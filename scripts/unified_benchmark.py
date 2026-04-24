@@ -1160,6 +1160,8 @@ class BenchmarkRunner:
                                     "p99_ms": latencies[int(0.99 * len(latencies))],
                                     "avg_ms": avg_ms,
                                 })
+                                self.results = all_results
+                                self.save_results()
                                 print(f"    {geo_type}: QPS={qps:.1f} P50={latencies[int(0.5*len(latencies))]:.2f}ms")
                             else:
                                 print(f"    {geo_type}: FAILED")
@@ -1644,8 +1646,7 @@ class BenchmarkRunner:
             print("\n[Stage 1] Warm-up — inserting small/medium/large datasets")
             workloads = [
                 ("small",  10_000),
-                ("medium", 200_000),
-                ("large",  2_000_000),
+                ("medium", 50_000),
             ]
 
             for size_label, n_vectors in workloads:
@@ -1809,6 +1810,26 @@ class BenchmarkRunner:
         print(f"\nResults saved to: {self.output_file}")
         print("=" * 80)
 
+    def save_results(self):
+        """Save current results to JSON matrix file."""
+        with open(self.output_file, "w") as f:
+            json.dump(
+                {
+                    "mode": self.args.mode,
+                    "timestamp": self.timestamp,
+                    "platform": f"{platform.system()} {platform.machine()}",
+                    "config": {
+                        "dims": [int(d) for d in self.args.dims.split(",")],
+                        "counts": [int(c) for c in self.args.counts.split(",")],
+                        "dtypes": self.args.dtypes.split(","),
+                        "duration": self.args.duration,
+                    },
+                    "results": self.results,
+                },
+                f,
+                indent=2,
+            )
+
     def execute(self):
         if self.args.mode == "learned_index":
             self.execute_learned_index()
@@ -1841,29 +1862,13 @@ class BenchmarkRunner:
             return
 
         if self.args.mode == "geo":
-            print("\n" + "─" * 100)
-            print("GEO-SPATIAL SEARCH BENCHMARK SUMMARY")
-            print("─" * 100)
-            print(f"{'Type':<25} {'QPS':<12} {'P50 ms':<10} {'P95 ms':<10} {'P99 ms':<10}")
-            print("─" * 100)
-            for r in self.results:
-                print(f"{r['search_type']:<25} {r['qps']:<12.1f} {r['p50_ms']:<10.2f} "
-                      f"{r['p95_ms']:<10.2f} {r['p99_ms']:<10.2f}")
-            print("─" * 100)
+            self.execute_geo()
             return
-
         if self.args.mode == "churn":
-            print("\n" + "─" * 100)
-            print("CHURN SOAK TEST SUMMARY")
-            print("─" * 100)
-            for r in self.results:
-                cycles = r.get("cycles", [])
-                if cycles:
-                    avg_p50 = sum(c.get("search_p50_ms", 0) for c in cycles) / len(cycles)
-                    avg_add = sum(c["add_ms"] for c in cycles) / len(cycles)
-                    print(f"  {r['dtype']} dim={r['dim']} payload={r['payload_kb']}KB: "
-                          f"avg_add={avg_add:.0f}ms avg_search={avg_p50:.2f}ms x{len(cycles)}cycles")
-            print("─" * 100)
+            self.execute_churn()
+            return
+        if self.args.mode == "temporal":
+            self.execute_temporal()
             return
         if self.args.mode == "geo":
             self.execute_geo()
@@ -1923,6 +1928,25 @@ class BenchmarkRunner:
 
                     try:
                         self.run_benchmark(dim, dtype, count, label)
+                        
+                        # Partial save for real-time monitoring
+                        with open(self.output_file, "w") as f:
+                            json.dump(
+                                {
+                                    "mode": self.args.mode,
+                                    "timestamp": self.timestamp,
+                                    "platform": f"{platform.system()} {platform.machine()}",
+                                    "config": {
+                                        "dims": dims,
+                                        "counts": counts,
+                                        "dtypes": dtypes,
+                                        "duration": self.args.duration,
+                                    },
+                                    "results": self.results,
+                                },
+                                f,
+                                indent=2,
+                            )
                     finally:
                         self.stop_server()
                         # Clean up data directory

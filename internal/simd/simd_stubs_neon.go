@@ -40,5 +40,8 @@ func dotF16NEON(a, b []float16.Num) (float32, error)       { return dotF16Unroll
 
 func l2SquaredNEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
 
-func FastWalshHadamardTransform32NEON(a []float32) error { return FastWalshHadamardTransform32(a) }
-func RandomRotationNEON(a []float32, seed int64) error  { return RandomRotation(a, seed) }
+func FastWalshHadamardTransform32NEON(a []float32) error { return fastWalshHadamardTransform32Generic(a) }
+func RandomRotationNEON(a []float32, seed int64) error  { return randomRotationGeneric(a, seed) }
+
+func dotInt4Neon(a, b []byte) (float32, error) { return dotInt4Generic(a, b) }
+func dotInt2Neon(a, b []byte) (float32, error) { return dotInt2Generic(a, b) }

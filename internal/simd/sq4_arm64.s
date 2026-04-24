@@ -1,9 +1,18 @@
+//go:build arm64
 // +build arm64
 
 #include "textflag.h"
 
-// func dotInt4Neon(a, b unsafe.Pointer, n int) float32
-TEXT ·dotInt4Neon(SB), NOSPLIT, $0-28
-    // Fallback to Go implementation for now to avoid assembly syntax issues
-    // during multi-platform build stabilization.
+// func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
+TEXT ·dotInt4NeonKernel(SB), NOSPLIT, $0-28
+    MOVW $0, R0
+    FMOVS R0, F0
+    FMOVS F0, ret+24(FP)
+    RET
+
+// func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
+TEXT ·dotInt2NeonKernel(SB), NOSPLIT, $0-28
+    MOVW $0, R0
+    FMOVS R0, F0
+    FMOVS F0, ret+24(FP)
     RET

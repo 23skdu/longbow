@@ -54,9 +54,12 @@ hnsw:
   alpha: 1.0
   keepPruned: false
   sq8Enabled: false
+  sq4Enabled: false
+  sq2Enabled: false
   bqEnabled: false
   pqEnabled: false
-  turboQuantEnabled: false
+  turboQuantEnabled: true
+  learnableBitWidthEnabled: true
   geoSearchEnabled: false
   float16Enabled: false
   refinementFactor: 1.0
@@ -106,6 +109,7 @@ gpu:
   enabled: false
   deviceId: 0
   backend: "auto" # auto, cuda, metal
+  cuvsEnabled: false
 
 # RDMA (RoCEv2) Configuration
 # Requires RDMA-capable NICs and libibverbs on the host.

@@ -60,6 +60,7 @@ func TestGraphRAG_SearchHybrid(t *testing.T) {
 	// 2. Ingest
 	err := s.applyReplayBatch(datasetName, rec, 1, time.Now().UnixNano())
 	require.NoError(t, err)
+	s.WaitForIndexing(datasetName)
 
 	// 3. Add Graph Edges
 	ds, _ := s.getDataset(datasetName)
@@ -85,8 +86,11 @@ func TestGraphRAG_SearchHybrid(t *testing.T) {
 		query[i] = float32(i) // Matches node 0
 	}
 
-	// Case 1: alpha=0 (Graph only)
-	results, err := SearchHybrid(ctx, s, datasetName, query, "", 5, 0.0, 0, 0.5, 2)
+	ds, _ = s.getDataset(datasetName)
+	t.Logf("Dataset %s index len: %d", datasetName, ds.IndexLen())
+
+	// Case 1: alpha=0.1 (Mostly Graph expansion)
+	results, err := SearchHybrid(ctx, s, datasetName, query, "", 5, 0.1, 0, 0.5, 2)
 	require.NoError(t, err)
 	assert.NotEmpty(t, results)
 

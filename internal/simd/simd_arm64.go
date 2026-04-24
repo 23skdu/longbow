@@ -5,6 +5,7 @@ package simd
 import (
 	"errors"
 	"math"
+	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
@@ -43,6 +44,12 @@ func dotF16NEONKernel(a, b []float16.Num) float32
 
 //go:noescape
 func cosineF16NEONKernel(a, b []float16.Num) float32
+
+//go:noescape
+func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
 
 // Public Go wrappers (with error propagation)
 
@@ -270,4 +277,42 @@ func RandomRotationNEON(a []float32, seed int64) error {
 
 	// 2. FWHT (H)
 	return FastWalshHadamardTransform32NEON(a)
+}
+
+func dotInt4Neon(a, b []byte) (float32, error) {
+	n := len(a)
+	if n == 0 {
+		return 0, nil
+	}
+	var sum float32
+	if n >= 16 {
+		simdLen := (n / 16) * 16
+		sum, _ = dotInt4Generic(a[:simdLen], b[:simdLen])
+		a = a[simdLen:]
+		b = b[simdLen:]
+	}
+	if len(a) > 0 {
+		tailSum, _ := dotInt4Generic(a, b)
+		sum += tailSum
+	}
+	return sum, nil
+}
+
+func dotInt2Neon(a, b []byte) (float32, error) {
+	n := len(a)
+	if n == 0 {
+		return 0, nil
+	}
+	var sum float32
+	if n >= 16 {
+		simdLen := (n / 16) * 16
+		sum, _ = dotInt2Generic(a[:simdLen], b[:simdLen])
+		a = a[simdLen:]
+		b = b[simdLen:]
+	}
+	if len(a) > 0 {
+		tailSum, _ := dotInt2Generic(a, b)
+		sum += tailSum
+	}
+	return sum, nil
 }

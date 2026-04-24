@@ -1,0 +1,29 @@
+=== RUN   TestGraphRAG_SearchHybrid
+{"level":"debug","message":"Single NUMA node detected (no NUMA)"}
+{"level":"info","added":12,"total":12,"message":"Started indexing workers"}
+{"level":"info","added":12,"total":12,"message":"Started ingestion workers"}
+{"level":"debug","dataset":"test_graphrag","batch_idx":0,"message":"Sending indexing job"}
+    graph_rag_test.go:90: Dataset test_graphrag index len: 100
+{"level":"info","dataset":"test_graphrag","text_query":"","alpha":0,"k":5,"message":"SearchHybrid started"}
+{"level":"info","dataset":"test_graphrag","duration":0.102084,"count":0,"message":"SearchHybrid completed"}
+    graph_rag_test.go:95: 
+        	Error Trace:	/Users/rsd/REPOS/longbow/internal/store/graph_rag_test.go:95
+        	Error:      	Should NOT be empty, but was []
+        	Test:       	TestGraphRAG_SearchHybrid
+{"level":"info","dataset":"test_graphrag","text_query":"","alpha":1,"k":5,"message":"SearchHybrid started"}
+{"level":"info","dataset":"test_graphrag","duration":1.833791,"count":5,"message":"SearchHybrid completed"}
+{"level":"info","message":"Starting graceful shutdown..."}
+{"level":"info","message":"Signaling background workers to stop"}
+{"level":"info","message":"Waiting for pending overflow jobs..."}
+{"level":"info","message":"Draining index queue..."}
+{"level":"info","message":"Index queue drained successfully"}
+{"level":"info","message":"Waiting for workers to finish..."}
+{"level":"info","message":"All workers finished"}
+{"level":"info","message":"Creating final snapshot..."}
+{"level":"error","error":"persistence not initialized","message":"Failed to create final snapshot"}
+{"level":"info","message":"Persistence closed successfully"}
+{"level":"info","elapsed":4.632625,"message":"Graceful shutdown completed successfully"}
+--- FAIL: TestGraphRAG_SearchHybrid (0.21s)
+FAIL
+FAIL	github.com/23skdu/longbow/internal/store	1.014s
+FAIL

@@ -1,6 +1,6 @@
 # Longbow Performance Benchmark Matrix (LATEST)
 
-Generated on: 2026-04-23 23:24:49
+Generated on: 2026-04-23 23:48:48
 
 ## Executive Summary
 
@@ -12,20 +12,20 @@ Benchmarks are still in progress. The following data represents partial results 
 |:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
 | ('Darwin arm64', 'cpu', 'complex128')   |       242173 |     150042   |        328248 |      157174   |
 | ('Darwin arm64', 'cpu', 'complex64')    |       249950 |     220677   |        373431 |      252058   |
-| ('Darwin arm64', 'cpu', 'float16')      |       472764 |     342428   |        689634 |      463231   |
-| ('Darwin arm64', 'cpu', 'float32')      |       386559 |     240395   |        540412 |      437060   |
-| ('Darwin arm64', 'cpu', 'float64')      |       322901 |     214075   |        425832 |      252690   |
-| ('Darwin arm64', 'cpu', 'int16')        |       347026 |     359108   |        741139 |      480626   |
-| ('Darwin arm64', 'cpu', 'int32')        |       375970 |     265230   |        546037 |      437294   |
-| ('Darwin arm64', 'cpu', 'int64')        |       326681 |     190930   |        410455 |      252758   |
-| ('Darwin arm64', 'cpu', 'int8')         |       401928 |     408029   |        870656 |      587454   |
+| ('Darwin arm64', 'cpu', 'float16')      |       481681 |     345492   |        689634 |      463231   |
+| ('Darwin arm64', 'cpu', 'float32')      |       387156 |     244792   |        540412 |      437060   |
+| ('Darwin arm64', 'cpu', 'float64')      |       320544 |     216250   |        425832 |      252690   |
+| ('Darwin arm64', 'cpu', 'int16')        |       386267 |     363046   |        741139 |      480626   |
+| ('Darwin arm64', 'cpu', 'int32')        |       375511 |     251006   |        546037 |      437294   |
+| ('Darwin arm64', 'cpu', 'int64')        |       326646 |     204283   |        410455 |      252758   |
+| ('Darwin arm64', 'cpu', 'int8')         |       438637 |     375483   |        870656 |      587454   |
 | ('Darwin arm64', 'cpu', 'turboquant')   |       400919 |     263666   |        475319 |      430892   |
-| ('Darwin arm64', 'cpu', 'uint16')       |       516034 |     264294   |        792775 |      480199   |
+| ('Darwin arm64', 'cpu', 'uint16')       |       482016 |     289427   |        792775 |      480199   |
 | ('Darwin arm64', 'cpu', 'uint32')       |       399059 |     271129   |        569995 |      345548   |
 | ('Darwin arm64', 'cpu', 'uint64')       |       240937 |     216771   |        418505 |      237520   |
-| ('Darwin arm64', 'cpu', 'uint8')        |       549053 |     358953   |        742018 |      567951   |
-| ('Darwin arm64', 'metal', 'complex128') |       189902 |     105497   |        339123 |      150017   |
-| ('Darwin arm64', 'metal', 'complex64')  |       202433 |     197649   |        390494 |      275796   |
+| ('Darwin arm64', 'cpu', 'uint8')        |       496172 |     360761   |        742018 |      567951   |
+| ('Darwin arm64', 'metal', 'complex128') |       197521 |     114388   |        339123 |      150017   |
+| ('Darwin arm64', 'metal', 'complex64')  |       214753 |     201920   |        390494 |      275796   |
 | ('Darwin arm64', 'metal', 'float16')    |       464864 |     325293   |        645373 |      482304   |
 | ('Darwin arm64', 'metal', 'float32')    |       395364 |     238417   |        584770 |      274655   |
 | ('Darwin arm64', 'metal', 'float64')    |       256228 |     203753   |        400951 |      200991   |
@@ -33,7 +33,7 @@ Benchmarks are still in progress. The following data represents partial results 
 | ('Darwin arm64', 'metal', 'int32')      |       397856 |     260722   |        662169 |      447412   |
 | ('Darwin arm64', 'metal', 'int64')      |       305980 |     216090   |        418661 |      237261   |
 | ('Darwin arm64', 'metal', 'int8')       |       434170 |     391252   |        733934 |      641170   |
-| ('Darwin arm64', 'metal', 'turboquant') |       324838 |     248835   |        584135 |      400907   |
+| ('Darwin arm64', 'metal', 'turboquant') |       335526 |     252722   |        584135 |      400907   |
 | ('Darwin arm64', 'metal', 'uint16')     |       493744 |     328008   |        780603 |      494895   |
 | ('Darwin arm64', 'metal', 'uint32')     |       336813 |     247494   |        518001 |      407168   |
 | ('Darwin arm64', 'metal', 'uint64')     |       306302 |     192297   |        429625 |      204438   |
@@ -75,20 +75,20 @@ Benchmarks are still in progress. The following data represents partial results 
 |:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
 | ('Darwin arm64', 'cpu', 'complex128')   |      6337.46 |      4586.81 |      5129.44  |      2685.88  |
 | ('Darwin arm64', 'cpu', 'complex64')    |      5511.89 |      5333.65 |      5753.72  |      4048.06  |
-| ('Darwin arm64', 'cpu', 'float16')      |      5073.85 |      4964.53 |      2814.91  |      2578.44  |
-| ('Darwin arm64', 'cpu', 'float32')      |      5636.49 |      4250.1  |      3463.96  |      3074.41  |
-| ('Darwin arm64', 'cpu', 'float64')      |      7048.26 |      5539.6  |      4537.92  |      4091.19  |
-| ('Darwin arm64', 'cpu', 'int16')        |      1539.06 |      1987.29 |      1013.54  |      1020.65  |
-| ('Darwin arm64', 'cpu', 'int32')        |      7708.66 |      6822.77 |      7194.87  |      6233.29  |
-| ('Darwin arm64', 'cpu', 'int64')        |      4392.18 |      3660.48 |      3677.9   |      3545.67  |
-| ('Darwin arm64', 'cpu', 'int8')         |      5094.55 |      4257.24 |      4535.96  |      3168.17  |
+| ('Darwin arm64', 'cpu', 'float16')      |      5187.66 |      4858.38 |      2814.91  |      2578.44  |
+| ('Darwin arm64', 'cpu', 'float32')      |      5640.08 |      4369.03 |      3463.96  |      3074.41  |
+| ('Darwin arm64', 'cpu', 'float64')      |      7068.11 |      5547.71 |      4537.92  |      4091.19  |
+| ('Darwin arm64', 'cpu', 'int16')        |      1687.48 |      1966.07 |      1013.54  |      1020.65  |
+| ('Darwin arm64', 'cpu', 'int32')        |      7755.15 |      6838.84 |      7194.87  |      6233.29  |
+| ('Darwin arm64', 'cpu', 'int64')        |      4470.12 |      3879.91 |      3677.9   |      3545.67  |
+| ('Darwin arm64', 'cpu', 'int8')         |      5406.85 |      4336.4  |      4535.96  |      3168.17  |
 | ('Darwin arm64', 'cpu', 'turboquant')   |      7637.72 |      6200.21 |      5428.99  |      5011.13  |
-| ('Darwin arm64', 'cpu', 'uint16')       |      1900.82 |      1882.08 |      1099.88  |      1306.56  |
+| ('Darwin arm64', 'cpu', 'uint16')       |      2191.81 |      1919.22 |      1099.88  |      1306.56  |
 | ('Darwin arm64', 'cpu', 'uint32')       |      5236.6  |      4456.18 |      3321.62  |      3319.54  |
 | ('Darwin arm64', 'cpu', 'uint64')       |      3285.74 |      4611.89 |      3472.78  |      3865.95  |
-| ('Darwin arm64', 'cpu', 'uint8')        |     10826.4  |      9226.12 |      8612.22  |      6894.16  |
-| ('Darwin arm64', 'metal', 'complex128') |      4068.19 |      3952.85 |      3995.29  |      3716.86  |
-| ('Darwin arm64', 'metal', 'complex64')  |      4945.64 |      4112.92 |      4935.97  |      4476.8   |
+| ('Darwin arm64', 'cpu', 'uint8')        |     10354.6  |      8805.52 |      8612.22  |      6894.16  |
+| ('Darwin arm64', 'metal', 'complex128') |      4450.09 |      4064.52 |      3995.29  |      3716.86  |
+| ('Darwin arm64', 'metal', 'complex64')  |      5208.77 |      4416.43 |      4935.97  |      4476.8   |
 | ('Darwin arm64', 'metal', 'float16')    |      4969.84 |      4075.12 |      3048.92  |      2331.94  |
 | ('Darwin arm64', 'metal', 'float32')    |      5718.07 |      4264.42 |      4058.05  |      3500.38  |
 | ('Darwin arm64', 'metal', 'float64')    |      5271.23 |      4418.68 |      5651.17  |      4532.06  |
@@ -96,7 +96,7 @@ Benchmarks are still in progress. The following data represents partial results 
 | ('Darwin arm64', 'metal', 'int32')      |      6670.28 |      6790.97 |      6831.19  |      6480.58  |
 | ('Darwin arm64', 'metal', 'int64')      |      4149.46 |      3957.63 |      4454.29  |      3950.84  |
 | ('Darwin arm64', 'metal', 'int8')       |      5085.28 |      3940.6  |      4152.06  |      3312.53  |
-| ('Darwin arm64', 'metal', 'turboquant') |      5503.81 |      4384.12 |      5654.44  |      5079.79  |
+| ('Darwin arm64', 'metal', 'turboquant') |      5852.01 |      4680.89 |      5654.44  |      5079.79  |
 | ('Darwin arm64', 'metal', 'uint16')     |      2401.64 |      1727.55 |       876.767 |      1030.18  |
 | ('Darwin arm64', 'metal', 'uint32')     |      4520.89 |      4343.74 |      2832.78  |      3146.74  |
 | ('Darwin arm64', 'metal', 'uint64')     |      4269.46 |      4295.82 |      3234.56  |      3350.22  |
@@ -136,20 +136,20 @@ Benchmarks are still in progress. The following data represents partial results 
 |:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
 | ('Darwin arm64', 'cpu', 'complex128')   |     4864.77  |      2904.58 |      4003.53  |      2230.15  |
 | ('Darwin arm64', 'cpu', 'complex64')    |     4131.96  |      3143.56 |      4355.85  |      2556.21  |
-| ('Darwin arm64', 'cpu', 'float16')      |     4411.8   |      3444.03 |      2942.52  |      2407.73  |
-| ('Darwin arm64', 'cpu', 'float32')      |     4813.25  |      2942.72 |      3172.71  |      2625.81  |
-| ('Darwin arm64', 'cpu', 'float64')      |     5780.94  |      3934.95 |      4127.42  |      3023.34  |
-| ('Darwin arm64', 'cpu', 'int16')        |     1424.08  |      1761.19 |      1108.6   |      1151.72  |
-| ('Darwin arm64', 'cpu', 'int32')        |     6359.12  |      4884.21 |      6145.25  |      4692.51  |
-| ('Darwin arm64', 'cpu', 'int64')        |     3820.45  |      2728.85 |      3537.45  |      3107.17  |
-| ('Darwin arm64', 'cpu', 'int8')         |     4156.28  |      3043.06 |      4142.04  |      2608.64  |
+| ('Darwin arm64', 'cpu', 'float16')      |     4507.63  |      3374.68 |      2942.52  |      2407.73  |
+| ('Darwin arm64', 'cpu', 'float32')      |     4793.11  |      3000.91 |      3172.71  |      2625.81  |
+| ('Darwin arm64', 'cpu', 'float64')      |     5812.75  |      3944.48 |      4127.42  |      3023.34  |
+| ('Darwin arm64', 'cpu', 'int16')        |     1556.88  |      1741.7  |      1108.6   |      1151.72  |
+| ('Darwin arm64', 'cpu', 'int32')        |     6378.28  |      4895.85 |      6145.25  |      4692.51  |
+| ('Darwin arm64', 'cpu', 'int64')        |     3799.81  |      2851.01 |      3537.45  |      3107.17  |
+| ('Darwin arm64', 'cpu', 'int8')         |     4536.94  |      3074.97 |      4142.04  |      2608.64  |
 | ('Darwin arm64', 'cpu', 'turboquant')   |     5376.42  |      4318.55 |      5067.07  |      3992.64  |
-| ('Darwin arm64', 'cpu', 'uint16')       |     1827.33  |      1551.59 |      1081.41  |      1211.85  |
+| ('Darwin arm64', 'cpu', 'uint16')       |     2022.24  |      1619.03 |      1081.41  |      1211.85  |
 | ('Darwin arm64', 'cpu', 'uint32')       |     4568.11  |      3232.47 |      2750.32  |      2679.55  |
 | ('Darwin arm64', 'cpu', 'uint64')       |     2875.89  |      3312.78 |      3691.36  |      2841.75  |
-| ('Darwin arm64', 'cpu', 'uint8')        |     7573.31  |      5549.07 |      6780.27  |      4892.26  |
-| ('Darwin arm64', 'metal', 'complex128') |     3614.02  |      2449.97 |      3725.59  |      2236.45  |
-| ('Darwin arm64', 'metal', 'complex64')  |     4206.32  |      2551.9  |      4060.93  |      2869.68  |
+| ('Darwin arm64', 'cpu', 'uint8')        |     7576     |      5525.76 |      6780.27  |      4892.26  |
+| ('Darwin arm64', 'metal', 'complex128') |     3840.89  |      2501.32 |      3725.59  |      2236.45  |
+| ('Darwin arm64', 'metal', 'complex64')  |     4338.03  |      2669.29 |      4060.93  |      2869.68  |
 | ('Darwin arm64', 'metal', 'float16')    |     4113.84  |      3063.98 |      2700.49  |      2359.38  |
 | ('Darwin arm64', 'metal', 'float32')    |     4856.35  |      2891.09 |      3189.26  |      2312.05  |
 | ('Darwin arm64', 'metal', 'float64')    |     4859.9   |      3596.72 |      4641.98  |      3047.78  |
@@ -157,7 +157,7 @@ Benchmarks are still in progress. The following data represents partial results 
 | ('Darwin arm64', 'metal', 'int32')      |     5623.33  |      4944.61 |      5920.59  |      4734.73  |
 | ('Darwin arm64', 'metal', 'int64')      |     3506.72  |      2862.44 |      3926.5   |      2863.87  |
 | ('Darwin arm64', 'metal', 'int8')       |     4560.03  |      3163.34 |      3690.34  |      2725.24  |
-| ('Darwin arm64', 'metal', 'turboquant') |     4733.36  |      3386.77 |      5569.86  |      4305.49  |
+| ('Darwin arm64', 'metal', 'turboquant') |     4532.04  |      3577.94 |      5569.86  |      4305.49  |
 | ('Darwin arm64', 'metal', 'uint16')     |     2266.27  |      1766.47 |      1058.52  |       937.098 |
 | ('Darwin arm64', 'metal', 'uint32')     |     4356.91  |      3896.33 |      2719.16  |      2490.39  |
 | ('Darwin arm64', 'metal', 'uint64')     |     3461.78  |      2931.52 |      3213.01  |      2609.08  |
@@ -197,20 +197,20 @@ Benchmarks are still in progress. The following data represents partial results 
 |:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
 | ('Darwin arm64', 'cpu', 'complex128')   |     4922.72  |      2827.16 |      4150.4   |      2126.81  |
 | ('Darwin arm64', 'cpu', 'complex64')    |     4123.09  |      3040.67 |      4460.81  |      2646.12  |
-| ('Darwin arm64', 'cpu', 'float16')      |     4641.02  |      3479.69 |      2770.74  |      2239.89  |
-| ('Darwin arm64', 'cpu', 'float32')      |     4908.33  |      2960.84 |      2951.47  |      2401.8   |
-| ('Darwin arm64', 'cpu', 'float64')      |     5466.21  |      4243.57 |      4275     |      2823.92  |
-| ('Darwin arm64', 'cpu', 'int16')        |     1462.32  |      1781.84 |       953.924 |       958.707 |
-| ('Darwin arm64', 'cpu', 'int32')        |     6615.95  |      5030.01 |      6296.71  |      4816.21  |
-| ('Darwin arm64', 'cpu', 'int64')        |     3895.22  |      2789.05 |      3570.47  |      2999     |
-| ('Darwin arm64', 'cpu', 'int8')         |     4188.83  |      2954.31 |      4185.66  |      2507.94  |
+| ('Darwin arm64', 'cpu', 'float16')      |     4607.86  |      3404.39 |      2770.74  |      2239.89  |
+| ('Darwin arm64', 'cpu', 'float32')      |     4920.71  |      3022.01 |      2951.47  |      2401.8   |
+| ('Darwin arm64', 'cpu', 'float64')      |     5565.14  |      4226.09 |      4275     |      2823.92  |
+| ('Darwin arm64', 'cpu', 'int16')        |     1592.1   |      1738.02 |       953.924 |       958.707 |
+| ('Darwin arm64', 'cpu', 'int32')        |     6479.9   |      5041.85 |      6296.71  |      4816.21  |
+| ('Darwin arm64', 'cpu', 'int64')        |     3867.71  |      2904.07 |      3570.47  |      2999     |
+| ('Darwin arm64', 'cpu', 'int8')         |     4588.3   |      3019.07 |      4185.66  |      2507.94  |
 | ('Darwin arm64', 'cpu', 'turboquant')   |     6184.39  |      4578.21 |      5076.79  |      3981.82  |
-| ('Darwin arm64', 'cpu', 'uint16')       |     1898.81  |      1575.56 |      1094.26  |      1222.08  |
+| ('Darwin arm64', 'cpu', 'uint16')       |     2064.47  |      1635.66 |      1094.26  |      1222.08  |
 | ('Darwin arm64', 'cpu', 'uint32')       |     4643.72  |      3325.75 |      2844.75  |      2718.53  |
 | ('Darwin arm64', 'cpu', 'uint64')       |     2959.7   |      3287.65 |      3624.35  |      2853.34  |
-| ('Darwin arm64', 'cpu', 'uint8')        |     8275.07  |      5755.92 |      7334.76  |      5594.14  |
-| ('Darwin arm64', 'metal', 'complex128') |     3581.66  |      2531.7  |      3886.32  |      2282.85  |
-| ('Darwin arm64', 'metal', 'complex64')  |     4212.54  |      2560.62 |      4115.27  |      2938.45  |
+| ('Darwin arm64', 'cpu', 'uint8')        |     8143.08  |      5728.7  |      7334.76  |      5594.14  |
+| ('Darwin arm64', 'metal', 'complex128') |     3838.22  |      2569    |      3886.32  |      2282.85  |
+| ('Darwin arm64', 'metal', 'complex64')  |     4381.82  |      2682.2  |      4115.27  |      2938.45  |
 | ('Darwin arm64', 'metal', 'float16')    |     4306.73  |      3108.91 |      2601.3   |      2285.12  |
 | ('Darwin arm64', 'metal', 'float32')    |     4989.15  |      2880.6  |      3296.23  |      2315.94  |
 | ('Darwin arm64', 'metal', 'float64')    |     5236.02  |      3508.91 |      4666.86  |      3037.83  |
@@ -218,7 +218,7 @@ Benchmarks are still in progress. The following data represents partial results 
 | ('Darwin arm64', 'metal', 'int32')      |     5671.15  |      5026.19 |      5980.77  |      4870.56  |
 | ('Darwin arm64', 'metal', 'int64')      |     3580.11  |      3072.35 |      3856.09  |      2695.26  |
 | ('Darwin arm64', 'metal', 'int8')       |     4539.14  |      3090.06 |      3884.31  |      2582.16  |
-| ('Darwin arm64', 'metal', 'turboquant') |     4924.78  |      3573.27 |      5355.86  |      4370.79  |
+| ('Darwin arm64', 'metal', 'turboquant') |     5168.34  |      3745.91 |      5355.86  |      4370.79  |
 | ('Darwin arm64', 'metal', 'uint16')     |     2238.95  |      1891.06 |       860.791 |       924.883 |
 | ('Darwin arm64', 'metal', 'uint32')     |     4234.35  |      3780.15 |      2489.63  |      2410.39  |
 | ('Darwin arm64', 'metal', 'uint64')     |     3413.74  |      2914.99 |      3275.14  |      2244.07  |
@@ -258,20 +258,20 @@ Benchmarks are still in progress. The following data represents partial results 
 |:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
 | ('Darwin arm64', 'cpu', 'complex128')   |     2464.7   |     1273.58  |       414.933 |         0     |
 | ('Darwin arm64', 'cpu', 'complex64')    |     2628.78  |     1546.28  |       417.657 |       615.668 |
-| ('Darwin arm64', 'cpu', 'float16')      |     1607.46  |     1132.42  |       283.879 |         0     |
-| ('Darwin arm64', 'cpu', 'float32')      |     2978.84  |     1639.67  |         0     |         0     |
-| ('Darwin arm64', 'cpu', 'float64')      |     3127.2   |     1542     |       829.762 |       733.177 |
-| ('Darwin arm64', 'cpu', 'int16')        |      722.539 |      571.204 |         0     |         0     |
-| ('Darwin arm64', 'cpu', 'int32')        |     2261.45  |     1660.2   |         0     |         0     |
-| ('Darwin arm64', 'cpu', 'int64')        |     1291.16  |     1084.79  |       483.303 |       333.907 |
-| ('Darwin arm64', 'cpu', 'int8')         |     2608.58  |      933.183 |       759.113 |       827.803 |
+| ('Darwin arm64', 'cpu', 'float16')      |     2434.68  |     1644.38  |       283.879 |         0     |
+| ('Darwin arm64', 'cpu', 'float32')      |     3290.78  |     1993.53  |         0     |         0     |
+| ('Darwin arm64', 'cpu', 'float64')      |     3702     |     2220.01  |       829.762 |       733.177 |
+| ('Darwin arm64', 'cpu', 'int16')        |     1017.96  |      848.374 |         0     |         0     |
+| ('Darwin arm64', 'cpu', 'int32')        |     3382.38  |     2518.96  |         0     |         0     |
+| ('Darwin arm64', 'cpu', 'int64')        |     1923.39  |     1623.15  |       483.303 |       333.907 |
+| ('Darwin arm64', 'cpu', 'int8')         |     3574.83  |     1501.4   |       759.113 |       827.803 |
 | ('Darwin arm64', 'cpu', 'turboquant')   |     3310.47  |     2328.1   |      1486.29  |      1139.84  |
-| ('Darwin arm64', 'cpu', 'uint16')       |      965.79  |     1065.42  |         0     |         0     |
+| ('Darwin arm64', 'cpu', 'uint16')       |     1448.17  |     1296.91  |         0     |         0     |
 | ('Darwin arm64', 'cpu', 'uint32')       |     2379.86  |     1625.66  |         0     |       464.525 |
 | ('Darwin arm64', 'cpu', 'uint64')       |     1978.55  |     3256.4   |         0     |       251.472 |
-| ('Darwin arm64', 'cpu', 'uint8')        |     4988.56  |     3796.61  |      1619.81  |      1725.32  |
+| ('Darwin arm64', 'cpu', 'uint8')        |     5880.63  |     4376.71  |      1619.81  |      1725.32  |
 | ('Darwin arm64', 'metal', 'complex128') |        0     |        0     |       527.482 |       470.517 |
-| ('Darwin arm64', 'metal', 'complex64')  |      410.87  |        0     |       786.54  |         0     |
+| ('Darwin arm64', 'metal', 'complex64')  |      352.174 |        0     |       786.54  |         0     |
 | ('Darwin arm64', 'metal', 'float16')    |        0     |        0     |         0     |         0     |
 | ('Darwin arm64', 'metal', 'float32')    |        0     |      399.393 |       439.497 |         0     |
 | ('Darwin arm64', 'metal', 'float64')    |      464.885 |      353.816 |       336.284 |       174.387 |
@@ -279,7 +279,7 @@ Benchmarks are still in progress. The following data represents partial results 
 | ('Darwin arm64', 'metal', 'int32')      |      790.098 |        0     |         0     |         0     |
 | ('Darwin arm64', 'metal', 'int64')      |        0     |        0     |         0     |       478.251 |
 | ('Darwin arm64', 'metal', 'int8')       |      595.684 |        0     |       999.561 |       222.128 |
-| ('Darwin arm64', 'metal', 'turboquant') |        0     |     1183.01  |      1114.25  |         0     |
+| ('Darwin arm64', 'metal', 'turboquant') |        0     |     1014.01  |      1114.25  |         0     |
 | ('Darwin arm64', 'metal', 'uint16')     |        0     |        0     |         0     |         0     |
 | ('Darwin arm64', 'metal', 'uint32')     |      548.26  |        0     |       232.468 |         0     |
 | ('Darwin arm64', 'metal', 'uint64')     |        0     |        0     |         0     |         0     |
@@ -319,20 +319,20 @@ Benchmarks are still in progress. The following data represents partial results 
 |:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
 | ('Darwin arm64', 'cpu', 'complex128')   |      5014.68 |     2953.27  |      4175.12  |      2069.44  |
 | ('Darwin arm64', 'cpu', 'complex64')    |      4258.7  |     3242.04  |      4440.67  |      2749.59  |
-| ('Darwin arm64', 'cpu', 'float16')      |      4629.05 |     3634.59  |      2802.02  |      2183.35  |
-| ('Darwin arm64', 'cpu', 'float32')      |      4890.37 |     3085.09  |      3046.64  |      2476.38  |
-| ('Darwin arm64', 'cpu', 'float64')      |      6028.02 |     4209.31  |      4199.5   |      3011.66  |
-| ('Darwin arm64', 'cpu', 'int16')        |      1446.09 |     1838.16  |       966.27  |       974.643 |
-| ('Darwin arm64', 'cpu', 'int32')        |      6672.23 |     5002.13  |      6300.84  |      4810.5   |
-| ('Darwin arm64', 'cpu', 'int64')        |      3986.8  |     2925.33  |      3580.22  |      3132.09  |
-| ('Darwin arm64', 'cpu', 'int8')         |      4182.5  |     3091.6   |      4015.94  |      2548.25  |
+| ('Darwin arm64', 'cpu', 'float16')      |      4717.99 |     3513.51  |      2802.02  |      2183.35  |
+| ('Darwin arm64', 'cpu', 'float32')      |      4894.29 |     3114.88  |      3046.64  |      2476.38  |
+| ('Darwin arm64', 'cpu', 'float64')      |      6039.05 |     4219.84  |      4199.5   |      3011.66  |
+| ('Darwin arm64', 'cpu', 'int16')        |      1560.09 |     1778.28  |       966.27  |       974.643 |
+| ('Darwin arm64', 'cpu', 'int32')        |      6693.94 |     5016.31  |      6300.84  |      4810.5   |
+| ('Darwin arm64', 'cpu', 'int64')        |      3938.68 |     3007.25  |      3580.22  |      3132.09  |
+| ('Darwin arm64', 'cpu', 'int8')         |      4628.55 |     3122.47  |      4015.94  |      2548.25  |
 | ('Darwin arm64', 'cpu', 'turboquant')   |      6439.21 |     4613.86  |      4815.75  |      3797.98  |
-| ('Darwin arm64', 'cpu', 'uint16')       |      1904.95 |     1596.81  |      1090.86  |      1243.65  |
+| ('Darwin arm64', 'cpu', 'uint16')       |      2071.26 |     1651.41  |      1090.86  |      1243.65  |
 | ('Darwin arm64', 'cpu', 'uint32')       |      4692.09 |     3311.7   |      2997.86  |      2803.95  |
 | ('Darwin arm64', 'cpu', 'uint64')       |      2975.77 |     3308.17  |      3522.4   |      3291.63  |
-| ('Darwin arm64', 'cpu', 'uint8')        |      8332.7  |     5775.95  |      7380.31  |      4810.94  |
-| ('Darwin arm64', 'metal', 'complex128') |      3565.44 |     2660.39  |      3804.12  |      2289.86  |
-| ('Darwin arm64', 'metal', 'complex64')  |      3788.96 |     2662.53  |      4157.25  |      2980.87  |
+| ('Darwin arm64', 'cpu', 'uint8')        |      8181.89 |     5718.57  |      7380.31  |      4810.94  |
+| ('Darwin arm64', 'metal', 'complex128') |      3823.99 |     2739.32  |      3804.12  |      2289.86  |
+| ('Darwin arm64', 'metal', 'complex64')  |      4021.78 |     2842.55  |      4157.25  |      2980.87  |
 | ('Darwin arm64', 'metal', 'float16')    |      4539.35 |     3448.7   |      2803.32  |      2350.22  |
 | ('Darwin arm64', 'metal', 'float32')    |      5032.97 |     3250.06  |      3572.63  |      2786.89  |
 | ('Darwin arm64', 'metal', 'float64')    |      4694.16 |     3516.45  |      4666.71  |      3407.23  |
@@ -340,7 +340,7 @@ Benchmarks are still in progress. The following data represents partial results 
 | ('Darwin arm64', 'metal', 'int32')      |      5912.24 |     5059.08  |      5905.36  |      4855.9   |
 | ('Darwin arm64', 'metal', 'int64')      |      3864.98 |     3349.96  |      4167.35  |      3370.24  |
 | ('Darwin arm64', 'metal', 'int8')       |      4554.36 |     3157.96  |      3885.76  |      2681     |
-| ('Darwin arm64', 'metal', 'turboquant') |      4799.69 |     3525.62  |      5134.04  |      4023.39  |
+| ('Darwin arm64', 'metal', 'turboquant') |      5068.05 |     3706.87  |      5134.04  |      4023.39  |
 | ('Darwin arm64', 'metal', 'uint16')     |      2402.26 |     1567.83  |       870.453 |       998.939 |
 | ('Darwin arm64', 'metal', 'uint32')     |      4084.48 |     3744.2   |      2490.14  |      2462.06  |
 | ('Darwin arm64', 'metal', 'uint64')     |      4025.19 |     3138.18  |      3379.55  |      2773.27  |
@@ -380,20 +380,20 @@ Benchmarks are still in progress. The following data represents partial results 
 |:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
 | ('Darwin arm64', 'cpu', 'complex128')   |     4194.72  |     2634.01  |      3687.8   |      1994.77  |
 | ('Darwin arm64', 'cpu', 'complex64')    |     3679.5   |     2828     |      3977.78  |      2318.85  |
-| ('Darwin arm64', 'cpu', 'float16')      |     4075.25  |     3187.1   |      2762.68  |      2132.3   |
-| ('Darwin arm64', 'cpu', 'float32')      |     4469.26  |     2729.12  |      2829.57  |      2323.88  |
-| ('Darwin arm64', 'cpu', 'float64')      |     5282.16  |     3775.44  |      3664.19  |      2497.7   |
-| ('Darwin arm64', 'cpu', 'int16')        |     1387.01  |     1704.99  |      1034.4   |      1096.13  |
-| ('Darwin arm64', 'cpu', 'int32')        |     5717.33  |     4426.96  |      5507.67  |      4288.3   |
-| ('Darwin arm64', 'cpu', 'int64')        |     3639.3   |     2585.68  |      3379.64  |      2795.92  |
-| ('Darwin arm64', 'cpu', 'int8')         |     3845.78  |     2796.71  |      3605.91  |      2246.15  |
+| ('Darwin arm64', 'cpu', 'float16')      |     4160.32  |     3128.41  |      2762.68  |      2132.3   |
+| ('Darwin arm64', 'cpu', 'float32')      |     4466.16  |     2781.37  |      2829.57  |      2323.88  |
+| ('Darwin arm64', 'cpu', 'float64')      |     5293.31  |     3688.75  |      3664.19  |      2497.7   |
+| ('Darwin arm64', 'cpu', 'int16')        |     1517.37  |     1685.91  |      1034.4   |      1096.13  |
+| ('Darwin arm64', 'cpu', 'int32')        |     5702.08  |     4440.99  |      5507.67  |      4288.3   |
+| ('Darwin arm64', 'cpu', 'int64')        |     3616.35  |     2671.11  |      3379.64  |      2795.92  |
+| ('Darwin arm64', 'cpu', 'int8')         |     4196.45  |     2844.72  |      3605.91  |      2246.15  |
 | ('Darwin arm64', 'cpu', 'turboquant')   |     5379.83  |     4095.97  |      4486.54  |      3587.29  |
-| ('Darwin arm64', 'cpu', 'uint16')       |     1852.24  |     1474.54  |      1069.11  |      1204.18  |
+| ('Darwin arm64', 'cpu', 'uint16')       |     2002.71  |     1550.27  |      1069.11  |      1204.18  |
 | ('Darwin arm64', 'cpu', 'uint32')       |     4036.85  |     3023.52  |      2628.69  |      2598.36  |
 | ('Darwin arm64', 'cpu', 'uint64')       |     2686.5   |     3066.93  |      3491.12  |      2669.4   |
-| ('Darwin arm64', 'cpu', 'uint8')        |     7110.61  |     4938.01  |      6188.54  |      4944.13  |
-| ('Darwin arm64', 'metal', 'complex128') |     3239.9   |     2324.26  |      3422.35  |      2076.42  |
-| ('Darwin arm64', 'metal', 'complex64')  |     3726.98  |     2322.8   |      3614.54  |      2711.86  |
+| ('Darwin arm64', 'cpu', 'uint8')        |     7013.62  |     4967.86  |      6188.54  |      4944.13  |
+| ('Darwin arm64', 'metal', 'complex128') |     3462.4   |     2363.3   |      3422.35  |      2076.42  |
+| ('Darwin arm64', 'metal', 'complex64')  |     3879.57  |     2442.5   |      3614.54  |      2711.86  |
 | ('Darwin arm64', 'metal', 'float16')    |     3819.63  |     2819.3   |      2390.08  |      2193.5   |
 | ('Darwin arm64', 'metal', 'float32')    |     4502.99  |     2616.39  |      3017.05  |      2217.96  |
 | ('Darwin arm64', 'metal', 'float64')    |     4614.73  |     3123.43  |      4029.28  |      2790.51  |
@@ -401,7 +401,7 @@ Benchmarks are still in progress. The following data represents partial results 
 | ('Darwin arm64', 'metal', 'int32')      |     5007.69  |     4480.75  |      5307.6   |      4311.2   |
 | ('Darwin arm64', 'metal', 'int64')      |     3258.89  |     2815.2   |      3648.24  |      2711.11  |
 | ('Darwin arm64', 'metal', 'int8')       |     4050.74  |     2941.03  |      3436.28  |      2447.99  |
-| ('Darwin arm64', 'metal', 'turboquant') |     4343.59  |     3183.51  |      5008.36  |      3976.53  |
+| ('Darwin arm64', 'metal', 'turboquant') |     4432.38  |     3348.43  |      5008.36  |      3976.53  |
 | ('Darwin arm64', 'metal', 'uint16')     |     2155.31  |     1723.77  |       838.725 |       863.385 |
 | ('Darwin arm64', 'metal', 'uint32')     |     4107.75  |     3489.55  |      2480.9   |      2351.54  |
 | ('Darwin arm64', 'metal', 'uint64')     |     3176.22  |     2664.63  |      2986.21  |      2081.08  |
@@ -441,20 +441,20 @@ Benchmarks are still in progress. The following data represents partial results 
 |:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
 | ('Darwin arm64', 'cpu', 'complex128')   |     13969.5  |     11896.3  |       9184.03 |       4413.44 |
 | ('Darwin arm64', 'cpu', 'complex64')    |     13594    |     11835.7  |       8882.77 |       6123.28 |
-| ('Darwin arm64', 'cpu', 'float16')      |     14364.1  |     12323.7  |       4795.3  |       6771.48 |
-| ('Darwin arm64', 'cpu', 'float32')      |     14079.3  |     12568.5  |       6499.27 |       8921.72 |
-| ('Darwin arm64', 'cpu', 'float64')      |     14268.9  |     13653    |       6917.79 |       7042.75 |
-| ('Darwin arm64', 'cpu', 'int16')        |     13049.6  |     12449.4  |       7051.91 |       6504.81 |
-| ('Darwin arm64', 'cpu', 'int32')        |     14570    |     13696.2  |      14464    |      13810.1  |
-| ('Darwin arm64', 'cpu', 'int64')        |     14018.3  |     12793.6  |       8976.43 |       9301.85 |
-| ('Darwin arm64', 'cpu', 'int8')         |     14237.8  |     12629.5  |       6722.52 |       7362.85 |
+| ('Darwin arm64', 'cpu', 'float16')      |     14215.4  |     12422.5  |       4795.3  |       6771.48 |
+| ('Darwin arm64', 'cpu', 'float32')      |     14085.2  |     12538.9  |       6499.27 |       8921.72 |
+| ('Darwin arm64', 'cpu', 'float64')      |     14267.5  |     13616.5  |       6917.79 |       7042.75 |
+| ('Darwin arm64', 'cpu', 'int16')        |     13060.3  |     12441.4  |       7051.91 |       6504.81 |
+| ('Darwin arm64', 'cpu', 'int32')        |     14361.7  |     13756.9  |      14464    |      13810.1  |
+| ('Darwin arm64', 'cpu', 'int64')        |     13850.4  |     12739.7  |       8976.43 |       9301.85 |
+| ('Darwin arm64', 'cpu', 'int8')         |     14278.3  |     12476.5  |       6722.52 |       7362.85 |
 | ('Darwin arm64', 'cpu', 'turboquant')   |     12729.6  |     13717.4  |       7054.79 |       7251.29 |
-| ('Darwin arm64', 'cpu', 'uint16')       |     12146.8  |     12532.8  |      13033.8  |      12571.3  |
+| ('Darwin arm64', 'cpu', 'uint16')       |     12615.4  |     12475.2  |      13033.8  |      12571.3  |
 | ('Darwin arm64', 'cpu', 'uint32')       |     13964.5  |     12487.5  |       9846.38 |       9098.08 |
 | ('Darwin arm64', 'cpu', 'uint64')       |     14199.9  |     12671.2  |       5984.68 |       9279.22 |
-| ('Darwin arm64', 'cpu', 'uint8')        |     14543.9  |     13578.7  |       8670.42 |       7180.16 |
-| ('Darwin arm64', 'metal', 'complex128') |      6225.68 |      7442.41 |       7341.86 |       9347.42 |
-| ('Darwin arm64', 'metal', 'complex64')  |      5323.68 |      5014.49 |       7627.74 |       9976.61 |
+| ('Darwin arm64', 'cpu', 'uint8')        |     14375.9  |     13637.2  |       8670.42 |       7180.16 |
+| ('Darwin arm64', 'metal', 'complex128') |      8151.12 |      9263.15 |       7341.86 |       9347.42 |
+| ('Darwin arm64', 'metal', 'complex64')  |      7026.19 |      6960.24 |       7627.74 |       9976.61 |
 | ('Darwin arm64', 'metal', 'float16')    |     14284.3  |      9342.45 |       8340.63 |       1672.27 |
 | ('Darwin arm64', 'metal', 'float32')    |     14394.7  |      8968.6  |       8071.49 |        nan    |
 | ('Darwin arm64', 'metal', 'float64')    |      8773.32 |      8340.85 |       7679.81 |       8016.7  |
@@ -462,13 +462,15 @@ Benchmarks are still in progress. The following data represents partial results 
 | ('Darwin arm64', 'metal', 'int32')      |     10581.5  |     13730.8  |        nan    |        nan    |
 | ('Darwin arm64', 'metal', 'int64')      |     10297.1  |      9506.59 |        nan    |       9635.05 |
 | ('Darwin arm64', 'metal', 'int8')       |      8524.86 |      9875.75 |       5928.05 |       8969.68 |
-| ('Darwin arm64', 'metal', 'turboquant') |      6558.92 |      8348.43 |       7716.02 |       8681.19 |
+| ('Darwin arm64', 'metal', 'turboquant') |      8148.3  |      9459.18 |       7716.02 |       8681.19 |
 | ('Darwin arm64', 'metal', 'uint16')     |     12965.6  |      6431.86 |       5182.06 |       9539.63 |
 | ('Darwin arm64', 'metal', 'uint32')     |      8125.58 |      9257.69 |       9255.55 |       8971.77 |
 | ('Darwin arm64', 'metal', 'uint64')     |     10079.1  |      9120.92 |       4253.97 |       8728.33 |
 | ('Darwin arm64', 'metal', 'uint8')      |      9025.41 |     10218.8  |       7705.2  |       8169.88 |
 
 ## 3. Specialized Search Performance
+
+### GRAPHRAG Results
 
 ### RECOMMEND Results
 

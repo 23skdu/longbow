@@ -195,13 +195,63 @@ func (a *PluggableInternalAdapter) Search(ctx context.Context, q any, k int, fil
 }
 
 // SearchVectors implements VectorIndexer.
+// Filters are not supported by PluggableVectorIndex, so they're ignored.
 func (a *PluggableInternalAdapter) SearchVectors(ctx context.Context, q any, k int, filters []core.Filter, options any) ([]lbtypes.SearchResult, error) {
-	return nil, fmt.Errorf("SearchVectors not implemented in bridge")
+	vec, ok := q.([]float32)
+	if !ok {
+		if f64, ok := q.([]float64); ok {
+			vec = make([]float32, len(f64))
+			for i, v := range f64 {
+				vec[i] = float32(v)
+			}
+		} else {
+			return nil, fmt.Errorf("query must be []float32 or []float64")
+		}
+	}
+	
+	_ = filters // Filters not supported by PluggableVectorIndex
+	_ = options
+	
+	iresults, err := a.inner.Search(vec, k)
+	if err != nil {
+		return nil, err
+	}
+	
+	results := make([]lbtypes.SearchResult, len(iresults))
+	for i, r := range iresults {
+		results[i] = lbtypes.SearchResult{ID: core.VectorID(r.ID), Distance: r.Distance}
+	}
+	return results, nil
 }
 
 // SearchVectorsWithBitmap implements VectorIndexer.
-func (a *PluggableInternalAdapter) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]lbtypes.SearchResult, error) {
-	return nil, fmt.Errorf("SearchVectorsWithBitmap not implemented in bridge")
+// Filters/bm are not supported by PluggableVectorIndex, so they're ignored.
+func (a *PluggableInternalAdapter) SearchVectorsWithBitmap(ctx context.Context, q any, k int, bm *roaring.Bitmap, options any) ([]lbtypes.SearchResult, error) {
+	vec, ok := q.([]float32)
+	if !ok {
+		if f64, ok := q.([]float64); ok {
+			vec = make([]float32, len(f64))
+			for i, v := range f64 {
+				vec[i] = float32(v)
+			}
+		} else {
+			return nil, fmt.Errorf("query must be []float32 or []float64")
+		}
+	}
+	
+	_ = bm // BitMap filter not supported by PluggableVectorIndex
+	_ = options
+	
+	iresults, err := a.inner.Search(vec, k)
+	if err != nil {
+		return nil, err
+	}
+	
+	results := make([]lbtypes.SearchResult, len(iresults))
+	for i, r := range iresults {
+		results[i] = lbtypes.SearchResult{ID: core.VectorID(r.ID), Distance: r.Distance}
+	}
+	return results, nil
 }
 
 // Other stubs required for VectorIndexer interface consistency

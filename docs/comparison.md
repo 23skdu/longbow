@@ -7,6 +7,7 @@ Choosing the right vector database depends on your project's scale, complexity, 
 | Feature | ChromaDB | Milvus | Weaviate | Qdrant | Longbow |
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Primary Focus** | Prototyping | Massive Scale | AI-Native Apps | Speed & Efficiency | **Structural Discovery** |
+| **Turboquant** | No | **RaBitQ** (Equiv) | PQ/SQ/BQ | PQ/SQ/BQ | **Native (+ PQ/SQ/BQ)** |
 | **Architecture** | Python/SQLite | Distributed | Modular/Go | High-Perf Rust | **Zero-Copy Arrow** |
 | **GPU Support** | CPU-Only | **Tier 1 (NVIDIA)** | Tier 2 (Embeds) | **Tier 1 (Agnostic)** | **Tier 1 (Metal/CUDA)** |
 | **SIMD Optim.** | Library-level | Extensive | Library-level | **Native Rust SIMD** | **Custom SIMD Kernels** |
@@ -54,6 +55,7 @@ The "Data Plane" determines how data moves from memory to the CPU/GPU.
 | **GraphRAG** | **Native**: Uses graph connectivity to "spread" activation and re-rank results based on structural context. | **Manual**: Typically requires a separate Graph DB (Neo4j) and client-side logic to merge results. |
 | **Temporal Search** | **Native**: Built-in "As-Of" and "Sliding Window" queries using a versioned storage layer. | **Metadata**: Rely on standard metadata filtering, which is slower for complex time-range queries. |
 | **Geo-Spatial** | **Native**: Uses a high-performance Quadtree index for sub-millisecond radius and box lookups. | **Mixed**: Qdrant has native support; others use standard metadata filters. |
+| **Turboquant** | **Native**: High-speed rotational quantization with zero indexing-time overhead. Also supports industry-standard PQ, SQ, and BQ. | **Variable**: Milvus supports **RaBitQ**; others use training-intensive Product Quantization (PQ), SQ, or BQ. |
 
 ---
 

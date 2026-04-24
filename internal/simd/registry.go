@@ -44,6 +44,8 @@ const (
 	DataTypeFloat64
 	DataTypeComplex64
 	DataTypeComplex128
+	DataTypeInt4
+	DataTypeInt2
 )
 
 func (d SIMDDataType) String() string {
@@ -74,6 +76,10 @@ func (d SIMDDataType) String() string {
 		return "complex64"
 	case DataTypeComplex128:
 		return "complex128"
+	case DataTypeInt4:
+		return "int4"
+	case DataTypeInt2:
+		return "int2"
 	default:
 		return "unknown"
 	}

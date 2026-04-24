@@ -560,5 +560,3 @@ func dotInt2AVX512Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func dotInt2AVX2Kernel(a, b unsafe.Pointer, n int) float32
-
-func dotInt2AVX2Kernel(a, b unsafe.Pointer, n int) float32

@@ -142,7 +142,7 @@ func main() {
 	log.Printf("[GET] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
 
 	// 3. Search
-	modes := []string{"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString", "Sparse", "ByID"}
+	modes := []string{"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString", "Sparse", "ByID", "GraphRAG", "Recommend", "Geo", "Temporal"}
 	searchCtx, searchCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer searchCancel()
 	for _, mode := range modes {
@@ -315,40 +315,51 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 	case "Sparse":
 		req["text_query"] = "benchmark search term"
 		req["alpha"] = 0.0
+	case "GraphRAG":
+		req["vector"] = vector
+		req["graph_alpha"] = 0.5
+	case "Recommend":
+		// Recommend uses seed_ids instead of a query vector
+		req["seed_ids"] = []string{"0", "1", "2"}
+		req["max_hops"] = 3
+		req["decay"] = 0.8
+		req["alpha"] = 0.5
+		ticketBytes, _ := json.Marshal(map[string]interface{}{"recommend": req})
+		return executeDoGet(ctx, sc, ticketBytes)
+	case "Geo":
+		req["center"] = map[string]float64{"lat": 40.7128, "lon": -74.0060}
+		req["radius_km"] = 50.0
+		ticketBytes, _ := json.Marshal(map[string]interface{}{"geo_search": req})
+		return executeDoGet(ctx, sc, ticketBytes)
+	case "Temporal":
+		req["search_type"] = "as_of"
+		req["timestamp"] = time.Now().UnixNano()
+		ticketBytes, _ := json.Marshal(map[string]interface{}{"temporal_search": req})
+		return executeDoGet(ctx, sc, ticketBytes)
 	case "ByID":
-
-		// SearchByID requires an existing ID. We use ID "0" from our ingest.
+		// SearchByID requires an existing ID.
 		req["id"] = "0"
 		ticketBytes, _ := json.Marshal(map[string]interface{}{"search_by_id": req})
-		stream, err := sc.DoGet(ctx, ticketBytes)
-		if err != nil {
-			return err
-		}
-		reader, err := flight.NewRecordReader(stream)
-		if err != nil {
-			return err
-		}
-		defer reader.Release()
-		for reader.Next() {
-			_ = reader.Record()
-		}
-		return reader.Err()
+		return executeDoGet(ctx, sc, ticketBytes)
 	}
 
 	ticketBytes, _ := json.Marshal(map[string]interface{}{"search": req})
-	stream, err := sc.DoGet(ctx, ticketBytes)
+	return executeDoGet(ctx, sc, ticketBytes)
+}
+
+// executeDoGet performs the actual Flight DoGet call and drains the stream
+func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) error {
+	stream, err := sc.DoGet(ctx, ticket)
 	if err != nil {
 		return err
 	}
-
 	reader, err := flight.NewRecordReader(stream)
 	if err != nil {
 		return err
 	}
 	defer reader.Release()
-
 	for reader.Next() {
-		_ = reader.Record() // Consume
+		_ = reader.Record()
 	}
 	return reader.Err()
 }

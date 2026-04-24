@@ -6,7 +6,6 @@ import (
 
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/pq"
-	"github.com/23skdu/longbow/internal/query"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -134,11 +133,11 @@ type IndexDataProvider interface {
 	GetName() string
 	GetRecords() []arrow.RecordBatch
 	GetSchema() *arrow.Schema
-	GetTombstones() map[int]*query.Bitset
+	GetTombstones() map[int]*Bitset
 	GetPQEncoder() *pq.PQEncoder
 	RLockData()
 	RUnlockData()
-	GenerateFilterBitset(filters []core.Filter, expr FilterExpr) (*query.Bitset, error)
+	GenerateFilterBitset(filters []core.Filter, expr FilterExpr) (*Bitset, error)
 	ResetTombstones()
 	GetIndex() any
 }

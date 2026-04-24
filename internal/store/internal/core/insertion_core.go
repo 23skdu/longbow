@@ -221,18 +221,3 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	return nil
 }
 
-func encodeBQ(vec []float32) []uint64 {
-	length := len(vec)
-	padded := (length + 63) & ^63
-	numWords := padded / 64
-	encoded := make([]uint64, numWords)
-
-	for i := 0; i < length; i++ {
-		if vec[i] > 0 {
-			wordIdx := i / 64
-			bitIdx := i % 64
-			encoded[wordIdx] |= (1 << bitIdx)
-		}
-	}
-	return encoded
-}

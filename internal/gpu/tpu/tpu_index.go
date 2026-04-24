@@ -168,3 +168,11 @@ func (i *TPUIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, 
 func (i *TPUIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
 	return nil, nil, fmt.Errorf("SearchComplex128 not implemented for TPUIndex (emulated)")
 }
+
+func (i *TPUIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
+	return fmt.Errorf("AddTurboQuant not implemented for TPUIndex (emulated)")
+}
+
+func (i *TPUIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchTurboQuant not implemented for TPUIndex (emulated)")
+}

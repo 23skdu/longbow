@@ -1,10 +1,10 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/flight"
-	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -45,12 +45,12 @@ func TestAdaptivelySliceBatches(t *testing.T) {
 	defer rec2.Release()
 
 	// Create tombstone for rec2: mark row 5 and 20 as deleted
-	ts2 := query.NewBitset()
+	ts2 := types.NewBitset()
 	ts2.Set(5)
 	ts2.Set(20)
 
 	records := []arrow.RecordBatch{rec1, rec2}
-	tombstones := map[int]*query.Bitset{
+	tombstones := map[int]*types.Bitset{
 		1: ts2,
 	}
 
@@ -108,12 +108,12 @@ func TestAdaptivelySliceBatches_SplittingTombstones(t *testing.T) {
 
 	// Tombstone at 5 starts in first chunk
 	// Tombstone at 15 starts in second chunk (index 5 relative to second chunk)
-	ts := query.NewBitset()
+	ts := types.NewBitset()
 	ts.Set(5)
 	ts.Set(15)
 
 	records := []arrow.RecordBatch{rec}
-	tombstones := map[int]*query.Bitset{0: ts}
+	tombstones := map[int]*types.Bitset{0: ts}
 
 	sliced, slicedTs := AdaptivelySliceBatches(records, tombstones, strategy)
 	defer func() {

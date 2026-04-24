@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -9,7 +10,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/23skdu/longbow/internal/query"
 )
 
 func TestZeroCopyRecordBatch(t *testing.T) {
@@ -44,7 +44,7 @@ func TestZeroCopyRecordBatch(t *testing.T) {
 		defer rec.Release()
 
 		// Empty bitset
-		deleted := query.NewBitset()
+		deleted := types.NewBitset()
 
 		res, err := ZeroCopyRecordBatch(pool, rec, deleted)
 		require.NoError(t, err)
@@ -59,7 +59,7 @@ func TestZeroCopyRecordBatch(t *testing.T) {
 		defer rec.Release()
 
 		// Delete indices 1 (row2) and 3 (row4)
-		deleted := query.NewBitset()
+		deleted := types.NewBitset()
 		deleted.Set(1)
 		deleted.Set(3)
 
@@ -86,7 +86,7 @@ func TestZeroCopyRecordBatch(t *testing.T) {
 		rec := createBatch([]int64{1, 2}, []float64{1.1, 2.2})
 		defer rec.Release()
 
-		deleted := query.NewBitset()
+		deleted := types.NewBitset()
 		deleted.Set(0)
 		deleted.Set(1)
 

@@ -284,6 +284,9 @@ func dot8AVX2(a, b unsafe.Pointer) float32
 func matchInt64AVX2Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Pointer, n int)
 
 //go:noescape
+func matchInt32AVX2Kernel(src unsafe.Pointer, val int32, op int, dst unsafe.Pointer, n int)
+
+//go:noescape
 func matchFloat32AVX2Kernel(src unsafe.Pointer, val float32, op int, dst unsafe.Pointer, n int)
 
 //go:noescape
@@ -316,6 +319,20 @@ func matchInt64AVX2(src []int64, val int64, op CompareOp, dst []byte) error {
 		return nil
 	}
 	matchInt64AVX2Kernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
+}
+
+func matchInt32AVX2(src []int32, val int32, op CompareOp, dst []byte) error {
+	if len(src) != len(dst) {
+		return errors.New("simd: length mismatch")
+	}
+	if !features.HasAVX2 {
+		return matchInt32Generic(src, val, op, dst)
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	matchInt32AVX2Kernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
 	return nil
 }
 

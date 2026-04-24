@@ -1,11 +1,11 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/types"
 	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/core"
-	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -128,8 +128,8 @@ func TestShardedHNSW_Vacuum(t *testing.T) {
 	}
 
 	// Mark 5 items as deleted in dataset
-	dataset.Tombstones = make(map[int]*query.Bitset)
-	ts := query.NewBitset()
+	dataset.Tombstones = make(map[int]*types.Bitset)
+	ts := types.NewBitset()
 	for i := 0; i < 5; i++ {
 		ts.Set(i)
 	}

@@ -425,13 +425,6 @@ func (h *ArrowHNSW) getCandidateSlice(capacity int) []types.Candidate {
 	return s
 }
 
-// putCandidateSlice returns a candidate slice to the pool.
-func (h *ArrowHNSW) putCandidateSlice(s []types.Candidate) {
-	if s == nil {
-		return
-	}
-	h.candidatePool.Put(&s)
-}
 
 // SetDisableNodeCountMetric prevents this ArrowHNSW from reporting HNSWNodeCount.
 func (h *ArrowHNSW) SetDisableNodeCountMetric(disable bool) {
@@ -1101,6 +1094,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	}
 
 	searchCtx.diskGraph = h.diskGraph.Load()
+	searchCtx.predicate = searchOptions.Predicate
 
 	// Handle BQ (Binary Quantization) search path
 	// If index has BQ enabled and user requests BQ search, use Hamming distance
@@ -2102,7 +2096,7 @@ func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filt
 		filterExpr = opts.FilterExpr
 	}
 
-	var bitset *query.Bitset
+	var bitset *types.Bitset
 	if (len(filters) > 0 || filterExpr != nil) && h.dataset != nil {
 		var err error
 		bitset, err = h.dataset.GenerateFilterBitset(filters, filterExpr)
@@ -2139,7 +2133,7 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 		filterExpr = opts.FilterExpr
 	}
 
-	var bitset *query.Bitset
+	var bitset *types.Bitset
 	if (len(filters) > 0 || filterExpr != nil) && h.dataset != nil {
 		var err error
 		bitset, err = h.dataset.GenerateFilterBitset(filters, filterExpr)
@@ -2794,7 +2788,21 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 	epCand := types.Candidate{ID: entryPoint, Dist: epDist}
 	heap.Push(minHeap, epCand)
-	heap.Push(resultSetAdapter, epCand) // resultSet is MaxHeap
+	
+	// Only add to result set if it passes filters and isn't deleted
+	passes := true
+	if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(entryPoint) {
+		passes = false
+	}
+	if passes && h.deleted != nil && h.deleted.Contains(entryPoint) {
+		passes = false
+	}
+	if passes && ctx.predicate != nil && !ctx.predicate.IsMatch(entryPoint) {
+		passes = false
+	}
+	if passes {
+		heap.Push(resultSetAdapter, epCand)
+	}
 	ctx.visited.Set(int(entryPoint)) // #nosec G115
 
 	for minHeap.Len() > 0 {
@@ -2872,44 +2880,100 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			}
 		}
 
-		for _, n := range neighbors {
-			if ctx.visited.IsSet(int(n)) { // #nosec G115
-				continue
-			}
-			ctx.visited.Set(int(n)) // #nosec G115
-
-			ctx.distComputeCount++
-			d, err := distComputer(n)
-			if err != nil {
-				continue
-			}
-
-			cand := types.Candidate{ID: n, Dist: d}
-
-			// Add to candidates for traversal regardless of filter
-			heap.Push(minHeap, cand)
-
-			// Only add to resultSet if it passes filters
-			if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
-				continue
-			}
-			if h.deleted != nil && h.deleted.Contains(n) {
-				continue
+		if ctx.predicate != nil {
+			// Vectorized Predicate Path
+			batch := ctx.neighborBatch[:0]
+			for _, n := range neighbors {
+				if ctx.visited.IsSet(int(n)) {
+					continue
+				}
+				ctx.visited.Set(int(n))
+				batch = append(batch, n)
 			}
 
-			if len(ctx.resultSet) > 0 {
-				furthest := ctx.resultSet[0]
+			if len(batch) > 0 {
+				// Ensure results buffer is large enough
+				if len(ctx.matchResultBuf) < len(batch) {
+					ctx.matchResultBuf = make([]byte, len(batch)*2)
+				}
+				results := ctx.matchResultBuf[:len(batch)]
+				ctx.predicate.MatchBatch(batch, results)
 
-				if ctx.resultSet.Len() < ef || d < furthest.Dist {
-					heap.Push(resultSetAdapter, cand)
-					if ctx.resultSet.Len() > ef {
-						heap.Pop(resultSetAdapter) // Remove furthest
+				for i, n := range batch {
+					if results[i] == 0 {
+						metrics.HNSWNodesSkippedTotal.WithLabelValues(h.name).Inc()
+						continue
+					}
+
+					ctx.distComputeCount++
+					d, err := distComputer(n)
+					if err != nil {
+						continue
+					}
+
+					cand := types.Candidate{ID: n, Dist: d}
+					heap.Push(minHeap, cand)
+
+					if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+						continue
+					}
+					if h.deleted != nil && h.deleted.Contains(n) {
+						continue
+					}
+
+					if len(ctx.resultSet) > 0 {
+						furthest := ctx.resultSet[0]
+						if ctx.resultSet.Len() < ef || d < furthest.Dist {
+							heap.Push(resultSetAdapter, cand)
+							if ctx.resultSet.Len() > ef {
+								heap.Pop(resultSetAdapter)
+							}
+						}
+					} else {
+						heap.Push(resultSetAdapter, cand)
 					}
 				}
-			} else {
-				// Empty resultSet
+			}
+		} else {
+			// Standard Path (No Predicate)
+			for _, n := range neighbors {
+				if ctx.visited.IsSet(int(n)) { // #nosec G115
+					continue
+				}
+				ctx.visited.Set(int(n)) // #nosec G115
+
+				ctx.distComputeCount++
+				d, err := distComputer(n)
+				if err != nil {
+					continue
+				}
+
+				cand := types.Candidate{ID: n, Dist: d}
+
+				// Add to candidates for traversal regardless of filter
 				heap.Push(minHeap, cand)
-				heap.Push(resultSetAdapter, cand)
+
+				// Only add to resultSet if it passes filters
+				if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+					continue
+				}
+				if h.deleted != nil && h.deleted.Contains(n) {
+					continue
+				}
+
+				if len(ctx.resultSet) > 0 {
+					furthest := ctx.resultSet[0]
+
+					if ctx.resultSet.Len() < ef || d < furthest.Dist {
+						heap.Push(resultSetAdapter, cand)
+						if ctx.resultSet.Len() > ef {
+							heap.Pop(resultSetAdapter) // Remove furthest
+						}
+					}
+				} else {
+					// Empty resultSet
+					heap.Push(resultSetAdapter, cand)
+				}
 			}
 		}
 	}
@@ -3601,17 +3665,6 @@ func euclideanDistanceInt32(a, b []int32) float32 {
 	return float32(math.Sqrt(sum))
 }
 
-func euclideanDistanceUint32(a, b []uint32) float32 {
-	if len(a) != len(b) || len(a) == 0 {
-		return math.MaxFloat32
-	}
-	var sum float64
-	for i := range a {
-		diff := float64(a[i]) - float64(b[i])
-		sum += diff * diff
-	}
-	return float32(math.Sqrt(sum))
-}
 
 func euclideanDistanceInt64(a, b []int64) float32 {
 	if len(a) != len(b) || len(a) == 0 {

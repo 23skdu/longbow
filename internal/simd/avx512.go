@@ -227,6 +227,17 @@ func matchInt64AVX512(src []int64, val int64, op CompareOp, dst []byte) error {
 	return nil
 }
 
+func matchInt32AVX512(src []int32, val int32, op CompareOp, dst []byte) error {
+	if len(src) == 0 {
+		return nil
+	}
+	if !features.HasAVX512 {
+		return matchInt32AVX2(src, val, op, dst)
+	}
+	matchInt32AVX512Kernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
+}
+
 func matchFloat32AVX512(src []float32, val float32, op CompareOp, dst []byte) error {
 	if len(src) == 0 {
 		return nil
@@ -489,6 +500,9 @@ func cosine16AVX512(a, b unsafe.Pointer) (dot, normA, normB float32)
 
 //go:noescape
 func matchInt64AVX512Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Pointer, n int)
+
+//go:noescape
+func matchInt32AVX512Kernel(src unsafe.Pointer, val int32, op int, dst unsafe.Pointer, n int)
 
 //go:noescape
 func matchFloat32AVX512Kernel(src unsafe.Pointer, val float32, op int, dst unsafe.Pointer, n int)

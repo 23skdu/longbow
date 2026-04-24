@@ -272,6 +272,14 @@ func (w *pooledIndexWrapper) Add(ids []int64, vectors []float32) error {
 	return w.pooled.index.Add(ids, vectors)
 }
 
+func (w *pooledIndexWrapper) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
+	return w.pooled.index.AddTurboQuant(ids, tqData, bitsPerAngle)
+}
+
+func (w *pooledIndexWrapper) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
+	return w.pooled.index.SearchTurboQuant(vector, k, bitsPerAngle)
+}
+
 // Search delegates to the wrapped index
 func (w *pooledIndexWrapper) Search(vector []float32, k int) ([]int64, []float32, error) {
 	return w.pooled.index.Search(vector, k)

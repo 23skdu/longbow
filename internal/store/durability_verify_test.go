@@ -198,10 +198,10 @@ func TestDurability_IndexRebuild(t *testing.T) {
 	// But `VectorIndex` interface has `Search`.
 	// We need `query.VectorSearchRequest` or similar? No, HNSW Search takes `[]float32`.
 	// Let's assume ArrowHNSW has Search(query []float32, k int).
-	// Actually VectorIndex interface: Search(query []float32, k int, ef int, bitset *query.Bitset)
+	// Actually VectorIndex interface: Search(query []float32, k int, ef int, bitset *types.Bitset)
 
 	// Check store/index_build.go or similar for signature.
-	// VectorIndex interface: Search(query []float32, k int, ef int, filter *query.Bitset) ([]Candidate, error)
+	// VectorIndex interface: Search(query []float32, k int, ef int, filter *types.Bitset) ([]Candidate, error)
 
 	qVec := []float32{1.0, 0.0}
 	results, err := ds.Index.SearchVectors(context.Background(), qVec, 1, nil, SearchOptions{})

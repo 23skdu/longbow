@@ -1038,3 +1038,202 @@ next_f64_512:
 
 done_f64_512:
     RET
+
+// func matchInt32AVX2Kernel(src unsafe.Pointer, val int32, op int, dst unsafe.Pointer, n int)
+TEXT ·matchInt32AVX2Kernel(SB), NOSPLIT, $0-40
+    MOVQ    src+0(FP), SI
+    MOVL    val+8(FP), X0
+    MOVQ    op+16(FP), BX
+    MOVQ    dst+24(FP), DI
+    MOVQ    n+32(FP), CX
+
+    VPBROADCASTD X0, Y0
+    LEAQ    maskLUT<>(SB), R8
+
+loop_int32_avx2:
+    CMPQ    CX, $8
+    JL      tail_int32_avx2
+
+    VMOVUPS (SI), Y1 // Load 8 int32s
+
+    CMPQ    BX, $0
+    JE      int32_eq_avx2
+    CMPQ    BX, $1
+    JE      int32_neq_avx2
+    CMPQ    BX, $2
+    JE      int32_gt_avx2
+    CMPQ    BX, $3
+    JE      int32_ge_avx2
+    CMPQ    BX, $4
+    JE      int32_lt_avx2
+    JMP     int32_le_avx2
+
+int32_eq_avx2:
+    VPCMPEQD Y0, Y1, Y1
+    JMP     store_mask_int32_avx2
+int32_neq_avx2:
+    VPCMPEQD Y0, Y1, Y1
+    VPCMPEQD Y2, Y2, Y2
+    VPXOR   Y2, Y1, Y1
+    JMP     store_mask_int32_avx2
+int32_gt_avx2:
+    VPCMPGTD Y0, Y1, Y1 // src > val
+    JMP     store_mask_int32_avx2
+int32_ge_avx2:
+    VPCMPGTD Y1, Y0, Y1 // val > src
+    VPCMPEQD Y2, Y2, Y2
+    VPXOR   Y2, Y1, Y1 // !(val > src) -> src >= val
+    JMP     store_mask_int32_avx2
+int32_lt_avx2:
+    VPCMPGTD Y1, Y0, Y1 // val > src
+    JMP     store_mask_int32_avx2
+int32_le_avx2:
+    VPCMPGTD Y0, Y1, Y1 // src > val
+    VPCMPEQD Y2, Y2, Y2
+    VPXOR   Y2, Y1, Y1 // !(src > val) -> src <= val
+
+store_mask_int32_avx2:
+    VMOVMSKPS Y1, DX // 8 bits
+    MOVQ    DX, AX
+    ANDQ    $0x0F, AX
+    MOVL    (R8)(AX*4), R10
+    MOVL    R10, (DI)
+    
+    MOVQ    DX, AX
+    SHRQ    $4, AX
+    ANDQ    $0x0F, AX
+    MOVL    (R8)(AX*4), R10
+    MOVL    R10, 4(DI)
+
+    ADDQ    $32, SI
+    ADDQ    $8, DI
+    SUBQ    $8, CX
+    JMP     loop_int32_avx2
+
+tail_int32_avx2:
+    CMPQ    CX, $0
+    JE      done_int32_avx2
+    MOVL    (SI), R9
+    VMOVQ   X0, R10
+    MOVB    $0, (DI)
+    
+    CMPQ    BX, $0
+    JE      t_eq_32
+    CMPQ    BX, $1
+    JE      t_neq_32
+    CMPQ    BX, $2
+    JE      t_gt_32
+    CMPQ    BX, $3
+    JE      t_ge_32
+    CMPQ    BX, $4
+    JE      t_lt_32
+    JMP     t_le_32
+
+t_eq_32:
+    CMPL    R9, R10
+    JNE     t_next_32
+    MOVB    $1, (DI)
+    JMP     t_next_32
+t_neq_32:
+    CMPL    R9, R10
+    JE      t_next_32
+    MOVB    $1, (DI)
+    JMP     t_next_32
+t_gt_32:
+    CMPL    R9, R10
+    JLE     t_next_32
+    MOVB    $1, (DI)
+    JMP     t_next_32
+t_ge_32:
+    CMPL    R9, R10
+    JL      t_next_32
+    MOVB    $1, (DI)
+    JMP     t_next_32
+t_lt_32:
+    CMPL    R9, R10
+    JGE     t_next_32
+    MOVB    $1, (DI)
+    JMP     t_next_32
+t_le_32:
+    CMPL    R9, R10
+    JG      t_next_32
+    MOVB    $1, (DI)
+
+t_next_32:
+    ADDQ    $4, SI
+    ADDQ    $1, DI
+    DECQ    CX
+    JMP     tail_int32_avx2
+
+done_int32_avx2:
+    VZEROUPPER
+    RET
+
+// func matchInt32AVX512Kernel(src unsafe.Pointer, val int32, op int, dst unsafe.Pointer, n int)
+TEXT ·matchInt32AVX512Kernel(SB), NOSPLIT, $0-40
+    MOVQ    src+0(FP), SI
+    MOVL    val+8(FP), X0
+    MOVQ    op+16(FP), BX
+    MOVQ    dst+24(FP), DI
+    MOVQ    n+32(FP), CX
+
+    VPBROADCASTD X0, Z0
+    
+    // Constant 1 for mask expansion
+    MOVQ    $1, R9
+    MOVQ    R9, X4
+    VPBROADCASTB X4, Z4
+
+loop_int32_512:
+    CMPQ    CX, $16
+    JL      tail_int32_512
+
+    VMOVUPS (SI), Z1
+    
+    // VPCMPD immediate: EQ=0, LT=1, LE=2, NEQ=4, GE=5, GT=6
+    // Our Enum: EQ=0, NEQ=1, GT=2, GE=3, LT=4, LE=5
+    CMPQ    BX, $0
+    JE      i32_eq_512
+    CMPQ    BX, $1
+    JE      i32_neq_512
+    CMPQ    BX, $2
+    JE      i32_gt_512
+    CMPQ    BX, $3
+    JE      i32_ge_512
+    CMPQ    BX, $4
+    JE      i32_lt_512
+    JMP     i32_le_512
+
+i32_eq_512:
+    VPCMPD  $0, Z0, Z1, K1
+    JMP     i32_store_512
+i32_neq_512:
+    VPCMPD  $4, Z0, Z1, K1
+    JMP     i32_store_512
+i32_gt_512:
+    VPCMPD  $6, Z0, Z1, K1
+    JMP     i32_store_512
+i32_ge_512:
+    VPCMPD  $5, Z0, Z1, K1
+    JMP     i32_store_512
+i32_lt_512:
+    VPCMPD  $1, Z0, Z1, K1
+    JMP     i32_store_512
+i32_le_512:
+    VPCMPD  $2, Z0, Z1, K1
+
+i32_store_512:
+    VPMOVM2B K1, Z2
+    VPAND    Z2, Z4, Z2
+    VMOVUPS  Z2, (DI)
+
+    ADDQ    $64, SI
+    ADDQ    $16, DI
+    SUBQ    $16, CX
+    JMP     loop_int32_512
+
+tail_int32_512:
+    VZEROUPPER
+    // Reuse tail_int32_avx2 logic for simple scalar tail
+    JMP     tail_int32_avx2
+

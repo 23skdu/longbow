@@ -69,9 +69,10 @@ def generate_markdown(results, output_file):
         # 2. Search Matrix (Standard Modes)
         search_data = []
         for r in results:
-            if r.get('mode') in ['cpu', 'metal', 'cuda']:
+            # Aggregate search metrics from all modes that produce them
+            if r.get('mode') in ['cpu', 'metal', 'cuda', 'geo', 'temporal', 'graphrag', 'recommend']:
                 for mode_name, metrics in r.get('search', {}).items():
-                    if isinstance(metrics, dict):
+                    if isinstance(metrics, dict) and metrics.get('qps', 0) > 0:
                         search_data.append({
                             'platform': r.get('platform', 'unknown'),
                             'mode': r['mode'],
@@ -85,7 +86,9 @@ def generate_markdown(results, output_file):
         if search_data:
             f.write("## 2. Standard Search Performance (QPS)\n\n")
             sdf = pd.DataFrame(search_data)
-            for smode in sorted(sdf['search_mode'].unique()):
+            # Prioritize standard search modes, then specialized ones
+            all_search_modes = sorted(sdf['search_mode'].unique())
+            for smode in all_search_modes:
                 f.write(f"### {smode.upper()} QPS\n\n")
                 sub_df = sdf[sdf['search_mode'] == smode].pivot_table(
                     index=['platform', 'mode', 'dtype'],
@@ -97,22 +100,37 @@ def generate_markdown(results, output_file):
 
         # 3. Specialized Search Modes
         spec_modes = ['geo', 'temporal', 'graphrag', 'recommend']
-        spec_df = df[df['mode'].isin(spec_modes)]
-        if not spec_df.empty:
+        spec_search_data = []
+        for r in results:
+            search_metrics = r.get('search', {})
+            for smode in spec_modes:
+                # The Go bench-tool might prefix with 'Search_' or use lowercase
+                metrics = search_metrics.get(smode) or search_metrics.get(f"Search_{smode.capitalize()}")
+                if isinstance(metrics, dict) and metrics.get('qps', 0) > 0:
+                    spec_search_data.append({
+                        'platform': r.get('platform', 'unknown'),
+                        'dtype': r['dtype'],
+                        'dim': r['dim'],
+                        'count': r['count'],
+                        'mode': r['mode'],
+                        'search_type': smode,
+                        'qps': metrics.get('qps', 0)
+                    })
+        
+        if spec_search_data:
             f.write("## 3. Specialized Search Performance\n\n")
-            for mode in spec_modes:
-                mode_df = spec_df[spec_df['mode'] == mode]
+            spec_df = pd.DataFrame(spec_search_data)
+            for smode in spec_modes:
+                mode_df = spec_df[spec_df['search_type'] == smode]
                 if not mode_df.empty:
-                    f.write(f"### {mode.upper()} Results\n\n")
-                    # Specialized modes often have 'search_type' or custom metrics
-                    if 'search_type' in mode_df.columns:
-                        pivot_df = mode_df.pivot_table(
-                            index=['platform', 'dtype', 'search_type'],
-                            columns=['count', 'dim'],
-                            values='qps'
-                        )
-                        f.write(pivot_df.to_markdown())
-                        f.write("\n\n")
+                    f.write(f"### {smode.upper()} Results\n\n")
+                    pivot_df = mode_df.pivot_table(
+                        index=['platform', 'mode', 'dtype'],
+                        columns=['count', 'dim'],
+                        values='qps'
+                    )
+                    f.write(pivot_df.to_markdown())
+                    f.write("\n\n")
         
         # 4. Learned Index Results
         learned_df = df[df['mode'] == 'learned_index']

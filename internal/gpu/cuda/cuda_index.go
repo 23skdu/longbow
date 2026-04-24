@@ -377,6 +377,7 @@ import (
 	"github.com/23skdu/longbow/internal/gpu/memory"
 	"github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 type CUDAIndex struct {
@@ -737,13 +738,67 @@ func (idx *CUDAIndex) startSyncTicker(cfg types.GPUConfig) {
 }
 
 func (idx *CUDAIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchFloat16 not implemented for CUDAIndex")
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	if len(vector) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
+	}
+
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
+
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+
+	for i := range resultDistances {
+		resultDistances[i] = math.MaxFloat32
+	}
+
+	start := time.Now()
+	ret := C.cuda_search_fp16(
+		idx.handle,
+		(*C.uint16_t)(unsafe.Pointer(&vector[0])),
+		C.int(k),
+		C.int(0),
+		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
+		(*C.float)(unsafe.Pointer(&resultDistances[0])),
+	)
+	duration := time.Since(start)
+
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("CUDA float16 search failed")
+	}
+
+	metrics.RecordGPUSearch(duration, "cuda_fp16", k)
+
+	return resultIDs, resultDistances, nil
 }
 
 func (idx *CUDAIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchComplex64 not implemented for CUDAIndex")
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	// Convert uint16 pairs to float32 pairs for search
+	f32Vec := make([]float32, len(vector)*2)
+	for i, v := range vector {
+		f := float16.New(float32(math.Float32frombits(uint32(v)))).Float32()
+		f32Vec[i*2] = f
+	}
+
+	return idx.Search(f32Vec, k)
 }
 
 func (idx *CUDAIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchComplex128 not implemented for CUDAIndex")
+	// complex128 is just float32 - use as-is
+	return idx.Search(vector, k)
 }

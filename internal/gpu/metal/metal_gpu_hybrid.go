@@ -160,9 +160,15 @@ void metal_hybrid_cleanup(MetalHybridIndex* handle) {
 import "C"
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"sync"
+	"time"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // MetalHybridIndex uses GPU for distances, CPU for selection
@@ -341,13 +347,102 @@ func (idx *MetalHybridIndex) GetUtilization() (float32, error) {
 }
 
 func (idx *MetalHybridIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchFloat16 not implemented for MetalHybridIndex")
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	// Convert uint16 (fp16) to float32 for search
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float16.New(float32FromUInt16(v)).Float32()
+	}
+
+	return idx.searchFloat32(f32Vec, k)
+}
+
+func float16FromUInt16(b uint16) float32 {
+	f16 := float16.New(float32(math.Float32frombits(uint32(b))))
+	return f16.Float32()
 }
 
 func (idx *MetalHybridIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchComplex64 not implemented for MetalHybridIndex")
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	// Convert uint16 pairs (complex64 stored as fp16 pairs) to float32
+	f32Vec := make([]float32, len(vector)*2)
+	for i, v := range vector {
+		f32Vec[i*2] = float16.New(float32(math.Float32frombits(uint32(v)))).Float32()
+	}
+
+	return idx.searchFloat32(f32Vec, k)
 }
 
 func (idx *MetalHybridIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchComplex128 not implemented for MetalHybridIndex")
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	// complex128 stored as interleaved float32 - just use as-is
+	return idx.searchFloat32(vector, k)
+}
+
+func (idx *MetalHybridIndex) searchFloat32(vector []float32, k int) ([]int64, []float32, error) {
+	if len(vector) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
+	}
+
+	// Step 1: GPU computes all distances in parallel
+	vectorCount := int(C.int(idx.handle.vectorCount))
+	distances := make([]float32, vectorCount)
+
+	start := time.Now()
+	ret := C.metal_hybrid_compute_distances(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&vector[0])),
+		(*C.float)(unsafe.Pointer(&distances[0])),
+	)
+	duration := time.Since(start)
+
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("hybrid Metal distance computation failed")
+	}
+
+	// Record metrics
+	metrics.RecordGPUSearch(duration, "metal_hybrid", k)
+
+	// Step 2: CPU finds top-k using simple selection
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+
+	for i := 0; i < k && i < vectorCount; i++ {
+		minIdx := i
+		minDist := distances[i]
+
+		for j := i + 1; j < vectorCount; j++ {
+			if distances[j] < minDist {
+				minDist = distances[j]
+				minIdx = j
+			}
+		}
+
+		if minIdx != i {
+			distances[i], distances[minIdx] = distances[minIdx], distances[i]
+		}
+
+		resultIDs[i] = int64(i)
+		resultDistances[i] = distances[i]
+	}
+
+	return resultIDs, resultDistances, nil
 }

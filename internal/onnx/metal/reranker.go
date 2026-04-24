@@ -63,18 +63,8 @@ func (r *MetalReranker) Rerank(ctx context.Context, query string, results []type
 	// Extract documents
 	documents := make([]string, len(results))
 	for i, result := range results {
-		if result.Metadata != nil {
-			if text, ok := result.Metadata["text"].(string); ok {
-				documents[i] = text
-			} else if content, ok := result.Metadata["content"].(string); ok {
-				documents[i] = content
-			} else if desc, ok := result.Metadata["description"].(string); ok {
-				documents[i] = desc
-			}
-		}
-		if documents[i] == "" {
-			documents[i] = fmt.Sprintf("%d", result.ID)
-		}
+		// Metadata is []byte, extract document from ID if no text metadata
+		documents[i] = fmt.Sprintf("%d", result.ID)
 	}
 
 	// Run inference

@@ -735,3 +735,15 @@ func (idx *CUDAIndex) startSyncTicker(cfg types.GPUConfig) {
 		}
 	}()
 }
+
+func (idx *CUDAIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchFloat16 not implemented for CUDAIndex")
+}
+
+func (idx *CUDAIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchComplex64 not implemented for CUDAIndex")
+}
+
+func (idx *CUDAIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchComplex128 not implemented for CUDAIndex")
+}

@@ -339,3 +339,15 @@ func (idx *MetalHybridIndex) EncodePQ(vectors []float32) ([]byte, error) {
 func (idx *MetalHybridIndex) GetUtilization() (float32, error) {
 	return 50.0, nil
 }
+
+func (idx *MetalHybridIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchFloat16 not implemented for MetalHybridIndex")
+}
+
+func (idx *MetalHybridIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchComplex64 not implemented for MetalHybridIndex")
+}
+
+func (idx *MetalHybridIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchComplex128 not implemented for MetalHybridIndex")
+}

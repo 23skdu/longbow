@@ -937,6 +937,101 @@ func (h *ArrowHNSW) ensureReady() {
 	}
 }
 
+// searchGPU performs automatic GPU dispatch based on data type
+func (h *ArrowHNSW) searchGPU(ctx context.Context, queryVec any, k int) ([]types.SearchResult, error) {
+	if h.gpuIndex == nil {
+		return nil, fmt.Errorf("GPU index not initialized")
+	}
+
+	// Check circuit breaker
+	if h.gpuCircuitBreaker != nil && !h.gpuCircuitBreaker.Allow() {
+		return nil, fmt.Errorf("circuit breaker open")
+	}
+
+	var ids []int64
+	var distances []float32
+	var err error
+
+	switch h.config.DataType {
+	case types.VectorTypeFloat32:
+		if q, ok := queryVec.([]float32); ok {
+			ids, distances, err = h.gpuIndex.Search(q, k)
+		} else {
+			return nil, fmt.Errorf("float32 search requires float32 query, got %T", queryVec)
+		}
+
+	case types.VectorTypeFloat16:
+		if q, ok := queryVec.([]float32); ok {
+			// Convert float32 to uint16 (fp16 encoding)
+			fp16Query := make([]uint16, len(q))
+			for i, v := range q {
+				fp16Query[i] = float16.New(v).Uint16()
+			}
+			ids, distances, err = h.gpuIndex.SearchFloat16(fp16Query, k)
+		} else if q16, ok := queryVec.([]float16.Num); ok {
+			fp16Query := make([]uint16, len(q16))
+			for i, v := range q16 {
+				fp16Query[i] = v.Uint16()
+			}
+			ids, distances, err = h.gpuIndex.SearchFloat16(fp16Query, k)
+		} else {
+			return nil, fmt.Errorf("float16 search requires float32 or float16 query, got %T", queryVec)
+		}
+
+	case types.VectorTypeComplex64:
+		if q, ok := queryVec.([]complex64); ok {
+			// Convert complex64 to uint16 pairs (half precision)
+			fp16Query := make([]uint16, len(q)*2)
+			for i, v := range q {
+				fp16Query[i*2] = float16.New(real(v)).Uint16()
+				fp16Query[i*2+1] = float16.New(imag(v)).Uint16()
+			}
+			ids, distances, err = h.gpuIndex.SearchComplex64(fp16Query, k)
+		} else {
+			return nil, fmt.Errorf("complex64 search requires complex64 query, got %T", queryVec)
+		}
+
+	case types.VectorTypeComplex128:
+		if q, ok := queryVec.([]complex128); ok {
+			// Convert complex128 to float32 pairs (stored as float32 for this implementation)
+			f32Query := make([]float32, len(q)*2)
+			for i, v := range q {
+				f32Query[i*2] = float32(real(v))
+				f32Query[i*2+1] = float32(imag(v))
+			}
+			ids, distances, err = h.gpuIndex.SearchComplex128(f32Query, k)
+		} else {
+			return nil, fmt.Errorf("complex128 search requires complex128 query, got %T", queryVec)
+		}
+
+	default:
+		return nil, fmt.Errorf("GPU search not supported for type %s", h.config.DataType)
+	}
+
+	if err != nil {
+		if h.gpuCircuitBreaker != nil {
+			h.gpuCircuitBreaker.RecordFailure()
+		}
+		return nil, err
+	}
+
+	if h.gpuCircuitBreaker != nil {
+		h.gpuCircuitBreaker.RecordSuccess()
+	}
+
+	// Convert to SearchResult
+	results := make([]types.SearchResult, len(ids))
+	for i, id := range ids {
+		results[i] = types.SearchResult{
+			ID:       types.VectorID(id),
+			Distance: distances[i],
+			Score:    1.0 / (1.0 + distances[i]),
+		}
+	}
+
+	return results, nil
+}
+
 func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k int, filter *roaring.Bitmap, options any) ([]types.SearchResult, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
@@ -982,6 +1077,15 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	if h.nodeCount.Load() == 0 {
 		return nil, nil
+	}
+
+	// Automatic GPU dispatch for supported types
+	if h.gpuEnabled && h.gpuIndex != nil && h.nodeCount.Load() >= 1000 {
+		gpuResults, err := h.searchGPU(ctx, queryVec, k)
+		if err == nil && len(gpuResults) > 0 {
+			return gpuResults, nil
+		}
+		// Fall through to CPU on GPU error
 	}
 
 	if metrics.HNSWSearchPoolGetTotal != nil {

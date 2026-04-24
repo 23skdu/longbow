@@ -169,3 +169,15 @@ func (m *MockIndex) euclideanDistance(a, b []float32) float32 {
 	}
 	return sum
 }
+
+func (m *MockIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchFloat16 not implemented in MockIndex")
+}
+
+func (m *MockIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchComplex64 not implemented in MockIndex")
+}
+
+func (m *MockIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchComplex128 not implemented in MockIndex")
+}

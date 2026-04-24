@@ -1,6 +1,6 @@
 # Longbow Metrics Reference
 
-Complete reference for all Prometheus metrics exported by Longbow 0.2.0.
+Complete reference for all Prometheus metrics exported by Longbow 0.1.9.
 
 **Metrics Endpoint**: `http://localhost:9090/metrics` (configurable via `LONGBOW_METRICS_ADDR`)
 
@@ -27,7 +27,7 @@ Metrics for the core vector indexing and search engine.
 
 ---
 
-## 3. TurboQuant & Acceleration (New in 0.2.0)
+## 3. TurboQuant & Acceleration (New in 0.1.9)
 Monitoring the SIMD-accelerated quantization and bit-packing features.
 
 - **longbow_turboquant_search_total**: (Counter) Number of searches using TurboQuant acceleration. Labels: `dataset`, `bit_width` (4 or 2).

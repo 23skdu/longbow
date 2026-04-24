@@ -291,7 +291,7 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 			{
 				"field":    "id",
 				"operator": ">",
-				"value":    "10",
+				"value":    10,
 			},
 		}
 	case "FilteredBool":

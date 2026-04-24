@@ -1,7 +1,5 @@
 package simd
 
-import "unsafe"
-
 // dotInt4Generic calculates the dot product of two Int4-packed byte slices.
 func dotInt4Generic(a, b []byte) (float32, error) {
 	var sum int32
@@ -30,17 +28,3 @@ func dotInt2Generic(a, b []byte) (float32, error) {
 	}
 	return float32(sum), nil
 }
-
-// Assembly stubs for AMD64
-
-//go:noescape
-func dotInt4AVX512Kernel(a, b unsafe.Pointer, n int) float32
-
-//go:noescape
-func dotInt4AVX2Kernel(a, b unsafe.Pointer, n int) float32
-
-//go:noescape
-func dotInt2AVX512Kernel(a, b unsafe.Pointer, n int) float32
-
-//go:noescape
-func dotInt2AVX2Kernel(a, b unsafe.Pointer, n int) float32

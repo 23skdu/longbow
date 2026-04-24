@@ -235,8 +235,8 @@ func initializeDispatch() {
 		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x
 		dotProductInt16Impl = dotInt16Unrolled4x
 		dotProductUint16Impl = dotUint16Unrolled4x
-		dotProductInt4Impl = dotInt4Generic
-		dotProductInt2Impl = dotInt2Generic
+		dotProductInt4Impl = dotInt4Neon
+		dotProductInt2Impl = dotInt2Neon
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
 		euclideanDistance384Impl = euclideanUnrolled4x

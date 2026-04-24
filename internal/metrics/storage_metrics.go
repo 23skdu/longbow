@@ -1043,4 +1043,23 @@ var (
 		},
 		[]string{"dataset"},
 	)
+ 
+	// TurboQuantSearchTotal counts TurboQuant-accelerated search operations.
+	TurboQuantSearchTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_turboquant_search_total",
+			Help: "Total number of searches performed using TurboQuant acceleration",
+		},
+		[]string{"dataset", "bit_width"}, // bit_width: "4", "2"
+	)
+ 
+	// TurboQuantSearchLatencySeconds tracks latency of TurboQuant-accelerated searches.
+	TurboQuantSearchLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_turboquant_search_latency_seconds",
+			Help:    "Latency of TurboQuant-accelerated search operations",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+		[]string{"dataset", "bit_width"},
+	)
 )

@@ -274,6 +274,30 @@
       "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_geo_search_duration_seconds_bucket[5m])) by (le, search_type))", "legendFormat": "P99 {{search_type}}", "refId": "A"}],
       "title": "Geo Search Latency (P99)",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 48},
+      "id": 26,
+      "panels": [],
+      "title": "Quantization & Acceleration",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 49},
+      "id": 27,
+      "targets": [{"expr": "sum(rate(longbow_simd_dispatch_count[1m])) by (instruction)", "legendFormat": "{{instruction}}", "refId": "A"}],
+      "title": "SIMD Dispatch Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 49},
+      "id": 28,
+      "targets": [{"expr": "sum(rate(longbow_turboquant_search_total[1m])) by (bit_width)", "legendFormat": "Int{{bit_width}}", "refId": "A"}],
+      "title": "Turboquant Search Rate",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

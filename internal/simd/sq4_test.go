@@ -5,15 +5,27 @@ import (
 )
 
 func TestDotInt4(t *testing.T) {
-	a := []byte{0x12, 0x34} // [2, 1, 4, 3]
-	b := []byte{0x12, 0x34} // [2, 1, 4, 3]
-	
-	// al*bl + ah*bh + al*bl + ah*bh
-	// 2*2 + 1*1 + 4*4 + 3*3 = 4 + 1 + 16 + 9 = 30
-	expected := float32(30)
-	got, _ := DotProductInt4(a, b)
-	if got != expected {
-		t.Errorf("DotInt4 expected %f, got %f", expected, got)
+	tests := []struct {
+		name     string
+		a        []byte
+		b        []byte
+		expected float32
+	}{
+		{"exact_16", make([]byte, 16), make([]byte, 16), 0},
+		{"simple_2", []byte{0x12, 0x34}, []byte{0x12, 0x34}, 30},
+		{"tail_3", []byte{0x12, 0x34, 0x56}, []byte{0x12, 0x34, 0x56}, 30 + (6*6 + 5*5)},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := DotProductInt4(tt.a, tt.b)
+			if err != nil {
+				t.Fatalf("DotProductInt4 failed: %v", err)
+			}
+			if got != tt.expected {
+				t.Errorf("%s: expected %f, got %f", tt.name, tt.expected, got)
+			}
+		})
 	}
 }
 
@@ -28,11 +40,26 @@ func FuzzDotInt4(f *testing.F) {
 }
 
 func TestDotInt2(t *testing.T) {
-	a := []byte{0x01} // [1, 0, 0, 0]
-	b := []byte{0x01} // [1, 0, 0, 0]
-	expected := float32(1)
-	got, _ := DotProductInt2(a, b)
-	if got != expected {
-		t.Errorf("DotInt2 expected %f, got %f", expected, got)
+	tests := []struct {
+		name     string
+		a        []byte
+		b        []byte
+		expected float32
+	}{
+		{"exact_16", make([]byte, 16), make([]byte, 16), 0},
+		{"simple_1", []byte{0x01}, []byte{0x01}, 1},
+		{"mixed", []byte{0b11100100}, []byte{0b11100100}, 3*3 + 2*2 + 1*1 + 0*0}, // 9+4+1+0=14
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := DotProductInt2(tt.a, tt.b)
+			if err != nil {
+				t.Fatalf("DotProductInt2 failed: %v", err)
+			}
+			if got != tt.expected {
+				t.Errorf("%s: expected %f, got %f", tt.name, tt.expected, got)
+			}
+		})
 	}
 }

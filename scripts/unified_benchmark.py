@@ -1837,42 +1837,23 @@ class BenchmarkRunner:
         if self.args.mode == "deletion":
             self.execute_deletion()
             return
-        if self.args.mode == "graphrag":
-            self.execute_graphrag()
-            return
-        if self.args.mode == "exchange":
-            self.execute_exchange()
-            return
-        if self.args.mode == "cluster":
-            self.execute_cluster()
-            return
-        if self.args.mode == "onnx":
-            self.execute_onnx()
-            return
-        if self.args.mode == "temporal":
-            print("\n" + "─" * 100)
-            print("TEMPORAL QUERY BENCHMARK SUMMARY")
-            print("─" * 100)
-            for r in self.results:
-                print(f"  dim={r['dim']} dtype={r['dtype']} count={r['count']}")
-            print("─" * 100)
-            return
-
-        if self.args.mode == "geo":
-            self.execute_geo()
-            return
-        if self.args.mode == "churn":
-            self.execute_churn()
-            return
-        if self.args.mode == "temporal":
-            self.execute_temporal()
-            return
-        if self.args.mode == "geo":
-            self.execute_geo()
-            return
-        if self.args.mode == "churn":
-            self.execute_churn()
-            return
+        if self.args.mode in ["graphrag", "recommend", "geo", "temporal"]:
+            # These are now natively supported in the Go bench-tool
+            # We skip the Python-heavy execute_* functions to get raw engine results
+            pass
+        else:
+            if self.args.mode == "exchange":
+                self.execute_exchange()
+                return
+            if self.args.mode == "cluster":
+                self.execute_cluster()
+                return
+            if self.args.mode == "onnx":
+                self.execute_onnx()
+                return
+            if self.args.mode == "churn":
+                self.execute_churn()
+                return
 
         dims = [int(d) for d in self.args.dims.split(",")]
         counts = [int(c) for c in self.args.counts.split(",")]

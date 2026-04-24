@@ -503,17 +503,41 @@ func dotUint16AVX2(a, b []uint16) (float32, error) {
 }
 
 func dotInt4AVX512(a, b []byte) (float32, error) {
-	if len(a) == 0 {
+	n := len(a)
+	if n == 0 {
 		return 0, nil
 	}
-	return dotInt4AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+	var sum float32
+	if n >= 32 {
+		simdLen := (n / 32) * 32
+		sum = dotInt4AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), simdLen)
+		a = a[simdLen:]
+		b = b[simdLen:]
+	}
+	if len(a) > 0 {
+		tailSum, _ := dotInt4Generic(a, b)
+		sum += tailSum
+	}
+	return sum, nil
 }
 
 func dotInt4AVX2(a, b []byte) (float32, error) {
-	if len(a) == 0 {
+	n := len(a)
+	if n == 0 {
 		return 0, nil
 	}
-	return dotInt4AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+	var sum float32
+	if n >= 16 {
+		simdLen := (n / 16) * 16
+		sum = dotInt4AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), simdLen)
+		a = a[simdLen:]
+		b = b[simdLen:]
+	}
+	if len(a) > 0 {
+		tailSum, _ := dotInt4Generic(a, b)
+		sum += tailSum
+	}
+	return sum, nil
 }
 
 func dotInt2AVX512(a, b []byte) (float32, error) {

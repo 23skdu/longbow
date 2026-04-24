@@ -1,6 +1,8 @@
 package tpu
 
 import (
+	"fmt"
+
 	"github.com/23skdu/longbow/internal/gpu/types"
 )
 
@@ -71,4 +73,16 @@ func (i *TPUIndex) GetMemoryInfo() (total, free, used int64, err error) {
 
 func (i *TPUIndex) GetUtilization() (float32, error) {
 	return 0, nil
+}
+
+func (i *TPUIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchFloat16 not implemented for TPUIndex")
+}
+
+func (i *TPUIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchComplex64 not implemented for TPUIndex")
+}
+
+func (i *TPUIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchComplex128 not implemented for TPUIndex")
 }

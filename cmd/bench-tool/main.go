@@ -291,7 +291,7 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 			{
 				"field":    "id",
 				"operator": ">",
-				"value":    10,
+				"value":    "10",
 			},
 		}
 	case "FilteredBool":
@@ -300,7 +300,7 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 			{
 				"field":    "active",
 				"operator": "==",
-				"value":    true, // Requires schema to have "active" boolean
+				"value":    "true", // Note: Value is a string in Filter struct
 			},
 		}
 	case "FilteredString":

@@ -23,8 +23,11 @@ Chroma is optimized for **developer simplicity**. It is designed to be embedded 
 
 ### Longbow
 Longbow is built for **production-grade throughput**. It utilizes an Apache Arrow-native data plane that enables **Zero-Copy** memory access. This eliminates the "Python tax" on serialization and memory translation.
-- **Ingestion**: Up to **~380,000 vectors/sec** on commodity hardware.
-*   **Search**: High-concurrency gRPC/Flight engine capable of **~14,000 QPS** for sparse signals and **~3,000 QPS** for hybrid GraphRAG workloads.
+- **Ingestion**: High-speed bulk ingestion reaching **~923,000 vectors/sec** on ARM64 (Metal) and **~597,000 vectors/sec** on AMD64 (CPU).
+*   **Search**: High-concurrency gRPC/Flight engine achieving:
+    - **Dense Search**: **~7,500+ QPS** (ARM64) and **~4,300+ QPS** (AMD64).
+    - **Sparse Search (BM25)**: **~14,000+ QPS** (ARM64).
+    - **GraphRAG/Hybrid**: **~2,700+ QPS** across specialized discovery paths.
 
 ---
 

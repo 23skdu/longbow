@@ -26,6 +26,8 @@ def parse_results(log_dir):
                             mode = 'unknown'
                         
                         for item in raw_items:
+                            if not isinstance(item, dict):
+                                continue
                             if 'ingest' in item and 'vec_per_sec' in item['ingest']:
                                 item['ingest_vec_per_sec'] = item['ingest']['vec_per_sec']
                             if 'platform' not in item:

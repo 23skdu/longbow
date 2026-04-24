@@ -178,11 +178,8 @@ class BenchmarkRunner:
         if self.args.iouring:
             env["LONGBOW_STORAGE_USE_IOURING"] = "true"
 
-        # Use ports from server_addr if available, otherwise default
-        if ":" in self.server_addr:
-            port = int(self.server_addr.split(":")[-1])
-        else:
-            port = 3000 + (os.getpid() % 1000)
+        # Standardize on port 3000 to ensure single-instance testing
+        port = 3000
 
         log_file = os.path.join(self.log_dir, f"longbow_{self.args.mode}_{label}.log")
 
@@ -1912,9 +1909,8 @@ class BenchmarkRunner:
                 port_offset = 0
                 for dim in dims:
                     current += 1
-                    current_port = base_port + (port_offset % 1000)
+                    current_port = 3000
                     self.server_addr = f"127.0.0.1:{current_port}"
-                    port_offset += 10
                     
                     label = f"{self.args.mode}_{dtype}_{dim}_{count}"
                     print(

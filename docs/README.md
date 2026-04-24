@@ -6,64 +6,57 @@ Longbow is a high-performance, distributed, and in-memory vector store implement
 
 ## 📖 Core Guides
 
-### 1. [Quick Start & Usage](usage.md)
-Get started with Longbow using Docker or Helm. Covers basic configuration, CLI usage, and client examples.
+### 1. [Quick Start & Deployment](deploy.md)
+Get started with Longbow using Docker or Helm. Covers installation, environment configuration, distributed architecture, CLI management, and client usage.
 
 ### 2. [Unified Search & Discovery](vectorsearch.md)
 Comprehensive guide to search:
 - **Metrics**: Euclidean, Cosine, Dot Product.
-- **SQL Filtering**: CTEs and Subqueries.
+- **SQL Filtering**: Compound boolean logic and nested fields.
 - **Hybrid**: Dense + Sparse fusion (RRF).
 - **Reranking**: ML-based Cross-Encoders.
-- **GraphRAG**: Spreading activation and pathfinding.
+- **GraphRAG**: [Internal Spreading Activation](graphrag.md) and pathfinding.
 
 ### 3. [High-Performance Indexing](indexing.md)
 Tuning for scale and speed:
-- **Compression**: PQ, SQ8, BQ, and TurboQuant.
+- **Compression**: PQ, SQ8, BQ, and **TurboQuant**.
 - **Adaptive**: Automated Flat-to-HNSW migration for zero-config scaling.
 - **Hardware**: NUMA affinity and CPU pinning.
-- **Memory**: GOGC Auto-tuning and heap management.
-- **Scaling**: Auto-sharding and partitioned indices.
+- **Memory**: GOGC Auto-tuning and slab-arena management.
 
-### 4. [Hardware Acceleration & GPU](gpu-acceleration.md)
+### 4. [Hardware Acceleration & ML](wasm_onnx.md)
 Unleash hardware performance:
-- **GPU**: CUDA (NVIDIA) and Metal (Apple Silicon).
-- **Inference**: Wazero (WASM) and ONNX Runtimes.
+- **GPU/TPU**: CUDA (NVIDIA), Metal (Apple Silicon), and Google TPU (Ironwood) [Optimization Details](gpu.md).
+- **Inference**: High-performance execution via WASM (Wazero) and ONNX Runtimes.
 - **Networking**: Zero-copy RDMA over RoCEv2.
 
 ### 5. [Storage & Durability](persistence.md)
 Managing data lifecycle:
-- **Persistence**: WAL, Snapshots, and S3 Offloading.
-- **Evolution**: Schema versioning and additive changes.
-- **Lifecycle**: TTL and LRU Eviction.
+- **Persistence**: WAL, Snapshots, and S3/GCS Offloading.
 - **Temporal**: Time-travel search and version history.
+- **Lifecycle**: TTL-based cleanup and LRU Eviction.
 
 ---
 
-## 🛠 Operation & Deployment
+## 🛠 System Reference
 
-### 1. [Deployment & Operations](deployment.md)
-Distributed cluster management:
-- **Kubernetes**: Helm chart configuration and tuning.
-- **Architecture**: Consistent Hashing and Mesh (Gossip).
-- **Multitenancy**: Namespaces and isolation.
-- **Traffic**: Rate limiting and priorities.
+### 1. [Systems Architecture](architecture.md)
+Deep dive into Longbow's design:
+- **Distributed Mesh**: Gossip-based membership and Consistent Hashing.
+- **Store Internals**: SlabArena, sharded indexing, and zero-copy data paths.
 
-### 2. [Clients & SDKs](python_client.md)
-Native support for:
-- Python SDK (`pip install longbowclientsdk`).
-- gRPC/Arrow Flight (Standard-compliant).
-- [OpenAPI Specification](openapi.yaml).
+### 2. [API Reference](api.md)
+Technical specification for the gRPC/Arrow Flight endpoints, including administrative actions and telemetry.
 
-### 3. [Diagnostics & Safety](troubleshooting.md)
-Tools for reliability:
-- **Metrics**: [Prometheus Reference](metrics.md).
-- **Security**: [Best Practices](security.md).
-- **Troubleshooting**: Common pitfalls and solutions.
+### 3. [Diagnostics & Metrics](metrics.md)
+Complete Prometheus reference for monitoring system health, TurboQuant throughput, and SIMD dispatch rates.
+
+### 4. [Troubleshooting & Security](troubleshooting.md)
+Common pitfalls, security best practices, and performance tuning strategies.
 
 ---
 
-## Architecture Diagram
+## Architecture Overview
 
 ```mermaid
 graph TB

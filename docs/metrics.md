@@ -1,183 +1,72 @@
 # Longbow Metrics Reference
 
-Complete reference for all Prometheus metrics exported by Longbow.
+Complete reference for all Prometheus metrics exported by Longbow 0.2.0.
 
 **Metrics Endpoint**: `http://localhost:9090/metrics` (configurable via `LONGBOW_METRICS_ADDR`)
 
-Last Updated: 2026-04-16
+---
 
-## Table of Contents
+## 1. Flight & RPC
+Performance and throughput of the Arrow Flight interface.
 
-1. [Flight & RPC](#flight--rpc)
-2. [Vector Search](#vector-search)
-3. [HNSW Index & PQ](#hnsw-index--pq)
-4. [Memory Management & NUMA](#memory-management--numa)
-5. [io_uring I/O](#io_uring-io)
-6. [Graph Navigation](#graph-navigation)
-7. [Health & Logging](#health--logging)
+- **longbow_flight_ops_total**: (Counter) Total processed Arrow Flight operations. Labels: `action`, `status`.
+- **longbow_flight_duration_seconds**: (Histogram) Latency of Flight operations. Labels: `action`.
+- **longbow_flight_bytes_read_total**: (Counter) Bytes read from input streams.
+- **longbow_flight_bytes_written_total**: (Counter) Bytes written to output streams.
 
 ---
 
-## Flight & RPC
+## 2. Vector Search & HNSW
+Metrics for the core vector indexing and search engine.
 
-### longbow_flight_ops_total
-
-**Type**: Counter  
-**Labels**: `action`, `status`  
-**Description**: Total number of processed Arrow Flight operations (DoPut, DoGet, DoAction, etc.)
-
-### longbow_flight_duration_seconds
-
-**Type**: Histogram  
-**Labels**: `action`  
-**Description**: Duration of Arrow Flight operations
-
-### longbow_flight_bytes_read_total
-
-**Type**: Counter  
-**Description**: Total bytes read from Arrow Flight tickets
-
-### longbow_flight_bytes_written_total
-
-**Type**: Counter  
-**Description**: Total bytes written to Arrow Flight streams
-
-### longbow_flight_active_tickets
-
-**Type**: Gauge  
-**Description**: Number of currently active Flight tickets
+- **longbow_vector_search_latency_seconds**: (Histogram) Latency of search operations. Labels: `dataset`.
+- **longbow_hnsw_node_count**: (Gauge) Total number of nodes in the HNSW graph. Labels: `dataset`.
+- **longbow_hnsw_search_queries_total**: (Counter) Total search queries executed. Labels: `dims`.
+- **longbow_hnsw_polymorphic_latency_seconds**: (Histogram) Search latency broken down by vector type (Float32, FP16, etc.). Labels: `type`.
+- **longbow_hnsw_arrow_extraction_errors_total**: (Counter) Errors during zero-copy extraction from Arrow buffers. Labels: `type`, `error`.
 
 ---
 
-## Vector Search
+## 3. TurboQuant & Acceleration (New in 0.2.0)
+Monitoring the SIMD-accelerated quantization and bit-packing features.
 
-### longbow_vector_search_latency_seconds
-
-**Type**: Histogram  
-**Labels**: `dataset`  
-**Description**: Latency of vector search operations
-
-### longbow_active_search_contexts
-
-**Type**: Gauge  
-**Description**: Number of concurrent DoGet/search operations in progress
+- **longbow_turboquant_search_total**: (Counter) Number of searches using TurboQuant acceleration. Labels: `dataset`, `bit_width` (4 or 2).
+- **longbow_turboquant_search_latency_seconds**: (Histogram) Latency of TQ-accelerated searches. Labels: `dataset`, `bit_width`.
+- **longbow_turboquant_encoding_total**: (Counter) Vectors encoded into TQ format. Labels: `dataset`, `direction` (client_provided or server_encoded).
+- **longbow_turboquant_storage_bytes_total**: (Gauge) Memory used by TQ vectors (demonstrating compression gains). Labels: `dataset`.
+- **longbow_simd_static_dispatch_type**: (Gauge) Currently active SIMD kernel type (0=Generic, 1=NEON, 2=AVX2, 3=AVX-512).
+- **longbow_hnsw_simd_dispatch_latency_seconds**: (Histogram) Time taken for dynamic kernel selection per query. Labels: `type`.
 
 ---
 
-## HNSW Index & PQ
+## 4. Hardware & GPU
+Metrics for CUDA and Metal acceleration.
 
-### longbow_hnsw_node_count
-
-**Type**: Gauge  
-**Labels**: `dataset`  
-**Description**: Current number of nodes in the HNSW graph (memory + disk).
-
-### longbow_hnsw_complex_ops_total
-
-**Type**: Counter  
-**Labels**: `type`  
-**Description**: Total number of complex number distance calculations
-
-### longbow_hnsw_simd_dispatch_latency_seconds
-
-**Type**: Histogram  
-**Labels**: `type`  
-**Description**: Latency of the dynamic SIMD kernel dispatcher by data type.
+- **longbow_onnx_inference_duration_seconds**: (Histogram) Duration of ML model execution. Labels: `backend` (onnx, metal, wazero).
+- **longbow_onnx_metal_memory_used_bytes**: (Gauge) VRAM utilization on Apple Silicon.
+- **longbow_gpu_memory_bytes**: (Gauge) VRAM utilization on NVIDIA/CUDA systems.
 
 ---
 
-## Memory Management & NUMA
+## 5. Persistence & IO
+Metrics for the WAL and snapshotting system.
 
-### longbow_arena_memory_bytes
-
-**Type**: Gauge  
-**Labels**: `size`  
-**Description**: Current bytes allocated in arena pools categorized by block size.
-
-### longbow_slab_fragmentation_ratio
-
-**Type**: Gauge  
-**Labels**: `size`  
-**Description**: Current fragmentation ratio for slab pools (allocated / active).
-
-### longbow_allocator_bytes_allocated_total
-
-**Type**: Counter  
-**Description**: Total cumulative bytes allocated by the custom memory allocator.
+- **longbow_snapshot_write_duration_seconds**: (Histogram) Latency of reflection-free Parquet snapshotting.
+- **longbow_snapshot_size_bytes**: (Histogram) Distribution of snapshot file sizes.
+- **longbow_iouring_ops_submitted_total**: (Counter) Total IO operations submitted via `io_uring`. Labels: `operation`.
 
 ---
 
-## io_uring I/O
+## 6. Distributed & Mesh
+Metrics for cluster membership and sharding.
 
-### longbow_iouring_submit_latency_seconds
-
-**Type**: Histogram  
-**Labels**: `operation`  
-**Description**: Latency of io_uring submission operations.
-
-### longbow_iouring_ops_submitted_total
-
-**Type**: Counter  
-**Labels**: `operation`  
-**Description**: Total number of operations submitted to the ring.
+- **longbow_gossip_active_members**: (Gauge) Number of healthy nodes in the gossip mesh.
+- **longbow_gossip_state_changes_total**: (Counter) Number of membership transitions (join/leave/fail).
+- **longbow_ring_vnode_distribution**: (Gauge) Number of virtual nodes assigned per physical node.
 
 ---
 
-## ML Inference & Reranking
-
-### longbow_onnx_inference_duration_seconds
-**Type**: Histogram  
-**Labels**: `backend`, `operation`  
-**Description**: Duration of ONNX inference operations (embedding, reranking).
-
-### longbow_reranker_inference_duration_seconds
-**Type**: Histogram  
-**Description**: Latency of the cross-encoder reranking stage.
-
-### longbow_reranker_scores_computed_total
-**Type**: Counter  
-**Description**: Total number of doc-query pairs re-scored by the cross-encoder.
-
-### longbow_onnx_metal_memory_used_bytes
-**Type**: Gauge  
-**Description**: Current VRAM utilization for the Metal (Apple Silicon) inference backend.
-
----
-
-## High-Throughput IO (Parquet V2)
-
-### longbow_snapshot_write_duration_seconds
-**Type**: Histogram  
-**Description**: Latency of reflection-free Parquet snapshotting.
-
-### longbow_snapshot_size_bytes
-**Type**: Histogram  
-**Description**: Distribution of Parquet snapshot file sizes.
-
----
-
-## Adaptive Indexing
-
-### longbow_hnsw_adaptive_m_value
-**Type**: Gauge  
-**Labels**: `index_name`  
-**Description**: Current dynamically adjusted `M` parameter (connections per node).
-
-### longbow_hnsw_adaptive_adjustments_total
-**Type**: Counter  
-**Labels**: `index_name`  
-**Description**: Cumulative count of dynamic graph structure adjustments.
-
----
-
-## Graph Navigation
-
-### longbow_graph_rag_rerank_latency_seconds
-**Type**: Histogram  
-**Labels**: `dataset`  
-**Description**: Latency of the spreading activation re-ranking phase.
-
----
-
-**Total Metrics Documented**: 140+  
-**Last Updated**: 2026-04-20
+## 7. Resource Management
+- **longbow_arena_memory_bytes**: (Gauge) Memory allocated in custom slab arenas. Labels: `size`.
+- **longbow_gc_pause_duration_seconds**: (Histogram) Latency of Go garbage collection cycles.
+- **longbow_gctuner_heap_target_bytes**: (Gauge) The dynamic heap target set by the GCTuner.

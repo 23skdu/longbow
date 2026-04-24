@@ -1,5 +1,7 @@
 package cuvs
 
+import "C"
+
 import (
 	"context"
 	"fmt"

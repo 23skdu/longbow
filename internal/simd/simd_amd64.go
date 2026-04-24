@@ -561,7 +561,4 @@ func dotInt2AVX512Kernel(a, b unsafe.Pointer, n int) float32
 //go:noescape
 func dotInt2AVX2Kernel(a, b unsafe.Pointer, n int) float32
 
-// NEON stubs for AMD64 compilation
-func dotInt4Neon(a, b []byte) (float32, error) { return 0, nil }
-func dotInt2Neon(a, b []byte) (float32, error) { return 0, nil }
-func FastWalshHadamardTransform32NEON(a []float32) float32 { return 0 }
+func dotInt2AVX2Kernel(a, b unsafe.Pointer, n int) float32

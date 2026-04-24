@@ -26,7 +26,7 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
-	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	types "github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/tracing"
 )
 
@@ -129,7 +129,6 @@ func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescript
 // DoGet - Minimal implementation
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
 	startDoGet := time.Now()
-	// log.Printf("[DEBUG] DoGet received ticket (len=%d): %q", len(tkt.Ticket), string(tkt.Ticket))
 	// Parse ticket
 	query, err := qry.ParseTicketQuerySafe(tkt.Ticket)
 	if err != nil {
@@ -146,7 +145,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	// s.logger.Info().Interface("parsed_query", query).Msg("DEBUG: DoGet parsed query")
 
 	// Resolve CTEs if present
-	cteResults := make(map[string][]lbtypes.SearchResult)
+	cteResults := make(map[string][]types.SearchResult)
 	if len(query.CTEs) > 0 {
 		if err := s.resolveCTEs(stream.Context(), query.CTEs, cteResults); err != nil {
 			return status.Errorf(codes.Internal, "failed to resolve CTEs: %v", err)
@@ -175,6 +174,8 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	switch {
 	case query.GeoSearch != nil:
 		return s.handleDoGetGeoSearch(query.GeoSearch, query.WindowFunctions, stream, mem)
+	case query.TemporalSearch != nil:
+		return s.handleDoGetTemporalSearch(query.TemporalSearch, query.WindowFunctions, stream, mem)
 	case query.Search != nil:
 		if isGlobal {
 			query.Search.LocalOnly = false
@@ -185,7 +186,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	case query.Recommend != nil:
 		return s.handleDoGetRecommend(query.Recommend, stream, mem)
 	case len(query.Vector) > 0:
-		searchReq := &lbtypes.VectorSearchRequest{
+		searchReq := &types.VectorSearchRequest{
 			Dataset: query.Name,
 			Vector:  query.Vector,
 			K:       query.K,
@@ -308,7 +309,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		go func() {
 			defer close(c)
 			for i, rec := range recordsToProcess {
-				var ts *qry.Bitset
+				var ts *types.Bitset
 				// Map access is safe under RLock
 				if t, ok := tombstonesToProcess[i]; ok {
 					ts = t
@@ -516,7 +517,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 // MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
 // MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
 // This is the public wrapper that acquires a read lock.
-func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []lbtypes.SearchResult) []lbtypes.SearchResult {
+func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []types.SearchResult) []types.SearchResult {
 	start := time.Now()
 	defer func() {
 		metrics.IDResolutionDuration.Observe(time.Since(start).Seconds())
@@ -529,14 +530,14 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []lbtypes.Search
 
 // mapInternalToUserIDsLocked maps internal HNSW IDs to user-provided IDs.
 // Caller MUST hold ds.dataMu.RLock (or Lock).
-func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []lbtypes.SearchResult) []lbtypes.SearchResult {
+func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []types.SearchResult) []types.SearchResult {
 	// Use the VectorIndex interface directly to look up locations.
 	// This supports HNSWIndex, ArrowHNSW, AutoShardingIndex, etc.
 	if ds.Index == nil {
 		return results
 	}
 
-	mappedResults := make([]lbtypes.SearchResult, 0, len(results))
+	mappedResults := make([]types.SearchResult, 0, len(results))
 
 	for _, res := range results {
 		// 1. Get location (Batch, Row) from VectorIndex
@@ -578,30 +579,30 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []lbtypes.
 		// ID column can be uint32 or uint64 (or others).
 		// VectorID is uint32. If user ID is uint64 > 2^32, we have a truncation issue.
 		// For now, cast to VectorID (uint32).
-		var resolvedID lbtypes.VectorID
+		var resolvedID types.VectorID
 
 		switch c := col.(type) {
 		case *array.Uint32:
 			if loc.RowIdx < c.Len() {
-				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx))
+				resolvedID = types.VectorID(c.Value(loc.RowIdx))
 			} else {
-				resolvedID = lbtypes.VectorID(res.ID) // Fallback
+				resolvedID = types.VectorID(res.ID) // Fallback
 			}
 		case *array.Uint64:
 			if loc.RowIdx < c.Len() {
-				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx)) // #nosec G115
+				resolvedID = types.VectorID(c.Value(loc.RowIdx)) // #nosec G115
 			} else {
 				resolvedID = res.ID
 			}
 		case *array.Int64:
 			if loc.RowIdx < c.Len() {
-				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx)) // #nosec G115
+				resolvedID = types.VectorID(c.Value(loc.RowIdx)) // #nosec G115
 			} else {
 				resolvedID = res.ID
 			}
 		case *array.Int32:
 			if loc.RowIdx < c.Len() {
-				resolvedID = lbtypes.VectorID(c.Value(loc.RowIdx)) // #nosec G115
+				resolvedID = types.VectorID(c.Value(loc.RowIdx)) // #nosec G115
 			} else {
 				resolvedID = res.ID
 			}
@@ -610,11 +611,11 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []lbtypes.
 				val := c.Value(loc.RowIdx)
 				u, err := strconv.ParseUint(val, 10, 64)
 				if err == nil {
-					resolvedID = lbtypes.VectorID(u) // #nosec G115
+					resolvedID = types.VectorID(u) // #nosec G115
 				} else {
 					// If not numeric, we're stuck with internal ID for the uint64 field.
 					// A better fix would be to return StringIDs in the response.
-					resolvedID = lbtypes.VectorID(res.ID)
+					resolvedID = types.VectorID(res.ID)
 				}
 			} else {
 				resolvedID = res.ID
@@ -648,7 +649,7 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []lbtypes.
 			}
 		}
 
-		mappedResults = append(mappedResults, lbtypes.SearchResult{
+		mappedResults = append(mappedResults, types.SearchResult{
 			ID:       resolvedID,
 			Score:    res.Score,
 			Distance: res.Distance,
@@ -670,12 +671,12 @@ func (s *VectorStore) GetDataset(name string) (*Dataset, error) {
 }
 
 // HybridSearch is a wrapper for the HybridSearch function
-func (s *VectorStore) HybridSearch(ctx context.Context, name string, query []float32, k int, filters map[string]string) ([]lbtypes.SearchResult, error) {
+func (s *VectorStore) HybridSearch(ctx context.Context, name string, query []float32, k int, filters map[string]string) ([]types.SearchResult, error) {
 	return HybridSearch(ctx, s, name, query, k, filters)
 }
 
 // SearchHybrid is a wrapper for the SearchHybrid function (RRF version)
-func (s *VectorStore) SearchHybrid(ctx context.Context, name string, query []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]lbtypes.SearchResult, error) {
+func (s *VectorStore) SearchHybrid(ctx context.Context, name string, query []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]types.SearchResult, error) {
 	// Expose graph params in future? For now default to 0 (disabled)
 	return SearchHybrid(ctx, s, name, query, textQuery, k, alpha, rrfK, graphAlpha, graphDepth)
 }
@@ -734,7 +735,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 		return status.Error(codes.InvalidArgument, "no query vector provided")
 	}
 
-	var searchResults []lbtypes.SearchResult
+	var searchResults []types.SearchResult
 	var err error
 
 	// 2.5 Query Cache Check
@@ -780,10 +781,12 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 
 			// Core Search (No dataset lock held)
 			var searchErr error
-			searchResults, searchErr = index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, SearchOptions{
+			filterExpr := ParseFilter(req.FilterExpr)
+			searchResults, searchErr = index.SearchVectors(stream.Context(), queryVec, req.K, req.Filters, types.SearchOptions{
 				IncludeVectors: req.IncludeVectors,
-				VectorFormat:   lbtypes.MapStringToVectorDataType(req.VectorFormat),
-				FilterExpr:     ParseFilter(req.FilterExpr),
+				VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
+				FilterExpr:     filterExpr,
+				Predicate:      qry.ExtractPushablePredicate(filterExpr, ds.Records),
 			})
 			if searchErr != nil {
 				return status.Errorf(codes.Internal, "search failed: %v", searchErr)
@@ -1063,7 +1066,7 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 
 	results, err := ds.Index.SearchVectors(stream.Context(), targetVec, req.K, nil, SearchOptions{
 		IncludeVectors: req.IncludeVectors,
-		VectorFormat:   lbtypes.MapStringToVectorDataType(req.VectorFormat),
+		VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
 	})
 	if err != nil {
 		return status.Errorf(codes.Internal, "search failed: %v", err)
@@ -1157,7 +1160,7 @@ func (s *VectorStore) handleDoGetRecommend(req *qry.RecommendRequest, stream fli
 	return nil
 }
 
-func (s *VectorStore) resolveCTEs(ctx context.Context, ctes []qry.CTE, results map[string][]lbtypes.SearchResult) error {
+func (s *VectorStore) resolveCTEs(ctx context.Context, ctes []qry.CTE, results map[string][]types.SearchResult) error {
 	for _, cte := range ctes {
 		if cte.Search == nil {
 			continue
@@ -1206,7 +1209,7 @@ func (s *VectorStore) resolveSubqueries(ctx context.Context, filters []qry.Filte
 	return nil
 }
 
-func (s *VectorStore) executeInternalSearch(ctx context.Context, req *qry.VectorSearchRequest) ([]lbtypes.SearchResult, error) {
+func (s *VectorStore) executeInternalSearch(ctx context.Context, req *qry.VectorSearchRequest) ([]types.SearchResult, error) {
 	isHybrid := req.TextQuery != "" || (req.Alpha > 0 && req.Alpha < 1.0)
 	var queryVec []float32
 	if len(req.Vector) > 0 {
@@ -1231,7 +1234,7 @@ func (s *VectorStore) executeInternalSearch(ctx context.Context, req *qry.Vector
 
 	res, err := ds.Index.SearchVectors(ctx, queryVec, req.K, req.Filters, SearchOptions{
 		IncludeVectors: req.IncludeVectors,
-		VectorFormat:   lbtypes.MapStringToVectorDataType(req.VectorFormat),
+		VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
 		FilterExpr:     ParseFilter(req.FilterExpr),
 	})
 	if err != nil {
@@ -1241,7 +1244,7 @@ func (s *VectorStore) executeInternalSearch(ctx context.Context, req *qry.Vector
 	return s.mapInternalToUserIDsLocked(ds, res), nil
 }
 
-func (s *VectorStore) executeInternalTicket(ctx context.Context, query *qry.TicketQuery) ([]lbtypes.SearchResult, error) {
+func (s *VectorStore) executeInternalTicket(ctx context.Context, query *qry.TicketQuery) ([]types.SearchResult, error) {
 	// If search is present AND has a vector/text, use vector search path
 	if query.Search != nil && (len(query.Search.Vector) > 0 || query.Search.TextQuery != "") {
 		return s.executeInternalSearch(ctx, query.Search)
@@ -1265,7 +1268,7 @@ func (s *VectorStore) executeInternalTicket(ctx context.Context, query *qry.Tick
 	return s.executeInternalTable(query)
 }
 
-func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]lbtypes.SearchResult, error) {
+func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]types.SearchResult, error) {
 	ds, ok := s.getDataset(query.Name)
 	if !ok {
 		return nil, fmt.Errorf("dataset %s not found", query.Name)
@@ -1274,7 +1277,7 @@ func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]lbtypes.Se
 	ds.dataMu.RLock()
 	defer ds.dataMu.RUnlock()
 
-	var results []lbtypes.SearchResult
+	var results []types.SearchResult
 	limit := int(query.Limit)
 	if limit <= 0 {
 		limit = 1000 // Default internal limit
@@ -1323,26 +1326,26 @@ func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]lbtypes.Se
 				continue
 			}
 
-			var res lbtypes.SearchResult
+			var res types.SearchResult
 			// We need a numeric ID for SearchResult.
 			// If 'id' column exists, try to extract it.
 			if idColIdx != -1 {
 				col := rec.Column(idColIdx)
 				switch c := col.(type) {
 				case *array.Uint32:
-					res.ID = lbtypes.VectorID(c.Value(rowIdx))
+					res.ID = types.VectorID(c.Value(rowIdx))
 				case *array.Uint64:
-					res.ID = lbtypes.VectorID(c.Value(rowIdx)) // #nosec G115
+					res.ID = types.VectorID(c.Value(rowIdx)) // #nosec G115
 				case *array.Int64:
-					res.ID = lbtypes.VectorID(c.Value(rowIdx)) // #nosec G115
+					res.ID = types.VectorID(c.Value(rowIdx)) // #nosec G115
 				case *array.Int32:
-					res.ID = lbtypes.VectorID(c.Value(rowIdx)) // #nosec G115
+					res.ID = types.VectorID(c.Value(rowIdx)) // #nosec G115
 				default:
 					// Fallback to internal ID (constructed from batch/row)
-					res.ID = lbtypes.VectorID(uint32(i)<<16 | uint32(rowIdx))
+					res.ID = types.VectorID(uint32(i)<<16 | uint32(rowIdx))
 				}
 			} else {
-				res.ID = lbtypes.VectorID(uint32(i)<<16 | uint32(rowIdx))
+				res.ID = types.VectorID(uint32(i)<<16 | uint32(rowIdx))
 			}
 
 			results = append(results, res)
@@ -1362,7 +1365,7 @@ func (s *VectorStore) evaluateFilters(ds *Dataset, batchIdx int, filters []core.
 }
 
 // streamSearchResults is a helper to stream a list of search results as RecordBatches
-func (s *VectorStore) streamSearchResults(results []lbtypes.SearchResult, windowFunctions []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem memory.Allocator) error {
+func (s *VectorStore) streamSearchResults(results []types.SearchResult, windowFunctions []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem memory.Allocator) error {
 	// Execute Window Functions
 	if len(windowFunctions) > 0 {
 		windowOp := qry.NewWindowOperator()
@@ -1432,7 +1435,7 @@ func (s *VectorStore) streamSearchResults(results []lbtypes.SearchResult, window
 	defer rec.Release()
 	return w.Write(rec)
 }
-func (s *VectorStore) handleDoGetGeoSearch(req *lbtypes.GeoSearchRequest, wfs []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem *lbmem.ArenaAllocator) error {
+func (s *VectorStore) handleDoGetGeoSearch(req *types.GeoSearchRequest, wfs []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem *lbmem.ArenaAllocator) error {
 	ds, ok := s.getDataset(req.Dataset)
 	if !ok {
 		return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
@@ -1446,7 +1449,7 @@ func (s *VectorStore) handleDoGetGeoSearch(req *lbtypes.GeoSearchRequest, wfs []
 	ds.dataMu.RLock()
 	defer ds.dataMu.RUnlock()
 
-	var results []lbtypes.SearchResult
+	var results []types.SearchResult
 	var err error
 
 	switch req.SearchType {
@@ -1469,6 +1472,44 @@ func (s *VectorStore) handleDoGetGeoSearch(req *lbtypes.GeoSearchRequest, wfs []
 
 	// Map internal IDs to user IDs if primary index exists
 	results = s.mapInternalToUserIDsLocked(ds, results)
+
+	return s.streamSearchResults(results, wfs, stream, mem)
+}
+
+func (s *VectorStore) handleDoGetTemporalSearch(req *types.TemporalSearchRequest, wfs []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem *lbmem.ArenaAllocator) error {
+	if s.temporalIndex == nil {
+		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
+	}
+
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+	}
+
+	var results []types.SearchResult
+	var err error
+
+	switch req.SearchType {
+	case "as_of":
+		results, err = s.temporalIndex.SearchAsOf(stream.Context(), req.Timestamp, req.K)
+	case "range":
+		results, err = s.temporalIndex.SearchRange(stream.Context(), req.StartTime, req.EndTime, req.K)
+	case "sliding_window":
+		results, err = s.temporalIndex.SearchSlidingWindow(stream.Context(), req.WindowSize, req.K)
+	case "sliding_window_time":
+		results, err = s.temporalIndex.SearchSlidingWindowByTime(stream.Context(), req.Duration, req.K)
+	default:
+		return status.Errorf(codes.InvalidArgument, "invalid temporal search_type: %s", req.SearchType)
+	}
+
+	if err != nil {
+		return status.Errorf(codes.Internal, "temporal search failed: %v", err)
+	}
+
+	// Lock dataset for ID mapping (requires dataMu)
+	ds.dataMu.RLock()
+	results = s.mapInternalToUserIDsLocked(ds, results)
+	ds.dataMu.RUnlock()
 
 	return s.streamSearchResults(results, wfs, stream, mem)
 }

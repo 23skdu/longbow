@@ -113,6 +113,7 @@ func initializeDispatch() {
 		l2SquaredImpl = l2SquaredAVX512 // uses AVX512 kernel
 		prefetchImpl = prefetchNTA
 		matchInt64Impl = matchInt64AVX512
+		matchInt32Impl = matchInt32AVX512
 		matchFloat32Impl = matchFloat32AVX512
 		matchFloat64Impl = matchFloat64AVX512
 		if features.HasVNNI {
@@ -163,6 +164,7 @@ func initializeDispatch() {
 		l2SquaredImpl = l2SquaredAVX2 // uses AVX2 kernel (no sqrt)
 		prefetchImpl = prefetchNTA
 		matchInt64Impl = matchInt64AVX2
+		matchInt32Impl = matchInt32AVX2
 		matchFloat32Impl = matchFloat32AVX2
 		matchFloat64Impl = matchFloat64AVX2
 		adcDistanceBatchImpl = adcBatchAVX2
@@ -208,9 +210,10 @@ func initializeDispatch() {
 		dotProductBatchImpl = dotBatchNEON
 		l2SquaredImpl = l2SquaredNEON
 		prefetchImpl = prefetchGeneric
-		matchInt64Impl = matchInt64Generic
-		matchFloat32Impl = matchFloat32Generic
-		matchFloat64Impl = matchFloat64Generic
+		matchInt64Impl = matchInt64Neon
+		matchInt32Impl = matchInt32Neon
+		matchFloat32Impl = matchFloat32Neon
+		matchFloat64Impl = matchFloat64Neon
 		adcDistanceBatchImpl = adcBatchGeneric
 		euclideanDistanceVerticalBatchImpl = euclideanBatchNEON
 		cosineDistanceBatchImpl = cosineBatchNEON
@@ -257,6 +260,7 @@ func initializeDispatch() {
 		l2SquaredImpl = L2SquaredFloat32
 		prefetchImpl = prefetchGeneric
 		matchInt64Impl = matchInt64Generic
+		matchInt32Impl = matchInt32Generic
 		matchFloat32Impl = matchFloat32Generic
 		matchFloat64Impl = matchFloat64Generic
 		adcDistanceBatchImpl = adcBatchGeneric

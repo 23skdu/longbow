@@ -197,6 +197,22 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 				p.result.GeoSearch = &req
 				i = newPos
 			}
+		case "temporal_search":
+			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
+				i += 4
+			} else {
+				start := i
+				newPos, err := skipObject(data, i)
+				if err != nil {
+					return p.result, err
+				}
+				var req core.TemporalSearchRequest
+				if err := json.Unmarshal(data[start:newPos], &req); err != nil {
+					return p.result, err
+				}
+				p.result.TemporalSearch = &req
+				i = newPos
+			}
 		case "search_by_id":
 			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
 				i += 4

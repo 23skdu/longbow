@@ -604,6 +604,16 @@ var (
 		[]string{"dataset"},
 	)
 
+	HNSWNodesSkippedTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_nodes_skipped_total",
+			Help: "Total number of HNSW nodes skipped due to early-exit filtering",
+		},
+		[]string{"dataset"},
+	)
+
+
+
 	ShardedHnswShardSize = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_sharded_hnsw_shard_size",

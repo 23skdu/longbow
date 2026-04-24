@@ -45,6 +45,7 @@ const (
 
 type (
 	matchInt64Func   func(src []int64, val int64, op CompareOp, dst []byte) error
+	matchInt32Func   func(src []int32, val int32, op CompareOp, dst []byte) error
 	matchFloat32Func func(src []float32, val float32, op CompareOp, dst []byte) error
 	matchFloat64Func func(src []float64, val float64, op CompareOp, dst []byte) error
 )
@@ -73,6 +74,7 @@ var (
 	l2SquaredImpl              distanceFunc
 
 	matchInt64Impl   matchInt64Func
+	matchInt32Impl   matchInt32Func
 	matchFloat32Impl matchFloat32Func
 	matchFloat64Impl matchFloat64Func
 
@@ -699,6 +701,15 @@ func MatchInt64(src []int64, val int64, op CompareOp, dst []byte) error {
 	return matchInt64Impl(src, val, op, dst)
 }
 
+// MatchInt32 performs a comparison of src elements against val, storing the result (0 or 1) in dst.
+// One byte per element is written to dst.
+func MatchInt32(src []int32, val int32, op CompareOp, dst []byte) error {
+	if len(src) != len(dst) {
+		return errors.New("simd: length mismatch")
+	}
+	return matchInt32Impl(src, val, op, dst)
+}
+
 // MatchFloat32 performs a comparison of src elements against val, storing the result (0 or 1) in dst.
 // One byte per element is written to dst.
 func MatchFloat32(src []float32, val float32, op CompareOp, dst []byte) error {
@@ -771,6 +782,68 @@ func matchInt64Generic(src []int64, val int64, op CompareOp, dst []byte) error {
 		}
 	default:
 		// Fallback for others
+		for i, v := range src {
+			if v == val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	}
+	return nil
+}
+
+func matchInt32Generic(src []int32, val int32, op CompareOp, dst []byte) error {
+	switch op {
+	case CompareEq:
+		for i, v := range src {
+			if v == val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareNeq:
+		for i, v := range src {
+			if v != val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareGt:
+		for i, v := range src {
+			if v > val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareGe:
+		for i, v := range src {
+			if v >= val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareLt:
+		for i, v := range src {
+			if v < val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	case CompareLe:
+		for i, v := range src {
+			if v <= val {
+				dst[i] = 1
+			} else {
+				dst[i] = 0
+			}
+		}
+	default:
 		for i, v := range src {
 			if v == val {
 				dst[i] = 1

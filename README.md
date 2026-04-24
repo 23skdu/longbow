@@ -46,21 +46,24 @@ go build -o bin/longbow ./cmd/longbow
 
 ### Running Benchmarks
 
-Longbow includes a distributed benchmark tool:
+Longbow includes a comprehensive, multi-platform benchmark suite:
 
 ```bash
-go build -o bin/bench-tool ./cmd/bench-tool
-./bin/bench-tool --mode=ingest --concurrency=4 --duration=10s
+# Run a targeted benchmark for specific types and dimensions
+python3 scripts/unified_benchmark.py --modes cpu,metal --dtypes float32,turboquant --dims 128,384,768
+
+# Results are generated as a Markdown matrix in docs/performance.md
 ```
 
 ## Configuration
 
-Longbow is configured via environment variables. See [Configuration](docs/configuration.md) for details.
+Longbow is configured via environment variables. See [Deployment & Configuration](docs/deploy.md#2-configuration) for details.
 
 Notable flags:
 
 - `STORAGE_USE_IOURING=true` (Enable new Linux storage engine)
-- `LONGBOW_GOSSIP_ENABLED=true` (Enable distributed discovery)
+- `LONGBOW_HNSW_TURBOQUANT_ENABLED=true` (Enable SIMD-accelerated bit-packing)
+- `LONGBOW_LEARNED_INDEX_ENABLED=true` (Enable adaptive learned index routing)
 
 - **Protocol**: Apache Arrow Flight (over gRPC/HTTP2).
 - **Search**: High-performance HNSW vector search with hybrid (Dense + Sparse) support and polymorphic vector types.
@@ -77,19 +80,23 @@ Longbow supports the following vector data types with optimized SIMD kernels:
 
 | Data Type | Dimensions Supported | Notes |
 |-----------|---------------------|-------|
-| **float32** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | Full SIMD optimization |
-| **float16** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | Metal GPU FP16 kernels |
-| **float64** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | Full SIMD optimization |
-| **int8** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | AVX2/NEON optimized |
-| **int16** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | AVX2/NEON optimized |
-| **int32** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | AVX2/NEON optimized |
-| **int64** | 128, 256, 384, 768+ | Generic SIMD |
-| **uint8** | 128, 256, 384, 768+ | Generic SIMD |
-| **uint16** | 128, 256, 384, 768+ | Generic SIMD |
-| **uint32** | 128, 256, 384, 768+ | Generic SIMD |
-| **complex64** | 128, 256, 384, 768, 1024, 1536, 2048, 3072 | Full SIMD optimization |
-| **complex128** | 128, 256, 384, 768+ | Generic SIMD |
-| **turboquant** | 128, 256, 384, 768+ | NEON FWHT optimized |
+| **float32** | 128 - 3072 | Full SIMD optimization (AVX2/AVX-512/Neon) |
+| **float16** | 128 - 3072 | Metal/CUDA GPU kernels + CPU fallback |
+| **float64** | 128 - 3072 | Full SIMD optimization |
+| **int8/uint8** | 128 - 3072 | AVX2/Neon optimized |
+| **int16/uint16** | 128 - 3072 | AVX2/Neon optimized |
+| **int32/uint32** | 128 - 3072 | AVX2/Neon optimized |
+| **int64/uint64** | 128 - 3072 | Generic SIMD & Metadata Filter support |
+| **complex64/128**| 128 - 3072 | Full SIMD optimization |
+| **turboquant** | 128 - 3072 | NEON/AVX2 FWHT optimized |
+
+### SIMD-Accelerated Metadata Filtering
+
+As of 0.1.9, Longbow supports **SIMD-accelerated predicate filtering** within the HNSW search path. This allows for extremely high QPS on filtered searches by pushing Boolean logic down into the vector traversal loop.
+
+- **Supported Ops**: `=`, `!=`, `>`, `>=`, `<`, `<=`
+- **Optimizations**: AVX-512 (AMD64) and Neon (ARM64) specialized kernels.
+- **Impact**: Up to 5x higher QPS for highly selective filters.
 
 ### Optimized Kernel Dimensions
 
@@ -165,8 +172,10 @@ docker run -p 3000:3000 -p 3001:3001 -p 9090:9090 longbow
 
 ## Documentation
 
-- [Distance Metrics](docs/distance_metrics.md)
+- [Distance Metrics & Functions](docs/functions.md)
+- [Deployment & Configuration](docs/deploy.md)
+- [Performance Benchmarks](docs/performance.md)
 - [Persistence & Snapshots](docs/persistence.md)
 - [Vector Search Architecture](docs/vectorsearch.md)
 - [Troubleshooting Guide](docs/troubleshooting.md)
-- [Metrics](docs/metrics.md)
+- [Metrics Documentation](docs/metrics.md)

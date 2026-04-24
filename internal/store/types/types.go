@@ -6,6 +6,17 @@ import (
 	basecore "github.com/23skdu/longbow/internal/core"
 )
 
+// HNSWPredicate defines an interface for metadata filtering during HNSW traversal.
+// It allows for early-exit and skipping nodes that don't match criteria.
+type HNSWPredicate interface {
+	// IsMatch returns true if the vector ID matches the predicate's metadata criteria.
+	IsMatch(id uint32) bool
+
+	// MatchBatch evaluates a batch of vector IDs and writes the results (0 or 1) to dst.
+	// dst must have the same length as ids.
+	MatchBatch(ids []uint32, dst []byte)
+}
+
 // VectorDataType represents the data type of vector elements
 type VectorDataType int
 
@@ -144,6 +155,8 @@ type GeoPoint = basecore.GeoPoint
 type GeoBoundingBox = basecore.GeoBoundingBox
 type GeoSearchRequest = basecore.GeoSearchRequest
 type VectorSearchRequest = basecore.VectorSearchRequest
+type TemporalSearchRequest = basecore.TemporalSearchRequest
+type TemporalAggregationRequest = basecore.TemporalAggregationRequest
 
 // SearchOptions defines the options for search operations
 type SearchOptions struct {
@@ -156,6 +169,7 @@ type SearchOptions struct {
 	Consistency    string         // "eventual" | "strong" | "" (default = eventual)
 	VectorType     VectorDataType // Explicit index type selection for search (float32, turboquant)
 	TurboQuantBits int            // Bit depth for TurboQuant search (4, 8)
+	Predicate      HNSWPredicate  // Predicate for early-exit filtering
 }
 
 // DefaultSearchOptions returns SearchOptions with production defaults.

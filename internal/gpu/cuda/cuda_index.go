@@ -24,6 +24,7 @@ void launch_l2_distance_kernel(const float* vectors, const float* query, float* 
 void launch_l2_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, cudaStream_t stream);
 void launch_dot_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, cudaStream_t stream);
 void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* codes, float* distances, int m, int count, cudaStream_t stream);
+void launch_turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count, cudaStream_t stream);
 
 CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
     int device = 0;
@@ -353,6 +354,75 @@ int cuda_search_pq(CUDAIndexHandle* handle, float* h_lookupTable, int m, int k, 
 
 int cuda_get_count(CUDAIndexHandle* handle) {
     return handle->vectorCount;
+}
+
+int cuda_add_tq_vectors(CUDAIndexHandle* handle, unsigned char* h_tqData, int stride, int64_t* h_ids, int count) {
+    if (!handle->vectorBuffer || count <= 0) return -1;
+    int requiredCapacity = handle->vectorCount + count;
+    if (requiredCapacity > handle->capacity) {
+        int newCapacity = handle->capacity > 0 ? handle->capacity : 1024;
+        while (newCapacity < requiredCapacity) newCapacity *= 2;
+
+        size_t newBufferSize = (size_t)newCapacity * stride;
+        void* newVectorBuffer = NULL;
+        if (cudaMalloc(&newVectorBuffer, newBufferSize) != cudaSuccess) return -1;
+        if (handle->vectorCount > 0) {
+            cudaMemcpy(newVectorBuffer, handle->vectorBuffer, (size_t)handle->vectorCount * stride, cudaMemcpyDeviceToDevice);
+        }
+        cudaFree(handle->vectorBuffer);
+        handle->vectorBuffer = newVectorBuffer;
+
+        size_t newIdBufferSize = (size_t)newCapacity * sizeof(int64_t);
+        void* newIdBuffer = NULL;
+        if (cudaMalloc(&newIdBuffer, newIdBufferSize) != cudaSuccess) return -1;
+        if (handle->vectorCount > 0) {
+            cudaMemcpy(newIdBuffer, handle->idBuffer, (size_t)handle->vectorCount * sizeof(int64_t), cudaMemcpyDeviceToDevice);
+        }
+        cudaFree(handle->idBuffer);
+        handle->idBuffer = newIdBuffer;
+        handle->capacity = newCapacity;
+    }
+
+    cudaMemcpy((unsigned char*)handle->vectorBuffer + (size_t)handle->vectorCount * stride, h_tqData, (size_t)count * stride, cudaMemcpyHostToDevice);
+    cudaMemcpy((int64_t*)handle->idBuffer + handle->vectorCount, h_ids, (size_t)count * sizeof(int64_t), cudaMemcpyHostToDevice);
+    handle->vectorCount += count;
+    return 0;
+}
+
+int cuda_search_tq(CUDAIndexHandle* handle, float* h_query, int k, int pow2, int bitsPerAngle, int64_t* h_resultIDs, float* h_resultDistances) {
+    if (!handle->vectorBuffer || handle->vectorCount == 0) return -1;
+    float *d_query, *d_distances;
+    cudaMalloc(&d_query, handle->dimensions * sizeof(float));
+    cudaMalloc(&d_distances, handle->vectorCount * sizeof(float));
+    cudaMemcpy(d_query, h_query, handle->dimensions * sizeof(float), cudaMemcpyHostToDevice);
+
+    launch_turboquant_distance_kernel(d_query, (const unsigned char*)handle->vectorBuffer, d_distances, handle->dimensions, pow2, bitsPerAngle, handle->vectorCount, 0);
+
+    float* h_distances = (float*)malloc(handle->vectorCount * sizeof(float));
+    cudaMemcpy(h_distances, d_distances, handle->vectorCount * sizeof(float), cudaMemcpyDeviceToHost);
+    int64_t* h_ids = (int64_t*)malloc(handle->vectorCount * sizeof(int64_t));
+    cudaMemcpy(h_ids, handle->idBuffer, handle->vectorCount * sizeof(int64_t), cudaMemcpyDeviceToHost);
+
+    int n = handle->vectorCount;
+    int resultCount = k < n ? k : n;
+    for (int i = 0; i < resultCount; i++) {
+        int minIdx = i;
+        float minDist = h_distances[i];
+        for (int j = i + 1; j < n; j++) {
+            if (h_distances[j] < minDist) {
+                minDist = h_distances[j];
+                minIdx = j;
+            }
+        }
+        h_resultIDs[i] = h_ids[minIdx];
+        h_resultDistances[i] = minDist;
+        h_distances[minIdx] = INFINITY;
+    }
+    cudaFree(d_query);
+    cudaFree(d_distances);
+    free(h_distances);
+    free(h_ids);
+    return 0;
 }
 
 void cuda_cleanup(CUDAIndexHandle* handle) {
@@ -763,6 +833,73 @@ func (idx *CUDAIndex) GetDeviceCount() int {
 
 func (idx *CUDAIndex) GetUtilization() (float32, error) {
 	return 50.0, nil
+}
+
+func (idx *CUDAIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	count := len(ids)
+	if count == 0 {
+		return nil
+	}
+
+	stride := len(tqData) / count
+
+	ret := C.cuda_add_tq_vectors(
+		idx.handle,
+		(*C.uchar)(unsafe.Pointer(&tqData[0])),
+		C.int(stride),
+		(*C.int64_t)(unsafe.Pointer(&ids[0])),
+		C.int(count),
+	)
+
+	if ret != 0 {
+		return fmt.Errorf("failed to add TQ vectors to CUDA buffer")
+	}
+
+	return nil
+}
+
+func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	if len(vector) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
+	}
+
+	pow2 := 1
+	for pow2 < idx.dim {
+		pow2 <<= 1
+	}
+
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+
+	ret := C.cuda_search_tq(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&vector[0])),
+		C.int(k),
+		C.int(pow2),
+		C.int(bitsPerAngle),
+		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
+		(*C.float)(unsafe.Pointer(&resultDistances[0])),
+	)
+
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("CUDA TQ search failed")
+	}
+
+	return resultIDs, resultDistances, nil
 }
 
 func (idx *CUDAIndex) Initialize(deviceID int) error {

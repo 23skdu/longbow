@@ -3,7 +3,7 @@ package store
 import (
 	"github.com/23skdu/longbow/internal/flight"
 	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
@@ -15,10 +15,10 @@ import (
 // The returned tombstones map uses the new sequential indices.
 func AdaptivelySliceBatches(
 	records []arrow.RecordBatch,
-	tombstones map[int]*query.Bitset,
+	tombstones map[int]*types.Bitset,
 	strategy *flight.AdaptiveChunkStrategy,
-) (outRecords []arrow.RecordBatch, outTombstones map[int]*query.Bitset) {
-	outTombstones = make(map[int]*query.Bitset)
+) (outRecords []arrow.RecordBatch, outTombstones map[int]*types.Bitset) {
+	outTombstones = make(map[int]*types.Bitset)
 	nextIdx := 0
 
 	// Track total adaptive chunks for metrics

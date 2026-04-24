@@ -117,3 +117,75 @@ func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 	}
 	assert.Greater(t, len(results2), 0)
 }
+
+func TestArrowHNSW_SIMDPredicate(t *testing.T) {
+	tmpDir, err := os.MkdirTemp("", "simd_filter_test")
+	require.NoError(t, err)
+	defer func() { _ = os.RemoveAll(tmpDir) }()
+
+	config := storage.StorageConfig{
+		DataPath:         tmpDir,
+		SnapshotInterval: 10 * time.Minute,
+	}
+
+	mem := memory.NewGoAllocator()
+	logger := zerolog.New(os.Stdout)
+	store := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
+	err = store.InitPersistence(config)
+	require.NoError(t, err)
+	defer func() { _ = store.Close() }()
+
+	schemaName := "simd_dataset"
+	dim := 8
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+		{Name: "timestamp", Type: arrow.PrimitiveTypes.Int64},
+	}, nil)
+
+	builder := array.NewRecordBuilder(mem, schema)
+	listB := builder.Field(0).(*array.FixedSizeListBuilder)
+	valB := listB.ValueBuilder().(*array.Float32Builder)
+	tsB := builder.Field(1).(*array.Int64Builder)
+
+	// Add 200 items with increasing timestamps
+	for i := 0; i < 200; i++ {
+		listB.Append(true)
+		vec := make([]float32, dim)
+		for j := range vec {
+			vec[j] = float32(i)
+		}
+		valB.AppendValues(vec, nil)
+		tsB.Append(int64(i))
+	}
+
+	rec := builder.NewRecordBatch()
+	defer rec.Release()
+
+	err = store.ApplyDelta(schemaName, rec, 1, time.Now().UnixNano())
+	require.NoError(t, err)
+	store.WaitForIndexing(schemaName)
+
+	ds, err := store.GetDataset(schemaName)
+	require.NoError(t, err)
+
+	// Test with explicit Predicate in SearchOptions
+	qVec := make([]float32, dim)
+	
+	// Create a SIMD predicate manually for testing the low-level path
+	// (Normally this is extracted from FilterExpr by store_query.go)
+	filterExpr := &types.GtExpr{Field: "timestamp", Value: int64(150)}
+	predicate := query.ExtractPushablePredicate(filterExpr, ds.Records)
+	require.NotNil(t, predicate)
+
+	results, err := ds.Index.SearchVectors(context.Background(), qVec, 10, nil, types.SearchOptions{
+		Predicate: predicate,
+	})
+	require.NoError(t, err)
+
+	t.Logf("Found %d results for timestamp > 150", len(results))
+	require.Greater(t, len(results), 0)
+	for _, res := range results {
+		// IDs match row indices in this simple test
+		assert.Greater(t, int64(res.ID), int64(150), "Expected ID > 150")
+	}
+}

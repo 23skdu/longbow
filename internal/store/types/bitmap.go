@@ -1,8 +1,7 @@
-package query
+package types
 
 import (
 	"sync"
-
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/pool"
@@ -95,6 +94,9 @@ func (b *Bitset) Count() uint64 {
 func (b *Bitset) ToUint32Array() []uint32 {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
+	if b.bitmap == nil {
+		return nil
+	}
 	return b.bitmap.ToArray()
 }
 
@@ -140,8 +142,6 @@ type AtomicBitset struct {
 	bitmap atomic.Pointer[roaring.Bitmap]
 	// We use a mutex to serialize writers to avoid excessive CAS retries under high contention,
 	// effectively making it Wait-Free for Readers and Blocking for Writers.
-	// Pure CAS loop without mutex is possible but might livelock under heavy write pressure.
-	// Given this is for Tombstones (deletes), write throughput is likely lower than read.
 	writeMu sync.Mutex
 }
 
@@ -228,6 +228,4 @@ func (b *AtomicBitset) Release() {
 	defer b.writeMu.Unlock()
 
 	_ = b.bitmap.Swap(nil)
-	// We rely on GC to collect the old bitmap since we can't safely pool it
-	// without knowing if other readers have a reference.
 }

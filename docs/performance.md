@@ -1,6 +1,6 @@
 # Longbow Performance Benchmark Matrix (LATEST)
 
-Generated on: 2026-04-24 08:21:56
+Generated on: 2026-04-24 12:51:35
 
 ## Executive Summary
 
@@ -8,743 +8,179 @@ Benchmarks are still in progress. The following data represents partial results 
 
 ## 1. Ingest Performance (vec/s)
 
-|                                         |   (500, 128) |   (500, 384) |   (1000, 128) |   (1000, 384) |
-|:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
-| ('Darwin arm64', 'cpu', 'complex128')   |          nan |        nan   |        350138 |      143486   |
-| ('Darwin arm64', 'cpu', 'complex64')    |          nan |        nan   |        393518 |      256152   |
-| ('Darwin arm64', 'cpu', 'float16')      |          nan |        nan   |        582153 |      432049   |
-| ('Darwin arm64', 'cpu', 'float32')      |          nan |        nan   |        595657 |         nan   |
-| ('Darwin arm64', 'cpu', 'float64')      |          nan |        nan   |        398400 |      227287   |
-| ('Darwin arm64', 'cpu', 'int16')        |          nan |        nan   |        692769 |         nan   |
-| ('Darwin arm64', 'cpu', 'int32')        |          nan |        nan   |        647979 |      334070   |
-| ('Darwin arm64', 'cpu', 'int64')        |          nan |        nan   |        425886 |      225471   |
-| ('Darwin arm64', 'cpu', 'int8')         |          nan |        nan   |        890055 |      610153   |
-| ('Darwin arm64', 'cpu', 'turboquant')   |          nan |        nan   |        600753 |      362910   |
-| ('Darwin arm64', 'cpu', 'uint16')       |          nan |        nan   |           nan |      485774   |
-| ('Darwin arm64', 'cpu', 'uint32')       |          nan |        nan   |        575137 |      380427   |
-| ('Darwin arm64', 'cpu', 'uint64')       |          nan |        nan   |        404383 |      233834   |
-| ('Darwin arm64', 'cpu', 'uint8')        |          nan |        nan   |        872029 |      560971   |
-| ('Darwin arm64', 'metal', 'complex128') |       157623 |     124163   |        331759 |      140691   |
-| ('Darwin arm64', 'metal', 'complex64')  |       277733 |        nan   |        373910 |      257365   |
-| ('Darwin arm64', 'metal', 'float16')    |       496278 |     318454   |        750606 |      450014   |
-| ('Darwin arm64', 'metal', 'float32')    |       364764 |     239244   |        613965 |         nan   |
-| ('Darwin arm64', 'metal', 'float64')    |       338772 |        nan   |        461290 |      199453   |
-| ('Darwin arm64', 'metal', 'int16')      |          nan |     397009   |        790718 |         nan   |
-| ('Darwin arm64', 'metal', 'int32')      |          nan |        nan   |        586448 |      393529   |
-| ('Darwin arm64', 'metal', 'int64')      |          nan |     169530   |        435688 |      234791   |
-| ('Darwin arm64', 'metal', 'int8')       |       456100 |        nan   |        803443 |      546811   |
-| ('Darwin arm64', 'metal', 'turboquant') |       251752 |     190682   |        597546 |      376232   |
-| ('Darwin arm64', 'metal', 'uint16')     |          nan |        nan   |           nan |      429655   |
-| ('Darwin arm64', 'metal', 'uint32')     |          nan |        nan   |        526864 |      404999   |
-| ('Darwin arm64', 'metal', 'uint64')     |       275065 |        nan   |        383218 |      263057   |
-| ('Darwin arm64', 'metal', 'uint8')      |       401043 |     274650   |        866444 |      632313   |
-| ('Linux x86_64', 'cpu', 'complex128')   |       117410 |      50838   |        150699 |       60549.9 |
-| ('Linux x86_64', 'cpu', 'complex64')    |       105534 |      91309.2 |        228175 |      109062   |
-| ('Linux x86_64', 'cpu', 'float16')      |       308199 |     196958   |        488719 |      286824   |
-| ('Linux x86_64', 'cpu', 'float32')      |          nan |     144573   |        334821 |      188099   |
-| ('Linux x86_64', 'cpu', 'float64')      |       196616 |     101239   |        190871 |      104926   |
-| ('Linux x86_64', 'cpu', 'int16')        |          nan |        nan   |        350464 |      287266   |
-| ('Linux x86_64', 'cpu', 'int32')        |          nan |     147801   |        356469 |      167568   |
-| ('Linux x86_64', 'cpu', 'int64')        |          nan |      92692.2 |        225591 |      104638   |
-| ('Linux x86_64', 'cpu', 'int8')         |       442887 |     318924   |        412063 |      427295   |
-| ('Linux x86_64', 'cpu', 'turboquant')   |       262107 |     124195   |        344818 |      198180   |
-| ('Linux x86_64', 'cpu', 'uint16')       |       126602 |     228157   |        352270 |      291458   |
-| ('Linux x86_64', 'cpu', 'uint32')       |       248361 |     139166   |        286211 |      180390   |
-| ('Linux x86_64', 'cpu', 'uint64')       |       158371 |      99703.9 |        226704 |       79474.2 |
-| ('Linux x86_64', 'cpu', 'uint8')        |       360769 |     231847   |        579192 |      338373   |
-| ('Linux x86_64', 'cuda', 'complex128')  |       123426 |      52451.8 |        140805 |       55027   |
-| ('Linux x86_64', 'cuda', 'complex64')   |       168978 |      98971.5 |        211603 |      108320   |
-| ('Linux x86_64', 'cuda', 'float16')     |       310358 |     220786   |        455427 |      279979   |
-| ('Linux x86_64', 'cuda', 'float32')     |       239870 |     149463   |        371526 |      204606   |
-| ('Linux x86_64', 'cuda', 'float64')     |       159035 |     108439   |        233808 |       97939.9 |
-| ('Linux x86_64', 'cuda', 'int16')       |       282641 |     175434   |        513704 |      272969   |
-| ('Linux x86_64', 'cuda', 'int32')       |       208820 |        nan   |        383188 |      204498   |
-| ('Linux x86_64', 'cuda', 'int64')       |       200601 |      87827.1 |        146434 |      112230   |
-| ('Linux x86_64', 'cuda', 'int8')        |       465320 |     232405   |        629893 |      411251   |
-| ('Linux x86_64', 'cuda', 'turboquant')  |       274487 |      82392.6 |        302014 |      195654   |
-| ('Linux x86_64', 'cuda', 'uint16')      |       276148 |     116784   |        413921 |      278555   |
-| ('Linux x86_64', 'cuda', 'uint32')      |       260718 |     131324   |        305555 |      188381   |
-| ('Linux x86_64', 'cuda', 'uint64')      |       205421 |      96888.5 |        157097 |      103070   |
-| ('Linux x86_64', 'cuda', 'uint8')       |       389832 |     222550   |        449155 |      410113   |
+|                                         |   (1000, 128) |   (1000, 384) |   (1000, 768) |
+|:----------------------------------------|--------------:|--------------:|--------------:|
+| ('Darwin arm64', 'cpu', 'float32')      |        420800 |        409099 |        280095 |
+| ('Darwin arm64', 'cpu', 'turboquant')   |        550513 |        413194 |        272386 |
+| ('Darwin arm64', 'metal', 'float32')    |        606848 |        422177 |        252361 |
+| ('Darwin arm64', 'metal', 'turboquant') |        598743 |        425973 |        269315 |
 
 ## 2. Standard Search Performance (QPS)
 
 ### BYID QPS
 
-|                                         |   (500, 128) |   (500, 384) |   (1000, 128) |   (1000, 384) |
-|:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
-| ('Darwin arm64', 'cpu', 'complex128')   |       nan    |       nan    |      5502.36  |      3833.44  |
-| ('Darwin arm64', 'cpu', 'complex64')    |       nan    |       nan    |      5915.77  |      4757.04  |
-| ('Darwin arm64', 'cpu', 'float16')      |       nan    |       nan    |      3657.19  |      2762.7   |
-| ('Darwin arm64', 'cpu', 'float32')      |       nan    |       nan    |      3583.95  |       nan     |
-| ('Darwin arm64', 'cpu', 'float64')      |       nan    |       nan    |      6010.07  |      4310.63  |
-| ('Darwin arm64', 'cpu', 'int16')        |       nan    |       nan    |       949.613 |       nan     |
-| ('Darwin arm64', 'cpu', 'int32')        |       nan    |       nan    |      7356.9   |      6556.31  |
-| ('Darwin arm64', 'cpu', 'int64')        |       nan    |       nan    |      4509.03  |      4126.48  |
-| ('Darwin arm64', 'cpu', 'int8')         |       nan    |       nan    |      5155.01  |      3568.7   |
-| ('Darwin arm64', 'cpu', 'turboquant')   |       nan    |       nan    |      7098.06  |      5857.62  |
-| ('Darwin arm64', 'cpu', 'uint16')       |       nan    |       nan    |       nan     |      1283.23  |
-| ('Darwin arm64', 'cpu', 'uint32')       |       nan    |       nan    |      3871.34  |      3235.47  |
-| ('Darwin arm64', 'cpu', 'uint64')       |       nan    |       nan    |      4293.36  |      4200.86  |
-| ('Darwin arm64', 'cpu', 'uint8')        |       nan    |       nan    |      9769.98  |      7912.43  |
-| ('Darwin arm64', 'metal', 'complex128') |      5117.06 |      4207.37 |      5454.39  |      3901.97  |
-| ('Darwin arm64', 'metal', 'complex64')  |      5485.48 |       nan    |      6054.07  |      4788.26  |
-| ('Darwin arm64', 'metal', 'float16')    |      4979.35 |      4410.84 |      3558.02  |      2920.2   |
-| ('Darwin arm64', 'metal', 'float32')    |      4834.45 |      4104.28 |      4698.24  |       nan     |
-| ('Darwin arm64', 'metal', 'float64')    |      6580.56 |       nan    |      6391.96  |      5033.06  |
-| ('Darwin arm64', 'metal', 'int16')      |       nan    |      2074.35 |      1226.49  |       nan     |
-| ('Darwin arm64', 'metal', 'int32')      |       nan    |       nan    |      7318.67  |      6586.2   |
-| ('Darwin arm64', 'metal', 'int64')      |       nan    |      3463    |      4237.67  |      4201.87  |
-| ('Darwin arm64', 'metal', 'int8')       |      5134.18 |       nan    |      4880.07  |      3615.39  |
-| ('Darwin arm64', 'metal', 'turboquant') |      5844.51 |      4919.72 |      7513.23  |      6051.75  |
-| ('Darwin arm64', 'metal', 'uint16')     |       nan    |       nan    |       nan     |      1419.38  |
-| ('Darwin arm64', 'metal', 'uint32')     |       nan    |       nan    |      2728.07  |      3240.44  |
-| ('Darwin arm64', 'metal', 'uint64')     |      3875.47 |       nan    |      4314.9   |      4201.69  |
-| ('Darwin arm64', 'metal', 'uint8')      |      6477.76 |      7412.85 |      9495.83  |      8252.51  |
-| ('Linux x86_64', 'cpu', 'complex128')   |      3114.97 |      2469.63 |      2916.88  |      1936.24  |
-| ('Linux x86_64', 'cpu', 'complex64')    |      3847.22 |      3435.82 |      3251.48  |      2598.15  |
-| ('Linux x86_64', 'cpu', 'float16')      |      2431.48 |      1959.8  |      1508.3   |      1624.21  |
-| ('Linux x86_64', 'cpu', 'float32')      |       nan    |      2460.91 |      2467.79  |      2002.45  |
-| ('Linux x86_64', 'cpu', 'float64')      |      3183.51 |      2825.38 |      3184.26  |      2606.58  |
-| ('Linux x86_64', 'cpu', 'int16')        |       nan    |       nan    |       645.228 |       707.824 |
-| ('Linux x86_64', 'cpu', 'int32')        |       nan    |      3486.45 |      3548.47  |      3992.41  |
-| ('Linux x86_64', 'cpu', 'int64')        |       nan    |      2071.22 |      1954.72  |      1981.98  |
-| ('Linux x86_64', 'cpu', 'int8')         |      3445.75 |      2998.23 |      3256.49  |      2682.98  |
-| ('Linux x86_64', 'cpu', 'turboquant')   |      3349.31 |      2823.97 |      3560.75  |      2987     |
-| ('Linux x86_64', 'cpu', 'uint16')       |       994.94 |      1027.19 |       690.829 |       680.82  |
-| ('Linux x86_64', 'cpu', 'uint32')       |      2585.51 |      2746.05 |      1693.68  |      1661.84  |
-| ('Linux x86_64', 'cpu', 'uint64')       |      2104.16 |      2023.1  |      1943.86  |      1903.04  |
-| ('Linux x86_64', 'cpu', 'uint8')        |      4616.87 |      5841.38 |      5067.44  |      5248.66  |
-| ('Linux x86_64', 'cuda', 'complex128')  |      3209.69 |      2199.38 |      2970.87  |      1905.83  |
-| ('Linux x86_64', 'cuda', 'complex64')   |      3567.44 |      3163.59 |      3253.02  |      2556.17  |
-| ('Linux x86_64', 'cuda', 'float16')     |      2313.76 |      2402.71 |      1552.67  |      1645.58  |
-| ('Linux x86_64', 'cuda', 'float32')     |      3044.35 |      2538.21 |      2567.23  |      2002.35  |
-| ('Linux x86_64', 'cuda', 'float64')     |      3243.2  |      3019.26 |      3161.49  |      2676.54  |
-| ('Linux x86_64', 'cuda', 'int16')       |      1102.23 |      1259.26 |       593.782 |       590.418 |
-| ('Linux x86_64', 'cuda', 'int32')       |      3616.13 |       nan    |      3506.1   |      3482.21  |
-| ('Linux x86_64', 'cuda', 'int64')       |      2049.78 |      2128.74 |      1956.79  |      1936.9   |
-| ('Linux x86_64', 'cuda', 'int8')        |      4403.58 |      3008.97 |      3256.68  |      2623.32  |
-| ('Linux x86_64', 'cuda', 'turboquant')  |      3500.21 |      2874.38 |      3464.22  |      2866.3   |
-| ('Linux x86_64', 'cuda', 'uint16')      |      1182.89 |      1548.98 |       645.315 |       718.078 |
-| ('Linux x86_64', 'cuda', 'uint32')      |      2536.67 |      2627.61 |      1521.65  |      1538.36  |
-| ('Linux x86_64', 'cuda', 'uint64')      |      2005.43 |      2023.73 |      1959.99  |      2026.42  |
-| ('Linux x86_64', 'cuda', 'uint8')       |      5799.75 |      3749.68 |      5345.58  |      4628.1   |
+|                                            |   (1000, 128) |   (1000, 384) |   (1000, 768) |
+|:-------------------------------------------|--------------:|--------------:|--------------:|
+| ('Darwin arm64', 'cpu', 'float32')         |       4604.43 |       3639.69 |       2406.83 |
+| ('Darwin arm64', 'cpu', 'turboquant')      |       7723.8  |       6305.17 |       5832.69 |
+| ('Darwin arm64', 'geo', 'float32')         |       4603.02 |       3674.78 |       2437.48 |
+| ('Darwin arm64', 'geo', 'turboquant')      |       7787.15 |       6379.1  |       5966.64 |
+| ('Darwin arm64', 'graphrag', 'float32')    |       4298.29 |       3441.7  |       2418.23 |
+| ('Darwin arm64', 'graphrag', 'turboquant') |       7524.93 |       6238    |       6198.36 |
+| ('Darwin arm64', 'metal', 'float32')       |       4640.49 |       3681.12 |       2404.99 |
+| ('Darwin arm64', 'metal', 'turboquant')    |       7957.8  |       6343.96 |       6056.34 |
+| ('Darwin arm64', 'temporal', 'float32')    |       4555.02 |       3597.45 |       2417.95 |
+| ('Darwin arm64', 'temporal', 'turboquant') |       7255.6  |       6412.04 |       6064.94 |
 
 ### DENSE QPS
 
-|                                         |   (500, 128) |   (500, 384) |   (1000, 128) |   (1000, 384) |
-|:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
-| ('Darwin arm64', 'cpu', 'complex128')   |      nan     |      nan     |      4308.3   |      2564.04  |
-| ('Darwin arm64', 'cpu', 'complex64')    |      nan     |      nan     |      4813.05  |      3090.75  |
-| ('Darwin arm64', 'cpu', 'float16')      |      nan     |      nan     |      3166.53  |      2483.18  |
-| ('Darwin arm64', 'cpu', 'float32')      |      nan     |      nan     |      3651.38  |       nan     |
-| ('Darwin arm64', 'cpu', 'float64')      |      nan     |      nan     |      4799.95  |      3041.11  |
-| ('Darwin arm64', 'cpu', 'int16')        |      nan     |      nan     |      1062.91  |       nan     |
-| ('Darwin arm64', 'cpu', 'int32')        |      nan     |      nan     |      6259.86  |      4822.85  |
-| ('Darwin arm64', 'cpu', 'int64')        |      nan     |      nan     |      3922.94  |      3282.86  |
-| ('Darwin arm64', 'cpu', 'int8')         |      nan     |      nan     |      4435.95  |      2829.88  |
-| ('Darwin arm64', 'cpu', 'turboquant')   |      nan     |      nan     |      5721.82  |      4279     |
-| ('Darwin arm64', 'cpu', 'uint16')       |      nan     |      nan     |       nan     |      1174.59  |
-| ('Darwin arm64', 'cpu', 'uint32')       |      nan     |      nan     |      3399.28  |      2554.77  |
-| ('Darwin arm64', 'cpu', 'uint64')       |      nan     |      nan     |      3768.31  |      3275.6   |
-| ('Darwin arm64', 'cpu', 'uint8')        |      nan     |      nan     |      7242.99  |      5062.91  |
-| ('Darwin arm64', 'metal', 'complex128') |     4111.37  |     2821.21  |      4192.04  |      2587.03  |
-| ('Darwin arm64', 'metal', 'complex64')  |     4599.61  |      nan     |      4892.16  |      3036.05  |
-| ('Darwin arm64', 'metal', 'float16')    |     4529.57  |     3716.78  |      3082.84  |      2405.83  |
-| ('Darwin arm64', 'metal', 'float32')    |     4332.09  |     3349.86  |      3781.98  |       nan     |
-| ('Darwin arm64', 'metal', 'float64')    |     5521.28  |      nan     |      5280.55  |      3711.39  |
-| ('Darwin arm64', 'metal', 'int16')      |      nan     |     1808.91  |      1180.64  |       nan     |
-| ('Darwin arm64', 'metal', 'int32')      |      nan     |      nan     |      6162.89  |      4823.81  |
-| ('Darwin arm64', 'metal', 'int64')      |      nan     |     3259.52  |      3842.9   |      3332.59  |
-| ('Darwin arm64', 'metal', 'int8')       |     4600.37  |      nan     |      4491.98  |      2910.87  |
-| ('Darwin arm64', 'metal', 'turboquant') |     5301.95  |     3837.15  |      5890.94  |      4439.82  |
-| ('Darwin arm64', 'metal', 'uint16')     |      nan     |      nan     |       nan     |      1294.31  |
-| ('Darwin arm64', 'metal', 'uint32')     |      nan     |      nan     |      3001.55  |      2624.76  |
-| ('Darwin arm64', 'metal', 'uint64')     |     3806.08  |      nan     |      3817.29  |      3269.44  |
-| ('Darwin arm64', 'metal', 'uint8')      |     6082.59  |     5591.42  |      6643.82  |      5285.56  |
-| ('Linux x86_64', 'cpu', 'complex128')   |     2574     |     1885.34  |      2431.06  |      1578.31  |
-| ('Linux x86_64', 'cpu', 'complex64')    |     2980.09  |     2305.98  |      2596.36  |      1916.67  |
-| ('Linux x86_64', 'cpu', 'float16')      |     2282.89  |     1715.67  |      1419.8   |      1433.55  |
-| ('Linux x86_64', 'cpu', 'float32')      |      nan     |     2056.23  |      2140.13  |      1584.98  |
-| ('Linux x86_64', 'cpu', 'float64')      |     2961.37  |     2246.88  |      2855.53  |      2117.37  |
-| ('Linux x86_64', 'cpu', 'int16')        |      nan     |      nan     |       587.449 |       654.138 |
-| ('Linux x86_64', 'cpu', 'int32')        |      nan     |     2610.74  |      3063.24  |      2325.43  |
-| ('Linux x86_64', 'cpu', 'int64')        |      nan     |     1807.93  |      1865.9   |      1744.2   |
-| ('Linux x86_64', 'cpu', 'int8')         |     3120.84  |     2545.88  |      2907.85  |      2105.48  |
-| ('Linux x86_64', 'cpu', 'turboquant')   |     3008.48  |     2312.09  |      3217.99  |      2419.77  |
-| ('Linux x86_64', 'cpu', 'uint16')       |      945.028 |      981.853 |       634.027 |       643.52  |
-| ('Linux x86_64', 'cpu', 'uint32')       |     2314.79  |     2251.32  |      1619.72  |      1462.54  |
-| ('Linux x86_64', 'cpu', 'uint64')       |     1948.85  |     1751.48  |      1862.75  |      1664.51  |
-| ('Linux x86_64', 'cpu', 'uint8')        |     3816.46  |     4029.99  |      4175.51  |      3810.17  |
-| ('Linux x86_64', 'cuda', 'complex128')  |     2693.11  |     1693.34  |      2371.96  |      1505.4   |
-| ('Linux x86_64', 'cuda', 'complex64')   |     2902.67  |     2227.9   |      2726.26  |      1927.48  |
-| ('Linux x86_64', 'cuda', 'float16')     |     2136.6   |     2008.87  |      1450.03  |      1464.62  |
-| ('Linux x86_64', 'cuda', 'float32')     |     2625.59  |     2073.84  |      2219.08  |      1621.69  |
-| ('Linux x86_64', 'cuda', 'float64')     |     2993.06  |     2379.4   |      2895.64  |      2166.74  |
-| ('Linux x86_64', 'cuda', 'int16')       |     1052.42  |     1185.68  |       559.96  |       568.326 |
-| ('Linux x86_64', 'cuda', 'int32')       |     3023.11  |      nan     |      3151.31  |      2390.44  |
-| ('Linux x86_64', 'cuda', 'int64')       |     1901.72  |     1874.09  |      1813.13  |      1729.98  |
-| ('Linux x86_64', 'cuda', 'int8')        |     3388.18  |     2337.07  |      2861.95  |      2070.69  |
-| ('Linux x86_64', 'cuda', 'turboquant')  |     3197.8   |     2359.96  |      3148.16  |      2428.18  |
-| ('Linux x86_64', 'cuda', 'uint16')      |     1144.46  |     1388.99  |       623.184 |       662.154 |
-| ('Linux x86_64', 'cuda', 'uint32')      |     2300.9   |     2201.4   |      1395.13  |      1364.72  |
-| ('Linux x86_64', 'cuda', 'uint64')      |     1886.26  |     1771.14  |      1880.28  |      1742.09  |
-| ('Linux x86_64', 'cuda', 'uint8')       |     4659.04  |     3048.1   |      4605.32  |      3556.63  |
+|                                            |   (1000, 128) |   (1000, 384) |   (1000, 768) |
+|:-------------------------------------------|--------------:|--------------:|--------------:|
+| ('Darwin arm64', 'cpu', 'float32')         |       3448.42 |       2570.91 |       1739.83 |
+| ('Darwin arm64', 'cpu', 'turboquant')      |       6299.37 |       4490.95 |       3235.26 |
+| ('Darwin arm64', 'geo', 'float32')         |       3493.72 |       2580.61 |       1766.66 |
+| ('Darwin arm64', 'geo', 'turboquant')      |       6445.51 |       4566    |       3287.14 |
+| ('Darwin arm64', 'graphrag', 'float32')    |       3434.69 |       2485.54 |       1760.98 |
+| ('Darwin arm64', 'graphrag', 'turboquant') |       6308    |       4534.64 |       3451.43 |
+| ('Darwin arm64', 'metal', 'float32')       |       3267.92 |       2532.85 |       1756.58 |
+| ('Darwin arm64', 'metal', 'turboquant')    |       6562.05 |       4531.29 |       3416.95 |
+| ('Darwin arm64', 'temporal', 'float32')    |       3468.93 |       2636.13 |       1773.27 |
+| ('Darwin arm64', 'temporal', 'turboquant') |       6184.56 |       4656.14 |       3387.34 |
 
 ### FILTERED QPS
 
-|                                         |   (500, 128) |   (500, 384) |   (1000, 128) |   (1000, 384) |
-|:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
-| ('Darwin arm64', 'cpu', 'complex128')   |      nan     |      nan     |      4567.69  |      2592.76  |
-| ('Darwin arm64', 'cpu', 'complex64')    |      nan     |      nan     |      4860.55  |      3242.06  |
-| ('Darwin arm64', 'cpu', 'float16')      |      nan     |      nan     |      3162.29  |      2488.65  |
-| ('Darwin arm64', 'cpu', 'float32')      |      nan     |      nan     |      3516.46  |       nan     |
-| ('Darwin arm64', 'cpu', 'float64')      |      nan     |      nan     |      4800.92  |      3181.84  |
-| ('Darwin arm64', 'cpu', 'int16')        |      nan     |      nan     |       933.815 |       nan     |
-| ('Darwin arm64', 'cpu', 'int32')        |      nan     |      nan     |      6496.71  |      4946.4   |
-| ('Darwin arm64', 'cpu', 'int64')        |      nan     |      nan     |      3869.39  |      3360.28  |
-| ('Darwin arm64', 'cpu', 'int8')         |      nan     |      nan     |      4508.14  |      2851.74  |
-| ('Darwin arm64', 'cpu', 'turboquant')   |      nan     |      nan     |      6123.44  |      4464.51  |
-| ('Darwin arm64', 'cpu', 'uint16')       |      nan     |      nan     |       nan     |      1202.95  |
-| ('Darwin arm64', 'cpu', 'uint32')       |      nan     |      nan     |      3353.51  |      2614.81  |
-| ('Darwin arm64', 'cpu', 'uint64')       |      nan     |      nan     |      3847.95  |      3275.32  |
-| ('Darwin arm64', 'cpu', 'uint8')        |      nan     |      nan     |      8301.97  |      5672.57  |
-| ('Darwin arm64', 'metal', 'complex128') |     4204.92  |     2862.45  |      4454.83  |      2599.36  |
-| ('Darwin arm64', 'metal', 'complex64')  |     3699.22  |      nan     |      4930.65  |      3158.05  |
-| ('Darwin arm64', 'metal', 'float16')    |     4655.86  |     3636.39  |      3065.71  |      2410.33  |
-| ('Darwin arm64', 'metal', 'float32')    |     4201.57  |     3345     |      3847.62  |       nan     |
-| ('Darwin arm64', 'metal', 'float64')    |     5653.34  |      nan     |      5048.7   |      3847.57  |
-| ('Darwin arm64', 'metal', 'int16')      |      nan     |     1810.02  |      1194.51  |       nan     |
-| ('Darwin arm64', 'metal', 'int32')      |      nan     |      nan     |      6407.05  |      4988.51  |
-| ('Darwin arm64', 'metal', 'int64')      |      nan     |     3237.69  |      3764.31  |      3371.66  |
-| ('Darwin arm64', 'metal', 'int8')       |     4465.4   |      nan     |      4544.82  |      2938.13  |
-| ('Darwin arm64', 'metal', 'turboquant') |     5382.55  |     3819.02  |      6296.11  |      4709.16  |
-| ('Darwin arm64', 'metal', 'uint16')     |      nan     |      nan     |       nan     |      1300.46  |
-| ('Darwin arm64', 'metal', 'uint32')     |      nan     |      nan     |      2978.77  |      2671.96  |
-| ('Darwin arm64', 'metal', 'uint64')     |     3819.96  |      nan     |      3839.2   |      3266.01  |
-| ('Darwin arm64', 'metal', 'uint8')      |     6214.37  |     5545.78  |      8087.83  |      5809.58  |
-| ('Linux x86_64', 'cpu', 'complex128')   |     2611.66  |     1802.24  |      2416.21  |      1636.15  |
-| ('Linux x86_64', 'cpu', 'complex64')    |     2905.88  |     2311.8   |      2711.34  |      1908.63  |
-| ('Linux x86_64', 'cpu', 'float16')      |     2275.7   |     1708.65  |      1435.49  |      1416.53  |
-| ('Linux x86_64', 'cpu', 'float32')      |      nan     |     2073.33  |      2165.2   |      1595.78  |
-| ('Linux x86_64', 'cpu', 'float64')      |     2864.84  |     2283.36  |      2837.81  |      2166.68  |
-| ('Linux x86_64', 'cpu', 'int16')        |      nan     |      nan     |       634.715 |       668.989 |
-| ('Linux x86_64', 'cpu', 'int32')        |      nan     |     2499.22  |      3103.45  |      2828.3   |
-| ('Linux x86_64', 'cpu', 'int64')        |      nan     |     1779.13  |      1854.17  |      1721.36  |
-| ('Linux x86_64', 'cpu', 'int8')         |     3093.06  |     2575.55  |      2923.7   |      2113.24  |
-| ('Linux x86_64', 'cpu', 'turboquant')   |     3022.77  |     2317.72  |      3214.12  |      2502.32  |
-| ('Linux x86_64', 'cpu', 'uint16')       |      955.704 |      980.704 |       666.352 |       660.702 |
-| ('Linux x86_64', 'cpu', 'uint32')       |     2333.4   |     2267.63  |      1612.1   |      1473.24  |
-| ('Linux x86_64', 'cpu', 'uint64')       |     1989.07  |     1635.86  |      1867.28  |      1734.27  |
-| ('Linux x86_64', 'cpu', 'uint8')        |     3895.7   |     4092.95  |      4183.52  |      3867.41  |
-| ('Linux x86_64', 'cuda', 'complex128')  |     2650.87  |     1691.49  |      2396.53  |      1609.43  |
-| ('Linux x86_64', 'cuda', 'complex64')   |     2942.46  |     2243.54  |      2699.3   |      1957.32  |
-| ('Linux x86_64', 'cuda', 'float16')     |     2160.98  |     1932.62  |      1430.65  |      1412.95  |
-| ('Linux x86_64', 'cuda', 'float32')     |     2645.41  |     2065.29  |      2183.36  |      1614.09  |
-| ('Linux x86_64', 'cuda', 'float64')     |     2966.32  |     2371.33  |      2858.08  |      2215.22  |
-| ('Linux x86_64', 'cuda', 'int16')       |     1053.54  |     1181.77  |       575.315 |       585.713 |
-| ('Linux x86_64', 'cuda', 'int32')       |     3044.8   |      nan     |      3082.61  |      2351.54  |
-| ('Linux x86_64', 'cuda', 'int64')       |     1898.61  |     1811.13  |      1893.97  |      1746.14  |
-| ('Linux x86_64', 'cuda', 'int8')        |     3452.43  |     2276.05  |      2877.43  |      2055.62  |
-| ('Linux x86_64', 'cuda', 'turboquant')  |     3156.81  |     2365.55  |      3152.18  |      2434.97  |
-| ('Linux x86_64', 'cuda', 'uint16')      |     1166.91  |     1359.52  |       630.864 |       665.268 |
-| ('Linux x86_64', 'cuda', 'uint32')      |     2252.69  |     2202.1   |      1415.69  |      1327.74  |
-| ('Linux x86_64', 'cuda', 'uint64')      |     1925.55  |     1745.48  |      1851.57  |      1711.58  |
-| ('Linux x86_64', 'cuda', 'uint8')       |     4866.76  |     3121.11  |      4678.79  |      3586.75  |
+|                                            |   (1000, 128) |   (1000, 384) |   (1000, 768) |
+|:-------------------------------------------|--------------:|--------------:|--------------:|
+| ('Darwin arm64', 'cpu', 'float32')         |       3483.48 |       2586.98 |       1743.92 |
+| ('Darwin arm64', 'cpu', 'turboquant')      |       6617.87 |       4699.89 |       3287.51 |
+| ('Darwin arm64', 'geo', 'float32')         |       3507.81 |       2632.82 |       1769.52 |
+| ('Darwin arm64', 'geo', 'turboquant')      |       6668.28 |       4759.17 |       3307.71 |
+| ('Darwin arm64', 'graphrag', 'float32')    |       3421.51 |       2584.47 |       1761.6  |
+| ('Darwin arm64', 'graphrag', 'turboquant') |       6436.46 |       4683.51 |       3284.27 |
+| ('Darwin arm64', 'metal', 'float32')       |       3482.85 |       2594.17 |       1763.1  |
+| ('Darwin arm64', 'metal', 'turboquant')    |       6847.84 |       4892.29 |       3454.93 |
+| ('Darwin arm64', 'temporal', 'float32')    |       3500.78 |       2633.23 |       1766.78 |
+| ('Darwin arm64', 'temporal', 'turboquant') |       6518.21 |       4747.42 |       3393.35 |
 
 ### FILTEREDBOOL QPS
 
-|                                         |   (500, 128) |   (500, 384) |   (1000, 128) |   (1000, 384) |
-|:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
-| ('Darwin arm64', 'cpu', 'complex128')   |      nan     |      nan     |      4533.32  |      2594.04  |
-| ('Darwin arm64', 'cpu', 'complex64')    |      nan     |      nan     |      4795.91  |      3220.71  |
-| ('Darwin arm64', 'cpu', 'float16')      |      nan     |      nan     |      3174.57  |      2478.35  |
-| ('Darwin arm64', 'cpu', 'float32')      |      nan     |      nan     |      3465.59  |       nan     |
-| ('Darwin arm64', 'cpu', 'float64')      |      nan     |      nan     |      4843.75  |      3232.31  |
-| ('Darwin arm64', 'cpu', 'int16')        |      nan     |      nan     |       932.696 |       nan     |
-| ('Darwin arm64', 'cpu', 'int32')        |      nan     |      nan     |      6497.76  |      4957.94  |
-| ('Darwin arm64', 'cpu', 'int64')        |      nan     |      nan     |      3986.52  |      3372.92  |
-| ('Darwin arm64', 'cpu', 'int8')         |      nan     |      nan     |      4498.15  |      2853.3   |
-| ('Darwin arm64', 'cpu', 'turboquant')   |      nan     |      nan     |      6091.51  |      4476.68  |
-| ('Darwin arm64', 'cpu', 'uint16')       |      nan     |      nan     |       nan     |      1184.38  |
-| ('Darwin arm64', 'cpu', 'uint32')       |      nan     |      nan     |      3394.4   |      2622.88  |
-| ('Darwin arm64', 'cpu', 'uint64')       |      nan     |      nan     |      3856.22  |      3315.19  |
-| ('Darwin arm64', 'cpu', 'uint8')        |      nan     |      nan     |      8334.11  |      5692.3   |
-| ('Darwin arm64', 'metal', 'complex128') |     4188.21  |     2785.54  |      4418.62  |      2631.42  |
-| ('Darwin arm64', 'metal', 'complex64')  |     3726.39  |      nan     |      4760.08  |      3188.4   |
-| ('Darwin arm64', 'metal', 'float16')    |     4539.56  |     3433.52  |      3077.25  |      2404.84  |
-| ('Darwin arm64', 'metal', 'float32')    |     4316.53  |     3364.99  |      3844.79  |       nan     |
-| ('Darwin arm64', 'metal', 'float64')    |     5755.64  |      nan     |      5190.59  |      3840.61  |
-| ('Darwin arm64', 'metal', 'int16')      |      nan     |     1799.73  |      1194.96  |       nan     |
-| ('Darwin arm64', 'metal', 'int32')      |      nan     |      nan     |      6388.31  |      4947.11  |
-| ('Darwin arm64', 'metal', 'int64')      |      nan     |     3248.12  |      3780.01  |      3295.77  |
-| ('Darwin arm64', 'metal', 'int8')       |     4498.04  |      nan     |      4627.94  |      2941.73  |
-| ('Darwin arm64', 'metal', 'turboquant') |     5346.22  |     3509.35  |      6357.37  |      4719.84  |
-| ('Darwin arm64', 'metal', 'uint16')     |      nan     |      nan     |       nan     |      1312.99  |
-| ('Darwin arm64', 'metal', 'uint32')     |      nan     |      nan     |      2962.64  |      2687.67  |
-| ('Darwin arm64', 'metal', 'uint64')     |     3784.71  |      nan     |      3889.91  |      3272.31  |
-| ('Darwin arm64', 'metal', 'uint8')      |     5351.27  |     5687.13  |      8075.33  |      5878.04  |
-| ('Linux x86_64', 'cpu', 'complex128')   |     2615.39  |     1569.73  |      2433.04  |      1581.44  |
-| ('Linux x86_64', 'cpu', 'complex64')    |     2878.42  |     2406.47  |      2678.04  |      1904.87  |
-| ('Linux x86_64', 'cpu', 'float16')      |     2275.24  |     1698.45  |      1410.08  |      1386.5   |
-| ('Linux x86_64', 'cpu', 'float32')      |      nan     |     2060.88  |      2173.21  |      1546.73  |
-| ('Linux x86_64', 'cpu', 'float64')      |     2912.09  |     2280.86  |      2837.35  |      2121.72  |
-| ('Linux x86_64', 'cpu', 'int16')        |      nan     |      nan     |       630.027 |       671.394 |
-| ('Linux x86_64', 'cpu', 'int32')        |      nan     |     2511.29  |      3168.25  |      2624.73  |
-| ('Linux x86_64', 'cpu', 'int64')        |      nan     |     1805.33  |      1859.17  |      1715.39  |
-| ('Linux x86_64', 'cpu', 'int8')         |     3140.7   |     2549.47  |      2922.15  |      2185.19  |
-| ('Linux x86_64', 'cpu', 'turboquant')   |     3055.35  |     2342.08  |      3214.64  |      2533.47  |
-| ('Linux x86_64', 'cpu', 'uint16')       |      947.598 |      980.315 |       682.858 |       650.23  |
-| ('Linux x86_64', 'cpu', 'uint32')       |     2298.13  |     2306.76  |      1631.48  |      1461.66  |
-| ('Linux x86_64', 'cpu', 'uint64')       |     1962.61  |     1695.74  |      1858.57  |      1710.37  |
-| ('Linux x86_64', 'cpu', 'uint8')        |     3862.33  |     4022.71  |      4272.12  |      3868.62  |
-| ('Linux x86_64', 'cuda', 'complex128')  |     2680.25  |     1887.31  |      2422.6   |      1616.76  |
-| ('Linux x86_64', 'cuda', 'complex64')   |     2978.18  |     2280.13  |      2741.72  |      1973.5   |
-| ('Linux x86_64', 'cuda', 'float16')     |     2183.16  |     1932.27  |      1433.74  |      1398.75  |
-| ('Linux x86_64', 'cuda', 'float32')     |     2664.05  |     2053.04  |      2229.29  |      1575.05  |
-| ('Linux x86_64', 'cuda', 'float64')     |     2921.41  |     2431.37  |      2836.56  |      2154.01  |
-| ('Linux x86_64', 'cuda', 'int16')       |     1063.98  |     1206.94  |       577.397 |       573.526 |
-| ('Linux x86_64', 'cuda', 'int32')       |     3194.23  |      nan     |      3085.18  |      2788.41  |
-| ('Linux x86_64', 'cuda', 'int64')       |     2067.99  |     1690.12  |      1907.18  |      1722.01  |
-| ('Linux x86_64', 'cuda', 'int8')        |     3577.27  |     2317.27  |      2908.51  |      2069.53  |
-| ('Linux x86_64', 'cuda', 'turboquant')  |     3125.24  |     2395.04  |      3108.02  |      2433.3   |
-| ('Linux x86_64', 'cuda', 'uint16')      |     1121.51  |     1383.97  |       644.097 |       670.955 |
-| ('Linux x86_64', 'cuda', 'uint32')      |     2266.13  |     2148.82  |      1425.08  |      1356.03  |
-| ('Linux x86_64', 'cuda', 'uint64')      |     1862.25  |     1746.57  |      1890.19  |      1703.66  |
-| ('Linux x86_64', 'cuda', 'uint8')       |     4781.53  |     3076.52  |      4720.04  |      3545.42  |
+|                                            |   (1000, 128) |   (1000, 384) |   (1000, 768) |
+|:-------------------------------------------|--------------:|--------------:|--------------:|
+| ('Darwin arm64', 'cpu', 'float32')         |       3497.97 |       2584.34 |       1744.07 |
+| ('Darwin arm64', 'cpu', 'turboquant')      |       6620.63 |       4729.89 |       3337.72 |
+| ('Darwin arm64', 'geo', 'float32')         |       3512.39 |       2629.09 |       1771.02 |
+| ('Darwin arm64', 'geo', 'turboquant')      |       6713.24 |       4752.96 |       3309.79 |
+| ('Darwin arm64', 'graphrag', 'float32')    |       3345.95 |       2576.49 |       1755.59 |
+| ('Darwin arm64', 'graphrag', 'turboquant') |       6616.17 |       4688.05 |       3571.8  |
+| ('Darwin arm64', 'metal', 'float32')       |       3498.65 |       2597.69 |       1732.44 |
+| ('Darwin arm64', 'metal', 'turboquant')    |       6432.92 |       4896.38 |       3511.64 |
+| ('Darwin arm64', 'temporal', 'float32')    |       3494.6  |       2632.07 |       1766.51 |
+| ('Darwin arm64', 'temporal', 'turboquant') |       6509.65 |       4751.83 |       3513.87 |
 
 ### FILTEREDSTRING QPS
 
-|                                         |   (500, 128) |   (500, 384) |   (1000, 128) |   (1000, 384) |
-|:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
-| ('Darwin arm64', 'cpu', 'complex128')   |       nan    |      nan     |      4501.24  |      2518.82  |
-| ('Darwin arm64', 'cpu', 'complex64')    |       nan    |      nan     |      4781.71  |      3238.32  |
-| ('Darwin arm64', 'cpu', 'float16')      |       nan    |      nan     |      3155.62  |      2462.71  |
-| ('Darwin arm64', 'cpu', 'float32')      |       nan    |      nan     |      3018.58  |       nan     |
-| ('Darwin arm64', 'cpu', 'float64')      |       nan    |      nan     |      5019.1   |      3214.04  |
-| ('Darwin arm64', 'cpu', 'int16')        |       nan    |      nan     |       933.355 |       nan     |
-| ('Darwin arm64', 'cpu', 'int32')        |       nan    |      nan     |      6457.8   |      4882.69  |
-| ('Darwin arm64', 'cpu', 'int64')        |       nan    |      nan     |      4010.41  |      3420.47  |
-| ('Darwin arm64', 'cpu', 'int8')         |       nan    |      nan     |      4534.07  |      2862.01  |
-| ('Darwin arm64', 'cpu', 'turboquant')   |       nan    |      nan     |      6077.7   |      4501.96  |
-| ('Darwin arm64', 'cpu', 'uint16')       |       nan    |      nan     |       nan     |      1166.82  |
-| ('Darwin arm64', 'cpu', 'uint32')       |       nan    |      nan     |      3403.79  |      2650.98  |
-| ('Darwin arm64', 'cpu', 'uint64')       |       nan    |      nan     |      3794.8   |      3316.99  |
-| ('Darwin arm64', 'cpu', 'uint8')        |       nan    |      nan     |      8291.32  |      5639.19  |
-| ('Darwin arm64', 'metal', 'complex128') |      3735.38 |     2925.33  |      4471.33  |      2558.87  |
-| ('Darwin arm64', 'metal', 'complex64')  |      4246.84 |      nan     |      4865.52  |      3191.4   |
-| ('Darwin arm64', 'metal', 'float16')    |      4377.07 |     3584.93  |      3096.3   |      2408.88  |
-| ('Darwin arm64', 'metal', 'float32')    |      3489.54 |     3384.21  |      3996.56  |       nan     |
-| ('Darwin arm64', 'metal', 'float64')    |      5700.6  |      nan     |      5412.94  |      3803.21  |
-| ('Darwin arm64', 'metal', 'int16')      |       nan    |     1857.53  |      1184.59  |       nan     |
-| ('Darwin arm64', 'metal', 'int32')      |       nan    |      nan     |      6422.76  |      4905.24  |
-| ('Darwin arm64', 'metal', 'int64')      |       nan    |     3209.74  |      3827.39  |      3361.94  |
-| ('Darwin arm64', 'metal', 'int8')       |      4307.3  |      nan     |      4582.92  |      2996.91  |
-| ('Darwin arm64', 'metal', 'turboquant') |      4956.39 |     3845.83  |      6441.5   |      4690.97  |
-| ('Darwin arm64', 'metal', 'uint16')     |       nan    |      nan     |       nan     |      1308.24  |
-| ('Darwin arm64', 'metal', 'uint32')     |       nan    |      nan     |      2428.85  |      2697.64  |
-| ('Darwin arm64', 'metal', 'uint64')     |      3796.8  |      nan     |      3886.29  |      3276.34  |
-| ('Darwin arm64', 'metal', 'uint8')      |      5734.48 |     5542.82  |      8104.74  |      5771.16  |
-| ('Linux x86_64', 'cpu', 'complex128')   |      2599.05 |     1826.36  |      2460.06  |      1602.73  |
-| ('Linux x86_64', 'cpu', 'complex64')    |      2947.48 |     2275.92  |      2722.82  |      1967.42  |
-| ('Linux x86_64', 'cpu', 'float16')      |      2251.45 |     1770.32  |      1430.2   |      1401.21  |
-| ('Linux x86_64', 'cpu', 'float32')      |       nan    |     2051.33  |      2163.35  |      1575.17  |
-| ('Linux x86_64', 'cpu', 'float64')      |      2863.64 |     2362.71  |      2871.07  |      2099.32  |
-| ('Linux x86_64', 'cpu', 'int16')        |       nan    |      nan     |       631.008 |       667.762 |
-| ('Linux x86_64', 'cpu', 'int32')        |       nan    |     2780.57  |      3187.01  |      2728.06  |
-| ('Linux x86_64', 'cpu', 'int64')        |       nan    |     1829.21  |      1862.92  |      1707.95  |
-| ('Linux x86_64', 'cpu', 'int8')         |      3088.57 |     2569.88  |      2936.96  |      2177.62  |
-| ('Linux x86_64', 'cpu', 'turboquant')   |      3071.59 |     2354.76  |      3189.83  |      2511.26  |
-| ('Linux x86_64', 'cpu', 'uint16')       |      1041.91 |      978.558 |       681.811 |       662.824 |
-| ('Linux x86_64', 'cpu', 'uint32')       |      2329.13 |     2289.07  |      1641.55  |      1466.75  |
-| ('Linux x86_64', 'cpu', 'uint64')       |      2024.57 |     1678.41  |      1865.69  |      1743.39  |
-| ('Linux x86_64', 'cpu', 'uint8')        |      3965.41 |     4183.68  |      4374.05  |      3840.76  |
-| ('Linux x86_64', 'cuda', 'complex128')  |      2649.05 |     1880.7   |      2449.05  |      1611.05  |
-| ('Linux x86_64', 'cuda', 'complex64')   |      3022.6  |     2283.33  |      2733.74  |      1967.89  |
-| ('Linux x86_64', 'cuda', 'float16')     |      2169.26 |     1901.51  |      1438.76  |      1416.82  |
-| ('Linux x86_64', 'cuda', 'float32')     |      2745.72 |     2044.98  |      2222.51  |      1580.32  |
-| ('Linux x86_64', 'cuda', 'float64')     |      2962.76 |     2389.37  |      2865.78  |      2152.7   |
-| ('Linux x86_64', 'cuda', 'int16')       |      1072.89 |     1171.06  |       584.018 |       581.717 |
-| ('Linux x86_64', 'cuda', 'int32')       |      3137    |      nan     |      3095.18  |      2740.98  |
-| ('Linux x86_64', 'cuda', 'int64')       |      2082.56 |     1782.33  |      1881.91  |      1708.79  |
-| ('Linux x86_64', 'cuda', 'int8')        |      3317.24 |     2326.41  |      2949.79  |      2084.44  |
-| ('Linux x86_64', 'cuda', 'turboquant')  |      3138.12 |     2371.58  |      3115.21  |      2415.94  |
-| ('Linux x86_64', 'cuda', 'uint16')      |      1148.96 |     1390.4   |       630.079 |       687.365 |
-| ('Linux x86_64', 'cuda', 'uint32')      |      2266.18 |     2168.81  |      1448.72  |      1340.78  |
-| ('Linux x86_64', 'cuda', 'uint64')      |      1908.9  |     1718.8   |      1881.45  |      1731.91  |
-| ('Linux x86_64', 'cuda', 'uint8')       |      4772.57 |     3073.44  |      4692.03  |      3506.99  |
-
-### GEO QPS
-
-|                                         |   (500, 128) |   (500, 384) |   (1000, 128) |   (1000, 384) |
-|:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
-| ('Darwin arm64', 'cpu', 'complex128')   |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'complex64')    |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'float16')      |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'float32')      |          nan |          nan |             0 |           nan |
-| ('Darwin arm64', 'cpu', 'float64')      |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'int16')        |          nan |          nan |             0 |           nan |
-| ('Darwin arm64', 'cpu', 'int32')        |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'int64')        |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'int8')         |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'turboquant')   |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'uint16')       |          nan |          nan |           nan |             0 |
-| ('Darwin arm64', 'cpu', 'uint32')       |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'uint64')       |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'uint8')        |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'complex128') |            0 |            0 |             0 |             0 |
-| ('Darwin arm64', 'metal', 'complex64')  |            0 |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'float16')    |            0 |            0 |             0 |             0 |
-| ('Darwin arm64', 'metal', 'float32')    |            0 |            0 |             0 |           nan |
-| ('Darwin arm64', 'metal', 'float64')    |            0 |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'int16')      |          nan |            0 |             0 |           nan |
-| ('Darwin arm64', 'metal', 'int32')      |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'int64')      |          nan |            0 |             0 |             0 |
-| ('Darwin arm64', 'metal', 'int8')       |            0 |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'turboquant') |            0 |            0 |             0 |             0 |
-| ('Darwin arm64', 'metal', 'uint16')     |          nan |          nan |           nan |             0 |
-| ('Darwin arm64', 'metal', 'uint32')     |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'uint64')     |            0 |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'uint8')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'complex128')   |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'complex64')    |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'float16')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'float32')      |          nan |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'float64')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'int16')        |          nan |          nan |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'int32')        |          nan |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'int64')        |          nan |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'int8')         |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'turboquant')   |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'uint16')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'uint32')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'uint64')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'uint8')        |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'complex128')  |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'complex64')   |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'float16')     |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'float32')     |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'float64')     |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'int16')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'int32')       |            0 |          nan |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'int64')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'int8')        |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'turboquant')  |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'uint16')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'uint32')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'uint64')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'uint8')       |            0 |            0 |             0 |             0 |
+|                                            |   (1000, 128) |   (1000, 384) |   (1000, 768) |
+|:-------------------------------------------|--------------:|--------------:|--------------:|
+| ('Darwin arm64', 'cpu', 'float32')         |       3501.91 |       2584.27 |       1721.39 |
+| ('Darwin arm64', 'cpu', 'turboquant')      |       6652.71 |       4689.11 |       3348.9  |
+| ('Darwin arm64', 'geo', 'float32')         |       3519.25 |       2613.02 |       1770.72 |
+| ('Darwin arm64', 'geo', 'turboquant')      |       6725.65 |       4755.84 |       3317.56 |
+| ('Darwin arm64', 'graphrag', 'float32')    |       3400.52 |       2513.76 |       1757.53 |
+| ('Darwin arm64', 'graphrag', 'turboquant') |       6569.6  |       4622.55 |       3619    |
+| ('Darwin arm64', 'metal', 'float32')       |       3519.89 |       2586.77 |       1771.94 |
+| ('Darwin arm64', 'metal', 'turboquant')    |       6828.42 |       4796.98 |       3543.21 |
+| ('Darwin arm64', 'temporal', 'float32')    |       3479.97 |       2645.04 |       1764.61 |
+| ('Darwin arm64', 'temporal', 'turboquant') |       6382.48 |       4651.03 |       3609.59 |
 
 ### GRAPHRAG QPS
 
-|                                         |   (500, 128) |   (500, 384) |   (1000, 128) |   (1000, 384) |
-|:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
-| ('Darwin arm64', 'cpu', 'complex128')   |      nan     |       nan    |      4449.61  |      2697.27  |
-| ('Darwin arm64', 'cpu', 'complex64')    |      nan     |       nan    |      4823.38  |      3237.08  |
-| ('Darwin arm64', 'cpu', 'float16')      |      nan     |       nan    |      3396.76  |      2051.84  |
-| ('Darwin arm64', 'cpu', 'float32')      |      nan     |       nan    |      3189.24  |       nan     |
-| ('Darwin arm64', 'cpu', 'float64')      |      nan     |       nan    |      5173.68  |      3757.45  |
-| ('Darwin arm64', 'cpu', 'int16')        |      nan     |       nan    |       932.482 |       nan     |
-| ('Darwin arm64', 'cpu', 'int32')        |      nan     |       nan    |      6361.35  |      4927.83  |
-| ('Darwin arm64', 'cpu', 'int64')        |      nan     |       nan    |      4274.75  |      3623.39  |
-| ('Darwin arm64', 'cpu', 'int8')         |      nan     |       nan    |      4630.21  |      2983.56  |
-| ('Darwin arm64', 'cpu', 'turboquant')   |      nan     |       nan    |      6134.93  |      4510.82  |
-| ('Darwin arm64', 'cpu', 'uint16')       |      nan     |       nan    |       nan     |      1186.74  |
-| ('Darwin arm64', 'cpu', 'uint32')       |      nan     |       nan    |      3574.32  |      2691.11  |
-| ('Darwin arm64', 'cpu', 'uint64')       |      nan     |       nan    |      4041.68  |      3572.72  |
-| ('Darwin arm64', 'cpu', 'uint8')        |      nan     |       nan    |      8184.6   |      5584.2   |
-| ('Darwin arm64', 'metal', 'complex128') |     4207.46  |      2728.35 |      4514.93  |      2726.12  |
-| ('Darwin arm64', 'metal', 'complex64')  |     3670.48  |       nan    |      4895.19  |      3201.4   |
-| ('Darwin arm64', 'metal', 'float16')    |     4555.59  |      3650.74 |      3304.09  |      2206.83  |
-| ('Darwin arm64', 'metal', 'float32')    |     4195.57  |      3377.09 |      4067.26  |       nan     |
-| ('Darwin arm64', 'metal', 'float64')    |     5690.52  |       nan    |      5533.08  |      3867.25  |
-| ('Darwin arm64', 'metal', 'int16')      |      nan     |      1865.73 |      1196.27  |       nan     |
-| ('Darwin arm64', 'metal', 'int32')      |      nan     |       nan    |      6447.11  |      4949.88  |
-| ('Darwin arm64', 'metal', 'int64')      |      nan     |      3059.04 |      4096.23  |      3568.2   |
-| ('Darwin arm64', 'metal', 'int8')       |     5245.39  |       nan    |      4143.25  |      3058.59  |
-| ('Darwin arm64', 'metal', 'turboquant') |     5445.4   |      3846.6  |      6464.09  |      4663.36  |
-| ('Darwin arm64', 'metal', 'uint16')     |      nan     |       nan    |       nan     |      1317.42  |
-| ('Darwin arm64', 'metal', 'uint32')     |      nan     |       nan    |      2534.9   |      2771.76  |
-| ('Darwin arm64', 'metal', 'uint64')     |     4090.43  |       nan    |      4084.2   |      3542.7   |
-| ('Darwin arm64', 'metal', 'uint8')      |     5666.78  |      5411.06 |      7940.69  |      5787.41  |
-| ('Linux x86_64', 'cpu', 'complex128')   |     2645.46  |      1767.78 |      2506.48  |      1634.17  |
-| ('Linux x86_64', 'cpu', 'complex64')    |     2992.8   |      2239.26 |      2732.43  |      1960.55  |
-| ('Linux x86_64', 'cpu', 'float16')      |     2251.72  |      1759.14 |      1447.31  |      1390.03  |
-| ('Linux x86_64', 'cpu', 'float32')      |      nan     |      2047.32 |      2184.55  |      1546.33  |
-| ('Linux x86_64', 'cpu', 'float64')      |     2962.86  |      2407.69 |      2897     |      2096.36  |
-| ('Linux x86_64', 'cpu', 'int16')        |      nan     |       nan    |       626.915 |       688.353 |
-| ('Linux x86_64', 'cpu', 'int32')        |      nan     |      2467.5  |      3114.32  |      2790.36  |
-| ('Linux x86_64', 'cpu', 'int64')        |      nan     |      1767.25 |      1854.89  |      1692.96  |
-| ('Linux x86_64', 'cpu', 'int8')         |     3088.57  |      2587.01 |      3001.35  |      2168.47  |
-| ('Linux x86_64', 'cpu', 'turboquant')   |     3146     |      2282.37 |      3302.96  |      2539.35  |
-| ('Linux x86_64', 'cpu', 'uint16')       |      945.904 |      1025.7  |       687.199 |       650.777 |
-| ('Linux x86_64', 'cpu', 'uint32')       |     2347.53  |      2187.86 |      1611.29  |      1439.29  |
-| ('Linux x86_64', 'cpu', 'uint64')       |     1952.43  |      1708.09 |      1888.43  |      1740.14  |
-| ('Linux x86_64', 'cpu', 'uint8')        |     3963.97  |      4065.82 |      4481.1   |      3913.75  |
-| ('Linux x86_64', 'cuda', 'complex128')  |     2737.45  |      1735.66 |      2442     |      1613.8   |
-| ('Linux x86_64', 'cuda', 'complex64')   |     2971.98  |      2316.53 |      2733.89  |      1974.32  |
-| ('Linux x86_64', 'cuda', 'float16')     |     2221.07  |      1822.12 |      1448.14  |      1423.08  |
-| ('Linux x86_64', 'cuda', 'float32')     |     2755.85  |      1972.38 |      2235.83  |      1596.59  |
-| ('Linux x86_64', 'cuda', 'float64')     |     2943.64  |      2369.01 |      2907.53  |      2180     |
-| ('Linux x86_64', 'cuda', 'int16')       |     1090.55  |      1141.5  |       592.578 |       583.295 |
-| ('Linux x86_64', 'cuda', 'int32')       |     3254.91  |       nan    |      3160     |      2802.27  |
-| ('Linux x86_64', 'cuda', 'int64')       |     1957.35  |      1753.63 |      1914.6   |      1737.38  |
-| ('Linux x86_64', 'cuda', 'int8')        |     3481.51  |      2333.78 |      2943.43  |      2071.66  |
-| ('Linux x86_64', 'cuda', 'turboquant')  |     3111.88  |      2414.04 |      3209.37  |      2397.93  |
-| ('Linux x86_64', 'cuda', 'uint16')      |     1226.27  |      1384.95 |       639.432 |       671.836 |
-| ('Linux x86_64', 'cuda', 'uint32')      |     2274.35  |      2123.61 |      1455.28  |      1336.29  |
-| ('Linux x86_64', 'cuda', 'uint64')      |     1979.42  |      1712.58 |      1907.82  |      1747.38  |
-| ('Linux x86_64', 'cuda', 'uint8')       |     4730.81  |      3071.24 |      4556.01  |      3566.78  |
+|                                            |   (1000, 128) |   (1000, 384) |   (1000, 768) |
+|:-------------------------------------------|--------------:|--------------:|--------------:|
+| ('Darwin arm64', 'cpu', 'float32')         |       4000.25 |       2715.64 |       1735.27 |
+| ('Darwin arm64', 'cpu', 'turboquant')      |       6552.71 |       4751.68 |       3704.33 |
+| ('Darwin arm64', 'geo', 'float32')         |       4033.23 |       2852.44 |       1768.53 |
+| ('Darwin arm64', 'geo', 'turboquant')      |       6731.63 |       4780.06 |       3763.81 |
+| ('Darwin arm64', 'graphrag', 'float32')    |       3657.63 |       2742.8  |       1747.22 |
+| ('Darwin arm64', 'graphrag', 'turboquant') |       6397.56 |       4677.96 |       3811.86 |
+| ('Darwin arm64', 'metal', 'float32')       |       4015.92 |       2764.98 |       1762.07 |
+| ('Darwin arm64', 'metal', 'turboquant')    |       6828.5  |       4813.82 |       3866.1  |
+| ('Darwin arm64', 'temporal', 'float32')    |       3753.09 |       2834.77 |       1766.67 |
+| ('Darwin arm64', 'temporal', 'turboquant') |       6204.61 |       4809.72 |       3745.99 |
 
 ### HYBRID QPS
 
-|                                         |   (500, 128) |   (500, 384) |   (1000, 128) |   (1000, 384) |
-|:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
-| ('Darwin arm64', 'cpu', 'complex128')   |      nan     |      nan     |      4112.18  |      2423.33  |
-| ('Darwin arm64', 'cpu', 'complex64')    |      nan     |      nan     |      4352.94  |      2948.41  |
-| ('Darwin arm64', 'cpu', 'float16')      |      nan     |      nan     |      2951.73  |      2275.44  |
-| ('Darwin arm64', 'cpu', 'float32')      |      nan     |      nan     |      3284.88  |       nan     |
-| ('Darwin arm64', 'cpu', 'float64')      |      nan     |      nan     |      4347.36  |      2925.26  |
-| ('Darwin arm64', 'cpu', 'int16')        |      nan     |      nan     |      1035.14  |       nan     |
-| ('Darwin arm64', 'cpu', 'int32')        |      nan     |      nan     |      5706.85  |      4371.22  |
-| ('Darwin arm64', 'cpu', 'int64')        |      nan     |      nan     |      3654.39  |      3150.09  |
-| ('Darwin arm64', 'cpu', 'int8')         |      nan     |      nan     |      4119.14  |      2679.78  |
-| ('Darwin arm64', 'cpu', 'turboquant')   |      nan     |      nan     |      5385.96  |      3979.15  |
-| ('Darwin arm64', 'cpu', 'uint16')       |      nan     |      nan     |       nan     |      1153.76  |
-| ('Darwin arm64', 'cpu', 'uint32')       |      nan     |      nan     |      3155.42  |      2444.1   |
-| ('Darwin arm64', 'cpu', 'uint64')       |      nan     |      nan     |      3561.46  |      3075.8   |
-| ('Darwin arm64', 'cpu', 'uint8')        |      nan     |      nan     |      7052.49  |      5037.77  |
-| ('Darwin arm64', 'metal', 'complex128') |     3892.96  |     2646.91  |      3915.8   |      2413.49  |
-| ('Darwin arm64', 'metal', 'complex64')  |     2957.71  |      nan     |      4451.27  |      2891.06  |
-| ('Darwin arm64', 'metal', 'float16')    |     4267.35  |     3456.46  |      2869.89  |      2264.55  |
-| ('Darwin arm64', 'metal', 'float32')    |     3997.34  |     3147.81  |      3539.31  |       nan     |
-| ('Darwin arm64', 'metal', 'float64')    |     5016.27  |      nan     |      4731.92  |      3425.15  |
-| ('Darwin arm64', 'metal', 'int16')      |      nan     |     1751.6   |      1153.57  |       nan     |
-| ('Darwin arm64', 'metal', 'int32')      |      nan     |      nan     |      5534.66  |      4390.45  |
-| ('Darwin arm64', 'metal', 'int64')      |      nan     |     3088.69  |      3548.91  |      3126.92  |
-| ('Darwin arm64', 'metal', 'int8')       |     4109.68  |      nan     |      4187.92  |      2717.89  |
-| ('Darwin arm64', 'metal', 'turboquant') |     4981.76  |     3568.51  |      5469.7   |      4110.75  |
-| ('Darwin arm64', 'metal', 'uint16')     |      nan     |      nan     |       nan     |      1260.24  |
-| ('Darwin arm64', 'metal', 'uint32')     |      nan     |      nan     |      2810.39  |      2483.72  |
-| ('Darwin arm64', 'metal', 'uint64')     |     3472.47  |      nan     |      3634.15  |      3051.78  |
-| ('Darwin arm64', 'metal', 'uint8')      |     5607.96  |     5033.14  |      6526.5   |      5273.58  |
-| ('Linux x86_64', 'cpu', 'complex128')   |     2353.24  |     1750.99  |      2175.19  |      1528.65  |
-| ('Linux x86_64', 'cpu', 'complex64')    |     2665.44  |     2053.24  |      2402.81  |      1840.27  |
-| ('Linux x86_64', 'cpu', 'float16')      |     2114.62  |     1554.64  |      1344.81  |      1354.37  |
-| ('Linux x86_64', 'cpu', 'float32')      |      nan     |     1884.55  |      1977.46  |      1465.01  |
-| ('Linux x86_64', 'cpu', 'float64')      |     2602.87  |     2068.5   |      2556.75  |      1944.03  |
-| ('Linux x86_64', 'cpu', 'int16')        |      nan     |      nan     |       594.887 |       646.635 |
-| ('Linux x86_64', 'cpu', 'int32')        |      nan     |     2203.77  |      2722.65  |      2411.17  |
-| ('Linux x86_64', 'cpu', 'int64')        |      nan     |     1689.42  |      1747.99  |      1660.22  |
-| ('Linux x86_64', 'cpu', 'int8')         |     2816.12  |     2341.22  |      2624.83  |      1936.11  |
-| ('Linux x86_64', 'cpu', 'turboquant')   |     2737.27  |     2138.5   |      2806.66  |      2198.58  |
-| ('Linux x86_64', 'cpu', 'uint16')       |      900.866 |      952.266 |       639.08  |       616.08  |
-| ('Linux x86_64', 'cpu', 'uint32')       |     2120.63  |     2064.42  |      1528.87  |      1395.92  |
-| ('Linux x86_64', 'cpu', 'uint64')       |     1836.32  |     1572.65  |      1756.17  |      1614.22  |
-| ('Linux x86_64', 'cpu', 'uint8')        |     3464.81  |     3592.41  |      3672.37  |      3383.06  |
-| ('Linux x86_64', 'cuda', 'complex128')  |     2399.23  |     1608.3   |      2158.57  |      1466.47  |
-| ('Linux x86_64', 'cuda', 'complex64')   |     2619.22  |     2020.73  |      2456.2   |      1829.88  |
-| ('Linux x86_64', 'cuda', 'float16')     |     1977.4   |     1826.39  |      1368.89  |      1364.37  |
-| ('Linux x86_64', 'cuda', 'float32')     |     2392.89  |     1865.79  |      2013.93  |      1532.99  |
-| ('Linux x86_64', 'cuda', 'float64')     |     2700.48  |     2170.18  |      2607.36  |      1989.53  |
-| ('Linux x86_64', 'cuda', 'int16')       |     1006.54  |     1145.8   |       569.579 |       564.461 |
-| ('Linux x86_64', 'cuda', 'int32')       |     2818.37  |      nan     |      2731.51  |      1970.23  |
-| ('Linux x86_64', 'cuda', 'int64')       |     1866.2   |     1727.43  |      1718.63  |      1654.22  |
-| ('Linux x86_64', 'cuda', 'int8')        |     3040.76  |     2124.82  |      2629.29  |      1850.62  |
-| ('Linux x86_64', 'cuda', 'turboquant')  |     2916.82  |     2123.8   |      2791.83  |      2199.36  |
-| ('Linux x86_64', 'cuda', 'uint16')      |     1153.07  |     1316.42  |       596.045 |       650.475 |
-| ('Linux x86_64', 'cuda', 'uint32')      |     2103.62  |     1966.39  |      1333.15  |      1314.46  |
-| ('Linux x86_64', 'cuda', 'uint64')      |     1779.59  |     1660.67  |      1766.85  |      1641.65  |
-| ('Linux x86_64', 'cuda', 'uint8')       |     4083.41  |     2707.1   |      3990.01  |      3068.49  |
+|                                            |   (1000, 128) |   (1000, 384) |   (1000, 768) |
+|:-------------------------------------------|--------------:|--------------:|--------------:|
+| ('Darwin arm64', 'cpu', 'float32')         |       3217.23 |       2390.79 |       1656.48 |
+| ('Darwin arm64', 'cpu', 'turboquant')      |       5743.37 |       4229.8  |       3001.13 |
+| ('Darwin arm64', 'geo', 'float32')         |       3241.51 |       2459.44 |       1689.21 |
+| ('Darwin arm64', 'geo', 'turboquant')      |       5858.61 |       4250.22 |       3045.03 |
+| ('Darwin arm64', 'graphrag', 'float32')    |       3174.14 |       2417.94 |       1682.06 |
+| ('Darwin arm64', 'graphrag', 'turboquant') |       5619.93 |       4190.06 |       3137.16 |
+| ('Darwin arm64', 'metal', 'float32')       |       3067.7  |       2424.97 |       1671.84 |
+| ('Darwin arm64', 'metal', 'turboquant')    |       5870.16 |       4361.81 |       3142.38 |
+| ('Darwin arm64', 'temporal', 'float32')    |       3217.12 |       2441.82 |       1663.7  |
+| ('Darwin arm64', 'temporal', 'turboquant') |       5665.95 |       4275.19 |       3104.45 |
 
 ### RECOMMEND QPS
 
-|                                         |   (500, 128) |   (500, 384) |   (1000, 128) |   (1000, 384) |
-|:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
-| ('Darwin arm64', 'cpu', 'complex128')   |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'complex64')    |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'float16')      |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'float32')      |          nan |          nan |             0 |           nan |
-| ('Darwin arm64', 'cpu', 'float64')      |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'int16')        |          nan |          nan |             0 |           nan |
-| ('Darwin arm64', 'cpu', 'int32')        |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'int64')        |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'int8')         |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'turboquant')   |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'uint16')       |          nan |          nan |           nan |             0 |
-| ('Darwin arm64', 'cpu', 'uint32')       |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'uint64')       |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'uint8')        |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'complex128') |            0 |            0 |             0 |             0 |
-| ('Darwin arm64', 'metal', 'complex64')  |            0 |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'float16')    |            0 |            0 |             0 |             0 |
-| ('Darwin arm64', 'metal', 'float32')    |            0 |            0 |             0 |           nan |
-| ('Darwin arm64', 'metal', 'float64')    |            0 |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'int16')      |          nan |            0 |             0 |           nan |
-| ('Darwin arm64', 'metal', 'int32')      |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'int64')      |          nan |            0 |             0 |             0 |
-| ('Darwin arm64', 'metal', 'int8')       |            0 |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'turboquant') |            0 |            0 |             0 |             0 |
-| ('Darwin arm64', 'metal', 'uint16')     |          nan |          nan |           nan |             0 |
-| ('Darwin arm64', 'metal', 'uint32')     |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'uint64')     |            0 |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'uint8')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'complex128')   |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'complex64')    |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'float16')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'float32')      |          nan |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'float64')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'int16')        |          nan |          nan |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'int32')        |          nan |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'int64')        |          nan |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'int8')         |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'turboquant')   |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'uint16')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'uint32')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'uint64')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'uint8')        |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'complex128')  |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'complex64')   |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'float16')     |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'float32')     |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'float64')     |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'int16')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'int32')       |            0 |          nan |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'int64')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'int8')        |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'turboquant')  |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'uint16')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'uint32')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'uint64')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'uint8')       |            0 |            0 |             0 |             0 |
+|                                            |   (1000, 128) |   (1000, 384) |   (1000, 768) |
+|:-------------------------------------------|--------------:|--------------:|--------------:|
+| ('Darwin arm64', 'cpu', 'float32')         |       4361.51 |       3058.82 |       2122.66 |
+| ('Darwin arm64', 'cpu', 'turboquant')      |       4843.2  |       3729.23 |       3440.9  |
+| ('Darwin arm64', 'geo', 'float32')         |       4377.9  |       2967.47 |       2087.5  |
+| ('Darwin arm64', 'geo', 'turboquant')      |       4932.03 |       3805.19 |       3371.87 |
+| ('Darwin arm64', 'graphrag', 'float32')    |       4380.47 |       2986.97 |       2172.18 |
+| ('Darwin arm64', 'graphrag', 'turboquant') |       4635.22 |       3711.7  |       3547.61 |
+| ('Darwin arm64', 'metal', 'float32')       |       4403.41 |       3021.17 |       2106.02 |
+| ('Darwin arm64', 'metal', 'turboquant')    |       4996.32 |       3831.69 |       3519.43 |
+| ('Darwin arm64', 'temporal', 'float32')    |       4386.1  |       3066.27 |       2118.36 |
+| ('Darwin arm64', 'temporal', 'turboquant') |       4796.01 |       3735.42 |       3563.26 |
 
 ### SPARSE QPS
 
-|                                         |   (500, 128) |   (500, 384) |   (1000, 128) |   (1000, 384) |
-|:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
-| ('Darwin arm64', 'cpu', 'complex128')   |       nan    |       nan    |      12237.4  |      11723.3  |
-| ('Darwin arm64', 'cpu', 'complex64')    |       nan    |       nan    |      11432.9  |      11554.5  |
-| ('Darwin arm64', 'cpu', 'float16')      |       nan    |       nan    |      12634    |      11041.5  |
-| ('Darwin arm64', 'cpu', 'float32')      |       nan    |       nan    |      10332.1  |        nan    |
-| ('Darwin arm64', 'cpu', 'float64')      |       nan    |       nan    |      12328.6  |       9577.48 |
-| ('Darwin arm64', 'cpu', 'int16')        |       nan    |       nan    |      11119.2  |        nan    |
-| ('Darwin arm64', 'cpu', 'int32')        |       nan    |       nan    |      14241.6  |      13739.5  |
-| ('Darwin arm64', 'cpu', 'int64')        |       nan    |       nan    |      12665.1  |      12011.3  |
-| ('Darwin arm64', 'cpu', 'int8')         |       nan    |       nan    |      11323.7  |      11316.7  |
-| ('Darwin arm64', 'cpu', 'turboquant')   |       nan    |       nan    |      12151.2  |      12068    |
-| ('Darwin arm64', 'cpu', 'uint16')       |       nan    |       nan    |        nan    |      12238.8  |
-| ('Darwin arm64', 'cpu', 'uint32')       |       nan    |       nan    |      11881.5  |      12165.8  |
-| ('Darwin arm64', 'cpu', 'uint64')       |       nan    |       nan    |      12458.9  |      12031.7  |
-| ('Darwin arm64', 'cpu', 'uint8')        |       nan    |       nan    |      11313.4  |      10573.5  |
-| ('Darwin arm64', 'metal', 'complex128') |      7731.61 |      7767.64 |      12614.7  |      11955.2  |
-| ('Darwin arm64', 'metal', 'complex64')  |      7982.11 |       nan    |      11536.7  |      11566.8  |
-| ('Darwin arm64', 'metal', 'float16')    |      8980.43 |      8554.62 |      13338.2  |      11366.8  |
-| ('Darwin arm64', 'metal', 'float32')    |      8887.67 |      8862.91 |      14261.5  |        nan    |
-| ('Darwin arm64', 'metal', 'float64')    |     13292.6  |       nan    |      13027.4  |      11313.7  |
-| ('Darwin arm64', 'metal', 'int16')      |       nan    |     12062.3  |      12949.4  |        nan    |
-| ('Darwin arm64', 'metal', 'int32')      |       nan    |       nan    |      14099.9  |      13719.1  |
-| ('Darwin arm64', 'metal', 'int64')      |       nan    |      8364.73 |      12669.4  |      12045.3  |
-| ('Darwin arm64', 'metal', 'int8')       |      8484.92 |       nan    |      11185.6  |      12123.3  |
-| ('Darwin arm64', 'metal', 'turboquant') |      5271.15 |      8855.3  |      12509    |      12172.3  |
-| ('Darwin arm64', 'metal', 'uint16')     |       nan    |       nan    |        nan    |      12151    |
-| ('Darwin arm64', 'metal', 'uint32')     |       nan    |       nan    |       9678.56 |      11797.3  |
-| ('Darwin arm64', 'metal', 'uint64')     |      8576.57 |       nan    |      12000.6  |      12096.3  |
-| ('Darwin arm64', 'metal', 'uint8')      |      7954.99 |      8166.62 |      12031.8  |      11294    |
-| ('Linux x86_64', 'cpu', 'complex128')   |      6778.14 |      7368.42 |       6734.26 |       6674.05 |
-| ('Linux x86_64', 'cpu', 'complex64')    |      6702.01 |      6686.49 |       6743.93 |       6778.55 |
-| ('Linux x86_64', 'cpu', 'float16')      |      6507.96 |      6471.89 |       6814.04 |       6817.59 |
-| ('Linux x86_64', 'cpu', 'float32')      |       nan    |      6763.98 |       6756.26 |       6788.38 |
-| ('Linux x86_64', 'cpu', 'float64')      |      6686.58 |      6612.28 |       6893.58 |       6574.34 |
-| ('Linux x86_64', 'cpu', 'int16')        |       nan    |       nan    |       6752.17 |       6551.97 |
-| ('Linux x86_64', 'cpu', 'int32')        |       nan    |      6989.32 |       6743.02 |       8208.35 |
-| ('Linux x86_64', 'cpu', 'int64')        |       nan    |      6914.03 |       6586.24 |       6719.59 |
-| ('Linux x86_64', 'cpu', 'int8')         |      6402.72 |      6359.33 |       6560.33 |       6723.35 |
-| ('Linux x86_64', 'cpu', 'turboquant')   |      6789.47 |      6694.54 |       6693.28 |       6632.44 |
-| ('Linux x86_64', 'cpu', 'uint16')       |      6443.62 |      5754.18 |       7029.22 |       6648.17 |
-| ('Linux x86_64', 'cpu', 'uint32')       |      6638.95 |      6424.64 |       6885.41 |       6719.23 |
-| ('Linux x86_64', 'cpu', 'uint64')       |      6702.18 |      6400.57 |       6634.46 |       6629.04 |
-| ('Linux x86_64', 'cpu', 'uint8')        |      6847.53 |      6790.66 |       6812.22 |       6592.17 |
-| ('Linux x86_64', 'cuda', 'complex128')  |      6346.63 |      7458.39 |       6967.11 |       6911.92 |
-| ('Linux x86_64', 'cuda', 'complex64')   |      6639.65 |      6253.48 |       6586.62 |       6613.88 |
-| ('Linux x86_64', 'cuda', 'float16')     |      6615.43 |      6928.03 |       6680.97 |       6370.88 |
-| ('Linux x86_64', 'cuda', 'float32')     |      6759.94 |      6623.08 |       6855.84 |       7059.77 |
-| ('Linux x86_64', 'cuda', 'float64')     |      6458.11 |      6929.3  |       6645.74 |       6637.5  |
-| ('Linux x86_64', 'cuda', 'int16')       |      6750.66 |      7121.75 |       6698.05 |       6853.63 |
-| ('Linux x86_64', 'cuda', 'int32')       |      6836.5  |       nan    |       6887.58 |       7438.33 |
-| ('Linux x86_64', 'cuda', 'int64')       |      7341.04 |      6655.84 |       6831.11 |       7167.9  |
-| ('Linux x86_64', 'cuda', 'int8')        |      7709.66 |      6822.52 |       6701.55 |       6598.75 |
-| ('Linux x86_64', 'cuda', 'turboquant')  |      6703.1  |      6383.44 |       6472.59 |       6585.71 |
-| ('Linux x86_64', 'cuda', 'uint16')      |      7105.41 |      6763.16 |       7140.39 |       6752.05 |
-| ('Linux x86_64', 'cuda', 'uint32')      |      6709.2  |      7270.46 |       6891.24 |       7300.92 |
-| ('Linux x86_64', 'cuda', 'uint64')      |      6357.33 |      6808.21 |       6802.86 |       7120.58 |
-| ('Linux x86_64', 'cuda', 'uint8')       |      6515.58 |      6365.78 |       6717.62 |       6510.4  |
-
-### TEMPORAL QPS
-
-|                                         |   (500, 128) |   (500, 384) |   (1000, 128) |   (1000, 384) |
-|:----------------------------------------|-------------:|-------------:|--------------:|--------------:|
-| ('Darwin arm64', 'cpu', 'complex128')   |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'complex64')    |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'float16')      |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'float32')      |          nan |          nan |             0 |           nan |
-| ('Darwin arm64', 'cpu', 'float64')      |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'int16')        |          nan |          nan |             0 |           nan |
-| ('Darwin arm64', 'cpu', 'int32')        |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'int64')        |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'int8')         |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'turboquant')   |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'uint16')       |          nan |          nan |           nan |             0 |
-| ('Darwin arm64', 'cpu', 'uint32')       |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'uint64')       |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'cpu', 'uint8')        |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'complex128') |            0 |            0 |             0 |             0 |
-| ('Darwin arm64', 'metal', 'complex64')  |            0 |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'float16')    |            0 |            0 |             0 |             0 |
-| ('Darwin arm64', 'metal', 'float32')    |            0 |            0 |             0 |           nan |
-| ('Darwin arm64', 'metal', 'float64')    |            0 |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'int16')      |          nan |            0 |             0 |           nan |
-| ('Darwin arm64', 'metal', 'int32')      |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'int64')      |          nan |            0 |             0 |             0 |
-| ('Darwin arm64', 'metal', 'int8')       |            0 |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'turboquant') |            0 |            0 |             0 |             0 |
-| ('Darwin arm64', 'metal', 'uint16')     |          nan |          nan |           nan |             0 |
-| ('Darwin arm64', 'metal', 'uint32')     |          nan |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'uint64')     |            0 |          nan |             0 |             0 |
-| ('Darwin arm64', 'metal', 'uint8')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'complex128')   |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'complex64')    |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'float16')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'float32')      |          nan |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'float64')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'int16')        |          nan |          nan |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'int32')        |          nan |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'int64')        |          nan |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'int8')         |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'turboquant')   |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'uint16')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'uint32')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'uint64')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cpu', 'uint8')        |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'complex128')  |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'complex64')   |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'float16')     |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'float32')     |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'float64')     |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'int16')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'int32')       |            0 |          nan |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'int64')       |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'int8')        |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'turboquant')  |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'uint16')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'uint32')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'uint64')      |            0 |            0 |             0 |             0 |
-| ('Linux x86_64', 'cuda', 'uint8')       |            0 |            0 |             0 |             0 |
+|                                            |   (1000, 128) |   (1000, 384) |   (1000, 768) |
+|:-------------------------------------------|--------------:|--------------:|--------------:|
+| ('Darwin arm64', 'cpu', 'float32')         |       13088.3 |       12079.7 |       11535.3 |
+| ('Darwin arm64', 'cpu', 'turboquant')      |       14021.9 |       13493.5 |       11546.2 |
+| ('Darwin arm64', 'geo', 'float32')         |       13349.8 |       11855   |       11898.8 |
+| ('Darwin arm64', 'geo', 'turboquant')      |       14096.9 |       13692.9 |       11960.5 |
+| ('Darwin arm64', 'graphrag', 'float32')    |       11475.5 |       12358.1 |       11838.6 |
+| ('Darwin arm64', 'graphrag', 'turboquant') |       13621.5 |       13571.4 |       12483   |
+| ('Darwin arm64', 'metal', 'float32')       |       13543.7 |       12307.3 |       11871.1 |
+| ('Darwin arm64', 'metal', 'turboquant')    |       13977.1 |       13136.1 |       12631.4 |
+| ('Darwin arm64', 'temporal', 'float32')    |       12862.2 |       12310.6 |       11711.1 |
+| ('Darwin arm64', 'temporal', 'turboquant') |       13511.6 |       13301.8 |       12334.8 |
 
 ## 3. Specialized Search Performance
 
-### GEO Results
-
-### TEMPORAL Results
-
 ### GRAPHRAG Results
+
+|                                            |   (1000, 128) |   (1000, 384) |   (1000, 768) |
+|:-------------------------------------------|--------------:|--------------:|--------------:|
+| ('Darwin arm64', 'cpu', 'float32')         |       4000.25 |       2715.64 |       1735.27 |
+| ('Darwin arm64', 'cpu', 'turboquant')      |       6552.71 |       4751.68 |       3704.33 |
+| ('Darwin arm64', 'geo', 'float32')         |       4033.23 |       2852.44 |       1768.53 |
+| ('Darwin arm64', 'geo', 'turboquant')      |       6731.63 |       4780.06 |       3763.81 |
+| ('Darwin arm64', 'graphrag', 'float32')    |       3657.63 |       2742.8  |       1747.22 |
+| ('Darwin arm64', 'graphrag', 'turboquant') |       6397.56 |       4677.96 |       3811.86 |
+| ('Darwin arm64', 'metal', 'float32')       |       4015.92 |       2764.98 |       1762.07 |
+| ('Darwin arm64', 'metal', 'turboquant')    |       6828.5  |       4813.82 |       3866.1  |
+| ('Darwin arm64', 'temporal', 'float32')    |       3753.09 |       2834.77 |       1766.67 |
+| ('Darwin arm64', 'temporal', 'turboquant') |       6204.61 |       4809.72 |       3745.99 |
+
+### RECOMMEND Results
+
+|                                            |   (1000, 128) |   (1000, 384) |   (1000, 768) |
+|:-------------------------------------------|--------------:|--------------:|--------------:|
+| ('Darwin arm64', 'cpu', 'float32')         |       4361.51 |       3058.82 |       2122.66 |
+| ('Darwin arm64', 'cpu', 'turboquant')      |       4843.2  |       3729.23 |       3440.9  |
+| ('Darwin arm64', 'geo', 'float32')         |       4377.9  |       2967.47 |       2087.5  |
+| ('Darwin arm64', 'geo', 'turboquant')      |       4932.03 |       3805.19 |       3371.87 |
+| ('Darwin arm64', 'graphrag', 'float32')    |       4380.47 |       2986.97 |       2172.18 |
+| ('Darwin arm64', 'graphrag', 'turboquant') |       4635.22 |       3711.7  |       3547.61 |
+| ('Darwin arm64', 'metal', 'float32')       |       4403.41 |       3021.17 |       2106.02 |
+| ('Darwin arm64', 'metal', 'turboquant')    |       4996.32 |       3831.69 |       3519.43 |
+| ('Darwin arm64', 'temporal', 'float32')    |       4386.1  |       3066.27 |       2118.36 |
+| ('Darwin arm64', 'temporal', 'turboquant') |       4796.01 |       3735.42 |       3563.26 |
 

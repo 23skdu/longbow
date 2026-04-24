@@ -215,6 +215,14 @@ func (m *MockIndex) SearchComplex128(vector []float32, k int) ([]int64, []float3
 	return m.Search(vector, k)
 }
 
+func (m *MockIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
+	return nil
+}
+
+func (m *MockIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
+	return nil, nil, nil
+}
+
 // float16ToFloat32Mock converts a uint16 float16 value to float32
 func float16ToFloat32Mock(v uint16) float32 {
 	sign := uint32(v >> 15)

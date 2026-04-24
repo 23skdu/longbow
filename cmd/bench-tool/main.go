@@ -327,11 +327,14 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 		ticketBytes, _ := json.Marshal(map[string]interface{}{"recommend": req})
 		return executeDoGet(ctx, sc, ticketBytes)
 	case "Geo":
+		req["dataset"] = "bench_go"
 		req["center"] = map[string]float64{"lat": 40.7128, "lon": -74.0060}
 		req["radius_km"] = 50.0
+		req["search_type"] = "radius"
 		ticketBytes, _ := json.Marshal(map[string]interface{}{"geo_search": req})
 		return executeDoGet(ctx, sc, ticketBytes)
 	case "Temporal":
+		req["dataset"] = "bench_go"
 		req["search_type"] = "as_of"
 		req["timestamp"] = time.Now().UnixNano()
 		ticketBytes, _ := json.Marshal(map[string]interface{}{"temporal_search": req})
@@ -483,22 +486,22 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 
 	schema := arrow.NewSchema(
 		[]arrow.Field{
-			{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+			{Name: "id", Type: arrow.BinaryTypes.String},
 			vecField,
 			{Name: "timestamp", Type: arrow.FixedWidthTypes.Timestamp_ns},
+			{Name: "geo_point", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float64)},
 			{Name: "active", Type: arrow.FixedWidthTypes.Boolean},
 			{Name: "category", Type: arrow.BinaryTypes.String},
 		},
 		nil,
 	)
 
-
 	// 1. Build IDs
-	idBldr := array.NewInt64Builder(pool)
+	idBldr := array.NewStringBuilder(pool)
 	defer idBldr.Release()
 	idBldr.Reserve(count)
 	for i := 0; i < count; i++ {
-		idBldr.Append(int64(i))
+		idBldr.Append(fmt.Sprintf("%d", i))
 	}
 	idArr := idBldr.NewArray()
 	defer idArr.Release()
@@ -653,7 +656,21 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 	tsArr := tsBldr.NewArray()
 	defer tsArr.Release()
 
-	// 4. Build Active (Boolean)
+	// 4. Build Geo Point
+	geoBldr := array.NewFixedSizeListBuilder(pool, 2, arrow.PrimitiveTypes.Float64)
+	defer geoBldr.Release()
+	geoBldr.Reserve(count)
+	geoValBldr := geoBldr.ValueBuilder().(*array.Float64Builder)
+	geoValBldr.Reserve(count * 2)
+	for i := 0; i < count; i++ {
+		geoBldr.Append(true)
+		geoValBldr.Append(40.7128 + rand.Float64()*0.1) // New York-ish
+		geoValBldr.Append(-74.0060 + rand.Float64()*0.1)
+	}
+	geoArr := geoBldr.NewArray()
+	defer geoArr.Release()
+
+	// 5. Build Active (Boolean)
 	boolBldr := array.NewBooleanBuilder(pool)
 	defer boolBldr.Release()
 	boolBldr.Reserve(count)
@@ -663,7 +680,7 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 	activeArr := boolBldr.NewArray()
 	defer activeArr.Release()
 
-	// 5. Build Category (String)
+	// 6. Build Category (String)
 	strBldr := array.NewStringBuilder(pool)
 	defer strBldr.Release()
 	strBldr.Reserve(count)
@@ -674,6 +691,6 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 	catArr := strBldr.NewArray()
 	defer catArr.Release()
 
-	return array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr, tsArr, activeArr, catArr}, int64(count)), schema, nil
+	return array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr, tsArr, geoArr, activeArr, catArr}, int64(count)), schema, nil
 }
 

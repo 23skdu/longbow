@@ -8,6 +8,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"os"
+	"strconv"
 
 	"github.com/rs/zerolog"
 
@@ -263,11 +265,28 @@ type LearnedIndexConfig struct {
 }
 
 func NewIndexPerformancePredictor(logger zerolog.Logger, config LearnedIndexConfig) *IndexPerformancePredictor {
+	if val := os.Getenv("LONGBOW_LEARNED_MIN_SAMPLES"); val != "" {
+		if i, err := strconv.Atoi(val); err == nil {
+			config.MinTrainingSamples = i
+		}
+	}
 	if config.MinTrainingSamples <= 0 {
 		config.MinTrainingSamples = 100
 	}
+
+	if val := os.Getenv("LONGBOW_LEARNED_CONFIDENCE_THRESHOLD"); val != "" {
+		if f, err := strconv.ParseFloat(val, 64); err == nil {
+			config.ConfidenceThreshold = f
+		}
+	}
 	if config.ConfidenceThreshold <= 0 {
 		config.ConfidenceThreshold = 0.7
+	}
+
+	if val := os.Getenv("LONGBOW_LEARNED_UPDATE_INTERVAL"); val != "" {
+		if d, err := time.ParseDuration(val); err == nil {
+			config.UpdateInterval = d
+		}
 	}
 	if config.UpdateInterval <= 0 {
 		config.UpdateInterval = time.Hour

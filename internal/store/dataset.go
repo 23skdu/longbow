@@ -83,7 +83,7 @@ type Dataset struct {
 	SchemaManager *SchemaEvolutionManager
 
 	// Tombstones map BatchIdx -> Bitset of deleted RowIdxs
-	Tombstones map[int]*qry.Bitset
+	Tombstones map[int]*types.Bitset
 
 	// BatchNodes tracks which NUMA node each RecordBatch is allocated on
 	BatchNodes []int
@@ -142,7 +142,7 @@ type Dataset struct {
 	fragmentationTracker *FragmentationTracker
 
 	// Filter Cache: maps filter hash -> Bitset
-	filterCache map[string]*qry.Bitset
+	filterCache map[string]*types.Bitset
 	filterMu    sync.RWMutex
 
 	Logger zerolog.Logger
@@ -306,7 +306,7 @@ func (d *Dataset) GetSchema() *arrow.Schema {
 }
 
 // GetTombstones returns the tombstones for the dataset
-func (d *Dataset) GetTombstones() map[int]*qry.Bitset {
+func (d *Dataset) GetTombstones() map[int]*types.Bitset {
 	return d.Tombstones
 }
 
@@ -329,7 +329,7 @@ func (d *Dataset) RUnlockData() {
 func (d *Dataset) ResetTombstones() {
 	d.dataMu.Lock()
 	defer d.dataMu.Unlock()
-	d.Tombstones = make(map[int]*qry.Bitset)
+	d.Tombstones = make(map[int]*types.Bitset)
 }
 
 func NewDataset(name string, schema *arrow.Schema) *Dataset {
@@ -339,7 +339,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		Records:         make([]arrow.RecordBatch, 0),
 		BatchNodes:      make([]int, 0),
 		Schema:          schema,
-		Tombstones:          make(map[int]*qry.Bitset),
+		Tombstones:          make(map[int]*types.Bitset),
 		PrimaryIndex:        make(map[string]RowLocation),
 		NumericPrimaryIndex: make(map[int64]RowLocation),
 		LWW:             NewTimestampMap(),
@@ -349,7 +349,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		},
 		InvertedIndexes: make(map[string]*InvertedIndex),
 		Graph:           NewGraphStore(),
-		filterCache:     make(map[string]*qry.Bitset),
+		filterCache:     make(map[string]*types.Bitset),
 		Metric:          MetricEuclidean, // Default
 	}
 
@@ -420,7 +420,7 @@ func (d *Dataset) AddToIndex(batchIdx, rowIdx int) error {
 }
 
 // GenerateFilterBitset pre-calculates a bitset of VectorIDs that match the filters.
-func (d *Dataset) GenerateFilterBitset(filters []qry.Filter, filterExpr FilterExpr) (*qry.Bitset, error) {
+func (d *Dataset) GenerateFilterBitset(filters []qry.Filter, filterExpr FilterExpr) (*types.Bitset, error) {
 	// Generate hash
 	var hash string
 	for _, f := range filters {
@@ -441,12 +441,12 @@ func (d *Dataset) GenerateFilterBitset(filters []qry.Filter, filterExpr FilterEx
 }
 
 // GenerateFilterBitsetLocked is the variant that assumes d.dataMu is already held.
-func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr FilterExpr, hash string) (*qry.Bitset, error) {
+func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr FilterExpr, hash string) (*types.Bitset, error) {
 	if len(d.Records) == 0 || d.Index == nil {
 		return nil, nil
 	}
 
-	bitset := qry.NewBitset()
+	bitset := types.NewBitset()
 
 	// Dataset records must have the same schema.
 	eval, err := qry.NewFilterEvaluator(d.Records[0], filters)
@@ -506,7 +506,7 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr Fi
 	// and the cached one stays safe.
 	d.filterMu.Lock()
 	if d.filterCache == nil {
-		d.filterCache = make(map[string]*qry.Bitset)
+		d.filterCache = make(map[string]*types.Bitset)
 	}
 	if len(d.filterCache) > 100 {
 		// Evict first element (pseudo-LRU since map iteration is random)
@@ -559,7 +559,7 @@ func (d *Dataset) Close() {
 	for _, ts := range d.Tombstones {
 		ts.Release()
 	}
-	d.Tombstones = make(map[int]*qry.Bitset)
+	d.Tombstones = make(map[int]*types.Bitset)
 
 	for _, idx := range d.InvertedIndexes {
 		idx.Close()
@@ -664,7 +664,7 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap *IDMap) {
 		for id, rowIdx := range idMap.IntMap {
 			if oldLoc, exists := d.NumericPrimaryIndex[id]; exists {
 				if d.Tombstones[oldLoc.BatchIdx] == nil {
-					d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
+					d.Tombstones[oldLoc.BatchIdx] = types.NewBitset()
 				}
 				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
 				d.RecordBatchDeletion(oldLoc.BatchIdx)
@@ -676,7 +676,7 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap *IDMap) {
 		for id, rowIdx := range idMap.StringMap {
 			if oldLoc, exists := d.PrimaryIndex[id]; exists {
 				if d.Tombstones[oldLoc.BatchIdx] == nil {
-					d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
+					d.Tombstones[oldLoc.BatchIdx] = types.NewBitset()
 				}
 				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
 				d.RecordBatchDeletion(oldLoc.BatchIdx)
@@ -706,7 +706,7 @@ func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap *IDMap) {
 		for id, rowIdx := range idMap.IntMap {
 			if oldLoc, exists := d.NumericPrimaryIndex[id]; exists {
 				if d.Tombstones[oldLoc.BatchIdx] == nil {
-					d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
+					d.Tombstones[oldLoc.BatchIdx] = types.NewBitset()
 				}
 				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
 				d.RecordBatchDeletion(oldLoc.BatchIdx)
@@ -718,7 +718,7 @@ func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap *IDMap) {
 		for id, rowIdx := range idMap.StringMap {
 			if oldLoc, exists := d.PrimaryIndex[id]; exists {
 				if d.Tombstones[oldLoc.BatchIdx] == nil {
-					d.Tombstones[oldLoc.BatchIdx] = qry.NewBitset()
+					d.Tombstones[oldLoc.BatchIdx] = types.NewBitset()
 				}
 				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
 				d.RecordBatchDeletion(oldLoc.BatchIdx)

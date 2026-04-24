@@ -316,3 +316,47 @@ func dotInt2Neon(a, b []byte) (float32, error) {
 	}
 	return sum, nil
 }
+
+func matchInt64Neon(src []int64, val int64, op CompareOp, dst []byte) error {
+	if len(src) != len(dst) {
+		return errors.New("simd: length mismatch")
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	matchInt64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
+}
+
+func matchInt32Neon(src []int32, val int32, op CompareOp, dst []byte) error {
+	if len(src) != len(dst) {
+		return errors.New("simd: length mismatch")
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	matchInt32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
+}
+
+func matchFloat32Neon(src []float32, val float32, op CompareOp, dst []byte) error {
+	if len(src) != len(dst) {
+		return errors.New("simd: length mismatch")
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	matchFloat32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
+}
+
+func matchFloat64Neon(src []float64, val float64, op CompareOp, dst []byte) error {
+	if len(src) != len(dst) {
+		return errors.New("simd: length mismatch")
+	}
+	if len(src) == 0 {
+		return nil
+	}
+	matchFloat64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
+}

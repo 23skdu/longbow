@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 func TestQuery_EvaluatorBranches(t *testing.T) {
@@ -120,7 +121,7 @@ func TestQuery_FilterOperators(t *testing.T) {
 }
 
 func TestQuery_BitmapLarge(t *testing.T) {
-	b := NewBitset()
+	b := types.NewBitset()
 	for i := 0; i < 1000; i += 2 {
 		b.Set(i)
 	}

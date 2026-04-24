@@ -914,3 +914,11 @@ func (idx *MetalIndex) searchFloat32(vector []float32, k int) ([]int64, []float3
 
 	return resultIDs, resultDistances, nil
 }
+
+func (idx *MetalIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
+	return fmt.Errorf("AddTurboQuant not implemented for standard Metal index, use optimized Metal index")
+}
+
+func (idx *MetalIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchTurboQuant not implemented for standard Metal index, use optimized Metal index")
+}

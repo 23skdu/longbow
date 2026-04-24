@@ -195,7 +195,7 @@ func (a *PluggableInternalAdapter) Search(ctx context.Context, q any, k int, fil
 }
 
 // SearchVectors implements VectorIndexer.
-// Filters are not supported by PluggableVectorIndex, so they're ignored.
+// Filters are not supported by PluggableVectorIndex - returns error if filters provided.
 func (a *PluggableInternalAdapter) SearchVectors(ctx context.Context, q any, k int, filters []core.Filter, options any) ([]lbtypes.SearchResult, error) {
 	vec, ok := q.([]float32)
 	if !ok {
@@ -208,15 +208,16 @@ func (a *PluggableInternalAdapter) SearchVectors(ctx context.Context, q any, k i
 			return nil, fmt.Errorf("query must be []float32 or []float64")
 		}
 	}
-	
-	_ = filters // Filters not supported by PluggableVectorIndex
-	_ = options
-	
+
+	if len(filters) > 0 {
+		return nil, fmt.Errorf("PluggableInternalAdapter: filters not supported")
+	}
+
 	iresults, err := a.inner.Search(vec, k)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	results := make([]lbtypes.SearchResult, len(iresults))
 	for i, r := range iresults {
 		results[i] = lbtypes.SearchResult{ID: core.VectorID(r.ID), Distance: r.Distance}
@@ -225,7 +226,7 @@ func (a *PluggableInternalAdapter) SearchVectors(ctx context.Context, q any, k i
 }
 
 // SearchVectorsWithBitmap implements VectorIndexer.
-// Filters/bm are not supported by PluggableVectorIndex, so they're ignored.
+// BitMap filters are not supported by PluggableVectorIndex - returns error if bm provided.
 func (a *PluggableInternalAdapter) SearchVectorsWithBitmap(ctx context.Context, q any, k int, bm *roaring.Bitmap, options any) ([]lbtypes.SearchResult, error) {
 	vec, ok := q.([]float32)
 	if !ok {
@@ -238,15 +239,16 @@ func (a *PluggableInternalAdapter) SearchVectorsWithBitmap(ctx context.Context, 
 			return nil, fmt.Errorf("query must be []float32 or []float64")
 		}
 	}
-	
-	_ = bm // BitMap filter not supported by PluggableVectorIndex
-	_ = options
-	
+
+	if bm != nil && !bm.IsEmpty() {
+		return nil, fmt.Errorf("PluggableInternalAdapter: bitmap filters not supported")
+	}
+
 	iresults, err := a.inner.Search(vec, k)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	results := make([]lbtypes.SearchResult, len(iresults))
 	for i, r := range iresults {
 		results[i] = lbtypes.SearchResult{ID: core.VectorID(r.ID), Distance: r.Distance}

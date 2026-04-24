@@ -131,11 +131,36 @@ Full benchmark matrix of **448 test runs** (14 dtypes × 2 dims × 8 counts × 2
 | Implement Metal PQ kernels (SearchPQ) | GPU team | `internal/gpu/metal/` | ✅ Done |
 | Implement Metal PQ kernels (TrainPQ, EncodePQ) | GPU team | `internal/gpu/metal/` | ✅ Done (CPU Fallback) |
 | Implement CUDA TrainPQ/EncodePQ kernels | GPU team | `internal/gpu/cuda/` | Pending |
+| **GPU-accelerated search offloading (cuVS)** | GPU team | `internal/gpu/cuda/cuvs/` | **Planned** |
+| **Next-Gen Quantization (Turboquant V2)** | Index team | `internal/core/quantization/` | **Planned** |
+
+---
+
+## Technical Feature Deep Dive: Planned Features
+
+### 1. GPU-accelerated Search Offloading via NVIDIA cuVS
+**Target**: NVIDIA AMD64 Linux Builds
+**Goal**: Transition from simple distance-metric offloading to full graph-traversal offloading using the **NVIDIA cuVS** (CUDA Vector Search) library.
+- **Strategy**: Build a CGO-based adapter for `libcuvs` to offload HNSW `Search` and `Build` operations.
+- **Impact**: Expected 10x-50x increase in QPS for large-scale datasets by amortizing kernel launch overhead and utilizing GPU-native graph structures.
+- **Work Items**:
+    - Implement `CUVSIndex` following the `VectorIndexer` interface.
+    - Add dynamic library detection for `libcuvs` on Linux.
+    - Benchmark against current `CUDAIndex` (distance-only).
+
+### 2. Superior Quantization (Turboquant V2)
+**Goal**: Surpass Qdrant's Binary/Scalar quantization performance and recall.
+**Strategy**: Implement **Learnable Bit-Widths** and **Int4/Int2 packed SIMD** routines.
+- **Innovation**: Instead of fixed 8-bit or 1-bit quantization, use a lightweight predictor to assign bit-widths per dimension based on information density.
+- **SIMD Optimization**: Custom AVX-512 and ARM Neon kernels for Int4/Int2 dot products, avoiding the unpacking overhead found in standard implementations.
+- **Impact**: 4x-8x memory reduction compared to float32 with <1% recall loss, significantly outperforming Qdrant's standard BQ/SQ implementations.
+
+---
 
 ### P2 — Medium-term (Backlog)
 
 | Item | Owner | Files | Status |
-|------|-------|-------|--------|
+|------|-------|--------|-------|
 | TPUIndex real implementation | Platform team | `internal/gpu/tpu/tpu_index.go` | Backlog |
 | Review skipped tests | QA team | `*/*_test.go` | Backlog |
 | IVF-TQ hybrid | Index team | `ivf_pq_index.go` | Backlog |

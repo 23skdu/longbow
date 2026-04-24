@@ -138,6 +138,8 @@ func initializeDispatch() {
 		euclideanDistanceUint16Impl = euclideanUint16AVX2
 		dotProductInt16Impl = dotInt16AVX2
 		dotProductUint16Impl = dotUint16AVX2
+		dotProductInt4Impl = dotInt4AVX512
+		dotProductInt2Impl = dotInt2AVX512
 		// Optimization: Use float32 AVX kernels for complex64
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 	case "avx2":
@@ -185,6 +187,8 @@ func initializeDispatch() {
 		euclideanDistanceUint16Impl = euclideanUint16AVX2
 		dotProductInt16Impl = dotInt16AVX2
 		dotProductUint16Impl = dotUint16AVX2
+		dotProductInt4Impl = dotInt4AVX2
+		dotProductInt2Impl = dotInt2AVX2
 	case "neon":
 		euclideanDistanceImpl = euclideanNEON
 		euclideanDistance384Impl = euclidean384NEON
@@ -231,6 +235,8 @@ func initializeDispatch() {
 		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x
 		dotProductInt16Impl = dotInt16Unrolled4x
 		dotProductUint16Impl = dotUint16Unrolled4x
+		dotProductInt4Impl = dotInt4Generic
+		dotProductInt2Impl = dotInt2Generic
 	default:
 		euclideanDistanceImpl = euclideanUnrolled4x
 		euclideanDistance384Impl = euclideanUnrolled4x
@@ -273,6 +279,8 @@ func initializeDispatch() {
 		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x
 		dotProductInt16Impl = dotInt16Unrolled4x
 		dotProductUint16Impl = dotUint16Unrolled4x
+		dotProductInt4Impl = dotInt4Generic
+		dotProductInt2Impl = dotInt2Generic
 	}
 
 	// Register current implementations into the new dynamic registry.

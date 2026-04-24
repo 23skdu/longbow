@@ -11,7 +11,7 @@ func TestDotInt4(t *testing.T) {
 	// al*bl + ah*bh + al*bl + ah*bh
 	// 2*2 + 1*1 + 4*4 + 3*3 = 4 + 1 + 16 + 9 = 30
 	expected := float32(30)
-	got := DotInt4(a, b)
+	got, _ := DotProductInt4(a, b)
 	if got != expected {
 		t.Errorf("DotInt4 expected %f, got %f", expected, got)
 	}
@@ -23,7 +23,7 @@ func FuzzDotInt4(f *testing.F) {
 		if len(a) != len(b) {
 			return
 		}
-		_ = DotInt4(a, b)
+		_, _ = DotProductInt4(a, b)
 	})
 }
 
@@ -31,7 +31,7 @@ func TestDotInt2(t *testing.T) {
 	a := []byte{0x01} // [1, 0, 0, 0]
 	b := []byte{0x01} // [1, 0, 0, 0]
 	expected := float32(1)
-	got := DotInt2(a, b)
+	got, _ := DotProductInt2(a, b)
 	if got != expected {
 		t.Errorf("DotInt2 expected %f, got %f", expected, got)
 	}

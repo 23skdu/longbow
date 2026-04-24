@@ -26,15 +26,10 @@ Full benchmark matrix of **448 test runs** (14 dtypes × 2 dims × 8 counts × 2
 
 ### P0 — Critical (Must Fix)
 
-1. **GPU Typed Search Stubs - MetalIndex/MetalHybridIndex/CUDAIndex**
-   - Status: SearchFloat16, SearchComplex64, SearchComplex128 return "not implemented" errors
-   - Impact: GPU dispatch falls back to CPU for float16/complex queries
-   - MetalIndexOptimized has implementations - need to port to MetalIndex
-   - Fix: Port typed search implementations from MetalIndexOptimized to MetalIndex
-
-2. **GPU Typed Search Stubs - TPUIndex**
-   - Status: All typed search methods return "not implemented" errors
-   - Fix: Implement or document as unsupported
+~~1. **GPU Typed Search Stubs - MetalIndex**~~ ✅ **FIXED** - Implemented in metal_gpu.go
+~~2. **GPU Typed Search Stubs - MetalHybridIndex**~~ ✅ **FIXED** - Implemented in metal_gpu_hybrid.go
+~~3. **GPU Typed Search Stubs - CUDAIndex**~~ ✅ **FIXED** - Uses existing fp16 kernel
+~~4. **GPU Typed Search Stubs - TPUIndex**~~ ⚠️ TBD - Not implementing (out of scope for now)
 
 ### P1 — High Impact (Should Fix)
 
@@ -74,21 +69,22 @@ Full benchmark matrix of **448 test runs** (14 dtypes × 2 dims × 8 counts × 2
 ✅ Learned index routing - AutoShardingIndex exists
 ✅ Prometheus GPU metrics - Already implemented
 ✅ TurboQuant performance - Comparable to float32
+✅ GPU Typed Search - All GPU indexes now implement SearchFloat16/SearchComplex64/SearchComplex128
 
 ---
 
 ## Remediation Plan
 
-### Immediate (P0)
+### Completed (P0)
 
 | Item | Owner | Files | Status |
 |------|-------|-------|--------|
-| Port SearchFloat16 to MetalIndex | GPU team | metal_gpu.go | Pending |
-| Port SearchComplex64/128 to MetalIndex | GPU team | metal_gpu.go | Pending |
-| Port SearchFloat16 to MetalHybridIndex | GPU team | metal_gpu_hybrid.go | Pending |
-| Port SearchComplex64/128 to MetalHybridIndex | GPU team | metal_gpu_hybrid.go | Pending |
-| Port SearchFloat16 to CUDAIndex | GPU team | cuda_index.go | Pending |
-| Port SearchComplex64/128 to CUDAIndex | GPU team | cuda_index.go | Pending |
+| Port SearchFloat16 to MetalIndex | GPU team | metal_gpu.go | ✅ Done |
+| Port SearchComplex64/128 to MetalIndex | GPU team | metal_gpu.go | ✅ Done |
+| Port SearchFloat16 to MetalHybridIndex | GPU team | metal_gpu_hybrid.go | ✅ Done |
+| Port SearchComplex64/128 to MetalHybridIndex | GPU team | metal_gpu_hybrid.go | ✅ Done |
+| Port SearchFloat16 to CUDAIndex | GPU team | cuda_index.go | ✅ Done |
+| Port SearchComplex64/128 to CUDAIndex | GPU team | cuda_index.go | ✅ Done |
 
 ### Short-term (P1)
 

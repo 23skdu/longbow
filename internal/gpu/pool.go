@@ -323,3 +323,18 @@ func (w *pooledIndexWrapper) GetUtilization() (float32, error) {
 func (w *pooledIndexWrapper) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {
 	return w.pooled.index.SearchBatch(vectors, k)
 }
+
+// SearchFloat16 delegates to the wrapped index
+func (w *pooledIndexWrapper) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
+	return w.pooled.index.SearchFloat16(vector, k)
+}
+
+// SearchComplex64 delegates to the wrapped index
+func (w *pooledIndexWrapper) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
+	return w.pooled.index.SearchComplex64(vector, k)
+}
+
+// SearchComplex128 delegates to the wrapped index
+func (w *pooledIndexWrapper) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
+	return w.pooled.index.SearchComplex128(vector, k)
+}

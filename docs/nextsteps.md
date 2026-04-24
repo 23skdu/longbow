@@ -34,14 +34,16 @@ Full benchmark matrix of **448 test runs** (14 dtypes × 2 dims × 8 counts × 2
 ### P1 — High Impact (Should Fix)
 
 3. **SearchPQ/TrainPQ/EncodePQ Not Implemented**
-   - Status: Returns "not implemented" in most GPU indexes
+   - Status: Returns "not implemented" in all GPU indexes
    - Impact: Product Quantization search cannot use GPU
-   - Fix: Implement PQ codebook training and search in Metal/CUDA
+   - Analysis: PQ requires dedicated Metal shader development for codebook lookup and reconstruction
+   - Fix: Backlog - requires GPU shader work
 
 4. **PluggableIndexAdapters Stub Methods**
-   - Status: SearchVectors/SearchVectorsWithBitmap return "not implemented" errors
-   - Impact: Bridge pattern incomplete
-   - Fix: Implement or remove dead code
+   - Status: SearchVectors/SearchVectorsWithBitmap return "not implemented"
+   - Impact: Bridge pattern incomplete for migrated indexes
+   - Analysis: These methods are for the old VectorIndexer interface, most callers use other paths
+   - Fix: Low priority - can be implemented if needed
 
 ### P2 — Medium Impact (Nice to Have)
 

@@ -50,7 +50,7 @@ Hybrid search combines the strengths of Dense and Sparse retrieval.
 ### Reciprocal Rank Fusion (RRF)
 
 Longbow uses RRF to merge results from multiple search paths without requiring normalized scores.
-$$RRF\_score(doc) = \sum_{p \in paths} \frac{1}{k + rank_p(doc)}$$
+$$RRF(doc) = \sum_{p \in \text{paths}} \frac{1}{k + \text{rank}_p(doc)}$$
 
 ### Alpha Blending
 

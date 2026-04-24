@@ -2,7 +2,6 @@
 
 package metal
 
-import "github.com/23skdu/longbow/internal/gpu/types"
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
@@ -37,6 +36,27 @@ const char* hybridShaderSource =
 "    }\n"
 "    \n"
 "    distances[gid] = sqrt(sum);\n"
+"}\n"
+"\n"
+"kernel void compute_pq_distances(\n"
+"    device const float* lookupTable [[buffer(0)]],\n"
+"    device const uchar* codes [[buffer(1)]],\n"
+"    device float* distances [[buffer(2)]],\n"
+"    constant uint& m [[buffer(3)]],\n"
+"    constant uint& numVectors [[buffer(4)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    float sum = 0.0f;\n"
+"    uint offset = gid * m;\n"
+"    \n"
+"    for (uint i = 0; i < m; i++) {\n"
+"        uchar code = codes[offset + i];\n"
+"        sum += lookupTable[i * 256 + code];\n"
+"    }\n"
+"    \n"
+"    distances[gid] = sum;\n"
 "}\n";
 
 typedef struct {
@@ -44,6 +64,7 @@ typedef struct {
     void* commandQueue;
     void* vectorBuffer;
     void* distancePipeline;
+    void* pqPipeline;
     int vectorCount;
     int dimensions;
 } MetalHybridIndex;
@@ -71,11 +92,15 @@ MetalHybridIndex* metal_hybrid_init(int dimensions) {
             return NULL;
         }
 
+        id<MTLFunction> pqFunc = [library newFunctionWithName:@"compute_pq_distances"];
+        id<MTLComputePipelineState> pqPipeline = [device newComputePipelineStateWithFunction:pqFunc error:&error];
+
         MetalHybridIndex* handle = (MetalHybridIndex*)malloc(sizeof(MetalHybridIndex));
         handle->device = (__bridge_retained void*)device;
         handle->commandQueue = (__bridge_retained void*)queue;
         handle->vectorBuffer = NULL;
         handle->distancePipeline = (__bridge_retained void*)pipeline;
+        handle->pqPipeline = pqPipeline ? (__bridge_retained void*)pqPipeline : NULL;
         handle->vectorCount = 0;
         handle->dimensions = dimensions;
 
@@ -147,14 +172,63 @@ int metal_hybrid_compute_distances(MetalHybridIndex* handle, float* query, float
     }
 }
 
+int metal_hybrid_compute_pq_distances(MetalHybridIndex* handle, float* lookupTable, int m, float* distances) {
+    @autoreleasepool {
+        if (!handle->vectorBuffer || handle->vectorCount == 0 || !handle->pqPipeline) return -1;
+
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLBuffer> codesBuffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
+        id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->pqPipeline;
+
+        size_t tableSize = m * 256 * sizeof(float);
+        id<MTLBuffer> tableBuffer = [device newBufferWithBytes:lookupTable
+                                                       length:tableSize
+                                                      options:MTLResourceStorageModeShared];
+
+        id<MTLBuffer> distBuffer = [device newBufferWithLength:handle->vectorCount * sizeof(float)
+                                                       options:MTLResourceStorageModeShared];
+
+        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+        [encoder setComputePipelineState:pipeline];
+        [encoder setBuffer:tableBuffer offset:0 atIndex:0];
+        [encoder setBuffer:codesBuffer offset:0 atIndex:1];
+        [encoder setBuffer:distBuffer offset:0 atIndex:2];
+        [encoder setBytes:&m length:sizeof(uint32_t) atIndex:3];
+        [encoder setBytes:&handle->vectorCount length:sizeof(uint32_t) atIndex:4];
+
+        MTLSize gridSize = MTLSizeMake(handle->vectorCount, 1, 1);
+        NSUInteger threadGroupSize = pipeline.maxTotalThreadsPerThreadgroup;
+        if (threadGroupSize > handle->vectorCount) threadGroupSize = handle->vectorCount;
+        MTLSize threadgroupSize = MTLSizeMake(threadGroupSize, 1, 1);
+
+        [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+        [encoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+
+        memcpy(distances, [distBuffer contents], handle->vectorCount * sizeof(float));
+
+        return 0;
+    }
+}
+
 void metal_hybrid_cleanup(MetalHybridIndex* handle) {
     @autoreleasepool {
         if (handle->vectorBuffer) CFRelease(handle->vectorBuffer);
         if (handle->distancePipeline) CFRelease(handle->distancePipeline);
+        if (handle->pqPipeline) CFRelease(handle->pqPipeline);
         if (handle->commandQueue) CFRelease(handle->commandQueue);
         if (handle->device) CFRelease(handle->device);
         free(handle);
     }
+}
+
+void* metal_hybrid_get_vector_buffer(MetalHybridIndex* handle) {
+    id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
+    return [buffer contents];
 }
 */
 import "C"
@@ -162,13 +236,14 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"sort"
 	"sync"
 	"time"
 	"unsafe"
 
+	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
-	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -182,7 +257,7 @@ type MetalHybridIndex struct {
 }
 
 // NewMetalHybridIndex creates a hybrid Metal/CPU index
-func NewMetalHybridIndex(cfg types.GPUConfig) (types.Index, error) {
+func NewMetalHybridIndex(cfg gputypes.GPUConfig) (gputypes.Index, error) {
 	handle := C.metal_hybrid_init(C.int(cfg.Dimension))
 	if handle == nil {
 		return nil, fmt.Errorf("failed to initialize hybrid Metal device")
@@ -312,17 +387,17 @@ func (idx *MetalHybridIndex) Close() error {
 	return nil
 }
 
-func (idx *MetalHybridIndex) Backend() types.GPUBackend {
-	return types.BackendMetal
+func (idx *MetalHybridIndex) Backend() gputypes.GPUBackend {
+	return gputypes.BackendMetal
 }
 
 func (idx *MetalHybridIndex) DeviceID() int {
 	return 0
 }
 
-func (idx *MetalHybridIndex) GetDeviceInfo() (*types.GPUInfo, error) {
-	return &types.GPUInfo{
-		Backend:  types.BackendMetal,
+func (idx *MetalHybridIndex) GetDeviceInfo() (*gputypes.GPUInfo, error) {
+	return &gputypes.GPUInfo{
+		Backend:  gputypes.BackendMetal,
 		Name:     "Apple Silicon GPU",
 		DeviceID: 0,
 	}, nil
@@ -340,14 +415,50 @@ func (idx *MetalHybridIndex) SearchPQ(lookupTable []float32, m, k int) ([]int64,
 		return nil, nil, fmt.Errorf("index is closed")
 	}
 
-	// CPU fallback for PQ search
 	vectorCount := int(C.int(idx.handle.vectorCount))
+	if vectorCount == 0 {
+		return []int64{}, []float32{}, nil
+	}
 	if k > vectorCount {
 		k = vectorCount
 	}
 
-	// Simplified: return empty results with proper error for now
-	return nil, nil, fmt.Errorf("SearchPQ CPU fallback not fully implemented for hybrid index")
+	distances := make([]float32, vectorCount)
+	ret := C.metal_hybrid_compute_pq_distances(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&lookupTable[0])),
+		C.int(m),
+		(*C.float)(unsafe.Pointer(&distances[0])),
+	)
+
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("Metal hybrid PQ search failed")
+	}
+
+	type result struct {
+		id   int64
+		dist float32
+	}
+	results := make([]result, vectorCount)
+	for i := 0; i < vectorCount; i++ {
+		results[i] = result{id: int64(i), dist: distances[i]}
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].dist < results[j].dist
+	})
+
+	resIDs := make([]int64, k)
+	resDists := make([]float32, k)
+	for i := 0; i < k; i++ {
+		resIDs[i] = results[i].id
+		resDists[i] = results[i].dist
+	}
+
+	// Record metrics
+	metrics.RecordGPUSearch(time.Duration(0), "metal_hybrid_pq", k) // Duration is 0 because it's measured inside C or not at all here
+
+	return resIDs, resDists, nil
 }
 
 func (idx *MetalHybridIndex) TrainPQ(vectors []float32, m, k int) error {
@@ -425,7 +536,7 @@ func (idx *MetalHybridIndex) SearchFloat16(vector []uint16, k int) ([]int64, []f
 	// Convert uint16 (fp16) to float32 for search
 	f32Vec := make([]float32, len(vector))
 	for i, v := range vector {
-		f32Vec[i] = float16.New(float32FromUInt16(v)).Float32()
+		f32Vec[i] = float16.FromBits(v).Float32()
 	}
 
 	return idx.searchFloat32(f32Vec, k)

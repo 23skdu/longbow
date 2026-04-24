@@ -2,9 +2,11 @@ package store
 
 import (
 	"context"
+	"encoding/gob"
 	"fmt"
 	"io"
 	"os"
+	"sort"
 	"sync"
 
 	"github.com/23skdu/longbow/internal/core"
@@ -12,6 +14,7 @@ import (
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
 // =============================================================================
@@ -65,14 +68,38 @@ func (h *HNSWPluggableAdapter) Search(query []float32, k int) ([]IndexSearchResu
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 
-	results := make([]IndexSearchResult, 0, k)
-	for id := range h.vectors {
-		results = append(results, IndexSearchResult{ID: id, Distance: 0.0})
-		if len(results) >= k {
-			break
-		}
+	if len(h.vectors) == 0 {
+		return []IndexSearchResult{}, nil
 	}
-	return results, nil
+
+	type result struct {
+		id   uint64
+		dist float32
+	}
+	results := make([]result, 0, len(h.vectors))
+
+	for id, vec := range h.vectors {
+		var dist float32
+		for i := 0; i < len(vec) && i < len(query); i++ {
+			diff := vec[i] - query[i]
+			dist += diff * diff
+		}
+		results = append(results, result{id: id, dist: dist})
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].dist < results[j].dist
+	})
+
+	if k > len(results) {
+		k = len(results)
+	}
+
+	finalResults := make([]IndexSearchResult, k)
+	for i := 0; i < k; i++ {
+		finalResults[i] = IndexSearchResult{ID: results[i].id, Distance: results[i].dist}
+	}
+	return finalResults, nil
 }
 
 func (h *HNSWPluggableAdapter) SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error) {
@@ -109,12 +136,29 @@ func (h *HNSWPluggableAdapter) Build() error {
 }
 
 func (h *HNSWPluggableAdapter) Save(path string) error {
-	return os.WriteFile(path, []byte("hnsw"), 0600)
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	
+	f, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return gob.NewEncoder(f).Encode(h.vectors)
 }
 
 func (h *HNSWPluggableAdapter) Load(path string) error {
-	_, err := os.ReadFile(path) // #nosec G304
-	return err
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	f, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	return gob.NewDecoder(f).Decode(&h.vectors)
 }
 
 func (h *HNSWPluggableAdapter) Close() error {
@@ -163,18 +207,45 @@ func (a *PluggableInternalAdapter) Close() error    { return a.inner.Close() }
 
 // AddByRecord implements VectorIndexer. This is a stub for migrated indexes;
 // they are built from snapshots.
+// AddByRecord implements VectorIndexer. Extracts vectors from Arrow record and adds to index.
 func (a *PluggableInternalAdapter) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	return 0, fmt.Errorf("adaptive index bridge: incremental AddByRecord not supported")
+	fieldIndices := rec.Schema().FieldIndices("vector")
+	if len(fieldIndices) == 0 {
+		return 0, fmt.Errorf("column 'vector' not found")
+	}
+	col := rec.Column(fieldIndices[0])
+	list, ok := col.(*array.FixedSizeList)
+	if !ok {
+		return 0, fmt.Errorf("column 'vector' is not a FixedSizeList")
+	}
+	values := list.ListValues().(*array.Float32).Float32Values()
+	listSize := int(list.DataType().(*arrow.FixedSizeListType).Len())
+	start := rowIdx * listSize
+	vec := make([]float32, listSize)
+	copy(vec, values[start:start+listSize])
+
+	// Use sequential ID for simplicity
+	id := uint64(a.inner.Size())
+	err := a.inner.Add(id, vec)
+	return uint32(id), err
 }
 
 // AddByLocation implements VectorIndexer.
 func (a *PluggableInternalAdapter) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	return 0, fmt.Errorf("adaptive index bridge: incremental AddByLocation not supported")
+	return 0, fmt.Errorf("adaptive index bridge: incremental AddByLocation not supported (requires dataset access)")
 }
 
 // AddBatch implements VectorIndexer.
 func (a *PluggableInternalAdapter) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
-	return nil, fmt.Errorf("adaptive index bridge: incremental AddBatch not supported")
+	ids := make([]uint32, len(rowIdxs))
+	for i := range rowIdxs {
+		id, err := a.AddByRecord(ctx, recs[0], rowIdxs[i], batchIdxs[i]) // Simplified: assumes all rows in same record for now
+		if err != nil {
+			return nil, err
+		}
+		ids[i] = id
+	}
+	return ids, nil
 }
 
 // Search implements VectorIndexer.

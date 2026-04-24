@@ -117,3 +117,17 @@ func DetectGPUBackend() GPUBackend {
 	// Simplified check for NVIDIA
 	return BackendCPU
 }
+
+func GetDeviceCount() int {
+	backend := DetectGPUBackend()
+	switch backend {
+	case BackendMetal:
+		return 1 // Mac always has at least one Metal device
+	}
+	return 0
+}
+
+func GetGlobalGPUUtilization() (float32, error) {
+	// For now, no-op or simple implementation to break cycle.
+	return 0, nil
+}

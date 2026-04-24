@@ -42,3 +42,28 @@ func TestTPU_EnqueueStub(t *testing.T) {
 	err := tpuEnqueueBatch(0, data)
 	require.NoError(t, err)
 }
+
+func TestTPUIndex_Functional(t *testing.T) {
+	cfg := types.GPUConfig{DeviceID: 0, Dimension: 4}
+	idx, err := NewTPUIndexImpl(cfg)
+	require.NoError(t, err)
+	defer idx.Close()
+
+	// Test Add
+	vectors := []float32{
+		1.0, 0.0, 0.0, 0.0,
+		0.0, 1.0, 0.0, 0.0,
+	}
+	ids := []int64{1, 2}
+	err = idx.Add(ids, vectors)
+	require.NoError(t, err)
+
+	// Test Search
+	query := []float32{1.0, 0.1, 0.0, 0.0}
+	resIDs, dists, err := idx.Search(query, 2)
+	require.NoError(t, err)
+	require.Len(t, resIDs, 2)
+	require.Equal(t, int64(1), resIDs[0])
+	require.Equal(t, int64(2), resIDs[1])
+	require.True(t, dists[0] < dists[1])
+}

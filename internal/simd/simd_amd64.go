@@ -125,9 +125,6 @@ func dotAVX2(a, b []float32) (float32, error) {
 	return sum, nil
 }
 
-	return sum, nil
-}
-
 // AVX2 optimized Batch Euclidean distance
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
 	if !features.HasAVX2 {
@@ -267,6 +264,9 @@ func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) er
 }
 
 // Assembly function declarations
+
+//go:noescape
+func euclidean8AVX2(a, b unsafe.Pointer) float32
 
 //go:noescape
 func euclideanVertical4AVX2(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)

@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"os"
 	"path/filepath"
+	"sort"
 	"sync"
 	"testing"
 
@@ -333,14 +334,39 @@ func (m *mockPluggableIndex) AddBatch(ids []uint64, vectors [][]float32) error {
 func (m *mockPluggableIndex) Search(query []float32, k int) ([]IndexSearchResult, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	results := make([]IndexSearchResult, 0, k)
-	for id := range m.vectors {
-		results = append(results, IndexSearchResult{ID: id, Distance: 0.0})
-		if len(results) >= k {
-			break
-		}
+
+	if len(m.vectors) == 0 {
+		return []IndexSearchResult{}, nil
 	}
-	return results, nil
+
+	type result struct {
+		id   uint64
+		dist float32
+	}
+	results := make([]result, 0, len(m.vectors))
+
+	for id, vec := range m.vectors {
+		var dist float32
+		for i := 0; i < len(vec) && i < len(query); i++ {
+			diff := vec[i] - query[i]
+			dist += diff * diff
+		}
+		results = append(results, result{id: id, dist: dist})
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].dist < results[j].dist
+	})
+
+	if k > len(results) {
+		k = len(results)
+	}
+
+	finalResults := make([]IndexSearchResult, k)
+	for i := 0; i < k; i++ {
+		finalResults[i] = IndexSearchResult{ID: results[i].id, Distance: results[i].dist}
+	}
+	return finalResults, nil
 }
 
 func (m *mockPluggableIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error) {

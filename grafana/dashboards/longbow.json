@@ -209,6 +209,48 @@
       "type": "stat"
     },
     {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [
+            {
+              "options": {
+                "0": {"text": "Generic"},
+                "1": {"text": "NEON"},
+                "2": {"text": "AVX2"},
+                "3": {"text": "AVX512"}
+              },
+              "type": "value"
+            }
+          ],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {"color": "blue", "value": null}
+            ]
+          }
+        }
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 5
+      },
+      "id": 300,
+      "targets": [
+        {
+          "expr": "longbow_simd_static_dispatch_type",
+          "refId": "A"
+        }
+      ],
+      "title": "SIMD Dispatch Type",
+      "type": "stat"
+    },
+    {
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -3122,6 +3164,38 @@
       ],
       "title": "Polymorphic SIMD Dispatch Latency (P99)",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 120},
+      "id": 10100,
+      "panels": [],
+      "title": "Advanced Performance & Hardware",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 121},
+      "id": 10101,
+      "targets": [{"expr": "longbow_numa_node_count", "refId": "A"}],
+      "title": "NUMA Node Count",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 121},
+      "id": 10102,
+      "targets": [{"expr": "longbow_numa_enabled", "refId": "A"}],
+      "title": "NUMA Enabled",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 121},
+      "id": 10103,
+      "targets": [{"expr": "sum(longbow_turboquant_storage_bytes_total) / sum(longbow_vector_index_size * 1024 * 4 + 1)", "refId": "A"}],
+      "title": "Turboquant Compression Ratio (Est.)",
+      "type": "gauge"
     }
   ],
   "refresh": "5s",

@@ -87,6 +87,10 @@ spec:
               value: {{ .Values.hnsw.keepPruned | quote }}
             - name: LONGBOW_HNSW_SQ8_ENABLED
               value: {{ .Values.hnsw.sq8Enabled | quote }}
+            - name: LONGBOW_HNSW_SQ4_ENABLED
+              value: {{ .Values.hnsw.sq4Enabled | quote }}
+            - name: LONGBOW_HNSW_SQ2_ENABLED
+              value: {{ .Values.hnsw.sq2Enabled | quote }}
             - name: LONGBOW_HNSW_BQ_ENABLED
               value: {{ .Values.hnsw.bqEnabled | quote }}
             - name: LONGBOW_HNSW_FLOAT16_ENABLED
@@ -99,6 +103,8 @@ spec:
               value: {{ .Values.pq.k | quote }}
             - name: LONGBOW_HNSW_TURBOQUANT_ENABLED
               value: {{ .Values.hnsw.turboQuantEnabled | quote }}
+            - name: LONGBOW_HNSW_LEARNABLE_BITWIDTH_ENABLED
+              value: {{ .Values.hnsw.learnableBitWidthEnabled | quote }}
             - name: LONGBOW_GEO_SEARCH_ENABLED
               value: {{ .Values.hnsw.geoSearchEnabled | quote }}
 
@@ -145,6 +151,8 @@ spec:
               value: {{ .Values.gpu.enabled | quote }}
             - name: LONGBOW_GPU_DEVICE_ID
               value: {{ .Values.gpu.deviceId | quote }}
+            - name: LONGBOW_GPU_CUVS_ENABLED
+              value: {{ .Values.gpu.cuvsEnabled | quote }}
             {{- if .Values.s3.enabled }}
             - name: LONGBOW_S3_ENABLED
               value: "true"

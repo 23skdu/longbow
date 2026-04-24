@@ -548,3 +548,15 @@ func dotInt2AVX512(a, b []byte) (float32, error) {
 func dotInt2AVX2(a, b []byte) (float32, error) {
 	return dotInt4AVX2(a, b) // Placeholder
 }
+
+//go:noescape
+func dotInt4AVX512Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func dotInt4AVX2Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func dotInt2AVX512Kernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func dotInt2AVX2Kernel(a, b unsafe.Pointer, n int) float32

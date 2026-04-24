@@ -71,8 +71,10 @@ Full benchmark matrix of **448 test runs** (14 dtypes × 2 dims × 8 counts × 2
    - Enable profiling-based optimization targeting: Metal GPU utilization > 60% during search
 
 10. **Quantized HNSW for turboquant at high dimensions**
-    - turboquant at 384d (4,805 QPS) is lower than float32 (4,756 QPS) — the quantization overhead exceeds the SIMD savings at this dimension
-    - Consider hybrid: HNSW graph built on float32, search probes quantized centroids for coarse filtering
+    - Performance is comparable to float32 (~440ns/op in microbenchmark)
+    - At 384d: turboquant 4,805 QPS vs float32 4,756 QPS - turboquant is slightly faster
+    - GPU acceleration for TurboQuant decoding is not implemented (decode is CPU-bound)
+    - Consider: Hybrid IVF-TQ where TQ encodes centroids for coarse filtering
 
 ---
 

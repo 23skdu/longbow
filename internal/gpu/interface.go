@@ -5,8 +5,6 @@ import (
 	"os"
 	"os/exec"
 	"runtime"
-	"strconv"
-	"strings"
 
 	"github.com/23skdu/longbow/internal/gpu/memory"
 	"github.com/23skdu/longbow/internal/gpu/types"
@@ -150,15 +148,8 @@ func DetectGPUBackend() GPUBackend {
 }
 
 func GetDeviceCount() int {
-	backend := types.DetectGPUBackend()
+	backend := DetectGPUBackend()
 	switch backend {
-	case BackendCUDA:
-		// Attempt to use nvidia-smi to count
-		cmd := exec.Command("nvidia-smi", "-L")
-		out, err := cmd.Output()
-		if err == nil {
-			return len(strings.Split(strings.TrimSpace(string(out)), "\n"))
-		}
 	case BackendMetal:
 		return 1 // Mac always has at least one Metal device
 	}
@@ -166,16 +157,5 @@ func GetDeviceCount() int {
 }
 
 func GetGlobalGPUUtilization() (float32, error) {
-	backend := types.DetectGPUBackend()
-	if backend == BackendCUDA {
-		cmd := exec.Command("nvidia-smi", "--query-gpu=utilization.gpu", "--format=csv,noheader,nounits")
-		out, err := cmd.Output()
-		if err == nil {
-			val, err := strconv.ParseFloat(strings.TrimSpace(string(out)), 32)
-			if err == nil {
-				return float32(val), nil
-			}
-		}
-	}
 	return 0, fmt.Errorf("utilization monitoring not supported for current backend")
 }

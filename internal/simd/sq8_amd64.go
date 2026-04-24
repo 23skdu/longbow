@@ -33,6 +33,3 @@ func euclideanSQ8AVX512(a, b []byte) (int32, error) {
 
 //go:noescape
 func euclideanSQ8AVX2Kernel(a, b unsafe.Pointer, n int) int32
-
-//go:noescape
-func euclideanSQ8AVX512Kernel(a, b unsafe.Pointer, n int) int32

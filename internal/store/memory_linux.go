@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"os"
 	"runtime"
+	"strconv"
+	"strings"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -91,4 +93,42 @@ func pinThreadToNodeLinux(node int) error {
 	}
 
 	return unix.SchedSetaffinity(0, &cpuSet)
+}
+
+// parseCPUList parses Linux CPU list format (e.g., "0-3,8-11" or "0,2,4,6").
+func parseCPUList(cpulist string) ([]int, error) {
+	var cpus []int
+	if cpulist == "" {
+		return cpus, nil
+	}
+
+	parts := strings.Split(cpulist, ",")
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" {
+			continue
+		}
+
+		if strings.Contains(part, "-") {
+			rangeParts := strings.Split(part, "-")
+			if len(rangeParts) != 2 {
+				return nil, fmt.Errorf("invalid range: %s", part)
+			}
+			start, err1 := strconv.Atoi(strings.TrimSpace(rangeParts[0]))
+			end, err2 := strconv.Atoi(strings.TrimSpace(rangeParts[1]))
+			if err1 != nil || err2 != nil {
+				return nil, fmt.Errorf("invalid range numbers: %s", part)
+			}
+			for i := start; i <= end; i++ {
+				cpus = append(cpus, i)
+			}
+		} else {
+			cpu, err := strconv.Atoi(part)
+			if err != nil {
+				return nil, fmt.Errorf("invalid cpu number: %s", part)
+			}
+			cpus = append(cpus, cpu)
+		}
+	}
+	return cpus, nil
 }

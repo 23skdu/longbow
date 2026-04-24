@@ -8,7 +8,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/23skdu/longbow/internal/gpu"
+	"github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/rs/zerolog"
 )
@@ -66,7 +66,7 @@ func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger)
 		reader:             &defaultMemStatsReader{},
 		logger:             logger,
 		currentGOGC:        debug.SetGCPercent(-1),
-		EnableGPUTuning:    gpu.GetDeviceCount() > 0,
+		EnableGPUTuning:    types.GetDeviceCount() > 0,
 		GPUUtilizationHigh: 70.0,
 		GPUUtilizationLow:  30.0,
 	}
@@ -169,7 +169,7 @@ func (t *GCTuner) tune(heapInUse uint64) {
 	// Get GPU utilization if enabled
 	var gpuUtilization float32
 	if t.EnableGPUTuning {
-		if util, err := gpu.GetGlobalGPUUtilization(); err == nil {
+		if util, err := types.GetGlobalGPUUtilization(); err == nil {
 			gpuUtilization = util
 			t.lastGPUUtilization.Store(uint32(util * 10)) // Store as 0-1000
 		}

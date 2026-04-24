@@ -22,92 +22,151 @@ Full benchmark matrix of **448 test runs** (14 dtypes × 2 dims × 8 counts × 2
 
 ---
 
+## Verified Completed Items
+
+✅ **GPU Typed Search - All implementations complete:**
+- MetalIndex: SearchFloat16, SearchComplex64, SearchComplex128 (`internal/gpu/metal/metal_gpu.go`)
+- MetalHybridIndex: SearchFloat16, SearchComplex64, SearchComplex128 (`internal/gpu/metal/metal_gpu_hybrid.go`)
+- CUDAIndex: SearchFloat16, SearchComplex64, SearchComplex128 (`internal/gpu/cuda/cuda_index.go`)
+
+✅ **P0 Critical Fixes Completed (2026-04-23):**
+- CPUIndex: SearchFloat16, SearchComplex64, SearchComplex128 now implemented (`internal/gpu/factory.go`)
+- PluggableIndexAdapter: Returns proper errors for unsupported filters (`internal/store/pluggable_index_adapters.go`)
+- MockIndex: SearchFloat16, SearchComplex64, SearchComplex128 now implemented (`internal/gpu/mock_index.go`)
+
+✅ **P1 PQ Fallbacks Completed (2026-04-23):**
+- MetalIndex: TrainPQ, EncodePQ now have CPU fallbacks using pq package
+- MetalHybridIndex: TrainPQ, EncodePQ now have CPU fallbacks using pq package
+- CUDAIndex: TrainPQ, EncodePQ now have CPU fallbacks using pq package
+
+✅ **Core functionality:**
+- int16/uint16 search performance - Fixed
+- float16 search - Metal kernels exist, wired up
+- Metal GPU acceleration for all float types - Automatic dispatch
+- Complex types GPU acceleration - Metal kernels exist, wired up
+- Complex128 ingest - Efficient .view(np.float64) approach
+- int16/uint16 ingest - Arrow path already optimal
+- Batch query optimization for Metal - SearchBatch exists
+- Learned index routing - AutoShardingIndex exists
+- Prometheus GPU metrics - Already implemented
+- TurboQuant performance - Comparable to float32
+
+---
+
 ## Remaining Issues & Plan
 
-### P0 — Critical (Must Fix)
+### P1 — High Impact (Partially Fixed, Needs GPU Kernels)
 
-~~1. **GPU Typed Search Stubs - MetalIndex**~~ ✅ **FIXED** - Implemented in metal_gpu.go
-~~2. **GPU Typed Search Stubs - MetalHybridIndex**~~ ✅ **FIXED** - Implemented in metal_gpu_hybrid.go
-~~3. **GPU Typed Search Stubs - CUDAIndex**~~ ✅ **FIXED** - Uses existing fp16 kernel
-~~4. **GPU Typed Search Stubs - TPUIndex**~~ ⚠️ TBD - Not implementing (out of scope for now)
+1. **Product Quantization (PQ) GPU Kernels Missing**
+   - Status: CPU fallbacks implemented, but GPU-accelerated PQ not available
+   - Locations:
+     - `internal/gpu/metal/metal_gpu.go` - Need Metal PQ kernels for SearchPQ
+     - `internal/gpu/metal/metal_gpu_hybrid.go` - Need Metal PQ kernels
+     - `internal/gpu/cuda/cuda_index.go` - SearchPQ exists, need TrainPQ/EncodePQ GPU kernels
+   - Impact: PQ operations work but fall back to CPU (slower)
+   - Fix: Implement GPU kernels for PQ operations (large effort)
 
-### P1 — High Impact (Should Fix)
-
-3. **SearchPQ/TrainPQ/EncodePQ Not Implemented**
-   - Status: Returns "not implemented" in all GPU indexes
-   - Impact: Product Quantization search cannot use GPU
-   - Analysis: PQ requires dedicated Metal shader development for codebook lookup and reconstruction
-   - Fix: Backlog - requires GPU shader work
-
-4. **PluggableIndexAdapters Stub Methods**
-   - Status: SearchVectors/SearchVectorsWithBitmap return "not implemented"
-   - Impact: Bridge pattern incomplete for migrated indexes
-   - Analysis: These methods are for the old VectorIndexer interface, most callers use other paths
-   - Fix: Low priority - can be implemented if needed
+2. **PluggableIndexAdapter Interface Compliance**
+   - Status: Multiple no-op/stub methods for VectorIndexer interface
+   - Location: `internal/store/pluggable_index_adapters.go:108-293`
+   - Issues: `Build()`, `Save()`, `Load()` are fakes; `AddByRecord`, `AddByLocation`, `AddBatch` return errors
+   - Fix: Implement or clearly document limitations
 
 ### P2 — Medium Impact (Nice to Have)
 
-5. **Test Coverage - Skipped Tests**
-   - ~185 tests have t.Skip() for various reasons (timing, platform, complexity)
-   - Fix: Review and either fix test or remove dead code
+3. **TPUIndex Placeholder Implementation**
+   - Status: All methods wired but empty (lines 28-52 in `internal/gpu/tpu/tpu_index.go`)
+   - Impact: TPU path exists but non-functional
+   - Fix: Backlog - requires actual TPU integration work
 
-6. **Complex Types GPU Encoding**
+4. **Test Coverage - Skipped Tests**
+   - ~185 tests have t.Skip() for various reasons
+   - Fix: Review and either fix tests or remove dead code
+
+5. **Complex Types GPU Encoding**
    - Status: complex64/complex128 stored as float in Arrow (2x dim)
    - Fix: Consider native complex support if needed
 
-7. **IVF-TQ Hybrid for High Dimensions**
+6. **IVF-TQ Hybrid for High Dimensions**
    - Status: TurboQuant at 384d comparable to float32
    - Fix: Consider TQ-encoded centroids for IVF coarse filtering
 
-### Completed Items (Verified)
+### P3 — Low Priority
 
-✅ int16/uint16 search performance - Fixed in previous session
-✅ float16 search - Metal kernels exist, wired up
-✅ Metal GPU acceleration for all float types - Automatic dispatch
-✅ Complex types GPU acceleration - Metal kernels exist, wired up
-✅ Complex128 ingest - Efficient .view(np.float64) approach
-✅ int16/uint16 ingest - Arrow path already optimal
-✅ Batch query optimization for Metal - SearchBatch exists
-✅ Learned index routing - AutoShardingIndex exists
-✅ Prometheus GPU metrics - Already implemented
-✅ TurboQuant performance - Comparable to float32
-✅ GPU Typed Search - All GPU indexes now implement SearchFloat16/SearchComplex64/SearchComplex128
+7. **Stub Files for Platform Compatibility**
+   - Multiple stub files with build tags (expected pattern, not a bug):
+     - `internal/simd/simd_stubs.go` (!amd64)
+     - `internal/gpu/factory_stub.go` (!gpu)
+     - `internal/gpu/memory/*_stub.go` (platform-specific)
+     - `internal/onnx/*_stub.go` (platform-specific)
+     - `internal/query/simd_filter_stub.go` (!amd64)
+   - Fix: No action needed - these are correct platform abstractions
+
+8. **ML Reranker and Embedding Generator Stubs**
+   - Status: `stubMLModel` and `stubEmbeddingModel` provide fallbacks
+   - Locations: `internal/store/ml_reranker.go:199-224`, `internal/store/embedding_generator.go:705-726`
+   - Fix: No action needed - these are intentional fallbacks
 
 ---
 
 ## Remediation Plan
 
-### Completed (P0)
+### Completed (P0 & P1 Fallbacks)
 
 | Item | Owner | Files | Status |
 |------|-------|-------|--------|
-| Port SearchFloat16 to MetalIndex | GPU team | metal_gpu.go | ✅ Done |
-| Port SearchComplex64/128 to MetalIndex | GPU team | metal_gpu.go | ✅ Done |
-| Port SearchFloat16 to MetalHybridIndex | GPU team | metal_gpu_hybrid.go | ✅ Done |
-| Port SearchComplex64/128 to MetalHybridIndex | GPU team | metal_gpu_hybrid.go | ✅ Done |
-| Port SearchFloat16 to CUDAIndex | GPU team | cuda_index.go | ✅ Done |
-| Port SearchComplex64/128 to CUDAIndex | GPU team | cuda_index.go | ✅ Done |
+| Implement CPUIndex SearchFloat16 | Core team | `internal/gpu/factory.go` | ✅ Done |
+| Implement CPUIndex SearchComplex64 | Core team | `internal/gpu/factory.go` | ✅ Done |
+| Implement CPUIndex SearchComplex128 | Core team | `internal/gpu/factory.go` | ✅ Done |
+| Fix PluggableIndexAdapter filter support | Store team | `internal/store/pluggable_index_adapters.go` | ✅ Done |
+| Implement MockIndex typed search | Test team | `internal/gpu/mock_index.go` | ✅ Done |
+| CPU fallback for MetalIndex PQ ops | GPU team | `internal/gpu/metal/metal_gpu.go` | ✅ Done |
+| CPU fallback for MetalHybridIndex PQ ops | GPU team | `internal/gpu/metal/metal_gpu_hybrid.go` | ✅ Done |
+| CPU fallback for CUDAIndex PQ ops | GPU team | `internal/gpu/cuda/cuda_index.go` | ✅ Done |
 
-### Short-term (P1)
-
-| Item | Owner | Files | Status |
-|------|-------|-------|--------|
-| Implement SearchPQ in MetalIndex | GPU team | metal_gpu.go | Pending |
-| Implement TrainPQ in MetalIndex | GPU team | metal_gpu.go | Pending |
-| Implement EncodePQ in MetalIndex | GPU team | metal_gpu.go | Pending |
-| Implement SearchPQ in MetalHybridIndex | GPU team | metal_gpu_hybrid.go | Pending |
-| Fix PluggableIndexAdapters stubs | Store team | pluggable_index_adapters.go | Pending |
-
-### Long-term (P2)
+### P1 — Next Sprint (GPU PQ Kernels)
 
 | Item | Owner | Files | Status |
 |------|-------|-------|--------|
-| Review skipped tests | QA team | */*_test.go | Pending |
-| IVF-TQ hybrid | Index team | ivf_pq_index.go | Backlog |
+| Implement Metal PQ kernels (SearchPQ) | GPU team | `internal/gpu/metal/` | Pending |
+| Implement Metal PQ kernels (TrainPQ, EncodePQ) | GPU team | `internal/gpu/metal/` | Pending |
+| Implement CUDA TrainPQ/EncodePQ kernels | GPU team | `internal/gpu/cuda/` | Pending |
+
+### P2 — Medium-term (Backlog)
+
+| Item | Owner | Files | Status |
+|------|-------|-------|--------|
+| TPUIndex real implementation | Platform team | `internal/gpu/tpu/tpu_index.go` | Backlog |
+| Review skipped tests | QA team | `*/*_test.go` | Backlog |
+| IVF-TQ hybrid | Index team | `ivf_pq_index.go` | Backlog |
+
+---
+
+## Implementation Notes
+
+### CPUIndex Typed Search ✅ COMPLETED
+- SearchFloat16: Converts uint16 (fp16) to float32, then searches
+- SearchComplex64: Converts uint16 pairs to float32, then searches
+- SearchComplex128: Uses float32 representation directly
+- Location: `internal/gpu/factory.go:176-211`
+
+### PluggableIndexAdapter Filter Support ✅ COMPLETED
+- Now returns clear errors when filters or bitmap filters are provided
+- Location: `internal/store/pluggable_index_adapters.go:197-255`
+
+### MockIndex Typed Search ✅ COMPLETED
+- All typed search methods now convert and delegate to existing Search()
+- Location: `internal/gpu/mock_index.go:173-220`
+
+### PQ CPU Fallbacks ✅ COMPLETED
+- All PQ operations (SearchPQ, TrainPQ, EncodePQ) now have CPU implementations
+- Uses the `pq` package for K-Means training and encoding
+- GPU kernels still needed for full acceleration
 
 ---
 
 **Generated**: 2026-04-23
-**Last Updated**: 2026-04-23
+**Last Updated**: 2026-04-23 (P0 and P1 fallbacks completed)
 **Test Matrix**: 448 runs (14 dtypes × 2 dims × 8 counts × 2 backends × search types)
 **System**: Apple M3 Pro, 18GB allocated
+**Status**: P0 critical issues resolved, PQ CPU fallbacks in place, GPU kernels needed for full acceleration

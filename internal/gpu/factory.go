@@ -3,6 +3,7 @@ package gpu
 import (
 	"fmt"
 	"sort"
+	"unsafe"
 )
 
 // NewIndexWithBackend creates a GPU index with specified backend (delegates to implementation)
@@ -174,13 +175,57 @@ func (i *CPUIndex) EncodePQ(vectors []float32) ([]byte, error) {
 }
 
 func (i *CPUIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchFloat16 not implemented for CPUIndex")
+	// Convert float16 (uint16) to float32
+	f32 := make([]float32, len(vector))
+	for idx, v := range vector {
+		f32[idx] = float16ToFloat32(v)
+	}
+	return i.Search(f32, k)
 }
 
 func (i *CPUIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchComplex64 not implemented for CPUIndex")
+	// complex64 is 2 x float32, stored as uint16 pairs (for GPU compatibility)
+	// Convert to float32 vector (2 * len)
+	f32 := make([]float32, len(vector))
+	for idx, v := range vector {
+		f32[idx] = float16ToFloat32(v)
+	}
+	return i.Search(f32, k)
 }
 
 func (i *CPUIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchComplex128 not implemented for CPUIndex")
+	// complex128 is 2 x float64, but stored as float32 pairs in our format
+	// Search using the float32 representation directly
+	return i.Search(vector, k)
+}
+
+// float16ToFloat32 converts a uint16 float16 value to float32
+func float16ToFloat32(v uint16) float32 {
+	// Extract float16 components
+	sign := uint32(v >> 15)
+	exp := uint32((v >> 10) & 0x1F)
+	mant := uint32(v & 0x3FF)
+
+	// Handle special cases
+	if exp == 0 {
+		if mant == 0 {
+			// Zero
+			return float32FromBits(sign << 31)
+		}
+		// Subnormal
+		return float32FromBits((sign << 31) | (mant << 13))
+	}
+	if exp == 31 {
+		// Infinity or NaN
+		return float32FromBits((sign << 31) | (0xFF << 23) | (mant << 13))
+	}
+
+	// Normalized: convert exponent from 5-bit bias-15 to 8-bit bias-127
+	newExp := (exp - 15 + 127) << 23
+	return float32FromBits((sign << 31) | newExp | (mant << 13))
+}
+
+// float32FromBits converts uint32 bits to float32
+func float32FromBits(bits uint32) float32 {
+	return *(*float32)(unsafe.Pointer(&bits))
 }

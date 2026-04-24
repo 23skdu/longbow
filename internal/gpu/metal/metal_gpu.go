@@ -3,9 +3,12 @@
 package metal
 
 import (
+	"fmt"
+
 	"github.com/23skdu/longbow/internal/gpu/memory"
 	"github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 )
 
 /*
@@ -264,6 +267,7 @@ type MetalIndex struct {
 	closed     bool
 	memPool    *memory.GPUMemPool
 	deviceInfo *types.GPUInfo
+	pqEncoder  *pq.PQEncoder // CPU fallback for PQ operations
 
 	// Batch sync support
 	batchIDs     []int64
@@ -486,15 +490,103 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 }
 
 func (idx *MetalIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchPQ not implemented for Metal backend")
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	// CPU fallback for PQ search using lookup table
+	// lookupTable contains precomputed distances for each vector and each PQ code
+	// For now, do a simple linear scan using the lookup table
+	numVecs := idx.vectorCount
+	if k > numVecs {
+		k = numVecs
+	}
+
+	type result struct {
+		id       int64
+		distance float32
+	}
+
+	results := make([]result, 0, numVecs)
+	for i := 0; i < numVecs; i++ {
+		id := idx.ids[i]
+		// Use the lookup table to get distance for this vector
+		// The lookup table format depends on the PQ configuration
+		dist := lookupTable[i*m] // Simplified - actual implementation depends on table format
+		results = append(results, result{id: id, distance: dist})
+	}
+
+	// Sort by distance
+	// (Implementation simplified - would need proper sorting)
+	return nil, nil, fmt.Errorf("SearchPQ CPU fallback not fully implemented")
 }
 
 func (idx *MetalIndex) TrainPQ(vectors []float32, m int, k int) error {
-	return fmt.Errorf("TrainPQ not implemented for MetalIndex")
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	// CPU fallback: Train PQ codebooks using K-Means
+	dims := idx.dimension
+	if dims%m != 0 {
+		return fmt.Errorf("dimension %d must be divisible by M %d", dims, m)
+	}
+
+	// Create encoder and train
+	encoder, err := pq.NewPQEncoder(dims, m, k)
+	if err != nil {
+		return fmt.Errorf("failed to create PQ encoder: %w", err)
+	}
+
+	// Convert flat vectors to [][]float32
+	numVecs := len(vectors) / dims
+	vecs2d := make([][]float32, numVecs)
+	for i := 0; i < numVecs; i++ {
+		vecs2d[i] = vectors[i*dims : (i+1)*dims]
+	}
+
+	if err := encoder.Train(vecs2d); err != nil {
+		return fmt.Errorf("PQ training failed: %w", err)
+	}
+
+	// Store encoder in index for later use
+	idx.pqEncoder = encoder
+	return nil
 }
 
 func (idx *MetalIndex) EncodePQ(vectors []float32) ([]byte, error) {
-	return nil, fmt.Errorf("EncodePQ not implemented for MetalIndex")
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	if idx.pqEncoder == nil {
+		return nil, fmt.Errorf("PQ encoder not trained")
+	}
+
+	// Encode each vector
+	dims := idx.dimension
+	numVecs := len(vectors) / dims
+	codes := make([]byte, numVecs*idx.pqEncoder.M)
+
+	for i := 0; i < numVecs; i++ {
+		vec := vectors[i*dims : (i+1)*dims]
+		encoded, err := idx.pqEncoder.Encode(vec)
+		if err != nil {
+			return nil, fmt.Errorf("encoding failed at vector %d: %w", i, err)
+		}
+		copy(codes[i*idx.pqEncoder.M:(i+1)*idx.pqEncoder.M], encoded)
+	}
+
+	return codes, nil
 }
 
 // SearchBatch queries the Metal GPU index with multiple vectors in parallel.

@@ -387,6 +387,7 @@ type CUDAIndex struct {
 	closed     bool
 	memPool    *memory.GPUMemPool
 	deviceInfo *types.GPUInfo
+	pqEncoder  *pq.PQEncoder // CPU fallback for PQ operations
 
 	batchIDs     []int64
 	batchVectors []float32
@@ -626,11 +627,63 @@ func (idx *CUDAIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []
 }
 
 func (idx *CUDAIndex) TrainPQ(vectors []float32, m int, k int) error {
-	return fmt.Errorf("TrainPQ not implemented for CUDAIndex")
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	// CPU fallback: Train PQ codebooks using K-Means
+	if idx.dim%m != 0 {
+		return fmt.Errorf("dimension %d must be divisible by M %d", idx.dim, m)
+	}
+
+	encoder, err := pq.NewPQEncoder(idx.dim, m, k)
+	if err != nil {
+		return fmt.Errorf("failed to create PQ encoder: %w", err)
+	}
+
+	// Convert flat vectors to [][]float32
+	numVecs := len(vectors) / idx.dim
+	vecs2d := make([][]float32, numVecs)
+	for i := 0; i < numVecs; i++ {
+		vecs2d[i] = vectors[i*idx.dim : (i+1)*idx.dim]
+	}
+
+	if err := encoder.Train(vecs2d); err != nil {
+		return fmt.Errorf("PQ training failed: %w", err)
+	}
+
+	idx.pqEncoder = encoder
+	return nil
 }
 
 func (idx *CUDAIndex) EncodePQ(vectors []float32) ([]byte, error) {
-	return nil, fmt.Errorf("EncodePQ not implemented for CUDAIndex")
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	if idx.pqEncoder == nil {
+		return nil, fmt.Errorf("PQ encoder not trained")
+	}
+
+	numVecs := len(vectors) / idx.dim
+	codes := make([]byte, numVecs*idx.pqEncoder.M)
+
+	for i := 0; i < numVecs; i++ {
+		vec := vectors[i*idx.dim : (i+1)*idx.dim]
+		encoded, err := idx.pqEncoder.Encode(vec)
+		if err != nil {
+			return nil, fmt.Errorf("encoding failed at vector %d: %w", i, err)
+		}
+		copy(codes[i*idx.pqEncoder.M:(i+1)*idx.pqEncoder.M], encoded)
+	}
+
+	return codes, nil
 }
 
 func (idx *CUDAIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float32, error) {

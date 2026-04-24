@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"unsafe"
 )
 
 // MockIndex implements the Index interface for testing purposes.
@@ -171,13 +172,70 @@ func (m *MockIndex) euclideanDistance(a, b []float32) float32 {
 }
 
 func (m *MockIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchFloat16 not implemented in MockIndex")
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.closed {
+		return nil, nil, fmt.Errorf("index closed")
+	}
+
+	// Convert float16 (uint16) to float32
+	f32 := make([]float32, len(vector))
+	for idx, v := range vector {
+		f32[idx] = float16ToFloat32Mock(v)
+	}
+	return m.Search(f32, k)
 }
 
 func (m *MockIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchComplex64 not implemented in MockIndex")
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.closed {
+		return nil, nil, fmt.Errorf("index closed")
+	}
+
+	// complex64 is 2 x float32, stored as uint16 pairs - convert to float32
+	f32 := make([]float32, len(vector))
+	for idx, v := range vector {
+		f32[idx] = float16ToFloat32Mock(v)
+	}
+	return m.Search(f32, k)
 }
 
 func (m *MockIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchComplex128 not implemented in MockIndex")
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.closed {
+		return nil, nil, fmt.Errorf("index closed")
+	}
+
+	// complex128 is 2 x float64, stored as float32 pairs - search directly
+	return m.Search(vector, k)
+}
+
+// float16ToFloat32Mock converts a uint16 float16 value to float32
+func float16ToFloat32Mock(v uint16) float32 {
+	sign := uint32(v >> 15)
+	exp := uint32((v >> 10) & 0x1F)
+	mant := uint32(v & 0x3FF)
+
+	if exp == 0 {
+		if mant == 0 {
+			return float32FromBitsMock(sign << 31)
+		}
+		return float32FromBitsMock((sign << 31) | (mant << 13))
+	}
+	if exp == 31 {
+		return float32FromBitsMock((sign << 31) | (0xFF << 23) | (mant << 13))
+	}
+
+	newExp := (exp - 15 + 127) << 23
+	return float32FromBitsMock((sign << 31) | newExp | (mant << 13))
+}
+
+// float32FromBitsMock converts uint32 bits to float32
+func float32FromBitsMock(bits uint32) float32 {
+	return *(*float32)(unsafe.Pointer(&bits))
 }

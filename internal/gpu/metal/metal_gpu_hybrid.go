@@ -167,16 +167,18 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // MetalHybridIndex uses GPU for distances, CPU for selection
 type MetalHybridIndex struct {
-	handle *C.MetalHybridIndex
-	dim    int
-	mu     sync.RWMutex
-	closed bool
+	handle    *C.MetalHybridIndex
+	dim       int
+	mu        sync.RWMutex
+	closed    bool
+	pqEncoder *pq.PQEncoder // CPU fallback for PQ operations
 }
 
 // NewMetalHybridIndex creates a hybrid Metal/CPU index
@@ -331,15 +333,81 @@ func (idx *MetalHybridIndex) GetMemoryInfo() (int64, int64, int64, error) {
 }
 
 func (idx *MetalHybridIndex) SearchPQ(lookupTable []float32, m, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchPQ not implemented for hybrid Metal index")
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	// CPU fallback for PQ search
+	vectorCount := int(C.int(idx.handle.vectorCount))
+	if k > vectorCount {
+		k = vectorCount
+	}
+
+	// Simplified: return empty results with proper error for now
+	return nil, nil, fmt.Errorf("SearchPQ CPU fallback not fully implemented for hybrid index")
 }
 
 func (idx *MetalHybridIndex) TrainPQ(vectors []float32, m, k int) error {
-	return fmt.Errorf("TrainPQ not implemented for hybrid Metal index")
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	// CPU fallback: Train PQ codebooks using K-Means
+	if idx.dim%m != 0 {
+		return fmt.Errorf("dimension %d must be divisible by M %d", idx.dim, m)
+	}
+
+	encoder, err := pq.NewPQEncoder(idx.dim, m, k)
+	if err != nil {
+		return fmt.Errorf("failed to create PQ encoder: %w", err)
+	}
+
+	// Convert flat vectors to [][]float32
+	numVecs := len(vectors) / idx.dim
+	vecs2d := make([][]float32, numVecs)
+	for i := 0; i < numVecs; i++ {
+		vecs2d[i] = vectors[i*idx.dim : (i+1)*idx.dim]
+	}
+
+	if err := encoder.Train(vecs2d); err != nil {
+		return fmt.Errorf("PQ training failed: %w", err)
+	}
+
+	idx.pqEncoder = encoder
+	return nil
 }
 
 func (idx *MetalHybridIndex) EncodePQ(vectors []float32) ([]byte, error) {
-	return nil, fmt.Errorf("EncodePQ not implemented for hybrid Metal index")
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	if idx.pqEncoder == nil {
+		return nil, fmt.Errorf("PQ encoder not trained")
+	}
+
+	numVecs := len(vectors) / idx.dim
+	codes := make([]byte, numVecs*idx.pqEncoder.M)
+
+	for i := 0; i < numVecs; i++ {
+		vec := vectors[i*idx.dim : (i+1)*idx.dim]
+		encoded, err := idx.pqEncoder.Encode(vec)
+		if err != nil {
+			return nil, fmt.Errorf("encoding failed at vector %d: %w", i, err)
+		}
+		copy(codes[i*idx.pqEncoder.M:(i+1)*idx.pqEncoder.M], encoded)
+	}
+
+	return codes, nil
 }
 
 func (idx *MetalHybridIndex) GetUtilization() (float32, error) {

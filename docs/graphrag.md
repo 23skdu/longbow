@@ -1,6 +1,6 @@
-# GraphRAG Internals: Dual-Path Graph Architecture
+# GraphRAG: Dual-Path Graph Architecture
 
-**Last Updated**: 2026-04-21
+**Last Updated**: 2026-04-24
 **Related Docs**: [functions.md](functions.md) · [vectorsearch.md](vectorsearch.md)
 
 ---

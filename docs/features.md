@@ -4,7 +4,7 @@
 
 ---
 
-## Implemented Features (0.1.9)
+## Implemented Features
 
 ### 🚀 Performance & Scalability
 

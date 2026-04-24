@@ -44,7 +44,7 @@ print(f"Rows: {table.num_rows}")
 # Graph Traversal
 paths = client.traverse("my_graph", start=101, max_hops=2)
 
-# Geospatial Search (0.1.9)
+# Geospatial Search
 results = client.geo_search(
     "cities", 
     center={"lat": 40.7, "lon": -74.0}, 
@@ -65,7 +65,7 @@ results = client.geo_search(
 ### Management & Control
 
 - `create_namespace(name)`: Create a new tenant isolation namespace.
-- `create_dataset(name, dimensions, vector_type="float32", geo_enabled=True)`: Create a dataset with 0.1.9 features.
+- `create_dataset(name, dimensions, vector_type="float32", geo_enabled=True)`: Create a dataset with all features enabled.
 - `delete_namespace(name)`: Delete an entire namespace.
 - `list_namespaces()`: List all active datasets.
 - `snapshot()`: Trigger a manual snapshot.

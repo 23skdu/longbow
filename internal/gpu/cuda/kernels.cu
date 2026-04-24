@@ -130,4 +130,64 @@ void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* co
     pq_distance_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(lookupTable, codes, distances, m, count);
 }
 
+// TurboQuant Distance Kernel
+__global__ void turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < count) {
+        int angleCount = pow2 - 1;
+        int angleBytes = (angleCount * bitsPerAngle + 7) / 8;
+        int bitBytes = (pow2 + 7) / 8;
+        int stride = 4 + angleBytes + bitBytes;
+        
+        const unsigned char* data = tqData + (idx * stride);
+        float radius = *(const float*)data;
+        const unsigned char* packedAngles = data + 4;
+        const unsigned char* qjlBits = data + 4 + angleBytes;
+        
+        float recon[1024]; // Max supported for now
+        recon[0] = radius;
+        int currentLevelSize = 1;
+        int angleOffset = angleCount;
+        
+        while (currentLevelSize < pow2) {
+            angleOffset -= currentLevelSize;
+            for (int i = currentLevelSize - 1; i >= 0; i--) {
+                float r = recon[i];
+                int bitStart = (angleOffset + i) * bitsPerAngle;
+                unsigned int q = 0;
+                for (int k = 0; k < bitsPerAngle; k++) {
+                    int bitIdx = bitStart + k;
+                    if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1) {
+                        q |= (1 << k);
+                    }
+                }
+                float theta = (float(q) / ((1 << bitsPerAngle) - 1)) * 2.0f * 3.14159265f - 3.14159265f;
+                float s, c;
+                sincosf(theta, &s, &c);
+                recon[2*i] = r * c;
+                recon[2*i+1] = r * s;
+            }
+            currentLevelSize *= 2;
+        }
+        
+        float sum = 0.0f;
+        float correctionFactor = radius / sqrtf((float)pow2) * 0.1f;
+        for (int i = 0; i < dim; i++) {
+            float val = recon[i];
+            if ((qjlBits[i / 8] >> (i % 8)) & 1) val += correctionFactor;
+            else val -= 0.1f;
+            
+            float diff = query[i] - val;
+            sum += diff * diff;
+        }
+        distances[idx] = sqrtf(sum);
+    }
+}
+
+void launch_turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
+    turboquant_distance_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(query, tqData, distances, dim, pow2, bitsPerAngle, count);
+}
+
 }

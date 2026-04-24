@@ -8,6 +8,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
@@ -251,7 +252,7 @@ func (p *DoGetPipeline) Stop() {
 type PipelineStage struct {
 	Record    arrow.RecordBatch
 	BatchIdx  int
-	Tombstone *query.Bitset // Legacy field
+	Tombstone *types.Bitset // Legacy field
 	Err       error
 }
 
@@ -259,7 +260,7 @@ type PipelineStage struct {
 func (p *DoGetPipeline) ProcessRecords(
 	ctx context.Context,
 	records []arrow.RecordBatch,
-	tombstones map[int]*query.Bitset,
+	tombstones map[int]*types.Bitset,
 	filters []query.Filter,
 	evaluator any,
 ) <-chan PipelineStage {

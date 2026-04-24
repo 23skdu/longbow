@@ -125,6 +125,14 @@ func euclideanF16BatchAVX512(query []float16.Num, vectors [][]float16.Num, resul
 	return euclideanF16BatchGeneric(query, vectors, results)
 }
 
+func matchInt32AVX2(src []int32, val int32, op CompareOp, dst []byte) error {
+	return matchInt32Generic(src, val, op, dst)
+}
+
+func matchInt32AVX512(src []int32, val int32, op CompareOp, dst []byte) error {
+	return matchInt32Generic(src, val, op, dst)
+}
+
 func andBytesAVX2(dst, src []byte) { andBytesGeneric(dst, src) }
 func orBytesAVX2(dst, src []byte)  { orBytesGeneric(dst, src) }
 func isAllZerosAVX2(src []byte) bool { return isAllZerosGeneric(src) }

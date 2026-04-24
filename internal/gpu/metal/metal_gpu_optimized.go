@@ -719,7 +719,83 @@ const char* metalShaderSource =
 "        topDistances[queryIdx * k + i] = minDist;\n"
 "        indices[queryIdx * k + i] = minIdx;\n"
 "    }\n"
-"}\n";
+"}\n"
+"\n"
+"// TurboQuant distance computation for high-dimensional vectors (768d+)\n"
+"kernel void compute_tq_distances(\n"
+"    device const float* query [[buffer(0)]],\n"
+"    device const uchar* tqData [[buffer(1)]],\n"
+"    device float* distances [[buffer(2)]],\n"
+"    constant uint& dim [[buffer(3)]],\n"
+"    constant uint& pow2 [[buffer(4)]],\n"
+"    constant uint& bitsPerAngle [[buffer(5)]],\n"
+"    constant uint& numVectors [[buffer(6)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    // Format: [Radius (4B)][Packed Angles][QJL Bits]\n"
+"    uint angleCount = pow2 - 1;\n"
+"    uint angleBytes = (angleCount * bitsPerAngle + 7) / 8;\n"
+"    uint bitBytes = (pow2 + 7) / 8;\n"
+"    uint stride = 4 + angleBytes + bitBytes;\n"
+"    \n"
+"    device const uchar* data = tqData + (gid * stride);\n"
+"    \n"
+"    float radius = *(device const float*)data;\n"
+"    device const uchar* packedAngles = data + 4;\n"
+"    device const uchar* qjlBits = data + 4 + angleBytes;\n"
+"    \n"
+"    // Iterative Polar Reconstruction (using local registers/stack)\n"
+"    // Max supported dimension in this kernel is 1024 (pow2)\n"
+"    float recon[1024];\n"
+"    \n"
+"    recon[0] = radius;\n"
+"    uint currentLevelSize = 1;\n"
+"    uint angleOffset = angleCount;\n"
+"    \n"
+"    while (currentLevelSize < pow2) {\n"
+"        angleOffset -= currentLevelSize;\n"
+"        for (int i = (int)currentLevelSize - 1; i >= 0; i--) {\n"
+"            float r = recon[i];\n"
+"            \n"
+"            uint bitStart = (angleOffset + i) * bitsPerAngle;\n"
+"            uint q = 0;\n"
+"            for (uint k = 0; k < bitsPerAngle; k++) {\n"
+"                uint bitIdx = bitStart + k;\n"
+"                if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1) {\n"
+"                    q |= (1 << k);\n"
+"                }\n"
+"            }\n"
+"            float theta = (float(q) / ((1 << bitsPerAngle) - 1)) * 2.0f * 3.14159265f - 3.14159265f;\n"
+"            \n"
+"            float s, c;\n"
+"            s = sincos(theta, c);\n"
+"            recon[2*i] = r * c;\n"
+"            recon[2*i+1] = r * s;\n"
+"        }\n"
+"        currentLevelSize *= 2;\n"
+"    }\n"
+"    \n"
+"    // QJL Correction & Distance\n"
+"    float sum = 0.0f;\n"
+"    float correctionFactor = radius / sqrt((float)pow2) * 0.1f;\n"
+"    \n"
+"    for (uint i = 0; i < dim; i++) {\n"
+"        float val = recon[i];\n"
+"        if ((qjlBits[i / 8] >> (i % 8)) & 1) {\n"
+"            val += correctionFactor;\n"
+"        } else {\n"
+"            val -= 0.1f;\n"
+"        }\n"
+"        \n"
+"        float diff = query[i] - val;\n"
+"        sum += diff * diff;\n"
+"    }\n"
+"    \n"
+"    distances[gid] = sqrt(sum);\n"
+"}\n"
+";\n"
 
 // Distance metric type
 typedef enum {
@@ -745,6 +821,7 @@ typedef struct {
     void* cosineC64Pipeline;
     void* l2C128Pipeline;
     void* cosineC128Pipeline;
+    void* tqPipeline;
     int vectorCount;
     int dimensions;
     int capacity;
@@ -789,6 +866,7 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
         id<MTLFunction> cosineC128Func = [library newFunctionWithName:@"compute_cosine_similarity_complex128"];
         id<MTLFunction> l2C64Func = [library newFunctionWithName:@"compute_l2_distances_complex64"];
         id<MTLFunction> cosineC64Func = [library newFunctionWithName:@"compute_cosine_similarity_complex64"];
+        id<MTLFunction> tqFunc = [library newFunctionWithName:@"compute_tq_distances"];
 
         id<MTLComputePipelineState> l2Pipeline = nil;
         id<MTLComputePipelineState> cosinePipeline = nil;
@@ -799,6 +877,7 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
         id<MTLComputePipelineState> dotFp16Pipeline = nil;
         id<MTLComputePipelineState> l2C128Pipeline = nil;
         id<MTLComputePipelineState> cosineC128Pipeline = nil;
+        id<MTLComputePipelineState> tqPipeline = nil;
         id<MTLComputePipelineState> l2C64Pipeline = nil;
         id<MTLComputePipelineState> cosineC64Pipeline = nil;
 
@@ -835,6 +914,9 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
         if (cosineC64Func) {
             cosineC64Pipeline = [device newComputePipelineStateWithFunction:cosineC64Func error:&error];
         }
+        if (tqFunc) {
+            tqPipeline = [device newComputePipelineStateWithFunction:tqFunc error:&error];
+        }
 
         if (!l2Pipeline || !topKPipeline) {
             NSLog(@"Failed to create compute pipelines: %@", error);
@@ -857,6 +939,7 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
         handle->cosineC128Pipeline = (__bridge_retained void*)cosineC128Pipeline;
         handle->l2C64Pipeline = (__bridge_retained void*)l2C64Pipeline;
         handle->cosineC64Pipeline = (__bridge_retained void*)cosineC64Pipeline;
+        handle->tqPipeline = (__bridge_retained void*)tqPipeline;
         handle->vectorCount = 0;
         handle->dimensions = dimensions;
         handle->capacity = 0;
@@ -1065,6 +1148,9 @@ void metal_cleanup_optimized(MetalIndexOptimized* handle) {
             if (handle->topKPipeline) {
                 CFRelease(handle->topKPipeline);
             }
+            if (handle->tqPipeline) {
+                CFRelease(handle->tqPipeline);
+            }
             if (handle->cosinePipeline) {
                 CFRelease(handle->cosinePipeline);
             }
@@ -1222,6 +1308,101 @@ int metal_search_typed(MetalIndexOptimized* handle, void* query, int k, int64_t*
             }
         }
 
+        return 0;
+    }
+}
+int metal_add_tq_vectors_optimized(MetalIndexOptimized* handle, unsigned char* tqData, int stride, int64_t* ids, int count) {
+    @autoreleasepool {
+        if (!handle || !tqData) return -1;
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+
+        int requiredCapacity = handle->vectorCount + count;
+        if (requiredCapacity > handle->capacity) {
+            int newCapacity = handle->capacity > 0 ? handle->capacity : 1024;
+            while (newCapacity < requiredCapacity) newCapacity *= 2;
+
+            size_t bufferSize = (size_t)newCapacity * stride;
+            id<MTLBuffer> newVectorBuffer = [device newBufferWithLength:bufferSize options:MTLResourceStorageModeShared];
+            if (!newVectorBuffer) return -1;
+
+            if (handle->vectorBuffer && handle->vectorCount > 0) {
+                memcpy([newVectorBuffer contents], [(__bridge id<MTLBuffer>)handle->vectorBuffer contents], (size_t)handle->vectorCount * stride);
+                CFRelease(handle->vectorBuffer);
+            }
+            handle->vectorBuffer = (__bridge_retained void*)newVectorBuffer;
+            handle->capacity = newCapacity;
+
+            // Grow ID buffer
+            size_t idBufferSize = (size_t)newCapacity * sizeof(int64_t);
+            id<MTLBuffer> newIdBuffer = [device newBufferWithLength:idBufferSize options:MTLResourceStorageModeShared];
+            if (handle->idBuffer) {
+                memcpy([newIdBuffer contents], [(__bridge id<MTLBuffer>)handle->idBuffer contents], (size_t)handle->vectorCount * sizeof(int64_t));
+                CFRelease(handle->idBuffer);
+            }
+            handle->idBuffer = (__bridge_retained void*)newIdBuffer;
+        }
+
+        memcpy((unsigned char*)[(__bridge id<MTLBuffer>)handle->vectorBuffer contents] + (size_t)handle->vectorCount * stride, tqData, (size_t)count * stride);
+        memcpy((int64_t*)[(__bridge id<MTLBuffer>)handle->idBuffer contents] + handle->vectorCount, ids, (size_t)count * sizeof(int64_t));
+        handle->vectorCount += count;
+        return 0;
+    }
+}
+
+int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, int pow2, int bitsPerAngle, int64_t* resultIDs, float* resultDistances) {
+    @autoreleasepool {
+        if (!handle->vectorBuffer || handle->vectorCount == 0 || !handle->tqPipeline) return -1;
+
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLBuffer> tqBuffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
+        id<MTLComputePipelineState> tqPipeline = (__bridge id<MTLComputePipelineState>)handle->tqPipeline;
+        id<MTLComputePipelineState> topKPipeline = (__bridge id<MTLComputePipelineState>)handle->topKPipeline;
+
+        id<MTLBuffer> queryBuffer = [device newBufferWithBytes:query length:handle->dimensions * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> distBuffer = [device newBufferWithLength:handle->vectorCount * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> indicesBuffer = [device newBufferWithLength:k * sizeof(int) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> topDistancesBuffer = [device newBufferWithLength:k * sizeof(float) options:MTLResourceStorageModeShared];
+
+        for (int i = 0; i < k; i++) {
+            ((int*)indicesBuffer.contents)[i] = -1;
+            ((float*)topDistancesBuffer.contents)[i] = INFINITY;
+        }
+
+        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+        [encoder setComputePipelineState:tqPipeline];
+        [encoder setBuffer:queryBuffer offset:0 atIndex:0];
+        [encoder setBuffer:tqBuffer offset:0 atIndex:1];
+        [encoder setBuffer:distBuffer offset:0 atIndex:2];
+        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:3];
+        [encoder setBytes:&pow2 length:sizeof(uint32_t) atIndex:4];
+        [encoder setBytes:&bitsPerAngle length:sizeof(uint32_t) atIndex:5];
+        [encoder setBytes:&handle->vectorCount length:sizeof(uint32_t) atIndex:6];
+
+        [encoder dispatchThreads:MTLSizeMake(handle->vectorCount, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(handle->vectorCount, (int)tqPipeline.maxTotalThreadsPerThreadgroup), 1, 1)];
+
+        [encoder setComputePipelineState:topKPipeline];
+        [encoder setBuffer:distBuffer offset:0 atIndex:0];
+        [encoder setBuffer:indicesBuffer offset:0 atIndex:1];
+        [encoder setBuffer:topDistancesBuffer offset:0 atIndex:2];
+        [encoder setBytes:&handle->vectorCount length:sizeof(uint32_t) atIndex:3];
+        [encoder setBytes:&k length:sizeof(uint32_t) atIndex:4];
+
+        [encoder dispatchThreads:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+        [encoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+
+        int* indices = (int*)[indicesBuffer contents];
+        float* distances = (float*)[topDistancesBuffer contents];
+        int64_t* ids = (int64_t*)[(__bridge id<MTLBuffer>)handle->idBuffer contents];
+
+        for (int i = 0; i < k; i++) {
+            resultIDs[i] = (indices[i] >= 0 && indices[i] < handle->vectorCount) ? ids[indices[i]] : -1;
+            resultDistances[i] = distances[i];
+        }
         return 0;
     }
 }
@@ -1506,4 +1687,71 @@ func (idx *MetalIndexOptimized) EncodePQ(vectors []float32) ([]byte, error) {
 
 func (idx *MetalIndexOptimized) GetUtilization() (float32, error) {
 	return 50.0, nil
+}
+
+func (idx *MetalIndexOptimized) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	count := len(ids)
+	if count == 0 {
+		return nil
+	}
+
+	stride := len(tqData) / count
+
+	ret := C.metal_add_tq_vectors_optimized(
+		idx.handle,
+		(*C.uchar)(unsafe.Pointer(&tqData[0])),
+		C.int(stride),
+		(*C.int64_t)(unsafe.Pointer(&ids[0])),
+		C.int(count),
+	)
+
+	if ret != 0 {
+		return fmt.Errorf("failed to add TQ vectors to optimized Metal buffer")
+	}
+
+	return nil
+}
+
+func (idx *MetalIndexOptimized) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	if len(vector) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
+	}
+
+	pow2 := 1
+	for pow2 < idx.dim {
+		pow2 <<= 1
+	}
+
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+
+	ret := C.metal_search_tq_optimized(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&vector[0])),
+		C.int(k),
+		C.int(pow2),
+		C.int(bitsPerAngle),
+		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
+		(*C.float)(unsafe.Pointer(&resultDistances[0])),
+	)
+
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("optimized Metal TQ search failed")
+	}
+
+	return resultIDs, resultDistances, nil
 }

@@ -24,7 +24,6 @@ import (
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
-	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/tracing"
 )
@@ -162,7 +161,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 				} else {
 					// Set tombstone.
 					if ds.Tombstones[loc.BatchIdx] == nil {
-						ds.Tombstones[loc.BatchIdx] = qry.NewBitset()
+						ds.Tombstones[loc.BatchIdx] = types.NewBitset()
 					}
 					ds.Tombstones[loc.BatchIdx].Set(loc.RowIdx)
 					ds.RecordBatchDeletion(loc.BatchIdx)
@@ -231,7 +230,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 					ds.metadataMu.Lock()
 					if ds.Tombstones[i] == nil {
-						ds.Tombstones[i] = qry.NewBitset()
+						ds.Tombstones[i] = types.NewBitset()
 					}
 					ds.Tombstones[i].Set(rowIdx)
 					ds.RecordBatchDeletion(i)
@@ -393,7 +392,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		// set tombstone
 		ds.dataMu.Lock()
 		if ds.Tombstones[loc.BatchIdx] == nil {
-			ds.Tombstones[loc.BatchIdx] = qry.NewBitset()
+			ds.Tombstones[loc.BatchIdx] = types.NewBitset()
 		}
 		ts := ds.Tombstones[loc.BatchIdx]
 		ds.dataMu.Unlock()
@@ -1343,6 +1342,83 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 					// Note: Metadata is nil for now as benchmark doesn't use it for temporal search results
 					_ = s.temporalIndex.Add(id, sub, ts, nil)
+				}
+			}
+		}
+	}
+
+	// Geospatial Index Hook
+	geoPointIdx := -1
+	for i, f := range rec.Schema().Fields() {
+		if f.Name == "geo_point" {
+			geoPointIdx = i
+			break
+		}
+	}
+
+	if geoPointIdx != -1 {
+		ds.dataMu.Lock()
+		if ds.GeoIndex == nil {
+			// Initialize with default config if missing
+			geoCfg := &GeoSearchConfig{
+				DistanceType: GeoDistanceHaversine,
+				EarthRadius:  6371.0,
+			}
+			// Use dimension from vector column if possible, otherwise default to 128
+			dim := 128
+			if vecCol := findVectorColumn(rec); vecCol != nil {
+				if listArr, ok := vecCol.(*array.FixedSizeList); ok {
+					dim = int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+				}
+			}
+			ds.GeoIndex = NewGeoIndex(ds.Name, dim, geoCfg)
+			s.logger.Info().Str("dataset", ds.Name).Int("dim", dim).Msg("Lazily initialized GeoIndex")
+		}
+		ds.dataMu.Unlock()
+
+		idColIdx := -1
+		vecColIdx := -1
+		for i, f := range rec.Schema().Fields() {
+			switch f.Name {
+			case "id":
+				idColIdx = i
+			case "vector", "embedding":
+				vecColIdx = i
+			}
+		}
+
+		if idColIdx != -1 && vecColIdx != -1 {
+			idArr := rec.Column(idColIdx).(*array.String)
+			vecArr := rec.Column(vecColIdx).(*array.FixedSizeList)
+			geoArr := rec.Column(geoPointIdx).(*array.FixedSizeList)
+			geoValues := geoArr.ListValues().(*array.Float64).Float64Values()
+
+			for i := 0; i < int(rec.NumRows()); i++ {
+				if idArr.IsValid(i) && vecArr.IsValid(i) && geoArr.IsValid(i) {
+					idStr := idArr.Value(i)
+					id, _ := strconv.ParseUint(idStr, 10, 64)
+
+					// Extract vector
+					listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
+					vStart := i * listLen
+					vEnd := (i + 1) * listLen
+					var sub []float32
+					switch values := vecArr.ListValues().(type) {
+					case *array.Float32:
+						sub = values.Float32Values()[vStart:vEnd]
+					case *array.Float64:
+						f64Values := values.Float64Values()[vStart:vEnd]
+						sub = make([]float32, len(f64Values))
+						for j, v := range f64Values {
+							sub[j] = float32(v)
+						}
+					}
+
+					// Extract GeoPoint
+					lat := geoValues[i*2]
+					lon := geoValues[i*2+1]
+
+					_ = ds.GeoIndex.Add(id, sub, types.GeoPoint{Lat: lat, Lon: lon}, nil)
 				}
 			}
 		}

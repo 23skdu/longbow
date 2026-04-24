@@ -177,6 +177,8 @@ type ArrowSearchContext struct {
 
 	// Neighbor tracking
 	neighborBuf []uint32
+	neighborBatch []uint32
+	matchResultBuf []byte
 
 	// Layer-specific buffers
 	layerCandidates []types.Candidate
@@ -210,6 +212,9 @@ type ArrowSearchContext struct {
 	distComputeTime   time.Duration
 	distComputeCount  int
 	nodesVisitedCount int
+
+	// HNSW predicate for early-exit filtering
+	predicate types.HNSWPredicate
 }
 
 // ArrowSearchContextPool manages reusable ArrowSearchContext objects.
@@ -238,6 +243,8 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		queryTQ:          make([]byte, 0, 512),
 		vectorCache:      make(map[uint32]any, 100),
 		vectorBuf:        make([]float32, 0, 384),
+		neighborBatch:    make([]uint32, 0, 64),
+		matchResultBuf:   make([]byte, 64),
 		dirty:            false,
 		operations:       0,
 	}
@@ -298,6 +305,7 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.visited.Clear()
 	ctx.dists = ctx.dists[:0]
 	ctx.neighborBuf = ctx.neighborBuf[:0]
+	ctx.neighborBatch = ctx.neighborBatch[:0]
 	ctx.layerCandidates = ctx.layerCandidates[:0]
 	ctx.resultSet = ctx.resultSet[:0]
 	ctx.scratchSelected = ctx.scratchSelected[:0]
@@ -318,6 +326,7 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.distComputeCount = 0
 	ctx.nodesVisitedCount = 0
 	ctx.diskGraph = nil
+	ctx.predicate = nil
 
 	// Clear temp buffer without reallocating
 	for i := range ctx.distsTemp {

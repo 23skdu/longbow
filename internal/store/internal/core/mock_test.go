@@ -32,11 +32,11 @@ func (m *MockDataset) Close() {
 func (m *MockDataset) GetName() string { return m.Name }
 func (m *MockDataset) GetRecords() []arrow.RecordBatch { return m.Records }
 func (m *MockDataset) GetSchema() *arrow.Schema { return m.Schema }
-func (m *MockDataset) GetTombstones() map[int]*query.Bitset { return nil }
+func (m *MockDataset) GetTombstones() map[int]*types.Bitset { return nil }
 func (m *MockDataset) GetPQEncoder() *pq.PQEncoder { return m.PQEncoder }
 func (m *MockDataset) RLockData() {}
 func (m *MockDataset) RUnlockData() {}
-func (m *MockDataset) GenerateFilterBitset(filters []query.Filter, expr types.FilterExpr) (*query.Bitset, error) {
+func (m *MockDataset) GenerateFilterBitset(filters []query.Filter, expr types.FilterExpr) (*types.Bitset, error) {
 	return nil, nil
 }
 func (m *MockDataset) ResetTombstones() {}

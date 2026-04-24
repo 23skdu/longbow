@@ -1,11 +1,11 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/types"
 	"context"
 	"sort"
 
 	"github.com/23skdu/longbow/internal/metrics"
-	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -52,7 +52,7 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 
 	// 2. Rebuild Records and Track Mapping
 	newRecords := make([]arrow.RecordBatch, 0, len(d.Records))
-	newTombstones := make(map[int]*qry.Bitset)
+	newTombstones := make(map[int]*types.Bitset)
 
 	// mappingForIndex: id -> newLocation (for VectorIndex.RemapLocations)
 	indexMapping := make(map[uint32]any)
@@ -140,7 +140,7 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 
 // squashBatch creates a new RecordBatch by removing rows marked in the bitset.
 // It returns the new batch and a mapping of oldRowIdx -> newRowIdx.
-func (d *Dataset) squashBatch(rec arrow.RecordBatch, tombstones *qry.Bitset) (arrow.RecordBatch, map[int]int) {
+func (d *Dataset) squashBatch(rec arrow.RecordBatch, tombstones *types.Bitset) (arrow.RecordBatch, map[int]int) {
 	numRows := int(rec.NumRows())
 	keepRows := []int{}
 	mapping := make(map[int]int)

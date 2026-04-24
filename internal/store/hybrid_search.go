@@ -9,7 +9,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
-	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/23skdu/longbow/internal/store/types"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -22,7 +22,7 @@ type HybridSearchRequest struct {
 	K           int
 	Alpha       float32 // Weight for vector score (0-1)
 	Filters     []query.Filter
-	Bitset      *query.Bitset
+	Bitset      *types.Bitset
 }
 
 // SearchHybrid performs a hybrid search combining dense vector search and sparse keyword search.
@@ -128,7 +128,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 		rerankStart := time.Now()
 
 		// Store results before reranking to track "graph_expanded" origin
-		preRerankIds := make(map[lbtypes.VectorID]bool)
+		preRerankIds := make(map[types.VectorID]bool)
 		for _, r := range finalResults {
 			preRerankIds[r.ID] = true
 		}
@@ -190,7 +190,7 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []f
 	ds.dataMu.RLock()
 	defer ds.dataMu.RUnlock()
 
-	var filterBitmap *query.Bitset
+	var filterBitmap *types.Bitset
 	hasFilters := len(filters) > 0
 
 	if hasFilters {
@@ -207,7 +207,7 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []f
 			}
 
 			if filterBitmap == nil {
-				filterBitmap = query.NewBitsetFromRoaring(bm)
+				filterBitmap = types.NewBitsetFromRoaring(bm)
 			} else {
 				filterBitmap.And(bm)
 			}
@@ -256,7 +256,7 @@ func RankFusion(list1, list2 []SearchResult, k, rrfK int) []SearchResult {
 	// Sort
 	final := make([]SearchResult, 0, len(scores))
 	for id, score := range scores {
-		final = append(final, SearchResult{ID: lbtypes.VectorID(id), Score: score})
+		final = append(final, SearchResult{ID: types.VectorID(id), Score: score})
 	}
 
 	sort.Slice(final, func(i, j int) bool {

@@ -199,6 +199,14 @@ func (i *CPUIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32
 	return i.Search(vector, k)
 }
 
+func (i *CPUIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
+	return fmt.Errorf("AddTurboQuant not implemented for CPUIndex")
+}
+
+func (i *CPUIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchTurboQuant not implemented for CPUIndex")
+}
+
 // float16ToFloat32 converts a uint16 float16 value to float32
 func float16ToFloat32(v uint16) float32 {
 	// Extract float16 components

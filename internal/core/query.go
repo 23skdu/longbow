@@ -153,6 +153,7 @@ type TicketQuery struct {
 	SearchByID      *VectorSearchByIDRequest `json:"search_by_id,omitempty"`
 	Recommend       *RecommendRequest        `json:"recommend,omitempty"`
 	GeoSearch       *GeoSearchRequest        `json:"geo_search,omitempty"`
+	TemporalSearch  *TemporalSearchRequest   `json:"temporal_search,omitempty"`
 	CTEs            []CTE                    `json:"ctes,omitempty"`
 
 	// Backwards compatibility / Direct shortcut fields
@@ -168,6 +169,7 @@ type VectorSearchResponse struct {
 
 // TemporalSearchRequest defines the request format for temporal queries
 type TemporalSearchRequest struct {
+	Dataset    string        `json:"dataset"`
 	SearchType string        `json:"search_type"` // "as_of", "range", "sliding_window", "sliding_window_time"
 	K          int           `json:"k"`
 	Timestamp  int64         `json:"timestamp,omitempty"`
@@ -175,6 +177,7 @@ type TemporalSearchRequest struct {
 	EndTime    int64         `json:"end_time,omitempty"`
 	WindowSize int           `json:"window_size,omitempty"`
 	Duration   time.Duration `json:"duration,omitempty"`
+	Filters    []Filter      `json:"filters,omitempty"`
 }
 
 // TemporalAggregationRequest defines analytical temporal query

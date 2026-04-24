@@ -1232,6 +1232,7 @@ func NewFilterEvaluator(rec arrow.RecordBatch, filters []Filter) (*FilterEvaluat
 			ops = append(ops, op)
 		}
 	}
+
 	if len(ops) == 0 && len(filters) > 0 {
 		return nil, fmt.Errorf("failed to bind any filters to schema fields")
 	}
@@ -1331,9 +1332,67 @@ func buildFilterOp(schema arrow.Schema, rec arrow.RecordBatch, f *Filter) (filte
 		return &float64FilterOp{col: col.(*array.Float64), val: val, operator: opStr, colIdx: colIdx}, nil
 	case arrow.STRING:
 		return &stringFilterOp{col: col.(*array.String), val: f.Value, operator: opStr, colIdx: colIdx}, nil
+	case arrow.BOOL:
+		val := strings.ToLower(f.Value) == "true"
+		return &boolFilterOp{col: col.(*array.Boolean), val: val, operator: opStr, colIdx: colIdx}, nil
 	default:
 		return nil, nil
 	}
+}
+
+type boolFilterOp struct {
+	col      *array.Boolean
+	val      bool
+	operator string
+	colIdx   int
+}
+
+func (o *boolFilterOp) Compound() bool { return false }
+func (o *boolFilterOp) MatchValue(val interface{}) bool {
+	if v, ok := val.(bool); ok {
+		return o.compareBool(v)
+	}
+	return false
+}
+func (o *boolFilterOp) compareBool(v bool) bool {
+	switch o.operator {
+	case "=", "eq", "==":
+		return v == o.val
+	case "!=", "neq":
+		return v != o.val
+	}
+	return false
+}
+func (o *boolFilterOp) Bind(col arrow.Array) error {
+	if col.DataType().ID() != arrow.BOOL {
+		return fmt.Errorf("expected boolean column, got %s", col.DataType())
+	}
+	o.col = col.(*array.Boolean)
+	return nil
+}
+func (o *boolFilterOp) Match(rowIdx int) bool {
+	if o.col.IsNull(rowIdx) {
+		return false
+	}
+	return o.compareBool(o.col.Value(rowIdx))
+}
+func (o *boolFilterOp) MatchBitmap(dst []byte) {
+	for i := range dst {
+		if o.Match(i) {
+			dst[i] = 1
+		} else {
+			dst[i] = 0
+		}
+	}
+}
+func (o *boolFilterOp) FilterBatch(indices []int) []int {
+	result := make([]int, 0, len(indices))
+	for _, idx := range indices {
+		if o.Match(idx) {
+			result = append(result, idx)
+		}
+	}
+	return result
 }
 
 func buildSubqueryOp(schema arrow.Schema, rec arrow.RecordBatch, f *Filter) (filterOp, error) {

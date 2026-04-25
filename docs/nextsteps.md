@@ -177,12 +177,40 @@ Design and implement batched search optimizations for billion-scale datasets.
 
 ### 2. ARM64 NEON SIMD Kernels (768/1024/3072 dimensions)
 
-Implementation completed in v0.1.9 - added optimized blocked NEON kernels.
+Implementation completed in v0.1.9 - added optimized blocked NEON kernels for float32.
 
-- Added `euclideanFloat64NEONKernel` in `simd_arm64.s`
-- Added float64 distance wrapper in `simd_arm64.go`
-- Implemented blocked kernels for 768, 1024, 1536, 3072 dimensions
-- Updated dispatch to use optimized implementations
+#### P0: ARM64 NEON Float64 Kernel (BUG - INVESTIGATION REQUIRED)
+
+**Issue**: Go slice headers not being accessed correctly in `euclideanFloat64NEONKernel` assembly.
+
+**Current Status**: Temporarily disabled - uses fallback to `euclideanFloat64Unrolled4x`.
+
+**Symptoms**: 
+- Kernel returns 0 for all inputs despite correct computation in Go wrapper
+- Debug prints show function is called with correct length
+- Slice headers (`a_base`, `b_base`, `a_len`) don't seem accessible
+
+**Comparison with Working Code**:
+```go
+// Working float32 kernel uses slice header access:
+TEXT ·euclideanNEONKernel(SB), NOSPLIT, $0-52
+    MOVD    a_base+0(FP), R0   // a_base
+    MOVD    a_len+8(FP), R1    // a_len  
+    MOVD    b_base+24(FP), R2  // b_base
+```
+
+**Attempted Solutions** (all failed):
+1. Direct slice parameters with `.base`/`.len` offset access
+2. Changed to unsafe.Pointer + explicit length parameter
+3. Used post-increment (`FMOVD.P`) vs pre-indexed (`FMOVD`) addressing
+
+**Investigation Required**:
+- Verify Go slice ABI for float64 vs float32 on ARM64
+- Test with pure indexed addressing (no post-inc)
+- Consider using C wrapper to verify ABI compatibility
+- Reference: https://go.dev/arch/ARM64
+
+**Workaround**: Uses `euclideanFloat64Unrolled4x` fallback
 
 ### 3. Metal Ingest Acceleration
 

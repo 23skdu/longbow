@@ -67,8 +67,8 @@ type Config struct {
 
 	// gRPC Server Options - configurable for large RecordBatch transfers
 	// Increased to 512MB to support large dimension vectors (e.g., OpenAI 1536/3072-dim)
-	GRPCMaxRecvMsgSize        int    `envconfig:"GRPC_MAX_RECV_MSG_SIZE" default:"536870912"`      // 512MB default (was 64MB)
-	GRPCMaxSendMsgSize        int    `envconfig:"GRPC_MAX_SEND_MSG_SIZE" default:"536870912"`      // 512MB default (was 64MB)
+	GRPCMaxRecvMsgSize        int    `envconfig:"GRPC_MAX_RECV_MSG_SIZE" default:"2147483647"`     // 2GB max
+	GRPCMaxSendMsgSize        int    `envconfig:"GRPC_MAX_SEND_MSG_SIZE" default:"2147483647"`     // 2GB max
 	GRPCInitialWindowSize     int32  `envconfig:"GRPC_INITIAL_WINDOW_SIZE" default:"1048576"`      // 1MB default
 	GRPCInitialConnWindowSize int32  `envconfig:"GRPC_INITIAL_CONN_WINDOW_SIZE" default:"1048576"` // 1MB default
 	GRPCMaxConcurrentStreams  uint32 `envconfig:"GRPC_MAX_CONCURRENT_STREAMS" default:"250"`       // 250 default

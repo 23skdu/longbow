@@ -113,6 +113,10 @@ type Index interface {
 	SearchComplex128(vector []float32, k int) (ids []int64, distances []float32, err error)
 	AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error
 	SearchTurboQuant(vector []float32, k int, bitsPerAngle int) (ids []int64, distances []float32, err error)
+
+	// Graph methods
+	UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error
+	GraphExpand(seeds []uint32, depth int, alpha float32) (ids []uint32, scores []float32, err error)
 }
 
 func DetectGPUBackend() GPUBackend {

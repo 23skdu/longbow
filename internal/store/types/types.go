@@ -36,6 +36,7 @@ const (
 	VectorTypeInt64
 	VectorTypeUint64
 	VectorTypeBQ
+	VectorTypePQ
 	VectorTypeTQ
 )
 
@@ -68,6 +69,10 @@ func (vdt VectorDataType) String() string {
 		return "int64"
 	case VectorTypeUint64:
 		return "uint64"
+	case VectorTypeBQ:
+		return "bq"
+	case VectorTypePQ:
+		return "pq"
 	case VectorTypeTQ:
 		return "turboquant"
 	default:
@@ -98,6 +103,8 @@ func MapStringToVectorDataType(s string) VectorDataType {
 		return VectorTypeUint32
 	case "bq":
 		return VectorTypeBQ
+	case "pq":
+		return VectorTypePQ
 	case "turboquant", "tq":
 		return VectorTypeTQ
 	default:

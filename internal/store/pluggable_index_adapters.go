@@ -381,3 +381,10 @@ func (a *PluggableInternalAdapter) GetParallelSearchConfig() lbtypes.ParallelSea
 func (a *PluggableInternalAdapter) RemapLocations(ctx context.Context, m map[uint32]any) error {
 	return nil
 }
+
+func (a *PluggableInternalAdapter) GetGPUIndex() any {
+	if g, ok := a.inner.(interface{ GetGPUIndex() any }); ok {
+		return g.GetGPUIndex()
+	}
+	return nil
+}

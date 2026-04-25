@@ -220,3 +220,11 @@ func (i *TPUIndex) AssignToClusters(vectors []float32, centroids []float32) ([]u
 
 	return assignments, nil
 }
+
+func (i *TPUIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
+	return fmt.Errorf("UpdateGraph not implemented for TPUIndex (experimental stub)")
+}
+
+func (i *TPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
+	return nil, nil, fmt.Errorf("GraphExpand not implemented for TPUIndex (experimental stub)")
+}

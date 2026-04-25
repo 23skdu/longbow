@@ -315,4 +315,112 @@ void launch_topk_kernel(const float* distances, const int64_t* ids, int n, int k
     select_topk_kernel<<<blocksPerGrid, threadsPerBlock, sharedMemSize, stream>>>(distances, ids, n, k, outDistances, outIDs);
 }
 
+// Graph BFS Expansion Kernel
+// frontier: list of node IDs to expand from
+// frontierSize: number of nodes in frontier
+// offsets: CSR offsets array (node i's neighbors start at offsets[i])
+// neighbors: CSR neighbors array
+// visited: Bitset to avoid cycles/redundant work
+// nextFrontier: Output list of discovered neighbors
+// nextFrontierSize: Output counter for nextFrontier
+__global__ void graph_bfs_expand_kernel(
+    const uint32_t* frontier, 
+    int frontierSize,
+    const uint32_t* offsets,
+    const uint32_t* neighbors,
+    unsigned long long* visited,
+    uint32_t* nextFrontier,
+    int* nextFrontierSize
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < frontierSize) {
+        uint32_t nodeID = frontier[idx];
+        uint32_t start = offsets[nodeID];
+        uint32_t end = offsets[nodeID + 1];
+        
+        for (uint32_t i = start; i < end; i++) {
+            uint32_t neighborID = neighbors[i];
+            
+            // Atomic bitset check and set
+            unsigned long long mask = 1ULL << (neighborID % 64);
+            unsigned long long old = atomicOr(&visited[neighborID / 64], mask);
+            
+            if (!(old & mask)) {
+                // Newly discovered node
+                int pos = atomicAdd(nextFrontierSize, 1);
+                nextFrontier[pos] = neighborID;
+            }
+        }
+    }
+}
+
+// Graph Activation Propagation Kernel
+// activations: Current activation scores per node
+// newActivations: Output activation scores
+// alpha: Decay factor
+// weights: Edge weights (optional)
+__global__ void graph_activation_propagate_kernel(
+    const float* activations,
+    float* newActivations,
+    const uint32_t* frontier,
+    int frontierSize,
+    const uint32_t* offsets,
+    const uint32_t* neighbors,
+    const float* weights,
+    float alpha
+) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < frontierSize) {
+        uint32_t nodeID = frontier[idx];
+        float parentScore = activations[nodeID];
+        uint32_t start = offsets[nodeID];
+        uint32_t end = offsets[nodeID + 1];
+        
+        for (uint32_t i = start; i < end; i++) {
+            uint32_t neighborID = neighbors[i];
+            float edgeWeight = weights ? weights[i] : 1.0f;
+            float scoreToPass = parentScore * alpha * edgeWeight;
+            
+            atomicAdd(&newActivations[neighborID], scoreToPass);
+        }
+    }
+}
+
+void launch_graph_bfs_expand_kernel(
+    const uint32_t* frontier, 
+    int frontierSize,
+    const uint32_t* offsets,
+    const uint32_t* neighbors,
+    unsigned long long* visited,
+    uint32_t* nextFrontier,
+    int* nextFrontierSize,
+    cudaStream_t stream
+) {
+    if (frontierSize == 0) return;
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (frontierSize + threadsPerBlock - 1) / threadsPerBlock;
+    graph_bfs_expand_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(
+        frontier, frontierSize, offsets, neighbors, visited, nextFrontier, nextFrontierSize
+    );
+}
+
+void launch_graph_activation_propagate_kernel(
+    const float* activations,
+    float* newActivations,
+    const uint32_t* frontier,
+    int frontierSize,
+    const uint32_t* offsets,
+    const uint32_t* neighbors,
+    const float* weights,
+    float alpha,
+    cudaStream_t stream
+) {
+    if (frontierSize == 0) return;
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (frontierSize + threadsPerBlock - 1) / threadsPerBlock;
+    graph_activation_propagate_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(
+        activations, newActivations, frontier, frontierSize, offsets, neighbors, weights, alpha
+    );
+}
+
 }

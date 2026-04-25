@@ -268,6 +268,15 @@ func (m *MockIndex) AssignToClusters(vectors []float32, centroids []float32) ([]
 	return assignments, nil
 }
 
+func (m *MockIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
+	return nil // Mock success
+}
+
+func (m *MockIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
+	// Simple mock return: the seeds themselves
+	return seeds, make([]float32, len(seeds)), nil
+}
+
 // float16ToFloat32Mock converts a uint16 float16 value to float32
 func float16ToFloat32Mock(v uint16) float32 {
 	sign := uint32(v >> 15)

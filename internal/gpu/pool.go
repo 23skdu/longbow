@@ -354,3 +354,11 @@ func (w *pooledIndexWrapper) SearchComplex64(vector []uint16, k int) ([]int64, [
 func (w *pooledIndexWrapper) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
 	return w.pooled.index.SearchComplex128(vector, k)
 }
+
+func (w *pooledIndexWrapper) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
+	return w.pooled.index.UpdateGraph(offsets, neighbors, weights)
+}
+
+func (w *pooledIndexWrapper) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
+	return w.pooled.index.GraphExpand(seeds, depth, alpha)
+}

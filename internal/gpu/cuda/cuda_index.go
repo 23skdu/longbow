@@ -19,6 +19,11 @@ typedef struct {
     int capacity;
     int currentType; // 0: float32, 1: float16, 2: int8/pq, 3: turboquant
     cudaStream_t streams[2];
+    void* graphOffsets;
+    void* graphNeighbors;
+    void* graphWeights;
+    int graphNodeCount;
+    int graphEdgeCount;
 } CUDAIndexHandle;
 
 // Function declarations from kernels.cu
@@ -30,6 +35,10 @@ void launch_turboquant_distance_kernel(const float* query, const unsigned char* 
 void launch_l2_distance_filtered_kernel(const float* vectors, const float* query, float* distances, const unsigned long long* bitset, int dimensions, int count, cudaStream_t stream);
 void launch_topk_kernel(const float* distances, const int64_t* ids, int n, int k, float* outDistances, int64_t* outIDs, cudaStream_t stream);
 int cuda_add_vectors_pq(CUDAIndexHandle* handle, unsigned char* h_codes, int64_t* h_ids, int count, int m);
+
+// Graph functions
+void launch_graph_bfs_expand_kernel(const uint32_t* frontier, int frontierSize, const uint32_t* offsets, const uint32_t* neighbors, unsigned long long* visited, uint32_t* nextFrontier, int* nextFrontierSize, cudaStream_t stream);
+void launch_graph_activation_propagate_kernel(const float* activations, float* newActivations, const uint32_t* frontier, int frontierSize, const uint32_t* offsets, const uint32_t* neighbors, const float* weights, float alpha, cudaStream_t stream);
 
 CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
     int device = 0;
@@ -44,6 +53,11 @@ CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
     handle->dimensions = dimensions;
     handle->capacity = initialCapacity > 0 ? initialCapacity : 10000;
     handle->currentType = 0;
+    handle->graphOffsets = NULL;
+    handle->graphNeighbors = NULL;
+    handle->graphWeights = NULL;
+    handle->graphNodeCount = 0;
+    handle->graphEdgeCount = 0;
 
     size_t idBufferSize = handle->capacity * sizeof(int64_t);
     err = cudaMalloc((void**)&handle->idBuffer, idBufferSize);
@@ -63,6 +77,9 @@ void cuda_free(CUDAIndexHandle* handle) {
     if (!handle) return;
     for(int i=0; i<4; i++) if (handle->buffers[i]) cudaFree(handle->buffers[i]);
     if (handle->idBuffer) cudaFree(handle->idBuffer);
+    if (handle->graphOffsets) cudaFree(handle->graphOffsets);
+    if (handle->graphNeighbors) cudaFree(handle->graphNeighbors);
+    if (handle->graphWeights) cudaFree(handle->graphWeights);
     cudaStreamDestroy(handle->streams[0]);
     cudaStreamDestroy(handle->streams[1]);
     free(handle);
@@ -259,6 +276,24 @@ int cuda_search_pq(CUDAIndexHandle* handle, float* h_lookupTable, int m, int k, 
 
 void cuda_cleanup(CUDAIndexHandle* handle) {
     cuda_free(handle);
+}
+
+int cuda_update_graph(CUDAIndexHandle* handle, uint32_t* h_offsets, uint32_t* h_neighbors, float* h_weights, int nodeCount, int edgeCount) {
+    if (handle->graphOffsets) cudaFree(handle->graphOffsets);
+    if (handle->graphNeighbors) cudaFree(handle->graphNeighbors);
+    if (handle->graphWeights) cudaFree(handle->graphWeights);
+
+    cudaMalloc(&handle->graphOffsets, (nodeCount + 1) * sizeof(uint32_t));
+    cudaMalloc(&handle->graphNeighbors, edgeCount * sizeof(uint32_t));
+    if (h_weights) cudaMalloc(&handle->graphWeights, edgeCount * sizeof(float));
+
+    cudaMemcpy(handle->graphOffsets, h_offsets, (nodeCount + 1) * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(handle->graphNeighbors, h_neighbors, edgeCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    if (h_weights) cudaMemcpy(handle->graphWeights, h_weights, edgeCount * sizeof(float), cudaMemcpyHostToDevice);
+
+    handle->graphNodeCount = nodeCount;
+    handle->graphEdgeCount = edgeCount;
+    return 0;
 }
 */
 import "C"
@@ -938,4 +973,137 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 	}
 
 	return results, nil
+}
+func (idx *CUDAIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	var wPtr *C.float
+	if len(weights) > 0 {
+		wPtr = (*C.float)(unsafe.Pointer(&weights[0]))
+	}
+
+	ret := C.cuda_update_graph(
+		idx.handle,
+		(*C.uint32_t)(unsafe.Pointer(&offsets[0])),
+		(*C.uint32_t)(unsafe.Pointer(&neighbors[0])),
+		wPtr,
+		C.int(len(offsets)-1),
+		C.int(len(neighbors)),
+	)
+
+	if ret != 0 {
+		return fmt.Errorf("failed to update CUDA graph")
+	}
+
+	return nil
+}
+
+func (idx *CUDAIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	if idx.handle.graphOffsets == nil {
+		return nil, nil, fmt.Errorf("graph not initialized on GPU")
+	}
+
+	nodeCount := int(idx.handle.graphNodeCount)
+	
+	// Allocate GPU buffers for BFS
+	var d_frontier, d_nextFrontier *C.uint32_t
+	var d_visited *C.ulonglong
+	var d_activations, d_newActivations *C.float
+	var d_nextSize *C.int
+
+	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_frontier)), C.size_t(nodeCount*4))
+	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_nextFrontier)), C.size_t(nodeCount*4))
+	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_visited)), C.size_t((nodeCount/64+1)*8))
+	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_activations)), C.size_t(nodeCount*4))
+	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_newActivations)), C.size_t(nodeCount*4))
+	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_nextSize)), 4)
+
+	defer func() {
+		C.cudaFree(unsafe.Pointer(d_frontier))
+		C.cudaFree(unsafe.Pointer(d_nextFrontier))
+		C.cudaFree(unsafe.Pointer(d_visited))
+		C.cudaFree(unsafe.Pointer(d_activations))
+		C.cudaFree(unsafe.Pointer(d_newActivations))
+		C.cudaFree(unsafe.Pointer(d_nextSize))
+	}()
+
+	C.cudaMemset(unsafe.Pointer(d_visited), 0, C.size_t((nodeCount/64+1)*8))
+	C.cudaMemset(unsafe.Pointer(d_activations), 0, C.size_t(nodeCount*4))
+	C.cudaMemset(unsafe.Pointer(d_newActivations), 0, C.size_t(nodeCount*4))
+
+	// Initial seeds
+	frontierSize := len(seeds)
+	if frontierSize == 0 {
+		return nil, nil, nil
+	}
+	C.cudaMemcpy(unsafe.Pointer(d_frontier), unsafe.Pointer(&seeds[0]), C.size_t(frontierSize*4), C.cudaMemcpyHostToDevice)
+	
+	// Initial activations
+	h_activations := make([]float32, nodeCount)
+	for _, s := range seeds {
+		if int(s) < nodeCount {
+			h_activations[s] = 1.0
+		}
+	}
+	C.cudaMemcpy(unsafe.Pointer(d_activations), unsafe.Pointer(&h_activations[0]), C.size_t(nodeCount*4), C.cudaMemcpyHostToDevice)
+
+	for d := 0; d < depth; d++ {
+		C.cudaMemset(unsafe.Pointer(d_nextSize), 0, 4)
+
+		C.launch_graph_bfs_expand_kernel(
+			d_frontier, C.int(frontierSize),
+			(*C.uint32_t)(idx.handle.graphOffsets),
+			(*C.uint32_t)(idx.handle.graphNeighbors),
+			d_visited, d_nextFrontier, d_nextSize, 0,
+		)
+
+		C.launch_graph_activation_propagate_kernel(
+			d_activations, d_newActivations,
+			d_frontier, C.int(frontierSize),
+			(*C.uint32_t)(idx.handle.graphOffsets),
+			(*C.uint32_t)(idx.handle.graphNeighbors),
+			(*C.float)(idx.handle.graphWeights),
+			C.float(alpha), 0,
+		)
+
+		var nextSize C.int
+		C.cudaMemcpy(unsafe.Pointer(&nextSize), unsafe.Pointer(d_nextSize), 4, C.cudaMemcpyDeviceToHost)
+		if nextSize == 0 {
+			break
+		}
+
+		// Swap buffers
+		d_frontier, d_nextFrontier = d_nextFrontier, d_frontier
+		frontierSize = int(nextSize)
+		
+		// Accumulate activations
+		C.cudaMemcpy(unsafe.Pointer(d_activations), unsafe.Pointer(d_newActivations), C.size_t(nodeCount*4), C.cudaMemcpyDeviceToDevice)
+	}
+
+	// Results
+	finalActivations := make([]float32, nodeCount)
+	C.cudaMemcpy(unsafe.Pointer(&finalActivations[0]), unsafe.Pointer(d_newActivations), C.size_t(nodeCount*4), C.cudaMemcpyDeviceToHost)
+
+	var resIDs []uint32
+	var resScores []float32
+	for i, s := range finalActivations {
+		if s > 1e-6 {
+			resIDs = append(resIDs, uint32(i))
+			resScores = append(resScores, s)
+		}
+	}
+
+	return resIDs, resScores, nil
 }

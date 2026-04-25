@@ -240,7 +240,15 @@ func (i *CPUIndex) AssignToClusters(vectors []float32, centroids []float32) ([]u
 	return assignments, nil
 }
 
-// float16ToFloat32 converts a uint16 float16 value to float32
+func (i *CPUIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
+	return fmt.Errorf("UpdateGraph not supported on CPUIndex")
+}
+
+func (i *CPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
+	return nil, nil, fmt.Errorf("GraphExpand not supported on CPUIndex")
+}
+
+// float16ToFloat32 ...
 func float16ToFloat32(v uint16) float32 {
 	// Extract float16 components
 	sign := uint32(v >> 15)

@@ -50,4 +50,15 @@ var (
 		},
 		[]string{"dataset"},
 	)
+
+	// RequantizationDurationSeconds tracks the time taken for background re-quantization.
+	// Labels: dataset, from, to
+	RequantizationDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_requantization_duration_seconds",
+			Help:    "Time taken to re-quantize a dataset in the background.",
+			Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60, 120},
+		},
+		[]string{"dataset", "from", "to"},
+	)
 )

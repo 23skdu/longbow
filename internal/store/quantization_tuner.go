@@ -16,7 +16,9 @@ type QuantizationType string
 const (
 	QuantizationFloat32 QuantizationType = "float32"
 	QuantizationFloat16 QuantizationType = "float16"
-	QuantizationInt8    QuantizationType = "int8"
+	QuantizationInt8        QuantizationType = "int8"
+	QuantizationPQ          QuantizationType = "pq"
+	QuantizationTurboQuant QuantizationType = "turboquant"
 )
 
 // QuantizationTuner handles automatic selection of quantization levels.
@@ -104,10 +106,16 @@ func (t *QuantizationTuner) TuneDataset(name string, ds *Dataset) {
 
 	// 3. Decision Logic
 	newType := state.currentType
+	p50, p99, avg, recall, qps := ds.queryStats.GetMetrics()
+	_, _, _, _, _ = p50, p99, avg, recall, qps
 
 	// If recall is too low, move to higher precision
 	if recall < t.recallThreshold {
 		switch state.currentType {
+		case QuantizationTurboQuant:
+			newType = QuantizationPQ
+		case QuantizationPQ:
+			newType = QuantizationInt8
 		case QuantizationInt8:
 			newType = QuantizationFloat16
 		case QuantizationFloat16:
@@ -117,13 +125,26 @@ func (t *QuantizationTuner) TuneDataset(name string, ds *Dataset) {
 		return
 	}
 
-	// If memory pressure is high (> 85%), move to higher compression
+	// High Load + High Memory Pressure -> Max Compression
+	if qps > 5000 && memoryPressure > 0.70 {
+		if state.currentType != QuantizationTurboQuant {
+			newType = QuantizationTurboQuant
+			t.applyTransition(name, ds, state, newType, "high_load_pressure")
+			return
+		}
+	}
+
+	// Standard Memory Pressure Check
 	if memoryPressure > 0.85 {
 		switch state.currentType {
 		case QuantizationFloat32:
 			newType = QuantizationFloat16
 		case QuantizationFloat16:
 			newType = QuantizationInt8
+		case QuantizationInt8:
+			newType = QuantizationPQ
+		case QuantizationPQ:
+			newType = QuantizationTurboQuant
 		}
 		t.applyTransition(name, ds, state, newType, "memory")
 		return
@@ -138,6 +159,17 @@ func (t *QuantizationTuner) TuneDataset(name string, ds *Dataset) {
 			newType = QuantizationInt8
 		}
 		t.applyTransition(name, ds, state, newType, "opportunistic")
+	}
+
+	// Opportunistic recovery: If memory pressure is low (< 30%) and load is low
+	if memoryPressure < 0.30 && qps < 100 {
+		switch state.currentType {
+		case QuantizationTurboQuant:
+			newType = QuantizationPQ
+		case QuantizationPQ:
+			newType = QuantizationInt8
+		}
+		t.applyTransition(name, ds, state, newType, "recovery")
 	}
 }
 
@@ -171,9 +203,16 @@ func (t *QuantizationTuner) applyTransition(name string, ds *Dataset, state *tun
 		dataType = types.VectorTypeFloat16
 	case QuantizationInt8:
 		dataType = types.VectorTypeInt8
+	case QuantizationPQ:
+		dataType = types.VectorTypePQ
+	case QuantizationTurboQuant:
+		dataType = types.VectorTypeTQ
 	}
 	ds.PreferredVectorType = dataType
 	ds.dataMu.Unlock()
+
+	// Trigger active re-quantization
+	ds.TriggerRequantization(dataType)
 
 	// 2. Update Metrics
 	metrics.QuantizationSwitchesTotal.WithLabelValues(name, string(state.currentType), string(newType), reason).Inc()

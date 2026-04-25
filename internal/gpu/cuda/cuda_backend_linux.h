@@ -27,7 +27,32 @@ void launch_l2_distance_kernel(const float* vectors, const float* query, float* 
 void launch_l2_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, void* stream);
 void launch_dot_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, void* stream);
 void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* codes, float* distances, int m, int count, void* stream);
+void launch_turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count, void* stream);
+void launch_topk_kernel(const float* distances, const int64_t* ids, int n, int k, float* outDistances, int64_t* outIDs, void* stream);
 
+// Graph Kernels
+void launch_graph_bfs_expand_kernel(
+    const uint32_t* frontier, 
+    int frontierSize,
+    const uint32_t* offsets,
+    const uint32_t* neighbors,
+    unsigned long long* visited,
+    uint32_t* nextFrontier,
+    int* nextFrontierSize,
+    void* stream
+);
+
+void launch_graph_activation_propagate_kernel(
+    const float* activations,
+    float* newActivations,
+    const uint32_t* frontier,
+    int frontierSize,
+    const uint32_t* offsets,
+    const uint32_t* neighbors,
+    const float* weights,
+    float alpha,
+    void* stream
+);
 
 #ifdef __cplusplus
 }

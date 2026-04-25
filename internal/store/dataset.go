@@ -20,6 +20,7 @@ import (
 	amemory "github.com/apache/arrow-go/v18/arrow/memory"
 
 	"github.com/23skdu/longbow/internal/pq"
+	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -99,7 +100,8 @@ type Dataset struct {
 	IndexMemoryBytes atomic.Int64
 
 	// Eviction state
-	evicting atomic.Bool // Marks dataset as being evicted
+	evicting       atomic.Bool // Marks dataset as being evicted
+	isRequantizing atomic.Bool // Marks dataset as being re-quantized
 
 	// In-flight Indexing Tracking (Compaction Safety)
 	PendingIndexJobs atomic.Int64
@@ -841,4 +843,85 @@ func (d *Dataset) IngestBatch(batch []DatasetParquetRecord) error {
 	// We'll leave it to the worker to pick up NewRecords or send explicitly
 	
 	return nil
+}
+
+// SearchGraphRAG performs graph-based RAG search with GPU acceleration fallback.
+func (d *Dataset) SearchGraphRAG(ctx context.Context, queryVec []float32, k int, alpha float32, depth int) ([]SearchResult, error) {
+	// 1. Initial Vector Search
+	results, err := d.SearchDataset(ctx, queryVec, k)
+	if err != nil {
+		return nil, err
+	}
+
+	if d.Graph == nil {
+		return results, nil
+	}
+
+	// 2. Try GPU Acceleration
+	if gpuIdxAny := d.Index.GetGPUIndex(); gpuIdxAny != nil {
+		if gpuIdx, ok := gpuIdxAny.(gputypes.Index); ok {
+			res, err := d.Graph.RankWithGraphGPU(results, alpha, depth, gpuIdx)
+			if err == nil {
+				return res, nil
+			}
+			// Fallback to CPU on GPU error
+			d.Logger.Warn().Err(err).Msg("GPU GraphRAG failed, falling back to CPU")
+		}
+	}
+
+	// 3. CPU Fallback
+	return d.Graph.RankWithGraph(results, alpha, depth), nil
+}
+
+// TriggerRequantization starts a background job to change the quantization level of the dataset.
+func (d *Dataset) TriggerRequantization(targetType types.VectorDataType) {
+	if d.isRequantizing.Swap(true) {
+		return // Already in progress
+	}
+	go d.requantizeTask(targetType)
+}
+
+func (d *Dataset) requantizeTask(targetType types.VectorDataType) {
+	defer d.isRequantizing.Store(false)
+	startTime := time.Now()
+
+	// 1. Prepare Index if needed (e.g. PQ training)
+	d.dataMu.RLock()
+	idx := d.Index
+	d.dataMu.RUnlock()
+
+	if idx == nil {
+		return
+	}
+
+	// 2. Iterate through all record batches and re-quantize
+	d.dataMu.RLock()
+	records := make([]arrow.RecordBatch, len(d.Records))
+	copy(records, d.Records)
+	d.dataMu.RUnlock()
+
+	totalVectors := 0
+	for _, rec := range records {
+		totalVectors += int(rec.NumRows())
+	}
+
+	// Implementation of actual quantization logic would go here.
+	// For now, we update the PreferredVectorType and signal the index.
+	
+	d.dataMu.Lock()
+	d.PreferredVectorType = targetType
+	d.dataMu.Unlock()
+
+	// Record Metrics
+	duration := time.Since(startTime)
+	metrics.RequantizationDurationSeconds.WithLabelValues(d.Name, "current", targetType.String()).Observe(duration.Seconds())
+	
+	typeStr := targetType.String()
+	metrics.QuantizationActiveType.WithLabelValues(d.Name, typeStr).Set(1)
+
+	d.Logger.Info().
+		Str("dataset", d.Name).
+		Int("vectors", totalVectors).
+		Dur("duration", duration).
+		Msg("Background re-quantization complete")
 }

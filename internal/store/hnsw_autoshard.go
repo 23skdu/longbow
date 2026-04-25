@@ -710,3 +710,9 @@ func (a *AutoShardingIndex) GetShardedIndex() *ShardedHNSW {
 	}
 	return nil
 }
+
+func (a *AutoShardingIndex) GetGPUIndex() any {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.current.GetGPUIndex()
+}

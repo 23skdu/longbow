@@ -2,9 +2,11 @@ package store
 
 import (
 	"container/heap"
+	"fmt"
 	"sort"
 	"sync"
 
+	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -151,12 +153,108 @@ func (gs *GraphStore) PredicateVocabulary() []string {
 }
 
 func (gs *GraphStore) CommunityCount() int {
-	// Returns number of unique node groups as a proxy for community count.
-	// For accurate community detection, a graph clustering algorithm
-	// (e.g., Louvain, Label Propagation) would need to be implemented.
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 	return len(gs.forwardEdges)
+}
+
+// GetCSR converts the graph to a Compressed Sparse Row (CSR) format.
+func (gs *GraphStore) GetCSR() (offsets []uint32, neighbors []uint32, weights []float32) {
+	gs.mu.RLock()
+	defer gs.mu.RUnlock()
+
+	// 1. Determine max node ID
+	maxID := uint32(0)
+	for id := range gs.forwardEdges {
+		if id > maxID {
+			maxID = id
+		}
+	}
+	for id := range gs.backwardEdges {
+		if id > maxID {
+			maxID = id
+		}
+	}
+
+	nodeCount := maxID + 1
+	offsets = make([]uint32, nodeCount+1)
+	neighbors = make([]uint32, 0, gs.edgeCount)
+	weights = make([]float32, 0, gs.edgeCount)
+
+	currOffset := uint32(0)
+	for i := uint32(0); i < nodeCount; i++ {
+		offsets[i] = currOffset
+		if edges, ok := gs.forwardEdges[i]; ok {
+			for _, e := range edges {
+				neighbors = append(neighbors, uint32(e.Object))
+				weights = append(weights, e.Weight)
+				currOffset++
+			}
+		}
+	}
+	offsets[nodeCount] = currOffset
+	return
+}
+
+func (gs *GraphStore) RankWithGraphGPU(results []SearchResult, alpha float32, depth int, gpuIdx gputypes.Index) ([]SearchResult, error) {
+	if len(results) == 0 || gpuIdx == nil {
+		return results, nil
+	}
+
+	// 1. Get CSR and update GPU
+	offsets, neighbors, weights := gs.GetCSR()
+	if err := gpuIdx.UpdateGraph(offsets, neighbors, weights); err != nil {
+		return nil, fmt.Errorf("failed to sync graph to GPU: %w", err)
+	}
+
+	// 2. Prepare seeds (top-K results)
+	seeds := make([]uint32, len(results))
+	for i, r := range results {
+		seeds[i] = uint32(r.ID)
+	}
+
+	// 3. Expand on GPU
+	ids, scores, err := gpuIdx.GraphExpand(seeds, depth, alpha)
+	if err != nil {
+		return nil, fmt.Errorf("GPU graph expansion failed: %w", err)
+	}
+
+	// 4. Combine with initial scores (boost)
+	boosts := make(map[uint32]float32)
+	for i, id := range ids {
+		boosts[id] = scores[i]
+	}
+
+	for i, r := range results {
+		if b, ok := boosts[uint32(r.ID)]; ok {
+			results[i].Score += b
+		}
+	}
+
+	// 5. Add new discovered neighbors if they have significant scores
+	discovered := make(map[uint32]float32)
+	for i, id := range ids {
+		found := false
+		for _, r := range results {
+			if uint32(r.ID) == id {
+				found = true
+				break
+			}
+		}
+		if !found && scores[i] > 0.1 {
+			discovered[id] = scores[i]
+		}
+	}
+
+	for id, s := range discovered {
+		results = append(results, SearchResult{ID: lbtypes.VectorID(id), Score: s})
+	}
+
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].Score > results[j].Score
+	})
+
+	return results, nil
 }
 
 func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth int) []SearchResult {

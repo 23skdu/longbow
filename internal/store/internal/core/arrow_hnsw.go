@@ -445,6 +445,12 @@ func (h *ArrowHNSW) IsSharded() bool {
 	return false
 }
 
+func (h *ArrowHNSW) GetGPUIndex() any {
+	h.gpuMu.RLock()
+	defer h.gpuMu.RUnlock()
+	return h.gpuIndex
+}
+
 // GetConfig returns the current configuration
 func (h *ArrowHNSW) GetConfig() types.ArrowHNSWConfig {
 	return h.config

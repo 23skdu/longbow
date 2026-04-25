@@ -335,6 +335,15 @@ func (s *ShardedHNSW) IsSharded() bool {
 	return true
 }
 
+func (s *ShardedHNSW) GetGPUIndex() any {
+	s.shardsMu.RLock()
+	defer s.shardsMu.RUnlock()
+	if len(s.shards) > 0 && s.shards[0] != nil && s.shards[0].index != nil {
+		return s.shards[0].index.GetGPUIndex()
+	}
+	return nil
+}
+
 func (s *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	// Allocate Global ID
 	id := VectorID(s.nextID.Add(1) - 1) // #nosec G115

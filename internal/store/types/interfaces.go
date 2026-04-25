@@ -71,6 +71,9 @@ type VectorIndexer interface {
 
 	// Maintenance
 	RemapLocations(ctx context.Context, mapping map[uint32]any) error
+
+	// GPU
+	GetGPUIndex() any // Returns types.Index (gpu index)
 }
 
 // GraphDataInterface defines the interface for graph data operations

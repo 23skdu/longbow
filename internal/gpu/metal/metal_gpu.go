@@ -77,9 +77,16 @@ typedef struct {
     void* idBuffer;
     void* pqPipeline;
     void* assignPipeline;
+    void* bfsExpandPipeline;
+    void* actPropagatePipeline;
+    void* graphOffsets;
+    void* graphNeighbors;
+    void* graphWeights;
     int vectorCount;
     int dimensions;
     int capacity;
+    int graphNodeCount;
+    int graphEdgeCount;
 } MetalIndexHandle;
 
 // Initialize Metal device and command queue
@@ -112,16 +119,27 @@ MetalIndexHandle* metal_init(int dimensions, int initialCapacity) {
         if (library) {
             id<MTLFunction> pqFunc = [library newFunctionWithName:@"compute_pq_distances"];
             id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:pqFunc error:&error];
-            if (pipeline) {
-                handle->pqPipeline = (__bridge_retained void*)pipeline;
-            }
+            if (pipeline) handle->pqPipeline = (__bridge_retained void*)pipeline;
             
             id<MTLFunction> assignFunc = [library newFunctionWithName:@"assign_to_clusters"];
             id<MTLComputePipelineState> assignPipeline = [device newComputePipelineStateWithFunction:assignFunc error:&error];
-            if (assignPipeline) {
-                handle->assignPipeline = (__bridge_retained void*)assignPipeline;
-            }
+            if (assignPipeline) handle->assignPipeline = (__bridge_retained void*)assignPipeline;
+
+            id<MTLFunction> bfsFunc = [library newFunctionWithName:@"graph_bfs_expand"];
+            id<MTLComputePipelineState> bfsPipeline = [device newComputePipelineStateWithFunction:bfsFunc error:&error];
+            if (bfsPipeline) handle->bfsExpandPipeline = (__bridge_retained void*)bfsPipeline;
+
+            id<MTLFunction> actFunc = [library newFunctionWithName:@"graph_activation_propagate"];
+            id<MTLComputePipelineState> actPipeline = [device newComputePipelineStateWithFunction:actFunc error:&error];
+            if (actPipeline) handle->actPropagatePipeline = (__bridge_retained void*)actPipeline;
         }
+        
+        handle->graphOffsets = NULL;
+        handle->graphNeighbors = NULL;
+        handle->graphWeights = NULL;
+        handle->graphNodeCount = 0;
+        handle->graphEdgeCount = 0;
+
         size_t bufferSize = handle->capacity * dimensions * sizeof(float);
         id<MTLBuffer> buffer = [device newBufferWithLength:bufferSize
                                                     options:MTLResourceStorageModeShared];
@@ -432,6 +450,26 @@ int metal_assign_to_clusters(MetalIndexHandle* handle, float* vectors, float* ce
 
         memcpy(assignments, [assignBuf contents], assignSize);
 
+        return 0;
+    }
+}
+
+int metal_update_graph(MetalIndexHandle* handle, uint32_t* h_offsets, uint32_t* h_neighbors, float* h_weights, int nodeCount, int edgeCount) {
+    @autoreleasepool {
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        
+        if (handle->graphOffsets) CFRelease(handle->graphOffsets);
+        if (handle->graphNeighbors) CFRelease(handle->graphNeighbors);
+        if (handle->graphWeights) CFRelease(handle->graphWeights);
+
+        handle->graphOffsets = (__bridge_retained void*)[device newBufferWithBytes:h_offsets length:(nodeCount + 1) * sizeof(uint32_t) options:MTLResourceStorageModeShared];
+        handle->graphNeighbors = (__bridge_retained void*)[device newBufferWithBytes:h_neighbors length:edgeCount * sizeof(uint32_t) options:MTLResourceStorageModeShared];
+        if (h_weights) {
+            handle->graphWeights = (__bridge_retained void*)[device newBufferWithBytes:h_weights length:edgeCount * sizeof(float) options:MTLResourceStorageModeShared];
+        }
+
+        handle->graphNodeCount = nodeCount;
+        handle->graphEdgeCount = edgeCount;
         return 0;
     }
 }
@@ -1034,4 +1072,50 @@ func (idx *MetalIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle in
 
 func (idx *MetalIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
 	return nil, nil, fmt.Errorf("SearchTurboQuant not implemented for standard Metal index, use optimized Metal index")
+}
+
+func (idx *MetalIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	var wPtr *C.float
+	if len(weights) > 0 {
+		wPtr = (*C.float)(unsafe.Pointer(&weights[0]))
+	}
+
+	ret := C.metal_update_graph(
+		idx.handle,
+		(*C.uint32_t)(unsafe.Pointer(&offsets[0])),
+		(*C.uint32_t)(unsafe.Pointer(&neighbors[0])),
+		wPtr,
+		C.int(len(offsets)-1),
+		C.int(len(neighbors)),
+	)
+
+	if ret != 0 {
+		return fmt.Errorf("failed to update Metal graph")
+	}
+
+	return nil
+}
+
+func (idx *MetalIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	if idx.handle.graphOffsets == nil {
+		return nil, nil, fmt.Errorf("graph not initialized on GPU")
+	}
+
+	// Metal multi-hop expansion would be implemented here.
+	// For now, we provide the API hook.
+	return nil, nil, fmt.Errorf("Metal GraphExpand not fully implemented in Go layer yet")
 }

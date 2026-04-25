@@ -180,6 +180,11 @@ func (m *MockVectorIndex) SearchVectorsInRange(ctx context.Context, q any, thres
 	return args.Get(0).([]SearchResult), args.Error(1)
 }
 
+func (m *MockVectorIndex) GetGPUIndex() any {
+	args := m.Called()
+	return args.Get(0)
+}
+
 // Additional interface requirements?
 // Note: Some methods in interfaces.go used types.VectorIndexer aliases.
 // GetPQEncoder returns *pq.PQEncoder which is internal. We skip precise mocking unless needed.

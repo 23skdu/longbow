@@ -1269,6 +1269,18 @@ func buildFilterOp(schema arrow.Schema, rec arrow.RecordBatch, f *Filter) (filte
 				return nil, fmt.Errorf("invalid int64 value %q for field %s", f.Value, f.Field)
 			}
 			innerOp = &int64FilterOp{val: val, operator: opStr, colIdx: colIdx}
+		case arrow.INT32:
+			val, err := strconv.ParseInt(f.Value, 10, 32)
+			if err != nil {
+				return nil, fmt.Errorf("invalid int32 value %q for field %s", f.Value, f.Field)
+			}
+			innerOp = &int32FilterOp{val: int32(val), operator: opStr, colIdx: colIdx}
+		case arrow.UINT64:
+			val, err := strconv.ParseUint(f.Value, 10, 64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid uint64 value %q for field %s", f.Value, f.Field)
+			}
+			innerOp = &uint64FilterOp{val: val, operator: opStr, colIdx: colIdx}
 		case arrow.FLOAT32:
 			val, err := strconv.ParseFloat(f.Value, 32)
 			if err != nil {
@@ -1283,6 +1295,9 @@ func buildFilterOp(schema arrow.Schema, rec arrow.RecordBatch, f *Filter) (filte
 			innerOp = &float64FilterOp{val: val, operator: opStr, colIdx: colIdx}
 		case arrow.STRING:
 			innerOp = &stringFilterOp{val: f.Value, operator: opStr, colIdx: colIdx}
+		case arrow.BOOL:
+			val := strings.ToLower(f.Value) == "true"
+			innerOp = &boolFilterOp{val: val, operator: opStr, colIdx: colIdx}
 		default:
 			return nil, nil
 		}

@@ -121,7 +121,7 @@ func TestOPQ_ReconstructionImprovement(t *testing.T) {
 
 	// 2. OPQ
 	opqEncoder, _ := NewOPQEncoder(dims, m, k)
-	_ = opqEncoder.TrainOPQ(vectors, 10)
+	_ = opqEncoder.TrainOPQ(vectors, 20)
 
 	var opqErr float32
 	for i := 0; i < 100; i++ {

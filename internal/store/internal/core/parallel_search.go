@@ -9,7 +9,7 @@ import (
 
 	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/pq"
+	"github.com/23skdu/longbow/internal/memory"
 	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
@@ -26,27 +26,31 @@ var flatBufferPool = sync.Pool{
 	},
 }
 
+// flatBufferPoolF64 pools []float64 slices for high-precision refinement.
+var flatBufferPoolF64 = sync.Pool{
+	New: func() any {
+		s := make([]float64, 0, 4096)
+		return &s
+	},
+}
+
 // ParallelSearchHost abstracts index-specific operations needed for parallel result processing.
-type ParallelSearchHost interface {
+type ParallelSearchHost[T float32 | float64] interface {
 	GetDataset() types.IndexDataProvider
 	GetLocationForParallel(id uint32) (types.Location, bool)
-	ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) ([]float32, error)
-	ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float32) error
+	ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []T) error
 	GetParallelSearchConfig() types.ParallelSearchConfig
-	GetDistanceFuncForParallel() func(a, b []float32) float32
-	GetPQEnabledForParallel() bool
-	GetPQEncoderForParallel() *pq.PQEncoder
-	ExtractVectorByIDForParallel(id uint32) ([]float32, error)
-	ExtractVectorByIDToBufferForParallel(id uint32, dst []float32) error
+	GetDistanceFuncForParallel() func(a, b []T) float32
+	ExtractVectorByIDToBufferForParallel(id uint32, dst []T) error
 	GetDistanceMetric() basecore.DistanceMetric
-	SearchForParallel(query []float32, k int) []types.Candidate
 	IsDeleted(id uint32) bool
+	GetNUMAConfig() (*memory.NUMATopology, int)
 }
 
 
 
 // processResultsParallelInternal is the generalized parallel result processing routine.
-func processResultsParallelInternal(ctx context.Context, h ParallelSearchHost, query []float32, candidates []types.Candidate, k int, filters []qry.Filter, bitmap *roaring.Bitmap) []types.SearchResult {
+func processResultsParallelInternal[T float32 | float64](ctx context.Context, h ParallelSearchHost[T], query []T, candidates []types.Candidate, k int, filters []qry.Filter, bitmap *roaring.Bitmap) []types.SearchResult {
 	cfg := h.GetParallelSearchConfig()
 	numWorkers := cfg.Workers
 	if numWorkers <= 0 {
@@ -112,6 +116,11 @@ func processResultsParallelInternal(ctx context.Context, h ParallelSearchHost, q
 		wg.Add(1)
 		go func(workerID int, chunk []types.Candidate) {
 			defer wg.Done()
+			topo, node := h.GetNUMAConfig()
+			if topo != nil && node >= 0 {
+				_ = memory.PinToNUMANode(topo, node)
+				defer runtime.UnlockOSThread()
+			}
 			chunksResults[workerID] = processChunkInternal(ctx, h, query, chunk, filters, bitmap)
 		}(i, candidates[start:end])
 	}
@@ -152,7 +161,7 @@ func getFallbackReason(cfg types.ParallelSearchConfig, neighborCount, chunkSize 
 }
 
 // processChunkInternal processes a chunk of HNSW neighbors using generic ParallelSearchHost.
-func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []float32, candidates []types.Candidate, filters []qry.Filter, bitmap *roaring.Bitmap) []types.SearchResult {
+func processChunkInternal[T float32 | float64](ctx context.Context, h ParallelSearchHost[T], query []T, candidates []types.Candidate, filters []qry.Filter, bitmap *roaring.Bitmap) []types.SearchResult {
 	results := make([]types.SearchResult, 0, len(candidates))
 	dataset := h.GetDataset()
 
@@ -217,16 +226,43 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 	need := len(candidates) * dims
 
 	// Reuse a pooled buffer to avoid per-search heap allocations.
-	pBuf := flatBufferPool.Get().(*[]float32)
-	if cap(*pBuf) < need {
-		*pBuf = make([]float32, need)
-	} else {
-		*pBuf = (*pBuf)[:need]
+	var pBuf any
+	var flatBuffer []T
+
+	// Selection logic for the correct type pool
+	var dummy T
+	switch any(dummy).(type) {
+	case float32:
+		pb := flatBufferPool.Get().(*[]float32)
+		if cap(*pb) < need {
+			*pb = make([]float32, need)
+		} else {
+			*pb = (*pb)[:need]
+		}
+		pBuf = pb
+		flatBuffer = any(*pb).([]T)
+	case float64:
+		pb := flatBufferPoolF64.Get().(*[]float64)
+		if cap(*pb) < need {
+			*pb = make([]float64, need)
+		} else {
+			*pb = (*pb)[:need]
+		}
+		pBuf = pb
+		flatBuffer = any(*pb).([]T)
 	}
-	flatBuffer := *pBuf
+
 	defer func() {
-		*pBuf = flatBuffer[:0]
-		flatBufferPool.Put(pBuf)
+		switch any(dummy).(type) {
+		case float32:
+			pb := pBuf.(*[]float32)
+			*pb = (*pb)[:0]
+			flatBufferPool.Put(pb)
+		case float64:
+			pb := pBuf.(*[]float64)
+			*pb = (*pb)[:0]
+			flatBufferPoolF64.Put(pb)
+		}
 	}()
 
 	validIDs := make([]uint32, 0, len(candidates))
@@ -318,9 +354,15 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 	usedBatch := false
 	metric := h.GetDistanceMetric()
 
-	if metric == basecore.MetricEuclidean {
-		if err := simd.EuclideanDistanceBatchFlat(query, flatBuffer[:count*dims], count, dims, scores); err == nil {
-			usedBatch = true
+	// Optimized batch SIMD path for float32
+	switch any(dummy).(type) {
+	case float32:
+		f32Buf := any(flatBuffer).([]float32)
+		f32Query := any(query).([]float32)
+		if metric == basecore.MetricEuclidean {
+			if err := simd.EuclideanDistanceBatchFlat(f32Query, f32Buf[:count*dims], count, dims, scores); err == nil {
+				usedBatch = true
+			}
 		}
 	}
 
@@ -342,3 +384,4 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 
 	return results
 }
+

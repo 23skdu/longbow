@@ -79,6 +79,7 @@ typedef struct {
     void* assignPipeline;
     void* bfsExpandPipeline;
     void* actPropagatePipeline;
+    void* fusedGraphPipeline;
     void* graphOffsets;
     void* graphNeighbors;
     void* graphWeights;
@@ -132,6 +133,10 @@ MetalIndexHandle* metal_init(int dimensions, int initialCapacity) {
             id<MTLFunction> actFunc = [library newFunctionWithName:@"graph_activation_propagate"];
             id<MTLComputePipelineState> actPipeline = [device newComputePipelineStateWithFunction:actFunc error:&error];
             if (actPipeline) handle->actPropagatePipeline = (__bridge_retained void*)actPipeline;
+
+            id<MTLFunction> fusedFunc = [library newFunctionWithName:@"graph_rag_fused"];
+            id<MTLComputePipelineState> fusedPipeline = [device newComputePipelineStateWithFunction:fusedFunc error:&error];
+            if (fusedPipeline) handle->fusedGraphPipeline = (__bridge_retained void*)fusedPipeline;
         }
         
         handle->graphOffsets = NULL;
@@ -470,6 +475,94 @@ int metal_update_graph(MetalIndexHandle* handle, uint32_t* h_offsets, uint32_t* 
 
         handle->graphNodeCount = nodeCount;
         handle->graphEdgeCount = edgeCount;
+        return 0;
+    }
+}
+
+int metal_graph_expand(MetalIndexHandle* handle, uint32_t* seeds, int numSeeds, int depth, float alpha, uint32_t* outIDs, float* outScores, int* outCount) {
+    @autoreleasepool {
+        if (!handle->graphOffsets || !handle->fusedGraphPipeline) return -1;
+
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->fusedGraphPipeline;
+
+        int nodeCount = handle->graphNodeCount;
+        
+        // 1. Buffers
+        id<MTLBuffer> activations = [device newBufferWithLength:nodeCount * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> nextActivations = [device newBufferWithLength:nodeCount * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> visited = [device newBufferWithLength:((nodeCount + 31) / 32) * sizeof(uint32_t) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> frontier = [device newBufferWithLength:nodeCount * sizeof(uint32_t) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> nextFrontier = [device newBufferWithLength:nodeCount * sizeof(uint32_t) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> nextFrontierSize = [device newBufferWithLength:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+
+        // 2. Initialize
+        float* actPtr = (float*)[activations contents];
+        uint32_t* frontPtr = (uint32_t*)[frontier contents];
+        uint32_t* visPtr = (uint32_t*)[visited contents];
+        memset(visPtr, 0, ((nodeCount + 31) / 32) * sizeof(uint32_t));
+        memset(actPtr, 0, nodeCount * sizeof(float));
+
+        for (int i = 0; i < numSeeds; i++) {
+            actPtr[seeds[i]] = 1.0f;
+            frontPtr[i] = seeds[i];
+            visPtr[seeds[i] / 32] |= (1 << (seeds[i] % 32));
+        }
+        int currentFrontierSize = numSeeds;
+
+        // 3. Iterative Expansion
+        for (int d = 0; d < depth; d++) {
+            if (currentFrontierSize == 0) break;
+            
+            memset([nextActivations contents], 0, nodeCount * sizeof(float));
+            memset([nextFrontierSize contents], 0, sizeof(uint32_t));
+
+            id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+            id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+            [encoder setComputePipelineState:pipeline];
+            [encoder setBuffer:frontier offset:0 atIndex:0];
+            [encoder setBuffer:(__bridge id<MTLBuffer>)handle->graphOffsets offset:0 atIndex:1];
+            [encoder setBuffer:(__bridge id<MTLBuffer>)handle->graphNeighbors offset:0 atIndex:2];
+            [encoder setBuffer:(__bridge id<MTLBuffer>)handle->graphWeights offset:0 atIndex:3];
+            [encoder setBuffer:activations offset:0 atIndex:4];
+            [encoder setBuffer:nextActivations offset:0 atIndex:5];
+            [encoder setBuffer:nextFrontier offset:0 atIndex:6];
+            [encoder setBuffer:nextFrontierSize offset:0 atIndex:7];
+            [encoder setBuffer:visited offset:0 atIndex:8];
+            
+            [encoder setBytes:&currentFrontierSize length:sizeof(int) atIndex:0];
+            [encoder setBytes:&alpha length:sizeof(float) atIndex:1];
+
+            MTLSize gridSize = MTLSizeMake(currentFrontierSize, 1, 1);
+            NSUInteger maxThreads = pipeline.maxTotalThreadsPerThreadgroup;
+            if (maxThreads > currentFrontierSize) maxThreads = currentFrontierSize;
+            MTLSize threadgroupSize = MTLSizeMake(maxThreads, 1, 1);
+
+            [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+            [encoder endEncoding];
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+
+            // Swap activations and frontiers
+            id<MTLBuffer> tmpAct = activations; activations = nextActivations; nextActivations = tmpAct;
+            id<MTLBuffer> tmpFront = frontier; frontier = nextFrontier; nextFrontier = tmpFront;
+            currentFrontierSize = *(uint32_t*)[nextFrontierSize contents];
+        }
+
+        // 4. Collect results
+        float* finalActs = (float*)[activations contents];
+        int count = 0;
+        for (int i = 0; i < nodeCount; i++) {
+            if (finalActs[i] > 0.01f) {
+                outIDs[count] = i;
+                outScores[count] = finalActs[i];
+                count++;
+            }
+        }
+        *outCount = count;
+
         return 0;
     }
 }
@@ -1115,8 +1208,28 @@ func (idx *MetalIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]
 		return nil, nil, fmt.Errorf("graph not initialized on GPU")
 	}
 
-	// Metal multi-hop expansion would be implemented here.
-	return nil, nil, fmt.Errorf("Metal GraphExpand not fully implemented in Go layer yet")
+	nodeCount := int(idx.handle.graphNodeCount)
+	outIDs := make([]uint32, nodeCount)
+	outScores := make([]float32, nodeCount)
+	var outCount C.int
+
+	ret := C.metal_graph_expand(
+		idx.handle,
+		(*C.uint32_t)(unsafe.Pointer(&seeds[0])),
+		C.int(len(seeds)),
+		C.int(depth),
+		C.float(alpha),
+		(*C.uint32_t)(unsafe.Pointer(&outIDs[0])),
+		(*C.float)(unsafe.Pointer(&outScores[0])),
+		&outCount,
+	)
+
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("Metal GraphExpand failed")
+	}
+
+	n := int(outCount)
+	return outIDs[:n], outScores[:n], nil
 }
 
 func (idx *MetalIndex) AddPQ(ids []int64, codes []byte, m int) error {

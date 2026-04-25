@@ -4,9 +4,11 @@ import os
 import sys
 import time
 
+# Matrix 1: Low Dims
 DIMS_LOW = [128, 384]
 COUNTS_LOW = [500, 1000, 5000, 15000, 50000, 100000]
 
+# Matrix 2: High Dims
 DIMS_HIGH = [768, 1024, 3072]
 COUNTS_HIGH = [500, 1000, 5000, 10000, 20000]
 
@@ -15,7 +17,7 @@ MEMORY = 19327352832  # 18 GB
 
 def run_bench(mode, dims, counts, label):
     cmd = [
-        "python3", "scripts/unified_benchmark.py",
+        "venv/bin/python3", "scripts/unified_benchmark.py",
         "--mode", mode,
         "--dims", str(dims),
         "--counts", str(counts),
@@ -24,8 +26,9 @@ def run_bench(mode, dims, counts, label):
         "--queries", "1000",
         "--label", label
     ]
-    # Set timeout based on count
-    if int(counts) > 5000:
+    
+    # Set timeout based on count (30s for small, 60s for large as per user request)
+    if int(counts) >= 5000:
         cmd += ["--duration", "60"]
     else:
         cmd += ["--duration", "30"]
@@ -41,8 +44,11 @@ def main():
     hw_mode = sys.argv[1] # "metal" or "cuda"
     host_label = sys.argv[2] # "local" or "ancalagon"
 
-    # Modes to iterate
-    modes = ["cpu", hw_mode, "learned_index", "geo", "graphrag", "temporal", "recommend"]
+    # Modes to iterate:
+    # 1. Hardware mode (Metal/CUDA) - this runs Dense, Hybrid, Sparse, Filtered, ByID, Geo, GraphRAG, Temporal
+    # 2. CPU mode - same as above but forced to CPU
+    # 3. Learned Index mode
+    modes = [hw_mode, "cpu", "learned_index"]
 
     # Matrix 1: Low Dims
     for dim in DIMS_LOW:

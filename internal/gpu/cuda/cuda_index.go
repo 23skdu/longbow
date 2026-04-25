@@ -942,7 +942,7 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 		(*C.float)(idx.handle.vectorBuffer),
 		(*C.float)(d_query),
 		(*C.float)(d_distances),
-		(*C.unsigned_long_long)(d_bitset),
+		(*C.ulonglong)(d_bitset),
 		C.int(idx.dimensions),
 		C.int(idx.vectorCount),
 		nil,

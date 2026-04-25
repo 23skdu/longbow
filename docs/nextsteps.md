@@ -27,7 +27,7 @@
 - [x] **Test Placeholders**: Implemented real recall validation in `DualIndexHarness` and dependency injection tests for `ShardedHNSW`.
 - [x] **Namespace Metrics**: Finished implementation of `NamespaceCreationTotal` metrics in `servers.go`.
 
-## 0.2.0 Hardening & Performance (RESOLVED)
+## 0.1.9 Hardening & Performance (RESOLVED)
 
 - [x] **SIMD Metadata Filtering for NEON**: Ported AVX-512 filters to ARM64 NEON with optimized assembly kernels for Int64, Int32, Float64, and Float32.
 - [x] **Persistent HNSW Memory Mapping**: Transitioned HNSW graph storage to direct Arrow-backed memory mapping to eliminate indexing load times.
@@ -38,7 +38,8 @@
 - [x] **Vector Extraction Buffer Reuse**: Extended `sync.Pool` pattern to all vector extraction paths to reduce heap pressure.
 - [x] **Zero-Copy SearchByID**: Optimized `SearchByID` to use Arrow-native slices directly for target vectors.
 
-## Roadmap for 0.2.0 (Updated)
+## Roadmap for 0.1.9 (Updated)
+
 
 ### 1. Full Test Coverage (95% Target)
 ...
@@ -110,15 +111,15 @@ Full completion of low-memory, low-power CPU-only coverage for Raspberry Pi Zero
 - **Approach**: Batch queries into fixed buckets (e.g., 1, 8, 32, 64) to maximize TPU throughput.
 - **Data Layout**: Pad vectors to TPU-friendly alignment (typically 128 bytes).
 
-## 0.2.0 Release Management
+## 0.1.9 Release Management
 
-- [ ] **Versioning**: Transition to semantic versioning (SemVer) starting with 0.2.0.
-- [ ] **Migration Guides**: Document breaking changes in disk format (if any) for 0.1.9 -> 0.2.0 upgrades.
+- [ ] **Versioning**: Transition to semantic versioning (SemVer) starting with 0.1.9.
+- [ ] **Migration Guides**: Document breaking changes in disk format (if any) for 0.1.8 -> 0.1.9 upgrades.
 - [ ] **Documentation**: Complete the API reference for all new hardware-specific flags.
 
 ### Suggestions for Next Release
 
-1.  **NUMA-Aware Parallel Refinement**: Pin parallel search workers to specific CPU cores matching the NUMA node where the Arrow RecordBatches are stored, reducing cross-socket memory latency.
-2.  **Zero-Alloc Response Building**: Extend the zero-allocation philosophy to the response serialization path. Currently, converting Arrow RecordBatches to JSON or Flight responses involves significant heap allocations.
-3.  **Kernel Fusing for GraphRAG**: Optimize GraphRAG performance by fusing activation calculation and graph traversal kernels into a single GPU dispatch.
-4.  **Asynchronous Index Compaction**: Move HNSW graph compaction and level-balancing to a background priority-throttled thread.
+1. **NUMA-Aware Parallel Refinement**: Pin parallel search workers to specific CPU cores matching the NUMA node where the Arrow RecordBatches are stored, reducing cross-socket memory latency.
+2. **Zero-Alloc Response Building**: Extend the zero-allocation philosophy to the response serialization path. Currently, converting Arrow RecordBatches to JSON or Flight responses involves significant heap allocations.
+3. **Kernel Fusing for GraphRAG**: Optimize GraphRAG performance by fusing activation calculation and graph traversal kernels into a single GPU dispatch.
+4. **Asynchronous Index Compaction**: Move HNSW graph compaction and level-balancing to a background priority-throttled thread.

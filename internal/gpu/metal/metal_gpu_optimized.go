@@ -2,8 +2,6 @@
 
 package metal
 
-import "github.com/23skdu/longbow/internal/gpu/types"
-
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
 #cgo LDFLAGS: -framework Accelerate -framework Metal -framework MetalPerformanceShaders -framework Foundation
@@ -12,6 +10,42 @@ import "github.com/23skdu/longbow/internal/gpu/types"
 #import <Metal/Metal.h>
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #import <Accelerate/Accelerate.h>
+
+// Forward declaration
+typedef struct MetalIndexOptimized MetalIndexOptimized;
+
+// Distance metric type
+typedef enum {
+    METRIC_L2 = 0,
+    METRIC_COSINE = 1,
+    METRIC_DOT = 2
+} DistanceMetric;
+
+// MetalIndexOptimized wraps Metal GPU resources with compute shaders
+struct MetalIndexOptimized {
+    void* device;
+    void* commandQueue;
+    void* vectorBuffer;
+    void* idBuffer;
+    void* distanceComputePipeline;
+    void* cosinePipeline;
+    void* dotPipeline;
+    void* topKPipeline;
+    void* l2Fp16Pipeline;
+    void* cosineFp16Pipeline;
+    void* dotFp16Pipeline;
+    void* l2C64Pipeline;
+    void* cosineC64Pipeline;
+    void* l2C128Pipeline;
+    void* cosineC128Pipeline;
+    void* tqPipeline;
+    void* pqPipeline;
+    void* pqBuffer;
+    int vectorCount;
+    int dimensions;
+    int capacity;
+    DistanceMetric metric;
+};
 
 // Metal shader source for optimized L2 distance calculation, top-k selection, and batched queries
 const char* metalShaderSource =
@@ -817,38 +851,7 @@ const char* metalShaderSource =
 "    distances[gid] = sqrt(sum);\n"
 "}\n";
 
-// Distance metric type
-typedef enum {
-    METRIC_L2 = 0,
-    METRIC_COSINE = 1,
-    METRIC_DOT = 2
-} DistanceMetric;
 
-// MetalIndexOptimized wraps Metal GPU resources with compute shaders
-typedef struct {
-    void* device;
-    void* commandQueue;
-    void* vectorBuffer;
-    void* idBuffer;
-    void* distanceComputePipeline;
-    void* cosinePipeline;
-    void* dotPipeline;
-    void* topKPipeline;
-    void* l2Fp16Pipeline;
-    void* cosineFp16Pipeline;
-    void* dotFp16Pipeline;
-    void* l2C64Pipeline;
-    void* cosineC64Pipeline;
-    void* l2C128Pipeline;
-    void* cosineC128Pipeline;
-    void* tqPipeline;
-    void* pqPipeline;
-    void* pqBuffer;
-    int vectorCount;
-    int dimensions;
-    int capacity;
-    DistanceMetric metric;
-} MetalIndexOptimized;
 
 // Initialize Metal device with compute shaders
 MetalIndexOptimized* metal_init_optimized(int dimensions) {
@@ -1435,6 +1438,7 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
         }
         return 0;
     }
+}
 
     int metal_add_pq(MetalIndexOptimized* handle, const unsigned char* codes, const int64_t* ids, int count, int m) {
         @autoreleasepool {
@@ -1470,9 +1474,9 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
         }
     }
 
-    int metal_search_pq(MetalIndexOptimized* handle, const float* lookupTable, int m, int k, int64_t* resultIDs, float* resultDistances) {
+    int metal_search_pq_optimized(MetalIndexOptimized* handle, const float* lookupTable, int m, int k, int64_t* resultIDs, float* resultDistances) {
         @autoreleasepool {
-            if (!handle->pqBuffer || handle->vectorCount == 0) return -1;
+            if (!handle || !handle->pqBuffer || handle->vectorCount == 0) return -1;
             id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
             id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
             id<MTLComputePipelineState> pqPipeline = (__bridge id<MTLComputePipelineState>)handle->pqPipeline;
@@ -1522,7 +1526,6 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
             return 0;
         }
     }
-}
 */
 import "C"
 import (
@@ -1826,7 +1829,7 @@ func (idx *MetalIndexOptimized) SearchPQ(lookupTable []float32, m, k int) ([]int
 	resIDs := make([]int64, k)
 	resDists := make([]float32, k)
 
-	ret := C.metal_search_pq(idx.handle, (*C.float)(unsafe.Pointer(&lookupTable[0])), C.int(m), C.int(k), (*C.int64_t)(unsafe.Pointer(&resIDs[0])), (*C.float)(unsafe.Pointer(&resDists[0])))
+	ret := C.metal_search_pq_optimized(idx.handle, (*C.float)(unsafe.Pointer(&lookupTable[0])), C.int(m), C.int(k), (*C.int64_t)(unsafe.Pointer(&resIDs[0])), (*C.float)(unsafe.Pointer(&resDists[0])))
 	if ret != 0 {
 		return nil, nil, fmt.Errorf("Metal PQ search failed: error %d", int(ret))
 	}
@@ -1976,4 +1979,10 @@ func (idx *MetalIndexOptimized) AssignToClusters(vectors []float32, centroids []
 	}
 	return assignments, nil
 }
+func (idx *MetalIndexOptimized) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
+	return fmt.Errorf("UpdateGraph not implemented for optimized Metal index")
+}
 
+func (idx *MetalIndexOptimized) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
+	return nil, nil, fmt.Errorf("GraphExpand not implemented for optimized Metal index")
+}

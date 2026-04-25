@@ -175,7 +175,7 @@ type SearchOptions struct {
 	Ef             int            // Entry factor for HNSW search (controls search breadth)
 	Consistency    string         // "eventual" | "strong" | "" (default = eventual)
 	VectorType     VectorDataType // Explicit index type selection for search (float32, turboquant)
-	TurboQuantBits int            // Bit depth for TurboQuant search (4, 8)
+	TurboQuantBits int            // Bit depth for TurboQuant search (2, 4, 8)
 	Predicate      HNSWPredicate  // Predicate for early-exit filtering
 }
 

@@ -33,7 +33,7 @@ except ImportError:
     HAS_LONGBOW_SDK = False
 
 # All supported data types
-ALL_DTYPES = "float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant"
+ALL_DTYPES = "float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant,turboquant2,turboquant4,turboquant8"
 
 # Bytes per element for each dtype
 DTYPE_BYTES = {
@@ -51,6 +51,9 @@ DTYPE_BYTES = {
     "float64": 8,
     "complex128": 8,
     "turboquant": 1,
+    "turboquant2": 1,
+    "turboquant4": 1,
+    "turboquant8": 1,
 }
 
 
@@ -257,8 +260,20 @@ class BenchmarkRunner:
         duration = self.args.duration
         json_file = os.path.join(self.log_dir, f"result_{label}.json")
 
+        # Handle TurboQuant bit-packs
+        tq_bits = 4
+        if dtype == "turboquant2":
+            dtype = "turboquant"
+            tq_bits = 2
+        elif dtype == "turboquant4":
+            dtype = "turboquant"
+            tq_bits = 4
+        elif dtype == "turboquant8":
+            dtype = "turboquant"
+            tq_bits = 8
+
         # Run benchmark-tool (does ingest + search + all modes)
-        cmd = f"{bench_tool} --uri={self.server_addr} --dim={dim} --dtype={dtype} --scale={batch_size} --queries={self.args.queries} --dataset={label} --json={json_file}"
+        cmd = f"{bench_tool} --uri={self.server_addr} --dim={dim} --dtype={dtype} --tq-bits={tq_bits} --scale={batch_size} --queries={self.args.queries} --dataset={label} --json={json_file}"
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)
         

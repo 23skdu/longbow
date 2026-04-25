@@ -44,6 +44,7 @@ func main() {
 	dataset := flag.String("dataset", "bench_go", "Target dataset name")
 	queries := flag.Int("queries", 1000, "Number of search queries")
 	outputJson := flag.String("json", "", "Save stats as JSON file")
+	tqBits := flag.Int("tq-bits", 4, "TurboQuant bit depth (2, 4, 8)")
 	flag.Parse()
 
 	if *dim > 3072 {
@@ -62,7 +63,7 @@ func main() {
 
 	// 1. Ingest/DoPut
 	log.Println("[PUT] Generating vectors and uploading...")
-	record, schema, err := generateRecord(*scale, *dim, *dtype)
+	record, schema, err := generateRecord(*scale, *dim, *dtype, *tqBits)
 	if err != nil {
 		log.Fatalf("Generation failed: %v", err)
 	}
@@ -95,7 +96,10 @@ func main() {
 
 	var totalBytes int64
 	if *dtype == "turboquant" {
-		totalBytes = int64(*scale) * (int64(*dim)*3/8 + 1)
+		totalBytes = int64(*scale) * (int64(*dim) * int64(*tqBits) / 8)
+		if totalBytes == 0 {
+			totalBytes = int64(*scale) // minimal estimate
+		}
 	} else {
 		totalBytes = int64(*scale) * int64(*dim) * bytesPerElement
 	}
@@ -469,7 +473,7 @@ func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, datase
 }
 
 // generateRecord is a multi-type arrow table builder
-func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Schema, error) {
+func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record, *arrow.Schema, error) {
 	pool := memory.NewGoAllocator()
 	var dt arrow.DataType
 
@@ -510,7 +514,11 @@ func generateRecord(count int, dim int, dtype string) (arrow.Record, *arrow.Sche
 		if dtype == "complex64" || dtype == "complex128" {
 			listLen = int32(2 * dim) // #nosec G115
 		}
-		meta = arrow.NewMetadata([]string{"longbow.vector_type"}, []string{dtype})
+		if dtype == "turboquant" {
+			meta = arrow.NewMetadata([]string{"longbow.vector_type", "longbow.turboquant_bits"}, []string{dtype, fmt.Sprintf("%d", tqBits)})
+		} else {
+			meta = arrow.NewMetadata([]string{"longbow.vector_type"}, []string{dtype})
+		}
 	}
 
 	var vecField arrow.Field

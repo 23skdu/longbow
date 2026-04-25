@@ -71,6 +71,7 @@ func (r *ONNXReranker) initModel() error {
 		}
 	}
 	// Default: use heuristic stub model
+	r.logger.Warn().Str("path", r.modelPath).Msg("Using heuristic fallback reranker (stubMLModel) - real ONNX/WASM models highly recommended for production")
 	r.model = &stubMLModel{path: r.modelPath}
 	return nil
 }

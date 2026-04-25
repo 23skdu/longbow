@@ -128,6 +128,27 @@ const char* metalShaderSource =
 "    products[gid] = sum;\n"
 "}\n"
 "\n"
+"// Asymmetric PQ distance computation\n"
+"kernel void compute_pq_distances(\n"
+"    device const float* lookupTable [[buffer(0)]],\n"
+"    device const uchar* codes [[buffer(1)]],\n"
+"    device float* distances [[buffer(2)]],\n"
+"    constant uint& m [[buffer(3)]],\n"
+"    constant uint& numVectors [[buffer(4)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    float sum = 0.0f;\n"
+"    uint offset = gid * m;\n"
+"    \n"
+"    for (uint i = 0; i < m; i++) {\n"
+"        sum += lookupTable[i * 256 + codes[offset + i]];\n"
+"    }\n"
+"    \n"
+"    distances[gid] = sum;\n"
+"}\n"
+"\n"
 "// Parallel reduction for top-k using threadgroups\n"
 "kernel void find_top_k_parallel(\n"
 "    device const float* distances [[buffer(0)]],\n"
@@ -821,6 +842,8 @@ typedef struct {
     void* l2C128Pipeline;
     void* cosineC128Pipeline;
     void* tqPipeline;
+    void* pqPipeline;
+    void* pqBuffer;
     int vectorCount;
     int dimensions;
     int capacity;
@@ -879,6 +902,12 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
         id<MTLComputePipelineState> tqPipeline = nil;
         id<MTLComputePipelineState> l2C64Pipeline = nil;
         id<MTLComputePipelineState> cosineC64Pipeline = nil;
+        id<MTLComputePipelineState> pqPipeline = nil;
+        
+        id<MTLFunction> pqFunc = [library newFunctionWithName:@"compute_pq_distances"];
+        if (pqFunc) {
+            pqPipeline = [device newComputePipelineStateWithFunction:pqFunc error:&error];
+        }
 
         if (l2DistanceFunc) {
             l2Pipeline = [device newComputePipelineStateWithFunction:l2DistanceFunc error:&error];
@@ -939,6 +968,8 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
         handle->l2C64Pipeline = (__bridge_retained void*)l2C64Pipeline;
         handle->cosineC64Pipeline = (__bridge_retained void*)cosineC64Pipeline;
         handle->tqPipeline = (__bridge_retained void*)tqPipeline;
+        handle->pqPipeline = (__bridge_retained void*)pqPipeline;
+        handle->pqBuffer = NULL;
         handle->vectorCount = 0;
         handle->dimensions = dimensions;
         handle->capacity = 0;
@@ -1404,6 +1435,93 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
         }
         return 0;
     }
+
+    int metal_add_pq(MetalIndexOptimized* handle, const unsigned char* codes, const int64_t* ids, int count, int m) {
+        @autoreleasepool {
+            if (!handle || !codes) return -1;
+            id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+            int requiredCapacity = handle->vectorCount + count;
+            if (requiredCapacity > handle->capacity) {
+                int newCapacity = handle->capacity > 0 ? handle->capacity : 1024;
+                while (newCapacity < requiredCapacity) newCapacity *= 2;
+                
+                size_t pqSize = (size_t)newCapacity * m;
+                id<MTLBuffer> newPQBuffer = [device newBufferWithLength:pqSize options:MTLResourceStorageModeShared];
+                if (handle->pqBuffer) {
+                    memcpy([newPQBuffer contents], [(__bridge id<MTLBuffer>)handle->pqBuffer contents], handle->vectorCount * m);
+                    CFRelease(handle->pqBuffer);
+                }
+                handle->pqBuffer = (__bridge_retained void*)newPQBuffer;
+
+                size_t idSize = (size_t)newCapacity * sizeof(int64_t);
+                id<MTLBuffer> newIDBuffer = [device newBufferWithLength:idSize options:MTLResourceStorageModeShared];
+                if (handle->idBuffer) {
+                    memcpy([newIDBuffer contents], [(__bridge id<MTLBuffer>)handle->idBuffer contents], handle->vectorCount * sizeof(int64_t));
+                    CFRelease(handle->idBuffer);
+                }
+                handle->idBuffer = (__bridge_retained void*)newIDBuffer;
+                handle->capacity = newCapacity;
+            }
+            
+            memcpy((unsigned char*)[(__bridge id<MTLBuffer>)handle->pqBuffer contents] + (handle->vectorCount * m), codes, count * m);
+            memcpy((int64_t*)[(__bridge id<MTLBuffer>)handle->idBuffer contents] + handle->vectorCount, ids, count * sizeof(int64_t));
+            handle->vectorCount += count;
+            return 0;
+        }
+    }
+
+    int metal_search_pq(MetalIndexOptimized* handle, const float* lookupTable, int m, int k, int64_t* resultIDs, float* resultDistances) {
+        @autoreleasepool {
+            if (!handle->pqBuffer || handle->vectorCount == 0) return -1;
+            id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+            id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+            id<MTLComputePipelineState> pqPipeline = (__bridge id<MTLComputePipelineState>)handle->pqPipeline;
+            id<MTLComputePipelineState> topKPipeline = (__bridge id<MTLComputePipelineState>)handle->topKPipeline;
+
+            id<MTLBuffer> tableBuf = [device newBufferWithBytes:lookupTable length:m * 256 * sizeof(float) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> distBuf = [device newBufferWithLength:handle->vectorCount * sizeof(float) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> indicesBuf = [device newBufferWithLength:k * sizeof(int) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> topDistBuf = [device newBufferWithLength:k * sizeof(float) options:MTLResourceStorageModeShared];
+
+            for (int i=0; i<k; i++) {
+                ((int*)indicesBuf.contents)[i] = -1;
+                ((float*)topDistBuf.contents)[i] = INFINITY;
+            }
+
+            id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+            id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+            
+            [encoder setComputePipelineState:pqPipeline];
+            [encoder setBuffer:tableBuf offset:0 atIndex:0];
+            [encoder setBuffer:(__bridge id<MTLBuffer>)handle->pqBuffer offset:0 atIndex:1];
+            [encoder setBuffer:distBuf offset:0 atIndex:2];
+            [encoder setBytes:&m length:sizeof(int) atIndex:3];
+            [encoder setBytes:&handle->vectorCount length:sizeof(int) atIndex:4];
+            
+            [encoder dispatchThreads:MTLSizeMake(handle->vectorCount, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(handle->vectorCount, (int)pqPipeline.maxTotalThreadsPerThreadgroup), 1, 1)];
+
+            [encoder setComputePipelineState:topKPipeline];
+            [encoder setBuffer:distBuf offset:0 atIndex:0];
+            [encoder setBuffer:indicesBuf offset:0 atIndex:1];
+            [encoder setBuffer:topDistBuf offset:0 atIndex:2];
+            [encoder setBytes:&handle->vectorCount length:sizeof(int) atIndex:3];
+            [encoder setBytes:&k length:sizeof(int) atIndex:4];
+            [encoder dispatchThreads:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+
+            [encoder endEncoding];
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+
+            int* indices = (int*)indicesBuf.contents;
+            float* distances = (float*)topDistBuf.contents;
+            int64_t* ids = (int64_t*)[(__bridge id<MTLBuffer>)handle->idBuffer contents];
+            for (int i=0; i<k; i++) {
+                resultIDs[i] = (indices[i] >= 0) ? ids[indices[i]] : -1;
+                resultDistances[i] = distances[i];
+            }
+            return 0;
+        }
+    }
 }
 */
 import "C"
@@ -1413,6 +1531,9 @@ import (
 	"runtime"
 	"sync"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/pq"
 )
 
 // MetalIndexOptimized implements GPU-accelerated vector search using Metal compute shaders
@@ -1421,6 +1542,7 @@ type MetalIndexOptimized struct {
 	dim    int
 	mu     sync.RWMutex
 	closed bool
+	pqEncoder *pq.PQEncoder
 }
 
 // NewMetalIndexOptimized creates an optimized Metal-based GPU index with compute shaders
@@ -1673,16 +1795,87 @@ func (idx *MetalIndexOptimized) GetMemoryInfo() (int64, int64, int64, error) {
 	return 0, 0, 0, nil
 }
 
+func (idx *MetalIndexOptimized) AddPQ(ids []int64, codes []byte, m int) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	if len(ids) == 0 {
+		return nil
+	}
+
+	ret := C.metal_add_pq(idx.handle, (*C.uchar)(unsafe.Pointer(&codes[0])), (*C.int64_t)(unsafe.Pointer(&ids[0])), C.int(len(ids)), C.int(m))
+	if ret != 0 {
+		return fmt.Errorf("failed to add PQ vectors to Metal: error %d", int(ret))
+	}
+
+	return nil
+}
+
 func (idx *MetalIndexOptimized) SearchPQ(lookupTable []float32, m, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchPQ not implemented for optimized Metal index")
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	resIDs := make([]int64, k)
+	resDists := make([]float32, k)
+
+	ret := C.metal_search_pq(idx.handle, (*C.float)(unsafe.Pointer(&lookupTable[0])), C.int(m), C.int(k), (*C.int64_t)(unsafe.Pointer(&resIDs[0])), (*C.float)(unsafe.Pointer(&resDists[0])))
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("Metal PQ search failed: error %d", int(ret))
+	}
+
+	return resIDs, resDists, nil
 }
 
 func (idx *MetalIndexOptimized) TrainPQ(vectors []float32, m, k int) error {
-	return fmt.Errorf("TrainPQ not implemented for optimized Metal index")
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	encoder, err := pq.NewPQEncoder(idx.dim, m, k)
+	if err != nil {
+		return err
+	}
+
+	numVecs := len(vectors) / idx.dim
+	vecs2d := make([][]float32, numVecs)
+	for i := 0; i < numVecs; i++ {
+		vecs2d[i] = vectors[i*idx.dim : (i+1)*idx.dim]
+	}
+
+	if err := encoder.Train(vecs2d); err != nil {
+		return err
+	}
+
+	idx.pqEncoder = encoder
+	return nil
 }
 
 func (idx *MetalIndexOptimized) EncodePQ(vectors []float32) ([]byte, error) {
-	return nil, fmt.Errorf("EncodePQ not implemented for optimized Metal index")
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.pqEncoder == nil {
+		return nil, fmt.Errorf("PQ encoder not trained")
+	}
+
+	numVecs := len(vectors) / idx.dim
+	codes := make([]byte, numVecs*idx.pqEncoder.M)
+	for i := 0; i < numVecs; i++ {
+		vec := vectors[i*idx.dim : (i+1)*idx.dim]
+		encoded, err := idx.pqEncoder.Encode(vec)
+		if err != nil {
+			return nil, err
+		}
+		copy(codes[i*idx.pqEncoder.M:], encoded)
+	}
+	return codes, nil
 }
 
 func (idx *MetalIndexOptimized) GetUtilization() (float32, error) {

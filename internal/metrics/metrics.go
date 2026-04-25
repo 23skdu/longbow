@@ -292,6 +292,13 @@ var (
 		},
 		[]string{"namespace"},
 	)
+	
+	NamespaceCreationTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_namespace_creation_total",
+			Help: "Total number of successful namespace creations",
+		},
+	)
 
 	// CompressedVectorsSentTotal counts total number of quantized vectors sent in search results
 	CompressedVectorsSentTotal = promauto.NewCounter(

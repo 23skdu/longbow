@@ -142,6 +142,10 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 				h.m = h.config.M * 2
 				h.mMax = h.config.MMax * 2
 				h.mMax0 = h.config.MMax0 * 2
+				// Update config struct so GetConfig() reflects the change
+				h.config.M = h.m
+				h.config.MMax = h.mMax
+				h.config.MMax0 = h.mMax0
 			}
 		}
 	}

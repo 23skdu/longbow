@@ -321,3 +321,14 @@ func (s *VectorStore) GetMemoryUsage(collection string) float64 {
 	}
 	return float64(ds.SizeBytes.Load()) / 1024.0 / 1024.0
 }
+
+func (s *VectorStore) GetCurrentIndex(collection string) IndexType {
+	ds, ok := s.getDataset(collection)
+	if !ok || ds.Index == nil {
+		return ""
+	}
+	if typed, ok := ds.Index.(interface{ Type() IndexType }); ok {
+		return typed.Type()
+	}
+	return ""
+}

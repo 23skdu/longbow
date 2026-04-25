@@ -11,6 +11,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"context"
 )
 
 type GraphStore struct {
@@ -30,6 +31,10 @@ const (
 	DirectionIncoming
 	DirectionBoth
 )
+
+type NeighborProvider interface {
+	GetNeighborsBulk(ctx context.Context, dataset string, nodeIDs []uint32) (map[uint32][]uint32, error)
+}
 
 type TraverseOptions struct {
 	MaxHops   int
@@ -280,6 +285,102 @@ func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth
 	}
 
 	// Rebuild results
+	newResults := make([]SearchResult, 0, len(scores))
+	for id, score := range scores {
+		newResults = append(newResults, SearchResult{ID: lbtypes.VectorID(id), Score: score})
+	}
+
+	sort.Slice(newResults, func(i, j int) bool {
+		return newResults[i].Score > newResults[j].Score
+	})
+
+	return newResults
+}
+
+func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset string, results []SearchResult, alpha float32, depth int, provider NeighborProvider) []SearchResult {
+	if len(results) == 0 || alpha <= 0 {
+		return results
+	}
+
+	// 1. Initial Local Rank
+	scores := make(map[uint32]float32)
+	for _, r := range results {
+		scores[uint32(r.ID)] += r.Score
+	}
+
+	// 2. Multi-hop Distributed BFS Expansion
+	currentNodes := make([]uint32, 0, len(results))
+	for _, r := range results {
+		currentNodes = append(currentNodes, uint32(r.ID))
+	}
+
+	visited := make(map[uint32]bool)
+	for _, id := range currentNodes {
+		visited[id] = true
+	}
+
+	decay := float32(1.0)
+	for d := 0; d < depth; d++ {
+		decay *= alpha
+		if len(currentNodes) == 0 {
+			break
+		}
+
+		// Collect neighbors (Local + Remote)
+		nextNodes := make([]uint32, 0)
+		
+		// First, check local edges
+		gs.mu.RLock()
+		for _, id := range currentNodes {
+			if edges, ok := gs.forwardEdges[id]; ok {
+				for _, edge := range edges {
+					target := uint32(edge.Object)
+					scores[target] += scores[id] * alpha * edge.Weight
+					if !visited[target] {
+						visited[target] = true
+						nextNodes = append(nextNodes, target)
+					}
+				}
+			} else if provider != nil {
+				// If not found locally, we might need to ask the provider (mesh)
+				// But we do it in bulk for performance
+			}
+		}
+		gs.mu.RUnlock()
+
+		// Bulk fetch missing neighbors from provider
+		if provider != nil {
+			missing := make([]uint32, 0)
+			for _, id := range currentNodes {
+				gs.mu.RLock()
+				_, ok := gs.forwardEdges[id]
+				gs.mu.RUnlock()
+				if !ok {
+					missing = append(missing, id)
+				}
+			}
+
+			if len(missing) > 0 {
+				remoteNeighbors, err := provider.GetNeighborsBulk(ctx, dataset, missing)
+				if err == nil {
+					for id, neighbors := range remoteNeighbors {
+						for _, target := range neighbors {
+							// For remote neighbors, we assume weight 1.0 if not provided
+							scores[target] += scores[id] * alpha
+							if !visited[target] {
+								visited[target] = true
+								nextNodes = append(nextNodes, target)
+							}
+						}
+					}
+				}
+			}
+		}
+
+		currentNodes = nextNodes
+	}
+
+	// 3. Rebuild results
 	newResults := make([]SearchResult, 0, len(scores))
 	for id, score := range scores {
 		newResults = append(newResults, SearchResult{ID: lbtypes.VectorID(id), Score: score})

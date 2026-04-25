@@ -18,6 +18,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"google.golang.org/grpc/metadata"
 )
 
 type BenchmarkResult struct {
@@ -142,7 +143,7 @@ func main() {
 	log.Printf("[GET] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
 
 	// 3. Search
-	modes := []string{"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString", "Sparse", "ByID", "GraphRAG", "Recommend", "Geo", "Temporal"}
+	modes := []string{"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString", "Sparse", "ByID", "GraphRAG", "GlobalGraphRAG", "Recommend", "Geo", "Temporal"}
 	searchCtx, searchCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer searchCancel()
 	for _, mode := range modes {
@@ -327,7 +328,7 @@ func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype s
 			s.buf = append(s.buf, `{"field":"category","operator":"==","value":"electronics"}`...)
 		}
 		s.buf = append(s.buf, ']')
-	case "GraphRAG":
+	case "GraphRAG", "GlobalGraphRAG":
 		s.buf = append(s.buf, `,"vector":[`...)
 		for i := 0; i < queryLen; i++ {
 			if i > 0 {
@@ -376,6 +377,10 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 		ticketBytes = state.BuildSpecialTicket(dataset, mode)
 	} else {
 		ticketBytes = state.BuildSearchTicket(dataset, dim, dtype, mode, 10)
+	}
+
+	if mode == "GlobalGraphRAG" {
+		ctx = metadata.AppendToOutgoingContext(ctx, "x-longbow-global", "true")
 	}
 
 	return executeDoGet(ctx, sc, ticketBytes)

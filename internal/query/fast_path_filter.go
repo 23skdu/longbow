@@ -272,10 +272,26 @@ func fastPathInt64(arr *array.Int64, val int64, equal bool, builder *array.Boole
 
 	var useAVX2 bool
 	var useAVX512 bool
-	if equal && n >= 4 {
+	var useNEON bool
+	if equal && n >= 2 {
 		feats := simd.GetCPUFeatures()
 		useAVX512 = feats.HasAVX512
 		useAVX2 = feats.HasAVX2 && !useAVX512
+		useNEON = feats.HasNEON
+	}
+
+	if useNEON {
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("neon").Inc()
+		results := make([]int64, n)
+		fastPathInt64EqualNEONKernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0])) // #nosec G103
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
 	}
 
 	if useAVX512 {
@@ -332,10 +348,26 @@ func fastPathInt32(arr *array.Int32, val int32, equal bool, builder *array.Boole
 
 	var useAVX2 bool
 	var useAVX512 bool
-	if equal && n >= 8 {
+	var useNEON bool
+	if equal && n >= 4 {
 		feats := simd.GetCPUFeatures()
 		useAVX512 = feats.HasAVX512
 		useAVX2 = feats.HasAVX2 && !useAVX512
+		useNEON = feats.HasNEON
+	}
+
+	if useNEON {
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("neon").Inc()
+		results := make([]int32, n)
+		fastPathInt32EqualNEONKernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0])) // #nosec G103
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
 	}
 
 	if useAVX512 {
@@ -442,10 +474,26 @@ func fastPathFloat64(arr *array.Float64, val float64, equal bool, builder *array
 
 	var useAVX2 bool
 	var useAVX512 bool
-	if equal && n >= 4 {
+	var useNEON bool
+	if equal && n >= 2 {
 		feats := simd.GetCPUFeatures()
 		useAVX512 = feats.HasAVX512
 		useAVX2 = feats.HasAVX2 && !useAVX512
+		useNEON = feats.HasNEON
+	}
+
+	if useNEON {
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("neon").Inc()
+		results := make([]float64, n)
+		fastPathFloat64EqualNEONKernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0])) // #nosec G103
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
 	}
 
 	if useAVX512 {
@@ -502,10 +550,26 @@ func fastPathFloat32(arr *array.Float32, val float32, equal bool, builder *array
 
 	var useAVX2 bool
 	var useAVX512 bool
-	if equal && n >= 8 {
+	var useNEON bool
+	if equal && n >= 4 {
 		feats := simd.GetCPUFeatures()
 		useAVX512 = feats.HasAVX512
 		useAVX2 = feats.HasAVX2 && !useAVX512
+		useNEON = feats.HasNEON
+	}
+
+	if useNEON {
+		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("neon").Inc()
+		results := make([]float32, n)
+		fastPathFloat32EqualNEONKernel(unsafe.Pointer(&values[0]), n, val, unsafe.Pointer(&results[0])) // #nosec G103
+		for i := 0; i < n; i++ {
+			if arr.IsNull(i) {
+				builder.Append(false)
+			} else {
+				builder.Append(results[i] != 0)
+			}
+		}
+		return
 	}
 
 	if useAVX512 {

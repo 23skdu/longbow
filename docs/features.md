@@ -8,12 +8,12 @@
 
 ### 🚀 Performance & Scalability
 
-- **TurboQuant (TQ) Compression**: Ultra-fast bit-packed vector compression using SIMD instructions (AVX-512/Neon) for up to 8x throughput improvements on modern CPUs.
-- **Lock-Free Ingestion Workers**: High-performance ingestion pipeline using `LockFreeRingBuffer` and adaptive batching to eliminate mutex contention during high-velocity data loads.
-- **Adaptive Batching Engine**: Dynamically adjusts WAL flush and indexing batch sizes based on real-time pressure and latency metrics.
-- **High-Throughput Parquet IO**: Reflection-free Arrow-to-Parquet encoding using `io.ReaderAt` compatible buffers for multi-threaded snapshotting.
-- **Runtime Learned Index (k-NN Classifier)**: `IndexPerformancePredictor` selects the optimal ANN index type (HNSW, IVF-PQ, DiskANN) per query using a k-nearest-neighbour classifier (k=7) over accumulated `TrainingSamples`. Feature weights are updated asynchronously via Fisher between-class variance (LDA), ensuring the scorer improves as operational data accumulates. A configurable `MinTrainingSamples` threshold guards the heuristic fallback path during cold-start.
-- **Adaptive Flat→HNSW Migration**: Automated, zero-downtime promotion from flat (linear) scan to HNSW indexing triggered by collection growth metrics, with background worker-pool lifecycle management.
+- **TurboQuant (TQ) V2**: Extended bit-packing to support **2-bit quantization**, achieving up to 64x memory compression for extreme-scale archival indices.
+- **Autonomous efSearch Tuning**: Integrated PID-controller for dynamic search depth adjustment, replacing static heuristics with real-time feedback-driven recall targeting.
+- **NEON SIMD Parity**: Full metadata filtering acceleration for ARM64 (macOS/Apple Silicon) via hand-optimized NEON assembly kernels.
+- **Lock-Free Ingestion Workers**: High-performance ingestion pipeline using `LockFreeRingBuffer` and adaptive batching to eliminate mutex contention.
+- **Runtime Learned Index**: `IndexPerformancePredictor` selects the optimal ANN index type per query using a k-NN classifier.
+- **Adaptive Flat→HNSW Migration**: Automated, zero-downtime promotion from flat scan to HNSW indexing.
 
 ### 🧠 Advanced Quantization Suite
 
@@ -24,10 +24,12 @@
 
 ### 🔍 Specialized Search Capabilities
 
+- **Distributed GraphRAG**: Support for cross-node BFS and activation propagation protocols, enabling traversal of multi-billion node knowledge graphs across clusters.
+- **Persistent HNSW Memory Mapping**: Direct Arrow-backed `mmap` for HNSW graph storage, eliminating indexing load times and enabling instant-on cold starts.
 - **Geo-Search Engine**: Native support for Haversine distance and geospatial indexing using AVX-accelerated Quadtrees.
-- **SQL Analytical Functions**: Full support for `ROW_NUMBER`, `RANK`, and windowing functions (`PARTITION BY` / `ORDER BY`) in TicketQuery.
-- **Multi-Type Filter Evaluator**: Native SIMD-accelerated support for Int32, Uint64, Float64, and String comparisons in metadata filtering.
-- **Automatic Sharding**: Distributed index management that split large datasets into manageable shards based on configurable thresholds.
+- **SQL Analytical Functions**: Full support for `ROW_NUMBER`, `RANK`, and windowing functions.
+- **Multi-Type Filter Evaluator**: Native SIMD-accelerated support for Int32, Uint64, Float64, and String comparisons.
+- **Automatic Sharding**: Distributed index management splitting large datasets into shards based on growth.
 
 ### 🧠 Unified ML Inference Engine
 

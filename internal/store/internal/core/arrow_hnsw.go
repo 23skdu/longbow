@@ -125,6 +125,7 @@ type ArrowHNSW struct {
 	tqCompute *TurboQuantCompute
 	gpuTrained atomic.Bool
 	topo       *memory.NUMATopology
+	efTuner     *PIDTuner
 }
 
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
@@ -316,6 +317,8 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		}
 		// Do not set sq8Ready to true until trained
 	}
+
+	h.efTuner = NewPIDTuner(0.95, int(config.EfSearch)) // Target 0.95 recall
 
 	// Ensure initial capacity
 	capacity := config.InitialCapacity
@@ -1339,7 +1342,12 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		// Item 3: Adaptive Search Expansion Policy
 		// Instead of a blind 5x multiplier, use a heuristic based on the distance distribution
 		// and the number of results found vs requested.
-		efSearch = h.calculateAdaptiveEfExpansion(efSearch, len(results), k, typeCandidates, maxNodeCount)
+		// Use PID-based autonomous efSearch tuning
+		// Proxy recall = len(results) / k
+		recallProxy := float64(len(results)) / float64(k)
+		if recallProxy > 1.0 { recallProxy = 1.0 }
+		
+		efSearch = h.efTuner.Update(recallProxy)
 	}
 
 	h.flushSearchMetrics(searchCtx)

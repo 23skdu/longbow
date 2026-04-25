@@ -14,7 +14,9 @@ pip install ./longbowclientsdk
 - **TurboQuant (TQ) & Quantization**: Support for SIMD-accelerated bit-packing during ingestion.
 - **Disk-ANN Offloading**: Configurable SSD-based storage for massive datasets.
 - **Integrated Search**: Unified `search()` method supporting pure vector, filtered, and **Advanced SQL (CTEs/Subqueries)** queries.
-- **Graph Operations**: Dedicated methods for `add_edge()`, `traverse()`, and `get_graph_stats()`.
+- **Graph RAG Expansion**: Native `graph_rag_expand()` for distributed neighborhood retrieval.
+- **Autonomous efSearch Tuning**: Support for `ef_search_pid` in `search()` to auto-optimize recall.
+- **Graph Operations**: Dedicated methods for `add_edge()`, `traverse()`, `graph_rag_expand()`, and `get_graph_stats()`.
 
 ## Quick Start
 
@@ -58,9 +60,10 @@ results = client.geo_search(
 ### Data Operations
 
 - `insert(dataset, data)`: Ingest Pandas DataFrames or lists of dicts.
-- `search(dataset, vector, k, filters)`: Perform K-NN search with optional post-filtering.
+- `search(dataset, vector, k, filters, ef_search_pid=True)`: Perform K-NN search with optional post-filtering and PID-tuned depth.
 - `download_arrow(dataset, filter)`: Download entire dataset as `pyarrow.Table`.
 - `download_stream(dataset, filter)`: Generator yielding `pyarrow.RecordBatch`.
+- `graph_rag_expand(dataset, node_ids)`: Retrieve neighbor lists for multiple nodes (Distributed).
 
 ### Management & Control
 
@@ -69,7 +72,8 @@ results = client.geo_search(
 - `delete_namespace(name)`: Delete an entire namespace.
 - `list_namespaces()`: List all active datasets.
 - `snapshot()`: Trigger a manual snapshot.
-- `delete(dataset, ids)`: Delete records by ID or delete entire dataset if IDs omitted.
+- `delete(dataset, ids)`: Delete records by ID.
+- `get_flight_info_metadata(dataset)`: Retrieve dataset schema and endpoint distribution (MetaServer).
 
 ### Graph RAG
 

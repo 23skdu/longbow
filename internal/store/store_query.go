@@ -801,7 +801,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 				if depth <= 0 {
 					depth = 2
 				}
-				ranked := graph.RankWithGraph(searchResults, req.GraphAlpha, depth)
+				ranked := graph.RankWithGraphDistributed(stream.Context(), req.Dataset, searchResults, req.GraphAlpha, depth, s)
 				if len(ranked) > 0 {
 					searchResults = ranked
 				}

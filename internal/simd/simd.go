@@ -54,10 +54,12 @@ var (
 
 	// Function pointers initialized at startup - eliminates switch overhead in hot path
 	euclideanDistanceImpl     distanceFunc
-	euclideanDistance384Impl  distanceFunc
-	euclideanDistance768Impl  distanceFunc
-	euclideanDistance1536Impl distanceFunc
 	euclideanDistance128Impl  distanceFunc // optimized for dimensions=128
+	euclideanDistance384Impl  distanceFunc // optimized for dimensions=384
+	euclideanDistance768Impl  distanceFunc // optimized for dimensions=768
+	euclideanDistance1024Impl distanceFunc // optimized for dimensions=1024
+	euclideanDistance1536Impl distanceFunc // optimized for dimensions=1536
+	euclideanDistance3072Impl distanceFunc // optimized for dimensions=3072
 	cosineDistanceImpl        distanceFunc
 
 	// DistFunc is the best available Euclidean distance implementation
@@ -68,6 +70,8 @@ var (
 	dotProduct768Impl          distanceFunc
 	dotProduct1536Impl         distanceFunc
 	dotProduct128Impl          distanceFunc // optimized for dimensions=128
+	dotProduct1024Impl         distanceFunc // optimized for dimensions=1024
+	dotProduct3072Impl         distanceFunc // optimized for dimensions=3072
 	euclideanDistanceBatchImpl distanceBatchFunc
 	cosineDistanceBatchImpl    distanceBatchFunc
 	dotProductBatchImpl        distanceBatchFunc

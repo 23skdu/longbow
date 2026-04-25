@@ -9,6 +9,7 @@
 - [x] **PQ Data Integrity**: Implemented `AddPQ` and `cuda_add_vectors_pq` to correctly handle uint8 codes on the device.
 - [x] **P0: Hardware-accelerated GraphRAG**: Native traversal of billion-scale knowledge graphs via CUDA/Metal kernels.
 - [x] **P0: Adaptive Re-quantization**: Real-time memory and precision optimization based on query load and memory pressure.
+- [x] **High-Dimension Optimizations**: Specialized SIMD kernels for 768, 1024, 1536, and 3072 dimensions across all architectures.
 
 ### Metal Backend Gaps
 

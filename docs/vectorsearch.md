@@ -23,6 +23,13 @@ Dense search uses hand-optimized HNSW (Hierarchical Navigable Small Worlds) inde
 
 Longbow implements a **Zero-Copy** data plane using Apache Arrow. Vectors are accessed directly from memory-mapped files during HNSW traversal, eliminating heap allocations and significantly reducing GC pressure.
 
+### IVF-HNSW Composite Index & OPQ
+
+For extreme billion-scale datasets, Longbow supports an **IVF-HNSW Composite Index** combined with **Optimized Product Quantization (OPQ)**:
+- **IVF-HNSW**: Inverted File centroids are organized in an HNSW graph to accelerate coarse quantization.
+- **OPQ**: Learns orthogonal transformations during centroid training, greatly reducing quantization error compared to standard PQ.
+- **GPU Acceleration**: Centroid assignment and K-Means training are highly parallelized using native **CUDA** (NVIDIA) and **Metal** (Apple Silicon) kernels to prevent training bottlenecks.
+
 ### Supported Metrics
 
 | Metric | Formula | Best For |
@@ -107,6 +114,12 @@ Temporal search leverages versioned snapshots of the data plane to allow searchi
 - **As-Of**: "What were the nearest neighbors of this vector as of Jan 1st?"
 - **Range**: Find all changes or states for a vector within a time window.
 - **Sliding Window**: Aggregate similarity statistics over a moving temporal window.
+
+### Temporal Aggregation Engine
+
+Longbow includes a dedicated aggregation engine to process scalar metadata over time bounds without needing an external OLAP database.
+- Supports instant bucketing operations (`COUNT`, `MIN`, `MAX`, `MEAN`, `SUM`) over specified intervals (e.g. 1-hour windows).
+- Directly processes the latest state of vectors using a read-optimized B-Tree style index (`TemporalTree`).
 
 ---
 

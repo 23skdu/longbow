@@ -52,16 +52,11 @@ func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
 func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
-func euclideanFloat64NEONKernel(a, b []float64) float32
+func euclideanFloat64NEONKernel(dataA unsafe.Pointer, dataB unsafe.Pointer, len int) float32
 
 func euclideanFloat64NEON(a, b []float64) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanFloat64NEONKernel(a, b), nil
+	// TODO: Debug - use fallback until assembly is fixed
+	return euclideanFloat64Unrolled4x(a, b)
 }
 
 func dotFloat64NEON(a, b []float64) (float32, error) {

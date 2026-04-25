@@ -1075,7 +1075,7 @@ func (idx *CUDAIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]u
 			d_frontier, C.int(frontierSize),
 			(*C.uint32_t)(idx.handle.graphOffsets),
 			(*C.uint32_t)(idx.handle.graphNeighbors),
-			d_visited, d_nextFrontier, d_nextSize, 0,
+			d_visited, d_nextFrontier, d_nextSize, nil,
 		)
 
 		C.launch_graph_activation_propagate_kernel(
@@ -1084,7 +1084,7 @@ func (idx *CUDAIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]u
 			(*C.uint32_t)(idx.handle.graphOffsets),
 			(*C.uint32_t)(idx.handle.graphNeighbors),
 			(*C.float)(idx.handle.graphWeights),
-			C.float(alpha), 0,
+			C.float(alpha), nil,
 		)
 
 		var nextSize C.int

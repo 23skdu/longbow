@@ -66,7 +66,7 @@ var (
 			Name: "longbow_learned_index_adaptations_total",
 			Help: "Total number of index adaptation events by lifecycle status.",
 		},
-		[]string{"status"},
+		[]string{"from", "to", "status"},
 	)
 
 	// LearnedIndexAdaptationLatencyGainMs measures the latency delta (before − after)
@@ -86,5 +86,15 @@ var (
 			Name: "longbow_learned_index_sample_overflow_total",
 			Help: "Total number of times the training sample buffer exceeded 10,000 entries and oldest samples were evicted.",
 		},
+	)
+
+	// LearnedIndexAdaptationDurationSeconds measures wall-clock time for one index migration.
+	LearnedIndexAdaptationDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_learned_index_adaptation_duration_seconds",
+			Help:    "Duration of index adaptation (migration) process.",
+			Buckets: []float64{0.1, 1, 5, 10, 30, 60, 120},
+		},
+		[]string{"from", "to"},
 	)
 )

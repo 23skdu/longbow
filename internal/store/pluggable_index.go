@@ -24,6 +24,8 @@ const (
 	IndexTypeIVFFlat IndexType = "ivf_flat"
 	// IndexTypeDiskANN is Microsoft DiskANN algorithm
 	IndexTypeDiskANN IndexType = "diskann"
+	// IndexTypeIVFHNSW is Billion-scale IVF-HNSW composite index
+	IndexTypeIVFHNSW IndexType = "ivf_hnsw"
 )
 
 // =============================================================================
@@ -101,6 +103,7 @@ type IndexConfig struct {
 	HNSWConfig    *ArrowHNSWConfig
 	IVFFlatConfig *IVFFlatConfig
 	DiskANNConfig *DiskANNConfig
+	IVFHNSWConfig *IVFHNSWConfig
 }
 
 // IVFFlatConfig holds IVF-Flat-specific configuration
@@ -139,6 +142,7 @@ func NewIndexFactory() *IndexFactory {
 	f.Register(IndexTypeHNSW, createHNSWIndex)
 	f.Register(IndexTypeIVFFlat, createIVFFlatIndex)
 	f.Register(IndexTypeDiskANN, createDiskANNIndex)
+	f.Register(IndexTypeIVFHNSW, createIVFHNSWIndex)
 
 	return f
 }
@@ -210,4 +214,13 @@ func createIVFFlatIndex(cfg IndexConfig) (PluggableVectorIndex, error) {
 // createDiskANNIndex creates a DiskANN index
 func createDiskANNIndex(cfg IndexConfig) (PluggableVectorIndex, error) {
 	return NewDiskANNIndex(cfg)
+}
+
+// createIVFHNSWIndex creates an IVF-HNSW composite index
+func createIVFHNSWIndex(cfg IndexConfig) (PluggableVectorIndex, error) {
+	var c IVFHNSWConfig
+	if cfg.IVFHNSWConfig != nil {
+		c = *cfg.IVFHNSWConfig
+	}
+	return NewIVFHNSWCompositeIndex(cfg.Dimension, c)
 }

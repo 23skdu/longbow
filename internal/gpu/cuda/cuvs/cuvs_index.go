@@ -1,5 +1,10 @@
 package cuvs
 
+/*
+#cgo LDFLAGS: -L/usr/local/cuda/lib64 -lcuvs
+#include "cuvs_wrapper.h"
+#include <stdlib.h>
+*/
 import "C"
 
 import (
@@ -8,6 +13,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 	"time"
+	"unsafe"
 )
 
 var (
@@ -26,32 +32,73 @@ var (
 type CUVSIndex struct {
 	dataset string
 	dim     int
-	handle  uintptr // Pointer to cuvsResources_t
+	res     C.cuvs_resources_t
 }
 
 func NewCUVSIndex(dataset string, dim int) (*CUVSIndex, error) {
-	return &CUVSIndex{
+	idx := &CUVSIndex{
 		dataset: dataset,
 		dim:     dim,
-	}, nil
+	}
+	ret := C.cuvs_init(&idx.res)
+	if ret != 0 {
+		return nil, fmt.Errorf("failed to initialize cuVS resources: error %d", int(ret))
+	}
+	return idx, nil
 }
 
-func (idx *CUVSIndex) Search(ctx context.Context, query []float32, k int) ([]string, []float32, error) {
+func (idx *CUVSIndex) Search(ctx context.Context, query []float32, k int) ([]int64, []float32, error) {
 	start := time.Now()
 	cuvsSearchOps.Inc()
 	defer func() {
 		cuvsSearchLatency.Observe(float64(time.Since(start).Milliseconds()))
 	}()
 
-	// Real implementation would call C.cuvs_search(...)
-	return nil, nil, fmt.Errorf("cuVS search not implemented in local stub")
+	if len(query) != idx.dim {
+		return nil, nil, fmt.Errorf("query dimension mismatch: expected %d, got %d", idx.dim, len(query))
+	}
+
+	cDistances := make([]C.float, k)
+	cIds := make([]*C.char, k)
+	// cuVS might return string IDs or integer IDs depending on configuration.
+	// For consistency with gpu.Index, we assume integer IDs can be derived.
+	// In this wrapper, we'll convert them to int64 if they are numeric strings.
+
+	ret := C.cuvs_search(&idx.res, (*C.float)(&query[0]), C.int(k), (**C.char)(unsafe.Pointer(&cIds[0])), (*C.float)(&cDistances[0]))
+	if ret != 0 {
+		return nil, nil, fmt.Errorf("cuVS search failed: error %d", int(ret))
+	}
+
+	ids := make([]int64, k)
+	distances := make([]float32, k)
+	for i := 0; i < k; i++ {
+		distances[i] = float32(cDistances[i])
+		if cIds[i] != nil {
+			// Convert C string to Go string, then to int64 (example logic)
+			goId := C.GoString(cIds[i])
+			// ... id mapping logic ...
+			// For now, we'll assume the ID is encoded in the string or we have a map
+			fmt.Sscanf(goId, "%d", &ids[i])
+			C.free(unsafe.Pointer(cIds[i]))
+		}
+	}
+
+	return ids, distances, nil
 }
 
-func (idx *CUVSIndex) AddBatch(ctx context.Context, ids []string, vectors [][]float32) error {
-	// Real implementation would call C.cuvs_index_build(...)
+func (idx *CUVSIndex) AddBatch(ctx context.Context, ids []int64, vectors []float32) error {
+	if len(vectors) == 0 {
+		return nil
+	}
+	n := len(vectors) / idx.dim
+	ret := C.cuvs_index_build(&idx.res, (*C.float)(&vectors[0]), C.int(n), C.int(idx.dim))
+	if ret != 0 {
+		return fmt.Errorf("cuVS index build failed: error %d", int(ret))
+	}
 	return nil
 }
 
 func (idx *CUVSIndex) Close() error {
+	// If cuvs_resources_t had a cleanup, we would call it here.
 	return nil
 }

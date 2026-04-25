@@ -644,7 +644,8 @@ func (le *localEmbeddingGenerator) initModel() error {
 	default:
 		le.model = &stubEmbeddingModel{dimension: le.dimension}
 		le.initialized = true
-		le.logger.Info("Using stub embedding model", "path", le.modelPath)
+		// Use a more visible warning for stub models in production-critical path
+		fmt.Printf("WARNING: Using stub embedding model for path: %s. This is NOT recommended for production.\n", le.modelPath)
 	}
 
 	return nil

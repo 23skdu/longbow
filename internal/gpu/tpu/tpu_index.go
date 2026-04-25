@@ -61,6 +61,19 @@ func (i *TPUIndex) Search(vector []float32, k int) ([]int64, []float32, error) {
 		return []int64{}, []float32{}, nil
 	}
 
+	// In a real production implementation, we would:
+	// 1. Batch the query vector
+	// 2. Transfer to TPU HBM
+	// 3. Launch the XLA-compiled search kernel
+	// 4. Retrieve results from TPU memory
+
+	// Simulate XLA kernel launch via our C stub
+	if err := tpuEnqueueBatch(i.cfg.DeviceID, vector); err != nil {
+		return nil, nil, fmt.Errorf("TPU XLA kernel dispatch failed: %w", err)
+	}
+
+	// For now, we still use the CPU fallback for the actual distance computation 
+	// until the XLA kernel is fully verified on hardware.
 	type result struct {
 		id   int64
 		dist float32

@@ -460,5 +460,46 @@ func (e *StorageEngine) FlushWAL() error {
 }
 
 func (e *StorageEngine) TruncateWAL(seq uint64) error {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	hadBatcher := e.walBatcher != nil
+	if hadBatcher {
+		if err := e.walBatcher.Stop(); err != nil {
+			return fmt.Errorf("failed to stop wal batcher for truncation: %w", err)
+		}
+		e.walBatcher = nil
+	}
+
+	if e.wal != nil {
+		_ = e.wal.Close()
+	}
+
+	walPath := filepath.Join(e.dataPath, walFileName)
+	if err := os.Truncate(walPath, 0); err != nil {
+		return fmt.Errorf("failed to truncate WAL file: %w", err)
+	}
+
+	// Re-initialize WAL and restart batcher if needed
+	e.wal = NewWAL(e.dataPath)
+
+	if hadBatcher {
+		batcherCfg := DefaultWALBatcherConfig()
+		if e.config.DoPutBatchSize > 0 {
+			batcherCfg.MaxBatchSize = e.config.DoPutBatchSize
+		}
+		batcherCfg.AsyncFsync.Enabled = e.config.AsyncFsync
+		batcherCfg.UseIOUring = e.config.UseIOUring
+		batcherCfg.UseDirectIO = e.config.UseDirectIO
+		batcherCfg.WALCompression = e.config.WALCompression
+		batcherCfg.WALCompressionType = e.config.WALCompressionType
+
+		e.walBatcher = NewWALBatcher(e.dataPath, &batcherCfg)
+		if err := e.walBatcher.Start(); err != nil {
+			return fmt.Errorf("failed to restart wal batcher after truncation: %w", err)
+		}
+	}
+
+	log.Info().Uint64("seq", seq).Msg("WAL truncated successfully")
 	return nil
 }

@@ -374,10 +374,7 @@ pack_f32:
 tail_f32_avx2:
     // Scalar fallback
     VZEROUPPER
-    // Implementation left simple - user can rely on generic or add complex scalar ASM if needed.
-    // I will return and let Go logic handle if I implemented fallback in Go wrapper?
-    // But I didn't. I stubbed it.
-    // I must implement scalar loop here.
+    // Implementation of scalar loop for tail handling.
     CMPQ    CX, $0
     JE      end_f32_avx2
     
@@ -1223,9 +1220,9 @@ i32_le_512:
     VPCMPD  $2, Z0, Z1, K1
 
 i32_store_512:
-    VPMOVM2B K1, Z2
-    VPANDQ   Z2, Z4, Z2
-    VMOVUPS  Z2, (DI)
+    VPMOVM2B K1, X2
+    VPAND    X2, X4, X2
+    VMOVDQU  X2, (DI)
 
     ADDQ    $64, SI
     ADDQ    $16, DI

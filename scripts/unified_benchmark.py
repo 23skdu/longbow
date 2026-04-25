@@ -893,7 +893,7 @@ class BenchmarkRunner:
                     print("=" * 80)
                     
                     label = f"temporal_{dtype}_{dim}_{count}"
-                    if not self.start_server(label, env_overrides={"TEMPORAL_ENABLED": "true", "LONGBOW_TEMPORAL_DIM": str(dim)}):
+                    if not self.start_server(label, env_overrides={"LONGBOW_TEMPORAL_ENABLED": "true", "LONGBOW_TEMPORAL_AGGREGATION_ENABLED": "true", "LONGBOW_TEMPORAL_DIM": str(dim)}):
                         print(f"  Failed to start server for {label}!")
                         continue
 

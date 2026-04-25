@@ -54,12 +54,12 @@ func TestCUDAIndex_FilteredSearch(t *testing.T) {
 		query[i] = rand.Float32()
 	}
 	
-	results, err := idx.SearchWithFilter(query, 10, bitset)
+	results, _, err := idx.SearchWithFilter(query, 10, bitset)
 	require.NoError(t, err)
 	
 	assert.NotEmpty(t, results)
 	for _, res := range results {
-		assert.Equal(t, 0, int(res.ID)%2, "Filtered ID should be even")
+		assert.Equal(t, 0, int(res)%2, "Filtered ID should be even")
 	}
 	fmt.Printf("Filtered search found %d results\n", len(results))
 }

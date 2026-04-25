@@ -184,6 +184,32 @@ __global__ void turboquant_distance_kernel(const float* query, const unsigned ch
     }
 }
 
+// Fused Filtered L2 Distance Kernel
+__global__ void l2_distance_filtered_kernel(const float* vectors, const float* query, float* distances, const unsigned long long* bitset, int dimensions, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < count) {
+        // Check if filtered out
+        if (bitset && !((bitset[idx / 64] >> (idx % 64)) & 1)) {
+            distances[idx] = 1e30f; // Max distance for filtered out
+            return;
+        }
+
+        float sum = 0.0f;
+        const float* vec = vectors + idx * dimensions;
+        for (int i = 0; i < dimensions; i++) {
+            float diff = vec[i] - query[i];
+            sum += diff * diff;
+        }
+        distances[idx] = sqrtf(sum);
+    }
+}
+
+void launch_l2_distance_filtered_kernel(const float* vectors, const float* query, float* distances, const unsigned long long* bitset, int dimensions, int count, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
+    l2_distance_filtered_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, query, distances, bitset, dimensions, count);
+}
+
 void launch_turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count, cudaStream_t stream) {
     int threadsPerBlock = 256;
     int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
@@ -174,10 +175,16 @@ func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 		workerCtx, cancel := context.WithCancel(s.ctx) // #nosec G118
 		s.indexingWorkerCancels = append(s.indexingWorkerCancels, cancel)
 		s.indexWg.Add(1)
-		go func() {
+		go func(workerIdx int) {
 			defer s.indexWg.Done()
+			// Pin to NUMA node if enabled
+			if s.numaEnabled && s.numaTopology != nil && s.numaTopology.NumNodes > 0 {
+				nodeID := workerIdx % s.numaTopology.NumNodes
+				_ = lbmem.PinToNUMANode(s.numaTopology, nodeID)
+				s.logger.Debug().Int("worker", workerIdx).Int("node", nodeID).Msg("Pinned index worker to NUMA node")
+			}
 			s.runIndexWorker(workerCtx)
-		}()
+		}(i)
 	}
 	s.logger.Info().Int("added", numWorkers).Int("total", len(s.indexingWorkerCancels)).Msg("Started indexing workers")
 }
@@ -212,10 +219,16 @@ func (s *VectorStore) StartIngestionWorkers(count int) {
 		workerCtx, cancel := context.WithCancel(s.ctx) // #nosec G118
 		s.ingestionWorkerCancels = append(s.ingestionWorkerCancels, cancel)
 		s.workerWg.Add(1)
-		go func() {
+		go func(workerIdx int) {
 			defer s.workerWg.Done()
+			// Pin to NUMA node if enabled
+			if s.numaEnabled && s.numaTopology != nil && s.numaTopology.NumNodes > 0 {
+				nodeID := workerIdx % s.numaTopology.NumNodes
+				_ = lbmem.PinToNUMANode(s.numaTopology, nodeID)
+				s.logger.Debug().Int("worker", workerIdx).Int("node", nodeID).Msg("Pinned ingestion worker to NUMA node")
+			}
 			s.runIngestionWorkerWithCtx(workerCtx)
-		}()
+		}(i)
 	}
 	s.logger.Info().Int("added", count).Int("total", len(s.ingestionWorkerCancels)).Msg("Started ingestion workers")
 }

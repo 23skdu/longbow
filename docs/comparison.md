@@ -7,7 +7,7 @@ Choosing the right vector database depends on your project's scale, complexity, 
 | Feature | ChromaDB | Milvus | Qdrant | FAISS | Pinecone | Longbow |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
 | **Primary Focus** | Prototyping | Massive Scale | Speed & Efficiency | **Perf Library** | Managed SaaS | **Structural Discovery** |
-| **Turboquant** | No | **RaBitQ** | PQ/SQ/BQ | **PQ/SQ/OPQ** | Proprietary | **Native (+ PQ/SQ/BQ)** |
+| **Quantization** | No | **RaBitQ / PQ** | PQ/SQ/BQ | **PQ/SQ/OPQ** | Proprietary | **IVF-OPQ / Turboquant** |
 | **Architecture** | SQLite | Distributed | Rust | **C++/CUDA** | Closed/Cloud | **Zero-Copy Arrow** |
 | **GPU Support** | CPU-Only | **Tier 1** | **Tier 1** | **Tier 1 (NVIDIA)** | Managed | **Tier 1 (Metal/CUDA)** |
 | **SIMD Optim.** | Library | Extensive | **Native** | **Extensive** | Managed | **Custom Kernels** |
@@ -34,7 +34,7 @@ The core bottleneck of vector search is distance calculation. Different database
 * **SIMD**: Highly optimized C++ core utilizing AVX2, AVX-512, and ARM Neon for maximum throughput on dense vector operations.
 
 ### **Longbow**
-* **GPU**: Native support for **Metal (Apple Silicon)** and deep **NVIDIA cuVS** integration for full graph-traversal offloading. Achieves parity with Milvus and FAISS in GPU performance while maintaining a significantly simpler architecture and supporting macOS natively.
+* **GPU**: Native support for **Metal (Apple Silicon)** and deep **NVIDIA cuVS** integration. With the **0.1.9 IVF-OPQ** release, Longbow achieves full algorithmic parity with FAISS for large-scale GPU-accelerated training and search.
 * **SIMD**: Implements custom **AVX-512**, **AVX2**, and **ARM Neon** kernels specifically for the Arrow Data Plane. Unlike FAISS, Longbow's SIMD is optimized for **Zero-Copy** access, eliminating the overhead of copying data into local buffers.
 
 ### **Weaviate & Chroma**
@@ -65,20 +65,22 @@ The "Data Plane" determines how data moves from memory to the CPU/GPU.
 | **GraphRAG** | **Native**: Uses graph connectivity to "spread" activation and re-rank results based on structural context. | **Manual**: Typically requires a separate Graph DB (Neo4j) and client-side logic to merge results. |
 | **Temporal Search** | **Native**: Built-in "As-Of" and "Sliding Window" queries using a versioned storage layer. | **Metadata**: Rely on standard metadata filtering, which is slower for complex time-range queries. |
 | **Geo-Spatial** | **Native**: Uses a high-performance Quadtree index for sub-millisecond radius and box lookups. | **Mixed**: Qdrant has native support; others use standard metadata filters. |
-| **Turboquant** | **Turboquant V2**: Features **Learnable Bit-Widths** (adaptive 1/2/4/8-bit) that adapt to local data distribution, offering 4x better memory reduction than Qdrant's Scalar Quantization with higher recall retention. | **Variable**: Milvus supports **RaBitQ**; others use training-intensive Product Quantization (PQ) or SQ. FAISS leads in **OPQ** (Optimized PQ) for high-dimensional recall. |
+| **Quantization** | **IVF-OPQ + Turboquant**: Combines industry-standard **Optimized Product Quantization (OPQ)** with Longbow's proprietary **Turboquant V2** (adaptive 1/2/4/8-bit). Offers 4x better memory reduction than Qdrant's SQ with higher recall retention. | **Variable**: Milvus supports **RaBitQ**; others use training-intensive PQ or SQ. FAISS is the benchmark for **OPQ**, a level of precision now matched by Longbow. |
 
 ---
 
 ## 4. Performance Summary
 
-Based on latest **v9 Cluster Benchmarks** (500-1000 vector scale):
+Based on latest **Longbow 0.1.9 Benchmarks** (Count: 50,000 vectors):
 
 *   **Ingestion Speed**:
-    *   **Longbow**: **~923,000 vec/s** (ARM64/Metal).
-    *   **Milvus/Qdrant/FAISS**: Typically high-throughput in bulk but require periodic "compaction" or intensive "training" phases for quantization.
+    *   **Longbow (CUDA)**: **~2.5M vec/s** (Tesla T4).
+    *   **Longbow (Metal)**: **~606k vec/s** (ARM64).
+    *   **Milvus/Qdrant/FAISS**: High throughput in bulk, but Longbow leads in **zero-copy ingestion** for small-to-medium datasets.
 *   **Search Latency (P95)**:
-    *   **Longbow**: **~14,000+ Sparse QPS**; **~2,700+ GraphRAG QPS**.
-    *   **Others**: Generally competitive on standard ANN (Dense), but Longbow leads in **specialized discovery** (Graph/Time/Geo) where native indexing beats metadata filtering.
+    *   **Longbow (CUDA)**: **~42,000+ Dense QPS** (TurboQuant); **~28,000+ QPS** (Standard).
+    *   **Longbow (CPU)**: **~13,500+ Sparse QPS**; **~5,147 GraphRAG QPS**.
+    *   **Others**: Generally competitive on standard ANN, but Longbow leads in **specialized discovery** (Graph/Time/Geo) where native indexing beats metadata filtering.
 
 ## Conclusion
 

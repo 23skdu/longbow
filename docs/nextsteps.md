@@ -70,3 +70,21 @@ Full completion of low-memory, low-power CPU-only coverage for Raspberry Pi Zero
 - [ ] **ARMv6 Fallbacks**: Ensure numerical stability and fast fallback loops for devices lacking advanced NEON/SIMD capabilities.
 - [ ] **Binary Size Reduction**: Implement build flags to strip symbols, optionally remove CGO, and reduce the binary footprint to < 20MB.
 - [ ] **Edge Containers**: Publish static, minimal Scratch/Alpine-based Docker images specifically tagged for `arm32v6`.
+
+## Architecture & Planning (For Delegation)
+
+### GPU Sharding Design Doc
+- **Scope**: Support indices larger than a single GPU's VRAM (e.g., 50GB index on 4x 16GB GPUs).
+- **Partitioning Strategy**: Use a global IVF centroids set; each GPU holds a subset of the Voronoi cells.
+- **Search Flow**: Client -> Router (CPU) -> Parallel Search (All GPUs) -> Merge & Sort (CPU) -> Client.
+- **Dependency**: Must implement NCCL/RCCL bindings for fast intra-node transfers during index build.
+
+### TPU Search Pipeline
+- **Core Challenge**: XLA requires static shapes.
+- **Approach**: Batch queries into fixed buckets (e.g., 1, 8, 32, 64) to maximize TPU throughput.
+- **Data Layout**: Pad vectors to TPU-friendly alignment (typically 128 bytes).
+
+## 0.2.0 Release Management
+- [ ] **Versioning**: Transition to semantic versioning (SemVer) starting with 0.2.0.
+- [ ] **Migration Guides**: Document breaking changes in disk format (if any) for 0.1.9 -> 0.2.0 upgrades.
+- [ ] **Documentation**: Complete the API reference for all new hardware-specific flags.

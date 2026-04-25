@@ -662,3 +662,15 @@ func (idx *MetalHybridIndex) searchFloat32(vector []float32, k int) ([]int64, []
 
 	return resultIDs, resultDistances, nil
 }
+
+func (idx *MetalHybridIndex) AddPQ(ids []int64, codes []byte, m int) error {
+	return fmt.Errorf("AddPQ not implemented for hybrid Metal index")
+}
+
+func (idx *MetalHybridIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
+	return fmt.Errorf("UpdateGraph not implemented for hybrid Metal index")
+}
+
+func (idx *MetalHybridIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
+	return nil, nil, fmt.Errorf("GraphExpand not implemented for hybrid Metal index")
+}

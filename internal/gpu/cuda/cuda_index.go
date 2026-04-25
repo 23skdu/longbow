@@ -906,19 +906,27 @@ func (idx *CUDAIndex) AssignToClusters(vectors []float32, centroids []float32) (
 	return assignments, nil
 }
 
-func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) ([]types.SearchResult, error) {
-	if len(query) != idx.dimensions {
-		return nil, fmt.Errorf("query dimension mismatch: expected %d, got %d", idx.dimensions, len(query))
+func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) ([]int64, []float32, error) {
+	if len(query) != idx.dim {
+		return nil, nil, fmt.Errorf("query dimension mismatch: expected %d, got %d", idx.dim, len(query))
+	}
+
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	
+	vectorCount := int(C.cuda_get_count(idx.handle))
+	if vectorCount == 0 {
+	    return nil, nil, nil
 	}
 
 	// 1. Upload query
 	var d_query unsafe.Pointer
-	cudaErr := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_query)), C.size_t(idx.dimensions*4))
+	cudaErr := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_query)), C.size_t(idx.dim*4))
 	if cudaErr != C.cudaSuccess {
-		return nil, fmt.Errorf("cudaMalloc query failed: %v", cudaErr)
+		return nil, nil, fmt.Errorf("cudaMalloc query failed: %v", cudaErr)
 	}
 	defer C.cudaFree(d_query)
-	C.cudaMemcpy(d_query, unsafe.Pointer(&query[0]), C.size_t(idx.dimensions*4), C.cudaMemcpyHostToDevice)
+	C.cudaMemcpy(d_query, unsafe.Pointer(&query[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
 
 	// 2. Upload bitset if provided
 	var d_bitset unsafe.Pointer
@@ -926,7 +934,7 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 		bitsetSize := C.size_t(len(bitset) * 8)
 		cudaErr = C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_bitset)), bitsetSize)
 		if cudaErr != C.cudaSuccess {
-			return nil, fmt.Errorf("cudaMalloc bitset failed: %v", cudaErr)
+			return nil, nil, fmt.Errorf("cudaMalloc bitset failed: %v", cudaErr)
 		}
 		defer C.cudaFree(d_bitset)
 		C.cudaMemcpy(d_bitset, unsafe.Pointer(&bitset[0]), bitsetSize, C.cudaMemcpyHostToDevice)
@@ -934,46 +942,47 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 
 	// 3. Prepare distances buffer
 	var d_distances unsafe.Pointer
-	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_distances)), C.size_t(idx.vectorCount*4))
+	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_distances)), C.size_t(vectorCount*4))
 	defer C.cudaFree(d_distances)
 
 	// 4. Launch fused kernel
 	C.launch_l2_distance_filtered_kernel(
-		(*C.float)(idx.handle.vectorBuffer),
+		(*C.float)(idx.handle.buffers[0]),
 		(*C.float)(d_query),
 		(*C.float)(d_distances),
 		(*C.ulonglong)(d_bitset),
-		C.int(idx.dimensions),
-		C.int(idx.vectorCount),
+		C.int(idx.dim),
+		C.int(vectorCount),
 		nil,
 	)
 
-	// 5. Download results
-	h_distances := make([]float32, idx.vectorCount)
-	C.cudaMemcpy(unsafe.Pointer(&h_distances[0]), d_distances, C.size_t(idx.vectorCount*4), C.cudaMemcpyDeviceToHost)
+	// 5. top-k using existing kernel
+	var d_outDist unsafe.Pointer
+	var d_outIDs unsafe.Pointer
+	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_outDist)), C.size_t(k*4))
+	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_outIDs)), C.size_t(k*8))
+	defer C.cudaFree(d_outDist)
+	defer C.cudaFree(d_outIDs)
 
-	// 6. Download IDs
-	h_ids := make([]int64, idx.vectorCount)
-	C.cuda_get_ids(idx.handle, (*C.int64_t)(unsafe.Pointer(&h_ids[0])), C.int(idx.vectorCount))
+	C.launch_topk_kernel(
+		(*C.float)(d_distances),
+		(*C.int64_t)(idx.handle.idBuffer),
+		C.int(vectorCount),
+		C.int(k),
+		(*C.float)(d_outDist),
+		(*C.int64_t)(d_outIDs),
+		nil,
+	)
 
-	// 7. Sort and return top-k
-	results := make([]types.SearchResult, 0, k)
-	for i, dist := range h_distances {
-		if dist >= 1e29 { // Filtered out
-			continue
-		}
-		results = append(results, types.SearchResult{
-			ID:       types.VectorID(h_ids[i]),
-			Distance: dist,
-		})
-	}
-	sort.Slice(results, func(i, j int) bool { return results[i].Distance < results[j].Distance })
-	if len(results) > k {
-		results = results[:k]
-	}
+	h_distances := make([]float32, k)
+	h_ids := make([]int64, k)
 
-	return results, nil
+	C.cudaMemcpy(unsafe.Pointer(&h_distances[0]), d_outDist, C.size_t(k*4), C.cudaMemcpyDeviceToHost)
+	C.cudaMemcpy(unsafe.Pointer(&h_ids[0]), d_outIDs, C.size_t(k*8), C.cudaMemcpyDeviceToHost)
+
+	return h_ids, h_distances, nil
 }
+
 func (idx *CUDAIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()

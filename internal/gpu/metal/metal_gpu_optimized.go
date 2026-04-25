@@ -794,8 +794,7 @@ const char* metalShaderSource =
 "    }\n"
 "    \n"
 "    distances[gid] = sqrt(sum);\n"
-"}\n"
-";\n"
+"}\n";
 
 // Distance metric type
 typedef enum {
@@ -1410,6 +1409,7 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
 import "C"
 import (
 	"fmt"
+	"math"
 	"runtime"
 	"sync"
 	"unsafe"
@@ -1755,3 +1755,32 @@ func (idx *MetalIndexOptimized) SearchTurboQuant(vector []float32, k int, bitsPe
 
 	return resultIDs, resultDistances, nil
 }
+
+func (idx *MetalIndexOptimized) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
+	// CPU fallback for cluster assignment
+	numVecs := len(vectors) / idx.dim
+	numClusters := len(centroids) / idx.dim
+	assignments := make([]uint32, numVecs)
+
+	for i := 0; i < numVecs; i++ {
+		vec := vectors[i*idx.dim : (i+1)*idx.dim]
+		minDist := float32(math.MaxFloat32)
+		bestCluster := uint32(0)
+
+		for j := 0; j < numClusters; j++ {
+			centroid := centroids[j*idx.dim : (j+1)*idx.dim]
+			dist := float32(0)
+			for k := 0; k < idx.dim; k++ {
+				diff := vec[k] - centroid[k]
+				dist += diff * diff
+			}
+			if dist < minDist {
+				minDist = dist
+				bestCluster = uint32(j)
+			}
+		}
+		assignments[i] = bestCluster
+	}
+	return assignments, nil
+}
+

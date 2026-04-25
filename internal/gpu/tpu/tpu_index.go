@@ -176,3 +176,43 @@ func (i *TPUIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) e
 func (i *TPUIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
 	return nil, nil, fmt.Errorf("SearchTurboQuant not implemented for TPUIndex (emulated)")
 }
+
+func (i *TPUIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	if i.closed {
+		return nil, fmt.Errorf("index closed")
+	}
+
+	if len(centroids) == 0 || len(vectors) == 0 {
+		return nil, nil
+	}
+
+	dim := i.cfg.Dimension
+	numVectors := len(vectors) / dim
+	numCentroids := len(centroids) / dim
+	assignments := make([]uint32, numVectors)
+
+	for v := 0; v < numVectors; v++ {
+		vec := vectors[v*dim : (v+1)*dim]
+		bestC := uint32(0)
+		minDist := float32(3.40282346638528859811704183484516925440e+38) // MaxFloat32
+
+		for c := 0; c < numCentroids; c++ {
+			cent := centroids[c*dim : (c+1)*dim]
+			var dist float32
+			for j := 0; j < dim; j++ {
+				diff := vec[j] - cent[j]
+				dist += diff * diff
+			}
+			if dist < minDist {
+				minDist = dist
+				bestC = uint32(c)
+			}
+		}
+		assignments[v] = bestC
+	}
+
+	return assignments, nil
+}

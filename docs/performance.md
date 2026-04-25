@@ -120,3 +120,25 @@ Benchmarks are still in progress. The following data represents partial results 
 | ('Darwin arm64', 'cpu', 'float32') |      5690.37 |      4852.13 |
 | ('Darwin arm64', 'cpu', 'float64') |      6972.16 |      5895.02 |
 
+## 4. Distributed Multi-Node Performance (Future)
+
+This section will track performance metrics for a 3-node gossip-enabled cluster. Tests are designed to measure coordination overhead, network latency, and scatter-gather efficiency.
+
+### 3-Node Global Search (QPS)
+
+| Mode | (Count, Dim) | CPU | Metal | CUDA |
+|:-----|-------------:|----:|------:|-----:|
+| Dense (Global) | - | - | - | - |
+| Hybrid (Global) | - | - | - | - |
+| Sparse (Global) | - | - | - | - |
+
+### 3-Node Global GraphRAG (QPS)
+
+| Mode | (Count, Dim) | CPU | Metal | CUDA |
+|:-----|-------------:|----:|------:|-----:|
+| GraphRAG (Global) | - | - | - | - |
+| GraphRAG (Local Only) | - | - | - | - |
+
+> [!NOTE]
+> Global searches use the `x-longbow-global: true` header to force multi-node scatter-gather even if the local node contains all partitions for a given key.
+

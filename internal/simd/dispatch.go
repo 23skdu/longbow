@@ -22,9 +22,19 @@ type ImplementationDispatch struct {
 	EuclideanDistanceBatchFlat distanceBatchFlatFunc
 
 	// Specialized functions for fixed dimensions
-	EuclideanDistance384 distanceFunc
-	EuclideanDistance768 distanceFunc
-	EuclideanDistance128 distanceFunc
+	EuclideanDistance128  distanceFunc
+	EuclideanDistance384  distanceFunc
+	EuclideanDistance768  distanceFunc
+	EuclideanDistance1024 distanceFunc
+	EuclideanDistance1536 distanceFunc
+	EuclideanDistance3072 distanceFunc
+
+	DotProduct128  distanceFunc
+	DotProduct384  distanceFunc
+	DotProduct768  distanceFunc
+	DotProduct1024 distanceFunc
+	DotProduct1536 distanceFunc
+	DotProduct3072 distanceFunc
 }
 
 // Global dispatch table - one per implementation
@@ -37,9 +47,20 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		CosineDistanceBatch:        cosineBatchAVX512,
 		DotProductBatch:            dotBatchAVX512,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
+
+		EuclideanDistance128:       euclidean128Unrolled4x,
 		EuclideanDistance384:       euclidean384AVX512,
 		EuclideanDistance768:       euclidean768AVX512,
-		EuclideanDistance128:       euclidean128Unrolled4x,
+		EuclideanDistance1024:      euclidean1024Blocked,
+		EuclideanDistance1536:      euclidean1536AVX512,
+		EuclideanDistance3072:      euclidean3072Blocked,
+
+		DotProduct128:  dot128Unrolled4x,
+		DotProduct384:  dot384AVX512,
+		DotProduct768:  dot768AVX512,
+		DotProduct1024: dotAVX512,
+		DotProduct1536: dot1536AVX512,
+		DotProduct3072: DotProductFloat32Blocked,
 	},
 	"avx2": {
 		EuclideanDistance:          euclideanAVX2,
@@ -49,9 +70,20 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		CosineDistanceBatch:        cosineBatchAVX2,
 		DotProductBatch:            dotBatchAVX2,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatAVX2,
-		EuclideanDistance384:       euclidean384Unrolled4x,
-		EuclideanDistance768:       euclidean768Unrolled4x,
+
 		EuclideanDistance128:       euclidean128Unrolled4x,
+		EuclideanDistance384:       euclidean384AVX2,
+		EuclideanDistance768:       euclidean768AVX2,
+		EuclideanDistance1024:      euclidean1024Blocked,
+		EuclideanDistance1536:      euclidean1536AVX2,
+		EuclideanDistance3072:      euclidean3072Blocked,
+
+		DotProduct128:  dot128Unrolled4x,
+		DotProduct384:  dotGeneric,
+		DotProduct768:  dotGeneric,
+		DotProduct1024: dotAVX2,
+		DotProduct1536: dotAVX2,
+		DotProduct3072: DotProductFloat32Blocked,
 	},
 	"neon": {
 		EuclideanDistance:          euclideanNEON,
@@ -60,10 +92,21 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		EuclideanDistanceBatch:     euclideanBatchNEON,
 		CosineDistanceBatch:        cosineBatchNEON,
 		DotProductBatch:            dotBatchNEON,
-		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric, // Fallback for NEON
-		EuclideanDistance384:       euclidean384Unrolled4x,
-		EuclideanDistance768:       euclidean768Unrolled4x,
-		EuclideanDistance128:       euclidean128Unrolled4x,
+		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
+
+		EuclideanDistance128:       euclidean128NEON,
+		EuclideanDistance384:       euclidean384NEON,
+		EuclideanDistance768:       euclidean768NEON,
+		EuclideanDistance1024:      euclidean1024Blocked,
+		EuclideanDistance1536:      euclidean1536NEON,
+		EuclideanDistance3072:      euclidean3072Blocked,
+
+		DotProduct128:  dot128NEON,
+		DotProduct384:  dot384NEON,
+		DotProduct768:  dot768NEON,
+		DotProduct1024: dotNEON,
+		DotProduct1536: dot1536NEON,
+		DotProduct3072: DotProductFloat32Blocked,
 	},
 	"generic": {
 		EuclideanDistance:          euclideanGeneric,
@@ -73,9 +116,20 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		CosineDistanceBatch:        cosineBatchGeneric,
 		DotProductBatch:            dotBatchGeneric,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
-		EuclideanDistance384:       euclidean384Unrolled4x,
-		EuclideanDistance768:       euclidean768Unrolled4x,
-		EuclideanDistance128:       euclideanGeneric,
+
+		EuclideanDistance128:  euclidean128Unrolled4x,
+		EuclideanDistance384:  euclidean384Unrolled4x,
+		EuclideanDistance768:  euclidean768Unrolled4x,
+		EuclideanDistance1024: euclidean1024Blocked,
+		EuclideanDistance1536: euclidean1536Unrolled4x,
+		EuclideanDistance3072: euclidean3072Blocked,
+
+		DotProduct128:  dot128Unrolled4x,
+		DotProduct384:  dotUnrolled4x,
+		DotProduct768:  dotUnrolled4x,
+		DotProduct1024: dotUnrolled4x,
+		DotProduct1536: dotUnrolled4x,
+		DotProduct3072: DotProductFloat32Blocked,
 	},
 }
 
@@ -93,19 +147,23 @@ func initializeDispatch() {
 	currentDispatch = dispatch
 	switch implementation {
 	case "avx512":
-		euclideanDistanceImpl = euclideanAVX512
-		euclideanDistance384Impl = euclidean384AVX512
-		euclideanDistance768Impl = euclidean768AVX512
-		euclideanDistance1536Impl = euclidean1536AVX512
-		euclideanDistance128Impl = euclidean128Unrolled4x // Fallback to unrolled Go (efficient enough for 128)
+		euclideanDistanceImpl = dispatch.EuclideanDistance
+		euclideanDistance384Impl = dispatch.EuclideanDistance384
+		euclideanDistance768Impl = dispatch.EuclideanDistance768
+		euclideanDistance1024Impl = dispatch.EuclideanDistance1024
+		euclideanDistance1536Impl = dispatch.EuclideanDistance1536
+		euclideanDistance3072Impl = dispatch.EuclideanDistance3072
+		euclideanDistance128Impl = dispatch.EuclideanDistance128
 		metrics.SimdDispatchCount.WithLabelValues("avx512").Inc()
 		metrics.SimdStaticDispatchType.Set(3)
-		cosineDistanceImpl = cosineAVX512
-		dotProductImpl = dotAVX512
-		dotProduct384Impl = dot384AVX512
-		dotProduct768Impl = dot768AVX512
-		dotProduct1536Impl = dot1536AVX512
-		dotProduct128Impl = dot128Unrolled4x // Fallback to unrolled Go
+		cosineDistanceImpl = dispatch.CosineDistance
+		dotProductImpl = dispatch.DotProduct
+		dotProduct384Impl = dispatch.DotProduct384
+		dotProduct768Impl = dispatch.DotProduct768
+		dotProduct1024Impl = dispatch.DotProduct1024
+		dotProduct1536Impl = dispatch.DotProduct1536
+		dotProduct3072Impl = dispatch.DotProduct3072
+		dotProduct128Impl = dispatch.DotProduct128
 		euclideanDistanceBatchImpl = euclideanBatchAVX512
 
 		cosineDistanceBatchImpl = cosineBatchAVX512
@@ -144,19 +202,23 @@ func initializeDispatch() {
 		// Optimization: Use float32 AVX kernels for complex64
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 	case "avx2":
-		euclideanDistanceImpl = euclideanAVX2
-		euclideanDistance384Impl = euclidean384AVX2
-		euclideanDistance768Impl = euclidean768AVX2
-		euclideanDistance1536Impl = euclidean1536AVX2
-		euclideanDistance128Impl = euclidean128Unrolled4x
+		euclideanDistanceImpl = dispatch.EuclideanDistance
+		euclideanDistance384Impl = dispatch.EuclideanDistance384
+		euclideanDistance768Impl = dispatch.EuclideanDistance768
+		euclideanDistance1024Impl = dispatch.EuclideanDistance1024
+		euclideanDistance1536Impl = dispatch.EuclideanDistance1536
+		euclideanDistance3072Impl = dispatch.EuclideanDistance3072
+		euclideanDistance128Impl = dispatch.EuclideanDistance128
 		metrics.SimdDispatchCount.WithLabelValues("avx2").Inc()
 		metrics.SimdStaticDispatchType.Set(2)
-		cosineDistanceImpl = cosineAVX2
-		dotProductImpl = dotAVX2
-		dotProduct384Impl = dotGeneric
-		dotProduct768Impl = dotGeneric  // AVX2 768-dim fallback
-		dotProduct1536Impl = dotGeneric // AVX2 1536-dim fallback
-		dotProduct128Impl = dot128Unrolled4x
+		cosineDistanceImpl = dispatch.CosineDistance
+		dotProductImpl = dispatch.DotProduct
+		dotProduct384Impl = dispatch.DotProduct384
+		dotProduct768Impl = dispatch.DotProduct768
+		dotProduct1024Impl = dispatch.DotProduct1024
+		dotProduct1536Impl = dispatch.DotProduct1536
+		dotProduct3072Impl = dispatch.DotProduct3072
+		dotProduct128Impl = dispatch.DotProduct128
 		euclideanDistanceBatchImpl = euclideanBatchAVX2
 
 		cosineDistanceBatchImpl = cosineBatchAVX2
@@ -192,19 +254,23 @@ func initializeDispatch() {
 		dotProductInt4Impl = dotInt4AVX2
 		dotProductInt2Impl = dotInt2AVX2
 	case "neon":
-		euclideanDistanceImpl = euclideanNEON
-		euclideanDistance384Impl = euclidean384NEON
-		euclideanDistance768Impl = euclidean768NEON
-		euclideanDistance1536Impl = euclidean1536NEON
-		euclideanDistance128Impl = euclidean128NEON
+		euclideanDistanceImpl = dispatch.EuclideanDistance
+		euclideanDistance384Impl = dispatch.EuclideanDistance384
+		euclideanDistance768Impl = dispatch.EuclideanDistance768
+		euclideanDistance1024Impl = dispatch.EuclideanDistance1024
+		euclideanDistance1536Impl = dispatch.EuclideanDistance1536
+		euclideanDistance3072Impl = dispatch.EuclideanDistance3072
+		euclideanDistance128Impl = dispatch.EuclideanDistance128
 		metrics.SimdDispatchCount.WithLabelValues("neon").Inc()
 		metrics.SimdStaticDispatchType.Set(1)
-		cosineDistanceImpl = cosineNEON
-		dotProductImpl = dotNEON
-		dotProduct384Impl = dot384NEON
-		dotProduct768Impl = dot768NEON
-		dotProduct1536Impl = dot1536NEON
-		dotProduct128Impl = dot128NEON
+		cosineDistanceImpl = dispatch.CosineDistance
+		dotProductImpl = dispatch.DotProduct
+		dotProduct384Impl = dispatch.DotProduct384
+		dotProduct768Impl = dispatch.DotProduct768
+		dotProduct1024Impl = dispatch.DotProduct1024
+		dotProduct1536Impl = dispatch.DotProduct1536
+		dotProduct3072Impl = dispatch.DotProduct3072
+		dotProduct128Impl = dispatch.DotProduct128
 		euclideanDistanceBatchImpl = euclideanBatchNEON
 		cosineDistanceBatchImpl = cosineBatchNEON
 		dotProductBatchImpl = dotBatchNEON
@@ -241,19 +307,23 @@ func initializeDispatch() {
 		dotProductInt4Impl = dotInt4Neon
 		dotProductInt2Impl = dotInt2Neon
 	default:
-		euclideanDistanceImpl = euclideanUnrolled4x
-		euclideanDistance384Impl = euclideanUnrolled4x
-		euclideanDistance768Impl = euclideanUnrolled4x
-		euclideanDistance1536Impl = euclideanUnrolled4x
-		euclideanDistance128Impl = euclidean128Unrolled4x
+		euclideanDistanceImpl = dispatch.EuclideanDistance
+		euclideanDistance128Impl = dispatch.EuclideanDistance128
+		euclideanDistance384Impl = dispatch.EuclideanDistance384
+		euclideanDistance768Impl = dispatch.EuclideanDistance768
+		euclideanDistance1024Impl = dispatch.EuclideanDistance1024
+		euclideanDistance1536Impl = dispatch.EuclideanDistance1536
+		euclideanDistance3072Impl = dispatch.EuclideanDistance3072
 		metrics.SimdDispatchCount.WithLabelValues("generic").Inc()
 		metrics.SimdStaticDispatchType.Set(0)
-		cosineDistanceImpl = cosineUnrolled4x
-		dotProductImpl = dotUnrolled4x
-		dotProduct384Impl = dotUnrolled4x
-		dotProduct768Impl = dotUnrolled4x
-		dotProduct1536Impl = dotUnrolled4x
-		dotProduct128Impl = dot128Unrolled4x
+		cosineDistanceImpl = dispatch.CosineDistance
+		dotProductImpl = dispatch.DotProduct
+		dotProduct128Impl = dispatch.DotProduct128
+		dotProduct384Impl = dispatch.DotProduct384
+		dotProduct768Impl = dispatch.DotProduct768
+		dotProduct1024Impl = dispatch.DotProduct1024
+		dotProduct1536Impl = dispatch.DotProduct1536
+		dotProduct3072Impl = dispatch.DotProduct3072
 		euclideanDistanceBatchImpl = euclideanBatchUnrolled4x
 		cosineDistanceBatchImpl = cosineBatchUnrolled4x
 		dotProductBatchImpl = dotBatchUnrolled4x
@@ -296,7 +366,9 @@ func initializeDispatch() {
 	Registry.Register(MetricEuclidean, DataTypeFloat32, 128, euclideanDistance128Impl)
 	Registry.Register(MetricEuclidean, DataTypeFloat32, 384, euclideanDistance384Impl)
 	Registry.Register(MetricEuclidean, DataTypeFloat32, 768, euclideanDistance768Impl)
+	Registry.Register(MetricEuclidean, DataTypeFloat32, 1024, euclideanDistance1024Impl)
 	Registry.Register(MetricEuclidean, DataTypeFloat32, 1536, euclideanDistance1536Impl)
+	Registry.Register(MetricEuclidean, DataTypeFloat32, 3072, euclideanDistance3072Impl)
 
 	// Float32 Cosine & Dot Product
 	Registry.Register(MetricCosine, DataTypeFloat32, 0, cosineDistanceImpl)
@@ -304,7 +376,9 @@ func initializeDispatch() {
 	Registry.Register(MetricDotProduct, DataTypeFloat32, 128, dotProduct128Impl)
 	Registry.Register(MetricDotProduct, DataTypeFloat32, 384, dotProduct384Impl)
 	Registry.Register(MetricDotProduct, DataTypeFloat32, 768, dotProduct768Impl)
+	Registry.Register(MetricDotProduct, DataTypeFloat32, 1024, dotProduct1024Impl)
 	Registry.Register(MetricDotProduct, DataTypeFloat32, 1536, dotProduct1536Impl)
+	Registry.Register(MetricDotProduct, DataTypeFloat32, 3072, dotProduct3072Impl)
 
 	// Float16 (Support both native and unrolled paths)
 	Registry.Register(MetricEuclidean, DataTypeFloat16, 0, euclideanDistanceF16Impl)

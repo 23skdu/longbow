@@ -214,6 +214,8 @@ func (s *MetaServer) DoAction(action *flight.Action, stream flight.FlightService
 		return s.handleTemporalVersionHistory(action, stream)
 	case "TemporalAggregation":
 		return s.handleTemporalAggregation(action, stream)
+	case "GraphRAGExpand":
+		return s.handleGraphRAGExpand(action, stream)
 	default:
 		return s.VectorStore.DoAction(action, stream)
 	}
@@ -829,4 +831,26 @@ func (s *MetaServer) handleTemporalAggregation(action *flight.Action, stream fli
 		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
 	}
 	return stream.Send(&flight.Result{Body: data})
+}
+func (s *MetaServer) handleGraphRAGExpand(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	var req struct {
+		Dataset string   `json:"dataset"`
+		NodeIDs []uint32 `json:"node_ids"`
+	}
+	if err := json.Unmarshal(action.Body, &req); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	}
+
+	neighbors, err := s.VectorStore.GetNeighborsBulk(stream.Context(), req.Dataset, req.NodeIDs)
+	if err != nil {
+		return ToGRPCStatus(err)
+	}
+
+	body, err := json.Marshal(map[string]any{
+		"neighbors": neighbors,
+	})
+	if err != nil {
+		return status.Errorf(codes.Internal, "failed to marshal response: %v", err)
+	}
+	return stream.Send(&flight.Result{Body: body})
 }

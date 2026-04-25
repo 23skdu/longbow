@@ -27,9 +27,21 @@
 - [x] **Test Placeholders**: Implemented real recall validation in `DualIndexHarness` and dependency injection tests for `ShardedHNSW`.
 - [x] **Namespace Metrics**: Finished implementation of `NamespaceCreationTotal` metrics in `servers.go`.
 
-## Roadmap for 0.2.0
+## 0.2.0 Hardening & Performance (RESOLVED)
+
+- [x] **SIMD Metadata Filtering for NEON**: Ported AVX-512 filters to ARM64 NEON with optimized assembly kernels for Int64, Int32, Float64, and Float32.
+- [x] **Persistent HNSW Memory Mapping**: Transitioned HNSW graph storage to direct Arrow-backed memory mapping to eliminate indexing load times.
+- [x] **Distributed GraphRAG Traversal**: Implemented cross-node BFS and activation propagation protocols for multi-billion node knowledge graphs.
+- [x] **Autonomous efSearch Tuning**: Replaced adaptive heuristic with a PID-controller to auto-tune search depth per query based on recall targets.
+- [x] **TurboQuant V2 (2-bit)**: Extended the quantization pipeline to support 2-bit packing for extreme memory compression (up to 64x).
+- [x] **Native Float64/Complex128 SIMD**: Direct SIMD distance kernels for double-precision types, eliminating float32 conversion overhead.
+- [x] **Vector Extraction Buffer Reuse**: Extended `sync.Pool` pattern to all vector extraction paths to reduce heap pressure.
+- [x] **Zero-Copy SearchByID**: Optimized `SearchByID` to use Arrow-native slices directly for target vectors.
+
+## Roadmap for 0.2.0 (Updated)
 
 ### 1. Full Test Coverage (95% Target)
+...
 
 Comprehensive hardening of core packages (`store`, `query`, `storage`) to meet enterprise stability standards.
 
@@ -104,16 +116,9 @@ Full completion of low-memory, low-power CPU-only coverage for Raspberry Pi Zero
 - [ ] **Migration Guides**: Document breaking changes in disk format (if any) for 0.1.9 -> 0.2.0 upgrades.
 - [ ] **Documentation**: Complete the API reference for all new hardware-specific flags.
 
-## suggestions for next release
+### Suggestions for Next Release
 
-### Performance Improvements
-
-1.  **Native Float64/Complex128 SIMD**: Implement direct `float64` SIMD distance kernels for the refinement phase. Currently, `complex128` and `float64` vectors are converted to `float32` for refinement to reuse the existing SIMD pipeline. Native `float64` support would eliminate conversion overhead and improve precision.
-2.  **Vector Extraction Buffer Reuse**: Extend the `sync.Pool` pattern used in parallel search to the `SearchByID` and single-vector extraction paths. This would further reduce heap allocations for large vector types.
-3.  **Adaptive Search Expansion Policy**: Refine the `efSearch` expansion logic in `SearchVectorsWithBitmap`. Instead of a blind 5x multiplier, use a heuristic based on the current recall and distance distribution to find the optimal search depth without over-expanding.
-4.  **Zero-Copy SearchByID**: Optimize `handleDoGetSearchByID` to return Arrow-native slices directly to the search engine when possible, avoiding the intermediate `[]float32` conversion for the target vector.
-5.  **NUMA-Aware Parallel Refinement**: Pin parallel search workers to specific CPU cores matching the NUMA node where the Arrow RecordBatches are stored, reducing cross-socket memory latency.
-6.  **Zero-Alloc Response Building**: Extend the zero-allocation philosophy to the response serialization path. Currently, converting Arrow RecordBatches to JSON or Flight responses involves significant heap allocations. Implementing a streaming, non-allocating response builder would complete the zero-copy pipeline.
-7.  **Kernel Fusing for GraphRAG**: Optimize GraphRAG performance by fusing activation calculation and graph traversal kernels into a single GPU dispatch. This would reduce global memory roundtrips and improve throughput for complex spreading queries.
-8.  **TurboQuant 4-bit Support**: Introduce the 4-bit variant of TurboQuant to enable extreme memory compression (up to 32x) for edge devices with severe VRAM constraints.
-9.  **Asynchronous Index Compaction**: Move HNSW graph compaction and level-balancing to a background priority-throttled thread to ensure ingestion throughput remains consistent during long-running bulk loads.
+1.  **NUMA-Aware Parallel Refinement**: Pin parallel search workers to specific CPU cores matching the NUMA node where the Arrow RecordBatches are stored, reducing cross-socket memory latency.
+2.  **Zero-Alloc Response Building**: Extend the zero-allocation philosophy to the response serialization path. Currently, converting Arrow RecordBatches to JSON or Flight responses involves significant heap allocations.
+3.  **Kernel Fusing for GraphRAG**: Optimize GraphRAG performance by fusing activation calculation and graph traversal kernels into a single GPU dispatch.
+4.  **Asynchronous Index Compaction**: Move HNSW graph compaction and level-balancing to a background priority-throttled thread.

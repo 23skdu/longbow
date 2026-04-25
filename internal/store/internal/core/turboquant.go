@@ -166,6 +166,22 @@ func (e *TurboQuantEncoder) packAngles(angles []float32, dst []byte) {
 		return
 	}
 
+	if bits == 2 {
+		for i := 0; i < len(angles); i += 4 {
+			var b byte
+			for j := 0; j < 4; j++ {
+				if i+j < len(angles) {
+					norm := (angles[i+j] + math.Pi) / (2 * math.Pi)
+					if norm < 0 { norm = 0 } else if norm > 1 { norm = 1 }
+					q := byte(norm*maxVal + 0.5)
+					b |= (q << (uint(j) * 2))
+				}
+			}
+			dst[i/4] = b
+		}
+		return
+	}
+
 	// Fallback for other bit depths
 	var currentBit int
 	for _, angle := range angles {
@@ -241,6 +257,19 @@ func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 			if i+1 < len(dst) {
 				q2 := float32(b >> 4)
 				dst[i+1] = (q2/maxVal)*2*math.Pi - math.Pi
+			}
+		}
+		return
+	}
+
+	if bits == 2 {
+		for i := 0; i < len(dst); i += 4 {
+			b := src[i/4]
+			for j := 0; j < 4; j++ {
+				if i+j < len(dst) {
+					q := float32((b >> (uint(j) * 2)) & 0x03)
+					dst[i+j] = (q/maxVal)*2*math.Pi - math.Pi
+				}
 			}
 		}
 		return

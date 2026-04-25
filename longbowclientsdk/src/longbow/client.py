@@ -220,6 +220,10 @@ class LongbowClient:
         ticket_bytes = json.dumps({"search": req}).encode("utf-8")
         ticket = flight.Ticket(ticket_bytes)
 
+        # Handle efSearch PID tuning if requested
+        if kwargs.get("ef_search_pid", False):
+            req["ef_search_pid"] = True
+
         try:
             reader = self._data_client.do_get(ticket, options=self._get_call_options())
             table = reader.read_all()
@@ -795,6 +799,52 @@ class LongbowClient:
             return []
         except Exception as e:
             raise LongbowQueryError(f"Temporal search failed: {e}")
+
+    def graph_rag_expand(self, dataset: str, node_ids: List[int]) -> Dict[int, List[int]]:
+        """
+        Perform a distributed GraphRAG expansion (get neighbors for multiple nodes).
+        
+        Args:
+            dataset: Name of the dataset.
+            node_ids: List of node IDs to expand.
+            
+        Returns:
+            Dict[int, List[int]]: Mapping of node IDs to their neighbor lists.
+        """
+        if self._meta_client is None:
+            self.connect()
+
+        req = {"dataset": dataset, "node_ids": node_ids}
+        action = flight.Action("GraphRAGExpand", json.dumps(req).encode("utf-8"))
+        try:
+            results = list(self._meta_client.do_action(action, options=self._get_call_options()))
+            if results:
+                return json.loads(results[0].body.to_pybytes())
+            return {}
+        except Exception as e:
+            raise LongbowQueryError(f"GraphRAGExpand failed: {e}")
+
+    def get_flight_info_metadata(self, dataset: str) -> Dict[str, Any]:
+        """
+        Retrieve FlightInfo for a dataset via the MetaServer.
+        
+        Args:
+            dataset: Name of the dataset.
+            
+        Returns:
+            Dict: Dataset statistics and metadata.
+        """
+        if self._meta_client is None:
+            self.connect()
+            
+        descriptor = flight.FlightDescriptor.for_path(dataset)
+        info = self._meta_client.get_flight_info(descriptor, options=self._get_call_options())
+        return {
+            "total_records": info.total_records,
+            "total_bytes": info.total_bytes,
+            "schema": str(info.schema),
+            "endpoints": [str(e.locations) for e in info.endpoints]
+        }
 
     def temporal_version_history(self, vector_id: int) -> List[Dict[str, Any]]:
         """

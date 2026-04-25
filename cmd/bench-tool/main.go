@@ -324,11 +324,12 @@ func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype s
 			s.buf = fmt.Appendf(s.buf, "%g", s.vector[i])
 		}
 		s.buf = append(s.buf, `],"filters":[`...)
-		if mode == "Filtered" {
+		switch mode {
+		case "Filtered":
 			s.buf = append(s.buf, `{"field":"id","operator":">","value":"10"}`...)
-		} else if mode == "FilteredBool" {
+		case "FilteredBool":
 			s.buf = append(s.buf, `{"field":"active","operator":"==","value":"true"}`...)
-		} else {
+		default:
 			s.buf = append(s.buf, `{"field":"category","operator":"==","value":"electronics"}`...)
 		}
 		s.buf = append(s.buf, ']')

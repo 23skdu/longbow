@@ -3,6 +3,7 @@
 #include <cuda_fp16.h>
 #include <math.h>
 #include <float.h>
+#include <stdint.h>
 
 // Top-K implementation using shared memory heap
 #define MAX_K 1024

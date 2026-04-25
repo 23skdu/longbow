@@ -52,6 +52,16 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 | `LONGBOW_STORAGE_ASYNC_FSYNC` | `true` | Non-blocking WAL flushes for faster ingestion. |
 | `LONGBOW_SNAPSHOT_INTERVAL` | `1h` | Frequency of full index disk snapshots. |
 
+### Temporal Search & Advanced Modules
+| Variable | Default | Description |
+| :--- | :--- | :--- |
+| `LONGBOW_TEMPORAL_ENABLED` | `false` | Enable temporal versioning and time-travel search. |
+| `LONGBOW_TEMPORAL_AGGREGATION_ENABLED` | `false` | Enable time-series bucketing and aggregation (`min`, `max`, `sum`). |
+| `LONGBOW_OLLAMA_ENABLED` | `false` | Enable local LLM embedding via Ollama (`LONGBOW_OLLAMA_ENDPOINT`). |
+| `LONGBOW_CDC_ENABLED` | `false` | Enable Change Data Capture for streaming data out. |
+| `LONGBOW_MQ_ENABLED` | `false` | Export vectors/CDC via Kafka/Pulsar. |
+| `LONGBOW_LEARNED_INDEX_ENABLED` | `false` | Enable ML-based index selection for faster routing. |
+
 ---
 
 ## 3. Distributed Architecture & Scaling

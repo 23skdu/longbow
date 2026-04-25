@@ -100,3 +100,28 @@ Transparently scales the HNSW index by migrating from a single monolithic graph 
 ### Sharding Performance
 - **Monolithic**: Lower overhead, but index build times degrade as the graph scales.
 - **Sharded**: Higher concurrent write throughput (lock-striping across sub-graphs) and parallel scatter-gather search.
+
+---
+
+## 7. IVF-HNSW Composite Index & Optimized Product Quantization (OPQ)
+
+To reach billion-scale scalability, Longbow 0.1.9 introduces the **IVF-HNSW Composite Index**. By combining Inverted File (IVF) structures with an HNSW-based coarse quantizer, the engine reduces search space dramatically while maintaining sub-millisecond latencies.
+
+### Architecture Highlights
+- **HNSW Coarse Quantization**: The IVF centroids are indexed using HNSW, meaning that finding the nearest Voronoi cells during a search is heavily optimized, preventing the bottleneck of exhaustive scalar centroid comparisons.
+- **Optimized Product Quantization (OPQ)**: Instead of standard Product Quantization, Longbow implements OPQ, which learns an orthogonal transformation matrix to align the data distribution with the Cartesian product structure. This significantly minimizes quantization error and increases recall.
+- **GPU-Accelerated Cluster Assignment**: To prevent OPQ training from becoming a bottleneck during indexing, Longbow uses GPU kernels (both **Metal** on Apple Silicon and **CUDA** on NVIDIA hardware) for K-Means clustering and centroid assignments. 
+- **Persistence**: The full OPQ encoder state, transformation matrices, and cluster mappings are fully serializable, ensuring zero-training reloads across restarts.
+
+---
+
+## 8. Temporal Indexing (Time-Travel Search)
+
+Longbow introduces a dedicated **Temporal Index** for real-time aggregation and time-travel search (historical queries).
+
+### Implementation Details
+- **Temporal Tree**: A concurrent, read-optimized B-Tree style index that maps Unix nanosecond timestamps to vector IDs.
+- **Tombstoning & Updates**: Updates and deletions are handled via non-blocking tombstones, preserving lock-free historical snapshots.
+- **Time-Travel Operations**: Support for `SearchAsOf(timestamp)`, `SearchSlidingWindow(size)`, and `SearchRange(start, end)`.
+- **Temporal Aggregation Engine**: Enables instantaneous statistical aggregations (`min`, `max`, `sum`, `mean`) over scalar metadata fields for any set of vectors within a specific time bucket.
+

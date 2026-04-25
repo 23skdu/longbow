@@ -269,7 +269,13 @@ class BenchmarkRunner:
                 stderr=subprocess.DEVNULL
             )
 
-        result = run_command(cmd, timeout=timeout)
+        bench_log = os.path.join(self.log_dir, f"bench_{label}.log")
+        with open(bench_log, "w") as f:
+            result = run_command(cmd, timeout=timeout)
+            if result:
+                f.write(result.stdout)
+                f.write(result.stderr)
+
 
         if pprof_proc:
             pprof_proc.wait()

@@ -392,8 +392,9 @@ int cuda_add_tq_vectors(CUDAIndexHandle* handle, unsigned char* h_tqData, int st
 int cuda_search_tq(CUDAIndexHandle* handle, float* h_query, int k, int pow2, int bitsPerAngle, int64_t* h_resultIDs, float* h_resultDistances) {
     if (!handle->vectorBuffer || handle->vectorCount == 0) return -1;
     float *d_query, *d_distances;
-    cudaMalloc(&d_query, handle->dimensions * sizeof(float));
-    cudaMalloc(&d_distances, handle->vectorCount * sizeof(float));
+    cudaMalloc((void**)&d_query, handle->dimensions * sizeof(float));
+    cudaMalloc((void**)&d_distances, handle->vectorCount * sizeof(float));
+
     cudaMemcpy(d_query, h_query, handle->dimensions * sizeof(float), cudaMemcpyHostToDevice);
 
     launch_turboquant_distance_kernel(d_query, (const unsigned char*)handle->vectorBuffer, d_distances, handle->dimensions, pow2, bitsPerAngle, handle->vectorCount, 0);
@@ -993,3 +994,32 @@ func (idx *CUDAIndex) SearchComplex128(vector []float32, k int) ([]int64, []floa
 	// complex128 is just float32 - use as-is
 	return idx.Search(vector, k)
 }
+
+func (idx *CUDAIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
+	// CPU fallback for cluster assignment
+	numVecs := len(vectors) / idx.dim
+	numClusters := len(centroids) / idx.dim
+	assignments := make([]uint32, numVecs)
+
+	for i := 0; i < numVecs; i++ {
+		vec := vectors[i*idx.dim : (i+1)*idx.dim]
+		minDist := float32(math.MaxFloat32)
+		bestCluster := uint32(0)
+
+		for j := 0; j < numClusters; j++ {
+			centroid := centroids[j*idx.dim : (j+1)*idx.dim]
+			dist := float32(0)
+			for k := 0; k < idx.dim; k++ {
+				diff := vec[k] - centroid[k]
+				dist += diff * diff
+			}
+			if dist < minDist {
+				minDist = dist
+				bestCluster = uint32(j)
+			}
+		}
+		assignments[i] = bestCluster
+	}
+	return assignments, nil
+}
+

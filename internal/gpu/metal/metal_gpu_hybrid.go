@@ -576,7 +576,44 @@ func (idx *MetalHybridIndex) SearchComplex128(vector []float32, k int) ([]int64,
 	return idx.searchFloat32(vector, k)
 }
 
+func (idx *MetalHybridIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
+	return fmt.Errorf("AddTurboQuant not implemented for hybrid Metal index")
+}
+
+func (idx *MetalHybridIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
+	return nil, nil, fmt.Errorf("SearchTurboQuant not implemented for hybrid Metal index")
+}
+
+func (idx *MetalHybridIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
+	// CPU fallback for cluster assignment
+	numVecs := len(vectors) / idx.dim
+	numClusters := len(centroids) / idx.dim
+	assignments := make([]uint32, numVecs)
+
+	for i := 0; i < numVecs; i++ {
+		vec := vectors[i*idx.dim : (i+1)*idx.dim]
+		minDist := float32(math.MaxFloat32)
+		bestCluster := uint32(0)
+
+		for j := 0; j < numClusters; j++ {
+			centroid := centroids[j*idx.dim : (j+1)*idx.dim]
+			dist := float32(0)
+			for k := 0; k < idx.dim; k++ {
+				diff := vec[k] - centroid[k]
+				dist += diff * diff
+			}
+			if dist < minDist {
+				minDist = dist
+				bestCluster = uint32(j)
+			}
+		}
+		assignments[i] = bestCluster
+	}
+	return assignments, nil
+}
+
 func (idx *MetalHybridIndex) searchFloat32(vector []float32, k int) ([]int64, []float32, error) {
+
 	if len(vector) != idx.dim {
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
 	}

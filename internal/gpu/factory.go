@@ -207,6 +207,35 @@ func (i *CPUIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) (
 	return nil, nil, fmt.Errorf("SearchTurboQuant not implemented for CPUIndex")
 }
 
+func (i *CPUIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
+	if len(centroids) == 0 || len(vectors) == 0 {
+		return nil, nil
+	}
+
+	dim := i.dimension
+	numVectors := len(vectors) / dim
+	numCentroids := len(centroids) / dim
+	assignments := make([]uint32, numVectors)
+
+	for v := 0; v < numVectors; v++ {
+		vec := vectors[v*dim : (v+1)*dim]
+		bestC := uint32(0)
+		minDist := float32(3.40282346638528859811704183484516925440e+38) // MaxFloat32
+
+		for c := 0; c < numCentroids; c++ {
+			cent := centroids[c*dim : (c+1)*dim]
+			dist := euclideanDistance(vec, cent)
+			if dist < minDist {
+				minDist = dist
+				bestC = uint32(c)
+			}
+		}
+		assignments[v] = bestC
+	}
+
+	return assignments, nil
+}
+
 // float16ToFloat32 converts a uint16 float16 value to float32
 func float16ToFloat32(v uint16) float32 {
 	// Extract float16 components

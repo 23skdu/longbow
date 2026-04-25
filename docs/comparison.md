@@ -4,16 +4,16 @@ Choosing the right vector database depends on your project's scale, complexity, 
 
 ## Executive Summary
 
-| Feature | ChromaDB | Milvus | Qdrant | Pinecone | Longbow |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Primary Focus** | Prototyping | Massive Scale | Speed & Efficiency | Managed SaaS | **Structural Discovery** |
-| **Turboquant** | No | **RaBitQ** | PQ/SQ/BQ | Proprietary | **Native (+ PQ/SQ/BQ)** |
-| **Architecture** | SQLite | Distributed | Rust | Closed/Cloud | **Zero-Copy Arrow** |
-| **GPU Support** | CPU-Only | **Tier 1** | **Tier 1** | Managed | **Tier 1 (Metal/CUDA)** |
-| **SIMD Optim.** | Library | Extensive | **Native** | Managed | **Custom Kernels** |
-| **GraphRAG** | No | Basic | No | No | **Native Spreading** |
-| **Temporal** | No | No | No | No | **Native Versioning** |
-| **Geo-Spatial** | No | No | Native | No | **Native Quadtree** |
+| Feature | ChromaDB | Milvus | Qdrant | FAISS | Pinecone | Longbow |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Primary Focus** | Prototyping | Massive Scale | Speed & Efficiency | **Perf Library** | Managed SaaS | **Structural Discovery** |
+| **Turboquant** | No | **RaBitQ** | PQ/SQ/BQ | **PQ/SQ/OPQ** | Proprietary | **Native (+ PQ/SQ/BQ)** |
+| **Architecture** | SQLite | Distributed | Rust | **C++/CUDA** | Closed/Cloud | **Zero-Copy Arrow** |
+| **GPU Support** | CPU-Only | **Tier 1** | **Tier 1** | **Tier 1 (NVIDIA)** | Managed | **Tier 1 (Metal/CUDA)** |
+| **SIMD Optim.** | Library | Extensive | **Native** | **Extensive** | Managed | **Custom Kernels** |
+| **GraphRAG** | No | Basic | No | No | No | **Native Spreading** |
+| **Temporal** | No | No | No | No | No | **Native Versioning** |
+| **Geo-Spatial** | No | No | Native | No | No | **Native Quadtree** |
 
 ---
 
@@ -29,9 +29,13 @@ The core bottleneck of vector search is distance calculation. Different database
 * **GPU**: Offers platform-agnostic GPU-accelerated indexing (supporting NVIDIA, AMD, and Apple Silicon).
 * **SIMD**: Written in Rust with a heavy focus on SIMD. Best-in-class performance for **Scalar and Binary Quantization**, often delivering 40x speedups for compressed data.
 
+### **FAISS**
+* **GPU**: The industry benchmark for NVIDIA GPU acceleration. Supports massive parallelization and multi-GPU indexing via **IVF-PQ** and **HNSW-Flat**.
+* **SIMD**: Highly optimized C++ core utilizing AVX2, AVX-512, and ARM Neon for maximum throughput on dense vector operations.
+
 ### **Longbow**
-* **GPU**: Native support for **Metal (Apple Silicon)** and deep **NVIDIA cuVS** integration for full graph-traversal offloading. Achieves parity with Milvus in GPU performance while maintaining a significantly simpler architecture.
-* **SIMD**: Implements custom **AVX-512**, **AVX2**, and **ARM Neon** kernels specifically for the Arrow Data Plane. Unlike others, Longbow's SIMD is optimized for **Zero-Copy** access, eliminating the overhead of copying data into local buffers before processing.
+* **GPU**: Native support for **Metal (Apple Silicon)** and deep **NVIDIA cuVS** integration for full graph-traversal offloading. Achieves parity with Milvus and FAISS in GPU performance while maintaining a significantly simpler architecture and supporting macOS natively.
+* **SIMD**: Implements custom **AVX-512**, **AVX2**, and **ARM Neon** kernels specifically for the Arrow Data Plane. Unlike FAISS, Longbow's SIMD is optimized for **Zero-Copy** access, eliminating the overhead of copying data into local buffers.
 
 ### **Weaviate & Chroma**
 * **Primarily CPU-bound**: GPU acceleration is typically offloaded to external module containers for embedding generation rather than being integrated into the core search engine.
@@ -49,6 +53,7 @@ The "Data Plane" determines how data moves from memory to the CPU/GPU.
 *   **Longbow (Zero-Copy Arrow)**: Uses a unified memory model where the storage format (Apache Arrow) is identical to the processing format. This eliminates the "Python tax" and serialization overhead found in Chroma and Weaviate.
 *   **Milvus (Distributed Metadata)**: Uses a complex distributed architecture (Pulsar/MinIO) optimized for massive scale (billions of vectors) but introduces higher latency for small to medium workloads due to network hops.
 *   **Qdrant (Rust-Native)**: Provides a highly efficient memory footprint and extremely low overhead between the API and the search engine.
+*   **FAISS (C++ Library)**: Optimized for raw performance within a single process. Lacks native database features (persistence/metadata) but provides the highest density of indexing options.
 *   **Pinecone (Managed/SaaS)**: A closed-source, cloud-only architecture. While highly scalable, it introduces a "network tax" (50-200ms latency) for every operation, making it unsuitable for applications requiring sub-millisecond local discovery.
 
 ---
@@ -60,7 +65,7 @@ The "Data Plane" determines how data moves from memory to the CPU/GPU.
 | **GraphRAG** | **Native**: Uses graph connectivity to "spread" activation and re-rank results based on structural context. | **Manual**: Typically requires a separate Graph DB (Neo4j) and client-side logic to merge results. |
 | **Temporal Search** | **Native**: Built-in "As-Of" and "Sliding Window" queries using a versioned storage layer. | **Metadata**: Rely on standard metadata filtering, which is slower for complex time-range queries. |
 | **Geo-Spatial** | **Native**: Uses a high-performance Quadtree index for sub-millisecond radius and box lookups. | **Mixed**: Qdrant has native support; others use standard metadata filters. |
-| **Turboquant** | **Turboquant V2**: Features **Learnable Bit-Widths** (adaptive 1/2/4/8-bit) that adapt to local data distribution, offering 4x better memory reduction than Qdrant's Scalar Quantization with higher recall retention. | **Variable**: Milvus supports **RaBitQ**; others use training-intensive Product Quantization (PQ), SQ, or BQ. |
+| **Turboquant** | **Turboquant V2**: Features **Learnable Bit-Widths** (adaptive 1/2/4/8-bit) that adapt to local data distribution, offering 4x better memory reduction than Qdrant's Scalar Quantization with higher recall retention. | **Variable**: Milvus supports **RaBitQ**; others use training-intensive Product Quantization (PQ) or SQ. FAISS leads in **OPQ** (Optimized PQ) for high-dimensional recall. |
 
 ---
 
@@ -70,7 +75,7 @@ Based on latest **v9 Cluster Benchmarks** (500-1000 vector scale):
 
 *   **Ingestion Speed**:
     *   **Longbow**: **~923,000 vec/s** (ARM64/Metal).
-    *   **Milvus/Qdrant**: Typically high-throughput in bulk but require periodic "compaction" phases.
+    *   **Milvus/Qdrant/FAISS**: Typically high-throughput in bulk but require periodic "compaction" or intensive "training" phases for quantization.
 *   **Search Latency (P95)**:
     *   **Longbow**: **~14,000+ Sparse QPS**; **~2,700+ GraphRAG QPS**.
     *   **Others**: Generally competitive on standard ANN (Dense), but Longbow leads in **specialized discovery** (Graph/Time/Geo) where native indexing beats metadata filtering.
@@ -82,4 +87,5 @@ Based on latest **v9 Cluster Benchmarks** (500-1000 vector scale):
 * **Use Weaviate** if you want a modular, AI-native experience with a rich schema-based graph.
 * **Use ChromaDB** for rapid local prototyping and LangChain experiments.
 * **Use Pinecone** if you want a fully managed SaaS experience and don't mind data residency in the cloud or network-induced latency.
+* **Use FAISS** if you need a high-performance C++ library for dense vector search and don't require database features like persistence or metadata filtering.
 * **Use Longbow** for **Production Discovery Applications** requiring sub-millisecond GraphRAG, native Temporal/Geo precision, and the maximum throughput of a Zero-Copy Arrow Data Plane on local or cluster hardware.

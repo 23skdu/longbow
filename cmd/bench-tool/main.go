@@ -327,18 +327,19 @@ func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, 
 		ticketBytes, _ := json.Marshal(map[string]interface{}{"recommend": req})
 		return executeDoGet(ctx, sc, ticketBytes)
 	case "Geo":
-		req["dataset"] = "bench_go"
+		req["dataset"] = dataset
 		req["center"] = map[string]float64{"lat": 40.7128, "lon": -74.0060}
 		req["radius_km"] = 50.0
 		req["search_type"] = "radius"
 		ticketBytes, _ := json.Marshal(map[string]interface{}{"geo_search": req})
 		return executeDoGet(ctx, sc, ticketBytes)
 	case "Temporal":
-		req["dataset"] = "bench_go"
+		req["dataset"] = dataset
 		req["search_type"] = "as_of"
 		req["timestamp"] = time.Now().UnixNano()
 		ticketBytes, _ := json.Marshal(map[string]interface{}{"temporal_search": req})
 		return executeDoGet(ctx, sc, ticketBytes)
+
 	case "ByID":
 		// SearchByID requires an existing ID.
 		req["id"] = "0"

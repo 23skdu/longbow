@@ -45,3 +45,18 @@ func RandomRotationNEON(a []float32, seed int64) error  { return randomRotationG
 
 func dotInt4Neon(a, b []byte) (float32, error) { return dotInt4Generic(a, b) }
 func dotInt2Neon(a, b []byte) (float32, error) { return dotInt2Generic(a, b) }
+
+func matchInt64Neon(src []int64, val int64, op CompareOp, dst []byte) error {
+	return matchInt64Generic(src, val, op, dst)
+}
+func matchInt32Neon(src []int32, val int32, op CompareOp, dst []byte) error {
+	return matchInt32Generic(src, val, op, dst)
+}
+func matchFloat32Neon(src []float32, val float32, op CompareOp, dst []byte) error {
+	return matchFloat32Generic(src, val, op, dst)
+}
+func matchFloat64Neon(src []float64, val float64, op CompareOp, dst []byte) error {
+	return matchFloat64Generic(src, val, op, dst)
+}
+
+

@@ -37,6 +37,36 @@ const char* pqShaderSource =
 "    }\n"
 "    \n"
 "    distances[gid] = sum;\n"
+"}\n"
+"\n"
+"kernel void assign_to_clusters(\n"
+"    device const float* vectors [[buffer(0)]],\n"
+"    device const float* centroids [[buffer(1)]],\n"
+"    device uint* assignments [[buffer(2)]],\n"
+"    constant uint& dim [[buffer(3)]],\n"
+"    constant uint& numVectors [[buffer(4)]],\n"
+"    constant uint& numCentroids [[buffer(5)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    \n"
+"    float minDist = 1e38f;\n"
+"    uint bestCent = 0;\n"
+"    uint vecOffset = gid * dim;\n"
+"    \n"
+"    for (uint c = 0; c < numCentroids; c++) {\n"
+"        float dist = 0.0f;\n"
+"        uint centOffset = c * dim;\n"
+"        for (uint i = 0; i < dim; i++) {\n"
+"            float diff = vectors[vecOffset + i] - centroids[centOffset + i];\n"
+"            dist += diff * diff;\n"
+"        }\n"
+"        if (dist < minDist) {\n"
+"            minDist = dist;\n"
+"            bestCent = c;\n"
+"        }\n"
+"    }\n"
+"    assignments[gid] = bestCent;\n"
 "}\n";
 
 // MetalIndex wraps Metal GPU resources
@@ -46,6 +76,7 @@ typedef struct {
     void* vectorBuffer;
     void* idBuffer;
     void* pqPipeline;
+    void* assignPipeline;
     int vectorCount;
     int dimensions;
     int capacity;
@@ -83,6 +114,12 @@ MetalIndexHandle* metal_init(int dimensions, int initialCapacity) {
             id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:pqFunc error:&error];
             if (pipeline) {
                 handle->pqPipeline = (__bridge_retained void*)pipeline;
+            }
+            
+            id<MTLFunction> assignFunc = [library newFunctionWithName:@"assign_to_clusters"];
+            id<MTLComputePipelineState> assignPipeline = [device newComputePipelineStateWithFunction:assignFunc error:&error];
+            if (assignPipeline) {
+                handle->assignPipeline = (__bridge_retained void*)assignPipeline;
             }
         }
         size_t bufferSize = handle->capacity * dimensions * sizeof(float);
@@ -351,6 +388,52 @@ void* metal_get_vector_buffer(MetalIndexHandle* handle) {
 void* metal_get_id_buffer(MetalIndexHandle* handle) {
     id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle->idBuffer;
     return [buffer contents];
+}
+
+int metal_assign_to_clusters(MetalIndexHandle* handle, float* vectors, float* centroids, uint32_t* assignments, int numVectors, int numCentroids, int dim) {
+    @autoreleasepool {
+        if (!handle->assignPipeline) {
+            return -1;
+        }
+
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->assignPipeline;
+
+        // Create buffers
+        size_t vecSize = (size_t)numVectors * dim * sizeof(float);
+        size_t centSize = (size_t)numCentroids * dim * sizeof(float);
+        size_t assignSize = (size_t)numVectors * sizeof(uint32_t);
+
+        id<MTLBuffer> vecBuf = [device newBufferWithBytes:vectors length:vecSize options:MTLResourceStorageModeShared];
+        id<MTLBuffer> centBuf = [device newBufferWithBytes:centroids length:centSize options:MTLResourceStorageModeShared];
+        id<MTLBuffer> assignBuf = [device newBufferWithLength:assignSize options:MTLResourceStorageModeShared];
+
+        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+        [encoder setComputePipelineState:pipeline];
+        [encoder setBuffer:vecBuf offset:0 atIndex:0];
+        [encoder setBuffer:centBuf offset:0 atIndex:1];
+        [encoder setBuffer:assignBuf offset:0 atIndex:2];
+        [encoder setBytes:&dim length:sizeof(int) atIndex:3];
+        [encoder setBytes:&numVectors length:sizeof(int) atIndex:4];
+        [encoder setBytes:&numCentroids length:sizeof(int) atIndex:5];
+
+        MTLSize gridSize = MTLSizeMake(numVectors, 1, 1);
+        NSUInteger maxThreads = pipeline.maxTotalThreadsPerThreadgroup;
+        if (maxThreads > numVectors) maxThreads = numVectors;
+        MTLSize threadgroupSize = MTLSizeMake(maxThreads, 1, 1);
+
+        [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+        [encoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+
+        memcpy(assignments, [assignBuf contents], assignSize);
+
+        return 0;
+    }
 }
 */
 import "C"
@@ -798,6 +881,36 @@ func (idx *MetalIndex) GetMemoryInfo() (total, free, used int64, err error) {
 // GetDeviceCount returns the number of GPU devices
 func (idx *MetalIndex) GetDeviceCount() int {
 	return 1
+}
+
+// AssignToClusters offloads vector assignment to GPU centroids
+func (idx *MetalIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	numVectors := len(vectors) / idx.dim
+	numCentroids := len(centroids) / idx.dim
+	assignments := make([]uint32, numVectors)
+
+	ret := C.metal_assign_to_clusters(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&vectors[0])),
+		(*C.float)(unsafe.Pointer(&centroids[0])),
+		(*C.uint32_t)(unsafe.Pointer(&assignments[0])),
+		C.int(numVectors),
+		C.int(numCentroids),
+		C.int(idx.dim),
+	)
+
+	if ret != 0 {
+		return nil, fmt.Errorf("Metal cluster assignment failed")
+	}
+
+	return assignments, nil
 }
 
 // GetUtilization returns GPU utilization (Metal doesn't expose this directly)

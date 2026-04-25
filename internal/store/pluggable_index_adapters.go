@@ -227,7 +227,7 @@ func (a *PluggableInternalAdapter) AddByRecord(ctx context.Context, rec arrow.Re
 	// Use sequential ID for simplicity
 	id := uint64(a.inner.Size())
 	err := a.inner.Add(id, vec)
-	return uint32(id), err
+	return uint32(id), err // #nosec G115
 }
 
 // AddByLocation implements VectorIndexer.
@@ -291,7 +291,7 @@ func (a *PluggableInternalAdapter) SearchVectors(ctx context.Context, q any, k i
 
 	results := make([]lbtypes.SearchResult, len(iresults))
 	for i, r := range iresults {
-		results[i] = lbtypes.SearchResult{ID: core.VectorID(r.ID), Distance: r.Distance}
+		results[i] = lbtypes.SearchResult{ID: core.VectorID(r.ID), Distance: r.Distance} // #nosec G115
 	}
 	return results, nil
 }
@@ -322,7 +322,7 @@ func (a *PluggableInternalAdapter) SearchVectorsWithBitmap(ctx context.Context, 
 
 	results := make([]lbtypes.SearchResult, len(iresults))
 	for i, r := range iresults {
-		results[i] = lbtypes.SearchResult{ID: core.VectorID(r.ID), Distance: r.Distance}
+		results[i] = lbtypes.SearchResult{ID: core.VectorID(r.ID), Distance: r.Distance} // #nosec G115
 	}
 	return results, nil
 }

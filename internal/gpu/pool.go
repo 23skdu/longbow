@@ -297,6 +297,10 @@ func (pw *pooledIndexWrapper) EncodePQ(vectors []float32) ([]byte, error) {
 	return pw.pooled.index.EncodePQ(vectors)
 }
 
+func (pw *pooledIndexWrapper) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
+	return pw.pooled.index.AssignToClusters(vectors, centroids)
+}
+
 // Close returns the index to the pool instead of closing it
 func (w *pooledIndexWrapper) Close() error {
 	return w.pool.ReturnGPUIndex(w)

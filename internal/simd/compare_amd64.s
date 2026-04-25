@@ -1224,7 +1224,7 @@ i32_le_512:
 
 i32_store_512:
     VPMOVM2B K1, Z2
-    VPAND    Z2, Z4, Z2
+    VPANDQ   Z2, Z4, Z2
     VMOVUPS  Z2, (DI)
 
     ADDQ    $64, SI
@@ -1234,6 +1234,66 @@ i32_store_512:
 
 tail_int32_512:
     VZEROUPPER
-    // Reuse tail_int32_avx2 logic for simple scalar tail
-    JMP     tail_int32_avx2
+    CMPQ    CX, $0
+    JE      done_int32_512
+    
+i32_scalar_loop:
+    CMPQ    CX, $0
+    JE      done_int32_512
+    MOVL    (SI), R9
+    MOVB    $0, (DI)
+    
+    // R10 = val
+    MOVL    DX, R10
+
+    CMPQ    BX, $0
+    JE      ti32_eq
+    CMPQ    BX, $1
+    JE      ti32_neq
+    CMPQ    BX, $2
+    JE      ti32_gt
+    CMPQ    BX, $3
+    JE      ti32_ge
+    CMPQ    BX, $4
+    JE      ti32_lt
+    JMP     ti32_le
+
+ti32_eq:
+    CMPL    R9, R10
+    JNE     ti32_adv
+    MOVB    $1, (DI)
+    JMP     ti32_adv
+ti32_neq:
+    CMPL    R9, R10
+    JE      ti32_adv
+    MOVB    $1, (DI)
+    JMP     ti32_adv
+ti32_gt:
+    CMPL    R9, R10
+    JLE     ti32_adv
+    MOVB    $1, (DI)
+    JMP     ti32_adv
+ti32_ge:
+    CMPL    R9, R10
+    JL      ti32_adv
+    MOVB    $1, (DI)
+    JMP     ti32_adv
+ti32_lt:
+    CMPL    R9, R10
+    JGE     ti32_adv
+    MOVB    $1, (DI)
+    JMP     ti32_adv
+ti32_le:
+    CMPL    R9, R10
+    JG      ti32_adv
+    MOVB    $1, (DI)
+
+ti32_adv:
+    ADDQ    $4, SI
+    ADDQ    $1, DI
+    DECQ    CX
+    JMP     i32_scalar_loop
+
+done_int32_512:
+    RET
 

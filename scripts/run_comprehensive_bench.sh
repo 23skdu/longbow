@@ -5,7 +5,7 @@
 set -e
 
 # Configuration
-DIMS="128,384"
+DIMS="128,384,768"
 DTYPES="float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant"
 MEMORY=19327352832
 QUERIES=1000
@@ -24,7 +24,8 @@ MODES="cpu geo temporal graphrag recommend learned_index"
 # Function to run local benchmarks
 run_local() {
     echo "[LOCAL] Starting benchmarks..."
-    source venv/bin/activate
+    ( [ -f venv/bin/activate ] && source venv/bin/activate || echo '[LOCAL] Using system python' )
+
     
     for count in 500 1000 5000 15000 50000; do
         if [ $count -le 5000 ]; then

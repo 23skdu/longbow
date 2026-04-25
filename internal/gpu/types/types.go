@@ -97,6 +97,7 @@ type Index interface {
 	SearchPQ(lookupTable []float32, m int, k int) (ids []int64, distances []float32, err error)
 	TrainPQ(vectors []float32, m int, k int) error
 	EncodePQ(vectors []float32) ([]byte, error)
+	AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error)
 	Close() error
 	Backend() GPUBackend
 	DeviceID() int // Returns the device ID this index runs on

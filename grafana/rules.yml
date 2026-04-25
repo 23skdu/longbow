@@ -347,6 +347,12 @@ groups:
 
       - alert: LongbowVectorClockConflicts
         expr: rate(longbow_vector_clock_conflicts_total[1m]) > 10
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High vector clock conflict rate"
+          description: "Vector clock conflicts exceeding 10/sec ({{ $value }})."
 
   - name: longbow_simd_alerts
     rules:
@@ -407,12 +413,6 @@ groups:
         annotations:
           summary: "RDMA no activity"
           description: "RDMA enabled but no bytes processed for 15 minutes."
-        for: 2m
-        labels:
-          severity: warning
-        annotations:
-          summary: "High vector clock conflict rate"
-          description: "Vector clock conflicts exceeding 10/sec ({{ $value }})."
 
       - alert: LongbowTombstoneSaturation
         expr: (longbow_tombstones_total / longbow_hnsw_node_count) > 0.2

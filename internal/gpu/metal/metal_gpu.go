@@ -1116,6 +1116,11 @@ func (idx *MetalIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]
 	}
 
 	// Metal multi-hop expansion would be implemented here.
-	// For now, we provide the API hook.
 	return nil, nil, fmt.Errorf("Metal GraphExpand not fully implemented in Go layer yet")
 }
+
+func (idx *MetalIndex) AddPQ(ids []int64, codes []byte, m int) error {
+	return fmt.Errorf("AddPQ not supported in basic MetalIndex")
+}
+
+

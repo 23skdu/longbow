@@ -102,6 +102,48 @@ dot_done:
     FMOVS   F0, ret+48(FP)
     RET
 
+// func euclideanFloat64NEONKernel(a, b []float64) float32
+TEXT ·euclideanFloat64NEONKernel(SB), NOSPLIT, $0-52
+    MOVD    a_base+0(FP), R0
+    MOVD    a_len+8(FP), R1
+    MOVD    b_base+24(FP), R2
+
+    FMOVD  $0.0, F0
+    MOVD   $0, R3
+
+    CMP    $2, R1
+    BLT    f64_tail_loop
+
+f64_loop_2x:
+    FMOVD.P 8(R0), F1
+    FMOVD.P 8(R2), F2
+
+    FSUBD  F2, F1, F3   // diff = a - b
+    FMULD  F3, F3, F4   // diff * diff
+    FADDD  F4, F0, F0   // accum += diff*diff
+
+    SUB    $2, R1
+    CMP    $2, R1
+    BGE   f64_loop_2x
+
+f64_tail_loop:
+    CBZ    R1, f64_done
+
+    FMOVD.P 8(R0), F1
+    FMOVD.P 8(R2), F2
+
+    FSUBD  F2, F1, F3
+    FMULD  F3, F3, F3
+    FADDD  F3, F0, F0
+
+    SUB    $1, R1
+    B      f64_tail_loop
+
+f64_done:
+    FCVTSD  F0, F0
+    FMOVS  F0, ret+48(FP)
+    RET
+
 // func l2SquaredNEONKernel(a, b []float32) float32
 TEXT ·l2SquaredNEONKernel(SB), NOSPLIT, $0-52
     MOVD    a_base+0(FP), R0

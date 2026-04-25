@@ -123,3 +123,82 @@ Full completion of low-memory, low-power CPU-only coverage for Raspberry Pi Zero
 2. **Zero-Alloc Response Building**: Extend the zero-allocation philosophy to the response serialization path. Currently, converting Arrow RecordBatches to JSON or Flight responses involves significant heap allocations.
 3. **Kernel Fusing for GraphRAG**: Optimize GraphRAG performance by fusing activation calculation and graph traversal kernels into a single GPU dispatch.
 4. **Asynchronous Index Compaction**: Move HNSW graph compaction and level-balancing to a background priority-throttled thread.
+5. **ARM64 NEON SIMD Optimization**: The Darwin arm64 CPU benchmarks show significant room for improvement in high-dimension (768, 1024, 3072) searches. Consider adding NEON SIMD kernels for float32/float64 distance calculations.
+6. **Metal Ingest Acceleration**: Metal shows lower ingest rates than CPU for high-dim vectors. Investigate Metal-specific ingest kernels to improve throughput.
+7. **Complex Type Support**: Complex64 and complex128 show no search results - these types need optimized distance kernels.
+8. **TurboQuant Search Optimization**: turboquant2/4/8 variants show lower QPS than expected. Investigate bit-pack search kernels.
+9. **Large Batch Search Optimization**: 100k+ vector searches show significant performance drop-off. Consider batched search optimizations for large datasets.
+10. **Learned Index Activation**: Ensure the k-NN classifier is being activated in production - current results show 0 predictions.
+
+## 0.2.0 Roadmap
+
+### 1. Large Batch Search Optimization (100k+ vectors)
+
+Design and implement batched search optimizations for billion-scale datasets.
+
+#### Problem Analysis
+
+- Current single-query path doesn't scale to 100k+ vector batches
+- Memory bandwidth saturation at high batch sizes
+- SIMD utilization drops with non-aligned batch sizes
+- GPU search kernels underperform due to launching overhead
+
+#### Proposed Architecture
+
+- **Hierarchical Batching**: Divide large queries into hierarchical batches (1k → 10k → 100k → 1M vectors)
+  - Level 1: Cache-friendly 1k vector batches with SIMD prefetch
+  - Level 2: Thread-block optimized 10k batches
+  - Level 3: Multi-GPU sharded 100k+ batches
+  
+- **Streaming Distance Computation**:
+  - Process vectors in stream (pipeline) rather than all-at-once
+  - Use ring buffer for distance accumulation to reduce peak memory
+  - Implement early termination with distance thresholds
+  
+- **GPU Batch Kernels**:
+  - Vectorized batch kernel launch (single dispatch per batch)
+  - Shared memory reduction for Top-K per thread block
+  - Multi-pass merging for global Top-K aggregation
+  
+- **Adaptive Batch Sizing**:
+  - Auto-tune batch size based on vector dimension and available memory
+  - Dynamic adjustment based on observed throughput
+
+#### Implementation Phases
+
+- [ ] **Phase 1 (v0.2.0-alpha)**: CPU batch search with hierarchical batching and SIMD unrolling
+- [ ] **Phase 2 (v0.2.0-beta)**: GPU batch kernels with shared memory reduction
+- [ ] **Phase 3 (v0.2.0-stable)**: Multi-GPU sharding for 1M+ vector batches
+- [ ] **Phase 4 (v0.2.0)**: Adaptive batch sizing and early termination
+
+#### Dependency
+
+- Requires completion of GPU sharding (GPU Sharding section above)
+
+### 2. ARM64 NEON SIMD Kernels (768/1024/3072 dimensions)
+
+Implementation completed in v0.1.9 - added optimized blocked NEON kernels.
+
+- Added `euclideanFloat64NEONKernel` in `simd_arm64.s`
+- Added float64 distance wrapper in `simd_arm64.go`
+- Implemented blocked kernels for 768, 1024, 1536, 3072 dimensions
+- Updated dispatch to use optimized implementations
+
+### 3. Metal Ingest Acceleration
+
+- [ ] **Metal Ingest Kernels**: Add dedicated Metal kernels for vector ingestion
+- [ ] **Batch Encoding**: Implement batched PQ/TurboQuant encoding on Metal
+- [ ] **Async Copy**: Use Metal async compute for zero-blocking ingest
+
+### 4. Complex Type Support (COMPLETED v0.1.9)
+
+Complex64/Complex128 kernels already implemented in v0.1.9:
+- Added `euclideanComplex64Optimized` for float32 path
+- Added `euclideanComplex128Unrolled` for float64 path
+- Verified search paths in `arrow_hnsw.go`
+
+### 5. TurboQuant Bit-Pack Optimization
+
+- [ ] **Bit-Pack Distance Kernels**: Implement SIMD bit-pack distance for 2/4/8-bit TQ
+- [ ] **Lookup Table**: Use precomputed distance tables for bit operations
+- [ ] **Vectorized Comparison**: Add SIMD bitwise comparison for TQ search

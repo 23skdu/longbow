@@ -850,3 +850,28 @@ func (s *VectorStore) broadcastCDC(dataset string, batches []arrow.RecordBatch) 
 		}
 	}
 }
+func (s *VectorStore) GetNeighborsBulk(ctx context.Context, datasetName string, nodeIDs []uint32) (map[uint32][]uint32, error) {
+	ds, ok := s.getDataset(datasetName)
+	if !ok {
+		return nil, fmt.Errorf("dataset %s not found", datasetName)
+	}
+
+	ds.dataMu.RLock()
+	idx := ds.Index
+	ds.dataMu.RUnlock()
+
+	if idx == nil {
+		return nil, fmt.Errorf("index for dataset %s not initialized", datasetName)
+	}
+
+	results := make(map[uint32][]uint32, len(nodeIDs))
+	for _, id := range nodeIDs {
+		neighbors, err := idx.GetRawNeighbors(id)
+		if err != nil {
+			continue // Or log error
+		}
+		results[id] = neighbors
+	}
+
+	return results, nil
+}

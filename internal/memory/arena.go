@@ -10,6 +10,10 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/23skdu/longbow/internal/metrics"
+	"golang.org/x/sys/unix"
+	"io"
+	"encoding/binary"
+	"os"
 )
 
 // nextPowerOf2 returns the smallest power of 2 >= n
@@ -381,4 +385,149 @@ func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
 	}
 	s := slabs[slabIdx]
 	return unsafe.Pointer(&s.data[localOffset]) // #nosec G103
+}
+func (a *SlabArena) Save(w io.Writer) error {
+	slabsPtr := a.slabs.Load()
+	if slabsPtr == nil {
+		return nil
+	}
+	slabs := *slabsPtr
+
+	// Write slab capacity
+	if err := binary.Write(w, binary.LittleEndian, a.slabCap); err != nil {
+		return err
+	}
+	// Write num slabs
+	if err := binary.Write(w, binary.LittleEndian, uint32(len(slabs))); err != nil {
+		return err
+	}
+
+	for _, s := range slabs {
+		// Write slab ID and offset
+		if err := binary.Write(w, binary.LittleEndian, s.id); err != nil {
+			return err
+		}
+		if err := binary.Write(w, binary.LittleEndian, s.offset); err != nil {
+			return err
+		}
+		
+		// Align to page boundary for mmap
+		if seeker, ok := w.(io.Seeker); ok {
+			pageSize := os.Getpagesize()
+			curr, _ := seeker.Seek(0, io.SeekCurrent)
+			padding := (pageSize - (int(curr) % pageSize)) % pageSize
+			if padding > 0 {
+				if _, err := w.Write(make([]byte, padding)); err != nil {
+					return err
+				}
+			}
+		}
+
+		// Write data
+		// fmt.Printf("Saving slab %d, data len %d, offset %d\n", s.id, len(s.data), s.offset)
+		if _, err := w.Write(s.data); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (a *SlabArena) Load(r io.Reader) error {
+	var slabCap uint32
+	if err := binary.Read(r, binary.LittleEndian, &slabCap); err != nil {
+		return err
+	}
+	a.slabCap = slabCap
+
+	var numSlabs uint32
+	if err := binary.Read(r, binary.LittleEndian, &numSlabs); err != nil {
+		return err
+	}
+
+	slabs := make([]*slab, numSlabs)
+	for i := 0; i < int(numSlabs); i++ {
+		var id, offset uint32
+		if err := binary.Read(r, binary.LittleEndian, &id); err != nil {
+			return err
+		}
+		if err := binary.Read(r, binary.LittleEndian, &offset); err != nil {
+			return err
+		}
+
+		// Align to page boundary
+		if seeker, ok := r.(io.Seeker); ok {
+			pageSize := os.Getpagesize()
+			curr, _ := seeker.Seek(0, io.SeekCurrent)
+			padding := (pageSize - (int(curr) % pageSize)) % pageSize
+			if padding > 0 {
+				if _, err := seeker.Seek(int64(padding), io.SeekCurrent); err != nil {
+					return err
+				}
+			}
+		}
+
+		data := make([]byte, a.slabCap)
+		if _, err := io.ReadFull(r, data); err != nil {
+			return err
+		}
+		slabs[i] = &slab{
+			id:     id,
+			data:   data,
+			offset: offset,
+		}
+	}
+	a.slabs.Store(&slabs)
+	return nil
+}
+
+func (a *SlabArena) LoadMmap(f *os.File) error {
+	var slabCap uint32
+	if err := binary.Read(f, binary.LittleEndian, &slabCap); err != nil {
+		return err
+	}
+	a.slabCap = slabCap
+
+	var numSlabs uint32
+	if err := binary.Read(f, binary.LittleEndian, &numSlabs); err != nil {
+		return err
+	}
+
+	slabs := make([]*slab, numSlabs)
+	for i := 0; i < int(numSlabs); i++ {
+		var id, offset uint32
+		if err := binary.Read(f, binary.LittleEndian, &id); err != nil {
+			return err
+		}
+		if err := binary.Read(f, binary.LittleEndian, &offset); err != nil {
+			return err
+		}
+
+		// Calculate current file offset and align
+		currOff, _ := f.Seek(0, io.SeekCurrent)
+		pageSize := os.Getpagesize()
+		padding := (pageSize - (int(currOff) % pageSize)) % pageSize
+		if padding > 0 {
+			currOff, _ = f.Seek(int64(padding), io.SeekCurrent)
+		}
+		
+		// Mmap the slab data
+		// fmt.Printf("Mmapping slab %d at offset %d size %d (pageSize %d)\n", i, currOff, a.slabCap, pageSize)
+		data, err := unix.Mmap(int(f.Fd()), currOff, int(a.slabCap), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+		if err != nil {
+			return fmt.Errorf("mmap slab %d failed: %v", i, err)
+		}
+		
+		// Advance file pointer
+		if _, err := f.Seek(int64(a.slabCap), io.SeekCurrent); err != nil {
+			return err
+		}
+
+		slabs[i] = &slab{
+			id:     id,
+			data:   data,
+			offset: offset,
+		}
+	}
+	a.slabs.Store(&slabs)
+	return nil
 }

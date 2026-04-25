@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Comprehensive example demonstrating Longbow 0.2.0 features:
+Comprehensive example demonstrating Longbow 0.1.9 features:
 - 2-bit TurboQuant
 - PID-based Autonomous efSearch Tuning
 - Direct Arrow-backed Persistent MMap
@@ -16,7 +16,7 @@ import pandas as pd
 from longbow import LongbowClient
 
 def run_example():
-    print("=== Longbow 0.2.0 Feature Showcase ===")
+    print("=== Longbow 0.1.9 Feature Showcase ===")
     
     # 1. Initialization
     client = LongbowClient(uri="grpc://localhost:3000", meta_uri="grpc://localhost:3001")

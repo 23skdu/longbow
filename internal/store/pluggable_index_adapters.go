@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"bytes"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -146,6 +147,22 @@ func (h *HNSWPluggableAdapter) Save(path string) error {
 	defer f.Close()
 
 	return gob.NewEncoder(f).Encode(h.vectors)
+}
+
+func (h *HNSWPluggableAdapter) ExportState() ([]byte, error) {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(h.vectors); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (h *HNSWPluggableAdapter) ImportState(data []byte) error {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	return gob.NewDecoder(bytes.NewReader(data)).Decode(&h.vectors)
 }
 
 func (h *HNSWPluggableAdapter) Load(path string) error {

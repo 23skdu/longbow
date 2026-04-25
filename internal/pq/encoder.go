@@ -6,6 +6,8 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/simd"
+	"bytes"
+	"encoding/gob"
 )
 
 // PQEncoder implements Product Quantization.
@@ -197,4 +199,16 @@ func UnpackFloat32sToBytes(floats []float32, size int) []byte {
 	floatBytes := unsafe.Slice((*byte)(unsafe.Pointer(&floats[0])), len(floats)*4) // #nosec G103
 	copy(res, floatBytes[:size])
 	return res
+}
+
+func (e *PQEncoder) ExportState() ([]byte, error) {
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(e); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (e *PQEncoder) ImportState(data []byte) error {
+	return gob.NewDecoder(bytes.NewReader(data)).Decode(e)
 }

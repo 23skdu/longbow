@@ -36,6 +36,7 @@ type ShardedHNSWConfig struct {
 	ShardSplitThreshold    int
 	UseRingSharding        bool // If true, use Consistent Hashing (Ring). If false, use Linear Range.
 	PackedAdjacencyEnabled bool // If true, use thread-safe packed neighbor storage (v0.1.4)
+	IndexFactory           func(shardIdx int) VectorIndex
 }
 
 func (c ShardedHNSWConfig) Validate() error {
@@ -177,6 +178,13 @@ func NewShardedHNSW(config ShardedHNSWConfig, dataset *Dataset) *ShardedHNSW {
 }
 
 func (s *ShardedHNSW) newShard(shardIdx int) *hnswShard {
+	if s.config.IndexFactory != nil {
+		idx := s.config.IndexFactory(shardIdx)
+		if idx != nil {
+			return newHnswShard(idx)
+		}
+	}
+
 	// Map ShardedHNSWConfig to ArrowHNSWConfig
 	arrowConfig := DefaultArrowHNSWConfig()
 	arrowConfig.M = s.config.M

@@ -900,6 +900,7 @@ type MetricsCollector interface {
 	GetRecall(collection string) float64
 	GetIndexSize(collection string) float64
 	GetMemoryUsage(collection string) float64
+	GetCurrentIndex(collection string) IndexType
 }
 
 type IndexAdaptationConfig struct {
@@ -996,10 +997,14 @@ func (a *RuntimeIndexAdapter) checkAndAdapt() {
 	collections := a.getMonitoredCollections()
 
 	for _, collection := range collections {
-		metrics := a.collectMetrics(collection)
+		m := a.collectMetrics(collection)
+		currentIndex := IndexTypeHNSW
+		if a.metricsCollector != nil {
+			currentIndex = a.metricsCollector.GetCurrentIndex(collection)
+		}
 
-		if a.shouldAdapt(metrics) {
-			a.triggerAdaptation(collection, metrics)
+		if a.shouldAdapt(m) {
+			a.triggerAdaptation(collection, m, currentIndex)
 		}
 	}
 }
@@ -1012,38 +1017,38 @@ func (a *RuntimeIndexAdapter) getMonitoredCollections() []string {
 }
 
 func (a *RuntimeIndexAdapter) collectMetrics(collection string) AdaptationMetrics {
-	var metrics AdaptationMetrics
+	var m AdaptationMetrics
 
 	if a.metricsCollector != nil {
-		metrics.P50LatencyMs, metrics.P99LatencyMs, metrics.AvgLatencyMs = a.metricsCollector.GetQueryLatencies(collection)
-		metrics.QueriesPerSec = a.metricsCollector.GetQueriesPerSecond(collection)
-		metrics.RecallAchieved = a.metricsCollector.GetRecall(collection)
-		metrics.IndexSizeMB = a.metricsCollector.GetIndexSize(collection)
-		metrics.MemoryUsageMB = a.metricsCollector.GetMemoryUsage(collection)
+		m.P50LatencyMs, m.P99LatencyMs, m.AvgLatencyMs = a.metricsCollector.GetQueryLatencies(collection)
+		m.QueriesPerSec = a.metricsCollector.GetQueriesPerSecond(collection)
+		m.RecallAchieved = a.metricsCollector.GetRecall(collection)
+		m.IndexSizeMB = a.metricsCollector.GetIndexSize(collection)
+		m.MemoryUsageMB = a.metricsCollector.GetMemoryUsage(collection)
 	} else {
 		// More realistic simulated metrics for testing/dev if no collector is provided
-		metrics.AvgLatencyMs = 12.5
-		metrics.P50LatencyMs = 8.2
-		metrics.P99LatencyMs = 45.0
-		metrics.RecallAchieved = 0.99
-		metrics.QueriesPerSec = 450.0
-		metrics.IndexSizeMB = 256.0
-		metrics.MemoryUsageMB = 128.0
+		m.AvgLatencyMs = 12.5
+		m.P50LatencyMs = 8.2
+		m.P99LatencyMs = 45.0
+		m.RecallAchieved = 0.99
+		m.QueriesPerSec = 450.0
+		m.IndexSizeMB = 256.0
+		m.MemoryUsageMB = 128.0
 	}
 
-	return metrics
+	return m
 }
 
-func (a *RuntimeIndexAdapter) shouldAdapt(metrics AdaptationMetrics) bool {
-	if metrics.AvgLatencyMs > a.config.LatencyThresholdMs {
-		a.logger.Info().Float64("latency_ms", metrics.AvgLatencyMs).
+func (a *RuntimeIndexAdapter) shouldAdapt(m AdaptationMetrics) bool {
+	if m.AvgLatencyMs > a.config.LatencyThresholdMs {
+		a.logger.Info().Float64("latency_ms", m.AvgLatencyMs).
 			Float64("threshold", a.config.LatencyThresholdMs).
 			Msg("Latency threshold exceeded")
 		return true
 	}
 
-	if metrics.RecallAchieved < a.config.RecallThreshold {
-		a.logger.Info().Float64("recall", metrics.RecallAchieved).
+	if m.RecallAchieved < a.config.RecallThreshold {
+		a.logger.Info().Float64("recall", m.RecallAchieved).
 			Float64("threshold", a.config.RecallThreshold).
 			Msg("Recall threshold below target")
 		return true
@@ -1052,12 +1057,12 @@ func (a *RuntimeIndexAdapter) shouldAdapt(metrics AdaptationMetrics) bool {
 	return false
 }
 
-func (a *RuntimeIndexAdapter) triggerAdaptation(collection string, metrics AdaptationMetrics) {
+func (a *RuntimeIndexAdapter) triggerAdaptation(collection string, m AdaptationMetrics, currentIndex IndexType) {
 	a.stats.AdaptationsTriggered.Add(1)
 
 	features := QueryFeatures{
-		DatasetSize:     int(metrics.IndexSizeMB * 1000),
-		SearchK:         int(metrics.QueriesPerSec / 100),
+		DatasetSize:     int(m.IndexSizeMB * 1000),
+		SearchK:         int(m.QueriesPerSec / 100),
 		QueryComplexity: "medium",
 	}
 
@@ -1065,18 +1070,19 @@ func (a *RuntimeIndexAdapter) triggerAdaptation(collection string, metrics Adapt
 	// This teaches the model that the CURRENT index is performaning poorly under these features.
 	a.predictor.AddTrainingSample(TrainingSample{
 		Features: features,
-		Latency:  time.Duration(metrics.AvgLatencyMs * float64(time.Millisecond)),
-		Recall:   metrics.RecallAchieved,
-		Index:    IndexTypeHNSW, // Assuming HNSW for now, should ideally pull from ds
+		Latency:  time.Duration(m.AvgLatencyMs * float64(time.Millisecond)),
+		Recall:   m.RecallAchieved,
+		Index:    currentIndex,
 	})
 
 	prediction := a.predictor.Predict(features)
 
 	adaptation := &IndexAdaptation{
 		CollectionName: collection,
+		CurrentIndex:   currentIndex,
 		ProposedIndex:  prediction.RecommendedIndex,
-		TriggerReason:  a.determineTriggerReason(metrics),
-		Metrics:        metrics,
+		TriggerReason:  a.determineTriggerReason(m),
+		Metrics:        m,
 		Timestamp:      time.Now(),
 		Status:         AdaptationStatusPending,
 		Features:       features,
@@ -1086,6 +1092,9 @@ func (a *RuntimeIndexAdapter) triggerAdaptation(collection string, metrics Adapt
 	a.adaptations[collection] = adaptation
 	a.adaptationMu.Unlock()
 
+	// Record metric
+	metrics.LearnedIndexAdaptationsTotal.WithLabelValues(string(currentIndex), string(prediction.RecommendedIndex), "triggered").Inc()
+
 	a.logger.Info().
 		Str("collection", collection).
 		Str("proposed", string(adaptation.ProposedIndex)).
@@ -1093,11 +1102,11 @@ func (a *RuntimeIndexAdapter) triggerAdaptation(collection string, metrics Adapt
 		Msg("Triggering index adaptation")
 }
 
-func (a *RuntimeIndexAdapter) determineTriggerReason(metrics AdaptationMetrics) string {
-	if metrics.AvgLatencyMs > a.config.LatencyThresholdMs {
+func (a *RuntimeIndexAdapter) determineTriggerReason(m AdaptationMetrics) string {
+	if m.AvgLatencyMs > a.config.LatencyThresholdMs {
 		return "high_latency"
 	}
-	if metrics.RecallAchieved < a.config.RecallThreshold {
+	if m.RecallAchieved < a.config.RecallThreshold {
 		return "low_recall"
 	}
 	return "performance_degradation"
@@ -1149,6 +1158,7 @@ func (a *RuntimeIndexAdapter) CompleteAdaptation(collection string, success bool
 	if success {
 		adaptation.Status = AdaptationStatusComplete
 		a.stats.AdaptationsCompleted.Add(1)
+		metrics.LearnedIndexAdaptationsTotal.WithLabelValues(string(adaptation.CurrentIndex), string(adaptation.ProposedIndex), "completed").Inc()
 		a.logger.Info().Str("collection", collection).Msg("Index adaptation completed")
 
 		// Record successful adaptation as a positive signal
@@ -1162,6 +1172,7 @@ func (a *RuntimeIndexAdapter) CompleteAdaptation(collection string, success bool
 	} else {
 		adaptation.Status = AdaptationStatusFailed
 		a.stats.AdaptationsFailed.Add(1)
+		metrics.LearnedIndexAdaptationsTotal.WithLabelValues(string(adaptation.CurrentIndex), string(adaptation.ProposedIndex), "failed").Inc()
 		a.logger.Error().Str("collection", collection).Msg("Index adaptation failed")
 
 		// Record failure as a negative signal (failure decomposition)
@@ -1209,7 +1220,7 @@ func (a *RuntimeIndexAdapter) Rollback(collection string) error {
 
 	if err := a.switcher.SwitchIndex(collection, target); err != nil {
 		a.stats.AdaptationsFailed.Add(1)
-		metrics.LearnedIndexAdaptationsTotal.WithLabelValues("rollback_failed").Inc()
+				metrics.LearnedIndexAdaptationsTotal.WithLabelValues(string(adaptation.ProposedIndex), string(adaptation.CurrentIndex), "rollback_failed").Inc()
 		a.logger.Error().Err(err).Str("collection", collection).Msg("Rollback: index switch failed")
 		return fmt.Errorf("rollback switch failed for %q: %w", collection, err)
 	}
@@ -1224,7 +1235,7 @@ func (a *RuntimeIndexAdapter) Rollback(collection string) error {
 	})
 
 	a.stats.RollbacksPerformed.Add(1)
-	metrics.LearnedIndexAdaptationsTotal.WithLabelValues("rolled_back").Inc()
+		metrics.LearnedIndexAdaptationsTotal.WithLabelValues(string(adaptation.ProposedIndex), string(adaptation.CurrentIndex), "rolled_back").Inc()
 	a.logger.Info().
 		Str("collection", collection).
 		Str("reverted_to", string(target)).

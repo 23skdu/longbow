@@ -110,6 +110,10 @@ func (i *TPUIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float
 	return resIDs, resDists, nil
 }
 
+func (i *TPUIndex) AddPQ(ids []int64, codes []byte, m int) error {
+	return fmt.Errorf("AddPQ not implemented for TPUIndex (experimental stub)")
+}
+
 func (i *TPUIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []float32, error) {
 	return nil, nil, fmt.Errorf("SearchPQ not implemented for TPUIndex (emulated)")
 }
@@ -141,7 +145,7 @@ func (i *TPUIndex) DeviceID() int {
 func (i *TPUIndex) GetDeviceInfo() (*types.GPUInfo, error) {
 	info, err := i.backend.GetDeviceInfo()
 	if err == nil {
-		info.Name = "[EMULATED] " + info.Name
+		info.Name = "[EXPERIMENTAL STUB] " + info.Name
 	}
 	return info, err
 }

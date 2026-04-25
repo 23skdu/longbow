@@ -11,11 +11,11 @@ import (
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
-	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
-	"github.com/apache/arrow-go/v18/arrow"
-	"io"
+	"bytes"
+	"encoding/gob"
+	"os"
 )
 
 // IVFHNSWConfig holds configuration for the IVF-HNSW composite index
@@ -317,6 +317,14 @@ func (idx *IVFHNSWCompositeIndex) SearchVectorsWithBitmap(ctx context.Context, q
 }
 
 // Interface compliance stubs
+func (idx *IVFHNSWCompositeIndex) AddByLocation(batchIdx, rowIdx int) error {
+	return fmt.Errorf("AddByLocation not supported for IVF-HNSW (use Add)")
+}
+
+func (idx *IVFHNSWCompositeIndex) GetVectorID(loc Location) (uint64, bool) {
+	return 0, false
+}
+
 func (idx *IVFHNSWCompositeIndex) SearchVectors(query []float32, k int, options SearchOptions) []types.SearchResult {
 	results, _ := idx.SearchVectorsWithBitmap(context.Background(), query, k, nil, nil)
 	return results
@@ -333,28 +341,121 @@ func (idx *IVFHNSWCompositeIndex) GetDimension() uint32 { return uint32(idx.dim)
 func (idx *IVFHNSWCompositeIndex) SetParallelSearchConfig(c types.ParallelSearchConfig) {}
 func (idx *IVFHNSWCompositeIndex) GetParallelSearchConfig() types.ParallelSearchConfig { return types.ParallelSearchConfig{} }
 func (idx *IVFHNSWCompositeIndex) IsSharded() bool { return false }
-func (idx *IVFHNSWCompositeIndex) ExportState() ([]byte, error) { return nil, nil }
-func (idx *IVFHNSWCompositeIndex) ImportState(d []byte) error { return nil }
-func (idx *IVFHNSWCompositeIndex) GetPQEncoder() *pq.PQEncoder { return idx.opqEncoder.PQEncoder }
+// ivfHNSWCompositeState is used for serialization
+type ivfHNSWCompositeState struct {
+	Config     IVFHNSWConfig
+	Dim        int
+	NextID     uint32
+	CoarseHNSW []byte
+	OPQ        []byte
+	Clusters   []IVFCluster
+}
 
-// Required by PluggableVectorIndex interface but not essential for IVF-HNSW
-func (idx *IVFHNSWCompositeIndex) AddByLocation(b, r int) error { return nil }
-func (idx *IVFHNSWCompositeIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, r, b int) (uint32, error) { return 0, nil }
-func (idx *IVFHNSWCompositeIndex) GetEntryPoint() uint32 { return 0 }
-func (idx *IVFHNSWCompositeIndex) GetLocation(id uint32) (any, bool) { return nil, false }
-func (idx *IVFHNSWCompositeIndex) GetVectorID(loc Location) (uint64, bool) { return 0, false }
-func (idx *IVFHNSWCompositeIndex) SetIndexedColumns(cols []string) {}
-func (idx *IVFHNSWCompositeIndex) GetRawNeighbors(id uint32) ([]uint32, error) { return nil, nil }
-func (idx *IVFHNSWCompositeIndex) GetNeighbors(ctx context.Context, id types.VectorID, k int) ([]types.SearchResult, error) { return nil, nil }
-func (idx *IVFHNSWCompositeIndex) PreWarm(s int) {}
-func (idx *IVFHNSWCompositeIndex) Warmup() int { return idx.Size() }
-func (idx *IVFHNSWCompositeIndex) EstimateMemory() int64 { return 0 }
-func (idx *IVFHNSWCompositeIndex) ExportGraph(w io.Writer) error { return nil }
-func (idx *IVFHNSWCompositeIndex) ImportGraph(r io.Reader) error { return nil }
-func (idx *IVFHNSWCompositeIndex) ExportDelta(v uint64) (*types.DeltaSync, error) { return nil, nil }
-func (idx *IVFHNSWCompositeIndex) ApplyDelta(d *types.DeltaSync) error { return nil }
-func (idx *IVFHNSWCompositeIndex) RemapLocations(ctx context.Context, m map[uint32]any) error { return nil }
-func (idx *IVFHNSWCompositeIndex) SearchVectorsInRange(ctx context.Context, q any, t float32, f []query.Filter, o any) ([]types.SearchResult, error) { return nil, nil }
-func (idx *IVFHNSWCompositeIndex) TrainPQ(v [][]float32) error { return idx.Train(v) }
-func (idx *IVFHNSWCompositeIndex) Save(path string) error { return nil }
-func (idx *IVFHNSWCompositeIndex) Load(path string) error { return nil }
+func (idx *IVFHNSWCompositeIndex) ExportState() ([]byte, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	var coarseData []byte
+	var err error
+	if idx.coarseHNSW != nil {
+		coarseData, err = idx.coarseHNSW.ExportState()
+		if err != nil {
+			return nil, fmt.Errorf("failed to export coarse HNSW state: %w", err)
+		}
+	}
+
+	opqData, err := idx.opqEncoder.ExportState()
+	if err != nil {
+		return nil, fmt.Errorf("failed to export OPQ state: %w", err)
+	}
+
+	state := ivfHNSWCompositeState{
+		Config:     idx.config,
+		Dim:        idx.dim,
+		NextID:     idx.nextID,
+		CoarseHNSW: coarseData,
+		OPQ:        opqData,
+		Clusters:   idx.clusters,
+	}
+
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(state); err != nil {
+		return nil, fmt.Errorf("failed to serialize state: %w", err)
+	}
+	return buf.Bytes(), nil
+}
+
+func (idx *IVFHNSWCompositeIndex) Save(path string) error {
+	data, err := idx.ExportState()
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(path, data, 0644)
+}
+
+func (idx *IVFHNSWCompositeIndex) Load(path string) error {
+	data, err := os.ReadFile(path)
+	if err != nil {
+		return err
+	}
+	return idx.ImportState(data)
+}
+
+func (idx *IVFHNSWCompositeIndex) ImportState(data []byte) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	var state ivfHNSWCompositeState
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&state); err != nil {
+		return fmt.Errorf("failed to deserialize state: %w", err)
+	}
+
+	idx.config = state.Config
+	idx.dim = state.Dim
+	idx.nextID = state.NextID
+	idx.clusters = state.Clusters
+
+	opq, err := pq.NewOPQEncoder(idx.dim, idx.config.M, idx.config.K)
+	if err != nil {
+		return err
+	}
+	if err := opq.ImportState(state.OPQ); err != nil {
+		return err
+	}
+	idx.opqEncoder = opq
+
+	if len(state.CoarseHNSW) > 0 {
+		h, err := createHNSWIndex(IndexConfig{
+			Type:      IndexTypeHNSW,
+			Dimension: idx.dim,
+			HNSWConfig: &ArrowHNSWConfig{
+				M:              idx.config.HNSWM,
+				EfConstruction: int32(idx.config.HNSWEfConstruction), // #nosec G115
+			},
+		})
+		if err != nil {
+			return err
+		}
+		if err := h.ImportState(state.CoarseHNSW); err != nil {
+			return err
+		}
+		idx.coarseHNSW = h
+	}
+
+	return nil
+}
+
+func (idx *IVFHNSWCompositeIndex) ApplyDelta(d *types.DeltaSync) error {
+	// For 0.1.9, we'll implement a basic version that adds vectors from delta
+	// This is a placeholder for the full anti-entropy logic
+	return nil
+}
+
+func (idx *IVFHNSWCompositeIndex) GetPQEncoder() *pq.PQEncoder {
+	return idx.opqEncoder.PQEncoder
+}
+
+func (idx *IVFHNSWCompositeIndex) GetNeighbors(ctx context.Context, id types.VectorID, k int) ([]types.SearchResult, error) {
+	// Not directly supported on the composite index (usually needs the full vector)
+	return nil, fmt.Errorf("GetNeighbors not supported for IVF-HNSW")
+}

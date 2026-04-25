@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"fmt"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/pq"
@@ -176,6 +175,11 @@ func (m *MockVectorIndex) RemapLocations(ctx context.Context, mapping map[uint32
 	return args.Error(0)
 }
 
+func (m *MockVectorIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
+	args := m.Called(ctx, q, threshold, filters, options)
+	return args.Get(0).([]SearchResult), args.Error(1)
+}
+
 // Additional interface requirements?
 // Note: Some methods in interfaces.go used types.VectorIndexer aliases.
 // GetPQEncoder returns *pq.PQEncoder which is internal. We skip precise mocking unless needed.
@@ -184,29 +188,22 @@ func (m *MockVectorIndex) RemapLocations(ctx context.Context, mapping map[uint32
 func TestShardedHNSW_WithRefactor(t *testing.T) {
 	mockIndex := new(MockVectorIndex)
 
-	// Since we haven't updated the code yet, this config struct key will fail compilation if we try to set it directly.
-	// But we are creating the file "first".
-	// The USER ASKED to write unit tests *first*.
-	// So we assume the API exists.
-
 	config := ShardedHNSWConfig{
 		NumShards: 2,
 		Dimension: 128,
-		// IndexFactory: func(shardIdx int) VectorIndex {
-		// 	return mockIndex
-		// },
+		IndexFactory: func(shardIdx int) VectorIndex {
+			return mockIndex
+		},
 	}
 
-	// Because code doesn't exist, we comment out the factory assignment above and will uncomment it when implementing.
-	// OR we can use map/setters if we want to be sneaky, but let's just create the file with the plan to enable it.
-	// Actually, Go code must compile. So I will create the file with the test *commented out* or use a placeholder
-	// and then uncomment later, OR I modify the struct FIRST (it's safe to add fields usually) then write test.
+	s := NewShardedHNSW(config, nil)
+	if len(s.shards) != 2 {
+		t.Errorf("expected 2 shards, got %d", len(s.shards))
+	}
 
-	// BUT, I can add the field to the config struct in the same step/plan.
-	// To respect "write unit test first", I will write a test that fails to compile, but I can't run it.
-	// So I will modify the code to include the field, THEN write the test, THEN run it. This is practically "first".
-
-	_ = config
-	_ = mockIndex
-	fmt.Println("Test placeholder until IndexFactory is added")
+	for i, shard := range s.shards {
+		if shard.index != VectorIndex(mockIndex) {
+			t.Errorf("shard %d index is not the mock index", i)
+		}
+	}
 }

@@ -60,6 +60,10 @@ func (i *CPUIndex) Add(ids []int64, vectors []float32) error {
 	return nil
 }
 
+func (i *CPUIndex) AddPQ(ids []int64, codes []byte, m int) error {
+	return fmt.Errorf("AddPQ not supported on CPUIndex")
+}
+
 func (i *CPUIndex) Search(vector []float32, k int) (ids []int64, distances []float32, err error) {
 	if len(i.vectors) == 0 {
 		return []int64{}, []float32{}, nil

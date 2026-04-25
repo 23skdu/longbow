@@ -2,6 +2,98 @@
 #include <device_launch_parameters.h>
 #include <cuda_fp16.h>
 #include <math.h>
+#include <float.h>
+
+// Top-K implementation using shared memory heap
+#define MAX_K 1024
+
+typedef struct {
+    float dist;
+    int64_t id;
+} ResultPair;
+
+__device__ void heap_push(ResultPair* heap, int* size, float dist, int64_t id, int k) {
+    if (*size < k) {
+        heap[*size] = {dist, id};
+        int curr = *size;
+        while (curr > 0) {
+            int parent = (curr - 1) / 2;
+            if (heap[curr].dist > heap[parent].dist) {
+                ResultPair tmp = heap[curr];
+                heap[curr] = heap[parent];
+                heap[parent] = tmp;
+                curr = parent;
+            } else break;
+        }
+        (*size)++;
+    } else if (dist < heap[0].dist) {
+        heap[0] = {dist, id};
+        int curr = 0;
+        while (true) {
+            int left = 2 * curr + 1;
+            int right = 2 * curr + 2;
+            int largest = curr;
+            if (left < k && heap[left].dist > heap[largest].dist) largest = left;
+            if (right < k && heap[right].dist > heap[largest].dist) largest = right;
+            if (largest != curr) {
+                ResultPair tmp = heap[curr];
+                heap[curr] = heap[largest];
+                heap[largest] = tmp;
+                curr = largest;
+            } else break;
+        }
+    }
+}
+
+__global__ void select_topk_kernel(const float* distances, const int64_t* ids, int n, int k, float* outDistances, int64_t* outIDs) {
+    // Each thread maintains its own small heap if K is very small, 
+    // but here we'll use a block-level approach with shared memory.
+    // For simplicity and correctness in this phase, each thread will process a portion
+    // and we'll use a single-threaded merge at the end of the block, or better, 
+    // use atomic operations if we had a global heap.
+    
+    // Improved: Each thread maintains a local heap in registers (if K is small)
+    // or we use a shared memory heap with a lock (slow).
+    // Let's use a simpler approach: Each thread block produces one Top-K list.
+    
+    extern __shared__ char s_mem[];
+    ResultPair* blockHeap = (ResultPair*)s_mem; // Shared by block
+    __shared__ int blockHeapSize;
+    __shared__ int lock;
+
+    if (threadIdx.x == 0) {
+        blockHeapSize = 0;
+        lock = 0;
+    }
+    __syncthreads();
+
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    int stride = blockDim.x * gridDim.x;
+
+    for (int i = idx; i < n; i += stride) {
+        float d = distances[i];
+        int64_t id = ids[i];
+        
+        // Critical section for block-level heap
+        bool done = false;
+        while (!done) {
+            if (atomicCAS(&lock, 0, 1) == 0) {
+                heap_push(blockHeap, &blockHeapSize, d, id, k);
+                atomicExch(&lock, 0);
+                done = true;
+            }
+        }
+    }
+
+    __syncthreads();
+
+    if (threadIdx.x == 0) {
+        for (int i = 0; i < blockHeapSize; i++) {
+            outDistances[blockIdx.x * k + i] = blockHeap[i].dist;
+            outIDs[blockIdx.x * k + i] = blockHeap[i].id;
+        }
+    }
+}
 
 extern "C" {
 
@@ -214,6 +306,13 @@ void launch_turboquant_distance_kernel(const float* query, const unsigned char* 
     int threadsPerBlock = 256;
     int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
     turboquant_distance_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(query, tqData, distances, dim, pow2, bitsPerAngle, count);
+}
+
+void launch_topk_kernel(const float* distances, const int64_t* ids, int n, int k, float* outDistances, int64_t* outIDs, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = 1; // For now, single block merge for simplicity, or 2-pass
+    size_t sharedMemSize = k * sizeof(ResultPair);
+    select_topk_kernel<<<blocksPerGrid, threadsPerBlock, sharedMemSize, stream>>>(distances, ids, n, k, outDistances, outIDs);
 }
 
 }

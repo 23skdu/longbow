@@ -26,6 +26,7 @@ Longbow implements a **Zero-Copy** data plane using Apache Arrow. Vectors are ac
 ### IVF-HNSW Composite Index & OPQ
 
 For extreme billion-scale datasets, Longbow supports an **IVF-HNSW Composite Index** combined with **Optimized Product Quantization (OPQ)**:
+
 - **IVF-HNSW**: Inverted File centroids are organized in an HNSW graph to accelerate coarse quantization.
 - **OPQ**: Learns orthogonal transformations during centroid training, greatly reducing quantization error compared to standard PQ.
 - **GPU Acceleration**: Centroid assignment and K-Means training are highly parallelized using native **CUDA** (NVIDIA) and **Metal** (Apple Silicon) kernels to prevent training bottlenecks.
@@ -118,6 +119,7 @@ Temporal search leverages versioned snapshots of the data plane to allow searchi
 ### Temporal Aggregation Engine
 
 Longbow includes a dedicated aggregation engine to process scalar metadata over time bounds without needing an external OLAP database.
+
 - Supports instant bucketing operations (`COUNT`, `MIN`, `MAX`, `MEAN`, `SUM`) over specified intervals (e.g. 1-hour windows).
 - Directly processes the latest state of vectors using a read-optimized B-Tree style index (`TemporalTree`).
 

@@ -22,7 +22,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"github.com/apache/arrow-go/v18/arrow/ipc"
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -713,7 +712,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	trackAlloc := lmem.NewTrackingAllocator(s.pooledMem)
-	r, err := flight.NewRecordReader(stream, ipc.WithAllocator(trackAlloc))
+	r, err := NewParallelRecordReader(stream, trackAlloc)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("DoPut failed to create reader")
 		return err

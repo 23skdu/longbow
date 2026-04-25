@@ -37,8 +37,8 @@ run_bench "cpu" "128,384" "500,1000,5000,15000,50000,100000" "$DTYPES" "low_dim"
 run_bench "metal" "128,384" "500,1000,5000,15000,50000,100000" "$DTYPES" "low_dim"
 
 # Group 2: 768, 1024, 3072
-run_bench "cpu" "768,1024,3072" "500,1000,5000,10000,20000" "$DTYPES" "high_dim"
-run_bench "metal" "768,1024,3072" "500,1000,5000,10000,20000" "$DTYPES" "high_dim"
+run_bench "cpu" "768,1024,3072" "500,1000,5000,10000,20000,50000" "$DTYPES" "high_dim"
+run_bench "metal" "768,1024,3072" "500,1000,5000,10000,20000,50000" "$DTYPES" "high_dim"
 
 echo "All LOCAL benchmarks complete!"
 date

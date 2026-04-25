@@ -55,6 +55,15 @@ func (m *MockIndex) Add(ids []int64, vectors []float32) error {
 	return nil
 }
 
+func (m *MockIndex) AddPQ(ids []int64, codes []byte, m_val int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.closed {
+		return fmt.Errorf("index closed")
+	}
+	return nil
+}
+
 func (m *MockIndex) Search(vector []float32, k int) ([]int64, []float32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

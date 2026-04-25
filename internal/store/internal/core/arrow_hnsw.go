@@ -931,7 +931,7 @@ func (h *ArrowHNSW) ensureReady() {
 }
 
 // searchGPU performs automatic GPU dispatch based on data type
-func (h *ArrowHNSW) searchGPU(ctx context.Context, queryVec any, k int) ([]types.SearchResult, error) {
+func (h *ArrowHNSW) searchGPU(_ context.Context, queryVec any, k int) ([]types.SearchResult, error) {
 	if h.gpuIndex == nil {
 		return nil, fmt.Errorf("GPU index not initialized")
 	}
@@ -1355,7 +1355,7 @@ func (h *ArrowHNSW) GetLayerNeighbors(id uint32, layer int) ([]uint32, error) {
 
 	maxLevel := h.GetMaxLevel()
 	if maxLevel < 0 || int64(id) >= h.nodeCount.Load() {
-		return nil, fmt.Errorf("vector id %d not found in index", id)
+		return nil, nil
 	}
 
 	if layer < 0 || int32(layer) > maxLevel { // #nosec G115

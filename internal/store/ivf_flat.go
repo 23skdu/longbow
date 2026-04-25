@@ -435,6 +435,14 @@ func (ivf *IVFFlatIndex) Close() error {
 	return nil
 }
 
+func (ivf *IVFFlatIndex) ExportState() ([]byte, error) {
+	return nil, nil
+}
+
+func (ivf *IVFFlatIndex) ImportState(data []byte) error {
+	return nil
+}
+
 func (ivf *IVFFlatIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return nil
 }

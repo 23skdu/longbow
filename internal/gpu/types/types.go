@@ -94,6 +94,8 @@ type Index interface {
 	Add(ids []int64, vectors []float32) error
 	Search(vector []float32, k int) (ids []int64, distances []float32, err error)
 	SearchBatch(vectors [][]float32, k int) (ids [][]int64, distances [][]float32, err error)
+	// PQ methods
+	AddPQ(ids []int64, codes []byte, m int) error
 	SearchPQ(lookupTable []float32, m int, k int) (ids []int64, distances []float32, err error)
 	TrainPQ(vectors []float32, m int, k int) error
 	EncodePQ(vectors []float32) ([]byte, error)

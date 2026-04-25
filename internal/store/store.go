@@ -176,6 +176,9 @@ type VectorStore struct {
 	temporalIndex      *TemporalIndex
 	temporalAggregator *TemporalAggregator
 	temporalConfig TemporalConfig
+
+	// Quantization auto-tuner (v0.1.9)
+	quantTuner *QuantizationTuner
 }
 
 type ingestionJob struct {
@@ -277,6 +280,15 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	s.pool = NewFlightClientPool(DefaultFlightClientPoolConfig())
 
 	s.admission = NewAdmissionController(&s.maxMemory, &s.currentMemory, nil)
+
+	// Initialize Quantization Auto-Tuner (v0.1.9)
+	s.quantTuner = NewQuantizationTuner(s.logger, s)
+	s.workerWg.Add(1)
+	go func() {
+		defer s.workerWg.Done()
+		s.quantTuner.Start(s.ctx)
+	}()
+
 	return s
 }
 

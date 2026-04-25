@@ -272,6 +272,10 @@ func (w *pooledIndexWrapper) Add(ids []int64, vectors []float32) error {
 	return w.pooled.index.Add(ids, vectors)
 }
 
+func (w *pooledIndexWrapper) AddPQ(ids []int64, codes []byte, m int) error {
+	return w.pooled.index.AddPQ(ids, codes, m)
+}
+
 func (w *pooledIndexWrapper) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
 	return w.pooled.index.AddTurboQuant(ids, tqData, bitsPerAngle)
 }

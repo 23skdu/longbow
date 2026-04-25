@@ -6,6 +6,8 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"gonum.org/v1/gonum/mat"
+	"bytes"
+	"encoding/gob"
 )
 
 // OPQEncoder implements Optimized Product Quantization (OPQ).
@@ -185,4 +187,37 @@ func (e *OPQEncoder) Decode(codes []byte) ([]float32, error) {
 	}
 
 	return original, nil
+}
+
+type opqState struct {
+	PQState  []byte
+	Rotation []byte
+}
+
+func (e *OPQEncoder) ExportState() ([]byte, error) {
+	pqData, err := e.PQEncoder.ExportState()
+	if err != nil {
+		return nil, err
+	}
+	rotData, err := e.RotationMatrix.MarshalBinary()
+	if err != nil {
+		return nil, err
+	}
+	state := opqState{PQState: pqData, Rotation: rotData}
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(state); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (e *OPQEncoder) ImportState(data []byte) error {
+	var state opqState
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&state); err != nil {
+		return err
+	}
+	if err := e.PQEncoder.ImportState(state.PQState); err != nil {
+		return err
+	}
+	return e.RotationMatrix.UnmarshalBinary(state.Rotation)
 }

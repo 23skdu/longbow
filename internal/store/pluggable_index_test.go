@@ -415,6 +415,14 @@ func (m *mockPluggableIndex) Close() error {
 	return nil
 }
 
+func (m *mockPluggableIndex) ExportState() ([]byte, error) {
+	return []byte("mock_state"), nil
+}
+
+func (m *mockPluggableIndex) ImportState(data []byte) error {
+	return nil
+}
+
 // Legacy interface compatibility
 func (m *mockPluggableIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return nil

@@ -572,6 +572,14 @@ func (d *DiskANNIndex) Close() error {
 	return nil
 }
 
+func (d *DiskANNIndex) ExportState() ([]byte, error) {
+	return nil, nil
+}
+
+func (d *DiskANNIndex) ImportState(data []byte) error {
+	return nil
+}
+
 func (d *DiskANNIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return nil
 }

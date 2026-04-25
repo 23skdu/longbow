@@ -80,6 +80,12 @@ type PluggableVectorIndex interface {
 	// Load loads the index from disk
 	Load(path string) error
 
+	// ExportState returns the index state as a byte slice
+	ExportState() ([]byte, error)
+
+	// ImportState restores the index state from a byte slice
+	ImportState(data []byte) error
+
 	// Close releases resources
 	Close() error
 

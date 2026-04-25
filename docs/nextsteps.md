@@ -1,23 +1,32 @@
-# Next Steps for Longbow Performance Optimization
+# Next Steps for Longbow
 
-## Observations from 0.1.9 Benchmarks
+## 0.1.9 Release Blockers (RESOLVED)
 
-1. **Metal vs CUDA**: On small datasets (500 vectors), local CPU (ARM64) often outperforms remote CUDA (x86_64) due to PCIe transfer overhead.
-2. **Type Parity**: Numerical parity has been verified across all 14 data types.
-3. **Geo/Temporal Fix**: Resolved a critical bug in `bench-tool` where dataset names were hardcoded to `bench_go`, causing failures in automated matrix runs.
-4. **TurboQuant Efficiency**: TurboQuant shows ~1.5x throughput improvement on local Metal backends for dense searches.
+### CUDA Backend Stability & Performance
 
-## Recommendations (Completed in 0.1.9)
-1. **Kernel Fusing**: Implemented fused kernels for filtered search in `kernels.cu`.
-2. **NUMA Pinning**: Implemented explicit NUMA pinning for ingestion and indexing workers.
-3. **Async PCIe Transfers**: Implemented double-buffering with async streams in `cuda_index.go`.
-4. **Vectorized Metadata**: Transitioned the metadata filtering engine to use Arrow-native SIMD kernels.
+- [x] **Top-K Algorithm**: Implemented shared-memory atomic heap Top-K kernel in `kernels.cu`.
+- [x] **Memory Isolation**: Refactored `CUDAIndexHandle` to use distinct buffers for FP32, FP16, PQ, and TQ to prevent corruption.
+- [x] **PQ Data Integrity**: Implemented `AddPQ` and `cuda_add_vectors_pq` to correctly handle uint8 codes on the device.
+
+### Metal Backend Gaps
+
+- [x] **PQ Implementation**: Fully implemented Metal ADC kernels and PQ interface in `MetalIndexOptimized`.
+
+### IVF-HNSW Composite Index
+
+- [x] **Persistence**: Implemented full `Save`/`Load` logic including OPQ encoder and cluster serialization.
+- [x] **State Management**: Implemented `ExportState`/`ImportState` for full index synchronization.
+
+### General Hardening
+
+- [x] **TPU Index Safety**: Explicitly flagged `TPUIndex` as an experimental stub.
+- [x] **Test Placeholders**: Implemented real recall validation in `DualIndexHarness` and dependency injection tests for `ShardedHNSW`.
+- [x] **Namespace Metrics**: Finished implementation of `NamespaceCreationTotal` metrics in `servers.go`.
 
 ## Roadmap for 0.1.10
+
 - [x] Support for billion-scale IVF-HNSW composite indexing. (v0.1.9)
 - [x] Integrated Optimized Product Quantization (OPQ) training. (v0.1.9)
 - [x] Real-time index adaptation based on query patterns. (v0.1.9)
-- [x] Zero-copy Arrow Flight streaming for all search modes. (v0.1.9)
-- [ ] Multi-GPU sharding support for massive clusters.
-- [ ] Dynamic quantization (Int8/Float16) auto-tuning.
-- [ ] Distributed consensus for index metadata (Raft integration).
+- [ ] Integration with hardware-accelerated GraphRAG traversal.
+- [ ] Adaptive re-quantization based on query load and available memory.

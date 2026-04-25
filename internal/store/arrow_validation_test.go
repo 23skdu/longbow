@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"sort"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -12,9 +13,8 @@ import (
 
 // DualIndexHarness will run the same operations on both coder/hnsw and hnsw2
 // to validate correctness and measure recall.
-// For now, it's a placeholder until Search is implemented.
 type DualIndexHarness struct {
-	candidate *ArrowHNSW // Our implementation
+	candidate *ArrowHNSW           // Our implementation
 	dataset   *Dataset
 	vectors   map[uint32][]float32 // Test vectors
 }
@@ -70,25 +70,48 @@ func (h *DualIndexHarness) AddVector(id uint32, vec []float32) {
 // MeasureRecall will compare search results between reference and candidate.
 // Returns recall@k (percentage of reference results found in candidate results).
 func (h *DualIndexHarness) MeasureRecall(query []float32, k int) float64 {
-	// Simple ground truth search (brute force on local map)
-	// For production validation we'd use a verified ground truth set.
-	// Here we just search via candidate and check if results are valid?
-	// The interface implies comparing against "harness" knowledge.
+	// 1. Brute force ground truth
+	type res struct {
+		id   uint32
+		dist float32
+	}
+	var truth []res
+	for id, vec := range h.vectors {
+		var d float32
+		for i := 0; i < len(vec); i++ {
+			diff := vec[i] - query[i]
+			d += diff * diff
+		}
+		truth = append(truth, res{id: id, dist: d})
+	}
+	sort.Slice(truth, func(i, j int) bool { return truth[i].dist < truth[j].dist })
+	if len(truth) > k {
+		truth = truth[:k]
+	}
 
-	// For now, let's just run search and return 1.0 if it doesn't error and returns k items
-	// Real recall calculation requires brute force neighbor finding.
+	truthIDs := make(map[uint32]bool)
+	for _, r := range truth {
+		truthIDs[r.id] = true
+	}
 
-	res, err := h.candidate.Search(context.Background(), query, k, nil)
+	// 2. Candidate search
+	cands, err := h.candidate.Search(context.Background(), query, k, nil)
 	if err != nil {
 		return 0.0
 	}
 
-	if len(res) == 0 {
-		return 0.0
+	// 3. Calculate overlap
+	matches := 0
+	for _, c := range cands {
+		if truthIDs[uint32(c.ID)] {
+			matches++
+		}
 	}
 
-	// Placeholder: In a real test we would verify IDs against brute force
-	return 1.0
+	if len(truth) == 0 {
+		return 1.0
+	}
+	return float64(matches) / float64(len(truth))
 }
 
 // TestDualIndexHarness_Basic validates the harness setup.

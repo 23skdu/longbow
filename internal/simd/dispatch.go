@@ -290,9 +290,9 @@ func initializeDispatch() {
 		notBytesImpl = notBytesGeneric
 		isAllZerosImpl = isAllZerosGeneric
 		// F16 Kernels
-		euclideanDistanceF16Impl = euclideanF16Unrolled4x
-		cosineDistanceF16Impl = cosineF16Unrolled4x
-		dotProductF16Impl = dotF16Unrolled4x
+		euclideanDistanceF16Impl = euclideanF16NEON
+		cosineDistanceF16Impl = cosineF16NEON
+		dotProductF16Impl = dotF16NEON
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
 		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x

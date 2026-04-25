@@ -491,3 +491,25 @@ groups:
         annotations:
           summary: "High I/O wait time"
           description: "I/O wait time is {{ $value }}/sec, indicating disk saturation."
+
+  - name: longbow_pipeline_alerts
+    rules:
+      - alert: LongbowPipelineHighLatency
+        expr: histogram_quantile(0.99, sum(rate(longbow_pipeline_duration_seconds_bucket[5m])) by (le, stage)) > 5
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow pipeline stage processing"
+          description: "Pipeline stage {{ $labels.stage }} P99 duration exceeds 5 seconds."
+
+  - name: longbow_temporal_alerts
+    rules:
+      - alert: LongbowTemporalIndexLag
+        expr: rate(longbow_namespace_creation_total[5m]) > 0
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "Temporal indexing activity detected"
+          description: "New temporal records or namespaces created."

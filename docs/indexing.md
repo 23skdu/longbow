@@ -139,15 +139,16 @@ Longbow introduces a dedicated **Temporal Index** for real-time aggregation and 
 - **Tombstoning & Updates**: Updates and deletions are handled via non-blocking tombstones, preserving lock-free historical snapshots.
 - **Time-Travel Operations**: Support for `SearchAsOf(timestamp)`, `SearchSlidingWindow(size)`, and `SearchRange(start, end)`.
 - **Temporal Aggregation Engine**: Enables instantaneous statistical aggregations (`min`, `max`, `sum`, `mean`) over scalar metadata fields for any set of vectors within a specific time bucket.
+
 ---
 
 ## 9. Persistent Arrow-Backed Memory Mapping (MMap)
 
-To achieve "instant-on" cold starts and support multi-billion node graphs without loading delays, Longbow 0.2.0 implements **direct memory mapping** for HNSW adjacency lists and SlabArena structures.
+To achieve "instant-on" cold starts and support multi-billion node graphs without loading delays, Longbow 0.1.9 implements **direct memory mapping** for HNSW adjacency lists and SlabArena structures.
 
 ### Key Advantages
 
-- **Zero-Copy Loading**: The graph structure is mapped directly from disk into the process address space using the `mmap` syscall. 
+- **Zero-Copy Loading**: The graph structure is mapped directly from disk into the process address space using the `mmap` syscall.
 - **Instant Availability**: No need to read and parse gigabytes of adjacency lists into heap objects on startup. The operating system handles page-faulting the graph data on-demand.
 - **Page-Aligned Storage**: Slabs are stored with 16KB alignment (matching Apple Silicon page size) to ensure optimal kernel mapping and hardware-level isolation.
 - **Shared Memory Support**: Multiple Longbow processes (or CLI tools) can map the same graph concurrently without duplicating the memory footprint.

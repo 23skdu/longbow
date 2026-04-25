@@ -138,22 +138,40 @@ func (e *TurboQuantEncoder) packAngles(angles []float32, dst []byte) {
 	bits := e.params.BitsPerAngle
 	maxVal := float32((uint32(1) << bits) - 1)
 
+	// Optimized path for 4 and 8 bits
+	if bits == 8 {
+		for i, angle := range angles {
+			norm := (angle + math.Pi) / (2 * math.Pi)
+			if norm < 0 { norm = 0 } else if norm > 1 { norm = 1 }
+			dst[i] = byte(norm*maxVal + 0.5)
+		}
+		return
+	}
+
+	if bits == 4 {
+		for i := 0; i < len(angles); i += 2 {
+			norm1 := (angles[i] + math.Pi) / (2 * math.Pi)
+			if norm1 < 0 { norm1 = 0 } else if norm1 > 1 { norm1 = 1 }
+			q1 := byte(norm1*maxVal + 0.5)
+			
+			var q2 byte
+			if i+1 < len(angles) {
+				norm2 := (angles[i+1] + math.Pi) / (2 * math.Pi)
+				if norm2 < 0 { norm2 = 0 } else if norm2 > 1 { norm2 = 1 }
+				q2 = byte(norm2*maxVal + 0.5)
+			}
+			
+			dst[i/2] = q1 | (q2 << 4)
+		}
+		return
+	}
+
+	// Fallback for other bit depths
 	var currentBit int
-
 	for _, angle := range angles {
-		// Normalize angle [-PI, PI] to [0, 1]
 		norm := (angle + math.Pi) / (2 * math.Pi)
-		if norm < 0 {
-			norm = 0
-		}
-		if norm > 1 {
-			norm = 1
-		}
-
-		// Quantize to int
+		if norm < 0 { norm = 0 } else if norm > 1 { norm = 1 }
 		q := uint32(norm*maxVal + 0.5)
-
-		// Pack into bits
 		for k := 0; k < bits; k++ {
 			if (q & (uint32(1) << k)) != 0 {
 				dst[currentBit/8] |= (1 << (currentBit % 8))
@@ -204,6 +222,31 @@ func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 	bits := e.params.BitsPerAngle
 	maxVal := float32((uint32(1) << bits) - 1)
 
+	// Optimized path for 4 and 8 bits
+	if bits == 8 {
+		for i := range dst {
+			norm := float32(src[i]) / maxVal
+			dst[i] = norm*2*math.Pi - math.Pi
+		}
+		return
+	}
+
+	if bits == 4 {
+		for i := 0; i < len(dst); i += 2 {
+			b := src[i/2]
+			
+			q1 := float32(b & 0x0F)
+			dst[i] = (q1/maxVal)*2*math.Pi - math.Pi
+			
+			if i+1 < len(dst) {
+				q2 := float32(b >> 4)
+				dst[i+1] = (q2/maxVal)*2*math.Pi - math.Pi
+			}
+		}
+		return
+	}
+
+	// Fallback
 	var currentBit int
 	for i := range dst {
 		var q uint32
@@ -213,8 +256,6 @@ func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 			}
 			currentBit++
 		}
-
-		// Map back to [-PI, PI]
 		norm := float32(q) / maxVal
 		dst[i] = norm*2*math.Pi - math.Pi
 	}

@@ -26,6 +26,7 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
+	internalcore "github.com/23skdu/longbow/internal/store/internal/core"
 	types "github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/tracing"
 )
@@ -972,7 +973,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 	return nil
 }
 
-func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, stream flight.FlightService_DoGetServer, mem memory.Allocator) error {
+func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, stream flight.FlightService_DoGetServer, _ memory.Allocator) error {
 	ds, ok := s.getDataset(req.Dataset)
 	if !ok {
 		return status.Errorf(codes.NotFound, "dataset not found: %s", req.Dataset)
@@ -985,7 +986,7 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 		return status.Error(codes.FailedPrecondition, "dataset has no index")
 	}
 
-	var targetVec []float32
+	var targetVec any
 	found := false
 
 	if ds.PrimaryIndex != nil {
@@ -996,7 +997,7 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 			}
 			if !isDeleted && loc.BatchIdx < len(ds.Records) {
 				rec := ds.Records[loc.BatchIdx]
-				vec, err := ExtractVectorFromArrow(rec, loc.RowIdx, -1)
+				vec, err := internalcore.ExtractVectorRaw(rec, loc.RowIdx, -1)
 				if err != nil {
 					ds.dataMu.RUnlock()
 					return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
@@ -1045,7 +1046,7 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 						isDeleted = true
 					}
 					if !isDeleted {
-						vec, err := ExtractVectorFromArrow(rec, rowIdx, -1)
+						vec, err := internalcore.ExtractVectorRaw(rec, rowIdx, -1)
 						if err != nil {
 							ds.dataMu.RUnlock()
 							return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
@@ -1080,21 +1081,26 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 	}
 
 	// 3. Stream results back to client
-	pool := mem
-	fields := []arrow.Field{
-		{Name: "id", Type: arrow.BinaryTypes.String},
-		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
-	}
+	var builder *array.RecordBuilder
 	if req.IncludeVectors {
-		fields = append(fields, arrow.Field{Name: "vector", Type: arrow.BinaryTypes.Binary})
+		builder = SearchWithVectorResponsePool.Get()
+	} else {
+		builder = SearchResponsePool.Get()
 	}
-	schema := arrow.NewSchema(fields, nil)
-
-	w := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
+	defer func() {
+		// Reset all fields before putting back to pool
+		for i := 0; i < builder.Schema().NumFields(); i++ {
+			builder.Field(i).NewArray().Release()
+		}
+		if req.IncludeVectors {
+			SearchWithVectorResponsePool.Put(builder)
+		} else {
+			SearchResponsePool.Put(builder)
+		}
+	}()
+ 
+	w := flight.NewRecordWriter(stream, ipc.WithSchema(builder.Schema()))
 	defer func() { _ = w.Close() }()
-
-	builder := array.NewRecordBuilder(pool, schema)
-	defer builder.Release()
 
 	idBuilder := builder.Field(0).(*array.StringBuilder)
 	scoreBuilder := builder.Field(1).(*array.Float32Builder)

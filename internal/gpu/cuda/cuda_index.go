@@ -959,7 +959,7 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 	// 7. Sort and return top-k
 	results := make([]types.SearchResult, 0, k)
 	for i, dist := range h_distances {
-		if dist >= 1e29f { // Filtered out
+		if dist >= 1e29 { // Filtered out
 			continue
 		}
 		results = append(results, types.SearchResult{

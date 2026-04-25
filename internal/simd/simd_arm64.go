@@ -167,6 +167,9 @@ func cosineF16NEON(a, b []float16.Num) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
+	if len(a) < 8 {
+		return cosineF16Unrolled4x(a, b)
+	}
 	return cosineF16NEONKernel(a, b), nil
 }
 

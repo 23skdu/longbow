@@ -89,6 +89,7 @@ func TestOPQ_RotationOrthogonality(t *testing.T) {
 
 func TestOPQ_ReconstructionImprovement(t *testing.T) {
 	// OPQ should generally perform better than standard PQ on correlated data
+	rand.Seed(42) // Set seed to avoid flakiness in this probabilistic test
 	dims := 32
 	m := 4
 	k := 256

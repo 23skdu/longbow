@@ -798,9 +798,50 @@ var (
 	EmbeddingPoolingDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_embedding_pooling_duration_seconds",
-			Help:    "Time spent on mean/max pooling of hidden states",
-			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01},
+			Help:    "Time spent pooling token embeddings",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05},
 		},
+	)
+
+	// =============================================================================
+	// Vector Quantization (PQ/OPQ) Metrics
+	// =============================================================================
+
+	VQTrainingDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_vq_training_duration_seconds",
+			Help:    "Time spent training PQ/OPQ codebooks",
+			Buckets: []float64{0.1, 0.5, 1, 5, 10, 30, 60, 120},
+		},
+		[]string{"type"}, // "pq", "opq"
+	)
+
+	VQReconstructionError = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_vq_reconstruction_error",
+			Help: "Current average reconstruction error (MSE) of PQ/OPQ",
+		},
+		[]string{"type"}, // "pq", "opq"
+	)
+
+	// =============================================================================
+	// IVF Index Metrics
+	// =============================================================================
+
+	IVFClusterSearchTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_ivf_cluster_search_total",
+			Help: "Total number of clusters searched in IVF-PQ/OPQ",
+		},
+		[]string{"dataset", "type"},
+	)
+
+	IVFLoadBalanceRatio = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_ivf_load_balance_ratio",
+			Help: "Ratio of max cluster size to average cluster size (1.0 = perfect balance)",
+		},
+		[]string{"dataset"},
 	)
 
 	EmbeddingNormalizationDurationSeconds = promauto.NewHistogram(

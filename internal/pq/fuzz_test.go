@@ -102,3 +102,57 @@ func mathAbs(f float32) float32 {
 	}
 	return f
 }
+
+func FuzzOPQEncoder_TrainAndEncode(f *testing.F) {
+	f.Add(32, 4, 16, 50)
+	f.Add(64, 8, 256, 100)
+
+	f.Fuzz(func(t *testing.T, dims, M, K, numSamples int) {
+		if dims <= 0 || M <= 0 || dims%M != 0 || K <= 0 || K > 256 || numSamples < K*2 {
+			return
+		}
+		if dims > 256 || M > 32 || numSamples > 500 { // Keep it fast for fuzzing
+			return
+		}
+
+		data := make([][]float32, numSamples)
+		for i := range data {
+			vec := make([]float32, dims)
+			for j := range vec {
+				vec[j] = float32(i+j) / float32(numSamples)
+			}
+			data[i] = vec
+		}
+
+		encoder, err := NewOPQEncoder(dims, M, K)
+		if err != nil {
+			return
+		}
+
+		err = encoder.TrainOPQ(data, 2) // 2 iterations
+		if err != nil {
+			return
+		}
+
+		for i := 0; i < 3 && i < numSamples; i++ {
+			original := data[i]
+			code, err := encoder.Encode(original)
+			if err != nil {
+				t.Errorf("Encode failed: %v", err)
+				return
+			}
+			if len(code) != M {
+				t.Errorf("Code length mismatch")
+			}
+
+			reconstructed, err := encoder.Decode(code)
+			if err != nil {
+				t.Errorf("Decode failed: %v", err)
+				return
+			}
+			if len(reconstructed) != dims {
+				t.Errorf("Reconstructed length mismatch")
+			}
+		}
+	})
+}

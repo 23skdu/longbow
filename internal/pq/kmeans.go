@@ -52,22 +52,29 @@ func putKMeansBuffers(buf *kmeansBuffers) {
 	kmeansBufferPool.Put(buf)
 }
 
+// KMeansOptions holds options for K-Means training
+type KMeansOptions struct {
+	MaxIter     int
+	GPUAssigner func(data []float32, centroids []float32) ([]uint32, error)
+}
+
 // TrainKMeans runs K-Means clustering on flattened data.
-// data: flattened vector data (n * dim)
-// n: number of vectors
-// dim: dimension of each vector
-// k: number of centroids
-// maxIter: maximum number of iterations
-//
-// Returns:
-//   - centroids: flattened centroids (k * dim)
-//   - error
 func TrainKMeans(data []float32, n, dim, k, maxIter int) ([]float32, error) {
+	return TrainKMeansWithOptions(data, n, dim, k, KMeansOptions{MaxIter: maxIter})
+}
+
+// TrainKMeansWithOptions runs K-Means clustering with advanced options.
+func TrainKMeansWithOptions(data []float32, n, dim, k int, opts KMeansOptions) ([]float32, error) {
 	if n < k {
 		return nil, errors.New("insufficient data for k-means: n < k")
 	}
 	if len(data) != n*dim {
 		return nil, errors.New("data length mismatch")
+	}
+
+	maxIter := opts.MaxIter
+	if maxIter <= 0 {
+		maxIter = 20
 	}
 
 	centroids := make([]float32, k*dim)
@@ -96,34 +103,28 @@ func TrainKMeans(data []float32, n, dim, k, maxIter int) ([]float32, error) {
 		changed := 0
 
 		// E-step: Assign vectors to nearest centroid
-		for i := 0; i < n; i++ {
-			vec := data[i*dim : (i+1)*dim]
-			bestDist := float32(math.MaxFloat32)
-			bestC := -1
-
-			for c := 0; c < k; c++ {
-				cent := centroids[c*dim : (c+1)*dim]
-				dist, err := simd.L2Squared(vec, cent)
-				if err != nil {
-					continue
+		if opts.GPUAssigner != nil {
+			gpuAssignments, err := opts.GPUAssigner(data, centroids)
+			if err == nil {
+				for i, bestC := range gpuAssignments {
+					bc := int(bestC)
+					if assignments[i] != bc {
+						changed++
+						assignments[i] = bc
+					}
+					counts[bc]++
+					centSum := sums[bc*dim : (bc+1)*dim]
+					vec := data[i*dim : (i+1)*dim]
+					for j := 0; j < dim; j++ {
+						centSum[j] += vec[j]
+					}
 				}
-				if dist < bestDist {
-					bestDist = dist
-					bestC = c
-				}
+			} else {
+				// Fallback to CPU on GPU error
+				changed = runCPUEstep(data, centroids, assignments, counts, sums, n, k, dim)
 			}
-
-			if assignments[i] != bestC {
-				changed++
-				assignments[i] = bestC
-			}
-
-			// Add to sums for M-step
-			counts[bestC]++
-			centSum := sums[bestC*dim : (bestC+1)*dim]
-			for j := 0; j < dim; j++ {
-				centSum[j] += vec[j]
-			}
+		} else {
+			changed = runCPUEstep(data, centroids, assignments, counts, sums, n, k, dim)
 		}
 
 		// M-step: Update centroids
@@ -149,4 +150,34 @@ func TrainKMeans(data []float32, n, dim, k, maxIter int) ([]float32, error) {
 	}
 
 	return centroids, nil
+}
+
+func runCPUEstep(data, centroids []float32, assignments, counts []int, sums []float32, n, k, dim int) int {
+	changed := 0
+	for i := 0; i < n; i++ {
+		vec := data[i*dim : (i+1)*dim]
+		bestDist := float32(math.MaxFloat32)
+		bestC := -1
+
+		for c := 0; c < k; c++ {
+			cent := centroids[c*dim : (c+1)*dim]
+			dist, _ := simd.L2Squared(vec, cent)
+			if dist < bestDist {
+				bestDist = dist
+				bestC = c
+			}
+		}
+
+		if assignments[i] != bestC {
+			changed++
+			assignments[i] = bestC
+		}
+
+		counts[bestC]++
+		centSum := sums[bestC*dim : (bestC+1)*dim]
+		for j := 0; j < dim; j++ {
+			centSum[j] += vec[j]
+		}
+	}
+	return changed
 }

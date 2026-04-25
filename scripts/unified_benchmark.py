@@ -201,6 +201,19 @@ class BenchmarkRunner:
         env["LONGBOW_DATA_PATH"] = data_root
         env["LONGBOW_NODE_ID"] = self.node_id
 
+        # Performance tuning for benchmarks
+        env["LONGBOW_GOGC"] = "200"  # Reduce GC overhead
+        env["LONGBOW_MAX_MEMORY"] = str(18 * 1024 * 1024 * 1024)  # 18GB - monitor for memory pressure
+        env["LONGBOW_INGESTION_WORKER_COUNT"] = "0"  # Use all CPUs
+        env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"  # Disable snapshots during bench
+
+        # Enable GPU for metal/cuda benchmark modes
+        if self.args.mode in ["metal", "cuda"]:
+            env["LONGBOW_GPU_ENABLED"] = "true"
+
+        # Enable learned index for all benchmark modes
+        env["LONGBOW_LEARNED_INDEX_ENABLED"] = "true"
+
         with open(log_file, "w") as f:
             process = subprocess.Popen(
                 [server_bin],

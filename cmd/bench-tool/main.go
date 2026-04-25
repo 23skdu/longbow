@@ -150,9 +150,10 @@ func main() {
 		log.Printf("[SEARCH][%s] Running queries...\n", mode)
 		start = time.Now()
 		var latencies []float64
+		state := NewReusableSearchState(*dim)
 		for i := 0; i < *queries; i++ {
 			qStart := time.Now()
-			if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode); err != nil {
+			if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode, state); err != nil {
 				log.Printf("[%s] Query %d failed: %v\n", mode, i, err)
 				continue
 			}
@@ -261,93 +262,122 @@ func downloadBatch(ctx context.Context, sc *client.SmartClient, dataset string) 
 	}
 }
 
-// executeSearch performs search by setting JSON ticket in DoGet
-func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, dim int, dtype string, mode string) error {
-	// For complex64/complex128, the index stores 2*dim float32 values (real+imaginary parts per element)
+type ReusableSearchState struct {
+	vector []float32
+	buf    []byte
+}
+
+func NewReusableSearchState(maxDim int) *ReusableSearchState {
+	return &ReusableSearchState{
+		vector: make([]float32, maxDim*2), // 2*dim for complex types
+		buf:    make([]byte, 0, 1024*64),   // 64KB should fit most vectors
+	}
+}
+
+func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype string, mode string, k int) []byte {
+	s.buf = s.buf[:0]
+	s.buf = append(s.buf, `{"search":{"dataset":"`...)
+	s.buf = append(s.buf, dataset...)
+	s.buf = append(s.buf, `","k":`...)
+	s.buf = append(s.buf, fmt.Sprintf("%d", k)...)
+
 	queryLen := dim
 	if dtype == "complex64" || dtype == "complex128" {
 		queryLen = dim * 2
 	}
-	vector := make([]float32, queryLen)
-	for i := range vector {
-		vector[i] = rand.Float32() // #nosec G404
-	}
 
-	req := map[string]interface{}{
-		"dataset": dataset,
-		"k":       10,
+	// Randomize vector in-place
+	for i := 0; i < queryLen; i++ {
+		s.vector[i] = rand.Float32()
 	}
 
 	switch mode {
 	case "Dense":
-		req["vector"] = vector
+		s.buf = append(s.buf, `,"vector":[`...)
+		for i := 0; i < queryLen; i++ {
+			if i > 0 {
+				s.buf = append(s.buf, ',')
+			}
+			s.buf = fmt.Appendf(s.buf, "%g", s.vector[i])
+		}
+		s.buf = append(s.buf, ']')
 	case "Hybrid":
-		req["vector"] = vector
-		req["text_query"] = "benchmark search term"
-		req["alpha"] = 0.5
-	case "Filtered":
-		req["vector"] = vector
-		req["filters"] = []map[string]interface{}{
-			{
-				"field":    "id",
-				"operator": ">",
-				"value":    "10",
-			},
+		s.buf = append(s.buf, `,"vector":[`...)
+		for i := 0; i < queryLen; i++ {
+			if i > 0 {
+				s.buf = append(s.buf, ',')
+			}
+			s.buf = fmt.Appendf(s.buf, "%g", s.vector[i])
 		}
-	case "FilteredBool":
-		req["vector"] = vector
-		req["filters"] = []map[string]interface{}{
-			{
-				"field":    "active",
-				"operator": "==",
-				"value":    "true", // Note: Value is a string in Filter struct
-			},
+		s.buf = append(s.buf, `],"text_query":"benchmark search term","alpha":0.5`...)
+	case "Filtered", "FilteredBool", "FilteredString":
+		s.buf = append(s.buf, `,"vector":[`...)
+		for i := 0; i < queryLen; i++ {
+			if i > 0 {
+				s.buf = append(s.buf, ',')
+			}
+			s.buf = fmt.Appendf(s.buf, "%g", s.vector[i])
 		}
-	case "FilteredString":
-		req["vector"] = vector
-		req["filters"] = []map[string]interface{}{
-			{
-				"field":    "category",
-				"operator": "==",
-				"value":    "electronics", // Requires schema to have "category" string
-			},
+		s.buf = append(s.buf, `],"filters":[`...)
+		if mode == "Filtered" {
+			s.buf = append(s.buf, `{"field":"id","operator":">","value":"10"}`...)
+		} else if mode == "FilteredBool" {
+			s.buf = append(s.buf, `{"field":"active","operator":"==","value":"true"}`...)
+		} else {
+			s.buf = append(s.buf, `{"field":"category","operator":"==","value":"electronics"}`...)
 		}
-	case "Sparse":
-		req["text_query"] = "benchmark search term"
-		req["alpha"] = 0.0
+		s.buf = append(s.buf, ']')
 	case "GraphRAG":
-		req["vector"] = vector
-		req["graph_alpha"] = 0.5
-	case "Recommend":
-		// Recommend uses seed_ids instead of a query vector
-		req["seed_ids"] = []string{"0", "1", "2"}
-		req["max_hops"] = 3
-		req["decay"] = 0.8
-		req["alpha"] = 0.5
-		ticketBytes, _ := json.Marshal(map[string]interface{}{"recommend": req})
-		return executeDoGet(ctx, sc, ticketBytes)
-	case "Geo":
-		req["dataset"] = dataset
-		req["center"] = map[string]float64{"lat": 40.7128, "lon": -74.0060}
-		req["radius_km"] = 50.0
-		req["search_type"] = "radius"
-		ticketBytes, _ := json.Marshal(map[string]interface{}{"geo_search": req})
-		return executeDoGet(ctx, sc, ticketBytes)
-	case "Temporal":
-		req["dataset"] = dataset
-		req["search_type"] = "as_of"
-		req["timestamp"] = time.Now().UnixNano()
-		ticketBytes, _ := json.Marshal(map[string]interface{}{"temporal_search": req})
-		return executeDoGet(ctx, sc, ticketBytes)
-
-	case "ByID":
-		// SearchByID requires an existing ID.
-		req["id"] = "0"
-		ticketBytes, _ := json.Marshal(map[string]interface{}{"search_by_id": req})
-		return executeDoGet(ctx, sc, ticketBytes)
+		s.buf = append(s.buf, `,"vector":[`...)
+		for i := 0; i < queryLen; i++ {
+			if i > 0 {
+				s.buf = append(s.buf, ',')
+			}
+			s.buf = fmt.Appendf(s.buf, "%g", s.vector[i])
+		}
+		s.buf = append(s.buf, `],"graph_alpha":0.5`...)
+	case "Sparse":
+		s.buf = append(s.buf, `,"text_query":"benchmark search term","alpha":0.0`...)
 	}
 
-	ticketBytes, _ := json.Marshal(map[string]interface{}{"search": req})
+	s.buf = append(s.buf, `}}`...)
+	return s.buf
+}
+
+func (s *ReusableSearchState) BuildSpecialTicket(dataset string, mode string) []byte {
+	s.buf = s.buf[:0]
+	switch mode {
+	case "Recommend":
+		s.buf = append(s.buf, `{"recommend":{"dataset":"`...)
+		s.buf = append(s.buf, dataset...)
+		s.buf = append(s.buf, `","k":10,"seed_ids":["0","1","2"],"max_hops":3,"decay":0.8,"alpha":0.5}}`...)
+	case "Geo":
+		s.buf = append(s.buf, `{"geo_search":{"dataset":"`...)
+		s.buf = append(s.buf, dataset...)
+		s.buf = append(s.buf, `","k":10,"center":{"lat":40.7128,"lon":-74.0060},"radius_km":50.0,"search_type":"radius"}}`...)
+	case "Temporal":
+		s.buf = append(s.buf, `{"temporal_search":{"dataset":"`...)
+		s.buf = append(s.buf, dataset...)
+		s.buf = append(s.buf, `","k":10,"search_type":"as_of","timestamp":`...)
+		s.buf = append(s.buf, fmt.Sprintf("%d", time.Now().UnixNano())...)
+		s.buf = append(s.buf, `}}`...)
+	case "ByID":
+		s.buf = append(s.buf, `{"search_by_id":{"dataset":"`...)
+		s.buf = append(s.buf, dataset...)
+		s.buf = append(s.buf, `","k":10,"id":"0"}}`...)
+	}
+	return s.buf
+}
+
+// executeSearch performs search by setting JSON ticket in DoGet
+func executeSearch(ctx context.Context, sc *client.SmartClient, dataset string, dim int, dtype string, mode string, state *ReusableSearchState) error {
+	var ticketBytes []byte
+	if mode == "Recommend" || mode == "Geo" || mode == "Temporal" || mode == "ByID" {
+		ticketBytes = state.BuildSpecialTicket(dataset, mode)
+	} else {
+		ticketBytes = state.BuildSearchTicket(dataset, dim, dtype, mode, 10)
+	}
+
 	return executeDoGet(ctx, sc, ticketBytes)
 }
 
@@ -371,7 +401,7 @@ func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) er
 // waitForIndexingComplete polls until the dataset is indexed.
 // The passed ctx is used for the initial action; polling uses an independent Background context.
 func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, dataset string, timeout time.Duration) string {
-	actionBody, _ := json.Marshal(map[string]string{"dataset": dataset})
+	actionBody := []byte(`{"dataset":"` + dataset + `"}`)
 	action := &flight.Action{Type: "wait-for-indexing", Body: actionBody}
 	stream, err := sc.DoAction(ctx, action)
 	if err == nil {
@@ -398,7 +428,7 @@ func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, datase
 	defer pollCancel()
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		checkBody, _ := json.Marshal(map[string]string{"dataset": dataset})
+		checkBody := []byte(`{"dataset":"` + dataset + `"}`)
 		checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
 		checkStream, err := sc.DoAction(pollCtx, checkAction)
 		if err != nil {

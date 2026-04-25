@@ -68,9 +68,9 @@ func DefaultParallelSearchConfig() ParallelSearchConfig {
 	return ParallelSearchConfig{
 		Enabled:      true,
 		Workers:      runtimeNumCPU(),
-		Threshold:    100,
-		MinChunkSize: 32,
-		MaxChunkSize: 500,
+		Threshold:    512,
+		MinChunkSize: 256,
+		MaxChunkSize: 1024,
 	}
 }
 

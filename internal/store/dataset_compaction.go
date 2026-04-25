@@ -13,25 +13,46 @@ import (
 
 // Compact performs fragmentation-aware compaction on the dataset.
 // It prioritizes hot batches and squashes fragmented ones.
+// This implementation is asynchronous and non-blocking for the majority of its execution.
 func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
-	d.dataMu.Lock()
-	defer d.dataMu.Unlock()
-
+	// 1. Snapshot current state for background processing
+	d.dataMu.RLock()
 	if len(d.Records) == 0 {
+		d.dataMu.RUnlock()
 		return nil
 	}
+	oldRecords := make([]arrow.RecordBatch, len(d.Records))
+	for i, r := range d.Records {
+		r.Retain()
+		oldRecords[i] = r
+	}
+	oldTombstones := make(map[int]*types.Bitset)
+	for i, ts := range d.Tombstones {
+		if ts != nil {
+			oldTombstones[i] = ts.Clone()
+		}
+	}
+	// Copy PrimaryIndex for mapping discovery
+	primarySnapshot := make(map[string]RowLocation)
+	for id, loc := range d.PrimaryIndex {
+		primarySnapshot[id] = loc
+	}
+	d.dataMu.RUnlock()
 
-	// 1. Determine new order
-	// Strategy: [Hot Batches (sorted by heat)] + [Normal Batches] + [Cold/Fragmented (squashed)]
+	defer func() {
+		for _, r := range oldRecords {
+			r.Release()
+		}
+	}()
 
-	// Strategy: Sort ALL batches by hits (hotness) descending, then by fragmentation density.
+	// 2. Identify strategy (in background)
 	type batchInfo struct {
 		idx   int
 		hits  int64
 		ratio float64
 	}
-	infos := make([]batchInfo, len(d.Records))
-	for i := range d.Records {
+	infos := make([]batchInfo, len(oldRecords))
+	for i := range oldRecords {
 		hits := int64(0)
 		ratio := 0.0
 		if d.fragmentationTracker != nil {
@@ -42,7 +63,6 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 		infos[i] = batchInfo{idx: i, hits: hits, ratio: ratio}
 	}
 
-	// Sort: higher hits first, then lower fragmentation ratio
 	sort.Slice(infos, func(i, j int) bool {
 		if infos[i].hits != infos[j].hits {
 			return infos[i].hits > infos[j].hits
@@ -50,65 +70,51 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 		return infos[i].ratio < infos[j].ratio
 	})
 
-	// 2. Rebuild Records and Track Mapping
-	newRecords := make([]arrow.RecordBatch, 0, len(d.Records))
+	// 3. Build new state (heavy lifting outside lock)
+	newRecords := make([]arrow.RecordBatch, 0, len(oldRecords))
 	newTombstones := make(map[int]*types.Bitset)
-
-	// mappingForIndex: id -> newLocation (for VectorIndex.RemapLocations)
 	indexMapping := make(map[uint32]any)
+	
+	oldToNewBatchIdx := make(map[int]int)
+	for i, info := range infos {
+		oldToNewBatchIdx[info.idx] = i
+	}
 
-	// Since we have PrimaryIndex (ID -> Location), we can update it by iterating.
-	// We need a way to go from (BatchIdx, RowIdx) -> ID.
-	// PrimaryIndex is ID -> (BatchIdx, RowIdx). We can invert it once.
 	reversePrimary := make(map[Location]string)
-	for id, loc := range d.PrimaryIndex {
-		// Location is an alias for core.Location. RowLocation is in dataset.go.
-		// They are structurally compatible.
+	for id, loc := range primarySnapshot {
 		reversePrimary[Location{BatchIdx: loc.BatchIdx, RowIdx: loc.RowIdx}] = id
 	}
 
 	for newBatchIdx, info := range infos {
 		oldBatchIdx := info.idx
-		rec := d.Records[oldBatchIdx]
-		tombstones := d.Tombstones[oldBatchIdx]
+		rec := oldRecords[oldBatchIdx]
+		tombstones := oldTombstones[oldBatchIdx]
 
 		if info.ratio > 0.1 && tombstones != nil && tombstones.Count() > 0 {
-			// SQUASH: Create new batch without deleted rows
 			newRec, rowMapping := d.squashBatch(rec, tombstones)
 			newRecords = append(newRecords, newRec)
 
-			// Update mappings for this batch
 			for oldRow, newRow := range rowMapping {
 				oldLoc := Location{BatchIdx: oldBatchIdx, RowIdx: oldRow}
-				if id, ok := reversePrimary[oldLoc]; ok {
+				if _, ok := reversePrimary[oldLoc]; ok {
 					if newRow != -1 {
-						newLoc := RowLocation{BatchIdx: newBatchIdx, RowIdx: newRow}
-						d.PrimaryIndex[id] = newLoc
 						if d.Index != nil {
 							if vid, ok := d.Index.GetVectorID(oldLoc); ok {
 								indexMapping[vid] = Location{BatchIdx: newBatchIdx, RowIdx: newRow}
 							}
 						}
-					} else {
-						// Row was squashed (deleted), remove from PrimaryIndex
-						delete(d.PrimaryIndex, id)
 					}
 				}
 			}
-			// Release old record
-			rec.Release()
 		} else {
-			// MOVE: Just update indices
+			rec.Retain()
 			newRecords = append(newRecords, rec)
 			if tombstones != nil {
-				newTombstones[newBatchIdx] = tombstones
+				newTombstones[newBatchIdx] = tombstones.Clone()
 			}
-
 			for row := 0; row < int(rec.NumRows()); row++ {
 				oldLoc := Location{BatchIdx: oldBatchIdx, RowIdx: row}
-				if id, ok := reversePrimary[oldLoc]; ok {
-					newLoc := RowLocation{BatchIdx: newBatchIdx, RowIdx: row}
-					d.PrimaryIndex[id] = newLoc
+				if _, ok := reversePrimary[oldLoc]; ok {
 					if d.Index != nil {
 						if vid, ok := d.Index.GetVectorID(oldLoc); ok {
 							indexMapping[vid] = Location{BatchIdx: newBatchIdx, RowIdx: row}
@@ -119,11 +125,57 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 		}
 	}
 
-	// 3. Finalize
-	d.Records = newRecords
+	// 4. Atomic Swap (Short Lock)
+	d.dataMu.Lock()
+	defer d.dataMu.Unlock()
+
+	// Handle records added during compaction
+	addedDuring := d.Records[len(oldRecords):]
+	
+	// Release old records that were part of compaction
+	for _, r := range d.Records[:len(oldRecords)] {
+		r.Release()
+	}
+	
+	d.Records = append(newRecords, addedDuring...)
 	d.Tombstones = newTombstones
 
-	// Reset fragmentation tracker for the new layout
+	// Update PrimaryIndex for remapped IDs
+	for _, locAny := range indexMapping {
+		loc := locAny.(Location)
+		// Find the string ID from the snapshot reverse map
+		oldBatchIdx := infos[loc.BatchIdx].idx
+		oldLoc := Location{BatchIdx: oldBatchIdx, RowIdx: loc.RowIdx}
+		if id, ok := reversePrimary[oldLoc]; ok {
+			d.PrimaryIndex[id] = RowLocation{BatchIdx: loc.BatchIdx, RowIdx: loc.RowIdx}
+		}
+	}
+
+	// Remove deleted IDs from PrimaryIndex
+	for oldBatchIdx, ts := range oldTombstones {
+		if ts == nil {
+			continue
+		}
+		// Find which new batch this corresponds to
+		newBatchIdx, ok := oldToNewBatchIdx[oldBatchIdx]
+		if !ok {
+			continue
+		}
+
+		// Re-check deletions for squashed rows
+		if infos[newBatchIdx].ratio > 0.1 {
+			// This was a squashed batch, rows marked for deletion are gone
+			for row := 0; row < int(oldRecords[oldBatchIdx].NumRows()); row++ {
+				if ts.Contains(row) {
+					oldLoc := Location{BatchIdx: oldBatchIdx, RowIdx: row}
+					if id, ok := reversePrimary[oldLoc]; ok {
+						delete(d.PrimaryIndex, id)
+					}
+				}
+			}
+		}
+	}
+
 	if d.fragmentationTracker != nil {
 		d.fragmentationTracker.ResetAll()
 	}
@@ -137,6 +189,7 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 	metrics.CompactionRunsTotal.WithLabelValues(d.Name).Inc()
 	return nil
 }
+
 
 // squashBatch creates a new RecordBatch by removing rows marked in the bitset.
 // It returns the new batch and a mapping of oldRowIdx -> newRowIdx.

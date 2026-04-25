@@ -242,10 +242,10 @@ func ExtractVectorComplex128(rec arrow.RecordBatch, rowIdx, colIdx int) ([]compl
 	return ExtractVectorGeneric[complex128](rec, rowIdx, colIdx)
 }
 
-// extractVectorRaw extracts a vector and returns it in its native Arrow type (any).
+// ExtractVectorRaw extracts a vector and returns it in its native Arrow type (any).
 // For Complex128: returns []float64 (Arrow stores complex as pairs of float64).
-// Use this for internal paths that need the raw type.
-func extractVectorRaw(rec arrow.RecordBatch, rowIdx, colIdx int) (any, error) {
+// Use this for internal paths that need the raw type to avoid intermediate allocations.
+func ExtractVectorRaw(rec arrow.RecordBatch, rowIdx, colIdx int) (any, error) {
 	anyVec, err := ExtractVectorAny(rec, rowIdx, colIdx)
 	if err != nil {
 		return nil, err
@@ -278,14 +278,14 @@ func extractVectorRaw(rec arrow.RecordBatch, rowIdx, colIdx int) (any, error) {
 	case []complex128:
 		return v, nil
 	default:
-		return nil, fmt.Errorf("extractVectorRaw: unsupported type %T", anyVec)
+		return nil, fmt.Errorf("ExtractVectorRaw: unsupported type %T", anyVec)
 	}
 }
 
 // ExtractVectorFromArrow extracts a vector from an Arrow record batch.
 // Converts all numeric types to []float32 for API compatibility.
 func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float32, error) {
-	vec, err := extractVectorRaw(rec, rowIdx, colIdx)
+	vec, err := ExtractVectorRaw(rec, rowIdx, colIdx)
 	if err != nil {
 		return nil, err
 	}

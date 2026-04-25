@@ -1331,17 +1331,15 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 			typeCandidates[i] = types.Candidate{ID: c.ID, Dist: c.Dist}
 		}
 
-		results = processResultsParallelInternal(ctx, h, qv, typeCandidates, k, nil, filter)
+		results = h.processResultsParallel(ctx, qv, queryVec, typeCandidates, k, filter)
 		if len(results) >= k || attempt == 2 || efSearch >= maxNodeCount {
 			break
 		}
 
-		// Expand search search space
-		efSearch *= 5
-		if efSearch > maxNodeCount {
-			efSearch = maxNodeCount
-		}
-
+		// Item 3: Adaptive Search Expansion Policy
+		// Instead of a blind 5x multiplier, use a heuristic based on the distance distribution
+		// and the number of results found vs requested.
+		efSearch = h.calculateAdaptiveEfExpansion(efSearch, len(results), k, typeCandidates, maxNodeCount)
 	}
 
 	h.flushSearchMetrics(searchCtx)
@@ -2086,13 +2084,121 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 
 // ProcessResultsParallel is a method wrapper for the parallel search logic.
 func (h *ArrowHNSW) ProcessResultsParallel(ctx context.Context, qv any, candidates []types.Candidate, k int, filter any) []types.SearchResult {
-	// The implementation is in parallel_search.go
-	if vec, ok := qv.([]float32); ok {
-		var roaringFilter *roaring.Bitmap
-		// Handle filter conversion if needed, or pass nil for now as per test usage
-		return processResultsParallelInternal(ctx, h, vec, candidates, k, nil, roaringFilter)
+	return h.processResultsParallel(ctx, qv, qv, candidates, k, filter)
+}
+
+func (h *ArrowHNSW) processResultsParallel(ctx context.Context, qv any, originalQuery any, candidates []types.Candidate, k int, filter any) []types.SearchResult {
+	var roaringFilter *roaring.Bitmap
+	if f, ok := filter.(*roaring.Bitmap); ok {
+		roaringFilter = f
+	}
+
+	switch vec := qv.(type) {
+	case []float32:
+		return processResultsParallelInternal[float32](ctx, parallelSearchHostF32{h}, vec, candidates, k, nil, roaringFilter)
+	case []float64:
+		return processResultsParallelInternal[float64](ctx, parallelSearchHostF64{h}, vec, candidates, k, nil, roaringFilter)
+	default:
+		// Check originalQuery for complex types
+		switch oq := originalQuery.(type) {
+		case []complex128:
+			// Treat as float64 with 2N dims
+			raw := unsafe.Slice((*float64)(unsafe.Pointer(&oq[0])), len(oq)*2) // #nosec G103
+			return processResultsParallelInternal[float64](ctx, parallelSearchHostF64{h}, raw, candidates, k, nil, roaringFilter)
+		case []complex64:
+			// Treat as float32 with 2N dims
+			raw := unsafe.Slice((*float32)(unsafe.Pointer(&oq[0])), len(oq)*2) // #nosec G103
+			return processResultsParallelInternal[float32](ctx, parallelSearchHostF32{h}, raw, candidates, k, nil, roaringFilter)
+		}
 	}
 	return nil
+}
+
+func (h *ArrowHNSW) calculateAdaptiveEfExpansion(currentEf, found, k int, candidates []types.Candidate, maxCount int) int {
+	if found >= k {
+		return currentEf
+	}
+
+	// Heuristic: if we found almost enough, expand less. If we found almost none, expand more.
+	ratio := float64(found) / float64(k)
+	expansion := 5.0
+	if ratio > 0.5 {
+		expansion = 2.0
+	} else if ratio > 0.8 {
+		expansion = 1.5
+	}
+
+	// Also look at distance spread of candidates. If distances are very tight, expansion might not help much.
+	if len(candidates) > 1 {
+		minDist := candidates[0].Dist
+		maxDist := candidates[len(candidates)-1].Dist
+		if maxDist-minDist < 0.0001 {
+			expansion *= 1.2 // Push harder if we are stuck in a local minima
+		}
+	}
+
+	nextEf := int(float64(currentEf) * expansion)
+	if nextEf <= currentEf {
+		nextEf = currentEf + k
+	}
+	if nextEf > maxCount {
+		nextEf = maxCount
+	}
+	return nextEf
+}
+
+type parallelSearchHostF32 struct{ h *ArrowHNSW }
+
+func (p parallelSearchHostF32) GetDataset() types.IndexDataProvider { return p.h.dataset }
+func (p parallelSearchHostF32) GetLocationForParallel(id uint32) (types.Location, bool) {
+	return p.h.locationStore.Get(types.VectorID(id))
+}
+func (p parallelSearchHostF32) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float32) error {
+	return p.h.ExtractVectorToBufferForParallel(rec, rowIdx, dst)
+}
+func (p parallelSearchHostF32) GetParallelSearchConfig() types.ParallelSearchConfig {
+	return p.h.parallelConfig
+}
+func (p parallelSearchHostF32) GetDistanceFuncForParallel() func(a, b []float32) float32 {
+	return func(a, b []float32) float32 {
+		d, _ := p.h.distFunc(a, b)
+		return d
+	}
+}
+func (p parallelSearchHostF32) ExtractVectorByIDToBufferForParallel(id uint32, dst []float32) error {
+	return p.h.ExtractVectorByIDToBufferForParallel(id, dst)
+}
+func (p parallelSearchHostF32) GetDistanceMetric() basecore.DistanceMetric { return p.h.config.Metric }
+func (p parallelSearchHostF32) IsDeleted(id uint32) bool                   { return p.h.IsDeleted(id) }
+func (p parallelSearchHostF32) GetNUMAConfig() (*memory.NUMATopology, int) {
+	return p.h.topo, p.h.config.NUMANode
+}
+
+type parallelSearchHostF64 struct{ h *ArrowHNSW }
+
+func (p parallelSearchHostF64) GetDataset() types.IndexDataProvider { return p.h.dataset }
+func (p parallelSearchHostF64) GetLocationForParallel(id uint32) (types.Location, bool) {
+	return p.h.locationStore.Get(types.VectorID(id))
+}
+func (p parallelSearchHostF64) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float64) error {
+	return p.h.ExtractVectorF64ToBufferForParallel(rec, rowIdx, dst)
+}
+func (p parallelSearchHostF64) GetParallelSearchConfig() types.ParallelSearchConfig {
+	return p.h.parallelConfig
+}
+func (p parallelSearchHostF64) GetDistanceFuncForParallel() func(a, b []float64) float32 {
+	return func(a, b []float64) float32 {
+		d, _ := p.h.distFuncF64(a, b)
+		return d
+	}
+}
+func (p parallelSearchHostF64) ExtractVectorByIDToBufferForParallel(id uint32, dst []float64) error {
+	return p.h.ExtractVectorF64ByIDToBufferForParallel(id, dst)
+}
+func (p parallelSearchHostF64) GetDistanceMetric() basecore.DistanceMetric { return p.h.config.Metric }
+func (p parallelSearchHostF64) IsDeleted(id uint32) bool                   { return p.h.IsDeleted(id) }
+func (p parallelSearchHostF64) GetNUMAConfig() (*memory.NUMATopology, int) {
+	return p.h.topo, p.h.config.NUMANode
 }
 
 func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filters []query.Filter, options any) ([]types.SearchResult, error) {
@@ -3268,7 +3374,7 @@ func (h *ArrowHNSW) ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) 
 		}
 	}
 
-	vec, err := extractVectorRaw(rec, rowIdx, vecColIdx)
+	vec, err := ExtractVectorRaw(rec, rowIdx, vecColIdx)
 	if err != nil {
 		return nil, err
 	}
@@ -3344,7 +3450,7 @@ func (h *ArrowHNSW) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowI
 		return fmt.Errorf("vector column not found in record")
 	}
 
-	vec, err := extractVectorRaw(rec, rowIdx, vecColIdx)
+	vec, err := ExtractVectorRaw(rec, rowIdx, vecColIdx)
 	if err != nil {
 		return err
 	}
@@ -3428,6 +3534,54 @@ func (h *ArrowHNSW) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowI
 	}
 
 	return fmt.Errorf("unsupported vector type %T for buffer-based extraction", vec)
+}
+
+func (h *ArrowHNSW) ExtractVectorF64ToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float64) error {
+	vecColIdx := -1
+	for i, field := range rec.Schema().Fields() {
+		if field.Name == "vector" || field.Name == "embedding" {
+			vecColIdx = i
+			break
+		}
+	}
+
+	if vecColIdx == -1 {
+		return fmt.Errorf("vector column not found in record")
+	}
+
+	vec, err := ExtractVectorRaw(rec, rowIdx, vecColIdx)
+	if err != nil {
+		return err
+	}
+
+	switch v := vec.(type) {
+	case []float64:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		copy(dst, v)
+		return nil
+	case []complex128:
+		if len(dst) != len(v)*2 {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
+		}
+		if len(v) == 0 {
+			return nil
+		}
+		raw := unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
+		copy(dst, raw)
+		return nil
+	case []float32:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = float64(val)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported vector type for F64 extraction: %T", vec)
+	}
 }
 
 func (h *ArrowHNSW) GetDistanceFuncForParallel() func([]float32, []float32) float32 {
@@ -3531,6 +3685,42 @@ func (h *ArrowHNSW) ExtractVectorByIDToBufferForParallel(id uint32, dst []float3
 	}
 
 	return fmt.Errorf("unsupported vector type %T for buffer-based extraction", vecAny)
+}
+
+func (h *ArrowHNSW) ExtractVectorF64ByIDToBufferForParallel(id uint32, dst []float64) error {
+	vecAny, err := h.GetVector(id)
+	if err != nil {
+		return err
+	}
+
+	switch v := vecAny.(type) {
+	case []float64:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		copy(dst, v)
+		return nil
+	case []complex128:
+		if len(dst) != len(v)*2 {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
+		}
+		if len(v) == 0 {
+			return nil
+		}
+		raw := unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
+		copy(dst, raw)
+		return nil
+	case []float32:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = float64(val)
+		}
+		return nil
+	default:
+		return fmt.Errorf("unsupported vector type for ID F64 extraction: %T", vecAny)
+	}
 }
 
 

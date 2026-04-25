@@ -51,6 +51,38 @@ func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
 //go:noescape
 func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
 
+//go:noescape
+func euclideanFloat64NEONKernel(a, b []float64) float32
+
+func euclideanFloat64NEON(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanFloat64NEONKernel(a, b), nil
+}
+
+func dotFloat64NEON(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	n := len(a)
+	var sum float64
+	i := 0
+	for ; i <= n-2; i += 2 {
+		sum += a[i]*b[i] + a[i+1]*b[i+1]
+	}
+	for ; i < n; i++ {
+		sum += a[i] * b[i]
+	}
+	return float32(sum), nil
+}
+
 // Public Go wrappers (with error propagation)
 
 func euclideanNEON(a, b []float32) (float32, error) {
@@ -78,14 +110,24 @@ func euclidean384NEON(a, b []float32) (float32, error) {
 	return euclideanNEON(a, b)
 }
 
-// Optimized for 768 dimensions - use generic NEON kernel which is SIMD-optimized
+// Optimized blocked implementation for 768 dimensions - processes in 256-element blocks for better cache utilization
 func euclidean768NEON(a, b []float32) (float32, error) {
-	return euclideanNEON(a, b)
+	return euclideanBlockedGeneric(a, b, 256)
 }
 
-// Optimized for 1536 dimensions - use generic NEON kernel which is SIMD-optimized
+// Optimized blocked implementation for 1024 dimensions
+func euclidean1024NEON(a, b []float32) (float32, error) {
+	return euclideanBlockedGeneric(a, b, 256)
+}
+
+// Optimized blocked implementation for 1536 dimensions
 func euclidean1536NEON(a, b []float32) (float32, error) {
-	return euclideanNEON(a, b)
+	return euclideanBlockedGeneric(a, b, 256)
+}
+
+// Optimized blocked implementation for 3072 dimensions (uses 512-element blocks)
+func euclidean3072NEON(a, b []float32) (float32, error) {
+	return euclideanBlockedGeneric(a, b, 512)
 }
 
 func euclidean128NEON(a, b []float32) (float32, error) {

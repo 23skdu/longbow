@@ -97,9 +97,9 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		EuclideanDistance128:       euclidean128NEON,
 		EuclideanDistance384:       euclidean384NEON,
 		EuclideanDistance768:       euclidean768NEON,
-		EuclideanDistance1024:      euclidean1024Blocked,
+		EuclideanDistance1024:      euclidean1024NEON,
 		EuclideanDistance1536:      euclidean1536NEON,
-		EuclideanDistance3072:      euclidean3072Blocked,
+		EuclideanDistance3072:      euclidean3072NEON,
 
 		DotProduct128:  dot128NEON,
 		DotProduct384:  dot384NEON,
@@ -295,7 +295,7 @@ func initializeDispatch() {
 		dotProductF16Impl = dotF16NEON
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
-		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
+		euclideanDistanceFloat64Impl = euclideanFloat64NEON
 		dotProductFloat64Impl = dotFloat64Unrolled4x
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
@@ -346,7 +346,7 @@ func initializeDispatch() {
 		dotProductF16Impl = dotF16Unrolled4x
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
-		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
+		euclideanDistanceFloat64Impl = euclideanFloat64NEON
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
 		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x

@@ -31,3 +31,4 @@
 - [ ] **Full Test Coverage (95%)**: Comprehensive hardening of core packages (`store`, `query`, `storage`) to meet enterprise stability standards.
 - [ ] **TPU Support**: Production-ready implementation of Google TPU-accelerated indexing and search.
 - [ ] **GPU Sharding**: Automated partitioning of billion-scale indices across multiple GPUs.
+- [ ] **PiZero & Edge Optimization**: Full completion of low-memory, low-power CPU-only coverage for Raspberry Pi Zero (ARMv6/v7/v8) and other edge devices.

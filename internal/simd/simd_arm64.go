@@ -51,32 +51,36 @@ func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
 //go:noescape
 func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
 
-//go:noescape
-func euclideanFloat64NEONKernel(dataA unsafe.Pointer, dataB unsafe.Pointer, len int) float32
-
 func euclideanFloat64NEON(a, b []float64) (float32, error) {
-	// TODO: Debug - use fallback until assembly is fixed
-	return euclideanFloat64Unrolled4x(a, b)
-}
-
-func dotFloat64NEON(a, b []float64) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
 	if len(a) == 0 {
 		return 0, nil
 	}
+
 	n := len(a)
-	var sum float64
+	var sum0, sum1, sum2, sum3 float64
 	i := 0
-	for ; i <= n-2; i += 2 {
-		sum += a[i]*b[i] + a[i+1]*b[i+1]
+	for ; i <= n-4; i += 4 {
+		d0 := a[i] - b[i]
+		d1 := a[i+1] - b[i+1]
+		d2 := a[i+2] - b[i+2]
+		d3 := a[i+3] - b[i+3]
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
 	}
 	for ; i < n; i++ {
-		sum += a[i] * b[i]
+		d := a[i] - b[i]
+		sum0 += d * d
 	}
-	return float32(sum), nil
+
+	return float32(math.Sqrt(sum0 + sum1 + sum2 + sum3)), nil
 }
+
+
 
 // Public Go wrappers (with error propagation)
 

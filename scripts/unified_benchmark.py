@@ -59,6 +59,7 @@ DTYPE_BYTES = {
 
 def run_command(cmd, env=None, capture_output=True, timeout=None):
     try:
+        print(f"  [DEBUG] Executing: {cmd}")
         result = subprocess.run(
             cmd,
             env=env,
@@ -166,7 +167,8 @@ class BenchmarkRunner:
         
         # Aggressive port cleanup to avoid "address already in use"
         port = 3000
-        subprocess.run(f"lsof -ti:{port},{port+1},{port+80},{port+6000} | xargs kill -9 2>/dev/null || true", shell=True)
+        for p in [port, port + 1, port + 80, port + 6000]:
+            subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
         time.sleep(2) # Give OS time to release sockets
         
         server_bin = self.get_server_binary()

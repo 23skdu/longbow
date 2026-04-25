@@ -59,4 +59,8 @@ func matchFloat64Neon(src []float64, val float64, op CompareOp, dst []byte) erro
 	return matchFloat64Generic(src, val, op, dst)
 }
 
+func euclidean1024NEON(a, b []float32) (float32, error) { return euclideanUnrolled4x(a, b) }
+func euclidean3072NEON(a, b []float32) (float32, error) { return euclideanUnrolled4x(a, b) }
+func euclideanFloat64NEON(a, b []float64) (float32, error) { return euclideanFloat64Unrolled4x(a, b) }
+
 

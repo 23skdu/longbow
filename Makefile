@@ -30,6 +30,11 @@ build:
 	@echo "Building longbow..."
 	go build -v -o bin/longbow ./cmd/longbow
 
+# Build the bench-tool binary
+build-bench:
+	@echo "Building bench-tool..."
+	go build -v -o bin/bench-tool ./cmd/bench-tool
+
 # Build with CUDA GPU support (Linux AMD64)
 build-cuda:
 	@echo "Building longbow with CUDA support..."

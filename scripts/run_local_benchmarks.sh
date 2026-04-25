@@ -1,44 +1,44 @@
 #!/bin/bash
-# Benchmark runner for local CPU and Metal (runs in background)
+# Benchmark runner for local CPU and Metal
 cd /Users/rsd/REPOS/longbow
 
 export LONGBOW_MAX_MEMORY=19327352832
 
-# CPU mode - smaller matrix for speed
-echo "Starting CPU benchmarks..."
-source scripts/venv/bin/activate
-python3 -c "
-import subprocess, sys, os
-os.environ['LONGBOW_MAX_MEMORY'] = '19327352832'
+# Function to run benchmark group
+run_bench() {
+    local mode=$1
+    local dims=$2
+    local counts=$3
+    local dtypes=$4
+    local label=$5
+    
+    echo "Running $mode benchmarks for dims=$dims counts=$counts..."
+    source venv/bin/activate
+    python3 -u scripts/unified_benchmark.py \
+        --mode $mode \
+        --dims "$dims" \
+        --counts "$counts" \
+        --dtypes "$dtypes" \
+        --memory 19327352832 \
+        --duration 30 \
+        --queries 1000 \
+        --label "$label" \
+        2>&1 | tee "data/perf_logs/local_${mode}_${label}.log"
+}
 
-configs = [
-    ('128,384', '500,1000,5000,15000,50000,100000', 'float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant2,turboquant4,turboquant8'),
-    ('768,1024,3072', '500,1000,5000,10000,20000', 'float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant2,turboquant4,turboquant8'),
-]
+# DTs requested by user
+DTYPES="float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant2,turboquant4,turboquant8"
 
-for dims, counts, dtypes in configs:
-    cmd = f'python3 scripts/unified_benchmark.py --mode cpu --dims {dims} --counts {counts} --dtypes {dtypes} --memory 19327352832 --duration 30 --queries 1000 --label local_cpu_{dims}"
-    print(f'Running: {cmd}')
-    subprocess.run(cmd, shell=True)
-"
+# Run CPU and Metal sequentially on local host (to avoid resource contention on same machine)
+echo "Starting LOCAL benchmarks (CPU + Metal)..."
 
-echo "CPU benchmarks complete. Starting Metal..."
+# Group 1: 128, 384
+run_bench "cpu" "128,384" "500,1000,5000,15000,50000,100000" "$DTYPES" "low_dim"
+run_bench "metal" "128,384" "500,1000,5000,15000,50000,100000" "$DTYPES" "low_dim"
 
-source scripts/venv/bin/activate
-python3 -c "
-import subprocess, sys, os
-os.environ['LONGBOW_MAX_MEMORY'] = '19327352832'
+# Group 2: 768, 1024, 3072
+run_bench "cpu" "768,1024,3072" "500,1000,5000,10000,20000" "$DTYPES" "high_dim"
+run_bench "metal" "768,1024,3072" "500,1000,5000,10000,20000" "$DTYPES" "high_dim"
 
-configs = [
-    ('128,384', '500,1000,5000,15000,50000,100000', 'float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant2,turboquant4,turboquant8'),
-    ('768,1024,3072', '500,1000,5000,10000,20000', 'float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant2,turboquant4,turboquant8'),
-]
-
-for dims, counts, dtypes in configs:
-    cmd = f'python3 scripts/unified_benchmark.py --mode metal --dims {dims} --counts {counts} --dtypes {dtypes} --memory 19327352832 --duration 30 --queries 1000 --label local_metal_{dims}'
-    print(f'Running: {cmd}')
-    subprocess.run(cmd, shell=True)
-"
-
-echo "All local benchmarks complete!"
+echo "All LOCAL benchmarks complete!"
 date

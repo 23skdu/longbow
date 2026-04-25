@@ -17,6 +17,7 @@ typedef struct {
     int vectorCount;
     int dimensions;
     int capacity;
+    cudaStream_t streams[2];
 } CUDAIndexHandle;
 
 // Function declarations from kernels.cu
@@ -25,6 +26,7 @@ void launch_l2_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* que
 void launch_dot_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, cudaStream_t stream);
 void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* codes, float* distances, int m, int count, cudaStream_t stream);
 void launch_turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count, cudaStream_t stream);
+void launch_l2_distance_filtered_kernel(const float* vectors, const float* query, float* distances, const unsigned long long* bitset, int dimensions, int count, cudaStream_t stream);
 
 CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
     int device = 0;
@@ -61,7 +63,19 @@ CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
     cudaMemset(handle->vectorBuffer, 0, bufferSize);
     cudaMemset(handle->idBuffer, 0, idBufferSize);
 
+    cudaStreamCreate(&handle->streams[0]);
+    cudaStreamCreate(&handle->streams[1]);
+
     return handle;
+}
+
+void cuda_free(CUDAIndexHandle* handle) {
+    if (!handle) return;
+    if (handle->vectorBuffer) cudaFree(handle->vectorBuffer);
+    if (handle->idBuffer) cudaFree(handle->idBuffer);
+    cudaStreamDestroy(handle->streams[0]);
+    cudaStreamDestroy(handle->streams[1]);
+    free(handle);
 }
 
 void cuda_get_device_info(CUDAIndexHandle* handle, char* name, int maxLen, uint64_t* totalMem) {
@@ -85,60 +99,73 @@ int cuda_add_vectors(CUDAIndexHandle* handle, float* h_vectors, int64_t* h_ids, 
     int requiredCapacity = handle->vectorCount + count;
     if (requiredCapacity > handle->capacity) {
         int newCapacity = handle->capacity;
+        if (newCapacity == 0) newCapacity = 10000;
         while (newCapacity < requiredCapacity) {
             newCapacity *= 2;
         }
 
-        size_t newBufferSize = newCapacity * handle->dimensions * sizeof(float);
+        size_t newBufferSize = (size_t)newCapacity * handle->dimensions * sizeof(float);
         void* newVectorBuffer = NULL;
         cudaError_t err = cudaMalloc((void**)&newVectorBuffer, newBufferSize);
         if (err != cudaSuccess) {
             return -1;
         }
 
-        if (handle->vectorCount > 0) {
-            cudaMemcpy(newVectorBuffer, handle->vectorBuffer,
-                       handle->vectorCount * handle->dimensions * sizeof(float),
-                       cudaMemcpyDeviceToDevice);
-        }
-
-        cudaFree(handle->vectorBuffer);
-        handle->vectorBuffer = newVectorBuffer;
-
-        size_t newIdBufferSize = newCapacity * sizeof(int64_t);
+        size_t newIdBufferSize = (size_t)newCapacity * sizeof(int64_t);
         void* newIdBuffer = NULL;
         err = cudaMalloc((void**)&newIdBuffer, newIdBufferSize);
         if (err != cudaSuccess) {
+            cudaFree(newVectorBuffer);
             return -1;
         }
 
         if (handle->vectorCount > 0) {
-            cudaMemcpy(newIdBuffer, handle->idBuffer,
-                       handle->vectorCount * sizeof(int64_t),
-                       cudaMemcpyDeviceToDevice);
+            cudaMemcpy(newVectorBuffer, handle->vectorBuffer, (size_t)handle->vectorCount * handle->dimensions * sizeof(float), cudaMemcpyDeviceToDevice);
+            cudaMemcpy(newIdBuffer, handle->idBuffer, (size_t)handle->vectorCount * sizeof(int64_t), cudaMemcpyDeviceToDevice);
+            cudaFree(handle->vectorBuffer);
+            cudaFree(handle->idBuffer);
         }
 
-        cudaFree(handle->idBuffer);
+        handle->vectorBuffer = newVectorBuffer;
         handle->idBuffer = newIdBuffer;
         handle->capacity = newCapacity;
     }
 
-    size_t vectorSize = count * handle->dimensions * sizeof(float);
-    void* vectorOffset = (char*)handle->vectorBuffer + handle->vectorCount * handle->dimensions * sizeof(float);
-    cudaError_t err = cudaMemcpy(vectorOffset, h_vectors, vectorSize, cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) {
-        return -1;
-    }
+    size_t vectorOffset = (size_t)handle->vectorCount * handle->dimensions * sizeof(float);
+    size_t idOffset = (size_t)handle->vectorCount * sizeof(int64_t);
 
-    size_t idSize = count * sizeof(int64_t);
-    void* idOffset = (char*)handle->idBuffer + handle->vectorCount * sizeof(int64_t);
-    err = cudaMemcpy(idOffset, h_ids, idSize, cudaMemcpyHostToDevice);
-    if (err != cudaSuccess) {
-        return -1;
+    // Use double buffering: split batch in two and send via separate streams
+    int halfCount = count / 2;
+    if (halfCount > 0) {
+        cudaMemcpyAsync((char*)handle->vectorBuffer + vectorOffset, h_vectors, (size_t)halfCount * handle->dimensions * sizeof(float), cudaMemcpyHostToDevice, handle->streams[0]);
+        cudaMemcpyAsync((char*)handle->idBuffer + idOffset, h_ids, (size_t)halfCount * sizeof(int64_t), cudaMemcpyHostToDevice, handle->streams[0]);
+
+        int remainingCount = count - halfCount;
+        size_t vRemOffset = vectorOffset + (size_t)halfCount * handle->dimensions * sizeof(float);
+        size_t iRemOffset = idOffset + (size_t)halfCount * sizeof(int64_t);
+        
+        cudaMemcpyAsync((char*)handle->vectorBuffer + vRemOffset, h_vectors + halfCount * handle->dimensions, (size_t)remainingCount * handle->dimensions * sizeof(float), cudaMemcpyHostToDevice, handle->streams[1]);
+        cudaMemcpyAsync((char*)handle->idBuffer + iRemOffset, h_ids + halfCount, (size_t)remainingCount * sizeof(int64_t), cudaMemcpyHostToDevice, handle->streams[1]);
+        
+        cudaStreamSynchronize(handle->streams[0]);
+        cudaStreamSynchronize(handle->streams[1]);
+    } else if (count > 0) {
+        cudaMemcpy((char*)handle->vectorBuffer + vectorOffset, h_vectors, (size_t)count * handle->dimensions * sizeof(float), cudaMemcpyHostToDevice);
+        cudaMemcpy((char*)handle->idBuffer + idOffset, h_ids, (size_t)count * sizeof(int64_t), cudaMemcpyHostToDevice);
     }
 
     handle->vectorCount += count;
     return 0;
+}
+
+void cuda_get_ids(CUDAIndexHandle* handle, int64_t* h_ids, int count) {
+    if (handle->idBuffer && count > 0) {
+        cudaMemcpy(h_ids, handle->idBuffer, (size_t)count * sizeof(int64_t), cudaMemcpyDeviceToHost);
+    }
+}
+
+int cuda_get_count(CUDAIndexHandle* handle) {
+    return handle->vectorCount;
 }
 
 int cuda_add_vectors_fp16(CUDAIndexHandle* handle, uint16_t* h_vectors, int64_t* h_ids, int count) {
@@ -1023,3 +1050,71 @@ func (idx *CUDAIndex) AssignToClusters(vectors []float32, centroids []float32) (
 	return assignments, nil
 }
 
+func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) ([]types.SearchResult, error) {
+	if len(query) != idx.dimensions {
+		return nil, fmt.Errorf("query dimension mismatch: expected %d, got %d", idx.dimensions, len(query))
+	}
+
+	// 1. Upload query
+	var d_query unsafe.Pointer
+	cudaErr := C.cudaMalloc(&d_query, C.size_t(idx.dimensions*4))
+	if cudaErr != C.cudaSuccess {
+		return nil, fmt.Errorf("cudaMalloc query failed: %v", cudaErr)
+	}
+	defer C.cudaFree(d_query)
+	C.cudaMemcpy(d_query, unsafe.Pointer(&query[0]), C.size_t(idx.dimensions*4), C.cudaMemcpyHostToDevice)
+
+	// 2. Upload bitset if provided
+	var d_bitset unsafe.Pointer
+	if len(bitset) > 0 {
+		bitsetSize := C.size_t(len(bitset) * 8)
+		cudaErr = C.cudaMalloc(&d_bitset, bitsetSize)
+		if cudaErr != C.cudaSuccess {
+			return nil, fmt.Errorf("cudaMalloc bitset failed: %v", cudaErr)
+		}
+		defer C.cudaFree(d_bitset)
+		C.cudaMemcpy(d_bitset, unsafe.Pointer(&bitset[0]), bitsetSize, C.cudaMemcpyHostToDevice)
+	}
+
+	// 3. Prepare distances buffer
+	var d_distances unsafe.Pointer
+	C.cudaMalloc(&d_distances, C.size_t(idx.vectorCount*4))
+	defer C.cudaFree(d_distances)
+
+	// 4. Launch fused kernel
+	C.launch_l2_distance_filtered_kernel(
+		(*C.float)(idx.handle.vectorBuffer),
+		(*C.float)(d_query),
+		(*C.float)(d_distances),
+		(*C.unsigned_long_long)(d_bitset),
+		C.int(idx.dimensions),
+		C.int(idx.vectorCount),
+		nil,
+	)
+
+	// 5. Download results
+	h_distances := make([]float32, idx.vectorCount)
+	C.cudaMemcpy(unsafe.Pointer(&h_distances[0]), d_distances, C.size_t(idx.vectorCount*4), C.cudaMemcpyDeviceToHost)
+
+	// 6. Download IDs
+	h_ids := make([]int64, idx.vectorCount)
+	C.cuda_get_ids(idx.handle, (*C.int64_t)(unsafe.Pointer(&h_ids[0])), C.int(idx.vectorCount))
+
+	// 7. Sort and return top-k
+	results := make([]types.SearchResult, 0, k)
+	for i, dist := range h_distances {
+		if dist >= 1e29f { // Filtered out
+			continue
+		}
+		results = append(results, types.SearchResult{
+			ID:       types.VectorID(h_ids[i]),
+			Distance: dist,
+		})
+	}
+	sort.Slice(results, func(i, j int) bool { return results[i].Distance < results[j].Distance })
+	if len(results) > k {
+		results = results[:k]
+	}
+
+	return results, nil
+}

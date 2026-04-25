@@ -28,5 +28,9 @@
 - [x] Support for billion-scale IVF-HNSW composite indexing. (v0.1.9)
 - [x] Integrated Optimized Product Quantization (OPQ) training. (v0.1.9)
 - [x] Real-time index adaptation based on query patterns. (v0.1.9)
-- [ ] Integration with hardware-accelerated GraphRAG traversal.
-- [ ] Adaptive re-quantization based on query load and available memory.
+## Roadmap for 1.2.0
+
+- [ ] **Full Test Coverage (95%)**: Comprehensive hardening of core packages (`store`, `query`, `storage`) to meet enterprise stability standards.
+- [ ] **TPU Support**: Production-ready implementation of Google TPU-accelerated indexing and search.
+- [ ] **Hardware-accelerated GraphRAG**: Native traversal of billion-scale knowledge graphs.
+- [ ] **Adaptive Re-quantization**: Real-time memory optimization based on query load.

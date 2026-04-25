@@ -1079,7 +1079,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	}
 
 	// Automatic GPU dispatch for supported types
-	if h.gpuEnabled && h.gpuIndex != nil && h.nodeCount.Load() >= 1000 {
+	if h.gpuEnabled && h.gpuIndex != nil && h.nodeCount.Load() >= 5000 {
 		gpuResults, err := h.searchGPU(ctx, queryVec, k)
 		if err == nil && len(gpuResults) > 0 {
 			return gpuResults, nil
@@ -3331,6 +3331,105 @@ func (h *ArrowHNSW) ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) 
 	return nil, fmt.Errorf("unsupported vector type %T for parallel search refinement", vec)
 }
 
+func (h *ArrowHNSW) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float32) error {
+	vecColIdx := -1
+	for i, field := range rec.Schema().Fields() {
+		if field.Name == "vector" || field.Name == "embedding" {
+			vecColIdx = i
+			break
+		}
+	}
+
+	if vecColIdx == -1 {
+		return fmt.Errorf("vector column not found in record")
+	}
+
+	vec, err := extractVectorRaw(rec, rowIdx, vecColIdx)
+	if err != nil {
+		return err
+	}
+
+	// Optimized buffer-based conversion
+	switch v := vec.(type) {
+	case []float32:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		copy(dst, v)
+		return nil
+	case []float64:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = float32(val)
+		}
+		return nil
+	case []complex128:
+		if len(dst) != len(v)*2 {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
+		}
+		for i, val := range v {
+			dst[i*2] = float32(real(val))
+			dst[i*2+1] = float32(imag(val))
+		}
+		return nil
+	case []complex64:
+		if len(dst) != len(v)*2 {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
+		}
+		// Complex64 is 2x float32 in memory
+		if len(v) == 0 {
+			return nil
+		}
+		raw := unsafe.Slice((*float32)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
+		copy(dst, raw)
+		return nil
+	case []float16.Num:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = val.Float32()
+		}
+		return nil
+	case []int8:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = float32(val)
+		}
+		return nil
+	case []uint8:
+		if h.quantizer != nil && h.sq8Ready.Load() {
+			decoded := h.quantizer.Decode(v)
+			if len(dst) != len(decoded) {
+				return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(decoded))
+			}
+			copy(dst, decoded)
+			return nil
+		}
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = float32(val)
+		}
+		return nil
+	case []int32:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = float32(val)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("unsupported vector type %T for buffer-based extraction", vec)
+}
+
 func (h *ArrowHNSW) GetDistanceFuncForParallel() func([]float32, []float32) float32 {
 	return func(a, b []float32) float32 {
 		d, _ := h.distFunc(a, b)
@@ -3340,6 +3439,100 @@ func (h *ArrowHNSW) GetDistanceFuncForParallel() func([]float32, []float32) floa
 
 func (h *ArrowHNSW) GetPQEnabledForParallel() bool          { return h.config.PQEnabled }
 func (h *ArrowHNSW) GetPQEncoderForParallel() *pq.PQEncoder { return h.pqEncoder }
+
+func (h *ArrowHNSW) ExtractVectorByIDToBufferForParallel(id uint32, dst []float32) error {
+	vecAny, err := h.GetVector(id)
+	if err != nil {
+		return err
+	}
+
+	switch v := vecAny.(type) {
+	case []float32:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		copy(dst, v)
+		return nil
+	case []complex128:
+		if len(dst) != len(v)*2 {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
+		}
+		for i, val := range v {
+			dst[i*2] = float32(real(val))
+			dst[i*2+1] = float32(imag(val))
+		}
+		return nil
+	case []complex64:
+		if len(dst) != len(v)*2 {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
+		}
+		if len(v) == 0 {
+			return nil
+		}
+		raw := unsafe.Slice((*float32)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
+		copy(dst, raw)
+		return nil
+	case []float64:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = float32(val)
+		}
+		return nil
+	case []float16.Num:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = val.Float32()
+		}
+		return nil
+	case []int8:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = float32(val)
+		}
+		return nil
+	case []uint8:
+		if h.quantizer != nil && h.sq8Ready.Load() {
+			decoded := h.quantizer.Decode(v)
+			if len(dst) != len(decoded) {
+				return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(decoded))
+			}
+			copy(dst, decoded)
+			return nil
+		}
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = float32(val)
+		}
+		return nil
+	case []int32:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = float32(val)
+		}
+		return nil
+	case []uint32:
+		if len(dst) != len(v) {
+			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
+		}
+		for i, val := range v {
+			dst[i] = float32(val)
+		}
+		return nil
+	}
+
+	return fmt.Errorf("unsupported vector type %T for buffer-based extraction", vecAny)
+}
+
 
 func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
 	vecAny, err := h.GetVector(id)

@@ -20,14 +20,14 @@ func (p *ZeroAllocTemporalParser) ParseSearch(data []byte) (TemporalSearchReques
 		return res, nil
 	}
 
-	i := skipWhitespace(data, 0)
+	i := SkipWhitespace(data, 0)
 	if i >= len(data) || data[i] != '{' {
 		return res, errors.New("expected opening brace")
 	}
 	i++
 
 	for i < len(data) {
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 		if i >= len(data) {
 			return res, errors.New("unexpected end of JSON")
 		}
@@ -40,64 +40,64 @@ func (p *ZeroAllocTemporalParser) ParseSearch(data []byte) (TemporalSearchReques
 			return res, errors.New("expected quote for key")
 		}
 
-		key, newPos, err := parseString(data, i)
+		key, newPos, err := ParseString(data, i)
 		if err != nil {
 			return res, err
 		}
 		i = newPos
 
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 		if i >= len(data) || data[i] != ':' {
 			return res, errors.New("expected colon")
 		}
 		i++
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 
 		switch key {
 		case "search_type":
-			val, newPos, err := parseString(data, i)
+			val, newPos, err := ParseString(data, i)
 			if err != nil {
 				return res, err
 			}
 			res.SearchType = val
 			i = newPos
 		case "k":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return res, err
 			}
 			res.K = int(val)
 			i = newPos
 		case "timestamp":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return res, err
 			}
 			res.Timestamp = val
 			i = newPos
 		case "start_time":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return res, err
 			}
 			res.StartTime = val
 			i = newPos
 		case "end_time":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return res, err
 			}
 			res.EndTime = val
 			i = newPos
 		case "window_size":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return res, err
 			}
 			res.WindowSize = int(val)
 			i = newPos
 		case "duration":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return res, err
 			}
@@ -105,14 +105,14 @@ func (p *ZeroAllocTemporalParser) ParseSearch(data []byte) (TemporalSearchReques
 			i = newPos
 		default:
 			// Skip unknown fields
-			newPos, err := skipValue(data, i)
+			newPos, err := SkipValue(data, i)
 			if err != nil {
 				return res, err
 			}
 			i = newPos
 		}
 
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 		if i < len(data) && data[i] == ',' {
 			i++
 		}
@@ -128,14 +128,14 @@ func (p *ZeroAllocTemporalParser) ParseAggregation(data []byte) (TemporalAggrega
 		return res, nil
 	}
 
-	i := skipWhitespace(data, 0)
+	i := SkipWhitespace(data, 0)
 	if i >= len(data) || data[i] != '{' {
 		return res, errors.New("expected opening brace")
 	}
 	i++
 
 	for i < len(data) {
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 		if i >= len(data) {
 			return res, errors.New("unexpected end of JSON")
 		}
@@ -148,50 +148,50 @@ func (p *ZeroAllocTemporalParser) ParseAggregation(data []byte) (TemporalAggrega
 			return res, errors.New("expected quote for key")
 		}
 
-		key, newPos, err := parseString(data, i)
+		key, newPos, err := ParseString(data, i)
 		if err != nil {
 			return res, err
 		}
 		i = newPos
 
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 		if i >= len(data) || data[i] != ':' {
 			return res, errors.New("expected colon")
 		}
 		i++
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 
 		switch key {
 		case "aggregation_type":
-			val, newPos, err := parseString(data, i)
+			val, newPos, err := ParseString(data, i)
 			if err != nil {
 				return res, err
 			}
 			res.AggregationType = val
 			i = newPos
 		case "start_time":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return res, err
 			}
 			res.StartTime = val
 			i = newPos
 		case "end_time":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return res, err
 			}
 			res.EndTime = val
 			i = newPos
 		case "interval":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return res, err
 			}
 			res.Interval = val
 			i = newPos
 		case "metric_field":
-			val, newPos, err := parseString(data, i)
+			val, newPos, err := ParseString(data, i)
 			if err != nil {
 				return res, err
 			}
@@ -199,14 +199,14 @@ func (p *ZeroAllocTemporalParser) ParseAggregation(data []byte) (TemporalAggrega
 			i = newPos
 		default:
 			// Skip unknown fields
-			newPos, err := skipValue(data, i)
+			newPos, err := SkipValue(data, i)
 			if err != nil {
 				return res, err
 			}
 			i = newPos
 		}
 
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 		if i < len(data) && data[i] == ',' {
 			i++
 		}

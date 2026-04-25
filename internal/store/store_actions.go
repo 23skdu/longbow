@@ -17,6 +17,8 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/query"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -63,7 +65,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		// Body is optional
 		if len(action.Body) > 0 {
-			if err := json.Unmarshal(action.Body, &req); err != nil {
+			if err := query.ParseDatasetRequest(action.Body, &req.Dataset); err != nil {
 				return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 			}
 		}
@@ -109,7 +111,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			Dataset string `json:"dataset"`
 		}
 		if len(action.Body) > 0 {
-			if err := json.Unmarshal(action.Body, &req); err != nil {
+			if err := query.ParseDatasetRequest(action.Body, &req.Dataset); err != nil {
 				return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 			}
 		}
@@ -128,11 +130,8 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		return nil
 
 	case "delete", "Delete":
-		var req struct {
-			Dataset string `json:"dataset"`
-			ID      string `json:"id"`
-		}
-		if err := json.Unmarshal(action.Body, &req); err != nil {
+		var req core.VectorSearchByIDRequest
+		if err := query.ParseSearchByIDRequest(action.Body, &req); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
 		s.WaitForIndexing(req.Dataset)
@@ -305,16 +304,12 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		return stream.Send(&flight.Result{Body: []byte("schema altered")})
 
 	case "delete-dataset", "DeleteNamespace", "delete-namespace":
-		var curr map[string]any
-		if err := json.Unmarshal(action.Body, &curr); err != nil {
+		var dsName string
+		if err := query.ParseDatasetRequest(action.Body, &dsName); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
 
-		dsName, ok := curr["dataset"].(string)
-		if !ok {
-			dsName, ok = curr["name"].(string)
-		}
-		if !ok {
+		if dsName == "" {
 			return status.Error(codes.InvalidArgument, "missing dataset name (use 'dataset' or 'name')")
 		}
 

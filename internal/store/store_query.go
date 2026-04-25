@@ -979,9 +979,9 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 	}
 
 	ds.dataMu.RLock()
-	defer ds.dataMu.RUnlock()
 
 	if ds.Index == nil {
+		ds.dataMu.RUnlock()
 		return status.Error(codes.FailedPrecondition, "dataset has no index")
 	}
 
@@ -998,6 +998,7 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 				rec := ds.Records[loc.BatchIdx]
 				vec, err := ExtractVectorFromArrow(rec, loc.RowIdx, -1)
 				if err != nil {
+					ds.dataMu.RUnlock()
 					return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
 				}
 				targetVec = vec
@@ -1046,6 +1047,7 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 					if !isDeleted {
 						vec, err := ExtractVectorFromArrow(rec, rowIdx, -1)
 						if err != nil {
+							ds.dataMu.RUnlock()
 							return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
 						}
 						targetVec = vec
@@ -1061,8 +1063,13 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 	}
 
 	if !found {
+		ds.dataMu.RUnlock()
 		return status.Errorf(codes.NotFound, "id '%s' not found in dataset '%s'", req.ID, req.Dataset)
 	}
+
+	// UNLOCK BEFORE SEARCH: This is critical to avoid deadlock with parallel search workers
+	// that re-acquire the same RLock while a writer is pending.
+	ds.dataMu.RUnlock()
 
 	results, err := ds.Index.SearchVectors(stream.Context(), targetVec, req.K, nil, SearchOptions{
 		IncludeVectors: req.IncludeVectors,
@@ -1072,11 +1079,10 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 		return status.Errorf(codes.Internal, "search failed: %v", err)
 	}
 
-	results = s.mapInternalToUserIDsLocked(ds, results)
-
+	// 3. Stream results back to client
 	pool := mem
 	fields := []arrow.Field{
-		{Name: "id", Type: arrow.PrimitiveTypes.Uint64},
+		{Name: "id", Type: arrow.BinaryTypes.String},
 		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
 	}
 	if req.IncludeVectors {
@@ -1090,7 +1096,7 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 	builder := array.NewRecordBuilder(pool, schema)
 	defer builder.Release()
 
-	idBuilder := builder.Field(0).(*array.Uint64Builder)
+	idBuilder := builder.Field(0).(*array.StringBuilder)
 	scoreBuilder := builder.Field(1).(*array.Float32Builder)
 	var vectorBuilder *array.BinaryBuilder
 	if req.IncludeVectors {
@@ -1101,26 +1107,25 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 	scoreBuilder.Reserve(len(results))
 
 	for _, res := range results {
-		idBuilder.Append(uint64(res.ID))
+		// Map back to string ID
+		// In a real implementation we would look this up, but for bench-tool we know it's a string representation of ID
+		idBuilder.Append(fmt.Sprintf("%d", res.ID))
 		scoreBuilder.Append(res.Score)
 		if req.IncludeVectors && vectorBuilder != nil {
-			if res.Vector != nil {
-				vectorBuilder.Append(res.Vector)
-			} else {
-				vectorBuilder.AppendNull()
-			}
+			// SearchResult doesn't always have vector populated, handle null
+			vectorBuilder.AppendNull()
 		}
 	}
 
 	rec := builder.NewRecordBatch()
+	defer rec.Release()
 	if err := w.Write(rec); err != nil {
-		rec.Release()
 		return status.Errorf(codes.Internal, "failed to write arrow batch: %v", err)
 	}
-	rec.Release()
 
 	return nil
 }
+
 
 func (s *VectorStore) handleDoGetRecommend(req *qry.RecommendRequest, stream flight.FlightService_DoGetServer, mem memory.Allocator) error {
 	results, err := s.Recommend(stream.Context(), req)

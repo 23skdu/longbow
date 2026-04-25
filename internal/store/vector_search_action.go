@@ -327,8 +327,8 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 
 // handleVectorSearchByIDAction handles the VectorSearchByID DoAction request
 func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-	var req query.VectorSearchByIDRequest
-	if err := json.Unmarshal(action.Body, &req); err != nil {
+	var req core.VectorSearchByIDRequest
+	if err := query.ParseSearchByIDRequest(action.Body, &req); err != nil {
 		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 	}
 

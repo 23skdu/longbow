@@ -31,11 +31,13 @@ type ParallelSearchHost interface {
 	GetDataset() types.IndexDataProvider
 	GetLocationForParallel(id uint32) (types.Location, bool)
 	ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) ([]float32, error)
+	ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float32) error
 	GetParallelSearchConfig() types.ParallelSearchConfig
 	GetDistanceFuncForParallel() func(a, b []float32) float32
 	GetPQEnabledForParallel() bool
 	GetPQEncoderForParallel() *pq.PQEncoder
 	ExtractVectorByIDForParallel(id uint32) ([]float32, error)
+	ExtractVectorByIDToBufferForParallel(id uint32, dst []float32) error
 	GetDistanceMetric() basecore.DistanceMetric
 	SearchForParallel(query []float32, k int) []types.Candidate
 	IsDeleted(id uint32) bool
@@ -210,11 +212,26 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 
 	metrics.PrefetchOperationsTotal.Add(float64(prefetchOps))
 
-	type vectorTask struct {
-		id  uint32
-		vec []float32
+	// Step 2 & 3: Extract vectors and compute distances
+	dims := len(query)
+	need := len(candidates) * dims
+
+	// Reuse a pooled buffer to avoid per-search heap allocations.
+	pBuf := flatBufferPool.Get().(*[]float32)
+	if cap(*pBuf) < need {
+		*pBuf = make([]float32, need)
+	} else {
+		*pBuf = (*pBuf)[:need]
 	}
-	tasks := make([]vectorTask, 0, len(candidates))
+	flatBuffer := *pBuf
+	defer func() {
+		*pBuf = flatBuffer[:0]
+		flatBufferPool.Put(pBuf)
+	}()
+
+	validIDs := make([]uint32, 0, len(candidates))
+	count := 0
+
 	evaluators := make(map[int]*qry.FilterEvaluator)
 	if dataset != nil {
 		dataset.RLockData()
@@ -244,13 +261,17 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 			continue
 		}
 
+		dst := flatBuffer[count*dims : (count+1)*dims]
+		var err error
+
 		if dataset != nil {
 			loc := locations[i]
 			records := dataset.GetRecords()
 			if loc.BatchIdx < 0 || loc.BatchIdx >= len(records) {
-				vec, err := h.ExtractVectorByIDForParallel(n.ID)
-				if err == nil && vec != nil {
-					tasks = append(tasks, vectorTask{id: n.ID, vec: vec})
+				err = h.ExtractVectorByIDToBufferForParallel(n.ID, dst)
+				if err == nil {
+					validIDs = append(validIDs, n.ID)
+					count++
 				}
 				continue
 			}
@@ -259,7 +280,6 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 			if len(evaluators) > 0 {
 				ev, ok := evaluators[loc.BatchIdx]
 				if !ok {
-					var err error
 					ev, err = qry.NewFilterEvaluator(records[loc.BatchIdx], filters)
 					if err != nil {
 						continue
@@ -273,75 +293,48 @@ func processChunkInternal(ctx context.Context, h ParallelSearchHost, query []flo
 				metrics.HnswBranchPredictionTotal.WithLabelValues("filter_match").Inc()
 			}
 
-			vec, err := h.ExtractVectorForParallel(rec, loc.RowIdx)
-			if err == nil && vec != nil {
-				tasks = append(tasks, vectorTask{id: n.ID, vec: vec})
-			}
+			err = h.ExtractVectorToBufferForParallel(rec, loc.RowIdx, dst)
 		} else {
 			if len(filters) > 0 {
 				continue
 			}
-			vec, err := h.ExtractVectorByIDForParallel(n.ID)
-			if err == nil && vec != nil {
-				tasks = append(tasks, vectorTask{id: n.ID, vec: vec})
-			}
+			err = h.ExtractVectorByIDToBufferForParallel(n.ID, dst)
+		}
+
+		if err == nil {
+			validIDs = append(validIDs, n.ID)
+			count++
 		}
 	}
 	if dataset != nil {
 		dataset.RUnlockData()
 	}
 
-	// Step 3: Compute distances
-	numTasks := len(tasks)
-	if numTasks == 0 {
+	if count == 0 {
 		return results
 	}
 
-	dims := len(query)
-	need := numTasks * dims
-
-	// Reuse a pooled buffer to avoid per-search heap allocations.
-	pBuf := flatBufferPool.Get().(*[]float32)
-	if cap(*pBuf) < need {
-		*pBuf = make([]float32, need)
-	} else {
-		*pBuf = (*pBuf)[:need]
-	}
-	flatBuffer := *pBuf
-	defer func() {
-		*pBuf = flatBuffer[:0]
-		flatBufferPool.Put(pBuf)
-	}()
-
-	scores := make([]float32, numTasks)
-
-	for i, t := range tasks {
-		offset := i * dims
-		copy(flatBuffer[offset:offset+dims], t.vec)
-		if i+4 < numTasks {
-			simd.Prefetch(unsafe.Pointer(&flatBuffer[(i+4)*dims])) // #nosec G103
-		}
-	}
-
-	metric := h.GetDistanceMetric()
+	scores := make([]float32, count)
 	usedBatch := false
+	metric := h.GetDistanceMetric()
+
 	if metric == basecore.MetricEuclidean {
-		if err := simd.EuclideanDistanceBatchFlat(query, flatBuffer, numTasks, dims, scores); err == nil {
+		if err := simd.EuclideanDistanceBatchFlat(query, flatBuffer[:count*dims], count, dims, scores); err == nil {
 			usedBatch = true
 		}
 	}
 
 	if !usedBatch {
 		distFunc := h.GetDistanceFuncForParallel()
-		for i := 0; i < numTasks; i++ {
+		for i := 0; i < count; i++ {
 			scores[i] = distFunc(query, flatBuffer[i*dims:(i+1)*dims])
 		}
 	}
 
-	for i, t := range tasks {
+	for i := 0; i < count; i++ {
 		dist := scores[i]
 		results = append(results, types.SearchResult{
-			ID:       types.VectorID(t.id),
+			ID:       types.VectorID(validIDs[i]),
 			Distance: dist,
 			Score:    1.0 / (1.0 + dist),
 		})

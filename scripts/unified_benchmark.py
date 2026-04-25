@@ -113,8 +113,9 @@ class BenchmarkRunner:
         os.makedirs(self.data_dir, exist_ok=True)
 
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        label_suffix = f"_{args.label}" if args.label else ""
         self.output_file = os.path.join(
-            self.log_dir, f"perf_matrix_{args.mode}_{self.timestamp}.json"
+            self.log_dir, f"perf_matrix_{args.mode}{label_suffix}_{self.timestamp}.json"
         )
         self.results = []
         self.server_pid = None
@@ -159,6 +160,12 @@ class BenchmarkRunner:
     def start_server(self, label, env_overrides=None):
         """Start a fresh Longbow server for a specific configuration."""
         self.stop_server()
+        
+        # Aggressive port cleanup to avoid "address already in use"
+        port = 3000
+        subprocess.run(f"lsof -ti:{port},{port+1},{port+80},{port+6000} | xargs kill -9 2>/dev/null || true", shell=True)
+        time.sleep(2) # Give OS time to release sockets
+        
         server_bin = self.get_server_binary()
         if not os.path.exists(server_bin):
             print(f"  Error: {server_bin} not found!")
@@ -255,8 +262,8 @@ class BenchmarkRunner:
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)
         
-        # Start background pprof collection if on localhost
-        pprof_file = os.path.join(self.log_dir, f"profile_{label}.pprof")
+        label_full = f"{label}_{self.args.label}" if self.args.label else label
+        pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
         pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
         
@@ -602,7 +609,8 @@ class BenchmarkRunner:
                         print(f"  Creating dataset {dataset_name}...")
 
                         # Start background pprof collection
-                        pprof_file = os.path.join(self.log_dir, f"profile_{label}.pprof")
+                        label_full = f"{label}_{self.args.label}" if self.args.label else label
+                        pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
                         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
                         pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
                         pprof_proc = subprocess.Popen(
@@ -940,7 +948,8 @@ class BenchmarkRunner:
                         search_types = ["as_of", "range", "sliding_window", "sliding_window_time"]
 
                         # Start background pprof collection
-                        pprof_file = os.path.join(self.log_dir, f"profile_{label}.pprof")
+                        label_full = f"{label}_{self.args.label}" if self.args.label else label
+                        pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
                         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
                         pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
                         pprof_proc = subprocess.Popen(
@@ -2010,9 +2019,15 @@ class BenchmarkRunner:
             )
             print("─" * 100)
             for r in self.results:
-                print(
-                    f"{r['alpha']:<8} {r['k']:<6} {r['qps']:<12.1f} {r['p50']:<10.2f} {r['p95']:<10.2f} {r['p99']:<10.2f}"
-                )
+                if 'alpha' in r:
+                    print(
+                        f"{r['alpha']:<8} {r['k']:<6} {r['qps']:<12.1f} {r['p50']:<10.2f} {r['p95']:<10.2f} {r['p99']:<10.2f}"
+                    )
+                elif 'search' in r and 'graphrag' in r['search']:
+                    s = r['search']['graphrag']
+                    print(
+                        f"{'0.5':<8} {'10':<6} {s['qps']:<12.1f} {s['p50']:<10.2f} {s['p95']:<10.2f} {s['p99']:<10.2f}"
+                    )
             print("─" * 100)
             return
 
@@ -2127,9 +2142,15 @@ class BenchmarkRunner:
                 f.write("| Alpha | K | QPS | P50 (ms) | P95 (ms) | P99 (ms) |\n")
                 f.write("|-------|---|-----|----------|----------|----------|\n")
                 for r in self.results:
-                    f.write(
-                        f"| {r['alpha']} | {r['k']} | {r['qps']:.1f} | {r['p50']:.2f} | {r['p95']:.2f} | {r['p99']:.2f} |\n"
-                    )
+                    if 'alpha' in r:
+                        f.write(
+                            f"| {r['alpha']} | {r['k']} | {r['qps']:.1f} | {r['p50']:.2f} | {r['p95']:.2f} | {r['p99']:.2f} |\n"
+                        )
+                    elif 'search' in r and 'graphrag' in r['search']:
+                        s = r['search']['graphrag']
+                        f.write(
+                            f"| 0.5 | 10 | {s['qps']:.1f} | {s['p50']:.2f} | {s['p95']:.2f} | {s['p99']:.2f} |\n"
+                        )
             return
 
         if self.args.mode == "exchange":
@@ -2176,8 +2197,13 @@ class BenchmarkRunner:
                 f.write("| Search Type | QPS | P50 (ms) | P95 (ms) | P99 (ms) |\n")
                 f.write("|-------------|-----|----------|----------|----------|\n")
                 for r in self.results:
-                    f.write(f"| {r['search_type']} | {r['qps']:.1f} | {r['p50_ms']:.2f} | "
-                            f"{r['p95_ms']:.2f} | {r['p99_ms']:.2f} |\n")
+                    if 'search_type' in r:
+                        f.write(f"| {r['search_type']} | {r['qps']:.1f} | {r['p50_ms']:.2f} | "
+                                f"{r['p95_ms']:.2f} | {r['p99_ms']:.2f} |\n")
+                    elif 'search' in r and 'geo' in r['search']:
+                        s = r['search']['geo']
+                        f.write(f"| geo | {s['qps']:.1f} | {s['p50']:.2f} | "
+                                f"{s['p95']:.2f} | {s['p99']:.2f} |\n")
             return
 
         if self.args.mode == "churn":
@@ -2385,6 +2411,11 @@ if __name__ == "__main__":
         "--churn-chunk-size",
         default="1000",
         help="Number of vectors added/deleted per churn cycle (default 1000)",
+    )
+    parser.add_argument(
+        "--label",
+        default="",
+        help="Custom label for result files and pprof profiles",
     )
     # Hardware acceleration flags
     parser.add_argument(

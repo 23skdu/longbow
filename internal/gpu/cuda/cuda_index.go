@@ -104,7 +104,7 @@ void* cuda_ensure_buffer(CUDAIndexHandle* handle, int type, size_t elementSize) 
     if (type == 2) size = (size_t)handle->capacity * handle->dimensions; // PQ is 1 byte per dim
     if (type == 3) size = (size_t)handle->capacity * 128; // TQ estimate
     
-    cudaError_t err = cudaMalloc(&handle->buffers[type], size);
+    cudaError_t err = cudaMalloc((void**)&handle->buffers[type], size);
     if (err != cudaSuccess) return NULL;
     cudaMemset(handle->buffers[type], 0, size);
     return handle->buffers[type];
@@ -133,10 +133,10 @@ int cuda_search(CUDAIndexHandle* handle, float* h_query, int k, int64_t* h_resul
 
     float *d_query, *d_distances, *d_outDist;
     int64_t *d_outIDs;
-    cudaMalloc(&d_query, handle->dimensions * sizeof(float));
-    cudaMalloc(&d_distances, handle->vectorCount * sizeof(float));
-    cudaMalloc(&d_outDist, k * sizeof(float));
-    cudaMalloc(&d_outIDs, k * sizeof(int64_t));
+    cudaMalloc((void**)&d_query, handle->dimensions * sizeof(float));
+    cudaMalloc((void**)&d_distances, handle->vectorCount * sizeof(float));
+    cudaMalloc((void**)&d_outDist, k * sizeof(float));
+    cudaMalloc((void**)&d_outIDs, k * sizeof(int64_t));
 
     cudaMemcpy(d_query, h_query, handle->dimensions * sizeof(float), cudaMemcpyHostToDevice);
     launch_l2_distance_kernel((float*)handle->buffers[0], d_query, d_distances, handle->dimensions, handle->vectorCount, 0);
@@ -172,10 +172,10 @@ int cuda_search_fp16(CUDAIndexHandle* handle, uint16_t* h_query, int k, int metr
     uint16_t* d_query;
     float *d_distances, *d_outDist;
     int64_t *d_outIDs;
-    cudaMalloc(&d_query, handle->dimensions * sizeof(uint16_t));
-    cudaMalloc(&d_distances, handle->vectorCount * sizeof(float));
-    cudaMalloc(&d_outDist, k * sizeof(float));
-    cudaMalloc(&d_outIDs, k * sizeof(int64_t));
+    cudaMalloc((void**)&d_query, handle->dimensions * sizeof(uint16_t));
+    cudaMalloc((void**)&d_distances, handle->vectorCount * sizeof(float));
+    cudaMalloc((void**)&d_outDist, k * sizeof(float));
+    cudaMalloc((void**)&d_outIDs, k * sizeof(int64_t));
 
     cudaMemcpy(d_query, h_query, handle->dimensions * sizeof(uint16_t), cudaMemcpyHostToDevice);
     if (metric == 0) launch_l2_distance_fp16_kernel((uint16_t*)handle->buffers[1], d_query, d_distances, handle->dimensions, handle->vectorCount, 0);
@@ -211,10 +211,10 @@ int cuda_search_tq(CUDAIndexHandle* handle, float* h_query, int k, int pow2, int
 
     float *d_query, *d_distances, *d_outDist;
     int64_t *d_outIDs;
-    cudaMalloc(&d_query, handle->dimensions * sizeof(float));
-    cudaMalloc(&d_distances, handle->vectorCount * sizeof(float));
-    cudaMalloc(&d_outDist, k * sizeof(float));
-    cudaMalloc(&d_outIDs, k * sizeof(int64_t));
+    cudaMalloc((void**)&d_query, handle->dimensions * sizeof(float));
+    cudaMalloc((void**)&d_distances, handle->vectorCount * sizeof(float));
+    cudaMalloc((void**)&d_outDist, k * sizeof(float));
+    cudaMalloc((void**)&d_outIDs, k * sizeof(int64_t));
 
     cudaMemcpy(d_query, h_query, handle->dimensions * sizeof(float), cudaMemcpyHostToDevice);
     launch_turboquant_distance_kernel(d_query, (const unsigned char*)handle->buffers[3], d_distances, handle->dimensions, pow2, bitsPerAngle, handle->vectorCount, 0);
@@ -257,10 +257,10 @@ int cuda_search_pq(CUDAIndexHandle* handle, float* h_lookupTable, int m, int k, 
 
     float *d_table, *d_distances, *d_outDist;
     int64_t *d_outIDs;
-    cudaMalloc(&d_table, m * 256 * sizeof(float));
-    cudaMalloc(&d_distances, handle->vectorCount * sizeof(float));
-    cudaMalloc(&d_outDist, k * sizeof(float));
-    cudaMalloc(&d_outIDs, k * sizeof(int64_t));
+    cudaMalloc((void**)&d_table, m * 256 * sizeof(float));
+    cudaMalloc((void**)&d_distances, handle->vectorCount * sizeof(float));
+    cudaMalloc((void**)&d_outDist, k * sizeof(float));
+    cudaMalloc((void**)&d_outIDs, k * sizeof(int64_t));
 
     cudaMemcpy(d_table, h_lookupTable, m * 256 * sizeof(float), cudaMemcpyHostToDevice);
     launch_pq_distance_kernel(d_table, (unsigned char*)handle->buffers[2], d_distances, m, handle->vectorCount, 0);
@@ -283,9 +283,9 @@ int cuda_update_graph(CUDAIndexHandle* handle, uint32_t* h_offsets, uint32_t* h_
     if (handle->graphNeighbors) cudaFree(handle->graphNeighbors);
     if (handle->graphWeights) cudaFree(handle->graphWeights);
 
-    cudaMalloc(&handle->graphOffsets, (nodeCount + 1) * sizeof(uint32_t));
-    cudaMalloc(&handle->graphNeighbors, edgeCount * sizeof(uint32_t));
-    if (h_weights) cudaMalloc(&handle->graphWeights, edgeCount * sizeof(float));
+    cudaMalloc((void**)&handle->graphOffsets, (nodeCount + 1) * sizeof(uint32_t));
+    cudaMalloc((void**)&handle->graphNeighbors, edgeCount * sizeof(uint32_t));
+    if (h_weights) cudaMalloc((void**)&handle->graphWeights, edgeCount * sizeof(float));
 
     cudaMemcpy(handle->graphOffsets, h_offsets, (nodeCount + 1) * sizeof(uint32_t), cudaMemcpyHostToDevice);
     cudaMemcpy(handle->graphNeighbors, h_neighbors, edgeCount * sizeof(uint32_t), cudaMemcpyHostToDevice);
@@ -913,7 +913,7 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 
 	// 1. Upload query
 	var d_query unsafe.Pointer
-	cudaErr := C.cudaMalloc(&d_query, C.size_t(idx.dimensions*4))
+	cudaErr := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_query)), C.size_t(idx.dimensions*4))
 	if cudaErr != C.cudaSuccess {
 		return nil, fmt.Errorf("cudaMalloc query failed: %v", cudaErr)
 	}
@@ -924,7 +924,7 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 	var d_bitset unsafe.Pointer
 	if len(bitset) > 0 {
 		bitsetSize := C.size_t(len(bitset) * 8)
-		cudaErr = C.cudaMalloc(&d_bitset, bitsetSize)
+		cudaErr = C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_bitset)), bitsetSize)
 		if cudaErr != C.cudaSuccess {
 			return nil, fmt.Errorf("cudaMalloc bitset failed: %v", cudaErr)
 		}
@@ -934,7 +934,7 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 
 	// 3. Prepare distances buffer
 	var d_distances unsafe.Pointer
-	C.cudaMalloc(&d_distances, C.size_t(idx.vectorCount*4))
+	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_distances)), C.size_t(idx.vectorCount*4))
 	defer C.cudaFree(d_distances)
 
 	// 4. Launch fused kernel

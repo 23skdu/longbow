@@ -35,8 +35,8 @@ run_bench "cpu" "128,384" "500,1000,5000,15000,50000,100000" "low_dim"
 run_bench "cuda" "128,384" "500,1000,5000,15000,50000,100000" "low_dim"
 
 # Group 2: 768, 1024, 3072
-run_bench "cpu" "768,1024,3072" "500,1000,5000,10000,20000" "high_dim"
-run_bench "cuda" "768,1024,3072" "500,1000,5000,10000,20000" "high_dim"
+run_bench "cpu" "768,1024,3072" "500,1000,5000,10000,20000,50000" "high_dim"
+run_bench "cuda" "768,1024,3072" "500,1000,5000,10000,20000,50000" "high_dim"
 
 echo "All ANCALAGON benchmarks complete!"
 date

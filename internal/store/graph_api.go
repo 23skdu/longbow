@@ -7,6 +7,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 
+	"github.com/23skdu/longbow/internal/query"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
@@ -19,9 +20,47 @@ func (s *VectorStore) handleAddEdge(body []byte, stream flight.FlightService_DoA
 		Object    uint32  `json:"object"`
 		Weight    float32 `json:"weight"`
 	}
-
-	if err := json.Unmarshal(body, &req); err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	if len(body) > 0 {
+		i := 0
+		i = query.SkipWhitespace(body, i)
+		if i < len(body) && body[i] == '{' {
+			i++
+			for i < len(body) {
+				i = query.SkipWhitespace(body, i)
+				if i >= len(body) || body[i] == '}' { break }
+				key, newPos, err := query.ParseString(body, i)
+				if err != nil { break }
+				i = query.SkipWhitespace(body, newPos)
+				if i < len(body) && body[i] == ':' { i++ }
+				i = query.SkipWhitespace(body, i)
+				switch key {
+				case "dataset":
+					val, newPos, _ := query.ParseString(body, i)
+					req.Dataset = val
+					i = newPos
+				case "subject":
+					val, newPos, _ := query.ParseInt64(body, i)
+					req.Subject = uint32(val)
+					i = newPos
+				case "predicate":
+					val, newPos, _ := query.ParseString(body, i)
+					req.Predicate = val
+					i = newPos
+				case "object":
+					val, newPos, _ := query.ParseInt64(body, i)
+					req.Object = uint32(val)
+					i = newPos
+				case "weight":
+					val, newPos, _ := query.ParseFloat32(body, i)
+					req.Weight = val
+					i = newPos
+				default:
+					i, _ = query.SkipValue(body, i)
+				}
+				i = query.SkipWhitespace(body, i)
+				if i < len(body) && body[i] == ',' { i++ }
+			}
+		}
 	}
 
 	if req.Dataset == "" {
@@ -69,8 +108,51 @@ func (s *VectorStore) handleTraverseGraph(body []byte, stream flight.FlightServi
 		Decay    float32 `json:"decay"`
 	}
 
-	if err := json.Unmarshal(body, &req); err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	if len(body) > 0 {
+		i := 0
+		i = query.SkipWhitespace(body, i)
+		if i < len(body) && body[i] == '{' {
+			i++
+			for i < len(body) {
+				i = query.SkipWhitespace(body, i)
+				if i >= len(body) || body[i] == '}' { break }
+				key, newPos, err := query.ParseString(body, i)
+				if err != nil { break }
+				i = query.SkipWhitespace(body, newPos)
+				if i < len(body) && body[i] == ':' { i++ }
+				i = query.SkipWhitespace(body, i)
+				switch key {
+				case "dataset":
+					val, newPos, _ := query.ParseString(body, i)
+					req.Dataset = val
+					i = newPos
+				case "start":
+					val, newPos, _ := query.ParseInt64(body, i)
+					req.Start = uint32(val)
+					i = newPos
+				case "max_hops":
+					val, newPos, _ := query.ParseInt64(body, i)
+					req.MaxHops = int(val)
+					i = newPos
+				case "incoming":
+					val, newPos, _ := query.ParseBool(body, i)
+					req.Incoming = val
+					i = newPos
+				case "weighted":
+					val, newPos, _ := query.ParseBool(body, i)
+					req.Weighted = val
+					i = newPos
+				case "decay":
+					val, newPos, _ := query.ParseFloat32(body, i)
+					req.Decay = val
+					i = newPos
+				default:
+					i, _ = query.SkipValue(body, i)
+				}
+				i = query.SkipWhitespace(body, i)
+				if i < len(body) && body[i] == ',' { i++ }
+			}
+		}
 	}
 
 	if req.Dataset == "" {
@@ -133,9 +215,10 @@ func (s *VectorStore) handleGetGraphStats(body []byte, stream flight.FlightServi
 	var req struct {
 		Dataset string `json:"dataset"`
 	}
-
-	if err := json.Unmarshal(body, &req); err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	if len(body) > 0 {
+		if err := query.ParseDatasetRequest(body, &req.Dataset); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
 	}
 
 	if req.Dataset == "" {
@@ -191,8 +274,43 @@ func (s *VectorStore) handleCalculatePageRank(body []byte, stream flight.FlightS
 		Tolerance     float32 `json:"tolerance"`
 	}
 
-	if err := json.Unmarshal(body, &req); err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	if len(body) > 0 {
+		i := 0
+		i = query.SkipWhitespace(body, i)
+		if i < len(body) && body[i] == '{' {
+			i++
+			for i < len(body) {
+				i = query.SkipWhitespace(body, i)
+				if i >= len(body) || body[i] == '}' { break }
+				key, newPos, err := query.ParseString(body, i)
+				if err != nil { break }
+				i = query.SkipWhitespace(body, newPos)
+				if i < len(body) && body[i] == ':' { i++ }
+				i = query.SkipWhitespace(body, i)
+				switch key {
+				case "dataset":
+					val, newPos, _ := query.ParseString(body, i)
+					req.Dataset = val
+					i = newPos
+				case "damping_factor":
+					val, newPos, _ := query.ParseFloat32(body, i)
+					req.DampingFactor = val
+					i = newPos
+				case "max_iterations":
+					val, newPos, _ := query.ParseInt64(body, i)
+					req.MaxIterations = int(val)
+					i = newPos
+				case "tolerance":
+					val, newPos, _ := query.ParseFloat32(body, i)
+					req.Tolerance = val
+					i = newPos
+				default:
+					i, _ = query.SkipValue(body, i)
+				}
+				i = query.SkipWhitespace(body, i)
+				if i < len(body) && body[i] == ',' { i++ }
+			}
+		}
 	}
 
 	if req.Dataset == "" {
@@ -265,8 +383,35 @@ func (s *VectorStore) handleDetectCommunities(body []byte, stream flight.FlightS
 		MaxIterations int    `json:"max_iterations"`
 	}
 
-	if err := json.Unmarshal(body, &req); err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	if len(body) > 0 {
+		i := 0
+		i = query.SkipWhitespace(body, i)
+		if i < len(body) && body[i] == '{' {
+			i++
+			for i < len(body) {
+				i = query.SkipWhitespace(body, i)
+				if i >= len(body) || body[i] == '}' { break }
+				key, newPos, err := query.ParseString(body, i)
+				if err != nil { break }
+				i = query.SkipWhitespace(body, newPos)
+				if i < len(body) && body[i] == ':' { i++ }
+				i = query.SkipWhitespace(body, i)
+				switch key {
+				case "dataset":
+					val, newPos, _ := query.ParseString(body, i)
+					req.Dataset = val
+					i = newPos
+				case "max_iterations":
+					val, newPos, _ := query.ParseInt64(body, i)
+					req.MaxIterations = int(val)
+					i = newPos
+				default:
+					i, _ = query.SkipValue(body, i)
+				}
+				i = query.SkipWhitespace(body, i)
+				if i < len(body) && body[i] == ',' { i++ }
+			}
+		}
 	}
 
 	if req.Dataset == "" {

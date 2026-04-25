@@ -103,3 +103,13 @@ Full completion of low-memory, low-power CPU-only coverage for Raspberry Pi Zero
 - [ ] **Versioning**: Transition to semantic versioning (SemVer) starting with 0.2.0.
 - [ ] **Migration Guides**: Document breaking changes in disk format (if any) for 0.1.9 -> 0.2.0 upgrades.
 - [ ] **Documentation**: Complete the API reference for all new hardware-specific flags.
+
+## suggestions for next release
+
+### Performance Improvements
+
+1.  **Native Float64/Complex128 SIMD**: Implement direct `float64` SIMD distance kernels for the refinement phase. Currently, `complex128` and `float64` vectors are converted to `float32` for refinement to reuse the existing SIMD pipeline. Native `float64` support would eliminate conversion overhead and improve precision.
+2.  **Vector Extraction Buffer Reuse**: Extend the `sync.Pool` pattern used in parallel search to the `SearchByID` and single-vector extraction paths. This would further reduce heap allocations for large vector types.
+3.  **Adaptive Search Expansion Policy**: Refine the `efSearch` expansion logic in `SearchVectorsWithBitmap`. Instead of a blind 5x multiplier, use a heuristic based on the current recall and distance distribution to find the optimal search depth without over-expanding.
+4.  **Zero-Copy SearchByID**: Optimize `handleDoGetSearchByID` to return Arrow-native slices directly to the search engine when possible, avoiding the intermediate `[]float32` conversion for the target vector.
+5.  **NUMA-Aware Parallel Refinement**: Pin parallel search workers to specific CPU cores matching the NUMA node where the Arrow RecordBatches are stored, reducing cross-socket memory latency.

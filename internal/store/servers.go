@@ -537,8 +537,61 @@ func (s *MetaServer) handleGetIndexRecommendation(action *flight.Action, stream 
 		IsHybrid        bool    `json:"is_hybrid"`
 	}
 	if len(action.Body) > 0 {
-		if err := json.Unmarshal(action.Body, &req); err != nil {
-			return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+		i := 0
+		i = query.SkipWhitespace(action.Body, i)
+		if i < len(action.Body) && action.Body[i] == '{' {
+			i++
+			for i < len(action.Body) {
+				i = query.SkipWhitespace(action.Body, i)
+				if i >= len(action.Body) || action.Body[i] == '}' { break }
+				key, newPos, err := query.ParseString(action.Body, i)
+				if err != nil { break }
+				i = query.SkipWhitespace(action.Body, newPos)
+				if i < len(action.Body) && action.Body[i] == ':' { i++ }
+				i = query.SkipWhitespace(action.Body, i)
+				switch key {
+				case "vector_dimension":
+					val, newPos, _ := query.ParseInt64(action.Body, i)
+					req.VectorDimension = int(val)
+					i = newPos
+				case "num_query_vectors":
+					val, newPos, _ := query.ParseInt64(action.Body, i)
+					req.NumQueryVectors = int(val)
+					i = newPos
+				case "search_k":
+					val, newPos, _ := query.ParseInt64(action.Body, i)
+					req.SearchK = int(val)
+					i = newPos
+				case "dataset_size":
+					val, newPos, _ := query.ParseInt64(action.Body, i)
+					req.DatasetSize = int(val)
+					i = newPos
+				case "num_collections":
+					val, newPos, _ := query.ParseInt64(action.Body, i)
+					req.NumCollections = int(val)
+					i = newPos
+				case "query_complexity":
+					val, newPos, _ := query.ParseString(action.Body, i)
+					req.QueryComplexity = val
+					i = newPos
+				case "avg_vector_norm":
+					val, newPos, _ := query.ParseFloat32(action.Body, i)
+					req.AvgVectorNorm = float64(val)
+					i = newPos
+				case "is_filtered":
+					val, newPos, _ := query.ParseBool(action.Body, i)
+					req.IsFiltered = val
+					i = newPos
+				case "is_hybrid":
+					val, newPos, _ := query.ParseBool(action.Body, i)
+					req.IsHybrid = val
+					i = newPos
+				default:
+					i, _ = query.SkipValue(action.Body, i)
+				}
+				i = query.SkipWhitespace(action.Body, i)
+				if i < len(action.Body) && action.Body[i] == ',' { i++ }
+			}
 		}
 	}
 
@@ -640,8 +693,35 @@ func (s *MetaServer) handleTemporalRangeSearch(action *flight.Action, stream fli
 		StartTime int64 `json:"start_time"`
 		EndTime   int64 `json:"end_time"`
 	}
-	if err := json.Unmarshal(action.Body, &req); err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	if len(action.Body) > 0 {
+		i := 0
+		i = query.SkipWhitespace(action.Body, i)
+		if i < len(action.Body) && action.Body[i] == '{' {
+			i++
+			for i < len(action.Body) {
+				i = query.SkipWhitespace(action.Body, i)
+				if i >= len(action.Body) || action.Body[i] == '}' { break }
+				key, newPos, err := query.ParseString(action.Body, i)
+				if err != nil { break }
+				i = query.SkipWhitespace(action.Body, newPos)
+				if i < len(action.Body) && action.Body[i] == ':' { i++ }
+				i = query.SkipWhitespace(action.Body, i)
+				switch key {
+				case "start_time":
+					val, newPos, _ := query.ParseInt64(action.Body, i)
+					req.StartTime = val
+					i = newPos
+				case "end_time":
+					val, newPos, _ := query.ParseInt64(action.Body, i)
+					req.EndTime = val
+					i = newPos
+				default:
+					i, _ = query.SkipValue(action.Body, i)
+				}
+				i = query.SkipWhitespace(action.Body, i)
+				if i < len(action.Body) && action.Body[i] == ',' { i++ }
+			}
+		}
 	}
 
 	vectors := s.temporalIndex.GetVectorsInRange(req.StartTime, req.EndTime)
@@ -661,9 +741,32 @@ func (s *MetaServer) handleTemporalVersionHistory(action *flight.Action, stream 
 		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
 	}
 
-	var req TemporalVersionHistoryRequest
-	if err := json.Unmarshal(action.Body, &req); err != nil {
-		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
+	var req core.TemporalVersionHistoryRequest
+	if len(action.Body) > 0 {
+		i := 0
+		i = query.SkipWhitespace(action.Body, i)
+		if i < len(action.Body) && action.Body[i] == '{' {
+			i++
+			for i < len(action.Body) {
+				i = query.SkipWhitespace(action.Body, i)
+				if i >= len(action.Body) || action.Body[i] == '}' { break }
+				key, newPos, err := query.ParseString(action.Body, i)
+				if err != nil { break }
+				i = query.SkipWhitespace(action.Body, newPos)
+				if i < len(action.Body) && action.Body[i] == ':' { i++ }
+				i = query.SkipWhitespace(action.Body, i)
+				switch key {
+				case "vector_id":
+					val, newPos, _ := query.ParseInt64(action.Body, i)
+					req.VectorID = uint64(val)
+					i = newPos
+				default:
+					i, _ = query.SkipValue(action.Body, i)
+				}
+				i = query.SkipWhitespace(action.Body, i)
+				if i < len(action.Body) && action.Body[i] == ',' { i++ }
+			}
+		}
 	}
 
 	history := s.temporalIndex.GetHistory(req.VectorID)

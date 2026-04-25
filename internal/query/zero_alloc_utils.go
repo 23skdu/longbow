@@ -1,29 +1,579 @@
 package query
 
 import (
-	"encoding/json"
 	"errors"
 	"strconv"
 
 	"github.com/23skdu/longbow/internal/core"
 )
 
-func parseSearchByIDRequest(data []byte, req *core.VectorSearchByIDRequest) error {
-	return json.Unmarshal(data, req)
+func ParseDatasetRequest(data []byte, dsName *string) error {
+	i := SkipWhitespace(data, 0)
+	if i >= len(data) || data[i] != '{' {
+		return errors.New("expected opening brace")
+	}
+	i++
+
+	for i < len(data) {
+		i = SkipWhitespace(data, i)
+		if i >= len(data) {
+			return errors.New("unexpected end of JSON")
+		}
+		if data[i] == '}' {
+			return nil
+		}
+		key, newPos, err := ParseString(data, i)
+		if err != nil {
+			return err
+		}
+		i = newPos
+		i = SkipWhitespace(data, i)
+		if i >= len(data) || data[i] != ':' {
+			return errors.New("expected colon")
+		}
+		i++
+		i = SkipWhitespace(data, i)
+
+		if key == "dataset" || key == "name" {
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return err
+			}
+			*dsName = val
+			i = newPos
+		} else {
+			i, err = SkipValue(data, i)
+			if err != nil {
+				return err
+			}
+		}
+
+		i = SkipWhitespace(data, i)
+		if i < len(data) && data[i] == ',' {
+			i++
+		}
+	}
+	return nil
 }
 
-func parseRecommendRequest(data []byte, req *core.RecommendRequest) error {
-	return json.Unmarshal(data, req)
+func ParseSearchByIDRequest(data []byte, req *core.VectorSearchByIDRequest) error {
+	i := SkipWhitespace(data, 0)
+	if i >= len(data) || data[i] != '{' {
+		return errors.New("expected opening brace")
+	}
+	i++
+
+	for i < len(data) {
+		i = SkipWhitespace(data, i)
+		if i >= len(data) {
+			return errors.New("unexpected end of JSON")
+		}
+		if data[i] == '}' {
+			return nil
+		}
+		if data[i] != '"' {
+			return errors.New("expected quote for key")
+		}
+		key, newPos, err := ParseString(data, i)
+		if err != nil {
+			return err
+		}
+		i = newPos
+		i = SkipWhitespace(data, i)
+		if i >= len(data) || data[i] != ':' {
+			return errors.New("expected colon")
+		}
+		i++
+		i = SkipWhitespace(data, i)
+
+		switch key {
+		case "dataset":
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return err
+			}
+			req.Dataset = val
+			i = newPos
+		case "id":
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return err
+			}
+			req.ID = val
+			i = newPos
+		case "k":
+			val, newPos, err := ParseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.K = int(val)
+			i = newPos
+		case "include_vectors":
+			val, newPos, err := ParseBool(data, i)
+			if err != nil {
+				return err
+			}
+			req.IncludeVectors = val
+			i = newPos
+		case "vector_format":
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return err
+			}
+			req.VectorFormat = val
+			i = newPos
+		case "vector_type":
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return err
+			}
+			req.VectorType = val
+			i = newPos
+		case "turboquant_bits":
+			val, newPos, err := ParseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.TurboQuantBits = int(val)
+			i = newPos
+		default:
+			i, err = SkipValue(data, i)
+			if err != nil {
+				return err
+			}
+		}
+
+		i = SkipWhitespace(data, i)
+		if i < len(data) && data[i] == ',' {
+			i++
+		}
+	}
+	return nil
 }
 
-func skipWhitespace(data []byte, pos int) int {
+func ParseRecommendRequest(data []byte, req *core.RecommendRequest) error {
+	i := SkipWhitespace(data, 0)
+	if i >= len(data) || data[i] != '{' {
+		return errors.New("expected opening brace")
+	}
+	i++
+
+	for i < len(data) {
+		i = SkipWhitespace(data, i)
+		if i >= len(data) {
+			return errors.New("unexpected end of JSON")
+		}
+		if data[i] == '}' {
+			return nil
+		}
+		key, newPos, err := ParseString(data, i)
+		if err != nil {
+			return err
+		}
+		i = newPos
+		i = SkipWhitespace(data, i)
+		if i >= len(data) || data[i] != ':' {
+			return errors.New("expected colon")
+		}
+		i++
+		i = SkipWhitespace(data, i)
+
+		switch key {
+		case "dataset":
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return err
+			}
+			req.Dataset = val
+			i = newPos
+		case "seed_ids":
+			if i < len(data) && data[i] == '[' {
+				i++
+				for i < len(data) {
+					i = SkipWhitespace(data, i)
+					if data[i] == ']' {
+						i++
+						break
+					}
+					val, newPos, err := ParseString(data, i)
+					if err != nil {
+						return err
+					}
+					req.SeedIDs = append(req.SeedIDs, val)
+					i = newPos
+					i = SkipWhitespace(data, i)
+					if i < len(data) && data[i] == ',' {
+						i++
+					}
+				}
+			} else {
+				i, _ = SkipValue(data, i)
+			}
+		case "k":
+			val, newPos, err := ParseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.K = int(val)
+			i = newPos
+		case "alpha":
+			val, newPos, err := ParseFloat32(data, i)
+			if err != nil {
+				return err
+			}
+			req.Alpha = val
+			i = newPos
+		case "max_hops":
+			val, newPos, err := ParseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.MaxHops = int(val)
+			i = newPos
+		case "decay":
+			val, newPos, err := ParseFloat32(data, i)
+			if err != nil {
+				return err
+			}
+			req.Decay = val
+			i = newPos
+		default:
+			i, err = SkipValue(data, i)
+			if err != nil {
+				return err
+			}
+		}
+
+		i = SkipWhitespace(data, i)
+		if i < len(data) && data[i] == ',' {
+			i++
+		}
+	}
+	return nil
+}
+
+func ParseGeoSearchRequest(data []byte, req *core.GeoSearchRequest) error {
+	i := SkipWhitespace(data, 0)
+	if i >= len(data) || data[i] != '{' {
+		return errors.New("expected opening brace")
+	}
+	i++
+
+	for i < len(data) {
+		i = SkipWhitespace(data, i)
+		if i >= len(data) {
+			return errors.New("unexpected end of JSON")
+		}
+		if data[i] == '}' {
+			return nil
+		}
+		key, newPos, err := ParseString(data, i)
+		if err != nil {
+			return err
+		}
+		i = newPos
+		i = SkipWhitespace(data, i)
+		if i >= len(data) || data[i] != ':' {
+			return errors.New("expected colon")
+		}
+		i++
+		i = SkipWhitespace(data, i)
+
+		switch key {
+		case "dataset":
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return err
+			}
+			req.Dataset = val
+			i = newPos
+		case "center":
+			newPos, err := ParseGeoPoint(data, i, &req.Center)
+			if err != nil {
+				return err
+			}
+			i = newPos
+		case "radius_km":
+			val, newPos, err := ParseFloat32(data, i)
+			if err != nil {
+				return err
+			}
+			req.RadiusKm = float64(val)
+			i = newPos
+		case "box":
+			if req.Box == nil {
+				req.Box = &core.GeoBoundingBox{}
+			}
+			newPos, err := ParseGeoBoundingBox(data, i, req.Box)
+			if err != nil {
+				return err
+			}
+			i = newPos
+		case "k":
+			val, newPos, err := ParseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.K = int(val)
+			i = newPos
+		case "search_type":
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return err
+			}
+			req.SearchType = val
+			i = newPos
+		case "filters":
+			newPos, err := ParseFilterArray(data, i, &req.Filters)
+			if err != nil {
+				return err
+			}
+			i = newPos
+		default:
+			i, err = SkipValue(data, i)
+			if err != nil {
+				return err
+			}
+		}
+
+		i = SkipWhitespace(data, i)
+		if i < len(data) && data[i] == ',' {
+			i++
+		}
+	}
+	return nil
+}
+
+func ParseGeoPoint(data []byte, pos int, point *core.GeoPoint) (int, error) {
+	pos = SkipWhitespace(data, pos)
+	if pos >= len(data) || data[pos] != '{' {
+		return pos, errors.New("expected { for geopoint")
+	}
+	pos++
+	for pos < len(data) {
+		pos = SkipWhitespace(data, pos)
+		if data[pos] == '}' {
+			return pos + 1, nil
+		}
+		key, newPos, err := ParseString(data, pos)
+		if err != nil {
+			return pos, err
+		}
+		pos = newPos
+		pos = SkipWhitespace(data, pos)
+		if data[pos] != ':' {
+			return pos, errors.New("expected :")
+		}
+		pos++
+		pos = SkipWhitespace(data, pos)
+		switch key {
+		case "lat":
+			val, newPos, err := ParseFloat32(data, pos)
+			if err != nil {
+				return pos, err
+			}
+			point.Lat = float64(val)
+			pos = newPos
+		case "lon":
+			val, newPos, err := ParseFloat32(data, pos)
+			if err != nil {
+				return pos, err
+			}
+			point.Lon = float64(val)
+			pos = newPos
+		case "name":
+			val, newPos, err := ParseString(data, pos)
+			if err != nil {
+				return pos, err
+			}
+			point.Name = val
+			pos = newPos
+		default:
+			pos, err = SkipValue(data, pos)
+			if err != nil {
+				return pos, err
+			}
+		}
+		pos = SkipWhitespace(data, pos)
+		if pos < len(data) && data[pos] == ',' {
+			pos++
+		}
+	}
+	return pos, nil
+}
+
+func ParseGeoBoundingBox(data []byte, pos int, box *core.GeoBoundingBox) (int, error) {
+	pos = SkipWhitespace(data, pos)
+	if pos >= len(data) || data[pos] != '{' {
+		return pos, errors.New("expected { for geobox")
+	}
+	pos++
+	for pos < len(data) {
+		pos = SkipWhitespace(data, pos)
+		if data[pos] == '}' {
+			return pos + 1, nil
+		}
+		key, newPos, err := ParseString(data, pos)
+		if err != nil {
+			return pos, err
+		}
+		pos = newPos
+		pos = SkipWhitespace(data, pos)
+		if data[pos] != ':' {
+			return pos, errors.New("expected :")
+		}
+		pos++
+		pos = SkipWhitespace(data, pos)
+		switch key {
+		case "min_lat":
+			val, newPos, err := ParseFloat32(data, pos)
+			if err != nil {
+				return pos, err
+			}
+			box.MinLat = float64(val)
+			pos = newPos
+		case "max_lat":
+			val, newPos, err := ParseFloat32(data, pos)
+			if err != nil {
+				return pos, err
+			}
+			box.MaxLat = float64(val)
+			pos = newPos
+		case "min_lon":
+			val, newPos, err := ParseFloat32(data, pos)
+			if err != nil {
+				return pos, err
+			}
+			box.MinLon = float64(val)
+			pos = newPos
+		case "max_lon":
+			val, newPos, err := ParseFloat32(data, pos)
+			if err != nil {
+				return pos, err
+			}
+			box.MaxLon = float64(val)
+			pos = newPos
+		default:
+			pos, err = SkipValue(data, pos)
+			if err != nil {
+				return pos, err
+			}
+		}
+		pos = SkipWhitespace(data, pos)
+		if pos < len(data) && data[pos] == ',' {
+			pos++
+		}
+	}
+	return pos, nil
+}
+
+func ParseTemporalSearchRequest(data []byte, req *core.TemporalSearchRequest) error {
+	i := SkipWhitespace(data, 0)
+	if i >= len(data) || data[i] != '{' {
+		return errors.New("expected opening brace")
+	}
+	i++
+
+	for i < len(data) {
+		i = SkipWhitespace(data, i)
+		if i >= len(data) {
+			return errors.New("unexpected end of JSON")
+		}
+		if data[i] == '}' {
+			return nil
+		}
+		key, newPos, err := ParseString(data, i)
+		if err != nil {
+			return err
+		}
+		i = newPos
+		i = SkipWhitespace(data, i)
+		if i >= len(data) || data[i] != ':' {
+			return errors.New("expected colon")
+		}
+		i++
+		i = SkipWhitespace(data, i)
+
+		switch key {
+		case "dataset":
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return err
+			}
+			req.Dataset = val
+			i = newPos
+		case "search_type":
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return err
+			}
+			req.SearchType = val
+			i = newPos
+		case "k":
+			val, newPos, err := ParseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.K = int(val)
+			i = newPos
+		case "timestamp":
+			val, newPos, err := ParseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.Timestamp = val
+			i = newPos
+		case "start_time":
+			val, newPos, err := ParseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.StartTime = val
+			i = newPos
+		case "end_time":
+			val, newPos, err := ParseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.EndTime = val
+			i = newPos
+		case "window_size":
+			val, newPos, err := ParseInt64(data, i)
+			if err != nil {
+				return err
+			}
+			req.WindowSize = int(val)
+			i = newPos
+		case "filters":
+			newPos, err := ParseFilterArray(data, i, &req.Filters)
+			if err != nil {
+				return err
+			}
+			i = newPos
+		default:
+			i, err = SkipValue(data, i)
+			if err != nil {
+				return err
+			}
+		}
+
+		i = SkipWhitespace(data, i)
+		if i < len(data) && data[i] == ',' {
+			i++
+		}
+	}
+	return nil
+}
+
+
+func SkipWhitespace(data []byte, pos int) int {
 	for pos < len(data) && (data[pos] == ' ' || data[pos] == '\t' || data[pos] == '\n' || data[pos] == '\r') {
 		pos++
 	}
 	return pos
 }
 
-func parseString(data []byte, pos int) (string, int, error) {
+func ParseString(data []byte, pos int) (string, int, error) {
 	if pos >= len(data) || data[pos] != '"' {
 		return "", pos, errors.New("expected quote")
 	}
@@ -123,7 +673,7 @@ func encodeRune(buf []byte, r rune) int {
 	return 0
 }
 
-func parseInt64(data []byte, pos int) (int64, int, error) {
+func ParseInt64(data []byte, pos int) (int64, int, error) {
 	start := pos
 	if pos < len(data) && data[pos] == '-' {
 		pos++
@@ -142,7 +692,7 @@ func parseInt64(data []byte, pos int) (int64, int, error) {
 	return val, pos, nil
 }
 
-func parseFloat32(data []byte, pos int) (float32, int, error) {
+func ParseFloat32(data []byte, pos int) (float32, int, error) {
 	start := pos
 	if pos < len(data) && data[pos] == '-' {
 		pos++
@@ -175,7 +725,7 @@ func parseFloat32(data []byte, pos int) (float32, int, error) {
 	return float32(val), pos, nil
 }
 
-func parseBool(data []byte, pos int) (bool, int, error) {
+func ParseBool(data []byte, pos int) (bool, int, error) {
 	if pos+4 <= len(data) && string(data[pos:pos+4]) == "true" {
 		return true, pos + 4, nil
 	}
@@ -185,27 +735,27 @@ func parseBool(data []byte, pos int) (bool, int, error) {
 	return false, pos, errors.New("expected boolean")
 }
 
-func skipValue(data []byte, pos int) (int, error) {
-	pos = skipWhitespace(data, pos)
+func SkipValue(data []byte, pos int) (int, error) {
+	pos = SkipWhitespace(data, pos)
 	if pos >= len(data) {
 		return pos, errors.New("unexpected end")
 	}
 	switch data[pos] {
 	case '{':
-		return skipObject(data, pos)
+		return SkipObject(data, pos)
 	case '[':
-		return skipArray(data, pos)
+		return SkipArray(data, pos)
 	case '"':
-		_, newPos, err := parseString(data, pos)
+		_, newPos, err := ParseString(data, pos)
 		return newPos, err
 	case 't', 'f', 'n':
-		return skipLiteral(data, pos)
+		return SkipLiteral(data, pos)
 	default:
-		return skipNumber(data, pos)
+		return SkipNumber(data, pos)
 	}
 }
 
-func skipLiteral(data []byte, pos int) (int, error) {
+func SkipLiteral(data []byte, pos int) (int, error) {
 	if pos+4 <= len(data) && string(data[pos:pos+4]) == "true" {
 		return pos + 4, nil
 	}
@@ -218,7 +768,7 @@ func skipLiteral(data []byte, pos int) (int, error) {
 	return pos, errors.New("expected literal")
 }
 
-func skipNumber(data []byte, pos int) (int, error) {
+func SkipNumber(data []byte, pos int) (int, error) {
 	start := pos
 	if pos < len(data) && data[pos] == '-' {
 		pos++
@@ -247,10 +797,10 @@ func skipNumber(data []byte, pos int) (int, error) {
 	return pos, nil
 }
 
-func skipObject(data []byte, pos int) (int, error) {
+func SkipObject(data []byte, pos int) (int, error) {
 	pos++ // {
 	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) {
 			return pos, errors.New("unclosed object")
 		}
@@ -258,20 +808,20 @@ func skipObject(data []byte, pos int) (int, error) {
 			return pos + 1, nil
 		}
 		var err error
-		pos, err = skipValue(data, pos)
+		pos, err = SkipValue(data, pos)
 		if err != nil {
 			return pos, err
 		}
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] != ':' {
 			return pos, errors.New("expected colon")
 		}
 		pos++
-		pos, err = skipValue(data, pos)
+		pos, err = SkipValue(data, pos)
 		if err != nil {
 			return pos, err
 		}
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos < len(data) && data[pos] == ',' {
 			pos++
 		}
@@ -279,10 +829,10 @@ func skipObject(data []byte, pos int) (int, error) {
 	return pos, errors.New("unclosed object")
 }
 
-func skipArray(data []byte, pos int) (int, error) {
+func SkipArray(data []byte, pos int) (int, error) {
 	pos++ // [
 	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) {
 			return pos, errors.New("unclosed array")
 		}
@@ -290,11 +840,11 @@ func skipArray(data []byte, pos int) (int, error) {
 			return pos + 1, nil
 		}
 		var err error
-		pos, err = skipValue(data, pos)
+		pos, err = SkipValue(data, pos)
 		if err != nil {
 			return pos, err
 		}
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos < len(data) && data[pos] == ',' {
 			pos++
 		}
@@ -308,41 +858,41 @@ func safeString(b []byte) string {
 
 
 
-func parseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (core.Filter, int, error) {
+func ParseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (core.Filter, int, error) {
 	var f core.Filter
 	if pos >= len(data) || data[pos] != '{' {
 		return f, pos, errors.New("expected {")
 	}
 	pos++
 	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] == '}' {
 			if pos < len(data) {
 				pos++
 			}
 			return f, pos, nil
 		}
-		key, newPos, err := parseString(data, pos)
+		key, newPos, err := ParseString(data, pos)
 		if err != nil {
 			return f, pos, err
 		}
 		pos = newPos
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] != ':' {
 			return f, pos, errors.New("expected colon")
 		}
 		pos++
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		switch key {
 		case "field":
-			val, newPos, err := parseString(data, pos)
+			val, newPos, err := ParseString(data, pos)
 			if err != nil {
 				return f, pos, err
 			}
 			f.Field = val
 			pos = newPos
 		case "operator", "op":
-			val, newPos, err := parseString(data, pos)
+			val, newPos, err := ParseString(data, pos)
 			if err != nil {
 				return f, pos, err
 			}
@@ -350,7 +900,7 @@ func parseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (
 			pos = newPos
 		case "value":
 			if data[pos] == '"' {
-				val, newPos, err := parseString(data, pos)
+				val, newPos, err := ParseString(data, pos)
 				if err != nil {
 					return f, pos, err
 				}
@@ -364,7 +914,7 @@ func parseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (
 				f.Value = safeString(data[start:pos])
 			}
 		case "logic":
-			val, newPos, err := parseString(data, pos)
+			val, newPos, err := ParseString(data, pos)
 			if err != nil {
 				return f, pos, err
 			}
@@ -372,7 +922,7 @@ func parseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (
 			pos = newPos
 		case "filters":
 			var sub []core.Filter
-			newPos, err := parseFilterArrayRecursive(data, pos, &sub, parser)
+			newPos, err := ParseFilterArrayRecursive(data, pos, &sub, parser)
 			if err != nil {
 				return f, pos, err
 			}
@@ -381,7 +931,7 @@ func parseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (
 		case "subquery":
 			if parser != nil {
 				start := pos
-				newPos, err := skipObject(data, pos)
+				newPos, err := SkipObject(data, pos)
 				if err != nil {
 					return f, pos, err
 				}
@@ -395,18 +945,18 @@ func parseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (
 				pos = newPos
 			} else {
 				// If no parser context, skip
-				pos, err = skipValue(data, pos)
+				pos, err = SkipValue(data, pos)
 				if err != nil {
 					return f, pos, err
 				}
 			}
 		default:
-			pos, err = skipValue(data, pos)
+			pos, err = SkipValue(data, pos)
 			if err != nil {
 				return f, pos, err
 			}
 		}
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos < len(data) && data[pos] == ',' {
 			pos++
 		}
@@ -414,12 +964,12 @@ func parseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (
 	return f, pos, nil
 }
 
-func parseFilterArray(data []byte, pos int, filters *[]core.Filter) (int, error) {
-	return parseFilterArrayRecursive(data, pos, filters, nil)
+func ParseFilterArray(data []byte, pos int, filters *[]core.Filter) (int, error) {
+	return ParseFilterArrayRecursive(data, pos, filters, nil)
 }
 
-func parseFilterArrayRecursive(data []byte, pos int, filters *[]core.Filter, parser *ZeroAllocTicketParser) (int, error) {
-	pos = skipWhitespace(data, pos)
+func ParseFilterArrayRecursive(data []byte, pos int, filters *[]core.Filter, parser *ZeroAllocTicketParser) (int, error) {
+	pos = SkipWhitespace(data, pos)
 	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
 		return pos + 4, nil
 	}
@@ -428,20 +978,20 @@ func parseFilterArrayRecursive(data []byte, pos int, filters *[]core.Filter, par
 	}
 	pos++
 	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] == ']' {
 			if pos < len(data) {
 				pos++
 			}
 			return pos, nil
 		}
-		f, newPos, err := parseFilterRecursive(data, pos, parser)
+		f, newPos, err := ParseFilterRecursive(data, pos, parser)
 		if err != nil {
 			return pos, err
 		}
 		*filters = append(*filters, f)
 		pos = newPos
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos < len(data) && data[pos] == ',' {
 			pos++
 		}
@@ -449,8 +999,8 @@ func parseFilterArrayRecursive(data []byte, pos int, filters *[]core.Filter, par
 	return pos, nil
 }
 
-func parseWindowFunctionsShared(data []byte, pos int) ([]core.WindowFunction, int, error) {
-	pos = skipWhitespace(data, pos)
+func ParseWindowFunctionsShared(data []byte, pos int) ([]core.WindowFunction, int, error) {
+	pos = SkipWhitespace(data, pos)
 	if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
 		return nil, pos + 4, nil
 	}
@@ -460,20 +1010,20 @@ func parseWindowFunctionsShared(data []byte, pos int) ([]core.WindowFunction, in
 	pos++
 	var wfs []core.WindowFunction
 	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] == ']' {
 			if pos < len(data) {
 				pos++
 			}
 			return wfs, pos, nil
 		}
-		wf, newPos, err := parseWindowFunctionShared(data, pos)
+		wf, newPos, err := ParseWindowFunctionShared(data, pos)
 		if err != nil {
 			return nil, pos, err
 		}
 		wfs = append(wfs, wf)
 		pos = newPos
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos < len(data) && data[pos] == ',' {
 			pos++
 		}
@@ -481,67 +1031,67 @@ func parseWindowFunctionsShared(data []byte, pos int) ([]core.WindowFunction, in
 	return nil, pos, errors.New("unexpected end")
 }
 
-func parseWindowFunctionShared(data []byte, pos int) (core.WindowFunction, int, error) {
+func ParseWindowFunctionShared(data []byte, pos int) (core.WindowFunction, int, error) {
 	var wf core.WindowFunction
 	if pos >= len(data) || data[pos] != '{' {
 		return wf, pos, errors.New("expected {")
 	}
 	pos++
 	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] == '}' {
 			if pos < len(data) {
 				pos++
 			}
 			return wf, pos, nil
 		}
-		key, newPos, err := parseString(data, pos)
+		key, newPos, err := ParseString(data, pos)
 		if err != nil {
 			return wf, pos, err
 		}
 		pos = newPos
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] != ':' {
 			return wf, pos, errors.New("expected :")
 		}
 		pos++
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		switch key {
 		case "name":
-			val, newPos, err := parseString(data, pos)
+			val, newPos, err := ParseString(data, pos)
 			if err != nil {
 				return wf, pos, err
 			}
 			wf.Name = val
 			pos = newPos
 		case "as":
-			val, newPos, err := parseString(data, pos)
+			val, newPos, err := ParseString(data, pos)
 			if err != nil {
 				return wf, pos, err
 			}
 			wf.As = val
 			pos = newPos
 		case "field":
-			val, newPos, err := parseString(data, pos)
+			val, newPos, err := ParseString(data, pos)
 			if err != nil {
 				return wf, pos, err
 			}
 			wf.Field = val
 			pos = newPos
 		case "over":
-			val, newPos, err := parseWindowSpecShared(data, pos)
+			val, newPos, err := ParseWindowSpecShared(data, pos)
 			if err != nil {
 				return wf, pos, err
 			}
 			wf.Over = val
 			pos = newPos
 		default:
-			pos, err = skipValue(data, pos)
+			pos, err = SkipValue(data, pos)
 			if err != nil {
 				return wf, pos, err
 			}
 		}
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos < len(data) && data[pos] == ',' {
 			pos++
 		}
@@ -549,34 +1099,34 @@ func parseWindowFunctionShared(data []byte, pos int) (core.WindowFunction, int, 
 	return wf, pos, nil
 }
 
-func parseWindowSpecShared(data []byte, pos int) (core.WindowSpec, int, error) {
+func ParseWindowSpecShared(data []byte, pos int) (core.WindowSpec, int, error) {
 	var spec core.WindowSpec
 	if pos >= len(data) || data[pos] != '{' {
 		return spec, pos, errors.New("expected {")
 	}
 	pos++
 	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] == '}' {
 			if pos < len(data) {
 				pos++
 			}
 			return spec, pos, nil
 		}
-		key, newPos, err := parseString(data, pos)
+		key, newPos, err := ParseString(data, pos)
 		if err != nil {
 			return spec, pos, err
 		}
 		pos = newPos
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] != ':' {
 			return spec, pos, errors.New("expected :")
 		}
 		pos++
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		switch key {
 		case "partition_by":
-			pos = skipWhitespace(data, pos)
+			pos = SkipWhitespace(data, pos)
 			if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
 				pos += 4
 				break
@@ -586,24 +1136,24 @@ func parseWindowSpecShared(data []byte, pos int) (core.WindowSpec, int, error) {
 			}
 			pos++
 			for pos < len(data) {
-				pos = skipWhitespace(data, pos)
+				pos = SkipWhitespace(data, pos)
 				if data[pos] == ']' {
 					pos++
 					break
 				}
-				val, newPos, err := parseString(data, pos)
+				val, newPos, err := ParseString(data, pos)
 				if err != nil {
 					return spec, pos, err
 				}
 				spec.PartitionBy = append(spec.PartitionBy, val)
 				pos = newPos
-				pos = skipWhitespace(data, pos)
+				pos = SkipWhitespace(data, pos)
 				if pos < len(data) && data[pos] == ',' {
 					pos++
 				}
 			}
 		case "order_by":
-			pos = skipWhitespace(data, pos)
+			pos = SkipWhitespace(data, pos)
 			if pos+4 <= len(data) && string(data[pos:pos+4]) == "null" {
 				pos += 4
 				break
@@ -613,29 +1163,29 @@ func parseWindowSpecShared(data []byte, pos int) (core.WindowSpec, int, error) {
 			}
 			pos++
 			for pos < len(data) {
-				pos = skipWhitespace(data, pos)
+				pos = SkipWhitespace(data, pos)
 				if data[pos] == ']' {
 					pos++
 					break
 				}
-				val, newPos, err := parseWindowOrderShared(data, pos)
+				val, newPos, err := ParseWindowOrderShared(data, pos)
 				if err != nil {
 					return spec, pos, err
 				}
 				spec.OrderBy = append(spec.OrderBy, val)
 				pos = newPos
-				pos = skipWhitespace(data, pos)
+				pos = SkipWhitespace(data, pos)
 				if pos < len(data) && data[pos] == ',' {
 					pos++
 				}
 			}
 		default:
-			pos, err = skipValue(data, pos)
+			pos, err = SkipValue(data, pos)
 			if err != nil {
 				return spec, pos, err
 			}
 		}
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos < len(data) && data[pos] == ',' {
 			pos++
 		}
@@ -643,53 +1193,53 @@ func parseWindowSpecShared(data []byte, pos int) (core.WindowSpec, int, error) {
 	return spec, pos, nil
 }
 
-func parseWindowOrderShared(data []byte, pos int) (core.WindowOrder, int, error) {
+func ParseWindowOrderShared(data []byte, pos int) (core.WindowOrder, int, error) {
 	var order core.WindowOrder
 	if pos >= len(data) || data[pos] != '{' {
 		return order, pos, errors.New("expected {")
 	}
 	pos++
 	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] == '}' {
 			if pos < len(data) {
 				pos++
 			}
 			return order, pos, nil
 		}
-		key, newPos, err := parseString(data, pos)
+		key, newPos, err := ParseString(data, pos)
 		if err != nil {
 			return order, pos, err
 		}
 		pos = newPos
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) || data[pos] != ':' {
 			return order, pos, errors.New("expected :")
 		}
 		pos++
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		switch key {
 		case "field":
-			val, newPos, err := parseString(data, pos)
+			val, newPos, err := ParseString(data, pos)
 			if err != nil {
 				return order, pos, err
 			}
 			order.Field = val
 			pos = newPos
 		case "desc", "descending":
-			val, newPos, err := parseBool(data, pos)
+			val, newPos, err := ParseBool(data, pos)
 			if err != nil {
 				return order, pos, err
 			}
 			order.Descending = val
 			pos = newPos
 		default:
-			pos, err = skipValue(data, pos)
+			pos, err = SkipValue(data, pos)
 			if err != nil {
 				return order, pos, err
 			}
 		}
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos < len(data) && data[pos] == ',' {
 			pos++
 		}

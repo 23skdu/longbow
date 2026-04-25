@@ -1,7 +1,6 @@
 package query
 
 import (
-	"encoding/json"
 	"errors"
 	"sync"
 	"sync/atomic"
@@ -59,14 +58,14 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 		return p.result, nil
 	}
 
-	i := skipWhitespace(data, 0)
+	i := SkipWhitespace(data, 0)
 	if i >= len(data) || data[i] != '{' {
 		return p.result, errors.New("expected opening brace")
 	}
 	i++
 
 	for i < len(data) {
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 		if i >= len(data) {
 			return p.result, errors.New("unexpected end of JSON")
 		}
@@ -91,36 +90,36 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 			return p.result, errors.New("expected quote for key")
 		}
 
-		key, newPos, err := parseString(data, i)
+		key, newPos, err := ParseString(data, i)
 		if err != nil {
 			return p.result, err
 		}
 		i = newPos
 
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 		if i >= len(data) || data[i] != ':' {
 			return p.result, errors.New("expected colon")
 		}
 		i++
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 
 		switch key {
 		case "name":
-			val, newPos, err := parseString(data, i)
+			val, newPos, err := ParseString(data, i)
 			if err != nil {
 				return p.result, err
 			}
 			p.result.Name = val
 			i = newPos
 		case "dataset": // Alias for name
-			val, newPos, err := parseString(data, i)
+			val, newPos, err := ParseString(data, i)
 			if err != nil {
 				return p.result, err
 			}
 			p.result.Name = val
 			i = newPos
 		case "limit":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return p.result, err
 			}
@@ -144,7 +143,7 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 			} else {
 				// Extract object slice
 				start := i
-				newPos, err := skipObject(data, i)
+				newPos, err := SkipObject(data, i)
 				if err != nil {
 					return p.result, err
 				}
@@ -175,7 +174,7 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 				i = newPos
 			}
 		case "k":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return p.result, err
 			}
@@ -186,12 +185,12 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 				i += 4
 			} else {
 				start := i
-				newPos, err := skipObject(data, i)
+				newPos, err := SkipObject(data, i)
 				if err != nil {
 					return p.result, err
 				}
 				var req core.GeoSearchRequest
-				if err := json.Unmarshal(data[start:newPos], &req); err != nil {
+				if err := ParseGeoSearchRequest(data[start:newPos], &req); err != nil {
 					return p.result, err
 				}
 				p.result.GeoSearch = &req
@@ -202,12 +201,12 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 				i += 4
 			} else {
 				start := i
-				newPos, err := skipObject(data, i)
+				newPos, err := SkipObject(data, i)
 				if err != nil {
 					return p.result, err
 				}
 				var req core.TemporalSearchRequest
-				if err := json.Unmarshal(data[start:newPos], &req); err != nil {
+				if err := ParseTemporalSearchRequest(data[start:newPos], &req); err != nil {
 					return p.result, err
 				}
 				p.result.TemporalSearch = &req
@@ -219,13 +218,13 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 			} else {
 				// Parse VectorSearchByIDRequest from JSON object
 				start := i
-				newPos, err := skipObject(data, i)
+				newPos, err := SkipObject(data, i)
 				if err != nil {
 					return p.result, err
 				}
 				// Parse the JSON object into VectorSearchByIDRequest
 				var req core.VectorSearchByIDRequest
-				if err := parseSearchByIDRequest(data[start:newPos], &req); err != nil {
+				if err := ParseSearchByIDRequest(data[start:newPos], &req); err != nil {
 					return p.result, err
 				}
 				p.result.SearchByID = &req
@@ -237,26 +236,26 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 			} else {
 				// Parse RecommendRequest from JSON object
 				start := i
-				newPos, err := skipObject(data, i)
+				newPos, err := SkipObject(data, i)
 				if err != nil {
 					return p.result, err
 				}
 				var req core.RecommendRequest
-				if err := parseRecommendRequest(data[start:newPos], &req); err != nil {
+				if err := ParseRecommendRequest(data[start:newPos], &req); err != nil {
 					return p.result, err
 				}
 				p.result.Recommend = &req
 				i = newPos
 			}
 		default:
-			newPos, err := skipValue(data, i)
+			newPos, err := SkipValue(data, i)
 			if err != nil {
 				return p.result, err
 			}
 			i = newPos
 		}
 
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 		if i < len(data) && data[i] == ',' {
 			i++
 		}
@@ -266,7 +265,7 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 }
 
 func (p *ZeroAllocTicketParser) parseWindowFunctions(data []byte, pos int) (int, error) {
-	wfs, newPos, err := parseWindowFunctionsShared(data, pos)
+	wfs, newPos, err := ParseWindowFunctionsShared(data, pos)
 	if err != nil {
 		return pos, err
 	}
@@ -275,18 +274,18 @@ func (p *ZeroAllocTicketParser) parseWindowFunctions(data []byte, pos int) (int,
 }
 
 func (p *ZeroAllocTicketParser) parseFilters(data []byte, pos int) (int, error) {
-	return parseFilterArrayRecursive(data, pos, &p.filters, p)
+	return ParseFilterArrayRecursive(data, pos, &p.filters, p)
 }
 
 func (p *ZeroAllocTicketParser) parseCTEs(data []byte, pos int) (int, error) {
-	pos = skipWhitespace(data, pos)
+	pos = SkipWhitespace(data, pos)
 	if data[pos] != '[' {
 		return pos, errors.New("expected [ for ctes")
 	}
 	pos++
 
 	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if data[pos] == ']' {
 			return pos + 1, nil
 		}
@@ -299,7 +298,7 @@ func (p *ZeroAllocTicketParser) parseCTEs(data []byte, pos int) (int, error) {
 		p.result.CTEs = append(p.result.CTEs, cte)
 		pos = newPos
 
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos < len(data) && data[pos] == ',' {
 			pos++
 		}
@@ -314,27 +313,27 @@ func (p *ZeroAllocTicketParser) parseCTEObject(data []byte, pos int, cte *core.C
 	pos++
 
 	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if data[pos] == '}' {
 			return pos + 1, nil
 		}
 
-		key, newPos, err := parseString(data, pos)
+		key, newPos, err := ParseString(data, pos)
 		if err != nil {
 			return pos, err
 		}
 		pos = newPos
 
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if data[pos] != ':' {
 			return pos, errors.New("expected : in cte object")
 		}
 		pos++
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 
 		switch key {
 		case "name":
-			val, newPos, err := parseString(data, pos)
+			val, newPos, err := ParseString(data, pos)
 			if err != nil {
 				return pos, err
 			}
@@ -342,7 +341,7 @@ func (p *ZeroAllocTicketParser) parseCTEObject(data []byte, pos int, cte *core.C
 			pos = newPos
 		case "search":
 			start := pos
-			newPos, err := skipObject(data, pos)
+			newPos, err := SkipObject(data, pos)
 			if err != nil {
 				return pos, err
 			}
@@ -353,13 +352,13 @@ func (p *ZeroAllocTicketParser) parseCTEObject(data []byte, pos int, cte *core.C
 			cte.Search = &searchReq
 			pos = newPos
 		default:
-			pos, err = skipValue(data, pos)
+			pos, err = SkipValue(data, pos)
 			if err != nil {
 				return pos, err
 			}
 		}
 
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos < len(data) && data[pos] == ',' {
 			pos++
 		}

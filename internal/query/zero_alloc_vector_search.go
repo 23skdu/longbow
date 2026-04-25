@@ -45,14 +45,14 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 		return p.result, nil
 	}
 
-	i := skipWhitespace(data, 0)
+	i := SkipWhitespace(data, 0)
 	if i >= len(data) || data[i] != '{' {
 		return p.result, errors.New("expected opening brace")
 	}
 	i++
 
 	for i < len(data) {
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 		if i >= len(data) {
 			return p.result, errors.New("unexpected end of JSON")
 		}
@@ -78,29 +78,29 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			return p.result, errors.New("expected quote for key")
 		}
 
-		key, newPos, err := parseString(data, i)
+		key, newPos, err := ParseString(data, i)
 		if err != nil {
 			return p.result, err
 		}
 		i = newPos
 
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 		if i >= len(data) || data[i] != ':' {
 			return p.result, errors.New("expected colon")
 		}
 		i++
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 
 		switch key {
 		case "dataset":
-			val, newPos, err := parseString(data, i)
+			val, newPos, err := ParseString(data, i)
 			if err != nil {
 				return p.result, err
 			}
 			p.result.Dataset = val
 			i = newPos
 		case "k":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return p.result, err
 			}
@@ -123,7 +123,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			}
 			i = newPos
 		case "local_only":
-			val, newPos, err := parseBool(data, i)
+			val, newPos, err := ParseBool(data, i)
 			if err != nil {
 				return p.result, err
 			}
@@ -135,7 +135,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 				p.result.TextQuery = ""
 				i += 4
 			} else {
-				val, newPos, err := parseString(data, i)
+				val, newPos, err := ParseString(data, i)
 				if err != nil {
 					return p.result, err
 				}
@@ -143,28 +143,28 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 				i = newPos
 			}
 		case "alpha":
-			val, newPos, err := parseFloat32(data, i)
+			val, newPos, err := ParseFloat32(data, i)
 			if err != nil {
 				return p.result, err
 			}
 			p.result.Alpha = val
 			i = newPos
 		case "graph_alpha":
-			val, newPos, err := parseFloat32(data, i)
+			val, newPos, err := ParseFloat32(data, i)
 			if err != nil {
 				return p.result, err
 			}
 			p.result.GraphAlpha = val
 			i = newPos
 		case "graph_depth":
-			val, newPos, err := parseInt64(data, i)
+			val, newPos, err := ParseInt64(data, i)
 			if err != nil {
 				return p.result, err
 			}
 			p.result.GraphDepth = int(val)
 			i = newPos
 		case "include_vectors":
-			val, newPos, err := parseBool(data, i)
+			val, newPos, err := ParseBool(data, i)
 			if err != nil {
 				return p.result, err
 			}
@@ -176,7 +176,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 				p.result.VectorFormat = ""
 				i += 4
 			} else {
-				val, newPos, err := parseString(data, i)
+				val, newPos, err := ParseString(data, i)
 				if err != nil {
 					return p.result, err
 				}
@@ -184,7 +184,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 				i = newPos
 			}
 		case "window_functions":
-			wfs, newPos, err := parseWindowFunctionsShared(data, i)
+			wfs, newPos, err := ParseWindowFunctionsShared(data, i)
 			if err != nil {
 				return p.result, err
 			}
@@ -197,7 +197,7 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			return p.result, errors.New("unknown field: " + key)
 		}
 
-		i = skipWhitespace(data, i)
+		i = SkipWhitespace(data, i)
 		if i < len(data) && data[i] == ',' {
 			i++
 		}
@@ -217,7 +217,7 @@ func (p *ZeroAllocVectorSearchParser) ParseVectorField(data []byte, pos int, out
 	*outVec = (*outVec)[:0]
 
 	for pos < len(data) {
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos >= len(data) {
 			return pos, errors.New("unexpected end in vector array")
 		}
@@ -227,18 +227,18 @@ func (p *ZeroAllocVectorSearchParser) ParseVectorField(data []byte, pos int, out
 		}
 
 		// Parse float value
-		val, newPos, err := parseFloat32(data, pos)
+		val, newPos, err := ParseFloat32(data, pos)
 		if err != nil {
 			return pos, err
 		}
 		*outVec = append(*outVec, val)
 		pos = newPos
 
-		pos = skipWhitespace(data, pos)
+		pos = SkipWhitespace(data, pos)
 		if pos < len(data) && data[pos] == ',' {
 			pos++
 			// Check for trailing comma
-			next := skipWhitespace(data, pos)
+			next := SkipWhitespace(data, pos)
 			if next < len(data) && data[next] == ']' {
 				return pos, errors.New("trailing comma in vector array")
 			}
@@ -250,5 +250,5 @@ func (p *ZeroAllocVectorSearchParser) ParseVectorField(data []byte, pos int, out
 
 
 func (p *ZeroAllocVectorSearchParser) parseFilters(data []byte, pos int) (int, error) {
-	return parseFilterArray(data, pos, &p.filters)
+	return ParseFilterArray(data, pos, &p.filters)
 }

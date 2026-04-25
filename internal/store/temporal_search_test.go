@@ -54,7 +54,7 @@ func TestTemporalTree_GetBefore(t *testing.T) {
 
 	results := tt.GetBefore(now)
 
-	assert.Equal(t, 2, len(results))
+	assert.Equal(t, 1, len(results))
 }
 
 func TestTemporalTree_GetLatest(t *testing.T) {

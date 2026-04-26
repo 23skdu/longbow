@@ -53,34 +53,56 @@ func EncodeMetadata(metadata map[string]interface{}) ([]byte, error) {
 			return nil, err
 		}
 		// key
-		buf.WriteString(k)
+		if _, err := buf.WriteString(k); err != nil {
+			return nil, err
+		}
 
 		if v == nil {
 			buf.WriteByte(TypeNil)
-			binary.Write(buf, binary.LittleEndian, uint32(0))
+			if err := binary.Write(buf, binary.LittleEndian, uint32(0)); err != nil {
+				return nil, err
+			}
 			continue
 		}
 
 		switch val := v.(type) {
 		case string:
 			buf.WriteByte(TypeString)
-			binary.Write(buf, binary.LittleEndian, uint32(len(val)))
-			buf.WriteString(val)
+			if err := binary.Write(buf, binary.LittleEndian, uint32(len(val))); err != nil {
+				return nil, err
+			}
+			if _, err := buf.WriteString(val); err != nil {
+				return nil, err
+			}
 		case int64:
 			buf.WriteByte(TypeInt64)
-			binary.Write(buf, binary.LittleEndian, uint32(8))
-			binary.Write(buf, binary.LittleEndian, val)
+			if err := binary.Write(buf, binary.LittleEndian, uint32(8)); err != nil {
+				return nil, err
+			}
+			if err := binary.Write(buf, binary.LittleEndian, val); err != nil {
+				return nil, err
+			}
 		case int:
 			buf.WriteByte(TypeInt64)
-			binary.Write(buf, binary.LittleEndian, uint32(8))
-			binary.Write(buf, binary.LittleEndian, int64(val))
+			if err := binary.Write(buf, binary.LittleEndian, uint32(8)); err != nil {
+				return nil, err
+			}
+			if err := binary.Write(buf, binary.LittleEndian, int64(val)); err != nil {
+				return nil, err
+			}
 		case float64:
 			buf.WriteByte(TypeFloat64)
-			binary.Write(buf, binary.LittleEndian, uint32(8))
-			binary.Write(buf, binary.LittleEndian, val)
+			if err := binary.Write(buf, binary.LittleEndian, uint32(8)); err != nil {
+				return nil, err
+			}
+			if err := binary.Write(buf, binary.LittleEndian, val); err != nil {
+				return nil, err
+			}
 		case bool:
 			buf.WriteByte(TypeBool)
-			binary.Write(buf, binary.LittleEndian, uint32(1))
+			if err := binary.Write(buf, binary.LittleEndian, uint32(1)); err != nil {
+				return nil, err
+			}
 			if val {
 				buf.WriteByte(1)
 			} else {
@@ -88,14 +110,22 @@ func EncodeMetadata(metadata map[string]interface{}) ([]byte, error) {
 			}
 		case []byte:
 			buf.WriteByte(TypeBinary)
-			binary.Write(buf, binary.LittleEndian, uint32(len(val)))
-			buf.Write(val)
+			if err := binary.Write(buf, binary.LittleEndian, uint32(len(val))); err != nil {
+				return nil, err
+			}
+			if _, err := buf.Write(val); err != nil {
+				return nil, err
+			}
 		default:
 			// Fallback to string representation for unknown types
 			s := fmt.Sprintf("%v", val)
 			buf.WriteByte(TypeString)
-			binary.Write(buf, binary.LittleEndian, uint32(len(s)))
-			buf.WriteString(s)
+			if err := binary.Write(buf, binary.LittleEndian, uint32(len(s))); err != nil {
+				return nil, err
+			}
+			if _, err := buf.WriteString(s); err != nil {
+				return nil, err
+			}
 		}
 	}
 

@@ -192,3 +192,9 @@ Based on benchmark results and code review:
 6. **CUDA Support**: Ancalagon has RTX 4060 (8GB). Recommend:
    - Enable CUDA benchmarks (currently commented out in run_matrix_bench.py)
    - Profile memory vs throughput tradeoffs
+
+## Additional Observations (2026-04-26)
+- **CLI Test**: Verified longbow-cli operations (create-namespace, import, stats)
+- **Benchmark Issues**: unified_benchmark.py shows 0 QPS for search operations - possible server initialization or SDK import issue
+- **Metal Batch**: Implemented in metal_gpu_optimized.go with 32-query threshold
+- **PQ Ingest**: Implemented in factory.go with LONGBOW_PQ_INGEST=1 env var

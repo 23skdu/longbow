@@ -188,6 +188,14 @@ Based on benchmark results and code review:
    - Profile-guided nprobe tuning
    - BITSET8/16/32 optimized kernels
 
+### Additional Issues Found (2026-04-26)
+
+6. **Benchmark Script Issues**: unified_benchmark.py requires bench-tool with specific flags (-uri, -dim, -dtype, etc.) but cmd/bench_io/main.go has different flags (-mode, -size, -duration). Recommend:
+   - Update bench_io to match benchmark script expectations OR
+   - Update unified_benchmark.py to use SDK directly
+
+7. **Server Auto-Shutdown**: Server sometimes shuts down after ~30s of inactivity. May be related to auto-scaler idle detection.
+
 ### Low Priority
 6. **CUDA Support**: Ancalagon has RTX 4060 (8GB). Recommend:
    - Enable CUDA benchmarks (currently commented out in run_matrix_bench.py)

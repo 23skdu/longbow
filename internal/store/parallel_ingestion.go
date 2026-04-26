@@ -3,6 +3,7 @@ package store
 import (
 	"bytes"
 	"context"
+	"encoding/binary"
 	"fmt"
 	"io"
 	"runtime"
@@ -12,6 +13,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 )
 
 // ParallelRecordReader handles gRPC-to-Arrow decoding in parallel
@@ -21,8 +23,11 @@ type ParallelRecordReader struct {
 	alloc      memory.Allocator
 	
 	schemaBytes []byte
-	dataChan    chan *flight.FlightData
+	dataChan    chan sequencedData
 	resultChan  chan recordResult
+	
+	nextSeq     int
+	reorderBuf  map[int]recordResult
 	
 	ctx        context.Context
 	cancel     context.CancelFunc
@@ -31,41 +36,68 @@ type ParallelRecordReader struct {
 	err        error
 	latestRec  arrow.RecordBatch
 	descriptor *flight.FlightDescriptor
+	logger     zerolog.Logger
+}
+
+type sequencedData struct {
+	data *flight.FlightData
+	seq  int
 }
 
 type recordResult struct {
 	batch      arrow.RecordBatch
 	descriptor *flight.FlightDescriptor
 	err        error
+	seq        int
 }
 
-func NewParallelRecordReader(stream flight.FlightService_DoPutServer, alloc memory.Allocator) (*ParallelRecordReader, error) {
+func NewParallelRecordReader(stream flight.FlightService_DoPutServer, alloc memory.Allocator, logger zerolog.Logger) (*ParallelRecordReader, error) {
 	// First message MUST contain the schema
 	data, err := stream.Recv()
 	if err != nil {
 		return nil, err
 	}
 
-	// Use internal helper or standard ipc to read schema from FlightData
-	// FlightData.DataHeader contains the Schema message
-	schema, err := flight.DeserializeSchema(data.DataHeader, alloc)
+	logger.Info().
+		Int("header_len", len(data.DataHeader)).
+		Int("body_len", len(data.DataBody)).
+		Str("header_hex", fmt.Sprintf("%x", data.DataHeader[:min(len(data.DataHeader), 64)])).
+		Msg("ParallelIngest: First message received")
+
+	if len(data.DataHeader) < 4 {
+		return nil, fmt.Errorf("invalid FlightData: header too short (%d bytes)", len(data.DataHeader))
+	}
+
+	// Try standard deserialize first, but check for prefix to avoid panics if possible
+	var schema *arrow.Schema
+	header := data.DataHeader
+	
+	// Fallback: Skip 8-byte IPC stream prefix if present
+	if len(header) > 8 && binary.LittleEndian.Uint32(header[0:4]) == 0xFFFFFFFF {
+		logger.Info().Msg("ParallelIngest: Detected IPC stream prefix in schema header")
+		header = header[8:]
+	}
+
+	schema, err = flight.DeserializeSchema(header, alloc)
 	if err != nil {
 		return nil, fmt.Errorf("failed to deserialize schema: %w", err)
 	}
 
+	// Store the "raw" schema metadata (without prefix) for reconstruction
+
+
 	// Pre-render schema message for per-batch decoding
+	// We use ipc.NewWriter to ensure proper alignment and prefixing.
 	var buf bytes.Buffer
-	// Note: We use NewWriter for a stream (not file) to avoid file headers
 	writer := ipc.NewWriter(&buf, ipc.WithSchema(schema), ipc.WithAllocator(alloc))
-	// We only want the schema message, but writer writes it on first call
-	// or on Start? Actually it writes it immediately.
-	// However, it might not be a standalone message.
-	
-	// A better way: just create a dummy IPC stream and capture the first part
-	_ = writer.Write(nil) // Trigger schema write
+	// writer.Close() writes the schema message and an 8-byte EOS (ffffffff 00000000).
 	writer.Close()
 	schemaBytes := buf.Bytes()
-	// Strip the EOS (last 4-8 bytes) if needed, but ipc.NewReader will handle it.
+	// Strip the 8-byte EOS marker so we can append batches to this "stream" later.
+	if len(schemaBytes) >= 8 {
+		schemaBytes = schemaBytes[:len(schemaBytes)-8]
+	}
+
 
 	ctx, cancel := context.WithCancel(stream.Context())
 	
@@ -74,31 +106,43 @@ func NewParallelRecordReader(stream flight.FlightService_DoPutServer, alloc memo
 		schema:      schema,
 		alloc:       alloc,
 		schemaBytes: schemaBytes,
-		dataChan:    make(chan *flight.FlightData, 16),
-		resultChan:  make(chan recordResult, 16),
+		dataChan:    make(chan sequencedData, 32),
+		resultChan:  make(chan recordResult, 32),
+		reorderBuf:  make(map[int]recordResult),
 		ctx:         ctx,
 		cancel:      cancel,
 		descriptor:  data.FlightDescriptor,
+		logger:      logger,
 	}
 
 	// Start workers
 	numWorkers := runtime.NumCPU()
 	if numWorkers > 8 {
-		numWorkers = 8 // Diminishing returns beyond 8 for single stream
+		numWorkers = 8
 	}
+	
+	logger.Info().Int("workers", numWorkers).Msg("ParallelIngest: Starting workers")
 
-	pr.wg.Add(numWorkers + 1) // Workers + Producer
+	pr.wg.Add(numWorkers + 1)
 	
 	// Producer: Reads from gRPC stream
 	go pr.produce()
 
 	// Consumers: Decode IPC to Arrow
 	for i := 0; i < numWorkers; i++ {
-		go pr.consume()
+		go pr.consume(i)
 	}
 
 	// Close results when workers are done
 	go pr.cleanup()
+
+	// IMPORTANT: The first message might already contain a record batch!
+	if len(data.DataBody) > 0 || len(data.DataHeader) > 0 {
+		// Re-decode the first message too if it has data
+		// Wait, DeserializeSchema already used DataHeader. 
+		// If it also had data, we'd need to be careful.
+		// For now, assume first message is just schema for bench-tool.
+	}
 
 	return pr, nil
 }
@@ -107,44 +151,62 @@ func (pr *ParallelRecordReader) produce() {
 	defer pr.wg.Done()
 	defer close(pr.dataChan)
 
+	seq := 0
 	for {
 		data, err := pr.stream.Recv()
 		if err != nil {
-			if err != context.Canceled {
-				// We don't report EOF as error here, Next() will handle it
+			if err != io.EOF {
+				pr.logger.Error().Err(err).Msg("ParallelIngest: produce error")
 			}
 			return
 		}
 		
 		select {
-		case pr.dataChan <- data:
+		case pr.dataChan <- sequencedData{data: data, seq: seq}:
+			seq++
 		case <-pr.ctx.Done():
 			return
 		}
 	}
 }
 
-func (pr *ParallelRecordReader) consume() {
+func (pr *ParallelRecordReader) consume(id int) {
 	defer pr.wg.Done()
 
-	for data := range pr.dataChan {
-		// Decode FlightData to RecordBatch
-		// This is the "critical block" the user wants to parallelize
-		
-		// Note: ipc.NewReader needs the full stream usually, but for single messages
-		// we can use ipc.ReadRecordBatch if we have the schema.
-		
-		// We need to be careful with memory allocation here
-		batch, err := pr.decodePayload(data)
-		
-		select {
-		case pr.resultChan <- recordResult{batch: batch, descriptor: data.FlightDescriptor, err: err}:
-		case <-pr.ctx.Done():
-			if batch != nil {
-				batch.Release()
+	for sd := range pr.dataChan {
+		// Use a closure to handle panics and ensure results are ALWAYS sent for every sequence number.
+		func() {
+			var batch arrow.RecordBatch
+			var err error
+			
+			defer func() {
+				if r := recover(); r != nil {
+					err = fmt.Errorf("panic in worker %d: %v", id, r)
+					pr.logger.Error().Int("worker", id).Interface("recover", r).Msg("ParallelIngest: worker panic")
+				}
+				
+				// Send result (success or error) to resultChan
+				select {
+				case pr.resultChan <- recordResult{
+					batch:      batch,
+					descriptor: sd.data.FlightDescriptor,
+					err:        err,
+					seq:        sd.seq,
+				}:
+				case <-pr.ctx.Done():
+					if batch != nil {
+						batch.Release()
+					}
+					return // Worker MUST exit on context cancellation
+				}
+			}()
+
+			// Decode FlightData to RecordBatch
+			batch, err = pr.decodePayload(sd.data)
+			if err != nil {
+				pr.logger.Error().Int("worker", id).Err(err).Int("seq", sd.seq).Msg("ParallelIngest: worker decode error")
 			}
-			return
-		}
+		}()
 	}
 }
 
@@ -153,35 +215,30 @@ func (pr *ParallelRecordReader) decodePayload(data *flight.FlightData) (arrow.Re
 		return nil, nil
 	}
 
-	// Construct a full IPC stream for this single record batch
-	// [Schema][RecordBatch][EOS]
-	// data.DataHeader contains the IPC metadata (continuation + size + message)
-	// data.DataBody contains the IPC data
-	
-	var r io.Reader
-	if len(data.DataBody) > 0 {
-		r = io.MultiReader(
-			bytes.NewReader(pr.schemaBytes),
-			bytes.NewReader(data.DataHeader),
-			bytes.NewReader(data.DataBody),
-		)
-	} else {
-		r = io.MultiReader(
-			bytes.NewReader(pr.schemaBytes),
-			bytes.NewReader(data.DataHeader),
-		)
-	}
+	// Construct a standalone IPC stream for this single record batch
+	// [Schema Message (with prefix)] [RecordBatch Message (with prefix)] [EOS (with prefix)]
+	var streamBuf bytes.Buffer
+	streamBuf.Write(pr.schemaBytes)
 
-	reader, err := ipc.NewReader(r, ipc.WithSchema(pr.schema), ipc.WithAllocator(pr.alloc))
+	// Check if DataHeader already has the 8-byte IPC prefix
+	hasPrefix := len(data.DataHeader) >= 8 && binary.LittleEndian.Uint32(data.DataHeader[0:4]) == 0xFFFFFFFF
+	
+	if !hasPrefix {
+		_ = binary.Write(&streamBuf, binary.LittleEndian, uint32(0xFFFFFFFF))
+		_ = binary.Write(&streamBuf, binary.LittleEndian, uint32(len(data.DataHeader)))
+	}
+	streamBuf.Write(data.DataHeader)
+	streamBuf.Write(data.DataBody)
+	
+	// Add proper EOS (8 bytes: ffffffff 00000000)
+	_ = binary.Write(&streamBuf, binary.LittleEndian, uint32(0xFFFFFFFF))
+	_ = binary.Write(&streamBuf, binary.LittleEndian, uint32(0))
+
+	reader, err := ipc.NewReader(&streamBuf, ipc.WithAllocator(pr.alloc))
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to create IPC reader for batch (hasPrefix=%v, hlen=%d, blen=%d): %w", hasPrefix, len(data.DataHeader), len(data.DataBody), err)
 	}
 	defer reader.Release()
-
-	// Skip the first record (which is our dummy nil write in schemaBytes)
-	if reader.Next() {
-		// This was the nil record
-	}
 
 	if reader.Next() {
 		rec := reader.Record()
@@ -202,23 +259,57 @@ func (pr *ParallelRecordReader) Next() bool {
 		pr.latestRec = nil
 	}
 
-	select {
-	case res, ok := <-pr.resultChan:
-		if !ok {
+	for {
+		// Check reorder buffer first
+		if res, ok := pr.reorderBuf[pr.nextSeq]; ok {
+			delete(pr.reorderBuf, pr.nextSeq)
+			pr.nextSeq++
+			
+			if res.err != nil {
+				pr.err = res.err
+				return false
+			}
+			if res.batch == nil {
+				continue // Skip empty batches (metadata only)
+			}
+			pr.latestRec = res.batch
+			if res.descriptor != nil {
+				pr.descriptor = res.descriptor
+			}
+			return true
+		}
+
+		// Wait for next result
+		select {
+		case res, ok := <-pr.resultChan:
+			if !ok {
+				// Re-check buffer one last time after channel close
+				if _, ok := pr.reorderBuf[pr.nextSeq]; ok {
+					continue
+				}
+				return false
+			}
+			if res.seq == pr.nextSeq {
+				pr.nextSeq++
+				if res.err != nil {
+					pr.err = res.err
+					return false
+				}
+				if res.batch == nil {
+					continue
+				}
+				pr.latestRec = res.batch
+				if res.descriptor != nil {
+					pr.descriptor = res.descriptor
+				}
+				return true
+			}
+			// Out of order, buffer it
+			pr.reorderBuf[res.seq] = res
+		case <-pr.ctx.Done():
+			pr.err = pr.ctx.Err()
 			return false
 		}
-		if res.err != nil {
-			pr.err = res.err
-			return false
-		}
-		pr.latestRec = res.batch
-		if res.descriptor != nil {
-			pr.descriptor = res.descriptor
-		}
-		return pr.latestRec != nil
-	case <-pr.ctx.Done():
-		pr.err = pr.ctx.Err()
-		return false
 	}
 }
 

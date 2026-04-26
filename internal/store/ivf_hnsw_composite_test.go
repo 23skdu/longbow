@@ -40,19 +40,18 @@ func TestIVFHNSWCompositeIndex_Basic(t *testing.T) {
 	require.NoError(t, err)
 	
 	// 3. Add vectors
-	addVectors := make([][]float32, numVectors)
-	ids := make([]uint64, numVectors)
-	for i := 0; i < numVectors; i++ {
-		ids[i] = uint64(i)
-		vec := make([]float32, dim)
+	randomVector := func(dim int) []float32 {
+		v := make([]float32, dim)
 		for j := 0; j < dim; j++ {
-			vec[j] = rand.Float32()
+			v[j] = rand.Float32()
 		}
-		addVectors[i] = vec
+		return v
 	}
-	
-	err = idx.AddBatch(ids, addVectors)
-	require.NoError(t, err)
+
+	for i := 0; i < numVectors; i++ {
+		err := idx.Add(uint64(i), randomVector(dim))
+		require.NoError(t, err)
+	}
 	assert.Equal(t, numVectors, idx.Size())
 	
 	// 4. Search
@@ -112,8 +111,10 @@ func TestIVFHNSWCompositeIndex_BillionScaleSimulation(t *testing.T) {
 			}
 			batch[j] = v
 		}
-		err = idx.AddBatch(ids, batch)
-		require.NoError(t, err)
+		for j, id := range ids {
+			err = idx.Add(id, batch[j])
+			require.NoError(t, err)
+		}
 	}
 
 	

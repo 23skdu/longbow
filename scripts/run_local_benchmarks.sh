@@ -1,8 +1,13 @@
 #!/bin/bash
-# Benchmark runner for local CPU and Metal
+# FULL Benchmark runner for local CPU and Metal
 cd /Users/rsd/REPOS/longbow
 
-export LONGBOW_MAX_MEMORY=19327352832
+# Cleanup old data
+rm -rf data/bench data/perf_logs
+mkdir -p data/perf_logs
+
+export LONGBOW_MAX_MEMORY=19327352832 # 18GB
+export LONGBOW_DATA_PATH="./data/bench"
 
 # Function to run benchmark group
 run_bench() {
@@ -26,19 +31,16 @@ run_bench() {
         2>&1 | tee "data/perf_logs/local_${mode}_${label}.log"
 }
 
-# DTs requested by user
+# ALL Dtypes requested
 DTYPES="float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant2,turboquant4,turboquant8"
 
-# Run CPU and Metal sequentially on local host (to avoid resource contention on same machine)
-echo "Starting LOCAL benchmarks (CPU + Metal)..."
+# ALL Dimensions and Counts requested
+DIMS="128,384,768,1024,3072"
+COUNTS="500,1000,5000,15000,50000,100000"
 
-# Group 1: 128, 384
-run_bench "cpu" "128,384" "500,1000,5000,15000,50000,100000" "$DTYPES" "low_dim"
-run_bench "metal" "128,384" "500,1000,5000,15000,50000,100000" "$DTYPES" "low_dim"
-
-# Group 2: 768, 1024, 3072
-run_bench "cpu" "768,1024,3072" "500,1000,5000,10000,20000,50000" "$DTYPES" "high_dim"
-run_bench "metal" "768,1024,3072" "500,1000,5000,10000,20000,50000" "$DTYPES" "high_dim"
+# Sequential run for CPU and Metal to avoid local resource contention
+run_bench "cpu" "$DIMS" "$COUNTS" "$DTYPES" "full"
+run_bench "metal" "$DIMS" "$COUNTS" "$DTYPES" "full"
 
 echo "All LOCAL benchmarks complete!"
 date

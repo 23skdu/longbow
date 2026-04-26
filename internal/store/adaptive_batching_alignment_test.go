@@ -69,18 +69,9 @@ func TestDoPut_AdaptiveBatchingAlignment(t *testing.T) {
 
 	// Collect chunks from channel
 	chunks := make([]*flight.FlightData, 0)
-	for {
-		select {
-		case fd := <-recvCh:
-			if fd == nil {
-				goto done_collect
-			}
-			chunks = append(chunks, fd)
-		default:
-			goto done_collect
-		}
+	for fd := range recvCh {
+		chunks = append(chunks, fd)
 	}
-done_collect:
 
 	// Add descriptor to the first chunk (schema)
 	if len(chunks) > 0 {

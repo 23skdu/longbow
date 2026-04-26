@@ -7,6 +7,7 @@ Longbow is a high-performance, distributed vector database designed for cloud-na
 ## 1. Installation
 
 ### Helm Chart (Recommended)
+ 
 The recommended way to deploy Longbow is using the official Helm chart.
 
 ```bash
@@ -15,6 +16,7 @@ helm install my-release ./helm/longbow
 ```
 
 ### Docker & Multi-Platform Support
+ 
 Official images are available on GitHub Container Registry (`ghcr.io/23skdu/longbow`):
 
 - **Apple Silicon (`arm64`)**: `latest-arm64-metal` - Optimized for Metal GPU and Mach CPU clusters.
@@ -28,6 +30,7 @@ Official images are available on GitHub Container Registry (`ghcr.io/23skdu/long
 Longbow follows the **Twelve-Factor App** methodology and is configured entirely via environment variables.
 
 ### Core Settings
+ 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `LONGBOW_LISTEN_ADDR` | `0.0.0.0:3000` | gRPC Data Plane (Arrow Flight). |
@@ -37,6 +40,7 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 | `LONGBOW_MAX_MEMORY` | `1GB` | Bound the total memory usage for vector storage. |
 
 ### Indexing & HNSW Tuning
+ 
 | Variable | Default | Tuning Recommendation |
 | :--- | :--- | :--- |
 | `LONGBOW_HNSW_M` | `16` | Connections per node. Use `32-48` for high-dim (768+). |
@@ -46,6 +50,7 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 | `LONGBOW_USE_DISK` | `false` | Enable SSD offloading (Disk-ANN style). |
 
 ### Storage & Persistence
+ 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `LONGBOW_STORAGE_USE_IOURING` | `false` | High-perf WAL writes (Linux 5.6+). |
@@ -53,6 +58,7 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 | `LONGBOW_SNAPSHOT_INTERVAL` | `1h` | Frequency of full index disk snapshots. |
 
 ### Temporal Search & Advanced Modules
+ 
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `LONGBOW_TEMPORAL_ENABLED` | `false` | Enable temporal versioning and time-travel search. |
@@ -61,6 +67,7 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 | `LONGBOW_CDC_ENABLED` | `false` | Enable Change Data Capture for streaming data out. |
 | `LONGBOW_MQ_ENABLED` | `false` | Export vectors/CDC via Kafka/Pulsar. |
 | `LONGBOW_LEARNED_INDEX_ENABLED` | `false` | Enable ML-based index selection for faster routing. |
+| `LONGBOW_STRICT_MODELS` | `false` | **New in 0.1.9**: If `true`, fail fast if embedding models are missing instead of using stubs. |
 
 ---
 
@@ -69,12 +76,14 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 Longbow uses a "Dynamo-style" architecture to scale horizontally.
 
 ### Consistent Hashing & Sharding
+ 
 - **Vnodes**: Each node uses 20 virtual nodes for uniform data distribution.
 - **Gossip (SWIM)**: Decentralized membership via the SWIM protocol.
 - **Auto-Sharding**: Automatically migrates from a flat index to a sharded HNSW index as data grows.
   - `LONGBOW_AUTO_SHARDING_THRESHOLD`: Default `10000`.
 
 ### High Availability
+ 
 Nodes detect failures through periodic direct and indirect pings. The cluster automatically rebalances when nodes join or leave the mesh.
 
 ---
@@ -84,11 +93,13 @@ Nodes detect failures through periodic direct and indirect pings. The cluster au
 Longbow includes a CLI for administrative tasks and data management.
 
 ### Installation
+ 
 ```bash
 go build -o bin/longbow-cli ./cmd/cli
 ```
 
 ### Common Commands
+ 
 - **Import Data**: `longbow-cli import -dataset demo -count 5000`
 - **Search**: `longbow-cli search -dataset demo -mode hybrid -vector "0.1,..." -text "query"`
 - **Manage Namespaces**: `longbow-cli create-namespace -name tenant-a`
@@ -124,10 +135,16 @@ results = reader.read_all()
 ## 6. Operational Maintenance
 
 ### Monitoring
+ 
 Metrics are available at `http://<METRICS_ADDR>/metrics`. Key namespaces include:
+ 
+- **longbow_onnx_metal_memory_used_bytes**: (Gauge) VRAM utilization on Apple Silicon.
+- **longbow_gpu_memory_bytes**: (Gauge) VRAM utilization on NVIDIA/CUDA systems.
+- **longbow_stub_model_usage_total**: (Counter) **New in 0.1.9**: Count of times a stub embedding model was used due to missing configuration. Labels: `model_path`.
 - `longbow_search_`: Latency and throughput.
 - `longbow_gossip_`: Cluster membership status.
 - `longbow_storage_`: WAL and disk usage.
 
 ### Memory Management
+ 
 Set `GOMEMLIMIT` to 90% of the container's hard limit. Longbow's internal **GCTuner** will manage allocations to stay within `LONGBOW_MAX_MEMORY` while maximizing performance.

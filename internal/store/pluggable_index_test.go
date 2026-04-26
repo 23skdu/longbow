@@ -85,7 +85,7 @@ func TestPluggableVectorIndex_AddAndSearch(t *testing.T) {
 	}
 
 	// Add batch
-	err = idx.AddBatch(
+	err = idx.AddBatchRaw(
 		[]uint64{2, 3},
 		[][]float32{{0.0, 1.0, 0.0, 0.0}, {0.0, 0.0, 1.0, 0.0}},
 	)
@@ -322,7 +322,7 @@ func (m *mockPluggableIndex) Add(id uint64, vector []float32) error {
 	return nil
 }
 
-func (m *mockPluggableIndex) AddBatch(ids []uint64, vectors [][]float32) error {
+func (m *mockPluggableIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	for i, id := range ids {
@@ -473,7 +473,7 @@ func TestIVFFlatIndex_AddAndSearch(t *testing.T) {
 		}
 	}
 
-	err = idx.AddBatch(ids, vectors)
+	err = idx.AddBatchRaw(ids, vectors)
 	if err != nil {
 		t.Fatalf("Failed to add vectors: %v", err)
 	}
@@ -557,7 +557,7 @@ func TestDiskANNIndex_AddAndSearch(t *testing.T) {
 		}
 	}
 
-	err = idx.AddBatch(ids, vectors)
+	err = idx.AddBatchRaw(ids, vectors)
 	if err != nil {
 		t.Fatalf("Failed to add vectors: %v", err)
 	}

@@ -14,6 +14,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/wasm"
 	"github.com/23skdu/longbow/internal/ml"
+	"os"
 )
 
 type EmbeddingGenerator interface {
@@ -622,7 +623,10 @@ func NewLocalEmbeddingGenerator(config EmbeddingConfig) (*localEmbeddingGenerato
 
 func (le *localEmbeddingGenerator) initModel() error {
 	if le.modelPath == "" {
-		le.model = &stubEmbeddingModel{dimension: le.dimension}
+		if os.Getenv("LONGBOW_STRICT_MODELS") == "1" {
+			return errors.New("strict model validation failed: no model path specified and LONGBOW_STRICT_MODELS=1")
+		}
+		le.model = &stubEmbeddingModel{dimension: le.dimension, path: "empty"}
 		le.initialized = true
 		return nil
 	}
@@ -642,7 +646,10 @@ func (le *localEmbeddingGenerator) initModel() error {
 		le.initialized = true
 		le.logger.Info("ONNX embedding model loaded", "path", le.modelPath)
 	default:
-		le.model = &stubEmbeddingModel{dimension: le.dimension}
+		if os.Getenv("LONGBOW_STRICT_MODELS") == "1" {
+			return fmt.Errorf("strict model validation failed: unknown model extension for %s and LONGBOW_STRICT_MODELS=1", le.modelPath)
+		}
+		le.model = &stubEmbeddingModel{dimension: le.dimension, path: le.modelPath}
 		le.initialized = true
 		// Use a more visible warning for stub models in production-critical path
 		fmt.Printf("WARNING: Using stub embedding model for path: %s. This is NOT recommended for production.\n", le.modelPath)
@@ -705,9 +712,11 @@ func (le *localEmbeddingGenerator) Close() error {
 
 type stubEmbeddingModel struct {
 	dimension int
+	path      string
 }
 
 func (m *stubEmbeddingModel) Inference(input []string) ([][]float32, error) {
+	metrics.StubModelUsageTotal.WithLabelValues(m.path).Add(float64(len(input)))
 	results := make([][]float32, len(input))
 	for i := range input {
 		results[i] = make([]float32, m.dimension)

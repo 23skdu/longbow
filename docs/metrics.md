@@ -7,6 +7,7 @@ Complete reference for all Prometheus metrics exported by Longbow 0.1.9.
 ---
 
 ## 1. Flight & RPC
+ 
 Performance and throughput of the Arrow Flight interface.
 
 - **longbow_flight_ops_total**: (Counter) Total processed Arrow Flight operations. Labels: `action`, `status`.
@@ -17,6 +18,7 @@ Performance and throughput of the Arrow Flight interface.
 ---
 
 ## 2. Vector Search & HNSW
+ 
 Metrics for the core vector indexing and search engine.
 
 - **longbow_vector_search_latency_seconds**: (Histogram) Latency of search operations. Labels: `dataset`.
@@ -28,6 +30,7 @@ Metrics for the core vector indexing and search engine.
 ---
 
 ## 3. TurboQuant & Acceleration (New in 0.1.9)
+ 
 Monitoring the SIMD-accelerated quantization and bit-packing features.
 
 - **longbow_turboquant_search_total**: (Counter) Number of searches using TurboQuant acceleration. Labels: `dataset`, `bit_width` (4 or 2).
@@ -40,15 +43,18 @@ Monitoring the SIMD-accelerated quantization and bit-packing features.
 ---
 
 ## 4. Hardware & GPU
+ 
 Metrics for CUDA and Metal acceleration.
 
 - **longbow_onnx_inference_duration_seconds**: (Histogram) Duration of ML model execution. Labels: `backend` (onnx, metal, wazero).
 - **longbow_onnx_metal_memory_used_bytes**: (Gauge) VRAM utilization on Apple Silicon.
 - **longbow_gpu_memory_bytes**: (Gauge) VRAM utilization on NVIDIA/CUDA systems.
+- **longbow_stub_model_usage_total**: (Counter) **New in 0.1.9**: Count of times a stub embedding model was used due to missing configuration. Labels: `model_path`.
 
 ---
 
 ## 5. Persistence & IO
+ 
 Metrics for the WAL and snapshotting system.
 
 - **longbow_snapshot_write_duration_seconds**: (Histogram) Latency of reflection-free Parquet snapshotting.
@@ -58,15 +64,18 @@ Metrics for the WAL and snapshotting system.
 ---
 
 ## 6. Distributed & Mesh
+ 
 Metrics for cluster membership and sharding.
 
 - **longbow_gossip_active_members**: (Gauge) Number of healthy nodes in the gossip mesh.
 - **longbow_gossip_state_changes_total**: (Counter) Number of membership transitions (join/leave/fail).
 - **longbow_ring_vnode_distribution**: (Gauge) Number of virtual nodes assigned per physical node.
+- **longbow_index_sync_delta_total**: (Counter) **New in 0.1.9**: Number of vectors synchronized via delta-sync anti-entropy. Labels: `index_type`, `dataset`.
 
 ---
 
 ## 7. Resource Management
+ 
 - **longbow_arena_memory_bytes**: (Gauge) Memory allocated in custom slab arenas. Labels: `size`.
 - **longbow_gc_pause_duration_seconds**: (Histogram) Latency of Go garbage collection cycles.
 - **longbow_gctuner_heap_target_bytes**: (Gauge) The dynamic heap target set by the GCTuner.

@@ -47,7 +47,7 @@ type IVFIndexEntry struct {
 // IVFCluster holds all vectors belonging to one cluster
 type IVFCluster struct {
 	mu       sync.RWMutex
-	entries  []IVFIndexEntry
+	Entries  []IVFIndexEntry
 	centroid []float32
 }
 
@@ -169,7 +169,7 @@ func (idx *IVFPQIndex) Add(ctx context.Context, vectors [][]float32) error {
 		}
 
 		idx.clusters[clusterID].mu.Lock()
-		idx.clusters[clusterID].entries = append(idx.clusters[clusterID].entries, entry)
+		idx.clusters[clusterID].Entries = append(idx.clusters[clusterID].Entries, entry)
 		idx.clusters[clusterID].mu.Unlock()
 
 		// 4. Store vector for scoring
@@ -241,7 +241,7 @@ func (idx *IVFPQIndex) SearchInternal(ctx context.Context, queryVec []float32, k
 		cluster := &idx.clusters[clusterID]
 
 		cluster.mu.RLock()
-		entries := cluster.entries
+		entries := cluster.Entries
 		cluster.mu.RUnlock()
 
 		for _, entry := range entries {

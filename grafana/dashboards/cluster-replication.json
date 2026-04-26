@@ -95,6 +95,16 @@
       "type": "timeseries"
     },
     {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 24, "x": 0, "y": 12},
+      "id": 99,
+      "targets": [
+        {"expr": "rate(longbow_index_sync_delta_total[1m])", "legendFormat": "{{index_type}} - {{dataset}}", "refId": "A"}
+      ],
+      "title": "Index Delta Sync Rate (Anti-Entropy)",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 12},
       "id": 10,

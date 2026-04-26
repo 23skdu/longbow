@@ -95,7 +95,7 @@ func (d *DiskANNIndex) Add(id uint64, vector []float32) error {
 	return nil
 }
 
-func (d *DiskANNIndex) AddBatch(ids []uint64, vectors [][]float32) error {
+func (d *DiskANNIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 

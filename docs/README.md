@@ -7,9 +7,12 @@ Longbow is a high-performance, distributed, and in-memory vector store implement
 ## 📖 Core Guides
 
 ### 1. [Quick Start & Deployment](deploy.md)
-Get started with Longbow using Docker or Helm. Covers installation, environment configuration, distributed architecture, CLI management, and client usage.
+Get started with Longbow using Docker or Helm. Covers installation, environment configuration, distributed architecture, and basic operational management.
 
-### 2. [Unified Search & Discovery](vectorsearch.md)
+### 2. [Command Line Interface (CLI)](cli.md)
+Technical reference for the `longbow-cli` tool, including build instructions, import workflows, and search options.
+
+### 3. [Unified Search & Discovery](vectorsearch.md)
 Comprehensive guide to search:
 - **Metrics**: Euclidean, Cosine, Dot Product.
 - **SQL Filtering**: Compound boolean logic and nested fields.
@@ -17,20 +20,20 @@ Comprehensive guide to search:
 - **Reranking**: ML-based Cross-Encoders.
 - **GraphRAG**: [Internal Spreading Activation](graphrag.md) and pathfinding.
 
-### 3. [High-Performance Indexing](indexing.md)
+### 4. [High-Performance Indexing](indexing.md)
 Tuning for scale and speed:
 - **Compression**: PQ, SQ8, BQ, and **TurboQuant**.
 - **Adaptive**: Automated Flat-to-HNSW migration for zero-config scaling.
 - **Hardware**: NUMA affinity and CPU pinning.
 - **Memory**: GOGC Auto-tuning and slab-arena management.
 
-### 4. [Hardware Acceleration & ML](wasm_onnx.md)
+### 5. [Hardware Acceleration & ML](wasm_onnx.md)
 Unleash hardware performance:
 - **GPU/TPU**: CUDA (NVIDIA), Metal (Apple Silicon), and Google TPU (Ironwood) [Optimization Details](gpu.md).
 - **Inference**: High-performance execution via WASM (Wazero) and ONNX Runtimes.
 - **Networking**: Zero-copy RDMA over RoCEv2.
 
-### 5. [Storage & Durability](persistence.md)
+### 6. [Storage & Durability](persistence.md)
 Managing data lifecycle:
 - **Persistence**: WAL, Snapshots, and S3/GCS Offloading.
 - **Temporal**: Time-travel search and version history.

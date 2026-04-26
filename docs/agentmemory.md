@@ -29,12 +29,16 @@ Agent memory is often time-sensitive. Longbow supports:
 - **Recency Biasing**: Boosting newer memories that are likely more relevant to the current conversation context.
 
 ### 4. Geo-Spatial Awareness
+
 Agents operating in the physical world (e.g., delivery bots, drone swarms, or augmented reality assistants) require memories tied to coordinates. Longbow provides:
+
 - **Proximity Retrieval**: Quickly finding relevant memories within a specific radius of the agent's current location.
 - **Geographic Re-ranking**: Weighting semantic relevance against physical distance to provide contextually accurate answers.
 
 ### 5. Turboquant (High-Speed Compression)
+
 For agents running on "the edge" or requiring massive memory pools with sub-millisecond latency, **Turboquant V2** provides:
+
 - **4x-8x Memory Reduction**: Using **Learnable Bit-Widths** (adaptive 1/2/4-bit quantization) to store millions of memories in a fraction of the RAM.
 - **Hardware Acceleration**: Leveraging **AVX-512**, **AVX2**, and **ARM Neon** kernels for blazing fast dot product calculations directly on the compressed data.
 
@@ -55,24 +59,31 @@ When performing searches, the store will now collect performance feedback to ref
 For complex AI agents, managing memory is not just about retrieval; it's about isolation, selective forgetting, and resource efficiency.
 
 ### 1. Session Isolation via Namespaces
+
 Agents often handle multiple users or sessions simultaneously. Longbow's **Namespaces** allow you to isolate these contexts completely:
+
 - **Tenancy**: Create a separate namespace for each user (`user_123`, `user_456`). This ensures that an agent never accidentally retrieves one user's private data for another.
 - **Bulk Cleanup**: When a session ends or a user deletes their profile, a single `delete-namespace` call wipes all associated memories instantly across both RAM and disk.
 - **Quota Control**: Prevent a single chatty session from consuming the entire cluster's memory by setting per-namespace vector limits.
 
 ### 2. Selective Forgetting with Tombstones
+
 Agents frequently need to "forget" or update specific facts without restarting the system:
+
 - **Soft-Deletes**: Deleting a specific memory (via `Delete`) marks it with a **Tombstone**. This is a sub-millisecond operation that ensures the memory is immediately excluded from all future searches.
 - **Fact Updates**: When an agent learns new information about an existing topic (e.g., a user's changed preference), re-ingesting the memory with the same ID automatically tombstones the old version and indexes the new one, ensuring the agent's knowledge remains current.
 
 ### 3. Namespace vs. Tombstone: When to use what?
+
 | Feature | Scope | Latency | Reclamation | Use Case |
 | :--- | :--- | :--- | :--- | :--- |
 | **Namespace** | Bulk / logical container | Instant (Metadata) | Background (Recursive Drop) | New User, Project, or Customer Tenant |
 | **Tombstone** | Granular / per-record | Sub-ms (Bitset) | Background (Compaction) | Fact Update, Error Correction, GDPR Forgetting |
 
 ### 4. Background Hygiene (Compaction)
+
 As an agent matures and its memory accumulates tombstones (deleted/outdated facts), Longbow's **Fragmentation-Aware Compaction** automatically cleans up the storage in the background:
+
 - **Efficiency**: Sparse batches are merged into dense batches to reclaim memory.
 - **Index Stability**: Unlike naive vector stores that require full rebuilds after many deletions, Longbow performs incremental index updates during compaction.
 - **Zero Downtime**: The agent continues to function normally while the system optimizes its internal representation of the memory.
@@ -82,7 +93,9 @@ As an agent matures and its memory accumulates tombstones (deleted/outdated fact
 ## Use Cases
 
 ### Local Search for AR/VR Agents
+
 An AR assistant can store semantic tags for objects in a room. By using **Geo-Spatial Proximity**, the agent can retrieve the name of a device just by "looking" at its coordinates, while **Turboquant** ensures the entire room's data fits on the headset's limited memory.
 
 ### Massive History for Personal AI
+
 A personal assistant storing every conversation for years can utilize **Turboquant** to compress history by 8x. When a user asks "Where was that Italian place we went to in SF?", the agent uses **Hybrid Search** (Italian) + **Geo-Spatial** (SF) + **Temporal Awareness** (past history) to find the exact memory in under 5ms.

@@ -1,6 +1,6 @@
 # Longbow Features (2026)
 
-**Last Updated**: 2026-04-21
+**Last Updated**: 2026-04-25
 
 ---
 
@@ -48,6 +48,8 @@
 - **Darwin Core Awareness**: Mach-level processor cluster identification for Apple Silicon (macOS) for core-type-aware worker affinity.
 - **Formalized Maintenance Scheduler**: Automated background repair, tombstone reclamation, and memory-limit enforcement tasks.
 - **Zero-Copy Network-to-GPU**: libibverbs CGO bindings for Linux/RoCEv2 and RDMA-aware Arrow Flight handshake.
+- **Python SDK (Zero-Copy)**: High-performance client using Arrow Flight for wire-speed ingestion and retrieval. Features native NumPy/Pandas integration and automatic vector type inference to eliminate serialization overhead.
+- **Administrative CLI**: Comprehensive Go-based tool for cluster management, geospatial search, and large-scale S3 Parquet ingestion. Enables terminal-based GraphRAG operations and dataset lifecycle management.
 
 ### 📊 Monitoring & Observability
 

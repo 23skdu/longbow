@@ -111,6 +111,13 @@ gpu:
   backend: "auto" # auto, cuda, metal
   cuvsEnabled: false
 
+# Environment Variables Configuration
+env:
+  LONGBOW_PQ_INGEST: "0"       # Enable PQ compression during ingest (1=enabled)
+  LONGBOW_LOW_MEM: "0"         # Enable low memory mode for 512MB devices
+  LONGBOW_GOGC: "100"         # Go GC percentage
+  LONGBOW_MAX_MEMORY: ""         # Max memory (e.g., 18GB) - leave empty for auto
+
 # RDMA (RoCEv2) Configuration
 # Requires RDMA-capable NICs and libibverbs on the host.
 rdma:

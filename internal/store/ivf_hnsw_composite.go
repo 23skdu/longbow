@@ -218,7 +218,25 @@ func (idx *IVFHNSWCompositeIndex) AddBatchRaw(ids []uint64, vectors [][]float32)
 }
 
 func (idx *IVFHNSWCompositeIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
-	return nil, fmt.Errorf("AddBatch not yet implemented for composite index")
+	if len(recs) == 0 {
+		return nil, nil
+	}
+	ids := make([]uint32, 0, len(recs))
+	for _, rec := range recs {
+		n := int(rec.NumRows())
+		for row := 0; row < n; row++ {
+			vec, err := ExtractVectorFromArrow(rec, row, -1)
+			if err != nil {
+				return nil, err
+			}
+			id := uint64(idx.nextID)
+			if err := idx.Add(id, vec); err != nil {
+				return nil, err
+			}
+			ids = append(ids, uint32(id))
+		}
+	}
+	return ids, nil
 }
 
 func (idx *IVFHNSWCompositeIndex) DeleteBatch(ctx context.Context, ids []uint32) error {

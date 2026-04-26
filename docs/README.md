@@ -39,6 +39,12 @@ Managing data lifecycle:
 - **Temporal**: Time-travel search and version history.
 - **Lifecycle**: TTL-based cleanup and LRU Eviction.
 
+### 7. [Data Lifecycle & Deletions](deletions.md)
+Advanced mutation management:
+- **Soft-Deletes**: Bitset-based tombstones for zero-overhead masking.
+- **Compaction**: Fragmentation-aware background hygiene and memory reclamation.
+- **Namespaces**: Recursive cleanup and isolation for multi-tenant workloads.
+
 ---
 
 ## 🛠 System Reference

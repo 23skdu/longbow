@@ -105,6 +105,13 @@ results = reader.read_all()
 | `compact` | name | Force compaction |
 | `snapshot` | name | Create snapshot |
 | `metrics` | - | Get runtime metrics |
+| `delete` | {"dataset": "ds", "id": "123"} | Soft-delete record by Primary ID |
+| `delete-vector` | {"dataset": "ds", "vector_id": 123} | Soft-delete record by Internal ID |
+| `delete-namespace` | {"name": "ns"} | Delete entire namespace |
+| `check_readiness` | {"dataset": "ds"} | Check if index is ready |
+| `wait-for-indexing` | {"dataset": "ds"} | Block until indexing completes |
+| `add-edge` | Graph Edge JSON | Add relationship between nodes |
+| `traverse` | Graph Traversal JSON | Multi-hop graph search |
 
 **Example:**
 
@@ -298,29 +305,30 @@ Removes a dataset from memory.
 - **Body**: `{"dataset": "my_dataset"}`
 - **Response**: `"deleted"` (string)
 
-#### `delete-vector`
+### Soft Deletions & Tombstones
 
-Deletes a specific vector by its internal `VectorID`.
+Longbow uses a **Tombstone** mechanism for efficient deletions without blocking high-speed indexing:
 
-- **Type**: `delete-vector`
-- **Body**: `{"dataset": "my_dataset", "vector_id": 123}`
-- **Response**: `"deleted"` (string)
+1. **Logical Deletion**: When an ID is deleted, a bit is set in the batch's bitset.
+2. **Search Exclusion**: The search engine automatically skips any record marked with a tombstone.
+3. **Primary ID Support**: `delete` action by Primary ID (string/int64) uses the PrimaryIndex for O(1) location lookup.
+4. **Internal ID Support**: `delete-vector` action by Internal ID (uint32) is useful for graph and edge operations.
 
-### Mesh & Cluster Status
+### Graph & Relationship API
 
-#### `MeshStatus`
+Longbow supports native graph operations for GraphRAG and social network use cases:
 
-Retrieves the status of the gossip mesh and connected members.
+#### `add-edge`
+- **Type**: `add-edge`
+- **Body**: `{"dataset": "ds", "source_id": 1, "target_id": 2, "predicate": "related"}`
 
-- **Type**: `MeshStatus`
-- **Response**: List of member objects including ID, Addr, and Status.
+#### `traverse`
+- **Type**: `traverse`
+- **Body**: `{"dataset": "ds", "start_id": 1, "max_depth": 3}`
 
-#### `cluster-status`
-
-Retrieves cluster-level health and member identity.
-
-- **Type**: `cluster-status`
-- **Response**: JSON object containing `self` identity and `members` list.
+#### `pagerank`
+- **Type**: `pagerank`
+- **Body**: `{"dataset": "ds", "iterations": 20}`
 
 ### Backpressure Monitoring
 

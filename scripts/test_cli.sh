@@ -22,21 +22,21 @@ for dim in "${DIMS[@]}"; do
         echo "[TEST] Testing Dimension: $dim, Datatype: $dtype"
         
         # 1. Clean up
-        $CLI delete-namespace -name "$TEST_DS" -uri "$SERVER_URI" > /dev/null 2>&1 || true
+        $CLI delete-namespace -name "$TEST_DS" -uri "$SERVER_URI"
         
         # 2. Create Namespace
         $CLI create-namespace -name "$TEST_DS" -dims "$dim" -data_type "$dtype" -uri "$SERVER_URI"
         
-        # 3. Import Data
-        $CLI import -dataset "$TEST_DS" -dim "$dim" -count 100 -uri "$SERVER_URI"
+        # 3. Import Data (Use namespaced path)
+        $CLI import -dataset "$TEST_DS/main" -dim "$dim" -count 100 -uri "$SERVER_URI"
         
         # 4. Stats
-        $CLI stats -dataset "$TEST_DS" -uri "$SERVER_URI"
+        $CLI stats -dataset "$TEST_DS/main" -uri "$SERVER_URI"
         
         # 5. Search
         # Generate a dummy vector of the correct dimension
         VEC=$(printf '0.1,%.0s' $(seq 1 "$dim") | sed 's/,$//')
-        $CLI search -dataset "$TEST_DS" -mode dense -vector "$VEC" -k 5 -uri "$SERVER_URI"
+        $CLI search -dataset "$TEST_DS/main" -mode dense -vector "$VEC" -k 5 -uri "$SERVER_URI"
         
         echo "[PASS] Dimension: $dim, Datatype: $dtype"
         echo "---------------------------------------"

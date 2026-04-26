@@ -148,6 +148,11 @@ spec:
               value: {{ .Values.memory.gcBallastGB | quote }}
             - name: LONGBOW_GOGC
               value: {{ .Values.memory.gogc | quote }}
+            # Performance Optimization
+            - name: LONGBOW_PQ_INGEST
+              value: {{ .Values.env.LONGBOW_PQ_INGEST | default "0" | quote }}
+            - name: LONGBOW_LOW_MEM
+              value: {{ .Values.env.LONGBOW_LOW_MEM | default "0" | quote }}
             # GPU Configuration
             - name: LONGBOW_GPU_ENABLED
               value: {{ .Values.gpu.enabled | quote }}

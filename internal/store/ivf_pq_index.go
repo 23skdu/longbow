@@ -324,15 +324,30 @@ func (idx *IVFPQIndex) computeADCDistance(pqCode []byte, adt []float32) float32 
 }
 
 func (idx *IVFPQIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	return 0, errors.New("AddByLocation not supported for IVFPQIndex")
+	return 0, errors.New("AddByLocation not supported for IVFPQIndex (use Add)")
 }
 
 func (idx *IVFPQIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	return 0, errors.New("AddByRecord not supported for IVFPQIndex")
+	vec, err := ExtractVectorFromArrow(rec, rowIdx, -1)
+	if err != nil {
+		return 0, err
+	}
+	if err := idx.Add(ctx, [][]float32{vec}); err != nil {
+		return 0, err
+	}
+	return idx.nextID - 1, nil
 }
 
 func (idx *IVFPQIndex) Search(ctx context.Context, query any, k int, filter any) ([]types.Candidate, error) {
-	return nil, errors.New("Search not supported for IVFPQIndex (use SearchVectors)")
+	results, err := idx.SearchVectorsWithBitmap(ctx, query, k, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]types.Candidate, len(results))
+	for i, r := range results {
+		candidates[i] = types.Candidate{ID: uint32(r.ID), Dist: r.Distance}
+	}
+	return candidates, nil
 }
 
 func (idx *IVFPQIndex) Size() int {
@@ -390,7 +405,25 @@ func (idx *IVFPQIndex) Close() error {
 }
 
 func (idx *IVFPQIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
-	return nil, errors.New("AddBatch not supported for IVFPQIndex")
+	if len(recs) == 0 {
+		return nil, nil
+	}
+	ids := make([]uint32, 0, len(recs))
+	for _, rec := range recs {
+		n := int(rec.NumRows())
+		for row := 0; row < n; row++ {
+			vec, err := ExtractVectorFromArrow(rec, row, -1)
+			if err != nil {
+				return nil, err
+			}
+			id := idx.nextID
+			if err := idx.Add(ctx, [][]float32{vec}); err != nil {
+				return nil, err
+			}
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 func (idx *IVFPQIndex) DeleteBatch(ctx context.Context, ids []uint32) error {

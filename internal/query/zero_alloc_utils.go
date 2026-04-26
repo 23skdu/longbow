@@ -34,7 +34,7 @@ func ParseDatasetRequest(data []byte, dsName *string) error {
 		i++
 		i = SkipWhitespace(data, i)
 
-		if key == "dataset" || key == "name" {
+		if key == "dataset" || key == "name" || key == "namespace" {
 			val, newPos, err := ParseString(data, i)
 			if err != nil {
 				return err

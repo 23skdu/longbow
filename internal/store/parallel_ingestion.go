@@ -68,19 +68,29 @@ func NewParallelRecordReader(stream flight.FlightService_DoPutServer, alloc memo
 		return nil, fmt.Errorf("invalid FlightData: header too short (%d bytes)", len(data.DataHeader))
 	}
 
-	// Try standard deserialize first, but check for prefix to avoid panics if possible
+	// Try standard deserialize first
 	var schema *arrow.Schema
 	header := data.DataHeader
-	
-	// Fallback: Skip 8-byte IPC stream prefix if present
-	if len(header) > 8 && binary.LittleEndian.Uint32(header[0:4]) == 0xFFFFFFFF {
-		logger.Info().Msg("ParallelIngest: Detected IPC stream prefix in schema header")
-		header = header[8:]
-	}
-
 	schema, err = flight.DeserializeSchema(header, alloc)
 	if err != nil {
-		return nil, fmt.Errorf("failed to deserialize schema: %w", err)
+		logger.Warn().Err(err).Msg("Standard DeserializeSchema failed, attempting IPC reader fallback")
+		// Fallback: Use a full IPC reader to handle complex encapsulation
+		var buf bytes.Buffer
+		buf.Write(header)
+		// IPC reader expects an EOS marker if we want it to be happy
+		_ = binary.Write(&buf, binary.LittleEndian, uint32(0xFFFFFFFF))
+		_ = binary.Write(&buf, binary.LittleEndian, uint32(0))
+		
+		rdr, rerr := ipc.NewReader(&buf, ipc.WithAllocator(alloc))
+		if rerr == nil {
+			schema = rdr.Schema()
+			err = nil
+			rdr.Release()
+		}
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to deserialize schema (hlen=%d): %w", len(data.DataHeader), err)
 	}
 
 	// Store the "raw" schema metadata (without prefix) for reconstruction

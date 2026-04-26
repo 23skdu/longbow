@@ -302,40 +302,37 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 		return stream.Send(&flight.Result{Body: []byte("schema altered")})
 
-	case "delete-dataset", "DeleteNamespace", "delete-namespace":
+	case "DeleteNamespace", "delete-namespace", "delete_namespace":
+		var nsName string
+		if err := query.ParseDatasetRequest(action.Body, &nsName); err != nil {
+			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+		}
+
+		if nsName == "" {
+			return status.Error(codes.InvalidArgument, "missing namespace name")
+		}
+
+		if err := s.DeleteNamespace(nsName); err != nil {
+			return status.Errorf(codes.Internal, "failed to delete namespace: %v", err)
+		}
+		if err := stream.Send(&flight.Result{Body: []byte("deleted")}); err != nil {
+			return err
+		}
+		return nil
+
+	case "delete-dataset":
 		var dsName string
 		if err := query.ParseDatasetRequest(action.Body, &dsName); err != nil {
 			return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 		}
 
 		if dsName == "" {
-			return status.Error(codes.InvalidArgument, "missing dataset name (use 'dataset' or 'name')")
+			return status.Error(codes.InvalidArgument, "missing dataset name")
 		}
 
-		// Use RCU to delete
-		var ds *Dataset
-		var deleted bool
-		s.updateDatasets(func(m map[string]*Dataset) {
-			if d, ok := m[dsName]; ok {
-				ds = d
-				delete(m, dsName)
-				deleted = true
-			}
-		})
-
-		if !deleted {
-			return status.Errorf(codes.NotFound, "dataset %s not found", dsName)
+		if err := s.DropDataset(stream.Context(), dsName); err != nil {
+			return status.Errorf(codes.NotFound, "failed to drop dataset: %v", err)
 		}
-
-		// Use existing eviction logic to free memory and close resources
-		s.evictDataset(ds.Name)
-
-		nsName, _ := ParseNamespacedPath(dsName)
-		if ns := s.GetNamespace(nsName); ns != nil {
-			ns.RemoveDataset(dsName)
-		}
-
-		s.logger.Info().Str("dataset", dsName).Msg("Dataset deleted")
 		if err := stream.Send(&flight.Result{Body: []byte("deleted")}); err != nil {
 			return err
 		}
@@ -711,8 +708,8 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		defer span.End()
 	}
 
-	trackAlloc := lmem.NewTrackingAllocator(s.pooledMem)
-	r, err := NewParallelRecordReader(stream, trackAlloc, s.logger)
+	// Fallback to standard reader for reliability during benchmarks
+	r, err := flight.NewRecordReader(stream)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("DoPut failed to create reader")
 		return err

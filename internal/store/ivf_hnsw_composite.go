@@ -495,7 +495,7 @@ func (idx *IVFHNSWCompositeIndex) ApplyDelta(d *types.DeltaSync) error {
 	return nil
 }
 
-func (idx *IVFHNSWCompositeIndex) fetchVector(loc core.Location) ([]float32, error) {
+func (idx *IVFHNSWCompositeIndex) fetchVector(_ core.Location) ([]float32, error) {
 	// This would interact with the underlying dataset to get the vector data
 	// For now, we'll assume we can resolve it.
 	return nil, fmt.Errorf("vector fetching from location not fully implemented in composite index")

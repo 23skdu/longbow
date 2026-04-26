@@ -398,7 +398,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 	fmt.Printf("Vector Benchmark (dim=%d, dtype=%s, count=%d)\n", dim, dtype, scale)
 
 	vecs := make([]float32, scale*dim)
-	rnd := rand.New(rand.NewSource(42))
+	rnd := rand.New(rand.NewSource(42)) // #nosec G404
 	for i := range vecs {
 		vecs[i] = rnd.Float32()
 	}
@@ -409,12 +409,12 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 	mem := memory.NewGoAllocator()
 	sch := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
-		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)}, // #nosec G115
 	}, nil)
 
 	idBuilder := array.NewInt64Builder(mem)
 	defer idBuilder.Release()
-	listBuilder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32)
+	listBuilder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32) // #nosec G115
 	defer listBuilder.Release()
 	vecBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
 
@@ -456,7 +456,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 		wg.Add(1)
 		go func(m string) {
 			defer wg.Done()
-			rnd := rand.New(rand.NewSource(time.Now().UnixNano()))
+			rnd := rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404
 			latencies := make([]float64, 0, queriesPerWorker*concurrency)
 
 			for w := 0; w < concurrency; w++ {
@@ -550,9 +550,12 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 	fmt.Printf("  ByID:    %8.0f QPS\n", result.ByIDQPS)
 
 	if jsonFile != "" {
-		data, _ := json.MarshalIndent(result, "", "  ")
-		os.WriteFile(jsonFile, data, 0644)
+data, _ := json.MarshalIndent(result, "", "  ")
+	if err := os.WriteFile(jsonFile, data, 0600); err != nil { // #nosec G306
+		fmt.Printf("Warning: failed to write JSON: %v\n", err)
+	} else {
 		fmt.Printf("Results written to %s\n", jsonFile)
+	}
 	}
 }
 

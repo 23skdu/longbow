@@ -7,13 +7,17 @@ Longbow is a high-performance, distributed, and in-memory vector store implement
 ## 📖 Core Guides
 
 ### 1. [Quick Start & Deployment](deploy.md)
+
 Get started with Longbow using Docker or Helm. Covers installation, environment configuration, distributed architecture, and basic operational management.
 
 ### 2. [Command Line Interface (CLI)](cli.md)
+
 Technical reference for the `longbow-cli` tool, including build instructions, import workflows, and search options.
 
 ### 3. [Unified Search & Discovery](vectorsearch.md)
+
 Comprehensive guide to search:
+
 - **Metrics**: Euclidean, Cosine, Dot Product.
 - **SQL Filtering**: Compound boolean logic and nested fields.
 - **Hybrid**: Dense + Sparse fusion (RRF).
@@ -21,26 +25,34 @@ Comprehensive guide to search:
 - **GraphRAG**: [Internal Spreading Activation](graphrag.md) and pathfinding.
 
 ### 4. [High-Performance Indexing](indexing.md)
+
 Tuning for scale and speed:
+
 - **Compression**: PQ, SQ8, BQ, and **TurboQuant**.
 - **Adaptive**: Automated Flat-to-HNSW migration for zero-config scaling.
 - **Hardware**: NUMA affinity and CPU pinning.
 - **Memory**: GOGC Auto-tuning and slab-arena management.
 
 ### 5. [Hardware Acceleration & ML](wasm_onnx.md)
+
 Unleash hardware performance:
+
 - **GPU/TPU**: CUDA (NVIDIA), Metal (Apple Silicon), and Google TPU (Ironwood) [Optimization Details](gpu.md).
 - **Inference**: High-performance execution via WASM (Wazero) and ONNX Runtimes.
 - **Networking**: Zero-copy RDMA over RoCEv2.
 
 ### 6. [Storage & Durability](persistence.md)
+
 Managing data lifecycle:
+
 - **Persistence**: WAL, Snapshots, and S3/GCS Offloading.
 - **Temporal**: Time-travel search and version history.
 - **Lifecycle**: TTL-based cleanup and LRU Eviction.
 
 ### 7. [Data Lifecycle & Deletions](deletions.md)
+
 Advanced mutation management:
+
 - **Soft-Deletes**: Bitset-based tombstones for zero-overhead masking.
 - **Compaction**: Fragmentation-aware background hygiene and memory reclamation.
 - **Namespaces**: Recursive cleanup and isolation for multi-tenant workloads.
@@ -50,17 +62,22 @@ Advanced mutation management:
 ## 🛠 System Reference
 
 ### 1. [Systems Architecture](architecture.md)
+
 Deep dive into Longbow's design:
+
 - **Distributed Mesh**: Gossip-based membership and Consistent Hashing.
 - **Store Internals**: SlabArena, sharded indexing, and zero-copy data paths.
 
 ### 2. [API Reference](api.md)
+
 Technical specification for the gRPC/Arrow Flight endpoints, including administrative actions and telemetry.
 
 ### 3. [Diagnostics & Metrics](metrics.md)
+
 Complete Prometheus reference for monitoring system health, TurboQuant throughput, and SIMD dispatch rates.
 
 ### 4. [Troubleshooting & Security](troubleshooting.md)
+
 Common pitfalls, security best practices, and performance tuning strategies.
 
 ---

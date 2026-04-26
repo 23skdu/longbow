@@ -65,17 +65,22 @@ graph TB
 ## 2. Core Components
 
 ### Flight Servers
+
 Longbow separates data and control traffic to prevent head-of-line blocking:
+
 - **Data Server (Port 3000)**: Implements Arrow Flight for `DoPut` (ingestion) and `DoGet` (search).
 - **Meta Server (Port 3001)**: Handles `ListFlights` and `DoAction` for cluster management.
 
 ### In-Memory Vector Store
+
 - **SlabArena**: Off-heap memory management using 1MB slabs to eliminate Go GC overhead.
 - **Auto-Sharding Index**: Dynamically transitions from a flat index to a lock-striped **ShardedHNSW** index as datasets grow.
 - **Leveled Compaction**: Incremental merging of Arrow RecordBatches to maintain read performance without full index rebuilds.
 
 ### Distance & SIMD Engine
+
 Vector distance calculations are optimized for modern CPU architectures:
+
 - **AVX2/AVX-512**: For x86_64 systems.
 - **NEON**: For ARM64 systems.
 - **TurboQuant**: SIMD-accelerated bit-packing for extreme throughput.
@@ -85,11 +90,14 @@ Vector distance calculations are optimized for modern CPU architectures:
 ## 3. Storage & Persistence
 
 ### Write-Ahead Log (WAL)
+
 Every mutation is logged to a CRC32-protected WAL.
+
 - **Double-Buffering**: Uses a swap-buffer strategy for zero-allocation logging.
 - **Async Flush**: Ingestion continues while the WAL is periodically synced to disk.
 
 ### Snapshotting
+
 Full index states are persisted as Parquet files. Snapshotting is triggered by WAL size limits or time intervals, and utilizes zero-copy Arrow-to-Parquet conversion.
 
 ---
@@ -97,6 +105,7 @@ Full index states are persisted as Parquet files. Snapshotting is triggered by W
 ## 4. Hardware Acceleration
 
 ### NVIDIA CUDA Architecture
+
 Supports GPU-accelerated HNSW traversal and distance kernels.
 
 ```mermaid
@@ -133,6 +142,7 @@ graph TB
 ```
 
 ### Apple Metal Architecture
+
 Leverages Unified Memory on Apple Silicon for zero-copy CPU/GPU sharing.
 
 ```mermaid
@@ -160,7 +170,9 @@ graph TB
 ```
 
 ### Google TPU Architecture
+
 Utilizes the HBM (High Bandwidth Memory) and VMEM scratchpad for massive vector operations.
+
 - **Backend**: `BackendTPU` (Ironwood).
 - **Optimization**: Optimized for petabyte-scale retrieval in GCP environments.
 
@@ -169,6 +181,7 @@ Utilizes the HBM (High Bandwidth Memory) and VMEM scratchpad for massive vector 
 ## 5. Advanced Search Features
 
 ### Hybrid Search & Reranking
+
 Combines dense HNSW search with sparse BM25 indexing using Reciprocal Rank Fusion (RRF).
 
 ```mermaid
@@ -200,6 +213,7 @@ graph TB
 ```
 
 ### Geospatial & Temporal Search
+
 - **Quadtree Indexing**: For efficient spatial range and radius queries.
 - **Temporal Versioning**: Maintains historical versions of vectors with TTL-based retention.
 
@@ -208,35 +222,43 @@ graph TB
 ## 6. Multi-Tenancy & Data Lifecycle
 
 ### Namespaces
-Longbow provides logical isolation through **Namespaces**. 
+
+Longbow provides logical isolation through **Namespaces**.
+
 - **Isolation**: Each namespace has its own set of datasets, quotas, and metadata.
 - **Recursive Cleanup**: Deleting a namespace automatically drops all contained datasets and releases associated memory and disk resources.
 - **Quota Management**: Support for per-namespace limits on total vectors, dimensions, and storage bytes.
 
 ### Data Mutation & Deletion Lifecycle
-+
-+Longbow implements an **LSM-tree inspired mutation model** for vector data, prioritizing high-ingestion throughput and search stability.
-+
-+#### 1. The Tombstone Strategy (Soft Delete)
-+To avoid expensive real-time index re-balancing, Longbow uses a bitset-based soft deletion mechanism:
-+- **Mutation**: When `Delete` is called for an ID, the `PrimaryIndex` is consulted to find the `RecordBatch` index and `RowOffset`.
-+- **Bitset Mapping**: A bit is flipped in the `Tombstone` bitset corresponding to that batch.
-+- **Masked Search**: During the search phase, distance kernels apply the tombstone bitset as a mask, effectively ignoring deleted vectors with zero overhead on the traversal logic.
-+
-+#### 2. Identity & Updates
-+- **Deterministic IDs**: If a vector is ingested with an existing ID, the system performs an atomic "Tombstone-then-Insert" operation.
-+- **Version Tracking**: The WAL ensures that even if a node crashes between tombstoning and inserting, the final state remains consistent upon replay.
-+
-+#### 3. Fragmentation-Aware Compaction
-+Background hygiene is managed by the **Compaction Worker**:
-+- **Tracking**: Each `Dataset` maintains a fragmentation score based on the density of active vs. tombstoned rows.
-+- **Merging**: When fragmentation exceeds the configured threshold (default 20%), the worker:
-+    1. Snapshots the fragmented batches.
-+    2. Physically "squashes" the data into new, dense `RecordBatches`.
-+    3. Atomically swaps the `Dataset.Records` pointer.
-+    4. Re-maps the `PrimaryIndex` to the new physical locations.
-+    5. Triggers a `RemapLocations` call on the underlying `Index` (HNSW/DiskANN) to update its internal graph pointers.
-+
-+#### 4. Resource Reclamation
-+- **Memory**: Once a batch is released, the `SlabArena` reclaims the underlying slabs for future allocations.
-+- **Disk**: Compaction triggers WAL truncation. Once a `Snapshot` is persisted containing the compacted state, all preceding WAL segments are safely deleted.
+
+Longbow implements an **LSM-tree inspired mutation model** for vector data, prioritizing high-ingestion throughput and search stability.
+
+#### 1. The Tombstone Strategy (Soft Delete)
+
+To avoid expensive real-time index re-balancing, Longbow uses a bitset-based soft deletion mechanism:
+
+- **Mutation**: When `Delete` is called for an ID, the `PrimaryIndex` is consulted to find the `RecordBatch` index and `RowOffset`.
+- **Bitset Mapping**: A bit is flipped in the `Tombstone` bitset corresponding to that batch.
+- **Masked Search**: During the search phase, distance kernels apply the tombstone bitset as a mask, effectively ignoring deleted vectors with zero overhead on the traversal logic.
+
+#### 2. Identity & Updates
+
+- **Deterministic IDs**: If a vector is ingested with an existing ID, the system performs an atomic "Tombstone-then-Insert" operation.
+- **Version Tracking**: The WAL ensures that even if a node crashes between tombstoning and inserting, the final state remains consistent upon replay.
+
+#### 3. Fragmentation-Aware Compaction
+
+Background hygiene is managed by the **Compaction Worker**:
+
+- **Tracking**: Each `Dataset` maintains a fragmentation score based on the density of active vs. tombstoned rows.
+- **Merging**: When fragmentation exceeds the configured threshold (default 20%), the worker:
+    1. Snapshots the fragmented batches.
+    2. Physically "squashes" the data into new, dense `RecordBatches`.
+    3. Atomically swaps the `Dataset.Records` pointer.
+    4. Re-maps the `PrimaryIndex` to the new physical locations.
+    5. Triggers a `RemapLocations` call on the underlying `Index` (HNSW/DiskANN) to update its internal graph pointers.
+
+#### 4. Resource Reclamation
+
+- **Memory**: Once a batch is released, the `SlabArena` reclaims the underlying slabs for future allocations.
+- **Disk**: Compaction triggers WAL truncation. Once a `Snapshot` is persisted containing the compacted state, all preceding WAL segments are safely deleted.

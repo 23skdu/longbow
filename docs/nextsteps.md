@@ -69,3 +69,18 @@ Automated partitioning of billion-scale indices across multiple GPUs.
 - [ ] **Versioning**: Transition to semantic versioning (SemVer).
 - [ ] **Migration Guides**: Document disk format changes for 0.1.8 -> 0.1.9.
 - [ ] **API Reference**: Complete documentation for all hardware-specific flags.
+
+### 7. Technical Debt & Stub Remediation
+Systematic replacement of stubs and placeholders identified in the 0.1.9 deep code review.
+- [ ] **Subsystem Implementation Completion**
+    - [ ] **TPU Index**: Replace experimental stubs in `internal/gpu/tpu/tpu_index.go` with full `TrainPQ` and `SearchPQ` implementations.
+    - [ ] **IVF-OPQ Index**: Complete missing interface implementations in `internal/store/ivf_opq_index.go` (Persistence, Sharding, Lifecycle).
+    - [ ] **IVF-HNSW Composite**: Implement `ApplyDelta` anti-entropy logic in `internal/store/ivf_hnsw_composite.go`.
+- [ ] **Mocking & Validation Framework**
+    - [ ] **Network Isolation**: Implement `MockNetwork` for `internal/query` to enable deterministic failure testing.
+    - [ ] **Disk Isolation**: Implement `MockDisk` for `internal/store` to validate IO error handling.
+    - [ ] **Strict Model Validation**: Introduce `LONGBOW_STRICT_MODELS=1` to fail fast instead of falling back to `stubEmbeddingModel`.
+- [ ] **Tests & Metrics**
+    - [ ] **Integration Tests**: Add persistence validation tests for all composite indices.
+    - [ ] **Metrics**: Add `longbow_stub_model_usage_total` and `longbow_index_sync_delta_total` to Prometheus exporter.
+    - [ ] **Unit Tests**: Achieve 100% coverage for new TPU kernels and OPQ persistence logic.

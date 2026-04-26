@@ -134,6 +134,21 @@ var dispatchTable = map[string]*ImplementationDispatch{
 	},
 }
 
+// Override broken kernels on Darwin for dispatch table
+func init() {
+	if runtime.GOOS == "darwin" {
+		dispatchTable["neon"] = &ImplementationDispatch{
+			EuclideanDistance:          euclideanGeneric,
+			CosineDistance:             cosineGeneric,
+			DotProduct:                 dotGeneric,
+			EuclideanDistanceBatch:     euclideanBatchGeneric,
+			CosineDistanceBatch:        cosineBatchGeneric,
+			DotProductBatch:            dotBatchGeneric,
+			EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
+		}
+	}
+}
+
 // Current dispatch - single pointer lookup instead of many
 var currentDispatch *ImplementationDispatch
 
@@ -308,51 +323,24 @@ func initializeDispatch() {
 		dotProductInt4Impl = dotInt4Neon
 		dotProductInt2Impl = dotInt2Neon
 
-		// Selectively disable NEON distance kernels on Darwin for dim > 384 due to alignment/cache performance regressions
+		// Disable all NEON kernels on Darwin due to known bugs in assembly
+		// cosineNEON produces wrong results, euclideanNEON produces NaN at dim 512
 		if runtime.GOOS == "darwin" {
-			cosineDistanceImpl = func(a, b []float32) (float32, error) {
-				if len(a) > 384 {
-					return cosineGeneric(a, b)
-				}
-				return cosineNEON(a, b)
-			}
-
-			cosineDistanceBatchImpl = func(query []float32, vectors [][]float32, results []float32) error {
-				if len(query) > 384 {
-					return cosineBatchUnrolled4x(query, vectors, results)
-				}
-				return cosineBatchNEON(query, vectors, results)
-			}
-
-			euclideanDistanceFloat64Impl = func(a, b []float64) (float32, error) {
-				if len(a) > 384 {
-					return euclideanFloat64Unrolled4x(a, b)
-				}
-				return euclideanFloat64NEON(a, b)
-			}
-
-			euclideanDistanceF16Impl = func(a, b []float16.Num) (float32, error) {
-				if len(a) > 384 {
-					return euclideanF16Unrolled4x(a, b)
-				}
-				return euclideanF16NEON(a, b)
-			}
-
-			cosineDistanceF16Impl = func(a, b []float16.Num) (float32, error) {
-				if len(a) > 384 {
-					return cosineF16Unrolled4x(a, b)
-				}
-				return cosineF16NEON(a, b)
-			}
-
-			dotProductF16Impl = func(a, b []float16.Num) (float32, error) {
-				if len(a) > 384 {
-					return dotF16Unrolled4x(a, b)
-				}
-				return dotF16NEON(a, b)
-			}
+			euclideanDistanceImpl = euclideanGeneric
+			euclideanDistance384Impl = euclideanGeneric
+			euclideanDistance768Impl = euclideanGeneric
+			euclideanDistance1024Impl = euclideanGeneric
+			euclideanDistance1536Impl = euclideanGeneric
+			euclideanDistance3072Impl = euclideanGeneric
+			euclideanDistanceBatchImpl = euclideanBatchGeneric
+			cosineDistanceImpl = cosineGeneric
+			cosineDistanceBatchImpl = cosineBatchGeneric
+			euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
+			euclideanDistanceF16Impl = euclideanF16Unrolled4x
+			dotProductF16Impl = dotF16Unrolled4x
+			euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
 		}
-	default:
+	case "generic":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance128Impl = dispatch.EuclideanDistance128
 		euclideanDistance384Impl = dispatch.EuclideanDistance384

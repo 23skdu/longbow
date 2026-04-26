@@ -100,8 +100,9 @@ func NewParallelRecordReader(stream flight.FlightService_DoPutServer, alloc memo
 	// We use ipc.NewWriter to ensure proper alignment and prefixing.
 	var buf bytes.Buffer
 	writer := ipc.NewWriter(&buf, ipc.WithSchema(schema), ipc.WithAllocator(alloc))
-	// writer.Close() writes the schema message and an 8-byte EOS (ffffffff 00000000).
-	writer.Close()
+	if err := writer.Close(); err != nil {
+		logger.Warn().Err(err).Msg("Failed to close IPC writer")
+	}
 	schemaBytes := buf.Bytes()
 	// Strip the 8-byte EOS marker so we can append batches to this "stream" later.
 	if len(schemaBytes) >= 8 {

@@ -161,3 +161,34 @@ Systematic replacement of stubs and placeholders identified in the 0.1.9 deep co
     - [ ] **Integration Tests**: Add persistence validation tests for all composite indices.
     - [ ] **Metrics**: Add `longbow_stub_model_usage_total` and `longbow_index_sync_delta_total` to Prometheus exporter.
     - [ ] **Unit Tests**: Achieve 100% coverage for new TPU kernels and OPQ persistence logic.
+
+## Suggestions for Next Release (Performance Optimizations)
+
+Based on benchmark results and code review:
+
+### High Priority
+1. **Fix Darwin NEON Distance Kernels**: The cosine/euclidean NEON kernels produce wrong results - disabled via fallback in `dispatch.go`. Root cause identified in `simd_arm64.s` reduction logic. Recommend:
+   - Rewrite reduction using scalar FPR registers instead of lane extraction
+   - Add proper prefix/postfix scalar handling for dims not divisible by 4
+
+2. **Metal Performance Parity**: Current Metal matches CPU but should exceed for large batches. Recommend:
+   - Metal compute shader for batch cosine/euclidean (currently via CPU fallback)
+   - MTLBuffer pooling to eliminate copies
+
+3. **Learn Index Benchmarking**: Learned indexes showed variable performance (1K-7K QPS depending on dimension). Need:
+   - Integration into unified_benchmark.py for automated measurement
+   - Profile-guided threshold tuning
+
+### Medium Priority
+4. **Ingest Throughput Optimization**: int8 achieves 345K vec/s vs float32 at 275K. Recommend:
+   - PQ compression during ingest for all integer types
+   - Async commit pipelining
+
+5. **Sparse Index**: Already fastest at 9K-14K QPS. Recommend:
+   - Profile-guided nprobe tuning
+   - BITSET8/16/32 optimized kernels
+
+### Low Priority
+6. **CUDA Support**: Ancalagon has RTX 4060 (8GB). Recommend:
+   - Enable CUDA benchmarks (currently commented out in run_matrix_bench.py)
+   - Profile memory vs throughput tradeoffs

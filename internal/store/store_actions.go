@@ -712,7 +712,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	trackAlloc := lmem.NewTrackingAllocator(s.pooledMem)
-	r, err := NewParallelRecordReader(stream, trackAlloc)
+	r, err := NewParallelRecordReader(stream, trackAlloc, s.logger)
 	if err != nil {
 		s.logger.Error().Err(err).Msg("DoPut failed to create reader")
 		return err

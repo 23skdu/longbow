@@ -150,6 +150,8 @@ config:
   nodeId: "" # Optional: set for specific node ID
   # Ingestion worker count (0 = runtime.NumCPU())
   ingestionWorkerCount: 0
+  # Fail fast if embedding models are missing instead of falling back to stub
+  strictModels: false
 
 # Hybrid Search Configuration
 hybrid:

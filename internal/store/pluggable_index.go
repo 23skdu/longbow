@@ -59,8 +59,8 @@ type PluggableVectorIndex interface {
 	// Add adds a single vector to the index
 	Add(id uint64, vector []float32) error
 
-	// AddBatch adds multiple vectors to the index
-	AddBatch(ids []uint64, vectors [][]float32) error
+	// AddBatchRaw adds multiple vectors to the index
+	AddBatchRaw(ids []uint64, vectors [][]float32) error
 
 	// Search finds k nearest neighbors for the query vector
 	Search(query []float32, k int) ([]IndexSearchResult, error)

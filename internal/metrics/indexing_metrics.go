@@ -87,4 +87,13 @@ var (
 		},
 		[]string{"dataset", "source"},
 	)
+
+	// IndexSyncDeltaTotal tracks total number of vectors synchronized via delta-sync anti-entropy
+	IndexSyncDeltaTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_index_sync_delta_total",
+			Help: "Total number of vectors synchronized via delta-sync",
+		},
+		[]string{"index_type", "dataset"},
+	)
 )

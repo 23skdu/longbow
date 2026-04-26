@@ -167,7 +167,7 @@ func (s *VectorStore) SwitchIndex(collection string, to IndexType) error {
 				return
 			}
 
-			if err := newIdx.AddBatch(ids, vectors); err != nil {
+			if err := newIdx.AddBatchRaw(ids, vectors); err != nil {
 				s.logger.Error().Err(err).Str("collection", collection).Msg("Failed to add vectors to new index")
 				_ = newIdx.Close()
 				if s.indexAdapter != nil {

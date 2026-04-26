@@ -118,6 +118,8 @@ spec:
               value: {{ .Values.ml.modelPath | quote }}
             - name: LONGBOW_ML_TOKENIZER_PATH
               value: {{ .Values.ml.tokenizerPath | quote }}
+            - name: LONGBOW_STRICT_MODELS
+              value: {{ .Values.config.strictModels | quote }}
             - name: LONGBOW_ML_RUNNER
               value: {{ .Values.ml.runner | quote }}
             - name: ONNX_RUNTIME_LIB_PATH

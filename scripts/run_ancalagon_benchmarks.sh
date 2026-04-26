@@ -1,11 +1,20 @@
 #!/bin/bash
-# Benchmark runner for ancalagon CPU and CUDA
+# FULL Benchmark runner for ancalagon CPU and CUDA
 cd ~/longbow
 
-export LONGBOW_MAX_MEMORY=19327352832
+# Cleanup old data
+rm -rf data/bench data/perf_logs
+mkdir -p data/perf_logs
 
-# DTs requested by user
+export LONGBOW_MAX_MEMORY=19327352832 # 18GB
+export LONGBOW_DATA_PATH="./data/bench"
+
+# ALL Dtypes requested
 DTYPES="float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant2,turboquant4,turboquant8"
+
+# ALL Dimensions and Counts requested
+DIMS="128,384,768,1024,3072"
+COUNTS="500,1000,5000,15000,50000,100000"
 
 # Function to run benchmark group
 run_bench() {
@@ -15,7 +24,11 @@ run_bench() {
     local label=$4
     
     echo "Running $mode benchmarks for dims=$dims counts=$counts..."
-    # Use system python with pre-installed packages
+    # Ensure venv is used if available, otherwise system python
+    if [ -d "venv" ]; then
+        source venv/bin/activate
+    fi
+    
     python3 -u scripts/unified_benchmark.py \
         --mode $mode \
         --dims "$dims" \
@@ -28,15 +41,8 @@ run_bench() {
         2>&1 | tee "data/perf_logs/ancalagon_${mode}_${label}.log"
 }
 
-echo "Starting ANCALAGON benchmarks (CPU + CUDA)..."
-
-# Group 1: 128, 384
-run_bench "cpu" "128,384" "500,1000,5000,15000,50000,100000" "low_dim"
-run_bench "cuda" "128,384" "500,1000,5000,15000,50000,100000" "low_dim"
-
-# Group 2: 768, 1024, 3072
-run_bench "cpu" "768,1024,3072" "500,1000,5000,10000,20000,50000" "high_dim"
-run_bench "cuda" "768,1024,3072" "500,1000,5000,10000,20000,50000" "high_dim"
+run_bench "cpu" "$DIMS" "$COUNTS" "full"
+run_bench "cuda" "$DIMS" "$COUNTS" "full"
 
 echo "All ANCALAGON benchmarks complete!"
 date

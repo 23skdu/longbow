@@ -16,10 +16,17 @@ import (
 // Internal assembly kernels (return single value for machine code compatibility)
 //
 //go:noescape
+//go:noescape
 func euclideanNEONKernel(a, b []float32) float32
 
 //go:noescape
+func euclideanHighDimNEONKernel(a, b []float32) float32
+
+//go:noescape
 func dotNEONKernel(a, b []float32) float32
+
+//go:noescape
+func dotHighDimNEONKernel(a, b []float32) float32
 
 //go:noescape
 func l2SquaredNEONKernel(a, b []float32) float32
@@ -50,6 +57,48 @@ func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+func cosineNEONKernel(a, b []float32) float32
+
+//go:noescape
+func cosineHighDimNEONKernel(a, b []float32) float32
+
+//go:noescape
+func dot128NEONKernel(a, b []float32) float32
+
+//go:noescape
+func dot384NEONKernel(a, b []float32) float32
+
+//go:noescape
+func dot768NEONKernel(a, b []float32) float32
+
+//go:noescape
+func dot1024NEONKernel(a, b []float32) float32
+
+//go:noescape
+func dot1536NEONKernel(a, b []float32) float32
+
+//go:noescape
+func dot3072NEONKernel(a, b []float32) float32
+
+//go:noescape
+func l2Squared128NEONKernel(a, b []float32) float32
+
+//go:noescape
+func l2Squared384NEONKernel(a, b []float32) float32
+
+//go:noescape
+func l2Squared768NEONKernel(a, b []float32) float32
+
+//go:noescape
+func l2Squared1024NEONKernel(a, b []float32) float32
+
+//go:noescape
+func l2Squared1536NEONKernel(a, b []float32) float32
+
+//go:noescape
+func l2Squared3072NEONKernel(a, b []float32) float32
 
 func euclideanFloat64NEON(a, b []float64) (float32, error) {
 	if len(a) != len(b) {
@@ -91,6 +140,9 @@ func euclideanNEON(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	if len(a) > 384 {
+		return euclideanHighDimNEONKernel(a, b), nil
+	}
 	return euclideanNEONKernel(a, b), nil
 }
 
@@ -101,6 +153,9 @@ func dotNEON(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	if len(a) > 384 {
+		return dotHighDimNEONKernel(a, b), nil
+	}
 	return dotNEONKernel(a, b), nil
 }
 
@@ -109,24 +164,24 @@ func euclidean384NEON(a, b []float32) (float32, error) {
 	return euclideanNEON(a, b)
 }
 
-// Optimized blocked implementation for 768 dimensions - processes in 256-element blocks for better cache utilization
+// Optimized blocked implementation for 768 dimensions - uses high-dimension unrolled kernel
 func euclidean768NEON(a, b []float32) (float32, error) {
-	return euclideanBlockedGeneric(a, b, 256)
+	return euclideanHighDimNEONKernel(a, b), nil
 }
 
 // Optimized blocked implementation for 1024 dimensions
 func euclidean1024NEON(a, b []float32) (float32, error) {
-	return euclideanBlockedGeneric(a, b, 256)
+	return euclideanHighDimNEONKernel(a, b), nil
 }
 
 // Optimized blocked implementation for 1536 dimensions
 func euclidean1536NEON(a, b []float32) (float32, error) {
-	return euclideanBlockedGeneric(a, b, 256)
+	return euclideanHighDimNEONKernel(a, b), nil
 }
 
-// Optimized blocked implementation for 3072 dimensions (uses 512-element blocks)
+// Optimized blocked implementation for 3072 dimensions
 func euclidean3072NEON(a, b []float32) (float32, error) {
-	return euclideanBlockedGeneric(a, b, 512)
+	return euclideanHighDimNEONKernel(a, b), nil
 }
 
 func euclidean128NEON(a, b []float32) (float32, error) {
@@ -134,22 +189,29 @@ func euclidean128NEON(a, b []float32) (float32, error) {
 }
 
 func dot384NEON(a, b []float32) (float32, error) {
-	return dotNEON(a, b)
+	return dot384NEONKernel(a, b), nil
 }
 
 func dot768NEON(a, b []float32) (float32, error) {
-	return dotNEON(a, b)
+	return dot768NEONKernel(a, b), nil
+}
+
+func dot1024NEON(a, b []float32) (float32, error) {
+	return dot1024NEONKernel(a, b), nil
 }
 
 func dot1536NEON(a, b []float32) (float32, error) {
-	return dotNEON(a, b)
+	return dot1536NEONKernel(a, b), nil
+}
+
+func dot3072NEON(a, b []float32) (float32, error) {
+	return dot3072NEONKernel(a, b), nil
 }
 
 func dot128NEON(a, b []float32) (float32, error) {
-	return dotNEON(a, b)
+	return dot128NEONKernel(a, b), nil
 }
 
-// Cosine is still generic for now (or combine Dot / Norms later)
 func cosineNEON(a, b []float32) (float32, error) {
 	if !features.HasNEON {
 		return cosineGeneric(a, b)
@@ -158,27 +220,13 @@ func cosineNEON(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-
-	var dot, normA, normB float32
-	n := len(a)
-	i := 0
-
-	for ; i <= n-4; i += 4 {
-		dot += a[i]*b[i] + a[i+1]*b[i+1] + a[i+2]*b[i+2] + a[i+3]*b[i+3]
-		normA += a[i]*a[i] + a[i+1]*a[i+1] + a[i+2]*a[i+2] + a[i+3]*a[i+3]
-		normB += b[i]*b[i] + b[i+1]*b[i+1] + b[i+2]*b[i+2] + b[i+3]*b[i+3]
-	}
-
-	for ; i < n; i++ {
-		dot += a[i] * b[i]
-		normA += a[i] * a[i]
-		normB += b[i] * b[i]
-	}
-
-	if normA == 0 || normB == 0 {
+	if len(a) == 0 {
 		return 1.0, nil
 	}
-	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB)))), nil
+	if len(a) > 384 {
+		return cosineHighDimNEONKernel(a, b), nil
+	}
+	return cosineNEONKernel(a, b), nil
 }
 
 func euclideanF16NEON(a, b []float16.Num) (float32, error) {

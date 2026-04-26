@@ -2,7 +2,6 @@ package simd
 
 import (
 	"fmt"
-	"runtime"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -87,11 +86,11 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		DotProduct3072: DotProductFloat32Blocked,
 	},
 	"neon": {
-		EuclideanDistance:          euclideanNEON,
-		CosineDistance:             cosineNEON,
+		EuclideanDistance:          euclideanGeneric,
+		CosineDistance:             cosineGeneric,
 		DotProduct:                 dotNEON,
 		EuclideanDistanceBatch:     euclideanBatchNEON,
-		CosineDistanceBatch:        cosineBatchNEON,
+		CosineDistanceBatch:        cosineBatchGeneric,
 		DotProductBatch:            dotBatchNEON,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
 
@@ -132,21 +131,6 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		DotProduct1536: dotUnrolled4x,
 		DotProduct3072: DotProductFloat32Blocked,
 	},
-}
-
-// Override broken kernels on Darwin for dispatch table
-func init() {
-	if runtime.GOOS == "darwin" {
-		dispatchTable["neon"] = &ImplementationDispatch{
-			EuclideanDistance:          euclideanGeneric,
-			CosineDistance:             cosineGeneric,
-			DotProduct:                 dotGeneric,
-			EuclideanDistanceBatch:     euclideanBatchGeneric,
-			CosineDistanceBatch:        cosineBatchGeneric,
-			DotProductBatch:            dotBatchGeneric,
-			EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
-		}
-	}
 }
 
 // Current dispatch - single pointer lookup instead of many
@@ -322,24 +306,6 @@ func initializeDispatch() {
 		dotProductUint16Impl = dotUint16Unrolled4x
 		dotProductInt4Impl = dotInt4Neon
 		dotProductInt2Impl = dotInt2Neon
-
-		// Disable all NEON kernels on Darwin due to known bugs in assembly
-		// cosineNEON produces wrong results, euclideanNEON produces NaN at dim 512
-		if runtime.GOOS == "darwin" {
-			euclideanDistanceImpl = euclideanGeneric
-			euclideanDistance384Impl = euclideanGeneric
-			euclideanDistance768Impl = euclideanGeneric
-			euclideanDistance1024Impl = euclideanGeneric
-			euclideanDistance1536Impl = euclideanGeneric
-			euclideanDistance3072Impl = euclideanGeneric
-			euclideanDistanceBatchImpl = euclideanBatchGeneric
-			cosineDistanceImpl = cosineGeneric
-			cosineDistanceBatchImpl = cosineBatchGeneric
-			euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
-			euclideanDistanceF16Impl = euclideanF16Unrolled4x
-			dotProductF16Impl = dotF16Unrolled4x
-			euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
-		}
 	case "generic":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance128Impl = dispatch.EuclideanDistance128

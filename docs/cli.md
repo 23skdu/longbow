@@ -23,73 +23,90 @@ All commands support the following global options:
 ## Commands
 
 ### 1. Import Data
-Import vectors from Parquet, NumPy, or generate demo data.
+Import vectors from Parquet, NumPy, or generate demo data. Supports local filesystem and remote S3 buckets.
 
 **Usage:**
 `longbow-cli import -dataset <name> [options]`
 
 **Options:**
 - `-dataset string`: Target dataset name (required)
-- `-input string`: Path to `.parquet` or `.npy` file
+- `-input string`: Path to `.parquet`, `.npy`, or `s3://bucket/key` (required)
 - `-dim int`: Vector dimension (default: 128, used for demo data)
 - `-count int`: Number of vectors to generate (default: 1000, used for demo data)
 
 **Example:**
 ```bash
+# Local file
 longbow-cli import -dataset my-collection -input data.parquet
+
+# S3 bucket
+longbow-cli import -dataset my-collection -input s3://my-bucket/vectors.parquet
 ```
 
-### 2. Vector Search
+### 2. Search Commands
+
+#### Vector Search
 Perform high-performance vector searches using various modes.
 
 **Usage:**
 `longbow-cli search -dataset <name> -mode <type> [options]`
 
-**Search Modes:**
-- `dense`: Standard L2/Cosine search on dense vectors
-- `sparse`: Keyword-based search using sparse indices
-- `filtered`: Metadata-filtered vector search
-- `hybrid`: Combined dense and sparse search with alpha weighting
-
 **Options:**
 - `-dataset string`: Dataset name (required)
-- `-mode string`: Search mode (default: `dense`)
-- `-vector string`: Query vector as comma-separated floats (e.g., "0.1,0.2,...")
+- `-mode string`: Search mode (dense, sparse, filtered, hybrid)
+- `-vector string`: Query vector as comma-separated floats
 - `-text string`: Text query for sparse/hybrid search
-- `-alpha float`: Hybrid weighting (0=sparse, 1=dense, default: 0.5)
-- `-k int`: Number of results to return (default: 10)
-- `-filters string`: JSON filter expression (string or file path)
+- `-alpha float`: Hybrid weighting (0=sparse, 1=dense)
+- `-k int`: Number of results to return
 
-**Example:**
-```bash
-longbow-cli search -dataset my-collection -mode hybrid -vector "0.1,0.5" -text "example query" -k 5
-```
+#### Geospatial Search
+Search for vectors within a physical radius.
 
-### 3. Namespace Management
-Manage logical groupings of datasets.
+**Usage:**
+`longbow-cli geo-search -dataset <name> -lat <val> -lon <val> -radius <km> -k <n>`
+
+#### Recommendations
+Get similar vectors based on existing IDs.
+
+**Usage:**
+`longbow-cli recommend -dataset <name> -seeds <id1,id2> -k <n> -alpha <f>`
+
+### 3. Namespace & Dataset Management
+Manage logical groupings and lifecycle of data.
 
 - **Create Namespace:** `longbow-cli create-namespace -name <name>`
 - **Delete Namespace:** `longbow-cli delete-namespace -name <name>`
 - **List Namespaces:** `longbow-cli list-namespaces`
 - **List Datasets:** `longbow-cli list-datasets-in-namespace -namespace <name>`
+- **Delete ID:** `longbow-cli delete -dataset <name> -id <id>`
+- **Snapshot:** `longbow-cli snapshot` (Triggers manual disk flush)
+- **Stats:** `longbow-cli stats -dataset <name>`
 
-### 4. Dataset Statistics
-Show operational statistics for a dataset.
+### 4. Graph & GraphRAG Operations
+Administrative tools for managing the HNSW graph as a knowledge graph.
+
+- **Add Edge:** `longbow-cli add-edge -dataset <ds> -subject <id> -predicate <p> -object <id> -weight <f>`
+- **Traverse:** `longbow-cli traverse -dataset <ds> -start <id> -hops <n>`
+- **Graph Stats:** `longbow-cli get-graph-stats -dataset <ds>`
+- **PageRank:** `longbow-cli pagerank -dataset <ds> -iterations <n>`
+- **Community Detection:** `longbow-cli detect-communities -dataset <ds>`
+
+### 5. Temporal Search
+Query the temporal index for versioned data.
 
 **Usage:**
-`longbow-cli stats -dataset <name>`
+`longbow-cli temporal-search -type <as_of|range|window> [options]`
 
-**Output includes:**
-- Index size and memory usage
-- Vector count
-- Health status
-- Training state
+**Options:**
+- `-ts int`: Unix nanosecond timestamp for `as_of`
+- `-start int`: Start time for `range`
+- `-end int`: End time for `range`
 
 ---
 
 ## Advanced Filtering
 
-The `-filters` flag accepts a JSON object representing complex boolean logic:
+The `-filters` flag in `search` accepts a JSON object representing complex boolean logic:
 
 ```json
 {
@@ -100,5 +117,3 @@ The `-filters` flag accepts a JSON object representing complex boolean logic:
   ]
 }
 ```
-
-You can pass this JSON directly or provide a path to a `.json` file.

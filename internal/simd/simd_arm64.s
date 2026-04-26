@@ -1797,7 +1797,7 @@ l2sq3072_loop:
     RET
 
 // ============================================================================
-// TURBOQUANT (INT4/INT2) STUBS - requires generic fallback
+// TURBOQUANT (INT4/INT2) KERNELS - stubs, use Go fallback
 // ============================================================================
 
 // func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32

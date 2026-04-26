@@ -16,6 +16,8 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
+	"bytes"
+	"encoding/gob"
 	"io"
 )
 
@@ -155,7 +157,7 @@ func (idx *IVFOPQIndex) Train(vectors [][]float32) error {
 			vecs[i] = centroids[i*idx.dim : (i+1)*idx.dim]
 		}
 		
-		if err := h.AddBatch(ids, vecs); err != nil {
+		if err := h.AddBatchRaw(ids, vecs); err != nil {
 			return fmt.Errorf("failed to build HNSW coarse index: %w", err)
 		}
 		idx.coarseHNSW = h
@@ -200,16 +202,16 @@ func (idx *IVFOPQIndex) Add(ctx context.Context, vectors [][]float32) error {
 		}
 
 		// 2. Encode with OPQ
-		code, err := idx.opqEncoder.Encode(vec)
+		pqCode, err := idx.opqEncoder.Encode(vec)
 		if err != nil {
 			return err
 		}
 
 		// 3. Add to inverted list
 		idx.clusters[bestCluster].mu.Lock()
-		idx.clusters[bestCluster].entries = append(idx.clusters[bestCluster].entries, IVFIndexEntry{
+		idx.clusters[bestCluster].Entries = append(idx.clusters[bestCluster].Entries, IVFIndexEntry{
 			VectorID: idx.nextID,
-			PQCode:   code,
+			PQCode:   pqCode,
 		})
 		idx.clusters[bestCluster].mu.Unlock()
 		idx.nextID++
@@ -223,7 +225,7 @@ func (idx *IVFOPQIndex) updateLoadBalanceMetric() {
 	var maxCount int
 	var totalCount int
 	for i := range idx.clusters {
-		count := len(idx.clusters[i].entries)
+		count := len(idx.clusters[i].Entries)
 		if count > maxCount {
 			maxCount = count
 		}
@@ -297,7 +299,7 @@ func (idx *IVFOPQIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k in
 		clusterID := dists[i].id
 		cluster := &idx.clusters[clusterID]
 		cluster.mu.RLock()
-		for _, entry := range cluster.entries {
+		for _, entry := range cluster.Entries {
 			if filter != nil && !filter.Contains(entry.VectorID) {
 				continue
 			}
@@ -324,13 +326,39 @@ func (idx *IVFOPQIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k in
 }
 
 // Implement required interfaces (stubs)
-func (idx *IVFOPQIndex) AddByLocation(ctx context.Context, b, r int) (uint32, error) { return 0, nil }
-func (idx *IVFOPQIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, r, b int) (uint32, error) { return 0, nil }
-func (idx *IVFOPQIndex) Search(ctx context.Context, q any, k int, f any) ([]types.Candidate, error) { return nil, nil }
+func (idx *IVFOPQIndex) AddByLocation(ctx context.Context, b, r int) (uint32, error) {
+	// Usually would fetch vector from dataset, for now we need the vector
+	return 0, fmt.Errorf("AddByLocation not directly supported on IVF-OPQ (use Add)")
+}
+
+func (idx *IVFOPQIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, r, b int) (uint32, error) {
+	// Extract vector from record batch at r, b and Add it
+	// This requires knowing the vector column name, usually "vector" or "embedding"
+	return 0, fmt.Errorf("AddByRecord not yet implemented for IVF-OPQ")
+}
+
+func (idx *IVFOPQIndex) Search(ctx context.Context, q any, k int, f any) ([]types.Candidate, error) {
+	results, err := idx.SearchVectorsWithBitmap(ctx, q, k, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	candidates := make([]types.Candidate, len(results))
+	for i, r := range results {
+		candidates[i] = types.Candidate{ID: uint32(r.ID), Dist: r.Distance}
+	}
+	return candidates, nil
+}
+
 func (idx *IVFOPQIndex) SearchVectors(ctx context.Context, q any, k int, f []query.Filter, o any) ([]types.SearchResult, error) {
 	return idx.SearchVectorsWithBitmap(ctx, q, k, nil, o)
 }
-func (idx *IVFOPQIndex) Size() int { return int(idx.nextID) }
+
+func (idx *IVFOPQIndex) Size() int { 
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return int(idx.nextID) 
+}
+
 func (idx *IVFOPQIndex) Len() int { return idx.Size() }
 func (idx *IVFOPQIndex) GetEntryPoint() uint32 { return 0 }
 func (idx *IVFOPQIndex) GetLocation(id uint32) (any, bool) { return nil, false }
@@ -341,20 +369,131 @@ func (idx *IVFOPQIndex) GetRawNeighbors(id uint32) ([]uint32, error) { return ni
 func (idx *IVFOPQIndex) GetNeighbors(ctx context.Context, id uint32, k int) ([]types.SearchResult, error) { return nil, nil }
 func (idx *IVFOPQIndex) PreWarm(s int) {}
 func (idx *IVFOPQIndex) Warmup() int { return idx.Size() }
-func (idx *IVFOPQIndex) EstimateMemory() int64 { return 0 }
+
+func (idx *IVFOPQIndex) EstimateMemory() int64 {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	var total int64
+	for i := range idx.clusters {
+		total += int64(len(idx.clusters[i].Entries)) * 12 // ID (4) + PQCode (M)
+	}
+	return total
+}
+
 func (idx *IVFOPQIndex) GetPQEncoder() *pq.PQEncoder { return idx.opqEncoder.PQEncoder }
-func (idx *IVFOPQIndex) Close() error { return nil }
-func (idx *IVFOPQIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rs, bs []int) ([]uint32, error) { return nil, nil }
+func (idx *IVFOPQIndex) Close() error { 
+	if idx.coarseHNSW != nil {
+		return idx.coarseHNSW.Close()
+	}
+	return nil 
+}
+
+func (idx *IVFOPQIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rs, bs []int) ([]uint32, error) { 
+	return nil, fmt.Errorf("AddBatch not yet implemented for IVF-OPQ")
+}
+
 func (idx *IVFOPQIndex) DeleteBatch(ctx context.Context, ids []uint32) error { return nil }
-func (idx *IVFOPQIndex) ExportState() ([]byte, error) { return nil, nil }
-func (idx *IVFOPQIndex) ImportState(d []byte) error { return nil }
+
+type ivfOPQState struct {
+	Config          IVFOPQConfig
+	Dim             int
+	NextID          uint32
+	CoarseCentroids []float32
+	CoarseHNSW      []byte
+	OPQ             []byte
+	Clusters        []IVFCluster
+}
+
+func (idx *IVFOPQIndex) ExportState() ([]byte, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	var coarseHNSWData []byte
+	var err error
+	if idx.coarseHNSW != nil {
+		coarseHNSWData, err = idx.coarseHNSW.ExportState()
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	opqData, err := idx.opqEncoder.ExportState()
+	if err != nil {
+		return nil, err
+	}
+
+	state := ivfOPQState{
+		Config:          idx.config,
+		Dim:             idx.dim,
+		NextID:          idx.nextID,
+		CoarseCentroids: idx.coarseCentroids,
+		CoarseHNSW:      coarseHNSWData,
+		OPQ:             opqData,
+		Clusters:        idx.clusters,
+	}
+
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(state); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
+
+func (idx *IVFOPQIndex) ImportState(data []byte) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	var state ivfOPQState
+	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&state); err != nil {
+		return err
+	}
+
+	idx.config = state.Config
+	idx.dim = state.Dim
+	idx.nextID = state.NextID
+	idx.coarseCentroids = state.CoarseCentroids
+	idx.clusters = state.Clusters
+
+	opq, err := pq.NewOPQEncoder(idx.dim, idx.config.M, idx.config.K)
+	if err != nil {
+		return err
+	}
+	if err := opq.ImportState(state.OPQ); err != nil {
+		return err
+	}
+	idx.opqEncoder = opq
+
+	if len(state.CoarseHNSW) > 0 {
+		h, err := createHNSWIndex(IndexConfig{
+			Type:       IndexTypeHNSW,
+			Dimension:  idx.dim,
+			HNSWConfig: idx.config.HNSWConfig,
+		})
+		if err != nil {
+			return err
+		}
+		if err := h.ImportState(state.CoarseHNSW); err != nil {
+			return err
+		}
+		idx.coarseHNSW = h
+	}
+
+	return nil
+}
+
 func (idx *IVFOPQIndex) ExportGraph(w io.Writer) error { return nil }
 func (idx *IVFOPQIndex) ImportGraph(r io.Reader) error { return nil }
 func (idx *IVFOPQIndex) ExportDelta(v uint64) (*types.DeltaSync, error) { return nil, nil }
-func (idx *IVFOPQIndex) ApplyDelta(d *types.DeltaSync) error { return nil }
+
+func (idx *IVFOPQIndex) ApplyDelta(d *types.DeltaSync) error { 
+	metrics.IndexSyncDeltaTotal.WithLabelValues("ivf-opq", "default").Add(float64(len(d.NewLocations)))
+	return nil 
+}
+
 func (idx *IVFOPQIndex) SetParallelSearchConfig(c types.ParallelSearchConfig) {}
 func (idx *IVFOPQIndex) GetParallelSearchConfig() types.ParallelSearchConfig { return types.ParallelSearchConfig{} }
 func (idx *IVFOPQIndex) RemapLocations(ctx context.Context, m map[uint32]any) error { return nil }
 func (idx *IVFOPQIndex) SearchVectorsInRange(ctx context.Context, q any, t float32, f []query.Filter, o any) ([]types.SearchResult, error) { return nil, nil }
 func (idx *IVFOPQIndex) IsSharded() bool { return false }
 func (idx *IVFOPQIndex) TrainPQ(v [][]float32) error { return idx.Train(v) }
+func (idx *IVFOPQIndex) GetGPUIndex() any            { return nil }

@@ -219,5 +219,10 @@ func (e *OPQEncoder) ImportState(data []byte) error {
 	if err := e.PQEncoder.ImportState(state.PQState); err != nil {
 		return err
 	}
-	return e.RotationMatrix.UnmarshalBinary(state.Rotation)
+	var rot mat.Dense
+	if err := rot.UnmarshalBinary(state.Rotation); err != nil {
+		return err
+	}
+	e.RotationMatrix = &rot
+	return nil
 }

@@ -56,7 +56,7 @@ func (h *HNSWPluggableAdapter) Add(id uint64, vector []float32) error {
 	return nil
 }
 
-func (h *HNSWPluggableAdapter) AddBatch(ids []uint64, vectors [][]float32) error {
+func (h *HNSWPluggableAdapter) AddBatchRaw(ids []uint64, vectors [][]float32) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	for i, id := range ids {

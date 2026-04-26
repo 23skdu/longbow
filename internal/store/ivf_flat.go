@@ -99,7 +99,7 @@ func (ivf *IVFFlatIndex) Add(id uint64, vector []float32) error {
 	return nil
 }
 
-func (ivf *IVFFlatIndex) AddBatch(ids []uint64, vectors [][]float32) error {
+func (ivf *IVFFlatIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
 	ivf.mu.Lock()
 	defer ivf.mu.Unlock()
 

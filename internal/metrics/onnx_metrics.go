@@ -139,4 +139,13 @@ var (
 			Buckets: []float64{1, 2, 4, 8, 16, 32, 64, 128},
 		},
 	)
+
+	// StubModelUsageTotal tracks how many times a stub embedding model was used
+	StubModelUsageTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_stub_model_usage_total",
+			Help: "Total number of times a stub embedding model was used",
+		},
+		[]string{"model_path"},
+	)
 )

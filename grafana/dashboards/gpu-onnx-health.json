@@ -623,6 +623,16 @@
       ],
       "title": "Reranker Throughput (Scores/s)",
       "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 37},
+      "id": 2004,
+      "targets": [
+        {"expr": "rate(longbow_stub_model_usage_total[5m])", "legendFormat": "Stub: {{model_path}}", "refId": "A"}
+      ],
+      "title": "Stub Embedding Model Usage (Fallbacks)",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",

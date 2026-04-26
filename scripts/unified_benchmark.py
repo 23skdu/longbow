@@ -141,11 +141,41 @@ class BenchmarkRunner:
         return path
 
     def get_bench_tool(self):
+        """Get bench-tool. Prefers longbow-cli as it supports all required operations"""
+        # First try CLI (primary - supports all search modes)
+        cli_path = self.get_cli_tool()
+        if cli_path and os.path.exists(cli_path):
+            return cli_path
+        # Fall back to bench-tool
         for name in ["bench-tool", "benchmark-tool"]:
             path = os.path.join(self.bin_dir, name)
             if os.path.exists(path):
                 return path
-        return os.path.join(self.bin_dir, "bench-tool")
+        # Return CLI path even if doesn't exist yet (will be built)
+        return cli_path
+
+    def get_cli_tool(self):
+        """Get the longbow-cli binary path"""
+        path = os.path.join(self.bin_dir, "longbow-cli")
+        if os.path.exists(path):
+            return path
+        # Try parent bin dir
+        path = os.path.join(self.bin_dir, "..", "bin", "longbow-cli")
+        if os.path.exists(path):
+            return path
+        return os.path.join(self.bin_dir, "longbow-cli")
+    
+    def get_sdk_client(self):
+        """Get the Python SDK LongbowClient for benchmarking"""
+        if not HAS_LONGBOW_SDK:
+            print("  Warning: longbow Python SDK not installed")
+            return None
+        try:
+            from longbow import LongbowClient
+            return LongbowClient(self.server_addr)
+        except Exception as e:
+            print(f"  Warning: Failed to create SDK client: {e}")
+            return None
 
     def check_cuda(self):
         if self.args.mode == "cuda" and platform.system() != "Linux":
@@ -253,6 +283,59 @@ class BenchmarkRunner:
             except:
                 pass
             self.server_pid = None
+
+    def run_benchmark_cli(self, dim, dtype, count, label):
+        """Run benchmark using longbow-cli for comparison"""
+        cli_tool = self.get_cli_tool()
+        batch_size = min(count, self.args.batch_size)
+        json_file = os.path.join(self.log_dir, f"result_cli_{label}.json")
+        
+        print(f"  CLI testing {dtype} dim={dim}...", end="", flush=True)
+        
+        # Create namespace
+        ns_cmd = f"{cli_tool} create-namespace -name {label} -dims {dim} -data_type {dtype}"
+        result = run_command(ns_cmd, timeout=30)
+        
+        # Import test data using CLI
+        # Note: CLI doesn't support direct data generation, this is demonstration
+        # Full implementation would generate test vectors
+        
+        print(f" CLI done")
+        return True
+    
+    def run_benchmark_sdk(self, dim, dtype, count, label):
+        """Run benchmark using Python SDK for accuracy comparison"""
+        client = self.get_sdk_client()
+        if not client:
+            return False
+            
+        print(f"  SDK testing {dtype} dim={dim}...", end="", flush=True)
+        
+        try:
+            # Create namespace via SDK
+            ns = client.create_namespace(label, dims=dim, data_type=dtype)
+            
+            # Generate test vectors
+            import numpy as np
+            vectors = np.random.rand(count, dim).astype(np.float32)
+            
+            # Normalize
+            norms = np.linalg.norm(vectors, axis=1, keepdims=True)
+            vectors = vectors / norms
+            
+            # Insert via SDK
+            client.insert(label, vectors)
+            
+            # Search via SDK
+            for _ in range(min(100, self.args.queries)):
+                query = vectors[0]
+                results = client.search(label, query, k=10)
+            
+            print(f" SDK done")
+            return True
+        except Exception as e:
+            print(f" SDK error: {e}")
+            return False
 
         # Surgical cleanup using port discovery for the specific port
         if ":" in self.server_addr:

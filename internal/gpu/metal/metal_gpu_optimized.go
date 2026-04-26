@@ -1743,8 +1743,12 @@ func (idx *MetalIndexOptimized) SearchBatch(vectors [][]float32, k int) ([][]int
 		return nil, nil, nil
 	}
 
-	// Batch search: currently implemented as sequential calls
-	// Future: use compute_l2_distances_batch kernel for true parallelism
+	// Use true batch kernel if we have enough queries to justify overhead
+	if len(vectors) >= 32 && idx.batchKernel != nil {
+		return idx.searchBatchKernel(vectors, k)
+	}
+
+	// Fallback to sequential for small batches
 	results := make([][]int64, len(vectors))
 	distances := make([][]float32, len(vectors))
 
@@ -1758,6 +1762,97 @@ func (idx *MetalIndexOptimized) SearchBatch(vectors [][]float32, k int) ([][]int
 	}
 
 	return results, distances, nil
+}
+
+// searchBatchKernel uses the GPU batch kernels for true parallelism
+func (idx *MetalIndexOptimized) searchBatchKernel(queries [][]float32, k int) ([][]int64, [][]float32, error) {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return nil, nil, errors.New("index closed")
+	}
+
+	dim := idx.dim
+	numQueries := len(queries)
+	numVectors := idx.count
+	if numVectors == 0 {
+		return nil, nil, errors.New("empty index")
+	}
+
+	// Flatten queries
+	flatQueries := make([]float32, dim*numQueries)
+	for i, q := range queries {
+		copy(flatQueries[i*dim:i*dim+dim], q)
+	}
+
+	// Allocate output buffers
+	allDistances := make([]float32, numQueries*numVectors)
+	topIDs := make([]int64, numQueries*k)
+	topDistances := make([]float32, numQueries*k)
+
+	// Compute all distances using batch kernel
+	queryBuf := idx.makeBuffer(flatQueries, MTLResourceModeShared)
+	defer queryBuf.Release()
+
+	distBuf := idx.device.MakeBuffer(bytesize(allDistances), MTLResourceModeShared)
+	defer distBuf.Release()
+
+	vectorBuf := idx.vectorsBuf
+	dimBuf := idx.makeBuffer([]uint32{uint32(dim), uint32(numVectors), uint32(numQueries)}, MTLResourceModeShared)
+	defer dimBuf.Release()
+
+	// Dispatch compute l2 distances batch
+	wg := idx.commandQueue.MakeCommandBuffer()
+	computeEncoder := wg.MakeCommandEncoder()
+	computeEncoder.SetComputePipelineState(idx.batchKernel)
+	computeEncoder.SetBuffer(queryBuf, 0, 0)
+	computeEncoder.SetBuffer(vectorBuf, 0, 1)
+	computeEncoder.SetBuffer(distBuf, 0, 2)
+	computeEncoder.SetBuffer(dimBuf, 0, 3)
+	computeEncoder.DispatchThreadgroups(
+		MTLSize{X: numQueries * numVectors, Y: 1, Z: 1},
+		MTLSize{X: 256, Y: 1, Z: 1},
+	)
+	computeEncoder.EndEncoding()
+
+	wg.Commit()
+	wg.WaitUntilCompleted()
+
+	// Top-k selection using batch kernel
+	topIDsBuf := idx.device.MakeBuffer(bytesize(topIDs), MTLResourceModeShared)
+	defer topIDsBuf.Release()
+	topDistBuf := idx.device.MakeBuffer(bytesize(topDistances), MTLResourceModeShared)
+	defer topDistBuf.Release()
+
+	kBuf := idx.makeBuffer([]uint32{uint32(numVectors), uint32(numQueries), uint32(k)}, MTLResourceModeShared)
+	defer kBuf.Release()
+
+	wg2 := idx.commandQueue.MakeCommandBuffer()
+	topEncoder := wg2.MakeCommandEncoder()
+	topEncoder.SetComputePipelineState(idx.topKBatchKernel)
+	topEncoder.SetBuffer(distBuf, 0, 0)
+	topEncoder.SetBuffer(topIDsBuf, 0, 1)
+	topEncoder.SetBuffer(topDistBuf, 0, 2)
+	topEncoder.SetBuffer(kBuf, 0, 3)
+	topEncoder.DispatchThreadgroups(
+		MTLSize{X: numQueries, Y: 1, Z: 1},
+		MTLSize{X: 256, Y: 1, Z: 1},
+	)
+	topEncoder.EndEncoding()
+
+	wg2.Commit()
+	wg2.WaitUntilCompleted()
+
+	// Convert results
+	results := make([][]int64, numQueries)
+	distResults := make([][]float32, numQueries)
+	for i := 0; i < numQueries; i++ {
+		results[i] = topIDs[i*k : i*k+k]
+		distResults[i] = topDistances[i*k : i*k+k]
+	}
+
+	return results, distResults, nil
 }
 
 // Close releases optimized Metal GPU resources

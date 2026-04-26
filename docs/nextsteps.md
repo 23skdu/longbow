@@ -4,6 +4,15 @@
 
 The 0.1.9 release is now in the hardening phase. All critical P0 blockers have been resolved or deferred to 0.2.0 for deeper architectural refinement.
 
+### Active P0 Blocker: High-Dimensional NEON SIMD Distance Kernels
+The current NEON distance kernels (`euclideanNEONKernel`) on Darwin arm64 exhibit severe performance regressions for high dimensions (dim > 384) due to lack of loop unrolling and prefetching, causing cache trashing and instruction pipeline stalls. We need to implement a fully unrolled and prefetched ASM kernel.
+
+**Subtasks:**
+- [x] **Step 1: Baseline Profiling Benchmark**: Write a targeted Go benchmark in `internal/simd/` to isolate `euclideanNEONKernel` for `dim=768` to measure the baseline cycle cost and cache behavior.
+- [x] **Step 2: ASM Kernel Development**: Implement a new `euclideanHighDimNEONKernel` in `simd_arm64.s` that unrolls the loop by 4x (processes 16 floats/64 bytes per iteration) and utilizes `PRFM PLDL1KEEP` for memory prefetching.
+- [x] **Step 3: Verification and Benchmarking**: Run the targeted benchmark against the new ASM kernel to verify performance exceeds the Go compiler's generic `Unrolled4x` fallback.
+- [x] **Step 4: Integration**: Wire the optimized kernel into `internal/simd/simd_arm64.go` and restore its usage in `dispatch.go` for Darwin `dim > 384`.
+
 ### Completed P0 Blockers
 - [x] **WAL Truncation**: Implemented proper truncation and batcher restart in `StorageEngine`.
 - [x] **CPU Index PQ/TurboQuant**: Wired quantized search to SIMD kernels in `internal/simd`.
@@ -11,6 +20,74 @@ The 0.1.9 release is now in the hardening phase. All critical P0 blockers have b
 - [x] **AMD64 SIMD Parity**: Resolved numerical correctness bugs in comparison assembly.
 - [x] **ML Reranker Validation**: Added fallback logging and hardening for ONNX/WASM paths.
 - [x] **Embedding Generator Hardening**: Added visibility into stub model usage.
+- [x] **NEON Cosine/Dot/L2 Kernels**: Complete float32 SIMD kernels for all dimensions.
+- [x] **NEON Fixed-Dim Kernels**: Added 128/384/768/1024/1536/3072 optimized kernels.
+
+---
+
+## Technical Debt Remediation (2026-04-26)
+
+### Findings from Deep Code Review
+
+#### P1: Critical Stubs Requiring Implementation
+
+1. **TPUIndex** (`internal/gpu/tpu/tpu_index.go`)
+   - AddPQ, TrainPQ, SearchPQ, EncodePQ: Not implemented (emulated)
+   - SearchFloat16, SearchComplex64/128: Not implemented (emulated)
+   - AddTurboQuant, SearchTurboQuant: Not implemented (emulated)
+   - UpdateGraph, GraphExpand: Experimental stub
+   - **Remediation**: Implement XLA kernels or document as experimental-only
+
+2. **IVF-OPQ Index** (`internal/store/ivf_opq_index.go`)
+   - AddByRecord: Not implemented
+   - AddBatch: Not implemented
+   - **Remediation**: Implement interface methods or deprecate index type
+
+3. **IVF-HNSW Composite** (`internal/store/ivf_hnsw_composite.go`)
+   - AddBatch: Not implemented
+   - Vector fetching from location: Partial
+   - **Remediation**: Complete implementation or document limitations
+
+4. **IVF-PQ Index** (`internal/store/ivf_pq_index.go`)
+   - Search, GetRawNeighbors, GetNeighbors, AddBatch: Not supported
+   - **Remediation**: Implement or deprecate
+
+#### P2: Metal Index Gaps
+
+5. **MetalIndex** (`internal/gpu/metal/metal_gpu.go`)
+   - AddTurboQuant, SearchTurboQuant: Not implemented (use optimized variant)
+
+6. **MetalIndexOptimized** (`internal/gpu/metal/metal_gpu_optimized.go`)
+   - UpdateGraph, GraphExpand: Not implemented
+
+7. **MetalHybridIndex** (`internal/gpu/metal/metal_gpu_hybrid.go`)
+   - AddTurboQuant, SearchTurboQuant: Not implemented
+   - AddPQ, UpdateGraph, GraphExpand: Not implemented
+
+#### P3: SIMD Optimization Opportunities
+
+8. **TurboQuant NEON Kernels** (`internal/simd/simd_arm64.s`)
+   - dotInt4NeonKernel, dotInt2NeonKernel: Stubs (rely on Go fallback)
+   - **Remediation**: Implement optimized bit-pack kernels or document behavior
+
+9. **Metal TurboQuant** (`internal/gpu/metal/metal_gpu_optimized.go`)
+   - SearchTurboQuant: Implement CUDA kernels for 2/4/8-bit TQ
+
+#### P4: Test Flakiness
+
+10. **Skipped Tests** (171 t.Skip calls found)
+    - Various timing-dependent, platform-specific, and flaky tests
+    - **Remediation**: Fix flakiness or document as known limitations
+
+### Remediation Task List
+
+- [ ] **TPU Stub Remediation**: Either implement XLA kernels or document as experimental-only feature
+- [ ] **IVF-OPQ Completion**: Implement missing AddBatch/AddByRecord or deprecate
+- [ ] **IVF-HNSW Composite**: Implement AddBatch or document limitations
+- [ ] **IVF-PQ Deprecation**: Implement missing methods or mark deprecated
+- [ ] **Metal TurboQuant**: Implement SearchTurboQuant in optimized Metal index
+- [ ] **NEON TurboQuant Optimization**: Implement proper bit-pack assembly or document Go-only behavior
+- [ ] **Test Fixes**: Reduce skipped tests by fixing platform-specific test failures
 
 ---
 

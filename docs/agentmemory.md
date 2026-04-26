@@ -58,15 +58,23 @@ For complex AI agents, managing memory is not just about retrieval; it's about i
 Agents often handle multiple users or sessions simultaneously. Longbow's **Namespaces** allow you to isolate these contexts completely:
 - **Tenancy**: Create a separate namespace for each user (`user_123`, `user_456`). This ensures that an agent never accidentally retrieves one user's private data for another.
 - **Bulk Cleanup**: When a session ends or a user deletes their profile, a single `delete-namespace` call wipes all associated memories instantly across both RAM and disk.
+- **Quota Control**: Prevent a single chatty session from consuming the entire cluster's memory by setting per-namespace vector limits.
 
 ### 2. Selective Forgetting with Tombstones
 Agents frequently need to "forget" or update specific facts without restarting the system:
 - **Soft-Deletes**: Deleting a specific memory (via `Delete`) marks it with a **Tombstone**. This is a sub-millisecond operation that ensures the memory is immediately excluded from all future searches.
 - **Fact Updates**: When an agent learns new information about an existing topic (e.g., a user's changed preference), re-ingesting the memory with the same ID automatically tombstones the old version and indexes the new one, ensuring the agent's knowledge remains current.
 
-### 3. Background Hygiene (Compaction)
+### 3. Namespace vs. Tombstone: When to use what?
+| Feature | Scope | Latency | Reclamation | Use Case |
+| :--- | :--- | :--- | :--- | :--- |
+| **Namespace** | Bulk / logical container | Instant (Metadata) | Background (Recursive Drop) | New User, Project, or Customer Tenant |
+| **Tombstone** | Granular / per-record | Sub-ms (Bitset) | Background (Compaction) | Fact Update, Error Correction, GDPR Forgetting |
+
+### 4. Background Hygiene (Compaction)
 As an agent matures and its memory accumulates tombstones (deleted/outdated facts), Longbow's **Fragmentation-Aware Compaction** automatically cleans up the storage in the background:
 - **Efficiency**: Sparse batches are merged into dense batches to reclaim memory.
+- **Index Stability**: Unlike naive vector stores that require full rebuilds after many deletions, Longbow performs incremental index updates during compaction.
 - **Zero Downtime**: The agent continues to function normally while the system optimizes its internal representation of the memory.
 
 ---

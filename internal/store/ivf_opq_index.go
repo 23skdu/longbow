@@ -332,9 +332,14 @@ func (idx *IVFOPQIndex) AddByLocation(ctx context.Context, b, r int) (uint32, er
 }
 
 func (idx *IVFOPQIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, r, b int) (uint32, error) {
-	// Extract vector from record batch at r, b and Add it
-	// This requires knowing the vector column name, usually "vector" or "embedding"
-	return 0, fmt.Errorf("AddByRecord not yet implemented for IVF-OPQ")
+	vec, err := ExtractVectorFromArrow(rec, r, -1)
+	if err != nil {
+		return 0, err
+	}
+	if err := idx.Add(ctx, [][]float32{vec}); err != nil {
+		return 0, err
+	}
+	return idx.nextID - 1, nil
 }
 
 func (idx *IVFOPQIndex) Search(ctx context.Context, q any, k int, f any) ([]types.Candidate, error) {
@@ -388,8 +393,22 @@ func (idx *IVFOPQIndex) Close() error {
 	return nil 
 }
 
-func (idx *IVFOPQIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rs, bs []int) ([]uint32, error) { 
-	return nil, fmt.Errorf("AddBatch not yet implemented for IVF-OPQ")
+func (idx *IVFOPQIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rs, bs []int) ([]uint32, error) {
+	if len(recs) == 0 {
+		return nil, nil
+	}
+	ids := make([]uint32, 0, len(recs))
+	for _, rec := range recs {
+		n := int(rec.NumRows())
+		for row := 0; row < n; row++ {
+			id, err := idx.AddByRecord(ctx, rec, row, 0)
+			if err != nil {
+				return nil, err
+			}
+			ids = append(ids, id)
+		}
+	}
+	return ids, nil
 }
 
 func (idx *IVFOPQIndex) DeleteBatch(ctx context.Context, ids []uint32) error { return nil }

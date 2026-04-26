@@ -66,6 +66,15 @@ Runs all benchmark modes locally (CPU, Metal if on macOS). Useful for quick loca
   ./scripts/run_all_local.sh
   ```
 
+### test_cli.sh
+
+Comprehensive verification script for the `longbow-cli`. Validates the full feature matrix (dimensions, datatypes) and specialized features like Geospatial and GraphRAG.
+
+**Usage**:
+  ```bash
+  ./scripts/test_cli.sh
+  ```
+
 ### run_user_request_bench.sh
 
 Runs benchmark suites based on user request parameters. Accepts dimension, count, and dtype arguments.

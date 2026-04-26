@@ -8,6 +8,7 @@ import (
 	"github.com/apache/arrow-go/v18/parquet/file"
 	"github.com/apache/arrow-go/v18/parquet/pqarrow"
 	"github.com/sbinet/npyio"
+	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -22,6 +23,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/aws/aws-sdk-go-v2/config"
+	"github.com/aws/aws-sdk-go-v2/service/s3"
 )
 
 func main() {
@@ -40,6 +43,8 @@ func main() {
 		runSearch(ctx, os.Args[2:])
 	case "create-namespace":
 		runCreateNamespace(ctx, os.Args[2:])
+	case "create-dataset":
+		runCreateDataset(ctx, os.Args[2:])
 	case "delete-namespace":
 		runDeleteNamespace(ctx, os.Args[2:])
 	case "list-namespaces":
@@ -48,6 +53,26 @@ func main() {
 		runListDatasetsInNamespace(ctx, os.Args[2:])
 	case "stats":
 		runStats(ctx, os.Args[2:])
+	case "geo-search":
+		runGeoSearch(ctx, os.Args[2:])
+	case "recommend":
+		runRecommend(ctx, os.Args[2:])
+	case "delete":
+		runDelete(ctx, os.Args[2:])
+	case "snapshot":
+		runSnapshot(ctx, os.Args[2:])
+	case "add-edge":
+		runAddEdge(ctx, os.Args[2:])
+	case "traverse":
+		runTraverse(ctx, os.Args[2:])
+	case "get-graph-stats":
+		runGetGraphStats(ctx, os.Args[2:])
+	case "pagerank":
+		runPageRank(ctx, os.Args[2:])
+	case "detect-communities":
+		runDetectCommunities(ctx, os.Args[2:])
+	case "temporal-search":
+		runTemporalSearch(ctx, os.Args[2:])
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -71,6 +96,16 @@ Commands:
   list-namespaces  List all dataset namespaces
   list-datasets-in-namespace List datasets in a namespace
   stats            Show dataset statistics
+  geo-search       Search vectors with geospatial constraints
+  recommend        Get recommendations based on seed IDs
+  delete           Delete specific IDs from a dataset
+  snapshot         Trigger a manual snapshot
+  add-edge         Add a directed edge to the graph
+  traverse         Traverse the graph from a start node
+  get-graph-stats  Show graph connectivity statistics
+  pagerank         Calculate PageRank centrality
+  detect-communities Run community detection (LPA)
+  temporal-search  Search temporal index (as-of, range, window)
 
 Global Options:
   -uri string    Longbow server URI (default: grpc://127.0.0.1:3000)
@@ -133,7 +168,7 @@ func mustGetClient(uri string) *client.SmartClient {
 func runImport(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("import", flag.ExitOnError)
 	dataset := fs.String("dataset", "", "Target dataset name (required)")
-	input := fs.String("input", "", "Input file path. Supports .parquet and .npy")
+	input := fs.String("input", "", "Input file path. Supports .parquet, .npy, and s3://bucket/key")
 	dim := fs.Int("dim", 128, "Vector dimension (used for demo data)")
 	count := fs.Int("count", 1000, "Number of vectors to generate (used for demo data if no input file)")
 	_ = fs.Parse(args)
@@ -148,6 +183,10 @@ func runImport(ctx context.Context, args []string) {
 	defer sc.Close()
 
 	if *input != "" {
+		if strings.HasPrefix(*input, "s3://") {
+			runImportS3(ctx, sc, *dataset, *input)
+			return
+		}
 		ext := strings.ToLower(*input)
 		if strings.HasSuffix(ext, ".parquet") {
 			runImportParquet(ctx, sc, *dataset, *input)
@@ -538,10 +577,12 @@ func extractValue(col arrow.Array, idx int64) interface{} {
 func runCreateNamespace(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("create-namespace", flag.ExitOnError)
 	name := fs.String("name", "", "Namespace name (required)")
+	dims := fs.Int("dims", 128, "Vector dimensions")
+	dtype := fs.String("data_type", "float32", "Data type (float32, int8, turboquant)")
 	_ = fs.Parse(args)
 
 	if *name == "" {
-		fmt.Fprintf(os.Stderr, "Usage: longbow-cli create-namespace -name <name> [-uri <uri>]\n")
+		fmt.Fprintf(os.Stderr, "Usage: longbow-cli create-namespace -name <name> [-dims <n>] [-data_type <type>]\n")
 		os.Exit(1)
 	}
 
@@ -549,8 +590,13 @@ func runCreateNamespace(ctx context.Context, args []string) {
 	sc := mustGetClient(uri)
 	defer sc.Close()
 
-	actionBody, _ := json.Marshal(map[string]string{"namespace": *name})
-	action := &flight.Action{Type: "create_namespace", Body: actionBody}
+	req := map[string]interface{}{
+		"name":      *name,
+		"dims":      *dims,
+		"data_type": *dtype,
+	}
+	actionBody, _ := json.Marshal(req)
+	action := &flight.Action{Type: "CreateNamespace", Body: actionBody}
 
 	stream, err := sc.DoAction(ctx, action)
 	if err != nil {
@@ -714,3 +760,450 @@ func runStats(ctx context.Context, args []string) {
 	}
 }
 
+
+func runImportS3(ctx context.Context, sc *client.SmartClient, dataset, s3Path string) {
+	// Parse s3://bucket/key
+	u := strings.TrimPrefix(s3Path, "s3://")
+	parts := strings.SplitN(u, "/", 2)
+	if len(parts) < 2 {
+		log.Fatalf("Invalid S3 path: %s. Expected s3://bucket/key\n", s3Path)
+	}
+	bucket, key := parts[0], parts[1]
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		log.Fatalf("Failed to load AWS config: %v\n", err)
+	}
+	s3Client := s3.NewFromConfig(cfg)
+
+	// Get file size
+	head, err := s3Client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+	})
+	if err != nil {
+		log.Fatalf("Failed to head S3 object: %v\n", err)
+	}
+	size := *head.ContentLength
+
+	fmt.Printf("Importing S3 Parquet file %s (size: %d bytes) to dataset %s...\n", s3Path, size, dataset)
+
+	readerAt := &s3ReaderAt{
+		s3:     s3Client,
+		bucket: bucket,
+		key:    key,
+		size:   size,
+	}
+
+	rdr, err := file.NewParquetReader(readerAt)
+	if err != nil {
+		log.Fatalf("Failed to create parquet reader from S3: %v\n", err)
+	}
+	defer rdr.Close()
+
+	arrowRdr, err := pqarrow.NewFileReader(rdr, pqarrow.ArrowReadProperties{Parallel: true}, memory.DefaultAllocator)
+	if err != nil {
+		log.Fatalf("Failed to create pqarrow reader: %v\n", err)
+	}
+
+	tbl, err := arrowRdr.ReadTable(ctx)
+	if err != nil {
+		log.Fatalf("Failed to read table from S3 parquet: %v\n", err)
+	}
+	defer tbl.Release()
+
+	tr := array.NewTableReader(tbl, 10000)
+	defer tr.Release()
+
+	desc := &flight.FlightDescriptor{
+		Type: flight.DescriptorPATH,
+		Path: []string{dataset},
+	}
+
+	stream, err := sc.DoPut(ctx, desc)
+	if err != nil {
+		log.Fatalf("DoPut stream failed: %v\n", err)
+	}
+
+	writer := flight.NewRecordWriter(stream, ipc.WithSchema(tbl.Schema()))
+	writer.SetFlightDescriptor(desc)
+
+	totalRows := int64(0)
+	for tr.Next() {
+		rec := tr.Record()
+		if err := writer.Write(rec); err != nil {
+			log.Fatalf("Failed to write record batch: %v\n", err)
+		}
+		totalRows += rec.NumRows()
+	}
+
+	_ = writer.Close()
+	_ = stream.CloseSend()
+	_, _ = stream.Recv()
+
+	fmt.Printf("Successfully imported %d rows from S3 in %v\n", totalRows, time.Now())
+}
+
+type s3ReaderAt struct {
+	s3            *s3.Client
+	bucket        string
+	key           string
+	size          int64
+	currentOffset int64
+}
+
+func (r *s3ReaderAt) ReadAt(p []byte, off int64) (n int, err error) {
+	if off >= r.size {
+		return 0, io.EOF
+	}
+	end := off + int64(len(p)) - 1
+	if end >= r.size {
+		end = r.size - 1
+	}
+	rangeHeader := fmt.Sprintf("bytes=%d-%d", off, end)
+	out, err := r.s3.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: &r.bucket,
+		Key:    &r.key,
+		Range:  &rangeHeader,
+	})
+	if err != nil {
+		return 0, err
+	}
+	defer out.Body.Close()
+	return io.ReadFull(out.Body, p)
+}
+
+func (r *s3ReaderAt) Seek(offset int64, whence int) (int64, error) {
+	var newOffset int64
+	switch whence {
+	case io.SeekStart:
+		newOffset = offset
+	case io.SeekCurrent:
+		newOffset = r.currentOffset + offset
+	case io.SeekEnd:
+		newOffset = r.size + offset
+	default:
+		return 0, fmt.Errorf("invalid whence: %d", whence)
+	}
+	if newOffset < 0 {
+		return 0, fmt.Errorf("negative offset: %d", newOffset)
+	}
+	r.currentOffset = newOffset
+	return newOffset, nil
+}
+
+func (r *s3ReaderAt) Read(p []byte) (n int, err error) {
+	n, err = r.ReadAt(p, r.currentOffset)
+	r.currentOffset += int64(n)
+	return n, err
+}
+
+func runGeoSearch(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("geo-search", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name (required)")
+	lat := fs.Float64("lat", 0, "Center latitude")
+	lon := fs.Float64("lon", 0, "Center longitude")
+	radius := fs.Float64("radius", 1.0, "Search radius in km")
+	k := fs.Int("k", 10, "Number of results")
+	_ = fs.Parse(args)
+
+	if *dataset == "" {
+		log.Fatal("Dataset name is required")
+	}
+
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	req := map[string]interface{}{
+		"dataset":   *dataset,
+		"k":         *k,
+		"center":    map[string]float64{"lat": *lat, "lon": *lon},
+		"radius_km": *radius,
+		"search_type": "radius",
+	}
+
+	ticketBytes, _ := json.Marshal(map[string]interface{}{"geo_search": req})
+	stream, err := sc.DoGet(ctx, ticketBytes)
+	if err != nil {
+		log.Fatalf("Geo-Search failed: %v", err)
+	}
+
+	reader, err := flight.NewRecordReader(stream)
+	if err != nil {
+		log.Fatalf("Failed to read results: %v", err)
+	}
+	defer reader.Release()
+
+	for reader.Next() {
+		printResults(reader.Record())
+	}
+}
+
+func runRecommend(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("recommend", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name (required)")
+	seeds := fs.String("seeds", "", "Comma-separated seed IDs")
+	k := fs.Int("k", 10, "Number of results")
+	alpha := fs.Float64("alpha", 0.5, "Hybrid blend alpha")
+	_ = fs.Parse(args)
+
+	if *dataset == "" || *seeds == "" {
+		log.Fatal("Dataset and seeds are required")
+	}
+
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	req := map[string]interface{}{
+		"dataset":  *dataset,
+		"seed_ids": strings.Split(*seeds, ","),
+		"k":        *k,
+		"alpha":    *alpha,
+	}
+
+	ticketBytes, _ := json.Marshal(map[string]interface{}{"recommend": req})
+	stream, err := sc.DoGet(ctx, ticketBytes)
+	if err != nil {
+		log.Fatalf("Recommend failed: %v", err)
+	}
+
+	reader, err := flight.NewRecordReader(stream)
+	if err != nil {
+		log.Fatalf("Failed to read results: %v", err)
+	}
+	defer reader.Release()
+
+	for reader.Next() {
+		printResults(reader.Record())
+	}
+}
+
+func runDelete(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("delete", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name (required)")
+	id := fs.String("id", "", "Vector ID to delete")
+	_ = fs.Parse(args)
+
+	if *dataset == "" || *id == "" {
+		log.Fatal("Dataset and ID are required")
+	}
+
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	req := map[string]string{"dataset": *dataset, "id": *id}
+	actionBody, _ := json.Marshal(req)
+	action := &flight.Action{Type: "delete", Body: actionBody}
+
+	_, err := sc.DoAction(ctx, action)
+	if err != nil {
+		log.Fatalf("Delete failed: %v", err)
+	}
+	fmt.Printf("Deleted ID %s from %s\n", *id, *dataset)
+}
+
+func runSnapshot(ctx context.Context, args []string) {
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	action := &flight.Action{Type: "ForceSnapshot", Body: []byte{}}
+	_, err := sc.DoAction(context.Background(), action)
+	if err != nil {
+		log.Fatalf("Snapshot failed: %v", err)
+	}
+	fmt.Println("Manual snapshot triggered")
+}
+
+func runAddEdge(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("add-edge", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name (required)")
+	sub := fs.Int("subject", 0, "Subject ID")
+	pred := fs.String("predicate", "related", "Predicate")
+	obj := fs.Int("object", 0, "Object ID")
+	weight := fs.Float64("weight", 1.0, "Edge weight")
+	_ = fs.Parse(args)
+
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	req := map[string]interface{}{
+		"dataset":   *dataset,
+		"subject":   *sub,
+		"predicate": *pred,
+		"object":    *obj,
+		"weight":    *weight,
+	}
+	actionBody, _ := json.Marshal(req)
+	action := &flight.Action{Type: "add-edge", Body: actionBody}
+	_, err := sc.DoAction(context.Background(), action)
+	if err != nil {
+		log.Fatalf("Add edge failed: %v", err)
+	}
+	fmt.Printf("Added edge: %d --[%s]--> %d\n", *sub, *pred, *obj)
+}
+
+func runTraverse(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("traverse", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name (required)")
+	start := fs.Int("start", 0, "Start node ID")
+	hops := fs.Int("hops", 2, "Max hops")
+	_ = fs.Parse(args)
+
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	req := map[string]interface{}{
+		"dataset":  *dataset,
+		"start":    *start,
+		"max_hops": *hops,
+	}
+	actionBody, _ := json.Marshal(req)
+	action := &flight.Action{Type: "traverse-graph", Body: actionBody}
+	stream, err := sc.DoAction(context.Background(), action)
+	if err != nil {
+		log.Fatalf("Traverse failed: %v", err)
+	}
+
+	for {
+		res, err := stream.Recv()
+		if err != nil {
+			break
+		}
+		fmt.Printf("%s\n", string(res.Body))
+	}
+}
+
+func runGetGraphStats(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("get-graph-stats", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name (required)")
+	_ = fs.Parse(args)
+
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	req := map[string]string{"dataset": *dataset}
+	actionBody, _ := json.Marshal(req)
+	action := &flight.Action{Type: "GetGraphStats", Body: actionBody}
+	stream, err := sc.DoAction(context.Background(), action)
+	if err != nil {
+		log.Fatalf("Get graph stats failed: %v", err)
+	}
+
+	res, _ := stream.Recv()
+	fmt.Printf("%s\n", string(res.Body))
+}
+
+func runPageRank(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("pagerank", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name (required)")
+	iter := fs.Int("iterations", 20, "Max iterations")
+	_ = fs.Parse(args)
+
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	req := map[string]interface{}{"dataset": *dataset, "max_iterations": *iter}
+	actionBody, _ := json.Marshal(req)
+	action := &flight.Action{Type: "calculate-pagerank", Body: actionBody}
+	stream, err := sc.DoAction(context.Background(), action)
+	if err != nil {
+		log.Fatalf("PageRank failed: %v", err)
+	}
+
+	res, _ := stream.Recv()
+	fmt.Printf("%s\n", string(res.Body))
+}
+
+func runDetectCommunities(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("detect-communities", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name (required)")
+	_ = fs.Parse(args)
+
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	req := map[string]string{"dataset": *dataset}
+	actionBody, _ := json.Marshal(req)
+	action := &flight.Action{Type: "detect-communities", Body: actionBody}
+	stream, err := sc.DoAction(context.Background(), action)
+	if err != nil {
+		log.Fatalf("Community detection failed: %v", err)
+	}
+
+	res, _ := stream.Recv()
+	fmt.Printf("%s\n", string(res.Body))
+}
+
+func runTemporalSearch(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("temporal-search", flag.ExitOnError)
+	searchType := fs.String("type", "as_of", "Search type: as_of, range, window")
+	ts := fs.Int64("ts", 0, "Timestamp for as_of")
+	start := fs.Int64("start", 0, "Start time")
+	end := fs.Int64("end", 0, "End time")
+	_ = fs.Parse(args)
+
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	req := map[string]interface{}{
+		"search_type": *searchType,
+		"timestamp":   *ts,
+		"start_time":  *start,
+		"end_time":    *end,
+	}
+	actionBody, _ := json.Marshal(req)
+	action := &flight.Action{Type: "TemporalSearch", Body: actionBody}
+	stream, err := sc.DoAction(context.Background(), action)
+	if err != nil {
+		log.Fatalf("Temporal search failed: %v", err)
+	}
+
+	for {
+		res, err := stream.Recv()
+		if err != nil {
+			break
+		}
+		fmt.Printf("%s\n", string(res.Body))
+	}
+}
+
+func runCreateDataset(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("create-dataset", flag.ExitOnError)
+	name := fs.String("name", "", "Dataset name (required)")
+	dims := fs.Int("dims", 128, "Dimensions")
+	vtype := fs.String("type", "float32", "Vector type")
+	geo := fs.Bool("geo", false, "Enable geo index")
+	_ = fs.Parse(args)
+
+	if *name == "" {
+		log.Fatal("Dataset name is required")
+	}
+
+	uri, _ := getClientURI(args)
+	sc := mustGetClient(uri)
+	defer sc.Close()
+
+	req := map[string]interface{}{
+		"name":        *name,
+		"dimension":   *dims,
+		"vector_type": *vtype,
+		"geo_enabled": *geo,
+	}
+	actionBody, _ := json.Marshal(req)
+	action := &flight.Action{Type: "CreateDataset", Body: actionBody}
+	_, err := sc.DoAction(context.Background(), action)
+	if err != nil {
+		log.Fatalf("Create dataset failed: %v", err)
+	}
+	fmt.Printf("Dataset '%s' created\n", *name)
+}

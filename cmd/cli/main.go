@@ -135,23 +135,6 @@ Examples:
 Use "longbow-cli <command> --help" for more information about a command.`)
 }
 
-func getClientURI(args []string) (string, []string) {
-	uri := "127.0.0.1:3000"
-	var remaining []string
-
-	for i := 0; i < len(args); i++ {
-		if args[i] == "-uri" && i+1 < len(args) {
-			uri = args[i+1]
-			i++
-		} else if strings.HasPrefix(args[i], "-uri=") {
-			uri = strings.TrimPrefix(args[i], "-uri=")
-		} else {
-			remaining = append(remaining, args[i])
-		}
-	}
-
-	return uri, remaining
-}
 
 func mustGetClient(uri string) *client.SmartClient {
 	// Sanitize URI for logging to prevent log injection (G706)
@@ -171,6 +154,7 @@ func runImport(ctx context.Context, args []string) {
 	input := fs.String("input", "", "Input file path. Supports .parquet, .npy, and s3://bucket/key")
 	dim := fs.Int("dim", 128, "Vector dimension (used for demo data)")
 	count := fs.Int("count", 1000, "Number of vectors to generate (used for demo data if no input file)")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
 	if *dataset == "" {
@@ -178,8 +162,7 @@ func runImport(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	if *input != "" {
@@ -434,6 +417,7 @@ func runSearch(ctx context.Context, args []string) {
 	alpha := fs.Float64("alpha", 0.5, "Alpha for hybrid search (0=sparse, 1=dense)")
 	k := fs.Int("k", 10, "Number of results")
 	filters := fs.String("filters", "", "JSON filter expression (inline or file path)")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
 	if *dataset == "" {
@@ -441,8 +425,7 @@ func runSearch(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]interface{}{
@@ -579,6 +562,7 @@ func runCreateNamespace(ctx context.Context, args []string) {
 	name := fs.String("name", "", "Namespace name (required)")
 	dims := fs.Int("dims", 128, "Vector dimensions")
 	dtype := fs.String("data_type", "float32", "Data type (float32, int8, turboquant)")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
 	if *name == "" {
@@ -586,8 +570,7 @@ func runCreateNamespace(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]interface{}{
@@ -619,6 +602,7 @@ func runCreateNamespace(ctx context.Context, args []string) {
 func runDeleteNamespace(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("delete-namespace", flag.ExitOnError)
 	name := fs.String("name", "", "Namespace name (required)")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
 	if *name == "" {
@@ -626,8 +610,7 @@ func runDeleteNamespace(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	actionBody, _ := json.Marshal(map[string]string{"namespace": *name})
@@ -654,8 +637,10 @@ func runDeleteNamespace(ctx context.Context, args []string) {
 
 
 func runListNamespaces(ctx context.Context, args []string) {
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	fs := flag.NewFlagSet("list-namespaces", flag.ExitOnError)
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
+	_ = fs.Parse(args)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	action := &flight.Action{Type: "list_actions"}
@@ -679,10 +664,10 @@ func runListNamespaces(ctx context.Context, args []string) {
 func runListDatasetsInNamespace(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("list-datasets-in-namespace", flag.ExitOnError)
 	name := fs.String("namespace", "default", "Namespace name")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	body, err := json.Marshal(map[string]string{"name": *name})
@@ -724,6 +709,7 @@ func runListDatasetsInNamespace(ctx context.Context, args []string) {
 func runStats(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("stats", flag.ExitOnError)
 	name := fs.String("dataset", "", "Dataset name (required)")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
 	if *name == "" {
@@ -731,8 +717,7 @@ func runStats(ctx context.Context, args []string) {
 		os.Exit(1)
 	}
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	actionBody, _ := json.Marshal(map[string]string{"dataset": *name})
@@ -905,14 +890,14 @@ func runGeoSearch(ctx context.Context, args []string) {
 	lon := fs.Float64("lon", 0, "Center longitude")
 	radius := fs.Float64("radius", 1.0, "Search radius in km")
 	k := fs.Int("k", 10, "Number of results")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
 	if *dataset == "" {
 		log.Fatal("Dataset name is required")
 	}
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]interface{}{
@@ -946,14 +931,14 @@ func runRecommend(ctx context.Context, args []string) {
 	seeds := fs.String("seeds", "", "Comma-separated seed IDs")
 	k := fs.Int("k", 10, "Number of results")
 	alpha := fs.Float64("alpha", 0.5, "Hybrid blend alpha")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
 	if *dataset == "" || *seeds == "" {
 		log.Fatal("Dataset and seeds are required")
 	}
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]interface{}{
@@ -984,14 +969,14 @@ func runDelete(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("delete", flag.ExitOnError)
 	dataset := fs.String("dataset", "", "Dataset name (required)")
 	id := fs.String("id", "", "Vector ID to delete")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
 	if *dataset == "" || *id == "" {
 		log.Fatal("Dataset and ID are required")
 	}
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]string{"dataset": *dataset, "id": *id}
@@ -1005,9 +990,11 @@ func runDelete(ctx context.Context, args []string) {
 	fmt.Printf("Deleted ID %s from %s\n", *id, *dataset)
 }
 
-func runSnapshot(ctx context.Context, args []string) {
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+func runSnapshot(_ context.Context, args []string) {
+	fs := flag.NewFlagSet("snapshot", flag.ExitOnError)
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
+	_ = fs.Parse(args)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	action := &flight.Action{Type: "ForceSnapshot", Body: []byte{}}
@@ -1018,17 +1005,17 @@ func runSnapshot(ctx context.Context, args []string) {
 	fmt.Println("Manual snapshot triggered")
 }
 
-func runAddEdge(ctx context.Context, args []string) {
+func runAddEdge(_ context.Context, args []string) {
 	fs := flag.NewFlagSet("add-edge", flag.ExitOnError)
 	dataset := fs.String("dataset", "", "Dataset name (required)")
 	sub := fs.Int("subject", 0, "Subject ID")
 	pred := fs.String("predicate", "related", "Predicate")
 	obj := fs.Int("object", 0, "Object ID")
 	weight := fs.Float64("weight", 1.0, "Edge weight")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]interface{}{
@@ -1047,15 +1034,15 @@ func runAddEdge(ctx context.Context, args []string) {
 	fmt.Printf("Added edge: %d --[%s]--> %d\n", *sub, *pred, *obj)
 }
 
-func runTraverse(ctx context.Context, args []string) {
+func runTraverse(_ context.Context, args []string) {
 	fs := flag.NewFlagSet("traverse", flag.ExitOnError)
 	dataset := fs.String("dataset", "", "Dataset name (required)")
 	start := fs.Int("start", 0, "Start node ID")
 	hops := fs.Int("hops", 2, "Max hops")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]interface{}{
@@ -1079,13 +1066,13 @@ func runTraverse(ctx context.Context, args []string) {
 	}
 }
 
-func runGetGraphStats(ctx context.Context, args []string) {
+func runGetGraphStats(_ context.Context, args []string) {
 	fs := flag.NewFlagSet("get-graph-stats", flag.ExitOnError)
 	dataset := fs.String("dataset", "", "Dataset name (required)")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]string{"dataset": *dataset}
@@ -1100,14 +1087,14 @@ func runGetGraphStats(ctx context.Context, args []string) {
 	fmt.Printf("%s\n", string(res.Body))
 }
 
-func runPageRank(ctx context.Context, args []string) {
+func runPageRank(_ context.Context, args []string) {
 	fs := flag.NewFlagSet("pagerank", flag.ExitOnError)
 	dataset := fs.String("dataset", "", "Dataset name (required)")
 	iter := fs.Int("iterations", 20, "Max iterations")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]interface{}{"dataset": *dataset, "max_iterations": *iter}
@@ -1122,13 +1109,13 @@ func runPageRank(ctx context.Context, args []string) {
 	fmt.Printf("%s\n", string(res.Body))
 }
 
-func runDetectCommunities(ctx context.Context, args []string) {
+func runDetectCommunities(_ context.Context, args []string) {
 	fs := flag.NewFlagSet("detect-communities", flag.ExitOnError)
 	dataset := fs.String("dataset", "", "Dataset name (required)")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]string{"dataset": *dataset}
@@ -1143,16 +1130,16 @@ func runDetectCommunities(ctx context.Context, args []string) {
 	fmt.Printf("%s\n", string(res.Body))
 }
 
-func runTemporalSearch(ctx context.Context, args []string) {
+func runTemporalSearch(_ context.Context, args []string) {
 	fs := flag.NewFlagSet("temporal-search", flag.ExitOnError)
 	searchType := fs.String("type", "as_of", "Search type: as_of, range, window")
 	ts := fs.Int64("ts", 0, "Timestamp for as_of")
 	start := fs.Int64("start", 0, "Start time")
 	end := fs.Int64("end", 0, "End time")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]interface{}{
@@ -1177,20 +1164,20 @@ func runTemporalSearch(ctx context.Context, args []string) {
 	}
 }
 
-func runCreateDataset(ctx context.Context, args []string) {
+func runCreateDataset(_ context.Context, args []string) {
 	fs := flag.NewFlagSet("create-dataset", flag.ExitOnError)
 	name := fs.String("name", "", "Dataset name (required)")
 	dims := fs.Int("dims", 128, "Dimensions")
 	vtype := fs.String("type", "float32", "Vector type")
 	geo := fs.Bool("geo", false, "Enable geo index")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
 	if *name == "" {
 		log.Fatal("Dataset name is required")
 	}
 
-	uri, _ := getClientURI(args)
-	sc := mustGetClient(uri)
+	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]interface{}{

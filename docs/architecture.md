@@ -202,3 +202,24 @@ graph TB
 ### Geospatial & Temporal Search
 - **Quadtree Indexing**: For efficient spatial range and radius queries.
 - **Temporal Versioning**: Maintains historical versions of vectors with TTL-based retention.
+
+---
+
+## 6. Multi-Tenancy & Data Lifecycle
+
+### Namespaces
+Longbow provides logical isolation through **Namespaces**. 
+- **Isolation**: Each namespace has its own set of datasets, quotas, and metadata.
+- **Recursive Cleanup**: Deleting a namespace automatically drops all contained datasets and releases associated memory and disk resources.
+- **Quota Management**: Support for per-namespace limits on total vectors, dimensions, and storage bytes.
+
+### Deletions & Tombstones
+Longbow uses a **Soft-Delete** strategy to maintain high search performance without immediate index rebuilds:
+- **Tombstones**: Deletions are recorded in a bitset (tombstone map) per RecordBatch.
+- **Search Filtering**: During search, results matching a tombstone bit are automatically excluded.
+- **Primary Index Updates**: When an ID is re-ingested, the old physical location is tombstoned, and the new location is registered.
+
+### Compaction & Garbage Collection
+- **Fragmentation Tracking**: Longbow monitors the ratio of tombstones to active rows in each RecordBatch.
+- **Background Compaction**: When fragmentation exceeds a threshold (e.g., 20%), a background worker merges sparse batches into new, dense batches.
+- **Resource Reclamation**: Once a batch is fully tombstoned or compacted, its memory is returned to the `SlabArena` and its WAL logs are marked for truncation.

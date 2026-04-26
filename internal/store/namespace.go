@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"errors"
 	"strings"
 	"sync"
@@ -41,6 +42,7 @@ func (n *Namespace) AddDataset(name string) {
 	if !n.datasets[name] {
 		n.datasets[name] = true
 		metrics.NamespaceDatasetsTotal.WithLabelValues(n.Name).Inc()
+		// vs.logger is not available here, but we can use standard log or just wait for higher level logs
 	}
 }
 
@@ -200,22 +202,53 @@ func (vs *VectorStore) DeleteNamespace(name string) error {
 	}
 
 	vs.nsManager.mu.Lock()
-	defer vs.nsManager.mu.Unlock()
+	vs.logger.Info().Str("namespace", name).Msg("DeleteNamespace called")
 
 	ns, exists := vs.nsManager.namespaces[name]
 	if !exists {
+		vs.nsManager.mu.Unlock()
 		return errors.New("namespace not found: " + name)
 	}
 
 	ns.mu.Lock()
-	defer ns.mu.Unlock()
 
 	if len(ns.datasets) > 0 {
-		return errors.New("cannot delete namespace with existing datasets")
+		// Recursively delete all datasets in this namespace
+		dsNames := make([]string, 0, len(ns.datasets))
+		for dsName := range ns.datasets {
+			dsNames = append(dsNames, dsName)
+		}
+		
+		vs.logger.Info().Str("namespace", name).Int("datasets", len(dsNames)).Msg("Deleting namespace recursively")
+		
+		ns.mu.Unlock()
+		vs.nsManager.mu.Unlock()
+
+		for _, dsName := range dsNames {
+			vs.logger.Info().Str("dataset", dsName).Msg("Dropping dataset during namespace deletion")
+			if err := vs.DropDataset(context.Background(), dsName); err != nil {
+				vs.logger.Error().Err(err).Str("dataset", dsName).Msg("Failed to drop dataset during namespace deletion")
+			}
+		}
+
+		// Re-acquire locks to finish namespace deletion
+		vs.nsManager.mu.Lock()
+		ns = vs.nsManager.namespaces[name]
+		if ns == nil {
+			vs.nsManager.mu.Unlock()
+			return nil // Already deleted?
+		}
+		ns.mu.Lock()
 	}
 
-	delete(vs.nsManager.namespaces, name)
-	metrics.NamespacesTotal.Dec()
+	// Double check if it's still there after re-acquiring locks
+	if vs.nsManager.namespaces[name] == ns {
+		delete(vs.nsManager.namespaces, name)
+		metrics.NamespacesTotal.Dec()
+	}
+	
+	ns.mu.Unlock()
+	vs.nsManager.mu.Unlock()
 	return nil
 }
 

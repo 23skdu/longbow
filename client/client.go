@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"sync"
 	"time"
+	"strings"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"google.golang.org/grpc"
@@ -22,6 +23,10 @@ type SmartClient struct {
 
 // NewSmartClient creates a new smart client connected to the initial address
 func NewSmartClient(addr string) (*SmartClient, error) {
+	// Strip schemes from address
+	addr = strings.TrimPrefix(addr, "grpc://")
+	addr = strings.TrimPrefix(addr, "http://")
+
 	sc := &SmartClient{
 		primaryAddr: addr,
 		clients:     make(map[string]flight.Client),

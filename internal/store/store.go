@@ -471,11 +471,13 @@ func (s *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset) 
 		}
 	})
 
-	// 3. Register dataset in namespace (after creation)
-	if created && result != nil {
+	// 3. Register dataset in namespace
+	if result != nil {
 		nsName, _ := ParseNamespacedPath(name)
 		if ns := s.GetNamespace(nsName); ns != nil {
-			ns.AddDataset(name)
+			if !ns.HasDataset(name) {
+				ns.AddDataset(name)
+			}
 		}
 	}
 

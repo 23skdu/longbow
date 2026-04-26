@@ -126,6 +126,7 @@ type Config struct {
 	AutoShardingThreshold      int  `envconfig:"AUTO_SHARDING_THRESHOLD" default:"10000"`
 	AutoShardingSplitThreshold int  `envconfig:"AUTO_SHARDING_SPLIT_THRESHOLD" default:"65536"` // Default chunk size
 	RingShardingEnabled        bool `envconfig:"RING_SHARDING_ENABLED" default:"true"`
+	AutoScaleEnabled           bool `envconfig:"AUTOSCALE_ENABLED" default:"true"`
 	IngestionWorkerCount       int  `envconfig:"INGESTION_WORKER_COUNT" default:"0"` // 0 = runtime.NumCPU()
 
 	// CDC Configuration (Part 17.1)
@@ -266,8 +267,12 @@ func run() error {
 	vectorStore.SetAutoScaler(scaler)
 	scaler.SetReconciler(vectorStore)
 
-	go scaler.Start(ctx)
-	logger.Info().Msg("Serverless Auto-Scaler monitoring started")
+	if cfg.AutoScaleEnabled {
+		go scaler.Start(ctx)
+		logger.Info().Msg("Serverless Auto-Scaler monitoring started")
+	} else {
+		logger.Info().Msg("Auto-scaler disabled by configuration")
+	}
 
 	// Keep ballast alive until the end of run()
 	defer runtime.KeepAlive(ballast)

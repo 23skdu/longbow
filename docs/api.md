@@ -262,6 +262,9 @@ results := client.Search("my_dataset", []float32{0.15, 0.25}, 10)
 | `METRICS_ADDR` | `0.0.0.0:9090` | Prometheus metrics |
 | `DATA_PATH` | `./data` | Data directory |
 | `MAX_MEMORY` | `1073741824` | Max memory (bytes) |
+| `LONGBOW_PQ_INGEST` | `0` | Enable PQ compression during ingest (1=enabled) |
+| `LONGBOW_GPU_ENABLED` | `false` | Enable GPU acceleration |
+| `LONGBOW_LOW_MEM` | `0` | Enable low memory mode for 512MB devices |
 
 ---
 

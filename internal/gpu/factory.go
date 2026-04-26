@@ -2,8 +2,10 @@ package gpu
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"unsafe"
+
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
 )
@@ -30,22 +32,28 @@ func NewIndex(cfg GPUConfig) (Index, error) {
 
 // CPUIndex implements a CPU-only fallback index using linear scan
 type CPUIndex struct {
-	vectors   map[int64][]float32
-	pqCodes   map[int64][]byte
-	tqCodes   map[int64][]byte
-	dimension int
-	deviceID  int
-	pqEncoder *pq.PQEncoder
+	vectors     map[int64][]float32
+	pqCodes     map[int64][]byte
+	tqCodes     map[int64][]byte
+	dimension  int
+	deviceID   int
+	pqEncoder  *pq.PQEncoder
+	pqEnabled  bool // Enable PQ compression during ingest
 }
 
-func NewCPUIndex(cfg GPUConfig) (Index, error) {
-	return &CPUIndex{
+func NewCPUIndex(cfg GPUConfig) (*CPUIndex, error) {
+	idx := &CPUIndex{
 		vectors:   make(map[int64][]float32),
 		pqCodes:   make(map[int64][]byte),
 		tqCodes:   make(map[int64][]byte),
 		dimension: cfg.Dimension,
 		deviceID:  cfg.DeviceID,
-	}, nil
+	}
+	// Auto-enable PQ for larger indexes to improve ingest throughput
+	if os.Getenv("LONGBOW_PQ_INGEST") == "1" {
+		idx.pqEnabled = true
+	}
+	return idx, nil
 }
 
 func (i *CPUIndex) Add(ids []int64, vectors []float32) error {
@@ -55,6 +63,26 @@ func (i *CPUIndex) Add(ids []int64, vectors []float32) error {
 
 	vectorsPerID := len(vectors) / len(ids)
 
+	// Use PQ compression during ingest if enabled and encoder is trained
+	if i.pqEnabled && i.pqEncoder != nil {
+		for idx, id := range ids {
+			start := idx * vectorsPerID
+			end := start + vectorsPerID
+			if end > len(vectors) {
+				end = len(vectors)
+			}
+			vec := vectors[start:end]
+			// Encode to PQ codes directly (skip storing full vectors)
+			codes, err := i.pqEncoder.Encode(vec)
+			if err != nil {
+				return err
+			}
+			i.pqCodes[id] = codes
+		}
+		return nil
+	}
+
+	// Default: store full vectors
 	for idx, id := range ids {
 		start := idx * vectorsPerID
 		end := start + vectorsPerID

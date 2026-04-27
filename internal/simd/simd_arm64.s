@@ -34,26 +34,26 @@ loop_4x:
     VMOV    V0.S[1], V1.S[0]
     VMOV    V0.S[2], V2.S[0]
     VMOV    V0.S[3], V3.S[0]
-    FADDS   F1, F0, F0
-    FADDS   F2, F0, F0
-    FADDS   F3, F0, F0
+    FADDS   F0, F1, F1     // F1 = F1 + F0 (accumulate V0[0])
+    FADDS   F2, F1, F1
+    FADDS   F3, F1, F1
 
 tail_loop:
     CBZ     R1, done
     
-    FMOVS.P 4(R0), F1
-    FMOVS.P 4(R2), F2
+    FMOVS.P 4(R0), F4
+    FMOVS.P 4(R2), F5
     
-    FSUBS   F2, F1, F3
-    FMULS   F3, F3, F3
-    FADDS   F3, F0, F0
+    FSUBS   F5, F4, F6
+    FMULS   F6, F6, F6
+    FADDS   F6, F1, F1
     
     SUB     $1, R1
     B       tail_loop
 
 done:
-    FSQRTS  F0, F0
-    FMOVS   F0, ret+48(FP)
+    FSQRTS  F1, F1
+    FMOVS   F1, ret+48(FP)
     RET
 
 // func euclideanHighDimNEONKernel(a, b []float32) float32
@@ -124,7 +124,7 @@ hd_scalar_reduction:
     VMOV    V0.S[1], V2.S[0]
     VMOV    V0.S[2], V3.S[0]
     VMOV    V0.S[3], V4.S[0]
-    FADDS   F0, F1, F1
+    FADDS   F0, F1, F1     // F1 = F1 + F0 (accumulate V0[0])
     FADDS   F2, F1, F1
     FADDS   F3, F1, F1
     FADDS   F4, F1, F1
@@ -132,12 +132,12 @@ hd_scalar_reduction:
 hd_scalar_tail:
     CBZ     R1, hd_done
     
-    FMOVS.P 4(R0), F2
-    FMOVS.P 4(R2), F3
+    FMOVS.P 4(R0), F5
+    FMOVS.P 4(R2), F6
     
-    FSUBS   F3, F2, F4
-    FMULS   F4, F4, F4
-    FADDS   F4, F1, F1
+    FSUBS   F6, F5, F7
+    FMULS   F7, F7, F7
+    FADDS   F7, F1, F1
     
     SUB     $1, R1
     B       hd_scalar_tail
@@ -938,69 +938,74 @@ cos_loop_4x:
     CMP     $4, R1
     BGE     cos_loop_4x
 
-    // Reduction for Dot (V0)
-    VMOV    V0.S[1], V1.S[0]
-    VMOV    V0.S[2], V2.S[0]
-    VMOV    V0.S[3], V3.S[0]
-    FADDS   F1, F0, F0
-    FADDS   F2, F0, F0
-    FADDS   F3, F0, F0
-    FMOVS   F0, F1  // Store dot in F1
+    // Reduction for Dot (V0) - use V4-V6 as temps, accumulate to F4
+    VMOV    V0.S[1], V4.S[0]
+    VMOV    V0.S[2], V5.S[0]
+    VMOV    V0.S[3], V6.S[0]
+    FMOVS   F0, F4             // Start with V0[0]
+    FADDS   F4, F1, F4        // F4 = F4 + F1 (add V0[1])
+    FADDS   F5, F4, F4
+    FADDS   F6, F4, F4
+    // F4 now has dot accumulator
 
-    // Reduction for NormA (V10)
-    FMOVS   $0.0, F0
-    VMOV    V10.S[1], V1.S[0]
-    VMOV    V10.S[2], V2.S[0]
-    VMOV    V10.S[3], V3.S[0]
-    FADDS   F1, F0, F0
-    FADDS   F2, F0, F0
-    FADDS   F3, F0, F0
-    FMOVS   F0, F2  // Store normA in F2
+    // Reduction for NormA (V10) - use V7-V9 as temps, accumulate to F5
+    FMOVS   $0.0, F1
+    VMOV    V10.S[1], V7.S[0]
+    VMOV    V10.S[2], V8.S[0]
+    VMOV    V10.S[3], V9.S[0]
+    FMOVS   $0.0, F5         // Start with 0
+    FADDS   F0, F5, F5     // Add V10[0]
+    FADDS   F7, F5, F5
+    FADDS   F8, F5, F5
+    FADDS   F9, F5, F5
+    // F5 now has normA
 
-    // Reduction for NormB (V11)
-    FMOVS   $0.0, F0
-    VMOV    V11.S[1], V1.S[0]
-    VMOV    V11.S[2], V2.S[0]
-    VMOV    V11.S[3], V3.S[0]
-    FADDS   F1, F0, F0
-    FADDS   F2, F0, F0
-    FADDS   F3, F0, F0
-    FMOVS   F0, F3  // Store normB in F3
+    // Reduction for NormB (V11) - use V12-V14 as temps, accumulate to F6
+    FMOVS   $0.0, F1
+    VMOV    V11.S[1], V12.S[0]
+    VMOV    V11.S[2], V13.S[0]
+    VMOV    V11.S[3], V14.S[0]
+    FMOVS   $0.0, F6         // Start with 0
+    FADDS   F0, F6, F6     // Add V11[0]
+    FADDS   F12, F6, F6
+    FADDS   F13, F6, F6
+    FADDS   F14, F6, F6
+    // F6 now has normB
 
 cos_tail:
     CBZ     R1, cos_calc
 
-    FMOVS.P 4(R0), F4
-    FMOVS.P 4(R2), F5
+    FMOVS.P 4(R0), F7
+    FMOVS.P 4(R2), F8
 
-    FMULS   F5, F4, F6
-    FADDS   F6, F1, F1
+    FMULS   F8, F7, F9
+    FADDS   F9, F4, F4
 
-    FMULS   F4, F4, F4
-    FADDS   F4, F2, F2
+    FMULS   F7, F7, F7
+    FADDS   F7, F5, F5
 
-    FMULS   F5, F5, F5
-    FADDS   F5, F3, F3
+    FMULS   F8, F8, F8
+    FADDS   F8, F6, F6
 
     SUB     $1, R1
     B       cos_tail
 
 cos_calc:
-    FMOVS   $0.0, F4
-    FCMPS   F2, F4
+    FMOVS   $0.0, F7
+    FCMPS   F5, F7
     BEQ     cos_ret_one
-    FCMPS   F3, F4
+    FCMPS   F6, F7
     BEQ     cos_ret_one
 
-    FSQRTS  F2, F2
-    FSQRTS  F3, F3
-    FMULS   F3, F2, F2
-    FDIVS   F2, F1, F1
+    FSQRTS  F5, F5
+    FSQRTS  F6, F6
+    FMULS   F6, F5, F5
+    FDIVS   F5, F4, F4
 
-    FMOVS   $1.0, F4
-    FSUBS   F1, F4, F1
+    FMOVS   $1.0, F7
+    FSUBS   F4, F7, F4
 
-    FMOVS   F1, ret+48(FP)
+    FMOVS   F4, ret+48(FP)
     RET
 
 cos_ret_one:

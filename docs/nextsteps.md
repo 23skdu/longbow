@@ -162,18 +162,62 @@ Systematic replacement of stubs and placeholders identified in the 0.1.9 deep co
     - [ ] **Metrics**: Add `longbow_stub_model_usage_total` and `longbow_index_sync_delta_total` to Prometheus exporter.
     - [ ] **Unit Tests**: Achieve 100% coverage for new TPU kernels and OPQ persistence logic.
 
+## Suggestions for Next Release (2026-04-26)
+
+Based on benchmark results and code review from 2026-04-26 testing session:
+
+### Critical Bug Fixes
+1. **VectorSearchRequest Missing Mode Field**: The `mode` field was missing from `VectorSearchRequest` struct, causing all search modes (hybrid, sparse, filtered, byid) to return 0 QPS. Fixed by:
+   - Adding `Mode string` field to `internal/core/query.go`
+   - Adding mode parsing in `internal/query/zero_alloc_vector_search.go`
+   - Adding mode handling in `internal/store/vector_search_action.go`
+   - **Recommendation**: Add comprehensive test coverage for all search modes in CI
+
+2. **Schema Mismatch on Dimension Change**: Server crashes when ingesting different dimensions (e.g., dim=384 after dim=128) with same dataset name. Root cause: fixed_size_list schema validation rejects schema evolution across dimensions.
+   - **Recommendation**: Either implement schema evolution support OR enforce cleaner cleanup between dimension changes (document current workaround in bench_functional_test.sh)
+
+3. **Search Mode Parsing in TicketQuery**: Mode field was also missing from outer TicketQuery wrapper.
+   - Added `Mode string` to `TicketQuery` struct in `internal/core/query.go`
+   - Added parsing in `internal/query/zero_alloc_parser.go`
+
+### Performance Observations (dim=128)
+- **Dense Search**: 4,900-6,600 QPS
+- **Hybrid Search**: 4,900-6,900 QPS  
+- **Sparse Search**: 4,800-6,700 QPS
+- **Filtered Search**: 4,800-6,700 QPS
+- **ByID Search**: 4,700-6,800 QPS
+
+### Verified Working Features
+- Dense, Hybrid, Sparse, Filtered, ByID search modes
+- Geo-spatial search (returns proper error when no geo index)
+- GraphRAG PageRank
+- Temporal search
+- Learned index (recommend)
+
+### Known Limitations
+- **Dimension Changes**: Require server restart (cleans up schema)
+- **Recommend**: Requires valid seed IDs in dataset
+
+### Recommended Testing
+1. Add mode field validation to unified_benchmark.py
+2. Add dimension-change stress test  
+3. Benchmark all search modes in parallel (currently run sequentially)
+4. Profile high-dimension (768, 1024, 3072) performance
+5. Ancalagon CUDA benchmarks (currently not enabled)
+
 ## Suggestions for Next Release (Performance Optimizations)
 
 Based on benchmark results and code review:
 
 ### High Priority
-1. **Fix Darwin NEON Distance Kernels**: The cosine/euclidean NEON kernels produce wrong results - disabled via fallback in `dispatch.go`. Root cause identified in `simd_arm64.s` reduction logic. Recommend:
+1. **Fix Darwin NEON Distance Kernels**: The cosine/euclidean NEON kernels produce wrong results - disabled via fallback in `dispatch.go`. Root cause: reduction logic uses `FADDS dst, src, dst` instead of accumulating to scalar FPR. Temp fix: cosine uses generic fallback. Recommend:
    - Rewrite reduction using scalar FPR registers instead of lane extraction
    - Add proper prefix/postfix scalar handling for dims not divisible by 4
+   - Euclidean already works (passes tests), cosine needs complete rewrite
 
 2. **Metal Performance Parity**: Current Metal matches CPU but should exceed for large batches. Recommend:
    - Metal compute shader for batch cosine/euclidean (currently via CPU fallback)
-   - MTLBuffer pooling to eliminate copies
+   - MTLBuffer pooling to eliminate copies (lower priority)
 
 3. **Learn Index Benchmarking**: Learned indexes showed variable performance (1K-7K QPS depending on dimension). Need:
    - Integration into unified_benchmark.py for automated measurement
@@ -200,9 +244,3 @@ Based on benchmark results and code review:
 6. **CUDA Support**: Ancalagon has RTX 4060 (8GB). Recommend:
    - Enable CUDA benchmarks (currently commented out in run_matrix_bench.py)
    - Profile memory vs throughput tradeoffs
-
-## Additional Observations (2026-04-26)
-- **CLI Test**: Verified longbow-cli operations (create-namespace, import, stats)
-- **Benchmark Issues**: unified_benchmark.py shows 0 QPS for search operations - possible server initialization or SDK import issue
-- **Metal Batch**: Implemented in metal_gpu_optimized.go with 32-query threshold
-- **PQ Ingest**: Implemented in factory.go with LONGBOW_PQ_INGEST=1 env var

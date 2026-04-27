@@ -46,7 +46,7 @@ func main() {
 		queries     = flag.Int("queries", 1000, "Number of search queries")
 		dataset     = flag.String("dataset", "benchmark", "Dataset name")
 		jsonFile    = flag.String("json", "", "Output JSON file")
-		searchModes = flag.String("search-modes", "dense,hybrid,sparse,filtered,byid", "Search modes")
+		searchModes = flag.String("search-modes", "dense,hybrid,sparse,filtered,byid", "Search modes (including temporal_as_of,temporal_range,temporal_window)")
 	)
 	flag.Parse()
 
@@ -387,6 +387,18 @@ type BenchmarkResult struct {
 	ByIDP50Ms       float64 `json:"byid_p50_ms"`
 	ByIDP95Ms       float64 `json:"byid_p95_ms"`
 	ByIDP99Ms       float64 `json:"byid_p99_ms"`
+	TemporalAsOfQPS   float64 `json:"temporal_as_of_qps"`
+	TemporalAsOfP50Ms float64 `json:"temporal_as_of_p50_ms"`
+	TemporalAsOfP95Ms float64 `json:"temporal_as_of_p95_ms"`
+	TemporalAsOfP99Ms float64 `json:"temporal_as_of_p99_ms"`
+	TemporalRangeQPS   float64 `json:"temporal_range_qps"`
+	TemporalRangeP50Ms float64 `json:"temporal_range_p50_ms"`
+	TemporalRangeP95Ms float64 `json:"temporal_range_p95_ms"`
+	TemporalRangeP99Ms float64 `json:"temporal_range_p99_ms"`
+	TemporalWindowQPS   float64 `json:"temporal_window_qps"`
+	TemporalWindowP50Ms float64 `json:"temporal_window_p50_ms"`
+	TemporalWindowP95Ms float64 `json:"temporal_window_p95_ms"`
+	TemporalWindowP99Ms float64 `json:"temporal_window_p99_ms"`
 }
 
 func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, queries int, dataset, jsonFile, searchModes string) {
@@ -486,13 +498,44 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 					start := time.Now()
 					var runErr error
 
-					req := map[string]interface{}{
-						"dataset": dataset,
-						"vector":  query,
-						"k":       10,
-						"mode":    m,
+					var ticketBytes []byte
+					if strings.HasPrefix(m, "temporal_") {
+						ts := time.Now().UnixNano()
+						if m == "temporal_as_of" {
+							req := map[string]interface{}{
+								"dataset":  dataset,
+								"search_type": "as_of",
+								"timestamp": ts,
+								"k":         10,
+							}
+							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal": req})
+						} else if m == "temporal_range" {
+							req := map[string]interface{}{
+								"dataset":   dataset,
+								"search_type": "range",
+								"start_time": ts - 1000000000,
+								"end_time":   ts,
+								"k":        10,
+							}
+							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal": req})
+						} else if m == "temporal_window" {
+							req := map[string]interface{}{
+								"dataset":    dataset,
+								"search_type": "sliding_window",
+								"window_size": 10,
+								"k":          10,
+							}
+							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal": req})
+						}
+					} else {
+						req := map[string]interface{}{
+							"dataset": dataset,
+							"vector":  query,
+							"k":       10,
+							"mode":    m,
+						}
+						ticketBytes, _ = json.Marshal(map[string]interface{}{"search": req})
 					}
-					ticketBytes, _ := json.Marshal(map[string]interface{}{"search": req})
 
 					stream, runErr := sc.DoGet(ctx, ticketBytes)
 					if runErr == nil {
@@ -544,6 +587,12 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 				result.FilteredQPS, result.FilteredP50Ms, result.FilteredP95Ms, result.FilteredP99Ms = qps, p50, p95, p99
 			case "byid":
 				result.ByIDQPS, result.ByIDP50Ms, result.ByIDP95Ms, result.ByIDP99Ms = qps, p50, p95, p99
+			case "temporal_as_of":
+				result.TemporalAsOfQPS, result.TemporalAsOfP50Ms, result.TemporalAsOfP95Ms, result.TemporalAsOfP99Ms = qps, p50, p95, p99
+			case "temporal_range":
+				result.TemporalRangeQPS, result.TemporalRangeP50Ms, result.TemporalRangeP95Ms, result.TemporalRangeP99Ms = qps, p50, p95, p99
+			case "temporal_window":
+				result.TemporalWindowQPS, result.TemporalWindowP50Ms, result.TemporalWindowP95Ms, result.TemporalWindowP99Ms = qps, p50, p95, p99
 			}
 			mu.Unlock()
 		}(mode)
@@ -556,6 +605,15 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 	fmt.Printf("  Sparse:  %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.SparseQPS, result.SparseP50Ms, result.SparseP95Ms, result.SparseP99Ms)
 	fmt.Printf("  Filtered:%8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.FilteredQPS, result.FilteredP50Ms, result.FilteredP95Ms, result.FilteredP99Ms)
 	fmt.Printf("  ByID:    %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.ByIDQPS, result.ByIDP50Ms, result.ByIDP95Ms, result.ByIDP99Ms)
+	if result.TemporalAsOfQPS > 0 {
+		fmt.Printf("  TemporalAsOf:  %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.TemporalAsOfQPS, result.TemporalAsOfP50Ms, result.TemporalAsOfP95Ms, result.TemporalAsOfP99Ms)
+	}
+	if result.TemporalRangeQPS > 0 {
+		fmt.Printf("  TemporalRange: %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.TemporalRangeQPS, result.TemporalRangeP50Ms, result.TemporalRangeP95Ms, result.TemporalRangeP99Ms)
+	}
+	if result.TemporalWindowQPS > 0 {
+		fmt.Printf("  TemporalWindow: %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.TemporalWindowQPS, result.TemporalWindowP50Ms, result.TemporalWindowP95Ms, result.TemporalWindowP99Ms)
+	}
 
 	if jsonFile != "" {
 data, _ := json.MarshalIndent(result, "", "  ")

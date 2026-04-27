@@ -209,6 +209,23 @@ class BenchmarkRunner:
         subprocess.run(f"rm -rf {data_root}", shell=True)
         os.makedirs(data_root, exist_ok=True)
 
+        # Build env overrides based on mode
+        if env_overrides is None:
+            env_overrides = {}
+        
+        # Enable temporal index for temporal mode
+        if self.args.mode == "temporal":
+            env_overrides["LONGBOW_TEMPORAL_ENABLED"] = "true"
+            env_overrides["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
+        
+        # Enable geo index for geo mode
+        if self.args.mode == "geo":
+            env_overrides["LONGBOW_GEO_ENABLED"] = "true"
+        
+        # Enable graphrag for graphrag mode
+        if self.args.mode == "graphrag":
+            env_overrides["LONGBOW_GRAPHRAG_ENABLED"] = "true"
+        
         env = os.environ.copy()
         if env_overrides:
             env.update(env_overrides)
@@ -398,7 +415,13 @@ class BenchmarkRunner:
         uri = self.server_addr
         if not uri.startswith("grpc://"):
             uri = f"grpc://{self.server_addr}"
-        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -dataset {label} -json {json_file}"
+        
+        # Build search-modes string based on mode
+        search_modes = "dense,hybrid,sparse,filtered,byid"
+        if self.args.mode == "temporal":
+            search_modes = "temporal_as_of,temporal_range,temporal_window"
+        
+        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -dataset {label} -search-modes {search_modes} -json {json_file}"
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)
         
@@ -440,7 +463,7 @@ class BenchmarkRunner:
 
         # Extract all search types
         search_metrics = {}
-        expected_modes = ["dense", "hybrid", "sparse", "filtered", "byid"]
+        expected_modes = ["dense", "hybrid", "sparse", "filtered", "byid", "temporal_as_of", "temporal_range", "temporal_window"]
         for key, value in metrics.items():
             if "_qps" in key:
                 prefix = key.replace("_qps", "")
@@ -2001,12 +2024,8 @@ class BenchmarkRunner:
         if self.args.mode == "deletion":
             self.execute_deletion()
             return
-        if self.args.mode == "temporal":
-            # Temporal requires Python SDK with temporal features
-            self.execute_temporal()
-            return
-        if self.args.mode in ["graphrag", "recommend", "geo"]:
-            # These are now natively supported in the Go bench-tool
+        if self.args.mode in ["graphrag", "recommend", "geo", "temporal"]:
+            # All specialized modes now use Go bench-tool for performance
             pass
         else:
             if self.args.mode == "exchange":

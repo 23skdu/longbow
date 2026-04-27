@@ -742,7 +742,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 	// 2.5 Query Cache Check
 	// We cache the FINAL result (after potential global scatter-gather if applicable)
 	cacheKey := cache.HashQuery(req)
-	if cached, hit := s.queryCache.Get(cacheKey); hit {
+	if cached, hit := s.queryCache.GetUint64(cacheKey); hit {
 		searchResults = cached
 	} else {
 
@@ -841,7 +841,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 		}
 
 		if len(searchResults) > 0 {
-			s.queryCache.Put(cacheKey, searchResults)
+			s.queryCache.PutUint64(cacheKey, searchResults)
 		}
 
 	} // End of Cache Miss block

@@ -457,7 +457,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		)
 
 		// Check Cache
-		if cached, ok := s.queryCache.Get(cacheKey); ok {
+		if cached, ok := s.queryCache.GetUint64(cacheKey); ok {
 			// Hit!
 			body, err := json.Marshal(cached)
 			if err != nil {
@@ -482,7 +482,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		)
 		if err == nil {
 			// Cache the result
-			s.queryCache.Put(cacheKey, results)
+			s.queryCache.PutUint64(cacheKey, results)
 		}
 		if err != nil {
 			return status.Errorf(codes.Internal, "failed to parse filters: %v", err)

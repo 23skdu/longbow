@@ -87,15 +87,30 @@ func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float3
 	if len(query) == 0 || len(vectors) == 0 {
 		return nil
 	}
-	
+
+	n := len(vectors)
 	qLen := len(query)
-	queryPtr := unsafe.Pointer(&query[0])
-	
-	for i, v := range vectors {
+	qPtr := unsafe.Pointer(&query[0])
+	i := 0
+
+	for ; i <= n-4; i += 4 {
+		euclideanVertical4AVX512(
+			qPtr,
+			unsafe.Pointer(&vectors[i][0]),
+			unsafe.Pointer(&vectors[i+1][0]),
+			unsafe.Pointer(&vectors[i+2][0]),
+			unsafe.Pointer(&vectors[i+3][0]),
+			qLen,
+			unsafe.Pointer(&results[i]),
+		)
+	}
+
+	for ; i < n; i++ {
+		v := vectors[i]
 		if len(v) != qLen {
 			return errors.New("simd: batch dimension mismatch")
 		}
-		sum := l2SquaredAVX512Kernel(queryPtr, unsafe.Pointer(&v[0]), qLen)
+		sum := l2SquaredAVX512Kernel(qPtr, unsafe.Pointer(&v[0]), qLen)
 		results[i] = float32(math.Sqrt(float64(sum)))
 	}
 	return nil
@@ -108,15 +123,30 @@ func dotBatchAVX512(query []float32, vectors [][]float32, results []float32) err
 	if len(query) == 0 || len(vectors) == 0 {
 		return nil
 	}
-	
+
+	n := len(vectors)
 	qLen := len(query)
-	queryPtr := unsafe.Pointer(&query[0])
-	
-	for i, v := range vectors {
+	qPtr := unsafe.Pointer(&query[0])
+	i := 0
+
+	for ; i <= n-4; i += 4 {
+		dotVertical4AVX512(
+			qPtr,
+			unsafe.Pointer(&vectors[i][0]),
+			unsafe.Pointer(&vectors[i+1][0]),
+			unsafe.Pointer(&vectors[i+2][0]),
+			unsafe.Pointer(&vectors[i+3][0]),
+			qLen,
+			unsafe.Pointer(&results[i]),
+		)
+	}
+
+	for ; i < n; i++ {
+		v := vectors[i]
 		if len(v) != qLen {
 			return errors.New("simd: batch dimension mismatch")
 		}
-		results[i] = dotAVX512Kernel(queryPtr, unsafe.Pointer(&v[0]), qLen)
+		results[i] = dotAVX512Kernel(qPtr, unsafe.Pointer(&v[0]), qLen)
 	}
 	return nil
 }
@@ -128,15 +158,30 @@ func cosineBatchAVX512(query []float32, vectors [][]float32, results []float32) 
 	if len(query) == 0 || len(vectors) == 0 {
 		return nil
 	}
-	
+
+	n := len(vectors)
 	qLen := len(query)
-	queryPtr := unsafe.Pointer(&query[0])
-	
-	for i, v := range vectors {
+	qPtr := unsafe.Pointer(&query[0])
+	i := 0
+
+	for ; i <= n-4; i += 4 {
+		cosineVertical4AVX512(
+			qPtr,
+			unsafe.Pointer(&vectors[i][0]),
+			unsafe.Pointer(&vectors[i+1][0]),
+			unsafe.Pointer(&vectors[i+2][0]),
+			unsafe.Pointer(&vectors[i+3][0]),
+			qLen,
+			unsafe.Pointer(&results[i]),
+		)
+	}
+
+	for ; i < n; i++ {
+		v := vectors[i]
 		if len(v) != qLen {
 			return errors.New("simd: batch dimension mismatch")
 		}
-		dot, normA, normB := cosineDotAVX512(queryPtr, unsafe.Pointer(&v[0]), qLen)
+		dot, normA, normB := cosineDotAVX512(qPtr, unsafe.Pointer(&v[0]), qLen)
 		if normA == 0 || normB == 0 {
 			results[i] = 1.0
 		} else {
@@ -470,6 +515,12 @@ func cosineDotAVX512(a, b unsafe.Pointer, n int) (dot, normA, normB float32)
 
 //go:noescape
 func euclideanVertical4AVX512(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
+
+//go:noescape
+func cosineVertical4AVX512(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
+
+//go:noescape
+func dotVertical4AVX512(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
 
 //go:noescape
 func euclidean384AVX512Kernel(a, b unsafe.Pointer) float32

@@ -68,6 +68,9 @@ func (ms *MemVectorStore) Set(key string, vec []float32) error {
 			return err
 		}
 
+		metrics.ArenaAllocationTotal.Inc()
+		metrics.ArenaBytesAllocated.Add(float64(len(vec) * 4))
+
 		// Copy data
 		dest := ms.floatArena.Get(ref)
 		if dest == nil || len(dest) != len(vec) {

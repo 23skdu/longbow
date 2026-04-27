@@ -3,6 +3,7 @@ package store
 import (
 	"errors"
 	"fmt"
+	"os"
 	"sync"
 	"sync/atomic"
 
@@ -47,6 +48,8 @@ func NewDimensionGuard(datasetName string, explicitDim int) *DimensionGuard {
 //
 // Returns a descriptive *DimensionError (wrapping ErrDimensionLocked) on
 // mismatch. Returns nil on success.
+//
+// Set LONGBOW_AUTO_EVOLVE=1 to automatically recreate index on dimension change.
 func (g *DimensionGuard) CheckOrSet(vec []float32) error {
 	incoming := len(vec)
 
@@ -54,6 +57,20 @@ func (g *DimensionGuard) CheckOrSet(vec []float32) error {
 	existing := g.dim.Load()
 	if existing > 0 {
 		if int(existing) == incoming {
+			return nil
+		}
+		// Dimension mismatch - check for auto-evolve
+		if os.Getenv("LONGBOW_AUTO_EVOLVE") == "1" {
+			g.dim.Store(0) // Reset dimension
+			g.mu.Lock()
+			defer g.mu.Unlock()
+			// Re-check after lock
+			existing = g.dim.Load()
+			if existing == 0 {
+				g.dim.Store(int64(incoming))
+				metrics.DatasetDimensionAutoDetectTotal.WithLabelValues(g.datasetName, "evolved").Inc()
+				return nil
+			}
 			return nil
 		}
 		metrics.DatasetDimensionMismatchTotal.WithLabelValues(g.datasetName).Inc()
@@ -73,6 +90,13 @@ func (g *DimensionGuard) CheckOrSet(vec []float32) error {
 	existing = g.dim.Load()
 	if existing > 0 {
 		if int(existing) == incoming {
+			return nil
+		}
+		// Check for auto-evolve in slow path
+		if os.Getenv("LONGBOW_AUTO_EVOLVE") == "1" {
+			g.dim.Store(0)
+			g.dim.Store(int64(incoming))
+			metrics.DatasetDimensionAutoDetectTotal.WithLabelValues(g.datasetName, "evolved").Inc()
 			return nil
 		}
 		metrics.DatasetDimensionMismatchTotal.WithLabelValues(g.datasetName).Inc()

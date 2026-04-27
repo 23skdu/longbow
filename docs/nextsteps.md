@@ -212,9 +212,7 @@ Based on benchmark results and code review:
 ### High Priority
 1. **Fix Darwin NEON Distance Kernels**: Cosine NEON kernel fixed in `simd_arm64.go` with proper reduction pattern. Added sanity check wrapper for out-of-range results. Euclidean already works.
 
-2. **Metal Performance Parity**: Batch compute kernel already exists in `metal_gpu_optimized.go` but has threshold of 32 queries to activate. Defer for now - requires more significant work:
-   - Metal compute shader for batch cosine/euclidean (already implemented with 32-query threshold)
-   - MTLBuffer pooling to eliminate copies (lower priority)
+2. **Metal Performance Parity**: Batch compute kernel already exists in `metal_gpu_optimized.go` with 32-query threshold. Added MTLBuffer pooling in `internal/gpu/memory/memory_metal_buffer_pool.go`.
 
 3. **Learn Index Benchmarking**: Already implemented in codebase. Need:
    - Integration into unified_benchmark.py for automated measurement

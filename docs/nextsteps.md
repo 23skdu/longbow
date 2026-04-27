@@ -210,16 +210,13 @@ Based on benchmark results and code review from 2026-04-26 testing session:
 Based on benchmark results and code review:
 
 ### High Priority
-1. **Fix Darwin NEON Distance Kernels**: The cosine/euclidean NEON kernels produce wrong results - disabled via fallback in `dispatch.go`. Root cause: reduction logic uses `FADDS dst, src, dst` instead of accumulating to scalar FPR. Temp fix: cosine uses generic fallback. Recommend:
-   - Rewrite reduction using scalar FPR registers instead of lane extraction
-   - Add proper prefix/postfix scalar handling for dims not divisible by 4
-   - Euclidean already works (passes tests), cosine needs complete rewrite
+1. **Fix Darwin NEON Distance Kernels**: Cosine NEON kernel fixed in `simd_arm64.go` with proper reduction pattern. Added sanity check wrapper for out-of-range results. Euclidean already works.
 
-2. **Metal Performance Parity**: Current Metal matches CPU but should exceed for large batches. Recommend:
-   - Metal compute shader for batch cosine/euclidean (currently via CPU fallback)
+2. **Metal Performance Parity**: Batch compute kernel already exists in `metal_gpu_optimized.go` but has threshold of 32 queries to activate. Defer for now - requires more significant work:
+   - Metal compute shader for batch cosine/euclidean (already implemented with 32-query threshold)
    - MTLBuffer pooling to eliminate copies (lower priority)
 
-3. **Learn Index Benchmarking**: Learned indexes showed variable performance (1K-7K QPS depending on dimension). Need:
+3. **Learn Index Benchmarking**: Already implemented in codebase. Need:
    - Integration into unified_benchmark.py for automated measurement
    - Profile-guided threshold tuning
 

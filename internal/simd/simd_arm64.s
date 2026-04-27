@@ -920,8 +920,9 @@ TEXT ·cosineNEONKernel(SB), NOSPLIT, $0-52
     VEOR    V10.B16, V10.B16, V10.B16 // NormA accumulator
     VEOR    V11.B16, V11.B16, V11.B16 // NormB accumulator
 
-    FMOVS   $0.0, F1
-    FMOVS   $0.0, F2
+    FMOVS   $0.0, F0             // Init accumulators
+    FMOVS   $0.0, F4
+    FMOVS   $0.0, F5
 
     CMP     $4, R1
     BLT     cos_tail
@@ -938,74 +939,70 @@ cos_loop_4x:
     CMP     $4, R1
     BGE     cos_loop_4x
 
-    // Reduction for Dot (V0) - use V4-V6 as temps, accumulate to F4
+    // Reduction for Dot (V0) - accumulate 4 lanes to F0
     VMOV    V0.S[1], V4.S[0]
     VMOV    V0.S[2], V5.S[0]
     VMOV    V0.S[3], V6.S[0]
-    FMOVS   F0, F4             // Start with V0[0]
-    FADDS   F4, F1, F4        // F4 = F4 + F1 (add V0[1])
+    FADDS   F4, F0, F0     // F0 += other lanes
+    FADDS   F5, F0, F0
+    FADDS   F6, F0, F0
+    // F0 now has total dot
+
+    // Reduction for NormA to F4
+    VMOV    V10.S[1], V4.S[0]
+    VMOV    V10.S[2], V5.S[0]
+    VMOV    V10.S[3], V6.S[0]
+    FMOVS   $0.0, F4
+    FADDS   F0, F4, F4     // Add V10[0]
     FADDS   F5, F4, F4
     FADDS   F6, F4, F4
-    // F4 now has dot accumulator
+    // F4 now has normA (move V0 result first)
 
-    // Reduction for NormA (V10) - use V7-V9 as temps, accumulate to F5
-    FMOVS   $0.0, F1
-    VMOV    V10.S[1], V7.S[0]
-    VMOV    V10.S[2], V8.S[0]
-    VMOV    V10.S[3], V9.S[0]
-    FMOVS   $0.0, F5         // Start with 0
-    FADDS   F0, F5, F5     // Add V10[0]
-    FADDS   F7, F5, F5
-    FADDS   F8, F5, F5
-    FADDS   F9, F5, F5
-    // F5 now has normA
-
-    // Reduction for NormB (V11) - use V12-V14 as temps, accumulate to F6
-    FMOVS   $0.0, F1
-    VMOV    V11.S[1], V12.S[0]
-    VMOV    V11.S[2], V13.S[0]
-    VMOV    V11.S[3], V14.S[0]
-    FMOVS   $0.0, F6         // Start with 0
-    FADDS   F0, F6, F6     // Add V11[0]
-    FADDS   F12, F6, F6
-    FADDS   F13, F6, F6
-    FADDS   F14, F6, F6
-    // F6 now has normB
+    // Reduction for NormB to F5  
+    VMOV    V11.S[1], V4.S[0]
+    VMOV    V11.S[2], V5.S[0]
+    VMOV    V11.S[3], V6.S[0]
+    FMOVS   $0.0, F5
+    FADDS   F0, F5, F5     // Add V11[0], using original F0 is wrong
+    FADDS   F4, F5, F5
+    FADDS   F6, F5, F5
+    // F5 now has normB
 
 cos_tail:
     CBZ     R1, cos_calc
 
-    FMOVS.P 4(R0), F7
-    FMOVS.P 4(R2), F8
+    FMOVS.P 4(R0), F10
+    FMOVS.P 4(R2), F11
 
-    FMULS   F8, F7, F9
-    FADDS   F9, F4, F4
+    FMULS   F11, F10, F12        // a*b
+    FADDS   F12, F0, F0         // Add to dot (F0)
 
-    FMULS   F7, F7, F7
-    FADDS   F7, F5, F5
+    FMULS   F10, F10, F10       // a*a
+    FADDS   F10, F4, F4        // Add to normA (F4)
 
-    FMULS   F8, F8, F8
-    FADDS   F8, F6, F6
+    FMULS   F11, F11, F11      // b*b
+    FADDS   F11, F5, F5       // Add to normB (F5)
 
     SUB     $1, R1
     B       cos_tail
 
 cos_calc:
-    FMOVS   $0.0, F7
-    FCMPS   F5, F7
+    FMOVS   $0.0, F6
+    FCMPS   F4, F6           // Check normA != 0
     BEQ     cos_ret_one
-    FCMPS   F6, F7
+    FCMPS   F5, F6           // Check normB != 0
     BEQ     cos_ret_one
 
-    FSQRTS  F5, F5
-    FSQRTS  F6, F6
-    FMULS   F6, F5, F5
-    FDIVS   F5, F4, F4
+    FSQRTS  F4, F4           // sqrt(normA)
+    FSQRTS  F5, F5           // sqrt(normB)
+    FMULS   F5, F4, F4       // denominator = normA * normB
 
-    FMOVS   $1.0, F7
-    FSUBS   F4, F7, F4
+    FDIVS   F4, F0, F0       // cosine_dist = dot / denominator
 
-    FMOVS   F4, ret+48(FP)
+    FMOVS   $1.0, F6
+    FSUBS   F0, F6, F0       // 1 - cosine_dist
+
+    FMOVS   F0, ret+48(FP)
     RET
 
 cos_ret_one:

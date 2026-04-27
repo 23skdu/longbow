@@ -1294,22 +1294,39 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	if s.temporalIndex != nil {
 		idColIdx := -1
 		vecColIdx := -1
+		tsColIdx := -1
 		for i, f := range rec.Schema().Fields() {
 			switch f.Name {
 			case "id":
 				idColIdx = i
 			case "vector", "embedding":
 				vecColIdx = i
+			case "timestamp":
+				tsColIdx = i
 			}
 		}
 
 		if idColIdx != -1 && vecColIdx != -1 {
 			idArr := rec.Column(idColIdx).(*array.String)
 			vecArr := rec.Column(vecColIdx).(*array.FixedSizeList)
+
+			var tsArr *array.Int64
+			if tsColIdx != -1 {
+				tsArr = rec.Column(tsColIdx).(*array.Int64)
+			}
+
 			for i := 0; i < int(rec.NumRows()); i++ {
 				if idArr.IsValid(i) && vecArr.IsValid(i) {
 					idStr := idArr.Value(i)
 					id, _ := strconv.ParseUint(idStr, 10, 64)
+
+					// Extract timestamp from record column if available, otherwise use ingestion time
+					var vectorTs int64
+					if tsArr != nil && tsArr.IsValid(i) {
+						vectorTs = tsArr.Value(i)
+					} else {
+						vectorTs = ts
+					}
 
 					// Extract vector slice based on actual type
 					listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
@@ -1332,7 +1349,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 					}
 
 					// Note: Metadata is nil for now as benchmark doesn't use it for temporal search results
-					_ = s.temporalIndex.Add(id, sub, ts, nil)
+					_ = s.temporalIndex.Add(id, sub, vectorTs, nil)
 				}
 			}
 		}

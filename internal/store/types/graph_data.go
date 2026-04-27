@@ -1002,8 +1002,8 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 		pd := g.GetPaddedDimsForType(VectorTypeUint8)
 		start := cOff * pd
 		if start+g.Dims <= len(chunk) {
-			ptr := unsafe.Pointer(&chunk[0])
-			u8Chunk := unsafe.Slice((*uint8)(ptr), len(chunk))
+			ptr := unsafe.Pointer(&chunk[0]) // #nosec G103 -- intentional unsafe for performance
+			u8Chunk := unsafe.Slice((*uint8)(ptr), len(chunk)) // #nosec G103 -- intentional unsafe for performance
 			return u8Chunk[start : start+g.Dims], nil
 		}
 	case VectorTypeInt8:

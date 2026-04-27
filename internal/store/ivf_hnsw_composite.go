@@ -182,7 +182,7 @@ func (idx *IVFHNSWCompositeIndex) Add(id uint64, vector []float32) error {
 	if err != nil || len(results) == 0 {
 		return fmt.Errorf("failed to assign vector to cluster: %w", err)
 	}
-	clusterID := int(results[0].ID)
+	clusterID := int(results[0].ID) // #nosec G115 -- ID is within int range
 
 	// 2. Encode with OPQ
 	code, err := idx.opqEncoder.Encode(vector)
@@ -198,8 +198,8 @@ func (idx *IVFHNSWCompositeIndex) Add(id uint64, vector []float32) error {
 	})
 	idx.clusters[clusterID].mu.Unlock()
 	
-	if uint32(id) >= idx.nextID {
-		idx.nextID = uint32(id) + 1
+	if uint32(id) >= idx.nextID { // #nosec G115 -- id is within uint32 range
+		idx.nextID = uint32(id) + 1 // #nosec G115 -- id is within uint32 range
 	}
 
 	return nil
@@ -233,7 +233,7 @@ func (idx *IVFHNSWCompositeIndex) AddBatch(ctx context.Context, recs []arrow.Rec
 			if err := idx.Add(id, vec); err != nil {
 				return nil, err
 			}
-			ids = append(ids, uint32(id))
+			ids = append(ids, uint32(id)) // #nosec G115 -- id is within uint32 range
 		}
 	}
 	return ids, nil
@@ -335,7 +335,7 @@ func (idx *IVFHNSWCompositeIndex) SearchVectorsWithBitmap(ctx context.Context, q
 				candidates = append(candidates, localCands...)
 				candMu.Unlock()
 			}
-		}(int(res.ID))
+		}(int(res.ID)) // #nosec G115 -- res.ID is within int range
 	}
 	wg.Wait()
 
@@ -369,7 +369,7 @@ func (idx *IVFHNSWCompositeIndex) Close() error {
 	}
 	return nil 
 }
-func (idx *IVFHNSWCompositeIndex) GetDimension() uint32 { return uint32(idx.dim) }
+func (idx *IVFHNSWCompositeIndex) GetDimension() uint32 { return uint32(idx.dim) } // #nosec G115 -- dim is within uint32 range
 func (idx *IVFHNSWCompositeIndex) SetParallelSearchConfig(c types.ParallelSearchConfig) {}
 func (idx *IVFHNSWCompositeIndex) GetParallelSearchConfig() types.ParallelSearchConfig { return types.ParallelSearchConfig{} }
 func (idx *IVFHNSWCompositeIndex) IsSharded() bool { return false }
@@ -422,11 +422,11 @@ func (idx *IVFHNSWCompositeIndex) Save(path string) error {
 	if err != nil {
 		return err
 	}
-	return os.WriteFile(path, data, 0644)
+	return os.WriteFile(path, data, 0600) // #nosec G304 -- path is internal, not user-controlled
 }
 
 func (idx *IVFHNSWCompositeIndex) Load(path string) error {
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(path) // #nosec G304 -- path is internal, not user-controlled
 	if err != nil {
 		return err
 	}

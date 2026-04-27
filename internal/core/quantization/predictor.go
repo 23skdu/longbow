@@ -31,7 +31,7 @@ func (p *BitWidthPredictor) Predict(vectors [][]float32) int {
 		sampleCount = len(vectors)
 	}
 
-	rng := rand.New(rand.NewSource(p.seed))
+	rng := rand.New(rand.NewSource(p.seed)) // #nosec G404 -- non-cryptographic use for sampling
 	
 	// Sample variance
 	var totalVar float64

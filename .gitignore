@@ -17,6 +17,7 @@ dist/
 longbow_server
 bench-tool
 benchtool
+longbow-cli
 cmd/longbow/longbow
 cmd/soak_test/soak_test
 scratch/

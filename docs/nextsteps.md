@@ -1,4 +1,4 @@
-# Next Steps for Longbow (Updated 2026-04-27)
+# Next Steps for Longbow (Updated 2026-04-26)
 
 ---
 
@@ -50,3 +50,25 @@
 | NamespaceCacheManager | REMOVED ✅ |
 
 ---
+
+## Performance Improvements for Next Release
+
+### Current Results (CPU, 10K vectors, dim=128)
+- Ingest: 1.22M vec/s
+- Search QPS: ~4,000 (all modes)
+- Latency p50: 0.23ms
+
+### Suggested Optimizations
+
+| Priority | Area | Suggestion | Expected Impact |
+|----------|------|----------|-------------|
+| HIGH | SIMD | Add AVX-512 batch kernels for x86_64 | +30% QPS |
+| HIGH | Memory | Arena allocator for vector storage | +15% QPS |
+| MEDIUM | Index | Implement IVF-PQ with OPQ | 10x+ for high-dim |
+| MEDIUM | GPU | Metal compute shaders | 5-10x for >1M vectors |
+| LOW | Graph | Batch graph traversal | +20% for graphrag |
+
+### Benchmark Infrastructure
+- Add automated daily benchmarks comparing CPU/Metal/CUDA
+- Track QPS, latency p50/p95/p99, ingest rate
+- Generate diffs vs previous releases

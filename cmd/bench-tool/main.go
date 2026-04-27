@@ -356,6 +356,7 @@ func (s *ReusableSearchState) BuildSpecialTicket(dataset string, mode string) []
 	case "Recommend":
 		s.buf = append(s.buf, `{"recommend":{"dataset":"`...)
 		s.buf = append(s.buf, dataset...)
+		// Use first 3 IDs from dataset as seeds (IDs are generated as "0", "1", "2", etc.)
 		s.buf = append(s.buf, `","k":10,"seed_ids":["0","1","2"],"max_hops":3,"decay":0.8,"alpha":0.5}}`...)
 	case "Geo":
 		s.buf = append(s.buf, `{"geo_search":{"dataset":"`...)
@@ -409,58 +410,45 @@ func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) er
 }
 
 // waitForIndexingComplete polls until the dataset is indexed.
-// The passed ctx is used for the initial action; polling uses an independent Background context.
+// Uses polling approach with check_readiness for reliability.
 func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, dataset string, timeout time.Duration) string {
-	actionBody := []byte(`{"dataset":"` + dataset + `"}`)
-	action := &flight.Action{Type: "wait-for-indexing", Body: actionBody}
-	stream, err := sc.DoAction(ctx, action)
-	if err == nil {
-		for {
-			if result, err := stream.Recv(); err != nil {
-				break
-			} else {
-				body := result.Body
-				if len(body) > 0 {
-					var status map[string]interface{}
-					if err := json.Unmarshal(body, &status); err == nil {
-						if s, ok := status["status"].(string); ok {
-							return s
-						}
-					}
-				}
-			}
-		}
-		return "complete"
-	}
-	log.Printf("wait-for-indexing action failed, polling check_readiness: %v", err)
-
 	pollCtx, pollCancel := context.WithTimeout(context.Background(), timeout)
 	defer pollCancel()
+
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
+		select {
+		case <-ctx.Done():
+			return "cancelled"
+		case <-pollCtx.Done():
+			log.Printf("WARNING: Timeout (%v) waiting for indexing to complete for dataset %s", timeout, dataset)
+			return "timeout"
+		default:
+		}
+
 		checkBody := []byte(`{"dataset":"` + dataset + `"}`)
 		checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
 		checkStream, err := sc.DoAction(pollCtx, checkAction)
 		if err != nil {
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(100 * time.Millisecond)
 			continue
 		}
 
 		for {
-			if result, err := checkStream.Recv(); err != nil {
+			result, err := checkStream.Recv()
+			if err != nil {
 				break
-			} else {
-				body := result.Body
-				if len(body) > 0 {
-					var status map[string]interface{}
-					if err := json.Unmarshal(body, &status); err == nil {
-						if s, ok := status["status"].(string); ok {
-							if s == "READY" {
-								return s
-							}
-							if reason, ok := status["reason"].(string); ok {
-								log.Printf("  Still indexing... (%s)", reason)
-							}
+			}
+			body := result.Body
+			if len(body) > 0 {
+				var status map[string]interface{}
+				if err := json.Unmarshal(body, &status); err == nil {
+					if s, ok := status["status"].(string); ok {
+						if s == "READY" {
+							return s
+						}
+						if reason, ok := status["reason"].(string); ok {
+							log.Printf("  Still indexing... (%s)", reason)
 						}
 					}
 				}

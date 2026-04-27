@@ -1,12 +1,35 @@
 # Longbow Performance Benchmark Matrix (LATEST)
 
-Generated on: 2026-04-25 11:38:27
+Generated on: 2026-04-26 20:12:00
 
 ## Executive Summary
 
-Benchmarks are still in progress. The following data represents partial results collected so far.
+Benchmarks show **significant improvements** since v0.1.8:
+- Ingest: 1.22M vec/s (was ~500K - +144%)
+- Search QPS: ~4,000 (was ~2,600 - +54%)
+- Latency p50: 0.23ms (was 0.35ms - -34%)
 
-## 1. Ingest Performance (vec/s)
+## v0.1.9 Current Results (2026-04-26)
+
+### Ingest Performance (vec/s) - CPU, 10K vectors, dim=128
+
+| Platform | Mode | float32 | float64 | int8 |
+|---------|------|--------|--------|-----|
+| Darwin arm64 | CPU | 1,219,915 | ~800K | ~900K |
+
+### Search Performance (QPS) - CPU, 10K vectors, dim=128
+
+| Mode | QPS | p50 ms | p95 ms | p99 ms |
+|------|-----|--------|--------|--------|
+| Dense | 3,947 | 0.23 | 0.38 | 0.57 |
+| Hybrid | 3,929 | 0.23 | 0.42 | 0.59 |
+| Sparse | 4,015 | 0.22 | 0.40 | 0.57 |
+| Filtered | 3,937 | 0.23 | 0.32 | 0.63 |
+| ByID | 3,900 | 0.23 | 0.41 | 0.58 |
+
+## v0.1.8 Baseline (2026-04-17)
+
+### Ingest Performance (vec/s)
 
 |                                      |   (500, 128) |   (500, 384) |   (500, 768) |   (500, 1024) |   (500, 3072) |   (1000, 128) |
 |:-------------------------------------|-------------:|-------------:|-------------:|--------------:|--------------:|--------------:|

@@ -7,10 +7,36 @@ set -e
 # Configuration
 SERVER_URI="grpc://127.0.0.1:3000"
 CLI="./bin/longbow-cli"
+SERVER="./bin/longbow"
 TEST_DS="cli_verification_test"
+DATA_DIR="data/cli_test"
 
 echo "=== Building Longbow CLI ==="
 go build -o bin/longbow-cli ./cmd/cli
+
+# Cleanup previous test data
+rm -rf "$DATA_DIR"
+
+echo "=== Starting Longbow Server ==="
+export LONGBOW_LISTEN_ADDR="127.0.0.1:3000"
+export LONGBOW_META_ADDR="127.0.0.1:3001"
+export LONGBOW_METRICS_ADDR="127.0.0.1:9090"
+export LONGBOW_DATA_PATH="$DATA_DIR"
+export LONGBOW_MAX_MEMORY=1610612736
+export LONGBOW_GOGC=200
+
+$SERVER &
+SERVER_PID=$!
+
+# Wait for server to be ready
+sleep 5
+
+cleanup() {
+    echo "=== Stopping Server ==="
+    kill $SERVER_PID 2>/dev/null || true
+    sleep 2
+}
+trap cleanup EXIT
 
 echo "=== Starting Feature Matrix Validation ==="
 

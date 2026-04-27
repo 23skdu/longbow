@@ -413,6 +413,7 @@ class BenchmarkRunner:
 
         # Extract all search types
         search_metrics = {}
+        expected_modes = ["dense", "hybrid", "sparse", "filtered", "byid"]
         for key, value in metrics.items():
             if "_qps" in key:
                 prefix = key.replace("_qps", "")
@@ -422,6 +423,14 @@ class BenchmarkRunner:
                     "p95": metrics.get(f"{prefix}_p95_ms", 0),
                     "p99": metrics.get(f"{prefix}_p99_ms", 0),
                 }
+
+        # Validate mode field - warn if any mode returns 0 QPS
+        mode_failures = []
+        for mode in expected_modes:
+            if mode in search_metrics and search_metrics[mode]["qps"] == 0:
+                mode_failures.append(mode)
+        if mode_failures:
+            print(f"    WARNING: Mode field validation failed for: {mode_failures}")
 
         result_entry = {
             "dim": dim,

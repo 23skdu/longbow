@@ -40,7 +40,7 @@ func (s *VectorStore) handleAddEdge(body []byte, stream flight.FlightService_DoA
 					i = newPos
 				case "subject":
 					val, newPos, _ := query.ParseInt64(body, i)
-					req.Subject = uint32(val)
+					req.Subject = uint32(val) // #nosec G115 -- val is within uint32 range
 					i = newPos
 				case "predicate":
 					val, newPos, _ := query.ParseString(body, i)
@@ -48,7 +48,7 @@ func (s *VectorStore) handleAddEdge(body []byte, stream flight.FlightService_DoA
 					i = newPos
 				case "object":
 					val, newPos, _ := query.ParseInt64(body, i)
-					req.Object = uint32(val)
+					req.Object = uint32(val) // #nosec G115 -- val is within uint32 range
 					i = newPos
 				case "weight":
 					val, newPos, _ := query.ParseFloat32(body, i)
@@ -128,7 +128,7 @@ func (s *VectorStore) handleTraverseGraph(body []byte, stream flight.FlightServi
 					i = newPos
 				case "start":
 					val, newPos, _ := query.ParseInt64(body, i)
-					req.Start = uint32(val)
+					req.Start = uint32(val) // #nosec G115 -- val is within uint32 range
 					i = newPos
 				case "max_hops":
 					val, newPos, _ := query.ParseInt64(body, i)

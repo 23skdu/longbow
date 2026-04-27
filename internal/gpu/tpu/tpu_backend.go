@@ -48,7 +48,7 @@ func (m *HBMManager) Allocate(size int64) (uintptr, error) {
 	}
 	m.used += size
 	// Placeholder for actual TPU allocation
-	return uintptr(m.used), nil
+	return uintptr(m.used), nil // #nosec G115 -- intentional conversion
 }
 
 type VMEMManager struct {

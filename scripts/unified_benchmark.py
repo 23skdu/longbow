@@ -421,7 +421,7 @@ class BenchmarkRunner:
         if self.args.mode == "temporal":
             search_modes = "temporal_as_of,temporal_range,temporal_window"
         
-        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -dataset {label} -search-modes {search_modes} -json {json_file}"
+        cmd = f"{bench_tool} -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -dataset {label} -json {json_file}"
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)
         

@@ -824,6 +824,15 @@ var (
 		[]string{"type"}, // "pq", "opq"
 	)
 
+	OPQEncoderWarmupDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_opq_encoder_warmup_duration_seconds",
+			Help:    "Time spent warming up the OPQ encoder during training",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+		[]string{"type"}, // "ivf-opq", etc.
+	)
+
 	VQReconstructionError = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_vq_reconstruction_error",

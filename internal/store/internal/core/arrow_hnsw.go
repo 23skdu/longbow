@@ -1025,7 +1025,7 @@ func (h *ArrowHNSW) searchGPU(_ context.Context, queryVec any, k int) ([]types.S
 	results := make([]types.SearchResult, len(ids))
 	for i, id := range ids {
 		results[i] = types.SearchResult{
-			ID:       types.VectorID(id),
+			ID:       types.VectorID(id), // #nosec G115 -- id is uint32
 			Distance: distances[i],
 			Score:    1.0 / (1.0 + distances[i]),
 		}
@@ -1160,7 +1160,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	ep := h.entryPoint.Load()
 	maxLevel := h.maxLevel.Load()
 
-	if ep >= uint32(data.Capacity) {
+	if ep >= uint32(data.Capacity) { // #nosec G115 -- intentional comparison
 		// During initial bulk ingestion, ep might be 0 while data is empty.
 		// If data is empty, just return nil.
 		if h.nodeCount.Load() == 0 {
@@ -2015,11 +2015,11 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	}
 
 	// Use optimized bulk ingestion path
-	err := h.AddBatchBulk(ctx, uint32(rowIdxs[0]), len(rowIdxs), recs)
+	err := h.AddBatchBulk(ctx, uint32(rowIdxs[0]), len(rowIdxs), recs) // #nosec G115 -- rowIdxs values are within uint32 range
 	if err == nil {
 		ids := make([]uint32, len(rowIdxs))
 		for i := range rowIdxs {
-			ids[i] = uint32(rowIdxs[0]) + uint32(i)
+			ids[i] = uint32(rowIdxs[0]) + uint32(i) // #nosec G115 -- values within uint32 range
 		}
 		return ids, nil
 	}

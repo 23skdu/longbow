@@ -70,7 +70,7 @@ func (c *float16Computer) Prefetch(id uint32) {
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)
 		start := cOff * pd
 		if start < len(chunk) {
-			simd.Prefetch(unsafe.Pointer(&chunk[start]))
+			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103 -- intentional unsafe for performance
 		}
 	}
 }

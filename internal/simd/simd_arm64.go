@@ -388,7 +388,7 @@ func dotInt4Neon(a, b []byte) (float32, error) {
 	var sum float32
 	if n >= 16 {
 		simdLen := (n / 16) * 16
-		sum = dotInt4NeonKernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), simdLen)
+		sum = dotInt4NeonKernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), simdLen) // #nosec G103 -- intentional unsafe for SIMD
 		a = a[simdLen:]
 		b = b[simdLen:]
 	}
@@ -407,7 +407,7 @@ func dotInt2Neon(a, b []byte) (float32, error) {
 	var sum float32
 	if n >= 16 {
 		simdLen := (n / 16) * 16
-		sum = dotInt2NeonKernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), simdLen)
+		sum = dotInt2NeonKernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), simdLen) // #nosec G103 -- intentional unsafe for SIMD
 		a = a[simdLen:]
 		b = b[simdLen:]
 	}
@@ -425,7 +425,7 @@ func matchInt64Neon(src []int64, val int64, op CompareOp, dst []byte) error {
 	if len(src) == 0 {
 		return nil
 	}
-	matchInt64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	matchInt64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103 -- intentional unsafe for SIMD
 	return nil
 }
 
@@ -436,7 +436,7 @@ func matchInt32Neon(src []int32, val int32, op CompareOp, dst []byte) error {
 	if len(src) == 0 {
 		return nil
 	}
-	matchInt32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	matchInt32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103 -- intentional unsafe for SIMD
 	return nil
 }
 
@@ -447,7 +447,7 @@ func matchFloat32Neon(src []float32, val float32, op CompareOp, dst []byte) erro
 	if len(src) == 0 {
 		return nil
 	}
-	matchFloat32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	matchFloat32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103 -- intentional unsafe for SIMD
 	return nil
 }
 
@@ -458,6 +458,6 @@ func matchFloat64Neon(src []float64, val float64, op CompareOp, dst []byte) erro
 	if len(src) == 0 {
 		return nil
 	}
-	matchFloat64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	matchFloat64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103 -- intentional unsafe for SIMD
 	return nil
 }

@@ -192,6 +192,11 @@ type FilterExpr interface {
 	Evaluate(metadata *LazyMetadata) bool
 }
 
+// BatchCandidates represents search results for a batch of queries
+type BatchCandidates struct {
+	Candidates []Candidate
+}
+
 // ChunkID returns the chunk index for a given vector identifier
 func ChunkID(id uint32) int {
 	return int(id / uint32(ChunkSize))

@@ -193,6 +193,96 @@
 
 ---
 
+## External Dependency Analysis & Replacement Candidates (0.2.0)
+
+### DO NOT Replace (Core Infrastructure)
+| Dependency | Version | Reason |
+|------------|---------|--------|
+| google.golang.org/grpc | v1.80.0 | gRPC is core to our RPC layer |
+| github.com/prometheus/client_golang | v1.23.2 | Prometheus metrics are industry standard |
+| github.com/apache/arrow-go/v18 | v18.5.2 | Arrow is critical for zero-copy data |
+| go.opentelemetry.io/otel | v1.43.0 | OpenTelemetry is industry standard |
+| cloud.google.com/go/storage | v1.62.1 | GCS client for cloud storage |
+
+### Replace With Custom Implementation (0.2.0)
+
+Based on actual codebase usage analysis:
+
+| Priority | Dependency | Usage | Replacement | Effort |
+|----------|------------|-------|-------------|--------|
+| HIGH | github.com/rs/zerolog | 581 refs | Implement internal/logger | 2 weeks |
+| MEDIUM | github.com/RoaringBitmap/roaring/v2 | - | Keep (used by parquet-go) | - |
+| LOW | klauspost/cpuid/v2 | 12 refs | Implement internal/cpu | 1 week |
+| LOW | parquet-go | 12 refs | Investigate usage | 1 day investigation |
+| LOW | gonum.org/v1/gonum | 1 ref | Implement internal/math | 2 weeks |
+| REMOVE | github.com/joho/godotenv | 0 refs | Remove unused | 1 day |
+| REMOVE | github.com/sbinet/npyio | 0 refs | Remove unused | 1 day |
+| KEEP | github.com/iceber/iouring-go | 113 refs | Keep (Linux async I/O) | - |
+| REMOVE | github.com/grandcat/zeroconf | v1.0.0 | Check if used (mDNS) | 1 day - Possibly unused |
+
+### Detailed Implementation Plan
+
+#### 1. Replace github.com/rs/zerolog (HIGH - 581 usages)
+
+**Current Usage:** Structured logging everywhere
+**Plan:** Create `internal/logger/logger.go`:
+- [ ] Create logger.go with zerolog-compatible API (~300 LOC)
+- [ ] Implement JSON and console output modes
+- [ ] Add log level filtering
+- [ ] Add hook system for enrichment
+- [ ] Add benchmark vs zerolog
+- [ ] Tests pass existing zerolog-style tests
+- Estimated: 2 weeks
+
+#### 2. Replace klauspost/cpuid/v2 (LOW - 12 usages)
+
+**Current Usage:** CPU feature detection
+**Plan:** Create `internal/cpu/cpuid.go`:
+- [ ] Add arm64 (NEON) feature detection
+- [ ] Add x86_64 (AVX2/AVX-512) feature detection  
+- [ ] Implement CPU.Has() API
+- [ ] Add benchmark
+- [ ] Estimated: 1 week
+
+#### 3. Investigate parquet-go (12 usages)
+
+**Current Usage:** Reading/writing Parquet files for Arrow integration
+**Plan:** 
+- [ ] Determine exact usage in codebase
+- [ ] If only basic functionality, wrap in internal/parquet.go
+- [ ] Possibly delegate to arrow-go
+- [ ] Estimated: 1 day investigation
+
+#### 4. gonum.org/v1/gonum (1 usage)
+
+**Current Usage:** Matrix operations in learned index
+**Plan:** Create `internal/math/matrix.go`:
+- [ ] Implement only needed operations
+- [ ] Use existing SIMD kernels
+- [ ] Benchmark comparison
+- [ ] Estimated: 2 weeks
+
+#### 5. Replace github.com/joho/godotenv + envconfig (MEDIUM - 2 deps)
+
+**Current Usage:** Loading .env files and environment variables
+**Plan:** Create `internal/env/env.go`:
+- [ ] `Load(filename string) error`
+- [ ] `Parse(v interface{}) error`
+- [ ] `Get(key, default string) string`
+- [ ] Support: bool, int, int64, float64, string types
+- [ ] Add tests for edge cases
+- Estimated: 1 day
+
+#### 6. Remove Unused Dependencies
+
+Check and potentially remove:
+- [ ] `github.com/grandcat/zeroconf` - mDNS/service discovery
+- [ ] `github.com/iceber/iouring-go` - io_uring for Linux (113 refs)
+- [ ] `github.com/tetratelabs/wazero` - WebAssembly runtime
+- [ ] `github.com/sbinet/npyio` - NumPy file format
+
+---
+
 ## Dead Code Analysis (Completed)
 
 | Code | Status |

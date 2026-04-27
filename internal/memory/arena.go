@@ -398,7 +398,7 @@ func (a *SlabArena) Save(w io.Writer) error {
 		return err
 	}
 	// Write num slabs
-	if err := binary.Write(w, binary.LittleEndian, uint32(len(slabs))); err != nil {
+	if err := binary.Write(w, binary.LittleEndian, uint32(len(slabs))); err != nil { // #nosec G115 -- intentional conversion for binary write
 		return err
 	}
 
@@ -512,7 +512,7 @@ func (a *SlabArena) LoadMmap(f *os.File) error {
 		
 		// Mmap the slab data
 		// fmt.Printf("Mmapping slab %d at offset %d size %d (pageSize %d)\n", i, currOff, a.slabCap, pageSize)
-		data, err := unix.Mmap(int(f.Fd()), currOff, int(a.slabCap), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED)
+		data, err := unix.Mmap(int(f.Fd()), currOff, int(a.slabCap), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED) // #nosec G115 -- intentional conversion
 		if err != nil {
 			return fmt.Errorf("mmap slab %d failed: %v", i, err)
 		}

@@ -373,12 +373,20 @@ type BenchmarkResult struct {
 	DenseP99Ms      float64 `json:"dense_p99_ms"`
 	HybridQPS       float64 `json:"hybrid_qps"`
 	HybridP50Ms     float64 `json:"hybrid_p50_ms"`
+	HybridP95Ms     float64 `json:"hybrid_p95_ms"`
+	HybridP99Ms     float64 `json:"hybrid_p99_ms"`
 	SparseQPS       float64 `json:"sparse_qps"`
 	SparseP50Ms     float64 `json:"sparse_p50_ms"`
+	SparseP95Ms     float64 `json:"sparse_p95_ms"`
+	SparseP99Ms     float64 `json:"sparse_p99_ms"`
 	FilteredQPS     float64 `json:"filtered_qps"`
 	FilteredP50Ms   float64 `json:"filtered_p50_ms"`
+	FilteredP95Ms  float64 `json:"filtered_p95_ms"`
+	FilteredP99Ms  float64 `json:"filtered_p99_ms"`
 	ByIDQPS         float64 `json:"byid_qps"`
 	ByIDP50Ms       float64 `json:"byid_p50_ms"`
+	ByIDP95Ms       float64 `json:"byid_p95_ms"`
+	ByIDP99Ms       float64 `json:"byid_p99_ms"`
 }
 
 func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, queries int, dataset, jsonFile, searchModes string) {
@@ -529,13 +537,13 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 			case "dense":
 				result.DenseQPS, result.DenseP50Ms, result.DenseP95Ms, result.DenseP99Ms = qps, p50, p95, p99
 			case "hybrid":
-				result.HybridQPS, result.HybridP50Ms = qps, p50
+				result.HybridQPS, result.HybridP50Ms, result.HybridP95Ms, result.HybridP99Ms = qps, p50, p95, p99
 			case "sparse":
-				result.SparseQPS, result.SparseP50Ms = qps, p50
+				result.SparseQPS, result.SparseP50Ms, result.SparseP95Ms, result.SparseP99Ms = qps, p50, p95, p99
 			case "filtered":
-				result.FilteredQPS, result.FilteredP50Ms = qps, p50
+				result.FilteredQPS, result.FilteredP50Ms, result.FilteredP95Ms, result.FilteredP99Ms = qps, p50, p95, p99
 			case "byid":
-				result.ByIDQPS, result.ByIDP50Ms = qps, p50
+				result.ByIDQPS, result.ByIDP50Ms, result.ByIDP95Ms, result.ByIDP99Ms = qps, p50, p95, p99
 			}
 			mu.Unlock()
 		}(mode)
@@ -544,10 +552,10 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 
 	fmt.Printf("\nResults:\n")
 	fmt.Printf("  Dense:    %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.DenseQPS, result.DenseP50Ms, result.DenseP95Ms, result.DenseP99Ms)
-	fmt.Printf("  Hybrid:  %8.0f QPS\n", result.HybridQPS)
-	fmt.Printf("  Sparse:  %8.0f QPS\n", result.SparseQPS)
-	fmt.Printf("  Filtered:%8.0f QPS\n", result.FilteredQPS)
-	fmt.Printf("  ByID:    %8.0f QPS\n", result.ByIDQPS)
+	fmt.Printf("  Hybrid:  %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.HybridQPS, result.HybridP50Ms, result.HybridP95Ms, result.HybridP99Ms)
+	fmt.Printf("  Sparse:  %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.SparseQPS, result.SparseP50Ms, result.SparseP95Ms, result.SparseP99Ms)
+	fmt.Printf("  Filtered:%8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.FilteredQPS, result.FilteredP50Ms, result.FilteredP95Ms, result.FilteredP99Ms)
+	fmt.Printf("  ByID:    %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.ByIDQPS, result.ByIDP50Ms, result.ByIDP95Ms, result.ByIDP99Ms)
 
 	if jsonFile != "" {
 data, _ := json.MarshalIndent(result, "", "  ")

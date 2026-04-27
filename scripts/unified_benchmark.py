@@ -238,13 +238,38 @@ class BenchmarkRunner:
         env["LONGBOW_MAX_MEMORY"] = str(18 * 1024 * 1024 * 1024)  # 18GB - monitor for memory pressure
         env["LONGBOW_INGESTION_WORKER_COUNT"] = "0"  # Use all CPUs
         env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"  # Disable snapshots during bench
+        
+        # Storage tuning
+        if self.args.low_mem:
+            env["LONGBOW_LOW_MEM"] = "1"
+        if self.args.use_disk:
+            env["LONGBOW_USE_DISK"] = "1"
+        
+        # Benchmark feature flags
+        if self.args.pq_ingest:
+            env["LONGBOW_PQ_INGEST"] = "1"  # PQ encode during ingest
+        
+        # Learned index tuning
+        env["LONGBOW_LEARNED_INDEX_ENABLED"] = "true"
+        if self.args.learned_samples:
+            env["LONGBOW_LEARNED_MIN_SAMPLES"] = str(self.args.learned_samples)
+        if self.args.learned_confidence:
+            env["LONGBOW_LEARNED_CONFIDENCE_THRESHOLD"] = str(self.args.learned_confidence)
+        if self.args.learned_interval:
+            env["LONGBOW_LEARNED_UPDATE_INTERVAL"] = str(self.args.learned_interval)
+        
+        # Telemetry
+        if self.args.debug:
+            env["LONGBOW_DEBUG"] = "true"
+            env["LONGBOW_METRICS_SAMPLING_RATE"] = "100"
 
         # Enable GPU for metal/cuda benchmark modes
         if self.args.mode in ["metal", "cuda"]:
             env["LONGBOW_GPU_ENABLED"] = "true"
 
-        # Enable learned index for all benchmark modes
-        env["LONGBOW_LEARNED_INDEX_ENABLED"] = "true"
+        # Enable RDMA for cluster mode
+        if self.args.rdma:
+            env["LONGBOW_RDMA_ENABLED"] = "true"
 
         with open(log_file, "w") as f:
             process = subprocess.Popen(
@@ -371,7 +396,7 @@ class BenchmarkRunner:
             tq_bits = 8
 
         # Run benchmark-tool (does ingest + search + all modes)
-        cmd = f"{bench_tool} --uri={self.server_addr} --dim={dim} --dtype={dtype} --tq-bits={tq_bits} --scale={batch_size} --queries={self.args.queries} --dataset={label} --json={json_file}"
+        cmd = f"{bench_tool} --uri {self.server_addr} --dim {dim} --dtype {dtype} --tq-bits {tq_bits} --scale {batch_size} --queries {self.args.queries} --dataset {label} --json {json_file}"
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)
         
@@ -2538,6 +2563,45 @@ if __name__ == "__main__":
         "--label",
         default="",
         help="Custom label for result files and pprof profiles",
+    )
+    # Benchmark feature flags
+    parser.add_argument(
+        "--low-mem",
+        action="store_true",
+        help="Enable LONGBOW_LOW_MEM=1 for low memory mode",
+    )
+    parser.add_argument(
+        "--use-disk",
+        action="store_true",
+        help="Enable LONGBOW_USE_DISK=1 for disk-based storage",
+    )
+    parser.add_argument(
+        "--pq-ingest",
+        action="store_true",
+        help="Enable LONGBOW_PQ_INGEST=1 for PQ encoding during ingest",
+    )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable LONGBOW_DEBUG=true for verbose logging",
+    )
+    parser.add_argument(
+        "--learned-samples",
+        type=int,
+        default=0,
+        help="Set LONGBOW_LEARNED_MIN_SAMPLES for learned index",
+    )
+    parser.add_argument(
+        "--learned-confidence",
+        type=float,
+        default=0.0,
+        help="Set LONGBOW_LEARNED_CONFIDENCE_THRESHOLD for learned index",
+    )
+    parser.add_argument(
+        "--learned-interval",
+        type=int,
+        default=0,
+        help="Set LONGBOW_LEARNED_UPDATE_INTERVAL for learned index",
     )
     # Hardware acceleration flags
     parser.add_argument(

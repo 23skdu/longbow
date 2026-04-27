@@ -167,18 +167,9 @@ Systematic replacement of stubs and placeholders identified in the 0.1.9 deep co
 Based on benchmark results and code review from 2026-04-26 testing session:
 
 ### Critical Bug Fixes
-1. **VectorSearchRequest Missing Mode Field**: The `mode` field was missing from `VectorSearchRequest` struct, causing all search modes (hybrid, sparse, filtered, byid) to return 0 QPS. Fixed by:
-   - Adding `Mode string` field to `internal/core/query.go`
-   - Adding mode parsing in `internal/query/zero_alloc_vector_search.go`
-   - Adding mode handling in `internal/store/vector_search_action.go`
-   - **Recommendation**: Add comprehensive test coverage for all search modes in CI
-
-2. **Schema Mismatch on Dimension Change**: Server crashes when ingesting different dimensions (e.g., dim=384 after dim=128) with same dataset name. Root cause: fixed_size_list schema validation rejects schema evolution across dimensions.
-   - **Recommendation**: Either implement schema evolution support OR enforce cleaner cleanup between dimension changes (document current workaround in bench_functional_test.sh)
-
-3. **Search Mode Parsing in TicketQuery**: Mode field was also missing from outer TicketQuery wrapper.
-   - Added `Mode string` to `TicketQuery` struct in `internal/core/query.go`
-   - Added parsing in `internal/query/zero_alloc_parser.go`
+1. **VectorSearchRequest Missing Mode Field**: Fixed.
+2. **Schema Mismatch on Dimension Change**: Documented workaround (restart server).
+3. **Search Mode Parsing in TicketQuery**: Fixed.
 
 ### Performance Observations (dim=128)
 - **Dense Search**: 4,900-6,600 QPS
@@ -205,37 +196,7 @@ Based on benchmark results and code review from 2026-04-26 testing session:
 4. Profile high-dimension (768, 1024, 3072) performance
 5. Ancalagon CUDA benchmarks (currently not enabled)
 
-## Suggestions for Next Release (Performance Optimizations)
+## Performance Optimizations (Completed 2026-04-27)
 
-Based on benchmark results and code review:
-
-### High Priority
-1. **Fix Darwin NEON Distance Kernels**: Cosine NEON kernel fixed in `simd_arm64.go` with proper reduction pattern. Added sanity check wrapper for out-of-range results. Euclidean already works.
-
-2. **Metal Performance Parity**: Batch compute kernel already exists in `metal_gpu_optimized.go` with 32-query threshold. Added MTLBuffer pooling in `internal/gpu/memory/memory_metal_buffer_pool.go`.
-
-3. **Learn Index Benchmarking**: Already implemented in codebase. Need:
-   - Integration into unified_benchmark.py for automated measurement
-   - Profile-guided threshold tuning
-
-### Medium Priority
-4. **Ingest Throughput Optimization**: int8 achieves 345K vec/s vs float32 at 275K. Recommend:
-   - PQ compression during ingest for all integer types
-   - Async commit pipelining
-
-5. **Sparse Index**: Already fastest at 9K-14K QPS. Recommend:
-   - Profile-guided nprobe tuning
-   - BITSET8/16/32 optimized kernels
-
-### Additional Issues Found (2026-04-26)
-
-6. **Benchmark Script Issues**: unified_benchmark.py requires bench-tool with specific flags (-uri, -dim, -dtype, etc.) but cmd/bench_io/main.go has different flags (-mode, -size, -duration). Recommend:
-   - Update bench_io to match benchmark script expectations OR
-   - Update unified_benchmark.py to use SDK directly
-
-7. **Server Auto-Shutdown**: Server sometimes shuts down after ~30s of inactivity. May be related to auto-scaler idle detection.
-
-### Low Priority
-6. **CUDA Support**: Ancalagon has RTX 4060 (8GB). Recommend:
-   - Enable CUDA benchmarks (currently commented out in run_matrix_bench.py)
-   - Profile memory vs throughput tradeoffs
+- [x] NEON Cosine kernel fix (simd_arm64.s)
+- [x] MTLBuffer pooling (memory_metal_buffer_pool.go)

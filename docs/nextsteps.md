@@ -200,3 +200,40 @@ Based on benchmark results and code review from 2026-04-26 testing session:
 
 - [x] NEON Cosine kernel fix (simd_arm64.s)
 - [x] MTLBuffer pooling (memory_metal_buffer_pool.go)
+
+## Dead Code Analysis (2026-04-27)
+
+Analyzed via `go run golang.org/x/tools/cmd/deadcode`:
+
+| Code | Files | Usage Count | Status |
+|------|-------|------------|--------|
+| AdaptiveChunkStrategy | internal/flight/ | 33 refs | **LIVE** - Used in store streaming |
+| CircuitBreaker | internal/breaker/, internal/store/ | 222 refs | **LIVE** - Used in HNSW, peer replicator |
+| NamespaceCacheManager | internal/cache/ | 7 refs | **DEAD** - Not called anywhere |
+| GPU Mock Index | internal/gpu/mock_index.go | tests only | **STUB** - Kept for testing |
+
+### Dead Code Plan
+
+#### 1. NamespaceCacheManager (internal/cache/)
+- **Utility**: Namespaced caching for query results
+- **Current**: 0 production usages
+- **Scope to make useful**: 
+  - Add to query server for result caching
+  - Add TTL-based invalidation for hot datasets
+  - Estimate: 2-4 hours
+
+**Action**: Remove - not enough value for effort
+
+#### 2. CircuitBreaker (internal/breaker/)
+- **Status**: ALREADY LIVE ✅
+- **Usage**: 222 references across HNSW, peer replicator
+- **Action**: Keep as-is
+
+#### 3. AdaptiveChunkStrategy (internal/flight/)
+- **Status**: ALREADY LIVE ✅  
+- **Usage**: 33 references in store streaming
+- **Action**: Keep as-is
+
+#### 4. GPU Mock Index (internal/gpu/mock_index.go)
+- **Status**: STUB for testing
+- **Action**: Keep for unit/fuzz tests (required)

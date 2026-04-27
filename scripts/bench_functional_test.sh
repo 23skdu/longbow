@@ -8,7 +8,7 @@ kill -9 $(lsof -t -i :3000) 2>/dev/null || true
 rm -rf ./data
 
 echo "=== Starting Longbow Server ==="
-nohup ./bin/longbow > /tmp/longbow.log 2>&1 &
+nohup ./bin/longbow-server > /tmp/longbow.log 2>&1 &
 SERVER_PID=$!
 echo "Server PID: $SERVER_PID"
 
@@ -42,10 +42,17 @@ echo "=== Test 1: dim=128 scale=1000 ==="
 
 echo ""
 echo "=== Test 2: dim=384 scale=1000 ==="
+rm -rf ./data
+./bin/longbow-server > /tmp/longbow2.log 2>&1 &
+sleep 2
 ./bin/bench-tool -mode vec -dim 384 -scale 1000 -queries 100 -search-modes dense
 
 echo ""
 echo "=== Test 3: dim=768 scale=1000 ==="
+rm -rf ./data
+pkill -f longbow-server; sleep 1
+./bin/longbow-server > /tmp/longbow3.log 2>&1 &
+sleep 2
 ./bin/bench-tool -mode vec -dim 768 -scale 1000 -queries 100 -search-modes dense
 
 echo ""

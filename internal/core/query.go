@@ -155,6 +155,7 @@ type TicketQuery struct {
 	GeoSearch       *GeoSearchRequest        `json:"geo_search,omitempty"`
 	TemporalSearch  *TemporalSearchRequest   `json:"temporal_search,omitempty"`
 	CTEs            []CTE                    `json:"ctes,omitempty"`
+	Mode            string                   `json:"mode,omitempty"` // search mode: dense, sparse, filtered, hybrid
 
 	// Backwards compatibility / Direct shortcut fields
 	Vector []float32 `json:"vector,omitempty"`

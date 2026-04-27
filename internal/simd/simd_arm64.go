@@ -223,10 +223,19 @@ func cosineNEON(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
+
+	var result float32
 	if len(a) > 384 {
-		return cosineHighDimNEONKernel(a, b), nil
+		result = cosineHighDimNEONKernel(a, b)
+	} else {
+		result = cosineNEONKernel(a, b)
 	}
-	return cosineNEONKernel(a, b), nil
+
+	// Sanity check - NEON may produce wrong results for certain dims
+	if result < -1.0 || result > 1.0 {
+		return cosineGeneric(a, b)
+	}
+	return result, nil
 }
 
 func euclideanF16NEON(a, b []float16.Num) (float32, error) {

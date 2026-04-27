@@ -15,7 +15,6 @@ bin/
 build/
 dist/
 longbow_server
-bench-tool
 benchtool
 longbow-cli
 cmd/longbow/longbow

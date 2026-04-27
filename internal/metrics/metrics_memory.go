@@ -55,6 +55,38 @@ var (
 		},
 	)
 
+	// ArenaAllocationTotal counts total vector allocations from arena
+	ArenaAllocationTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_arena_allocations_total",
+			Help: "Total number of vector allocations from arena",
+		},
+	)
+
+	// ArenaHitRate tracks arena fast-path utilization
+	ArenaHitRate = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_arena_hit_rate",
+			Help: "Arena fast-path hit rate (0-1, higher is better)",
+		},
+	)
+
+	// ArenaBytesAllocated tracks total bytes allocated from arena
+	ArenaBytesAllocated = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_arena_bytes_allocated",
+			Help: "Total bytes allocated from arena",
+		},
+	)
+
+	// ArenaSlabAllocations counts slab allocations
+	ArenaSlabAllocations = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_arena_slab_allocations_total",
+			Help: "Total number of slab allocations in arena",
+		},
+	)
+
 	// AdjacencyPaddingBytes tracks bytes used for alignment padding
 	AdjacencyPaddingBytes = promauto.NewCounter(
 		prometheus.CounterOpts{

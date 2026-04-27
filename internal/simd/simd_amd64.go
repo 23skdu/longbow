@@ -131,28 +131,34 @@ func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32)
 		return euclideanBatchGeneric(query, vectors, results)
 	}
 
-	for idx, v := range vectors {
+	n := len(vectors)
+	qLen := len(query)
+	qPtr := unsafe.Pointer(&query[0])
+	i := 0
+
+	for ; i <= n-4; i += 4 {
+		euclideanVertical4AVX2(
+			qPtr,
+			unsafe.Pointer(&vectors[i][0]),
+			unsafe.Pointer(&vectors[i+1][0]),
+			unsafe.Pointer(&vectors[i+2][0]),
+			unsafe.Pointer(&vectors[i+3][0]),
+			qLen,
+			unsafe.Pointer(&results[i]),
+		)
+	}
+
+	for ; i < n; i++ {
+		v := vectors[i]
 		if v == nil || len(query) != len(v) {
-			results[idx] = math.MaxFloat32
+			results[i] = math.MaxFloat32
 			continue
 		}
-
-		var sum float32
-		n := len(query)
-		i := 0
-
-		for ; i <= n-8; i += 8 {
-			sum += euclidean8AVX2(
-				unsafe.Pointer(&query[i]),
-				unsafe.Pointer(&v[i]),
-			)
+		d, err := euclideanAVX2(query, v)
+		if err != nil {
+			return err
 		}
-
-		for ; i < n; i++ {
-			d := query[i] - v[i]
-			sum += d * d
-		}
-		results[idx] = float32(math.Sqrt(float64(sum)))
+		results[i] = d
 	}
 	return nil
 }
@@ -238,12 +244,29 @@ func dotBatchAVX2(query []float32, vectors [][]float32, results []float32) error
 	if !features.HasAVX2 {
 		return dotBatchGeneric(query, vectors, results)
 	}
-	for idx, v := range vectors {
-		d, err := dotAVX2(query, v)
+	n := len(vectors)
+	qLen := len(query)
+	qPtr := unsafe.Pointer(&query[0])
+	i := 0
+
+	for ; i <= n-4; i += 4 {
+		dotVertical4AVX2(
+			qPtr,
+			unsafe.Pointer(&vectors[i][0]),
+			unsafe.Pointer(&vectors[i+1][0]),
+			unsafe.Pointer(&vectors[i+2][0]),
+			unsafe.Pointer(&vectors[i+3][0]),
+			qLen,
+			unsafe.Pointer(&results[i]),
+		)
+	}
+
+	for ; i < n; i++ {
+		d, err := dotAVX2(query, vectors[i])
 		if err != nil {
 			return err
 		}
-		results[idx] = d
+		results[i] = d
 	}
 	return nil
 }
@@ -253,12 +276,29 @@ func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) er
 	if !features.HasAVX2 {
 		return cosineBatchGeneric(query, vectors, results)
 	}
-	for idx, v := range vectors {
-		d, err := cosineAVX2(query, v)
+	n := len(vectors)
+	qLen := len(query)
+	qPtr := unsafe.Pointer(&query[0])
+	i := 0
+
+	for ; i <= n-4; i += 4 {
+		cosineVertical4AVX2(
+			qPtr,
+			unsafe.Pointer(&vectors[i][0]),
+			unsafe.Pointer(&vectors[i+1][0]),
+			unsafe.Pointer(&vectors[i+2][0]),
+			unsafe.Pointer(&vectors[i+3][0]),
+			qLen,
+			unsafe.Pointer(&results[i]),
+		)
+	}
+
+	for ; i < n; i++ {
+		d, err := cosineAVX2(query, vectors[i])
 		if err != nil {
 			return err
 		}
-		results[idx] = d
+		results[i] = d
 	}
 	return nil
 }
@@ -270,6 +310,12 @@ func euclidean8AVX2(a, b unsafe.Pointer) float32
 
 //go:noescape
 func euclideanVertical4AVX2(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
+
+//go:noescape
+func cosineVertical4AVX2(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
+
+//go:noescape
+func dotVertical4AVX2(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
 
 //go:noescape
 func prefetchNTA(p unsafe.Pointer)

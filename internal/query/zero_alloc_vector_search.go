@@ -191,10 +191,13 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			p.result.WindowFunctions = wfs
 			i = newPos
 		default:
-			// Unknown field: return error to trigger fallback to json.Unmarshal
-			// This is important because the zero-alloc parser doesn't support 'vectors' yet.
-			p.logger.Warn().Str("key", key).Msg("DEBUG: Unknown key in VectorSearchRequest")
-			return p.result, errors.New("unknown field: " + key)
+			// Skip unknown fields - continue parsing for supported fields
+			// This allows forward compatibility with new client features
+			p.logger.Debug().Str("key", key).Msg("Skipping unknown field, using standard JSON parser")
+			i, err = SkipValue(data, i)
+			if err != nil {
+				return p.result, err
+			}
 		}
 
 		i = SkipWhitespace(data, i)

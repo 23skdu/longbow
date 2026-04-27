@@ -1,6 +1,3 @@
-//go:build !gpu || !darwin || !arm64
-// +build !gpu !darwin !arm64
-
 package cache
 
 import (
@@ -31,6 +28,10 @@ func (c *QueryCache[T]) Get(key string) (T, bool) {
 	return val, ok
 }
 
+func (c *QueryCache[T]) GetInt(key int) (T, bool) {
+	return c.Get(fmt.Sprintf("%d", key))
+}
+
 func (c *QueryCache[T]) GetUint64(key uint64) (T, bool) {
 	return c.Get(fmt.Sprintf("%d", key))
 }
@@ -42,8 +43,16 @@ func (c *QueryCache[T]) Set(key string, val T) {
 	c.expires[key] = time.Now().Add(c.ttl)
 }
 
+func (c *QueryCache[T]) SetInt(key int, val T) {
+	c.Set(fmt.Sprintf("%d", key), val)
+}
+
 func (c *QueryCache[T]) Put(key string, val T) {
 	c.Set(key, val)
+}
+
+func (c *QueryCache[T]) PutInt(key int, val T) {
+	c.SetInt(key, val)
 }
 
 func (c *QueryCache[T]) PutUint64(key uint64, val T) {

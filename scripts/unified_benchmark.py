@@ -2001,9 +2001,12 @@ class BenchmarkRunner:
         if self.args.mode == "deletion":
             self.execute_deletion()
             return
-        if self.args.mode in ["graphrag", "recommend", "geo", "temporal"]:
+        if self.args.mode == "temporal":
+            # Temporal requires Python SDK with temporal features
+            self.execute_temporal()
+            return
+        if self.args.mode in ["graphrag", "recommend", "geo"]:
             # These are now natively supported in the Go bench-tool
-            # We skip the Python-heavy execute_* functions to get raw engine results
             pass
         else:
             if self.args.mode == "exchange":

@@ -141,18 +141,18 @@ class BenchmarkRunner:
         return path
 
     def get_bench_tool(self):
-        """Get bench-tool. Prefers longbow-cli as it supports all required operations"""
-        # First try CLI (primary - supports all search modes)
-        cli_path = self.get_cli_tool()
-        if cli_path and os.path.exists(cli_path):
-            return cli_path
-        # Fall back to bench-tool
+        """Get benchmark tool. Prefers bench-tool which supports vec benchmark mode."""
+        # First try bench-tool (has full vec benchmark mode)
         for name in ["bench-tool", "benchmark-tool"]:
             path = os.path.join(self.bin_dir, name)
             if os.path.exists(path):
                 return path
+        # Fall back to longbow-cli
+        cli_path = self.get_cli_tool()
+        if cli_path and os.path.exists(cli_path):
+            return cli_path
         # Return CLI path even if doesn't exist yet (will be built)
-        return cli_path
+        return os.path.join(self.bin_dir, "longbow-cli")
 
     def get_cli_tool(self):
         """Get the longbow-cli binary path"""
@@ -396,7 +396,10 @@ class BenchmarkRunner:
             tq_bits = 8
 
         # Run benchmark-tool (does ingest + search + all modes)
-        cmd = f"{bench_tool} --uri {self.server_addr} --dim {dim} --dtype {dtype} --tq-bits {tq_bits} --scale {batch_size} --queries {self.args.queries} --dataset {label} --json {json_file}"
+        uri = self.server_addr
+        if not uri.startswith("grpc://"):
+            uri = f"grpc://{self.server_addr}"
+        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -dataset {label} -json {json_file}"
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)
         

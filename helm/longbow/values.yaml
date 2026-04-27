@@ -53,15 +53,15 @@ hnsw:
   efConstruction: 400
   alpha: 1.0
   keepPruned: false
-  sq8Enabled: false
-  sq4Enabled: false
-  sq2Enabled: false
-  bqEnabled: false
-  pqEnabled: false
+  sq8Enabled: true      # SQ8 quantization enabled by default
+  sq4Enabled: true     # SQ4 quantization enabled by default
+  sq2Enabled: false   # SQ2 optional
+  bqEnabled: false    # Binary quantization optional
+  pqEnabled: true     # Product quantization enabled by default
   turboQuantEnabled: true
   learnableBitWidthEnabled: true
-  geoSearchEnabled: false
-  float16Enabled: false
+  geoSearchEnabled: true   # Geo-spatial search enabled by default
+  float16Enabled: true    # Float16 vectors enabled by default
   refinementFactor: 1.0
   useDisk: false
 
@@ -106,10 +106,10 @@ memory:
 
 # GPU Configuration
 gpu:
-  enabled: false
+  enabled: true           # GPU enabled by default for better performance
   deviceId: 0
-  backend: "auto" # auto, cuda, metal
-  cuvsEnabled: false
+  backend: "auto"       # auto-detect: cuda, metal
+  cuvsEnabled: true      # cuVS enabled by default for GPU-accelerated search
 
 # Environment Variables Configuration
 env:
@@ -162,9 +162,9 @@ config:
 
 # Hybrid Search Configuration
 hybrid:
-  enabled: false
-  textColumns: "" # Comma-separated list of columns to index for keyword search
-  alpha: 0.5 # Default weight (0.5 = equal dense/sparse)
+  enabled: true           # Hybrid search enabled by default
+  textColumns: ""        # Comma-separated list of columns to index for keyword search
+  alpha: 0.5           # Default weight (0.5 = equal dense/sparse)
 
 # Gossip Mesh Configuration
 # SWIM-based failure detection and membership protocol
@@ -174,10 +174,10 @@ gossip:
   port: 7946
   # Protocol timing parameters
   protocolPeriod: "200ms" # How often to probe a random member
-  interval: "200ms" # Added to satisfy config
-  ackTimeout: "100ms" # Timeout for direct ping acknowledgment
+  interval: "200ms"    # Added to satisfy config
+  ackTimeout: "100ms"   # Timeout for direct ping acknowledgment
   suspicionTimeout: "5s" # Time before suspect member marked dead
-  advertiseAddr: "" # Set to Pod IP in K8s via downward API
+  advertiseAddr: ""     # Set to Pod IP in K8s via downward API
   # Discovery configuration
   discovery:
     # Discovery provider: static, dns, or k8s
@@ -186,7 +186,7 @@ gossip:
     # Example: "longbow-0.longbow:7946,longbow-1.longbow:7946"
     staticPeers: ""
     # For k8s discovery: namespace and label selector
-    namespace: "" # Empty = same namespace as pod
+    namespace: ""    # Empty = same namespace as pod
     labelSelector: "app.kubernetes.io/name=longbow"
     # For DNS discovery: SRV record to query
     dnsRecord: "_gossip._udp.longbow.default.svc.cluster.local"
@@ -203,20 +203,20 @@ sharding:
 # Learned Index Configuration
 # ML-based index selection using learned index predictors
 learnedIndex:
-  enabled: false
+  enabled: true         # Learned index enabled by default
   minSamples: 100
   confidenceThreshold: 0.7
   updateInterval: "1h"
 
 # SIMD Configuration
 simd:
-  implementation: "" # auto-detect: avx512, avx2, neon, generic
+  implementation: ""    # auto-detect: avx512, avx2, neon, generic
   fallbackEnabled: true
-  jitEnabled: false
+  jitEnabled: true     # JIT compilation enabled by default for better performance
 
 # PQ (Product Quantization) Configuration
 pq:
-  enabled: false
+  enabled: true      # PQ enabled by default for better compression
   m: 16
   k: 256
   minVectors: 1000
@@ -239,14 +239,27 @@ indexing:
     enabled: true
     threshold: 1024
   workerPool:
-    size: 0 # 0 = auto-detect CPU count
+    size: 0          # 0 = auto-detect CPU count
+
+# Compaction Configuration
+compaction:
+  enabled: true
+  interval: "30s"
+  targetBatchSize: 10000
+  minBatches: 10
+
+# Auto-Sharding Configuration
+autoSharding:
+  enabled: true
+  threshold: 10000
+  splitThreshold: 65536
 
 # ONNX Runtime Configuration (Legacy/Native)
 onnx:
-  enabled: false
-  ep: "CPU" # CPU, CUDA, CoreML, TensorRT
+  enabled: true           # ONNX runtime enabled by default
+  ep: "CUDA"           # Use CUDA by default for GPU acceleration
   intraOpNumThreads: 0 # 0 = auto
-  interOpNumThreads: 0 # 0 = auto
+  interOpNumThreads: 0   # 0 = auto
 
 # Ollama Integration
 # Local LLM server for embedding-based index prediction
@@ -293,16 +306,16 @@ mq:
 
 # Temporal Versioning & Retention
 temporal:
-  enabled: false
-  versionHistory: false
+  enabled: true         # Temporal index enabled by default
+  versionHistory: true # Version history tracking enabled by default
   maxVersions: 10
   retentionPeriod: "168h" # 7 days
   ttl:
-    enabled: false
+    enabled: true      # TTL enabled by default for automatic cleanup
     default: "720h" # 30 days
   cleanupInterval: "1h"
   aggregation:
-    enabled: false
+    enabled: true      # Aggregation enabled by default
     maxBuckets: 1000
 
 # S3 Backend for Snapshots

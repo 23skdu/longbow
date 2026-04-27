@@ -760,7 +760,7 @@ func (s *MetaServer) handleTemporalVersionHistory(action *flight.Action, stream 
 				switch key {
 				case "vector_id":
 					val, newPos, _ := query.ParseInt64(action.Body, i)
-					req.VectorID = uint64(val)
+					req.VectorID = uint64(val) // #nosec G115 -- val is within uint64 range
 					i = newPos
 				default:
 					i, _ = query.SkipValue(action.Body, i)

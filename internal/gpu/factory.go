@@ -436,5 +436,5 @@ func float16ToFloat32(v uint16) float32 {
 
 // float32FromBits converts uint32 bits to float32
 func float32FromBits(bits uint32) float32 {
-	return *(*float32)(unsafe.Pointer(&bits))
+	return *(*float32)(unsafe.Pointer(&bits)) // #nosec G103 -- intentional unsafe for type punning
 }

@@ -140,7 +140,7 @@ func (h *HNSWPluggableAdapter) Save(path string) error {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- path is internal, not user-controlled
 	if err != nil {
 		return err
 	}
@@ -169,7 +169,7 @@ func (h *HNSWPluggableAdapter) Load(path string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 -- path is internal, not user-controlled
 	if err != nil {
 		return err
 	}
@@ -242,7 +242,7 @@ func (a *PluggableInternalAdapter) AddByRecord(ctx context.Context, rec arrow.Re
 	copy(vec, values[start:start+listSize])
 
 	// Use sequential ID for simplicity
-	id := uint64(a.inner.Size())
+	id := uint64(a.inner.Size()) // #nosec G115 -- Size() returns int within uint64 range
 	err := a.inner.Add(id, vec)
 	return uint32(id), err // #nosec G115
 }

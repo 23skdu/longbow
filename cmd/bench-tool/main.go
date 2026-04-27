@@ -293,7 +293,7 @@ func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype s
 
 	// Randomize vector in-place
 	for i := 0; i < queryLen; i++ {
-		s.vector[i] = rand.Float32()
+		s.vector[i] = rand.Float32() // #nosec G404 -- non-cryptographic use for benchmark data
 	}
 
 	switch mode {
@@ -709,8 +709,8 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 	geoValBldr.Reserve(count * 2)
 	for i := 0; i < count; i++ {
 		geoBldr.Append(true)
-		geoValBldr.Append(40.7128 + rand.Float64()*0.1) // New York-ish
-		geoValBldr.Append(-74.0060 + rand.Float64()*0.1)
+		geoValBldr.Append(40.7128 + rand.Float64()*0.1) // #nosec G404 -- non-cryptographic use for benchmark data
+		geoValBldr.Append(-74.0060 + rand.Float64()*0.1) // #nosec G404 -- non-cryptographic use for benchmark data
 	}
 	geoArr := geoBldr.NewArray()
 	defer geoArr.Release()

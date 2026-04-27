@@ -236,7 +236,7 @@ func (pr *ParallelRecordReader) decodePayload(data *flight.FlightData) (arrow.Re
 	
 	if !hasPrefix {
 		_ = binary.Write(&streamBuf, binary.LittleEndian, uint32(0xFFFFFFFF))
-		_ = binary.Write(&streamBuf, binary.LittleEndian, uint32(len(data.DataHeader)))
+		_ = binary.Write(&streamBuf, binary.LittleEndian, uint32(len(data.DataHeader))) // #nosec G115 -- intentional conversion for binary write
 	}
 	streamBuf.Write(data.DataHeader)
 	streamBuf.Write(data.DataBody)

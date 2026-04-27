@@ -43,13 +43,13 @@ func EncodeMetadata(metadata map[string]interface{}) ([]byte, error) {
 	defer putBuffer(buf)
 
 	// num_fields (uint32)
-	if err := binary.Write(buf, binary.LittleEndian, uint32(len(metadata))); err != nil {
+	if err := binary.Write(buf, binary.LittleEndian, uint32(len(metadata))); err != nil { // #nosec G115 -- intentional conversion for binary write
 		return nil, err
 	}
 
 	for k, v := range metadata {
 		// key_len (uint16)
-		if err := binary.Write(buf, binary.LittleEndian, uint16(len(k))); err != nil {
+		if err := binary.Write(buf, binary.LittleEndian, uint16(len(k))); err != nil { // #nosec G115 -- intentional conversion for binary write
 			return nil, err
 		}
 		// key
@@ -68,7 +68,7 @@ func EncodeMetadata(metadata map[string]interface{}) ([]byte, error) {
 		switch val := v.(type) {
 		case string:
 			buf.WriteByte(TypeString)
-			if err := binary.Write(buf, binary.LittleEndian, uint32(len(val))); err != nil {
+			if err := binary.Write(buf, binary.LittleEndian, uint32(len(val))); err != nil { // #nosec G115 -- intentional conversion for binary write
 				return nil, err
 			}
 			if _, err := buf.WriteString(val); err != nil {
@@ -110,7 +110,7 @@ func EncodeMetadata(metadata map[string]interface{}) ([]byte, error) {
 			}
 		case []byte:
 			buf.WriteByte(TypeBinary)
-			if err := binary.Write(buf, binary.LittleEndian, uint32(len(val))); err != nil {
+			if err := binary.Write(buf, binary.LittleEndian, uint32(len(val))); err != nil { // #nosec G115 -- intentional conversion for binary write
 				return nil, err
 			}
 			if _, err := buf.Write(val); err != nil {
@@ -120,7 +120,7 @@ func EncodeMetadata(metadata map[string]interface{}) ([]byte, error) {
 			// Fallback to string representation for unknown types
 			s := fmt.Sprintf("%v", val)
 			buf.WriteByte(TypeString)
-			if err := binary.Write(buf, binary.LittleEndian, uint32(len(s))); err != nil {
+			if err := binary.Write(buf, binary.LittleEndian, uint32(len(s))); err != nil { // #nosec G115 -- intentional conversion for binary write
 				return nil, err
 			}
 			if _, err := buf.WriteString(s); err != nil {

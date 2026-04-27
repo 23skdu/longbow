@@ -299,5 +299,5 @@ func float16ToFloat32Mock(v uint16) float32 {
 
 // float32FromBitsMock converts uint32 bits to float32
 func float32FromBitsMock(bits uint32) float32 {
-	return *(*float32)(unsafe.Pointer(&bits))
+	return *(*float32)(unsafe.Pointer(&bits)) // #nosec G103 -- intentional unsafe for type punning
 }

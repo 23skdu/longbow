@@ -272,7 +272,8 @@ func initializeDispatch() {
 		dotProduct3072Impl = dispatch.DotProduct3072
 		dotProduct128Impl = dispatch.DotProduct128
 		euclideanDistanceBatchImpl = euclideanBatchNEON
-		cosineDistanceBatchImpl = cosineBatchNEON
+		cosineDistanceImpl = dispatch.CosineDistance // Temp fallback: NEON kernel has bugs
+		cosineDistanceBatchImpl = cosineBatchGeneric // Temp fallback
 		dotProductBatchImpl = dotBatchNEON
 		l2SquaredImpl = l2SquaredNEON
 		prefetchImpl = prefetchGeneric
@@ -281,8 +282,8 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32Neon
 		matchFloat64Impl = matchFloat64Neon
 		adcDistanceBatchImpl = adcBatchGeneric
-		euclideanDistanceVerticalBatchImpl = euclideanBatchNEON
-		cosineDistanceBatchImpl = cosineBatchNEON
+		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric // Temp fallback for vertical batch
+		cosineDistanceBatchImpl = cosineBatchGeneric // Temp fallback
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric
 		euclideanDistanceF16BatchImpl = euclideanF16BatchGeneric
 		andBytesImpl = andBytesGeneric

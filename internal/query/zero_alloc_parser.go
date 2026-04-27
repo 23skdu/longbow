@@ -180,6 +180,13 @@ func (p *ZeroAllocTicketParser) Parse(data []byte) (TicketQuery, error) {
 			}
 			p.result.K = int(val)
 			i = newPos
+		case "mode":
+			val, newPos, err := ParseString(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.Mode = val
+			i = newPos
 		case "geo_search":
 			if i+4 <= len(data) && string(data[i:i+4]) == "null" {
 				i += 4

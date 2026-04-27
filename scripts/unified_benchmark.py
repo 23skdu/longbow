@@ -59,7 +59,6 @@ DTYPE_BYTES = {
 
 def run_command(cmd, env=None, capture_output=True, timeout=None):
     try:
-        print(f"  [DEBUG] Executing: {cmd}")
         result = subprocess.run(
             cmd,
             env=env,

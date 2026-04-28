@@ -601,8 +601,14 @@ func (h *ArrowHNSW) SetOPQEncoder(encoder any) {
 		data.PQEnabled = true
 		data.PQM = m
 
+		// Force re-allocation if current offset is 0 (placeholder from dims=0 call)
+		if len(data.VectorsPQ) > 0 && data.VectorsPQ[0] == 0 && data.Dims > 0 {
+			// Re-allocate with proper dims
+			data.VectorsPQ = nil // Reset to trigger real allocation
+		}
+
 		// Explicitly ensure PQ chunk 0 if capacity > 0
-		if data.Capacity > 0 {
+		if data.Capacity > 0 && data.Dims > 0 {
 			if err := data.EnsureChunk(0, 0, data.Dims); err != nil {
 				return
 			}

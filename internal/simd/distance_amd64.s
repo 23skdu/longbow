@@ -115,6 +115,6 @@ dot_loop8:
 
 dot_tail:
     VEXTRACTF128    $1, Y0, X0
-    VADDPS  X0, Y0, Y0
-    VMOVSS  Y0, (R11)
+    VADDPS  X0, X0, X0
+    VMOVSS  X0, (R11)
     RET

@@ -47,10 +47,8 @@ func detectCPU() {
 		HasNEON:       hasNEON,
 	}
 
-	// Select best implementation with fallback logic
+	// Select best implementation with fallback logic (AVX2 only for x86_64)
 	switch {
-	case features.HasAVX512:
-		implementation = "avx512"
 	case features.HasAVX2:
 		// Additional check for AVX2 prerequisites
 		if cpuid.CPU.Supports(cpuid.FMA3) && cpuid.CPU.Supports(cpuid.BMI1) {

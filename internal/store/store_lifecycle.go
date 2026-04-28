@@ -65,6 +65,11 @@ func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 	}
 }
 
+const (
+	MinIndexingWorkers    = 2
+	MinIngestionWorkers = 2
+)
+
 // StartLifecycleManager starts the lifecycle manager background task.
 func (s *VectorStore) StartLifecycleManager(ctx context.Context) {
 	s.logger.Info().Msg("Starting formalized background task scheduler")
@@ -85,9 +90,32 @@ func (s *VectorStore) StartLifecycleManager(ctx context.Context) {
 				// Perform maintenance
 				s.enforceMemoryLimits()
 				s.performGlobalCompactionCheck()
+				s.maintainMinimumWorkers(ctx)
 			}
 		}
 	}()
+}
+
+// maintainMinimumWorkers ensures at least minimum workers are running
+func (s *VectorStore) maintainMinimumWorkers(ctx context.Context) {
+	s.workerMu.Lock()
+	currIndexing := len(s.indexingWorkerCancels)
+	currIngestion := len(s.ingestionWorkerCancels)
+	s.workerMu.Unlock()
+
+	// Ensure minimum indexing workers
+	if currIndexing < MinIndexingWorkers {
+		needed := MinIndexingWorkers - currIndexing
+		s.logger.Warn().Int("current", currIndexing).Int("needed", needed).Msg("Indexing workers below minimum, spawning")
+		s.StartIndexingWorkers(needed)
+	}
+
+	// Ensure minimum ingestion workers
+	if currIngestion < MinIngestionWorkers {
+		needed := MinIngestionWorkers - currIngestion
+		s.logger.Warn().Int("current", currIngestion).Int("needed", needed).Msg("Ingestion workers below minimum, spawning")
+		s.StartIngestionWorkers(needed)
+	}
 }
 
 // performGlobalCompactionCheck initiates compaction across all datasets if needed

@@ -165,8 +165,8 @@ All P0 performance features below are IMPLEMENTED in codebase:
 
 **Subtasks:**
 1. [x] Optimize IVFOPQIndex.Search for batch queries (existing: SearchBatch) ✅
-2. [ ] Add OPQ encoder warmup metric
-3. [ ] Implement GPU offload path for encoding
+2. [x] Add OPQ encoder warmup metric ✅ (existing: OPQEncoderWarmupDurationSeconds)
+3. [x] Implement GPU offload path for encoding ✅ (existing: EncodePQOnGPU)
 4. [x] Add recall test: TestIVFOPQ_RecallK ✅
 5. [x] Add benchmark: BenchmarkIVFOPQ_1M_3072dim ✅
 

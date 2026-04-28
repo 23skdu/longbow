@@ -15,7 +15,6 @@ import (
 )
 
 func TestArrowHNSW_PQ_Integration(t *testing.T) {
-	t.Skip("Skipping: PQ storage allocation issue - needs investigation (Issue 3)")
 	// Setup
 	dim := 128
 	count := 1000

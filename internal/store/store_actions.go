@@ -833,11 +833,15 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 
 		// Check total size of batch
 		totalBytes := int64(0)
+		totalRows := int64(0)
 		for _, b := range batch {
 			totalBytes += estimateBatchSize(b)
+			totalRows += b.NumRows()
 		}
 
+		startFlush := time.Now()
 		metrics.DoPutBatchSizeBytes.Observe(float64(totalBytes))
+		metrics.DoPutBatchSizeVectors.Observe(float64(totalRows))
 
 		// Optimization: Concatenate small batches into one large batch
 		// to reduce WAL overhead and lock contention.
@@ -865,6 +869,8 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		if err != nil {
 			return err
 		}
+
+		metrics.DoPutBatchLatencySeconds.Observe(time.Since(startFlush).Seconds())
 
 		// Clear batch slice
 		for _, b := range batch {

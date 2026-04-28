@@ -1826,8 +1826,8 @@ func (h *ArrowHNSW) generateLevel() int {
 
 // AddBatch implements VectorIndex.
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
-	// Bulk optimization path temporarily disabled for 0.1.9-rc1 stability
-	if false && len(rowIdxs) >= 1000 && !h.IsSharded() {
+	// Bulk optimization path - only use for large batches to avoid individual gRPC overhead
+	if len(rowIdxs) >= 100 && !h.IsSharded() {
 		n := len(rowIdxs)
 		startID := uint32(h.nextID.Add(int64(n)) - int64(n)) // #nosec G115
 

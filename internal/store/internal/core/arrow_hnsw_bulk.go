@@ -363,11 +363,11 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				}
 
 				// 4. PQ Ingestion
-				if h.config.PQEnabled && h.pqEncoder != nil {
+				if h.config.PQEnabled && h.oopqEncoder != nil {
 					pqChunk := data.GetVectorsPQChunk(cID)
 					if pqChunk != nil {
 						if vf32, ok := v.([]float32); ok {
-							switch enc := h.pqEncoder.(type) {
+							switch enc := h.oopqEncoder.(type) {
 							case *pq.PQEncoder:
 								code, err := enc.Encode(vf32)
 								if err == nil {

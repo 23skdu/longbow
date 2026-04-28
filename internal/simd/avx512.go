@@ -1,6 +1,5 @@
-//go:build amd64 && avx512
+//go:build amd64
 // +build amd64
-// +build avx512
 
 package simd
 

@@ -749,6 +749,15 @@ func run() error {
 	<-ctx.Done()
 	logger.Info().Msg("Received shutdown signal, initiating graceful shutdown")
 
+	// Stop workers explicitly (ensures they all shut down, not just back to min)
+	totalIndexing := runtime.NumCPU()
+	totalIngestion := cfg.IngestionWorkerCount
+	if totalIngestion <= 0 {
+		totalIngestion = runtime.NumCPU()
+	}
+	vectorStore.StopIndexingWorkers(totalIndexing)
+	vectorStore.StopIngestionWorkers(totalIngestion)
+
 	// Shutdown Sequence
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()

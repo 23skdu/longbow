@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/assert"
@@ -140,17 +141,28 @@ func TestPQ_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	exactDistSq := exactDist * exactDist
 
-	// ADC Distance
-	table, err := hnsw.pqEncoder.BuildADCTable(queryVec)
-	require.NoError(t, err)
-	pqDist, err := hnsw.pqEncoder.ADCDistance(table, code)
-	require.NoError(t, err)
-
-	t.Logf("Exact DistSq: %.4f, PQ ADC Dist: %.4f", exactDistSq, pqDist)
-
-	// They should be somewhat close, but hard to assert strictly without loose tolerance.
-	// Just asserting no error and non-zero (unless identical).
-	if exactDistSq > 0.0001 {
-		assert.Greater(t, pqDist, float32(0.0))
+	// ADC Distance using type assertion
+	enc := hnsw.InternalGetPQEncoder()
+	require.NotNil(t, enc, "PQ encoder should be set")
+	
+	switch e := enc.(type) {
+	case *pq.PQEncoder:
+		table, err := e.BuildADCTable(queryVec)
+		require.NoError(t, err)
+		pqDist, err := e.ADCDistance(table, code)
+		require.NoError(t, err)
+		t.Logf("Exact DistSq: %.4f, PQ ADC Dist: %.4f", exactDistSq, pqDist)
+		if exactDistSq > 0.0001 {
+			assert.Greater(t, pqDist, float32(0.0))
+		}
+	case *pq.OPQEncoder:
+		table, err := e.BuildADCTable(queryVec)
+		require.NoError(t, err)
+		pqDist, err := e.ADCDistance(table, code)
+		require.NoError(t, err)
+		t.Logf("Exact DistSq: %.4f, OPQ ADC Dist: %.4f", exactDistSq, pqDist)
+		if exactDistSq > 0.0001 {
+			assert.Greater(t, pqDist, float32(0.0))
+		}
 	}
 }

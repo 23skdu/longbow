@@ -23,13 +23,8 @@ func euclideanSQ8AVX2(a, b []byte) (int32, error) {
 }
 
 func euclideanSQ8AVX512(a, b []byte) (int32, error) {
-	if len(a) == 0 {
-		return 0, nil
-	}
-	if !features.HasAVX512 {
-		return euclideanSQ8AVX2(a, b)
-	}
-	return euclideanSQ8AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+	// Use AVX2 kernel as fallback (AVX512 assembly is in separate file)
+	return euclideanSQ8AVX2(a, b)
 }
 
 //go:noescape

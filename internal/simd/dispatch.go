@@ -101,59 +101,6 @@ func initializeDispatch() {
 	}
 	currentDispatch = dispatch
 	switch implementation {
-	case "avx512":
-		euclideanDistanceImpl = dispatch.EuclideanDistance
-		euclideanDistance384Impl = dispatch.EuclideanDistance384
-		euclideanDistance768Impl = dispatch.EuclideanDistance768
-		euclideanDistance1024Impl = dispatch.EuclideanDistance1024
-		euclideanDistance1536Impl = dispatch.EuclideanDistance1536
-		euclideanDistance3072Impl = dispatch.EuclideanDistance3072
-		euclideanDistance128Impl = dispatch.EuclideanDistance128
-		metrics.SimdDispatchCount.WithLabelValues("avx512").Inc()
-		metrics.SimdStaticDispatchType.Set(3)
-		cosineDistanceImpl = dispatch.CosineDistance
-		dotProductImpl = dispatch.DotProduct
-		dotProduct384Impl = dispatch.DotProduct384
-		dotProduct768Impl = dispatch.DotProduct768
-		dotProduct1024Impl = dispatch.DotProduct1024
-		dotProduct1536Impl = dispatch.DotProduct1536
-		dotProduct3072Impl = dispatch.DotProduct3072
-		dotProduct128Impl = dispatch.DotProduct128
-		euclideanDistanceBatchImpl = euclideanBatchAVX512
-		cosineDistanceBatchImpl = cosineBatchAVX512
-		dotProductBatchImpl = dotBatchAVX512
-		l2SquaredImpl = l2SquaredAVX512
-		prefetchImpl = prefetchNTA
-		matchInt64Impl = matchInt64AVX512
-		matchInt32Impl = matchInt32AVX512
-		matchFloat32Impl = matchFloat32AVX512
-		matchFloat64Impl = matchFloat64AVX512
-		if features.HasVNNI {
-			adcDistanceBatchImpl = adcBatchVNNI
-		} else {
-			adcDistanceBatchImpl = adcBatchAVX512
-		}
-		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX512
-		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX512
-		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX512
-		andBytesImpl = andBytesGeneric
-		euclideanDistanceF16Impl = euclideanF16AVX512
-		cosineDistanceF16Impl = cosineF16AVX512
-		dotProductF16Impl = dotF16AVX512
-		euclideanDistanceFloat64Impl = euclideanFloat64AVX512
-		dotProductFloat64Impl = dotFloat64AVX512
-		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
-		euclideanDistanceInt8Impl = euclideanInt8AVX2
-		dotProductInt8Impl = dotInt8Unrolled4x
-		dotProductUint8Impl = dotUint8Unrolled4x
-		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
-		euclideanDistanceInt16Impl = euclideanInt16AVX2
-		euclideanDistanceUint16Impl = euclideanUint16AVX2
-		dotProductInt16Impl = dotInt16AVX2
-		dotProductUint16Impl = dotUint16AVX2
-		dotProductInt4Impl = dotInt4AVX512
-		dotProductInt2Impl = dotInt2AVX512
-		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 	case "avx2":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384

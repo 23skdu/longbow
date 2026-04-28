@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"math"
 	"math/rand"
 	"testing"
 
@@ -55,4 +56,54 @@ func TestIVFOPQIndex_Empty(t *testing.T) {
 	results, err := idx.SearchVectorsWithBitmap(context.Background(), make([]float32, 8), 5, nil, nil)
 	require.NoError(t, err)
 	assert.Empty(t, results)
+}
+
+func FuzzIVFOPQIndex_Build(f *testing.F) {
+	f.Fuzz(func(t *testing.T, dim int, nlist int, n int) {
+		if dim <= 0 || dim > 8192 || nlist <= 0 || nlist > 512 || n <= 0 || n > 100000 {
+			t.Skip()
+		}
+
+		cfg := IVFOPQConfig{
+			Nlist:         nlist,
+			M:             4,
+			K:             10,
+			Nprobe:        2,
+			OPQIterations: 2,
+		}
+
+		idx, err := NewIVFOPQIndex(dim, cfg)
+		if err != nil {
+			t.Skip()
+		}
+
+		rng := rand.New(rand.NewSource(int64(dim ^ nlist ^ n)))
+		vectors := make([][]float32, n)
+		for i := 0; i < n; i++ {
+			vectors[i] = make([]float32, dim)
+			for j := 0; j < dim; j++ {
+				vectors[i][j] = rng.Float32()
+			}
+		}
+
+		err = idx.Train(vectors)
+		if err != nil {
+			t.Skip()
+		}
+
+		err = idx.Add(context.Background(), vectors)
+		if err != nil {
+			t.Skip()
+		}
+
+		query := vectors[0]
+		results, err := idx.SearchVectorsWithBitmap(context.Background(), query, 5, nil, nil)
+		if err != nil {
+			t.Fatalf("Search failed: %v", err)
+		}
+
+		if len(results) == 0 {
+			t.Fatalf("No results returned")
+		}
+	})
 }

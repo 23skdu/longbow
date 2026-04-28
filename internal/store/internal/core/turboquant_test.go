@@ -125,3 +125,57 @@ func TestTurboQuant_LargeDimensions(t *testing.T) {
 	assert.NoError(t, err)
 	assert.True(t, len(encoded) > 0)
 }
+
+func FuzzTurboQuant_EncodeDecode(f *testing.F) {
+	f.Fuzz(func(t *testing.T, dim int, bits int, seed int64) {
+		if dim <= 0 || dim > 8192 || bits < 2 || bits > 8 {
+			t.Skip()
+		}
+
+		encoder := NewTurboQuantEncoder(dim, bits, seed)
+		rng := rand.New(rand.NewSource(seed))
+
+		vec := make([]float32, dim)
+		for i := 0; i < dim; i++ {
+			vec[i] = rng.Float32()
+		}
+
+		encoded, err := encoder.Encode(vec)
+		if err != nil {
+			t.Skip()
+		}
+
+		decoded, err := encoder.Decode(encoded)
+		if err != nil {
+			t.Fatalf("Decode failed: %v", err)
+		}
+
+		if len(decoded) != dim {
+			t.Fatalf("Dimension mismatch: got %d, want %d", len(decoded), dim)
+		}
+	})
+}
+
+func FuzzTurboQuant_Compression(f *testing.F) {
+	f.Fuzz(func(t *testing.T, dim int, bits int) {
+		if dim <= 0 || dim > 8192 || bits < 2 || bits > 8 {
+			t.Skip()
+		}
+
+		encoder := NewTurboQuantEncoder(dim, bits, 42)
+		vec := make([]float32, dim)
+
+		encoded, err := encoder.Encode(vec)
+		if err != nil {
+			t.Skip()
+		}
+
+		origSize := dim * 4
+		compSize := len(encoded)
+		ratio := float64(origSize) / float64(compSize)
+
+		if ratio < 1.0 {
+			t.Fatalf("Compression ratio too low: %.2fx", ratio)
+		}
+	})
+}

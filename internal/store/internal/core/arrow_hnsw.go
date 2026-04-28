@@ -678,7 +678,11 @@ func (h *ArrowHNSW) commitID(id uint32) {
 
 // Interface implementation: AddByLocation adds a vector by its location
 func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	id := uint32(h.nextID.Add(1) - 1) // Use nextID for allocation // #nosec G115
+	next := h.nextID.Add(1)
+	if next > math.MaxUint32 {
+		return 0, fmt.Errorf("index overflow: nextID %d exceeds uint32 max", next)
+	}
+	id := uint32(next - 1)
 	defer h.commitID(id)
 
 	var vec any
@@ -712,7 +716,11 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 
 // AddByRecord implements VectorIndex.
 func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	id := uint32(h.nextID.Add(1) - 1) // Use nextID for allocation, nodeCount will be updated by InsertWithVector // #nosec G115
+	next := h.nextID.Add(1)
+	if next > math.MaxUint32 {
+		return 0, fmt.Errorf("index overflow: nextID %d exceeds uint32 max", next)
+	}
+	id := uint32(next - 1)
 	defer h.commitID(id)
 
 	var vec any

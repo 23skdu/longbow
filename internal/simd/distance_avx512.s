@@ -2,6 +2,8 @@
 
 #include "textflag.h"
 
+AVX512-optimized distance functions
+
 // ----------------------------------------------------------------------------
 // func l2SquaredAVX512Kernel(a, b unsafe.Pointer, n int) float32
 //

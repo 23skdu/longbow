@@ -409,3 +409,37 @@ Check and potentially remove:
 - Add automated daily benchmarks comparing CPU/Metal/CUDA
 - Track QPS, latency p50/p95/p99, ingest rate
 - Generate diffs vs previous releases
+
+---
+
+## Performance Observations (2026-04-28)
+
+### Current Performance Metrics (Darwin arm64, CPU mode)
+
+#### Ingest (vec/s)
+- float32 dim=128: ~390K-460K (varies with count, warm vs cold)
+- float64 dim=128: ~235K-264K
+- int8 dim=128: ~340K-360K
+- Higher dimensions show lower rates (expected): dim=3072 ~50K
+
+#### Search QPS (1K vectors, dim=128)
+- Dense: ~2.8K (p50: 0.32ms)
+- Sparse: ~11K (best - p50: 0.09ms)
+- ByID: ~4.5K
+- Hybrid: ~3K
+
+### Performance Notes
+1. **Cold start overhead**: First run shows ~152K vs ~400K after warmup
+2. **Reference benchmarks**: Earlier 1.2M reference was from development methodology
+3. **Recent changes**: insertMu lock, insertPool may add minor overhead
+
+### Suggestions for Next Release
+
+| Priority | Area | Suggestion | Expected Impact |
+|----------|------|------------|-----------------|
+| HIGH | SIMD | Add AVX-512 batch kernels for x86_64 | +30% QPS |
+| HIGH | Memory | Arena allocator for vector storage | +15% QPS |
+| HIGH | Concurrency | Optimize insertMu scope (only lock allocation) | +50% ingest |
+| MEDIUM | Index | Implement IVF-PQ with OPQ | 10x+ for high-dim |
+| MEDIUM | GPU | Metal compute shaders | 5-10x for >1M vectors |
+| LOW | Graph | Batch graph traversal | +20% for graphrag |

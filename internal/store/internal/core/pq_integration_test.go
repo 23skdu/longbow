@@ -70,7 +70,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 
 	// Verify Configuration Updated
 	assert.True(t, hnsw.config.PQEnabled, "PQEnabled should be true after training")
-	assert.NotNil(t, hnsw.pqEncoder, "PQEncoder should be initialized")
+	assert.NotNil(t, hnsw.GetOPQEncoder(), "OPQEncoder should be initialized")
 
 	// Verify Backfill
 	gd = hnsw.data.Load()
@@ -142,7 +142,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 	exactDistSq := exactDist * exactDist
 
 	// ADC Distance using type assertion
-	enc := hnsw.InternalGetPQEncoder()
+	enc := hnsw.GetOPQEncoder()
 	require.NotNil(t, enc, "PQ encoder should be set")
 	
 	switch e := enc.(type) {

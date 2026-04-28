@@ -159,9 +159,9 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		}
 	}
 
-	if h.config.PQEnabled && h.pqEncoder != nil {
+	if h.config.PQEnabled && h.oopqEncoder != nil {
 		if v32, ok := vec.([]float32); ok {
-			switch enc := h.pqEncoder.(type) {
+			switch enc := h.oopqEncoder.(type) {
 			case *pq.PQEncoder:
 				code, err := enc.Encode(v32)
 				if err == nil {

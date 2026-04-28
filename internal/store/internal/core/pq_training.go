@@ -65,7 +65,7 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 		}
 	}
 
-	h.pqEncoder = encoder
+	h.oopqEncoder = encoder
 	h.config.PQEnabled = true
 	h.config.PQM = m
 	h.config.PQK = k

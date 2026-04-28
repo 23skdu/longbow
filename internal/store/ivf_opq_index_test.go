@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"math"
 	"math/rand"
 	"testing"
 

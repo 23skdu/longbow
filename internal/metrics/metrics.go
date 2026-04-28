@@ -519,6 +519,24 @@ var (
 		},
 	)
 
+	// DoPutBatchSizeVectors tracks number of vectors per batch
+	DoPutBatchSizeVectors = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_doput_batch_size_vectors",
+			Help:    "Number of vectors per DoPut batch",
+			Buckets: []float64{100, 1000, 5000, 10000, 25000, 50000, 100000},
+		},
+	)
+
+	// DoPutBatchLatencySeconds tracks batch processing latency
+	DoPutBatchLatencySeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_doput_batch_latency_seconds",
+			Help:    "Latency of DoPut batch processing",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0},
+		},
+	)
+
 	// Vector Access Metrics - Zero-Copy Optimization
 	VectorAccessZeroCopyTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -859,6 +877,96 @@ var (
 			Help: "Ratio of max cluster size to average cluster size (1.0 = perfect balance)",
 		},
 		[]string{"dataset"},
+	)
+
+	// IVFOPQ specific metrics
+	IVFOPQPQcodesPerCluster = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_ivfopq_pqcodes_per_cluster",
+			Help:    "Number of PQ codes per cluster in IVF-OPQ",
+			Buckets: []float64{1, 10, 50, 100, 500, 1000, 5000},
+		},
+	)
+
+	IVFOPQLookupHits = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_ivfopq_lookup_hits_total",
+			Help: "Total number of ADC lookup cache hits in IVF-OPQ",
+		},
+		[]string{"dataset"},
+	)
+
+	// TurboQuant metrics (TQ2/TQ4/TQ8)
+	TQ2EncodeDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_tq2_encode_duration_seconds",
+			Help:    "Time spent encoding vectors with TurboQuant2 (2-bit)",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+	)
+
+	TQ2DecodeDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_tq2_decode_duration_seconds",
+			Help:    "Time spent decoding vectors with TurboQuant2 (2-bit)",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+	)
+
+	TQ2CodesPerVector = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_tq2_codes_per_vector",
+			Help:    "Number of codes per vector for TurboQuant2 (2-bit)",
+			Buckets: []float64{1, 2, 4, 8, 16, 32},
+		},
+	)
+
+	TQ4EncodeDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_tq4_encode_duration_seconds",
+			Help:    "Time spent encoding vectors with TurboQuant4 (4-bit)",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+	)
+
+	TQ4DecodeDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_tq4_decode_duration_seconds",
+			Help:    "Time spent decoding vectors with TurboQuant4 (4-bit)",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+	)
+
+	TQ4CodesPerVector = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_tq4_codes_per_vector",
+			Help:    "Number of codes per vector for TurboQuant4 (4-bit)",
+			Buckets: []float64{1, 2, 4, 8, 16, 32},
+		},
+	)
+
+	TQ8EncodeDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_tq8_encode_duration_seconds",
+			Help:    "Time spent encoding vectors with TurboQuant8 (8-bit)",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+	)
+
+	TQ8DecodeDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_tq8_decode_duration_seconds",
+			Help:    "Time spent decoding vectors with TurboQuant8 (8-bit)",
+			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+	)
+
+	TQ8CodesPerVector = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_tq8_codes_per_vector",
+			Help:    "Number of codes per vector for TurboQuant8 (8-bit)",
+			Buckets: []float64{1, 2, 4, 8, 16, 32},
+		},
 	)
 
 	EmbeddingNormalizationDurationSeconds = promauto.NewHistogram(

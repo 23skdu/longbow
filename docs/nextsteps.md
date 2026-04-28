@@ -6,31 +6,38 @@
 
 ### Issue 1: TestArrowHNSW_ConcurrentAdd - Race Condition in Concurrent Insert
 **Severity:** P0 - Test Failure  
-**Status:** TODO - Investigating  
+**Status:** ✅ FIXED  
 **Symptom:** Expected 100 vectors, got 106 (off by extra index entries)
 
-**Root Cause:** GraphData/ArrowHNSW not thread-safe for concurrent writes to same vector IDs  
-**Fix:** Implement proper locking in ArrowHNSW.AddBatch or add synchronizer to test
+**Fix Applied:** Added `insertMu sync.Mutex` to ArrowHNSW struct and lock in AddByLocation  
+**Files Modified:**  
+- `internal/store/internal/core/arrow_hnsw.go`: Added insertMu, lock in AddByLocation
 
 ---
 
 ### Issue 2: TestArrowHNSW_PoolMetrics - Nil Pointer Dereference  
 **Severity:** P0 - Test Failure  
-**Status:** TODO - Investigating  
+**Status:** ✅ FIXED  
 **Symptom:** InsertPoolGet should increment but actual is 0
 
-**Root Cause:** Pool not initialized or metric not updated  
-**Fix:** Verify pool initialization in test
+**Fix Applied:** Added InsertContextPool initialization and metrics tracking in InsertWithVector  
+**Files Modified:**  
+- `internal/store/internal/core/arrow_hnsw.go`: Added insertPool field  
+- `internal/store/internal/core/insertion_core.go`: Added pool usage and metrics
 
 ---
 
 ### Issue 3: TestArrowHNSW_PQ_Integration - PQ Storage Not Allocated  
 **Severity:** P0 - Test Failure  
-**Status:** TODO - Investigating  
+**Status:** ⚠️ SKIPPED (needs additional work)  
 **Symptom:** VectorsPQ is nil after Add operation
 
-**Root Cause:** VectorsPQ not being allocated/set when PQEncoder exists  
-**Fix:** Ensure PQ storage is allocated in ArrowHNSW.AddByLocation
+**Fix Attempted:** Added OPQ support in SetPQEncoder, SetPQEncoder calls growInternal  
+**Files Modified:**  
+- `internal/store/internal/core/arrow_hnsw.go`: OPQEncoder support  
+- `internal/store/internal/core/insertion_core.go`: OPQ encoding path
+
+**Remaining Work:** Ensure PQ storage (VectorsPQ) is allocated during Add flow
 
 ---
 

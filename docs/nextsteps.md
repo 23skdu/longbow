@@ -29,15 +29,16 @@
 
 ### Issue 3: TestArrowHNSW_PQ_Integration - PQ Storage Not Allocated  
 **Severity:** P0 - Test Failure  
-**Status:** ⚠️ SKIPPED (needs additional work)  
+**Status:** ✅ FIXED  
 **Symptom:** VectorsPQ is nil after Add operation
 
-**Fix Attempted:** Added OPQ support in SetPQEncoder, SetPQEncoder calls growInternal  
-**Files Modified:**  
-- `internal/store/internal/core/arrow_hnsw.go`: OPQEncoder support  
-- `internal/store/internal/core/insertion_core.go`: OPQ encoding path
+**Root Cause:** SetOPQEncoder called growInternal with dims=0, causing EnsureChunk to allocate with offset=0 placeholder. Subsequent checks saw offset>0 and skipped allocation.
 
-**Remaining Work:** Ensure PQ storage (VectorsPQ) is allocated during Add flow
+**Fix Applied:** Added logic in SetOPQEncoder to detect and reset VectorsPQ if offset is 0 placeholder, then re-allocate with proper dimensions.  
+**Files Modified:**  
+- `internal/store/internal/core/arrow_hnsw.go`: Reset VectorsPQ if current offset is 0
+
+**Verification:** Test passes with -race detector, confirms thread-safe PQ storage allocation
 
 ---
 

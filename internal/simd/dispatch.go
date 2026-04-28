@@ -63,6 +63,30 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		DotProduct3072: DotProductFloat32Blocked,
 	},
 
+	"neon": {
+		EuclideanDistance:          euclideanGeneric,
+		CosineDistance:             cosineGeneric,
+		DotProduct:                 dotGeneric,
+		EuclideanDistanceBatch:     euclideanBatchGeneric,
+		CosineDistanceBatch:        cosineBatchGeneric,
+		DotProductBatch:            dotBatchGeneric,
+		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
+
+		EuclideanDistance128:  euclidean128Unrolled4x,
+		EuclideanDistance384:  euclidean384Unrolled4x,
+		EuclideanDistance768:  euclidean768Unrolled4x,
+		EuclideanDistance1024: euclidean1024Blocked,
+		EuclideanDistance1536: euclidean1536Unrolled4x,
+		EuclideanDistance3072: euclidean3072Blocked,
+
+		DotProduct128:  dot128Unrolled4x,
+		DotProduct384:  dotUnrolled4x,
+		DotProduct768:  dotUnrolled4x,
+		DotProduct1024: dotUnrolled4x,
+		DotProduct1536: dotUnrolled4x,
+		DotProduct3072: DotProductFloat32Blocked,
+	},
+
 	"generic": {
 		EuclideanDistance:          euclideanGeneric,
 		CosineDistance:             cosineGeneric,
@@ -172,6 +196,8 @@ func initializeDispatch() {
 		dotProduct3072Impl = dispatch.DotProduct3072
 		dotProduct128Impl = dispatch.DotProduct128
 		euclideanDistanceBatchImpl = euclideanBatchNEON
+		cosineDistanceBatchImpl = cosineBatchNEON
+		dotProductBatchImpl = dotBatchNEON
 		cosineDistanceBatchImpl = cosineBatchNEON
 		dotProductBatchImpl = dotBatchNEON
 		l2SquaredImpl = l2SquaredNEON

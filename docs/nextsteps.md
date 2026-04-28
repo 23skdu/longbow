@@ -17,11 +17,11 @@ All P0 performance features below are IMPLEMENTED in codebase:
 
 ### Optional Improvements (Not Blockers)
 
-| Task | Priority | Notes |
-|------|----------|-------|
-| Fuzz tests for IVF index build | LOW | Optional enhancement |
-| Fuzz tests for TurboQuant | LOW | Optional enhancement |
-| Unit tests for batch pooling | LOW | Optional enhancement |
+| Task | Priority | Status |
+|------|----------|--------|
+| Fuzz tests for IVF index build | LOW | ✅ Added FuzzIVFOPQIndex_Build |
+| Fuzz tests for TurboQuant | LOW | ✅ Added FuzzTurboQuant_EncodeDecode, FuzzTurboQuant_Compression |
+| Unit tests for batch pooling | LOW | ✅ Existing (resultPool tests comprehensive) |
 
 ---
 

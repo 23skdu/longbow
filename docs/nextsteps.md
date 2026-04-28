@@ -44,11 +44,14 @@
 
 ### Issue 4: PQ vs OPQ - Migrate to OPQ
 **Severity:** P1 - Deprecation  
-**Status:** TODO - Implement  
+**Status:** ✅ FIXED  
 **Symptom:** Code uses deprecated PQ encoder, should use OPQ
 
 **Root Cause:** pq.NewPQEncoder creates legacy PQ, should use pq.NewOPQEncoder if available  
-**Fix:** Update encoder creation to use OPQ
+**Fix Applied:** Updated encoder creation to use OPQ, renamed pqEncoder to oopqEncoder for clarity
+**Files Modified:**
+- `internal/store/internal/core/arrow_hnsw.go`: Added SetOPQEncoder/GetOPQEncoder methods
+- Tests updated to use NewOPQEncoder
 
 ---
 
@@ -89,10 +92,10 @@
 
 ## Subtasks & Action Items
 
-- [ ] Issue 1: Fix race condition in concurrent add test OR mark test as skipped with reason
-- [ ] Issue 2: Fix pool metrics test (verify pool initialization)  
-- [ ] Issue 3: Fix PQ storage allocation in AddByLocation
-- [ ] Issue 4: Replace pq.NewPQEncoder with OPQ equivalent
+- [x] Issue 1: Fix race condition in concurrent add test ✅
+- [x] Issue 2: Fix pool metrics test ✅  
+- [x] Issue 3: Fix PQ storage allocation in AddByLocation ✅
+- [x] Issue 4: Replace pq.NewPQEncoder with OPQ equivalent ✅
 
 ---
 
@@ -390,17 +393,17 @@ Check and potentially remove:
 
 ## Performance Improvements for Next Release
 
-### Current Results (CPU, 10K vectors, dim=128)
-- Ingest: 1.22M vec/s
-- Search QPS: ~4,000 (all modes)
-- Latency p50: 0.23ms
+### Current Results (CPU, dim=128)
+- Ingest: ~400-500K vec/s (platform dependent)
+- Search QPS: ~3K-10K (mode dependent)
+- Latency p50: 0.22-0.35ms
 
 ### Suggested Optimizations
 
 | Priority | Area | Suggestion | Expected Impact |
-|----------|------|----------|-------------|
+|----------|------|------------|-----------------|
 | HIGH | SIMD | Add AVX-512 batch kernels for x86_64 | +30% QPS |
-| HIGH | Memory | Arena allocator for vector storage | +15% QPS |
+| HIGH | Ingest | Optimize DoPut batch path | +50% ingest |
 | MEDIUM | Index | Implement IVF-PQ with OPQ | 10x+ for high-dim |
 | MEDIUM | GPU | Metal compute shaders | 5-10x for >1M vectors |
 | LOW | Graph | Batch graph traversal | +20% for graphrag |

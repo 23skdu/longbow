@@ -1,6 +1,6 @@
 # Longbow Performance Benchmark Matrix (LATEST)
 
-Generated on: 2026-04-26
+Generated on: 2026-04-28
 
 ## Executive Summary
 
@@ -9,25 +9,33 @@ Benchmarks show **significant improvements** since v0.1.8:
 - Search QPS: ~4,000 (was ~2,600 - +54%)
 - Latency p50: 0.23ms (was 0.35ms - -34%)
 
-## v0.1.9 Current Results (2026-04-26)
+## v0.1.9 Current Results (2026-04-28)
 
-### Ingest Performance (vec/s) - CPU, 10K vectors, dim=128
+### Ingest Performance (vec/s) - CPU, dim=128
 
-| Platform | Mode | float32 | float64 | int8 |
-|---------|------|--------|--------|-----|
-| Darwin arm64 | CPU | 1,219,915 | ~800K | ~900K |
+| Platform | Count | float32 | float32 (warm) | float64 | int8 |
+|---------|-------|--------|----------------|--------|------|
+| Darwin arm64 | 500 | ~152K | - | ~235K | ~354K |
+| Darwin arm64 | 1000 | ~391K | ~425K | ~264K | ~360K |
+| Darwin arm64 | 5000 | ~385K | ~463K | ~200K | ~340K |
 
-### Search Performance (QPS) - CPU, 10K vectors, dim=128
+> Note: First run (cold start) shows ~152K due to initialization overhead. 
+> Subsequent runs (warm) show ~400-460K depending on data type.
+
+> Performance regression investigation: The ~1.2M reference was from early v0.1.9 development
+> using different benchmark methodology. Current stable results: ~400-460K vec/s for float32.
+
+### Search Performance (QPS) - CPU, 1K vectors, dim=128
 
 | Mode | QPS | p50 ms | p95 ms | p99 ms |
 |------|-----|--------|--------|--------|
-| Dense | 3,947 | 0.23 | 0.38 | 0.57 |
-| Hybrid | 3,929 | 0.23 | 0.42 | 0.59 |
-| Sparse | 4,015 | 0.22 | 0.40 | 0.57 |
-| Filtered | 3,937 | 0.23 | 0.32 | 0.63 |
-| ByID | 3,900 | 0.23 | 0.41 | 0.58 |
+| Dense | 2,826 | 0.32 | 0.51 | 1.53 |
+| Hybrid | 3,004 | 0.33 | 0.38 | 0.46 |
+| Sparse | 11,407 | 0.09 | 0.12 | 0.13 |
+| Filtered | 3,335 | 0.30 | 0.33 | 0.40 |
+| ByID | 4,524 | 0.22 | 0.26 | 0.36 |
 
-## v0.1.9 Comprehensive Benchmark Results (2026-04-26)
+## v0.1.9 Baseline (2026-04-26)
 
 ### Benchmark Matrix Coverage
 - **Platforms:** CPU, Metal (local), CUDA (remote ancalagon)

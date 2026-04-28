@@ -39,29 +39,6 @@ type ImplementationDispatch struct {
 
 // Global dispatch table - one per implementation
 var dispatchTable = map[string]*ImplementationDispatch{
-	"avx512": {
-		EuclideanDistance:          euclideanAVX512,
-		CosineDistance:             cosineAVX512,
-		DotProduct:                 dotAVX512,
-		EuclideanDistanceBatch:     euclideanBatchAVX512,
-		CosineDistanceBatch:        cosineBatchAVX512,
-		DotProductBatch:            dotBatchAVX512,
-		EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
-
-		EuclideanDistance128:       euclidean128Unrolled4x,
-		EuclideanDistance384:       euclidean384AVX512,
-		EuclideanDistance768:       euclidean768AVX512,
-		EuclideanDistance1024:      euclidean1024Blocked,
-		EuclideanDistance1536:      euclidean1536AVX512,
-		EuclideanDistance3072:      euclidean3072Blocked,
-
-		DotProduct128:  dot128Unrolled4x,
-		DotProduct384:  dot384AVX512,
-		DotProduct768:  dot768AVX512,
-		DotProduct1024: dotAVX512,
-		DotProduct1536: dot1536AVX512,
-		DotProduct3072: DotProductFloat32Blocked,
-	},
 	"avx2": {
 		EuclideanDistance:          euclideanAVX2,
 		CosineDistance:             cosineAVX2,

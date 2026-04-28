@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
@@ -54,6 +55,14 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 			metrics.HNSWNodeCount.WithLabelValues(h.name, "0").Set(nodeCount)
 		}
 	}()
+
+	// Issue 2: Use insert context pool and track metrics
+	if h.insertPool != nil {
+		insertCtx := h.insertPool.Get()
+		defer h.insertPool.Put(insertCtx)
+		metrics.HNSWInsertPoolGetTotal.Inc()
+		metrics.HNSWInsertPoolPutTotal.Inc()
+	}
 
 	// 1. SQ8 Training (Outside any lock to avoid deadlock with ensureTrained -> growMu.Lock())
 	if h.config.SQ8Enabled {
@@ -152,8 +161,18 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 
 	if h.config.PQEnabled && h.pqEncoder != nil {
 		if v32, ok := vec.([]float32); ok {
-			code, err := h.pqEncoder.Encode(v32)
-			if err == nil { _ = data.SetVectorPQ(id, code) }
+			switch enc := h.pqEncoder.(type) {
+			case *pq.PQEncoder:
+				code, err := enc.Encode(v32)
+				if err == nil {
+					_ = data.SetVectorPQ(id, code)
+				}
+			case *pq.OPQEncoder:
+				code, err := enc.Encode(v32)
+				if err == nil {
+					_ = data.SetVectorPQ(id, code)
+				}
+			}
 		}
 	}
 	ctx := h.searchPool.Get()

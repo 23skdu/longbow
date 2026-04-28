@@ -44,9 +44,8 @@ func TestArrowHNSW_PQ_ParallelSearch(t *testing.T) {
 	defer rec.Release()
 	dataset := &MockDataset{Name: "test_pq_parallel", Schema: schema, Records: []arrow.RecordBatch{rec}}
 
-	encoder, _ := pq.NewPQEncoder(dim, 16, 256)
+	encoder, _ := pq.NewOPQEncoder(dim, 16, 256)
 	_ = encoder.Train(trainingData)
-	dataset.PQEncoder = encoder
 
 	config := types.DefaultArrowHNSWConfig()
 	config.PQEnabled = true

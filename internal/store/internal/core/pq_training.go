@@ -39,7 +39,7 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 		k = 256
 	}
 
-	encoder, err := pq.NewPQEncoder(dims, m, k)
+	encoder, err := pq.NewOPQEncoder(dims, m, k)
 	if err != nil {
 		return err
 	}

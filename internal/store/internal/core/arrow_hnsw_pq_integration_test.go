@@ -52,19 +52,17 @@ func TestArrowHNSW_PQ_Integration(t *testing.T) {
 		trainingData[i] = vec
 	}
 
-	rec := builder.NewRecordBatch()
+rec := builder.NewRecordBatch()
 	defer rec.Release()
 	dataset := &MockDataset{Name: "test_pq", Schema: schema, Records: []arrow.RecordBatch{rec}}
-
-	// 2. Setup PQ Encoder
+ 
+	// 2. Setup OPQ Encoder (Issue 4: Use new OPQ instead of deprecated PQ)
 	// 128 dims -> 16 sub-vectors of 8 dims each. 256 centroids per sub-vector.
-	encoder, err := pq.NewPQEncoder(dim, 16, 256)
+	encoder, err := pq.NewOPQEncoder(dim, 16, 256)
 	require.NoError(t, err)
 
 	err = encoder.Train(trainingData)
 	require.NoError(t, err)
-
-	dataset.PQEncoder = encoder
 
 	// 3. Create ArrowHNSW with PQ enabled
 	config := types.DefaultArrowHNSWConfig()

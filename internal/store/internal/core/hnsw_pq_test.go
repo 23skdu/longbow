@@ -49,7 +49,7 @@ func TestPQEncoder_Correctness(t *testing.T) {
 		samples[i] = v
 	}
 
-	encoder, err := pq.NewPQEncoder(dim, 8, 256)
+	encoder, err := pq.NewOPQEncoder(dim, 8, 256)
 	assert.NoError(t, err)
 
 	err = encoder.Train(samples)

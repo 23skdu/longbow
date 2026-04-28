@@ -11,6 +11,7 @@ import (
 
 	"time"
 
+	"github.com/23skdu/longbow/internal/pq"
 	"golang.org/x/sync/errgroup"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -365,13 +366,22 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				if h.config.PQEnabled && h.pqEncoder != nil {
 					pqChunk := data.GetVectorsPQChunk(cID)
 					if pqChunk != nil {
-						// PQEncoder.Encode takes []float32
 						if vf32, ok := v.([]float32); ok {
-							code, err := h.pqEncoder.Encode(vf32)
-							if err == nil {
-								pqM := h.config.PQM
-								dest := pqChunk[int(cOff)*pqM : (int(cOff)+1)*pqM]
-								copy(dest, code)
+							switch enc := h.pqEncoder.(type) {
+							case *pq.PQEncoder:
+								code, err := enc.Encode(vf32)
+								if err == nil {
+									pqM := h.config.PQM
+									dest := pqChunk[int(cOff)*pqM : (int(cOff)+1)*pqM]
+									copy(dest, code)
+								}
+							case *pq.OPQEncoder:
+								code, err := enc.Encode(vf32)
+								if err == nil {
+									pqM := h.config.PQM
+									dest := pqChunk[int(cOff)*pqM : (int(cOff)+1)*pqM]
+									copy(dest, code)
+								}
 							}
 						}
 					}

@@ -55,6 +55,11 @@ type ArrowHNSW struct {
 	mMax  int
 	mMax0 int
 
+	// Mutex for thread-safe concurrent writes (Issue 1: ConcurrentAdd race fix)
+	insertMu sync.Mutex
+
+	// Insert context pool for reducing allocations (Issue 2: PoolMetrics)
+	insertPool *InsertContextPool
 
 	// DiskGraph backing
 	diskGraph atomic.Pointer[DiskGraph]
@@ -62,7 +67,7 @@ type ArrowHNSW struct {
 	quantizer  *ScalarQuantizer
 	sq8Ready   atomic.Bool
 	bqEncoder  *types.BQEncoder
-	pqEncoder  *pq.PQEncoder
+	pqEncoder  any // Accepts *pq.PQEncoder or *pq.OPQEncoder (Issue 4: Use new OPQ)
 	tqEncoder  *TurboQuantEncoder
 	searchPool    *ArrowSearchContextPool
 	candidatePool sync.Pool
@@ -254,6 +259,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		mMax:            config.MMax,
 		mMax0:           config.MMax0,
 		searchPool:      NewArrowSearchContextPool(),
+		insertPool:     NewInsertContextPool(), // Issue 2: Pool metrics
 		candidatePool: sync.Pool{
 			New: func() any {
 				s := make([]types.Candidate, 0, config.EfConstruction)
@@ -373,7 +379,12 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		config.TurboQuantBits,
 	)
 	if h.pqEncoder != nil {
-		gd.PQM = h.pqEncoder.CodeSize()
+		switch enc := h.pqEncoder.(type) {
+		case *pq.PQEncoder:
+			gd.PQM = enc.CodeSize()
+		case *pq.OPQEncoder:
+			gd.PQM = enc.CodeSize()
+		}
 	}
 
 	// Initialize Layer 0 Lock-Free Adjacency ([#11] Lock-Free Adjacency)
@@ -536,24 +547,53 @@ func (h *ArrowHNSW) SetBQEncoder(encoder *types.BQEncoder) {
 	h.bqEncoder = encoder
 }
 
-// GetPQEncoder returns the PQ encoder
+// GetPQEncoder returns any PQ/OPQ encoder (for VectorIndexer interface compliance)
 func (h *ArrowHNSW) GetPQEncoder() *pq.PQEncoder {
+	if h.pqEncoder != nil {
+		if enc, ok := h.pqEncoder.(*pq.PQEncoder); ok {
+			return enc
+		}
+	}
+	return nil
+}
+
+// InternalGetPQEncoder returns any encoder (OPQ or PQ)
+func (h *ArrowHNSW) InternalGetPQEncoder() any {
 	return h.pqEncoder
 }
 
-// SetPQEncoder sets the PQ encoder
-func (h *ArrowHNSW) SetPQEncoder(encoder *pq.PQEncoder) {
-	h.pqEncoder = encoder
-	if encoder != nil {
-		h.config.PQM = encoder.M
-		h.config.PQK = encoder.K
-		h.config.PQEnabled = true // Explicitly enable if encoder is set
+// SetPQEncoder sets the PQ/OPQ encoder
+func (h *ArrowHNSW) SetPQEncoder(encoder any) {
+	switch enc := encoder.(type) {
+	case *pq.PQEncoder:
+		h.pqEncoder = encoder
+		if encoder != nil {
+			h.config.PQM = enc.M
+			h.config.PQK = enc.K
+			h.config.PQEnabled = true
+		}
+	case *pq.OPQEncoder:
+		h.pqEncoder = encoder
+		if encoder != nil {
+			h.config.PQM = enc.M
+			h.config.PQK = enc.K
+			h.config.PQEnabled = true
+		}
+	default:
+		return
+	}
 
-		data := h.data.Load()
-		if data != nil {
-			data.PQEnabled = true
-			data.PQM = encoder.M
-			// Trigger allocation of current chunks
+	// Initialize data if not yet created
+	if h.data.Load() == nil {
+		h.growInternal(1024, 0)
+	}
+
+	data := h.data.Load()
+	if data != nil {
+		data.PQEnabled = true
+		data.PQM = h.config.PQM
+		// Trigger allocation of current chunks
+		if data.Capacity > 0 {
 			numChunks := (data.Capacity + types.ChunkSize - 1) / types.ChunkSize
 			for i := 0; i < numChunks; i++ {
 				if err := data.EnsureChunk(i, 0, data.Dims); err != nil {
@@ -678,6 +718,10 @@ func (h *ArrowHNSW) commitID(id uint32) {
 
 // Interface implementation: AddByLocation adds a vector by its location
 func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
+	// Issue 1: Thread-safe concurrent writes - acquire lock
+	h.insertMu.Lock()
+	defer h.insertMu.Unlock()
+
 	next := h.nextID.Add(1)
 	if next > math.MaxUint32 {
 		return 0, fmt.Errorf("index overflow: nextID %d exceeds uint32 max", next)
@@ -1600,7 +1644,12 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	newData.PQEnabled = h.config.PQEnabled
 	if newData.PQEnabled {
 		if h.pqEncoder != nil {
-			newData.PQM = h.pqEncoder.CodeSize()
+			switch enc := h.pqEncoder.(type) {
+			case *pq.PQEncoder:
+				newData.PQM = enc.CodeSize()
+			case *pq.OPQEncoder:
+				newData.PQM = enc.CodeSize()
+			}
 		} else {
 			newData.PQM = h.config.PQM
 		}
@@ -2361,8 +2410,15 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			return &tqComputer{data: data, h: h, rotatedQuery: searchCtx.rotatedQueryTQ, diskGraph: searchCtx.diskGraph}
 		}
 		if h.config.PQEnabled && h.pqEncoder != nil {
-			table, err := h.pqEncoder.BuildADCTable(q)
-			if err == nil {
+			var table any
+			var err error
+			switch enc := h.pqEncoder.(type) {
+			case *pq.PQEncoder:
+				table, err = enc.BuildADCTable(q)
+			case *pq.OPQEncoder:
+				table, err = enc.BuildADCTable(q)
+			}
+			if err == nil && table != nil {
 				return &pqComputer{data: data, q: q, table: table, h: h, diskGraph: searchCtx.GetDiskGraph()}
 			}
 		}
@@ -3608,7 +3664,17 @@ func (h *ArrowHNSW) GetDistanceFuncForParallel() func([]float32, []float32) floa
 }
 
 func (h *ArrowHNSW) GetPQEnabledForParallel() bool          { return h.config.PQEnabled }
-func (h *ArrowHNSW) GetPQEncoderForParallel() *pq.PQEncoder { return h.pqEncoder }
+func (h *ArrowHNSW) GetPQEncoderForParallel() any {
+	if h.pqEncoder != nil {
+		switch enc := h.pqEncoder.(type) {
+		case *pq.PQEncoder:
+			return enc
+		case *pq.OPQEncoder:
+			return enc
+		}
+	}
+	return nil
+}
 
 func (h *ArrowHNSW) ExtractVectorByIDToBufferForParallel(id uint32, dst []float32) error {
 	vecAny, err := h.GetVector(id)
@@ -3864,7 +3930,7 @@ func (h *ArrowHNSW) SearchWithArena(queryVec []float32, k int, arena any) []type
 type pqComputer struct {
 	data      *types.GraphData
 	q         []float32
-	table     []float32
+	table     any // Accepts []float32 or pq.ADCTable
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 }
@@ -3900,7 +3966,20 @@ func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
 	if code == nil {
 		return math.MaxFloat32, nil
 	}
-	distSq, err := c.h.pqEncoder.ADCDistance(c.table, code)
+	var distSq float32
+	var err error
+	switch enc := c.h.pqEncoder.(type) {
+	case *pq.PQEncoder:
+		if t, ok := c.table.([]float32); ok {
+			distSq, err = enc.ADCDistance(t, code)
+		}
+	case *pq.OPQEncoder:
+		if t, ok := c.table.([]float32); ok {
+			distSq, err = enc.ADCDistance(t, code)
+		}
+	default:
+		return 0, fmt.Errorf("unsupported encoder type")
+	}
 	if err != nil {
 		return 0, err
 	}

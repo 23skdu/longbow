@@ -77,6 +77,7 @@ func FuzzIVFOPQIndex_Build(f *testing.F) {
 		}
 
 		rng := rand.New(rand.NewSource(int64(dim ^ nlist ^ n)))
+
 		vectors := make([][]float32, n)
 		for i := 0; i < n; i++ {
 			vectors[i] = make([]float32, dim)
@@ -105,4 +106,95 @@ func FuzzIVFOPQIndex_Build(f *testing.F) {
 			t.Fatalf("No results returned")
 		}
 	})
+}
+
+func TestIVFOPQIndex_RecallK(t *testing.T) {
+	dim := 128
+	n := 1000
+	k := 10
+
+	config := IVFOPQConfig{
+		Nlist:         50,
+		M:             16,
+		K:             256,
+		Nprobe:        10,
+		OPQIterations: 10,
+	}
+
+	idx, err := NewIVFOPQIndex(dim, config)
+	require.NoError(t, err)
+
+	vectors := make([][]float32, n)
+	for i := 0; i < n; i++ {
+		vectors[i] = make([]float32, dim)
+		for j := 0; j < dim; j++ {
+			vectors[i][j] = rand.Float32()
+		}
+	}
+
+	err = idx.Train(vectors)
+	require.NoError(t, err)
+
+	err = idx.Add(context.Background(), vectors)
+	require.NoError(t, err)
+
+	query := vectors[0]
+	results, err := idx.SearchVectorsWithBitmap(context.Background(), query, k, nil, nil)
+	require.NoError(t, err)
+
+	matchCount := 0
+	for _, r := range results {
+		if r.ID == 0 {
+			matchCount++
+		}
+	}
+
+	t.Logf("Recall@%d: %d/%d (%.2f%%)", k, matchCount, k, float64(matchCount)*100/float64(k))
+}
+
+func BenchmarkIVFOPQIndex_1M_3072dim(b *testing.B) {
+	dim := 3072
+	n := 100000
+	nlist := 256
+
+	config := IVFOPQConfig{
+		Nlist:         nlist,
+		M:             32,
+		K:             100,
+		Nprobe:        32,
+		OPQIterations: 5,
+	}
+
+	idx, err := NewIVFOPQIndex(dim, config)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	vectors := make([][]float32, n)
+	for i := 0; i < n; i++ {
+		vectors[i] = make([]float32, dim)
+		for j := 0; j < dim; j++ {
+			vectors[i][j] = rand.Float32()
+		}
+	}
+
+	b.ResetTimer()
+	b.ReportAllocs()
+
+	for i := 0; i < b.N; i++ {
+		if i == 0 {
+			idx.Train(vectors)
+		}
+		idx.Add(context.Background(), vectors)
+	}
+
+	query := make([]float32, dim)
+	for i := 0; i < dim; i++ {
+		query[i] = rand.Float32()
+	}
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		idx.SearchVectorsWithBitmap(context.Background(), query, 10, nil, nil)
+	}
 }

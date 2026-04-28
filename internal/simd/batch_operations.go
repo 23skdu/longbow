@@ -65,6 +65,9 @@ func EuclideanDistanceBatchFlat(query, flatVectors []float32, numVectors, dims i
 	if numVectors == 0 {
 		return nil
 	}
+	if currentDispatch == nil || currentDispatch.EuclideanDistanceBatchFlat == nil {
+		return errors.New("simd: dispatch not initialized")
+	}
 	if dims == 384 {
 		for i := 0; i < numVectors; i++ {
 			offset := i * 384

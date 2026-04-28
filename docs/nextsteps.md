@@ -1,8 +1,94 @@
-# Next Steps for Longbow (Updated 2026-04-26)
+# Next Steps for Longbow (Updated 2026-04-28)
 
 ---
 
-## P0 Blockers for Performance Optimization
+## P0 Blockers - Critical Bugs
+
+### Issue 1: TestArrowHNSW_ConcurrentAdd - Race Condition in Concurrent Insert
+**Severity:** P0 - Test Failure  
+**Status:** TODO - Investigating  
+**Symptom:** Expected 100 vectors, got 106 (off by extra index entries)
+
+**Root Cause:** GraphData/ArrowHNSW not thread-safe for concurrent writes to same vector IDs  
+**Fix:** Implement proper locking in ArrowHNSW.AddBatch or add synchronizer to test
+
+---
+
+### Issue 2: TestArrowHNSW_PoolMetrics - Nil Pointer Dereference  
+**Severity:** P0 - Test Failure  
+**Status:** TODO - Investigating  
+**Symptom:** InsertPoolGet should increment but actual is 0
+
+**Root Cause:** Pool not initialized or metric not updated  
+**Fix:** Verify pool initialization in test
+
+---
+
+### Issue 3: TestArrowHNSW_PQ_Integration - PQ Storage Not Allocated  
+**Severity:** P0 - Test Failure  
+**Status:** TODO - Investigating  
+**Symptom:** VectorsPQ is nil after Add operation
+
+**Root Cause:** VectorsPQ not being allocated/set when PQEncoder exists  
+**Fix:** Ensure PQ storage is allocated in ArrowHNSW.AddByLocation
+
+---
+
+### Issue 4: PQ vs OPQ - Migrate to OPQ
+**Severity:** P1 - Deprecation  
+**Status:** TODO - Implement  
+**Symptom:** Code uses deprecated PQ encoder, should use OPQ
+
+**Root Cause:** pq.NewPQEncoder creates legacy PQ, should use pq.NewOPQEncoder if available  
+**Fix:** Update encoder creation to use OPQ
+
+---
+
+### Issue 5: SIMD Dispatch - NEON Batch Flat Missing  
+**Severity:** P0 - Was Fixed, Verify  
+**Status:** ✅ FIXED  
+**Symptom:** nil pointer dereference in EuclideanDistanceBatchFlat on ARM64
+
+**Fix Applied:** Added neon entry to dispatchTable + euclideanDistanceBatchFlatImpl assignment  
+**Files Modified:**  
+- `internal/simd/dispatch.go`: Added neon dispatch table entry  
+- `internal/simd/batch_operations.go`: Added currentDispatch nil check
+
+---
+
+### Issue 6: Worker Count - Ensure Minimum 2 Workers
+**Severity:** P1 - Stability  
+**Status:** ✅ FIXED in previous commit  
+**Symptom:** Workers could drop to 1 during runtime
+
+**Fix Applied:** Added MinIndexingWorkers=2, MinIngestionWorkers=2 constants + maintainMinimumWorkers()  
+**Files Modified:**  
+- `internal/store/store_lifecycle.go`: Added worker minimums  
+- `cmd/longbow/main.go`: Stop all workers on shutdown
+
+---
+
+### Issue 7: G115 Integer Overflow in ArrowHNSW ID Allocation  
+**Severity:** P0 - Security  
+**Status:** ✅ FIXED in previous commit  
+**Symptom:** gosec reports G115: int64->uint32 overflow
+
+**Fix Applied:** Added overflow check: `if next > math.MaxUint32 { return error }`  
+**Files Modified:**  
+- `internal/store/internal/core/arrow_hnsw.go`: Lines 715-717, 681-683
+
+---
+
+## Subtasks & Action Items
+
+- [ ] Issue 1: Fix race condition in concurrent add test OR mark test as skipped with reason
+- [ ] Issue 2: Fix pool metrics test (verify pool initialization)  
+- [ ] Issue 3: Fix PQ storage allocation in AddByLocation
+- [ ] Issue 4: Replace pq.NewPQEncoder with OPQ equivalent
+
+---
+
+## Previous P0 Blockers (> 95% QPS Improvement Achieved)
 
 ### ✅ 1. HIGH | SIMD | AVX-512/AVX2 Batch Kernels for x86_64 - COMPLETED
 

@@ -1,13 +1,14 @@
 # Makefile for Longbow
 
-.PHONY: help build build-cuda build-metal build-gpu build-rpi0 build-rpi0-2 test test-low-mem lint race clean docker docker-push install deps fmt vet
+.PHONY: help build build-avx2 build-cuda build-metal build-gpu build-rpi0 build-rpi0-2 test test-low-mem lint race clean docker docker-push install deps fmt vet
 
 # Default target
 help:
 	@echo "Longbow Build System"
 	@echo ""
 	@echo "Available targets:"
-	@echo "  build     - Build the longbow binary"
+	@echo "  build      - Build the longbow binary (with AVX512 if available)"
+	@echo "  build-avx2 - Build for AVX2-only systems (older AMD64 without AVX512)"
 	@echo "  build-cuda - Build with CUDA GPU support (Linux AMD64)"
 	@echo "  build-metal - Build with Metal GPU support (macOS ARM64)"
 	@echo "  build-gpu - Build with GPU support (auto-detect backend)"
@@ -29,6 +30,13 @@ help:
 build:
 	@echo "Building longbow..."
 	go build -v -o bin/longbow ./cmd/longbow
+
+# Build for AVX2-only systems (e.g., ancalagon, older AMD64 without AVX512)
+build-avx2:
+	@echo "Building longbow for AVX2-only systems..."
+	go build -v -tags '!avx512' -o bin/longbow-avx2 ./cmd/longbow
+	@echo "Binary: bin/longbow-avx2"
+	@echo "Use this for systems without AVX512 support (e.g., ancalagon)"
 
 # Build the bench-tool binary
 build-bench:

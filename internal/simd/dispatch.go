@@ -120,10 +120,9 @@ func initializeDispatch() {
 		dotProduct3072Impl = dispatch.DotProduct3072
 		dotProduct128Impl = dispatch.DotProduct128
 		euclideanDistanceBatchImpl = euclideanBatchAVX512
-
 		cosineDistanceBatchImpl = cosineBatchAVX512
 		dotProductBatchImpl = dotBatchAVX512
-		l2SquaredImpl = l2SquaredAVX512 // uses AVX512 kernel
+		l2SquaredImpl = l2SquaredAVX512
 		prefetchImpl = prefetchNTA
 		matchInt64Impl = matchInt64AVX512
 		matchInt32Impl = matchInt32AVX512
@@ -143,7 +142,7 @@ func initializeDispatch() {
 		dotProductF16Impl = dotF16AVX512
 		euclideanDistanceFloat64Impl = euclideanFloat64AVX512
 		dotProductFloat64Impl = dotFloat64AVX512
-		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x // Fallback for now
+		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8AVX2
 		dotProductInt8Impl = dotInt8Unrolled4x
 		dotProductUint8Impl = dotUint8Unrolled4x
@@ -154,7 +153,6 @@ func initializeDispatch() {
 		dotProductUint16Impl = dotUint16AVX2
 		dotProductInt4Impl = dotInt4AVX512
 		dotProductInt2Impl = dotInt2AVX512
-		// Optimization: Use float32 AVX kernels for complex64
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 	case "avx2":
 		euclideanDistanceImpl = dispatch.EuclideanDistance

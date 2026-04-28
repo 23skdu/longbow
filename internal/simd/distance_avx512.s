@@ -1,4 +1,4 @@
-// +build amd64
+// +build amd64,avx512
 
 #include "textflag.h"
 

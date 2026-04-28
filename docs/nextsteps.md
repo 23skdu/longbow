@@ -164,11 +164,11 @@ All P0 performance features below are IMPLEMENTED in codebase:
 **Current State:** IVFOPQIndex exists but needs optimization
 
 **Subtasks:**
-1. [ ] Optimize IVFOPQIndex.Search for batch queries
+1. [x] Optimize IVFOPQIndex.Search for batch queries (existing: SearchBatch) ✅
 2. [ ] Add OPQ encoder warmup metric
 3. [ ] Implement GPU offload path for encoding
-4. [ ] Add recall test: TestIVFOPQ_RecallK
-5. [ ] Add benchmark: BenchmarkIVFOPQ_1M_3072dim
+4. [x] Add recall test: TestIVFOPQ_RecallK ✅
+5. [x] Add benchmark: BenchmarkIVFOPQ_1M_3072dim ✅
 
 **Success Criteria:**
 - >95% recall@10 on SIFT-1M

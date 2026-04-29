@@ -7,7 +7,7 @@
 // ----------------------------------------------------------------------------
 
 // func l2SquaredAVX2Kernel(a, b unsafe.Pointer, n int) float32
-TEXT ·l2SquaredAVX2Kernel(SB), NOSPLIT, $0-28
+TEXT ·l2SquaredAVX2Kernel(SB), NOSPLIT, $0-32
     MOVQ    a+0(FP), SI
     MOVQ    b+8(FP), DI
     MOVQ    n+16(FP), BX
@@ -17,7 +17,7 @@ TEXT ·l2SquaredAVX2Kernel(SB), NOSPLIT, $0-28
     RET
 
 // func dotAVX2Kernel(a, b unsafe.Pointer, n int) float32  
-TEXT ·dotAVX2Kernel(SB), NOSPLIT, $0-28
+TEXT ·dotAVX2Kernel(SB), NOSPLIT, $0-32
     MOVQ    a+0(FP), SI
     MOVQ    b+8(FP), DI
     MOVQ    n+16(FP), BX

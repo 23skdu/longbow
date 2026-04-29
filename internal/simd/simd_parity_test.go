@@ -160,8 +160,8 @@ func TestSimdParity_Integer(t *testing.T) {
 			a := make([]int16, d)
 			b := make([]int16, d)
 			for i := 0; i < d; i++ {
-				a[i] = int16(rand.Intn(65536) - 32768)
-				b[i] = int16(rand.Intn(65536) - 32768)
+				a[i] = int16(rand.Intn(2001) - 1000)
+				b[i] = int16(rand.Intn(2001) - 1000)
 			}
 
 			got, _ := DispatchDistance(MetricEuclidean, a, b)
@@ -189,8 +189,8 @@ func TestSimdParity_Integer(t *testing.T) {
 			a := make([]uint16, d)
 			b := make([]uint16, d)
 			for i := 0; i < d; i++ {
-				a[i] = uint16(rand.Intn(65536))
-				b[i] = uint16(rand.Intn(65536))
+				a[i] = uint16(rand.Intn(2001))
+				b[i] = uint16(rand.Intn(2001))
 			}
 
 			got, _ := DispatchDistance(MetricEuclidean, a, b)

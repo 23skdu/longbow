@@ -74,6 +74,7 @@ Longbow separates data and control traffic to prevent head-of-line blocking:
 ### In-Memory Vector Store
 
 - **SlabArena**: Off-heap memory management using 1MB slabs to eliminate Go GC overhead.
+- **Atomic COW (Copy-On-Write)**: Structural updates (e.g., index growth, metadata resizing) utilize a strict COW pattern. Modifications are applied to private clones before being atomically published, ensuring zero-lock read stability even during high-concurrency ingestion.
 - **Auto-Sharding Index**: Dynamically transitions from a flat index to a lock-striped **ShardedHNSW** index as datasets grow.
 - **Leveled Compaction**: Incremental merging of Arrow RecordBatches to maintain read performance without full index rebuilds.
 
@@ -216,6 +217,14 @@ graph TB
 
 - **Quadtree Indexing**: For efficient spatial range and radius queries.
 - **Temporal Versioning**: Maintains historical versions of vectors with TTL-based retention.
+
+### GraphStore & GraphRAG
+
+Longbow integrates a high-performance **GraphStore** that operates alongside the vector store to enable GraphRAG (Retrieval-Augmented Generation) and complex knowledge graph traversal.
+
+- **Relationship Modeling**: Stores edges between vector entities with arbitrary metadata.
+- **Unified Querying**: Enables hybrid queries that combine semantic similarity (HNSW) with structural traversal (e.g., "Find all documents similar to X that are also connected to Entity Y").
+- **Lock-Free Navigation**: Utilizes the same atomic visibility patterns as the vector store to ensure graph traversals are consistent with the latest ingested data.
 
 ---
 

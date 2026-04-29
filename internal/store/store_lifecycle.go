@@ -90,14 +90,15 @@ func (s *VectorStore) StartLifecycleManager(ctx context.Context) {
 				// Perform maintenance
 				s.enforceMemoryLimits()
 				s.performGlobalCompactionCheck()
-				s.maintainMinimumWorkers(ctx)
+				s.maintainMinimumWorkers()
+				s.performTemporalPrewarm(ctx)
 			}
 		}
 	}()
 }
 
 // maintainMinimumWorkers ensures at least minimum workers are running
-func (s *VectorStore) maintainMinimumWorkers(ctx context.Context) {
+func (s *VectorStore) maintainMinimumWorkers() {
 	s.workerMu.Lock()
 	currIndexing := len(s.indexingWorkerCancels)
 	currIngestion := len(s.ingestionWorkerCancels)
@@ -619,4 +620,10 @@ func (s *VectorStore) ReleaseMemory() {
 	s.logger.Info().
 		Int64("current_memory_bytes", s.currentMemory.Load()).
 		Msg("Memory release complete")
+}
+
+func (s *VectorStore) performTemporalPrewarm(ctx context.Context) {
+	if s.temporalIndex != nil {
+		_ = s.temporalIndex.Prewarm(ctx)
+	}
 }

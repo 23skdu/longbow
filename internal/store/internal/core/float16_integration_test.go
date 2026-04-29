@@ -47,6 +47,7 @@ func TestArrowHNSW_Float16_ZeroCopy(t *testing.T) {
 		// Use generic method which should dispatch to SetVector
 		err := idx.InsertWithVector(uint32(i), vecsF16[i], 0)
 		require.NoError(t, err)
+		idx.commitID(uint32(i))
 	}
 	t.Logf("Inserted %d Float16 vectors in %v", count, time.Since(start))
 

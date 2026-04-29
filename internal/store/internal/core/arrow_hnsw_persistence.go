@@ -41,8 +41,8 @@ func (h *ArrowHNSW) promoteNodeLocked(data *types.GraphData, id uint32) *types.G
 		return data
 	}
 
-	cID := types.ChunkID(id)
-	cOff := types.ChunkOffset(id)
+	cID := int(id) / types.ChunkSize // #nosec G115
+	cOff := int(id) % types.ChunkSize // #nosec G115
 
 	// If already in memory, no need to promote from disk
 	if data.GetNeighborsChunk(0, cID) != nil {
@@ -54,13 +54,20 @@ func (h *ArrowHNSW) promoteNodeLocked(data *types.GraphData, id uint32) *types.G
 		return data
 	}
 
-	// Ensure chunk in Mutable Data (L0-LMax)
+	// Ensure chunk in Mutable Data (L0-LMax) using private locked version
 	dims := int(h.dims.Load())
-	var err error
-	data, err = h.ensureChunkInternal(cID, cOff, dims)
+	newData, cloned, err := h.ensureChunkInternalLocked(cID, cOff, dims)
 	if err != nil {
 		return data
 	}
+
+	// If ensureChunkInternalLocked didn't clone, we MUST clone now because we are going to modify neighbors.
+	// We MUST NOT modify any GraphData that was ever published (i.e. currently in h.data).
+	if !cloned {
+		newData = newData.Clone()
+		cloned = true
+	}
+
 
 	// Copy neighbors from disk for all layers
 	for l := 0; l < types.ArrowMaxLayers; l++ {
@@ -68,9 +75,8 @@ func (h *ArrowHNSW) promoteNodeLocked(data *types.GraphData, id uint32) *types.G
 		if len(diskNeighbors) == 0 {
 			continue
 		}
-
-		countsChunk := data.GetCountsChunk(l, cID)
-		neighborsChunk := data.GetNeighborsChunk(l, cID)
+		countsChunk := newData.GetCountsChunk(l, cID)
+		neighborsChunk := newData.GetNeighborsChunk(l, cID)
 		if countsChunk == nil || neighborsChunk == nil {
 			continue
 		}
@@ -90,5 +96,7 @@ func (h *ArrowHNSW) promoteNodeLocked(data *types.GraphData, id uint32) *types.G
 		atomic.StoreInt32(&countsChunk[cOff], int32(min(len(diskNeighbors), limit))) // #nosec G115
 	}
 
-	return data
+	// Publish the newly consistent data structure
+	h.data.Store(newData)
+	return newData
 }

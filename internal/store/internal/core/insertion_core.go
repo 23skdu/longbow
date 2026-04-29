@@ -124,15 +124,17 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		h.growMu.Unlock()
 	}
 
-	// Phase 1: Ensure Chunk Allocation (Strictly Serialized)
+	// Phase 1: Ensure Chunk Allocation (Optimistic Check)
 	cID := types.ChunkID(id)
 	cOff := types.ChunkOffset(id)
-	h.growMu.Lock()
-	if _, err := h.ensureChunkInternal(cID, cOff, dims); err != nil {
+	if h.data.Load().NeedsChunk(cID) {
+		h.growMu.Lock()
+		if _, err := h.ensureChunkInternal(int(cID), int(cOff), dims); err != nil {
+			h.growMu.Unlock()
+			return err
+		}
 		h.growMu.Unlock()
-		return err
 	}
-	h.growMu.Unlock()
 	data = h.data.Load()
 
 	// Store raw vector in GraphData (idempotent if already set)
@@ -229,17 +231,21 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		if len(neighbors) > 0 { ep = neighbors[0].ID }
 	}
 
-	maxL = int(h.maxLevel.Load())
-	if level > maxL {
-		h.maxLevel.Store(int32(level)) // #nosec G115
-		h.entryPoint.Store(id)
+	if level > int(h.maxLevel.Load()) {
+		h.epMu.Lock()
+		if level > int(h.maxLevel.Load()) {
+			h.maxLevel.Store(int32(level)) // #nosec G115
+			h.entryPoint.Store(id)
+		}
+		h.epMu.Unlock()
 	}
 
 	// Publish the updated data pointer so search can see the new connections
-	h.data.Store(data)
+	// No need to store here: structure-modifying calls (promoteNode, growInternal) 
+	// already update h.data, and neighbor updates are in-place.
 
-	// Increment node count so GetLayerNeighbors and search work correctly
-	h.nodeCount.Add(1)
+	// Increment node count is now handled by commitID in entry points 
+	// to ensure consistent ID reservation and counting.
 
 	return nil
 }

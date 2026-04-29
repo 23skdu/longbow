@@ -143,10 +143,10 @@ func initializeDispatch() {
 		dotProduct1536Impl = dispatch.DotProduct1536
 		dotProduct3072Impl = dispatch.DotProduct3072
 		dotProduct128Impl = dispatch.DotProduct128
-		euclideanDistanceBatchImpl = euclideanBatchAVX2
+		euclideanDistanceBatchImpl = euclideanBatchGeneric // AVX2 vertical batch kernel is a stub; use verified generic
 
-		cosineDistanceBatchImpl = cosineBatchAVX2
-		dotProductBatchImpl = dotBatchAVX2
+		cosineDistanceBatchImpl = cosineBatchGeneric // AVX2 batch kernel is a stub; use verified generic
+		dotProductBatchImpl = dotBatchGeneric       // AVX2 batch kernel is a stub; use verified generic
 		l2SquaredImpl = l2SquaredAVX2 // uses AVX2 kernel (no sqrt)
 		prefetchImpl = prefetchNTA
 		matchInt64Impl = matchInt64AVX2
@@ -154,7 +154,7 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32AVX2
 		matchFloat64Impl = matchFloat64AVX2
 		adcDistanceBatchImpl = adcBatchAVX2
-		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX2
+		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric // AVX2 vertical batch kernel is a stub
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX2
 		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX2
 		andBytesImpl = andBytesAVX2

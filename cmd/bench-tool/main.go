@@ -147,7 +147,7 @@ func main() {
 	log.Printf("[GET] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
 
 	// 3. Search
-	modes := []string{"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString", "Sparse", "ByID", "GraphRAG", "GlobalGraphRAG", "Recommend", "Geo", "Temporal"}
+	modes := []string{"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString", "Sparse", "ByID", "GraphRAG", "GlobalGraphRAG", "Recommend", "Geo", "Temporal", "LearnedIndex"}
 	searchCtx, searchCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer searchCancel()
 	for _, mode := range modes {
@@ -344,6 +344,15 @@ func (s *ReusableSearchState) BuildSearchTicket(dataset string, dim int, dtype s
 		s.buf = append(s.buf, `],"graph_alpha":0.5`...)
 	case "Sparse":
 		s.buf = append(s.buf, `,"text_query":"benchmark search term","alpha":0.0`...)
+	case "LearnedIndex":
+		s.buf = append(s.buf, `,"vector":[`...)
+		for i := 0; i < queryLen; i++ {
+			if i > 0 {
+				s.buf = append(s.buf, ',')
+			}
+			s.buf = fmt.Appendf(s.buf, "%g", s.vector[i])
+		}
+		s.buf = append(s.buf, `],"enable_learned_index":true`...)
 	}
 
 	s.buf = append(s.buf, `}}`...)

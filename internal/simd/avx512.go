@@ -644,3 +644,10 @@ func euclideanUint16AVX512(a, b []uint16) (float32, error) {
 	}
 	return euclideanUint16AVX2(a, b)
 }
+
+func isAllZerosAVX512(data []byte) bool {
+	if !features.HasAVX512 {
+		return isAllZerosAVX2(data)
+	}
+	return isAllZerosAVX2(data)
+}

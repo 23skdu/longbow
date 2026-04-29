@@ -1199,7 +1199,7 @@ TEXT ·dot128NEONKernel(SB), NOSPLIT, $0-52
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
 
-    MOVW    $32, R1  // 128/4 = 32 iterations
+    MOVW    $8, R1   // 128/16 = 8 iterations
 
 dot128_loop:
     VLD1.P  16(R0), [V4.S4]
@@ -1247,7 +1247,7 @@ TEXT ·dot384NEONKernel(SB), NOSPLIT, $0-52
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
 
-    MOVW    $96, R1  // 384/4 = 96 iterations
+    MOVW    $24, R1  // 384/16 = 24 iterations
 
 dot384_loop:
     VLD1.P  16(R0), [V4.S4]
@@ -1295,7 +1295,7 @@ TEXT ·dot768NEONKernel(SB), NOSPLIT, $0-52
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
 
-    MOVW    $192, R1  // 768/4 = 192 iterations
+    MOVW    $48, R1  // 768/16 = 48 iterations
 
 dot768_loop:
     VLD1.P  16(R0), [V4.S4]
@@ -1343,7 +1343,7 @@ TEXT ·dot1024NEONKernel(SB), NOSPLIT, $0-52
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
 
-    MOVW    $256, R1  // 1024/4 = 256 iterations
+    MOVW    $64, R1  // 1024/16 = 64 iterations
 
 dot1024_loop:
     VLD1.P  16(R0), [V4.S4]
@@ -1391,7 +1391,7 @@ TEXT ·dot1536NEONKernel(SB), NOSPLIT, $0-52
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
 
-    MOVW    $384, R1  // 1536/4 = 384 iterations
+    MOVW    $96, R1  // 1536/16 = 96 iterations
 
 dot1536_loop:
     VLD1.P  16(R0), [V4.S4]
@@ -1439,7 +1439,7 @@ TEXT ·dot3072NEONKernel(SB), NOSPLIT, $0-52
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
 
-    MOVW    $768, R1  // 3072/4 = 768 iterations
+    MOVW    $192, R1  // 3072/16 = 192 iterations
 
 dot3072_loop:
     VLD1.P  16(R0), [V4.S4]

@@ -574,8 +574,8 @@ func dotInt4AVX512(a, b []byte) (float32, error) {
 		return 0, nil
 	}
 	var sum float32
-	if n >= 32 {
-		simdLen := (n / 32) * 32
+	if n >= 64 {
+		simdLen := (n / 64) * 64
 		sum = dotInt4AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), simdLen)
 		a = a[simdLen:]
 		b = b[simdLen:]
@@ -593,8 +593,8 @@ func dotInt4AVX2(a, b []byte) (float32, error) {
 		return 0, nil
 	}
 	var sum float32
-	if n >= 16 {
-		simdLen := (n / 16) * 16
+	if n >= 32 {
+		simdLen := (n / 32) * 32
 		sum = dotInt4AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), simdLen)
 		a = a[simdLen:]
 		b = b[simdLen:]

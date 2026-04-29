@@ -3,10 +3,6 @@
 package simd
 
 import (
-	"errors"
-	"math"
-	"unsafe"
-
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -126,8 +122,4 @@ func cosineF16AVX512(a, b []float16.Num) (float32, error) {
 
 func euclideanF16BatchAVX512(query []float16.Num, vectors [][]float16.Num, results []float32) error {
 	return euclideanF16BatchAVX2(query, vectors, results)
-}
-
-func l2SquaredAVX512(a, b []float32) (float32, error) {
-	return l2SquaredAVX2(a, b)
 }

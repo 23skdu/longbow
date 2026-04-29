@@ -228,6 +228,8 @@ func initializeDispatch() {
 		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
 		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x
 		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x
+		dotProductInt8Impl = dotInt8Unrolled4x
+		dotProductUint8Impl = dotUint8Unrolled4x
 		dotProductInt16Impl = dotInt16Unrolled4x
 		dotProductUint16Impl = dotUint16Unrolled4x
 		dotProductInt4Impl = dotInt4Neon
@@ -272,11 +274,14 @@ func initializeDispatch() {
 		dotProductF16Impl = dotF16Unrolled4x
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
-		euclideanDistanceFloat64Impl = euclideanFloat64NEON
+		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
+		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
 		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x
 		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x
+		dotProductInt8Impl = dotInt8Unrolled4x
+		dotProductUint8Impl = dotUint8Unrolled4x
 		dotProductInt16Impl = dotInt16Unrolled4x
 		dotProductUint16Impl = dotUint16Unrolled4x
 		dotProductInt4Impl = dotInt4Generic

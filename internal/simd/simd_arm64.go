@@ -320,22 +320,7 @@ func RandomRotationNEON(a []float32, seed int64) error {
 }
 
 func dotInt4Neon(a, b []byte) (float32, error) {
-	n := len(a)
-	if n == 0 {
-		return 0, nil
-	}
-	var sum float32
-	if n >= 16 {
-		simdLen := (n / 16) * 16
-		sum = dotInt4NeonKernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), simdLen) // #nosec G103 -- intentional unsafe for SIMD
-		a = a[simdLen:]
-		b = b[simdLen:]
-	}
-	if len(a) > 0 {
-		tailSum, _ := dotInt4Generic(a, b)
-		sum += tailSum
-	}
-	return sum, nil
+	return dotInt4Generic(a, b)
 }
 
 func dotInt2Neon(a, b []byte) (float32, error) {

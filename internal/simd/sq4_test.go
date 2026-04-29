@@ -14,6 +14,19 @@ func TestDotInt4(t *testing.T) {
 		{"exact_16", make([]byte, 16), make([]byte, 16), 0},
 		{"simple_2", []byte{0x12, 0x34}, []byte{0x12, 0x34}, 30},
 		{"tail_3", []byte{0x12, 0x34, 0x56}, []byte{0x12, 0x34, 0x56}, 30 + (6*6 + 5*5)},
+		{"large_32", func() []byte {
+			b := make([]byte, 32)
+			for i := range b {
+				b[i] = 0x11
+			}
+			return b
+		}(), func() []byte {
+			b := make([]byte, 32)
+			for i := range b {
+				b[i] = 0x11
+			}
+			return b
+		}(), 64}, // 32 bytes * 2 nibbles/byte * (1*1) = 64
 	}
 
 	for _, tt := range tests {

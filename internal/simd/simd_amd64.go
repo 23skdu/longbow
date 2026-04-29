@@ -520,7 +520,7 @@ func euclideanInt8AVX2(a, b []int8) (float32, error) {
 		return 0, nil
 	}
 	if !features.HasAVX2 {
-		return euclideanInt8Generic(a, b)
+		return euclideanInt8Unrolled4x(a, b)
 	}
 	if len(a) >= 64 {
 		return euclideanInt8Unrolled4xAVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil

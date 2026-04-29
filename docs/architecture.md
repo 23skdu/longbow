@@ -1,6 +1,6 @@
 # Longbow Systems Architecture
 
-Longbow is a distributed, high-performance vector database designed for low-latency retrieval and high-throughput ingestion. It leverages a hybrid storage engine, modern hardware optimizations, and a resilient distributed mesh.
+Longbow is a distributed, high-performance vector engine designed for low-latency retrieval and high-throughput ingestion. It leverages a hybrid storage engine, modern hardware optimizations, and a resilient distributed mesh.
 
 ---
 
@@ -220,11 +220,15 @@ graph TB
 
 ### GraphStore & GraphRAG
 
-Longbow integrates a high-performance **GraphStore** that operates alongside the vector store to enable GraphRAG (Retrieval-Augmented Generation) and complex knowledge graph traversal.
+Longbow integrates a high-performance **GraphStore** that operates alongside the vector store to enable GraphRAG (Retrieval-Augmented Generation) and complex knowledge graph traversal. The architecture treats the vector index (HNSW) and the knowledge graph as two views of the same underlying data.
 
-- **Relationship Modeling**: Stores edges between vector entities with arbitrary metadata.
-- **Unified Querying**: Enables hybrid queries that combine semantic similarity (HNSW) with structural traversal (e.g., "Find all documents similar to X that are also connected to Entity Y").
-- **Lock-Free Navigation**: Utilizes the same atomic visibility patterns as the vector store to ensure graph traversals are consistent with the latest ingested data.
+- **Unified GraphData Structure**: Both semantic HNSW connections and explicit domain-specific relationships (e.g., "mentions", "belongs_to") are stored in a unified `GraphData` structure. This enables high-locality traversals that hop between semantic similarity and structural links.
+- **Atomic Ingestion Pipeline**: Mutations follow a strict Copy-On-Write (COW) flow:
+    1. **Private Workspace**: Structural updates are prepared in a private clone of the `GraphData`.
+    2. **Linear Publication**: Once all connections (both vector and relational) are established, the `GraphData` pointer is atomically updated in the `ArrowHNSW` index.
+    3. **Visibility Consistency**: This ensures that a single search request sees a perfectly consistent snapshot of both the vector space and the relationship graph, preventing "ghost" nodes or broken edges.
+- **Search Context Isolation**: Each query utilizes a `SearchContext` which pins a specific atomic pointer to `GraphData`. This provides a stable, immutable view for the duration of complex multi-hop traversals, even if background ingestion continues to publish new graph versions.
+- **Hybrid Traversal (Knowledge Graph + Semantic)**: Enables queries like "Find the 5 most similar documents to *User Query* that are also within 2 hops of *Entity A* in the knowledge graph".
 
 ---
 

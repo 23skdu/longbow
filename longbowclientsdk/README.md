@@ -1,6 +1,6 @@
 # Longbow Python SDK
 
-The official Python client for [Longbow](https://github.com/23skdu/longbow), a high-performance vector database.
+The official Python client for [Longbow](https://github.com/23skdu/longbow), a high-performance vector engine.
 
 ## Features
 

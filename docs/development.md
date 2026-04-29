@@ -44,7 +44,7 @@ This document provides guidance for contributing to and developing Longbow.
 
 ## Architecture & Subsystems
 
-Longbow is designed as a high-performance vector database with modular subsystems:
+Longbow is designed as a high-performance vector engine with modular subsystems:
 
 - **`internal/store`**: The core vector store engine. Handles datasets, indices, and the Search/Put lifecycles.
 - **`internal/store/internal/core`**: Low-level HNSW, IVF-PQ, and DiskANN index implementations optimized for Arrow memory.

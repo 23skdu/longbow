@@ -1,6 +1,6 @@
 # Longbow Helm Chart
 
-A Helm chart for deploying Longbow, high-performance vector database on Kubernetes.
+A Helm chart for deploying Longbow, high-performance vector engine on Kubernetes.
 
 ## Configuration
 

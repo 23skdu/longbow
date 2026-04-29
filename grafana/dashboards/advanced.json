@@ -120,6 +120,30 @@
     },
     {
       "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 4, "x": 0, "y": 17},
+      "id": 123,
+      "targets": [{"expr": "sum(longbow_turboquant_storage_bytes_total) / sum(longbow_vector_index_size * 1024 * 4)", "legendFormat": "Compression Ratio", "refId": "A"}],
+      "title": "TurboQuant Compression Ratio",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 4, "x": 4, "y": 17},
+      "id": 124,
+      "targets": [{"expr": "sum(rate(longbow_turboquant_encoding_total[1m])) by (direction)", "legendFormat": "{{direction}}", "refId": "A"}],
+      "title": "TurboQuant Encoding Rate/s",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 4, "w": 4, "x": 8, "y": 17},
+      "id": 125,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_turboquant_encoding_latency_seconds_bucket[5m])) by (le))", "legendFormat": "Encoding P99", "refId": "A"}],
+      "title": "TurboQuant Encoding Latency (P99)",
+      "type": "stat"
+    },
+    {
+      "datasource": "${datasource}",
       "gridPos": {"h": 4, "w": 4, "x": 12, "y": 13},
       "id": 12,
       "targets": [{"expr": "longbow_hnsw_pq_enabled", "refId": "A"}],

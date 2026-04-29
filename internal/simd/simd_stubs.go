@@ -147,3 +147,12 @@ func dotInt2AVX2(a, b []byte) (float32, error)   { return dotInt2Generic(a, b) }
 
 func euclidean16AVX512Wrapper(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
 func cosine16AVX512Wrapper(a, b []float32) (float32, error)    { return cosineGeneric(a, b) }
+
+func andBytesAVX512(dst, src []byte) { andBytesGeneric(dst, src) }
+func orBytesAVX512(dst, src []byte)  { orBytesGeneric(dst, src) }
+func isAllZerosAVX512(src []byte) bool { return isAllZerosGeneric(src) }
+func euclideanInt8AVX512(a, b []int8) (float32, error) { return euclideanInt8Unrolled4x(a, b) }
+func euclideanInt16AVX512(a, b []int16) (float32, error) { return 0, errors.New("avx512 not supported") }
+func euclideanUint16AVX512(a, b []uint16) (float32, error) { return 0, errors.New("avx512 not supported") }
+func dotInt16AVX512(a, b []int16) (float32, error) { return 0, errors.New("avx512 not supported") }
+func dotUint16AVX512(a, b []uint16) (float32, error) { return 0, errors.New("avx512 not supported") }

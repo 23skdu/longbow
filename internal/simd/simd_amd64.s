@@ -999,10 +999,8 @@ euc_i16_avx2_tail:
     // Reduction Y0 (float) -> X0
     VEXTRACTF128 $1, Y0, X1
     VADDPS  X1, X0, X0
-    VMOVHLPS X0, X1, X1
-    VADDPS  X1, X0, X0
-    VMOVSHDUP X0, X1
-    VADDSS  X1, X0, X0
+    VHADDPS X0, X0, X0
+    VHADDPS X0, X0, X0
 
     CMPQ    BX, $0
     JE      euc_i16_avx2_done

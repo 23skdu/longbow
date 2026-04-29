@@ -9,7 +9,7 @@ Longbow is designed to provide FAISS-level performance with Arrow-native ergonom
 | **Architecture** | SQLite | Distributed | Rust | **C++/CUDA** | Closed/Cloud | **Zero-Copy Arrow** |
 | **GPU Support** | CPU-Only | **Tier 1** | **Tier 1** | **Tier 1 (NVIDIA)** | Managed | **Tier 1 (Metal/CUDA)** |
 | **SIMD Optim.** | Library | Extensive | **Native** | **Extensive** | Managed | **Custom AVX2/AVX512/NEON** |
-| **GraphRAG** | No | Basic | No | No | **Native Spreading** |
+| **GraphRAG** | No | Basic | No | No | No | **Dual-Path: Spreading + Knowledge Graph** |
 | **Temporal** | No | No | No | No | No | **Native Versioning (Default On)** |
 | **Geo-Spatial** | No | No | Native | No | No | **Native Quadtree** |
 
@@ -48,7 +48,7 @@ Our internal benchmarks on 1M vectors (1536D) show that Longbow is within 5% of 
 ### Search
 - **Temporal**: Native versioning (enabled by default)
 - **Hybrid**: Vector + BM25 + metadata filtering
-- **GraphRAG**: Structural knowledge discovery
+- **GraphRAG**: Dual-path (Spreading + Knowledge Graph) with PageRank & Community Detection
 
 ### Quality
 - **Fuzz Tests**: IVF index build, TurboQuant encode/decode
@@ -66,6 +66,8 @@ Our internal benchmarks on 1M vectors (1536D) show that Longbow is within 5% of 
 ### **Longbow**
 
 * **Arrow-Native**: No serialization overhead when interacting with Arrow-based data pipelines or DuckDB.
-* **GraphRAG**: Native support for structural knowledge discovery via relationship-aware indexing.
+* **GraphRAG**: Dual-path architecture combining:
+  * **Spreading Activation**: Vector-based re-ranking using HNSW Layer 0 graph expansion
+  * **Knowledge Graph**: Triple-based (SPOW) explicit relationships with PageRank & Community Detection
 * **Hybrid Search**: Seamless integration of vector similarity with full-text search (BM25) and metadata filtering.
 * **TurboQuant**: Novel two-stage compression achieving extreme density with fast search.

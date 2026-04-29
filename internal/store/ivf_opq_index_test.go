@@ -198,3 +198,98 @@ func BenchmarkIVFOPQIndex_1M_3072dim(b *testing.B) {
 		idx.SearchVectorsWithBitmap(context.Background(), query, 10, nil, nil)
 	}
 }
+
+func TestIVFOPQ_makeClusterDists(t *testing.T) {
+	dim := 8
+	nlist := 4
+	qv := make([]float32, dim)
+	for i := 0; i < dim; i++ {
+		qv[i] = 0.5
+	}
+	centroids := []float32{
+		0, 0, 0, 0, 0, 0, 0, 0,
+		1, 1, 1, 1, 1, 1, 1, 1,
+		2, 2, 2, 2, 2, 2, 2, 2,
+		3, 3, 3, 3, 3, 3, 3, 3,
+	}
+
+	dists := makeClusterDists(qv, centroids, nlist, dim)
+
+	assert.Equal(t, nlist, len(dists))
+	for i := 0; i < nlist; i++ {
+		assert.Equal(t, i, dists[i].id)
+		assert.Greater(t, dists[i].dist, float32(0))
+	}
+}
+
+func TestIVFOPQ_decodeVector(t *testing.T) {
+	dim := 128
+	n := 1000
+	config := IVFOPQConfig{
+		Nlist:         8,
+		M:             8,
+		K:             256,
+		Nprobe:        2,
+		OPQIterations: 2,
+	}
+
+	idx, err := NewIVFOPQIndex(dim, config)
+	require.NoError(t, err)
+
+	vectors := make([][]float32, n)
+	for i := 0; i < n; i++ {
+		vectors[i] = make([]float32, dim)
+		for j := 0; j < dim; j++ {
+			vectors[i][j] = rand.Float32()
+		}
+	}
+
+	err = idx.Train(vectors)
+	require.NoError(t, err)
+
+	err = idx.Add(context.Background(), vectors)
+	require.NoError(t, err)
+
+	decoded, err := idx.decodeVector(0)
+	require.NoError(t, err)
+	assert.NotNil(t, decoded)
+	assert.Equal(t, dim, len(decoded))
+
+	_, err = idx.decodeVector(int(idx.nextID))
+	assert.Error(t, err)
+}
+
+func TestIVFOPQ_computeResidualScore(t *testing.T) {
+	dim := 128
+	n := 1000
+	config := IVFOPQConfig{
+		Nlist:         8,
+		M:             8,
+		K:             256,
+		Nprobe:        2,
+		OPQIterations: 2,
+	}
+
+	idx, err := NewIVFOPQIndex(dim, config)
+	require.NoError(t, err)
+
+	vectors := make([][]float32, n)
+	for i := 0; i < n; i++ {
+		vectors[i] = make([]float32, dim)
+		for j := 0; j < dim; j++ {
+			vectors[i][j] = rand.Float32()
+		}
+	}
+
+	err = idx.Train(vectors)
+	require.NoError(t, err)
+
+	err = idx.Add(context.Background(), vectors)
+	require.NoError(t, err)
+
+	score := idx.computeResidualScore(0, vectors[0])
+	assert.GreaterOrEqual(t, score, float32(0))
+
+	scoreBad := idx.computeResidualScore(int(idx.nextID)+100, vectors[0])
+	assert.Equal(t, float32(0), scoreBad)
+}

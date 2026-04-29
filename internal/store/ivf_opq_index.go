@@ -652,17 +652,118 @@ type clusterDist struct {
 func makeClusterDists(qv []float32, centroids []float32, nlist, dim int) []clusterDist {
 	dists := make([]clusterDist, nlist)
 	for i := 0; i < nlist; i++ {
-		dists[i] = clusterDist{id: i, dist: 0} // TODO: actual distance computation
+		cent := centroids[i*dim : (i+1)*dim]
+		dist := euclideanDist(qv, cent, dim)
+		dists[i] = clusterDist{id: i, dist: dist}
 	}
 	return dists
 }
 
+func euclideanDist(a, b []float32, dim int) float32 {
+	var sum float32
+	for i := 0; i < dim; i++ {
+		diff := a[i] - b[i]
+		sum += diff * diff
+	}
+	return sum
+}
+
 func (idx *IVFOPQIndex) decodeVector(id int) ([]float32, error) {
-	return nil, nil // TODO: implement
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if id >= int(idx.nextID) {
+		return nil, errors.New("vector ID out of bounds")
+	}
+
+	var (
+		clusterID int
+		entryIdx  int
+		found    bool
+	)
+
+	for c := 0; c < len(idx.clusters); c++ {
+		entries := idx.clusters[c].Entries
+		for e := 0; e < len(entries); e++ {
+			if int(entries[e].VectorID) == id {
+				clusterID = c
+				entryIdx = e
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+
+	if !found {
+		return nil, errors.New("vector not found")
+	}
+
+	clusterEntries := idx.clusters[clusterID].Entries
+	if entryIdx >= len(clusterEntries) {
+		return nil, errors.New("invalid entry index")
+	}
+
+	pqCode := clusterEntries[entryIdx].PQCode
+	if pqCode == nil {
+		return nil, errors.New("no PQ code available")
+	}
+
+	decoded, err := idx.opqEncoder.Decode(pqCode)
+	if err != nil {
+		return nil, err
+	}
+
+	centroid := idx.coarseCentroids[clusterID*idx.dim : (clusterID+1)*idx.dim]
+	result := make([]float32, idx.dim)
+	for i := 0; i < idx.dim; i++ {
+		result[i] = decoded[i] + centroid[i]
+	}
+
+	return result, nil
 }
 
 func (idx *IVFOPQIndex) computeResidualScore(queryIdx int, vec []float32) float32 {
-	return 0 // TODO: implement
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if queryIdx >= int(idx.nextID) {
+		return 0
+	}
+
+	var (
+		clusterID int
+		found    bool
+	)
+	for c := 0; c < len(idx.clusters); c++ {
+		entries := idx.clusters[c].Entries
+		for e := 0; e < len(entries); e++ {
+			if int(entries[e].VectorID) == queryIdx {
+				clusterID = c
+				found = true
+				break
+			}
+		}
+		if found {
+			break
+		}
+	}
+
+	if !found {
+		return 0
+	}
+
+	centroid := idx.coarseCentroids[clusterID*idx.dim : (clusterID+1)*idx.dim]
+
+	residual := make([]float32, idx.dim)
+	for i := 0; i < idx.dim; i++ {
+		residual[i] = vec[i] - centroid[i]
+	}
+
+	dist := euclideanDist(residual, make([]float32, idx.dim), idx.dim)
+	return dist
 }
 
 func combineErrors(errs []error) error {

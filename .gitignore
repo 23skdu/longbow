@@ -85,6 +85,10 @@ benchmark_results*.json
 perf_*.json
 perf_summary.md
 results_*.json
+bench_*.json
+metal_*.json
+local_*.json
+remote_*.json
 
 # Node.js
 node_modules/

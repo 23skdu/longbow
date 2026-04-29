@@ -16,18 +16,13 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 		return h.data.Load()
 	}
 
-	if data == nil {
-		data = h.data.Load()
+	// Ensure node is in memory and we are working on a private clone
+	// If 'data' is the published one, promoteNode will return a clone.
+	// If 'data' was already a private clone from a previous step in InsertWithVector,
+	// promoteNode will still check if the specific node chunk needs promotion.
+	if data == h.data.Load() {
+		data = data.Clone()
 	}
-	cID := types.ChunkID(source)
-
-	if int(source) < data.Capacity && data.GetNeighborsChunk(0, cID) != nil {
-		oldVer := data.LockNode(layer, source)
-		defer data.UnlockNode(layer, source, oldVer)
-		h.addConnectionLocked(ctx, data, source, target, layer, maxConn)
-		return data
-	}
-
 	data = h.promoteNode(data, source)
 
 	oldVer := data.LockNode(layer, source)

@@ -240,12 +240,8 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		h.epMu.Unlock()
 	}
 
-	// Publish the updated data pointer so search can see the new connections
-	// No need to store here: structure-modifying calls (promoteNode, growInternal) 
-	// already update h.data, and neighbor updates are in-place.
-
-	// Increment node count is now handled by commitID in entry points 
-	// to ensure consistent ID reservation and counting.
+	// Publish the final consistent state to the atomic pointer
+	h.data.Store(data)
 
 	return nil
 }

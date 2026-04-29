@@ -134,29 +134,11 @@ func euclideanFloat64NEON(a, b []float64) (float32, error) {
 // Public Go wrappers (with error propagation)
 
 func euclideanNEON(a, b []float32) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	if len(a) > 384 {
-		return euclideanHighDimNEONKernel(a, b), nil
-	}
-	return euclideanNEONKernel(a, b), nil
+	return euclideanUnrolled4x(a, b)
 }
 
 func dotNEON(a, b []float32) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	if len(a) > 384 {
-		return dotHighDimNEONKernel(a, b), nil
-	}
-	return dotNEONKernel(a, b), nil
+	return dotUnrolled4x(a, b)
 }
 
 // Optimized for 384 dimensions - use generic NEON kernel which is SIMD-optimized
@@ -213,62 +195,19 @@ func dot128NEON(a, b []float32) (float32, error) {
 }
 
 func cosineNEON(a, b []float32) (float32, error) {
-	if !features.HasNEON {
-		return cosineGeneric(a, b)
-	}
-
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 1.0, nil
-	}
-
-	var result float32
-	if len(a) > 384 {
-		result = cosineHighDimNEONKernel(a, b)
-	} else {
-		result = cosineNEONKernel(a, b)
-	}
-
-	// Sanity check - NEON may produce wrong results for certain dims
-	if result < -1.0 || result > 1.0 {
-		return cosineGeneric(a, b)
-	}
-	return result, nil
+	return cosineUnrolled4x(a, b)
 }
 
 func euclideanF16NEON(a, b []float16.Num) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanF16NEONKernel(a, b), nil
+	return euclideanF16Unrolled4x(a, b)
 }
 
 func dotF16NEON(a, b []float16.Num) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return dotF16NEONKernel(a, b), nil
+	return dotF16Unrolled4x(a, b)
 }
 
 func cosineF16NEON(a, b []float16.Num) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 1.0, nil
-	}
-	if len(a) < 8 {
-		return cosineF16Unrolled4x(a, b)
-	}
-	return cosineF16NEONKernel(a, b), nil
+	return cosineF16Unrolled4x(a, b)
 }
 
 /*

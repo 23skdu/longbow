@@ -159,8 +159,8 @@ type Config struct {
 	OllamaTimeout  int    `envconfig:"OLLAMA_TIMEOUT" default:"30"`
 
 	// Temporal Query Configuration (Part 22)
-	TemporalEnabled            bool          `envconfig:"TEMPORAL_ENABLED" default:"false"`
-	TemporalVersionHistory     bool          `envconfig:"TEMPORAL_VERSION_HISTORY" default:"false"`
+	TemporalEnabled            bool          `envconfig:"TEMPORAL_ENABLED" default:"true"`
+	TemporalVersionHistory     bool          `envconfig:"TEMPORAL_VERSION_HISTORY" default:"true"`
 	TemporalMaxVersions        int           `envconfig:"TEMPORAL_MAX_VERSIONS" default:"10"`
 	TemporalRetentionPeriod    time.Duration `envconfig:"TEMPORAL_RETENTION_PERIOD" default:"168h"` // 7 days
 	TemporalTTLEnabled         bool          `envconfig:"TEMPORAL_TTL_ENABLED" default:"false"`

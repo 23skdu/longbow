@@ -1,6 +1,6 @@
 ---
 name: longbow-memory
-description: Store and retrieve AI agent memories using Longbow vector database with temporal, graph, geo-spatial, and hybrid search capabilities. Use when building AI agents that need persistent memory, semantic search, temporal queries, knowledge graphs, or location-based lookups.
+description: Store and retrieve AI agent memories using Longbow vector engine with temporal, graph, geo-spatial, and hybrid search capabilities. Use when building AI agents that need persistent memory, semantic search, temporal queries, knowledge graphs, or location-based lookups.
 ---
 
 # Longbow Memory Skill

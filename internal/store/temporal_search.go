@@ -51,6 +51,65 @@ type TemporalIndex struct {
 	vectors      map[uint64]*TemporalVector
 	temporalTree *TemporalTree
 	byTimestamp  map[int64][]uint64
+	cache        *TemporalResultCache
+}
+
+type TemporalResultCache struct {
+	mu    sync.Mutex
+	items map[string]cachedResult
+	lru   []string
+	max   int
+}
+
+type cachedResult struct {
+	results []lbtypes.SearchResult
+	expiry  time.Time
+}
+
+func NewTemporalResultCache(size int) *TemporalResultCache {
+	return &TemporalResultCache{
+		items: make(map[string]cachedResult),
+		lru:   make([]string, 0, size),
+		max:   size,
+	}
+}
+
+func (c *TemporalResultCache) Get(key string) ([]lbtypes.SearchResult, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	item, ok := c.items[key]
+	if !ok || time.Now().After(item.expiry) {
+		if ok { delete(c.items, key) }
+		return nil, false
+	}
+
+	// Update LRU
+	for i, k := range c.lru {
+		if k == key {
+			c.lru = append(c.lru[:i], c.lru[i+1:]...)
+			break
+		}
+	}
+	c.lru = append(c.lru, key)
+	return item.results, true
+}
+
+func (c *TemporalResultCache) Set(key string, results []lbtypes.SearchResult, ttl time.Duration) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if len(c.lru) >= c.max {
+		oldest := c.lru[0]
+		delete(c.items, oldest)
+		c.lru = c.lru[1:]
+	}
+
+	c.items[key] = cachedResult{
+		results: results,
+		expiry:  time.Now().Add(ttl),
+	}
+	c.lru = append(c.lru, key)
 }
 
 type TemporalTree struct {
@@ -93,11 +152,18 @@ func (tt *TemporalTree) GetRange(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
+	n := len(tt.sorted)
+	if n == 0 {
+		return nil
+	}
+
+	startIdx := sort.Search(n, func(i int) bool {
+		return tt.sorted[i] >= start
+	})
+
 	var results []uint64
-	for _, ts := range tt.sorted {
-		if ts >= start && ts <= end {
-			results = append(results, tt.nodes[ts].VectorIDs...)
-		}
+	for i := startIdx; i < n && tt.sorted[i] <= end; i++ {
+		results = append(results, tt.nodes[tt.sorted[i]].VectorIDs...)
 	}
 	return results
 }
@@ -184,6 +250,7 @@ func NewTemporalIndex(dimension int) *TemporalIndex {
 		vectors:      make(map[uint64]*TemporalVector),
 		temporalTree: NewTemporalTree(),
 		byTimestamp:  make(map[int64][]uint64),
+		cache:        NewTemporalResultCache(1024),
 	}
 }
 
@@ -250,6 +317,11 @@ func (ti *TemporalIndex) Update(id uint64, vector []float32, timestamp int64, me
 }
 
 func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int) ([]lbtypes.SearchResult, error) {
+	cacheKey := fmt.Sprintf("asof:%d:%d", timestamp, k)
+	if results, ok := ti.cache.Get(cacheKey); ok {
+		return results, nil
+	}
+
 	ti.mu.RLock()
 	defer ti.mu.RUnlock()
 
@@ -283,7 +355,22 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 		})
 	}
 
+	ti.cache.Set(cacheKey, searchResults, 5*time.Minute)
 	return searchResults, nil
+}
+
+func (ti *TemporalIndex) Prewarm(ctx context.Context) error {
+	ti.mu.RLock()
+	latestTs := int64(0)
+	if len(ti.temporalTree.sorted) > 0 {
+		latestTs = ti.temporalTree.sorted[len(ti.temporalTree.sorted)-1]
+	}
+	ti.mu.RUnlock()
+
+	if latestTs > 0 {
+		_, _ = ti.SearchAsOf(ctx, latestTs, 100)
+	}
+	return nil
 }
 
 func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int64, k int) ([]lbtypes.SearchResult, error) {

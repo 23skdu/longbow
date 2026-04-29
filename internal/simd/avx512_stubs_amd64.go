@@ -3,8 +3,6 @@
 package simd
 
 import (
-	"errors"
-	"unsafe"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -62,9 +60,6 @@ func euclideanF16BatchAVX512(query []float16.Num, vectors [][]float16.Num, resul
 	return euclideanF16BatchAVX2(query, vectors, results)
 }
 
-func dotInt4AVX512(a, b []byte) (float32, error) { return dotInt4AVX2(a, b) }
-func dotInt2AVX512(a, b []byte) (float32, error) { return dotInt2AVX2(a, b) }
-
 func andBytesAVX512(dst, src []byte) { andBytesAVX2(dst, src) }
 func orBytesAVX512(dst, src []byte) { orBytesAVX2(dst, src) }
 func isAllZerosAVX512(data []byte) bool { return isAllZerosAVX2(data) }
@@ -79,9 +74,9 @@ func adcBatchAVX512(table []float32, flatCodes []byte, m int, results []float32)
 	return adcBatchAVX2(table, flatCodes, m, results)
 }
 
+func adcBatchVNNI(table []float32, flatCodes []byte, m int, results []float32) error {
+	return adcBatchAVX2(table, flatCodes, m, results)
+}
+
 func euclidean16AVX512Wrapper(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
 func cosine16AVX512Wrapper(a, b []float32) (float32, error) { return cosineGeneric(a, b) }
-
-func euclideanBatchFlatAVX512(query, flatVectors []float32, numVectors, dims int, results []float32) error {
-	return errors.New("avx512 not supported")
-}

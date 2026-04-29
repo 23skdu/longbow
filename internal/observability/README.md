@@ -1,6 +1,6 @@
 # Longbow Observability Configuration
 
-This directory contains Grafana dashboard definitions and monitoring configurations for the Longbow vector database.
+This directory contains Grafana dashboard definitions and monitoring configurations for the Longbow vector engine.
 
 ## Overview
 

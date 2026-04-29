@@ -1,6 +1,6 @@
 # Deployment, Operations, and Usage Guide
 
-Longbow is a high-performance, distributed vector database designed for cloud-native environments. This guide covers installation, configuration, operational management, and basic usage.
+Longbow is a high-performance, distributed vector engine designed for cloud-native environments. This guide covers installation, configuration, operational management, and basic usage.
 
 ---
 

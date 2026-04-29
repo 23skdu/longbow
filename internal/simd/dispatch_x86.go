@@ -7,10 +7,10 @@ func init() {
 	dispatchTable["avx2"].EuclideanDistance = euclideanAVX2
 	dispatchTable["avx2"].CosineDistance = cosineAVX2
 	dispatchTable["avx2"].DotProduct = dotAVX2
-	dispatchTable["avx2"].EuclideanDistanceBatch = euclideanBatchAVX2
-	dispatchTable["avx2"].CosineDistanceBatch = cosineBatchAVX2
-	dispatchTable["avx2"].DotProductBatch = dotBatchAVX2
-	dispatchTable["avx2"].EuclideanDistanceBatchFlat = euclideanBatchFlatAVX2
+	dispatchTable["avx2"].EuclideanDistanceBatch = euclideanBatchGeneric
+	dispatchTable["avx2"].CosineDistanceBatch = cosineBatchGeneric
+	dispatchTable["avx2"].DotProductBatch = dotBatchGeneric
+	dispatchTable["avx2"].EuclideanDistanceBatchFlat = euclideanBatchFlatGeneric
 
 	dispatchTable["avx2"].EuclideanDistance128 = euclidean128Unrolled4x
 	dispatchTable["avx2"].EuclideanDistance384 = euclidean384AVX2

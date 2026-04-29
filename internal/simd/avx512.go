@@ -1,6 +1,5 @@
-//go:build amd64 && avx512
+//go:build amd64
 // +build amd64
-// +build avx512
 
 package simd
 
@@ -585,3 +584,63 @@ func adcBatchVNNIKernel(table, codes unsafe.Pointer, m int, results unsafe.Point
 
 //go:noescape
 func euclideanPQVNNIKernel(q, c unsafe.Pointer, subDim, k int, res unsafe.Pointer)
+
+func dotInt16AVX512(a, b []int16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if !features.HasAVX512 {
+		return dotInt16AVX2(a, b)
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotInt16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+}
+
+func dotUint16AVX512(a, b []uint16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if !features.HasAVX512 {
+		return dotUint16AVX2(a, b)
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotUint16AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+}
+
+func andBytesAVX512(dst, src []byte) {
+	if !features.HasAVX512 {
+		andBytesAVX2(dst, src)
+		return
+	}
+	andBytesAVX2(dst, src)
+}
+
+func orBytesAVX512(dst, src []byte) {
+	if !features.HasAVX512 {
+		orBytesAVX2(dst, src)
+		return
+	}
+	orBytesAVX2(dst, src)
+}
+
+func euclideanInt8AVX512(a, b []int8) (float32, error) {
+	return euclideanInt8Unrolled4x(a, b)
+}
+
+func euclideanInt16AVX512(a, b []int16) (float32, error) {
+	if !features.HasAVX512 {
+		return euclideanInt16AVX2(a, b)
+	}
+	return euclideanInt16AVX2(a, b)
+}
+
+func euclideanUint16AVX512(a, b []uint16) (float32, error) {
+	if !features.HasAVX512 {
+		return euclideanUint16AVX2(a, b)
+	}
+	return euclideanUint16AVX2(a, b)
+}

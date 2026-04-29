@@ -102,23 +102,65 @@ All P0 performance features below are IMPLEMENTED in codebase:
 
 ---
 
-### Issue 7: G115 Integer Overflow in ArrowHNSW ID Allocation  
-**Severity:** P0 - Security  
-**Status:** ✅ FIXED in previous commit  
+### Issue 7: G115 Integer Overflow in ArrowHNSW ID Allocation
+**Severity:** P0 - Security
+**Status:** ✅ FIXED in previous commit
 **Symptom:** gosec reports G115: int64->uint32 overflow
 
-**Fix Applied:** Added overflow check: `if next > math.MaxUint32 { return error }`  
-**Files Modified:**  
+**Fix Applied:** Added overflow check: `if next > math.MaxUint32 { return error }`
+**Files Modified:**
 - `internal/store/internal/core/arrow_hnsw.go`: Lines 715-717, 681-683
+
+---
+
+## Code Quality Analysis (2026-04-28)
+
+### TODO/FIXME Items
+
+| Priority | File | Line | Description | Status |
+|----------|------|------|-------------|--------|
+| HIGH | ivf_opq_index.go | 655 | makeClusterDists - dist=0 placeholder | NEEDS FIX |
+| HIGH | ivf_opq_index.go | 661 | decodeVector - returns nil | NEEDS FIX |
+| HIGH | ivf_opq_index.go | 665 | computeResidualScore - returns 0 | NEEDS FIX |
+| LOW | simd_blocked.go | 93 | Tiled batch for unaligned dims | LOW PRIORITY |
+
+### Stub Files (Platform-Specific, OK)
+
+All stubs are correctly tagged with platform build constraints:
+- `gpu/*_stub.go` (CUDA, TPU, Metal)
+- `memory/numa*_stub.go`
+- `query/simd_filter*_stub.go`
+- `storage/wal_backend*_stub.go`
+- `mesh/rdma_stub.go`
+- `onnx/*_stub.go`
+
+### Known Incomplete Functions (IVF-OPQ Index)
+
+The following methods need implementation in IVF-OPQ index:
+
+1. **makeClusterDists** (line 655) - Currently sets dist=0, needs actual distance to centroids
+2. **decodeVector** (line 661) - Currently returns nil, needs vector reconstruction from residual
+3. **computeResidualScore** (line 665) - Currently returns 0, needs residual distance computation
+
+### Remediation Plan
+
+1. [ ] Implement makeClusterDists with actual distance to centroids using SIMD batch
+2. [ ] Implement decodeVector for IVF-OPQ vector reconstruction
+3. [ ] Implement computeResidualScore for ranking
+4. [ ] Add tests: TestIVFOPQ_DecodeVector, TestIVFOPQ_ResidualScore
+5. [ ] Add benchmark: BenchmarkIVFOPQ_DecodeVector
 
 ---
 
 ## Subtasks & Action Items
 
 - [x] Issue 1: Fix race condition in concurrent add test ✅
-- [x] Issue 2: Fix pool metrics test ✅  
+- [x] Issue 2: Fix pool metrics test ✅
 - [x] Issue 3: Fix PQ storage allocation in AddByLocation ✅
 - [x] Issue 4: Replace pq.NewPQEncoder with OPQ equivalent ✅
+- [x] Issue 5: Verify SIMD NEON dispatch ✅
+- [x] Issue 6: Worker minimum count ✅
+- [x] Issue 7: G115 integer overflow check ✅
 
 ---
 
@@ -421,10 +463,37 @@ Check and potentially remove:
 | MEDIUM | GPU | Metal compute shaders | 5-10x for >1M vectors |
 | LOW | Graph | Batch graph traversal | +20% for graphrag |
 
-### Benchmark Infrastructure
-- Add automated daily benchmarks comparing CPU/Metal/CUDA
-- Track QPS, latency p50/p95/p99, ingest rate
-- Generate diffs vs previous releases
+---
+
+## Performance Micro-Optimizations (Hot Path Analysis)
+
+### Critical Hot Paths Identified
+
+| Path | Location | Current | Optimization |
+|------|----------|---------|--------------|
+| Search Entry | arrow_hnsw.go:888 | Full ctx propagation | Prefetch entry points |
+| Insert Entry | insertion_core.go:31 | Per-vector metrics | Sample every N |
+| Distance Calc | simd/batch_operations.go | Per-element | AVX-512 batch |
+| Heap Push | arrow_heap.go | bubbleUp | SIMD compare |
+| Context Pool | search_context.go | Get/Put | Pre-allocate |
+| PQ Encode | pq/encoder.go | Per-vector | GPU offload |
+
+### Micro-Optimization Plan (Priority Order)
+
+1. **HIGH** - Context pool pre-allocation: Pre-allocate search contexts per thread to avoid Get/Put in hot path
+2. **HIGH** - Batch distance: Use AVX-512 batch for >512 dim queries
+3. **HIGH** - Heap operations: Add SIMD compare for heap merge (RRF composite)
+4. **MEDIUM** - Insert metrics: Reduce sampling interval from 10->100
+5. **MEDIUM** - PQ encode: Add GPU offload path for large batches
+6. **LOW** - Prefetch: Add node prefetch for disk-graph
+
+### Planned Changes
+
+1. [ ] Add SearchContext pool with thread-local pre-allocation
+2. [ ] Enable AVX-512 batch for dim>512 in search
+3. [ ] Add RRF SIMD merge for multi-index queries
+4. [ ] Reduce metric sampling overhead in insert path
+5. [ ] Add GPU PQ encoding batch threshold
 
 ---
 

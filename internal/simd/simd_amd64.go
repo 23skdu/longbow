@@ -516,12 +516,16 @@ func euclideanInt8AVX2(a, b []int8) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	var sum float64
-	for i := range a {
-		diff := float64(a[i]) - float64(b[i])
-		sum += diff * diff
+	if len(a) == 0 {
+		return 0, nil
 	}
-	return float32(math.Sqrt(sum)), nil
+	if !features.HasAVX2 {
+		return euclideanInt8Generic(a, b)
+	}
+	if len(a) >= 64 {
+		return euclideanInt8Unrolled4xAVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+	}
+	return euclideanInt8AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
 }
 
 // =============================================================================
@@ -620,8 +624,74 @@ func dotInt4AVX512Kernel(a, b unsafe.Pointer, n int) float32
 //go:noescape
 func dotInt4AVX2Kernel(a, b unsafe.Pointer, n int) float32
 
+/*
 //go:noescape
 func dotInt2AVX512Kernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
 func dotInt2AVX2Kernel(a, b unsafe.Pointer, n int) float32
+*/
+
+// AVX512 Kernel Declarations
+// These are declared here to satisfy go vet even when build without avx512 tag
+
+//go:noescape
+func l2SquaredAVX512Kernel(a, b unsafe.Pointer, n int) float32
+//go:noescape
+func dotAVX512Kernel(a, b unsafe.Pointer, n int) float32
+//go:noescape
+func cosineDotAVX512(a, b unsafe.Pointer, n int) (dot, normA, normB float32)
+//go:noescape
+func euclideanVertical4AVX512(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
+//go:noescape
+func cosineVertical4AVX512(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
+//go:noescape
+func dotVertical4AVX512(q, v0, v1, v2, v3 unsafe.Pointer, n int, res unsafe.Pointer)
+//go:noescape
+func euclidean384AVX512Kernel(a, b unsafe.Pointer) float32
+//go:noescape
+func euclidean768AVX512Kernel(a, b unsafe.Pointer) float32
+//go:noescape
+func euclidean1536AVX512Kernel(a, b unsafe.Pointer) float32
+//go:noescape
+func dot384AVX512Kernel(a, b unsafe.Pointer) float32
+//go:noescape
+func dot768AVX512Kernel(a, b unsafe.Pointer) float32
+//go:noescape
+func dot1536AVX512Kernel(a, b unsafe.Pointer) float32
+//go:noescape
+func matchInt64AVX512Kernel(src unsafe.Pointer, val int64, op int, dst unsafe.Pointer, n int)
+//go:noescape
+func matchInt32AVX512Kernel(src unsafe.Pointer, val int32, op int, dst unsafe.Pointer, n int)
+//go:noescape
+func matchFloat32AVX512Kernel(src unsafe.Pointer, val float32, op int, dst unsafe.Pointer, n int)
+//go:noescape
+func matchFloat64AVX512Kernel(src unsafe.Pointer, val float64, op int, dst unsafe.Pointer, n int)
+//go:noescape
+func euclideanFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
+//go:noescape
+func dotFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
+//go:noescape
+func euclideanSQ8AVX512Kernel(q, v unsafe.Pointer, n int) int32
+//go:noescape
+func euclideanF16AVX512Kernel(a, b unsafe.Pointer, n int) float32
+//go:noescape
+func dotF16AVX512Kernel(a, b unsafe.Pointer, n int) float32
+//go:noescape
+func adcBatchAVX512Kernel(table, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
+//go:noescape
+func adcBatchVNNIKernel(table, codes unsafe.Pointer, m int, results unsafe.Pointer, n int)
+//go:noescape
+func euclideanPQVNNIKernel(q, c unsafe.Pointer, subDim, k int, res unsafe.Pointer)
+
+// AVX2 Kernel Declarations (missing from Go)
+//go:noescape
+func l2SquaredAVX2Kernel(a, b unsafe.Pointer, n int) float32
+//go:noescape
+func dotAVX2Kernel(a, b unsafe.Pointer, n int) float32
+//go:noescape
+func euclidean16AVX512(a, b unsafe.Pointer) float32
+//go:noescape
+func dot16AVX512(a, b unsafe.Pointer) float32
+//go:noescape
+func cosine16AVX512(a, b unsafe.Pointer) (dot, normA, normB float32)

@@ -134,11 +134,26 @@ func euclideanFloat64NEON(a, b []float64) (float32, error) {
 // Public Go wrappers (with error propagation)
 
 func euclideanNEON(a, b []float32) (float32, error) {
-	return euclideanUnrolled4x(a, b)
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanNEONKernel(a, b), nil
 }
 
 func dotNEON(a, b []float32) (float32, error) {
-	return dotUnrolled4x(a, b)
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if len(a) > 384 {
+		return dotHighDimNEONKernel(a, b), nil
+	}
+	return dotNEONKernel(a, b), nil
 }
 
 // Optimized for 384 dimensions - use generic NEON kernel which is SIMD-optimized
@@ -195,19 +210,46 @@ func dot128NEON(a, b []float32) (float32, error) {
 }
 
 func cosineNEON(a, b []float32) (float32, error) {
-	return cosineUnrolled4x(a, b)
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if len(a) > 384 {
+		return cosineHighDimNEONKernel(a, b), nil
+	}
+	return cosineNEONKernel(a, b), nil
 }
 
 func euclideanF16NEON(a, b []float16.Num) (float32, error) {
-	return euclideanF16Unrolled4x(a, b)
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanF16NEONKernel(a, b), nil
 }
 
 func dotF16NEON(a, b []float16.Num) (float32, error) {
-	return dotF16Unrolled4x(a, b)
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotF16NEONKernel(a, b), nil
 }
 
 func cosineF16NEON(a, b []float16.Num) (float32, error) {
-	return cosineF16Unrolled4x(a, b)
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return cosineF16NEONKernel(a, b), nil
 }
 
 /*
@@ -252,8 +294,23 @@ func l2SquaredNEON(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	if len(a) == 0 {
+	n := len(a)
+	if n == 0 {
 		return 0, nil
+	}
+	switch n {
+	case 128:
+		return l2Squared128NEONKernel(a, b), nil
+	case 384:
+		return l2Squared384NEONKernel(a, b), nil
+	case 768:
+		return l2Squared768NEONKernel(a, b), nil
+	case 1024:
+		return l2Squared1024NEONKernel(a, b), nil
+	case 1536:
+		return l2Squared1536NEONKernel(a, b), nil
+	case 3072:
+		return l2Squared3072NEONKernel(a, b), nil
 	}
 	return l2SquaredNEONKernel(a, b), nil
 }
@@ -320,11 +377,23 @@ func RandomRotationNEON(a []float32, seed int64) error {
 }
 
 func dotInt4Neon(a, b []byte) (float32, error) {
-	return dotInt4Generic(a, b)
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotInt4NeonKernel(a, b), nil
 }
 
 func dotInt2Neon(a, b []byte) (float32, error) {
-	return dotInt2Generic(a, b)
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotInt2NeonKernel(a, b), nil
 }
 
 func matchInt64Neon(src []int64, val int64, op CompareOp, dst []byte) error {

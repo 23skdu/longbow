@@ -1666,10 +1666,7 @@ func (g *GraphData) Clone() *GraphData {
 				}
 				newG.Neighbors[l] = make([][]uint32, len(g.Neighbors[l]), targetCap)
 				for c := range g.Neighbors[l] {
-					if g.Neighbors[l][c] != nil {
-						newG.Neighbors[l][c] = make([]uint32, len(g.Neighbors[l][c]))
-						copy(newG.Neighbors[l][c], g.Neighbors[l][c])
-					}
+					newG.Neighbors[l][c] = g.Neighbors[l][c]
 				}
 			}
 		}
@@ -1686,10 +1683,7 @@ func (g *GraphData) Clone() *GraphData {
 				}
 				newG.Counts[l] = make([][]int32, len(g.Counts[l]), targetCap)
 				for c := range g.Counts[l] {
-					if g.Counts[l][c] != nil {
-						newG.Counts[l][c] = make([]int32, len(g.Counts[l][c]))
-						copy(newG.Counts[l][c], g.Counts[l][c])
-					}
+					newG.Counts[l][c] = g.Counts[l][c]
 				}
 			}
 		}
@@ -1706,10 +1700,7 @@ func (g *GraphData) Clone() *GraphData {
 				}
 				newG.Versions[l] = make([][]uint32, len(g.Versions[l]), targetCap)
 				for c := range g.Versions[l] {
-					if g.Versions[l][c] != nil {
-						newG.Versions[l][c] = make([]uint32, len(g.Versions[l][c]))
-						copy(newG.Versions[l][c], g.Versions[l][c])
-					}
+					newG.Versions[l][c] = g.Versions[l][c]
 				}
 			}
 		}

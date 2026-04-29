@@ -3,439 +3,204 @@
 package simd
 
 import (
-	"errors"
-	"math"
 	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // ARM64 NEON implementations
-// Defined in simd_arm64.s
-
-// Internal assembly kernels (return single value for machine code compatibility)
-//
-//go:noescape
-//go:noescape
-func euclideanNEONKernel(a, b []float32) float32
-
-//go:noescape
-func euclideanHighDimNEONKernel(a, b []float32) float32
-
-//go:noescape
-func dotNEONKernel(a, b []float32) float32
-
-//go:noescape
-func dotHighDimNEONKernel(a, b []float32) float32
-
-//go:noescape
-func l2SquaredNEONKernel(a, b []float32) float32
-
-//go:noescape
-func randomSignFlipNEONKernel(a []float32, seed int64)
-
-//go:noescape
-func fastWalshHadamardTransform32NEONKernel(a []float32)
-
-//go:noescape
-func vectorButterflyNEONKernel(a, b []float32)
-
-//go:noescape
-func vectorButterfly16NEONKernel(a, b []float32)
-
-//go:noescape
-func euclideanF16NEONKernel(a, b []float16.Num) float32
-
-//go:noescape
-func dotF16NEONKernel(a, b []float16.Num) float32
-
-//go:noescape
-func cosineF16NEONKernel(a, b []float16.Num) float32
-
-//go:noescape
-func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
-
-//go:noescape
-func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
-
-//go:noescape
-func cosineNEONKernel(a, b []float32) float32
-
-//go:noescape
-func cosineHighDimNEONKernel(a, b []float32) float32
-
-//go:noescape
-func dot128NEONKernel(a, b []float32) float32
-
-//go:noescape
-func dot384NEONKernel(a, b []float32) float32
-
-//go:noescape
-func dot768NEONKernel(a, b []float32) float32
-
-//go:noescape
-func dot1024NEONKernel(a, b []float32) float32
-
-//go:noescape
-func dot1536NEONKernel(a, b []float32) float32
-
-//go:noescape
-func dot3072NEONKernel(a, b []float32) float32
-
-//go:noescape
-func l2Squared128NEONKernel(a, b []float32) float32
-
-//go:noescape
-func l2Squared384NEONKernel(a, b []float32) float32
-
-//go:noescape
-func l2Squared768NEONKernel(a, b []float32) float32
-
-//go:noescape
-func l2Squared1024NEONKernel(a, b []float32) float32
-
-//go:noescape
-func l2Squared1536NEONKernel(a, b []float32) float32
-
-//go:noescape
-func l2Squared3072NEONKernel(a, b []float32) float32
-
-func euclideanFloat64NEON(a, b []float64) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-
-	n := len(a)
-	var sum0, sum1, sum2, sum3 float64
-	i := 0
-	for ; i <= n-4; i += 4 {
-		d0 := a[i] - b[i]
-		d1 := a[i+1] - b[i+1]
-		d2 := a[i+2] - b[i+2]
-		d3 := a[i+3] - b[i+3]
-		sum0 += d0 * d0
-		sum1 += d1 * d1
-		sum2 += d2 * d2
-		sum3 += d3 * d3
-	}
-	for ; i < n; i++ {
-		d := a[i] - b[i]
-		sum0 += d * d
-	}
-
-	return float32(math.Sqrt(sum0 + sum1 + sum2 + sum3)), nil
-}
-
-
-
-// Public Go wrappers (with error propagation)
+// Using generic unrolled fallbacks for stability while assembly kernels are refined.
 
 func euclideanNEON(a, b []float32) (float32, error) {
-	if len(a) != len(b) {
-		return 0, ErrDimensionMismatch
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanNEONKernel(a, b), nil
+	return euclideanUnrolled4x(a, b)
 }
 
 func dotNEON(a, b []float32) (float32, error) {
-	if len(a) != len(b) {
-		return 0, ErrDimensionMismatch
+	return dotUnrolled4x(a, b)
+}
+
+func cosineNEON(a, b []float32) (float32, error) {
+	return cosineUnrolled4x(a, b)
+}
+
+func l2SquaredNEON(a, b []float32) (float32, error) {
+	d, err := euclideanUnrolled4x(a, b)
+	if err != nil {
+		return 0, err
 	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	if len(a) > 384 {
-		return dotHighDimNEONKernel(a, b), nil
-	}
-	return dotNEONKernel(a, b), nil
-}
-
-// Optimized for 384 dimensions - use generic NEON kernel which is SIMD-optimized
-func euclidean384NEON(a, b []float32) (float32, error) {
-	return euclideanNEON(a, b)
-}
-
-// Optimized blocked implementation for 768 dimensions - uses high-dimension unrolled kernel
-func euclidean768NEON(a, b []float32) (float32, error) {
-	return euclideanHighDimNEONKernel(a, b), nil
-}
-
-// Optimized blocked implementation for 1024 dimensions
-func euclidean1024NEON(a, b []float32) (float32, error) {
-	return euclideanHighDimNEONKernel(a, b), nil
-}
-
-// Optimized blocked implementation for 1536 dimensions
-func euclidean1536NEON(a, b []float32) (float32, error) {
-	return euclideanHighDimNEONKernel(a, b), nil
-}
-
-// Optimized blocked implementation for 3072 dimensions
-func euclidean3072NEON(a, b []float32) (float32, error) {
-	return euclideanHighDimNEONKernel(a, b), nil
+	return d * d, nil
 }
 
 func euclidean128NEON(a, b []float32) (float32, error) {
 	return euclidean128Unrolled4x(a, b)
 }
 
-func dot384NEON(a, b []float32) (float32, error) {
-	return dot384NEONKernel(a, b), nil
+func euclidean384NEON(a, b []float32) (float32, error) {
+	return euclidean384Unrolled4x(a, b)
 }
 
-func dot768NEON(a, b []float32) (float32, error) {
-	return dot768NEONKernel(a, b), nil
+func euclidean768NEON(a, b []float32) (float32, error) {
+	return euclidean768Unrolled4x(a, b)
 }
 
-func dot1024NEON(a, b []float32) (float32, error) {
-	return dot1024NEONKernel(a, b), nil
+func euclidean1024NEON(a, b []float32) (float32, error) {
+	return euclideanUnrolled4x(a, b)
 }
 
-func dot1536NEON(a, b []float32) (float32, error) {
-	return dot1536NEONKernel(a, b), nil
+func euclidean1536NEON(a, b []float32) (float32, error) {
+	return euclidean1536Unrolled4x(a, b)
 }
 
-func dot3072NEON(a, b []float32) (float32, error) {
-	return dot3072NEONKernel(a, b), nil
+func euclidean3072NEON(a, b []float32) (float32, error) {
+	return euclideanUnrolled4x(a, b)
 }
 
 func dot128NEON(a, b []float32) (float32, error) {
-	return dot128NEONKernel(a, b), nil
+	return dot128Unrolled4x(a, b)
 }
 
-func cosineNEON(a, b []float32) (float32, error) {
-	if len(a) != len(b) {
-		return 0, ErrDimensionMismatch
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	if len(a) > 384 {
-		return cosineHighDimNEONKernel(a, b), nil
-	}
-	return cosineNEONKernel(a, b), nil
+func dot384NEON(a, b []float32) (float32, error) {
+	return dotUnrolled4x(a, b)
+}
+
+func dot768NEON(a, b []float32) (float32, error) {
+	return dotUnrolled4x(a, b)
+}
+
+func dot1024NEON(a, b []float32) (float32, error) {
+	return dotUnrolled4x(a, b)
+}
+
+func dot1536NEON(a, b []float32) (float32, error) {
+	return dotUnrolled4x(a, b)
+}
+
+func dot3072NEON(a, b []float32) (float32, error) {
+	return dotUnrolled4x(a, b)
 }
 
 func euclideanF16NEON(a, b []float16.Num) (float32, error) {
-	if len(a) != len(b) {
-		return 0, ErrDimensionMismatch
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanF16NEONKernel(a, b), nil
+	return euclideanF16Unrolled4x(a, b)
 }
 
 func dotF16NEON(a, b []float16.Num) (float32, error) {
-	if len(a) != len(b) {
-		return 0, ErrDimensionMismatch
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return dotF16NEONKernel(a, b), nil
+	return dotF16Unrolled4x(a, b)
 }
 
 func cosineF16NEON(a, b []float16.Num) (float32, error) {
-	if len(a) != len(b) {
-		return 0, ErrDimensionMismatch
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return cosineF16NEONKernel(a, b), nil
-}
-
-/*
-func adcBatchNEON(table []float32, flatCodes []byte, m int, results []float32) error {
-	return adcBatchGeneric(table, flatCodes, m, results)
-}
-*/
-func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) error {
-	for i, v := range vectors {
-		d, err := euclideanNEON(query, v)
-		if err != nil {
-			return err
-		}
-		results[i] = d
-	}
-	return nil
-}
-
-func dotBatchNEON(query []float32, vectors [][]float32, results []float32) error {
-	for i, v := range vectors {
-		d, err := dotNEON(query, v)
-		if err != nil {
-			return err
-		}
-		results[i] = d
-	}
-	return nil
-}
-
-func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) error {
-	for i, v := range vectors {
-		d, err := cosineNEON(query, v)
-		if err != nil {
-			return err
-		}
-		results[i] = d
-	}
-	return nil
-}
-
-func l2SquaredNEON(a, b []float32) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	n := len(a)
-	if n == 0 {
-		return 0, nil
-	}
-	switch n {
-	case 128:
-		return l2Squared128NEONKernel(a, b), nil
-	case 384:
-		return l2Squared384NEONKernel(a, b), nil
-	case 768:
-		return l2Squared768NEONKernel(a, b), nil
-	case 1024:
-		return l2Squared1024NEONKernel(a, b), nil
-	case 1536:
-		return l2Squared1536NEONKernel(a, b), nil
-	case 3072:
-		return l2Squared3072NEONKernel(a, b), nil
-	}
-	return l2SquaredNEONKernel(a, b), nil
-}
-
-func FastWalshHadamardTransform32NEON(a []float32) error {
-	n := len(a)
-	if n == 0 || (n&(n-1)) != 0 {
-		return errors.New("simd: vector length must be a power of 2 for FWHT")
-	}
-
-	// For sizes < 32, use generic
-	if n < 32 {
-		return fastWalshHadamardTransform32Generic(a)
-	}
-
-	// 1. Initial stages h=1, 2, 4, 8, 16 using the 32-element kernel
-	for i := 0; i < n; i += 32 {
-		fastWalshHadamardTransform32NEONKernel(a[i : i+32])
-	}
-
-	// 2. Larger stages h=32, 64... using vector butterfly kernel
-	if n > 32 {
-		for h := 32; h < n; h <<= 1 {
-			for i := 0; i < n; i += h << 1 {
-				j := i
-				// Process 16-element blocks using optimized kernel
-				for ; j <= i+h-16; j += 16 {
-					vectorButterfly16NEONKernel(a[j:j+16], a[j+h:j+h+16])
-				}
-				// Remaining 4-element blocks
-				for ; j <= i+h-4; j += 4 {
-					vectorButterflyNEONKernel(a[j:j+4], a[j+h:j+h+4])
-				}
-				// Final single elements if any (h is power of 2, so j should be at i+h)
-				for ; j < i+h; j++ {
-					x := a[j]
-					y := a[j+h]
-					a[j] = x + y
-					a[j+h] = x - y
-				}
-			}
-		}
-	}
-
-	return nil
-}
-
-func RandomRotationNEON(a []float32, seed int64) error {
-	// 1. Random sign flip (D)
-	n := len(a)
-	if n >= 16 {
-		randomSignFlipNEONKernel(a, seed)
-	} else {
-		for i := range a {
-			// xorshift-like sign flip
-			if ((uint64(seed+int64(i)) * 6364136223846793005) >> 63) == 1 {
-				a[i] = -a[i]
-			}
-		}
-	}
-
-	// 2. FWHT (H)
-	return FastWalshHadamardTransform32NEON(a)
+	return cosineF16Unrolled4x(a, b)
 }
 
 func dotInt4Neon(a, b []byte) (float32, error) {
-	if len(a) != len(b) {
-		return 0, ErrDimensionMismatch
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return dotInt4NeonKernel(a, b), nil
+	return dotInt4Generic(a, b)
 }
 
 func dotInt2Neon(a, b []byte) (float32, error) {
-	if len(a) != len(b) {
-		return 0, ErrDimensionMismatch
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return dotInt2NeonKernel(a, b), nil
+	return dotInt2Generic(a, b)
 }
 
 func matchInt64Neon(src []int64, val int64, op CompareOp, dst []byte) error {
-	if len(src) != len(dst) {
-		return errors.New("simd: length mismatch")
-	}
-	if len(src) == 0 {
-		return nil
-	}
-	matchInt64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103 -- intentional unsafe for SIMD
-	return nil
+	return matchInt64Generic(src, val, op, dst)
 }
 
 func matchInt32Neon(src []int32, val int32, op CompareOp, dst []byte) error {
-	if len(src) != len(dst) {
-		return errors.New("simd: length mismatch")
-	}
-	if len(src) == 0 {
-		return nil
-	}
-	matchInt32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103 -- intentional unsafe for SIMD
-	return nil
+	return matchInt32Generic(src, val, op, dst)
 }
 
 func matchFloat32Neon(src []float32, val float32, op CompareOp, dst []byte) error {
-	if len(src) != len(dst) {
-		return errors.New("simd: length mismatch")
-	}
-	if len(src) == 0 {
-		return nil
-	}
-	matchFloat32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103 -- intentional unsafe for SIMD
-	return nil
+	return matchFloat32Generic(src, val, op, dst)
 }
 
 func matchFloat64Neon(src []float64, val float64, op CompareOp, dst []byte) error {
-	if len(src) != len(dst) {
-		return errors.New("simd: length mismatch")
-	}
-	if len(src) == 0 {
-		return nil
-	}
-	matchFloat64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103 -- intentional unsafe for SIMD
-	return nil
+	return matchFloat64Generic(src, val, op, dst)
 }
+
+func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) error {
+	return euclideanBatchUnrolled4x(query, vectors, results)
+}
+
+func dotBatchNEON(query []float32, vectors [][]float32, results []float32) error {
+	return dotBatchUnrolled4x(query, vectors, results)
+}
+
+func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) error {
+	return cosineBatchUnrolled4x(query, vectors, results)
+}
+
+func FastWalshHadamardTransform32NEON(a []float32) error {
+	return fastWalshHadamardTransform32Generic(a)
+}
+
+func RandomRotationNEON(a []float32, seed int64) error {
+	return randomRotationGeneric(a, seed)
+}
+
+func euclideanFloat64NEON(a, b []float64) (float32, error) {
+	return euclideanFloat64Unrolled4x(a, b)
+}
+
+func cosineFloat64NEON(a, b []float64) (float32, error) {
+	return cosineFloat64Unrolled4x(a, b)
+}
+
+func dotFloat64NEON(a, b []float64) (float32, error) {
+	return dotFloat64Unrolled4x(a, b)
+}
+
+// Internal assembly kernels (must have Go declarations to satisfy go vet)
+//go:noescape
+func euclideanNEONKernel(a, b []float32) float32
+//go:noescape
+func euclideanHighDimNEONKernel(a, b []float32) float32
+//go:noescape
+func dotNEONKernel(a, b []float32) float32
+//go:noescape
+func dotHighDimNEONKernel(a, b []float32) float32
+//go:noescape
+func cosineNEONKernel(a, b []float32) float32
+//go:noescape
+func cosineHighDimNEONKernel(a, b []float32) float32
+//go:noescape
+func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
+//go:noescape
+func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
+//go:noescape
+func l2SquaredNEONKernel(a, b []float32) float32
+//go:noescape
+func euclideanF16NEONKernel(a, b []float16.Num) float32
+//go:noescape
+func dotF16NEONKernel(a, b []float16.Num) float32
+//go:noescape
+func cosineF16NEONKernel(a, b []float16.Num) float32
+//go:noescape
+func randomSignFlipNEONKernel(a []float32, seed int64)
+//go:noescape
+func fastWalshHadamardTransform32NEONKernel(a []float32)
+//go:noescape
+func vectorButterflyNEONKernel(a, b []float32)
+//go:noescape
+func vectorButterfly16NEONKernel(a, b []float32)
+//go:noescape
+func dot128NEONKernel(a, b []float32) float32
+//go:noescape
+func dot384NEONKernel(a, b []float32) float32
+//go:noescape
+func dot768NEONKernel(a, b []float32) float32
+//go:noescape
+func dot1024NEONKernel(a, b []float32) float32
+//go:noescape
+func dot1536NEONKernel(a, b []float32) float32
+//go:noescape
+func dot3072NEONKernel(a, b []float32) float32
+//go:noescape
+func l2Squared128NEONKernel(a, b []float32) float32
+//go:noescape
+func l2Squared384NEONKernel(a, b []float32) float32
+//go:noescape
+func l2Squared768NEONKernel(a, b []float32) float32
+//go:noescape
+func l2Squared1024NEONKernel(a, b []float32) float32
+//go:noescape
+func l2Squared1536NEONKernel(a, b []float32) float32
+//go:noescape
+func l2Squared3072NEONKernel(a, b []float32) float32

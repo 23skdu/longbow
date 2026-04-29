@@ -672,7 +672,7 @@ func euclideanFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
 //go:noescape
 func dotFloat64AVX512Kernel(a, b unsafe.Pointer, n int) float32
 //go:noescape
-func euclideanSQ8AVX512Kernel(q, v unsafe.Pointer, n int) int32
+func euclideanSQ8AVX512Kernel(a, b unsafe.Pointer, n int) int32
 //go:noescape
 func euclideanF16AVX512Kernel(a, b unsafe.Pointer, n int) float32
 //go:noescape
@@ -686,9 +686,9 @@ func euclideanPQVNNIKernel(q, c unsafe.Pointer, subDim, k int, res unsafe.Pointe
 
 // AVX2 Kernel Declarations (missing from Go)
 //go:noescape
-func l2SquaredAVX2Kernel(a, b unsafe.Pointer, n int) float32
+func l2SquaredAVX2Kernel(a, b unsafe.Pointer, n int, res unsafe.Pointer)
 //go:noescape
-func dotAVX2Kernel(a, b unsafe.Pointer, n int) float32
+func dotAVX2Kernel(a, b unsafe.Pointer, n int, res unsafe.Pointer)
 //go:noescape
 func euclidean16AVX512(a, b unsafe.Pointer) float32
 //go:noescape

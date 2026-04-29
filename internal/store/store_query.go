@@ -780,6 +780,26 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 
 			ds.dataMu.RUnlock()
 
+			// Learned Index Prediction (v0.2.0-rc1)
+			if req.EnableLearnedIndex {
+				predictor := s.GetIndexPredictor()
+				if predictor != nil {
+					features := QueryFeatures{
+						VectorDimension: len(queryVec),
+						DatasetSize:     ds.IndexLen(),
+						SearchK:         req.K,
+						IsFiltered:      len(req.Filters) > 0 || req.FilterExpr != nil,
+						IsHybrid:        isHybrid,
+					}
+					prediction := predictor.Predict(features)
+					s.logger.Info().
+						Str("dataset", req.Dataset).
+						Str("recommended", string(prediction.RecommendedIndex)).
+						Float64("confidence", prediction.Confidence).
+						Msg("Learned index recommendation")
+				}
+			}
+
 			// Core Search (No dataset lock held)
 			var searchErr error
 			filterExpr := ParseFilter(req.FilterExpr)

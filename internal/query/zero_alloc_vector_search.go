@@ -163,6 +163,13 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 			}
 			p.result.GraphDepth = int(val)
 			i = newPos
+		case "enable_learned_index":
+			val, newPos, err := ParseBool(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.EnableLearnedIndex = val
+			i = newPos
 		case "include_vectors":
 			val, newPos, err := ParseBool(data, i)
 			if err != nil {

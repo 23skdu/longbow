@@ -2,38 +2,36 @@
 
 Generated on: 2026-04-28
 
-## Executive Summary
+## Current Benchmark Results (2026-04-28)
 
-Benchmarks show **significant improvements** since v0.1.8:
-- Ingest: 1.22M vec/s (was ~500K - +144%)
-- Search QPS: ~4,000 (was ~2,600 - +54%)
-- Latency p50: 0.23ms (was 0.35ms - -34%)
+### Platform Configuration
+- **Memory**: 18GB allocated to longbow
+- **Test Configuration**: dim=128, count=500, 500 queries
 
-## v0.1.9 Current Results (2026-04-28)
+### Results Summary
 
-### Ingest Performance (vec/s) - CPU, dim=128
+| Metric | Local CPU | Local Metal | Remote CPU (ancalagon) | Remote CUDA (ancalagon) |
+|--------|----------|-------------|----------------------|------------------------|
+| **DoPut (vec/s)** | 281,491 | 231,839 | 227,294 | 241,875 |
+| **DoGet (vec/s)** | 438,212 | 501,567 | 231,851 | 400,580 |
+| **Search Dense (QPS)** | 4,868 | 4,966 | 2,685 | 2,747 |
+| **Search Sparse (QPS)** | 13,825 | 13,912 | 6,356 | 6,522 |
+| **Search ByID (QPS)** | 6,279 | 6,292 | 2,933 | 3,359 |
+| **Search Temporal (QPS)** | 5,803 | 5,779 | 3,753 | **4,192** |
+| **Search Geo (QPS)** | 6,115 | 6,160 | 2,520 | 2,882 |
+| **Search GraphRAG (QPS)** | 1,464 | 1,498 | 869 | 939 |
+| **Search Recommend (QPS)** | 5,728 | 5,800 | 2,710 | 3,130 |
+| **p50 Dense (ms)** | 0.19 | 0.19 | 0.35 | 0.35 |
 
-| Platform | Count | float32 | float32 (warm) | float64 | int8 |
-|---------|-------|--------|----------------|--------|------|
-| Darwin arm64 | 500 | ~152K | - | ~235K | ~354K |
-| Darwin arm64 | 1000 | ~391K | ~425K | ~264K | ~360K |
-| Darwin arm64 | 5000 | ~385K | ~463K | ~200K | ~340K |
+### Key Observations
+1. **Temporal search now working**: Fixed timestamp type assertion, now returning 3,700-5,800 QPS
+2. **Local (Metal) shows best performance**: 4,966 dense QPS (vs 2,747 CUDA)
+3. **Sparse remains fastest**: 13,825 QPS local CPU
+4. **Ancalagon (RTX 4060) lower QPS**: Due to x86 CPU vs Apple Silicon, but CUDA shows improvement in some ops
 
-> Note: First run (cold start) shows ~152K due to initialization overhead. 
-> Subsequent runs (warm) show ~400-460K depending on data type.
-
-> Performance regression investigation: The ~1.2M reference was from early v0.1.9 development
-> using different benchmark methodology. Current stable results: ~400-460K vec/s for float32.
-
-### Search Performance (QPS) - CPU, 1K vectors, dim=128
-
-| Mode | QPS | p50 ms | p95 ms | p99 ms |
-|------|-----|--------|--------|--------|
-| Dense | 2,826 | 0.32 | 0.51 | 1.53 |
-| Hybrid | 3,004 | 0.33 | 0.38 | 0.46 |
-| Sparse | 11,407 | 0.09 | 0.12 | 0.13 |
-| Filtered | 3,335 | 0.30 | 0.33 | 0.40 |
-| ByID | 4,524 | 0.22 | 0.26 | 0.36 |
+### Hardware
+- **Local**: Apple Silicon M3, 18GB memory
+- **Remote (ancalagon)**: NVIDIA RTX 4060 Laptop GPU, 8GB VRAM, 22GB RAM, 16 cores
 
 ## v0.1.9 Baseline (2026-04-26)
 

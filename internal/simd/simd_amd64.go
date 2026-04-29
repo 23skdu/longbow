@@ -95,6 +95,9 @@ func cosineAVX2(a, b []float32) (float32, error) {
 		normB += b[i] * b[i]
 	}
 
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
 	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB)))), nil
 }
 

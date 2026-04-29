@@ -5,34 +5,31 @@ import (
 	"fmt"
 	"net"
 	"net/http"
-	"net/http/pprof" // Register pprof handlers manually
+	"net/http/pprof"
 	"os"
 	"os/signal"
-	"strconv" // Added for hostname fallback
+	"runtime"
+	"runtime/debug"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"syscall"
 	"time"
 
-	"runtime"
-	"runtime/debug"
-
 	"github.com/23skdu/longbow/internal/autoscale"
-	lbflight "github.com/23skdu/longbow/internal/flight"
 	"github.com/23skdu/longbow/internal/gpu"
+	lbflight "github.com/23skdu/longbow/internal/flight"
 	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
-	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/middleware"
+	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/sharding"
 	"github.com/23skdu/longbow/internal/store"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"github.com/joho/godotenv"
-	"github.com/kelseyhightower/envconfig"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/propagation"
@@ -186,19 +183,12 @@ func main() {
 }
 
 func run() error {
-	// Load .env file if it exists (do this before logger init to read LOG_* vars)
-	_ = godotenv.Load()
-
-	// Handle signals for graceful shutdown and hot reload
-	// Use NotifyContext to cancel context on SIGINT/SIGTERM
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
-
-	if err := envconfig.Process("LONGBOW", &globalCfg); err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to process config: %v\n", err)
-		return err
-	}
+	// Load configuration first so it is available for logger init
 	cfg := globalCfg
+
+	// Set up context that cancels on OS signals
+	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	// Initialize zerolog logger
 	logger, err := logging.NewLogger(logging.Config{

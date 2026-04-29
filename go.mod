@@ -4,7 +4,6 @@ go 1.26.2
 
 require (
 	github.com/apache/arrow-go/v18 v18.5.2
-	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/klauspost/cpuid/v2 v2.3.0
 	github.com/parquet-go/parquet-go v0.29.0

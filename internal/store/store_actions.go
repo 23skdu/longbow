@@ -1316,9 +1316,14 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			idArr := rec.Column(idColIdx).(*array.String)
 			vecArr := rec.Column(vecColIdx).(*array.FixedSizeList)
 
-			var tsArr *array.Int64
+			var tsArr arrow.Array
 			if tsColIdx != -1 {
-				tsArr = rec.Column(tsColIdx).(*array.Int64)
+				tsArr = rec.Column(tsColIdx)
+			}
+
+			var tsInt64 *array.Int64
+			if tsArr != nil {
+				tsInt64, _ = tsArr.(*array.Int64)
 			}
 
 			for i := 0; i < int(rec.NumRows()); i++ {
@@ -1328,8 +1333,8 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 					// Extract timestamp from record column if available, otherwise use ingestion time
 					var vectorTs int64
-					if tsArr != nil && tsArr.IsValid(i) {
-						vectorTs = tsArr.Value(i)
+					if tsInt64 != nil && tsInt64.IsValid(i) {
+						vectorTs = tsInt64.Value(i)
 					} else {
 						vectorTs = ts
 					}

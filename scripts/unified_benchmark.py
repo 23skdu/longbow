@@ -198,7 +198,7 @@ class BenchmarkRunner:
         port = 3000
         for p in [port, port + 1, port + 80, port + 6000]:
             subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
-        time.sleep(2) # Give OS time to release sockets
+        time.sleep(5) # Increased wait time for OS to release sockets
         
         server_bin = self.get_server_binary()
         if not os.path.exists(server_bin):

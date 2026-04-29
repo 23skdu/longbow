@@ -62,6 +62,7 @@ type Quadtree struct {
 	southwest   *Quadtree
 	southeast   *Quadtree
 	datasetName string
+	depth       int
 }
 
 func NewQuadtree(bounds GeoBoundingBox, capacity int, datasetName string) *Quadtree {
@@ -69,6 +70,7 @@ func NewQuadtree(bounds GeoBoundingBox, capacity int, datasetName string) *Quadt
 		bounds:      bounds,
 		capacity:    capacity,
 		datasetName: datasetName,
+		depth:       0,
 	}
 }
 
@@ -83,6 +85,10 @@ func (q *Quadtree) Insert(vec *GeoIndexedVector) bool {
 	}
 
 	if !q.divided {
+		if q.depth >= 20 {
+			q.vectors = append(q.vectors, vec)
+			return true
+		}
 		q.subdivide()
 	}
 
@@ -104,21 +110,25 @@ func (q *Quadtree) subdivide() {
 		bounds:      GeoBoundingBox{MinLat: midLat, MaxLat: q.bounds.MaxLat, MinLon: q.bounds.MinLon, MaxLon: midLon},
 		capacity:    q.capacity,
 		datasetName: q.datasetName,
+		depth:       q.depth + 1,
 	}
 	q.northeast = &Quadtree{
 		bounds:      GeoBoundingBox{MinLat: midLat, MaxLat: q.bounds.MaxLat, MinLon: midLon, MaxLon: q.bounds.MaxLon},
 		capacity:    q.capacity,
 		datasetName: q.datasetName,
+		depth:       q.depth + 1,
 	}
 	q.southwest = &Quadtree{
 		bounds:      GeoBoundingBox{MinLat: q.bounds.MinLat, MaxLat: midLat, MinLon: q.bounds.MinLon, MaxLon: midLon},
 		capacity:    q.capacity,
 		datasetName: q.datasetName,
+		depth:       q.depth + 1,
 	}
 	q.southeast = &Quadtree{
 		bounds:      GeoBoundingBox{MinLat: q.bounds.MinLat, MaxLat: midLat, MinLon: midLon, MaxLon: q.bounds.MaxLon},
 		capacity:    q.capacity,
 		datasetName: q.datasetName,
+		depth:       q.depth + 1,
 	}
 
 	for _, v := range q.vectors {

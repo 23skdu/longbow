@@ -88,9 +88,9 @@ func NewAutoScaler(logger zerolog.Logger) *AutoScaler {
 		ingestWindow:    NewRollingWindow(time.Second, 60),
 		cooldown:        30 * time.Second,
 		config: ScalingConfig{
-			MinIndexingWorkers:  1,
+			MinIndexingWorkers:  4,
 			MaxIndexingWorkers:  16, // Default cap
-			MinIngestionWorkers: 1,
+			MinIngestionWorkers: 4,
 			MaxIngestionWorkers: 16,
 			TargetQPSPerWorker:  50.0,
 			ScaleUpThreshold:    0.8,

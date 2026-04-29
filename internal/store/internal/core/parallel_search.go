@@ -102,6 +102,7 @@ func processResultsParallelInternal[T float32 | float64](ctx context.Context, h 
 	// Pre-allocate results array of arrays
 	chunksResults := make([][]types.SearchResult, numWorkers)
 	var wg sync.WaitGroup
+	pool := GetSharedPool()
 
 	for i := 0; i < numWorkers; i++ {
 		start := i * chunkSize
@@ -113,8 +114,10 @@ func processResultsParallelInternal[T float32 | float64](ctx context.Context, h 
 			end = neighborCount
 		}
 
+		workerID := i
+		chunk := candidates[start:end]
 		wg.Add(1)
-		go func(workerID int, chunk []types.Candidate) {
+		pool.Submit(func() {
 			defer wg.Done()
 			topo, node := h.GetNUMAConfig()
 			if topo != nil && node >= 0 {
@@ -122,7 +125,7 @@ func processResultsParallelInternal[T float32 | float64](ctx context.Context, h 
 				defer runtime.UnlockOSThread()
 			}
 			chunksResults[workerID] = processChunkInternal(ctx, h, query, chunk, filters, bitmap)
-		}(i, candidates[start:end])
+		})
 	}
 	wg.Wait()
 

@@ -55,8 +55,8 @@ type ArrowHNSW struct {
 	mMax  int
 	mMax0 int
 
-	// Mutex for thread-safe concurrent writes (Issue 1: ConcurrentAdd race fix)
-	insertMu sync.Mutex
+	// Mutexes for thread-safe concurrent writes (sharded to 1024 to reduce contention)
+	insertMus [ShardedLockCount]sync.Mutex
 
 	// Insert context pool for reducing allocations (Issue 2: PoolMetrics)
 	insertPool *InsertContextPool
@@ -95,6 +95,7 @@ type ArrowHNSW struct {
 
 	initMu sync.Mutex
 	growMu sync.RWMutex
+	epMu   sync.Mutex
 
 	deleted *roaring.Bitmap
 
@@ -674,11 +675,21 @@ func (h *ArrowHNSW) ensureChunk(data *types.GraphData, cID, cOff, dims int) (*ty
 	// Strictly serialized growth to avoid structural races in types.GraphData
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
-
 	return h.ensureChunkInternal(cID, cOff, dims)
 }
 
 func (h *ArrowHNSW) ensureChunkInternal(cID, cOff, dims int) (*types.GraphData, error) {
+	newData, cloned, err := h.ensureChunkInternalLocked(cID, cOff, dims)
+	if err != nil {
+		return nil, err
+	}
+	if cloned {
+		h.data.Store(newData)
+	}
+	return newData, nil
+}
+
+func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *types.GraphData, cloned bool, err error) {
 	// Reload data to ensure we have the latest view before modifying
 	data := h.data.Load()
 
@@ -686,29 +697,25 @@ func (h *ArrowHNSW) ensureChunkInternal(cID, cOff, dims int) (*types.GraphData, 
 	if !data.NeedsChunk(cID) {
 		// Even if chunk exists, we might need to sync dims if it was 0
 		if data.Dims == 0 && dims > 0 {
-			// This part still potentially modifies in-place, but Dims is just an int.
-			// To be purely safe, we could COW here too, but dims usually set on first insert.
 			newData := data.Clone()
 			newData.Dims = dims
-			h.data.Store(newData)
-			return newData, nil
+			return newData, true, nil
 		}
-		return data, nil
+		return data, false, nil
 	}
 
 	// Structural growth requires COW to avoid racing with readers
-	newData := data.Clone()
+	newData = data.Clone()
 	if newData.Dims == 0 && dims > 0 {
 		newData.Dims = dims
 	}
 
-	err := newData.EnsureChunk(cID, cOff, dims)
+	err = newData.EnsureChunk(cID, cOff, dims)
 	if err != nil {
-		return nil, err
+		return nil, false, err
 	}
 
-	h.data.Store(newData)
-	return newData, nil
+	return newData, true, nil
 }
 
 // DeleteBatch invokes Delete for each id.
@@ -730,16 +737,16 @@ func (h *ArrowHNSW) commitID(id uint32) {
 
 // Interface implementation: AddByLocation adds a vector by its location
 func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	// Issue 1: Thread-safe concurrent writes - acquire lock
-	h.insertMu.Lock()
-	defer h.insertMu.Unlock()
-
 	next := h.nextID.Add(1)
 	if next > math.MaxUint32 {
 		return 0, fmt.Errorf("index overflow: nextID %d exceeds uint32 max", next)
 	}
-	id := uint32(next - 1)
+	id := uint32(next - 1) // #nosec G115
 	defer h.commitID(id)
+
+	shard := id % ShardedLockCount
+	h.insertMus[shard].Lock()
+	defer h.insertMus[shard].Unlock()
 
 	var vec any
 	if h.dataset != nil {
@@ -776,8 +783,12 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 	if next > math.MaxUint32 {
 		return 0, fmt.Errorf("index overflow: nextID %d exceeds uint32 max", next)
 	}
-	id := uint32(next - 1)
+	id := uint32(next - 1) // #nosec G115
 	defer h.commitID(id)
+
+	shard := id % ShardedLockCount
+	h.insertMus[shard].Lock()
+	defer h.insertMus[shard].Unlock()
 
 	var vec any
 	// Find vector column
@@ -1760,24 +1771,15 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	numExistingChunks := (int(h.nodeCount.Load()) + types.ChunkSize - 1) / types.ChunkSize
 
 	if numChunks > 0 {
-		// grow outer slices without allocating all inner chunks
-		// (EnsureChunk(cID) appends up to cID, but doesn't allocate all intermediates if we are careful)
-		// Wait, EnsureChunk(i) DOES allocate chunk i.
-		// So we loop up to numExistingChunks to ensure they are ALL allocated/updated.
 		for i := 0; i < numExistingChunks; i++ {
 			if err := newData.EnsureChunk(i, 0, dims); err != nil {
 				return err
 			}
 		}
-		// For the rest, we just ensure the outer slices have enough capacity
 		newData.GrowMetadataSlices(numChunks)
 	}
 
-	oldData := h.data.Swap(newData)
-	// We no longer release oldData here because it shares arenas with newData.
-	// Manual lifecycle management of shared arenas is complex; for 0.1.8 we let Go GC 
-	// handle the metadata slices and reserve manual Release() for ArrowHNSW.Close().
-	_ = oldData
+	h.data.Store(newData)
 	return nil
 }
 
@@ -1826,22 +1828,27 @@ func (h *ArrowHNSW) generateLevel() int {
 
 // AddBatch implements VectorIndex.
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
-	// Bulk optimization path - only use for large batches to avoid individual gRPC overhead
-	if len(rowIdxs) >= 100 && !h.IsSharded() {
-		n := len(rowIdxs)
-		startID := uint32(h.nextID.Add(int64(n)) - int64(n)) // #nosec G115
+	n := len(rowIdxs)
+	if n == 0 {
+		return nil, nil
+	}
 
-		// Discover vector column
-		vecColIdx := -1
-		if len(recs) > 0 && recs[0] != nil {
-			for i := 0; i < int(recs[0].NumCols()); i++ {
-				name := recs[0].ColumnName(i)
-				if name == "vector" || name == "embedding" || name == "vec" {
-					vecColIdx = i
-					break
-				}
+	// Discover vector column
+	vecColIdx := -1
+	if len(recs) > 0 && recs[0] != nil {
+		for i := 0; i < int(recs[0].NumCols()); i++ {
+			name := recs[0].ColumnName(i)
+			if name == "vector" || name == "embedding" || name == "vec" {
+				vecColIdx = i
+				break
 			}
 		}
+	}
+
+	var startID uint32
+	// Bulk optimization path - only use for large batches to avoid individual gRPC overhead
+	if n >= 100 && !h.IsSharded() {
+		startID = uint32(h.nextID.Add(int64(n)) - int64(n)) // #nosec G115
 
 		if vecColIdx != -1 {
 			// Extract all vectors into a typed slice for bulk processing
@@ -1852,39 +1859,55 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				f32s := make([][]float32, n)
 				// Cache raw slices per record batch to avoid expensive column calls
 				valuesCache := make(map[arrow.RecordBatch][]float32)
-				physicalDims := int(h.dims.Load())
-				
-				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					values, ok := valuesCache[rec]
-					if !ok {
-						col := rec.Column(vecColIdx)
-						if f32Arr, okCol := col.(*arrowarray.Float32); okCol {
-							values = f32Arr.Float32Values()
-							valuesCache[rec] = values
-						}
-					}
-					
-					if values != nil {
-						start := rowIdxs[i] * physicalDims
-						if start+physicalDims <= len(values) {
-							f32s[i] = values[start : start+physicalDims]
-							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-						} else {
-							supported = false
-							break
-						}
-					} else {
-						// Fallback to slow path if type mismatch
-						if v, okC := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float32); okC {
-							f32s[i] = v
-							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-						} else {
-							supported = false
-							break
+				// Pre-populate valuesCache
+				for _, rec := range recs {
+					if rec != nil {
+						if _, ok := valuesCache[rec]; !ok {
+							col := rec.Column(vecColIdx)
+							if f32Arr, okCol := col.(*arrowarray.Float32); okCol {
+								valuesCache[rec] = f32Arr.Float32Values()
+							}
 						}
 					}
 				}
+				physicalDims := int(h.dims.Load())
+				
+				// Parallel extraction
+				pool := GetSharedPool()
+				var supportedAtomic atomic.Bool
+				supportedAtomic.Store(true)
+				
+				pool.ParallelFor(n, (n+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
+					if !supportedAtomic.Load() {
+						return
+					}
+					
+					for i := start; i < end; i++ {
+						rec := recs[batchIdxs[i]]
+						values := valuesCache[rec]
+						
+						if values != nil {
+							off := rowIdxs[i] * physicalDims
+							if off+physicalDims <= len(values) {
+								f32s[i] = values[off : off+physicalDims]
+								h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]}) // #nosec G115
+							} else {
+								supportedAtomic.Store(false)
+								return
+							}
+						} else {
+							// Fallback to slow path if type mismatch
+							if v, okC := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float32); okC {
+								f32s[i] = v
+								h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]}) // #nosec G115
+							} else {
+								supportedAtomic.Store(false)
+								return
+							}
+						}
+					}
+				})
+				supported = supportedAtomic.Load()
 				vecs = f32s
 
 				// Zero-Copy Direct Mapping Optimization
@@ -2084,43 +2107,58 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	}
 
 	// Use optimized bulk ingestion path
-	err := h.AddBatchBulk(ctx, uint32(rowIdxs[0]), len(rowIdxs), recs) // #nosec G115 -- rowIdxs values are within uint32 range
+	startID = uint32(rowIdxs[0]) // #nosec G115 -- rowIdxs values are within uint32 range
+	err := h.AddBatchBulk(ctx, startID, len(rowIdxs), recs)
 	if err == nil {
 		ids := make([]uint32, len(rowIdxs))
 		for i := range rowIdxs {
-			ids[i] = uint32(rowIdxs[0]) + uint32(i) // #nosec G115 -- values within uint32 range
+			ids[i] = startID + uint32(i)
 		}
 		return ids, nil
 	}
 	
 	// Fallback to sequential insertion if bulk fails (rare)
-	ids := make([]uint32, 0, len(rowIdxs))
-	for i := range rowIdxs {
-		if i%100 == 0 {
-			if err := ctx.Err(); err != nil {
-				return ids, err
+	ids := make([]uint32, len(rowIdxs))
+	var errFinal error
+	var errMu sync.Mutex
+	
+	pool := GetSharedPool()
+	pool.ParallelFor(len(rowIdxs), (len(rowIdxs)+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
+		for i := start; i < end; i++ {
+			errMu.Lock()
+			if errFinal != nil {
+				errMu.Unlock()
+				return
 			}
+			errMu.Unlock()
+			
+			id := startID + uint32(i) // #nosec G115
+			rec := recs[batchIdxs[i]]
+			h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+			
+			var vec any
+			if vecColIdx != -1 {
+				vec = h.extractVector(rec, vecColIdx, rowIdxs[i])
+			}
+			
+			// Use sharded lock for this pre-reserved ID
+			shard := id % ShardedLockCount
+			h.insertMus[shard].Lock()
+			err := h.InsertWithVector(id, vec, -1)
+			h.insertMus[shard].Unlock()
+			
+			if err != nil {
+				errMu.Lock()
+				errFinal = err
+				errMu.Unlock()
+				return
+			}
+			ids[i] = id
 		}
-
-		// Robust record resolution
-		var rec arrow.RecordBatch
-		bIdx := batchIdxs[i]
-		switch {
-		case bIdx < len(recs) && recs[bIdx] != nil:
-			rec = recs[bIdx]
-		case len(recs) == 1:
-			rec = recs[0]
-		case i < len(recs):
-			rec = recs[i]
-		default:
-			return ids, fmt.Errorf("could not resolve record batch for row %d (batchIdx %d, recs len %d)", i, bIdx, len(recs))
-		}
-
-		id, err := h.AddByRecord(ctx, rec, rowIdxs[i], batchIdxs[i])
-		if err != nil {
-			return ids, err
-		}
-		ids = append(ids, id)
+	})
+	
+	if errFinal != nil {
+		return nil, errFinal
 	}
 	return ids, nil
 }
@@ -2172,57 +2210,25 @@ func (h *ArrowHNSW) processResultsParallel(ctx context.Context, qv any, original
 
 	switch vec := qv.(type) {
 	case []float32:
-		return processResultsParallelInternal[float32](ctx, parallelSearchHostF32{h}, vec, candidates, k, nil, roaringFilter)
+		return processResultsParallelInternal(ctx, parallelSearchHostF32{h}, vec, candidates, k, nil, roaringFilter)
 	case []float64:
-		return processResultsParallelInternal[float64](ctx, parallelSearchHostF64{h}, vec, candidates, k, nil, roaringFilter)
+		return processResultsParallelInternal(ctx, parallelSearchHostF64{h}, vec, candidates, k, nil, roaringFilter)
 	default:
 		// Check originalQuery for complex types
 		switch oq := originalQuery.(type) {
 		case []complex128:
 			// Treat as float64 with 2N dims
 			raw := unsafe.Slice((*float64)(unsafe.Pointer(&oq[0])), len(oq)*2) // #nosec G103
-			return processResultsParallelInternal[float64](ctx, parallelSearchHostF64{h}, raw, candidates, k, nil, roaringFilter)
+			return processResultsParallelInternal(ctx, parallelSearchHostF64{h}, raw, candidates, k, nil, roaringFilter)
 		case []complex64:
 			// Treat as float32 with 2N dims
 			raw := unsafe.Slice((*float32)(unsafe.Pointer(&oq[0])), len(oq)*2) // #nosec G103
-			return processResultsParallelInternal[float32](ctx, parallelSearchHostF32{h}, raw, candidates, k, nil, roaringFilter)
+			return processResultsParallelInternal(ctx, parallelSearchHostF32{h}, raw, candidates, k, nil, roaringFilter)
 		}
 	}
 	return nil
 }
 
-func (h *ArrowHNSW) calculateAdaptiveEfExpansion(currentEf, found, k int, candidates []types.Candidate, maxCount int) int {
-	if found >= k {
-		return currentEf
-	}
-
-	// Heuristic: if we found almost enough, expand less. If we found almost none, expand more.
-	ratio := float64(found) / float64(k)
-	expansion := 5.0
-	if ratio > 0.5 {
-		expansion = 2.0
-	} else if ratio > 0.8 {
-		expansion = 1.5
-	}
-
-	// Also look at distance spread of candidates. If distances are very tight, expansion might not help much.
-	if len(candidates) > 1 {
-		minDist := candidates[0].Dist
-		maxDist := candidates[len(candidates)-1].Dist
-		if maxDist-minDist < 0.0001 {
-			expansion *= 1.2 // Push harder if we are stuck in a local minima
-		}
-	}
-
-	nextEf := int(float64(currentEf) * expansion)
-	if nextEf <= currentEf {
-		nextEf = currentEf + k
-	}
-	if nextEf > maxCount {
-		nextEf = maxCount
-	}
-	return nextEf
-}
 
 type parallelSearchHostF32 struct{ h *ArrowHNSW }
 
@@ -3044,8 +3050,12 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		if prefetchLimit < 16 {
 			prefetchLimit = 16
 		}
+		maxCommitted := h.nodeCount.Load()
 		for i := 0; i < len(neighbors) && i < prefetchLimit; i++ {
 			nID := neighbors[i]
+			if int64(nID) >= maxCommitted {
+				continue
+			}
 			cID := int(nID) / types.ChunkSize // #nosec G115
 			cOff := int(nID) % types.ChunkSize // #nosec G115
 			chunk := data.GetVectorsChunk(cID)
@@ -3061,7 +3071,9 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					paddedDims := (data.Dims + 63) & ^63
 					start := cOff * paddedDims
 					if start+data.Dims <= len(sq8Chunk) {
-						_ = sq8Chunk[start]
+						if int64(nID) < maxCommitted {
+							_ = sq8Chunk[start]
+						}
 					}
 				}
 			}
@@ -3070,7 +3082,9 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					stride := 4 + (data.Dims-1)*data.TurboQuantBits/8 + (data.Dims+7)/8
 					start := cOff * stride
 					if start+stride <= len(tqChunk) {
-						_ = tqChunk[start]
+						if int64(nID) < maxCommitted {
+							_ = tqChunk[start]
+						}
 					}
 				}
 			}
@@ -3080,6 +3094,9 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			// Vectorized Predicate Path
 			batch := ctx.neighborBatch[:0]
 			for _, n := range neighbors {
+				if int64(n) >= maxCommitted {
+					continue
+				}
 				if ctx.visited.IsSet(int(n)) {
 					continue
 				}
@@ -3133,6 +3150,9 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		} else {
 			// Standard Path (No Predicate)
 			for _, n := range neighbors {
+				if int64(n) >= maxCommitted {
+					continue
+				}
 				if ctx.visited.IsSet(int(n)) { // #nosec G115
 					continue
 				}

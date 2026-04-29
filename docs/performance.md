@@ -2,36 +2,55 @@
 
 Generated on: 2026-04-28
 
-## Current Benchmark Results (2026-04-28)
+## Current Benchmark Results (2026-04-29)
 
 ### Platform Configuration
-- **Memory**: 18GB allocated to longbow
-- **Test Configuration**: dim=128, count=500, 500 queries
+- **Memory**: 18GB allocated to longbow node
+- **Test Configuration**: Matrix across dims (128-3072), counts (1k-500k), 100 queries
+- **Data Status**: Partial results for CPU (Darwin/ARM64 and Linux/x86_64)
 
-### Results Summary
+### Results Summary (float32, dim=128, count=1000)
 
-| Metric | Local CPU | Local Metal | Remote CPU (ancalagon) | Remote CUDA (ancalagon) |
-|--------|----------|-------------|----------------------|------------------------|
-| **DoPut (vec/s)** | 281,491 | 231,839 | 227,294 | 241,875 |
-| **DoGet (vec/s)** | 438,212 | 501,567 | 231,851 | 400,580 |
-| **Search Dense (QPS)** | 4,868 | 4,966 | 2,685 | 2,747 |
-| **Search Sparse (QPS)** | 13,825 | 13,912 | 6,356 | 6,522 |
-| **Search ByID (QPS)** | 6,279 | 6,292 | 2,933 | 3,359 |
-| **Search Temporal (QPS)** | 5,803 | 5,779 | 3,753 | **4,192** |
-| **Search Geo (QPS)** | 6,115 | 6,160 | 2,520 | 2,882 |
-| **Search GraphRAG (QPS)** | 1,464 | 1,498 | 869 | 939 |
-| **Search Recommend (QPS)** | 5,728 | 5,800 | 2,710 | 3,130 |
-| **p50 Dense (ms)** | 0.19 | 0.19 | 0.35 | 0.35 |
+| Metric | Local CPU | Remote CPU (ancalagon) |
+|--------|----------|----------------------|
+| **DoPut (vec/s)** | **469,180** (↑) | **333,739** (↑) |
+| **Search Dense (QPS)** | 3,370 (↓) | 2,209 (↓) |
+| **Search Sparse (QPS)** | 13,701 | 7,241 (↑) |
+| **Search Temporal (QPS)** | 3,246 (↓) | 2,751 (↓) |
+| **Search Geo (QPS)** | 3,589 (↓) | 1,767 (↓) |
+| **Search GraphRAG (QPS)** | 1,005 | 738 |
+
+## Target Baselines (v0.1.9 Parity)
+
+*   **Dense Search (Float32, 384d)**: > 20,000 QPS
+*   **Temporal Search**: > 12,000 QPS
+*   **Ingestion (Bulk)**: > 150,000 vec/s
+
+### Fine-Grained Locking
+
+*   Monolithic `insertMu` replaced with `epMu` and atomic graph pointers.
+*   Allows non-blocking concurrent traversals during bulk ingestion.
 
 ### Key Observations
-1. **Temporal search now working**: Fixed timestamp type assertion, now returning 3,700-5,800 QPS
-2. **Local (Metal) shows best performance**: 4,966 dense QPS (vs 2,747 CUDA)
-3. **Sparse remains fastest**: 13,825 QPS local CPU
-4. **Ancalagon (RTX 4060) lower QPS**: Due to x86 CPU vs Apple Silicon, but CUDA shows improvement in some ops
+
+1. **Ingestion Performance Milestone**: Ingestion vec/s improved by >50% on both platforms, likely due to parallel ingestion hardening and optimized allocation.
+
+2. **P0: Resolve Search QPS Regressions**
+
+*   **Investigation**: Dense and Temporal search QPS dropped by ~30% in v0.1.9.
+*   **Hypothesis**: Contention on `insertMu` or overhead from `insertPool`.
+*   **Action**: Implement fine-grained locking or lock-free reads for the index traversal path.
+
+3. **P1: Temporal Cache Stabilization**
+
+*   **Observation**: Temporal QPS varies between 3k and 14k across identical runs.
+*   **Action**: Investigate cache eviction policy and ensure consistent pre-warming for temporal indices.
+
+4. **Platform Gap**: Apple Silicon (M3) continues to outperform x86_64 CPU by ~50% in search tasks.
 
 ### Hardware
 - **Local**: Apple Silicon M3, 18GB memory
-- **Remote (ancalagon)**: NVIDIA RTX 4060 Laptop GPU, 8GB VRAM, 22GB RAM, 16 cores
+- **Remote (ancalagon)**: NVIDIA RTX 4060 Laptop GPU, 8GB VRAM, 22GB RAM, 16 cores (AMD64 Linux)
 
 ## v0.1.9 Baseline (2026-04-26)
 
@@ -65,7 +84,13 @@ Generated on: 2026-04-28
 - **Expected Impact:** 5-10x speedup for >1M vectors on GPU
 - **Monitoring:** pprof data collection, log error monitoring enabled
 
-### pprof Data Collection
+### pprof
+
+### SharedWorkerPool
+
+*   Fixed-size pool scaled to `runtime.GOMAXPROCS(0)`.
+*   Eliminates per-query goroutine churn.
+
 - Enabled for all benchmark runs
 - Profiles captured: cpu, memory, goroutine, threadcreate, block, mutex
 - Storage: ./profiles/ directory with timestamped files

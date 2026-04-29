@@ -808,7 +808,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	// Batching configuration
-	const maxBatchRows = 50000             // Aggressive batching for small vectors
+	const maxBatchRows = 10000             // Aggressive batching for small vectors
 	const maxBatchBytes = 32 * 1024 * 1024 // 32MB cap
 	batch := make([]arrow.RecordBatch, 0, 100)
 
@@ -883,6 +883,47 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	for r.Next() {
 		rec := r.RecordBatch()
 
+		// If the record itself is larger than maxBatchRows, slice it into manageable chunks.
+		// This prevents O(N^2) bottlenecks in the indexing worker's AddBatchBulk phase.
+		if rec.NumRows() > maxBatchRows {
+			for i := int64(0); i < rec.NumRows(); i += maxBatchRows {
+				end := i + maxBatchRows
+				if end > rec.NumRows() {
+					end = rec.NumRows()
+				}
+				subRec := rec.NewSlice(i, end)
+				
+				// Process sub-record
+				subRecSize := estimateBatchSize(subRec)
+				if len(batch) == 0 && subRecSize >= maxBatchBytes {
+					subRec.Retain()
+					metrics.DoPutBatchSizeBytes.Observe(float64(subRecSize))
+					if err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{subRec}); err != nil {
+						subRec.Release()
+						return err
+					}
+					subRec.Release()
+					continue
+				}
+
+				subRec.Retain()
+				batch = append(batch, subRec)
+
+				// Check accumulator size
+				totalBatchRows := int64(0)
+				for _, b := range batch {
+					totalBatchRows += b.NumRows()
+				}
+
+				if totalBatchRows >= maxBatchRows {
+					if err := flush(); err != nil {
+						return err
+					}
+				}
+			}
+			continue
+		}
+
 		// Adaptive Batching (Byte-Aware Option 1):
 		// If the record is large enough (>= 10MB) and we don't have pending small records,
 		// write it directly to avoid concatenation/slice overhead.
@@ -902,14 +943,12 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		batch = append(batch, rec)
 
 		// Check accumulator size
-		totalBatchBytes := int64(0)
 		totalBatchRows := int64(0)
 		for _, b := range batch {
-			totalBatchBytes += estimateBatchSize(b)
 			totalBatchRows += b.NumRows()
 		}
 
-		if totalBatchRows >= maxBatchRows || totalBatchBytes >= maxBatchBytes {
+		if totalBatchRows >= maxBatchRows {
 			if err := flush(); err != nil {
 				return err
 			}

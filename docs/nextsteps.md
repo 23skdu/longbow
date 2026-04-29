@@ -323,36 +323,26 @@ All P0 performance features below are IMPLEMENTED in codebase:
 | github.com/apache/arrow-go/v18 | v18.5.2 | Arrow is critical for zero-copy data |
 | go.opentelemetry.io/otel | v1.43.0 | OpenTelemetry is industry standard |
 | cloud.google.com/go/storage | v1.62.1 | GCS client for cloud storage |
+| github.com/rs/zerolog | - | KEEP - performant, well-maintained, 581 refs |
 
-### Replace With Custom Implementation (0.2.0)
+### Replace Candidates (0.2.0) - Lower Priority
 
 Based on actual codebase usage analysis:
 
 | Priority | Dependency | Usage | Replacement | Effort |
 |----------|------------|-------|-------------|--------|
-| HIGH | github.com/rs/zerolog | 581 refs | Implement internal/logger | 2 weeks |
-| MEDIUM | github.com/RoaringBitmap/roaring/v2 | - | Keep (used by parquet-go) | - |
 | LOW | klauspost/cpuid/v2 | 12 refs | Implement internal/cpu | 1 week |
-| LOW | parquet-go | 12 refs | Investigate usage | 1 day investigation |
+| LOW | parquet-go | 12 refs | Investigate usage | 1 day |
 | LOW | gonum.org/v1/gonum | 1 ref | Implement internal/math | 2 weeks |
-| REMOVE | github.com/joho/godotenv | 0 refs | Remove unused | 1 day |
-| REMOVE | github.com/sbinet/npyio | 0 refs | Remove unused | 1 day |
-| KEEP | github.com/iceber/iouring-go | 113 refs | Keep (Linux async I/O) | - |
-| REMOVE | github.com/grandcat/zeroconf | v1.0.0 | Check if used (mDNS) | 1 day - Possibly unused |
+| MEDIUM | github.com/joho/godotenv + kelseyhightower/envconfig | 2 deps | Internal env wrapper | 1 day |
+| LOW | github.com/sbinet/npyio | 2 refs | Internal wrapper or delegate to arrow-go | 1 day |
 
 ### Detailed Implementation Plan
 
-#### 1. Replace github.com/rs/zerolog (HIGH - 581 usages)
-
+#### 1. Replace github.com/rs/zerolog (REMOVED - KEEPING DEPENDENCY)
 **Current Usage:** Structured logging everywhere
-**Plan:** Create `internal/logger/logger.go`:
-- [ ] Create logger.go with zerolog-compatible API (~300 LOC)
-- [ ] Implement JSON and console output modes
-- [ ] Add log level filtering
-- [ ] Add hook system for enrichment
-- [ ] Add benchmark vs zerolog
-- [ ] Tests pass existing zerolog-style tests
-- Estimated: 2 weeks
+**Decision:** KEEP zerolog - performant, well-maintained, 581 refs
+**Alternative:** If specific issues arise, address them individually
 
 #### 2. Replace klauspost/cpuid/v2 (LOW - 12 usages)
 

@@ -155,7 +155,49 @@ communities = client.detect_communities(
 
 ---
 
-## 4. Distributed GraphRAG
+## 4. Distributed GraphRAG (Cluster-Wide)
+
+Scatter-gather search across multiple Longbow nodes in the cluster.
+
+### Architecture
+
+```
+Local Search Results → Scatter to Peers → Gather & Merge → Return Top-K
+```
+
+### Python SDK
+
+```python
+# Multi-seed expansion across cluster
+expansion = client.graph_rag_expand(
+    dataset="knowledge",
+    node_ids=[1, 2, 3, 4, 5]
+)
+# Returns: {1: [neighbors...], 2: [neighbors...], ...}
+```
+
+### Global Search Coordinator
+
+The `GlobalSearchCoordinator` handles:
+
+1. **Scatter Phase**: Send search to all cluster peers
+2. **Parallel Execution**: Each node searches local HNSW
+3. **Gather Phase**: Merge results using RRF
+4. **Dedup**: Remove duplicate/global IDs
+
+### Metrics
+
+| Metric | Description |
+|--------|-------------|
+| `longbow_global_search_fanout_size` | Peers contacted per search |
+| `longbow_global_search_partial_failures` | Failed peer queries |
+| `longbow_global_search_duration` | Total scatter-gather latency |
+
+### CLI Benchmark
+
+```bash
+python3 scripts/unified_benchmark.py --mode graphrag --dims 768 --counts 10000
+```
 
 For large-scale graphs across multiple nodes:
 

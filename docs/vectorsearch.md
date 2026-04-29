@@ -327,7 +327,78 @@ System learns optimal weights over time via Fisher Linear Discriminant (LDA).
 
 ---
 
-## 11. Resilience & Observability
+## 11. Global Distributed Search (Cluster-Wide)
+
+Scatter-gather search across multiple Longbow nodes.
+
+### Architecture
+
+```
+Query → Local HNSW Search → Scatter to Peers → Gather & Merge (RRF) → Top-K
+```
+
+### Python SDK
+
+```python
+# Automatic global search when peer nodes available
+results = client.search(
+    dataset="documents",
+    vector=[0.1, 0.2, ...],
+    k=10
+    # If cluster peers exist, automatically scatter-gathers
+)
+```
+
+### Global IDs
+
+Each vector has a global ID across the cluster:
+
+- **GlobalID**: Unique across all nodes (node_id << 32 | local_id)
+- **LocalID**: Unique within single node
+
+### Request Options
+
+```python
+# Force local-only search (skip scatter-gather)
+results = client.search(
+    dataset="documents",
+    vector=[0.1, 0.2, ...],
+    k=10,
+    local_only=True  # Skip cluster peers
+)
+
+# Specify specific nodes
+results = client.search(
+    dataset="documents",
+    vector=[0.1, 0.2, ...],
+    k=10,
+    nodes=["node-1", "node-2"]  # Specific peers only
+)
+```
+
+### Cluster Metrics (Prometheus)
+
+| Metric | Description |
+|--------|-------------|
+| `longbow_global_search_fanout_size` | Peers contacted per search |
+| `longbow_global_search_partial_failures` | Failed peer queries |
+| `longbow_global_search_duration_seconds` | Scatter-gather latency |
+| `longbow_gossip_active_members` | Healthy cluster nodes |
+
+### CLI Benchmark
+
+```bash
+# Benchmark distributed search
+python3 scripts/unified_benchmark.py \
+    --mode cluster \
+    --dims 768 \
+    --counts 10000 \
+    --peers 3
+```
+
+---
+
+## 12. Resilience & Observability
 
 ### Circuit Breaker
 

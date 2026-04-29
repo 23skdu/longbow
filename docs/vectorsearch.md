@@ -1,193 +1,358 @@
 # Unified Search & Discovery Guide
 
-Longbow provides an integrated suite of search capabilities, from low-latency vector similarity to complex relational filtering and graph-based retrieval. This guide covers everything from basic distance metrics to advanced GraphRAG workflows.
+**Last Updated**: 2026-04-28
+
+Longbow provides an integrated suite of search capabilities, from low-latency vector similarity to complex relational filtering and graph-based retrieval.
 
 ## Search Modes Overview
 
-1. **Dense Search**: HNSW-based vector similarity (Zero-Copy).
-2. **Sparse Search**: BM25/Keyword matching via inverted index.
-3. **Filtered Search**: Metadata filtering using post-filtering or SQL-based CTEs.
-4. **Hybrid Search**: RRF-fused results combining dense and sparse signals.
-5. **ByID Search**: Instant retrieval of specific vectors and their neighbors.
-6. **Temporal Search**: Versioned discovery via As-Of and Range queries.
-7. **Graph Discovery**: Multi-hop pathfinding and spreading activation re-ranking.
-8. **Adaptive Indexing**: Automated index selection using Learned Indexes.
+| Mode | Description | Python SDK |
+|------|------------|-----------|
+| **Dense** | HNSW-based vector similarity | `client.search()` |
+| **Sparse** | BM25/Keyword matching | Built-in |
+| **Filtered** | Metadata filtering | `filters=` parameter |
+| **Hybrid** | RRF-fused dense + sparse | `client.search(alpha=0.5)` |
+| **ByID** | Instant specific vector retrieval | `client.search_by_id()` |
+| **Temporal** | Versioned time-travel queries | `client.temporal_search()` |
+| **Geo-Spatial** | Radius/bounding box search | `client.geo_search()` |
+| **GraphRAG** | Knowledge graph spreading | `client.recommend()` |
+| **Learned Index** | Automatic index selection | Auto-enabled |
+| **TurboQuant** | Compressed vector search | `vector_type="turboquant"` |
 
 ---
 
 ## 1. Dense Search (Vector Similarity)
 
-Dense search uses hand-optimized HNSW (Hierarchical Navigable Small Worlds) indexes for sub-millisecond similarity retrieval.
+HNSW-based vector similarity with sub-millisecond latency.
 
-### Zero-Copy Data Plane
+### Python SDK
 
-Longbow implements a **Zero-Copy** data plane using Apache Arrow. Vectors are accessed directly from memory-mapped files during HNSW traversal, eliminating heap allocations and significantly reducing GC pressure.
+```python
+from longbow import LongbowClient
 
-### IVF-HNSW Composite Index & OPQ
+client = LongbowClient(uri="grpc://localhost:3000")
+client.connect()
 
-For extreme billion-scale datasets, Longbow supports an **IVF-HNSW Composite Index** combined with **Optimized Product Quantization (OPQ)**:
-
-- **IVF-HNSW**: Inverted File centroids are organized in an HNSW graph to accelerate coarse quantization.
-- **OPQ**: Learns orthogonal transformations during centroid training, greatly reducing quantization error compared to standard PQ.
-- **GPU Acceleration**: Centroid assignment and K-Means training are highly parallelized using native **CUDA** (NVIDIA) and **Metal** (Apple Silicon) kernels to prevent training bottlenecks.
+# Basic vector search
+results = client.search(
+    dataset="documents",
+    vector=[0.1, 0.2, 0.3, ...],  # Query vector
+    k=10  # Return top 10
+)
+# Returns DataFrame with: id, text, distance columns
+```
 
 ### Supported Metrics
 
 | Metric | Formula | Best For |
 | :--- | :--- | :--- |
-| **Euclidean (L2)** | `√(Σ(a[i] - b[i])²)` | Image search, magnitude-sensitive data. |
-| **Cosine Distance** | `1.0 - (dot(a,b) / (\|\|a\|\|*\|\|b\|\|))` | Text embeddings, semantic similarity. |
-| **Dot Product** | `-(Σ(a[i] * b[i]))` | MIPS, pre-normalized recommendation systems. |
+| **Euclidean (L2)** | `√(Σ(a[i] - b[i])²)` | Image search |
+| **Cosine Distance** | `1.0 - (dot(a,b) / (\|\|a\|\|*\|\|b\|\|))` | Text embeddings |
+| **Dot Product** | `-(Σ(a[i] * b[i]))` | MIPS, recommendations |
+
+### IVF-OPQ Composite Index
+
+For billion-scale datasets:
+
+```python
+client.create_namespace(
+    name="billion_scale",
+    dims=768,
+    data_type="opq",      # Optimized Product Quantization
+    nlist=1024,          # IVF clusters
+    nprobe=64            # Clusters to search
+)
+```
 
 ---
 
-## 2. Sparse Search (BM25 & Keywords)
+## 2. Sparse Search (BM25)
 
-Sparse search provides traditional full-text retrieval using a highly concurrent Inverted Index.
+Traditional full-text retrieval using inverted index.
 
-- **Algorithm**: BM25 (Best Matching 25) with configurable $k_1$ and $b$ parameters.
-- **Tokenization**: Standard WordPiece tokenization with support for custom stop-word filtering.
-- **Use Case**: Exact keyword matching where semantic embeddings might be too "fuzzy" (e.g., searching for specific part numbers or rare medical terms).
+**Algorithm**: BM25 with configurable $k_1$ and $b$ parameters.
+
+**Use Case**: Exact keyword matching where semantic embeddings might be too "fuzzy".
 
 ---
 
 ## 3. Hybrid Search (RRF & Alpha Blending)
 
-Hybrid search combines the strengths of Dense and Sparse retrieval.
+Combines Dense and Sparse retrieval.
 
 ### Reciprocal Rank Fusion (RRF)
 
-Longbow uses RRF to merge results from multiple search paths without requiring normalized scores.
-$$RRF(doc) = \sum_{p \in \text{paths}} \frac{1}{k + \text{rank}_p(doc)}$$
+$$RRF(doc) = \sum_{p \in paths} \frac{1}{k + rank_p(doc)}$$
 
 ### Alpha Blending
 
-For advanced users, `alpha` blending allows manual weighting between signals:
-
-- `alpha = 1.0`: Pure Dense search.
-- `alpha = 0.0`: Pure Sparse search.
-- `alpha = 0.5`: Balanced Hybrid search.
-
----
-
-## 4. Filtered Search (SQL & CTEs)
-
-Longbow supports complex metadata filtering using both JSON-based filters and SQL-like Common Table Expressions (CTEs).
-
-### Filter Operators
-
-- **Comparison**: `==`, `!=`, `>`, `<`, `>=`, `<=`
-- **Set Logic**: `IN`, `NOT IN`
-- **Boolean**: `AND`, `OR`, `NOT`
-
-### Common Table Expressions (CTEs)
-
-Define temporary sets to filter another dataset. For example, selecting "top products from active vendors".
-
-```json
-{
-  "ctes": [{
-    "name": "active_vendors",
-    "search": { "dataset": "vendors", "filters": [{"field": "status", "operator": "==", "value": "active"}] }
-  }],
-  "dataset": "products",
-  "filters": [{"field": "vendor_id", "operator": "IN", "value": "active_vendors"}]
-}
+```python
+results = client.search(
+    dataset="documents",
+    vector=[0.1, 0.2, ...],
+    text_query="search terms",  # Combine with BM25
+    alpha=0.7,  # 1.0 = dense, 0.0 = sparse
+    k=10
+)
 ```
 
 ---
 
-## 5. ByID Search & Neighborhoods
+## 4. Filtered Search
 
-ByID search is an $O(1)$ operation that retrieves a specific vector by its unique identifier and optionally its nearest neighbors in the graph.
+Metadata filtering using post-filtering.
 
-- **Primary Key Lookup**: Instant metadata and vector retrieval.
-- **Neighbor Discovery**: Use `K` to find similar items starting from a known entity without providing a new query vector.
+```python
+results = client.search(
+    dataset="documents",
+    vector=[0.1, 0.2, ...],
+    filters=[
+        {"field": "category", "op": "eq", "value": "tech"},
+        {"field": "priority", "op": "gte", "value": 5},
+    ],
+    k=10
+)
+```
+
+**Operators**: `eq`, `neq`, `gt`, `gte`, `lt`, `lte`, `in`, `like`
+
+---
+
+## 5. ByID Search
+
+O(1) instant retrieval of specific vectors.
+
+```python
+# Find neighbors of known vector
+results = client.search_by_id(
+    dataset="documents",
+    id=12345,
+    k=10  # Get 10 nearest neighbors
+)
+
+# Get single vector
+vector = client.get_vector(
+    dataset="documents", 
+    id=12345
+)
+```
 
 ---
 
 ## 6. Temporal Search (Time-Travel)
 
-Temporal search leverages versioned snapshots of the data plane to allow searching through time.
+Versioned discovery via snapshots.
 
-### Query Types
+```python
+# As-Of search (state at specific time)
+results = client.temporal_search(
+    dataset="documents",
+    search_type="as_of",
+    timestamp=1700050000000000000,  # Unix nanoseconds
+    k=10
+)
 
-- **As-Of**: "What were the nearest neighbors of this vector as of Jan 1st?"
-- **Range**: Find all changes or states for a vector within a time window.
-- **Sliding Window**: Aggregate similarity statistics over a moving temporal window.
+# Range search (time window)
+results = client.temporal_search(
+    dataset="documents",
+    search_type="range",
+    start_time=1700000000000000000,
+    end_time=1700100000000000000,
+    k=10
+)
 
-### Temporal Aggregation Engine
+# Sliding window (last N items)
+results = client.temporal_search(
+    dataset="documents",
+    search_type="sliding_window",
+    window_size=100,
+    k=10
+)
 
-Longbow includes a dedicated aggregation engine to process scalar metadata over time bounds without needing an external OLAP database.
+# Sliding window by duration
+results = client.temporal_search(
+    dataset="documents",
+    search_type="sliding_window_time",
+    duration="1h",  # "30m", "2h", "1d"
+    k=10
+)
 
-- Supports instant bucketing operations (`COUNT`, `MIN`, `MAX`, `MEAN`, `SUM`) over specified intervals (e.g. 1-hour windows).
-- Directly processes the latest state of vectors using a read-optimized B-Tree style index (`TemporalTree`).
+# Version history
+versions = client.temporal_version_history(
+    dataset="documents",
+    vector_id=12345
+)
+```
 
 ---
 
 ## 7. Geo-Spatial Search
 
-Location-aware search using a Quadtree spatial index. Every vector can carry a `GeoPoint` (lat/lon).
+Location-aware search using Quadtree index.
 
-### Radius & Bounding Box
+```python
+# Radius search (Haversine distance)
+results = client.geo_search(
+    dataset="locations",
+    center={"lat": 37.7749, "lon": -122.4194},
+    radius_km=10,
+    search_type="radius",
+    k=10
+)
 
-- **SearchRadius**: Haversine distance-based culling within N kilometers.
-- **SearchBox**: Precise rectangular region intersection.
+# Bounding box search
+results = client.geo_search(
+    dataset="locations",
+    box={"min_lat": 37.7, "max_lat": 37.8, "min_lon": -122.5, "max_lon": -122.4},
+    search_type="box",
+    k=10
+)
 
-### Hybrid Geo+Vector
-
-Score = $W_{geo} \times GeoScore + W_{vec} \times VectorScore$. This allows finding "Restaurants near me that are semantically similar to 'Sushi'".
+# Hybrid (vector + geo)
+results = client.geo_search(
+    dataset="locations",
+    center={"lat": 37.7749, "lon": -122.4194},
+    radius_km=5,
+    vector=[0.1, 0.2, ...],  # Combine with semantic search
+    search_type="hybrid",
+    k=10
+)
+```
 
 ---
 
-## 8. GraphRAG & Reasoning
+## 8. GraphRAG (Knowledge Graph)
 
-GraphRAG overlays a knowledge graph on top of vector space, enabling relationship-aware discovery and multi-hop reasoning.
+Dual-path: Spreading Activation + Knowledge Graph triples.
 
-### Spreading Activation Re-ranking
+### Spreading Activation
 
-1. **Seeds**: Initial search results become active nodes.
-2. **Propagation**: Relevance "mass" spreads through edges with hop-based decay.
-3. **Final Ranking**: Scores blend Vector Similarity and Graph Centrality (Closeness).
+```python
+# Hybrid search with graph re-ranking
+results = client.search(
+    dataset="documents",
+    vector=[0.1, 0.2, ...],
+    alpha=0.7,  # Graph weight (1.0 = full graph, 0.0 = pure vector)
+    depth=2,    # Graph traversal depth
+    k=10
+)
+```
 
-### Recommendation API
+### Knowledge Graph
 
-The `Recommend` API uses graph-based walk strategies (Random Walk with Restart) to find items that are structurally similar to a set of seed IDs.
+```python
+# Add edges
+client.add_edge(
+    dataset="knowledge",
+    subject=1,
+    predicate="knows",
+    object=2,
+    weight=1.0
+)
+
+# Recommend (hybrid vector-graph)
+results = client.recommend(
+    dataset="documents",
+    seed_ids=["doc_1", "doc_2"],
+    alpha=0.5,  # Balance vector vs graph
+    max_hops=2,
+    k=10
+)
+
+# Traverse graph
+results = client.traverse(
+    dataset="knowledge",
+    start=1,
+    max_hops=2,
+    decay=0.5
+)
+
+# PageRank centrality
+scores = client.calculate_pagerank(dataset="knowledge")
+
+# Community detection
+communities = client.detect_communities(dataset="knowledge")
+```
 
 ---
 
-## 9. Adaptive Index Selection (Learned Index)
+## 9. TurboQuant Search (Compressed)
 
-Longbow automatically selects the best ANN index type (HNSW, IVF-PQ, DiskANN) for each query at runtime using a **k-NN classifier**.
+Two-stage vector compression achieving 4-64x storage reduction.
 
-### Feature-Based Dispatch
+### Usage
 
-The classifier uses an 11-dimensional feature vector, including:
+```python
+# Create TurboQuant dataset
+client.create_namespace(
+    name="compressed",
+    dims=768,
+    data_type="turboquant",  # or "tq"
+    turboquant_bits=4       # 2, 4, or 8 bits
+)
 
+# Search works the same
+results = client.search(
+    dataset="compressed",
+    vector=[0.1, 0.2, ...],
+    k=10
+)
+```
+
+### Compression Ratios
+
+| Bits | Compression | Typical Use |
+|------|-------------|-------------|
+| 2-bit | 16x | Archival |
+| 4-bit | 8x | Standard |
+| 8-bit | 4x | High recall |
+
+---
+
+## 10. Learned Index (Adaptive)
+
+Automatic index selection using k-NN classifier.
+
+### Feature Vector
+
+11-dimensional features including:
 - `DatasetSize` (Most discriminating)
 - `QueryComplexity`
 - `AvgVectorNorm`
 - `IsFiltered` / `IsHybrid`
 
-### Fisher Linear Discriminant (LDA)
+### Auto-Dispatch
 
-The system learns optimal feature weights over time by maximizing between-class variance between different index performances, ensuring the selector adapts to your specific hardware and data distribution.
+System learns optimal weights over time via Fisher Linear Discriminant (LDA).
 
 ---
 
-## 10. Resilience & Observability
+## 11. Resilience & Observability
 
 ### Circuit Breaker
 
-To maintain stability, search operations are protected by a Circuit Breaker:
+- **Trip Conditions**: 10 consecutive failures
+- **Cooldown**: 30-second reset
 
-- **Trip Conditions**: 10 consecutive failures.
-- **Cooldown**: 30-second automated reset.
+### Prometheus Metrics (Port 9090)
 
-### Prometheus Metrics
+| Metric | Description |
+|--------|-------------|
+| `longbow_search_ops_total` | Throughput per mode |
+| `longbow_search_duration_seconds` | Latency P50/P95/P99 |
+| `longbow_vector_search_latency_seconds` | Search latency histogram |
+| `longbow_turboquant_search_total` | TurboQuant search count |
+| `longbow_learned_index_adaptations_total` | Adaptive index switches |
 
-Exposed on port `9090`:
+### Benchmark
 
-- `longbow_search_ops_total`: Throughput per mode.
-- `longbow_search_duration_seconds`: Latency P50/P95/P99.
-- `longbow_learned_index_adaptations_total`: Tracking adaptive switches.
+```bash
+# Run benchmark suite
+python3 scripts/unified_benchmark.py \
+    --mode dense,hybrid,filtered,byid,temporal,geo,graphrag,turboquant \
+    --dims 768 \
+    --counts 10000
+```
+
+> [!NOTE]
+> For complete GraphRAG documentation, see [graphrag.md](graphrag.md).

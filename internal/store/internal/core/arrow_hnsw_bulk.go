@@ -329,7 +329,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			}
 
 			// Always ingest into hot storage using method that handles all types
-			if err := data.SetVector(id, v); err != nil {
+			// Use h.data.Load() to ensure we write to the latest version that includes our ensured chunks
+			if err := h.data.Load().SetVector(id, v); err != nil {
 				errMu.Lock()
 				errPrep = err
 				errMu.Unlock()
@@ -465,14 +466,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	// 2.5 Pre-Promote all nodes in the batch and SET VECTORS (Parallel)
 	// This ensures chunks are allocated and vectors are persistent before linkage.
 	pool.ParallelFor(n, (n+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
-		for i := start; i < end; i++ {
-			id := startID + uint32(i) // #nosec G115
-			// promoteNode handles its own locking (growMu) and updates h.data
-			h.promoteNode(h.data.Load(), id)
-			if err := h.data.Load().SetVector(id, activeNodes[i].vec); err != nil {
-				// We ignore error here but it's unlikely if promoteNode succeeded
-			}
-		}
+		// Vector data is already set in the previous ParallelFor using the latest h.data pointer.
+		// No need to promote nodes here as chunks were pre-allocated and published.
 	})
 	data = h.data.Load()
 

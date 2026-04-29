@@ -298,6 +298,51 @@
       "targets": [{"expr": "sum(rate(longbow_turboquant_search_total[1m])) by (bit_width)", "legendFormat": "Int{{bit_width}}", "refId": "A"}],
       "title": "Turboquant Search Rate",
       "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 57},
+      "id": 29,
+      "targets": [{"expr": "sum(rate(longbow_turboquant_encoding_total[1m])) by (direction)", "legendFormat": "{{direction}}", "refId": "A"}],
+      "title": "TurboQuant Encoding Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 57},
+      "id": 30,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_turboquant_search_latency_seconds_bucket[5m])) by (le, bit_width))", "legendFormat": "P99 bit{{bit_width}}", "refId": "A"}],
+      "title": "TurboQuant Search Latency P99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"lineWidth": 1},
+          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+        }
+      },
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 65},
+      "id": 31,
+      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_turboquant_encoding_latency_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "title": "TurboQuant Encoding Latency P99",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

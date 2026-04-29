@@ -30,15 +30,16 @@ Metrics for the core vector indexing and search engine.
 ---
 
 ## 3. TurboQuant & Acceleration (New in 0.1.9)
- 
+  
 Monitoring the SIMD-accelerated quantization and bit-packing features.
 
-- **longbow_turboquant_search_total**: (Counter) Number of searches using TurboQuant acceleration. Labels: `dataset`, `bit_width` (4 or 2).
-- **longbow_turboquant_search_latency_seconds**: (Histogram) Latency of TQ-accelerated searches. Labels: `dataset`, `bit_width`.
-- **longbow_turboquant_encoding_total**: (Counter) Vectors encoded into TQ format. Labels: `dataset`, `direction` (client_provided or server_encoded).
-- **longbow_turboquant_storage_bytes_total**: (Gauge) Memory used by TQ vectors (demonstrating compression gains). Labels: `dataset`.
-- **longbow_simd_static_dispatch_type**: (Gauge) Currently active SIMD kernel type (0=Generic, 1=NEON, 2=AVX2, 3=AVX-512).
-- **longbow_hnsw_simd_dispatch_latency_seconds**: (Histogram) Time taken for dynamic kernel selection per query. Labels: `type`.
+- **longbow_turboquant_encoding_total**: (Counter) Total number of TurboQuant encoding operations. Labels: `dataset`, `direction` (client_provided | server_encoded).
+- **longbow_turboquant_encoding_latency_seconds**: (Histogram) Server-side latency for TurboQuant encoding operations. Labels: `dataset`. Buckets: 0.1ms, 0.5ms, 1ms, 5ms, 10ms, 50ms.
+- **longbow_turboquant_storage_bytes_total**: (Gauge) Total storage bytes used by TurboQuant-encoded vectors. Labels: `dataset`.
+- **longbow_turboquant_search_total**: (Counter) Total searches performed using TurboQuant acceleration. Labels: `dataset`, `bit_width` (2 | 4 | 8).
+- **longbow_turboquant_search_latency_seconds**: (Histogram) Latency of TurboQuant-accelerated search operations. Labels: `dataset`, `bit_width`. Buckets: 0.1ms, 0.5ms, 1ms, 5ms, 10ms, 50ms, 100ms.
+- **longbow_simd_static_dispatch_type**: (Gauge) Currently active SIMD kernel type. Value: 0=Generic, 1=NEON, 2=AVX2, 3=AVX-512.
+- **longbow_hnsw_simd_dispatch_latency_seconds**: (Histogram) Time taken for dynamic SIMD kernel selection per query. Labels: `type`.
 
 ---
 

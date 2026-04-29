@@ -2,6 +2,78 @@
 
 ---
 
+## P0 Blockers - Incomplete/StUb/Dead Code Review (2026-04-28)
+
+### Issue 1: TurboQuant INT4/INT2 SIMD Kernels Not Implemented
+**Severity:** P0  
+**Status:** OPEN  
+**Symptom:** ARM64 SIMD assembly file has stub comments for INT4/INT2 kernels  
+**File:** `internal/simd/simd_arm64.s:1802` - "TURBOQUANT (INT4/INT2) KERNELS - stubs, use Go fallback"  
+**Impact:** 2-bit and 3-bit TurboQuant search falls back to generic Go implementation  
+**Plan:** Implement INT4/INT2 distance kernels in ARM64 assembly, or use blocked SIMD path
+
+### Issue 2: TPU Index TurboQuant/PQ Not Implemented  
+**Severity:** P0  
+**Status:** OPEN  
+**Symptom:** TPUIndex returns "not implemented" errors for TurboQuant and PQ operations  
+**File:** `internal/gpu/tpu/tpu_index.go:126-195` - AddPQ, SearchPQ, AddTurboQuant, SearchTurboQuant all unimplemented  
+**Impact:** Cannot use TPU with TurboQuant or PQ compressed indexes  
+**Plan:** Implement TPU kernels for TurboQuant and PQ search, or remove TPUIndex from production
+
+### Issue 3: Metal Index TurboQuant Not Fully Implemented
+**Severity:** P0  
+**Status:** OPEN  
+**Symptom:** MetalHybridIndex and MetalIndex return "not implemented" for TurboQuant  
+**Files:** 
+- `internal/gpu/metal/metal_gpu_hybrid.go:580,584` - AddTurboQuant/SearchTurboQuant unimplemented
+- `internal/gpu/metal/metal_gpu.go:1163,1167` - Same for standard MetalIndex  
+**Impact:** Cannot leverage Metal GPU acceleration with TurboQuant vectors  
+**Plan:** Implement Metal compute kernels for TurboQuant search distance
+
+### Issue 4: SIMD Filter Stubs Panic on Non-x86 Platforms
+**Severity:** P0  
+**Status:** OPEN  
+**Symptom:** SIMD filter functions on non-amd64 platforms call panic()  
+**File:** `internal/query/simd_filter_stub.go:7-44` - All functions panic with "not implemented on this arch"  
+**Impact:** Query filters with SIMD will crash on ARM64/Linux/non-x86 builds  
+**Plan:** Implement SIMD filter kernels for ARM64 (NEON), or add graceful fallback to generic Go
+
+### Issue 5: IVF-OPQ AddByLocation Returns Error
+**Severity:** P0  
+**Status:** OPEN  
+**Symptom:** IVFOPQIndex.AddByLocation returns error instead of implementing method  
+**File:** `internal/store/ivf_opq_index.go:454-457` - "AddByLocation not directly supported on IVF-OPQ (use Add)"  
+**Impact:** IVF-OPQ index cannot use certain add-by-location operations  
+**Plan:** Implement AddByLocation or refactor to use AddVector pathway
+
+### Issue 6: Tiled Batch Distance Has Numerical Precision TODO  
+**Severity:** P1  
+**Status:** OPEN  
+**Symptom:** EuclideanDistanceTiledBatch falls back to non-tiled due to precision differences  
+**File:** `internal/simd/simd_blocked.go:93` - "TODO: Fix tiled batch for dims not aligned to blockedSimdThreshold"  
+**Impact:** Tiled batch optimization not used for non-aligned dimensions  
+**Plan:** Investigate and fix numerical precision issue for full tiled implementation
+
+### Issue 7: Metal Hybrid Index Missing Operations
+**Severity:** P1  
+**Status:** OPEN  
+**Symptom:** MetalHybridIndex missing AddPQ, UpdateGraph, GraphExpand  
+**File:** `internal/gpu/metal/metal_gpu_hybrid.go:667-675` - All return "not implemented"  
+**Impact:** Cannot use PQ compression or dynamic graph updates with hybrid Metal index  
+**Plan:** Implement missing operations or document as limitations
+
+### Issue 8: Stub Embedding/Reranking Model Fallback in Production
+**Severity:** P1  
+**Status:** OPEN  
+**Symptom:** If ONNX model missing, falls back to stub model with warning  
+**Files:** 
+- `internal/store/embedding_generator.go:654` - "Using stub embedding model... NOT recommended for production"
+- `internal/store/ml_reranker.go:73-75` - "Using heuristic fallback reranker (stubMLModel)"  
+**Impact:** Production systems may use degraded quality stub models silently  
+**Plan:** Add LONGBOW_STRICT_MODELS=true to fail fast if model missing (exists in config)
+
+---
+
 ## Completed P0 Blockers - Performance & Quantization (2026-04-28)
 
 All P0 performance features below are IMPLEMENTED in codebase:

@@ -145,6 +145,7 @@ func TestAddConnection(t *testing.T) {
 
 	// Add connection 0 -> 1 at layer 0
 	data = index.AddConnection(ctx, data, 0, 1, 0, 10, 0.0)
+	index.data.Store(data)
 
 	// Reload data from index as AddConnection may have performed COW
 	data = index.data.Load()
@@ -168,7 +169,8 @@ func TestAddConnection(t *testing.T) {
 	}
 
 	// Adding same connection again should be idempotent
-	index.AddConnection(ctx, data, 0, 1, 0, 10, 0.0)
+	data = index.AddConnection(ctx, data, 0, 1, 0, 10, 0.0)
+	index.data.Store(data)
 
 	// Reload data from index again
 	data = index.data.Load()
@@ -239,6 +241,7 @@ func TestPruneConnections(t *testing.T) {
 		// New signature: (ctx, data, id, neighborID, layer, maxConn, dist)
 		data = index.AddConnection(ctx, data, 0, i, 0, 10, 1.0)
 	}
+	index.data.Store(data)
 	
 	// Reload from index
 	data = index.data.Load()
@@ -260,6 +263,7 @@ func TestPruneConnections(t *testing.T) {
 
 	// Prune to 5
 	data = index.PruneConnections(ctx, data, 0, 5, 0)
+	index.data.Store(data)
 	
 	// Reload data from index as PruneConnections may have performed COW
 	data = index.data.Load()
@@ -274,7 +278,8 @@ func TestPruneConnections(t *testing.T) {
 	}
 
 	// Check idempotency - count should still be 5 after pruning again
-	index.PruneConnections(ctx, data, 0, 5, 0)
+	data = index.PruneConnections(ctx, data, 0, 5, 0)
+	index.data.Store(data)
 	
 	// Reload data from index again
 	data = index.data.Load()

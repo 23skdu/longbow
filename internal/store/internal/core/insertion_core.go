@@ -241,7 +241,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	}
 
 	// Publish the final consistent state to the atomic pointer
-	h.data.Store(data)
+	h.compareAndSwapData(data)
 
 	return nil
 }

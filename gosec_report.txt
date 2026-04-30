@@ -1,0 +1,880 @@
+[gosec] 2026/04/30 15:31:03 Including rules: default
+[gosec] 2026/04/30 15:31:03 Excluding rules: default
+[gosec] 2026/04/30 15:31:03 Including analyzers: default
+[gosec] 2026/04/30 15:31:03 Excluding analyzers: default
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/gpu
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/logging
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/store/internal/core
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/mesh/sync
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/store/memory
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/tuning
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/cmd/ring-sim
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/cache
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/gpu/cuda/cuvs
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/limiter
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/gpu/cuda
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/middleware
+[gosec] 2026/04/30 15:31:03 Checking package: memory
+[gosec] 2026/04/30 15:31:03 Checking file: /Users/rsd/REPOS/longbow/internal/store/memory/arena.go
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/pq
+[gosec] 2026/04/30 15:31:03 Checking package: cuda
+[gosec] 2026/04/30 15:31:03 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/cuda/cuda_stub.go
+[gosec] 2026/04/30 15:31:03 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/cuda/doc.go
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/profiling
+[gosec] 2026/04/30 15:31:03 Checking package: main
+[gosec] 2026/04/30 15:31:03 Checking file: /Users/rsd/REPOS/longbow/cmd/ring-sim/main.go
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/cmd/bench-tool
+[gosec] 2026/04/30 15:31:03 Checking package: tuning
+[gosec] 2026/04/30 15:31:03 Checking file: /Users/rsd/REPOS/longbow/internal/tuning/auto_tuner.go
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/cmd/cli
+[gosec] 2026/04/30 15:31:03 Checking package: logging
+[gosec] 2026/04/30 15:31:03 Checking file: /Users/rsd/REPOS/longbow/internal/logging/logger.go
+[gosec] 2026/04/30 15:31:03 Checking file: /Users/rsd/REPOS/longbow/internal/logging/structured_logger.go
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/cmd/scratch/test_estimate
+[gosec] 2026/04/30 15:31:03 Checking package: profiling
+[gosec] 2026/04/30 15:31:03 Checking file: /Users/rsd/REPOS/longbow/internal/profiling/cpu.go
+[gosec] 2026/04/30 15:31:03 Checking file: /Users/rsd/REPOS/longbow/internal/profiling/memory_leak.go
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/benchmark
+[gosec] 2026/04/30 15:31:03 Import directory: /Users/rsd/REPOS/longbow/internal/simd
+[gosec] 2026/04/30 15:31:04 Checking package: cuvs
+[gosec] 2026/04/30 15:31:04 Import directory: /Users/rsd/REPOS/longbow/cmd/scratch/test_doget
+[gosec] 2026/04/30 15:31:04 Checking package: cache
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/cache/cache_key.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/cache/query_cache.go
+[gosec] 2026/04/30 15:31:04 Import directory: /Users/rsd/REPOS/longbow/internal/autoscale
+[gosec] 2026/04/30 15:31:04 Checking package: sync
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/sync/sync_worker.go
+[gosec] 2026/04/30 15:31:04 Checking package: main
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/cmd/scratch/test_estimate/main.go
+[gosec] 2026/04/30 15:31:04 Import directory: /Users/rsd/REPOS/longbow/internal/core
+[gosec] 2026/04/30 15:31:04 Import directory: /Users/rsd/REPOS/longbow/internal/flight
+[gosec] 2026/04/30 15:31:04 Checking package: gpu
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/circuit_breaker.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/detection.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/factory.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/factory_stub.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/interface.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/mmap_others.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/mock_index.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/multi_gpu.go
+[gosec] 2026/04/30 15:31:04 Checking package: core
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/core/arrow_metadata.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/core/enums.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/core/errors.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/core/metadata_codec.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/core/query.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/core/search.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/core/types.go
+[gosec] 2026/04/30 15:31:04 Import directory: /Users/rsd/REPOS/longbow/internal/health
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/pool.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/zero_copy.go
+[gosec] 2026/04/30 15:31:04 Checking package: autoscale
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/autoscale/scaler.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/autoscale/window.go
+[gosec] 2026/04/30 15:31:04 Import directory: /Users/rsd/REPOS/longbow/internal/ml
+[gosec] 2026/04/30 15:31:04 Import directory: /Users/rsd/REPOS/longbow/internal/pool
+[gosec] 2026/04/30 15:31:04 Checking package: limiter
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/limiter/limiter.go
+[gosec] 2026/04/30 15:31:04 Import directory: /Users/rsd/REPOS/longbow/internal/store/types
+[gosec] 2026/04/30 15:31:04 Checking package: pq
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/pq/adc_table.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/pq/encoder.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/pq/kmeans.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/pq/opq.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/pq/persistence.go
+[gosec] 2026/04/30 15:31:04 Import directory: /Users/rsd/REPOS/longbow/cmd/longbow
+[gosec] 2026/04/30 15:31:04 Checking package: ml
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/ml/tokenizer.go
+[gosec] 2026/04/30 15:31:04 Checking package: health
+[gosec] 2026/04/30 15:31:04 Checking package: core
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/health/checkers.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_adaptive_ef.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_graph_metrics.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/health/health_manager.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go
+[gosec] 2026/04/30 15:31:04 Import directory: /Users/rsd/REPOS/longbow/cmd/soak_test
+[gosec] 2026/04/30 15:31:04 Import directory: /Users/rsd/REPOS/longbow/internal/core/quantization
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_adaptive.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_batch.go
+[gosec] 2026/04/30 15:31:04 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_bulk.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_compute_complex.go
+[gosec] 2026/04/30 15:31:05 Checking package: simd
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_compute_float16.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/batch_operations.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_compute_float64.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_compute_int.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/bitops_arm64.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/cpu_detection.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_compute_tq.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/dispatch.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/dispatch_arm64.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/distance_functions.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_index_helper.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_insert.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_persistence.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/generate.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/hadamard.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_insert_pool.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/hadamard_arm64.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/jit_codegen.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_quantization.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_search_context.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/jit_runtime.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/match_arm64.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_utils.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/registry.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/simd.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/disk_graph.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/simd_arm64.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/disk_writer.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/simd_baseline.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/distance_resolvers.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/get_neighbors.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/gpu_cache.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/simd_batch_baseline.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/simd_bitops.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/gpu_hybrid_config.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/graph_navigator.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_gpu.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/simd_blocked.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_gpu_build.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/simd_fma_other.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/simd_generic.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/simd_optimized.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/simd_stubs.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/simd_stubs_amd64_f16.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/simd_v23_compatibility.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/sq4.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/sq8.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/simd/sq8_arm64.go
+[gosec] 2026/04/30 15:31:05 Error building the SSA representation of the package simd: package simd has type errors, skipping SSA analysis, no ssa result
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/query
+[gosec] 2026/04/30 15:31:05 Checking package: main
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/cmd/bench-tool/main.go
+[gosec] 2026/04/30 15:31:05 Checking package: flight
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/flight/adaptive_chunk_strategy.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/flight/eof.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/flight/rdma_server.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/flight/tensor_stream.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_graph_sync.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_lockfree.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_repair.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_repair_agent.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_repair_integration.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_repair_worker.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_top_layers.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/index_queue_lockfree.go
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/storage/benchmark
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/insertion_core.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/level_generation.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/location_mapping.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/location_store.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/lock_free_ring.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/navigator_planner.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/navigator_strategy.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/navigator_strategy_astar.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/navigator_strategy_parallel.go
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/telemetry
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/neighbor_ops.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/packed_adjacency.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/parallel_search.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/perp_result_pool.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/pid_tuner.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/pq_training.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/quantization_integration.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/result_pool.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/scalar_quantization.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/search_arena.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/skip_list.go
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/errors
+[gosec] 2026/04/30 15:31:05 Checking package: middleware
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/middleware/admission_interceptor.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/middleware/circuit_breaker.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/test_utils.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/turboquant.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/gpu/memory
+[gosec] 2026/04/30 15:31:05 Checking package: pool
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/pool/bitmap_pool.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/pool/byte_pool.go
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/scheduler
+[gosec] 2026/04/30 15:31:05 Checking package: main
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/cmd/cli/main.go
+[gosec] 2026/04/30 15:31:05 Checking package: scheduler
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/scheduler/work_queue.go
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/storage
+[gosec] 2026/04/30 15:31:05 Checking package: errors
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/errors/errors.go
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/security
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/tracing
+[gosec] 2026/04/30 15:31:05 Checking package: memory
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/memory/doc.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/memory/memory_base.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/memory/memory_cuda_stub.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/memory/memory_metal_stub.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/memory/memory_pool_base_methods.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/memory/mmap_others.go
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/wasm
+[gosec] 2026/04/30 15:31:05 Checking package: quantization
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/core/quantization/metrics.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/core/quantization/predictor.go
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/memory
+[gosec] 2026/04/30 15:31:05 Checking package: types
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/arrow_bitset.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/bitmap.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/bq.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/filters.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/graph_data.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/graph_snapshot.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/index_types.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/interfaces.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/lazy_metadata.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/serialization.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/sync.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/test_helpers.go
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/internal/store/types/types.go
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/onnx/metal
+[gosec] 2026/04/30 15:31:05 Checking package: main
+[gosec] 2026/04/30 15:31:05 Checking file: /Users/rsd/REPOS/longbow/cmd/soak_test/main.go
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/simd/gen
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/client
+[gosec] 2026/04/30 15:31:05 Import directory: /Users/rsd/REPOS/longbow/internal/concurrency
+[gosec] 2026/04/30 15:31:06 Checking package: tracing
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/tracing/opentelemetry.go
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/gpu/types
+[gosec] 2026/04/30 15:31:06 Checking package: telemetry
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/telemetry/telemetry.go
+[gosec] 2026/04/30 15:31:06 Checking package: security
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/security/audit.go
+[gosec] 2026/04/30 15:31:06 Checking package: wasm
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/wasm/runner.go
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/simd/asm
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/security/auth.go
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/gc
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/security/input_sanitizer.go
+[gosec] 2026/04/30 15:31:06 Checking package: query
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/fast_path_filter.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/filter_evaluator.go
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/gpu/metal
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/hnsw_predicate_adapter.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/hnsw_simd_predicate.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/projection.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/requests.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/simd_filter_neon_arm64.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/iouring
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/onnx
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/vectorized_filter.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/window_operator.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/zero_alloc_parser.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/zero_alloc_temporal.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/zero_alloc_utils.go
+[gosec] 2026/04/30 15:31:06 Checking package: metal
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/metal/doc.go
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/metrics
+[gosec] 2026/04/30 15:31:06 Checking package: concurrency
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/concurrency/lockfree_queue.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/concurrency/lockfree_stack.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/concurrency/pool.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/concurrency/scheduler.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/concurrency/sharded_mutex.go
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/resilience/test
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/sharding
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/query/zero_alloc_vector_search.go
+[gosec] 2026/04/30 15:31:06 Error building the SSA representation of the package query: package query has type errors, skipping SSA analysis, no ssa result
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/breaker
+[gosec] 2026/04/30 15:31:06 Checking package: types
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/types/doc.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/types/errors.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/types/types.go
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/gpu/tpu
+[gosec] 2026/04/30 15:31:06 Checking package: onnx
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/onnx/onnx_stub.go
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/mesh
+[gosec] 2026/04/30 15:31:06 Checking package: memory
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/allocator.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/arena.go
+[gosec] 2026/04/30 15:31:06 Checking package: breaker
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/breaker/breaker.go
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/resilience
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/arena_compaction.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/arena_registry.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/bulk_operations.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/gc_tuner.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/memory_profiler.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/numa_allocator.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/numa_pin_stub.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/numa_stub.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/size_classed_arena.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/slab_pool.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/slab_release_unix.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/tracking_allocator.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/typed_arena.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/memory/vector_arena.go
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/internal/store
+[gosec] 2026/04/30 15:31:06 Checking package: tpu
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/tpu/tpu_backend.go
+[gosec] 2026/04/30 15:31:06 Checking package: main
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/cmd/scratch/test_doget/main.go
+[gosec] 2026/04/30 15:31:06 Checking package: client
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/client/client.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/client/errors.go
+[gosec] 2026/04/30 15:31:06 Checking package: resilience
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/resilience/circuit_breaker.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/resilience/graceful_degradation.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/resilience/manager.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/resilience/retry.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/resilience/timeout.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/gpu/tpu/tpu_index.go
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/cmd/bench_io
+[gosec] 2026/04/30 15:31:06 Import directory: /Users/rsd/REPOS/longbow/cmd/scratch/test_doget_pipeline
+[gosec] 2026/04/30 15:31:06 Checking package: metrics
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/bulk_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/compaction_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking package: metal
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/onnx/metal/reranker_stub.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/onnx/metal/stub.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/dataset_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/geo_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/gpu_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/graph_navigation_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/graph_store_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/hnsw_adaptive_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/hnsw_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking package: gc
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/gc/adaptive.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/hnsw_polymorphic_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/hnsw_repair_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/indexing_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/io_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/learned_index_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/lock_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/memory_metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/metrics.go
+[gosec] 2026/04/30 15:31:06 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/metrics_arena.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/metrics_eviction.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/metrics_hybrid.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/metrics_memory.go
+[gosec] 2026/04/30 15:31:07 Checking package: mesh
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/compression.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/discovery.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/metrics_mesh.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/discovery_dns.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/discovery_k8s.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/discovery_loop.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/discovery_mdns.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/gossip.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/metrics_storage.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/namespace_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/network_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/member.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/packet.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/pod_parser.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/rdma_stub.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/region.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/mesh/spatial_index.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/onnx_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/quantization_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/rdma_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/search_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking package: sharding
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/sharding/forwarder.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/sharding/manager.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/sharding/proxy.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/sharding/ring.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/sharding/scatter_gather.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/sharding/stream_aggregator.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/simd_kernel_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/storage_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking package: storage
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/adaptive_wal.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/async_fsync.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/batched_wal.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/cache.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/direct_io_darwin.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/engine.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/errors.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/file_backend.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/gcs_remote.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/io_helper.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/mmap_vector.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/mock_remote.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/parquet.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/patchable_buffer.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/remote_reader.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/s3_backend.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/s3_remote.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/snapshot_backend.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/storage_backend.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/storage_backend_stub.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/tiered_storage.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/wal_backend.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/wal_backend_arrow_iouring_stub.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/wal_backend_stub.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/wal_buffer_pool.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/wal_buffered.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/wal_interface.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/wal_iterator.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/wal_replay.go
+[gosec] 2026/04/30 15:31:07 Checking package: main
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/storage/wal_ring_buffer.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/cmd/longbow/config.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/cmd/longbow/grpc_server_config.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/cmd/longbow/main.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/system_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/tpu_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/tracing_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/metrics/wal_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking package: main
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/cmd/bench_io/main.go
+[gosec] 2026/04/30 15:31:07 Checking package: main
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/cmd/scratch/test_doget_pipeline/main.go
+[gosec] 2026/04/30 15:31:07 Checking package: store
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/adaptive_index.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/adaptive_search.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/adaptive_stream.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/admission.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/aligned_sharded_mutex.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/allocator.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/arrow_aggregation.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/arrow_allocator.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/arrow_batch.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/arrow_distance.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/arrow_distance_simd.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/arrow_heap.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/arrow_kernels.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/arrow_neighbors.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/arrow_v23_compatibility_layer.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/backup.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/batch_neighbor_updates.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/batch_remap.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/batch_search.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/bitmap_index.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/bitmap_pool.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/bloom_filter.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/bm25_arena.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/bm25_inverted_index.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/bm25_scorer.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/capacity_plan.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/cdc.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/checkpoint_coordinator.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/circuit_breaker.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/cohere_reranker.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/column_inverted_index.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/compaction.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/consistency.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/cow_metadata.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/dataset.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/dataset_compaction.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/dataset_fragmentation.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/dataset_io.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/dimension.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/disk_io_scheduler.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/disk_vector_store.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/disk_writer_uring_stub.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/diskann.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/do_exchange.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/doget_pipeline.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/doget_pipeline_integration.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/embedding_generator.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/errors.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/fast_path_ordered.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/federated_search.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/filters.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/flight_client_pool.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/flight_data_queue.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/fragmentation_tracker.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/generic_quantizer.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/geo_search.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/global_search.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/goroutine_audit.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/graph_analytics.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/graph_api.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/graph_backend.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/graph_store.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/grpc_options.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/hashing.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/hnsw_autoshard.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/hnsw_optimized_search.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/hnsw_predicate.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/hnsw_temporal.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/hybrid_config.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/hybrid_pipeline.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/hybrid_query.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/hybrid_search.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/hybrid_search_arena.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/index_queue.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/ingestion_queue_ring.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/ingestion_worker.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/inverted_index.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/inverted_index_sharded.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/ivf_flat.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/ivf_hnsw_composite.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/ivf_opq_index.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/ivf_pq_index.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/learned_index.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/learned_index_ollama.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/load_balancer.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/lockfree_neighbors.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/logging_helper.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/lww.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/measured_mutex.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/mem_vector_store.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/memory.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/memory_backpressure.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/memory_config.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/memory_enforcement.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/memory_metrics.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/memory_setter.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/memory_stub.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/merkle.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/mesh_cache.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/metric.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/ml_reranker.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/mq_exporter.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/namespace.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/optimistic_update.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/parallel_filter.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/parallel_ingestion.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/parquet_ingester.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/parquet_streaming.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/partitioned_records.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/peer_replicator.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/pluggable_index.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/pluggable_index_adapters.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/pooled_allocator.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/quantization_tuner.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/quorum.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/rate_limit.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/rate_limiter.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/rbac.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/recommend.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/record_builder_pool.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/record_eviction.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/record_size_cache.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/record_writer_pool.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/replication.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/request_semaphore.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/result_merger.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/rrf.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/schema_evolution.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/schema_lock.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/search_ef_tuning.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/search_pool.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/search_result.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/servers.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/shard.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/sharded_dataset.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/sharded_hnsw.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/sharded_indexing.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/sharded_mutex.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/sharding_strategy.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/shutdown.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/split_brain_detector.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/store.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/store_actions.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/store_dataset.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/store_gpu_stub.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/store_helpers.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/store_hybrid.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/store_learned.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/store_lifecycle.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/store_persistence.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/store_persistence_methods.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/store_query.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/streaming_aggregation.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/tcp_nodelay.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/temporal_aggregation.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/temporal_search.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/ttl_policy.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/turboquant_storage.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/type_aliases.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/uring_reader_stub.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/vector_clock.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/vector_math.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/vector_pool.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/vector_search_action.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/vector_search_exchange.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/vector_types.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/version_history.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/versioning.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/websocket.go
+[gosec] 2026/04/30 15:31:07 Checking file: /Users/rsd/REPOS/longbow/internal/store/zero_copy.go
+Results:
+
+Golang errors in file: []:
+
+  > [line 0 : column 0] - # command-line-arguments
+internal/query/simd_filter_neon_arm64.go:10:6: missing function body
+internal/query/simd_filter_neon_arm64.go:15:6: missing function body
+internal/query/simd_filter_neon_arm64.go:19:6: missing function body
+internal/query/simd_filter_neon_arm64.go:23:6: missing function body
+
+  > [line 0 : column 0] - # command-line-arguments
+internal/simd/simd_arm64.go:224:6: missing function body
+internal/simd/simd_arm64.go:226:6: missing function body
+internal/simd/simd_arm64.go:234:6: missing function body
+internal/simd/simd_arm64.go:236:6: missing function body
+internal/simd/simd_arm64.go:238:6: missing function body
+internal/simd/simd_arm64.go:240:6: missing function body
+internal/simd/simd_arm64.go:242:6: missing function body
+internal/simd/simd_arm64.go:244:6: missing function body
+internal/simd/simd_arm64.go:246:6: missing function body
+internal/simd/simd_arm64.go:260:6: missing function body
+internal/simd/simd_arm64.go:240:6: too many errors
+
+
+
+[[97;41m/Users/rsd/REPOS/longbow/internal/store/internal/core/location_store.go:225[0m] - G115 (CWE-190): integer overflow conversion int -> uint32 (Confidence: MEDIUM, Severity: HIGH)
+    224: 	// 1. Reserve block of IDs
+  > 225: 	count := uint32(len(locs))
+    226: 	startIDVal := s.size.Add(count) - count
+
+Autofix: 
+
+[[97;41m/Users/rsd/Library/Caches/go-build/f0/f0b7bb42845f5385de659e4d4dd34aae71a48da80aa1fa84fbdc968847763138-d:61[0m] - G115 (CWE-190): integer overflow conversion int -> int32 (Confidence: MEDIUM, Severity: HIGH)
+    60: func tpuEnqueueBatch(deviceID int, data []float32) error {
+  > 61: 	if len(data) == 0 {
+    62: 		return nil
+
+Autofix: 
+
+[[97;41m/Users/rsd/Library/Caches/go-build/f0/f0b7bb42845f5385de659e4d4dd34aae71a48da80aa1fa84fbdc968847763138-d:61[0m] - G115 (CWE-190): integer overflow conversion int -> int32 (Confidence: MEDIUM, Severity: HIGH)
+    60: func tpuEnqueueBatch(deviceID int, data []float32) error {
+  > 61: 	if len(data) == 0 {
+    62: 		return nil
+
+Autofix: 
+
+[[97;41m/Users/rsd/Library/Caches/go-build/f0/f0b7bb42845f5385de659e4d4dd34aae71a48da80aa1fa84fbdc968847763138-d:49[0m] - G115 (CWE-190): integer overflow conversion int -> int32 (Confidence: MEDIUM, Severity: HIGH)
+    48: 
+  > 49: // Wrapper for tpu_get_device_info
+    50: func tpuGetDeviceInfo(deviceID int) (total, free uint64, err error) {
+
+Autofix: 
+
+[[97;41m/Users/rsd/Library/Caches/go-build/13/13fbd28e3560c1429164aa1b83d852ce3ba31ea6483827a908d1b47747ce3071-d:94[0m] - G115 (CWE-190): integer overflow conversion int -> int32 (Confidence: MEDIUM, Severity: HIGH)
+    93: 	if len(vectors) == 0 {
+  > 94: 		return nil
+    95: 	}
+
+Autofix: 
+
+[[97;41m/Users/rsd/Library/Caches/go-build/13/13fbd28e3560c1429164aa1b83d852ce3ba31ea6483827a908d1b47747ce3071-d:94[0m] - G115 (CWE-190): integer overflow conversion int -> int32 (Confidence: MEDIUM, Severity: HIGH)
+    93: 	if len(vectors) == 0 {
+  > 94: 		return nil
+    95: 	}
+
+Autofix: 
+
+[[97;41m/Users/rsd/Library/Caches/go-build/13/13fbd28e3560c1429164aa1b83d852ce3ba31ea6483827a908d1b47747ce3071-d:67[0m] - G115 (CWE-190): integer overflow conversion int -> int32 (Confidence: MEDIUM, Severity: HIGH)
+    66: 	// cuVS might return string IDs or integer IDs depending on configuration.
+  > 67: 	// For consistency with gpu.Index, we assume integer IDs can be derived.
+    68: 	// In this wrapper, we'll convert them to int64 if they are numeric strings.
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/store/types/graph_data.go:1386[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    1385: 			if len(vec) > 0 {
+  > 1386: 				simd.MemcpyNTA(unsafe.Pointer(&chunk[start]), unsafe.Pointer(&vec[0]), len(vec)*4)
+    1387: 			}
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/store/types/graph_data.go:1386[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    1385: 			if len(vec) > 0 {
+  > 1386: 				simd.MemcpyNTA(unsafe.Pointer(&chunk[start]), unsafe.Pointer(&vec[0]), len(vec)*4)
+    1387: 			}
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/store/graph_store.go:447[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    446: 				if edges, ok := gs.forwardEdges[nextNextID]; ok && len(edges) > 0 {
+  > 447: 					simd.Prefetch(unsafe.Pointer(&edges[0]))
+    448: 				}
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/store/graph_store.go:355[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    354: 				if edges, ok := gs.forwardEdges[nextNextID]; ok && len(edges) > 0 {
+  > 355: 					simd.Prefetch(unsafe.Pointer(&edges[0]))
+    356: 				}
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/simd/simd_arm64.go:122[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    121: 	if len(src) == 0 { return nil }
+  > 122: 	matchFloat64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+    123: 	return nil
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/simd/simd_arm64.go:122[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    121: 	if len(src) == 0 { return nil }
+  > 122: 	matchFloat64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+    123: 	return nil
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/simd/simd_arm64.go:116[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    115: 	if len(src) == 0 { return nil }
+  > 116: 	matchFloat32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+    117: 	return nil
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/simd/simd_arm64.go:116[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    115: 	if len(src) == 0 { return nil }
+  > 116: 	matchFloat32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+    117: 	return nil
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/simd/simd_arm64.go:110[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    109: 	if len(src) == 0 { return nil }
+  > 110: 	matchInt32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+    111: 	return nil
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/simd/simd_arm64.go:110[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    109: 	if len(src) == 0 { return nil }
+  > 110: 	matchInt32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+    111: 	return nil
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/simd/simd_arm64.go:104[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    103: 	if len(src) == 0 { return nil }
+  > 104: 	matchInt64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+    105: 	return nil
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/simd/simd_arm64.go:104[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    103: 	if len(src) == 0 { return nil }
+  > 104: 	matchInt64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+    105: 	return nil
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/simd/simd.go:1226[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    1225: 	d := unsafe.Slice((*byte)(dst), n)
+  > 1226: 	s := unsafe.Slice((*byte)(src), n)
+    1227: 	copy(d, s)
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/simd/simd.go:1225[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    1224: func memcpyGeneric(dst, src unsafe.Pointer, n int) {
+  > 1225: 	d := unsafe.Slice((*byte)(dst), n)
+    1226: 	s := unsafe.Slice((*byte)(src), n)
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:78[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    77: 	srcSlice := unsafe.Slice((*float64)(src), n)
+  > 78: 	resultSlice := unsafe.Slice((*int64)(result), n)
+    79: 	for i := 0; i < n; i++ {
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:77[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    76: func fastPathFloat64EqualAVX2Kernel(src unsafe.Pointer, n int, val float64, result unsafe.Pointer) {
+  > 77: 	srcSlice := unsafe.Slice((*float64)(src), n)
+    78: 	resultSlice := unsafe.Slice((*int64)(result), n)
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:66[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    65: 	srcSlice := unsafe.Slice((*int64)(src), n)
+  > 66: 	resultSlice := unsafe.Slice((*int64)(result), n)
+    67: 	for i := 0; i < n; i++ {
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:65[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    64: func fastPathInt64EqualAVX2Kernel(src unsafe.Pointer, n int, val int64, result unsafe.Pointer) {
+  > 65: 	srcSlice := unsafe.Slice((*int64)(src), n)
+    66: 	resultSlice := unsafe.Slice((*int64)(result), n)
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:46[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    45: 	targetSlice := unsafe.Slice((*byte)(target), targetLen)
+  > 46: 	resultSlice := unsafe.Slice((*int32)(result), n)
+    47: 	for i := 0; i < n; i++ {
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:45[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    44: 	dataSlice := unsafe.Slice((*byte)(data), offsetsSlice[n])
+  > 45: 	targetSlice := unsafe.Slice((*byte)(target), targetLen)
+    46: 	resultSlice := unsafe.Slice((*int32)(result), n)
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:44[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    43: 	offsetsSlice := unsafe.Slice((*int32)(offsets), n+1)
+  > 44: 	dataSlice := unsafe.Slice((*byte)(data), offsetsSlice[n])
+    45: 	targetSlice := unsafe.Slice((*byte)(target), targetLen)
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:43[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    42: func fastPathStringEqualAVX2Kernel(offsets unsafe.Pointer, data unsafe.Pointer, n int, target unsafe.Pointer, targetLen int, result unsafe.Pointer) {
+  > 43: 	offsetsSlice := unsafe.Slice((*int32)(offsets), n+1)
+    44: 	dataSlice := unsafe.Slice((*byte)(data), offsetsSlice[n])
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:33[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    32: 	srcSlice := unsafe.Slice((*uint8)(src), nBytes)
+  > 33: 	resultSlice := unsafe.Slice((*uint8)(result), nBytes)
+    34: 	copy(resultSlice, srcSlice)
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:32[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    31: func fastPathBoolAVX2Kernel(src unsafe.Pointer, nBytes int, negate bool, result unsafe.Pointer) {
+  > 32: 	srcSlice := unsafe.Slice((*uint8)(src), nBytes)
+    33: 	resultSlice := unsafe.Slice((*uint8)(result), nBytes)
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:21[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    20: 	srcSlice := unsafe.Slice((*float32)(src), n)
+  > 21: 	resultSlice := unsafe.Slice((*int32)(result), n)
+    22: 	for i := 0; i < n; i++ {
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:20[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    19: func fastPathFloat32EqualAVX2Kernel(src unsafe.Pointer, n int, val float32, result unsafe.Pointer) {
+  > 20: 	srcSlice := unsafe.Slice((*float32)(src), n)
+    21: 	resultSlice := unsafe.Slice((*int32)(result), n)
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:9[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    8: 	srcSlice := unsafe.Slice((*int32)(src), n)
+  > 9: 	resultSlice := unsafe.Slice((*int32)(result), n)
+    10: 	for i := 0; i < n; i++ {
+
+Autofix: 
+
+[[37;40m/Users/rsd/REPOS/longbow/internal/query/simd_filter_stub.go:8[0m] - G103 (CWE-242): Use of unsafe calls should be audited (Confidence: HIGH, Severity: LOW)
+    7: func fastPathInt32EqualAVX2Kernel(src unsafe.Pointer, n int, val int32, result unsafe.Pointer) {
+  > 8: 	srcSlice := unsafe.Slice((*int32)(src), n)
+    9: 	resultSlice := unsafe.Slice((*int32)(result), n)
+
+Autofix: 
+
+[1;36mSummary:[0m
+  Gosec  : 2.26.1
+  Files  : 481
+  Lines  : 116272
+  Nosec  : 586
+  Issues : [1;31m35[0m
+

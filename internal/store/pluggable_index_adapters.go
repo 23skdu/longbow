@@ -207,6 +207,10 @@ func (h *HNSWPluggableAdapter) SearchVectors(query []float32, k int, options Sea
 func (h *HNSWPluggableAdapter) Len() int {
 	return h.Size()
 }
+
+func (h *HNSWPluggableAdapter) GetIndexType() string {
+	return string(h.Type())
+}
 // PluggableInternalAdapter wraps a PluggableVectorIndex to implement the internal VectorIndexer interface.
 // This allows the adaptive learned index to perform live swaps into the dataset search path.
 type PluggableInternalAdapter struct {
@@ -221,6 +225,10 @@ func (a *PluggableInternalAdapter) Type() IndexType { return a.inner.Type() }
 func (a *PluggableInternalAdapter) Size() int       { return a.inner.Size() }
 func (a *PluggableInternalAdapter) Len() int        { return a.inner.Size() }
 func (a *PluggableInternalAdapter) Close() error    { return a.inner.Close() }
+
+func (a *PluggableInternalAdapter) GetIndexType() string {
+	return string(a.inner.Type())
+}
 
 // AddByRecord implements VectorIndexer. This is a stub for migrated indexes;
 // they are built from snapshots.

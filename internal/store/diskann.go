@@ -59,45 +59,51 @@ func NewDiskANNIndex(cfg IndexConfig) (*DiskANNIndex, error) {
 	}, nil
 }
 
-func (d *DiskANNIndex) Type() IndexType {
+// Type returns the index type identifier (DiskANN).
+func (idx *DiskANNIndex) Type() IndexType {
 	return IndexTypeDiskANN
 }
 
-func (d *DiskANNIndex) Dimension() int {
-	return d.dimension
+// Dimension returns the vector dimension supported by the index.
+func (idx *DiskANNIndex) Dimension() int {
+	return idx.dimension
 }
 
-func (d *DiskANNIndex) Size() int {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
-	return len(d.vectors)
+// Size returns the total number of vectors stored in the index.
+func (idx *DiskANNIndex) Size() int {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return len(idx.vectors)
 }
 
-func (d *DiskANNIndex) NeedsBuild() bool {
+// NeedsBuild returns true because DiskANN requires explicit graph construction.
+func (idx *DiskANNIndex) NeedsBuild() bool {
 	return true // DiskANN requires graph construction
 }
 
-func (d *DiskANNIndex) Add(id uint64, vector []float32) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+// Add inserts a single vector into the index.
+func (idx *DiskANNIndex) Add(id uint64, vector []float32) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
 
-	if len(vector) != d.dimension {
-		return fmt.Errorf("vector dimension mismatch: expected %d, got %d", d.dimension, len(vector))
+	if len(vector) != idx.dimension {
+		return fmt.Errorf("vector dimension mismatch: expected %d, got %d", idx.dimension, len(vector))
 	}
 
-	d.vectors[id] = vector
+	idx.vectors[id] = vector
 
 	// If already built, insert into graph
-	if d.built {
-		d.insertIntoGraph(id, vector)
+	if idx.built {
+		idx.insertIntoGraph(id, vector)
 	}
 
 	return nil
 }
 
-func (d *DiskANNIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+// AddBatchRaw inserts multiple vectors into the index efficiently.
+func (idx *DiskANNIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
 
 	if len(ids) != len(vectors) {
 		return fmt.Errorf("ids and vectors length mismatch: %d vs %d", len(ids), len(vectors))
@@ -105,15 +111,15 @@ func (d *DiskANNIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
 
 	for i, id := range ids {
 		vector := vectors[i]
-		if len(vector) != d.dimension {
-			return fmt.Errorf("vector dimension mismatch: expected %d, got %d", d.dimension, len(vector))
+		if len(vector) != idx.dimension {
+			return fmt.Errorf("vector dimension mismatch: expected %d, got %d", idx.dimension, len(vector))
 		}
 
-		d.vectors[id] = vector
+		idx.vectors[id] = vector
 
 		// If already built, insert into graph
-		if d.built {
-			d.insertIntoGraph(id, vector)
+		if idx.built {
+			idx.insertIntoGraph(id, vector)
 		}
 	}
 
@@ -121,46 +127,46 @@ func (d *DiskANNIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
 }
 
 // Build constructs the Vamana graph from the current vectors
-func (d *DiskANNIndex) Build() error {
-	d.mu.Lock()
-	defer d.mu.Unlock()
+func (idx *DiskANNIndex) Build() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
 
-	if len(d.vectors) == 0 {
+	if len(idx.vectors) == 0 {
 		return fmt.Errorf("no vectors to build index")
 	}
 
 	// Initialize graph with empty neighbor lists
-	d.graph = make(map[uint64][]uint64)
-	for id := range d.vectors {
-		d.graph[id] = make([]uint64, 0)
+	idx.graph = make(map[uint64][]uint64)
+	for id := range idx.vectors {
+		idx.graph[id] = make([]uint64, 0)
 	}
 
 	// Build Vamana graph using greedy search with robust pruning
 	// Simplified implementation: for each node, find nearest neighbors
-	ids := make([]uint64, 0, len(d.vectors))
-	for id := range d.vectors {
+	ids := make([]uint64, 0, len(idx.vectors))
+	for id := range idx.vectors {
 		ids = append(ids, id)
 	}
 
 	// For each node, build its neighbor list
 	for _, id := range ids {
-		d.buildNodeNeighbors(id)
+		idx.buildNodeNeighbors(id)
 	}
 
-	d.built = true
+	idx.built = true
 	return nil
 }
 
 // buildNodeNeighbors builds the neighbor list for a single node
-func (d *DiskANNIndex) buildNodeNeighbors(nodeID uint64) {
-	vector := d.vectors[nodeID]
+func (idx *DiskANNIndex) buildNodeNeighbors(nodeID uint64) {
+	vector := idx.vectors[nodeID]
 	candidates := make([]struct {
 		id       uint64
 		distance float32
-	}, 0, len(d.vectors)-1)
+	}, 0, len(idx.vectors)-1)
 
 	// Find all other nodes as candidates
-	for otherID, otherVec := range d.vectors {
+	for otherID, otherVec := range idx.vectors {
 		if otherID == nodeID {
 			continue
 		}
@@ -177,7 +183,7 @@ func (d *DiskANNIndex) buildNodeNeighbors(nodeID uint64) {
 	})
 
 	// Select top neighbors up to MaxDegree
-	maxNeighbors := d.config.MaxDegree
+	maxNeighbors := idx.config.MaxDegree
 	if len(candidates) < maxNeighbors {
 		maxNeighbors = len(candidates)
 	}
@@ -187,19 +193,19 @@ func (d *DiskANNIndex) buildNodeNeighbors(nodeID uint64) {
 		nodeNeighbors = append(nodeNeighbors, candidates[i].id)
 	}
 
-	d.graph[nodeID] = nodeNeighbors
+	idx.graph[nodeID] = nodeNeighbors
 }
 
 // insertIntoGraph inserts a new node into the existing graph
-func (d *DiskANNIndex) insertIntoGraph(newID uint64, vector []float32) {
+func (idx *DiskANNIndex) insertIntoGraph(newID uint64, vector []float32) {
 	// Find nearest neighbors for the new node
 	type candidate struct {
 		id       uint64
 		distance float32
 	}
 
-	candidates := make([]candidate, 0, len(d.vectors)-1)
-	for id, vec := range d.vectors {
+	candidates := make([]candidate, 0, len(idx.vectors)-1)
+	for id, vec := range idx.vectors {
 		if id == newID {
 			continue
 		}
@@ -213,7 +219,7 @@ func (d *DiskANNIndex) insertIntoGraph(newID uint64, vector []float32) {
 	})
 
 	// Select top neighbors
-	maxNeighbors := d.config.MaxDegree
+	maxNeighbors := idx.config.MaxDegree
 	if len(candidates) < maxNeighbors {
 		maxNeighbors = len(candidates)
 	}
@@ -223,7 +229,7 @@ func (d *DiskANNIndex) insertIntoGraph(newID uint64, vector []float32) {
 		newNeighbors = append(newNeighbors, candidates[i].id)
 	}
 
-	d.graph[newID] = newNeighbors
+	idx.graph[newID] = newNeighbors
 
 	// Update neighbors of existing nodes (simplified: just add to top candidates)
 	// In a full implementation, this would use robust pruning
@@ -231,34 +237,35 @@ func (d *DiskANNIndex) insertIntoGraph(newID uint64, vector []float32) {
 		neighborID := candidates[i].id
 		// Add new node to neighbor's list if not already present
 		found := false
-		for _, existingID := range d.graph[neighborID] {
+		for _, existingID := range idx.graph[neighborID] {
 			if existingID == newID {
 				found = true
 				break
 			}
 		}
-		if !found && len(d.graph[neighborID]) < d.config.MaxDegree {
-			d.graph[neighborID] = append(d.graph[neighborID], newID)
+		if !found && len(idx.graph[neighborID]) < idx.config.MaxDegree {
+			idx.graph[neighborID] = append(idx.graph[neighborID], newID)
 		}
 	}
 }
 
 // Search finds k nearest neighbors using greedy graph search
-func (d *DiskANNIndex) Search(query []float32, k int) ([]IndexSearchResult, error) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
+// Search finds the top-k nearest neighbors for a query vector using greedy graph traversal.
+func (idx *DiskANNIndex) Search(query []float32, k int) ([]IndexSearchResult, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 
-	if !d.built {
+	if !idx.built {
 		return nil, fmt.Errorf("index not built. Call Build() first")
 	}
 
-	if len(d.vectors) == 0 {
+	if len(idx.vectors) == 0 {
 		return []IndexSearchResult{}, nil
 	}
 
 	// Start from a random node
 	var startNode uint64
-	for id := range d.graph {
+	for id := range idx.graph {
 		startNode = id
 		break
 	}
@@ -270,7 +277,7 @@ func (d *DiskANNIndex) Search(query []float32, k int) ([]IndexSearchResult, erro
 	}
 
 	visitedSet := make(map[uint64]bool)
-	startDist, _ := simd.L2Squared(query, d.vectors[startNode])
+	startDist, _ := simd.L2Squared(query, idx.vectors[startNode])
 	candidates := []visited{
 		{id: startNode, distance: startDist},
 	}
@@ -279,9 +286,9 @@ func (d *DiskANNIndex) Search(query []float32, k int) ([]IndexSearchResult, erro
 	results := make([]IndexSearchResult, 0, k*2)
 
 	// Beam search with pruning
-	beamWidth := d.config.BeamWidth
-	if beamWidth > len(d.vectors) {
-		beamWidth = len(d.vectors)
+	beamWidth := idx.config.BeamWidth
+	if beamWidth > len(idx.vectors) {
+		beamWidth = len(idx.vectors)
 	}
 
 	for len(candidates) > 0 && len(results) < k*2 {
@@ -296,13 +303,13 @@ func (d *DiskANNIndex) Search(query []float32, k int) ([]IndexSearchResult, erro
 		})
 
 		// Explore neighbors
-		neighbors := d.graph[best.id]
+		neighbors := idx.graph[best.id]
 		for _, neighborID := range neighbors {
 			if visitedSet[neighborID] {
 				continue
 			}
 			visitedSet[neighborID] = true
-			dist, _ := simd.L2Squared(query, d.vectors[neighborID])
+			dist, _ := simd.L2Squared(query, idx.vectors[neighborID])
 			candidates = append(candidates, visited{id: neighborID, distance: dist})
 		}
 
@@ -327,10 +334,11 @@ func (d *DiskANNIndex) Search(query []float32, k int) ([]IndexSearchResult, erro
 	return results[:k], nil
 }
 
-func (d *DiskANNIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error) {
+// SearchBatch performs multiple vector searches in parallel.
+func (idx *DiskANNIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error) {
 	results := make([][]IndexSearchResult, len(queries))
 	for i, query := range queries {
-		r, err := d.Search(query, k)
+		r, err := idx.Search(query, k)
 		if err != nil {
 			return nil, err
 		}
@@ -339,11 +347,12 @@ func (d *DiskANNIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearchR
 	return results, nil
 }
 
-func (d *DiskANNIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error) {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
+// GetNeighbors returns the nearest neighbors for an existing vector ID.
+func (idx *DiskANNIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 
-	neighbors, ok := d.graph[uint64(id)]
+	neighbors, ok := idx.graph[uint64(id)]
 	if !ok {
 		return nil, fmt.Errorf("vector id %d not found in DiskANN index", id)
 	}
@@ -359,9 +368,10 @@ func (d *DiskANNIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k 
 	return results, nil
 }
 
-func (d *DiskANNIndex) Save(path string) error {
-	d.mu.RLock()
-	defer d.mu.RUnlock()
+// Save serializes the DiskANN index and its graph to the specified disk path.
+func (idx *DiskANNIndex) Save(path string) error {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 
 	path = filepath.Clean(path)
 	f, err := os.Create(path)
@@ -379,12 +389,12 @@ func (d *DiskANNIndex) Save(path string) error {
 	}
 
 	// Write dimension
-	if err := binary.Write(f, binary.LittleEndian, uint32(d.dimension)); err != nil { // #nosec G115
+	if err := binary.Write(f, binary.LittleEndian, uint32(idx.dimension)); err != nil { // #nosec G115
 		return fmt.Errorf("failed to write dimension: %w", err)
 	}
 
 	// Write config as JSON
-	configData, err := json.Marshal(d.config)
+	configData, err := json.Marshal(idx.config)
 	if err != nil {
 		return fmt.Errorf("failed to marshal config: %w", err)
 	}
@@ -396,21 +406,21 @@ func (d *DiskANNIndex) Save(path string) error {
 	}
 
 	// Write vector count
-	vecCount := uint32(len(d.vectors)) // #nosec G115
+	vecCount := uint32(len(idx.vectors)) // #nosec G115
 	if err := binary.Write(f, binary.LittleEndian, vecCount); err != nil {
 		return fmt.Errorf("failed to write vector count: %w", err)
 	}
 
 	// Sort IDs for deterministic ordering
-	ids := make([]uint64, 0, len(d.vectors))
-	for id := range d.vectors {
+	ids := make([]uint64, 0, len(idx.vectors))
+	for id := range idx.vectors {
 		ids = append(ids, id)
 	}
 	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
 
 	// Write vectors: for each id, write (id, vector)
 	for _, id := range ids {
-		vector := d.vectors[id]
+		vector := idx.vectors[id]
 		if err := binary.Write(f, binary.LittleEndian, id); err != nil {
 			return fmt.Errorf("failed to write vector id: %w", err)
 		}
@@ -424,14 +434,14 @@ func (d *DiskANNIndex) Save(path string) error {
 	}
 
 	// Write graph count
-	graphCount := uint32(len(d.graph)) // #nosec G115
+	graphCount := uint32(len(idx.graph)) // #nosec G115
 	if err := binary.Write(f, binary.LittleEndian, graphCount); err != nil {
 		return fmt.Errorf("failed to write graph count: %w", err)
 	}
 
 	// Write graph: for each id, write (id, neighbor_count, neighbors)
 	for _, id := range ids {
-		neighbors := d.graph[id]
+		neighbors := idx.graph[id]
 		if err := binary.Write(f, binary.LittleEndian, id); err != nil {
 			return fmt.Errorf("failed to write graph id: %w", err)
 		}
@@ -451,7 +461,7 @@ func (d *DiskANNIndex) Save(path string) error {
 
 	// Write built flag
 	builtFlag := uint8(0)
-	if d.built {
+	if idx.built {
 		builtFlag = 1
 	}
 	if err := binary.Write(f, binary.LittleEndian, builtFlag); err != nil {
@@ -461,7 +471,8 @@ func (d *DiskANNIndex) Save(path string) error {
 	return nil
 }
 
-func (d *DiskANNIndex) Load(path string) error {
+// Load restores the DiskANN index and its graph from the specified disk path.
+func (idx *DiskANNIndex) Load(path string) error {
 	path = filepath.Clean(path)
 	f, err := os.Open(path)
 	if err != nil {
@@ -492,7 +503,7 @@ func (d *DiskANNIndex) Load(path string) error {
 	if err := binary.Read(f, binary.LittleEndian, &dimension); err != nil {
 		return fmt.Errorf("failed to read dimension: %w", err)
 	}
-	d.dimension = int(dimension)
+	idx.dimension = int(dimension)
 
 	// Read config
 	var configLen uint32
@@ -503,8 +514,8 @@ func (d *DiskANNIndex) Load(path string) error {
 	if _, err := f.Read(configData); err != nil {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
-	d.config = &DiskANNConfig{}
-	if err := json.Unmarshal(configData, d.config); err != nil {
+	idx.config = &DiskANNConfig{}
+	if err := json.Unmarshal(configData, idx.config); err != nil {
 		return fmt.Errorf("failed to unmarshal config: %w", err)
 	}
 
@@ -513,21 +524,21 @@ func (d *DiskANNIndex) Load(path string) error {
 	if err := binary.Read(f, binary.LittleEndian, &vecCount); err != nil {
 		return fmt.Errorf("failed to read vector count: %w", err)
 	}
-	d.vectors = make(map[uint64][]float32, vecCount)
+	idx.vectors = make(map[uint64][]float32, vecCount)
 	for i := uint32(0); i < vecCount; i++ {
 		var id uint64
 		if err := binary.Read(f, binary.LittleEndian, &id); err != nil {
 			return fmt.Errorf("failed to read vector id: %w", err)
 		}
-		vec := make([]float32, d.dimension)
-		vecBytes := make([]byte, d.dimension*4)
+		vec := make([]float32, idx.dimension)
+		vecBytes := make([]byte, idx.dimension*4)
 		if _, err := f.Read(vecBytes); err != nil {
 			return fmt.Errorf("failed to read vector: %w", err)
 		}
-		for j := 0; j < d.dimension; j++ {
+		for j := 0; j < idx.dimension; j++ {
 			vec[j] = math.Float32frombits(binary.LittleEndian.Uint32(vecBytes[j*4:]))
 		}
-		d.vectors[id] = vec
+		idx.vectors[id] = vec
 	}
 
 	// Read graph
@@ -535,7 +546,7 @@ func (d *DiskANNIndex) Load(path string) error {
 	if err := binary.Read(f, binary.LittleEndian, &graphCount); err != nil {
 		return fmt.Errorf("failed to read graph count: %w", err)
 	}
-	d.graph = make(map[uint64][]uint64, graphCount)
+	idx.graph = make(map[uint64][]uint64, graphCount)
 	for i := uint32(0); i < graphCount; i++ {
 		var id uint64
 		if err := binary.Read(f, binary.LittleEndian, &id); err != nil {
@@ -555,7 +566,7 @@ func (d *DiskANNIndex) Load(path string) error {
 				neighbors[j] = binary.LittleEndian.Uint64(neighborBytes[j*8:])
 			}
 		}
-		d.graph[id] = neighbors
+		idx.graph[id] = neighbors
 	}
 
 	// Read built flag
@@ -563,34 +574,40 @@ func (d *DiskANNIndex) Load(path string) error {
 	if err := binary.Read(f, binary.LittleEndian, &builtFlag); err != nil {
 		return fmt.Errorf("failed to read built flag: %w", err)
 	}
-	d.built = builtFlag == 1
+	idx.built = builtFlag == 1
 
 	return nil
 }
 
-func (d *DiskANNIndex) Close() error {
+// Close releases all resources associated with the DiskANN index.
+func (idx *DiskANNIndex) Close() error {
 	return nil
 }
 
-func (d *DiskANNIndex) ExportState() ([]byte, error) {
+// ExportState returns the serialized state of the index.
+func (idx *DiskANNIndex) ExportState() ([]byte, error) {
 	return nil, nil
 }
 
-func (d *DiskANNIndex) ImportState(data []byte) error {
+// ImportState restores the index state from a byte slice.
+func (idx *DiskANNIndex) ImportState(data []byte) error {
 	return nil
 }
 
-func (d *DiskANNIndex) AddByLocation(batchIdx, rowIdx int) error {
+// AddByLocation is a legacy adapter for location-based vector insertion.
+func (idx *DiskANNIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return nil
 }
 
-func (d *DiskANNIndex) GetVectorID(loc Location) (uint64, bool) {
+// GetVectorID resolves a storage location to its internal vector ID.
+func (idx *DiskANNIndex) GetVectorID(loc Location) (uint64, bool) {
 	// Not supported for DiskANN adapter
 	return 0, false
 }
 
-func (d *DiskANNIndex) SearchVectors(query []float32, k int, options SearchOptions) []lbtypes.SearchResult {
-	results, _ := d.Search(query, k)
+// SearchVectors is a legacy adapter for vector search with options.
+func (idx *DiskANNIndex) SearchVectors(query []float32, k int, options SearchOptions) []lbtypes.SearchResult {
+	results, _ := idx.Search(query, k)
 	searchResults := make([]lbtypes.SearchResult, len(results))
 	for i, r := range results {
 		id := r.ID
@@ -606,6 +623,12 @@ func (d *DiskANNIndex) SearchVectors(query []float32, k int, options SearchOptio
 	return searchResults
 }
 
-func (d *DiskANNIndex) Len() int {
-	return d.Size()
+// Len returns the number of vectors in the index.
+func (idx *DiskANNIndex) Len() int {
+	return idx.Size()
+}
+
+// GetIndexType returns the string identifier for the index type.
+func (idx *DiskANNIndex) GetIndexType() string {
+	return string(idx.Type())
 }

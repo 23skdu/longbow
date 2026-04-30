@@ -500,7 +500,7 @@ func TestBQ_Float32ToHamming(t *testing.T) {
 }
 
 // FuzzQuantizer_RoundTrip tests full encode/decode cycle with random data
-func FuzzQuantizer_RoundTrip(f *testing.F) {
+func FuzzQuantizerRoundTrip(f *testing.F) {
 	// Seed corpus
 	f.Add(float32(1.0), float32(2.0), float32(3.0), float32(4.0))
 	f.Add(float32(-5.0), float32(5.0), float32(0.0), float32(2.5))

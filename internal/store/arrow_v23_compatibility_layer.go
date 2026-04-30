@@ -1,4 +1,4 @@
-// Arrow v23 Flight Compatibility Layer
+// Package store provides vector storage and indexing capabilities.
 package store
 
 import (
@@ -10,7 +10,7 @@ import (
 	genflight "github.com/apache/arrow-go/v18/arrow/flight/gen/flight"
 )
 
-// FlightCompatibilityLayer provides compatibility between current implementation and future v23 APIs
+// FlightCompatibilityLayer provides compatibility between current implementation and future v23 APIs.
 type FlightCompatibilityLayer struct {
 	client flight.Client
 }

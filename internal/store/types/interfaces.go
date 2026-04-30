@@ -46,6 +46,9 @@ type VectorIndexer interface {
 	Warmup() int
 	EstimateMemory() int64
 
+	// GetIndexType returns the type of the index (e.g., "hnsw", "sharded_hnsw", "brute_force", "adaptive")
+	GetIndexType() string
+
 	// PQ
 	TrainPQ(vectors [][]float32) error
 	GetPQEncoder() *pq.PQEncoder

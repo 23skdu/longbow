@@ -75,7 +75,7 @@ func TestAdaptiveIndex(t *testing.T) {
 	}
 	
 	assert.Equal(t, "hnsw", idx.GetIndexType())
-	assert.Equal(t, int64(1), idx.GetMigrationCount())
+	assert.Equal(t, int64(1), idx.(*AdaptiveIndex).GetMigrationCount())
 	assert.Equal(t, 2, idx.Len())
 
 	// 6. Search while in HNSW

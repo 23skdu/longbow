@@ -17,6 +17,7 @@ import (
 	"os"
 )
 
+// EmbeddingGenerator defines the interface for generating vector embeddings from text.
 type EmbeddingGenerator interface {
 	Generate(ctx context.Context, texts []string) ([][]float32, error)
 	GenerateSingle(ctx context.Context, text string) ([]float32, error)
@@ -24,6 +25,7 @@ type EmbeddingGenerator interface {
 	Close() error
 }
 
+// EmbeddingConfig holds configuration for an embedding generator.
 type EmbeddingConfig struct {
 	ModelPath    string
 	ModelType    string
@@ -39,6 +41,7 @@ type EmbeddingConfig struct {
 	CacheTTL     time.Duration
 }
 
+// ModelVersion tracks metadata for a specific version of an embedding model.
 type ModelVersion struct {
 	Version   string    `json:"version"`
 	ModelName string    `json:"model_name"`
@@ -49,6 +52,7 @@ type ModelVersion struct {
 	Checksum  string    `json:"checksum,omitempty"`
 }
 
+// EmbeddingModelRegistry manages available embedding models and their generators.
 type EmbeddingModelRegistry struct {
 	mu         sync.RWMutex
 	models     map[string]map[string]ModelVersion
@@ -56,6 +60,7 @@ type EmbeddingModelRegistry struct {
 	cache      *EmbeddingCache
 }
 
+// EmbeddingCache provides a simple LRU-like cache for embeddings.
 type EmbeddingCache struct {
 	mu         sync.RWMutex
 	entries    map[string][]float32
@@ -65,6 +70,7 @@ type EmbeddingCache struct {
 	misses     int64
 }
 
+// NewEmbeddingModelRegistry creates a new model registry.
 func NewEmbeddingModelRegistry(cacheTTL time.Duration, maxCacheEntries int) *EmbeddingModelRegistry {
 	return &EmbeddingModelRegistry{
 		models:     make(map[string]map[string]ModelVersion),
@@ -109,6 +115,7 @@ func (c *EmbeddingCache) Stats() (hits, misses int64, size int) {
 	return c.hits, c.misses, len(c.entries)
 }
 
+// RegisterModel adds a model version to the registry.
 func (r *EmbeddingModelRegistry) RegisterModel(provider, modelName string, version ModelVersion) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -153,6 +160,7 @@ func (r *EmbeddingModelRegistry) GetCache() *EmbeddingCache {
 	return r.cache
 }
 
+// ModelHealthStatus tracks the availability and performance of an embedding model.
 type ModelHealthStatus struct {
 	ModelName   string    `json:"model_name"`
 	Provider    string    `json:"provider"`
@@ -225,6 +233,7 @@ func (r *EmbeddingModelRegistry) GetDefaultModel(provider string) (ModelVersion,
 	return ModelVersion{}, false
 }
 
+// NewEmbeddingGenerator creates an embedding generator based on the provided configuration.
 func NewEmbeddingGenerator(config EmbeddingConfig) (EmbeddingGenerator, error) {
 	switch config.Provider {
 	case "openai":
@@ -250,7 +259,8 @@ type openAIEmbeddingGenerator struct {
 	httpClient *http.Client
 }
 
-func NewOpenAIEmbedding(config EmbeddingConfig) (*openAIEmbeddingGenerator, error) {
+// NewOpenAIEmbedding creates an OpenAI embedding generator.
+func NewOpenAIEmbedding(config EmbeddingConfig) (EmbeddingGenerator, error) {
 	if config.APIKey == "" {
 		return nil, errors.New("API key is required for OpenAI embedding")
 	}
@@ -375,7 +385,8 @@ type cohereEmbeddingGenerator struct {
 	httpClient *http.Client
 }
 
-func NewCohereEmbedding(config EmbeddingConfig) (*cohereEmbeddingGenerator, error) {
+// NewCohereEmbedding creates a Cohere embedding generator.
+func NewCohereEmbedding(config EmbeddingConfig) (EmbeddingGenerator, error) {
 	if config.APIKey == "" {
 		return nil, errors.New("API key is required for Cohere embedding")
 	}
@@ -482,7 +493,8 @@ type huggingFaceEmbeddingGenerator struct {
 	httpClient *http.Client
 }
 
-func NewHuggingFaceEmbedding(config EmbeddingConfig) (*huggingFaceEmbeddingGenerator, error) {
+// NewHuggingFaceEmbedding creates a HuggingFace embedding generator.
+func NewHuggingFaceEmbedding(config EmbeddingConfig) (EmbeddingGenerator, error) {
 	if config.APIKey == "" {
 		return nil, errors.New("API key is required for HuggingFace embedding")
 	}
@@ -595,7 +607,8 @@ func (l noopLogger) Debug(msg string, keysAndValues ...interface{}) {}
 func (l noopLogger) Info(msg string, keysAndValues ...interface{})  {}
 func (l noopLogger) Error(msg string, keysAndValues ...interface{}) {}
 
-func NewLocalEmbeddingGenerator(config EmbeddingConfig) (*localEmbeddingGenerator, error) {
+// NewLocalEmbeddingGenerator creates a local embedding generator using ONNX or WASM.
+func NewLocalEmbeddingGenerator(config EmbeddingConfig) (EmbeddingGenerator, error) {
 	dim := config.Dimension
 	if dim <= 0 {
 		dim = 384

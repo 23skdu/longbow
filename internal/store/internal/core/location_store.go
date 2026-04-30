@@ -222,7 +222,7 @@ func (s *ChunkedLocationStore) BatchAppend(locs []types.Location) (startID types
 	}
 
 	// 1. Reserve block of IDs
-	count := uint32(len(locs))
+	count := uint32(len(locs)) // #nosec G115
 	startIDVal := s.size.Add(count) - count
 	startID = types.VectorID(startIDVal)
 	

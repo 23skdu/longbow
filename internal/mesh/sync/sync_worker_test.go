@@ -31,6 +31,8 @@ func TestSyncWorker_Replication(t *testing.T) {
 		DataPath:         leaderDir,
 		SnapshotInterval: time.Hour,
 	}))
+	leaderStore.StartIngestionWorkers(2)
+	leaderStore.StartIndexingWorkers(2)
 	defer func() { _ = leaderStore.Close() }()
 
 	// 2. Start Leader gRPC Server
@@ -52,6 +54,8 @@ func TestSyncWorker_Replication(t *testing.T) {
 		DataPath:         followerDir,
 		SnapshotInterval: time.Hour,
 	}))
+	followerStore.StartIngestionWorkers(2)
+	followerStore.StartIndexingWorkers(2)
 	defer func() { _ = followerStore.Close() }()
 
 	// 4. Create Record on Leader

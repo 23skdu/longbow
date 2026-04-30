@@ -15,8 +15,7 @@ import (
 // StoreLifecycle manages startup/shutdown of standard components
 // such as managing memory pressure, eviction, and startup.
 
-// evictDataset evicts a dataset from memory.
-// evictDataset evicts a dataset from memory.
+// evictDataset removes a dataset from memory and releases its resources.
 func (s *VectorStore) evictDataset(name string) {
 	var ds *Dataset
 	s.updateDatasets(func(m map[string]*Dataset) {
@@ -52,6 +51,7 @@ func (s *VectorStore) evictDataset(name string) {
 	// Metrics updated elsewhere
 }
 
+// PrewarmDataset ensures a dataset is initialized in memory, creating it if necessary.
 func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 	_, created := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, schema)
@@ -167,7 +167,7 @@ func (s *VectorStore) StartWALCheckTicker(d time.Duration) {
 	}()
 }
 
-// UpdateConfig updates store configuration dynamically
+// UpdateConfig updates store configuration parameters like memory limits dynamically.
 func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval time.Duration) {
 	if maxMemory > 0 {
 		s.maxMemory.Store(maxMemory)
@@ -195,7 +195,7 @@ func (s *VectorStore) StartMetricsTicker(d time.Duration) {
 
 // StartEvictionTicker is defined later
 
-// StartIndexingWorkers starts more background indexing workers
+// StartIndexingWorkers spawns a specified number of background indexing workers.
 func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 	s.workerMu.Lock()
 	defer s.workerMu.Unlock()
@@ -218,7 +218,7 @@ func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 	s.logger.Info().Int("added", numWorkers).Int("total", len(s.indexingWorkerCancels)).Msg("Started indexing workers")
 }
 
-// StopIndexingWorkers stops n background indexing workers
+// StopIndexingWorkers stops a specified number of background indexing workers.
 func (s *VectorStore) StopIndexingWorkers(numWorkers int) {
 	s.workerMu.Lock()
 	defer s.workerMu.Unlock()
@@ -236,7 +236,7 @@ func (s *VectorStore) StopIndexingWorkers(numWorkers int) {
 	s.logger.Info().Int("stopped", numWorkers).Int("remaining", len(s.indexingWorkerCancels)).Msg("Stopped indexing workers")
 }
 
-// StartIngestionWorkers starts background ingestion workers.
+// StartIngestionWorkers spawns a specified number of background ingestion workers.
 func (s *VectorStore) StartIngestionWorkers(count int) {
 	if count <= 0 {
 		count = runtime.NumCPU()
@@ -262,7 +262,7 @@ func (s *VectorStore) StartIngestionWorkers(count int) {
 	s.logger.Info().Int("added", count).Int("total", len(s.ingestionWorkerCancels)).Msg("Started ingestion workers")
 }
 
-// StopIngestionWorkers stops n background ingestion workers
+// StopIngestionWorkers stops a specified number of background ingestion workers.
 func (s *VectorStore) StopIngestionWorkers(numWorkers int) {
 	s.workerMu.Lock()
 	defer s.workerMu.Unlock()
@@ -280,7 +280,7 @@ func (s *VectorStore) StopIngestionWorkers(numWorkers int) {
 	s.logger.Info().Int("stopped", numWorkers).Int("remaining", len(s.ingestionWorkerCancels)).Msg("Stopped ingestion workers")
 }
 
-// AdjustWorkerCounts resizes pools to match target counts
+// AdjustWorkerCounts resizes the indexing and ingestion worker pools to match target counts.
 func (s *VectorStore) AdjustWorkerCounts(indexing, ingestion int) {
 	s.workerMu.Lock()
 	currIndexing := len(s.indexingWorkerCancels)
@@ -613,8 +613,7 @@ func (s *VectorStore) StartEvictionTicker(interval time.Duration) {
 	}()
 }
 
-// ReleaseMemory explicitly triggers GC and frees OS memory.
-// It also waits for async cleanups to complete.
+// ReleaseMemory explicitly triggers garbage collection and returns memory to the OS.
 func (s *VectorStore) ReleaseMemory() {
 	s.logger.Info().Msg("Explicitly releasing memory")
 

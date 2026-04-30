@@ -1383,7 +1383,7 @@ func (g *GraphData) SetVectorsBatch(startID uint32, vecs [][]float32) error {
 		start := cOff * dims
 		if start+len(vec) <= len(chunk) {
 			if len(vec) > 0 {
-				simd.MemcpyNTA(unsafe.Pointer(&chunk[start]), unsafe.Pointer(&vec[0]), len(vec)*4)
+				simd.MemcpyNTA(unsafe.Pointer(&chunk[start]), unsafe.Pointer(&vec[0]), len(vec)*4) // #nosec G103
 			}
 		}
 	}

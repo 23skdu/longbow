@@ -4,8 +4,8 @@ import (
 	"context"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/pq"
-	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -33,7 +33,7 @@ func (m *MockVectorIndex) Search(ctx context.Context, qv any, k int, filter any)
 	return args.Get(0).([]types.Candidate), args.Error(1)
 }
 
-func (m *MockVectorIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]SearchResult, error) {
+func (m *MockVectorIndex) SearchVectors(ctx context.Context, q any, k int, filters []core.Filter, options any) ([]SearchResult, error) {
 	args := m.Called(ctx, q, k, filters, options)
 	return args.Get(0).([]SearchResult), args.Error(1)
 }
@@ -175,7 +175,7 @@ func (m *MockVectorIndex) RemapLocations(ctx context.Context, mapping map[uint32
 	return args.Error(0)
 }
 
-func (m *MockVectorIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
+func (m *MockVectorIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []core.Filter, options any) ([]SearchResult, error) {
 	args := m.Called(ctx, q, threshold, filters, options)
 	return args.Get(0).([]SearchResult), args.Error(1)
 }
@@ -183,6 +183,11 @@ func (m *MockVectorIndex) SearchVectorsInRange(ctx context.Context, q any, thres
 func (m *MockVectorIndex) GetGPUIndex() any {
 	args := m.Called()
 	return args.Get(0)
+}
+
+func (m *MockVectorIndex) GetIndexType() string {
+	args := m.Called()
+	return args.String(0)
 }
 
 // Additional interface requirements?
@@ -201,7 +206,7 @@ func TestShardedHNSW_WithRefactor(t *testing.T) {
 		},
 	}
 
-	s := NewShardedHNSW(config, nil)
+	s := NewShardedHNSW(config, nil).(*ShardedHNSW)
 	if len(s.shards) != 2 {
 		t.Errorf("expected 2 shards, got %d", len(s.shards))
 	}

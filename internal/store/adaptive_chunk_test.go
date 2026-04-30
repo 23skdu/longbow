@@ -284,7 +284,7 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 	})
 }
 
-func FuzzAdaptiveChunkSize_Calculation(f *testing.F) {
+func FuzzAdaptiveChunkSizeCalculation(f *testing.F) {
 	f.Add(4, 100, 32, 500)
 	f.Add(8, 1000, 32, 500)
 	f.Add(16, 10000, 32, 500)

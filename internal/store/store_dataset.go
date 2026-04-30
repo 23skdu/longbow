@@ -10,6 +10,7 @@ import (
 	"github.com/23skdu/longbow/internal/storage"
 )
 
+// NamespaceMigrationConfig defines the parameters for migrating a namespace.
 type NamespaceMigrationConfig struct {
 	SourceNamespace string
 	TargetNamespace string
@@ -18,6 +19,7 @@ type NamespaceMigrationConfig struct {
 	CopyMode        bool
 }
 
+// NamespaceMigrationResult contains the outcome of a namespace migration.
 type NamespaceMigrationResult struct {
 	Success          bool
 	MigratedDatasets int
@@ -25,6 +27,7 @@ type NamespaceMigrationResult struct {
 	Duration         time.Duration
 }
 
+// MigrateNamespace moves or copies datasets between namespaces.
 func (vs *VectorStore) MigrateNamespace(config NamespaceMigrationConfig) (*NamespaceMigrationResult, error) {
 	startTime := time.Now()
 	result := &NamespaceMigrationResult{

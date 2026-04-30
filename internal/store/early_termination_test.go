@@ -35,7 +35,7 @@ func TestHNSW_SearchEarlyTermination(t *testing.T) {
 	// but we can check if it returns results.
 }
 
-func FuzzHNSW_SearchEarlyTermination(f *testing.F) {
+func FuzzHNSWSearchEarlyTermination(f *testing.F) {
 	f.Add(float32(1.0), 100)
 	f.Fuzz(func(t *testing.T, val float32, ef int) {
 		if ef <= 0 || ef > 1000 {

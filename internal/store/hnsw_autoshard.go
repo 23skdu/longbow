@@ -59,7 +59,7 @@ type AutoShardingIndex struct {
 
 // NewAutoShardingIndex creates a new auto-sharding index.
 // Initially, it uses a standard HNSWIndex.
-func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingIndex {
+func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) VectorIndex {
 	if config.ShardThreshold <= 0 {
 		config.ShardThreshold = 10000 // Default to 10k
 	}
@@ -84,139 +84,143 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) *AutoShardingI
 }
 
 // SetInitialDimension sets the dimension for the underlying index if not yet set.
-func (a *AutoShardingIndex) SetInitialDimension(dim int) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
+// SetInitialDimension sets the dimension for the underlying index if not yet set.
+func (idx *AutoShardingIndex) SetInitialDimension(dim int) {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
 
-	if h, ok := a.current.(*ArrowHNSW); ok {
+	if h, ok := idx.current.(*ArrowHNSW); ok {
 		_ = h.SetDimension(int(dim))
 	}
 }
 
 // AddByLocation adds a vector to the index.
-func (a *AutoShardingIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
+// AddByLocation adds a vector to the index.
+func (idx *AutoShardingIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	// Lock held throughout execution to prevent Close during migration
-	a.mu.RLock()
-	sharded := a.sharded
-	interim := a.interimIndex
-	curr := a.current
+	idx.mu.RLock()
+	sharded := idx.sharded
+	interim := idx.interimIndex
+	curr := idx.current
 
 	if sharded {
 		id, err := curr.AddByLocation(ctx, batchIdx, rowIdx)
-		a.mu.RUnlock()
+		idx.mu.RUnlock()
 		return id, err
 	}
 
 	if interim != nil {
 		id, err := interim.AddByLocation(ctx, batchIdx, rowIdx)
-		a.mu.RUnlock()
+		idx.mu.RUnlock()
 		return id, err
 	}
 
 	id, err := curr.AddByLocation(ctx, batchIdx, rowIdx)
-	a.mu.RUnlock()
+	idx.mu.RUnlock()
 
 	if err == nil {
-		a.checkShardThreshold()
+		idx.checkShardThreshold()
 	}
 	return id, err
 }
 
 // AddByRecord implementation to support interim index.
-func (a *AutoShardingIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
-	a.mu.RLock()
-	sharded := a.sharded
-	interim := a.interimIndex
-	curr := a.current
+// AddByRecord adds a vector from a record batch.
+func (idx *AutoShardingIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+	idx.mu.RLock()
+	sharded := idx.sharded
+	interim := idx.interimIndex
+	curr := idx.current
 
 	if sharded {
 		id, err := curr.AddByRecord(ctx, rec, rowIdx, batchIdx)
-		a.mu.RUnlock()
+		idx.mu.RUnlock()
 		return id, err
 	}
 
 	if interim != nil {
 		id, err := interim.AddByRecord(ctx, rec, rowIdx, batchIdx)
-		a.mu.RUnlock()
+		idx.mu.RUnlock()
 		return id, err
 	}
 
 	id, err := curr.AddByRecord(ctx, rec, rowIdx, batchIdx)
-	a.mu.RUnlock()
+	idx.mu.RUnlock()
 
 	if err == nil {
-		a.checkShardThreshold()
+		idx.checkShardThreshold()
 	}
 	return id, err
 }
 
 // AddBatch adds multiple vectors from multiple record batches efficiently.
-func (a *AutoShardingIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
-	a.mu.RLock()
-	sharded := a.sharded
-	interim := a.interimIndex
-	curr := a.current
+// AddBatch adds multiple vectors efficiently.
+func (idx *AutoShardingIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+	idx.mu.RLock()
+	sharded := idx.sharded
+	interim := idx.interimIndex
+	curr := idx.current
 
 	if sharded {
 		ids, err := curr.AddBatch(ctx, recs, rowIdxs, batchIdxs)
-		a.mu.RUnlock()
+		idx.mu.RUnlock()
 		return ids, err
 	}
 
 	if interim != nil {
 		// During migration, add to the NEW index directly
 		ids, err := interim.AddBatch(ctx, recs, rowIdxs, batchIdxs)
-		a.mu.RUnlock()
+		idx.mu.RUnlock()
 		return ids, err
 	}
 
 	ids, err := curr.AddBatch(ctx, recs, rowIdxs, batchIdxs)
-	a.mu.RUnlock()
+	idx.mu.RUnlock()
 
 	if err == nil {
-		a.checkShardThreshold()
+		idx.checkShardThreshold()
 	}
 	return ids, err
 }
 
-func (a *AutoShardingIndex) checkShardThreshold() {
-	a.mu.RLock()
-	if a.sharded || !a.config.Enabled {
-		a.mu.RUnlock()
+func (idx *AutoShardingIndex) checkShardThreshold() {
+	idx.mu.RLock()
+	if idx.sharded || !idx.config.Enabled {
+		idx.mu.RUnlock()
 		return
 	}
-	currentLen := a.current.Len()
-	threshold := a.config.ShardThreshold
-	a.mu.RUnlock()
+	currentLen := idx.current.Len()
+	threshold := idx.config.ShardThreshold
+	idx.mu.RUnlock()
 
 	if currentLen >= threshold {
-		if !a.sharded && a.migrating.CompareAndSwap(false, true) {
-			go a.migrateToSharded()
+		if !idx.sharded && idx.migrating.CompareAndSwap(false, true) {
+			go idx.migrateToSharded()
 		}
 	}
 }
 
 // migrateToSharded performs the migration from HNSWIndex to ShardedHNSW.
-func (a *AutoShardingIndex) migrateToSharded() {
-	defer a.migrating.Store(false) // Ensure migrating flag is reset on exit
+func (idx *AutoShardingIndex) migrateToSharded() {
+	defer idx.migrating.Store(false) // Ensure migrating flag is reset on exit
 	start := time.Now()
 
-	// LOCK ORDER: ds.dataMu MUST be locked before a.mu to avoid deadlock with Search
-	a.dataset.dataMu.RLock()
-	a.mu.Lock()
-	if a.sharded {
-		a.mu.Unlock()
-		a.dataset.dataMu.RUnlock()
+	// LOCK ORDER: ds.dataMu MUST be locked before idx.mu to avoid deadlock with Search
+	idx.dataset.dataMu.RLock()
+	idx.mu.Lock()
+	if idx.sharded {
+		idx.mu.Unlock()
+		idx.dataset.dataMu.RUnlock()
 		return
 	}
-	if a.current.Len() < a.config.ShardThreshold {
-		a.mu.Unlock()
-		a.dataset.dataMu.RUnlock()
+	if idx.current.Len() < idx.config.ShardThreshold {
+		idx.mu.Unlock()
+		idx.dataset.dataMu.RUnlock()
 		return
 	}
 
 	// Starting migration
-	oldIndex := a.current
+	oldIndex := idx.current
 
 	// Get DataType from old index (it's ArrowHNSW at this point)
 	var oldDataType types.VectorDataType
@@ -226,28 +230,28 @@ func (a *AutoShardingIndex) migrateToSharded() {
 
 	// Create new ShardedHNSW config
 	shardedConfig := DefaultShardedHNSWConfig()
-	shardedConfig.Metric = a.dataset.Metric
+	shardedConfig.Metric = idx.dataset.Metric
 	shardedConfig.Dimension = oldIndex.GetDimension()
 	shardedConfig.DataType = oldDataType // Preserve DataType for complex64/complex128
-	if a.config.ShardCount > 0 {
-		shardedConfig.NumShards = a.config.ShardCount
+	if idx.config.ShardCount > 0 {
+		shardedConfig.NumShards = idx.config.ShardCount
 	}
-	if a.config.ShardSplitThreshold > 0 {
-		shardedConfig.ShardSplitThreshold = a.config.ShardSplitThreshold
+	if idx.config.ShardSplitThreshold > 0 {
+		shardedConfig.ShardSplitThreshold = idx.config.ShardSplitThreshold
 	}
-	shardedConfig.UseRingSharding = a.config.UseRingSharding // Propagate ring sharding setting
+	shardedConfig.UseRingSharding = idx.config.UseRingSharding // Propagate ring sharding setting
 
 	// IMPORTANT: Unlock here! We have captured our snapshots (oldIndex, n, shardedConfig).
 	// We can now create the new index and run the migration without holding these global locks.
-	a.mu.Unlock()
-	a.dataset.dataMu.RUnlock()
+	idx.mu.Unlock()
+	idx.dataset.dataMu.RUnlock()
 
-	newIndex := NewShardedHNSW(shardedConfig, a.dataset)
+	newIndex := NewShardedHNSW(shardedConfig, idx.dataset)
 
 	// Promote newIndex to interimIndex so that AddBatch starts hitting it immediately
-	a.mu.Lock()
-	a.interimIndex = newIndex
-	a.mu.Unlock()
+	idx.mu.Lock()
+	idx.interimIndex = newIndex
+	idx.mu.Unlock()
 
 	// Migrate data in batches, releasing locks between items
 	batchSize := 50
@@ -257,11 +261,11 @@ func (a *AutoShardingIndex) migrateToSharded() {
 
 	for {
 		// Read state under lock
-		a.mu.RLock()
-		oldIdx := a.current
-		isSharded := a.sharded
+		idx.mu.RLock()
+		oldIdx := idx.current
+		isSharded := idx.sharded
 		nSnap := oldIdx.Len()
-		a.mu.RUnlock()
+		idx.mu.RUnlock()
 
 		if isSharded || lastMigrated >= nSnap {
 			break
@@ -280,19 +284,19 @@ func (a *AutoShardingIndex) migrateToSharded() {
 		}
 		items := make([]item, 0, endIdx-lastMigrated)
 
-		a.dataset.dataMu.RLock()
+		idx.dataset.dataMu.RLock()
 		for id := lastMigrated; id < endIdx; id++ {
 			vid := VectorID(id)
 			locAny, ok := oldIdx.GetLocation(uint32(vid))
 			if ok {
-				if loc, ok := locAny.(Location); ok && loc.BatchIdx >= 0 && loc.BatchIdx < len(a.dataset.Records) {
-					rec := a.dataset.Records[loc.BatchIdx]
+				if loc, ok := locAny.(Location); ok && loc.BatchIdx >= 0 && loc.BatchIdx < len(idx.dataset.Records) {
+					rec := idx.dataset.Records[loc.BatchIdx]
 					rec.Retain()
 					items = append(items, item{rec: rec, loc: loc, id: vid})
 				}
 			}
 		}
-		a.dataset.dataMu.RUnlock()
+		idx.dataset.dataMu.RUnlock()
 
 		// Perform expensive additions outside dataMu
 		for _, it := range items {
@@ -318,43 +322,44 @@ func (a *AutoShardingIndex) migrateToSharded() {
 
 	// Final swap
 
-	// LOCK ORDER: ds.dataMu MUST be locked before a.mu to avoid deadlock with Search
-	a.dataset.dataMu.RLock()
-	a.mu.Lock()
+	// LOCK ORDER: ds.dataMu MUST be locked before idx.mu to avoid deadlock with Search
+	idx.dataset.dataMu.RLock()
+	idx.mu.Lock()
 
-	if a.sharded {
-		a.dataset.dataMu.RUnlock()
-		a.mu.Unlock()
+	if idx.sharded {
+		idx.dataset.dataMu.RUnlock()
+		idx.mu.Unlock()
 		return
 	}
 
 	// Swap
-	a.current = newIndex
-	a.sharded = true
-	a.interimIndex = nil // Clear interim index
+	idx.current = newIndex
+	idx.sharded = true
+	idx.interimIndex = nil // Clear interim index
 
 	// Close old index to release resources
 	_ = oldIndex.Close()
 
-	a.dataset.dataMu.RUnlock()
-	a.mu.Unlock()
+	idx.dataset.dataMu.RUnlock()
+	idx.mu.Unlock()
 
 	duration := time.Since(start)
 	metrics.IndexMigrationDuration.Observe(duration.Seconds())
 }
 
 // SearchVectors implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]SearchResult, error) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+// SearchVectors returns the k nearest neighbors for a query vector.
+func (idx *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]SearchResult, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 
-	sharded := a.sharded
+	sharded := idx.sharded
 	if sharded {
-		return a.current.SearchVectors(ctx, q, k, filters, options)
+		return idx.current.SearchVectors(ctx, q, k, filters, options)
 	}
 
-	interim := a.interimIndex
-	res, err := a.current.SearchVectors(ctx, q, k, filters, options)
+	interim := idx.interimIndex
+	res, err := idx.current.SearchVectors(ctx, q, k, filters, options)
 	if err != nil {
 		return nil, err
 	}
@@ -365,48 +370,50 @@ func (a *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, fil
 			// Log error but return what we have
 			return res, nil
 		}
-		res = a.mergeSearchResults(res, res2, k)
+		res = idx.mergeSearchResults(res, res2, k)
 	}
 
 	return res, nil
 }
 
 // SearchVectorsWithBitmap implements VectorIndex.
-func (a *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+// SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
+func (idx *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 
-	sharded := a.sharded
+	sharded := idx.sharded
 	if sharded {
-		return a.current.SearchVectorsWithBitmap(ctx, q, k, filter, options)
+		return idx.current.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	}
 
-	interim := a.interimIndex
-	res, err := a.current.SearchVectorsWithBitmap(ctx, q, k, filter, options)
+	interim := idx.interimIndex
+	res, err := idx.current.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	if err != nil {
 		return nil, err
 	}
 	if interim != nil {
 		res2, err := interim.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 		if err == nil {
-			res = a.mergeSearchResults(res, res2, k)
+			res = idx.mergeSearchResults(res, res2, k)
 		}
 	}
 
 	return res, nil
 }
 
-func (a *AutoShardingIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+// SearchVectorsInRange returns nearest neighbors within a distance threshold.
+func (idx *AutoShardingIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 
-	sharded := a.sharded
+	sharded := idx.sharded
 	if sharded {
-		return a.current.SearchVectorsInRange(ctx, q, threshold, filters, options)
+		return idx.current.SearchVectorsInRange(ctx, q, threshold, filters, options)
 	}
 
-	interim := a.interimIndex
-	res, err := a.current.SearchVectorsInRange(ctx, q, threshold, filters, options)
+	interim := idx.interimIndex
+	res, err := idx.current.SearchVectorsInRange(ctx, q, threshold, filters, options)
 	if err != nil {
 		return nil, err
 	}
@@ -420,7 +427,7 @@ func (a *AutoShardingIndex) SearchVectorsInRange(ctx context.Context, q any, thr
 	return res, nil
 }
 
-func (a *AutoShardingIndex) mergeSearchResults(res1, res2 []SearchResult, k int) []SearchResult {
+func (idx *AutoShardingIndex) mergeSearchResults(res1, res2 []SearchResult, k int) []SearchResult {
 	if len(res1) == 0 {
 		if len(res2) > k {
 			return res2[:k]
@@ -449,54 +456,64 @@ func (a *AutoShardingIndex) mergeSearchResults(res1, res2 []SearchResult, k int)
 	return combined
 }
 
-func (a *AutoShardingIndex) IsSharded() bool {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.sharded
+func (idx *AutoShardingIndex) IsSharded() bool {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.sharded
 }
 
 // Len implements VectorIndex.
-func (a *AutoShardingIndex) Len() int {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.current.Len()
+// GetIndexType returns the type of the active index.
+func (idx *AutoShardingIndex) GetIndexType() string {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.GetIndexType()
+}
+
+func (idx *AutoShardingIndex) Len() int {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.Len()
 }
 
 // GetDimension implements VectorIndex.
-func (a *AutoShardingIndex) GetDimension() uint32 {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.current.GetDimension()
+func (idx *AutoShardingIndex) GetDimension() uint32 {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.GetDimension()
 }
 
 // SetEfConstruction updates the efConstruction parameter dynamically.
-func (a *AutoShardingIndex) SetEfConstruction(ef int) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
+// SetEfConstruction updates the efConstruction parameter dynamically.
+func (idx *AutoShardingIndex) SetEfConstruction(ef int) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 
 	// Update current index if supported
-	if h, ok := a.current.(interface{ SetEfConstruction(int) }); ok {
+	if h, ok := idx.current.(interface{ SetEfConstruction(int) }); ok {
 		h.SetEfConstruction(ef)
 	}
 
 	// Update interim index if exists
-	if a.interimIndex != nil {
-		if h, ok := a.interimIndex.(interface{ SetEfConstruction(int) }); ok {
+	if idx.interimIndex != nil {
+		if h, ok := idx.interimIndex.(interface{ SetEfConstruction(int) }); ok {
 			h.SetEfConstruction(ef)
 		}
 	}
 }
 
-func (a *AutoShardingIndex) TrainPQ(vectors [][]float32) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.current.TrainPQ(vectors)
+// TrainPQ trains a Product Quantizer for the index.
+func (idx *AutoShardingIndex) TrainPQ(vectors [][]float32) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	return idx.current.TrainPQ(vectors)
 }
 
-func (a *AutoShardingIndex) GetPQEncoder() *pq.PQEncoder {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.current.GetPQEncoder()
+// GetPQEncoder returns the Product Quantizer encoder for the index.
+func (idx *AutoShardingIndex) GetPQEncoder() *pq.PQEncoder {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.GetPQEncoder()
 }
 
 // SetIndexedColumns configures which columns are indexed for fast equality lookups
@@ -603,95 +620,98 @@ func (idx *AutoShardingIndex) EstimateMemory() int64 {
 	return size
 }
 
-func (a *AutoShardingIndex) DeleteBatch(ctx context.Context, ids []uint32) error {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.current.DeleteBatch(ctx, ids)
+// DeleteBatch removes a batch of vectors from the index.
+func (idx *AutoShardingIndex) DeleteBatch(ctx context.Context, ids []uint32) error {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.DeleteBatch(ctx, ids)
 }
 
-func (a *AutoShardingIndex) GetEntryPoint() uint32 {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.current.GetEntryPoint()
+// GetEntryPoint returns the entry point node ID for HNSW traversal.
+func (idx *AutoShardingIndex) GetEntryPoint() uint32 {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.GetEntryPoint()
 }
 
-func (a *AutoShardingIndex) Size() int {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.current.Size()
+// Size returns the total number of nodes in the index.
+func (idx *AutoShardingIndex) Size() int {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.Size()
 }
 
-// ExportState implements VectorIndex.
-func (a *AutoShardingIndex) ExportState() ([]byte, error) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.current.ExportState()
+// ExportState serializes the current index state.
+func (idx *AutoShardingIndex) ExportState() ([]byte, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.ExportState()
 }
 
-// ImportState implements VectorIndex.
-func (a *AutoShardingIndex) ImportState(data []byte) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.current.ImportState(data)
+// ImportState restores the index state from a byte slice.
+func (idx *AutoShardingIndex) ImportState(data []byte) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	return idx.current.ImportState(data)
 }
 
-// ExportGraph implements VectorIndex.
-func (a *AutoShardingIndex) ExportGraph(w io.Writer) error {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.current.ExportGraph(w)
+// ExportGraph serializes the graph structure to a writer.
+func (idx *AutoShardingIndex) ExportGraph(w io.Writer) error {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.ExportGraph(w)
 }
 
-// ImportGraph implements VectorIndex.
-func (a *AutoShardingIndex) ImportGraph(r io.Reader) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.current.ImportGraph(r)
+// ImportGraph restores the graph structure from a reader.
+func (idx *AutoShardingIndex) ImportGraph(r io.Reader) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	return idx.current.ImportGraph(r)
 }
 
-// ExportDelta implements VectorIndex.
-func (a *AutoShardingIndex) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.current.ExportDelta(fromVersion)
+// ExportDelta returns a delta sync object since the given version.
+func (idx *AutoShardingIndex) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.ExportDelta(fromVersion)
 }
 
-// ApplyDelta implements VectorIndex.
-func (a *AutoShardingIndex) ApplyDelta(delta *types.DeltaSync) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.current.ApplyDelta(delta)
+// ApplyDelta applies a delta sync object to the index.
+func (idx *AutoShardingIndex) ApplyDelta(delta *types.DeltaSync) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	return idx.current.ApplyDelta(delta)
 }
 
-// GetParallelSearchConfig implements VectorIndex.
-func (a *AutoShardingIndex) GetParallelSearchConfig() types.ParallelSearchConfig {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.current.GetParallelSearchConfig()
+// GetParallelSearchConfig returns the current parallel search configuration.
+func (idx *AutoShardingIndex) GetParallelSearchConfig() types.ParallelSearchConfig {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.GetParallelSearchConfig()
 }
 
 // SetParallelSearchConfig updates the parallel search configuration
-func (a *AutoShardingIndex) SetParallelSearchConfig(cfg types.ParallelSearchConfig) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	a.current.SetParallelSearchConfig(cfg)
-	if a.interimIndex != nil {
-		a.interimIndex.SetParallelSearchConfig(cfg)
+func (idx *AutoShardingIndex) SetParallelSearchConfig(cfg types.ParallelSearchConfig) {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	idx.current.SetParallelSearchConfig(cfg)
+	if idx.interimIndex != nil {
+		idx.interimIndex.SetParallelSearchConfig(cfg)
 	}
 }
 
-// RemapLocations implements VectorIndex.
-func (a *AutoShardingIndex) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-	return a.current.RemapLocations(ctx, mapping)
+// RemapLocations updates storage locations for physical movement (compaction).
+func (idx *AutoShardingIndex) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	return idx.current.RemapLocations(ctx, mapping)
 }
 
 // GetData returns graph data from the current index.
-func (a *AutoShardingIndex) GetData() *types.GraphData {
-	a.mu.RLock()
-	curr := a.current
-	a.mu.RUnlock()
+func (idx *AutoShardingIndex) GetData() *types.GraphData {
+	idx.mu.RLock()
+	curr := idx.current
+	idx.mu.RUnlock()
 
 	if g, ok := curr.(interface{ GetData() *types.GraphData }); ok {
 		return g.GetData()
@@ -700,10 +720,10 @@ func (a *AutoShardingIndex) GetData() *types.GraphData {
 }
 
 // GetShardedIndex returns the underlying sharded index if it exists.
-func (a *AutoShardingIndex) GetShardedIndex() *ShardedHNSW {
-	a.mu.RLock()
-	curr := a.current
-	a.mu.RUnlock()
+func (idx *AutoShardingIndex) GetShardedIndex() *ShardedHNSW {
+	idx.mu.RLock()
+	curr := idx.current
+	idx.mu.RUnlock()
 
 	if s, ok := curr.(interface{ GetShardedIndex() *ShardedHNSW }); ok {
 		return s.GetShardedIndex()
@@ -711,8 +731,9 @@ func (a *AutoShardingIndex) GetShardedIndex() *ShardedHNSW {
 	return nil
 }
 
-func (a *AutoShardingIndex) GetGPUIndex() any {
-	a.mu.RLock()
-	defer a.mu.RUnlock()
-	return a.current.GetGPUIndex()
+// GetGPUIndex returns the GPU-accelerated index if active.
+func (idx *AutoShardingIndex) GetGPUIndex() any {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.current.GetGPUIndex()
 }

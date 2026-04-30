@@ -1800,24 +1800,231 @@ l2sq3072_loop:
     FMOVS   F1, ret+48(FP)
     RET
 
-// ============================================================================
-// TURBOQUANT (INT4/INT2) KERNELS - stubs, use Go fallback
-// ============================================================================
-
-// func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
-TEXT ·dotInt4NeonKernel(SB), NOSPLIT, $0-28
-    MOVD    a+0(FP), R0
-    MOVD    b+8(FP), R1
+// func expNEONKernel(src, dst unsafe.Pointer, n int)
+TEXT ·expNEONKernel(SB), NOSPLIT, $0-24
+    MOVD    src+0(FP), R0
+    MOVD    dst+8(FP), R1
     MOVD    n+16(FP), R2
-    FMOVS   $0.0, F0
-    FMOVS   F0, ret+24(FP)
+
+    CBZ     R2, exp_done
+
+    // Constants
+    FMOVS   $1.44269504, F31    // log2(e)
+    FMOVS   $0.5, F30           // half
+    MOVW    $127, R3            // bias
+    
+    // Polynomial coefficients
+    FMOVS   $1.0, F28
+    FMOVS   $0.69314718, F27
+    FMOVS   $0.240226507, F26
+    FMOVS   $0.0555041086, F25
+    FMOVS   $0.009618129, F24
+    FMOVS   $0.00134204, F23
+
+exp_loop:
+    CMP     $4, R2
+    BLT     exp_tail
+    
+    VLD1.P  16(R0), [V0.S4]     // V0 = x
+    
+    // z = x * log2(e)
+    VDUP    V31.S[0], V12.S4    // V12 = [log2e, log2e, log2e, log2e]
+    // FMUL V1.4S, V0.4S, V12.4S
+    WORD    $0x6e2c9401
+    
+    // n = round_toward_minus_inf(z + 0.5)
+    VDUP    V30.S[0], V13.S4    // V13 = [0.5, ...]
+    VADD    V13.S4, V1.S4, V2.S4
+    // FRINTM V2.S4, V2.S4
+    WORD    $0x4e214042
+    
+    // f = z - n
+    VSUB    V2.S4, V1.S4, V3.S4  // V3 = z - n = f
+    
+    // Poly: c0 + f*(c1 + ... )
+    VORR    V23.B16, V23.B16, V4.B16 // V4 = c5
+    VFMLA   V24.S4, V3.S4, V4.S4
+    VFMLA   V25.S4, V3.S4, V4.S4
+    VFMLA   V26.S4, V3.S4, V4.S4
+    VFMLA   V27.S4, V3.S4, V4.S4
+    VFMLA   V28.S4, V3.S4, V4.S4    // V4 = 2^f
+    
+    // 2^n: convert float n → int, add IEEE bias, shift to exponent field
+    // FCVTZS V2.S4, V5.S4
+    WORD    $0x4e21b845
+    VMOV    R3, V6.S4           // V6 = [127, 127, 127, 127]
+    VADD    V5.S4, V6.S4, V5.S4
+    VSHL    $23, V5.S4, V5.S4
+    // FMUL V0.4S, V4.4S, V5.4S  (exp(x) = 2^f * 2^n)
+    WORD    $0x6e259480
+    
+    VST1.P  [V0.S4], 16(R1)
+    
+    SUB     $4, R2
+    B       exp_loop
+
+exp_tail:
+    CBZ     R2, exp_done
+    FMOVS.P 4(R0), F0
+    FMOVS   F0, F1              // copy to F1
+    FMULS   F31, F1, F1         // z = x * log2(e)
+    FADDS   F30, F1, F2
+    // FRINTM S2, S2  (scalar round toward -inf)
+    WORD    $0x1e254042
+    FSUBS   F2, F1, F3          // f = z - n
+    
+    FMOVS   $0.00134204, F4     // c5
+    FMOVS   $0.009618129, F5
+    FMULS   F3, F4, F4
+    FADDS   F5, F4, F4          // c4 + f*c5
+    FMOVS   $0.0555041086, F5
+    FMULS   F3, F4, F4
+    FADDS   F5, F4, F4
+    FMOVS   $0.240226507, F5
+    FMULS   F3, F4, F4
+    FADDS   F5, F4, F4
+    FMOVS   $0.69314718, F5
+    FMULS   F3, F4, F4
+    FADDS   F5, F4, F4
+    FMOVS   $1.0, F5
+    FMULS   F3, F4, F4
+    FADDS   F5, F4, F4          // 2^f
+    
+    FCVTZSS F2, R4              // n as int32
+    ADD     R3, R4, R4          // n + bias
+    LSL     $23, R4, R4
+    VMOV    V5.S[0], V20.S[0]   // extract 2^n scalar
+    FMULS   F20, F4, F0          // res = 2^f * 2^n
+    
+    FMOVS.P F0, 4(R1)
+    SUB     $1, R2
+    B       exp_tail
+
+exp_done:
     RET
 
-// func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
-TEXT ·dotInt2NeonKernel(SB), NOSPLIT, $0-28
-    MOVD    a+0(FP), R0
-    MOVD    b+8(FP), R1
+// func softmaxNEONKernel(src, dst unsafe.Pointer, n int)
+TEXT ·softmaxNEONKernel(SB), NOSPLIT, $0-24
+    MOVD    src+0(FP), R0
+    MOVD    dst+8(FP), R1
     MOVD    n+16(FP), R2
-    FMOVS   $0.0, F0
-    FMOVS   F0, ret+24(FP)
+    
+    CBZ     R2, softmax_done
+    
+    // 1. Find Max
+    FMOVS   $-1e38, F0          // Max accumulator (scalar)
+    MOVD    R0, R3
+    MOVD    R2, R4
+softmax_max_loop:
+    CMP     $4, R4
+    BLT     softmax_max_tail
+    VLD1.P  16(R3), [V1.S4]
+    // FMAX V1.S4, V0.S4, V0.S4  (element-wise max)
+    WORD    $0x4e21f400
+    SUB     $4, R4
+    B       softmax_max_loop
+softmax_max_tail:
+    CBZ     R4, softmax_max_reduce
+    FMOVS.P 4(R3), F1
+    FMAXS   F1, F0, F0
+    SUB     $1, R4
+    B       softmax_max_tail
+softmax_max_reduce:
+    // FMAXV S0, V0.S4  (reduce to scalar max)
+    WORD    $0x6e30f800
+    
+    // 2. Compute Exp(x - max) and Sum
+    FMOVS   $0.0, F1            // Sum accumulator
+    MOVD    R0, R3
+    MOVD    R1, R5
+    MOVD    R2, R4
+    
+    FMOVS   $1.44269504, F31    // log2(e)
+    FMOVS   $0.5, F30           // half
+    MOVW    $127, R6            // bias
+    
+softmax_exp_loop:
+    CMP     $4, R4
+    BLT     softmax_exp_tail
+    VLD1.P  16(R3), [V2.S4]
+    VDUP    V0.S[0], V9.S4       // broadcast max
+    VSUB    V9.S4, V2.S4, V2.S4  // x - max
+    
+    // Exp approximation
+    VDUP    V31.S[0], V12.S4
+    // FMUL V3.4S, V2.4S, V12.4S
+    WORD    $0x6e2c9443
+    VDUP    V30.S[0], V13.S4
+    VADD    V13.S4, V3.S4, V4.S4
+    // FRINTM V4.S4, V4.S4
+    WORD    $0x4e214084
+    VSUB    V4.S4, V3.S4, V5.S4   // f = z - n
+    
+    // Poly
+    FMOVS   $0.00134204, F23
+    VORR    V23.B16, V23.B16, V6.B16
+    FMOVS   $0.009618129, F24
+    VFMLA   V24.S4, V5.S4, V6.S4
+    FMOVS   $0.0555041086, F25
+    VFMLA   V25.S4, V5.S4, V6.S4
+    FMOVS   $0.240226507, F26
+    VFMLA   V26.S4, V5.S4, V6.S4
+    FMOVS   $0.69314718, F27
+    VFMLA   V27.S4, V5.S4, V6.S4
+    FMOVS   $1.0, F28
+    VFMLA   V28.S4, V5.S4, V6.S4
+    
+    // FCVTZS V4.S4, V7.S4
+    WORD    $0x4e21b887
+    VMOV    R6, V8.S4
+    VADD    V7.S4, V8.S4, V7.S4
+    VSHL    $23, V7.S4, V7.S4
+    // FMUL V2.4S, V6.4S, V7.4S  (exp result)
+    WORD    $0x6e279482
+    
+    VST1.P  [V2.S4], 16(R5)
+    VADDP   V2.S4, V2.S4, V2.S4
+    VADDP   V2.S4, V2.S4, V2.S4
+    VMOV    V2.S[0], V20.S[0]
+    FADDS   F20, F1, F1
+    
+    SUB     $4, R4
+    B       softmax_exp_loop
+    
+softmax_exp_tail:
+    CBZ     R4, softmax_exp_reduce
+    FMOVS.P 4(R3), F2
+    FSUBS   F0, F2, F2           // x - max (scalar)
+    FADDS   F30, F2, F3
+    // FRINTM S3, S3
+    WORD    $0x1e254063
+    FSUBS   F3, F2, F4           // f
+    FMOVS   $1.0, F5
+    FADDS   F4, F5, F5           // 1 + f
+    FCVTZSS F3, R7
+    ADD     R6, R7, R7
+    LSL     $23, R7, R7
+    VMOV    R7, V8.S[0]
+    VMOV    V8.S[0], V20.S[0]   // extract as scalar
+    FMULS   F20, F5, F2
+    
+    FMOVS.P F2, 4(R5)
+    FADDS   F2, F1, F1
+    SUB     $1, R4
+    B       softmax_exp_tail
+    
+softmax_exp_reduce:
+    // 3. Divide by Sum
+    MOVD    R1, R5
+    MOVD    R2, R4
+softmax_div_loop:
+    CBZ     R4, softmax_done
+    FMOVS   (R5), F2
+    FDIVS   F1, F2, F2
+    FMOVS   F2, (R5)
+    ADD     $4, R5
+    SUB     $1, R4
+    B       softmax_div_loop
+
+softmax_done:
     RET

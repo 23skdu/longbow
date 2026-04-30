@@ -201,9 +201,20 @@ func (gs *GraphStore) GetCSR() (offsets []uint32, neighbors []uint32, weights []
 	return
 }
 
+const (
+	// GPUWorkloadThreshold is the minimum number of nodes in the results set
+	// to justify the GPU launch latency for graph expansion.
+	GPUWorkloadThreshold = 128
+)
+
 func (gs *GraphStore) RankWithGraphGPU(results []SearchResult, alpha float32, depth int, gpuIdx gputypes.Index) ([]SearchResult, error) {
 	if len(results) == 0 || gpuIdx == nil {
 		return results, nil
+	}
+
+	// Adaptive Dispatching: Skip GPU for small workloads where kernel launch latency dominates.
+	if len(results) < GPUWorkloadThreshold {
+		return gs.RankWithGraph(results, alpha, depth), nil
 	}
 
 	// 1. Get CSR and update GPU

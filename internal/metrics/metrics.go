@@ -1011,4 +1011,22 @@ var (
 		},
 		[]string{"model"},
 	)
+
+	// SIMD Activation Kernel Metrics
+	SimdActivationKernelDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_simd_activation_kernel_duration_seconds",
+			Help:    "Duration of SIMD activation kernel execution",
+			Buckets: []float64{0.000001, 0.000005, 0.00001, 0.00005, 0.0001, 0.0005, 0.001},
+		},
+		[]string{"kernel", "arch"}, // kernel: "exp", "softmax", "sigmoid"; arch: "avx512", "neon", "avx2"
+	)
+
+	SimdActivationKernelCallsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_simd_activation_kernel_calls_total",
+			Help: "Total number of SIMD activation kernel calls",
+		},
+		[]string{"kernel", "arch"},
+	)
 )

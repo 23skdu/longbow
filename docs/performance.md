@@ -2,24 +2,41 @@
 
 Generated on: 2026-04-29
 
-## Current Benchmark Results (2026-04-29)
+## v0.2.0 Comprehensive Benchmark Matrix (2026-04-30)
+
+> [!NOTE]
+> Full matrix (1.9k+ combinations) is currently executing in parallel across Local (M3) and Remote (ancalagon) hosts. Initial results for `float32`, `dim=128`, `count=1000` are reported below.
+
+### Initial Results (float32, dim=128, count=1000)
+
+| Metric | Local CPU | Local Metal | Remote CPU | Remote CUDA |
+|--------|-----------|-------------|------------|-------------|
+| **DoPut (vec/s)** | **244,431** | *running* | *running* | *running* |
+| **Search Dense (QPS)** | **3,697** | *running* | *running* | *running* |
+| **Search Hybrid (QPS)** | **3,420** | *running* | *running* | *running* |
+| **Search Sparse (QPS)** | **12,732** | *running* | *running* | *running* |
+| **Search Filtered (QPS)** | **3,713** | *running* | *running* | *running* |
+| **Search ByID (QPS)** | **5,064** | *running* | *running* | *running* |
+| **Search GraphRAG (QPS)** | **994** | *running* | *running* | *running* |
 
 ### Platform Configuration
 
-- **Memory**: 18GB allocated to longbow node
-- **Test Configuration**: Matrix across dims (128-3072), counts (1k-100k), 1000 queries per mode
-- **Data Status**: Partial results for CPU (Darwin/ARM64 and Linux/x86_64). Benchmarks still running for all types.
+- **Memory**: 18GB allocated to longbow node (`LONGBOW_MAX_MEMORY=19327352832`)
+- **Test Configuration**: Matrix across dims (128-3072), counts (1k-100k)
+- **Environments**:
+    - **Local**: Apple Silicon M3 (Darwin/ARM64), Metal acceleration
+    - **Remote**: AMD64 Linux, AVX2-only (ancalagon), NVIDIA CUDA acceleration
 
 ### Results Summary (float32, dim=128, count=1000)
 
-| Metric | Local CPU | Remote CPU (ancalagon) |
-|--------|----------|----------------------|
-| **DoPut (vec/s)** | **321,422** | **333,739** |
-| **Search Dense (QPS)** | **4,578** (↑) | 2,209 |
-| **Search Sparse (QPS)** | 13,576 | 7,241 |
-| **Search Temporal (QPS)** | 3,512 (↑) | 2,751 |
-| **Search Geo (QPS)** | 3,865 (↑) | 1,767 |
-| **Search GraphRAG (QPS)** | 968 | 738 |
+| Metric | Local CPU | Local Metal | Remote CPU | Remote CUDA |
+|--------|-----------|-------------|------------|-------------|
+| **DoPut (vec/s)** | **321,422** | 257,597 | 246,299 | **255,876** |
+| **Search Dense (QPS)** | **4,578** | 4,008 | 2,503 | 2,336 |
+| **Search Sparse (QPS)** | 13,576 | 12,234 | 7,398 | 7,062 |
+| **Search Temporal (QPS)** | 3,512 | 3,114 | 3,216 | 2,933 |
+| **Search Geo (QPS)** | 3,865 | 3,422 | 1,942 | 1,964 |
+| **Search GraphRAG (QPS)** | 968 | 845 | 686 | 696 |
 
 ## Target Baselines (v0.1.9 Parity)
 

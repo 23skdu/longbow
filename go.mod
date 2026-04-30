@@ -31,6 +31,7 @@ require (
 	github.com/iceber/iouring-go v0.0.0-20230403020409-002cfd2e2a90
 	github.com/klauspost/compress v1.18.5
 	github.com/leanovate/gopter v0.2.11
+	github.com/mmcloughlin/avo v0.6.0
 	github.com/pierrec/lz4/v4 v4.1.26
 	github.com/prometheus/client_model v0.6.2
 	github.com/rs/zerolog v1.35.1

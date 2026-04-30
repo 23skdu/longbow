@@ -1029,4 +1029,21 @@ var (
 		},
 		[]string{"kernel", "arch"},
 	)
+
+	// Graph GPU Adaptive Dispatch Metrics
+	GraphGPUDispatchTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_graph_gpu_dispatch_total",
+			Help: "Total GraphRAG expansion calls to GPU backend",
+		},
+		[]string{"dataset"},
+	)
+
+	GraphGPUDispatchFallbackTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_graph_gpu_dispatch_fallback_total",
+			Help: "Total GraphRAG expansion calls falling back to CPU due to threshold",
+		},
+		[]string{"dataset"},
+	)
 )

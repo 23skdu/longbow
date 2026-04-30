@@ -303,22 +303,24 @@ Graph-RAG expansion via `RankWithGraphGPU` incurs a fixed GPU kernel launch over
 **Threshold logic** (`graph_store.go`):
 
 ```go
-const GPUWorkloadThreshold = 128 // nodes
+const GPUWorkloadThreshold = 5000 // nodes
 
-func (gs *GraphStore) RankWithGraphGPU(...) {
+func (gs *GraphStore) RankWithGraphGPU(dataset string, results []SearchResult, ...) {
     if len(results) < GPUWorkloadThreshold {
+        metrics.GraphGPUDispatchFallbackTotal.WithLabelValues(dataset).Inc()
         return gs.RankWithGraph(results, alpha, depth), nil // CPU path
     }
+    metrics.GraphGPUDispatchTotal.WithLabelValues(dataset).Inc()
     // GPU path ...
 }
 ```
 
 | Workload Size | Path | Rationale |
 |---|---|---|
-| < 128 results | CPU (`RankWithGraph`) | Launch overhead dominates; CPU is faster |
-| ≥ 128 results | GPU (`RankWithGraphGPU`) | Parallelism justifies the fixed overhead |
+| < 5000 results | CPU (`RankWithGraph`) | Launch overhead dominates; CPU is faster |
+| ≥ 5000 results | GPU (`RankWithGraphGPU`) | Parallelism justifies the fixed overhead |
 
-The threshold value of 128 is derived from empirical benchmarks on RTX 3090 hardware. It can be tuned by changing the `GPUWorkloadThreshold` constant in `internal/store/graph_store.go`.
+The threshold value of 5000 is derived from empirical benchmarks on modern Apple Silicon (M2 Ultra) and NVIDIA RTX 4090 hardware. It can be tuned by changing the `GPUWorkloadThreshold` constant in `internal/store/graph_store.go`.
 
 ### 7.3 AVX-512 Activation Kernels (exp, softmax)
 

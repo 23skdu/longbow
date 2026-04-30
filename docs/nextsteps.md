@@ -96,6 +96,29 @@ We aim to reduce the external dependency surface to improve build times and secu
 
 ---
 
+## Suggestions for Next Release (from v0.2.0 Stabilization)
+
+### 1. Ingestion Performance Recovery
+- **Problem**: Ingestion throughput on Remote CPU dropped from 333k to 246k vec/s (-26%).
+- **Hypothesis**: The migration of `ChunkedLocationStore` to `atomic.Value` for chunk headers adds overhead in the critical `AddBatch` path due to frequent `Store()` calls during growth and interface boxing.
+- **Suggestion**: Implement a "Growth-only Mutex" or a read-copy-update (RCU) pattern specifically for the slice header to reduce atomic write frequency. Profile the `SharedWorkerPool` synchronization overhead under high-load parallel ingestion.
+
+### 2. Adaptive GPU Offloading Thresholds
+- **Problem**: Metal and CUDA acceleration show significant overhead for small datasets (1k vectors), underperforming CPU.
+- **Observation**: Kernel launch latency and buffer synchronization dominate for small counts.
+- **Suggestion**: Implement a dynamic dispatcher that keeps workloads on the CPU for `count < 5,000` or `dim < 384`, only activating GPU pipelines when the compute density justifies the transfer costs.
+
+### 3. SIMD Activation Kernels (AVX-512 & NEON)
+- **Problem**: Current activation functions (Exp, Log, Softmax) use generic Go fallbacks.
+- **Observation**: High-dimensional search modes (GraphRAG, Temporal) spend significant time in these activations.
+- **Suggestion**: Prioritize native assembly implementations for `Exp` and `Softmax` using AVX-512 `VEXP2PS` (or range reduction approximations) and NEON unrolled loops to reclaim the 20-30% performance gap in complex search modes.
+
+### 4. Port Persistence Optimization
+- **Observation**: Port binding conflicts during parallel benchmarking indicate that the server shutdown sequence may be trailing the benchmark runner.
+- **Suggestion**: Implement a `GracefulShutdownWithTimeout` that ensures port release before the process exit, and add a randomized port fallback for benchmark environments.
+
+---
+
 ## Suggestions for Next Release (v0.2.0 Roadmap)
 
 ### P0: Shared-Read Optimization for GraphData
@@ -117,3 +140,20 @@ We aim to reduce the external dependency surface to improve build times and secu
 
 - **Observation**: High search load can sometimes starve index workers, leading to "Still indexing..." hangs.
 - **Action**: Implement priority-based scheduling in the server's shared worker pool to ensure background indexing progress during heavy query bursts.
+
+---
+
+## Suggestions for Next Release (from 2026-04-30 Matrix)
+
+### 1. GraphRAG Search Optimization
+- **Observation**: GraphRAG search throughput is significantly lower (~1k QPS) compared to Dense search (~3.7k QPS), despite shared traversal logic.
+- **Analysis**: GraphRAG likely performs more complex neighbor expansions and metadata lookups per hop.
+- **Suggestion**: Optimize the GraphRAG expansion loop with prefetching and consider caching intermediate expansion sets for frequently accessed "hub" nodes.
+
+### 2. AVX-512 Assembly Refinement
+- **Observation**: Build failures in AVX-512 assembly during this task indicate that the Plan 9 assembly syntax for masked instructions is fragile and error-prone.
+- **Suggestion**: Shift towards using a high-level SIMD generator (like `avo`) or provide more robust unit tests specifically for the assembly kernels to catch syntax and operand ordering issues during CI.
+
+### 3. Cross-Host Parallelism Efficiency
+- **Observation**: Running benchmarks on `ancalagon` requires manual rsync and SSH coordination.
+- **Suggestion**: Formalize the `scripts/bench_all.sh` into a proper benchmark controller that can handle remote orchestration, result collection, and automated pprof analysis (e.g., using a tool like `go-torch` or similar).

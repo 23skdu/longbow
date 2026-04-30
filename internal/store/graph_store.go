@@ -12,6 +12,9 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"context"
+	"unsafe"
+	"github.com/23skdu/longbow/internal/simd"
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 type GraphStore struct {
@@ -204,18 +207,21 @@ func (gs *GraphStore) GetCSR() (offsets []uint32, neighbors []uint32, weights []
 const (
 	// GPUWorkloadThreshold is the minimum number of nodes in the results set
 	// to justify the GPU launch latency for graph expansion.
-	GPUWorkloadThreshold = 128
+	GPUWorkloadThreshold = 5000
 )
 
-func (gs *GraphStore) RankWithGraphGPU(results []SearchResult, alpha float32, depth int, gpuIdx gputypes.Index) ([]SearchResult, error) {
+func (gs *GraphStore) RankWithGraphGPU(dataset string, results []SearchResult, alpha float32, depth int, gpuIdx gputypes.Index) ([]SearchResult, error) {
 	if len(results) == 0 || gpuIdx == nil {
 		return results, nil
 	}
 
 	// Adaptive Dispatching: Skip GPU for small workloads where kernel launch latency dominates.
 	if len(results) < GPUWorkloadThreshold {
+		metrics.GraphGPUDispatchFallbackTotal.WithLabelValues(dataset).Inc()
 		return gs.RankWithGraph(results, alpha, depth), nil
 	}
+
+	metrics.GraphGPUDispatchTotal.WithLabelValues(dataset).Inc()
 
 	// 1. Get CSR and update GPU
 	offsets, neighbors, weights := gs.GetCSR()
@@ -281,29 +287,86 @@ func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 
-	// Simple graph-based re-ranking: boost nodes that are neighbors of top results
-	scores := make(map[uint32]float32)
+	// 1. Initial Local Rank & Bounds Checking
+	maxID := gs.CommunityCount() + 1000
 	for _, r := range results {
-		id := uint32(r.ID)
-		scores[id] += r.Score
-
-		// Traverse up to 'depth' hops
-		// (Simplified: 1 hop for now)
-		edges := gs.forwardEdges[id]
-		for _, edge := range edges {
-			scores[uint32(edge.Object)] += r.Score * alpha * edge.Weight
+		if int(r.ID) > maxID {
+			maxID = int(r.ID) + 1
 		}
 	}
 
-	// Rebuild results
-	newResults := make([]SearchResult, 0, len(scores))
-	for id, score := range scores {
-		newResults = append(newResults, SearchResult{ID: lbtypes.VectorID(id), Score: score})
+	// Use dense slices for performance
+	scoreSlice := make([]float32, maxID+1024)
+	visited := make([]uint64, (len(scoreSlice)+63)/64)
+
+	setVisited := func(id uint32) {
+		visited[id>>6] |= 1 << (id & 63)
+	}
+	isVisited := func(id uint32) bool {
+		return (visited[id>>6] & (1 << (id & 63))) != 0
+	}
+
+	currentNodes := make([]uint32, 0, len(results))
+	for _, r := range results {
+		id := uint32(r.ID)
+		scoreSlice[id] = r.Score
+		if !isVisited(id) {
+			setVisited(id)
+			currentNodes = append(currentNodes, id)
+		}
+	}
+
+	// 2. Multi-hop BFS Expansion
+	nextNodes := make([]uint32, 0, len(currentNodes)*2)
+
+	for d := 0; d < depth; d++ {
+		if len(currentNodes) == 0 {
+			break
+		}
+
+		for i, id := range currentNodes {
+			// SIMD prefetching for local edges
+			if i+2 < len(currentNodes) {
+				nextNextId := currentNodes[i+2]
+				if edges, ok := gs.forwardEdges[nextNextId]; ok && len(edges) > 0 {
+					simd.Prefetch(unsafe.Pointer(&edges[0]))
+				}
+			}
+
+			if edges, ok := gs.forwardEdges[id]; ok {
+				s := scoreSlice[id] * alpha
+				for _, edge := range edges {
+					target := uint32(edge.Object)
+					scoreSlice[target] += s * edge.Weight
+					if !isVisited(target) {
+						setVisited(target)
+						nextNodes = append(nextNodes, target)
+					}
+				}
+			}
+		}
+
+		// Swap slices for next iteration
+		currentNodes = currentNodes[:0]
+		currentNodes = append(currentNodes, nextNodes...)
+		nextNodes = nextNodes[:0]
+	}
+
+	// 3. Rebuild results
+	newResults := make([]SearchResult, 0, len(results)*2)
+	for id, score := range scoreSlice {
+		if score > 0 {
+			newResults = append(newResults, SearchResult{ID: lbtypes.VectorID(id), Score: score})
+		}
 	}
 
 	sort.Slice(newResults, func(i, j int) bool {
 		return newResults[i].Score > newResults[j].Score
 	})
+
+	if len(newResults) > 2000 {
+		newResults = newResults[:2000]
+	}
 
 	return newResults
 }
@@ -313,73 +376,88 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 		return results
 	}
 
-	// 1. Initial Local Rank
-	scores := make(map[uint32]float32)
+	// 1. Initial Local Rank & Bounds Checking
+	maxID := gs.CommunityCount() + 1000
 	for _, r := range results {
-		scores[uint32(r.ID)] += r.Score
+		if int(r.ID) > maxID {
+			maxID = int(r.ID) + 1
+		}
+	}
+
+	// Use dense slices for performance if possible
+	scoreSlice := make([]float32, maxID+1024)
+	visited := make([]uint64, (len(scoreSlice)+63)/64)
+
+	setVisited := func(id uint32) {
+		visited[id>>6] |= 1 << (id & 63)
+	}
+	isVisited := func(id uint32) bool {
+		return (visited[id>>6] & (1 << (id & 63))) != 0
+	}
+
+	currentNodes := make([]uint32, 0, len(results))
+	for _, r := range results {
+		id := uint32(r.ID)
+		scoreSlice[id] = r.Score
+		if !isVisited(id) {
+			setVisited(id)
+			currentNodes = append(currentNodes, id)
+		}
 	}
 
 	// 2. Multi-hop Distributed BFS Expansion
-	currentNodes := make([]uint32, 0, len(results))
-	for _, r := range results {
-		currentNodes = append(currentNodes, uint32(r.ID))
-	}
+	nextNodes := make([]uint32, 0, len(currentNodes)*4) // Pre-allocate with heuristic
 
-	visited := make(map[uint32]bool)
-	for _, id := range currentNodes {
-		visited[id] = true
-	}
-
-	decay := float32(1.0)
 	for d := 0; d < depth; d++ {
-		decay *= alpha
 		if len(currentNodes) == 0 {
 			break
 		}
 
-		// Collect neighbors (Local + Remote)
-		nextNodes := make([]uint32, 0)
-		
-		// First, check local edges
+		// First, check local edges with prioritized prefetching
 		gs.mu.RLock()
-		for _, id := range currentNodes {
+		for i, id := range currentNodes {
+			// Prioritize for SIMD prefetching: prefetch the edge list for the node after next
+			if i+2 < len(currentNodes) {
+				nextNextId := currentNodes[i+2]
+				if edges, ok := gs.forwardEdges[nextNextId]; ok && len(edges) > 0 {
+					simd.Prefetch(unsafe.Pointer(&edges[0]))
+				}
+			}
+
 			if edges, ok := gs.forwardEdges[id]; ok {
+				s := scoreSlice[id] * alpha
 				for _, edge := range edges {
 					target := uint32(edge.Object)
-					scores[target] += scores[id] * alpha * edge.Weight
-					if !visited[target] {
-						visited[target] = true
+					scoreSlice[target] += s * edge.Weight
+					if !isVisited(target) {
+						setVisited(target)
 						nextNodes = append(nextNodes, target)
 					}
 				}
-			} else if provider != nil {
-				// If not found locally, we might need to ask the provider (mesh)
-				// But we do it in bulk for performance
 			}
 		}
 		gs.mu.RUnlock()
 
-		// Bulk fetch missing neighbors from provider
+		// Bulk fetch missing neighbors from provider (distributed mesh)
 		if provider != nil {
 			missing := make([]uint32, 0)
+			gs.mu.RLock()
 			for _, id := range currentNodes {
-				gs.mu.RLock()
-				_, ok := gs.forwardEdges[id]
-				gs.mu.RUnlock()
-				if !ok {
+				if _, ok := gs.forwardEdges[id]; !ok {
 					missing = append(missing, id)
 				}
 			}
+			gs.mu.RUnlock()
 
 			if len(missing) > 0 {
 				remoteNeighbors, err := provider.GetNeighborsBulk(ctx, dataset, missing)
 				if err == nil {
 					for id, neighbors := range remoteNeighbors {
+						s := scoreSlice[id] * alpha
 						for _, target := range neighbors {
-							// For remote neighbors, we assume weight 1.0 if not provided
-							scores[target] += scores[id] * alpha
-							if !visited[target] {
-								visited[target] = true
+							scoreSlice[target] += s
+							if !isVisited(target) {
+								setVisited(target)
 								nextNodes = append(nextNodes, target)
 							}
 						}
@@ -388,18 +466,27 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 			}
 		}
 
-		currentNodes = nextNodes
+		// Swap slices for next iteration
+		currentNodes = currentNodes[:0]
+		currentNodes = append(currentNodes, nextNodes...)
+		nextNodes = nextNodes[:0]
 	}
 
-	// 3. Rebuild results
-	newResults := make([]SearchResult, 0, len(scores))
-	for id, score := range scores {
-		newResults = append(newResults, SearchResult{ID: lbtypes.VectorID(id), Score: score})
+	// 3. Rebuild results from dense score slice
+	newResults := make([]SearchResult, 0, len(results)*2) // Heuristic
+	for id, score := range scoreSlice {
+		if score > 0 {
+			newResults = append(newResults, SearchResult{ID: lbtypes.VectorID(id), Score: score})
+		}
 	}
 
 	sort.Slice(newResults, func(i, j int) bool {
 		return newResults[i].Score > newResults[j].Score
 	})
+
+	if len(newResults) > 2000 { // Limit expansion results to prevent explosion
+		newResults = newResults[:2000]
+	}
 
 	return newResults
 }

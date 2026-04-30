@@ -103,5 +103,18 @@ node_modules/
 !longbowclientsdk/
 longbowclientsdk/**/__pycache__/
 longbowclientsdk/**/*.py[cod]
+# Performance Profiles and Results
+profiles/
+*.prof
+results_parallel/
+results_remote_*.json
+remote_profiles/
+local_cpu_run.log
+local_metal_run.log
+remote_cpu_run.log
+remote_cuda_run.log
+bench_*.log
+server_*.log
+
 coverage.*
 *.out

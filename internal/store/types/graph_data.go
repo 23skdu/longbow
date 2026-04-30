@@ -1712,15 +1712,10 @@ func (g *GraphData) Clone() *GraphData {
 		}
 	}
 
-	// Deep copy Levels (Chunk -> Data)
+	// Shallow copy Levels (Chunk -> Data) - the chunks themselves are managed by EnsureChunk and are COW-safe
 	if g.Levels != nil {
 		newG.Levels = make([][]uint8, len(g.Levels))
-		for i := range g.Levels {
-			if g.Levels[i] != nil {
-				newG.Levels[i] = make([]uint8, len(g.Levels[i]))
-				copy(newG.Levels[i], g.Levels[i])
-			}
-		}
+		copy(newG.Levels, g.Levels)
 	}
 
 	// Shallow copy PackedNeighbors (the structures themselves are thread-safe and manage their own growth)

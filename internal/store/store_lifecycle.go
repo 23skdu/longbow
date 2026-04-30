@@ -305,6 +305,8 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 	currentBatch := 100
 
 	jobs := make([]IndexJob, 0, maxBatch)
+	var lastLogTime time.Time
+
 
 	// Dynamic ticker: start standard
 	ticker := time.NewTicker(10 * time.Millisecond)
@@ -541,12 +543,13 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 				return
 			case <-ctx.Done():
 				return
-			default:
+			case <-s.indexQueue.Notify():
+				// Wake up and check for jobs
+				continue
+			case <-time.After(100 * time.Millisecond):
+				// Periodic safety check
+				continue
 			}
-
-			// No jobs, wait a bit
-			time.Sleep(10 * time.Millisecond)
-			continue
 		}
 
 		if len(jobs) >= currentBatch || (!ok && len(jobs) > 0) {
@@ -559,14 +562,21 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 
 		switch {
 		case queueDepth > 100:
-			s.logger.Warn().Int("depth", queueDepth).Msg("Ingestion queue is BACKPRESSURED")
+			if time.Since(lastLogTime) > 2*time.Second {
+				s.logger.Warn().Int("depth", queueDepth).Msg("Ingestion queue is BACKPRESSURED")
+				lastLogTime = time.Now()
+			}
 			currentBatch = maxBatch // 1000
 		case queueDepth > 50:
-			s.logger.Info().Int("depth", queueDepth).Msg("Ingestion queue is filling up")
+			if time.Since(lastLogTime) > 5*time.Second {
+				s.logger.Info().Int("depth", queueDepth).Msg("Ingestion queue is filling up")
+				lastLogTime = time.Now()
+			}
 			currentBatch = 500
 		default:
 			currentBatch = 100
 		}
+
 
 		select {
 		case <-s.stopChan:

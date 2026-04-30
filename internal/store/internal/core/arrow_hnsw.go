@@ -744,10 +744,6 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 	id := uint32(next - 1) // #nosec G115
 	defer h.commitID(id)
 
-	shard := id % ShardedLockCount
-	h.insertMus[shard].Lock()
-	defer h.insertMus[shard].Unlock()
-
 	var vec any
 	if h.dataset != nil {
 		records := h.dataset.GetRecords()
@@ -785,10 +781,6 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 	}
 	id := uint32(next - 1) // #nosec G115
 	defer h.commitID(id)
-
-	shard := id % ShardedLockCount
-	h.insertMus[shard].Lock()
-	defer h.insertMus[shard].Unlock()
 
 	var vec any
 	// Find vector column
@@ -936,6 +928,9 @@ func (h *ArrowHNSW) Size() int {
 
 // Interface implementation: Close cleans up resources
 func (h *ArrowHNSW) Close() error {
+	if h == nil {
+		return nil
+	}
 	if h.navigator != nil {
 		if err := h.navigator.Close(); err != nil {
 			return err
@@ -946,10 +941,10 @@ func (h *ArrowHNSW) Close() error {
 	if data != nil {
 		data.Release()
 	}
-	h.dataset = nil
-	h.searchPool = nil
-	h.locationStore = nil
-	h.deleted = nil
+	// We do NOT nil locationStore, searchPool, etc. here because concurrent 
+	// background tasks (like indexing workers or migration) might still 
+	// be accessing them. The memory will be reclaimed when the ArrowHNSW 
+	// object itself is no longer referenced.
 	return nil
 }
 
@@ -2164,6 +2159,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 }
 
 func (h *ArrowHNSW) EstimateMemory() int64 {
+	if h == nil {
+		return 0
+	}
 	nodeCount := int(h.nodeCount.Load())
 	dims := int(h.dims.Load())
 
@@ -2190,8 +2188,11 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 
 	levelsMemory := int64(nodeCount) * 1
 
-	locCount := h.locationStore.Len()
-		locMemory := int64(locCount) * 8
+	var locMemory int64
+	if h.locationStore != nil {
+		locCount := h.locationStore.Len()
+		locMemory = int64(locCount) * 8
+	}
 
 	return vectorMemory + graphMemory + levelsMemory + locMemory
 }

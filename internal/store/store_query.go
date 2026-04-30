@@ -339,9 +339,11 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		}
 	}()
 
+	pool := internalcore.GetSharedPool()
 	for w := 0; w < numWorkers; w++ {
 		wg.Add(1)
-		go func(workerIdx int) {
+		workerIdx := w
+		pool.Submit(func() {
 			defer wg.Done()
 			var evaluator *qry.FilterEvaluator
 			workerMem := workerArenas[workerIdx]
@@ -423,7 +425,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 					return
 				}
 			}
-		}(w)
+		})
 	}
 
 	// Monitor to close results channel

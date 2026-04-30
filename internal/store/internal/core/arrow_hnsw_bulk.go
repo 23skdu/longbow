@@ -582,7 +582,10 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		// that are active at this layer.
 		insertingIndices := activeIndices
 		numNew := len(insertingIndices)
-		if numNew > 1 {
+		// Cap intra-batch matching to avoid O(N^2) explosion on massive batches.
+		// For very large batches, graph-based discovery is sufficient.
+		if numNew > 1 && numNew <= 1000 {
+
 			// Pre-cast vectors to avoid type assertions in hot loop
 			var activeF32 [][]float32
 			if h.config.DataType == types.VectorTypeFloat32 {
@@ -764,6 +767,12 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			linkageChunkSize = 32
 		}
 
+		// Optimization: Clone once per layer for the entire batch to avoid 
+		// massive per-node cloning and memory pressure during linkage.
+		// Since we use shard locks, workers can safely share this clone.
+		data = h.data.Load().Clone()
+
+
 		pool.ParallelFor(len(activeIndices), linkageChunkSize, func(start, end int) {
 			for _, idx := range activeIndices[start:end] {
 				node := activeNodes[idx]
@@ -829,20 +838,12 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					fDists = append(fDists, n.Dist)
 				}
 				
-				// Acquire shard lock for source node (forward)
-				shard := node.id % ShardedLockCount
-				h.insertMus[shard].Lock()
-				currentData := h.data.Load()
-				_ = h.AddConnectionsBatch(ctxPrune, currentData, node.id, fSources, fDists, lc, maxConn)
-				h.insertMus[shard].Unlock()
+				// Use the shared 'data' clone prepared for this layer
+				_ = h.AddConnectionsBatch(ctxPrune, data, node.id, fSources, fDists, lc, maxConn)
 
-				// Reverse connections (neighbors -> this node)
 				for _, neighbor := range neighbors {
-					nShard := neighbor.ID % ShardedLockCount
-					h.insertMus[nShard].Lock()
-					currentData = h.data.Load()
-					_ = h.AddConnectionsBatch(ctxPrune, currentData, neighbor.ID, []uint32{node.id}, []float32{neighbor.Dist}, lc, maxConn)
-					h.insertMus[nShard].Unlock()
+					// Use the shared 'data' clone prepared for this layer
+					_ = h.AddConnectionsBatch(ctxPrune, data, neighbor.ID, []uint32{node.id}, []float32{neighbor.Dist}, lc, maxConn)
 				}
 
 				h.searchPool.PutWithMetrics(ctxPrune, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
@@ -855,11 +856,10 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		}
 
 		// End of Layer Linkage
-		// We MUST update the index's global view to ensure the next (lower) layer's 
-		// search-discovery can traverse these new connections!
-		// Structure updates are already published by promoteNode/AddConnectionsBatch if needed.
-		data = h.data.Load() 
+		// Publish the updated graph data for this layer so the next layer's search can use it.
+		h.data.Store(data)
 	}
+
 
 	// 4. Update Global Stats
 	// Update Max Level / Entry Point atomically

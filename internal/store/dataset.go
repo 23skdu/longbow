@@ -860,7 +860,7 @@ func (d *Dataset) SearchGraphRAG(ctx context.Context, queryVec []float32, k int,
 	// 2. Try GPU Acceleration
 	if gpuIdxAny := d.Index.GetGPUIndex(); gpuIdxAny != nil {
 		if gpuIdx, ok := gpuIdxAny.(gputypes.Index); ok {
-			res, err := d.Graph.RankWithGraphGPU(results, alpha, depth, gpuIdx)
+			res, err := d.Graph.RankWithGraphGPU(d.Name, results, alpha, depth, gpuIdx)
 			if err == nil {
 				return res, nil
 			}

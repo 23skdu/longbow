@@ -357,6 +357,41 @@ func dotUint16AVX2Kernel(a, b unsafe.Pointer, n int) float32
 //go:noescape
 func dotFloat64AVX2Kernel(a, b unsafe.Pointer, n int) float32
 
+func int8ToFloat32AVX2(src []int8, dst []float32) {
+	if len(src) == 0 { return }
+	int8ToFloat32AVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func uint8ToFloat32AVX2(src []uint8, dst []float32) {
+	if len(src) == 0 { return }
+	uint8ToFloat32AVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func int16ToFloat32AVX2(src []int16, dst []float32) {
+	if len(src) == 0 { return }
+	int16ToFloat32AVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func uint16ToFloat32AVX2(src []uint16, dst []float32) {
+	if len(src) == 0 { return }
+	uint16ToFloat32AVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func int32ToFloat32AVX2(src []int32, dst []float32) {
+	if len(src) == 0 { return }
+	int32ToFloat32AVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func uint32ToFloat32AVX2(src []uint32, dst []float32) {
+	uint32ToFloat32Generic(src, dst) // uint32 -> f32 is tricky on AVX2, fallback to generic
+}
+
+func float16ToFloat32AVX2(src []float16.Num, dst []float32) {
+	if len(src) == 0 { return }
+	// We already have VCVTPH2PS in AVX2
+	float16ToFloat32AVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
 func matchInt64AVX2(src []int64, val int64, op CompareOp, dst []byte) error {
 	if len(src) != len(dst) {
 		return errors.New("simd: length mismatch")
@@ -692,3 +727,16 @@ func euclidean16AVX512(a, b unsafe.Pointer) float32
 func dot16AVX512(a, b unsafe.Pointer) float32
 //go:noescape
 func cosine16AVX512(a, b unsafe.Pointer) (dot, normA, normB float32)
+
+//go:noescape
+func int8ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func uint8ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func int16ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func uint16ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func int32ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func float16ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)

@@ -114,6 +114,23 @@ var (
 	dotProductUint16Impl func(a, b []uint16) (float32, error)
 	dotProductInt4Impl   func(a, b []byte) (float32, error)
 	dotProductInt2Impl   func(a, b []byte) (float32, error)
+
+	memcpyNTAImpl func(dst, src unsafe.Pointer, n int)
+
+	// Type conversion kernels
+	int8ToFloat32Impl   func(src []int8, dst []float32)
+	uint8ToFloat32Impl  func(src []uint8, dst []float32)
+	int16ToFloat32Impl  func(src []int16, dst []float32)
+	uint16ToFloat32Impl func(src []uint16, dst []float32)
+	int32ToFloat32Impl  func(src []int32, dst []float32)
+	uint32ToFloat32Impl func(src []uint32, dst []float32)
+	float16ToFloat32Impl func(src []float16.Num, dst []float32)
+
+	// Activation kernels
+	sigmoidFloat32Impl func(src, dst []float32)
+	softmaxFloat32Impl func(src, dst []float32)
+	expFloat32Impl     func(src, dst []float32)
+	logFloat32Impl     func(src, dst []float32)
 )
 
 func init() {
@@ -1076,4 +1093,141 @@ func cosineF16Unrolled4x(a, b []float16.Num) (float32, error) {
 		return 1.0, nil
 	}
 	return 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB)))), nil
+}
+
+// Type conversion generic implementations
+
+func int8ToFloat32Generic(src []int8, dst []float32) {
+	for i, v := range src {
+		dst[i] = float32(v)
+	}
+}
+
+func uint8ToFloat32Generic(src []uint8, dst []float32) {
+	for i, v := range src {
+		dst[i] = float32(v)
+	}
+}
+
+func int16ToFloat32Generic(src []int16, dst []float32) {
+	for i, v := range src {
+		dst[i] = float32(v)
+	}
+}
+
+func uint16ToFloat32Generic(src []uint16, dst []float32) {
+	for i, v := range src {
+		dst[i] = float32(v)
+	}
+}
+
+func int32ToFloat32Generic(src []int32, dst []float32) {
+	for i, v := range src {
+		dst[i] = float32(v)
+	}
+}
+
+func uint32ToFloat32Generic(src []uint32, dst []float32) {
+	for i, v := range src {
+		dst[i] = float32(v)
+	}
+}
+
+func float16ToFloat32Generic(src []float16.Num, dst []float32) {
+	for i, v := range src {
+		dst[i] = v.Float32()
+	}
+}
+
+// Public API for type conversion
+
+func Int8ToFloat32(src []int8, dst []float32) {
+	int8ToFloat32Impl(src, dst)
+}
+
+func Uint8ToFloat32(src []uint8, dst []float32) {
+	uint8ToFloat32Impl(src, dst)
+}
+
+func Int16ToFloat32(src []int16, dst []float32) {
+	int16ToFloat32Impl(src, dst)
+}
+
+func Uint16ToFloat32(src []uint16, dst []float32) {
+	uint16ToFloat32Impl(src, dst)
+}
+
+func Int32ToFloat32(src []int32, dst []float32) {
+	int32ToFloat32Impl(src, dst)
+}
+
+func Uint32ToFloat32(src []uint32, dst []float32) {
+	uint32ToFloat32Impl(src, dst)
+}
+
+func Float16ToFloat32(src []float16.Num, dst []float32) {
+	float16ToFloat32Impl(src, dst)
+}
+
+// Activation Functions
+
+func Sigmoid(src, dst []float32) {
+	sigmoidFloat32Impl(src, dst)
+}
+
+func Softmax(src, dst []float32) {
+	softmaxFloat32Impl(src, dst)
+}
+
+func Exp(src, dst []float32) {
+	expFloat32Impl(src, dst)
+}
+
+func Log(src, dst []float32) {
+	logFloat32Impl(src, dst)
+}
+
+func sigmoidGeneric(src, dst []float32) {
+	for i, x := range src {
+		dst[i] = 1.0 / (1.0 + float32(math.Exp(float64(-x))))
+	}
+}
+
+func expGeneric(src, dst []float32) {
+	for i, x := range src {
+		dst[i] = float32(math.Exp(float64(x)))
+	}
+}
+
+func logGeneric(src, dst []float32) {
+	for i, x := range src {
+		dst[i] = float32(math.Log(float64(x)))
+	}
+}
+
+func softmaxGeneric(src, dst []float32) {
+	var max float32 = -math.MaxFloat32
+	for _, x := range src {
+		if x > max {
+			max = x
+		}
+	}
+	var sum float32
+	for i, x := range src {
+		dst[i] = float32(math.Exp(float64(x - max)))
+		sum += dst[i]
+	}
+	for i := range dst {
+		dst[i] /= sum
+	}
+}
+
+func MemcpyNTA(dst, src unsafe.Pointer, n int) {
+	memcpyNTAImpl(dst, src, n)
+}
+
+func memcpyGeneric(dst, src unsafe.Pointer, n int) {
+	d := unsafe.Slice((*byte)(dst), n)
+	s := unsafe.Slice((*byte)(src), n)
+	copy(d, s)
 }

@@ -156,3 +156,29 @@ func euclideanInt16AVX512(a, b []int16) (float32, error) { return 0, errors.New(
 func euclideanUint16AVX512(a, b []uint16) (float32, error) { return 0, errors.New("avx512 not supported") }
 func dotInt16AVX512(a, b []int16) (float32, error) { return 0, errors.New("avx512 not supported") }
 func dotUint16AVX512(a, b []uint16) (float32, error) { return 0, errors.New("avx512 not supported") }
+
+func int8ToFloat32AVX2(src []int8, dst []float32) { int8ToFloat32Generic(src, dst) }
+func uint8ToFloat32AVX2(src []uint8, dst []float32) { uint8ToFloat32Generic(src, dst) }
+func int16ToFloat32AVX2(src []int16, dst []float32) { int16ToFloat32Generic(src, dst) }
+func uint16ToFloat32AVX2(src []uint16, dst []float32) { uint16ToFloat32Generic(src, dst) }
+func int32ToFloat32AVX2(src []int32, dst []float32) { int32ToFloat32Generic(src, dst) }
+func uint32ToFloat32AVX2(src []uint32, dst []float32) { uint32ToFloat32Generic(src, dst) }
+func float16ToFloat32AVX2(src []float16.Num, dst []float32) { float16ToFloat32Generic(src, dst) }
+
+func int8ToFloat32AVX512(src []int8, dst []float32) { int8ToFloat32Generic(src, dst) }
+func uint8ToFloat32AVX512(src []uint8, dst []float32) { uint8ToFloat32Generic(src, dst) }
+func int16ToFloat32AVX512(src []int16, dst []float32) { int16ToFloat32Generic(src, dst) }
+func uint16ToFloat32AVX512(src []uint16, dst []float32) { uint16ToFloat32Generic(src, dst) }
+func int32ToFloat32AVX512(src []int32, dst []float32) { int32ToFloat32Generic(src, dst) }
+func uint32ToFloat32AVX512(src []uint32, dst []float32) { uint32ToFloat32Generic(src, dst) }
+func float16ToFloat32AVX512(src []float16.Num, dst []float32) { float16ToFloat32Generic(src, dst) }
+
+func sigmoidAVX2(src, dst []float32) { sigmoidGeneric(src, dst) }
+func softmaxAVX2(src, dst []float32) { softmaxGeneric(src, dst) }
+func expAVX2(src, dst []float32) { expGeneric(src, dst) }
+func logAVX2(src, dst []float32) { logGeneric(src, dst) }
+
+func sigmoidAVX512(src, dst []float32) { sigmoidGeneric(src, dst) }
+func softmaxAVX512(src, dst []float32) { softmaxGeneric(src, dst) }
+func expAVX512(src, dst []float32) { expGeneric(src, dst) }
+func logAVX512(src, dst []float32) { logGeneric(src, dst) }

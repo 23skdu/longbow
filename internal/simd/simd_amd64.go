@@ -427,6 +427,46 @@ func float16ToFloat32AVX512(src []float16.Num, dst []float32) {
 	float16ToFloat32AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
 }
 
+func sigmoidAVX2(src, dst []float32) {
+	if len(src) == 0 { return }
+	sigmoidAVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func softmaxAVX2(src, dst []float32) {
+	if len(src) == 0 { return }
+	softmaxAVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func expAVX2(src, dst []float32) {
+	if len(src) == 0 { return }
+	expAVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func logAVX2(src, dst []float32) {
+	if len(src) == 0 { return }
+	logAVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func sigmoidAVX512(src, dst []float32) {
+	if len(src) == 0 { return }
+	sigmoidAVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func softmaxAVX512(src, dst []float32) {
+	if len(src) == 0 { return }
+	softmaxAVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func expAVX512(src, dst []float32) {
+	if len(src) == 0 { return }
+	expAVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func logAVX512(src, dst []float32) {
+	if len(src) == 0 { return }
+	logAVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
 func matchInt64AVX2(src []int64, val int64, op CompareOp, dst []byte) error {
 	if len(src) != len(dst) {
 		return errors.New("simd: length mismatch")
@@ -790,3 +830,21 @@ func int32ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
 func uint32ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
 //go:noescape
 func float16ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+
+//go:noescape
+func sigmoidAVX2Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func softmaxAVX2Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func expAVX2Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func logAVX2Kernel(src, dst unsafe.Pointer, n int)
+
+//go:noescape
+func sigmoidAVX512Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func softmaxAVX512Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func expAVX512Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func logAVX512Kernel(src, dst unsafe.Pointer, n int)

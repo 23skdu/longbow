@@ -4,9 +4,12 @@ import (
 	"fmt"
 	"math"
 	"sync/atomic"
+	"strconv"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
@@ -25,6 +28,7 @@ type GraphData struct {
 	PQM           int
 	GlobalVersion uint64 // For cache validation
 	BackingGraph  any    // interface{} to avoid import cycle (likely *DiskGraph)
+	Name          string // Dataset name for metrics
 
 	// Vectors (primary storage, usually float32)
 	Vectors [][]float32
@@ -1378,7 +1382,9 @@ func (g *GraphData) SetVectorsBatch(startID uint32, vecs [][]float32) error {
 
 		start := cOff * dims
 		if start+len(vec) <= len(chunk) {
-			copy(chunk[start:start+len(vec)], vec)
+			if len(vec) > 0 {
+				simd.MemcpyNTA(unsafe.Pointer(&chunk[start]), unsafe.Pointer(&vec[0]), len(vec)*4)
+			}
 		}
 	}
 
@@ -1540,14 +1546,19 @@ func (g *GraphData) LockNode(layer int, id uint32) uint32 {
 	}
 	verAddr := &versions[int(id)%ChunkSize]
 
+	var spinCycles uint64
 	for {
 		v := atomic.LoadUint32(verAddr)
 		if v&NodeLockMask == 0 {
 			if atomic.CompareAndSwapUint32(verAddr, v, v|NodeLockMask) {
+				if spinCycles > 0 {
+					metrics.LockNodeSpinCyclesTotal.WithLabelValues(g.Name, strconv.Itoa(layer)).Add(float64(spinCycles))
+				}
 				return v // Return old version for Unlock
 			}
 		}
 		// Spin
+		spinCycles++
 		for i := 0; i < 10; i++ {
 			// Relaxed spin
 		}
@@ -1624,6 +1635,7 @@ func (g *GraphData) Clone() *GraphData {
 	newG.BQEnabled = g.BQEnabled
 	newG.PQEnabled = g.PQEnabled
 	newG.PQM = g.PQM
+	newG.Name = g.Name
 	newG.GlobalVersion = atomic.LoadUint64(&g.GlobalVersion)
 	newG.BackingGraph = g.BackingGraph
 	newG.TurboQuantEnabled = g.TurboQuantEnabled
@@ -1665,9 +1677,7 @@ func (g *GraphData) Clone() *GraphData {
 					targetCap = 16
 				}
 				newG.Neighbors[l] = make([][]uint32, len(g.Neighbors[l]), targetCap)
-				for c := range g.Neighbors[l] {
-					newG.Neighbors[l][c] = g.Neighbors[l][c]
-				}
+				copy(newG.Neighbors[l], g.Neighbors[l])
 			}
 		}
 	}
@@ -1682,9 +1692,7 @@ func (g *GraphData) Clone() *GraphData {
 					targetCap = 16
 				}
 				newG.Counts[l] = make([][]int32, len(g.Counts[l]), targetCap)
-				for c := range g.Counts[l] {
-					newG.Counts[l][c] = g.Counts[l][c]
-				}
+				copy(newG.Counts[l], g.Counts[l])
 			}
 		}
 	}
@@ -1699,9 +1707,7 @@ func (g *GraphData) Clone() *GraphData {
 					targetCap = 16
 				}
 				newG.Versions[l] = make([][]uint32, len(g.Versions[l]), targetCap)
-				for c := range g.Versions[l] {
-					newG.Versions[l][c] = g.Versions[l][c]
-				}
+				copy(newG.Versions[l], g.Versions[l])
 			}
 		}
 	}
@@ -2319,89 +2325,97 @@ func (g *GraphData) PreAllocate(capacity int) error {
 func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	quantization bool, sq8 bool, persistent bool,
 	dataType VectorDataType, bqEnabled bool, pqEnabled bool,
-	tqEnabled bool, tqBits int) *GraphData {
+	tqEnabled bool, tqBits int, name string) *GraphData {
 
 	// Enforce minimum capacity to avoid rapid initial COW cycles
 	if capacity < 1024 {
 		capacity = 1024
 	}
-	// Slab size: fit at least one chunk + overhead.
-	// Float32: 1024 * dim * 4 bytes.
-	f32SlabSize := ChunkSize*dim*4 + 64
-	if f32SlabSize < 1024*1024 {
-		f32SlabSize = 1024 * 1024
+	
+	var f32Arena, u8Arena, f64Arena, i8Arena, c64Arena, c128Arena, i64Arena, i16Arena, u16Arena, i32Arena, f16Arena, u64Arena, u32Arena *memory.SlabArena
+	if dim > 0 {
+		f32SlabSize := ChunkSize*dim*4 + 64
+		if f32SlabSize < 1024*1024 {
+			f32SlabSize = 1024 * 1024
+		}
+		f32Arena = memory.NewSlabArena(f32SlabSize)
+
+		// Uint8: 1024 * dim * 1 bytes.
+		u8SlabSize := ChunkSize*dim + 64
+		if u8SlabSize < 1024*1024 {
+			u8SlabSize = 1024 * 1024
+		}
+		u8Arena = memory.NewSlabArena(u8SlabSize)
+
+		// Float64: 8 bytes
+		f64SlabSize := ChunkSize*dim*8 + 64
+		if f64SlabSize < 1024*1024 {
+			f64SlabSize = 1024 * 1024
+		}
+		f64Arena = memory.NewSlabArena(f64SlabSize)
+
+		// Int8: 1 byte (reuse logic/size if creating distinct arena, but simpler to separate)
+		i8Arena = memory.NewSlabArena(u8SlabSize)
+
+		// Complex64: 8 bytes
+		c64SlabSize := ChunkSize*dim*8 + 64
+		if c64SlabSize < 1024*1024 {
+			c64SlabSize = 1024 * 1024
+		}
+		c64Arena = memory.NewSlabArena(c64SlabSize)
+
+		// Complex128: 16 bytes
+		c128SlabSize := ChunkSize*dim*16 + 64
+		if c128SlabSize < 1024*1024 {
+			c128SlabSize = 1024 * 1024
+		}
+		c128Arena = memory.NewSlabArena(c128SlabSize)
+
+		// Int64: 8 bytes
+		i64SlabSize := ChunkSize*dim*8 + 64
+		if i64SlabSize < 1024*1024 {
+			i64SlabSize = 1024 * 1024
+		}
+		i64Arena = memory.NewSlabArena(i64SlabSize)
+
+		// Int16: 2 bytes
+		i16SlabSize := ChunkSize*dim*2 + 64
+		if i16SlabSize < 1024*1024 {
+			i16SlabSize = 1024 * 1024
+		}
+		i16Arena = memory.NewSlabArena(i16SlabSize)
+
+		// Uint16: 2 bytes
+		u16SlabSize := ChunkSize*dim*2 + 64
+		if u16SlabSize < 1024*1024 {
+			u16SlabSize = 1024 * 1024
+		}
+		u16Arena = memory.NewSlabArena(u16SlabSize)
+
+		// Int32: 4 bytes
+		i32SlabSize := ChunkSize*dim*4 + 64
+		if i32SlabSize < 1024*1024 {
+			i32SlabSize = 1024 * 1024
+		}
+		i32Arena = memory.NewSlabArena(i32SlabSize)
+
+		// Float16: 2 bytes
+		f16SlabSize := ChunkSize*dim*2 + 64
+		if f16SlabSize < 1024*1024 {
+			f16SlabSize = 1024 * 1024
+		}
+		f16Arena = memory.NewSlabArena(f16SlabSize)
+
+		// Uint64/Uint32: 8/4 bytes (used for offsets and topology)
+		u64Arena = memory.NewSlabArena(i64SlabSize)      // Reuse 8-byte sizing
+		u32Arena = memory.NewSlabArena(u8SlabSize * 4) // Reuse 4-fold 1-byte sizing
+	} else {
+		// Use default 1MB slabs for topology if dimensions are unknown
+		// but DON'T initialize typed arenas that depend on vector dims yet.
+		u64Arena = memory.NewSlabArena(1024 * 1024)
+		u32Arena = memory.NewSlabArena(1024 * 1024)
 	}
-	f32Arena := memory.NewSlabArena(f32SlabSize)
 
-	// Uint8: 1024 * dim * 1 bytes.
-	u8SlabSize := ChunkSize*dim + 64
-	if u8SlabSize < 1024*1024 {
-		u8SlabSize = 1024 * 1024
-	}
-	u8Arena := memory.NewSlabArena(u8SlabSize)
-
-	// Float64: 8 bytes
-	f64SlabSize := ChunkSize*dim*8 + 64
-	if f64SlabSize < 1024*1024 {
-		f64SlabSize = 1024 * 1024
-	}
-	f64Arena := memory.NewSlabArena(f64SlabSize)
-
-	// Int8: 1 byte (reuse logic/size if creating distinct arena, but simpler to separate)
-	i8Arena := memory.NewSlabArena(u8SlabSize)
-
-	// Complex64: 8 bytes
-	c64SlabSize := ChunkSize*dim*8 + 64
-	if c64SlabSize < 1024*1024 {
-		c64SlabSize = 1024 * 1024
-	}
-	c64Arena := memory.NewSlabArena(c64SlabSize)
-
-	// Complex128: 16 bytes
-	c128SlabSize := ChunkSize*dim*16 + 64
-	if c128SlabSize < 1024*1024 {
-		c128SlabSize = 1024 * 1024
-	}
-	c128Arena := memory.NewSlabArena(c128SlabSize)
-
-	// Int64: 8 bytes
-	i64SlabSize := ChunkSize*dim*8 + 64
-	if i64SlabSize < 1024*1024 {
-		i64SlabSize = 1024 * 1024
-	}
-	i64Arena := memory.NewSlabArena(i64SlabSize)
-
-	// Int16: 2 bytes
-	i16SlabSize := ChunkSize*dim*2 + 64
-	if i16SlabSize < 1024*1024 {
-		i16SlabSize = 1024 * 1024
-	}
-	i16Arena := memory.NewSlabArena(i16SlabSize)
-
-	// Uint16: 2 bytes
-	u16SlabSize := ChunkSize*dim*2 + 64
-	if u16SlabSize < 1024*1024 {
-		u16SlabSize = 1024 * 1024
-	}
-	u16Arena := memory.NewSlabArena(u16SlabSize)
-
-	// Int32: 4 bytes
-	i32SlabSize := ChunkSize*dim*4 + 64
-	if i32SlabSize < 1024*1024 {
-		i32SlabSize = 1024 * 1024
-	}
-	i32Arena := memory.NewSlabArena(i32SlabSize)
-
-	// Float16: 2 bytes
-	f16SlabSize := ChunkSize*dim*2 + 64
-	if f16SlabSize < 1024*1024 {
-		f16SlabSize = 1024 * 1024
-	}
-	f16Arena := memory.NewSlabArena(f16SlabSize)
-
-	// Uint64/Uint32: 8/4 bytes (used for offsets and topology)
-	u64Arena := memory.NewSlabArena(i64SlabSize) // Reuse 8-byte sizing
-	u32Arena := memory.NewSlabArena(u8SlabSize * 4) // Reuse 4-fold 1-byte sizing
 
 	numChunks := (capacity + ChunkSize - 1) / ChunkSize
 	if numChunks < 0 {
@@ -2415,6 +2429,7 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 		SQ8Enabled:        sq8,
 		BQEnabled:         bqEnabled,
 		PQEnabled:         pqEnabled,
+		Name:              name,
 		Vectors:           make([][]float32, numChunks),
 		VectorsFloat64:    make([][]float64, numChunks),
 		VectorsComplex64:  make([][]complex64, numChunks),
@@ -2425,25 +2440,52 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 		Counts:            make([][][]int32, ArrowMaxLayers),
 		Versions:          make([][][]uint32, ArrowMaxLayers),
 		Levels:            make([][]uint8, 0, numChunks),
-		Float32Arena:      memory.NewTypedArena[float32](f32Arena),
-		Uint8Arena:        memory.NewTypedArena[uint8](u8Arena),
-		Float64Arena:      memory.NewTypedArena[float64](f64Arena),
-		Int8Arena:         memory.NewTypedArena[int8](i8Arena),
-		Int64Arena:        memory.NewTypedArena[int64](i64Arena),
-		Int16Arena:        memory.NewTypedArena[int16](i16Arena),
-		Uint16Arena:       memory.NewTypedArena[uint16](u16Arena),
-		Int32Arena:        memory.NewTypedArena[int32](i32Arena),
-		Float16Arena:      memory.NewTypedArena[float16.Num](f16Arena),
-		Complex64Arena:    memory.NewTypedArena[complex64](c64Arena),
-		Complex128Arena:   memory.NewTypedArena[complex128](c128Arena),
-		Uint64Arena:       memory.NewTypedArena[uint64](u64Arena),
-		Uint32Arena:       memory.NewTypedArena[uint32](u32Arena),
 		VectorsTQ:         nil,
 		VectorsPQ:         nil,
 		VectorsSQ8:        nil,
 		VectorsBQ:         nil,
 		VectorsF16:        nil,
 		VectorsF32:         make([]uint64, 0, numChunks),
+	}
+
+	if f32Arena != nil {
+		gd.Float32Arena = memory.NewTypedArena[float32](f32Arena)
+	}
+	if u8Arena != nil {
+		gd.Uint8Arena = memory.NewTypedArena[uint8](u8Arena)
+	}
+	if f64Arena != nil {
+		gd.Float64Arena = memory.NewTypedArena[float64](f64Arena)
+	}
+	if i8Arena != nil {
+		gd.Int8Arena = memory.NewTypedArena[int8](i8Arena)
+	}
+	if i64Arena != nil {
+		gd.Int64Arena = memory.NewTypedArena[int64](i64Arena)
+	}
+	if i16Arena != nil {
+		gd.Int16Arena = memory.NewTypedArena[int16](i16Arena)
+	}
+	if u16Arena != nil {
+		gd.Uint16Arena = memory.NewTypedArena[uint16](u16Arena)
+	}
+	if i32Arena != nil {
+		gd.Int32Arena = memory.NewTypedArena[int32](i32Arena)
+	}
+	if f16Arena != nil {
+		gd.Float16Arena = memory.NewTypedArena[float16.Num](f16Arena)
+	}
+	if c64Arena != nil {
+		gd.Complex64Arena = memory.NewTypedArena[complex64](c64Arena)
+	}
+	if c128Arena != nil {
+		gd.Complex128Arena = memory.NewTypedArena[complex128](c128Arena)
+	}
+	if u64Arena != nil {
+		gd.Uint64Arena = memory.NewTypedArena[uint64](u64Arena)
+	}
+	if u32Arena != nil {
+		gd.Uint32Arena = memory.NewTypedArena[uint32](u32Arena)
 	}
 
 	for i := 0; i < ArrowMaxLayers; i++ {

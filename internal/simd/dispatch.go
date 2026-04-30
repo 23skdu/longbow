@@ -35,6 +35,21 @@ type ImplementationDispatch struct {
 	DotProduct1024 distanceFunc
 	DotProduct1536 distanceFunc
 	DotProduct3072 distanceFunc
+
+	// Type conversion
+	Int8ToFloat32   func(src []int8, dst []float32)
+	Uint8ToFloat32  func(src []uint8, dst []float32)
+	Int16ToFloat32  func(src []int16, dst []float32)
+	Uint16ToFloat32 func(src []uint16, dst []float32)
+	Int32ToFloat32  func(src []int32, dst []float32)
+	Uint32ToFloat32 func(src []uint32, dst []float32)
+	Float16ToFloat32 func(src []float16.Num, dst []float32)
+
+	// Activations
+	Sigmoid func(src, dst []float32)
+	Softmax func(src, dst []float32)
+	Exp     func(src, dst []float32)
+	Log     func(src, dst []float32)
 }
 
 // Global dispatch table - one per implementation
@@ -61,6 +76,19 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		DotProduct1024: dotGeneric,
 		DotProduct1536: dotGeneric,
 		DotProduct3072: DotProductFloat32Blocked,
+
+		Int8ToFloat32:   int8ToFloat32AVX2,
+		Uint8ToFloat32:  uint8ToFloat32AVX2,
+		Int16ToFloat32:  int16ToFloat32AVX2,
+		Uint16ToFloat32: uint16ToFloat32AVX2,
+		Int32ToFloat32:  int32ToFloat32AVX2,
+		Uint32ToFloat32: uint32ToFloat32AVX2,
+		Float16ToFloat32: float16ToFloat32AVX2,
+
+		Sigmoid: sigmoidGeneric,
+		Softmax: softmaxGeneric,
+		Exp:     expGeneric,
+		Log:     logGeneric,
 	},
 
 	"avx2": {
@@ -85,6 +113,19 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		DotProduct1024: dotAVX2,
 		DotProduct1536: dotAVX2,
 		DotProduct3072: DotProductFloat32Blocked,
+
+		Int8ToFloat32:   int8ToFloat32AVX2,
+		Uint8ToFloat32:  uint8ToFloat32AVX2,
+		Int16ToFloat32:  int16ToFloat32AVX2,
+		Uint16ToFloat32: uint16ToFloat32AVX2,
+		Int32ToFloat32:  int32ToFloat32AVX2,
+		Uint32ToFloat32: uint32ToFloat32AVX2,
+		Float16ToFloat32: float16ToFloat32AVX2,
+
+		Sigmoid: sigmoidGeneric,
+		Softmax: softmaxGeneric,
+		Exp:     expGeneric,
+		Log:     logGeneric,
 	},
 
 	"neon": {
@@ -109,6 +150,19 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		DotProduct1024: dot1024NEON,
 		DotProduct1536: dot1536NEON,
 		DotProduct3072: dot3072NEON,
+
+		Int8ToFloat32:   int8ToFloat32NEON,
+		Uint8ToFloat32:  uint8ToFloat32NEON,
+		Int16ToFloat32:  int16ToFloat32NEON,
+		Uint16ToFloat32: uint16ToFloat32NEON,
+		Int32ToFloat32:  int32ToFloat32NEON,
+		Uint32ToFloat32: uint32ToFloat32NEON,
+		Float16ToFloat32: float16ToFloat32NEON,
+
+		Sigmoid: sigmoidNEON,
+		Softmax: softmaxNEON,
+		Exp:     expNEON,
+		Log:     logNEON,
 	},
 
 	"generic": {
@@ -133,6 +187,19 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		DotProduct1024: dotUnrolled4x,
 		DotProduct1536: dotUnrolled4x,
 		DotProduct3072: DotProductFloat32Blocked,
+
+		Int8ToFloat32:   int8ToFloat32Generic,
+		Uint8ToFloat32:  uint8ToFloat32Generic,
+		Int16ToFloat32:  int16ToFloat32Generic,
+		Uint16ToFloat32: uint16ToFloat32Generic,
+		Int32ToFloat32:  int32ToFloat32Generic,
+		Uint32ToFloat32: uint32ToFloat32Generic,
+		Float16ToFloat32: float16ToFloat32Generic,
+
+		Sigmoid: sigmoidGeneric,
+		Softmax: softmaxGeneric,
+		Exp:     expGeneric,
+		Log:     logGeneric,
 	},
 }
 
@@ -172,6 +239,7 @@ func initializeDispatch() {
 		dotProductBatchImpl = dispatch.DotProductBatch
 		l2SquaredImpl = l2SquaredAVX512
 		prefetchImpl = prefetchNTA
+		memcpyNTAImpl = memcpyGeneric // Use generic for now on x86, we will add NTA later
 		matchInt64Impl = matchInt64AVX512
 		matchInt32Impl = matchInt32AVX512
 		matchFloat32Impl = matchFloat32AVX512
@@ -200,6 +268,19 @@ func initializeDispatch() {
 		dotProductUint16Impl = dotUint16AVX512
 		dotProductInt4Impl = dotInt4AVX512
 		dotProductInt2Impl = dotInt2AVX512
+
+		int8ToFloat32Impl = dispatch.Int8ToFloat32
+		uint8ToFloat32Impl = dispatch.Uint8ToFloat32
+		int16ToFloat32Impl = dispatch.Int16ToFloat32
+		uint16ToFloat32Impl = dispatch.Uint16ToFloat32
+		int32ToFloat32Impl = dispatch.Int32ToFloat32
+		uint32ToFloat32Impl = dispatch.Uint32ToFloat32
+		float16ToFloat32Impl = dispatch.Float16ToFloat32
+
+		sigmoidFloat32Impl = dispatch.Sigmoid
+		softmaxFloat32Impl = dispatch.Softmax
+		expFloat32Impl = dispatch.Exp
+		logFloat32Impl = dispatch.Log
 	case "avx2":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -224,6 +305,7 @@ func initializeDispatch() {
 		dotProductBatchImpl = dotBatchGeneric       // AVX2 batch kernel is a stub; use verified generic
 		l2SquaredImpl = l2SquaredAVX2 // uses AVX2 kernel (no sqrt)
 		prefetchImpl = prefetchNTA
+		memcpyNTAImpl = memcpyGeneric
 		matchInt64Impl = matchInt64AVX2
 		matchInt32Impl = matchInt32AVX2
 		matchFloat32Impl = matchFloat32AVX2
@@ -252,6 +334,19 @@ func initializeDispatch() {
 		dotProductUint16Impl = dotUint16AVX2
 		dotProductInt4Impl = dotInt4AVX2
 		dotProductInt2Impl = dotInt2AVX2
+
+		int8ToFloat32Impl = dispatch.Int8ToFloat32
+		uint8ToFloat32Impl = dispatch.Uint8ToFloat32
+		int16ToFloat32Impl = dispatch.Int16ToFloat32
+		uint16ToFloat32Impl = dispatch.Uint16ToFloat32
+		int32ToFloat32Impl = dispatch.Int32ToFloat32
+		uint32ToFloat32Impl = dispatch.Uint32ToFloat32
+		float16ToFloat32Impl = dispatch.Float16ToFloat32
+
+		sigmoidFloat32Impl = dispatch.Sigmoid
+		softmaxFloat32Impl = dispatch.Softmax
+		expFloat32Impl = dispatch.Exp
+		logFloat32Impl = dispatch.Log
 	case "neon":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -309,6 +404,20 @@ func initializeDispatch() {
 		dotProductUint16Impl = dotUint16Unrolled4x
 		dotProductInt4Impl = dotInt4Neon
 		dotProductInt2Impl = dotInt2Neon
+		memcpyNTAImpl = memcpyNEON
+		
+		int8ToFloat32Impl = dispatch.Int8ToFloat32
+		uint8ToFloat32Impl = dispatch.Uint8ToFloat32
+		int16ToFloat32Impl = dispatch.Int16ToFloat32
+		uint16ToFloat32Impl = dispatch.Uint16ToFloat32
+		int32ToFloat32Impl = dispatch.Int32ToFloat32
+		uint32ToFloat32Impl = dispatch.Uint32ToFloat32
+		float16ToFloat32Impl = dispatch.Float16ToFloat32
+
+		sigmoidFloat32Impl = dispatch.Sigmoid
+		softmaxFloat32Impl = dispatch.Softmax
+		expFloat32Impl = dispatch.Exp
+		logFloat32Impl = dispatch.Log
 	case "generic":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance128Impl = dispatch.EuclideanDistance128
@@ -361,6 +470,20 @@ func initializeDispatch() {
 		dotProductUint16Impl = dotUint16Unrolled4x
 		dotProductInt4Impl = dotInt4Generic
 		dotProductInt2Impl = dotInt2Generic
+		memcpyNTAImpl = memcpyGeneric
+
+		int8ToFloat32Impl = dispatch.Int8ToFloat32
+		uint8ToFloat32Impl = dispatch.Uint8ToFloat32
+		int16ToFloat32Impl = dispatch.Int16ToFloat32
+		uint16ToFloat32Impl = dispatch.Uint16ToFloat32
+		int32ToFloat32Impl = dispatch.Int32ToFloat32
+		uint32ToFloat32Impl = dispatch.Uint32ToFloat32
+		float16ToFloat32Impl = dispatch.Float16ToFloat32
+
+		sigmoidFloat32Impl = dispatch.Sigmoid
+		softmaxFloat32Impl = dispatch.Softmax
+		expFloat32Impl = dispatch.Exp
+		logFloat32Impl = dispatch.Log
 	}
 
 	// Register current implementations into the new dynamic registry.

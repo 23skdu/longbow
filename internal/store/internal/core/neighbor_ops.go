@@ -6,6 +6,7 @@ import (
 	"math"
 	"sync/atomic"
 
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
@@ -300,27 +301,27 @@ func (h *ArrowHNSW) getVectorF32(data *types.GraphData, id uint32) []float32 {
 	case []float32: return v
 	case []int32:
 		f := make([]float32, len(v))
-		for i, val := range v { f[i] = float32(val) }
+		simd.Int32ToFloat32(v, f)
 		return f
 	case []uint32:
 		f := make([]float32, len(v))
-		for i, val := range v { f[i] = float32(val) }
+		simd.Uint32ToFloat32(v, f)
 		return f
 	case []int8:
 		f := make([]float32, len(v))
-		for i, val := range v { f[i] = float32(val) }
+		simd.Int8ToFloat32(v, f)
 		return f
 	case []uint8:
 		f := make([]float32, len(v))
-		for i, val := range v { f[i] = float32(val) }
+		simd.Uint8ToFloat32(v, f)
 		return f
 	case []int16:
 		f := make([]float32, len(v))
-		for i, val := range v { f[i] = float32(val) }
+		simd.Int16ToFloat32(v, f)
 		return f
 	case []uint16:
 		f := make([]float32, len(v))
-		for i, val := range v { f[i] = float32(val) }
+		simd.Uint16ToFloat32(v, f)
 		return f
 	case []float64:
 		f := make([]float32, len(v))
@@ -328,7 +329,7 @@ func (h *ArrowHNSW) getVectorF32(data *types.GraphData, id uint32) []float32 {
 		return f
 	case []float16.Num:
 		f := make([]float32, len(v))
-		for i, val := range v { f[i] = val.Float32() }
+		simd.Float16ToFloat32(v, f)
 		return f
 	case []complex64:
 		// Use real part or magnitude? Standard HNSW for complex usually uses magnitude.

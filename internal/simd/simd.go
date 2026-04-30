@@ -1221,13 +1221,12 @@ func softmaxGeneric(src, dst []float32) {
 		dst[i] /= sum
 	}
 }
-
-func MemcpyNTA(dst, src unsafe.Pointer, n int) {
-	memcpyNTAImpl(dst, src, n)
-}
-
 func memcpyGeneric(dst, src unsafe.Pointer, n int) {
 	d := unsafe.Slice((*byte)(dst), n)
 	s := unsafe.Slice((*byte)(src), n)
 	copy(d, s)
+}
+
+func MemcpyNTA(dst, src unsafe.Pointer, n int) {
+	memcpyNTAImpl(dst, src, n)
 }

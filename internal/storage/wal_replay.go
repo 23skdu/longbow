@@ -91,7 +91,7 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 
 	reorderedChan := make(chan decodedWALEntry, 100)
 
-	go e.reorderBufferRoutine(decodedChan, reorderedChan, &wgDecoders, numDecoders)
+	go e.reorderBufferRoutine(decodedChan, reorderedChan, &wgDecoders)
 
 	for i := 0; i < numDecoders; i++ {
 		go func(id int) {
@@ -306,7 +306,7 @@ func (e *StorageEngine) walDecoderRoutine(in <-chan rawWALBlock, out chan<- deco
 }
 
 // reorderBufferRoutine reorders decoded entries by sequence number. It collects entries from multiple decoder goroutines and outputs them in order.
-func (e *StorageEngine) reorderBufferRoutine(in chan decodedWALEntry, out chan decodedWALEntry, wgDecoders *sync.WaitGroup, _numDecoders int) {
+func (e *StorageEngine) reorderBufferRoutine(in chan decodedWALEntry, out chan decodedWALEntry, wgDecoders *sync.WaitGroup) {
 	defer close(out)
 
 	// Map to hold out-of-order entries

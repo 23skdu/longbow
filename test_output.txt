@@ -1,0 +1,296 @@
+--- FAIL: TestComprehensiveDistances (0.00s)
+    --- FAIL: TestComprehensiveDistances/Float32 (0.00s)
+        --- FAIL: TestComprehensiveDistances/Float32/Euclidean (0.00s)
+            comprehensive_simd_test.go:28: 
+                	Error Trace:	/Users/rsd/REPOS/longbow/internal/simd/comprehensive_simd_test.go:28
+                	Error:      	Can not compare type "float32"
+                	Test:       	TestComprehensiveDistances/Float32/Euclidean
+unexpected fault address 0x3f1871be3f8ea3bb
+fatal error: fault
+[signal SIGSEGV: segmentation violation code=0x2 addr=0x3f1871be3f8ea3bb pc=0x102c4a2f8]
+
+goroutine 896 gp=0xc0003d63c0 m=3 mp=0xc00007b008 [running]:
+runtime.throw({0x102d4c311?, 0x1027e46a4?})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/panic.go:1229 +0x38 fp=0xc000197c90 sp=0xc000197c60 pc=0x1027335f8
+runtime.sigpanic()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/signal_unix.go:945 +0x21c fp=0xc000197cf0 sp=0xc000197c90 pc=0x10273557c
+github.com/23skdu/longbow/internal/simd.fastWalshHadamardTransform32Generic({0x3f1871be3f8ea3bb, 0x4, 0x0?})
+	/Users/rsd/REPOS/longbow/internal/simd/hadamard.go:25 +0x188 fp=0xc000197d70 sp=0xc000197d00 pc=0x102c4a2f8
+github.com/23skdu/longbow/internal/simd.TestFastWalshHadamardTransform32NEON.func1(0xc000142488)
+	/Users/rsd/REPOS/longbow/internal/simd/hadamard_arm64_test.go:32 +0x164 fp=0xc000197ec0 sp=0xc000197d70 pc=0x102c763c4
+testing.tRunner(0xc000142488, 0xc00011aa80)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x168 fp=0xc000197fa0 sp=0xc000197ec0 pc=0x1027fe238
+testing.(*T).Run.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x38 fp=0xc000197fd0 sp=0xc000197fa0 pc=0x1027ff868
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000197fd0 sp=0xc000197fd0 pc=0x10273b044
+created by testing.(*T).Run in goroutine 895
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x7c0
+
+goroutine 1 gp=0xc0000041e0 m=nil [chan receive]:
+runtime.gopark(0x30039bb80?, 0x106340380?, 0x8?, 0x41?, 0x18?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc0001cf630 sp=0xc0001cf610 pc=0x10273371c
+runtime.chanrecv(0xc000505700, 0xc0001cf73e, 0x1)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/chan.go:667 +0x410 fp=0xc0001cf6c0 sp=0xc0001cf630 pc=0x1026c4690
+runtime.chanrecv1(0x10321cd40?, 0x1031e6ac0?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/chan.go:509 +0x14 fp=0xc0001cf6f0 sp=0xc0001cf6c0 pc=0x1026c4244
+testing.(*T).Run(0xc00021eb48, {0x102d658a4, 0x24}, 0x1032ae160)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2109 +0x7dc fp=0xc0001cf840 sp=0xc0001cf6f0 pc=0x1027ff68c
+testing.runTests.func1(0xc00021eb48)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2585 +0x7c fp=0xc0001cf890 sp=0xc0001cf840 pc=0x102802c5c
+testing.tRunner(0xc00021eb48, 0xc0001cfab8)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x168 fp=0xc0001cf970 sp=0xc0001cf890 pc=0x1027fe238
+testing.runTests({0x102d59301, 0x19}, {0x102d69206, 0x27}, 0xc0003da828, {0x103343740, 0x77, 0x77}, {0xc0003ec540?, 0xc0003dcc80?, ...})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2583 +0x7a4 fp=0xc0001cfae0 sp=0xc0001cf970 pc=0x102802ae4
+testing.(*M).Run(0xc00039bae0)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2443 +0xb3c fp=0xc0001cfe60 sp=0xc0001cfae0 pc=0x102800a3c
+main.main()
+	_testmain.go:444 +0x104 fp=0xc0001cff30 sp=0xc0001cfe60 pc=0x102ca7164
+runtime.main()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:290 +0x2b4 fp=0xc0001cffd0 sp=0xc0001cff30 pc=0x1026fc714
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc0001cffd0 sp=0xc0001cffd0 pc=0x10273b044
+
+goroutine 2 gp=0xc000004d20 m=nil [force gc (idle)]:
+runtime.gopark(0x0?, 0x1032e5d40?, 0x60?, 0x4e?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000076790 sp=0xc000076770 pc=0x10273371c
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:468
+runtime.forcegchelper()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:375 +0xb4 fp=0xc0000767d0 sp=0xc000076790 pc=0x1026fca34
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc0000767d0 sp=0xc0000767d0 pc=0x10273b044
+created by runtime.init.7 in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:363 +0x24
+
+goroutine 3 gp=0xc0000052c0 m=nil [GC sweep wait]:
+runtime.gopark(0x1?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000196f70 sp=0xc000196f50 pc=0x10273371c
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:468
+runtime.bgsweep(0xc000032080)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgcsweep.go:324 +0x178 fp=0xc000196fb0 sp=0xc000196f70 pc=0x1026e54b8
+runtime.gcenable.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:214 +0x20 fp=0xc000196fd0 sp=0xc000196fb0 pc=0x1026d6900
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000196fd0 sp=0xc000196fd0 pc=0x10273b044
+created by runtime.gcenable in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:214 +0x6c
+
+goroutine 4 gp=0xc0000054a0 m=nil [GC scavenge wait]:
+runtime.gopark(0x10000?, 0x102d876b8?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000088f60 sp=0xc000088f40 pc=0x10273371c
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:468
+runtime.(*scavengerState).park(0x1033539a0)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgcscavenge.go:425 +0x5c fp=0xc000088f90 sp=0xc000088f60 pc=0x1026e2fcc
+runtime.bgscavenge(0xc000032080)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgcscavenge.go:658 +0xac fp=0xc000088fb0 sp=0xc000088f90 pc=0x1026e356c
+runtime.gcenable.gowrap2()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:215 +0x20 fp=0xc000088fd0 sp=0xc000088fb0 pc=0x1026d68c0
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000088fd0 sp=0xc000088fd0 pc=0x10273b044
+created by runtime.gcenable in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:215 +0xac
+
+goroutine 18 gp=0xc0001843c0 m=nil [GOMAXPROCS updater (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000076f70 sp=0xc000076f50 pc=0x10273371c
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:468
+runtime.updateMaxProcsGoroutine()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:7095 +0xf4 fp=0xc000076fd0 sp=0xc000076f70 pc=0x10270b4f4
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000076fd0 sp=0xc000076fd0 pc=0x10273b044
+created by runtime.defaultGOMAXPROCSUpdateEnable in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:7083 +0x48
+
+goroutine 19 gp=0xc000184960 m=nil [finalizer wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000192d80 sp=0xc000192d60 pc=0x10273371c
+runtime.runFinalizers()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mfinal.go:210 +0x120 fp=0xc000192fd0 sp=0xc000192d80 pc=0x1026d5920
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000192fd0 sp=0xc000192fd0 pc=0x10273b044
+created by runtime.createfing in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mfinal.go:172 +0x78
+
+goroutine 20 gp=0xc000184f00 m=nil [cleanup wait]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000072f10 sp=0xc000072ef0 pc=0x10273371c
+runtime.goparkunlock(...)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:468
+runtime.(*cleanupQueue).dequeue(0x103353dc0)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mcleanup.go:522 +0x160 fp=0xc000072f50 sp=0xc000072f10 pc=0x1026d1e20
+runtime.runCleanups()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mcleanup.go:718 +0x3c fp=0xc000072fd0 sp=0xc000072f50 pc=0x1026d256c
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000072fd0 sp=0xc000072fd0 pc=0x10273b044
+created by runtime.(*cleanupQueue).createGs in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mcleanup.go:672 +0x108
+
+goroutine 703 gp=0xc0001045a0 m=nil [GC worker (idle)]:
+runtime.gopark(0xc0003d8540?, 0xc00041c780?, 0x1?, 0xc7?, 0x102a7ebb8?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000513f20 sp=0xc000513f00 pc=0x10273371c
+runtime.gcBgMarkWorker(0xc000502690)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1791 +0xe0 fp=0xc000513fb0 sp=0xc000513f20 pc=0x1026d9360
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x20 fp=0xc000513fd0 sp=0xc000513fb0 pc=0x1026d9260
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000513fd0 sp=0xc000513fd0 pc=0x10273b044
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x134
+
+goroutine 701 gp=0xc000185680 m=nil [GC worker (idle)]:
+runtime.gopark(0xc000074f58?, 0x102a7ef78?, 0x30?, 0x90?, 0xc000074f80?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000515f20 sp=0xc000515f00 pc=0x10273371c
+runtime.gcBgMarkWorker(0xc000502690)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1791 +0xe0 fp=0xc000515fb0 sp=0xc000515f20 pc=0x1026d9360
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x20 fp=0xc000515fd0 sp=0xc000515fb0 pc=0x1026d9260
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000515fd0 sp=0xc000515fd0 pc=0x10273b044
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x134
+
+goroutine 702 gp=0xc0000cc000 m=nil [GC worker (idle)]:
+runtime.gopark(0xc00016e620?, 0xc000078f80?, 0x1?, 0x8f?, 0x102a7e9a8?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000514f20 sp=0xc000514f00 pc=0x10273371c
+runtime.gcBgMarkWorker(0xc000502690)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1791 +0xe0 fp=0xc000514fb0 sp=0xc000514f20 pc=0x1026d9360
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x20 fp=0xc000514fd0 sp=0xc000514fb0 pc=0x1026d9260
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000514fd0 sp=0xc000514fd0 pc=0x10273b044
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x134
+
+goroutine 700 gp=0xc0003d65a0 m=nil [GC worker (idle)]:
+runtime.gopark(0xc00016f500?, 0xc0003d4780?, 0x1?, 0x47?, 0x102a7ebb8?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000516f20 sp=0xc000516f00 pc=0x10273371c
+runtime.gcBgMarkWorker(0xc000502690)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1791 +0xe0 fp=0xc000516fb0 sp=0xc000516f20 pc=0x1026d9360
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x20 fp=0xc000516fd0 sp=0xc000516fb0 pc=0x1026d9260
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000516fd0 sp=0xc000516fd0 pc=0x10273b044
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x134
+
+goroutine 774 gp=0xc0003d6780 m=nil [GC worker (idle)]:
+runtime.gopark(0xc0003d4f58?, 0x102a7f0f8?, 0xa0?, 0x9?, 0xc0003d4f80?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000519f20 sp=0xc000519f00 pc=0x10273371c
+runtime.gcBgMarkWorker(0xc000502690)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1791 +0xe0 fp=0xc000519fb0 sp=0xc000519f20 pc=0x1026d9360
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x20 fp=0xc000519fd0 sp=0xc000519fb0 pc=0x1026d9260
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000519fd0 sp=0xc000519fd0 pc=0x10273b044
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x134
+
+goroutine 699 gp=0xc0003d6960 m=nil [GC worker (idle)]:
+runtime.gopark(0xc00016f7a0?, 0xc0003d5780?, 0x1?, 0x57?, 0x102a7e9a8?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000517f20 sp=0xc000517f00 pc=0x10273371c
+runtime.gcBgMarkWorker(0xc000502690)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1791 +0xe0 fp=0xc000517fb0 sp=0xc000517f20 pc=0x1026d9360
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x20 fp=0xc000517fd0 sp=0xc000517fb0 pc=0x1026d9260
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000517fd0 sp=0xc000517fd0 pc=0x10273b044
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x134
+
+goroutine 775 gp=0xc0003d6b40 m=nil [GC worker (idle)]:
+runtime.gopark(0xc0003d3f58?, 0x102a7ef78?, 0xe0?, 0x9c?, 0xc0003d3f80?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000518f20 sp=0xc000518f00 pc=0x10273371c
+runtime.gcBgMarkWorker(0xc000502690)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1791 +0xe0 fp=0xc000518fb0 sp=0xc000518f20 pc=0x1026d9360
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x20 fp=0xc000518fd0 sp=0xc000518fb0 pc=0x1026d9260
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000518fd0 sp=0xc000518fd0 pc=0x10273b044
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x134
+
+goroutine 895 gp=0xc0003d6d20 m=nil [chan receive]:
+runtime.gopark(0x30039bb80?, 0x106340380?, 0x8?, 0x41?, 0x18?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc00008dbf0 sp=0xc00008dbd0 pc=0x10273371c
+runtime.chanrecv(0xc000505780, 0xc00008dcfe, 0x1)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/chan.go:667 +0x410 fp=0xc00008dc80 sp=0xc00008dbf0 pc=0x1026c4690
+runtime.chanrecv1(0x10321cd40?, 0x1031e6ac0?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/chan.go:509 +0x14 fp=0xc00008dcb0 sp=0xc00008dc80 pc=0x1026c4244
+testing.(*T).Run(0xc000142248, {0xc00011aa7d, 0x3}, 0xc00011aa80)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2109 +0x7dc fp=0xc00008de00 sp=0xc00008dcb0 pc=0x1027ff68c
+github.com/23skdu/longbow/internal/simd.TestFastWalshHadamardTransform32NEON(0xc000142248)
+	/Users/rsd/REPOS/longbow/internal/simd/hadamard_arm64_test.go:20 +0x1d8 fp=0xc00008dec0 sp=0xc00008de00 pc=0x102c76228
+testing.tRunner(0xc000142248, 0x1032ae160)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x168 fp=0xc00008dfa0 sp=0xc00008dec0 pc=0x1027fe238
+testing.(*T).Run.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x38 fp=0xc00008dfd0 sp=0xc00008dfa0 pc=0x1027ff868
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc00008dfd0 sp=0xc00008dfd0 pc=0x10273b044
+created by testing.(*T).Run in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x7c0
+
+goroutine 704 gp=0xc0000cc1e0 m=nil [GC worker (idle)]:
+runtime.gopark(0x0?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc000512f20 sp=0xc000512f00 pc=0x10273371c
+runtime.gcBgMarkWorker(0xc000502690)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1791 +0xe0 fp=0xc000512fb0 sp=0xc000512f20 pc=0x1026d9360
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x20 fp=0xc000512fd0 sp=0xc000512fb0 pc=0x1026d9260
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc000512fd0 sp=0xc000512fd0 pc=0x10273b044
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x134
+
+goroutine 705 gp=0xc0000cc3c0 m=nil [GC worker (idle)]:
+runtime.gopark(0xec7b195e0fa?, 0x0?, 0x0?, 0x0?, 0x0?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc0000dff20 sp=0xc0000dff00 pc=0x10273371c
+runtime.gcBgMarkWorker(0xc000502690)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1791 +0xe0 fp=0xc0000dffb0 sp=0xc0000dff20 pc=0x1026d9360
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x20 fp=0xc0000dffd0 sp=0xc0000dffb0 pc=0x1026d9260
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc0000dffd0 sp=0xc0000dffd0 pc=0x10273b044
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x134
+
+goroutine 786 gp=0xc0000cc5a0 m=nil [GC worker (idle)]:
+runtime.gopark(0xec7b19516fe?, 0x102a7ef78?, 0xe0?, 0x9c?, 0xc0003d3f80?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc0000def20 sp=0xc0000def00 pc=0x10273371c
+runtime.gcBgMarkWorker(0xc000502690)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1791 +0xe0 fp=0xc0000defb0 sp=0xc0000def20 pc=0x1026d9360
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x20 fp=0xc0000defd0 sp=0xc0000defb0 pc=0x1026d9260
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc0000defd0 sp=0xc0000defd0 pc=0x10273b044
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x134
+
+goroutine 787 gp=0xc0000cc780 m=nil [GC worker (idle)]:
+runtime.gopark(0xec7b1958022?, 0xc0003d5780?, 0x1?, 0x57?, 0x102a7e9a8?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc0000ddf20 sp=0xc0000ddf00 pc=0x10273371c
+runtime.gcBgMarkWorker(0xc000502690)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1791 +0xe0 fp=0xc0000ddfb0 sp=0xc0000ddf20 pc=0x1026d9360
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x20 fp=0xc0000ddfd0 sp=0xc0000ddfb0 pc=0x1026d9260
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc0000ddfd0 sp=0xc0000ddfd0 pc=0x10273b044
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x134
+
+goroutine 788 gp=0xc0000cc960 m=nil [GC worker (idle)]:
+runtime.gopark(0xec7b195e1f4?, 0xc0003d4780?, 0x1?, 0x47?, 0x102a7ebb8?)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/proc.go:462 +0xbc fp=0xc0000dcf20 sp=0xc0000dcf00 pc=0x10273371c
+runtime.gcBgMarkWorker(0xc000502690)
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1791 +0xe0 fp=0xc0000dcfb0 sp=0xc0000dcf20 pc=0x1026d9360
+runtime.gcBgMarkStartWorkers.gowrap1()
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x20 fp=0xc0000dcfd0 sp=0xc0000dcfb0 pc=0x1026d9260
+runtime.goexit({})
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/asm_arm64.s:1447 +0x4 fp=0xc0000dcfd0 sp=0xc0000dcfd0 pc=0x10273b044
+created by runtime.gcBgMarkStartWorkers in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/mgc.go:1695 +0x134
+FAIL	github.com/23skdu/longbow/internal/simd	0.391s
+FAIL

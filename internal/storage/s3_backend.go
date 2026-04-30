@@ -63,9 +63,17 @@ func (c *S3BackendConfig) Validate() error {
 	return nil
 }
 
+// S3ClientAPI defines the subset of s3.Client methods used by S3Backend
+type S3ClientAPI interface {
+	PutObject(ctx context.Context, params *s3.PutObjectInput, optFns ...func(*s3.Options)) (*s3.PutObjectOutput, error)
+	GetObject(ctx context.Context, params *s3.GetObjectInput, optFns ...func(*s3.Options)) (*s3.GetObjectOutput, error)
+	DeleteObject(ctx context.Context, params *s3.DeleteObjectInput, optFns ...func(*s3.Options)) (*s3.DeleteObjectOutput, error)
+	ListObjectsV2(ctx context.Context, params *s3.ListObjectsV2Input, optFns ...func(*s3.Options)) (*s3.ListObjectsV2Output, error)
+}
+
 // S3Backend implements SnapshotBackend for S3-compatible storage
 type S3Backend struct {
-	client     *s3.Client
+	client     S3ClientAPI
 	bucket     string
 	prefix     string
 	transport  *http.Transport

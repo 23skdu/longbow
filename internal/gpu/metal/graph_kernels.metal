@@ -112,3 +112,116 @@ kernel void graph_rag_fused(
         }
     }
 }
+
+// L2 Distance Kernel (Vector vs Batch)
+kernel void vector_distance_l2(
+    const device float* query [[buffer(0)]],
+    const device float* vectors [[buffer(1)]],
+    device float* results [[buffer(2)]],
+    uint vectorIdx [[thread_position_in_grid]],
+    uint dims [[constant(0)]],
+    uint numVectors [[constant(1)]]
+) {
+    if (vectorIdx >= numVectors) return;
+    
+    float sum = 0.0f;
+    uint offset = vectorIdx * dims;
+    for (uint i = 0; i < dims; i++) {
+        float diff = query[i] - vectors[offset + i];
+        sum += diff * diff;
+    }
+    results[vectorIdx] = sqrt(sum);
+}
+
+// Inner Product Kernel
+kernel void vector_distance_ip(
+    const device float* query [[buffer(0)]],
+    const device float* vectors [[buffer(1)]],
+    device float* results [[buffer(2)]],
+    uint vectorIdx [[thread_position_in_grid]],
+    uint dims [[constant(0)]],
+    uint numVectors [[constant(1)]]
+) {
+    if (vectorIdx >= numVectors) return;
+    
+    float dot = 0.0f;
+    uint offset = vectorIdx * dims;
+    for (uint i = 0; i < dims; i++) {
+        dot += query[i] * vectors[offset + i];
+    }
+    results[vectorIdx] = dot;
+}
+
+// Batch SQ8 Encoding Kernel
+kernel void quantize_sq8(
+    const device float* vectors [[buffer(0)]],
+    const device float* mins [[buffer(1)]],
+    const device float* maxs [[buffer(2)]],
+    device uchar* results [[buffer(3)]],
+    uint elementIdx [[thread_position_in_grid]],
+    uint dims [[constant(0)]]
+) {
+    uint vectorIdx = elementIdx / dims;
+    uint dimIdx = elementIdx % dims;
+    
+    float val = vectors[elementIdx];
+    float min = mins[dimIdx];
+    float max = maxs[dimIdx];
+    
+    float scaled = (val - min) / (max - min) * 255.0f;
+    results[elementIdx] = (uchar)clamp(scaled, 0.0f, 255.0f);
+}
+
+// Euclidean Distance Kernel for Large Dimensions
+kernel void euclidean_distance_f32_large(
+    const device float* query [[buffer(0)]],
+    const device float* vectors [[buffer(1)]],
+    device float* results [[buffer(2)]],
+    uint vectorIdx [[thread_position_in_grid]],
+    constant uint& dims [[buffer(3)]]
+) {
+    float distSq = 0.0f;
+    uint base = vectorIdx * dims;
+    
+    // Process in blocks of 4 for better SIMD utilization on GPU
+    uint i = 0;
+    for (; i + 3 < dims; i += 4) {
+        float4 q = *(const device float4*)(query + i);
+        float4 v = *(const device float4*)(vectors + base + i);
+        float4 diff = q - v;
+        distSq += dot(diff, diff);
+    }
+    
+    // Tail loop
+    for (; i < dims; i++) {
+        float diff = query[i] - vectors[base + i];
+        distSq += diff * diff;
+    }
+    
+    results[vectorIdx] = sqrt(distSq);
+}
+
+// Inner Product (Cosine-ready) Kernel for Large Dimensions
+kernel void dot_product_f32_large(
+    const device float* query [[buffer(0)]],
+    const device float* vectors [[buffer(1)]],
+    device float* results [[buffer(2)]],
+    uint vectorIdx [[thread_position_in_grid]],
+    constant uint& dims [[buffer(3)]]
+) {
+    float dotSum = 0.0f;
+    uint base = vectorIdx * dims;
+    
+    uint i = 0;
+    for (; i + 3 < dims; i += 4) {
+        float4 q = *(const device float4*)(query + i);
+        float4 v = *(const device float4*)(vectors + base + i);
+        dotSum += dot(q, v);
+    }
+    
+    for (; i < dims; i++) {
+        dotSum += query[i] * vectors[base + i];
+    }
+    
+    results[vectorIdx] = dotSum;
+}

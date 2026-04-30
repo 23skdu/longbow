@@ -425,3 +425,79 @@ void launch_graph_activation_propagate_kernel(
 }
 
 }
+
+// Euclidean Distance Kernel for Large Dimensions (Vectorized with float4)
+__global__ void l2_distance_kernel_large(const float* vectors, const float* query, float* distances, int dimensions, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < count) {
+        float sum = 0.0f;
+        const float* vec = vectors + idx * dimensions;
+        
+        int i = 0;
+        // Ensure alignment for float4 loads
+        if (((uintptr_t)vec & 0xF) == 0 && ((uintptr_t)query & 0xF) == 0) {
+            const float4* vec4 = (const float4*)vec;
+            const float4* query4 = (const float4*)query;
+            int n4 = dimensions / 4;
+            
+            #pragma unroll 4
+            for (; i < n4; i++) {
+                float4 v = vec4[i];
+                float4 q = query4[i];
+                float dx = v.x - q.x;
+                float dy = v.y - q.y;
+                float dz = v.z - q.z;
+                float dw = v.w - q.w;
+                sum += dx*dx + dy*dy + dz*dz + dw*dw;
+            }
+            i *= 4;
+        }
+        
+        for (; i < dimensions; i++) {
+            float diff = vec[i] - query[i];
+            sum += diff * diff;
+        }
+        distances[idx] = sqrtf(sum);
+    }
+}
+
+// Dot Product Kernel for Large Dimensions (Vectorized with float4)
+__global__ void dot_product_kernel_large(const float* vectors, const float* query, float* distances, int dimensions, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < count) {
+        float sum = 0.0f;
+        const float* vec = vectors + idx * dimensions;
+        
+        int i = 0;
+        if (((uintptr_t)vec & 0xF) == 0 && ((uintptr_t)query & 0xF) == 0) {
+            const float4* vec4 = (const float4*)vec;
+            const float4* query4 = (const float4*)query;
+            int n4 = dimensions / 4;
+            
+            #pragma unroll 4
+            for (; i < n4; i++) {
+                float4 v = vec4[i];
+                float4 q = query4[i];
+                sum += v.x*q.x + v.y*q.y + v.z*q.z + v.w*q.w;
+            }
+            i *= 4;
+        }
+        
+        for (; i < dimensions; i++) {
+            sum += vec[i] * query[i];
+        }
+        distances[idx] = sum;
+    }
+}
+
+void launch_l2_distance_large_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
+    l2_distance_kernel_large<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, query, distances, dimensions, count);
+}
+
+void launch_dot_product_large_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
+    dot_product_kernel_large<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, query, distances, dimensions, count);
+}

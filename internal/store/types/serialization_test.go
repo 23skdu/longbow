@@ -11,7 +11,7 @@ func TestGraphData_Serialization(t *testing.T) {
 	// Create sample GraphData
 	capacity := 100
 	dims := 4
-	g := NewGraphData(capacity, dims, false, false, 0, false, false, false, VectorTypeFloat32, false, false, false, 8)
+	g := NewGraphData(capacity, dims, false, false, 0, false, false, false, VectorTypeFloat32, false, false, false, 8, "test")
 
 	// Populate vectors
 	for i := 0; i < 10; i++ {

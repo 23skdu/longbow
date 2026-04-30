@@ -275,3 +275,78 @@ Background hygiene is managed by the **Compaction Worker**:
 
 - **Memory**: Once a batch is released, the `SlabArena` reclaims the underlying slabs for future allocations.
 - **Disk**: Compaction triggers WAL truncation. Once a `Snapshot` is persisted containing the compacted state, all preceding WAL segments are safely deleted.
+
+---
+
+## 7. Performance Optimizations
+
+### 7.1 RCU ChunkedLocationStore
+
+`ChunkedLocationStore` maps every `VectorID` to a `Location` (batch + row offset) and maintains a reverse index (location → ID). Prior to this change it held a global `sync.RWMutex` that serialized all ingestion writes through a single critical section.
+
+The rewrite uses two complementary techniques:
+
+- **Lock-free reads**: The chunk slice is published via `atomic.Pointer[[]*locationChunk]`. Readers load the pointer and iterate without acquiring any lock. Readers and writers never block each other.
+- **Sharded reverse index**: Instead of one global `map[uint64]VectorID`, the reverse index is split into 64 independent shards (each with its own `sync.RWMutex`). The shard is selected by `packedLocation % 64`, so 64 parallel ingestion goroutines contend on different shards.
+- **Atomic ID reservation**: `Append` and `BatchAppend` use `atomic.Uint32.Add` to atomically claim a contiguous range of IDs before acquiring the growth lock. The growth lock is held only while allocating new `locationChunk` objects — a very infrequent operation.
+
+```
+Before:  global RWMutex → serialized ingestion (~25% regression under load)
+After:   atomic.Add (ID reservation) + per-shard lock (reverse map only)
+         chunk reads: fully lock-free
+```
+
+### 7.2 Adaptive GPU Dispatch
+
+Graph-RAG expansion via `RankWithGraphGPU` incurs a fixed GPU kernel launch overhead of ~50–200 µs regardless of workload size. For small result sets (e.g., reranking 10–20 seed nodes) this latency dominates and the GPU provides no speedup.
+
+**Threshold logic** (`graph_store.go`):
+
+```go
+const GPUWorkloadThreshold = 128 // nodes
+
+func (gs *GraphStore) RankWithGraphGPU(...) {
+    if len(results) < GPUWorkloadThreshold {
+        return gs.RankWithGraph(results, alpha, depth), nil // CPU path
+    }
+    // GPU path ...
+}
+```
+
+| Workload Size | Path | Rationale |
+|---|---|---|
+| < 128 results | CPU (`RankWithGraph`) | Launch overhead dominates; CPU is faster |
+| ≥ 128 results | GPU (`RankWithGraphGPU`) | Parallelism justifies the fixed overhead |
+
+The threshold value of 128 is derived from empirical benchmarks on RTX 3090 hardware. It can be tuned by changing the `GPUWorkloadThreshold` constant in `internal/store/graph_store.go`.
+
+### 7.3 AVX-512 Activation Kernels (exp, softmax)
+
+GraphRAG re-scoring and temporal search modes apply `softmax` and `exp` to score vectors. These operations are now accelerated by hand-written AVX-512 assembly on x86-64.
+
+**Algorithm** (`internal/simd/simd_amd64.s`):
+
+Both kernels use a 5-term minimax polynomial for `2^f` combined with an integer exponent-field trick for `2^n`:
+
+```
+exp(x) ≈ 2^f * 2^n
+  where z = x * log2(e)
+        n = floor(z + 0.5)         -- via VRNDSCALEPS
+        f = z - n                  -- fractional part
+        2^f ≈ c0 + f(c1 + f(c2 + f(c3 + f(c4 + f·c5))))
+        2^n = (n + 127) << 23      -- IEEE 754 exponent trick, FCVTPS2DQ + VPSLLD
+```
+
+**Softmax** follows the numerically-stable variant: subtract max before exp, then normalize by the sum.
+
+Both kernels process 16 `float32` elements per cycle using AVX-512 ZMM registers, with masked-load/store for arbitrary-length tails.
+
+| Architecture | `exp` dispatch | `softmax` dispatch |
+|---|---|---|
+| amd64 (AVX-512) | `expAVX512Kernel` (asm) | `softmaxAVX512Kernel` (asm) |
+| arm64 (NEON) | `expGeneric` (Go, pending validated WORD opcodes) | `softmaxGeneric` (Go) |
+| other | `expGeneric` | `softmaxGeneric` |
+
+> **Observability**: kernel calls and latency are tracked via
+> `longbow_simd_activation_kernel_calls_total` and
+> `longbow_simd_activation_kernel_duration_seconds` (see `docs/metrics.md §8`).

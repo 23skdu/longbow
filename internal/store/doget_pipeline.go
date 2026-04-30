@@ -8,6 +8,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
+	internalcore "github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -130,14 +131,15 @@ func (p *DoGetPipeline) run(
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	// Start workers
+	// Start workers using SharedWorkerPool
+	pool := internalcore.GetSharedPool()
 	var workerWg sync.WaitGroup
 	for i := 0; i < p.numWorkers; i++ {
 		workerWg.Add(1)
-		go func() {
+		pool.Submit(func() {
 			defer workerWg.Done()
 			p.worker(ctx, filterFn, workCh, processedCh)
-		}()
+		})
 	}
 
 	// Close processedCh when all workers done

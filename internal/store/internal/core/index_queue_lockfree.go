@@ -21,6 +21,7 @@ type IndexJobQueueLockFree struct {
 	stopOnce sync.Once
 
 	estimatedBytes int64
+	notify         chan struct{}
 }
 
 func NewIndexJobQueueLockFree(cfg types.IndexJobQueueConfig) *IndexJobQueueLockFree {
@@ -29,6 +30,7 @@ func NewIndexJobQueueLockFree(cfg types.IndexJobQueueConfig) *IndexJobQueueLockF
 		cfg:      cfg,
 		buffer:   NewLockFreeRingBuffer[types.IndexJob](uint64(bufferSize)), // #nosec G115
 		stopChan: make(chan struct{}),
+		notify:   make(chan struct{}, 1),
 	}
 
 	return q
@@ -49,6 +51,12 @@ func (q *IndexJobQueueLockFree) Send(job types.IndexJob) bool {
 	if q.buffer.Push(job) {
 		atomic.AddUint64(&q.acceptedCount, 1)
 		atomic.AddInt64(&q.estimatedBytes, size)
+		
+		// Non-blocking signal
+		select {
+		case q.notify <- struct{}{}:
+		default:
+		}
 		return true
 	}
 
@@ -84,6 +92,12 @@ func (q *IndexJobQueueLockFree) Block(job types.IndexJob, timeout time.Duration)
 	if q.buffer.PushBlocking(job, timeout) {
 		atomic.AddUint64(&q.acceptedCount, 1)
 		atomic.AddInt64(&q.estimatedBytes, size)
+
+		// Non-blocking signal
+		select {
+		case q.notify <- struct{}{}:
+		default:
+		}
 		return true
 	}
 
@@ -131,4 +145,8 @@ func (q *IndexJobQueueLockFree) EstimatedBytes() int64 {
 }
 
 func (q *IndexJobQueueLockFree) DecreaseEstimatedBytes(amount int64) {
+}
+
+func (q *IndexJobQueueLockFree) Notify() <-chan struct{} {
+	return q.notify
 }

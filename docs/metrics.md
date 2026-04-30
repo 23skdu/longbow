@@ -7,7 +7,7 @@ Complete reference for all Prometheus metrics exported by Longbow.
 ---
 
 ## 1. Flight & RPC
- 
+
 Performance and throughput of the Arrow Flight interface.
 
 - **longbow_flight_ops_total**: (Counter) Total processed Arrow Flight operations. Labels: `action`, `status`.
@@ -18,7 +18,7 @@ Performance and throughput of the Arrow Flight interface.
 ---
 
 ## 2. Vector Search & HNSW
- 
+
 Metrics for the core vector indexing and search engine.
 
 - **longbow_vector_search_latency_seconds**: (Histogram) Latency of search operations. Labels: `dataset`.
@@ -30,7 +30,7 @@ Metrics for the core vector indexing and search engine.
 ---
 
 ## 3. TurboQuant & Acceleration (New in 0.1.9)
-  
+
 Monitoring the SIMD-accelerated quantization and bit-packing features.
 
 - **longbow_turboquant_encoding_total**: (Counter) Total number of TurboQuant encoding operations. Labels: `dataset`, `direction` (client_provided | server_encoded).
@@ -44,7 +44,7 @@ Monitoring the SIMD-accelerated quantization and bit-packing features.
 ---
 
 ## 4. Hardware & GPU
- 
+
 Metrics for CUDA and Metal acceleration.
 
 - **longbow_onnx_inference_duration_seconds**: (Histogram) Duration of ML model execution. Labels: `backend` (onnx, metal, wazero).
@@ -55,7 +55,7 @@ Metrics for CUDA and Metal acceleration.
 ---
 
 ## 5. Persistence & IO
- 
+
 Metrics for the WAL and snapshotting system.
 
 - **longbow_snapshot_write_duration_seconds**: (Histogram) Latency of reflection-free Parquet snapshotting.
@@ -65,7 +65,7 @@ Metrics for the WAL and snapshotting system.
 ---
 
 ## 6. Distributed & Mesh
- 
+
 Metrics for cluster membership and sharding.
 
 - **longbow_gossip_active_members**: (Gauge) Number of healthy nodes in the gossip mesh.
@@ -76,7 +76,7 @@ Metrics for cluster membership and sharding.
 ---
 
 ## 7. Resource Management
- 
+
 - **longbow_arena_memory_bytes**: (Gauge) Memory allocated in custom slab arenas. Labels: `size`.
 - **longbow_gc_pause_duration_seconds**: (Histogram) Latency of Go garbage collection cycles.
 - **longbow_gctuner_heap_target_bytes**: (Gauge) The dynamic heap target set by the GCTuner.

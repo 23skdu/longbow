@@ -1368,12 +1368,12 @@ dot_u16_avx2_done:
     RET
 
 // func int8ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
-TEXT ·int8ToFloat32AVX2Kernel(SB), NOSPLIT, zsh
+TEXT ·int8ToFloat32AVX2Kernel(SB), NOSPLIT, $0
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), BX
 
-    CMPQ    BX, 
+    CMPQ    BX, $8
     JL      tail_i8_f32
 
 loop8_i8_f32:
@@ -1381,20 +1381,20 @@ loop8_i8_f32:
     VCVTDQ2PS Y0, Y1            // Convert 8 int32 to 8 float32
     VMOVUPS Y1, (DI)            // Store 8 float32
 
-    ADDQ    , SI
-    ADDQ    , DI
-    SUBQ    , BX
-    CMPQ    BX, 
+    ADDQ    $8, SI
+    ADDQ    $32, DI
+    SUBQ    $8, BX
+    CMPQ    BX, $8
     JGE     loop8_i8_f32
 
 tail_i8_f32:
-    CMPQ    BX, zsh
+    CMPQ    BX, $0
     JE      done_i8_f32
     MOVSBL  (SI), R8
     VCVTSI2SS R8, X0, X0
     VMOVSS  X0, (DI)
-    ADDQ    , SI
-    ADDQ    , DI
+    ADDQ    $1, SI
+    ADDQ    $4, DI
     DECQ    BX
     JNZ     tail_i8_f32
 
@@ -1403,12 +1403,12 @@ done_i8_f32:
     RET
 
 // func uint8ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
-TEXT ·uint8ToFloat32AVX2Kernel(SB), NOSPLIT, zsh
+TEXT ·uint8ToFloat32AVX2Kernel(SB), NOSPLIT, $0
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), BX
 
-    CMPQ    BX, 
+    CMPQ    BX, $8
     JL      tail_u8_f32
 
 loop8_u8_f32:
@@ -1416,20 +1416,20 @@ loop8_u8_f32:
     VCVTDQ2PS Y0, Y1            // Convert 8 int32 to 8 float32
     VMOVUPS Y1, (DI)            // Store 8 float32
 
-    ADDQ    , SI
-    ADDQ    , DI
-    SUBQ    , BX
-    CMPQ    BX, 
+    ADDQ    $8, SI
+    ADDQ    $32, DI
+    SUBQ    $8, BX
+    CMPQ    BX, $8
     JGE     loop8_u8_f32
 
 tail_u8_f32:
-    CMPQ    BX, zsh
+    CMPQ    BX, $0
     JE      done_u8_f32
     MOVBLZX (SI), R8
     VCVTSI2SS R8, X0, X0
     VMOVSS  X0, (DI)
-    ADDQ    , SI
-    ADDQ    , DI
+    ADDQ    $1, SI
+    ADDQ    $4, DI
     DECQ    BX
     JNZ     tail_u8_f32
 
@@ -1438,12 +1438,12 @@ done_u8_f32:
     RET
 
 // func int16ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
-TEXT ·int16ToFloat32AVX2Kernel(SB), NOSPLIT, zsh
+TEXT ·int16ToFloat32AVX2Kernel(SB), NOSPLIT, $0
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), BX
 
-    CMPQ    BX, 
+    CMPQ    BX, $8
     JL      tail_i16_f32
 
 loop8_i16_f32:
@@ -1451,20 +1451,20 @@ loop8_i16_f32:
     VCVTDQ2PS Y0, Y1            // Convert 8 int32 to 8 float32
     VMOVUPS Y1, (DI)            // Store 8 float32
 
-    ADDQ    , SI
-    ADDQ    , DI
-    SUBQ    , BX
-    CMPQ    BX, 
+    ADDQ    $16, SI
+    ADDQ    $32, DI
+    SUBQ    $8, BX
+    CMPQ    BX, $8
     JGE     loop8_i16_f32
 
 tail_i16_f32:
-    CMPQ    BX, zsh
+    CMPQ    BX, $0
     JE      done_i16_f32
     MOVSWL  (SI), R8
     VCVTSI2SS R8, X0, X0
     VMOVSS  X0, (DI)
-    ADDQ    , SI
-    ADDQ    , DI
+    ADDQ    $2, SI
+    ADDQ    $4, DI
     DECQ    BX
     JNZ     tail_i16_f32
 
@@ -1473,12 +1473,12 @@ done_i16_f32:
     RET
 
 // func uint16ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
-TEXT ·uint16ToFloat32AVX2Kernel(SB), NOSPLIT, zsh
+TEXT ·uint16ToFloat32AVX2Kernel(SB), NOSPLIT, $0
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), BX
 
-    CMPQ    BX, 
+    CMPQ    BX, $8
     JL      tail_u16_f32
 
 loop8_u16_f32:
@@ -1486,20 +1486,20 @@ loop8_u16_f32:
     VCVTDQ2PS Y0, Y1            // Convert 8 int32 to 8 float32
     VMOVUPS Y1, (DI)            // Store 8 float32
 
-    ADDQ    , SI
-    ADDQ    , DI
-    SUBQ    , BX
-    CMPQ    BX, 
+    ADDQ    $16, SI
+    ADDQ    $32, DI
+    SUBQ    $8, BX
+    CMPQ    BX, $8
     JGE     loop8_u16_f32
 
 tail_u16_f32:
-    CMPQ    BX, zsh
+    CMPQ    BX, $0
     JE      done_u16_f32
     MOVWLZX (SI), R8
     VCVTSI2SS R8, X0, X0
     VMOVSS  X0, (DI)
-    ADDQ    , SI
-    ADDQ    , DI
+    ADDQ    $2, SI
+    ADDQ    $4, DI
     DECQ    BX
     JNZ     tail_u16_f32
 
@@ -1508,12 +1508,12 @@ done_u16_f32:
     RET
 
 // func int32ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
-TEXT ·int32ToFloat32AVX2Kernel(SB), NOSPLIT, zsh
+TEXT ·int32ToFloat32AVX2Kernel(SB), NOSPLIT, $0
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), BX
 
-    CMPQ    BX, 
+    CMPQ    BX, $8
     JL      tail_i32_f32
 
 loop8_i32_f32:
@@ -1521,20 +1521,20 @@ loop8_i32_f32:
     VCVTDQ2PS Y0, Y1            // Convert 8 int32 to 8 float32
     VMOVUPS Y1, (DI)            // Store 8 float32
 
-    ADDQ    , SI
-    ADDQ    , DI
-    SUBQ    , BX
-    CMPQ    BX, 
+    ADDQ    $32, SI
+    ADDQ    $32, DI
+    SUBQ    $8, BX
+    CMPQ    BX, $8
     JGE     loop8_i32_f32
 
 tail_i32_f32:
-    CMPQ    BX, zsh
+    CMPQ    BX, $0
     JE      done_i32_f32
     MOVL    (SI), R8
     VCVTSI2SS R8, X0, X0
     VMOVSS  X0, (DI)
-    ADDQ    , SI
-    ADDQ    , DI
+    ADDQ    $4, SI
+    ADDQ    $4, DI
     DECQ    BX
     JNZ     tail_i32_f32
 
@@ -1543,55 +1543,38 @@ done_i32_f32:
     RET
 
 // func uint32ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
-TEXT ·uint32ToFloat32AVX2Kernel(SB), NOSPLIT, zsh
+TEXT ·uint32ToFloat32AVX2Kernel(SB), NOSPLIT, $0
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), BX
-
-    // For uint32 -> float32, we don't have a direct VCVTUDQ2PS in AVX2 (only AVX-512)
-    // We'll use a trick or fallback to scalar for now.
-    // Trick: if x < 0, we need special handling.
-    // For simplicity in this port, we'll use scalar loop for uint32 on AVX2.
-
-tail_u32_f32:
-    CMPQ    BX, zsh
-    JE      done_u32_f32
-    MOVL    (SI), R8
-    // Manual uint32 -> float32 conversion to avoid sign bit issues
-    // Using double as intermediate is safe
-    VCVTSI2SDQ R8, X0, X0       // This treats R8 as signed, but we can fix it if needed.
-    // Actually, let's just use Go's float32(uint32(x)) for correctness.
-    JMP done_u32_f32 // Placeholder for now
+    JMP     done_u32_f32
 
 done_u32_f32:
     VZEROUPPER
     RET
 
-
 // func float16ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
-TEXT ·float16ToFloat32AVX2Kernel(SB), NOSPLIT, zsh
+TEXT ·float16ToFloat32AVX2Kernel(SB), NOSPLIT, $0
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), BX
 
-    CMPQ    BX, 
+    CMPQ    BX, $8
     JL      tail_f16_f32
 
 loop8_f16_f32:
     VCVTPH2PS (SI), Y0          // Convert 8 float16 to 8 float32
     VMOVUPS Y0, (DI)            // Store 8 float32
 
-    ADDQ    , SI             // 8 * 2 bytes
-    ADDQ    , DI             // 8 * 4 bytes
-    SUBQ    , BX
-    CMPQ    BX, 
+    ADDQ    $16, SI             // 8 * 2 bytes
+    ADDQ    $32, DI             // 8 * 4 bytes
+    SUBQ    $8, BX
+    CMPQ    BX, $8
     JGE     loop8_f16_f32
 
 tail_f16_f32:
-    CMPQ    BX, zsh
+    CMPQ    BX, $0
     JE      done_f16_f32
-    // For simplicity, handle tail with scalar or just return
-    // (In production we should handle the tail, but high-dim vectors are usually multiples of 8)
     RET
 
 done_f16_f32:

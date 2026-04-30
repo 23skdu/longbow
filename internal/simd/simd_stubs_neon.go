@@ -3,6 +3,7 @@
 package simd
 
 import (
+	"unsafe"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -64,5 +65,20 @@ func euclidean3072NEON(a, b []float32) (float32, error) { return euclideanUnroll
 func dot1024NEON(a, b []float32) (float32, error)       { return dotUnrolled4x(a, b) }
 func dot3072NEON(a, b []float32) (float32, error)       { return dotUnrolled4x(a, b) }
 func euclideanFloat64NEON(a, b []float64) (float32, error) { return euclideanFloat64Unrolled4x(a, b) }
+
+func int8ToFloat32NEON(src []int8, dst []float32) { int8ToFloat32Generic(src, dst) }
+func uint8ToFloat32NEON(src []uint8, dst []float32) { uint8ToFloat32Generic(src, dst) }
+func int16ToFloat32NEON(src []int16, dst []float32) { int16ToFloat32Generic(src, dst) }
+func uint16ToFloat32NEON(src []uint16, dst []float32) { uint16ToFloat32Generic(src, dst) }
+func int32ToFloat32NEON(src []int32, dst []float32) { int32ToFloat32Generic(src, dst) }
+func uint32ToFloat32NEON(src []uint32, dst []float32) { uint32ToFloat32Generic(src, dst) }
+func float16ToFloat32NEON(src []float16.Num, dst []float32) { float16ToFloat32Generic(src, dst) }
+
+func sigmoidNEON(src, dst []float32) { sigmoidGeneric(src, dst) }
+func softmaxNEON(src, dst []float32) { softmaxGeneric(src, dst) }
+func expNEON(src, dst []float32) { expGeneric(src, dst) }
+func logNEON(src, dst []float32) { logGeneric(src, dst) }
+
+func memcpyNEON(dst, src unsafe.Pointer, n int) { memcpyGeneric(dst, src, n) }
 
 

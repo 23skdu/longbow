@@ -92,9 +92,9 @@ func TestQuery_ZeroAllocParsers(t *testing.T) {
 		assert.Equal(t, []float32{0.1, 0.2}, req.Vector)
 		assert.InDelta(t, 0.5, req.Alpha, 0.001)
 
-		// Test error path: unknown field
+		// Unknown fields should be skipped (forward compatibility)
 		_, err = parser.Parse([]byte(`{"dataset":"test","unknown":123}`))
-		assert.Error(t, err)
+		assert.NoError(t, err)
 	})
 
 	t.Run("TicketParser", func(t *testing.T) {

@@ -378,6 +378,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		config.PQEnabled,
 		config.TurboQuantEnabled,
 		config.TurboQuantBits,
+		h.name,
 	)
 	if h.oopqEncoder != nil {
 		switch enc := h.oopqEncoder.(type) {
@@ -765,7 +766,12 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 
 	h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 
+	shard := id % ShardedLockCount
+	lockStart := time.Now()
+	h.insertMus[shard].Lock()
+	metrics.InsertMuWaitDurationSeconds.WithLabelValues(h.name).Observe(time.Since(lockStart).Seconds())
 	err := h.InsertWithVector(id, vec, h.generateLevel())
+	h.insertMus[shard].Unlock()
 	if err != nil {
 		return 0, err
 	}
@@ -797,7 +803,12 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 
 	h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 
+	shard := id % ShardedLockCount
+	lockStart := time.Now()
+	h.insertMus[shard].Lock()
+	metrics.InsertMuWaitDurationSeconds.WithLabelValues(h.name).Observe(time.Since(lockStart).Seconds())
 	err := h.InsertWithVector(id, vec, h.generateLevel())
+	h.insertMus[shard].Unlock()
 	if err != nil {
 		return 0, err
 	}
@@ -1607,6 +1618,7 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 			h.config.PQEnabled,
 			h.config.TurboQuantEnabled,
 			h.config.TurboQuantBits,
+			h.name,
 		)
 		h.data.Store(gd)
 		data = gd
@@ -2138,7 +2150,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			
 			// Use sharded lock for this pre-reserved ID
 			shard := id % ShardedLockCount
+			lockStart := time.Now()
 			h.insertMus[shard].Lock()
+			metrics.InsertMuWaitDurationSeconds.WithLabelValues(h.name).Observe(time.Since(lockStart).Seconds())
 			err := h.InsertWithVector(id, vec, -1)
 			h.insertMus[shard].Unlock()
 			

@@ -100,19 +100,27 @@ func dotInt2Neon(a, b []byte) (float32, error) {
 }
 
 func matchInt64Neon(src []int64, val int64, op CompareOp, dst []byte) error {
-	return matchInt64Generic(src, val, op, dst)
+	if len(src) == 0 { return nil }
+	matchInt64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
 }
 
 func matchInt32Neon(src []int32, val int32, op CompareOp, dst []byte) error {
-	return matchInt32Generic(src, val, op, dst)
+	if len(src) == 0 { return nil }
+	matchInt32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
 }
 
 func matchFloat32Neon(src []float32, val float32, op CompareOp, dst []byte) error {
-	return matchFloat32Generic(src, val, op, dst)
+	if len(src) == 0 { return nil }
+	matchFloat32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
 }
 
 func matchFloat64Neon(src []float64, val float64, op CompareOp, dst []byte) error {
-	return matchFloat64Generic(src, val, op, dst)
+	if len(src) == 0 { return nil }
+	matchFloat64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	return nil
 }
 
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) error {
@@ -128,6 +136,10 @@ func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) er
 }
 
 func FastWalshHadamardTransform32NEON(a []float32) error {
+	if len(a) == 32 {
+		fastWalshHadamardTransform32NEONKernel(a)
+		return nil
+	}
 	return fastWalshHadamardTransform32Generic(a)
 }
 
@@ -135,12 +147,56 @@ func RandomRotationNEON(a []float32, seed int64) error {
 	return randomRotationGeneric(a, seed)
 }
 
-func euclideanFloat64NEON(a, b []float64) (float32, error) {
-	return euclideanFloat64Unrolled4x(a, b)
+func int8ToFloat32NEON(src []int8, dst []float32) {
+	int8ToFloat32Generic(src, dst)
 }
 
-func cosineFloat64NEON(a, b []float64) (float32, error) {
-	return cosineFloat64Unrolled4x(a, b)
+func uint8ToFloat32NEON(src []uint8, dst []float32) {
+	uint8ToFloat32Generic(src, dst)
+}
+
+func int16ToFloat32NEON(src []int16, dst []float32) {
+	int16ToFloat32Generic(src, dst)
+}
+
+func uint16ToFloat32NEON(src []uint16, dst []float32) {
+	uint16ToFloat32Generic(src, dst)
+}
+
+func int32ToFloat32NEON(src []int32, dst []float32) {
+	int32ToFloat32Generic(src, dst)
+}
+
+func uint32ToFloat32NEON(src []uint32, dst []float32) {
+	uint32ToFloat32Generic(src, dst)
+}
+
+func float16ToFloat32NEON(src []float16.Num, dst []float32) {
+	float16ToFloat32Generic(src, dst) // Use generic for now, f16 conversion is tricky in asm
+}
+
+func sigmoidNEON(src, dst []float32) {
+	sigmoidGeneric(src, dst)
+}
+
+func expNEON(src, dst []float32) {
+	expGeneric(src, dst)
+}
+
+func logNEON(src, dst []float32) {
+	logGeneric(src, dst)
+}
+
+func softmaxNEON(src, dst []float32) {
+	softmaxGeneric(src, dst)
+}
+
+func memcpyNEON(dst, src unsafe.Pointer, n int) {
+	memcpyNTA(dst, src, n)
+}
+
+func euclideanFloat64NEON(a, b []float64) (float32, error) {
+	return euclideanFloat64Unrolled4x(a, b)
 }
 
 func dotFloat64NEON(a, b []float64) (float32, error) {
@@ -161,25 +217,13 @@ func cosineNEONKernel(a, b []float32) float32
 //go:noescape
 func cosineHighDimNEONKernel(a, b []float32) float32
 //go:noescape
-func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
-//go:noescape
-func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
-//go:noescape
 func l2SquaredNEONKernel(a, b []float32) float32
 //go:noescape
-func euclideanF16NEONKernel(a, b []float16.Num) float32
-//go:noescape
 func dotF16NEONKernel(a, b []float16.Num) float32
-//go:noescape
-func cosineF16NEONKernel(a, b []float16.Num) float32
 //go:noescape
 func randomSignFlipNEONKernel(a []float32, seed int64)
 //go:noescape
 func fastWalshHadamardTransform32NEONKernel(a []float32)
-//go:noescape
-func vectorButterflyNEONKernel(a, b []float32)
-//go:noescape
-func vectorButterfly16NEONKernel(a, b []float32)
 //go:noescape
 func dot128NEONKernel(a, b []float32) float32
 //go:noescape
@@ -195,8 +239,6 @@ func dot3072NEONKernel(a, b []float32) float32
 //go:noescape
 func l2Squared128NEONKernel(a, b []float32) float32
 //go:noescape
-func l2Squared384NEONKernel(a, b []float32) float32
-//go:noescape
 func l2Squared768NEONKernel(a, b []float32) float32
 //go:noescape
 func l2Squared1024NEONKernel(a, b []float32) float32
@@ -204,3 +246,36 @@ func l2Squared1024NEONKernel(a, b []float32) float32
 func l2Squared1536NEONKernel(a, b []float32) float32
 //go:noescape
 func l2Squared3072NEONKernel(a, b []float32) float32
+//go:noescape
+func euclideanF16NEONKernel(a, b []float16.Num) float32
+//go:noescape
+func cosineF16NEONKernel(a, b []float16.Num) float32
+//go:noescape
+func vectorButterflyNEONKernel(a, b []float32)
+//go:noescape
+func vectorButterfly16NEONKernel(a, b []float32)
+//go:noescape
+func l2Squared384NEONKernel(a, b []float32) float32
+//go:noescape
+func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
+//go:noescape
+func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
+
+//go:noescape
+
+//go:noescape
+func memcpyNTA(dst, src unsafe.Pointer, n int)
+
+// Static assertion to keep Go assembly kernels "used" even if not in the active dispatch path.
+// This prevents gopls from reporting them as unused while keeping them available for debugging.
+var _ = func() {
+	if false {
+		_ = dotInt4NeonKernel(nil, nil, 0)
+		_ = dotInt2NeonKernel(nil, nil, 0)
+		_ = euclideanF16NEONKernel(nil, nil)
+		_ = cosineF16NEONKernel(nil, nil)
+		vectorButterflyNEONKernel(nil, nil)
+		vectorButterfly16NEONKernel(nil, nil)
+		_ = l2Squared384NEONKernel(nil, nil)
+	}
+}

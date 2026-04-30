@@ -457,7 +457,7 @@ func DeserializeGraphData(r io.Reader) (*GraphData, error) {
 	}
 
 	// Initialize GraphData
-	g := NewGraphData(int(capacity), int(dims), false, false, 0, false, sq8, false, VectorDataType(typeCode), bq, pqEnabled, tqEnabled, tqBits)
+	g := NewGraphData(int(capacity), int(dims), false, false, 0, false, sq8, false, VectorDataType(typeCode), bq, pqEnabled, tqEnabled, tqBits, "test")
 	g.PQM = int(pqM)
 
 	// 1. Levels

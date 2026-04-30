@@ -81,7 +81,7 @@ func TestArrowHNSW_Coverage_ExtractVectorByIDForParallel(t *testing.T) {
 			h = NewArrowHNSW(nil, &config, nil)
 			h.dims.Store(int32(tc.vectorDims))
 
-			gd := types.NewGraphData(10, tc.vectorDims, false, false, 0, false, false, false, tc.dataType, false, false, false, 8)
+			gd := types.NewGraphData(10, tc.vectorDims, false, false, 0, false, false, false, tc.dataType, false, false, false, 8, "test")
 			atomic.StoreUint32(&gd.SQ8Ready, 1) // For Int8/Uint8 GetVector
 			h.data.Store(gd)
 
@@ -163,7 +163,7 @@ func TestArrowHNSW_Coverage_ComputeSingle(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			h := NewArrowHNSW(nil, &config, nil)
 			h.dims.Store(int32(tc.dims))
-			gd := types.NewGraphData(10, tc.dims, false, false, 0, false, false, false, tc.dataType, false, false, false, 8)
+			gd := types.NewGraphData(10, tc.dims, false, false, 0, false, false, false, tc.dataType, false, false, false, 8, "test")
 			atomic.StoreUint32(&gd.SQ8Ready, 1)
 			h.data.Store(gd)
 
@@ -191,7 +191,7 @@ func TestComplexComputers(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = dims
 	h := NewArrowHNSW(nil, &config, nil)
-	gd := types.NewGraphData(10, dims, false, false, 0, false, false, false, types.VectorTypeComplex64, false, false, false, 8)
+	gd := types.NewGraphData(10, dims, false, false, 0, false, false, false, types.VectorTypeComplex64, false, false, false, 8, "test")
 	h.data.Store(gd)
 
 	err := gd.EnsureChunk(0, 0, dims)
@@ -215,7 +215,7 @@ func TestComplexComputers(t *testing.T) {
 	assert.NoError(t, err)
 	assert.Equal(t, float32(0), dists[0])
 
-	gd128 := types.NewGraphData(10, dims, false, false, 0, false, false, false, types.VectorTypeComplex128, false, false, false, 8)
+	gd128 := types.NewGraphData(10, dims, false, false, 0, false, false, false, types.VectorTypeComplex128, false, false, false, 8, "test")
 	h.data.Store(gd128)
 	err = gd128.EnsureChunk(0, 0, dims)
 	require.NoError(t, err)
@@ -244,7 +244,7 @@ func TestMoreComputers(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = dims
 	h := NewArrowHNSW(nil, &config, nil)
-	gd := types.NewGraphData(10, dims, false, false, 0, false, false, false, types.VectorTypeFloat64, false, false, false, 8)
+	gd := types.NewGraphData(10, dims, false, false, 0, false, false, false, types.VectorTypeFloat64, false, false, false, 8, "test")
 	atomic.StoreUint32(&gd.SQ8Ready, 1)
 	h.data.Store(gd)
 
@@ -271,7 +271,7 @@ func TestMoreComputers(t *testing.T) {
 	assert.Equal(t, float32(0), dists[0])
 
 	// int8Computer
-	gdInt8 := types.NewGraphData(10, dims, false, false, 0, false, false, false, types.VectorTypeInt8, false, false, false, 8)
+	gdInt8 := types.NewGraphData(10, dims, false, false, 0, false, false, false, types.VectorTypeInt8, false, false, false, 8, "test")
 	atomic.StoreUint32(&gdInt8.SQ8Ready, 1)
 	h.data.Store(gdInt8)
 	err = gdInt8.EnsureChunk(0, 0, dims)
@@ -292,7 +292,7 @@ func TestMoreComputers(t *testing.T) {
 	assert.Equal(t, float32(0), dist)
 
 	// int8Computer with Float32 vector
-	gdF32 := types.NewGraphData(10, dims, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8)
+	gdF32 := types.NewGraphData(10, dims, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test")
 	h.data.Store(gdF32)
 	err = gdF32.EnsureChunk(0, 0, dims)
 	require.NoError(t, err)
@@ -315,7 +315,7 @@ func TestSQ8Computers(t *testing.T) {
 	h.quantizer = NewScalarQuantizerFromParams(dims, 0.0, 1.0)
 	h.sq8Ready.Store(true)
 
-	gd := types.NewGraphData(10, dims, true, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8)
+	gd := types.NewGraphData(10, dims, true, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test")
 	gd.SQ8Enabled = true
 	atomic.StoreUint32(&gd.SQ8Ready, 1)
 	h.data.Store(gd)

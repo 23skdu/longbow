@@ -25,5 +25,20 @@ func init() {
 		DotProduct1024: dot1024NEON,
 		DotProduct1536: dot1536NEON,
 		DotProduct3072: dot3072NEON,
+
+		// Conversions
+		Int8ToFloat32:   int8ToFloat32NEON,
+		Uint8ToFloat32:  uint8ToFloat32NEON,
+		Int16ToFloat32:  int16ToFloat32NEON,
+		Uint16ToFloat32: uint16ToFloat32NEON,
+		Int32ToFloat32:  int32ToFloat32NEON,
+		Uint32ToFloat32: uint32ToFloat32NEON,
+		Float16ToFloat32: float16ToFloat32NEON,
+
+		// Activations
+		Sigmoid: sigmoidNEON,
+		Softmax: softmaxNEON,
+		Exp:     expNEON,
+		Log:     logNEON,
 	}
 }

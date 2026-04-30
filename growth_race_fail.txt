@@ -1,0 +1,218 @@
+=== RUN   TestHNSW_GrowthRace
+==================
+WARNING: DATA RACE
+Read at 0x00c000582204 by goroutine 719:
+  github.com/23skdu/longbow/internal/simd.euclidean128Unrolled4x()
+      /Users/rsd/REPOS/longbow/internal/simd/simd.go:604 +0x5c
+  github.com/23skdu/longbow/internal/simd.euclidean128NEON()
+      /Users/rsd/REPOS/longbow/internal/simd/simd_arm64.go:35 +0x50
+  github.com/23skdu/longbow/internal/simd.EuclideanDistance()
+      /Users/rsd/REPOS/longbow/internal/simd/distance_functions.go:36 +0x160
+  github.com/23skdu/longbow/internal/store/internal/core.(*float32Computer).ComputeSingle()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:4060 +0x228
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).searchLayer()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:2645 +0xdbc
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).searchLayerForInsert()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_insert.go:14 +0x98
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).InsertWithVector()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/insertion_core.go:209 +0xf88
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:69 +0x118
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:94 +0x38
+
+Previous write at 0x00c000582200 by goroutine 714:
+  runtime.slicecopy()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/slice.go:392 +0x0
+  github.com/23skdu/longbow/internal/store/types.(*GraphData).SetVector()
+      /Users/rsd/REPOS/longbow/internal/store/types/graph_data.go:1224 +0xce0
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).InsertWithVector()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/insertion_core.go:141 +0x9f8
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:69 +0x118
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:94 +0x38
+
+Goroutine 719 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:56 +0x218
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+
+Goroutine 714 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:56 +0x218
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+==================
+==================
+WARNING: DATA RACE
+Read at 0x00c000582010 by goroutine 719:
+  github.com/23skdu/longbow/internal/simd.euclidean128Unrolled4x()
+      /Users/rsd/REPOS/longbow/internal/simd/simd.go:611 +0x198
+  github.com/23skdu/longbow/internal/simd.euclidean128NEON()
+      /Users/rsd/REPOS/longbow/internal/simd/simd_arm64.go:35 +0x50
+  github.com/23skdu/longbow/internal/simd.EuclideanDistance()
+      /Users/rsd/REPOS/longbow/internal/simd/distance_functions.go:36 +0x160
+  github.com/23skdu/longbow/internal/store/internal/core.(*float32Computer).ComputeSingle()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:4060 +0x228
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).searchLayer()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:2645 +0xdbc
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).searchLayerForInsert()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_insert.go:14 +0x98
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).InsertWithVector()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/insertion_core.go:209 +0xf88
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:69 +0x118
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:94 +0x38
+
+Previous write at 0x00c000582010 by goroutine 714:
+  runtime.slicecopy()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/slice.go:392 +0x0
+  github.com/23skdu/longbow/internal/store/types.(*GraphData).SetVector()
+      /Users/rsd/REPOS/longbow/internal/store/types/graph_data.go:1224 +0xce0
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).InsertWithVector()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/insertion_core.go:141 +0x9f8
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:69 +0x118
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:94 +0x38
+
+Goroutine 719 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:56 +0x218
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+
+Goroutine 714 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:56 +0x218
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+==================
+==================
+WARNING: DATA RACE
+Read at 0x00c000582018 by goroutine 719:
+  github.com/23skdu/longbow/internal/simd.euclidean128Unrolled4x()
+      /Users/rsd/REPOS/longbow/internal/simd/simd.go:609 +0x104
+  github.com/23skdu/longbow/internal/simd.euclidean128NEON()
+      /Users/rsd/REPOS/longbow/internal/simd/simd_arm64.go:35 +0x50
+  github.com/23skdu/longbow/internal/simd.EuclideanDistance()
+      /Users/rsd/REPOS/longbow/internal/simd/distance_functions.go:36 +0x160
+  github.com/23skdu/longbow/internal/store/internal/core.(*float32Computer).ComputeSingle()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:4060 +0x228
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).searchLayer()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:2645 +0xdbc
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).searchLayerForInsert()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_insert.go:14 +0x98
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).InsertWithVector()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/insertion_core.go:209 +0xf88
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:69 +0x118
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:94 +0x38
+
+Previous write at 0x00c000582018 by goroutine 714:
+  runtime.slicecopy()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/slice.go:392 +0x0
+  github.com/23skdu/longbow/internal/store/types.(*GraphData).SetVector()
+      /Users/rsd/REPOS/longbow/internal/store/types/graph_data.go:1224 +0xce0
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).InsertWithVector()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/insertion_core.go:141 +0x9f8
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:69 +0x118
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:94 +0x38
+
+Goroutine 719 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:56 +0x218
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+
+Goroutine 714 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:56 +0x218
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+==================
+==================
+WARNING: DATA RACE
+Read at 0x00c000506de0 by goroutine 722:
+  runtime.slicecopy()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/runtime/slice.go:392 +0x0
+  github.com/23skdu/longbow/internal/store/internal/core.(*PackedAdjacency).EnsureCapacity()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/packed_adjacency.go:107 +0x1e4
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).growInternal()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:1704 +0xa30
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).InsertWithVector()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/insertion_core.go:118 +0x838
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:69 +0x118
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:94 +0x38
+
+Previous write at 0x00c000506de0 by goroutine 715:
+  ??()
+      -:0 +0x1014d0fb0
+  sync/atomic.CompareAndSwapUint64()
+      <autogenerated>:1 +0x14
+  github.com/23skdu/longbow/internal/store/internal/core.(*PackedAdjacency).SetNeighbors()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/packed_adjacency.go:133 +0xec
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).addConnectionLocked()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/neighbor_ops.go:155 +0x4e4
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).AddConnection()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/neighbor_ops.go:31 +0x1d0
+  github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).InsertWithVector()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/insertion_core.go:227 +0x1188
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.func1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:69 +0x118
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.gowrap1()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:94 +0x38
+
+Goroutine 722 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:56 +0x218
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+
+Goroutine 715 (running) created at:
+  github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace()
+      /Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:56 +0x218
+  testing.tRunner()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2036 +0x164
+  testing.(*T).Run.gowrap1()
+      /opt/homebrew/Cellar/go/1.26.2/libexec/src/testing/testing.go:2101 +0x34
+==================
+panic: runtime error: index out of range [114432] with length 0
+
+goroutine 776 [running]:
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).pruneConnectionsLocked(0xc000348008, 0xc00ff94508, 0xc00fa99c08, 0x237e, 0x40, 0x0, {0xc000309968, 0x1, 0x0?})
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/neighbor_ops.go:265 +0xa50
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).addConnectionLocked(0xc000348008, 0xc00ff94508, 0xc00fa99c08, 0x237e, 0xc34, 0x0, 0x40)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/neighbor_ops.go:139 +0x554
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).AddConnection(0xc000348008, 0xc00ff94508, 0xc00fa99c08, 0x237e, 0xc34, 0x0, 0x40, 0x237e?)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/neighbor_ops.go:31 +0x1d4
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).InsertWithVector(0xc000348008, 0xc34, {0x1020ca940, 0xc00faf3ae8}, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/insertion_core.go:228 +0x11b0
+github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace.func1(0x3)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:69 +0x11c
+created by github.com/23skdu/longbow/internal/store/internal/core.TestHNSW_GrowthRace in goroutine 772
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/growth_race_test.go:56 +0x21c
+FAIL	github.com/23skdu/longbow/internal/store/internal/core	39.295s
+FAIL

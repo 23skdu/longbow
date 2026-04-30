@@ -107,12 +107,12 @@ AVX-512 `exp`/`softmax` kernels and the adaptive GPU dispatch threshold.
 
 ## 9. Graph GPU Adaptive Dispatch
 
-The adaptive dispatch threshold (`GPUWorkloadThreshold = 128 nodes`) can be
+The adaptive dispatch threshold (`GPUWorkloadThreshold = 5000 nodes`) is
 monitored using the following signals:
 
-- **longbow_graph_gpu_dispatch_total**: (Counter, *planned*) Total
+- **longbow_graph_gpu_dispatch_total**: (Counter) Total
   `RankWithGraphGPU` calls. Labels: `dataset`.
-- **longbow_graph_gpu_dispatch_fallback_total**: (Counter, *planned*) Calls
+- **longbow_graph_gpu_dispatch_fallback_total**: (Counter) Calls
   that fell back to CPU due to the workload being below the threshold. Labels:
   `dataset`.
 

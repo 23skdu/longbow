@@ -34,6 +34,7 @@ type filterOp interface {
 	MatchBitmap(dst []byte)
 	FilterBatch(indices []int) []int
 	Bind(col arrow.Array) error
+	Reset(rec arrow.RecordBatch) error
 	Compound() bool
 	MatchValue(val interface{}) bool
 }
@@ -173,8 +174,13 @@ func (c *compoundFilterOp) FilterBatch(indices []int) []int {
 }
 
 func (c *compoundFilterOp) Bind(col arrow.Array) error {
+	// Re-binding compound op is usually handled via Reset(rec)
+	return nil
+}
+
+func (c *compoundFilterOp) Reset(rec arrow.RecordBatch) error {
 	for _, child := range c.children {
-		if err := child.Bind(col); err != nil {
+		if err := child.Reset(rec); err != nil {
 			return err
 		}
 	}
@@ -423,6 +429,20 @@ func (n *nestedFilterOp) Bind(col arrow.Array) error {
 	return nil
 }
 
+func (n *nestedFilterOp) Reset(rec arrow.RecordBatch) error {
+	// Re-resolve nested field for new record batch
+	indices, col, _, err := resolveFilterColumnEx(*rec.Schema(), rec, n.fieldPath)
+	if err != nil {
+		return err
+	}
+	if col == nil {
+		return fmt.Errorf("nested field %s not found in record batch", n.fieldPath)
+	}
+	n.outerCol = col
+	n.colIndices = indices
+	return n.op.Reset(rec)
+}
+
 func (n *nestedFilterOp) MatchValue(val interface{}) bool {
 	return n.op.MatchValue(val)
 }
@@ -475,6 +495,13 @@ func (o *int64FilterOp) Bind(col arrow.Array) error {
 	}
 	o.col = col.(*array.Int64)
 	return nil
+}
+
+func (o *int64FilterOp) Reset(rec arrow.RecordBatch) error {
+	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
+		return fmt.Errorf("column index %d out of bounds", o.colIdx)
+	}
+	return o.Bind(rec.Column(o.colIdx))
 }
 
 func (o *int64FilterOp) Match(rowIdx int) bool {
@@ -632,6 +659,13 @@ func (o *int32FilterOp) Bind(col arrow.Array) error {
 	o.col = col.(*array.Int32)
 	return nil
 }
+
+func (o *int32FilterOp) Reset(rec arrow.RecordBatch) error {
+	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
+		return fmt.Errorf("column index %d out of bounds", o.colIdx)
+	}
+	return o.Bind(rec.Column(o.colIdx))
+}
 func (o *int32FilterOp) Match(rowIdx int) bool {
 	if o.col.IsNull(rowIdx) {
 		return false
@@ -696,6 +730,13 @@ func (o *uint64FilterOp) Bind(col arrow.Array) error {
 	}
 	o.col = col.(*array.Uint64)
 	return nil
+}
+
+func (o *uint64FilterOp) Reset(rec arrow.RecordBatch) error {
+	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
+		return fmt.Errorf("column index %d out of bounds", o.colIdx)
+	}
+	return o.Bind(rec.Column(o.colIdx))
 }
 func (o *uint64FilterOp) Match(rowIdx int) bool {
 	if o.col.IsNull(rowIdx) {
@@ -765,6 +806,13 @@ func (o *float32FilterOp) Bind(col arrow.Array) error {
 	}
 	o.col = col.(*array.Float32)
 	return nil
+}
+
+func (o *float32FilterOp) Reset(rec arrow.RecordBatch) error {
+	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
+		return fmt.Errorf("column index %d out of bounds", o.colIdx)
+	}
+	return o.Bind(rec.Column(o.colIdx))
 }
 
 func (o *float32FilterOp) Match(rowIdx int) bool {
@@ -907,6 +955,13 @@ func (o *float64FilterOp) Bind(col arrow.Array) error {
 	return nil
 }
 
+func (o *float64FilterOp) Reset(rec arrow.RecordBatch) error {
+	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
+		return fmt.Errorf("column index %d out of bounds", o.colIdx)
+	}
+	return o.Bind(rec.Column(o.colIdx))
+}
+
 func (o *float64FilterOp) Match(rowIdx int) bool {
 	if o.col.IsNull(rowIdx) {
 		return false
@@ -1028,6 +1083,13 @@ func (o *stringFilterOp) Bind(col arrow.Array) error {
 	}
 	o.col = col.(*array.String)
 	return nil
+}
+
+func (o *stringFilterOp) Reset(rec arrow.RecordBatch) error {
+	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
+		return fmt.Errorf("column index %d out of bounds", o.colIdx)
+	}
+	return o.Bind(rec.Column(o.colIdx))
 }
 
 func (o *stringFilterOp) Match(rowIdx int) bool {
@@ -1385,6 +1447,13 @@ func (o *boolFilterOp) Bind(col arrow.Array) error {
 	o.col = col.(*array.Boolean)
 	return nil
 }
+
+func (o *boolFilterOp) Reset(rec arrow.RecordBatch) error {
+	if o.colIdx < 0 || o.colIdx >= int(rec.NumCols()) {
+		return fmt.Errorf("column index %d out of bounds", o.colIdx)
+	}
+	return o.Bind(rec.Column(o.colIdx))
+}
 func (o *boolFilterOp) Match(rowIdx int) bool {
 	if o.col.IsNull(rowIdx) {
 		return false
@@ -1482,6 +1551,18 @@ func (s *subqueryFilterOp) FilterBatch(indices []int) []int {
 }
 
 func (s *subqueryFilterOp) Bind(col arrow.Array) error {
+	s.col = col
+	return nil
+}
+
+func (s *subqueryFilterOp) Reset(rec arrow.RecordBatch) error {
+	_, col, _, err := resolveFilterColumnEx(*rec.Schema(), rec, s.field)
+	if err != nil {
+		return err
+	}
+	if col == nil {
+		return fmt.Errorf("subquery field %s not found in record batch", s.field)
+	}
 	s.col = col
 	return nil
 }
@@ -1711,33 +1792,7 @@ func (e *FilterEvaluator) Reset(rec arrow.RecordBatch) error {
 	}
 
 	for _, op := range e.ops {
-		if op.Compound() {
-			if err := op.Bind(rec.Columns()[0]); err != nil {
-				continue
-			}
-			continue
-		}
-
-		var colIdx int
-		switch o := op.(type) {
-		case *int64FilterOp:
-			colIdx = o.colIdx
-		case *float32FilterOp:
-			colIdx = o.colIdx
-		case *float64FilterOp:
-			colIdx = o.colIdx
-		case *stringFilterOp:
-			colIdx = o.colIdx
-		default:
-			continue
-		}
-
-		if colIdx < 0 || colIdx >= int(rec.NumCols()) {
-			return fmt.Errorf("column index %d out of bounds", colIdx)
-		}
-
-		col := rec.Column(colIdx)
-		if err := op.Bind(col); err != nil {
+		if err := op.Reset(rec); err != nil {
 			return err
 		}
 	}

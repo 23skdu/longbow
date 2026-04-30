@@ -29,26 +29,47 @@ for dtype in "${DTYPES[@]}"; do
       echo "[$(date)] Testing $dtype dim=$dim scale=$scale"
       echo "--------------------------------------------------------"
       
+      # Ensure ports are free
+      if [[ "$OSTYPE" == "darwin"* ]]; then
+        lsof -ti:3000,3001,9090 | xargs kill -9 2>/dev/null
+      else
+        fuser -k 3000/tcp 3001/tcp 9090/tcp 2>/dev/null
+      fi
+      sleep 2
+
       # Clean data and logs before starting server
-      rm -rf data/ logs/ server.log
+      rm -rf data/ logs/
       
-      # Start server in background
-      $SERVER_BIN > server.log 2>&1 &
+      # Start server in background with unique log for failure analysis
+      LOG_FILE="logs/server_${dtype}_${dim}_${scale}.log"
+      mkdir -p logs
+      $SERVER_BIN > "$LOG_FILE" 2>&1 &
       SERVER_PID=$!
       
-      # Wait for server to be ready (look for "Listening for Data gRPC connections")
+      # Wait for server to be ready
       echo "Waiting for server to start..."
       MAX_WAIT=30
       COUNT=0
-      while ! grep -q "Listening for Data gRPC connections" server.log; do
+      READY=0
+      while [ $COUNT -lt $MAX_WAIT ]; do
+        if grep -q "Listening for Data gRPC connections" "$LOG_FILE"; then
+          READY=1
+          break
+        fi
+        if ! ps -p $SERVER_PID > /dev/null; then
+          echo "Server CRASHED during startup (see $LOG_FILE)"
+          break
+        fi
         sleep 1
         COUNT=$((COUNT+1))
-        if [ $COUNT -ge $MAX_WAIT ]; then
-          echo "TIMEOUT waiting for server to start"
-          kill -9 $SERVER_PID
-          continue 3
-        fi
       done
+      
+      if [ $READY -eq 0 ]; then
+        echo "TIMEOUT or CRASH waiting for server to start"
+        kill -9 $SERVER_PID 2>/dev/null
+        continue
+      fi
+      
       echo "Server is ready (PID: $SERVER_PID)"
       
       # Use unique dataset name
@@ -75,15 +96,20 @@ if os.path.exists('tmp_${SUFFIX}.json'):
         json.dump(all_results, f, indent=2)
 "
         rm "tmp_${SUFFIX}.json"
-      else:
-        echo "ERROR: Benchmark failed for $dtype $dim $scale"
+        # Success! Remove the server log to save space, unless it's a huge run we want to keep
+        if [ "$scale" -lt 500000 ]; then
+            rm "$LOG_FILE"
+        fi
+      else
+        echo "ERROR: Benchmark failed for $dtype $dim $scale (see $LOG_FILE)"
       fi
       
       # Kill server and cleanup
       echo "Stopping server..."
-      kill -9 $SERVER_PID
+      kill -9 $SERVER_PID 2>/dev/null
       wait $SERVER_PID 2>/dev/null
       rm -rf data/
+      sleep 1
     done
   done
 done

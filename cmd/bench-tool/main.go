@@ -62,20 +62,63 @@ func main() {
 	var results []BenchmarkResult
 
 	// 1. Ingest/DoPut
-	log.Println("[PUT] Generating vectors and uploading...")
-	record, schema, err := generateRecord(*scale, *dim, *dtype, *tqBits)
-	if err != nil {
-		log.Fatalf("Generation failed: %v", err)
+	log.Printf("[PUT] Generating vectors and uploading in chunks (back-pressure aware)...\n")
+	
+	chunkSize := 25000
+	if *scale < chunkSize {
+		chunkSize = *scale
 	}
-	defer record.Release()
 
-	putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	totalUploaded := 0
 	start := time.Now()
-	if err := uploadBatch(putCtx, sc, *dataset, record, schema); err != nil {
+	
+	for totalUploaded < *scale {
+		currentChunk := chunkSize
+		if totalUploaded+currentChunk > *scale {
+			currentChunk = *scale - totalUploaded
+		}
+
+		// Generate chunk
+		record, schema, err := generateRecord(currentChunk, *dim, *dtype, *tqBits)
+		if err != nil {
+			log.Fatalf("Generation failed: %v", err)
+		}
+		
+		// Upload chunk
+		putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+		if err := uploadBatch(putCtx, sc, *dataset, record, schema); err != nil {
+			record.Release()
+			putCancel()
+			log.Fatalf("DoPut failed at %d: %v", totalUploaded, err)
+		}
+		record.Release()
 		putCancel()
-		log.Fatalf("DoPut failed: %v", err)
+		
+		totalUploaded += currentChunk
+		if totalUploaded % 50000 == 0 || totalUploaded == *scale {
+			log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, *scale)
+		}
+
+		// Back-pressure awareness: check server status before sending more
+		if totalUploaded < *scale {
+			backoff := 500 * time.Millisecond
+			for {
+				isBusy, reason := checkBackpressure(context.Background(), sc, *dataset)
+				if !isBusy {
+					break
+				}
+				// Log backpressure at most every 5 seconds to avoid client-side log spam
+				log.Printf("  Server is BUSY: %s. Waiting %v...\n", reason, backoff)
+				time.Sleep(backoff)
+				
+				// Adaptive backoff
+				backoff += 500 * time.Millisecond
+				if backoff > 10*time.Second {
+					backoff = 10 * time.Second
+				}
+			}
+		}
 	}
-	putCancel()
 	duration := time.Since(start).Seconds()
 
 	var bytesPerElement int64 = 4
@@ -114,6 +157,7 @@ func main() {
 		BytesProcessed:  totalBytes,
 	})
 	log.Printf("[PUT] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(*scale)/duration, (float64(totalBytes)/(1024*1024))/duration)
+
 
 	log.Println("Waiting for background indexing to complete...")
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 660*time.Second)
@@ -416,6 +460,29 @@ func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) er
 		_ = reader.Record()
 	}
 	return reader.Err()
+}
+
+func checkBackpressure(ctx context.Context, sc *client.SmartClient, dataset string) (bool, string) {
+	checkBody := []byte(`{"dataset":"` + dataset + `"}`)
+	checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
+	checkStream, err := sc.DoAction(ctx, checkAction)
+	if err != nil {
+		return false, ""
+	}
+
+	result, err := checkStream.Recv()
+	if err != nil {
+		return false, ""
+	}
+
+	var status map[string]interface{}
+	if err := json.Unmarshal(result.Body, &status); err == nil {
+		if s, ok := status["status"].(string); ok && s == "BUSY" {
+			reason, _ := status["reason"].(string)
+			return true, reason
+		}
+	}
+	return false, ""
 }
 
 // waitForIndexingComplete polls until the dataset is indexed.

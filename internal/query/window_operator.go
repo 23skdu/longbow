@@ -284,13 +284,14 @@ func (o *WindowOperator) compareInternal(a core.SearchResult, metaA map[string]i
 		var valA, valB interface{}
 		var okA, okB bool
 
-		if order.Field == "distance" {
+		switch order.Field {
+		case "distance":
 			valA, okA = a.Distance, true
 			valB, okB = b.Distance, true
-		} else if order.Field == "score" {
+		case "score":
 			valA, okA = a.Score, true
 			valB, okB = b.Score, true
-		} else {
+		default:
 			if metaA != nil {
 				valA, okA = metaA[order.Field]
 			}
@@ -381,11 +382,12 @@ func (o *WindowOperator) isEqualInternal(a core.SearchResult, metaA map[string]i
 	}
 	for _, order := range orders {
 		var valA, valB interface{}
-		if order.Field == "distance" {
+		switch order.Field {
+		case "distance":
 			valA, valB = a.Distance, b.Distance
-		} else if order.Field == "score" {
+		case "score":
 			valA, valB = a.Score, b.Score
-		} else {
+		default:
 			if metaA != nil {
 				valA = metaA[order.Field]
 			}

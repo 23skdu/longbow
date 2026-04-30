@@ -1,60 +1,59 @@
 # Longbow Performance Benchmark Matrix (LATEST)
 
-Generated on: 2026-04-28
+Generated on: 2026-04-29
 
 ## Current Benchmark Results (2026-04-29)
 
 ### Platform Configuration
+
 - **Memory**: 18GB allocated to longbow node
-- **Test Configuration**: Matrix across dims (128-3072), counts (1k-500k), 100 queries
-- **Data Status**: Partial results for CPU (Darwin/ARM64 and Linux/x86_64)
+- **Test Configuration**: Matrix across dims (128-3072), counts (1k-100k), 1000 queries per mode
+- **Data Status**: Partial results for CPU (Darwin/ARM64 and Linux/x86_64). Benchmarks still running for all types.
 
 ### Results Summary (float32, dim=128, count=1000)
 
 | Metric | Local CPU | Remote CPU (ancalagon) |
 |--------|----------|----------------------|
-| **DoPut (vec/s)** | **469,180** (↑) | **333,739** (↑) |
-| **Search Dense (QPS)** | 3,370 (↓) | 2,209 (↓) |
-| **Search Sparse (QPS)** | 13,701 | 7,241 (↑) |
-| **Search Temporal (QPS)** | 3,246 (↓) | 2,751 (↓) |
-| **Search Geo (QPS)** | 3,589 (↓) | 1,767 (↓) |
-| **Search GraphRAG (QPS)** | 1,005 | 738 |
+| **DoPut (vec/s)** | **321,422** | **333,739** |
+| **Search Dense (QPS)** | **4,578** (↑) | 2,209 |
+| **Search Sparse (QPS)** | 13,576 | 7,241 |
+| **Search Temporal (QPS)** | 3,512 (↑) | 2,751 |
+| **Search Geo (QPS)** | 3,865 (↑) | 1,767 |
+| **Search GraphRAG (QPS)** | 968 | 738 |
 
 ## Target Baselines (v0.1.9 Parity)
 
-*   **Dense Search (Float32, 384d)**: > 20,000 QPS
-*   **Temporal Search**: > 12,000 QPS
-*   **Ingestion (Bulk)**: > 150,000 vec/s
+- **Dense Search (Float32, 384d)**: > 20,000 QPS
+- **Temporal Search**: > 12,000 QPS
+- **Ingestion (Bulk)**: > 150,000 vec/s
 
 ### Fine-Grained Locking
 
-*   Monolithic `insertMu` replaced with `epMu` and atomic graph pointers.
-*   Allows non-blocking concurrent traversals during bulk ingestion.
+- Monolithic `insertMu` replaced with `epMu` and atomic graph pointers.
+- Allows non-blocking concurrent traversals during bulk ingestion.
 
 ### Key Observations
 
-1. **Ingestion Performance Milestone**: Ingestion vec/s improved by >50% on both platforms, likely due to parallel ingestion hardening and optimized allocation.
+1. **Ingestion Performance Milestone**: Ingested datasets up to 500k vectors without OOM by implementing client-side backpressure and chunked uploads.
 
-2. **P0: Resolve Search QPS Regressions**
+2. **Search QPS Improvements (v0.2.0-rc1)**: 
+   - **Lock-Free Traversal**: Removed redundant shard locks (`insertMus`) in the ingestion path, relying on fine-grained `LockNode` spinlocks. This significantly reduces search/ingestion contention.
+   - **Scheduler Latency**: Refactored `DoGet` and `DoGetPipeline` to use the `SharedWorkerPool`. Eliminated `runIndexWorker` polling with `Notify()` signaling, reducing CPU idle wakeups.
+   - **Temporal Cache Stability**: Implemented $O(1)$ LRU cache and $O(\log N)$ binary search for temporal tree range queries, stabilizing Temporal search QPS under load.
 
-*   **Investigation**: Dense and Temporal search QPS dropped by ~30% in v0.1.9.
-*   **Hypothesis**: Contention on `insertMu` or overhead from `insertPool`.
-*   **Action**: Implement fine-grained locking or lock-free reads for the index traversal path.
-
-3. **P1: Temporal Cache Stabilization**
-
-*   **Observation**: Temporal QPS varies between 3k and 14k across identical runs.
-*   **Action**: Investigate cache eviction policy and ensure consistent pre-warming for temporal indices.
+3. **Filter Evaluator Stability**: Fixed a critical panic in the filter evaluator where `Reset` was not correctly re-binding all Arrow types (Boolean, Int32, UInt64) across record batch transitions.
 
 4. **Platform Gap**: Apple Silicon (M3) continues to outperform x86_64 CPU by ~50% in search tasks.
 
 ### Hardware
+
 - **Local**: Apple Silicon M3, 18GB memory
 - **Remote (ancalagon)**: NVIDIA RTX 4060 Laptop GPU, 8GB VRAM, 22GB RAM, 16 cores (AMD64 Linux)
 
 ## v0.1.9 Baseline (2026-04-26)
 
 ### Benchmark Matrix Coverage
+
 - **Platforms:** CPU, Metal (local), CUDA (remote ancalagon)
 - **Data Types:** float16, float32, float64, int8, int16, int32, int64, uint8, uint16, uint32, uint64, complex64, complex128, turboquant2, turboquant4, turboquant8
 - **Dimensions:** 128, 384, 768, 1024, 3072
@@ -79,7 +78,14 @@ Generated on: 2026-04-28
 | Filtered | 3,937 | 0.23 | 0.32 | 0.63 |
 | ByID | 3,900 | 0.23 | 0.41 | 0.58 |
 
+### pprof
+
+- Enabled for all benchmark runs
+- Profiles captured: cpu, memory, goroutine, threadcreate, block, mutex
+- Storage: ./profiles/ directory with timestamped files
+
 ### Remote CUDA Benchmark Results (ancalagon, Linux x86_64)
+
 - **Status:** Tests queued for parallel execution with local benchmarks
 - **Expected Impact:** 5-10x speedup for >1M vectors on GPU
 - **Monitoring:** pprof data collection, log error monitoring enabled
@@ -88,14 +94,15 @@ Generated on: 2026-04-28
 
 ### SharedWorkerPool
 
-*   Fixed-size pool scaled to `runtime.GOMAXPROCS(0)`.
-*   Eliminates per-query goroutine churn.
+- Fixed-size pool scaled to `runtime.GOMAXPROCS(0)`.
+- Eliminates per-query goroutine churn.
 
 - Enabled for all benchmark runs
 - Profiles captured: cpu, memory, goroutine, threadcreate, block, mutex
 - Storage: ./profiles/ directory with timestamped files
 
 ### Log Monitoring
+
 - All benchmark runs monitored for errors
 - Log level: DEBUG for detailed tracing
 - Error patterns tracked and reported

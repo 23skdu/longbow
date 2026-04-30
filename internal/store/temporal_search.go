@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"container/list"
 	"encoding/json"
 	"fmt"
 	"sort"
@@ -56,20 +57,21 @@ type TemporalIndex struct {
 
 type TemporalResultCache struct {
 	mu    sync.Mutex
-	items map[string]cachedResult
-	lru   []string
+	items map[string]*list.Element
+	evict *list.List
 	max   int
 }
 
-type cachedResult struct {
+type temporalCacheEntry struct {
+	key     string
 	results []lbtypes.SearchResult
 	expiry  time.Time
 }
 
 func NewTemporalResultCache(size int) *TemporalResultCache {
 	return &TemporalResultCache{
-		items: make(map[string]cachedResult),
-		lru:   make([]string, 0, size),
+		items: make(map[string]*list.Element),
+		evict: list.New(),
 		max:   size,
 	}
 }
@@ -78,38 +80,49 @@ func (c *TemporalResultCache) Get(key string) ([]lbtypes.SearchResult, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	item, ok := c.items[key]
-	if !ok || time.Now().After(item.expiry) {
-		if ok { delete(c.items, key) }
+	element, ok := c.items[key]
+	if !ok {
 		return nil, false
 	}
 
-	// Update LRU
-	for i, k := range c.lru {
-		if k == key {
-			c.lru = append(c.lru[:i], c.lru[i+1:]...)
-			break
-		}
+	entry := element.Value.(*temporalCacheEntry)
+	if time.Now().After(entry.expiry) {
+		c.evict.Remove(element)
+		delete(c.items, key)
+		return nil, false
 	}
-	c.lru = append(c.lru, key)
-	return item.results, true
+
+	c.evict.MoveToFront(element)
+	return entry.results, true
 }
 
 func (c *TemporalResultCache) Set(key string, results []lbtypes.SearchResult, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if len(c.lru) >= c.max {
-		oldest := c.lru[0]
-		delete(c.items, oldest)
-		c.lru = c.lru[1:]
+	if element, ok := c.items[key]; ok {
+		c.evict.MoveToFront(element)
+		entry := element.Value.(*temporalCacheEntry)
+		entry.results = results
+		entry.expiry = time.Now().Add(ttl)
+		return
 	}
 
-	c.items[key] = cachedResult{
+	entry := &temporalCacheEntry{
+		key:     key,
 		results: results,
 		expiry:  time.Now().Add(ttl),
 	}
-	c.lru = append(c.lru, key)
+	element := c.evict.PushFront(entry)
+	c.items[key] = element
+
+	if c.evict.Len() > c.max {
+		oldest := c.evict.Back()
+		if oldest != nil {
+			c.evict.Remove(oldest)
+			delete(c.items, oldest.Value.(*temporalCacheEntry).key)
+		}
+	}
 }
 
 type TemporalTree struct {
@@ -186,11 +199,13 @@ func (tt *TemporalTree) GetBefore(timestamp int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
+	idx := sort.Search(len(tt.sorted), func(i int) bool {
+		return tt.sorted[i] >= timestamp
+	})
+
 	var results []uint64
-	for _, ts := range tt.sorted {
-		if ts < timestamp {
-			results = append(results, tt.nodes[ts].VectorIDs...)
-		}
+	for i := 0; i < idx; i++ {
+		results = append(results, tt.nodes[tt.sorted[i]].VectorIDs...)
 	}
 	return results
 }
@@ -199,11 +214,13 @@ func (tt *TemporalTree) GetAfter(timestamp int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
+	idx := sort.Search(len(tt.sorted), func(i int) bool {
+		return tt.sorted[i] > timestamp
+	})
+
 	var results []uint64
-	for _, ts := range tt.sorted {
-		if ts > timestamp {
-			results = append(results, tt.nodes[ts].VectorIDs...)
-		}
+	for i := idx; i < len(tt.sorted); i++ {
+		results = append(results, tt.nodes[tt.sorted[i]].VectorIDs...)
 	}
 	return results
 }
@@ -361,15 +378,29 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 
 func (ti *TemporalIndex) Prewarm(ctx context.Context) error {
 	ti.mu.RLock()
-	latestTs := int64(0)
-	if len(ti.temporalTree.sorted) > 0 {
-		latestTs = ti.temporalTree.sorted[len(ti.temporalTree.sorted)-1]
+	if len(ti.temporalTree.sorted) == 0 {
+		ti.mu.RUnlock()
+		return nil
 	}
+	latestTs := ti.temporalTree.sorted[len(ti.temporalTree.sorted)-1]
 	ti.mu.RUnlock()
 
-	if latestTs > 0 {
-		_, _ = ti.SearchAsOf(ctx, latestTs, 100)
+	// 1. Latest results
+	_, _ = ti.SearchAsOf(ctx, latestTs, 100)
+
+	// 2. Common windows (if they contain data)
+	now := time.Now().UnixNano()
+	windows := []time.Duration{
+		5 * time.Minute,
+		1 * time.Hour,
+		24 * time.Hour,
 	}
+
+	for _, d := range windows {
+		start := now - d.Nanoseconds()
+		_, _ = ti.SearchRange(ctx, start, now, 100)
+	}
+
 	return nil
 }
 

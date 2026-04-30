@@ -270,14 +270,36 @@ func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
 func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
-
-//go:noescape
 func memcpyNTA(dst, src unsafe.Pointer, n int)
 
 // Static assertion to keep Go assembly kernels "used" even if not in the active dispatch path.
 // This prevents gopls from reporting them as unused while keeping them available for debugging.
 var _ = func() {
 	if false {
+		// Activation kernels (NEON stubs; AVX-512 path used on amd64)
+		expNEONKernel(nil, nil, 0)
+		softmaxNEONKernel(nil, nil, 0)
+		// Distance kernels kept for debugging / future dispatch
+		_, _ = dotFloat64NEON(nil, nil)
+		_ = dotNEONKernel(nil, nil)
+		_ = dotHighDimNEONKernel(nil, nil)
+		_ = cosineNEONKernel(nil, nil)
+		_ = cosineHighDimNEONKernel(nil, nil)
+		_ = l2SquaredNEONKernel(nil, nil)
+		_ = dotF16NEONKernel(nil, nil)
+		randomSignFlipNEONKernel(nil, 0)
+		_ = dot128NEONKernel(nil, nil)
+		_ = dot384NEONKernel(nil, nil)
+		_ = dot768NEONKernel(nil, nil)
+		_ = dot1024NEONKernel(nil, nil)
+		_ = dot1536NEONKernel(nil, nil)
+		_ = dot3072NEONKernel(nil, nil)
+		_ = l2Squared128NEONKernel(nil, nil)
+		_ = l2Squared768NEONKernel(nil, nil)
+		_ = l2Squared1024NEONKernel(nil, nil)
+		_ = l2Squared1536NEONKernel(nil, nil)
+		_ = l2Squared3072NEONKernel(nil, nil)
+		// Already-guarded kernels
 		_ = dotInt4NeonKernel(nil, nil, 0)
 		_ = dotInt2NeonKernel(nil, nil, 0)
 		_ = euclideanF16NEONKernel(nil, nil)

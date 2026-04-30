@@ -2080,6 +2080,122 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 75,
+      "title": "SIMD Activation Kernel Duration (p50/p99)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 200,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(longbow_simd_activation_kernel_duration_seconds_bucket[5m])) by (le, kernel, arch))",
+          "legendFormat": "p50 {{kernel}}/{{arch}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_simd_activation_kernel_duration_seconds_bucket[5m])) by (le, kernel, arch))",
+          "legendFormat": "p99 {{kernel}}/{{arch}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
+    },
+    {
+      "id": 76,
+      "title": "SIMD Activation Kernel Call Rate",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 200,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(longbow_simd_activation_kernel_calls_total[5m])) by (kernel, arch)",
+          "legendFormat": "{{kernel}}/{{arch}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "id": 77,
+      "title": "GPU Dispatch: CPU Fallback Rate (Adaptive Threshold)",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 208,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(longbow_graph_gpu_dispatch_fallback_total[5m])) by (dataset)",
+          "legendFormat": "CPU fallback {{dataset}}"
+        },
+        {
+          "expr": "sum(rate(longbow_graph_gpu_dispatch_total[5m])) by (dataset)",
+          "legendFormat": "GPU dispatch {{dataset}}"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "ops"
+        }
+      }
+    },
+    {
+      "id": 78,
+      "title": "Location Store: RCU Read Latency",
+      "type": "timeseries",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "${datasource}"
+      },
+      "gridPos": {
+        "x": 12,
+        "y": 208,
+        "w": 12,
+        "h": 8
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_location_store_read_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99 read latency"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(longbow_location_store_read_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p50 read latency"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        }
+      }
     }
   ],
   "refresh": "",

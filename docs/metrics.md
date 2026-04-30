@@ -1,6 +1,6 @@
 # Longbow Metrics Reference
 
-Complete reference for all Prometheus metrics exported by Longbow 0.1.9.
+Complete reference for all Prometheus metrics exported by Longbow.
 
 **Metrics Endpoint**: `http://localhost:9090/metrics` (configurable via `LONGBOW_METRICS_ADDR`)
 
@@ -80,3 +80,42 @@ Metrics for cluster membership and sharding.
 - **longbow_arena_memory_bytes**: (Gauge) Memory allocated in custom slab arenas. Labels: `size`.
 - **longbow_gc_pause_duration_seconds**: (Histogram) Latency of Go garbage collection cycles.
 - **longbow_gctuner_heap_target_bytes**: (Gauge) The dynamic heap target set by the GCTuner.
+
+---
+
+## 8. SIMD Activation Kernels & Adaptive Dispatch
+
+Metrics added during the RCU + SIMD optimization pass. These cover the new
+AVX-512 `exp`/`softmax` kernels and the adaptive GPU dispatch threshold.
+
+- **longbow_simd_activation_kernel_duration_seconds**: (Histogram) Execution
+  time of SIMD activation kernels (`exp`, `softmax`, `sigmoid`). Labels:
+  `kernel` (`exp` | `softmax` | `sigmoid`), `arch` (`avx512` | `avx2` |
+  `neon`). Buckets: 1µs, 5µs, 10µs, 50µs, 100µs, 500µs, 1ms.
+
+- **longbow_simd_activation_kernel_calls_total**: (Counter) Total invocations
+  of SIMD activation kernels. Labels: `kernel`, `arch`. Use this to track
+  whether the AVX-512 path is being exercised on production hardware.
+
+> **Grafana**: Both metrics are wired into the **Advanced Internals** dashboard
+> under the *SIMD Activation Kernels* row. Useful alert: fire when p99
+> `longbow_simd_activation_kernel_duration_seconds{kernel="softmax"}` exceeds
+> 500µs — this indicates the kernel is being called on unexpectedly large
+> tensors or is falling back to the generic path.
+
+---
+
+## 9. Graph GPU Adaptive Dispatch
+
+The adaptive dispatch threshold (`GPUWorkloadThreshold = 128 nodes`) can be
+monitored using the following signals:
+
+- **longbow_graph_gpu_dispatch_total**: (Counter, *planned*) Total
+  `RankWithGraphGPU` calls. Labels: `dataset`.
+- **longbow_graph_gpu_dispatch_fallback_total**: (Counter, *planned*) Calls
+  that fell back to CPU due to the workload being below the threshold. Labels:
+  `dataset`.
+
+> Until these counters are wired, the adaptive-dispatch behavior can be
+> inferred from a reduction in `longbow_onnx_inference_duration_seconds`
+> variance at low-cardinality result sets.

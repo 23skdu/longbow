@@ -180,6 +180,9 @@ func sigmoidNEON(src, dst []float32) {
 }
 
 func expNEON(src, dst []float32) {
+	// TODO: validated WORD opcodes for Go ARM64 assembler pending
+	// The NEON exp/softmax kernels exist in simd_arm64.s but require
+	// correct AArch64 binary encoding. AVX-512 path handles amd64.
 	expGeneric(src, dst)
 }
 
@@ -188,6 +191,7 @@ func logNEON(src, dst []float32) {
 }
 
 func softmaxNEON(src, dst []float32) {
+	// TODO: validated WORD opcodes for Go ARM64 assembler pending
 	softmaxGeneric(src, dst)
 }
 
@@ -204,6 +208,10 @@ func dotFloat64NEON(a, b []float64) (float32, error) {
 }
 
 // Internal assembly kernels (must have Go declarations to satisfy go vet)
+//go:noescape
+func expNEONKernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func softmaxNEONKernel(src, dst unsafe.Pointer, n int)
 //go:noescape
 func euclideanNEONKernel(a, b []float32) float32
 //go:noescape

@@ -1913,13 +1913,277 @@ TEXT ·logAVX2Kernel(SB), NOSPLIT, $0
 TEXT ·sigmoidAVX512Kernel(SB), NOSPLIT, $0
     RET
 
-// func softmaxAVX512Kernel(src, dst unsafe.Pointer, n int)
-TEXT ·softmaxAVX512Kernel(SB), NOSPLIT, $0
+// func expAVX512Kernel(src, dst unsafe.Pointer, n int)
+// Approximates exp(x) for a batch of float32s using AVX-512
+TEXT ·expAVX512Kernel(SB), NOSPLIT, $0-24
+    MOVQ    src+0(FP), SI
+    MOVQ    dst+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    // Constants
+    VBROADCASTSS ·log2e(SB), Z31   // log2(e)
+    VBROADCASTSS ·ln2(SB), Z30     // ln(2)
+    VBROADCASTSS ·half(SB), Z29    // 0.5
+    VBROADCASTSS ·exp_c0(SB), Z28  // Polynomial coefficients
+    VBROADCASTSS ·exp_c1(SB), Z27
+    VBROADCASTSS ·exp_c2(SB), Z26
+    VBROADCASTSS ·exp_c3(SB), Z25
+    VBROADCASTSS ·exp_c4(SB), Z24
+    VBROADCASTSS ·exp_c5(SB), Z23
+
+    CMPQ    BX, $16
+    JL      exp_tail
+
+exp_loop:
+    VMOVUPS (SI), Z0            // Z0 = x
+    
+    // z = x * log2(e)
+    VMULPS  Z31, Z0, Z1         // Z1 = z
+    
+    // n = floor(z + 0.5)
+    VADDPS  Z29, Z1, Z2
+    VRNDSCALEPS $1, Z2, Z2      // Z2 = n (integer part)
+    
+    // f = z - n
+    VSUBPS  Z2, Z1, Z3          // Z3 = f (fractional part)
+    
+    // Approximate 2^f using polynomial: c0 + c1*f + c2*f^2 + ...
+    VMOVUPS Z28, Z4             // Z4 = c0
+    VFMADD213PS Z27, Z3, Z4     // Z4 = c1*f + c0
+    VFMADD213PS Z26, Z3, Z4     // Z4 = c2*f^2 + c1*f + c0
+    VFMADD213PS Z25, Z3, Z4     // ...
+    VFMADD213PS Z24, Z3, Z4
+    VFMADD213PS Z23, Z3, Z4     // Z4 \approx 2^f
+    
+    // exp(x) = 2^n * 2^f
+    // 2^n can be done via VPSLLD and adding to exponent bits
+    VCVTPS2DQ Z2, Z5            // Convert n to int32
+    VPADDD  ·exp_bias(SB), Z5, Z5 // Add bias (127)
+    VPSLLD  $23, Z5, Z5         // Shift to exponent position
+    
+    VMULPS  Z5, Z4, Z0          // Z0 = 2^n * 2^f \approx exp(x)
+    
+    VMOVUPS Z0, (DI)
+    
+    ADDQ    $64, SI
+    ADDQ    $64, DI
+    SUBQ    $16, BX
+    CMPQ    BX, $16
+    JGE     exp_loop
+
+exp_tail:
+    CMPQ    BX, $0
+    JE      exp_done
+    // Masked tail
+    MOVQ    $1, R8
+    MOVQ    BX, CX
+    SHLQ    CX, R8
+    SUBQ    $1, R8
+    KMOVQ   R8, K1
+    
+    VMOVUPS (SI), K1, Z0
+    VMULPS  Z31, Z0, Z1
+    VADDPS  Z29, Z1, Z2
+    VRNDSCALEPS $1, Z2, Z2
+    VSUBPS  Z2, Z1, Z3
+    VMOVUPS Z28, Z4
+    VFMADD213PS Z27, Z3, Z4
+    VFMADD213PS Z26, Z3, Z4
+    VFMADD213PS Z25, Z3, Z4
+    VFMADD213PS Z24, Z3, Z4
+    VFMADD213PS Z23, Z3, Z4
+    VCVTPS2DQ Z2, Z5
+    VPADDD  ·exp_bias(SB), Z5, Z5
+    VPSLLD  $23, Z5, Z5
+    VMULPS  Z5, Z4, Z0
+    VMOVUPS Z0, K1, (DI)
+
+exp_done:
+    VZEROUPPER
     RET
 
-// func expAVX512Kernel(src, dst unsafe.Pointer, n int)
-TEXT ·expAVX512Kernel(SB), NOSPLIT, $0
+// func softmaxAVX512Kernel(src, dst unsafe.Pointer, n int)
+TEXT ·softmaxAVX512Kernel(SB), NOSPLIT, $0-24
+    MOVQ    src+0(FP), SI
+    MOVQ    dst+8(FP), DI
+    MOVQ    n+16(FP), BX
+    
+    CMPQ    BX, $0
+    JE      softmax_done
+    
+    // 1. Find Max
+    VBROADCASTSS ·neg_inf(SB), Z0 // Z0 = max accumulator
+    MOVQ    SI, R8
+    MOVQ    BX, R9
+softmax_max_loop:
+    CMPQ    R9, $16
+    JL      softmax_max_tail
+    VMAXPS  (R8), Z0, Z0
+    ADDQ    $64, R8
+    SUBQ    $16, R9
+    JMP     softmax_max_loop
+softmax_max_tail:
+    CMPQ    R9, $0
+    JE      softmax_max_reduce
+    MOVQ    $1, R10
+    MOVQ    R9, CX
+    SHLQ    CX, R10
+    SUBQ    $1, R10
+    KMOVQ   R10, K1
+    VMAXPS  (R8), K1, Z0, Z0
+softmax_max_reduce:
+    VEXTRACTF64X4 $1, Z0, Y1
+    VMAXPS  Y1, Y0, Y0
+    VEXTRACTF128 $1, Y0, X1
+    VMAXPS  X1, X0, X0
+    VSHUFPS $0x4E, X0, X1, X1
+    VMAXPS  X1, X0, X0
+    VSHUFPS $0xB1, X0, X1, X1
+    VMAXPS  X1, X0, X0
+    // X0[0] is max
+    VBROADCASTSS X0, Z0 // Z0 = [max, max, ...]
+
+    // 2. Compute Exp(x - max) and Sum
+    VXORPS  Z1, Z1, Z1 // Z1 = sum accumulator
+    MOVQ    SI, R8
+    MOVQ    DI, R11
+    MOVQ    BX, R9
+softmax_exp_loop:
+    CMPQ    R9, $16
+    JL      softmax_exp_tail
+    VMOVUPS (R8), Z2
+    VSUBPS  Z0, Z2, Z2 // Z2 = x - max
+    
+    // Inline Exp Approximation
+    VMULPS  ·log2e(SB), Z2, Z3
+    VADDPS  ·half(SB), Z3, Z4
+    VRNDSCALEPS $1, Z4, Z4
+    VSUBPS  Z4, Z3, Z5
+    VMOVUPS ·exp_c0(SB), Z6
+    VFMADD213PS ·exp_c1(SB), Z5, Z6
+    VFMADD213PS ·exp_c2(SB), Z5, Z6
+    VFMADD213PS ·exp_c3(SB), Z5, Z6
+    VFMADD213PS ·exp_c4(SB), Z5, Z6
+    VFMADD213PS ·exp_c5(SB), Z5, Z6
+    VCVTPS2DQ Z4, Z7
+    VPADDD  ·exp_bias(SB), Z7, Z7
+    VPSLLD  $23, Z7, Z7
+    VMULPS  Z7, Z6, Z2 // Z2 = exp(x - max)
+    
+    VMOVUPS Z2, (R11)
+    VADDPS  Z2, Z1, Z1
+    
+    ADDQ    $64, R8
+    ADDQ    $64, R11
+    SUBQ    $16, R9
+    JMP     softmax_exp_loop
+softmax_exp_tail:
+    CMPQ    R9, $0
+    JE      softmax_exp_reduce
+    MOVQ    $1, R10
+    MOVQ    R9, CX
+    SHLQ    CX, R10
+    SUBQ    $1, R10
+    KMOVQ   R10, K1
+    VMOVUPS (R8), K1, Z2
+    VSUBPS  Z0, Z2, Z2
+    // Exp
+    VMULPS  ·log2e(SB), Z2, Z3
+    VADDPS  ·half(SB), Z3, Z4
+    VRNDSCALEPS $1, Z4, Z4
+    VSUBPS  Z4, Z3, Z5
+    VMOVUPS ·exp_c0(SB), Z6
+    VFMADD213PS ·exp_c1(SB), Z5, Z6
+    VFMADD213PS ·exp_c2(SB), Z5, Z6
+    VFMADD213PS ·exp_c3(SB), Z5, Z6
+    VFMADD213PS ·exp_c4(SB), Z5, Z6
+    VFMADD213PS ·exp_c5(SB), Z5, Z6
+    VCVTPS2DQ Z4, Z7
+    VPADDD  ·exp_bias(SB), Z7, Z7
+    VPSLLD  $23, Z7, Z7
+    VMULPS  Z7, Z6, Z2
+    VMOVUPS Z2, K1, (R11)
+    VADDPS  Z2, K1, Z1, Z1
+softmax_exp_reduce:
+    VEXTRACTF64X4 $1, Z1, Y2
+    VADDPS  Y2, Y1, Y1
+    VEXTRACTF128 $1, Y1, X2
+    VADDPS  X2, X1, X1
+    VSHUFPS $0x4E, X1, X2, X2
+    VADDPS  X2, X1, X1
+    VSHUFPS $0xB1, X1, X2, X2
+    VADDPS  X2, X1, X1
+    // X1[0] is sum
+    VBROADCASTSS X1, Z1 // Z1 = [sum, sum, ...]
+
+    // 3. Divide by Sum
+    MOVQ    DI, R11
+    MOVQ    BX, R9
+softmax_div_loop:
+    CMPQ    R9, $16
+    JL      softmax_div_tail
+    VDIVPS  Z1, (R11), Z2
+    VMOVUPS Z2, (R11)
+    ADDQ    $64, R11
+    SUBQ    $16, R9
+    JMP     softmax_div_loop
+softmax_div_tail:
+    CMPQ    R9, $0
+    JE      softmax_done
+    MOVQ    $1, R10
+    MOVQ    R9, CX
+    SHLQ    CX, R10
+    SUBQ    $1, R10
+    KMOVQ   R10, K1
+    VDIVPS  Z1, (R11), Z2
+    VMOVUPS Z2, K1, (R11)
+
+softmax_done:
+    VZEROUPPER
     RET
+
+GLOBL ·log2e(SB), RODATA, $4
+DATA ·log2e(SB)/4, $0x3fb8aa3b // 1.44269504
+
+GLOBL ·ln2(SB), RODATA, $4
+DATA ·ln2(SB)/4, $0x3f317218 // 0.69314718
+
+GLOBL ·half(SB), RODATA, $4
+DATA ·half(SB)/4, $0x3f000000 // 0.5
+
+GLOBL ·exp_bias(SB), RODATA, $64
+DATA ·exp_bias(SB)/4, $127
+DATA ·exp_bias(SB)+4/4, $127
+DATA ·exp_bias(SB)+8/4, $127
+DATA ·exp_bias(SB)+12/4, $127
+DATA ·exp_bias(SB)+16/4, $127
+DATA ·exp_bias(SB)+20/4, $127
+DATA ·exp_bias(SB)+24/4, $127
+DATA ·exp_bias(SB)+28/4, $127
+DATA ·exp_bias(SB)+32/4, $127
+DATA ·exp_bias(SB)+36/4, $127
+DATA ·exp_bias(SB)+40/4, $127
+DATA ·exp_bias(SB)+44/4, $127
+DATA ·exp_bias(SB)+48/4, $127
+DATA ·exp_bias(SB)+52/4, $127
+DATA ·exp_bias(SB)+56/4, $127
+DATA ·exp_bias(SB)+60/4, $127
+
+GLOBL ·exp_c0(SB), RODATA, $4
+DATA ·exp_c0(SB)/4, $0x3f800000 // 1.0
+GLOBL ·exp_c1(SB), RODATA, $4
+DATA ·exp_c1(SB)/4, $0x3f317218 // 0.69314718
+GLOBL ·exp_c2(SB), RODATA, $4
+DATA ·exp_c2(SB)/4, $0x3e75fdf1 // 0.240226507
+GLOBL ·exp_c3(SB), RODATA, $4
+DATA ·exp_c3(SB)/4, $0x3d6356eb // 0.0555041086
+GLOBL ·exp_c4(SB), RODATA, $4
+DATA ·exp_c4(SB)/4, $0x3c1d964a // 0.009618129
+GLOBL ·exp_c5(SB), RODATA, $4
+DATA ·exp_c5(SB)/4, $0x3ab0125c // 0.00134204
+
+GLOBL ·neg_inf(SB), RODATA, $4
+DATA ·neg_inf(SB)/4, $0xff800000
 
 // func logAVX512Kernel(src, dst unsafe.Pointer, n int)
 TEXT ·logAVX512Kernel(SB), NOSPLIT, $0

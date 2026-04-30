@@ -1580,3 +1580,261 @@ tail_f16_f32:
 done_f16_f32:
     VZEROUPPER
     RET
+
+// func int8ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+TEXT ·int8ToFloat32AVX512Kernel(SB), NOSPLIT, $0
+    MOVQ    src+0(FP), SI
+    MOVQ    dst+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    CMPQ    BX, $16
+    JL      tail_i8_f32_512
+
+loop16_i8_f32_512:
+    VPMOVSXBD (SI), Z0          // Load 16 int8, sign extend to 16 int32
+    VCVTDQ2PS Z0, Z1            // Convert 16 int32 to 16 float32
+    VMOVUPS Z1, (DI)            // Store 16 float32
+
+    ADDQ    $16, SI
+    ADDQ    $64, DI
+    SUBQ    $16, BX
+    CMPQ    BX, $16
+    JGE     loop16_i8_f32_512
+
+tail_i8_f32_512:
+    CMPQ    BX, $0
+    JE      done_i8_f32_512
+    // Simple mask for remaining elements (up to 15)
+    MOVQ    $1, R8
+    MOVQ    BX, CX
+    SHLQ    CX, R8
+    SUBQ    $1, R8
+    KMOVQ   R8, K1
+    
+    VPMOVSXBD (SI), K1, Z0
+    VCVTDQ2PS Z0, K1, Z1
+    VMOVUPS Z1, K1, (DI)
+
+done_i8_f32_512:
+    VZEROUPPER
+    RET
+
+// func uint8ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+TEXT ·uint8ToFloat32AVX512Kernel(SB), NOSPLIT, $0
+    MOVQ    src+0(FP), SI
+    MOVQ    dst+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    CMPQ    BX, $16
+    JL      tail_u8_f32_512
+
+loop16_u8_f32_512:
+    VPMOVZXBD (SI), Z0          // Load 16 uint8, zero extend to 16 int32
+    VCVTDQ2PS Z0, Z1            // Convert 16 int32 to 16 float32
+    VMOVUPS Z1, (DI)            // Store 16 float32
+
+    ADDQ    $16, SI
+    ADDQ    $64, DI
+    SUBQ    $16, BX
+    CMPQ    BX, $16
+    JGE     loop16_u8_f32_512
+
+tail_u8_f32_512:
+    CMPQ    BX, $0
+    JE      done_u8_f32_512
+    MOVQ    $1, R8
+    MOVQ    BX, CX
+    SHLQ    CX, R8
+    SUBQ    $1, R8
+    KMOVQ   R8, K1
+    
+    VPMOVZXBD (SI), K1, Z0
+    VCVTDQ2PS Z0, K1, Z1
+    VMOVUPS Z1, K1, (DI)
+
+done_u8_f32_512:
+    VZEROUPPER
+    RET
+
+// func int16ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+TEXT ·int16ToFloat32AVX512Kernel(SB), NOSPLIT, $0
+    MOVQ    src+0(FP), SI
+    MOVQ    dst+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    CMPQ    BX, $16
+    JL      tail_i16_f32_512
+
+loop16_i16_f32_512:
+    VPMOVSXWD (SI), Z0          // Load 16 int16, sign extend to 16 int32
+    VCVTDQ2PS Z0, Z1            // Convert 16 int32 to 16 float32
+    VMOVUPS Z1, (DI)            // Store 16 float32
+
+    ADDQ    $32, SI
+    ADDQ    $64, DI
+    SUBQ    $16, BX
+    CMPQ    BX, $16
+    JGE     loop16_i16_f32_512
+
+tail_i16_f32_512:
+    CMPQ    BX, $0
+    JE      done_i16_f32_512
+    MOVQ    $1, R8
+    MOVQ    BX, CX
+    SHLQ    CX, R8
+    SUBQ    $1, R8
+    KMOVQ   R8, K1
+    
+    VPMOVSXWD (SI), K1, Z0
+    VCVTDQ2PS Z0, K1, Z1
+    VMOVUPS Z1, K1, (DI)
+
+done_i16_f32_512:
+    VZEROUPPER
+    RET
+
+// func uint16ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+TEXT ·uint16ToFloat32AVX512Kernel(SB), NOSPLIT, $0
+    MOVQ    src+0(FP), SI
+    MOVQ    dst+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    CMPQ    BX, $16
+    JL      tail_u16_f32_512
+
+loop16_u16_f32_512:
+    VPMOVZXWD (SI), Z0          // Load 16 uint16, zero extend to 16 int32
+    VCVTDQ2PS Z0, Z1            // Convert 16 int32 to 16 float32
+    VMOVUPS Z1, (DI)            // Store 16 float32
+
+    ADDQ    $32, SI
+    ADDQ    $64, DI
+    SUBQ    $16, BX
+    CMPQ    BX, $16
+    JGE     loop16_u16_f32_512
+
+tail_u16_f32_512:
+    CMPQ    BX, $0
+    JE      done_u16_f32_512
+    MOVQ    $1, R8
+    MOVQ    BX, CX
+    SHLQ    CX, R8
+    SUBQ    $1, R8
+    KMOVQ   R8, K1
+    
+    VPMOVZXWD (SI), K1, Z0
+    VCVTDQ2PS Z0, K1, Z1
+    VMOVUPS Z1, K1, (DI)
+
+done_u16_f32_512:
+    VZEROUPPER
+    RET
+
+// func int32ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+TEXT ·int32ToFloat32AVX512Kernel(SB), NOSPLIT, $0
+    MOVQ    src+0(FP), SI
+    MOVQ    dst+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    CMPQ    BX, $16
+    JL      tail_i32_f32_512
+
+loop16_i32_f32_512:
+    VMOVUPS (SI), Z0            // Load 16 int32
+    VCVTDQ2PS Z0, Z1            // Convert 16 int32 to 16 float32
+    VMOVUPS Z1, (DI)            // Store 16 float32
+
+    ADDQ    $64, SI
+    ADDQ    $64, DI
+    SUBQ    $16, BX
+    CMPQ    BX, $16
+    JGE     loop16_i32_f32_512
+
+tail_i32_f32_512:
+    CMPQ    BX, $0
+    JE      done_i32_f32_512
+    MOVQ    $1, R8
+    MOVQ    BX, CX
+    SHLQ    CX, R8
+    SUBQ    $1, R8
+    KMOVQ   R8, K1
+    
+    VMOVUPS (SI), K1, Z0
+    VCVTDQ2PS Z0, K1, Z1
+    VMOVUPS Z1, K1, (DI)
+
+done_i32_f32_512:
+    VZEROUPPER
+    RET
+
+// func uint32ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+TEXT ·uint32ToFloat32AVX512Kernel(SB), NOSPLIT, $0
+    MOVQ    src+0(FP), SI
+    MOVQ    dst+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    CMPQ    BX, $16
+    JL      tail_u32_f32_512
+
+loop16_u32_f32_512:
+    VMOVUPS (SI), Z0            // Load 16 uint32
+    VCVTUDQ2PS Z0, Z1           // Convert 16 uint32 to 16 float32 (AVX-512 only)
+    VMOVUPS Z1, (DI)            // Store 16 float32
+
+    ADDQ    $64, SI
+    ADDQ    $64, DI
+    SUBQ    $16, BX
+    CMPQ    BX, $16
+    JGE     loop16_u32_f32_512
+
+tail_u32_f32_512:
+    CMPQ    BX, $0
+    JE      done_u32_f32_512
+    MOVQ    $1, R8
+    MOVQ    BX, CX
+    SHLQ    CX, R8
+    SUBQ    $1, R8
+    KMOVQ   R8, K1
+    
+    VMOVUPS (SI), K1, Z0
+    VCVTUDQ2PS Z0, K1, Z1
+    VMOVUPS Z1, K1, (DI)
+
+done_u32_f32_512:
+    VZEROUPPER
+    RET
+
+// func float16ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+TEXT ·float16ToFloat32AVX512Kernel(SB), NOSPLIT, $0
+    MOVQ    src+0(FP), SI
+    MOVQ    dst+8(FP), DI
+    MOVQ    n+16(FP), BX
+
+    CMPQ    BX, $16
+    JL      tail_f16_f32_512
+
+loop16_f16_f32_512:
+    VCVTPH2PS (SI), Z0          // Convert 16 float16 to 16 float32
+    VMOVUPS Z0, (DI)            // Store 16 float32
+
+    ADDQ    $32, SI
+    ADDQ    $64, DI
+    SUBQ    $16, BX
+    CMPQ    BX, $16
+    JGE     loop16_f16_f32_512
+
+tail_f16_f32_512:
+    CMPQ    BX, $0
+    JE      done_f16_f32_512
+    MOVQ    $1, R8
+    MOVQ    BX, CX
+    SHLQ    CX, R8
+    SUBQ    $1, R8
+    KMOVQ   R8, K1
+    
+    VCVTPH2PS (SI), K1, Z0
+    VMOVUPS Z0, K1, (DI)
+
+done_f16_f32_512:
+    VZEROUPPER
+    RET

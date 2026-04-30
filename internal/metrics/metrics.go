@@ -808,6 +808,24 @@ var (
 		[]string{"provider"},
 	)
 
+	// Contention Metrics
+	LockNodeSpinCyclesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_lock_node_spin_cycles_total",
+			Help: "Total number of spin cycles performed by LockNode spinlocks",
+		},
+		[]string{"dataset", "layer"},
+	)
+
+	InsertMuWaitDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_insert_mu_wait_duration_seconds",
+			Help:    "Time spent waiting for insertMus sharded locks",
+			Buckets: []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01, 0.1},
+		},
+		[]string{"dataset"},
+	)
+
 	// =============================================================================
 	// ML & Embedding Metrics
 	// =============================================================================

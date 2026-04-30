@@ -276,3 +276,56 @@ func TestS3Backend_ImplementsSnapshotBackend(t *testing.T) {
 	var _ SnapshotBackend = (*S3Backend)(nil)
 	_ = backend // Keep compiler happy about unused variable
 }
+// ========== S3Backend Operation Tests with Mock ==========
+
+func TestS3Backend_Operations(t *testing.T) {
+	mockClient := NewMockS3Client()
+	backend := &S3Backend{
+		client: mockClient,
+		bucket: "test-bucket",
+		prefix: "tenant1",
+	}
+	ctx := context.Background()
+
+	t.Run("WriteSnapshot", func(t *testing.T) {
+		data := []byte("parquet-data")
+		err := backend.WriteSnapshot(ctx, "coll1", data)
+		assert.NoError(t, err)
+		assert.Equal(t, data, mockClient.objects["tenant1/snapshots/coll1.parquet"])
+	})
+
+	t.Run("ReadSnapshot", func(t *testing.T) {
+		data := []byte("read-data")
+		mockClient.objects["tenant1/snapshots/coll2.parquet"] = data
+		
+		reader, err := backend.ReadSnapshot(ctx, "coll2")
+		assert.NoError(t, err)
+		readData, _ := io.ReadAll(reader)
+		assert.Equal(t, data, readData)
+		_ = reader.Close()
+	})
+
+	t.Run("ReadSnapshot_NotFound", func(t *testing.T) {
+		reader, err := backend.ReadSnapshot(ctx, "nonexistent")
+		assert.Error(t, err)
+		assert.Nil(t, reader)
+		assert.True(t, IsNotFoundError(err))
+	})
+
+	t.Run("ListSnapshots", func(t *testing.T) {
+		mockClient.objects["tenant1/snapshots/a.parquet"] = []byte{}
+		mockClient.objects["tenant1/snapshots/b.parquet"] = []byte{}
+		mockClient.objects["other/snapshots/c.parquet"] = []byte{}
+
+		list, err := backend.ListSnapshots(ctx)
+		assert.NoError(t, err)
+		assert.ElementsMatch(t, []string{"a", "b", "coll1", "coll2"}, list)
+	})
+
+	t.Run("DeleteSnapshot", func(t *testing.T) {
+		err := backend.DeleteSnapshot(ctx, "coll1")
+		assert.NoError(t, err)
+		_, ok := mockClient.objects["tenant1/snapshots/coll1.parquet"]
+		assert.False(t, ok)
+	})
+}

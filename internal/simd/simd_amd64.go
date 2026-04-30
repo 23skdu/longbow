@@ -392,6 +392,41 @@ func float16ToFloat32AVX2(src []float16.Num, dst []float32) {
 	float16ToFloat32AVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
 }
 
+func int8ToFloat32AVX512(src []int8, dst []float32) {
+	if len(src) == 0 { return }
+	int8ToFloat32AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func uint8ToFloat32AVX512(src []uint8, dst []float32) {
+	if len(src) == 0 { return }
+	uint8ToFloat32AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func int16ToFloat32AVX512(src []int16, dst []float32) {
+	if len(src) == 0 { return }
+	int16ToFloat32AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func uint16ToFloat32AVX512(src []uint16, dst []float32) {
+	if len(src) == 0 { return }
+	uint16ToFloat32AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func int32ToFloat32AVX512(src []int32, dst []float32) {
+	if len(src) == 0 { return }
+	int32ToFloat32AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func uint32ToFloat32AVX512(src []uint32, dst []float32) {
+	if len(src) == 0 { return }
+	uint32ToFloat32AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
+func float16ToFloat32AVX512(src []float16.Num, dst []float32) {
+	if len(src) == 0 { return }
+	float16ToFloat32AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+}
+
 func matchInt64AVX2(src []int64, val int64, op CompareOp, dst []byte) error {
 	if len(src) != len(dst) {
 		return errors.New("simd: length mismatch")
@@ -740,3 +775,18 @@ func uint16ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
 func int32ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
 //go:noescape
 func float16ToFloat32AVX2Kernel(src, dst unsafe.Pointer, n int)
+
+//go:noescape
+func int8ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func uint8ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func int16ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func uint16ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func int32ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func uint32ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func float16ToFloat32AVX512Kernel(src, dst unsafe.Pointer, n int)

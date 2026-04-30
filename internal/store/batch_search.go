@@ -8,6 +8,7 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 )
 
+// BatchSearchRequest represents a single search request within a batch.
 type BatchSearchRequest struct {
 	Query    []float32
 	K        int
@@ -17,6 +18,7 @@ type BatchSearchRequest struct {
 	ErrorCh  chan error
 }
 
+// BatchSearchProcessor handles concurrent processing of search requests.
 type BatchSearchProcessor struct {
 	requests   chan BatchSearchRequest
 	workers    int
@@ -24,6 +26,7 @@ type BatchSearchProcessor struct {
 	wg         sync.WaitGroup
 }
 
+// NewBatchSearchProcessor creates a new processor with the specified number of workers.
 func NewBatchSearchProcessor(workers int, queueSize int) *BatchSearchProcessor {
 	pool := NewSearchResultPool()
 	return &BatchSearchProcessor{
@@ -33,6 +36,7 @@ func NewBatchSearchProcessor(workers int, queueSize int) *BatchSearchProcessor {
 	}
 }
 
+// Start begins processing search requests with the provided search function.
 func (bp *BatchSearchProcessor) Start(ctx context.Context, searchFn func(ctx context.Context, q any, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error)) {
 	for i := 0; i < bp.workers; i++ {
 		bp.wg.Add(1)
@@ -69,6 +73,7 @@ func (bp *BatchSearchProcessor) worker(ctx context.Context, searchFn func(ctx co
 	}
 }
 
+// Search submits a search request to the processor and waits for the results.
 func (bp *BatchSearchProcessor) Search(ctx context.Context, query []float32, k int, filters []query.Filter, options SearchOptions) ([]SearchResult, error) {
 	resultCh := make(chan []SearchResult, 1)
 	errorCh := make(chan error, 1)
@@ -98,16 +103,19 @@ func (bp *BatchSearchProcessor) Search(ctx context.Context, query []float32, k i
 	}
 }
 
+// Close stops the processor and waits for all workers to finish.
 func (bp *BatchSearchProcessor) Close() {
 	close(bp.requests)
 	bp.wg.Wait()
 }
 
+// BatchSearchResult contains the results or error for a batch search.
 type BatchSearchResult struct {
 	Results []SearchResult
 	Err     error
 }
 
+// BatchSearchBatcher collects search requests and processes them in batches.
 type BatchSearchBatcher struct {
 	mu        sync.Mutex
 	pending   []BatchSearchRequest
@@ -117,6 +125,7 @@ type BatchSearchBatcher struct {
 	resultCh  chan BatchSearchResult
 }
 
+// NewBatchSearchBatcher creates a new batcher with specified size and interval.
 func NewBatchSearchBatcher(batchSize int, interval int) *BatchSearchBatcher {
 	return &BatchSearchBatcher{
 		batchSize: batchSize,
@@ -126,6 +135,7 @@ func NewBatchSearchBatcher(batchSize int, interval int) *BatchSearchBatcher {
 	}
 }
 
+// AddRequest adds a search request to the batcher.
 func (bb *BatchSearchBatcher) AddRequest(req BatchSearchRequest) {
 	bb.mu.Lock()
 	bb.pending = append(bb.pending, req)
@@ -140,10 +150,12 @@ func (bb *BatchSearchBatcher) AddRequest(req BatchSearchRequest) {
 	bb.mu.Unlock()
 }
 
+// GetResults returns a channel for receiving batch search results.
 func (bb *BatchSearchBatcher) GetResults() <-chan BatchSearchResult {
 	return bb.resultCh
 }
 
+// ComputeBatchDistancesSIMD computes distances for a batch of queries using SIMD instructions.
 func ComputeBatchDistancesSIMD(queries [][]float32, vectors [][]float32, k int) [][]SearchResult {
 	if len(queries) == 0 || len(vectors) == 0 {
 		return nil

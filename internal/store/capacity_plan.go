@@ -5,6 +5,7 @@ import (
 	"time"
 )
 
+// CapacityPlan represents the current and projected capacity of the vector store.
 type CapacityPlan struct {
 	CurrentVectors   int64     `json:"current_vectors"`
 	MaxVectors       int64     `json:"max_vectors"`
@@ -16,6 +17,7 @@ type CapacityPlan struct {
 	Timestamp        time.Time `json:"timestamp"`
 }
 
+// AutoScaleConfig defines the parameters for automatic scaling of workers.
 type AutoScaleConfig struct {
 	Enabled            bool    `json:"enabled"`
 	MinWorkers         int     `json:"min_workers"`
@@ -25,6 +27,7 @@ type AutoScaleConfig struct {
 	ScaleDownThreshold float64 `json:"scale_down_threshold"`
 }
 
+// GetCapacityPlan calculates the current resource usage and recommends scaling actions.
 func (vs *VectorStore) GetCapacityPlan() (CapacityPlan, error) {
 	plan := CapacityPlan{
 		Timestamp: time.Now(),
@@ -59,6 +62,7 @@ func (vs *VectorStore) GetCapacityPlan() (CapacityPlan, error) {
 	return plan, nil
 }
 
+// GetAutoScaleConfig retrieves the current auto-scaling configuration.
 func (vs *VectorStore) GetAutoScaleConfig() AutoScaleConfig {
 	vs.configMu.RLock()
 	defer vs.configMu.RUnlock()
@@ -73,6 +77,7 @@ func (vs *VectorStore) GetAutoScaleConfig() AutoScaleConfig {
 	}
 }
 
+// SetAutoScaleConfig updates the auto-scaling configuration.
 func (vs *VectorStore) SetAutoScaleConfig(config AutoScaleConfig) error {
 	if config.MinWorkers > config.MaxWorkers {
 		return fmt.Errorf("min_workers cannot exceed max_workers")

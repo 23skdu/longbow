@@ -13,7 +13,7 @@ func runtimeNumCPU() int {
 	return 4 // Simple fallback, usually overridden
 }
 
-// IndexJob represents a job for the indexing worker
+// IndexJob represents a background task to index an Arrow RecordBatch.
 type IndexJob struct {
 	DatasetName string
 	Record      arrow.RecordBatch
@@ -21,13 +21,13 @@ type IndexJob struct {
 	CreatedAt   time.Time
 }
 
-// RowLocation represents a physical location of a row
+// RowLocation represents the physical address of a row (Batch + Row offset).
 type RowLocation struct {
 	BatchIdx int
 	RowIdx   int
 }
 
-// IndexJobQueueStats tracks queue statistics.
+// IndexJobQueueStats provides visibility into the state of the indexing queue.
 type IndexJobQueueStats struct {
 	TotalSent     uint64 // Total jobs sent
 	DirectSent    uint64 // Jobs sent directly to main channel
@@ -36,7 +36,7 @@ type IndexJobQueueStats struct {
 	DroppedCount  uint64 // Jobs dropped when both buffers full
 }
 
-// IndexJobQueueConfig holds settings for the indexing job queue
+// IndexJobQueueConfig defines the behavior of the producer-consumer indexing queue.
 type IndexJobQueueConfig struct {
 	MainChannelSize    int           // Primary channel buffer size
 	OverflowBufferSize int           // Secondary overflow buffer size
@@ -54,7 +54,7 @@ func DefaultIndexJobQueueConfig() IndexJobQueueConfig {
 	}
 }
 
-// ParallelSearchConfig holds settings for parallelized vector search
+// ParallelSearchConfig controls the degree of parallelism for vector similarity search.
 type ParallelSearchConfig struct {
 	Enabled      bool
 	Workers      int
@@ -74,7 +74,7 @@ func DefaultParallelSearchConfig() ParallelSearchConfig {
 	}
 }
 
-// ArrowHNSWConfig holds configuration for ArrowHNSW index
+// ArrowHNSWConfig defines the hyperparameters and runtime settings for an HNSW index.
 type ArrowHNSWConfig struct {
 	M              int
 	MMax           int

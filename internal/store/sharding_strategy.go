@@ -20,6 +20,7 @@ type LinearSharding struct {
 	threshold int
 }
 
+// NewLinearSharding creates a new LinearSharding strategy.
 func NewLinearSharding(threshold int) *LinearSharding {
 	if threshold <= 0 {
 		threshold = 1
@@ -27,10 +28,12 @@ func NewLinearSharding(threshold int) *LinearSharding {
 	return &LinearSharding{threshold: threshold}
 }
 
+// GetShard returns the shard index for a given vector ID using linear math.
 func (s *LinearSharding) GetShard(id VectorID) int {
 	return int(uint64(id) / uint64(s.threshold)) // #nosec G115
 }
 
+// ActiveShards is not applicable for linear sharding and returns -1.
 func (s *LinearSharding) ActiveShards() int {
 	// Linear sharding effectively has "infinite" shards, but active ones depend on max ID.
 	// This method is less relevant for linear sharding's dynamic growth.
@@ -101,6 +104,7 @@ func (rs *RingSharder) hashID(id VectorID) uint32 {
 	return h.Sum32()
 }
 
+// GetShard returns the shard index for a given vector ID using consistent hashing.
 func (rs *RingSharder) GetShard(id VectorID) int {
 	rs.mu.RLock()
 	defer rs.mu.RUnlock()
@@ -121,6 +125,7 @@ func (rs *RingSharder) GetShard(id VectorID) int {
 	return rs.ring[rs.sortedHashes[idx]]
 }
 
+// ActiveShards returns the number of shards currently in the ring.
 func (rs *RingSharder) ActiveShards() int {
 	rs.mu.RLock()
 	defer rs.mu.RUnlock()

@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// DiskIOScheduler manages background I/O requests with concurrency control and prefetching.
 type DiskIOScheduler struct {
 	mu            sync.RWMutex
 	pendingReads  []DiskIORequest
@@ -36,6 +37,7 @@ type DiskIOScheduler struct {
 	sequentialCount int
 }
 
+// DiskIORequest represents a single I/O operation request.
 type DiskIORequest struct {
 	Offset    int64
 	Size      int
@@ -46,6 +48,7 @@ type DiskIORequest struct {
 	Timestamp time.Time
 }
 
+// IOScheduleItem is an internal item used for scheduling I/O operations.
 type IOScheduleItem struct {
 	BlockID    uint64
 	Priority   int
@@ -54,12 +57,14 @@ type IOScheduleItem struct {
 	SubmitTime time.Time
 }
 
+// PriorityQueue implements a simple priority queue for I/O tasks.
 type PriorityQueue struct {
 	items   []IOScheduleItem
 	mu      sync.Mutex
 	maxSize int
 }
 
+// NewPriorityQueue creates a new PriorityQueue with a maximum size.
 func NewPriorityQueue(maxSize int) *PriorityQueue {
 	return &PriorityQueue{
 		items:   make([]IOScheduleItem, 0, maxSize),
@@ -67,6 +72,7 @@ func NewPriorityQueue(maxSize int) *PriorityQueue {
 	}
 }
 
+// Push adds an item to the priority queue. Returns false if full.
 func (pq *PriorityQueue) Push(item IOScheduleItem) bool {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
@@ -78,6 +84,7 @@ func (pq *PriorityQueue) Push(item IOScheduleItem) bool {
 	return true
 }
 
+// Pop removes and returns the highest priority item from the queue.
 func (pq *PriorityQueue) Pop() (IOScheduleItem, bool) {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
@@ -92,6 +99,7 @@ func (pq *PriorityQueue) Pop() (IOScheduleItem, bool) {
 	return item, true
 }
 
+// Len returns the number of items in the queue.
 func (pq *PriorityQueue) Len() int {
 	pq.mu.Lock()
 	defer pq.mu.Unlock()
@@ -129,6 +137,7 @@ func (pq *PriorityQueue) siftDown(i int) {
 	}
 }
 
+// NewDiskIOScheduler creates a new DiskIOScheduler with the specified concurrency limit.
 func NewDiskIOScheduler(maxConcurrent int) *DiskIOScheduler {
 	return &DiskIOScheduler{
 		maxConcurrent: maxConcurrent,
@@ -146,6 +155,7 @@ func NewDiskIOScheduler(maxConcurrent int) *DiskIOScheduler {
 	}
 }
 
+// ConfigurePrefetch updates the prefetching parameters.
 func (s *DiskIOScheduler) ConfigurePrefetch(readAheadBlocks, maxPrefetch int) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -154,6 +164,7 @@ func (s *DiskIOScheduler) ConfigurePrefetch(readAheadBlocks, maxPrefetch int) {
 	s.prefetchQueue = make(chan uint64, maxPrefetch)
 }
 
+// Submit adds a request to the scheduler.
 func (s *DiskIOScheduler) Submit(req DiskIORequest) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -195,6 +206,7 @@ func (s *DiskIOScheduler) performRead(req DiskIORequest) error {
 	return nil
 }
 
+// RecordAccess logs a block access to update prefetching state.
 func (s *DiskIOScheduler) RecordAccess(blockID uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -232,16 +244,19 @@ func (s *DiskIOScheduler) triggerReadAhead(currentBlock uint64) {
 	}
 }
 
+// IsPrefetched returns true if the block is currently in the prefetch cache.
 func (s *DiskIOScheduler) IsPrefetched(blockID uint64) bool {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	return s.prefetched[blockID]
 }
 
+// GetPrefetchChannel returns the channel for receiving prefetch block IDs.
 func (s *DiskIOScheduler) GetPrefetchChannel() <-chan uint64 {
 	return s.prefetchQueue
 }
 
+// MarkPrefetchComplete flags a block as successfully prefetched.
 func (s *DiskIOScheduler) MarkPrefetchComplete(blockID uint64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -274,6 +289,7 @@ func (s *DiskIOScheduler) sortByPriority() {
 	}
 }
 
+// DiskIOStats contains performance metrics for the I/O scheduler.
 type DiskIOStats struct {
 	TotalRequests   int64
 	TotalBytes      int64
@@ -287,6 +303,7 @@ type DiskIOStats struct {
 	RandomReads     int64
 }
 
+// GetStats returns current I/O performance metrics.
 func (s *DiskIOScheduler) GetStats() DiskIOStats {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -304,6 +321,7 @@ func (s *DiskIOScheduler) GetStats() DiskIOStats {
 	}
 }
 
+// Wait blocks until all pending requests are complete or the context is cancelled.
 func (s *DiskIOScheduler) Wait(ctx context.Context) error {
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
@@ -323,6 +341,7 @@ func (s *DiskIOScheduler) Wait(ctx context.Context) error {
 	}
 }
 
+// ClearPrefetched resets the prefetch tracking state.
 func (s *DiskIOScheduler) ClearPrefetched() {
 	s.mu.Lock()
 	defer s.mu.Unlock()

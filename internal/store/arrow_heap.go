@@ -137,10 +137,12 @@ func NewMaxHeap(capacity int) *MaxHeap {
 	}
 }
 
+// Len returns the current number of elements in the heap.
 func (h *MaxHeap) Len() int {
 	return h.size
 }
 
+// Push adds a candidate to the heap. If full, it replaces the largest element if the new candidate is smaller.
 func (h *MaxHeap) Push(c Candidate) {
 	if h.size < h.cap {
 		h.items[h.size] = c
@@ -166,6 +168,7 @@ func (h *MaxHeap) Push(c Candidate) {
 	}
 }
 
+// Pop removes and returns the maximum element (largest distance).
 func (h *MaxHeap) Pop() (Candidate, bool) {
 	if h.size == 0 {
 		return Candidate{}, false
@@ -179,6 +182,7 @@ func (h *MaxHeap) Pop() (Candidate, bool) {
 	return maxItem, true
 }
 
+// Peek returns the maximum element without removing it.
 func (h *MaxHeap) Peek() (Candidate, bool) {
 	if h.size == 0 {
 		return Candidate{}, false

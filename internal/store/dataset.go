@@ -26,11 +26,10 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
-// IndexJob represents a job for the indexing worker
+// IndexJob represents a job for the indexing worker.
+// RowLocation represents a physical location of a row.
 
-// RowLocation represents a physical location of a row
-
-// Dataset wraps records with metadata for eviction and tombstones
+// HNSWSettings holds configuration for HNSW index construction.
 type HNSWSettings struct {
 	M              int
 	EfConstruction int
@@ -44,6 +43,7 @@ type IDMap struct {
 	IsNumeric bool
 }
 
+// Release returns the IDMap to the pool.
 func (m *IDMap) Release() {
 	if m == nil {
 		return
@@ -66,6 +66,7 @@ var idMapPool = sync.Pool{
 	},
 }
 
+// Dataset wraps records with metadata for eviction and tombstones.
 type Dataset struct {
 	Records    []arrow.RecordBatch
 	lastAccess int64 // UnixNano
@@ -187,6 +188,7 @@ type QueryStats struct {
 	lastReset    time.Time
 }
 
+// Record adds a new sample to the query statistics.
 func (s *QueryStats) Record(latency time.Duration, recall float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -201,6 +203,7 @@ func (s *QueryStats) Record(latency time.Duration, recall float64) {
 	}
 }
 
+// GetMetrics returns the calculated performance metrics.
 func (s *QueryStats) GetMetrics() (p50, p99, avg float64, recall float64, qps float64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -267,7 +270,7 @@ func (d *Dataset) GetShardedIndex() *ShardedHNSW {
 	return nil
 }
 
-// IndexLen returns the number of vectors in the index.
+// IndexLen returns the total number of vectors currently in the dataset's index.
 func (d *Dataset) IndexLen() int {
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
@@ -287,42 +290,49 @@ func (d *Dataset) GetRecord(idx int) (arrow.RecordBatch, bool) {
 	return nil, false
 }
 
-// GetName returns the name of the dataset
+// GetName returns the name of the dataset.
 func (d *Dataset) GetName() string {
 	return d.Name
 }
 
 // GetRecords returns the records in the dataset
+// GetRecords returns the records in the dataset.
 func (d *Dataset) GetRecords() []arrow.RecordBatch {
 	return d.Records
 }
 
 // GetIndex returns the underlying vector index
+// GetIndex returns the underlying vector index.
 func (d *Dataset) GetIndex() any {
 	return d.Index
 }
 
 // GetSchema returns the schema of the dataset
+// GetSchema returns the schema of the dataset.
 func (d *Dataset) GetSchema() *arrow.Schema {
 	return d.Schema
 }
 
 // GetTombstones returns the tombstones for the dataset
+// GetTombstones returns the tombstones for the dataset.
 func (d *Dataset) GetTombstones() map[int]*types.Bitset {
 	return d.Tombstones
 }
 
 // GetPQEncoder returns the PQ encoder for the dataset
+// GetPQEncoder returns the PQ encoder for the dataset.
 func (d *Dataset) GetPQEncoder() *pq.PQEncoder {
 	return d.PQEncoder
 }
 
 // RLockData acquires a read lock on the dataset data
+// RLockData acquires a read lock on the dataset data.
 func (d *Dataset) RLockData() {
 	d.dataMu.RLock()
 }
 
 // RUnlockData releases a read lock on the dataset data
+// RUnlockData releases a read lock on the dataset data.
 func (d *Dataset) RUnlockData() {
 	d.dataMu.RUnlock()
 }
@@ -334,6 +344,8 @@ func (d *Dataset) ResetTombstones() {
 	d.Tombstones = make(map[int]*types.Bitset)
 }
 
+// NewDataset creates a new dataset with the given name and schema.
+// NewDataset creates a new Dataset with the specified name and schema.
 func NewDataset(name string, schema *arrow.Schema) *Dataset {
 
 	ds := &Dataset{
@@ -390,15 +402,18 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 	return ds
 }
 
+// LastAccess returns the time of the last access to the dataset.
 func (d *Dataset) LastAccess() time.Time {
 	return time.Unix(0, atomic.LoadInt64(&d.lastAccess))
 }
 
+// SetLastAccess updates the time of the last access to the dataset.
 func (d *Dataset) SetLastAccess(t time.Time) {
 	atomic.StoreInt64(&d.lastAccess, t.UnixNano())
 }
 
 // SearchDataset delegates to the vector index if available
+// SearchDataset delegates to the vector index if available.
 func (d *Dataset) SearchDataset(ctx context.Context, queryVec []float32, k int) ([]SearchResult, error) {
 	if d.Index == nil {
 		return nil, fmt.Errorf("index not initialized")
@@ -407,6 +422,7 @@ func (d *Dataset) SearchDataset(ctx context.Context, queryVec []float32, k int) 
 }
 
 // AddToIndex adds a vector to the index
+// AddToIndex adds a vector to the index.
 func (d *Dataset) AddToIndex(batchIdx, rowIdx int) error {
 	d.dataMu.RLock()
 	idx := d.Index
@@ -524,7 +540,7 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr Fi
 	return bitset, nil
 }
 
-// MigrateToShardedIndex migrates the current index to a sharded index
+// MigrateToShardedIndex migrates the current index to a sharded index.
 func (d *Dataset) MigrateToShardedIndex(cfg AutoShardingConfig) error {
 	d.dataMu.Lock()
 	defer d.dataMu.Unlock()
@@ -547,6 +563,7 @@ func (d *Dataset) MigrateToShardedIndex(cfg AutoShardingConfig) error {
 }
 
 // GetVectorIndex returns the current index safely
+// GetVectorIndex returns the current index safely.
 func (d *Dataset) GetVectorIndex() VectorIndex {
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
@@ -554,6 +571,7 @@ func (d *Dataset) GetVectorIndex() VectorIndex {
 }
 
 // Close releases resources associated with the dataset
+// Close releases resources associated with the dataset.
 func (d *Dataset) Close() {
 	d.dataMu.Lock()
 	defer d.dataMu.Unlock()

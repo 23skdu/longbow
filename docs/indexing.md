@@ -85,6 +85,17 @@ Longbow manages the search strategy automatically based on dataset size. Small d
 
 For large-scale deployments, Longbow uses a data-driven **IndexPerformancePredictor** to select the optimal ANN index type (HNSW, IVF-PQ, DiskANN) based on real-time query features and hardware characteristics.
 
+### Multi-Signal Prediction (QueryFeatures)
+
+The predictor analyzes 13 distinct signals to determine the optimal index class:
+
+- **Structural Signals**: Vector dimension, Dataset size, Number of collections.
+- **Query Context**: Search K, Number of query vectors, Query complexity (estimated).
+- **Data Statistics**: Average vector norm (sparsity indicator).
+- **State Signals**: Filtering status (roaring bitmaps), Hybrid search flags.
+- **Infrastructure Context**: Time of day (load prediction), Day of week.
+- **AI Context**: Embedding provider (OpenAI, Cohere, Local), Model dimension ratio.
+
 ### Index Switching Lifecycle
 
 1. **Prediction**: The system monitors latency and recall. If a threshold is breached, the k-NN predictor proposes a superior index type (e.g., migrating from HNSW to DiskANN for better scale).
@@ -208,3 +219,42 @@ When enabled:
 | 768 | 96 | 3 MB | 768 KB | 75% |
 | 1024 | 128 | 4 MB | 1 MB | 75% |
 | 3072 | 384 | 12 MB | 3 MB | 75% |
+
+---
+
+## 12. DiskANN: High-Recall Disk-Optimized Index
+
+Longbow 0.2.0-rc1 introduces native support for **DiskANN**, a state-of-the-art graph-based index optimized for datasets that exceed available RAM.
+
+### Vamana Graph Algorithm
+
+DiskANN uses the **Vamana** graph construction algorithm, which produces graphs with smaller diameter and higher connectivity than standard HNSW, specifically designed to minimize disk I/O during traversal.
+
+### Key Features
+
+- **Disk-First Traversal**: Integrated with Longbow's `DiskIOScheduler` for asynchronous prefetching and I/O concurrency control.
+- **High Density**: Supports much larger datasets than HNSW by offloading the majority of the graph structure and vector data to SSD/NVMe.
+- **Configurable Performance**:
+  - `MaxDegree (R)`: Controls graph density and search speed.
+  - `BeamWidth (L)`: Balances search recall vs. latency.
+  - `BuildThreads`: Parallelizes graph construction during background migrations.
+
+### Performance Comparison
+
+| Metric | HNSW | IVF-PQ | DiskANN |
+| :--- | :--- | :--- | :--- |
+| **Recall** | Ultra-High | Medium | **High** |
+| **RAM Usage** | High | Low | **Low-Medium** |
+| **Disk Usage** | Moderate | Moderate | **High** |
+| **Search QPS** | Extreme | High | **Moderate-High** |
+| **Scale** | Millions | Billions | **Billions** |
+
+---
+
+## 13. Index Factory & Pluggable Architecture
+
+Longbow's `PluggableVectorIndex` interface allows for seamless integration of custom indexing algorithms.
+
+- **Unified Interface**: All indices support `Search`, `Add`, `Save`, `Load`, and `ExportState`.
+- **Hot-Swapping**: The `IndexSwitcher` allows for runtime algorithm migration without restart.
+- **Legacy Compatibility**: Adapters ensure that new indices (like DiskANN) work with existing `AddByLocation` and `SearchVectors` call sites.

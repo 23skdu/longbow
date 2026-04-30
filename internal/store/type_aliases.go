@@ -28,9 +28,13 @@ const (
 	MetricDotProduct = core.MetricDotProduct
 )
 
-// Index interface alias
+// VectorIndex is an interface for vector indexing operations.
 type VectorIndex = types.VectorIndexer
+
+// GraphData represents the graph structure for HNSW.
 type GraphData = types.GraphData
+
+// Candidate represents a potential search result during HNSW traversal.
 type Candidate = types.Candidate
 
 const (
@@ -39,24 +43,55 @@ const (
 	ArrowMaxLayers = types.ArrowMaxLayers
 )
 
-// HNSW Core Types
+// DeltaSync represents a delta update for index synchronization.
+type DeltaSync = types.DeltaSync
+
+// ParallelSearchConfig defines configuration for parallel search operations.
+type ParallelSearchConfig = types.ParallelSearchConfig
+
+// ArrowHNSW is the core HNSW implementation using Arrow memory.
 type ArrowHNSW = hnswcore.ArrowHNSW
+
+// ArrowHNSWConfig defines the configuration for ArrowHNSW.
 type ArrowHNSWConfig = types.ArrowHNSWConfig
+
+// ArrowBitset provides a fast bitset implementation for visited nodes.
 type ArrowBitset = types.ArrowBitset
 type LockFreeRingBuffer[T any] = hnswcore.LockFreeRingBuffer[T]
 type PackedAdjacency = hnswcore.PackedAdjacency
 type SearchArena = hnswcore.SearchArena
 type ChunkedLocationStore = hnswcore.ChunkedLocationStore
+// BQEncoder implements Binary Quantization.
 type BQEncoder = types.BQEncoder
+
+// RepairAgentConfig defines the configuration for the HNSW repair agent.
 type RepairAgentConfig = hnswcore.RepairAgentConfig
+
+// SparseLayerIndex manages sparse index layers.
 type SparseLayerIndex = hnswcore.SparseLayerIndex
+
+// IndexJob represents a background indexing task.
 type IndexJob = types.IndexJob
+
+// IndexJobQueueConfig defines configuration for the index job queue.
 type IndexJobQueueConfig = types.IndexJobQueueConfig
+
+// RowLocation maps a row to its physical storage.
 type RowLocation = types.RowLocation
+
+// IndexJobQueueLockFree is a high-performance index job queue.
 type IndexJobQueueLockFree = hnswcore.IndexJobQueueLockFree
+
+// IndexJobQueueStats provides metrics for the index job queue.
 type IndexJobQueueStats = types.IndexJobQueueStats
+
+// SQ8Encoder implements 8-bit Scalar Quantization.
 type SQ8Encoder = hnswcore.SQ8Encoder
+
+// ArrowSearchContext holds state for a single HNSW search.
 type ArrowSearchContext = hnswcore.ArrowSearchContext
+
+// ArrowSearchContextPool provides a pool for reusing search contexts.
 type ArrowSearchContextPool = hnswcore.ArrowSearchContextPool
 
 const (

@@ -17,6 +17,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
+// GraphStore manages an in-memory graph representation for GraphRAG operations.
 type GraphStore struct {
 	mu sync.RWMutex
 
@@ -27,18 +28,24 @@ type GraphStore struct {
 	edgeCount     int
 }
 
+// Direction defines the traversal direction in the graph.
 type Direction int
 
 const (
+	// DirectionOutgoing traverses from subject to object.
 	DirectionOutgoing Direction = iota
+	// DirectionIncoming traverses from object to subject.
 	DirectionIncoming
+	// DirectionBoth traverses in both directions.
 	DirectionBoth
 )
 
+// NeighborProvider defines an interface for bulk neighbor lookups.
 type NeighborProvider interface {
 	GetNeighborsBulk(ctx context.Context, dataset string, nodeIDs []uint32) (map[uint32][]uint32, error)
 }
 
+// TraverseOptions configures the graph traversal behavior.
 type TraverseOptions struct {
 	MaxHops   int
 	Direction Direction
@@ -46,6 +53,7 @@ type TraverseOptions struct {
 	Decay     float32
 }
 
+// DefaultTraverseOptions returns a default traversal configuration.
 func DefaultTraverseOptions() TraverseOptions {
 	return TraverseOptions{
 		MaxHops:   2,
@@ -55,12 +63,14 @@ func DefaultTraverseOptions() TraverseOptions {
 	}
 }
 
+// Path represents a sequence of nodes and edges found during traversal.
 type Path struct {
 	Nodes []VectorID
 	Edges []Edge
 	Score float32
 }
 
+// Edge represents a weighted relationship between a subject and an object.
 type Edge struct {
 	Subject   VectorID
 	Predicate string
@@ -71,6 +81,7 @@ type Edge struct {
 // PathPriorityQueue for weighted traversal
 type PathPriorityQueue []Path
 
+// Len returns the number of paths in the queue.
 func (pq PathPriorityQueue) Len() int { return len(pq) }
 
 func (pq PathPriorityQueue) Less(i, j int) bool {
@@ -82,10 +93,12 @@ func (pq PathPriorityQueue) Swap(i, j int) {
 	pq[i], pq[j] = pq[j], pq[i]
 }
 
+// Push adds a path to the priority queue.
 func (pq *PathPriorityQueue) Push(x any) {
 	*pq = append(*pq, x.(Path))
 }
 
+// Pop removes the highest-scoring path from the priority queue.
 func (pq *PathPriorityQueue) Pop() any {
 	old := *pq
 	n := len(old)
@@ -94,6 +107,7 @@ func (pq *PathPriorityQueue) Pop() any {
 	return item
 }
 
+// NewGraphStore creates an empty GraphStore.
 func NewGraphStore() *GraphStore {
 	return &GraphStore{
 		forwardEdges:  make(map[uint32][]Edge),
@@ -104,6 +118,7 @@ func NewGraphStore() *GraphStore {
 	}
 }
 
+// AddEdge adds a new edge to the graph store.
 func (gs *GraphStore) AddEdge(edge Edge) error {
 	gs.mu.Lock()
 	defer gs.mu.Unlock()
@@ -121,24 +136,28 @@ func (gs *GraphStore) AddEdge(edge Edge) error {
 	return nil
 }
 
+// EdgeCount returns the total number of edges in the graph.
 func (gs *GraphStore) EdgeCount() int {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 	return gs.edgeCount
 }
 
+// GetEdgesBySubject returns all outgoing edges for a given subject.
 func (gs *GraphStore) GetEdgesBySubject(subject uint32) []Edge {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 	return append([]Edge(nil), gs.forwardEdges[subject]...)
 }
 
+// GetEdgesByObject returns all incoming edges for a given object.
 func (gs *GraphStore) GetEdgesByObject(object uint32) []Edge {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 	return append([]Edge(nil), gs.backwardEdges[object]...)
 }
 
+// GetEdgesByPredicate returns all edges with a specific predicate.
 func (gs *GraphStore) GetEdgesByPredicate(predicate string) []Edge {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
@@ -154,12 +173,14 @@ func (gs *GraphStore) GetEdgesByPredicate(predicate string) []Edge {
 	return result
 }
 
+// PredicateVocabulary returns the list of all predicates in the graph.
 func (gs *GraphStore) PredicateVocabulary() []string {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
 	return append([]string(nil), gs.predicates...)
 }
 
+// CommunityCount returns the number of nodes that have outgoing edges.
 func (gs *GraphStore) CommunityCount() int {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
@@ -210,6 +231,7 @@ const (
 	GPUWorkloadThreshold = 5000
 )
 
+// RankWithGraphGPU performs graph-based reranking using GPU acceleration.
 func (gs *GraphStore) RankWithGraphGPU(dataset string, results []SearchResult, alpha float32, depth int, gpuIdx gputypes.Index) ([]SearchResult, error) {
 	if len(results) == 0 || gpuIdx == nil {
 		return results, nil
@@ -279,6 +301,7 @@ func (gs *GraphStore) RankWithGraphGPU(dataset string, results []SearchResult, a
 	return results, nil
 }
 
+// RankWithGraph performs graph-based reranking using CPU execution.
 func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth int) []SearchResult {
 	if len(results) == 0 || alpha <= 0 {
 		return results
@@ -327,9 +350,9 @@ func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth
 		for i, id := range currentNodes {
 			// SIMD prefetching for local edges
 			if i+2 < len(currentNodes) {
-				nextNextId := currentNodes[i+2]
-				if edges, ok := gs.forwardEdges[nextNextId]; ok && len(edges) > 0 {
-					simd.Prefetch(unsafe.Pointer(&edges[0]))
+				nextNextID := currentNodes[i+2]
+				if edges, ok := gs.forwardEdges[nextNextID]; ok && len(edges) > 0 {
+					simd.Prefetch(unsafe.Pointer(&edges[0])) // #nosec G103
 				}
 			}
 
@@ -371,6 +394,7 @@ func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth
 	return newResults
 }
 
+// RankWithGraphDistributed performs graph-based reranking across a distributed mesh.
 func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset string, results []SearchResult, alpha float32, depth int, provider NeighborProvider) []SearchResult {
 	if len(results) == 0 || alpha <= 0 {
 		return results
@@ -418,9 +442,9 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 		for i, id := range currentNodes {
 			// Prioritize for SIMD prefetching: prefetch the edge list for the node after next
 			if i+2 < len(currentNodes) {
-				nextNextId := currentNodes[i+2]
-				if edges, ok := gs.forwardEdges[nextNextId]; ok && len(edges) > 0 {
-					simd.Prefetch(unsafe.Pointer(&edges[0]))
+				nextNextID := currentNodes[i+2]
+				if edges, ok := gs.forwardEdges[nextNextID]; ok && len(edges) > 0 {
+					simd.Prefetch(unsafe.Pointer(&edges[0])) // #nosec G103
 				}
 			}
 
@@ -491,6 +515,7 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 	return newResults
 }
 
+// Traverse performs a graph traversal starting from a specific node.
 func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
@@ -688,6 +713,7 @@ func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
 	return results
 }
 
+// Close releases all resources associated with the graph store.
 func (gs *GraphStore) Close() error {
 	gs.mu.Lock()
 	defer gs.mu.Unlock()

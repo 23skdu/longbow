@@ -3249,6 +3249,11 @@ func (h *ArrowHNSW) flushSearchMetrics(ctx *ArrowSearchContext) {
 	}
 }
 
+// GetIndexType returns "hnsw".
+func (h *ArrowHNSW) GetIndexType() string {
+	return "hnsw"
+}
+
 func (h *ArrowHNSW) Len() int {
 	return h.Size()
 }
@@ -4317,4 +4322,30 @@ func (h *ArrowHNSW) RemapLocations(ctx context.Context, mapping map[uint32]any) 
 }
 func (h *ArrowHNSW) GetNUMANode() (int, *memory.NUMATopology) {
 	return h.config.NUMANode, h.topo
+}
+// compareAndSwapData safely publishes a new GraphData pointer, ensuring we don't
+// revert a concurrent structural growth (higher capacity) and retry if needed.
+func (h *ArrowHNSW) compareAndSwapData(newData *types.GraphData) bool {
+	for {
+		current := h.data.Load()
+		if current == newData {
+			return true // Already published
+		}
+
+		// Never revert capacity. If current has higher capacity, we must adopt its structure.
+		// However, since chunks are shared across clones, we don't strictly need to 
+		// merge if our updates were to existing chunks. 
+		// But we should at least not overwrite a larger capacity with a smaller one.
+		if current != nil && newData != nil && newData.Capacity < current.Capacity {
+			// Someone else grew the graph. Our newData is structurally stale.
+			// Since our adjacency updates were to shared chunks, they are likely 
+			// already visible via 'current' if it shares those same chunks.
+			return false 
+		}
+
+		if h.data.CompareAndSwap(current, newData) {
+			return true
+		}
+		// CAS failed, retry (unless capacity check fails)
+	}
 }

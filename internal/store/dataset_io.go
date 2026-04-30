@@ -41,14 +41,17 @@ func putDatasetBuffer(b *bytes.Buffer) {
 	datasetExportBufferPool.Put(b)
 }
 
+// DatasetIO handles importing and exporting datasets in various formats.
 type DatasetIO struct {
 	vs *VectorStore
 }
 
+// NewDatasetIO creates a new DatasetIO instance.
 func NewDatasetIO(vs *VectorStore) *DatasetIO {
 	return &DatasetIO{vs: vs}
 }
 
+// DatasetHeader contains metadata for an exported dataset.
 type DatasetHeader struct {
 	Magic      string    `json:"magic"`
 	Version    int       `json:"version"`
@@ -62,6 +65,7 @@ type DatasetHeader struct {
 	VectorType string    `json:"vector_type"`
 }
 
+// Validate checks if the header magic and version are supported.
 func (d *DatasetHeader) Validate() error {
 	if d.Magic != DatasetMagic {
 		return fmt.Errorf("invalid magic: expected %s, got %s", DatasetMagic, d.Magic)
@@ -79,6 +83,7 @@ type DatasetParquetRecord struct {
 	CreatedAt int64  `parquet:"created_at,optional"`
 }
 
+// ExportToParquet exports a dataset to Parquet format using the provided backend.
 func (d *DatasetIO) ExportToParquet(ctx context.Context, name string, backend storage.SnapshotBackend) (int64, error) {
 	startTime := time.Now()
 	ds, ok := d.vs.getDataset(name)
@@ -295,6 +300,7 @@ func (d *DatasetIO) writeRecordsToParquet(records []arrow.RecordBatch, buf *byte
 	return totalRows, nil
 }
 
+// ImportFromParquet imports a dataset from Parquet format.
 func (d *DatasetIO) ImportFromParquet(ctx context.Context, snapshotName, datasetName string, backend storage.SnapshotBackend, schema *arrow.Schema) (int64, error) {
 	startTime := time.Now()
 
@@ -402,6 +408,7 @@ func (d *DatasetIO) readParquetToRecords(r io.Reader, ds *Dataset) (int64, error
 	return ingester.Ingest(context.Background(), tmpPath)
 }
 
+// ExportToArrowIPC exports a dataset to Arrow IPC format.
 func (d *DatasetIO) ExportToArrowIPC(ctx context.Context, name string, backend storage.SnapshotBackend) (int64, error) {
 	startTime := time.Now()
 	ds, ok := d.vs.getDataset(name)
@@ -455,6 +462,7 @@ func (d *DatasetIO) ExportToArrowIPC(ctx context.Context, name string, backend s
 	return totalRows, nil
 }
 
+// ImportFromArrowIPC imports a dataset from Arrow IPC format.
 func (d *DatasetIO) ImportFromArrowIPC(ctx context.Context, name string, backend storage.SnapshotBackend, schema *arrow.Schema) (int64, error) {
 	startTime := time.Now()
 

@@ -363,6 +363,10 @@ func (idx *IVFHNSWCompositeIndex) SearchVectors(query []float32, k int, options 
 }
 func (idx *IVFHNSWCompositeIndex) Size() int { return int(idx.nextID) }
 func (idx *IVFHNSWCompositeIndex) Len() int { return idx.Size() }
+
+func (idx *IVFHNSWCompositeIndex) GetIndexType() string {
+	return string(idx.Type())
+}
 func (idx *IVFHNSWCompositeIndex) Close() error { 
 	if idx.coarseHNSW != nil {
 		return idx.coarseHNSW.Close()

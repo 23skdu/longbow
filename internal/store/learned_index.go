@@ -187,6 +187,7 @@ func embeddingModelDimRatio(provider, model string, actualDim int) float64 {
 	}
 }
 
+// QueryFeatures encapsulates signals used to predict the optimal index type for a query.
 type QueryFeatures struct {
 	VectorDimension    int     `json:"vector_dimension"`
 	NumQueryVectors    int     `json:"num_query_vectors"`
@@ -218,6 +219,7 @@ func (f *QueryFeatures) UpdateFromEmbedding(embedding []float64) {
 	f.AvgVectorNorm = math.Sqrt(sumSq)
 }
 
+// IndexPrediction contains the recommended index type and its estimated performance.
 type IndexPrediction struct {
 	RecommendedIndex IndexType     `json:"recommended_index"`
 	Confidence       float64       `json:"confidence"`
@@ -226,6 +228,7 @@ type IndexPrediction struct {
 	Alternatives     []IndexType   `json:"alternatives"`
 }
 
+// TrainingSample represents an observed search performance event used for model training.
 type TrainingSample struct {
 	Features QueryFeatures
 	Latency  time.Duration
@@ -233,6 +236,7 @@ type TrainingSample struct {
 	Index    IndexType
 }
 
+// IndexPerformancePredictor predicts the best index type based on query features.
 type IndexPerformancePredictor struct {
 	logger           zerolog.Logger
 	config           LearnedIndexConfig
@@ -247,12 +251,14 @@ type IndexPerformancePredictor struct {
 	lastPredictedIdx atomic.Value // stores IndexType; written by Predict, read by AddTrainingSample
 }
 
+// PredictorStats tracks the performance and accuracy of the predictor.
 type PredictorStats struct {
 	TrainingSamplesCollected atomic.Int64
 	PredictionsMade          atomic.Int64
 	PredictionCorrect        atomic.Int64
 }
 
+// LearnedIndexConfig defines the configuration for the learned index predictor.
 type LearnedIndexConfig struct {
 	EnableAutoSelection bool          `json:"enable_auto_selection"`
 	MinTrainingSamples  int           `json:"min_training_samples"`
@@ -327,6 +333,7 @@ func (p *IndexPerformancePredictor) initializeWeights() {
 	}
 }
 
+// AddTrainingSample incorporates a new observation into the predictor's training set.
 func (p *IndexPerformancePredictor) AddTrainingSample(sample TrainingSample) {
 	// Correctness tracking: if the last k-NN prediction matched this observed outcome, count it.
 	if v := p.lastPredictedIdx.Load(); v != nil {
@@ -367,6 +374,7 @@ func (p *IndexPerformancePredictor) AddTrainingSample(sample TrainingSample) {
 	}
 }
 
+// Predict estimates the optimal index type and performance for a given set of query features.
 func (p *IndexPerformancePredictor) Predict(features QueryFeatures) IndexPrediction {
 	p.stats.PredictionsMade.Add(1)
 
@@ -695,32 +703,43 @@ func (p *IndexPerformancePredictor) getAlternatives(scores map[IndexType]float64
 	return alternatives
 }
 
+// GetStats returns the current operational statistics of the predictor.
+// GetStats returns the current performance statistics of the predictor.
 func (p *IndexPerformancePredictor) GetStats() (samples, predictions, correct int64) {
 	return p.stats.TrainingSamplesCollected.Load(),
 		p.stats.PredictionsMade.Load(),
 		p.stats.PredictionCorrect.Load()
 }
 
+// GetConfig returns the current predictor configuration.
+// GetConfig returns the current configuration of the learned index predictor.
 func (p *IndexPerformancePredictor) GetConfig() LearnedIndexConfig {
 	return p.config
 }
 
+// SetConfig updates the predictor configuration.
+// SetConfig updates the configuration of the learned index predictor.
 func (p *IndexPerformancePredictor) SetConfig(config LearnedIndexConfig) {
 	p.config = config
 }
 
+// GetTrainingSampleCount returns the total number of training samples collected.
+// GetTrainingSampleCount returns the number of samples currently in the training set.
 func (p *IndexPerformancePredictor) GetTrainingSampleCount() int {
 	p.samplesMu.RLock()
 	defer p.samplesMu.RUnlock()
 	return len(p.samples)
 }
 
+// ClearTrainingData removes all collected training samples.
+// ClearTrainingData removes all training samples and resets the predictor stats.
 func (p *IndexPerformancePredictor) ClearTrainingData() {
 	p.samplesMu.Lock()
 	defer p.samplesMu.Unlock()
 	p.samples = make([]TrainingSample, 0, 10000)
 }
 
+// QueryIndexMapper manages the mapping between queries and optimal index types.
 type QueryIndexMapper struct {
 	logger       zerolog.Logger
 	predictor    *IndexPerformancePredictor
@@ -730,6 +749,7 @@ type QueryIndexMapper struct {
 	stats        IndexMapperStats
 }
 
+// IndexMapperConfig defines the configuration for the query-to-index mapper.
 type IndexMapperConfig struct {
 	EnableAutoMapping  bool          `json:"enable_auto_mapping"`
 	CacheEnabled       bool          `json:"cache_enabled"`
@@ -740,6 +760,7 @@ type IndexMapperConfig struct {
 	AdaptationInterval time.Duration `json:"adaptation_interval"`
 }
 
+// IndexMapperStats tracks the mapping operations and cache performance.
 type IndexMapperStats struct {
 	QueriesMapped atomic.Int64
 	CacheHits     atomic.Int64
@@ -748,6 +769,7 @@ type IndexMapperStats struct {
 	Errors        atomic.Int64
 }
 
+// NewQueryIndexMapper creates a new mapper with specified predictor and configuration.
 func NewQueryIndexMapper(logger zerolog.Logger, predictor *IndexPerformancePredictor, config IndexMapperConfig) *QueryIndexMapper {
 	if config.CacheTTL <= 0 {
 		config.CacheTTL = 10 * time.Minute
@@ -764,6 +786,7 @@ func NewQueryIndexMapper(logger zerolog.Logger, predictor *IndexPerformancePredi
 	}
 }
 
+// GetIndexForQuery determines the best index type for a given query and its features.
 func (m *QueryIndexMapper) GetIndexForQuery(queryID string, features QueryFeatures) IndexType {
 	m.stats.QueriesMapped.Add(1)
 
@@ -797,6 +820,7 @@ func (m *QueryIndexMapper) GetIndexForQuery(queryID string, features QueryFeatur
 	return selectedIndex
 }
 
+// InvalidateCache removes a specific query from the index mapping cache.
 func (m *QueryIndexMapper) InvalidateCache(queryID string) {
 	m.mappingMu.Lock()
 	defer m.mappingMu.Unlock()

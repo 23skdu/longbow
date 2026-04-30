@@ -17,8 +17,10 @@ type GeoPoint = lbtypes.GeoPoint
 
 type GeoBoundingBox = lbtypes.GeoBoundingBox
 
+// GeoPolygon represents a sequence of GeoPoints forming a closed area.
 type GeoPolygon []GeoPoint
 
+// GeoDistanceType defines the method used for distance calculations.
 type GeoDistanceType string
 
 const (
@@ -27,12 +29,14 @@ const (
 	GeoDistanceApproximate GeoDistanceType = "approximate"
 )
 
+// GeoSearchConfig holds configuration for geospatial indexing and search.
 type GeoSearchConfig struct {
 	DistanceType GeoDistanceType
 	EarthRadius  float64
 	IndexType    string
 }
 
+// GeoIndexedVector pairs a vector with its geographic location.
 type GeoIndexedVector struct {
 	ID        uint64
 	Vector    []float32
@@ -41,6 +45,7 @@ type GeoIndexedVector struct {
 	Metadata  []byte
 }
 
+// GeoIndex provides efficient spatial indexing for vectors.
 type GeoIndex struct {
 	mu           sync.RWMutex
 	dimension    int
@@ -51,6 +56,7 @@ type GeoIndex struct {
 	datasetName  string // For metrics
 }
 
+// Quadtree implements a recursive spatial partitioning structure.
 type Quadtree struct {
 	mu          sync.RWMutex
 	bounds      GeoBoundingBox
@@ -96,6 +102,7 @@ func (q *Quadtree) Insert(vec *GeoIndexedVector) bool {
 		q.southwest.Insert(vec) || q.southeast.Insert(vec)
 }
 
+// Contains checks if a GeoPoint is within the quadtree bounds.
 func (q *Quadtree) Contains(point GeoPoint) bool {
 	return point.Lat >= q.bounds.MinLat && point.Lat <= q.bounds.MaxLat &&
 		point.Lon >= q.bounds.MinLon && point.Lon <= q.bounds.MaxLon
@@ -141,6 +148,7 @@ func (q *Quadtree) subdivide() {
 	q.divided = true
 }
 
+// QueryRadius returns all vectors within a given radius from a point.
 func (q *Quadtree) QueryRadius(center GeoPoint, radiusKm float64) []*GeoIndexedVector {
 	results := q.queryRadiusRecursive(center, radiusKm)
 	return results
@@ -183,6 +191,7 @@ func (q *Quadtree) intersects(box GeoBoundingBox) bool {
 		box.MaxLon < q.bounds.MinLon || box.MinLon > q.bounds.MaxLon)
 }
 
+// QueryBox returns all vectors within a bounding box.
 func (q *Quadtree) QueryBox(box GeoBoundingBox) []*GeoIndexedVector {
 	var results []*GeoIndexedVector
 
@@ -208,6 +217,7 @@ func (q *Quadtree) QueryBox(box GeoBoundingBox) []*GeoIndexedVector {
 	return results
 }
 
+// NewGeoIndex creates a new GeoIndex with the specified configuration.
 func NewGeoIndex(datasetName string, dimension int, config *GeoSearchConfig) *GeoIndex {
 	if config == nil {
 		config = &GeoSearchConfig{
@@ -227,6 +237,7 @@ func NewGeoIndex(datasetName string, dimension int, config *GeoSearchConfig) *Ge
 	}
 }
 
+// Add inserts a vector and its location into the index.
 func (gi *GeoIndex) Add(id uint64, vector []float32, point GeoPoint, metadata []byte) error {
 	gi.mu.Lock()
 	defer gi.mu.Unlock()
@@ -250,6 +261,7 @@ func (gi *GeoIndex) Add(id uint64, vector []float32, point GeoPoint, metadata []
 	return nil
 }
 
+// SearchRadius finds the k-nearest neighbors within a radius.
 func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm float64, k int) ([]lbtypes.SearchResult, error) {
 	start := time.Now()
 	defer func() {
@@ -302,6 +314,7 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 	return searchResults, nil
 }
 
+// SearchBox finds all vectors within a geographic bounding box.
 func (gi *GeoIndex) SearchBox(ctx context.Context, box GeoBoundingBox, k int) ([]lbtypes.SearchResult, error) {
 	start := time.Now()
 	defer func() {
@@ -327,6 +340,7 @@ func (gi *GeoIndex) SearchBox(ctx context.Context, box GeoBoundingBox, k int) ([
 	return searchResults, nil
 }
 
+// HybridSearch combines vector similarity and geographic proximity.
 func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, center GeoPoint, radiusKm float64, k int) ([]lbtypes.SearchResult, error) {
 	start := time.Now()
 	defer func() {
@@ -379,12 +393,14 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 	return searchResults, nil
 }
 
+// Size returns the total number of vectors in the geo index.
 func (gi *GeoIndex) Size() int {
 	gi.mu.RLock()
 	defer gi.mu.RUnlock()
 	return len(gi.vectors)
 }
 
+// Get retrieves a vector by its ID.
 func (gi *GeoIndex) Get(id uint64) (*GeoIndexedVector, bool) {
 	gi.mu.RLock()
 	defer gi.mu.RUnlock()
@@ -392,6 +408,7 @@ func (gi *GeoIndex) Get(id uint64) (*GeoIndexedVector, bool) {
 	return v, ok
 }
 
+// Delete removes a vector from the geo index.
 func (gi *GeoIndex) Delete(id uint64) {
 	gi.mu.Lock()
 	defer gi.mu.Unlock()
@@ -401,6 +418,7 @@ func (gi *GeoIndex) Delete(id uint64) {
 	}
 }
 
+// HaversineDistance calculates the great-circle distance between two points.
 func HaversineDistance(p1, p2 GeoPoint, earthRadius float64) float64 {
 	lat1 := p1.Lat * math.Pi / 180
 	lat2 := p2.Lat * math.Pi / 180
@@ -413,6 +431,7 @@ func HaversineDistance(p1, p2 GeoPoint, earthRadius float64) float64 {
 	return earthRadius * c
 }
 
+// EuclideanDistanceGeo calculates the planar distance between two points.
 func EuclideanDistanceGeo(p1, p2 GeoPoint) float64 {
 	dLat := p2.Lat - p1.Lat
 	dLon := p2.Lon - p1.Lon
@@ -421,6 +440,7 @@ func EuclideanDistanceGeo(p1, p2 GeoPoint) float64 {
 
 type GeoSearchRequest = lbtypes.GeoSearchRequest
 
+// ValidateGeoSearchRequest ensures a GeoSearchRequest is well-formed.
 func ValidateGeoSearchRequest(req *GeoSearchRequest) error {
 	if req.K <= 0 {
 		req.K = 10
@@ -448,6 +468,7 @@ func ValidateGeoSearchRequest(req *GeoSearchRequest) error {
 }
 
 
+// VectorDistance calculates the Euclidean distance between two vectors.
 func VectorDistance(v1, v2 []float32) float64 {
 	if len(v1) != len(v2) {
 		return -1

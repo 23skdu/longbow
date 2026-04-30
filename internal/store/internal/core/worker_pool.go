@@ -3,6 +3,7 @@ package core
 import (
 	"runtime"
 	"sync"
+	"sync/atomic"
 )
 
 // SharedWorkerPool is a lightweight pool of persistent workers to avoid
@@ -13,7 +14,7 @@ type SharedWorkerPool struct {
 }
 
 var (
-	globalPool *SharedWorkerPool
+	globalPool atomic.Pointer[SharedWorkerPool]
 	poolOnce   sync.Once
 )
 
@@ -21,14 +22,15 @@ var (
 func GetSharedPool() *SharedWorkerPool {
 	poolOnce.Do(func() {
 		numWorkers := runtime.GOMAXPROCS(0)
-		globalPool = &SharedWorkerPool{
+		p := &SharedWorkerPool{
 			tasks: make(chan func(), numWorkers*256),
 		}
 		for i := 0; i < numWorkers; i++ {
-			go globalPool.worker()
+			go p.worker()
 		}
+		globalPool.Store(p)
 	})
-	return globalPool
+	return globalPool.Load()
 }
 
 func (p *SharedWorkerPool) worker() {

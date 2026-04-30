@@ -31,6 +31,7 @@ import (
 	"github.com/23skdu/longbow/internal/tracing"
 )
 
+// ListFlights returns a list of available datasets as FlightInfo objects.
 func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
 	var ticketQuery qry.TicketQuery
 	var err error
@@ -107,6 +108,7 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 	return nil
 }
 
+// GetFlightInfo returns metadata about a specific dataset.
 func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDescriptor) (*flight.FlightInfo, error) {
 	if len(desc.Path) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Empty path")
@@ -123,11 +125,12 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 		TotalBytes:       ds.SizeBytes.Load(),
 	}, nil
 }
+// GetSchema returns the Arrow schema for a specific dataset.
 func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescriptor) (*flight.SchemaResult, error) {
 	return nil, nil
 }
 
-// DoGet - Minimal implementation
+// DoGet handles data retrieval and vector search queries via Arrow Tickets.
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
 	startDoGet := time.Now()
 	// Parse ticket

@@ -22,7 +22,7 @@ func TestShardedHNSW_Compaction(t *testing.T) {
 	config := DefaultShardedHNSWConfig()
 	config.NumShards = 2
 	config.Dimension = 4
-	idx := NewShardedHNSW(config, dataset)
+	idx := NewShardedHNSW(config, dataset).(*ShardedHNSW)
 
 	// 2. Insert Data
 	// Create a dummy record batch
@@ -101,7 +101,7 @@ func TestShardedHNSW_Vacuum(t *testing.T) {
 	config := DefaultShardedHNSWConfig()
 	config.NumShards = 1
 	config.Dimension = 4
-	idx := NewShardedHNSW(config, dataset)
+	idx := NewShardedHNSW(config, dataset).(*ShardedHNSW)
 
 	// Insert 10 items
 	schema := arrow.NewSchema([]arrow.Field{
@@ -158,7 +158,7 @@ func TestShardedHNSW_DynamicGrowth(t *testing.T) {
 	config.UseRingSharding = false  // Enable Linear
 	config.ShardSplitThreshold = 10 // Split every 10 items
 	config.Dimension = 4
-	idx := NewShardedHNSW(config, dataset)
+	idx := NewShardedHNSW(config, dataset).(*ShardedHNSW)
 
 	// Insert 25 items -> Should grow to 3 shards (0-9, 10-19, 20-24)
 	schema := arrow.NewSchema([]arrow.Field{

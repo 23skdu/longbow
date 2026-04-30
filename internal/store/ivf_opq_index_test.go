@@ -57,7 +57,7 @@ func TestIVFOPQIndex_Empty(t *testing.T) {
 	assert.Empty(t, results)
 }
 
-func FuzzIVFOPQIndex_Build(f *testing.F) {
+func FuzzIVFOPQIndexBuild(f *testing.F) {
 	f.Fuzz(func(t *testing.T, dim int, nlist int, n int) {
 		if dim <= 0 || dim > 8192 || nlist <= 0 || nlist > 512 || n <= 0 || n > 100000 {
 			t.Skip()

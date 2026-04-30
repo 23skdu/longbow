@@ -260,6 +260,10 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 	
 	countsChunk = data.GetCountsChunk(layer, cID)
 	neighborsChunk = data.GetNeighborsChunk(layer, cID)
+	if countsChunk == nil || neighborsChunk == nil {
+		return
+	}
+
 	baseIdx := int(cOff) * types.MaxNeighbors
 	for i, cand := range selected {
 		atomic.StoreUint32(&neighborsChunk[baseIdx+i], cand.ID)

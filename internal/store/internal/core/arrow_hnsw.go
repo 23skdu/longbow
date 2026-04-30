@@ -2163,6 +2163,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				return
 			}
 			ids[i] = id
+			h.commitID(id)
 		}
 	})
 	

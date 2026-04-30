@@ -85,10 +85,10 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		Uint32ToFloat32: uint32ToFloat32AVX512,
 		Float16ToFloat32: float16ToFloat32AVX512,
 
-		Sigmoid: sigmoidGeneric,
-		Softmax: softmaxGeneric,
-		Exp:     expGeneric,
-		Log:     logGeneric,
+		Sigmoid: sigmoidAVX512,
+		Softmax: softmaxAVX512,
+		Exp:     expAVX512,
+		Log:     logAVX512,
 	},
 
 	"avx2": {
@@ -122,10 +122,10 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		Uint32ToFloat32: uint32ToFloat32AVX2,
 		Float16ToFloat32: float16ToFloat32AVX2,
 
-		Sigmoid: sigmoidGeneric,
-		Softmax: softmaxGeneric,
-		Exp:     expGeneric,
-		Log:     logGeneric,
+		Sigmoid: sigmoidAVX2,
+		Softmax: softmaxAVX2,
+		Exp:     expAVX2,
+		Log:     logAVX2,
 	},
 
 	"neon": {

@@ -1,10 +1,13 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
-	"container/list"
+	"encoding/binary"
 	"hash/fnv"
+	"math"
 	"sync"
+	"container/list"
+
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // gpuResultCache is an LRU cache for GPU search results
@@ -105,10 +108,11 @@ func (c *gpuResultCache) evictOldest() {
 // hashQuery creates a hash of a query vector for cache lookup
 func hashQuery(query []float32) uint64 {
 	h := fnv.New64a()
+	var b [4]byte
 	for i := 0; i < len(query); i++ {
-		// Convert float32 to bytes
-		bits := uint32(query[i])
-		_, _ = h.Write([]byte{byte(bits), byte(bits >> 8), byte(bits >> 16), byte(bits >> 24)}) // #nosec G104,G115
+		bits := math.Float32bits(query[i])
+		binary.LittleEndian.PutUint32(b[:], bits)
+		_, _ = h.Write(b[:])
 	}
 	return h.Sum64()
 }

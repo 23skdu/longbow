@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/23skdu/longbow/internal/mesh"
@@ -49,7 +50,7 @@ type SyncWorker struct {
 
 type PeerState struct {
 	Addr        string
-	LastSeenSeq uint64
+	LastSeenSeq atomic.Uint64
 	Priority    SyncPriority
 }
 
@@ -144,7 +145,7 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 
 	w.logger.Info().
 		Str("addr", p.Addr).
-		Uint64("last_seq", p.LastSeenSeq).
+		Uint64("last_seq", p.LastSeenSeq.Load()).
 		Msg("Syncing with peer")
 
 	// 2. Connect to peer
@@ -164,7 +165,8 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 
 	// 4. Send "sync" request with last seen seq
 	lastSeqBuf := make([]byte, 8)
-	binary.LittleEndian.PutUint64(lastSeqBuf, p.LastSeenSeq)
+	lastSeq := p.LastSeenSeq.Load()
+	binary.LittleEndian.PutUint64(lastSeqBuf, lastSeq)
 
 	req := &flight.FlightData{
 		FlightDescriptor: &flight.FlightDescriptor{
@@ -230,8 +232,14 @@ func (w *SyncWorker) syncPeer(p *PeerState) error {
 			}
 
 			// Update last seen seq
-			if seq > p.LastSeenSeq {
-				p.LastSeenSeq = seq
+			for {
+				oldSeq := p.LastSeenSeq.Load()
+				if seq <= oldSeq {
+					break
+				}
+				if p.LastSeenSeq.CompareAndSwap(oldSeq, seq) {
+					break
+				}
 			}
 		}
 		r.Release()

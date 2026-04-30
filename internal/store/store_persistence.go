@@ -91,7 +91,9 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 				config.Enabled = true
 			}
 			aIdx := NewAutoShardingIndex(d, config)
-			aIdx.SetInitialDimension(vectorDim)
+			if setter, ok := aIdx.(interface{ SetInitialDimension(int) }); ok {
+				setter.SetInitialDimension(vectorDim)
+			}
 			d.Index = aIdx
 		}
 
@@ -207,7 +209,9 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 			hnswCfg.DataType = dataType
 			config.IndexConfig = &hnswCfg
 			aIdx := NewAutoShardingIndex(d, config)
-			aIdx.SetInitialDimension(vectorDim)
+			if setter, ok := aIdx.(interface{ SetInitialDimension(int) }); ok {
+				setter.SetInitialDimension(vectorDim)
+			}
 			d.Index = aIdx
 
 			// Restore Index Graph

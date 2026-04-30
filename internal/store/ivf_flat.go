@@ -473,6 +473,10 @@ func (ivf *IVFFlatIndex) Len() int {
 	return ivf.Size()
 }
 
+func (ivf *IVFFlatIndex) GetIndexType() string {
+	return string(ivf.Type())
+}
+
 // =============================================================================
 // K-Means Clustering Implementation
 // =============================================================================

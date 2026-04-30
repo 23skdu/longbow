@@ -481,7 +481,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			data = h.AddConnection(nil, data, activeNodes[i-1].id, activeNodes[i].id, 0, h.mMax0, 0.0)
 		}
 	}
-	h.data.Store(data) // Publish initial chain to enable traversal
+	h.compareAndSwapData(data) // Publish initial chain to enable traversal
 
 	for lc := topL; lc >= 0; lc-- {
 
@@ -855,9 +855,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			graphCandidates[idx] = nil
 		}
 
-		// End of Layer Linkage
 		// Publish the updated graph data for this layer so the next layer's search can use it.
-		h.data.Store(data)
+		h.compareAndSwapData(data)
 	}
 
 
@@ -871,7 +870,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	}
 	h.initMu.Unlock()
 
-	h.data.Store(data)
+	h.compareAndSwapData(data)
 
 	if h.config.SQ8Enabled && h.quantizer != nil && !h.sq8Ready.Load() {
 		if vecsF32, ok := vecs.([][]float32); ok {

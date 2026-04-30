@@ -58,20 +58,20 @@ func (s *VectorStore) runIngestionWorkerWithCtx(ctx context.Context) {
 		metrics.IngestionQueueDepth.Set(float64(s.ingestionQueue.Len()))
 
 		// Apply to memory
-		if err := s.applyBatchToMemory(job.ds, job.batch, job.ts); err != nil {
-			s.logger.Error().Err(err).Str("dataset", job.ds.Name).Msg("Failed to apply batch from ingestion queue")
+		if err := s.applyBatchToMemory(job.DS, job.Batch, job.TS); err != nil {
+			s.logger.Error().Err(err).Str("dataset", job.DS.Name).Msg("Failed to apply batch from ingestion queue")
 		}
 
 		// Update metrics (time since enqueued)
 		metrics.IngestionQueueLatency.Observe(time.Since(start).Seconds())
 
 		// Decrement Lag
-		metrics.IngestionLagCount.Sub(float64(job.batch.NumRows()))
+		metrics.IngestionLagCount.Sub(float64(job.Batch.NumRows()))
 
 		// Decrement PendingIngestion counter
-		job.ds.PendingIngestion.Add(-1)
+		job.DS.PendingIngestion.Add(-1)
 
 		// Release the retained batch from DoPut
-		job.batch.Release()
+		job.Batch.Release()
 	}
 }

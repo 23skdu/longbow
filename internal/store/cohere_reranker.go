@@ -9,6 +9,7 @@ import (
 	"time"
 )
 
+// CohereReranker implements a reranking logic using Cohere's API.
 type CohereReranker struct {
 	apiKey     string
 	model      string
@@ -32,6 +33,7 @@ type cohereResponse struct {
 	Results []cohereResult `json:"results"`
 }
 
+// NewCohereReranker creates a new CohereReranker with the specified API key and model.
 func NewCohereReranker(apiKey, model string) *CohereReranker {
 	if model == "" {
 		model = "rerank-english-v3.0"
@@ -45,6 +47,7 @@ func NewCohereReranker(apiKey, model string) *CohereReranker {
 	}
 }
 
+// Score returns relevance scores for a query and a list of documents.
 func (c *CohereReranker) Score(query string, documents []string) ([]float32, error) {
 	if len(documents) == 0 {
 		return []float32{}, nil
@@ -99,6 +102,7 @@ func (c *CohereReranker) Score(query string, documents []string) ([]float32, err
 	return scores, nil
 }
 
+// Close releases resources associated with the reranker.
 func (c *CohereReranker) Close() error {
 	c.httpClient.CloseIdleConnections()
 	return nil

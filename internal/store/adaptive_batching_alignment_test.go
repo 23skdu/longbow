@@ -110,7 +110,7 @@ drain_i:
 		if !ok {
 			break drain_i
 		}
-		job.batch.Release()
+		job.Batch.Release()
 	}
 
 	// With 32MB batching limit:

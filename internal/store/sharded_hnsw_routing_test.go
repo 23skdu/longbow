@@ -58,7 +58,7 @@ func TestShardedHNSW_Routing(t *testing.T) {
 	cfg.UseRingSharding = false
 
 	ds := &Dataset{Name: "routing_test", dataMu: sync.RWMutex{}}
-	idx := NewShardedHNSW(cfg, ds)
+	idx := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	rec := makeRoutingTestRecord(mem, 16, 100)
 	defer rec.Release()
@@ -90,7 +90,7 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 	cfg.UseRingSharding = false
 
 	ds := &Dataset{Name: "merged_search_test", dataMu: sync.RWMutex{}}
-	idx := NewShardedHNSW(cfg, ds)
+	idx := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	rec := makeRoutingTestRecord(mem, 16, 100)
 	defer rec.Release()
@@ -129,7 +129,7 @@ func TestShardedHNSW_Filtering(t *testing.T) {
 	cfg.NumShards = 1
 
 	ds := &Dataset{Name: "filtering_test", dataMu: sync.RWMutex{}}
-	idx := NewShardedHNSW(cfg, ds)
+	idx := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	rec := makeRoutingTestRecord(mem, 16, 100)
 	defer rec.Release()

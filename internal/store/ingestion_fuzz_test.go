@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// FuzzIngestionPipeline_ConcurrentWrites simulates multiple concurrent writers
+// FuzzIngestionPipelineConcurrentWrites simulates multiple concurrent writers
 // to verify data integrity with the async pipeline.
-func FuzzIngestionPipeline_ConcurrentWrites(f *testing.F) {
+func FuzzIngestionPipelineConcurrentWrites(f *testing.F) {
 	f.Add(10, 5) // 10 writers, 5 batches each
 
 	f.Fuzz(func(t *testing.T, numWriters int, batchesPerWriter int) {

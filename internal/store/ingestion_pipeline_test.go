@@ -80,7 +80,7 @@ func TestIngestionPipeline_Backpressure(t *testing.T) {
 
 	// Fill the queue
 	for i := 0; i < queueCap; i++ {
-		job := ingestionJob{ds: ds, batch: rec}
+		job := IngestionJob{DS: ds, Batch: rec}
 		rec.Retain()
 		if !store.ingestionQueue.Push(job) {
 			t.Fatalf("Queue should not be full at %d", i)
@@ -93,7 +93,7 @@ func TestIngestionPipeline_Backpressure(t *testing.T) {
 	// Start a goroutine that blocks
 	done := make(chan bool)
 	go func() {
-		job := ingestionJob{ds: ds, batch: rec}
+		job := IngestionJob{DS: ds, Batch: rec}
 		rec.Retain()
 		// Wait up to 5s. Should succeed after we drain.
 		if store.ingestionQueue.PushBlocking(job, 5*time.Second) {
@@ -111,8 +111,8 @@ func TestIngestionPipeline_Backpressure(t *testing.T) {
 	// Unblock by draining one
 	item, ok := store.ingestionQueue.Pop()
 	require.True(t, ok, "Queue should have item")
-	if item.batch != nil {
-		item.batch.Release()
+	if item.Batch != nil {
+		item.Batch.Release()
 	}
 
 	select {

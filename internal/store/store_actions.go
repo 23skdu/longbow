@@ -29,7 +29,7 @@ import (
 	"github.com/23skdu/longbow/internal/tracing"
 )
 
-// DoAction handles custom actions like deletion and status
+// DoAction handles custom actions like deletion, status, and graph operations.
 func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	switch action.Type {
 	case "cluster-status":
@@ -701,7 +701,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 	return status.Error(codes.Unimplemented, "unknown action type "+action.Type)
 }
 
-// DoPut - Optimized implementation with batching
+// DoPut handles streaming ingestion of Arrow RecordBatches into the store.
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	_, span := tracing.CreateSpan(stream.Context(), "DoPut")
 	if span != nil {
@@ -1044,7 +1044,7 @@ func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []ar
 		// Increment pending ingestion count
 		ds.PendingIngestion.Add(1)
 
-		if !s.ingestionQueue.PushBlocking(ingestionJob{ds: ds, batch: rec, ts: ts}, 5*time.Second) {
+		if !s.ingestionQueue.PushBlocking(IngestionJob{DS: ds, Batch: rec, TS: ts}, 5*time.Second) {
 			// If PushBlocking fails (timeout or stop), we must adjust PendingIngestion
 			ds.PendingIngestion.Add(-1)
 			return errors.New("failed to enqueue ingestion job (timeout or queue closed)")
@@ -1054,6 +1054,7 @@ func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []ar
 	return nil
 }
 
+// StoreRecordBatch ingests a record batch into the specified dataset.
 func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
 	if rec == nil {
 		return errors.New("nil record batch")
@@ -1082,7 +1083,7 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	ds.PendingIngestion.Add(1)
 
 	// Dispatch for ingestion
-	if !s.ingestionQueue.PushBlocking(ingestionJob{ds: ds, batch: rec, ts: ts}, 10*time.Second) {
+	if !s.ingestionQueue.PushBlocking(IngestionJob{DS: ds, Batch: rec, TS: ts}, 10*time.Second) {
 		ds.PendingIngestion.Add(-1)
 		return errors.New("failed to enqueue ingestion job")
 	}
@@ -1296,7 +1297,9 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 				case VectorTypeComplex64, VectorTypeComplex128:
 					dim /= 2
 				}
-				aIdx.SetInitialDimension(dim)
+				if setter, ok := aIdx.(interface{ SetInitialDimension(int) }); ok {
+					setter.SetInitialDimension(dim)
+				}
 			}
 		} else {
 			s.logger.Error().Str("dataset", name).Msg("findVectorColumn returned nil")

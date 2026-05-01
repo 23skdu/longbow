@@ -17,6 +17,7 @@
 **Goal**: Reduce the 50% performance delta between Dense and GraphRAG search.
 
 ### Subtasks
+
 - [ ] **Visited Node Bitset**: Replace `map[uint32]struct{}` with a pooled bitset (e.g., `roaring.Bitmap` or a simple `[]uint64`) in `GraphData` expansion.
 - [ ] **Candidate Set Caching**: Implement a small, thread-local LRU cache for expansion candidates to avoid redundant distance calculations for common hub nodes.
 - [ ] **Expansion Loop Vectorization**: Manually unroll the neighbor traversal loop to improve instruction-level parallelism (ILP).
@@ -34,6 +35,7 @@
 **Goal**: Replace generic fallbacks with architecture-specific assembly for non-linear activations.
 
 ### Subtasks
+
 - [ ] **AVX2/AVX512 (Avo)**:
   - Implement `Exp` and `Log` using rational approximations (e.g., Remez algorithm) or table-based methods.
   - Implement `Softmax` and `Sigmoid` using the new `Exp` kernel.
@@ -51,6 +53,7 @@
 **Goal**: Complete the SIMD toolbox for high-performance tensor-like operations.
 
 ### Subtasks
+
 - [ ] **Vectorized MatMul**: 
   - Implement blocked matrix multiplication kernels for AVX-512 and NEON.
   - Focus on $M \times K \times N$ where $K$ is vector dimension.
@@ -61,5 +64,6 @@
   - `ArgMax` / `ArgMin` for fast top-k candidate selection outside HNSW.
 
 ### Testing & Metrics
+
 - **Metrics**: `longbow_simd_math_ops_total` (labeled by operation and architecture).
 - **Parity Tests**: Automated comparison against `gonum` or standard Go loops for correctness.

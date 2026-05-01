@@ -25,4 +25,11 @@ func init() {
 	dispatchTable["avx2"].DotProduct1024 = dotAVX2
 	dispatchTable["avx2"].DotProduct1536 = dotAVX2
 	dispatchTable["avx2"].DotProduct3072 = DotProductFloat32Blocked
+	dispatchTable["avx2"].Sum = sumAVX2
+	dispatchTable["avx2"].Max = maxAVX2
+	dispatchTable["avx2"].Min = minAVX2
+	dispatchTable["avx2"].Exp = expAVX2
+	dispatchTable["avx2"].Log = logAVX2
+	dispatchTable["avx2"].Softmax = softmaxAVX2
+	dispatchTable["avx2"].Sigmoid = sigmoidAVX2
 }

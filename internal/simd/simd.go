@@ -132,6 +132,11 @@ var (
 	expFloat32Impl     func(src, dst []float32)
 	logFloat32Impl     func(src, dst []float32)
 
+	sumFloat32Impl    func(src []float32) float32
+	maxFloat32Impl    func(src []float32) float32
+	minFloat32Impl    func(src []float32) float32
+	matMulFloat32Impl func(a, b []float32, m, n, k int, dst []float32)
+
 	pauseImpl func()
 )
 
@@ -1203,6 +1208,22 @@ func Log(src, dst []float32) {
 	logFloat32Impl(src, dst)
 }
 
+func Sum(src []float32) float32 {
+	return sumFloat32Impl(src)
+}
+
+func Max(src []float32) float32 {
+	return maxFloat32Impl(src)
+}
+
+func Min(src []float32) float32 {
+	return minFloat32Impl(src)
+}
+
+func MatMul(a, b []float32, m, n, k int, dst []float32) {
+	matMulFloat32Impl(a, b, m, n, k, dst)
+}
+
 func sigmoidGeneric(src, dst []float32) {
 	for i, x := range src {
 		dst[i] = 1.0 / (1.0 + float32(math.Exp(float64(-x))))
@@ -1235,6 +1256,53 @@ func softmaxGeneric(src, dst []float32) {
 	}
 	for i := range dst {
 		dst[i] /= sum
+	}
+}
+
+func sumGeneric(src []float32) float32 {
+	var sum float32
+	for _, x := range src {
+		sum += x
+	}
+	return sum
+}
+
+func maxGeneric(src []float32) float32 {
+	if len(src) == 0 {
+		return -math.MaxFloat32
+	}
+	max := src[0]
+	for _, x := range src[1:] {
+		if x > max {
+			max = x
+		}
+	}
+	return max
+}
+
+func minGeneric(src []float32) float32 {
+	if len(src) == 0 {
+		return math.MaxFloat32
+	}
+	min := src[0]
+	for _, x := range src[1:] {
+		if x < min {
+			min = x
+		}
+	}
+	return min
+}
+
+func matMulGeneric(a, b []float32, m, n, k int, dst []float32) {
+	// a: m x k, b: k x n, dst: m x n
+	for i := 0; i < m; i++ {
+		for j := 0; j < n; j++ {
+			var sum float32
+			for l := 0; l < k; l++ {
+				sum += a[i*k+l] * b[l*n+j]
+			}
+			dst[i*n+j] = sum
+		}
 	}
 }
 func memcpyGeneric(dst, src unsafe.Pointer, n int) {

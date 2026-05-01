@@ -888,7 +888,7 @@ func (d *Dataset) SearchGraphRAG(ctx context.Context, queryVec []float32, k int,
 	}
 
 	// 3. CPU Fallback
-	return d.Graph.RankWithGraph(results, alpha, depth), nil
+	return d.Graph.RankWithGraph(d.Name, results, alpha, depth), nil
 }
 
 // TriggerRequantization starts a background job to change the quantization level of the dataset.

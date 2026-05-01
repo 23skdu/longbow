@@ -50,6 +50,14 @@ type ImplementationDispatch struct {
 	Softmax func(src, dst []float32)
 	Exp     func(src, dst []float32)
 	Log     func(src, dst []float32)
+
+	// Reductions
+	Sum func(src []float32) float32
+	Max func(src []float32) float32
+	Min func(src []float32) float32
+
+	// Matrix operations
+	MatMul func(a, b []float32, m, n, k int, dst []float32)
 }
 
 // Global dispatch table - one per implementation
@@ -89,6 +97,11 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		Softmax: softmaxAVX512,
 		Exp:     expAVX512,
 		Log:     logAVX512,
+
+		Sum: sumGeneric,
+		Max: maxGeneric,
+		Min: minGeneric,
+		MatMul: matMulGeneric,
 	},
 
 	"avx2": {
@@ -126,6 +139,11 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		Softmax: softmaxAVX2,
 		Exp:     expAVX2,
 		Log:     logAVX2,
+
+		Sum: sumAVX2,
+		Max: maxAVX2,
+		Min: minAVX2,
+		MatMul: matMulGeneric,
 	},
 
 	"neon": {
@@ -163,6 +181,11 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		Softmax: softmaxNEON,
 		Exp:     expNEON,
 		Log:     logNEON,
+
+		Sum: sumNEON,
+		Max: maxNEON,
+		Min: minNEON,
+		MatMul: matMulGeneric,
 	},
 
 	"generic": {
@@ -200,6 +223,11 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		Softmax: softmaxGeneric,
 		Exp:     expGeneric,
 		Log:     logGeneric,
+
+		Sum: sumGeneric,
+		Max: maxGeneric,
+		Min: minGeneric,
+		MatMul: matMulGeneric,
 	},
 }
 
@@ -281,6 +309,11 @@ func initializeDispatch() {
 		softmaxFloat32Impl = dispatch.Softmax
 		expFloat32Impl = dispatch.Exp
 		logFloat32Impl = dispatch.Log
+
+		sumFloat32Impl = dispatch.Sum
+		maxFloat32Impl = dispatch.Max
+		minFloat32Impl = dispatch.Min
+		matMulFloat32Impl = dispatch.MatMul
 	case "avx2":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -347,6 +380,11 @@ func initializeDispatch() {
 		softmaxFloat32Impl = dispatch.Softmax
 		expFloat32Impl = dispatch.Exp
 		logFloat32Impl = dispatch.Log
+
+		sumFloat32Impl = dispatch.Sum
+		maxFloat32Impl = dispatch.Max
+		minFloat32Impl = dispatch.Min
+		matMulFloat32Impl = dispatch.MatMul
 	case "neon":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -418,6 +456,11 @@ func initializeDispatch() {
 		softmaxFloat32Impl = dispatch.Softmax
 		expFloat32Impl = dispatch.Exp
 		logFloat32Impl = dispatch.Log
+
+		sumFloat32Impl = dispatch.Sum
+		maxFloat32Impl = dispatch.Max
+		minFloat32Impl = dispatch.Min
+		matMulFloat32Impl = dispatch.MatMul
 	case "generic":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance128Impl = dispatch.EuclideanDistance128
@@ -484,6 +527,11 @@ func initializeDispatch() {
 		softmaxFloat32Impl = dispatch.Softmax
 		expFloat32Impl = dispatch.Exp
 		logFloat32Impl = dispatch.Log
+
+		sumFloat32Impl = dispatch.Sum
+		maxFloat32Impl = dispatch.Max
+		minFloat32Impl = dispatch.Min
+		matMulFloat32Impl = dispatch.MatMul
 	}
 
 	// Register current implementations into the new dynamic registry.

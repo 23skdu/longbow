@@ -158,3 +158,76 @@ func BenchmarkSoftmaxGeneric(b *testing.B) {
 	}
 	b.SetBytes(int64(n * 4))
 }
+
+func TestSigmoidSIMD(t *testing.T) {
+	testSizes := []int{1, 4, 15, 16, 17, 31, 32, 33, 100, 128}
+	for _, n := range testSizes {
+		t.Run(fmt.Sprintf("n=%d", n), func(t *testing.T) {
+			src := make([]float32, n)
+			for i := range src {
+				src[i] = float32(i)/10.0 - 5.0 // Range [-5, 7.8]
+			}
+			dstSIMD := make([]float32, n)
+			dstGeneric := make([]float32, n)
+
+			sigmoidSIMD(src, dstSIMD)
+			sigmoidGeneric(src, dstGeneric)
+
+			for i := range src {
+				diff := math.Abs(float64(dstSIMD[i] - dstGeneric[i]))
+				if diff > 0.05 {
+					t.Errorf("index %d: src=%f, SIMD=%f, Generic=%f",
+						i, src[i], dstSIMD[i], dstGeneric[i])
+				}
+			}
+		})
+	}
+}
+
+func TestLogSIMD(t *testing.T) {
+	testSizes := []int{1, 4, 15, 16, 17, 31, 32, 33, 100, 128}
+	for _, n := range testSizes {
+		t.Run(fmt.Sprintf("n=%d", n), func(t *testing.T) {
+			src := make([]float32, n)
+			for i := range src {
+				src[i] = float32(i)/100.0 + 0.5 // Range [0.5, 1.78]
+			}
+			dstSIMD := make([]float32, n)
+			dstGeneric := make([]float32, n)
+
+			logSIMD(src, dstSIMD)
+			logGeneric(src, dstGeneric)
+
+			for i := range src {
+				diff := math.Abs(float64(dstSIMD[i] - dstGeneric[i]))
+				relDiff := diff / math.Max(1.0, float64(dstGeneric[i]))
+				if relDiff > 0.1 {
+					t.Errorf("index %d: src=%f, SIMD=%f, Generic=%f",
+						i, src[i], dstSIMD[i], dstGeneric[i])
+				}
+			}
+		})
+	}
+}
+
+func sigmoidSIMD(src, dst []float32) {
+	switch runtime.GOARCH {
+	case "amd64":
+		sigmoidAVX2(src, dst)
+	case "arm64":
+		sigmoidNEON(src, dst)
+	default:
+		sigmoidGeneric(src, dst)
+	}
+}
+
+func logSIMD(src, dst []float32) {
+	switch runtime.GOARCH {
+	case "amd64":
+		logAVX2(src, dst)
+	case "arm64":
+		logNEON(src, dst)
+	default:
+		logGeneric(src, dst)
+	}
+}

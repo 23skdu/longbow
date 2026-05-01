@@ -425,19 +425,40 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		return errPrep
 	}
 
-	// Update node count BEFORE discovery/linkage so internal checks permit these IDs
-	h.nodeCount.Add(int64(n))
+	// 2. Sequential Bootstrap Phase
+	// Establish a stable hierarchy by inserting a portion sequentially.
+	seedCount := 1024
+	if n < seedCount {
+		seedCount = n
+	}
 
-	// 2. Global Entry Point
-	// We start search from the current global entry point.
-	// We need to update entry point potentially at the end.
+	for i := 0; i < seedCount; i++ {
+		node := activeNodes[i]
+		if err := h.InsertWithVector(node.id, node.vec, node.level); err != nil {
+			return err
+		}
+		h.commitID(node.id)
+	}
+
+	if n <= seedCount {
+		return nil
+	}
+
+	// Capture the last seed node for chain linkage
+	lastSeedID := activeNodes[seedCount-1].id
+
+	// Shift to remaining nodes for parallel linkage
+	activeNodes = activeNodes[seedCount:]
+	n = len(activeNodes)
+
+	// Refresh metadata after bootstrap
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())
+	h.nodeCount.Add(int64(n))
 
-	// Determine max level in this batch to update global max later
+	// Determine max level in remaining batch
 	batchMaxLevel := -1
-	batchEpCandidate := uint32(0) // ID of node with max level in batch
-
+	batchEpCandidate := uint32(0)
 	for _, node := range activeNodes {
 		if node.level > batchMaxLevel {
 			batchMaxLevel = node.level
@@ -445,15 +466,12 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		}
 	}
 
-	// 3. Layer-by-Layer Insertion (Top Down)
-	// We iterate max(maxL, batchMaxLevel) down to 0.
-
 	topL := maxL
 	if batchMaxLevel > topL {
 		topL = batchMaxLevel
 	}
 
-	// Current entry points for all active nodes. Initially global EP.
+	// Current entry points for remaining active nodes. Initially global EP.
 	currentEps := make([]uint32, n)
 	for i := range currentEps {
 		currentEps[i] = ep
@@ -471,15 +489,15 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	})
 	data = h.data.Load()
 
-	// 2.6 Initial Linkage: Link each node to its predecessor to form a simple chain
-	// This provides a fallback path for reachability during the initial build.
-	// Small serial overhead for chain construction.
+	// 2.6 Initial Linkage: Link each node to its predecessor to form a simple chain.
+	// Link the first parallel node to the last bootstrap seed to ensure connectivity.
 	for i := 0; i < n; i++ {
+		prevID := lastSeedID
 		if i > 0 {
-			// AddConnection now respects the passed 'data' pointer and handles node-level locking
-			data = h.AddConnection(nil, data, activeNodes[i].id, activeNodes[i-1].id, 0, h.mMax0, 0.0)
-			data = h.AddConnection(nil, data, activeNodes[i-1].id, activeNodes[i].id, 0, h.mMax0, 0.0)
+			prevID = activeNodes[i-1].id
 		}
+		data = h.AddConnection(nil, data, activeNodes[i].id, prevID, 0, h.mMax0, 0.0)
+		data = h.AddConnection(nil, data, prevID, activeNodes[i].id, 0, h.mMax0, 0.0)
 	}
 	h.compareAndSwapData(data) // Publish initial chain to enable traversal
 
@@ -820,10 +838,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 				ctxPrune := h.searchPool.Get()
 				ctxPrune.Reset()
 
-				// Direct Linkage
-				limit := m
-				if len(candidates) < limit { limit = len(candidates) }
-				neighbors := candidates[:limit]
+				// Use diversity heuristic for linkage (Heuristic 2)
+				neighbors := h.selectNeighbors(ctxPrune, candidates, m, data)
 				
 				if len(neighbors) == 0 {
 					h.searchPool.PutWithMetrics(ctxPrune, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))

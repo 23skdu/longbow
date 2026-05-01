@@ -103,7 +103,7 @@ start_pprof() {
             curl -s "http://$METRICS_URI/debug/pprof/goroutine?debug=1" -o "$OUTPUT_DIR/profiles/goroutine_${ts}.txt" 2>/dev/null || true
             sleep 60
         done
-    ) &
+    ) > /dev/null 2>&1 &
     echo $!
 }
 

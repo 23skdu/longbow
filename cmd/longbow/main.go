@@ -99,7 +99,7 @@ type Config struct {
 	HybridSearchAlpha       float32 `envconfig:"HYBRID_ALPHA" default:"0.5"`
 
 	// GPU Configuration
-	GPUEnabled  bool `envconfig:"GPU_ENABLED" default:"false"`
+	GPUEnabled  bool `envconfig:"GPU_ENABLED" default:"true"`
 	GPUDeviceID int  `envconfig:"GPU_DEVICE_ID" default:"0"`
 
 	// Rate Limiting Configuration
@@ -243,7 +243,7 @@ func run() error {
 	// Dynamic GOGC Tuning
 	var tuner *lbmem.GCTuner
 	if cfg.MaxMemory > 0 {
-		tuner = lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 10, &logger)
+		tuner = lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 40, &logger)
 		tuner.IsAggressive = true
 		// Run in background, tied to ctx (stops on signal)
 		go tuner.Start(ctx, 500*time.Millisecond)

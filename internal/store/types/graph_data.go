@@ -3,8 +3,8 @@ package types
 import (
 	"fmt"
 	"math"
-	"sync/atomic"
 	"strconv"
+	"sync/atomic"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
@@ -13,7 +13,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"runtime"
-	"time"
 )
 
 // GraphData holds the vector data and graph topology.
@@ -1559,17 +1558,15 @@ func (g *GraphData) LockNode(layer int, id uint32) uint32 {
 				return v // Return old version for Unlock
 			}
 		}
-		// Spin with exponential backoff or relaxation
+		// Spin with exponential backoff
 		spinCycles++
-		if spinCycles < 10 {
+		if spinCycles < 20 {
 			for i := 0; i < 10; i++ {
 				simd.Pause()
 			}
-		} else if spinCycles < 100 {
-			runtime.Gosched()
 		} else {
-			// Extreme contention, yield more aggressively
-			time.Sleep(time.Microsecond)
+			// Yield the processor to other goroutines
+			runtime.Gosched()
 		}
 	}
 }

@@ -93,8 +93,7 @@
 
 ### Recommendations
 
-- [ ] **Investigate Remote CPU Bottleneck**: The 5.8x performance gap between local and remote suggests potential scheduler or lock contention on x86_64 - profile with pprof.
-- [ ] **Address p95/p99 Latency**: High tail latencies on remote suggest possible GC pauses or contention - tune GOGC or investigate lock contention.
+- [ ] **Investigate remote CPU bottleneck**: The 5.8x performance gap between local and remote suggests potential scheduler or lock contention on x86_64.
+- [ ] **Tune GOGC for tail latencies**: Address high remote p95/p99 latencies (18ms+) by optimizing GC parameters.
+- [ ] **Enable CUDA/Metal for GPU acceleration**: Complete backend integration to bypass CPU bottlenecks on both platforms.
 - [ ] **Memory Tuning**: Investigate heap pressure warnings - consider adjusting GC tuner parameters or reducing memory footprint.
-- [ ] **CUDA Integration**: Complete CUDA support for remote GPU acceleration to improve ancalagon performance.
-- [ ] **Metal Integration**: Enable Metal acceleration for local GPU to match or exceed CPU performance.

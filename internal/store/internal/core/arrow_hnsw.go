@@ -1170,7 +1170,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	}
 
 	// Automatic GPU dispatch for supported types
-	if h.gpuEnabled && h.gpuIndex != nil && h.nodeCount.Load() >= 5000 {
+	if h.gpuEnabled && h.gpuIndex != nil && h.nodeCount.Load() >= 1024 {
 		gpuResults, err := h.searchGPU(ctx, queryVec, k)
 		if err == nil && len(gpuResults) > 0 {
 			return gpuResults, nil

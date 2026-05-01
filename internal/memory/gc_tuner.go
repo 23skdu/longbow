@@ -50,10 +50,10 @@ type GCTuner struct {
 // GPU tuning is enabled by default when a GPU is available.
 func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger) *GCTuner {
 	if highGOGC <= 0 {
-		highGOGC = 80
+		highGOGC = 150
 	}
 	if lowGOGC <= 0 {
-		lowGOGC = 10
+		lowGOGC = 40
 	}
 	if lowGOGC > highGOGC {
 		lowGOGC = highGOGC
@@ -181,7 +181,7 @@ func (t *GCTuner) tune(heapInUse uint64) {
 
 	if aggressive && arenaRatio > 0.7 {
 		// Arena-dominated heap: be very aggressive
-		targetGOGC = 50
+		targetGOGC = t.lowGOGC
 		if t.logger != nil {
 			t.logger.Warn().
 				Float64("arenaRatio", arenaRatio).

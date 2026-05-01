@@ -62,10 +62,16 @@ Generated on: 2026-04-30
 
 4. **Platform Gap**: Apple Silicon (M3) continues to outperform x86_64 CPU by ~25% in search tasks, but the gap has narrowed due to a ~33% regression in Local CPU search QPS compared to v0.1.9.
 
-5. **Regression Analysis (v0.2.0-pre)**:
-   - **Local Search Regression**: Dense search QPS on M3 dropped from 4.5k to 3k (-33%). CPU profiling indicates high scheduler overhead (`runtime.usleep`) and lock contention in `LockNode`.
+### Regression Analysis (v0.2.0-pre)
+   - **Local Search Regression**: Dense search QPS on M3 dropped from 4.5k to 3.9k. CPU profiling indicates high scheduler overhead (`runtime.usleep`) and lock contention in `LockNode`.
+   - **Remote Dense Search Regression**: Dense search QPS on ancalagon dropped from ~4.5k to ~684 QPS (-85%). Significant gap (5.8x) compared to local performance, likely due to scheduler/lock contention.
    - **Remote Ingestion Regression**: Ingestion on AMD64 dropped from 246k to 145k vec/s (-41%). Potential cause: `atomic.Value` overhead on x86 or `SharedWorkerPool` synchronization.
    - **GraphRAG Stability**: GraphRAG search is more stable (~1.4k QPS) but still performs at 50% of Dense search capacity.
+
+### Tail Latency & Memory Pressure
+
+- **Remote Tail Latency**: Remote shows high tail latencies (p95: 18ms vs 0.40ms local) for Dense search.
+- **Heap Pressure**: Local server showed repeated "High effective heap utilization" warnings during tests, indicating GC pressure.
 
 ### Hardware
 

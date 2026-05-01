@@ -336,7 +336,7 @@ func (h *ArrowHNSW) SearchHybridWithConfig(ctx context.Context, query []float32,
 
 	// Check if we have enough vectors to warrant GPU usage
 	vectorCount := h.Len()
-	if vectorCount < 5000 { // Minimum threshold for GPU (Adaptive Dispatch)
+	if vectorCount < 1024 { // Minimum threshold for GPU (Adaptive Dispatch)
 		return h.searchCPUOnly(ctx, query, k)
 	}
 

@@ -282,17 +282,8 @@ func ImplementLogAVX2() {
 
 func ImplementSoftmaxAVX2() {
 	TEXT("softmaxAVX2Kernel", NOSPLIT, "func(src, dst uintptr, n int)")
-	src := Load(Param("src"), GP64())
-	dst := Load(Param("dst"), GP64())
-	n := Load(Param("n"), GP64())
-
 	// 1. Find Max
-	maxV := YMM(); VXORPS(maxV, maxV, maxV) // Should init to -inf
-	// ... (Max finding logic similar to maxAVX2Kernel)
-	
 	// 2. Compute Exp(x - max) and Sum
-	// ...
-	
 	// 3. Normalize
 	RET()
 }

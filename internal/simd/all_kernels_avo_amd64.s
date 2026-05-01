@@ -256,22 +256,6 @@ TEXT ·uint32ToFloat32AVX2Kernel(SB), NOSPLIT, $0-56
 TEXT ·float16ToFloat32AVX2Kernel(SB), NOSPLIT, $0-56
 	RET
 
-// func sigmoidAVX2Kernel(a uintptr, b uintptr, c uintptr, d uintptr, e uintptr, f uintptr, g uintptr)
-TEXT ·sigmoidAVX2Kernel(SB), NOSPLIT, $0-56
-	RET
-
-// func softmaxAVX2Kernel(a uintptr, b uintptr, c uintptr, d uintptr, e uintptr, f uintptr, g uintptr)
-TEXT ·softmaxAVX2Kernel(SB), NOSPLIT, $0-56
-	RET
-
-// func expAVX2Kernel(a uintptr, b uintptr, c uintptr, d uintptr, e uintptr, f uintptr, g uintptr)
-TEXT ·expAVX2Kernel(SB), NOSPLIT, $0-56
-	RET
-
-// func logAVX2Kernel(a uintptr, b uintptr, c uintptr, d uintptr, e uintptr, f uintptr, g uintptr)
-TEXT ·logAVX2Kernel(SB), NOSPLIT, $0-56
-	RET
-
 // func sigmoidAVX512Kernel(a uintptr, b uintptr, c uintptr, d uintptr, e uintptr, f uintptr, g uintptr)
 TEXT ·sigmoidAVX512Kernel(SB), NOSPLIT, $0-56
 	RET
@@ -459,3 +443,218 @@ TEXT ·dotVertical4AVX2(SB), NOSPLIT, $0-56
 // func cosineVertical4AVX2(a uintptr, b uintptr, c uintptr, d uintptr, e uintptr, f uintptr, g uintptr)
 TEXT ·cosineVertical4AVX2(SB), NOSPLIT, $0-56
 	RET
+
+// func matMulAVX2(a uintptr, b uintptr, dst uintptr, m int, n int, k int)
+// Requires: AVX, FMA3
+TEXT ·matMulAVX2(SB), NOSPLIT, $0-48
+	MOVQ a+0(FP), AX
+	MOVQ b+8(FP), CX
+	MOVQ dst+16(FP), DX
+	MOVQ m+24(FP), BX
+	MOVQ n+32(FP), SI
+	MOVQ k+40(FP), DI
+	XORQ R8, R8
+
+mat_row_loop:
+	CMPQ R8, BX
+	JGE  mat_done
+	XORQ R9, R9
+
+mat_col_loop:
+	CMPQ   R9, SI
+	JGE    mat_next_row
+	VXORPS X0, X0, X0
+	XORQ   R10, R10
+
+mat_sum_loop:
+	CMPQ        R10, DI
+	JGE         mat_store_result
+	MOVQ        R8, R11
+	IMULQ       DI, R11
+	ADDQ        R10, R11
+	SHLQ        $0x02, R11
+	MOVQ        R10, R12
+	IMULQ       SI, R12
+	ADDQ        R9, R12
+	SHLQ        $0x02, R12
+	VMOVSS      (AX)(R11*1), X1
+	VMOVSS      (CX)(R12*1), X2
+	VFMADD231SS X1, X2, X0
+	ADDQ        $0x01, R10
+	JMP         mat_sum_loop
+
+mat_store_result:
+	MOVQ   R8, R10
+	IMULQ  SI, R10
+	ADDQ   R9, R10
+	SHLQ   $0x02, R10
+	VMOVSS X0, (DX)(R10*1)
+	ADDQ   $0x01, R9
+	JMP    mat_col_loop
+
+mat_next_row:
+	ADDQ $0x01, R8
+	JMP  mat_row_loop
+
+mat_done:
+	RET
+
+// func expAVX2Kernel(src uintptr, dst uintptr, n int)
+// Requires: AVX, FMA3, SSE
+TEXT ·expAVX2Kernel(SB), NOSPLIT, $0-24
+	MOVQ src+0(FP), AX
+	MOVQ dst+8(FP), CX
+	MOVQ n+16(FP), DX
+
+exp_loop:
+	CMPQ         DX, $0x08
+	JL           exp_tail
+	VMOVUPS      (AX), Y0
+	VBROADCASTSS exp_p5<>+0(SB), Y1
+	VBROADCASTSS exp_p4<>+0(SB), Y2
+	VFMADD213PS  Y2, Y0, Y1
+	VBROADCASTSS exp_p3<>+0(SB), Y2
+	VFMADD213PS  Y2, Y0, Y1
+	VBROADCASTSS exp_p2<>+0(SB), Y2
+	VFMADD213PS  Y2, Y0, Y1
+	VBROADCASTSS exp_p1<>+0(SB), Y2
+	VFMADD213PS  Y2, Y0, Y1
+	VBROADCASTSS exp_p0<>+0(SB), Y2
+	VFMADD213PS  Y2, Y0, Y1
+	VMOVUPS      Y1, (CX)
+	ADDQ         $0x20, AX
+	ADDQ         $0x20, CX
+	SUBQ         $0x08, DX
+	JMP          exp_loop
+
+exp_tail:
+	CMPQ   DX, $0x00
+	JE     exp_done
+	VMOVSS (AX), X0
+	VXORPS X1, X1, X1
+	MOVSS  exp_p1<>+0(SB), X1
+	VADDSS X1, X0, X0
+	VMOVSS X0, (CX)
+	ADDQ   $0x04, AX
+	ADDQ   $0x04, CX
+	DECQ   DX
+	JMP    exp_tail
+
+exp_done:
+	RET
+
+DATA exp_p0<>+0(SB)/4, $(1.0)
+GLOBL exp_p0<>(SB), RODATA|NOPTR, $4
+
+DATA exp_p1<>+0(SB)/4, $(1.0)
+GLOBL exp_p1<>(SB), RODATA|NOPTR, $4
+
+DATA exp_p2<>+0(SB)/4, $(0.5)
+GLOBL exp_p2<>(SB), RODATA|NOPTR, $4
+
+DATA exp_p3<>+0(SB)/4, $(0.16666667)
+GLOBL exp_p3<>(SB), RODATA|NOPTR, $4
+
+DATA exp_p4<>+0(SB)/4, $(0.041666664)
+GLOBL exp_p4<>(SB), RODATA|NOPTR, $4
+
+DATA exp_p5<>+0(SB)/4, $(0.008333333)
+GLOBL exp_p5<>(SB), RODATA|NOPTR, $4
+
+// func logAVX2Kernel(src uintptr, dst uintptr, n int)
+// Requires: AVX, FMA3, SSE
+TEXT ·logAVX2Kernel(SB), NOSPLIT, $0-24
+	MOVQ src+0(FP), AX
+	MOVQ dst+8(FP), CX
+	MOVQ n+16(FP), DX
+
+log_loop:
+	CMPQ         DX, $0x08
+	JL           log_tail
+	VMOVUPS      (AX), Y0
+	VBROADCASTSS log_one<>+0(SB), Y1
+	VSUBPS       Y1, Y0, Y0
+	VBROADCASTSS log_c2<>+0(SB), Y2
+	VBROADCASTSS log_c1<>+0(SB), Y3
+	VFMADD213PS  Y3, Y0, Y2
+	VFMADD213PS  Y1, Y0, Y2
+	VMULPS       Y0, Y2, Y2
+	VMOVUPS      Y2, (CX)
+	ADDQ         $0x20, AX
+	ADDQ         $0x20, CX
+	SUBQ         $0x08, DX
+	JMP          log_loop
+
+log_tail:
+	CMPQ   DX, $0x00
+	JE     log_done
+	VMOVSS (AX), X0
+	VXORPS X1, X1, X1
+	MOVSS  log_one<>+0(SB), X1
+	VSUBSS X1, X0, X0
+	VMOVSS X0, (CX)
+	ADDQ   $0x04, AX
+	ADDQ   $0x04, CX
+	DECQ   DX
+	JMP    log_tail
+
+log_done:
+	RET
+
+DATA log_one<>+0(SB)/4, $(1.0)
+GLOBL log_one<>(SB), RODATA|NOPTR, $4
+
+DATA log_c1<>+0(SB)/4, $(-0.5)
+GLOBL log_c1<>(SB), RODATA|NOPTR, $4
+
+DATA log_c2<>+0(SB)/4, $(0.33333334)
+GLOBL log_c2<>(SB), RODATA|NOPTR, $4
+
+// func softmaxAVX2Kernel(src uintptr, dst uintptr, n int)
+TEXT ·softmaxAVX2Kernel(SB), NOSPLIT, $0-24
+	RET
+
+// func sigmoidAVX2Kernel(src uintptr, dst uintptr, n int)
+// Requires: AVX, SSE
+TEXT ·sigmoidAVX2Kernel(SB), NOSPLIT, $0-24
+	MOVQ src+0(FP), AX
+	MOVQ dst+8(FP), CX
+	MOVQ n+16(FP), DX
+
+sig_loop:
+	CMPQ         DX, $0x08
+	JL           sig_tail
+	VMOVUPS      (AX), Y0
+	VXORPS       Y1, Y1, Y1
+	VSUBPS       Y0, Y1, Y1
+	VBROADCASTSS sig_p1<>+0(SB), Y0
+	VADDPS       Y1, Y0, Y0
+	VBROADCASTSS sig_p1<>+0(SB), Y1
+	VADDPS       Y1, Y0, Y0
+	VDIVPS       Y0, Y1, Y0
+	VMOVUPS      Y0, (CX)
+	ADDQ         $0x20, AX
+	ADDQ         $0x20, CX
+	SUBQ         $0x08, DX
+	JMP          sig_loop
+
+sig_tail:
+	CMPQ   DX, $0x00
+	JE     sig_done
+	VMOVSS (AX), X0
+	MOVSS  sig_p1<>+0(SB), X1
+	MOVSS  sig_p1<>+0(SB), X2
+	ADDSS  X2, X2
+	SUBSS  X0, X2
+	DIVSS  X2, X1
+	VMOVSS X1, (CX)
+	ADDQ   $0x04, AX
+	ADDQ   $0x04, CX
+	DECQ   DX
+	JMP    sig_tail
+
+sig_done:
+	RET
+
+DATA sig_p1<>+0(SB)/4, $(1.0)
+GLOBL sig_p1<>(SB), RODATA|NOPTR, $4

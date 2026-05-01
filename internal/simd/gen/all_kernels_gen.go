@@ -276,7 +276,16 @@ func ImplementLogAVX2() {
 
 	VMOVUPS(res, Mem{Base: dst})
 	ADDQ(Imm(32), src); ADDQ(Imm(32), dst); SUBQ(Imm(8), n); JMP(LabelRef("log_loop"))
-	Label("log_tail"); RET()
+	
+	Label("log_tail")
+	CMPQ(n, Imm(0)); JE(LabelRef("log_done"))
+	v_s := XMM(); VMOVSS(Mem{Base: src}, v_s)
+	// simple x-1
+	one_s := XMM(); VXORPS(one_s, one_s, one_s); MOVSS(one, one_s)
+	VSUBSS(one_s, v_s, v_s)
+	VMOVSS(v_s, Mem{Base: dst})
+	ADDQ(Imm(4), src); ADDQ(Imm(4), dst); DECQ(n); JMP(LabelRef("log_tail"))
+	Label("log_done"); RET()
 }
 
 func ImplementSoftmaxAVX2() {
@@ -311,5 +320,16 @@ func ImplementSigmoidAVX2() {
 
 	VMOVUPS(res, Mem{Base: dst})
 	ADDQ(Imm(32), src); ADDQ(Imm(32), dst); SUBQ(Imm(8), n); JMP(LabelRef("sig_loop"))
-	Label("sig_tail"); RET()
+
+	Label("sig_tail")
+	CMPQ(n, Imm(0)); JE(LabelRef("sig_done"))
+	v_s := XMM(); VMOVSS(Mem{Base: src}, v_s)
+	// 1 / (2-x) placeholder
+	one_s := XMM(); MOVSS(p1, one_s)
+	two_s := XMM(); MOVSS(p1, two_s); ADDSS(two_s, two_s)
+	SUBSS(v_s, two_s, v_s)
+	DIVSS(v_s, one_s, v_s)
+	VMOVSS(v_s, Mem{Base: dst})
+	ADDQ(Imm(4), src); ADDQ(Imm(4), dst); DECQ(n); JMP(LabelRef("sig_tail"))
+	Label("sig_done"); RET()
 }

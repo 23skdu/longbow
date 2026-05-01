@@ -8,6 +8,8 @@ import (
 	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow/float16"
+	"github.com/23skdu/longbow/internal/metrics"
+	"time"
 )
 
 var (
@@ -1193,19 +1195,27 @@ func Float16ToFloat32(src []float16.Num, dst []float32) {
 // Activation Functions
 
 func Sigmoid(src, dst []float32) {
+	start := time.Now()
 	sigmoidFloat32Impl(src, dst)
+	metrics.SIMDActivationDuration.WithLabelValues("sigmoid", implementation).Observe(time.Since(start).Seconds())
 }
 
 func Softmax(src, dst []float32) {
+	start := time.Now()
 	softmaxFloat32Impl(src, dst)
+	metrics.SIMDActivationDuration.WithLabelValues("softmax", implementation).Observe(time.Since(start).Seconds())
 }
 
 func Exp(src, dst []float32) {
+	start := time.Now()
 	expFloat32Impl(src, dst)
+	metrics.SIMDActivationDuration.WithLabelValues("exp", implementation).Observe(time.Since(start).Seconds())
 }
 
 func Log(src, dst []float32) {
+	start := time.Now()
 	logFloat32Impl(src, dst)
+	metrics.SIMDActivationDuration.WithLabelValues("log", implementation).Observe(time.Since(start).Seconds())
 }
 
 func Sum(src []float32) float32 {

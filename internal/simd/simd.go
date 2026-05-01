@@ -131,9 +131,12 @@ var (
 	softmaxFloat32Impl func(src, dst []float32)
 	expFloat32Impl     func(src, dst []float32)
 	logFloat32Impl     func(src, dst []float32)
+
+	pauseImpl func()
 )
 
 func init() {
+	pauseImpl = func() {} // Default no-op
 	detectCPU()
 	initializeDispatch()
 
@@ -185,6 +188,19 @@ func NotBytes(dst []byte) error {
 // IsAllZeros returns true if all bytes in src are zero.
 func IsAllZeros(src []byte) bool {
 	return isAllZerosImpl(src)
+}
+
+// Pause yields the processor for a short time.
+// On x86 it uses the PAUSE instruction, on ARM64 it uses YIELD.
+func Pause() {
+	pauseImpl()
+}
+
+// PauseN calls Pause n times.
+func PauseN(n int) {
+	for i := 0; i < n; i++ {
+		pauseImpl()
+	}
 }
 
 // GetCPUFeatures returns detected CPU SIMD capabilities

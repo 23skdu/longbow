@@ -99,3 +99,8 @@ reduce:
 
     MOVD    R3, ret+24(FP)
     RET
+
+// func pause()
+TEXT ·pause(SB), NOSPLIT, $0-0
+	YIELD
+	RET

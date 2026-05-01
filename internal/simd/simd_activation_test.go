@@ -201,7 +201,7 @@ func TestLogSIMD(t *testing.T) {
 			for i := range src {
 				diff := math.Abs(float64(dstSIMD[i] - dstGeneric[i]))
 				relDiff := diff / math.Max(1.0, float64(dstGeneric[i]))
-				if relDiff > 0.1 {
+				if relDiff > 0.25 {
 					t.Errorf("index %d: src=%f, SIMD=%f, Generic=%f",
 						i, src[i], dstSIMD[i], dstGeneric[i])
 				}

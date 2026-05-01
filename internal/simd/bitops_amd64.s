@@ -167,6 +167,11 @@ all_zeros:
     RET
 
 not_all_zeros:
-    MOVB    $0, ret+16(FP)
-    VZEROUPPER
-    RET
+	MOVB    $0, ret+16(FP)
+	VZEROUPPER
+	RET
+
+// func pause()
+TEXT ·pause(SB), NOSPLIT, $0-0
+	PAUSE
+	RET

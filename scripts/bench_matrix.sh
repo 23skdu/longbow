@@ -28,6 +28,14 @@ echo "Target URI: $URI, Metrics: $METRICS_URI"
 ) &
 PPROF_PID=$!
 
+# Cleanup function to kill background pprof
+cleanup() {
+    echo "Cleaning up..."
+    kill $PPROF_PID
+    exit
+}
+trap cleanup SIGINT SIGTERM
+
 for count in "${COUNTS[@]}"; do
     for dim in "${DIMS[@]}"; do
         for dtype_raw in "${DTYPES[@]}"; do
@@ -46,7 +54,8 @@ for count in "${COUNTS[@]}"; do
             echo "Running: $dataset (dim=$dim, dtype=$dtype, bits=$tq_bits, count=$count)"
             
             # Run benchmark tool
-            go run cmd/bench-tool/main.go \
+            # The tool runs all search modes (Dense, Hybrid, etc.) internally.
+            ./bin/bench-tool \
                 -uri "$URI" \
                 -dataset "$dataset" \
                 -dim "$dim" \
@@ -62,6 +71,9 @@ for count in "${COUNTS[@]}"; do
             else
                 echo "  Completed."
             fi
+            
+            # Optional: Delete dataset after each run to save memory/disk if needed
+            # For now we'll keep them since we have 18GB allocation.
         done
     done
 done

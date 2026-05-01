@@ -261,41 +261,99 @@ func (idx *ShardedHNSW) AddSafe(ctx context.Context, rec arrow.RecordBatch, rowI
 	return VectorID(id), nil
 }
 
-// AddBatch adds a batch of records to the sharded index.
+// AddBatch adds a batch of records to the sharded index in parallel.
 func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
-	if len(recs) == 0 {
+	if len(recs) == 0 || len(rowIdxs) == 0 {
 		return nil, nil
 	}
- 
-	// Delegating to simple loop for now to ensure correctness with sharding.
-	ids := make([]uint32, len(rowIdxs))
-	for i := range rowIdxs {
-		if i%100 == 0 {
-			if err := ctx.Err(); err != nil {
-				return nil, err
-			}
-		}
-		// Robust record resolution
-		var rec arrow.RecordBatch
-		bIdx := batchIdxs[i]
-		switch {
-		case bIdx < len(recs) && recs[bIdx] != nil:
-			rec = recs[bIdx]
-		case len(recs) == 1:
-			rec = recs[0]
-		case i < len(recs):
-			rec = recs[i]
-		default:
-			return nil, fmt.Errorf("could not resolve record batch for row %d (batchIdx %d, recs len %d)", i, bIdx, len(recs))
-		}
- 
-		id, err := idx.AddByRecord(ctx, rec, rowIdxs[i], batchIdxs[i])
-		if err != nil {
-			return nil, err
-		}
-		ids[i] = id
+
+	n := len(rowIdxs)
+	globalIDs := make([]uint32, n)
+	
+	// 1. Group indices by shard
+	type shardJob struct {
+		indices []int // Original indices in the batch
 	}
-	return ids, nil
+	shardJobs := make(map[int]*shardJob)
+
+	for i := 0; i < n; i++ {
+		// Allocate Global ID
+		gid := VectorID(idx.nextID.Add(1) - 1)
+		globalIDs[i] = uint32(gid)
+
+		// Set Global Location
+		idx.locationStore.EnsureCapacity(gid)
+		idx.locationStore.Set(gid, Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+		idx.locationStore.UpdateSize(gid)
+
+		// Route to Shard
+		shardIdx := idx.sharder.GetShard(gid)
+		job, ok := shardJobs[shardIdx]
+		if !ok {
+			job = &shardJob{indices: make([]int, 0, n/idx.config.NumShards)}
+			shardJobs[shardIdx] = job
+		}
+		job.indices = append(job.indices, i)
+	}
+
+	// 2. Parallel Insert across shards
+	g, ctx := errgroup.WithContext(ctx)
+	
+	idx.shardsMu.RLock()
+	// Ensure shards exist (linear sharding growth)
+	maxShardIdx := 0
+	for sIdx := range shardJobs {
+		if sIdx > maxShardIdx {
+			maxShardIdx = sIdx
+		}
+	}
+	if maxShardIdx >= len(idx.shards) {
+		idx.shardsMu.RUnlock()
+		idx.shardsMu.Lock()
+		for i := len(idx.shards); i <= maxShardIdx; i++ {
+			idx.shards = append(idx.shards, idx.newShard(i))
+		}
+		idx.shardsMu.Unlock()
+		idx.shardsMu.RLock()
+	}
+
+	for shardIdx, job := range shardJobs {
+		sIdx := shardIdx
+		j := job
+		shard := idx.shards[sIdx]
+		
+		g.Go(func() error {
+			shardRowIdxs := make([]int, len(j.indices))
+			shardBatchIdxs := make([]int, len(j.indices))
+			for k, idxInBatch := range j.indices {
+				shardRowIdxs[k] = rowIdxs[idxInBatch]
+				shardBatchIdxs[k] = batchIdxs[idxInBatch]
+			}
+
+			localIDs, err := shard.index.AddBatch(ctx, recs, shardRowIdxs, shardBatchIdxs)
+			if err != nil {
+				return err
+			}
+
+			// Register Global->Local mappings
+			for k, lid := range localIDs {
+				idxInBatch := j.indices[k]
+				gid := VectorID(globalIDs[idxInBatch])
+				shard.registerID(lid, gid)
+			}
+			
+			metrics.ShardedHnswShardSize.WithLabelValues(idx.dataset.Name, fmt.Sprintf("%d", sIdx)).Add(float64(len(localIDs)))
+			return nil
+		})
+	}
+	
+	idx.shardsMu.RUnlock()
+
+	if err := g.Wait(); err != nil {
+		return nil, err
+	}
+
+	return globalIDs, nil
 }
 
 // DeleteBatch removes multiple vectors from the sharded index.

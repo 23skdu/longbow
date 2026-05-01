@@ -848,3 +848,5 @@ func softmaxAVX512Kernel(src, dst unsafe.Pointer, n int)
 func expAVX512Kernel(src, dst unsafe.Pointer, n int)
 //go:noescape
 func logAVX512Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func pause()

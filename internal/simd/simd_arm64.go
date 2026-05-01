@@ -270,6 +270,9 @@ func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
 func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
 
 //go:noescape
+func pause()
+
+//go:noescape
 func memcpyNTA(dst, src unsafe.Pointer, n int)
 
 // Static assertion to keep Go assembly kernels "used" even if not in the active dispatch path.

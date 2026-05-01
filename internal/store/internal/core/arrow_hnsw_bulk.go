@@ -147,7 +147,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		return fmt.Errorf("failed to determine dimensions for bulk insert")
 	}
 
-	maxID := startID + uint32(n) - 1
+	maxID := startID + uint32(n) - 1 // #nosec G115
 	cID_start := types.ChunkID(startID)
 	cID_end := types.ChunkID(maxID)
 

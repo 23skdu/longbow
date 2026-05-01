@@ -180,6 +180,12 @@ type ArrowSearchContext struct {
 	neighborBatch []uint32
 	matchResultBuf []byte
 
+	// Vectorized predicate buffers
+	bufInt64 []int64
+	bufInt32 []int32
+	bufF32   []float32
+	bufF64   []float64
+
 	// Layer-specific buffers
 	layerCandidates []types.Candidate
 
@@ -320,6 +326,10 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.queryF16 = ctx.queryF16[:0]
 	ctx.queryC64 = ctx.queryC64[:0]
 	ctx.queryC128 = ctx.queryC128[:0]
+	ctx.bufInt64 = ctx.bufInt64[:0]
+	ctx.bufInt32 = ctx.bufInt32[:0]
+	ctx.bufF32 = ctx.bufF32[:0]
+	ctx.bufF64 = ctx.bufF64[:0]
 	ctx.vectorBuf = ctx.vectorBuf[:0]
 	clear(ctx.vectorCache)
 	clear(ctx.distCache)
@@ -363,6 +373,21 @@ func (ctx *ArrowSearchContext) GetDiskGraph() *DiskGraph {
 // RecordEarlyExit increments the early exit counter with a specific reason.
 func (ctx *ArrowSearchContext) RecordEarlyExit(reason string) {
 	metrics.HnswSearchEarlyExitsTotal.WithLabelValues(reason).Inc()
+}
+
+// EvaluatePredicateBatch evaluates a batch of IDs against the current predicate.
+// It ensures the matchResultBuf is large enough and returns the results slice.
+func (ctx *ArrowSearchContext) EvaluatePredicateBatch(ids []uint32) []byte {
+	if ctx.predicate == nil {
+		return nil
+	}
+	n := len(ids)
+	if len(ctx.matchResultBuf) < n {
+		ctx.matchResultBuf = make([]byte, n*2)
+	}
+	results := ctx.matchResultBuf[:n]
+	ctx.predicate.MatchBatch(ids, results)
+	return results
 }
 
 // SetDiskGraph sets the DiskGraph reference to be cached for this search.

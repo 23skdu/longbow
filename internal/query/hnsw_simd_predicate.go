@@ -16,6 +16,12 @@ type HNSWSIMDPredicate struct {
 	valInt  int64
 	valF64  float64
 	dt      arrow.Type
+
+	// Reusable buffers to avoid allocations in MatchBatch
+	bufInt64 []int64
+	bufInt32 []int32
+	bufF32   []float32
+	bufF64   []float64
 }
 
 // NewHNSWSIMDPredicate creates a new SIMD-accelerated predicate for HNSW traversal.
@@ -100,7 +106,10 @@ func (p *HNSWSIMDPredicate) MatchBatch(ids []uint32, dst []byte) {
 
 	switch p.dt {
 	case arrow.INT64:
-		buf := make([]int64, n)
+		if len(p.bufInt64) < n {
+			p.bufInt64 = make([]int64, n*2)
+		}
+		buf := p.bufInt64[:n]
 		for i, id := range ids {
 			batchIdx := int(id / uint32(types.ChunkSize))
 			rowIdx := int(id % uint32(types.ChunkSize))
@@ -108,7 +117,10 @@ func (p *HNSWSIMDPredicate) MatchBatch(ids []uint32, dst []byte) {
 		}
 		_ = simd.MatchInt64(buf, p.valInt, p.op, dst)
 	case arrow.INT32:
-		buf := make([]int32, n)
+		if len(p.bufInt32) < n {
+			p.bufInt32 = make([]int32, n*2)
+		}
+		buf := p.bufInt32[:n]
 		for i, id := range ids {
 			batchIdx := int(id / uint32(types.ChunkSize))
 			rowIdx := int(id % uint32(types.ChunkSize))
@@ -116,7 +128,10 @@ func (p *HNSWSIMDPredicate) MatchBatch(ids []uint32, dst []byte) {
 		}
 		_ = simd.MatchInt32(buf, int32(p.valInt), p.op, dst)
 	case arrow.FLOAT32:
-		buf := make([]float32, n)
+		if len(p.bufF32) < n {
+			p.bufF32 = make([]float32, n*2)
+		}
+		buf := p.bufF32[:n]
 		for i, id := range ids {
 			batchIdx := int(id / uint32(types.ChunkSize))
 			rowIdx := int(id % uint32(types.ChunkSize))
@@ -124,7 +139,10 @@ func (p *HNSWSIMDPredicate) MatchBatch(ids []uint32, dst []byte) {
 		}
 		_ = simd.MatchFloat32(buf, float32(p.valF64), p.op, dst)
 	case arrow.FLOAT64:
-		buf := make([]float64, n)
+		if len(p.bufF64) < n {
+			p.bufF64 = make([]float64, n*2)
+		}
+		buf := p.bufF64[:n]
 		for i, id := range ids {
 			batchIdx := int(id / uint32(types.ChunkSize))
 			rowIdx := int(id % uint32(types.ChunkSize))

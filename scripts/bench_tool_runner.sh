@@ -94,7 +94,7 @@ echo "Using bench-tool: $BENCH_TOOL"
 
 # Pprof collection in background
 start_pprof() {
-    echo "Starting pprof collection..."
+    echo "Starting pprof collection..." >&2
     (
         while true; do
             ts=$(date +%H%M%S)

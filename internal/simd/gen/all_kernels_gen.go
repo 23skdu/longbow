@@ -112,7 +112,6 @@ func main() {
 		"euclideanInt8Unrolled4xAVX2Kernel", "euclideanUint16AVX2Kernel", "dotInt16AVX2Kernel", "dotUint16AVX2Kernel",
 		"int8ToFloat32AVX2Kernel", "uint8ToFloat32AVX2Kernel", "int16ToFloat32AVX2Kernel", "uint16ToFloat32AVX2Kernel",
 		"int32ToFloat32AVX2Kernel", "uint32ToFloat32AVX2Kernel", "float16ToFloat32AVX2Kernel",
-		"sigmoidAVX2Kernel", "softmaxAVX2Kernel", "expAVX2Kernel", "logAVX2Kernel",
 		"sigmoidAVX512Kernel", "expAVX512Kernel", "logAVX512Kernel",
 		"l2SquaredAVX512Kernel", "dotAVX512Kernel", "cosineDotAVX512",
 		"euclideanVertical4AVX512", "cosineVertical4AVX512", "dotVertical4AVX512",

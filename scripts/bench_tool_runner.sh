@@ -57,7 +57,9 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-mkdir -p "$OUTPUT_DIR/${HOST}_${MODE}_$(date +%Y%m%d_%H%M%S)"/{profiles,logs}
+TIMESTAMP=$(date +%Y%m%d_%H%M%S)
+OUTPUT_DIR="$OUTPUT_DIR/${HOST}_${MODE}_${TIMESTAMP}"
+mkdir -p "$OUTPUT_DIR"/{profiles,logs}
 
 echo "========================================="
 echo "Benchmark Configuration"

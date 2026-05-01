@@ -21,10 +21,10 @@
 
 ### Subtasks
 
-- [ ] **Visited Node Bitset**: Replace `map[uint32]struct{}` with a pooled bitset (e.g., `roaring.Bitmap` or a simple `[]uint64`) in `GraphData` expansion.
-- [ ] **Candidate Set Caching**: Implement a small, thread-local LRU cache for expansion candidates to avoid redundant distance calculations for common hub nodes.
-- [ ] **Expansion Loop Vectorization**: Manually unroll the neighbor traversal loop to improve instruction-level parallelism (ILP).
-- [ ] **Prefetching**: Add software prefetch hints (`simd.Prefetch`) for neighbor vector data during expansion.
+- [x] **Visited Node Bitset**: Replace `map[uint32]struct{}` with a pooled bitset (e.g., `roaring.Bitmap` or a simple `[]uint64`) in `GraphData` expansion.
+- [x] **Candidate Set Caching**: Implement a small, thread-local LRU cache for expansion candidates to avoid redundant distance calculations for common hub nodes.
+- [x] **Expansion Loop Vectorization**: Manually unroll the neighbor traversal loop to improve instruction-level parallelism (ILP).
+- [x] **Prefetching**: Add software prefetch hints (`simd.Prefetch`) for neighbor vector data during expansion.
 
 ### Testing & Metrics
 

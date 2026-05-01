@@ -29,6 +29,10 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 
 // InsertWithVector inserts a vector that has already been retrieved.
 func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
+	return h.insertInternal(id, vec, level, false)
+}
+
+func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool) error {
 	if level < 0 {
 		level = h.generateLevel()
 	}
@@ -69,10 +73,6 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		if vecF32, ok := vec.([]float32); ok {
 			h.ensureTrained(int(h.nodeCount.Load()), [][]float32{vecF32})
 		}
-	}
-
-	if level < 0 {
-		level = h.generateLevel()
 	}
 
 	data := h.data.Load()
@@ -138,8 +138,10 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	data = h.data.Load()
 
 	// Store raw vector in GraphData (idempotent if already set)
-	if err := data.SetVector(id, vec); err != nil {
-		return err
+	if !skipSet {
+		if err := data.SetVector(id, vec); err != nil {
+			return err
+		}
 	}
 
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {

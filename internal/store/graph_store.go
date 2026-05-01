@@ -377,7 +377,7 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 			if edges, ok := gs.forwardEdges[id]; ok {
 				s := scoreSlice[id] * alpha
 				
-				// Manual Unrolling for instruction-level parallelism (8x)
+				// Advanced 8x Unrolled expansion with aggressive prefetching
 				edgeCount := len(edges)
 				j := 0
 				for ; j <= edgeCount-8; j += 8 {
@@ -386,6 +386,10 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 					
 					t0, t1, t2, t3 := uint32(e0.Object), uint32(e1.Object), uint32(e2.Object), uint32(e3.Object)
 					t4, t5, t6, t7 := uint32(e4.Object), uint32(e5.Object), uint32(e6.Object), uint32(e7.Object)
+					
+					// Prefetch next batch of score slots
+					simd.Prefetch(unsafe.Pointer(&scoreSlice[t0]))
+					simd.Prefetch(unsafe.Pointer(&scoreSlice[t4]))
 					
 					scoreSlice[t0] += s * e0.Weight
 					scoreSlice[t1] += s * e1.Weight
@@ -396,6 +400,7 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 					scoreSlice[t6] += s * e6.Weight
 					scoreSlice[t7] += s * e7.Weight
 					
+					// Grouped visited checks to improve branch prediction
 					if !isVisited(t0) { setVisited(t0); nextNodes = append(nextNodes, t0); allInfluenced = append(allInfluenced, t0) }
 					if !isVisited(t1) { setVisited(t1); nextNodes = append(nextNodes, t1); allInfluenced = append(allInfluenced, t1) }
 					if !isVisited(t2) { setVisited(t2); nextNodes = append(nextNodes, t2); allInfluenced = append(allInfluenced, t2) }
@@ -532,22 +537,38 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 			if edges, ok := gs.forwardEdges[id]; ok {
 				s := scoreSlice[id] * alpha
 				
-				// Unrolled local expansion
+				// Advanced 8x Unrolled expansion with aggressive prefetching
 				edgeCount := len(edges)
 				j := 0
-				for ; j <= edgeCount-4; j += 4 {
+				for ; j <= edgeCount-8; j += 8 {
 					e0, e1, e2, e3 := edges[j], edges[j+1], edges[j+2], edges[j+3]
+					e4, e5, e6, e7 := edges[j+4], edges[j+5], edges[j+6], edges[j+7]
+					
 					t0, t1, t2, t3 := uint32(e0.Object), uint32(e1.Object), uint32(e2.Object), uint32(e3.Object)
+					t4, t5, t6, t7 := uint32(e4.Object), uint32(e5.Object), uint32(e6.Object), uint32(e7.Object)
+					
+					// Prefetch next batch of score slots
+					simd.Prefetch(unsafe.Pointer(&scoreSlice[t0]))
+					simd.Prefetch(unsafe.Pointer(&scoreSlice[t4]))
 					
 					scoreSlice[t0] += s * e0.Weight
 					scoreSlice[t1] += s * e1.Weight
 					scoreSlice[t2] += s * e2.Weight
 					scoreSlice[t3] += s * e3.Weight
+					scoreSlice[t4] += s * e4.Weight
+					scoreSlice[t5] += s * e5.Weight
+					scoreSlice[t6] += s * e6.Weight
+					scoreSlice[t7] += s * e7.Weight
 					
+					// Grouped visited checks to improve branch prediction
 					if !isVisited(t0) { setVisited(t0); nextNodes = append(nextNodes, t0); allInfluenced = append(allInfluenced, t0) }
 					if !isVisited(t1) { setVisited(t1); nextNodes = append(nextNodes, t1); allInfluenced = append(allInfluenced, t1) }
 					if !isVisited(t2) { setVisited(t2); nextNodes = append(nextNodes, t2); allInfluenced = append(allInfluenced, t2) }
 					if !isVisited(t3) { setVisited(t3); nextNodes = append(nextNodes, t3); allInfluenced = append(allInfluenced, t3) }
+					if !isVisited(t4) { setVisited(t4); nextNodes = append(nextNodes, t4); allInfluenced = append(allInfluenced, t4) }
+					if !isVisited(t5) { setVisited(t5); nextNodes = append(nextNodes, t5); allInfluenced = append(allInfluenced, t5) }
+					if !isVisited(t6) { setVisited(t6); nextNodes = append(nextNodes, t6); allInfluenced = append(allInfluenced, t6) }
+					if !isVisited(t7) { setVisited(t7); nextNodes = append(nextNodes, t7); allInfluenced = append(allInfluenced, t7) }
 				}
 				for ; j < edgeCount; j++ {
 					edge := edges[j]

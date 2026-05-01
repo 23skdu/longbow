@@ -215,6 +215,68 @@ func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
 	return nil
 }
 
+func (pa *PackedAdjacency) CASNeighbors(id uint32, old []uint32, new []uint32) bool {
+	packed, ok := pa.getPackedRef(id)
+	if !ok && len(old) > 0 {
+		return false
+	}
+
+	// Verify old matches current
+	if len(old) > 0 {
+		// We assume 'old' was returned by GetNeighbors, so we can't easily get its original Ref.
+		// However, we can compare the current packed ref with what it WOULD have been.
+		// A better way: just compare the content or the underlying pointer if we can.
+		
+		curOff, curLen := UnpackRef(packed)
+		if int(curLen) != len(old) {
+			return false
+		}
+		
+		// Content comparison (safe and robust)
+		current := pa.neighborArena.Get(memory.SliceRef{Offset: curOff, Len: curLen, Cap: curLen})
+		if len(current) != len(old) {
+			return false
+		}
+		for i := range current {
+			if current[i] != old[i] {
+				return false
+			}
+		}
+	} else {
+		if packed != 0 {
+			return false
+		}
+	}
+
+	// 1. Alloc new neighbors
+	var newPacked uint64
+	if len(new) > 0 {
+		ref, err := pa.neighborArena.AllocSliceAligned(len(new), 64)
+		if err != nil {
+			return false
+		}
+		dest := pa.neighborArena.Get(ref)
+		copy(dest, new)
+		newPacked = PackRef(ref.Offset, uint32(len(new))) // #nosec G115
+	}
+
+	// 2. CAS in page
+	chunkIdx := int(id) / AdjacencyChunkSize
+	offsetInPage := int(id) % AdjacencyChunkSize
+	chunksPtr := pa.chunks.Load()
+	if chunksPtr == nil || chunkIdx >= len(*chunksPtr) {
+		return false
+	}
+	chunks := *chunksPtr
+	pageOffset := atomic.LoadUint64(&chunks[chunkIdx])
+	if pageOffset == 0 {
+		return false
+	}
+	page := pa.pageArena.Get(memory.SliceRef{Offset: pageOffset, Len: AdjacencyChunkSize, Cap: AdjacencyChunkSize})
+	
+	return atomic.CompareAndSwapUint64(&page[offsetInPage], packed, newPacked)
+}
+
 func (pa *PackedAdjacency) GetNeighbors(id uint32) ([]uint32, bool) {
 	packed, ok := pa.getPackedRef(id)
 	if !ok {

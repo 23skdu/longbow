@@ -97,3 +97,24 @@
 - [ ] **Tune GOGC for tail latencies**: Address high remote p95/p99 latencies (18ms+) by optimizing GC parameters.
 - [ ] **Enable CUDA/Metal for GPU acceleration**: Complete backend integration to bypass CPU bottlenecks on both platforms.
 - [ ] **Memory Tuning**: Investigate heap pressure warnings - consider adjusting GC tuner parameters or reducing memory footprint.
+
+---
+
+## Suggestions for Next Release (Performance Observations from 2026-05-01)
+
+### [ARCH] Lock-Free Adjacency Lists
+- **Observation**: The `LockNode` spinlock optimization significantly improved remote throughput (3.3x gain), but p95 latencies for filtered search remain elevated (17ms+).
+- **Recommendation**: Transition to a truly lock-free RCU pattern for neighbor lists to eliminate spin-wait cycles entirely during traversals.
+
+### [PERF] Filter Evaluator Batching
+- **Observation**: Filtered search shows significantly higher tail latency than dense search on remote hosts, suggesting filter evaluation overhead during graph traversal.
+- **Recommendation**: Implement vectorized filter evaluation or batching during search expansion to reduce per-node overhead.
+
+### [GPU] Cost-Model Based Dispatch
+- **Observation**: The current 1024-vector threshold for GPU dispatch is a static heuristic.
+- **Recommendation**: Implement a dynamic cost-model that accounts for CPU load, GPU launch latency, and vector dimensionality to decide the optimal execution path.
+
+### [MEM] Memory Tiering (NVMe/RAM)
+- **Observation**: Higher `lowGOGC` floors improve latency but increase memory pressure.
+- **Recommendation**: Implement a memory-tiering strategy for colder graph segments using `mmap` or direct NVMe access to scale indices without sacrificing tail latency.
+

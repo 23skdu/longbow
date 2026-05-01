@@ -125,7 +125,7 @@ func (sca *SizeClassArena[T]) Stats() map[string]ArenaStats {
 
 	stats := make(map[string]ArenaStats)
 	for name, arena := range sca.arenas {
-		stats[name] = arena.arena.Stats()
+		stats[name] = arena.Slab().Stats()
 	}
 	return stats
 }
@@ -161,7 +161,7 @@ func (sca *SizeClassArena[T]) MemoryUsage() MemoryUsageSummary {
 	}
 
 	for className, arena := range sca.arenas {
-		stats := arena.arena.Stats()
+		stats := arena.Slab().Stats()
 		classUsage := MemoryClassUsage{
 			TotalCapacity: stats.TotalCapacity,
 			UsedBytes:     stats.UsedBytes,

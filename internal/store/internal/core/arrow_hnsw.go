@@ -2164,7 +2164,39 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	var errFinal error
 	var errMu sync.Mutex
 	
+	// Phase 1: Parallel Vector Ingestion
+	// Ensures all vectors are persistent in arenas before we start linking nodes.
+	// This eliminates races between concurrent writers and readers in the same batch.
 	pool := GetSharedPool()
+	pool.ParallelFor(len(rowIdxs), (len(rowIdxs)+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
+		for i := start; i < end; i++ {
+			id := startID + uint32(i) // #nosec G115
+			
+			// Resolve record batch
+			var rec arrow.RecordBatch
+			bIdx := batchIdxs[i]
+			if bIdx < len(recs) && recs[bIdx] != nil {
+				rec = recs[bIdx]
+			} else if len(recs) == 1 {
+				rec = recs[0]
+			} else if i < len(recs) {
+				rec = recs[i]
+			}
+			
+			if rec == nil {
+				continue
+			}
+
+			v := h.extractVector(rec, vecColIdx, rowIdxs[i])
+			if v != nil {
+				_ = h.data.Load().SetVector(id, v)
+				h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+			}
+		}
+	})
+
+	// Phase 2: Parallel Insertion
+	// Now that all vectors are ready, we can perform HNSW insertion.
 	pool.ParallelFor(len(rowIdxs), (len(rowIdxs)+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
 		for i := start; i < end; i++ {
 			errMu.Lock()
@@ -2176,7 +2208,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			
 			id := startID + uint32(i) // #nosec G115
 			
-			// Robust record resolution
+			// Extract vector again (cheap from record batch or already in cache)
 			var rec arrow.RecordBatch
 			bIdx := batchIdxs[i]
 			if bIdx < len(recs) && recs[bIdx] != nil {
@@ -2194,19 +2226,26 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				return
 			}
 
-			h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-			
 			var vec any
 			if vecColIdx != -1 {
 				vec = h.extractVector(rec, vecColIdx, rowIdxs[i])
 			}
-			
+
+			if vec == nil {
+				errMu.Lock()
+				errFinal = fmt.Errorf("vector missing for row %d", rowIdxs[i])
+				errMu.Unlock()
+				return
+			}
+
 			// Use sharded lock for this pre-reserved ID
 			shard := id % ShardedLockCount
 			lockStart := time.Now()
 			h.insertMus[shard].Lock()
 			metrics.InsertMuWaitDurationSeconds.WithLabelValues(h.name).Observe(time.Since(lockStart).Seconds())
-			err := h.InsertWithVector(id, vec, -1)
+			
+			// Perform insertion - SetVector inside is now SKIPPED to avoid races
+			err := h.insertInternal(id, vec, -1, true)
 			h.insertMus[shard].Unlock()
 			
 			if err != nil {
@@ -3218,12 +3257,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			}
 
 			if len(batch) > 0 {
-				// Ensure results buffer is large enough
-				if len(ctx.matchResultBuf) < len(batch) {
-					ctx.matchResultBuf = make([]byte, len(batch)*2)
-				}
-				results := ctx.matchResultBuf[:len(batch)]
-				ctx.predicate.MatchBatch(batch, results)
+				results := ctx.EvaluatePredicateBatch(batch)
 
 				for i, n := range batch {
 					if results[i] == 0 {
@@ -3388,6 +3422,19 @@ func (h *ArrowHNSW) SnapshotGraph() (*types.GraphData, *types.SyncState, error) 
 		loc := basecore.UnpackLocation(val.Load())
 		locs = append(locs, loc)
 	})
+
+	// Capture PackedNeighbors state
+	for l, pn := range data.PackedNeighbors {
+		if pn == nil { continue }
+		// Ensure legacy slices are in sync for this snapshot
+		// This is a trade-off: snapshots become slightly more expensive,
+		// but we maintain compatibility with the existing serialization format.
+		for i := uint32(0); i < uint32(data.Capacity); i++ { // #nosec G115
+			if neighbors, ok := pn.GetNeighbors(i); ok {
+				_ = data.SetNeighborsAtLayer(l, i, neighbors)
+			}
+		}
+	}
 
 	state := &types.SyncState{
 		Version:   1,
@@ -3558,7 +3605,7 @@ func (h *ArrowHNSW) ApplyDelta(delta *types.DeltaSync) error {
 		h.locationStore.Set(globalID, loc)
 	}
 
-	h.locationStore.UpdateSize(types.VectorID(delta.StartIndex + len(delta.NewLocations) - 1))
+	h.locationStore.UpdateSize(types.VectorID(delta.StartIndex + len(delta.NewLocations) - 1)) // #nosec G115
 
 	return nil
 }

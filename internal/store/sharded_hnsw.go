@@ -278,7 +278,7 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 
 	for i := 0; i < n; i++ {
 		// Allocate Global ID
-		gid := VectorID(idx.nextID.Add(1) - 1)
+		gid := VectorID(idx.nextID.Add(1) - 1) // #nosec G115
 		globalIDs[i] = uint32(gid)
 
 		// Set Global Location

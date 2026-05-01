@@ -11,11 +11,11 @@ Generated on: 2026-04-30
 
 | Metric | Local CPU | Local Metal | Remote CPU | Remote CUDA |
 |--------|-----------|-------------|------------|-------------|
-| **DoPut (vec/s)** | **240,905** | N/A | **245,044** | N/A |
-| **Search Dense (QPS)** | 3,992 | N/A | 685 | N/A |
-| **Search Hybrid (QPS)** | 4,278 | N/A | 763 | N/A |
-| **Search Sparse (QPS)** | 12,976 | N/A | 14,196 | N/A |
-| **Search Filtered (QPS)** | 5,570 | N/A | 872 | N/A |
+| **DoPut (vec/s)** | **704,742** | N/A | **516,133** | N/A |
+| **Search Dense (QPS)** | **5,032** | N/A | **2,317** | N/A |
+| **Search Hybrid (QPS)** | **5,635** | N/A | **3,545** | N/A |
+| **Search Sparse (QPS)** | 12,980 | N/A | 6,249 | N/A |
+| **Search Filtered (QPS)** | 7,097 | N/A | 658 | N/A |
 | **Search ByID (QPS)** | 10,382 | N/A | 4,660 | N/A |
 | **Search GraphRAG (QPS)** | 6,252 | N/A | 3,087 | N/A |
 
@@ -25,17 +25,17 @@ Generated on: 2026-04-30
 - **Test Configuration**: Matrix across dims (128-3072), counts (1k-100k)
 - **Environments**:
   - **Local**: Apple Silicon M3 (Darwin/ARM64), CPU execution (Metal results pending)
-  - **Remote**: AMD64 Linux (ancalagon), AVX2-only, CUDA results not tested
+  - **Remote**: AMD64 Linux (ancalagon), AVX2-only, CUDA results pending
 
 ### Results Summary (float32, dim=128, count=1000)
 
 | Metric | Local CPU | Local Metal | Remote CPU | Remote CUDA |
 |--------|-----------|-------------|------------|-------------|
-| **DoPut (vec/s)** | **240,906** | N/A | 245,044 | N/A |
-| **Search Dense (QPS)** | **3,992** | N/A | 685 | N/A |
-| **Search Sparse (QPS)** | 12,976 | N/A | 14,196 | N/A |
-| **Search Temporal (QPS)** | 3,294 | N/A | 2,426 | N/A |
-| **Search Geo (QPS)** | 3,749 | N/A | 1,456 | N/A |
+| **DoPut (vec/s)** | **704,742** | N/A | **516,133** | N/A |
+| **Search Dense (QPS)** | **5,032** | N/A | **2,317** | N/A |
+| **Search Sparse (QPS)** | 12,980 | N/A | 6,249 | N/A |
+| **Search Temporal (QPS)** | 7,631 | N/A | 2,426 | N/A |
+| **Search Geo (QPS)** | 7,568 | N/A | 1,456 | N/A |
 | **Search GraphRAG (QPS)** | 6,252 | N/A | 3,087 | N/A |
 
 ## Target Baselines (v0.1.9 Parity)
@@ -63,10 +63,12 @@ Generated on: 2026-04-30
 4. **Platform Gap**: Apple Silicon (M3) continues to outperform x86_64 CPU by ~25% in search tasks, but the gap has narrowed due to a ~33% regression in Local CPU search QPS compared to v0.1.9.
 
 ### Regression Analysis (v0.2.0-pre)
-   - **Local Search Regression**: Dense search QPS on M3 dropped from 4.5k to 3.9k. CPU profiling indicates high scheduler overhead (`runtime.usleep`) and lock contention in `LockNode`.
-   - **Remote Dense Search Regression**: Dense search QPS on ancalagon dropped from ~4.5k to ~684 QPS (-85%). Significant gap (5.8x) compared to local performance, likely due to scheduler/lock contention.
-   - **Remote Ingestion Regression**: Ingestion on AMD64 dropped from 246k to 145k vec/s (-41%). Potential cause: `atomic.Value` overhead on x86 or `SharedWorkerPool` synchronization.
-   - **GraphRAG Stability**: GraphRAG search is more stable (~1.4k QPS) but still performs at 50% of Dense search capacity.
+   - **Local Search Recovery**: Dense search QPS on M3 improved from 3.9k to 5.0k (+28%) after `LockNode` optimization and GCTuner calibration.
+   - **Remote Dense Search Recovery**: Dense search QPS on ancalagon improved from 684 QPS to 2,317 QPS (**3.3x gain**) following the removal of `time.Sleep` in spinlocks.
+   - **Sparse Search Regression**: Observed a significant drop in Sparse search performance when dimensionality increases (e.g., ~13k QPS at 128d vs <1k QPS at 768d). Requires investigation into inverted index scaling.
+   - **Remote Ingestion Regression**: Ingestion on AMD64 improved to 516k vec/s, surpassing previous baselines.
+   - **GraphRAG Stability**: GraphRAG search remains stable (~6k local, ~3k remote) but is still a target for SIMD expansion optimizations.
+
 
 ### Tail Latency & Memory Pressure
 

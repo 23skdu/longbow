@@ -56,7 +56,7 @@ func (p *SharedWorkerPool) worker(tasks chan func()) {
 
 // Submit adds a task to the pool using round-robin distribution.
 func (p *SharedWorkerPool) Submit(task func()) {
-	shardIdx := atomic.AddUint32(&p.nextShard, 1) % uint32(p.numWorkers)
+	shardIdx := atomic.AddUint32(&p.nextShard, 1) % uint32(p.numWorkers) // #nosec G115
 	p.shards[shardIdx] <- task
 }
 

@@ -138,6 +138,7 @@ type graphFallback interface {
 type PackedNeighbors interface {
 	GetNeighbors(id uint32) ([]uint32, bool)
 	SetNeighbors(id uint32, neighbors []uint32) error
+	CASNeighbors(id uint32, old, new []uint32) bool
 	GetNeighborsF16(id uint32) ([]uint32, []float16.Num, bool)
 	SetNeighborsF16(id uint32, neighbors []uint32, dists []float16.Num) error
 	EnsureCapacity(id uint32)
@@ -914,26 +915,20 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 }
 
 func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
-	// Only support layer 0 for generic SetNeighbors on GraphData for now
-	// To support multiple layers, we'd need layer argument.
-	// Assuming this is used for simple tests or base layer.
-	// But wait, HNSW is multi-layer.
-	// The interface might be legacy or for specialized use.
-	// Let's assume layer 0.
+	return g.SetNeighborsAtLayer(0, id, neighbors)
+}
 
-	layer := 0
+func (g *GraphData) SetNeighborsAtLayer(layer int, id uint32, neighbors []uint32) error {
 	cID := int(id) / ChunkSize
 	cOff := int(id) % ChunkSize
 
-	// Ensure chunk exists (might fail if not pre-allocated)
-	// But we should try to get it.
+	// Ensure chunk exists
 	countsChunk := g.GetCountsChunk(layer, cID)
 	neighborsChunk := g.GetNeighborsChunk(layer, cID)
 	versionsChunk := g.GetVersionsChunk(layer, cID)
 
 	if countsChunk == nil || neighborsChunk == nil {
-		// Try to ensure?
-		if err := g.EnsureChunk(cID, 0, g.Dims); err != nil {
+		if err := g.EnsureChunk(cID, layer, g.Dims); err != nil {
 			return err
 		}
 		countsChunk = g.GetCountsChunk(layer, cID)
@@ -945,7 +940,6 @@ func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
 	}
 
 	if len(neighbors) > MaxNeighbors {
-		// Truncate or error?
 		neighbors = neighbors[:MaxNeighbors]
 	}
 
@@ -1487,6 +1481,14 @@ func (g *GraphData) GetNeighbors(layer int, id uint32, buf []uint32) []uint32 {
 	}
 
 	countAddr := &counts[cOff]
+	
+	// 1. Try Lock-Free PackedNeighbors first (truly lock-free)
+	if layer < len(g.PackedNeighbors) && g.PackedNeighbors[layer] != nil {
+		if res, ok := g.PackedNeighbors[layer].GetNeighbors(id); ok {
+			return res
+		}
+	}
+
 	base := cOff * MaxNeighbors
 
 	// Seqlock read loop

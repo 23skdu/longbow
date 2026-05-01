@@ -327,9 +327,9 @@ func ImplementSigmoidAVX2() {
 	// 1 / (2-x) placeholder
 	one_s := XMM(); MOVSS(p1, one_s)
 	two_s := XMM(); MOVSS(p1, two_s); ADDSS(two_s, two_s)
-	SUBSS(v_s, two_s, v_s)
-	DIVSS(v_s, one_s, v_s)
-	VMOVSS(v_s, Mem{Base: dst})
+	SUBSS(v_s, two_s)
+	DIVSS(two_s, one_s) // Wait, I want 1 / (2-x)
+	VMOVSS(one_s, Mem{Base: dst})
 	ADDQ(Imm(4), src); ADDQ(Imm(4), dst); DECQ(n); JMP(LabelRef("sig_tail"))
 	Label("sig_done"); RET()
 }

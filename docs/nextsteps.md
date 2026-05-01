@@ -74,3 +74,27 @@
 
 - **Metrics**: `longbow_simd_math_ops_total` (labeled by operation and architecture).
 - **Parity Tests**: Automated comparison against `gonum` or standard Go loops for correctness.
+
+---
+
+## Suggestions for Next Release (Performance Observations from 2026-04-30)
+
+### Performance Observations
+
+1. **Local vs Remote Gap**: Local CPU (M3) significantly outperforms remote CPU (ancalagon/x86_64) for search operations:
+   - Dense: 3,992 QPS (local) vs 685 QPS (remote) - **5.8x gap**
+   - GraphRAG: 6,252 QPS (local) vs 3,087 QPS (remote) - **2.0x gap**
+   
+2. **High p95/p99 Latency on Remote**: Remote ancalagon shows high tail latencies (p95: 18ms, p99: 19ms for Dense) compared to local (p95: 0.40ms, p99: 0.59ms).
+   
+3. **Heap Pressure Warnings**: Local server showed repeated "High effective heap utilization" warnings during large batch tests - may indicate memory pressure or GC inefficiencies.
+
+4. **Sparse Search Performs Well**: Both platforms show excellent sparse search performance (>12k QPS local, >14k QPS remote).
+
+### Recommendations
+
+- [ ] **Investigate Remote CPU Bottleneck**: The 5.8x performance gap between local and remote suggests potential scheduler or lock contention on x86_64 - profile with pprof.
+- [ ] **Address p95/p99 Latency**: High tail latencies on remote suggest possible GC pauses or contention - tune GOGC or investigate lock contention.
+- [ ] **Memory Tuning**: Investigate heap pressure warnings - consider adjusting GC tuner parameters or reducing memory footprint.
+- [ ] **CUDA Integration**: Complete CUDA support for remote GPU acceleration to improve ancalagon performance.
+- [ ] **Metal Integration**: Enable Metal acceleration for local GPU to match or exceed CPU performance.

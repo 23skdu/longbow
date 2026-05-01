@@ -872,35 +872,3 @@ func logAVX512Kernel(src, dst unsafe.Pointer, n int)
 //go:noescape
 func pause()
 
-func expAVX2(src, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	expAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
-}
-
-func logAVX2(src, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	logAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
-}
-
-func softmaxAVX2(src, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	softmaxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
-}
-
-func sigmoidAVX2(src, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	sigmoidAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
-}
-
-func expAVX2Kernel(src, dst uintptr, n int)
-func logAVX2Kernel(src, dst uintptr, n int)
-func softmaxAVX2Kernel(src, dst uintptr, n int)
-func sigmoidAVX2Kernel(src, dst uintptr, n int)

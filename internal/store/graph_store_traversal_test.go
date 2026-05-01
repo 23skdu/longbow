@@ -109,7 +109,7 @@ func TestGraphStore_RankWithGraph(t *testing.T) {
 
 	// 10 is connected to 11. 20 is isolated.
 	// RankWithGraph with Alpha=0.5
-	reranked := gs.RankWithGraph(initial, 0.5, 1)
+	reranked := gs.RankWithGraph("test_ds", initial, 0.5, 1)
 
 	// We expect 11 to appear in results because of connection to 10.
 	found11 := false

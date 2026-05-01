@@ -79,6 +79,10 @@ func softmaxNEON(src, dst []float32) { softmaxGeneric(src, dst) }
 func expNEON(src, dst []float32) { expGeneric(src, dst) }
 func logNEON(src, dst []float32) { logGeneric(src, dst) }
 
+func sumNEON(src []float32) float32 { return sumGeneric(src) }
+func maxNEON(src []float32) float32 { return maxGeneric(src) }
+func minNEON(src []float32) float32 { return minGeneric(src) }
+
 func memcpyNEON(dst, src unsafe.Pointer, n int) { memcpyGeneric(dst, src, n) }
 
 

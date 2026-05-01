@@ -177,7 +177,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 				// gs (GraphStore) has its OWN lock. ds.Graph is just a pointer.
 				// So calling it while holding ds.dataMu RLock is safe (assuming no lock inversion).
 				graphDepth := 2
-				ranked := ds.Graph.RankWithGraph(searchResults, req.GraphAlpha, graphDepth)
+				ranked := ds.Graph.RankWithGraph(req.Dataset, searchResults, req.GraphAlpha, graphDepth)
 				if len(ranked) > 0 {
 					searchResults = ranked
 				}

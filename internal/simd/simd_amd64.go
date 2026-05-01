@@ -447,6 +447,21 @@ func logAVX2(src, dst []float32) {
 	logAVX2Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
 }
 
+func sumAVX2(src []float32) float32 {
+	if len(src) == 0 { return 0 }
+	return sumAVX2Kernel(unsafe.Pointer(&src[0]), len(src))
+}
+
+func maxAVX2(src []float32) float32 {
+	if len(src) == 0 { return -math.MaxFloat32 }
+	return maxAVX2Kernel(unsafe.Pointer(&src[0]), len(src))
+}
+
+func minAVX2(src []float32) float32 {
+	if len(src) == 0 { return math.MaxFloat32 }
+	return minAVX2Kernel(unsafe.Pointer(&src[0]), len(src))
+}
+
 func sigmoidAVX512(src, dst []float32) {
 	if len(src) == 0 { return }
 	sigmoidAVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
@@ -839,6 +854,12 @@ func softmaxAVX2Kernel(src, dst unsafe.Pointer, n int)
 func expAVX2Kernel(src, dst unsafe.Pointer, n int)
 //go:noescape
 func logAVX2Kernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func sumAVX2Kernel(src unsafe.Pointer, n int) float32
+//go:noescape
+func maxAVX2Kernel(src unsafe.Pointer, n int) float32
+//go:noescape
+func minAVX2Kernel(src unsafe.Pointer, n int) float32
 
 //go:noescape
 func sigmoidAVX512Kernel(src, dst unsafe.Pointer, n int)
@@ -850,3 +871,36 @@ func expAVX512Kernel(src, dst unsafe.Pointer, n int)
 func logAVX512Kernel(src, dst unsafe.Pointer, n int)
 //go:noescape
 func pause()
+
+func expAVX2(src, dst []float32) {
+	if len(src) == 0 {
+		return
+	}
+	expAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+}
+
+func logAVX2(src, dst []float32) {
+	if len(src) == 0 {
+		return
+	}
+	logAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+}
+
+func softmaxAVX2(src, dst []float32) {
+	if len(src) == 0 {
+		return
+	}
+	softmaxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+}
+
+func sigmoidAVX2(src, dst []float32) {
+	if len(src) == 0 {
+		return
+	}
+	sigmoidAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+}
+
+func expAVX2Kernel(src, dst uintptr, n int)
+func logAVX2Kernel(src, dst uintptr, n int)
+func softmaxAVX2Kernel(src, dst uintptr, n int)
+func sigmoidAVX2Kernel(src, dst uintptr, n int)

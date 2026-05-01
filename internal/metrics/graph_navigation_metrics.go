@@ -115,6 +115,26 @@ var (
 		[]string{"dataset"},
 	)
 
+	// GraphRAGExpansionLatencySeconds (requested in roadmap)
+	GraphRAGExpansionLatencySeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_graphrag_expansion_duration_seconds",
+			Help:    "Detailed latency of the GraphRAG expansion step",
+			Buckets: []float64{0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5},
+		},
+		[]string{"dataset"},
+	)
+
+	// GraphRAGNodesVisitedTotal (requested in roadmap)
+	GraphRAGNodesVisitedTotal = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_graphrag_nodes_visited_total",
+			Help:    "Total number of unique nodes visited during GraphRAG expansion.",
+			Buckets: []float64{10, 50, 100, 500, 1000, 5000, 10000, 50000},
+		},
+		[]string{"dataset"},
+	)
+
 	// GraphRAGSeedNodesTotal tracks the number of ANN seed nodes before graph expansion.
 	GraphRAGSeedNodesTotal = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{

@@ -3,6 +3,7 @@
 package simd
 
 import (
+	"math"
 	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow/float16"
@@ -176,23 +177,31 @@ func float16ToFloat32NEON(src []float16.Num, dst []float32) {
 }
 
 func sigmoidNEON(src, dst []float32) {
-	sigmoidGeneric(src, dst)
+	if len(src) == 0 {
+		return
+	}
+	sigmoidNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
 }
 
 func expNEON(src, dst []float32) {
-	// TODO: validated WORD opcodes for Go ARM64 assembler pending
-	// The NEON exp/softmax kernels exist in simd_arm64.s but require
-	// correct AArch64 binary encoding. AVX-512 path handles amd64.
-	expGeneric(src, dst)
+	if len(src) == 0 {
+		return
+	}
+	expNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
 }
 
 func logNEON(src, dst []float32) {
-	logGeneric(src, dst)
+	if len(src) == 0 {
+		return
+	}
+	logNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
 }
 
 func softmaxNEON(src, dst []float32) {
-	// TODO: validated WORD opcodes for Go ARM64 assembler pending
-	softmaxGeneric(src, dst)
+	if len(src) == 0 {
+		return
+	}
+	softmaxNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
 }
 
 func memcpyNEON(dst, src unsafe.Pointer, n int) {
@@ -207,11 +216,42 @@ func dotFloat64NEON(a, b []float64) (float32, error) {
 	return dotFloat64Unrolled4x(a, b)
 }
 
+func sumNEON(src []float32) float32 {
+	if len(src) == 0 {
+		return 0
+	}
+	return sumNEONKernel(unsafe.Pointer(&src[0]), len(src))
+}
+
+func maxNEON(src []float32) float32 {
+	if len(src) == 0 {
+		return -math.MaxFloat32
+	}
+	return maxNEONKernel(unsafe.Pointer(&src[0]), len(src))
+}
+
+func minNEON(src []float32) float32 {
+	if len(src) == 0 {
+		return math.MaxFloat32
+	}
+	return minNEONKernel(unsafe.Pointer(&src[0]), len(src))
+}
+
 // Internal assembly kernels (must have Go declarations to satisfy go vet)
 //go:noescape
 func expNEONKernel(src, dst unsafe.Pointer, n int)
 //go:noescape
+func logNEONKernel(src, dst unsafe.Pointer, n int)
+//go:noescape
 func softmaxNEONKernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func sigmoidNEONKernel(src, dst unsafe.Pointer, n int)
+//go:noescape
+func sumNEONKernel(src unsafe.Pointer, n int) float32
+//go:noescape
+func maxNEONKernel(src unsafe.Pointer, n int) float32
+//go:noescape
+func minNEONKernel(src unsafe.Pointer, n int) float32
 //go:noescape
 func euclideanNEONKernel(a, b []float32) float32
 //go:noescape
@@ -279,6 +319,7 @@ func memcpyNTA(dst, src unsafe.Pointer, n int)
 // This prevents gopls from reporting them as unused while keeping them available for debugging.
 var _ = func() {
 	if false {
+		pause()
 		// Activation kernels (NEON stubs; AVX-512 path used on amd64)
 		expNEONKernel(nil, nil, 0)
 		softmaxNEONKernel(nil, nil, 0)

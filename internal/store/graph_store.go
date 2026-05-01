@@ -12,6 +12,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"context"
+	"time"
 	"unsafe"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -240,7 +241,7 @@ func (gs *GraphStore) RankWithGraphGPU(dataset string, results []SearchResult, a
 	// Adaptive Dispatching: Skip GPU for small workloads where kernel launch latency dominates.
 	if len(results) < GPUWorkloadThreshold {
 		metrics.GraphGPUDispatchFallbackTotal.WithLabelValues(dataset).Inc()
-		return gs.RankWithGraph(results, alpha, depth), nil
+		return gs.RankWithGraph(dataset, results, alpha, depth), nil
 	}
 
 	metrics.GraphGPUDispatchTotal.WithLabelValues(dataset).Inc()
@@ -302,10 +303,15 @@ func (gs *GraphStore) RankWithGraphGPU(dataset string, results []SearchResult, a
 }
 
 // RankWithGraph performs graph-based reranking using CPU execution.
-func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth int) []SearchResult {
+func (gs *GraphStore) RankWithGraph(dataset string, results []SearchResult, alpha float32, depth int) []SearchResult {
 	if len(results) == 0 || alpha <= 0 {
 		return results
 	}
+
+	start := time.Now()
+	defer func() {
+		metrics.GraphRAGExpansionLatencySeconds.WithLabelValues(dataset).Observe(time.Since(start).Seconds())
+	}()
 
 	gs.mu.RLock()
 	defer gs.mu.RUnlock()
@@ -318,9 +324,12 @@ func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth
 		}
 	}
 
-	// Use dense slices for performance
-	scoreSlice := make([]float32, maxID+1024)
-	visited := make([]uint64, (len(scoreSlice)+63)/64)
+	// Use pooled context for buffers
+	ctx := getGraphSearchContext(maxID, len(results))
+	defer putGraphSearchContext(ctx)
+
+	scoreSlice := ctx.scores
+	visited := ctx.visited
 
 	setVisited := func(id uint32) {
 		visited[id>>6] |= 1 << (id & 63)
@@ -329,9 +338,12 @@ func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth
 		return (visited[id>>6] & (1 << (id & 63))) != 0
 	}
 
-	currentNodes := make([]uint32, 0, len(results))
+	currentNodes := ctx.currentNodes
 	for _, r := range results {
 		id := uint32(r.ID)
+		if int(id) >= len(scoreSlice) {
+			continue
+		}
 		scoreSlice[id] = r.Score
 		if !isVisited(id) {
 			setVisited(id)
@@ -340,14 +352,20 @@ func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth
 	}
 
 	// 2. Multi-hop BFS Expansion
-	nextNodes := make([]uint32, 0, len(currentNodes)*2)
+	nextNodes := ctx.nextNodes
+	
+	// Pre-allocation optimization: track all nodes that received a score update
+	allInfluenced := make([]uint32, 0, len(results)*4)
+	allInfluenced = append(allInfluenced, currentNodes...)
 
 	for d := 0; d < depth; d++ {
 		if len(currentNodes) == 0 {
 			break
 		}
 
-		for i, id := range currentNodes {
+		for i := 0; i < len(currentNodes); i++ {
+			id := currentNodes[i]
+			
 			// SIMD prefetching for local edges
 			if i+2 < len(currentNodes) {
 				nextNextID := currentNodes[i+2]
@@ -358,12 +376,41 @@ func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth
 
 			if edges, ok := gs.forwardEdges[id]; ok {
 				s := scoreSlice[id] * alpha
-				for _, edge := range edges {
+				
+				// Manual Unrolling for instruction-level parallelism
+				edgeCount := len(edges)
+				j := 0
+				for ; j <= edgeCount-4; j += 4 {
+					e0 := edges[j]
+					e1 := edges[j+1]
+					e2 := edges[j+2]
+					e3 := edges[j+3]
+					
+					t0 := uint32(e0.Object)
+					t1 := uint32(e1.Object)
+					t2 := uint32(e2.Object)
+					t3 := uint32(e3.Object)
+					
+					scoreSlice[t0] += s * e0.Weight
+					scoreSlice[t1] += s * e1.Weight
+					scoreSlice[t2] += s * e2.Weight
+					scoreSlice[t3] += s * e3.Weight
+					
+					if !isVisited(t0) { setVisited(t0); nextNodes = append(nextNodes, t0); allInfluenced = append(allInfluenced, t0) }
+					if !isVisited(t1) { setVisited(t1); nextNodes = append(nextNodes, t1); allInfluenced = append(allInfluenced, t1) }
+					if !isVisited(t2) { setVisited(t2); nextNodes = append(nextNodes, t2); allInfluenced = append(allInfluenced, t2) }
+					if !isVisited(t3) { setVisited(t3); nextNodes = append(nextNodes, t3); allInfluenced = append(allInfluenced, t3) }
+				}
+				
+				// Handle remainder
+				for ; j < edgeCount; j++ {
+					edge := edges[j]
 					target := uint32(edge.Object)
 					scoreSlice[target] += s * edge.Weight
 					if !isVisited(target) {
 						setVisited(target)
 						nextNodes = append(nextNodes, target)
+						allInfluenced = append(allInfluenced, target)
 					}
 				}
 			}
@@ -375,11 +422,22 @@ func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth
 		nextNodes = nextNodes[:0]
 	}
 
-	// 3. Rebuild results
-	newResults := make([]SearchResult, 0, len(results)*2)
-	for id, score := range scoreSlice {
+	metrics.GraphRAGNodesVisitedTotal.WithLabelValues(dataset).Observe(float64(len(allInfluenced)))
+
+	// 3. Rebuild results (SPARSE rebuild - only iterate over influenced nodes)
+	newResults := ctx.results[:0]
+	
+	// Deduplicate allInfluenced to avoid double-adding if multiple paths hit same node
+	// (Though scoreSlice is already aggregated correctly)
+	// We use the visited bitset to help deduplicate if needed, but actually 
+	// allInfluenced might contain duplicates if we don't check.
+	// However, it's faster to just iterate and clear the score after use.
+	
+	for _, id := range allInfluenced {
+		score := scoreSlice[id]
 		if score > 0 {
 			newResults = append(newResults, SearchResult{ID: lbtypes.VectorID(id), Score: score})
+			scoreSlice[id] = 0 // Reset for next use in pool
 		}
 	}
 
@@ -391,7 +449,12 @@ func (gs *GraphStore) RankWithGraph(results []SearchResult, alpha float32, depth
 		newResults = newResults[:2000]
 	}
 
-	return newResults
+	// Important: We need to return a COPY of the pooled results slice 
+	// because the pool will overwrite the buffer.
+	finalResults := make([]SearchResult, len(newResults))
+	copy(finalResults, newResults)
+	
+	return finalResults
 }
 
 // RankWithGraphDistributed performs graph-based reranking across a distributed mesh.
@@ -399,6 +462,11 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 	if len(results) == 0 || alpha <= 0 {
 		return results
 	}
+
+	start := time.Now()
+	defer func() {
+		metrics.GraphRAGExpansionLatencySeconds.WithLabelValues(dataset).Observe(time.Since(start).Seconds())
+	}()
 
 	// 1. Initial Local Rank & Bounds Checking
 	maxID := gs.CommunityCount() + 1000
@@ -408,9 +476,12 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 		}
 	}
 
-	// Use dense slices for performance if possible
-	scoreSlice := make([]float32, maxID+1024)
-	visited := make([]uint64, (len(scoreSlice)+63)/64)
+	// Use pooled context
+	gCtx := getGraphSearchContext(maxID, len(results))
+	defer putGraphSearchContext(gCtx)
+
+	scoreSlice := gCtx.scores
+	visited := gCtx.visited
 
 	setVisited := func(id uint32) {
 		visited[id>>6] |= 1 << (id & 63)
@@ -419,9 +490,12 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 		return (visited[id>>6] & (1 << (id & 63))) != 0
 	}
 
-	currentNodes := make([]uint32, 0, len(results))
+	currentNodes := gCtx.currentNodes
 	for _, r := range results {
 		id := uint32(r.ID)
+		if int(id) >= len(scoreSlice) {
+			continue
+		}
 		scoreSlice[id] = r.Score
 		if !isVisited(id) {
 			setVisited(id)
@@ -430,7 +504,9 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 	}
 
 	// 2. Multi-hop Distributed BFS Expansion
-	nextNodes := make([]uint32, 0, len(currentNodes)*4) // Pre-allocate with heuristic
+	nextNodes := gCtx.nextNodes
+	allInfluenced := make([]uint32, 0, len(results)*4)
+	allInfluenced = append(allInfluenced, currentNodes...)
 
 	for d := 0; d < depth; d++ {
 		if len(currentNodes) == 0 {
@@ -439,7 +515,8 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 
 		// First, check local edges with prioritized prefetching
 		gs.mu.RLock()
-		for i, id := range currentNodes {
+		for i := 0; i < len(currentNodes); i++ {
+			id := currentNodes[i]
 			// Prioritize for SIMD prefetching: prefetch the edge list for the node after next
 			if i+2 < len(currentNodes) {
 				nextNextID := currentNodes[i+2]
@@ -450,12 +527,32 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 
 			if edges, ok := gs.forwardEdges[id]; ok {
 				s := scoreSlice[id] * alpha
-				for _, edge := range edges {
+				
+				// Unrolled local expansion
+				edgeCount := len(edges)
+				j := 0
+				for ; j <= edgeCount-4; j += 4 {
+					e0, e1, e2, e3 := edges[j], edges[j+1], edges[j+2], edges[j+3]
+					t0, t1, t2, t3 := uint32(e0.Object), uint32(e1.Object), uint32(e2.Object), uint32(e3.Object)
+					
+					scoreSlice[t0] += s * e0.Weight
+					scoreSlice[t1] += s * e1.Weight
+					scoreSlice[t2] += s * e2.Weight
+					scoreSlice[t3] += s * e3.Weight
+					
+					if !isVisited(t0) { setVisited(t0); nextNodes = append(nextNodes, t0); allInfluenced = append(allInfluenced, t0) }
+					if !isVisited(t1) { setVisited(t1); nextNodes = append(nextNodes, t1); allInfluenced = append(allInfluenced, t1) }
+					if !isVisited(t2) { setVisited(t2); nextNodes = append(nextNodes, t2); allInfluenced = append(allInfluenced, t2) }
+					if !isVisited(t3) { setVisited(t3); nextNodes = append(nextNodes, t3); allInfluenced = append(allInfluenced, t3) }
+				}
+				for ; j < edgeCount; j++ {
+					edge := edges[j]
 					target := uint32(edge.Object)
 					scoreSlice[target] += s * edge.Weight
 					if !isVisited(target) {
 						setVisited(target)
 						nextNodes = append(nextNodes, target)
+						allInfluenced = append(allInfluenced, target)
 					}
 				}
 			}
@@ -483,6 +580,7 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 							if !isVisited(target) {
 								setVisited(target)
 								nextNodes = append(nextNodes, target)
+								allInfluenced = append(allInfluenced, target)
 							}
 						}
 					}
@@ -496,11 +594,15 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 		nextNodes = nextNodes[:0]
 	}
 
+	metrics.GraphRAGNodesVisitedTotal.WithLabelValues(dataset).Observe(float64(len(allInfluenced)))
+
 	// 3. Rebuild results from dense score slice
-	newResults := make([]SearchResult, 0, len(results)*2) // Heuristic
-	for id, score := range scoreSlice {
+	newResults := gCtx.results[:0]
+	for _, id := range allInfluenced {
+		score := scoreSlice[id]
 		if score > 0 {
 			newResults = append(newResults, SearchResult{ID: lbtypes.VectorID(id), Score: score})
+			scoreSlice[id] = 0 // Reset for pool reuse
 		}
 	}
 
@@ -508,11 +610,14 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 		return newResults[i].Score > newResults[j].Score
 	})
 
-	if len(newResults) > 2000 { // Limit expansion results to prevent explosion
+	if len(newResults) > 2000 {
 		newResults = newResults[:2000]
 	}
 
-	return newResults
+	finalResults := make([]SearchResult, len(newResults))
+	copy(finalResults, newResults)
+
+	return finalResults
 }
 
 // Traverse performs a graph traversal starting from a specific node.

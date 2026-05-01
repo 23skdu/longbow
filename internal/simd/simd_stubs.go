@@ -182,3 +182,7 @@ func sigmoidAVX512(src, dst []float32) { sigmoidGeneric(src, dst) }
 func softmaxAVX512(src, dst []float32) { softmaxGeneric(src, dst) }
 func expAVX512(src, dst []float32) { expGeneric(src, dst) }
 func logAVX512(src, dst []float32) { logGeneric(src, dst) }
+
+func sumAVX2(src []float32) float32 { return sumGeneric(src) }
+func maxAVX2(src []float32) float32 { return maxGeneric(src) }
+func minAVX2(src []float32) float32 { return minGeneric(src) }

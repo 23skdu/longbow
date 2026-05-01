@@ -210,7 +210,7 @@ func main() {
 }
 
 func ImplementExpAVX2() {
-	TEXT("expAVX2Kernel", NOSPLIT, "func(src, dst unsafe.Pointer, n int)")
+	TEXT("expAVX2Kernel", NOSPLIT, "func(src, dst uintptr, n int)")
 	src := Load(Param("src"), GP64())
 	dst := Load(Param("dst"), GP64())
 	n := Load(Param("n"), GP64())
@@ -252,7 +252,7 @@ func ImplementExpAVX2() {
 }
 
 func ImplementLogAVX2() {
-	TEXT("logAVX2Kernel", NOSPLIT, "func(src, dst unsafe.Pointer, n int)")
+	TEXT("logAVX2Kernel", NOSPLIT, "func(src, dst uintptr, n int)")
 	src := Load(Param("src"), GP64())
 	dst := Load(Param("dst"), GP64())
 	n := Load(Param("n"), GP64())
@@ -281,7 +281,7 @@ func ImplementLogAVX2() {
 }
 
 func ImplementSoftmaxAVX2() {
-	TEXT("softmaxAVX2Kernel", NOSPLIT, "func(src, dst unsafe.Pointer, n int)")
+	TEXT("softmaxAVX2Kernel", NOSPLIT, "func(src, dst uintptr, n int)")
 	// 1. Find Max
 	// 2. Compute Exp(x - max) and Sum
 	// 3. Normalize
@@ -289,7 +289,7 @@ func ImplementSoftmaxAVX2() {
 }
 
 func ImplementSigmoidAVX2() {
-	TEXT("sigmoidAVX2Kernel", NOSPLIT, "func(src, dst unsafe.Pointer, n int)")
+	TEXT("sigmoidAVX2Kernel", NOSPLIT, "func(src, dst uintptr, n int)")
 	src := Load(Param("src"), GP64())
 	dst := Load(Param("dst"), GP64())
 	n := Load(Param("n"), GP64())

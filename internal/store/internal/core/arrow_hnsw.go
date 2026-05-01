@@ -1863,8 +1863,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	// Allocate local IDs for the entire batch to ensure monotonic assignment and avoid overwrites
 	startID = uint32(h.nextID.Add(int64(n)) - int64(n)) // #nosec G115
 
-	// Bulk optimization path - only use for large batches to avoid individual overhead
-	if n >= 100 && !h.IsSharded() {
+	// Bulk optimization path - only use for large batches on an established index
+	// to ensure reachability and graph diversity.
+	if n >= 5000 && h.nodeCount.Load() > 0 && !h.IsSharded() {
 
 		if vecColIdx != -1 {
 			// Extract all vectors into a typed slice for bulk processing

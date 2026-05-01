@@ -14,6 +14,10 @@ type GraphSearchContext struct {
 	
 	// results stores the intermediate SearchResult slice to avoid re-allocation
 	results      []SearchResult
+
+	// distCache provides a thread-local cache for distance calculations
+	// during expansion to avoid redundant work for hub nodes.
+	distCache    map[uint32]float32
 }
 
 // Reset clears the context for reuse.
@@ -55,6 +59,14 @@ func (ctx *GraphSearchContext) Reset(maxID int, initialCount int) {
 	} else {
 		ctx.results = ctx.results[:0]
 	}
+
+	if ctx.distCache == nil {
+		ctx.distCache = make(map[uint32]float32, 1024)
+	} else {
+		for k := range ctx.distCache {
+			delete(ctx.distCache, k)
+		}
+	}
 }
 
 var graphSearchPool = sync.Pool{
@@ -65,6 +77,7 @@ var graphSearchPool = sync.Pool{
 			currentNodes: make([]uint32, 0, 1000),
 			nextNodes:    make([]uint32, 0, 2000),
 			results:      make([]SearchResult, 0, 2000),
+			distCache:    make(map[uint32]float32, 1024),
 		}
 	},
 }

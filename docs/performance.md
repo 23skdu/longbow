@@ -2,30 +2,30 @@
 
 Generated on: 2026-04-29
 
-## v0.2.0 Comprehensive Benchmark Matrix (2026-04-30)
+## v0.2.0 Comprehensive Benchmark Matrix (2026-05-01)
 
 > [!NOTE]
-> Full matrix (1.9k+ combinations) is currently executing in parallel across Local (M3) and Remote (ancalagon) hosts. Initial results for `float32`, `dim=128`, `count=1000` are reported below.
+> Full matrix (1.9k+ combinations) is executing in parallel across Local (M3) and Remote (ancalagon). Results for `float32`, `dim=128`, `count=1000` are updated below.
 
-### Initial Results (float32, dim=128, count=1000)
+### Latest Results (float32, dim=128, count=1000)
 
 | Metric | Local CPU | Local Metal | Remote CPU | Remote CUDA |
 |--------|-----------|-------------|------------|-------------|
-| **DoPut (vec/s)** | **244,431** | *running* | *running* | *running* |
-| **Search Dense (QPS)** | **3,697** | *running* | *running* | *running* |
-| **Search Hybrid (QPS)** | **3,420** | *running* | *running* | *running* |
-| **Search Sparse (QPS)** | **12,732** | *running* | *running* | *running* |
-| **Search Filtered (QPS)** | **3,713** | *running* | *running* | *running* |
-| **Search ByID (QPS)** | **5,064** | *running* | *running* | *running* |
-| **Search GraphRAG (QPS)** | **994** | *running* | *running* | *running* |
+| **DoPut (vec/s)** | **348,477** | *running* | 145,299 | *running* |
+| **Search Dense (QPS)** | 3,026 | *running* | 2,454 | *running* |
+| **Search Hybrid (QPS)** | 2,915 | *running* | 2,216 | *running* |
+| **Search Sparse (QPS)** | 6,958 | *running* | 4,398 | *running* |
+| **Search Filtered (QPS)** | 3,159 | *running* | 1,942 | *running* |
+| **Search ByID (QPS)** | 3,731 | *running* | 2,116 | *running* |
+| **Search GraphRAG (QPS)** | 1,466 | *running* | 887 | *running* |
 
 ### Platform Configuration
 
 - **Memory**: 18GB allocated to longbow node (`LONGBOW_MAX_MEMORY=19327352832`)
 - **Test Configuration**: Matrix across dims (128-3072), counts (1k-100k)
 - **Environments**:
-    - **Local**: Apple Silicon M3 (Darwin/ARM64), Metal acceleration
-    - **Remote**: AMD64 Linux, AVX2-only (ancalagon), NVIDIA CUDA acceleration
+  - **Local**: Apple Silicon M3 (Darwin/ARM64), Metal acceleration
+  - **Remote**: AMD64 Linux, AVX2-only (ancalagon), NVIDIA CUDA acceleration
 
 ### Results Summary (float32, dim=128, count=1000)
 
@@ -53,14 +53,19 @@ Generated on: 2026-04-29
 
 1. **Ingestion Performance Milestone**: Ingested datasets up to 500k vectors without OOM by implementing client-side backpressure and chunked uploads.
 
-2. **Search QPS Improvements (v0.2.0-rc1)**: 
+2. **Search QPS Improvements (v0.2.0-rc1)**:
    - **Lock-Free Traversal**: Removed redundant shard locks (`insertMus`) in the ingestion path, relying on fine-grained `LockNode` spinlocks. This significantly reduces search/ingestion contention.
    - **Scheduler Latency**: Refactored `DoGet` and `DoGetPipeline` to use the `SharedWorkerPool`. Eliminated `runIndexWorker` polling with `Notify()` signaling, reducing CPU idle wakeups.
    - **Temporal Cache Stability**: Implemented $O(1)$ LRU cache and $O(\log N)$ binary search for temporal tree range queries, stabilizing Temporal search QPS under load.
 
 3. **Filter Evaluator Stability**: Fixed a critical panic in the filter evaluator where `Reset` was not correctly re-binding all Arrow types (Boolean, Int32, UInt64) across record batch transitions.
 
-4. **Platform Gap**: Apple Silicon (M3) continues to outperform x86_64 CPU by ~50% in search tasks.
+4. **Platform Gap**: Apple Silicon (M3) continues to outperform x86_64 CPU by ~25% in search tasks, but the gap has narrowed due to a ~33% regression in Local CPU search QPS compared to v0.1.9.
+
+5. **Regression Analysis (v0.2.0-pre)**:
+   - **Local Search Regression**: Dense search QPS on M3 dropped from 4.5k to 3k (-33%). CPU profiling indicates high scheduler overhead (`runtime.usleep`) and lock contention in `LockNode`.
+   - **Remote Ingestion Regression**: Ingestion on AMD64 dropped from 246k to 145k vec/s (-41%). Potential cause: `atomic.Value` overhead on x86 or `SharedWorkerPool` synchronization.
+   - **GraphRAG Stability**: GraphRAG search is more stable (~1.4k QPS) but still performs at 50% of Dense search capacity.
 
 ### Hardware
 

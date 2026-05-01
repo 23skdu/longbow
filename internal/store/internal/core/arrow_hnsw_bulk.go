@@ -205,8 +205,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 	// Slice into chunks for workers to amortize goroutine overhead
 	chunkSize := (n + runtime.NumCPU() - 1) / runtime.NumCPU()
-	if chunkSize < 256 {
-		chunkSize = 256 // Minimum chunk size to justify overhead
+	if chunkSize < 64 {
+		chunkSize = 64 // Minimum chunk size to justify overhead
 	}
 
 	pool.ParallelFor(n, chunkSize, func(start, end int) {

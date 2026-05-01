@@ -4,7 +4,18 @@
 MAX_MEM=19327352832
 LOCAL_REPO="/Users/rsd/REPOS/longbow"
 REMOTE_HOST="ancalagon"
-REMOTE_REPO="~/longbow_bench"
+REMOTE_REPO="~/longbow"
+
+cleanup_local() {
+    echo "[LOCAL] Cleaning up old data and binaries..."
+    rm -rf data/ bench_results/ *.log *.prof
+    go clean
+}
+
+cleanup_remote() {
+    echo "[REMOTE] Cleaning up old data and binaries..."
+    ssh "$REMOTE_HOST" "cd $REMOTE_REPO && rm -rf data/ bench_results/ *.log *.prof && go clean"
+}
 
 run_local() {
     local mode=$1
@@ -12,8 +23,9 @@ run_local() {
     if [ "$mode" == "metal" ]; then gpu_enabled="true"; fi
 
     echo "[LOCAL] Starting Longbow in $mode mode..."
+    # Allocate 18GB
     LONGBOW_GPU_ENABLED=$gpu_enabled LONGBOW_MAX_MEMORY=$MAX_MEM \
-    go run ./cmd/longbow > local_${mode}.log 2>&1 &
+    ./bin/longbow > local_${mode}.log 2>&1 &
     SERVER_PID=$!
     
     # Wait for server readiness
@@ -32,11 +44,11 @@ run_remote() {
     local gpu_enabled="false"
     if [ "$mode" == "cuda" ]; then gpu_enabled="true"; fi
 
-    echo "[REMOTE] Syncing code to $REMOTE_HOST..."
-    tar --exclude='.git' --exclude='bench_results' --exclude='data/' --exclude='*.log' --exclude='bin' --exclude='debug' -cf - . | ssh "$REMOTE_HOST" "rm -rf $REMOTE_REPO && mkdir -p $REMOTE_REPO && cd $REMOTE_REPO && tar -xf -"
+    echo "[REMOTE] Pulling fresh changes on $REMOTE_HOST..."
+    ssh "$REMOTE_HOST" "cd $REMOTE_REPO && git fetch origin && git reset --hard origin/main"
     
     echo "[REMOTE] Starting Longbow in $mode mode..."
-    ssh "$REMOTE_HOST" "cd $REMOTE_REPO && LONGBOW_GPU_ENABLED=$gpu_enabled LONGBOW_MAX_MEMORY=$MAX_MEM go run ./cmd/longbow" > remote_${mode}.log 2>&1 &
+    ssh "$REMOTE_HOST" "cd $REMOTE_REPO && LONGBOW_GPU_ENABLED=$gpu_enabled LONGBOW_MAX_MEMORY=$MAX_MEM ./bin/longbow" > remote_${mode}.log 2>&1 &
     REMOTE_SERVER_PID=$!
     
     # Wait for server readiness
@@ -46,13 +58,23 @@ run_remote() {
     ssh "$REMOTE_HOST" "cd $REMOTE_REPO && ./scripts/bench_matrix.sh '127.0.0.1:3000' '127.0.0.1:9090' '$mode'"
     
     echo "[REMOTE] Stopping server..."
-    ssh "$REMOTE_HOST" "pkill -f 'cmd/longbow/main.go' || pkill longbow"
+    ssh "$REMOTE_HOST" "pkill -f './cmd/longbow' || pkill longbow"
 }
 
 # Main Execution
 echo "Starting Parallel Benchmarks: Local (M3) and Remote (ancalagon)..."
 
-# Local Thread
+# Initial Cleanup
+cleanup_local
+cleanup_remote
+
+echo "Compiling binaries..."
+mkdir -p bin
+go build -o bin/longbow ./cmd/longbow
+go build -o bin/bench-tool ./cmd/bench-tool
+
+echo "Updating remote code and compiling..."
+ssh "$REMOTE_HOST" "cd $REMOTE_REPO && git fetch origin && git reset --hard origin/main && mkdir -p bin && go build -o bin/longbow ./cmd/longbow && go build -o bin/bench-tool ./cmd/bench-tool"
 (
     run_local "cpu"
     run_local "metal"

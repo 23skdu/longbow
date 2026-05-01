@@ -231,6 +231,14 @@ func (s *ChunkedLocationStore) BatchAppend(locs []types.Location) (startID types
 	
 	// 3. Update data and reverse maps
 	chunks := *s.chunks.Load()
+	
+	// Map to group IDs and packed locations by shard
+	type shardUpdate struct {
+		id     types.VectorID
+		packed uint64
+	}
+	shardGroups := make([][]shardUpdate, ReverseShards)
+
 	for i, loc := range locs {
 		currID := types.VectorID(startIDVal + uint32(i))
 		idx := int(currID)
@@ -240,9 +248,20 @@ func (s *ChunkedLocationStore) BatchAppend(locs []types.Location) (startID types
 		packed := packLocation(loc)
 		chunks[chunkIdx].data[offset].Store(packed)
 		
-		shard := s.getShard(packed)
+		shardIdx := packed % uint64(ReverseShards)
+		shardGroups[shardIdx] = append(shardGroups[shardIdx], shardUpdate{currID, packed})
+	}
+
+	// Batch update reverse maps per shard
+	for shardIdx, updates := range shardGroups {
+		if len(updates) == 0 {
+			continue
+		}
+		shard := &s.reverseShards[shardIdx]
 		shard.mu.Lock()
-		shard.data[packed] = currID
+		for _, up := range updates {
+			shard.data[up.packed] = up.id
+		}
 		shard.mu.Unlock()
 	}
 	

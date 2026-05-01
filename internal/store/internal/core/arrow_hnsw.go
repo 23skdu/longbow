@@ -95,7 +95,9 @@ type ArrowHNSW struct {
 
 	initMu sync.Mutex
 	growMu sync.RWMutex
-	epMu   sync.Mutex
+	epMu       sync.Mutex
+	commitMu   sync.Mutex
+	commitCond *sync.Cond
 
 	deleted *roaring.Bitmap
 
@@ -426,6 +428,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		h.tqCompute = NewTurboQuantCompute(h)
 	}
 
+	h.commitCond = sync.NewCond(&h.commitMu)
 	return h
 }
 
@@ -730,10 +733,14 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 }
 
 func (h *ArrowHNSW) commitID(id uint32) {
+	h.commitMu.Lock()
 	for h.nodeCount.Load() < int64(id) {
-		runtime.Gosched()
+		h.commitCond.Wait()
 	}
-	h.nodeCount.CompareAndSwap(int64(id), int64(id+1))
+	if h.nodeCount.CompareAndSwap(int64(id), int64(id+1)) {
+		h.commitCond.Broadcast()
+	}
+	h.commitMu.Unlock()
 }
 
 // Interface implementation: AddByLocation adds a vector by its location
@@ -1853,9 +1860,11 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	}
 
 	var startID uint32
-	// Bulk optimization path - only use for large batches to avoid individual gRPC overhead
+	// Allocate local IDs for the entire batch to ensure monotonic assignment and avoid overwrites
+	startID = uint32(h.nextID.Add(int64(n)) - int64(n)) // #nosec G115
+
+	// Bulk optimization path - only use for large batches to avoid individual overhead
 	if n >= 100 && !h.IsSharded() {
-		startID = uint32(h.nextID.Add(int64(n)) - int64(n)) // #nosec G115
 
 		if vecColIdx != -1 {
 			// Extract all vectors into a typed slice for bulk processing
@@ -1867,7 +1876,18 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				// Cache raw slices per record batch to avoid expensive column calls
 				valuesCache := make(map[arrow.RecordBatch][]float32)
 				// Pre-populate valuesCache
-				for _, rec := range recs {
+				for i := range rowIdxs {
+					// Robust record resolution: if we only have one record, use it regardless of batchIdx
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
+					} else if i < len(recs) {
+						rec = recs[i]
+					}
+
 					if rec != nil {
 						if _, ok := valuesCache[rec]; !ok {
 							col := rec.Column(vecColIdx)
@@ -1884,13 +1904,28 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				var supportedAtomic atomic.Bool
 				supportedAtomic.Store(true)
 				
-				pool.ParallelFor(n, (n+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
+				pool.ParallelFor(n, max(256, (n+runtime.NumCPU()-1)/runtime.NumCPU()), func(start, end int) {
 					if !supportedAtomic.Load() {
 						return
 					}
 					
 					for i := start; i < end; i++ {
-						rec := recs[batchIdxs[i]]
+						// Robust record resolution
+						var rec arrow.RecordBatch
+						bIdx := batchIdxs[i]
+						if bIdx < len(recs) && recs[bIdx] != nil {
+							rec = recs[bIdx]
+						} else if len(recs) == 1 {
+							rec = recs[0]
+						} else if i < len(recs) {
+							rec = recs[i]
+						}
+
+						if rec == nil {
+							supportedAtomic.Store(false)
+							return
+						}
+
 						values := valuesCache[rec]
 						
 						if values != nil {
@@ -2114,7 +2149,6 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	}
 
 	// Use optimized bulk ingestion path
-	startID = uint32(rowIdxs[0]) // #nosec G115 -- rowIdxs values are within uint32 range
 	err := h.AddBatchBulk(ctx, startID, len(rowIdxs), recs)
 	if err == nil {
 		ids := make([]uint32, len(rowIdxs))
@@ -2140,7 +2174,25 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			errMu.Unlock()
 			
 			id := startID + uint32(i) // #nosec G115
-			rec := recs[batchIdxs[i]]
+			
+			// Robust record resolution
+			var rec arrow.RecordBatch
+			bIdx := batchIdxs[i]
+			if bIdx < len(recs) && recs[bIdx] != nil {
+				rec = recs[bIdx]
+			} else if len(recs) == 1 {
+				rec = recs[0]
+			} else if i < len(recs) {
+				rec = recs[i]
+			}
+			
+			if rec == nil {
+				errMu.Lock()
+				errFinal = fmt.Errorf("could not resolve record batch for index %d", i)
+				errMu.Unlock()
+				return
+			}
+
 			h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 			
 			var vec any
@@ -2163,13 +2215,22 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				return
 			}
 			ids[i] = id
-			h.commitID(id)
 		}
 	})
 	
 	if errFinal != nil {
 		return nil, errFinal
 	}
+
+	// Commit the entire block at once to avoid worker pool saturation deadlocks
+	h.commitMu.Lock()
+	for h.nodeCount.Load() < int64(startID) {
+		h.commitCond.Wait()
+	}
+	h.nodeCount.Add(int64(len(rowIdxs)))
+	h.commitCond.Broadcast()
+	h.commitMu.Unlock()
+
 	return ids, nil
 }
 

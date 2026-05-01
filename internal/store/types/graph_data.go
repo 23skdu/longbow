@@ -12,6 +12,8 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/float16"
+	"runtime"
+	"time"
 )
 
 // GraphData holds the vector data and graph topology.
@@ -1557,10 +1559,17 @@ func (g *GraphData) LockNode(layer int, id uint32) uint32 {
 				return v // Return old version for Unlock
 			}
 		}
-		// Spin
+		// Spin with exponential backoff or relaxation
 		spinCycles++
-		for i := 0; i < 10; i++ {
-			// Relaxed spin
+		if spinCycles < 10 {
+			for i := 0; i < 10; i++ {
+				simd.Pause()
+			}
+		} else if spinCycles < 100 {
+			runtime.Gosched()
+		} else {
+			// Extreme contention, yield more aggressively
+			time.Sleep(time.Microsecond)
 		}
 	}
 }

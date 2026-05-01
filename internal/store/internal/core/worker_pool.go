@@ -8,9 +8,12 @@ import (
 
 // SharedWorkerPool is a lightweight pool of persistent workers to avoid
 // goroutine churn and scheduler overhead during parallel search and bulk insert.
+// SharedWorkerPool is a lightweight pool of persistent workers to avoid
+// goroutine churn and scheduler overhead during parallel search and bulk insert.
 type SharedWorkerPool struct {
-	tasks chan func()
-	wg    sync.WaitGroup
+	numWorkers int
+	shards     []chan func()
+	nextShard  uint32
 }
 
 var (
@@ -22,24 +25,28 @@ var (
 func GetSharedPool() *SharedWorkerPool {
 	poolOnce.Do(func() {
 		numWorkers := runtime.GOMAXPROCS(0)
+		if numWorkers < 1 {
+			numWorkers = 1
+		}
 		p := &SharedWorkerPool{
-			tasks: make(chan func(), numWorkers*256),
+			numWorkers: numWorkers,
+			shards:     make([]chan func(), numWorkers),
 		}
 		for i := 0; i < numWorkers; i++ {
-			go p.worker()
+			p.shards[i] = make(chan func(), 1024)
+			go p.worker(p.shards[i])
 		}
 		globalPool.Store(p)
 	})
 	return globalPool.Load()
 }
 
-func (p *SharedWorkerPool) worker() {
-	for task := range p.tasks {
+func (p *SharedWorkerPool) worker(tasks chan func()) {
+	for task := range tasks {
 		func() {
 			defer func() {
 				if r := recover(); r != nil {
-					// In a real system, we'd log this.
-					// For now, we just ensure the worker doesn't die.
+					// Log and recover
 				}
 			}()
 			task()
@@ -47,9 +54,10 @@ func (p *SharedWorkerPool) worker() {
 	}
 }
 
-// Submit adds a task to the pool.
+// Submit adds a task to the pool using round-robin distribution.
 func (p *SharedWorkerPool) Submit(task func()) {
-	p.tasks <- task
+	shardIdx := atomic.AddUint32(&p.nextShard, 1) % uint32(p.numWorkers)
+	p.shards[shardIdx] <- task
 }
 
 // ParallelFor executes a loop in parallel using the worker pool.
@@ -61,7 +69,10 @@ func (p *SharedWorkerPool) ParallelFor(n int, chunkSize int, task func(start, en
 		chunkSize = 1
 	}
 
+	numChunks := (n + chunkSize - 1) / chunkSize
 	var wg sync.WaitGroup
+	wg.Add(numChunks)
+
 	for i := 0; i < n; i += chunkSize {
 		start := i
 		end := i + chunkSize
@@ -69,7 +80,6 @@ func (p *SharedWorkerPool) ParallelFor(n int, chunkSize int, task func(start, en
 			end = n
 		}
 
-		wg.Add(1)
 		p.Submit(func() {
 			defer wg.Done()
 			task(start, end)

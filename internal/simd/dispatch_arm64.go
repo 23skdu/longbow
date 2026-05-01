@@ -40,5 +40,10 @@ func init() {
 		Softmax: softmaxNEON,
 		Exp:     expNEON,
 		Log:     logNEON,
+
+		Sum: sumNEON,
+		Max: maxNEON,
+		Min: minNEON,
+		MatMul: matMulGeneric,
 	}
 }

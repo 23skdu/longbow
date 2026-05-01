@@ -1903,6 +1903,74 @@ exp_tail:
 exp_done:
     RET
 
+// func sigmoidNEONKernel(src, dst unsafe.Pointer, n int)
+TEXT ·sigmoidNEONKernel(SB), NOSPLIT, $0-24
+    MOVD    src+0(FP), R0
+    MOVD    dst+8(FP), R1
+    MOVD    n+16(FP), R2
+    
+    CBZ     R2, sigmoid_done
+    
+sigmoid_loop:
+    FMOVS.P 4(R0), F0
+    FNEGS   F0, F0              // -x
+    
+    // exp(-x) approximation
+    FMOVS   $1.0, F1
+    FMOVS   $0.5, F2
+    FMOVS   $0.166666, F3
+    FMULS   F0, F3, F4
+    FADDS   F2, F4, F4
+    FMULS   F0, F4, F4
+    FADDS   F1, F4, F4
+    FMULS   F0, F4, F4
+    FADDS   F1, F4, F0           // exp(-x)
+    
+    // Clip to avoid overflow/underflow
+    FMOVS   $0.0, F1
+    FMAXS   F1, F0, F0
+    
+    FMOVS   $1.0, F1
+    FADDS   F1, F0, F0           // 1 + exp(-x)
+    FDIVS   F0, F1, F0           // 1 / (1 + exp(-x))
+    
+    FMOVS.P F0, 4(R1)
+    SUB     $1, R2
+    CBNZ    R2, sigmoid_loop
+    
+sigmoid_done:
+    RET
+
+// func logNEONKernel(src, dst unsafe.Pointer, n int)
+TEXT ·logNEONKernel(SB), NOSPLIT, $0-24
+    MOVD    src+0(FP), R0
+    MOVD    dst+8(FP), R1
+    MOVD    n+16(FP), R2
+    
+    CBZ     R2, log_done
+    
+log_loop:
+    FMOVS.P 4(R0), F0
+    // Simple log approximation: log(1+x) approx x - x^2/2 + x^3/3
+    // For x in [1, 2)
+    FMOVS   $1.0, F1
+    FSUBS   F1, F0, F2           // y = x - 1
+    
+    FMOVS   $0.333333, F3
+    FMULS   F2, F3, F4           // y/3
+    FMOVS   $0.5, F3
+    FSUBS   F3, F4, F4           // y/3 - 0.5
+    FMULS   F2, F4, F4           // y^2/3 - 0.5y
+    FADDS   F1, F4, F4           // 1 - 0.5y + y^2/3
+    FMULS   F2, F4, F0           // y - 0.5y^2 + y^3/3
+    
+    FMOVS.P F0, 4(R1)
+    SUB     $1, R2
+    CBNZ    R2, log_loop
+    
+log_done:
+    RET
+
 // func softmaxNEONKernel(src, dst unsafe.Pointer, n int)
 TEXT ·softmaxNEONKernel(SB), NOSPLIT, $0-24
     MOVD    src+0(FP), R0
@@ -1912,108 +1980,50 @@ TEXT ·softmaxNEONKernel(SB), NOSPLIT, $0-24
     CBZ     R2, softmax_done
     
     // 1. Find Max
-    FMOVS   $-1e38, F0          // Max accumulator (scalar)
     MOVD    R0, R3
     MOVD    R2, R4
+    MOVW    $0xff7fffff, R5
+    VMOV    R5, V0.S[0]
 softmax_max_loop:
-    CMP     $4, R4
-    BLT     softmax_max_tail
-    VLD1.P  16(R3), [V1.S4]
-    // FMAX V1.S4, V0.S4, V0.S4  (element-wise max)
-    WORD    $0x4e21f400
-    SUB     $4, R4
-    B       softmax_max_loop
-softmax_max_tail:
-    CBZ     R4, softmax_max_reduce
+    CBZ     R4, softmax_max_done
     FMOVS.P 4(R3), F1
     FMAXS   F1, F0, F0
     SUB     $1, R4
-    B       softmax_max_tail
-softmax_max_reduce:
-    // FMAXV S0, V0.S4  (reduce to scalar max)
-    WORD    $0x6e30f800
+    B       softmax_max_loop
+softmax_max_done:
     
     // 2. Compute Exp(x - max) and Sum
-    FMOVS   $0.0, F1            // Sum accumulator
     MOVD    R0, R3
     MOVD    R1, R5
     MOVD    R2, R4
-    
-    FMOVS   $1.44269504, F31    // log2(e)
-    FMOVS   $0.5, F30           // half
-    MOVW    $127, R6            // bias
-    
+    FMOVS   $0.0, F1             // Sum
 softmax_exp_loop:
-    CMP     $4, R4
-    BLT     softmax_exp_tail
-    VLD1.P  16(R3), [V2.S4]
-    VDUP    V0.S[0], V9.S4       // broadcast max
-    VSUB    V9.S4, V2.S4, V2.S4  // x - max
-    
-    // Exp approximation
-    VDUP    V31.S[0], V12.S4
-    // FMUL V3.4S, V2.4S, V12.4S
-    WORD    $0x6e2c9443
-    VDUP    V30.S[0], V13.S4
-    VADD    V13.S4, V3.S4, V4.S4
-    // FRINTM V4.S4, V4.S4
-    WORD    $0x4e214084
-    VSUB    V4.S4, V3.S4, V5.S4   // f = z - n
-    
-    // Poly
-    FMOVS   $0.00134204, F23
-    VORR    V23.B16, V23.B16, V6.B16
-    FMOVS   $0.009618129, F24
-    VFMLA   V24.S4, V5.S4, V6.S4
-    FMOVS   $0.0555041086, F25
-    VFMLA   V25.S4, V5.S4, V6.S4
-    FMOVS   $0.240226507, F26
-    VFMLA   V26.S4, V5.S4, V6.S4
-    FMOVS   $0.69314718, F27
-    VFMLA   V27.S4, V5.S4, V6.S4
-    FMOVS   $1.0, F28
-    VFMLA   V28.S4, V5.S4, V6.S4
-    
-    // FCVTZS V4.S4, V7.S4
-    WORD    $0x4e21b887
-    VMOV    R6, V8.S4
-    VADD    V7.S4, V8.S4, V7.S4
-    VSHL    $23, V7.S4, V7.S4
-    // FMUL V2.4S, V6.4S, V7.4S  (exp result)
-    WORD    $0x6e279482
-    
-    VST1.P  [V2.S4], 16(R5)
-    VADDP   V2.S4, V2.S4, V2.S4
-    VADDP   V2.S4, V2.S4, V2.S4
-    VMOV    V2.S[0], V20.S[0]
-    FADDS   F20, F1, F1
-    
-    SUB     $4, R4
-    B       softmax_exp_loop
-    
-softmax_exp_tail:
-    CBZ     R4, softmax_exp_reduce
+    CBZ     R4, softmax_exp_done
     FMOVS.P 4(R3), F2
-    FSUBS   F0, F2, F2           // x - max (scalar)
-    FADDS   F30, F2, F3
-    // FRINTM S3, S3
-    WORD    $0x1e254063
-    FSUBS   F3, F2, F4           // f
-    FMOVS   $1.0, F5
-    FADDS   F4, F5, F5           // 1 + f
-    FCVTZSS F3, R7
-    ADD     R6, R7, R7
-    LSL     $23, R7, R7
-    VMOV    R7, V8.S[0]
-    VMOV    V8.S[0], V20.S[0]   // extract as scalar
-    FMULS   F20, F5, F2
+    FSUBS   F0, F2, F2           // x - max
+    
+    // Inline Exp (simple polynomial for testing)
+    // e^x approx 1 + x + 0.5x^2 + 0.166x^3
+    FMOVS   $1.0, F3
+    FMOVS   $0.5, F4
+    FMOVS   $0.166666, F5
+    FMULS   F2, F5, F6           // 0.166x
+    FADDS   F4, F6, F6           // 0.5 + 0.166x
+    FMULS   F2, F6, F6           // 0.5x + 0.166x^2
+    FADDS   F3, F6, F6           // 1 + 0.5x + 0.166x^2
+    FMULS   F2, F6, F6           // x + 0.5x^2 + 0.166x^3
+    FADDS   F3, F6, F2           // 1 + x + 0.5x^2 + 0.166x^3
+    
+    // For large negative values, result should be 0
+    FMOVS   $0.0, F3
+    FMAXS   F3, F2, F2
     
     FMOVS.P F2, 4(R5)
     FADDS   F2, F1, F1
     SUB     $1, R4
-    B       softmax_exp_tail
-    
-softmax_exp_reduce:
+    B       softmax_exp_loop
+softmax_exp_done:
+
     // 3. Divide by Sum
     MOVD    R1, R5
     MOVD    R2, R4
@@ -2021,10 +2031,105 @@ softmax_div_loop:
     CBZ     R4, softmax_done
     FMOVS   (R5), F2
     FDIVS   F1, F2, F2
-    FMOVS   F2, (R5)
-    ADD     $4, R5
+    FMOVS.P F2, 4(R5)
     SUB     $1, R4
     B       softmax_div_loop
-
 softmax_done:
+    RET
+
+// func sumNEONKernel(src unsafe.Pointer, n int) float32
+TEXT ·sumNEONKernel(SB), NOSPLIT, $0-20
+    MOVD    src+0(FP), R0
+    MOVD    n+8(FP), R1
+    
+    FMOVS   $0.0, F0
+    VEOR    V0.B16, V0.B16, V0.B16
+    
+    CMP     $4, R1
+    BLT     sum_tail
+    
+sum_loop_4x:
+    VLD1.P  16(R0), [V1.S4]
+    // FADD V1.4S, V0.4S, V0.4S
+    WORD    $0x4e21d400
+    SUB     $4, R1
+    CMP     $4, R1
+    BGE     sum_loop_4x
+    
+    // Reduction
+    VMOV    V0.S[1], V1.S[0]
+    VMOV    V0.S[2], V2.S[0]
+    VMOV    V0.S[3], V3.S[0]
+    FADDS   F1, F0, F0
+    FADDS   F2, F0, F0
+    FADDS   F3, F0, F0
+
+sum_tail:
+    CBZ     R1, sum_done
+    FMOVS.P 4(R0), F1
+    FADDS   F1, F0, F0
+    SUB     $1, R1
+    B       sum_tail
+
+sum_done:
+    FMOVS   F0, ret+16(FP)
+    RET
+
+// func maxNEONKernel(src unsafe.Pointer, n int) float32
+TEXT ·maxNEONKernel(SB), NOSPLIT, $0-20
+    MOVD    src+0(FP), R0
+    MOVD    n+8(FP), R1
+    
+    MOVW    $0xff7fffff, R2
+    VMOV    R2, V0.S[0]
+    VDUP    V0.S[0], V0.S4
+    
+    CMP     $4, R1
+    BLT     max_tail
+    
+max_loop_4x:
+    VLD1.P  16(R0), [V1.S4]
+    // FMAX V1.4S, V0.4S, V0.4S
+    WORD    $0x4e21f400
+    SUB     $4, R1
+    CMP     $4, R1
+    BGE     max_loop_4x
+    
+    // Reduction
+    VMOV    V0.S[1], V1.S[0]
+    VMOV    V0.S[2], V2.S[0]
+    VMOV    V0.S[3], V3.S[0]
+    FMAXS   F1, F0, F0
+    FMAXS   F2, F0, F0
+    FMAXS   F3, F0, F0
+
+max_tail:
+    CBZ     R1, max_done
+    FMOVS.P 4(R0), F1
+    FMAXS   F1, F0, F0
+    SUB     $1, R1
+    B       max_tail
+
+max_done:
+    FMOVS   F0, ret+16(FP)
+    RET
+
+// func minNEONKernel(src unsafe.Pointer, n int) float32
+TEXT ·minNEONKernel(SB), NOSPLIT, $0-20
+    MOVD    src+0(FP), R0
+    MOVD    n+8(FP), R1
+    
+    MOVW    $0x7f7fffff, R2
+    VMOV    R2, V0.S[0]
+    
+min_loop:
+    CBZ     R1, min_done
+    FMOVS.P 4(R0), F1
+    FMINS   F1, F0, F0
+    SUB     $1, R1
+    B       min_loop
+
+min_done:
+    FMOVS   F0, ret+16(FP)
+    RET
     RET

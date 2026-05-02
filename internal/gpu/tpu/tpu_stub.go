@@ -64,7 +64,7 @@ func tpuEnqueueBatch(deviceID int, data []float32) error {
 	if len(data) > 2147483647 { // math.MaxInt32
 		return fmt.Errorf("batch size too large: %d", len(data))
 	}
-	if deviceID < 0 {
+	if deviceID < 0 || deviceID > 2147483647 {
 		return fmt.Errorf("invalid deviceID: %d", deviceID)
 	}
 	status := C.tpu_enqueue_batch(C.int(deviceID), (*C.float)(unsafe.Pointer(&data[0])), C.int(len(data))) // #nosec G115

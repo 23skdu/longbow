@@ -361,6 +361,14 @@ func (vs *VectorStore) CheckIngestionBackpressure() bool {
 		}
 	}
 
+	// 3. WAL Pressure (Hard Threshold: > 90% queue depth)
+	if vs.engine != nil {
+		pending, capacity := vs.engine.GetWALQueueDepth()
+		if capacity > 0 && pending > (capacity*90)/100 {
+			return true
+		}
+	}
+
 	return false
 }
 
@@ -391,6 +399,19 @@ func (vs *VectorStore) IngestionBackpressureDelay() time.Duration {
 				p = 1.0
 			}
 			return time.Duration(p * float64(100*time.Millisecond))
+		}
+	}
+
+	// 3. WAL Pressure (Soft Threshold: 60% to 90% queue depth)
+	if vs.engine != nil {
+		pending, capacity := vs.engine.GetWALQueueDepth()
+		if capacity > 0 && pending > (capacity*60)/100 {
+			p := float64(pending-(capacity*60)/100) / float64((capacity*90)/100-(capacity*60)/100)
+			if p > 1.0 {
+				p = 1.0
+			}
+			// Linear delay from 0 to 75ms
+			return time.Duration(p * float64(75*time.Millisecond))
 		}
 	}
 

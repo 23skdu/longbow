@@ -458,30 +458,25 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		)
 
 		// Check Cache
-		if cached, ok := s.queryCache.GetUint64(cacheKey); ok {
-			// Hit!
-			body, err := json.Marshal(cached)
-			if err != nil {
-				return status.Errorf(codes.Internal, "failed to marshal cached results: %v", err)
-			}
-			return stream.Send(&flight.Result{Body: body})
-		}
-
-		// Use SearchHybrid for text+vector search
-		// Signature: (ctx, name, query, textQuery, k, alpha, rrfK, graphAlpha, graphDepth)
-		// Filters are currently not supported in this pipeline path
-		results, err := s.SearchHybrid(
-			stream.Context(),
-			req.Dataset,
-			req.Vector,
-			req.TextQuery,
-			req.K,
-			req.Alpha,
-			60,  // Default RRF k
-			0.0, // Default Graph Alpha
-			0,   // Default Graph Depth
-		)
+		// Use SearchHybrid for text+vector search with Circuit Breaker
+		cb := s.Breakers.GetOrCreate(req.Dataset)
+		resultsAny, err := cb.Execute(func() (any, error) {
+			return s.SearchHybrid(
+				stream.Context(),
+				req.Dataset,
+				req.Vector,
+				req.TextQuery,
+				req.K,
+				req.Alpha,
+				60,  // Default RRF k
+				0.0, // Default Graph Alpha
+				0,   // Default Graph Depth
+			)
+		})
+		
+		var results []types.SearchResult
 		if err == nil {
+			results = resultsAny.([]types.SearchResult)
 			// Cache the result
 			s.queryCache.PutUint64(cacheKey, results)
 		}
@@ -682,20 +677,28 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		ds.dataMu.RLock()
 		defer ds.dataMu.RUnlock()
 
-		var results []types.SearchResult
-		var err error
-		switch req.SearchType {
-		case "radius":
-			results, err = ds.GeoIndex.SearchRadius(stream.Context(), req.Center, req.RadiusKm, req.K)
-		case "box":
-			if req.Box == nil {
-				return status.Error(codes.InvalidArgument, "box required")
+		// Wrap with Circuit Breaker
+		cb := s.Breakers.GetOrCreate(req.Dataset)
+		resultsAny, err := cb.Execute(func() (any, error) {
+			switch req.SearchType {
+			case "radius":
+				return ds.GeoIndex.SearchRadius(stream.Context(), req.Center, req.RadiusKm, req.K)
+			case "box":
+				if req.Box == nil {
+					return nil, status.Error(codes.InvalidArgument, "box required")
+				}
+				return ds.GeoIndex.SearchBox(stream.Context(), *req.Box, req.K)
+			case "hybrid":
+				return ds.GeoIndex.HybridSearch(stream.Context(), nil, req.Center, req.RadiusKm, req.K)
+			default:
+				return nil, status.Error(codes.InvalidArgument, "invalid search type")
 			}
-			results, err = ds.GeoIndex.SearchBox(stream.Context(), *req.Box, req.K)
-		case "hybrid":
-			results, err = ds.GeoIndex.HybridSearch(stream.Context(), nil, req.Center, req.RadiusKm, req.K)
-		}
-		if err != nil {
+		})
+		
+		var results []types.SearchResult
+		if err == nil {
+			results = resultsAny.([]types.SearchResult)
+		} else {
 			return status.Errorf(codes.Internal, "geo search failed: %v", err)
 		}
 		results = s.mapInternalToUserIDsLocked(ds, results)
@@ -733,6 +736,14 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	s.logger.Info().Str("dataset", name).Msg("DoPut started (Batched)")
+	
+	// 0. Admission Control (Backpressure)
+	if s.admission != nil {
+		if err := s.admission.Admit(stream.Context(), "ingest"); err != nil {
+			return err
+		}
+	}
+
 	s.logger.Info().Str("schema", r.Schema().String()).Msg("DoPut Schema")
 	// Use RCU helper for create
 	ds, created := s.getOrCreateDataset(name, func() *Dataset {
@@ -867,8 +878,11 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			}
 		}
 
-		// Flush single combined batch
-		err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{combined})
+		// Flush single combined batch with Circuit Breaker
+		cb := s.Breakers.GetOrCreate(ds.Name)
+		_, err := cb.Execute(func() (any, error) {
+			return nil, s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{combined})
+		})
 		combined.Release()
 		if err != nil {
 			return err

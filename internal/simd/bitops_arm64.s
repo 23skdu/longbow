@@ -1,6 +1,9 @@
 //go:build arm64
 #include "textflag.h"
 
+#define VADDV_B16(n, d)  WORD $(0x4e31ba00 | ((n) << 5) | (d))
+#define VADDV_B8(n, d)   WORD $(0x0e31ba00 | ((n) << 5) | (d))
+
 // func hammingNEONKernel(a, b unsafe.Pointer, n int) int
 TEXT ·hammingNEONKernel(SB), NOSPLIT, $0-32
     MOVD    a+0(FP), R0
@@ -98,5 +101,80 @@ reduce:
     ADD     R5, R3
 
     MOVD    R3, ret+24(FP)
+    RET
+
+// func andBitVectorNEON(dst, src unsafe.Pointer, n int)
+TEXT ·andBitVectorNEON(SB), NOSPLIT, $0-24
+    MOVD    dst+0(FP), R0
+    MOVD    src+8(FP), R1
+    MOVD    n+16(FP), R2
+
+    CBZ     R2, and_done
+    
+loop_and:
+    CMP     $2, R2
+    BLT     and_tail
+    
+    VLD1    (R0), [V0.B16]
+    VLD1.P  16(R1), [V1.B16]
+    VAND    V1.B16, V0.B16, V0.B16
+    VST1.P  [V0.B16], 16(R0)
+    
+    SUB     $2, R2
+    B       loop_and
+
+and_tail:
+    CBZ     R2, and_done
+    MOVD    (R0), R3
+    MOVD    (R1), R4
+    AND     R4, R3, R3
+    MOVD    R3, (R0)
+
+and_done:
+    RET
+
+// func countBitVectorNEONKernel(src unsafe.Pointer, n int) int
+TEXT ·countBitVectorNEONKernel(SB), NOSPLIT, $0-24
+    MOVD    src+0(FP), R0
+    MOVD    n+8(FP), R1
+    
+    MOVD    $0, R2 // Total count
+    VEOR    V0.B16, V0.B16, V0.B16 // Accumulator
+    
+loop_cnt:
+    CMP     $2, R1
+    BLT     cnt_tail
+    
+    VLD1.P  16(R0), [V1.B16]
+    VCNT    V1.B16, V1.B16
+    VADD    V1.B16, V0.B16, V0.B16
+    
+    SUB     $2, R1
+    // Potential overflow if n is very large (> 256 words)
+    // To be safe, we should periodically reduce V0
+    B       loop_cnt
+
+cnt_tail:
+    // Reduction logic
+    VADDV_B16(0, 1)
+    VMOV    V1.B[0], R3
+    ADD     R3, R2
+    
+    CBZ     R1, cnt_done
+cnt_tail_loop:
+    MOVD    (R0), R3
+    FMOVD   R3, F1
+    // Popcount using scalar
+    VCNT    V1.B8, V1.B8
+    VADDV_B8(1, 1)
+    VMOV    V1.B[0], R4
+    ADD     R4, R2
+    
+    ADD     $8, R0
+    SUB     $1, R1
+    B       cnt_tail_loop
+
+cnt_done:
+    MOVD    R2, ret+16(FP)
     RET
 

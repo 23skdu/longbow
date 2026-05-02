@@ -11,6 +11,8 @@ import (
 func init() {
 	if cpu.X86.HasPOPCNT {
 		hammingImpl = hammingAVX2
+		andBitVectorsImpl = andBitVectorsAVX2
+		countBitVectorImpl = countBitVectorAVX2
 	}
 }
 
@@ -26,6 +28,28 @@ func hammingAVX2(a, b []uint64) int {
 
 //go:noescape
 func andBytesAVX2Kernel(dst, src unsafe.Pointer, n int)
+
+func andBitVectorsAVX2(dst, src []uint64) {
+	if len(dst) == 0 || len(src) == 0 {
+		return
+	}
+	n := len(dst)
+	if len(src) < n {
+		n = len(src)
+	}
+	// cast to byte slice for existing kernel
+	andBytesAVX2Kernel(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), n*8)
+}
+
+//go:noescape
+func countBitVectorAVX2Kernel(src unsafe.Pointer, n int) int
+
+func countBitVectorAVX2(src []uint64) int {
+	if len(src) == 0 {
+		return 0
+	}
+	return countBitVectorAVX2Kernel(unsafe.Pointer(&src[0]), len(src))
+}
 
 //go:noescape
 func orBytesAVX2Kernel(dst, src unsafe.Pointer, n int)

@@ -17,17 +17,12 @@ func (h *ArrowHNSW) adjustMParameter(data *types.GraphData, sampleSize int) {
 	// 2. Sample vectors
 	// We need 'sampleSize' vectors. We just pick 0..sampleSize-1
 	var sampleVecs [][]float32
-	dims := int(h.dims.Load())
-
-	// Safety check
-	if dims == 0 {
-		return
-	}
-
 	for i := uint32(0); i < uint32(sampleSize); i++ { // #nosec G115
-		vf32 := h.getVectorF32(data, i)
-		if vf32 != nil {
-			sampleVecs = append(sampleVecs, vf32)
+		vec, err := h.getVectorWithData(data, i)
+		if err == nil {
+			if vf32, ok := vec.([]float32); ok {
+				sampleVecs = append(sampleVecs, vf32)
+			}
 		}
 	}
 

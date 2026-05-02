@@ -188,6 +188,14 @@ var (
 		},
 		[]string{"reason"}, // "timeout", "threshold", "no_candidates"
 	)
+ 
+	HNSWEarlyTerminationTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_early_termination_total",
+			Help: "Total number of HNSW searches that hit the visited nodes budget",
+		},
+		[]string{"reason"},
+	)
 
 	// NUMA Metrics
 	NUMANodeCount = promauto.NewGauge(

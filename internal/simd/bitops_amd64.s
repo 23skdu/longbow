@@ -171,3 +171,47 @@ not_all_zeros:
 	VZEROUPPER
 	RET
 
+
+// func countBitVectorAVX2Kernel(src unsafe.Pointer, n int) int
+TEXT ·countBitVectorAVX2Kernel(SB), NOSPLIT, $0-24
+    MOVQ    src+0(FP), SI
+    MOVQ    n+8(FP), CX
+    XORQ    AX, AX // Accumulator
+
+loop_cnt_avx2:
+    CMPQ    CX, $4
+    JL      tail_cnt_avx2
+    
+    MOVQ    (SI), BX
+    POPCNTQ BX, BX
+    ADDQ    BX, AX
+    
+    MOVQ    8(SI), BX
+    POPCNTQ BX, BX
+    ADDQ    BX, AX
+    
+    MOVQ    16(SI), BX
+    POPCNTQ BX, BX
+    ADDQ    BX, AX
+    
+    MOVQ    24(SI), BX
+    POPCNTQ BX, BX
+    ADDQ    BX, AX
+    
+    ADDQ    , SI
+    SUBQ    , CX
+    JMP     loop_cnt_avx2
+
+tail_cnt_avx2:
+    TESTQ   CX, CX
+    JZ      cnt_done_avx2
+    MOVQ    (SI), BX
+    POPCNTQ BX, BX
+    ADDQ    BX, AX
+    ADDQ    , SI
+    DECQ    CX
+    JMP     tail_cnt_avx2
+
+cnt_done_avx2:
+    MOVQ    AX, ret+16(FP)
+    RET

@@ -234,6 +234,14 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 	return recon, nil
 }
 
+// GetRadius extracts the radius (magnitude) from an encoded TurboQuant byte stream.
+func (e *TurboQuantEncoder) GetRadius(data []byte) float32 {
+	if len(data) < 4 {
+		return 0
+	}
+	return math.Float32frombits(binary.LittleEndian.Uint32(data[0:4]))
+}
+
 func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 	bits := e.params.BitsPerAngle
 	maxVal := float32((uint32(1) << bits) - 1)

@@ -135,6 +135,10 @@ type ArrowHNSW struct {
 	gpuTrained atomic.Bool
 	topo       *memory.NUMATopology
 	efTuner     *PIDTuner
+
+	// Cached Schema Metadata
+	cachedVecColIdx atomic.Int32
+	colIdxCache    sync.Map // map[string]int
 }
 
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
@@ -318,6 +322,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		return nil
 	}
 	h.dims.Store(int32(config.Dims)) // #nosec G115
+	h.cachedVecColIdx.Store(-1)
 
 	// Initialize quantization if enabled
 	if config.SQ8Enabled {
@@ -770,13 +775,7 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 		if batchIdx < len(records) {
 			record := records[batchIdx]
 			// Find vector column
-			vecColIdx := -1
-			for i := 0; i < int(record.NumCols()); i++ {
-				if record.ColumnName(i) == "vector" {
-					vecColIdx = i
-					break
-				}
-			}
+			vecColIdx := h.getVectorColumnIndex(record)
 			if vecColIdx != -1 {
 				vec = h.extractVector(record, vecColIdx, rowIdx)
 			}
@@ -809,13 +808,7 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 
 	var vec any
 	// Find vector column
-	vecColIdx := -1
-	for i := 0; i < int(rec.NumCols()); i++ {
-		if rec.ColumnName(i) == "vector" {
-			vecColIdx = i
-			break
-		}
-	}
+	vecColIdx := h.getVectorColumnIndex(rec)
 	if vecColIdx != -1 {
 		vec = h.extractVector(rec, vecColIdx, rowIdx)
 	}
@@ -1365,7 +1358,16 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	distToEp := dist
 	currObj := types.Candidate{ID: ep, Dist: distToEp}
 
-	// 2. Greedy search down through levels
+	searchCtx.queryRadius = 0
+	if qv, ok := queryVec.([]float32); ok {
+		var sum float32
+		for _, x := range qv {
+			sum += x * x
+		}
+		searchCtx.queryRadius = float32(math.Sqrt(float64(sum)))
+	}
+
+	// 1. Initial Greedy Search to find entry point at level 0
 	for level := int(maxLevel); level > 0; level-- { // #nosec G115
 		// Greedy search: keep 1 best candidate
 		res, err := h.searchLayer(ctx, computer, currObj.ID, 1, level, searchCtx, data, queryVec)
@@ -1860,7 +1862,6 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	}
 
 	// Discover vector column
-	vecColIdx := -1
 	var schemaSource arrow.RecordBatch
 	for _, r := range recs {
 		if r != nil {
@@ -1869,15 +1870,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		}
 	}
 
-	if schemaSource != nil {
-		for i := 0; i < int(schemaSource.NumCols()); i++ {
-			name := strings.ToLower(schemaSource.ColumnName(i))
-			if name == "vector" || name == "embedding" || name == "vec" {
-				vecColIdx = i
-				break
-			}
-		}
-	}
+	vecColIdx := h.getVectorColumnIndex(schemaSource)
 
 	if vecColIdx == -1 {
 		var colNames []string
@@ -3251,6 +3244,13 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		if err := goCtx.Err(); err != nil {
 			return nil, err
 		}
+		
+		// 0. Early termination: Visited nodes budget check
+		if ctx.visitedNodesBudget > 0 && ctx.nodesVisitedCount >= ctx.visitedNodesBudget {
+			metrics.HNSWEarlyTerminationTotal.WithLabelValues(h.name, "budget_exceeded").Inc()
+			break
+		}
+
 		// Pop closest candidate
 		curr := heap.Pop(minHeap).(types.Candidate)
 		ctx.nodesVisitedCount++
@@ -3733,13 +3733,7 @@ func (h *ArrowHNSW) ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) 
 	if rec == nil {
 		return nil, fmt.Errorf("record is nil")
 	}
-	vecColIdx := -1
-	for i := 0; i < int(rec.NumCols()); i++ {
-		if rec.ColumnName(i) == "vector" {
-			vecColIdx = i
-			break
-		}
-	}
+	vecColIdx := h.getVectorColumnIndex(rec)
 	if vecColIdx == -1 {
 		if rec.NumCols() == 1 {
 			vecColIdx = 0
@@ -3811,14 +3805,58 @@ func (h *ArrowHNSW) ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) 
 	return nil, fmt.Errorf("unsupported vector type %T for parallel search refinement", vec)
 }
 
-func (h *ArrowHNSW) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float32) error {
-	vecColIdx := -1
-	for i, field := range rec.Schema().Fields() {
-		if field.Name == "vector" || field.Name == "embedding" {
-			vecColIdx = i
+func (h *ArrowHNSW) getColumnIdx(rec arrow.RecordBatch, name string) int {
+	if rec == nil {
+		return -1
+	}
+	
+	// 1. Try cache first
+	if val, ok := h.colIdxCache.Load(name); ok {
+		return val.(int)
+	}
+
+	// 2. Linear search if not in cache
+	idx := -1
+	numCols := int(rec.NumCols())
+	for i := 0; i < numCols; i++ {
+		if strings.EqualFold(rec.ColumnName(i), name) {
+			idx = i
 			break
 		}
 	}
+
+	if idx != -1 {
+		h.colIdxCache.Store(name, idx)
+	}
+	return idx
+}
+
+func (h *ArrowHNSW) getVectorColumnIndex(rec arrow.RecordBatch) int {
+	if rec == nil {
+		return -1
+	}
+	cached := h.cachedVecColIdx.Load()
+	if cached != -1 {
+		return int(cached)
+	}
+
+	// Schema lookups are expensive in the hot path. Cache the result.
+	vecColIdx := h.getColumnIdx(rec, "vector")
+	if vecColIdx == -1 {
+		vecColIdx = h.getColumnIdx(rec, "embedding")
+	}
+	if vecColIdx == -1 {
+		vecColIdx = h.getColumnIdx(rec, "vec")
+	}
+
+	if vecColIdx != -1 && vecColIdx <= 2147483647 {
+		h.cachedVecColIdx.Store(int32(vecColIdx)) // #nosec G115
+	}
+	return vecColIdx
+}
+
+func (h *ArrowHNSW) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float32) error {
+	vecColIdx := h.getVectorColumnIndex(rec)
 
 	if vecColIdx == -1 {
 		return fmt.Errorf("vector column not found in record")
@@ -3911,13 +3949,7 @@ func (h *ArrowHNSW) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowI
 }
 
 func (h *ArrowHNSW) ExtractVectorF64ToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float64) error {
-	vecColIdx := -1
-	for i, field := range rec.Schema().Fields() {
-		if field.Name == "vector" || field.Name == "embedding" {
-			vecColIdx = i
-			break
-		}
-	}
+	vecColIdx := h.getVectorColumnIndex(rec)
 
 	if vecColIdx == -1 {
 		return fmt.Errorf("vector column not found in record")

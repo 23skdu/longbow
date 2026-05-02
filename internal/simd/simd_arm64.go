@@ -3,6 +3,7 @@
 package simd
 
 import (
+	"math"
 	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow/float16"
@@ -28,27 +29,33 @@ func l2SquaredNEON(a, b []float32) (float32, error) {
 }
 
 func euclidean128NEON(a, b []float32) (float32, error) {
-	return l2Squared128NEONKernel(a, b), nil
+	sum := l2Squared128NEONKernel(a, b)
+	return float32(math.Sqrt(float64(sum))), nil
 }
 
 func euclidean384NEON(a, b []float32) (float32, error) {
-	return l2Squared384NEONKernel(a, b), nil
+	sum := l2Squared384NEONKernel(a, b)
+	return float32(math.Sqrt(float64(sum))), nil
 }
 
 func euclidean768NEON(a, b []float32) (float32, error) {
-	return l2Squared768NEONKernel(a, b), nil
+	sum := l2Squared768NEONKernel(a, b)
+	return float32(math.Sqrt(float64(sum))), nil
 }
 
 func euclidean1024NEON(a, b []float32) (float32, error) {
-	return l2Squared1024NEONKernel(a, b), nil
+	sum := l2Squared1024NEONKernel(a, b)
+	return float32(math.Sqrt(float64(sum))), nil
 }
 
 func euclidean1536NEON(a, b []float32) (float32, error) {
-	return l2Squared1536NEONKernel(a, b), nil
+	sum := l2Squared1536NEONKernel(a, b)
+	return float32(math.Sqrt(float64(sum))), nil
 }
 
 func euclidean3072NEON(a, b []float32) (float32, error) {
-	return l2Squared3072NEONKernel(a, b), nil
+	sum := l2Squared3072NEONKernel(a, b)
+	return float32(math.Sqrt(float64(sum))), nil
 }
 
 func dot128NEON(a, b []float32) (float32, error) {
@@ -121,7 +128,8 @@ func matchFloat64Neon(src []float64, val float64, op CompareOp, dst []byte) erro
 
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) error {
 	for i, vec := range vectors {
-		results[i] = l2SquaredNEONKernel(query, vec)
+		sum := l2SquaredNEONKernel(query, vec)
+		results[i] = float32(math.Sqrt(float64(sum)))
 	}
 	return nil
 }
@@ -181,15 +189,24 @@ func float16ToFloat32NEON(src []float16.Num, dst []float32) {
 }
 
 func sigmoidNEON(src, dst []float32) {
-	sigmoidGeneric(src, dst)
+	if len(src) == 0 {
+		return
+	}
+	sigmoidNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
 }
 
 func expNEON(src, dst []float32) {
-	expGeneric(src, dst)
+	if len(src) == 0 {
+		return
+	}
+	expNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
 }
 
 func logNEON(src, dst []float32) {
-	logGeneric(src, dst)
+	if len(src) == 0 {
+		return
+	}
+	logNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
 }
 
 func softmaxNEON(src, dst []float32) {
@@ -365,11 +382,22 @@ var _ = func() {
 		vectorButterfly16NEONKernel(nil, nil)
 		_ = l2Squared384NEONKernel(nil, nil)
 		accumulateWeightedScatterNEON(nil, nil, nil, 0)
+		accumulateWeightedScatterNEONKernel(nil, nil, nil, 0, 0)
 	}
 }
 
 func accumulateWeightedScatterNEON(dst []float32, targets []uint32, weights []float32, factor float32) {
-	// For now, use generic fallback until assembly kernel is ready.
-	// Scatter-add is tricky in NEON without specialized instructions like SVE.
-	accumulateWeightedScatterGeneric(dst, targets, weights, factor)
+	if len(targets) == 0 {
+		return
+	}
+	n := len(targets)
+	if len(weights) < n {
+		n = len(weights)
+	}
+	// Note: We don't check dst bounds here to match baseline behavior and maximize performance.
+	// The caller (GraphStore) ensures targets are within range.
+	accumulateWeightedScatterNEONKernel(unsafe.Pointer(&dst[0]), unsafe.Pointer(&targets[0]), unsafe.Pointer(&weights[0]), factor, n)
 }
+
+//go:noescape
+func accumulateWeightedScatterNEONKernel(dst, targets, weights unsafe.Pointer, factor float32, n int)

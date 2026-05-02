@@ -8,25 +8,11 @@ import (
 )
 
 func expSIMD(src, dst []float32) {
-	switch runtime.GOARCH {
-	case "amd64":
-		expAVX512(src, dst)
-	case "arm64":
-		expNEON(src, dst)
-	default:
-		expGeneric(src, dst)
-	}
+	Exp(src, dst)
 }
 
 func softmaxSIMD(src, dst []float32) {
-	switch runtime.GOARCH {
-	case "amd64":
-		softmaxAVX512(src, dst)
-	case "arm64":
-		softmaxNEON(src, dst)
-	default:
-		softmaxGeneric(src, dst)
-	}
+	Softmax(src, dst)
 }
 
 func TestExpSIMD(t *testing.T) {
@@ -211,23 +197,9 @@ func TestLogSIMD(t *testing.T) {
 }
 
 func sigmoidSIMD(src, dst []float32) {
-	switch runtime.GOARCH {
-	case "amd64":
-		sigmoidAVX2(src, dst)
-	case "arm64":
-		sigmoidNEON(src, dst)
-	default:
-		sigmoidGeneric(src, dst)
-	}
+	Sigmoid(src, dst)
 }
 
 func logSIMD(src, dst []float32) {
-	switch runtime.GOARCH {
-	case "amd64":
-		logAVX2(src, dst)
-	case "arm64":
-		logNEON(src, dst)
-	default:
-		logGeneric(src, dst)
-	}
+	Log(src, dst)
 }

@@ -100,10 +100,47 @@ github.com/23skdu/longbow/internal/store.SearchHybrid(...)
 
 ---
 
-## Future Work (v0.2.2+)
+## Performance Regression Recommendations (2026-05-02)
+
+### Critical Issues Found
+
+1. **Dense Search Regression (81% below target)**
+   - Current: 3,827 QPS at 384d
+   - Target: > 20,000 QPS
+   - **Root Cause**: Likely related to scheduler changes and SharedWorkerPool contention
+   - **Recommendation**: Profile the DoGet search path, check for lock contention in index traversal
+
+2. **Temporal Search Regression (95% below target)**
+   - Current: 651 QPS
+   - Target: > 12,000 QPS
+   - **Root Cause**: Temporal index tree traversal overhead, possible LRU cache inefficiency
+   - **Recommendation**: Optimize temporal tree range queries, verify O(1) LRU cache is being used correctly
+
+3. **Benchmark Stability Issues**
+   - Full matrix (400+ tests) causes resource exhaustion and EOF crashes
+   - LearnedIndex fails with "system at critical capacity" under load
+   - **Recommendation**: Implement proper backpressure, add circuit breakers for high-load scenarios
+
+### Stability Fixes Required
+
+1. **Initialize resultPool** in VectorStore (documented above)
+2. **Implement proper resource management** for large benchmark runs
+3. **Add circuit breakers** to prevent cascade failures under load
+
+### Performance Optimization Priorities
+
+1. **High Priority**: Fix Dense Search regression - likely cause is scheduler/worker pool issue
+2. **High Priority**: Fix Temporal Search regression - tree traversal optimization needed
+3. **Medium Priority**: Improve benchmark stability for full matrix runs
+4. **Low Priority**: Geo search optimization (currently 1,606 QPS, acceptable)
+
+---
 
 ## Future Work (v0.2.2+)
 
 - [ ] Define next architectural milestones for Longbow.
 - [ ] Evaluate further GPU compute offloading opportunities.
 - [ ] Plan cross-region replication optimizations.
+- [ ] Implement assembly kernel for `accumulateWeightedScatterNEON`.
+- [ ] Optimize schema mapping lookups in `ArrowHNSW` search path.
+- [ ] Verify peak QPS saturation with new concurrent `bench-tool` workers.

@@ -9,6 +9,7 @@ import (
 	"math/rand"
 	"os"
 	"sort"
+	"sync"
 	"time"
 
 	"github.com/23skdu/longbow/client"
@@ -45,6 +46,7 @@ func main() {
 	queries := flag.Int("queries", 1000, "Number of search queries")
 	outputJson := flag.String("json", "", "Save stats as JSON file")
 	tqBits := flag.Int("tq-bits", 4, "TurboQuant bit depth (2, 4, 8)")
+	workers := flag.Int("workers", 1, "Number of concurrent search workers")
 	flag.Parse()
 
 	if *dim > 3072 {
@@ -208,18 +210,47 @@ func main() {
 	defer searchCancel()
 	for _, mode := range modes {
 
-		log.Printf("[SEARCH][%s] Running queries...\n", mode)
+		log.Printf("[SEARCH][%s] Running %d queries with %d workers...\n", mode, *queries, *workers)
 		start = time.Now()
+		
 		var latencies []float64
-		state := NewReusableSearchState(*dim)
-		for i := 0; i < *queries; i++ {
-			qStart := time.Now()
-			if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode, state); err != nil {
-				log.Printf("[%s] Query %d failed: %v\n", mode, i, err)
-				continue
-			}
-			latencies = append(latencies, time.Since(qStart).Seconds()*1000)
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		
+		queriesPerWorker := *queries / *workers
+		if queriesPerWorker == 0 {
+			queriesPerWorker = 1
+			*workers = *queries
 		}
+
+		for w := 0; w < *workers; w++ {
+			wg.Add(1)
+			go func(workerID int) {
+				defer wg.Done()
+				state := NewReusableSearchState(*dim)
+				localLatencies := make([]float64, 0, queriesPerWorker)
+				
+				numToRun := queriesPerWorker
+				if workerID == *workers-1 {
+					numToRun = *queries - (queriesPerWorker * (*workers - 1))
+				}
+
+				for i := 0; i < numToRun; i++ {
+					qStart := time.Now()
+					if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode, state); err != nil {
+						log.Printf("[%s][Worker %d] Query %d failed: %v\n", mode, workerID, i, err)
+						continue
+					}
+					localLatencies = append(localLatencies, time.Since(qStart).Seconds()*1000)
+				}
+				
+				mu.Lock()
+				latencies = append(latencies, localLatencies...)
+				mu.Unlock()
+			}(w)
+		}
+		wg.Wait()
+		
 		duration = time.Since(start).Seconds()
 
 		p50, p95, p99 := 0.0, 0.0, 0.0

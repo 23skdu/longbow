@@ -394,10 +394,10 @@ func initializeDispatch() {
 		l2SquaredImpl = l2SquaredAVX2 // uses AVX2 kernel (no sqrt)
 		prefetchImpl = func(p unsafe.Pointer) { prefetchNTA(uintptr(p)) }
 		memcpyNTAImpl = memcpyGeneric
-		matchInt64Impl = matchInt64AVX2
-		matchInt32Impl = matchInt32AVX2
-		matchFloat32Impl = matchFloat32AVX2
-		matchFloat64Impl = matchFloat64AVX2
+		matchInt64Impl = matchInt64Generic
+		matchInt32Impl = matchInt32Generic
+		matchFloat32Impl = matchFloat32Generic
+		matchFloat64Impl = matchFloat64Generic
 		adcDistanceBatchImpl = adcBatchGeneric
 		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric // AVX2 vertical batch kernel is a stub
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric

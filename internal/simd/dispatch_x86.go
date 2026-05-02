@@ -6,8 +6,8 @@ package simd
 func init() {
 	// Core distance functions - AVX2 optimized
 	dispatchTable["avx2"].EuclideanDistance = euclideanAVX2
-	dispatchTable["avx2"].CosineDistance = cosineAVX2
-	dispatchTable["avx2"].DotProduct = dotAVX2
+	dispatchTable["avx2"].CosineDistance = cosineGeneric
+	dispatchTable["avx2"].DotProduct = dotGeneric
 
 	// Fallbacks for complex or batch operations
 	dispatchTable["avx2"].EuclideanDistanceBatch = euclideanBatchGeneric
@@ -16,11 +16,11 @@ func init() {
 	dispatchTable["avx2"].EuclideanDistanceBatchFlat = euclideanBatchFlatGeneric
 
 	dispatchTable["avx2"].EuclideanDistance128 = euclidean128Unrolled4x
-	dispatchTable["avx2"].EuclideanDistance384 = euclidean384AVX2
-	dispatchTable["avx2"].EuclideanDistance768 = euclidean768AVX2
-	dispatchTable["avx2"].EuclideanDistance1024 = euclidean1024Blocked
-	dispatchTable["avx2"].EuclideanDistance1536 = euclidean1536AVX2
-	dispatchTable["avx2"].EuclideanDistance3072 = euclidean3072Blocked
+	dispatchTable["avx2"].EuclideanDistance384 = euclideanGeneric
+	dispatchTable["avx2"].EuclideanDistance768 = euclideanGeneric
+	dispatchTable["avx2"].EuclideanDistance1024 = euclideanGeneric
+	dispatchTable["avx2"].EuclideanDistance1536 = euclideanGeneric
+	dispatchTable["avx2"].EuclideanDistance3072 = euclideanGeneric
 
 	dispatchTable["avx2"].DotProduct128 = dot128Unrolled4x
 	dispatchTable["avx2"].DotProduct384 = dotGeneric

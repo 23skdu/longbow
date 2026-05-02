@@ -217,6 +217,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 		logger:       logger,
 		memoryConfig: memCfg,
 		stopChan:     make(chan struct{}),
+		resultPool:   NewSearchResultPool(),
 	}
 	vs.ctx, vs.cancel = context.WithCancel(context.Background()) // #nosec G118
  

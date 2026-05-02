@@ -3,7 +3,6 @@ package simd
 import (
 	"fmt"
 	"math"
-	"runtime"
 	"testing"
 )
 

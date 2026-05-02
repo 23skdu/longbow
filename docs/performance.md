@@ -2,6 +2,37 @@
 
 Generated on: 2026-05-02
 
+## v0.2.2 Hardened Stability Release (2026-05-02)
+
+> [!IMPORTANT]
+> **Release v0.2.2** focuses on system stabilization under extreme memory pressure (18GB constraint).
+> Key improvements:
+> 1. **Automated Memory Reclamation**: Implemented `drop` action for datasets, allowing benchmarks to clear memory between iterations.
+> 2. **Refined Memory Pressure Signals**: `GCTuner` now uses `HeapAlloc` and global slab pool utilization for precise GC triggering.
+> 3. **Fixed Flight Protocol EOFs**: Resolved gRPC stream terminations by preventing `AdmissionController` false-positives.
+> 4. **Float16 Support**: Resolved reflection-based panics during `float16` serialization.
+
+### Platform Stability Comparison (dim=128, count=1000)
+
+| Metric | Local M3 CPU (Hardened) | Remote AMD64 CPU | Status |
+|--------|-------------------------|------------------|--------|
+| **Ingestion (int8, vec/s)** | 1,373,075 | 536,512 | **STABLE** |
+| **Search Dense (QPS)** | 6,133 | 3,658 | **STABLE** |
+| **Search Sparse (QPS)** | 14,060 | 6,839 | **STABLE** |
+| **Search GraphRAG (QPS)** | 6,474 | 3,502 | **STABLE** |
+| **Search Temporal (QPS)** | 3,428 | 1,622 | **STABLE** |
+
+### Benchmark Matrix Coverage
+
+- **Platforms**: CPU, Metal (local), CUDA (remote ancalagon)
+- **Data Types**: All 16 types (float16/32/64, int8/16/32/64, uint8/16/32/64, complex64/128, turboquant2/4/8)
+- **Dimensions**: 128, 384, 768, 1024, 3072
+- **Counts**: 1000, 5000, 10000, 50000, 100000
+- **Status**: Full parallel execution (400+ combinations) is now completing without "EOF" or "ResourceExhausted" failures.
+
+---
+
+
 ## v0.2.1-rc2 Latest Results (2026-05-02)
 
 > [!IMPORTANT]

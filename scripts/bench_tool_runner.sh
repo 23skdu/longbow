@@ -116,7 +116,11 @@ if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
     META_PORT=$((PORT + 1))
     
     export LONGBOW_MAX_MEMORY=19327352832
-    nohup "$REPO_DIR/bin/longbow" serve --memory 19327352832 --port "$PORT" --metrics-port "$METRICS_PORT" --meta-port "$META_PORT" > "$OUTPUT_DIR/logs/server.log" 2>&1 &
+    export LONGBOW_LISTEN_ADDR="0.0.0.0:$PORT"
+    export LONGBOW_METRICS_ADDR="0.0.0.0:$METRICS_PORT"
+    export LONGBOW_META_ADDR="0.0.0.0:$META_PORT"
+    
+    nohup "$REPO_DIR/bin/longbow" > "$OUTPUT_DIR/logs/server.log" 2>&1 &
     SERVER_PID=$!
     echo "Server PID: $SERVER_PID"
 

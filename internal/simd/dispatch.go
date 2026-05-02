@@ -398,9 +398,9 @@ func initializeDispatch() {
 		matchInt32Impl = matchInt32AVX2
 		matchFloat32Impl = matchFloat32AVX2
 		matchFloat64Impl = matchFloat64AVX2
-		adcDistanceBatchImpl = adcBatchAVX2
+		adcDistanceBatchImpl = adcBatchGeneric
 		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric // AVX2 vertical batch kernel is a stub
-		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX2
+		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric
 		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX2
 		andBytesImpl = andBytesAVX2
 		orBytesImpl = orBytesAVX2

@@ -182,8 +182,21 @@ func main() {
 	Store(GP32(), ReturnIndex(0))
 	RET()
 	TEXT("cosine8AVX2", NOSPLIT, "func(a, b uintptr) (dot, normA, normB float32)")
-	Store(XMM(), ReturnIndex(0)); Store(XMM(), ReturnIndex(1)); Store(XMM(), ReturnIndex(2))
-	RET()
+	ac := Load(Param("a"), GP64()); bc := Load(Param("b"), GP64())
+	ya := YMM(); VMOVUPS(Mem{Base: ac}, ya)
+	yb := YMM(); VMOVUPS(Mem{Base: bc}, yb)
+	
+	// Dot product: ya * yb
+	ydot := YMM(); VMULPS(ya, yb, ydot)
+	// NormA: ya * ya
+	yna := YMM(); VMULPS(ya, ya, yna)
+	// NormB: yb * yb
+	ynb := YMM(); VMULPS(yb, yb, ynb)
+	
+	Store(reduceYMM(ydot), ReturnIndex(0))
+	Store(reduceYMM(yna), ReturnIndex(1))
+	Store(reduceYMM(ynb), ReturnIndex(2))
+	VZEROUPPER(); RET()
 	TEXT("l2SquaredAVX2Kernel", NOSPLIT, "func(a, b uintptr, n int, res uintptr)")
 	RET()
 	TEXT("dotAVX2Kernel", NOSPLIT, "func(a, b uintptr, n int, res uintptr)")

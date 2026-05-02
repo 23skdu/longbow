@@ -4,7 +4,19 @@ package types
 // and a shallow copy of vectors (assuming append-only).
 // This allows serialization to proceed concurrently with modifications.
 func (g *GraphData) CloneForSnapshot() *GraphData {
-	clone := *g // Shallow copy of struct
+	clone := GraphData{
+		Capacity:      g.Capacity,
+		Dims:          g.Dims,
+		Type:          g.Type,
+		SQ8Enabled:    g.SQ8Enabled,
+		SQ8Ready:      g.SQ8Ready,
+		BQEnabled:     g.BQEnabled,
+		PQEnabled:     g.PQEnabled,
+		PQM:           g.PQM,
+		GlobalVersion: g.GlobalVersion,
+		BackingGraph:  g.BackingGraph,
+		Name:          g.Name,
+	}
 
 	// 1. Deep Copy Neighbors (Mutable Topology)
 	clone.Neighbors = make([][][]uint32, len(g.Neighbors))

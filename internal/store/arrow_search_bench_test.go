@@ -22,7 +22,7 @@ func BenchmarkSearchScaling(b *testing.B) {
 			// Create dataset
 			schema := arrow.NewSchema([]arrow.Field{
 				{Name: "id", Type: arrow.PrimitiveTypes.Uint32},
-				{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+				{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)}, // #nosec G115
 			}, nil)
 
 			ds := &Dataset{

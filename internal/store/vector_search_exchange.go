@@ -20,6 +20,7 @@ type PeekedStream struct {
 	read     bool
 }
 
+// Recv reads the next message from the stream, returning the peeked message first if available.
 func (p *PeekedStream) Recv() (*flight.FlightData, error) {
 	if !p.read && p.firstMsg != nil {
 		p.read = true

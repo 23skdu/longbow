@@ -167,10 +167,7 @@ func (e *ErrUnsupportedCodeType) Error() string {
 		e.CodeType, e.ExpectedTypes)
 }
 
-// ==============================================================================
-// Generic Quantizer Interface
-// ==============================================================================
-// Quantizer[T, U] defines a generic quantizer interface
+// Quantizer defines a generic quantizer interface.
 // T is the input vector type, U is the output code type
 //
 // This interface allows quantizers to work with different vector types while

@@ -35,13 +35,13 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 	currMem := ac.currentMemory.Load()
 	memoryUsage := float64(currMem) / float64(maxMem)
 
-	// Hard Limit: 95% Memory Usage
-	if memoryUsage > 0.95 {
+	// Hard Limit: 96% Memory Usage
+	if memoryUsage > 0.96 {
 		return status.Errorf(codes.ResourceExhausted, "critical memory pressure (%.1f%% usage): request rejected", memoryUsage*100)
 	}
 
-	// Soft Limit: 90% Memory Usage for Ingestion
-	if opType == "ingest" && memoryUsage > 0.90 {
+	// Soft Limit: 92% Memory Usage for Ingestion
+	if opType == "ingest" && memoryUsage > 0.92 {
 		return status.Errorf(codes.ResourceExhausted, "high memory pressure (%.1f%% usage): ingestion throttled", memoryUsage*100)
 	}
 

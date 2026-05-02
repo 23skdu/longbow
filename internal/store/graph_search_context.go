@@ -11,6 +11,7 @@ type GraphSearchContext struct {
 	visited      []uint64
 	currentNodes []uint32
 	nextNodes    []uint32
+	allInfluenced []uint32
 	
 	// results stores the intermediate SearchResult slice to avoid re-allocation
 	results      []SearchResult
@@ -54,6 +55,12 @@ func (ctx *GraphSearchContext) Reset(maxID int, initialCount int) {
 		ctx.nextNodes = ctx.nextNodes[:0]
 	}
 
+	if cap(ctx.allInfluenced) < initialCount*4 {
+		ctx.allInfluenced = make([]uint32, 0, initialCount*4)
+	} else {
+		ctx.allInfluenced = ctx.allInfluenced[:0]
+	}
+
 	if cap(ctx.results) < initialCount*2 {
 		ctx.results = make([]SearchResult, 0, initialCount*2)
 	} else {
@@ -76,6 +83,7 @@ var graphSearchPool = sync.Pool{
 			visited:      make([]uint64, 0, 10000/64),
 			currentNodes: make([]uint32, 0, 1000),
 			nextNodes:    make([]uint32, 0, 2000),
+			allInfluenced: make([]uint32, 0, 4000),
 			results:      make([]SearchResult, 0, 2000),
 			distCache:    make(map[uint32]float32, 1024),
 		}

@@ -79,6 +79,7 @@ func NewEmbeddingModelRegistry(cacheTTL time.Duration, maxCacheEntries int) *Emb
 	}
 }
 
+// NewEmbeddingCache creates a new EmbeddingCache with the given TTL and capacity.
 func NewEmbeddingCache(ttl time.Duration, maxEntries int) *EmbeddingCache {
 	return &EmbeddingCache{
 		entries:    make(map[string][]float32),
@@ -87,6 +88,7 @@ func NewEmbeddingCache(ttl time.Duration, maxEntries int) *EmbeddingCache {
 	}
 }
 
+// Get retrieves an embedding from the cache if it exists and is not expired.
 func (c *EmbeddingCache) Get(key string) ([]float32, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -97,6 +99,7 @@ func (c *EmbeddingCache) Get(key string) ([]float32, bool) {
 	return entry, ok
 }
 
+// Set adds or updates an embedding in the cache.
 func (c *EmbeddingCache) Set(key string, value []float32) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -109,6 +112,7 @@ func (c *EmbeddingCache) Set(key string, value []float32) {
 	c.entries[key] = value
 }
 
+// Stats returns the cache hit/miss statistics and current size.
 func (c *EmbeddingCache) Stats() (hits, misses int64, size int) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -126,6 +130,7 @@ func (r *EmbeddingModelRegistry) RegisterModel(provider, modelName string, versi
 	return nil
 }
 
+// GetModel retrieves a model version from the registry.
 func (r *EmbeddingModelRegistry) GetModel(provider, modelName string) (ModelVersion, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -133,6 +138,7 @@ func (r *EmbeddingModelRegistry) GetModel(provider, modelName string) (ModelVers
 	return v, ok
 }
 
+// ListModels returns all model versions for a given provider.
 func (r *EmbeddingModelRegistry) ListModels(provider string) []ModelVersion {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -143,12 +149,14 @@ func (r *EmbeddingModelRegistry) ListModels(provider string) []ModelVersion {
 	return versions
 }
 
+// SetGenerator registers an active generator for a model key.
 func (r *EmbeddingModelRegistry) SetGenerator(key string, gen EmbeddingGenerator) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.generators[key] = gen
 }
 
+// GetGenerator retrieves an active generator for a model key.
 func (r *EmbeddingModelRegistry) GetGenerator(key string) (EmbeddingGenerator, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -156,6 +164,7 @@ func (r *EmbeddingModelRegistry) GetGenerator(key string) (EmbeddingGenerator, b
 	return g, ok
 }
 
+// GetCache returns the shared embedding cache.
 func (r *EmbeddingModelRegistry) GetCache() *EmbeddingCache {
 	return r.cache
 }
@@ -170,6 +179,7 @@ type ModelHealthStatus struct {
 	ErrorCount  int       `json:"error_count"`
 }
 
+// ListAllModels returns all registered model versions grouped by provider.
 func (r *EmbeddingModelRegistry) ListAllModels() map[string][]ModelVersion {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -184,6 +194,7 @@ func (r *EmbeddingModelRegistry) ListAllModels() map[string][]ModelVersion {
 	return result
 }
 
+// UpdateModelVersion updates an existing model version's metadata.
 func (r *EmbeddingModelRegistry) UpdateModelVersion(provider, modelName string, version ModelVersion) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -197,6 +208,7 @@ func (r *EmbeddingModelRegistry) UpdateModelVersion(provider, modelName string, 
 	return nil
 }
 
+// SetDefaultModel marks a specific model as the default for its provider.
 func (r *EmbeddingModelRegistry) SetDefaultModel(provider, modelName string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -219,6 +231,7 @@ func (r *EmbeddingModelRegistry) SetDefaultModel(provider, modelName string) err
 	return nil
 }
 
+// GetDefaultModel returns the default model version for a provider.
 func (r *EmbeddingModelRegistry) GetDefaultModel(provider string) (ModelVersion, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -588,11 +601,13 @@ type localEmbeddingGenerator struct {
 	initialized bool
 }
 
+// EmbeddingModel defines the interface for local model inference.
 type EmbeddingModel interface {
 	Inference(input []string) ([][]float32, error)
 	Close() error
 }
 
+// EmbeddingLogger defines the logging interface used by embedding generators.
 type EmbeddingLogger interface {
 	Debug(msg string, keysAndValues ...interface{})
 	Info(msg string, keysAndValues ...interface{})

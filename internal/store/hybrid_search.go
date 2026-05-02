@@ -134,7 +134,9 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 		}
 
 		// Rerank using graph topology (Distributed BFS expansion)
+		ds.dataMu.RUnlock()
 		ranked := ds.Graph.RankWithGraphDistributed(ctx, name, queryVec, finalResults, graphAlpha, graphDepth, s)
+		ds.dataMu.RLock()
 		metrics.HybridGraphReRankLatencySeconds.WithLabelValues(name).Observe(time.Since(rerankStart).Seconds())
 
 		if len(ranked) > 0 {

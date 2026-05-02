@@ -101,25 +101,25 @@ func dotInt2Neon(a, b []byte) (float32, error) {
 
 func matchInt64Neon(src []int64, val int64, op CompareOp, dst []byte) error {
 	if len(src) == 0 { return nil }
-	matchInt64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	matchInt64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 	return nil
 }
 
 func matchInt32Neon(src []int32, val int32, op CompareOp, dst []byte) error {
 	if len(src) == 0 { return nil }
-	matchInt32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	matchInt32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 	return nil
 }
 
 func matchFloat32Neon(src []float32, val float32, op CompareOp, dst []byte) error {
 	if len(src) == 0 { return nil }
-	matchFloat32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	matchFloat32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 	return nil
 }
 
 func matchFloat64Neon(src []float64, val float64, op CompareOp, dst []byte) error {
 	if len(src) == 0 { return nil }
-	matchFloat64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src))
+	matchFloat64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 	return nil
 }
 
@@ -213,6 +213,18 @@ func maxNEON(src []float32) float32 {
 
 func minNEON(src []float32) float32 {
 	return minGeneric(src)
+}
+
+func argMaxNEON(src []float32) int {
+	return argMaxGeneric(src)
+}
+
+func argMinNEON(src []float32) int {
+	return argMinGeneric(src)
+}
+
+func matMulNEON(a, b []float32, m, n, k int, dst []float32) {
+	matMulGeneric(a, b, m, n, k, dst)
 }
 
 // Internal assembly kernels (must have Go declarations to satisfy go vet)
@@ -312,7 +324,13 @@ var _ = func() {
 		pause()
 		// Activation kernels (NEON stubs; AVX-512 path used on amd64)
 		expNEONKernel(nil, nil, 0)
+		logNEONKernel(nil, nil, 0)
 		softmaxNEONKernel(nil, nil, 0)
+		sigmoidNEONKernel(nil, nil, 0)
+		// Reduction kernels
+		_ = sumNEONKernel(nil, 0)
+		_ = maxNEONKernel(nil, 0)
+		_ = minNEONKernel(nil, 0)
 		// Distance kernels kept for debugging / future dispatch
 		_, _ = dotFloat64NEON(nil, nil)
 		_ = dotNEONKernel(nil, nil)

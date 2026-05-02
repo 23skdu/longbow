@@ -117,7 +117,7 @@ func (c *CheckpointCoordinator) WaitForBarrier(ctx context.Context, participantI
 	}
 }
 
-// ShouldTruncateWAL returns true if WAL can be truncated after checkpoint.
+// ShouldTruncateWAL returns true if Write-Ahead Log (WAL) can be truncated after a successful checkpoint epoch.
 func (c *CheckpointCoordinator) ShouldTruncateWAL(epoch uint64) bool {
 	return epoch <= c.GetEpoch()
 }

@@ -243,7 +243,7 @@ func run() error {
 	// Dynamic GOGC Tuning
 	var tuner *lbmem.GCTuner
 	if cfg.MaxMemory > 0 {
-		tuner = lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 40, &logger)
+		tuner = lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 80, &logger)
 		tuner.IsAggressive = true
 		// Run in background, tied to ctx (stops on signal)
 		go tuner.Start(ctx, 500*time.Millisecond)
@@ -472,8 +472,12 @@ func run() error {
 	}
 	_ = temporalIndex // Reserved for future API exposure
 
-	// Start background indexing workers
-	vectorStore.StartIndexingWorkers(runtime.NumCPU())
+	// Start background indexing
+	indexingWorkers := runtime.NumCPU() / 2
+	if indexingWorkers < 2 {
+		indexingWorkers = 2
+	}
+	vectorStore.StartIndexingWorkers(indexingWorkers)
 	// Start ingestion workers
 	vectorStore.StartIngestionWorkers(cfg.IngestionWorkerCount)
 

@@ -7,6 +7,7 @@ import (
 	"sync"
 	"sync/atomic"
 
+	"github.com/23skdu/longbow/internal/simd"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 )
@@ -21,12 +22,18 @@ type BM25InvertedIndex struct {
 	totalLen   atomic.Int64 // total document length for avgdl
 }
 
+// BM25PostingList stores parallel slices for SIMD-accelerated scoring
+type BM25PostingList struct {
+	DocIDs []VectorID
+	TFs    []int
+}
+
 // bm25TermShard holds the inverted index for a subset of terms
 type bm25TermShard struct {
 	bloom *BloomFilter
 	mu    sync.RWMutex
-	// term -> docID -> term frequency (raw count)
-	index map[string]map[VectorID]int
+	// term -> posting list
+	index map[string]*BM25PostingList
 }
 
 // bm25DocShard holds document metadata for a subset of documents
@@ -44,7 +51,7 @@ func NewBM25InvertedIndex(config BM25Config) *BM25InvertedIndex {
 	}
 	for i := 0; i < invertedIndexShards; i++ {
 		idx.termShards[i].bloom = NewBloomFilter(10000, 0.01)
-		idx.termShards[i].index = make(map[string]map[VectorID]int)
+		idx.termShards[i].index = make(map[string]*BM25PostingList)
 		idx.docShards[i].terms = make(map[VectorID][]string)
 		idx.docShards[i].length = make(map[VectorID]int)
 	}
@@ -83,7 +90,10 @@ func (idx *BM25InvertedIndex) GetTermDocFreq(term string) int {
 	shard := &idx.termShards[shardIdx]
 	shard.mu.RLock()
 	defer shard.mu.RUnlock()
-	return len(shard.index[term])
+	if pl, ok := shard.index[term]; ok {
+		return len(pl.DocIDs)
+	}
+	return 0
 }
 
 // Add indexes a document with the given text
@@ -137,11 +147,33 @@ func (idx *BM25InvertedIndex) Add(id VectorID, text string) {
 		shard := &idx.termShards[shardIdx]
 		shard.mu.Lock()
 		for term, freq := range terms {
-			if shard.index[term] == nil {
-				shard.index[term] = make(map[VectorID]int)
+			pl := shard.index[term]
+			if pl == nil {
+				pl = &BM25PostingList{
+					DocIDs: make([]VectorID, 0, 1),
+					TFs:    make([]int, 0, 1),
+				}
+				shard.index[term] = pl
 			}
 			shard.bloom.Add(term)
-			shard.index[term][id] = freq
+			
+			// Maintain sorted order by DocID
+			n := len(pl.DocIDs)
+			idx := sort.Search(n, func(i int) bool {
+				return pl.DocIDs[i] >= id
+			})
+			if idx < n && pl.DocIDs[idx] == id {
+				pl.TFs[idx] = freq
+			} else {
+				// Insert at idx
+				pl.DocIDs = append(pl.DocIDs, 0)
+				copy(pl.DocIDs[idx+1:], pl.DocIDs[idx:n])
+				pl.DocIDs[idx] = id
+
+				pl.TFs = append(pl.TFs, 0)
+				copy(pl.TFs[idx+1:], pl.TFs[idx:n])
+				pl.TFs[idx] = freq
+			}
 		}
 		shard.mu.Unlock()
 	}
@@ -180,10 +212,21 @@ func (idx *BM25InvertedIndex) Delete(id VectorID) {
 		shard := &idx.termShards[shardIdx]
 		shard.mu.Lock()
 		for _, term := range termList {
-			if docs, ok := shard.index[term]; ok {
-				delete(docs, id)
-				if len(docs) == 0 {
-					delete(shard.index, term)
+			if pl, ok := shard.index[term]; ok {
+				n := len(pl.DocIDs)
+				idx := sort.Search(n, func(i int) bool {
+					return pl.DocIDs[i] >= id
+				})
+				if idx < n && pl.DocIDs[idx] == id {
+					copy(pl.DocIDs[idx:], pl.DocIDs[idx+1:])
+					pl.DocIDs = pl.DocIDs[:n-1]
+
+					copy(pl.TFs[idx:], pl.TFs[idx+1:])
+					pl.TFs = pl.TFs[:n-1]
+					
+					if len(pl.DocIDs) == 0 {
+						delete(shard.index, term)
+					}
 				}
 			}
 		}
@@ -216,8 +259,8 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 	// Track which docs we need lengths for
 	docSet := make(map[VectorID]struct{})
 
-	// Temporary storage: term -> docID -> tf
-	termDocTF := make(map[string]map[VectorID]int)
+	// Temporary storage: term -> filtered posting list
+	termDocTF := make(map[string]*BM25PostingList)
 	termDF := make(map[string]int) // term -> document frequency
 
 	// Gather all term data from shards
@@ -229,16 +272,21 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 			if !shard.bloom.Contains(term) {
 				continue
 			}
-			if docs, ok := shard.index[term]; ok {
-				termDF[term] = len(docs)
-				termDocTF[term] = make(map[VectorID]int)
-				for docID, tf := range docs {
+			if pl, ok := shard.index[term]; ok {
+				termDF[term] = len(pl.DocIDs)
+				filteredPL := &BM25PostingList{
+					DocIDs: make([]VectorID, 0, len(pl.DocIDs)),
+					TFs:    make([]int, 0, len(pl.TFs)),
+				}
+				for i, docID := range pl.DocIDs {
 					if filter != nil && !filter.Contains(uint32(docID)) {
 						continue
 					}
-					termDocTF[term][docID] = tf
+					filteredPL.DocIDs = append(filteredPL.DocIDs, docID)
+					filteredPL.TFs = append(filteredPL.TFs, pl.TFs[i])
 					docSet[docID] = struct{}{}
 				}
+				termDocTF[term] = filteredPL
 			}
 		}
 		shard.mu.RUnlock()
@@ -255,13 +303,23 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 	}
 
 	// Calculate BM25 scores
-	for term, docs := range termDocTF {
+	avgDL := idx.scorer.AvgDocLength()
+	for term, pl := range termDocTF {
 		df := termDF[term]
 
-		for docID, tf := range docs {
-			docLen := docLengths[docID]
-			score := float32(idx.scorer.Score(tf, docLen, df))
-			docScores[docID] += score
+		docLengthsList := make([]int, len(pl.DocIDs))
+		for i, docID := range pl.DocIDs {
+			docLengthsList[i] = docLengths[docID]
+		}
+		
+		// Fallback to sequential for now until SIMD kernel is implemented
+		k1 := float32(idx.scorer.Config().K1)
+		b := float32(idx.scorer.Config().B)
+		idf := float32(idx.scorer.IDF(df))
+		scores := simd.BM25ScoreBatch(pl.TFs, docLengthsList, float32(avgDL), idf, k1, b)
+
+		for i, docID := range pl.DocIDs {
+			docScores[docID] += scores[i]
 		}
 	}
 

@@ -11,16 +11,20 @@ import (
 	"google.golang.org/grpc/keepalive"
 )
 
-// GRPCConfig holds all gRPC server/client tuning parameters for optimal throughput.
-// Configuring these parameters can yield 5-10% improvement in sustained throughput.
+// FlowControlPolicy defines the strategy for HTTP/2 flow control window management.
 type FlowControlPolicy int
 
 const (
-	PolicyDefault       FlowControlPolicy = iota // 4MB windows
-	PolicyHighBandwidth                          // 16MB windows (10GbE+)
-	PolicyAuto                                   // Reserved for auto-tuning
+	// PolicyDefault uses 4MB window sizes.
+	PolicyDefault FlowControlPolicy = iota // 4MB windows
+	// PolicyHighBandwidth uses 16MB window sizes (recommended for 10GbE+ networks).
+	PolicyHighBandwidth
+	// PolicyAuto is reserved for future auto-tuning functionality.
+	PolicyAuto
 )
 
+// GRPCConfig holds all gRPC server/client tuning parameters for optimal throughput.
+// Configuring these parameters can yield 5-10% improvement in sustained throughput.
 type GRPCConfig struct {
 	// Keepalive parameters
 	KeepAliveTime                time.Duration // Time between keepalive pings (server sends to client)

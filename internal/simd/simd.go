@@ -1416,8 +1416,8 @@ func matMulGeneric(a, b []float32, m, n, k int, dst []float32) {
 	}
 }
 func memcpyGeneric(dst, src unsafe.Pointer, n int) {
-	d := unsafe.Slice((*byte)(dst), n)
-	s := unsafe.Slice((*byte)(src), n)
+	d := unsafe.Slice((*byte)(dst), n) // #nosec G103
+	s := unsafe.Slice((*byte)(src), n) // #nosec G103
 	copy(d, s)
 }
 

@@ -240,6 +240,7 @@ func (p *DoGetPipeline) worker(
 	}
 }
 
+// Stop terminates the pipeline and stops all active processing.
 func (p *DoGetPipeline) Stop() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -303,6 +304,7 @@ func (p *DoGetPipeline) ProcessRecords(
 	return resCh
 }
 
+// ShouldUsePipeline returns true if the number of batches justifies the overhead of pipelining.
 func ShouldUsePipeline(numBatches int) bool {
 	return numBatches >= 10
 }

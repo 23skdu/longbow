@@ -62,36 +62,46 @@ func main() {
 	var results []BenchmarkResult
 
 	// 1. Ingest/DoPut
-	log.Printf("[PUT] Generating vectors and uploading in chunks (back-pressure aware)...\n")
+	log.Printf("[PUT] Pre-generating vectors...\n")
 	
 	chunkSize := 25000
 	if *scale < chunkSize {
 		chunkSize = *scale
 	}
 
+	// First pass: generate all records
+	numChunks := (*scale + chunkSize - 1) / chunkSize
+	preGenerated := make([]arrow.Record, 0, numChunks)
+	var genSchema *arrow.Schema
+	
+	for i := 0; i < *scale; {
+		currentChunk := chunkSize
+		if i+currentChunk > *scale {
+			currentChunk = *scale - i
+		}
+		rec, schema, err := generateRecord(currentChunk, *dim, *dtype, *tqBits)
+		if err != nil {
+			log.Fatalf("Pre-generation failed: %v", err)
+		}
+		preGenerated = append(preGenerated, rec)
+		genSchema = schema
+		i += currentChunk
+	}
+
+	log.Printf("[PUT] Uploading %d pre-generated chunks (back-pressure aware)...\n", numChunks)
+	
 	totalUploaded := 0
 	start := time.Now()
 	
-	for totalUploaded < *scale {
-		currentChunk := chunkSize
-		if totalUploaded+currentChunk > *scale {
-			currentChunk = *scale - totalUploaded
-		}
-
-		// Generate chunk
-		record, schema, err := generateRecord(currentChunk, *dim, *dtype, *tqBits)
-		if err != nil {
-			log.Fatalf("Generation failed: %v", err)
-		}
+	for _, record := range preGenerated {
+		currentChunk := int(record.NumRows())
 		
 		// Upload chunk
 		putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		if err := uploadBatch(putCtx, sc, *dataset, record, schema); err != nil {
-			record.Release()
+		if err := uploadBatch(putCtx, sc, *dataset, record, genSchema); err != nil {
 			putCancel()
 			log.Fatalf("DoPut failed at %d: %v", totalUploaded, err)
 		}
-		record.Release()
 		putCancel()
 		
 		totalUploaded += currentChunk
@@ -107,17 +117,19 @@ func main() {
 				if !isBusy {
 					break
 				}
-				// Log backpressure at most every 5 seconds to avoid client-side log spam
 				log.Printf("  Server is BUSY: %s. Waiting %v...\n", reason, backoff)
 				time.Sleep(backoff)
 				
-				// Adaptive backoff
 				backoff += 500 * time.Millisecond
 				if backoff > 10*time.Second {
 					backoff = 10 * time.Second
 				}
 			}
 		}
+	}
+	// Release pre-generated records
+	for _, rec := range preGenerated {
+		rec.Release()
 	}
 	duration := time.Since(start).Seconds()
 

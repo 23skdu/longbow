@@ -16,9 +16,11 @@ import (
 // Load Balancer Strategy Types
 // =============================================================================
 
+// StrategyType defines the type of load balancing strategy.
 type StrategyType string
 
 const (
+	// StrategyRoundRobin cycles through replicas in order.
 	StrategyRoundRobin       StrategyType = "round_robin"
 	StrategyLeastConnections StrategyType = "least_connections"
 	StrategyWeighted         StrategyType = "weighted"
@@ -218,6 +220,7 @@ type ReplicaInfo struct {
 // =============================================================================
 
 var (
+	// ErrNoHealthyReplicas is returned when no replicas are available to handle a request.
 	ErrNoHealthyReplicas = errors.New("no healthy replicas available")
 )
 

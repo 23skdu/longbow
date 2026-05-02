@@ -14,12 +14,15 @@ import (
 )
 
 // MLModel defines the interface for ML model inference
+// MLModel defines the interface for ML model inference.
 type MLModel interface {
+	// Score calculates relevance scores for a query and a set of documents.
 	Score(query string, documents []string) ([]float32, error)
+	// Close releases resources associated with the model.
 	Close() error
 }
 
-// ONNXReranker uses ONNX Runtime for cross-encoder reranking
+// ONNXReranker uses ONNX Runtime or WASM for cross-encoder reranking.
 type ONNXReranker struct {
 	model     MLModel
 	modelPath string
@@ -27,7 +30,7 @@ type ONNXReranker struct {
 	mu        sync.RWMutex
 }
 
-// NewONNXReranker creates a new ONNX-based reranker
+// NewONNXReranker creates a new ONNX-based reranker.
 func NewONNXReranker(modelPath string, logger zerolog.Logger) (*ONNXReranker, error) {
 	if modelPath == "" {
 		return nil, errors.New("model path is required")
@@ -123,6 +126,7 @@ func (w *wasmModelWrapper) Close() error {
 	return w.runner.Close(context.Background())
 }
 
+// Rerank performs second-stage reranking on search results using an ML model.
 func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {
 	if len(results) == 0 {
 		return results, nil
@@ -188,6 +192,7 @@ func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []Searc
 	return reranked, nil
 }
 
+// Close releases the underlying ML model resources.
 func (r *ONNXReranker) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -284,8 +289,10 @@ func (r *stubMLModel) Close() error {
 	return nil
 }
 
+// RerankerFactory creates reranker instances based on configuration.
 type RerankerFactory struct{}
 
+// CreateReranker builds a reranker from a configuration map.
 func (f *RerankerFactory) CreateReranker(config map[string]interface{}) (Reranker, error) {
 	rerankerType, _ := config["type"].(string)
 	modelPath, _ := config["model_path"].(string)
@@ -309,10 +316,12 @@ func (f *RerankerFactory) CreateReranker(config map[string]interface{}) (Reranke
 	}
 }
 
+// NewDefaultRerankerFactory creates a new RerankerFactory instance.
 func NewDefaultRerankerFactory() *RerankerFactory {
 	return &RerankerFactory{}
 }
 
+// AutoSelectReranker returns a default reranker suitable for general use.
 func AutoSelectReranker() Reranker {
 	return &CrossEncoderReranker{ModelName: "auto"}
 }

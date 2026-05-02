@@ -25,7 +25,7 @@ type GlobalSearchCoordinator struct {
 	pool   *FlightClientPool
 }
 
-//nolint:gocritic // Logger passed by value for simplicity
+// NewGlobalSearchCoordinator creates a new GlobalSearchCoordinator with the provided logger and client pool.
 func NewGlobalSearchCoordinator(logger zerolog.Logger, pool *FlightClientPool) *GlobalSearchCoordinator {
 	return &GlobalSearchCoordinator{
 		logger: logger,
@@ -274,6 +274,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 	return finalResults, nil
 }
 
+// Close releases any resources held by the coordinator.
 func (c *GlobalSearchCoordinator) Close() error {
 	// The pool is managed externally, so we don't need to close it here.
 	return nil

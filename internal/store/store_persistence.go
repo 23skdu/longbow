@@ -10,7 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
-// InitPersistence initializes the storage layer, replays WAL, and loads snapshots.
+// InitPersistence initializes the storage layer, replays Write-Ahead Log (WAL), and loads snapshots for disaster recovery.
 func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()

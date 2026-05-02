@@ -8,6 +8,7 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 )
 
+// HNSWSearchConfig defines tunable parameters for the optimized HNSW search path.
 type HNSWSearchConfig struct {
 	EnablePrefetch            bool
 	PrefetchDistance          int
@@ -18,6 +19,7 @@ type HNSWSearchConfig struct {
 	BatchSize                 int
 }
 
+// DefaultHNSWSearchConfig provides recommended settings for typical search workloads.
 var DefaultHNSWSearchConfig = HNSWSearchConfig{
 	EnablePrefetch:            true,
 	PrefetchDistance:          3,
@@ -28,11 +30,13 @@ var DefaultHNSWSearchConfig = HNSWSearchConfig{
 	BatchSize:                 64,
 }
 
+// OptimizedSearchContext maintains state for an individual search operation, enabling optimizations like prefetching.
 type OptimizedSearchContext struct {
 	PrefetchEnabled bool
 	PrefetchDist    int
 }
 
+// PrefetchNode hints to the memory subsystem to load a node's data.
 func (ctx *OptimizedSearchContext) PrefetchNode(nodeID uint32) {
 	if !ctx.PrefetchEnabled {
 		return
@@ -40,22 +44,26 @@ func (ctx *OptimizedSearchContext) PrefetchNode(nodeID uint32) {
 	_ = nodeID
 }
 
+// BeamSearchCandidate represents a potential match during graph traversal.
 type BeamSearchCandidate struct {
 	ID    uint32
 	Dist  float32
 	Layer int
 }
 
+// BeamSearchHeap is a min-priority queue of search candidates, ordered by distance.
 type BeamSearchHeap []BeamSearchCandidate
 
 func (h BeamSearchHeap) Len() int           { return len(h) }
 func (h BeamSearchHeap) Less(i, j int) bool { return h[i].Dist < h[j].Dist }
 func (h BeamSearchHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
+// Push adds a candidate to the heap.
 func (h *BeamSearchHeap) Push(x any) {
 	*h = append(*h, x.(BeamSearchCandidate))
 }
 
+// Pop removes the best candidate from the heap.
 func (h *BeamSearchHeap) Pop() any {
 	old := *h
 	n := len(old)
@@ -64,6 +72,7 @@ func (h *BeamSearchHeap) Pop() any {
 	return x
 }
 
+// BeamSearchOptimized executes a high-performance beam search traversal on the graph.
 func BeamSearchOptimized(
 	query []float32,
 	vectors [][]float32,
@@ -152,6 +161,7 @@ func BeamSearchOptimized(
 	return results
 }
 
+// ParallelSearchResult aggregates search results from multiple threads in a thread-safe manner.
 type ParallelSearchResult struct {
 	mu      sync.Mutex
 	results []BeamSearchCandidate
@@ -160,6 +170,7 @@ type ParallelSearchResult struct {
 	total   uint32
 }
 
+// NewParallelSearchResult creates a new aggregator for k results.
 func NewParallelSearchResult(k int, total uint32) *ParallelSearchResult {
 	return &ParallelSearchResult{
 		results: make([]BeamSearchCandidate, 0, k),
@@ -167,6 +178,7 @@ func NewParallelSearchResult(k int, total uint32) *ParallelSearchResult {
 	}
 }
 
+// Add incorporates a candidate into the shared result set.
 func (r *ParallelSearchResult) Add(candidate BeamSearchCandidate) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -177,6 +189,7 @@ func (r *ParallelSearchResult) Add(candidate BeamSearchCandidate) {
 	}
 }
 
+// Get returns the final sorted search results.
 func (r *ParallelSearchResult) Get() []BeamSearchCandidate {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -186,6 +199,7 @@ func (r *ParallelSearchResult) Get() []BeamSearchCandidate {
 	return result
 }
 
+// ParallelBeamSearch distributes a beam search operation across multiple CPU cores.
 func ParallelBeamSearch(
 	query []float32,
 	vectors [][]float32,
@@ -251,10 +265,12 @@ func ParallelBeamSearch(
 	return finalResults
 }
 
+// CalculateMinPossibleDistance estimates the lower bound distance for heuristic pruning.
 func CalculateMinPossibleDistance(query []float32, neighborCount int, avgDist float32) float32 {
 	return avgDist * float32(neighborCount) * 0.5
 }
 
+// SearchMetrics tracks performance and quality counters during search operations for diagnostics.
 type SearchMetrics struct {
 	NodesVisited   int32
 	Computations   int32
@@ -263,18 +279,22 @@ type SearchMetrics struct {
 	PrefetchMisses int32
 }
 
+// RecordVisit increments the counter for visited nodes.
 func (m *SearchMetrics) RecordVisit() {
 	atomic.AddInt32(&m.NodesVisited, 1)
 }
 
+// RecordComputation increments the counter for distance calculations.
 func (m *SearchMetrics) RecordComputation() {
 	atomic.AddInt32(&m.Computations, 1)
 }
 
+// RecordEarlyTermination increments the counter for early termination events.
 func (m *SearchMetrics) RecordEarlyTermination() {
 	atomic.AddInt32(&m.EarlyTermCount, 1)
 }
 
+// Get returns the current metric values.
 func (m *SearchMetrics) Get() (visited, computations, earlyTerm int32) {
 	visited = atomic.LoadInt32(&m.NodesVisited)
 	computations = atomic.LoadInt32(&m.Computations)
@@ -282,6 +302,7 @@ func (m *SearchMetrics) Get() (visited, computations, earlyTerm int32) {
 	return
 }
 
+// Reset clears all search metrics.
 func (m *SearchMetrics) Reset() {
 	atomic.StoreInt32(&m.NodesVisited, 0)
 	atomic.StoreInt32(&m.Computations, 0)

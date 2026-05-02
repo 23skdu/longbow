@@ -10,7 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
-// VectorIndexer defines the interface for vector indexing operations
+// VectorIndexer defines the core operations for vector similarity search indexes.
 type VectorIndexer interface {
 	// Core indexing operations
 	AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error)
@@ -79,7 +79,7 @@ type VectorIndexer interface {
 	GetGPUIndex() any // Returns types.Index (gpu index)
 }
 
-// GraphDataInterface defines the interface for graph data operations
+// GraphDataInterface defines the interface for accessing underlying graph storage.
 type GraphDataInterface interface {
 	// Data access operations
 	GetVector(id uint32) (any, error)
@@ -95,7 +95,7 @@ type GraphDataInterface interface {
 	Close() error
 }
 
-// HNSWGraphInterface defines the interface for HNSW graph operations
+// HNSWGraphInterface defines the specific operations required for HNSW-style graphs.
 type HNSWGraphInterface interface {
 	// Graph construction
 	Insert(id uint32, vec any, level int) error
@@ -114,7 +114,7 @@ type HNSWGraphInterface interface {
 	MaxLevel() int
 }
 
-// CompactionWorkerInterface defines the interface for background compaction
+// CompactionWorkerInterface defines the control interface for background index compaction.
 type CompactionWorkerInterface interface {
 	Start()
 	Stop()
@@ -122,7 +122,7 @@ type CompactionWorkerInterface interface {
 	Trigger(dataset string)
 }
 
-// StorageInterface defines the interface for persistent storage operations
+// StorageInterface defines the interface for generic persistent storage operations.
 type StorageInterface interface {
 	// Persistence operations
 	Save(data any) error
@@ -134,7 +134,7 @@ type StorageInterface interface {
 	Size() int64
 }
 
-// IndexDataProvider defines the interface for data access required by vector indexes
+// IndexDataProvider provides the necessary data and synchronization for index building and search.
 type IndexDataProvider interface {
 	GetName() string
 	GetRecords() []arrow.RecordBatch

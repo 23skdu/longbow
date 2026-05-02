@@ -2,7 +2,6 @@
 #include <device_launch_parameters.h>
 #include <cuda_fp16.h>
 #include <math.h>
-#include <float.h>
 #include <stdint.h>
 
 // Top-K implementation using shared memory heap
@@ -424,7 +423,6 @@ void launch_graph_activation_propagate_kernel(
     );
 }
 
-}
 
 // Euclidean Distance Kernel for Large Dimensions (Vectorized with float4)
 __global__ void l2_distance_kernel_large(const float* vectors, const float* query, float* distances, int dimensions, int count) {
@@ -501,3 +499,51 @@ void launch_dot_product_large_kernel(const float* vectors, const float* query, f
     int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
     dot_product_kernel_large<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, query, distances, dimensions, count);
 }
+
+// Haversine Distance Kernel
+__global__ void haversine_distance_kernel(const float* center, const float* points, float* distances, float earthRadius, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < count) {
+        float lat1 = center[0] * 3.14159265f / 180.0f;
+        float lon1 = center[1] * 3.14159265f / 180.0f;
+        float lat2 = points[idx * 2] * 3.14159265f / 180.0f;
+        float lon2 = points[idx * 2 + 1] * 3.14159265f / 180.0f;
+        
+        float dLat = lat2 - lat1;
+        float dLon = lon2 - lon1;
+        
+        float a = sinf(dLat / 2.0f) * sinf(dLat / 2.0f) + 
+                  cosf(lat1) * cosf(lat2) * 
+                  sinf(dLon / 2.0f) * sinf(dLon / 2.0f);
+        float c = 2.0f * atan2f(sqrtf(a), sqrtf(1.0f - a));
+        distances[idx] = earthRadius * c;
+    }
+}
+
+// Norm Squared Kernel
+__global__ void l2_squared_kernel(const float* vectors, float* results, int dimensions, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < count) {
+        float sum = 0.0f;
+        const float* vec = vectors + idx * dimensions;
+        for (int i = 0; i < dimensions; i++) {
+            float v = vec[i];
+            sum += v * v;
+        }
+        results[idx] = sum;
+    }
+}
+
+void launch_haversine_distance_kernel(const float* center, const float* points, float* distances, float earthRadius, int count, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
+    haversine_distance_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(center, points, distances, earthRadius, count);
+}
+
+void launch_l2_squared_kernel(const float* vectors, float* results, int dimensions, int count, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
+    l2_squared_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, results, dimensions, count);
+}
+
+} // extern "C"

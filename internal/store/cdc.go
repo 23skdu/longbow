@@ -17,8 +17,11 @@ import (
 type CDCEventType int
 
 const (
+	// CDCEventInsert indicates a new record has been inserted.
 	CDCEventInsert CDCEventType = iota
+	// CDCEventUpdate indicates an existing record has been updated.
 	CDCEventUpdate
+	// CDCEventDelete indicates a record has been deleted.
 	CDCEventDelete
 )
 

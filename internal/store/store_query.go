@@ -822,6 +822,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 			ds.dataMu.RLock()
 			// Graph Re-ranking
 			if req.GraphAlpha > 0 && graph != nil {
+				ds.dataMu.RUnlock()
 				depth := req.GraphDepth
 				if depth <= 0 {
 					depth = 2
@@ -830,6 +831,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 				if len(ranked) > 0 {
 					searchResults = ranked
 				}
+				ds.dataMu.RLock()
 			}
 
 			// Map internal IDs to user IDs

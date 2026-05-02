@@ -700,6 +700,66 @@ func atan2AVX2(y, x, dst []float32) {
 	atan2Float32Generic(y, x, dst)
 }
 
+func argMaxAVX2(src []float32) int {
+	if len(src) == 0 { return -1 }
+	n := len(src)
+	_, idx := argMaxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), n)
+	
+	// Handle tail if kernel didn't process all elements
+	if n % 8 != 0 {
+		processed := (n / 8) * 8
+		bestVal, _ := argMaxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), processed)
+		bestIdx := idx
+		for i := processed; i < n; i++ {
+			if src[i] > bestVal {
+				bestVal = src[i]
+				bestIdx = i
+			}
+		}
+		return bestIdx
+	}
+	return idx
+}
+
+func argMinAVX2(src []float32) int {
+	if len(src) == 0 { return -1 }
+	n := len(src)
+	_, idx := argMinAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), n)
+	
+	if n % 8 != 0 {
+		processed := (n / 8) * 8
+		bestVal, _ := argMinAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), processed)
+		bestIdx := idx
+		for i := processed; i < n; i++ {
+			if src[i] < bestVal {
+				bestVal = src[i]
+				bestIdx = i
+			}
+		}
+		return bestIdx
+	}
+	return idx
+}
+
+func matMulAVX2(a, b []float32, m, n, k int, dst []float32) {
+	if len(a) < m*k || len(b) < k*n || len(dst) < m*n {
+		matMulGeneric(a, b, m, n, k, dst)
+		return
+	}
+	// Our SIMD kernel assumes n is a multiple of 8
+	if n % 8 != 0 {
+		matMulGeneric(a, b, m, n, k, dst)
+		return
+	}
+	
+	matMulAVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&dst[0])),
+		m, n, k,
+	)
+}
+
 // AVX512 and other kernel declarations are now in all_kernels_stubs_amd64.go
 //go:noescape
 func pause()

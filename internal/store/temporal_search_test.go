@@ -12,8 +12,9 @@ import (
 func TestTemporalTree_Insert(t *testing.T) {
 	tt := NewTemporalTree()
 
-	tt.Insert(time.Now().UnixNano(), 1)
-	tt.Insert(time.Now().UnixNano(), 2)
+	now := time.Now().UnixNano()
+	tt.Insert(now, 1)
+	tt.Insert(now+1, 2)
 
 	assert.Equal(t, 2, tt.Len())
 }
@@ -75,7 +76,7 @@ func TestTemporalIndex_New(t *testing.T) {
 
 	assert.NotNil(t, ti)
 	assert.Equal(t, 128, ti.dimension)
-	assert.NotNil(t, ti.temporalTree)
+	assert.NotNil(t, ti.temporalTree.Load())
 }
 
 func TestTemporalIndex_Add(t *testing.T) {

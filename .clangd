@@ -1,0 +1,22 @@
+CompileFlags:
+  Add: 
+    - "-xcuda"
+    - "--cuda-path=/dev/null"
+    - "-nocudainc"
+    - "-nocudalib"
+    - "-D__global__="
+    - "-D__device__="
+    - "-D__host__="
+    - "-D__shared__="
+    - "-D__constant__="
+    - "-D__launch_bounds__(x)="
+  Remove: [-Werror]
+
+Diagnostics:
+  Suppress: 
+    - "drv_cannot_find_cuda_install"
+    - "drv_cannot_find_libdevice"
+    - "lib_cuda_runtime_not_found"
+    - "undeclared_var_use"
+    - "unknown_type_name"
+    - "reference_to_device_function_in_host_function"

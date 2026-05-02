@@ -38,6 +38,10 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 	p.result.Alpha = 0
 	p.result.GraphAlpha = 0
 	p.result.GraphDepth = 0
+	p.result.LocalOnly = false
+	p.result.IncludeVectors = false
+	p.result.VectorFormat = ""
+	p.result.FilterExpr = nil
 	p.vector = p.vector[:0]
 	p.filters = p.filters[:0]
 

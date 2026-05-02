@@ -139,7 +139,11 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool) 
 
 	// Store raw vector in GraphData (idempotent if already set)
 	if !skipSet {
-		if err := data.SetVector(id, vec); err != nil {
+		// Use node-specific lock to ensure memory visibility for concurrent readers
+		oldVer := data.LockNode(0, id)
+		err := data.SetVector(id, vec)
+		data.UnlockNode(0, id, oldVer)
+		if err != nil {
 			return err
 		}
 	}

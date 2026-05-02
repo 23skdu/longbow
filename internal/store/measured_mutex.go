@@ -50,10 +50,12 @@ type MeasuredRWMutex struct {
 	labelType string
 }
 
+// NewMeasuredRWMutex creates a new measured read-write mutex.
 func NewMeasuredRWMutex(label string) MeasuredRWMutex {
 	return MeasuredRWMutex{labelType: label}
 }
 
+// Lock records the duration spent waiting for the write lock.
 func (m *MeasuredRWMutex) Lock() {
 	start := time.Now()
 	m.mu.Lock()
@@ -62,10 +64,12 @@ func (m *MeasuredRWMutex) Lock() {
 	}
 }
 
+// Unlock unlocks the write lock.
 func (m *MeasuredRWMutex) Unlock() {
 	m.mu.Unlock()
 }
 
+// RLock records the duration spent waiting for the read lock.
 func (m *MeasuredRWMutex) RLock() {
 	start := time.Now()
 	m.mu.RLock()
@@ -74,6 +78,7 @@ func (m *MeasuredRWMutex) RLock() {
 	}
 }
 
+// RUnlock unlocks the read lock.
 func (m *MeasuredRWMutex) RUnlock() {
 	m.mu.RUnlock()
 }

@@ -25,6 +25,7 @@ import (
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
+	internalcore "github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/tracing"
 )
@@ -623,6 +624,9 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 					EarthRadius:  6371.0,
 				}
 				ds.GeoIndex = NewGeoIndex(ds.Name, req.Dimension, geoCfg)
+				if gIdx, err := s.getGPUIndex(req.Dimension); err == nil {
+					ds.GeoIndex.SetGPUIndex(gIdx)
+				}
 			}
 			if req.DiskEnabled {
 				ds.DiskStore, _ = NewDiskVectorStore(filepath.Join(s.dataPath, "disk", ds.Name), req.Dimension)
@@ -1003,12 +1007,21 @@ func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []ar
 		s.scaler.RecordIngest(totalRows)
 	}
 
-	// Backpressure: Check if we should throttle
+	// Soft Backpressure: Apply linear delay if system is starting to get stressed
+	if delay := s.IngestionBackpressureDelay(); delay > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+
+	// Hard Backpressure: Block if system is at capacity
 	if s.CheckIngestionBackpressure() {
 		// Log warning occasionally (every 5 seconds?) or use rate limiter
-		s.logger.Warn().Msg("Applying ingestion backpressure (throttling)")
+		s.logger.Warn().Msg("Applying ingestion backpressure (HARD block)")
 		// Loop with sleep until pressure relieves or context done
-		ticker := time.NewTicker(100 * time.Millisecond) // Check every 100ms
+		ticker := time.NewTicker(200 * time.Millisecond) // Check every 200ms
 		defer ticker.Stop()
 
 		// Wait loop
@@ -1144,8 +1157,8 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 			colArrays[j] = batch.Column(i)
 		}
 
-		// Use Arrow's array.Concatenate
-		concatenated, err := array.Concatenate(colArrays, s.mem)
+		// Use Arrow's array.Concatenate with pooled allocator for transient ingestion buffers
+		concatenated, err := array.Concatenate(colArrays, s.pooledMem)
 		if err != nil {
 			return nil, fmt.Errorf("failed to concatenate column %d: %w", i, err)
 		}
@@ -1355,56 +1368,64 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		}
 
 		if idColIdx != -1 && vecColIdx != -1 {
+			numRows := int(rec.NumRows())
+			ids := make([]uint64, numRows)
+			vectors := make([][]float32, numRows)
+			timestamps := make([]int64, numRows)
+			
 			idArr := rec.Column(idColIdx).(*array.String)
 			vecArr := rec.Column(vecColIdx).(*array.FixedSizeList)
-
 			var tsArr arrow.Array
 			if tsColIdx != -1 {
 				tsArr = rec.Column(tsColIdx)
 			}
 
-			var tsInt64 *array.Int64
-			if tsArr != nil {
-				tsInt64, _ = tsArr.(*array.Int64)
-			}
+			listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
+			
+			// Parallel Extraction
+			pool := internalcore.GetSharedPool()
+			pool.ParallelFor(numRows, 1024, func(start, end int) {
+				for i := start; i < end; i++ {
+					if idArr.IsValid(i) && vecArr.IsValid(i) {
+						idStr := idArr.Value(i)
+						id, _ := strconv.ParseUint(idStr, 10, 64)
+						ids[i] = id
 
-			for i := 0; i < int(rec.NumRows()); i++ {
-				if idArr.IsValid(i) && vecArr.IsValid(i) {
-					idStr := idArr.Value(i)
-					id, _ := strconv.ParseUint(idStr, 10, 64)
-
-					// Extract timestamp from record column if available, otherwise use ingestion time
-					var vectorTs int64
-					if tsInt64 != nil && tsInt64.IsValid(i) {
-						vectorTs = tsInt64.Value(i)
-					} else {
-						vectorTs = ts
-					}
-
-					// Extract vector slice based on actual type
-					listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
-					start := i * listLen
-					end := (i + 1) * listLen
-
-					var sub []float32
-					switch values := vecArr.ListValues().(type) {
-					case *array.Float32:
-						sub = values.Float32Values()[start:end]
-					case *array.Float64:
-						f64Values := values.Float64Values()[start:end]
-						sub = make([]float32, len(f64Values))
-						for j, v := range f64Values {
-							sub[j] = float32(v)
+						if tsArr != nil && tsArr.IsValid(i) {
+							switch arr := tsArr.(type) {
+							case *array.Int64:
+								timestamps[i] = arr.Value(i)
+							case *array.Timestamp:
+								timestamps[i] = int64(arr.Value(i))
+							default:
+								timestamps[i] = ts
+							}
+						} else {
+							timestamps[i] = ts
 						}
-					default:
-						s.logger.Warn().Str("type", vecArr.ListValues().DataType().String()).Msg("Temporal index hook: unsupported vector type")
-						continue
-					}
 
-					// Note: Metadata is nil for now as benchmark doesn't use it for temporal search results
-					_ = s.temporalIndex.Add(id, sub, vectorTs, nil)
+						vStart := i * listLen
+						vEnd := (i + 1) * listLen
+						switch values := vecArr.ListValues().(type) {
+						case *array.Float32:
+							src := values.Float32Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							copy(sub, src)
+							vectors[i] = sub
+						case *array.Float64:
+							f64Values := values.Float64Values()[vStart:vEnd]
+							sub := make([]float32, len(f64Values))
+							for j, v := range f64Values {
+								sub[j] = float32(v)
+							}
+							vectors[i] = sub
+						}
+					}
 				}
-			}
+			})
+
+			// Batch Add
+			_ = s.temporalIndex.AddBatch(ids, vectors, timestamps, nil)
 		}
 	}
 
@@ -1449,39 +1470,63 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		}
 
 		if idColIdx != -1 && vecColIdx != -1 {
+			numRows := int(rec.NumRows())
+			ids := make([]uint64, numRows)
+			vectors := make([][]float32, numRows)
+			points := make([]types.GeoPoint, numRows)
+			valid := make([]bool, numRows)
+
 			idArr := rec.Column(idColIdx).(*array.String)
 			vecArr := rec.Column(vecColIdx).(*array.FixedSizeList)
 			geoArr := rec.Column(geoPointIdx).(*array.FixedSizeList)
 			geoValues := geoArr.ListValues().(*array.Float64).Float64Values()
+			listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
 
-			for i := 0; i < int(rec.NumRows()); i++ {
-				if idArr.IsValid(i) && vecArr.IsValid(i) && geoArr.IsValid(i) {
-					idStr := idArr.Value(i)
-					id, _ := strconv.ParseUint(idStr, 10, 64)
+			// Parallel Extraction
+			pool := internalcore.GetSharedPool()
+			pool.ParallelFor(numRows, 1024, func(start, end int) {
+				for i := start; i < end; i++ {
+					if idArr.IsValid(i) && vecArr.IsValid(i) && geoArr.IsValid(i) {
+						idStr := idArr.Value(i)
+						id, _ := strconv.ParseUint(idStr, 10, 64)
+						ids[i] = id
 
-					// Extract vector
-					listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
-					vStart := i * listLen
-					vEnd := (i + 1) * listLen
-					var sub []float32
-					switch values := vecArr.ListValues().(type) {
-					case *array.Float32:
-						sub = values.Float32Values()[vStart:vEnd]
-					case *array.Float64:
-						f64Values := values.Float64Values()[vStart:vEnd]
-						sub = make([]float32, len(f64Values))
-						for j, v := range f64Values {
-							sub[j] = float32(v)
+						vStart := i * listLen
+						vEnd := (i + 1) * listLen
+						switch values := vecArr.ListValues().(type) {
+						case *array.Float32:
+							src := values.Float32Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							copy(sub, src)
+							vectors[i] = sub
+						case *array.Float64:
+							f64Values := values.Float64Values()[vStart:vEnd]
+							sub := make([]float32, len(f64Values))
+							for j, v := range f64Values {
+								sub[j] = float32(v)
+							}
+							vectors[i] = sub
 						}
+
+						points[i] = types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]}
+						valid[i] = true
 					}
+				}
+			})
 
-					// Extract GeoPoint
-					lat := geoValues[i*2]
-					lon := geoValues[i*2+1]
-
-					_ = ds.GeoIndex.Add(id, sub, types.GeoPoint{Lat: lat, Lon: lon}, nil)
+			// Filter valid and Batch Add
+			validIds := make([]uint64, 0, numRows)
+			validVectors := make([][]float32, 0, numRows)
+			validPoints := make([]types.GeoPoint, 0, numRows)
+			for i := 0; i < numRows; i++ {
+				if valid[i] {
+					validIds = append(validIds, ids[i])
+					validVectors = append(validVectors, vectors[i])
+					validPoints = append(validPoints, points[i])
 				}
 			}
+
+			_ = ds.GeoIndex.AddBatch(validIds, validVectors, validPoints, nil)
 		}
 	}
 

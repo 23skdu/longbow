@@ -6,6 +6,7 @@ import (
 	"github.com/23skdu/longbow/internal/gpu"
 )
 
+// SearchEfConfig defines the configuration for search ef tuning.
 type SearchEfConfig struct {
 	BaseEf int
 
@@ -20,6 +21,7 @@ type SearchEfConfig struct {
 	detectedCores int
 }
 
+// NewSearchEfConfig creates a new SearchEfConfig with default values.
 func NewSearchEfConfig() SearchEfConfig {
 	gpus := gpu.DetectAvailableGPUs()
 	hasGPU := len(gpus) > 0
@@ -37,6 +39,7 @@ func NewSearchEfConfig() SearchEfConfig {
 	}
 }
 
+// GetEfForDimension returns the base ef value for a given dimension.
 func (cfg *SearchEfConfig) GetEfForDimension(dim int) int {
 	switch {
 	case dim <= 128:
@@ -52,6 +55,7 @@ func (cfg *SearchEfConfig) GetEfForDimension(dim int) int {
 	}
 }
 
+// GetEf calculates the final ef value based on hardware and dimension.
 func (cfg *SearchEfConfig) GetEf(isGPU bool, dimension int) int {
 	ef := cfg.GetEfForDimension(dimension)
 

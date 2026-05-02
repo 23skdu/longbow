@@ -203,16 +203,20 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 		return 0, fmt.Errorf("alloc request %d exceeds slab capacity %d", size, a.slabCap)
 	}
 
+	var isFastPath bool
+	var fastPathFailed bool
+	var newSlabAllocated bool
+
 	a.mu.Lock()
-	defer a.mu.Unlock()
 
 	// Try fast path while holding the mutex
-	if size <= 64 && align <= 8 {
+	if size <= 256 && align <= 8 {
 		if offset, ok := a.allocFast(size); ok {
+			a.mu.Unlock()
 			metrics.ArenaFastPathTotal.Inc()
 			return offset, nil
 		}
-		metrics.ArenaFastPathFailedTotal.Inc()
+		fastPathFailed = true
 	}
 
 	// Load current state
@@ -243,9 +247,7 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 				if atomic.CompareAndSwapUint32(&active.offset, oldOffset, newOffset) {
 					start = oldOffset + pad
 					claimed = true
-					if pad > 0 {
-						metrics.AdjacencyPaddingBytes.Add(float64(pad))
-					}
+					// Metrics moved out of lock
 					break
 				}
 			} else {
@@ -295,13 +297,25 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 		a.slabs.Store(&newSlabs)
 
 		active = newSlab
-
-		metrics.ArenaSlabsTotal.Inc()
-		metrics.ArenaAllocatedBytes.WithLabelValues("slab").Add(float64(a.slabCap))
+		newSlabAllocated = true
 	} else {
 		if zero {
 			clear(active.data[start : start+needed])
 		}
+	}
+
+	a.mu.Unlock()
+
+	// Update metrics outside the lock
+	if isFastPath {
+		metrics.ArenaFastPathTotal.Inc()
+	} else if fastPathFailed {
+		metrics.ArenaFastPathFailedTotal.Inc()
+	}
+
+	if newSlabAllocated {
+		metrics.ArenaSlabsTotal.Inc()
+		metrics.ArenaAllocatedBytes.WithLabelValues("slab").Add(float64(a.slabCap))
 	}
 
 	slabIdx := uint64(active.id - 1)

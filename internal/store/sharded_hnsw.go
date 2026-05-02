@@ -575,25 +575,55 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 	if len(filters) > 0 && idx.dataset != nil {
 		idx.dataset.dataMu.RLock()
 		if len(idx.dataset.Records) > 0 {
-			evaluators := make(map[int]*query.FilterEvaluator)
-			filtered := merged[:0]
-			for _, r := range merged {
+			// 1. Group row indices by BatchIdx
+			type batchJob struct {
+				rowIndices []int
+				resultIdx  []int
+			}
+			batchJobs := make(map[int]*batchJob)
+
+			for i, r := range merged {
 				loc, ok := idx.locationStore.Get(r.ID)
 				if !ok || loc.BatchIdx >= len(idx.dataset.Records) {
 					continue
 				}
- 
-				ev, ok := evaluators[loc.BatchIdx]
+				job, ok := batchJobs[loc.BatchIdx]
 				if !ok {
-					var err error
-					ev, err = query.NewFilterEvaluator(idx.dataset.Records[loc.BatchIdx], filters)
-					if err != nil {
-						continue
-					}
-					evaluators[loc.BatchIdx] = ev
+					job = &batchJob{}
+					batchJobs[loc.BatchIdx] = job
 				}
- 
-				if ev.Matches(loc.RowIdx) {
+				job.rowIndices = append(job.rowIndices, loc.RowIdx)
+				job.resultIdx = append(job.resultIdx, i)
+			}
+
+			// 2. Evaluate each batch
+			filteredMask := make([]bool, len(merged))
+			for bIdx, job := range batchJobs {
+				ev, err := query.NewFilterEvaluator(idx.dataset.Records[bIdx], filters)
+				if err != nil {
+					continue
+				}
+				matches := ev.MatchesBatch(job.rowIndices)
+				
+				// Create a quick lookup for matched row indices in this batch
+				matchMap := make(map[int]struct{}, len(matches))
+				for _, m := range matches {
+					matchMap[m] = struct{}{}
+				}
+				
+				// Mark results in the filteredMask
+				for k, rowIdx := range job.rowIndices {
+					if _, matched := matchMap[rowIdx]; matched {
+						resIdx := job.resultIdx[k]
+						filteredMask[resIdx] = true
+					}
+				}
+			}
+
+			// 3. Rebuild filtered results
+			filtered := merged[:0]
+			for i, r := range merged {
+				if filteredMask[i] {
 					filtered = append(filtered, r)
 				}
 			}
@@ -782,12 +812,12 @@ func (idx *ShardedHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, 
 	return merged, nil
 }
 
-// Len returns the total number of vectors indexed across all shards.
-// GetIndexType returns "sharded_hnsw".
+// GetIndexType returns the string identifier for the sharded HNSW index.
 func (idx *ShardedHNSW) GetIndexType() string {
 	return "sharded_hnsw"
 }
 
+// Len returns the total number of vectors indexed across all shards.
 func (idx *ShardedHNSW) Len() int {
 	return int(idx.nextID.Load())
 }

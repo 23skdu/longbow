@@ -362,3 +362,11 @@ func (w *pooledIndexWrapper) UpdateGraph(offsets []uint32, neighbors []uint32, w
 func (w *pooledIndexWrapper) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	return w.pooled.index.GraphExpand(seeds, depth, alpha)
 }
+
+func (w *pooledIndexWrapper) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
+	return w.pooled.index.HaversineSearch(centerLat, centerLon, points, earthRadius)
+}
+
+func (w *pooledIndexWrapper) NormBatch(vectors []float32, dims int) ([]float32, error) {
+	return w.pooled.index.NormBatch(vectors, dims)
+}

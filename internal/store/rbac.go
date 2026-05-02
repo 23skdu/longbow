@@ -10,23 +10,35 @@ import (
 	"time"
 )
 
+// Role defines the access level for a user or service.
 type Role string
 
 const (
-	RoleAdmin     Role = "admin"
+	// RoleAdmin has full access to all system operations.
+	RoleAdmin Role = "admin"
+	// RoleReadWrite has access to read and modify data.
 	RoleReadWrite Role = "read-write"
-	RoleReadOnly  Role = "read-only"
-	RoleIngest    Role = "ingest-only"
+	// RoleReadOnly has access to read data only.
+	RoleReadOnly Role = "read-only"
+	// RoleIngest has access to read data and ingest new vectors.
+	RoleIngest Role = "ingest-only"
 )
 
+// Permission defines a specific action that can be performed in the system.
 type Permission string
 
 const (
-	PermRead   Permission = "read"
-	PermWrite  Permission = "write"
+	// PermRead allows reading vector data and metadata.
+	PermRead Permission = "read"
+	// PermWrite allows updating existing vectors and metadata.
+	PermWrite Permission = "write"
+	// PermDelete allows deleting vectors and datasets.
 	PermDelete Permission = "delete"
+	// PermIngest allows adding new vectors to datasets.
 	PermIngest Permission = "ingest"
-	PermAdmin  Permission = "admin"
+	// PermAdmin allows performing administrative tasks like backup and sync.
+	PermAdmin Permission = "admin"
+	// PermBackup allows performing dataset backups.
 	PermBackup Permission = "backup"
 )
 
@@ -37,6 +49,7 @@ var rolePermissions = map[Role][]Permission{
 	RoleIngest:    {PermRead, PermIngest},
 }
 
+// HasPermission checks if a role has the specified permission.
 func (r Role) HasPermission(perm Permission) bool {
 	perms, ok := rolePermissions[r]
 	if !ok {
@@ -50,6 +63,7 @@ func (r Role) HasPermission(perm Permission) bool {
 	return false
 }
 
+// APIKey represents a security credential for accessing the store with associated permissions.
 type APIKey struct {
 	KeyID       string
 	KeyHash     string
@@ -64,12 +78,14 @@ type APIKey struct {
 	Enabled     bool
 }
 
+// RBACManager handles Role-Based Access Control for the vector store.
 type RBACManager struct {
 	mu      sync.RWMutex
 	apiKeys map[string]*APIKey
 	roles   map[string]map[Role]bool
 }
 
+// NewRBACManager creates a new instance of RBACManager.
 func NewRBACManager() *RBACManager {
 	return &RBACManager{
 		apiKeys: make(map[string]*APIKey),
@@ -77,6 +93,7 @@ func NewRBACManager() *RBACManager {
 	}
 }
 
+// CreateAPIKey generates and registers a new API key with the specified role and scope.
 func (r *RBACManager) CreateAPIKey(name string, role Role, namespace string, datasets []string) (*APIKey, error) {
 	keyBytes := make([]byte, 32)
 	if _, err := rand.Read(keyBytes); err != nil {
@@ -106,6 +123,7 @@ func (r *RBACManager) CreateAPIKey(name string, role Role, namespace string, dat
 	return apiKey, nil
 }
 
+// GetAPIKey retrieves an API key by its raw string value.
 func (r *RBACManager) GetAPIKey(keyStr string) (*APIKey, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -113,6 +131,7 @@ func (r *RBACManager) GetAPIKey(keyStr string) (*APIKey, bool) {
 	return ak, ok
 }
 
+// ValidateAPIKey checks if an API key exists, is enabled, and has not expired.
 func (r *RBACManager) ValidateAPIKey(keyStr string) (bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -133,6 +152,7 @@ func (r *RBACManager) ValidateAPIKey(keyStr string) (bool, error) {
 	return true, nil
 }
 
+// CheckPermission verifies if the provided API key has permission for a specific action in a namespace/dataset.
 func (r *RBACManager) CheckPermission(keyStr string, perm Permission, namespace, dataset string) (bool, error) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -170,6 +190,7 @@ func (r *RBACManager) CheckPermission(keyStr string, perm Permission, namespace,
 	return true, nil
 }
 
+// RevokeAPIKey disables an existing API key.
 func (r *RBACManager) RevokeAPIKey(keyStr string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -182,6 +203,7 @@ func (r *RBACManager) RevokeAPIKey(keyStr string) error {
 	return nil
 }
 
+// DeleteAPIKey removes an API key from the registry.
 func (r *RBACManager) DeleteAPIKey(keyStr string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -194,6 +216,7 @@ func (r *RBACManager) DeleteAPIKey(keyStr string) error {
 	return nil
 }
 
+// ListAPIKeys returns a list of all registered API keys.
 func (r *RBACManager) ListAPIKeys() []*APIKey {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -205,6 +228,7 @@ func (r *RBACManager) ListAPIKeys() []*APIKey {
 	return keys
 }
 
+// UpdateAPIKey updates the properties of an existing API key.
 func (r *RBACManager) UpdateAPIKey(keyStr string, role Role, namespace string, datasets []string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()

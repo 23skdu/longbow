@@ -117,6 +117,10 @@ type Index interface {
 	// Graph methods
 	UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error
 	GraphExpand(seeds []uint32, depth int, alpha float32) (ids []uint32, scores []float32, err error)
+
+	// Spatial and Temporal Acceleration
+	HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error)
+	NormBatch(vectors []float32, dims int) ([]float32, error)
 }
 
 func DetectGPUBackend() GPUBackend {

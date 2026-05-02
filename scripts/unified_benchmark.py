@@ -22,8 +22,12 @@ import signal
 import subprocess
 import sys
 import time
-import numpy as np
-import pandas as pd
+try:
+    import numpy as np
+    import pandas as pd
+    HAS_ANALYSIS_LIBS = True
+except ImportError:
+    HAS_ANALYSIS_LIBS = False
 from datetime import datetime
 
 try:
@@ -238,8 +242,8 @@ class BenchmarkRunner:
         if self.args.iouring:
             env["LONGBOW_STORAGE_USE_IOURING"] = "true"
 
-        # Standardize on port 3000 to ensure single-instance testing
-        port = 3000
+        # Use provided port or default to 3000
+        port = self.args.port
 
         log_file = os.path.join(self.log_dir, f"longbow_{self.args.mode}_{label}.log")
 
@@ -284,6 +288,8 @@ class BenchmarkRunner:
         # Enable GPU for metal/cuda benchmark modes
         if self.args.mode in ["metal", "cuda"]:
             env["LONGBOW_GPU_ENABLED"] = "true"
+        else:
+            env["LONGBOW_GPU_ENABLED"] = "false"
 
         # Enable RDMA for cluster mode
         if self.args.rdma:
@@ -375,6 +381,9 @@ class BenchmarkRunner:
     
     def run_benchmark_sdk(self, dim, dtype, count, label):
         """Run benchmark using Python SDK for accuracy comparison"""
+        if not HAS_ANALYSIS_LIBS:
+            print("  Skipping SDK test: numpy/pandas not installed")
+            return False
         client = self.get_sdk_client()
         if not client:
             return False
@@ -450,7 +459,7 @@ class BenchmarkRunner:
         if self.args.mode == "temporal":
             search_modes = "temporal_as_of,temporal_range,temporal_window"
         
-        cmd = f"{bench_tool} -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -dataset {label} -json {json_file}"
+        cmd = f"{bench_tool} -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file}"
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)
         
@@ -528,9 +537,9 @@ class BenchmarkRunner:
         return True
 
     def execute_recommend(self):
-        if not HAS_LONGBOW_SDK:
+        if not HAS_LONGBOW_SDK or not HAS_ANALYSIS_LIBS:
             print(
-                "Error: longbow Python SDK not installed. Install with: pip install longbow"
+                "Error: longbow SDK or numpy/pandas not installed."
             )
             return
 
@@ -764,9 +773,9 @@ class BenchmarkRunner:
 
     def execute_graphrag(self):
         """Test GraphRAG graph spreading activation operations."""
-        if not HAS_LONGBOW_SDK:
+        if not HAS_LONGBOW_SDK or not HAS_ANALYSIS_LIBS:
             print(
-                "Error: longbow Python SDK not installed. Install with: pip install longbow"
+                "Error: longbow SDK or numpy/pandas not installed."
             )
             return
 
@@ -2675,6 +2684,18 @@ if __name__ == "__main__":
         help="Enable pprof collection during benchmarks",
     )
 
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=3000,
+        help="Base port for server instances (default 3000)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="Number of concurrent search workers (default 8)",
+    )
     args = parser.parse_args()
     runner = BenchmarkRunner(args)
     runner.execute()

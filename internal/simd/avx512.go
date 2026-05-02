@@ -445,6 +445,22 @@ func dot1536AVX512(a, b []float32) (float32, error) {
 	return dot1536AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])), nil
 }
 
+func euclidean1024AVX512(a, b []float32) (float32, error) {
+	return euclideanAVX512(a, b)
+}
+
+func euclidean3072AVX512(a, b []float32) (float32, error) {
+	return euclideanAVX512(a, b)
+}
+
+func dot1024AVX512(a, b []float32) (float32, error) {
+	return dotAVX512(a, b)
+}
+
+func dot3072AVX512(a, b []float32) (float32, error) {
+	return dotAVX512(a, b)
+}
+
 func euclidean16AVX512Wrapper(a, b []float32) (float32, error) {
 	if len(a) != 16 || len(b) != 16 {
 		return 0, errors.New("simd: expected dimension 16")

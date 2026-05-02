@@ -2947,8 +2947,12 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				switch vAny := vecAny.(type) {
 				case []float32:
 					// Convert q to float32
-					minV, maxV := h.quantizer.Params()
-					scale := (maxV - minV) / 255.0
+					var minV, maxV float32
+					var scale float32
+					if h.quantizer != nil {
+						minV, maxV = h.quantizer.Params()
+						scale = (maxV - minV) / 255.0
+					}
 					var sum float32
 					for i, val := range q {
 						deq := minV + float32(val)*scale

@@ -796,6 +796,15 @@ var (
 	)
 
 
+	// SimdDispatchTotal counts SIMD dispatch calls by implementation type
+	SimdDispatchTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_simd_dispatch_total",
+			Help: "Total number of SIMD dispatch calls by implementation",
+		},
+		[]string{"implementation", "operation"},
+	)
+
 	// =============================================================================
 	// Remote Storage Metrics (S3/GCS)
 	// =============================================================================

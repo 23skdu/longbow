@@ -23,18 +23,22 @@ All commands support the following global options:
 ## Commands
 
 ### 1. Import Data
+
 Import vectors from Parquet, NumPy, or generate demo data. Supports local filesystem and remote S3 buckets.
 
 **Usage:**
+
 `longbow-cli import -dataset <name> [options]`
 
 **Options:**
+
 - `-dataset string`: Target dataset name (required)
 - `-input string`: Path to `.parquet`, `.npy`, or `s3://bucket/key` (required)
 - `-dim int`: Vector dimension (default: 128, used for demo data)
 - `-count int`: Number of vectors to generate (default: 1000, used for demo data)
 
 **Example:**
+
 ```bash
 # Local file
 longbow-cli import -dataset my-collection -input data.parquet
@@ -46,12 +50,15 @@ longbow-cli import -dataset my-collection -input s3://my-bucket/vectors.parquet
 ### 2. Search Commands
 
 #### Vector Search
+
 Perform high-performance vector searches using various modes.
 
 **Usage:**
+
 `longbow-cli search -dataset <name> -mode <type> [options]`
 
 **Options:**
+
 - `-dataset string`: Dataset name (required)
 - `-mode string`: Search mode (dense, sparse, filtered, hybrid)
 - `-vector string`: Query vector as comma-separated floats
@@ -60,18 +67,23 @@ Perform high-performance vector searches using various modes.
 - `-k int`: Number of results to return
 
 #### Geospatial Search
+
 Search for vectors within a physical radius.
 
 **Usage:**
+
 `longbow-cli geo-search -dataset <name> -lat <val> -lon <val> -radius <km> -k <n>`
 
 #### Recommendations
+
 Get similar vectors based on existing IDs.
 
 **Usage:**
+
 `longbow-cli recommend -dataset <name> -seeds <id1,id2> -k <n> -alpha <f>`
 
 ### 3. Namespace & Dataset Management
+
 Manage logical groupings and lifecycle of data.
 
 - **Create Namespace:** `longbow-cli create-namespace -name <name>`
@@ -82,9 +94,10 @@ Manage logical groupings and lifecycle of data.
 - **Delete ID:** `longbow-cli delete -dataset <name> -id <id>`
 - **Snapshot:** `longbow-cli snapshot` (Triggers manual disk flush)
 - **Stats:** `longbow-cli stats -dataset <name>`
-- **Drop Dataset:** `longbow-cli drop -dataset <name>` (Evicts dataset from memory)
+- **Drop Dataset:** `longbow-cli drop -dataset <name>` (Evicts dataset from memory and clears RCU/COW structures)
 
 ### 4. Graph & GraphRAG Operations
+
 Administrative tools for managing the HNSW graph as a knowledge graph.
 
 - **Add Edge:** `longbow-cli add-edge -dataset <ds> -subject <id> -predicate <p> -object <id> -weight <f>`
@@ -94,12 +107,15 @@ Administrative tools for managing the HNSW graph as a knowledge graph.
 - **Community Detection:** `longbow-cli detect-communities -dataset <ds>`
 
 ### 5. Temporal Search
+
 Query the temporal index for versioned data.
 
 **Usage:**
+
 `longbow-cli temporal-search -dataset <name> -type <as_of|range|window> [options]`
 
 **Options:**
+
 - `-dataset string`: Target dataset name (required)
 - `-type string`: Search type (as_of, range, window)
 - `-ts int`: Unix nanosecond timestamp for `as_of`

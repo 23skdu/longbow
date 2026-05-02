@@ -47,6 +47,59 @@ github.com/23skdu/longbow/internal/store.SearchHybrid(...)
 
 ---
 
+## Build Failure on Linux AMD64 (Go 1.26.1) - FIXED
+
+### Issue: Multiple Build Failures on ancalagon (Linux AMD64)
+
+**Date Identified:** 2026-05-02
+
+**Symptom:** `go build` fails on ancalagon (Linux AMD64) with multiple errors:
+1. `internal/mesh/region.go:7:2: found packages gen and simd in internal/simd`
+2. `internal/simd/dispatch.go:238:30: undefined: accumulateWeightedScatterNEON`
+3. `internal/simd/sparse_score_amd64.go:16:5: undefined: hasAVX512`
+4. `internal/simd/sparse_score_amd64.s:103: unrecognized instruction "CVTSI2SS"`
+
+**Root Cause Analysis:**
+
+1. **Package Declaration Error**: Generated file `internal/simd/all_kernels_stubs_amd64.go` declares `package gen` instead of `package simd`
+2. **Cross-Platform Function Reference**: `dispatch.go` references `accumulateWeightedScatterNEON` (ARM64-only) without build constraints for AMD64 builds
+3. **Missing CPU Features Variable**: `sparse_score_amd64.go` references `hasAVX512` but doesn't access the package-level `features` variable correctly
+4. **Assembly Instruction Compatibility**: `sparse_score_amd64.s` uses x87 instructions (CVTSI2SS) not supported by Go assembler on all platforms
+
+**Fix Steps Applied:**
+
+1. **Fix package declaration** (all_kernels_stubs_amd64.go:3):
+   ```diff
+   - package gen
+   + package simd
+   ```
+
+2. **Fix dispatch.go ARM64 function reference** (dispatch.go:238):
+   ```diff
+   - AccumulateWeightedScatter: accumulateWeightedScatterNEON,
+   - BM25ScoreBatch: bm25ScoreBatchArch,
+   + AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
+   + BM25ScoreBatch: bm25ScoreBatchGeneric,
+   ```
+
+3. **Fix sparse_score_amd64.go CPU features reference** (sparse_score_amd64.go:16):
+   ```diff
+   - if hasAVX512 {
+   + if features.HasAVX512 {
+   ```
+
+4. **Fix sparse_score_amd64.s assembly** (sparse_score_amd64.s):
+   - Simplified to no-op fallback since pure Go implementation handles BM25 correctly
+   - Removed complex AVX-512 assembly that had cross-platform compatibility issues
+
+**Verification:**
+- Local (Darwin ARM64): Builds successfully
+- Remote (ancalagon Linux AMD64): Builds successfully
+
+**Key Takeaway:** Always use `git fetch/reset` to sync code between hosts. Never use rsync. Test builds on all target platforms before pushing.
+
+---
+
 ## Future Work (v0.2.2+)
 
 ## Future Work (v0.2.2+)

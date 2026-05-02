@@ -18,6 +18,7 @@ import json
 import os
 import platform
 import re
+import signal
 import subprocess
 import sys
 import time
@@ -109,12 +110,13 @@ class BenchmarkRunner:
         self.data_dir = os.environ.get(
             "LONGBOW_DATA_PATH", os.path.join(os.getcwd(), "data/bench")
         )
-
-        self.bin_dir = os.path.join(os.getcwd(), "bin")
         self.log_dir = os.path.join(os.getcwd(), "data/perf_logs")
+        print(f"DEBUG: data_dir={self.data_dir}")
+        print(f"DEBUG: log_dir={self.log_dir}")
         os.makedirs(self.log_dir, exist_ok=True)
         os.makedirs(self.data_dir, exist_ok=True)
 
+        self.bin_dir = os.path.join(os.getcwd(), "bin")
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         label_suffix = f"_{args.label}" if args.label else ""
         self.output_file = os.path.join(
@@ -287,6 +289,8 @@ class BenchmarkRunner:
         if self.args.rdma:
             env["LONGBOW_RDMA_ENABLED"] = "true"
 
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir, exist_ok=True)
         with open(log_file, "w") as f:
             process = subprocess.Popen(
                 [server_bin],
@@ -318,12 +322,37 @@ class BenchmarkRunner:
     def stop_server(self):
         if self.server_pid:
             try:
-                subprocess.run(
-                    f"kill -9 {self.server_pid}", shell=True, stderr=subprocess.DEVNULL
-                )
-            except:
+                os.kill(self.server_pid, signal.SIGTERM)
+                time.sleep(1)
+            except ProcessLookupError:
                 pass
             self.server_pid = None
+
+    def collect_pprof(self, label):
+        """Collect pprof profiles from the running server."""
+        profiles = ["profile", "heap", "allocs", "goroutine", "threadcreate", "block", "mutex"]
+        os.makedirs("profiles", exist_ok=True)
+        
+        host, port = self.server_addr.split(":")
+        # Metrics server is typically on base_port + 6000.
+        # unified_benchmark sets LONGBOW_METRICS_ADDR to 127.0.0.1:{port + 6000}
+        metrics_port = 9000
+        
+        for profile in profiles:
+            url = f"http://{host}:{metrics_port}/debug/pprof/{profile}"
+            if profile == "profile":
+                url += "?seconds=5"
+            
+            output_file = os.path.join("profiles", f"{label}_{profile}_{self.timestamp}.pprof")
+            try:
+                res = subprocess.run(f"curl -s -v -o {output_file} {url}", shell=True, capture_output=True, text=True, timeout=15)
+                if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                    print(f"  Collected {profile} profile")
+                else:
+                    print(f"  Failed to collect {profile} profile: {res.stderr}")
+            except Exception as e:
+                print(f"  Error collecting {profile}: {e}")
+                continue
 
     def run_benchmark_cli(self, dim, dtype, count, label):
         """Run benchmark using longbow-cli for comparison"""
@@ -2110,6 +2139,8 @@ class BenchmarkRunner:
                                 f,
                                 indent=2,
                             )
+                        if self.args.pprof:
+                            self.collect_pprof(label)
                     finally:
                         self.stop_server()
                         # Clean up data directory
@@ -2637,6 +2668,11 @@ if __name__ == "__main__":
         "--iouring",
         action="store_true",
         help="Enable io_uring optimized Parquet snapshots",
+    )
+    parser.add_argument(
+        "--pprof",
+        action="store_true",
+        help="Enable pprof collection during benchmarks",
     )
 
     args = parser.parse_args()

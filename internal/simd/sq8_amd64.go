@@ -29,5 +29,8 @@ func euclideanSQ8AVX512(a, b []byte) (int32, error) {
 	return euclideanSQ8AVX2(a, b)
 }
 */
-
-// euclideanSQ8AVX2Kernel is now in all_kernels_stubs_amd64.go
+var _ = func() {
+	if false {
+		_, _ = euclideanSQ8AVX2(nil, nil)
+	}
+}

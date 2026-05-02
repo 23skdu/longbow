@@ -25,13 +25,13 @@ func TestComprehensiveDistances(t *testing.T) {
 		t.Run("Euclidean", func(t *testing.T) {
 			res, err := EuclideanDistance(a, b)
 			assert.NoError(t, err)
-			assert.Greater(t, res, float32(0))
+			assert.True(t, res > 0)
 		})
 
 		t.Run("Cosine", func(t *testing.T) {
 			res, err := CosineDistance(a, b)
 			assert.NoError(t, err)
-			assert.Greater(t, res, float32(0))
+			assert.True(t, res > 0)
 		})
 
 		t.Run("DotProduct", func(t *testing.T) {
@@ -43,13 +43,13 @@ func TestComprehensiveDistances(t *testing.T) {
 		t.Run("L2Squared", func(t *testing.T) {
 			res, err := L2Squared(a, b)
 			assert.NoError(t, err)
-			assert.Greater(t, res, float32(0))
+			assert.True(t, res > 0)
 		})
 
 		t.Run("L2SquaredFloat32_Generic", func(t *testing.T) {
 			res, err := L2SquaredFloat32(a, b)
 			assert.NoError(t, err)
-			assert.Greater(t, res, float32(0))
+			assert.True(t, res > 0)
 		})
 	})
 

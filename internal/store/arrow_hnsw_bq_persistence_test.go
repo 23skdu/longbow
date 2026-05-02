@@ -31,6 +31,7 @@ func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.New(os.Stdout)
 	store := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
+	store.StartIndexingWorkers(1)
 	err = store.InitPersistence(config)
 	require.NoError(t, err)
 

@@ -255,7 +255,7 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 	if len(pool) <= maxConn { return pool }
 
 	dists := make([]float32, len(pool))
-	h.computeDistances(data, nodeID, pool, dists)
+	h.computeDistances(ctx, data, nodeID, pool, dists)
 	
 	candidates := make([]types.Candidate, len(pool))
 	for i := 0; i < len(pool); i++ {
@@ -303,12 +303,12 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 }
 
 // computeDistances calculates distance from nodeID to multiple targets using type-aware helper.
-func (h *ArrowHNSW) computeDistances(data *types.GraphData, nodeID uint32, neighbors []uint32, dists []float32) {
-	v1 := h.getVectorF32(data, nodeID)
+func (h *ArrowHNSW) computeDistances(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, neighbors []uint32, dists []float32) {
+	v1 := h.getVectorF32Optimized(ctx, data, nodeID, 0)
 	if v1 == nil { return }
 
 	for i, nbID := range neighbors {
-		v2 := h.getVectorF32(data, nbID)
+		v2 := h.getVectorF32Optimized(ctx, data, nbID, 1)
 		if v2 != nil {
 			d, _ := h.distFunc(v1, v2)
 			dists[i] = d
@@ -318,62 +318,56 @@ func (h *ArrowHNSW) computeDistances(data *types.GraphData, nodeID uint32, neigh
 	}
 }
 
-// getVectorF32 ensures the vector is returned as []float32 for distance calculations.
-func (h *ArrowHNSW) getVectorF32(data *types.GraphData, id uint32) []float32 {
+// getVectorF32Optimized ensures the vector is returned as []float32 for distance calculations using ctx buffers.
+func (h *ArrowHNSW) getVectorF32Optimized(ctx *ArrowSearchContext, data *types.GraphData, id uint32, bufIdx int) []float32 {
 	vecAny, err := data.GetVector(id)
 	if err != nil || vecAny == nil { return nil }
 
-	switch v := vecAny.(type) {
-	case []float32: return v
-	case []int32:
-		f := make([]float32, len(v))
-		simd.Int32ToFloat32(v, f)
-		return f
-	case []uint32:
-		f := make([]float32, len(v))
-		simd.Uint32ToFloat32(v, f)
-		return f
-	case []int8:
-		f := make([]float32, len(v))
-		simd.Int8ToFloat32(v, f)
-		return f
-	case []uint8:
-		f := make([]float32, len(v))
-		simd.Uint8ToFloat32(v, f)
-		return f
-	case []int16:
-		f := make([]float32, len(v))
-		simd.Int16ToFloat32(v, f)
-		return f
-	case []uint16:
-		f := make([]float32, len(v))
-		simd.Uint16ToFloat32(v, f)
-		return f
-	case []float64:
-		f := make([]float32, len(v))
-		for i, val := range v { f[i] = float32(val) }
-		return f
-	case []float16.Num:
-		f := make([]float32, len(v))
-		simd.Float16ToFloat32(v, f)
-		return f
-	case []complex64:
-		// Use real part or magnitude? Standard HNSW for complex usually uses magnitude.
-		// But here we need []float32. Let's return real parts for now if that's the pattern,
-		// or better, return it in a way that matches extractVector.
-		f := make([]float32, len(v)*2)
-		for i, val := range v {
-			f[2*i] = real(val)
-			f[2*i+1] = imag(val)
-		}
-		return f
-	case []complex128:
-		f := make([]float32, len(v)*2)
-		for i, val := range v {
-			f[2*i] = float32(real(val))
-			f[2*i+1] = float32(imag(val))
-		}
-		return f
-	default: return nil
+	if v, ok := vecAny.([]float32); ok {
+		return v
 	}
+
+	// Use pre-allocated buffers from ctx to avoid allocations
+	var dst []float32
+	if ctx != nil {
+		if bufIdx == 0 {
+			if len(ctx.bufF32) < data.Dims {
+				ctx.bufF32 = make([]float32, data.Dims*2)
+			}
+			dst = ctx.bufF32[:data.Dims]
+		} else {
+			if len(ctx.bufF32_2) < data.Dims {
+				ctx.bufF32_2 = make([]float32, data.Dims*2)
+			}
+			dst = ctx.bufF32_2[:data.Dims]
+		}
+	}
+
+	switch v := vecAny.(type) {
+	case []int32:
+		if dst != nil { simd.Int32ToFloat32(v, dst); return dst }
+		f := make([]float32, len(v)); simd.Int32ToFloat32(v, f); return f
+	case []uint32:
+		if dst != nil { simd.Uint32ToFloat32(v, dst); return dst }
+		f := make([]float32, len(v)); simd.Uint32ToFloat32(v, f); return f
+	case []int8:
+		if dst != nil { simd.Int8ToFloat32(v, dst); return dst }
+		f := make([]float32, len(v)); simd.Int8ToFloat32(v, f); return f
+	case []uint8:
+		if dst != nil { simd.Uint8ToFloat32(v, dst); return dst }
+		f := make([]float32, len(v)); simd.Uint8ToFloat32(v, f); return f
+	case []int16:
+		if dst != nil { simd.Int16ToFloat32(v, dst); return dst }
+		f := make([]float32, len(v)); simd.Int16ToFloat32(v, f); return f
+	case []uint16:
+		if dst != nil { simd.Uint16ToFloat32(v, dst); return dst }
+		f := make([]float32, len(v)); simd.Uint16ToFloat32(v, f); return f
+	case []float64:
+		if dst != nil { for i, val := range v { dst[i] = float32(val) }; return dst }
+		f := make([]float32, len(v)); for i, val := range v { f[i] = float32(val) }; return f
+	case []float16.Num:
+		if dst != nil { simd.Float16ToFloat32(v, dst); return dst }
+		f := make([]float32, len(v)); simd.Float16ToFloat32(v, f); return f
+	}
+	return nil
 }

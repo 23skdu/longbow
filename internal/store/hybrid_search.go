@@ -27,7 +27,7 @@ type HybridSearchRequest struct {
 
 // SearchHybrid performs a hybrid search combining dense vector search and sparse keyword search.
 // If alpha is < 0, it is automatically estimated using EstimateAlpha.
-func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]SearchResult, error) {
+func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]SearchResult, error) {
 	// Adaptive Alpha
 	if alpha < 0 {
 		alpha = EstimateAlpha(textQuery)
@@ -180,7 +180,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 }
 
 // HybridSearch performs a filtered vector search using inverted indexes for pre-filtering.
-func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []float32, k int, filters map[string]string) ([]SearchResult, error) {
+func (s *VectorStore) HybridSearch(ctx context.Context, name string, queryVec []float32, k int, filters map[string]string) ([]SearchResult, error) {
 	defer func(start time.Time) {
 		metrics.SearchLatencySeconds.WithLabelValues(name, "hybrid_filtered").Observe(time.Since(start).Seconds())
 	}(time.Now())

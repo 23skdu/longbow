@@ -103,6 +103,9 @@ var _ = func() {
 	if false {
 		_ = adcBatchNEON(nil, nil, 0, nil)
 		_ = euclideanVerticalBatchNEON(nil, nil, nil)
+		_, _ = manhattanNEON(nil, nil)
+		_, _ = chebyshevNEON(nil, nil)
+		_, _ = brayCurtisNEON(nil, nil)
 	}
 }
 

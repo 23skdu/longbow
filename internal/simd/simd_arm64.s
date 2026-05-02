@@ -2,6 +2,17 @@
 
 #include "textflag.h"
 
+#define VFADD_V(m, n, d) WORD $(0x4e20d400 | ((m) << 16) | ((n) << 5) | (d))
+#define VFSUB_V(m, n, d) WORD $(0x4ea0d400 | ((m) << 16) | ((n) << 5) | (d))
+#define VFMUL_V(m, n, d) WORD $(0x6e20dc00 | ((m) << 16) | ((n) << 5) | (d))
+#define VFMLA_V(m, n, d) WORD $(0x4e20cc00 | ((m) << 16) | ((n) << 5) | (d))
+#define VFNEG_V(n, d)    WORD $(0x6ea1f800 | ((n) << 5) | (d))
+#define VFCVTZS_V(n, d)  WORD $(0x4e21b800 | ((n) << 5) | (d))
+#define VSCVTF_V(n, d)   WORD $(0x4e21d800 | ((n) << 5) | (d))
+#define VFRINTM_V(n, d)  WORD $(0x4e214000 | ((n) << 5) | (d))
+#define VFRECPE_V(n, d)  WORD $(0x4e21d000 | ((n) << 5) | (d))
+#define VFRECPS_V(m, n, d) WORD $(0x4e20fc00 | ((m) << 16) | ((n) << 5) | (d))
+
 // func euclideanNEONKernel(a, b []float32) float32
 TEXT ·euclideanNEONKernel(SB), NOSPLIT, $0-52
     MOVD    a_base+0(FP), R0
@@ -22,7 +33,7 @@ loop_4x:
     VLD1.P  16(R2), [V2.S4]
 
     // FSUB V1.4S, V2.4S, V3.4S (V3 = V1 - V2)
-    WORD    $0x6ea2d423
+    WORD    $0x4ea2d423
 
     // Accumulate diff^2: V0 += V3 * V3
     VFMLA   V3.S4, V3.S4, V0.S4
@@ -35,26 +46,26 @@ loop_4x:
     VMOV    V0.S[1], V1.S[0]
     VMOV    V0.S[2], V2.S[0]
     VMOV    V0.S[3], V3.S[0]
-    FADDS   F0, F1, F1     // F1 = F1 + F0 (accumulate V0[0])
-    FADDS   F2, F1, F1
-    FADDS   F3, F1, F1
+    FADDS   F1, F0, F0
+    FADDS   F2, F0, F0
+    FADDS   F3, F0, F0
 
 tail_loop:
     CBZ     R1, done
     
-    FMOVS.P 4(R0), F4
-    FMOVS.P 4(R2), F5
+    FMOVS.P 4(R0), F1
+    FMOVS.P 4(R2), F2
     
-    FSUBS   F5, F4, F6
-    FMULS   F6, F6, F6
-    FADDS   F6, F1, F1
+    FSUBS   F2, F1, F3
+    FMULS   F3, F3, F3
+    FADDS   F3, F0, F0
     
     SUB     $1, R1
     B       tail_loop
 
 done:
-    FSQRTS  F1, F1
-    FMOVS   F1, ret+48(FP)
+    FSQRTS  F0, F0
+    FMOVS   F0, ret+48(FP)
     RET
 
 // func euclideanHighDimNEONKernel(a, b []float32) float32
@@ -298,7 +309,7 @@ l2_loop_4x:
     VLD1.P  16(R2), [V2.S4]
 
     // FSUB V1.4S, V2.4S, V3.4S (V3 = V1 - V2)
-    WORD    $0x6ea2d423
+    WORD    $0x4ea2d423
 
     // Accumulate diff^2: V0 += V3 * V3
     VFMLA   V3.S4, V3.S4, V0.S4
@@ -589,10 +600,6 @@ ret_one:
     FMOVS   $1.0, F0
     FMOVS   F0, ret+48(FP)
     RET
-
-// Macros to resolve Go assembler issues with vector floating-point instructions
-#define VFADD_V(m, n, d) WORD $(0x4e20d400 | ((m) << 16) | ((n) << 5) | (d))
-#define VFSUB_V(m, n, d) WORD $(0x4ea0d400 | ((m) << 16) | ((n) << 5) | (d))
 
 // func fastWalshHadamardTransform32NEONKernel(a []float32)
 TEXT ·fastWalshHadamardTransform32NEONKernel(SB), NOSPLIT, $0-24
@@ -1493,7 +1500,7 @@ TEXT ·l2Squared128NEONKernel(SB), NOSPLIT, $0-52
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
 
-    MOVW    $32, R1
+    MOVW    $8, R1
 
 l2sq128_loop:
     VLD1.P  16(R0), [V4.S4]
@@ -1546,7 +1553,7 @@ TEXT ·l2Squared384NEONKernel(SB), NOSPLIT, $0-52
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
 
-    MOVW    $96, R1
+    MOVW    $24, R1
 
 l2sq384_loop:
     VLD1.P  16(R0), [V4.S4]
@@ -1599,7 +1606,7 @@ TEXT ·l2Squared768NEONKernel(SB), NOSPLIT, $0-52
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
 
-    MOVW    $192, R1
+    MOVW    $48, R1
 
 l2sq768_loop:
     VLD1.P  16(R0), [V4.S4]
@@ -1652,7 +1659,7 @@ TEXT ·l2Squared1024NEONKernel(SB), NOSPLIT, $0-52
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
 
-    MOVW    $256, R1
+    MOVW    $64, R1
 
 l2sq1024_loop:
     VLD1.P  16(R0), [V4.S4]
@@ -1705,7 +1712,7 @@ TEXT ·l2Squared1536NEONKernel(SB), NOSPLIT, $0-52
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
 
-    MOVW    $384, R1
+    MOVW    $96, R1
 
 l2sq1536_loop:
     VLD1.P  16(R0), [V4.S4]
@@ -1758,7 +1765,7 @@ TEXT ·l2Squared3072NEONKernel(SB), NOSPLIT, $0-52
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
 
-    MOVW    $768, R1
+    MOVW    $192, R1
 
 l2sq3072_loop:
     VLD1.P  16(R0), [V4.S4]
@@ -1808,93 +1815,102 @@ TEXT ·expNEONKernel(SB), NOSPLIT, $0-24
 
     CBZ     R2, exp_done
 
-    // Constants
-    FMOVS   $1.44269504, F31    // log2(e)
-    FMOVS   $0.5, F30           // half
     MOVW    $127, R3            // bias
+
+    MOVW    $0x3fb8aa3b, R4     // log2(e)
+    VMOV    R4, V31.S[0]
+    VDUP    V31.S[0], V31.S4
     
-    // Polynomial coefficients
-    FMOVS   $1.0, F28
-    FMOVS   $0.69314718, F27
-    FMOVS   $0.240226507, F26
-    FMOVS   $0.0555041086, F25
-    FMOVS   $0.009618129, F24
-    FMOVS   $0.00134204, F23
+    MOVW    $0x3f000000, R4     // 0.5
+    VMOV    R4, V30.S[0]
+    VDUP    V30.S[0], V30.S4
+    
+    MOVW    $0x3f800000, R4     // 1.0 (c0)
+    VMOV    R4, V28.S[0]
+    VDUP    V28.S[0], V28.S4
+    
+    MOVW    $0x3f317218, R4     // 0.69314718 (c1)
+    VMOV    R4, V27.S[0]
+    VDUP    V27.S[0], V27.S4
+    
+    MOVW    $127, R3            // Exponent bias
+    
+    MOVW    $0x3e762d61, R4     // 0.240226507 (c2)
+    VMOV    R4, V26.S[0]
+    VDUP    V26.S[0], V26.S4
+    
+    MOVW    $0x3d6359a4, R4     // 0.0555041086 (c3)
+    VMOV    R4, V25.S[0]
+    VDUP    V25.S[0], V25.S4
+    
+    MOVW    $0x3c1d9551, R4     // 0.009618129 (c4)
+    VMOV    R4, V24.S[0]
+    VDUP    V24.S[0], V24.S4
+    
+    MOVW    $0x3aafd05d, R4     // 0.00134204 (c5)
+    VMOV    R4, V23.S[0]
+    VDUP    V23.S[0], V23.S4
 
 exp_loop:
-    CMP     $4, R2
-    BLT     exp_tail
-    
-    VLD1.P  16(R0), [V0.S4]     // V0 = x
+    CBZ     R2, exp_done
+    FMOVS.P 4(R0), F0
     
     // z = x * log2(e)
-    VDUP    V31.S[0], V12.S4    // V12 = [log2e, log2e, log2e, log2e]
-    // FMUL V1.4S, V0.4S, V12.4S
-    WORD    $0x6e2c9401
+    FMULS   F31, F0, F1
+    FADDS   F30, F1, F2
+    FRINTMS F2, F2               // n = floor(z + 0.5)
+    FSUBS   F2, F1, F3           // f = z - n
     
-    // n = round_toward_minus_inf(z + 0.5)
-    VDUP    V30.S[0], V13.S4    // V13 = [0.5, ...]
-    VADD    V13.S4, V1.S4, V2.S4
-    // FRINTM V2.S4, V2.S4
-    WORD    $0x4e214042
+    // Poly for 2^f
+    FMOVS   $0.00134204, F4
+    FMULS   F3, F4, F4
+    FADDS   F24, F4, F4
+    FMULS   F3, F4, F4
+    FADDS   F25, F4, F4
+    FMULS   F3, F4, F4
+    FADDS   F26, F4, F4
+    FMULS   F3, F4, F4
+    FADDS   F27, F4, F4
+    FMULS   F3, F4, F4
+    FADDS   F28, F4, F4          // 2^f
     
-    // f = z - n
-    VSUB    V2.S4, V1.S4, V3.S4  // V3 = z - n = f
+    FCVTZSS F2, R4               // n as int
+    ADD     $127, R4, R4         // n + 127
+    LSL     $23, R4, R4          // shift to exponent
+    VMOV    R4, V5.S[0]          // bits of 2^n
+    FMULS   F4, F5, F0           // exp(x) = 2^f * 2^n
     
-    // Poly: c0 + f*(c1 + ... )
-    VORR    V23.B16, V23.B16, V4.B16 // V4 = c5
-    VFMLA   V24.S4, V3.S4, V4.S4
-    VFMLA   V25.S4, V3.S4, V4.S4
-    VFMLA   V26.S4, V3.S4, V4.S4
-    VFMLA   V27.S4, V3.S4, V4.S4
-    VFMLA   V28.S4, V3.S4, V4.S4    // V4 = 2^f
-    
-    // 2^n: convert float n → int, add IEEE bias, shift to exponent field
-    // FCVTZS V2.S4, V5.S4
-    WORD    $0x4e21b845
-    VMOV    R3, V6.S4           // V6 = [127, 127, 127, 127]
-    VADD    V5.S4, V6.S4, V5.S4
-    VSHL    $23, V5.S4, V5.S4
-    // FMUL V0.4S, V4.4S, V5.4S  (exp(x) = 2^f * 2^n)
-    WORD    $0x6e259480
-    
-    VST1.P  [V0.S4], 16(R1)
-    
-    SUB     $4, R2
+    FMOVS.P F0, 4(R1)
+    SUB     $1, R2
     B       exp_loop
 
 exp_tail:
     CBZ     R2, exp_done
     FMOVS.P 4(R0), F0
-    FMOVS   F0, F1              // copy to F1
-    FMULS   F31, F1, F1         // z = x * log2(e)
+    
+    FMULS   F31, F0, F1          // z = x * log2(e)
     FADDS   F30, F1, F2
-    // FRINTM S2, S2  (scalar round toward -inf)
-    WORD    $0x1e254042
-    FSUBS   F2, F1, F3          // f = z - n
+    FRINTMS F2, F2               // n = floor(z + 0.5)
+    FSUBS   F2, F1, F3           // f = z - n
     
-    FMOVS   $0.00134204, F4     // c5
-    FMOVS   $0.009618129, F5
+    // Polynomial for 2^f
+    FMOVS   $0.00134204, F4
     FMULS   F3, F4, F4
-    FADDS   F5, F4, F4          // c4 + f*c5
-    FMOVS   $0.0555041086, F5
+    FADDS   F24, F4, F4
     FMULS   F3, F4, F4
-    FADDS   F5, F4, F4
-    FMOVS   $0.240226507, F5
+    FADDS   F25, F4, F4
     FMULS   F3, F4, F4
-    FADDS   F5, F4, F4
-    FMOVS   $0.69314718, F5
+    FADDS   F26, F4, F4
     FMULS   F3, F4, F4
-    FADDS   F5, F4, F4
-    FMOVS   $1.0, F5
+    FADDS   F27, F4, F4
     FMULS   F3, F4, F4
-    FADDS   F5, F4, F4          // 2^f
+    FADDS   F28, F4, F4          // 2^f
     
-    FCVTZSS F2, R4              // n as int32
-    ADD     R3, R4, R4          // n + bias
-    LSL     $23, R4, R4
-    VMOV    V5.S[0], V20.S[0]   // extract 2^n scalar
-    FMULS   F20, F4, F0          // res = 2^f * 2^n
+    FCVTZSS F2, R4               // n as int
+    ADD     $127, R4, R4         // n + 127
+    LSL     $23, R4, R4          // shift to exponent
+    VMOV    R4, V5.S[0]          // 2^n as float bit pattern
+    FMULS   F4, F5, F0           // exp(x) = 2^f * 2^n
     
     FMOVS.P F0, 4(R1)
     SUB     $1, R2
@@ -1908,14 +1924,74 @@ TEXT ·sigmoidNEONKernel(SB), NOSPLIT, $0-24
     MOVD    src+0(FP), R0
     MOVD    dst+8(FP), R1
     MOVD    n+16(FP), R2
-    
+
     CBZ     R2, sigmoid_done
     
-sigmoid_loop:
-    FMOVS.P 4(R0), F0
-    FNEGS   F0, F0              // -x
+    FMOVS   $1.44269504, F31    // log2(e)
+    FMOVS   $0.5, F30           // half
+    MOVW    $127, R3            // bias
+    FMOVS   $1.0, F29           // 1.0
     
-    // exp(-x) approximation
+    // Poly constants
+    MOVW    $0x3f317218, R4     // 0.69314718 (c1)
+    VMOV    R4, V27.S[0]
+    MOVW    $0x3e762d61, R4     // 0.240226507 (c2)
+    VMOV    R4, V26.S[0]
+    MOVW    $0x3d6359a4, R4     // 0.0555041086 (c3)
+    VMOV    R4, V25.S[0]
+    MOVW    $0x3c1d9551, R4     // 0.009618129 (c4)
+    VMOV    R4, V24.S[0]
+    MOVW    $0x3f800000, R4     // 1.0 (c0)
+    VMOV    R4, V28.S[0]
+
+    VDUP    V31.S[0], V31.S4
+    VDUP    V30.S[0], V30.S4
+    VDUP    V29.S[0], V29.S4
+
+sigmoid_loop:
+    CBZ     R2, sigmoid_done
+    FMOVS.P 4(R0), F0
+    FNEGS   F0, F0               // x_neg = -x
+    
+    // exp(x_neg)
+    FMULS   F31, F0, F1          // z = x_neg * log2(e)
+    FADDS   F30, F1, F2
+    FRINTMS F2, F2               // n = floor(z + 0.5)
+    FSUBS   F2, F1, F3           // f = z - n
+    
+    // Poly for 2^f
+    FMOVS   $0.00134204, F4
+    FMULS   F3, F4, F4
+    FADDS   F24, F4, F4
+    FMULS   F3, F4, F4
+    FADDS   F25, F4, F4
+    FMULS   F3, F4, F4
+    FADDS   F26, F4, F4
+    FMULS   F3, F4, F4
+    FADDS   F27, F4, F4
+    FMULS   F3, F4, F4
+    FADDS   F28, F4, F4          // 2^f
+    
+    FCVTZSS F2, R4               // n as int
+    ADD     $127, R4, R4         // n + 127
+    LSL     $23, R4, R4          // shift to exponent
+    VMOV    R4, V5.S[0]          // bits of 2^n
+    FMULS   F4, F5, F0           // exp(-x) = 2^f * 2^n
+    
+    FMOVS   $1.0, F1
+    FADDS   F1, F0, F0           // 1 + exp(-x)
+    FDIVS   F0, F1, F0           // 1 / (1 + exp(-x))
+    
+    FMOVS.P F0, 4(R1)
+    SUB     $1, R2
+    B       sigmoid_loop
+
+sigmoid_tail:
+    CBZ     R2, sigmoid_done
+    FMOVS.P 4(R0), F0
+    FNEGS   F0, F0               // -x
+    
+    // exp(-x) approximation (scalar)
     FMOVS   $1.0, F1
     FMOVS   $0.5, F2
     FMOVS   $0.166666, F3
@@ -1926,18 +2002,13 @@ sigmoid_loop:
     FMULS   F0, F4, F4
     FADDS   F1, F4, F0           // exp(-x)
     
-    // Clip to avoid overflow/underflow
-    FMOVS   $0.0, F1
-    FMAXS   F1, F0, F0
-    
-    FMOVS   $1.0, F1
     FADDS   F1, F0, F0           // 1 + exp(-x)
     FDIVS   F0, F1, F0           // 1 / (1 + exp(-x))
     
     FMOVS.P F0, 4(R1)
     SUB     $1, R2
-    CBNZ    R2, sigmoid_loop
-    
+    B       sigmoid_tail
+
 sigmoid_done:
     RET
 
@@ -1946,28 +2017,126 @@ TEXT ·logNEONKernel(SB), NOSPLIT, $0-24
     MOVD    src+0(FP), R0
     MOVD    dst+8(FP), R1
     MOVD    n+16(FP), R2
-    
+
     CBZ     R2, log_done
     
-log_loop:
-    FMOVS.P 4(R0), F0
-    // Simple log approximation: log(1+x) approx x - x^2/2 + x^3/3
-    // For x in [1, 2)
-    FMOVS   $1.0, F1
-    FSUBS   F1, F0, F2           // y = x - 1
+    // Constants
+    FMOVS   $0.69314718, F31     // ln(2)
+    MOVW    $0x007fffff, R4      // mantissa mask
+    MOVW    $127, R5             // bias
     
-    FMOVS   $0.333333, F3
-    FMULS   F2, F3, F4           // y/3
-    FMOVS   $0.5, F3
-    FSUBS   F3, F4, F4           // y/3 - 0.5
-    FMULS   F2, F4, F4           // y^2/3 - 0.5y
-    FADDS   F1, F4, F4           // 1 - 0.5y + y^2/3
-    FMULS   F2, F4, F0           // y - 0.5y^2 + y^3/3
+    VDUP    V31.S[0], V31.S4
+
+log_loop:
+    CMP     $4, R2
+    BLT     log_tail
+    
+    VLD1.P  16(R0), [V0.S4]      // V0 = x
+    
+    // Extract exponent n
+    VMOV    V0.B16, V1.B16
+    VUSHR   $23, V1.S4, V1.S4    // V1 = x >> 23
+    MOVW    $0xFF, R6
+    VMOV    R6, V10.S[0]
+    VDUP    V10.S[0], V10.S4
+    VAND    V10.B16, V1.B16, V1.B16  // V1 = (x >> 23) & 0xFF (raw exponent)
+    
+    VMOV    R5, V11.S[0]         // 127
+    VDUP    V11.S[0], V11.S4
+    VSUB    V11.S4, V1.S4, V2.S4  // V2 = n = raw_exp - 127
+    VSCVTF_V(2, 2)               // V2 = n as float
+    
+    // Extract mantissa f in [1, 2)
+    VMOV    R4, V12.S[0]         // 0x007fffff
+    VDUP    V12.S[0], V12.S4
+    VAND    V12.B16, V0.B16, V3.B16  // V3 = mantissa bits
+    
+    MOVW    $0x3f800000, R6      // bits of 1.0
+    VMOV    R6, V13.S[0]
+    VDUP    V13.S[0], V13.S4
+    VORR    V13.B16, V3.B16, V3.B16  // V3 = f in [1, 2)
+    
+    // log(f) approx (f-1) * (a0 + (f-1)*(a1 + ...))
+    FMOVS   $1.0, F20
+    VDUP    V20.S[0], V20.S4
+    VFSUB_V(20, 3, 4)            // V4 = m = f - 1
+    
+    // Polynomial for log(1+m) on [0, 1]
+    FMOVS   $0.99999642, F21     // a1
+    FMOVS   $-0.49987412, F22    // a2
+    FMOVS   $0.33179904, F23     // a3
+    FMOVS   $-0.2407338, F24     // a4
+    FMOVS   $0.16765407, F25     // a5
+    FMOVS   $-0.09532939, F26    // a6
+
+    VDUP    V21.S[0], V21.S4
+    VDUP    V22.S[0], V22.S4
+    VDUP    V23.S[0], V23.S4
+    VDUP    V24.S[0], V24.S4
+    VDUP    V25.S[0], V25.S4
+    VDUP    V26.S[0], V26.S4
+    
+    VFMUL_V(26, 4, 5)            // V5 = a6 * m
+    VFADD_V(25, 5, 5)            // V5 = a6 * m + a5
+    VFMUL_V(5, 4, 5)             // V5 = (a6 * m + a5) * m
+    VFADD_V(24, 5, 5)            // V5 = (a6 * m + a5) * m + a4
+    VFMUL_V(5, 4, 5)             // V5 = ((a6 * m + a5) * m + a4) * m
+    VFADD_V(23, 5, 5)            // V5 = ... + a3
+    VFMUL_V(5, 4, 5)             // V5 = ... * m
+    VFADD_V(22, 5, 5)            // V5 = ... + a2
+    VFMUL_V(5, 4, 5)             // V5 = ... * m
+    VFADD_V(21, 5, 5)            // V5 = ... + a1
+    VFMUL_V(4, 5, 5)             // V5 = log(f)
+    // Wait, log(1+m) = m * (a1 + m*(a2 + ...))
+    
+    // log(x) = n*ln(2) + log(f)
+    VFMLA_V(31, 2, 5)
+    
+    VST1.P  [V5.S4], 16(R1)
+    
+    SUB     $4, R2
+    B       log_loop
+
+log_tail:
+    CBZ     R2, log_done
+    FMOVS.P 4(R0), F0
+    
+    FMOVS   F0, R6
+    LSR     $23, R6, R7
+    AND     $0xFF, R7, R7        // R7 = raw_exp
+    SUB     $127, R7, R7         // R7 = n
+    SCVTFS  R7, F2               // F2 = n as float
+    
+    AND     R4, R6, R6           // R6 = mantissa bits
+    MOVW    $0x3f800000, R8
+    ORR     R8, R6, R6
+    VMOV    R6, V10.S[0]
+    FMOVS   F10, F3              // F3 = f in [1, 2)
+    
+    FMOVS   $1.0, F4
+    FSUBS   F4, F3, F4          // F4 = m = f - 1
+    
+    FMOVS   $-0.09532939, F5     // a6
+    FMULS   F4, F5, F5
+    FADDS   F25, F5, F5
+    FMULS   F4, F5, F5
+    FADDS   F24, F5, F5
+    FMULS   F4, F5, F5
+    FADDS   F23, F5, F5
+    FMULS   F4, F5, F5
+    FADDS   F22, F5, F5
+    FMULS   F4, F5, F5
+    FADDS   F21, F5, F5
+    FMULS   F4, F5, F5           // F5 = log(f)
+    
+    FMOVS   $0.69314718, F6
+    FMULS   F2, F6, F6          // n*ln(2)
+    FADDS   F6, F5, F0           // log(x)
     
     FMOVS.P F0, 4(R1)
     SUB     $1, R2
-    CBNZ    R2, log_loop
-    
+    B       log_tail
+
 log_done:
     RET
 

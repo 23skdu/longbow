@@ -310,11 +310,21 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 	docScores := make(map[VectorID]float32)
 	// Track which docs we need lengths for
 	docSet := make(map[VectorID]struct{})
- 
+
+	// Pre-convert roaring filter to dense BitVector for O(1) cache-friendly access
+	var bvFilter BitVector
+	if filter != nil {
+		bvFilter = NewBitVector(totalDocs + 1)
+		it := filter.Iterator()
+		for it.HasNext() {
+			bvFilter.Set(it.Next())
+		}
+	}
+
 	// Temporary storage: term -> filtered posting list
 	termDocTF := make(map[string]*BM25PostingList)
 	termDF := make(map[string]int) // term -> document frequency
- 
+
 	// Gather all term data from shards (lock-free reads)
 	for shardIdx, terms := range shardTerms {
 		shard := &idx.termShards[shardIdx]
@@ -336,20 +346,22 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 					}
 					continue
 				}
- 
+
 				filteredPL := &BM25PostingList{
-					DocIDs: make([]VectorID, 0, len(pl.DocIDs)),
-					TFs:    make([]int, 0, len(pl.TFs)),
+					DocIDs: make([]VectorID, 0, len(pl.DocIDs)/4), // heuristic initial capacity
+					TFs:    make([]int, 0, len(pl.TFs)/4),
 				}
 				for i, docID := range pl.DocIDs {
-					if !filter.Contains(uint32(docID)) {
+					if !bvFilter.Get(uint32(docID)) {
 						continue
 					}
 					filteredPL.DocIDs = append(filteredPL.DocIDs, docID)
 					filteredPL.TFs = append(filteredPL.TFs, pl.TFs[i])
 					docSet[docID] = struct{}{}
 				}
-				termDocTF[term] = filteredPL
+				if len(filteredPL.DocIDs) > 0 {
+					termDocTF[term] = filteredPL
+				}
 			}
 		}
 	}

@@ -1,55 +1,38 @@
-# Longbow Performance & Stability Roadmap
+# Longbow Storage Engine Hardening - Next Steps
 
-This document outlines the high-priority tasks and architectural milestones remaining for the Longbow storage engine.
+This document tracks the remaining tasks for hardening the Longbow storage engine for production readiness.
 
----
+## 1. SIMD Kernel Expansion & Build Parity
 
-## 1. SIMD Kernel Expansion
-Accelerate specialized search modes by moving remaining generic fallbacks to optimized assembly.
+- [x] Integrate `HaversineBatch` into SIMD dispatch.
+- [x] Wire ARM64-specific kernels (`AccumulateWeightedScatter`, `BM25ScoreBatch`, `HaversineBatch`).
+- [x] Implement remaining AVX-512 kernels for transcendental functions (`Exp`/`Log`) in assembly.
+- [x] Implement NEON-specific kernels for `Exp`/`Log` for ARM64 parity.
+- [x] Ensure runtime dispatch handles all architecture-specific fallbacks correctly.
 
-- **Implement GraphRAG Acceleration**
-    - [ ] Write NEON assembly kernel for `accumulateWeightedScatterNEON`.
-    - [ ] Port scatter-add kernels to AVX-512 for Linux AMD64 performance parity.
-- **Transcendental Function Optimization**
-    - [ ] Implement SIMD-optimized `Exp` and `Log` kernels for probability-based scoring.
-    - [ ] Integrate assembly-based Haversine distance for Geo-spatial search scaling.
+## 2. Search Pipeline & Data Path Optimization
 
-## 2. Search Pipeline Optimizations
-Refine the hot path to reduce per-query overhead and metadata lookups.
+- [x] Implement zero-copy schema column index caching (`colIdxCache`).
+- [x] Optimize vector retrieval to use pre-allocated buffers in `ArrowSearchContext`.
+- [x] Implement budget-based early-termination logic for HNSW searches.
+- [x] Research and implement bit-vector filters for sparse indices to reduce cache line misses.
+- [ ] Optimize `ArrowRefs` data path in `GraphData` for direct Arrow array access.
 
-- **Zero-Copy Metadata Management**
-    - [ ] Optimize schema mapping lookups in `ArrowHNSW` to eliminate map access per query.
-    - [ ] Implement pre-calculated field offsets for faster record batch attribute extraction.
-- **Search Execution Efficiency**
-    - [ ] Implement pre-calculated distance bounds for early HNSW search termination.
-    - [ ] Evaluate bit-vector filters for sparse indices to reduce cache line misses.
+## 3. Stability, Resilience & Backpressure
 
-## 3. Stability & Resilience
-Enhance system reliability under extreme saturation and resource contention.
+- [x] Implement gRPC/Flight level circuit breakers to prevent cascade failures.
+- [x] Integrate admission control (backpressure) based on memory pressure and health signals.
+- [ ] Develop a retry-with-backoff policy for distributed search failures.
+- [ ] Implement client-side load balancing hints in Flight Info responses.
 
-- **Fault Tolerance**
-    - [ ] Implement gRPC/Flight level circuit breakers to prevent cascade failures.
-    - [ ] Add configurable timeouts and deadlines for cross-node distributed searches.
-- **Load Management**
-    - [ ] Add explicit backpressure to the `IngestionRingBuffer` when WAL persistence lags.
-    - [ ] Implement dynamic worker pool resizing based on CPU/Memory pressure metrics.
+## 4. Performance Validation
 
-## 4. Operational Maturity
-Automate performance validation and regression detection.
+- [x] Run quick validation benchmark suite for basic stability and performance verification.
+- [ ] Execute the full 480-point benchmark suite (`local_bench.sh`) and analyze long-tail latencies.
+- [ ] Conduct multi-node scalability tests for distributed search and ingestion.
 
-- **Continuous Benchmarking**
-    - [ ] Finalize and validate results for the full 480-point performance matrix.
-    - [ ] Create an automated dashboard for comparing pprof profiles between releases.
-- **Memory Observability**
-    - [ ] Add granular metrics for `SearchAttemptBuffers` pool utilization.
-    - [ ] Implement slab-arena fragmentation monitoring.
+## 5. Documentation & Maintenance
 
-## 5. Multi-Architecture Evolution
-Prepare Longbow for next-generation hardware and distributed topologies.
-
-- **Hardware Offloading**
-    - [ ] Evaluate GPU compute offloading for large-scale IVF index clusters.
-    - [ ] Benchmark Apple Silicon Neural Engine (ANE) for low-power embedding generation.
-- **Distributed Scale**
-    - [ ] Design cross-region replication protocols for high-availability deployments.
-    - [ ] Optimize RDMA/RoCEv2 zero-copy ingest for multi-node clusters.
+- [x] Consolidated and updated `docs/nextsteps.md`.
+- [ ] Update `docs/performance.md` with latest benchmark results.
+- [ ] Finalize Go doc comments for all new SIMD and search pipeline components.

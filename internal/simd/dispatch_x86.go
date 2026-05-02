@@ -30,9 +30,9 @@ func init() {
 	dispatchTable["avx2"].DotProduct3072 = DotProductFloat32Blocked
 
 	// Use generic for all reductions and activations on AVX2 for now (stubs in asm)
-	dispatchTable["avx2"].Sum = sumFloat32Generic
-	dispatchTable["avx2"].Max = maxFloat32Generic
-	dispatchTable["avx2"].Min = minFloat32Generic
+	dispatchTable["avx2"].Sum = sumGeneric
+	dispatchTable["avx2"].Max = maxGeneric
+	dispatchTable["avx2"].Min = minGeneric
 	dispatchTable["avx2"].Exp = expGeneric
 	dispatchTable["avx2"].Log = logGeneric
 	dispatchTable["avx2"].Sin = sinFloat32Generic

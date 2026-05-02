@@ -185,6 +185,7 @@ type ArrowSearchContext struct {
 	bufInt64 []int64
 	bufInt32 []int32
 	bufF32   []float32
+	bufF32_2 []float32
 	bufF64   []float64
 
 	// Layer-specific buffers
@@ -212,6 +213,10 @@ type ArrowSearchContext struct {
 	// Cached DiskGraph reference for the duration of the search
 	diskGraph *DiskGraph
 
+	// Visited nodes budget for early termination
+	visitedNodesBudget int
+	nodesVisitedCount  int
+
 	// Reset tracking
 	dirty bool
 
@@ -219,10 +224,12 @@ type ArrowSearchContext struct {
 	operations        int
 	distComputeTime   time.Duration
 	distComputeCount  int
-	nodesVisitedCount int
 
 	// HNSW predicate for early-exit filtering
 	predicate types.HNSWPredicate
+
+	// Query norm for distance bound calculations
+	queryRadius float32
 }
 
 // ArrowSearchContextPool manages reusable ArrowSearchContext objects.
@@ -251,6 +258,7 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		vectorCache:      make(map[uint32]any, 100),
 		distCache:        make(map[uint32]float32, 100),
 		vectorBuf:        make([]float32, 0, 384),
+		bufF32_2:         make([]float32, 0, 384),
 		neighborBatch:    make([]uint32, 0, 64),
 		matchResultBuf:   make([]byte, 64),
 		dirty:            false,
@@ -325,6 +333,7 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.bufInt64 = ctx.bufInt64[:0]
 	ctx.bufInt32 = ctx.bufInt32[:0]
 	ctx.bufF32 = ctx.bufF32[:0]
+	ctx.bufF32_2 = ctx.bufF32_2[:0]
 	ctx.bufF64 = ctx.bufF64[:0]
 	ctx.vectorBuf = ctx.vectorBuf[:0]
 	clear(ctx.vectorCache)
@@ -335,7 +344,12 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.distComputeCount = 0
 	ctx.nodesVisitedCount = 0
 	ctx.diskGraph = nil
+	ctx.visitedNodesBudget = 0
+	ctx.nodesVisitedCount = 0
+	ctx.dirty = false
+	ctx.queryRadius = 0
 	ctx.predicate = nil
+	ctx.queryRadius = 0
 
 	// Clear temp buffer without reallocating
 	for i := range ctx.distsTemp {

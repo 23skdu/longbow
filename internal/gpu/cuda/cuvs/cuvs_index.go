@@ -90,8 +90,8 @@ func (idx *CUVSIndex) AddBatch(ctx context.Context, ids []int64, vectors []float
 		return nil
 	}
 	n := len(vectors) / idx.dim
-	if n > 2147483647 || idx.dim > 2147483647 {
-		return fmt.Errorf("n or dim too large")
+	if n < 0 || n > 2147483647 || idx.dim < 0 || idx.dim > 2147483647 {
+		return fmt.Errorf("n or dim too large or invalid")
 	}
 	ret := C.cuvs_index_build(&idx.res, (*C.float)(&vectors[0]), C.int(n), C.int(idx.dim)) // #nosec G115
 	if ret != 0 {

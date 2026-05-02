@@ -146,16 +146,17 @@ var (
 	argMinFloat32Impl func(src []float32) int
 	matMulFloat32Impl func(a, b []float32, m, n, k int, dst []float32)
 	accumulateWeightedScatterFloat32Impl func(dst []float32, targets []uint32, weights []float32, factor float32)
-
+	haversineBatchImpl                   haversineBatchFunc
+ 
 	// Transcendental kernels
 	sinFloat32Impl   func(src, dst []float32)
 	cosFloat32Impl   func(src, dst []float32)
 	atan2Float32Impl func(y, x, dst []float32)
 
-	haversineBatchImpl func(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32)
-
 	pauseImpl func()
 )
+
+type haversineBatchFunc func(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32)
 
 // SinFloat32 calculates the sine of each element in src.
 func SinFloat32(src, dst []float32) {
@@ -1283,6 +1284,7 @@ func Log(src, dst []float32) {
 func AccumulateWeightedScatter(dst []float32, targets []uint32, weights []float32, factor float32) {
 	accumulateWeightedScatterFloat32Impl(dst, targets, weights, factor)
 }
+
 
 func sigmoidGeneric(src, dst []float32) {
 	for i, x := range src {

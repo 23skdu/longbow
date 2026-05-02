@@ -51,5 +51,9 @@ func init() {
 		ManhattanDistance:  manhattanNEON,
 		ChebyshevDistance:  chebyshevNEON,
 		BrayCurtisDistance: brayCurtisNEON,
+
+		AccumulateWeightedScatter: accumulateWeightedScatterNEON,
+		BM25ScoreBatch:            bm25ScoreBatchArch,
+		HaversineBatch:            haversineBatchGeneric,
 	}
 }

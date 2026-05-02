@@ -105,3 +105,35 @@ func (c *TurboQuantCompute) getVectorWithDisk(id uint32, dg *DiskGraph) ([]float
 
 	return c.encoder.Decode(tqCode)
 }
+func (c *TurboQuantCompute) GetRadius(id uint32, dg *DiskGraph) (float32, error) {
+	cID := types.ChunkID(id)
+	cOff := types.ChunkOffset(id)
+	data := c.h.data.Load()
+	chunk := data.GetVectorsTQChunk(cID)
+
+	var tqCode []byte
+	var stride int
+
+	if chunk != nil {
+		stride = PackedSize(int(data.Dims), data.TurboQuantBits)
+		start := cOff * stride
+		if start+stride <= len(chunk) {
+			tqCode = chunk[start : start+stride]
+		}
+	}
+
+	if tqCode == nil {
+		if dg == nil {
+			dg = c.h.diskGraph.Load()
+		}
+		if dg != nil {
+			tqCode = dg.GetVectorTQ(id)
+		}
+	}
+
+	if tqCode == nil {
+		return 0, fmt.Errorf("tq vector %d not found for radius extraction", id)
+	}
+
+	return c.encoder.GetRadius(tqCode), nil
+}

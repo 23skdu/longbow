@@ -79,6 +79,9 @@ type ImplementationDispatch struct {
  
 	// Sparse Search
 	BM25ScoreBatch func(tfs []int, docLengths []int, avgDL, idf, k1, b float32) []float32
+
+	// Geospatial
+	HaversineBatch haversineBatchFunc
 }
 
 // Global dispatch table - one per implementation
@@ -133,6 +136,7 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		BrayCurtisDistance: BrayCurtisDistanceFloat32,
 		AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
 		BM25ScoreBatch: bm25ScoreBatchGeneric,
+		HaversineBatch: haversineBatchGeneric,
 	},
 
 	"avx2": {
@@ -185,6 +189,7 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		BrayCurtisDistance: BrayCurtisDistanceFloat32,
 		AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
 		BM25ScoreBatch: bm25ScoreBatchGeneric,
+		HaversineBatch: haversineBatchGeneric,
 	},
 
 	"neon": {
@@ -237,6 +242,7 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		BrayCurtisDistance: BrayCurtisDistanceFloat32,
 		AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
 		BM25ScoreBatch: bm25ScoreBatchGeneric,
+		HaversineBatch: haversineBatchGeneric,
 	},
 
 	"generic": {
@@ -289,6 +295,7 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		BrayCurtisDistance: BrayCurtisDistanceFloat32,
 		AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
 		BM25ScoreBatch: bm25ScoreBatchGeneric,
+		HaversineBatch: haversineBatchGeneric,
 	},
 }
 
@@ -384,6 +391,7 @@ func initializeDispatch() {
 		chebyshevDistanceImpl = dispatch.ChebyshevDistance
 		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
 		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
+		haversineBatchImpl = dispatch.HaversineBatch
 	case "avx2":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -464,6 +472,7 @@ func initializeDispatch() {
 		chebyshevDistanceImpl = dispatch.ChebyshevDistance
 		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
 		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
+		haversineBatchImpl = dispatch.HaversineBatch
 	case "neon":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -549,6 +558,7 @@ func initializeDispatch() {
 		chebyshevDistanceImpl = dispatch.ChebyshevDistance
 		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
 		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
+		haversineBatchImpl = dispatch.HaversineBatch
 	case "generic":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance128Impl = dispatch.EuclideanDistance128
@@ -629,6 +639,7 @@ func initializeDispatch() {
 		chebyshevDistanceImpl = dispatch.ChebyshevDistance
 		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
 		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
+		haversineBatchImpl = dispatch.HaversineBatch
 	}
 
 	// Register current implementations into the new dynamic registry.

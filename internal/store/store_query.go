@@ -144,9 +144,13 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			s.logger.Error().Err(err).Str("ticket_preview", string(tkt.Ticket)).Msg("Failed to parse ticket")
 			return status.Error(codes.InvalidArgument, "invalid ticket format")
 		}
-		err = nil // Clear error after fallback
 	}
-	// s.logger.Info().Interface("parsed_query", query).Msg("DEBUG: DoGet parsed query")
+		// 0. Admission Control (Backpressure)
+	if s.admission != nil {
+		if err := s.admission.Admit(stream.Context(), "search"); err != nil {
+			return err
+		}
+	}
 
 	// Resolve CTEs if present
 	cteResults := make(map[string][]types.SearchResult)
@@ -184,7 +188,13 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		if isGlobal {
 			query.Search.LocalOnly = false
 		}
-		return s.handleDoGetSearch(query.Search, query.WindowFunctions, stream, mem)
+		
+		// Wrap with Circuit Breaker
+		cb := s.Breakers.GetOrCreate(query.Search.Dataset)
+		_, err := cb.Execute(func() (any, error) {
+			return nil, s.handleDoGetSearch(query.Search, query.WindowFunctions, stream, mem)
+		})
+		return err
 	case query.SearchByID != nil:
 		return s.handleDoGetSearchByID(query.SearchByID, stream, mem)
 	case query.Recommend != nil:
@@ -521,10 +531,11 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	return nil
 }
 
+
 // MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
 // MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
 // This is the public wrapper that acquires a read lock.
-func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []types.SearchResult) []types.SearchResult {
+func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) []SearchResult {
 	start := time.Now()
 	defer func() {
 		metrics.IDResolutionDuration.Observe(time.Since(start).Seconds())
@@ -537,7 +548,7 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []types.SearchRe
 
 // mapInternalToUserIDsLocked maps internal HNSW IDs to user-provided IDs.
 // Caller MUST hold ds.dataMu.RLock (or Lock).
-func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []types.SearchResult) []types.SearchResult {
+func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchResult) []SearchResult {
 	// Use the VectorIndex interface directly to look up locations.
 	// This supports HNSWIndex, ArrowHNSW, AutoShardingIndex, etc.
 	if ds.Index == nil {
@@ -678,16 +689,7 @@ func (s *VectorStore) GetDataset(name string) (*Dataset, error) {
 	return ds, nil
 }
 
-// HybridSearch is a wrapper for the HybridSearch function
-func (s *VectorStore) HybridSearch(ctx context.Context, name string, query []float32, k int, filters map[string]string) ([]types.SearchResult, error) {
-	return HybridSearch(ctx, s, name, query, k, filters)
-}
 
-// SearchHybrid is a wrapper for the SearchHybrid function (RRF version)
-func (s *VectorStore) SearchHybrid(ctx context.Context, name string, query []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]types.SearchResult, error) {
-	// Expose graph params in future? For now default to 0 (disabled)
-	return SearchHybrid(ctx, s, name, query, textQuery, k, alpha, rrfK, graphAlpha, graphDepth)
-}
 
 func findVectorColumn(rec arrow.RecordBatch) arrow.Array {
 	if rec == nil || rec.Schema() == nil {

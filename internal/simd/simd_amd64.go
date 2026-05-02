@@ -760,9 +760,20 @@ func matMulAVX2(a, b []float32, m, n, k int, dst []float32) {
 	)
 }
 
-// AVX512 and other kernel declarations are now in all_kernels_stubs_amd64.go
 //go:noescape
 func pause()
 
 //go:noescape
 func softmaxAVX512Kernel(src, dst uintptr, n int)
+
+var _ = func() {
+	if false {
+		pause()
+		_, _ = dotInt4AVX2(nil, nil)
+		_, _ = dotInt2AVX2(nil, nil)
+		sinAVX2(nil, nil)
+		cosAVX2(nil, nil)
+		atan2AVX2(nil, nil, nil)
+		softmaxAVX512Kernel(0, 0, 0)
+	}
+}

@@ -75,12 +75,14 @@ Get similar vectors based on existing IDs.
 Manage logical groupings and lifecycle of data.
 
 - **Create Namespace:** `longbow-cli create-namespace -name <name>`
+- **Create Dataset:** `longbow-cli create-dataset -name <name> -dims <n> -type <type>`
 - **Delete Namespace:** `longbow-cli delete-namespace -name <name>`
 - **List Namespaces:** `longbow-cli list-namespaces`
 - **List Datasets:** `longbow-cli list-datasets-in-namespace -namespace <name>`
 - **Delete ID:** `longbow-cli delete -dataset <name> -id <id>`
 - **Snapshot:** `longbow-cli snapshot` (Triggers manual disk flush)
 - **Stats:** `longbow-cli stats -dataset <name>`
+- **Drop Dataset:** `longbow-cli drop -dataset <name>` (Evicts dataset from memory)
 
 ### 4. Graph & GraphRAG Operations
 Administrative tools for managing the HNSW graph as a knowledge graph.
@@ -95,12 +97,15 @@ Administrative tools for managing the HNSW graph as a knowledge graph.
 Query the temporal index for versioned data.
 
 **Usage:**
-`longbow-cli temporal-search -type <as_of|range|window> [options]`
+`longbow-cli temporal-search -dataset <name> -type <as_of|range|window> [options]`
 
 **Options:**
+- `-dataset string`: Target dataset name (required)
+- `-type string`: Search type (as_of, range, window)
 - `-ts int`: Unix nanosecond timestamp for `as_of`
 - `-start int`: Start time for `range`
 - `-end int`: End time for `range`
+- `-k int`: Number of results (default: 10)
 
 ---
 

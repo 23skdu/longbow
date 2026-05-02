@@ -252,7 +252,9 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	if vs.compactionConfig.Enabled {
 		vs.compactionWorker.Start()
 	}
- 
+
+	vs.Breakers = NewCircuitBreakerRegistry(DefaultCircuitBreakerConfig())
+
 	vs.workerWg.Add(1)
 	go vs.runPersistenceWorker()
  

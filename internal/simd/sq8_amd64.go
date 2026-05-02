@@ -10,9 +10,10 @@ import (
 // init runs after simd.go's init (lexical order usually, but safer to rely on internal check)
 // But since we are in same package, order is file name based. simd.go comes before sq8_amd64.go
 func init() {
-	if features.HasAVX2 {
-		euclideanSQ8Impl = euclideanSQ8AVX2
-	}
+	// AVX2 kernel is currently a stub; fallback to generic
+	// if features.HasAVX2 {
+	// 	euclideanSQ8Impl = euclideanSQ8AVX2
+	// }
 }
 
 func euclideanSQ8AVX2(a, b []byte) (int32, error) {

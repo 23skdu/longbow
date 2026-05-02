@@ -3,7 +3,7 @@
 #include "textflag.h"
  
 // func bm25ScoreBatchNEON(tfs, docLens unsafe.Pointer, n int, invAvgDL, idf, k1, b float32, results unsafe.Pointer)
-TEXT ·bm25ScoreBatchNEON(SB), NOSPLIT, $0-64
+TEXT ·bm25ScoreBatchNEON(SB), NOSPLIT, $0-48
     MOVD    tfs+0(FP), R0
     MOVD    docLens+8(FP), R1
     MOVD    n+16(FP), R2

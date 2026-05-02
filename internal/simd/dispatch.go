@@ -235,8 +235,8 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		ManhattanDistance: ManhattanDistanceFloat32,
 		ChebyshevDistance: ChebyshevDistanceFloat32,
 		BrayCurtisDistance: BrayCurtisDistanceFloat32,
-		AccumulateWeightedScatter: accumulateWeightedScatterNEON,
-		BM25ScoreBatch: bm25ScoreBatchArch,
+		AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
+		BM25ScoreBatch: bm25ScoreBatchGeneric,
 	},
 
 	"generic": {

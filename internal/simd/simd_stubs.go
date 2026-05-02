@@ -4,9 +4,9 @@ package simd
 
 import (
 	"errors"
-	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow/float16"
+	lbcore "github.com/23skdu/longbow/internal/core"
 )
 
 // Stubs for non-AMD64 architectures to satisfy simd.go references
@@ -92,11 +92,16 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 	return euclideanBatchGeneric(query, vectors, results)
 }
 
-func prefetchNTA(p unsafe.Pointer) {}
+func prefetchNTA(p uintptr) {}
 
-func euclideanFloat64AVX2(a, b []float64) (float32, error) {
-	return 0, errors.New("avx2 not supported")
+func dotFloat64AVX512(a, b []float64) (float32, error) {
+	return 0, errors.New("avx512 not supported")
 }
+
+func haversineBatchAVX2(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32) {
+	haversineBatchGeneric(centerLat, centerLon, points, earthRadius, results)
+}
+
 func euclideanFloat64AVX512(a, b []float64) (float32, error) {
 	return 0, errors.New("avx512 not supported")
 }
@@ -138,7 +143,7 @@ func orBytesAVX2(dst, src []byte)  { orBytesGeneric(dst, src) }
 func isAllZerosAVX2(src []byte) bool { return isAllZerosGeneric(src) }
 
 func dotFloat64AVX2(a, b []float64) (float32, error)   { return dotFloat64Unrolled4x(a, b) }
-func dotFloat64AVX512(a, b []float64) (float32, error) { return dotFloat64Unrolled4x(a, b) }
+func euclideanFloat64AVX2(a, b []float64) (float32, error) { return euclideanFloat64Unrolled4x(a, b) }
 
 func dotInt4AVX512(a, b []byte) (float32, error) { return dotInt4Generic(a, b) }
 func dotInt4AVX2(a, b []byte) (float32, error)   { return dotInt4Generic(a, b) }
@@ -186,3 +191,23 @@ func logAVX512(src, dst []float32) { logGeneric(src, dst) }
 func sumAVX2(src []float32) float32 { return sumGeneric(src) }
 func maxAVX2(src []float32) float32 { return maxGeneric(src) }
 func minAVX2(src []float32) float32 { return minGeneric(src) }
+
+func sinAVX2(src, dst []float32)   { sinFloat32Generic(src, dst) }
+func cosAVX2(src, dst []float32)   { cosFloat32Generic(src, dst) }
+func atan2AVX2(y, x, dst []float32) { atan2Float32Generic(y, x, dst) }
+
+func matMulAVX2_Go(a, b []float32, m, n, k int, dst []float32) {
+	matMulGeneric(a, b, m, n, k, dst)
+}
+
+func ManhattanDistanceFloat32AVX2(a, b []float32) (float32, error) {
+	return 0, errors.New("simd: AVX2 not supported on this architecture")
+}
+
+func ChebyshevDistanceFloat32AVX2(a, b []float32) (float32, error) {
+	return 0, errors.New("simd: AVX2 not supported on this architecture")
+}
+
+func BrayCurtisDistanceFloat32AVX2(a, b []float32) (float32, error) {
+	return 0, errors.New("simd: AVX2 not supported on this architecture")
+}

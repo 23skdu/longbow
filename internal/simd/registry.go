@@ -11,6 +11,9 @@ const (
 	MetricEuclidean MetricType = iota
 	MetricCosine
 	MetricDotProduct
+	MetricManhattan
+	MetricChebyshev
+	MetricBrayCurtis
 )
 
 func (m MetricType) String() string {
@@ -21,6 +24,12 @@ func (m MetricType) String() string {
 		return "cosine"
 	case MetricDotProduct:
 		return "dot"
+	case MetricManhattan:
+		return "manhattan"
+	case MetricChebyshev:
+		return "chebyshev"
+	case MetricBrayCurtis:
+		return "braycurtis"
 	default:
 		return "unknown"
 	}

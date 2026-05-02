@@ -9,6 +9,7 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/23skdu/longbow/internal/metrics"
+	lbcore "github.com/23skdu/longbow/internal/core"
 	"time"
 )
 
@@ -99,6 +100,10 @@ var (
 	cosineDistanceF16Impl    distanceF16Func
 	dotProductF16Impl        distanceF16Func
 
+	manhattanDistanceImpl  distanceFunc
+	chebyshevDistanceImpl  distanceFunc
+	brayCurtisDistanceImpl distanceFunc
+
 	euclideanDistanceComplex64Impl  distanceComplex64Func
 	euclideanDistanceComplex128Impl distanceComplex128Func
 	euclideanDistanceFloat64Impl    distanceFloat64Func
@@ -137,13 +142,67 @@ var (
 	sumFloat32Impl    func(src []float32) float32
 	maxFloat32Impl    func(src []float32) float32
 	minFloat32Impl    func(src []float32) float32
+	argMaxFloat32Impl func(src []float32) int
+	argMinFloat32Impl func(src []float32) int
 	matMulFloat32Impl func(a, b []float32, m, n, k int, dst []float32)
+	accumulateWeightedScatterFloat32Impl func(dst []float32, targets []uint32, weights []float32, factor float32)
+
+	// Transcendental kernels
+	sinFloat32Impl   func(src, dst []float32)
+	cosFloat32Impl   func(src, dst []float32)
+	atan2Float32Impl func(y, x, dst []float32)
+
+	haversineBatchImpl func(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32)
 
 	pauseImpl func()
 )
 
+// SinFloat32 calculates the sine of each element in src.
+func SinFloat32(src, dst []float32) {
+	sinFloat32Impl(src, dst)
+}
+
+// CosFloat32 calculates the cosine of each element in src.
+func CosFloat32(src, dst []float32) {
+	cosFloat32Impl(src, dst)
+}
+
+// Atan2Float32 calculates the arc tangent of y/x for each pair of elements.
+func Atan2Float32(y, x, dst []float32) {
+	atan2Float32Impl(y, x, dst)
+}
+
+// ManhattanDistance calculates the L1 distance between two vectors.
+func ManhattanDistance(a, b []float32) (float32, error) {
+	return manhattanDistanceImpl(a, b)
+}
+
+// ChebyshevDistance calculates the L-infinity distance between two vectors.
+func ChebyshevDistance(a, b []float32) (float32, error) {
+	return chebyshevDistanceImpl(a, b)
+}
+
+// BrayCurtisDistance calculates the Bray-Curtis distance between two vectors.
+func BrayCurtisDistance(a, b []float32) (float32, error) {
+	return brayCurtisDistanceImpl(a, b)
+}
+
+// MatMul performs matrix multiplication: dst = a * b
+func MatMul(a, b []float32, m, n, k int, dst []float32) {
+	matMulFloat32Impl(a, b, m, n, k, dst)
+}
+
+// HaversineBatch calculates the haversine distance between a center point and a batch of points.
+func HaversineBatch(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32) {
+	if haversineBatchImpl != nil {
+		haversineBatchImpl(centerLat, centerLon, points, earthRadius, results)
+	} else {
+		haversineBatchGeneric(centerLat, centerLon, points, earthRadius, results)
+	}
+}
+
 func init() {
-	pauseImpl = func() {} // Default no-op
+	pauseImpl = pause
 	detectCPU()
 	initializeDispatch()
 
@@ -202,6 +261,8 @@ func IsAllZeros(src []byte) bool {
 func Pause() {
 	pauseImpl()
 }
+
+// pause is implemented in assembly.
 
 // PauseN calls Pause n times.
 func PauseN(n int) {
@@ -1218,20 +1279,9 @@ func Log(src, dst []float32) {
 	metrics.SIMDActivationDuration.WithLabelValues("log", implementation).Observe(time.Since(start).Seconds())
 }
 
-func Sum(src []float32) float32 {
-	return sumFloat32Impl(src)
-}
-
-func Max(src []float32) float32 {
-	return maxFloat32Impl(src)
-}
-
-func Min(src []float32) float32 {
-	return minFloat32Impl(src)
-}
-
-func MatMul(a, b []float32, m, n, k int, dst []float32) {
-	matMulFloat32Impl(a, b, m, n, k, dst)
+// AccumulateWeightedScatter adds weighted values to a destination slice using scatter indices.
+func AccumulateWeightedScatter(dst []float32, targets []uint32, weights []float32, factor float32) {
+	accumulateWeightedScatterFloat32Impl(dst, targets, weights, factor)
 }
 
 func sigmoidGeneric(src, dst []float32) {
@@ -1301,6 +1351,56 @@ func minGeneric(src []float32) float32 {
 		}
 	}
 	return min
+}
+
+func Sum(src []float32) float32 {
+	return sumFloat32Impl(src)
+}
+
+func Max(src []float32) float32 {
+	return maxFloat32Impl(src)
+}
+
+func Min(src []float32) float32 {
+	return minFloat32Impl(src)
+}
+
+func ArgMax(src []float32) int {
+	return argMaxFloat32Impl(src)
+}
+
+func ArgMin(src []float32) int {
+	return argMinFloat32Impl(src)
+}
+
+func argMaxGeneric(src []float32) int {
+	if len(src) == 0 {
+		return -1
+	}
+	maxIdx := 0
+	maxVal := src[0]
+	for i, x := range src[1:] {
+		if x > maxVal {
+			maxVal = x
+			maxIdx = i + 1
+		}
+	}
+	return maxIdx
+}
+
+func argMinGeneric(src []float32) int {
+	if len(src) == 0 {
+		return -1
+	}
+	minIdx := 0
+	minVal := src[0]
+	for i, x := range src[1:] {
+		if x < minVal {
+			minVal = x
+			minIdx = i + 1
+		}
+	}
+	return minIdx
 }
 
 func matMulGeneric(a, b []float32, m, n, k int, dst []float32) {

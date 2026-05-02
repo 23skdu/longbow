@@ -53,15 +53,44 @@ func euclidean384AVX2(a, b []float32) (float32, error) {
 }
 
 // AVX2 optimized Euclidean distance for 768 dims.
-// Uses scalar unrolled4x (faster than 8-float AVX2 loop for high dims on AVX2-only).
 func euclidean768AVX2(a, b []float32) (float32, error) {
-	return euclidean768Unrolled4x(a, b)
+	return euclideanAVX2(a, b)
+}
+
+// AVX2 optimized Euclidean distance for 1024 dims.
+func euclidean1024AVX2(a, b []float32) (float32, error) {
+	return euclideanAVX2(a, b)
 }
 
 // AVX2 optimized Euclidean distance for 1536 dims.
-// Uses scalar unrolled4x (faster than 8-float AVX2 loop for high dims on AVX2-only).
 func euclidean1536AVX2(a, b []float32) (float32, error) {
-	return euclidean1536Unrolled4x(a, b)
+	return euclideanAVX2(a, b)
+}
+
+// AVX2 optimized Euclidean distance for 3072 dims.
+func euclidean3072AVX2(a, b []float32) (float32, error) {
+	return euclideanAVX2(a, b)
+}
+
+// AVX2 optimized dot product for specific dimensions
+func dot384AVX2(a, b []float32) (float32, error) {
+	return dotAVX2(a, b)
+}
+
+func dot768AVX2(a, b []float32) (float32, error) {
+	return dotAVX2(a, b)
+}
+
+func dot1024AVX2(a, b []float32) (float32, error) {
+	return dotAVX2(a, b)
+}
+
+func dot1536AVX2(a, b []float32) (float32, error) {
+	return dotAVX2(a, b)
+}
+
+func dot3072AVX2(a, b []float32) (float32, error) {
+	return dotAVX2(a, b)
 }
 
 // AVX2 optimized Cosine distance

@@ -48,6 +48,10 @@ type GRPCConfig struct {
 
 	// Compression settings - enables gzip compression for 50-70% bandwidth reduction
 	CompressionEnabled bool // Enable gzip compression for streaming data
+
+	// Socket-level buffer sizes
+	WriteBufferSize int // Size of the socket write buffer
+	ReadBufferSize  int // Size of the socket read buffer
 }
 
 // DefaultGRPCConfig returns a GRPCConfig with sensible defaults optimized for throughput.
@@ -75,6 +79,10 @@ func DefaultGRPCConfig() GRPCConfig {
 
 		// Enable compression by default for 50-70% bandwidth reduction
 		CompressionEnabled: true,
+
+		// 1MB socket buffers for high-bandwidth remote nodes (ancalagon)
+		WriteBufferSize: 1 * 1024 * 1024,
+		ReadBufferSize:  1 * 1024 * 1024,
 	}
 }
 
@@ -167,6 +175,10 @@ func (c GRPCConfig) BuildServerOptions() []grpc.ServerOption {
 		// OpenTelemetry stats handler
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.MaxSendMsgSize(c.MaxSendMsgSize),
+
+		// Socket buffers
+		grpc.WriteBufferSize(c.WriteBufferSize),
+		grpc.ReadBufferSize(c.ReadBufferSize),
 	}
 }
 
@@ -199,6 +211,10 @@ func (c GRPCConfig) BuildClientOptions() []grpc.DialOption {
 
 		// Message size limits and compression
 		grpc.WithDefaultCallOptions(callOpts...),
+
+		// Socket buffers
+		grpc.WithWriteBufferSize(c.WriteBufferSize),
+		grpc.WithReadBufferSize(c.ReadBufferSize),
 	}
 
 	return opts

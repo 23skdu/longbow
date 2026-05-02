@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -427,7 +426,17 @@ func (p *IndexPerformancePredictor) Predict(features QueryFeatures) IndexPredict
 	}
 }
 
-// Heuristic scoring methods were removed in favor of data-driven k-NN prediction (v0.1.9).
+// Pool for knnHeap entries to avoid allocations in kNNPredict
+var knnHeapPool = sync.Pool{
+	New: func() any {
+		return &knnHeap{entries: make([]distEntry, 0, 32)} // typical k=7-15
+	},
+}
+
+type distEntry struct {
+	dist  float64
+	index IndexType
+}
 
 // kNNPredict scores candidate index types using weighted k-nearest-neighbour
 // classification over the accumulated TrainingSamples. Neighbours are ranked by
@@ -436,12 +445,6 @@ func (p *IndexPerformancePredictor) Predict(features QueryFeatures) IndexPredict
 //
 // Returns a map of index type → aggregated vote score (higher = preferred).
 func (p *IndexPerformancePredictor) kNNPredict(features QueryFeatures, k int) map[IndexType]float64 {
-	scores := map[IndexType]float64{
-		IndexTypeHNSW:    0.0,
-		LearnedIVFPQ:     0.0,
-		IndexTypeDiskANN: 0.0,
-	}
-
 	if k <= 0 {
 		k = 7
 	}
@@ -449,20 +452,14 @@ func (p *IndexPerformancePredictor) kNNPredict(features QueryFeatures, k int) ma
 	queryVec := extractFeatureVector(features)
 	normalisedQuery := p.normalizer.Normalize(queryVec)
 
-	// Snapshot samples under RLock to avoid blocking AddTrainingSample.
+	// Snapshot weights and sample length under RLock.
 	p.samplesMu.RLock()
-	snap := make([]TrainingSample, len(p.samples))
-	copy(snap, p.samples)
-	weights := p.featureWeights
-	p.samplesMu.RUnlock()
-
-	if len(snap) == 0 {
+	if len(p.samples) == 0 {
+		p.samplesMu.RUnlock()
 		return map[IndexType]float64{IndexTypeHNSW: 1.0}
 	}
-	if k > len(snap) {
-		k = len(snap)
-	}
-
+	weights := p.featureWeights
+	
 	// Build a weight vector aligned to featureKeys.
 	var wVec [numFeatures]float64
 	total := 0.0
@@ -480,36 +477,103 @@ func (p *IndexPerformancePredictor) kNNPredict(features QueryFeatures, k int) ma
 		}
 	}
 
-	type distEntry struct {
-		dist  float64
-		index IndexType
-	}
+	// Use a max-heap to track top-k neighbors without sorting the entire sample set.
+	// This reduces complexity from O(N log N) to O(N log K).
+	h := knnHeapPool.Get().(*knnHeap)
+	h.entries = h.entries[:0]
+	h.k = k
 
-	entries := make([]distEntry, len(snap))
-	for i, s := range snap {
+	for _, s := range p.samples {
 		sVec := extractFeatureVector(s.Features)
 		normS := p.normalizer.Normalize(sVec)
-		entries[i] = distEntry{
-			dist:  weightedEuclidean(normalisedQuery, normS, wVec),
-			index: s.Index,
+		dist := weightedEuclidean(normalisedQuery, normS, wVec)
+		
+		if h.Len() < k {
+			h.push(distEntry{dist: dist, index: s.Index})
+		} else if dist < h.peek().dist {
+			h.pop()
+			h.push(distEntry{dist: dist, index: s.Index})
 		}
 	}
+	p.samplesMu.RUnlock()
 
-	// Partial sort: pull k smallest-distance neighbours to front.
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].dist < entries[j].dist
-	})
+	scores := map[IndexType]float64{
+		IndexTypeHNSW:    0.0,
+		LearnedIVFPQ:     0.0,
+		IndexTypeDiskANN: 0.0,
+	}
 
 	const eps = 1e-9
-	for _, e := range entries[:k] {
+	for _, e := range h.entries {
 		scores[e.index] += 1.0 / (e.dist + eps)
 	}
 
+	knnHeapPool.Put(h)
 	return scores
 }
 
-// weightedEuclidean computes the weighted Euclidean distance between two
-// feature vectors using the provided per-dimension weight vector.
+// knnHeap implements a simple max-heap for distEntry.
+type knnHeap struct {
+	entries []distEntry
+	k       int
+}
+
+func (h *knnHeap) Len() int           { return len(h.entries) }
+func (h *knnHeap) Less(i, j int) bool { return h.entries[i].dist > h.entries[j].dist } // Max-heap
+func (h *knnHeap) Swap(i, j int)      { h.entries[i], h.entries[j] = h.entries[j], h.entries[i] }
+
+func (h *knnHeap) push(x distEntry) {
+	h.entries = append(h.entries, x)
+	h.up(h.Len() - 1)
+}
+
+func (h *knnHeap) pop() distEntry {
+	n := h.Len() - 1
+	h.Swap(0, n)
+	h.down(0, n)
+	x := h.entries[n]
+	h.entries = h.entries[:n]
+	return x
+}
+
+func (h *knnHeap) peek() distEntry {
+	if len(h.entries) == 0 {
+		return distEntry{dist: math.MaxFloat64}
+	}
+	return h.entries[0]
+}
+
+func (h *knnHeap) up(j int) {
+	for {
+		i := (j - 1) / 2 // parent
+		if i == j || !h.Less(j, i) {
+			break
+		}
+		h.Swap(i, j)
+		j = i
+	}
+}
+
+func (h *knnHeap) down(i0, n int) bool {
+	i := i0
+	for {
+		j1 := 2*i + 1
+		if j1 >= n || j1 < 0 { // j1 < 0 after int overflow
+			break
+		}
+		j := j1 // left child
+		if j2 := j1 + 1; j2 < n && h.Less(j2, j) {
+			j = j2 // = 2*i + 2  // right child
+		}
+		if !h.Less(j, i) {
+			break
+		}
+		h.Swap(i, j)
+		i = j
+	}
+	return i > i0
+}
+
 func weightedEuclidean(a, b, w [numFeatures]float64) float64 {
 	sum := 0.0
 	for i := range a {

@@ -4,6 +4,7 @@ import (
 	"errors"
 	"unsafe"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -22,21 +23,26 @@ func EuclideanDistance(a, b []float32) (float32, error) {
 	}
 
 	dimension := len(a)
+	metrics.SimdDispatchTotal.WithLabelValues(implementation, "euclidean").Inc()
 
-	if dimension == 384 {
-		if features.HasAVX2 {
-			return euclideanAVX2(a, b)
-		}
-		if features.HasNEON {
-			return euclidean384Blocked(a, b)
-		}
-		return currentDispatch.EuclideanDistance384(a, b)
-	}
-	if dimension == 128 {
+	// Optimized dispatch for common dimensions
+	switch dimension {
+	case 128:
 		return currentDispatch.EuclideanDistance128(a, b)
+	case 384:
+		return currentDispatch.EuclideanDistance384(a, b)
+	case 768:
+		return currentDispatch.EuclideanDistance768(a, b)
+	case 1024:
+		return currentDispatch.EuclideanDistance1024(a, b)
+	case 1536:
+		return currentDispatch.EuclideanDistance1536(a, b)
+	case 3072:
+		return currentDispatch.EuclideanDistance3072(a, b)
 	}
-	// Use blocked SIMD for high dimensions (768+) on all platforms
-	if dimension >= 768 {
+
+	// Use blocked SIMD for very high dimensions (> 3072) or fallback to generic SIMD
+	if dimension > 3072 {
 		return euclideanBlocked(a, b)
 	}
 	return currentDispatch.EuclideanDistance(a, b)
@@ -75,14 +81,28 @@ func DotProduct(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	if len(a) == 384 {
-		return dotProduct384Impl(a, b)
+
+	dimension := len(a)
+	metrics.SimdDispatchTotal.WithLabelValues(implementation, "dot").Inc()
+
+	// Optimized dispatch for common dimensions
+	switch dimension {
+	case 128:
+		return currentDispatch.DotProduct128(a, b)
+	case 384:
+		return currentDispatch.DotProduct384(a, b)
+	case 768:
+		return currentDispatch.DotProduct768(a, b)
+	case 1024:
+		return currentDispatch.DotProduct1024(a, b)
+	case 1536:
+		return currentDispatch.DotProduct1536(a, b)
+	case 3072:
+		return currentDispatch.DotProduct3072(a, b)
 	}
-	if len(a) == 128 {
-		return dotProduct128Impl(a, b)
-	}
-	// Use blocked SIMD for high dimensions (768+) on all platforms
-	if len(a) >= 768 {
+
+	// Use blocked SIMD for very high dimensions (> 3072) or fallback to generic SIMD
+	if dimension > 3072 {
 		return DotProductFloat32Blocked(a, b)
 	}
 	return currentDispatch.DotProduct(a, b)

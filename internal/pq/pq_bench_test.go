@@ -51,7 +51,7 @@ func BenchmarkPQ_1536d(b *testing.B) {
 	numDB := 1000
 	flatCodes := make([]byte, numDB*m)
 	for i := range flatCodes {
-		flatCodes[i] = byte(rng.Intn(256))
+		flatCodes[i] = byte(rng.Intn(256)) // #nosec G115
 	}
 	results := make([]float32, numDB)
 

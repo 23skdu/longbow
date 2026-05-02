@@ -17,7 +17,7 @@ func generateRandomInt16Vectors(count, dim int) [][]int16 {
 	for i := 0; i < count; i++ {
 		vecs[i] = make([]int16, dim)
 		for j := 0; j < dim; j++ {
-			vecs[i][j] = int16(rng.Intn(65536) - 32768)
+			vecs[i][j] = int16(rng.Intn(65536) - 32768) // #nosec G115
 		}
 	}
 	return vecs
@@ -155,7 +155,7 @@ func BenchmarkSearch_Uint16(b *testing.B) {
 				for i := 0; i < numVectors; i++ {
 					vecs[i] = make([]uint16, dim)
 					for j := 0; j < dim; j++ {
-						vecs[i][j] = uint16(rng.Intn(65536))
+						vecs[i][j] = uint16(rng.Intn(65536)) // #nosec G115
 					}
 				}
 

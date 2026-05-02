@@ -209,48 +209,70 @@ MetalIndexHandle* metal_init(int dimensions, int initialCapacity) {
         id<MTLLibrary> library = [device newLibraryWithSource:shaderSource options:nil error:&error];
         if (library) {
             id<MTLFunction> pqFunc = [library newFunctionWithName:@"compute_pq_distances"];
-            id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:pqFunc error:&error];
-            if (pipeline) handle->pqPipeline = (__bridge_retained void*)pipeline;
+            if (pqFunc) {
+                id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:pqFunc error:&error];
+                if (pipeline) handle->pqPipeline = (__bridge_retained void*)pipeline;
+            }
             
             id<MTLFunction> assignFunc = [library newFunctionWithName:@"assign_to_clusters"];
-            id<MTLComputePipelineState> assignPipeline = [device newComputePipelineStateWithFunction:assignFunc error:&error];
-            if (assignPipeline) handle->assignPipeline = (__bridge_retained void*)assignPipeline;
+            if (assignFunc) {
+                id<MTLComputePipelineState> assignPipeline = [device newComputePipelineStateWithFunction:assignFunc error:&error];
+                if (assignPipeline) handle->assignPipeline = (__bridge_retained void*)assignPipeline;
+            }
 
             id<MTLFunction> bfsFunc = [library newFunctionWithName:@"graph_bfs_expand"];
-            id<MTLComputePipelineState> bfsPipeline = [device newComputePipelineStateWithFunction:bfsFunc error:&error];
-            if (bfsPipeline) handle->bfsExpandPipeline = (__bridge_retained void*)bfsPipeline;
+            if (bfsFunc) {
+                id<MTLComputePipelineState> bfsPipeline = [device newComputePipelineStateWithFunction:bfsFunc error:&error];
+                if (bfsPipeline) handle->bfsExpandPipeline = (__bridge_retained void*)bfsPipeline;
+            }
 
             id<MTLFunction> actFunc = [library newFunctionWithName:@"graph_activation_propagate"];
-            id<MTLComputePipelineState> actPipeline = [device newComputePipelineStateWithFunction:actFunc error:&error];
-            if (actPipeline) handle->actPropagatePipeline = (__bridge_retained void*)actPipeline;
+            if (actFunc) {
+                id<MTLComputePipelineState> actPipeline = [device newComputePipelineStateWithFunction:actFunc error:&error];
+                if (actPipeline) handle->actPropagatePipeline = (__bridge_retained void*)actPipeline;
+            }
 
             id<MTLFunction> fusedFunc = [library newFunctionWithName:@"graph_rag_fused"];
-            id<MTLComputePipelineState> fusedPipeline = [device newComputePipelineStateWithFunction:fusedFunc error:&error];
-            if (fusedPipeline) handle->fusedGraphPipeline = (__bridge_retained void*)fusedPipeline;
+            if (fusedFunc) {
+                id<MTLComputePipelineState> fusedPipeline = [device newComputePipelineStateWithFunction:fusedFunc error:&error];
+                if (fusedPipeline) handle->fusedGraphPipeline = (__bridge_retained void*)fusedPipeline;
+            }
 
             id<MTLFunction> l2Func = [library newFunctionWithName:@"vector_distance_l2"];
-            id<MTLComputePipelineState> l2Pipeline = [device newComputePipelineStateWithFunction:l2Func error:&error];
-            if (l2Pipeline) handle->l2DistancePipeline = (__bridge_retained void*)l2Pipeline;
+            if (l2Func) {
+                id<MTLComputePipelineState> l2Pipeline = [device newComputePipelineStateWithFunction:l2Func error:&error];
+                if (l2Pipeline) handle->l2DistancePipeline = (__bridge_retained void*)l2Pipeline;
+            }
 
             id<MTLFunction> ipFunc = [library newFunctionWithName:@"vector_distance_ip"];
-            id<MTLComputePipelineState> ipPipeline = [device newComputePipelineStateWithFunction:ipFunc error:&error];
-            if (ipPipeline) handle->ipDistancePipeline = (__bridge_retained void*)ipPipeline;
+            if (ipFunc) {
+                id<MTLComputePipelineState> ipPipeline = [device newComputePipelineStateWithFunction:ipFunc error:&error];
+                if (ipPipeline) handle->ipDistancePipeline = (__bridge_retained void*)ipPipeline;
+            }
 
             id<MTLFunction> sq8Func = [library newFunctionWithName:@"quantize_sq8"];
-            id<MTLComputePipelineState> sq8Pipeline = [device newComputePipelineStateWithFunction:sq8Func error:&error];
-            if (sq8Pipeline) handle->quantizeSQ8Pipeline = (__bridge_retained void*)sq8Pipeline;
+            if (sq8Func) {
+                id<MTLComputePipelineState> sq8Pipeline = [device newComputePipelineStateWithFunction:sq8Func error:&error];
+                if (sq8Pipeline) handle->quantizeSQ8Pipeline = (__bridge_retained void*)sq8Pipeline;
+            }
 
             id<MTLFunction> sigFunc = [library newFunctionWithName:@"sigmoid_f32"];
-            id<MTLComputePipelineState> sigPipeline = [device newComputePipelineStateWithFunction:sigFunc error:&error];
-            if (sigPipeline) handle->sigmoidPipeline = (__bridge_retained void*)sigPipeline;
+            if (sigFunc) {
+                id<MTLComputePipelineState> sigPipeline = [device newComputePipelineStateWithFunction:sigFunc error:&error];
+                if (sigPipeline) handle->sigmoidPipeline = (__bridge_retained void*)sigPipeline;
+            }
 
             id<MTLFunction> havFunc = [library newFunctionWithName:@"haversine_batch"];
-            id<MTLComputePipelineState> havPipeline = [device newComputePipelineStateWithFunction:havFunc error:&error];
-            if (havPipeline) handle->haversinePipeline = (__bridge_retained void*)havPipeline;
+            if (havFunc) {
+                id<MTLComputePipelineState> havPipeline = [device newComputePipelineStateWithFunction:havFunc error:&error];
+                if (havPipeline) handle->haversinePipeline = (__bridge_retained void*)havPipeline;
+            }
 
             id<MTLFunction> normFunc = [library newFunctionWithName:@"norm_batch_f32"];
-            id<MTLComputePipelineState> normPipeline = [device newComputePipelineStateWithFunction:normFunc error:&error];
-            if (normPipeline) handle->normPipeline = (__bridge_retained void*)normPipeline;
+            if (normFunc) {
+                id<MTLComputePipelineState> normPipeline = [device newComputePipelineStateWithFunction:normFunc error:&error];
+                if (normPipeline) handle->normPipeline = (__bridge_retained void*)normPipeline;
+            }
         }
         
         handle->graphOffsets = NULL;

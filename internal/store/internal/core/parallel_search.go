@@ -47,6 +47,56 @@ type ParallelSearchHost[T float32 | float64] interface {
 	GetNUMAConfig() (*memory.NUMATopology, int)
 }
 
+// SearchAttemptBuffers holds transient slices used during processChunkInternal
+// to avoid repeated allocations on the heap.
+type SearchAttemptBuffers struct {
+	Locations []types.Location
+	Found     []bool
+	ValidIDs  []uint32
+	Scores    []float32
+}
+
+func (b *SearchAttemptBuffers) EnsureCapacity(n int) {
+	if cap(b.Locations) < n {
+		b.Locations = make([]types.Location, n)
+	} else {
+		b.Locations = b.Locations[:n]
+	}
+	if cap(b.Found) < n {
+		b.Found = make([]bool, n)
+	} else {
+		b.Found = b.Found[:n]
+	}
+	if cap(b.ValidIDs) < n {
+		b.ValidIDs = make([]uint32, n)
+	} else {
+		b.ValidIDs = b.ValidIDs[:n]
+	}
+	if cap(b.Scores) < n {
+		b.Scores = make([]float32, n)
+	} else {
+		b.Scores = b.Scores[:n]
+	}
+}
+
+func (b *SearchAttemptBuffers) Reset() {
+	b.Locations = b.Locations[:0]
+	b.Found = b.Found[:0]
+	b.ValidIDs = b.ValidIDs[:0]
+	b.Scores = b.Scores[:0]
+}
+
+var attemptBuffersPool = sync.Pool{
+	New: func() any {
+		return &SearchAttemptBuffers{
+			Locations: make([]types.Location, 0, 512),
+			Found:     make([]bool, 0, 512),
+			ValidIDs:  make([]uint32, 0, 512),
+			Scores:    make([]float32, 0, 512),
+		}
+	},
+}
+
 
 
 // processResultsParallelInternal is the generalized parallel result processing routine.
@@ -168,9 +218,16 @@ func processChunkInternal[T float32 | float64](ctx context.Context, h ParallelSe
 	results := make([]types.SearchResult, 0, len(candidates))
 	dataset := h.GetDataset()
 
-	// Step 1: Batch location lookup
-	locations := make([]types.Location, len(candidates))
-	found := make([]bool, len(candidates))
+	// Step 1: Batch location lookup from pool
+	buf := attemptBuffersPool.Get().(*SearchAttemptBuffers)
+	buf.EnsureCapacity(len(candidates))
+	defer func() {
+		buf.Reset()
+		attemptBuffersPool.Put(buf)
+	}()
+
+	locations := buf.Locations
+	found := buf.Found
 
 	prefetchCount := 4 // Prefetch 4 items ahead
 	prefetchOps := 0
@@ -268,7 +325,7 @@ func processChunkInternal[T float32 | float64](ctx context.Context, h ParallelSe
 		}
 	}()
 
-	validIDs := make([]uint32, 0, len(candidates))
+	validIDs := buf.ValidIDs[:0]
 	count := 0
 
 	evaluators := make(map[int]*qry.FilterEvaluator)
@@ -353,7 +410,7 @@ func processChunkInternal[T float32 | float64](ctx context.Context, h ParallelSe
 		return results
 	}
 
-	scores := make([]float32, count)
+	scores := buf.Scores[:count]
 	usedBatch := false
 	metric := h.GetDistanceMetric()
 

@@ -12,35 +12,31 @@ import (
 // Using generic unrolled fallbacks for stability while assembly kernels are refined.
 
 func euclideanNEON(a, b []float32) (float32, error) {
-	return euclideanUnrolled4x(a, b)
+	return euclideanNEONKernel(a, b), nil
 }
 
 func dotNEON(a, b []float32) (float32, error) {
-	return dotUnrolled4x(a, b)
+	return dotNEONKernel(a, b), nil
 }
 
 func cosineNEON(a, b []float32) (float32, error) {
-	return cosineUnrolled4x(a, b)
+	return cosineNEONKernel(a, b), nil
 }
 
 func l2SquaredNEON(a, b []float32) (float32, error) {
-	d, err := euclideanUnrolled4x(a, b)
-	if err != nil {
-		return 0, err
-	}
-	return d * d, nil
+	return l2SquaredNEONKernel(a, b), nil
 }
 
 func euclidean128NEON(a, b []float32) (float32, error) {
-	return euclidean128Unrolled4x(a, b)
+	return l2Squared128NEONKernel(a, b), nil
 }
 
 func euclidean384NEON(a, b []float32) (float32, error) {
-	return euclidean384Unrolled4x(a, b)
+	return l2Squared384NEONKernel(a, b), nil
 }
 
 func euclidean768NEON(a, b []float32) (float32, error) {
-	return euclidean768Unrolled4x(a, b)
+	return l2Squared768NEONKernel(a, b), nil
 }
 
 func euclidean1024NEON(a, b []float32) (float32, error) {
@@ -56,15 +52,15 @@ func euclidean3072NEON(a, b []float32) (float32, error) {
 }
 
 func dot128NEON(a, b []float32) (float32, error) {
-	return dot128Unrolled4x(a, b)
+	return dot128NEONKernel(a, b), nil
 }
 
 func dot384NEON(a, b []float32) (float32, error) {
-	return dotUnrolled4x(a, b)
+	return dot384NEONKernel(a, b), nil
 }
 
 func dot768NEON(a, b []float32) (float32, error) {
-	return dotUnrolled4x(a, b)
+	return dot768NEONKernel(a, b), nil
 }
 
 func dot1024NEON(a, b []float32) (float32, error) {
@@ -80,15 +76,15 @@ func dot3072NEON(a, b []float32) (float32, error) {
 }
 
 func euclideanF16NEON(a, b []float16.Num) (float32, error) {
-	return euclideanF16Unrolled4x(a, b)
+	return euclideanF16NEONKernel(a, b), nil
 }
 
 func dotF16NEON(a, b []float16.Num) (float32, error) {
-	return dotF16Unrolled4x(a, b)
+	return dotF16NEONKernel(a, b), nil
 }
 
 func cosineF16NEON(a, b []float16.Num) (float32, error) {
-	return cosineF16Unrolled4x(a, b)
+	return cosineF16NEONKernel(a, b), nil
 }
 
 func dotInt4Neon(a, b []byte) (float32, error) {
@@ -124,15 +120,24 @@ func matchFloat64Neon(src []float64, val float64, op CompareOp, dst []byte) erro
 }
 
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) error {
-	return euclideanBatchUnrolled4x(query, vectors, results)
+	for i, vec := range vectors {
+		results[i] = l2SquaredNEONKernel(query, vec)
+	}
+	return nil
 }
 
 func dotBatchNEON(query []float32, vectors [][]float32, results []float32) error {
-	return dotBatchUnrolled4x(query, vectors, results)
+	for i, vec := range vectors {
+		results[i] = dotNEONKernel(query, vec)
+	}
+	return nil
 }
 
 func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) error {
-	return cosineBatchUnrolled4x(query, vectors, results)
+	for i, vec := range vectors {
+		results[i] = cosineNEONKernel(query, vec)
+	}
+	return nil
 }
 
 func FastWalshHadamardTransform32NEON(a []float32) error {
@@ -359,6 +364,7 @@ var _ = func() {
 		vectorButterflyNEONKernel(nil, nil)
 		vectorButterfly16NEONKernel(nil, nil)
 		_ = l2Squared384NEONKernel(nil, nil)
+		accumulateWeightedScatterNEON(nil, nil, nil, 0)
 	}
 }
 

@@ -374,6 +374,10 @@ TEXT ·int32ToFloat32AVX512Kernel(SB), NOSPLIT, $0-24
 TEXT ·uint32ToFloat32AVX512Kernel(SB), NOSPLIT, $0-24
 	RET
 
+// func float16ToFloat32AVX512Kernel(src uintptr, dst uintptr, n int)
+TEXT ·float16ToFloat32AVX512Kernel(SB), NOSPLIT, $0-24
+	RET
+
 // func matchInt64AVX2Kernel(src uintptr, val int64, op int, dst uintptr, n int)
 TEXT ·matchInt64AVX2Kernel(SB), NOSPLIT, $0-40
 	RET

@@ -134,6 +134,7 @@ func main() {
 		"int8ToFloat32AVX512Kernel", "uint8ToFloat32AVX512Kernel", 
 		"int16ToFloat32AVX512Kernel", "uint16ToFloat32AVX512Kernel",
 		"int32ToFloat32AVX512Kernel", "uint32ToFloat32AVX512Kernel", 
+		"float16ToFloat32AVX512Kernel",
 	}
 	for _, s := range stubsUnary {
 		TEXT(s, NOSPLIT, "func(src, dst uintptr, n int)")

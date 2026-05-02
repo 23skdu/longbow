@@ -703,3 +703,6 @@ func atan2AVX2(y, x, dst []float32) {
 // AVX512 and other kernel declarations are now in all_kernels_stubs_amd64.go
 //go:noescape
 func pause()
+
+//go:noescape
+func softmaxAVX512Kernel(src, dst uintptr, n int)

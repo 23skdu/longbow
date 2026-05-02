@@ -6,6 +6,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/pprof" // Register pprof handlers manually
+	_ "expvar"       // Register expvar handlers
 	"os"
 	"os/signal"
 	"strconv" // Added for hostname fallback
@@ -510,6 +511,7 @@ func run() error {
 		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+		mux.Handle("/debug/vars", http.DefaultServeMux) // expvar uses DefaultServeMux
 
 		// Try to bind to the configured port, with fallback to next 5 ports
 		baseAddr := cfg.MetricsAddr

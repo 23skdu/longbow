@@ -105,7 +105,7 @@ func FuzzIngestionIntegrityConcurrent(f *testing.F) {
 			// We check Records length (memory applied)
 			// total rows calculation:
 			count := 0
-			for _, r := range ds.Records {
+			for _, r := range ds.Records.Read() {
 				count += int(r.NumRows())
 			}
 			return count == totalExpected

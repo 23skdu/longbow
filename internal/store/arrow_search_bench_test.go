@@ -53,7 +53,7 @@ func BenchmarkSearchScaling(b *testing.B) {
 			}
 
 			rec := builder.NewRecordBatch()
-			ds.Records = []arrow.RecordBatch{rec}
+			ds.Records = NewLockFreeSliceFrom([]arrow.RecordBatch{rec})
 
 			// Create level generator
 			ml := 1.0 / math.Log(float64(config.M))

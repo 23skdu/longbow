@@ -97,6 +97,9 @@ type VectorStore struct {
 	// Auto-sharding (Phase 13)
 	autoShardingConfig AutoShardingConfig
 
+	// Search pooling (Phase 6 Optimization)
+	resultPool *SearchResultPool
+
 	// Namespace management
 	nsManager *namespaceManager
 

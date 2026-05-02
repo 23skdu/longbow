@@ -167,7 +167,7 @@ func runType(t *testing.T, typeName string, dim, numVecs int, genFunc func(*arra
 			batchIdxs[k] = 0 // We pass only 1 batch in the slice
 		}
 
-		ds.Records = append(ds.Records, rec)
+		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 		rec.Retain()
 
 		_, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)

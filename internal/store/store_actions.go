@@ -173,7 +173,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 		// Fallback Linear Scan (if not found in PrimaryIndex)
 		if !found {
-			for i, rec := range ds.Records {
+			for i, rec := range ds.Records.Read() {
 				idColIdx := -1
 				for j, field := range rec.Schema().Fields() {
 					if field.Name == "id" {
@@ -1320,16 +1320,24 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		ds.Index = aIdx
 	}
 
-	batchIdx := len(ds.Records)
-	ds.Records = append(ds.Records, rec)
+	currentRecords := ds.Records.Read()
+	batchIdx := len(currentRecords)
+	newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
+	copy(newRecords, currentRecords)
+	newRecords[len(currentRecords)] = rec
+	ds.Records.UpdateInPlace(newRecords)
 	rec.Retain()
-
+ 
 	currCPU := lmem.GetCurrentCPU()
 	currNode := -1
 	if s.numaTopology != nil {
 		currNode = s.numaTopology.GetNodeForCPU(currCPU)
 	}
-	ds.BatchNodes = append(ds.BatchNodes, currNode)
+	currentNodes := ds.BatchNodes.Read()
+	newNodes := make([]int, len(currentNodes)+1)
+	copy(newNodes, currentNodes)
+	newNodes[len(currentNodes)] = currNode
+	ds.BatchNodes.UpdateInPlace(newNodes)
 
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
 

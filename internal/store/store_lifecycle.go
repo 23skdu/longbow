@@ -44,7 +44,7 @@ func (s *VectorStore) evictDataset(name string) {
 	// If store owns the "base" refcount, we release it here.
 	ds.dataMu.Lock()
 	defer ds.dataMu.Unlock()
-	for _, r := range ds.Records {
+	for _, r := range ds.Records.Read() {
 		r.Release()
 	}
 

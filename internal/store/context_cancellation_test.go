@@ -50,7 +50,7 @@ func TestSearchContextCancellation(t *testing.T) {
 	})
 
 	ds.dataMu.Lock()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	rec.Retain()
 	ds.dataMu.Unlock()
 
@@ -112,7 +112,7 @@ func TestCompactionContextCancellation(t *testing.T) {
 		b.Field(0).(*array.Int64Builder).Append(int64(i))
 		rec := b.NewRecordBatch()
 		ds.dataMu.Lock()
-		ds.Records = append(ds.Records, rec)
+		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 		ds.dataMu.Unlock()
 		b.Release()
 	}

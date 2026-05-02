@@ -170,7 +170,7 @@ func (p *HybridSearchPipeline) Search(q *HybridSearchQuery) ([]SearchResult, err
 	// 3. Keyword search (sparse) using BM25
 	var sparseResults []SearchResult
 	if q.KeywordQuery != "" && p.bm25Index != nil && alpha < 1 {
-		sparseResults = p.bm25Index.SearchBM25(q.KeywordQuery, q.K*2, filterBitmap)
+		sparseResults = p.bm25Index.SearchBM25(q.KeywordQuery, q.K*2, filterBitmap, nil)
 	}
 
 	// 4. Fuse results based on mode
@@ -182,13 +182,13 @@ func (p *HybridSearchPipeline) Search(q *HybridSearchQuery) ([]SearchResult, err
 
 	switch p.config.FusionMode {
 	case FusionModeRRF:
-		fused = ReciprocalRankFusion(datasetName, denseResults, sparseResults, p.config.RRFk, q.K)
+		fused = ReciprocalRankFusion(datasetName, denseResults, sparseResults, p.config.RRFk, q.K, nil)
 	case FusionModeLinear:
 		fused = FuseLinear(denseResults, sparseResults, alpha, q.K)
 	case FusionModeCascade:
 		fused = FuseCascade(filterBitmap, sparseResults, denseResults, q.K)
 	default:
-		fused = ReciprocalRankFusion(datasetName, denseResults, sparseResults, p.config.RRFk, q.K)
+		fused = ReciprocalRankFusion(datasetName, denseResults, sparseResults, p.config.RRFk, q.K, nil)
 	}
 
 	// 5. Re-ranking stage (Stage 2)
@@ -245,7 +245,7 @@ func FuseLinear(dense, sparse []SearchResult, alpha float32, limit int) []Search
 
 // FuseRRF is an alias for ReciprocalRankFusion (legacy alignment)
 func FuseRRF(dataset string, dense, sparse []SearchResult, k, limit int) []SearchResult {
-	return ReciprocalRankFusion(dataset, dense, sparse, k, limit)
+	return ReciprocalRankFusion(dataset, dense, sparse, k, limit, nil)
 }
 
 // FuseCascade implements cascade-style filtering: exact -> keyword -> vector

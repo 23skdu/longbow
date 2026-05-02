@@ -217,7 +217,7 @@ func createTestDataset(t *testing.T, name string, dims, numVectors int) *Dataset
 
 	return &Dataset{
 		Name:    name,
-		Records: []arrow.RecordBatch{record},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{record}),
 		Schema:  schema,
 	}
 }

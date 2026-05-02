@@ -120,9 +120,13 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 	defer ds.dataMu.Unlock()
 
 	rec.Retain() // Dataset takes ownership
-	batchIdx := len(ds.Records)
-	ds.Records = append(ds.Records, rec)
-
+	currentRecords := ds.Records.Read()
+	batchIdx := len(currentRecords)
+	newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
+	copy(newRecords, currentRecords)
+	newRecords[len(currentRecords)] = rec
+	ds.Records.UpdateInPlace(newRecords)
+ 
 	// Update Primary Index and natively process RowLocation tombstones for Upserts
 	ds.UpdatePrimaryIndex(batchIdx, ds.ExtractIDs(rec))
 
@@ -145,7 +149,7 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 
 	// queue for indexing
 	ds.PendingIndexJobs.Add(rec.NumRows())
-	bIdx := len(ds.Records) - 1
+	bIdx := len(ds.Records.Read()) - 1
 	s.logger.Debug().Str("dataset", name).Int("batch_idx", bIdx).Msg("Sending indexing job")
 	s.indexQueue.Send(IndexJob{
 		DatasetName: name,
@@ -229,8 +233,11 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 	defer ds.dataMu.Unlock()
 
 	for _, rec := range item.Records {
-		rec.Retain()
-		ds.Records = append(ds.Records, rec)
+		currentRecords := ds.Records.Read()
+		newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
+		copy(newRecords, currentRecords)
+		newRecords[len(currentRecords)] = rec
+		ds.Records.UpdateInPlace(newRecords)
 
 		size := estimateBatchSize(rec)
 		ds.SizeBytes.Add(size)

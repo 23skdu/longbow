@@ -49,7 +49,7 @@ func TestShardedHNSW_Compaction(t *testing.T) {
 	rec0 := bldr.NewRecordBatch()
 	defer rec0.Release()
 
-	dataset.Records = []arrow.RecordBatch{rec0}
+	dataset.Records = NewLockFreeSliceFrom([]arrow.RecordBatch{rec0})
 
 	// Add to index
 	for i := 0; i < 10; i++ {
@@ -75,9 +75,9 @@ func TestShardedHNSW_Compaction(t *testing.T) {
 	remapping[0] = BatchRemapInfo{NewBatchIdx: 10, NewRowIdxs: newRowIdxs}
 
 	// Update dataset records (mock)
-	dataset.Records = make([]arrow.RecordBatch, 11) // Resize to accommodate batch 10
+	dataset.Records = NewLockFreeSliceFrom(make([]arrow.RecordBatch, 11)) // Resize to accommodate batch 10
 	rec0.Retain()
-	dataset.Records[10] = rec0 // Move record to pos 10
+	dataset.Records.Read()[10] = rec0 // Move record to pos 10
 
 	// Call Remap
 	err = idx.RemapFromBatchInfo(remapping)
@@ -120,7 +120,7 @@ func TestShardedHNSW_Vacuum(t *testing.T) {
 	}
 	rec := bldr.NewRecordBatch()
 	defer rec.Release()
-	dataset.Records = []arrow.RecordBatch{rec}
+	dataset.Records = NewLockFreeSliceFrom([]arrow.RecordBatch{rec})
 
 	for i := 0; i < 10; i++ {
 		_, err := idx.AddByRecord(context.Background(), rec, i, 0)
@@ -177,7 +177,7 @@ func TestShardedHNSW_DynamicGrowth(t *testing.T) {
 	}
 	rec := bldr.NewRecordBatch()
 	defer rec.Release()
-	dataset.Records = []arrow.RecordBatch{rec}
+	dataset.Records = NewLockFreeSliceFrom([]arrow.RecordBatch{rec})
 
 	for i := 0; i < 25; i++ {
 		_, err := idx.AddByRecord(context.Background(), rec, i, 0)

@@ -37,7 +37,7 @@ func TestHighDimGrowth(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "growth_test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
 	config := DefaultArrowHNSWConfig()

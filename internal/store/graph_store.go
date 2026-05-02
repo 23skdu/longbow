@@ -27,6 +27,7 @@ type GraphStore struct {
 	predicatesMu  sync.RWMutex
 	predicates    []string
 	edgeCount     atomic.Int64
+	shardedMus    [1024]lbtypes.PaddedMutex
 }
 
 // Direction defines the traversal direction in the graph.
@@ -130,17 +131,23 @@ func (gs *GraphStore) AddEdge(edge Edge) error {
 		gs.predicatesMu.Unlock()
 	}
 
-	// 2. Add to Forward Edges (Lock-Free Read, COW Update)
+	// 2. Add to Forward Edges (Lock-Free Read, COW Update with Shard Lock)
 	subject := uint32(edge.Subject)
+	muFwd := &gs.shardedMus[subject%1024]
+	muFwd.Lock()
 	edges, _ := gs.forwardEdges.Get(subject)
 	newEdges := append(append([]Edge(nil), edges...), edge)
 	gs.forwardEdges.Set(subject, newEdges)
+	muFwd.Unlock()
 
-	// 3. Add to Backward Edges (Lock-Free Read, COW Update)
+	// 3. Add to Backward Edges (Lock-Free Read, COW Update with Shard Lock)
 	object := uint32(edge.Object)
+	muBwd := &gs.shardedMus[object%1024]
+	muBwd.Lock()
 	bEdges, _ := gs.backwardEdges.Get(object)
 	newBEdges := append(append([]Edge(nil), bEdges...), edge)
 	gs.backwardEdges.Set(object, newBEdges)
+	muBwd.Unlock()
 
 	gs.edgeCount.Add(1)
 	return nil

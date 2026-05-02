@@ -101,7 +101,7 @@ func TestReciprocalRankFusion(t *testing.T) {
 		{ID: 4, Distance: 0.5, Score: 0.5},
 	}
 
-	fused := ReciprocalRankFusion("test", results1, results2, 60, 1)
+	fused := ReciprocalRankFusion("test", results1, results2, 60, 1, nil)
 
 	assert.NotEmpty(t, fused)
 

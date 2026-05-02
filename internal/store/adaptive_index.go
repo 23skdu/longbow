@@ -476,11 +476,11 @@ func (b *BruteForceIndex) Len() int {
 
 // getVector retrieves a vector from the dataset.
 func (b *BruteForceIndex) getVector(loc Location) []float32 {
-	if b.dataset == nil || loc.BatchIdx >= len(b.dataset.Records) {
+	if b.dataset == nil || loc.BatchIdx >= len(b .dataset.Records.Read()) {
 		return nil
 	}
 
-	record := b.dataset.Records[loc.BatchIdx]
+	record := b .dataset.Records.Read()[loc.BatchIdx]
 	fieldIndices := record.Schema().FieldIndices("vector")
 	if len(fieldIndices) == 0 {
 		return nil
@@ -514,12 +514,12 @@ func (b *BruteForceIndex) getVector(loc Location) []float32 {
 func (b *BruteForceIndex) getVectorUnsafe(loc Location) (vec []float32, release func()) {
 	b.enterEpoch()
 
-	if b.dataset == nil || loc.BatchIdx >= len(b.dataset.Records) {
+	if b.dataset == nil || loc.BatchIdx >= len(b .dataset.Records.Read()) {
 		b.exitEpoch()
 		return nil, nil
 	}
 
-	record := b.dataset.Records[loc.BatchIdx]
+	record := b .dataset.Records.Read()[loc.BatchIdx]
 	fieldIndices := record.Schema().FieldIndices("vector")
 	if len(fieldIndices) == 0 {
 		b.exitEpoch()

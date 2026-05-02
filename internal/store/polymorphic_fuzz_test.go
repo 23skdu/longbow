@@ -9,6 +9,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/storage"
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/require"
@@ -75,8 +76,8 @@ func FuzzPolymorphicIngestion(f *testing.F) {
 		// 1. Storage
 		batch.Retain()
 		ds.dataMu.Lock()
-		ds.Records = append(ds.Records, batch)
-		batchIdx := len(ds.Records) - 1
+		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), batch))
+		batchIdx := len(ds.Records.Read()) - 1
 		ds.dataMu.Unlock()
 
 		// 2. Index (HNSW)

@@ -25,7 +25,7 @@ func TestArrowHNSW_PersistenceRefactor(t *testing.T) {
 	ds := &MockDataset{
 		Name:    "test_persistence",
 		Schema:  schema,
-		Records: []arrow.RecordBatch{},
+		Records: make([]arrow.RecordBatch, 0),
 	}
 
 	// Create Index

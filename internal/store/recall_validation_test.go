@@ -159,7 +159,7 @@ func measureRecall(ctx context.Context, t *testing.T, numVectors, dim, numQuerie
 
 	// Create dataset
 	ds := store.NewDataset("recall_test", schema)
-	ds.Records = []arrow.RecordBatch{rec}
+	ds.Records = store.NewLockFreeSliceFrom([]arrow.RecordBatch{rec})
 
 	// No legacy index needed. ArrowHNSW manages its own locations.
 

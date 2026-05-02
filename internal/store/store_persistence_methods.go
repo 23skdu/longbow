@@ -51,8 +51,8 @@ func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) 
 
 	for name, ds := range *datasets {
 		ds.dataMu.RLock()
-		records := make([]arrow.RecordBatch, len(ds.Records))
-		copy(records, ds.Records)
+		records := make([]arrow.RecordBatch, len(ds.Records.Read()))
+		copy(records, ds.Records.Read())
 		// Access PQEncoder under lock
 		var pqBytes []byte
 		if ds.PQEncoder != nil {
@@ -60,10 +60,20 @@ func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) 
 		}
 		ds.dataMu.RUnlock()
 
+		// Retain records for parallel snapshot
+		for _, r := range records {
+			r.Retain()
+		}
+
 		item := storage.SnapshotItem{
 			Name:       name,
 			Records:    records,
 			PQCodebook: pqBytes,
+			Cleanup: func() {
+				for _, r := range records {
+					r.Release()
+				}
+			},
 		}
 
 		// Export Index Graph

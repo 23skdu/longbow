@@ -266,7 +266,7 @@ func TestDataset_PerRecordEviction(t *testing.T) {
 
 	// Create dataset with eviction manager
 	ds := &Dataset{
-		Records:        make([]arrow.RecordBatch, 0),
+		Records: NewLockFreeSlice[arrow.RecordBatch](),
 		Name:           "test",
 		recordEviction: NewRecordEvictionManager(),
 	}
@@ -288,7 +288,7 @@ func TestDataset_PerRecordEviction(t *testing.T) {
 			ttl = 50 * time.Millisecond
 		}
 		ds.recordEviction.Register(rec, ttl)
-		ds.Records = append(ds.Records, rec)
+		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	}
 
 	assert.Len(t, ds.Records, 3)

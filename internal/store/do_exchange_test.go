@@ -116,11 +116,11 @@ func TestDoExchange_Ingest(t *testing.T) {
 	assert.Eventually(t, func() bool {
 		ds.dataMu.RLock()
 		defer ds.dataMu.RUnlock()
-		return len(ds.Records) == 1
+		return len(ds.Records.Read()) == 1
 	}, 1*time.Second, 10*time.Millisecond, "dataset should have 1 record batch")
 
 	require.Len(t, ds.Records, 1)
-	assert.Equal(t, int64(2), ds.Records[0].NumRows())
+	assert.Equal(t, int64(2), ds.Records.Read()[0].NumRows())
 }
 
 // BenchmarkDoExchange_Ingest measures throughput of DoExchange ingestion.

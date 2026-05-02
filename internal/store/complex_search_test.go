@@ -105,7 +105,7 @@ func TestComplex_SearchCorrectness(t *testing.T) {
 	}
 
 	rec := b.NewRecordBatch()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	rec.Retain()
 	defer rec.Release()
 

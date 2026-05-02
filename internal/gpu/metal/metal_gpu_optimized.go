@@ -1951,6 +1951,22 @@ func (idx *MetalIndexOptimized) SearchTurboQuant(vector []float32, k int, bitsPe
 	return resultIDs, resultDistances, nil
 }
 
+func (idx *MetalIndexOptimized) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
+	return nil
+}
+
+func (idx *MetalIndexOptimized) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
+	return nil, nil, nil
+}
+
+func (idx *MetalIndexOptimized) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
+	return nil, nil
+}
+
+func (idx *MetalIndexOptimized) NormBatch(vectors []float32, dims int) ([]float32, error) {
+	return nil, nil
+}
+
 func (idx *MetalIndexOptimized) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
 	// CPU fallback for cluster assignment
 	numVecs := len(vectors) / idx.dim
@@ -1977,11 +1993,4 @@ func (idx *MetalIndexOptimized) AssignToClusters(vectors []float32, centroids []
 		assignments[i] = bestCluster
 	}
 	return assignments, nil
-}
-func (idx *MetalIndexOptimized) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
-	return fmt.Errorf("UpdateGraph not implemented for optimized Metal index")
-}
-
-func (idx *MetalIndexOptimized) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
-	return nil, nil, fmt.Errorf("GraphExpand not implemented for optimized Metal index")
 }

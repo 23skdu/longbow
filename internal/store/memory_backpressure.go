@@ -14,12 +14,15 @@ import (
 type PressureLevel int32
 
 const (
+	// PressureNone indicates no memory pressure.
 	PressureNone PressureLevel = iota
+	// PressureSoft indicates memory usage is above the soft limit; operations are delayed.
 	PressureSoft
+	// PressureHard indicates memory usage is above the hard limit; operations are blocked.
 	PressureHard
 )
 
-// BackpressureConfig configures memory backpressure behavior.
+// BackpressureConfig configures memory backpressure behavior thresholds and delays.
 type BackpressureConfig struct {
 	SoftLimitBytes    uint64
 	HardLimitBytes    uint64

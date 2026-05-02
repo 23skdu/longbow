@@ -258,6 +258,50 @@ func extractVectorFromCol(rec arrow.RecordBatch, rowIdx int) ([]float32, error) 
 		for j := 0; j < width; j++ {
 			vec[j] = float32(vals[start+j])
 		}
+	case *array.Int8:
+		vals := valuesArr.Int8Values()
+		for j := 0; j < width; j++ {
+			vec[j] = float32(vals[start+j])
+		}
+	case *array.Int16:
+		vals := valuesArr.Int16Values()
+		for j := 0; j < width; j++ {
+			vec[j] = float32(vals[start+j])
+		}
+	case *array.Int32:
+		vals := valuesArr.Int32Values()
+		for j := 0; j < width; j++ {
+			vec[j] = float32(vals[start+j])
+		}
+	case *array.Int64:
+		vals := valuesArr.Int64Values()
+		for j := 0; j < width; j++ {
+			vec[j] = float32(vals[start+j])
+		}
+	case *array.Uint8:
+		vals := valuesArr.Uint8Values()
+		for j := 0; j < width; j++ {
+			vec[j] = float32(vals[start+j])
+		}
+	case *array.Uint16:
+		vals := valuesArr.Uint16Values()
+		for j := 0; j < width; j++ {
+			vec[j] = float32(vals[start+j])
+		}
+	case *array.Uint32:
+		vals := valuesArr.Uint32Values()
+		for j := 0; j < width; j++ {
+			vec[j] = float32(vals[start+j])
+		}
+	case *array.Uint64:
+		vals := valuesArr.Uint64Values()
+		for j := 0; j < width; j++ {
+			vec[j] = float32(vals[start+j])
+		}
+	case *array.Float16:
+		for j := 0; j < width; j++ {
+			vec[j] = valuesArr.Value(start + j).Float32()
+		}
 	default:
 		return nil, fmt.Errorf("unsupported vector element type: %s", valuesArr.DataType())
 	}

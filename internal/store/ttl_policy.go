@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// TTLPolicy manages the time-to-live policy for vectors, automatically deleting expired data.
 type TTLPolicy struct {
 	mu              sync.RWMutex
 	defaultTTL      time.Duration
@@ -16,12 +17,14 @@ type TTLPolicy struct {
 	wg              sync.WaitGroup
 }
 
+// TTLPolicyConfig defines the configuration for the TTL policy.
 type TTLPolicyConfig struct {
 	Enabled         bool
 	DefaultTTL      time.Duration
 	CleanupInterval time.Duration
 }
 
+// DefaultTTLPolicyConfig returns a TTLPolicyConfig with production defaults.
 func DefaultTTLPolicyConfig() TTLPolicyConfig {
 	return TTLPolicyConfig{
 		Enabled:         false,
@@ -30,6 +33,7 @@ func DefaultTTLPolicyConfig() TTLPolicyConfig {
 	}
 }
 
+// NewTTLPolicy creates a new TTLPolicy with the given temporal index and configuration.
 func NewTTLPolicy(temporalIndex *TemporalIndex, cfg TTLPolicyConfig) *TTLPolicy {
 	return &TTLPolicy{
 		defaultTTL:      cfg.DefaultTTL,
@@ -40,6 +44,7 @@ func NewTTLPolicy(temporalIndex *TemporalIndex, cfg TTLPolicyConfig) *TTLPolicy 
 	}
 }
 
+// Start begins the background cleanup process for the TTL policy.
 func (tp *TTLPolicy) Start(ctx context.Context) {
 	if !tp.enabled {
 		return
@@ -64,6 +69,7 @@ func (tp *TTLPolicy) Start(ctx context.Context) {
 	}()
 }
 
+// Stop terminates the background cleanup process for the TTL policy.
 func (tp *TTLPolicy) Stop() {
 	if !tp.enabled {
 		return
@@ -91,24 +97,28 @@ func (tp *TTLPolicy) cleanup() {
 	}
 }
 
+// SetEnabled enables or disables the TTL policy.
 func (tp *TTLPolicy) SetEnabled(enabled bool) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 	tp.enabled = enabled
 }
 
+// IsEnabled returns whether the TTL policy is currently enabled.
 func (tp *TTLPolicy) IsEnabled() bool {
 	tp.mu.RLock()
 	defer tp.mu.RUnlock()
 	return tp.enabled
 }
 
+// SetDefaultTTL updates the default TTL duration.
 func (tp *TTLPolicy) SetDefaultTTL(ttl time.Duration) {
 	tp.mu.Lock()
 	defer tp.mu.Unlock()
 	tp.defaultTTL = ttl
 }
 
+// GetDefaultTTL returns the current default TTL duration.
 func (tp *TTLPolicy) GetDefaultTTL() time.Duration {
 	tp.mu.RLock()
 	defer tp.mu.RUnlock()

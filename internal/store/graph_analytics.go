@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"runtime"
 	"sync"
 	"sync/atomic"
 
@@ -14,6 +15,7 @@ type GraphAnalytics struct {
 	graphProvider func() *types.GraphData
 }
 
+// GraphProperties contains basic statistics about the graph structure.
 type GraphProperties struct {
 	NodeCount int
 	EdgeCount int
@@ -21,6 +23,7 @@ type GraphProperties struct {
 	Density   float32
 }
 
+// NewGraphAnalytics creates a new GraphAnalytics instance with the provided graph provider.
 func NewGraphAnalytics(graphProvider func() *types.GraphData) *GraphAnalytics {
 	return &GraphAnalytics{
 		graphProvider: graphProvider,
@@ -144,122 +147,126 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 	// Let's use a map for reverse adjacency to be safe with sparse IDs,
 	// but arrays for scores if we can determine max ID.
 
-	maxID := uint32(0)
-	nodeCount := 0
-
-	// Scan layer 0 to find max ID and build out-degrees
-	// We can't easily know "valid" nodes without iterating everything or Levels.
-	// We'll iterate Levels to find valid nodes.
-
-	validNodes := make(map[uint32]bool)
-	outDegrees := make(map[uint32]int)
-	reverseAdj := make(map[uint32][]uint32)
-
-	// Iterate chunks
-	// Assuming Layer 0 exists
-	if len(graph.Neighbors) == 0 || len(graph.Neighbors[0]) == 0 {
+	// 1. Determine Max Node ID and Node Count
+	capacity := graph.Capacity
+	validNodes := make([]bool, capacity)
+	outDegrees := make([]int32, capacity)
+	
+	var wg sync.WaitGroup
+	numWorkers := runtime.NumCPU()
+	chunkSize := (capacity + numWorkers - 1) / numWorkers
+	
+	for w := 0; w < numWorkers; w++ {
+		start := w * chunkSize
+		end := start + chunkSize
+		if end > capacity { end = capacity }
+		if start >= end { break }
+		
+		wg.Add(1)
+		go func(s, e int) {
+			defer wg.Done()
+			for i := s; i < e; i++ {
+				neighbors := graph.GetNeighbors(0, uint32(i), nil) // #nosec G115
+				if len(neighbors) > 0 {
+					validNodes[i] = true
+					outDegrees[i] = int32(len(neighbors)) // #nosec G115
+				}
+			}
+		}(start, end)
+	}
+	wg.Wait()
+	
+	realMaxID := uint32(0)
+	realNodeCount := 0
+	for i, valid := range validNodes {
+		if valid {
+			realNodeCount++
+			realMaxID = uint32(i)
+		}
+	}
+	
+	if realNodeCount == 0 {
 		return &CentralityResult{Scores: map[uint32]float32{}}, nil
 	}
 
-	chunks := graph.Neighbors[0]
-	for cID, chunk := range chunks {
-		if chunk == nil {
-			continue
-		}
-
-		countChunk := graph.GetCountsChunk(0, cID)
-		if countChunk == nil {
-			continue
-		}
-
-		for cOff := 0; cOff < types.ChunkSize; cOff++ {
-			if atomic.LoadInt32(&countChunk[cOff]) == 0 {
-				// Potential skip, but check via Levels if node exists?
-				// A node might have 0 neighbors but still exist.
-				// For PageRank, isolated nodes are boring but valid.
-				// Let's assume Levels check is authoritative for existence.
-				continue
-			}
-
-			nodeID := uint32(cID*types.ChunkSize + cOff)
-			validNodes[nodeID] = true
-			if nodeID > maxID {
-				maxID = nodeID
-			}
-			nodeCount++
-
-			// Read neighbors
-			neighbors := graph.GetNeighbors(0, nodeID, nil)
-			outDegrees[nodeID] = len(neighbors)
-
+	// 2. Build Reverse Adjacency
+	reverseAdj := make([][]uint32, realMaxID+1)
+	for i, valid := range validNodes {
+		if valid {
+			neighbors := graph.GetNeighbors(0, uint32(i), nil) // #nosec G115
 			for _, nbr := range neighbors {
-				reverseAdj[nbr] = append(reverseAdj[nbr], nodeID)
-				if nbr > maxID {
-					maxID = nbr
+				if nbr < uint32(len(reverseAdj)) { // #nosec G115
+					reverseAdj[nbr] = append(reverseAdj[nbr], uint32(i))
 				}
-				validNodes[nbr] = true
 			}
 		}
+	}
 
-		// Context check
-		select {
-		case <-ctx.Done():
-			return nil, ctx.Err()
-		default:
+	// 3. Initialize Scores
+	scores := make([]float32, realMaxID+1)
+	initialScore := 1.0 / float32(realNodeCount)
+	for i, valid := range validNodes {
+		if valid {
+			scores[i] = initialScore
 		}
 	}
 
-	// Initialize PR
-	scores := make(map[uint32]float32, len(validNodes))
-	initialScore := 1.0 / float32(len(validNodes))
-	for id := range validNodes {
-		scores[id] = initialScore
-	}
+	newScores := make([]float32, realMaxID+1)
 
-	newScores := make(map[uint32]float32, len(validNodes))
-
-	// Iterations
+	// 4. PageRank Iterations
 	for iter := 0; iter < config.MaxIterations; iter++ {
-		diff := float32(0.0)
-
-		// Dangling sum (nodes with no out-links distribute rank evenly)
 		danglingSum := float32(0.0)
-		for id := range validNodes {
-			if outDegrees[id] == 0 {
-				danglingSum += scores[id]
+		for i, valid := range validNodes {
+			if valid && outDegrees[i] == 0 {
+				danglingSum += scores[i]
 			}
 		}
-		danglingFactor := (config.DampingFactor * danglingSum) / float32(len(validNodes))
-		baseScore := (1.0-config.DampingFactor)/float32(len(validNodes)) + danglingFactor
+		
+		danglingFactor := (config.DampingFactor * danglingSum) / float32(realNodeCount)
+		baseScore := (1.0-config.DampingFactor)/float32(realNodeCount) + danglingFactor
 
-		for id := range validNodes {
-			incomingSum := float32(0.0)
-			for _, source := range reverseAdj[id] {
-				degree := outDegrees[source]
-				if degree > 0 {
-					incomingSum += scores[source] / float32(degree)
+		// Parallel Update
+		var iterWG sync.WaitGroup
+		for w := 0; w < numWorkers; w++ {
+			start := w * chunkSize
+			end := start + chunkSize
+			if end > int(realMaxID)+1 { end = int(realMaxID) + 1 }
+			if start >= end { break }
+			
+			iterWG.Add(1)
+			go func(s, e int) {
+				defer iterWG.Done()
+				for i := s; i < e; i++ {
+					if !validNodes[i] { continue }
+					
+					incomingSum := float32(0.0)
+					for _, source := range reverseAdj[i] {
+						degree := outDegrees[source]
+						if degree > 0 {
+							incomingSum += scores[source] / float32(degree)
+						}
+					}
+					newScores[i] = baseScore + (config.DampingFactor * incomingSum)
 				}
-			}
+			}(start, end)
+		}
+		iterWG.Wait()
 
-			newScore := baseScore + (config.DampingFactor * incomingSum)
-			newScores[id] = newScore
-
-			d := newScore - scores[id]
-			if d < 0 {
-				d = -d
+		// Convergence check and update scores
+		maxDiff := float32(0.0)
+		for i, valid := range validNodes {
+			if valid {
+				d := newScores[i] - scores[i]
+				if d < 0 { d = -d }
+				if d > maxDiff { maxDiff = d }
+				scores[i] = newScores[i]
 			}
-			diff += d
 		}
 
-		// Update scores
-		for id, s := range newScores {
-			scores[id] = s
-		}
-
-		if diff < config.Tolerance {
+		if maxDiff < config.Tolerance {
 			break
 		}
-
+		
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()
@@ -267,7 +274,15 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 		}
 	}
 
-	return &CentralityResult{Scores: scores}, nil
+	// 5. Build Result
+	resScores := make(map[uint32]float32)
+	for i, valid := range validNodes {
+		if valid {
+			resScores[uint32(i)] = scores[i] // #nosec G115
+		}
+	}
+
+	return &CentralityResult{Scores: resScores}, nil
 }
 
 // CommunityResult holds the detected communities.

@@ -105,11 +105,11 @@ func haversineBatchAVX2(centerLat, centerLon float64, points []lbcore.GeoPoint, 
 func euclideanFloat64AVX512(a, b []float64) (float32, error) {
 	return 0, errors.New("avx512 not supported")
 }
-func euclideanInt8AVX2(a, b []int8) (float32, error)   { return 0, errors.New("avx2 not supported") }
-func euclideanInt16AVX2(a, b []int16) (float32, error) { return 0, errors.New("avx2 not supported") }
-func euclideanUint16AVX2(a, b []uint16) (float32, error) { return 0, errors.New("avx2 not supported") }
-func dotInt16AVX2(a, b []int16) (float32, error) { return 0, errors.New("avx2 not supported") }
-func dotUint16AVX2(a, b []uint16) (float32, error) { return 0, errors.New("avx2 not supported") }
+func euclideanInt8AVX2(_, _ []int8) (float32, error)   { return 0, errors.New("avx2 not supported") }
+func euclideanInt16AVX2(_, _ []int16) (float32, error) { return 0, errors.New("avx2 not supported") }
+func euclideanUint16AVX2(_, _ []uint16) (float32, error) { return 0, errors.New("avx2 not supported") }
+func dotInt16AVX2(_, _ []int16) (float32, error) { return 0, errors.New("avx2 not supported") }
+func dotUint16AVX2(_, _ []uint16) (float32, error) { return 0, errors.New("avx2 not supported") }
 
 func l2SquaredAVX2(a, b []float32) (float32, error)   { return L2SquaredFloat32(a, b) }
 func l2SquaredAVX512(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
@@ -210,4 +210,20 @@ func ChebyshevDistanceFloat32AVX2(a, b []float32) (float32, error) {
 
 func BrayCurtisDistanceFloat32AVX2(a, b []float32) (float32, error) {
 	return 0, errors.New("simd: AVX2 not supported on this architecture")
+}
+
+var _ = func() {
+	if false {
+		haversineBatchAVX2(0, 0, nil, 0, nil)
+		_, _ = euclideanUint16AVX2(nil, nil)
+		_, _ = dotInt16AVX2(nil, nil)
+		_, _ = dotUint16AVX2(nil, nil)
+		_ = matchInt32AVX2(nil, 0, 0, nil)
+		_, _ = dotInt4AVX2(nil, nil)
+		_, _ = dotInt2AVX2(nil, nil)
+		sinAVX2(nil, nil)
+		cosAVX2(nil, nil)
+		atan2AVX2(nil, nil, nil)
+		matMulAVX2_Go(nil, nil, 0, 0, 0, nil)
+	}
 }

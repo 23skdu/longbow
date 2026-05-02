@@ -469,6 +469,15 @@ var (
 		},
 	)
 
+	GPUComputeDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_gpu_compute_duration_seconds",
+			Help:    "Time spent in GPU compute operations",
+			Buckets: []float64{0.0001, 0.001, 0.01, 0.1, 1},
+		},
+		[]string{"backend", "operation"},
+	)
+
 	// WAL Metrics
 	WALQueueDepth = promauto.NewGauge(
 		prometheus.GaugeOpts{
@@ -497,6 +506,14 @@ var (
 			Name:    "longbow_wal_write_duration_seconds",
 			Help:    "Duration of WAL writes",
 			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05},
+		},
+	)
+
+	// IndexingPausedDurationSeconds tracks total time background indexing is paused
+	IndexingPausedDurationSeconds = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_indexing_paused_duration_seconds",
+			Help: "Total time background graph maintenance is delayed due to ingestion bursts",
 		},
 	)
 

@@ -9,15 +9,19 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
-// Circuit breaker states
+// CircuitState represents the current state of a circuit breaker.
 type CircuitState int32
 
 const (
-	CircuitClosed   CircuitState = iota // Normal operation
-	CircuitOpen                         // Failing, reject requests
-	CircuitHalfOpen                     // Testing recovery
+	// CircuitClosed indicates the circuit is closed and requests are allowed.
+	CircuitClosed CircuitState = iota
+	// CircuitOpen indicates the circuit is open and requests are rejected.
+	CircuitOpen
+	// CircuitHalfOpen indicates the circuit is testing recovery.
+	CircuitHalfOpen
 )
 
+// String returns the string representation of the CircuitState.
 func (s CircuitState) String() string {
 	switch s {
 	case CircuitClosed:
@@ -34,14 +38,17 @@ func (s CircuitState) String() string {
 // ErrCircuitOpen is returned when circuit breaker rejects request
 var ErrCircuitOpen = errors.New("circuit breaker is open")
 
-// CircuitBreakerConfig holds configuration for circuit breaker
+// CircuitBreakerConfig holds configuration parameters for the circuit breaker.
 type CircuitBreakerConfig struct {
-	FailureThreshold int           // failures before opening
-	SuccessThreshold int           // successes in half-open before closing
-	Timeout          time.Duration // time in open state before half-open
+	// FailureThreshold is the number of failures before the circuit opens.
+	FailureThreshold int
+	// SuccessThreshold is the number of successes in half-open state before the circuit closes.
+	SuccessThreshold int
+	// Timeout is the duration the circuit stays open before transitioning to half-open.
+	Timeout time.Duration
 }
 
-// DefaultCircuitBreakerConfig returns sensible defaults
+// DefaultCircuitBreakerConfig returns a configuration with sensible default values.
 func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
 	return CircuitBreakerConfig{
 		FailureThreshold: 5,
@@ -50,7 +57,7 @@ func DefaultCircuitBreakerConfig() CircuitBreakerConfig {
 	}
 }
 
-// CircuitBreakerStats holds operational statistics
+// CircuitBreakerStats holds operational statistics for a circuit breaker.
 type CircuitBreakerStats struct {
 	Successes    int64
 	Failures     int64
@@ -61,7 +68,7 @@ type CircuitBreakerStats struct {
 	StateChanges int64
 }
 
-// CircuitBreaker implements the circuit breaker pattern
+// CircuitBreaker implements the circuit breaker pattern to prevent cascading failures.
 type CircuitBreaker struct {
 	config CircuitBreakerConfig
 
@@ -83,7 +90,7 @@ type CircuitBreaker struct {
 	timeMu      sync.RWMutex
 }
 
-// NewCircuitBreaker creates a new circuit breaker
+// NewCircuitBreaker creates a new CircuitBreaker with the given configuration.
 func NewCircuitBreaker(config CircuitBreakerConfig) *CircuitBreaker {
 	cb := &CircuitBreaker{
 		config: config,
@@ -92,7 +99,7 @@ func NewCircuitBreaker(config CircuitBreakerConfig) *CircuitBreaker {
 	return cb
 }
 
-// State returns current circuit state
+// State returns the current state of the circuit breaker.
 func (cb *CircuitBreaker) State() CircuitState {
 	current := CircuitState(cb.state.Load())
 
@@ -116,7 +123,7 @@ func (cb *CircuitBreaker) State() CircuitState {
 	return current
 }
 
-// Allow checks if a request should be allowed
+// Allow checks if a request should be allowed through the circuit breaker.
 func (cb *CircuitBreaker) Allow() bool {
 	state := cb.State()
 
@@ -133,7 +140,7 @@ func (cb *CircuitBreaker) Allow() bool {
 	return false
 }
 
-// RecordSuccess records a successful operation
+// RecordSuccess increments the success count and potentially closes the circuit.
 func (cb *CircuitBreaker) RecordSuccess() {
 	// Get state FIRST to trigger any pending transitions
 	state := cb.State()
@@ -162,7 +169,7 @@ func (cb *CircuitBreaker) RecordSuccess() {
 	}
 }
 
-// RecordFailure records a failed operation
+// RecordFailure increments the failure count and potentially opens the circuit.
 func (cb *CircuitBreaker) RecordFailure() {
 	cb.totalFailures.Add(1)
 	metrics.CircuitBreakerFailures.Inc()
@@ -198,7 +205,7 @@ func (cb *CircuitBreaker) RecordFailure() {
 	}
 }
 
-// Execute wraps a function with circuit breaker logic
+// Execute wraps a function call with circuit breaker protection.
 func (cb *CircuitBreaker) Execute(fn func() (any, error)) (any, error) {
 	if !cb.Allow() {
 		return nil, ErrCircuitOpen
@@ -214,7 +221,7 @@ func (cb *CircuitBreaker) Execute(fn func() (any, error)) (any, error) {
 	return result, nil
 }
 
-// Stats returns current statistics
+// Stats returns a snapshot of the circuit breaker's operational statistics.
 func (cb *CircuitBreaker) Stats() CircuitBreakerStats {
 	cb.timeMu.RLock()
 	lastFailure := cb.lastFailure
@@ -232,7 +239,7 @@ func (cb *CircuitBreaker) Stats() CircuitBreakerStats {
 	}
 }
 
-// Reset resets the circuit breaker to closed state
+// Reset clears all counters and returns the circuit breaker to a closed state.
 func (cb *CircuitBreaker) Reset() {
 	cb.state.Store(int32(CircuitClosed))
 	cb.consecutiveFailures.Store(0)
@@ -253,20 +260,20 @@ func (cb *CircuitBreaker) Reset() {
 // CircuitBreakerRegistry
 // =============================================================================
 
-// CircuitBreakerRegistry manages multiple circuit breakers by key
+// CircuitBreakerRegistry manages a collection of circuit breakers identified by keys.
 type CircuitBreakerRegistry struct {
 	breakers sync.Map // map[string]*CircuitBreaker
 	config   CircuitBreakerConfig
 }
 
-// NewCircuitBreakerRegistry creates a new registry
+// NewCircuitBreakerRegistry creates a new registry with a default configuration.
 func NewCircuitBreakerRegistry(config CircuitBreakerConfig) *CircuitBreakerRegistry {
 	return &CircuitBreakerRegistry{
 		config: config,
 	}
 }
 
-// GetOrCreate returns an existing circuit breaker or creates a new one
+// GetOrCreate retrieves an existing circuit breaker or creates one if it doesn't exist.
 func (r *CircuitBreakerRegistry) GetOrCreate(key string) *CircuitBreaker {
 	if value, ok := r.breakers.Load(key); ok {
 		return value.(*CircuitBreaker)
@@ -277,14 +284,14 @@ func (r *CircuitBreakerRegistry) GetOrCreate(key string) *CircuitBreaker {
 	return actual.(*CircuitBreaker)
 }
 
-// Reset resets a specific circuit breaker
+// Reset resets the state of a specific circuit breaker in the registry.
 func (r *CircuitBreakerRegistry) Reset(key string) {
 	if value, ok := r.breakers.Load(key); ok {
 		value.(*CircuitBreaker).Reset()
 	}
 }
 
-// ResetAll resets all circuit breakers
+// ResetAll resets all circuit breakers managed by the registry.
 func (r *CircuitBreakerRegistry) ResetAll() {
 	r.breakers.Range(func(_, value any) bool {
 		value.(*CircuitBreaker).Reset()

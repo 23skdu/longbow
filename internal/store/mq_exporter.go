@@ -12,13 +12,17 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// MQType defines the supported message queue types.
 type MQType string
 
 const (
+	// MQTypeKafka represents a Kafka message queue.
 	MQTypeKafka  MQType = "kafka"
+	// MQTypePulsar represents a Pulsar message queue.
 	MQTypePulsar MQType = "pulsar"
 )
 
+// MQConfig holds configuration for the message queue exporter.
 type MQConfig struct {
 	Type           MQType `json:"type"`
 	Brokers        string `json:"brokers"`
@@ -30,6 +34,7 @@ type MQConfig struct {
 	Compression    string `json:"compression"`
 }
 
+// MQMetrics tracks performance and throughput for the MQ exporter.
 type MQMetrics struct {
 	MessagesProduced atomic.Int64
 	MessagesFailed   atomic.Int64
@@ -37,6 +42,7 @@ type MQMetrics struct {
 	BatchesProduced  atomic.Int64
 }
 
+// MessageQueueExporter handles exporting CDC events to external message queues.
 type MessageQueueExporter struct {
 	logger         zerolog.Logger
 	cdc            *ChangeDataCapture
@@ -55,6 +61,7 @@ type MessageQueueExporter struct {
 	cancel         context.CancelFunc
 }
 
+// NewMessageQueueExporter creates a new instance of MessageQueueExporter.
 func NewMessageQueueExporter(logger zerolog.Logger, cdc *ChangeDataCapture, config MQConfig) (*MessageQueueExporter, error) {
 	if config.Brokers == "" {
 		return nil, fmt.Errorf("brokers is required")
@@ -146,6 +153,7 @@ func (m *MessageQueueExporter) initPulsar() error {
 	return nil
 }
 
+// compressionFromString converts a compression string to a sarama compression codec.
 func (m *MessageQueueExporter) compressionFromString(comp string) sarama.CompressionCodec {
 	switch comp {
 	case "gzip":
@@ -159,6 +167,7 @@ func (m *MessageQueueExporter) compressionFromString(comp string) sarama.Compres
 	}
 }
 
+// Start begins the background export loop.
 func (m *MessageQueueExporter) Start() error {
 	filter := CDCFilter{
 		EventTypes: []CDCEventType{CDCEventInsert, CDCEventUpdate, CDCEventDelete},
@@ -300,6 +309,7 @@ func (m *MessageQueueExporter) sendToPulsar(data []byte) {
 	m.metrics.BytesProduced.Add(int64(len(data)))
 }
 
+// Stop terminates the background export loop and closes producers.
 func (m *MessageQueueExporter) Stop() error {
 	m.cancel()
 	close(m.stopChan)
@@ -328,6 +338,7 @@ func (m *MessageQueueExporter) Stop() error {
 	return nil
 }
 
+// GetMetrics returns the current production statistics.
 func (m *MessageQueueExporter) GetMetrics() (produced, failed, bytes, batches int64) {
 	return m.metrics.MessagesProduced.Load(),
 		m.metrics.MessagesFailed.Load(),
@@ -335,10 +346,12 @@ func (m *MessageQueueExporter) GetMetrics() (produced, failed, bytes, batches in
 		m.metrics.BatchesProduced.Load()
 }
 
+// GetConfig returns the current configuration.
 func (m *MessageQueueExporter) GetConfig() MQConfig {
 	return m.config
 }
 
+// SetConfig updates the exporter configuration.
 func (m *MessageQueueExporter) SetConfig(config MQConfig) error {
 	if config.Type != m.config.Type {
 		return fmt.Errorf("cannot change message queue type")
@@ -348,6 +361,7 @@ func (m *MessageQueueExporter) SetConfig(config MQConfig) error {
 	return nil
 }
 
+// IsRunning checks if the exporter is currently active.
 func (m *MessageQueueExporter) IsRunning() bool {
 	select {
 	case <-m.stopChan:

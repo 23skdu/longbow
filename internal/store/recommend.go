@@ -131,6 +131,9 @@ func (s *VectorStore) getGraphConnectivity(ds *Dataset, seeds []lbtypes.VectorID
 	}
 
 	// BFS Layers (Multi-hop closeness)
+	const nodeLimit = 10000
+	totalVisited := len(seeds)
+
 	for h := 0; h < maxHops; h++ {
 		var nextQueue []lbtypes.VectorID
 		reward := float32(math.Pow(float64(decay), float64(h+1)))
@@ -144,6 +147,10 @@ func (s *VectorStore) getGraphConnectivity(ds *Dataset, seeds []lbtypes.VectorID
 					visited[neighborID] = h + 1
 					scores[neighborID] = reward
 					nextQueue = append(nextQueue, neighborID)
+					totalVisited++
+					if totalVisited >= nodeLimit {
+						return scores
+					}
 				}
 			}
 		}

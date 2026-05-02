@@ -20,14 +20,16 @@ import (
 	"github.com/23skdu/longbow/internal/cache"
 	"github.com/23skdu/longbow/internal/gc"
 	"github.com/23skdu/longbow/internal/gpu"
+	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/storage"
+	lbcore "github.com/23skdu/longbow/internal/store/internal/core"
 )
 
-// VectorStore implements flight.FlightServer and provides vector storage and search.
+// VectorStore implements flight.FlightServer and provides vector storage and search with support for HNSW, IVF, and learned indexing.
 type VectorStore struct {
 	flight.BaseFlightServer
 	mem           memory.Allocator
@@ -44,8 +46,8 @@ type VectorStore struct {
 	dataPath string
 	engine   *storage.StorageEngine // Manages WAL and Snapshots
 
-	indexQueue          *IndexJobQueueLockFree // Integrated HNSW
-	ingestionQueue      *IngestionRingBuffer   // Lock-free ring buffer
+	indexQueue          *IndexJobQueueLockFree // Integrated HNSW background indexing queue.
+	ingestionQueue      *IngestionRingBuffer   // Lock-free ring buffer for high-throughput ingestion.
 	persistenceQueue    chan persistenceJob    // Async persistence queue
 	pendingOverflowJobs atomic.Int64           // Jobs spinning in applyBatchToMemory
 
@@ -97,6 +99,12 @@ type VectorStore struct {
 
 	// Namespace management
 	nsManager *namespaceManager
+
+	// Circuit Breakers for fault tolerance
+	Breakers *CircuitBreakerRegistry
+
+	// Disk IO Scheduler for background tasks
+	DiskIO *DiskIOScheduler
 
 	// Rate limiting per namespace
 	rateLimiterManager *RateLimiterManager
@@ -181,7 +189,7 @@ type VectorStore struct {
 	quantTuner *QuantizationTuner
 }
 
-// IngestionJob represents a unit of work for the ingestion pipeline.
+// IngestionJob represents a unit of work for the ingestion pipeline, containing a record batch and timestamp.
 type IngestionJob struct {
 	DS    *Dataset
 	Batch arrow.RecordBatch
@@ -318,12 +326,12 @@ func (vs *VectorStore) initNUMA(logger zerolog.Logger) {
 	}
 }
 
-// GetNUMATopology returns the NUMA topology if available
+// GetNUMATopology returns the detected NUMA topology of the system.
 func (vs *VectorStore) GetNUMATopology() *lbmem.NUMATopology {
 	return vs.numaTopology
 }
 
-// IsNUMAEnabled returns whether NUMA awareness is enabled
+// IsNUMAEnabled returns true if NUMA-aware memory allocation is active.
 func (vs *VectorStore) IsNUMAEnabled() bool {
 	return vs.numaEnabled
 }
@@ -332,26 +340,19 @@ func (vs *VectorStore) IsNUMAEnabled() bool {
 // should throttle incoming requests.
 // Returns true if backpressure should be applied.
 func (vs *VectorStore) CheckIngestionBackpressure() bool {
-	// First check admission controller
-	if vs.admission != nil {
-		if err := vs.admission.Admit(context.Background(), "ingest"); err != nil {
-			return true // Apply backpressure if admission rejected
-		}
-	}
-
-	// 2. Queue Pressure
-	// If ingestion queue is > 80% full, throttle.
+	// 1. Queue Pressure
+	// If ingestion queue is > 95% full, hard block.
 	if vs.ingestionQueue != nil {
 		queueCap := vs.ingestionQueue.Capacity()
-		if vs.ingestionQueue.Len() > (queueCap*80)/100 {
+		if vs.ingestionQueue.Len() > (queueCap*95)/100 {
 			return true
 		}
 	}
 
-	// 3. Global Heap Pressure (v0.1.4-rc5 fix)
+	// 2. Global Heap Pressure (Hard Threshold)
 	if vs.tuner != nil {
 		ratio := vs.tuner.GetUtilizationRatio()
-		if ratio > 0.95 {
+		if ratio > 0.98 {
 			return true
 		}
 	}
@@ -359,7 +360,40 @@ func (vs *VectorStore) CheckIngestionBackpressure() bool {
 	return false
 }
 
-// TrackMemory adds delta to current usage and logs if large
+// IngestionBackpressureDelay returns a delay duration if the system is under moderate load.
+// This implements "Soft Backpressure" to prevent the ingestion cliff.
+func (vs *VectorStore) IngestionBackpressureDelay() time.Duration {
+	// 1. Queue Pressure (Soft Threshold: 70% to 95%)
+	if vs.ingestionQueue != nil {
+		queueCap := vs.ingestionQueue.Capacity()
+		length := vs.ingestionQueue.Len()
+		if length > (queueCap*70)/100 {
+			// Linear delay from 0 to 50ms
+			p := float64(length-(queueCap*70)/100) / float64((queueCap*95)/100-(queueCap*70)/100)
+			if p > 1.0 {
+				p = 1.0
+			}
+			return time.Duration(p * float64(50*time.Millisecond))
+		}
+	}
+
+	// 2. Global Heap Pressure (Soft Threshold: 85% to 98%)
+	if vs.tuner != nil {
+		ratio := vs.tuner.GetUtilizationRatio()
+		if ratio > 0.85 {
+			// Linear delay from 0 to 100ms
+			p := (ratio - 0.85) / (0.98 - 0.85)
+			if p > 1.0 {
+				p = 1.0
+			}
+			return time.Duration(p * float64(100*time.Millisecond))
+		}
+	}
+
+	return 0
+}
+
+// TrackMemory adds delta to current usage and logs if large.
 func (vs *VectorStore) TrackMemory(delta int64) {
 	if delta > 100*1024*1024 {
 		vs.logger.Warn().
@@ -380,6 +414,8 @@ func stackTrace() string {
 // SetGCTuner sets the memory tuner for backpressure.
 func (vs *VectorStore) SetGCTuner(tuner *lbmem.GCTuner) {
 	vs.tuner = tuner
+	// Wire to global worker pool for indexing backpressure
+	lbcore.GetSharedPool().SetTuner(tuner)
 }
 
 // GetAdmissionController returns the admission controller for the store.
@@ -481,10 +517,12 @@ func (vs *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset)
 	return result, created
 }
 
+// SetCoordinator sets the global search coordinator for the vector store.
 func (vs *VectorStore) SetCoordinator(c *GlobalSearchCoordinator) {
 	vs.coordinator = c
 }
 
+// SetMesh sets the mesh gossip instance for the vector store.
 func (vs *VectorStore) SetMesh(m *mesh.Gossip) {
 	vs.Mesh = m
 }
@@ -554,9 +592,11 @@ func (vs *VectorStore) GetAutoShardingConfig() AutoShardingConfig {
 
 // SetGPUConfig updates the GPU configuration
 func (vs *VectorStore) SetGPUConfig(backend gpu.GPUBackend, deviceID int) {
+	vs.configMu.Lock()
 	vs.gpuBackend = backend
 	vs.gpuEnabled = true
 	vs.gpuDeviceID = deviceID
+	vs.configMu.Unlock()
 
 	if backend != gpu.BackendCPU {
 		pool, err := gpu.NewGPUMemPool(backend, deviceID)
@@ -566,6 +606,31 @@ func (vs *VectorStore) SetGPUConfig(backend gpu.GPUBackend, deviceID int) {
 
 		// Initialize GPU index pool
 		vs.gpuIndexPool = gpu.NewGPUIndexPool(gpu.DefaultGPUIndexPoolConfig())
+
+		// Create a reusable GPU index for global operations (e.g. TemporalIndex)
+		// We use a dummy dimension or a common one if available.
+		// For now, let's use the temporal dimension if temporal index is initialized.
+		if vs.temporalIndex != nil {
+			cfg := gpu.GPUConfig{
+				DeviceID:  deviceID,
+				Dimension: vs.temporalIndex.dimension,
+				Enabled:   true,
+				Backend:   backend,
+			}
+			gIdx, err := gpu.NewIndexWithBackend(cfg, backend)
+			if err == nil {
+				vs.temporalIndex.SetGPUIndex(gIdx)
+			}
+		}
+
+		// Also update any existing GeoIndexes
+		vs.IterateDatasets(func(name string, ds *Dataset) {
+			if ds.GeoIndex != nil {
+				if gIdx, err := vs.getGPUIndex(128); err == nil {
+					ds.GeoIndex.SetGPUIndex(gIdx)
+				}
+			}
+		})
 	}
 }
 
@@ -577,10 +642,36 @@ func (vs *VectorStore) SetAutoGPUConfig(deviceID int) {
 	vs.SetGPUConfig(backend, deviceID)
 }
 
+// getGPUIndex returns a GPU index handle for the current backend and device.
+func (vs *VectorStore) getGPUIndex(dim int) (gputypes.Index, error) {
+	vs.configMu.RLock()
+	gpuEnabled := vs.gpuEnabled
+	gpuBackend := vs.gpuBackend
+	gpuDeviceID := vs.gpuDeviceID
+	vs.configMu.RUnlock()
+
+	if !gpuEnabled || gpuBackend == gpu.BackendCPU {
+		return nil, fmt.Errorf("GPU acceleration not enabled")
+	}
+
+	cfg := gpu.GPUConfig{
+		DeviceID:  gpuDeviceID,
+		Dimension: dim,
+		Enabled:   true,
+		Backend:   gpuBackend,
+	}
+	return gpu.NewIndexWithBackend(cfg, gpuBackend)
+}
+
 // SetTemporalIndex configures the temporal index for Part 22
 func (vs *VectorStore) SetTemporalIndex(idx *TemporalIndex, cfg TemporalConfig) {
 	vs.temporalIndex = idx
 	vs.temporalConfig = cfg
+
+	// Wire GPU if enabled
+	if gIdx, err := vs.getGPUIndex(idx.dimension); err == nil {
+		idx.SetGPUIndex(gIdx)
+	}
 }
 
 // GetTemporalIndex returns the temporal index
@@ -617,7 +708,7 @@ func (vs *VectorStore) checkAndMigrateToSharded(_ *Dataset) {
 	// Migration logic would go here
 }
 
-// WarmupStats holds statistics about the warmup operation
+// WarmupStats holds statistics about the warmup operation, including duration and node count.
 type WarmupStats struct {
 	DatasetsWarmed   int
 	DatasetsSkipped  int
@@ -657,6 +748,7 @@ func (vs *VectorStore) Warmup() WarmupStats {
 	return stats
 }
 
+// GetWALQueueDepth returns the number of jobs and total size in bytes currently in the WAL queue.
 func (vs *VectorStore) GetWALQueueDepth() (count, size int) {
 	if vs.engine == nil {
 		return 0, 0
@@ -691,6 +783,7 @@ func (vs *VectorStore) updateLWWAndMerkle(ds *Dataset, rec arrow.RecordBatch, ts
 	}
 }
 
+// MerkleRoot returns the root hash of the Merkle tree for a given dataset.
 func (vs *VectorStore) MerkleRoot(name string) [32]byte {
 	ds, ok := vs.getDataset(name)
 	if !ok {
@@ -782,6 +875,7 @@ func (vs *VectorStore) WaitForIndexing(name string) {
 
 
 
+// ClosePersistence closes the persistence engine.
 func (vs *VectorStore) ClosePersistence() error {
 	if vs.engine != nil {
 		return vs.engine.Close()
@@ -849,6 +943,7 @@ func (vs *VectorStore) broadcastCDC(dataset string, batches []arrow.RecordBatch)
 		}
 	}
 }
+// GetNeighborsBulk retrieves the adjacency lists for multiple nodes in the vector index.
 func (vs *VectorStore) GetNeighborsBulk(ctx context.Context, datasetName string, nodeIDs []uint32) (map[uint32][]uint32, error) {
 	ds, ok := vs.getDataset(datasetName)
 	if !ok {

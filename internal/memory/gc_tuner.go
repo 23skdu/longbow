@@ -44,6 +44,12 @@ type GCTuner struct {
 	currentGOGC        int
 	lastUtilization    atomic.Uint64 // 0..1000 representing 0.0..1.0 ratio
 	lastGPUUtilization atomic.Uint32 // 0..1000 representing 0.0..100.0%
+
+	// Allocation rate tracking for burst mode
+	lastTotalAlloc uint64
+	lastAllocTime  time.Time
+	allocRate      atomic.Uint64 // Bytes per second
+	isBursting     atomic.Bool   // True if currently in burst mode
 }
 
 // NewGCTuner creates a tuner. limitBytes should be close to container memory limit.
@@ -53,7 +59,7 @@ func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger)
 		highGOGC = 150
 	}
 	if lowGOGC <= 0 {
-		lowGOGC = 40
+		lowGOGC = 100
 	}
 	if lowGOGC > highGOGC {
 		lowGOGC = highGOGC
@@ -67,8 +73,8 @@ func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger)
 		logger:             logger,
 		currentGOGC:        debug.SetGCPercent(-1),
 		EnableGPUTuning:    types.GetDeviceCount() > 0,
-		GPUUtilizationHigh: 70.0,
-		GPUUtilizationLow:  30.0,
+		GPUUtilizationHigh: 60.0,
+		GPUUtilizationLow:  20.0,
 	}
 
 	if tuner.logger != nil {
@@ -113,18 +119,33 @@ func (t *GCTuner) Start(ctx context.Context, interval time.Duration) {
 			return
 		case <-ticker.C:
 			t.reader.ReadMemStats(&m)
-			t.tune(m.HeapInuse)
+			t.tune(&m, t.IsAggressive)
 		}
 	}
 }
 
-func (t *GCTuner) tune(heapInUse uint64) {
+func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 	if t.limitBytes <= 0 {
 		return
 	}
 
+	// Calculate allocation rate
+	now := time.Now()
+	if !t.lastAllocTime.IsZero() {
+		duration := now.Sub(t.lastAllocTime).Seconds()
+		if duration > 0 {
+			diff := m.TotalAlloc - t.lastTotalAlloc
+			rate := uint64(float64(diff) / duration)
+			t.allocRate.Store(rate)
+		}
+	}
+	t.lastTotalAlloc = m.TotalAlloc
+	t.lastAllocTime = now
+
+	heapInUse := m.HeapInuse
+
+
 	t.mu.RLock()
-	aggressive := t.IsAggressive
 	totalArenaCapacity := int64(0)
 	unusedArenaMemory := int64(0)
 	if aggressive {
@@ -165,6 +186,12 @@ func (t *GCTuner) tune(heapInUse uint64) {
 	}
 
 	ratio := float64(effectiveInUse) / float64(t.limitBytes)
+	
+	// Burst mode detection: if alloc rate > 512MB/s and we are using > 60% of heap,
+	// or if rate > 1GB/s, we are likely in a heavy ingestion phase.
+	allocRate := t.allocRate.Load()
+	isBurst := (allocRate > 512*1024*1024 && ratio > 0.6) || (allocRate > 1024*1024*1024)
+	t.isBursting.Store(isBurst)
 
 	// Get GPU utilization if enabled
 	var gpuUtilization float32
@@ -187,7 +214,8 @@ func (t *GCTuner) tune(heapInUse uint64) {
 				Float64("arenaRatio", arenaRatio).
 				Int64("totalArenaCapacity", totalArenaCapacity).
 				Uint64("heapInUse", heapInUse).
-				Msg("Arena-dominated heap detected, setting aggressive GOGC=50")
+				Int("targetGOGC", targetGOGC).
+				Msg("Arena-dominated heap detected, setting aggressive GOGC")
 		}
 	} else if t.EnableGPUTuning && gpuUtilization >= t.GPUUtilizationHigh {
 		// GPU is highly utilized - reduce GOGC to reduce CPU overhead
@@ -218,6 +246,11 @@ func (t *GCTuner) tune(heapInUse uint64) {
 		}
 	}
 
+	// Relax for burst mode if we have significant headroom (< 70% utilization)
+	if isBurst && ratio < 0.7 {
+		targetGOGC += 50
+	}
+
 	if aggressive && ratio > 0.7 {
 		if t.logger != nil {
 			t.logger.Warn().Float64("ratio", ratio).Int64("effective", effectiveInUse).Msg("High effective heap utilization")
@@ -243,7 +276,7 @@ func (t *GCTuner) tune(heapInUse uint64) {
 	if targetGOGC != t.currentGOGC {
 		// Only set if changed significantly (e.g. > 5 difference) to avoid noise
 		// In aggressive mode we might want smaller threshold? Let's stick to 2.
-		threshold := 5
+		threshold := 10
 		if aggressive {
 			threshold = 2
 		}
@@ -261,4 +294,9 @@ func (t *GCTuner) tune(heapInUse uint64) {
 // GetUtilizationRatio returns the last measured memory utilization ratio (0.0 to 1.0+).
 func (t *GCTuner) GetUtilizationRatio() float64 {
 	return float64(t.lastUtilization.Load()) / 1000.0
+}
+
+// IsBursting returns true if the tuner has detected a heavy ingestion burst.
+func (t *GCTuner) IsBursting() bool {
+	return t.isBursting.Load()
 }

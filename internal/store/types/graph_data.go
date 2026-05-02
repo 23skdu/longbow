@@ -13,23 +13,30 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"runtime"
+	"sync"
 )
+
+// PaddedMutex is a sync.Mutex padded to a full 64-byte cache line to prevent false sharing.
+type PaddedMutex struct {
+	sync.Mutex
+	_ [56]byte // Padding to 64 bytes (assuming 8-byte mutex)
+}
 
 // GraphData holds the vector data and graph topology.
 // It effectively implements the component storage for ArrowHNSW.
 type GraphData struct {
 	// Metadata
-	Capacity      int
-	Dims          int
-	Type          VectorDataType
-	SQ8Enabled    bool
-	SQ8Ready      uint32 // 0=not ready, 1=ready
-	BQEnabled     bool
-	PQEnabled     bool
-	PQM           int
-	GlobalVersion uint64 // For cache validation
-	BackingGraph  any    // interface{} to avoid import cycle (likely *DiskGraph)
-	Name          string // Dataset name for metrics
+	Capacity      int            // Total number of nodes the graph can currently hold.
+	Dims          int            // Number of dimensions for the vectors.
+	Type          VectorDataType // Underlying data type of the vectors.
+	SQ8Enabled    bool           // Whether Scalar Quantization (8-bit) is enabled.
+	SQ8Ready      uint32         // 0=not ready, 1=ready (atomic).
+	BQEnabled     bool           // Whether Binary Quantization is enabled.
+	PQEnabled     bool           // Whether Product Quantization is enabled.
+	PQM           int            // Number of sub-spaces for Product Quantization.
+	GlobalVersion uint64         // Incremented on structural changes for cache validation.
+	BackingGraph  any            // Interface to a persistent storage (e.g., *DiskGraph).
+	Name          string         // Unique identifier for the dataset (used in metrics).
 
 	// Vectors (primary storage, usually float32)
 	Vectors [][]float32
@@ -129,19 +136,36 @@ type GraphData struct {
 	ArrowRefs []arrow.Array
 }
 
+// graphFallback provides a secondary mechanism for neighbor and vector retrieval.
 type graphFallback interface {
 	GetNeighbors(layer int, id uint32, buf []uint32) []uint32
 	GetVector(id uint32) (any, error)
 }
 
-// PackedNeighbors interface for graph adjacency management
+// PackedNeighbors interface for graph adjacency management with atomic support.
 type PackedNeighbors interface {
+	// GetNeighbors returns the list of neighbor IDs for a given node.
 	GetNeighbors(id uint32) ([]uint32, bool)
+	// GetPackedNeighbors returns a packed representation of neighbors for atomic operations.
+	GetPackedNeighbors(id uint32) (uint64, bool)
+	// GetNeighborsFromPacked extracts a list of neighbor IDs from a packed uint64.
+	GetNeighborsFromPacked(packed uint64) []uint32
+	// SetNeighbors updates the neighbor list for a node.
 	SetNeighbors(id uint32, neighbors []uint32) error
-	CASNeighbors(id uint32, old, new []uint32) bool
+	// CASNeighbors performs an atomic compare-and-swap on the neighbor list.
+	CASNeighbors(id uint32, oldPacked uint64, new []uint32) bool
+	// GetNeighborsF16 returns neighbors and their distances in float16 precision.
 	GetNeighborsF16(id uint32) ([]uint32, []float16.Num, bool)
+	// SetNeighborsF16 updates neighbors and their distances in float16 precision.
 	SetNeighborsF16(id uint32, neighbors []uint32, dists []float16.Num) error
+	// EnsureCapacity ensures the underlying storage can accommodate the given node ID.
 	EnsureCapacity(id uint32)
+	// Lock acquires a node-specific lock (usually a shard lock).
+	Lock(id uint32)
+	// Unlock releases a node-specific lock.
+	Unlock(id uint32)
+	// UpdateNeighbors performs an atomic read-modify-write update using a callback.
+	UpdateNeighbors(id uint32, fn func(old []uint32) []uint32) error
 }
 
 // GetNodeCount returns the current capacity of the graph (number of addressable nodes).
@@ -283,6 +307,7 @@ func (g *GraphData) GetVectorsChunk(chunkID int) []float32 {
 	return nil
 }
 
+// PackedSize returns the byte size of a TurboQuant packed vector.
 func (g *GraphData) PackedSize() int {
 	if g.Dims <= 0 {
 		return 0
@@ -293,6 +318,7 @@ func (g *GraphData) PackedSize() int {
 	return 4 + angleBytes + bitBytes
 }
 
+// GetVectorsTQChunk returns a chunk of TurboQuant compressed vectors.
 func (g *GraphData) GetVectorsTQChunk(chunkID int) []byte {
 	if chunkID < len(g.VectorsTQ) && g.Uint8Arena != nil {
 		stride := g.PackedSize()
@@ -301,6 +327,7 @@ func (g *GraphData) GetVectorsTQChunk(chunkID int) []byte {
 	return nil
 }
 
+// GetVectorsFloat64Chunk returns a chunk of float64 vectors.
 func (g *GraphData) GetVectorsFloat64Chunk(chunkID int) []float64 {
 	if chunkID < len(g.VectorsFloat64Offsets) && g.Float64Arena != nil {
 		return g.Float64Arena.Get(memory.SliceRef{Offset: g.VectorsFloat64Offsets[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
@@ -311,6 +338,7 @@ func (g *GraphData) GetVectorsFloat64Chunk(chunkID int) []float64 {
 	return nil
 }
 
+// GetVectorsComplex64Chunk returns a chunk of complex64 vectors.
 func (g *GraphData) GetVectorsComplex64Chunk(chunkID int) []complex64 {
 	if chunkID < len(g.VectorsComplex64Offsets) && g.Complex64Arena != nil {
 		return g.Complex64Arena.Get(memory.SliceRef{Offset: g.VectorsComplex64Offsets[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
@@ -321,6 +349,7 @@ func (g *GraphData) GetVectorsComplex64Chunk(chunkID int) []complex64 {
 	return nil
 }
 
+// GetVectorsComplex128Chunk returns a chunk of complex128 vectors.
 func (g *GraphData) GetVectorsComplex128Chunk(chunkID int) []complex128 {
 	if chunkID < len(g.VectorsComplex128Offsets) && g.Complex128Arena != nil {
 		return g.Complex128Arena.Get(memory.SliceRef{Offset: g.VectorsComplex128Offsets[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
@@ -331,6 +360,7 @@ func (g *GraphData) GetVectorsComplex128Chunk(chunkID int) []complex128 {
 	return nil
 }
 
+// GetVectorsInt64Chunk returns a chunk of int64 vectors.
 func (g *GraphData) GetVectorsInt64Chunk(chunkID int) []int64 {
 	if chunkID < len(g.VectorsInt64) && g.Int64Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeInt64)
@@ -339,6 +369,7 @@ func (g *GraphData) GetVectorsInt64Chunk(chunkID int) []int64 {
 	return nil
 }
 
+// GetVectorsUint64Chunk returns a chunk of uint64 vectors.
 func (g *GraphData) GetVectorsUint64Chunk(chunkID int) []uint64 {
 	if chunkID < len(g.VectorsUint64) && g.Uint64Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeUint64)
@@ -347,6 +378,7 @@ func (g *GraphData) GetVectorsUint64Chunk(chunkID int) []uint64 {
 	return nil
 }
 
+// GetVectorsInt32Chunk returns a chunk of int32 vectors.
 func (g *GraphData) GetVectorsInt32Chunk(chunkID int) []int32 {
 	if chunkID < len(g.VectorsInt32) && g.Int32Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeInt32)
@@ -355,6 +387,7 @@ func (g *GraphData) GetVectorsInt32Chunk(chunkID int) []int32 {
 	return nil
 }
 
+// GetVectorsUint32Chunk returns a chunk of uint32 vectors.
 func (g *GraphData) GetVectorsUint32Chunk(chunkID int) []uint32 {
 	if chunkID < len(g.VectorsUint32) && g.Uint32Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeUint32)
@@ -363,10 +396,12 @@ func (g *GraphData) GetVectorsUint32Chunk(chunkID int) []uint32 {
 	return nil
 }
 
+// GetPaddedDims returns the padded dimension for the primary vector type.
 func (g *GraphData) GetPaddedDims() int {
 	return g.GetPaddedDimsForType(g.Type)
 }
 
+// GetPaddedDimsForType returns the padded dimension for a specific vector type to ensure SIMD alignment.
 func (g *GraphData) GetPaddedDimsForType(dt VectorDataType) int {
 	switch dt {
 	case VectorTypeFloat32, VectorTypeInt32, VectorTypeUint32:
@@ -1540,6 +1575,15 @@ func (g *GraphData) GetNeighbors(layer int, id uint32, buf []uint32) []uint32 {
 
 	return nil
 }
+// GetVersion returns the current version/lock state of a node at a given layer.
+func (g *GraphData) GetVersion(layer int, id uint32) uint32 {
+	versions := g.GetVersionsChunk(layer, int(id)/ChunkSize)
+	if versions == nil {
+		return 0
+	}
+	return atomic.LoadUint32(&versions[int(id)%ChunkSize])
+}
+
 
 // LockNode acquires a per-node spinlock.
 func (g *GraphData) LockNode(layer int, id uint32) uint32 {

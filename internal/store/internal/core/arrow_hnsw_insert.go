@@ -2,9 +2,7 @@ package core
 
 import (
 	"context"
-
 	"github.com/23skdu/longbow/internal/store/types"
-	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // searchLayerForInsert performs search during insertion.
@@ -48,169 +46,11 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 		selected = make([]types.Candidate, 0, m)
 	}
 
-	// HNSW "Heuristic 2" (Diversity Heuristic)
-	var vectorCache map[uint32]any
-	if ctx != nil {
-		vectorCache = ctx.vectorCache
-	} else {
-		vectorCache = make(map[uint32]any, len(candidates))
-	}
-
 	for _, cand := range candidates {
 		if len(selected) >= m {
 			break
 		}
-
-		isDiverse := true
-		v1, ok := vectorCache[cand.ID]
-		if !ok {
-			vecAny, _ := data.GetVector(cand.ID)
-			v1 = vecAny
-			// Cast integer types to float32 once when fetched into bypass double-loop builds
-			if vInt, ok := vecAny.([]int32); ok {
-				var v1f []float32
-				if ctx != nil {
-					// Use pooled buffer
-					ctx.vectorBuf = ctx.vectorBuf[:0]
-					for _, val := range vInt { ctx.vectorBuf = append(ctx.vectorBuf, float32(val)) }
-					v1f = ctx.vectorBuf
-				} else {
-					v1f = make([]float32, len(vInt))
-					for i, val := range vInt { v1f[i] = float32(val) }
-				}
-				v1 = v1f
-			} else if vUint, ok := vecAny.([]uint32); ok {
-				var v1f []float32
-				if ctx != nil {
-					ctx.vectorBuf = ctx.vectorBuf[:0]
-					for _, val := range vUint { ctx.vectorBuf = append(ctx.vectorBuf, float32(val)) }
-					v1f = make([]float32, len(ctx.vectorBuf))
-					copy(v1f, ctx.vectorBuf)
-				} else {
-					v1f = make([]float32, len(vUint))
-					for i, val := range vUint { v1f[i] = float32(val) }
-				}
-				v1 = v1f
-			} else if vInt32, ok := vecAny.([]int32); ok {
-				v1f := make([]float32, len(vInt32))
-				for i, val := range vInt32 { v1f[i] = float32(val) }
-				v1 = v1f
-			} else if vUint32, ok := vecAny.([]uint32); ok {
-				v1f := make([]float32, len(vUint32))
-				for i, val := range vUint32 { v1f[i] = float32(val) }
-				v1 = v1f
-			} else if vInt16, ok := vecAny.([]int16); ok {
-				v1f := make([]float32, len(vInt16))
-				for i, val := range vInt16 { v1f[i] = float32(val) }
-				v1 = v1f
-			} else if vUint16, ok := vecAny.([]uint16); ok {
-				v1f := make([]float32, len(vUint16))
-				for i, val := range vUint16 { v1f[i] = float32(val) }
-				v1 = v1f
-			} else if vInt8, ok := vecAny.([]int8); ok {
-				v1f := make([]float32, len(vInt8))
-				for i, val := range vInt8 { v1f[i] = float32(val) }
-				v1 = v1f
-			} else if vUint8, ok := vecAny.([]uint8); ok {
-				v1f := make([]float32, len(vUint8))
-				for i, val := range vUint8 { v1f[i] = float32(val) }
-				v1 = v1f
-			}
-			vectorCache[cand.ID] = v1
-		}
-		if v1 == nil {
-			continue
-		}
-
-		for _, sel := range selected {
-			v2, ok := vectorCache[sel.ID]
-			if !ok {
-				vecAny, _ := data.GetVector(sel.ID)
-				v2 = vecAny
-				vectorCache[sel.ID] = v2
-			}
-			if v2 == nil {
-				continue
-			}
-
-			var d float32
-			var err error
-
-			switch v1Typed := v1.(type) {
-			case []float32:
-				if v2f, ok := v2.([]float32); ok {
-					d, err = h.distFunc(v1Typed, v2f)
-				}
-			case []float64:
-				if v2Typed, ok := v2.([]float64); ok {
-					d, err = h.distFuncF64(v1Typed, v2Typed)
-				}
-			case []float16.Num:
-				if v2Typed, ok := v2.([]float16.Num); ok {
-					d, err = h.distFuncF16(v1Typed, v2Typed)
-				}
-			case []complex64:
-				if v2Typed, ok := v2.([]complex64); ok {
-					d, err = h.distFuncC64(v1Typed, v2Typed)
-				}
-			case []complex128:
-				if v2Typed, ok := v2.([]complex128); ok {
-					d, err = h.distFuncC128(v1Typed, v2Typed)
-				}
-			case []int32:
-				if v2Typed, ok := v2.([]int32); ok {
-					d, err = h.distFuncInt32(v1Typed, v2Typed)
-				}
-			case []uint32:
-				if v2Typed, ok := v2.([]uint32); ok {
-					d, err = h.distFuncUint32(v1Typed, v2Typed)
-				}
-			case []int16:
-				if v2Typed, ok := v2.([]int16); ok {
-					d, err = h.distFuncInt16(v1Typed, v2Typed)
-				}
-			case []uint16:
-				if v2Typed, ok := v2.([]uint16); ok {
-					d, err = h.distFuncUint16(v1Typed, v2Typed)
-				}
-			case []int8:
-				// Should be pre-converted to float32 in vectorCache filling
-				if v2Typed, ok := v2.([]int8); ok {
-					// Fallback for safety if somehow reached
-					v1f := make([]float32, len(v1Typed))
-					for i, val := range v1Typed { v1f[i] = float32(val) }
-					v2f := make([]float32, len(v2Typed))
-					for i, val := range v2Typed { v2f[i] = float32(val) }
-					d, err = h.distFunc(v1f, v2f)
-				}
-			case []uint8:
-				// Should be pre-converted to float32 in vectorCache filling
-				if v2Typed, ok := v2.([]uint8); ok {
-					v1f := make([]float32, len(v1Typed))
-					for i, val := range v1Typed { v1f[i] = float32(val) }
-					v2f := make([]float32, len(v2Typed))
-					for i, val := range v2Typed { v2f[i] = float32(val) }
-					d, err = h.distFunc(v1f, v2f)
-				}
-			}
-
-			// Diversity Heuristic check: Loosen for SQ8 to allow more edges
-			threshold := cand.Dist
-			if h.config.SQ8Enabled {
-				threshold *= 1.5 // Relax pruning more for SQ8/Bulk to ensure connectivity
-			} else {
-				threshold *= 1.2 // Baseline relaxation for bulk paths
-			}
-
-			if err == nil && d > 0 && d < threshold {
-				isDiverse = false
-				break
-			}
-		}
-
-		if isDiverse {
-			selected = append(selected, cand)
-		}
+		selected = append(selected, cand)
 	}
 
 	// Fallback: if selected is empty but candidates were not, take at least one (closest)

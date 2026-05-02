@@ -7,6 +7,7 @@ import (
 // ResultHeap implements heap.Interface for a stream of SearchResults
 type ResultHeap []StreamItem
 
+// StreamItem represents a single search result within a stream, tracking its source.
 type StreamItem struct {
 	Result    SearchResult
 	SourceIdx int // Index of the source channel
@@ -16,10 +17,12 @@ func (h ResultHeap) Len() int           { return len(h) }
 func (h ResultHeap) Less(i, j int) bool { return h[i].Result.Score < h[j].Result.Score } // Min-heap by score (asc)
 func (h ResultHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
+// Push adds a StreamItem to the heap.
 func (h *ResultHeap) Push(x any) {
 	*h = append(*h, x.(StreamItem))
 }
 
+// Pop removes and returns the smallest StreamItem from the heap.
 func (h *ResultHeap) Pop() any {
 	old := *h
 	n := len(old)

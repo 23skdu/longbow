@@ -71,7 +71,7 @@ func TestGeoIndex_New(t *testing.T) {
 
 	assert.NotNil(t, idx)
 	assert.Equal(t, 128, idx.dimension)
-	assert.NotNil(t, idx.pointIndex)
+	assert.NotNil(t, idx.pointIndex.Load())
 }
 
 func TestGeoIndex_AddAndSearchRadius(t *testing.T) {

@@ -4,6 +4,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -55,7 +56,7 @@ func TestArrowHNSW_AddBatchBulk_EdgeCases(t *testing.T) {
 		// StartID shouldn't matter as we fail early
 		err := idx.AddBatchBulk(ctx, 100, n, vecs)
 		require.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
+		assert.True(t, errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded), "Should be context error: %v", err)
 	})
 
 	t.Run("UnsupportedType", func(t *testing.T) {

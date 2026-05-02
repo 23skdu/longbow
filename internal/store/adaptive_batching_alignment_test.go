@@ -67,10 +67,21 @@ func TestDoPut_AdaptiveBatchingAlignment(t *testing.T) {
 	err := w.Close()
 	require.NoError(t, err)
 
-	// Collect chunks from channel
+	// Collect chunks from channel with timeout
 	chunks := make([]*flight.FlightData, 0)
-	for fd := range recvCh {
-		chunks = append(chunks, fd)
+	timer := time.NewTimer(2 * time.Second)
+	defer timer.Stop()
+collect:
+	for {
+		select {
+		case fd, ok := <-recvCh:
+			if !ok {
+				break collect
+			}
+			chunks = append(chunks, fd)
+		case <-timer.C:
+			t.Fatal("Timeout waiting for FlightData chunks")
+		}
 	}
 
 	// Add descriptor to the first chunk (schema)

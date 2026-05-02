@@ -7,14 +7,17 @@ import (
 	"github.com/23skdu/longbow/internal/core"
 )
 
+// TemporalAggregator manages temporal aggregation of vector search results.
 type TemporalAggregator struct {
 	mu            sync.RWMutex
 	maxBucketSize int
 }
 
+// TemporalAggType defines the type of temporal aggregation to perform.
 type TemporalAggType string
 
 const (
+	// TemporalAggCount counts the number of occurrences in each time bucket.
 	TemporalAggCount TemporalAggType = "count"
 	TemporalAggMin   TemporalAggType = "min"
 	TemporalAggMax   TemporalAggType = "max"
@@ -22,6 +25,7 @@ const (
 	TemporalAggSum   TemporalAggType = "sum"
 )
 
+// AggregationBucket represents a single time-based bucket in an aggregation result.
 type AggregationBucket struct {
 	Timestamp int64    `json:"timestamp"`
 	Count     int      `json:"count"`
@@ -31,6 +35,7 @@ type AggregationBucket struct {
 	Sum       *float32 `json:"sum,omitempty"`
 }
 
+// TemporalAggRequest defines the parameters for a temporal aggregation request.
 type TemporalAggRequest struct {
 	AggType     TemporalAggType `json:"aggregation_type"`
 	StartTime   int64           `json:"start_time"`
@@ -39,6 +44,7 @@ type TemporalAggRequest struct {
 	MetricField string          `json:"metric_field,omitempty"`
 }
 
+// NewTemporalAggregator creates a new TemporalAggregator with the specified maximum bucket size.
 func NewTemporalAggregator(maxBuckets int) *TemporalAggregator {
 	if maxBuckets <= 0 {
 		maxBuckets = 1000
@@ -48,6 +54,7 @@ func NewTemporalAggregator(maxBuckets int) *TemporalAggregator {
 	}
 }
 
+// Aggregate performs the requested temporal aggregation on a set of vector timestamps.
 func (ta *TemporalAggregator) Aggregate(req TemporalAggRequest, vectors []VectorTimestamp) []AggregationBucket {
 	if len(vectors) == 0 {
 		return nil

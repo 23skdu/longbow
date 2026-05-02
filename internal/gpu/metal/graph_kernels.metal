@@ -225,3 +225,54 @@ kernel void dot_product_f32_large(
     
     results[vectorIdx] = dotSum;
 }
+
+// Haversine Distance Kernel
+kernel void haversine_batch(
+    const device float* center [[buffer(0)]], // lat, lon
+    const device float* points [[buffer(1)]], // lat, lon pairs
+    device float* results [[buffer(2)]],
+    uint idx [[thread_position_in_grid]],
+    constant float& earthRadius [[buffer(3)]],
+    constant uint& numPoints [[buffer(4)]]
+) {
+    if (idx >= numPoints) return;
+    
+    float lat1 = center[0] * M_PI_F / 180.0f;
+    float lon1 = center[1] * M_PI_F / 180.0f;
+    float lat2 = points[idx * 2] * M_PI_F / 180.0f;
+    float lon2 = points[idx * 2 + 1] * M_PI_F / 180.0f;
+    
+    float dLat = lat2 - lat1;
+    float dLon = lon2 - lon1;
+    
+    float a = sin(dLat / 2.0f) * sin(dLat / 2.0f) + 
+              cos(lat1) * cos(lat2) * 
+              sin(dLon / 2.0f) * sin(dLon / 2.0f);
+    float c = 2.0f * atan2(sqrt(a), sqrt(1.0f - a));
+    results[idx] = earthRadius * c;
+}
+
+// Norm Squared (L2 Squared) Kernel for Temporal Search
+kernel void norm_batch_f32(
+    const device float* vectors [[buffer(0)]],
+    device float* results [[buffer(1)]],
+    uint idx [[thread_position_in_grid]],
+    constant uint& dims [[buffer(2)]],
+    constant uint& numVectors [[buffer(3)]]
+) {
+    if (idx >= numVectors) return;
+    
+    float sum = 0.0f;
+    uint base = idx * dims;
+    uint i = 0;
+    
+    for (; i + 3 < dims; i += 4) {
+        float4 v = *(const device float4*)(vectors + base + i);
+        sum += dot(v, v);
+    }
+    for (; i < dims; i++) {
+        float v = vectors[base + i];
+        sum += v * v;
+    }
+    results[idx] = sum;
+}

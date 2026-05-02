@@ -20,11 +20,9 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 	// 1. Try Lock-Free path with PackedNeighbors (High Throughput)
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
-		for {
-			old, _ := pn.GetNeighbors(source)
-			
+		_ = pn.UpdateNeighbors(source, func(old []uint32) []uint32 {
 			for _, n := range old {
-				if n == target { return data }
+				if n == target { return nil } // No change
 			}
 			
 			var next []uint32
@@ -37,12 +35,10 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 				next = h.computePrunedNeighbors(ctx, data, source, old, []uint32{target}, maxConn)
 			}
 			
-			if pn.CASNeighbors(source, old, next) {
-				atomic.AddUint64(&data.GlobalVersion, 1)
-				return data
-			}
-			// Retry on CAS failure (concurrent update)
-		}
+			atomic.AddUint64(&data.GlobalVersion, 1)
+			return next
+		})
+		return data
 	}
 
 	// 2. Fallback to COW + Mutex path for legacy storage
@@ -127,16 +123,14 @@ func (h *ArrowHNSW) AddConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *types.GraphData, id uint32, maxConn, layer int) *types.GraphData {
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
-		for {
-			old, _ := pn.GetNeighbors(id)
-			if len(old) <= maxConn { return data }
+		_ = pn.UpdateNeighbors(id, func(old []uint32) []uint32 {
+			if len(old) <= maxConn { return nil }
 
 			next := h.computePrunedNeighbors(ctx, data, id, old, nil, maxConn)
-			if pn.CASNeighbors(id, old, next) {
-				atomic.AddUint64(&data.GlobalVersion, 1)
-				return data
-			}
-		}
+			atomic.AddUint64(&data.GlobalVersion, 1)
+			return next
+		})
+		return data
 	}
 
 	// Legacy path

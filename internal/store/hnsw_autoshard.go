@@ -84,7 +84,6 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) VectorIndex {
 }
 
 // SetInitialDimension sets the dimension for the underlying index if not yet set.
-// SetInitialDimension sets the dimension for the underlying index if not yet set.
 func (idx *AutoShardingIndex) SetInitialDimension(dim int) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -94,8 +93,7 @@ func (idx *AutoShardingIndex) SetInitialDimension(dim int) {
 	}
 }
 
-// AddByLocation adds a vector to the index.
-// AddByLocation adds a vector to the index.
+// AddByLocation adds a vector to the index using its storage location.
 func (idx *AutoShardingIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	// Lock held throughout execution to prevent Close during migration
 	idx.mu.RLock()
@@ -124,8 +122,7 @@ func (idx *AutoShardingIndex) AddByLocation(ctx context.Context, batchIdx, rowId
 	return id, err
 }
 
-// AddByRecord implementation to support interim index.
-// AddByRecord adds a vector from a record batch.
+// AddByRecord adds a vector from an Arrow record batch.
 func (idx *AutoShardingIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	idx.mu.RLock()
 	sharded := idx.sharded
@@ -153,8 +150,7 @@ func (idx *AutoShardingIndex) AddByRecord(ctx context.Context, rec arrow.RecordB
 	return id, err
 }
 
-// AddBatch adds multiple vectors from multiple record batches efficiently.
-// AddBatch adds multiple vectors efficiently.
+// AddBatch adds multiple vectors from Arrow record batches efficiently.
 func (idx *AutoShardingIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	idx.mu.RLock()
 	sharded := idx.sharded
@@ -347,7 +343,6 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	metrics.IndexMigrationDuration.Observe(duration.Seconds())
 }
 
-// SearchVectors implements VectorIndex.
 // SearchVectors returns the k nearest neighbors for a query vector.
 func (idx *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]SearchResult, error) {
 	idx.mu.RLock()
@@ -376,7 +371,6 @@ func (idx *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, f
 	return res, nil
 }
 
-// SearchVectorsWithBitmap implements VectorIndex.
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
 func (idx *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
 	idx.mu.RLock()
@@ -456,20 +450,21 @@ func (idx *AutoShardingIndex) mergeSearchResults(res1, res2 []SearchResult, k in
 	return combined
 }
 
+// IsSharded returns true if the index has been upgraded to a sharded implementation.
 func (idx *AutoShardingIndex) IsSharded() bool {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return idx.sharded
 }
 
-// Len implements VectorIndex.
-// GetIndexType returns the type of the active index.
+// GetIndexType returns the index type identifier for the active index.
 func (idx *AutoShardingIndex) GetIndexType() string {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return idx.current.GetIndexType()
 }
 
+// Len returns the total number of vectors across all shards.
 func (idx *AutoShardingIndex) Len() int {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -483,7 +478,6 @@ func (idx *AutoShardingIndex) GetDimension() uint32 {
 	return idx.current.GetDimension()
 }
 
-// SetEfConstruction updates the efConstruction parameter dynamically.
 // SetEfConstruction updates the efConstruction parameter dynamically.
 func (idx *AutoShardingIndex) SetEfConstruction(ef int) {
 	idx.mu.RLock()
@@ -516,7 +510,7 @@ func (idx *AutoShardingIndex) GetPQEncoder() *pq.PQEncoder {
 	return idx.current.GetPQEncoder()
 }
 
-// SetIndexedColumns configures which columns are indexed for fast equality lookups
+// SetIndexedColumns configures which columns are indexed for fast equality lookups.
 func (idx *AutoShardingIndex) SetIndexedColumns(cols []string) {
 	// No-op for now, or delegate if underlying supports it
 }
@@ -559,8 +553,7 @@ func (idx *AutoShardingIndex) PreWarm(targetSize int) {
 	}
 }
 
-// Close closes the current index.
-
+// Close releases all resources held by the index.
 func (idx *AutoShardingIndex) Close() error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()

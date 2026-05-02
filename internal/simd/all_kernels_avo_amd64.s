@@ -100,6 +100,145 @@ GLOBL neg_inf_const_red<>(SB), RODATA|NOPTR, $4
 DATA pos_inf_const_red<>+0(SB)/4, $0x7f800000
 GLOBL pos_inf_const_red<>(SB), RODATA|NOPTR, $4
 
+// func argMaxAVX2Kernel(src uintptr, n int) (val float32, idx int)
+// Requires: AVX, AVX2, SSE
+TEXT ·argMaxAVX2Kernel(SB), NOSPLIT, $0-32
+	MOVQ         src+0(FP), AX
+	MOVQ         n+8(FP), CX
+	VBROADCASTSS neg_inf_const_red<>+0(SB), Y0
+	VPXOR        Y1, Y1, Y1
+	VMOVUPS      idx_const_argmax<>+0(SB), Y2
+	VMOVUPS      eight_const_argmax<>+0(SB), Y3
+
+loop:
+	CMPQ      CX, $0x08
+	JL        done
+	VMOVUPS   (AX), Y4
+	VCMPPS    $0x0e, Y0, Y4, Y5
+	VBLENDVPS Y5, Y4, Y0, Y0
+	VBLENDVPS Y5, Y2, Y1, Y1
+	VPADDD    Y3, Y2, Y2
+	ADDQ      $0x20, AX
+	SUBQ      $0x08, CX
+	JMP       loop
+
+done:
+	VEXTRACTF128 $0x01, Y0, X2
+	VEXTRACTF128 $0x00, Y0, X0
+	VEXTRACTF128 $0x01, Y1, X3
+	VEXTRACTF128 $0x00, Y1, X1
+	VCMPPS       $0x0e, X0, X2, X4
+	VBLENDVPS    X4, X2, X0, X0
+	VBLENDVPS    X4, X3, X1, X1
+	VPERMILPS    $0x4e, X0, X2
+	VPERMILPS    $0x4e, X1, X3
+	VCMPPS       $0x0e, X0, X2, X4
+	VBLENDVPS    X4, X2, X0, X0
+	VBLENDVPS    X4, X3, X1, X1
+	VPERMILPS    $0x11, X0, X2
+	VPERMILPS    $0x11, X1, X3
+	VCMPPS       $0x0e, X0, X2, X4
+	VBLENDVPS    X4, X2, X0, X0
+	VBLENDVPS    X4, X3, X1, X1
+	CMPQ         CX, $0x00
+	JE           final
+	VMOVSS       (AX), X2
+	VCMPSS       $0x0e, X0, X2, X3
+	VBLENDVPS    X3, X2, X0, X0
+
+final:
+	MOVSS X0, val+16(FP)
+	VMOVQ X1, AX
+	MOVQ  AX, idx+24(FP)
+	VZEROUPPER
+	RET
+
+DATA idx_const_argmax<>+0(SB)/4, $0x00000000
+DATA idx_const_argmax<>+4(SB)/4, $0x00000001
+DATA idx_const_argmax<>+8(SB)/4, $0x00000002
+DATA idx_const_argmax<>+12(SB)/4, $0x00000003
+DATA idx_const_argmax<>+16(SB)/4, $0x00000004
+DATA idx_const_argmax<>+20(SB)/4, $0x00000005
+DATA idx_const_argmax<>+24(SB)/4, $0x00000006
+DATA idx_const_argmax<>+28(SB)/4, $0x00000007
+GLOBL idx_const_argmax<>(SB), RODATA|NOPTR, $32
+
+DATA eight_const_argmax<>+0(SB)/4, $0x00000008
+DATA eight_const_argmax<>+4(SB)/4, $0x00000008
+DATA eight_const_argmax<>+8(SB)/4, $0x00000008
+DATA eight_const_argmax<>+12(SB)/4, $0x00000008
+DATA eight_const_argmax<>+16(SB)/4, $0x00000008
+DATA eight_const_argmax<>+20(SB)/4, $0x00000008
+DATA eight_const_argmax<>+24(SB)/4, $0x00000008
+DATA eight_const_argmax<>+28(SB)/4, $0x00000008
+GLOBL eight_const_argmax<>(SB), RODATA|NOPTR, $32
+
+// func argMinAVX2Kernel(src uintptr, n int) (val float32, idx int)
+// Requires: AVX, AVX2, SSE
+TEXT ·argMinAVX2Kernel(SB), NOSPLIT, $0-32
+	MOVQ         src+0(FP), AX
+	MOVQ         n+8(FP), CX
+	VBROADCASTSS pos_inf_const_red<>+0(SB), Y0
+	VPXOR        Y1, Y1, Y1
+	VMOVUPS      idx_const_argmin<>+0(SB), Y2
+	VMOVUPS      eight_const_argmin<>+0(SB), Y3
+
+loop:
+	CMPQ      CX, $0x08
+	JL        done
+	VMOVUPS   (AX), Y4
+	VCMPPS    $0x01, Y0, Y4, Y5
+	VBLENDVPS Y5, Y4, Y0, Y0
+	VBLENDVPS Y5, Y2, Y1, Y1
+	VPADDD    Y3, Y2, Y2
+	ADDQ      $0x20, AX
+	SUBQ      $0x08, CX
+	JMP       loop
+
+done:
+	VEXTRACTF128 $0x01, Y0, X2
+	VEXTRACTF128 $0x00, Y0, X0
+	VEXTRACTF128 $0x01, Y1, X3
+	VEXTRACTF128 $0x00, Y1, X1
+	VCMPPS       $0x01, X0, X2, X4
+	VBLENDVPS    X4, X2, X0, X0
+	VBLENDVPS    X4, X3, X1, X1
+	VPERMILPS    $0x4e, X0, X2
+	VPERMILPS    $0x4e, X1, X3
+	VCMPPS       $0x01, X0, X2, X4
+	VBLENDVPS    X4, X2, X0, X0
+	VBLENDVPS    X4, X3, X1, X1
+	VPERMILPS    $0x11, X0, X2
+	VPERMILPS    $0x11, X1, X3
+	VCMPPS       $0x01, X0, X2, X4
+	VBLENDVPS    X4, X2, X0, X0
+	VBLENDVPS    X4, X3, X1, X1
+	MOVSS        X0, val+16(FP)
+	VMOVQ        X1, AX
+	MOVQ         AX, idx+24(FP)
+	VZEROUPPER
+	RET
+
+DATA idx_const_argmin<>+0(SB)/4, $0x00000000
+DATA idx_const_argmin<>+4(SB)/4, $0x00000001
+DATA idx_const_argmin<>+8(SB)/4, $0x00000002
+DATA idx_const_argmin<>+12(SB)/4, $0x00000003
+DATA idx_const_argmin<>+16(SB)/4, $0x00000004
+DATA idx_const_argmin<>+20(SB)/4, $0x00000005
+DATA idx_const_argmin<>+24(SB)/4, $0x00000006
+DATA idx_const_argmin<>+28(SB)/4, $0x00000007
+GLOBL idx_const_argmin<>(SB), RODATA|NOPTR, $32
+
+DATA eight_const_argmin<>+0(SB)/4, $0x00000008
+DATA eight_const_argmin<>+4(SB)/4, $0x00000008
+DATA eight_const_argmin<>+8(SB)/4, $0x00000008
+DATA eight_const_argmin<>+12(SB)/4, $0x00000008
+DATA eight_const_argmin<>+16(SB)/4, $0x00000008
+DATA eight_const_argmin<>+20(SB)/4, $0x00000008
+DATA eight_const_argmin<>+24(SB)/4, $0x00000008
+DATA eight_const_argmin<>+28(SB)/4, $0x00000008
+GLOBL eight_const_argmin<>(SB), RODATA|NOPTR, $32
+
 // func sumAVX2Kernel(src uintptr, n int) float32
 // Requires: AVX, SSE
 TEXT ·sumAVX2Kernel(SB), NOSPLIT, $0-20
@@ -589,22 +728,58 @@ TEXT ·cosine64FMA(SB), NOSPLIT, $0-28
 	MOVSS X0, normB+24(FP)
 	RET
 
-// func matMulAVX2(a uintptr, b uintptr, dst uintptr, m int, n int, k int)
-TEXT ·matMulAVX2(SB), NOSPLIT, $0-48
-	RET
+// func matMulAVX2Kernel(a uintptr, b uintptr, dst uintptr, m int, n int, k int)
+// Requires: AVX, AVX2, FMA3
+TEXT ·matMulAVX2Kernel(SB), NOSPLIT, $0-48
+	MOVQ a+0(FP), AX
+	MOVQ b+8(FP), CX
+	MOVQ dst+16(FP), DX
+	MOVQ m+24(FP), BX
+	MOVQ n+32(FP), SI
+	MOVQ k+40(FP), DI
+	XORQ R8, R8
 
-// func argMaxAVX2Kernel(src uintptr, n int) (val float32, idx int)
-// Requires: SSE
-TEXT ·argMaxAVX2Kernel(SB), NOSPLIT, $0-32
-	MOVSS X0, val+16(FP)
-	MOVQ  AX, idx+24(FP)
-	RET
+m_loop:
+	CMPQ R8, BX
+	JE   m_done
+	XORQ R9, R9
 
-// func argMinAVX2Kernel(src uintptr, n int) (val float32, idx int)
-// Requires: SSE
-TEXT ·argMinAVX2Kernel(SB), NOSPLIT, $0-32
-	MOVSS X0, val+16(FP)
-	MOVQ  AX, idx+24(FP)
+k_loop:
+	CMPQ         R9, DI
+	JE           k_done
+	MOVQ         R8, R10
+	IMULQ        DI, R10
+	ADDQ         R9, R10
+	VMOVSS       (AX)(R10*4), X0
+	VBROADCASTSS X0, Y0
+	XORQ         R10, R10
+
+n_loop:
+	CMPQ        R10, SI
+	JGE         n_done
+	MOVQ        R9, R11
+	IMULQ       SI, R11
+	ADDQ        R10, R11
+	MOVQ        R8, R12
+	IMULQ       SI, R12
+	ADDQ        R10, R12
+	VMOVUPS     (CX)(R11*4), Y1
+	VMOVUPS     (DX)(R12*4), Y2
+	VFMADD231PS Y0, Y1, Y2
+	VMOVUPS     Y2, (DX)(R12*4)
+	ADDQ        $0x08, R10
+	JMP         n_loop
+
+n_done:
+	INCQ R9
+	JMP  k_loop
+
+k_done:
+	INCQ R8
+	JMP  m_loop
+
+m_done:
+	VZEROUPPER
 	RET
 
 // func argMaxAVX512Kernel(src uintptr, n int) (val float32, idx int)

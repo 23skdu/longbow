@@ -8,6 +8,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
+// MemStoreOptions defines configuration options for the MemVectorStore.
 type MemStoreOptions struct {
 	UseArena bool
 	Dim      int
@@ -33,6 +34,7 @@ type MemVectorStore struct {
 	deleted map[string]bool
 }
 
+// NewMemVectorStore creates a new in-memory vector store with the provided options.
 func NewMemVectorStore(opts MemStoreOptions) (*MemVectorStore, error) {
 	ms := &MemVectorStore{
 		useArena: opts.UseArena,
@@ -50,6 +52,7 @@ func NewMemVectorStore(opts MemStoreOptions) (*MemVectorStore, error) {
 	return ms, nil
 }
 
+// Set stores a vector in the memory store under the given key.
 func (ms *MemVectorStore) Set(key string, vec []float32) error {
 	ms.mu.Lock()
 	defer ms.mu.Unlock()
@@ -92,6 +95,7 @@ func (ms *MemVectorStore) Set(key string, vec []float32) error {
 	return nil
 }
 
+// Get retrieves a vector from the memory store by its key.
 func (ms *MemVectorStore) Get(key string) ([]float32, bool) {
 	ms.mu.RLock()
 	defer ms.mu.RUnlock()

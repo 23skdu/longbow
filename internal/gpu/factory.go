@@ -2,6 +2,7 @@ package gpu
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"sort"
 	"unsafe"
@@ -406,6 +407,47 @@ func (i *CPUIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []f
 
 func (i *CPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	return nil, nil, fmt.Errorf("GraphExpand not supported on CPUIndex")
+}
+
+func (i *CPUIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
+	count := len(points) / 2
+	results := make([]float32, count)
+	
+	// Scalar fallback for CPU
+	for j := 0; j < count; j++ {
+		lat2 := points[j*2]
+		lon2 := points[j*2+1]
+		
+		dLat := (lat2 - centerLat) * math.Pi / 180.0
+		dLon := (lon2 - centerLon) * math.Pi / 180.0
+		
+		lat1Rad := float64(centerLat) * math.Pi / 180.0
+		lat2Rad := float64(lat2) * math.Pi / 180.0
+		
+		a := math.Sin(float64(dLat/2))*math.Sin(float64(dLat/2)) +
+			math.Cos(lat1Rad)*math.Cos(lat2Rad)*
+				math.Sin(float64(dLon/2))*math.Sin(float64(dLon/2))
+		c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+		results[j] = float32(float64(earthRadius) * c)
+	}
+	
+	return results, nil
+}
+
+func (i *CPUIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
+	count := len(vectors) / dims
+	results := make([]float32, count)
+	
+	for j := 0; j < count; j++ {
+		vec := vectors[j*dims : (j+1)*dims]
+		var sum float32
+		for _, v := range vec {
+			sum += v * v
+		}
+		results[j] = sum
+	}
+	
+	return results, nil
 }
 
 // float16ToFloat32 ...

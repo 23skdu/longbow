@@ -277,6 +277,16 @@ func (m *MockIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uin
 	return seeds, make([]float32, len(seeds)), nil
 }
 
+func (m *MockIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
+	// Simple mock: return zeros for now or implement if needed for tests
+	return make([]float32, len(points)/2), nil
+}
+
+func (m *MockIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
+	// Simple mock: return zeros
+	return make([]float32, len(vectors)/dims), nil
+}
+
 // float16ToFloat32Mock converts a uint16 float16 value to float32
 func float16ToFloat32Mock(v uint16) float32 {
 	sign := uint32(v >> 15)

@@ -674,3 +674,11 @@ func (idx *MetalHybridIndex) UpdateGraph(offsets []uint32, neighbors []uint32, w
 func (idx *MetalHybridIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	return nil, nil, fmt.Errorf("GraphExpand not implemented for hybrid Metal index")
 }
+
+func (idx *MetalHybridIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
+	return nil, fmt.Errorf("HaversineSearch not implemented for hybrid Metal index")
+}
+
+func (idx *MetalHybridIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
+	return nil, fmt.Errorf("NormBatch not implemented for hybrid Metal index")
+}

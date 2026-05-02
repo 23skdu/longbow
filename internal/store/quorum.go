@@ -15,8 +15,11 @@ import (
 type ConsistencyLevel int
 
 const (
+	// ConsistencyOne requires at least one node to acknowledge the operation.
 	ConsistencyOne    ConsistencyLevel = iota // At least one node must acknowledge
+	// ConsistencyQuorum requires a majority of nodes to acknowledge the operation.
 	ConsistencyQuorum                         // Majority of nodes must acknowledge
+	// ConsistencyAll requires all nodes to acknowledge the operation.
 	ConsistencyAll                            // All nodes must acknowledge
 )
 

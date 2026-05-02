@@ -115,7 +115,7 @@ func (p *PooledAllocator) Free(b []byte) {
 	p.pools[idx].Put(&b)
 }
 
-// Stats returns allocator statistics.
+// PooledAllocatorStats returns allocator statistics.
 type PooledAllocatorStats struct {
 	AllocatedBytes int64
 	ReusedBuffers  int64

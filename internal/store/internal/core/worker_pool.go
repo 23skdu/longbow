@@ -1,19 +1,25 @@
 package core
 
 import (
+	"github.com/23skdu/longbow/internal/metrics"
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
-// SharedWorkerPool is a lightweight pool of persistent workers to avoid
-// goroutine churn and scheduler overhead during parallel search and bulk insert.
+// Tuner interface for observing system load
+type Tuner interface {
+	IsBursting() bool
+}
+
 // SharedWorkerPool is a lightweight pool of persistent workers to avoid
 // goroutine churn and scheduler overhead during parallel search and bulk insert.
 type SharedWorkerPool struct {
 	numWorkers int
 	shards     []chan func()
 	nextShard  uint32
+	tuner      atomic.Value // Stores Tuner interface
 }
 
 var (
@@ -54,10 +60,32 @@ func (p *SharedWorkerPool) worker(tasks chan func()) {
 	}
 }
 
+// SetTuner attaches a system tuner to the pool.
+func (p *SharedWorkerPool) SetTuner(t Tuner) {
+	p.tuner.Store(t)
+}
+
 // Submit adds a task to the pool using round-robin distribution.
 func (p *SharedWorkerPool) Submit(task func()) {
 	shardIdx := atomic.AddUint32(&p.nextShard, 1) % uint32(p.numWorkers) // #nosec G115
 	p.shards[shardIdx] <- task
+}
+
+// SubmitLowPriority adds a task that can be delayed if the system is bursting.
+func (p *SharedWorkerPool) SubmitLowPriority(task func()) {
+	tVal := p.tuner.Load()
+	if tVal != nil {
+		t := tVal.(Tuner)
+		if t.IsBursting() {
+			start := time.Now()
+			for t.IsBursting() {
+				runtime.Gosched()
+				time.Sleep(10 * time.Millisecond)
+			}
+			metrics.IndexingPausedDurationSeconds.Add(time.Since(start).Seconds())
+		}
+	}
+	p.Submit(task)
 }
 
 // ParallelFor executes a loop in parallel using the worker pool.
@@ -70,6 +98,11 @@ func (p *SharedWorkerPool) ParallelFor(n int, chunkSize int, task func(start, en
 	}
 
 	numChunks := (n + chunkSize - 1) / chunkSize
+	if numChunks == 1 {
+		task(0, n)
+		return
+	}
+
 	var wg sync.WaitGroup
 	wg.Add(numChunks)
 

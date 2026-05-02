@@ -73,6 +73,8 @@ func main() {
 		runDetectCommunities(ctx, os.Args[2:])
 	case "temporal-search":
 		runTemporalSearch(ctx, os.Args[2:])
+	case "drop":
+		runDrop(ctx, os.Args[2:])
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -106,6 +108,7 @@ Commands:
   pagerank         Calculate PageRank centrality
   detect-communities Run community detection (LPA)
   temporal-search  Search temporal index (as-of, range, window)
+  drop             Explicitly drop a dataset from memory
 
 Global Options:
   -uri string    Longbow server URI (default: grpc://127.0.0.1:3000)
@@ -1132,21 +1135,29 @@ func runDetectCommunities(_ context.Context, args []string) {
 
 func runTemporalSearch(_ context.Context, args []string) {
 	fs := flag.NewFlagSet("temporal-search", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name (required)")
 	searchType := fs.String("type", "as_of", "Search type: as_of, range, window")
 	ts := fs.Int64("ts", 0, "Timestamp for as_of")
 	start := fs.Int64("start", 0, "Start time")
 	end := fs.Int64("end", 0, "End time")
+	k := fs.Int("k", 10, "Number of results")
 	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
+
+	if *dataset == "" {
+		log.Fatal("Dataset name is required")
+	}
 
 	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]interface{}{
+		"dataset":     *dataset,
 		"search_type": *searchType,
 		"timestamp":   *ts,
 		"start_time":  *start,
 		"end_time":    *end,
+		"k":           *k,
 	}
 	actionBody, _ := json.Marshal(req)
 	action := &flight.Action{Type: "TemporalSearch", Body: actionBody}
@@ -1193,4 +1204,34 @@ func runCreateDataset(_ context.Context, args []string) {
 		log.Fatalf("Create dataset failed: %v", err)
 	}
 	fmt.Printf("Dataset '%s' created\n", *name)
+}
+
+func runDrop(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("drop", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name to drop (required)")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
+	_ = fs.Parse(args)
+
+	if *dataset == "" {
+		fmt.Fprintf(os.Stderr, "Usage: longbow-cli drop -dataset <name> [-uri <uri>]\n")
+		os.Exit(1)
+	}
+
+	sc := mustGetClient(*uri)
+	defer sc.Close()
+
+	actionBody, _ := json.Marshal(map[string]string{"dataset": *dataset})
+	action := &flight.Action{Type: "drop", Body: actionBody}
+
+	stream, err := sc.DoAction(ctx, action)
+	if err != nil {
+		log.Fatalf("Failed to drop dataset: %v", err)
+	}
+
+	result, err := stream.Recv()
+	if err != nil {
+		log.Fatalf("Failed to receive response: %v", err)
+	}
+
+	fmt.Printf("Dataset '%s' dropped successfully: %s\n", *dataset, string(result.Body))
 }

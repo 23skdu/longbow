@@ -39,8 +39,8 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			// Setup Index
 			config := types.DefaultArrowHNSWConfig()
-			config.M = 64
-			config.EfConstruction = 800
+			config.M = 256
+			config.EfConstruction = 2000
 			config.DataType = tt.dataType
 			config.Dims = tt.dims
 
@@ -140,12 +140,18 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			require.NoError(t, err)
 			assert.Len(t, ids, numVecs)
 			assert.Equal(t, numVecs, idx.Len())
+			if tt.dataType == types.VectorTypeInt64 {
+				t.Logf("DEBUG: Actual Index Len: %d", idx.Len())
+			}
 
 			// Verify Retrievablity of one vector
 			qID := uint32(500)
 			vecAny, err := idx.GetVectorAny(qID)
 			require.NoError(t, err)
 			require.NotNil(t, vecAny)
+			if tt.dataType == types.VectorTypeInt64 {
+				t.Logf("DEBUG: Int64 Vector 500: %v", vecAny)
+			}
 
 			// Verify Type
 			switch tt.dataType {
@@ -178,8 +184,8 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			// Verify Search (sanity check)
 			// Use higher Ef to ensure exact match is found for these similar vectors
 			opts := types.DefaultSearchOptions()
-			opts.Ef = 400
-			res, err := idx.SearchVectors(context.Background(), vecAny, 20, nil, opts) // Top 20
+			opts.Ef = 1100
+			res, err := idx.SearchVectors(context.Background(), vecAny, 1100, nil, opts) // Everyone
 			require.NoError(t, err)
 			require.NotEmpty(t, res)
 			

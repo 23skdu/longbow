@@ -21,7 +21,7 @@ import (
 	"io"
 )
 
-// IVFOPQConfig holds configuration for IVF-OPQ index
+// IVFOPQConfig holds configuration for the IVF-OPQ index.
 type IVFOPQConfig struct {
 	Nlist         int // Number of clusters
 	M             int // Number of PQ subvectors
@@ -36,7 +36,7 @@ type IVFOPQConfig struct {
 	GPUConfig     *gputypes.GPUConfig
 }
 
-// IVFOPQIndex implements a billion-scale optimized IVF-OPQ index
+// IVFOPQIndex implements a billion-scale optimized IVF-OPQ index for extremely large vector datasets.
 type IVFOPQIndex struct {
 	config IVFOPQConfig
 	dim    int
@@ -51,7 +51,7 @@ type IVFOPQIndex struct {
 	mu     sync.RWMutex
 }
 
-// NewIVFOPQIndex creates a new IVF-OPQ index
+// NewIVFOPQIndex creates a new IVF-OPQ index with the specified dimensions and configuration.
 func NewIVFOPQIndex(dim int, config IVFOPQConfig) (*IVFOPQIndex, error) {
 	if dim <= 0 {
 		return nil, errors.New("invalid dimension")
@@ -90,7 +90,7 @@ func NewIVFOPQIndex(dim int, config IVFOPQConfig) (*IVFOPQIndex, error) {
 	return idx, nil
 }
 
-// Train builds the coarse quantizer and trains the OPQ encoder
+// Train builds the coarse quantizer and trains the OPQ encoder using the provided sample vectors.
 func (idx *IVFOPQIndex) Train(vectors [][]float32) error {
 	if len(vectors) == 0 {
 		return errors.New("empty training data")
@@ -175,7 +175,7 @@ func (idx *IVFOPQIndex) Train(vectors [][]float32) error {
 	return nil
 }
 
-// Add adds vectors to the index
+// Add inserts vectors into the index.
 func (idx *IVFOPQIndex) Add(ctx context.Context, vectors [][]float32) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -240,7 +240,7 @@ func (idx *IVFOPQIndex) updateLoadBalanceMetric() {
 	}
 }
 
-// Search implements the VectorIndexer search interface
+// SearchVectorsWithBitmap performs a search with bitset filtering.
 func (idx *IVFOPQIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]types.SearchResult, error) {
 	queryVec, ok := q.([]float32)
 	if !ok {
@@ -450,12 +450,13 @@ func (idx *IVFOPQIndex) refineBatch(queryIdx int, k int, dists []clusterDist) ([
 	return candidates, nil
 }
 
-// Implement required interfaces (stubs)
-func (idx *IVFOPQIndex) AddByLocation(ctx context.Context, b, r int) (uint32, error) {
+// AddByLocation is not directly supported on IVF-OPQ (use Add).
+func (idx *IVFOPQIndex) AddByLocation(batchIdx, rowIdx int) error {
 	// Usually would fetch vector from dataset, for now we need the vector
-	return 0, fmt.Errorf("AddByLocation not directly supported on IVF-OPQ (use Add)")
+	return fmt.Errorf("AddByLocation not directly supported on IVF-OPQ (use Add)")
 }
 
+// AddByRecord inserts a vector from an Arrow record.
 func (idx *IVFOPQIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, r, b int) (uint32, error) {
 	vec, err := ExtractVectorFromArrow(rec, r, -1)
 	if err != nil {
@@ -467,6 +468,7 @@ func (idx *IVFOPQIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, 
 	return idx.nextID - 1, nil
 }
 
+// Search executes a vector search query.
 func (idx *IVFOPQIndex) Search(ctx context.Context, q any, k int, f any) ([]types.Candidate, error) {
 	results, err := idx.SearchVectorsWithBitmap(ctx, q, k, nil, nil)
 	if err != nil {
@@ -479,27 +481,49 @@ func (idx *IVFOPQIndex) Search(ctx context.Context, q any, k int, f any) ([]type
 	return candidates, nil
 }
 
+// SearchVectors performs a search and returns standard SearchResult types.
 func (idx *IVFOPQIndex) SearchVectors(ctx context.Context, q any, k int, f []query.Filter, o any) ([]types.SearchResult, error) {
 	return idx.SearchVectorsWithBitmap(ctx, q, k, nil, o)
 }
 
+// Size returns the number of nodes in the index.
 func (idx *IVFOPQIndex) Size() int { 
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return int(idx.nextID) 
 }
 
+// Len returns the number of vectors in the index.
 func (idx *IVFOPQIndex) Len() int { return idx.Size() }
+
+// GetEntryPoint returns 0 as IVF has no single traversal entry point.
 func (idx *IVFOPQIndex) GetEntryPoint() uint32 { return 0 }
+
+// GetLocation returns nil as locations are not supported for this index type.
 func (idx *IVFOPQIndex) GetLocation(id uint32) (any, bool) { return nil, false }
+
+// GetVectorID returns 0 as location mapping is not supported.
 func (idx *IVFOPQIndex) GetVectorID(loc any) (uint32, bool) { return 0, false }
+
+// GetDimension returns the dimensionality of the vectors.
 func (idx *IVFOPQIndex) GetDimension() uint32 { return uint32(idx.dim) } // #nosec G115
+
+// GetIndexType returns the index type identifier (IVF-OPQ).
+func (idx *IVFOPQIndex) GetIndexType() string {
+	return "ivf_opq"
+}
+// SetIndexedColumns is a no-op for this index type.
 func (idx *IVFOPQIndex) SetIndexedColumns(cols []string) {}
+// GetRawNeighbors is not supported for IVF-OPQ.
 func (idx *IVFOPQIndex) GetRawNeighbors(id uint32) ([]uint32, error) { return nil, nil }
+// GetNeighbors is not supported for IVF-OPQ.
 func (idx *IVFOPQIndex) GetNeighbors(ctx context.Context, id uint32, k int) ([]types.SearchResult, error) { return nil, nil }
+// PreWarm is a no-op for this index type.
 func (idx *IVFOPQIndex) PreWarm(s int) {}
+// Warmup returns the current size of the index.
 func (idx *IVFOPQIndex) Warmup() int { return idx.Size() }
 
+// EstimateMemory returns the estimated memory usage of the index.
 func (idx *IVFOPQIndex) EstimateMemory() int64 {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -510,7 +534,9 @@ func (idx *IVFOPQIndex) EstimateMemory() int64 {
 	return total
 }
 
+// GetPQEncoder returns the underlying PQ encoder.
 func (idx *IVFOPQIndex) GetPQEncoder() *pq.PQEncoder { return idx.opqEncoder.PQEncoder }
+// Close releases all resources held by the index.
 func (idx *IVFOPQIndex) Close() error { 
 	if idx.coarseHNSW != nil {
 		return idx.coarseHNSW.Close()
@@ -518,6 +544,7 @@ func (idx *IVFOPQIndex) Close() error {
 	return nil 
 }
 
+// AddBatch inserts a batch of vectors.
 func (idx *IVFOPQIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rs, bs []int) ([]uint32, error) {
 	if len(recs) == 0 {
 		return nil, nil
@@ -536,6 +563,7 @@ func (idx *IVFOPQIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 	return ids, nil
 }
 
+// DeleteBatch is a no-op for this index type.
 func (idx *IVFOPQIndex) DeleteBatch(ctx context.Context, ids []uint32) error { return nil }
 
 type ivfOPQState struct {
@@ -548,6 +576,7 @@ type ivfOPQState struct {
 	Clusters        []IVFCluster
 }
 
+// ExportState returns the serialized state of the index.
 func (idx *IVFOPQIndex) ExportState() ([]byte, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -583,6 +612,7 @@ func (idx *IVFOPQIndex) ExportState() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// ImportState restores the index state from a byte slice.
 func (idx *IVFOPQIndex) ImportState(data []byte) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -625,21 +655,32 @@ func (idx *IVFOPQIndex) ImportState(data []byte) error {
 	return nil
 }
 
+// ExportGraph is a no-op for this index type.
 func (idx *IVFOPQIndex) ExportGraph(w io.Writer) error { return nil }
+// ImportGraph is a no-op for this index type.
 func (idx *IVFOPQIndex) ImportGraph(r io.Reader) error { return nil }
+// ExportDelta is a no-op for this index type.
 func (idx *IVFOPQIndex) ExportDelta(v uint64) (*types.DeltaSync, error) { return nil, nil }
 
+// ApplyDelta updates metrics for synchronizing data.
 func (idx *IVFOPQIndex) ApplyDelta(d *types.DeltaSync) error { 
 	metrics.IndexSyncDeltaTotal.WithLabelValues("ivf-opq", "default").Add(float64(len(d.NewLocations)))
 	return nil 
 }
 
+// SetParallelSearchConfig is a no-op for this index type.
 func (idx *IVFOPQIndex) SetParallelSearchConfig(c types.ParallelSearchConfig) {}
+// GetParallelSearchConfig returns an empty config.
 func (idx *IVFOPQIndex) GetParallelSearchConfig() types.ParallelSearchConfig { return types.ParallelSearchConfig{} }
+// RemapLocations is a no-op for this index type.
 func (idx *IVFOPQIndex) RemapLocations(ctx context.Context, m map[uint32]any) error { return nil }
+// SearchVectorsInRange is not supported for IVF-OPQ.
 func (idx *IVFOPQIndex) SearchVectorsInRange(ctx context.Context, q any, t float32, f []query.Filter, o any) ([]types.SearchResult, error) { return nil, nil }
+// IsSharded returns false for this index type.
 func (idx *IVFOPQIndex) IsSharded() bool { return false }
+// TrainPQ delegates to the Train method.
 func (idx *IVFOPQIndex) TrainPQ(v [][]float32) error { return idx.Train(v) }
+// GetGPUIndex returns nil as it is handled internally.
 func (idx *IVFOPQIndex) GetGPUIndex() any            { return nil }
 
 // Helper functions for SearchBatch

@@ -114,6 +114,43 @@ const char* pqShaderSource =
 "{\n"
 "    if (gid >= n) return;\n"
 "    dst[gid] = 1.0f / (1.0f + exp(-src[gid]));\n"
+"}\n"
+"\n"
+"kernel void haversine_batch(\n"
+"    device const float* center [[buffer(0)]],\n"
+"    device const float* points [[buffer(1)]],\n"
+"    device float* results [[buffer(2)]],\n"
+"    constant float& earthRadius [[buffer(3)]],\n"
+"    constant uint& numPoints [[buffer(4)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numPoints) return;\n"
+"    float lat1 = center[0] * 3.14159265f / 180.0f;\n"
+"    float lon1 = center[1] * 3.14159265f / 180.0f;\n"
+"    float lat2 = points[gid * 2] * 3.14159265f / 180.0f;\n"
+"    float lon2 = points[gid * 2 + 1] * 3.14159265f / 180.0f;\n"
+"    float dLat = lat2 - lat1;\n"
+"    float dLon = lon2 - lon1;\n"
+"    float a = sin(dLat / 2.0f) * sin(dLat / 2.0f) + cos(lat1) * cos(lat2) * sin(dLon / 2.0f) * sin(dLon / 2.0f);\n"
+"    float c = 2.0f * atan2(sqrt(a), sqrt(1.0f - a));\n"
+"    results[gid] = earthRadius * c;\n"
+"}\n"
+"\n"
+"kernel void norm_batch_f32(\n"
+"    device const float* vectors [[buffer(0)]],\n"
+"    device float* results [[buffer(1)]],\n"
+"    constant uint& dims [[buffer(2)]],\n"
+"    constant uint& numVectors [[buffer(3)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numVectors) return;\n"
+"    float sum = 0.0f;\n"
+"    uint offset = gid * dims;\n"
+"    for (uint i = 0; i < dims; i++) {\n"
+"        float v = vectors[offset + i];\n"
+"        sum += v * v;\n"
+"    }\n"
+"    results[gid] = sum;\n"
 "}\n";
 
 // MetalIndex wraps Metal GPU resources
@@ -134,6 +171,8 @@ typedef struct {
     void* ipDistancePipeline;
     void* quantizeSQ8Pipeline;
     void* sigmoidPipeline;
+    void* haversinePipeline;
+    void* normPipeline;
     int vectorCount;
     int dimensions;
     int capacity;
@@ -204,6 +243,14 @@ MetalIndexHandle* metal_init(int dimensions, int initialCapacity) {
             id<MTLFunction> sigFunc = [library newFunctionWithName:@"sigmoid_f32"];
             id<MTLComputePipelineState> sigPipeline = [device newComputePipelineStateWithFunction:sigFunc error:&error];
             if (sigPipeline) handle->sigmoidPipeline = (__bridge_retained void*)sigPipeline;
+
+            id<MTLFunction> havFunc = [library newFunctionWithName:@"haversine_batch"];
+            id<MTLComputePipelineState> havPipeline = [device newComputePipelineStateWithFunction:havFunc error:&error];
+            if (havPipeline) handle->haversinePipeline = (__bridge_retained void*)havPipeline;
+
+            id<MTLFunction> normFunc = [library newFunctionWithName:@"norm_batch_f32"];
+            id<MTLComputePipelineState> normPipeline = [device newComputePipelineStateWithFunction:normFunc error:&error];
+            if (normPipeline) handle->normPipeline = (__bridge_retained void*)normPipeline;
         }
         
         handle->graphOffsets = NULL;
@@ -272,17 +319,32 @@ int metal_add_vectors(MetalIndexHandle* handle, float* vectors, int64_t* ids, in
             // Replace buffer
             CFRelease(handle->vectorBuffer);
             handle->vectorBuffer = (__bridge_retained void*)newBuffer;
+
+            // Also resize idBuffer if it exists
+            if (handle->idBuffer) {
+                size_t newIdBufferSize = newCapacity * sizeof(int64_t);
+                id<MTLBuffer> newIdBuffer = [device newBufferWithLength:newIdBufferSize
+                                                                options:MTLResourceStorageModeShared];
+                if (newIdBuffer) {
+                    id<MTLBuffer> oldIdBuffer = (__bridge id<MTLBuffer>)handle->idBuffer;
+                    memcpy([newIdBuffer contents], [oldIdBuffer contents],
+                           handle->vectorCount * sizeof(int64_t));
+                    CFRelease(handle->idBuffer);
+                    handle->idBuffer = (__bridge_retained void*)newIdBuffer;
+                }
+            }
+            
             handle->capacity = newCapacity;
         }
 
         // Copy vectors to buffer
         id<MTLBuffer> vectorBuffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
-        float* dest = (float*)[vectorBuffer contents] + (handle->vectorCount * handle->dimensions);
-        memcpy(dest, vectors, count * handle->dimensions * sizeof(float));
+        float* dest = (float*)[vectorBuffer contents] + (handle->vectorCount * (long)handle->dimensions);
+        memcpy(dest, vectors, count * (long)handle->dimensions * sizeof(float));
 
         // Copy IDs
         if (!handle->idBuffer) {
-            size_t idBufferSize = handle->capacity * sizeof(int64_t);
+            size_t idBufferSize = (size_t)handle->capacity * sizeof(int64_t);
             id<MTLBuffer> idBuf = [device newBufferWithLength:idBufferSize
                                                        options:MTLResourceStorageModeShared];
             if (!idBuf) {
@@ -293,7 +355,7 @@ int metal_add_vectors(MetalIndexHandle* handle, float* vectors, int64_t* ids, in
 
         id<MTLBuffer> idBuffer = (__bridge id<MTLBuffer>)handle->idBuffer;
         int64_t* idDest = (int64_t*)[idBuffer contents] + handle->vectorCount;
-        memcpy(idDest, ids, count * sizeof(int64_t));
+        memcpy(idDest, ids, (size_t)count * sizeof(int64_t));
 
         handle->vectorCount += count;
 
@@ -400,6 +462,79 @@ int metal_get_count(MetalIndexHandle* handle) {
 }
 
 // Clean up Metal resources
+int metal_haversine_batch(MetalIndexHandle* handle, float* center, float* points, float* results, float earthRadius, int count) {
+    @autoreleasepool {
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->haversinePipeline;
+        
+        if (!pipeline) return -1;
+
+        id<MTLBuffer> centerBuf = [device newBufferWithBytes:center length:2 * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> pointsBuf = [device newBufferWithBytes:points length:count * 2 * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> resBuf = [device newBufferWithLength:count * sizeof(float) options:MTLResourceStorageModeShared];
+
+        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+        [encoder setComputePipelineState:pipeline];
+        [encoder setBuffer:centerBuf offset:0 atIndex:0];
+        [encoder setBuffer:pointsBuf offset:0 atIndex:1];
+        [encoder setBuffer:resBuf offset:0 atIndex:2];
+        [encoder setBytes:&earthRadius length:sizeof(float) atIndex:3];
+        [encoder setBytes:&count length:sizeof(uint32_t) atIndex:4];
+
+        MTLSize gridSize = MTLSizeMake(count, 1, 1);
+        NSUInteger maxThreads = pipeline.maxTotalThreadsPerThreadgroup;
+        if (maxThreads > (uint)count) maxThreads = count;
+        MTLSize threadgroupSize = MTLSizeMake(maxThreads, 1, 1);
+
+        [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+        [encoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+
+        memcpy(results, [resBuf contents], count * sizeof(float));
+        return 0;
+    }
+}
+
+int metal_norm_batch_f32(MetalIndexHandle* handle, float* vectors, float* results, int dims, int count) {
+    @autoreleasepool {
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->normPipeline;
+        
+        if (!pipeline) return -1;
+
+        size_t vecSize = (size_t)count * dims * sizeof(float);
+        id<MTLBuffer> vecBuf = [device newBufferWithBytes:vectors length:vecSize options:MTLResourceStorageModeShared];
+        id<MTLBuffer> resBuf = [device newBufferWithLength:count * sizeof(float) options:MTLResourceStorageModeShared];
+
+        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+        [encoder setComputePipelineState:pipeline];
+        [encoder setBuffer:vecBuf offset:0 atIndex:0];
+        [encoder setBuffer:resBuf offset:0 atIndex:1];
+        [encoder setBytes:&dims length:sizeof(uint32_t) atIndex:2];
+        [encoder setBytes:&count length:sizeof(uint32_t) atIndex:3];
+
+        MTLSize gridSize = MTLSizeMake(count, 1, 1);
+        NSUInteger maxThreads = pipeline.maxTotalThreadsPerThreadgroup;
+        if (maxThreads > (uint)count) maxThreads = count;
+        MTLSize threadgroupSize = MTLSizeMake(maxThreads, 1, 1);
+
+        [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+        [encoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+
+        memcpy(results, [resBuf contents], count * sizeof(float));
+        return 0;
+    }
+}
+
 void metal_cleanup(MetalIndexHandle* handle) {
     @autoreleasepool {
         if (handle->idBuffer) {
@@ -1390,4 +1525,71 @@ func (idx *MetalIndex) Sigmoid(src []float32, dst []float32) error {
 	// Since I don't have a full wrapper for all C functions here, 
 	// I'll leave this as a stub that calls a C function we'll add.
 	return nil 
+}
+func (idx *MetalIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
+	idx.mu.RLock()
+	closed := idx.closed
+	idx.mu.RUnlock()
+
+	if closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	count := len(points) / 2
+	if count == 0 {
+		return nil, nil
+	}
+
+	results := make([]float32, count)
+	center := []float32{centerLat, centerLon}
+
+	start := time.Now()
+	ret := C.metal_haversine_batch(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&center[0])),
+		(*C.float)(unsafe.Pointer(&points[0])),
+		(*C.float)(unsafe.Pointer(&results[0])),
+		C.float(earthRadius),
+		C.int(count),
+	)
+	
+	if ret != 0 {
+		return nil, fmt.Errorf("metal_haversine_batch failed")
+	}
+	
+	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "haversine").Observe(time.Since(start).Seconds())
+	return results, nil
+}
+
+func (idx *MetalIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
+	idx.mu.RLock()
+	closed := idx.closed
+	idx.mu.RUnlock()
+
+	if closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	count := len(vectors) / dims
+	if count == 0 {
+		return nil, nil
+	}
+
+	results := make([]float32, count)
+	
+	start := time.Now()
+	ret := C.metal_norm_batch_f32(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&vectors[0])),
+		(*C.float)(unsafe.Pointer(&results[0])),
+		C.int(dims),
+		C.int(count),
+	)
+	
+	if ret != 0 {
+		return nil, fmt.Errorf("metal_norm_batch_f32 failed")
+	}
+	
+	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "norm_batch").Observe(time.Since(start).Seconds())
+	return results, nil
 }

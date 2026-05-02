@@ -199,10 +199,18 @@ func (c *int64Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
+	if id == 500 {
+		fmt.Printf("DEBUG: int64Computer.ComputeSingle(500) called\n")
+	}
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
 	if err == nil {
 		if v, ok := vecAny.([]int64); ok {
-			return c.h.distFuncInt64(c.q, v)
+			var sum float64
+			for i := range v {
+				diff := float64(c.q[i]) - float64(v[i])
+				sum += diff * diff
+			}
+			return float32(math.Sqrt(sum)), nil
 		}
 	}
 

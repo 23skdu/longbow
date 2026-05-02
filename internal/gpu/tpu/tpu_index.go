@@ -241,3 +241,11 @@ func (i *TPUIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []f
 func (i *TPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	return nil, nil, fmt.Errorf("GraphExpand not implemented for TPUIndex (experimental stub)")
 }
+
+func (i *TPUIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
+	return nil, fmt.Errorf("HaversineSearch not implemented for TPUIndex (emulated)")
+}
+
+func (i *TPUIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
+	return nil, fmt.Errorf("NormBatch not implemented for TPUIndex (emulated)")
+}

@@ -70,6 +70,7 @@ func (n *Namespace) HasDataset(name string) bool {
 	return n.datasets[name]
 }
 
+// ListDatasets returns a list of all dataset names registered in this namespace.
 func (n *Namespace) ListDatasets() []string {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
@@ -81,6 +82,7 @@ func (n *Namespace) ListDatasets() []string {
 	return datasets
 }
 
+// SetQuota configures resource limits for the namespace, including max vectors, dimensions, and storage.
 func (n *Namespace) SetQuota(maxVectors int64, maxDimensions int, maxStorageBytes int64) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -99,6 +101,7 @@ func (n *Namespace) SetQuota(maxVectors int64, maxDimensions int, maxStorageByte
 	}
 }
 
+// CheckQuota verifies if the requested resources fit within the namespace's allocated quota.
 func (n *Namespace) CheckQuota(vectors int64, dimensions int, storageBytes int64) error {
 	if n.MaxVectors > 0 && n.CurrentVectors+vectors > n.MaxVectors {
 		return errors.New("namespace quota exceeded: max vectors")
@@ -112,6 +115,7 @@ func (n *Namespace) CheckQuota(vectors int64, dimensions int, storageBytes int64
 	return nil
 }
 
+// AddUsage increments the current resource usage counters for the namespace.
 func (n *Namespace) AddUsage(vectors int64, storageBytes int64) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -124,6 +128,7 @@ func (n *Namespace) AddUsage(vectors int64, storageBytes int64) {
 	metrics.RecordNamespaceStorage(n.Name, n.CurrentStorageBytes)
 }
 
+// RemoveUsage decrements the current resource usage counters for the namespace.
 func (n *Namespace) RemoveUsage(vectors int64, storageBytes int64) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -137,6 +142,7 @@ func (n *Namespace) RemoveUsage(vectors int64, storageBytes int64) {
 	}
 }
 
+// GetUsage returns the current vector count and storage bytes used by the namespace.
 func (n *Namespace) GetUsage() (vectors int64, storageBytes int64) {
 	n.mu.RLock()
 	defer n.mu.RUnlock()
@@ -192,6 +198,7 @@ func (vs *VectorStore) NamespaceExists(name string) bool {
 	return exists
 }
 
+// DeleteNamespace removes a namespace and all its associated datasets from the store.
 func (vs *VectorStore) DeleteNamespace(name string) error {
 	if name == "default" {
 		return errors.New("cannot delete default namespace")
@@ -292,6 +299,7 @@ func (vs *VectorStore) GetTotalNamespaceCount() int {
 	return len(vs.nsManager.namespaces)
 }
 
+// ListDatasetsInNamespace returns all dataset names belonging to the specified namespace.
 func (vs *VectorStore) ListDatasetsInNamespace(name string) []string {
 	if vs.nsManager == nil {
 		return nil

@@ -9,6 +9,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow/float16"
+	"sync/atomic"
 )
 
 // CandidateHeap implements a max-heap of Candidates for search results
@@ -229,8 +230,7 @@ type ArrowSearchContextPool struct {
 	pool sync.Pool
 
 	// Pool statistics
-	gets, puts int64
-	mu         sync.RWMutex
+	gets, puts atomic.Int64
 }
 
 // NewArrowSearchContext creates a new ArrowSearchContext with default capacity.
@@ -271,9 +271,7 @@ func NewArrowSearchContextPool() *ArrowSearchContextPool {
 
 // Get retrieves an ArrowSearchContext from the pool.
 func (p *ArrowSearchContextPool) Get() *ArrowSearchContext {
-	p.mu.Lock()
-	p.gets++
-	p.mu.Unlock()
+	p.gets.Add(1)
 
 	ctx := p.pool.Get().(*ArrowSearchContext)
 	ctx.Reset()
@@ -285,10 +283,8 @@ func (p *ArrowSearchContextPool) Put(ctx *ArrowSearchContext) {
 	if ctx == nil {
 		return
 	}
-
-	p.mu.Lock()
-	p.puts++
-	p.mu.Unlock()
+ 
+	p.puts.Add(1)
 
 	p.pool.Put(ctx)
 }
@@ -349,9 +345,7 @@ func (ctx *ArrowSearchContext) Reset() {
 
 // Stats returns pool statistics.
 func (p *ArrowSearchContextPool) Stats() (gets, puts int64) {
-	p.mu.RLock()
-	defer p.mu.RUnlock()
-	return p.gets, p.puts
+	return p.gets.Load(), p.puts.Load()
 }
 
 // MarkDirty indicates the context has been modified.

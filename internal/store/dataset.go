@@ -26,12 +26,11 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
-// IndexJob represents a job for the indexing worker.
-// RowLocation represents a physical location of a row.
-
-// HNSWSettings holds configuration for HNSW index construction.
+// HNSWSettings holds configuration parameters for the HNSW index construction.
 type HNSWSettings struct {
-	M              int
+	// M is the number of bi-directional links created for every new element during construction.
+	M int
+	// EfConstruction is the size of the dynamic list for the nearest neighbors (used during construction).
 	EfConstruction int
 }
 
@@ -180,6 +179,7 @@ func (d *Dataset) ResetBatchFragmentation(batchIdx int) {
 	}
 }
 
+// QueryStats tracks performance metrics for searches on a dataset.
 type QueryStats struct {
 	mu           sync.RWMutex
 	latencies    []time.Duration

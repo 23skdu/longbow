@@ -29,7 +29,9 @@ func (b *TPUBackend) Initialize() error {
 	if b.initialized {
 		return nil
 	}
-	// Call libtpu.so initialization here
+	if err := tpuInitialize(); err != nil {
+		return err
+	}
 	b.initialized = true
 	return nil
 }
@@ -58,10 +60,14 @@ type VMEMManager struct {
 }
 
 func (b *TPUBackend) GetDeviceInfo() (*types.GPUInfo, error) {
+	total, _, err := tpuGetDeviceInfo(b.deviceID)
+	if err != nil {
+		return nil, err
+	}
 	return &types.GPUInfo{
 		Backend:  types.BackendTPU,
 		Name:     "Google TPU v7x (Ironwood)",
-		MemoryMB: 192 * 1024,
+		MemoryMB: int64(total / (1024 * 1024)), // #nosec G115 -- safe division
 		DeviceID: b.deviceID,
 		Vendor:   "Google",
 	}, nil

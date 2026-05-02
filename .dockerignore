@@ -5,8 +5,8 @@
 *.out
 *.log
 *.pprof
-bin/
-data/
+# bin/
+# data/
 data1/
 data2/
 scripts/

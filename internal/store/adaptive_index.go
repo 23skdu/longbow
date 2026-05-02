@@ -80,7 +80,6 @@ func NewAdaptiveIndex(ds *Dataset, cfg AdaptiveIndexConfig) VectorIndex {
 	return a
 }
 
-// IsSharded returns true if the underlying index is sharded.
 // IsSharded returns true if the adaptive index is currently using a sharded HNSW index.
 func (idx *AdaptiveIndex) IsSharded() bool {
 	idx.mu.RLock()
@@ -111,6 +110,7 @@ func NewBruteForceIndex(ds *Dataset) VectorIndex {
 	}
 }
 
+// IsSharded returns true if the index is sharded. BruteForceIndex is never sharded.
 func (b *BruteForceIndex) IsSharded() bool { return false }
 
 // AddByLocation adds a vector to the brute-force index using its storage location.
@@ -240,6 +240,7 @@ func (b *BruteForceIndex) GetDimension() uint32 {
 	return 0
 }
 
+// PreWarm pre-allocates resources for a target size. No-op for BruteForceIndex.
 func (b *BruteForceIndex) PreWarm(targetSize int) {}
 
 // Warmup is a no-op for BruteForceIndex.
@@ -265,6 +266,7 @@ func (b *BruteForceIndex) GetPQEncoder() *pq.PQEncoder {
 	return nil
 }
 
+// Search performs a vector search and returns a list of candidates.
 func (b *BruteForceIndex) Search(ctx context.Context, query any, k int, filter any) ([]Candidate, error) {
 	results, err := b.SearchVectors(ctx, query, k, nil, SearchOptions{})
 	if err != nil {
@@ -277,10 +279,13 @@ func (b *BruteForceIndex) Search(ctx context.Context, query any, k int, filter a
 	return candidates, nil
 }
 
+// Size returns the number of vectors in the index.
 func (b *BruteForceIndex) Size() int { return b.Len() }
 
+// GetEntryPoint returns the entry point of the index. BruteForceIndex always returns 0.
 func (b *BruteForceIndex) GetEntryPoint() uint32 { return 0 }
 
+// GetVectorID returns the ID of a vector given its location.
 func (b *BruteForceIndex) GetVectorID(loc any) (uint32, bool) {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -296,32 +301,43 @@ func (b *BruteForceIndex) GetVectorID(loc any) (uint32, bool) {
 	return 0, false
 }
 
+// DeleteBatch removes a batch of vectors from the index. No-op for BruteForceIndex.
 func (b *BruteForceIndex) DeleteBatch(ctx context.Context, ids []uint32) error {
 	return nil
 }
 
+// ExportState serializes the current index state.
 func (b *BruteForceIndex) ExportState() ([]byte, error) { return nil, nil }
 
+// ImportState restores the index state from a byte array.
 func (b *BruteForceIndex) ImportState(data []byte) error { return nil }
 
+// ExportGraph serializes the index graph structure. No-op for BruteForceIndex.
 func (b *BruteForceIndex) ExportGraph(w io.Writer) error { return nil }
 
+// ImportGraph restores the index graph from a reader. No-op for BruteForceIndex.
 func (b *BruteForceIndex) ImportGraph(r io.Reader) error { return nil }
 
+// ExportDelta returns the changes since a given version.
 func (b *BruteForceIndex) ExportDelta(fromVersion uint64) (*DeltaSync, error) { return nil, nil }
 
+// ApplyDelta applies incremental changes to the index.
 func (b *BruteForceIndex) ApplyDelta(delta *DeltaSync) error { return nil }
 
+// SetParallelSearchConfig updates the configuration for parallel searches.
 func (b *BruteForceIndex) SetParallelSearchConfig(cfg ParallelSearchConfig) {}
 
+// GetParallelSearchConfig returns the current parallel search configuration.
 func (b *BruteForceIndex) GetParallelSearchConfig() ParallelSearchConfig {
 	return ParallelSearchConfig{}
 }
 
+// RemapLocations updates the mapping of vector IDs to storage locations.
 func (b *BruteForceIndex) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
 	return nil
 }
 
+// GetGPUIndex returns the underlying GPU index if available.
 func (b *BruteForceIndex) GetGPUIndex() any { return nil }
 
 // EstimateMemory returns an estimate of the memory used by the index.
@@ -752,6 +768,7 @@ func (idx *AdaptiveIndex) GetNeighbors(ctx context.Context, id uint32, k int) ([
 	return nil, errors.New("GetNeighbors not supported for BruteForceIndex")
 }
 
+// Search performs a vector search and returns a list of candidates, delegating to the active implementation.
 func (idx *AdaptiveIndex) Search(ctx context.Context, query any, k int, filter any) ([]Candidate, error) {
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.Search(ctx, query, k, filter)
@@ -768,10 +785,12 @@ func (idx *AdaptiveIndex) Search(ctx context.Context, query any, k int, filter a
 	return candidates, nil
 }
 
+// Size returns the total number of vectors in the active index.
 func (idx *AdaptiveIndex) Size() int {
 	return idx.Len()
 }
 
+// GetEntryPoint returns the entry point of the index, delegating to HNSW if active.
 func (idx *AdaptiveIndex) GetEntryPoint() uint32 {
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.GetEntryPoint()
@@ -779,6 +798,7 @@ func (idx *AdaptiveIndex) GetEntryPoint() uint32 {
 	return 0
 }
 
+// GetVectorID returns the ID of a vector given its location.
 func (idx *AdaptiveIndex) GetVectorID(loc any) (uint32, bool) {
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.GetVectorID(loc)
@@ -786,6 +806,7 @@ func (idx *AdaptiveIndex) GetVectorID(loc any) (uint32, bool) {
 	return idx.bruteForce.GetVectorID(loc)
 }
 
+// DeleteBatch removes a batch of vectors from the active index.
 func (idx *AdaptiveIndex) DeleteBatch(ctx context.Context, ids []uint32) error {
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.DeleteBatch(ctx, ids)
@@ -793,6 +814,7 @@ func (idx *AdaptiveIndex) DeleteBatch(ctx context.Context, ids []uint32) error {
 	return nil
 }
 
+// ExportState serializes the active index state.
 func (idx *AdaptiveIndex) ExportState() ([]byte, error) {
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.ExportState()
@@ -800,11 +822,13 @@ func (idx *AdaptiveIndex) ExportState() ([]byte, error) {
 	return nil, nil
 }
 
+// ImportState is not supported for AdaptiveIndex.
 func (idx *AdaptiveIndex) ImportState(data []byte) error {
 	// Not supported for adaptive bridge
 	return nil
 }
 
+// ExportGraph serializes the active index graph.
 func (idx *AdaptiveIndex) ExportGraph(w io.Writer) error {
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.ExportGraph(w)
@@ -812,11 +836,13 @@ func (idx *AdaptiveIndex) ExportGraph(w io.Writer) error {
 	return nil
 }
 
+// ImportGraph is not supported for AdaptiveIndex.
 func (idx *AdaptiveIndex) ImportGraph(r io.Reader) error {
 	// Not supported for adaptive bridge
 	return nil
 }
 
+// ExportDelta returns changes since a given version from the active index.
 func (idx *AdaptiveIndex) ExportDelta(fromVersion uint64) (*DeltaSync, error) {
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.ExportDelta(fromVersion)
@@ -824,6 +850,7 @@ func (idx *AdaptiveIndex) ExportDelta(fromVersion uint64) (*DeltaSync, error) {
 	return nil, nil
 }
 
+// ApplyDelta applies incremental changes to the active index.
 func (idx *AdaptiveIndex) ApplyDelta(delta *DeltaSync) error {
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.ApplyDelta(delta)
@@ -831,12 +858,14 @@ func (idx *AdaptiveIndex) ApplyDelta(delta *DeltaSync) error {
 	return nil
 }
 
+// SetParallelSearchConfig updates parallel search settings for HNSW if active.
 func (idx *AdaptiveIndex) SetParallelSearchConfig(cfg ParallelSearchConfig) {
 	if h := idx.hnsw; h != nil {
 		h.SetParallelSearchConfig(cfg)
 	}
 }
 
+// GetParallelSearchConfig returns the active parallel search configuration.
 func (idx *AdaptiveIndex) GetParallelSearchConfig() ParallelSearchConfig {
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.GetParallelSearchConfig()
@@ -844,6 +873,7 @@ func (idx *AdaptiveIndex) GetParallelSearchConfig() ParallelSearchConfig {
 	return ParallelSearchConfig{}
 }
 
+// RemapLocations updates ID-to-location mappings in the active index.
 func (idx *AdaptiveIndex) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.RemapLocations(ctx, mapping)
@@ -851,6 +881,7 @@ func (idx *AdaptiveIndex) RemapLocations(ctx context.Context, mapping map[uint32
 	return nil
 }
 
+// GetGPUIndex returns the underlying GPU index if available.
 func (idx *AdaptiveIndex) GetGPUIndex() any {
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.GetGPUIndex()
@@ -858,6 +889,7 @@ func (idx *AdaptiveIndex) GetGPUIndex() any {
 	return nil
 }
 
+// PreWarm pre-allocates resources for the active index.
 func (idx *AdaptiveIndex) PreWarm(targetSize int) {
 	if idx.usingHNSW.Load() {
 		idx.hnsw.PreWarm(targetSize)

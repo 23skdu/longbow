@@ -20,7 +20,7 @@ import (
 	"os"
 )
 
-// IVFHNSWConfig holds configuration for the IVF-HNSW composite index
+// IVFHNSWConfig holds configuration for the IVF-HNSW composite index.
 type IVFHNSWConfig struct {
 	Nlist         int // Number of clusters
 	M             int // Number of PQ subvectors (quantization)
@@ -36,7 +36,7 @@ type IVFHNSWConfig struct {
 	GPUConfig     *gputypes.GPUConfig
 }
 
-// IVFHNSWCompositeIndex implements a high-density billion-scale composite index
+// IVFHNSWCompositeIndex implements a high-density billion-scale composite index.
 // It uses HNSW for fast coarse quantization (assignment to clusters) and
 // OPQ/PQ encoded inverted lists for dense storage and fast scan.
 type IVFHNSWCompositeIndex struct {
@@ -51,7 +51,7 @@ type IVFHNSWCompositeIndex struct {
 	mu     sync.RWMutex
 }
 
-// NewIVFHNSWCompositeIndex creates a new IVF-HNSW composite index
+// NewIVFHNSWCompositeIndex creates a new IVF-HNSW composite index with the specified dimensions and configuration.
 func NewIVFHNSWCompositeIndex(dim int, config IVFHNSWConfig) (*IVFHNSWCompositeIndex, error) {
 	if dim <= 0 {
 		return nil, errors.New("invalid dimension")
@@ -94,21 +94,24 @@ func NewIVFHNSWCompositeIndex(dim int, config IVFHNSWConfig) (*IVFHNSWCompositeI
 	return idx, nil
 }
 
+// Type returns the index type identifier (IVFHNSW).
 func (idx *IVFHNSWCompositeIndex) Type() IndexType {
 	return IndexTypeIVFHNSW
 }
 
+// Dimension returns the dimensionality of the vectors in the index.
 func (idx *IVFHNSWCompositeIndex) Dimension() int {
 	return idx.dim
 }
 
+// NeedsBuild returns true because the IVF index requires training on a representative dataset.
 func (idx *IVFHNSWCompositeIndex) NeedsBuild() bool {
 	return true
 }
 
 // Coarse assignment via HNSW
 
-// Train builds the coarse centroids and the HNSW coarse index
+// Train builds the coarse centroids and the HNSW coarse index using the provided sample vectors.
 func (idx *IVFHNSWCompositeIndex) Train(vectors [][]float32) error {
 	if len(vectors) == 0 {
 		return errors.New("empty training data")
@@ -163,12 +166,13 @@ func (idx *IVFHNSWCompositeIndex) Train(vectors [][]float32) error {
 	return nil
 }
 
+// Build is a no-op for the composite index as the work is performed during Train.
 func (idx *IVFHNSWCompositeIndex) Build() error {
 	// Build is handled by Train
 	return nil
 }
 
-// Add adds a single vector to the index
+// Add adds a single vector to the index.
 func (idx *IVFHNSWCompositeIndex) Add(id uint64, vector []float32) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -205,9 +209,10 @@ func (idx *IVFHNSWCompositeIndex) Add(id uint64, vector []float32) error {
 	return nil
 }
 
-// AddBatch adds multiple vectors to the index
+// GetGPUIndex returns nil as this is a CPU-based implementation.
 func (idx *IVFHNSWCompositeIndex) GetGPUIndex() any { return nil }
 
+// AddBatchRaw adds a batch of vectors with explicit IDs to the index.
 func (idx *IVFHNSWCompositeIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
 	for i, id := range ids {
 		if err := idx.Add(id, vectors[i]); err != nil {
@@ -217,6 +222,7 @@ func (idx *IVFHNSWCompositeIndex) AddBatchRaw(ids []uint64, vectors [][]float32)
 	return nil
 }
 
+// AddBatch adds vectors from Arrow RecordBatches to the index.
 func (idx *IVFHNSWCompositeIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	if len(recs) == 0 {
 		return nil, nil
@@ -239,6 +245,7 @@ func (idx *IVFHNSWCompositeIndex) AddBatch(ctx context.Context, recs []arrow.Rec
 	return ids, nil
 }
 
+// DeleteBatch is currently a no-op for the composite index.
 func (idx *IVFHNSWCompositeIndex) DeleteBatch(ctx context.Context, ids []uint32) error {
 	return nil
 }
@@ -260,6 +267,7 @@ func (idx *IVFHNSWCompositeIndex) Search(query []float32, k int) ([]IndexSearchR
 	return finalResults, nil
 }
 
+// SearchBatch performs a batch search for multiple query vectors.
 func (idx *IVFHNSWCompositeIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error) {
 	results := make([][]IndexSearchResult, len(queries))
 	for i, q := range queries {
@@ -348,34 +356,50 @@ func (idx *IVFHNSWCompositeIndex) SearchVectorsWithBitmap(ctx context.Context, q
 	return candidates, nil
 }
 
-// Interface compliance stubs
+// AddByLocation is not supported for IVF-HNSW; use Add instead.
 func (idx *IVFHNSWCompositeIndex) AddByLocation(batchIdx, rowIdx int) error {
 	return fmt.Errorf("AddByLocation not supported for IVF-HNSW (use Add)")
 }
 
+// GetVectorID returns the vector ID for a given location (not supported).
 func (idx *IVFHNSWCompositeIndex) GetVectorID(loc Location) (uint64, bool) {
 	return 0, false
 }
 
+// SearchVectors performs a synchronous search and returns results.
 func (idx *IVFHNSWCompositeIndex) SearchVectors(query []float32, k int, options SearchOptions) []types.SearchResult {
 	results, _ := idx.SearchVectorsWithBitmap(context.Background(), query, k, nil, nil)
 	return results
 }
+// Size returns the total number of vectors in the index.
 func (idx *IVFHNSWCompositeIndex) Size() int { return int(idx.nextID) }
+
+// Len returns the total number of vectors in the index.
 func (idx *IVFHNSWCompositeIndex) Len() int { return idx.Size() }
 
+// GetIndexType returns the index type as a string.
 func (idx *IVFHNSWCompositeIndex) GetIndexType() string {
 	return string(idx.Type())
 }
-func (idx *IVFHNSWCompositeIndex) Close() error { 
+
+// Close releases resources associated with the index.
+func (idx *IVFHNSWCompositeIndex) Close() error {
 	if idx.coarseHNSW != nil {
 		return idx.coarseHNSW.Close()
 	}
-	return nil 
+	return nil
 }
+
+// GetDimension returns the dimensionality as a uint32.
 func (idx *IVFHNSWCompositeIndex) GetDimension() uint32 { return uint32(idx.dim) } // #nosec G115 -- dim is within uint32 range
+
+// SetParallelSearchConfig is a no-op for the composite index.
 func (idx *IVFHNSWCompositeIndex) SetParallelSearchConfig(c types.ParallelSearchConfig) {}
+
+// GetParallelSearchConfig returns an empty parallel search configuration.
 func (idx *IVFHNSWCompositeIndex) GetParallelSearchConfig() types.ParallelSearchConfig { return types.ParallelSearchConfig{} }
+
+// IsSharded returns false as the composite index is a local-only implementation.
 func (idx *IVFHNSWCompositeIndex) IsSharded() bool { return false }
 // ivfHNSWCompositeState is used for serialization
 type ivfHNSWCompositeState struct {
@@ -387,6 +411,7 @@ type ivfHNSWCompositeState struct {
 	Clusters   []IVFCluster
 }
 
+// ExportState returns the serialized state of the index.
 func (idx *IVFHNSWCompositeIndex) ExportState() ([]byte, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -421,6 +446,7 @@ func (idx *IVFHNSWCompositeIndex) ExportState() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// Save serializes the index to a file.
 func (idx *IVFHNSWCompositeIndex) Save(path string) error {
 	data, err := idx.ExportState()
 	if err != nil {
@@ -429,6 +455,7 @@ func (idx *IVFHNSWCompositeIndex) Save(path string) error {
 	return os.WriteFile(path, data, 0600) // #nosec G304 -- path is internal, not user-controlled
 }
 
+// Load restores the index from a file.
 func (idx *IVFHNSWCompositeIndex) Load(path string) error {
 	data, err := os.ReadFile(path) // #nosec G304 -- path is internal, not user-controlled
 	if err != nil {
@@ -437,6 +464,7 @@ func (idx *IVFHNSWCompositeIndex) Load(path string) error {
 	return idx.ImportState(data)
 }
 
+// ImportState restores the index state from a byte slice.
 func (idx *IVFHNSWCompositeIndex) ImportState(data []byte) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -481,6 +509,7 @@ func (idx *IVFHNSWCompositeIndex) ImportState(data []byte) error {
 	return nil
 }
 
+// ApplyDelta applies a series of new locations to the index.
 func (idx *IVFHNSWCompositeIndex) ApplyDelta(d *types.DeltaSync) error {
 	if d == nil || len(d.NewLocations) == 0 {
 		return nil
@@ -523,10 +552,12 @@ func (idx *IVFHNSWCompositeIndex) fetchVector(_ core.Location) ([]float32, error
 	return nil, fmt.Errorf("vector fetching from location not fully implemented in composite index")
 }
 
+// GetPQEncoder returns the underlying PQ encoder used by the index.
 func (idx *IVFHNSWCompositeIndex) GetPQEncoder() *pq.PQEncoder {
 	return idx.opqEncoder.PQEncoder
 }
 
+// GetNeighbors retrieves the nearest neighbors for a specific vector ID.
 func (idx *IVFHNSWCompositeIndex) GetNeighbors(ctx context.Context, id types.VectorID, k int) ([]types.SearchResult, error) {
 	// Not directly supported on the composite index (usually needs the full vector)
 	return nil, fmt.Errorf("GetNeighbors not supported for IVF-HNSW")

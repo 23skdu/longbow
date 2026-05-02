@@ -13,6 +13,7 @@ type DiskLayoutInfo struct {
 	ReadAmpAverage float64
 }
 
+// BatchLayoutDetail provides fine-grained information about a single record batch's disk layout.
 type BatchLayoutDetail struct {
 	BatchIdx int
 	Rows     int

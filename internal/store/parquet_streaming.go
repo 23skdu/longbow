@@ -73,6 +73,7 @@ func (p *StreamingParquetWriter) WriteBatch(gd *types.GraphData) error {
 	return nil
 }
 
+// Close finalizes the Parquet file and closes the writer.
 func (p *StreamingParquetWriter) Close() error {
 	p.mu.Lock()
 	defer p.mu.Unlock()

@@ -31,24 +31,29 @@ type HNSWPluggableAdapter struct {
 	hnsw      VectorIndex //nolint:unused // reserved for future HNSW integration // actual HNSW index, nil until dataset provided
 }
 
+// Type returns the index type.
 func (h *HNSWPluggableAdapter) Type() IndexType {
 	return IndexTypeHNSW
 }
 
+// Dimension returns the vector dimension.
 func (h *HNSWPluggableAdapter) Dimension() int {
 	return h.dimension
 }
 
+// Size returns the number of vectors in the index.
 func (h *HNSWPluggableAdapter) Size() int {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	return len(h.vectors)
 }
 
+// NeedsBuild returns whether the index needs to be explicitly built.
 func (h *HNSWPluggableAdapter) NeedsBuild() bool {
 	return false // HNSW builds incrementally
 }
 
+// Add adds a single vector to the index.
 func (h *HNSWPluggableAdapter) Add(id uint64, vector []float32) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -56,6 +61,7 @@ func (h *HNSWPluggableAdapter) Add(id uint64, vector []float32) error {
 	return nil
 }
 
+// AddBatchRaw adds a batch of vectors to the index.
 func (h *HNSWPluggableAdapter) AddBatchRaw(ids []uint64, vectors [][]float32) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -65,6 +71,7 @@ func (h *HNSWPluggableAdapter) AddBatchRaw(ids []uint64, vectors [][]float32) er
 	return nil
 }
 
+// Search performs a nearest neighbor search.
 func (h *HNSWPluggableAdapter) Search(query []float32, k int) ([]IndexSearchResult, error) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -103,6 +110,7 @@ func (h *HNSWPluggableAdapter) Search(query []float32, k int) ([]IndexSearchResu
 	return finalResults, nil
 }
 
+// SearchBatch performs multiple nearest neighbor searches in parallel.
 func (h *HNSWPluggableAdapter) SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error) {
 	results := make([][]IndexSearchResult, len(queries))
 	for i, q := range queries {
@@ -112,6 +120,7 @@ func (h *HNSWPluggableAdapter) SearchBatch(queries [][]float32, k int) ([][]Inde
 	return results, nil
 }
 
+// GetNeighbors retrieves the nearest neighbors for a specific vector ID.
 func (h *HNSWPluggableAdapter) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error) {
 	// Simple mock implementation for the adapter
 	h.mu.RLock()
@@ -132,10 +141,12 @@ func (h *HNSWPluggableAdapter) GetNeighbors(ctx context.Context, id lbtypes.Vect
 	return results, nil
 }
 
+// Build constructs the index structure.
 func (h *HNSWPluggableAdapter) Build() error {
 	return nil // HNSW builds incrementally
 }
 
+// Save serializes the index to a file.
 func (h *HNSWPluggableAdapter) Save(path string) error {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -149,6 +160,7 @@ func (h *HNSWPluggableAdapter) Save(path string) error {
 	return gob.NewEncoder(f).Encode(h.vectors)
 }
 
+// ExportState exports the internal state of the index.
 func (h *HNSWPluggableAdapter) ExportState() ([]byte, error) {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -159,12 +171,14 @@ func (h *HNSWPluggableAdapter) ExportState() ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// ImportState imports the internal state of the index.
 func (h *HNSWPluggableAdapter) ImportState(data []byte) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	return gob.NewDecoder(bytes.NewReader(data)).Decode(&h.vectors)
 }
 
+// Load deserializes the index from a file.
 func (h *HNSWPluggableAdapter) Load(path string) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
@@ -178,19 +192,23 @@ func (h *HNSWPluggableAdapter) Load(path string) error {
 	return gob.NewDecoder(f).Decode(&h.vectors)
 }
 
+// Close releases resources associated with the index.
 func (h *HNSWPluggableAdapter) Close() error {
 	return nil
 }
 
+// AddByLocation is a stub for PluggableVectorIndex compatibility.
 func (h *HNSWPluggableAdapter) AddByLocation(batchIdx, rowIdx int) error {
 	return nil
 }
 
+// GetVectorID retrieves the vector ID for a given location.
 func (h *HNSWPluggableAdapter) GetVectorID(loc Location) (uint64, bool) {
 	// Adapter doesn't support structured location mapping yet
 	return 0, false
 }
 
+// SearchVectors performs a nearest neighbor search and returns results in the store's format.
 func (h *HNSWPluggableAdapter) SearchVectors(query []float32, k int, options SearchOptions) []lbtypes.SearchResult {
 	results, _ := h.Search(query, k)
 	searchResults := make([]lbtypes.SearchResult, len(results))
@@ -204,10 +222,12 @@ func (h *HNSWPluggableAdapter) SearchVectors(query []float32, k int, options Sea
 	return searchResults
 }
 
+// Len returns the number of vectors in the index.
 func (h *HNSWPluggableAdapter) Len() int {
 	return h.Size()
 }
 
+// GetIndexType returns the index type as a string.
 func (h *HNSWPluggableAdapter) GetIndexType() string {
 	return string(h.Type())
 }
@@ -217,15 +237,21 @@ type PluggableInternalAdapter struct {
 	inner PluggableVectorIndex
 }
 
+// NewPluggableInternalAdapter creates a new adapter for internal use.
 func NewPluggableInternalAdapter(inner PluggableVectorIndex) *PluggableInternalAdapter {
 	return &PluggableInternalAdapter{inner: inner}
 }
 
+// Type returns the index type.
 func (a *PluggableInternalAdapter) Type() IndexType { return a.inner.Type() }
+// Size returns the number of vectors in the index.
 func (a *PluggableInternalAdapter) Size() int       { return a.inner.Size() }
+// Len returns the number of vectors in the index.
 func (a *PluggableInternalAdapter) Len() int        { return a.inner.Size() }
+// Close releases resources associated with the index.
 func (a *PluggableInternalAdapter) Close() error    { return a.inner.Close() }
 
+// GetIndexType returns the index type as a string.
 func (a *PluggableInternalAdapter) GetIndexType() string {
 	return string(a.inner.Type())
 }
@@ -352,44 +378,68 @@ func (a *PluggableInternalAdapter) SearchVectorsWithBitmap(ctx context.Context, 
 	return results, nil
 }
 
-// Other stubs required for VectorIndexer interface consistency
+// SearchVectorsInRange performs a range search.
 func (a *PluggableInternalAdapter) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []core.Filter, options any) ([]lbtypes.SearchResult, error) {
 	return nil, nil
 }
+// IsSharded returns whether the index is sharded.
 func (a *PluggableInternalAdapter) IsSharded() bool                       { return false }
+// GetEntryPoint returns the entry point for the index.
 func (a *PluggableInternalAdapter) GetEntryPoint() uint32                  { return 0 }
+// GetLocation retrieves the location of a vector.
 func (a *PluggableInternalAdapter) GetLocation(id uint32) (any, bool)      { return nil, false }
+// GetVectorID retrieves the vector ID for a given location.
 func (a *PluggableInternalAdapter) GetVectorID(loc any) (uint32, bool)     { return 0, false }
+// GetDimension returns the vector dimension.
 func (a *PluggableInternalAdapter) GetDimension() uint32                  { return uint32(a.inner.Dimension()) } // #nosec G115
+// SetIndexedColumns sets the columns to be indexed.
 func (a *PluggableInternalAdapter) SetIndexedColumns(cols []string)        {}
+// GetRawNeighbors retrieves the raw neighbor IDs for a vector.
 func (a *PluggableInternalAdapter) GetRawNeighbors(id uint32) ([]uint32, error) { return nil, nil }
+// GetNeighbors retrieves the nearest neighbors for a vector.
 func (a *PluggableInternalAdapter) GetNeighbors(ctx context.Context, id uint32, k int) ([]lbtypes.SearchResult, error) {
 	return a.inner.GetNeighbors(ctx, lbtypes.VectorID(id), k)
 }
+// PreWarm prepares the index for search.
 func (a *PluggableInternalAdapter) PreWarm(targetSize int)              {}
+// Warmup warms up the index.
 func (a *PluggableInternalAdapter) Warmup() int                         { return 0 }
+// EstimateMemory estimates the memory usage of the index.
 func (a *PluggableInternalAdapter) EstimateMemory() int64               { return 0 }
+// TrainPQ trains the product quantizer for the index.
 func (a *PluggableInternalAdapter) TrainPQ(vectors [][]float32) error   { return nil }
+// GetPQEncoder returns the product quantizer encoder.
 func (a *PluggableInternalAdapter) GetPQEncoder() *pq.PQEncoder         { return nil }
+// DeleteBatch deletes multiple vectors from the index.
 func (a *PluggableInternalAdapter) DeleteBatch(ctx context.Context, ids []uint32) error {
 	return nil
 }
+// ExportState exports the internal state of the index.
 func (a *PluggableInternalAdapter) ExportState() ([]byte, error)          { return nil, nil }
+// ImportState imports the internal state of the index.
 func (a *PluggableInternalAdapter) ImportState(data []byte) error         { return nil }
+// ExportGraph exports the graph structure of the index.
 func (a *PluggableInternalAdapter) ExportGraph(w io.Writer) error         { return nil }
+// ImportGraph imports the graph structure of the index.
 func (a *PluggableInternalAdapter) ImportGraph(r io.Reader) error         { return nil }
+// ExportDelta exports the delta since the given version.
 func (a *PluggableInternalAdapter) ExportDelta(v uint64) (*lbtypes.DeltaSync, error) {
 	return nil, nil
 }
+// ApplyDelta applies the given delta sync to the index.
 func (a *PluggableInternalAdapter) ApplyDelta(d *lbtypes.DeltaSync) error { return nil }
+// SetParallelSearchConfig sets the configuration for parallel search.
 func (a *PluggableInternalAdapter) SetParallelSearchConfig(c lbtypes.ParallelSearchConfig) {}
+// GetParallelSearchConfig returns the configuration for parallel search.
 func (a *PluggableInternalAdapter) GetParallelSearchConfig() lbtypes.ParallelSearchConfig {
 	return lbtypes.ParallelSearchConfig{}
 }
+// RemapLocations remaps vector locations.
 func (a *PluggableInternalAdapter) RemapLocations(ctx context.Context, m map[uint32]any) error {
 	return nil
 }
 
+// GetGPUIndex returns the GPU index if available.
 func (a *PluggableInternalAdapter) GetGPUIndex() any {
 	if g, ok := a.inner.(interface{ GetGPUIndex() any }); ok {
 		return g.GetGPUIndex()

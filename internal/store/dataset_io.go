@@ -21,9 +21,12 @@ import (
 )
 
 const (
+	// DatasetFileExtension is the default file extension for exported datasets.
 	DatasetFileExtension = ".parquet"
-	DatasetMagic         = "LONGDATASET"
-	DatasetVersion       = 1
+	// DatasetMagic is the magic string used to identify Longbow dataset files.
+	DatasetMagic = "LONGDATASET"
+	// DatasetVersion is the current version of the dataset export format.
+	DatasetVersion = 1
 )
 
 var datasetExportBufferPool = sync.Pool{
@@ -76,6 +79,7 @@ func (d *DatasetHeader) Validate() error {
 	return nil
 }
 
+// DatasetParquetRecord defines the structure of a single record when exporting to Parquet.
 type DatasetParquetRecord struct {
 	ID        int64  `parquet:"id,optional"`
 	Vector    []byte `parquet:"vector,optional"`

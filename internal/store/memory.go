@@ -12,11 +12,17 @@ import (
 type MemoryAdvice int
 
 const (
+	// AdviceNormal indicates the default memory access pattern.
 	AdviceNormal MemoryAdvice = iota
+	// AdviceRandom indicates that memory access is expected to be random.
 	AdviceRandom
+	// AdviceSequential indicates that memory access is expected to be sequential.
 	AdviceSequential
+	// AdviceWillNeed indicates that the memory will be needed in the near future.
 	AdviceWillNeed
+	// AdviceDontNeed indicates that the memory will not be needed in the near future.
 	AdviceDontNeed
+	// AdviceHugePage indicates that the memory should use huge pages if available.
 	AdviceHugePage
 )
 

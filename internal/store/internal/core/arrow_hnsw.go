@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"sort"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -56,7 +57,7 @@ type ArrowHNSW struct {
 	mMax0 int
 
 	// Mutexes for thread-safe concurrent writes (sharded to 1024 to reduce contention)
-	insertMus [ShardedLockCount]sync.Mutex
+	insertMus [ShardedLockCount]types.PaddedMutex
 
 	// Insert context pool for reducing allocations (Issue 2: PoolMetrics)
 	insertPool *InsertContextPool
@@ -391,18 +392,29 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		}
 	}
 
-	// Initialize Layer 0 Lock-Free Adjacency ([#11] Lock-Free Adjacency)
+	// Initialize Lock-Free Adjacency for all layers ([#11] Lock-Free Adjacency)
 	gd.PackedNeighbors = make([]types.PackedNeighbors, types.ArrowMaxLayers)
-	// We use a dedicated SlabArena for Layer 0 adjacency to maximize throughput
 	
-	var adjArena *memory.SlabArena
-	if config.NUMANode >= 0 && topo != nil {
-		numaAlloc := memory.NewNUMAAllocator(topo, config.NUMANode)
-		adjArena = memory.NewSlabArenaWithAllocator(1024*1024*32, numaAlloc)
-	} else {
-		adjArena = memory.NewSlabArena(1024 * 1024 * 32) // 32MB initial slab
+	for l := 0; l < types.ArrowMaxLayers; l++ {
+		var adjArena *memory.SlabArena
+		// We use a dedicated SlabArena for each layer to minimize contention
+		if config.NUMANode >= 0 && topo != nil {
+			numaAlloc := memory.NewNUMAAllocator(topo, config.NUMANode)
+			// Lower layers are larger, use larger slabs
+			slabSize := 1024 * 1024 * 32
+			if l > 0 {
+				slabSize = 1024 * 1024 * 4 // Upper layers are smaller
+			}
+			adjArena = memory.NewSlabArenaWithAllocator(slabSize, numaAlloc)
+		} else {
+			slabSize := 1024 * 1024 * 32
+			if l > 0 {
+				slabSize = 1024 * 1024 * 4
+			}
+			adjArena = memory.NewSlabArena(slabSize)
+		}
+		gd.PackedNeighbors[l] = NewPackedAdjacency(adjArena, capacity)
 	}
-	gd.PackedNeighbors[0] = NewPackedAdjacency(adjArena, capacity)
 
 	h.data.Store(gd)
 
@@ -1849,9 +1861,17 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 
 	// Discover vector column
 	vecColIdx := -1
-	if len(recs) > 0 && recs[0] != nil {
-		for i := 0; i < int(recs[0].NumCols()); i++ {
-			name := recs[0].ColumnName(i)
+	var schemaSource arrow.RecordBatch
+	for _, r := range recs {
+		if r != nil {
+			schemaSource = r
+			break
+		}
+	}
+
+	if schemaSource != nil {
+		for i := 0; i < int(schemaSource.NumCols()); i++ {
+			name := strings.ToLower(schemaSource.ColumnName(i))
 			if name == "vector" || name == "embedding" || name == "vec" {
 				vecColIdx = i
 				break
@@ -1859,9 +1879,66 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		}
 	}
 
+	if vecColIdx == -1 {
+		var colNames []string
+		if schemaSource != nil {
+			for i := 0; i < int(schemaSource.NumCols()); i++ {
+				colNames = append(colNames, schemaSource.ColumnName(i))
+			}
+		}
+		return nil, fmt.Errorf("no vector column found (looked for 'vector', 'embedding', 'vec'); available columns: %v", colNames)
+	}
+
 	var startID uint32
 	// Allocate local IDs for the entire batch to ensure monotonic assignment and avoid overwrites
 	startID = uint32(h.nextID.Add(int64(n)) - int64(n)) // #nosec G115
+
+	// Ensure the index is grown to accommodate the new batch before parallel ingestion.
+	if n > 0 && vecColIdx != -1 {
+		h.growMu.Lock()
+		data := h.data.Load()
+		if data == nil || int(startID)+n > data.Capacity || h.dims.Load() == 0 {
+			// Extract first vector to determine dimensions
+			var recFirst arrow.RecordBatch
+			if len(recs) == 1 {
+				recFirst = recs[0]
+			} else if batchIdxs[0] >= 0 && batchIdxs[0] < len(recs) {
+				recFirst = recs[batchIdxs[0]]
+			}
+			
+			if recFirst != nil {
+				v := h.extractVector(recFirst, vecColIdx, rowIdxs[0])
+				if v != nil {
+					dims := 0
+					switch vt := v.(type) {
+					case []float32: dims = len(vt)
+					case []float16.Num: dims = len(vt)
+					case []float64: dims = len(vt)
+					case []int32: dims = len(vt)
+					case []uint32: dims = len(vt)
+					case []int16: dims = len(vt)
+					case []uint16: dims = len(vt)
+					case []int8: dims = len(vt)
+					case []uint8: dims = len(vt)
+					case []int64: dims = len(vt)
+					case []uint64: dims = len(vt)
+					case []complex64: dims = len(vt)
+					case []complex128: dims = len(vt)
+					}
+					
+					if dims > 0 {
+						newCap := int(startID) + n
+						if data != nil && data.Capacity > 0 {
+							newCap = int(math.Max(float64(newCap), float64(data.Capacity*2)))
+						}
+						newCap = (newCap + types.ChunkSize - 1) & ^(types.ChunkSize - 1)
+						_ = h.growInternal(newCap, dims)
+					}
+				}
+			}
+		}
+		h.growMu.Unlock()
+	}
 
 	// Bulk optimization path - only use for large batches on an established index
 	// to ensure reachability and graph diversity.
@@ -1881,12 +1958,10 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 					// Robust record resolution: if we only have one record, use it regardless of batchIdx
 					var rec arrow.RecordBatch
 					bIdx := batchIdxs[i]
-					if bIdx < len(recs) && recs[bIdx] != nil {
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
 						rec = recs[bIdx]
 					} else if len(recs) == 1 {
 						rec = recs[0]
-					} else if i < len(recs) {
-						rec = recs[i]
 					}
 
 					if rec != nil {
@@ -1911,16 +1986,14 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 					}
 					
 					for i := start; i < end; i++ {
-						// Robust record resolution
-						var rec arrow.RecordBatch
-						bIdx := batchIdxs[i]
-						if bIdx < len(recs) && recs[bIdx] != nil {
-							rec = recs[bIdx]
-						} else if len(recs) == 1 {
-							rec = recs[0]
-						} else if i < len(recs) {
-							rec = recs[i]
-						}
+					// Robust record resolution
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
+					}
 
 						if rec == nil {
 							supportedAtomic.Store(false)
@@ -2175,12 +2248,10 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			// Resolve record batch
 			var rec arrow.RecordBatch
 			bIdx := batchIdxs[i]
-			if bIdx < len(recs) && recs[bIdx] != nil {
+			if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
 				rec = recs[bIdx]
 			} else if len(recs) == 1 {
 				rec = recs[0]
-			} else if i < len(recs) {
-				rec = recs[i]
 			}
 			
 			if rec == nil {
@@ -2195,10 +2266,44 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		}
 	})
 
+	// Phase 1.5: Sequential Bootstrap
+	// If the index is empty or very small, we must insert some nodes sequentially
+	// to establish an entry point and basic graph structure before parallel insertion.
+	bootstrapEnd := len(rowIdxs)
+
+	for i := 0; i < bootstrapEnd; i++ {
+		id := startID + uint32(i) // #nosec G115
+		
+		var rec arrow.RecordBatch
+		bIdx := batchIdxs[i]
+		if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+			rec = recs[bIdx]
+		} else if len(recs) == 1 {
+			rec = recs[0]
+		}
+		
+		if rec == nil { continue }
+		vec := h.extractVector(rec, vecColIdx, rowIdxs[i])
+		if vec == nil { continue }
+
+		// Insert sequentially to establish graph backbone
+		err := h.insertInternal(id, vec, -1, true)
+		if err == nil {
+			h.commitID(id) // Make visible immediately for subsequent bootstrap nodes
+			ids[i] = id
+		} else {
+			errMu.Lock()
+			errFinal = err
+			errMu.Unlock()
+			return nil, err
+		}
+	}
+
 	// Phase 2: Parallel Insertion
-	// Now that all vectors are ready, we can perform HNSW insertion.
-	pool.ParallelFor(len(rowIdxs), (len(rowIdxs)+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
-		for i := start; i < end; i++ {
+	// Now that the graph backbone is established, we can perform parallel insertion for the rest.
+	remainingStart := bootstrapEnd
+	pool.ParallelFor(len(rowIdxs)-remainingStart, (len(rowIdxs)-remainingStart+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
+		for i := start + remainingStart; i < end + remainingStart; i++ {
 			errMu.Lock()
 			if errFinal != nil {
 				errMu.Unlock()
@@ -2211,12 +2316,10 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			// Extract vector again (cheap from record batch or already in cache)
 			var rec arrow.RecordBatch
 			bIdx := batchIdxs[i]
-			if bIdx < len(recs) && recs[bIdx] != nil {
+			if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
 				rec = recs[bIdx]
 			} else if len(recs) == 1 {
 				rec = recs[0]
-			} else if i < len(recs) {
-				rec = recs[i]
 			}
 			
 			if rec == nil {
@@ -2267,7 +2370,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	for h.nodeCount.Load() < int64(startID) {
 		h.commitCond.Wait()
 	}
-	h.nodeCount.Add(int64(len(rowIdxs)))
+	h.nodeCount.Add(int64(len(rowIdxs) - bootstrapEnd))
 	h.commitCond.Broadcast()
 	h.commitMu.Unlock()
 
@@ -4203,6 +4306,10 @@ type float32Computer struct {
 }
 
 func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
+	// Full node lock to synchronize with SetVector (line 142 of insertion_core.go)
+	oldVer := c.h.data.Load().LockNode(0, id)
+	defer c.h.data.Load().UnlockNode(0, id, oldVer)
+
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
 	if err != nil {
 		return 0, err

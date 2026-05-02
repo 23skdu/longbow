@@ -50,7 +50,7 @@ func NewSearchPool() *SearchPool {
 	}
 }
 
-// Get retrieves a SearchContext from the pool
+// Get retrieves a SearchContext from the pool and resets its results.
 func (sp *SearchPool) Get() *SearchContext {
 	sp.gets.Add(1)
 	ctx := sp.pool.Get().(*SearchContext)
@@ -59,7 +59,7 @@ func (sp *SearchPool) Get() *SearchContext {
 	return ctx
 }
 
-// Put returns a SearchContext to the pool
+// Put returns a SearchContext to the pool after clearing its contents.
 func (sp *SearchPool) Put(ctx *SearchContext) {
 	if ctx == nil {
 		return
@@ -83,7 +83,7 @@ func (sp *SearchPool) Put(ctx *SearchContext) {
 	sp.pool.Put(ctx)
 }
 
-// Stats returns pool statistics
+// Stats returns current search pool hit/miss statistics.
 func (sp *SearchPool) Stats() (gets, puts int64) {
 	return sp.gets.Load(), sp.puts.Load()
 }
@@ -126,7 +126,7 @@ func newSearchResultBucket(capacity int) *SearchResultBucket {
 	}
 }
 
-// Get retrieves a result slice from the appropriate bucket
+// Get retrieves a SearchResult slice from the appropriate capacity bucket.
 func (sp *SearchResultPool) Get(capacity int) []SearchResult {
 	// Find closest bucket
 	bucket := sp.getBucket(capacity)
@@ -145,7 +145,7 @@ func (sp *SearchResultPool) Get(capacity int) []SearchResult {
 	return result
 }
 
-// Put returns a result slice to the appropriate bucket
+// Put returns a SearchResult slice to the appropriate bucket after clearing it.
 func (sp *SearchResultPool) Put(slice []SearchResult) {
 	if slice == nil {
 		return
@@ -199,7 +199,7 @@ func capacityBucketLabel(capacity int) string {
 	}
 }
 
-// Stats returns pool statistics
+// Stats returns statistics for all capacity buckets in the result pool.
 func (sp *SearchResultPool) Stats() map[string]map[string]int64 {
 	stats := make(map[string]map[string]int64)
 	for c, bucket := range sp.buckets {

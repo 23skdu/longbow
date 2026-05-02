@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// OptimisticUpdate represents a request to update a vector with optimistic concurrency control.
 type OptimisticUpdate struct {
 	VectorID   string
 	Vector     []float32
@@ -17,6 +18,7 @@ type OptimisticUpdate struct {
 	RetryCount int
 }
 
+// VectorVersion stores the version and metadata for a specific vector.
 type VectorVersion struct {
 	Version    uint64
 	Vector     []float32
@@ -24,6 +26,7 @@ type VectorVersion struct {
 	ModifiedBy string
 }
 
+// OptimisticConcurrentConfig defines the configuration for optimistic concurrency control.
 type OptimisticConcurrentConfig struct {
 	MaxRetries       int    `json:"max_retries"`
 	RetryDelayMs     int    `json:"retry_delay_ms"`
@@ -32,6 +35,7 @@ type OptimisticConcurrentConfig struct {
 	ConflictStrategy string `json:"conflict_strategy"` // abort, overwrite, merge
 }
 
+// OptimisticConcurrentUpdates manages optimistic concurrency for vector updates.
 type OptimisticConcurrentUpdates struct {
 	logger       zerolog.Logger
 	config       OptimisticConcurrentConfig
@@ -42,6 +46,7 @@ type OptimisticConcurrentUpdates struct {
 	stopChan     chan struct{}
 }
 
+// OptimisticStats tracks operational statistics for optimistic updates.
 type OptimisticStats struct {
 	UpdatesAttempted  atomic.Int64
 	UpdatesSucceeded  atomic.Int64
@@ -50,6 +55,7 @@ type OptimisticStats struct {
 	UpdatesAborted    atomic.Int64
 }
 
+// UpdateResult represents the outcome of an optimistic update operation.
 type UpdateResult struct {
 	Success    bool
 	NewVersion uint64
@@ -57,6 +63,7 @@ type UpdateResult struct {
 	Error      error
 }
 
+// NewOptimisticConcurrentUpdates creates a new OptimisticConcurrentUpdates manager.
 func NewOptimisticConcurrentUpdates(logger zerolog.Logger, config OptimisticConcurrentConfig) *OptimisticConcurrentUpdates {
 	if config.MaxRetries <= 0 {
 		config.MaxRetries = 3
@@ -76,6 +83,7 @@ func NewOptimisticConcurrentUpdates(logger zerolog.Logger, config OptimisticConc
 	}
 }
 
+// GetVersion retrieves the current version of a vector.
 func (o *OptimisticConcurrentUpdates) GetVersion(vectorID string) (uint64, bool) {
 	o.cacheMu.RLock()
 	defer o.cacheMu.RUnlock()
@@ -86,6 +94,7 @@ func (o *OptimisticConcurrentUpdates) GetVersion(vectorID string) (uint64, bool)
 	return 0, false
 }
 
+// SetVersion explicitly sets the version and data for a vector.
 func (o *OptimisticConcurrentUpdates) SetVersion(vectorID string, version uint64, vector []float32) {
 	o.cacheMu.Lock()
 	defer o.cacheMu.Unlock()
@@ -97,6 +106,7 @@ func (o *OptimisticConcurrentUpdates) SetVersion(vectorID string, version uint64
 	}
 }
 
+// UpdateVector attempts to update a vector, failing if the expected version does not match.
 func (o *OptimisticConcurrentUpdates) UpdateVector(vectorID string, newVector []float32, expectedVersion uint64, modifiedBy string) UpdateResult {
 	o.stats.UpdatesAttempted.Add(1)
 
@@ -153,6 +163,7 @@ func (o *OptimisticConcurrentUpdates) UpdateVector(vectorID string, newVector []
 	}
 }
 
+// UpdateVectorWithRetry attempts to update a vector, retrying on conflicts according to the configuration.
 func (o *OptimisticConcurrentUpdates) UpdateVectorWithRetry(vectorID string, newVector []float32, expectedVersion uint64, modifiedBy string) UpdateResult {
 	o.stats.UpdatesAttempted.Add(1)
 
@@ -213,6 +224,7 @@ func (o *OptimisticConcurrentUpdates) mergeUpdate(vectorID string, currentVersio
 	}
 }
 
+// DeleteVector removes the version information for a vector.
 func (o *OptimisticConcurrentUpdates) DeleteVector(vectorID string) {
 	o.cacheMu.Lock()
 	defer o.cacheMu.Unlock()
@@ -220,6 +232,7 @@ func (o *OptimisticConcurrentUpdates) DeleteVector(vectorID string) {
 	delete(o.versionCache, vectorID)
 }
 
+// BatchUpdate performs multiple vector updates concurrently.
 func (o *OptimisticConcurrentUpdates) BatchUpdate(updates []OptimisticUpdate, modifiedBy string) []UpdateResult {
 	results := make([]UpdateResult, len(updates))
 
@@ -236,6 +249,7 @@ func (o *OptimisticConcurrentUpdates) BatchUpdate(updates []OptimisticUpdate, mo
 	return results
 }
 
+// GetStats returns the current operational statistics for optimistic updates.
 func (o *OptimisticConcurrentUpdates) GetStats() (attempted, succeeded, conflicted, retried, aborted int64) {
 	return o.stats.UpdatesAttempted.Load(),
 		o.stats.UpdatesSucceeded.Load(),
@@ -244,14 +258,17 @@ func (o *OptimisticConcurrentUpdates) GetStats() (attempted, succeeded, conflict
 		o.stats.UpdatesAborted.Load()
 }
 
+// SetConfig updates the configuration for optimistic concurrency control.
 func (o *OptimisticConcurrentUpdates) SetConfig(config OptimisticConcurrentConfig) {
 	o.config = config
 }
 
+// GetConfig returns the current configuration for optimistic concurrency control.
 func (o *OptimisticConcurrentUpdates) GetConfig() OptimisticConcurrentConfig {
 	return o.config
 }
 
+// ClearCache removes all version information from the cache.
 func (o *OptimisticConcurrentUpdates) ClearCache() {
 	o.cacheMu.Lock()
 	defer o.cacheMu.Unlock()
@@ -259,6 +276,7 @@ func (o *OptimisticConcurrentUpdates) ClearCache() {
 	o.versionCache = make(map[string]*VectorVersion, o.config.VersionCacheSize)
 }
 
+// GetCacheSize returns the number of vectors currently in the version cache.
 func (o *OptimisticConcurrentUpdates) GetCacheSize() int {
 	o.cacheMu.RLock()
 	defer o.cacheMu.RUnlock()
@@ -266,6 +284,7 @@ func (o *OptimisticConcurrentUpdates) GetCacheSize() int {
 	return len(o.versionCache)
 }
 
+// GetVectorInfo retrieves the full version information for a specific vector.
 func (o *OptimisticConcurrentUpdates) GetVectorInfo(vectorID string) (*VectorVersion, bool) {
 	o.cacheMu.RLock()
 	defer o.cacheMu.RUnlock()

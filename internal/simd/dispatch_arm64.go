@@ -44,12 +44,12 @@ func init() {
 		Sum:    sumNEON,
 		Max:    maxNEON,
 		Min:    minNEON,
-		ArgMax: argMaxGeneric,
-		ArgMin: argMinGeneric,
-		MatMul: matMulGeneric,
+		ArgMax: argMaxNEON,
+		ArgMin: argMinNEON,
+		MatMul: matMulNEON,
 
-		ManhattanDistance:  ManhattanDistanceFloat32,
-		ChebyshevDistance:  ChebyshevDistanceFloat32,
-		BrayCurtisDistance: BrayCurtisDistanceFloat32,
+		ManhattanDistance:  manhattanNEON,
+		ChebyshevDistance:  chebyshevNEON,
+		BrayCurtisDistance: brayCurtisNEON,
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"context"
+	"sync/atomic"
 	"time"
 	"unsafe"
 	"github.com/23skdu/longbow/internal/simd"
@@ -20,13 +21,12 @@ import (
 
 // GraphStore manages an in-memory graph representation for GraphRAG operations.
 type GraphStore struct {
-	mu sync.RWMutex
-
-	forwardEdges  map[uint32][]Edge
-	backwardEdges map[uint32][]Edge
-	predicateMap  map[string]int32
+	forwardEdges  *LockFreeMap[uint32, Edge]
+	backwardEdges *LockFreeMap[uint32, Edge]
+	predicateMap  sync.Map // map[string]int32
+	predicatesMu  sync.RWMutex
 	predicates    []string
-	edgeCount     int
+	edgeCount     atomic.Int64
 }
 
 // Direction defines the traversal direction in the graph.
@@ -111,60 +111,63 @@ func (pq *PathPriorityQueue) Pop() any {
 // NewGraphStore creates an empty GraphStore.
 func NewGraphStore() *GraphStore {
 	return &GraphStore{
-		forwardEdges:  make(map[uint32][]Edge),
-		backwardEdges: make(map[uint32][]Edge),
-		predicateMap:  make(map[string]int32),
+		forwardEdges:  NewLockFreeMap[uint32, Edge](),
+		backwardEdges: NewLockFreeMap[uint32, Edge](),
 		predicates:    make([]string, 0),
-		edgeCount:     0,
 	}
 }
 
 // AddEdge adds a new edge to the graph store.
 func (gs *GraphStore) AddEdge(edge Edge) error {
-	gs.mu.Lock()
-	defer gs.mu.Unlock()
-
-	if _, exists := gs.predicateMap[edge.Predicate]; !exists {
-		idx := int32(len(gs.predicates)) // #nosec G115
-		gs.predicateMap[edge.Predicate] = idx
-		gs.predicates = append(gs.predicates, edge.Predicate)
+	// 1. Manage Predicate (Thread-Safe)
+	if _, exists := gs.predicateMap.Load(edge.Predicate); !exists {
+		gs.predicatesMu.Lock()
+		if _, exists := gs.predicateMap.Load(edge.Predicate); !exists {
+			idx := int32(len(gs.predicates)) // #nosec G115
+			gs.predicateMap.Store(edge.Predicate, idx)
+			gs.predicates = append(gs.predicates, edge.Predicate)
+		}
+		gs.predicatesMu.Unlock()
 	}
 
-	gs.forwardEdges[uint32(edge.Subject)] = append(gs.forwardEdges[uint32(edge.Subject)], edge)
-	gs.backwardEdges[uint32(edge.Object)] = append(gs.backwardEdges[uint32(edge.Object)], edge)
+	// 2. Add to Forward Edges (Lock-Free Read, COW Update)
+	subject := uint32(edge.Subject)
+	edges, _ := gs.forwardEdges.Get(subject)
+	newEdges := append(append([]Edge(nil), edges...), edge)
+	gs.forwardEdges.Set(subject, newEdges)
 
-	gs.edgeCount++
+	// 3. Add to Backward Edges (Lock-Free Read, COW Update)
+	object := uint32(edge.Object)
+	bEdges, _ := gs.backwardEdges.Get(object)
+	newBEdges := append(append([]Edge(nil), bEdges...), edge)
+	gs.backwardEdges.Set(object, newBEdges)
+
+	gs.edgeCount.Add(1)
 	return nil
 }
 
 // EdgeCount returns the total number of edges in the graph.
 func (gs *GraphStore) EdgeCount() int {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
-	return gs.edgeCount
+	return int(gs.edgeCount.Load())
 }
 
 // GetEdgesBySubject returns all outgoing edges for a given subject.
 func (gs *GraphStore) GetEdgesBySubject(subject uint32) []Edge {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
-	return append([]Edge(nil), gs.forwardEdges[subject]...)
+	edges, _ := gs.forwardEdges.Get(subject)
+	return edges
 }
 
 // GetEdgesByObject returns all incoming edges for a given object.
 func (gs *GraphStore) GetEdgesByObject(object uint32) []Edge {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
-	return append([]Edge(nil), gs.backwardEdges[object]...)
+	edges, _ := gs.backwardEdges.Get(object)
+	return edges
 }
 
 // GetEdgesByPredicate returns all edges with a specific predicate.
 func (gs *GraphStore) GetEdgesByPredicate(predicate string) []Edge {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
-
 	var result []Edge
-	for _, edges := range gs.forwardEdges {
+	for _, subject := range gs.forwardEdges.Keys() {
+		edges, _ := gs.forwardEdges.Get(subject)
 		for _, edge := range edges {
 			if edge.Predicate == predicate {
 				result = append(result, edge)
@@ -176,31 +179,28 @@ func (gs *GraphStore) GetEdgesByPredicate(predicate string) []Edge {
 
 // PredicateVocabulary returns the list of all predicates in the graph.
 func (gs *GraphStore) PredicateVocabulary() []string {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
+	gs.predicatesMu.RLock()
+	defer gs.predicatesMu.RUnlock()
 	return append([]string(nil), gs.predicates...)
 }
 
 // CommunityCount returns the number of nodes that have outgoing edges.
 func (gs *GraphStore) CommunityCount() int {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
-	return len(gs.forwardEdges)
+	return gs.forwardEdges.Len()
 }
 
 // GetCSR converts the graph to a Compressed Sparse Row (CSR) format.
 func (gs *GraphStore) GetCSR() (offsets []uint32, neighbors []uint32, weights []float32) {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
-
 	// 1. Determine max node ID
 	maxID := uint32(0)
-	for id := range gs.forwardEdges {
+	subjects := gs.forwardEdges.Keys()
+	for _, id := range subjects {
 		if id > maxID {
 			maxID = id
 		}
 	}
-	for id := range gs.backwardEdges {
+	// Also check backward edges for max ID
+	for _, id := range gs.backwardEdges.Keys() {
 		if id > maxID {
 			maxID = id
 		}
@@ -208,13 +208,14 @@ func (gs *GraphStore) GetCSR() (offsets []uint32, neighbors []uint32, weights []
 
 	nodeCount := maxID + 1
 	offsets = make([]uint32, nodeCount+1)
-	neighbors = make([]uint32, 0, gs.edgeCount)
-	weights = make([]float32, 0, gs.edgeCount)
+	edgeCount := int(gs.edgeCount.Load())
+	neighbors = make([]uint32, 0, edgeCount)
+	weights = make([]float32, 0, edgeCount)
 
 	currOffset := uint32(0)
 	for i := uint32(0); i < nodeCount; i++ {
 		offsets[i] = currOffset
-		if edges, ok := gs.forwardEdges[i]; ok {
+		if edges, ok := gs.forwardEdges.Get(i); ok {
 			for _, e := range edges {
 				neighbors = append(neighbors, uint32(e.Object))
 				weights = append(weights, e.Weight)
@@ -313,9 +314,6 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 		metrics.GraphRAGExpansionLatencySeconds.WithLabelValues(dataset).Observe(time.Since(start).Seconds())
 	}()
 
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
-
 	// 1. Initial Local Rank & Bounds Checking
 	maxID := gs.CommunityCount() + 1000
 	for _, r := range results {
@@ -353,9 +351,7 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 
 	// 2. Multi-hop BFS Expansion
 	nextNodes := ctx.nextNodes
-	
-	// Pre-allocation optimization: track all nodes that received a score update
-	allInfluenced := make([]uint32, 0, len(results)*4)
+	allInfluenced := ctx.allInfluenced
 	allInfluenced = append(allInfluenced, currentNodes...)
 
 	for d := 0; d < depth; d++ {
@@ -369,12 +365,12 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 			// SIMD prefetching for local edges
 			if i+2 < len(currentNodes) {
 				nextNextID := currentNodes[i+2]
-				if edges, ok := gs.forwardEdges[nextNextID]; ok && len(edges) > 0 {
+				if edges, ok := gs.forwardEdges.Get(nextNextID); ok && len(edges) > 0 {
 					simd.Prefetch(unsafe.Pointer(&edges[0])) // #nosec G103
 				}
 			}
 
-			if edges, ok := gs.forwardEdges[id]; ok {
+			if edges, ok := gs.forwardEdges.Get(id); ok {
 				s := scoreSlice[id] * alpha
 				
 				// Advanced 8x Unrolled expansion with aggressive prefetching
@@ -388,8 +384,8 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 					t4, t5, t6, t7 := uint32(e4.Object), uint32(e5.Object), uint32(e6.Object), uint32(e7.Object)
 					
 					// Prefetch next batch of score slots
-					simd.Prefetch(unsafe.Pointer(&scoreSlice[t0]))
-					simd.Prefetch(unsafe.Pointer(&scoreSlice[t4]))
+					simd.Prefetch(unsafe.Pointer(&scoreSlice[t0])) // #nosec G103
+					simd.Prefetch(unsafe.Pointer(&scoreSlice[t4])) // #nosec G103
 					
 					scoreSlice[t0] += s * e0.Weight
 					scoreSlice[t1] += s * e1.Weight
@@ -514,7 +510,7 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 
 	// 2. Multi-hop Distributed BFS Expansion
 	nextNodes := gCtx.nextNodes
-	allInfluenced := make([]uint32, 0, len(results)*4)
+	allInfluenced := gCtx.allInfluenced
 	allInfluenced = append(allInfluenced, currentNodes...)
 
 	for d := 0; d < depth; d++ {
@@ -523,18 +519,17 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 		}
 
 		// First, check local edges with prioritized prefetching
-		gs.mu.RLock()
 		for i := 0; i < len(currentNodes); i++ {
 			id := currentNodes[i]
 			// Prioritize for SIMD prefetching: prefetch the edge list for the node after next
 			if i+2 < len(currentNodes) {
 				nextNextID := currentNodes[i+2]
-				if edges, ok := gs.forwardEdges[nextNextID]; ok && len(edges) > 0 {
+				if edges, ok := gs.forwardEdges.Get(nextNextID); ok && len(edges) > 0 {
 					simd.Prefetch(unsafe.Pointer(&edges[0])) // #nosec G103
 				}
 			}
 
-			if edges, ok := gs.forwardEdges[id]; ok {
+			if edges, ok := gs.forwardEdges.Get(id); ok {
 				s := scoreSlice[id] * alpha
 				
 				// Advanced 8x Unrolled expansion with aggressive prefetching
@@ -548,8 +543,8 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 					t4, t5, t6, t7 := uint32(e4.Object), uint32(e5.Object), uint32(e6.Object), uint32(e7.Object)
 					
 					// Prefetch next batch of score slots
-					simd.Prefetch(unsafe.Pointer(&scoreSlice[t0]))
-					simd.Prefetch(unsafe.Pointer(&scoreSlice[t4]))
+					simd.Prefetch(unsafe.Pointer(&scoreSlice[t0])) // #nosec G103
+					simd.Prefetch(unsafe.Pointer(&scoreSlice[t4])) // #nosec G103
 					
 					scoreSlice[t0] += s * e0.Weight
 					scoreSlice[t1] += s * e1.Weight
@@ -582,18 +577,15 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 				}
 			}
 		}
-		gs.mu.RUnlock()
 
 		// Bulk fetch missing neighbors from provider (distributed mesh)
 		if provider != nil {
 			missing := make([]uint32, 0)
-			gs.mu.RLock()
 			for _, id := range currentNodes {
-				if _, ok := gs.forwardEdges[id]; !ok {
+				if _, ok := gs.forwardEdges.Get(id); !ok {
 					missing = append(missing, id)
 				}
 			}
-			gs.mu.RUnlock()
 
 			if len(missing) > 0 {
 				remoteNeighbors, err := provider.GetNeighborsBulk(ctx, dataset, missing)
@@ -647,8 +639,6 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 
 // Traverse performs a graph traversal starting from a specific node.
 func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
 
 	// Initial Path
 	initPath := Path{
@@ -713,12 +703,12 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 			var edges []Edge
 			switch opts.Direction {
 			case DirectionOutgoing:
-				edges = gs.forwardEdges[uint32(lastNode)]
+				edges, _ = gs.forwardEdges.Get(uint32(lastNode))
 			case DirectionIncoming:
-				edges = gs.backwardEdges[uint32(lastNode)]
+				edges, _ = gs.backwardEdges.Get(uint32(lastNode))
 			case DirectionBoth:
-				fwd := gs.forwardEdges[uint32(lastNode)]
-				bwd := gs.backwardEdges[uint32(lastNode)]
+				fwd, _ := gs.forwardEdges.Get(uint32(lastNode))
+				bwd, _ := gs.backwardEdges.Get(uint32(lastNode))
 				edges = append(edges, fwd...)
 				edges = append(edges, bwd...)
 			}
@@ -796,12 +786,12 @@ func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
 		var edges []Edge
 		switch opts.Direction {
 		case DirectionOutgoing:
-			edges = gs.forwardEdges[uint32(lastNode)]
+			edges, _ = gs.forwardEdges.Get(uint32(lastNode))
 		case DirectionIncoming:
-			edges = gs.backwardEdges[uint32(lastNode)]
+			edges, _ = gs.backwardEdges.Get(uint32(lastNode))
 		case DirectionBoth:
-			fwd := gs.forwardEdges[uint32(lastNode)]
-			bwd := gs.backwardEdges[uint32(lastNode)]
+			fwd, _ := gs.forwardEdges.Get(uint32(lastNode))
+			bwd, _ := gs.backwardEdges.Get(uint32(lastNode))
 			edges = make([]Edge, 0, len(fwd)+len(bwd))
 			edges = append(edges, fwd...)
 			edges = append(edges, bwd...)
@@ -812,7 +802,7 @@ func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
 			
 			// Prefetch next edge's target vector data if possible
 			if i+1 < len(edges) {
-				simd.Prefetch(unsafe.Pointer(&edges[i+1]))
+				simd.Prefetch(unsafe.Pointer(&edges[i+1])) // #nosec G103
 			}
 
 			var nextNode VectorID
@@ -852,14 +842,11 @@ func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
 
 // Close releases all resources associated with the graph store.
 func (gs *GraphStore) Close() error {
-	gs.mu.Lock()
-	defer gs.mu.Unlock()
-
 	gs.forwardEdges = nil
 	gs.backwardEdges = nil
-	gs.predicateMap = nil
+	gs.predicateMap = sync.Map{}
 	gs.predicates = nil
-	gs.edgeCount = 0
+	gs.edgeCount.Store(0)
 
 	return nil
 }
@@ -868,10 +855,7 @@ func (gs *GraphStore) Close() error {
 // It uses Dictionary Encoding for the 'predicate' column to ensure the
 // predicate vocabulary is self-contained within the record.
 func (gs *GraphStore) ToArrowBatch() (arrow.Record, error) {
-	gs.mu.RLock()
-	defer gs.mu.RUnlock()
-
-	if gs.edgeCount == 0 {
+	if gs.edgeCount.Load() == 0 {
 		return nil, nil
 	}
 
@@ -892,7 +876,8 @@ func (gs *GraphStore) ToArrowBatch() (arrow.Record, error) {
 	defer predicatesArr.Release()
 
 	// Use ONE loop to avoid random map iteration order issues
-	for _, edges := range gs.forwardEdges {
+	for _, id := range gs.forwardEdges.Keys() {
+		edges, _ := gs.forwardEdges.Get(id)
 		for _, e := range edges {
 			subjectsArr.Append(uint32(e.Subject))
 			objectsArr.Append(uint32(e.Object))
@@ -930,9 +915,6 @@ func (gs *GraphStore) FromArrowBatch(record arrow.Record, _ []string) error {
 		return nil
 	}
 
-	gs.mu.Lock()
-	defer gs.mu.Unlock()
-
 	// Validate schema
 	schema := record.Schema()
 	if schema.NumFields() != 4 {
@@ -949,13 +931,15 @@ func (gs *GraphStore) FromArrowBatch(record arrow.Record, _ []string) error {
 	if dict, ok := predicateCol.(*array.Dictionary); ok {
 		values := dict.Dictionary().(*array.Binary)
 		numDictVals := values.Len()
+		gs.predicatesMu.Lock()
 		gs.predicates = make([]string, numDictVals)
-		gs.predicateMap = make(map[string]int32)
+		gs.predicateMap = sync.Map{}
 		for i := 0; i < numDictVals; i++ {
 			p := string(values.Value(i))
 			gs.predicates[i] = p
-			gs.predicateMap[p] = int32(i)
+			gs.predicateMap.Store(p, int32(i))
 		}
+		gs.predicatesMu.Unlock()
 	} else if intIdxCol, ok := predicateCol.(*array.Int32); ok {
 		// Fallback for old simple Int32 columns (though vocabulary is lost if not passed externally)
 		// This ensures we don't crash on older data if the predicates []string was somehow provided.
@@ -991,9 +975,11 @@ func (gs *GraphStore) FromArrowBatch(record arrow.Record, _ []string) error {
 		}
 
 		// Add to maps (without going through AddEdge to avoid duplicate predicate handling)
-		gs.forwardEdges[subject] = append(gs.forwardEdges[subject], edge)
-		gs.backwardEdges[object] = append(gs.backwardEdges[object], edge)
-		gs.edgeCount++
+		fwd, _ := gs.forwardEdges.Get(subject)
+		gs.forwardEdges.Set(subject, append(append([]Edge(nil), fwd...), edge))
+		bwd, _ := gs.backwardEdges.Get(object)
+		gs.backwardEdges.Set(object, append(append([]Edge(nil), bwd...), edge))
+		gs.edgeCount.Add(1)
 	}
 
 	return nil

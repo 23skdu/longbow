@@ -13,6 +13,7 @@ import (
 type ClockComparison int
 
 const (
+	// ClockEqual indicates that the two vector clocks are identical.
 	ClockEqual      ClockComparison = iota // Clocks are identical
 	ClockBefore                            // First clock happened before second
 	ClockAfter                             // First clock happened after second

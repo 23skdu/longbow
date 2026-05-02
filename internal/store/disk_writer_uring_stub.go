@@ -16,6 +16,7 @@ type DiskWriterUring struct {
 	active bool
 }
 
+// NewDiskWriterUring creates a new DiskWriterUring instance (fallback stub).
 func NewDiskWriterUring(path string) (*DiskWriterUring, error) {
 	path = filepath.Clean(path)
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 G302
@@ -28,6 +29,7 @@ func NewDiskWriterUring(path string) (*DiskWriterUring, error) {
 	}, nil
 }
 
+// SubmitWrite submits a write request to the underlying file (stub implementation).
 func (d *DiskWriterUring) SubmitWrite(data []byte, offset int64) error {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -41,6 +43,7 @@ func (d *DiskWriterUring) SubmitWrite(data []byte, offset int64) error {
 	return err
 }
 
+// Close closes the underlying file and deactivates the writer (stub implementation).
 func (d *DiskWriterUring) Close() error {
 	d.mu.Lock()
 	defer d.mu.Unlock()

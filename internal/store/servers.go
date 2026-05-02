@@ -20,6 +20,7 @@ type DataServer struct {
 	*VectorStore
 }
 
+// NewDataServer creates a new DataServer wrapping the provided VectorStore.
 func NewDataServer(store *VectorStore) *DataServer {
 	return &DataServer{store}
 }
@@ -103,6 +104,7 @@ type MetaServer struct {
 	*VectorStore
 }
 
+// NewMetaServer creates a new MetaServer wrapping the provided VectorStore.
 func NewMetaServer(store *VectorStore) *MetaServer {
 	coord := NewGlobalSearchCoordinator(store.logger, store.pool)
 	store.SetCoordinator(coord)
@@ -442,6 +444,7 @@ func (s *MetaServer) handleSetAutoScaleConfig(action *flight.Action, stream flig
 	return stream.Send(&flight.Result{Body: data})
 }
 
+// CDCSubscribeRequest defines the request body for CDC subscription actions.
 type CDCSubscribeRequest struct {
 	Dataset    string   `json:"dataset"`
 	EventTypes []string `json:"event_types,omitempty"`

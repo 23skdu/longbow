@@ -20,6 +20,7 @@ type HybridPipelineConfig struct {
 	UseColumnIndex bool       // Use column index for exact filters
 }
 
+// Validate checks if the hybrid pipeline configuration is within valid ranges.
 func (c *HybridPipelineConfig) Validate() error {
 	if c.Alpha < 0 || c.Alpha > 1 {
 		return errors.New("alpha must be between 0 and 1")
@@ -37,9 +38,12 @@ func (c *HybridPipelineConfig) Validate() error {
 type FusionMode int
 
 const (
-	FusionModeRRF     FusionMode = iota // Reciprocal Rank Fusion
-	FusionModeLinear                    // Linear weighted combination
-	FusionModeCascade                   // Cascade: filters -> keyword -> vector
+	// FusionModeRRF uses Reciprocal Rank Fusion to combine results.
+	FusionModeRRF     FusionMode = iota
+	// FusionModeLinear uses a linear weighted combination of scores.
+	FusionModeLinear
+	// FusionModeCascade uses cascade-style filtering (exact -> keyword -> vector).
+	FusionModeCascade
 )
 
 // DefaultHybridPipelineConfig returns sensible defaults
@@ -61,10 +65,12 @@ type HybridSearchQuery struct {
 	ExactFilters  []query.Filter // Exact match filters (for column index)
 }
 
+// DefaultHybridSearchQuery returns a HybridSearchQuery with default limit.
 func DefaultHybridSearchQuery() HybridSearchQuery {
 	return HybridSearchQuery{K: 10}
 }
 
+// Validate ensures the hybrid search query has all required fields and valid parameters.
 func (q *HybridSearchQuery) Validate() error {
 	if q.K <= 0 {
 		return errors.New("k must be positive")
@@ -345,10 +351,12 @@ type Reranker interface {
 	Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error)
 }
 
+// CrossEncoderReranker implements a second-stage reranker using text-matching heuristics.
 type CrossEncoderReranker struct {
 	ModelName string
 }
 
+// Rerank re-orders the search results based on a cross-encoder model or heuristic.
 func (r *CrossEncoderReranker) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {
 	if len(results) == 0 {
 		return results, nil

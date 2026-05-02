@@ -7,7 +7,9 @@ import (
 )
 
 const (
+	// MerkleFanout is the number of children per node in the Merkle Tree.
 	MerkleFanout = 16
+	// MerkleDepth is the depth of the Merkle Tree.
 	MerkleDepth  = 4
 )
 
@@ -23,6 +25,7 @@ type MerkleTree struct {
 	mu   sync.RWMutex
 }
 
+// NewMerkleTree creates a new Merkle Tree for dataset consistency tracking.
 func NewMerkleTree() *MerkleTree {
 	return &MerkleTree{
 		root: &MerkleNode{},
@@ -77,12 +80,14 @@ func (t *MerkleTree) Update(id VectorID, ts int64) {
 	}
 }
 
+// RootHash returns the current root hash of the Merkle Tree.
 func (t *MerkleTree) RootHash() [32]byte {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return t.root.Hash
 }
 
+// GetNode retrieves the hash and child hashes for a node at the specified path.
 func (t *MerkleTree) GetNode(path []int) (hash [32]byte, children [][32]byte, found bool) {
 	t.mu.RLock()
 	defer t.mu.RUnlock()

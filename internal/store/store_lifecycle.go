@@ -65,10 +65,20 @@ func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 	}
 }
 
-const (
-	MinIndexingWorkers    = 2
-	MinIngestionWorkers = 2
+var (
+	// MinIndexingWorkers is the minimum number of indexing workers to keep running.
+	MinIndexingWorkers = calculateMinWorkers(8) // 1/8th of CPU
+	// MinIngestionWorkers is the minimum number of ingestion workers to keep running.
+	MinIngestionWorkers = calculateMinWorkers(4) // 1/4th of CPU
 )
+
+func calculateMinWorkers(divisor int) int {
+	n := runtime.NumCPU() / divisor
+	if n < 4 {
+		return 4
+	}
+	return n
+}
 
 // StartLifecycleManager starts the lifecycle manager background task.
 func (s *VectorStore) StartLifecycleManager(ctx context.Context) {

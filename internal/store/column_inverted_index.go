@@ -228,7 +228,7 @@ func (idx *ColumnInvertedIndex) RemoveDataset(datasetName string) {
 	delete(idx.datasets, datasetName)
 }
 
-// Stats returns statistics about the index
+// ColumnInvertedIndexStats contains statistics about the column inverted index.
 type ColumnInvertedIndexStats struct {
 	Datasets       int
 	TotalColumns   int
@@ -236,6 +236,7 @@ type ColumnInvertedIndexStats struct {
 	TotalPositions int
 }
 
+// Stats returns statistics about the index across all datasets.
 func (idx *ColumnInvertedIndex) Stats() ColumnInvertedIndexStats {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()

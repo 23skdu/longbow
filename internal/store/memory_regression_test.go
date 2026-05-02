@@ -63,7 +63,7 @@ func TestHNSWIndex_EstimateMemory(t *testing.T) {
 	// So we must put the record into the dataset first.
 
 	ds.dataMu.Lock()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	rec.Retain() // Dataset owns one ref
 	ds.dataMu.Unlock()
 

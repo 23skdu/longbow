@@ -23,6 +23,14 @@ func NewLockFreeSlice[T any]() *LockFreeSlice[T] {
 	return l
 }
 
+// NewLockFreeSliceFrom creates a new lock-free slice initialized with data.
+func NewLockFreeSliceFrom[T any](data []T) *LockFreeSlice[T] {
+	l := &LockFreeSlice[T]{}
+	l.data.Store(&data)
+	return l
+}
+
+
 // Read returns the current slice without acquiring any locks.
 func (l *LockFreeSlice[T]) Read() []T {
 	l.activeReaders.Add(1)
@@ -119,4 +127,109 @@ func (l *LockFreeMap[K, T]) Keys() []K {
 		keys = append(keys, k)
 	}
 	return keys
+}
+ 
+// MapRCU provides a truly lock-free (read-side) map using Copy-On-Write.
+// Optimized for very frequent reads and infrequent to moderate updates.
+type MapRCU[K comparable, V any] struct {
+	data    atomic.Value // stores map[K]V
+	writeMu sync.Mutex
+}
+ 
+// NewMapRCU creates a new RCU-protected map.
+func NewMapRCU[K comparable, V any]() *MapRCU[K, V] {
+	m := &MapRCU[K, V]{}
+	m.data.Store(make(map[K]V))
+	return m
+}
+ 
+// Load returns the current map. The returned map MUST NOT be modified.
+func (m *MapRCU[K, V]) Load() map[K]V {
+	return m.data.Load().(map[K]V)
+}
+ 
+// Get retrieves a value from the map.
+func (m *MapRCU[K, V]) Get(key K) (V, bool) {
+	val, ok := m.Load()[key]
+	return val, ok
+}
+ 
+// Store updates the map using a Copy-On-Write operation.
+func (m *MapRCU[K, V]) Store(key K, val V) {
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
+ 
+	oldMap := m.Load()
+	newMap := make(map[K]V, len(oldMap)+1)
+	for k, v := range oldMap {
+		newMap[k] = v
+	}
+	newMap[key] = val
+	m.data.Store(newMap)
+}
+ 
+// Delete removes a key from the map using COW.
+func (m *MapRCU[K, V]) Delete(key K) {
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
+ 
+	oldMap := m.Load()
+	if _, ok := oldMap[key]; !ok {
+		return
+	}
+ 
+	newMap := make(map[K]V, len(oldMap)-1)
+	for k, v := range oldMap {
+		if k != key {
+			newMap[k] = v
+		}
+	}
+	m.data.Store(newMap)
+}
+ 
+// Range iterates over the map. The map is a consistent snapshot.
+func (m *MapRCU[K, V]) Range(f func(key K, val V) bool) {
+	for k, v := range m.Load() {
+		if !f(k, v) {
+			break
+		}
+	}
+}
+
+// BulkStore updates multiple keys using a single Copy-On-Write operation.
+func (m *MapRCU[K, V]) BulkStore(updates map[K]V) {
+	if len(updates) == 0 {
+		return
+	}
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
+
+	oldMap := m.Load()
+	newMap := make(map[K]V, len(oldMap)+len(updates))
+	for k, v := range oldMap {
+		newMap[k] = v
+	}
+	for k, v := range updates {
+		newMap[k] = v
+	}
+	m.data.Store(newMap)
+}
+
+// BulkDelete removes multiple keys using COW.
+func (m *MapRCU[K, V]) BulkDelete(keys []K) {
+	if len(keys) == 0 {
+		return
+	}
+	m.writeMu.Lock()
+	defer m.writeMu.Unlock()
+
+	oldMap := m.Load()
+	newMap := make(map[K]V, len(oldMap))
+	for k, v := range oldMap {
+		newMap[k] = v
+	}
+	for _, k := range keys {
+		delete(newMap, k)
+	}
+	m.data.Store(newMap)
 }

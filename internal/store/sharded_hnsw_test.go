@@ -153,7 +153,7 @@ func TestShardedHNSW_AddToShard(t *testing.T) {
 	rec := makeShardedTestRecord(mem, 3, 100)
 	defer rec.Release()
 	ds.dataMu.Lock()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	ds.dataMu.Unlock()
 
 	// Add vectors
@@ -243,7 +243,7 @@ func TestShardedHNSW_Search(t *testing.T) {
 	rec := makeShardedTestRecord(mem, 3, 100)
 	defer rec.Release()
 	ds.dataMu.Lock()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	ds.dataMu.Unlock()
 
 	// Add 100 vectors
@@ -291,7 +291,7 @@ func TestShardedHNSW_GetLocation(t *testing.T) {
 	rec := makeShardedTestRecord(mem, 3, 20)
 	defer rec.Release()
 	ds.dataMu.Lock()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	ds.dataMu.Unlock()
 
 	// Add vectors
@@ -331,7 +331,7 @@ func TestShardedHNSW_ShardStats(t *testing.T) {
 	rec := makeShardedTestRecord(mem, 3, 100)
 	defer rec.Release()
 	ds.dataMu.Lock()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	ds.dataMu.Unlock()
 
 	// Add 100 vectors
@@ -468,7 +468,7 @@ func TestShardedHNSW_SearchByID(t *testing.T) {
 	defer rec.Release()
 
 	ds.dataMu.Lock()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	ds.dataMu.Unlock()
 
 	ids, err := sharded.AddBatch(context.Background(), []arrow.RecordBatch{rec}, []int{0, 1, 2}, []int{0, 0, 0})

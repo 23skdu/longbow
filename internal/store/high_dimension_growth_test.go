@@ -78,8 +78,8 @@ func TestHNSW_HighDimensionGrowth(t *testing.T) {
 		// Add to dataset
 		rec.Retain()
 		ds.dataMu.Lock()
-		ds.Records = append(ds.Records, rec)
-		batchIdx := len(ds.Records) - 1
+		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
+		batchIdx := len(ds.Records.Read()) - 1
 		ds.dataMu.Unlock()
 
 		// Add to index
@@ -190,8 +190,8 @@ func TestHNSW_HighDimensionGrowth_MemoryPressure(t *testing.T) {
 
 		rec.Retain()
 		ds.dataMu.Lock()
-		ds.Records = append(ds.Records, rec)
-		batchIdx := len(ds.Records) - 1
+		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
+		batchIdx := len(ds.Records.Read()) - 1
 		ds.dataMu.Unlock()
 
 		for i := 0; i < batchSize; i++ {

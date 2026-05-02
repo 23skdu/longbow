@@ -859,3 +859,12 @@ func DotProductUint64Blocked(a, b []uint64) (float32, error) {
 
 	return float32(sum), nil
 }
+
+// accumulateWeightedScatterGeneric adds weighted values to a destination slice using scatter indices.
+func accumulateWeightedScatterGeneric(dst []float32, targets []uint32, weights []float32, factor float32) {
+	for i, target := range targets {
+		if int(target) < len(dst) {
+			dst[target] += weights[i] * factor
+		}
+	}
+}

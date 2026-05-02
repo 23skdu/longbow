@@ -284,7 +284,7 @@ func BenchmarkAddToIndexHNSW(b *testing.B) {
 
 	ds := &Dataset{
 		Name:    "bench",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 		Index:   NewTestHNSWIndex(nil),
 	}
 	// Dataset already set by NewTestHNSWIndex

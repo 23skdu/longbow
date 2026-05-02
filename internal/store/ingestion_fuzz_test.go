@@ -65,7 +65,7 @@ func FuzzIngestionPipelineConcurrentWrites(f *testing.F) {
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
 			ds.dataMu.RLock()
-			count := len(ds.Records)
+			count := len(ds.Records.Read())
 			ds.dataMu.RUnlock()
 			if count == expected {
 				return // Success
@@ -74,7 +74,7 @@ func FuzzIngestionPipelineConcurrentWrites(f *testing.F) {
 		}
 
 		ds.dataMu.RLock()
-		finalCount := len(ds.Records)
+		finalCount := len(ds.Records.Read())
 		ds.dataMu.RUnlock()
 		require.Equal(t, expected, finalCount, "Data loss detected in async pipeline")
 	})

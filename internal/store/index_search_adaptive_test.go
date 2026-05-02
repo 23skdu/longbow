@@ -45,7 +45,7 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 
 	dataset := &Dataset{
 		Schema:  schema,
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
 	config := DefaultArrowHNSWConfig()

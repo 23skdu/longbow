@@ -67,7 +67,7 @@ var idMapPool = sync.Pool{
 
 // Dataset wraps records with metadata for eviction and tombstones.
 type Dataset struct {
-	Records    []arrow.RecordBatch
+	Records    *LockFreeSlice[arrow.RecordBatch]
 	lastAccess int64 // UnixNano
 	Version    int64
 	Index      VectorIndex  // Use common interface (Item 3)
@@ -87,7 +87,7 @@ type Dataset struct {
 	Tombstones map[int]*types.Bitset
 
 	// BatchNodes tracks which NUMA node each RecordBatch is allocated on
-	BatchNodes []int
+	BatchNodes *LockFreeSlice[int]
 
 	// PrimaryIndex maps ID -> Physical Location (O(1) lookup)
 	PrimaryIndex        map[string]RowLocation
@@ -272,8 +272,6 @@ func (d *Dataset) GetShardedIndex() *ShardedHNSW {
 
 // IndexLen returns the total number of vectors currently in the dataset's index.
 func (d *Dataset) IndexLen() int {
-	d.dataMu.RLock()
-	defer d.dataMu.RUnlock()
 	if d.Index != nil {
 		return d.Index.Len()
 	}
@@ -282,10 +280,9 @@ func (d *Dataset) IndexLen() int {
 
 // GetRecord returns the record batch at the given index in a thread-safe manner.
 func (d *Dataset) GetRecord(idx int) (arrow.RecordBatch, bool) {
-	d.dataMu.RLock()
-	defer d.dataMu.RUnlock()
-	if idx >= 0 && idx < len(d.Records) {
-		return d.Records[idx], true
+	records := d.Records.Read()
+	if idx >= 0 && idx < len(records) {
+		return records[idx], true
 	}
 	return nil, false
 }
@@ -298,7 +295,7 @@ func (d *Dataset) GetName() string {
 // GetRecords returns the records in the dataset
 // GetRecords returns the records in the dataset.
 func (d *Dataset) GetRecords() []arrow.RecordBatch {
-	return d.Records
+	return d.Records.Read()
 }
 
 // GetIndex returns the underlying vector index
@@ -350,8 +347,8 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 
 	ds := &Dataset{
 		Name:            name,
-		Records:         make([]arrow.RecordBatch, 0),
-		BatchNodes:      make([]int, 0),
+		Records:         NewLockFreeSlice[arrow.RecordBatch](),
+		BatchNodes:      NewLockFreeSlice[int](),
 		Schema:          schema,
 		Tombstones:          make(map[int]*types.Bitset),
 		PrimaryIndex:        make(map[string]RowLocation),
@@ -460,21 +457,22 @@ func (d *Dataset) GenerateFilterBitset(filters []qry.Filter, filterExpr FilterEx
 
 // GenerateFilterBitsetLocked is the variant that assumes d.dataMu is already held.
 func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr FilterExpr, hash string) (*types.Bitset, error) {
-	if len(d.Records) == 0 || d.Index == nil {
+	records := d.Records.Read()
+	if len(records) == 0 || d.Index == nil {
 		return nil, nil
 	}
 
 	bitset := types.NewBitset()
 
 	// Dataset records must have the same schema.
-	eval, err := qry.NewFilterEvaluator(d.Records[0], filters)
+	eval, err := qry.NewFilterEvaluator(records[0], filters)
 	if err != nil {
 		bitset.Release()
 		return nil, err
 	}
 
 	idx := d.Index
-	for batchIdx, rec := range d.Records {
+	for batchIdx, rec := range records {
 		if err := eval.Reset(rec); err != nil {
 			continue // Should not happen with consistent schema
 		}
@@ -607,12 +605,13 @@ func (d *Dataset) Close() {
 	}
 
 	// Release records
-	for _, r := range d.Records {
+	records := d.Records.Read()
+	for _, r := range records {
 		if r != nil {
 			r.Release()
 		}
 	}
-	d.Records = nil
+	d.Records.UpdateInPlace(nil)
 
 	d.PrimaryIndex = nil
 	d.NumericPrimaryIndex = nil
@@ -844,11 +843,19 @@ func (d *Dataset) IngestBatch(batch []DatasetParquetRecord) error {
 
 	rec := b.NewRecord()
 	
-	d.dataMu.Lock()
-	batchIdx := len(d.Records)
-	d.Records = append(d.Records, rec)
-	d.BatchNodes = append(d.BatchNodes, -1) // NUMA untracked for now
-	d.dataMu.Unlock()
+	records := d.Records.Read()
+	newRecords := make([]arrow.RecordBatch, len(records)+1)
+	copy(newRecords, records)
+	newRecords[len(records)] = rec
+	d.Records.UpdateInPlace(newRecords)
+ 
+	batchNodes := d.BatchNodes.Read()
+	newNodes := make([]int, len(batchNodes)+1)
+	copy(newNodes, batchNodes)
+	newNodes[len(batchNodes)] = -1
+	d.BatchNodes.UpdateInPlace(newNodes)
+ 
+	batchIdx := len(records)
 
 	// Update primary index and handle tombstones
 	idMap := d.ExtractIDs(rec)
@@ -913,10 +920,7 @@ func (d *Dataset) requantizeTask(targetType types.VectorDataType) {
 	}
 
 	// 2. Iterate through all record batches and re-quantize
-	d.dataMu.RLock()
-	records := make([]arrow.RecordBatch, len(d.Records))
-	copy(records, d.Records)
-	d.dataMu.RUnlock()
+	records := d.Records.Read()
 
 	totalVectors := 0
 	for _, rec := range records {

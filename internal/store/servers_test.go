@@ -346,7 +346,7 @@ func putDataViaVectorStore(vs *VectorStore, name string) {
 	vs.updateDatasets(func(m map[string]*Dataset) {
 		m[name] = &Dataset{
 			Name:    name,
-			Records: []arrow.RecordBatch{rec},
+			Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 		}
 	})
 	rec.Retain() // Keep record alive in dataset

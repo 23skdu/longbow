@@ -152,8 +152,8 @@ func (s *VectorStore) SwitchIndex(collection string, to IndexType) error {
 
 		// 4. Populate the new index from existing records.
 		ds.dataMu.RLock()
-		records := make([]arrow.RecordBatch, len(ds.Records))
-		copy(records, ds.Records)
+		records := make([]arrow.RecordBatch, len(ds.Records.Read()))
+		copy(records, ds.Records.Read())
 		ds.dataMu.RUnlock()
 
 		for _, rec := range records {

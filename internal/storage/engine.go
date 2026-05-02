@@ -152,6 +152,9 @@ type SnapshotItem struct {
 	// OnSnapshot is a callback to handle custom snapshot logic (e.g. large file streaming)
 	// It is called with the active snapshot backend if one is configured.
 	OnSnapshot func(backend SnapshotBackend) error
+
+	// Cleanup is called after the item has been processed (either successfully or with error).
+	Cleanup func()
 }
 
 type SnapshotSource interface {
@@ -171,16 +174,41 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 		return fmt.Errorf("failed to create temp snapshot dir: %w", err)
 	}
 
+	var wg sync.WaitGroup
+	errCh := make(chan error, 1024) // Buffer to avoid blocking workers
+
 	err := source.Iterate(func(item SnapshotItem) error {
 		if e.snapshotBackend != nil && item.OnSnapshot != nil {
 			if err := item.OnSnapshot(e.snapshotBackend); err != nil {
 				return err
 			}
 		}
-		return e.writeSnapshotItem(&item, tempDir)
+
+		wg.Add(1)
+		go func(it SnapshotItem) {
+			defer wg.Done()
+			if it.Cleanup != nil {
+				defer it.Cleanup()
+			}
+			if err := e.writeSnapshotItem(&it, tempDir); err != nil {
+				errCh <- err
+			}
+		}(item)
+		return nil
 	})
+
+	wg.Wait()
+	close(errCh)
+
 	if err != nil {
 		return err
+	}
+
+	// Check for errors from parallel workers
+	for e := range errCh {
+		if e != nil {
+			return e
+		}
 	}
 
 	if err := os.RemoveAll(snapshotDir); err != nil {

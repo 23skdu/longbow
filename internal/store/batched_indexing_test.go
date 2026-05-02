@@ -43,7 +43,7 @@ func TestBatchedIndexing(t *testing.T) {
 	// 2. Add vectors in batches
 	numVectors := 200
 	ds.dataMu.Lock()
-	ds.Records = make([]arrow.RecordBatch, numVectors)
+	ds.Records = NewLockFreeSliceFrom(make([]arrow.RecordBatch, numVectors))
 	ds.dataMu.Unlock()
 
 	for i := 0; i < numVectors; i++ {
@@ -60,7 +60,7 @@ func TestBatchedIndexing(t *testing.T) {
 
 		rec := b.NewRecordBatch()
 		ds.dataMu.Lock()
-		ds.Records[i] = rec
+		ds.Records.Read()[i] = rec
 		ds.dataMu.Unlock()
 
 		rec.Retain() // One for dataset, one for job

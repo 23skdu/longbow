@@ -73,6 +73,12 @@ type ImplementationDispatch struct {
 	ManhattanDistance  distanceFunc
 	ChebyshevDistance  distanceFunc
 	BrayCurtisDistance distanceFunc
+ 
+	// Batch processing (GraphRAG expansion)
+	AccumulateWeightedScatter func(dst []float32, targets []uint32, weights []float32, factor float32)
+ 
+	// Sparse Search
+	BM25ScoreBatch func(tfs []int, docLengths []int, avgDL, idf, k1, b float32) []float32
 }
 
 // Global dispatch table - one per implementation
@@ -125,6 +131,8 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		ManhattanDistance: ManhattanDistanceFloat32,
 		ChebyshevDistance: ChebyshevDistanceFloat32,
 		BrayCurtisDistance: BrayCurtisDistanceFloat32,
+		AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
+		BM25ScoreBatch: bm25ScoreBatchGeneric,
 	},
 
 	"avx2": {
@@ -175,6 +183,8 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		ManhattanDistance: ManhattanDistanceFloat32,
 		ChebyshevDistance: ChebyshevDistanceFloat32,
 		BrayCurtisDistance: BrayCurtisDistanceFloat32,
+		AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
+		BM25ScoreBatch: bm25ScoreBatchGeneric,
 	},
 
 	"neon": {
@@ -225,6 +235,8 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		ManhattanDistance: ManhattanDistanceFloat32,
 		ChebyshevDistance: ChebyshevDistanceFloat32,
 		BrayCurtisDistance: BrayCurtisDistanceFloat32,
+		AccumulateWeightedScatter: accumulateWeightedScatterNEON,
+		BM25ScoreBatch: bm25ScoreBatchArch,
 	},
 
 	"generic": {
@@ -275,6 +287,8 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		ManhattanDistance: ManhattanDistanceFloat32,
 		ChebyshevDistance: ChebyshevDistanceFloat32,
 		BrayCurtisDistance: BrayCurtisDistanceFloat32,
+		AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
+		BM25ScoreBatch: bm25ScoreBatchGeneric,
 	},
 }
 
@@ -369,6 +383,7 @@ func initializeDispatch() {
 		manhattanDistanceImpl = dispatch.ManhattanDistance
 		chebyshevDistanceImpl = dispatch.ChebyshevDistance
 		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
+		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
 	case "avx2":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -448,6 +463,7 @@ func initializeDispatch() {
 		manhattanDistanceImpl = dispatch.ManhattanDistance
 		chebyshevDistanceImpl = dispatch.ChebyshevDistance
 		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
+		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
 	case "neon":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -532,6 +548,7 @@ func initializeDispatch() {
 		manhattanDistanceImpl = dispatch.ManhattanDistance
 		chebyshevDistanceImpl = dispatch.ChebyshevDistance
 		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
+		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
 	case "generic":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance128Impl = dispatch.EuclideanDistance128
@@ -611,6 +628,7 @@ func initializeDispatch() {
 		manhattanDistanceImpl = dispatch.ManhattanDistance
 		chebyshevDistanceImpl = dispatch.ChebyshevDistance
 		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
+		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
 	}
 
 	// Register current implementations into the new dynamic registry.

@@ -50,7 +50,7 @@ func TestIngestionPipeline_AsyncDecoupling(t *testing.T) {
 		}
 		ds.dataMu.RLock()
 		defer ds.dataMu.RUnlock()
-		return len(ds.Records) > 0
+		return len(ds.Records.Read()) > 0
 	}, 2*time.Second, 10*time.Millisecond, "Dataset should eventually have records")
 }
 

@@ -71,7 +71,7 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 
 			ds := &Dataset{
 				Name:    fmt.Sprintf("test_dataset_%s", tt.name),
-				Records: []arrow.RecordBatch{rec},
+				Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 				dataMu:  sync.RWMutex{},
 			}
 

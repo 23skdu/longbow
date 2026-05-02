@@ -97,7 +97,7 @@ func (d *DatasetIO) ExportToParquet(ctx context.Context, name string, backend st
 	}
 
 	ds.dataMu.RLock()
-	numRecords := len(ds.Records)
+	numRecords := len(ds.Records.Read())
 	ds.dataMu.RUnlock()
 
 	if numRecords == 0 {
@@ -113,8 +113,8 @@ func (d *DatasetIO) ExportToParquet(ctx context.Context, name string, backend st
 
 	var vectorDim int
 	ds.dataMu.RLock()
-	if len(ds.Records) > 0 {
-		rec := ds.Records[0]
+	if len(ds.Records.Read()) > 0 {
+		rec := ds.Records.Read()[0]
 		for _, f := range rec.Schema().Fields() {
 			if f.Name == "vector" {
 				if fType, ok := f.Type.(*arrow.FixedSizeListType); ok {
@@ -157,7 +157,7 @@ func (d *DatasetIO) ExportToParquet(ctx context.Context, name string, backend st
 	parquetBuf := getDatasetBuffer()
 	defer putDatasetBuffer(parquetBuf)
 	ds.dataMu.RLock()
-	totalVectors, err := d.writeRecordsToParquet(ds.Records, parquetBuf)
+	totalVectors, err := d.writeRecordsToParquet(ds.Records.Read(), parquetBuf)
 	ds.dataMu.RUnlock()
 
 	if err != nil {
@@ -422,7 +422,7 @@ func (d *DatasetIO) ExportToArrowIPC(ctx context.Context, name string, backend s
 	}
 
 	ds.dataMu.RLock()
-	numRecords := len(ds.Records)
+	numRecords := len(ds.Records.Read())
 	ds.dataMu.RUnlock()
 
 	if numRecords == 0 {
@@ -439,7 +439,7 @@ func (d *DatasetIO) ExportToArrowIPC(ctx context.Context, name string, backend s
 
 	ds.dataMu.RLock()
 	totalRows := int64(0)
-	for _, rec := range ds.Records {
+	for _, rec := range ds.Records.Read() {
 		totalRows += rec.NumRows()
 		if err := writer.Write(rec); err != nil {
 			ds.dataMu.RUnlock()
@@ -501,9 +501,18 @@ func (d *DatasetIO) ImportFromArrowIPC(ctx context.Context, name string, backend
 			break
 		}
 		totalRows += rec.NumRows()
-		batchIdx := len(ds.Records)
-		ds.Records = append(ds.Records, rec)
-		ds.BatchNodes = append(ds.BatchNodes, -1)
+		currentRecords := ds.Records.Read()
+		batchIdx := len(currentRecords)
+		newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
+		copy(newRecords, currentRecords)
+		newRecords[len(currentRecords)] = rec
+		ds.Records.UpdateInPlace(newRecords)
+ 
+		currentNodes := ds.BatchNodes.Read()
+		newNodes := make([]int, len(currentNodes)+1)
+		copy(newNodes, currentNodes)
+		newNodes[len(currentNodes)] = -1
+		ds.BatchNodes.UpdateInPlace(newNodes)
 
 		if d.vs.indexQueue != nil {
 			job := IndexJob{

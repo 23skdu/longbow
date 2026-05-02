@@ -15,3 +15,35 @@ type Candidate struct {
 	Dist  float32
 	Level int // for hierarchical structures
 }
+
+// ResultIterator provides a streaming interface for search results.
+type ResultIterator interface {
+	// Next returns the next search result. Returns (SearchResult{}, false) if no more results.
+	Next() (SearchResult, bool)
+	// Close releases any resources held by the iterator.
+	Close() error
+}
+
+// ResultSliceIterator implements ResultIterator for a simple slice of results.
+type ResultSliceIterator struct {
+	results []SearchResult
+	pos     int
+}
+
+func NewResultSliceIterator(results []SearchResult) *ResultSliceIterator {
+	return &ResultSliceIterator{results: results}
+}
+
+func (it *ResultSliceIterator) Next() (SearchResult, bool) {
+	if it.pos >= len(it.results) {
+		return SearchResult{}, false
+	}
+	res := it.results[it.pos]
+	it.pos++
+	return res, true
+}
+
+func (it *ResultSliceIterator) Close() error {
+	it.results = nil
+	return nil
+}

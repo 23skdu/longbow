@@ -38,7 +38,7 @@ func (vs *VectorStore) GetCapacityPlan() (CapacityPlan, error) {
 	vs.IterateDatasets(func(name string, ds *Dataset) {
 		dsCount++
 		ds.dataMu.RLock()
-		for _, rec := range ds.Records {
+		for _, rec := range ds.Records.Read() {
 			totalVectors += rec.NumRows()
 		}
 		ds.dataMu.RUnlock()

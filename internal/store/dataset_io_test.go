@@ -57,7 +57,7 @@ func TestDatasetIO_ExportImportParquet(t *testing.T) {
 	ds, ok := vs.getDataset(datasetName)
 	require.True(t, ok)
 	ds.dataMu.Lock()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	ds.dataMu.Unlock()
 
 	// Setup Mock Backend
@@ -83,6 +83,6 @@ func TestDatasetIO_ExportImportParquet(t *testing.T) {
 	importedDS, ok := vs.getDataset(importName)
 	require.True(t, ok)
 	require.NotNil(t, importedDS)
-	assert.Equal(t, 1, len(importedDS.Records))
-	assert.Equal(t, int64(3), importedDS.Records[0].NumRows())
+	assert.Equal(t, 1, len(importedDS.Records.Read()))
+	assert.Equal(t, int64(3), importedDS.Records.Read()[0].NumRows())
 }

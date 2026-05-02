@@ -63,7 +63,7 @@ func TestShardedHNSW_Routing(t *testing.T) {
 	rec := makeRoutingTestRecord(mem, 16, 100)
 	defer rec.Release()
 
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 
 	for i := 0; i < 100; i++ {
 		_, err := idx.AddSafe(context.Background(), rec, i, 0)
@@ -94,7 +94,7 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 
 	rec := makeRoutingTestRecord(mem, 16, 100)
 	defer rec.Release()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 
 	for i := 0; i < 100; i++ {
 		_, err := idx.AddSafe(context.Background(), rec, i, 0)
@@ -133,7 +133,7 @@ func TestShardedHNSW_Filtering(t *testing.T) {
 
 	rec := makeRoutingTestRecord(mem, 16, 100)
 	defer rec.Release()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 
 	for i := 0; i < 100; i++ {
 		_, err := idx.AddSafe(context.Background(), rec, i, 0)

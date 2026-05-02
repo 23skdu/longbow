@@ -185,7 +185,7 @@ func TestAdaptiveChunkSize_ConcurrentSafety(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 	idx := NewTestHNSWIndex(ds)
 
@@ -232,7 +232,7 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 
 	ds := &Dataset{
 		Name:    "bench",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 	idx := NewTestHNSWIndex(ds)
 

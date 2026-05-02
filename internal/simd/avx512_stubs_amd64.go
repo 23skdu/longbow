@@ -41,10 +41,15 @@ func matchFloat64AVX512(src []float64, val float64, op CompareOp, dst []byte) er
 
 func euclidean384AVX512(a, b []float32) (float32, error) { return euclidean384AVX2(a, b) }
 func euclidean768AVX512(a, b []float32) (float32, error) { return euclidean768AVX2(a, b) }
+func euclidean1024AVX512(a, b []float32) (float32, error) { return euclidean1024AVX2(a, b) }
 func euclidean1536AVX512(a, b []float32) (float32, error) { return euclidean1536AVX2(a, b) }
-func dot384AVX512(a, b []float32) (float32, error) { return dotGeneric(a, b) }
-func dot768AVX512(a, b []float32) (float32, error) { return dotGeneric(a, b) }
-func dot1536AVX512(a, b []float32) (float32, error) { return dotGeneric(a, b) }
+func euclidean3072AVX512(a, b []float32) (float32, error) { return euclidean3072AVX2(a, b) }
+
+func dot384AVX512(a, b []float32) (float32, error) { return dot384AVX2(a, b) }
+func dot768AVX512(a, b []float32) (float32, error) { return dot768AVX2(a, b) }
+func dot1024AVX512(a, b []float32) (float32, error) { return dot1024AVX2(a, b) }
+func dot1536AVX512(a, b []float32) (float32, error) { return dot1536AVX2(a, b) }
+func dot3072AVX512(a, b []float32) (float32, error) { return dot3072AVX2(a, b) }
 
 func euclideanFloat64AVX512(a, b []float64) (float32, error) { return euclideanFloat64AVX2(a, b) }
 func dotFloat64AVX512(a, b []float64) (float32, error) { return dotFloat64AVX2(a, b) }

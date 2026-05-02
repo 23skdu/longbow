@@ -129,6 +129,23 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return nil
 
+	case "drop", "Drop":
+		var req struct {
+			Dataset string `json:"dataset"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			// Fallback to simple string if not JSON object
+			var name string
+			if err := json.Unmarshal(action.Body, &name); err == nil {
+				req.Dataset = name
+			} else {
+				return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+			}
+		}
+		s.evictDataset(req.Dataset)
+		s.logger.Info().Str("dataset", req.Dataset).Msg("Dataset dropped via action")
+		return stream.Send(&flight.Result{Body: []byte(`{"status": "dropped"}`)})
+
 	case "delete", "Delete":
 		var req core.VectorSearchByIDRequest
 		if err := query.ParseSearchByIDRequest(action.Body, &req); err != nil {

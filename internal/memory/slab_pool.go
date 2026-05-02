@@ -181,3 +181,12 @@ func (p *SlabPool) updateMetrics() {
 	}
 	metrics.SlabFragmentationRatio.WithLabelValues(sizeLabel).Set(fragmentation)
 }
+// GetGlobalSlabPoolUnusedMemory returns the total memory sitting idle in all global slab pools.
+func GetGlobalSlabPoolUnusedMemory() int64 {
+	var total int64
+	total += atomic.LoadInt64(&global4MBPool.pooledCount) * int64(global4MBPool.size)
+	total += atomic.LoadInt64(&global8MBPool.pooledCount) * int64(global8MBPool.size)
+	total += atomic.LoadInt64(&global16MBPool.pooledCount) * int64(global16MBPool.size)
+	total += atomic.LoadInt64(&global32MBPool.pooledCount) * int64(global32MBPool.size)
+	return total
+}

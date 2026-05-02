@@ -142,7 +142,8 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 	t.lastTotalAlloc = m.TotalAlloc
 	t.lastAllocTime = now
 
-	heapInUse := m.HeapInuse
+	// Use HeapAlloc (live objects) for better accuracy with MADV_DONTNEED/FREE
+	heapAlloc := m.HeapAlloc
 
 
 	t.mu.RLock()
@@ -174,13 +175,15 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 				unusedArenaMemory += unused
 			}
 		}
+		
+		// Add global slab pools to unused tracking
+		unusedArenaMemory += GetGlobalSlabPoolUnusedMemory()
 	}
 	t.mu.RUnlock()
 
-	// Effective Usage = Total Heap Inuse - Memory reserved by arenas but not actually used.
-	// We want to be aggressive when ACTUAL data (active nodes + overhead) approaches limit,
-	// but NOT when just reserved slabs approach limit (those can be freed/compacted).
-	effectiveInUse := int64(heapInUse) - unusedArenaMemory // #nosec G115
+	// Effective Usage = Total Heap Alloc - Memory reserved by arenas/pools but not actually used.
+	// We use HeapAlloc because it's the actual live object space.
+	effectiveInUse := int64(heapAlloc) - unusedArenaMemory // #nosec G115
 	if effectiveInUse < 0 {
 		effectiveInUse = 0
 	}
@@ -203,7 +206,7 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 	}
 
 	// Arena-aware tuning: if arena usage >70% of heap, set GOGC=50
-	arenaRatio := float64(totalArenaCapacity) / float64(heapInUse)
+	arenaRatio := float64(totalArenaCapacity) / float64(heapAlloc)
 	var targetGOGC int
 
 	if aggressive && arenaRatio > 0.7 {
@@ -213,7 +216,7 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 			t.logger.Warn().
 				Float64("arenaRatio", arenaRatio).
 				Int64("totalArenaCapacity", totalArenaCapacity).
-				Uint64("heapInUse", heapInUse).
+				Uint64("heapAlloc", heapAlloc).
 				Int("targetGOGC", targetGOGC).
 				Msg("Arena-dominated heap detected, setting aggressive GOGC")
 		}

@@ -47,7 +47,25 @@ func main() {
 	outputJson := flag.String("json", "", "Save stats as JSON file")
 	tqBits := flag.Int("tq-bits", 4, "TurboQuant bit depth (2, 4, 8)")
 	workers := flag.Int("workers", 1, "Number of concurrent search workers")
+	drop := flag.Bool("drop", false, "Drop dataset after benchmark")
 	flag.Parse()
+
+	if *drop {
+		defer func() {
+			sc, err := client.NewSmartClient(*uri)
+			if err != nil {
+				log.Printf("Failed to create client for drop: %v\n", err)
+				return
+			}
+			defer sc.Close()
+			if err := dropDataset(context.Background(), sc, *dataset); err != nil {
+				log.Printf("Failed to drop dataset %s: %v\n", *dataset, err)
+			} else {
+				log.Printf("Dataset %s dropped successfully\n", *dataset)
+			}
+		}()
+	}
+
 
 	if *dim > 3072 {
 		log.Printf("WARNING: Dimension %d exceeds recommended 3072 limit. Proceeding anyway.\n", *dim)
@@ -845,4 +863,25 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 
 	return array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr, tsArr, geoArr, activeArr, catArr}, int64(count)), schema, nil
 }
+
+func dropDataset(ctx context.Context, sc *client.SmartClient, dataset string) error {
+	req := struct {
+		Dataset string `json:"dataset"`
+	}{Dataset: dataset}
+	body, _ := json.Marshal(req)
+
+	action := &flight.Action{
+		Type: "drop",
+		Body: body,
+	}
+
+	stream, err := sc.DoAction(ctx, action)
+	if err != nil {
+		return err
+	}
+
+	_, err = stream.Recv()
+	return err
+}
+
 

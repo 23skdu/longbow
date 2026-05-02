@@ -178,6 +178,7 @@ for count in "${COUNTS[@]}"; do
                 -scale $count \
                 -queries $QUERIES \
                 -json "$json_out" \
+                -drop \
                 >> "$LOG_FILE" 2>&1
 
             if [[ $? -ne 0 ]]; then

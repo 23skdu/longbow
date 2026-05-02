@@ -259,65 +259,72 @@ type partialResult struct {
 }
 
 func (fqr *FederatedQueryRouter) mergeResultsRRF(partials []partialResult, k int) []lbtypes.SearchResult {
+	if len(partials) == 0 {
+		return nil
+	}
+ 
 	type scoredResult struct {
 		id         lbtypes.VectorID
-		score      float64
+		score      float32
 		collection string
 		distance   float32
 	}
-
-	var allScored []scoredResult
-
+ 
+	// Estimate unique results to minimize reallocations
+	totalPotential := 0
+	for _, p := range partials {
+		totalPotential += len(p.results)
+	}
+ 
+	scoreMap := make(map[lbtypes.VectorID]*scoredResult, totalPotential/2)
+	rrfConstant := float32(fqr.defaultRRF)
+ 
 	for _, p := range partials {
 		for i, r := range p.results {
 			rank := i + 1
-			rrfScore := 1.0 / (fqr.defaultRRF * float64(rank))
-			allScored = append(allScored, scoredResult{
-				id:         r.ID,
-				score:      rrfScore,
-				collection: p.collection,
-				distance:   r.Distance,
-			})
+			rrfScore := 1.0 / (rrfConstant * float32(rank))
+			
+			if existing, ok := scoreMap[r.ID]; ok {
+				existing.score += rrfScore
+			} else {
+				scoreMap[r.ID] = &scoredResult{
+					id:         r.ID,
+					score:      rrfScore,
+					collection: p.collection,
+					distance:   r.Distance,
+				}
+			}
 		}
 	}
-
-	scoreMap := make(map[lbtypes.VectorID]*scoredResult)
-	for i := range allScored {
-		s := &allScored[i]
-		if existing, ok := scoreMap[s.id]; ok {
-			existing.score += s.score
-		} else {
-			scoreMap[s.id] = s
-		}
-	}
-
-	uniqueScored := make([]scoredResult, 0, len(scoreMap))
+ 
+	uniqueScored := make([]*scoredResult, 0, len(scoreMap))
 	for _, s := range scoreMap {
-		uniqueScored = append(uniqueScored, *s)
+		uniqueScored = append(uniqueScored, s)
 	}
-
+ 
 	sort.Slice(uniqueScored, func(i, j int) bool {
 		return uniqueScored[i].score > uniqueScored[j].score
 	})
-
+ 
 	limit := k
 	if limit > len(uniqueScored) {
 		limit = len(uniqueScored)
 	}
-
+ 
 	results := make([]lbtypes.SearchResult, limit)
 	for i := 0; i < limit; i++ {
+		s := uniqueScored[i]
 		metaBytes, _ := core.EncodeMetadata(map[string]interface{}{
-			"collection": uniqueScored[i].collection,
+			"collection": s.collection,
 		})
 		results[i] = lbtypes.SearchResult{
-			ID:       uniqueScored[i].id,
-			Distance: uniqueScored[i].distance,
-			Score:    float32(uniqueScored[i].score),
+			ID:       s.id,
+			Distance: s.distance,
+			Score:    s.score,
 			Metadata: metaBytes,
 		}
 	}
-
+ 
 	return results
 }
 

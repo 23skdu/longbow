@@ -87,7 +87,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 				metrics.HybridSearchKeywordTotal.Inc()
 				metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
 			} else if bm25 != nil {
-				sparseResults = bm25.SearchBM25(textQuery, k*2, nil)
+				sparseResults = bm25.SearchBM25(textQuery, k*2, nil, s.resultPool)
 				metrics.HybridSearchKeywordTotal.Inc()
 				metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
 			}
@@ -113,7 +113,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 		if rrfK <= 0 {
 			rrfK = 60 // Default
 		}
-		finalResults = ReciprocalRankFusion(name, denseResults, sparseResults, rrfK, k)
+		finalResults = ReciprocalRankFusion(name, denseResults, sparseResults, rrfK, k, s.resultPool)
 		metrics.HybridSearchMergeDuration.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
 		metrics.HybridRRFFusionLatencySeconds.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
 	}
@@ -239,10 +239,10 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []f
 	return results, nil
 }
 
-// RankFusion performs Reciprocal Rank Fusion.
-func RankFusion(list1, list2 []SearchResult, k, rrfK int) []SearchResult {
+// ReciprocalRankFusion performs Reciprocal Rank Fusion.
+func ReciprocalRankFusion(dataset string, list1, list2 []SearchResult, rrfK, k int, pool *SearchResultPool) []SearchResult {
 	scores := make(map[uint32]float32) // Use VectorID (uint32)
-
+ 
 	// Helper to add scores
 	add := func(list []SearchResult) {
 		for rank, item := range list {
@@ -251,24 +251,35 @@ func RankFusion(list1, list2 []SearchResult, k, rrfK int) []SearchResult {
 			scores[uint32(item.ID)] += score
 		}
 	}
-
+ 
 	add(list1)
 	add(list2)
-
-	// Sort
-	final := make([]SearchResult, 0, len(scores))
+ 
+	// Get result slice from pool
+	final := pool.Get(len(scores))
+ 
 	for id, score := range scores {
 		final = append(final, SearchResult{ID: types.VectorID(id), Score: score})
 	}
-
+ 
 	sort.Slice(final, func(i, j int) bool {
 		return final[i].Score > final[j].Score
 	})
-
+ 
 	if len(final) > k {
 		final = final[:k]
 	}
-	return final
+ 
+	// Note: The caller is responsible for returning the slice to the pool
+	// but since SearchHybrid is the main caller and it returns the results to the user,
+	// we have a lifetime issue. 
+	// For now, we'll return a copy and Put the pooled slice back.
+	
+	results := make([]SearchResult, len(final))
+	copy(results, final)
+	pool.Put(final)
+	
+	return results
 }
 
 // HybridSearchWithBitmap performs hybrid search using a pre-computed bitmap for filtering.

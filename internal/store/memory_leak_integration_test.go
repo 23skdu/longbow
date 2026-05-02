@@ -120,7 +120,7 @@ func runDatasetCycle(ctx context.Context, t *testing.T, s *VectorStore, name str
 	dsSize := ds.SizeBytes.Load()
 	logger.Debug().Int64("before_store", beforeStore).Int64("after_store", afterStore).Int64("store_delta", afterStore-beforeStore).Int64("ds_size", dsSize).Msg("After StoreRecordBatch")
 
-	if len(ds.Records) == 0 {
+	if len(ds.Records.Read()) == 0 {
 		logger.Warn().Str("dataset", name).Msg("Dataset has NO records after indexing")
 	}
 
@@ -133,7 +133,7 @@ func runDatasetCycle(ctx context.Context, t *testing.T, s *VectorStore, name str
 	require.NoError(t, err)
 
 	if len(results) == 0 {
-		logger.Warn().Str("dataset", name).Int("records", len(ds.Records)).Int("index_len", ds.Index.Len()).Msg("Search returned 0 results")
+		logger.Warn().Str("dataset", name).Int("records", len(ds.Records.Read())).Int("index_len", ds.Index.Len()).Msg("Search returned 0 results")
 	}
 	assert.NotEmpty(t, results)
 

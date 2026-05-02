@@ -22,7 +22,7 @@ func TestVacuum_Basic(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "vacuum_test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
 	cfg := DefaultArrowHNSWConfig()
@@ -51,7 +51,7 @@ func TestVacuum_SearchImpact(t *testing.T) {
 	rec := makeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
-	ds := &Dataset{Records: []arrow.RecordBatch{rec}}
+	ds := &Dataset{Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec})}
 	cfg := DefaultArrowHNSWConfig()
 	h := NewArrowHNSW(ds, &cfg, nil)
 

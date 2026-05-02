@@ -29,13 +29,13 @@ func (d *Dataset) GetDiskLayoutInfo() DiskLayoutInfo {
 	defer d.dataMu.RUnlock()
 
 	info := DiskLayoutInfo{
-		TotalBatches: len(d.Records),
-		BatchDetails: make([]BatchLayoutDetail, 0, len(d.Records)),
+		TotalBatches: len(d.Records.Read()),
+		BatchDetails: make([]BatchLayoutDetail, 0, len(d.Records.Read())),
 	}
 
 	totalReadAmp := 0.0
 
-	for i, rec := range d.Records {
+	for i, rec := range d.Records.Read() {
 		rows := int(rec.NumRows())
 		deleted := 0
 		if d.Tombstones[i] != nil {
@@ -72,8 +72,8 @@ func (d *Dataset) GetDiskLayoutInfo() DiskLayoutInfo {
 		totalReadAmp += readAmp
 	}
 
-	if len(d.Records) > 0 {
-		info.ReadAmpAverage = totalReadAmp / float64(len(d.Records))
+	if len(d.Records.Read()) > 0 {
+		info.ReadAmpAverage = totalReadAmp / float64(len(d.Records.Read()))
 	}
 
 	return info

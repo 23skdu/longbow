@@ -63,7 +63,7 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 			case "rows":
 				var numRows int64
 				ds.dataMu.RLock()
-				for _, rec := range ds.Records {
+				for _, rec := range ds.Records.Read() {
 					numRows += rec.NumRows()
 				}
 				ds.dataMu.RUnlock()
@@ -121,7 +121,7 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 
 	return &flight.FlightInfo{
 		FlightDescriptor: desc,
-		TotalRecords:     int64(len(ds.Records)),
+		TotalRecords:     int64(len(ds.Records.Read())),
 		TotalBytes:       ds.SizeBytes.Load(),
 	}, nil
 }
@@ -223,22 +223,23 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	ds.dataMu.RLock()
 	// Check if dataset is already empty or if we have records
-	if len(ds.Records) == 0 {
+	if len(ds.Records.Read()) == 0 {
 		ds.dataMu.RUnlock()
 		s.logger.Warn().Msg("Dataset empty")
 		return nil
 	}
 
 	// Use first record's schema (all records in a dataset must share schema)
-	schema := ds.Records[0].Schema()
+	schema := ds.Records.Read()[0].Schema()
 
 	// Adaptive Chunking (Byte-Aware Optimization)
 	// We estimate row size to ensure chunks are at least ~2MB to saturate bandwidth
 	// while keeping overhead low.
 	avgRowSize := int64(256) // Default fallback
-	if ds.Records[0].NumRows() > 0 {
-		batchSize := estimateBatchSize(ds.Records[0])
-		avgRowSize = batchSize / ds.Records[0].NumRows()
+	firstBatch := ds.Records.Read()[0]
+	if firstBatch.NumRows() > 0 {
+		batchSize := estimateBatchSize(firstBatch)
+		avgRowSize = batchSize / firstBatch.NumRows()
 		if avgRowSize == 0 {
 			avgRowSize = 1
 		}
@@ -259,7 +260,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	}
 
 	chunkStrategy := lbflight.NewAdaptiveChunkStrategy(minChunkRows, maxChunkRows, 2.0)
-	recordsToProcess, tombstonesToProcess := AdaptivelySliceBatches(ds.Records, ds.Tombstones, chunkStrategy)
+	recordsToProcess, tombstonesToProcess := AdaptivelySliceBatches(ds.Records.Read(), ds.Tombstones, chunkStrategy)
 	ds.dataMu.RUnlock() // RELEASE LOCK IMMEDIATELY AFTER CLONING REFERENCES
 
 	s.logger.Info().Str("name", name).Int("batches", len(recordsToProcess)).Msg("DoGet streaming started")
@@ -557,11 +558,12 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []types.Se
 		}
 
 		// 2. Access RecordBatch
-		if loc.BatchIdx >= len(ds.Records) {
-
+		currentRecords := ds.Records.Read()
+		if loc.BatchIdx >= len(currentRecords) {
+ 
 			continue
 		}
-		rec := ds.Records[loc.BatchIdx]
+		rec := currentRecords[loc.BatchIdx]
 
 		// 3. Find 'id' column
 		// Optimization: could cache column index if schema is consistent
@@ -812,7 +814,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 				IncludeVectors: req.IncludeVectors,
 				VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
 				FilterExpr:     filterExpr,
-				Predicate:      qry.ExtractPushablePredicate(filterExpr, ds.Records),
+				Predicate:      qry.ExtractPushablePredicate(filterExpr, ds.Records.Read()),
 			})
 			if searchErr != nil {
 				return status.Errorf(codes.Internal, "search failed: %v", searchErr)
@@ -1022,8 +1024,8 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 			if ts, ok := ds.Tombstones[loc.BatchIdx]; ok && ts != nil && ts.Contains(loc.RowIdx) {
 				isDeleted = true
 			}
-			if !isDeleted && loc.BatchIdx < len(ds.Records) {
-				rec := ds.Records[loc.BatchIdx]
+			if !isDeleted && loc.BatchIdx < len(ds.Records.Read()) {
+				rec := ds.Records.Read()[loc.BatchIdx]
 				vec, err := internalcore.ExtractVectorRaw(rec, loc.RowIdx, -1)
 				if err != nil {
 					ds.dataMu.RUnlock()
@@ -1036,7 +1038,7 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 	}
 
 	if !found {
-		for batchIdx, rec := range ds.Records {
+		for batchIdx, rec := range ds.Records.Read() {
 			idColIdx := -1
 			for i, field := range rec.Schema().Fields() {
 				if field.Name == "id" {
@@ -1321,7 +1323,7 @@ func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]types.Sear
 		limit = 1000 // Default internal limit
 	}
 
-	for i, rec := range ds.Records {
+	for i, rec := range ds.Records.Read() {
 		if len(results) >= limit {
 			break
 		}
@@ -1394,7 +1396,7 @@ func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]types.Sear
 }
 
 func (s *VectorStore) evaluateFilters(ds *Dataset, batchIdx int, filters []core.Filter) (*qry.FilterEvaluator, error) {
-	rec := ds.Records[batchIdx]
+	rec := ds.Records.Read()[batchIdx]
 	eval, err := qry.NewFilterEvaluator(rec, filters)
 	if err != nil {
 		return nil, err

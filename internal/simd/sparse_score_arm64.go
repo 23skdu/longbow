@@ -3,6 +3,34 @@
 
 package simd
 
+import (
+	"unsafe"
+)
+
+//go:noescape
+func bm25ScoreBatchNEON(tfs, docLens unsafe.Pointer, n int, invAvgDL, idf, k1, b float32, results unsafe.Pointer)
+
 func bm25ScoreBatchArch(tfs []int, docLengths []int, avgDL float32, idf float32, k1 float32, b float32) []float32 {
-	return bm25ScoreBatchGeneric(tfs, docLengths, avgDL, idf, k1, b)
+	n := len(tfs)
+	if n == 0 {
+		return nil
+	}
+	
+	results := make([]float32, n)
+	if avgDL == 0 {
+		avgDL = 1.0
+	}
+	
+	bm25ScoreBatchNEON(
+		unsafe.Pointer(&tfs[0]),
+		unsafe.Pointer(&docLengths[0]),
+		n,
+		1.0/avgDL,
+		idf,
+		k1,
+		b,
+		unsafe.Pointer(&results[0]),
+	)
+	
+	return results
 }

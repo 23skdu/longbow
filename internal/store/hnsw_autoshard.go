@@ -285,8 +285,8 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 			vid := VectorID(id)
 			locAny, ok := oldIdx.GetLocation(uint32(vid))
 			if ok {
-				if loc, ok := locAny.(Location); ok && loc.BatchIdx >= 0 && loc.BatchIdx < len(idx.dataset.Records) {
-					rec := idx.dataset.Records[loc.BatchIdx]
+				if loc, ok := locAny.(Location); ok && loc.BatchIdx >= 0 && loc.BatchIdx < len(idx .dataset.Records.Read()) {
+					rec := idx .dataset.Records.Read()[loc.BatchIdx]
 					rec.Retain()
 					items = append(items, item{rec: rec, loc: loc, id: vid})
 				}

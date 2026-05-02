@@ -6,7 +6,7 @@ import (
 	"sync"
 )
 
-const invertedIndexShards = 32
+const invertedIndexShards = 1024
 
 // termShard holds the inverted index for a subset of terms
 type termShard struct {

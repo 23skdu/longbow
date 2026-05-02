@@ -48,10 +48,10 @@ func buildSmallDataset(t *testing.T, n, dim int) (*Dataset, *ArrowHNSW) {
 
 	ds := NewDataset("test_gn", schema)
 	batch.Retain()
-	ds.Records = append(ds.Records, batch)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), batch))
 
 	t.Cleanup(func() {
-		for _, r := range ds.Records {
+		for _, r := range ds.Records.Read() {
 			r.Release()
 		}
 	})

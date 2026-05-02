@@ -44,15 +44,15 @@ func euclidean768NEON(a, b []float32) (float32, error) {
 }
 
 func euclidean1024NEON(a, b []float32) (float32, error) {
-	return euclideanUnrolled4x(a, b)
+	return l2Squared1024NEONKernel(a, b), nil
 }
 
 func euclidean1536NEON(a, b []float32) (float32, error) {
-	return euclidean1536Unrolled4x(a, b)
+	return l2Squared1536NEONKernel(a, b), nil
 }
 
 func euclidean3072NEON(a, b []float32) (float32, error) {
-	return euclideanUnrolled4x(a, b)
+	return l2Squared3072NEONKernel(a, b), nil
 }
 
 func dot128NEON(a, b []float32) (float32, error) {
@@ -68,15 +68,15 @@ func dot768NEON(a, b []float32) (float32, error) {
 }
 
 func dot1024NEON(a, b []float32) (float32, error) {
-	return dotUnrolled4x(a, b)
+	return dot1024NEONKernel(a, b), nil
 }
 
 func dot1536NEON(a, b []float32) (float32, error) {
-	return dotUnrolled4x(a, b)
+	return dot1536NEONKernel(a, b), nil
 }
 
 func dot3072NEON(a, b []float32) (float32, error) {
-	return dotUnrolled4x(a, b)
+	return dot3072NEONKernel(a, b), nil
 }
 
 func euclideanF16NEON(a, b []float16.Num) (float32, error) {
@@ -360,4 +360,10 @@ var _ = func() {
 		vectorButterfly16NEONKernel(nil, nil)
 		_ = l2Squared384NEONKernel(nil, nil)
 	}
+}
+
+func accumulateWeightedScatterNEON(dst []float32, targets []uint32, weights []float32, factor float32) {
+	// For now, use generic fallback until assembly kernel is ready.
+	// Scatter-add is tricky in NEON without specialized instructions like SVE.
+	accumulateWeightedScatterGeneric(dst, targets, weights, factor)
 }

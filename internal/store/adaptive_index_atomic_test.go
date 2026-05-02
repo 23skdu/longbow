@@ -34,7 +34,7 @@ func createTestDatasetWithVectors(name string, numVectors int) *Dataset {
 	}
 	
 	rec := b.NewRecord()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	return ds
 }
 

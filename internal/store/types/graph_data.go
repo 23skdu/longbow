@@ -134,6 +134,9 @@ type GraphData struct {
 	// ArrowRefs holds references to external Arrow arrays providing vector data.
 	// Used for zero-copy ingestion paths.
 	ArrowRefs []arrow.Array
+ 
+	// Sharded locks for fine-grained concurrency control
+	ShardedMus [1024]PaddedMutex
 }
 
 // graphFallback provides a secondary mechanism for neighbor and vector retrieval.
@@ -954,6 +957,10 @@ func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
 }
 
 func (g *GraphData) SetNeighborsAtLayer(layer int, id uint32, neighbors []uint32) error {
+	mu := &g.ShardedMus[id%1024]
+	mu.Lock()
+	defer mu.Unlock()
+ 
 	cID := int(id) / ChunkSize
 	cOff := int(id) % ChunkSize
 

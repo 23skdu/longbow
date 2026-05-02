@@ -44,7 +44,7 @@ func TestVectorPrefetchProcessChunkWithPrefetch(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 	// Correct constructor usage
 	idx := NewTestHNSWIndex(ds)
@@ -96,7 +96,7 @@ func TestVectorPrefetchStress(t *testing.T) {
 	rec := makeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
-	ds := &Dataset{Records: []arrow.RecordBatch{rec}}
+	ds := &Dataset{Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec})}
 	idx := NewTestHNSWIndex(ds)
 
 	rowIdxs := make([]int, numVectors)

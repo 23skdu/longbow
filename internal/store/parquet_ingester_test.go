@@ -53,6 +53,6 @@ func TestParquetIngester(t *testing.T) {
 	
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), total)
-	assert.Equal(t, 1, len(ds.Records))
-	assert.Equal(t, int64(2), ds.Records[0].NumRows())
+	assert.Equal(t, 1, len(ds.Records.Read()))
+	assert.Equal(t, int64(2), ds.Records.Read()[0].NumRows())
 }

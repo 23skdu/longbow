@@ -39,7 +39,7 @@ func TestAdaptiveIndex(t *testing.T) {
 	listBuilder.Append(true)
 	
 	rec := b.NewRecord()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 
 	// 2. Initialize AdaptiveIndex with low threshold
 	cfg := AdaptiveIndexConfig{

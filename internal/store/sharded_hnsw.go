@@ -245,10 +245,10 @@ func (idx *ShardedHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int)
 
 // AddByLocationUnsafe adds a vector without taking dataset locks.
 func (idx *ShardedHNSW) AddByLocationUnsafe(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	if batchIdx >= len(idx.dataset.Records) {
+	if batchIdx >= len(idx .dataset.Records.Read()) {
 		return 0, fmt.Errorf("invalid batch idx")
 	}
-	rec := idx.dataset.Records[batchIdx]
+	rec := idx .dataset.Records.Read()[batchIdx]
 	return idx.AddByRecord(ctx, rec, rowIdx, batchIdx)
 }
 
@@ -574,7 +574,7 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 	// Filter Block (Redundant if shards filtered, but kept for safety/fallback)
 	if len(filters) > 0 && idx.dataset != nil {
 		idx.dataset.dataMu.RLock()
-		if len(idx.dataset.Records) > 0 {
+		if len(idx .dataset.Records.Read()) > 0 {
 			// 1. Group row indices by BatchIdx
 			type batchJob struct {
 				rowIndices []int
@@ -584,7 +584,7 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 
 			for i, r := range merged {
 				loc, ok := idx.locationStore.Get(r.ID)
-				if !ok || loc.BatchIdx >= len(idx.dataset.Records) {
+				if !ok || loc.BatchIdx >= len(idx .dataset.Records.Read()) {
 					continue
 				}
 				job, ok := batchJobs[loc.BatchIdx]
@@ -599,7 +599,7 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 			// 2. Evaluate each batch
 			filteredMask := make([]bool, len(merged))
 			for bIdx, job := range batchJobs {
-				ev, err := query.NewFilterEvaluator(idx.dataset.Records[bIdx], filters)
+				ev, err := query.NewFilterEvaluator(idx .dataset.Records.Read()[bIdx], filters)
 				if err != nil {
 					continue
 				}
@@ -791,11 +791,11 @@ func (idx *ShardedHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, 
  
 	if len(filters) > 0 && idx.dataset != nil {
 		idx.dataset.dataMu.RLock()
-		if len(idx.dataset.Records) > 0 {
+		if len(idx .dataset.Records.Read()) > 0 {
 			filtered := merged[:0]
 			for _, r := range merged {
 				loc, ok := idx.locationStore.Get(r.ID)
-				if !ok || loc.BatchIdx >= len(idx.dataset.Records) {
+				if !ok || loc.BatchIdx >= len(idx .dataset.Records.Read()) {
 					continue
 				}
 				filtered = append(filtered, r)
@@ -845,11 +845,11 @@ func (idx *ShardedHNSW) SearchByID(ctx context.Context, id VectorID, k int) []Ve
  
 	// Retrieve vector from dataset
 	idx.dataset.dataMu.RLock()
-	if loc.BatchIdx >= len(idx.dataset.Records) {
+	if loc.BatchIdx >= len(idx .dataset.Records.Read()) {
 		idx.dataset.dataMu.RUnlock()
 		return nil
 	}
-	rec := idx.dataset.Records[loc.BatchIdx]
+	rec := idx .dataset.Records.Read()[loc.BatchIdx]
 	idx.dataset.dataMu.RUnlock()
  
 	// Find vector column

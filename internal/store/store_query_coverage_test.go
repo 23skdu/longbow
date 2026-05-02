@@ -118,7 +118,7 @@ func TestVectorStore_MapInternalToUserIDs(t *testing.T) {
 	builder.Field(0).(*array.Uint32Builder).AppendValues([]uint32{1001, 1002}, nil)
 	builder.Field(1).(*array.BinaryBuilder).AppendValues([][]byte{[]byte("meta1"), []byte("meta2")}, nil)
 	rec := builder.NewRecordBatch()
-	ds.Records = []arrow.RecordBatch{rec}
+	ds.Records = NewLockFreeSliceFrom([]arrow.RecordBatch{rec})
 
 	results := []types.SearchResult{
 		{ID: 1, Distance: 0.1},

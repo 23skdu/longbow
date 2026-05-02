@@ -78,9 +78,9 @@ func TestDurability_EndToEnd(t *testing.T) {
 	require.NotNil(t, ds)
 	require.Equal(t, 10, ds.IndexLen())
 	require.Len(t, ds.Records, 1)
-	require.Equal(t, int64(10), ds.Records[0].NumRows())
+	require.Equal(t, int64(10), ds.Records.Read()[0].NumRows())
 
-	idArr := ds.Records[0].Column(0).(*array.Int32)
+	idArr := ds.Records.Read()[0].Column(0).(*array.Int32)
 	require.Equal(t, int32(0), idArr.Value(0))
 	require.Equal(t, int32(9), idArr.Value(9))
 }
@@ -129,7 +129,7 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 
 	fmt.Printf("Verify: Checking ds %p\n", ds)
 	totalRows := 0
-	for i, r := range ds.Records {
+	for i, r := range ds.Records.Read() {
 		fmt.Printf("Verify: Batch %d rows: %d\n", i, r.NumRows())
 		totalRows += int(r.NumRows())
 	}
@@ -265,7 +265,7 @@ func TestDurability_WALTruncation(t *testing.T) {
 	// If this fails, we have a duplication bug.
 
 	count := 0
-	for _, r := range ds.Records {
+	for _, r := range ds.Records.Read() {
 		count += int(r.NumRows())
 	}
 	require.Equal(t, 1, count, "Should not duplicate records on recovery after snapshot")

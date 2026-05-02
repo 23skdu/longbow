@@ -358,8 +358,8 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 			}
 
 			if !isDeleted {
-				if loc.BatchIdx < len(ds.Records) {
-					rec := ds.Records[loc.BatchIdx]
+				if loc.BatchIdx < len(ds.Records.Read()) {
+					rec := ds.Records.Read()[loc.BatchIdx]
 					vec, err := ExtractVectorFromArrow(rec, loc.RowIdx, -1)
 					if err != nil {
 						return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
@@ -374,7 +374,7 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 	// Fallback to linear scan if index miss (shouldn't happen if index is fully populated)
 	// or if PrimaryIndex wasn't initialized.
 	if !found && ds.PrimaryIndex == nil {
-		for i, rec := range ds.Records {
+		for i, rec := range ds.Records.Read() {
 			// Check for "id" column
 			idColIdx := -1
 			for j, field := range rec.Schema().Fields() {

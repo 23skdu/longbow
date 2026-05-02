@@ -110,8 +110,13 @@ start_pprof() {
 # Check if we need to start local server
 if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
     echo "Starting local longbow server..."
+    # Extract ports from URI and METRICS_URI
+    PORT=$(echo "$URI" | cut -d: -f2)
+    METRICS_PORT=$(echo "$METRICS_URI" | cut -d: -f2)
+    META_PORT=$((PORT + 1))
+    
     export LONGBOW_MAX_MEMORY=19327352832
-    nohup "$REPO_DIR/bin/longbow" serve --memory 19327352832 --port 3000 --metrics-port 9090 > "$OUTPUT_DIR/logs/server.log" 2>&1 &
+    nohup "$REPO_DIR/bin/longbow" serve --memory 19327352832 --port "$PORT" --metrics-port "$METRICS_PORT" --meta-port "$META_PORT" > "$OUTPUT_DIR/logs/server.log" 2>&1 &
     SERVER_PID=$!
     echo "Server PID: $SERVER_PID"
 

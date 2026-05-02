@@ -13,6 +13,7 @@ This document outlines the completed implementation plan for high-performance SI
 **Symptom:** Benchmark tests fail with "Mode field validation failed" warning for `hybrid`, `sparse`, `filtered`, `byid` search modes. Server crashes with nil pointer dereference panic.
 
 **Root Cause Analysis:**
+
 1. The `resultPool` field in `VectorStore` (store.go:101) is declared but **never initialized**
 2. When `SearchHybrid` is called (hybrid_search.go:116), it passes `s.resultPool` to `ReciprocalRankFusion`
 3. The nil pool causes panic at `search_pool.go:179` when accessing `sp.buckets[c]` on a nil SearchResultPool
@@ -21,16 +22,17 @@ This document outlines the completed implementation plan for high-performance SI
 ```
 panic: runtime error: invalid memory address or nil pointer dereference
 github.com/23skdu/longbow/internal/store.(*SearchResultPool).getBucket(...)
-	/Users/rsd/REPOS/longbow/internal/store/search_pool.go:179
+    /Users/rsd/REPOS/longbow/internal/store/search_pool.go:179
 github.com/23skdu/longbow/internal/store.ReciprocalRankFusion(...)
-	/Users/rsd/REPOS/longbow/internal/store/hybrid_search.go:259
+    /Users/rsd/REPOS/longbow/internal/store/hybrid_search.go:259
 github.com/23skdu/longbow/internal/store.SearchHybrid(...)
-	/Users/rsd/REPOS/longbow/internal/store/hybrid_search.go:116
+    /Users/rsd/REPOS/longbow/internal/store/hybrid_search.go:116
 ```
 
 **Affected Search Modes:** Hybrid, Sparse, Filtered, FilteredBool, FilteredString, ByID, GraphRAG, GlobalGraphRAG, Recommend, Geo, Temporal, LearnedIndex
 
 **Fix Plan:**
+
 1. **Initialize resultPool in NewVectorStore** (store.go:210)
    - Add `vs.resultPool = NewSearchResultPool()` after line 220 in NewVectorStore
    - This ensures the pool is ready before any search operations
@@ -54,6 +56,7 @@ github.com/23skdu/longbow/internal/store.SearchHybrid(...)
 **Date Identified:** 2026-05-02
 
 **Symptom:** `go build` fails on ancalagon (Linux AMD64) with multiple errors:
+
 1. `internal/mesh/region.go:7:2: found packages gen and simd in internal/simd`
 2. `internal/simd/dispatch.go:238:30: undefined: accumulateWeightedScatterNEON`
 3. `internal/simd/sparse_score_amd64.go:16:5: undefined: hasAVX512`
@@ -69,28 +72,32 @@ github.com/23skdu/longbow/internal/store.SearchHybrid(...)
 **Fix Steps Applied:**
 
 1. **Fix package declaration** (all_kernels_stubs_amd64.go:3):
-   ```diff
-   - package gen
-   + package simd
-   ```
+
+```diff
+- package gen
++ package simd
+```
 
 2. **Fix dispatch.go ARM64 function reference** (dispatch.go:238):
-   ```diff
-   - AccumulateWeightedScatter: accumulateWeightedScatterNEON,
-   - BM25ScoreBatch: bm25ScoreBatchArch,
-   + AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
-   + BM25ScoreBatch: bm25ScoreBatchGeneric,
-   ```
+
+```diff
+- AccumulateWeightedScatter: accumulateWeightedScatterNEON,
+- BM25ScoreBatch: bm25ScoreBatchArch,
++ AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
++ BM25ScoreBatch: bm25ScoreBatchGeneric,
+```
 
 3. **Fix sparse_score_amd64.go CPU features reference** (sparse_score_amd64.go:16):
-   ```diff
-   - if hasAVX512 {
-   + if features.HasAVX512 {
-   ```
+
+```diff
+- if hasAVX512 {
++ if features.HasAVX512 {
+```
 
 4. **Fix sparse_score_amd64.s assembly** (sparse_score_amd64.s):
-   - Simplified to no-op fallback since pure Go implementation handles BM25 correctly
-   - Removed complex AVX-512 assembly that had cross-platform compatibility issues
+
+- Simplified to no-op fallback since pure Go implementation handles BM25 correctly
+- Removed complex AVX-512 assembly that had cross-platform compatibility issues
 
 **Verification:**
 - Local (Darwin ARM64): Builds successfully

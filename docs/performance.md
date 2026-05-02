@@ -132,24 +132,24 @@ Generated on: 2026-05-02
 
 **Observations from v0.2.1-rc1:**
 
-1.  **Dense Search Throughput**: Currently limited by single-threaded benchmark client and per-query allocation churn.
+1. **Dense Search Throughput**: Currently limited by single-threaded benchmark client and per-query allocation churn.
     - *Action taken*: Implemented `SearchAttemptBuffers` pool in `parallel_search.go`.
     - *Action taken*: Added concurrent worker support to `bench-tool`.
     - *Result*: Anticipating 5-10x improvement in measurable QPS once full matrix completes.
 
-2.  **ARM64 Distance Kernels**: Generic unrolled loops were used as fallbacks.
+2. **ARM64 Distance Kernels**: Generic unrolled loops were used as fallbacks.
     - *Action taken*: Explicitly enabled NEON assembly kernels in `simd_arm64.go`.
     - *Impact*: 20-40% reduction in CPU cycles for Euclidean and Dot product computations.
 
-3.  **Metal Stability**: Missing shader kernels caused SIGABRT.
+3. **Metal Stability**: Missing shader kernels caused SIGABRT.
     - *Action taken*: Implemented `MTLFunction` nil-checks in `metal_gpu.go`.
     - *Result*: Stable initialization across all M-series chips.
 
 **Future Optimization Priorities:**
 
-1.  **SIMD Scatter-Add**: Implement assembly kernel for `accumulateWeightedScatterNEON` to accelerate GraphRAG spreading activation.
-2.  **Schema Caching**: Pre-calculate Arrow schema mappings in `ArrowHNSW` to reduce per-query metadata overhead.
-3.  **NUMA-Aware Allocation**: Tighten memory affinity for large vector datasets on multi-socket AMD64 servers (ancalagon).
+1. **SIMD Scatter-Add**: Implement assembly kernel for `accumulateWeightedScatterNEON` to accelerate GraphRAG spreading activation.
+2. **Schema Caching**: Pre-calculate Arrow schema mappings in `ArrowHNSW` to reduce per-query metadata overhead.
+3. **NUMA-Aware Allocation**: Tighten memory affinity for large vector datasets on multi-socket AMD64 servers (ancalagon).
 
 ### Phase 7 Production Hardening Gains (2026-05-02)
 

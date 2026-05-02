@@ -18,7 +18,7 @@ func AdmissionInterceptor(admission *store.AdmissionController) grpc.UnaryServer
 		opType := "search"
 		if strings.Contains(info.FullMethod, "DoPut") || strings.Contains(info.FullMethod, "Put") {
 			opType = "ingest"
-		} else if strings.Contains(info.FullMethod, "Admin") {
+		} else if strings.Contains(info.FullMethod, "Admin") || strings.Contains(info.FullMethod, "DoAction") {
 			opType = "maintenance"
 		}
 

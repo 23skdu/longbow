@@ -171,7 +171,3 @@ not_all_zeros:
 	VZEROUPPER
 	RET
 
-// func pause()
-TEXT ·pause(SB), NOSPLIT, $0-0
-	PAUSE
-	RET

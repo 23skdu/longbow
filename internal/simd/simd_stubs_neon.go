@@ -3,6 +3,7 @@
 package simd
 
 import (
+	"errors"
 	"unsafe"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
@@ -83,6 +84,26 @@ func sumNEON(src []float32) float32 { return sumGeneric(src) }
 func maxNEON(src []float32) float32 { return maxGeneric(src) }
 func minNEON(src []float32) float32 { return minGeneric(src) }
 
+func manhattanNEON(a, b []float32) (float32, error) {
+	return 0, errors.New("simd: NEON not supported on this architecture")
+}
+
+func chebyshevNEON(a, b []float32) (float32, error) {
+	return 0, errors.New("simd: NEON not supported on this architecture")
+}
+
+func brayCurtisNEON(a, b []float32) (float32, error) {
+	return 0, errors.New("simd: NEON not supported on this architecture")
+}
+
 func memcpyNEON(dst, src unsafe.Pointer, n int) { memcpyGeneric(dst, src, n) }
+
+// Static assertion to keep Go functions "used" even if not in the active dispatch path.
+var _ = func() {
+	if false {
+		_ = adcBatchNEON(nil, nil, 0, nil)
+		_ = euclideanVerticalBatchNEON(nil, nil, nil)
+	}
+}
 
 

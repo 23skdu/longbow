@@ -453,13 +453,9 @@ TEXT ·chebyshevAVX2Kernel(SB), NOSPLIT, $0-28
 TEXT ·sigmoidAVX512Kernel(SB), NOSPLIT, $0-24
 	RET
 
-// func expAVX512Kernel(src uintptr, dst uintptr, n int)
-TEXT ·expAVX512Kernel(SB), NOSPLIT, $0-24
-	RET
+// expAVX512Kernel moved to transcendental_amd64.s
 
-// func logAVX512Kernel(src uintptr, dst uintptr, n int)
-TEXT ·logAVX512Kernel(SB), NOSPLIT, $0-24
-	RET
+// logAVX512Kernel moved to transcendental_amd64.s
 
 // func int8ToFloat32AVX2Kernel(src uintptr, dst uintptr, n int)
 TEXT ·int8ToFloat32AVX2Kernel(SB), NOSPLIT, $0-24
@@ -796,13 +792,9 @@ TEXT ·argMinAVX512Kernel(SB), NOSPLIT, $0-32
 	MOVQ  AX, idx+24(FP)
 	RET
 
-// func expAVX2Kernel(src uintptr, dst uintptr, n int)
-TEXT ·expAVX2Kernel(SB), NOSPLIT, $0-24
-	RET
+// expAVX2Kernel moved to transcendental_amd64.s
 
-// func logAVX2Kernel(src uintptr, dst uintptr, n int)
-TEXT ·logAVX2Kernel(SB), NOSPLIT, $0-24
-	RET
+// logAVX2Kernel moved to transcendental_amd64.s
 
 // func softmaxAVX2Kernel(src uintptr, dst uintptr, n int)
 TEXT ·softmaxAVX2Kernel(SB), NOSPLIT, $0-24

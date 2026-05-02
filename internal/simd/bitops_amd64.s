@@ -198,8 +198,8 @@ loop_cnt_avx2:
     POPCNTQ BX, BX
     ADDQ    BX, AX
     
-    ADDQ    , SI
-    SUBQ    , CX
+    ADDQ    $32, SI
+    SUBQ    $4, CX
     JMP     loop_cnt_avx2
 
 tail_cnt_avx2:
@@ -208,7 +208,7 @@ tail_cnt_avx2:
     MOVQ    (SI), BX
     POPCNTQ BX, BX
     ADDQ    BX, AX
-    ADDQ    , SI
+    ADDQ    $8, SI
     DECQ    CX
     JMP     tail_cnt_avx2
 

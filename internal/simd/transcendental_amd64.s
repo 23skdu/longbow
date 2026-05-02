@@ -63,8 +63,8 @@ exp_tail:
 	// Actually, we can use a mask for the last <16 elements.
 	
 	MOVQ $0xFFFF, R8
-	MOVQ DX, R9
-	SHLQ R9, R8
+	MOVQ DX, CX
+	SHLQ CX, R8
 	NOTQ R8
 	KMOVQ R8, K1
 	
@@ -131,7 +131,8 @@ log_loop:
 	VMULPS      Z2, Z3, Z3 // Z3 = log(f)
 	
 	// log(x) = n*ln(2) + log(f)
-	VFMADD213PS Z3, ln2_const_tr<>+0(SB), Z1
+	VMOVUPS ln2_const_tr<>+0(SB), Z4
+	VFMADD213PS Z3, Z4, Z1
 	
 	VMOVUPS Z1, (CX)
 	
@@ -145,8 +146,8 @@ log_tail:
 	JE   log_done
 	
 	MOVQ $0xFFFF, R8
-	MOVQ DX, R9
-	SHLQ R9, R8
+	MOVQ DX, CX
+	SHLQ CX, R8
 	NOTQ R8
 	KMOVQ R8, K1
 	
@@ -168,7 +169,8 @@ log_tail:
 	VFMADD213PS log_a2_const_tr<>+0(SB), Z2, Z3
 	VFMADD213PS log_a1_const_tr<>+0(SB), Z2, Z3
 	VMULPS      Z2, Z3, Z3
-	VFMADD213PS Z3, ln2_const_tr<>+0(SB), Z1
+	VMOVUPS ln2_const_tr<>+0(SB), Z4
+	VFMADD213PS Z3, Z4, Z1
 	
 	VMOVUPS Z1, K1, (CX)
 
@@ -208,19 +210,19 @@ exp2_loop:
 	// Poly: 2^f approx c0 + f*(c1 + f*(c2 + f*(c3 + f*(c4 + f*c5))))
 	VBROADCASTSS exp_c0_const_tr<>+0(SB), Y3
 	// FMA on AVX2
-	VMOVUPS      exp_c5_const_tr<>+0(SB), Y4
-	VBROADCASTSS Y4, Y4
-	VMOVUPS      exp_c4_const_tr<>+0(SB), Y5
-	VBROADCASTSS Y5, Y5
+	VMOVUPS      exp_c5_const_tr<>+0(SB), X4
+	VBROADCASTSS X4, Y4
+	VMOVUPS      exp_c4_const_tr<>+0(SB), X5
+	VBROADCASTSS X5, Y5
 	VFMADD213PS  Y5, Y1, Y4
-	VMOVUPS      exp_c3_const_tr<>+0(SB), Y5
-	VBROADCASTSS Y5, Y5
+	VMOVUPS      exp_c3_const_tr<>+0(SB), X5
+	VBROADCASTSS X5, Y5
 	VFMADD213PS  Y5, Y1, Y4
-	VMOVUPS      exp_c2_const_tr<>+0(SB), Y5
-	VBROADCASTSS Y5, Y5
+	VMOVUPS      exp_c2_const_tr<>+0(SB), X5
+	VBROADCASTSS X5, Y5
 	VFMADD213PS  Y5, Y1, Y4
-	VMOVUPS      exp_c1_const_tr<>+0(SB), Y5
-	VBROADCASTSS Y5, Y5
+	VMOVUPS      exp_c1_const_tr<>+0(SB), X5
+	VBROADCASTSS X5, Y5
 	VFMADD213PS  Y5, Y1, Y4
 	VFMADD213PS  Y3, Y1, Y4    // Y4 = 2^f
 	
@@ -284,20 +286,20 @@ log2_loop:
 	VSUBPS Y2, Y0, Y2 // Y2 = m = f - 1
 	
 	VBROADCASTSS log_a6_const_tr<>+0(SB), Y3
-	VMOVUPS      log_a5_const_tr<>+0(SB), Y4
-	VBROADCASTSS Y4, Y4
+	VMOVUPS      log_a5_const_tr<>+0(SB), X4
+	VBROADCASTSS X4, Y4
 	VFMADD213PS  Y4, Y2, Y3
-	VMOVUPS      log_a4_const_tr<>+0(SB), Y4
-	VBROADCASTSS Y4, Y4
+	VMOVUPS      log_a4_const_tr<>+0(SB), X4
+	VBROADCASTSS X4, Y4
 	VFMADD213PS  Y4, Y2, Y3
-	VMOVUPS      log_a3_const_tr<>+0(SB), Y4
-	VBROADCASTSS Y4, Y4
+	VMOVUPS      log_a3_const_tr<>+0(SB), X4
+	VBROADCASTSS X4, Y4
 	VFMADD213PS  Y4, Y2, Y3
-	VMOVUPS      log_a2_const_tr<>+0(SB), Y4
-	VBROADCASTSS Y4, Y4
+	VMOVUPS      log_a2_const_tr<>+0(SB), X4
+	VBROADCASTSS X4, Y4
 	VFMADD213PS  Y4, Y2, Y3
-	VMOVUPS      log_a1_const_tr<>+0(SB), Y4
-	VBROADCASTSS Y4, Y4
+	VMOVUPS      log_a1_const_tr<>+0(SB), X4
+	VBROADCASTSS X4, Y4
 	VFMADD213PS  Y4, Y2, Y3
 	VMULPS       Y2, Y3, Y3 // Y3 = log(f)
 	

@@ -1,19 +1,19 @@
 //go:build amd64
- 
+
 package simd
- 
+
 import "unsafe"
- 
+
 // bm25ScoreBatchAVX512 is implemented in sparse_score_amd64.s
 func bm25ScoreBatchAVX512(tfs, docLens unsafe.Pointer, n int, invAvgDL, idf, k1, b float32, results unsafe.Pointer)
- 
+
 func bm25ScoreBatchArch(tfs []int, docLengths []int, avgDL float32, idf float32, k1 float32, b float32) []float32 {
 	if len(tfs) == 0 {
 		return nil
 	}
- 
+
 	results := make([]float32, len(tfs))
-	if hasAVX512 {
+	if features.HasAVX512 {
 		invAvgDL := 1.0 / avgDL
 		if avgDL == 0 {
 			invAvgDL = 1.0

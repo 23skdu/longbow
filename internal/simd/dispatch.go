@@ -6,6 +6,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/float16"
+	"unsafe"
 )
 
 // ImplementationDispatch holds all SIMD function pointers for a specific implementation
@@ -58,6 +59,20 @@ type ImplementationDispatch struct {
 
 	// Matrix operations
 	MatMul func(a, b []float32, m, n, k int, dst []float32)
+
+	// Transcendental
+	Sin   func(src, dst []float32)
+	Cos   func(src, dst []float32)
+	Atan2 func(y, x, dst []float32)
+
+	// More reductions
+	ArgMax func(src []float32) int
+	ArgMin func(src []float32) int
+
+	// More distances
+	ManhattanDistance  distanceFunc
+	ChebyshevDistance  distanceFunc
+	BrayCurtisDistance distanceFunc
 }
 
 // Global dispatch table - one per implementation
@@ -102,6 +117,14 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		Max: maxGeneric,
 		Min: minGeneric,
 		MatMul: matMulGeneric,
+		Sin: sinFloat32Generic,
+		Cos: cosFloat32Generic,
+		Atan2: atan2Float32Generic,
+		ArgMax: argMaxGeneric,
+		ArgMin: argMinGeneric,
+		ManhattanDistance: ManhattanDistanceFloat32,
+		ChebyshevDistance: ChebyshevDistanceFloat32,
+		BrayCurtisDistance: BrayCurtisDistanceFloat32,
 	},
 
 	"avx2": {
@@ -144,6 +167,14 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		Max: maxAVX2,
 		Min: minAVX2,
 		MatMul: matMulGeneric,
+		Sin: sinFloat32Generic,
+		Cos: cosFloat32Generic,
+		Atan2: atan2Float32Generic,
+		ArgMax: argMaxGeneric,
+		ArgMin: argMinGeneric,
+		ManhattanDistance: ManhattanDistanceFloat32,
+		ChebyshevDistance: ChebyshevDistanceFloat32,
+		BrayCurtisDistance: BrayCurtisDistanceFloat32,
 	},
 
 	"neon": {
@@ -186,6 +217,14 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		Max: maxNEON,
 		Min: minNEON,
 		MatMul: matMulGeneric,
+		Sin: sinFloat32Generic,
+		Cos: cosFloat32Generic,
+		Atan2: atan2Float32Generic,
+		ArgMax: argMaxGeneric,
+		ArgMin: argMinGeneric,
+		ManhattanDistance: ManhattanDistanceFloat32,
+		ChebyshevDistance: ChebyshevDistanceFloat32,
+		BrayCurtisDistance: BrayCurtisDistanceFloat32,
 	},
 
 	"generic": {
@@ -228,6 +267,14 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		Max: maxGeneric,
 		Min: minGeneric,
 		MatMul: matMulGeneric,
+		Sin: sinFloat32Generic,
+		Cos: cosFloat32Generic,
+		Atan2: atan2Float32Generic,
+		ArgMax: argMaxGeneric,
+		ArgMin: argMinGeneric,
+		ManhattanDistance: ManhattanDistanceFloat32,
+		ChebyshevDistance: ChebyshevDistanceFloat32,
+		BrayCurtisDistance: BrayCurtisDistanceFloat32,
 	},
 }
 
@@ -266,7 +313,7 @@ func initializeDispatch() {
 		cosineDistanceBatchImpl = dispatch.CosineDistanceBatch
 		dotProductBatchImpl = dispatch.DotProductBatch
 		l2SquaredImpl = l2SquaredAVX512
-		prefetchImpl = prefetchNTA
+		prefetchImpl = func(p unsafe.Pointer) { prefetchNTA(uintptr(p)) }
 		memcpyNTAImpl = memcpyGeneric // Use generic for now on x86, we will add NTA later
 		matchInt64Impl = matchInt64AVX512
 		matchInt32Impl = matchInt32AVX512
@@ -314,6 +361,14 @@ func initializeDispatch() {
 		maxFloat32Impl = dispatch.Max
 		minFloat32Impl = dispatch.Min
 		matMulFloat32Impl = dispatch.MatMul
+		sinFloat32Impl = dispatch.Sin
+		cosFloat32Impl = dispatch.Cos
+		atan2Float32Impl = dispatch.Atan2
+		argMaxFloat32Impl = dispatch.ArgMax
+		argMinFloat32Impl = dispatch.ArgMin
+		manhattanDistanceImpl = dispatch.ManhattanDistance
+		chebyshevDistanceImpl = dispatch.ChebyshevDistance
+		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
 	case "avx2":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -337,7 +392,7 @@ func initializeDispatch() {
 		cosineDistanceBatchImpl = cosineBatchGeneric // AVX2 batch kernel is a stub; use verified generic
 		dotProductBatchImpl = dotBatchGeneric       // AVX2 batch kernel is a stub; use verified generic
 		l2SquaredImpl = l2SquaredAVX2 // uses AVX2 kernel (no sqrt)
-		prefetchImpl = prefetchNTA
+		prefetchImpl = func(p unsafe.Pointer) { prefetchNTA(uintptr(p)) }
 		memcpyNTAImpl = memcpyGeneric
 		matchInt64Impl = matchInt64AVX2
 		matchInt32Impl = matchInt32AVX2
@@ -385,6 +440,14 @@ func initializeDispatch() {
 		maxFloat32Impl = dispatch.Max
 		minFloat32Impl = dispatch.Min
 		matMulFloat32Impl = dispatch.MatMul
+		sinFloat32Impl = dispatch.Sin
+		cosFloat32Impl = dispatch.Cos
+		atan2Float32Impl = dispatch.Atan2
+		argMaxFloat32Impl = dispatch.ArgMax
+		argMinFloat32Impl = dispatch.ArgMin
+		manhattanDistanceImpl = dispatch.ManhattanDistance
+		chebyshevDistanceImpl = dispatch.ChebyshevDistance
+		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
 	case "neon":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -461,6 +524,14 @@ func initializeDispatch() {
 		maxFloat32Impl = dispatch.Max
 		minFloat32Impl = dispatch.Min
 		matMulFloat32Impl = dispatch.MatMul
+		sinFloat32Impl = dispatch.Sin
+		cosFloat32Impl = dispatch.Cos
+		atan2Float32Impl = dispatch.Atan2
+		argMaxFloat32Impl = dispatch.ArgMax
+		argMinFloat32Impl = dispatch.ArgMin
+		manhattanDistanceImpl = dispatch.ManhattanDistance
+		chebyshevDistanceImpl = dispatch.ChebyshevDistance
+		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
 	case "generic":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance128Impl = dispatch.EuclideanDistance128
@@ -532,6 +603,14 @@ func initializeDispatch() {
 		maxFloat32Impl = dispatch.Max
 		minFloat32Impl = dispatch.Min
 		matMulFloat32Impl = dispatch.MatMul
+		sinFloat32Impl = dispatch.Sin
+		cosFloat32Impl = dispatch.Cos
+		atan2Float32Impl = dispatch.Atan2
+		argMaxFloat32Impl = dispatch.ArgMax
+		argMinFloat32Impl = dispatch.ArgMin
+		manhattanDistanceImpl = dispatch.ManhattanDistance
+		chebyshevDistanceImpl = dispatch.ChebyshevDistance
+		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
 	}
 
 	// Register current implementations into the new dynamic registry.

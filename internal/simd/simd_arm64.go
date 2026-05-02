@@ -3,7 +3,6 @@
 package simd
 
 import (
-	"math"
 	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow/float16"
@@ -177,31 +176,19 @@ func float16ToFloat32NEON(src []float16.Num, dst []float32) {
 }
 
 func sigmoidNEON(src, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	sigmoidNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+	sigmoidGeneric(src, dst)
 }
 
 func expNEON(src, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	expNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+	expGeneric(src, dst)
 }
 
 func logNEON(src, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	logNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+	logGeneric(src, dst)
 }
 
 func softmaxNEON(src, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	softmaxNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+	softmaxGeneric(src, dst)
 }
 
 func memcpyNEON(dst, src unsafe.Pointer, n int) {
@@ -217,24 +204,15 @@ func dotFloat64NEON(a, b []float64) (float32, error) {
 }
 
 func sumNEON(src []float32) float32 {
-	if len(src) == 0 {
-		return 0
-	}
-	return sumNEONKernel(unsafe.Pointer(&src[0]), len(src))
+	return sumGeneric(src)
 }
 
 func maxNEON(src []float32) float32 {
-	if len(src) == 0 {
-		return -math.MaxFloat32
-	}
-	return maxNEONKernel(unsafe.Pointer(&src[0]), len(src))
+	return maxGeneric(src)
 }
 
 func minNEON(src []float32) float32 {
-	if len(src) == 0 {
-		return math.MaxFloat32
-	}
-	return minNEONKernel(unsafe.Pointer(&src[0]), len(src))
+	return minGeneric(src)
 }
 
 // Internal assembly kernels (must have Go declarations to satisfy go vet)
@@ -308,6 +286,18 @@ func l2Squared384NEONKernel(a, b []float32) float32
 func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
 //go:noescape
 func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
+
+func manhattanNEON(a, b []float32) (float32, error) {
+	return ManhattanDistanceFloat32(a, b)
+}
+
+func chebyshevNEON(a, b []float32) (float32, error) {
+	return ChebyshevDistanceFloat32(a, b)
+}
+
+func brayCurtisNEON(a, b []float32) (float32, error) {
+	return BrayCurtisDistanceFloat32(a, b)
+}
 
 //go:noescape
 func pause()

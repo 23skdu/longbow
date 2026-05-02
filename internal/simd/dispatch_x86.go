@@ -30,6 +30,14 @@ func init() {
 	dispatchTable["avx2"].Min = minAVX2
 	dispatchTable["avx2"].Exp = expAVX2
 	dispatchTable["avx2"].Log = logAVX2
+	dispatchTable["avx2"].Sin = sinAVX2
+	dispatchTable["avx2"].Cos = cosAVX2
+	dispatchTable["avx2"].Atan2 = atan2AVX2
 	dispatchTable["avx2"].Softmax = softmaxAVX2
 	dispatchTable["avx2"].Sigmoid = sigmoidAVX2
+	dispatchTable["avx2"].ArgMax = argMaxGeneric
+	dispatchTable["avx2"].ArgMin = argMinGeneric
+	dispatchTable["avx2"].ManhattanDistance = ManhattanDistanceFloat32
+	dispatchTable["avx2"].ChebyshevDistance = ChebyshevDistanceFloat32
+	dispatchTable["avx2"].BrayCurtisDistance = BrayCurtisDistanceFloat32
 }

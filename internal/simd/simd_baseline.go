@@ -3,6 +3,11 @@ package simd
 import (
 	"errors"
 	"math"
+	"runtime"
+	"sync"
+
+	lbcore "github.com/23skdu/longbow/internal/core"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // =============================================================================
@@ -786,4 +791,223 @@ func cosineComplex128Unrolled(a, b []complex128) (float32, error) {
 	}
 	similarity := dotR / (math.Sqrt(normA) * math.Sqrt(normB))
 	return float32(1.0 - similarity), nil
+}
+
+// ManhattanDistanceFloat32 calculates the L1 distance between two float32 vectors.
+func ManhattanDistanceFloat32(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum float32
+	for i := range a {
+		d := a[i] - b[i]
+		if d < 0 {
+			sum -= d
+		} else {
+			sum += d
+		}
+	}
+	return sum, nil
+}
+
+// ChebyshevDistanceFloat32 calculates the L-infinity distance between two float32 vectors.
+func ChebyshevDistanceFloat32(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	var max float32
+	for i := range a {
+		d := a[i] - b[i]
+		if d < 0 {
+			d = -d
+		}
+		if d > max {
+			max = d
+		}
+	}
+	return max, nil
+}
+
+// BrayCurtisDistanceFloat32 calculates the Bray-Curtis distance between two float32 vectors.
+func BrayCurtisDistanceFloat32(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sumAbsDiff, sumAbsTotal float32
+	for i := range a {
+		d := a[i] - b[i]
+		if d < 0 {
+			sumAbsDiff -= d
+		} else {
+			sumAbsDiff += d
+		}
+		s := a[i] + b[i]
+		if s < 0 {
+			sumAbsTotal -= s
+		} else {
+			sumAbsTotal += s
+		}
+	}
+	if sumAbsTotal == 0 {
+		return 0, nil
+	}
+	return sumAbsDiff / sumAbsTotal, nil
+}
+
+// ManhattanDistanceF16 calculates the L1 distance between two float16 vectors.
+func ManhattanDistanceF16(a, b []float16.Num) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum float32
+	for i := range a {
+		d := a[i].Float32() - b[i].Float32()
+		if d < 0 {
+			sum -= d
+		} else {
+			sum += d
+		}
+	}
+	return sum, nil
+}
+
+// ChebyshevDistanceF16 calculates the L-infinity distance between two float16 vectors.
+func ChebyshevDistanceF16(a, b []float16.Num) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	var max float32
+	for i := range a {
+		d := a[i].Float32() - b[i].Float32()
+		if d < 0 {
+			d = -d
+		}
+		if d > max {
+			max = d
+		}
+	}
+	return max, nil
+}
+
+// BrayCurtisDistanceF16 calculates the Bray-Curtis distance between two float16 vectors.
+func BrayCurtisDistanceF16(a, b []float16.Num) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sumAbsDiff, sumAbsTotal float32
+	for i := range a {
+		va, vb := a[i].Float32(), b[i].Float32()
+		d := va - vb
+		if d < 0 {
+			sumAbsDiff -= d
+		} else {
+			sumAbsDiff += d
+		}
+		s := va + vb
+		if s < 0 {
+			sumAbsTotal -= s
+		} else {
+			sumAbsTotal += s
+		}
+	}
+	if sumAbsTotal == 0 {
+		return 0, nil
+	}
+	return sumAbsDiff / sumAbsTotal, nil
+}
+
+// AccumulateWeightedScatterFloat32 adds weighted values to a destination slice using scatter indices.
+// dst[targets[i]] += weights[i] * factor
+func AccumulateWeightedScatterFloat32(dst []float32, targets []uint32, weights []float32, factor float32) {
+	n := len(targets)
+	if len(weights) < n {
+		n = len(weights)
+	}
+	
+	// Unrolled 4x for better performance
+	i := 0
+	for ; i <= n-4; i += 4 {
+		t0, t1, t2, t3 := targets[i], targets[i+1], targets[i+2], targets[i+3]
+		w0, w1, w2, w3 := weights[i], weights[i+1], weights[i+2], weights[i+3]
+		
+		dst[t0] += w0 * factor
+		dst[t1] += w1 * factor
+		dst[t2] += w2 * factor
+		dst[t3] += w3 * factor
+	}
+	
+	for ; i < n; i++ {
+		dst[targets[i]] += weights[i] * factor
+	}
+}
+
+func sinFloat32Generic(src, dst []float32) {
+	for i, v := range src {
+		dst[i] = float32(math.Sin(float64(v)))
+	}
+}
+
+func cosFloat32Generic(src, dst []float32) {
+	for i, v := range src {
+		dst[i] = float32(math.Cos(float64(v)))
+	}
+}
+
+func atan2Float32Generic(y, x, dst []float32) {
+	for i := range y {
+		dst[i] = float32(math.Atan2(float64(y[i]), float64(x[i])))
+	}
+}
+
+func haversineBatchGeneric(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32) {
+	lat1 := centerLat * math.Pi / 180.0
+	lon1 := centerLon * math.Pi / 180.0
+	cosLat1 := math.Cos(lat1)
+	
+	// Parallelize for large batches
+	if len(points) < 1024 {
+		for i, p := range points {
+			lat2 := p.Lat * math.Pi / 180.0
+			lon2 := p.Lon * math.Pi / 180.0
+			dLat := lat2 - lat1
+			dLon := lon2 - lon1
+			a := math.Sin(dLat/2)*math.Sin(dLat/2) + cosLat1*math.Cos(lat2)*math.Sin(dLon/2)*math.Sin(dLon/2)
+			c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+			results[i] = float32(earthRadius * c)
+		}
+		return
+	}
+
+	numCPUs := runtime.NumCPU()
+	if numCPUs < 1 { numCPUs = 1 }
+	chunkSize := (len(points) + numCPUs - 1) / numCPUs
+	
+	var wg sync.WaitGroup
+	for i := 0; i < len(points); i += chunkSize {
+		start := i
+		end := i + chunkSize
+		if end > len(points) { end = len(points) }
+		
+		wg.Add(1)
+		go func(s, e int) {
+			defer wg.Done()
+			for j := s; j < e; j++ {
+				p := points[j]
+				lat2 := p.Lat * math.Pi / 180.0
+				lon2 := p.Lon * math.Pi / 180.0
+				dLat := lat2 - lat1
+				dLon := lon2 - lon1
+				a := math.Sin(dLat/2)*math.Sin(dLat/2) + cosLat1*math.Cos(lat2)*math.Sin(dLon/2)*math.Sin(dLon/2)
+				c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+				results[j] = float32(earthRadius * c)
+			}
+		}(start, end)
+	}
+	wg.Wait()
 }

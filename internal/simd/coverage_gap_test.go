@@ -106,7 +106,7 @@ func TestCoverage_F16BatchStubs(t *testing.T) {
 
 func TestCoverage_Misc(t *testing.T) {
 	dummy := make([]byte, 16)
-	prefetchNTA(unsafe.Pointer(&dummy[0]))
+	prefetchNTA(uintptr(unsafe.Pointer(&dummy[0])))
 	
 	andBytesAVX2(dummy, dummy)
 	orBytesAVX2(dummy, dummy)

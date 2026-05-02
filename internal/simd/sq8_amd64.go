@@ -19,7 +19,7 @@ func euclideanSQ8AVX2(a, b []byte) (int32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	return euclideanSQ8AVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+	return euclideanSQ8AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), len(a)), nil
 }
 
 /*
@@ -29,5 +29,4 @@ func euclideanSQ8AVX512(a, b []byte) (int32, error) {
 }
 */
 
-//go:noescape
-func euclideanSQ8AVX2Kernel(a, b unsafe.Pointer, n int) int32
+// euclideanSQ8AVX2Kernel is now in all_kernels_stubs_amd64.go

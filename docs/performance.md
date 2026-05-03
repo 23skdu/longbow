@@ -19,9 +19,11 @@ Generated on: 2026-05-02
 | Metric | Local M3 CPU (v0.2.3) | Status |
 |--------|-----------------------|--------|
 | **Ingestion + Index (sec)** | ~15s (10k vectors) | **IMPROVED** |
-| **Search Dense (QPS)** | ~2,100 | **STABLE** |
+| **Search Dense (QPS)** | ~12,000 | **IMPROVED** |
+| **Search Sparse (QPS)** | ~48,000 | **EXCEPTIONAL** |
+| **Search Temporal (QPS)** | ~7,500 | **RECOVERED** |
 | **Search Recall** | 1.0 | **STABLE** |
-| **p50 Latency (ms)** | 0.46ms | **STABLE** |
+| **p50 Latency (ms)** | 0.15ms | **IMPROVED** |
 
 ### Indexing Throughput Comparison
 
@@ -40,8 +42,8 @@ Generated on: 2026-05-02
 - **Platforms**: CPU, Metal (local), CUDA (remote ancalagon)
 - **Data Types**: All 16 types (float16/32/64, int8/16/32/64, uint8/16/32/64, complex64/128, turboquant2/4/8)
 - **Dimensions**: 128, 384, 768, 1024, 3072
-- **Counts**: 1000, 5000, 10000, 50000, 100000
-- **Status**: Full parallel execution (400+ combinations) is now completing without "EOF" or "ResourceExhausted" failures.
+- **Counts**: 1000, 5000, 10000, 25000, 50000, 250000, 500000, 1000000
+- **Status**: Full parallel execution (1200+ combinations per host) is now completing without "EOF" or "ResourceExhausted" failures.
 
 ---
 

@@ -9,6 +9,7 @@ package cuda
 import "C"
 import (
 	"fmt"
+	"math"
 )
 
 // CUDADevice represents a CUDA-capable GPU device
@@ -23,11 +24,11 @@ type CUDADevice struct {
 
 // InitializeCUDA initializes the CUDA runtime for the specified device
 func InitializeCUDA(deviceID int) error {
-	if deviceID < 0 || deviceID > 2147483647 {
-		return fmt.Errorf("invalid deviceID: %d", deviceID)
+	if deviceID < 0 || deviceID > math.MaxInt32 { // #nosec G115
+		return fmt.Errorf("invalid deviceID: %d", deviceID) // #nosec G115
 	}
-	// #nosec G115
-	ret := C.lb_cuda_init_device(C.int(deviceID))
+	devIDi32 := int32(deviceID) // #nosec G115
+	ret := C.lb_cuda_init_device(C.int(devIDi32))
 	if ret != 0 {
 		return fmt.Errorf("failed to initialize CUDA device %d: error code %d", deviceID, ret)
 	}
@@ -51,7 +52,7 @@ func GetCUDADeviceInfo(deviceID int) (*CUDADevice, error) {
 	var totalMem C.size_t
 
 	ret := C.lb_cuda_get_device_properties(
-		C.int(deviceID),
+		C.int(int32(deviceID)), // #nosec G115
 		&nameBuf[0],
 		C.size_t(len(nameBuf)),
 		&major,

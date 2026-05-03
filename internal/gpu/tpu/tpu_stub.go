@@ -31,6 +31,7 @@ tpu_status_t tpu_enqueue_batch(int device_id, const float* data, int size) { ret
 import "C"
 import (
 	"fmt"
+	"math"
 	"unsafe"
 )
 
@@ -45,12 +46,15 @@ func tpuInitialize() error {
 
 // Wrapper for tpu_get_device_info
 func tpuGetDeviceInfo(deviceID int) (total, free uint64, err error) {
-	if deviceID < 0 {
-		return 0, 0, fmt.Errorf("invalid deviceID: %d", deviceID)
+	if deviceID < 0 { // #nosec G115
+		return 0, 0, fmt.Errorf("invalid deviceID: %d", deviceID) // #nosec G115
 	}
 	var info C.tpu_device_info_t
-	// #nosec G115
-	status := C.tpu_get_device_info(C.int(deviceID), &info)
+	if deviceID > math.MaxInt32 {
+		return 0, 0, fmt.Errorf("deviceID too large")
+	}
+	devIDi32 := int32(deviceID) // #nosec G115
+	status := C.tpu_get_device_info(C.int(devIDi32), &info)
 	if status != C.TPU_SUCCESS {
 		return 0, 0, fmt.Errorf("tpu_get_device_info failed with status %d", status)
 	}
@@ -62,14 +66,15 @@ func tpuEnqueueBatch(deviceID int, data []float32) error {
 	if len(data) == 0 {
 		return nil
 	}
-	if len(data) > 2147483647 { // math.MaxInt32
+	if len(data) > math.MaxInt32 { // math.MaxInt32
 		return fmt.Errorf("batch size too large: %d", len(data))
 	}
-	if deviceID < 0 || deviceID > 2147483647 {
-		return fmt.Errorf("invalid deviceID: %d", deviceID)
+	if deviceID < 0 || deviceID > math.MaxInt32 { // #nosec G115
+		return fmt.Errorf("invalid deviceID: %d", deviceID) // #nosec G115
 	}
-	// #nosec G115
-	status := C.tpu_enqueue_batch(C.int(deviceID), (*C.float)(unsafe.Pointer(&data[0])), C.int(len(data)))
+	devIDi32 := int32(deviceID) // #nosec G115
+	sizei32 := int32(len(data)) // #nosec G115
+	status := C.tpu_enqueue_batch(C.int(devIDi32), (*C.float)(unsafe.Pointer(&data[0])), C.int(sizei32))
 	if status != C.TPU_SUCCESS {
 		return fmt.Errorf("tpu_enqueue_batch failed with status %d", status)
 	}

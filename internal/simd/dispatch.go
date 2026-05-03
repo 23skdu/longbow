@@ -16,6 +16,11 @@ type ImplementationDispatch struct {
 	CosineDistance    distanceFunc
 	DotProduct        distanceFunc
 
+	// F16 distance functions
+	EuclideanDistanceF16 distanceF16Func
+	CosineDistanceF16    distanceF16Func
+	DotProductF16        distanceF16Func
+
 	// Batch functions
 	EuclideanDistanceBatch     distanceBatchFunc
 	CosineDistanceBatch        distanceBatchFunc
@@ -95,7 +100,7 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		DotProductBatch:            dotBatchGeneric,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
 
-		EuclideanDistance128:  euclidean128Unrolled4x,
+		EuclideanDistance128:  euclideanNEON,
 		EuclideanDistance384:  euclidean384AVX512,
 		EuclideanDistance768:  euclidean768AVX512,
 		EuclideanDistance1024: euclidean1024AVX512,
@@ -201,12 +206,12 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		DotProductBatch:            dotBatchNEON,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
 
-		EuclideanDistance128:  euclidean128NEON,
-		EuclideanDistance384:  euclidean384NEON,
-		EuclideanDistance768:  euclidean768NEON,
-		EuclideanDistance1024: euclidean1024NEON,
-		EuclideanDistance1536: euclidean1536NEON,
-		EuclideanDistance3072: euclidean3072NEON,
+		EuclideanDistance128:  euclideanNEON,
+		EuclideanDistance384:  euclideanNEON,
+		EuclideanDistance768:  euclideanNEON,
+		EuclideanDistance1024: euclideanNEON,
+		EuclideanDistance1536: euclideanNEON,
+		EuclideanDistance3072: euclideanNEON,
 
 		DotProduct128:  dot128NEON,
 		DotProduct384:  dot384NEON,
@@ -254,7 +259,7 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		DotProductBatch:            dotBatchGeneric,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
 
-		EuclideanDistance128:  euclidean128Unrolled4x,
+		EuclideanDistance128:  euclideanNEON,
 		EuclideanDistance384:  euclidean384Unrolled4x,
 		EuclideanDistance768:  euclidean768Unrolled4x,
 		EuclideanDistance1024: euclidean1024Blocked,
@@ -498,10 +503,10 @@ func initializeDispatch() {
 		dotProductBatchImpl = dotBatchNEON
 		l2SquaredImpl = l2SquaredNEON
 		prefetchImpl = prefetchGeneric
-		matchInt64Impl = matchInt64Neon
-		matchInt32Impl = matchInt32Neon
-		matchFloat32Impl = matchFloat32Neon
-		matchFloat64Impl = matchFloat64Neon
+		matchInt64Impl = matchInt64Generic
+		matchInt32Impl = matchInt32Generic
+		matchFloat32Impl = matchFloat32Generic
+		matchFloat64Impl = matchFloat64Generic
 		adcDistanceBatchImpl = adcBatchGeneric
 		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric // Fallback - vertical batch has separate issues
 		cosineDistanceBatchImpl = cosineBatchNEON // Temp fallback
@@ -512,9 +517,9 @@ func initializeDispatch() {
 		notBytesImpl = notBytesGeneric
 		isAllZerosImpl = isAllZerosGeneric
 		// F16 Kernels
-		euclideanDistanceF16Impl = euclideanF16NEON
-		cosineDistanceF16Impl = cosineF16NEON
-		dotProductF16Impl = dotF16NEON
+		euclideanDistanceF16Impl = euclideanF16Unrolled4x
+		cosineDistanceF16Impl = cosineF16Unrolled4x
+		dotProductF16Impl = dotF16Unrolled4x
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
 		euclideanDistanceFloat64Impl = euclideanFloat64NEON

@@ -1,0 +1,12 @@
+# github.com/23skdu/longbow/internal/store/internal/core [github.com/23skdu/longbow/internal/store/internal/core.test]
+internal/store/internal/core/arrow_hnsw.go:2293:10: assignment mismatch: 1 variable but h.insertInternal returns 2 values
+internal/store/internal/core/arrow_hnsw.go:2293:40: not enough arguments in call to h.insertInternal
+	have (uint32, any, number, bool)
+	want (uint32, any, int, bool, *"github.com/23skdu/longbow/internal/store/types".GraphData)
+internal/store/internal/core/arrow_hnsw.go:2354:11: assignment mismatch: 1 variable but h.insertInternal returns 2 values
+internal/store/internal/core/arrow_hnsw.go:2354:41: not enough arguments in call to h.insertInternal
+	have (uint32, any, number, bool)
+	want (uint32, any, int, bool, *"github.com/23skdu/longbow/internal/store/types".GraphData)
+internal/store/internal/core/arrow_hnsw_bulk.go:168:17: h.EnsureChunks undefined (type *ArrowHNSW has no field or method EnsureChunks)
+FAIL	github.com/23skdu/longbow/internal/store/internal/core [build failed]
+FAIL

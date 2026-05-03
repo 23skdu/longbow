@@ -116,11 +116,24 @@ if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
     META_PORT=$((PORT + 1))
     
     export LONGBOW_MAX_MEMORY=19327352832
+    export LONGBOW_AUTOSCALE_ENABLED=false
     export LONGBOW_LISTEN_ADDR="0.0.0.0:$PORT"
     export LONGBOW_METRICS_ADDR="0.0.0.0:$METRICS_PORT"
     export LONGBOW_META_ADDR="0.0.0.0:$META_PORT"
     
-    nohup "$REPO_DIR/bin/longbow" > "$OUTPUT_DIR/logs/server.log" 2>&1 &
+    # Select binary based on mode
+    case "$MODE" in
+        metal) SERVER_BIN="$REPO_DIR/bin/longbow-metal" ;;
+        cuda)  SERVER_BIN="$REPO_DIR/bin/longbow-cuda" ;;
+        *)     SERVER_BIN="$REPO_DIR/bin/longbow-cpu" ;;
+    esac
+    
+    if [[ ! -x "$SERVER_BIN" ]]; then
+        echo "ERROR: Server binary $SERVER_BIN not found!"
+        exit 1
+    fi
+    
+    nohup "$SERVER_BIN" > "$OUTPUT_DIR/logs/server.log" 2>&1 &
     SERVER_PID=$!
     echo "Server PID: $SERVER_PID"
 

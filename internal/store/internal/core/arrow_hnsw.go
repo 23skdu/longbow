@@ -831,82 +831,92 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any {
 	col := rec.Column(colIdx)
 
-	// Helper to extract values from underlying array
-	extractValues := func(values arrow.Array, start, end int64) any {
-		switch arr := values.(type) {
-		case *arrowarray.Float32:
-			// Handle Complex64
-			if h.config.DataType == types.VectorTypeComplex64 {
-				floats := arr.Float32Values()[start:end]
-				// size should be 2 * dims
-				size := int(end - start)
-				complexes := make([]complex64, size/2)
-				for i := 0; i < size/2; i++ {
-					complexes[i] = complex(floats[2*i], floats[2*i+1])
-				}
-				return complexes
-			}
-			// Important: Return copy or ensuring safety?
-			// Float32Values returns slice. Arrow semantics: slice is view.
-			// But we copy into types.GraphData immediately in InsertWithVector (SetVector does copy).
-			return arr.Float32Values()[start:end]
-
-		case *arrowarray.Float64:
-			// Handle Complex128
-			if h.config.DataType == types.VectorTypeComplex128 {
-				floats := arr.Float64Values()[start:end]
-				size := int(end - start)
-				complexes := make([]complex128, size/2)
-				for i := 0; i < size/2; i++ {
-					complexes[i] = complex(floats[2*i], floats[2*i+1])
-				}
-				return complexes
-			}
-			return arr.Float64Values()[start:end]
-
-		case *arrowarray.Uint32:
-			return arr.Uint32Values()[start:end]
-		case *arrowarray.Int32:
-			return arr.Int32Values()[start:end]
-		case *arrowarray.Uint16:
-			return arr.Uint16Values()[start:end]
-		case *arrowarray.Int16:
-			return arr.Int16Values()[start:end]
-		case *arrowarray.Uint8:
-			return arr.Uint8Values()[start:end]
-		case *arrowarray.Int8:
-			return arr.Int8Values()[start:end]
-		case *arrowarray.Int64:
-			return arr.Int64Values()[start:end]
-		case *arrowarray.Uint64:
-			return arr.Uint64Values()[start:end]
-
-		case *arrowarray.Float16:
-			return arr.Values()[start:end]
-
-		// Add other types as needed
-		default:
-			return nil
-		}
-	}
+	var values arrow.Array
+	var start, end int
 
 	if list, ok := col.(*arrowarray.FixedSizeList); ok {
-		values := list.ListValues()
-		size := int64(list.DataType().(*arrow.FixedSizeListType).Len())
-		// Account for list array offset
-		listOffset := int64(list.Data().Offset())
-		offset := (listOffset + int64(rowIdx)) * size
-		return extractValues(values, offset, offset+size)
-	}
-
-	if list, ok := col.(*arrowarray.List); ok {
+		size := int(list.DataType().(*arrow.FixedSizeListType).Len())
+		values = list.ListValues()
+		start = (list.Offset() + rowIdx) * size
+		end = start + size
+	} else if list, ok := col.(*arrowarray.List); ok {
 		offsets := list.Offsets()
-		start := int64(offsets[rowIdx])
-		end := int64(offsets[rowIdx+1])
-		values := list.ListValues()
-		return extractValues(values, start, end)
+		start = int(offsets[rowIdx])
+		end = int(offsets[rowIdx+1])
+		values = list.ListValues()
+	} else {
+		return nil
 	}
 
+	// Guard against out-of-bounds (should not happen with valid Arrow data)
+	if end > values.Len() {
+		end = values.Len()
+	}
+	if start > end {
+		start = end
+	}
+
+	switch arr := values.(type) {
+	case *arrowarray.Float32:
+		floats := arr.Float32Values()[start:end]
+		if h.config.DataType == types.VectorTypeComplex64 {
+			if len(floats) < 2 { return nil }
+			complexes := make([]complex64, len(floats)/2)
+			for i := 0; i < len(complexes); i++ {
+				complexes[i] = complex(floats[2*i], floats[2*i+1])
+			}
+			return complexes
+		}
+		res := make([]float32, len(floats))
+		copy(res, floats)
+		return res
+
+	case *arrowarray.Float64:
+		floats := arr.Float64Values()[start:end]
+		if h.config.DataType == types.VectorTypeComplex128 {
+			if len(floats) < 2 { return nil }
+			complexes := make([]complex128, len(floats)/2)
+			for i := 0; i < len(complexes); i++ {
+				complexes[i] = complex(floats[2*i], floats[2*i+1])
+			}
+			return complexes
+		}
+		res := make([]float64, len(floats))
+		copy(res, floats)
+		return res
+
+	default:
+		// Generic fallback using Value(i)
+		return h.extractValuesGeneric(values, start, end)
+	}
+}
+
+func (h *ArrowHNSW) extractValuesGeneric(values arrow.Array, start, end int) any {
+	size := end - start
+	if size <= 0 { return nil }
+
+	switch arr := values.(type) {
+	case *arrowarray.Int8:
+		res := make([]int8, size)
+		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		return res
+	case *arrowarray.Uint8:
+		res := make([]uint8, size)
+		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		return res
+	case *arrowarray.Uint32:
+		res := make([]uint32, size)
+		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		return res
+	case *arrowarray.Int32:
+		res := make([]int32, size)
+		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		return res
+	case *arrowarray.Float16:
+		res := make([]float16.Num, size)
+		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		return res
+	}
 	return nil
 }
 

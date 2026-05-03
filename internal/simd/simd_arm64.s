@@ -2303,12 +2303,12 @@ min_done:
     RET
     RET
 
-#define VCMEQ_S4(m, n, d) WORD $(0x4e808c00 | ((m) << 16) | ((n) << 5) | (d))
-#define VCMGT_S4(m, n, d) WORD $(0x4e803400 | ((m) << 16) | ((n) << 5) | (d))
-#define VCMGE_S4(m, n, d) WORD $(0x6e803c00 | ((m) << 16) | ((n) << 5) | (d))
-#define VCMEQ_D2(m, n, d) WORD $(0x4ec08c00 | ((m) << 16) | ((n) << 5) | (d))
-#define VCMGT_D2(m, n, d) WORD $(0x4ec03400 | ((m) << 16) | ((n) << 5) | (d))
-#define VCMGE_D2(m, n, d) WORD $(0x6ec03c00 | ((m) << 16) | ((n) << 5) | (d))
+#define VCMEQ_S4(m, n, d) WORD $(0x4ea08c00 | ((m) << 16) | ((n) << 5) | (d))
+#define VCMGT_S4(m, n, d) WORD $(0x4ea03400 | ((m) << 16) | ((n) << 5) | (d))
+#define VCMGE_S4(m, n, d) WORD $(0x6ea03c00 | ((m) << 16) | ((n) << 5) | (d))
+#define VCMEQ_D2(m, n, d) WORD $(0x4ee08c00 | ((m) << 16) | ((n) << 5) | (d))
+#define VCMGT_D2(m, n, d) WORD $(0x4ee03400 | ((m) << 16) | ((n) << 5) | (d))
+#define VCMGE_D2(m, n, d) WORD $(0x6ee03c00 | ((m) << 16) | ((n) << 5) | (d))
 
 #define VFCMEQ_S4(m, n, d) WORD $(0x4e20e400 | ((m) << 16) | ((n) << 5) | (d))
 #define VFCMGT_S4(m, n, d) WORD $(0x6e20e400 | ((m) << 16) | ((n) << 5) | (d))
@@ -2337,10 +2337,10 @@ loop32:
     CMP     $0, R2; BEQ eq32; CMP $1, R2; BEQ neq32; CMP $2, R2; BEQ gt32; CMP $3, R2; BEQ ge32; CMP $4, R2; BEQ lt32; CMP $5, R2; BEQ le32; B eq32
 eq32:  VCMEQ_S4(0, 2, 3); B store32
 neq32: VCMEQ_S4(0, 2, 3); VEOR V7.B16, V3.B16, V3.B16; B store32
-gt32:  VCMGT_S4(2, 0, 3); B store32
-ge32:  VCMGE_S4(2, 0, 3); B store32
-lt32:  VCMGT_S4(0, 2, 3); B store32
-le32:  VCMGE_S4(0, 2, 3); B store32
+gt32:  VCMGT_S4(0, 2, 3); B store32
+ge32:  VCMGE_S4(0, 2, 3); B store32
+lt32:  VCMGT_S4(2, 0, 3); B store32
+le32:  VCMGE_S4(2, 0, 3); B store32
 store32:
     VAND    V1.B16, V3.B16, V3.B16
     VMOV    V3.S[0], R6; MOVB R6, (R3)

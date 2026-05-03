@@ -1811,6 +1811,38 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	return nil
 }
 
+// EnsureChunks ensures that all chunks in the range [startCID, endCID] are allocated.
+func (h *ArrowHNSW) EnsureChunks(startCID, endCID int, dims int) (*types.GraphData, error) {
+	h.growMu.Lock()
+	defer h.growMu.Unlock()
+	data := h.data.Load()
+	if data == nil {
+		return nil, fmt.Errorf("graph data not initialized")
+	}
+
+	needsGrow := false
+	for i := startCID; i <= endCID; i++ {
+		if data.GetVectorsChunk(types.ChunkID(uint32(i))) == nil {
+			needsGrow = true
+			break
+		}
+	}
+
+	if !needsGrow {
+		return data, nil
+	}
+
+	// COW Clone
+	newData := data.Clone()
+	for i := startCID; i <= endCID; i++ {
+		if err := newData.EnsureChunk(int(types.ChunkID(uint32(i))), 0, dims); err != nil {
+			return nil, err
+		}
+	}
+	h.data.Store(newData)
+	return newData, nil
+}
+
 func (h *ArrowHNSW) SetEfConstruction(ef int32) {
 	h.efConstruction.Store(ef)
 }
@@ -2290,8 +2322,12 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		if vec == nil { continue }
 
 		// Insert sequentially to establish graph backbone
-		err := h.insertInternal(id, vec, -1, true)
+		var err error
+		data, err := h.insertInternal(id, vec, -1, true, nil)
 		if err == nil {
+			if data != nil {
+				h.compareAndSwapData(data)
+			}
 			h.commitID(id) // Make visible immediately for subsequent bootstrap nodes
 			ids[i] = id
 		} else {
@@ -2351,7 +2387,10 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			metrics.InsertMuWaitDurationSeconds.WithLabelValues(h.name).Observe(time.Since(lockStart).Seconds())
 			
 			// Perform insertion - SetVector inside is now SKIPPED to avoid races
-			err := h.insertInternal(id, vec, -1, true)
+			data, err := h.insertInternal(id, vec, -1, true, nil)
+			if err == nil && data != nil {
+				h.compareAndSwapData(data)
+			}
 			h.insertMus[shard].Unlock()
 			
 			if err != nil {

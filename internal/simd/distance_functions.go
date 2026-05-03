@@ -25,21 +25,7 @@ func EuclideanDistance(a, b []float32) (float32, error) {
 	dimension := len(a)
 	metrics.RecordSimdBatch(implementation, "euclidean", 1)
 
-	// Optimized dispatch for common dimensions
-	switch dimension {
-	case 128:
-		return currentDispatch.EuclideanDistance128(a, b)
-	case 384:
-		return currentDispatch.EuclideanDistance384(a, b)
-	case 768:
-		return currentDispatch.EuclideanDistance768(a, b)
-	case 1024:
-		return currentDispatch.EuclideanDistance1024(a, b)
-	case 1536:
-		return currentDispatch.EuclideanDistance1536(a, b)
-	case 3072:
-		return currentDispatch.EuclideanDistance3072(a, b)
-	}
+	
 
 	// Use blocked SIMD for very high dimensions (> 3072) or fallback to generic SIMD
 	if dimension > 3072 {

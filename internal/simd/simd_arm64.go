@@ -29,33 +29,27 @@ func l2SquaredNEON(a, b []float32) (float32, error) {
 }
 
 func euclidean128NEON(a, b []float32) (float32, error) {
-	sum := l2Squared128NEONKernel(a, b)
-	return float32(math.Sqrt(float64(sum))), nil
+	return euclideanNEONKernel(a, b), nil
 }
 
 func euclidean384NEON(a, b []float32) (float32, error) {
-	sum := l2Squared384NEONKernel(a, b)
-	return float32(math.Sqrt(float64(sum))), nil
+	return euclideanNEONKernel(a, b), nil
 }
 
 func euclidean768NEON(a, b []float32) (float32, error) {
-	sum := l2Squared768NEONKernel(a, b)
-	return float32(math.Sqrt(float64(sum))), nil
+	return euclideanNEONKernel(a, b), nil
 }
 
 func euclidean1024NEON(a, b []float32) (float32, error) {
-	sum := l2Squared1024NEONKernel(a, b)
-	return float32(math.Sqrt(float64(sum))), nil
+	return euclideanNEONKernel(a, b), nil
 }
 
 func euclidean1536NEON(a, b []float32) (float32, error) {
-	sum := l2Squared1536NEONKernel(a, b)
-	return float32(math.Sqrt(float64(sum))), nil
+	return euclideanNEONKernel(a, b), nil
 }
 
 func euclidean3072NEON(a, b []float32) (float32, error) {
-	sum := l2Squared3072NEONKernel(a, b)
-	return float32(math.Sqrt(float64(sum))), nil
+	return euclideanNEONKernel(a, b), nil
 }
 
 func dot128NEON(a, b []float32) (float32, error) {
@@ -103,19 +97,35 @@ func dotInt2Neon(a, b []byte) (float32, error) {
 }
 
 func matchInt64Neon(src []int64, val int64, op CompareOp, dst []byte) error {
-	return matchInt64Generic(src, val, op, dst)
+	if len(src) == 0 {
+		return nil
+	}
+	matchInt64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
+	return nil
 }
 
 func matchInt32Neon(src []int32, val int32, op CompareOp, dst []byte) error {
-	return matchInt32Generic(src, val, op, dst)
+	if len(src) == 0 {
+		return nil
+	}
+	matchInt32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
+	return nil
 }
 
 func matchFloat32Neon(src []float32, val float32, op CompareOp, dst []byte) error {
-	return matchFloat32Generic(src, val, op, dst)
+	if len(src) == 0 {
+		return nil
+	}
+	matchFloat32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
+	return nil
 }
 
 func matchFloat64Neon(src []float64, val float64, op CompareOp, dst []byte) error {
-	return matchFloat64Generic(src, val, op, dst)
+	if len(src) == 0 {
+		return nil
+	}
+	matchFloat64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
+	return nil
 }
 
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) error {

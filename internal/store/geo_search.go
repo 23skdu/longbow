@@ -437,7 +437,7 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 	}
 
 	// Use a max-heap to keep track of the k closest results (highest score)
-	h := &ResultHeap{}
+	h := &geoResultHeap{}
 	for _, res := range results {
 		score := float32(1.0 / (1.0 + res.distance))
 		if h.Len() < k {
@@ -582,7 +582,7 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 	})
 
 	// Use a min-heap to keep top-k highest scores
-	h := &ResultHeap{}
+	h := &geoResultHeap{}
 	for _, res := range results {
 		if h.Len() < k {
 			heap.Push(h, lbtypes.SearchResult{
@@ -696,18 +696,18 @@ func VectorDistance(v1, v2 []float32) float64 {
 	return float64(d)
 }
 
-// ResultHeap implements heap.Interface for SearchResult (Max-Heap by Score).
-type ResultHeap []lbtypes.SearchResult
+// geoResultHeap implements heap.Interface for SearchResult (Max-Heap by Score).
+type geoResultHeap []lbtypes.SearchResult
 
-func (h ResultHeap) Len() int           { return len(h) }
-func (h ResultHeap) Less(i, j int) bool { return h[i].Score < h[j].Score }
-func (h ResultHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+func (h geoResultHeap) Len() int           { return len(h) }
+func (h geoResultHeap) Less(i, j int) bool { return h[i].Score < h[j].Score }
+func (h geoResultHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
 
-func (h *ResultHeap) Push(x any) {
+func (h *geoResultHeap) Push(x any) {
 	*h = append(*h, x.(lbtypes.SearchResult))
 }
 
-func (h *ResultHeap) Pop() any {
+func (h *geoResultHeap) Pop() any {
 	old := *h
 	n := len(old)
 	x := old[n-1]

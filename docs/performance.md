@@ -2,10 +2,10 @@
 
 Generated on: 2026-05-02
 
-## v0.2.4 Performance & Stability Release (2026-05-03)
+## v0.2.0-rc2 Stabilization (2026-05-03)
 
 > [!IMPORTANT]
-> **Release v0.2.4** establishes the definitive stability baseline for the v0.2.x series. It resolves the "Server is BUSY" hangs that plagued previous release candidates and improves parallel ingestion throughput by up to 2.5x.
+> **Release 0.2.0-rc2 (Stabilized)** establishes the definitive stability baseline for the v0.2.x series. It resolves the "Server is BUSY" hangs that plagued previous release candidates and improves parallel ingestion throughput by up to 2.5x.
 
 ### Key Stabilization Fixes
 

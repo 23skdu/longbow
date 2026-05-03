@@ -16,7 +16,8 @@ This document tracks the remaining tasks for hardening the Longbow storage engin
 - [x] Optimize vector retrieval to use pre-allocated buffers in `ArrowSearchContext`.
 - [x] Implement budget-based early-termination logic for HNSW searches.
 - [x] Research and implement bit-vector filters for sparse indices to reduce cache line misses.
-- [ ] Optimize `ArrowRefs` data path in `GraphData` for direct Arrow array access.
+- [x] Optimize `ArrowRefs` data path in `GraphData` for direct Arrow array access.
+- [x] Optimize Quadtree depth and node-locking for high-density Geo Search.
 
 ## 3. Stability, Resilience & Backpressure
 

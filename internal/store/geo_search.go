@@ -4,9 +4,9 @@ import (
 	"context"
 	"fmt"
 	"math"
-	"sort"
 	"sync"
 	"sync/atomic"
+	"container/heap"
 
 	"time"
 
@@ -86,7 +86,7 @@ type Quadtree struct {
 	bounds      GeoBoundingBox
 	capacity    int
 	vectors     []*GeoIndexedVector
-	divided     bool
+	divided     atomic.Bool
 	northwest   *Quadtree
 	northeast   *Quadtree
 	southwest   *Quadtree
@@ -97,6 +97,9 @@ type Quadtree struct {
 
 // NewQuadtree creates a new Quadtree instance with the given bounds and capacity.
 func NewQuadtree(bounds GeoBoundingBox, capacity int, datasetName string) *Quadtree {
+	if capacity <= 0 {
+		capacity = 64 // Increased default capacity for better scaling
+	}
 	return &Quadtree{
 		bounds:      bounds,
 		capacity:    capacity,
@@ -106,26 +109,25 @@ func NewQuadtree(bounds GeoBoundingBox, capacity int, datasetName string) *Quadt
 }
 
 // Insert adds a vector to the quadtree, subdividing if necessary.
+// Note: Called under GeoIndex.mu lock.
 func (q *Quadtree) Insert(vec *GeoIndexedVector) bool {
 	if !q.Contains(vec.GeoPoint) {
 		return false
 	}
 
-	if len(q.vectors) < q.capacity && !q.divided {
-		q.vectors = append(q.vectors, vec)
-		return true
-	}
-
-	if !q.divided {
-		if q.depth >= 20 {
+	if !q.divided.Load() {
+		if len(q.vectors) < q.capacity || q.depth >= 24 {
 			q.vectors = append(q.vectors, vec)
 			return true
 		}
 		q.subdivide()
 	}
 
-	return q.northwest.Insert(vec) || q.northeast.Insert(vec) ||
-		q.southwest.Insert(vec) || q.southeast.Insert(vec)
+	// Try children
+	if q.northwest.Insert(vec) { return true }
+	if q.northeast.Insert(vec) { return true }
+	if q.southwest.Insert(vec) { return true }
+	return q.southeast.Insert(vec)
 }
 
 // Contains checks if a GeoPoint is within the quadtree bounds.
@@ -139,52 +141,68 @@ func (q *Quadtree) subdivide() {
 	midLat := (q.bounds.MinLat + q.bounds.MaxLat) / 2
 	midLon := (q.bounds.MinLon + q.bounds.MaxLon) / 2
 
-	q.northwest = &Quadtree{
+	// Pre-create children
+	nw := &Quadtree{
 		bounds:      GeoBoundingBox{MinLat: midLat, MaxLat: q.bounds.MaxLat, MinLon: q.bounds.MinLon, MaxLon: midLon},
 		capacity:    q.capacity,
 		datasetName: q.datasetName,
 		depth:       q.depth + 1,
 	}
-	q.northeast = &Quadtree{
+	ne := &Quadtree{
 		bounds:      GeoBoundingBox{MinLat: midLat, MaxLat: q.bounds.MaxLat, MinLon: midLon, MaxLon: q.bounds.MaxLon},
 		capacity:    q.capacity,
 		datasetName: q.datasetName,
 		depth:       q.depth + 1,
 	}
-	q.southwest = &Quadtree{
+	sw := &Quadtree{
 		bounds:      GeoBoundingBox{MinLat: q.bounds.MinLat, MaxLat: midLat, MinLon: q.bounds.MinLon, MaxLon: midLon},
 		capacity:    q.capacity,
 		datasetName: q.datasetName,
 		depth:       q.depth + 1,
 	}
-	q.southeast = &Quadtree{
+	se := &Quadtree{
 		bounds:      GeoBoundingBox{MinLat: q.bounds.MinLat, MaxLat: midLat, MinLon: midLon, MaxLon: q.bounds.MaxLon},
 		capacity:    q.capacity,
 		datasetName: q.datasetName,
 		depth:       q.depth + 1,
 	}
 
+	// Direct quadrant assignment for existing vectors
 	for _, v := range q.vectors {
-		q.northwest.Insert(v)
-		q.northeast.Insert(v)
-		q.southwest.Insert(v)
-		q.southeast.Insert(v)
+		if v.GeoPoint.Lat >= midLat {
+			if v.GeoPoint.Lon < midLon { nw.vectors = append(nw.vectors, v) } else { ne.vectors = append(ne.vectors, v) }
+		} else {
+			if v.GeoPoint.Lon < midLon { sw.vectors = append(sw.vectors, v) } else { se.vectors = append(se.vectors, v) }
+		}
 	}
+
+	// Atomic publication of children to ensure Search consistency
+	q.northwest = nw
+	q.northeast = ne
+	q.southwest = sw
+	q.southeast = se
+	
+	// Finalize subdivision flag
+	q.divided.Store(true)
+	
+	// Clear local vectors only after children are visible
 	q.vectors = nil
-	q.divided = true
 }
 
 // QueryRadius returns all vectors within a given radius from a point.
 func (q *Quadtree) QueryRadius(center GeoPoint, radiusKm float64) []*GeoIndexedVector {
-	var results []*GeoIndexedVector
+	// Pre-allocate with a reasonable estimate to avoid reallocations
+	results := make([]*GeoIndexedVector, 0, 128)
 	q.queryRadiusRecursive(center, radiusKm, &results)
 	return results
 }
 
 func (q *Quadtree) queryRadiusRecursive(center GeoPoint, radiusKm float64, results *[]*GeoIndexedVector) {
+	// Re-use BoundingBox logic but inline for performance in recursion
+	latDelta := radiusKm / 111.0
 	box := GeoBoundingBox{
-		MinLat: center.Lat - radiusKm/111.0,
-		MaxLat: center.Lat + radiusKm/111.0,
+		MinLat: center.Lat - latDelta,
+		MaxLat: center.Lat + latDelta,
 		MinLon: center.Lon - radiusKm/(111.0*math.Cos(center.Lat*math.Pi/180)),
 		MaxLon: center.Lon + radiusKm/(111.0*math.Cos(center.Lat*math.Pi/180)),
 	}
@@ -193,7 +211,7 @@ func (q *Quadtree) queryRadiusRecursive(center GeoPoint, radiusKm float64, resul
 		return
 	}
 
-	if !q.divided {
+	if !q.divided.Load() {
 		for _, v := range q.vectors {
 			dist := HaversineDistance(center, v.GeoPoint, 6371.0)
 			if dist <= radiusKm {
@@ -216,7 +234,7 @@ func (q *Quadtree) intersects(box GeoBoundingBox) bool {
 
 // QueryBox returns all vectors within a bounding box.
 func (q *Quadtree) QueryBox(box GeoBoundingBox) []*GeoIndexedVector {
-	var results []*GeoIndexedVector
+	results := make([]*GeoIndexedVector, 0, 128)
 	q.queryBoxRecursive(box, &results)
 	return results
 }
@@ -226,7 +244,7 @@ func (q *Quadtree) queryBoxRecursive(box GeoBoundingBox, results *[]*GeoIndexedV
 		return
 	}
 
-	if !q.divided {
+	if !q.divided.Load() {
 		for _, v := range q.vectors {
 			if v.GeoPoint.Lat >= box.MinLat && v.GeoPoint.Lat <= box.MaxLat &&
 				v.GeoPoint.Lon >= box.MinLon && v.GeoPoint.Lon <= box.MaxLon {
@@ -418,17 +436,29 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 		})
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].distance < results[j].distance
-	})
+	// Use a max-heap to keep track of the k closest results (highest score)
+	h := &ResultHeap{}
+	for _, res := range results {
+		score := float32(1.0 / (1.0 + res.distance))
+		if h.Len() < k {
+			heap.Push(h, lbtypes.SearchResult{
+				ID:       lbtypes.VectorID(res.id), // #nosec G115
+				Distance: float32(res.distance),
+				Score:    score,
+			})
+		} else if score > (*h)[0].Score {
+			heap.Pop(h)
+			heap.Push(h, lbtypes.SearchResult{
+				ID:       lbtypes.VectorID(res.id), // #nosec G115
+				Distance: float32(res.distance),
+				Score:    score,
+			})
+		}
+	}
 
-	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
-	for i := 0; i < min(k, len(results)); i++ {
-		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: float32(results[i].distance),
-			Score:    float32(1.0 / (1.0 + results[i].distance)),
-		})
+	searchResults := make([]lbtypes.SearchResult, h.Len())
+	for i := h.Len() - 1; i >= 0; i-- {
+		searchResults[i] = heap.Pop(h).(lbtypes.SearchResult)
 	}
 
 	return searchResults, nil
@@ -481,10 +511,8 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 	}
 
 	type scoredResult struct {
-		id       uint64
-		distance float64
-		geoScore float64
-		vector   []float32
+		id    uint64
+		score float64
 	}
 
 	// Batch compute geo distances
@@ -543,27 +571,36 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 			vectorDist := VectorDistance(queryVector, c.Vector)
 			vectorScore := 1.0 / (1.0 + vectorDist)
 
+			// Combined score using equal weighting
 			combinedScore := 0.5*geoScore + 0.5*vectorScore
 
 			results[i] = scoredResult{
-				id:       c.ID,
-				distance: combinedScore,
-				vector:   c.Vector,
+				id:    c.ID,
+				score: combinedScore,
 			}
 		}
 	})
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].distance > results[j].distance
-	})
+	// Use a min-heap to keep top-k highest scores
+	h := &ResultHeap{}
+	for _, res := range results {
+		if h.Len() < k {
+			heap.Push(h, lbtypes.SearchResult{
+				ID:    lbtypes.VectorID(res.id), // #nosec G115
+				Score: float32(res.score),
+			})
+		} else if float32(res.score) > (*h)[0].Score {
+			heap.Pop(h)
+			heap.Push(h, lbtypes.SearchResult{
+				ID:    lbtypes.VectorID(res.id), // #nosec G115
+				Score: float32(res.score),
+			})
+		}
+	}
 
-	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
-	for i := 0; i < min(k, len(results)); i++ {
-		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: float32(results[i].distance),
-			Score:    float32(1.0 / (1.0 + results[i].distance)), // Fixed score calculation
-		})
+	searchResults := make([]lbtypes.SearchResult, h.Len())
+	for i := h.Len() - 1; i >= 0; i-- {
+		searchResults[i] = heap.Pop(h).(lbtypes.SearchResult)
 	}
 
 	return searchResults, nil
@@ -657,4 +694,23 @@ func VectorDistance(v1, v2 []float32) float64 {
 		return -1
 	}
 	return float64(d)
+}
+
+// ResultHeap implements heap.Interface for SearchResult (Max-Heap by Score).
+type ResultHeap []lbtypes.SearchResult
+
+func (h ResultHeap) Len() int           { return len(h) }
+func (h ResultHeap) Less(i, j int) bool { return h[i].Score < h[j].Score }
+func (h ResultHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+func (h *ResultHeap) Push(x any) {
+	*h = append(*h, x.(lbtypes.SearchResult))
+}
+
+func (h *ResultHeap) Pop() any {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
 }

@@ -619,19 +619,53 @@ func (idx *AdaptiveIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch
 
 // AddBatch adds multiple vectors efficiently.
 func (idx *AdaptiveIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+	idx.mu.RLock()
+	hnsw := idx.hnsw
+	usingHNSW := idx.usingHNSW.Load()
+	idx.mu.RUnlock()
+
+	if hnsw != nil {
+		ids, err := hnsw.AddBatch(ctx, recs, rowIdxs, batchIdxs)
+		if err != nil {
+			return nil, err
+		}
+		
+		// If we are still migrating, also add to bruteForce to maintain searchability
+		if !usingHNSW {
+			idx.mu.Lock()
+			if idx.bruteForce != nil {
+				for i := range rowIdxs {
+					_, _ = idx.bruteForce.AddByLocation(ctx, batchIdxs[i], rowIdxs[i])
+				}
+			}
+			idx.mu.Unlock()
+		}
+		return ids, nil
+	}
+
 	start := time.Now()
 	idx.mu.Lock()
 	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	defer idx.mu.Unlock()
 
+	if idx.usingHNSW.Load() {
+		return idx.hnsw.AddBatch(ctx, recs, rowIdxs, batchIdxs)
+	}
+
 	ids := make([]uint32, len(rowIdxs))
 	for i := range rowIdxs {
-		id, err := idx.AddByLocation(ctx, batchIdxs[i], rowIdxs[i])
+		id, err := idx.bruteForce.AddByLocation(ctx, batchIdxs[i], rowIdxs[i])
 		if err != nil {
 			return nil, err
 		}
 		ids[i] = id
 	}
+	
+	newCount := idx.vectorCount.Add(int64(len(rowIdxs)))
+	if idx.config.Enabled && int(newCount) >= idx.config.Threshold {
+		idx.migrateToHNSW()
+	}
+
 	return ids, nil
 }
 
@@ -913,6 +947,7 @@ func (idx *AdaptiveIndex) migrateToHNSW() {
 			return
 		}
 		bf := idx.bruteForce.(*BruteForceIndex)
+		// Snapshot existing locations to build HNSW
 		snapshotLocations := make([]Location, len(bf.locations))
 		copy(snapshotLocations, bf.locations)
 		idx.mu.RUnlock()
@@ -922,33 +957,48 @@ func (idx *AdaptiveIndex) migrateToHNSW() {
 		config.Logger = idx.dataset.Logger
 		newHNSW := NewArrowHNSW(idx.dataset, &config, idx.dataset.Topo)
 
-		for _, loc := range snapshotLocations {
-			_, _ = newHNSW.AddByLocation(context.Background(), loc.BatchIdx, loc.RowIdx)
+		// Set hnsw pointer early so new batches use parallel ingestion path
+		idx.mu.Lock()
+		idx.hnsw = newHNSW
+		idx.mu.Unlock()
+
+		// Build HNSW from snapshot. Group by batch to use AddBatch efficiency.
+		if len(snapshotLocations) > 0 {
+			recs := idx.dataset.Records.Read()
+			// Simple grouping by batch
+			byBatch := make(map[int][]int) // batchIdx -> []rowIdx
+			for _, loc := range snapshotLocations {
+				byBatch[loc.BatchIdx] = append(byBatch[loc.BatchIdx], loc.RowIdx)
+			}
+
+			for bIdx, rows := range byBatch {
+				if bIdx >= 0 && bIdx < len(recs) {
+					batchRecs := []arrow.RecordBatch{recs[bIdx]}
+					batchIdxs := make([]int, len(rows))
+					for i := range batchIdxs {
+						batchIdxs[i] = bIdx
+					}
+					_, _ = newHNSW.AddBatch(context.Background(), batchRecs, rows, batchIdxs)
+				}
+			}
 		}
 
+		// Final swap to mark as fully ready for search
 		swapStart := time.Now()
 		idx.mu.Lock()
 		metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "write").Observe(time.Since(swapStart).Seconds())
 		defer idx.mu.Unlock()
 
 		if idx.usingHNSW.Load() || idx.bruteForce == nil {
-			_ = newHNSW.Close()
 			return
 		}
 
-		bf = idx.bruteForce.(*BruteForceIndex)
-		currentLocations := bf.locations
-		if len(currentLocations) > len(snapshotLocations) {
-			delta := currentLocations[len(snapshotLocations):]
-			for _, loc := range delta {
-				_, _ = newHNSW.AddByLocation(context.Background(), loc.BatchIdx, loc.RowIdx)
-			}
-		}
-
-		idx.hnsw = newHNSW
 		idx.usingHNSW.Store(true)
 		idx.migrationCount.Add(1)
 		metrics.AdaptiveIndexMigrationsTotal.WithLabelValues("brute_force", "hnsw").Inc()
+		
+		// Note: We don't need a final catch-up loop here because AddBatch 
+		// now adds to both indices during migration.
 		idx.bruteForce = nil
 	}()
 }

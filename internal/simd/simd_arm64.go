@@ -103,27 +103,19 @@ func dotInt2Neon(a, b []byte) (float32, error) {
 }
 
 func matchInt64Neon(src []int64, val int64, op CompareOp, dst []byte) error {
-	if len(src) == 0 { return nil }
-	matchInt64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
-	return nil
+	return matchInt64Generic(src, val, op, dst)
 }
 
 func matchInt32Neon(src []int32, val int32, op CompareOp, dst []byte) error {
-	if len(src) == 0 { return nil }
-	matchInt32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
-	return nil
+	return matchInt32Generic(src, val, op, dst)
 }
 
 func matchFloat32Neon(src []float32, val float32, op CompareOp, dst []byte) error {
-	if len(src) == 0 { return nil }
-	matchFloat32NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
-	return nil
+	return matchFloat32Generic(src, val, op, dst)
 }
 
 func matchFloat64Neon(src []float64, val float64, op CompareOp, dst []byte) error {
-	if len(src) == 0 { return nil }
-	matchFloat64NeonKernel(unsafe.Pointer(&src[0]), val, int(op), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
-	return nil
+	return matchFloat64Generic(src, val, op, dst)
 }
 
 func euclideanBatchNEON(query []float32, vectors [][]float32, results []float32) error {
@@ -192,21 +184,21 @@ func sigmoidNEON(src, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	sigmoidNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+	sigmoidNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 }
 
 func expNEON(src, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	expNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+	expNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 }
 
 func logNEON(src, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	logNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+	logNEONKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 }
 
 func softmaxNEON(src, dst []float32) {
@@ -299,6 +291,8 @@ func dot3072NEONKernel(a, b []float32) float32
 //go:noescape
 func l2Squared128NEONKernel(a, b []float32) float32
 //go:noescape
+func l2Squared384NEONKernel(a, b []float32) float32
+//go:noescape
 func l2Squared768NEONKernel(a, b []float32) float32
 //go:noescape
 func l2Squared1024NEONKernel(a, b []float32) float32
@@ -314,8 +308,6 @@ func cosineF16NEONKernel(a, b []float16.Num) float32
 func vectorButterflyNEONKernel(a, b []float32)
 //go:noescape
 func vectorButterfly16NEONKernel(a, b []float32)
-//go:noescape
-func l2Squared384NEONKernel(a, b []float32) float32
 //go:noescape
 func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
 //go:noescape
@@ -396,7 +388,7 @@ func accumulateWeightedScatterNEON(dst []float32, targets []uint32, weights []fl
 	}
 	// Note: We don't check dst bounds here to match baseline behavior and maximize performance.
 	// The caller (GraphStore) ensures targets are within range.
-	accumulateWeightedScatterNEONKernel(unsafe.Pointer(&dst[0]), unsafe.Pointer(&targets[0]), unsafe.Pointer(&weights[0]), factor, n)
+	accumulateWeightedScatterNEONKernel(unsafe.Pointer(&dst[0]), unsafe.Pointer(&targets[0]), unsafe.Pointer(&weights[0]), factor, n) // #nosec G103
 }
 
 //go:noescape

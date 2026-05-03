@@ -2262,7 +2262,17 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	// Phase 1.5: Sequential Bootstrap
 	// If the index is empty or very small, we must insert some nodes sequentially
 	// to establish an entry point and basic graph structure before parallel insertion.
-	bootstrapEnd := len(rowIdxs)
+	bootstrapEnd := 0
+	nodeCount := h.nodeCount.Load()
+	if nodeCount < 1024 {
+		bootstrapEnd = 1024 - int(nodeCount)
+		if bootstrapEnd > len(rowIdxs) {
+			bootstrapEnd = len(rowIdxs)
+		}
+		if bootstrapEnd < 0 {
+			bootstrapEnd = 0
+		}
+	}
 
 	for i := 0; i < bootstrapEnd; i++ {
 		id := startID + uint32(i) // #nosec G115

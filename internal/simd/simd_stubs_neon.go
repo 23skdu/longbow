@@ -85,14 +85,17 @@ func maxNEON(src []float32) float32 { return maxGeneric(src) }
 func minNEON(src []float32) float32 { return minGeneric(src) }
 
 func manhattanNEON(a, b []float32) (float32, error) {
+	_, _ = a, b
 	return 0, errors.New("simd: NEON not supported on this architecture")
 }
 
 func chebyshevNEON(a, b []float32) (float32, error) {
+	_, _ = a, b
 	return 0, errors.New("simd: NEON not supported on this architecture")
 }
 
 func brayCurtisNEON(a, b []float32) (float32, error) {
+	_, _ = a, b
 	return 0, errors.New("simd: NEON not supported on this architecture")
 }
 

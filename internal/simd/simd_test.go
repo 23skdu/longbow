@@ -236,7 +236,7 @@ func TestDotProduct_Basic(t *testing.T) {
 }
 
 func TestDotProduct_VariousDimensions(t *testing.T) {
-	dimensions := []int{1, 7, 8, 15, 16, 31, 32, 64, 128, 256, 512, 1024}
+	dimensions := []int{1, 7, 8, 15, 16, 31, 32, 64, 128, 256, 384, 512, 768, 1024, 1536, 3072}
 
 	for _, dim := range dimensions {
 		t.Run(fmt.Sprintf("dim_%d", dim), func(t *testing.T) {

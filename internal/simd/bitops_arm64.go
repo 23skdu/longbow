@@ -38,7 +38,7 @@ func andBitVectorsNEON(dst, src []uint64) {
 	if len(src) < n {
 		n = len(src)
 	}
-	andBitVectorNEON(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), n)
+	andBitVectorNEON(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), n) // #nosec G103
 }
 
 // countBitVectorNEON returns the number of set bits in the vector
@@ -46,5 +46,5 @@ func countBitVectorNEON(src []uint64) int {
 	if len(src) == 0 {
 		return 0
 	}
-	return countBitVectorNEONKernel(unsafe.Pointer(&src[0]), len(src))
+	return countBitVectorNEONKernel(unsafe.Pointer(&src[0]), len(src)) // #nosec G103
 }

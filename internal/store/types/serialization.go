@@ -335,7 +335,7 @@ func (g *GraphData) writeF16Vectors(w io.Writer) error {
 			}
 		} else {
 			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
-			u16Chunk := unsafe.Slice((*uint16)(unsafe.Pointer(&chunk[0])), len(chunk))
+			u16Chunk := unsafe.Slice((*uint16)(unsafe.Pointer(&chunk[0])), len(chunk)) // #nosec G103
 			for j := 0; j < toWriteNodes; j++ {
 				start := j * paddedDims
 				if err := binary.Write(w, binary.LittleEndian, u16Chunk[start:start+g.Dims]); err != nil {
@@ -707,7 +707,7 @@ func (g *GraphData) readF16Vectors(r io.Reader) error {
 		
 		// Use unsafe to treat float16.Num as uint16 for binary.Read to avoid reflection panics
 		// because float16.Num may have unexported fields.
-		u16Chunk := unsafe.Slice((*uint16)(unsafe.Pointer(&chunk[0])), len(chunk))
+		u16Chunk := unsafe.Slice((*uint16)(unsafe.Pointer(&chunk[0])), len(chunk)) // #nosec G103
 
 		for j := 0; j < toRead; j++ {
 			start := j * paddedDims

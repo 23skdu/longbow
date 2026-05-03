@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"sync"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -1081,3 +1082,24 @@ var (
 		[]string{"dataset"},
 	)
 )
+
+var (
+	simdDispatchCache sync.Map // map[string]prometheus.Counter
+)
+
+// RecordSimdBatch records multiple SIMD calls at once to reduce contention
+func RecordSimdBatch(impl string, op string, count int) {
+	if count <= 0 {
+		return
+	}
+
+	key := impl + ":" + op
+	if val, ok := simdDispatchCache.Load(key); ok {
+		val.(prometheus.Counter).Add(float64(count))
+		return
+	}
+
+	counter := SimdDispatchTotal.WithLabelValues(impl, op)
+	simdDispatchCache.Store(key, counter)
+	counter.Add(float64(count))
+}

@@ -3,6 +3,7 @@ package metrics
 import (
 	"os"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -23,6 +24,31 @@ func init() {
 	}
 }
 
+// MetricsCache holds pre-resolved Prometheus metrics to avoid label lookup contention.
+type MetricsCache struct {
+	OpsCounter      prometheus.Counter
+	DurationObserver prometheus.Observer
+}
+
+var (
+	metricsCacheMap sync.Map // map[string]*MetricsCache
+)
+
+// GetMetricsCache returns a cached MetricsCache for the given labels.
+func GetMetricsCache(dtype, dimension, operation string) *MetricsCache {
+	key := dtype + ":" + dimension + ":" + operation
+	if val, ok := metricsCacheMap.Load(key); ok {
+		return val.(*MetricsCache)
+	}
+
+	cache := &MetricsCache{
+		OpsCounter:       SimdKernelOperationsTotal.WithLabelValues(dtype, dimension, operation),
+		DurationObserver: SimdKernelDuration.WithLabelValues(dtype, dimension, operation),
+	}
+	metricsCacheMap.Store(key, cache)
+	return cache
+}
+
 // RecordSearchBatchMetrics records accumulated metrics for a search batch (query).
 // It uses internal sampling based on LONGBOW_METRICS_SAMPLING_RATE.
 func RecordSearchBatchMetrics(dtype, dimension, operation string, count int, duration time.Duration) {
@@ -33,7 +59,6 @@ func RecordSearchBatchMetrics(dtype, dimension, operation string, count int, dur
 	// Simple atomic sampling
 	current := atomic.AddUint64(&samplingCounter, 1)
 	if metricsSamplingRate < 1.0 {
-		// e.g. 0.01 rate means 1 in 100
 		threshold := uint64(1.0 / metricsSamplingRate)
 		if threshold == 0 {
 			threshold = 1
@@ -43,11 +68,9 @@ func RecordSearchBatchMetrics(dtype, dimension, operation string, count int, dur
 		}
 	}
 
-	// Record to histograms/counters
-	// Note: We divide by sampling rate if we want to estimate total volume,
-	// but for histograms (latency), we usually just record the samples.
-	SimdKernelDuration.WithLabelValues(dtype, dimension, operation).Observe(duration.Seconds() / float64(count))
-	SimdKernelOperationsTotal.WithLabelValues(dtype, dimension, operation).Add(float64(count))
+	cache := GetMetricsCache(dtype, dimension, operation)
+	cache.DurationObserver.Observe(duration.Seconds() / float64(count))
+	cache.OpsCounter.Add(float64(count))
 }
 
 // =============================================================================

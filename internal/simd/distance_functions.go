@@ -23,7 +23,7 @@ func EuclideanDistance(a, b []float32) (float32, error) {
 	}
 
 	dimension := len(a)
-	metrics.SimdDispatchTotal.WithLabelValues(implementation, "euclidean").Inc()
+	metrics.RecordSimdBatch(implementation, "euclidean", 1)
 
 	// Optimized dispatch for common dimensions
 	switch dimension {
@@ -69,6 +69,7 @@ func CosineDistance(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
+	metrics.RecordSimdBatch(implementation, "cosine", 1)
 	return currentDispatch.CosineDistance(a, b)
 }
 
@@ -83,7 +84,7 @@ func DotProduct(a, b []float32) (float32, error) {
 	}
 
 	dimension := len(a)
-	metrics.SimdDispatchTotal.WithLabelValues(implementation, "dot").Inc()
+	metrics.RecordSimdBatch(implementation, "dot", 1)
 
 	// Optimized dispatch for common dimensions
 	switch dimension {
@@ -116,6 +117,14 @@ func EuclideanDistanceF16(a, b []float16.Num) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	// Use specialized dispatch for common dimensions
+	switch len(a) {
+	case 384:
+		return Euclidean384Float16(a, b)
+	case 768:
+		return Euclidean768Float16(a, b)
+	}
+
 	return euclideanDistanceF16Impl(a, b)
 }
 
@@ -150,8 +159,16 @@ func EuclideanDistanceFloat64(a, b []float64) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Use blocked SIMD for high dimensions (768+)
-	if len(a) >= 768 {
+	// Use specialized dispatch for common dimensions
+	switch len(a) {
+	case 384:
+		return Euclidean384Float64(a, b)
+	case 768:
+		return Euclidean768Float64(a, b)
+	}
+
+	// Use blocked SIMD for high dimensions (> 768)
+	if len(a) > 768 {
 		return EuclideanFloat64Blocked(a, b)
 	}
 	return euclideanDistanceFloat64Impl(a, b)
@@ -214,8 +231,16 @@ func DotProductF64(a, b []float64) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Use blocked SIMD for high dimensions (768+)
-	if len(a) >= 768 {
+	// Use specialized dispatch for common dimensions
+	switch len(a) {
+	case 384:
+		return Dot384Float64(a, b)
+	case 768:
+		return Dot768Float64(a, b)
+	}
+
+	// Use blocked SIMD for high dimensions (> 768)
+	if len(a) > 768 {
 		return DotProductFloat64Blocked(a, b)
 	}
 	return dotFloat64Unrolled4x(a, b)
@@ -354,8 +379,16 @@ func EuclideanDistanceInt8(a, b []int8) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Use blocked SIMD for high dimensions (768+)
-	if len(a) >= 768 {
+	// Use specialized dispatch for common dimensions
+	switch len(a) {
+	case 384:
+		return Euclidean384Int8(a, b)
+	case 768:
+		return Euclidean768Int8(a, b)
+	}
+
+	// Use blocked SIMD for high dimensions (> 768)
+	if len(a) > 768 {
 		return EuclideanInt8Blocked(a, b)
 	}
 	return euclideanDistanceInt8Impl(a, b)
@@ -380,8 +413,16 @@ func DotProductInt8(a, b []int8) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Use blocked SIMD for high dimensions (768+)
-	if len(a) >= 768 {
+	// Use specialized dispatch for common dimensions
+	switch len(a) {
+	case 384:
+		return Dot384Int8(a, b)
+	case 768:
+		return Dot768Int8(a, b)
+	}
+
+	// Use blocked SIMD for high dimensions (> 768)
+	if len(a) > 768 {
 		return DotProductInt8Blocked(a, b)
 	}
 	return dotInt8Unrolled4x(a, b)

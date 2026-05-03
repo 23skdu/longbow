@@ -49,7 +49,8 @@ func tpuGetDeviceInfo(deviceID int) (total, free uint64, err error) {
 		return 0, 0, fmt.Errorf("invalid deviceID: %d", deviceID)
 	}
 	var info C.tpu_device_info_t
-	status := C.tpu_get_device_info(C.int(deviceID), &info) // #nosec G115
+	// #nosec G115
+	status := C.tpu_get_device_info(C.int(deviceID), &info)
 	if status != C.TPU_SUCCESS {
 		return 0, 0, fmt.Errorf("tpu_get_device_info failed with status %d", status)
 	}
@@ -67,7 +68,8 @@ func tpuEnqueueBatch(deviceID int, data []float32) error {
 	if deviceID < 0 || deviceID > 2147483647 {
 		return fmt.Errorf("invalid deviceID: %d", deviceID)
 	}
-	status := C.tpu_enqueue_batch(C.int(deviceID), (*C.float)(unsafe.Pointer(&data[0])), C.int(len(data))) // #nosec G115
+	// #nosec G115
+	status := C.tpu_enqueue_batch(C.int(deviceID), (*C.float)(unsafe.Pointer(&data[0])), C.int(len(data)))
 	if status != C.TPU_SUCCESS {
 		return fmt.Errorf("tpu_enqueue_batch failed with status %d", status)
 	}

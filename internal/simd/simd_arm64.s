@@ -2302,3 +2302,147 @@ min_done:
     FMOVS   F0, ret+16(FP)
     RET
     RET
+
+#define VCMEQ_S4(m, n, d) WORD $(0x4e808c00 | ((m) << 16) | ((n) << 5) | (d))
+#define VCMGT_S4(m, n, d) WORD $(0x4e803400 | ((m) << 16) | ((n) << 5) | (d))
+#define VCMGE_S4(m, n, d) WORD $(0x6e803c00 | ((m) << 16) | ((n) << 5) | (d))
+#define VCMEQ_D2(m, n, d) WORD $(0x4ec08c00 | ((m) << 16) | ((n) << 5) | (d))
+#define VCMGT_D2(m, n, d) WORD $(0x4ec03400 | ((m) << 16) | ((n) << 5) | (d))
+#define VCMGE_D2(m, n, d) WORD $(0x6ec03c00 | ((m) << 16) | ((n) << 5) | (d))
+
+#define VFCMEQ_S4(m, n, d) WORD $(0x4e20e400 | ((m) << 16) | ((n) << 5) | (d))
+#define VFCMGT_S4(m, n, d) WORD $(0x6e20e400 | ((m) << 16) | ((n) << 5) | (d))
+#define VFCMGE_S4(m, n, d) WORD $(0x6e20ec00 | ((m) << 16) | ((n) << 5) | (d))
+#define VFCMEQ_D2(m, n, d) WORD $(0x4e60e400 | ((m) << 16) | ((n) << 5) | (d))
+#define VFCMGT_D2(m, n, d) WORD $(0x6e60e400 | ((m) << 16) | ((n) << 5) | (d))
+#define VFCMGE_D2(m, n, d) WORD $(0x6e60ec00 | ((m) << 16) | ((n) << 5) | (d))
+
+// func matchInt32NeonKernel(src unsafe.Pointer, val int32, op int, dst unsafe.Pointer, n int)
+TEXT ·matchInt32NeonKernel(SB), NOSPLIT, $0-40
+    MOVD    src+0(FP), R0
+    MOVW    val+8(FP), R1
+    MOVD    op+16(FP), R2
+    MOVD    dst+24(FP), R3
+    MOVD    n+32(FP), R4
+    CBZ     R4, match32_done
+    VDUP    R1, V0.S4
+    MOVD    $1, R5
+    VDUP    R5, V1.B16
+    MOVD    $-1, R6
+    VDUP    R6, V7.B16
+loop32:
+    CMP     $4, R4
+    BLT     tail32
+    VLD1.P  16(R0), [V2.S4]
+    CMP     $0, R2; BEQ eq32; CMP $1, R2; BEQ neq32; CMP $2, R2; BEQ gt32; CMP $3, R2; BEQ ge32; CMP $4, R2; BEQ lt32; CMP $5, R2; BEQ le32; B eq32
+eq32:  VCMEQ_S4(0, 2, 3); B store32
+neq32: VCMEQ_S4(0, 2, 3); VEOR V7.B16, V3.B16, V3.B16; B store32
+gt32:  VCMGT_S4(2, 0, 3); B store32
+ge32:  VCMGE_S4(2, 0, 3); B store32
+lt32:  VCMGT_S4(0, 2, 3); B store32
+le32:  VCMGE_S4(0, 2, 3); B store32
+store32:
+    VAND    V1.B16, V3.B16, V3.B16
+    VMOV    V3.S[0], R6; MOVB R6, (R3)
+    VMOV    V3.S[1], R6; MOVB R6, 1(R3)
+    VMOV    V3.S[2], R6; MOVB R6, 2(R3)
+    VMOV    V3.S[3], R6; MOVB R6, 3(R3)
+    ADD     $4, R3; SUB     $4, R4; B       loop32
+tail32:
+    CBZ     R4, match32_done
+    MOVW.P  4(R0), R5
+    CMP     $0, R2; BEQ t_eq32; CMP $1, R2; BEQ t_neq32; CMP $2, R2; BEQ t_gt32; CMP $3, R2; BEQ t_ge32; CMP $4, R2; BEQ t_lt32; CMP $5, R2; BEQ t_le32; B t_eq32
+t_eq32:  CMP R1, R5; CSET EQ, R6; B t_store32
+t_neq32: CMP R1, R5; CSET NE, R6; B t_store32
+t_gt32:  CMP R5, R1; CSET GT, R6; B t_store32
+t_ge32:  CMP R5, R1; CSET GE, R6; B t_store32
+t_lt32:  CMP R1, R5; CSET GT, R6; B t_store32
+t_le32:  CMP R1, R5; CSET GE, R6; B t_store32
+t_store32:
+    MOVB    R6, (R3); ADD $1, R3; SUB $1, R4; B tail32
+match32_done: RET
+
+// func matchInt64NeonKernel(src unsafe.Pointer, val int64, op int, dst unsafe.Pointer, n int)
+TEXT ·matchInt64NeonKernel(SB), NOSPLIT, $0-40
+    MOVD    src+0(FP), R0; MOVD val+8(FP), R1; MOVD op+16(FP), R2; MOVD dst+24(FP), R3; MOVD n+32(FP), R4
+    CBZ     R4, match64_done
+    VDUP    R1, V0.D2; MOVD $1, R5; VDUP R5, V1.B16; MOVD $-1, R6; VDUP R6, V7.B16
+loop64:
+    CMP     $2, R4; BLT tail64; VLD1.P 16(R0), [V2.D2]
+    CMP $0, R2; BEQ eq64; CMP $1, R2; BEQ neq64; CMP $2, R2; BEQ gt64; CMP $3, R2; BEQ ge64; CMP $4, R2; BEQ lt64; CMP $5, R2; BEQ le64; B eq64
+eq64:  VCMEQ_D2(0, 2, 3); B store64
+neq64: VCMEQ_D2(0, 2, 3); VEOR V7.B16, V3.B16, V3.B16; B store64
+gt64:  VCMGT_D2(2, 0, 3); B store64
+ge64:  VCMGE_D2(2, 0, 3); B store64
+lt64:  VCMGT_D2(0, 2, 3); B store64
+le64:  VCMGE_D2(0, 2, 3); B store64
+store64:
+    VAND    V1.B16, V3.B16, V3.B16
+    VMOV    V3.D[0], R6; MOVB R6, (R3); VMOV V3.D[1], R6; MOVB R6, 1(R3); ADD $2, R3; SUB $2, R4; B loop64
+tail64:
+    CBZ R4, match64_done; MOVD.P 8(R0), R5
+    CMP $0, R2; BEQ t_eq64; CMP $1, R2; BEQ t_neq64; CMP $2, R2; BEQ t_gt64; CMP $3, R2; BEQ t_ge64; CMP $4, R2; BEQ t_lt64; CMP $5, R2; BEQ t_le64; B t_eq64
+t_eq64: CMP R1, R5; CSET EQ, R6; B t_store64
+t_neq64: CMP R1, R5; CSET NE, R6; B t_store64
+t_gt64: CMP R5, R1; CSET GT, R6; B t_store64
+t_ge64: CMP R5, R1; CSET GE, R6; B t_store64
+t_lt64: CMP R1, R5; CSET GT, R6; B t_store64
+t_le64: CMP R1, R5; CSET GE, R6; B t_store64
+t_store64: MOVB R6, (R3); ADD $1, R3; SUB $1, R4; B tail64
+match64_done: RET
+
+// func matchFloat32NeonKernel(src unsafe.Pointer, val float32, op int, dst unsafe.Pointer, n int)
+TEXT ·matchFloat32NeonKernel(SB), NOSPLIT, $0-40
+    MOVD src+0(FP), R0; FMOVS val+8(FP), F0; MOVD op+16(FP), R2; MOVD dst+24(FP), R3; MOVD n+32(FP), R4
+    CBZ R4, matchf32_done; VDUP V0.S[0], V0.S4; MOVD $1, R5; VDUP R5, V1.B16; MOVD $-1, R6; VDUP R6, V7.B16
+loopf32:
+    CMP $4, R4; BLT tailf32; VLD1.P 16(R0), [V2.S4]
+    CMP $0, R2; BEQ eqf32; CMP $1, R2; BEQ neqf32; CMP $2, R2; BEQ gtf32; CMP $3, R2; BEQ gef32; CMP $4, R2; BEQ ltf32; CMP $5, R2; BEQ lef32; B eqf32
+eqf32: VFCMEQ_S4(0, 2, 3); B storef32
+neqf32: VFCMEQ_S4(0, 2, 3); VEOR V7.B16, V3.B16, V3.B16; B storef32
+gtf32: VFCMGT_S4(2, 0, 3); B storef32
+gef32: VFCMGE_S4(2, 0, 3); B storef32
+ltf32: VFCMGT_S4(0, 2, 3); B storef32
+lef32: VFCMGE_S4(0, 2, 3); B storef32
+storef32:
+    VAND V1.B16, V3.B16, V3.B16
+    VMOV V3.S[0], R6; MOVB R6, (R3); VMOV V3.S[1], R6; MOVB R6, 1(R3); VMOV V3.S[2], R6; MOVB R6, 2(R3); VMOV V3.S[3], R6; MOVB R6, 3(R3); ADD $4, R3; SUB $4, R4; B loopf32
+tailf32:
+    CBZ R4, matchf32_done; FMOVS.P 4(R0), F1
+    CMP $0, R2; BEQ t_eqf32; CMP $1, R2; BEQ t_neqf32; CMP $2, R2; BEQ t_gtf32; CMP $3, R2; BEQ t_gef32; CMP $4, R2; BEQ t_ltf32; CMP $5, R2; BEQ t_lef32; B t_eqf32
+t_eqf32: FCMPS F0, F1; CSET EQ, R6; B t_storef32
+t_neqf32: FCMPS F0, F1; CSET NE, R6; B t_storef32
+t_gtf32: FCMPS F1, F0; CSET LT, R6; B t_storef32
+t_gef32: FCMPS F1, F0; CSET LE, R6; B t_storef32
+t_ltf32: FCMPS F1, F0; CSET GT, R6; B t_storef32
+t_lef32: FCMPS F1, F0; CSET GE, R6; B t_storef32
+t_storef32: MOVB R6, (R3); ADD $1, R3; SUB $1, R4; B tailf32
+matchf32_done: RET
+
+// func matchFloat64NeonKernel(src unsafe.Pointer, val float64, op int, dst unsafe.Pointer, n int)
+TEXT ·matchFloat64NeonKernel(SB), NOSPLIT, $0-40
+    MOVD src+0(FP), R0; FMOVD val+8(FP), F0; MOVD op+16(FP), R2; MOVD dst+24(FP), R3; MOVD n+32(FP), R4
+    CBZ R4, matchf64_done; VDUP V0.D[0], V0.D2; MOVD $1, R5; VDUP R5, V1.B16; MOVD $-1, R6; VDUP R6, V7.B16
+loopf64:
+    CMP $2, R4; BLT tailf64; VLD1.P 16(R0), [V2.D2]
+    CMP $0, R2; BEQ eqf64; CMP $1, R2; BEQ neqf64; CMP $2, R2; BEQ gtf64; CMP $3, R2; BEQ gef64; CMP $4, R2; BEQ ltf64; CMP $5, R2; BEQ lef64; B eqf64
+eqf64: VFCMEQ_D2(0, 2, 3); B storef64
+neqf64: VFCMEQ_D2(0, 2, 3); VEOR V7.B16, V3.B16, V3.B16; B storef64
+gtf64: VFCMGT_D2(2, 0, 3); B storef64
+gef64: VFCMGE_D2(2, 0, 3); B storef64
+ltf64: VFCMGT_D2(0, 2, 3); B storef64
+lef64: VFCMGE_D2(0, 2, 3); B storef64
+storef64:
+    VAND V1.B16, V3.B16, V3.B16
+    VMOV V3.D[0], R6; MOVB R6, (R3); VMOV V3.D[1], R6; MOVB R6, 1(R3); ADD $2, R3; SUB $2, R4; B loopf64
+tailf64:
+    CBZ R4, matchf64_done; FMOVD.P 8(R0), F1
+    CMP $0, R2; BEQ t_eqf64; CMP $1, R2; BEQ t_neqf64; CMP $2, R2; BEQ t_gtf64; CMP $3, R2; BEQ t_gef64; CMP $4, R2; BEQ t_ltf64; CMP $5, R2; BEQ t_lef64; B t_eqf64
+t_eqf64: FCMPD F0, F1; CSET EQ, R6; B t_storef64
+t_neqf64: FCMPD F0, F1; CSET NE, R6; B t_storef64
+t_gtf64: FCMPD F1, F0; CSET LT, R6; B t_storef64
+t_gef64: FCMPD F1, F0; CSET LE, R6; B t_storef64
+t_ltf64: FCMPD F1, F0; CSET GT, R6; B t_storef64
+t_lef64: FCMPD F1, F0; CSET GE, R6; B t_storef64
+t_storef64: MOVB R6, (R3); ADD $1, R3; SUB $1, R4; B tailf64
+matchf64_done: RET

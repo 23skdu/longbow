@@ -491,14 +491,16 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 	// 2.6 Initial Linkage: Link each node to its predecessor to form a simple chain.
 	// Link the first parallel node to the last bootstrap seed to ensure connectivity.
-	for i := 0; i < n; i++ {
-		prevID := lastSeedID
-		if i > 0 {
-			prevID = activeNodes[i-1].id
+	pool.ParallelFor(n, (n+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
+		for i := start; i < end; i++ {
+			prevID := lastSeedID
+			if i > 0 {
+				prevID = activeNodes[i-1].id
+			}
+			_ = h.AddConnection(nil, data, activeNodes[i].id, prevID, 0, h.mMax0, 0.0)
+			_ = h.AddConnection(nil, data, prevID, activeNodes[i].id, 0, h.mMax0, 0.0)
 		}
-		data = h.AddConnection(nil, data, activeNodes[i].id, prevID, 0, h.mMax0, 0.0)
-		data = h.AddConnection(nil, data, prevID, activeNodes[i].id, 0, h.mMax0, 0.0)
-	}
+	})
 	h.compareAndSwapData(data) // Publish initial chain to enable traversal
 
 	for lc := topL; lc >= 0; lc-- {

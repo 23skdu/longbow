@@ -23,6 +23,10 @@ type CUDADevice struct {
 
 // InitializeCUDA initializes the CUDA runtime for the specified device
 func InitializeCUDA(deviceID int) error {
+	if deviceID < 0 || deviceID > 2147483647 {
+		return fmt.Errorf("invalid deviceID: %d", deviceID)
+	}
+	// #nosec G115
 	ret := C.lb_cuda_init_device(C.int(deviceID))
 	if ret != 0 {
 		return fmt.Errorf("failed to initialize CUDA device %d: error code %d", deviceID, ret)

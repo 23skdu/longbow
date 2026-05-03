@@ -47,14 +47,22 @@ func l2SquaredAVX2(a, b []float32) (float32, error) {
 	return sum, nil
 }
 
-// AVX2 optimized Euclidean distance for 384 dims - uses generic AVX2 SIMD kernel
+// AVX2 optimized Euclidean distance for 384 dims
 func euclidean384AVX2(a, b []float32) (float32, error) {
-	return euclideanAVX2(a, b)
+	if len(a) != 384 || len(b) != 384 {
+		return euclideanAVX2(a, b)
+	}
+	sum := l2Squared384AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])))
+	return float32(math.Sqrt(float64(sum))), nil
 }
 
 // AVX2 optimized Euclidean distance for 768 dims.
 func euclidean768AVX2(a, b []float32) (float32, error) {
-	return euclideanAVX2(a, b)
+	if len(a) != 768 || len(b) != 768 {
+		return euclideanAVX2(a, b)
+	}
+	sum := l2Squared768AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])))
+	return float32(math.Sqrt(float64(sum))), nil
 }
 
 // AVX2 optimized Euclidean distance for 1024 dims.
@@ -74,11 +82,17 @@ func euclidean3072AVX2(a, b []float32) (float32, error) {
 
 // AVX2 optimized dot product for specific dimensions
 func dot384AVX2(a, b []float32) (float32, error) {
-	return dotAVX2(a, b)
+	if len(a) != 384 || len(b) != 384 {
+		return dotAVX2(a, b)
+	}
+	return dot384AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
 func dot768AVX2(a, b []float32) (float32, error) {
-	return dotAVX2(a, b)
+	if len(a) != 768 || len(b) != 768 {
+		return dotAVX2(a, b)
+	}
+	return dot768AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
 func dot1024AVX2(a, b []float32) (float32, error) {
@@ -806,3 +820,12 @@ var _ = func() {
 		softmaxAVX512Kernel(0, 0, 0)
 	}
 }
+
+//go:noescape
+func l2Squared384AVX2Kernel(a, b uintptr) float32
+//go:noescape
+func l2Squared768AVX2Kernel(a, b uintptr) float32
+//go:noescape
+func dot384AVX2Kernel(a, b uintptr) float32
+//go:noescape
+func dot768AVX2Kernel(a, b uintptr) float32

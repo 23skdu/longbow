@@ -245,6 +245,8 @@ func (s *QueryStats) GetMetrics() (p50, p99, avg float64, recall float64, qps fl
 
 // IsSharded returns true if the dataset's vector index is sharded.
 func (d *Dataset) IsSharded() bool {
+	d.dataMu.RLock()
+	defer d.dataMu.RUnlock()
 	if d.Index != nil {
 		return d.Index.IsSharded()
 	}
@@ -253,14 +255,18 @@ func (d *Dataset) IsSharded() bool {
 
 // GetShardedIndex returns the index as a *ShardedHNSW if it is one.
 func (d *Dataset) GetShardedIndex() *ShardedHNSW {
-	if d.Index == nil {
+	d.dataMu.RLock()
+	idx := d.Index
+	d.dataMu.RUnlock()
+
+	if idx == nil {
 		return nil
 	}
-	if s, ok := d.Index.(*ShardedHNSW); ok {
+	if s, ok := idx.(*ShardedHNSW); ok {
 		return s
 	}
 	// Also check if it's an AutoShardingIndex that is currently sharded
-	if asi, ok := d.Index.(*AutoShardingIndex); ok {
+	if asi, ok := idx.(*AutoShardingIndex); ok {
 		asi.mu.RLock()
 		defer asi.mu.RUnlock()
 		if s, ok := asi.current.(*ShardedHNSW); ok {
@@ -272,6 +278,8 @@ func (d *Dataset) GetShardedIndex() *ShardedHNSW {
 
 // IndexLen returns the total number of vectors currently in the dataset's index.
 func (d *Dataset) IndexLen() int {
+	d.dataMu.RLock()
+	defer d.dataMu.RUnlock()
 	if d.Index != nil {
 		return d.Index.Len()
 	}
@@ -412,10 +420,14 @@ func (d *Dataset) SetLastAccess(t time.Time) {
 // SearchDataset delegates to the vector index if available
 // SearchDataset delegates to the vector index if available.
 func (d *Dataset) SearchDataset(ctx context.Context, queryVec []float32, k int) ([]SearchResult, error) {
-	if d.Index == nil {
+	d.dataMu.RLock()
+	idx := d.Index
+	d.dataMu.RUnlock()
+
+	if idx == nil {
 		return nil, fmt.Errorf("index not initialized")
 	}
-	return d.Index.SearchVectors(ctx, queryVec, k, nil, SearchOptions{})
+	return idx.SearchVectors(ctx, queryVec, k, nil, SearchOptions{})
 }
 
 // AddToIndex adds a vector to the index

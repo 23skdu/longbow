@@ -118,17 +118,9 @@ func (g *GraphData) Serialize(w io.Writer) error {
 				count = g.Capacity - nodesProcessed
 			}
 
-			// Get Counts and Neighbors chunks
-			// Note: We access safely. If nil, means 0 neighbors.
-			var counts []int32
-			var neighbors []uint32
-
-			if cID < len(g.Counts[l]) {
-				counts = g.Counts[l][cID]
-			}
-			if cID < len(g.Neighbors[l]) {
-				neighbors = g.Neighbors[l][cID]
-			}
+			// Get Counts and Neighbors chunks using accessors
+			counts := g.GetCountsChunk(l, cID)
+			neighbors := g.GetNeighborsChunk(l, cID)
 
 			for i := 0; i < count; i++ {
 				var encodedCount uint32

@@ -13,7 +13,7 @@ type MockIndex struct {
 	mu        sync.RWMutex
 	vectors   map[int64][]float32
 	dimension int
-	deviceID  int
+	deviceID  int32
 	backend   GPUBackend
 	closed    bool
 }
@@ -146,7 +146,7 @@ func (m *MockIndex) Backend() GPUBackend {
 	return m.backend
 }
 
-func (m *MockIndex) DeviceID() int {
+func (m *MockIndex) DeviceID() int32 {
 	return m.deviceID
 }
 

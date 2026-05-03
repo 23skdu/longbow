@@ -22,11 +22,8 @@ func (h *ArrowHNSW) promoteNode(data *types.GraphData, id uint32) *types.GraphDa
 
 	cID := types.ChunkID(id)
 	
-	// If chunk is already in memory, we still might need to clone if this is the published data
+	// If chunk is already in memory, no need to clone or promote.
 	if data.GetNeighborsChunk(0, cID) != nil {
-		if data == h.data.Load() {
-			return data.Clone()
-		}
 		return data
 	}
 

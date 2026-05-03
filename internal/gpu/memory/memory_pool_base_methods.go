@@ -100,6 +100,6 @@ func (p *GPUMemPool) Backend() GPUBackend {
 	return p.backend
 }
 
-func (p *GPUMemPool) DeviceID() int {
+func (p *GPUMemPool) DeviceID() int32 {
 	return p.deviceID
 }

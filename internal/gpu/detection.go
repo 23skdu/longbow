@@ -2,6 +2,7 @@ package gpu
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -69,8 +70,8 @@ func detectCUDAGPUs() []GPUInfo {
 		}
 
 		deviceID, err := strconv.Atoi(strings.TrimSpace(parts[0]))
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: Failed to parse device ID from line '%s': %v\n", line, err)
+		if err != nil || deviceID < 0 || deviceID > math.MaxInt32 {
+			fmt.Fprintf(os.Stderr, "Warning: Invalid device ID from line '%s': %v\n", line, err)
 			continue
 		}
 		name := strings.TrimSpace(parts[1])
@@ -97,7 +98,7 @@ func detectCUDAGPUs() []GPUInfo {
 		gpu := GPUInfo{
 			Backend:      BackendCUDA,
 			Name:         name,
-			DeviceID:     deviceID,
+			DeviceID:     int32(deviceID), // #nosec G109 - validated above
 			MemoryMB:     memoryMB,
 			ComputeMajor: computeMajor,
 			ComputeMinor: computeMinor,
@@ -298,7 +299,7 @@ func parseClinfoOutput(output string, backend GPUBackend) []GPUInfo {
 			}
 			currentGPU = &GPUInfo{
 				Backend:  backend,
-				DeviceID: len(gpus),
+				DeviceID: int32(len(gpus)),
 			}
 		}
 
@@ -519,7 +520,7 @@ func GetBestGPU() (*GPUInfo, error) {
 }
 
 // GetGPUByID returns GPU info for a specific device ID
-func GetGPUByID(deviceID int) (*GPUInfo, error) {
+func GetGPUByID(deviceID int32) (*GPUInfo, error) {
 	gpus := DetectAvailableGPUs()
 
 	for i := range gpus {
@@ -554,7 +555,7 @@ func detectTPUsWithRoot(root string) []GPUInfo {
 				gpus = append(gpus, GPUInfo{
 					Backend:  BackendTPU,
 					Name:     "Google TPU",
-					DeviceID: i,
+					DeviceID: int32(i),
 					MemoryMB: 16384, // Generic fallback
 				})
 			}
@@ -574,7 +575,10 @@ func detectTPUsWithRoot(root string) []GPUInfo {
 		}
 
 		idStr := strings.TrimPrefix(devName, "accel")
-		deviceID, _ := strconv.Atoi(idStr)
+		deviceID, err := strconv.Atoi(idStr)
+		if err != nil || deviceID < 0 || deviceID > math.MaxInt32 {
+			continue
+		}
 
 		// Check for Google Vendor ID (0x1ae0)
 		vendorPath := filepath.Join(accelDir, devName, "device/vendor")
@@ -612,7 +616,7 @@ func detectTPUsWithRoot(root string) []GPUInfo {
 		gpus = append(gpus, GPUInfo{
 			Backend:      BackendTPU,
 			Name:         name,
-			DeviceID:     deviceID,
+			DeviceID:     int32(deviceID), // #nosec G109 - validated above
 			MemoryMB:     memoryMB,
 			Vendor:       "Google",
 			VendorID:     "0x1ae0",

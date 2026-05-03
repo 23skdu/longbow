@@ -74,7 +74,7 @@ type GeoIndex struct {
 	dimension    int
 	vectors      sync.Map
 	pointIndex   atomic.Pointer[Quadtree]
-	nearestCache sync.Map
+	nearestCache atomic.Pointer[sync.Map]
 	config       *GeoSearchConfig
 	datasetName  string // For metrics
 	pointCount   atomic.Int64
@@ -93,6 +93,7 @@ type Quadtree struct {
 	southeast   *Quadtree
 	datasetName string
 	depth       int
+	mu          sync.RWMutex
 }
 
 // NewQuadtree creates a new Quadtree instance with the given bounds and capacity.
@@ -108,22 +109,23 @@ func NewQuadtree(bounds GeoBoundingBox, capacity int, datasetName string) *Quadt
 	}
 }
 
-// Insert adds a vector to the quadtree, subdividing if necessary.
-// Note: Called under GeoIndex.mu lock.
 func (q *Quadtree) Insert(vec *GeoIndexedVector) bool {
 	if !q.Contains(vec.GeoPoint) {
 		return false
 	}
 
+	q.mu.Lock()
 	if !q.divided.Load() {
 		if len(q.vectors) < q.capacity || q.depth >= 24 {
 			q.vectors = append(q.vectors, vec)
+			q.mu.Unlock()
 			return true
 		}
 		q.subdivide()
 	}
+	q.mu.Unlock()
 
-	// Try children
+	// Try children - no lock needed here as children are immutable once published
 	if q.northwest.Insert(vec) { return true }
 	if q.northeast.Insert(vec) { return true }
 	if q.southwest.Insert(vec) { return true }
@@ -211,6 +213,7 @@ func (q *Quadtree) queryRadiusRecursive(center GeoPoint, radiusKm float64, resul
 		return
 	}
 
+	q.mu.RLock()
 	if !q.divided.Load() {
 		for _, v := range q.vectors {
 			dist := HaversineDistance(center, v.GeoPoint, 6371.0)
@@ -218,8 +221,10 @@ func (q *Quadtree) queryRadiusRecursive(center GeoPoint, radiusKm float64, resul
 				*results = append(*results, v)
 			}
 		}
+		q.mu.RUnlock()
 		return
 	}
+	q.mu.RUnlock()
 
 	q.northwest.queryRadiusRecursive(center, radiusKm, results)
 	q.northeast.queryRadiusRecursive(center, radiusKm, results)
@@ -244,6 +249,7 @@ func (q *Quadtree) queryBoxRecursive(box GeoBoundingBox, results *[]*GeoIndexedV
 		return
 	}
 
+	q.mu.RLock()
 	if !q.divided.Load() {
 		for _, v := range q.vectors {
 			if v.GeoPoint.Lat >= box.MinLat && v.GeoPoint.Lat <= box.MaxLat &&
@@ -251,8 +257,10 @@ func (q *Quadtree) queryBoxRecursive(box GeoBoundingBox, results *[]*GeoIndexedV
 				*results = append(*results, v)
 			}
 		}
+		q.mu.RUnlock()
 		return
 	}
+	q.mu.RUnlock()
 
 	q.northwest.queryBoxRecursive(box, results)
 	q.northeast.queryBoxRecursive(box, results)
@@ -275,6 +283,7 @@ func NewGeoIndex(datasetName string, dimension int, config *GeoSearchConfig) *Ge
 		dimension:   dimension,
 		config:      config,
 	}
+	gi.nearestCache.Store(&sync.Map{})
 	gi.pointIndex.Store(NewQuadtree(GeoBoundingBox{MinLat: -90, MaxLat: 90, MinLon: -180, MaxLon: 180}, 4, datasetName))
 	return gi
 }
@@ -286,9 +295,6 @@ func (gi *GeoIndex) SetGPUIndex(idx gputypes.Index) {
 
 // Add inserts a vector and its location into the index.
 func (gi *GeoIndex) Add(id uint64, vector []float32, point GeoPoint, metadata []byte) error {
-	gi.mu.Lock()
-	defer gi.mu.Unlock()
-
 	geoVec := &GeoIndexedVector{
 		ID:        id,
 		Vector:    vector,
@@ -305,16 +311,13 @@ func (gi *GeoIndex) Add(id uint64, vector []float32, point GeoPoint, metadata []
 	gi.pointCount.Add(1)
 
 	// Reset nearestCache by creating a new sync.Map
-	gi.nearestCache = sync.Map{}
+	gi.nearestCache.Store(&sync.Map{})
 
 	return nil
 }
 
 // AddBatch inserts multiple vectors into the GeoIndex.
 func (gi *GeoIndex) AddBatch(ids []uint64, vectors [][]float32, points []GeoPoint, metadata [][]byte) error {
-	gi.mu.Lock()
-	defer gi.mu.Unlock()
-
 	index := gi.pointIndex.Load()
 	for i := range ids {
 		var m []byte
@@ -337,7 +340,7 @@ func (gi *GeoIndex) AddBatch(ids []uint64, vectors [][]float32, points []GeoPoin
 	gi.pointCount.Add(int64(len(ids)))
 
 	// Reset nearestCache
-	gi.nearestCache = sync.Map{}
+	gi.nearestCache.Store(&sync.Map{})
 
 	return nil
 }
@@ -620,10 +623,7 @@ func (gi *GeoIndex) Get(id uint64) (*GeoIndexedVector, bool) {
 	return val.(*GeoIndexedVector), true
 }
 
-// Delete removes a vector from the geo index.
 func (gi *GeoIndex) Delete(id uint64) {
-	gi.mu.Lock()
-	defer gi.mu.Unlock()
 	
 	if _, ok := gi.vectors.Load(id); ok {
 		gi.vectors.Delete(id)
@@ -633,7 +633,7 @@ func (gi *GeoIndex) Delete(id uint64) {
 	// It will be filtered out during Search if not in gi.vectors or marked.
 	// But current Quadtree doesn't support easy deletion.
 	
-	gi.nearestCache = sync.Map{}
+	gi.nearestCache.Store(&sync.Map{})
 }
 
 // HaversineDistance calculates the great-circle distance between two points.

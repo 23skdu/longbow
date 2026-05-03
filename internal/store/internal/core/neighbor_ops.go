@@ -41,10 +41,10 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 		return data
 	}
 
-	// 2. Fallback to COW + Mutex path for legacy storage
-	if data == h.data.Load() {
-		data = data.Clone()
-	}
+	// 2. Fallback to Mutex path for legacy storage
+	// Note: We don't need to clone here anymore because Neighbor/Count updates
+	// are performed on the shared arena using atomic operations and per-node locks.
+	// We only clone if we need to GROW the GraphData structure (handled in EnsureChunk).
 	data = h.promoteNode(data, source)
 
 	oldVer := data.LockNode(layer, source)

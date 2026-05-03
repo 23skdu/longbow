@@ -1272,7 +1272,7 @@ func (idx *MetalIndex) Backend() gputypes.GPUBackend {
 	return gputypes.BackendMetal
 }
 
-func (idx *MetalIndex) DeviceID() int {
+func (idx *MetalIndex) DeviceID() int32 {
 	return idx.deviceInfo.DeviceID
 }
 
@@ -1334,7 +1334,7 @@ func (idx *MetalIndex) GetUtilization() (float32, error) {
 }
 
 // Initialize initializes the GPU device
-func (idx *MetalIndex) Initialize(deviceID int) error {
+func (idx *MetalIndex) Initialize(deviceID int32) error {
 	return nil
 }
 

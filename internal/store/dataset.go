@@ -106,6 +106,8 @@ type Dataset struct {
 	// In-flight Indexing Tracking (Compaction Safety)
 	PendingIndexJobs atomic.Int64
 	PendingIngestion atomic.Int64
+	IsReady          atomic.Bool // Set to true after first successful ingestion (v0.2.0)
+	RegistryPublished atomic.Bool // Set to true when advertised to the cluster
 
 	// LWW State
 	LWW *TimestampMap

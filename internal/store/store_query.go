@@ -15,6 +15,7 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/23skdu/longbow/pkg/loadbalancing"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -44,7 +45,7 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 
 	var datasets []*Dataset
 	s.IterateDatasets(func(name string, ds *Dataset) {
-		if ds != nil {
+		if ds != nil && ds.IsReady.Load() {
 			datasets = append(datasets, ds)
 		}
 	})
@@ -94,11 +95,16 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 		}
 
 		if match {
+			metadata := s.getPooledMetadataBuffer(loadbalancing.LoadHintsSize)
+			hints := s.GetLoadHints()
+			hints.Serialize(metadata)
+
 			info := &flight.FlightInfo{
 				FlightDescriptor: &flight.FlightDescriptor{
 					Type: flight.DescriptorPATH,
 					Path: []string{ds.Name},
 				},
+				AppMetadata: metadata,
 			}
 			if err := stream.Send(info); err != nil {
 				return err
@@ -119,10 +125,20 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 		return nil, status.Error(codes.NotFound, "dataset not found")
 	}
 
+	if !ds.IsReady.Load() {
+		return nil, status.Error(codes.Unavailable, "dataset is being initialized")
+	}
+
+	// Include load balancing hints in AppMetadata (Apache Arrow Zero-Alloc approach)
+	metadata := s.getPooledMetadataBuffer(loadbalancing.LoadHintsSize)
+	hints := s.nodeMonitor.GetLoadHints()
+	hints.Serialize(metadata)
+
 	return &flight.FlightInfo{
 		FlightDescriptor: desc,
 		TotalRecords:     int64(len(ds.Records.Read())),
 		TotalBytes:       ds.SizeBytes.Load(),
+		AppMetadata:      metadata,
 	}, nil
 }
 // GetSchema returns the Arrow schema for a specific dataset.

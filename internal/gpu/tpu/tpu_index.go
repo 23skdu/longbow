@@ -151,7 +151,7 @@ func (i *TPUIndex) Backend() types.GPUBackend {
 	return types.BackendTPU
 }
 
-func (i *TPUIndex) DeviceID() int {
+func (i *TPUIndex) DeviceID() int32 {
 	return i.cfg.DeviceID
 }
 

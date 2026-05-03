@@ -19,34 +19,52 @@ func (g *GraphData) CloneForSnapshot() *GraphData {
 	}
 
 	// 1. Deep Copy Neighbors (Mutable Topology)
-	clone.Neighbors = make([][][]uint32, len(g.Neighbors))
+	clone.Neighbors = make([][]uint64, len(g.Neighbors))
 	for l := range g.Neighbors {
 		if g.Neighbors[l] == nil {
 			continue
 		}
-		clone.Neighbors[l] = make([][]uint32, len(g.Neighbors[l]))
+		clone.Neighbors[l] = make([]uint64, len(g.Neighbors[l]))
 		for c := range g.Neighbors[l] {
-			if chunk := g.Neighbors[l][c]; chunk != nil {
-				// Allocate new chunk and copy
-				newChunk := make([]uint32, len(chunk))
-				copy(newChunk, chunk)
-				clone.Neighbors[l][c] = newChunk
+			if offset := g.Neighbors[l][c]; offset != 0 {
+				chunk := g.GetNeighborsChunk(l, c)
+				if chunk == nil {
+					continue
+				}
+				// Allocate new chunk in arena and copy
+				if g.Uint32Arena != nil {
+					ref, err := g.Uint32Arena.AllocSlice(len(chunk))
+					if err == nil {
+						newChunk := g.Uint32Arena.Get(ref)
+						copy(newChunk, chunk)
+						clone.Neighbors[l][c] = ref.Offset
+					}
+				}
 			}
 		}
 	}
 
 	// 2. Deep Copy Counts
-	clone.Counts = make([][][]int32, len(g.Counts))
+	clone.Counts = make([][]uint64, len(g.Counts))
 	for l := range g.Counts {
 		if g.Counts[l] == nil {
 			continue
 		}
-		clone.Counts[l] = make([][]int32, len(g.Counts[l]))
+		clone.Counts[l] = make([]uint64, len(g.Counts[l]))
 		for c := range g.Counts[l] {
-			if chunk := g.Counts[l][c]; chunk != nil {
-				newChunk := make([]int32, len(chunk))
-				copy(newChunk, chunk)
-				clone.Counts[l][c] = newChunk
+			if offset := g.Counts[l][c]; offset != 0 {
+				chunk := g.GetCountsChunk(l, c)
+				if chunk == nil {
+					continue
+				}
+				if g.Int32Arena != nil {
+					ref, err := g.Int32Arena.AllocSlice(len(chunk))
+					if err == nil {
+						newChunk := g.Int32Arena.Get(ref)
+						copy(newChunk, chunk)
+						clone.Counts[l][c] = ref.Offset
+					}
+				}
 			}
 		}
 	}

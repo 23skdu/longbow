@@ -106,7 +106,10 @@ func EuclideanDistanceF16(a, b []float16.Num) (float32, error) {
 		return Euclidean768Float16(a, b)
 	}
 
-	return euclideanDistanceF16Impl(a, b)
+	if euclideanDistanceF16Impl != nil {
+		return euclideanDistanceF16Impl(a, b)
+	}
+	return euclideanF16Unrolled4x(a, b)
 }
 
 // CosineDistanceF16 calculates the cosine distance between two FP16 vectors.
@@ -117,10 +120,13 @@ func CosineDistanceF16(a, b []float16.Num) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	return cosineDistanceF16Impl(a, b)
+	if cosineDistanceF16Impl != nil {
+		return cosineDistanceF16Impl(a, b)
+	}
+	return cosineF16Unrolled4x(a, b)
 }
 
-// DotProductF16 calculates the dot product of two FP16 vectors.
+// DotProductF16 calculates the dot product between two FP16 vectors.
 func DotProductF16(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: vector length mismatch")
@@ -128,7 +134,10 @@ func DotProductF16(a, b []float16.Num) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	return dotProductF16Impl(a, b)
+	if dotProductF16Impl != nil {
+		return dotProductF16Impl(a, b)
+	}
+	return dotF16Unrolled4x(a, b)
 }
 
 // EuclideanDistanceFloat64 calculates Euclidean distance for Float64 vectors.

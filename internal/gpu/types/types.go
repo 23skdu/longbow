@@ -34,7 +34,7 @@ func (b GPUBackend) String() string {
 
 type GPUConfig struct {
 	Backend            GPUBackend
-	DeviceID           int
+	DeviceID           int32
 	Dimension          int
 	Enabled            bool
 	CUDAHome           string
@@ -76,7 +76,7 @@ func DefaultGPUConfig() GPUConfig {
 type GPUInfo struct {
 	Name             string
 	Backend          GPUBackend
-	DeviceID         int
+	DeviceID         int32
 	MemoryMB         int64
 	ComputeMajor     int
 	ComputeMinor     int
@@ -102,7 +102,7 @@ type Index interface {
 	AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error)
 	Close() error
 	Backend() GPUBackend
-	DeviceID() int // Returns the device ID this index runs on
+	DeviceID() int32 // Returns the device ID this index runs on
 	GetDeviceInfo() (*GPUInfo, error)
 	GetMemoryInfo() (total, free, used int64, err error)
 	GetUtilization() (float32, error)
@@ -131,7 +131,7 @@ func DetectGPUBackend() GPUBackend {
 	return BackendCPU
 }
 
-func GetDeviceCount() int {
+func GetDeviceCount() int32 {
 	backend := DetectGPUBackend()
 	switch backend {
 	case BackendMetal:

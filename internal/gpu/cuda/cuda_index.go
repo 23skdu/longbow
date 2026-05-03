@@ -840,7 +840,7 @@ func (idx *CUDAIndex) Backend() types.GPUBackend {
 	return types.BackendCUDA
 }
 
-func (idx *CUDAIndex) DeviceID() int {
+func (idx *CUDAIndex) DeviceID() int32 {
 	return idx.deviceInfo.DeviceID
 }
 
@@ -933,7 +933,7 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 	return resultIDs, resultDistances, nil
 }
 
-func (idx *CUDAIndex) Initialize(deviceID int) error {
+func (idx *CUDAIndex) Initialize(deviceID int32) error {
 	return SetDevice(deviceID)
 }
 

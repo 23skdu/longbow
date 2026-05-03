@@ -14,6 +14,7 @@ import (
 	"github.com/23skdu/longbow/internal/tracing"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/23skdu/longbow/pkg/retry"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,8 +22,9 @@ import (
 
 // GlobalSearchCoordinator handles scatter-gather logic
 type GlobalSearchCoordinator struct {
-	logger zerolog.Logger
-	pool   *FlightClientPool
+	logger      zerolog.Logger
+	pool        *FlightClientPool
+	retryPolicy retry.RetryPolicy
 }
 
 // NewGlobalSearchCoordinator creates a new GlobalSearchCoordinator with the provided logger and client pool.
@@ -30,6 +32,12 @@ func NewGlobalSearchCoordinator(logger zerolog.Logger, pool *FlightClientPool) *
 	return &GlobalSearchCoordinator{
 		logger: logger,
 		pool:   pool,
+		retryPolicy: &retry.ExponentialBackoff{
+			BaseDelay:      100 * time.Millisecond,
+			MaxDelay:       2 * time.Second,
+			Retries:        3,
+			AttemptTimeout: 10 * time.Second,
+		},
 	}
 }
 
@@ -88,7 +96,6 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 	remoteReq.LocalOnly = true
 
 	var wg sync.WaitGroup
-	configTimeout := 30 * time.Second
 
 	groupIdx := 0
 	for _, members := range peerGroups {
@@ -115,85 +122,79 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 			failSignal := make(chan struct{}, len(replicas))
 			var wgReplicas sync.WaitGroup
 
-			subCtx, cancelTimeout := context.WithTimeout(ctxHedge, configTimeout)
-			defer cancelTimeout()
-
 			for i := range replicas {
 				rp := replicas[i]
 				wgReplicas.Add(1)
 				go func(p mesh.Member) {
 					defer wgReplicas.Done()
 
-					conn, err := c.pool.Get(subCtx, p.MetaAddr)
-					if err != nil {
-						failSignal <- struct{}{}
-						return
-					}
-					defer c.pool.Put(conn)
-					client := conn.Client()
+					err := retry.Do(ctxHedge, c.retryPolicy, func(subCtx context.Context) error {
+						conn, err := c.pool.Get(subCtx, p.MetaAddr)
+						if err != nil {
+							return err
+						}
+						defer c.pool.Put(conn)
+						client := conn.Client()
 
-					c.logger.Debug().Str("peer", p.ID).Str("addr", p.MetaAddr).Msg("Sending DoGet to peer")
+						c.logger.Debug().Str("peer", p.ID).Str("addr", p.MetaAddr).Msg("Sending DoGet to peer")
 
-					// DoGet with Search Ticket
-					ticketQuery := query.TicketQuery{
-						Search: &remoteReq,
-					}
-					ticketBytes, err := json.Marshal(ticketQuery)
-					if err != nil {
-						failSignal <- struct{}{}
-						return
-					}
+						// DoGet with Search Ticket
+						ticketQuery := query.TicketQuery{
+							Search: &remoteReq,
+						}
+						ticketBytes, err := json.Marshal(ticketQuery)
+						if err != nil {
+							return err
+						}
 
-					stream, err := client.DoGet(subCtx, &flight.Ticket{Ticket: ticketBytes})
-					if err != nil {
-						// Only log at Debug level for NotFound as it happens when Sharding skips a node
+						stream, err := client.DoGet(subCtx, &flight.Ticket{Ticket: ticketBytes})
+						if err != nil {
+							return err
+						}
+
+						reader, err := flight.NewRecordReader(stream)
+						if err != nil {
+							return err
+						}
+						defer reader.Release()
+
+						var results []SearchResult
+						for reader.Next() {
+							rec := reader.RecordBatch()
+							col0 := rec.Column(0)
+							col1 := rec.Column(1)
+
+							ids := col0.(*array.Uint64).Uint64Values()
+							scores := col1.(*array.Float32).Float32Values()
+
+							for k := 0; k < len(ids); k++ {
+								results = append(results, SearchResult{
+									ID:    lbtypes.VectorID(ids[k]), // #nosec G115
+									Score: scores[k],
+								})
+							}
+						}
+						if reader.Err() != nil {
+							return reader.Err()
+						}
+
+						// Submit
+						select {
+						case resultHedge <- results:
+							cancelHedge() // Cancel others
+						case <-subCtx.Done():
+						}
+						return nil
+					})
+
+					if err != nil && ctxHedge.Err() == nil {
+						// Only log and signal failure if the hedge context wasn't cancelled by a winner
 						if status.Code(err) == codes.NotFound {
-							c.logger.Debug().Err(err).Str("peer", p.ID).Msg("Peer does not have dataset")
+							c.logger.Debug().Err(err).Str("peer", p.ID).Msg("Peer does not have dataset after retries")
 						} else {
-							c.logger.Warn().Err(err).Str("peer", p.ID).Msg("DoGet failed")
+							c.logger.Warn().Err(err).Str("peer", p.ID).Msg("DoGet failed after retries")
 						}
 						failSignal <- struct{}{}
-						return
-					}
-
-					reader, err := flight.NewRecordReader(stream)
-					if err != nil {
-						if status.Code(err) == codes.NotFound {
-							c.logger.Debug().Err(err).Str("peer", p.ID).Msg("NewRecordReader failed (NotFound)")
-						} else {
-							c.logger.Warn().Err(err).Str("peer", p.ID).Msg("NewRecordReader failed")
-						}
-						failSignal <- struct{}{}
-						return
-					}
-					defer reader.Release()
-
-					var results []SearchResult
-					for reader.Next() {
-						rec := reader.RecordBatch()
-						col0 := rec.Column(0)
-						col1 := rec.Column(1)
-
-						ids := col0.(*array.Uint64).Uint64Values()
-						scores := col1.(*array.Float32).Float32Values()
-
-						for k := 0; k < len(ids); k++ {
-							results = append(results, SearchResult{
-								ID:    lbtypes.VectorID(ids[k]), // #nosec G115
-								Score: scores[k],
-							})
-						}
-					}
-					if reader.Err() != nil {
-						failSignal <- struct{}{}
-						return
-					}
-
-					// Submit
-					select {
-					case resultHedge <- results:
-						cancelHedge() // Cancel others
-					case <-subCtx.Done():
 					}
 				}(rp)
 			}
@@ -222,7 +223,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 				case <-finishedAll:
 					// Double check if we missed a result? theoretically shouldn't happen with resultHedge
 					return
-				case <-subCtx.Done():
+				case <-ctxHedge.Done():
 					metrics.GlobalSearchPartialFailures.Inc()
 					return
 				}

@@ -9,14 +9,14 @@ import (
 
 type GPUMemPool struct {
 	backend     types.GPUBackend
-	deviceID    int
+	deviceID    int32
 	totalBytes  int64
 	usedBytes   int64
 	allocations map[unsafe.Pointer]int64
 	mu          sync.RWMutex
 }
 
-func NewGPUMemPool(backend types.GPUBackend, deviceID int) (*GPUMemPool, error) {
+func NewGPUMemPool(backend types.GPUBackend, deviceID int32) (*GPUMemPool, error) {
 	pool := &GPUMemPool{
 		backend:     backend,
 		deviceID:    deviceID,

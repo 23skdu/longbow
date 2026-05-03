@@ -94,6 +94,9 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 				} else if ds.Index == nil {
 					resp["status"] = "BUSY"
 					resp["reason"] = "index not initialized"
+				} else if !ds.IsReady.Load() {
+					resp["status"] = "BUSY"
+					resp["reason"] = "metadata registration in progress"
 				}
 				resp["index_len"] = ds.IndexLen()
 				resp["index_ready"] = ds.Index != nil
@@ -1358,6 +1361,12 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	newRecords[len(currentRecords)] = rec
 	ds.Records.UpdateInPlace(newRecords)
 	rec.Retain()
+
+	// Mark dataset as ready after first successful ingestion
+	if !ds.IsReady.Load() {
+		ds.IsReady.Store(true)
+		s.logger.Info().Str("dataset", name).Msg("Dataset metadata registration complete (Ready for queries)")
+	}
  
 	currCPU := lmem.GetCurrentCPU()
 	currNode := -1

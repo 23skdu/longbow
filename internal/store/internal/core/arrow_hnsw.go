@@ -139,6 +139,9 @@ type ArrowHNSW struct {
 	// Cached Schema Metadata
 	cachedVecColIdx atomic.Int32
 	colIdxCache    sync.Map // map[string]int
+	cachedTQBits   atomic.Int32
+	cachedMetric   atomic.Int32
+	metadataCached atomic.Bool
 }
 
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
@@ -1580,9 +1583,9 @@ func (h *ArrowHNSW) PreWarm(targetSize int) {
 	var dummy uint32
 
 	// Prewarm Neighbors (Layer 0) - this is usually the largest memory block
-	if len(data.Neighbors) > 0 && len(data.Neighbors[0]) > 0 {
+	if len(data.Neighbors) > 0 {
 		for i := 0; i < targetChunks && i < len(data.Neighbors[0]); i++ {
-			chunk := data.Neighbors[0][i]
+			chunk := data.GetNeighborsChunk(0, i)
 			if chunk == nil {
 				continue
 			}
@@ -1832,7 +1835,7 @@ func (h *ArrowHNSW) EnsureChunks(startCID, endCID int, dims int) (*types.GraphDa
 
 	needsGrow := false
 	for i := startCID; i <= endCID; i++ {
-		if data.GetVectorsChunk(types.ChunkID(uint32(i))) == nil {
+		if data.GetVectorsChunk(types.ChunkID(uint32(i))) == nil { // #nosec G115
 			needsGrow = true
 			break
 		}
@@ -1845,7 +1848,7 @@ func (h *ArrowHNSW) EnsureChunks(startCID, endCID int, dims int) (*types.GraphDa
 	// COW Clone
 	newData := data.Clone()
 	for i := startCID; i <= endCID; i++ {
-		if err := newData.EnsureChunk(int(types.ChunkID(uint32(i))), 0, dims); err != nil {
+		if err := newData.EnsureChunk(int(types.ChunkID(uint32(i))), 0, dims); err != nil { // #nosec G115
 			return nil, err
 		}
 	}
@@ -3915,7 +3918,44 @@ func (h *ArrowHNSW) getVectorColumnIndex(rec arrow.RecordBatch) int {
 	if vecColIdx != -1 && vecColIdx <= 2147483647 {
 		h.cachedVecColIdx.Store(int32(vecColIdx)) // #nosec G115
 	}
+	
+	// Pre-cache other metadata while we have the schema
+	h.precacheMetadata(rec.Schema())
+	
 	return vecColIdx
+}
+
+func (h *ArrowHNSW) precacheMetadata(schema *arrow.Schema) {
+	if schema == nil || h.metadataCached.Load() {
+		return
+	}
+
+	md := schema.Metadata()
+	
+	// Pre-cache TurboQuant bits
+	if val, ok := md.GetValue("longbow.turboquant_bits"); ok {
+		if bits, err := strconv.ParseInt(val, 10, 32); err == nil {
+			h.cachedTQBits.Store(int32(bits))
+		}
+	}
+
+	// Pre-cache metric
+	if val, ok := md.GetValue("longbow.metric"); ok {
+		var m int32 = -1
+		switch strings.ToLower(val) {
+		case "euclidean", "l2":
+			m = 0
+		case "cosine":
+			m = 1
+		case "dot_product":
+			m = 2
+		}
+		if m != -1 {
+			h.cachedMetric.Store(m)
+		}
+	}
+
+	h.metadataCached.Store(true)
 }
 
 func (h *ArrowHNSW) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float32) error {

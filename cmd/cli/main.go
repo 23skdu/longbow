@@ -746,6 +746,18 @@ func runStats(ctx context.Context, args []string) {
 			}
 		}
 	}
+
+	// Display Load Balancing Hints
+	desc := &flight.FlightDescriptor{Type: flight.DescriptorPATH, Path: []string{*name}}
+	_, _ = sc.GetFlightInfo(ctx, desc)
+	hints := sc.GetLastLoadHints()
+	if hints != nil {
+		fmt.Printf("\nLoad Balancing Hints:\n")
+		fmt.Printf("  CPU Load:    %d%%\n", hints.CPULoad)
+		fmt.Printf("  Memory Load: %d%%\n", hints.MemLoad)
+		fmt.Printf("  Queue Depth: %d\n", hints.QueueDepth)
+		fmt.Printf("  Health:      %d%%\n\n", hints.Health)
+	}
 }
 
 

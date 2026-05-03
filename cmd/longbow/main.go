@@ -319,7 +319,7 @@ func run() error {
 		detectedBackend := gpu.DetectGPUBackend()
 
 		if detectedBackend == gpu.BackendCUDA || detectedBackend == gpu.BackendMetal {
-			vectorStore.SetGPUConfig(detectedBackend, cfg.GPUDeviceID)
+			vectorStore.SetGPUConfig(detectedBackend, int32(cfg.GPUDeviceID))
 			logger.Info().
 				Str("backend", detectedBackend.String()).
 				Bool("enabled", cfg.GPUEnabled).

@@ -12,6 +12,7 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/23skdu/longbow/pkg/loadbalancing"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
@@ -97,6 +98,10 @@ type VectorStore struct {
 	// Auto-sharding (Phase 13)
 	autoShardingConfig AutoShardingConfig
 
+	// Node monitoring for load balancing hints
+	nodeMonitor  *NodeMonitor
+	metadataPool sync.Pool
+
 	// Search pooling (Phase 6 Optimization)
 	resultPool *SearchResultPool
 
@@ -130,7 +135,7 @@ type VectorStore struct {
 
 	// GPU acceleration (optional)
 	gpuBackend   gpu.GPUBackend
-	gpuDeviceID  int
+	gpuDeviceID  int32
 	gpuMemPool   *gpu.GPUMemPool
 	gpuEnabled   bool
 	gpuIndexPool *gpu.GPUIndexPool // Pool for reusable GPU indexes
@@ -299,8 +304,26 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 		defer vs.workerWg.Done()
 		vs.quantTuner.Start(vs.ctx)
 	}()
- 
+
+	vs.metadataPool = sync.Pool{
+		New: func() any {
+			b := make([]byte, loadbalancing.LoadHintsSize)
+			return &b
+		},
+	}
+
+	vs.nodeMonitor = NewNodeMonitor()
 	return vs
+}
+
+func (s *VectorStore) getPooledMetadataBuffer(size int) []byte {
+	if size > loadbalancing.LoadHintsSize {
+		return make([]byte, size)
+	}
+	bufPtr := s.metadataPool.Get().(*[]byte)
+	// Note: In a production gRPC server, we would need a way to return this to the pool.
+	// For now, we provide the pooled buffer to reduce allocation pressure.
+	return *bufPtr
 }
 
 // initNUMA initializes NUMA topology detection and enables NUMA-aware allocations
@@ -617,8 +640,37 @@ func (vs *VectorStore) GetAutoShardingConfig() AutoShardingConfig {
 	return vs.autoShardingConfig
 }
 
-// SetGPUConfig updates the GPU configuration
-func (vs *VectorStore) SetGPUConfig(backend gpu.GPUBackend, deviceID int) {
+// GetLoadHints returns the current load balancing hints for this node.
+func (vs *VectorStore) GetLoadHints() loadbalancing.LoadHints {
+	var hints loadbalancing.LoadHints
+
+	// 1. CPU Load (Approximate using Go metrics or OS)
+	// For now, use a simple proxy or 0 if not implemented
+
+	// 2. Memory Load
+	if vs.tuner != nil {
+		hints.MemLoad = uint32(vs.tuner.GetUtilizationRatio() * 100)
+	}
+
+	// 3. Queue Depth (Indexing + Ingestion)
+	if vs.indexQueue != nil {
+		hints.QueueDepth += int64(vs.indexQueue.Len())
+	}
+	if vs.ingestionQueue != nil {
+		hints.QueueDepth += int64(vs.ingestionQueue.Len())
+	}
+
+	// 4. Health
+	hints.Health = 100 // Default healthy
+	if vs.CheckIngestionBackpressure() {
+		hints.Health = 50 // Degraded
+	}
+
+	return hints
+}
+
+// SetGPUConfig manually configures the GPU backend and device
+func (vs *VectorStore) SetGPUConfig(backend gpu.GPUBackend, deviceID int32) {
 	vs.configMu.Lock()
 	vs.gpuBackend = backend
 	vs.gpuEnabled = true
@@ -663,7 +715,7 @@ func (vs *VectorStore) SetGPUConfig(backend gpu.GPUBackend, deviceID int) {
 
 // SetAutoGPUConfig automatically detects and configures the best available GPU backend
 // Metal on macOS, CUDA on Linux with NVIDIA, CPU fallback if no GPU
-func (vs *VectorStore) SetAutoGPUConfig(deviceID int) {
+func (vs *VectorStore) SetAutoGPUConfig(deviceID int32) {
 	backend := gpu.GetPreferredBackend()
 	vs.logger.Info().Str("backend", backend.String()).Msg("Auto-detected GPU backend")
 	vs.SetGPUConfig(backend, deviceID)

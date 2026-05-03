@@ -188,7 +188,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	if level > int(h.maxLevel.Load()) {
 		h.epMu.Lock()
 		if level > int(h.maxLevel.Load()) {
-			h.maxLevel.Store(int32(level))
+			h.maxLevel.Store(int32(level)) // #nosec G115
 			h.entryPoint.Store(id)
 		}
 		h.epMu.Unlock()

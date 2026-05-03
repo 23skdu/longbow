@@ -391,7 +391,7 @@ func (idx *MetalHybridIndex) Backend() gputypes.GPUBackend {
 	return gputypes.BackendMetal
 }
 
-func (idx *MetalHybridIndex) DeviceID() int {
+func (idx *MetalHybridIndex) DeviceID() int32 {
 	return 0
 }
 

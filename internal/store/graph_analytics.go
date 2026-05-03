@@ -50,8 +50,8 @@ func (ga *GraphAnalytics) AnalyzeProperties(ctx context.Context) (*GraphProperti
 		sem := make(chan struct{}, maxWorkers)
 
 		var wg sync.WaitGroup
-		for cID, chunk := range chunks {
-			if chunk == nil {
+		for cID, offset := range chunks {
+			if offset == 0 {
 				continue
 			}
 
@@ -305,8 +305,8 @@ func (ga *GraphAnalytics) DetectCommunities(ctx context.Context, maxIter int) (*
 	// Identifying valid nodes
 	if len(graph.Neighbors) > 0 && len(graph.Neighbors[0]) > 0 {
 		chunks := graph.Neighbors[0]
-		for cID, chunk := range chunks {
-			if chunk == nil {
+		for cID, offset := range chunks {
+			if offset == 0 {
 				continue
 			}
 			countChunk := graph.GetCountsChunk(0, cID)

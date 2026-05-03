@@ -129,13 +129,13 @@ func RecordGPUSyncError() {
 }
 
 // RecordGPUIndexSize updates the GPU index size metric
-func RecordGPUIndexSize(deviceID int, size int64) {
+func RecordGPUIndexSize(deviceID int32, size int64) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
 	GPUIndexSize.WithLabelValues(deviceLabel).Set(float64(size))
 }
 
 // RecordGPUMemory updates GPU memory metrics
-func RecordGPUMemory(deviceID int, total, used, free int64) {
+func RecordGPUMemory(deviceID int32, total, used, free int64) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
 	GPUMemoryBytes.WithLabelValues(deviceLabel, "total").Set(float64(total))
 	GPUMemoryBytes.WithLabelValues(deviceLabel, "used").Set(float64(used))
@@ -143,19 +143,19 @@ func RecordGPUMemory(deviceID int, total, used, free int64) {
 }
 
 // RecordGPUUtilization updates GPU utilization metric
-func RecordGPUUtilization(deviceID int, utilization float64) {
+func RecordGPUUtilization(deviceID int32, utilization float64) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
 	GPUDeviceUtilization.WithLabelValues(deviceLabel).Set(utilization)
 }
 
 // RecordGPUTemperature updates GPU temperature metric
-func RecordGPUTemperature(deviceID int, temp float64) {
+func RecordGPUTemperature(deviceID int32, temp float64) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
 	GPUDeviceTemperature.WithLabelValues(deviceLabel).Set(temp)
 }
 
 // RecordGPUPower updates GPU power usage metric
-func RecordGPUPower(deviceID int, power float64) {
+func RecordGPUPower(deviceID int32, power float64) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
 	GPUDevicePowerUsage.WithLabelValues(deviceLabel).Set(power)
 }
@@ -196,7 +196,7 @@ func RecordMetalAddError(errorType string) {
 }
 
 // RecordMetalIndexSize updates the Metal index size metric
-func RecordMetalIndexSize(deviceID int, vectorCount int, dim int) {
+func RecordMetalIndexSize(deviceID int32, vectorCount int, dim int) {
 	deviceLabel := fmt.Sprintf("%d", deviceID)
 	MetalIndexVectors.WithLabelValues(deviceLabel).Set(float64(vectorCount))
 	MetalIndexDimensions.WithLabelValues(deviceLabel).Set(float64(dim))

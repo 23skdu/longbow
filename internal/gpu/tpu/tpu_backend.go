@@ -8,14 +8,14 @@ import (
 )
 
 type TPUBackend struct {
-	deviceID int
+	deviceID int32
 	mu       sync.Mutex
 	hbm      *HBMManager
 	vmem     *VMEMManager
 	initialized bool
 }
 
-func NewTPUBackend(deviceID int) (*TPUBackend, error) {
+func NewTPUBackend(deviceID int32) (*TPUBackend, error) {
 	return &TPUBackend{
 		deviceID: deviceID,
 		hbm:      &HBMManager{total: 192 * 1024 * 1024 * 1024}, // 192GB for v7x

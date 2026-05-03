@@ -156,23 +156,18 @@ func (idx *AutoShardingIndex) AddBatch(ctx context.Context, recs []arrow.RecordB
 	sharded := idx.sharded
 	interim := idx.interimIndex
 	curr := idx.current
+	idx.mu.RUnlock()
 
 	if sharded {
-		ids, err := curr.AddBatch(ctx, recs, rowIdxs, batchIdxs)
-		idx.mu.RUnlock()
-		return ids, err
+		return curr.AddBatch(ctx, recs, rowIdxs, batchIdxs)
 	}
 
 	if interim != nil {
 		// During migration, add to the NEW index directly
-		ids, err := interim.AddBatch(ctx, recs, rowIdxs, batchIdxs)
-		idx.mu.RUnlock()
-		return ids, err
+		return interim.AddBatch(ctx, recs, rowIdxs, batchIdxs)
 	}
 
 	ids, err := curr.AddBatch(ctx, recs, rowIdxs, batchIdxs)
-	idx.mu.RUnlock()
-
 	if err == nil {
 		idx.checkShardThreshold()
 	}
@@ -346,26 +341,25 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 // SearchVectors returns the k nearest neighbors for a query vector.
 func (idx *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]SearchResult, error) {
 	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-
 	sharded := idx.sharded
+	interim := idx.interimIndex
+	curr := idx.current
+	idx.mu.RUnlock()
+
 	if sharded {
-		return idx.current.SearchVectors(ctx, q, k, filters, options)
+		return curr.SearchVectors(ctx, q, k, filters, options)
 	}
 
-	interim := idx.interimIndex
-	res, err := idx.current.SearchVectors(ctx, q, k, filters, options)
+	res, err := curr.SearchVectors(ctx, q, k, filters, options)
 	if err != nil {
 		return nil, err
 	}
 
 	if interim != nil {
 		res2, err := interim.SearchVectors(ctx, q, k, filters, options)
-		if err != nil {
-			// Log error but return what we have
-			return res, nil
+		if err == nil {
+			res = idx.mergeSearchResults(res, res2, k)
 		}
-		res = idx.mergeSearchResults(res, res2, k)
 	}
 
 	return res, nil
@@ -374,15 +368,16 @@ func (idx *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, f
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
 func (idx *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
 	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-
 	sharded := idx.sharded
+	interim := idx.interimIndex
+	curr := idx.current
+	idx.mu.RUnlock()
+
 	if sharded {
-		return idx.current.SearchVectorsWithBitmap(ctx, q, k, filter, options)
+		return curr.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	}
 
-	interim := idx.interimIndex
-	res, err := idx.current.SearchVectorsWithBitmap(ctx, q, k, filter, options)
+	res, err := curr.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	if err != nil {
 		return nil, err
 	}

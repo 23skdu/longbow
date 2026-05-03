@@ -205,6 +205,9 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		CosineDistanceBatch:        cosineBatchNEON,
 		DotProductBatch:            dotBatchNEON,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
+		EuclideanDistanceF16:       euclideanF16NEON,
+		CosineDistanceF16:          cosineF16NEON,
+		DotProductF16:               dotF16NEON,
 
 		EuclideanDistance128:  euclideanNEON,
 		EuclideanDistance384:  euclideanNEON,
@@ -517,9 +520,9 @@ func initializeDispatch() {
 		notBytesImpl = notBytesGeneric
 		isAllZerosImpl = isAllZerosGeneric
 		// F16 Kernels
-		euclideanDistanceF16Impl = euclideanF16Unrolled4x
-		cosineDistanceF16Impl = cosineF16Unrolled4x
-		dotProductF16Impl = dotF16Unrolled4x
+		euclideanDistanceF16Impl = dispatch.EuclideanDistanceF16
+		cosineDistanceF16Impl = dispatch.CosineDistanceF16
+		dotProductF16Impl = dispatch.DotProductF16
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
 		euclideanDistanceFloat64Impl = euclideanFloat64NEON

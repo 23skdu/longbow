@@ -4,7 +4,6 @@ import (
 	"errors"
 	"unsafe"
 
-	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -23,8 +22,6 @@ func EuclideanDistance(a, b []float32) (float32, error) {
 	}
 
 	dimension := len(a)
-	metrics.RecordSimdBatch(implementation, "euclidean", 1)
-
 	
 
 	// Use blocked SIMD for very high dimensions (> 3072) or fallback to generic SIMD
@@ -55,7 +52,6 @@ func CosineDistance(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	metrics.RecordSimdBatch(implementation, "cosine", 1)
 	return currentDispatch.CosineDistance(a, b)
 }
 
@@ -70,7 +66,6 @@ func DotProduct(a, b []float32) (float32, error) {
 	}
 
 	dimension := len(a)
-	metrics.RecordSimdBatch(implementation, "dot", 1)
 
 	// Optimized dispatch for common dimensions
 	switch dimension {

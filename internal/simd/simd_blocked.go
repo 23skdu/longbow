@@ -228,24 +228,8 @@ func EuclideanFloat32BlockedPrefetch(a, b []float32) (float32, error) {
 	return float32(math.Sqrt(float64(sum))), nil
 }
 
-func euclidean384Blocked(a, b []float32) (float32, error) {
-	return euclideanBlockedGeneric(a, b, blockedSimdThreshold256)
-}
-
-func euclidean768Blocked(a, b []float32) (float32, error) {
-	return euclideanBlockedGeneric(a, b, blockedSimdThreshold256)
-}
-
 func euclidean1024Blocked(a, b []float32) (float32, error) {
 	return euclideanBlockedGeneric(a, b, blockedSimdThreshold256)
-}
-
-func euclidean1536Blocked(a, b []float32) (float32, error) {
-	return euclideanBlockedGeneric(a, b, blockedSimdThreshold256)
-}
-
-func euclidean2048Blocked(a, b []float32) (float32, error) {
-	return euclideanBlockedGeneric(a, b, blockedSimdThreshold512)
 }
 
 func euclidean3072Blocked(a, b []float32) (float32, error) {

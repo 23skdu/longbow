@@ -35,7 +35,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	start := time.Now()
 	// Ensure nodeCount is advanced even on error/cancellation to unblock subsequent writers.
 	defer func() {
-		finalID := int64(startID + uint32(n))
+		finalID := int64(startID + uint32(n)) // #nosec G115
 		h.commitMu.Lock()
 		for h.nodeCount.Load() < int64(startID) {
 			h.commitCond.Wait()

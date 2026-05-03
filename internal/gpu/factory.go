@@ -37,7 +37,7 @@ type CPUIndex struct {
 	pqCodes     map[int64][]byte
 	tqCodes     map[int64][]byte
 	dimension  int
-	deviceID   int
+	deviceID   int32
 	pqEncoder  *pq.PQEncoder
 	pqEnabled  bool // Enable PQ compression during ingest
 }
@@ -153,7 +153,7 @@ func (i *CPUIndex) Backend() GPUBackend {
 	return BackendCPU
 }
 
-func (i *CPUIndex) DeviceID() int {
+func (i *CPUIndex) DeviceID() int32 {
 	return i.deviceID
 }
 

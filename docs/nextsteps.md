@@ -2,47 +2,65 @@
 
 This document tracks the remaining tasks for hardening the Longbow storage engine for production readiness.
 
-## 1. SIMD Kernel Expansion & Build Parity
+## 0. P0 Blockers: Performance & Scaling (2026-05-03)
 
-- [x] Integrate `HaversineBatch` into SIMD dispatch.
-- [x] Wire ARM64-specific kernels (`AccumulateWeightedScatter`, `BM25ScoreBatch`, `HaversineBatch`).
-- [x] Implement remaining AVX-512 kernels for transcendental functions (`Exp`/`Log`) in assembly.
-- [x] Implement NEON-specific kernels for `Exp`/`Log` for ARM64 parity.
-- [x] Ensure runtime dispatch handles all architecture-specific fallbacks correctly.
+### [ ] Temporal Search Scaling: Cache Locality Optimizations
 
-## 2. Search Pipeline & Data Path Optimization
+- **Objective**: Recover QPS gap between Temporal and Dense Search via cache-aligned tree traversals.
+- **Subtasks**:
+  - [ ] Profile `TemporalTree` traversal using `pprof` (CPU/Cache misses).
+  - [ ] Align tree nodes to cache lines (e.g., 64-byte padding/struct alignment).
+  - [ ] Implement block-based layouts or BFS traversal for better prefetching.
+- **Testing**:
+  - [ ] **Unit**: Validate search correctness across varying tree depths and densities.
+  - [ ] **Fuzz**: Fuzz temporal ranges to ensure performance stability for skewed distributions.
 
-- [x] Implement zero-copy schema column index caching (`colIdxCache`).
-- [x] Optimize vector retrieval to use pre-allocated buffers in `ArrowSearchContext`.
-- [x] Implement budget-based early-termination logic for HNSW searches.
-- [x] Research and implement bit-vector filters for sparse indices to reduce cache line misses.
-- [x] Optimize `ArrowRefs` data path in `GraphData` for direct Arrow array access.
-- [x] Optimize Quadtree depth and node-locking for high-density Geo Search.
+### [ ] Learned Index Capacity: Disk-Backed Node Management
 
-## 3. Stability, Resilience & Backpressure
+- **Objective**: Scale Learned Index to 1M+ vectors without OOM by implementing disk spill-over.
+- **Subtasks**:
+  - [ ] Audit node metadata overhead; implement `DiskBackedLearnedIndex` using `mmap`.
+  - [ ] Implement LRU eviction for in-memory learned index nodes.
+- **Testing**:
+  - [ ] **Unit**: Compare accuracy/performance parity between in-memory and disk-backed paths.
+  - [ ] **Fuzz**: Stress-test memory pressure and eviction logic under heavy ingestion load.
 
-- [x] Implement gRPC/Flight level circuit breakers to prevent cascade failures.
-- [x] Integrate admission control (backpressure) based on memory pressure and health signals.
-- [ ] Develop a retry-with-backoff policy for distributed search failures.
-- [ ] Implement client-side load balancing hints in Flight Info responses.
+### [ ] TurboQuant Ingestion: Metadata Pre-caching
 
-## 4. Performance Validation
+- **Objective**: Eliminate the 5-8% ingestion penalty by caching Arrow metadata field lookups.
+- **Subtasks**:
+  - [ ] Implement a `MetadataRegistry` in `ArrowHNSW` for pre-cached field lookups.
+  - [ ] Optimize `extractMetadata` to bypass per-batch string lookups.
+- **Testing**:
+  - [ ] **Unit**: Benchmark ingestion speed with and without metadata registry.
+  - [ ] **Fuzz**: Fuzz metadata strings to ensure no registry collisions or leaks.
 
-- [x] Run quick validation benchmark suite for basic stability and performance verification.
+### [ ] NUMA Affinity: Thread-to-Core Pinning (Linux/ancalagon)
+
+- **Objective**: Reduce search jitter on many-core systems by pinning workers to physical cores.
+- **Subtasks**:
+  - [ ] Implement `PinThreadToCore` using `runtime.LockOSThread` and `sched_setaffinity`.
+  - [ ] Update `SharedWorkerPool` to support NUMA-aware worker assignment.
+- **Testing**:
+  - [ ] **Unit**: Verify thread pinning via `/proc/self/status` or `cpuid` on Linux.
+  - [ ] **Fuzz**: N/A; verify pool stability during high-concurrency churn.
+
+## 1. Stabilization & Reliability (COMPLETED)
+
+- [x] Implement `RetryPolicy` with Exponential Backoff and jitter in `pkg/retry`.
+- [x] Integrate `pkg/retry` into `DistributedSearch` and ingestion dispatch paths.
+- [x] Add `LoadHints` serialization/deserialization in `pkg/loadbalancing`.
+- [x] Instrument `GetFlightInfo` and `ListFlights` with real-time load balancing hints.
+- [x] Resolve "dataset not found" race condition via atomic `IsReady` synchronization.
+- [x] Achieve 100% test coverage for `pkg/retry` and `pkg/loadbalancing`.
+
+## 1. Performance Validation & Benchmarking
+
 - [ ] Execute the full 480-point benchmark suite (`local_bench.sh`) and analyze long-tail latencies.
 - [ ] Conduct multi-node scalability tests for distributed search and ingestion.
+- [ ] Collect pprof profiling data on `ancalagon` for NUMA jitter analysis.
 
-## 5. Documentation & Maintenance
+## 2. Documentation & Maintenance
 
-- [x] Consolidated and updated `docs/nextsteps.md`.
-- [ ] Update `docs/performance.md` with latest benchmark results.
-- [x] Finalize Go doc comments for all new SIMD and search pipeline components.
-
-## 6. Performance & Stability Recommendations (2026-05-03)
-
-Based on the 0.2.0-rc2 stabilization benchmarks:
-
-1. **Temporal Search Scaling**: Temporal QPS has recovered from ~600 to ~7,500 (+1100%), but still trails behind Dense Search. The $O(\log N)$ tree traversal should be profiled for cache locality optimizations.
-2. **Learned Index Capacity**: Learned index metadata overhead remains significant. For counts exceeding 1M, consider increasing `LONGBOW_MAX_MEMORY` beyond 18GB or implementing disk-backed learned index nodes.
-3. **TurboQuant Ingestion Metadata**: Observed a minor (5-8%) ingestion throughput penalty when using TurboQuant metadata tags. Pre-caching these Arrow metadata fields in the `ArrowHNSW` schema could eliminate per-batch string lookups.
-4. **NUMA Affinity (ancalagon)**: Remote AMD64 search performance shows higher jitter than local M3. Implementing thread-to-core affinity for search workers is recommended for many-core Linux environments.
+- [ ] Update `docs/performance.md` with latest benchmark results from the 0.2.0-rc2 release.
+- [ ] Update `docs/architecture.md` to reflect the new `pkg/retry` and `pkg/loadbalancing` protocols.

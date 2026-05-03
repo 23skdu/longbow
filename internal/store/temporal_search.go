@@ -158,90 +158,108 @@ func (c *TemporalResultCache) Set(key string, results []lbtypes.SearchResult, tt
 
 // TemporalTree implements a specialized structure for range-based timestamp queries.
 type TemporalTree struct {
-	nodes  sync.Map
-	sorted atomic.Pointer[[]int64]
+	snapshot atomic.Pointer[temporalSnapshot]
+	mu       sync.Mutex // Protects COW updates
+}
+
+type temporalSnapshot struct {
+	timestamps []int64
+	nodes      []*TemporalNode
 }
 
 // TemporalNode represents a set of vector IDs sharing a specific timestamp.
+// Aligned to 64 bytes to improve cache locality during range scans.
 type TemporalNode struct {
 	Timestamp int64
 	VectorIDs []uint64
+	_         [40]byte // Padding to 64 bytes (8 + 16 + 40)
 }
 
 // NewTemporalTree creates a new TemporalTree instance.
 func NewTemporalTree() *TemporalTree {
 	tt := &TemporalTree{}
-	empty := make([]int64, 0)
-	tt.sorted.Store(&empty)
+	tt.snapshot.Store(&temporalSnapshot{
+		timestamps: make([]int64, 0),
+		nodes:      make([]*TemporalNode, 0),
+	})
 	return tt
 }
 
 // Insert adds a vector ID to the tree at the specified timestamp.
 func (tt *TemporalTree) Insert(timestamp int64, id uint64) {
-	val, ok := tt.nodes.Load(timestamp)
-	if ok {
-		node := val.(*TemporalNode)
-		newNode := *node
-		newNode.VectorIDs = append(append([]uint64(nil), node.VectorIDs...), id)
-		tt.nodes.Store(timestamp, &newNode)
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+
+	current := tt.snapshot.Load()
+	idx := sort.Search(len(current.timestamps), func(i int) bool {
+		return current.timestamps[i] >= timestamp
+	})
+
+	newSnap := &temporalSnapshot{}
+	if idx < len(current.timestamps) && current.timestamps[idx] == timestamp {
+		// Existing timestamp, update node (COW)
+		newSnap.timestamps = current.timestamps
+		newSnap.nodes = append([]*TemporalNode(nil), current.nodes...)
+		
+		oldNode := newSnap.nodes[idx]
+		newNode := &TemporalNode{
+			Timestamp: oldNode.Timestamp,
+			VectorIDs: append(append([]uint64(nil), oldNode.VectorIDs...), id),
+		}
+		newSnap.nodes[idx] = newNode
 	} else {
-		tt.nodes.Store(timestamp, &TemporalNode{
+		// New timestamp, insert into sorted slices
+		newSnap.timestamps = make([]int64, len(current.timestamps)+1)
+		newSnap.nodes = make([]*TemporalNode, len(current.nodes)+1)
+
+		copy(newSnap.timestamps[:idx], current.timestamps[:idx])
+		copy(newSnap.nodes[:idx], current.nodes[:idx])
+
+		newSnap.timestamps[idx] = timestamp
+		newSnap.nodes[idx] = &TemporalNode{
 			Timestamp: timestamp,
 			VectorIDs: []uint64{id},
-		})
-		
-		// Update sorted slice atomically (COW)
-		currentSorted := tt.sorted.Load()
-		newSorted := append(append([]int64(nil), *currentSorted...), timestamp)
-		sort.Slice(newSorted, func(i, j int) bool {
-			return newSorted[i] < newSorted[j]
-		})
-		tt.sorted.Store(&newSorted)
+		}
+
+		copy(newSnap.timestamps[idx+1:], current.timestamps[idx:])
+		copy(newSnap.nodes[idx+1:], current.nodes[idx:])
 	}
+	tt.snapshot.Store(newSnap)
 }
 
 // GetRange returns all vector IDs within the specified timestamp range.
 func (tt *TemporalTree) GetRange(start, end int64) []uint64 {
-	sortedPtr := tt.sorted.Load()
-	if sortedPtr == nil {
-		return nil
-	}
-	sorted := *sortedPtr
-	n := len(sorted)
-	if n == 0 {
+	snap := tt.snapshot.Load()
+	if snap == nil || len(snap.timestamps) == 0 {
 		return nil
 	}
 
+	n := len(snap.timestamps)
 	startIdx := sort.Search(n, func(i int) bool {
-		return sorted[i] >= start
+		return snap.timestamps[i] >= start
 	})
 
 	var results []uint64
-	for i := startIdx; i < n && sorted[i] <= end; i++ {
-		if nodeVal, ok := tt.nodes.Load(sorted[i]); ok {
-			node := nodeVal.(*TemporalNode)
-			results = append(results, node.VectorIDs...)
-		}
+	for i := startIdx; i < n && snap.timestamps[i] <= end; i++ {
+		results = append(results, snap.nodes[i].VectorIDs...)
 	}
 	return results
 }
 
 // GetRangeReversed returns all vector IDs within the specified timestamp range in descending order.
 func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
-	sortedPtr := tt.sorted.Load()
-	if sortedPtr == nil {
+	snap := tt.snapshot.Load()
+	if snap == nil || len(snap.timestamps) == 0 {
 		return nil
 	}
-	sorted := *sortedPtr
 
 	var results []uint64
-	for i := len(sorted) - 1; i >= 0; i-- {
-		ts := sorted[i]
+	for i := len(snap.timestamps) - 1; i >= 0; i-- {
+		ts := snap.timestamps[i]
 		if ts >= start && ts <= end {
-			if nodeVal, ok := tt.nodes.Load(ts); ok {
-				node := nodeVal.(*TemporalNode)
-				results = append(results, node.VectorIDs...)
-			}
+			results = append(results, snap.nodes[i].VectorIDs...)
+		} else if ts < start {
+			break
 		}
 	}
 	return results
@@ -249,93 +267,77 @@ func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
 
 // GetBefore returns all vector IDs with timestamps before the specified value.
 func (tt *TemporalTree) GetBefore(timestamp int64) []uint64 {
-	sortedPtr := tt.sorted.Load()
-	if sortedPtr == nil {
+	snap := tt.snapshot.Load()
+	if snap == nil || len(snap.timestamps) == 0 {
 		return nil
 	}
-	sorted := *sortedPtr
 
-	idx := sort.Search(len(sorted), func(i int) bool {
-		return sorted[i] >= timestamp
+	idx := sort.Search(len(snap.timestamps), func(i int) bool {
+		return snap.timestamps[i] >= timestamp
 	})
 
 	var results []uint64
 	for i := 0; i < idx; i++ {
-		if nodeVal, ok := tt.nodes.Load(sorted[i]); ok {
-			node := nodeVal.(*TemporalNode)
-			results = append(results, node.VectorIDs...)
-		}
+		results = append(results, snap.nodes[i].VectorIDs...)
 	}
 	return results
 }
 
 // GetAfter returns all vector IDs with timestamps after the specified value.
 func (tt *TemporalTree) GetAfter(timestamp int64) []uint64 {
-	sortedPtr := tt.sorted.Load()
-	if sortedPtr == nil {
+	snap := tt.snapshot.Load()
+	if snap == nil || len(snap.timestamps) == 0 {
 		return nil
 	}
-	sorted := *sortedPtr
 
-	idx := sort.Search(len(sorted), func(i int) bool {
-		return sorted[i] > timestamp
+	idx := sort.Search(len(snap.timestamps), func(i int) bool {
+		return snap.timestamps[i] > timestamp
 	})
 
 	var results []uint64
-	for i := idx; i < len(sorted); i++ {
-		if nodeVal, ok := tt.nodes.Load(sorted[i]); ok {
-			node := nodeVal.(*TemporalNode)
-			results = append(results, node.VectorIDs...)
-		}
+	for i := idx; i < len(snap.timestamps); i++ {
+		results = append(results, snap.nodes[i].VectorIDs...)
 	}
 	return results
 }
 
 // GetLatest returns the vector IDs from the last n timestamps.
 func (tt *TemporalTree) GetLatest(n int) []uint64 {
-	sortedPtr := tt.sorted.Load()
-	if sortedPtr == nil {
+	snap := tt.snapshot.Load()
+	if snap == nil || len(snap.timestamps) == 0 {
 		return nil
 	}
-	sorted := *sortedPtr
-	if n > len(sorted) {
-		n = len(sorted)
+	if n > len(snap.timestamps) {
+		n = len(snap.timestamps)
 	}
 
 	var results []uint64
-	for i := len(sorted) - n; i < len(sorted); i++ {
-		if nodeVal, ok := tt.nodes.Load(sorted[i]); ok {
-			node := nodeVal.(*TemporalNode)
-			results = append(results, node.VectorIDs...)
-		}
+	for i := len(snap.timestamps) - n; i < len(snap.timestamps); i++ {
+		results = append(results, snap.nodes[i].VectorIDs...)
 	}
 	return results
 }
 
 // GetEarliest returns the vector IDs from the first n timestamps.
 func (tt *TemporalTree) GetEarliest(n int) []uint64 {
-	sortedPtr := tt.sorted.Load()
-	if sortedPtr == nil {
+	snap := tt.snapshot.Load()
+	if snap == nil || len(snap.timestamps) == 0 {
 		return nil
 	}
-	sorted := *sortedPtr
-	if n > len(sorted) {
-		n = len(sorted)
+	if n > len(snap.timestamps) {
+		n = len(snap.timestamps)
 	}
 
 	var results []uint64
 	for i := 0; i < n; i++ {
-		if nodeVal, ok := tt.nodes.Load(sorted[i]); ok {
-			node := nodeVal.(*TemporalNode)
-			results = append(results, node.VectorIDs...)
-		}
+		results = append(results, snap.nodes[i].VectorIDs...)
 	}
 	return results
 }
 
 // Len returns the number of unique timestamps in the tree.
 func (tt *TemporalTree) Len() int {
-	return len(*tt.sorted.Load())
+	return len(tt.snapshot.Load().timestamps)
 }
 
 // NewTemporalIndex creates a new TemporalIndex instance.
@@ -595,12 +597,11 @@ func (ti *TemporalIndex) Prewarm(ctx context.Context) error {
 		return nil
 	}
 
-	sortedPtr := tree.sorted.Load()
-	if sortedPtr == nil || len(*sortedPtr) == 0 {
+	snap := tree.snapshot.Load()
+	if snap == nil || len(snap.timestamps) == 0 {
 		return nil
 	}
-	sorted := *sortedPtr
-	latestTs := sorted[len(sorted)-1]
+	latestTs := snap.timestamps[len(snap.timestamps)-1]
 
 	// 1. Latest results
 	_, _ = ti.SearchAsOf(ctx, latestTs, 100)

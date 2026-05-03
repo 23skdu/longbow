@@ -198,6 +198,7 @@ func main() {
 	waitCancel()
 	indexingSeconds := time.Since(indexingStart).Seconds()
 	log.Printf("Indexing complete in %.4fs (status: %s).", indexingSeconds, readyStatus)
+	logLoadHints(sc)
 
 	// 2. DoGet
 	log.Println("[GET] Downloading to verify scan...")
@@ -256,7 +257,7 @@ func main() {
 				for i := 0; i < numToRun; i++ {
 					qStart := time.Now()
 					if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode, state); err != nil {
-						log.Printf("[%s][Worker %d] Query %d failed: %v\n", mode, workerID, i, err)
+						logDetailedError(fmt.Sprintf("[%s][Worker %d] Query %d", mode, workerID, i), err, sc)
 						continue
 					}
 					localLatencies = append(localLatencies, time.Since(qStart).Seconds()*1000)
@@ -884,4 +885,34 @@ func dropDataset(ctx context.Context, sc *client.SmartClient, dataset string) er
 	return err
 }
 
+func logLoadHints(sc *client.SmartClient) {
+	// Trigger a GetFlightInfo to refresh hints
+	desc := &flight.FlightDescriptor{
+		Type: flight.DescriptorPATH,
+		Path: []string{"_health"},
+	}
+	// We use a short timeout for this background refresh
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	
+	_, err := sc.GetFlightInfo(ctx, desc)
+	if err != nil {
+		// Log error but don't fail, hints might still be available from previous calls
+		log.Printf("[LOAD-REFRESH-ERROR] %v\n", err)
+	}
 
+	hints := sc.GetLastLoadHints()
+	if hints != nil {
+		log.Printf("[LOAD] CPU: %d%%, Mem: %d%%, Queue: %d, Health: %d%%\n", 
+			hints.CPULoad, hints.MemLoad, hints.QueueDepth, hints.Health)
+	}
+}
+
+func logDetailedError(cmd string, err error, sc *client.SmartClient) {
+	log.Printf("[ERROR] %s failed: %v\n", cmd, err)
+	hints := sc.GetLastLoadHints()
+	if hints != nil {
+		log.Printf("[LOAD-AT-FAILURE] CPU: %d%%, Mem: %d%%, Queue: %d, Health: %d%%\n", 
+			hints.CPULoad, hints.MemLoad, hints.QueueDepth, hints.Health)
+	}
+}

@@ -1781,7 +1781,7 @@ func (idx *MetalIndexOptimized) Backend() types.GPUBackend {
 	return types.BackendMetal
 }
 
-func (idx *MetalIndexOptimized) DeviceID() int {
+func (idx *MetalIndexOptimized) DeviceID() int32 {
 	return 0
 }
 

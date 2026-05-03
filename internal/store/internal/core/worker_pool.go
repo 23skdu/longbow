@@ -1,6 +1,7 @@
 package core
 
 import (
+	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"runtime"
 	"sync"
@@ -20,6 +21,11 @@ type SharedWorkerPool struct {
 	shards     []chan func()
 	nextShard  uint32
 	tuner      atomic.Value // Stores Tuner interface
+
+	// NUMA-aware pooling
+	topo      *memory.NUMATopology
+	nodePools [][]chan func()
+	nodeRobin []uint32
 }
 
 var (
@@ -30,24 +36,60 @@ var (
 // GetSharedPool returns the global shared worker pool.
 func GetSharedPool() *SharedWorkerPool {
 	poolOnce.Do(func() {
+		topo, _ := memory.DetectNUMATopology()
 		numWorkers := runtime.GOMAXPROCS(0)
 		if numWorkers < 1 {
 			numWorkers = 1
 		}
+
 		p := &SharedWorkerPool{
 			numWorkers: numWorkers,
 			shards:     make([]chan func(), numWorkers),
+			topo:       topo,
+			nodePools:  make([][]chan func(), topo.NumNodes),
+			nodeRobin:  make([]uint32, topo.NumNodes),
 		}
-		for i := 0; i < numWorkers; i++ {
-			p.shards[i] = make(chan func(), 1024)
-			go p.worker(p.shards[i])
+
+		// Initialize per-node pools
+		workersPerNode := numWorkers / topo.NumNodes
+		if workersPerNode < 1 {
+			workersPerNode = 1
 		}
+
+		workerIdx := 0
+		for n := 0; n < topo.NumNodes; n++ {
+			p.nodePools[n] = make([]chan func(), workersPerNode)
+			for w := 0; w < workersPerNode; w++ {
+				ch := make(chan func(), 1024)
+				p.nodePools[n][w] = ch
+				if workerIdx < numWorkers {
+					p.shards[workerIdx] = ch
+					workerIdx++
+				}
+				go p.numaWorker(ch, n)
+			}
+		}
+
+		// Handle remaining workers if numWorkers not divisible by NumNodes
+		for workerIdx < numWorkers {
+			ch := make(chan func(), 1024)
+			p.shards[workerIdx] = ch
+			p.nodePools[0] = append(p.nodePools[0], ch)
+			go p.numaWorker(ch, 0)
+			workerIdx++
+		}
+
 		globalPool.Store(p)
 	})
 	return globalPool.Load()
 }
 
-func (p *SharedWorkerPool) worker(tasks chan func()) {
+func (p *SharedWorkerPool) numaWorker(tasks chan func(), nodeID int) {
+	// Pin thread to NUMA node
+	if p.topo != nil && p.topo.NumNodes > 1 {
+		_ = memory.PinToNUMANode(p.topo, nodeID)
+	}
+
 	for task := range tasks {
 		func() {
 			defer func() {
@@ -65,10 +107,25 @@ func (p *SharedWorkerPool) SetTuner(t Tuner) {
 	p.tuner.Store(t)
 }
 
-// Submit adds a task to the pool using round-robin distribution.
+// Submit adds a task to the pool using global round-robin distribution.
 func (p *SharedWorkerPool) Submit(task func()) {
 	shardIdx := atomic.AddUint32(&p.nextShard, 1) % uint32(p.numWorkers) // #nosec G115
 	p.shards[shardIdx] <- task
+}
+
+// SubmitToNode adds a task to a specific NUMA node's pool.
+func (p *SharedWorkerPool) SubmitToNode(nodeID int, task func()) {
+	if nodeID < 0 || nodeID >= len(p.nodePools) {
+		p.Submit(task)
+		return
+	}
+	pools := p.nodePools[nodeID]
+	if len(pools) == 0 {
+		p.Submit(task)
+		return
+	}
+	idx := atomic.AddUint32(&p.nodeRobin[nodeID], 1) % uint32(len(pools)) // #nosec G115
+	pools[idx] <- task
 }
 
 // SubmitLowPriority adds a task that can be delayed if the system is bursting.

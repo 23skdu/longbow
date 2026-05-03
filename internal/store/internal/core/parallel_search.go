@@ -167,15 +167,18 @@ func processResultsParallelInternal[T float32 | float64](ctx context.Context, h 
 		workerID := i
 		chunk := candidates[start:end]
 		wg.Add(1)
-		pool.Submit(func() {
+		
+		topo, node := h.GetNUMAConfig()
+		task := func() {
 			defer wg.Done()
-			topo, node := h.GetNUMAConfig()
-			if topo != nil && node >= 0 {
-				_ = memory.PinToNUMANode(topo, node)
-				defer runtime.UnlockOSThread()
-			}
 			chunksResults[workerID] = processChunkInternal(ctx, h, query, chunk, filters, bitmap)
-		})
+		}
+
+		if topo != nil && node >= 0 {
+			pool.SubmitToNode(node, task)
+		} else {
+			pool.Submit(task)
+		}
 	}
 	wg.Wait()
 

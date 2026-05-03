@@ -6,7 +6,9 @@ import (
 	"sync"
 	"time"
 	"strings"
+	"sync/atomic"
 
+	"github.com/23skdu/longbow/pkg/loadbalancing"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -19,6 +21,7 @@ type SmartClient struct {
 	clients     map[string]flight.Client // addr -> client
 	dialOpts    []grpc.DialOption
 	timeout     time.Duration
+	lastLoad    atomic.Pointer[loadbalancing.LoadHints]
 }
 
 // NewSmartClient creates a new smart client connected to the initial address
@@ -248,6 +251,12 @@ func (c *SmartClient) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 
 		info, err := client.GetFlightInfo(ctx, desc)
 		if err == nil {
+			// Parse load hints from AppMetadata
+			if len(info.AppMetadata) >= loadbalancing.LoadHintsSize {
+				if hints, ok := loadbalancing.DeserializeLoadHints(info.AppMetadata); ok {
+					c.lastLoad.Store(&hints)
+				}
+			}
 			return info, nil
 		}
 
@@ -310,4 +319,9 @@ func (s *smartDoPutStream) Send(data *flight.FlightData) error {
 		data.FlightDescriptor = s.desc
 	}
 	return s.FlightService_DoPutClient.Send(data)
+}
+
+// GetLastLoadHints returns the latest load balancing hints received from the server.
+func (c *SmartClient) GetLastLoadHints() *loadbalancing.LoadHints {
+	return c.lastLoad.Load()
 }

@@ -1,6 +1,7 @@
 package types
 
 import (
+	"github.com/23skdu/longbow/internal/memory"
 	"sync/atomic"
 )
 
@@ -15,11 +16,15 @@ func (gd *GraphData) StoreNeighborsChunk(layer int, chunkID uint32, chunk []uint
 		return
 	}
 
-	// Copy data to new slice
-	dst := make([]uint32, len(chunk))
+	// Allocate space in arena and copy
+	if gd.Uint32Arena == nil {
+		gd.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(1024 * 1024))
+	}
+	ref, _ := gd.Uint32Arena.AllocSlice(len(chunk))
+	dst := gd.Uint32Arena.Get(ref)
 	copy(dst, chunk)
 
-	gd.Neighbors[layer][chunkID] = dst
+	gd.Neighbors[layer][chunkID] = ref.Offset
 }
 
 // StoreCountsChunk stores a chunk of counts for testing.
@@ -30,9 +35,13 @@ func (gd *GraphData) StoreCountsChunk(layer int, chunkID uint32, chunk []int32) 
 	if layer >= len(gd.Counts) || int(chunkID) >= len(gd.Counts[layer]) {
 		return
 	}
-	dst := make([]int32, len(chunk))
+	if gd.Int32Arena == nil {
+		gd.Int32Arena = memory.NewTypedArena[int32](memory.NewSlabArena(1024 * 1024))
+	}
+	ref, _ := gd.Int32Arena.AllocSlice(len(chunk))
+	dst := gd.Int32Arena.Get(ref)
 	copy(dst, chunk)
-	gd.Counts[layer][chunkID] = dst
+	gd.Counts[layer][chunkID] = ref.Offset
 }
 
 // StoreVersionsChunk stores a chunk of versions for testing.
@@ -44,9 +53,13 @@ func (gd *GraphData) StoreVersionsChunk(layer int, chunkID uint32, chunk []uint3
 	if layer >= len(gd.Versions) || int(chunkID) >= len(gd.Versions[layer]) {
 		return
 	}
-	dst := make([]uint32, len(chunk))
+	if gd.Uint32Arena == nil {
+		gd.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(1024 * 1024))
+	}
+	ref, _ := gd.Uint32Arena.AllocSlice(len(chunk))
+	dst := gd.Uint32Arena.Get(ref)
 	copy(dst, chunk)
-	gd.Versions[layer][chunkID] = dst
+	gd.Versions[layer][chunkID] = ref.Offset
 }
 
 // StoreVectorsChunk stores a chunk of vectors for testing.

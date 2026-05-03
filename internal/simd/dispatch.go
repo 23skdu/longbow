@@ -99,6 +99,9 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		CosineDistanceBatch:        cosineBatchGeneric,
 		DotProductBatch:            dotBatchGeneric,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
+		EuclideanDistanceF16:       euclideanF16AVX512,
+		CosineDistanceF16:          cosineF16AVX512,
+		DotProductF16:               dotF16AVX512,
 
 		EuclideanDistance128:  euclideanNEON,
 		EuclideanDistance384:  euclidean384AVX512,
@@ -152,6 +155,9 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		CosineDistanceBatch:        cosineBatchAVX2,
 		DotProductBatch:            dotBatchAVX2,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatAVX2,
+		EuclideanDistanceF16:       euclideanF16Unrolled4x,
+		CosineDistanceF16:          cosineF16Unrolled4x,
+		DotProductF16:               dotF16Unrolled4x,
 
 		EuclideanDistance128:       euclidean128Unrolled4x,
 		EuclideanDistance384:       euclidean384AVX2,
@@ -261,6 +267,9 @@ var dispatchTable = map[string]*ImplementationDispatch{
 		CosineDistanceBatch:        cosineBatchGeneric,
 		DotProductBatch:            dotBatchGeneric,
 		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
+		EuclideanDistanceF16:       euclideanF16Unrolled4x,
+		CosineDistanceF16:          cosineF16Unrolled4x,
+		DotProductF16:               dotF16Unrolled4x,
 
 		EuclideanDistance128:  euclideanNEON,
 		EuclideanDistance384:  euclidean384Unrolled4x,

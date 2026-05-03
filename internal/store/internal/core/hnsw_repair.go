@@ -62,7 +62,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 
 			// Get Neighbors
 			// NOTE: We need direct access to modify.
-			if lvl >= len(data.Neighbors) || int(cID) >= len(data.Neighbors[lvl]) || data.Neighbors[lvl][cID] == nil {
+			if lvl >= len(data.Neighbors) || int(cID) >= len(data.Neighbors[lvl]) || data.Neighbors[lvl][cID] == 0 {
 				continue
 			}
 
@@ -134,7 +134,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 					tCID := types.ChunkID(tID)
 					tCOff := types.ChunkOffset(tID)
 
-					if lvl >= len(data.Neighbors) || int(tCID) >= len(data.Neighbors[lvl]) {
+					if lvl >= len(data.Neighbors) || int(tCID) >= len(data.Neighbors[lvl]) || data.Neighbors[lvl][tCID] == 0 {
 						continue
 					}
 					tNeighbors := data.GetNeighborsChunk(lvl, tCID)

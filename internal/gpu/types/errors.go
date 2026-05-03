@@ -24,7 +24,7 @@ func IsGPUNotAvailableError(err error) bool {
 type GPUMemoryError struct {
 	Requested uint64
 	Available uint64
-	DeviceID  int
+	DeviceID  int32
 }
 
 func (e *GPUMemoryError) Error() string {
@@ -40,7 +40,7 @@ func IsGPUMemoryError(err error) bool {
 
 // GPUInitializationError indicates failure during GPU initialization
 type GPUInitializationError struct {
-	DeviceID int
+	DeviceID int32
 	Backend  GPUBackend
 	Cause    error
 }
@@ -64,7 +64,7 @@ func IsGPUInitializationError(err error) bool {
 // GPUComputeError indicates failure during GPU computation
 type GPUComputeError struct {
 	Operation string
-	DeviceID  int
+	DeviceID  int32
 	Cause     error
 }
 
@@ -87,7 +87,7 @@ func IsGPUComputeError(err error) bool {
 // GPUSyncError indicates failure during GPU synchronization
 type GPUSyncError struct {
 	BatchSize int
-	DeviceID  int
+	DeviceID  int32
 	Cause     error
 }
 

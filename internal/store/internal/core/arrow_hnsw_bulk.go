@@ -33,6 +33,19 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		return nil
 	}
 	start := time.Now()
+	// Ensure nodeCount is advanced even on error/cancellation to unblock subsequent writers.
+	defer func() {
+		finalID := int64(startID + uint32(n))
+		h.commitMu.Lock()
+		for h.nodeCount.Load() < int64(startID) {
+			h.commitCond.Wait()
+		}
+		if h.nodeCount.Load() < finalID {
+			h.nodeCount.Store(finalID)
+			h.commitCond.Broadcast()
+		}
+		h.commitMu.Unlock()
+	}()
 	defer func() {
 		duration := time.Since(start).Seconds()
 		metrics.HNSWBulkInsertDurationSeconds.Observe(duration)
@@ -151,42 +164,16 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	cID_start := types.ChunkID(startID)
 	cID_end := types.ChunkID(maxID)
 
-	// Retry loop to handle concurrent Grow operations that might swap data pointer
-	// between ensureChunk calls and the actual insertion.
-	for {
-		// Capture data pointer before ensureChunk
-		data := h.data.Load()
-
-		// Ensure all required chunks on the current data pointer
-		for cid := cID_start; cid <= cID_end; cid++ {
-			_, err := h.ensureChunk(data, cid, 0, dims)
-			if err != nil {
-				return fmt.Errorf("failed to pre-allocate chunk %d for bulk insert: %w", cid, err)
-			}
-		}
-
-		// Acquire Read Lock to stabilize the data pointer
-		h.growMu.RLock()
-
-		// Check if data pointer changed while we were ensuring chunks
-		currentData := h.data.Load()
-		if data == currentData {
-			// Data pointer is stable, use the CURRENT data pointer (not the one from before ensureChunk)
-			// This ensures we use the latest data that includes our chunk allocations
-			break
-		}
-
-		// Data pointer changed (Grow happened), release lock and retry
-		h.growMu.RUnlock()
+	// Pre-allocate all required chunks in a single COW operation
+	data, err := h.EnsureChunks(int(cID_start), int(cID_end), dims)
+	if err != nil {
+		return err
 	}
+	// Use a private clone for the entire batch operation
+	data = data.Clone()
 
-	data := h.data.Load()
-	growMuReleased := false
-	defer func() {
-		if !growMuReleased {
-			h.growMu.RUnlock()
-		}
-	}()
+	growMuReleased := true // #nosec G101 - No longer needed with EnsureChunks
+	_ = growMuReleased
 
 	type activeNode struct {
 		id    uint32
@@ -329,8 +316,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			}
 
 			// Always ingest into hot storage using method that handles all types
-			// Use h.data.Load() to ensure we write to the latest version that includes our ensured chunks
-			if err := h.data.Load().SetVector(id, v); err != nil {
+			// Use private data snapshot for vector storage
+			if err := data.SetVector(id, v); err != nil {
 				errMu.Lock()
 				errPrep = err
 				errMu.Unlock()
@@ -434,11 +421,13 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 	for i := 0; i < seedCount; i++ {
 		node := activeNodes[i]
-		if err := h.InsertWithVector(node.id, node.vec, node.level); err != nil {
+		var err error
+		data, err = h.insertInternal(node.id, node.vec, node.level, false, data)
+		if err != nil {
 			return err
 		}
-		h.commitID(node.id)
 	}
+	h.compareAndSwapData(data)
 
 	if n <= seedCount {
 		return nil
@@ -487,8 +476,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		// Vector data is already set in the previous ParallelFor using the latest h.data pointer.
 		// No need to promote nodes here as chunks were pre-allocated and published.
 	})
-	data = h.data.Load()
-
 	// 2.6 Initial Linkage: Link each node to its predecessor to form a simple chain.
 	// Link the first parallel node to the last bootstrap seed to ensure connectivity.
 	pool.ParallelFor(n, (n+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
@@ -541,7 +528,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			layerMu.Unlock()
 
 			indices := activeIndices[start:end]
-			workerData := h.data.Load() // Capture stable pointer for this layer
+			workerData := data // Use the private batch snapshot
 
 			// Thread-local context
 			ctxSearch := h.searchPool.Get()
@@ -790,7 +777,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		// Optimization: Clone once per layer for the entire batch to avoid 
 		// massive per-node cloning and memory pressure during linkage.
 		// Since we use shard locks, workers can safely share this clone.
-		data = h.data.Load().Clone()
+		// data is already our private snapshot
 
 
 		pool.ParallelFor(len(activeIndices), linkageChunkSize, func(start, end int) {

@@ -2,48 +2,11 @@
 
 This document tracks the remaining tasks for hardening the Longbow storage engine for production readiness.
 
-## 0. P0 Blockers: Performance & Scaling (2026-05-03)
-
-### [ ] Temporal Search Scaling: Cache Locality Optimizations
-
-- **Objective**: Recover QPS gap between Temporal and Dense Search via cache-aligned tree traversals.
-- **Subtasks**:
-  - [ ] Profile `TemporalTree` traversal using `pprof` (CPU/Cache misses).
-  - [ ] Align tree nodes to cache lines (e.g., 64-byte padding/struct alignment).
-  - [ ] Implement block-based layouts or BFS traversal for better prefetching.
-- **Testing**:
-  - [ ] **Unit**: Validate search correctness across varying tree depths and densities.
-  - [ ] **Fuzz**: Fuzz temporal ranges to ensure performance stability for skewed distributions.
-
-### [ ] Learned Index Capacity: Disk-Backed Node Management
-
-- **Objective**: Scale Learned Index to 1M+ vectors without OOM by implementing disk spill-over.
-- **Subtasks**:
-  - [ ] Audit node metadata overhead; implement `DiskBackedLearnedIndex` using `mmap`.
-  - [ ] Implement LRU eviction for in-memory learned index nodes.
-- **Testing**:
-  - [ ] **Unit**: Compare accuracy/performance parity between in-memory and disk-backed paths.
-  - [ ] **Fuzz**: Stress-test memory pressure and eviction logic under heavy ingestion load.
-
-### [ ] TurboQuant Ingestion: Metadata Pre-caching
-
-- **Objective**: Eliminate the 5-8% ingestion penalty by caching Arrow metadata field lookups.
-- **Subtasks**:
-  - [ ] Implement a `MetadataRegistry` in `ArrowHNSW` for pre-cached field lookups.
-  - [ ] Optimize `extractMetadata` to bypass per-batch string lookups.
-- **Testing**:
-  - [ ] **Unit**: Benchmark ingestion speed with and without metadata registry.
-  - [ ] **Fuzz**: Fuzz metadata strings to ensure no registry collisions or leaks.
-
-### [ ] NUMA Affinity: Thread-to-Core Pinning (Linux/ancalagon)
-
-- **Objective**: Reduce search jitter on many-core systems by pinning workers to physical cores.
-- **Subtasks**:
-  - [ ] Implement `PinThreadToCore` using `runtime.LockOSThread` and `sched_setaffinity`.
-  - [ ] Update `SharedWorkerPool` to support NUMA-aware worker assignment.
-- **Testing**:
-  - [ ] **Unit**: Verify thread pinning via `/proc/self/status` or `cpuid` on Linux.
-  - [ ] **Fuzz**: N/A; verify pool stability during high-concurrency churn.
+## 0. P0 Blockers: Performance & Scaling (COMPLETED)
+- [x] **Temporal Search Scaling**: Optimized `TemporalTree` with 64-byte cache-line alignment and contiguous memory layout.
+- [x] **Learned Index Capacity**: Implemented `DiskBackedLearnedIndex` using `mmap` for scalable node management (1M+ vectors).
+- [x] **TurboQuant Ingestion**: Implemented `MetadataRegistry` in `ArrowHNSW` to eliminate metadata lookup overhead.
+- [x] **NUMA Affinity**: Implemented `PinThreadToCore` and updated `SharedWorkerPool` for granular worker pinning on Linux/Ancalagon.
 
 ## 1. Stabilization & Reliability (COMPLETED)
 

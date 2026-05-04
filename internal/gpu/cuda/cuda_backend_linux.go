@@ -9,7 +9,6 @@ package cuda
 import "C"
 import (
 	"fmt"
-	"math"
 )
 
 // CUDADevice represents a CUDA-capable GPU device

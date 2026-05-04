@@ -136,12 +136,16 @@ type ArrowHNSW struct {
 	topo       *memory.NUMATopology
 	efTuner     *PIDTuner
 
-	// Cached Schema Metadata
-	cachedVecColIdx atomic.Int32
-	colIdxCache    sync.Map // map[string]int
-	cachedTQBits   atomic.Int32
-	cachedMetric   atomic.Int32
-	metadataCached atomic.Bool
+	// MetadataRegistry for pre-cached field lookups
+	metadata struct {
+		vecColIdx atomic.Int32
+		tqBits    atomic.Int32
+		metric    atomic.Int32
+		vecType   atomic.Int32 // stores types.VectorDataType
+		isComplex atomic.Bool
+		cached    atomic.Bool
+		fieldMap  sync.Map // map[string]int
+	}
 }
 
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
@@ -329,7 +333,6 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		return nil
 	}
 	h.dims.Store(int32(config.Dims)) // #nosec G115
-	h.cachedVecColIdx.Store(-1)
 
 	// Initialize quantization if enabled
 	if config.SQ8Enabled {
@@ -3895,7 +3898,7 @@ func (h *ArrowHNSW) getColumnIdx(rec arrow.RecordBatch, name string) int {
 	}
 	
 	// 1. Try cache first
-	if val, ok := h.colIdxCache.Load(name); ok {
+	if val, ok := h.metadata.fieldMap.Load(name); ok {
 		return val.(int)
 	}
 
@@ -3910,7 +3913,7 @@ func (h *ArrowHNSW) getColumnIdx(rec arrow.RecordBatch, name string) int {
 	}
 
 	if idx != -1 {
-		h.colIdxCache.Store(name, idx)
+		h.metadata.fieldMap.Store(name, idx)
 	}
 	return idx
 }
@@ -3919,7 +3922,7 @@ func (h *ArrowHNSW) getVectorColumnIndex(rec arrow.RecordBatch) int {
 	if rec == nil {
 		return -1
 	}
-	cached := h.cachedVecColIdx.Load()
+	cached := h.metadata.vecColIdx.Load()
 	if cached != -1 {
 		return int(cached)
 	}
@@ -3934,7 +3937,7 @@ func (h *ArrowHNSW) getVectorColumnIndex(rec arrow.RecordBatch) int {
 	}
 
 	if vecColIdx != -1 && vecColIdx <= 2147483647 {
-		h.cachedVecColIdx.Store(int32(vecColIdx)) // #nosec G115
+		h.metadata.vecColIdx.Store(int32(vecColIdx)) // #nosec G115
 	}
 	
 	// Pre-cache other metadata while we have the schema
@@ -3944,7 +3947,7 @@ func (h *ArrowHNSW) getVectorColumnIndex(rec arrow.RecordBatch) int {
 }
 
 func (h *ArrowHNSW) precacheMetadata(schema *arrow.Schema) {
-	if schema == nil || h.metadataCached.Load() {
+	if schema == nil || h.metadata.cached.Load() {
 		return
 	}
 
@@ -3953,8 +3956,19 @@ func (h *ArrowHNSW) precacheMetadata(schema *arrow.Schema) {
 	// Pre-cache TurboQuant bits
 	if val, ok := md.GetValue("longbow.turboquant_bits"); ok {
 		if bits, err := strconv.ParseInt(val, 10, 32); err == nil {
-			h.cachedTQBits.Store(int32(bits))
+			h.metadata.tqBits.Store(int32(bits))
 		}
+	}
+
+	// Pre-cache vector type
+	if val, ok := md.GetValue("longbow.vector_type"); ok {
+		vt := parseVectorType(val)
+		h.metadata.vecType.Store(int32(vt)) // #nosec G115
+	}
+
+	// Pre-cache complex flag
+	if val, ok := md.GetValue("longbow.complex"); ok && val == "true" {
+		h.metadata.isComplex.Store(true)
 	}
 
 	// Pre-cache metric
@@ -3969,11 +3983,11 @@ func (h *ArrowHNSW) precacheMetadata(schema *arrow.Schema) {
 			m = 2
 		}
 		if m != -1 {
-			h.cachedMetric.Store(m)
+			h.metadata.metric.Store(m)
 		}
 	}
 
-	h.metadataCached.Store(true)
+	h.metadata.cached.Store(true)
 }
 
 func (h *ArrowHNSW) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float32) error {

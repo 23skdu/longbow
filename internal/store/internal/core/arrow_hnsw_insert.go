@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
@@ -31,14 +32,11 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 		candidates = candidates[:limit]
 	}
 
-	// Fast-path for Float32 to lift type declarations out of nested loops
-	// types.VectorTypeFloat32 is the design DataType setup.
-	// Setup constants to keep speedups or just use types.VectorDataType(1)?
-	// Let's check with types.VectorTypeFloat32
-	if data.Type == 1 { // VectorTypeFloat32 is usually 1, or just do reflection assert once
+	if data.Type == types.VectorTypeFloat32 {
 		return h.selectNeighborsFloat32(ctx, candidates, m, data)
 	}
 
+	// Generic path for other types (Int8, Int16, etc.)
 	var selected []types.Candidate
 	if ctx != nil {
 		selected = ctx.scratchSelected[:0]
@@ -46,47 +44,76 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 		selected = make([]types.Candidate, 0, m)
 	}
 
+	if len(candidates) == 0 {
+		return nil
+	}
+
+	// For non-float32, we use a slower but generic diversity check
 	for _, cand := range candidates {
 		if len(selected) >= m {
 			break
 		}
-		selected = append(selected, cand)
+
+		isDiverse := true
+		v1Any, err := data.GetVector(cand.ID)
+		if err != nil || v1Any == nil {
+			continue
+		}
+
+		for _, sel := range selected {
+			v2Any, err := data.GetVector(sel.ID)
+			if err != nil || v2Any == nil {
+				continue
+			}
+
+			// Compute distance between candidates to check diversity
+			var d float32
+			var distErr error
+			
+			switch v1 := v1Any.(type) {
+			case []int8:
+				d, distErr = h.distFuncInt8(v1, v2Any.([]int8))
+			case []int16:
+				d, distErr = h.distFuncInt16(v1, v2Any.([]int16))
+			case []uint16:
+				d, distErr = h.distFuncUint16(v1, v2Any.([]uint16))
+			case []int32:
+				d, distErr = h.distFuncInt32(v1, v2Any.([]int32))
+			case []uint32:
+				d, distErr = h.distFuncUint32(v1, v2Any.([]uint32))
+			case []int64:
+				d, distErr = h.distFuncInt64(v1, v2Any.([]int64))
+			case []uint64:
+				d, distErr = h.distFuncUint64(v1, v2Any.([]uint64))
+			case []float64:
+				d, distErr = h.distFuncF64(v1, v2Any.([]float64))
+			default:
+				distErr = fmt.Errorf("unsupported type")
+			}
+
+			if distErr == nil && d < cand.Dist {
+				isDiverse = false
+				break
+			}
+		}
+
+		if isDiverse {
+			selected = append(selected, cand)
+		}
 	}
 
-	// Fallback: if selected is empty but candidates were not, take at least one (closest)
 	if len(selected) == 0 && len(candidates) > 0 {
 		selected = append(selected, candidates[0])
 	}
 
-	// Optional: if SQ8 is enabled and we have very few neighbors, take a few more even if not diverse
-	if h.config.SQ8Enabled && len(selected) < m/4 && len(candidates) > len(selected) {
-		// Take some more to ensure connectivity
-		for _, cand := range candidates {
-			found := false
-			for _, s := range selected {
-				if s.ID == cand.ID {
-					found = true
-					break
-				}
-			}
-			if !found {
-				selected = append(selected, cand)
-				if len(selected) >= m/2 {
-					break
-				}
-			}
-		}
+	if ctx != nil {
+		ctx.scratchSelected = selected
 	}
-
 	return selected
 }
 
-// Core insertion functions that remain to be refactored in Phase 3
-
 // selectNeighborsFloat32 is a specialized high-performance diversity check for float32 vectors.
 func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates []types.Candidate, m int, data *types.GraphData) []types.Candidate {
-	// Optimization: use context scratch buffer to avoid allocations in critical path
-	// but ensure isolation by using a local slice if ctx is nil (should not happen in bulk path).
 	var selected []types.Candidate
 	if ctx != nil {
 		selected = ctx.scratchSelected[:0]
@@ -145,7 +172,6 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 				threshold *= 1.2
 			}
 
-
 			if err == nil && d > 0 && d < threshold {
 				isDiverse = false
 				break
@@ -166,7 +192,3 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 	}
 	return selected
 }
-
-// Insert function moved to insertion_core.go
-
-// ensureTrained function moved to quantization_integration.go

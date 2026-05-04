@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"sync"
 	"sync/atomic"
 
@@ -106,17 +107,28 @@ func (h *ArrowHNSW) GetNeighborsCombined(layer int, id uint32) []uint32 {
 
 // GetNeighborsCombinedCached returns neighbors, using the provided DiskGraph cache if available.
 func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGraph) []uint32 {
+	var res []uint32
+	defer func() {
+		if id == 0 && layer == 0 && h.nodeCount.Load() == 1100 {
+			found500 := false
+			for _, n := range res { if n == 500 { found500 = true; break } }
+			fmt.Printf("DEBUG: GetNeighborsCombinedCached(0, 0) -> len %d, found500=%v\n", len(res), found500)
+		}
+	}()
+
 	// 1. Try TopLayerManager (Persistent lock-free upper layers)
 	lf := h.topLayerManager.GetNeighborsLockFree(layer, id)
 	if lf != nil {
-		return lf
+		res = lf
+		return res
 	}
 	
 	// 2. Try GraphData PackedNeighbors (Dynamic lock-free adjacency)
 	data := h.data.Load()
 	if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		if neighbors, ok := data.PackedNeighbors[layer].GetNeighbors(id); ok {
-			return neighbors
+			res = neighbors
+			return res
 		}
 	}
 	
@@ -124,7 +136,8 @@ func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGra
 	if data != nil {
 		neighbors := data.GetNeighbors(layer, id, nil)
 		if len(neighbors) > 0 {
-			return neighbors
+			res = neighbors
+			return res
 		}
 	}
 
@@ -133,7 +146,8 @@ func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGra
 		dg = h.diskGraph.Load()
 	}
 	if dg != nil {
-		return dg.GetNeighbors(layer, id, nil)
+		res = dg.GetNeighbors(layer, id, nil)
+		return res
 	}
 	
 	return nil

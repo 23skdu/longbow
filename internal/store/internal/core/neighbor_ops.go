@@ -3,6 +3,7 @@ package core
 // Neighbor operations extracted from arrow_hnsw_insert.go
 
 import (
+	"fmt"
 	"math"
 	"sync/atomic"
 
@@ -321,7 +322,12 @@ func (h *ArrowHNSW) computeDistances(ctx *ArrowSearchContext, data *types.GraphD
 // getVectorF32Optimized ensures the vector is returned as []float32 for distance calculations using ctx buffers.
 func (h *ArrowHNSW) getVectorF32Optimized(ctx *ArrowSearchContext, data *types.GraphData, id uint32, bufIdx int) []float32 {
 	vecAny, err := data.GetVector(id)
-	if err != nil || vecAny == nil { return nil }
+	if err != nil || vecAny == nil {
+		if id < 1100 {
+			fmt.Printf("DEBUG: getVectorF32Optimized failed for ID %d, err=%v\n", id, err)
+		}
+		return nil
+	}
 
 	if v, ok := vecAny.([]float32); ok {
 		return v

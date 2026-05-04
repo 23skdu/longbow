@@ -2,7 +2,6 @@
 
 package metal
 
-
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
 #cgo LDFLAGS: -framework Accelerate -framework Metal -framework MetalPerformanceShaders -framework Foundation

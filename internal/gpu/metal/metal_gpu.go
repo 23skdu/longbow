@@ -2,14 +2,6 @@
 
 package metal
 
-import (
-	"embed"
-	"fmt"
-)
-
-//go:embed kernels.metallib
-var metalFS embed.FS
-
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
 #cgo LDFLAGS: -framework Accelerate -framework Metal -framework MetalPerformanceShaders -framework Foundation
@@ -55,76 +47,6 @@ void* create_shared_buffer(void* device, size_t size) {
         return (__bridge_retained void*)buffer;
     }
 }
-*/
-import "C"
-import (
-	"math"
-	"runtime"
-	"sync"
-	"time"
-	"unsafe"
-
-	"github.com/23skdu/longbow/internal/gpu/memory"
-	gputypes "github.com/23skdu/longbow/internal/gpu/types"
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/pq"
-	"github.com/apache/arrow-go/v18/arrow/float16"
-)
-
-// Initialize Metal device and command queue using shared context
-func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
-	libData, err := metalFS.ReadFile("kernels.metallib")
-	if err != nil {
-		return fmt.Errorf("failed to read embedded metal library: %w", err)
-	}
-
-	if err := InitGlobalContext(libData); err != nil {
-		return err
-	}
-
-	ctx := GetContext()
-	handle := (*C.MetalIndexHandle)(C.malloc(C.sizeof_MetalIndexHandle))
-	handle.device = ctx.GetDevice()
-	handle.commandQueue = ctx.GetCommandQueue()
-	handle.vectorBuffer = nil
-	handle.idBuffer = nil
-	handle.vectorCount = 0
-	handle.dimensions = C.int(dimensions)
-	handle.capacity = C.int(initialCapacity)
-	if handle.capacity <= 0 {
-		handle.capacity = 10000
-	}
-
-	// Load pipelines from shared context
-	handle.pqPipeline, _ = ctx.GetPipelineState("compute_pq_distances")
-	handle.assignPipeline, _ = ctx.GetPipelineState("assign_to_clusters")
-	handle.bfsExpandPipeline, _ = ctx.GetPipelineState("graph_bfs_expand")
-	handle.actPropagatePipeline, _ = ctx.GetPipelineState("graph_activation_propagate")
-	handle.fusedGraphPipeline, _ = ctx.GetPipelineState("graph_rag_fused")
-	handle.l2DistancePipeline, _ = ctx.GetPipelineState("vector_distance_l2")
-	handle.ipDistancePipeline, _ = ctx.GetPipelineState("vector_distance_ip")
-	handle.quantizeSQ8Pipeline, _ = ctx.GetPipelineState("quantize_sq8")
-	handle.sigmoidPipeline, _ = ctx.GetPipelineState("sigmoid_f32")
-	handle.haversinePipeline, _ = ctx.GetPipelineState("haversine_batch")
-	handle.normPipeline, _ = ctx.GetPipelineState("norm_batch_f32")
-
-	handle.graphOffsets = nil
-	handle.graphNeighbors = nil
-	handle.graphWeights = nil
-	handle.graphNodeCount = 0
-	handle.graphEdgeCount = 0
-
-	bufferSize := C.size_t(handle.capacity) * C.size_t(dimensions) * C.sizeof_float
-	buffer := C.create_shared_buffer(handle.device, bufferSize)
-	if buffer != nil {
-		handle.vectorBuffer = buffer
-	}
-
-	m.handle = handle
-	return nil
-}
-
-// Get device info
 void metal_get_device_info(MetalIndexHandle* handle, char* name, int maxLen, uint64_t* totalMem) {
     @autoreleasepool {
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
@@ -187,7 +109,7 @@ int metal_add_vectors(MetalIndexHandle* handle, float* vectors, int64_t* ids, in
                     handle->idBuffer = (__bridge_retained void*)newIdBuffer;
                 }
             }
-            
+
             handle->capacity = newCapacity;
         }
 
@@ -223,7 +145,7 @@ int metal_compute_distances_gpu(MetalIndexHandle* handle, float* query, float* d
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
         id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
         id<MTLComputePipelineState> pipeline = (type == 0) ? (__bridge id<MTLComputePipelineState>)handle->l2DistancePipeline : (__bridge id<MTLComputePipelineState>)handle->ipDistancePipeline;
-        
+
         if (!pipeline) return -1;
 
         id<MTLBuffer> queryBuf = [device newBufferWithBytes:query length:handle->dimensions * sizeof(float) options:MTLResourceStorageModeShared];
@@ -321,7 +243,7 @@ int metal_haversine_batch(MetalIndexHandle* handle, float* center, float* points
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
         id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
         id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->haversinePipeline;
-        
+
         if (!pipeline) return -1;
 
         id<MTLBuffer> centerBuf = [device newBufferWithBytes:center length:2 * sizeof(float) options:MTLResourceStorageModeShared];
@@ -358,7 +280,7 @@ int metal_norm_batch_f32(MetalIndexHandle* handle, float* vectors, float* result
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
         id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
         id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->normPipeline;
-        
+
         if (!pipeline) return -1;
 
         size_t vecSize = (size_t)count * dims * sizeof(float);
@@ -425,7 +347,7 @@ int metal_search_pq(MetalIndexHandle* handle, float* lookupTable, int m, int k, 
         // Allocate distance buffer on GPU
         size_t distSize = handle->vectorCount * sizeof(float);
         id<MTLBuffer> distBuffer = [device newBufferWithLength:distSize options:MTLResourceStorageModeShared];
-        
+
         // Create lookup table buffer
         size_t tableSize = m * 256 * sizeof(float);
         id<MTLBuffer> tableBuffer = [device newBufferWithBytes:lookupTable length:tableSize options:MTLResourceStorageModeShared];
@@ -534,7 +456,7 @@ int metal_assign_to_clusters(MetalIndexHandle* handle, float* vectors, float* ce
 int metal_update_graph(MetalIndexHandle* handle, uint32_t* h_offsets, uint32_t* h_neighbors, float* h_weights, int nodeCount, int edgeCount) {
     @autoreleasepool {
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
-        
+
         if (handle->graphOffsets) CFRelease(handle->graphOffsets);
         if (handle->graphNeighbors) CFRelease(handle->graphNeighbors);
         if (handle->graphWeights) CFRelease(handle->graphWeights);
@@ -560,7 +482,7 @@ int metal_graph_expand(MetalIndexHandle* handle, uint32_t* seeds, int numSeeds, 
         id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->fusedGraphPipeline;
 
         int nodeCount = handle->graphNodeCount;
-        
+
         // 1. Buffers
         id<MTLBuffer> activations = [device newBufferWithLength:nodeCount * sizeof(float) options:MTLResourceStorageModeShared];
         id<MTLBuffer> nextActivations = [device newBufferWithLength:nodeCount * sizeof(float) options:MTLResourceStorageModeShared];
@@ -586,7 +508,7 @@ int metal_graph_expand(MetalIndexHandle* handle, uint32_t* seeds, int numSeeds, 
         // 3. Iterative Expansion
         for (int d = 0; d < depth; d++) {
             if (currentFrontierSize == 0) break;
-            
+
             memset([nextActivations contents], 0, nodeCount * sizeof(float));
             memset([nextFrontierSize contents], 0, sizeof(uint32_t));
 
@@ -603,7 +525,7 @@ int metal_graph_expand(MetalIndexHandle* handle, uint32_t* seeds, int numSeeds, 
             [encoder setBuffer:nextFrontier offset:0 atIndex:6];
             [encoder setBuffer:nextFrontierSize offset:0 atIndex:7];
             [encoder setBuffer:visited offset:0 atIndex:8];
-            
+
             [encoder setBytes:&currentFrontierSize length:sizeof(int) atIndex:0];
             [encoder setBytes:&alpha length:sizeof(float) atIndex:1];
 
@@ -645,7 +567,7 @@ int metal_quantize_sq8(MetalIndexHandle* handle, float* vectors, float* mins, fl
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
         id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
         id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->quantizeSQ8Pipeline;
-        
+
         if (!pipeline) return -1;
 
         int totalElements = count * handle->dimensions;
@@ -682,8 +604,82 @@ int metal_quantize_sq8(MetalIndexHandle* handle, float* vectors, float* mins, fl
         return 0;
     }
 }
+*/
+import "C"
 
-// MetalIndex implements GPU-accelerated vector search using Apple Metal
+import (
+	"embed"
+	"fmt"
+)
+import (
+	"math"
+	"runtime"
+	"sync"
+	"time"
+	"unsafe"
+
+	"github.com/23skdu/longbow/internal/gpu/memory"
+	gputypes "github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
+	"github.com/apache/arrow-go/v18/arrow/float16"
+)
+
+//go:embed kernels.metallib
+var metalFS embed.FS
+
+func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
+	libData, err := metalFS.ReadFile("kernels.metallib")
+	if err != nil {
+		return fmt.Errorf("failed to read embedded metal library: %w", err)
+	}
+
+	if err := InitGlobalContext(libData); err != nil {
+		return err
+	}
+
+	ctx := GetContext()
+	handle := (*C.MetalIndexHandle)(C.malloc(C.sizeof_MetalIndexHandle))
+	handle.device = ctx.GetDevice()
+	handle.commandQueue = ctx.GetCommandQueue()
+	handle.vectorBuffer = nil
+	handle.idBuffer = nil
+	handle.vectorCount = 0
+	handle.dimensions = C.int(dimensions)
+	handle.capacity = C.int(initialCapacity)
+	if handle.capacity <= 0 {
+		handle.capacity = 10000
+	}
+
+	// Load pipelines from shared context
+	handle.pqPipeline, _ = ctx.GetPipelineState("compute_pq_distances")
+	handle.assignPipeline, _ = ctx.GetPipelineState("assign_to_clusters")
+	handle.bfsExpandPipeline, _ = ctx.GetPipelineState("graph_bfs_expand")
+	handle.actPropagatePipeline, _ = ctx.GetPipelineState("graph_activation_propagate")
+	handle.fusedGraphPipeline, _ = ctx.GetPipelineState("graph_rag_fused")
+	handle.l2DistancePipeline, _ = ctx.GetPipelineState("vector_distance_l2")
+	handle.ipDistancePipeline, _ = ctx.GetPipelineState("vector_distance_ip")
+	handle.quantizeSQ8Pipeline, _ = ctx.GetPipelineState("quantize_sq8")
+	handle.sigmoidPipeline, _ = ctx.GetPipelineState("sigmoid_f32")
+	handle.haversinePipeline, _ = ctx.GetPipelineState("haversine_batch")
+	handle.normPipeline, _ = ctx.GetPipelineState("norm_batch_f32")
+
+	handle.graphOffsets = nil
+	handle.graphNeighbors = nil
+	handle.graphWeights = nil
+	handle.graphNodeCount = 0
+	handle.graphEdgeCount = 0
+
+	bufferSize := C.size_t(handle.capacity) * C.size_t(dimensions) * C.sizeof_float
+	buffer := C.create_shared_buffer(handle.device, bufferSize)
+	if buffer != nil {
+		handle.vectorBuffer = buffer
+	}
+
+	m.handle = handle
+	return nil
+}
+
 type MetalIndex struct {
 	handle     *C.MetalIndexHandle
 	dim        int
@@ -717,7 +713,7 @@ func NewMetalIndexImpl(cfg gputypes.GPUConfig) (gputypes.Index, error) {
 	}
 
 	idx := &MetalIndex{
-		dim:    cfg.Dimension,
+		dim: cfg.Dimension,
 		deviceInfo: &gputypes.GPUInfo{
 			Backend:  gputypes.BackendMetal,
 			DeviceID: cfg.DeviceID,
@@ -1354,13 +1350,13 @@ func (idx *MetalIndex) Sigmoid(src []float32, dst []float32) error {
 
 	// For small vectors, GPU overhead might be too high.
 	// But the user requested GPU offloading.
-	
+
 	// Implementation note: This should ideally use the memPool to avoid allocations
 	// and use the sigmoidPipeline.
-	
-	// Since I don't have a full wrapper for all C functions here, 
+
+	// Since I don't have a full wrapper for all C functions here,
 	// I'll leave this as a stub that calls a C function we'll add.
-	return nil 
+	return nil
 }
 func (idx *MetalIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	idx.mu.RLock()
@@ -1388,11 +1384,11 @@ func (idx *MetalIndex) HaversineSearch(centerLat, centerLon float32, points []fl
 		C.float(earthRadius),
 		C.int(count),
 	)
-	
+
 	if ret != 0 {
 		return nil, fmt.Errorf("metal_haversine_batch failed")
 	}
-	
+
 	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "haversine").Observe(time.Since(start).Seconds())
 	return results, nil
 }
@@ -1412,7 +1408,7 @@ func (idx *MetalIndex) NormBatch(vectors []float32, dims int) ([]float32, error)
 	}
 
 	results := make([]float32, count)
-	
+
 	start := time.Now()
 	ret := C.metal_norm_batch_f32(
 		idx.handle,
@@ -1421,11 +1417,11 @@ func (idx *MetalIndex) NormBatch(vectors []float32, dims int) ([]float32, error)
 		C.int(dims),
 		C.int(count),
 	)
-	
+
 	if ret != 0 {
 		return nil, fmt.Errorf("metal_norm_batch_f32 failed")
 	}
-	
+
 	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "norm_batch").Observe(time.Since(start).Seconds())
 	return results, nil
 }

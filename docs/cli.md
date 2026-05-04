@@ -33,9 +33,9 @@ Import vectors from Parquet, NumPy, or generate demo data. Supports local filesy
 **Options:**
 
 - `-dataset string`: Target dataset name (required)
-- `-input string`: Path to `.parquet`, `.npy`, or `s3://bucket/key` (required)
+- `-input string`: Path to `.parquet`, `.npy`, or `s3://bucket/key`
 - `-dim int`: Vector dimension (default: 128, used for demo data)
-- `-count int`: Number of vectors to generate (default: 1000, used for demo data)
+- `-count int`: Number of vectors to generate (default: 1000, used for demo data if no input file)
 
 **Example:**
 
@@ -45,6 +45,9 @@ longbow-cli import -dataset my-collection -input data.parquet
 
 # S3 bucket
 longbow-cli import -dataset my-collection -input s3://my-bucket/vectors.parquet
+
+# Generate demo data
+longbow-cli import -dataset demo-ds -dim 1536 -count 10000
 ```
 
 ### 2. Search Commands
@@ -65,6 +68,7 @@ Perform high-performance vector searches using various modes.
 - `-text string`: Text query for sparse/hybrid search
 - `-alpha float`: Hybrid weighting (0=sparse, 1=dense)
 - `-k int`: Number of results to return
+- `-filters string`: JSON filter expression or path to JSON file
 
 #### Geospatial Search
 
@@ -86,8 +90,8 @@ Get similar vectors based on existing IDs.
 
 Manage logical groupings and lifecycle of data.
 
-- **Create Namespace:** `longbow-cli create-namespace -name <name>`
-- **Create Dataset:** `longbow-cli create-dataset -name <name> -dims <n> -type <type>`
+- **Create Namespace:** `longbow-cli create-namespace -name <name> [-dims <n>] [-data_type <type>]`
+- **Create Dataset:** `longbow-cli create-dataset -name <name> -dims <n> -type <type> [-geo]`
 - **Delete Namespace:** `longbow-cli delete-namespace -name <name>`
 - **List Namespaces:** `longbow-cli list-namespaces`
 - **List Datasets:** `longbow-cli list-datasets-in-namespace -namespace <name>`

@@ -3,8 +3,12 @@
 package metal
 
 import (
+	"embed"
 	"fmt"
 )
+
+//go:embed kernels.metallib
+var metalFS embed.FS
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
@@ -14,144 +18,7 @@ import (
 #import <MetalPerformanceShaders/MetalPerformanceShaders.h>
 #import <Accelerate/Accelerate.h>
 
-const char* pqShaderSource =
-"#include <metal_stdlib>\n"
-"using namespace metal;\n"
-"\n"
-"kernel void compute_pq_distances(\n"
-"    device const float* lookupTable [[buffer(0)]],\n"
-"    device const uchar* codes [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    constant uint& m [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    float sum = 0.0f;\n"
-"    uint offset = gid * m;\n"
-"    \n"
-"    for (uint i = 0; i < m; i++) {\n"
-"        uchar code = codes[offset + i];\n"
-"        sum += lookupTable[i * 256 + code];\n"
-"    }\n"
-"    \n"
-"    distances[gid] = sum;\n"
-"}\n"
-"\n"
-"kernel void assign_to_clusters(\n"
-"    device const float* vectors [[buffer(0)]],\n"
-"    device const float* centroids [[buffer(1)]],\n"
-"    device uint* assignments [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    constant uint& numCentroids [[buffer(5)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    float minDist = 1e38f;\n"
-"    uint bestCent = 0;\n"
-"    uint vecOffset = gid * dim;\n"
-"    \n"
-"    for (uint c = 0; c < numCentroids; c++) {\n"
-"        float dist = 0.0f;\n"
-"        uint centOffset = c * dim;\n"
-"        for (uint i = 0; i < dim; i++) {\n"
-"            float diff = vectors[vecOffset + i] - centroids[centOffset + i];\n"
-"            dist += diff * diff;\n"
-"        }\n"
-"        if (dist < minDist) {\n"
-"            minDist = dist;\n"
-"            bestCent = c;\n"
-"        }\n"
-"    }\n"
-"    assignments[gid] = bestCent;\n"
-"}\n"
-"\n"
-"kernel void vector_distance_l2(\n"
-"    device const float* query [[buffer(0)]],\n"
-"    device const float* vectors [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    float sum = 0.0f;\n"
-"    uint offset = gid * dim;\n"
-"    for (uint i = 0; i < dim; i++) {\n"
-"        float diff = query[i] - vectors[offset + i];\n"
-"        sum += diff * diff;\n"
-"    }\n"
-"    distances[gid] = sqrt(sum);\n"
-"}\n"
-"\n"
-"kernel void vector_distance_ip(\n"
-"    device const float* query [[buffer(0)]],\n"
-"    device const float* vectors [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    float sum = 0.0f;\n"
-"    uint offset = gid * dim;\n"
-"    for (uint i = 0; i < dim; i++) {\n"
-"        sum += query[i] * vectors[offset + i];\n"
-"    }\n"
-"    distances[gid] = sum;\n"
-"}\n"
-"\n"
-"kernel void sigmoid_f32(\n"
-"    device const float* src [[buffer(0)]],\n"
-"    device float* dst [[buffer(1)]],\n"
-"    constant uint& n [[buffer(2)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= n) return;\n"
-"    dst[gid] = 1.0f / (1.0f + exp(-src[gid]));\n"
-"}\n"
-"\n"
-"kernel void haversine_batch(\n"
-"    device const float* center [[buffer(0)]],\n"
-"    device const float* points [[buffer(1)]],\n"
-"    device float* results [[buffer(2)]],\n"
-"    constant float& earthRadius [[buffer(3)]],\n"
-"    constant uint& numPoints [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numPoints) return;\n"
-"    float lat1 = center[0] * 3.14159265f / 180.0f;\n"
-"    float lon1 = center[1] * 3.14159265f / 180.0f;\n"
-"    float lat2 = points[gid * 2] * 3.14159265f / 180.0f;\n"
-"    float lon2 = points[gid * 2 + 1] * 3.14159265f / 180.0f;\n"
-"    float dLat = lat2 - lat1;\n"
-"    float dLon = lon2 - lon1;\n"
-"    float a = sin(dLat / 2.0f) * sin(dLat / 2.0f) + cos(lat1) * cos(lat2) * sin(dLon / 2.0f) * sin(dLon / 2.0f);\n"
-"    float c = 2.0f * atan2(sqrt(a), sqrt(1.0f - a));\n"
-"    results[gid] = earthRadius * c;\n"
-"}\n"
-"\n"
-"kernel void norm_batch_f32(\n"
-"    device const float* vectors [[buffer(0)]],\n"
-"    device float* results [[buffer(1)]],\n"
-"    constant uint& dims [[buffer(2)]],\n"
-"    constant uint& numVectors [[buffer(3)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    float sum = 0.0f;\n"
-"    uint offset = gid * dims;\n"
-"    for (uint i = 0; i < dims; i++) {\n"
-"        float v = vectors[offset + i];\n"
-"        sum += v * v;\n"
-"    }\n"
-"    results[gid] = sum;\n"
-"}\n";
+// Removed inline shader source as it is now in kernels.metal and kernels.metallib
 
 // MetalIndex wraps Metal GPU resources
 typedef struct {
@@ -180,116 +47,81 @@ typedef struct {
     int graphEdgeCount;
 } MetalIndexHandle;
 
-// Initialize Metal device and command queue
-MetalIndexHandle* metal_init(int dimensions, int initialCapacity) {
+// Helper to create a shared buffer
+void* create_shared_buffer(void* device, size_t size) {
     @autoreleasepool {
-        id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-        if (!device) {
-            return NULL;
-        }
-
-        id<MTLCommandQueue> queue = [device newCommandQueue];
-        if (!queue) {
-            return NULL;
-        }
-
-        MetalIndexHandle* handle = (MetalIndexHandle*)malloc(sizeof(MetalIndexHandle));
-        handle->device = (__bridge_retained void*)device;
-        handle->commandQueue = (__bridge_retained void*)queue;
-        handle->vectorBuffer = NULL;
-        handle->idBuffer = NULL;
-        handle->pqPipeline = NULL;
-        handle->vectorCount = 0;
-        handle->dimensions = dimensions;
-        handle->capacity = initialCapacity > 0 ? initialCapacity : 10000;
-
-        // Compile PQ shader
-        NSError* error = nil;
-        NSString* shaderSource = [NSString stringWithUTF8String:pqShaderSource];
-        id<MTLLibrary> library = [device newLibraryWithSource:shaderSource options:nil error:&error];
-        if (library) {
-            id<MTLFunction> pqFunc = [library newFunctionWithName:@"compute_pq_distances"];
-            if (pqFunc) {
-                id<MTLComputePipelineState> pipeline = [device newComputePipelineStateWithFunction:pqFunc error:&error];
-                if (pipeline) handle->pqPipeline = (__bridge_retained void*)pipeline;
-            }
-            
-            id<MTLFunction> assignFunc = [library newFunctionWithName:@"assign_to_clusters"];
-            if (assignFunc) {
-                id<MTLComputePipelineState> assignPipeline = [device newComputePipelineStateWithFunction:assignFunc error:&error];
-                if (assignPipeline) handle->assignPipeline = (__bridge_retained void*)assignPipeline;
-            }
-
-            id<MTLFunction> bfsFunc = [library newFunctionWithName:@"graph_bfs_expand"];
-            if (bfsFunc) {
-                id<MTLComputePipelineState> bfsPipeline = [device newComputePipelineStateWithFunction:bfsFunc error:&error];
-                if (bfsPipeline) handle->bfsExpandPipeline = (__bridge_retained void*)bfsPipeline;
-            }
-
-            id<MTLFunction> actFunc = [library newFunctionWithName:@"graph_activation_propagate"];
-            if (actFunc) {
-                id<MTLComputePipelineState> actPipeline = [device newComputePipelineStateWithFunction:actFunc error:&error];
-                if (actPipeline) handle->actPropagatePipeline = (__bridge_retained void*)actPipeline;
-            }
-
-            id<MTLFunction> fusedFunc = [library newFunctionWithName:@"graph_rag_fused"];
-            if (fusedFunc) {
-                id<MTLComputePipelineState> fusedPipeline = [device newComputePipelineStateWithFunction:fusedFunc error:&error];
-                if (fusedPipeline) handle->fusedGraphPipeline = (__bridge_retained void*)fusedPipeline;
-            }
-
-            id<MTLFunction> l2Func = [library newFunctionWithName:@"vector_distance_l2"];
-            if (l2Func) {
-                id<MTLComputePipelineState> l2Pipeline = [device newComputePipelineStateWithFunction:l2Func error:&error];
-                if (l2Pipeline) handle->l2DistancePipeline = (__bridge_retained void*)l2Pipeline;
-            }
-
-            id<MTLFunction> ipFunc = [library newFunctionWithName:@"vector_distance_ip"];
-            if (ipFunc) {
-                id<MTLComputePipelineState> ipPipeline = [device newComputePipelineStateWithFunction:ipFunc error:&error];
-                if (ipPipeline) handle->ipDistancePipeline = (__bridge_retained void*)ipPipeline;
-            }
-
-            id<MTLFunction> sq8Func = [library newFunctionWithName:@"quantize_sq8"];
-            if (sq8Func) {
-                id<MTLComputePipelineState> sq8Pipeline = [device newComputePipelineStateWithFunction:sq8Func error:&error];
-                if (sq8Pipeline) handle->quantizeSQ8Pipeline = (__bridge_retained void*)sq8Pipeline;
-            }
-
-            id<MTLFunction> sigFunc = [library newFunctionWithName:@"sigmoid_f32"];
-            if (sigFunc) {
-                id<MTLComputePipelineState> sigPipeline = [device newComputePipelineStateWithFunction:sigFunc error:&error];
-                if (sigPipeline) handle->sigmoidPipeline = (__bridge_retained void*)sigPipeline;
-            }
-
-            id<MTLFunction> havFunc = [library newFunctionWithName:@"haversine_batch"];
-            if (havFunc) {
-                id<MTLComputePipelineState> havPipeline = [device newComputePipelineStateWithFunction:havFunc error:&error];
-                if (havPipeline) handle->haversinePipeline = (__bridge_retained void*)havPipeline;
-            }
-
-            id<MTLFunction> normFunc = [library newFunctionWithName:@"norm_batch_f32"];
-            if (normFunc) {
-                id<MTLComputePipelineState> normPipeline = [device newComputePipelineStateWithFunction:normFunc error:&error];
-                if (normPipeline) handle->normPipeline = (__bridge_retained void*)normPipeline;
-            }
-        }
-        
-        handle->graphOffsets = NULL;
-        handle->graphNeighbors = NULL;
-        handle->graphWeights = NULL;
-        handle->graphNodeCount = 0;
-        handle->graphEdgeCount = 0;
-
-        size_t bufferSize = handle->capacity * dimensions * sizeof(float);
-        id<MTLBuffer> buffer = [device newBufferWithLength:bufferSize
-                                                    options:MTLResourceStorageModeShared];
-        if (buffer) {
-            handle->vectorBuffer = (__bridge_retained void*)buffer;
-        }
-
-        return handle;
+        id<MTLDevice> d = (__bridge id<MTLDevice>)device;
+        id<MTLBuffer> buffer = [d newBufferWithLength:size options:MTLResourceStorageModeShared];
+        return (__bridge_retained void*)buffer;
     }
+}
+*/
+import "C"
+import (
+	"math"
+	"runtime"
+	"sync"
+	"time"
+	"unsafe"
+
+	"github.com/23skdu/longbow/internal/gpu/memory"
+	gputypes "github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
+	"github.com/apache/arrow-go/v18/arrow/float16"
+)
+
+// Initialize Metal device and command queue using shared context
+func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
+	libData, err := metalFS.ReadFile("kernels.metallib")
+	if err != nil {
+		return fmt.Errorf("failed to read embedded metal library: %w", err)
+	}
+
+	if err := InitGlobalContext(libData); err != nil {
+		return err
+	}
+
+	ctx := GetContext()
+	handle := (*C.MetalIndexHandle)(C.malloc(C.sizeof_MetalIndexHandle))
+	handle.device = ctx.GetDevice()
+	handle.commandQueue = ctx.GetCommandQueue()
+	handle.vectorBuffer = nil
+	handle.idBuffer = nil
+	handle.vectorCount = 0
+	handle.dimensions = C.int(dimensions)
+	handle.capacity = C.int(initialCapacity)
+	if handle.capacity <= 0 {
+		handle.capacity = 10000
+	}
+
+	// Load pipelines from shared context
+	handle.pqPipeline, _ = ctx.GetPipelineState("compute_pq_distances")
+	handle.assignPipeline, _ = ctx.GetPipelineState("assign_to_clusters")
+	handle.bfsExpandPipeline, _ = ctx.GetPipelineState("graph_bfs_expand")
+	handle.actPropagatePipeline, _ = ctx.GetPipelineState("graph_activation_propagate")
+	handle.fusedGraphPipeline, _ = ctx.GetPipelineState("graph_rag_fused")
+	handle.l2DistancePipeline, _ = ctx.GetPipelineState("vector_distance_l2")
+	handle.ipDistancePipeline, _ = ctx.GetPipelineState("vector_distance_ip")
+	handle.quantizeSQ8Pipeline, _ = ctx.GetPipelineState("quantize_sq8")
+	handle.sigmoidPipeline, _ = ctx.GetPipelineState("sigmoid_f32")
+	handle.haversinePipeline, _ = ctx.GetPipelineState("haversine_batch")
+	handle.normPipeline, _ = ctx.GetPipelineState("norm_batch_f32")
+
+	handle.graphOffsets = nil
+	handle.graphNeighbors = nil
+	handle.graphWeights = nil
+	handle.graphNodeCount = 0
+	handle.graphEdgeCount = 0
+
+	bufferSize := C.size_t(handle.capacity) * C.size_t(dimensions) * C.sizeof_float
+	buffer := C.create_shared_buffer(handle.device, bufferSize)
+	if buffer != nil {
+		handle.vectorBuffer = buffer
+	}
+
+	m.handle = handle
+	return nil
 }
 
 // Get device info
@@ -850,21 +682,6 @@ int metal_quantize_sq8(MetalIndexHandle* handle, float* vectors, float* mins, fl
         return 0;
     }
 }
-*/
-import "C"
-import (
-	"math"
-	"runtime"
-	"sync"
-	"time"
-	"unsafe"
-
-	"github.com/23skdu/longbow/internal/gpu/memory"
-	gputypes "github.com/23skdu/longbow/internal/gpu/types"
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/pq"
-	"github.com/apache/arrow-go/v18/arrow/float16"
-)
 
 // MetalIndex implements GPU-accelerated vector search using Apple Metal
 type MetalIndex struct {
@@ -899,34 +716,31 @@ func NewMetalIndexImpl(cfg gputypes.GPUConfig) (gputypes.Index, error) {
 		}
 	}
 
-	initialCapacity := 10000
-	handle := C.metal_init(C.int(cfg.Dimension), C.int(initialCapacity))
-	if handle == nil {
+	idx := &MetalIndex{
+		dim:    cfg.Dimension,
+		deviceInfo: &gputypes.GPUInfo{
+			Backend:  gputypes.BackendMetal,
+			DeviceID: cfg.DeviceID,
+		},
+		lastSyncTime: time.Now(),
+		stopSync:     make(chan struct{}),
+		maxMemory:    cfg.MaxMemory,
+	}
+
+	if err := idx.Init(cfg.Dimension, 10000); err != nil {
 		return nil, &gputypes.GPUInitializationError{
 			DeviceID: cfg.DeviceID,
 			Backend:  gputypes.BackendMetal,
-			Cause:    fmt.Errorf("failed to initialize Metal device"),
+			Cause:    err,
 		}
 	}
 
 	// Get actual device info
 	nameBuf := make([]C.char, 256)
 	var totalMem C.uint64_t
-	C.metal_get_device_info(handle, &nameBuf[0], C.int(len(nameBuf)), &totalMem)
-
-	idx := &MetalIndex{
-		handle: handle,
-		dim:    cfg.Dimension,
-		deviceInfo: &gputypes.GPUInfo{
-			Backend:  gputypes.BackendMetal,
-			Name:     C.GoString(&nameBuf[0]),
-			DeviceID: cfg.DeviceID,
-			MemoryMB: int64(totalMem) / (1024 * 1024),
-		},
-		lastSyncTime: time.Now(),
-		stopSync:     make(chan struct{}),
-		maxMemory:    cfg.MaxMemory,
-	}
+	C.metal_get_device_info(idx.handle, &nameBuf[0], C.int(len(nameBuf)), &totalMem)
+	idx.deviceInfo.Name = C.GoString(&nameBuf[0])
+	idx.deviceInfo.MemoryMB = int64(totalMem) / (1024 * 1024)
 
 	// Initialize memory pool
 	pool, err := memory.NewGPUMemPool(gputypes.BackendMetal, cfg.DeviceID)

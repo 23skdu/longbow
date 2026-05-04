@@ -149,19 +149,37 @@ func (e *TurboQuantEncoder) packAngles(angles []float32, dst []byte) {
 	}
 
 	if bits == 4 {
-		for i := 0; i < len(angles); i += 2 {
-			norm1 := (angles[i] + math.Pi) / (2 * math.Pi)
-			if norm1 < 0 { norm1 = 0 } else if norm1 > 1 { norm1 = 1 }
-			q1 := byte(norm1*maxVal + 0.5)
-			
-			var q2 byte
-			if i+1 < len(angles) {
-				norm2 := (angles[i+1] + math.Pi) / (2 * math.Pi)
-				if norm2 < 0 { norm2 = 0 } else if norm2 > 1 { norm2 = 1 }
-				q2 = byte(norm2*maxVal + 0.5)
+		inv2Pi := 1.0 / (2 * math.Pi)
+		for i := 0; i < len(angles); i += 8 {
+			if i+7 < len(angles) {
+				for j := 0; j < 4; j++ {
+					a1 := angles[i+2*j]
+					norm1 := (a1 + math.Pi) * inv2Pi
+					if norm1 < 0 { norm1 = 0 } else if norm1 > 1 { norm1 = 1 }
+					q1 := byte(norm1*maxVal + 0.5)
+					
+					a2 := angles[i+2*j+1]
+					norm2 := (a2 + math.Pi) * inv2Pi
+					if norm2 < 0 { norm2 = 0 } else if norm2 > 1 { norm2 = 1 }
+					q2 := byte(norm2*maxVal + 0.5)
+					
+					dst[i/2+j] = q1 | (q2 << 4)
+				}
+			} else {
+				for j := i; j < len(angles); j += 2 {
+					norm1 := (angles[j] + math.Pi) * inv2Pi
+					if norm1 < 0 { norm1 = 0 } else if norm1 > 1 { norm1 = 1 }
+					q1 := byte(norm1*maxVal + 0.5)
+					var q2 byte
+					if j+1 < len(angles) {
+						norm2 := (angles[j+1] + math.Pi) * inv2Pi
+						if norm2 < 0 { norm2 = 0 } else if norm2 > 1 { norm2 = 1 }
+						q2 = byte(norm2*maxVal + 0.5)
+					}
+					dst[j/2] = q1 | (q2 << 4)
+				}
+				break
 			}
-			
-			dst[i/2] = q1 | (q2 << 4)
 		}
 		return
 	}
@@ -256,28 +274,57 @@ func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 	}
 
 	if bits == 4 {
-		for i := 0; i < len(dst); i += 2 {
-			b := src[i/2]
-			
-			q1 := float32(b & 0x0F)
-			dst[i] = (q1/maxVal)*2*math.Pi - math.Pi
-			
-			if i+1 < len(dst) {
-				q2 := float32(b >> 4)
-				dst[i+1] = (q2/maxVal)*2*math.Pi - math.Pi
+		for i := 0; i < len(dst); i += 8 {
+			if i+7 < len(dst) {
+				b0 := src[i/2]
+				b1 := src[i/2+1]
+				b2 := src[i/2+2]
+				b3 := src[i/2+3]
+				dst[i] = (float32(b0&0x0F)/maxVal)*2*math.Pi - math.Pi
+				dst[i+1] = (float32(b0>>4)/maxVal)*2*math.Pi - math.Pi
+				dst[i+2] = (float32(b1&0x0F)/maxVal)*2*math.Pi - math.Pi
+				dst[i+3] = (float32(b1>>4)/maxVal)*2*math.Pi - math.Pi
+				dst[i+4] = (float32(b2&0x0F)/maxVal)*2*math.Pi - math.Pi
+				dst[i+5] = (float32(b2>>4)/maxVal)*2*math.Pi - math.Pi
+				dst[i+6] = (float32(b3&0x0F)/maxVal)*2*math.Pi - math.Pi
+				dst[i+7] = (float32(b3>>4)/maxVal)*2*math.Pi - math.Pi
+			} else {
+				for j := i; j < len(dst); j += 2 {
+					b := src[j/2]
+					dst[j] = (float32(b&0x0F)/maxVal)*2*math.Pi - math.Pi
+					if j+1 < len(dst) {
+						dst[j+1] = (float32(b>>4)/maxVal)*2*math.Pi - math.Pi
+					}
+				}
+				break
 			}
 		}
 		return
 	}
 
 	if bits == 2 {
-		for i := 0; i < len(dst); i += 4 {
-			b := src[i/4]
-			for j := 0; j < 4; j++ {
-				if i+j < len(dst) {
-					q := float32((b >> (uint(j) * 2)) & 0x03)
-					dst[i+j] = (q/maxVal)*2*math.Pi - math.Pi
+		for i := 0; i < len(dst); i += 8 {
+			if i+7 < len(dst) {
+				b0 := src[i/4]
+				b1 := src[i/4+1]
+				dst[i] = (float32(b0&0x03)/maxVal)*2*math.Pi - math.Pi
+				dst[i+1] = (float32((b0>>2)&0x03)/maxVal)*2*math.Pi - math.Pi
+				dst[i+2] = (float32((b0>>4)&0x03)/maxVal)*2*math.Pi - math.Pi
+				dst[i+3] = (float32((b0>>6)&0x03)/maxVal)*2*math.Pi - math.Pi
+				dst[i+4] = (float32(b1&0x03)/maxVal)*2*math.Pi - math.Pi
+				dst[i+5] = (float32((b1>>2)&0x03)/maxVal)*2*math.Pi - math.Pi
+				dst[i+6] = (float32((b1>>4)&0x03)/maxVal)*2*math.Pi - math.Pi
+				dst[i+7] = (float32((b1>>6)&0x03)/maxVal)*2*math.Pi - math.Pi
+			} else {
+				for j := i; j < len(dst); j += 4 {
+					b := src[j/4]
+					for k := 0; k < 4; k++ {
+						if j+k < len(dst) {
+							dst[j+k] = (float32((b>>(uint(k)*2))&0x03)/maxVal)*2*math.Pi - math.Pi
+						}
+					}
 				}
+				break
 			}
 		}
 		return

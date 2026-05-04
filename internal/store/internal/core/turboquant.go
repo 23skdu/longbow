@@ -149,17 +149,18 @@ func (e *TurboQuantEncoder) packAngles(angles []float32, dst []byte) {
 	}
 
 	if bits == 4 {
-		inv2Pi := 1.0 / (2 * math.Pi)
+		inv2Pi := float32(1.0 / (2 * math.Pi))
+		pi32 := float32(math.Pi)
 		for i := 0; i < len(angles); i += 8 {
 			if i+7 < len(angles) {
 				for j := 0; j < 4; j++ {
 					a1 := angles[i+2*j]
-					norm1 := (a1 + math.Pi) * inv2Pi
+					norm1 := (a1 + pi32) * inv2Pi
 					if norm1 < 0 { norm1 = 0 } else if norm1 > 1 { norm1 = 1 }
 					q1 := byte(norm1*maxVal + 0.5)
 					
 					a2 := angles[i+2*j+1]
-					norm2 := (a2 + math.Pi) * inv2Pi
+					norm2 := (a2 + pi32) * inv2Pi
 					if norm2 < 0 { norm2 = 0 } else if norm2 > 1 { norm2 = 1 }
 					q2 := byte(norm2*maxVal + 0.5)
 					
@@ -167,12 +168,12 @@ func (e *TurboQuantEncoder) packAngles(angles []float32, dst []byte) {
 				}
 			} else {
 				for j := i; j < len(angles); j += 2 {
-					norm1 := (angles[j] + math.Pi) * inv2Pi
+					norm1 := (angles[j] + pi32) * inv2Pi
 					if norm1 < 0 { norm1 = 0 } else if norm1 > 1 { norm1 = 1 }
 					q1 := byte(norm1*maxVal + 0.5)
 					var q2 byte
 					if j+1 < len(angles) {
-						norm2 := (angles[j+1] + math.Pi) * inv2Pi
+						norm2 := (angles[j+1] + pi32) * inv2Pi
 						if norm2 < 0 { norm2 = 0 } else if norm2 > 1 { norm2 = 1 }
 						q2 = byte(norm2*maxVal + 0.5)
 					}

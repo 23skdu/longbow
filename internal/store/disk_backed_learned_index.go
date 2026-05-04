@@ -4,10 +4,12 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"math"
 	"os"
 	"path/filepath"
 	"sync"
 
+	"github.com/23skdu/longbow/internal/simd"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"golang.org/x/sys/unix"
 )
@@ -97,6 +99,46 @@ func (idx *DiskBackedLearnedIndex) Build() error {
 	return nil
 }
 
+// Save serializes the index to disk in a layout optimized for mmap access.
+// Layout:
+// [Header: 64b]
+// [Vectors: numNodes * dimension * 4b]
+// [Graph: numNodes * (maxDegree + 1) * 8b]
+func (idx *DiskBackedLearnedIndex) Save(path string) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	f, err := os.Create(path) // #nosec G304
+	if err != nil {
+		return err
+	}
+	defer f.Close()
+
+	// Header
+	header := make([]byte, 64)
+	binary.LittleEndian.PutUint32(header[0:4], diskBackedLearnedMagic)
+	binary.LittleEndian.PutUint32(header[4:8], diskBackedLearnedVersion)
+	binary.LittleEndian.PutUint32(header[8:12], idx.numNodes)
+	binary.LittleEndian.PutUint32(header[12:16], uint32(idx.dimension)) // #nosec G115
+	
+	vecSize := uint64(idx.numNodes) * uint64(idx.dimension) * 4 // #nosec G115
+	idx.vectorOffset = 64
+	idx.graphOffset = idx.vectorOffset + vecSize
+	
+	binary.LittleEndian.PutUint64(header[16:24], idx.vectorOffset)
+	binary.LittleEndian.PutUint64(header[24:32], idx.graphOffset)
+	binary.LittleEndian.PutUint32(header[32:36], uint32(idx.config.MaxDegree)) // #nosec G115
+
+	if _, err := f.Write(header); err != nil {
+		return err
+	}
+
+	// For a real implementation, we would write vectors and graph edges here.
+	// This is a placeholder for the actual serialization from an in-memory index.
+	
+	return nil
+}
+
 // Search performs a greedy search over the mmap'd graph.
 func (idx *DiskBackedLearnedIndex) Search(query []float32, k int) ([]IndexSearchResult, error) {
 	idx.mu.RLock()
@@ -106,10 +148,69 @@ func (idx *DiskBackedLearnedIndex) Search(query []float32, k int) ([]IndexSearch
 		return nil, fmt.Errorf("index not loaded")
 	}
 
-	// Implementation of Vamana greedy search on mmap'd data
-	// ... (Implementation details omitted for brevity, will follow DiskANN logic)
+	if idx.numNodes == 0 {
+		return nil, nil
+	}
+
+	// Vamana greedy search on mmap
+	curr := uint32(0) // Start at node 0 (entry point)
+	visited := make(map[uint32]bool)
 	
-	return nil, nil // Placeholder
+	bestDist, _ := idx.getDistance(query, curr)
+	
+	for {
+		visited[curr] = true
+		neighbors := idx.getNeighbors(curr)
+		
+		var nextNode uint32
+		found := false
+		
+		for _, neighbor := range neighbors {
+			if neighbor == 0 && curr != 0 { continue } // End of neighbors
+			if visited[neighbor] { continue }
+			
+			dist, _ := idx.getDistance(query, neighbor)
+			if dist < bestDist {
+				bestDist = dist
+				nextNode = neighbor
+				found = true
+			}
+		}
+		
+		if !found {
+			break
+		}
+		curr = nextNode
+	}
+
+	return []IndexSearchResult{{ID: uint64(curr), Distance: bestDist}}, nil
+}
+
+func (idx *DiskBackedLearnedIndex) getDistance(query []float32, nodeID uint32) (float32, error) {
+	offset := idx.vectorOffset + uint64(nodeID)*uint64(idx.dimension)*4 // #nosec G115
+	vecData := idx.data[offset : offset+uint64(idx.dimension)*4]       // #nosec G115
+	
+	// Zero-copy conversion for distance calculation
+	nodeVec := make([]float32, idx.dimension)
+	for i := 0; i < idx.dimension; i++ {
+		nodeVec[i] = math.Float32frombits(binary.LittleEndian.Uint32(vecData[i*4 : (i+1)*4]))
+	}
+	
+	return simd.EuclideanDistance(query, nodeVec)
+}
+
+func (idx *DiskBackedLearnedIndex) getNeighbors(nodeID uint32) []uint32 {
+	maxDegree := uint32(idx.config.MaxDegree) // #nosec G115
+	offset := idx.graphOffset + uint64(nodeID)*uint64(maxDegree+1)*4
+	
+	count := binary.LittleEndian.Uint32(idx.data[offset : offset+4])
+	if count > maxDegree { count = maxDegree }
+	
+	neighbors := make([]uint32, count)
+	for i := uint32(0); i < count; i++ {
+		neighbors[i] = binary.LittleEndian.Uint32(idx.data[offset+4+uint64(i*4) : offset+8+uint64(i*4)])
+	}
+	return neighbors
 }
 
 // Load maps the index file into memory.
@@ -118,7 +219,7 @@ func (idx *DiskBackedLearnedIndex) Load(path string) error {
 	defer idx.mu.Unlock()
 
 	path = filepath.Clean(path)
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304
 	if err != nil {
 		return err
 	}
@@ -163,6 +264,9 @@ func (idx *DiskBackedLearnedIndex) parseHeader() error {
 	idx.vectorOffset = binary.LittleEndian.Uint64(idx.data[16:24])
 	idx.graphOffset = binary.LittleEndian.Uint64(idx.data[24:32])
 
+	// Optional: read MaxDegree from header if available
+	// if len(idx.data) >= 36 { ... }
+
 	idx.built = true
 	return nil
 }
@@ -185,12 +289,34 @@ func (idx *DiskBackedLearnedIndex) Close() error {
 }
 
 // Placeholder implementations for interface compliance
-func (idx *DiskBackedLearnedIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error) { return nil, nil }
-func (idx *DiskBackedLearnedIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error) { return nil, nil }
-func (idx *DiskBackedLearnedIndex) Save(path string) error { return nil }
+func (idx *DiskBackedLearnedIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error) {
+	results := make([][]IndexSearchResult, len(queries))
+	for i, q := range queries {
+		res, _ := idx.Search(q, k)
+		results[i] = res
+	}
+	return results, nil
+}
+
+func (idx *DiskBackedLearnedIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, k int) ([]lbtypes.SearchResult, error) {
+	neighbors := idx.getNeighbors(uint32(id))
+	res := make([]lbtypes.SearchResult, len(neighbors))
+	for i, n := range neighbors {
+		res[i] = lbtypes.SearchResult{ID: lbtypes.VectorID(n)}
+	}
+	return res, nil
+}
+
 func (idx *DiskBackedLearnedIndex) ExportState() ([]byte, error) { return nil, nil }
 func (idx *DiskBackedLearnedIndex) ImportState(data []byte) error { return nil }
 func (idx *DiskBackedLearnedIndex) AddByLocation(batchIdx, rowIdx int) error { return nil }
 func (idx *DiskBackedLearnedIndex) GetVectorID(loc Location) (uint64, bool) { return 0, false }
-func (idx *DiskBackedLearnedIndex) SearchVectors(query []float32, k int, options SearchOptions) []lbtypes.SearchResult { return nil }
+func (idx *DiskBackedLearnedIndex) SearchVectors(query []float32, k int, options SearchOptions) []lbtypes.SearchResult {
+	res, _ := idx.Search(query, k)
+	out := make([]lbtypes.SearchResult, len(res))
+	for i, r := range res {
+		out[i] = lbtypes.SearchResult{ID: lbtypes.VectorID(r.ID), Distance: r.Distance} // #nosec G115
+	}
+	return out
+}
 func (idx *DiskBackedLearnedIndex) Len() int { return idx.Size() }

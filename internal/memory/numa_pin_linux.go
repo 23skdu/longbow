@@ -34,6 +34,17 @@ func PinToNUMANode(topo *NUMATopology, nodeID int) error {
 	return unix.SchedSetaffinity(0, &cpuSet)
 }
 
+// PinThreadToCore pins the current goroutine to a specific CPU core.
+func PinThreadToCore(coreID int) error {
+	// Lock goroutine to OS thread
+	runtime.LockOSThread()
+
+	var cpuSet unix.CPUSet
+	cpuSet.Set(coreID)
+
+	return unix.SchedSetaffinity(0, &cpuSet)
+}
+
 // MbindMemory binds the specified memory range to a NUMA node.
 // This uses the mbind(2) system call with MPOL_BIND policy.
 func MbindMemory(ptr unsafe.Pointer, size int, nodeID int) error {

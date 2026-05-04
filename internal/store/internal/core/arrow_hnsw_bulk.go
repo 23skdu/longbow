@@ -32,10 +32,14 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	if n <= 0 {
 		return nil
 	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	start := time.Now()
+	var committedN int
 	// Ensure nodeCount is advanced even on error/cancellation to unblock subsequent writers.
-	defer func() {
-		finalID := int64(startID + uint32(n)) // #nosec G115
+	defer func(batchSize int) {
+		finalID := int64(startID + uint32(committedN)) // #nosec G115
 		h.commitMu.Lock()
 		for h.nodeCount.Load() < int64(startID) {
 			h.commitCond.Wait()
@@ -45,7 +49,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			h.commitCond.Broadcast()
 		}
 		h.commitMu.Unlock()
-	}()
+	}(n)
 	defer func() {
 		duration := time.Since(start).Seconds()
 		metrics.HNSWBulkInsertDurationSeconds.Observe(duration)
@@ -198,7 +202,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 	pool.ParallelFor(n, chunkSize, func(start, end int) {
 		errMu.Lock()
-		if errPrep != nil {
+		if errPrep != nil || ctx.Err() != nil {
+			if errPrep == nil { errPrep = ctx.Err() }
 			errMu.Unlock()
 			return
 		}
@@ -428,8 +433,12 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		}
 	}
 	h.compareAndSwapData(data)
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 
 	if n <= seedCount {
+		committedN = n
 		return nil
 	}
 
@@ -443,7 +452,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	// Refresh metadata after bootstrap
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())
-	h.nodeCount.Add(int64(n))
 
 	// Determine max level in remaining batch
 	batchMaxLevel := -1
@@ -886,5 +894,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		}
 	}
 
+	committedN = n
 	return nil
 }

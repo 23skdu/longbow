@@ -1,10 +1,12 @@
 package core_test
 
 import (
+	"context"
+	"fmt"
+	"testing"
+
 	"github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
-	"context"
-	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -39,8 +41,10 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			// Setup Index
 			config := types.DefaultArrowHNSWConfig()
-			config.M = 256
-			config.EfConstruction = 2000
+			config.M = 128
+			config.MMax = 128
+			config.MMax0 = 256
+			config.EfConstruction = 1000
 			config.DataType = tt.dataType
 			config.Dims = tt.dims
 
@@ -139,15 +143,14 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
 			require.NoError(t, err)
 			assert.Len(t, ids, numVecs)
+			t.Logf("DEBUG: Added %d nodes, current idx.Len(): %d", numVecs, idx.Len())
 			assert.Equal(t, numVecs, idx.Len())
-			if tt.dataType == types.VectorTypeInt64 {
-				t.Logf("DEBUG: Actual Index Len: %d", idx.Len())
-			}
 
 			// Verify Retrievablity of one vector
 			qID := uint32(500)
-			vecAny, err := idx.GetVectorAny(qID)
+			vecAny, err := idx.GetVector(qID)
 			require.NoError(t, err)
+			t.Logf("DEBUG: Vector 500 type: %T, val: %v", vecAny, vecAny)
 			require.NotNil(t, vecAny)
 			if tt.dataType == types.VectorTypeInt64 {
 				t.Logf("DEBUG: Int64 Vector 500: %v", vecAny)
@@ -186,8 +189,8 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			opts := types.DefaultSearchOptions()
 			opts.Ef = 1100
 			res, err := idx.SearchVectors(context.Background(), vecAny, 1100, nil, opts) // Everyone
-			require.NoError(t, err)
-			require.NotEmpty(t, res)
+			fmt.Printf("DEBUG: Results[0]: ID=%d, Dist=%f, Score=%f\n", res[0].ID, res[0].Distance, res[0].Score)
+			require.Equal(t, uint32(500), uint32(res[0].ID))
 			
 			// For Int8, multiple vectors might be identical in distance (0).
 			// We check if our target ID is at least in the results.

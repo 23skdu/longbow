@@ -59,14 +59,21 @@ func GetSharedPool() *SharedWorkerPool {
 		workerIdx := 0
 		for n := 0; n < topo.NumNodes; n++ {
 			p.nodePools[n] = make([]chan func(), workersPerNode)
+			cpus := topo.CPUs[n]
 			for w := 0; w < workersPerNode; w++ {
 				ch := make(chan func(), 1024)
 				p.nodePools[n][w] = ch
+				
+				coreID := -1
+				if len(cpus) > 0 {
+					coreID = cpus[w%len(cpus)]
+				}
+
 				if workerIdx < numWorkers {
 					p.shards[workerIdx] = ch
 					workerIdx++
 				}
-				go p.numaWorker(ch, n)
+				go p.numaWorker(ch, n, coreID)
 			}
 		}
 
@@ -75,7 +82,14 @@ func GetSharedPool() *SharedWorkerPool {
 			ch := make(chan func(), 1024)
 			p.shards[workerIdx] = ch
 			p.nodePools[0] = append(p.nodePools[0], ch)
-			go p.numaWorker(ch, 0)
+			
+			coreID := -1
+			cpus := topo.CPUs[0]
+			if len(cpus) > 0 {
+				coreID = cpus[workerIdx%len(cpus)]
+			}
+			
+			go p.numaWorker(ch, 0, coreID)
 			workerIdx++
 		}
 
@@ -84,9 +98,11 @@ func GetSharedPool() *SharedWorkerPool {
 	return globalPool.Load()
 }
 
-func (p *SharedWorkerPool) numaWorker(tasks chan func(), nodeID int) {
-	// Pin thread to NUMA node
-	if p.topo != nil && p.topo.NumNodes > 1 {
+func (p *SharedWorkerPool) numaWorker(tasks chan func(), nodeID int, coreID int) {
+	// Pin thread to specific core if available, otherwise NUMA node
+	if coreID >= 0 {
+		_ = memory.PinThreadToCore(coreID)
+	} else if p.topo != nil && p.topo.NumNodes > 1 {
 		_ = memory.PinToNUMANode(p.topo, nodeID)
 	}
 

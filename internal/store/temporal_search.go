@@ -163,8 +163,7 @@ type TemporalTree struct {
 }
 
 type temporalSnapshot struct {
-	timestamps []int64
-	nodes      []*TemporalNode
+	nodes []TemporalNode
 }
 
 // TemporalNode represents a set of vector IDs sharing a specific timestamp.
@@ -172,15 +171,14 @@ type temporalSnapshot struct {
 type TemporalNode struct {
 	Timestamp int64
 	VectorIDs []uint64
-	_         [40]byte // Padding to 64 bytes (8 + 16 + 40)
+	_         [32]byte // Padding to exactly 64 bytes (8 + 24 + 32)
 }
 
 // NewTemporalTree creates a new TemporalTree instance.
 func NewTemporalTree() *TemporalTree {
 	tt := &TemporalTree{}
 	tt.snapshot.Store(&temporalSnapshot{
-		timestamps: make([]int64, 0),
-		nodes:      make([]*TemporalNode, 0),
+		nodes: make([]TemporalNode, 0),
 	})
 	return tt
 }
@@ -191,37 +189,29 @@ func (tt *TemporalTree) Insert(timestamp int64, id uint64) {
 	defer tt.mu.Unlock()
 
 	current := tt.snapshot.Load()
-	idx := sort.Search(len(current.timestamps), func(i int) bool {
-		return current.timestamps[i] >= timestamp
+	idx := sort.Search(len(current.nodes), func(i int) bool {
+		return current.nodes[i].Timestamp >= timestamp
 	})
 
 	newSnap := &temporalSnapshot{}
-	if idx < len(current.timestamps) && current.timestamps[idx] == timestamp {
+	if idx < len(current.nodes) && current.nodes[idx].Timestamp == timestamp {
 		// Existing timestamp, update node (COW)
-		newSnap.timestamps = current.timestamps
-		newSnap.nodes = append([]*TemporalNode(nil), current.nodes...)
+		newSnap.nodes = make([]TemporalNode, len(current.nodes))
+		copy(newSnap.nodes, current.nodes)
 		
-		oldNode := newSnap.nodes[idx]
-		newNode := &TemporalNode{
-			Timestamp: oldNode.Timestamp,
-			VectorIDs: append(append([]uint64(nil), oldNode.VectorIDs...), id),
-		}
-		newSnap.nodes[idx] = newNode
+		oldNode := &newSnap.nodes[idx]
+		oldNode.VectorIDs = append(append([]uint64(nil), oldNode.VectorIDs...), id)
 	} else {
-		// New timestamp, insert into sorted slices
-		newSnap.timestamps = make([]int64, len(current.timestamps)+1)
-		newSnap.nodes = make([]*TemporalNode, len(current.nodes)+1)
+		// New timestamp, insert into sorted slice
+		newSnap.nodes = make([]TemporalNode, len(current.nodes)+1)
 
-		copy(newSnap.timestamps[:idx], current.timestamps[:idx])
 		copy(newSnap.nodes[:idx], current.nodes[:idx])
 
-		newSnap.timestamps[idx] = timestamp
-		newSnap.nodes[idx] = &TemporalNode{
+		newSnap.nodes[idx] = TemporalNode{
 			Timestamp: timestamp,
 			VectorIDs: []uint64{id},
 		}
 
-		copy(newSnap.timestamps[idx+1:], current.timestamps[idx:])
 		copy(newSnap.nodes[idx+1:], current.nodes[idx:])
 	}
 	tt.snapshot.Store(newSnap)
@@ -230,18 +220,23 @@ func (tt *TemporalTree) Insert(timestamp int64, id uint64) {
 // GetRange returns all vector IDs within the specified timestamp range.
 func (tt *TemporalTree) GetRange(start, end int64) []uint64 {
 	snap := tt.snapshot.Load()
-	if snap == nil || len(snap.timestamps) == 0 {
+	if snap == nil || len(snap.nodes) == 0 {
 		return nil
 	}
 
-	n := len(snap.timestamps)
+	n := len(snap.nodes)
 	startIdx := sort.Search(n, func(i int) bool {
-		return snap.timestamps[i] >= start
+		return snap.nodes[i].Timestamp >= start
 	})
 
 	var results []uint64
-	for i := startIdx; i < n && snap.timestamps[i] <= end; i++ {
-		results = append(results, snap.nodes[i].VectorIDs...)
+	// Linear scan from startIdx is now very cache-friendly
+	for i := startIdx; i < n; i++ {
+		node := &snap.nodes[i]
+		if node.Timestamp > end {
+			break
+		}
+		results = append(results, node.VectorIDs...)
 	}
 	return results
 }
@@ -249,13 +244,13 @@ func (tt *TemporalTree) GetRange(start, end int64) []uint64 {
 // GetRangeReversed returns all vector IDs within the specified timestamp range in descending order.
 func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
 	snap := tt.snapshot.Load()
-	if snap == nil || len(snap.timestamps) == 0 {
+	if snap == nil || len(snap.nodes) == 0 {
 		return nil
 	}
 
 	var results []uint64
-	for i := len(snap.timestamps) - 1; i >= 0; i-- {
-		ts := snap.timestamps[i]
+	for i := len(snap.nodes) - 1; i >= 0; i-- {
+		ts := snap.nodes[i].Timestamp
 		if ts >= start && ts <= end {
 			results = append(results, snap.nodes[i].VectorIDs...)
 		} else if ts < start {
@@ -268,12 +263,12 @@ func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
 // GetBefore returns all vector IDs with timestamps before the specified value.
 func (tt *TemporalTree) GetBefore(timestamp int64) []uint64 {
 	snap := tt.snapshot.Load()
-	if snap == nil || len(snap.timestamps) == 0 {
+	if snap == nil || len(snap.nodes) == 0 {
 		return nil
 	}
 
-	idx := sort.Search(len(snap.timestamps), func(i int) bool {
-		return snap.timestamps[i] >= timestamp
+	idx := sort.Search(len(snap.nodes), func(i int) bool {
+		return snap.nodes[i].Timestamp >= timestamp
 	})
 
 	var results []uint64
@@ -286,16 +281,16 @@ func (tt *TemporalTree) GetBefore(timestamp int64) []uint64 {
 // GetAfter returns all vector IDs with timestamps after the specified value.
 func (tt *TemporalTree) GetAfter(timestamp int64) []uint64 {
 	snap := tt.snapshot.Load()
-	if snap == nil || len(snap.timestamps) == 0 {
+	if snap == nil || len(snap.nodes) == 0 {
 		return nil
 	}
 
-	idx := sort.Search(len(snap.timestamps), func(i int) bool {
-		return snap.timestamps[i] > timestamp
+	idx := sort.Search(len(snap.nodes), func(i int) bool {
+		return snap.nodes[i].Timestamp > timestamp
 	})
 
 	var results []uint64
-	for i := idx; i < len(snap.timestamps); i++ {
+	for i := idx; i < len(snap.nodes); i++ {
 		results = append(results, snap.nodes[i].VectorIDs...)
 	}
 	return results
@@ -304,15 +299,15 @@ func (tt *TemporalTree) GetAfter(timestamp int64) []uint64 {
 // GetLatest returns the vector IDs from the last n timestamps.
 func (tt *TemporalTree) GetLatest(n int) []uint64 {
 	snap := tt.snapshot.Load()
-	if snap == nil || len(snap.timestamps) == 0 {
+	if snap == nil || len(snap.nodes) == 0 {
 		return nil
 	}
-	if n > len(snap.timestamps) {
-		n = len(snap.timestamps)
+	if n > len(snap.nodes) {
+		n = len(snap.nodes)
 	}
 
 	var results []uint64
-	for i := len(snap.timestamps) - n; i < len(snap.timestamps); i++ {
+	for i := len(snap.nodes) - n; i < len(snap.nodes); i++ {
 		results = append(results, snap.nodes[i].VectorIDs...)
 	}
 	return results
@@ -321,11 +316,11 @@ func (tt *TemporalTree) GetLatest(n int) []uint64 {
 // GetEarliest returns the vector IDs from the first n timestamps.
 func (tt *TemporalTree) GetEarliest(n int) []uint64 {
 	snap := tt.snapshot.Load()
-	if snap == nil || len(snap.timestamps) == 0 {
+	if snap == nil || len(snap.nodes) == 0 {
 		return nil
 	}
-	if n > len(snap.timestamps) {
-		n = len(snap.timestamps)
+	if n > len(snap.nodes) {
+		n = len(snap.nodes)
 	}
 
 	var results []uint64
@@ -337,7 +332,7 @@ func (tt *TemporalTree) GetEarliest(n int) []uint64 {
 
 // Len returns the number of unique timestamps in the tree.
 func (tt *TemporalTree) Len() int {
-	return len(tt.snapshot.Load().timestamps)
+	return len(tt.snapshot.Load().nodes)
 }
 
 // NewTemporalIndex creates a new TemporalIndex instance.
@@ -598,10 +593,10 @@ func (ti *TemporalIndex) Prewarm(ctx context.Context) error {
 	}
 
 	snap := tree.snapshot.Load()
-	if snap == nil || len(snap.timestamps) == 0 {
+	if snap == nil || len(snap.nodes) == 0 {
 		return nil
 	}
-	latestTs := snap.timestamps[len(snap.timestamps)-1]
+	latestTs := snap.nodes[len(snap.nodes)-1].Timestamp
 
 	// 1. Latest results
 	_, _ = ti.SearchAsOf(ctx, latestTs, 100)

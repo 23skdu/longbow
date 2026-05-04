@@ -10,10 +10,11 @@ import (
 
 /*
 #cgo CFLAGS: -x objective-c -fobjc-arc
-#cgo LDFLAGS: -framework Metal -framework Foundation
+#cgo LDFLAGS: -framework Metal -framework Foundation -framework CoreFoundation
 
 #import <Metal/Metal.h>
 #import <Foundation/Foundation.h>
+#import <CoreFoundation/CoreFoundation.h>
 
 typedef struct {
     void* device;
@@ -32,7 +33,7 @@ MetalContextHandle* init_metal_context(const void* libData, int libLen) {
         NSError* error = nil;
         dispatch_data_t data = dispatch_data_create(libData, libLen, nil, DISPATCH_DATA_DESTRUCTOR_DEFAULT);
         id<MTLLibrary> library = [device newLibraryWithData:data error:&error];
-        
+
         if (!library) {
             NSLog(@"Failed to load Metal library: %@", error);
             return NULL;
@@ -71,9 +72,9 @@ void* create_pipeline_state(MetalContextHandle* handle, void* function) {
 import "C"
 
 type MetalContext struct {
-	handle *C.MetalContextHandle
-	mu     sync.RWMutex
-	pipelines map[string]*C.void
+	handle    *C.MetalContextHandle
+	mu        sync.RWMutex
+	pipelines map[string]unsafe.Pointer
 }
 
 var (
@@ -93,7 +94,7 @@ func InitGlobalContext(libData []byte) error {
 		}
 		globalContext = &MetalContext{
 			handle:    handle,
-			pipelines: make(map[string]*C.void),
+			pipelines: make(map[string]unsafe.Pointer),
 		}
 	})
 	return err
@@ -115,7 +116,7 @@ func (c *MetalContext) GetPipelineState(kernelName string) (unsafe.Pointer, erro
 	c.mu.RLock()
 	if p, ok := c.pipelines[kernelName]; ok {
 		c.mu.RUnlock()
-		return unsafe.Pointer(p), nil
+		return p, nil
 	}
 	c.mu.RUnlock()
 
@@ -124,7 +125,7 @@ func (c *MetalContext) GetPipelineState(kernelName string) (unsafe.Pointer, erro
 
 	// Double check
 	if p, ok := c.pipelines[kernelName]; ok {
-		return unsafe.Pointer(p), nil
+		return p, nil
 	}
 
 	cKernelName := C.CString(kernelName)
@@ -134,13 +135,13 @@ func (c *MetalContext) GetPipelineState(kernelName string) (unsafe.Pointer, erro
 	if fn == nil {
 		return nil, fmt.Errorf("kernel %s not found in library", kernelName)
 	}
-	defer C.CFRelease(fn)
+	defer C.CFRelease(C.CFTypeRef(fn))
 
 	pipeline := C.create_pipeline_state(c.handle, fn)
 	if pipeline == nil {
 		return nil, fmt.Errorf("failed to create pipeline for %s", kernelName)
 	}
 
-	c.pipelines[kernelName] = (*C.void)(pipeline)
-	return unsafe.Pointer(pipeline), nil
+	c.pipelines[kernelName] = pipeline
+	return pipeline, nil
 }

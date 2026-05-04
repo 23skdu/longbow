@@ -906,7 +906,7 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
         id<MTLComputePipelineState> l2C64Pipeline = nil;
         id<MTLComputePipelineState> cosineC64Pipeline = nil;
         id<MTLComputePipelineState> pqPipeline = nil;
-        
+
         id<MTLFunction> pqFunc = [library newFunctionWithName:@"compute_pq_distances"];
         if (pqFunc) {
             pqPipeline = [device newComputePipelineStateWithFunction:pqFunc error:&error];
@@ -1448,7 +1448,7 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
             if (requiredCapacity > handle->capacity) {
                 int newCapacity = handle->capacity > 0 ? handle->capacity : 1024;
                 while (newCapacity < requiredCapacity) newCapacity *= 2;
-                
+
                 size_t pqSize = (size_t)newCapacity * m;
                 id<MTLBuffer> newPQBuffer = [device newBufferWithLength:pqSize options:MTLResourceStorageModeShared];
                 if (handle->pqBuffer) {
@@ -1466,7 +1466,7 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
                 handle->idBuffer = (__bridge_retained void*)newIDBuffer;
                 handle->capacity = newCapacity;
             }
-            
+
             memcpy((unsigned char*)[(__bridge id<MTLBuffer>)handle->pqBuffer contents] + (handle->vectorCount * m), codes, count * m);
             memcpy((int64_t*)[(__bridge id<MTLBuffer>)handle->idBuffer contents] + handle->vectorCount, ids, count * sizeof(int64_t));
             handle->vectorCount += count;
@@ -1494,14 +1494,14 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
 
             id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
             id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
-            
+
             [encoder setComputePipelineState:pqPipeline];
             [encoder setBuffer:tableBuf offset:0 atIndex:0];
             [encoder setBuffer:(__bridge id<MTLBuffer>)handle->pqBuffer offset:0 atIndex:1];
             [encoder setBuffer:distBuf offset:0 atIndex:2];
             [encoder setBytes:&m length:sizeof(int) atIndex:3];
             [encoder setBytes:&handle->vectorCount length:sizeof(int) atIndex:4];
-            
+
             [encoder dispatchThreads:MTLSizeMake(handle->vectorCount, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(handle->vectorCount, (int)pqPipeline.maxTotalThreadsPerThreadgroup), 1, 1)];
 
             [encoder setComputePipelineState:topKPipeline];
@@ -1541,10 +1541,10 @@ import (
 
 // MetalIndexOptimized implements GPU-accelerated vector search using Metal compute shaders
 type MetalIndexOptimized struct {
-	handle *C.MetalIndexOptimized
-	dim    int
-	mu     sync.RWMutex
-	closed bool
+	handle    *C.MetalIndexOptimized
+	dim       int
+	mu        sync.RWMutex
+	closed    bool
 	pqEncoder *pq.PQEncoder
 }
 

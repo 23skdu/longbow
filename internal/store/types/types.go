@@ -151,7 +151,7 @@ func (vdt VectorDataType) ElementSize() int {
 type Candidate = basecore.Candidate
 
 // MaxNeighbors is the maximum number of neighbors per node in HNSW
-const MaxNeighbors = 128
+const MaxNeighbors = 512
 
 // ChunkSize is the size of data chunks for memory allocation
 const ChunkSize = 1024

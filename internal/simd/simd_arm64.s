@@ -2446,3 +2446,89 @@ t_ltf64: FCMPD F1, F0; CSET GT, R6; B t_storef64
 t_lef64: FCMPD F1, F0; CSET GE, R6; B t_storef64
 t_storef64: MOVB R6, (R3); ADD $1, R3; SUB $1, R4; B tailf64
 matchf64_done: RET
+
+// func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
+TEXT ·dotInt4NeonKernel(SB), NOSPLIT, $0-28
+    MOVD    a+0(FP), R0
+    MOVD    b+8(FP), R1
+    MOVD    n+16(FP), R2
+    MOVD    $0, R3
+loop_int4:
+    CMP     $4, R2
+    BLT     tail_int4
+    
+    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
+    AND $0x0F, R4, R6; AND $0x0F, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $4, R4, R6; LSR $4, R5, R7; MUL R6, R7, R6; ADD R6, R3
+
+    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
+    AND $0x0F, R4, R6; AND $0x0F, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $4, R4, R6; LSR $4, R5, R7; MUL R6, R7, R6; ADD R6, R3
+
+    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
+    AND $0x0F, R4, R6; AND $0x0F, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $4, R4, R6; LSR $4, R5, R7; MUL R6, R7, R6; ADD R6, R3
+
+    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
+    AND $0x0F, R4, R6; AND $0x0F, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $4, R4, R6; LSR $4, R5, R7; MUL R6, R7, R6; ADD R6, R3
+
+    SUB     $4, R2
+    B       loop_int4
+tail_int4:
+    CBZ     R2, done_int4
+    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
+    AND $0x0F, R4, R6; AND $0x0F, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $4, R4, R6; LSR $4, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    SUB     $1, R2; B tail_int4
+done_int4:
+    MOVW    R3, ret+24(FP)
+    RET
+
+// func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
+TEXT ·dotInt2NeonKernel(SB), NOSPLIT, $0-28
+    MOVD    a+0(FP), R0
+    MOVD    b+8(FP), R1
+    MOVD    n+16(FP), R2
+    MOVD    $0, R3
+loop_int2:
+    CMP     $4, R2
+    BLT     tail_int2
+    
+    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
+    AND $0x03, R4, R6; AND $0x03, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $2, R4, R6; LSR $2, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $4, R4, R6; LSR $4, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $6, R4, R6; LSR $6, R5, R7; MUL R6, R7, R6; ADD R6, R3
+
+    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
+    AND $0x03, R4, R6; AND $0x03, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $2, R4, R6; LSR $2, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $4, R4, R6; LSR $4, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $6, R4, R6; LSR $6, R5, R7; MUL R6, R7, R6; ADD R6, R3
+
+    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
+    AND $0x03, R4, R6; AND $0x03, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $2, R4, R6; LSR $2, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $4, R4, R6; LSR $4, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $6, R4, R6; LSR $6, R5, R7; MUL R6, R7, R6; ADD R6, R3
+
+    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
+    AND $0x03, R4, R6; AND $0x03, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $2, R4, R6; LSR $2, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $4, R4, R6; LSR $4, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $6, R4, R6; LSR $6, R5, R7; MUL R6, R7, R6; ADD R6, R3
+
+    SUB     $4, R2
+    B       loop_int2
+tail_int2:
+    CBZ     R2, done_int2
+    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
+    AND $0x03, R4, R6; AND $0x03, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $2, R4, R6; LSR $2, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $4, R4, R6; LSR $4, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
+    LSR $6, R4, R6; LSR $6, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    SUB     $1, R2; B tail_int2
+done_int2:
+    MOVW    R3, ret+24(FP)
+    RET

@@ -48,6 +48,7 @@ func main() {
 	tqBits := flag.Int("tq-bits", 4, "TurboQuant bit depth (2, 4, 8)")
 	workers := flag.Int("workers", 1, "Number of concurrent search workers")
 	drop := flag.Bool("drop", false, "Drop dataset after benchmark")
+	fbin := flag.String("fbin", "", "Read vectors from Arrow IPC binary file instead of generating them")
 	flag.Parse()
 
 	if *drop {
@@ -81,75 +82,119 @@ func main() {
 
 	var results []BenchmarkResult
 
-	// 1. Ingest/DoPut
-	log.Printf("[PUT] Pre-generating vectors...\n")
-	
-	chunkSize := 25000
-	if *scale < chunkSize {
-		chunkSize = *scale
-	}
+	var totalUploaded int
+	var start time.Time
 
-	// First pass: generate all records
-	numChunks := (*scale + chunkSize - 1) / chunkSize
-	preGenerated := make([]arrow.Record, 0, numChunks)
-	var genSchema *arrow.Schema
-	
-	for i := 0; i < *scale; {
-		currentChunk := chunkSize
-		if i+currentChunk > *scale {
-			currentChunk = *scale - i
-		}
-		rec, schema, err := generateRecord(currentChunk, *dim, *dtype, *tqBits)
+	if *fbin != "" {
+		log.Printf("[PUT] Reading vectors from %s...\n", *fbin)
+		f, err := os.Open(*fbin)
 		if err != nil {
-			log.Fatalf("Pre-generation failed: %v", err)
+			log.Fatalf("Failed to open fbin file: %v", err)
 		}
-		preGenerated = append(preGenerated, rec)
-		genSchema = schema
-		i += currentChunk
-	}
+		defer f.Close()
 
-	log.Printf("[PUT] Uploading %d pre-generated chunks (back-pressure aware)...\n", numChunks)
-	
-	totalUploaded := 0
-	start := time.Now()
-	
-	for _, record := range preGenerated {
-		currentChunk := int(record.NumRows())
-		
-		// Upload chunk
-		putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		if err := uploadBatch(putCtx, sc, *dataset, record, genSchema); err != nil {
+		reader, err := ipc.NewFileReader(f)
+		if err != nil {
+			log.Fatalf("Failed to create IPC reader: %v", err)
+		}
+		// reader does not have Release
+
+		numRecords := reader.NumRecords()
+		totalUploaded = 0
+		start = time.Now()
+
+		for i := 0; i < numRecords; i++ {
+			record, err := reader.Record(i)
+			if err != nil {
+				log.Fatalf("Failed to read record %d: %v", i, err)
+			}
+			record.Retain()
+
+			putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			if err := uploadBatch(putCtx, sc, *dataset, record, record.Schema()); err != nil {
+				putCancel()
+				log.Fatalf("DoPut failed at record %d: %v", i, err)
+			}
 			putCancel()
-			log.Fatalf("DoPut failed at %d: %v", totalUploaded, err)
+
+			totalUploaded += int(record.NumRows())
+			record.Release()
+
+			if totalUploaded%50000 == 0 || i == numRecords-1 {
+				log.Printf("  Progress: %d vectors uploaded\n", totalUploaded)
+			}
 		}
-		putCancel()
-		
-		totalUploaded += currentChunk
-		if totalUploaded % 50000 == 0 || totalUploaded == *scale {
-			log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, *scale)
+		*scale = totalUploaded
+	} else {
+		log.Printf("[PUT] Pre-generating vectors...\n")
+
+		chunkSize := 25000
+		if *scale < chunkSize {
+			chunkSize = *scale
 		}
 
-		// Back-pressure awareness: check server status before sending more
-		if totalUploaded < *scale {
-			backoff := 500 * time.Millisecond
-			for {
-				isBusy, reason := checkBackpressure(context.Background(), sc, *dataset)
-				if !isBusy {
-					break
-				}
-				log.Printf("  Server is BUSY: %s. Waiting %v...\n", reason, backoff)
-				time.Sleep(backoff)
-				
-				backoff += 500 * time.Millisecond
-				if backoff > 10*time.Second {
-					backoff = 10 * time.Second
+		// First pass: generate all records
+		numChunks := (*scale + chunkSize - 1) / chunkSize
+		preGenerated := make([]arrow.Record, 0, numChunks)
+		var genSchema *arrow.Schema
+
+		for i := 0; i < *scale; {
+			currentChunk := chunkSize
+			if i+currentChunk > *scale {
+				currentChunk = *scale - i
+			}
+			rec, schema, err := generateRecord(currentChunk, *dim, *dtype, *tqBits)
+			if err != nil {
+				log.Fatalf("Pre-generation failed: %v", err)
+			}
+			preGenerated = append(preGenerated, rec)
+			genSchema = schema
+			i += currentChunk
+		}
+
+		log.Printf("[PUT] Uploading %d pre-generated chunks (back-pressure aware)...\n", numChunks)
+
+		totalUploaded = 0
+		start = time.Now()
+
+		for _, record := range preGenerated {
+			currentChunk := int(record.NumRows())
+
+			// Upload chunk
+			putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			if err := uploadBatch(putCtx, sc, *dataset, record, genSchema); err != nil {
+				putCancel()
+				log.Fatalf("DoPut failed at %d: %v", totalUploaded, err)
+			}
+			putCancel()
+
+			totalUploaded += currentChunk
+			if totalUploaded%50000 == 0 || totalUploaded == *scale {
+				log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, *scale)
+			}
+
+			// Back-pressure awareness: check server status before sending more
+			if totalUploaded < *scale {
+				backoff := 500 * time.Millisecond
+				for {
+					isBusy, reason := checkBackpressure(context.Background(), sc, *dataset)
+					if !isBusy {
+						break
+					}
+					log.Printf("  Server is BUSY: %s. Waiting %v...\n", reason, backoff)
+					time.Sleep(backoff)
+
+					backoff += 500 * time.Millisecond
+					if backoff > 10*time.Second {
+						backoff = 10 * time.Second
+					}
 				}
 			}
 		}
-	}
-	// Release pre-generated records
-	for _, rec := range preGenerated {
-		rec.Release()
+		// Release pre-generated records
+		for _, rec := range preGenerated {
+			rec.Release()
+		}
 	}
 	duration := time.Since(start).Seconds()
 
@@ -364,7 +409,7 @@ func downloadBatch(ctx context.Context, sc *client.SmartClient, dataset string) 
 			total += reader.Record().NumRows()
 		}
 		err = reader.Err()
-		reader.Release()
+		// reader does not have Release
 
 		if total > 0 || time.Now().After(deadline) {
 			return total, err
@@ -517,7 +562,7 @@ func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) er
 	if err != nil {
 		return err
 	}
-	defer reader.Release()
+		// reader does not have Release
 	for reader.Next() {
 		_ = reader.Record()
 	}

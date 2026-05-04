@@ -89,11 +89,17 @@ func cosineF16NEON(a, b []float16.Num) (float32, error) {
 }
 
 func dotInt4Neon(a, b []byte) (float32, error) {
-	return dotInt4Generic(a, b)
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return float32(dotInt4NeonKernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))), nil // #nosec G103
 }
 
 func dotInt2Neon(a, b []byte) (float32, error) {
-	return dotInt2Generic(a, b)
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return float32(dotInt2NeonKernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))), nil // #nosec G103
 }
 
 func matchInt64Neon(src []int64, val int64, op CompareOp, dst []byte) error {
@@ -319,9 +325,9 @@ func vectorButterflyNEONKernel(a, b []float32)
 //go:noescape
 func vectorButterfly16NEONKernel(a, b []float32)
 //go:noescape
-func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
+func dotInt4NeonKernel(a, b unsafe.Pointer, n int) int32
 //go:noescape
-func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
+func dotInt2NeonKernel(a, b unsafe.Pointer, n int) int32
 
 func manhattanNEON(a, b []float32) (float32, error) {
 	return ManhattanDistanceFloat32(a, b)

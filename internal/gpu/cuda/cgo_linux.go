@@ -111,7 +111,7 @@ func GetDeviceCount() int {
 }
 
 // GetDeviceName returns the name of the specified CUDA device
-func GetDeviceName(deviceID int) (string, error) {
+func GetDeviceName(deviceID int32) (string, error) {
 	buf := make([]C.char, 256)
 	ret := C.lb_cudaGetDeviceName(C.int(deviceID), &buf[0], C.int(len(buf)))
 	if ret != 0 {
@@ -121,7 +121,7 @@ func GetDeviceName(deviceID int) (string, error) {
 }
 
 // GetComputeCapability returns the compute capability of the specified device
-func GetComputeCapability(deviceID int) (major, minor int, err error) {
+func GetComputeCapability(deviceID int32) (major, minor int, err error) {
 	var cMajor, cMinor C.int
 	ret := C.lb_cudaGetComputeCapability(C.int(deviceID), &cMajor, &cMinor)
 	if ret != 0 {
@@ -131,7 +131,7 @@ func GetComputeCapability(deviceID int) (major, minor int, err error) {
 }
 
 // GetTotalMemory returns the total global memory of the specified device
-func GetTotalMemory(deviceID int) uint64 {
+func GetTotalMemory(deviceID int32) uint64 {
 	mem := C.lb_cudaGetTotalMem(C.int(deviceID))
 	return uint64(mem)
 }
@@ -147,7 +147,7 @@ func GetMemInfo() (free, total uint64, err error) {
 }
 
 // SetDevice sets the current CUDA device
-func SetDevice(deviceID int) error {
+func SetDevice(deviceID int32) error {
 	ret := C.lb_cudaSetDevice(C.int(deviceID))
 	if ret != 0 {
 		return fmt.Errorf("failed to set CUDA device %d", deviceID)

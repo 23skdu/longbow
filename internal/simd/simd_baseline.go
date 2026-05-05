@@ -749,16 +749,16 @@ func cosineComplex64Unrolled(a, b []complex64) (float32, error) {
 	}
 	var dotR, dotI, normA, normB float64
 	for i := range a {
-		va_r, va_i := float64(real(a[i])), float64(imag(a[i]))
-		vb_r, vb_i := float64(real(b[i])), float64(imag(b[i]))
+		vaR, vaI := float64(real(a[i])), float64(imag(a[i]))
+		vbR, vbI := float64(real(b[i])), float64(imag(b[i]))
 		
 		// dot(a, b) = sum(a[i] * conj(b[i]))
 		// (ar + i*ai) * (br - i*bi) = (ar*br + ai*bi) + i*(ai*br - ar*bi)
-		dotR += va_r*vb_r + va_i*vb_i
-		dotI += va_i*vb_r - va_r*vb_i
+		dotR += vaR*vbR + vaI*vbI
+		dotI += vaI*vbR - vaR*vbI
 		
-		normA += va_r*va_r + va_i*va_i
-		normB += vb_r*vb_r + vb_i*vb_i
+		normA += vaR*vaR + vaI*vaI
+		normB += vbR*vbR + vbI*vbI
 	}
 	if normA <= 0 || normB <= 0 {
 		return 1.0, nil
@@ -777,14 +777,14 @@ func cosineComplex128Unrolled(a, b []complex128) (float32, error) {
 	}
 	var dotR, dotI, normA, normB float64
 	for i := range a {
-		va_r, va_i := real(a[i]), imag(a[i])
-		vb_r, vb_i := real(b[i]), imag(b[i])
+		vaR, vaI := real(a[i]), imag(a[i])
+		vbR, vbI := real(b[i]), imag(b[i])
 		
-		dotR += va_r*vb_r + va_i*vb_i
-		dotI += va_i*vb_r - va_r*vb_i
+		dotR += vaR*vbR + vaI*vbI
+		dotI += vaI*vbR - vaR*vbI
 		
-		normA += va_r*va_r + va_i*va_i
-		normB += vb_r*vb_r + vb_i*vb_i
+		normA += vaR*vaR + vaI*vaI
+		normB += vbR*vbR + vbI*vbI
 	}
 	if normA <= 0 || normB <= 0 {
 		return 1.0, nil

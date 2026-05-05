@@ -1,6 +1,14 @@
 # Makefile for Longbow
 
-.PHONY: help build build-avx2 build-cuda build-metal build-gpu build-rpi0 build-rpi0-2 test test-low-mem lint race clean docker docker-push install deps fmt vet
+# Versioning
+VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
+COMMIT ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo "none")
+DATE ?= $(shell date -u +'%Y-%m-%dT%H:%M:%SZ')
+PKG := github.com/23skdu/longbow/pkg/version
+
+LDFLAGS := -X $(PKG).Version=$(VERSION) -X $(PKG).Commit=$(COMMIT) -X $(PKG).BuildDate=$(DATE)
+
+.PHONY: help build build-cli build-avx2 build-cuda build-metal build-gpu build-rpi0 build-rpi0-2 test test-low-mem lint race clean docker docker-push install deps fmt vet
 
 # Default target
 help:
@@ -28,24 +36,31 @@ help:
 
 # Build the longbow binary
 build:
-	@echo "Building longbow..."
-	go build -v -o bin/longbow ./cmd/longbow
+	@echo "Building all binaries $(VERSION)..."
+	go build -ldflags "$(LDFLAGS)" -v -o bin/longbow ./cmd/longbow
+	go build -ldflags "$(LDFLAGS)" -v -o bin/longbow-cli ./cmd/cli
+	go build -ldflags "$(LDFLAGS)" -v -o bin/bench-tool ./cmd/bench-tool
+
+# Build just the CLI
+build-cli:
+	@echo "Building longbow-cli $(VERSION)..."
+	go build -ldflags "$(LDFLAGS)" -v -o bin/longbow-cli ./cmd/cli
 
 # Build for AVX2-only systems (e.g., ancalagon, older AMD64 without AVX512)
 build-avx2:
-	@echo "Building longbow for AVX2-only systems..."
-	go build -v -tags '!avx512' -o bin/longbow-avx2 ./cmd/longbow
+	@echo "Building longbow $(VERSION) for AVX2-only systems..."
+	go build -ldflags "$(LDFLAGS)" -v -tags '!avx512' -o bin/longbow-avx2 ./cmd/longbow
 	@echo "Binary: bin/longbow-avx2"
 	@echo "Use this for systems without AVX512 support (e.g., ancalagon)"
 
 # Build the bench-tool binary
 build-bench:
-	@echo "Building bench-tool..."
-	go build -v -o bin/bench-tool ./cmd/bench-tool
+	@echo "Building bench-tool $(VERSION)..."
+	go build -ldflags "$(LDFLAGS)" -v -o bin/bench-tool ./cmd/bench-tool
 
 # Build with CUDA GPU support (Linux AMD64)
 build-cuda:
-	@echo "Building longbow with CUDA support..."
+	@echo "Building longbow $(VERSION) with CUDA support..."
 	@echo "Note: Requires CUDA toolkit and FAISS library"
 	@if [ -z "$(CUDA_HOME)" ]; then \
 		if [ -d "/usr/local/cuda" ]; then \
@@ -53,14 +68,14 @@ build-cuda:
 		fi; \
 	fi; \
 	nvcc -O3 --ptxas-options=-v --compiler-options '-fPIC' -c internal/gpu/cuda/kernels.cu -o internal/gpu/cuda/kernels.o
-	CGO_ENABLED=1 go build -tags "gpu onnx" -v -o bin/longbow-cuda ./cmd/longbow
+	CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -tags "gpu onnx" -v -o bin/longbow-cuda ./cmd/longbow
 	ln -sf longbow-cuda bin/longbow
 
 # Build with Metal GPU support (macOS ARM64)
 build-metal:
-	@echo "Building longbow with Metal support..."
+	@echo "Building longbow $(VERSION) with Metal support..."
 	@echo "Note: Requires macOS with Apple Silicon (M1/M2/M3)"
-	CGO_ENABLED=1 go build -tags "gpu onnx" -v -o bin/longbow-metal ./cmd/longbow
+	CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -tags "gpu onnx" -v -o bin/longbow-metal ./cmd/longbow
 	ln -sf longbow-metal bin/longbow
 
 
@@ -77,14 +92,14 @@ build-gpu:
 # Use LONGBOW_LOW_MEM=1 at runtime on the device to activate low-memory mode.
 build-rpi0:
 	@echo "Cross-compiling for Raspberry Pi Zero (ARMv6, Linux)..."
-	GOOS=linux GOARCH=arm GOARM=6 CGO_ENABLED=0 go build -v -o bin/longbow-rpi0 ./cmd/longbow
+	GOOS=linux GOARCH=arm GOARM=6 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -v -o bin/longbow-rpi0 ./cmd/longbow
 	@echo "Binary: bin/longbow-rpi0"
 	@echo "Tip: Set LONGBOW_LOW_MEM=1 on the device to enable low-memory mode."
 
 # Cross-compile for Raspberry Pi Zero 2W (ARM64, 64-bit, linux)
 build-rpi0-2:
 	@echo "Cross-compiling for Raspberry Pi Zero 2W (ARM64, Linux)..."
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -v -o bin/longbow-rpi0-2 ./cmd/longbow
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -ldflags "$(LDFLAGS)" -v -o bin/longbow-rpi0-2 ./cmd/longbow
 	@echo "Binary: bin/longbow-rpi0-2"
 	@echo "Tip: Set LONGBOW_LOW_MEM=1 on the device to enable low-memory mode."
 
@@ -109,6 +124,7 @@ lint:
 	golangci-lint run
 	@$(MAKE) lint-metrics
 
+# Run linter on metrics documentation
 lint-metrics:
 	@echo "Verifying Prometheus metrics documentation..."
 	python3 scripts/verify_metrics.py
@@ -138,12 +154,12 @@ clean:
 # Build Docker image
 docker:
 	@echo "Building standard Docker image..."
-	docker build -t longbow:latest .
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t longbow:latest .
 
 # Build NVIDIA Docker image
 docker-nvidia:
 	@echo "Building NVIDIA Docker image..."
-	docker build -f Dockerfile.nvidia -t longbow:nvidia .
+	docker build -f Dockerfile.nvidia --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg DATE=$(DATE) -t longbow:nvidia .
 
 # Build Metal Docker image (requires binary built on host)
 docker-metal: build-metal

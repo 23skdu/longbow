@@ -394,15 +394,15 @@ func TestSIMDArchitectureDispatch(t *testing.T) {
 	})
 }
 
-func TestGetSIMDDataType(t *testing.T) {
+func TestGetDataType(t *testing.T) {
 	t.Run("float32", func(t *testing.T) {
-		assert.Equal(t, DataTypeFloat32, GetSIMDDataType[float32]())
+		assert.Equal(t, DataTypeFloat32, GetDataType[float32]())
 	})
 	t.Run("float64", func(t *testing.T) {
-		assert.Equal(t, DataTypeFloat64, GetSIMDDataType[float64]())
+		assert.Equal(t, DataTypeFloat64, GetDataType[float64]())
 	})
 	t.Run("int8", func(t *testing.T) {
-		assert.Equal(t, DataTypeInt8, GetSIMDDataType[int8]())
+		assert.Equal(t, DataTypeInt8, GetDataType[int8]())
 	})
 }
 

@@ -10,14 +10,14 @@ func TestExtraCoverage(t *testing.T) {
 	initializeDispatch()
 
 	t.Run("Context", func(t *testing.T) {
-		ctx := &SimdContext{}
+		ctx := &Context{}
 		ctx.RecordCall()
 		gctx := &GlobalSimdContext{}
 		gctx.RecordCall()
 	})
 
 	t.Run("V23Compatibility", func(t *testing.T) {
-		scl := NewSIMDCompatibilityLayer()
+		scl := NewCompatibilityLayer()
 		scl.EnableV23Optimizations()
 		_ = scl.V23MemoryLayoutOptimizations()
 		_ = scl.V23InstructionSetEnhancements()

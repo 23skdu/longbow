@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/client"
+	"github.com/23skdu/longbow/pkg/version"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -75,6 +76,8 @@ func main() {
 		runTemporalSearch(ctx, os.Args[2:])
 	case "drop":
 		runDrop(ctx, os.Args[2:])
+	case "version", "-v", "--version":
+		version.Print()
 	case "help", "-h", "--help":
 		printUsage()
 	default:

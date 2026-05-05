@@ -42,6 +42,7 @@ func EuclideanDistanceSQ8(a, b []byte) (int32, error) {
 	return euclideanSQ8Impl(a, b)
 }
 
+// EuclideanSQ8Generic calculates the squared Euclidean distance for SQ8 quantized vectors.
 func EuclideanSQ8Generic(a, b []byte) (int32, error) {
 	var sum int32
 	i := 0

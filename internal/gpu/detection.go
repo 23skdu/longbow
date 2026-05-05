@@ -299,7 +299,7 @@ func parseClinfoOutput(output string, backend GPUBackend) []GPUInfo {
 			}
 			currentGPU = &GPUInfo{
 				Backend:  backend,
-				DeviceID: int32(len(gpus)),
+				DeviceID: int32(len(gpus)), // #nosec G115
 			}
 		}
 

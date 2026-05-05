@@ -8,11 +8,17 @@ import (
 type MetricType int
 
 const (
+	// MetricEuclidean uses the L2 norm (square root of sum of squares).
 	MetricEuclidean MetricType = iota
+	// MetricCosine uses 1 - cosine similarity.
 	MetricCosine
+	// MetricDotProduct uses the sum of products of corresponding elements.
 	MetricDotProduct
+	// MetricManhattan uses the L1 norm (sum of absolute differences).
 	MetricManhattan
+	// MetricChebyshev uses the L-infinity norm (maximum absolute difference).
 	MetricChebyshev
+	// MetricBrayCurtis uses the Bray-Curtis dissimilarity.
 	MetricBrayCurtis
 )
 
@@ -35,29 +41,44 @@ func (m MetricType) String() string {
 	}
 }
 
-// SIMDDataType is a local redeclaration of VectorDataType to avoid circular imports.
+// DataType is a local redeclaration of VectorDataType to avoid circular imports.
 // It must stay in sync with the mapping in internal/store if used there.
-type SIMDDataType int
+type DataType int
 
 const (
-	DataTypeFloat32 SIMDDataType = iota
+	// DataTypeFloat32 represents IEEE 754 single-precision floating point.
+	DataTypeFloat32 DataType = iota
+	// DataTypeFloat16 represents IEEE 754 half-precision floating point.
 	DataTypeFloat16
+	// DataTypeInt8 represents 8-bit signed integer.
 	DataTypeInt8
+	// DataTypeUint8 represents 8-bit unsigned integer.
 	DataTypeUint8
+	// DataTypeInt16 represents 16-bit signed integer.
 	DataTypeInt16
+	// DataTypeUint16 represents 16-bit unsigned integer.
 	DataTypeUint16
+	// DataTypeInt32 represents 32-bit signed integer.
 	DataTypeInt32
+	// DataTypeUint32 represents 32-bit unsigned integer.
 	DataTypeUint32
+	// DataTypeInt64 represents 64-bit signed integer.
 	DataTypeInt64
+	// DataTypeUint64 represents 64-bit unsigned integer.
 	DataTypeUint64
+	// DataTypeFloat64 represents IEEE 754 double-precision floating point.
 	DataTypeFloat64
+	// DataTypeComplex64 represents complex number with two float32s.
 	DataTypeComplex64
+	// DataTypeComplex128 represents complex number with two float64s.
 	DataTypeComplex128
+	// DataTypeInt4 represents 4-bit packed signed integer.
 	DataTypeInt4
+	// DataTypeInt2 represents 2-bit packed signed integer.
 	DataTypeInt2
 )
 
-func (d SIMDDataType) String() string {
+func (d DataType) String() string {
 	switch d {
 	case DataTypeInt8:
 		return "int8"
@@ -97,7 +118,7 @@ func (d SIMDDataType) String() string {
 // KernelKey identifies a specific kernel implementation.
 type KernelKey struct {
 	Metric   MetricType
-	DataType SIMDDataType
+	DataType DataType
 	Dims     int // 0 means any/generic
 }
 
@@ -107,12 +128,13 @@ type KernelRegistry struct {
 	kernels map[KernelKey]any
 }
 
+// Registry is the global KernelRegistry used for polymorphic kernel selection.
 var Registry = &KernelRegistry{
 	kernels: make(map[KernelKey]any),
 }
 
 // Register adds a kernel to the registry.
-func (r *KernelRegistry) Register(metric MetricType, dt SIMDDataType, dims int, kernel any) {
+func (r *KernelRegistry) Register(metric MetricType, dt DataType, dims int, kernel any) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	key := KernelKey{Metric: metric, DataType: dt, Dims: dims}
@@ -121,7 +143,7 @@ func (r *KernelRegistry) Register(metric MetricType, dt SIMDDataType, dims int, 
 
 // Get retrieves a kernel from the registry.
 // If a dimension-specific kernel isn't found, it falls back to the generic (Dims=0) one.
-func (r *KernelRegistry) Get(metric MetricType, dt SIMDDataType, dims int) any {
+func (r *KernelRegistry) Get(metric MetricType, dt DataType, dims int) any {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
 

@@ -14,7 +14,9 @@ import (
 )
 
 var (
-	ErrDimensionMismatch    = errors.New("simd: vector dimension mismatch")
+	// ErrDimensionMismatch is returned when input vectors have different lengths.
+	ErrDimensionMismatch = errors.New("simd: vector dimension mismatch")
+	// ErrInitializationFailed is returned when SIMD dispatch or JIT fails to initialize.
 	ErrInitializationFailed = errors.New("simd: initialization failed")
 )
 
@@ -38,11 +40,17 @@ type (
 )
 
 const (
+	// CompareEq represents equality (==).
 	CompareEq CompareOp = iota
+	// CompareNeq represents inequality (!=).
 	CompareNeq
+	// CompareGt represents greater than (>).
 	CompareGt
+	// CompareGe represents greater than or equal to (>=).
 	CompareGe
+	// CompareLt represents less than (<).
 	CompareLt
+	// CompareLe represents less than or equal to (<=).
 	CompareLe
 )
 
@@ -310,17 +318,13 @@ func dotGeneric(a, b []float32) (float32, error) {
 	return sum, nil
 }
 
+// DotProductInt4 calculates the dot product for 4-bit packed integer vectors.
 func DotProductInt4(a, b []byte) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
 	return dotProductInt4Impl(a, b)
 }
 
+// DotProductInt2 calculates the dot product for 2-bit packed integer vectors.
 func DotProductInt2(a, b []byte) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
 	return dotProductInt2Impl(a, b)
 }
 
@@ -1226,54 +1230,65 @@ func float16ToFloat32Generic(src []float16.Num, dst []float32) {
 
 // Public API for type conversion
 
+// Int8ToFloat32 converts a slice of int8 to float32 using SIMD if available.
 func Int8ToFloat32(src []int8, dst []float32) {
 	int8ToFloat32Impl(src, dst)
 }
 
+// Uint8ToFloat32 converts a slice of uint8 to float32 using SIMD if available.
 func Uint8ToFloat32(src []uint8, dst []float32) {
 	uint8ToFloat32Impl(src, dst)
 }
 
+// Int16ToFloat32 converts a slice of int16 to float32 using SIMD if available.
 func Int16ToFloat32(src []int16, dst []float32) {
 	int16ToFloat32Impl(src, dst)
 }
 
+// Uint16ToFloat32 converts a slice of uint16 to float32 using SIMD if available.
 func Uint16ToFloat32(src []uint16, dst []float32) {
 	uint16ToFloat32Impl(src, dst)
 }
 
+// Int32ToFloat32 converts a slice of int32 to float32 using SIMD if available.
 func Int32ToFloat32(src []int32, dst []float32) {
 	int32ToFloat32Impl(src, dst)
 }
 
+// Uint32ToFloat32 converts a slice of uint32 to float32 using SIMD if available.
 func Uint32ToFloat32(src []uint32, dst []float32) {
 	uint32ToFloat32Impl(src, dst)
 }
 
+// Float16ToFloat32 converts a slice of float16 to float32 using SIMD if available.
 func Float16ToFloat32(src []float16.Num, dst []float32) {
 	float16ToFloat32Impl(src, dst)
 }
 
 // Activation Functions
 
+// Sigmoid applies the sigmoid activation function element-wise.
 func Sigmoid(src, dst []float32) {
 	start := time.Now()
 	sigmoidFloat32Impl(src, dst)
 	metrics.SIMDActivationDuration.WithLabelValues("sigmoid", implementation).Observe(time.Since(start).Seconds())
 }
 
+// Softmax applies the softmax activation function to the input slice.
 func Softmax(src, dst []float32) {
 	start := time.Now()
 	softmaxFloat32Impl(src, dst)
 	metrics.SIMDActivationDuration.WithLabelValues("softmax", implementation).Observe(time.Since(start).Seconds())
 }
 
+// Exp applies the exponential function element-wise.
 func Exp(src, dst []float32) {
 	start := time.Now()
 	expFloat32Impl(src, dst)
 	metrics.SIMDActivationDuration.WithLabelValues("exp", implementation).Observe(time.Since(start).Seconds())
 }
 
+// Log applies the natural logarithm function element-wise.
 func Log(src, dst []float32) {
 	start := time.Now()
 	logFloat32Impl(src, dst)
@@ -1355,22 +1370,27 @@ func minGeneric(src []float32) float32 {
 	return min
 }
 
+// Sum calculates the sum of all elements in a float32 slice.
 func Sum(src []float32) float32 {
 	return sumFloat32Impl(src)
 }
 
+// Max finds the maximum value in a float32 slice.
 func Max(src []float32) float32 {
 	return maxFloat32Impl(src)
 }
 
+// Min finds the minimum value in a float32 slice.
 func Min(src []float32) float32 {
 	return minFloat32Impl(src)
 }
 
+// ArgMax returns the index of the maximum value in a float32 slice.
 func ArgMax(src []float32) int {
 	return argMaxFloat32Impl(src)
 }
 
+// ArgMin returns the index of the minimum value in a float32 slice.
 func ArgMin(src []float32) int {
 	return argMinFloat32Impl(src)
 }
@@ -1423,6 +1443,7 @@ func memcpyGeneric(dst, src unsafe.Pointer, n int) {
 	copy(d, s)
 }
 
+// MemcpyNTA performs a memory copy using non-temporal hints to avoid cache pollution.
 func MemcpyNTA(dst, src unsafe.Pointer, n int) {
 	memcpyNTAImpl(dst, src, n)
 }

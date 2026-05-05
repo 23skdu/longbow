@@ -583,8 +583,8 @@ func DetectAvailableDevices() ([]int32, error) {
 	}
 
 	devices := make([]int32, count)
-	for i := int32(0); i < int32(count); i++ {
-		devices[i] = i
+	for i := 0; i < count; i++ {
+		devices[i] = int32(i) // #nosec G115
 	}
 
 	return devices, nil

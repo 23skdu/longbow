@@ -35,6 +35,9 @@ type (
 	distanceComplex128Func func(a, b []complex128) (float32, error)
 	distanceFloat64Func    func(a, b []float64) (float32, error)
 
+	// DistanceKernel is a generic distance function type for cached kernels.
+	DistanceKernel[T any] func(a, b []T) (float32, error)
+
 	// CompareOp represents a comparison operator for SIMD filters
 	CompareOp int
 )

@@ -12,7 +12,7 @@ func TestExtraCoverage(t *testing.T) {
 	t.Run("Context", func(t *testing.T) {
 		ctx := &Context{}
 		ctx.RecordCall()
-		gctx := &GlobalSimdContext{}
+		gctx := &GlobalContext{}
 		gctx.RecordCall()
 	})
 

@@ -117,9 +117,12 @@ func (d DataType) String() string {
 
 // KernelKey identifies a specific kernel implementation.
 type KernelKey struct {
-	Metric   MetricType
+	// Metric specifies the distance metric.
+	Metric MetricType
+	// DataType specifies the vector element data type.
 	DataType DataType
-	Dims     int // 0 means any/generic
+	// Dims specifies the vector dimension (0 means any/generic).
+	Dims int
 }
 
 // KernelRegistry manages the collection of available SIMD kernels.

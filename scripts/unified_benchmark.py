@@ -201,10 +201,14 @@ class BenchmarkRunner:
         self.stop_server()
         
         # Aggressive port cleanup to avoid "address already in use"
-        port = 3000
+        port = self.args.port
+        print(f"  Cleaning up ports starting from {port}...")
         for p in [port, port + 1, port + 80, port + 6000]:
             subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
-        time.sleep(5) # Increased wait time for OS to release sockets
+        
+        # Also kill any lingering longbow processes
+        subprocess.run("pkill -9 -f longbow 2>/dev/null || true", shell=True)
+        time.sleep(3) 
         
         server_bin = self.get_server_binary()
         if not os.path.exists(server_bin):
@@ -215,75 +219,56 @@ class BenchmarkRunner:
         subprocess.run(f"rm -rf {data_root}", shell=True)
         os.makedirs(data_root, exist_ok=True)
 
-        # Build env overrides based on mode
-        if env_overrides is None:
-            env_overrides = {}
-        
-        # Enable temporal index for temporal mode
-        if self.args.mode == "temporal":
-            env_overrides["LONGBOW_TEMPORAL_ENABLED"] = "true"
-            env_overrides["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
-        
-        # Enable geo index for geo mode
-        if self.args.mode == "geo":
-            env_overrides["LONGBOW_GEO_ENABLED"] = "true"
-        
-        # Enable graphrag for graphrag mode
-        if self.args.mode == "graphrag":
-            env_overrides["LONGBOW_GRAPHRAG_ENABLED"] = "true"
-        
         env = os.environ.copy()
         if env_overrides:
             env.update(env_overrides)
-        env["LONGBOW_MAX_MEMORY"] = str(self.args.memory)
+        
+        # Dynamic mode-based env overrides
+        current_mode = getattr(self, 'current_mode', self.args.mode)
+        if current_mode == "temporal":
+            env["LONGBOW_TEMPORAL_ENABLED"] = "true"
+            env["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
+        if current_mode == "geo":
+            env["LONGBOW_GEO_ENABLED"] = "true"
+        if current_mode == "graphrag":
+            env["LONGBOW_GRAPHRAG_ENABLED"] = "true"
+        if current_mode in ["metal", "cuda"]:
+            env["LONGBOW_GPU_ENABLED"] = "true"
+        else:
+            env["LONGBOW_GPU_ENABLED"] = "false"
+
+        env["LONGBOW_MAX_MEMORY"] = str(18 * 1024 * 1024 * 1024) 
         env["ARROW_DISABLE_LOCKING"] = "1"
         if self.args.rdma:
             env["LONGBOW_RDMA_ENABLED"] = "true"
         if self.args.iouring:
             env["LONGBOW_STORAGE_USE_IOURING"] = "true"
 
-        # Use provided port or default to 3000
-        port = self.args.port
+        log_file = os.path.join(self.log_dir, f"longbow_{current_mode}_{label}.log")
 
-        log_file = os.path.join(self.log_dir, f"longbow_{self.args.mode}_{label}.log")
-
-        # Server uses envconfig, not command-line flags
         env["LONGBOW_LISTEN_ADDR"] = f"127.0.0.1:{port}"
         env["LONGBOW_META_ADDR"] = f"127.0.0.1:{port + 1}"
-        env["LONGBOW_REST_ADDR"] = f"127.0.0.1:{port + 80}"  # e.g. 3080
-        env["LONGBOW_METRICS_ADDR"] = f"127.0.0.1:{port + 6000}"  # e.g. 9000
+        env["LONGBOW_REST_ADDR"] = f"127.0.0.1:{port + 80}"
+        env["LONGBOW_METRICS_ADDR"] = f"127.0.0.1:{port + 6000}"
         env["LONGBOW_DATA_PATH"] = data_root
         env["LONGBOW_NODE_ID"] = self.node_id
-
-        # Performance tuning for benchmarks
-        env["LONGBOW_GOGC"] = "200"  # Reduce GC overhead
-        env["LONGBOW_MAX_MEMORY"] = str(18 * 1024 * 1024 * 1024)  # 18GB - monitor for memory pressure
-        env["LONGBOW_INGESTION_WORKER_COUNT"] = "0"  # Use all CPUs
-        env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"  # Disable snapshots during bench
+        env["LONGBOW_GOGC"] = "200"
+        env["LONGBOW_INGESTION_WORKER_COUNT"] = "0"
+        env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"
         
-        # Storage tuning
         if self.args.low_mem:
             env["LONGBOW_LOW_MEM"] = "1"
         if self.args.use_disk:
             env["LONGBOW_USE_DISK"] = "1"
-        
-        # Benchmark feature flags
         if self.args.pq_ingest:
-            env["LONGBOW_PQ_INGEST"] = "1"  # PQ encode during ingest
+            env["LONGBOW_PQ_INGEST"] = "1"
         
-        # Learned index tuning
         env["LONGBOW_LEARNED_INDEX_ENABLED"] = "true"
         if self.args.learned_samples:
             env["LONGBOW_LEARNED_MIN_SAMPLES"] = str(self.args.learned_samples)
-        if self.args.learned_confidence:
-            env["LONGBOW_LEARNED_CONFIDENCE_THRESHOLD"] = str(self.args.learned_confidence)
-        if self.args.learned_interval:
-            env["LONGBOW_LEARNED_UPDATE_INTERVAL"] = str(self.args.learned_interval)
-        
-        # Telemetry
-        if self.args.debug:
-            env["LONGBOW_DEBUG"] = "true"
-            env["LONGBOW_METRICS_SAMPLING_RATE"] = "100"
+
+        if not os.path.exists(self.log_dir):
+            os.makedirs(self.log_dir, exist_ok=True)
 
         # Enable GPU for metal/cuda benchmark modes
         if self.args.mode in ["metal", "cuda"]:
@@ -2054,50 +2039,68 @@ class BenchmarkRunner:
             )
 
     def execute(self):
-        if self.args.mode == "learned_index":
-            self.execute_learned_index()
-            return
-        if self.args.mode == "recommend":
-            self.execute_recommend()
-            return
-        if self.args.mode == "deletion":
-            self.execute_deletion()
-            return
-        if self.args.mode in ["graphrag", "recommend", "geo", "temporal"]:
-            # All specialized modes now use Go bench-tool for performance
-            pass
-        else:
-            if self.args.mode == "exchange":
+        modes = self.args.mode.split(",")
+        print(f"Executing benchmarks for modes: {modes}")
+        
+        for mode in modes:
+            mode = mode.strip()
+            self.current_mode = mode
+            print(f"\n{'#' * 80}")
+            print(f"SWITCHING TO MODE: {mode}")
+            print(f"{'#' * 80}")
+            
+            if mode == "learned_index":
+                self.execute_learned_index()
+                continue
+            if mode == "recommend":
+                self.execute_recommend()
+                continue
+            if mode == "deletion":
+                self.execute_deletion()
+                continue
+            if mode == "graphrag":
+                self.execute_graphrag()
+                continue
+            if mode == "temporal":
+                self.execute_temporal()
+                continue
+            if mode == "geo":
+                self.execute_geo()
+                continue
+            if mode == "exchange":
                 self.execute_exchange()
-                return
-            if self.args.mode == "cluster":
+                continue
+            if mode == "cluster":
                 self.execute_cluster()
-                return
-            if self.args.mode == "onnx":
+                continue
+            if mode == "onnx":
                 self.execute_onnx()
-                return
-            if self.args.mode == "churn":
+                continue
+            if mode == "churn":
                 self.execute_churn()
-                return
+                continue
 
-        dims = [int(d) for d in self.args.dims.split(",")]
-        counts = [int(c) for c in self.args.counts.split(",")]
-        dtypes = self.args.dtypes.split(",")
+            # Default logic for cpu/metal/cuda
+            dims = [int(d) for d in self.args.dims.split(",")]
+            counts = [int(c) for c in self.args.counts.split(",")]
+            dtypes = self.args.dtypes.split(",")
 
-        count = counts[0] if counts else 1000
+            count = counts[0] if counts else 1000
 
-        total = len(dims) * len(dtypes)
-        current = 0
+            self.check_cuda()
 
-        self.check_cuda()
-
-        print("=" * 80)
-        print(f"UNIFIED BENCHMARK MATRIX ({self.args.mode.upper()})")
-        print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Platform: {platform.system()} {platform.machine()}")
-        print(f"Dims: {dims}")
-        print(f"Count: {count}")
-        print(f"Types: {dtypes}")
+            print("=" * 80)
+            print(f"UNIFIED BENCHMARK MATRIX ({mode.upper()})")
+            print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"Platform: {platform.system()} {platform.machine()}")
+            print(f"Dims: {dims}")
+            print(f"Count: {count}")
+            print(f"Types: {dtypes}")
+            print("=" * 80)
+            
+            self.results = [] # Clear results for each mode
+            total = len(dims) * len(dtypes)
+            current = 0
         print(f"Duration per test: {self.args.duration}s")
         print("=" * 80)
 
@@ -2496,26 +2499,11 @@ class BenchmarkRunner:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Unified Longbow Benchmark Script")
+    parser = argparse.ArgumentParser(description="Longbow Unified Benchmark Orchestrator")
     parser.add_argument(
         "--mode",
-        choices=[
-            "cpu",
-            "metal",
-            "cuda",
-            "onnx",
-            "recommend",
-            "deletion",
-            "graphrag",
-            "exchange",
-            "cluster",
-            "temporal",
-            "geo",
-            "churn",
-            "learned_index",
-        ],
         default="cpu",
-        help="Benchmark mode: cpu, metal, cuda, onnx, recommend, deletion, graphrag, exchange, cluster, temporal, geo, churn, learned_index (k-NN adaptive index scorer)",
+        help="Benchmark mode(s), comma-separated: cpu, metal, cuda, onnx, recommend, deletion, graphrag, exchange, cluster, temporal, geo, churn, learned_index",
     )
     parser.add_argument(
         "--dims", default="128,384,768,1536,3072", help="Comma-separated dimensions"

@@ -2111,11 +2111,9 @@ class BenchmarkRunner:
                 print(f"Data Type: {dtype} (Count: {count})")
                 print(f"{'━' * 70}")
 
-                base_port = 3000
-                port_offset = 0
                 for dim in dims:
                     current += 1
-                    current_port = 3000
+                    current_port = self.args.port
                     self.server_addr = f"127.0.0.1:{current_port}"
                     
                     label = f"{self.args.mode}_{dtype}_{dim}_{count}"

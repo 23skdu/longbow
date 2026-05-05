@@ -214,8 +214,8 @@ func TestStubs_Coverage(t *testing.T) {
   cosAVX2(nil, nil)
   // Calling atan2AVX2
   atan2AVX2(nil, nil, nil)
-  // Calling matMulAVX2_Go
-  matMulAVX2_Go(nil, nil, 0, 0, 0, nil)
+  // Calling matMulAVX2Go
+  matMulAVX2Go(nil, nil, 0, 0, 0, nil)
   // Calling ManhattanDistanceFloat32AVX2
   _, _ = ManhattanDistanceFloat32AVX2(nil, nil)
   // Calling ChebyshevDistanceFloat32AVX2

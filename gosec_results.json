@@ -1,0 +1,201 @@
+{
+	"Golang errors": {
+		"": [
+			{
+				"line": 0,
+				"column": 0,
+				"error": "# command-line-arguments\ninternal/query/simd_filter_neon_arm64.go:10:6: missing function body\ninternal/query/simd_filter_neon_arm64.go:15:6: missing function body\ninternal/query/simd_filter_neon_arm64.go:19:6: missing function body\ninternal/query/simd_filter_neon_arm64.go:23:6: missing function body"
+			},
+			{
+				"line": 0,
+				"column": 0,
+				"error": "# command-line-arguments\ninternal/simd/sparse_score_arm64.go:11:6: missing function body\ninternal/simd/simd_arm64.go:284:6: missing function body\ninternal/simd/simd_arm64.go:286:6: missing function body\ninternal/simd/simd_arm64.go:294:6: missing function body\ninternal/simd/simd_arm64.go:296:6: missing function body\ninternal/simd/simd_arm64.go:302:6: missing function body\ninternal/simd/simd_arm64.go:322:6: missing function body\ninternal/simd/simd_arm64.go:411:6: missing function body\ninternal/simd/bitops_arm64.go:20:6: missing function body\ninternal/simd/bitops_arm64.go:23:6: missing function body\ninternal/simd/simd_arm64.go:296:6: too many errors"
+			}
+		]
+	},
+	"Issues": [
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion int -\u003e int32",
+			"file": "/Users/rsd/REPOS/longbow/internal/gpu/multi_gpu.go",
+			"code": "585: \tdevices := make([]int32, count)\n586: \tfor i := int32(0); i \u003c int32(count); i++ {\n587: \t\tdevices[i] = i\n",
+			"line": "586",
+			"column": "30",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion int -\u003e int32",
+			"file": "/Users/rsd/REPOS/longbow/internal/gpu/detection.go",
+			"code": "301: \t\t\t\tBackend:  backend,\n302: \t\t\t\tDeviceID: int32(len(gpus)),\n303: \t\t\t}\n",
+			"line": "302",
+			"column": "20",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion int -\u003e int32",
+			"file": "/Users/rsd/REPOS/longbow/cmd/longbow/main.go",
+			"code": "332: \t\tif detectedBackend == gpu.BackendCUDA || detectedBackend == gpu.BackendMetal {\n333: \t\t\tvectorStore.SetGPUConfig(detectedBackend, int32(cfg.GPUDeviceID))\n334: \t\t\tlogger.Info().\n",
+			"line": "333",
+			"column": "51",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion int -\u003e byte",
+			"file": "/Users/rsd/REPOS/longbow/internal/gpu/memory/memory_pool_base_methods.go",
+			"code": "156: \t\tfor i := range buf {\n157: \t\t\tbuf[i] = byte(value)\n158: \t\t}\n",
+			"line": "157",
+			"column": "17",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/gpu/memory/memory_pool_base_methods.go",
+			"code": "154: \tcase BackendCPU:\n155: \t\tbuf := unsafe.Slice((*byte)(ptr), size)\n156: \t\tfor i := range buf {\n",
+			"line": "155",
+			"column": "10",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/gpu/memory/memory_pool_base_methods.go",
+			"code": "142: \tcase BackendCPU:\n143: \t\tcopy(unsafe.Slice((*byte)(dstPtr), size), unsafe.Slice((*byte)(srcPtr), size))\n144: \t\treturn nil\n",
+			"line": "143",
+			"column": "8",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/gpu/memory/memory_pool_base_methods.go",
+			"code": "142: \tcase BackendCPU:\n143: \t\tcopy(unsafe.Slice((*byte)(dstPtr), size), unsafe.Slice((*byte)(srcPtr), size))\n144: \t\treturn nil\n",
+			"line": "143",
+			"column": "45",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/gpu/memory/memory_pool_base_methods.go",
+			"code": "127: \tcase BackendCPU:\n128: \t\tcopy(unsafe.Slice((*byte)(hostPtr), size), unsafe.Slice((*byte)(devicePtr), size))\n129: \t\treturn nil\n",
+			"line": "128",
+			"column": "8",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/gpu/memory/memory_pool_base_methods.go",
+			"code": "127: \tcase BackendCPU:\n128: \t\tcopy(unsafe.Slice((*byte)(hostPtr), size), unsafe.Slice((*byte)(devicePtr), size))\n129: \t\treturn nil\n",
+			"line": "128",
+			"column": "46",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/gpu/memory/memory_pool_base_methods.go",
+			"code": "113: \tcase BackendCPU:\n114: \t\tcopy(unsafe.Slice((*byte)(devicePtr), size), unsafe.Slice((*byte)(hostPtr), size))\n115: \t\treturn nil\n",
+			"line": "114",
+			"column": "8",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/gpu/memory/memory_pool_base_methods.go",
+			"code": "113: \tcase BackendCPU:\n114: \t\tcopy(unsafe.Slice((*byte)(devicePtr), size), unsafe.Slice((*byte)(hostPtr), size))\n115: \t\treturn nil\n",
+			"line": "114",
+			"column": "48",
+			"nosec": false,
+			"suppressions": null
+		}
+	],
+	"Stats": {
+		"files": 496,
+		"lines": 122210,
+		"nosec": 664,
+		"found": 11
+	},
+	"GosecVersion": "dev"
+}

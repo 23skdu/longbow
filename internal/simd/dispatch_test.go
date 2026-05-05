@@ -139,7 +139,7 @@ func TestRegistryAfterDispatch(t *testing.T) {
 	// Test core metric/data type combinations
 	testCases := []struct {
 		metric MetricType
-		dtype  SIMDDataType
+		dtype  DataType
 		dims   int
 	}{
 		{MetricEuclidean, DataTypeFloat32, 0},

@@ -208,18 +208,22 @@ func sinAVX2(src, dst []float32)   { sinFloat32Generic(src, dst) }
 func cosAVX2(src, dst []float32)   { cosFloat32Generic(src, dst) }
 func atan2AVX2(y, x, dst []float32) { atan2Float32Generic(y, x, dst) }
 
-func matMulAVX2_Go(a, b []float32, m, n, k int, dst []float32) {
+// matMulAVX2Go is a Go fallback for AVX2 matrix multiplication.
+func matMulAVX2Go(a, b []float32, m, n, k int, dst []float32) {
 	matMulGeneric(a, b, m, n, k, dst)
 }
 
+// ManhattanDistanceFloat32AVX2 is a stub for AVX2 Manhattan distance.
 func ManhattanDistanceFloat32AVX2(a, b []float32) (float32, error) {
 	return 0, errors.New("simd: AVX2 not supported on this architecture")
 }
 
+// ChebyshevDistanceFloat32AVX2 is a stub for AVX2 Chebyshev distance.
 func ChebyshevDistanceFloat32AVX2(a, b []float32) (float32, error) {
 	return 0, errors.New("simd: AVX2 not supported on this architecture")
 }
 
+// BrayCurtisDistanceFloat32AVX2 is a stub for AVX2 Bray-Curtis distance.
 func BrayCurtisDistanceFloat32AVX2(a, b []float32) (float32, error) {
 	return 0, errors.New("simd: AVX2 not supported on this architecture")
 }
@@ -236,6 +240,6 @@ var _ = func() {
 		sinAVX2(nil, nil)
 		cosAVX2(nil, nil)
 		atan2AVX2(nil, nil, nil)
-		matMulAVX2_Go(nil, nil, 0, 0, 0, nil)
+		matMulAVX2Go(nil, nil, 0, 0, 0, nil)
 	}
 }

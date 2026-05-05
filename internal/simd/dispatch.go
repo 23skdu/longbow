@@ -2,6 +2,7 @@ package simd
 
 import (
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -90,230 +91,237 @@ type ImplementationDispatch struct {
 }
 
 // Global dispatch table - one per implementation
-var dispatchTable = map[string]*ImplementationDispatch{
-	"avx512": {
-		EuclideanDistance:          euclideanAVX512,
-		CosineDistance:             cosineAVX512,
-		DotProduct:                 dotAVX512,
-		EuclideanDistanceBatch:     euclideanBatchGeneric, // Fallback for now
-		CosineDistanceBatch:        cosineBatchGeneric,
-		DotProductBatch:            dotBatchGeneric,
-		EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
-		EuclideanDistanceF16:       euclideanF16AVX512,
-		CosineDistanceF16:          cosineF16AVX512,
-		DotProductF16:               dotF16AVX512,
+var (
+	dispatchTable = make(map[string]*ImplementationDispatch)
+	initTableOnce sync.Once
+)
 
-		EuclideanDistance128:  euclideanNEON,
-		EuclideanDistance384:  euclidean384AVX512,
-		EuclideanDistance768:  euclidean768AVX512,
-		EuclideanDistance1024: euclidean1024AVX512,
-		EuclideanDistance1536: euclidean1536AVX512,
-		EuclideanDistance3072: euclidean3072AVX512,
+func initDispatchTable() {
+	initTableOnce.Do(func() {
+		dispatchTable["avx512"] = &ImplementationDispatch{
+			EuclideanDistance:          euclideanAVX512,
+			CosineDistance:             cosineAVX512,
+			DotProduct:                 dotAVX512,
+			EuclideanDistanceBatch:     euclideanBatchGeneric, // Fallback for now
+			CosineDistanceBatch:        cosineBatchGeneric,
+			DotProductBatch:            dotBatchGeneric,
+			EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
+			EuclideanDistanceF16:       euclideanF16AVX512,
+			CosineDistanceF16:          cosineF16AVX512,
+			DotProductF16:               dotF16AVX512,
 
-		DotProduct128:  dot128Unrolled4x,
-		DotProduct384:  dot384AVX512,
-		DotProduct768:  dot768AVX512,
-		DotProduct1024: dot1024AVX512,
-		DotProduct1536: dot1536AVX512,
-		DotProduct3072: dot3072AVX512,
+			EuclideanDistance128:  euclideanNEON,
+			EuclideanDistance384:  euclidean384AVX512,
+			EuclideanDistance768:  euclidean768AVX512,
+			EuclideanDistance1024: euclidean1024AVX512,
+			EuclideanDistance1536: euclidean1536AVX512,
+			EuclideanDistance3072: euclidean3072AVX512,
 
-		Int8ToFloat32:   int8ToFloat32AVX512,
-		Uint8ToFloat32:  uint8ToFloat32AVX512,
-		Int16ToFloat32:  int16ToFloat32AVX512,
-		Uint16ToFloat32: uint16ToFloat32AVX512,
-		Int32ToFloat32:  int32ToFloat32AVX512,
-		Uint32ToFloat32: uint32ToFloat32AVX512,
-		Float16ToFloat32: float16ToFloat32AVX512,
+			DotProduct128:  dot128Unrolled4x,
+			DotProduct384:  dot384AVX512,
+			DotProduct768:  dot768AVX512,
+			DotProduct1024: dot1024AVX512,
+			DotProduct1536: dot1536AVX512,
+			DotProduct3072: dot3072AVX512,
 
-		Sigmoid: sigmoidAVX512,
-		Softmax: softmaxAVX512,
-		Exp:     expAVX512,
-		Log:     logAVX512,
+			Int8ToFloat32:   int8ToFloat32AVX512,
+			Uint8ToFloat32:  uint8ToFloat32AVX512,
+			Int16ToFloat32:  int16ToFloat32AVX512,
+			Uint16ToFloat32: uint16ToFloat32AVX512,
+			Int32ToFloat32:  int32ToFloat32AVX512,
+			Uint32ToFloat32: uint32ToFloat32AVX512,
+			Float16ToFloat32: float16ToFloat32AVX512,
 
-		Sum: sumGeneric,
-		Max: maxGeneric,
-		Min: minGeneric,
-		MatMul: matMulGeneric,
-		Sin: sinFloat32Generic,
-		Cos: cosFloat32Generic,
-		Atan2: atan2Float32Generic,
-		ArgMax: argMaxGeneric,
-		ArgMin: argMinGeneric,
-		ManhattanDistance: ManhattanDistanceFloat32,
-		ChebyshevDistance: ChebyshevDistanceFloat32,
-		BrayCurtisDistance: BrayCurtisDistanceFloat32,
-		AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
-		BM25ScoreBatch: bm25ScoreBatchGeneric,
-		HaversineBatch: haversineBatchGeneric,
-	},
+			Sigmoid: sigmoidAVX512,
+			Softmax: softmaxAVX512,
+			Exp:     expAVX512,
+			Log:     logAVX512,
 
-	"avx2": {
-		EuclideanDistance:          euclideanAVX2,
-		CosineDistance:             cosineAVX2,
-		DotProduct:                 dotAVX2,
-		EuclideanDistanceBatch:     euclideanBatchAVX2,
-		CosineDistanceBatch:        cosineBatchAVX2,
-		DotProductBatch:            dotBatchAVX2,
-		EuclideanDistanceBatchFlat: euclideanBatchFlatAVX2,
-		EuclideanDistanceF16:       euclideanF16Unrolled4x,
-		CosineDistanceF16:          cosineF16Unrolled4x,
-		DotProductF16:               dotF16Unrolled4x,
+			Sum: sumGeneric,
+			Max: maxGeneric,
+			Min: minGeneric,
+			MatMul: matMulGeneric,
+			Sin: sinFloat32Generic,
+			Cos: cosFloat32Generic,
+			Atan2: atan2Float32Generic,
+			ArgMax: argMaxGeneric,
+			ArgMin: argMinGeneric,
+			ManhattanDistance: ManhattanDistanceFloat32,
+			ChebyshevDistance: ChebyshevDistanceFloat32,
+			BrayCurtisDistance: BrayCurtisDistanceFloat32,
+			AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
+			BM25ScoreBatch: bm25ScoreBatchGeneric,
+			HaversineBatch: haversineBatchGeneric,
+		}
 
-		EuclideanDistance128:       euclidean128Unrolled4x,
-		EuclideanDistance384:       euclidean384AVX2,
-		EuclideanDistance768:       euclidean768AVX2,
-		EuclideanDistance1024:      euclidean1024AVX2,
-		EuclideanDistance1536:      euclidean1536AVX2,
-		EuclideanDistance3072:      euclidean3072AVX2,
+		dispatchTable["avx2"] = &ImplementationDispatch{
+			EuclideanDistance:          euclideanAVX2,
+			CosineDistance:             cosineAVX2,
+			DotProduct:                 dotAVX2,
+			EuclideanDistanceBatch:     euclideanBatchAVX2,
+			CosineDistanceBatch:        cosineBatchAVX2,
+			DotProductBatch:            dotBatchAVX2,
+			EuclideanDistanceBatchFlat: euclideanBatchFlatAVX2,
+			EuclideanDistanceF16:       euclideanF16Unrolled4x,
+			CosineDistanceF16:          cosineF16Unrolled4x,
+			DotProductF16:               dotF16Unrolled4x,
 
-		DotProduct128:  dot128Unrolled4x,
-		DotProduct384:  dot384AVX2,
-		DotProduct768:  dot768AVX2,
-		DotProduct1024: dot1024AVX2,
-		DotProduct1536: dot1536AVX2,
-		DotProduct3072: dot3072AVX2,
+			EuclideanDistance128:       euclidean128Unrolled4x,
+			EuclideanDistance384:       euclidean384AVX2,
+			EuclideanDistance768:       euclidean768AVX2,
+			EuclideanDistance1024:      euclidean1024AVX2,
+			EuclideanDistance1536:      euclidean1536AVX2,
+			EuclideanDistance3072:      euclidean3072AVX2,
 
-		Int8ToFloat32:   int8ToFloat32AVX2,
-		Uint8ToFloat32:  uint8ToFloat32AVX2,
-		Int16ToFloat32:  int16ToFloat32AVX2,
-		Uint16ToFloat32: uint16ToFloat32AVX2,
-		Int32ToFloat32:  int32ToFloat32AVX2,
-		Uint32ToFloat32: uint32ToFloat32AVX2,
-		Float16ToFloat32: float16ToFloat32AVX2,
+			DotProduct128:  dot128Unrolled4x,
+			DotProduct384:  dot384AVX2,
+			DotProduct768:  dot768AVX2,
+			DotProduct1024: dot1024AVX2,
+			DotProduct1536: dot1536AVX2,
+			DotProduct3072: dot3072AVX2,
 
-		Sigmoid: sigmoidAVX2,
-		Softmax: softmaxAVX2,
-		Exp:     expAVX2,
-		Log:     logAVX2,
+			Int8ToFloat32:   int8ToFloat32AVX2,
+			Uint8ToFloat32:  uint8ToFloat32AVX2,
+			Int16ToFloat32:  int16ToFloat32AVX2,
+			Uint16ToFloat32: uint16ToFloat32AVX2,
+			Int32ToFloat32:  int32ToFloat32AVX2,
+			Uint32ToFloat32: uint32ToFloat32AVX2,
+			Float16ToFloat32: float16ToFloat32AVX2,
 
-		Sum: sumAVX2,
-		Max: maxAVX2,
-		Min: minAVX2,
-		MatMul: matMulGeneric,
-		Sin: sinFloat32Generic,
-		Cos: cosFloat32Generic,
-		Atan2: atan2Float32Generic,
-		ArgMax: argMaxGeneric,
-		ArgMin: argMinGeneric,
-		ManhattanDistance: ManhattanDistanceFloat32,
-		ChebyshevDistance: ChebyshevDistanceFloat32,
-		BrayCurtisDistance: BrayCurtisDistanceFloat32,
-		AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
-		BM25ScoreBatch: bm25ScoreBatchGeneric,
-		HaversineBatch: haversineBatchGeneric,
-	},
+			Sigmoid: sigmoidAVX2,
+			Softmax: softmaxAVX2,
+			Exp:     expAVX2,
+			Log:     logAVX2,
 
-	"neon": {
-		EuclideanDistance:          euclideanNEON,
-		CosineDistance:             cosineNEON,
-		DotProduct:                 dotNEON,
-		EuclideanDistanceBatch:     euclideanBatchNEON,
-		CosineDistanceBatch:        cosineBatchNEON,
-		DotProductBatch:            dotBatchNEON,
-		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
-		EuclideanDistanceF16:       euclideanF16NEON,
-		CosineDistanceF16:          cosineF16NEON,
-		DotProductF16:               dotF16NEON,
+			Sum: sumAVX2,
+			Max: maxAVX2,
+			Min: minAVX2,
+			MatMul: matMulGeneric,
+			Sin: sinFloat32Generic,
+			Cos: cosFloat32Generic,
+			Atan2: atan2Float32Generic,
+			ArgMax: argMaxGeneric,
+			ArgMin: argMinGeneric,
+			ManhattanDistance: ManhattanDistanceFloat32,
+			ChebyshevDistance: ChebyshevDistanceFloat32,
+			BrayCurtisDistance: BrayCurtisDistanceFloat32,
+			AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
+			BM25ScoreBatch: bm25ScoreBatchGeneric,
+			HaversineBatch: haversineBatchGeneric,
+		}
 
-		EuclideanDistance128:  euclideanNEON,
-		EuclideanDistance384:  euclideanNEON,
-		EuclideanDistance768:  euclideanNEON,
-		EuclideanDistance1024: euclideanNEON,
-		EuclideanDistance1536: euclideanNEON,
-		EuclideanDistance3072: euclideanNEON,
+		dispatchTable["neon"] = &ImplementationDispatch{
+			EuclideanDistance:          euclideanNEON,
+			CosineDistance:             cosineNEON,
+			DotProduct:                 dotNEON,
+			EuclideanDistanceBatch:     euclideanBatchNEON,
+			CosineDistanceBatch:        cosineBatchNEON,
+			DotProductBatch:            dotBatchNEON,
+			EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
+			EuclideanDistanceF16:       euclideanF16NEON,
+			CosineDistanceF16:          cosineF16NEON,
+			DotProductF16:               dotF16NEON,
 
-		DotProduct128:  dot128NEON,
-		DotProduct384:  dot384NEON,
-		DotProduct768:  dot768NEON,
-		DotProduct1024: dot1024NEON,
-		DotProduct1536: dot1536NEON,
-		DotProduct3072: dot3072NEON,
+			EuclideanDistance128:  euclidean128NEON,
+			EuclideanDistance384:  euclidean384NEON,
+			EuclideanDistance768:  euclidean768NEON,
+			EuclideanDistance1024: euclidean1024NEON,
+			EuclideanDistance1536: euclidean1536NEON,
+			EuclideanDistance3072: euclidean3072NEON,
 
-		Int8ToFloat32:   int8ToFloat32NEON,
-		Uint8ToFloat32:  uint8ToFloat32NEON,
-		Int16ToFloat32:  int16ToFloat32NEON,
-		Uint16ToFloat32: uint16ToFloat32NEON,
-		Int32ToFloat32:  int32ToFloat32NEON,
-		Uint32ToFloat32: uint32ToFloat32NEON,
-		Float16ToFloat32: float16ToFloat32NEON,
+			DotProduct128:  dot128NEON,
+			DotProduct384:  dot384NEON,
+			DotProduct768:  dot768NEON,
+			DotProduct1024: dot1024NEON,
+			DotProduct1536: dot1536NEON,
+			DotProduct3072: dot3072NEON,
 
-		Sigmoid: sigmoidNEON,
-		Softmax: softmaxNEON,
-		Exp:     expNEON,
-		Log:     logNEON,
+			Int8ToFloat32:   int8ToFloat32NEON,
+			Uint8ToFloat32:  uint8ToFloat32NEON,
+			Int16ToFloat32:  int16ToFloat32NEON,
+			Uint16ToFloat32: uint16ToFloat32NEON,
+			Int32ToFloat32:  int32ToFloat32NEON,
+			Uint32ToFloat32: uint32ToFloat32NEON,
+			Float16ToFloat32: float16ToFloat32NEON,
 
-		Sum: sumNEON,
-		Max: maxNEON,
-		Min: minNEON,
-		MatMul: matMulGeneric,
-		Sin: sinFloat32Generic,
-		Cos: cosFloat32Generic,
-		Atan2: atan2Float32Generic,
-		ArgMax: argMaxGeneric,
-		ArgMin: argMinGeneric,
-		ManhattanDistance: ManhattanDistanceFloat32,
-		ChebyshevDistance: ChebyshevDistanceFloat32,
-		BrayCurtisDistance: BrayCurtisDistanceFloat32,
-		AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
-		BM25ScoreBatch: bm25ScoreBatchGeneric,
-		HaversineBatch: haversineBatchGeneric,
-	},
+			Sigmoid: sigmoidNEON,
+			Softmax: softmaxNEON,
+			Exp:     expNEON,
+			Log:     logNEON,
 
-	"generic": {
-		EuclideanDistance:          euclideanGeneric,
-		CosineDistance:             cosineGeneric,
-		DotProduct:                 dotGeneric,
-		EuclideanDistanceBatch:     euclideanBatchGeneric,
-		CosineDistanceBatch:        cosineBatchGeneric,
-		DotProductBatch:            dotBatchGeneric,
-		EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
-		EuclideanDistanceF16:       euclideanF16Unrolled4x,
-		CosineDistanceF16:          cosineF16Unrolled4x,
-		DotProductF16:               dotF16Unrolled4x,
+			Sum: sumNEON,
+			Max: maxNEON,
+			Min: minNEON,
+			MatMul: matMulGeneric,
+			Sin: sinFloat32Generic,
+			Cos: cosFloat32Generic,
+			Atan2: atan2Float32Generic,
+			ArgMax: argMaxGeneric,
+			ArgMin: argMinGeneric,
+			ManhattanDistance: ManhattanDistanceFloat32,
+			ChebyshevDistance: ChebyshevDistanceFloat32,
+			BrayCurtisDistance: BrayCurtisDistanceFloat32,
+			AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
+			BM25ScoreBatch: bm25ScoreBatchGeneric,
+			HaversineBatch: haversineBatchGeneric,
+		}
 
-		EuclideanDistance128:  euclideanNEON,
-		EuclideanDistance384:  euclidean384Unrolled4x,
-		EuclideanDistance768:  euclidean768Unrolled4x,
-		EuclideanDistance1024: euclidean1024Blocked,
-		EuclideanDistance1536: euclidean1536Unrolled4x,
-		EuclideanDistance3072: euclidean3072Blocked,
+		dispatchTable["generic"] = &ImplementationDispatch{
+			EuclideanDistance:          euclideanGeneric,
+			CosineDistance:             cosineGeneric,
+			DotProduct:                 dotGeneric,
+			EuclideanDistanceBatch:     euclideanBatchGeneric,
+			CosineDistanceBatch:        cosineBatchGeneric,
+			DotProductBatch:            dotBatchGeneric,
+			EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
+			EuclideanDistanceF16:       euclideanF16Unrolled4x,
+			CosineDistanceF16:          cosineF16Unrolled4x,
+			DotProductF16:               dotF16Unrolled4x,
 
-		DotProduct128:  dot128Unrolled4x,
-		DotProduct384:  dotUnrolled4x,
-		DotProduct768:  dotUnrolled4x,
-		DotProduct1024: dotUnrolled4x,
-		DotProduct1536: dotUnrolled4x,
-		DotProduct3072: DotProductFloat32Blocked,
+			EuclideanDistance128:  euclideanNEON,
+			EuclideanDistance384:  euclidean384Unrolled4x,
+			EuclideanDistance768:  euclidean768Unrolled4x,
+			EuclideanDistance1024: euclidean1024Blocked,
+			EuclideanDistance1536: euclidean1536Unrolled4x,
+			EuclideanDistance3072: euclidean3072Blocked,
 
-		Int8ToFloat32:   int8ToFloat32Generic,
-		Uint8ToFloat32:  uint8ToFloat32Generic,
-		Int16ToFloat32:  int16ToFloat32Generic,
-		Uint16ToFloat32: uint16ToFloat32Generic,
-		Int32ToFloat32:  int32ToFloat32Generic,
-		Uint32ToFloat32: uint32ToFloat32Generic,
-		Float16ToFloat32: float16ToFloat32Generic,
+			DotProduct128:  dot128Unrolled4x,
+			DotProduct384:  dotUnrolled4x,
+			DotProduct768:  dotUnrolled4x,
+			DotProduct1024: dotUnrolled4x,
+			DotProduct1536: dotUnrolled4x,
+			DotProduct3072: DotProductFloat32Blocked,
 
-		Sigmoid: sigmoidGeneric,
-		Softmax: softmaxGeneric,
-		Exp:     expGeneric,
-		Log:     logGeneric,
+			Int8ToFloat32:   int8ToFloat32Generic,
+			Uint8ToFloat32:  uint8ToFloat32Generic,
+			Int16ToFloat32:  int16ToFloat32Generic,
+			Uint16ToFloat32: uint16ToFloat32Generic,
+			Int32ToFloat32:  int32ToFloat32Generic,
+			Uint32ToFloat32: uint32ToFloat32Generic,
+			Float16ToFloat32: float16ToFloat32Generic,
 
-		Sum: sumGeneric,
-		Max: maxGeneric,
-		Min: minGeneric,
-		MatMul: matMulGeneric,
-		Sin: sinFloat32Generic,
-		Cos: cosFloat32Generic,
-		Atan2: atan2Float32Generic,
-		ArgMax: argMaxGeneric,
-		ArgMin: argMinGeneric,
-		ManhattanDistance: ManhattanDistanceFloat32,
-		ChebyshevDistance: ChebyshevDistanceFloat32,
-		BrayCurtisDistance: BrayCurtisDistanceFloat32,
-		AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
-		BM25ScoreBatch: bm25ScoreBatchGeneric,
-		HaversineBatch: haversineBatchGeneric,
-	},
+			Sigmoid: sigmoidGeneric,
+			Softmax: softmaxGeneric,
+			Exp:     expGeneric,
+			Log:     logGeneric,
+
+			Sum: sumGeneric,
+			Max: maxGeneric,
+			Min: minGeneric,
+			MatMul: matMulGeneric,
+			Sin: sinFloat32Generic,
+			Cos: cosFloat32Generic,
+			Atan2: atan2Float32Generic,
+			ArgMax: argMaxGeneric,
+			ArgMin: argMinGeneric,
+			ManhattanDistance: ManhattanDistanceFloat32,
+			ChebyshevDistance: ChebyshevDistanceFloat32,
+			BrayCurtisDistance: BrayCurtisDistanceFloat32,
+			AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
+			BM25ScoreBatch: bm25ScoreBatchGeneric,
+			HaversineBatch: haversineBatchGeneric,
+		}
+	})
 }
 
 // Current dispatch - single pointer lookup instead of many
@@ -322,6 +330,7 @@ var currentDispatch *ImplementationDispatch
 // initializeDispatch sets function pointers based on detected CPU features.
 // This is called once at startup, removing branch overhead from hot paths.
 func initializeDispatch() {
+	initDispatchTable()
 	dispatch, exists := dispatchTable[implementation]
 	if !exists {
 		// Fallback to generic if implementation not found
@@ -746,7 +755,7 @@ func DispatchDistance[T any](metric MetricType, a, b []T) (float32, error) {
 		return 0, nil
 	}
 
-	dt := GetSIMDDataType[T]()
+	dt := GetDataType[T]()
 	dims := len(a)
 
 	kernel := Registry.Get(metric, dt, dims)
@@ -761,13 +770,22 @@ func DispatchDistance[T any](metric MetricType, a, b []T) (float32, error) {
 
 	switch k := kernel.(type) {
 	case func([]T, []T) (float32, error):
+		if k == nil {
+			return 0, fmt.Errorf("simd: kernel function is nil for metric %s", metric)
+		}
 		return k(a, b)
 	case distanceFunc:
+		if k == nil {
+			return 0, fmt.Errorf("simd: distanceFunc kernel is nil for metric %s", metric)
+		}
 		if va, ok := any(a).([]float32); ok {
 			vb := any(b).([]float32)
 			return k(va, vb)
 		}
 	case distanceF16Func:
+		if k == nil {
+			return 0, fmt.Errorf("simd: distanceF16Func kernel is nil for metric %s", metric)
+		}
 		if va, ok := any(a).([]float16.Num); ok {
 			vb := any(b).([]float16.Num)
 			return k(va, vb)
@@ -778,8 +796,8 @@ func DispatchDistance[T any](metric MetricType, a, b []T) (float32, error) {
 	return 0, fmt.Errorf("simd: type mismatch between T and kernel for %s", dt)
 }
 
-// GetSIMDDataType returns the SIMDDataType for a given type T.
-func GetSIMDDataType[T any]() SIMDDataType {
+// GetDataType returns the DataType for a given type T.
+func GetDataType[T any]() DataType {
 	var zero T
 	switch any(zero).(type) {
 	case float32:

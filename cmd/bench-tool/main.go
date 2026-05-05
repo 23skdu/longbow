@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/client"
+	"github.com/23skdu/longbow/pkg/version"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -38,6 +39,16 @@ type BenchmarkResult struct {
 }
 
 func main() {
+	// Handle version flags early
+	if len(os.Args) > 1 {
+		for _, arg := range os.Args[1:] {
+			if arg == "--version" || arg == "-v" {
+				version.Print()
+				return
+			}
+		}
+	}
+
 	uri := flag.String("uri", "127.0.0.1:3000", "Data plane address (host:port)")
 	dim := flag.Int("dim", 128, "Vector dimension (up to 3072)")
 	scale := flag.Int("scale", 1000, "Vector count")

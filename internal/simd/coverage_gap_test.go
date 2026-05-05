@@ -103,7 +103,7 @@ func TestComprehensiveCoverage(t *testing.T) {
 
 	t.Run("RegistryLoop", func(t *testing.T) {
 		metrics := []MetricType{MetricEuclidean, MetricCosine, MetricDotProduct}
-		dataTypes := []SIMDDataType{DataTypeFloat32, DataTypeFloat16, DataTypeInt8, DataTypeUint8, DataTypeInt16, DataTypeUint16, DataTypeInt32, DataTypeUint32, DataTypeInt64, DataTypeUint64, DataTypeFloat64}
+		dataTypes := []DataType{DataTypeFloat32, DataTypeFloat16, DataTypeInt8, DataTypeUint8, DataTypeInt16, DataTypeUint16, DataTypeInt32, DataTypeUint32, DataTypeInt64, DataTypeUint64, DataTypeFloat64}
 		
 		for _, m := range metrics {
 			for _, dt := range dataTypes {

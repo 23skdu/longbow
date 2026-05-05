@@ -116,23 +116,23 @@ func TestDispatchDistance_Errors(t *testing.T) {
 	})
 }
 
-func TestGetSIMDDataType_Extended(t *testing.T) {
-	assert.Equal(t, DataTypeFloat32, GetSIMDDataType[float32]())
-	assert.Equal(t, DataTypeFloat16, GetSIMDDataType[float16.Num]())
-	assert.Equal(t, DataTypeInt8, GetSIMDDataType[int8]())
-	assert.Equal(t, DataTypeUint8, GetSIMDDataType[uint8]())
-	assert.Equal(t, DataTypeInt16, GetSIMDDataType[int16]())
-	assert.Equal(t, DataTypeUint16, GetSIMDDataType[uint16]())
-	assert.Equal(t, DataTypeInt32, GetSIMDDataType[int32]())
-	assert.Equal(t, DataTypeUint32, GetSIMDDataType[uint32]())
-	assert.Equal(t, DataTypeInt64, GetSIMDDataType[int64]())
-	assert.Equal(t, DataTypeUint64, GetSIMDDataType[uint64]())
-	assert.Equal(t, DataTypeFloat64, GetSIMDDataType[float64]())
-	assert.Equal(t, DataTypeComplex64, GetSIMDDataType[complex64]())
-	assert.Equal(t, DataTypeComplex128, GetSIMDDataType[complex128]())
+func TestGetDataType_Extended(t *testing.T) {
+	assert.Equal(t, DataTypeFloat32, GetDataType[float32]())
+	assert.Equal(t, DataTypeFloat16, GetDataType[float16.Num]())
+	assert.Equal(t, DataTypeInt8, GetDataType[int8]())
+	assert.Equal(t, DataTypeUint8, GetDataType[uint8]())
+	assert.Equal(t, DataTypeInt16, GetDataType[int16]())
+	assert.Equal(t, DataTypeUint16, GetDataType[uint16]())
+	assert.Equal(t, DataTypeInt32, GetDataType[int32]())
+	assert.Equal(t, DataTypeUint32, GetDataType[uint32]())
+	assert.Equal(t, DataTypeInt64, GetDataType[int64]())
+	assert.Equal(t, DataTypeUint64, GetDataType[uint64]())
+	assert.Equal(t, DataTypeFloat64, GetDataType[float64]())
+	assert.Equal(t, DataTypeComplex64, GetDataType[complex64]())
+	assert.Equal(t, DataTypeComplex128, GetDataType[complex128]())
 	
 	type custom struct{}
-	assert.Equal(t, DataTypeFloat32, GetSIMDDataType[custom](), "Should fallback to float32")
+	assert.Equal(t, DataTypeFloat32, GetDataType[custom](), "Should fallback to float32")
 }
 
 func TestRegistry_Specialized(t *testing.T) {

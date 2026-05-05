@@ -14,6 +14,7 @@ import (
 	"github.com/tetratelabs/wazero/api"
 )
 
+// JitRuntime provides a WebAssembly-based JIT execution environment for SIMD kernels.
 type JitRuntime struct {
 	runtime wazero.Runtime
 	ctx     context.Context
@@ -55,6 +56,7 @@ func initJIT() error {
 	return nil
 }
 
+// Euclidean calculates the Euclidean distance between two vectors using JIT.
 func (rt *JitRuntime) Euclidean(a, b []float32) float32 {
 	n := uint32(len(a))
 	if n == 0 {
@@ -100,6 +102,7 @@ func bytesToFloat32Slice(b []byte) []float32 {
 	return res
 }
 
+// EuclideanBatch calculates Euclidean distances for a batch of vectors against a query using JIT.
 func (rt *JitRuntime) EuclideanBatch(query []float32, vectors [][]float32) ([]float32, error) {
 	if len(vectors) == 0 {
 		return nil, nil
@@ -152,6 +155,7 @@ func (rt *JitRuntime) EuclideanBatch(query []float32, vectors [][]float32) ([]fl
 	return bytesToFloat32Slice(resBytes), nil
 }
 
+// EuclideanBatchInto calculates Euclidean distances for a batch into a pre-allocated results slice using JIT.
 func (rt *JitRuntime) EuclideanBatchInto(query []float32, vectors [][]float32, results []float32) error {
 	if len(vectors) == 0 {
 		return nil

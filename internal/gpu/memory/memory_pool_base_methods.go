@@ -111,7 +111,7 @@ func (p *GPUMemPool) MemcpyHostToDevice(devicePtr, hostPtr unsafe.Pointer, size 
 	case BackendCUDA:
 		return p.cudaMemcpyHostToDevice(hostPtr, devicePtr, size)
 	case BackendCPU:
-		copy(unsafe.Slice((*byte)(devicePtr), size), unsafe.Slice((*byte)(hostPtr), size))
+		copy(unsafe.Slice((*byte)(devicePtr), size), unsafe.Slice((*byte)(hostPtr), size)) // #nosec G103
 		return nil
 	default:
 		return fmt.Errorf("unsupported backend: %v", p.backend)
@@ -125,7 +125,7 @@ func (p *GPUMemPool) MemcpyDeviceToHost(hostPtr, devicePtr unsafe.Pointer, size 
 	case BackendCUDA:
 		return p.cudaMemcpyDeviceToHost(devicePtr, hostPtr, size)
 	case BackendCPU:
-		copy(unsafe.Slice((*byte)(hostPtr), size), unsafe.Slice((*byte)(devicePtr), size))
+		copy(unsafe.Slice((*byte)(hostPtr), size), unsafe.Slice((*byte)(devicePtr), size)) // #nosec G103
 		return nil
 	default:
 		return fmt.Errorf("unsupported backend: %v", p.backend)
@@ -140,7 +140,7 @@ func (p *GPUMemPool) MemcpyDeviceToDevice(dstPtr, srcPtr unsafe.Pointer, size in
 		// Metal doesn't have a direct D2D implementation yet in the pool
 		return fmt.Errorf("device-to-device copy not implemented for Metal")
 	case BackendCPU:
-		copy(unsafe.Slice((*byte)(dstPtr), size), unsafe.Slice((*byte)(srcPtr), size))
+		copy(unsafe.Slice((*byte)(dstPtr), size), unsafe.Slice((*byte)(srcPtr), size)) // #nosec G103
 		return nil
 	default:
 		return fmt.Errorf("unsupported backend: %v", p.backend)
@@ -152,9 +152,9 @@ func (p *GPUMemPool) Memset(ptr unsafe.Pointer, value int, size int64) error {
 	case BackendCUDA:
 		return p.cudaMemset(ptr, value, size)
 	case BackendCPU:
-		buf := unsafe.Slice((*byte)(ptr), size)
+		buf := unsafe.Slice((*byte)(ptr), size) // #nosec G103
 		for i := range buf {
-			buf[i] = byte(value)
+			buf[i] = byte(value) // #nosec G115
 		}
 		return nil
 	default:

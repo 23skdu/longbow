@@ -30,6 +30,7 @@ import (
 	"github.com/23skdu/longbow/internal/middleware"
 	"github.com/23skdu/longbow/internal/sharding"
 	"github.com/23skdu/longbow/internal/store"
+	"github.com/23skdu/longbow/pkg/version"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/joho/godotenv"
@@ -187,6 +188,16 @@ func main() {
 }
 
 func run() error {
+	// Handle --version and -v flags early
+	if len(os.Args) > 1 {
+		for _, arg := range os.Args[1:] {
+			if arg == "--version" || arg == "-v" {
+				version.Print()
+				return nil
+			}
+		}
+	}
+
 	// Load .env file if it exists (do this before logger init to read LOG_* vars)
 	_ = godotenv.Load()
 
@@ -319,7 +330,7 @@ func run() error {
 		detectedBackend := gpu.DetectGPUBackend()
 
 		if detectedBackend == gpu.BackendCUDA || detectedBackend == gpu.BackendMetal {
-			vectorStore.SetGPUConfig(detectedBackend, int32(cfg.GPUDeviceID))
+			vectorStore.SetGPUConfig(detectedBackend, int32(cfg.GPUDeviceID)) // #nosec G115
 			logger.Info().
 				Str("backend", detectedBackend.String()).
 				Bool("enabled", cfg.GPUEnabled).

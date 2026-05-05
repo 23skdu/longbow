@@ -77,15 +77,15 @@ func dot3072NEON(a, b []float32) (float32, error) {
 }
 
 func euclideanF16NEON(a, b []float16.Num) (float32, error) {
-	return euclideanF16NEONKernel(a, b), nil
+	return euclideanF16Unrolled4x(a, b)
 }
 
 func dotF16NEON(a, b []float16.Num) (float32, error) {
-	return dotF16NEONKernel(a, b), nil
+	return dotF16Unrolled4x(a, b)
 }
 
 func cosineF16NEON(a, b []float16.Num) (float32, error) {
-	return cosineF16NEONKernel(a, b), nil
+	return cosineF16Unrolled4x(a, b)
 }
 
 func dotInt4Neon(a, b []byte) (float32, error) {
@@ -156,6 +156,7 @@ func cosineBatchNEON(query []float32, vectors [][]float32, results []float32) er
 	return nil
 }
 
+// FastWalshHadamardTransform32NEON performs a FWHT for 32-dim vectors using NEON.
 func FastWalshHadamardTransform32NEON(a []float32) error {
 	if len(a) == 32 {
 		fastWalshHadamardTransform32NEONKernel(a)
@@ -164,6 +165,7 @@ func FastWalshHadamardTransform32NEON(a []float32) error {
 	return fastWalshHadamardTransform32Generic(a)
 }
 
+// RandomRotationNEON applies a random rotation to a vector using NEON (fallback to generic).
 func RandomRotationNEON(a []float32, seed int64) error {
 	return randomRotationGeneric(a, seed)
 }

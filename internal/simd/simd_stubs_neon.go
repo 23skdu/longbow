@@ -101,6 +101,22 @@ func brayCurtisNEON(a, b []float32) (float32, error) {
 
 func memcpyNEON(dst, src unsafe.Pointer, n int) { memcpyGeneric(dst, src, n) }
 
+func accumulateWeightedScatterNEON(dst []float32, targets []uint32, weights []float32, factor float32) {
+	accumulateWeightedScatterGeneric(dst, targets, weights, factor)
+}
+
+func matMulNEON(a, b []float32, m, n, k int, dst []float32) { matMulGeneric(a, b, m, n, k, dst) }
+func argMaxNEON(src []float32) int { return argMaxGeneric(src) }
+func argMinNEON(src []float32) int { return argMinGeneric(src) }
+
+func andBitVectorsNEON(a, b []uint64) { AndBitVectorsGeneric(a, b) }
+func countBitVectorNEON(src []uint64) int {
+	return CountBitVectorGeneric(src)
+}
+func hammingNEON(a, b []uint64) (float32, error) {
+	return float32(HammingDistanceGeneric(a, b)), nil
+}
+
 // Static assertion to keep Go functions "used" even if not in the active dispatch path.
 var _ = func() {
 	if false {

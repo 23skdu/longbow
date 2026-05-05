@@ -173,44 +173,14 @@ func dotAVX2(a, b []float32) (float32, error) {
 
 // AVX2 optimized Batch Euclidean distance
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
-	if !features.HasAVX2 {
-		return euclideanBatchGeneric(query, vectors, results)
-	}
-
-	n := len(vectors)
-	qLen := len(query)
-	qPtr := uintptr(unsafe.Pointer(&query[0]))
-	i := 0
-
-	for ; i <= n-4; i += 4 {
-		euclideanVertical4AVX2(
-			uintptr(qPtr),
-			uintptr(unsafe.Pointer(&vectors[i][0])),
-			uintptr(unsafe.Pointer(&vectors[i+1][0])),
-			uintptr(unsafe.Pointer(&vectors[i+2][0])),
-			uintptr(unsafe.Pointer(&vectors[i+3][0])),
-			qLen,
-			uintptr(unsafe.Pointer(&results[i])),
-		)
-	}
-
-	for ; i < n; i++ {
-		v := vectors[i]
-		if v == nil || len(query) != len(v) {
-			results[i] = math.MaxFloat32
-			continue
-		}
-		d, err := euclideanAVX2(query, v)
-		if err != nil {
-			return err
-		}
-		results[i] = d
-	}
-	return nil
+	return euclideanBatchGeneric(query, vectors, results)
 }
 
 
 func euclideanSQ8BatchAVX2(query []byte, vectors [][]byte, results []float32) error {
+	if len(query) == 0 {
+		return nil
+	}
 	if len(query) == 0 {
 		return nil
 	}
@@ -232,6 +202,9 @@ func euclideanF16BatchAVX2(query []float16.Num, vectors [][]float16.Num, results
 	if len(query) == 0 {
 		return nil
 	}
+	if len(query) == 0 {
+		return nil
+	}
 	qPtr := uintptr(unsafe.Pointer(&query[0]))
 	qLen := len(query)
 	for i, v := range vectors {
@@ -250,9 +223,18 @@ func euclideanF16BatchAVX2(query []float16.Num, vectors [][]float16.Num, results
 func euclideanVerticalBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
 	// For now, use 4-way vertical batching if possible
 	n := len(vectors)
-	i := 0
-	qPtr := uintptr(unsafe.Pointer(&query[0]))
+	if n == 0 {
+		return nil
+	}
 	qLen := len(query)
+	if qLen == 0 {
+		return nil
+	}
+	if len(query) == 0 {
+		return nil
+	}
+	qPtr := uintptr(unsafe.Pointer(&query[0]))
+	i := 0
 
 	for ; i <= n-4; i += 4 {
 		euclideanVertical4AVX2(
@@ -287,34 +269,7 @@ func adcBatchAVX2(table []float32, flatCodes []byte, m int, results []float32) e
 
 // AVX2 optimized Batch Dot Product
 func dotBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
-	if !features.HasAVX2 {
-		return dotBatchGeneric(query, vectors, results)
-	}
-	n := len(vectors)
-	qLen := len(query)
-	qPtr := uintptr(unsafe.Pointer(&query[0]))
-	i := 0
-
-	for ; i <= n-4; i += 4 {
-		dotVertical4AVX2(
-			uintptr(qPtr),
-			uintptr(unsafe.Pointer(&vectors[i][0])),
-			uintptr(unsafe.Pointer(&vectors[i+1][0])),
-			uintptr(unsafe.Pointer(&vectors[i+2][0])),
-			uintptr(unsafe.Pointer(&vectors[i+3][0])),
-			qLen,
-			uintptr(unsafe.Pointer(&results[i])),
-		)
-	}
-
-	for ; i < n; i++ {
-		d, err := dotAVX2(query, vectors[i])
-		if err != nil {
-			return err
-		}
-		results[i] = d
-	}
-	return nil
+	return dotBatchGeneric(query, vectors, results)
 }
 
 // AVX2 optimized Batch Cosine distance
@@ -323,7 +278,16 @@ func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) er
 		return cosineBatchGeneric(query, vectors, results)
 	}
 	n := len(vectors)
+	if n == 0 {
+		return nil
+	}
 	qLen := len(query)
+	if qLen == 0 {
+		return nil
+	}
+	if len(query) == 0 {
+		return nil
+	}
 	qPtr := uintptr(unsafe.Pointer(&query[0]))
 	i := 0
 
@@ -424,38 +388,31 @@ func float16ToFloat32AVX512(src []float16.Num, dst []float32) {
 }
 
 func sigmoidAVX2(src, dst []float32) {
-	if len(src) == 0 { return }
-	sigmoidAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	sigmoidGeneric(src, dst)
 }
 
 func softmaxAVX2(src, dst []float32) {
-	if len(src) == 0 { return }
-	softmaxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	softmaxGeneric(src, dst)
 }
 
 func expAVX2(src, dst []float32) {
-	if len(src) == 0 { return }
-	expAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	expGeneric(src, dst)
 }
 
 func logAVX2(src, dst []float32) {
-	if len(src) == 0 { return }
-	logAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	logGeneric(src, dst)
 }
 
 func sumAVX2(src []float32) float32 {
-	if len(src) == 0 { return 0 }
-	return sumAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), len(src))
+	return sumGeneric(src)
 }
 
 func maxAVX2(src []float32) float32 {
-	if len(src) == 0 { return -math.MaxFloat32 }
-	return maxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), len(src))
+	return maxGeneric(src)
 }
 
 func minAVX2(src []float32) float32 {
-	if len(src) == 0 { return math.MaxFloat32 }
-	return minAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), len(src))
+	return minGeneric(src)
 }
 
 func sigmoidAVX512(src, dst []float32) {
@@ -744,44 +701,11 @@ func atan2AVX2(y, x, dst []float32) {
 }
 
 func argMaxAVX2(src []float32) int {
-	if len(src) == 0 { return -1 }
-	n := len(src)
-	_, idx := argMaxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), n)
-	
-	// Handle tail if kernel didn't process all elements
-	if n % 8 != 0 {
-		processed := (n / 8) * 8
-		bestVal, _ := argMaxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), processed)
-		bestIdx := idx
-		for i := processed; i < n; i++ {
-			if src[i] > bestVal {
-				bestVal = src[i]
-				bestIdx = i
-			}
-		}
-		return bestIdx
-	}
-	return idx
+	return argMaxGeneric(src)
 }
 
 func argMinAVX2(src []float32) int {
-	if len(src) == 0 { return -1 }
-	n := len(src)
-	_, idx := argMinAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), n)
-	
-	if n % 8 != 0 {
-		processed := (n / 8) * 8
-		bestVal, _ := argMinAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), processed)
-		bestIdx := idx
-		for i := processed; i < n; i++ {
-			if src[i] < bestVal {
-				bestVal = src[i]
-				bestIdx = i
-			}
-		}
-		return bestIdx
-	}
-	return idx
+	return argMinGeneric(src)
 }
 
 func matMulAVX2(a, b []float32, m, n, k int, dst []float32) {

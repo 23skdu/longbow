@@ -494,6 +494,7 @@ class BenchmarkRunner:
                 print(f"    Error: {result.stderr.strip()}")
             return False
 
+        print(f"DEBUG: json_file={json_file}")
         metrics = parse_bench_json(json_file)
         if not metrics:
             print(" NO DATA")

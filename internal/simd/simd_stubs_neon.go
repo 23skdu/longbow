@@ -42,7 +42,9 @@ func dotF16NEON(a, b []float16.Num) (float32, error)       { return dotF16Unroll
 
 func l2SquaredNEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
 
+// FastWalshHadamardTransform32NEON is a stub for non-ARM64 platforms.
 func FastWalshHadamardTransform32NEON(a []float32) error { return fastWalshHadamardTransform32Generic(a) }
+// RandomRotationNEON is a stub for non-ARM64 platforms.
 func RandomRotationNEON(a []float32, seed int64) error  { return randomRotationGeneric(a, seed) }
 
 func dotInt4Neon(a, b []byte) (float32, error) { return dotInt4Generic(a, b) }

@@ -2113,7 +2113,7 @@ class BenchmarkRunner:
 
                 for dim in dims:
                     current += 1
-                    current_port = self.args.port
+                    current_port = 3000
                     self.server_addr = f"127.0.0.1:{current_port}"
                     
                     label = f"{self.args.mode}_{dtype}_{dim}_{count}"

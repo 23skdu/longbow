@@ -319,15 +319,16 @@ void metal_cleanup(MetalIndexHandle* handle) {
         if (handle->vectorBuffer) {
             CFRelease(handle->vectorBuffer);
         }
-        if (handle->commandQueue) {
-            CFRelease(handle->commandQueue);
+        if (handle->graphOffsets) {
+            CFRelease(handle->graphOffsets);
         }
-        if (handle->pqPipeline) {
-            CFRelease(handle->pqPipeline);
+        if (handle->graphNeighbors) {
+            CFRelease(handle->graphNeighbors);
         }
-        if (handle->device) {
-            CFRelease(handle->device);
+        if (handle->graphWeights) {
+            CFRelease(handle->graphWeights);
         }
+        // device, commandQueue, and pipelines are shared and managed by MetalContext
         free(handle);
     }
 }
@@ -654,8 +655,6 @@ func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
 	// Load pipelines from shared context
 	handle.pqPipeline, _ = ctx.GetPipelineState("compute_pq_distances")
 	handle.assignPipeline, _ = ctx.GetPipelineState("assign_to_clusters")
-	handle.bfsExpandPipeline, _ = ctx.GetPipelineState("graph_bfs_expand")
-	handle.actPropagatePipeline, _ = ctx.GetPipelineState("graph_activation_propagate")
 	handle.fusedGraphPipeline, _ = ctx.GetPipelineState("graph_rag_fused")
 	handle.l2DistancePipeline, _ = ctx.GetPipelineState("vector_distance_l2")
 	handle.ipDistancePipeline, _ = ctx.GetPipelineState("vector_distance_ip")
@@ -663,6 +662,9 @@ func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
 	handle.sigmoidPipeline, _ = ctx.GetPipelineState("sigmoid_f32")
 	handle.haversinePipeline, _ = ctx.GetPipelineState("haversine_batch")
 	handle.normPipeline, _ = ctx.GetPipelineState("norm_batch_f32")
+	// Note: bfsExpandPipeline and actPropagatePipeline are legacy, merged into fusedGraphPipeline
+	handle.bfsExpandPipeline = nil
+	handle.actPropagatePipeline = nil
 
 	handle.graphOffsets = nil
 	handle.graphNeighbors = nil

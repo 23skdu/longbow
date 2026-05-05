@@ -37,6 +37,7 @@ type IVFFlatIndex struct {
 	assignments map[uint64]int // Vector ID -> Cluster ID
 	config      *IVFFlatConfig
 	built       bool
+	distFunc    simd.DistanceKernel[float32]
 }
 
 // NewIVFFlatIndex creates a new IVF-Flat index with the specified configuration.
@@ -52,14 +53,16 @@ func NewIVFFlatIndex(cfg IndexConfig) (*IVFFlatIndex, error) {
 		}
 	}
 
-	return &IVFFlatIndex{
+	ivf := &IVFFlatIndex{
 		dimension:   cfg.Dimension,
 		vectors:     make(map[uint64][]float32),
 		centroids:   make([][]float32, 0),
 		assignments: make(map[uint64]int),
 		config:      cfg.IVFFlatConfig,
 		built:       false,
-	}, nil
+	}
+	ivf.ensureKernel()
+	return ivf, nil
 }
 
 // Type returns the index type identifier (IVFFlat).
@@ -156,6 +159,12 @@ func (ivf *IVFFlatIndex) Build() error {
 	ivf.assignments = assignments
 	ivf.built = true
 
+	// Resolve kernel for the dimension
+	ivf.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, ivf.dimension)
+	if ivf.distFunc == nil {
+		ivf.distFunc = simd.L2Squared
+	}
+
 	return nil
 }
 
@@ -188,7 +197,7 @@ func (ivf *IVFFlatIndex) Search(query []float32, k int) ([]IndexSearchResult, er
 		for id, assignedCluster := range ivf.assignments {
 			if assignedCluster == clusterID {
 				vector := ivf.vectors[id]
-				dist, _ := simd.L2Squared(query, vector)
+				dist, _ := ivf.distFunc(query, vector)
 				results = append(results, result{id: id, distance: dist})
 			}
 		}
@@ -436,6 +445,7 @@ func (ivf *IVFFlatIndex) Load(path string) error {
 		return fmt.Errorf("failed to read built flag: %w", err)
 	}
 	ivf.built = builtFlag == 1
+	ivf.ensureKernel()
 
 	return nil
 }
@@ -645,7 +655,7 @@ func (ivf *IVFFlatIndex) findNearestCentroid(vector []float32, centroids [][]flo
 	minIdx := 0
 
 	for i, centroid := range centroids {
-		dist, _ := simd.L2Squared(vector, centroid)
+		dist, _ := ivf.distFunc(vector, centroid)
 		if dist < minDist {
 			minDist = dist
 			minIdx = i
@@ -669,7 +679,7 @@ func (ivf *IVFFlatIndex) findNearestClusters(query []float32, n int) []int {
 
 	dists := make([]clusterDist, len(ivf.centroids))
 	for i, centroid := range ivf.centroids {
-		dist, _ := simd.L2Squared(query, centroid)
+		dist, _ := ivf.distFunc(query, centroid)
 		dists[i] = clusterDist{
 			id:       i,
 			distance: dist,
@@ -709,4 +719,14 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (ivf *IVFFlatIndex) ensureKernel() {
+	if ivf.distFunc != nil {
+		return
+	}
+	ivf.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, ivf.dimension)
+	if ivf.distFunc == nil {
+		ivf.distFunc = simd.L2Squared
+	}
 }

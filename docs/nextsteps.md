@@ -2,6 +2,16 @@
 
 This document tracks the remaining tasks for hardening the Longbow storage engine for production readiness.
 
+## 0. P0 Blockers: SIMD & Kernel Optimization (New)
+
+- [ ] **Dataset-Level SIMD Kernel Caching**
+  - [ ] **Standardization**: Define `type DistanceKernel[T any] func(a, b []T) (float32, error)` in `internal/simd`.
+  - [ ] **Resolver**: Implement `simd.GetKernel[T](metric, dims)` for one-time resolution during index initialization.
+  - [ ] **Refactoring**: Update `ArrowHNSW` and `FlatIndex` to store the resolved kernel and call it directly in search/insert loops.
+  - [ ] **Validation**: Verify the elimination of `Registry.Get` map lookups and interface assertions via `pprof` on hot paths.
+  - [ ] **Target**: 5-10% improvement in raw vector comparison throughput.
+
+
 ## 0. P0 Blockers: Performance Optimization & Infrastructure
 
 - [ ] **Metal Initialization & AOT Shaders**
@@ -45,11 +55,12 @@ This document tracks the remaining tasks for hardening the Longbow storage engin
 
 ## 3. Performance Validation & Benchmarking
 
-- [ ] Execute the full 480-point benchmark suite (`local_bench.sh`) and analyze long-tail latencies.
+- [x] **Performance Recovery**: Resolved P0 regressions in Dense and Temporal searches (verified v0.2.0-rc2).
+- [/] **Full Matrix Execution**: Ongoing parallel execution on Local (M3) and Remote (ancalagon).
 - [ ] Conduct multi-node scalability tests for distributed search and ingestion.
 - [ ] Collect pprof profiling data on `ancalagon` for NUMA jitter analysis.
 
 ## 4. Documentation & Maintenance
 
-- [ ] Update `docs/performance.md` with latest benchmark results from the 0.2.0-rc2 release.
+- [/] Update `docs/performance.md` with latest benchmark results from the 0.2.0-rc2 release (Initial results added).
 - [ ] Update `docs/architecture.md` to reflect the new `pkg/retry` and `pkg/loadbalancing` protocols.

@@ -96,6 +96,10 @@ var (
 	initTableOnce sync.Once
 )
 
+func init() {
+	initDispatchTable()
+}
+
 func initDispatchTable() {
 	initTableOnce.Do(func() {
 		dispatchTable["avx512"] = &ImplementationDispatch{
@@ -196,12 +200,12 @@ func initDispatchTable() {
 			Sum: sumAVX2,
 			Max: maxAVX2,
 			Min: minAVX2,
-			MatMul: matMulGeneric,
-			Sin: sinFloat32Generic,
-			Cos: cosFloat32Generic,
-			Atan2: atan2Float32Generic,
-			ArgMax: argMaxGeneric,
-			ArgMin: argMinGeneric,
+			MatMul: matMulAVX2,
+			Sin: sinAVX2,
+			Cos: cosAVX2,
+			Atan2: atan2AVX2,
+			ArgMax: argMaxAVX2,
+			ArgMin: argMinAVX2,
 			ManhattanDistance: ManhattanDistanceFloat32,
 			ChebyshevDistance: ChebyshevDistanceFloat32,
 			BrayCurtisDistance: BrayCurtisDistanceFloat32,
@@ -252,17 +256,17 @@ func initDispatchTable() {
 			Sum: sumNEON,
 			Max: maxNEON,
 			Min: minNEON,
-			MatMul: matMulGeneric,
+			MatMul: matMulNEON,
 			Sin: sinFloat32Generic,
 			Cos: cosFloat32Generic,
 			Atan2: atan2Float32Generic,
-			ArgMax: argMaxGeneric,
-			ArgMin: argMinGeneric,
-			ManhattanDistance: ManhattanDistanceFloat32,
-			ChebyshevDistance: ChebyshevDistanceFloat32,
-			BrayCurtisDistance: BrayCurtisDistanceFloat32,
-			AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
-			BM25ScoreBatch: bm25ScoreBatchGeneric,
+			ArgMax: argMaxNEON,
+			ArgMin: argMinNEON,
+			ManhattanDistance: manhattanNEON,
+			ChebyshevDistance: chebyshevNEON,
+			BrayCurtisDistance: brayCurtisNEON,
+			AccumulateWeightedScatter: accumulateWeightedScatterNEON,
+			BM25ScoreBatch: bm25ScoreBatchArch,
 			HaversineBatch: haversineBatchGeneric,
 		}
 
@@ -323,6 +327,7 @@ func initDispatchTable() {
 		}
 	})
 }
+
 
 // Current dispatch - single pointer lookup instead of many
 var currentDispatch *ImplementationDispatch

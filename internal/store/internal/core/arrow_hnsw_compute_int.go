@@ -205,12 +205,7 @@ func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
 	if err == nil {
 		if v, ok := vecAny.([]int64); ok {
-			var sum float64
-			for i := range v {
-				diff := float64(c.q[i]) - float64(v[i])
-				sum += diff * diff
-			}
-			return float32(math.Sqrt(sum)), nil
+			return c.h.distFuncInt64(c.q, v)
 		}
 	}
 

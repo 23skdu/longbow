@@ -2,21 +2,45 @@
 
 Generated on: 2026-05-05
 
-## v0.2.0 GA Readiness - SIMD Hardening & Production Stability (2026-05-05)
+## v0.2.0-rc2 Release Candidate - Final Hardening (2026-05-05)
 
 > [!IMPORTANT]
-> **Production Hardening Milestone**: This update finalizes the SIMD storage engine by resolving all Go linter warnings, renaming stuttering types for idiomatic compliance, and achieving significant performance gains through optimized dispatcher logic.
+> **Performance Validation**: This update confirms that all P0 performance regressions in Dense and Temporal searches have been resolved. The current build significantly outperforms v0.1.9 targets across all critical search modes.
 
-### Performance Breakdown (dim=128, count=1000)
+### Search Performance Breakdown (dim=128, count=5000)
 
-| Metric | Previous (2026-05-02) | **Hardened (2026-05-05)** | Improvement |
-|--------|-----------------------|---------------------------|-------------|
-| **Ingestion (vec/s)** | ~645,005 | **~504,011** | Slightly lower (overhead) |
-| **Search Dense (QPS)** | 2,177 | **43,511** | **~20x FASTER** |
-| **Search Sparse (QPS)** | 13,794 | **48,975** | **~3.5x FASTER** |
-| **Search GraphRAG (QPS)** | 5,873 | **28,387** | **~4.8x FASTER** |
-| **Search Geo (QPS)** | 5,842 | **35,511** | **~6x FASTER** |
-| **Search Temporal (QPS)** | 5,391 | **31,110** | **~5.7x FASTER** |
+| Mode | Target (v0.1.9) | **Actual (v0.2.0-rc2)** | Platform | Status |
+|------|---------------|-------------------------|----------|--------|
+| **Dense Search** | > 20,000 QPS | **30,576 QPS** | Local CPU (M3) | **OK (+52%)** |
+| **Dense Search** | > 20,000 QPS | **29,268 QPS** | Local Metal (M3) | **OK (+46%)** |
+| **Dense Search** | > 20,000 QPS | **29,223 QPS** | Remote CPU (Ancalagon) | **OK (+46%)** |
+| **Dense Search** | > 20,000 QPS | **30,013 QPS** | Remote CUDA (Ancalagon)| **OK (+50%)** |
+| **Temporal Search** | > 12,000 QPS | **29,389 QPS** | Local CPU (M3) | **OK (+145%)** |
+| **Temporal Search** | > 12,000 QPS | **29,817 QPS** | Local Metal (M3) | **OK (+148%)** |
+| **Temporal Search** | > 12,000 QPS | **19,886 QPS** | Remote CPU (Ancalagon) | **OK (+65%)** |
+| **Temporal Search** | > 12,000 QPS | **20,096 QPS** | Remote CUDA (Ancalagon)| **OK (+67%)** |
+| **Sparse Search** | > 4,000 QPS | **59,400 QPS** | Local Metal (M3) | **OK (14x above)** |
+| **GraphRAG Search**| > 3,000 QPS | **47,960 QPS** | Local Metal (M3) | **OK (15x above)** |
+| **Geospatial** | > 5,000 QPS | **36,617 QPS** | Local Metal (M3) | **OK (+632%)** |
+
+### Latency Metrics (Local M3, dim=128, count=5000)
+
+| Search Mode | p50 (ms) | p95 (ms) | p99 (ms) |
+|-------------|----------|----------|----------|
+| Dense | 0.228 | 0.493 | 0.757 |
+| Sparse | 0.129 | 0.250 | 0.372 |
+| GraphRAG | 0.156 | 0.276 | 0.338 |
+| Temporal | 0.246 | 0.493 | 0.756 |
+| LearnedIndex| 2.039 | 2.731 | 2.821 |
+
+### Ingestion Performance (vec/s)
+
+| Platform | Mode | float32 (128d) | Target | Status |
+|----------|------|----------------|--------|--------|
+| Darwin arm64 | CPU | **459,418** | 150,000 | **OK (+206%)** |
+| Linux x86_64 | CPU | **371,689** | 150,000 | **OK (+147%)** |
+
+---
 
 ### Stability & Safety Improvements
 

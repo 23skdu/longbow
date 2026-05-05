@@ -25,6 +25,11 @@ func (e *PQEncoder) BuildADCTable(query []float32) ([]float32, error) {
 	subDim := e.SubDim
 	table := make([]float32, m*k)
 
+	kernel := simd.GetKernel[float32](simd.MetricEuclidean, subDim)
+	if kernel == nil {
+		kernel = simd.L2Squared
+	}
+
 	for i := 0; i < m; i++ {
 		start := i * subDim
 		end := start + subDim
@@ -39,7 +44,7 @@ func (e *PQEncoder) BuildADCTable(query []float32) ([]float32, error) {
 			cent := centroids[cStart:cEnd]
 
 			// Compute squared L2 distance between query subvector and centroid
-			dist, err := simd.L2Squared(querySub, cent)
+			dist, err := kernel(querySub, cent)
 			if err != nil {
 				return nil, err
 			}

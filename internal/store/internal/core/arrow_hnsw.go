@@ -310,21 +310,6 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		}
 	}
 
-	// Initialize distance functions using resolvers
-	h.distFunc = h.resolveDistanceFunc()
-	h.distFuncF64 = h.resolveDistanceFuncF64()
-	h.distFuncF16 = h.resolveDistanceFuncF16()
-	h.distFuncC64 = h.resolveDistanceFuncC64()
-	h.distFuncC128 = h.resolveDistanceFuncC128()
-	h.distFuncInt8 = h.resolveDistanceFuncInt8()
-	h.distFuncUint8 = h.resolveDistanceFuncUint8()
-	h.distFuncInt16 = h.resolveDistanceFuncInt16()
-	h.distFuncUint16 = h.resolveDistanceFuncUint16()
-	h.distFuncInt32 = h.resolveDistanceFuncInt32()
-	h.distFuncUint32 = h.resolveDistanceFuncUint32()
-	h.distFuncInt64 = h.resolveDistanceFuncInt64()
-	h.distFuncUint64 = h.resolveDistanceFuncUint64()
-
 	// Initialize atomic values
 	h.efConstruction.Store(int32(config.EfConstruction))
 	h.maxLevel.Store(-1)
@@ -333,6 +318,9 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		return nil
 	}
 	h.dims.Store(int32(config.Dims)) // #nosec G115
+
+	// Initialize distance functions using resolvers
+	h.resolveAllDistanceFuncs()
 
 	// Initialize quantization if enabled
 	if config.SQ8Enabled {
@@ -663,6 +651,7 @@ func (h *ArrowHNSW) SetDimension(dim int) error {
 	// This is critical if the index was initialized with 0 dims but large capacity (default config).
 	h.initMu.Lock()
 	defer h.initMu.Unlock()
+	h.resolveAllDistanceFuncs()
 	data := h.data.Load()
 	if data != nil {
 		if err := h.Grow(data.Capacity, dim); err != nil {

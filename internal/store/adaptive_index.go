@@ -100,6 +100,8 @@ type BruteForceIndex struct {
 	locations     []Location
 	dataset       *Dataset
 	activeReaders atomic.Int64 // Track active zero-copy readers
+	distFunc      simd.DistanceKernel[float32]
+	dims          int
 }
 
 // NewBruteForceIndex creates a new brute force index for the given dataset.
@@ -373,6 +375,16 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 	h := &bfSearchHeap{}
 	heap.Init(h)
 
+	dims := len(qF32)
+	if b.distFunc == nil || b.dims != dims {
+		b.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, dims)
+		if b.distFunc == nil {
+			b.distFunc = simd.EuclideanDistance
+		}
+		b.dims = dims
+	}
+	kernel := b.distFunc
+
 	for i, loc := range b.locations {
 		if i%1000 == 0 {
 			if err := ctx.Err(); err != nil {
@@ -385,7 +397,7 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 			continue
 		}
 
-		dist, err := simd.EuclideanDistance(qF32, vec)
+		dist, err := kernel(qF32, vec)
 		release()
 
 		if err != nil {
@@ -432,6 +444,16 @@ func (b *BruteForceIndex) SearchVectorsInRange(ctx context.Context, q any, thres
 		return nil, nil
 	}
 
+	dims := len(qF32)
+	if b.distFunc == nil || b.dims != dims {
+		b.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, dims)
+		if b.distFunc == nil {
+			b.distFunc = simd.EuclideanDistance
+		}
+		b.dims = dims
+	}
+	kernel := b.distFunc
+
 	var results []SearchResult
 	for i, loc := range b.locations {
 		if i%1000 == 0 {
@@ -445,7 +467,7 @@ func (b *BruteForceIndex) SearchVectorsInRange(ctx context.Context, q any, thres
 			continue
 		}
 
-		dist, _ := simd.EuclideanDistance(qF32, vec)
+		dist, _ := kernel(qF32, vec)
 		release()
 
 		if dist <= threshold {

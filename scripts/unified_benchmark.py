@@ -2098,65 +2098,70 @@ class BenchmarkRunner:
             print(f"Types: {dtypes}")
             print("=" * 80)
             
+            print("=" * 80)
+            
             self.results = [] # Clear results for each mode
             total = len(dims) * len(dtypes)
             current = 0
-        print(f"Duration per test: {self.args.duration}s")
-        print("=" * 80)
+            
+            print(f"Duration per test: {self.args.duration}s")
+            print("=" * 80)
 
-        for count in counts:
-            print(f"\n{'=' * 70}")
-            print(f"Vector Count: {count}")
-            print(f"{'=' * 70}")
+            for count in counts:
+                print(f"\n{'=' * 70}")
+                print(f"Vector Count: {count}")
+                print(f"{'=' * 70}")
 
-            for dtype in dtypes:
-                print(f"\n{'━' * 70}")
-                print(f"Data Type: {dtype} (Count: {count})")
-                print(f"{'━' * 70}")
+                for dtype in dtypes:
+                    print(f"\n{'━' * 70}")
+                    print(f"Data Type: {dtype} (Count: {count})")
+                    print(f"{'━' * 70}")
 
-                for dim in dims:
-                    current += 1
-                    current_port = 3000
-                    self.server_addr = f"127.0.0.1:{current_port}"
-                    
-                    label = f"{self.args.mode}_{dtype}_{dim}_{count}"
-                    print(
-                        f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count} port={current_port}"
-                    )
-
-                    # Start fresh server for this config
-                    if not self.start_server(label):
-                        print("  Failed to start server!")
-                        continue
-
-                    try:
-                        self.run_benchmark(dim, dtype, count, label)
+                    for dim in dims:
+                        current += 1
+                        current_port = self.args.port
+                        self.server_addr = f"127.0.0.1:{current_port}"
                         
-                        # Partial save for real-time monitoring
-                        with open(self.output_file, "w") as f:
-                            json.dump(
-                                {
-                                    "mode": self.args.mode,
-                                    "timestamp": self.timestamp,
-                                    "platform": f"{platform.system()} {platform.machine()}",
-                                    "config": {
-                                        "dims": dims,
-                                        "counts": counts,
-                                        "dtypes": dtypes,
-                                        "duration": self.args.duration,
+                        label = f"{mode}_{dtype}_{dim}_{count}"
+                        print(
+                            f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count} port={current_port}"
+                        )
+
+                        # Start fresh server for this config
+                        if not self.start_server(label):
+                            print("  Failed to start server!")
+                            continue
+
+                        try:
+                            self.run_benchmark(dim, dtype, count, label)
+                            
+                            # Partial save for real-time monitoring
+                            with open(self.output_file, "w") as f:
+                                json.dump(
+                                    {
+                                        "mode": mode,
+                                        "timestamp": self.timestamp,
+                                        "platform": f"{platform.system()} {platform.machine()}",
+                                        "config": {
+                                            "dims": dims,
+                                            "counts": counts,
+                                            "dtypes": dtypes,
+                                            "duration": self.args.duration,
+                                        },
+                                        "results": self.results,
                                     },
-                                    "results": self.results,
-                                },
-                                f,
-                                indent=2,
-                            )
-                        if self.args.pprof:
-                            self.collect_pprof(label)
-                    finally:
-                        self.stop_server()
-                        # Clean up data directory
-                        data_root = os.path.join(self.data_dir, label)
-                        subprocess.run(f"rm -rf {data_root}", shell=True)
+                                    f,
+                                    indent=2,
+                                )
+                            if self.args.pprof:
+                                self.collect_pprof(label)
+                        finally:
+                            self.stop_server()
+                            # Clean up data directory
+                            data_root = os.path.join(self.data_dir, label)
+                            subprocess.run(f"rm -rf {data_root}", shell=True)
+        
+        self.print_summary()
 
         # Save results
         with open(self.output_file, "w") as f:
@@ -2283,16 +2288,17 @@ class BenchmarkRunner:
         print("─" * 100)
 
         for r in self.results:
-            for s_type, s_data in r["search"].items():
+            search_results = r.get("search", {})
+            for s_type, s_data in search_results.items():
                 print(
-                    f"{r['dim']:<8} "
-                    f"{r['dtype']:<12} "
-                    f"{r['count']:<8} "
+                    f"{r.get('dim', 'N/A'):<8} "
+                    f"{r.get('dtype', 'N/A'):<12} "
+                    f"{r.get('count', 'N/A'):<8} "
                     f"{s_type:<15} "
-                    f"{s_data['qps']:<10.1f} "
-                    f"{s_data['p50']:<8.3f} "
-                    f"{s_data['p95']:<8.3f} "
-                    f"{s_data['p99']:<8.3f}"
+                    f"{s_data.get('qps', 0):<10.1f} "
+                    f"{s_data.get('p50', 0):<8.3f} "
+                    f"{s_data.get('p95', 0):<8.3f} "
+                    f"{s_data.get('p99', 0):<8.3f}"
                 )
         print("─" * 100)
 

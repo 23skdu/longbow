@@ -162,3 +162,82 @@ func (r *KernelRegistry) Get(metric MetricType, dt DataType, dims int) any {
 
 	return nil
 }
+
+// GetKernel resolves the best available kernel for a given metric, type, and dimension.
+// It returns a typed DistanceKernel that can be cached at the dataset level to avoid
+// recurring registry lookups and interface assertions on hot paths.
+func GetKernel[T any](metric MetricType, dims int) DistanceKernel[T] {
+	dt := GetDataType[T]()
+	kernel := Registry.Get(metric, dt, dims)
+	if kernel == nil {
+		return nil
+	}
+
+	// 1. Try direct match for generic kernel signature
+	if k, ok := kernel.(func([]T, []T) (float32, error)); ok {
+		return k
+	}
+
+	// 2. Try match for DistanceKernel[T]
+	if k, ok := kernel.(DistanceKernel[T]); ok {
+		return k
+	}
+
+	// 3. Handle standard specialized distance functions by casting through any
+	switch k := kernel.(type) {
+	case distanceFunc:
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	case distanceF16Func:
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	case distanceFloat64Func:
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	case distanceComplex64Func:
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	case distanceComplex128Func:
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	case func([]int8, []int8) (float32, error):
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	case func([]uint8, []uint8) (float32, error):
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	case func([]int16, []int16) (float32, error):
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	case func([]uint16, []uint16) (float32, error):
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	case func([]int32, []int32) (float32, error):
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	case func([]uint32, []uint32) (float32, error):
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	case func([]int64, []int64) (float32, error):
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	case func([]uint64, []uint64) (float32, error):
+		if f, ok := any(k).(func([]T, []T) (float32, error)); ok {
+			return f
+		}
+	}
+
+	return nil
+}

@@ -90,8 +90,9 @@ func (h *ArrowHNSW) adjustMParameter(data *types.GraphData, sampleSize int) {
 	// ID > 50: M = 32
 	// ID > 100: M = 48
 
-	newM := h.m
-	newMMax := h.mMax
+	currentM := h.m.Load()
+	newM := currentM
+	var newMMax int32
 
 	switch {
 	case idEst > 100:
@@ -103,19 +104,21 @@ func (h *ArrowHNSW) adjustMParameter(data *types.GraphData, sampleSize int) {
 	case idEst > 20:
 		newM = 24
 		newMMax = 48
+	default:
+		newMMax = int32(h.mMax.Load())
 	}
 
 	// Only adjust if increasing (usually safer for recall)
-	if newM > h.m {
-		h.m = newM
-		h.mMax = newMMax
-		h.mMax0 = newMMax * 2
+	if newM > currentM {
+		h.m.Store(newM)
+		h.mMax.Store(newMMax)
+		h.mMax0.Store(newMMax * 2)
 		// Recalculate levelMultiplier to match new M for proper level distribution
 		h.levelMultiplier = 1.0 / math.Log(float64(newM))
-		// Update config for visibility (though config is struct copy usually, h.config might be used elsewhere)
-		h.config.M = newM
-		h.config.MMax = newMMax
-		h.config.MMax0 = newMMax * 2
+		// Update config for visibility
+		h.config.M = int(newM)
+		h.config.MMax = int(newMMax)
+		h.config.MMax0 = int(newMMax * 2)
 
 		metrics.HNSWAdaptiveMValue.WithLabelValues("default").Set(float64(newM))
 		metrics.HNSWAdaptiveAdjustments.WithLabelValues("default").Inc()

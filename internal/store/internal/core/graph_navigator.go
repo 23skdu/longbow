@@ -32,6 +32,7 @@ type GraphNavigator struct {
 	cache         map[string]cachedResult
 	planner       *QueryPlanner
 	cacheMu       sync.RWMutex
+	distFunc      simd.DistanceKernel[float32]
 }
 
 type cachedResult struct {
@@ -155,6 +156,13 @@ func NewGraphNavigator(datasetName string, graphProvider func() *types.GraphData
 		cache:         make(map[string]cachedResult),
 		planner:       NewQueryPlanner(),
 	}
+}
+
+// SetDistanceKernel sets the distance function used for navigation.
+func (gn *GraphNavigator) SetDistanceKernel(k simd.DistanceKernel[float32]) {
+	gn.mu.Lock()
+	defer gn.mu.Unlock()
+	gn.distFunc = k
 }
 
 func (gn *GraphNavigator) Initialize() error {
@@ -348,7 +356,12 @@ func (gn *GraphNavigator) calculateDistance(node1, node2 uint32) float32 {
 	}
 
 	// Use SIMD optimization
-	dist, err := simd.DistFunc(v1, v2)
+	df := gn.distFunc
+	if df == nil {
+		df = simd.DistanceKernel[float32](simd.DistFunc)
+	}
+	
+	dist, err := df(v1, v2)
 	if err != nil {
 		return math.MaxFloat32
 	}

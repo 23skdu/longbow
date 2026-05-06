@@ -82,18 +82,18 @@ func (h *ArrowHNSW) promoteNodeLocked(data *types.GraphData, id uint32) *types.G
 		}
 
 		// Copy neighbors to chunk
-		limit := h.mMax
+		limit := h.mMax.Load()
 		if l == 0 {
-			limit = h.mMax0
+			limit = h.mMax0.Load()
 		}
 		
 		start := int(cOff) * types.MaxNeighbors
 		for i, nID := range diskNeighbors {
-			if i < limit {
+			if i < int(limit) {
 				neighborsChunk[start+i] = nID
 			}
 		}
-		atomic.StoreInt32(&countsChunk[cOff], int32(min(len(diskNeighbors), limit))) // #nosec G115
+		atomic.StoreInt32(&countsChunk[cOff], int32(min(len(diskNeighbors), int(limit)))) // #nosec G115
 	}
 
 	// Publish the newly consistent data structure using CAS

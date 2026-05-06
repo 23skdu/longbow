@@ -1,20 +1,27 @@
 #!/bin/bash
+# scripts/compile_metal.sh - AOT compile Metal shaders to .metallib
+
 set -e
 
-# Path to the kernels source and output library
-SRC="internal/gpu/metal/kernels.metal"
-LIB="internal/gpu/metal/kernels.metallib"
-AIR="internal/gpu/metal/kernels.air"
+METAL_DIR="internal/gpu/metal"
+SOURCE="${METAL_DIR}/kernels.metal"
+OUTPUT="${METAL_DIR}/kernels.metallib"
 
-echo "Compiling Metal kernels: $SRC -> $LIB"
+if [ ! -f "$SOURCE" ]; then
+    echo "Error: Metal source not found at $SOURCE"
+    exit 1
+fi
 
-# 1. Compile to AIR (Apple Intermediate Representation)
-xcrun -sdk macosx metal -c "$SRC" -o "$AIR"
+echo "Compiling Metal shaders for macOS ARM64..."
 
-# 2. Compile to Metal Library
-xcrun -sdk macosx metallib "$AIR" -o "$LIB"
+# 1. Compile to bitcode (.air)
+xcrun -sdk macosx metal -c "$SOURCE" -o "${METAL_DIR}/kernels.air"
 
-# 3. Cleanup
-rm "$AIR"
+# 2. Link to library (.metallib)
+xcrun -sdk macosx metallib "${METAL_DIR}/kernels.air" -o "$OUTPUT"
 
-echo "Successfully compiled $LIB"
+# 3. Clean up intermediate files
+rm "${METAL_DIR}/kernels.air"
+
+echo "Successfully generated $OUTPUT"
+ls -lh "$OUTPUT"

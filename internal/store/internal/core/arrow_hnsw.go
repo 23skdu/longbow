@@ -52,9 +52,9 @@ type ArrowHNSW struct {
 	maxLevel       atomic.Int32
 	efConstruction atomic.Int32
 
-	m     int
-	mMax  int
-	mMax0 int
+	m     atomic.Int32
+	mMax  atomic.Int32
+	mMax0 atomic.Int32
 
 	// Mutexes for thread-safe concurrent writes (sharded to 1024 to reduce contention)
 	insertMus [ShardedLockCount]types.PaddedMutex
@@ -270,9 +270,9 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	h := &ArrowHNSW{
 		config:          config,
 		dataset:         dataset,
-		m:               config.M,
-		mMax:            config.MMax,
-		mMax0:           config.MMax0,
+		m:               atomic.Int32{},
+		mMax:            atomic.Int32{},
+		mMax0:           atomic.Int32{},
 		searchPool:      NewArrowSearchContextPool(),
 		insertPool:     NewInsertContextPool(), // Issue 2: Pool metrics
 		candidatePool: sync.Pool{
@@ -287,6 +287,20 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		topLayerManager: NewTopLayerManager(config.LockFreeThreshold),
 		topo:            topo,
 	}
+	// Ensure config parameters fit in int32 and are valid for HNSW
+	if config.M > math.MaxInt32 || config.M <= 1 {
+		config.M = 16 // Default safe value
+	}
+	if config.MMax > math.MaxInt32 || config.MMax <= 0 {
+		config.MMax = config.M * 2
+	}
+	if config.MMax0 > math.MaxInt32 || config.MMax0 <= 0 {
+		config.MMax0 = config.M * 2
+	}
+
+	h.m.Store(int32(config.M))     // #nosec G115
+	h.mMax.Store(int32(config.MMax))   // #nosec G115
+	h.mMax0.Store(int32(config.MMax0)) // #nosec G115
 	// Initialize metadata cache to -1 to avoid defaulting to column 0
 	h.metadata.vecColIdx.Store(-1)
 	h.metadata.tqBits.Store(-1)
@@ -312,7 +326,10 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	}
 
 	// Initialize atomic values
-	h.efConstruction.Store(int32(config.EfConstruction))
+	if config.EfConstruction <= 0 {
+		config.EfConstruction = 200
+	}
+	h.efConstruction.Store(int32(config.EfConstruction)) // #nosec G115
 	h.maxLevel.Store(-1)
 	if config.Dims > math.MaxInt32 {
 		fmt.Printf("Error: dimensions %d exceed MaxInt32, returning nil index\n", config.Dims)
@@ -358,16 +375,16 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 			dt == types.VectorTypeComplex64 ||
 			dt == types.VectorTypeComplex128 ||
 			dt == types.VectorTypeTQ) {
-		if h.m < 24 {
-			h.m = 24
+		if h.m.Load() < 24 {
+			h.m.Store(24)
 		}
-		if h.mMax < h.m*2 {
-			h.mMax = h.m * 2
+		if h.mMax.Load() < int32(h.m.Load()*2) {
+			h.mMax.Store(int32(h.m.Load() * 2)) // #nosec G115
 		}
-		if h.mMax0 < h.m*2 {
-			h.mMax0 = h.m * 2
+		if h.mMax0.Load() < int32(h.m.Load()*2) {
+			h.mMax0.Store(int32(h.m.Load() * 2)) // #nosec G115
 		}
-		h.levelMultiplier = 1.0 / math.Log(float64(h.m))
+		h.levelMultiplier = 1.0 / math.Log(float64(h.m.Load()))
 	}
 
 	// Initialize types.GraphData
@@ -493,17 +510,17 @@ func (h *ArrowHNSW) GetConfig() types.ArrowHNSWConfig {
 
 // GetM returns the M parameter (connections per layer)
 func (h *ArrowHNSW) GetM() int {
-	return h.m
+	return int(h.m.Load())
 }
 
 // GetMMax returns the MMax parameter (max connections)
 func (h *ArrowHNSW) GetMMax() int {
-	return h.mMax
+	return int(h.mMax.Load())
 }
 
 // GetMMax0 returns the MMax0 parameter (max connections in layer 0)
 func (h *ArrowHNSW) GetMMax0() int {
-	return h.mMax0
+	return int(h.mMax0.Load())
 }
 
 // GetEfConstruction returns the efConstruction parameter
@@ -1334,11 +1351,11 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 			}
 		case []complex64:
 			if v, ok := vec.([]complex64); ok {
-				dist, err = simd.EuclideanDistanceComplex64(q, v)
+				dist, err = h.distFuncC64(q, v)
 			}
 		case []complex128:
 			if v, ok := vec.([]complex128); ok {
-				dist, err = simd.EuclideanDistanceComplex128(q, v)
+				dist, err = h.distFuncC128(q, v)
 			}
 		case []int8:
 			if v, ok := vec.([]int8); ok {
@@ -2448,7 +2465,7 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 
 	vectorMemory := int64(nodeCount) * vecBytesPer
 
-	m := h.m
+	m := h.m.Load()
 	if m == 0 {
 		m = 32
 	}
@@ -3345,7 +3362,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		// Explore neighbors
 		neighbors := h.GetNeighborsCombinedCached(layer, curr.ID, disk)
 
-		prefetchLimit := h.mMax
+		prefetchLimit := h.mMax.Load()
 		if prefetchLimit > 64 {
 			prefetchLimit = 64
 		}
@@ -3353,7 +3370,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			prefetchLimit = 16
 		}
 		maxCommitted := h.nodeCount.Load()
-		for i := 0; i < len(neighbors) && i < prefetchLimit; i++ {
+		for i := 0; i < len(neighbors) && i < int(prefetchLimit); i++ {
 			nID := neighbors[i]
 			if int64(nID) >= maxCommitted {
 				continue
@@ -4487,7 +4504,7 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 		// Unsafe cast to []float32
 		vf := unsafe.Slice((*float32)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
-		return simd.EuclideanDistance(c.q, vf)
+		return c.h.distFunc(c.q, vf)
 	case []complex128:
 		// Treats complex128 as flattened []float64, but query is float32
 		if len(c.q) != len(v)*2 {

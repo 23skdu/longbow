@@ -316,16 +316,16 @@ func (h *ArrowHNSW) insertWithGPUCandidates(id uint32, vec any, level int, gpuCa
 				return err
 			}
 
-			m := h.m
+			m := int(h.m.Load())
 			if l == 0 {
-				m = h.mMax0
+				m = int(h.mMax0.Load())
 			}
 			selected := selectNeighborsSimple(neighbors, m)
 
 			searchCtx := h.searchPool.Get()
-			maxConn := h.mMax
+			maxConn := int(h.mMax.Load())
 			if l == 0 {
-				maxConn = h.mMax0
+				maxConn = int(h.mMax0.Load())
 			}
 
 			for _, n := range selected {

@@ -103,7 +103,13 @@ func BeamSearchOptimized(
 		return results
 	}
 
-	firstDist, _ := simd.EuclideanDistance(query, firstVec)
+	dims := len(query)
+	kernel := simd.GetKernel[float32](simd.MetricEuclidean, dims)
+	if kernel == nil {
+		kernel = simd.EuclideanDistance
+	}
+
+	firstDist, _ := kernel(query, firstVec)
 	heap.Push(candidates, BeamSearchCandidate{ID: 0, Dist: firstDist, Layer: 0})
 	visited[0] = true
 
@@ -139,7 +145,7 @@ func BeamSearchOptimized(
 			}
 			visited[i] = true
 
-			dist, err := simd.EuclideanDistance(query, vectors[i])
+			dist, err := kernel(query, vectors[i])
 			if err != nil {
 				continue
 			}

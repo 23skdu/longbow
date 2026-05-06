@@ -5,16 +5,18 @@ package memory
 // NUMATopology represents the NUMA topology of the system.
 // On non-Linux systems, this always returns a single-node topology.
 type NUMATopology struct {
-	NumNodes int
-	CPUs     [][]int
+	NumNodes     int
+	CPUs         [][]int
+	PhysicalCPUs [][]int
 }
 
 // DetectNUMATopology returns a single-node topology on non-Linux systems.
 // macOS (M-series) and most non-server systems don't have NUMA.
 func DetectNUMATopology() (*NUMATopology, error) {
 	return &NUMATopology{
-		NumNodes: 1,
-		CPUs:     [][]int{{0}}, // Single node with at least one CPU
+		NumNodes:     1,
+		CPUs:         [][]int{{0}}, // Single node with at least one CPU
+		PhysicalCPUs: [][]int{{0}},
 	}, nil
 }
 

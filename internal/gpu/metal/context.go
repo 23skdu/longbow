@@ -71,10 +71,22 @@ void* create_pipeline_state(MetalContextHandle* handle, void* function) {
 */
 import "C"
 
-type MetalContext struct {
-	handle    *C.MetalContextHandle
+type ShaderCache struct {
 	mu        sync.RWMutex
+	functions map[string]unsafe.Pointer
 	pipelines map[string]unsafe.Pointer
+}
+
+func NewShaderCache() *ShaderCache {
+	return &ShaderCache{
+		functions: make(map[string]unsafe.Pointer),
+		pipelines: make(map[string]unsafe.Pointer),
+	}
+}
+
+type MetalContext struct {
+	handle *C.MetalContextHandle
+	cache  *ShaderCache
 }
 
 var (
@@ -93,8 +105,8 @@ func InitGlobalContext(libData []byte) error {
 			return
 		}
 		globalContext = &MetalContext{
-			handle:    handle,
-			pipelines: make(map[string]unsafe.Pointer),
+			handle: handle,
+			cache:  NewShaderCache(),
 		}
 	})
 	return err
@@ -113,35 +125,41 @@ func (c *MetalContext) GetCommandQueue() unsafe.Pointer {
 }
 
 func (c *MetalContext) GetPipelineState(kernelName string) (unsafe.Pointer, error) {
-	c.mu.RLock()
-	if p, ok := c.pipelines[kernelName]; ok {
-		c.mu.RUnlock()
+	c.cache.mu.RLock()
+	if p, ok := c.cache.pipelines[kernelName]; ok {
+		c.cache.mu.RUnlock()
 		return p, nil
 	}
-	c.mu.RUnlock()
+	c.cache.mu.RUnlock()
 
-	c.mu.Lock()
-	defer c.mu.Unlock()
+	c.cache.mu.Lock()
+	defer c.cache.mu.Unlock()
 
 	// Double check
-	if p, ok := c.pipelines[kernelName]; ok {
+	if p, ok := c.cache.pipelines[kernelName]; ok {
 		return p, nil
 	}
 
 	cKernelName := C.CString(kernelName)
 	defer C.free(unsafe.Pointer(cKernelName))
 
-	fn := C.get_metal_function(c.handle, cKernelName)
-	if fn == nil {
-		return nil, fmt.Errorf("kernel %s not found in library", kernelName)
+	// Check function cache first
+	var fn unsafe.Pointer
+	if f, ok := c.cache.functions[kernelName]; ok {
+		fn = f
+	} else {
+		fn = C.get_metal_function(c.handle, cKernelName)
+		if fn == nil {
+			return nil, fmt.Errorf("kernel %s not found in library", kernelName)
+		}
+		c.cache.functions[kernelName] = fn
 	}
-	defer C.CFRelease(C.CFTypeRef(fn))
 
 	pipeline := C.create_pipeline_state(c.handle, fn)
 	if pipeline == nil {
 		return nil, fmt.Errorf("failed to create pipeline for %s", kernelName)
 	}
 
-	c.pipelines[kernelName] = pipeline
+	c.cache.pipelines[kernelName] = pipeline
 	return pipeline, nil
 }

@@ -195,6 +195,9 @@ type VectorStore struct {
 
 	// Quantization auto-tuner (v0.1.9)
 	quantTuner *QuantizationTuner
+
+	// Learned index rate limiter
+	rateLimiter *LearnedIndexRateLimiter
 }
 
 // IngestionJob represents a unit of work for the ingestion pipeline, containing a record batch and timestamp.
@@ -278,19 +281,27 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	vs.replicator = NewPeerReplicator(DefaultReplicatorConfig())
 	_ = vs.replicator.Start()
  
-	// Initialize and start the Adaptive Learned Index Adapter (v0.1.9)
-	if vs.indexPredictor != nil {
-		adaptConfig := IndexAdaptationConfig{
-			EnableRollback:     true,
-			RollbackWindow:     30 * time.Minute,
-			LatencyThresholdMs: 200.0,
-			RecallThreshold:    0.90,
-			CheckInterval:      5 * time.Minute,
-		}
-		vs.indexAdapter = NewRuntimeIndexAdapter(vs.logger, vs.indexPredictor, adaptConfig, vs)
-		vs.indexAdapter.WithIndexSwitcher(vs)
-		vs.indexAdapter.Start()
+	// Initialize Learned Index Predictor (Part 16/v0.1.9)
+	predictorCfg := LearnedIndexConfig{
+		EnableAutoSelection: true,
+		MinTrainingSamples:  100,
+		ConfidenceThreshold: 0.7,
+		UpdateInterval:      time.Hour,
 	}
+	vs.indexPredictor = NewIndexPerformancePredictor(vs.logger, predictorCfg)
+	vs.rateLimiter = NewLearnedIndexRateLimiter(vs.indexPredictor, vs.logger)
+
+	// Initialize and start the Adaptive Learned Index Adapter
+	adaptConfig := IndexAdaptationConfig{
+		EnableRollback:     true,
+		RollbackWindow:     30 * time.Minute,
+		LatencyThresholdMs: 200.0,
+		RecallThreshold:    0.90,
+		CheckInterval:      5 * time.Minute,
+	}
+	vs.indexAdapter = NewRuntimeIndexAdapter(vs.logger, vs.indexPredictor, adaptConfig, vs)
+	vs.indexAdapter.WithIndexSwitcher(vs)
+	vs.indexAdapter.Start()
  
 	// Initialize Flight client pool for distributed coordination
 	vs.pool = NewFlightClientPool(DefaultFlightClientPoolConfig())

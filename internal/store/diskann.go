@@ -34,6 +34,7 @@ type DiskANNIndex struct {
 	graph     map[uint64][]uint64 // Vamana graph: node -> neighbors
 	config    *DiskANNConfig
 	built     bool
+	distFunc  simd.DistanceKernel[float32]
 }
 
 // NewDiskANNIndex creates a new DiskANN index
@@ -154,6 +155,7 @@ func (idx *DiskANNIndex) Build() error {
 	}
 
 	idx.built = true
+	idx.ensureKernel()
 	return nil
 }
 
@@ -170,7 +172,7 @@ func (idx *DiskANNIndex) buildNodeNeighbors(nodeID uint64) {
 		if otherID == nodeID {
 			continue
 		}
-		dist, _ := simd.L2Squared(vector, otherVec)
+		dist, _ := idx.getDistFunc()(vector, otherVec)
 		candidates = append(candidates, struct {
 			id       uint64
 			distance float32
@@ -209,7 +211,7 @@ func (idx *DiskANNIndex) insertIntoGraph(newID uint64, vector []float32) {
 		if id == newID {
 			continue
 		}
-		dist, _ := simd.L2Squared(vector, vec)
+		dist, _ := idx.getDistFunc()(vector, vec)
 		candidates = append(candidates, candidate{id: id, distance: dist})
 	}
 
@@ -277,7 +279,7 @@ func (idx *DiskANNIndex) Search(query []float32, k int) ([]IndexSearchResult, er
 	}
 
 	visitedSet := make(map[uint64]bool)
-	startDist, _ := simd.L2Squared(query, idx.vectors[startNode])
+	startDist, _ := idx.getDistFunc()(query, idx.vectors[startNode])
 	candidates := []visited{
 		{id: startNode, distance: startDist},
 	}
@@ -309,7 +311,7 @@ func (idx *DiskANNIndex) Search(query []float32, k int) ([]IndexSearchResult, er
 				continue
 			}
 			visitedSet[neighborID] = true
-			dist, _ := simd.L2Squared(query, idx.vectors[neighborID])
+			dist, _ := idx.getDistFunc()(query, idx.vectors[neighborID])
 			candidates = append(candidates, visited{id: neighborID, distance: dist})
 		}
 
@@ -631,4 +633,19 @@ func (idx *DiskANNIndex) Len() int {
 // GetIndexType returns the string identifier for the index type.
 func (idx *DiskANNIndex) GetIndexType() string {
 	return string(idx.Type())
+}
+
+func (idx *DiskANNIndex) ensureKernel() {
+	if idx.distFunc != nil {
+		return
+	}
+	idx.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, idx.dimension)
+	if idx.distFunc == nil {
+		idx.distFunc = simd.L2Squared
+	}
+}
+
+func (idx *DiskANNIndex) getDistFunc() simd.DistanceKernel[float32] {
+	idx.ensureKernel()
+	return idx.distFunc
 }

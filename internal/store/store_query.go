@@ -743,6 +743,13 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 		}()
 	}
 
+	// 0. Learned Index Rate Limiting (Phase 16)
+	if s.rateLimiter != nil {
+		if err := s.rateLimiter.Wait(stream.Context()); err != nil {
+			return status.Errorf(codes.Aborted, "rate limit wait failed: %v", err)
+		}
+	}
+
 	// 1. Validate Request
 	if req.K < 1 {
 		return status.Error(codes.InvalidArgument, "k must be at least 1")

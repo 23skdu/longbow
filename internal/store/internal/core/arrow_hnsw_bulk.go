@@ -616,11 +616,11 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 						continue
 					}
 
-					m := h.m
-					maxConn := h.mMax
+					m := h.m.Load()
+					maxConn := h.mMax.Load()
 					if lc == 0 {
-						m = h.m * 2
-						maxConn = h.mMax0
+						m = h.m.Load() * 2
+						maxConn = h.mMax0.Load()
 					}
 					if m > maxConn {
 						m = maxConn
@@ -635,7 +635,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					ctxPrune := h.searchPool.Get()
 					ctxPrune.Reset()
 
-					neighbors := h.selectNeighbors(ctxPrune, candidates, m, data)
+					neighbors := h.selectNeighbors(ctxPrune, candidates, int(m), data)
 					if len(neighbors) == 0 {
 						h.searchPool.PutWithMetrics(ctxPrune, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 						continue
@@ -648,10 +648,10 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 						fDists = append(fDists, n.Dist)
 					}
 					
-					_ = h.AddConnectionsBatch(ctxPrune, data, node.id, fSources, fDists, lc, maxConn)
+					_ = h.AddConnectionsBatch(ctxPrune, data, node.id, fSources, fDists, lc, int(maxConn))
 
 					for _, neighbor := range neighbors {
-						_ = h.AddConnectionsBatch(ctxPrune, data, neighbor.ID, []uint32{node.id}, []float32{neighbor.Dist}, lc, maxConn)
+						_ = h.AddConnectionsBatch(ctxPrune, data, neighbor.ID, []uint32{node.id}, []float32{neighbor.Dist}, lc, int(maxConn))
 					}
 
 					h.searchPool.PutWithMetrics(ctxPrune, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))

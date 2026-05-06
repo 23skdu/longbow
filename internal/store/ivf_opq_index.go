@@ -13,6 +13,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -49,6 +50,8 @@ type IVFOPQIndex struct {
 
 	nextID uint32
 	mu     sync.RWMutex
+
+	distFunc simd.DistanceKernel[float32]
 }
 
 // NewIVFOPQIndex creates a new IVF-OPQ index with the specified dimensions and configuration.
@@ -171,6 +174,12 @@ func (idx *IVFOPQIndex) Train(vectors [][]float32) error {
 	// Record OPQ encoder warmup duration as a custom metric
 	metrics.OPQEncoderWarmupDurationSeconds.WithLabelValues("ivf-opq").Observe(time.Since(warmupStart).Seconds())
 
+	// Resolve kernel
+	idx.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, idx.dim)
+	if idx.distFunc == nil {
+		idx.distFunc = simd.L2Squared
+	}
+
 	metrics.VQTrainingDurationSeconds.WithLabelValues("ivf-opq").Observe(time.Since(start).Seconds())
 	return nil
 }
@@ -192,11 +201,7 @@ func (idx *IVFOPQIndex) Add(ctx context.Context, vectors [][]float32) error {
 			minDist := float32(math.MaxFloat32)
 			for c := 0; c < idx.config.Nlist; c++ {
 				cent := idx.coarseCentroids[c*idx.dim : (c+1)*idx.dim]
-				var dist float32
-				for i := 0; i < idx.dim; i++ {
-					diff := vec[i] - cent[i]
-					dist += diff * diff
-				}
+				dist, _ := idx.getDistFunc()(vec, cent)
 				if dist < minDist {
 					minDist = dist
 					bestCluster = c
@@ -272,12 +277,8 @@ func (idx *IVFOPQIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k in
 		dists = make([]clusterDist, idx.config.Nlist)
 		for c := 0; c < idx.config.Nlist; c++ {
 			cent := idx.coarseCentroids[c*idx.dim : (c+1)*idx.dim]
-			var d float32
-			for i := 0; i < idx.dim; i++ {
-				diff := queryVec[i] - cent[i]
-				d += diff * diff
-			}
-			dists[c] = clusterDist{id: c, dist: d}
+			dist, _ := idx.getDistFunc()(queryVec, cent)
+			dists[c] = clusterDist{id: c, dist: dist}
 		}
 		sort.Slice(dists, func(i, j int) bool { return dists[i].dist < dists[j].dist })
 	}
@@ -694,19 +695,27 @@ func makeClusterDists(qv []float32, centroids []float32, nlist, dim int) []clust
 	dists := make([]clusterDist, nlist)
 	for i := 0; i < nlist; i++ {
 		cent := centroids[i*dim : (i+1)*dim]
-		dist := euclideanDist(qv, cent, dim)
+		dist := euclideanDist(qv, cent)
 		dists[i] = clusterDist{id: i, dist: dist}
 	}
 	return dists
 }
 
-func euclideanDist(a, b []float32, dim int) float32 {
-	var sum float32
-	for i := 0; i < dim; i++ {
-		diff := a[i] - b[i]
-		sum += diff * diff
+func (idx *IVFOPQIndex) getDistFunc() simd.DistanceKernel[float32] {
+	if idx.distFunc != nil {
+		return idx.distFunc
 	}
-	return sum
+	idx.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, idx.dim)
+	if idx.distFunc == nil {
+		idx.distFunc = simd.L2Squared
+	}
+	return idx.distFunc
+}
+
+func euclideanDist(a, b []float32) float32 {
+	// Note: generic implementation used for SearchBatch helper, but could use global kernel
+	d, _ := simd.EuclideanDistance(a, b)
+	return d
 }
 
 func (idx *IVFOPQIndex) decodeVector(id int) ([]float32, error) {
@@ -803,7 +812,7 @@ func (idx *IVFOPQIndex) computeResidualScore(queryIdx int, vec []float32) float3
 		residual[i] = vec[i] - centroid[i]
 	}
 
-	dist := euclideanDist(residual, make([]float32, idx.dim), idx.dim)
+	dist := euclideanDist(residual, make([]float32, idx.dim))
 	return dist
 }
 

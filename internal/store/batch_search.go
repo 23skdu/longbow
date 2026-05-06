@@ -168,6 +168,17 @@ func ComputeBatchDistancesSIMD(queries [][]float32, vectors [][]float32, k int) 
 	}
 
 	numVectors := len(vectors)
+	dims := 0
+	if numVectors > 0 {
+		dims = len(vectors[0])
+	} else if len(queries) > 0 {
+		dims = len(queries[0])
+	}
+
+	kernel := simd.GetKernel[float32](simd.MetricEuclidean, dims)
+	if kernel == nil {
+		kernel = simd.EuclideanDistance
+	}
 
 	chunkSize := 64
 	for start := 0; start < numVectors; start += chunkSize {
@@ -178,7 +189,7 @@ func ComputeBatchDistancesSIMD(queries [][]float32, vectors [][]float32, k int) 
 
 		for qIdx, query := range queries {
 			for vIdx := start; vIdx < end; vIdx++ {
-				dist, err := simd.EuclideanDistance(query, vectors[vIdx])
+				dist, err := kernel(query, vectors[vIdx])
 				if err != nil {
 					dist = 1e10
 				}

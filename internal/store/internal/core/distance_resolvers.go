@@ -35,6 +35,11 @@ func (h *ArrowHNSW) resolveAllDistanceFuncs() {
 	h.distFuncUint32 = h.resolveDistanceFuncUint32()
 	h.distFuncInt64 = h.resolveDistanceFuncInt64()
 	h.distFuncUint64 = h.resolveDistanceFuncUint64()
+	
+	// Sync with navigator
+	if h.navigator != nil {
+		h.navigator.SetDistanceKernel(h.distFunc)
+	}
 }
 
 // resolveDistanceFunc returns the appropriate distance function for float32 vectors.

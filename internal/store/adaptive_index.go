@@ -163,6 +163,16 @@ func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k 
 	h := &bfSearchHeap{}
 	heap.Init(h)
 
+	dims := len(qF32)
+	if b.distFunc == nil || b.dims != dims {
+		b.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, dims)
+		if b.distFunc == nil {
+			b.distFunc = simd.EuclideanDistance
+		}
+		b.dims = dims
+	}
+	kernel := b.distFunc
+
 	for i, loc := range b.locations {
 		if i%1000 == 0 {
 			if err := ctx.Err(); err != nil {
@@ -180,7 +190,7 @@ func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k 
 			continue
 		}
 
-		dist, err := simd.EuclideanDistance(qF32, vec)
+		dist, err := kernel(qF32, vec)
 		release()
 
 		if err != nil {

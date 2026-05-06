@@ -172,13 +172,13 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				}
 
 				// Select Best M
-				limitM := h.m
+				limitM := int(h.m.Load())
 				if lvl == 0 {
-					limitM = h.m * 2
+					limitM = int(h.m.Load()) * 2
 				}
-				maxConn := h.mMax
+				maxConn := int(h.mMax.Load())
 				if lvl == 0 {
-					maxConn = h.mMax0
+					maxConn = int(h.mMax0.Load())
 				}
 
 				var candList []types.Candidate

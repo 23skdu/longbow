@@ -11,6 +11,7 @@ import (
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"io"
 )
@@ -71,6 +72,8 @@ type IVFPQIndex struct {
 	dim    int
 	nextID uint32
 	mu     sync.RWMutex
+
+	distFunc simd.DistanceKernel[float32]
 }
 
 // NewIVFPQIndex creates a new IVF-PQ index with the specified dimensions and configuration.
@@ -132,6 +135,12 @@ func (idx *IVFPQIndex) Train(vectors [][]float32) error {
 		return err
 	}
 
+	// Resolve kernel
+	idx.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, idx.dim)
+	if idx.distFunc == nil {
+		idx.distFunc = simd.L2Squared
+	}
+
 	return nil
 }
 
@@ -190,7 +199,7 @@ func (idx *IVFPQIndex) assignToCluster(vec []float32) int {
 
 	for c := 0; c < idx.config.Nlist; c++ {
 		cent := idx.coarseCentroids[c*idx.dim : (c+1)*idx.dim]
-		dist := idx.l2Squared(vec, cent)
+		dist, _ := idx.getDistFunc()(vec, cent)
 		if dist < bestDist {
 			bestDist = dist
 			bestCluster = c
@@ -200,15 +209,17 @@ func (idx *IVFPQIndex) assignToCluster(vec []float32) int {
 	return bestCluster
 }
 
-// l2Squared computes L2 squared distance between two vectors
-func (idx *IVFPQIndex) l2Squared(a, b []float32) float32 {
-	var sum float32
-	for i := 0; i < len(a); i++ {
-		diff := a[i] - b[i]
-		sum += diff * diff
+func (idx *IVFPQIndex) getDistFunc() simd.DistanceKernel[float32] {
+	if idx.distFunc != nil {
+		return idx.distFunc
 	}
-	return sum
+	idx.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, idx.dim)
+	if idx.distFunc == nil {
+		idx.distFunc = simd.L2Squared
+	}
+	return idx.distFunc
 }
+
 
 // IVFPQSearchResult holds a single search result with its ID and distance.
 type IVFPQSearchResult struct {
@@ -292,7 +303,8 @@ func (idx *IVFPQIndex) findNearestClusters(queryVec []float32) []int {
 	dists := make([]clusterDist, idx.config.Nlist)
 	for c := 0; c < idx.config.Nlist; c++ {
 		cent := idx.coarseCentroids[c*idx.dim : (c+1)*idx.dim]
-		dists[c] = clusterDist{id: c, dist: idx.l2Squared(queryVec, cent)}
+		dist, _ := idx.getDistFunc()(queryVec, cent)
+		dists[c] = clusterDist{id: c, dist: dist}
 	}
 
 	// Sort by distance

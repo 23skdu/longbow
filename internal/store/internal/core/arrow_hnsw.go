@@ -218,13 +218,9 @@ func (h *ArrowHNSW) getVectorWithData(data *types.GraphData, id uint32) (any, er
 }
 
 func (h *ArrowHNSW) getVectorWithCachedDisk(data *types.GraphData, dg *DiskGraph, id uint32) (any, error) {
-	v, err := data.GetVector(id)
+	v, _ := data.GetVector(id)
 	if v != nil {
 		return v, nil
-	}
-	if err != nil {
-		fmt.Printf("DEBUG: data.GetVector(%d) returned error: %v\n", id, err)
-		return nil, err
 	}
 
 	// Fallback to DiskGraph
@@ -291,6 +287,11 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		topLayerManager: NewTopLayerManager(config.LockFreeThreshold),
 		topo:            topo,
 	}
+	// Initialize metadata cache to -1 to avoid defaulting to column 0
+	h.metadata.vecColIdx.Store(-1)
+	h.metadata.tqBits.Store(-1)
+	h.metadata.metric.Store(-1)
+	h.metadata.vecType.Store(-1)
 
 	if h.topLayerManager.threshold == 0 {
 		h.topLayerManager.threshold = 2 // Default to layer 2+
@@ -1426,8 +1427,6 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	var ok bool
 	if qv, ok = queryVec.([]float32); !ok {
 		// Fallback to non-retry path if not float32 (unlikely for this path)
-		nbs := h.GetNeighborsCombinedCached(0, currObj.ID, searchCtx.diskGraph)
-		fmt.Printf("DEBUG: EP %d neighbors: %v\n", currObj.ID, nbs)
 		res, err := h.searchLayer(ctx, computer, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
 		if err != nil {
 			return nil, err
@@ -1849,7 +1848,7 @@ func (h *ArrowHNSW) EnsureChunks(startCID, endCID int, dims int) (*types.GraphDa
 
 	needsGrow := false
 	for i := startCID; i <= endCID; i++ {
-		if data.GetVectorsChunk(types.ChunkID(uint32(i))) == nil { // #nosec G115
+		if data.NeedsChunk(i) {
 			needsGrow = true
 			break
 		}
@@ -1862,11 +1861,15 @@ func (h *ArrowHNSW) EnsureChunks(startCID, endCID int, dims int) (*types.GraphDa
 	// COW Clone
 	newData := data.Clone()
 	for i := startCID; i <= endCID; i++ {
-		if err := newData.EnsureChunk(int(types.ChunkID(uint32(i))), 0, dims); err != nil { // #nosec G115
-			return nil, err
+		// Crucial: Pre-ensure chunks for ALL possible HNSW layers to avoid concurrent
+		// slice appends during parallel ingestion.
+		for l := 0; l < types.ArrowMaxLayers; l++ {
+			if err := newData.EnsureChunk(i, l, dims); err != nil {
+				return nil, err
+			}
 		}
 	}
-	h.data.Store(newData)
+	// h.data.Store(newData) // Removed to avoid publishing half-initialized snapshots
 	return newData, nil
 }
 
@@ -2289,9 +2292,11 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 
 	// Ensure chunks are allocated before parallel ingestion
 	maxID := startID + uint32(len(rowIdxs)) - 1 // #nosec G115
-	if _, err := h.EnsureChunks(int(types.ChunkID(startID)), int(types.ChunkID(maxID)), int(h.dims.Load())); err != nil {
+	data, err := h.EnsureChunks(int(types.ChunkID(startID)), int(types.ChunkID(maxID)), int(h.dims.Load()))
+	if err != nil {
 		return nil, err
 	}
+	// h.data.Store(data)
 
 	// Phase 1: Sequential Vector Ingestion
 	// Ensures all vectors are persistent in arenas before we start linking nodes.
@@ -2313,20 +2318,24 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 
 		v := h.extractVector(rec, vecColIdx, rowIdxs[i])
 		if v != nil {
-			if err := h.data.Load().SetVector(id, v); err != nil {
+			if err := data.SetVector(id, v); err != nil {
 				return nil, err
 			}
 			h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 		}
 	}
 
+	// Publish the populated snapshot
+	h.compareAndSwapData(data)
+
 	// Phase 1.5: Sequential Bootstrap
 	// If the index is empty or very small, we must insert some nodes sequentially
 	// to establish an entry point and basic graph structure before parallel insertion.
 	bootstrapEnd := 0
 	nodeCount := h.nodeCount.Load()
-	if nodeCount < 1024 {
-		bootstrapEnd = 1024 - int(nodeCount)
+	seedCount := 256
+	if nodeCount < int64(seedCount) {
+		bootstrapEnd = seedCount - int(nodeCount)
 		if bootstrapEnd > len(rowIdxs) {
 			bootstrapEnd = len(rowIdxs)
 		}
@@ -2335,7 +2344,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		}
 	}
 
-	data := h.data.Load()
+	data = h.data.Load()
 	for i := 0; i < bootstrapEnd; i++ {
 		id := startID + uint32(i) // #nosec G115
 		
@@ -2352,22 +2361,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		if vec == nil { continue }
 
 		// Insert sequentially to establish graph backbone
-		if id == 500 {
-			ep := h.entryPoint.Load()
-			nc := h.nodeCount.Load()
-			fmt.Printf("DEBUG: Inserting ID 500, entryPoint=%d, nodeCount=%d\n", ep, nc)
-		}
 		var newData *types.GraphData
 		newData, err = h.insertInternal(id, vec, -1, false, data)
 		if err == nil {
-			if id == 500 && newData != nil {
-				nbs := newData.GetNeighbors(0, 500, nil)
-				fmt.Printf("DEBUG: ID 500 neighbors: %v\n", nbs)
-				nb0 := newData.GetNeighbors(0, 0, nil)
-				fmt.Printf("DEBUG: ID 0 neighbors: %v\n", nb0)
-				nb244 := newData.GetNeighbors(0, 244, nil)
-				fmt.Printf("DEBUG: ID 244 neighbors: %v\n", nb244)
-			}
 			if newData != nil {
 				h.compareAndSwapData(newData)
 				data = newData
@@ -2882,10 +2878,6 @@ func (h *MaxCandidateHeapAdapter) Pop() any {
 // searchLayer is used by insertion logic
 // searchLayer implements HNSW layer search
 func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]types.Candidate, error) {
-	fmt.Printf("DEBUG: searchLayer called for layer %d\n", layer)
-	if h.nodeCount.Load() == 1100 {
-		fmt.Printf("DEBUG: searchLayer starting, nodeCount=1100, ep=%d, layer=%d, ef=%d\n", entryPoint, layer, ef)
-	}
 	start := time.Now()
 	defer func() {
 		if ctx != nil {
@@ -3328,9 +3320,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 		// Pop closest candidate
 		curr := heap.Pop(minHeap).(types.Candidate)
-		if h.nodeCount.Load() == 1100 {
-			fmt.Printf("DEBUG: Popped ID %d, Dist %f from minHeap at layer %d\n", curr.ID, curr.Dist, layer)
-		}
 		ctx.nodesVisitedCount++
 
 		// Furthest in resultSet (MaxHeap Top)
@@ -3473,9 +3462,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		} else {
 			// Standard Path (No Predicate)
 			for _, n := range neighbors {
-				if n == 500 {
-					fmt.Printf("DEBUG: Found neighbor 500 of node %d, visited=%v\n", curr.ID, ctx.visited.IsSet(500))
-				}
 				if int64(n) >= maxCommitted {
 					continue
 				}
@@ -4462,10 +4448,6 @@ type float32Computer struct {
 }
 
 func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
-	// Full node lock to synchronize with SetVector (line 142 of insertion_core.go)
-	oldVer := c.h.data.Load().LockNode(0, id)
-	defer c.h.data.Load().UnlockNode(0, id, oldVer)
-
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
 	if err != nil {
 		return 0, err
@@ -4654,11 +4636,7 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * pd // #nosec G115
 		if start+c.dims <= len(chunk) {
 			v8 := chunk[start : start+c.dims]
-			d, err := c.h.distFuncInt8(c.qInt8, v8)
-			if id == 500 || id == 244 || id == 0 {
-				fmt.Printf("DEBUG: ComputeSingle(%d) -> %f, err=%v\n", id, d, err)
-			}
-			return d, err
+			return c.h.distFuncInt8(c.qInt8, v8)
 		}
 	}
 	// Fallback to SQ8 chunks if specifically enabled for Int8 (rare but supported)

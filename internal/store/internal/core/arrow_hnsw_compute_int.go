@@ -2,7 +2,6 @@ package core
 
 import (
 	"github.com/23skdu/longbow/internal/store/types"
-	"fmt"
 	"math"
 )
 
@@ -43,9 +42,6 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * pd
 		if start+c.dims <= len(chunk) {
 			v := chunk[start:start+c.dims]
-			if id == 500 {
-				fmt.Printf("DEBUG: ID 500 stored vector: %v, query vector: %v\n", v, c.q)
-			}
 			return c.h.distFuncInt16(c.q, v)
 		}
 	}
@@ -199,9 +195,6 @@ func (c *int64Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
-	if id == 500 {
-		fmt.Printf("DEBUG: int64Computer.ComputeSingle(500) called\n")
-	}
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
 	if err == nil {
 		if v, ok := vecAny.([]int64); ok {

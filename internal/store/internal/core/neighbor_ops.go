@@ -7,9 +7,7 @@ import (
 	"math"
 	"sync/atomic"
 
-	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
-	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData, source, target uint32, layer, maxConn int, dist float32) *types.GraphData {
@@ -305,13 +303,40 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 
 // computeDistances calculates distance from nodeID to multiple targets using type-aware helper.
 func (h *ArrowHNSW) computeDistances(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, neighbors []uint32, dists []float32) {
-	v1 := h.getVectorF32Optimized(ctx, data, nodeID, 0)
-	if v1 == nil { return }
+	vQuery, err := data.GetVector(nodeID)
+	if err != nil || vQuery == nil { return }
+
+	computer := h.resolveHNSWComputer(data, ctx, vQuery, false)
+	if computer == nil { return }
+
+	// Use specialized computer if available
+	if comp, ok := computer.(interface {
+		ComputeSingle(id uint32) (float32, error)
+	}); ok {
+		for i, nbID := range neighbors {
+			d, err := comp.ComputeSingle(nbID)
+			if err == nil {
+				dists[i] = d
+			} else {
+				dists[i] = math.MaxFloat32
+			}
+		}
+		return
+	}
+
+	// Fallback to manual computation
+	v1, err := data.GetVector(nodeID)
+	if err != nil || v1 == nil { return }
 
 	for i, nbID := range neighbors {
-		v2 := h.getVectorF32Optimized(ctx, data, nbID, 1)
-		if v2 != nil {
-			d, _ := h.distFunc(v1, v2)
+		v2, err := data.GetVector(nbID)
+		if err != nil || v2 == nil {
+			dists[i] = math.MaxFloat32
+			continue
+		}
+		
+		d, err := h.DispatchDistance(data.Type, v1, v2)
+		if err == nil {
 			dists[i] = d
 		} else {
 			dists[i] = math.MaxFloat32
@@ -319,61 +344,34 @@ func (h *ArrowHNSW) computeDistances(ctx *ArrowSearchContext, data *types.GraphD
 	}
 }
 
-// getVectorF32Optimized ensures the vector is returned as []float32 for distance calculations using ctx buffers.
-func (h *ArrowHNSW) getVectorF32Optimized(ctx *ArrowSearchContext, data *types.GraphData, id uint32, bufIdx int) []float32 {
-	vecAny, err := data.GetVector(id)
-	if err != nil || vecAny == nil {
-		if id < 1100 {
-			fmt.Printf("DEBUG: getVectorF32Optimized failed for ID %d, err=%v\n", id, err)
-		}
-		return nil
+// DispatchDistance is a helper to compute distance between any two vectors of the same type.
+func (h *ArrowHNSW) DispatchDistance(vt types.VectorDataType, a, b any) (float32, error) {
+	switch vt {
+	case types.VectorTypeFloat32:
+		return h.distFunc(a.([]float32), b.([]float32))
+	case types.VectorTypeFloat64:
+		return h.distFuncF64(a.([]float64), b.([]float64))
+	case types.VectorTypeInt8:
+		return h.distFuncInt8(a.([]int8), b.([]int8))
+	case types.VectorTypeInt16:
+		return h.distFuncInt16(a.([]int16), b.([]int16))
+	case types.VectorTypeInt32:
+		return h.distFuncInt32(a.([]int32), b.([]int32))
+	case types.VectorTypeInt64:
+		return h.distFuncInt64(a.([]int64), b.([]int64))
+	case types.VectorTypeUint8:
+		return h.distFuncUint8(a.([]uint8), b.([]uint8))
+	case types.VectorTypeUint16:
+		return h.distFuncUint16(a.([]uint16), b.([]uint16))
+	case types.VectorTypeUint32:
+		return h.distFuncUint32(a.([]uint32), b.([]uint32))
+	case types.VectorTypeUint64:
+		return h.distFuncUint64(a.([]uint64), b.([]uint64))
+	case types.VectorTypeComplex64:
+		return h.distFuncC64(a.([]complex64), b.([]complex64))
+	case types.VectorTypeComplex128:
+		return h.distFuncC128(a.([]complex128), b.([]complex128))
+	default:
+		return 0, fmt.Errorf("unsupported vector type for distance: %v", vt)
 	}
-
-	if v, ok := vecAny.([]float32); ok {
-		return v
-	}
-
-	// Use pre-allocated buffers from ctx to avoid allocations
-	var dst []float32
-	if ctx != nil {
-		if bufIdx == 0 {
-			if len(ctx.bufF32) < data.Dims {
-				ctx.bufF32 = make([]float32, data.Dims*2)
-			}
-			dst = ctx.bufF32[:data.Dims]
-		} else {
-			if len(ctx.bufF32_2) < data.Dims {
-				ctx.bufF32_2 = make([]float32, data.Dims*2)
-			}
-			dst = ctx.bufF32_2[:data.Dims]
-		}
-	}
-
-	switch v := vecAny.(type) {
-	case []int32:
-		if dst != nil { simd.Int32ToFloat32(v, dst); return dst }
-		f := make([]float32, len(v)); simd.Int32ToFloat32(v, f); return f
-	case []uint32:
-		if dst != nil { simd.Uint32ToFloat32(v, dst); return dst }
-		f := make([]float32, len(v)); simd.Uint32ToFloat32(v, f); return f
-	case []int8:
-		if dst != nil { simd.Int8ToFloat32(v, dst); return dst }
-		f := make([]float32, len(v)); simd.Int8ToFloat32(v, f); return f
-	case []uint8:
-		if dst != nil { simd.Uint8ToFloat32(v, dst); return dst }
-		f := make([]float32, len(v)); simd.Uint8ToFloat32(v, f); return f
-	case []int16:
-		if dst != nil { simd.Int16ToFloat32(v, dst); return dst }
-		f := make([]float32, len(v)); simd.Int16ToFloat32(v, f); return f
-	case []uint16:
-		if dst != nil { simd.Uint16ToFloat32(v, dst); return dst }
-		f := make([]float32, len(v)); simd.Uint16ToFloat32(v, f); return f
-	case []float64:
-		if dst != nil { for i, val := range v { dst[i] = float32(val) }; return dst }
-		f := make([]float32, len(v)); for i, val := range v { f[i] = float32(val) }; return f
-	case []float16.Num:
-		if dst != nil { simd.Float16ToFloat32(v, dst); return dst }
-		f := make([]float32, len(v)); simd.Float16ToFloat32(v, f); return f
-	}
-	return nil
 }

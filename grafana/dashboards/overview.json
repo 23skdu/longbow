@@ -179,8 +179,8 @@
       "datasource": "${datasource}",
       "gridPos": {"h": 4, "w": 4, "x": 20, "y": 6},
       "id": 12,
-      "targets": [{"expr": "longbow_ingestion_queue_depth", "refId": "A"}],
-      "title": "Ingestion Queue",
+      "targets": [{"expr": "sum(rate(longbow_hnsw_nodes_added_total[1m]))", "refId": "A"}],
+      "title": "Node Addition Rate/s",
       "type": "stat"
     },
     {

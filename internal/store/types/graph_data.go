@@ -1076,8 +1076,8 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 		pd := g.GetPaddedDimsForType(VectorTypeUint8)
 		start := cOff * pd
 		if start+g.Dims <= len(chunk) {
-			ptr := unsafe.Pointer(&chunk[0])
-			u8Chunk := unsafe.Slice((*uint8)(ptr), len(chunk))
+			ptr := unsafe.Pointer(&chunk[0]) // #nosec G103
+			u8Chunk := unsafe.Slice((*uint8)(ptr), len(chunk)) // #nosec G103
 			return u8Chunk[start : start+g.Dims], nil
 		}
 	case VectorTypeInt8:
@@ -1155,6 +1155,15 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 		chunk := g.GetVectorsComplex128Chunk(cID)
 		if chunk != nil {
 			paddedDims := g.GetPaddedDimsForType(VectorTypeComplex128)
+			start := cOff * paddedDims
+			if start+g.Dims <= len(chunk) {
+				return chunk[start : start+g.Dims], nil
+			}
+		}
+	case VectorTypeFloat16:
+		chunk := g.GetVectorsF16Chunk(cID)
+		if chunk != nil {
+			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
 			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil

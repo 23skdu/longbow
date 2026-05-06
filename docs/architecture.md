@@ -352,3 +352,25 @@ Both kernels process 16 `float32` elements per cycle using AVX-512 ZMM registers
 > **Observability**: kernel calls and latency are tracked via
 > `longbow_simd_activation_kernel_calls_total` and
 > `longbow_simd_activation_kernel_duration_seconds` (see `docs/metrics.md §8`).
+
+---
+
+## 8. Reliability & Client-Side Balancing
+
+Longbow includes a suite of utility protocols in the `pkg/` directory to ensure system resilience and efficient request distribution in distributed environments.
+
+### 8.1 gRPC Retry Protocol (`pkg/retry`)
+
+The retry protocol provides a standardized, gRPC-aware resilience layer used by both internal distributed search and client SDKs.
+
+- **Strategy**: Implements **Exponential Backoff with Jitter** to prevent "thundering herd" problems during node recovery or network partitions.
+- **Retryable Codes**: Automatically identifies transient failures (`Unavailable`, `DeadlineExceeded`, `ResourceExhausted`, `Aborted`, `Internal`) and triggers retries based on a configurable policy.
+- **Context Awareness**: Retries are bound by the parent `context.Context` deadline, ensuring that the total request time never exceeds the user-defined timeout.
+
+### 8.2 Load-Aware Balancing (`pkg/loadbalancing`)
+
+To achieve optimal cluster utilization, Longbow exports **LoadHints** that enable intelligent, client-side load balancing without requiring a centralized proxy.
+
+- **Protocol**: Nodes broadcast `LoadHints` containing real-time CPU utilization, memory pressure, and ingestion queue depth.
+- **Binary Serialization**: Hints are serialized into a compact 21-byte binary format for zero-allocation propagation over the Arrow Flight control channel.
+- **Informed Routing**: Clients use these hints to dynamically adjust their consistent hashing weights, favoring nodes with lower queue depths or higher available memory, which significantly reduces p99 tail latency during heavy ingestion cycles.

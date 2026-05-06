@@ -451,19 +451,32 @@ kernel void compute_tq_distances(
     uint currentLevelSize = 1;
     uint angleOffset = angleCount;
     
+    float invMaxVal = 1.0f / ((1 << bitsPerAngle) - 1);
+    
     while (currentLevelSize < pow2) {
         angleOffset -= currentLevelSize;
         for (int i = (int)currentLevelSize - 1; i >= 0; i--) {
             float r = recon[i];
             uint bitStart = (angleOffset + i) * bitsPerAngle;
             uint q = 0;
-            for (uint k = 0; k < bitsPerAngle; k++) {
-                uint bitIdx = bitStart + k;
-                if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1) {
-                    q |= (1 << k);
+            
+            // Manual unrolling for common bit depths (2, 4, 8)
+            if (bitsPerAngle == 4) {
+                uint byteIdx = bitStart / 8;
+                uint bitShift = bitStart % 8;
+                q = (packedAngles[byteIdx] >> bitShift) & 0x0F;
+            } else if (bitsPerAngle == 8) {
+                q = packedAngles[bitStart / 8];
+            } else {
+                for (uint k = 0; k < bitsPerAngle; k++) {
+                    uint bitIdx = bitStart + k;
+                    if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1) {
+                        q |= (1 << k);
+                    }
                 }
             }
-            float theta = (float(q) / ((1 << bitsPerAngle) - 1)) * 2.0f * M_PI_F - M_PI_F;
+            
+            float theta = (float(q) * invMaxVal) * 2.0f * M_PI_F - M_PI_F;
             float s, c;
             s = sincos(theta, c);
             recon[2*i] = r * c;
@@ -474,7 +487,30 @@ kernel void compute_tq_distances(
     
     float sum = 0.0f;
     float correctionFactor = radius / sqrt((float)pow2) * 0.1f;
-    for (uint i = 0; i < dim; i++) {
+    
+    uint vectorWidth = dim / 4;
+    
+    for (uint i = 0; i < vectorWidth; i++) {
+        float4 q = *(device const float4*)(query + i * 4);
+        float4 r;
+        
+        // Load recon and apply QJL
+        for (uint j = 0; j < 4; j++) {
+            uint idx = i * 4 + j;
+            float val = recon[idx];
+            if ((qjlBits[idx / 8] >> (idx % 8)) & 1) {
+                val += correctionFactor;
+            } else {
+                val -= 0.1f;
+            }
+            r[j] = val;
+        }
+        
+        float4 diff = q - r;
+        sum += dot(diff, diff);
+    }
+    
+    for (uint i = vectorWidth * 4; i < dim; i++) {
         float val = recon[i];
         if ((qjlBits[i / 8] >> (i % 8)) & 1) {
             val += correctionFactor;
@@ -484,6 +520,7 @@ kernel void compute_tq_distances(
         float diff = query[i] - val;
         sum += diff * diff;
     }
+    
     distances[gid] = sqrt(sum);
 }
 

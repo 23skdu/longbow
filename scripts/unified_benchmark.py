@@ -266,6 +266,15 @@ class BenchmarkRunner:
         if self.args.pq_ingest:
             env["LONGBOW_PQ_INGEST"] = "1"
         
+        # Dynamically scale gRPC message size for workloads > 100k vectors
+        # Also helpful for high-dimensional vectors (e.g. 1536d, 3072d)
+        max_count = max([int(c) for c in self.args.counts.split(",")])
+        if max_count >= 100000:
+            # Scale up to 2GB for large batches
+            env["LONGBOW_GRPC_MAX_RECV_MSG_SIZE"] = "2147483647"
+            env["LONGBOW_GRPC_MAX_SEND_MSG_SIZE"] = "2147483647"
+            print(f"  Scaling gRPC message size for {max_count} vectors")
+        
         env["LONGBOW_LEARNED_INDEX_ENABLED"] = "true"
         if self.args.learned_samples:
             env["LONGBOW_LEARNED_MIN_SAMPLES"] = str(self.args.learned_samples)
@@ -459,7 +468,19 @@ class BenchmarkRunner:
         if self.args.mode == "temporal":
             search_modes = "temporal_as_of,temporal_range,temporal_window"
         
-        cmd = f"{bench_tool} -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file}"
+        extra_args = ""
+        if self.args.fbin:
+            extra_args += f" -fbin {self.args.fbin}"
+        if self.args.arrow:
+            extra_args += f" -fbin {self.args.arrow}"
+            
+        if self.args.generate_only:
+            os.makedirs(self.args.output_dir, exist_ok=True)
+            output_path = os.path.join(self.args.output_dir, f"{label}.fbin")
+            extra_args += f" -output-fbin {output_path}"
+            print(f"  Generating {dtype} dim={dim} count={batch_size} -> {output_path}")
+        
+        cmd = f"{bench_tool} -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file}{extra_args}"
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)
         
@@ -2142,6 +2163,14 @@ class BenchmarkRunner:
                             f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count} port={current_port}"
                         )
 
+                        # Skip server startup if only generating data
+                        if self.args.generate_only:
+                            try:
+                                self.run_benchmark(dim, dtype, count, label)
+                            except Exception as e:
+                                print(f"  Generation failed: {e}")
+                            continue
+
                         # Start fresh server for this config
                         if not self.start_server(label):
                             print("  Failed to start server!")
@@ -2685,6 +2714,25 @@ if __name__ == "__main__":
         "--iouring",
         action="store_true",
         help="Enable io_uring optimized Parquet snapshots",
+    )
+    # Benchmarking Infrastructure (Large Scale)
+    parser.add_argument(
+        "--fbin",
+        help="Path to an .fbin file for ingestion benchmarks",
+    )
+    parser.add_argument(
+        "--arrow",
+        help="Path to an Arrow IPC file for ingestion benchmarks",
+    )
+    parser.add_argument(
+        "--generate-only",
+        action="store_true",
+        help="Only generate the test data files and exit",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="data/generated",
+        help="Directory to save generated data files",
     )
     parser.add_argument(
         "--pprof",

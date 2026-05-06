@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -59,7 +60,9 @@ func main() {
 	tqBits := flag.Int("tq-bits", 4, "TurboQuant bit depth (2, 4, 8)")
 	workers := flag.Int("workers", 1, "Number of concurrent search workers")
 	drop := flag.Bool("drop", false, "Drop dataset after benchmark")
-	fbin := flag.String("fbin", "", "Read vectors from Arrow IPC binary file instead of generating them")
+	fbin := flag.String("fbin", "", "Read vectors from Arrow IPC binary file or true .fbin instead of generating them")
+	outputArrow := flag.String("output-arrow", "", "Save generated vectors to Arrow IPC file and exit")
+	outputFbin := flag.String("output-fbin", "", "Save generated vectors to .fbin file and exit")
 	flag.Parse()
 
 	if *drop {
@@ -97,42 +100,120 @@ func main() {
 	var start time.Time
 
 	if *fbin != "" {
-		log.Printf("[PUT] Reading vectors from %s...\n", *fbin)
 		f, err := os.Open(*fbin)
 		if err != nil {
-			log.Fatalf("Failed to open fbin file: %v", err)
+			log.Fatalf("Failed to open input file: %v", err)
 		}
 		defer f.Close()
 
-		reader, err := ipc.NewFileReader(f)
-		if err != nil {
-			log.Fatalf("Failed to create IPC reader: %v", err)
-		}
-		// reader does not have Release
-
-		numRecords := reader.NumRecords()
-		totalUploaded = 0
-		start = time.Now()
-
-		for i := 0; i < numRecords; i++ {
-			record, err := reader.Record(i)
+		// Peek first 6 bytes to check for ARROW1
+		magic := make([]byte, 6)
+		_, _ = f.ReadAt(magic, 0)
+		
+		if string(magic) == "ARROW1" {
+			log.Printf("[PUT] Ingesting from Arrow IPC file: %s\n", *fbin)
+			reader, err := ipc.NewFileReader(f)
 			if err != nil {
-				log.Fatalf("Failed to read record %d: %v", i, err)
+				log.Fatalf("Failed to create IPC reader: %v", err)
 			}
-			record.Retain()
 
-			putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
-			if err := uploadBatch(putCtx, sc, *dataset, record, record.Schema()); err != nil {
+			numRecords := reader.NumRecords()
+			totalUploaded = 0
+			start = time.Now()
+
+			for i := 0; i < numRecords; i++ {
+				record, err := reader.Record(i)
+				if err != nil {
+					log.Fatalf("Failed to read record %d: %v", i, err)
+				}
+				record.Retain()
+
+				putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				if err := uploadBatch(putCtx, sc, *dataset, record, record.Schema()); err != nil {
+					putCancel()
+					log.Fatalf("DoPut failed at record %d: %v", i, err)
+				}
 				putCancel()
-				log.Fatalf("DoPut failed at record %d: %v", i, err)
+
+				totalUploaded += int(record.NumRows())
+				record.Release()
+
+				if totalUploaded%50000 == 0 || i == numRecords-1 {
+					log.Printf("  Progress: %d vectors uploaded\n", totalUploaded)
+				}
 			}
-			putCancel()
-
-			totalUploaded += int(record.NumRows())
-			record.Release()
-
-			if totalUploaded%50000 == 0 || i == numRecords-1 {
-				log.Printf("  Progress: %d vectors uploaded\n", totalUploaded)
+		} else {
+			// Try as true .fbin (4B count, 4B dim, then floats)
+			log.Printf("[PUT] Ingesting from true .fbin file: %s\n", *fbin)
+			var countVal, dimVal uint32
+			if err := binary.Read(f, binary.LittleEndian, &countVal); err != nil {
+				log.Fatalf("Failed to read fbin count: %v", err)
+			}
+			if err := binary.Read(f, binary.LittleEndian, &dimVal); err != nil {
+				log.Fatalf("Failed to read fbin dim: %v", err)
+			}
+			
+			log.Printf("  fbin: count=%d, dim=%d\n", countVal, dimVal)
+			*scale = int(countVal)
+			*dim = int(dimVal)
+			
+			// Build schema for fbin (minimal schema)
+			fbinSchema := arrow.NewSchema(
+				[]arrow.Field{
+					{Name: "id", Type: arrow.BinaryTypes.String},
+					{Name: "vector", Type: arrow.FixedSizeListOf(int32(dimVal), arrow.PrimitiveTypes.Float32)},
+				},
+				nil,
+			)
+			
+			totalUploaded = 0
+			start = time.Now()
+			
+			chunkSize := 10000
+			for totalUploaded < int(countVal) {
+				currentChunk := chunkSize
+				if totalUploaded+currentChunk > int(countVal) {
+					currentChunk = int(countVal) - totalUploaded
+				}
+				
+				// Generate IDs
+				pool := memory.NewGoAllocator()
+				idBldr := array.NewStringBuilder(pool)
+				vecBldr := array.NewFixedSizeListBuilder(pool, int32(dimVal), arrow.PrimitiveTypes.Float32)
+				valBldr := vecBldr.ValueBuilder().(*array.Float32Builder)
+				
+				for i := 0; i < currentChunk; i++ {
+					idBldr.Append(fmt.Sprintf("%d", totalUploaded+i))
+					vecBldr.Append(true)
+					
+					row := make([]float32, dimVal)
+					if err := binary.Read(f, binary.LittleEndian, &row); err != nil {
+						log.Fatalf("Failed to read fbin data at %d: %v", totalUploaded+i, err)
+					}
+					valBldr.AppendValues(row, nil)
+				}
+				
+				idArr := idBldr.NewArray()
+				vecArr := vecBldr.NewArray()
+				record := array.NewRecordBatch(fbinSchema, []arrow.Array{idArr, vecArr}, int64(currentChunk))
+				
+				putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+				if err := uploadBatch(putCtx, sc, *dataset, record, fbinSchema); err != nil {
+					putCancel()
+					log.Fatalf("DoPut failed at chunk starting %d: %v", totalUploaded, err)
+				}
+				putCancel()
+				
+				totalUploaded += currentChunk
+				record.Release()
+				idArr.Release()
+				vecArr.Release()
+				idBldr.Release()
+				vecBldr.Release()
+				
+				if totalUploaded%50000 == 0 || totalUploaded == int(countVal) {
+					log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, countVal)
+				}
 			}
 		}
 		*scale = totalUploaded
@@ -161,6 +242,64 @@ func main() {
 			preGenerated = append(preGenerated, rec)
 			genSchema = schema
 			i += currentChunk
+		}
+
+		// Check for generation-only mode (saving to file)
+		if *outputArrow != "" {
+			log.Printf("[GEN] Saving generated vectors to Arrow IPC: %s\n", *outputArrow)
+			f, err := os.Create(*outputArrow)
+			if err != nil {
+				log.Fatalf("Failed to create output file: %v", err)
+			}
+			writer, err := ipc.NewFileWriter(f, ipc.WithSchema(genSchema))
+			if err != nil {
+				log.Fatalf("Failed to create IPC writer: %v", err)
+			}
+			for _, rec := range preGenerated {
+				if err := writer.Write(rec); err != nil {
+					log.Fatalf("Failed to write record: %v", err)
+				}
+			}
+			if err := writer.Close(); err != nil {
+				log.Printf("Warning: failed to close IPC writer: %v", err)
+			}
+			if err := f.Close(); err != nil {
+				log.Printf("Warning: failed to close output file: %v", err)
+			}
+			log.Printf("[GEN] Saved %d vectors. Exiting.\n", *scale)
+			os.Exit(0)
+		}
+
+		if *outputFbin != "" {
+			log.Printf("[GEN] Saving generated vectors to .fbin: %s\n", *outputFbin)
+			f, err := os.Create(*outputFbin)
+			if err != nil {
+				log.Fatalf("Failed to create output file: %v", err)
+			}
+			
+			// Header: count, dim
+			if err := binary.Write(f, binary.LittleEndian, uint32(*scale)); err != nil { // #nosec G115
+				log.Fatalf("Failed to write .fbin header (count): %v", err)
+			}
+			if err := binary.Write(f, binary.LittleEndian, uint32(*dim)); err != nil { // #nosec G115
+				log.Fatalf("Failed to write .fbin header (dim): %v", err)
+			}
+			
+			for _, rec := range preGenerated {
+				// Assuming vectors is the second column (index 1)
+				vecArr := rec.Column(1).(*array.FixedSizeList)
+				floatArr := vecArr.ListValues().(*array.Float32)
+				
+				// Standard .fbin only supports float32
+				if err := binary.Write(f, binary.LittleEndian, floatArr.Float32Values()); err != nil {
+					log.Fatalf("Failed to write .fbin vector data: %v", err)
+				}
+			}
+			if err := f.Close(); err != nil {
+				log.Printf("Warning: failed to close output file: %v", err)
+			}
+			log.Printf("[GEN] Saved %d vectors. Exiting.\n", *scale)
+			os.Exit(0)
 		}
 
 		log.Printf("[PUT] Uploading %d pre-generated chunks (back-pressure aware)...\n", numChunks)

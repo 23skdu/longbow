@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"math"
 	"strconv"
 	"time"
 
@@ -132,17 +133,36 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		cOff := int(id) % types.ChunkSize
 		levelsChunk := data.GetLevelsChunk(cID)
 		if levelsChunk != nil {
-			levelsChunk[cOff] = uint8(level)
+			safeLevel := level
+			if safeLevel > 255 {
+				safeLevel = 255
+			}
+			levelsChunk[cOff] = uint8(safeLevel) // #nosec G115
 		}
 	}
 
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
 		if int(h.nodeCount.Load()) >= h.config.AdaptiveMThreshold {
 			if h.adaptiveMTriggered.CompareAndSwap(false, true) {
-				h.m = h.config.M * 2
-				h.mMax = h.config.MMax * 2
-				h.mMax0 = h.config.MMax0 * 2
-				h.config.M, h.config.MMax, h.config.MMax0 = h.m, h.mMax, h.mMax0
+				newM := int64(h.config.M) * 2
+				newMMax := int64(h.config.MMax) * 2
+				newMMax0 := int64(h.config.MMax0) * 2
+
+				if newM > math.MaxInt32 {
+					newM = math.MaxInt32
+				}
+				if newMMax > math.MaxInt32 {
+					newMMax = math.MaxInt32
+				}
+				if newMMax0 > math.MaxInt32 {
+					newMMax0 = math.MaxInt32
+				}
+
+				h.m.Store(int32(newM))       // #nosec G115
+				h.mMax.Store(int32(newMMax))   // #nosec G115
+				h.mMax0.Store(int32(newMMax0)) // #nosec G115
+				h.config.M, h.config.MMax, h.config.MMax0 = int(newM), int(newMMax), int(newMMax0)
+				h.levelMultiplier = 1.0 / math.Log(float64(newM))
 			}
 		}
 	}
@@ -176,7 +196,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	}
 
 	for l := min(level, maxL+1); l >= 0; l-- {
-		ef := max(int(h.efConstruction.Load()), h.m)
+		ef := max(int(h.efConstruction.Load()), int(h.m.Load()))
 		neighbors, err := h.searchLayerForInsert(context.Background(), ctx, vec, ep, ef, l, data)
 		if err != nil { return nil, err }
 		
@@ -184,8 +204,8 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		for _, nb := range neighbors { if nb.ID != id { filtered = append(filtered, nb) } }
 		neighbors = filtered
 
-		maxConn := h.mMax
-		if l == 0 { maxConn = h.mMax0 }
+		maxConn := int(h.mMax.Load())
+		if l == 0 { maxConn = int(h.mMax0.Load()) }
 		for _, nb := range neighbors {
 			data = h.AddConnection(ctx, data, id, nb.ID, l, maxConn, nb.Dist)
 			data = h.AddConnection(ctx, data, nb.ID, id, l, maxConn, nb.Dist)
@@ -196,7 +216,11 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	if level > int(h.maxLevel.Load()) {
 		h.epMu.Lock()
 		if level > int(h.maxLevel.Load()) {
-			h.maxLevel.Store(int32(level)) // #nosec G115
+			safeLevel := level
+			if safeLevel > math.MaxInt32 {
+				safeLevel = math.MaxInt32
+			}
+			h.maxLevel.Store(int32(safeLevel)) // #nosec G115
 			h.entryPoint.Store(id)
 		}
 		h.epMu.Unlock()

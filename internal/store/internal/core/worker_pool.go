@@ -59,12 +59,15 @@ func GetSharedPool() *SharedWorkerPool {
 		workerIdx := 0
 		for n := 0; n < topo.NumNodes; n++ {
 			p.nodePools[n] = make([]chan func(), workersPerNode)
-			cpus := topo.CPUs[n]
 			for w := 0; w < workersPerNode; w++ {
 				ch := make(chan func(), 1024)
 				p.nodePools[n][w] = ch
 				
 				coreID := -1
+				cpus := topo.PhysicalCPUs[n]
+				if len(cpus) == 0 {
+					cpus = topo.CPUs[n]
+				}
 				if len(cpus) > 0 {
 					coreID = cpus[w%len(cpus)]
 				}
@@ -84,7 +87,10 @@ func GetSharedPool() *SharedWorkerPool {
 			p.nodePools[0] = append(p.nodePools[0], ch)
 			
 			coreID := -1
-			cpus := topo.CPUs[0]
+			cpus := topo.PhysicalCPUs[0]
+			if len(cpus) == 0 {
+				cpus = topo.CPUs[0]
+			}
 			if len(cpus) > 0 {
 				coreID = cpus[workerIdx%len(cpus)]
 			}

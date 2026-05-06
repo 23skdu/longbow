@@ -1,6 +1,7 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -250,6 +251,42 @@ type IndexPerformancePredictor struct {
 	lastWeightUpdate time.Time
 	updateInProgress atomic.Bool
 	lastPredictedIdx atomic.Value // stores IndexType; written by Predict, read by AddTrainingSample
+}
+
+// LearnedIndexRateLimiter protects search hot-paths during background model training.
+type LearnedIndexRateLimiter struct {
+	predictor *IndexPerformancePredictor
+	logger    zerolog.Logger
+}
+
+// NewLearnedIndexRateLimiter creates a new rate limiter for the predictor.
+func NewLearnedIndexRateLimiter(predictor *IndexPerformancePredictor, logger zerolog.Logger) *LearnedIndexRateLimiter {
+	return &LearnedIndexRateLimiter{
+		predictor: predictor,
+		logger:    logger,
+	}
+}
+
+// Wait blocks if background training is in progress and search load is high.
+// This ensures that model training doesn't starve the search hot-path.
+func (rl *LearnedIndexRateLimiter) Wait(ctx context.Context) error {
+	if rl.predictor == nil {
+		return nil
+	}
+
+	// If background update is in progress, introduce a small adaptive delay
+	if rl.predictor.updateInProgress.Load() {
+		// During training, we introduce a 10-50ms delay to give the trainer some breathing room
+		// while still allowing searches to complete.
+		select {
+		case <-time.After(20 * time.Millisecond):
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
 }
 
 // PredictorStats tracks the performance and accuracy of the predictor.

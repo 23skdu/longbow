@@ -206,9 +206,12 @@ class BenchmarkRunner:
         for p in [port, port + 1, port + 80, port + 6000]:
             subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
         
-        # Also kill any lingering longbow processes
-        subprocess.run("pkill -9 -f longbow 2>/dev/null || true", shell=True)
-        time.sleep(3) 
+        # Also kill any lingering longbow processes by name to be sure
+        for name in ["longbow", "longbow-metal", "longbow-cuda", "bench-tool", "benchmark-tool", "longbow-cli"]:
+            subprocess.run(f"pkill -9 {name} 2>/dev/null || true", shell=True)
+            subprocess.run(f"pkill -9 -f {name} 2>/dev/null || true", shell=True)
+        
+        time.sleep(5) 
         
         server_bin = self.get_server_binary()
         if not os.path.exists(server_bin):
@@ -314,6 +317,18 @@ class BenchmarkRunner:
         if self.server_pid:
             try:
                 os.kill(self.server_pid, signal.SIGTERM)
+                # Wait up to 5 seconds for graceful stop
+                for _ in range(10):
+                    time.sleep(0.5)
+                    try:
+                        os.kill(self.server_pid, 0)
+                    except ProcessLookupError:
+                        self.server_pid = None
+                        return
+                
+                # Fallback to kill -9
+                print(f"  Server PID {self.server_pid} didn't stop gracefully, killing -9")
+                os.kill(self.server_pid, signal.SIGKILL)
                 time.sleep(1)
             except ProcessLookupError:
                 pass

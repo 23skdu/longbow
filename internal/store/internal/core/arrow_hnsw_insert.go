@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
@@ -48,57 +47,227 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 		return nil
 	}
 
-	// For non-float32, we use a slower but generic diversity check
-	for _, cand := range candidates {
-		if len(selected) >= m {
-			break
-		}
+	var vectorCache map[uint32]any
+	if ctx != nil {
+		vectorCache = ctx.vectorCache
+	} else {
+		vectorCache = make(map[uint32]any, len(candidates))
+	}
 
-		isDiverse := true
-		v1Any, err := data.GetVector(cand.ID)
-		if err != nil || v1Any == nil {
-			continue
-		}
-
-		for _, sel := range selected {
-			v2Any, err := data.GetVector(sel.ID)
-			if err != nil || v2Any == nil {
-				continue
-			}
-
-			// Compute distance between candidates to check diversity
-			var d float32
-			var distErr error
-			
-			switch v1 := v1Any.(type) {
-			case []int8:
-				d, distErr = h.distFuncInt8(v1, v2Any.([]int8))
-			case []int16:
-				d, distErr = h.distFuncInt16(v1, v2Any.([]int16))
-			case []uint16:
-				d, distErr = h.distFuncUint16(v1, v2Any.([]uint16))
-			case []int32:
-				d, distErr = h.distFuncInt32(v1, v2Any.([]int32))
-			case []uint32:
-				d, distErr = h.distFuncUint32(v1, v2Any.([]uint32))
-			case []int64:
-				d, distErr = h.distFuncInt64(v1, v2Any.([]int64))
-			case []uint64:
-				d, distErr = h.distFuncUint64(v1, v2Any.([]uint64))
-			case []float64:
-				d, distErr = h.distFuncF64(v1, v2Any.([]float64))
-			default:
-				distErr = fmt.Errorf("unsupported type")
-			}
-
-			if distErr == nil && d < cand.Dist {
-				isDiverse = false
+	// For non-float32, we use a cached diversity check
+	// We use specialized loops for each type to avoid type assertions in the hot path
+	switch data.Type {
+	case types.VectorTypeInt8:
+		for _, cand := range candidates {
+			if len(selected) >= m {
 				break
 			}
+			isDiverse := true
+			v1, ok := vectorCache[cand.ID].([]int8)
+			if !ok {
+				vecAny, _ := data.GetVector(cand.ID)
+				v1, _ = vecAny.([]int8)
+				if v1 == nil { continue }
+				vectorCache[cand.ID] = v1
+			}
+			for _, sel := range selected {
+				v2, _ := vectorCache[sel.ID].([]int8)
+				if v2 == nil { continue }
+				d, _ := h.distFuncInt8(v1, v2)
+				if d < cand.Dist {
+					isDiverse = false
+					break
+				}
+			}
+			if isDiverse { selected = append(selected, cand) }
 		}
-
-		if isDiverse {
-			selected = append(selected, cand)
+	case types.VectorTypeInt16:
+		for _, cand := range candidates {
+			if len(selected) >= m { break }
+			isDiverse := true
+			v1, ok := vectorCache[cand.ID].([]int16)
+			if !ok {
+				vecAny, _ := data.GetVector(cand.ID)
+				v1, _ = vecAny.([]int16)
+				if v1 == nil { continue }
+				vectorCache[cand.ID] = v1
+			}
+			for _, sel := range selected {
+				v2, _ := vectorCache[sel.ID].([]int16)
+				if v2 == nil { continue }
+				d, _ := h.distFuncInt16(v1, v2)
+				if d < cand.Dist { isDiverse = false; break }
+			}
+			if isDiverse { selected = append(selected, cand) }
+		}
+	case types.VectorTypeUint16:
+		for _, cand := range candidates {
+			if len(selected) >= m { break }
+			isDiverse := true
+			v1, ok := vectorCache[cand.ID].([]uint16)
+			if !ok {
+				vecAny, _ := data.GetVector(cand.ID)
+				v1, _ = vecAny.([]uint16)
+				if v1 == nil { continue }
+				vectorCache[cand.ID] = v1
+			}
+			for _, sel := range selected {
+				v2, _ := vectorCache[sel.ID].([]uint16)
+				if v2 == nil { continue }
+				d, _ := h.distFuncUint16(v1, v2)
+				if d < cand.Dist { isDiverse = false; break }
+			}
+			if isDiverse { selected = append(selected, cand) }
+		}
+	case types.VectorTypeInt32:
+		for _, cand := range candidates {
+			if len(selected) >= m { break }
+			isDiverse := true
+			v1, ok := vectorCache[cand.ID].([]int32)
+			if !ok {
+				vecAny, _ := data.GetVector(cand.ID)
+				v1, _ = vecAny.([]int32)
+				if v1 == nil { continue }
+				vectorCache[cand.ID] = v1
+			}
+			for _, sel := range selected {
+				v2, _ := vectorCache[sel.ID].([]int32)
+				if v2 == nil { continue }
+				d, _ := h.distFuncInt32(v1, v2)
+				if d < cand.Dist { isDiverse = false; break }
+			}
+			if isDiverse { selected = append(selected, cand) }
+		}
+	case types.VectorTypeUint32:
+		for _, cand := range candidates {
+			if len(selected) >= m { break }
+			isDiverse := true
+			v1, ok := vectorCache[cand.ID].([]uint32)
+			if !ok {
+				vecAny, _ := data.GetVector(cand.ID)
+				v1, _ = vecAny.([]uint32)
+				if v1 == nil { continue }
+				vectorCache[cand.ID] = v1
+			}
+			for _, sel := range selected {
+				v2, _ := vectorCache[sel.ID].([]uint32)
+				if v2 == nil { continue }
+				d, _ := h.distFuncUint32(v1, v2)
+				if d < cand.Dist { isDiverse = false; break }
+			}
+			if isDiverse { selected = append(selected, cand) }
+		}
+	case types.VectorTypeInt64:
+		for _, cand := range candidates {
+			if len(selected) >= m { break }
+			isDiverse := true
+			v1, ok := vectorCache[cand.ID].([]int64)
+			if !ok {
+				vecAny, _ := data.GetVector(cand.ID)
+				v1, _ = vecAny.([]int64)
+				if v1 == nil { continue }
+				vectorCache[cand.ID] = v1
+			}
+			for _, sel := range selected {
+				v2, _ := vectorCache[sel.ID].([]int64)
+				if v2 == nil { continue }
+				d, _ := h.distFuncInt64(v1, v2)
+				if d < cand.Dist { isDiverse = false; break }
+			}
+			if isDiverse { selected = append(selected, cand) }
+		}
+	case types.VectorTypeUint64:
+		for _, cand := range candidates {
+			if len(selected) >= m { break }
+			isDiverse := true
+			v1, ok := vectorCache[cand.ID].([]uint64)
+			if !ok {
+				vecAny, _ := data.GetVector(cand.ID)
+				v1, _ = vecAny.([]uint64)
+				if v1 == nil { continue }
+				vectorCache[cand.ID] = v1
+			}
+			for _, sel := range selected {
+				v2, _ := vectorCache[sel.ID].([]uint64)
+				if v2 == nil { continue }
+				d, _ := h.distFuncUint64(v1, v2)
+				if d < cand.Dist { isDiverse = false; break }
+			}
+			if isDiverse { selected = append(selected, cand) }
+		}
+	case types.VectorTypeFloat64:
+		for _, cand := range candidates {
+			if len(selected) >= m { break }
+			isDiverse := true
+			v1, ok := vectorCache[cand.ID].([]float64)
+			if !ok {
+				vecAny, _ := data.GetVector(cand.ID)
+				v1, _ = vecAny.([]float64)
+				if v1 == nil { continue }
+				vectorCache[cand.ID] = v1
+			}
+			for _, sel := range selected {
+				v2, _ := vectorCache[sel.ID].([]float64)
+				if v2 == nil { continue }
+				d, _ := h.distFuncF64(v1, v2)
+				if d < cand.Dist { isDiverse = false; break }
+			}
+			if isDiverse { selected = append(selected, cand) }
+		}
+	case types.VectorTypeComplex64:
+		for _, cand := range candidates {
+			if len(selected) >= m { break }
+			isDiverse := true
+			v1, ok := vectorCache[cand.ID].([]complex64)
+			if !ok {
+				vecAny, _ := data.GetVector(cand.ID)
+				v1, _ = vecAny.([]complex64)
+				if v1 == nil { continue }
+				vectorCache[cand.ID] = v1
+			}
+			for _, sel := range selected {
+				v2, _ := vectorCache[sel.ID].([]complex64)
+				if v2 == nil { continue }
+				d, _ := h.distFuncC64(v1, v2)
+				if d < cand.Dist { isDiverse = false; break }
+			}
+			if isDiverse { selected = append(selected, cand) }
+		}
+	case types.VectorTypeComplex128:
+		for _, cand := range candidates {
+			if len(selected) >= m { break }
+			isDiverse := true
+			v1, ok := vectorCache[cand.ID].([]complex128)
+			if !ok {
+				vecAny, _ := data.GetVector(cand.ID)
+				v1, _ = vecAny.([]complex128)
+				if v1 == nil { continue }
+				vectorCache[cand.ID] = v1
+			}
+			for _, sel := range selected {
+				v2, _ := vectorCache[sel.ID].([]complex128)
+				if v2 == nil { continue }
+				d, _ := h.distFuncC128(v1, v2)
+				if d < cand.Dist { isDiverse = false; break }
+			}
+			if isDiverse { selected = append(selected, cand) }
+		}
+	default:
+		// Fallback for unknown types (slow path)
+		for _, cand := range candidates {
+			if len(selected) >= m { break }
+			isDiverse := true
+			v1, _ := data.GetVector(cand.ID)
+			if v1 == nil { continue }
+			for _, sel := range selected {
+				v2, _ := data.GetVector(sel.ID)
+				if v2 == nil { continue }
+				// CORRECT RobustPrune: only reject if an existing neighbor is CLOSER to the candidate than the query is
+				// We don't have a distFunc for unknown types, so we fallback to a simple reachability check
+				// (in practice this shouldn't happen as all types are registered)
+				// For now, just allow all up to M
+			}
+			if isDiverse { selected = append(selected, cand) }
 		}
 	}
 

@@ -301,7 +301,8 @@ func (g *GraphData) NeedsChunk(cID int) bool {
 func (g *GraphData) GetVectorsChunk(chunkID int) []float32 {
 	// Try arena first (off-heap, GC-free)
 	if g.Float32Arena != nil && chunkID < len(g.VectorsF32) {
-		return g.Float32Arena.Get(memory.SliceRef{Offset: g.VectorsF32[chunkID], Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
+		pd := g.GetPaddedDimsForType(VectorTypeFloat32)
+		return g.Float32Arena.Get(memory.SliceRef{Offset: g.VectorsF32[chunkID], Len: uint32(ChunkSize * pd), Cap: uint32(ChunkSize * pd)}) // #nosec G115
 	}
 	// Fallback to legacy slice
 	if chunkID < len(g.Vectors) {
@@ -652,22 +653,15 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 		g.Levels[cID] = make([]uint8, ChunkSize)
 	}
 
-	// Ensure Neighbors, Counts, Versions for requested layer (and layer 0)
+
+	// Ensure Neighbors, Counts, Versions for ALL possible HNSW layers to avoid concurrent appends.
 	if len(g.Neighbors) == 0 {
 		g.Neighbors = make([][]uint64, ArrowMaxLayers)
 		g.Counts = make([][]uint64, ArrowMaxLayers)
 		g.Versions = make([][]uint64, ArrowMaxLayers)
 	}
-
-	// Lazy allocation: only allocate for layer 0 and the requested layer (if passed via cOff as a hack for now, or just layer 0)
-	// In ArrowHNSW, we often call EnsureChunk(cID, layer, dims)
-	targetLayer := cOff
-	if targetLayer < 0 || targetLayer >= ArrowMaxLayers {
-		targetLayer = 0
-	}
-
-	layersToEnsure := []int{0, targetLayer}
-	for _, l := range layersToEnsure {
+ 
+	for l := 0; l < ArrowMaxLayers; l++ {
 		requiredLen := cID + 1
 		if len(g.Neighbors[l]) < requiredLen {
 			delta := requiredLen - len(g.Neighbors[l])
@@ -675,11 +669,14 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 			g.Counts[l] = append(g.Counts[l], make([]uint64, delta)...)
 			g.Versions[l] = append(g.Versions[l], make([]uint64, delta)...)
 		}
-
+ 
 		if g.Neighbors[l][cID] == 0 {
 			if g.Uint32Arena == nil {
-				// 1024 * 128 * 4 = 512KB. 16MB slab is reasonable for neighbors.
-				g.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(16 * 1024 * 1024))
+				// Ensure slab size can accommodate a full chunk of neighbors.
+				// ChunkSize (1024) * MaxNeighbors (512) * 4 bytes = 2MB.
+				// We use 16MB to allow for multiple concurrent chunks per slab.
+				slabSize := 16 * 1024 * 1024
+				g.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(slabSize))
 			}
 			ref, err := g.Uint32Arena.AllocSlice(ChunkSize * MaxNeighbors)
 			if err != nil {
@@ -690,7 +687,8 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 		if g.Counts[l][cID] == 0 {
 			if g.Int32Arena == nil {
-				g.Int32Arena = memory.NewTypedArena[int32](memory.NewSlabArena(1024 * 1024))
+				// Use 4MB slab for counts (1024 * 4 = 4KB per chunk, many chunks per slab)
+				g.Int32Arena = memory.NewTypedArena[int32](memory.NewSlabArena(4 * 1024 * 1024))
 			}
 			ref, err := g.Int32Arena.AllocSlice(ChunkSize)
 			if err != nil {
@@ -701,8 +699,10 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 		if g.Versions[l][cID] == 0 {
 			if g.Uint32Arena == nil {
-				// Share Uint32Arena with neighbors if it already exists
-				g.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(1024 * 1024))
+				// Share Uint32Arena with neighbors if it already exists.
+				// Ensure same 16MB slab size as neighbors.
+				slabSize := 16 * 1024 * 1024
+				g.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(slabSize))
 			}
 			ref, err := g.Uint32Arena.AllocSlice(ChunkSize)
 			if err != nil {
@@ -1072,26 +1072,58 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 	switch g.Type {
 	case VectorTypeUint8:
 		chunk := g.GetVectorsInt8Chunk(cID)
-		if chunk == nil {
-			return nil, nil
-		}
+		if chunk == nil { return nil, nil }
 		pd := g.GetPaddedDimsForType(VectorTypeUint8)
 		start := cOff * pd
 		if start+g.Dims <= len(chunk) {
-			ptr := unsafe.Pointer(&chunk[0]) // #nosec G103 -- intentional unsafe for performance
-			u8Chunk := unsafe.Slice((*uint8)(ptr), len(chunk)) // #nosec G103 -- intentional unsafe for performance
+			ptr := unsafe.Pointer(&chunk[0])
+			u8Chunk := unsafe.Slice((*uint8)(ptr), len(chunk))
 			return u8Chunk[start : start+g.Dims], nil
 		}
 	case VectorTypeInt8:
 		chunk := g.GetVectorsInt8Chunk(cID)
-		if chunk == nil {
-			return nil, nil
-		}
+		if chunk == nil { return nil, nil }
 		pd := g.GetPaddedDimsForType(VectorTypeInt8)
 		start := cOff * pd
 		if start+g.Dims <= len(chunk) {
 			return chunk[start : start+g.Dims], nil
 		}
+	case VectorTypeInt16:
+		chunk := g.GetVectorsInt16Chunk(cID)
+		if chunk == nil { return nil, nil }
+		pd := g.GetPaddedDimsForType(VectorTypeInt16)
+		start := cOff * pd
+		if start+g.Dims <= len(chunk) { return chunk[start : start+g.Dims], nil }
+	case VectorTypeUint16:
+		chunk := g.GetVectorsUint16Chunk(cID)
+		if chunk == nil { return nil, nil }
+		pd := g.GetPaddedDimsForType(VectorTypeUint16)
+		start := cOff * pd
+		if start+g.Dims <= len(chunk) { return chunk[start : start+g.Dims], nil }
+	case VectorTypeInt32:
+		chunk := g.GetVectorsInt32Chunk(cID)
+		if chunk == nil { return nil, nil }
+		pd := g.GetPaddedDimsForType(VectorTypeInt32)
+		start := cOff * pd
+		if start+g.Dims <= len(chunk) { return chunk[start : start+g.Dims], nil }
+	case VectorTypeUint32:
+		chunk := g.GetVectorsUint32Chunk(cID)
+		if chunk == nil { return nil, nil }
+		pd := g.GetPaddedDimsForType(VectorTypeUint32)
+		start := cOff * pd
+		if start+g.Dims <= len(chunk) { return chunk[start : start+g.Dims], nil }
+	case VectorTypeInt64:
+		chunk := g.GetVectorsInt64Chunk(cID)
+		if chunk == nil { return nil, nil }
+		pd := g.GetPaddedDimsForType(VectorTypeInt64)
+		start := cOff * pd
+		if start+g.Dims <= len(chunk) { return chunk[start : start+g.Dims], nil }
+	case VectorTypeUint64:
+		chunk := g.GetVectorsUint64Chunk(cID)
+		if chunk == nil { return nil, nil }
+		pd := g.GetPaddedDimsForType(VectorTypeUint64)
+		start := cOff * pd
+		if start+g.Dims <= len(chunk) { return chunk[start : start+g.Dims], nil }
 	case VectorTypeFloat32:
 		chunk := g.GetVectorsChunk(cID)
 		if chunk != nil {
@@ -1101,20 +1133,16 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 				return chunk[start : start+g.Dims], nil
 			}
 		}
-	}
-
-	if len(g.VectorsF32) > cID || len(g.Vectors) > cID {
-		chunk := g.GetVectorsChunk(cID)
+	case VectorTypeFloat64:
+		chunk := g.GetVectorsFloat64Chunk(cID)
 		if chunk != nil {
-			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat32)
+			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat64)
 			start := cOff * paddedDims
 			if start+g.Dims <= len(chunk) {
 				return chunk[start : start+g.Dims], nil
 			}
 		}
-	}
-
-	if len(g.VectorsComplex64Offsets) > cID || len(g.VectorsComplex64) > cID {
+	case VectorTypeComplex64:
 		chunk := g.GetVectorsComplex64Chunk(cID)
 		if chunk != nil {
 			paddedDims := g.GetPaddedDimsForType(VectorTypeComplex64)
@@ -1123,9 +1151,7 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 				return chunk[start : start+g.Dims], nil
 			}
 		}
-	}
-
-	if len(g.VectorsComplex128Offsets) > cID || len(g.VectorsComplex128) > cID {
+	case VectorTypeComplex128:
 		chunk := g.GetVectorsComplex128Chunk(cID)
 		if chunk != nil {
 			paddedDims := g.GetPaddedDimsForType(VectorTypeComplex128)
@@ -1136,133 +1162,9 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 		}
 	}
 
-	if len(g.VectorsFloat64Offsets) > cID || len(g.VectorsFloat64) > cID {
-		chunk := g.GetVectorsFloat64Chunk(cID)
-		if chunk != nil {
-			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat64)
-			start := cOff * paddedDims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if len(g.VectorsInt64) > cID {
-		chunk := g.GetVectorsInt64Chunk(cID)
-		if chunk != nil {
-			paddedDims := g.GetPaddedDimsForType(VectorTypeInt64)
-			start := cOff * paddedDims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if len(g.VectorsUint64) > cID {
-		chunk := g.GetVectorsUint64Chunk(cID)
-		if chunk != nil {
-			paddedDims := g.GetPaddedDimsForType(VectorTypeUint64)
-			start := cOff * paddedDims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if len(g.VectorsInt32) > cID {
-		chunk := g.GetVectorsInt32Chunk(cID)
-		if chunk != nil {
-			paddedDims := g.GetPaddedDimsForType(VectorTypeInt32)
-			start := cOff * paddedDims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if len(g.VectorsUint32) > cID {
-		chunk := g.GetVectorsUint32Chunk(cID)
-		if chunk != nil {
-			paddedDims := g.GetPaddedDimsForType(VectorTypeUint32)
-			start := cOff * paddedDims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if len(g.VectorsInt16) > cID {
-		chunk := g.GetVectorsInt16Chunk(cID)
-		if chunk != nil {
-			paddedDims := g.GetPaddedDimsForType(VectorTypeInt16)
-			start := cOff * paddedDims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if len(g.VectorsUint16) > cID {
-		chunk := g.GetVectorsUint16Chunk(cID)
-		if chunk != nil {
-			paddedDims := g.GetPaddedDimsForType(VectorTypeUint16)
-			start := cOff * paddedDims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if len(g.VectorsF16) > cID {
-		chunk := g.GetVectorsF16Chunk(cID)
-		if chunk != nil {
-			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
-			start := cOff * paddedDims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if len(g.VectorsFloat64) > cID || len(g.VectorsFloat64Offsets) > cID {
-		chunk := g.GetVectorsFloat64Chunk(cID)
-		if chunk != nil {
-			start := cOff * g.Dims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if len(g.VectorsComplex64) > cID || len(g.VectorsComplex64Offsets) > cID {
-		chunk := g.GetVectorsComplex64Chunk(cID)
-		if chunk != nil {
-			start := cOff * g.Dims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if len(g.VectorsComplex128) > cID || len(g.VectorsComplex128Offsets) > cID {
-		chunk := g.GetVectorsComplex128Chunk(cID)
-		if chunk != nil {
-			start := cOff * g.Dims
-			if start+g.Dims <= len(chunk) {
-				return chunk[start : start+g.Dims], nil
-			}
-		}
-	}
-
-	if g.BackingGraph != nil {
-		if bg, ok := g.BackingGraph.(graphFallback); ok {
-			return bg.GetVector(id)
-		}
-	}
-
-	return nil, nil
+	return nil, fmt.Errorf("vector type mismatch or uninitialized for ID %d (type %v)", id, g.Type)
 }
-
+ 
 func (g *GraphData) SetVector(id uint32, vec any) error {
 	cID := int(id) / ChunkSize
 	cOff := int(id) % ChunkSize
@@ -1753,6 +1655,18 @@ func (g *GraphData) Clone() *GraphData {
 	newG.Complex64Arena = g.Complex64Arena
 	newG.Complex128Arena = g.Complex128Arena
 
+
+	// Deep copy Levels
+	if g.Levels != nil {
+		newG.Levels = make([][]uint8, len(g.Levels))
+		for i := range g.Levels {
+			if g.Levels[i] != nil {
+				newG.Levels[i] = make([]uint8, len(g.Levels[i]))
+				copy(newG.Levels[i], g.Levels[i])
+			}
+		}
+	}
+
 	// Deep copy Vectors (Slice of slices)
 	if g.Vectors != nil {
 		newG.Vectors = make([][]float32, len(g.Vectors))
@@ -1805,11 +1719,6 @@ func (g *GraphData) Clone() *GraphData {
 		}
 	}
 
-	// Shallow copy Levels (Chunk -> Data) - the chunks themselves are managed by EnsureChunk and are COW-safe
-	if g.Levels != nil {
-		newG.Levels = make([][]uint8, len(g.Levels))
-		copy(newG.Levels, g.Levels)
-	}
 
 	// Shallow copy PackedNeighbors (the structures themselves are thread-safe and manage their own growth)
 	if g.PackedNeighbors != nil {
@@ -2439,86 +2348,55 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	
 	var f32Arena, u8Arena, f64Arena, i8Arena, c64Arena, c128Arena, i64Arena, i16Arena, u16Arena, i32Arena, f16Arena, u64Arena, u32Arena *memory.SlabArena
 	if dim > 0 {
+		minSlabSize := 16 * 1024 * 1024 // 16MB minimum for all arenas
+
 		f32SlabSize := ChunkSize*dim*4 + 64
-		if f32SlabSize < 1024*1024 {
-			f32SlabSize = 1024 * 1024
-		}
+		if f32SlabSize < minSlabSize { f32SlabSize = minSlabSize }
 		f32Arena = memory.NewSlabArena(f32SlabSize)
 
-		// Uint8: 1024 * dim * 1 bytes.
 		u8SlabSize := ChunkSize*dim + 64
-		if u8SlabSize < 1024*1024 {
-			u8SlabSize = 1024 * 1024
-		}
+		if u8SlabSize < minSlabSize { u8SlabSize = minSlabSize }
 		u8Arena = memory.NewSlabArena(u8SlabSize)
 
-		// Float64: 8 bytes
 		f64SlabSize := ChunkSize*dim*8 + 64
-		if f64SlabSize < 1024*1024 {
-			f64SlabSize = 1024 * 1024
-		}
+		if f64SlabSize < minSlabSize { f64SlabSize = minSlabSize }
 		f64Arena = memory.NewSlabArena(f64SlabSize)
 
-		// Int8: 1 byte (reuse logic/size if creating distinct arena, but simpler to separate)
 		i8Arena = memory.NewSlabArena(u8SlabSize)
 
-		// Complex64: 8 bytes
 		c64SlabSize := ChunkSize*dim*8 + 64
-		if c64SlabSize < 1024*1024 {
-			c64SlabSize = 1024 * 1024
-		}
+		if c64SlabSize < minSlabSize { c64SlabSize = minSlabSize }
 		c64Arena = memory.NewSlabArena(c64SlabSize)
 
-		// Complex128: 16 bytes
 		c128SlabSize := ChunkSize*dim*16 + 64
-		if c128SlabSize < 1024*1024 {
-			c128SlabSize = 1024 * 1024
-		}
+		if c128SlabSize < minSlabSize { c128SlabSize = minSlabSize }
 		c128Arena = memory.NewSlabArena(c128SlabSize)
 
-		// Int64: 8 bytes
 		i64SlabSize := ChunkSize*dim*8 + 64
-		if i64SlabSize < 1024*1024 {
-			i64SlabSize = 1024 * 1024
-		}
+		if i64SlabSize < minSlabSize { i64SlabSize = minSlabSize }
 		i64Arena = memory.NewSlabArena(i64SlabSize)
 
-		// Int16: 2 bytes
 		i16SlabSize := ChunkSize*dim*2 + 64
-		if i16SlabSize < 1024*1024 {
-			i16SlabSize = 1024 * 1024
-		}
+		if i16SlabSize < minSlabSize { i16SlabSize = minSlabSize }
 		i16Arena = memory.NewSlabArena(i16SlabSize)
 
-		// Uint16: 2 bytes
 		u16SlabSize := ChunkSize*dim*2 + 64
-		if u16SlabSize < 1024*1024 {
-			u16SlabSize = 1024 * 1024
-		}
+		if u16SlabSize < minSlabSize { u16SlabSize = minSlabSize }
 		u16Arena = memory.NewSlabArena(u16SlabSize)
 
-		// Int32: 4 bytes
 		i32SlabSize := ChunkSize*dim*4 + 64
-		if i32SlabSize < 1024*1024 {
-			i32SlabSize = 1024 * 1024
-		}
+		if i32SlabSize < minSlabSize { i32SlabSize = minSlabSize }
 		i32Arena = memory.NewSlabArena(i32SlabSize)
 
-		// Float16: 2 bytes
 		f16SlabSize := ChunkSize*dim*2 + 64
-		if f16SlabSize < 1024*1024 {
-			f16SlabSize = 1024 * 1024
-		}
+		if f16SlabSize < minSlabSize { f16SlabSize = minSlabSize }
 		f16Arena = memory.NewSlabArena(f16SlabSize)
 
-		// Uint64/Uint32: 8/4 bytes (used for offsets and topology)
-		u64Arena = memory.NewSlabArena(i64SlabSize)      // Reuse 8-byte sizing
-		u32Arena = memory.NewSlabArena(u8SlabSize * 4) // Reuse 4-fold 1-byte sizing
+		u64Arena = memory.NewSlabArena(minSlabSize)
+		u32Arena = memory.NewSlabArena(minSlabSize)
 	} else {
-		// Use default 1MB slabs for topology if dimensions are unknown
-		// but DON'T initialize typed arenas that depend on vector dims yet.
-		u64Arena = memory.NewSlabArena(1024 * 1024)
-		u32Arena = memory.NewSlabArena(1024 * 1024)
+		u64Arena = memory.NewSlabArena(16 * 1024 * 1024)
+		u32Arena = memory.NewSlabArena(16 * 1024 * 1024)
 	}
 
 

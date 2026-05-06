@@ -126,6 +126,14 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		if err != nil {
 			return nil, err
 		}
+		
+		// PERSIST LEVEL: Ensure the node's hierarchical level is stored in metadata
+		cID := int(id) / types.ChunkSize
+		cOff := int(id) % types.ChunkSize
+		levelsChunk := data.GetLevelsChunk(cID)
+		if levelsChunk != nil {
+			levelsChunk[cOff] = uint8(level)
+		}
 	}
 
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {

@@ -961,27 +961,18 @@ func (idx *AdaptiveIndex) migrateToHNSW() {
 	go func() {
 		defer idx.migrating.Store(false)
 
-		migStart := time.Now()
-		idx.mu.RLock()
-		metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "read").Observe(time.Since(migStart).Seconds())
-		if idx.bruteForce == nil {
-			idx.mu.RUnlock()
-			return
-		}
-		bf := idx.bruteForce.(*BruteForceIndex)
-		// Snapshot existing locations to build HNSW
-		snapshotLocations := make([]Location, len(bf.locations))
-		copy(snapshotLocations, bf.locations)
-		idx.mu.RUnlock()
-
 		config := DefaultArrowHNSWConfig()
 		config.Metric = idx.dataset.Metric
 		config.Logger = idx.dataset.Logger
 		newHNSW := NewArrowHNSW(idx.dataset, &config, idx.dataset.Topo)
 
-		// Set hnsw pointer early so new batches use parallel ingestion path
+		// Set hnsw pointer and snapshot locations while holding the lock
+		// to ensure no NEW vectors are added to bruteForce but missed by HNSW.
 		idx.mu.Lock()
 		idx.hnsw = newHNSW
+		bf := idx.bruteForce.(*BruteForceIndex)
+		snapshotLocations := make([]Location, len(bf.locations))
+		copy(snapshotLocations, bf.locations)
 		idx.mu.Unlock()
 
 		// Build HNSW from snapshot. Group by batch to use AddBatch efficiency.

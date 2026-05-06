@@ -64,3 +64,11 @@ This document tracks the remaining tasks for hardening the Longbow storage engin
 
 - [/] Update `docs/performance.md` with latest benchmark results from the 0.2.0-rc2 release (Initial results added).
 - [ ] Update `docs/architecture.md` to reflect the new `pkg/retry` and `pkg/loadbalancing` protocols.
+
+## 0.2.1 Roadmap: CLI & Tooling
+
+- [ ] **Native Arrow IPC Support in CLI**
+  - [ ] Implement `longbow-cli import --file data.arrow` for direct high-speed ingestion of Arrow binary files.
+  - [ ] Implement `longbow-cli export --dataset name --file output.arrow` for zero-copy extraction of dataset snapshots.
+  - [ ] Support compressed Arrow IPC streams (LZ4/ZSTD) for efficient data mobility.
+  - [ ] **Validation**: Cross-compatibility with Python Pandas/PyArrow for exported files.

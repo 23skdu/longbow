@@ -127,11 +127,32 @@ func ExtractVectorGeneric[T any](rec arrow.RecordBatch, rowIdx, colIdx int) ([]T
 	}
 
 	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-	listOffset := listArr.Data().Offset()
-	start := (listOffset + rowIdx) * width
-	values := listArr.Data().Children()[0]
+	
+	// SCALE WIDTH: If the requested type T is larger than the underlying Arrow element type,
+	// we must adjust the width to avoid out-of-bounds access.
+	// For Complex64 (8 bytes) on Float32 (4 bytes), width should be halved.
+	elemType := listArr.DataType().(*arrow.FixedSizeListType).Elem()
+	var arrowElemSize int
+	switch elemType.ID() {
+	case arrow.INT8, arrow.UINT8: arrowElemSize = 1
+	case arrow.INT16, arrow.UINT16, arrow.FLOAT16: arrowElemSize = 2
+	case arrow.INT32, arrow.UINT32, arrow.FLOAT32: arrowElemSize = 4
+	case arrow.INT64, arrow.UINT64, arrow.FLOAT64: arrowElemSize = 8
+	default: arrowElemSize = 1 // Fallback
+	}
+
 	var zero T
-	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
+	requestedElemSize := int(unsafe.Sizeof(zero))
+	
+	if requestedElemSize > arrowElemSize && arrowElemSize > 0 {
+		ratio := requestedElemSize / arrowElemSize
+		width /= ratio
+	}
+
+	listOffset := listArr.Data().Offset()
+	start := (listOffset + rowIdx) * int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+	values := listArr.Data().Children()[0]
+	elemSize := requestedElemSize // #nosec G115
 
 	// Validate bounds and handle potentially truncated buffers (e.g. from Flight IPC)
 	if len(values.Buffers()) > 1 && values.Buffers()[1] != nil {

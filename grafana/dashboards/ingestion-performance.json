@@ -1,0 +1,155 @@
+{
+  "annotations": {
+    "list": []
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "id": 1,
+      "panels": [],
+      "title": "HNSW Ingestion Pipeline",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 1 },
+      "id": 2,
+      "title": "Nodes Added (Rate)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "sum(rate(longbow_hnsw_nodes_added_total[1m])) by (dataset)",
+          "legendFormat": "{{dataset}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 1 },
+      "id": 3,
+      "title": "Bulk Insert Latency (p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_hnsw_bulk_insert_latency_by_type_seconds_bucket[5m])) by (le, type))",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 9 },
+      "id": 4,
+      "title": "Ingestion Queue Depth",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "longbow_ingestion_queue_depth",
+          "legendFormat": "Queue Depth",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 9 },
+      "id": 5,
+      "title": "Ingestion Lag (Records)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "longbow_ingestion_lag_count",
+          "legendFormat": "Lag",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 9 },
+      "id": 6,
+      "title": "Queue Latency (p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_ingestion_queue_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "Latency",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 17 },
+      "id": 7,
+      "panels": [],
+      "title": "WAL & Persistence",
+      "type": "row"
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 18 },
+      "id": 8,
+      "title": "WAL Write Rate",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "longbow_wal_write_rate_per_second",
+          "legendFormat": "Bytes/s",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 18 },
+      "id": 9,
+      "title": "Fsync Duration (p99)",
+      "type": "timeseries",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_wal_fsync_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "p99",
+          "refId": "A"
+        }
+      ]
+    }
+  ],
+  "refresh": "10s",
+  "schemaVersion": 38,
+  "tags": ["longbow", "ingestion"],
+  "templating": {
+    "list": [
+      {
+        "current": { "selected": false, "text": "Prometheus", "value": "Prometheus" },
+        "hide": 0,
+        "includeAll": false,
+        "label": "Data Source",
+        "multi": false,
+        "name": "DS_PROMETHEUS",
+        "options": [],
+        "query": "prometheus",
+        "refresh": 1,
+        "regex": "",
+        "skipUrlSync": false,
+        "type": "datasource"
+      }
+    ]
+  },
+  "time": { "from": "now-1h", "to": "now" },
+  "timepicker": {},
+  "timezone": "",
+  "title": "Longbow Ingestion Performance",
+  "uid": "longbow-ingestion",
+  "version": 1,
+  "weekStart": ""
+}

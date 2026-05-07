@@ -87,7 +87,7 @@ func NewSession(modelPath string) (*Session, error) {
 					isMetal:     true,
 				}, nil
 			}
-			engine.Close()
+			_ = engine.Close()
 		}
 	}
 
@@ -231,7 +231,7 @@ func (s *Session) Score(ctx context.Context, query string, docs []string) ([]flo
 	defer func() {
 		for _, v := range outputs {
 			if v != nil {
-				v.Destroy()
+				_ = v.Destroy()
 			}
 		}
 	}()
@@ -319,7 +319,7 @@ func (s *Session) Embed(ctx context.Context, texts []string) ([][]float32, error
 	defer func() {
 		for _, v := range outputs {
 			if v != nil {
-				v.Destroy()
+				_ = v.Destroy()
 			}
 		}
 	}()

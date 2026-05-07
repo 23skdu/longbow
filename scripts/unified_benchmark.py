@@ -240,7 +240,10 @@ class BenchmarkRunner:
         else:
             env["LONGBOW_GPU_ENABLED"] = "false"
 
-        env["LONGBOW_MAX_MEMORY"] = str(18 * 1024 * 1024 * 1024) 
+        limit_gb = 18
+        if "ancalagon" not in os.uname().nodename.lower() and "darwin" in sys.platform.lower():
+            limit_gb = 12
+        env["LONGBOW_MAX_MEMORY"] = str(limit_gb * 1024 * 1024 * 1024) 
         env["ARROW_DISABLE_LOCKING"] = "1"
         if self.args.rdma:
             env["LONGBOW_RDMA_ENABLED"] = "true"
@@ -442,7 +445,7 @@ class BenchmarkRunner:
     def run_benchmark(self, dim, dtype, count, label):
         """Run benchmark-tool with JSON output for a configuration."""
         bench_tool = self.get_bench_tool()
-        batch_size = min(count, self.args.batch_size)
+        batch_size = count
         duration = self.args.duration
         json_file = os.path.join(self.log_dir, f"result_{label}.json")
 

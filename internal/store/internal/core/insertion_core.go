@@ -181,6 +181,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	}
 
 	ctx := h.searchPool.Get()
+	computer := h.resolveHNSWComputer(data, ctx, vec, true)
 	defer h.searchPool.PutWithMetrics(ctx, h.config.DataType.String(), strconv.Itoa(dims))
 	ctx.Reset()
 
@@ -189,7 +190,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 
 	if maxL >= 0 {
 		for l := maxL; l > level; l-- {
-			neighbors, err := h.searchLayer(context.Background(), nil, ep, 1, l, ctx, data, vec)
+			neighbors, err := h.searchLayer(context.Background(), computer, ep, 1, l, ctx, data, vec)
 			if err != nil { return nil, err }
 			if len(neighbors) > 0 { ep = neighbors[0].ID }
 		}

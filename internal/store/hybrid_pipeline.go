@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
-	"strings"
 
-	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/query"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
@@ -344,93 +342,6 @@ func (p *HybridSearchPipeline) findVectorID(pos RowPosition) (VectorID, bool) {
 	// O(1) Reverse Lookup relying on reverseMap in ChunkedLocationStore
 	id, ok := p.hnswIndex.GetVectorID(Location{BatchIdx: pos.RecordIdx, RowIdx: pos.RowIdx})
 	return VectorID(id), ok
-}
-
-// Reranker defines the interface for the second-stage re-ranking
-type Reranker interface {
-	Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error)
-}
-
-// CrossEncoderReranker implements a second-stage reranker using text-matching heuristics.
-type CrossEncoderReranker struct {
-	ModelName string
-}
-
-// Rerank re-orders the search results based on a cross-encoder model or heuristic.
-func (r *CrossEncoderReranker) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {
-	if len(results) == 0 {
-		return results, nil
-	}
-
-	type scoredResult struct {
-		result SearchResult
-		score  float32
-	}
-
-	scored := make([]scoredResult, len(results))
-	for i, result := range results {
-		score := r.scoreResult(query, result)
-		scored[i] = scoredResult{result: result, score: score}
-	}
-
-	sort.Slice(scored, func(i, j int) bool {
-		return scored[i].score > scored[j].score
-	})
-
-	reranked := make([]SearchResult, len(results))
-	for i, sr := range scored {
-		reranked[i] = sr.result
-		reranked[i].Score = sr.score
-	}
-
-	return reranked, nil
-}
-
-func (r *CrossEncoderReranker) scoreResult(query string, result SearchResult) float32 {
-	distanceScore := 1.0 / (1.0 + float32(result.Distance))
-
-	textMatchScore := float32(0.0)
-	if len(result.Metadata) > 0 {
-		metaMap, _ := core.DecodeMetadata(result.Metadata)
-		if metaMap != nil {
-			if title, ok := metaMap["title"].(string); ok {
-				textMatchScore += r.textMatchScore(query, title)
-			}
-			if description, ok := metaMap["description"].(string); ok {
-				textMatchScore += r.textMatchScore(query, description) * 0.5
-			}
-			if content, ok := metaMap["content"].(string); ok {
-				textMatchScore += r.textMatchScore(query, content) * 0.3
-			}
-		}
-	}
-
-	finalScore := 0.7*distanceScore + 0.3*textMatchScore
-
-	return finalScore
-}
-
-func (r *CrossEncoderReranker) textMatchScore(query, text string) float32 {
-	if query == "" || text == "" {
-		return 0.0
-	}
-
-	queryLower := strings.ToLower(query)
-	textLower := strings.ToLower(text)
-
-	matchCount := 0
-	queryTerms := strings.Fields(queryLower)
-	for _, term := range queryTerms {
-		if strings.Contains(textLower, term) {
-			matchCount++
-		}
-	}
-
-	if len(queryTerms) == 0 {
-		return 0.0
-	}
-
-	return float32(matchCount) / float32(len(queryTerms))
 }
 
 // dedupeAndSort removes duplicates (keeping highest score) and sorts by score descending

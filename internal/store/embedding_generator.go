@@ -654,9 +654,10 @@ func (le *localEmbeddingGenerator) initModel() error {
 		if os.Getenv("LONGBOW_ALLOW_STUBS") == "1" {
 			le.model = &stubEmbeddingModel{dimension: le.dimension, path: "empty"}
 			le.initialized = true
+			fmt.Println("WARNING: Using empty stub embedding model. This is NOT recommended for production.")
 			return nil
 		}
-		return errors.New("strict model validation failed: no model path specified and LONGBOW_ALLOW_STUBS != 1")
+		return errors.New("strict model validation failed: no model path specified. Set LONGBOW_ALLOW_STUBS=1 to bypass for development")
 	}
 
 	ext := ""
@@ -817,16 +818,24 @@ func (m *wasmEmbeddingModel) Inference(input []string) ([][]float32, error) {
 	}
 
 	if m.tokenizer == nil {
-		tok, _ := ml.NewTokenizer("vocab.txt", 512)
+		tok, err := ml.NewTokenizer("vocab.txt", 512)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load tokenizer: %w", err)
+		}
 		m.tokenizer = tok
 	}
+
+	start := time.Now()
+	defer func() {
+		metrics.EmbeddingGenerationDurationSeconds.WithLabelValues("local", "wasm").Observe(time.Since(start).Seconds())
+	}()
 
 	results := make([][]float32, len(input))
 	for i, text := range input {
 		ids, mask := m.tokenizer.Encode(text)
 		output, err := m.runner.InferenceWithTokens(context.Background(), ids, mask)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("WASM inference failed for text %d: %w", i, err)
 		}
 		results[i] = output
 	}

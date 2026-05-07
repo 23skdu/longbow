@@ -37,19 +37,19 @@ func euclidean384NEON(a, b []float32) (float32, error) {
 }
 
 func euclidean768NEON(a, b []float32) (float32, error) {
-	return euclideanNEONKernel(a, b), nil
+	return euclideanHighDimNEONKernel(a, b), nil
 }
 
 func euclidean1024NEON(a, b []float32) (float32, error) {
-	return euclideanNEONKernel(a, b), nil
+	return euclideanHighDimNEONKernel(a, b), nil
 }
 
 func euclidean1536NEON(a, b []float32) (float32, error) {
-	return euclideanNEONKernel(a, b), nil
+	return euclideanHighDimNEONKernel(a, b), nil
 }
 
 func euclidean3072NEON(a, b []float32) (float32, error) {
-	return euclideanNEONKernel(a, b), nil
+	return euclideanHighDimNEONKernel(a, b), nil
 }
 
 func dot128NEON(a, b []float32) (float32, error) {

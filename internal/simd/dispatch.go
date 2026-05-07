@@ -79,6 +79,7 @@ type ImplementationDispatch struct {
 	ManhattanDistance  distanceFunc
 	ChebyshevDistance  distanceFunc
 	BrayCurtisDistance distanceFunc
+	L2SquaredDistance  distanceFunc
  
 	// Batch processing (GraphRAG expansion)
 	AccumulateWeightedScatter func(dst []float32, targets []uint32, weights []float32, factor float32)
@@ -113,6 +114,7 @@ func initDispatchTable() {
 			EuclideanDistanceF16:       euclideanF16AVX512,
 			CosineDistanceF16:          cosineF16AVX512,
 			DotProductF16:               dotF16AVX512,
+			L2SquaredDistance:           l2SquaredAVX512,
 
 			EuclideanDistance128:  euclideanNEON,
 			EuclideanDistance384:  euclidean384AVX512,
@@ -165,6 +167,7 @@ func initDispatchTable() {
 			EuclideanDistanceBatch:     euclideanBatchAVX2,
 			CosineDistanceBatch:        cosineBatchAVX2,
 			DotProductBatch:            dotBatchAVX2,
+			L2SquaredDistance:           l2SquaredAVX2,
 			EuclideanDistanceBatchFlat: euclideanBatchFlatAVX2,
 			EuclideanDistanceF16:       euclideanF16Unrolled4x,
 			CosineDistanceF16:          cosineF16Unrolled4x,
@@ -225,6 +228,7 @@ func initDispatchTable() {
 			EuclideanDistanceF16:       euclideanF16NEON,
 			CosineDistanceF16:          cosineF16NEON,
 			DotProductF16:               dotF16NEON,
+			L2SquaredDistance:           l2SquaredNEON,
 
 			EuclideanDistance128:  euclidean128NEON,
 			EuclideanDistance384:  euclidean384NEON,
@@ -745,6 +749,11 @@ func initializeDispatch() {
 	Registry.Register(MetricEuclidean, DataTypeComplex64, 0, euclideanComplex64Unrolled)
 	Registry.Register(MetricCosine, DataTypeComplex64, 0, CosineDistanceComplex64)
 	Registry.Register(MetricDotProduct, DataTypeComplex64, 0, dotComplex64Unrolled)
+	// L2Squared (Polymorphic)
+	Registry.Register(MetricL2Squared, DataTypeFloat32, 0, l2SquaredImpl)
+	Registry.Register(MetricL2Squared, DataTypeInt8, 0, l2SquaredInt8Unrolled4x)
+	Registry.Register(MetricL2Squared, DataTypeUint8, 0, l2SquaredUint8Unrolled4x)
+
 
 	Registry.Register(MetricEuclidean, DataTypeComplex128, 0, euclideanComplex128Unrolled)
 	Registry.Register(MetricCosine, DataTypeComplex128, 0, CosineDistanceComplex128)

@@ -20,6 +20,8 @@ const (
 	MetricChebyshev
 	// MetricBrayCurtis uses the Bray-Curtis dissimilarity.
 	MetricBrayCurtis
+	// MetricL2Squared uses the squared Euclidean distance.
+	MetricL2Squared
 )
 
 func (m MetricType) String() string {
@@ -36,6 +38,8 @@ func (m MetricType) String() string {
 		return "chebyshev"
 	case MetricBrayCurtis:
 		return "braycurtis"
+	case MetricL2Squared:
+		return "l2_squared"
 	default:
 		return "unknown"
 	}

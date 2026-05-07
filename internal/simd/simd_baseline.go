@@ -57,6 +57,54 @@ func dotInt8Unrolled4x(a, b []int8) (float32, error) {
 	}
 	return float32(sum0 + sum1 + sum2 + sum3), nil
 }
+func l2SquaredInt8Unrolled4x(a, b []int8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 int32
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := int32(a[i]) - int32(b[i])
+		d1 := int32(a[i+1]) - int32(b[i+1])
+		d2 := int32(a[i+2]) - int32(b[i+2])
+		d3 := int32(a[i+3]) - int32(b[i+3])
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	for ; i < n; i++ {
+		d := int32(a[i]) - int32(b[i])
+		sum0 += d * d
+	}
+	return float32(sum0 + sum1 + sum2 + sum3), nil
+}
+
+func l2SquaredUint8Unrolled4x(a, b []uint8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 int32
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := int32(a[i]) - int32(b[i])
+		d1 := int32(a[i+1]) - int32(b[i+1])
+		d2 := int32(a[i+2]) - int32(b[i+2])
+		d3 := int32(a[i+3]) - int32(b[i+3])
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	for ; i < n; i++ {
+		d := int32(a[i]) - int32(b[i])
+		sum0 += d * d
+	}
+	return float32(sum0 + sum1 + sum2 + sum3), nil
+}
+
 
 // ... Repeat for Int16, Int32, Int64 and Uint equivalents ...
 // Note: Int64 might need float64 for better precision if values are huge.

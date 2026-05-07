@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/23skdu/longbow/internal/store/internal/core"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
@@ -36,8 +37,13 @@ func TestHNSW_UnsafeAccess(t *testing.T) {
 	// Check vector in first chunk
 	chunk := data.GetVectorsChunk(0)
 	require.NotNil(t, chunk)
+	
+	paddedDims := data.GetPaddedDimsForType(types.VectorTypeFloat32)
 	assert.Equal(t, float32(1.0), chunk[0])
 	assert.Equal(t, float32(2.0), chunk[1])
-	assert.Equal(t, float32(3.0), chunk[2])
-	assert.Equal(t, float32(4.0), chunk[3])
+	
+	// Node 1 starts at paddedDims
+	require.True(t, len(chunk) >= paddedDims+2)
+	assert.Equal(t, float32(3.0), chunk[paddedDims])
+	assert.Equal(t, float32(4.0), chunk[paddedDims+1])
 }

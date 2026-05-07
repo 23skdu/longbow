@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"sync"
 
@@ -75,13 +74,7 @@ func (r *ONNXReranker) initModel() error {
 			r.logger.Warn().Err(err).Str("path", r.modelPath).Msg("Failed to initialize ONNX session, using fallback")
 		}
 	}
-	// Default: use heuristic stub model if allowed
-	if os.Getenv("LONGBOW_ALLOW_STUBS") == "1" {
-		r.logger.Warn().Str("path", r.modelPath).Msg("Using heuristic fallback reranker (stubMLModel) - real ONNX/WASM models highly recommended for production")
-		r.model = &stubMLModel{path: r.modelPath}
-		return nil
-	}
-	return fmt.Errorf("strict model validation failed: unknown model extension for %s (use .onnx or .wasm, or set LONGBOW_ALLOW_STUBS=1)", r.modelPath)
+	return fmt.Errorf("strict model validation failed: unknown model extension for %s (use .onnx or .wasm)", r.modelPath)
 }
 
 type onnxModelWrapper struct {

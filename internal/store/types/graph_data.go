@@ -11,6 +11,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
+	arrowmemory "github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"runtime"
 	"sync"
@@ -37,6 +38,7 @@ type GraphData struct {
 	GlobalVersion uint64         // Incremented on structural changes for cache validation.
 	BackingGraph  any            // Interface to a persistent storage (e.g., *DiskGraph).
 	Name          string         // Unique identifier for the dataset (used in metrics).
+	Allocator     arrowmemory.Allocator // Optional allocator for NUMA-aware memory placement.
 
 	// Vectors (primary storage, usually float32)
 	Vectors [][]float32
@@ -588,7 +590,13 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
-				g.Float32Arena = memory.NewTypedArena[float32](memory.NewSlabArena(slabSize))
+				var sa *memory.SlabArena
+				if g.Allocator != nil {
+					sa = memory.NewSlabArenaWithAllocator(slabSize, g.Allocator)
+				} else {
+					sa = memory.NewSlabArena(slabSize)
+				}
+				g.Float32Arena = memory.NewTypedArena[float32](sa)
 			}
 			ref, err := g.Float32Arena.AllocSlice(ChunkSize * paddedDims)
 			if err != nil {
@@ -612,7 +620,13 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
-				g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
+				var sa *memory.SlabArena
+				if g.Allocator != nil {
+					sa = memory.NewSlabArenaWithAllocator(slabSize, g.Allocator)
+				} else {
+					sa = memory.NewSlabArena(slabSize)
+				}
+				g.Uint8Arena = memory.NewTypedArena[uint8](sa)
 			}
 			ref, err := g.Uint8Arena.AllocSliceDirty(ChunkSize * paddedDims)
 			if err != nil {
@@ -635,7 +649,13 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 				if slabSize < 1024*1024 {
 					slabSize = 1024 * 1024
 				}
-				g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
+				var sa *memory.SlabArena
+				if g.Allocator != nil {
+					sa = memory.NewSlabArenaWithAllocator(slabSize, g.Allocator)
+				} else {
+					sa = memory.NewSlabArena(slabSize)
+				}
+				g.Uint64Arena = memory.NewTypedArena[uint64](sa)
 			}
 			ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWordsPerNode)
 			if err != nil {
@@ -2348,7 +2368,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	quantization bool, sq8 bool, persistent bool,
 	dataType VectorDataType, bqEnabled bool, pqEnabled bool,
-	tqEnabled bool, tqBits int, name string) *GraphData {
+	tqEnabled bool, tqBits int, name string, alloc arrowmemory.Allocator) *GraphData {
 
 	// Enforce minimum capacity to avoid rapid initial COW cycles
 	if capacity < 1024 {
@@ -2361,48 +2381,105 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 
 		f32SlabSize := ChunkSize*dim*4 + 64
 		if f32SlabSize < minSlabSize { f32SlabSize = minSlabSize }
-		f32Arena = memory.NewSlabArena(f32SlabSize)
+		if alloc != nil {
+			f32Arena = memory.NewSlabArenaWithAllocator(f32SlabSize, alloc)
+		} else {
+			f32Arena = memory.NewSlabArena(f32SlabSize)
+		}
 
 		u8SlabSize := ChunkSize*dim + 64
 		if u8SlabSize < minSlabSize { u8SlabSize = minSlabSize }
-		u8Arena = memory.NewSlabArena(u8SlabSize)
+		if alloc != nil {
+			u8Arena = memory.NewSlabArenaWithAllocator(u8SlabSize, alloc)
+		} else {
+			u8Arena = memory.NewSlabArena(u8SlabSize)
+		}
 
 		f64SlabSize := ChunkSize*dim*8 + 64
 		if f64SlabSize < minSlabSize { f64SlabSize = minSlabSize }
-		f64Arena = memory.NewSlabArena(f64SlabSize)
+		if alloc != nil {
+			f64Arena = memory.NewSlabArenaWithAllocator(f64SlabSize, alloc)
+		} else {
+			f64Arena = memory.NewSlabArena(f64SlabSize)
+		}
 
-		i8Arena = memory.NewSlabArena(u8SlabSize)
+		if alloc != nil {
+			i8Arena = memory.NewSlabArenaWithAllocator(u8SlabSize, alloc)
+		} else {
+			i8Arena = memory.NewSlabArena(u8SlabSize)
+		}
 
 		c64SlabSize := ChunkSize*dim*8 + 64
 		if c64SlabSize < minSlabSize { c64SlabSize = minSlabSize }
-		c64Arena = memory.NewSlabArena(c64SlabSize)
+		if alloc != nil {
+			c64Arena = memory.NewSlabArenaWithAllocator(c64SlabSize, alloc)
+		} else {
+			c64Arena = memory.NewSlabArena(c64SlabSize)
+		}
 
 		c128SlabSize := ChunkSize*dim*16 + 64
 		if c128SlabSize < minSlabSize { c128SlabSize = minSlabSize }
-		c128Arena = memory.NewSlabArena(c128SlabSize)
+		if alloc != nil {
+			c128Arena = memory.NewSlabArenaWithAllocator(c128SlabSize, alloc)
+		} else {
+			c128Arena = memory.NewSlabArena(c128SlabSize)
+		}
 
 		i64SlabSize := ChunkSize*dim*8 + 64
 		if i64SlabSize < minSlabSize { i64SlabSize = minSlabSize }
-		i64Arena = memory.NewSlabArena(i64SlabSize)
+		if alloc != nil {
+			i64Arena = memory.NewSlabArenaWithAllocator(i64SlabSize, alloc)
+		} else {
+			i64Arena = memory.NewSlabArena(i64SlabSize)
+		}
 
 		i16SlabSize := ChunkSize*dim*2 + 64
 		if i16SlabSize < minSlabSize { i16SlabSize = minSlabSize }
-		i16Arena = memory.NewSlabArena(i16SlabSize)
+		if alloc != nil {
+			i16Arena = memory.NewSlabArenaWithAllocator(i16SlabSize, alloc)
+		} else {
+			i16Arena = memory.NewSlabArena(i16SlabSize)
+		}
 
 		u16SlabSize := ChunkSize*dim*2 + 64
 		if u16SlabSize < minSlabSize { u16SlabSize = minSlabSize }
-		u16Arena = memory.NewSlabArena(u16SlabSize)
+		if alloc != nil {
+			u16Arena = memory.NewSlabArenaWithAllocator(u16SlabSize, alloc)
+		} else {
+			u16Arena = memory.NewSlabArena(u16SlabSize)
+		}
 
 		i32SlabSize := ChunkSize*dim*4 + 64
 		if i32SlabSize < minSlabSize { i32SlabSize = minSlabSize }
-		i32Arena = memory.NewSlabArena(i32SlabSize)
+		if alloc != nil {
+			i32Arena = memory.NewSlabArenaWithAllocator(i32SlabSize, alloc)
+		} else {
+			i32Arena = memory.NewSlabArena(i32SlabSize)
+		}
 
 		f16SlabSize := ChunkSize*dim*2 + 64
 		if f16SlabSize < minSlabSize { f16SlabSize = minSlabSize }
-		f16Arena = memory.NewSlabArena(f16SlabSize)
+		if alloc != nil {
+			f16Arena = memory.NewSlabArenaWithAllocator(f16SlabSize, alloc)
+		} else {
+			f16Arena = memory.NewSlabArena(f16SlabSize)
+		}
 
-		u64Arena = memory.NewSlabArena(minSlabSize)
-		u32Arena = memory.NewSlabArena(minSlabSize)
+		u64SlabSize := ChunkSize*dim*8 + 64
+		if u64SlabSize < minSlabSize { u64SlabSize = minSlabSize }
+		if alloc != nil {
+			u64Arena = memory.NewSlabArenaWithAllocator(u64SlabSize, alloc)
+		} else {
+			u64Arena = memory.NewSlabArena(u64SlabSize)
+		}
+
+		u32SlabSize := ChunkSize*dim*4 + 64
+		if u32SlabSize < minSlabSize { u32SlabSize = minSlabSize }
+		if alloc != nil {
+			u32Arena = memory.NewSlabArenaWithAllocator(u32SlabSize, alloc)
+		} else {
+			u32Arena = memory.NewSlabArena(u32SlabSize)
+		}
 	} else {
 		u64Arena = memory.NewSlabArena(16 * 1024 * 1024)
 		u32Arena = memory.NewSlabArena(16 * 1024 * 1024)
@@ -2422,6 +2499,7 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 		BQEnabled:         bqEnabled,
 		PQEnabled:         pqEnabled,
 		Name:              name,
+		Allocator:         alloc,
 		Vectors:           make([][]float32, numChunks),
 		VectorsFloat64:    make([][]float64, numChunks),
 		VectorsComplex64:  make([][]complex64, numChunks),

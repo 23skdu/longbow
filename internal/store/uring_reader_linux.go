@@ -6,15 +6,29 @@ import (
 	"fmt"
 	"os"
 	"sync"
+	"sync/atomic"
+
 	"github.com/23skdu/longbow/internal/iouring"
 )
 
-// UringReader utilizes io_uring for high-performance, non-blocking reads.
+// ReadRequest tracks an asynchronous read operation.
+type ReadRequest struct {
+	ID   uint64
+	Done chan int
+	Err  chan error
+}
+
+// UringReader utilizes io_uring for high-performance, concurrent non-blocking reads.
 type UringReader struct {
 	f      *os.File
 	ring   *iouring.Ring
-	mu     sync.RWMutex
-	active bool
+	
+	mu          sync.RWMutex
+	active      bool
+	nextID      uint64
+	pending     map[uint64]*ReadRequest
+	
+	stopChan chan struct{}
 }
 
 func NewUringReader(path string) (*UringReader, error) {
@@ -30,56 +44,118 @@ func NewUringReader(path string) (*UringReader, error) {
 		return nil, fmt.Errorf("failed to init io_uring: %w", err)
 	}
 
-	return &UringReader{
-		f:      f,
-		ring:   ring,
-		active: true,
-	}, nil
+	r := &UringReader{
+		f:        f,
+		ring:     ring,
+		active:   true,
+		pending:  make(map[uint64]*ReadRequest),
+		stopChan: make(chan struct{}),
+	}
+
+	go r.completionLoop()
+
+	return r, nil
 }
 
 // ReadAt reads data into buf from the specified offset using io_uring.
+// This implementation is thread-safe and allows multiple concurrent reads.
 func (r *UringReader) ReadAt(buf []byte, offset int64) (int, error) {
 	r.mu.RLock()
-	defer r.mu.RUnlock()
+	active := r.active
+	r.mu.RUnlock()
 
-	if !r.active {
+	if !active {
 		return 0, fmt.Errorf("reader inactive")
 	}
 
+	id := atomic.AddUint64(&r.nextID, 1)
+	req := &ReadRequest{
+		ID:   id,
+		Done: make(chan int, 1),
+		Err:  make(chan error, 1),
+	}
+
+	r.mu.Lock()
+	r.pending[id] = req
+	r.mu.Unlock()
+
 	// Submit read operation
-	err := r.ring.SubmitRead(int(r.f.Fd()), buf, uint64(offset), 0)
+	err := r.ring.SubmitRead(int(r.f.Fd()), buf, uint64(offset), id)
 	if err != nil {
+		r.mu.Lock()
+		delete(r.pending, id)
+		r.mu.Unlock()
 		return 0, fmt.Errorf("iouring submit error: %w", err)
 	}
 
-	// Wait for completion
-	_, err = r.ring.Wait()
-	if err != nil {
-		return 0, fmt.Errorf("iouring wait error: %w", err)
+	// Flush to ensure kernel sees the request
+	if _, err := r.ring.Flush(); err != nil {
+		// Ignore error if some entries were submitted
 	}
 
-	cqe := r.ring.Peek()
-	if cqe == nil {
-		return 0, fmt.Errorf("no completion available")
+	// Wait for THIS request to complete
+	select {
+	case n := <-req.Done:
+		return n, nil
+	case err := <-req.Err:
+		return 0, err
+	case <-r.stopChan:
+		return 0, fmt.Errorf("reader closed")
 	}
-	defer r.ring.Advance(1)
+}
 
-	if cqe.Res < 0 {
-		return 0, fmt.Errorf("async read failed: %d", cqe.Res)
+func (r *UringReader) completionLoop() {
+	for {
+		select {
+		case <-r.stopChan:
+			return
+		default:
+			cqe, err := r.ring.Wait()
+			if err != nil {
+				return
+			}
+			if cqe == nil {
+				continue
+			}
+
+			id := cqe.UserData
+			res := cqe.Res
+
+			r.mu.Lock()
+			req, ok := r.pending[id]
+			if ok {
+				delete(r.pending, id)
+			}
+			r.mu.Unlock()
+
+			if ok {
+				if res < 0 {
+					req.Err <- fmt.Errorf("async read failed: %d", res)
+				} else {
+					req.Done <- int(res)
+				}
+				close(req.Done)
+				close(req.Err)
+			}
+
+			r.ring.Advance(1)
+		}
 	}
-
-	return int(cqe.Res), nil
 }
 
 func (r *UringReader) Close() error {
 	r.mu.Lock()
-	defer r.mu.Unlock()
 	if !r.active {
+		r.mu.Unlock()
 		return nil
 	}
 	r.active = false
+	r.mu.Unlock()
+
+	close(r.stopChan)
+	
 	if r.ring != nil {
-		r.ring.Close()
+		_ = r.ring.Close()
 	}
 	return r.f.Close()
 }

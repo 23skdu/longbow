@@ -406,6 +406,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		config.TurboQuantEnabled,
 		config.TurboQuantBits,
 		h.name,
+		nil,
 	)
 	if h.oopqEncoder != nil {
 		switch enc := h.oopqEncoder.(type) {
@@ -775,6 +776,31 @@ func (h *ArrowHNSW) commitID(id uint32) {
 		h.commitCond.Wait()
 	}
 	if h.nodeCount.CompareAndSwap(int64(id), int64(id+1)) {
+		// Entry Point Promotion: Only promote if this node reached a higher level than current EP
+		currentEP := h.entryPoint.Load()
+		data := h.data.Load()
+		if data != nil {
+			cID := int(id) / types.ChunkSize
+			cOff := int(id) % types.ChunkSize
+			levels := data.GetLevelsChunk(cID)
+			nodeLevel := 0
+			if levels != nil {
+				nodeLevel = int(levels[cOff])
+			}
+
+			epCID := int(currentEP) / types.ChunkSize
+			epCOff := int(currentEP) % types.ChunkSize
+			epLevels := data.GetLevelsChunk(epCID)
+			epLevel := 0
+			if epLevels != nil {
+				epLevel = int(epLevels[epCOff])
+			}
+
+			if nodeLevel > epLevel {
+				h.entryPoint.Store(id)
+				h.maxLevel.Store(int32(nodeLevel))
+			}
+		}
 		h.commitCond.Broadcast()
 	}
 	h.commitMu.Unlock()
@@ -1672,20 +1698,21 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	data := h.data.Load()
 	if data == nil {
 		gd := types.NewGraphData(
-			capacity,
-			dims,
-			false,
-			h.config.UseDisk,
-			0,
+			int(capacity),
+			int(h.dims.Load()),
+			false, // mmap
+			false, // useDisk
+			0,     // fd
 			h.config.Quantization,
 			h.config.SQ8Enabled,
-			h.config.UseDisk,
+			false, // persistent
 			h.config.DataType,
 			h.config.BQEnabled,
 			h.config.PQEnabled,
 			h.config.TurboQuantEnabled,
 			h.config.TurboQuantBits,
 			h.name,
+			nil,
 		)
 		h.data.Store(gd)
 		data = gd
@@ -2329,6 +2356,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	// Ensure chunks are allocated before parallel ingestion
 	maxID := startID + uint32(len(rowIdxs)) - 1 // #nosec G115
 	data, err := h.EnsureChunks(int(types.ChunkID(startID)), int(types.ChunkID(maxID)), int(h.dims.Load()))
+	if err == nil {
+		data = data.Clone()
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -2362,7 +2392,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	}
 
 	// Publish the populated snapshot
-	h.compareAndSwapData(data)
+	h.compareAndSwapData(data.Clone())
 
 	// Phase 1.5: Sequential Bootstrap
 	// If the index is empty or very small, we must insert some nodes sequentially
@@ -2380,7 +2410,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		}
 	}
 
-	data = h.data.Load()
+	data = h.data.Load().Clone()
 	for i := 0; i < bootstrapEnd; i++ {
 		id := startID + uint32(i) // #nosec G115
 		
@@ -2401,7 +2431,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		newData, err = h.insertInternal(id, vec, -1, false, data)
 		if err == nil {
 			if newData != nil {
-				h.compareAndSwapData(newData)
+				h.compareAndSwapData(newData.Clone())
 				data = newData
 			}
 			h.commitID(id) // Make visible immediately for subsequent bootstrap nodes
@@ -2441,7 +2471,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 
 		data, err := h.insertInternal(id, vec, -1, true, nil)
 		if err == nil && data != nil {
-			h.compareAndSwapData(data)
+			h.compareAndSwapData(data.Clone())
 		}
 		if err != nil {
 			return nil, err
@@ -2895,6 +2925,9 @@ func (h *MaxCandidateHeapAdapter) Pop() any {
 // searchLayer is used by insertion logic
 // searchLayer implements HNSW layer search
 func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]types.Candidate, error) {
+	h.growMu.RLock()
+	defer h.growMu.RUnlock()
+
 	start := time.Now()
 	defer func() {
 		if ctx != nil {
@@ -2920,7 +2953,14 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		if ctx != nil {
 			ctx.distComputeCount++
 		}
-		epDist, err = comp.ComputeSingle(entryPoint)
+		maxCommitted := h.nodeCount.Load()
+		if int64(entryPoint) >= maxCommitted {
+			oldVer := data.LockNode(0, entryPoint)
+			epDist, err = comp.ComputeSingle(entryPoint)
+			data.UnlockNode(0, entryPoint, oldVer)
+		} else {
+			epDist, err = comp.ComputeSingle(entryPoint)
+		}
 		if err != nil {
 			return nil, err
 		}
@@ -3016,7 +3056,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 				return math.MaxFloat32, nil
 			}
-			epDist, _ = distComputer(entryPoint)
 
 		case []int8:
 			distComputer = func(id uint32) (float32, error) {
@@ -3075,7 +3114,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 				return math.MaxFloat32, nil
 			}
-			epDist, _ = distComputer(entryPoint)
 
 		case []complex64:
 			distComputer = func(id uint32) (float32, error) {
@@ -3097,7 +3135,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 				return math.MaxFloat32, nil
 			}
-			epDist, _ = distComputer(entryPoint)
 
 		case []complex128:
 			distComputer = func(id uint32) (float32, error) {
@@ -3119,7 +3156,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 				return math.MaxFloat32, nil
 			}
-			epDist, _ = distComputer(entryPoint)
 
 		case []float64:
 			distComputer = func(id uint32) (float32, error) {
@@ -3144,7 +3180,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 				return math.MaxFloat32, nil
 			}
-			epDist, _ = distComputer(entryPoint)
 
 		case []float16.Num:
 			distComputer = func(id uint32) (float32, error) {
@@ -3169,7 +3204,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 				return math.MaxFloat32, nil
 			}
-			epDist, _ = distComputer(entryPoint)
 
 		case []uint32:
 			distComputer = func(id uint32) (float32, error) {
@@ -3190,7 +3224,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 				return math.MaxFloat32, nil
 			}
-			epDist, _ = distComputer(entryPoint)
 
 		case []int32:
 			distComputer = func(id uint32) (float32, error) {
@@ -3206,7 +3239,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 				return math.MaxFloat32, nil
 			}
-			epDist, _ = distComputer(entryPoint)
 
 		case []int16:
 			distComputer = func(id uint32) (float32, error) {
@@ -3222,7 +3254,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 				return math.MaxFloat32, nil
 			}
-			epDist, _ = distComputer(entryPoint)
 
 		case []uint16:
 			distComputer = func(id uint32) (float32, error) {
@@ -3238,7 +3269,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 				return math.MaxFloat32, nil
 			}
-			epDist, _ = distComputer(entryPoint)
 
 		case []int64:
 			distComputer = func(id uint32) (float32, error) {
@@ -3254,7 +3284,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 				return math.MaxFloat32, nil
 			}
-			epDist, _ = distComputer(entryPoint)
 
 		case []uint64:
 			distComputer = func(id uint32) (float32, error) {
@@ -3270,7 +3299,15 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 				return math.MaxFloat32, nil
 			}
-			epDist, _ = distComputer(entryPoint)
+			maxCommitted := h.nodeCount.Load()
+			// Race Protection: If entry point is not yet committed, lock it to ensure SetVector is finished.
+			if int64(entryPoint) >= maxCommitted {
+				oldVer := data.LockNode(0, entryPoint)
+				epDist, _ = distComputer(entryPoint)
+				data.UnlockNode(0, entryPoint, oldVer)
+			} else {
+				epDist, _ = distComputer(entryPoint)
+			}
 
 		default:
 			return nil, fmt.Errorf("searchLayer: unsupported query vector type %T", queryVec)

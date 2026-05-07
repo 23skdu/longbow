@@ -6,6 +6,7 @@ import (
 	"encoding/gob"
 	"fmt"
 	"io"
+	"math"
 	"os"
 	"sort"
 	"sync"
@@ -26,9 +27,11 @@ import (
 type HNSWPluggableAdapter struct {
 	mu        sync.RWMutex
 	dimension int
-	vectors   map[uint64][]float32
-	config    *ArrowHNSWConfig
-	hnsw      VectorIndex //nolint:unused // reserved for future HNSW integration // actual HNSW index, nil until dataset provided
+	vectors      map[uint64][]float32
+	locationToID map[uint64]uint64
+	hnsw         VectorIndex // actual HNSW index, nil until dataset provided
+	provider     lbtypes.IndexDataProvider
+	hnswConfig   lbtypes.ArrowHNSWConfig
 }
 
 // Type returns the index type.
@@ -199,13 +202,115 @@ func (h *HNSWPluggableAdapter) Close() error {
 
 // AddByLocation is a stub for PluggableVectorIndex compatibility.
 func (h *HNSWPluggableAdapter) AddByLocation(batchIdx, rowIdx int) error {
+	if h.provider == nil {
+		return fmt.Errorf("HNSWPluggableAdapter: AddByLocation requires IndexDataProvider")
+	}
+
+	h.provider.RLockData()
+	defer h.provider.RUnlockData()
+
+	records := h.provider.GetRecords()
+	if batchIdx < 0 || batchIdx >= len(records) {
+		return fmt.Errorf("invalid batch index: %d", batchIdx)
+	}
+
+	rec := records[batchIdx]
+	return h.AddByRecord(context.Background(), rec, rowIdx, batchIdx)
+}
+
+// AddByRecord extracts a vector from an Arrow record and adds it to the index.
+func (h *HNSWPluggableAdapter) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) error {
+	fieldIdx := rec.Schema().FieldIndices("vector")
+	if len(fieldIdx) == 0 {
+		return fmt.Errorf("column 'vector' not found")
+	}
+
+	col := rec.Column(fieldIdx[0])
+	list, ok := col.(*array.FixedSizeList)
+	if !ok {
+		return fmt.Errorf("column 'vector' is not a FixedSizeList")
+	}
+
+	listSize := int(list.DataType().(*arrow.FixedSizeListType).Len())
+	if listSize != h.dimension {
+		return fmt.Errorf("vector dimension mismatch: expected %d, got %d", h.dimension, listSize)
+	}
+
+	values := list.ListValues().(*array.Float32).Float32Values()
+	start := rowIdx * listSize
+	vec := make([]float32, listSize)
+	copy(vec, values[start:start+listSize])
+
+	// Use packed location as a temporary ID if no ID column is available,
+	// or use a sequence if needed. In this adapter, we just need a unique ID.
+	id := uint64(lbtypes.PackLocation(lbtypes.Location{BatchIdx: batchIdx, RowIdx: rowIdx}))
+	
+	h.mu.Lock()
+	h.vectors[id] = vec
+	if h.locationToID == nil {
+		h.locationToID = make(map[uint64]uint64)
+	}
+	h.locationToID[id] = id // Identity mapping for this case
+	h.mu.Unlock()
+
 	return nil
+}
+
+// SetDataProvider sets the data provider for the adapter.
+func (h *HNSWPluggableAdapter) SetDataProvider(p lbtypes.IndexDataProvider) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.provider = p
+}
+
+// EstimateMemory returns the estimated memory usage of the index in bytes.
+func (h *HNSWPluggableAdapter) EstimateMemory() int64 {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+
+	numVectors := len(h.vectors)
+	// Overhead per map entry (approximate) + slice header + vector data
+	// map[uint64][]float32: ~48 bytes overhead per entry (bucket + pointer)
+	// []float32: 24 bytes header + dimension * 4 bytes
+	vecMem := int64(numVectors) * (48 + 24 + int64(h.dimension)*4)
+	
+	// locationToID map[uint64]uint64: ~32 bytes overhead per entry
+	locMem := int64(len(h.locationToID)) * (32 + 8 + 8)
+
+	return vecMem + locMem
 }
 
 // GetVectorID retrieves the vector ID for a given location.
 func (h *HNSWPluggableAdapter) GetVectorID(loc Location) (uint64, bool) {
-	// Adapter doesn't support structured location mapping yet
-	return 0, false
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	if h.locationToID == nil {
+		return 0, false
+	}
+	
+	packed := lbtypes.PackLocation(loc)
+	id, ok := h.locationToID[packed]
+	return id, ok
+}
+
+// SetLocation registers a location-to-ID mapping.
+func (h *HNSWPluggableAdapter) SetLocation(id uint64, loc any) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	if h.locationToID == nil {
+		h.locationToID = make(map[uint64]uint64)
+	}
+
+	var packed uint64
+	switch l := loc.(type) {
+	case Location:
+		packed = lbtypes.PackLocation(l)
+	case uint64:
+		packed = l
+	default:
+		return
+	}
+	h.locationToID[packed] = id
 }
 
 // SearchVectors performs a nearest neighbor search and returns results in the store's format.
@@ -233,13 +338,17 @@ func (h *HNSWPluggableAdapter) GetIndexType() string {
 }
 // PluggableInternalAdapter wraps a PluggableVectorIndex to implement the internal VectorIndexer interface.
 // This allows the adaptive learned index to perform live swaps into the dataset search path.
+// PluggableInternalAdapter wraps a PluggableVectorIndex to implement the internal VectorIndexer interface.
+// This allows the adaptive learned index to perform live swaps into the dataset search path.
 type PluggableInternalAdapter struct {
-	inner PluggableVectorIndex
+	inner    PluggableVectorIndex
+	provider lbtypes.IndexDataProvider
 }
 
 // NewPluggableInternalAdapter creates a new adapter for internal use.
-func NewPluggableInternalAdapter(inner PluggableVectorIndex) *PluggableInternalAdapter {
-	return &PluggableInternalAdapter{inner: inner}
+// NewPluggableInternalAdapter creates a new adapter for internal use.
+func NewPluggableInternalAdapter(inner PluggableVectorIndex, provider lbtypes.IndexDataProvider) *PluggableInternalAdapter {
+	return &PluggableInternalAdapter{inner: inner, provider: provider}
 }
 
 // Type returns the index type.
@@ -278,12 +387,34 @@ func (a *PluggableInternalAdapter) AddByRecord(ctx context.Context, rec arrow.Re
 	// Use sequential ID for simplicity
 	id := uint64(a.inner.Size()) // #nosec G115 -- Size() returns int within uint64 range
 	err := a.inner.Add(id, vec)
+	if err == nil {
+		// Try to register location if the inner index supports it
+		type locationSetter interface {
+			SetLocation(id uint64, loc Location)
+		}
+		if ls, ok := a.inner.(locationSetter); ok {
+			ls.SetLocation(id, Location{BatchIdx: batchIdx, RowIdx: rowIdx})
+		}
+	}
 	return uint32(id), err // #nosec G115
 }
 
 // AddByLocation implements VectorIndexer.
 func (a *PluggableInternalAdapter) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	return 0, fmt.Errorf("adaptive index bridge: incremental AddByLocation not supported (requires dataset access)")
+	if a.provider == nil {
+		return 0, fmt.Errorf("PluggableInternalAdapter: provider not set")
+	}
+
+	a.provider.RLockData()
+	defer a.provider.RUnlockData()
+
+	records := a.provider.GetRecords()
+	if batchIdx < 0 || batchIdx >= len(records) {
+		return 0, fmt.Errorf("invalid batch index: %d", batchIdx)
+	}
+
+	rec := records[batchIdx]
+	return a.AddByRecord(ctx, rec, rowIdx, batchIdx)
 }
 
 // AddBatch implements VectorIndexer.
@@ -389,7 +520,17 @@ func (a *PluggableInternalAdapter) GetEntryPoint() uint32                  { ret
 // GetLocation retrieves the location of a vector.
 func (a *PluggableInternalAdapter) GetLocation(id uint32) (any, bool)      { return nil, false }
 // GetVectorID retrieves the vector ID for a given location.
-func (a *PluggableInternalAdapter) GetVectorID(loc any) (uint32, bool)     { return 0, false }
+func (a *PluggableInternalAdapter) GetVectorID(loc any) (uint32, bool) {
+	l, ok := loc.(Location)
+	if !ok {
+		return 0, false
+	}
+	id, ok := a.inner.GetVectorID(l)
+	if id > math.MaxUint32 {
+		return 0, false
+	}
+	return uint32(id), ok
+}
 // GetDimension returns the vector dimension.
 func (a *PluggableInternalAdapter) GetDimension() uint32                  { return uint32(a.inner.Dimension()) } // #nosec G115
 // SetIndexedColumns sets the columns to be indexed.
@@ -405,7 +546,12 @@ func (a *PluggableInternalAdapter) PreWarm(targetSize int)              {}
 // Warmup warms up the index.
 func (a *PluggableInternalAdapter) Warmup() int                         { return 0 }
 // EstimateMemory estimates the memory usage of the index.
-func (a *PluggableInternalAdapter) EstimateMemory() int64               { return 0 }
+func (a *PluggableInternalAdapter) EstimateMemory() int64 {
+	if em, ok := a.inner.(interface{ EstimateMemory() int64 }); ok {
+		return em.EstimateMemory()
+	}
+	return 0
+}
 // TrainPQ trains the product quantizer for the index.
 func (a *PluggableInternalAdapter) TrainPQ(vectors [][]float32) error   { return nil }
 // GetPQEncoder returns the product quantizer encoder.

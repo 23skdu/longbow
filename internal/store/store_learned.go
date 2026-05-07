@@ -192,7 +192,7 @@ func (s *VectorStore) SwitchIndex(collection string, to IndexType) error {
 		// 6. Atomic Swap.
 		ds.dataMu.Lock()
 		oldIdx := ds.Index
-		ds.Index = NewPluggableInternalAdapter(newIdx)
+		ds.Index = NewPluggableInternalAdapter(newIdx, ds)
 		ds.dataMu.Unlock()
 
 		// 7. Cleanup and Callback.

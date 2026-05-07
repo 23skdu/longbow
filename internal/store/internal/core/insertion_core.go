@@ -23,6 +23,9 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 
 // InsertWithVector inserts a vector that has already been retrieved.
 func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
+	h.growMu.Lock()
+	defer h.growMu.Unlock()
+
 	data, err := h.insertInternal(id, vec, level, false, nil)
 	if err == nil && data != nil {
 		h.compareAndSwapData(data)
@@ -37,7 +40,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		level = h.generateLevel()
 	}
 	if data == nil {
-		data = h.data.Load()
+		data = h.data.Load().Clone()
 	}
 	start := time.Now()
 	var dims int
@@ -120,6 +123,9 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		data = h.data.Load()
 	}
 
+	h.growMu.RLock()
+	defer h.growMu.RUnlock()
+
 	if !skipSet {
 		oldVer := data.LockNode(0, id)
 		err := data.SetVector(id, vec)
@@ -189,6 +195,14 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	maxL := int(h.maxLevel.Load())
 
 	if maxL >= 0 {
+		// Optimization: If we have multiple entry points at the highest layer,
+		// pick one randomly to reduce contention on the search start node.
+		if randomizedEP, ok := h.topLayerManager.entryPoints[maxL].GetRandom(); ok {
+			if int64(randomizedEP) < h.nodeCount.Load() {
+				ep = randomizedEP
+			}
+		}
+
 		for l := maxL; l > level; l-- {
 			neighbors, err := h.searchLayer(context.Background(), computer, ep, 1, l, ctx, data, vec)
 			if err != nil { return nil, err }
@@ -212,19 +226,6 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			data = h.AddConnection(ctx, data, nb.ID, id, l, maxConn, nb.Dist)
 		}
 		if len(neighbors) > 0 { ep = neighbors[0].ID }
-	}
-
-	if level > int(h.maxLevel.Load()) {
-		h.epMu.Lock()
-		if level > int(h.maxLevel.Load()) {
-			safeLevel := level
-			if safeLevel > math.MaxInt32 {
-				safeLevel = math.MaxInt32
-			}
-			h.maxLevel.Store(int32(safeLevel)) // #nosec G115
-			h.entryPoint.Store(id)
-		}
-		h.epMu.Unlock()
 	}
 
 	return data, nil

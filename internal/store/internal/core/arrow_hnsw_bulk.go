@@ -435,7 +435,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			return err
 		}
 	}
-	h.compareAndSwapData(data)
+	h.compareAndSwapData(data.Clone())
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -661,8 +661,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			// Update the global snapshot for organic growth so next sub-batch sees these nodes
 			// Only clone if there are more sub-batches to process to avoid final redundant clone
 			if i+subBatchSize < len(activeIndices) {
-				stableSubBatchData := data.Clone()
-				h.compareAndSwapData(stableSubBatchData)
+				h.compareAndSwapData(data.Clone())
 			}
 		}
 
@@ -682,7 +681,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	}
 	h.initMu.Unlock()
 
-	h.compareAndSwapData(data)
+	h.compareAndSwapData(data.Clone())
 
 	if h.config.SQ8Enabled && h.quantizer != nil && !h.sq8Ready.Load() {
 		if vecsF32, ok := vecs.([][]float32); ok {

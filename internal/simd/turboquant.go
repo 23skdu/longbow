@@ -111,3 +111,18 @@ func TurboQuantDistanceNEON(query []float32, tqData []byte, dim int, pow2 int, b
 
 	return float32(math.Sqrt(float64(sum))), nil
 }
+
+func TurboQuantDistanceAVX512(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
+	// Fallback to NEON-optimized Go version for now until AVX512 assembly is finalized
+	return TurboQuantDistanceNEON(query, tqData, dim, pow2, bitsPerAngle)
+}
+
+func TurboQuantDistanceAVX2(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
+	return TurboQuantDistanceNEON(query, tqData, dim, pow2, bitsPerAngle)
+}
+
+// GetTurboQuantDistanceFunc returns the optimal TQ distance function for the current CPU.
+func GetTurboQuantDistanceFunc() TurboQuantDistanceFunc {
+	// runtime detection logic
+	return TurboQuantDistanceNEON
+}

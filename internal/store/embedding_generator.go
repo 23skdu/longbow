@@ -14,7 +14,6 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/wasm"
 	"github.com/23skdu/longbow/internal/ml"
-	"os"
 )
 
 // EmbeddingGenerator defines the interface for generating vector embeddings from text.
@@ -651,13 +650,7 @@ func NewLocalEmbeddingGenerator(config EmbeddingConfig) (EmbeddingGenerator, err
 
 func (le *localEmbeddingGenerator) initModel() error {
 	if le.modelPath == "" {
-		if os.Getenv("LONGBOW_ALLOW_STUBS") == "1" {
-			le.model = &stubEmbeddingModel{dimension: le.dimension, path: "empty"}
-			le.initialized = true
-			fmt.Println("WARNING: Using empty stub embedding model. This is NOT recommended for production.")
-			return nil
-		}
-		return errors.New("strict model validation failed: no model path specified. Set LONGBOW_ALLOW_STUBS=1 to bypass for development")
+		return errors.New("strict model validation failed: no model path specified")
 	}
 
 	ext := ""
@@ -675,13 +668,7 @@ func (le *localEmbeddingGenerator) initModel() error {
 		le.initialized = true
 		le.logger.Info("ONNX embedding model loaded", "path", le.modelPath)
 	default:
-		if os.Getenv("LONGBOW_ALLOW_STUBS") == "1" {
-			le.model = &stubEmbeddingModel{dimension: le.dimension, path: le.modelPath}
-			le.initialized = true
-			fmt.Printf("WARNING: Using stub embedding model for path: %s. This is NOT recommended for production.\n", le.modelPath)
-			return nil
-		}
-		return fmt.Errorf("strict model validation failed: unknown model extension for %s (use .onnx or .wasm, or set LONGBOW_ALLOW_STUBS=1)", le.modelPath)
+		return fmt.Errorf("strict model validation failed: unknown model extension for %s (use .onnx or .wasm)", le.modelPath)
 	}
 
 	return nil

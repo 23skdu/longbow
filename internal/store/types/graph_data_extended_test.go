@@ -13,7 +13,7 @@ func TestGraphData_VariousVectorTypes(t *testing.T) {
 	
 	// Test SQ8 - use Int8 type as base
 	// quantization=true, sq8=true
-	g := NewGraphData(capacity, dims, false, false, -1, true, true, false, VectorTypeInt8, false, false, false, 8, "test")
+	g := NewGraphData(capacity, dims, false, false, -1, true, true, false, VectorTypeInt8, false, false, false, 8, "test", nil)
 	require.NotNil(t, g)
 	
 	err := g.EnsureChunk(0, 0, dims)
@@ -34,7 +34,7 @@ func TestGraphData_VariousVectorTypes(t *testing.T) {
 
 	// Test BQ
 	// quantization=true, bqEnabled=true
-	gBQ := NewGraphData(capacity, dims, false, false, -1, true, false, false, VectorTypeBQ, true, false, false, 8, "test")
+	gBQ := NewGraphData(capacity, dims, false, false, -1, true, false, false, VectorTypeBQ, true, false, false, 8, "test", nil)
 	err = gBQ.EnsureChunk(0, 0, dims)
 	assert.NoError(t, err)
 	
@@ -48,7 +48,7 @@ func TestGraphData_VariousVectorTypes(t *testing.T) {
 }
 
 func TestGraphData_Metadata(t *testing.T) {
-	g := NewGraphData(10, 4, true, true, 0, false, false, false, VectorTypeFloat32, false, false, false, 8, "test")
+	g := NewGraphData(10, 4, true, true, 0, false, false, false, VectorTypeFloat32, false, false, false, 8, "test", nil)
 	err := g.EnsureChunk(0, 0, 4)
 	assert.NoError(t, err)
 	
@@ -65,7 +65,7 @@ func TestGraphData_Metadata(t *testing.T) {
 }
 
 func TestGraphData_Clone(t *testing.T) {
-	g := NewGraphData(10, 4, false, false, 0, false, false, false, VectorTypeFloat32, false, false, false, 8, "test")
+	g := NewGraphData(10, 4, false, false, 0, false, false, false, VectorTypeFloat32, false, false, false, 8, "test", nil)
 	_ = g.EnsureChunk(0, 0, 4)
 	_ = g.SetVector(0, []float32{1, 2, 3, 4})
 	

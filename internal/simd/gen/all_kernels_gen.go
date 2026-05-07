@@ -2,6 +2,7 @@
 package main
 
 import (
+	"fmt"
 	. "github.com/mmcloughlin/avo/build"
 	. "github.com/mmcloughlin/avo/operand"
 	"github.com/mmcloughlin/avo/reg"
@@ -60,6 +61,13 @@ func main() {
 	ImplementDotAVX2()
 	ImplementL2SquaredAVX512()
 	ImplementDotAVX512()
+
+	// --- Specialized Fixed-Size Kernels ---
+	ImplementSpecializedAVX2(128)
+	ImplementSpecializedAVX2(384)
+	ImplementSpecializedAVX2(768)
+	ImplementSpecializedAVX2(1024)
+	ImplementSpecializedAVX2(3072)
 
 	// --- Vertical Batch Kernels ---
 	ImplementEuclideanVertical4AVX2()
@@ -890,4 +898,86 @@ func ImplementSoftmaxAVX2() {
 func ImplementSigmoidAVX2() {
 	TEXT("sigmoidAVX2Kernel", NOSPLIT, "func(src, dst uintptr, n int)")
 	RET()
+}
+
+func ImplementSpecializedAVX2(dim int) {
+	// L2Squared specialized
+	TEXT(fmt.Sprintf("l2Squared%dAVX2Kernel", dim), NOSPLIT, "func(a, b uintptr) float32")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	
+	acc := YMM()
+	VXORPS(acc, acc, acc)
+	
+	for i := 0; i < dim; i += 8 {
+		y0 := YMM(); VMOVUPS(Mem{Base: a, Disp: i * 4}, y0)
+		y1 := YMM(); VMOVUPS(Mem{Base: b, Disp: i * 4}, y1)
+		VSUBPS(y1, y0, y0)
+		VFMADD231PS(y0, y0, acc)
+	}
+	
+	// Reduce YMM
+	xLow := XMM(); VEXTRACTF128(Imm(0), acc, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), acc, xHigh)
+	VADDPS(xLow, xHigh, xHigh)
+	xSum := XMM(); VMOVHLPS(xHigh, xSum, xSum)
+	VADDPS(xSum, xHigh, xHigh)
+	xNext := XMM(); VMOVSHDUP(xHigh, xNext)
+	VADDSS(xNext, xHigh, xHigh)
+	
+	Store(xHigh, ReturnIndex(0))
+	VZEROUPPER()
+	RET()
+
+	// Dot specialized
+	TEXT(fmt.Sprintf("dot%dAVX2Kernel", dim), NOSPLIT, "func(a, b uintptr) float32")
+	a2 := Load(Param("a"), GP64())
+	b2 := Load(Param("b"), GP64())
+	
+	acc2 := YMM()
+	VXORPS(acc2, acc2, acc2)
+	
+	for i := 0; i < dim; i += 8 {
+		y0 := YMM(); VMOVUPS(Mem{Base: a2, Disp: i * 4}, y0)
+		y1 := YMM(); VMOVUPS(Mem{Base: b2, Disp: i * 4}, y1)
+		VFMADD231PS(y0, y1, acc2)
+	}
+	
+	// Reduce YMM
+	xLow2 := XMM(); VEXTRACTF128(Imm(0), acc2, xLow2)
+	xHigh2 := XMM(); VEXTRACTF128(Imm(1), acc2, xHigh2)
+	VADDPS(xLow2, xHigh2, xHigh2)
+	xSum2 := XMM(); VMOVHLPS(xHigh2, xSum2, xSum2)
+	VADDPS(xSum2, xHigh2, xHigh2)
+	xNext2 := XMM(); VMOVSHDUP(xHigh2, xNext2)
+	VADDSS(xNext2, xHigh2, xHigh2)
+	
+	Store(xHigh2, ReturnIndex(0))
+	VZEROUPPER()
+	RET()
+
+    // Euclidean specialized (some code uses this name)
+    if dim == 128 {
+        TEXT("euclidean128AVX2Kernel", NOSPLIT, "func(a, b uintptr) float32")
+        a3 := Load(Param("a"), GP64())
+        b3 := Load(Param("b"), GP64())
+        acc3 := YMM()
+        VXORPS(acc3, acc3, acc3)
+        for i := 0; i < 128; i += 8 {
+            y0 := YMM(); VMOVUPS(Mem{Base: a3, Disp: i * 4}, y0)
+            y1 := YMM(); VMOVUPS(Mem{Base: b3, Disp: i * 4}, y1)
+            VSUBPS(y1, y0, y0)
+            VFMADD231PS(y0, y0, acc3)
+        }
+        xLow3 := XMM(); VEXTRACTF128(Imm(0), acc3, xLow3)
+        xHigh3 := XMM(); VEXTRACTF128(Imm(1), acc3, xHigh3)
+        VADDPS(xLow3, xHigh3, xHigh3)
+        xSum3 := XMM(); VMOVHLPS(xHigh3, xSum3, xSum3)
+        VADDPS(xSum3, xHigh3, xHigh3)
+        xNext3 := XMM(); VMOVSHDUP(xHigh3, xNext3)
+        VADDSS(xNext3, xHigh3, xHigh3)
+        Store(xHigh3, ReturnIndex(0))
+        VZEROUPPER()
+        RET()
+    }
 }

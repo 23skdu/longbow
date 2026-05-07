@@ -62,17 +62,21 @@ DTYPE_BYTES = {
 }
 
 
-def run_command(cmd, env=None, capture_output=True, timeout=None):
+def run_command(cmd, env=None, capture_output=True, timeout=None, shell=False):
     import shlex
     try:
-        args = shlex.split(cmd)
+        if shell:
+            args = cmd
+        else:
+            args = shlex.split(cmd)
+        
         result = subprocess.run(
             args,
             env=env,
             capture_output=capture_output,
             text=True,
             timeout=timeout,
-            shell=False,
+            shell=shell,
         )
         return result
     except subprocess.TimeoutExpired:
@@ -207,6 +211,8 @@ class BenchmarkRunner:
         print(f"  Cleaning up ports starting from {port}...")
         for p in [port, port + 1, port + 80, port + 6000]:
             subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
+            if platform.system() == "Linux":
+                subprocess.run(f"fuser -k {p}/tcp 2>/dev/null || true", shell=True)
         
         # Wait for ports to be actually free
         import socket
@@ -326,7 +332,7 @@ class BenchmarkRunner:
                 return False
 
             # Check if port is listening
-            result = run_command(f"lsof -i :{port} 2>/dev/null | grep LISTEN")
+            result = run_command(f"lsof -i :{port} 2>/dev/null | grep LISTEN", shell=True)
             if result and result.returncode == 0:
                 # Additional wait for indexing workers to start
                 time.sleep(3)
@@ -2604,7 +2610,7 @@ if __name__ == "__main__":
         "--batch-size", type=int, default=1000, help="Batch size for ingest"
     )
     parser.add_argument(
-        "--startup-timeout", type=int, default=60, help="Server startup timeout"
+        "--startup-timeout", type=int, default=120, help="Server startup timeout"
     )
     parser.add_argument("--addr", default="127.0.0.1:3000", help="Server address")
     parser.add_argument(

@@ -66,4 +66,11 @@ This document tracks the remaining tasks for hardening the Longbow storage engin
   - [x] Hardened `unified_benchmark.py` orchestrator for port stability and pprof reliability.
   - [x] Verified 18GB memory limit compliance during high-load benchmarks.
 
+## Future Optimization Paths (v0.2.3+)
+
+- [ ] **HNSW Indexing Parallelism**: Preliminary pprof data indicates a stall in HNSW construction during high-load ingestion. Investigating lock-free entry point selection to further reduce contention.
+- [ ] **SIMD DotProduct Specialization**: Extend the dimension-specialization pattern to DotProduct kernels for cosine similarity acceleration.
+- [ ] **Quantization-Aware Kernels**: Implement specialized kernels for TurboQuant 2-bit and 4-bit formats to eliminate bit-unpacking overhead in the distance computation hot path.
+- [ ] **NUMA-Aware Memory Affinity**: Optimize memory allocation on multi-socket AMD64 nodes to reduce cross-socket latency during large-scale searches.
+
 *Document updated for v0.2.2-rc1 release preparation.*

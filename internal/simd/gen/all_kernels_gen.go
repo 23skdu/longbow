@@ -69,6 +69,13 @@ func main() {
 	ImplementSpecializedAVX2(1024)
 	ImplementSpecializedAVX2(3072)
 
+	// --- AVX512 Specialized Fixed-Size Kernels ---
+	ImplementSpecializedAVX512(128)
+	ImplementSpecializedAVX512(384)
+	ImplementSpecializedAVX512(768)
+	ImplementSpecializedAVX512(1024)
+	ImplementSpecializedAVX512(3072)
+
 	// --- Vertical Batch Kernels ---
 	ImplementEuclideanVertical4AVX2()
 	ImplementDotVertical4AVX2()
@@ -980,4 +987,97 @@ func ImplementSpecializedAVX2(dim int) {
         VZEROUPPER()
         RET()
     }
+}
+
+func ImplementSpecializedAVX512(dim int) {
+	// L2Squared specialized
+	TEXT(fmt.Sprintf("l2Squared%dAVX512Kernel", dim), NOSPLIT, "func(a, b uintptr) float32")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	
+	acc := ZMM()
+	VXORPS(acc, acc, acc)
+	
+	for i := 0; i < dim; i += 16 {
+		z0 := ZMM(); VMOVUPS(Mem{Base: a, Disp: i * 4}, z0)
+		z1 := ZMM(); VMOVUPS(Mem{Base: b, Disp: i * 4}, z1)
+		VSUBPS(z1, z0, z0)
+		VFMADD231PS(z0, z0, acc)
+	}
+	
+	// Reduce ZMM
+	yLow := YMM(); VEXTRACTF64X4(Imm(0), acc, yLow)
+	yHigh := YMM(); VEXTRACTF64X4(Imm(1), acc, yHigh)
+	VADDPS(yLow, yHigh, yHigh)
+	
+	xLow := XMM(); VEXTRACTF128(Imm(0), yHigh, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), yHigh, xHigh)
+	VADDPS(xLow, xHigh, xHigh)
+	xSum := XMM(); VMOVHLPS(xHigh, xSum, xSum)
+	VADDPS(xSum, xHigh, xHigh)
+	xNext := XMM(); VMOVSHDUP(xHigh, xNext)
+	VADDSS(xNext, xHigh, xHigh)
+	
+	Store(xHigh, ReturnIndex(0))
+	VZEROUPPER()
+	RET()
+
+	// Dot specialized
+	TEXT(fmt.Sprintf("dot%dAVX512Kernel", dim), NOSPLIT, "func(a, b uintptr) float32")
+	a2 := Load(Param("a"), GP64())
+	b2 := Load(Param("b"), GP64())
+	
+	acc2 := ZMM()
+	VXORPS(acc2, acc2, acc2)
+	
+	for i := 0; i < dim; i += 16 {
+		z0 := ZMM(); VMOVUPS(Mem{Base: a2, Disp: i * 4}, z0)
+		z1 := ZMM(); VMOVUPS(Mem{Base: b2, Disp: i * 4}, z1)
+		VFMADD231PS(z0, z1, acc2)
+	}
+	
+	// Reduce ZMM
+	yLow2 := YMM(); VEXTRACTF64X4(Imm(0), acc2, yLow2)
+	yHigh2 := YMM(); VEXTRACTF64X4(Imm(1), acc2, yHigh2)
+	VADDPS(yLow2, yHigh2, yHigh2)
+	
+	xLow2 := XMM(); VEXTRACTF128(Imm(0), yHigh2, xLow2)
+	xHigh2 := XMM(); VEXTRACTF128(Imm(1), yHigh2, xHigh2)
+	VADDPS(xLow2, xHigh2, xHigh2)
+	xSum2 := XMM(); VMOVHLPS(xHigh2, xSum2, xSum2)
+	VADDPS(xSum2, xHigh2, xHigh2)
+	xNext2 := XMM(); VMOVSHDUP(xHigh2, xNext2)
+	VADDSS(xNext2, xHigh2, xHigh2)
+	
+	Store(xHigh2, ReturnIndex(0))
+	VZEROUPPER()
+	RET()
+
+	// Euclidean specialized
+	TEXT(fmt.Sprintf("euclidean%dAVX512Kernel", dim), NOSPLIT, "func(a, b uintptr) float32")
+	a3 := Load(Param("a"), GP64())
+	b3 := Load(Param("b"), GP64())
+	acc3 := ZMM()
+	VXORPS(acc3, acc3, acc3)
+	for i := 0; i < dim; i += 16 {
+		z0 := ZMM(); VMOVUPS(Mem{Base: a3, Disp: i * 4}, z0)
+		z1 := ZMM(); VMOVUPS(Mem{Base: b3, Disp: i * 4}, z1)
+		VSUBPS(z1, z0, z0)
+		VFMADD231PS(z0, z0, acc3)
+	}
+	yLow3 := YMM(); VEXTRACTF64X4(Imm(0), acc3, yLow3)
+	yHigh3 := YMM(); VEXTRACTF64X4(Imm(1), acc3, yHigh3)
+	VADDPS(yLow3, yHigh3, yHigh3)
+	xLow3 := XMM(); VEXTRACTF128(Imm(0), yHigh3, xLow3)
+	xHigh3 := XMM(); VEXTRACTF128(Imm(1), yHigh3, xHigh3)
+	VADDPS(xLow3, xHigh3, xHigh3)
+	xSum3 := XMM(); VMOVHLPS(xHigh3, xSum3, xSum3)
+	VADDPS(xSum3, xHigh3, xHigh3)
+	xNext3 := XMM(); VMOVSHDUP(xHigh3, xNext3)
+	VADDSS(xNext3, xHigh3, xHigh3)
+	
+	VSQRTSS(xHigh3, xHigh3, xHigh3) // Euclidean needs sqrt
+	Store(xHigh3, ReturnIndex(0))
+	VZEROUPPER()
+	RET()
 }

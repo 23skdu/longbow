@@ -22,7 +22,7 @@ func TestFloat16_RoundTrip(t *testing.T) {
 
 	// Create GraphData with Float16 enabled
 	// NewGraphData(capacity, dims, sq8, pq, pqDims, bq, float16, false, "test")
-	gd := lbtypes.NewGraphData(capacity, dims, false, false, 0, false, true, false, lbtypes.VectorTypeFloat16, false, false, false, 8, "test")
+	gd := lbtypes.NewGraphData(capacity, dims, false, false, 0, false, true, false, lbtypes.VectorTypeFloat16, false, false, false, 8, "test", nil)
 
 	require.NotNil(t, gd.Float16Arena)
 	require.NotNil(t, gd.VectorsF16)

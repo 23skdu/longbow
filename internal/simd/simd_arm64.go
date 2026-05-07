@@ -28,6 +28,26 @@ func l2SquaredNEON(a, b []float32) (float32, error) {
 	return l2SquaredNEONKernel(a, b), nil
 }
 
+func l2Squared128NEON(a, b []float32) (float32, error) {
+	return l2Squared128NEONKernel(a, b), nil
+}
+
+func l2Squared384NEON(a, b []float32) (float32, error) {
+	return l2Squared384NEONKernel(a, b), nil
+}
+
+func l2Squared768NEON(a, b []float32) (float32, error) {
+	return l2Squared768NEONKernel(a, b), nil
+}
+
+func l2Squared1024NEON(a, b []float32) (float32, error) {
+	return l2Squared1024NEONKernel(a, b), nil
+}
+
+func l2Squared3072NEON(a, b []float32) (float32, error) {
+	return l2Squared3072NEONKernel(a, b), nil
+}
+
 func euclidean128NEON(a, b []float32) (float32, error) {
 	return euclideanNEONKernel(a, b), nil
 }

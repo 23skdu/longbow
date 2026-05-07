@@ -43,6 +43,13 @@ type ImplementationDispatch struct {
 	DotProduct1536 distanceFunc
 	DotProduct3072 distanceFunc
 
+	// L2Squared specialized (no sqrt) for fixed dimensions
+	L2SquaredDistance128  distanceFunc
+	L2SquaredDistance384  distanceFunc
+	L2SquaredDistance768  distanceFunc
+	L2SquaredDistance1024 distanceFunc
+	L2SquaredDistance3072 distanceFunc
+
 	// Type conversion
 	Int8ToFloat32   func(src []int8, dst []float32)
 	Uint8ToFloat32  func(src []uint8, dst []float32)
@@ -115,15 +122,20 @@ func initDispatchTable() {
 			CosineDistanceF16:          cosineF16AVX512,
 			DotProductF16:               dotF16AVX512,
 			L2SquaredDistance:           l2SquaredAVX512,
+			L2SquaredDistance128:  l2Squared128AVX512,
+			L2SquaredDistance384:  l2Squared384AVX512,
+			L2SquaredDistance768:  l2Squared768AVX512,
+			L2SquaredDistance1024: l2Squared1024AVX512,
+			L2SquaredDistance3072: l2Squared3072AVX512,
 
-			EuclideanDistance128:  euclideanNEON,
+			EuclideanDistance128:  euclidean128AVX512,
 			EuclideanDistance384:  euclidean384AVX512,
 			EuclideanDistance768:  euclidean768AVX512,
 			EuclideanDistance1024: euclidean1024AVX512,
 			EuclideanDistance1536: euclidean1536AVX512,
 			EuclideanDistance3072: euclidean3072AVX512,
 
-			DotProduct128:  dot128Unrolled4x,
+			DotProduct128:  dot128AVX512,
 			DotProduct384:  dot384AVX512,
 			DotProduct768:  dot768AVX512,
 			DotProduct1024: dot1024AVX512,
@@ -168,19 +180,24 @@ func initDispatchTable() {
 			CosineDistanceBatch:        cosineBatchAVX2,
 			DotProductBatch:            dotBatchAVX2,
 			L2SquaredDistance:           l2SquaredAVX2,
+			L2SquaredDistance128:  l2Squared128AVX2,
+			L2SquaredDistance384:  l2Squared384AVX2,
+			L2SquaredDistance768:  l2Squared768AVX2,
+			L2SquaredDistance1024: l2Squared1024AVX2,
+			L2SquaredDistance3072: l2Squared3072AVX2,
 			EuclideanDistanceBatchFlat: euclideanBatchFlatAVX2,
 			EuclideanDistanceF16:       euclideanF16Unrolled4x,
 			CosineDistanceF16:          cosineF16Unrolled4x,
 			DotProductF16:               dotF16Unrolled4x,
 
-			EuclideanDistance128:       euclidean128Unrolled4x,
+			EuclideanDistance128:       euclidean128AVX2,
 			EuclideanDistance384:       euclidean384AVX2,
 			EuclideanDistance768:       euclidean768AVX2,
 			EuclideanDistance1024:      euclidean1024AVX2,
 			EuclideanDistance1536:      euclidean1536AVX2,
 			EuclideanDistance3072:      euclidean3072AVX2,
 
-			DotProduct128:  dot128Unrolled4x,
+			DotProduct128:  dot128AVX2,
 			DotProduct384:  dot384AVX2,
 			DotProduct768:  dot768AVX2,
 			DotProduct1024: dot1024AVX2,
@@ -229,6 +246,11 @@ func initDispatchTable() {
 			CosineDistanceF16:          cosineF16NEON,
 			DotProductF16:               dotF16NEON,
 			L2SquaredDistance:           l2SquaredNEON,
+			L2SquaredDistance128:  l2Squared128NEON,
+			L2SquaredDistance384:  l2Squared384NEON,
+			L2SquaredDistance768:  l2Squared768NEON,
+			L2SquaredDistance1024: l2Squared1024NEON,
+			L2SquaredDistance3072: l2Squared3072NEON,
 
 			EuclideanDistance128:  euclidean128NEON,
 			EuclideanDistance384:  euclidean384NEON,
@@ -368,7 +390,12 @@ func initializeDispatch() {
 		euclideanDistanceBatchImpl = dispatch.EuclideanDistanceBatch
 		cosineDistanceBatchImpl = dispatch.CosineDistanceBatch
 		dotProductBatchImpl = dispatch.DotProductBatch
-		l2SquaredImpl = l2SquaredAVX512
+		l2SquaredImpl = dispatch.L2SquaredDistance
+		l2Squared128Impl = dispatch.L2SquaredDistance128
+		l2Squared384Impl = dispatch.L2SquaredDistance384
+		l2Squared768Impl = dispatch.L2SquaredDistance768
+		l2Squared1024Impl = dispatch.L2SquaredDistance1024
+		l2Squared3072Impl = dispatch.L2SquaredDistance3072
 		prefetchImpl = func(p unsafe.Pointer) { prefetchNTA(uintptr(p)) }
 		memcpyNTAImpl = memcpyGeneric // Use generic for now on x86, we will add NTA later
 		matchInt64Impl = matchInt64AVX512
@@ -450,6 +477,11 @@ func initializeDispatch() {
 		cosineDistanceBatchImpl = cosineBatchGeneric // AVX2 batch kernel is a stub; use verified generic
 		dotProductBatchImpl = dotBatchGeneric       // AVX2 batch kernel is a stub; use verified generic
 		l2SquaredImpl = l2SquaredAVX2 // uses AVX2 kernel (no sqrt)
+		l2Squared128Impl = dispatch.L2SquaredDistance128
+		l2Squared384Impl = dispatch.L2SquaredDistance384
+		l2Squared768Impl = dispatch.L2SquaredDistance768
+		l2Squared1024Impl = dispatch.L2SquaredDistance1024
+		l2Squared3072Impl = dispatch.L2SquaredDistance3072
 		prefetchImpl = func(p unsafe.Pointer) { prefetchNTA(uintptr(p)) }
 		memcpyNTAImpl = memcpyGeneric
 		matchInt64Impl = matchInt64Generic
@@ -529,9 +561,12 @@ func initializeDispatch() {
 		euclideanDistanceBatchImpl = euclideanBatchNEON
 		cosineDistanceBatchImpl = cosineBatchNEON
 		dotProductBatchImpl = dotBatchNEON
-		cosineDistanceBatchImpl = cosineBatchNEON
-		dotProductBatchImpl = dotBatchNEON
 		l2SquaredImpl = l2SquaredNEON
+		l2Squared128Impl = dispatch.L2SquaredDistance128
+		l2Squared384Impl = dispatch.L2SquaredDistance384
+		l2Squared768Impl = dispatch.L2SquaredDistance768
+		l2Squared1024Impl = dispatch.L2SquaredDistance1024
+		l2Squared3072Impl = dispatch.L2SquaredDistance3072
 		prefetchImpl = prefetchGeneric
 		matchInt64Impl = matchInt64Generic
 		matchInt32Impl = matchInt32Generic
@@ -749,9 +784,14 @@ func initializeDispatch() {
 	Registry.Register(MetricEuclidean, DataTypeComplex64, 0, euclideanComplex64Unrolled)
 	Registry.Register(MetricCosine, DataTypeComplex64, 0, CosineDistanceComplex64)
 	Registry.Register(MetricDotProduct, DataTypeComplex64, 0, dotComplex64Unrolled)
-	// L2Squared (Polymorphic)
-	Registry.Register(MetricL2Squared, DataTypeFloat32, 0, l2SquaredImpl)
-	Registry.Register(MetricL2Squared, DataTypeInt8, 0, l2SquaredInt8Unrolled4x)
+	// L2Squared (Polymorphic — generic + dimension-specialized)
+	Registry.Register(MetricL2Squared, DataTypeFloat32, 0,    l2SquaredImpl)
+	Registry.Register(MetricL2Squared, DataTypeFloat32, 128,  l2Squared128Impl)
+	Registry.Register(MetricL2Squared, DataTypeFloat32, 384,  l2Squared384Impl)
+	Registry.Register(MetricL2Squared, DataTypeFloat32, 768,  l2Squared768Impl)
+	Registry.Register(MetricL2Squared, DataTypeFloat32, 1024, l2Squared1024Impl)
+	Registry.Register(MetricL2Squared, DataTypeFloat32, 3072, l2Squared3072Impl)
+	Registry.Register(MetricL2Squared, DataTypeInt8,  0, l2SquaredInt8Unrolled4x)
 	Registry.Register(MetricL2Squared, DataTypeUint8, 0, l2SquaredUint8Unrolled4x)
 
 

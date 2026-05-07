@@ -97,10 +97,10 @@ hd_loop_16x:
     VLD1.P  16(R0), [V7.S4]
     VLD1.P  16(R2), [V11.S4]
 
-    VSUB    V8.S4, V4.S4, V12.S4
-    VSUB    V9.S4, V5.S4, V13.S4
-    VSUB    V10.S4, V6.S4, V14.S4
-    VSUB    V11.S4, V7.S4, V15.S4
+    VFSUB_V(8, 4, 12)
+    VFSUB_V(9, 5, 13)
+    VFSUB_V(10, 6, 14)
+    VFSUB_V(11, 7, 15)
 
     VFMLA   V12.S4, V12.S4, V0.S4
     VFMLA   V13.S4, V13.S4, V1.S4
@@ -125,7 +125,7 @@ hd_tail_loop:
 hd_tail_4x:
     VLD1.P  16(R0), [V4.S4]
     VLD1.P  16(R2), [V8.S4]
-    VSUB    V8.S4, V4.S4, V12.S4
+    VFSUB_V(8, 4, 12)
     VFMLA   V12.S4, V12.S4, V0.S4
     SUB     $4, R1
     CMP     $4, R1
@@ -368,14 +368,14 @@ euc_f16_loop_8x:
     WORD    $0x0e217823
     WORD    $0x0e217844
 
-    VSUB    V4.S4, V3.S4, V5.S4
+    VFSUB_V(4, 3, 5)
     VFMLA   V5.S4, V5.S4, V0.S4
 
     // Convert upper 4
     WORD    $0x4e217823
     WORD    $0x4e217844
 
-    VSUB    V4.S4, V3.S4, V5.S4
+    VFSUB_V(4, 3, 5)
     VFMLA   V5.S4, V5.S4, V0.S4
 
     SUB     $8, R1
@@ -1512,10 +1512,10 @@ l2sq128_loop:
     VLD1.P  16(R0), [V7.S4]
     VLD1.P  16(R2), [V11.S4]
 
-    VSUB    V8.S4, V4.S4, V12.S4
-    VSUB    V9.S4, V5.S4, V13.S4
-    VSUB    V10.S4, V6.S4, V14.S4
-    VSUB    V11.S4, V7.S4, V15.S4
+    VFSUB_V(8, 4, 12)
+    VFSUB_V(9, 5, 13)
+    VFSUB_V(10, 6, 14)
+    VFSUB_V(11, 7, 15)
 
     VFMLA   V12.S4, V12.S4, V0.S4
     VFMLA   V13.S4, V13.S4, V1.S4
@@ -1565,10 +1565,10 @@ l2sq384_loop:
     VLD1.P  16(R0), [V7.S4]
     VLD1.P  16(R2), [V11.S4]
 
-    VSUB    V8.S4, V4.S4, V12.S4
-    VSUB    V9.S4, V5.S4, V13.S4
-    VSUB    V10.S4, V6.S4, V14.S4
-    VSUB    V11.S4, V7.S4, V15.S4
+    VFSUB_V(8, 4, 12)
+    VFSUB_V(9, 5, 13)
+    VFSUB_V(10, 6, 14)
+    VFSUB_V(11, 7, 15)
 
     VFMLA   V12.S4, V12.S4, V0.S4
     VFMLA   V13.S4, V13.S4, V1.S4
@@ -1618,10 +1618,10 @@ l2sq768_loop:
     VLD1.P  16(R0), [V7.S4]
     VLD1.P  16(R2), [V11.S4]
 
-    VSUB    V8.S4, V4.S4, V12.S4
-    VSUB    V9.S4, V5.S4, V13.S4
-    VSUB    V10.S4, V6.S4, V14.S4
-    VSUB    V11.S4, V7.S4, V15.S4
+    VFSUB_V(8, 4, 12)
+    VFSUB_V(9, 5, 13)
+    VFSUB_V(10, 6, 14)
+    VFSUB_V(11, 7, 15)
 
     VFMLA   V12.S4, V12.S4, V0.S4
     VFMLA   V13.S4, V13.S4, V1.S4
@@ -1671,10 +1671,10 @@ l2sq1024_loop:
     VLD1.P  16(R0), [V7.S4]
     VLD1.P  16(R2), [V11.S4]
 
-    VSUB    V8.S4, V4.S4, V12.S4
-    VSUB    V9.S4, V5.S4, V13.S4
-    VSUB    V10.S4, V6.S4, V14.S4
-    VSUB    V11.S4, V7.S4, V15.S4
+    VFSUB_V(8, 4, 12)
+    VFSUB_V(9, 5, 13)
+    VFSUB_V(10, 6, 14)
+    VFSUB_V(11, 7, 15)
 
     VFMLA   V12.S4, V12.S4, V0.S4
     VFMLA   V13.S4, V13.S4, V1.S4
@@ -1724,10 +1724,10 @@ l2sq1536_loop:
     VLD1.P  16(R0), [V7.S4]
     VLD1.P  16(R2), [V11.S4]
 
-    VSUB    V8.S4, V4.S4, V12.S4
-    VSUB    V9.S4, V5.S4, V13.S4
-    VSUB    V10.S4, V6.S4, V14.S4
-    VSUB    V11.S4, V7.S4, V15.S4
+    VFSUB_V(8, 4, 12)
+    VFSUB_V(9, 5, 13)
+    VFSUB_V(10, 6, 14)
+    VFSUB_V(11, 7, 15)
 
     VFMLA   V12.S4, V12.S4, V0.S4
     VFMLA   V13.S4, V13.S4, V1.S4
@@ -1777,10 +1777,10 @@ l2sq3072_loop:
     VLD1.P  16(R0), [V7.S4]
     VLD1.P  16(R2), [V11.S4]
 
-    VSUB    V8.S4, V4.S4, V12.S4
-    VSUB    V9.S4, V5.S4, V13.S4
-    VSUB    V10.S4, V6.S4, V14.S4
-    VSUB    V11.S4, V7.S4, V15.S4
+    VFSUB_V(8, 4, 12)
+    VFSUB_V(9, 5, 13)
+    VFSUB_V(10, 6, 14)
+    VFSUB_V(11, 7, 15)
 
     VFMLA   V12.S4, V12.S4, V0.S4
     VFMLA   V13.S4, V13.S4, V1.S4

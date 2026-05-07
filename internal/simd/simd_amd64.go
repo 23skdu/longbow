@@ -47,6 +47,15 @@ func l2SquaredAVX2(a, b []float32) (float32, error) {
 	return sum, nil
 }
 
+// AVX2 optimized Euclidean distance for 128 dims
+func euclidean128AVX2(a, b []float32) (float32, error) {
+	if len(a) != 128 || len(b) != 128 {
+		return euclideanAVX2(a, b)
+	}
+	sum := euclidean128AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])))
+	return sum, nil
+}
+
 // AVX2 optimized Euclidean distance for 384 dims
 func euclidean384AVX2(a, b []float32) (float32, error) {
 	if len(a) != 384 || len(b) != 384 {
@@ -81,6 +90,13 @@ func euclidean3072AVX2(a, b []float32) (float32, error) {
 }
 
 // AVX2 optimized dot product for specific dimensions
+func dot128AVX2(a, b []float32) (float32, error) {
+	if len(a) != 128 || len(b) != 128 {
+		return dotAVX2(a, b)
+	}
+	return dot128AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
 func dot384AVX2(a, b []float32) (float32, error) {
 	if len(a) != 384 || len(b) != 384 {
 		return dotAVX2(a, b)
@@ -105,6 +121,42 @@ func dot1536AVX2(a, b []float32) (float32, error) {
 
 func dot3072AVX2(a, b []float32) (float32, error) {
 	return dotAVX2(a, b)
+}
+
+// L2Squared AVX2 dimension-specialized wrappers (no sqrt)
+func l2Squared128AVX2(a, b []float32) (float32, error) {
+	if len(a) != 128 || len(b) != 128 {
+		return l2SquaredAVX2(a, b)
+	}
+	return l2Squared128AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func l2Squared384AVX2(a, b []float32) (float32, error) {
+	if len(a) != 384 || len(b) != 384 {
+		return l2SquaredAVX2(a, b)
+	}
+	return l2Squared384AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func l2Squared768AVX2(a, b []float32) (float32, error) {
+	if len(a) != 768 || len(b) != 768 {
+		return l2SquaredAVX2(a, b)
+	}
+	return l2Squared768AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func l2Squared1024AVX2(a, b []float32) (float32, error) {
+	if len(a) != 1024 || len(b) != 1024 {
+		return l2SquaredAVX2(a, b)
+	}
+	return l2Squared1024AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func l2Squared3072AVX2(a, b []float32) (float32, error) {
+	if len(a) != 3072 || len(b) != 3072 {
+		return l2SquaredAVX2(a, b)
+	}
+	return l2Squared3072AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
 // AVX2 optimized Cosine distance

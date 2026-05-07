@@ -15,7 +15,7 @@ func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 
-	if s.engine != nil {
+	if s.engine.Load() != nil {
 		return fmt.Errorf("persistence already initialized")
 	}
 
@@ -24,23 +24,23 @@ func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to create storage engine: %w", err)
 	}
-	s.engine = engine
+	s.engine.Store(engine)
 	s.dataPath = cfg.DataPath
 
 	// 2. Initialize WAL (and Batcher)
-	if err := s.engine.InitWAL(); err != nil {
+	if err := engine.InitWAL(); err != nil {
 		return fmt.Errorf("failed to initialize WAL: %w", err)
 	}
 
 	// 3. Replay WAL
-	maxSeq, err := s.engine.ReplayWAL(s.applyReplayBatch)
+	maxSeq, err := engine.ReplayWAL(s.applyReplayBatch)
 	if err != nil {
 		return fmt.Errorf("failed to replay WAL: %w", err)
 	}
 	s.sequence.Store(maxSeq)
 
 	// 4. Load Snapshots
-	err = s.engine.LoadSnapshots(s.loadSnapshotItem)
+	err = engine.LoadSnapshots(s.loadSnapshotItem)
 	if err != nil {
 		return fmt.Errorf("failed to load snapshots: %w", err)
 	}

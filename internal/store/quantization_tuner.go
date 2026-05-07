@@ -105,8 +105,9 @@ func (t *QuantizationTuner) TuneDataset(name string, ds *Dataset) {
 
 	// 2. Memory Pressure Check
 	var memoryPressure float64
-	if t.store.tuner != nil {
-		memoryPressure = t.store.tuner.GetUtilizationRatio()
+	tuner := t.store.tuner.Load()
+	if tuner != nil {
+		memoryPressure = tuner.GetUtilizationRatio()
 	}
 
 	// 3. Decision Logic

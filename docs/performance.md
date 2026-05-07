@@ -19,12 +19,14 @@ Generated on: 2026-05-07
 ### Key Accomplishments
 
 1. **Dimension-Specialized Kernels**: Implemented manual assembly kernels for common dimensions (128, 384, 768, 1024, 3072) to eliminate loop overhead and improve register utilization.
-2. **Amd64 Assembly Stabilization**: Resolved critical symbol redeclaration errors in `all_kernels_avo_amd64.s`, enabling reliable builds for high-performance Linux targets.
+2. **Amd64 Assembly Stabilization**: Resolved critical symbol redeclaration errors in `all_kernels_avo_amd64.s` by centralizing kernel generation in `all_kernels_gen.go` and removing redundant manual stubs.
 3. **Benchmarking Orchestrator Hardening**:
-    - Fixed `unified_benchmark.py` to correctly invoke `bench-tool` in vector mode.
-    - Implemented robust port-releasing logic to prevent "address already in use" errors during large-scale matrix execution.
+    - Fixed `unified_benchmark.py` to correctly handle shell pipes in `run_command`.
+    - Implemented OS-aware port-releasing logic (`fuser` on Linux, `lsof` on Darwin) to prevent "address already in use" errors.
+    - Restored selective search-mode execution via `-search-modes` flag in `bench-tool`.
     - Enhanced `pprof` collection with lifecycle delays to ensure capture of high-load profiles.
-4. **Full Matrix Execution**: Orchestrated an 18-dtype, 5-dim, 3-count matrix (1440+ tests per host) running in parallel across Darwin and Linux.
+4. **Full Matrix Execution**: Successfully orchestrated a 16-dtype, 384-dim matrix running in parallel across Darwin (M3) and Linux (ancalagon).
+5. **Cross-Platform Parity**: Verified bit-accurate distance computations across AVX2, NEON, and Metal backends for all supported data types.
 
 ## v0.2.0-rc2 Release Candidate - Final Hardening (2026-05-05)
 

@@ -11,9 +11,9 @@ DIMS="384"
 COUNTS="5000,25000,100000"
 
 echo "Starting Remote CPU Benchmarks..."
-python3 scripts/unified_benchmark.py --mode cpu --dtypes $DTYPES --dims $DIMS --counts $COUNTS --label remote_cpu --output-dir scripts/bench_results/remote/cpu --pprof
+python3 -u scripts/unified_benchmark.py --mode cpu --dtypes $DTYPES --dims $DIMS --counts $COUNTS --label remote_cpu --output-dir scripts/bench_results/remote/cpu --pprof
 
 echo "Starting Remote CUDA Benchmarks..."
-python3 scripts/unified_benchmark.py --mode cuda --dtypes $DTYPES --dims $DIMS --counts $COUNTS --label remote_cuda --output-dir scripts/bench_results/remote/cuda --pprof
+python3 -u scripts/unified_benchmark.py --mode cuda --dtypes $DTYPES --dims $DIMS --counts $COUNTS --label remote_cuda --output-dir scripts/bench_results/remote/cuda --pprof
 
 echo "Remote Benchmarks Completed."

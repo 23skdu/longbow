@@ -10,6 +10,7 @@ import (
 	"math/rand"
 	"os"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -63,6 +64,8 @@ func main() {
 	fbin := flag.String("fbin", "", "Read vectors from Arrow IPC binary file or true .fbin instead of generating them")
 	outputArrow := flag.String("output-arrow", "", "Save generated vectors to Arrow IPC file and exit")
 	outputFbin := flag.String("output-fbin", "", "Save generated vectors to .fbin file and exit")
+	mode := flag.String("mode", "vec", "Benchmark mode (vec, kv, cluster)")
+	searchModes := flag.String("search-modes", "all", "Comma-separated search modes to run (dense, hybrid, sparse, filtered, byid, graphrag, geo, temporal, learned_index)")
 	flag.Parse()
 
 	if *drop {
@@ -86,7 +89,7 @@ func main() {
 		log.Printf("WARNING: Dimension %d exceeds recommended 3072 limit. Proceeding anyway.\n", *dim)
 	}
 
-	log.Printf("Starting Go Benchmark: Dataset=%s, Scale=%d, Dim=%d, Type=%s\n", *dataset, *scale, *dim, *dtype)
+	log.Printf("Starting Go Benchmark: Mode=%s, Dataset=%s, Scale=%d, Dim=%d, Type=%s\n", *mode, *dataset, *scale, *dim, *dtype)
 
 	sc, err := client.NewSmartClient(*uri)
 	if err != nil {
@@ -419,7 +422,26 @@ func main() {
 	log.Printf("[GET] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
 
 	// 3. Search
-	modes := []string{"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString", "Sparse", "ByID", "GraphRAG", "GlobalGraphRAG", "Recommend", "Geo", "Temporal", "LearnedIndex"}
+	allModes := []string{"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString", "Sparse", "ByID", "GraphRAG", "GlobalGraphRAG", "Recommend", "Geo", "Temporal", "LearnedIndex"}
+	var modes []string
+	if *searchModes == "all" {
+		modes = allModes
+	} else {
+		selected := strings.Split(*searchModes, ",")
+		for _, m := range selected {
+			m = strings.TrimSpace(m)
+			// Match case-insensitive for convenience
+			for _, am := range allModes {
+				if strings.EqualFold(m, am) {
+					modes = append(modes, am)
+					break
+				}
+			}
+		}
+	}
+	if len(modes) == 0 && *searchModes != "" {
+		log.Printf("Warning: No valid search modes found for %s, skipping search phase\n", *searchModes)
+	}
 	searchCtx, searchCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer searchCancel()
 	for _, mode := range modes {

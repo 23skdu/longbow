@@ -172,6 +172,16 @@ type SearchResult = basecore.SearchResult
 // Location represents the physical batch and row coordinates of a record.
 type Location = basecore.Location
 
+// PackLocation packs a Location into a uint64.
+func PackLocation(loc Location) uint64 {
+	return basecore.PackLocation(loc)
+}
+
+// UnpackLocation unpacks a uint64 into a Location.
+func UnpackLocation(val uint64) Location {
+	return basecore.UnpackLocation(val)
+}
+
 // LocationChunkSize is the size of chunks in the location store
 const LocationChunkSize = 1024
 

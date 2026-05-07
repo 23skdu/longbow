@@ -5,7 +5,6 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/23skdu/longbow/internal/metrics"
 )
 
 const (
@@ -90,11 +89,50 @@ func L2Float32Blocked(a, b []float32) (float32, error) {
 // EuclideanDistanceTiledBatch calculates distances for multiple vectors by tiling the dimension loop.
 // This keeps chunks of the query vector in L1/L2 cache while processing multiple data vectors.
 func EuclideanDistanceTiledBatch(query []float32, vectors [][]float32, results []float32) error {
-	// TODO: Fix tiled batch for dims not aligned to blockedSimdThreshold
-	// The tiled implementation has numerical precision differences
-	// For now, fall back to standard batch
-	metrics.SimdTiledDistanceBatchTotal.Inc()
-	return EuclideanDistanceBatch(query, vectors, results)
+	if len(query) <= blockedSimdThreshold {
+		return EuclideanDistanceBatch(query, vectors, results)
+	}
+
+	// Initialize results to zero
+	for i := range results {
+		results[i] = 0
+	}
+
+	numVecs := len(vectors)
+	dims := len(query)
+	impl := l2SquaredImpl
+	if impl == nil {
+		impl = L2SquaredFloat32
+	}
+
+	// Outer loop over dimension tiles
+	for i := 0; i < dims; i += blockedSimdThreshold {
+		end := i + blockedSimdThreshold
+		if end > dims {
+			end = dims
+		}
+		qTile := query[i:end]
+
+		// Inner loop over vectors
+		for j := 0; j < numVecs; j++ {
+			// Ensure vector has enough dimensions
+			if len(vectors[j]) < end {
+				return errors.New("simd: vector dimension mismatch in tiled batch")
+			}
+			d, err := impl(qTile, vectors[j][i:end])
+			if err != nil {
+				return err
+			}
+			results[j] += d
+		}
+	}
+
+	// Final square root to get Euclidean distance
+	for i := range results {
+		results[i] = float32(math.Sqrt(float64(results[i])))
+	}
+
+	return nil
 }
 
 // DotProductTiledBatch calculates dot products for multiple vectors by tiling the dimension loop.

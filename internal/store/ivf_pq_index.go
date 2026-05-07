@@ -14,6 +14,8 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"io"
+	"bytes"
+	"encoding/gob"
 )
 
 // IVFPQConfig holds configuration for the IVF-PQ index.
@@ -68,6 +70,10 @@ type IVFPQIndex struct {
 	// Vector storage for search candidates
 	vectorStore map[uint32][]float32
 
+	// Location mapping
+	locationToID map[uint64]uint32
+	idToLocation map[uint32]uint64
+
 	// Metadata
 	dim    int
 	nextID uint32
@@ -100,11 +106,13 @@ func NewIVFPQIndex(dim int, config IVFPQConfig) (*IVFPQIndex, error) {
 	}
 
 	idx := &IVFPQIndex{
-		config:      config,
-		pqEncoder:   pqEncoder,
-		clusters:    make([]IVFCluster, config.Nlist),
-		vectorStore: make(map[uint32][]float32),
-		dim:         dim,
+		config:       config,
+		pqEncoder:    pqEncoder,
+		clusters:     make([]IVFCluster, config.Nlist),
+		vectorStore:  make(map[uint32][]float32),
+		locationToID: make(map[uint64]uint32),
+		idToLocation: make(map[uint32]uint64),
+		dim:          dim,
 	}
 
 	return idx, nil
@@ -335,9 +343,12 @@ func (idx *IVFPQIndex) computeADCDistance(pqCode []byte, adt []float32) float32 
 	return dist
 }
 
-// AddByLocation is not supported for IVFPQIndex (use Add).
-func (idx *IVFPQIndex) AddByLocation(batchIdx, rowIdx int) error {
-	return errors.New("AddByLocation not supported for IVFPQIndex (use Add)")
+// AddByLocation inserts a vector from the specified physical location.
+func (idx *IVFPQIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
+	// For IVF-PQ, we need the actual vector data to encode it.
+	// This usually requires access to the dataset, which this index doesn't have directly.
+	// However, if the vector is already in the record (passed via AddByRecord), we use that.
+	return 0, errors.New("AddByLocation requires vector data for IVF-PQ encoding")
 }
 
 // AddByRecord inserts a vector from an Arrow record.
@@ -349,7 +360,11 @@ func (idx *IVFPQIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, r
 	if err := idx.Add(ctx, [][]float32{vec}); err != nil {
 		return 0, err
 	}
-	return idx.nextID - 1, nil
+	
+	id := idx.nextID - 1
+	idx.SetLocation(id, types.Location{BatchIdx: batchIdx, RowIdx: rowIdx})
+	
+	return id, nil
 }
 
 // Search executes a vector search query.
@@ -382,14 +397,39 @@ func (idx *IVFPQIndex) GetEntryPoint() uint32 {
 	return 0
 }
 
-// GetLocation returns nil as locations are not supported for this index type.
+// GetLocation returns the physical location for a given vector ID.
 func (idx *IVFPQIndex) GetLocation(id uint32) (any, bool) {
-	return nil, false
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	loc, ok := idx.idToLocation[id]
+	if !ok {
+		return nil, false
+	}
+	return types.UnpackLocation(loc), true
 }
 
-// GetVectorID returns 0 as location mapping is not supported.
-func (idx *IVFPQIndex) GetVectorID(loc any) (uint32, bool) {
-	return 0, false
+// GetVectorID returns the vector ID for a given physical location.
+func (idx *IVFPQIndex) GetVectorID(loc Location) (uint64, bool) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	id, ok := idx.locationToID[types.PackLocation(loc)]
+	return uint64(id), ok
+}
+
+// SetLocation registers a mapping between a vector ID and its physical location.
+func (idx *IVFPQIndex) SetLocation(id uint32, loc any) {
+	l, ok := loc.(types.Location)
+	if !ok {
+		return
+	}
+
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	packed := types.PackLocation(l)
+	idx.locationToID[packed] = id
+	idx.idToLocation[id] = packed
 }
 
 // GetDimension returns the dimensionality of the vectors.
@@ -521,17 +561,115 @@ func (idx *IVFPQIndex) TrainPQ(vectors [][]float32) error {
 	return idx.Train(vectors)
 }
 
-// ExportState is a stub for interface compliance.
-func (idx *IVFPQIndex) ExportState() ([]byte, error) { return nil, nil }
+// ExportState exports the internal state of the index.
+func (idx *IVFPQIndex) ExportState() ([]byte, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 
-// ImportState is a stub for interface compliance.
-func (idx *IVFPQIndex) ImportState(data []byte) error { return nil }
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
 
-// ExportGraph is a stub for interface compliance.
-func (idx *IVFPQIndex) ExportGraph(w io.Writer) error { return nil }
+	// We wrap fields in a serializable struct
+	state := struct {
+		Config          IVFPQConfig
+		CoarseCentroids []float32
+		PQEncoder       *pq.PQEncoder
+		NextID          uint32
+		Dim             int
+		VectorStore     map[uint32][]float32
+		LocationToID    map[uint64]uint32
+		IDToLocation    map[uint32]uint64
+	}{
+		Config:          idx.config,
+		CoarseCentroids: idx.coarseCentroids,
+		PQEncoder:       idx.pqEncoder,
+		NextID:          idx.nextID,
+		Dim:             idx.dim,
+		VectorStore:     idx.vectorStore,
+		LocationToID:    idx.locationToID,
+		IDToLocation:    idx.idToLocation,
+	}
 
-// ImportGraph is a stub for interface compliance.
-func (idx *IVFPQIndex) ImportGraph(r io.Reader) error { return nil }
+	if err := enc.Encode(state); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
+}
+
+// ImportState restores the index state from a byte slice.
+func (idx *IVFPQIndex) ImportState(data []byte) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	var state struct {
+		Config          IVFPQConfig
+		CoarseCentroids []float32
+		PQEncoder       *pq.PQEncoder
+		NextID          uint32
+		Dim             int
+		VectorStore     map[uint32][]float32
+		LocationToID    map[uint64]uint32
+		IDToLocation    map[uint32]uint64
+	}
+
+	dec := gob.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&state); err != nil {
+		return err
+	}
+
+	idx.config = state.Config
+	idx.coarseCentroids = state.CoarseCentroids
+	idx.pqEncoder = state.PQEncoder
+	idx.nextID = state.NextID
+	idx.dim = state.Dim
+	idx.vectorStore = state.VectorStore
+	idx.locationToID = state.LocationToID
+	idx.idToLocation = state.IDToLocation
+
+	// Rebuild clusters structure (entries must be migrated manually or saved)
+	// For IVFPQ, the 'clusters' field contains live entries. We should include them in state.
+	return nil
+}
+
+// ExportGraph exports the graph structure of the index (inverted file entries).
+func (idx *IVFPQIndex) ExportGraph(w io.Writer) error {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	enc := gob.NewEncoder(w)
+	// Serialize cluster entries
+	clusterEntries := make([][]IVFIndexEntry, len(idx.clusters))
+	for i := range idx.clusters {
+		idx.clusters[i].mu.RLock()
+		clusterEntries[i] = idx.clusters[i].Entries
+		idx.clusters[i].mu.RUnlock()
+	}
+
+	return enc.Encode(clusterEntries)
+}
+
+// ImportGraph imports the graph structure of the index.
+func (idx *IVFPQIndex) ImportGraph(r io.Reader) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	dec := gob.NewDecoder(r)
+	var clusterEntries [][]IVFIndexEntry
+	if err := dec.Decode(&clusterEntries); err != nil {
+		return err
+	}
+
+	if len(clusterEntries) != len(idx.clusters) {
+		idx.clusters = make([]IVFCluster, len(clusterEntries))
+	}
+
+	for i, entries := range clusterEntries {
+		idx.clusters[i].Entries = entries
+	}
+
+	return nil
+}
 
 // ExportDelta is a no-op for this index type.
 func (idx *IVFPQIndex) ExportDelta(fromV uint64) (*types.DeltaSync, error) { return nil, nil }

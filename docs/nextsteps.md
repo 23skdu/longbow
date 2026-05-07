@@ -6,13 +6,24 @@ The following items represent incomplete implementations or stubbed functionalit
 
 - [ ] **Remediate `io_uring` Stubs for Linux Production**
   - [ ] Replace `internal/store/disk_writer_uring_stub.go` with full `io_uring` implementation.
-  - [ ] Replace `internal/store/uring_reader_stub.go` with full `io_uring` implementation.
-  - [ ] *Rationale:* Stubs prevent high-performance asynchronous I/O, a core requirement for the storage engine performance.
+  - [ ] Verify `internal/store/uring_reader_linux.go` robustness under high-concurrency stress tests.
+  - [ ] *Rationale:* Stubs prevent high-performance asynchronous I/O, which is critical for saturating NVMe bandwidth during bulk ingestion.
+
+- [ ] **TPU Index Kernel Remediation**
+  - [ ] Replace CPU fallback in `internal/gpu/tpu/tpu_index.go` with real XLA-compiled distance kernels.
+  - [ ] Implement TPU-specific memory management for HBM (High Bandwidth Memory) allocation.
+  - [ ] *Rationale:* Current TPU implementation is an emulated stub that computes distances on the CPU, providing no hardware acceleration.
 
 - [ ] **Replace Fallback Heuristic Models**
-  - [ ] Integrate production ONNX/WASM models in `internal/store/embedding_generator.go` (currently `stubEmbeddingModel`).
-  - [ ] Implement real ML reranking models in `internal/store/ml_reranker.go` (currently `stubMLModel`).
-  - [ ] *Rationale:* Current heuristic fallbacks are explicitly documented as "NOT recommended for production."
+  - [ ] Integrate production-grade ONNX/WASM models in `internal/store/embedding_generator.go` (currently `stubEmbeddingModel`).
+  - [ ] Replace keyword-matching fallback in `internal/store/ml_reranker.go` (`stubMLModel`) with real cross-encoder models.
+  - [ ] Enforce strict model validation by removing the `LONGBOW_ALLOW_STUBS` environment variable bypass.
+  - [ ] *Rationale:* Heuristic fallbacks provide incorrect recall and performance metrics, masking actual production behavior.
+
+- [ ] **Security & Bounds Hardening**
+  - [ ] Complete 100% `gosec` audit and remediate all remaining G115 (integer overflow) and G304 (path traversal) findings.
+  - [ ] Implement exhaustive bounds checking for all CGO/assembly boundary crossings in the SIMD engine.
+  - [ ] *Rationale:* Production release requires guaranteed memory safety, especially at the hardware interface level.
 
 This document tracks the remaining tasks for hardening the Longbow storage engine for production readiness.
 

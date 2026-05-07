@@ -79,12 +79,15 @@ type ArrowHNSW struct {
 	topLayerManager        *TopLayerManager
 
 	distFunc     func([]float32, []float32) (float32, error)
+	distFuncSquared  func([]float32, []float32) (float32, error)
 	distFuncF64  func([]float64, []float64) (float32, error)
 	distFuncF16  func([]float16.Num, []float16.Num) (float32, error)
 	distFuncC64  func([]complex64, []complex64) (float32, error)
 	distFuncC128 func([]complex128, []complex128) (float32, error)
 	distFuncInt8 func([]int8, []int8) (float32, error)
+	distFuncInt8Squared func([]int8, []int8) (float32, error)
 	distFuncUint8 func([]uint8, []uint8) (float32, error)
+	distFuncUint8Squared func([]uint8, []uint8) (float32, error)
 	distFuncInt16 func([]int16, []int16) (float32, error)
 	distFuncUint16 func([]uint16, []uint16) (float32, error)
 	distFuncInt32 func([]int32, []int32) (float32, error)
@@ -2707,7 +2710,7 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 	return results, nil
 }
 
-func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowSearchContext, queryVal any, _ bool) any {
+func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowSearchContext, queryVal any, squared bool) any {
 	switch q := queryVal.(type) {
 	case []float32:
 		if h.tqCompute != nil && data.TurboQuantEnabled && searchCtx != nil {
@@ -2732,13 +2735,13 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		}
 		// Temporarily disabled specialized computer to isolate test regressions
 		// if data.Type == types.VectorTypeFloat32 {
-		// 	return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: searchCtx.GetDiskGraph()}
+		// 	return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: searchCtx.GetDiskGraph(), squared: squared}
 		// }
 		var dg *DiskGraph
 		if searchCtx != nil {
 			dg = searchCtx.GetDiskGraph()
 		}
-		comp := &float32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
+		comp := &float32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared}
 		if searchCtx != nil {
 			// Populate conversion buffers once
 			if data.Type == types.VectorTypeFloat64 {
@@ -4449,6 +4452,7 @@ func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
 }
 
 type float32Computer struct {
+	squared bool
 	data *types.GraphData
 	q    []float32
 	dims int
@@ -4468,6 +4472,9 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 	}
 	switch v := vecAny.(type) {
 	case []float32:
+		if c.squared {
+			return c.h.distFuncSquared(c.q, v)
+		}
 		return c.h.distFunc(c.q, v)
 	case []int8, []uint8:
 		var v8 []uint8
@@ -4534,6 +4541,7 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 }
 
 type float32ToFloat32Computer struct {
+	squared bool
 	data      *types.GraphData
 	q         []float32
 	dims      int
@@ -4550,7 +4558,10 @@ func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 			return 0, err
 		}
 		if v, ok := vecAny.([]float32); ok {
-			return c.h.distFunc(c.q, v)
+			if c.squared {
+			return c.h.distFuncSquared(c.q, v)
+		}
+		return c.h.distFunc(c.q, v)
 		}
 		return math.MaxFloat32, nil
 	}
@@ -4559,13 +4570,19 @@ func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 	start := cOff * c.data.Dims
 	if start+c.dims <= len(chunk) {
 		v := chunk[start : start+c.dims]
+		if c.squared {
+			return c.h.distFuncSquared(c.q, v)
+		}
 		return c.h.distFunc(c.q, v)
 	}
 	// Fallback to cached disk for out-of-bounds in memory
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
 	if err == nil {
 		if v, ok := vecAny.([]float32); ok {
-			return c.h.distFunc(c.q, v)
+			if c.squared {
+			return c.h.distFuncSquared(c.q, v)
+		}
+		return c.h.distFunc(c.q, v)
 		}
 	}
 	return math.MaxFloat32, nil
@@ -4633,6 +4650,7 @@ func euclideanDistanceUint64(a, b []uint64) float32 {
 }
 
 type int8Computer struct {
+	squared bool
 	data      *types.GraphData
 	q         []uint8
 	qInt8     []int8
@@ -4650,7 +4668,10 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 		start := cOff * pd // #nosec G115
 		if start+c.dims <= len(chunk) {
 			v8 := chunk[start : start+c.dims]
-			return c.h.distFuncInt8(c.qInt8, v8)
+			if c.squared {
+			return c.h.distFuncInt8Squared(c.qInt8, v8)
+		}
+		return c.h.distFuncInt8(c.qInt8, v8)
 		}
 	}
 	// Fallback to SQ8 chunks if specifically enabled for Int8 (rare but supported)

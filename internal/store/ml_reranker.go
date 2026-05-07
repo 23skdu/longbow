@@ -142,7 +142,7 @@ func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []Searc
 	r.mu.RUnlock()
 
 	if model == nil {
-		hr := &CrossEncoderReranker{ModelName: "fallback"}
+		hr := &HeuristicReranker{ModelName: "fallback"}
 		return hr.Rerank(ctx, query, results)
 	}
 
@@ -167,7 +167,7 @@ func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []Searc
 
 	scores, err := model.Score(query, documents)
 	if err != nil {
-		hr := &CrossEncoderReranker{ModelName: "fallback"}
+		hr := &HeuristicReranker{ModelName: "fallback"}
 		return hr.Rerank(ctx, query, results)
 	}
 
@@ -221,6 +221,7 @@ func (r *stubMLModel) Score(query string, documents []string) ([]float32, error)
 			if contains(docLower, queryLower) {
 				score = 0.9
 			} else {
+				// Use the logic from HeuristicReranker if available, or stay simple here
 				matchCount := countKeywordMatches(queryLower, docLower)
 				score = float32(0.3) + float32(matchCount)*float32(0.15)
 				if score > 0.8 {
@@ -231,6 +232,93 @@ func (r *stubMLModel) Score(query string, documents []string) ([]float32, error)
 		scores[i] = score
 	}
 	return scores, nil
+}
+
+// Reranker defines the interface for the second-stage re-ranking
+type Reranker interface {
+	Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error)
+}
+
+// HeuristicReranker implements a second-stage reranker using text-matching heuristics.
+type HeuristicReranker struct {
+	ModelName string
+}
+
+// Rerank re-orders the search results based on a cross-encoder model or heuristic.
+func (r *HeuristicReranker) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {
+	if len(results) == 0 {
+		return results, nil
+	}
+
+	type scoredResult struct {
+		result SearchResult
+		score  float32
+	}
+
+	scored := make([]scoredResult, len(results))
+	for i, result := range results {
+		score := r.scoreResult(query, result)
+		scored[i] = scoredResult{result: result, score: score}
+	}
+
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+
+	reranked := make([]SearchResult, len(results))
+	for i, sr := range scored {
+		reranked[i] = sr.result
+		reranked[i].Score = sr.score
+	}
+
+	return reranked, nil
+}
+
+func (r *HeuristicReranker) scoreResult(query string, result SearchResult) float32 {
+	distanceScore := 1.0 / (1.0 + float32(result.Distance))
+
+	textMatchScore := float32(0.0)
+	if len(result.Metadata) > 0 {
+		metaMap, _ := core.DecodeMetadata(result.Metadata)
+		if metaMap != nil {
+			if title, ok := metaMap["title"].(string); ok {
+				textMatchScore += r.textMatchScore(query, title)
+			}
+			if description, ok := metaMap["description"].(string); ok {
+				textMatchScore += r.textMatchScore(query, description) * 0.5
+			}
+			if content, ok := metaMap["content"].(string); ok {
+				textMatchScore += r.textMatchScore(query, content) * 0.3
+			}
+		}
+	}
+
+	finalScore := 0.7*distanceScore + 0.3*textMatchScore
+
+	return finalScore
+}
+
+func (r *HeuristicReranker) textMatchScore(query, text string) float32 {
+	if query == "" || text == "" {
+		return 0.0
+	}
+
+	queryLower := toLowerCase(query)
+	textLower := toLowerCase(text)
+
+	matchCount := 0
+	queryTerms := splitWords(queryLower)
+	for _, term := range queryTerms {
+		if contains(textLower, term) {
+			matchCount++
+		}
+	}
+
+	if len(queryTerms) == 0 {
+		return 0.0
+	}
+
+	return float32(matchCount) / float32(len(queryTerms))
 }
 
 func toLowerCase(s string) string {
@@ -315,7 +403,7 @@ func (f *RerankerFactory) CreateReranker(config map[string]interface{}) (Reranke
 		logger := zerolog.Nop()
 		return NewONNXReranker(modelPath, logger)
 	case "heuristic", "":
-		return &CrossEncoderReranker{ModelName: "default"}, nil
+		return &HeuristicReranker{ModelName: "default"}, nil
 	default:
 		return nil, errors.New("unknown reranker type: " + rerankerType)
 	}
@@ -328,5 +416,5 @@ func NewDefaultRerankerFactory() *RerankerFactory {
 
 // AutoSelectReranker returns a default reranker suitable for general use.
 func AutoSelectReranker() Reranker {
-	return &CrossEncoderReranker{ModelName: "auto"}
+	return &HeuristicReranker{ModelName: "auto"}
 }

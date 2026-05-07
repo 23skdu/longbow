@@ -26,7 +26,7 @@ func main() {
 		return reduceYMM(yHigh)
 	}
 
-	// --- Distance Kernels ---
+	// --- Fixed-Size Kernels (Unrolled) ---
 	TEXT("euclidean8AVX2", NOSPLIT, "func(a, b uintptr) float32")
 	a := Load(Param("a"), GP64()); b := Load(Param("b"), GP64())
 	y0 := YMM(); VMOVUPS(Mem{Base: a}, y0); y1 := YMM(); VMOVUPS(Mem{Base: b}, y1)
@@ -54,6 +54,18 @@ func main() {
 
 	TEXT("prefetchNTA", NOSPLIT, "func(p uintptr)")
 	p := Load(Param("p"), GP64()); PREFETCHNTA(Mem{Base: p}); RET()
+
+	// --- Looping Kernels ---
+	ImplementL2SquaredAVX2()
+	ImplementDotAVX2()
+	ImplementL2SquaredAVX512()
+	ImplementDotAVX512()
+
+	// --- Vertical Batch Kernels ---
+	ImplementEuclideanVertical4AVX2()
+	ImplementDotVertical4AVX2()
+	ImplementEuclideanVertical4AVX512()
+	ImplementDotVertical4AVX512()
 
 	// --- Reductions ---
 	negInf := GLOBL("neg_inf_const_red", RODATA|NOPTR); DATA(0, U32(0xff800000))
@@ -110,7 +122,6 @@ func main() {
 	
 	// func(a, b uintptr, n int) float32
 	stubsDist := []string{
-		"dotAVX512Kernel",
 		"euclideanFloat64AVX512Kernel", "dotFloat64AVX512Kernel",
 		"euclideanF16AVX512Kernel", "dotF16AVX512Kernel",
 		"euclideanF16AVX2Kernel", "dotF16AVX2Kernel",
@@ -129,7 +140,7 @@ func main() {
 
 	// func(src, dst uintptr, n int)
 	stubsUnary := []string{
-		"sigmoidAVX512Kernel", "expAVX512Kernel", "logAVX512Kernel",
+		"sigmoidAVX512Kernel",
 		"int8ToFloat32AVX2Kernel", "uint8ToFloat32AVX2Kernel", 
 		"int16ToFloat32AVX2Kernel", "uint16ToFloat32AVX2Kernel",
 		"int32ToFloat32AVX2Kernel", "uint32ToFloat32AVX2Kernel", 
@@ -158,15 +169,7 @@ func main() {
 	TEXT("cosineDotAVX512", NOSPLIT, "func(a, b uintptr, n int) (dot, normA, normB float32)")
 	Store(XMM(), ReturnIndex(0)); Store(XMM(), ReturnIndex(1)); Store(XMM(), ReturnIndex(2))
 	RET()
-	TEXT("euclideanVertical4AVX512", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
-	RET()
 	TEXT("cosineVertical4AVX512", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
-	RET()
-	TEXT("dotVertical4AVX512", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
-	RET()
-	TEXT("euclideanVertical4AVX2", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
-	RET()
-	TEXT("dotVertical4AVX2", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
 	RET()
 	TEXT("cosineVertical4AVX2", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
 	RET()
@@ -200,12 +203,7 @@ func main() {
 	Store(reduceYMM(yna), ReturnIndex(1))
 	Store(reduceYMM(ynb), ReturnIndex(2))
 	VZEROUPPER(); RET()
-	TEXT("l2SquaredAVX2Kernel", NOSPLIT, "func(a, b uintptr, n int, res uintptr)")
-	RET()
-	TEXT("dotAVX2Kernel", NOSPLIT, "func(a, b uintptr, n int, res uintptr)")
-	RET()
-	TEXT("dotAVX2Kernel", NOSPLIT, "func(a, b uintptr, n int, res uintptr)")
-	RET()
+
 	TEXT("euclidean32FMA", NOSPLIT, "func(a, b uintptr) float32")
 	Store(XMM(), ReturnIndex(0))
 	RET()
@@ -229,30 +227,30 @@ func main() {
 	aBase := Load(Param("a"), GP64())
 	bBase := Load(Param("b"), GP64())
 	dstBase := Load(Param("dst"), GP64())
-	m := Load(Param("m"), GP64())
-	n := Load(Param("n"), GP64())
-	k := Load(Param("k"), GP64())
+	m_val := Load(Param("m"), GP64())
+	n_val := Load(Param("n"), GP64())
+	k_val := Load(Param("k"), GP64())
 
-	i := GP64(); XORQ(i, i)
+	i_reg := GP64(); XORQ(i_reg, i_reg)
 	Label("m_loop")
-	CMPQ(i, m); JE(LabelRef("m_done"))
+	CMPQ(i_reg, m_val); JE(LabelRef("m_done"))
 
-	l := GP64(); XORQ(l, l)
+	l_reg := GP64(); XORQ(l_reg, l_reg)
 	Label("k_loop")
-	CMPQ(l, k); JE(LabelRef("k_done"))
+	CMPQ(l_reg, k_val); JE(LabelRef("k_done"))
 
 	// va = a[i*k + l]
-	idxA := GP64(); MOVQ(i, idxA); IMULQ(k, idxA); ADDQ(l, idxA)
+	idxA := GP64(); MOVQ(i_reg, idxA); IMULQ(k_val, idxA); ADDQ(l_reg, idxA)
 	va := XMM(); VMOVSS(Mem{Base: aBase, Index: idxA, Scale: 4}, va)
 	vaY := YMM(); VBROADCASTSS(va, vaY)
 
-	j := GP64(); XORQ(j, j)
+	j_reg := GP64(); XORQ(j_reg, j_reg)
 	Label("n_loop")
-	CMPQ(j, n); JGE(LabelRef("n_done"))
+	CMPQ(j_reg, n_val); JGE(LabelRef("n_done"))
 
 	// dst[i*n + j] += va * b[l*n + j]
-	idxB := GP64(); MOVQ(l, idxB); IMULQ(n, idxB); ADDQ(j, idxB)
-	idxDst := GP64(); MOVQ(i, idxDst); IMULQ(n, idxDst); ADDQ(j, idxDst)
+	idxB := GP64(); MOVQ(l_reg, idxB); IMULQ(n_val, idxB); ADDQ(j_reg, idxB)
+	idxDst := GP64(); MOVQ(i_reg, idxDst); IMULQ(n_val, idxDst); ADDQ(j_reg, idxDst)
 
 	vb := YMM(); VMOVUPS(Mem{Base: bBase, Index: idxB, Scale: 4}, vb)
 	vdst := YMM(); VMOVUPS(Mem{Base: dstBase, Index: idxDst, Scale: 4}, vdst)
@@ -260,15 +258,15 @@ func main() {
 	VFMADD231PS(vaY, vb, vdst)
 	VMOVUPS(vdst, Mem{Base: dstBase, Index: idxDst, Scale: 4})
 
-	ADDQ(Imm(8), j)
+	ADDQ(Imm(8), j_reg)
 	JMP(LabelRef("n_loop"))
 
 	Label("n_done")
-	INCQ(l)
+	INCQ(l_reg)
 	JMP(LabelRef("k_loop"))
 
 	Label("k_done")
-	INCQ(i)
+	INCQ(i_reg)
 	JMP(LabelRef("m_loop"))
 
 	Label("m_done")
@@ -276,12 +274,482 @@ func main() {
 
 	ImplementArgMaxAVX512()
 	ImplementArgMinAVX512()
-	ImplementExpAVX2()
-	ImplementLogAVX2()
 	ImplementSoftmaxAVX2()
 	ImplementSigmoidAVX2()
 
 	Generate()
+}
+
+func ImplementL2SquaredAVX2() {
+	TEXT("l2SquaredAVX2Kernel", NOSPLIT, "func(a, b uintptr, n int, res uintptr)")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	n := Load(Param("n"), GP64())
+	res := Load(Param("res"), GP64())
+
+	ySum := YMM()
+	VXORPS(ySum, ySum, ySum)
+
+	Label("loop")
+	CMPQ(n, Imm(8))
+	JL(LabelRef("tail"))
+
+	y0 := YMM(); VMOVUPS(Mem{Base: a}, y0)
+	y1 := YMM(); VMOVUPS(Mem{Base: b}, y1)
+	VSUBPS(y1, y0, y0)
+	VFMADD231PS(y0, y0, ySum)
+
+	ADDQ(Imm(32), a)
+	ADDQ(Imm(32), b)
+	SUBQ(Imm(8), n)
+	JMP(LabelRef("loop"))
+
+	Label("tail")
+	// Horizontal reduction
+	xLow := XMM(); VEXTRACTF128(Imm(0), ySum, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), ySum, xHigh)
+	VADDPS(xLow, xHigh, xHigh)
+	xFinal := XMM(); VMOVHLPS(xHigh, xFinal, xFinal)
+	VADDPS(xFinal, xHigh, xHigh)
+	xNext := XMM(); VMOVSHDUP(xHigh, xNext)
+	VADDSS(xNext, xHigh, xHigh)
+
+	// Tail handling (scalar)
+	Label("scalar_loop")
+	CMPQ(n, Imm(0))
+	JE(LabelRef("done"))
+
+	x0 := XMM(); VMOVSS(Mem{Base: a}, x0)
+	x1 := XMM(); VMOVSS(Mem{Base: b}, x1)
+	VSUBSS(x1, x0, x0)
+	VFMADD231SS(x0, x0, xHigh)
+
+	ADDQ(Imm(4), a)
+	ADDQ(Imm(4), b)
+	DECQ(n)
+	JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	VMOVSS(xHigh, Mem{Base: res})
+	VZEROUPPER(); RET()
+}
+
+func ImplementDotAVX2() {
+	TEXT("dotAVX2Kernel", NOSPLIT, "func(a, b uintptr, n int, res uintptr)")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	n := Load(Param("n"), GP64())
+	res := Load(Param("res"), GP64())
+
+	ySum := YMM()
+	VXORPS(ySum, ySum, ySum)
+
+	Label("loop")
+	CMPQ(n, Imm(8))
+	JL(LabelRef("tail"))
+
+	y0 := YMM(); VMOVUPS(Mem{Base: a}, y0)
+	y1 := YMM(); VMOVUPS(Mem{Base: b}, y1)
+	VFMADD231PS(y0, y1, ySum)
+
+	ADDQ(Imm(32), a)
+	ADDQ(Imm(32), b)
+	SUBQ(Imm(8), n)
+	JMP(LabelRef("loop"))
+
+	Label("tail")
+	xLow := XMM(); VEXTRACTF128(Imm(0), ySum, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), ySum, xHigh)
+	VADDPS(xLow, xHigh, xHigh)
+	xFinal := XMM(); VMOVHLPS(xHigh, xFinal, xFinal)
+	VADDPS(xFinal, xHigh, xHigh)
+	xNext := XMM(); VMOVSHDUP(xHigh, xNext)
+	VADDSS(xNext, xHigh, xHigh)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0))
+	JE(LabelRef("done"))
+
+	x0 := XMM(); VMOVSS(Mem{Base: a}, x0)
+	x1 := XMM(); VMOVSS(Mem{Base: b}, x1)
+	VFMADD231SS(x0, x1, xHigh)
+
+	ADDQ(Imm(4), a)
+	ADDQ(Imm(4), b)
+	DECQ(n)
+	JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	VMOVSS(xHigh, Mem{Base: res})
+	VZEROUPPER(); RET()
+}
+
+func ImplementL2SquaredAVX512() {
+	TEXT("l2SquaredAVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	n := Load(Param("n"), GP64())
+
+	zSum := ZMM()
+	VXORPS(zSum, zSum, zSum)
+
+	Label("loop")
+	CMPQ(n, Imm(16))
+	JL(LabelRef("tail"))
+
+	z0 := ZMM(); VMOVUPS(Mem{Base: a}, z0)
+	z1 := ZMM(); VMOVUPS(Mem{Base: b}, z1)
+	VSUBPS(z1, z0, z0)
+	VFMADD231PS(z0, z0, zSum)
+
+	ADDQ(Imm(64), a)
+	ADDQ(Imm(64), b)
+	SUBQ(Imm(16), n)
+	JMP(LabelRef("loop"))
+
+	Label("tail")
+	yLow := YMM(); VEXTRACTF64X4(Imm(0), zSum, yLow)
+	yHigh := YMM(); VEXTRACTF64X4(Imm(1), zSum, yHigh)
+	VADDPS(yLow, yHigh, yHigh)
+	
+	xLow := XMM(); VEXTRACTF128(Imm(0), yHigh, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), yHigh, xHigh)
+	VADDPS(xLow, xHigh, xHigh)
+	xFinal := XMM(); VMOVHLPS(xHigh, xFinal, xFinal)
+	VADDPS(xFinal, xHigh, xHigh)
+	xNext := XMM(); VMOVSHDUP(xHigh, xNext)
+	VADDSS(xNext, xHigh, xHigh)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0))
+	JE(LabelRef("done"))
+
+	x0 := XMM(); VMOVSS(Mem{Base: a}, x0)
+	x1 := XMM(); VMOVSS(Mem{Base: b}, x1)
+	VSUBSS(x1, x0, x0)
+	VFMADD231SS(x0, x0, xHigh)
+
+	ADDQ(Imm(4), a)
+	ADDQ(Imm(4), b)
+	DECQ(n)
+	JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	Store(xHigh, ReturnIndex(0))
+	VZEROUPPER(); RET()
+}
+
+func ImplementDotAVX512() {
+	TEXT("dotAVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	n := Load(Param("n"), GP64())
+
+	zSum := ZMM()
+	VXORPS(zSum, zSum, zSum)
+
+	Label("loop")
+	CMPQ(n, Imm(16))
+	JL(LabelRef("tail"))
+
+	z0 := ZMM(); VMOVUPS(Mem{Base: a}, z0)
+	z1 := ZMM(); VMOVUPS(Mem{Base: b}, z1)
+	VFMADD231PS(z0, z1, zSum)
+
+	ADDQ(Imm(64), a)
+	ADDQ(Imm(64), b)
+	SUBQ(Imm(16), n)
+	JMP(LabelRef("loop"))
+
+	Label("tail")
+	yLow := YMM(); VEXTRACTF64X4(Imm(0), zSum, yLow)
+	yHigh := YMM(); VEXTRACTF64X4(Imm(1), zSum, yHigh)
+	VADDPS(yLow, yHigh, yHigh)
+	
+	xLow := XMM(); VEXTRACTF128(Imm(0), yHigh, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), yHigh, xHigh)
+	VADDPS(xLow, xHigh, xHigh)
+	xFinal := XMM(); VMOVHLPS(xHigh, xFinal, xFinal)
+	VADDPS(xFinal, xHigh, xHigh)
+	xNext := XMM(); VMOVSHDUP(xHigh, xNext)
+	VADDSS(xNext, xHigh, xHigh)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0))
+	JE(LabelRef("done"))
+
+	x0 := XMM(); VMOVSS(Mem{Base: a}, x0)
+	x1 := XMM(); VMOVSS(Mem{Base: b}, x1)
+	VFMADD231SS(x0, x1, xHigh)
+
+	ADDQ(Imm(4), a)
+	ADDQ(Imm(4), b)
+	DECQ(n)
+	JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	Store(xHigh, ReturnIndex(0))
+	VZEROUPPER(); RET()
+}
+
+func ImplementEuclideanVertical4AVX2() {
+	TEXT("euclideanVertical4AVX2", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
+	q := Load(Param("q"), GP64())
+	v0 := Load(Param("v0"), GP64())
+	v1 := Load(Param("v1"), GP64())
+	v2 := Load(Param("v2"), GP64())
+	v3 := Load(Param("v3"), GP64())
+	n := Load(Param("n"), GP64())
+	res := Load(Param("res"), GP64())
+
+	s0, s1, s2, s3 := YMM(), YMM(), YMM(), YMM()
+	VXORPS(s0, s0, s0); VXORPS(s1, s1, s1); VXORPS(s2, s2, s2); VXORPS(s3, s3, s3)
+
+	Label("loop")
+	CMPQ(n, Imm(8)); JL(LabelRef("tail"))
+
+	qy := YMM(); VMOVUPS(Mem{Base: q}, qy)
+	t0, t1, t2, t3 := YMM(), YMM(), YMM(), YMM()
+	VMOVUPS(Mem{Base: v0}, t0); VMOVUPS(Mem{Base: v1}, t1); VMOVUPS(Mem{Base: v2}, t2); VMOVUPS(Mem{Base: v3}, t3)
+	
+	VSUBPS(qy, t0, t0); VFMADD231PS(t0, t0, s0)
+	VSUBPS(qy, t1, t1); VFMADD231PS(t1, t1, s1)
+	VSUBPS(qy, t2, t2); VFMADD231PS(t2, t2, s2)
+	VSUBPS(qy, t3, t3); VFMADD231PS(t3, t3, s3)
+
+	ADDQ(Imm(32), q); ADDQ(Imm(32), v0); ADDQ(Imm(32), v1); ADDQ(Imm(32), v2); ADDQ(Imm(32), v3)
+	SUBQ(Imm(8), n); JMP(LabelRef("loop"))
+
+	Label("tail")
+	// Simplistic horizontal reduction for each
+	reduceToScalar := func(y reg.VecVirtual) reg.VecVirtual {
+		xl := XMM(); VEXTRACTF128(Imm(0), y, xl)
+		xh := XMM(); VEXTRACTF128(Imm(1), y, xh)
+		VADDPS(xl, xh, xh)
+		xf := XMM(); VMOVHLPS(xh, xf, xf)
+		VADDPS(xf, xh, xh)
+		xn := XMM(); VMOVSHDUP(xh, xn)
+		VADDSS(xn, xh, xh)
+		return xh
+	}
+	r0 := reduceToScalar(s0); r1 := reduceToScalar(s1); r2 := reduceToScalar(s2); r3 := reduceToScalar(s3)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0)); JE(LabelRef("done"))
+	qs := XMM(); VMOVSS(Mem{Base: q}, qs)
+	t0s, t1s, t2s, t3s := XMM(), XMM(), XMM(), XMM()
+	VMOVSS(Mem{Base: v0}, t0s); VMOVSS(Mem{Base: v1}, t1s); VMOVSS(Mem{Base: v2}, t2s); VMOVSS(Mem{Base: v3}, t3s)
+	
+	VSUBSS(qs, t0s, t0s); VFMADD231SS(t0s, t0s, r0)
+	VSUBSS(qs, t1s, t1s); VFMADD231SS(t1s, t1s, r1)
+	VSUBSS(qs, t2s, t2s); VFMADD231SS(t2s, t2s, r2)
+	VSUBSS(qs, t3s, t3s); VFMADD231SS(t3s, t3s, r3)
+
+	ADDQ(Imm(4), q); ADDQ(Imm(4), v0); ADDQ(Imm(4), v1); ADDQ(Imm(4), v2); ADDQ(Imm(4), v3)
+	DECQ(n); JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	// Sqrt and store
+	VSQRTSS(r0, r0, r0); VMOVSS(r0, Mem{Base: res})
+	VSQRTSS(r1, r1, r1); VMOVSS(r1, Mem{Base: res, Disp: 4})
+	VSQRTSS(r2, r2, r2); VMOVSS(r2, Mem{Base: res, Disp: 8})
+	VSQRTSS(r3, r3, r3); VMOVSS(r3, Mem{Base: res, Disp: 12})
+	VZEROUPPER(); RET()
+}
+
+func ImplementDotVertical4AVX2() {
+	TEXT("dotVertical4AVX2", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
+	q := Load(Param("q"), GP64())
+	v0 := Load(Param("v0"), GP64())
+	v1 := Load(Param("v1"), GP64())
+	v2 := Load(Param("v2"), GP64())
+	v3 := Load(Param("v3"), GP64())
+	n := Load(Param("n"), GP64())
+	res := Load(Param("res"), GP64())
+
+	s0, s1, s2, s3 := YMM(), YMM(), YMM(), YMM()
+	VXORPS(s0, s0, s0); VXORPS(s1, s1, s1); VXORPS(s2, s2, s2); VXORPS(s3, s3, s3)
+
+	Label("loop")
+	CMPQ(n, Imm(8)); JL(LabelRef("tail"))
+
+	qy := YMM(); VMOVUPS(Mem{Base: q}, qy)
+	t0, t1, t2, t3 := YMM(), YMM(), YMM(), YMM()
+	VMOVUPS(Mem{Base: v0}, t0); VMOVUPS(Mem{Base: v1}, t1); VMOVUPS(Mem{Base: v2}, t2); VMOVUPS(Mem{Base: v3}, t3)
+	
+	VFMADD231PS(qy, t0, s0)
+	VFMADD231PS(qy, t1, s1)
+	VFMADD231PS(qy, t2, s2)
+	VFMADD231PS(qy, t3, s3)
+
+	ADDQ(Imm(32), q); ADDQ(Imm(32), v0); ADDQ(Imm(32), v1); ADDQ(Imm(32), v2); ADDQ(Imm(32), v3)
+	SUBQ(Imm(8), n); JMP(LabelRef("loop"))
+
+	Label("tail")
+	reduceToScalar := func(y reg.VecVirtual) reg.VecVirtual {
+		xl := XMM(); VEXTRACTF128(Imm(0), y, xl)
+		xh := XMM(); VEXTRACTF128(Imm(1), y, xh)
+		VADDPS(xl, xh, xh)
+		xf := XMM(); VMOVHLPS(xh, xf, xf)
+		VADDPS(xf, xh, xh)
+		xn := XMM(); VMOVSHDUP(xh, xn)
+		VADDSS(xn, xh, xh)
+		return xh
+	}
+	r0 := reduceToScalar(s0); r1 := reduceToScalar(s1); r2 := reduceToScalar(s2); r3 := reduceToScalar(s3)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0)); JE(LabelRef("done"))
+	qs := XMM(); VMOVSS(Mem{Base: q}, qs)
+	t0s, t1s, t2s, t3s := XMM(), XMM(), XMM(), XMM()
+	VMOVSS(Mem{Base: v0}, t0s); VMOVSS(Mem{Base: v1}, t1s); VMOVSS(Mem{Base: v2}, t2s); VMOVSS(Mem{Base: v3}, t3s)
+	
+	VFMADD231SS(qs, t0s, r0)
+	VFMADD231SS(qs, t1s, r1)
+	VFMADD231SS(qs, t2s, r2)
+	VFMADD231SS(qs, t3s, r3)
+
+	ADDQ(Imm(4), q); ADDQ(Imm(4), v0); ADDQ(Imm(4), v1); ADDQ(Imm(4), v2); ADDQ(Imm(4), v3)
+	DECQ(n); JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	VMOVSS(r0, Mem{Base: res})
+	VMOVSS(r1, Mem{Base: res, Disp: 4})
+	VMOVSS(r2, Mem{Base: res, Disp: 8})
+	VMOVSS(r3, Mem{Base: res, Disp: 12})
+	VZEROUPPER(); RET()
+}
+
+func ImplementEuclideanVertical4AVX512() {
+	TEXT("euclideanVertical4AVX512", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
+	q := Load(Param("q"), GP64())
+	v0 := Load(Param("v0"), GP64())
+	v1 := Load(Param("v1"), GP64())
+	v2 := Load(Param("v2"), GP64())
+	v3 := Load(Param("v3"), GP64())
+	n := Load(Param("n"), GP64())
+	res := Load(Param("res"), GP64())
+
+	s0, s1, s2, s3 := ZMM(), ZMM(), ZMM(), ZMM()
+	VXORPS(s0, s0, s0); VXORPS(s1, s1, s1); VXORPS(s2, s2, s2); VXORPS(s3, s3, s3)
+
+	Label("loop")
+	CMPQ(n, Imm(16)); JL(LabelRef("tail"))
+
+	qz := ZMM(); VMOVUPS(Mem{Base: q}, qz)
+	t0, t1, t2, t3 := ZMM(), ZMM(), ZMM(), ZMM()
+	VMOVUPS(Mem{Base: v0}, t0); VMOVUPS(Mem{Base: v1}, t1); VMOVUPS(Mem{Base: v2}, t2); VMOVUPS(Mem{Base: v3}, t3)
+	
+	VSUBPS(qz, t0, t0); VFMADD231PS(t0, t0, s0)
+	VSUBPS(qz, t1, t1); VFMADD231PS(t1, t1, s1)
+	VSUBPS(qz, t2, t2); VFMADD231PS(t2, t2, s2)
+	VSUBPS(qz, t3, t3); VFMADD231PS(t3, t3, s3)
+
+	ADDQ(Imm(64), q); ADDQ(Imm(64), v0); ADDQ(Imm(64), v1); ADDQ(Imm(64), v2); ADDQ(Imm(64), v3)
+	SUBQ(Imm(16), n); JMP(LabelRef("loop"))
+
+	Label("tail")
+	reduceZToScalar := func(z reg.VecVirtual) reg.VecVirtual {
+		yl := YMM(); VEXTRACTF64X4(Imm(0), z, yl)
+		yh := YMM(); VEXTRACTF64X4(Imm(1), z, yh)
+		VADDPS(yl, yh, yh)
+		xl := XMM(); VEXTRACTF128(Imm(0), yh, xl)
+		xh := XMM(); VEXTRACTF128(Imm(1), yh, xh)
+		VADDPS(xl, xh, xh)
+		xf := XMM(); VMOVHLPS(xh, xf, xf)
+		VADDPS(xf, xh, xh)
+		xn := XMM(); VMOVSHDUP(xh, xn)
+		VADDSS(xn, xh, xh)
+		return xh
+	}
+	r0 := reduceZToScalar(s0); r1 := reduceZToScalar(s1); r2 := reduceZToScalar(s2); r3 := reduceZToScalar(s3)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0)); JE(LabelRef("done"))
+	qs := XMM(); VMOVSS(Mem{Base: q}, qs)
+	t0s, t1s, t2s, t3s := XMM(), XMM(), XMM(), XMM()
+	VMOVSS(Mem{Base: v0}, t0s); VMOVSS(Mem{Base: v1}, t1s); VMOVSS(Mem{Base: v2}, t2s); VMOVSS(Mem{Base: v3}, t3s)
+	
+	VSUBSS(qs, t0s, t0s); VFMADD231SS(t0s, t0s, r0)
+	VSUBSS(qs, t1s, t1s); VFMADD231SS(t1s, t1s, r1)
+	VSUBSS(qs, t2s, t2s); VFMADD231SS(t2s, t2s, r2)
+	VSUBSS(qs, t3s, t3s); VFMADD231SS(t3s, t3s, r3)
+
+	ADDQ(Imm(4), q); ADDQ(Imm(4), v0); ADDQ(Imm(4), v1); ADDQ(Imm(4), v2); ADDQ(Imm(4), v3)
+	DECQ(n); JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	VSQRTSS(r0, r0, r0); VMOVSS(r0, Mem{Base: res})
+	VSQRTSS(r1, r1, r1); VMOVSS(r1, Mem{Base: res, Disp: 4})
+	VSQRTSS(r2, r2, r2); VMOVSS(r2, Mem{Base: res, Disp: 8})
+	VSQRTSS(r3, r3, r3); VMOVSS(r3, Mem{Base: res, Disp: 12})
+	VZEROUPPER(); RET()
+}
+
+func ImplementDotVertical4AVX512() {
+	TEXT("dotVertical4AVX512", NOSPLIT, "func(q, v0, v1, v2, v3 uintptr, n int, res uintptr)")
+	q := Load(Param("q"), GP64())
+	v0 := Load(Param("v0"), GP64())
+	v1 := Load(Param("v1"), GP64())
+	v2 := Load(Param("v2"), GP64())
+	v3 := Load(Param("v3"), GP64())
+	n := Load(Param("n"), GP64())
+	res := Load(Param("res"), GP64())
+
+	s0, s1, s2, s3 := ZMM(), ZMM(), ZMM(), ZMM()
+	VXORPS(s0, s0, s0); VXORPS(s1, s1, s1); VXORPS(s2, s2, s2); VXORPS(s3, s3, s3)
+
+	Label("loop")
+	CMPQ(n, Imm(16)); JL(LabelRef("tail"))
+
+	qz := ZMM(); VMOVUPS(Mem{Base: q}, qz)
+	t0, t1, t2, t3 := ZMM(), ZMM(), ZMM(), ZMM()
+	VMOVUPS(Mem{Base: v0}, t0); VMOVUPS(Mem{Base: v1}, t1); VMOVUPS(Mem{Base: v2}, t2); VMOVUPS(Mem{Base: v3}, t3)
+	
+	VFMADD231PS(qz, t0, s0)
+	VFMADD231PS(qz, t1, s1)
+	VFMADD231PS(qz, t2, s2)
+	VFMADD231PS(qz, t3, s3)
+
+	ADDQ(Imm(64), q); ADDQ(Imm(64), v0); ADDQ(Imm(64), v1); ADDQ(Imm(64), v2); ADDQ(Imm(64), v3)
+	SUBQ(Imm(16), n); JMP(LabelRef("loop"))
+
+	Label("tail")
+	reduceZToScalar := func(z reg.VecVirtual) reg.VecVirtual {
+		yl := YMM(); VEXTRACTF64X4(Imm(0), z, yl)
+		yh := YMM(); VEXTRACTF64X4(Imm(1), z, yh)
+		VADDPS(yl, yh, yh)
+		xl := XMM(); VEXTRACTF128(Imm(0), yh, xl)
+		xh := XMM(); VEXTRACTF128(Imm(1), yh, xh)
+		VADDPS(xl, xh, xh)
+		xf := XMM(); VMOVHLPS(xh, xf, xf)
+		VADDPS(xf, xh, xh)
+		xn := XMM(); VMOVSHDUP(xh, xn)
+		VADDSS(xn, xh, xh)
+		return xh
+	}
+	r0 := reduceZToScalar(s0); r1 := reduceZToScalar(s1); r2 := reduceZToScalar(s2); r3 := reduceZToScalar(s3)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0)); JE(LabelRef("done"))
+	qs := XMM(); VMOVSS(Mem{Base: q}, qs)
+	t0s, t1s, t2s, t3s := XMM(), XMM(), XMM(), XMM()
+	VMOVSS(Mem{Base: v0}, t0s); VMOVSS(Mem{Base: v1}, t1s); VMOVSS(Mem{Base: v2}, t2s); VMOVSS(Mem{Base: v3}, t3s)
+	
+	VFMADD231SS(qs, t0s, r0)
+	VFMADD231SS(qs, t1s, r1)
+	VFMADD231SS(qs, t2s, r2)
+	VFMADD231SS(qs, t3s, r3)
+
+	ADDQ(Imm(4), q); ADDQ(Imm(4), v0); ADDQ(Imm(4), v1); ADDQ(Imm(4), v2); ADDQ(Imm(4), v3)
+	DECQ(n); JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	VMOVSS(r0, Mem{Base: res})
+	VMOVSS(r1, Mem{Base: res, Disp: 4})
+	VMOVSS(r2, Mem{Base: res, Disp: 8})
+	VMOVSS(r3, Mem{Base: res, Disp: 12})
+	VZEROUPPER(); RET()
 }
 
 func ImplementArgMaxAVX2(negInf Op) {
@@ -297,102 +765,50 @@ func ImplementArgMaxAVX2(negInf Op) {
 	VBROADCASTSS(negInf, maxVal)
 	VPXOR(maxIdx, maxIdx, maxIdx)
 
-	// curIdx = {0, 1, 2, 3, 4, 5, 6, 7}
 	idxConst := GLOBL("idx_const_argmax", RODATA|NOPTR)
 	DATA(0, U32(0)); DATA(4, U32(1)); DATA(8, U32(2)); DATA(12, U32(3))
 	DATA(16, U32(4)); DATA(20, U32(5)); DATA(24, U32(6)); DATA(28, U32(7))
 	VMOVUPS(idxConst, curIdx)
 
-	// inc = {8, 8, 8, 8, 8, 8, 8, 8}
 	eight := GLOBL("eight_const_argmax", RODATA|NOPTR)
 	DATA(0, U32(8)); DATA(4, U32(8)); DATA(8, U32(8)); DATA(12, U32(8))
 	DATA(16, U32(8)); DATA(20, U32(8)); DATA(24, U32(8)); DATA(28, U32(8))
 	VMOVUPS(eight, inc)
 
 	Label("loop")
-	CMPQ(n, Imm(8))
-	JL(LabelRef("done"))
-
-	val := YMM()
-	VMOVUPS(Mem{Base: src}, val)
-
-	mask := YMM()
-	VCMPPS(Imm(0x0e), maxVal, val, mask) // 0x0e = _CMP_GT_OS (val > maxVal)
-
+	CMPQ(n, Imm(8)); JL(LabelRef("done"))
+	val := YMM(); VMOVUPS(Mem{Base: src}, val)
+	mask := YMM(); VCMPPS(Imm(0x0e), maxVal, val, mask)
 	VBLENDVPS(mask, val, maxVal, maxVal)
 	VBLENDVPS(mask, curIdx, maxIdx, maxIdx)
-
 	VPADDD(inc, curIdx, curIdx)
-	ADDQ(Imm(32), src)
-	SUBQ(Imm(8), n)
-	JMP(LabelRef("loop"))
+	ADDQ(Imm(32), src); SUBQ(Imm(8), n); JMP(LabelRef("loop"))
 
 	Label("done")
-	// Horizontal reduction
-	xValHigh := XMM()
-	VEXTRACTF128(Imm(1), maxVal, xValHigh)
-	xValLow := XMM()
-	VEXTRACTF128(Imm(0), maxVal, xValLow)
-
-	xIdxHigh := XMM()
-	VEXTRACTF128(Imm(1), maxIdx, xIdxHigh)
-	xIdxLow := XMM()
-	VEXTRACTF128(Imm(0), maxIdx, xIdxLow)
-
-	resMask := XMM()
-	VCMPPS(Imm(0x0e), xValLow, xValHigh, resMask)
+	xValHigh := XMM(); VEXTRACTF128(Imm(1), maxVal, xValHigh)
+	xValLow := XMM(); VEXTRACTF128(Imm(0), maxVal, xValLow)
+	xIdxHigh := XMM(); VEXTRACTF128(Imm(1), maxIdx, xIdxHigh)
+	xIdxLow := XMM(); VEXTRACTF128(Imm(0), maxIdx, xIdxLow)
+	resMask := XMM(); VCMPPS(Imm(0x0e), xValLow, xValHigh, resMask)
 	VBLENDVPS(resMask, xValHigh, xValLow, xValLow)
 	VBLENDVPS(resMask, xIdxHigh, xIdxLow, xIdxLow)
 
-	// Now 4 elements in xValLow/xIdxLow. Compare [0,1] vs [2,3]
-	xValNext := XMM()
-	VPERMILPS(Imm(0x4e), xValLow, xValNext) // Swap [0,1,2,3] -> [2,3,0,1]
-	xIdxNext := XMM()
-	VPERMILPS(Imm(0x4e), xIdxLow, xIdxNext)
-
-	resMask2 := XMM()
-	VCMPPS(Imm(0x0e), xValLow, xValNext, resMask2)
+	xValNext := XMM(); VPERMILPS(Imm(0x4e), xValLow, xValNext)
+	xIdxNext := XMM(); VPERMILPS(Imm(0x4e), xIdxLow, xIdxNext)
+	resMask2 := XMM(); VCMPPS(Imm(0x0e), xValLow, xValNext, resMask2)
 	VBLENDVPS(resMask2, xValNext, xValLow, xValLow)
 	VBLENDVPS(resMask2, xIdxNext, xIdxLow, xIdxLow)
 
-	// Now 2 elements (actually [0,1] are same, [2,3] are same). Compare 0 vs 1
-	VPERMILPS(Imm(0x11), xValLow, xValNext) // Swap [0,1] -> [1,0]
+	VPERMILPS(Imm(0x11), xValLow, xValNext)
 	VPERMILPS(Imm(0x11), xIdxLow, xIdxNext)
-
-	resMask3 := XMM()
-	VCMPPS(Imm(0x0e), xValLow, xValNext, resMask3)
+	resMask3 := XMM(); VCMPPS(Imm(0x0e), xValLow, xValNext, resMask3)
 	VBLENDVPS(resMask3, xValNext, xValLow, xValLow)
 	VBLENDVPS(resMask3, xIdxNext, xIdxLow, xIdxLow)
 
-	// Handle tail
-	Label("tail_loop")
-	CMPQ(n, Imm(0))
-	JE(LabelRef("final"))
-
-	tailVal := XMM()
-	VMOVSS(Mem{Base: src}, tailVal)
-	tailMask := XMM()
-	VCMPSS(Imm(0x0e), xValLow, tailVal, tailMask)
-	VBLENDVPS(tailMask, tailVal, xValLow, xValLow)
-
-	// We need the index. n is not the original index.
-	// Let's use a GP register for the tail index?
-	// Or just don't use SIMD for tail index and do it simply?
-	// Wait, I can't easily get the index here without tracking it.
-	// Let's just finish the SIMD part and handle tail in Go if needed, or track it.
-	
-	// Actually, let's just handle tail by loading 8 bytes with a mask if possible? No.
-	// Let's just handle tail in Go.
-
 	Label("final")
 	Store(xValLow, ReturnIndex(0))
-	// Extract index from xIdxLow
-	idx := GP64()
-	VMOVQ(xIdxLow, idx)
-	Store(idx, ReturnIndex(1))
-
-	VZEROUPPER()
-	RET()
+	idx_reg := GP64(); VMOVQ(xIdxLow, idx_reg); Store(idx_reg, ReturnIndex(1))
+	VZEROUPPER(); RET()
 }
 
 func ImplementArgMinAVX2(posInf Op) {
@@ -419,88 +835,58 @@ func ImplementArgMinAVX2(posInf Op) {
 	VMOVUPS(eight, inc)
 
 	Label("loop")
-	CMPQ(n, Imm(8))
-	JL(LabelRef("done"))
-
-	val := YMM()
-	VMOVUPS(Mem{Base: src}, val)
-
-	mask := YMM()
-	VCMPPS(Imm(0x01), minVal, val, mask) // 0x01 = _CMP_LT_OS (val < minVal)
-
+	CMPQ(n, Imm(8)); JL(LabelRef("done"))
+	val := YMM(); VMOVUPS(Mem{Base: src}, val)
+	mask := YMM(); VCMPPS(Imm(0x01), minVal, val, mask)
 	VBLENDVPS(mask, val, minVal, minVal)
 	VBLENDVPS(mask, curIdx, minIdx, minIdx)
-
 	VPADDD(inc, curIdx, curIdx)
-	ADDQ(Imm(32), src)
-	SUBQ(Imm(8), n)
-	JMP(LabelRef("loop"))
+	ADDQ(Imm(32), src); SUBQ(Imm(8), n); JMP(LabelRef("loop"))
 
 	Label("done")
-	xValHigh := XMM()
-	VEXTRACTF128(Imm(1), minVal, xValHigh)
-	xValLow := XMM()
-	VEXTRACTF128(Imm(0), minVal, xValLow)
-
-	xIdxHigh := XMM()
-	VEXTRACTF128(Imm(1), minIdx, xIdxHigh)
-	xIdxLow := XMM()
-	VEXTRACTF128(Imm(0), minIdx, xIdxLow)
-
-	resMask := XMM()
-	VCMPPS(Imm(0x01), xValLow, xValHigh, resMask)
+	xValHigh := XMM(); VEXTRACTF128(Imm(1), minVal, xValHigh)
+	xValLow := XMM(); VEXTRACTF128(Imm(0), minVal, xValLow)
+	xIdxHigh := XMM(); VEXTRACTF128(Imm(1), minIdx, xIdxHigh)
+	xIdxLow := XMM(); VEXTRACTF128(Imm(0), minIdx, xIdxLow)
+	resMask := XMM(); VCMPPS(Imm(0x01), xValLow, xValHigh, resMask)
 	VBLENDVPS(resMask, xValHigh, xValLow, xValLow)
 	VBLENDVPS(resMask, xIdxHigh, xIdxLow, xIdxLow)
 
-	xValNext := XMM()
-	VPERMILPS(Imm(0x4e), xValLow, xValNext)
-	xIdxNext := XMM()
-	VPERMILPS(Imm(0x4e), xIdxLow, xIdxNext)
-
-	resMask2 := XMM()
-	VCMPPS(Imm(0x01), xValLow, xValNext, resMask2)
+	xValNext := XMM(); VPERMILPS(Imm(0x4e), xValLow, xValNext)
+	xIdxNext := XMM(); VPERMILPS(Imm(0x4e), xIdxLow, xIdxNext)
+	resMask2 := XMM(); VCMPPS(Imm(0x01), xValLow, xValNext, resMask2)
 	VBLENDVPS(resMask2, xValNext, xValLow, xValLow)
 	VBLENDVPS(resMask2, xIdxNext, xIdxLow, xIdxLow)
 
 	VPERMILPS(Imm(0x11), xValLow, xValNext)
 	VPERMILPS(Imm(0x11), xIdxLow, xIdxNext)
-
-	resMask3 := XMM()
-	VCMPPS(Imm(0x01), xValLow, xValNext, resMask3)
+	resMask3 := XMM(); VCMPPS(Imm(0x01), xValLow, xValNext, resMask3)
 	VBLENDVPS(resMask3, xValNext, xValLow, xValLow)
 	VBLENDVPS(resMask3, xIdxNext, xIdxLow, xIdxLow)
 
 	Label("final")
 	Store(xValLow, ReturnIndex(0))
-	idx := GP64()
-	VMOVQ(xIdxLow, idx)
-	Store(idx, ReturnIndex(1))
-
-	VZEROUPPER()
-	RET()
+	idx_reg := GP64(); VMOVQ(xIdxLow, idx_reg); Store(idx_reg, ReturnIndex(1))
+	VZEROUPPER(); RET()
 }
+
 func ImplementArgMaxAVX512() {
 	TEXT("argMaxAVX512Kernel", NOSPLIT, "func(src uintptr, n int) (val float32, idx int)")
 	Store(XMM(), ReturnIndex(0)); Store(GP64(), ReturnIndex(1))
 	RET()
 }
+
 func ImplementArgMinAVX512() {
 	TEXT("argMinAVX512Kernel", NOSPLIT, "func(src uintptr, n int) (val float32, idx int)")
 	Store(XMM(), ReturnIndex(0)); Store(GP64(), ReturnIndex(1))
 	RET()
 }
-func ImplementExpAVX2() {
-	TEXT("expAVX2Kernel", NOSPLIT, "func(src, dst uintptr, n int)")
-	RET()
-}
-func ImplementLogAVX2() {
-	TEXT("logAVX2Kernel", NOSPLIT, "func(src, dst uintptr, n int)")
-	RET()
-}
+
 func ImplementSoftmaxAVX2() {
 	TEXT("softmaxAVX2Kernel", NOSPLIT, "func(src, dst uintptr, n int)")
 	RET()
 }
+
 func ImplementSigmoidAVX2() {
 	TEXT("sigmoidAVX2Kernel", NOSPLIT, "func(src, dst uintptr, n int)")
 	RET()

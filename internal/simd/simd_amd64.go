@@ -765,9 +765,6 @@ func matMulAVX2(a, b []float32, m, n, k int, dst []float32) {
 //go:noescape
 func pause()
 
-//go:noescape
-func softmaxAVX512Kernel(src, dst uintptr, n int)
-
 var _ = func() {
 	if false {
 		pause()
@@ -776,15 +773,5 @@ var _ = func() {
 		sinAVX2(nil, nil)
 		cosAVX2(nil, nil)
 		atan2AVX2(nil, nil, nil)
-		softmaxAVX512Kernel(0, 0, 0)
 	}
 }
-
-//go:noescape
-func l2Squared384AVX2Kernel(a, b uintptr) float32
-//go:noescape
-func l2Squared768AVX2Kernel(a, b uintptr) float32
-//go:noescape
-func dot384AVX2Kernel(a, b uintptr) float32
-//go:noescape
-func dot768AVX2Kernel(a, b uintptr) float32

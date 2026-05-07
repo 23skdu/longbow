@@ -110,7 +110,7 @@ func main() {
 	
 	// func(a, b uintptr, n int) float32
 	stubsDist := []string{
-		"l2SquaredAVX512Kernel", "dotAVX512Kernel",
+		"dotAVX512Kernel",
 		"euclideanFloat64AVX512Kernel", "dotFloat64AVX512Kernel",
 		"euclideanF16AVX512Kernel", "dotF16AVX512Kernel",
 		"euclideanF16AVX2Kernel", "dotF16AVX2Kernel",
@@ -204,23 +204,7 @@ func main() {
 	RET()
 	TEXT("dotAVX2Kernel", NOSPLIT, "func(a, b uintptr, n int, res uintptr)")
 	RET()
-	TEXT("euclidean384AVX512Kernel", NOSPLIT, "func(a, b uintptr) float32")
-	Store(XMM(), ReturnIndex(0))
-	RET()
-	TEXT("euclidean768AVX512Kernel", NOSPLIT, "func(a, b uintptr) float32")
-	Store(XMM(), ReturnIndex(0))
-	RET()
-	TEXT("euclidean1536AVX512Kernel", NOSPLIT, "func(a, b uintptr) float32")
-	Store(XMM(), ReturnIndex(0))
-	RET()
-	TEXT("dot384AVX512Kernel", NOSPLIT, "func(a, b uintptr) float32")
-	Store(XMM(), ReturnIndex(0))
-	RET()
-	TEXT("dot768AVX512Kernel", NOSPLIT, "func(a, b uintptr) float32")
-	Store(XMM(), ReturnIndex(0))
-	RET()
-	TEXT("dot1536AVX512Kernel", NOSPLIT, "func(a, b uintptr) float32")
-	Store(XMM(), ReturnIndex(0))
+	TEXT("dotAVX2Kernel", NOSPLIT, "func(a, b uintptr, n int, res uintptr)")
 	RET()
 	TEXT("euclidean32FMA", NOSPLIT, "func(a, b uintptr) float32")
 	Store(XMM(), ReturnIndex(0))

@@ -41,6 +41,11 @@ func cosineF16NEON(a, b []float16.Num) (float32, error)    { return cosineF16Unr
 func dotF16NEON(a, b []float16.Num) (float32, error)       { return dotF16Unrolled4x(a, b) }
 
 func l2SquaredNEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
+func l2Squared128NEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
+func l2Squared384NEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
+func l2Squared768NEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
+func l2Squared1024NEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
+func l2Squared3072NEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
 
 // FastWalshHadamardTransform32NEON is a stub for non-ARM64 platforms.
 func FastWalshHadamardTransform32NEON(a []float32) error { return fastWalshHadamardTransform32Generic(a) }

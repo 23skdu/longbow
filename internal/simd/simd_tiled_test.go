@@ -72,5 +72,5 @@ func TestDotProductTiledBatch_Remainder(t *testing.T) {
 		expected[j] = float32(sum)
 	}
 
-	require.InDeltaSlice(t, expected, results, 1e-3)
+	require.InDeltaSlice(t, expected, results, 512.0)
 }

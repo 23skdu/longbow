@@ -188,7 +188,7 @@ dot_768_loop:
     VMOVUPS 64(AX), Y6
     VMOVUPS 64(CX), Y10
     VFMADD231PS Y6, Y10, Y2
-    
+
     VMOVUPS 96(AX), Y7
     VMOVUPS 96(CX), Y11
     VFMADD231PS Y7, Y11, Y3
@@ -197,6 +197,252 @@ dot_768_loop:
     ADDQ    $128, CX
     DECQ    R8
     JNZ     dot_768_loop
+
+    VADDPS  Y1, Y0, Y0
+    VADDPS  Y3, Y2, Y2
+    VADDPS  Y2, Y0, Y0
+
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VHADDPS X0, X0, X0
+    VHADDPS X0, X0, X0
+
+    MOVSS   X0, ret+16(FP)
+    VZEROUPPER
+    RET
+
+// func l2Squared128AVX2(a, b uintptr) float32
+TEXT ·l2Squared128AVX2Kernel(SB), NOSPLIT, $0-20
+    MOVQ    a+0(FP), AX
+    MOVQ    b+8(FP), CX
+
+    VXORPS  Y0, Y0, Y0
+    VXORPS  Y1, Y1, Y1
+    VXORPS  Y2, Y2, Y2
+    VXORPS  Y3, Y3, Y3
+
+    MOVQ    $4, R8 // 4 iterations * 32 floats = 128
+
+l2_128_loop:
+    VMOVUPS (AX), Y4
+    VMOVUPS (CX), Y8
+    VMOVUPS 32(AX), Y5
+    VMOVUPS 32(CX), Y9
+    VMOVUPS 64(AX), Y6
+    VMOVUPS 64(CX), Y10
+    VMOVUPS 96(AX), Y7
+    VMOVUPS 96(CX), Y11
+
+    VSUBPS  Y8, Y4, Y4
+    VSUBPS  Y9, Y5, Y5
+    VSUBPS  Y10, Y6, Y6
+    VSUBPS  Y11, Y7, Y7
+
+    VFMADD231PS Y4, Y4, Y0
+    VFMADD231PS Y5, Y5, Y1
+    VFMADD231PS Y6, Y6, Y2
+    VFMADD231PS Y7, Y7, Y3
+
+    ADDQ    $128, AX
+    ADDQ    $128, CX
+    DECQ    R8
+    JNZ     l2_128_loop
+
+    VADDPS  Y1, Y0, Y0
+    VADDPS  Y3, Y2, Y2
+    VADDPS  Y2, Y0, Y0
+
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VHADDPS X0, X0, X0
+    VHADDPS X0, X0, X0
+
+    MOVSS   X0, ret+16(FP)
+    VZEROUPPER
+    RET
+
+// func l2Squared1024AVX2(a, b uintptr) float32
+TEXT ·l2Squared1024AVX2Kernel(SB), NOSPLIT, $0-20
+    MOVQ    a+0(FP), AX
+    MOVQ    b+8(FP), CX
+
+    VXORPS  Y0, Y0, Y0
+    VXORPS  Y1, Y1, Y1
+    VXORPS  Y2, Y2, Y2
+    VXORPS  Y3, Y3, Y3
+
+    MOVQ    $32, R8 // 32 iterations * 32 floats = 1024
+
+l2_1024_loop:
+    VMOVUPS (AX), Y4
+    VMOVUPS (CX), Y8
+    VMOVUPS 32(AX), Y5
+    VMOVUPS 32(CX), Y9
+    VMOVUPS 64(AX), Y6
+    VMOVUPS 64(CX), Y10
+    VMOVUPS 96(AX), Y7
+    VMOVUPS 96(CX), Y11
+
+    VSUBPS  Y8, Y4, Y4
+    VSUBPS  Y9, Y5, Y5
+    VSUBPS  Y10, Y6, Y6
+    VSUBPS  Y11, Y7, Y7
+
+    VFMADD231PS Y4, Y4, Y0
+    VFMADD231PS Y5, Y5, Y1
+    VFMADD231PS Y6, Y6, Y2
+    VFMADD231PS Y7, Y7, Y3
+
+    ADDQ    $128, AX
+    ADDQ    $128, CX
+    DECQ    R8
+    JNZ     l2_1024_loop
+
+    VADDPS  Y1, Y0, Y0
+    VADDPS  Y3, Y2, Y2
+    VADDPS  Y2, Y0, Y0
+
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VHADDPS X0, X0, X0
+    VHADDPS X0, X0, X0
+
+    MOVSS   X0, ret+16(FP)
+    VZEROUPPER
+    RET
+
+// func l2Squared3072AVX2(a, b uintptr) float32
+TEXT ·l2Squared3072AVX2Kernel(SB), NOSPLIT, $0-20
+    MOVQ    a+0(FP), AX
+    MOVQ    b+8(FP), CX
+
+    VXORPS  Y0, Y0, Y0
+    VXORPS  Y1, Y1, Y1
+    VXORPS  Y2, Y2, Y2
+    VXORPS  Y3, Y3, Y3
+
+    MOVQ    $96, R8 // 96 iterations * 32 floats = 3072
+
+l2_3072_loop:
+    VMOVUPS (AX), Y4
+    VMOVUPS (CX), Y8
+    VMOVUPS 32(AX), Y5
+    VMOVUPS 32(CX), Y9
+    VMOVUPS 64(AX), Y6
+    VMOVUPS 64(CX), Y10
+    VMOVUPS 96(AX), Y7
+    VMOVUPS 96(CX), Y11
+
+    VSUBPS  Y8, Y4, Y4
+    VSUBPS  Y9, Y5, Y5
+    VSUBPS  Y10, Y6, Y6
+    VSUBPS  Y11, Y7, Y7
+
+    VFMADD231PS Y4, Y4, Y0
+    VFMADD231PS Y5, Y5, Y1
+    VFMADD231PS Y6, Y6, Y2
+    VFMADD231PS Y7, Y7, Y3
+
+    ADDQ    $128, AX
+    ADDQ    $128, CX
+    DECQ    R8
+    JNZ     l2_3072_loop
+
+    VADDPS  Y1, Y0, Y0
+    VADDPS  Y3, Y2, Y2
+    VADDPS  Y2, Y0, Y0
+
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VHADDPS X0, X0, X0
+    VHADDPS X0, X0, X0
+
+    MOVSS   X0, ret+16(FP)
+    VZEROUPPER
+    RET
+
+// func euclidean128AVX2(a, b uintptr) float32
+TEXT ·euclidean128AVX2Kernel(SB), NOSPLIT, $0-20
+    MOVQ    a+0(FP), AX
+    MOVQ    b+8(FP), CX
+
+    VXORPS  Y0, Y0, Y0
+    VXORPS  Y1, Y1, Y1
+    VXORPS  Y2, Y2, Y2
+    VXORPS  Y3, Y3, Y3
+
+    MOVQ    $4, R8
+
+euclidean_128_loop:
+    VMOVUPS (AX), Y4
+    VMOVUPS (CX), Y8
+    VMOVUPS 32(AX), Y5
+    VMOVUPS 32(CX), Y9
+    VMOVUPS 64(AX), Y6
+    VMOVUPS 64(CX), Y10
+    VMOVUPS 96(AX), Y7
+    VMOVUPS 96(CX), Y11
+
+    VSUBPS  Y8, Y4, Y4
+    VSUBPS  Y9, Y5, Y5
+    VSUBPS  Y10, Y6, Y6
+    VSUBPS  Y11, Y7, Y7
+
+    VFMADD231PS Y4, Y4, Y0
+    VFMADD231PS Y5, Y5, Y1
+    VFMADD231PS Y6, Y6, Y2
+    VFMADD231PS Y7, Y7, Y3
+
+    ADDQ    $128, AX
+    ADDQ    $128, CX
+    DECQ    R8
+    JNZ     euclidean_128_loop
+
+    VADDPS  Y1, Y0, Y0
+    VADDPS  Y3, Y2, Y2
+    VADDPS  Y2, Y0, Y0
+
+    VEXTRACTF128 $1, Y0, X1
+    VADDPS  X1, X0, X0
+    VHADDPS X0, X0, X0
+    VHADDPS X0, X0, X0
+
+    SQRTSS  X0, X0
+    MOVSS   X0, ret+16(FP)
+    VZEROUPPER
+    RET
+
+// func dot128AVX2(a, b uintptr) float32
+TEXT ·dot128AVX2Kernel(SB), NOSPLIT, $0-20
+    MOVQ    a+0(FP), AX
+    MOVQ    b+8(FP), CX
+
+    VXORPS  Y0, Y0, Y0
+    VXORPS  Y1, Y1, Y1
+    VXORPS  Y2, Y2, Y2
+    VXORPS  Y3, Y3, Y3
+
+    MOVQ    $4, R8
+
+dot_128_loop:
+    VMOVUPS (AX), Y4
+    VMOVUPS (CX), Y8
+    VMOVUPS 32(AX), Y5
+    VMOVUPS 32(CX), Y9
+    VMOVUPS 64(AX), Y6
+    VMOVUPS 64(CX), Y10
+    VMOVUPS 96(AX), Y7
+    VMOVUPS 96(CX), Y11
+
+    VFMADD231PS Y4, Y8, Y0
+    VFMADD231PS Y5, Y9, Y1
+    VFMADD231PS Y6, Y10, Y2
+    VFMADD231PS Y7, Y11, Y3
+
+    ADDQ    $128, AX
+    ADDQ    $128, CX
+    DECQ    R8
+    JNZ     dot_128_loop
 
     VADDPS  Y1, Y0, Y0
     VADDPS  Y3, Y2, Y2

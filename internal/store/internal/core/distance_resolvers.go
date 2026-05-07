@@ -15,20 +15,46 @@ func getSimdMetric(m basecore.DistanceMetric) simd.MetricType {
 		return simd.MetricCosine
 	case basecore.MetricDotProduct:
 		return simd.MetricDotProduct
+	case basecore.MetricL2Squared:
+		return simd.MetricL2Squared
 	default:
 		return simd.MetricEuclidean
 	}
 }
 
 // resolveAllDistanceFuncs resolves and caches all typed distance functions.
+func (h *ArrowHNSW) resolveDistanceFuncSquared() func([]float32, []float32) (float32, error) {
+	dims := int(h.dims.Load())
+	k := simd.GetKernel[float32](simd.MetricL2Squared, dims)
+	if k == nil { return simd.L2SquaredFloat32 }
+	return k
+}
+
+func (h *ArrowHNSW) resolveDistanceFuncInt8Squared() func([]int8, []int8) (float32, error) {
+	dims := int(h.dims.Load())
+	k := simd.GetKernel[int8](simd.MetricL2Squared, dims)
+	if k == nil { return nil }
+	return k
+}
+
+func (h *ArrowHNSW) resolveDistanceFuncUint8Squared() func([]uint8, []uint8) (float32, error) {
+	dims := int(h.dims.Load())
+	k := simd.GetKernel[uint8](simd.MetricL2Squared, dims)
+	if k == nil { return nil }
+	return k
+}
+
 func (h *ArrowHNSW) resolveAllDistanceFuncs() {
 	h.distFunc = h.resolveDistanceFunc()
+	h.distFuncSquared = h.resolveDistanceFuncSquared()
 	h.distFuncF64 = h.resolveDistanceFuncF64()
 	h.distFuncF16 = h.resolveDistanceFuncF16()
 	h.distFuncC64 = h.resolveDistanceFuncC64()
 	h.distFuncC128 = h.resolveDistanceFuncC128()
 	h.distFuncInt8 = h.resolveDistanceFuncInt8()
+	h.distFuncInt8Squared = h.resolveDistanceFuncInt8Squared()
 	h.distFuncUint8 = h.resolveDistanceFuncUint8()
+	h.distFuncUint8Squared = h.resolveDistanceFuncUint8Squared()
 	h.distFuncInt16 = h.resolveDistanceFuncInt16()
 	h.distFuncUint16 = h.resolveDistanceFuncUint16()
 	h.distFuncInt32 = h.resolveDistanceFuncInt32()

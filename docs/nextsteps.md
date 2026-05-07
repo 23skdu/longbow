@@ -14,7 +14,6 @@ The following items represent incomplete implementations or stubbed functionalit
   - [ ] Implement real ML reranking models in `internal/store/ml_reranker.go` (currently `stubMLModel`).
   - [ ] *Rationale:* Current heuristic fallbacks are explicitly documented as "NOT recommended for production."
 
-
 This document tracks the remaining tasks for hardening the Longbow storage engine for production readiness.
 
 ## Completed Tasks (v0.2.1-rc1)

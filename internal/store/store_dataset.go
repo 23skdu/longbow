@@ -63,9 +63,10 @@ func (vs *VectorStore) MigrateNamespace(config NamespaceMigrationConfig) (*Names
 	for _, dataset := range datasets {
 		newName := config.TargetNamespace + "/" + dataset[len(config.SourceNamespace)+1:]
 
+		engine := vs.engine.Load()
 		if config.CopyMode {
-			if vs.engine != nil && vs.engine.GetSnapshotBackend() != nil {
-				if err := vs.CloneDataset(context.Background(), dataset, newName, vs.engine.GetSnapshotBackend()); err != nil {
+			if engine != nil && engine.GetSnapshotBackend() != nil {
+				if err := vs.CloneDataset(context.Background(), dataset, newName, engine.GetSnapshotBackend()); err != nil {
 					result.FailedDatasets = append(result.FailedDatasets, dataset)
 					continue
 				}
@@ -74,14 +75,14 @@ func (vs *VectorStore) MigrateNamespace(config NamespaceMigrationConfig) (*Names
 				continue
 			}
 		} else {
-			if vs.engine != nil && vs.engine.GetSnapshotBackend() != nil {
-				_, err := vs.ExportDataset(dataset, vs.engine.GetSnapshotBackend())
+			if engine != nil && engine.GetSnapshotBackend() != nil {
+				_, err := vs.ExportDataset(dataset, engine.GetSnapshotBackend())
 				if err != nil {
 					result.FailedDatasets = append(result.FailedDatasets, dataset)
 					continue
 				}
 
-				_, err = vs.ImportDataset(context.Background(), newName, vs.engine.GetSnapshotBackend(), nil)
+				_, err = vs.ImportDataset(context.Background(), newName, engine.GetSnapshotBackend(), nil)
 				if err != nil {
 					result.FailedDatasets = append(result.FailedDatasets, dataset)
 					continue

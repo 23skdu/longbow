@@ -13,7 +13,7 @@ type mockMemStatsReader struct {
 }
 
 func (m *mockMemStatsReader) ReadMemStats(stats *runtime.MemStats) {
-	stats.HeapInuse = m.heapInUse
+	stats.HeapAlloc = m.heapInUse
 }
 
 func TestGCTuner_Logic(t *testing.T) {
@@ -44,7 +44,7 @@ func TestGCTuner_Logic(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			tuner.IsAggressive = tt.aggressive
-			tuner.tune(&runtime.MemStats{HeapInuse: tt.heapUsage}, tt.aggressive)
+			tuner.tune(&runtime.MemStats{HeapAlloc: tt.heapUsage}, tt.aggressive)
 			// We can't easily check debug.SetGCPercent without a wrapper or race,
 			// but we can check internal state
 

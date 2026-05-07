@@ -146,6 +146,16 @@ func l2SquaredAVX2Kernel(a uintptr, b uintptr, n int, res uintptr)
 
 func dotAVX2Kernel(a uintptr, b uintptr, n int, res uintptr)
 
+func l2Squared128AVX2Kernel(a, b uintptr) float32
+
+func l2Squared1024AVX2Kernel(a, b uintptr) float32
+
+func l2Squared3072AVX2Kernel(a, b uintptr) float32
+
+func euclidean128AVX2Kernel(a, b uintptr) float32
+
+func dot128AVX2Kernel(a, b uintptr) float32
+
 func euclidean384AVX512Kernel(a uintptr, b uintptr) float32
 
 func euclidean768AVX512Kernel(a uintptr, b uintptr) float32

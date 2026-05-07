@@ -18,29 +18,45 @@ func cosineAVX512(a, b []float32) (float32, error)    { return cosineGeneric(a, 
 func dotAVX2(a, b []float32) (float32, error)         { return dotGeneric(a, b) }
 func dotAVX512(a, b []float32) (float32, error)       { return dotGeneric(a, b) }
 
+func euclidean128AVX2(a, b []float32) (float32, error)   { return euclideanGeneric(a, b) }
 func euclidean384AVX2(a, b []float32) (float32, error)  { return euclideanGeneric(a, b) }
 func euclidean768AVX2(a, b []float32) (float32, error)  { return euclideanGeneric(a, b) }
 func euclidean1024AVX2(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
 func euclidean1536AVX2(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
 func euclidean3072AVX2(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
 
+func euclidean128AVX512(a, b []float32) (float32, error)   { return euclideanGeneric(a, b) }
 func euclidean384AVX512(a, b []float32) (float32, error)  { return euclideanGeneric(a, b) }
 func euclidean768AVX512(a, b []float32) (float32, error)  { return euclideanGeneric(a, b) }
 func euclidean1024AVX512(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
 func euclidean1536AVX512(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
 func euclidean3072AVX512(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
 
+func dot128AVX2(a, b []float32) (float32, error)   { return dotGeneric(a, b) }
 func dot384AVX2(a, b []float32) (float32, error)  { return dotGeneric(a, b) }
 func dot768AVX2(a, b []float32) (float32, error)  { return dotGeneric(a, b) }
 func dot1024AVX2(a, b []float32) (float32, error) { return dotGeneric(a, b) }
 func dot1536AVX2(a, b []float32) (float32, error) { return dotGeneric(a, b) }
 func dot3072AVX2(a, b []float32) (float32, error) { return dotGeneric(a, b) }
 
+func dot128AVX512(a, b []float32) (float32, error)   { return dotGeneric(a, b) }
 func dot384AVX512(a, b []float32) (float32, error)  { return dotGeneric(a, b) }
 func dot768AVX512(a, b []float32) (float32, error)  { return dotGeneric(a, b) }
 func dot1024AVX512(a, b []float32) (float32, error) { return dotGeneric(a, b) }
 func dot1536AVX512(a, b []float32) (float32, error) { return dotGeneric(a, b) }
 func dot3072AVX512(a, b []float32) (float32, error) { return dotGeneric(a, b) }
+
+func l2Squared128AVX2(a, b []float32) (float32, error)   { return L2SquaredFloat32(a, b) }
+func l2Squared384AVX2(a, b []float32) (float32, error)  { return L2SquaredFloat32(a, b) }
+func l2Squared768AVX2(a, b []float32) (float32, error)  { return L2SquaredFloat32(a, b) }
+func l2Squared1024AVX2(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
+func l2Squared3072AVX2(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
+
+func l2Squared128AVX512(a, b []float32) (float32, error)   { return L2SquaredFloat32(a, b) }
+func l2Squared384AVX512(a, b []float32) (float32, error)  { return L2SquaredFloat32(a, b) }
+func l2Squared768AVX512(a, b []float32) (float32, error)  { return L2SquaredFloat32(a, b) }
+func l2Squared1024AVX512(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
+func l2Squared3072AVX512(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
 
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
 	return euclideanBatchGeneric(query, vectors, results)

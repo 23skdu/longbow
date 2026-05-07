@@ -220,6 +220,8 @@ func (w *CompactionWorker) compactDataset(name string) {
 
 // GetStats returns compaction worker statistics.
 func (w *CompactionWorker) GetStats() (total, failed int64, lastTime time.Time, isRunning bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.totalCompactions.Load(),
 		w.failedCompactions.Load(),
 		w.lastCompaction,

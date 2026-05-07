@@ -45,7 +45,7 @@ type VectorStore struct {
 
 	// Persistence
 	dataPath string
-	engine   *storage.StorageEngine // Manages WAL and Snapshots
+	engine   atomic.Pointer[storage.StorageEngine] // Manages WAL and Snapshots
 
 	indexQueue          *IndexJobQueueLockFree // Integrated HNSW background indexing queue.
 	ingestionQueue      *IngestionRingBuffer   // Lock-free ring buffer for high-throughput ingestion.
@@ -155,7 +155,7 @@ type VectorStore struct {
 	hnsw2Config *ArrowHNSWConfig //nolint:unused
 
 	// Memory Tuner
-	tuner *lbmem.GCTuner
+	tuner atomic.Pointer[lbmem.GCTuner]
 
 	// AutoScaler (Part 1.1)
 	scaler    *autoscale.AutoScaler
@@ -390,16 +390,18 @@ func (vs *VectorStore) CheckIngestionBackpressure() bool {
 	}
 
 	// 2. Global Heap Pressure (Hard Threshold)
-	if vs.tuner != nil {
-		ratio := vs.tuner.GetUtilizationRatio()
+	tuner := vs.tuner.Load()
+	if tuner != nil {
+		ratio := tuner.GetUtilizationRatio()
 		if ratio > 0.98 {
 			return true
 		}
 	}
 
 	// 3. WAL Pressure (Hard Threshold: > 90% queue depth)
-	if vs.engine != nil {
-		pending, capacity := vs.engine.GetWALQueueDepth()
+	engine := vs.engine.Load()
+	if engine != nil {
+		pending, capacity := engine.GetWALQueueDepth()
 		if capacity > 0 && pending > (capacity*90)/100 {
 			return true
 		}
@@ -426,8 +428,9 @@ func (vs *VectorStore) IngestionBackpressureDelay() time.Duration {
 	}
 
 	// 2. Global Heap Pressure (Soft Threshold: 85% to 98%)
-	if vs.tuner != nil {
-		ratio := vs.tuner.GetUtilizationRatio()
+	tuner := vs.tuner.Load()
+	if tuner != nil {
+		ratio := tuner.GetUtilizationRatio()
 		if ratio > 0.85 {
 			// Linear delay from 0 to 100ms
 			p := (ratio - 0.85) / (0.98 - 0.85)
@@ -439,8 +442,9 @@ func (vs *VectorStore) IngestionBackpressureDelay() time.Duration {
 	}
 
 	// 3. WAL Pressure (Soft Threshold: 60% to 90% queue depth)
-	if vs.engine != nil {
-		pending, capacity := vs.engine.GetWALQueueDepth()
+	engine := vs.engine.Load()
+	if engine != nil {
+		pending, capacity := engine.GetWALQueueDepth()
 		if capacity > 0 && pending > (capacity*60)/100 {
 			p := float64(pending-(capacity*60)/100) / float64((capacity*90)/100-(capacity*60)/100)
 			if p > 1.0 {
@@ -474,7 +478,7 @@ func stackTrace() string {
 
 // SetGCTuner sets the memory tuner for backpressure.
 func (vs *VectorStore) SetGCTuner(tuner *lbmem.GCTuner) {
-	vs.tuner = tuner
+	vs.tuner.Store(tuner)
 	// Wire to global worker pool for indexing backpressure
 	lbcore.GetSharedPool().SetTuner(tuner)
 }
@@ -659,8 +663,9 @@ func (vs *VectorStore) GetLoadHints() loadbalancing.LoadHints {
 	// For now, use a simple proxy or 0 if not implemented
 
 	// 2. Memory Load
-	if vs.tuner != nil {
-		hints.MemLoad = uint32(vs.tuner.GetUtilizationRatio() * 100)
+	tuner := vs.tuner.Load()
+	if tuner != nil {
+		hints.MemLoad = uint32(tuner.GetUtilizationRatio() * 100)
 	}
 
 	// 3. Queue Depth (Indexing + Ingestion)
@@ -840,10 +845,11 @@ func (vs *VectorStore) Warmup() WarmupStats {
 
 // GetWALQueueDepth returns the number of jobs and total size in bytes currently in the WAL queue.
 func (vs *VectorStore) GetWALQueueDepth() (count, size int) {
-	if vs.engine == nil {
+	engine := vs.engine.Load()
+	if engine == nil {
 		return 0, 0
 	}
-	return vs.engine.GetWALQueueDepth()
+	return engine.GetWALQueueDepth()
 }
 
 func (vs *VectorStore) updateLWWAndMerkle(ds *Dataset, rec arrow.RecordBatch, ts int64) {
@@ -967,8 +973,9 @@ func (vs *VectorStore) WaitForIndexing(name string) {
 
 // ClosePersistence closes the persistence engine.
 func (vs *VectorStore) ClosePersistence() error {
-	if vs.engine != nil {
-		return vs.engine.Close()
+	engine := vs.engine.Load()
+	if engine != nil {
+		return engine.Close()
 	}
 	return nil
 }
@@ -996,9 +1003,7 @@ func (vs *VectorStore) processPersistenceJob(job persistenceJob) {
 	// Note: We access vs.engine racily if InitPersistence is called concurrently,
 	// but usage model implies Init happens before heavy load.
 
-	vs.configMu.RLock()
-	engine := vs.engine
-	vs.configMu.RUnlock()
+	engine := vs.engine.Load()
 
 	if engine != nil {
 		if err := engine.WriteWAL(job.datasetName, job.batch, seq, job.ts); err != nil {

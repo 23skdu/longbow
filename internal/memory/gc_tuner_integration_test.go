@@ -40,13 +40,13 @@ func TestGCTuner_ArenaAwareTuning(t *testing.T) {
 	// Calculate expected arena ratio
 	arenaRatio := float64(stats.TotalCapacity) / float64(heapSize)
 	if arenaRatio > 0.7 {
-		tuner.tune(&runtime.MemStats{HeapInuse: uint64(heapSize)}, true)
-		// Should set GOGC to 50 due to high arena ratio
-		assert.Equal(t, 50, tuner.currentGOGC, "Should set aggressive GOGC=50 when arena ratio >0.7 (ratio=%.2f, capacity=%d, heap=%d)", arenaRatio, stats.TotalCapacity, heapSize)
+		tuner.tune(&runtime.MemStats{HeapAlloc: uint64(heapSize)}, true)
+		// Should set GOGC to lowGOGC (10) due to high arena ratio
+		assert.Equal(t, 10, tuner.currentGOGC, "Should set aggressive GOGC=10 when arena ratio >0.7 (ratio=%.2f, capacity=%d, heap=%d)", arenaRatio, stats.TotalCapacity, heapSize)
 	} else {
 		t.Logf("Arena ratio %.2f <= 0.7, testing standard logic instead", arenaRatio)
 		// Test that standard logic still works
-		tuner.tune(&runtime.MemStats{HeapInuse: uint64(heapSize)}, true)
+		tuner.tune(&runtime.MemStats{HeapAlloc: uint64(heapSize)}, true)
 		// With small heap (1MB) vs limit (50MB), should be high GOGC
 		assert.Equal(t, 100, tuner.currentGOGC, "Should use standard high GOGC for low utilization")
 	}

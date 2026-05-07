@@ -90,6 +90,11 @@ var (
 	cosineDistanceBatchImpl    distanceBatchFunc
 	dotProductBatchImpl        distanceBatchFunc
 	l2SquaredImpl              distanceFunc
+	l2Squared128Impl            distanceFunc // optimized for dimensions=128
+	l2Squared384Impl            distanceFunc // optimized for dimensions=384
+	l2Squared768Impl            distanceFunc // optimized for dimensions=768
+	l2Squared1024Impl           distanceFunc // optimized for dimensions=1024
+	l2Squared3072Impl           distanceFunc // optimized for dimensions=3072
 
 	matchInt64Impl   matchInt64Func
 	matchInt32Impl   matchInt32Func

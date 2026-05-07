@@ -2638,3 +2638,65 @@ func (g *GraphData) Unregister() {
 		memory.UnregisterArena(g.Complex128Arena.Slab())
 	}
 }
+
+func (g *GraphData) EstimateMemory() int64 {
+	var total int64
+	if g.Float32Arena != nil {
+		total += g.Float32Arena.TotalAllocated()
+	}
+	if g.Float64Arena != nil {
+		total += g.Float64Arena.TotalAllocated()
+	}
+	if g.Uint8Arena != nil {
+		total += g.Uint8Arena.TotalAllocated()
+	}
+	if g.Uint16Arena != nil {
+		total += g.Uint16Arena.TotalAllocated()
+	}
+	if g.Uint32Arena != nil {
+		total += g.Uint32Arena.TotalAllocated()
+	}
+	if g.Uint64Arena != nil {
+		total += g.Uint64Arena.TotalAllocated()
+	}
+	if g.Int8Arena != nil {
+		total += g.Int8Arena.TotalAllocated()
+	}
+	if g.Int16Arena != nil {
+		total += g.Int16Arena.TotalAllocated()
+	}
+	if g.Int32Arena != nil {
+		total += g.Int32Arena.TotalAllocated()
+	}
+	if g.Int64Arena != nil {
+		total += g.Int64Arena.TotalAllocated()
+	}
+	if g.Float16Arena != nil {
+		total += g.Float16Arena.TotalAllocated()
+	}
+	if g.Complex64Arena != nil {
+		total += g.Complex64Arena.TotalAllocated()
+	}
+	if g.Complex128Arena != nil {
+		total += g.Complex128Arena.TotalAllocated()
+	}
+	
+	// Add Go-allocated slices overhead
+	total += int64(len(g.VectorsF32) * 8)
+	total += int64(len(g.VectorsPQ) * 8)
+	total += int64(len(g.VectorsInt8) * 8)
+	total += int64(len(g.VectorsInt16) * 8)
+	total += int64(len(g.VectorsUint16) * 8)
+	total += int64(len(g.VectorsF16) * 8)
+	total += int64(len(g.VectorsBQ) * 8)
+	total += int64(len(g.VectorsSQ8) * 8)
+	total += int64(len(g.VectorsTQ) * 8)
+	total += int64(len(g.VectorsInt64) * 8)
+	total += int64(len(g.VectorsUint64) * 8)
+	total += int64(len(g.VectorsInt32) * 8)
+	total += int64(len(g.VectorsUint32) * 8)
+	total += int64(len(g.Neighbors) * 24) // roughly 24 bytes per slice header
+	total += int64(len(g.Levels) * 24)
+	
+	return total
+}

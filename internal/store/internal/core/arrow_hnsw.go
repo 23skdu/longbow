@@ -1918,6 +1918,22 @@ func (h *ArrowHNSW) CleanupTombstones(threshold int) int {
 	return totalPruned
 }
 
+// NeedsCompaction returns true if the index has accumulated significant tombstoned entries.
+func (h *ArrowHNSW) NeedsCompaction() bool {
+	if h.dataset == nil {
+		return false
+	}
+	var total int64
+	for _, ts := range h.dataset.GetTombstones() {
+		if ts != nil {
+			total += int64(ts.Count()) // #nosec G115
+		}
+	}
+	// Threshold for compaction: 10% of total nodes or at least 5000 entries
+	nodeCount := h.nodeCount.Load()
+	return total > 5000 || (nodeCount > 0 && float64(total)/float64(nodeCount) > 0.1)
+}
+
 func (h *ArrowHNSW) SetIndexedColumns(columns []string) {
 	// No-op: Column indexing is handled at the VectorStore level, not ArrowHNSW.
 	// VectorStore.SetIndexedColumns() stores columns in s.indexedColumns,
@@ -2454,31 +2470,12 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 	if h == nil {
 		return 0
 	}
-	nodeCount := int(h.nodeCount.Load())
-	dims := int(h.dims.Load())
-
-	if nodeCount == 0 || dims == 0 {
-		return 0
+	
+	var total int64
+	gd := h.data.Load()
+	if gd != nil {
+		total += gd.EstimateMemory()
 	}
-
-	vecBytesPer := int64(dims * 4)
-
-	vectorMemory := int64(nodeCount) * vecBytesPer
-
-	m := h.m.Load()
-	if m == 0 {
-		m = 32
-	}
-	maxLevel := int(h.maxLevel.Load())
-	if maxLevel == 0 {
-		maxLevel = int(math.Log2(float64(nodeCount)))
-		if maxLevel < 1 {
-			maxLevel = 1
-		}
-	}
-	graphMemory := int64(nodeCount) * int64(maxLevel) * int64(m) * 4
-
-	levelsMemory := int64(nodeCount) * 1
 
 	var locMemory int64
 	if h.locationStore != nil {
@@ -2486,7 +2483,7 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 		locMemory = int64(locCount) * 8
 	}
 
-	return vectorMemory + graphMemory + levelsMemory + locMemory
+	return total + locMemory
 }
 
 

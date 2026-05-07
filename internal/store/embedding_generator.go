@@ -651,12 +651,12 @@ func NewLocalEmbeddingGenerator(config EmbeddingConfig) (EmbeddingGenerator, err
 
 func (le *localEmbeddingGenerator) initModel() error {
 	if le.modelPath == "" {
-		if os.Getenv("LONGBOW_STRICT_MODELS") == "1" {
-			return errors.New("strict model validation failed: no model path specified and LONGBOW_STRICT_MODELS=1")
+		if os.Getenv("LONGBOW_ALLOW_STUBS") == "1" {
+			le.model = &stubEmbeddingModel{dimension: le.dimension, path: "empty"}
+			le.initialized = true
+			return nil
 		}
-		le.model = &stubEmbeddingModel{dimension: le.dimension, path: "empty"}
-		le.initialized = true
-		return nil
+		return errors.New("strict model validation failed: no model path specified and LONGBOW_ALLOW_STUBS != 1")
 	}
 
 	ext := ""
@@ -674,13 +674,13 @@ func (le *localEmbeddingGenerator) initModel() error {
 		le.initialized = true
 		le.logger.Info("ONNX embedding model loaded", "path", le.modelPath)
 	default:
-		if os.Getenv("LONGBOW_STRICT_MODELS") == "1" {
-			return fmt.Errorf("strict model validation failed: unknown model extension for %s and LONGBOW_STRICT_MODELS=1", le.modelPath)
+		if os.Getenv("LONGBOW_ALLOW_STUBS") == "1" {
+			le.model = &stubEmbeddingModel{dimension: le.dimension, path: le.modelPath}
+			le.initialized = true
+			fmt.Printf("WARNING: Using stub embedding model for path: %s. This is NOT recommended for production.\n", le.modelPath)
+			return nil
 		}
-		le.model = &stubEmbeddingModel{dimension: le.dimension, path: le.modelPath}
-		le.initialized = true
-		// Use a more visible warning for stub models in production-critical path
-		fmt.Printf("WARNING: Using stub embedding model for path: %s. This is NOT recommended for production.\n", le.modelPath)
+		return fmt.Errorf("strict model validation failed: unknown model extension for %s (use .onnx or .wasm, or set LONGBOW_ALLOW_STUBS=1)", le.modelPath)
 	}
 
 	return nil

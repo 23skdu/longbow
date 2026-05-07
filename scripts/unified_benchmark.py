@@ -63,14 +63,16 @@ DTYPE_BYTES = {
 
 
 def run_command(cmd, env=None, capture_output=True, timeout=None):
+    import shlex
     try:
+        args = shlex.split(cmd)
         result = subprocess.run(
-            cmd,
+            args,
             env=env,
             capture_output=capture_output,
             text=True,
             timeout=timeout,
-            shell=True,
+            shell=False,
         )
         return result
     except subprocess.TimeoutExpired:
@@ -205,6 +207,15 @@ class BenchmarkRunner:
         print(f"  Cleaning up ports starting from {port}...")
         for p in [port, port + 1, port + 80, port + 6000]:
             subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
+        
+        # Wait for ports to be actually free
+        import socket
+        for p in [port, port + 1, port + 80, port + 6000]:
+            for _ in range(30):
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    if s.connect_ex(('127.0.0.1', p)) != 0:
+                        break
+                time.sleep(0.5)
         
         # Also kill any lingering longbow processes by name to be sure
         for name in ["longbow", "longbow-metal", "longbow-cuda", "bench-tool", "benchmark-tool", "longbow-cli"]:
@@ -483,7 +494,8 @@ class BenchmarkRunner:
             extra_args += f" -output-fbin {output_path}"
             print(f"  Generating {dtype} dim={dim} count={batch_size} -> {output_path}")
         
-        cmd = f"{bench_tool} -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file}{extra_args}"
+        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
+        print(f"DEBUG: cmd={cmd}", flush=True)
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)
         
@@ -2202,6 +2214,7 @@ class BenchmarkRunner:
                                 )
                             if self.args.pprof:
                                 self.collect_pprof(label)
+                                time.sleep(5)
                         finally:
                             self.stop_server()
                             # Clean up data directory

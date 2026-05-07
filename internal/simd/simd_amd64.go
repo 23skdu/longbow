@@ -27,22 +27,12 @@ func l2SquaredAVX2(a, b []float32) (float32, error) {
 	}
 
 	var sum float32
-	n := len(a)
-	i := 0
-
-	// Process 8 elements at a time (AVX2: 256-bit = 8 x float32)
-	for ; i <= n-8; i += 8 {
-		sum += euclidean8AVX2(
-			uintptr(unsafe.Pointer(&a[i])),
-			uintptr(unsafe.Pointer(&b[i])),
-		)
-	}
-
-	// Handle remaining elements
-	for ; i < n; i++ {
-		d := a[i] - b[i]
-		sum += d * d
-	}
+	l2SquaredAVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a),
+		uintptr(unsafe.Pointer(&sum)),
+	)
 
 	return sum, nil
 }
@@ -206,19 +196,12 @@ func dotAVX2(a, b []float32) (float32, error) {
 	}
 
 	var sum float32
-	n := len(a)
-	i := 0
-
-	for ; i <= n-8; i += 8 {
-		sum += dot8AVX2(
-			uintptr(unsafe.Pointer(&a[i])),
-			uintptr(unsafe.Pointer(&b[i])),
-		)
-	}
-
-	for ; i < n; i++ {
-		sum += a[i] * b[i]
-	}
+	dotAVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a),
+		uintptr(unsafe.Pointer(&sum)),
+	)
 
 	return sum, nil
 }

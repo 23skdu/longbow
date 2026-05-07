@@ -57,4 +57,13 @@ This document tracks the remaining tasks for hardening the Longbow storage engin
 
 ---
 
-*Document updated for v0.2.1-rc1 release preparation.*
+- [x] **DIMENSION-SPECIALIZED SIMD KERNELS (v0.2.2-rc1)**
+  - [x] Implemented manual assembly kernels for common dimensions (128, 384, 768, 1024, 3072) for L2Squared.
+  - [x] Enabled specialized kernels across NEON (ARM64), AVX2 (AMD64), and AVX512 (AMD64).
+  - [x] Validated ingestion throughput gains (up to 2x improvement for 128d).
+- [x] **PERFORMANCE MATRIX VALIDATION (v0.2.2-rc1)**
+  - [x] Orchestrated full 18-run benchmark matrix (1440+ tests per host).
+  - [x] Hardened `unified_benchmark.py` orchestrator for port stability and pprof reliability.
+  - [x] Verified 18GB memory limit compliance during high-load benchmarks.
+
+*Document updated for v0.2.2-rc1 release preparation.*

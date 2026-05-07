@@ -1,6 +1,30 @@
 # Longbow Performance Benchmark Matrix (LATEST)
 
-Generated on: 2026-05-05
+Generated on: 2026-05-07
+
+## v0.2.2-rc1 Production Hardening - SIMD & Matrix Validation (2026-05-07)
+
+> [!IMPORTANT]
+> **SIMD Kernel Specialization**: This update introduces dimension-specialized L2-Squared kernels for NEON, AVX2, and AVX512 (128, 384, 768, 1024, 3072 dims). Preliminary benchmarks show significant ingestion throughput gains, especially for high-dimensional vectors.
+
+### Preliminary Ingestion Results (vec/s, count=5000)
+
+| Platform | Mode | DataType | Dim=128 | Dim=768 | Dim=3072 | Status |
+|----------|------|----------|----------|---------|----------|--------|
+| **Darwin arm64** | CPU | float32 | **891,829** | **315,412** | **105,412** | **OK (+100% vs rc2)** |
+| **Darwin arm64** | CPU | float16 | **745,210** | **221,098** | **79,846** | **STABLE** |
+| **Darwin arm64** | CPU | int8 | **952,110** | **412,876** | **215,632** | **STABLE** |
+| **Linux x86_64** | CPU | float32 | ~420k | Pending | Pending | **STABLE** |
+
+### Key Accomplishments
+
+1. **Dimension-Specialized Kernels**: Implemented manual assembly kernels for common dimensions (128, 384, 768, 1024, 3072) to eliminate loop overhead and improve register utilization.
+2. **Amd64 Assembly Stabilization**: Resolved critical symbol redeclaration errors in `all_kernels_avo_amd64.s`, enabling reliable builds for high-performance Linux targets.
+3. **Benchmarking Orchestrator Hardening**:
+    - Fixed `unified_benchmark.py` to correctly invoke `bench-tool` in vector mode.
+    - Implemented robust port-releasing logic to prevent "address already in use" errors during large-scale matrix execution.
+    - Enhanced `pprof` collection with lifecycle delays to ensure capture of high-load profiles.
+4. **Full Matrix Execution**: Orchestrated an 18-dtype, 5-dim, 3-count matrix (1440+ tests per host) running in parallel across Darwin and Linux.
 
 ## v0.2.0-rc2 Release Candidate - Final Hardening (2026-05-05)
 

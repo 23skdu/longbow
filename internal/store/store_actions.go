@@ -145,7 +145,9 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 				return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
 			}
 		}
-		s.evictDataset(req.Dataset)
+		if err := s.DropDataset(stream.Context(), req.Dataset); err != nil {
+			return status.Errorf(codes.Internal, "failed to drop dataset: %v", err)
+		}
 		s.logger.Info().Str("dataset", req.Dataset).Msg("Dataset dropped via action")
 		return stream.Send(&flight.Result{Body: []byte(`{"status": "dropped"}`)})
 
@@ -1138,34 +1140,7 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	return nil
 }
 
-// estimateBatchSize calculates appropriate size in bytes of a record batch
-func estimateBatchSize(rec arrow.RecordBatch) int64 {
-	if rec == nil {
-		return 0
-	}
-	size := int64(0)
-	for _, col := range rec.Columns() {
-		// Approximate: sum of all buffer lengths
-		for _, buf := range col.Data().Buffers() {
-			if buf != nil {
-				size += int64(buf.Len())
-			}
-		}
-		// Recurse for children (e.g. List arrays)
-		// Note: Children() returns []ArrowData, which is internal.
-		// For correctness with Arrow Go, we might rely on Buffers() mostly.
-		// Detailed recursion is complex without `array.Data` access if not exported.
-		// However col.Data() gives ArrayData which has Children().
-		for _, child := range col.Data().Children() {
-			for _, buf := range child.Buffers() {
-				if buf != nil {
-					size += int64(buf.Len())
-				}
-			}
-		}
-	}
-	return size
-}
+
 
 // concatenateBatches merges multiple record batches into one
 func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.RecordBatch, error) {

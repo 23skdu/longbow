@@ -51,6 +51,8 @@ type ArrowHNSW struct {
 	entryPoint     atomic.Uint32
 	maxLevel       atomic.Int32
 	efConstruction atomic.Int32
+	// entryPointPools provides multiple entry points per layer to reduce contention
+	entryPointPools [types.ArrowMaxLayers]*ConcurrentSkipList
 
 	m     atomic.Int32
 	mMax  atomic.Int32
@@ -427,9 +429,9 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		if config.NUMANode >= 0 && topo != nil {
 			numaAlloc := memory.NewNUMAAllocator(topo, config.NUMANode)
 			// Lower layers are larger, use larger slabs
-			slabSize := 1024 * 1024 * 32
+			slabSize := 1024 * 1024 * 64
 			if l > 0 {
-				slabSize = 1024 * 1024 * 4 // Upper layers are smaller
+				slabSize = 1024 * 1024 * 8 // Upper layers are smaller but still benefit from larger slabs
 			}
 			adjArena = memory.NewSlabArenaWithAllocator(slabSize, numaAlloc)
 		} else {
@@ -2957,7 +2959,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			ctx.distComputeCount++
 		}
 		maxCommitted := h.nodeCount.Load()
-		if int64(entryPoint) >= maxCommitted {
+		if !ctx.AllowUncommitted && int64(entryPoint) >= maxCommitted {
 			oldVer := data.LockNode(0, entryPoint)
 			epDist, err = comp.ComputeSingle(entryPoint)
 			data.UnlockNode(0, entryPoint, oldVer)
@@ -3412,7 +3414,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		maxCommitted := h.nodeCount.Load()
 		for i := 0; i < len(neighbors) && i < int(prefetchLimit); i++ {
 			nID := neighbors[i]
-			if int64(nID) >= maxCommitted {
+			if !ctx.AllowUncommitted && int64(nID) >= maxCommitted {
 				continue
 			}
 			cID := int(nID) / types.ChunkSize // #nosec G115
@@ -3468,7 +3470,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			// Vectorized Predicate Path
 			batch := ctx.neighborBatch[:0]
 			for _, n := range neighbors {
-				if int64(n) >= maxCommitted {
+				if !ctx.AllowUncommitted && int64(n) >= maxCommitted {
 					continue
 				}
 				if ctx.visited.IsSet(int(n)) {
@@ -3519,7 +3521,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		} else {
 			// Standard Path (No Predicate)
 			for _, n := range neighbors {
-				if int64(n) >= maxCommitted {
+				if !ctx.AllowUncommitted && int64(n) >= maxCommitted {
 					continue
 				}
 				if ctx.visited.IsSet(int(n)) { // #nosec G115

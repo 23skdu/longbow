@@ -538,6 +538,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 				ctxSearch := h.searchPool.Get()
 				ctxSearch.Reset()
+				ctxSearch.AllowUncommitted = true
 				defer h.searchPool.PutWithMetrics(ctxSearch, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 
 				for _, idx := range indices {
@@ -634,6 +635,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 					ctxPrune := h.searchPool.Get()
 					ctxPrune.Reset()
+					ctxPrune.AllowUncommitted = true
 
 					neighbors := h.selectNeighbors(ctxPrune, candidates, int(m), data)
 					if len(neighbors) == 0 {
@@ -679,13 +681,20 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		h.maxLevel.Store(int32(batchMaxLevel))
 		h.entryPoint.Store(batchEpCandidate)
 	}
+
+	// Register all nodes in this batch into entry point pools if they have upper layer presence
+	for _, node := range activeNodes {
+		if node.level > 0 && node.level < len(h.entryPointPools) {
+			h.entryPointPools[node.level].Insert(node.id)
+		}
+	}
 	h.initMu.Unlock()
 
 	h.compareAndSwapData(data.Clone())
 
 	if h.config.SQ8Enabled && h.quantizer != nil && !h.sq8Ready.Load() {
 		if vecsF32, ok := vecs.([][]float32); ok {
-			h.ensureTrained(int(startID)+n-1, vecsF32)
+			h.ensureTrained(int(startID)+n-1, vecsF32, data)
 			return nil
 		}
 	}

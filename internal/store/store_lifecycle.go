@@ -15,7 +15,7 @@ import (
 // StoreLifecycle manages startup/shutdown of standard components
 // such as managing memory pressure, eviction, and startup.
 
-// evictDataset removes a dataset from memory and releases its resources.
+// evictDataset removes a dataset from memory and releases its resources safely.
 func (s *VectorStore) evictDataset(name string) {
 	var ds *Dataset
 	s.updateDatasets(func(m map[string]*Dataset) {
@@ -29,26 +29,18 @@ func (s *VectorStore) evictDataset(name string) {
 		return
 	}
 
-	size := ds.SizeBytes.Load()
-	s.currentMemory.Add(-size)
+	// Ensure all pending indexing/ingestion for this dataset is finished
+	// before we decrement the global memory counter and release resources.
+	ds.WaitForIndexing()
 
-	if ds.Index != nil {
-		_ = ds.Index.Close()
-	}
+	// Account for both records and index overhead
+	totalMemory := ds.SizeBytes.Load() + ds.IndexMemoryBytes.Load()
+	s.currentMemory.Add(-totalMemory)
 
-	// Release records
-	// Note: We need lock to safely read records?
-	// The dataset is removed from map, but other readers might still hold a pointer.
-	// We can't immediately release if RCU readers are active.
-	// But Arrow Release() decrements refcount. If readers retained, it's fine.
-	// If store owns the "base" refcount, we release it here.
-	ds.dataMu.Lock()
-	defer ds.dataMu.Unlock()
-	for _, r := range ds.Records.Read() {
-		r.Release()
-	}
-
-	// Metrics updated elsewhere
+	// Robust cleanup
+	ds.Close()
+	
+	s.logger.Info().Str("dataset", name).Int64("freed_bytes", totalMemory).Msg("Dataset evicted safely")
 }
 
 // PrewarmDataset ensures a dataset is initialized in memory, creating it if necessary.

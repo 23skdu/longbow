@@ -2,7 +2,7 @@
 # Comprehensive bench-tool runner for all data types, dimensions, and search modes
 # Supports both local (CPU/Metal) and remote (CPU/CUDA) execution
 
-set -e
+
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(dirname "$SCRIPT_DIR")"

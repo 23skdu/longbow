@@ -228,8 +228,10 @@ type ArrowSearchContext struct {
 	// HNSW predicate for early-exit filtering
 	predicate types.HNSWPredicate
 
-	// Query norm for distance bound calculations
-	queryRadius float32
+	queryRadius      float32
+	// AllowUncommitted allows search to see nodes beyond global nodeCount
+	// (used during internal bootstrap/linkage operations)
+	AllowUncommitted bool
 }
 
 // ArrowSearchContextPool manages reusable ArrowSearchContext objects.
@@ -347,9 +349,9 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.visitedNodesBudget = 0
 	ctx.nodesVisitedCount = 0
 	ctx.dirty = false
-	ctx.queryRadius = 0
 	ctx.predicate = nil
 	ctx.queryRadius = 0
+	ctx.AllowUncommitted = false
 
 	// Clear temp buffer without reallocating
 	for i := range ctx.distsTemp {

@@ -1455,3 +1455,129 @@ func memcpyGeneric(dst, src unsafe.Pointer, n int) {
 func MemcpyNTA(dst, src unsafe.Pointer, n int) {
 	memcpyNTAImpl(dst, src, n)
 }
+
+// UnpackTQ2 unpacks 2-bit TurboQuant data.
+func UnpackTQ2(src []byte, dst []float32, scale, bias float32) {
+	if currentDispatch.UnpackTQ2 != nil {
+		currentDispatch.UnpackTQ2(src, dst, scale, bias)
+	} else {
+		UnpackTQ2Generic(src, dst, scale, bias)
+	}
+}
+
+// UnpackTQ4 unpacks 4-bit TurboQuant data.
+func UnpackTQ4(src []byte, dst []float32, scale, bias float32) {
+	if currentDispatch.UnpackTQ4 != nil {
+		currentDispatch.UnpackTQ4(src, dst, scale, bias)
+	} else {
+		UnpackTQ4Generic(src, dst, scale, bias)
+	}
+}
+
+// UnpackTQ8 unpacks 8-bit TurboQuant data.
+func UnpackTQ8(src []byte, dst []float32, scale, bias float32) {
+	if currentDispatch.UnpackTQ8 != nil {
+		currentDispatch.UnpackTQ8(src, dst, scale, bias)
+	} else {
+		UnpackTQ8Generic(src, dst, scale, bias)
+	}
+}
+
+func UnpackTQ2Generic(src []byte, dst []float32, scale, bias float32) {
+	n := len(dst)
+	i := 0
+	for ; i <= n-8; i += 8 {
+		b0 := src[i/4]
+		b1 := src[i/4+1]
+		dst[i]   = float32(b0&0x03)*scale + bias
+		dst[i+1] = float32((b0>>2)&0x03)*scale + bias
+		dst[i+2] = float32((b0>>4)&0x03)*scale + bias
+		dst[i+3] = float32((b0>>6)&0x03)*scale + bias
+		dst[i+4] = float32(b1&0x03)*scale + bias
+		dst[i+5] = float32((b1>>2)&0x03)*scale + bias
+		dst[i+6] = float32((b1>>4)&0x03)*scale + bias
+		dst[i+7] = float32((b1>>6)&0x03)*scale + bias
+	}
+	for ; i < n; i++ {
+		val := (src[i/4] >> (uint(i%4) * 2)) & 0x03
+		dst[i] = float32(val)*scale + bias
+	}
+}
+
+func UnpackTQ4Generic(src []byte, dst []float32, scale, bias float32) {
+	n := len(dst)
+	i := 0
+	for ; i <= n-8; i += 8 {
+		b0 := src[i/2]
+		b1 := src[i/2+1]
+		b2 := src[i/2+2]
+		b3 := src[i/2+3]
+		dst[i]   = float32(b0&0x0F)*scale + bias
+		dst[i+1] = float32(b0>>4)*scale + bias
+		dst[i+2] = float32(b1&0x0F)*scale + bias
+		dst[i+3] = float32(b1>>4)*scale + bias
+		dst[i+4] = float32(b2&0x0F)*scale + bias
+		dst[i+5] = float32(b2>>4)*scale + bias
+		dst[i+6] = float32(b3&0x0F)*scale + bias
+		dst[i+7] = float32(b3>>4)*scale + bias
+	}
+	for ; i < n; i++ {
+		var val byte
+		if i%2 == 0 {
+			val = src[i/2] & 0x0F
+		} else {
+			val = src[i/2] >> 4
+		}
+		dst[i] = float32(val)*scale + bias
+	}
+}
+
+func UnpackTQ8Generic(src []byte, dst []float32, scale, bias float32) {
+	n := len(dst)
+	i := 0
+	for ; i <= n-8; i += 8 {
+		dst[i]   = float32(src[i])*scale + bias
+		dst[i+1] = float32(src[i+1])*scale + bias
+		dst[i+2] = float32(src[i+2])*scale + bias
+		dst[i+3] = float32(src[i+3])*scale + bias
+		dst[i+4] = float32(src[i+4])*scale + bias
+		dst[i+5] = float32(src[i+5])*scale + bias
+		dst[i+6] = float32(src[i+6])*scale + bias
+		dst[i+7] = float32(src[i+7])*scale + bias
+	}
+	for ; i < n; i++ {
+		dst[i] = float32(src[i])*scale + bias
+	}
+}
+
+func l2SquaredTQCorrectionGeneric(query, recon []float32, qjlBits []byte, correction float32, n int) float32 {
+	var sum float32
+	i := 0
+	// 8x unrolling
+	for ; i <= n-8; i += 8 {
+		bits := qjlBits[i/8]
+		for j := 0; j < 8; j++ {
+			idx := i + j
+			val := recon[idx]
+			if (bits >> uint(j)) & 1 != 0 {
+				val += correction
+			} else {
+				val -= 0.1
+			}
+			diff := query[idx] - val
+			sum += diff * diff
+		}
+	}
+	// Remainder
+	for ; i < n; i++ {
+		val := recon[i]
+		if (qjlBits[i/8] >> (i % 8)) & 1 != 0 {
+			val += correction
+		} else {
+			val -= 0.1
+		}
+		diff := query[i] - val
+		sum += diff * diff
+	}
+	return sum
+}

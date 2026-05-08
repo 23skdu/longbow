@@ -9,6 +9,7 @@ import (
 	"sync"
 	"sync/atomic"
 	"time"
+	"math"
 
 	"github.com/23skdu/longbow/internal/simd"
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
@@ -156,11 +157,18 @@ func (c *TemporalResultCache) Set(key string, results []lbtypes.SearchResult, tt
 	}
 }
 
-// TemporalTree implements a specialized structure for range-based timestamp queries.
 type TemporalTree struct {
-	mu    sync.RWMutex
-	nodes []TemporalNode
+	mu     sync.RWMutex
+	chunks []*temporalChunk
 }
+
+type temporalChunk struct {
+	nodes []TemporalNode
+	minTs int64
+	maxTs int64
+}
+
+const maxNodesPerChunk = 1024
 
 // TemporalNode represents a set of vector IDs sharing a specific timestamp.
 // Aligned to 64 bytes to improve cache locality during range scans.
@@ -173,7 +181,7 @@ type TemporalNode struct {
 // NewTemporalTree creates a new TemporalTree instance.
 func NewTemporalTree() *TemporalTree {
 	return &TemporalTree{
-		nodes: make([]TemporalNode, 0, 1024),
+		chunks: make([]*temporalChunk, 0),
 	}
 }
 
@@ -182,27 +190,70 @@ func (tt *TemporalTree) Insert(timestamp int64, id uint64) {
 	tt.mu.Lock()
 	defer tt.mu.Unlock()
 
-	idx := sort.Search(len(tt.nodes), func(i int) bool {
-		return tt.nodes[i].Timestamp >= timestamp
+	if len(tt.chunks) == 0 {
+		tt.chunks = append(tt.chunks, &temporalChunk{
+			nodes: []TemporalNode{{Timestamp: timestamp, VectorIDs: []uint64{id}}},
+			minTs: timestamp,
+			maxTs: timestamp,
+		})
+		return
+	}
+
+	// 1. Find the target chunk
+	idx := sort.Search(len(tt.chunks), func(i int) bool {
+		return tt.chunks[i].maxTs >= timestamp
 	})
 
-	if idx < len(tt.nodes) && tt.nodes[idx].Timestamp == timestamp {
-		// Existing timestamp, update node in-place
-		tt.nodes[idx].VectorIDs = append(tt.nodes[idx].VectorIDs, id)
+	if idx == len(tt.chunks) {
+		idx = len(tt.chunks) - 1
+	}
+
+	chunk := tt.chunks[idx]
+	
+	// 2. Insert into chunk
+	nodeIdx := sort.Search(len(chunk.nodes), func(i int) bool {
+		return chunk.nodes[i].Timestamp >= timestamp
+	})
+
+	if nodeIdx < len(chunk.nodes) && chunk.nodes[nodeIdx].Timestamp == timestamp {
+		chunk.nodes[nodeIdx].VectorIDs = append(chunk.nodes[nodeIdx].VectorIDs, id)
 	} else {
-		// New timestamp, insert into sorted slice
 		node := TemporalNode{
 			Timestamp: timestamp,
 			VectorIDs: []uint64{id},
 		}
 		
-		// In-place insert
-		if idx == len(tt.nodes) {
-			tt.nodes = append(tt.nodes, node)
+		if nodeIdx == len(chunk.nodes) {
+			chunk.nodes = append(chunk.nodes, node)
 		} else {
-			tt.nodes = append(tt.nodes, TemporalNode{})
-			copy(tt.nodes[idx+1:], tt.nodes[idx:])
-			tt.nodes[idx] = node
+			chunk.nodes = append(chunk.nodes, TemporalNode{})
+			copy(chunk.nodes[nodeIdx+1:], chunk.nodes[nodeIdx:])
+			chunk.nodes[nodeIdx] = node
+		}
+		
+		// Update chunk bounds
+		if timestamp < chunk.minTs {
+			chunk.minTs = timestamp
+		}
+		if timestamp > chunk.maxTs {
+			chunk.maxTs = timestamp
+		}
+
+		// 3. Split chunk if too large
+		if len(chunk.nodes) > maxNodesPerChunk {
+			mid := len(chunk.nodes) / 2
+			newChunk := &temporalChunk{
+				nodes: chunk.nodes[mid:],
+				minTs: chunk.nodes[mid].Timestamp,
+				maxTs: chunk.nodes[len(chunk.nodes)-1].Timestamp,
+			}
+			chunk.nodes = chunk.nodes[:mid]
+			chunk.maxTs = chunk.nodes[len(chunk.nodes)-1].Timestamp
+			
+			// Insert new chunk into tt.chunks
+			tt.chunks = append(tt.chunks, nil)
+			copy(tt.chunks[idx+2:], tt.chunks[idx+1:])
+			tt.chunks[idx+1] = newChunk
 		}
 	}
 }
@@ -212,32 +263,9 @@ func (tt *TemporalTree) InsertBatch(timestamps []int64, ids []uint64) {
 	if len(timestamps) == 0 {
 		return
 	}
-	tt.mu.Lock()
-	defer tt.mu.Unlock()
-
+	// For simplicity and correctness with splits, we call Insert for each
 	for i := range timestamps {
-		ts := timestamps[i]
-		id := ids[i]
-		
-		idx := sort.Search(len(tt.nodes), func(j int) bool {
-			return tt.nodes[j].Timestamp >= ts
-		})
-
-		if idx < len(tt.nodes) && tt.nodes[idx].Timestamp == ts {
-			tt.nodes[idx].VectorIDs = append(tt.nodes[idx].VectorIDs, id)
-		} else {
-			node := TemporalNode{
-				Timestamp: ts,
-				VectorIDs: []uint64{id},
-			}
-			if idx == len(tt.nodes) {
-				tt.nodes = append(tt.nodes, node)
-			} else {
-				tt.nodes = append(tt.nodes, TemporalNode{})
-				copy(tt.nodes[idx+1:], tt.nodes[idx:])
-				tt.nodes[idx] = node
-			}
-		}
+		tt.Insert(timestamps[i], ids[i])
 	}
 }
 
@@ -246,22 +274,32 @@ func (tt *TemporalTree) GetRange(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	if len(tt.nodes) == 0 {
+	if len(tt.chunks) == 0 {
 		return nil
 	}
 
-	n := len(tt.nodes)
-	startIdx := sort.Search(n, func(i int) bool {
-		return tt.nodes[i].Timestamp >= start
+	startChunkIdx := sort.Search(len(tt.chunks), func(i int) bool {
+		return tt.chunks[i].maxTs >= start
 	})
 
 	var results []uint64
-	for i := startIdx; i < n; i++ {
-		node := &tt.nodes[i]
-		if node.Timestamp > end {
+	for i := startChunkIdx; i < len(tt.chunks); i++ {
+		chunk := tt.chunks[i]
+		if chunk.minTs > end {
 			break
 		}
-		results = append(results, node.VectorIDs...)
+		
+		nodeIdx := sort.Search(len(chunk.nodes), func(j int) bool {
+			return chunk.nodes[j].Timestamp >= start
+		})
+		
+		for j := nodeIdx; j < len(chunk.nodes); j++ {
+			node := &chunk.nodes[j]
+			if node.Timestamp > end {
+				return results // Done with the whole range
+			}
+			results = append(results, node.VectorIDs...)
+		}
 	}
 	return results
 }
@@ -271,17 +309,32 @@ func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	if len(tt.nodes) == 0 {
+	if len(tt.chunks) == 0 {
 		return nil
 	}
 
+	// Find the end chunk
+	endChunkIdx := sort.Search(len(tt.chunks), func(i int) bool {
+		return tt.chunks[i].maxTs >= end
+	})
+	if endChunkIdx == len(tt.chunks) {
+		endChunkIdx = len(tt.chunks) - 1
+	}
+
 	var results []uint64
-	for i := len(tt.nodes) - 1; i >= 0; i-- {
-		ts := tt.nodes[i].Timestamp
-		if ts >= start && ts <= end {
-			results = append(results, tt.nodes[i].VectorIDs...)
-		} else if ts < start {
+	for i := endChunkIdx; i >= 0; i-- {
+		chunk := tt.chunks[i]
+		if chunk.maxTs < start {
 			break
+		}
+		
+		for j := len(chunk.nodes) - 1; j >= 0; j-- {
+			ts := chunk.nodes[j].Timestamp
+			if ts >= start && ts <= end {
+				results = append(results, chunk.nodes[j].VectorIDs...)
+			} else if ts < start {
+				return results
+			}
 		}
 	}
 	return results
@@ -289,59 +342,39 @@ func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
 
 // GetBefore returns all vector IDs with timestamps before the specified value.
 func (tt *TemporalTree) GetBefore(timestamp int64) []uint64 {
-	tt.mu.RLock()
-	defer tt.mu.RUnlock()
-
-	if len(tt.nodes) == 0 {
-		return nil
-	}
-
-	idx := sort.Search(len(tt.nodes), func(i int) bool {
-		return tt.nodes[i].Timestamp >= timestamp
-	})
-
-	var results []uint64
-	for i := 0; i < idx; i++ {
-		results = append(results, tt.nodes[i].VectorIDs...)
-	}
-	return results
+	return tt.GetRange(0, timestamp-1)
 }
 
 // GetAfter returns all vector IDs with timestamps after the specified value.
 func (tt *TemporalTree) GetAfter(timestamp int64) []uint64 {
-	tt.mu.RLock()
-	defer tt.mu.RUnlock()
-
-	if len(tt.nodes) == 0 {
-		return nil
-	}
-
-	idx := sort.Search(len(tt.nodes), func(i int) bool {
-		return tt.nodes[i].Timestamp > timestamp
-	})
-
-	var results []uint64
-	for i := idx; i < len(tt.nodes); i++ {
-		results = append(results, tt.nodes[i].VectorIDs...)
-	}
-	return results
+	return tt.GetRange(timestamp+1, math.MaxInt64)
 }
+
 
 // GetLatest returns the vector IDs from the last n timestamps.
 func (tt *TemporalTree) GetLatest(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	if len(tt.nodes) == 0 {
+	if len(tt.chunks) == 0 {
 		return nil
-	}
-	if n > len(tt.nodes) {
-		n = len(tt.nodes)
 	}
 
 	var results []uint64
-	for i := len(tt.nodes) - n; i < len(tt.nodes); i++ {
-		results = append(results, tt.nodes[i].VectorIDs...)
+	remaining := n
+	for i := len(tt.chunks) - 1; i >= 0 && remaining > 0; i-- {
+		chunk := tt.chunks[i]
+		count := len(chunk.nodes)
+		take := remaining
+		if take > count {
+			take = count
+		}
+		
+		startIdx := count - take
+		for j := startIdx; j < count; j++ {
+			results = append(results, chunk.nodes[j].VectorIDs...)
+		}
+		remaining -= take
 	}
 	return results
 }
@@ -351,16 +384,24 @@ func (tt *TemporalTree) GetEarliest(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	if len(tt.nodes) == 0 {
+	if len(tt.chunks) == 0 {
 		return nil
-	}
-	if n > len(tt.nodes) {
-		n = len(tt.nodes)
 	}
 
 	var results []uint64
-	for i := 0; i < n; i++ {
-		results = append(results, tt.nodes[i].VectorIDs...)
+	remaining := n
+	for i := 0; i < len(tt.chunks) && remaining > 0; i++ {
+		chunk := tt.chunks[i]
+		count := len(chunk.nodes)
+		take := remaining
+		if take > count {
+			take = count
+		}
+		
+		for j := 0; j < take; j++ {
+			results = append(results, chunk.nodes[j].VectorIDs...)
+		}
+		remaining -= take
 	}
 	return results
 }
@@ -369,7 +410,11 @@ func (tt *TemporalTree) GetEarliest(n int) []uint64 {
 func (tt *TemporalTree) Len() int {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
-	return len(tt.nodes)
+	total := 0
+	for _, c := range tt.chunks {
+		total += len(c.nodes)
+	}
+	return total
 }
 
 // NewTemporalIndex creates a new TemporalIndex instance.
@@ -631,11 +676,12 @@ func (ti *TemporalIndex) Prewarm(ctx context.Context) error {
 	}
 
 	tree.mu.RLock()
-	if len(tree.nodes) == 0 {
+	if len(tree.chunks) == 0 {
 		tree.mu.RUnlock()
 		return nil
 	}
-	latestTs := tree.nodes[len(tree.nodes)-1].Timestamp
+	lastChunk := tree.chunks[len(tree.chunks)-1]
+	latestTs := lastChunk.nodes[len(lastChunk.nodes)-1].Timestamp
 	tree.mu.RUnlock()
 
 	// 1. Latest results

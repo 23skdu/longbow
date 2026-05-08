@@ -63,6 +63,8 @@ This document tracks the remaining tasks for hardening the Longbow storage engin
   - [x] Orchestrated full 18-run benchmark matrix (1440+ tests per host).
   - [x] Hardened `unified_benchmark.py` orchestrator for port stability and pprof reliability.
   - [x] Verified 18GB memory limit compliance during high-load benchmarks.
+  - [x] **Temporal Index Fix**: Corrected initialization path to ensure `TEMPORAL_ENABLED=true` is honored during server startup.
+  - [x] **TurboQuant Validation**: Confirmed high-throughput ingestion and search for 2-bit, 4-bit, and 8-bit quantized formats.
 
 ## Future Optimization Paths (v0.2.3+)
 
@@ -77,13 +79,20 @@ This document tracks the remaining tasks for hardening the Longbow storage engin
 
 Based on the performance validation matrix for v0.2.1-rc1, the following regressions and stability risks were identified:
 
-1. **WAL Replay Bottleneck**: Background indexing throughput for replayed WAL records is significantly lower than real-time ingestion. 
+1. **WAL Replay Bottleneck**: Background indexing throughput for replayed WAL records is significantly lower than real-time ingestion.
    - *Recommendation*: Implement batch-vectorized WAL decoding and increase the `SharedWorkerPool` priority for replay-phase indexing to reduce system startup time.
 2. **Filtering Concurrency Stability**: Observed sporadic panics in `roaring.Bitmap.Contains` during high-concurrency `Search_Filtered` benchmarks.
    - *Recommendation*: Audit all `filterBitmap` usage for thread-safety. Although workers have independent state, the underlying bitmaps generated from Arrow filters may share memory. Implement a "Copy-on-Write" or "Clone" strategy for shared filter bitmaps in concurrent search paths.
 3. **M3 vs Xeon SIMD Gap**: Local M3 (NEON) consistently underperforms remote Xeon (AVX-512) for float32 dot-product and L2 search by ~30%.
-   - *Recommendation*: Optimize NEON kernels with dual-issue instruction scheduling and investigate `AMX` (Apple Matrix Extension) integration for high-dimensional vector math.
+   - *Recommendation*:
+     - **NEON Dual-Issue**: Refactor `dotHighDimNEONKernel` and `l2SquaredNEONKernel` to better utilize the Apple M3's dual-issue pipeline by interleaving 4-8 independent load/compute streams.
+     - **AMX Integration**: Investigate `Accelerate.framework` integration for high-dimensional distance calculations. For >1024 dimensions, AMX (via `vDSP_dotpr` or `BNNS`) may provide a 5-10x throughput boost, potentially closing the gap with AVX-512.
+     - **TurboQuant ARM**: Implement specialized NEON kernels for TurboQuant 2/4/8-bit distance calculations to eliminate bit-shifting overhead.
 4. **HNSW Indexing Stalls**: pprof data indicates high contention in `AddConnection` for datasets >100k.
    - *Recommendation*: Implement the "Lock-Free Entry Point" strategy mentioned in Future Optimization Paths to allow multiple indexing workers to traverse the graph without acquiring global locks.
 5. **Memory Pressure & GC Jitter**: Aggressive GCTuner cycles were observed at 18GB limit.
    - *Recommendation*: Refine the `SlabArena` to use larger chunks (e.g., 64MB) to reduce the number of individual allocations tracked by the Go runtime, thereby reducing GC overhead.
+6. **Temporal Index Initialization (v0.2.2-rc1)**: Identified and resolved a systematic failure in temporal benchmarks due to the `temporalIndex` being nil even when enabled.
+   - *Fix*: Validated that `SetTemporalIndex` is called BEFORE the server starts listening and that environment variables are correctly exported to background processes.
+7. **TurboQuant Scaling**: Verified that TurboQuant 4-bit ingestion throughput matches target expectations (>1M vec/s), but search latency scales non-linearly at >250k vectors.
+   - *Recommendation*: Implement bit-specialized SIMD kernels for TurboQuant to avoid bit-shifting overhead during distance computation.

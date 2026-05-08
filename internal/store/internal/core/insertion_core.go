@@ -70,7 +70,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 
 	if h.config.SQ8Enabled {
 		if vecF32, ok := vec.([]float32); ok {
-			h.ensureTrained(int(h.nodeCount.Load()), [][]float32{vecF32})
+			h.ensureTrained(int(h.nodeCount.Load()), [][]float32{vecF32}, h.data.Load())
 		}
 	}
 
@@ -188,6 +188,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	computer := h.resolveHNSWComputer(data, ctx, vec, true)
 	defer h.searchPool.PutWithMetrics(ctx, h.config.DataType.String(), strconv.Itoa(dims))
 	ctx.Reset()
+	ctx.AllowUncommitted = true
 
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())

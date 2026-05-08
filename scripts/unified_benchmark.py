@@ -245,8 +245,12 @@ class BenchmarkRunner:
         
         # Dynamic mode-based env overrides
         current_mode = getattr(self, 'current_mode', self.args.mode)
-        if current_mode == "temporal":
+        if self.args.mode == "temporal" or "temporal" in self.args.search_modes or self.args.search_modes == "all":
             env["LONGBOW_TEMPORAL_ENABLED"] = "true"
+            env["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
+        
+        if "geo" in self.args.search_modes or self.args.search_modes == "all":
+            env["GEO_ENABLED"] = "true"
             env["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
         if current_mode == "geo":
             env["LONGBOW_GEO_ENABLED"] = "true"
@@ -484,8 +488,8 @@ class BenchmarkRunner:
             uri = f"grpc://{self.server_addr}"
         
         # Build search-modes string based on mode
-        search_modes = "dense,hybrid,sparse,filtered,byid"
-        if self.args.mode == "temporal":
+        search_modes = self.args.search_modes
+        if self.args.mode == "temporal" and search_modes == "all":
             search_modes = "temporal_as_of,temporal_range,temporal_window"
         
         extra_args = ""
@@ -2773,6 +2777,12 @@ if __name__ == "__main__":
         type=int,
         default=8,
         help="Number of concurrent search workers (default 8)",
+    )
+    parser.add_argument(
+        "--search-modes",
+        type=str,
+        default="all",
+        help="Comma-separated search modes to run (default: all)",
     )
     args = parser.parse_args()
     runner = BenchmarkRunner(args)

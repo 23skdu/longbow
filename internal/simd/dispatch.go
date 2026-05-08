@@ -8,6 +8,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"unsafe"
+	"github.com/23skdu/longbow/internal/simd/amx"
 )
 
 // ImplementationDispatch holds all SIMD function pointers for a specific implementation
@@ -96,6 +97,10 @@ type ImplementationDispatch struct {
 
 	// Geospatial
 	HaversineBatch haversineBatchFunc
+	// TurboQuant
+	UnpackTQ2 func(src []byte, dst []float32, scale, bias float32)
+	UnpackTQ4 func(src []byte, dst []float32, scale, bias float32)
+	UnpackTQ8 func(src []byte, dst []float32, scale, bias float32)
 }
 
 // Global dispatch table - one per implementation
@@ -237,7 +242,12 @@ func initDispatchTable() {
 		dispatchTable["neon"] = &ImplementationDispatch{
 			EuclideanDistance:          euclideanNEON,
 			CosineDistance:             cosineNEON,
-			DotProduct:                 dotNEON,
+			DotProduct: func(a, b []float32) (float32, error) {
+				if len(a) >= 1024 {
+					return amx.DotAMX(a, b)
+				}
+				return dotNEON(a, b)
+			},
 			EuclideanDistanceBatch:     euclideanBatchNEON,
 			CosineDistanceBatch:        cosineBatchNEON,
 			DotProductBatch:            dotBatchNEON,
@@ -245,7 +255,12 @@ func initDispatchTable() {
 			EuclideanDistanceF16:       euclideanF16NEON,
 			CosineDistanceF16:          cosineF16NEON,
 			DotProductF16:               dotF16NEON,
-			L2SquaredDistance:           l2SquaredNEON,
+			L2SquaredDistance: func(a, b []float32) (float32, error) {
+				if len(a) >= 1024 {
+					return amx.L2AMX(a, b)
+				}
+				return l2SquaredNEON(a, b)
+			},
 			L2SquaredDistance128:  l2Squared128NEON,
 			L2SquaredDistance384:  l2Squared384NEON,
 			L2SquaredDistance768:  l2Squared768NEON,
@@ -294,6 +309,9 @@ func initDispatchTable() {
 			AccumulateWeightedScatter: accumulateWeightedScatterNEON,
 			BM25ScoreBatch: bm25ScoreBatchArch,
 			HaversineBatch: haversineBatchGeneric,
+			UnpackTQ2:      UnpackTQ2Generic,
+			UnpackTQ4:      UnpackTQ4Generic,
+			UnpackTQ8:      UnpackTQ8Generic,
 		}
 
 		dispatchTable["generic"] = &ImplementationDispatch{
@@ -350,6 +368,9 @@ func initDispatchTable() {
 			AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
 			BM25ScoreBatch: bm25ScoreBatchGeneric,
 			HaversineBatch: haversineBatchGeneric,
+			UnpackTQ2:      UnpackTQ2Generic,
+			UnpackTQ4:      UnpackTQ4Generic,
+			UnpackTQ8:      UnpackTQ8Generic,
 		}
 	})
 }

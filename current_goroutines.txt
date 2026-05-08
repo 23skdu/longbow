@@ -1,0 +1,151 @@
+goroutine profile: total 60
+12 @ 0x10468eb1c 0x1046202e0 0x10461fe54 0x105bebc78 0x104696bb4
+#	0x105bebc77	github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker+0x47	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:115
+
+12 @ 0x10468eb1c 0x10466c77c 0x105f791d0 0x105fc3344 0x104696bb4
+#	0x105f791cf	github.com/23skdu/longbow/internal/store.(*VectorStore).runIngestionWorkerWithCtx+0x1af		/Users/rsd/REPOS/longbow/internal/store/ingestion_worker.go:35
+#	0x105fc3343	github.com/23skdu/longbow/internal/store.(*VectorStore).StartIngestionWorkers.func1+0xe3	/Users/rsd/REPOS/longbow/internal/store/store_lifecycle.go:261
+
+10 @ 0x10468eb1c 0x104690684 0x104690665 0x10469fce4 0x105bc8198 0x105bc51c0 0x105bb6704 0x105fa5a30 0x1054e0e1c 0x104696bb4
+#	0x104690664	sync.runtime_notifyListWait+0x174								/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/sema.go:617
+#	0x10469fce3	sync.(*Cond).Wait+0xa3										/opt/homebrew/Cellar/go/1.26.3/libexec/src/sync/cond.go:71
+#	0x105bc8197	github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).AddBatchBulk.func1+0xb7	/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_bulk.go:44
+#	0x105bc51bf	github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).AddBatchBulk+0xa8f		/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_bulk.go:694
+#	0x105bb6703	github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).AddBatch+0x643		/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:2351
+#	0x105fa5a2f	github.com/23skdu/longbow/internal/store.(*ShardedHNSW).AddBatch.func1+0x15f			/Users/rsd/REPOS/longbow/internal/store/sharded_hnsw.go:333
+#	0x1054e0e1b	golang.org/x/sync/errgroup.(*Group).Go.func1+0x4b						/Users/rsd/go/pkg/mod/golang.org/x/sync@v0.20.0/errgroup/errgroup.go:93
+
+4 @ 0x10468eb1c 0x10466c77c 0x105fc3b9c 0x105fc2c04 0x104696bb4
+#	0x105fc3b9b	github.com/23skdu/longbow/internal/store.(*VectorStore).runIndexWorker+0x37b		/Users/rsd/REPOS/longbow/internal/store/store_lifecycle.go:555
+#	0x105fc2c03	github.com/23skdu/longbow/internal/store.(*VectorStore).StartIndexingWorkers.func1+0xe3	/Users/rsd/REPOS/longbow/internal/store/store_lifecycle.go:217
+
+2 @ 0x10468eb1c 0x10466d314 0x10466d2f5 0x1046903e8 0x1046a1ef8 0x1054e0cd8 0x105fa5730 0x105fc7634 0x105fc3df0 0x105fc3a89 0x105fc2c04 0x104696bb4
+#	0x1046903e7	sync.runtime_SemacquireWaitGroup+0x37											/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/sema.go:114
+#	0x1046a1ef7	sync.(*WaitGroup).Wait+0xa7												/opt/homebrew/Cellar/go/1.26.3/libexec/src/sync/waitgroup.go:206
+#	0x1054e0cd7	golang.org/x/sync/errgroup.(*Group).Wait+0x27										/Users/rsd/go/pkg/mod/golang.org/x/sync@v0.20.0/errgroup/errgroup.go:56
+#	0x105fa572f	github.com/23skdu/longbow/internal/store.(*ShardedHNSW).AddBatch+0x68f							/Users/rsd/REPOS/longbow/internal/store/sharded_hnsw.go:352
+#	0x105fc7633	github.com/23skdu/longbow/internal/store.(*VectorStore).runIndexWorker.(*VectorStore).runIndexWorker.func1.func2+0xe23	/Users/rsd/REPOS/longbow/internal/store/store_lifecycle.go:435
+#	0x105fc3def	github.com/23skdu/longbow/internal/store.(*VectorStore).runIndexWorker.func1+0x5cf					/Users/rsd/REPOS/longbow/internal/store/store_lifecycle.go:543
+#	0x105fc3a88	github.com/23skdu/longbow/internal/store.(*VectorStore).runIndexWorker+0x268						/Users/rsd/REPOS/longbow/internal/store/store_lifecycle.go:570
+#	0x105fc2c03	github.com/23skdu/longbow/internal/store.(*VectorStore).StartIndexingWorkers.func1+0xe3					/Users/rsd/REPOS/longbow/internal/store/store_lifecycle.go:217
+
+1 @ 0x10464e6dc 0x10468d8d4 0x104adcb24 0x104adc950 0x104ada144 0x104aef064 0x104aef8d4 0x1049eb6a8 0x1049ed090 0x104a08820 0x1049e9b0c 0x104696bb4
+#	0x104adcb23	runtime/pprof.writeRuntimeProfile+0xb3	/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/pprof/pprof.go:851
+#	0x104adc94f	runtime/pprof.writeGoroutine+0x4f	/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/pprof/pprof.go:784
+#	0x104ada143	runtime/pprof.(*Profile).WriteTo+0x143	/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/pprof/pprof.go:408
+#	0x104aef063	net/http/pprof.handler.ServeHTTP+0x413	/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/http/pprof/pprof.go:273
+#	0x104aef8d3	net/http/pprof.Index+0xa3		/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/http/pprof/pprof.go:397
+#	0x1049eb6a7	net/http.HandlerFunc.ServeHTTP+0x37	/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/http/server.go:2286
+#	0x1049ed08f	net/http.(*ServeMux).ServeHTTP+0x18f	/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/http/server.go:2828
+#	0x104a0881f	net/http.serverHandler.ServeHTTP+0xaf	/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/http/server.go:3311
+#	0x1049e9b0b	net/http.(*conn).serve+0x51b		/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/http/server.go:2073
+
+1 @ 0x104653210 0x104691028 0x104af4dcc 0x104696bb4
+#	0x104691027	os/signal.signal_recv+0x107	/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/sigqueue.go:149
+#	0x104af4dcb	os/signal.loop+0x1b		/opt/homebrew/Cellar/go/1.26.3/libexec/src/os/signal/signal_unix.go:23
+
+1 @ 0x10468eb1c 0x1046202e0 0x10461fe34 0x10600e1d8 0x10600b49c 0x104658a74 0x104696bb4
+#	0x10600e1d7	main.run+0x2d17		/Users/rsd/REPOS/longbow/cmd/longbow/main.go:766
+#	0x10600b49b	main.main+0x1b		/Users/rsd/REPOS/longbow/cmd/longbow/main.go:185
+#	0x104658a73	runtime.main+0x2b3	/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/proc.go:290
+
+1 @ 0x10468eb1c 0x1046521d0 0x10468dd30 0x104702118 0x104703294 0x104703285 0x104779598 0x104787984 0x1048de918 0x1046f8928 0x104a1a158 0x104a1a12d 0x104a1a7b0 0x104a492e4 0x104a4208c 0x104ab5a7c 0x104ab5400 0x104696bb4
+#	0x10468dd2f	internal/poll.runtime_pollWait+0x9f						/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/netpoll.go:351
+#	0x104702117	internal/poll.(*pollDesc).wait+0x27						/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_poll_runtime.go:84
+#	0x104703293	internal/poll.(*pollDesc).waitRead+0x233					/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_poll_runtime.go:89
+#	0x104703284	internal/poll.(*FD).Read+0x224							/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_unix.go:165
+#	0x104779597	net.(*netFD).Read+0x27								/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/fd_posix.go:68
+#	0x104787983	net.(*conn).Read+0x33								/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/net.go:196
+#	0x1048de917	bufio.(*Reader).Read+0x187							/opt/homebrew/Cellar/go/1.26.3/libexec/src/bufio/bufio.go:245
+#	0x1046f8927	io.ReadAtLeast+0x97								/opt/homebrew/Cellar/go/1.26.3/libexec/src/io/io.go:335
+#	0x104a1a157	io.ReadFull+0x57								/opt/homebrew/Cellar/go/1.26.3/libexec/src/io/io.go:354
+#	0x104a1a12c	golang.org/x/net/http2.readFrameHeader+0x2c					/Users/rsd/go/pkg/mod/golang.org/x/net@v0.53.0/http2/frame.go:250
+#	0x104a1a7af	golang.org/x/net/http2.(*Framer).ReadFrameHeader+0x5f				/Users/rsd/go/pkg/mod/golang.org/x/net@v0.53.0/http2/frame.go:513
+#	0x104a492e3	google.golang.org/grpc/internal/transport.(*framer).readFrame+0x43		/Users/rsd/go/pkg/mod/google.golang.org/grpc@v1.81.0/internal/transport/http_util.go:493
+#	0x104a4208b	google.golang.org/grpc/internal/transport.(*http2Server).HandleStreams+0xbb	/Users/rsd/go/pkg/mod/google.golang.org/grpc@v1.81.0/internal/transport/http2_server.go:638
+#	0x104ab5a7b	google.golang.org/grpc.(*Server).serveStreams+0x2ab				/Users/rsd/go/pkg/mod/google.golang.org/grpc@v1.81.0/server.go:1059
+#	0x104ab53ff	google.golang.org/grpc.(*Server).handleRawConn.func1+0x4f			/Users/rsd/go/pkg/mod/google.golang.org/grpc@v1.81.0/server.go:993
+
+1 @ 0x10468eb1c 0x1046521d0 0x10468dd30 0x104702118 0x104703294 0x104703285 0x104779598 0x104787984 0x1049e4368 0x104696bb4
+#	0x10468dd2f	internal/poll.runtime_pollWait+0x9f		/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/netpoll.go:351
+#	0x104702117	internal/poll.(*pollDesc).wait+0x27		/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_poll_runtime.go:84
+#	0x104703293	internal/poll.(*pollDesc).waitRead+0x233	/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_poll_runtime.go:89
+#	0x104703284	internal/poll.(*FD).Read+0x224			/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_unix.go:165
+#	0x104779597	net.(*netFD).Read+0x27				/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/fd_posix.go:68
+#	0x104787983	net.(*conn).Read+0x33				/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/net.go:196
+#	0x1049e4367	net/http.(*connReader).backgroundRead+0x37	/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/http/server.go:702
+
+1 @ 0x10468eb1c 0x1046521d0 0x10468dd30 0x104702118 0x1047062c4 0x1047062b5 0x10477ac98 0x104790624 0x10478f90c 0x105fd4610 0x104ab49bc 0x10600eb2c 0x104696bb4
+#	0x10468dd2f	internal/poll.runtime_pollWait+0x9f						/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/netpoll.go:351
+#	0x104702117	internal/poll.(*pollDesc).wait+0x27						/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_poll_runtime.go:84
+#	0x1047062c3	internal/poll.(*pollDesc).waitRead+0x213					/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_poll_runtime.go:89
+#	0x1047062b4	internal/poll.(*FD).Accept+0x204						/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_unix.go:613
+#	0x10477ac97	net.(*netFD).accept+0x27							/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/fd_unix.go:150
+#	0x104790623	net.(*TCPListener).accept+0x23							/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/tcpsock_posix.go:159
+#	0x10478f90b	net.(*TCPListener).AcceptTCP+0x2b						/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/tcpsock.go:374
+#	0x105fd460f	github.com/23skdu/longbow/internal/store.(*TCPNoDelayListener).Accept+0x1f	/Users/rsd/REPOS/longbow/internal/store/tcp_nodelay.go:26
+#	0x104ab49bb	google.golang.org/grpc.(*Server).Serve+0x3ab					/Users/rsd/go/pkg/mod/google.golang.org/grpc@v1.81.0/server.go:921
+#	0x10600eb2b	main.run.func5+0x7b								/Users/rsd/REPOS/longbow/cmd/longbow/main.go:745
+
+1 @ 0x10468eb1c 0x1046521d0 0x10468dd30 0x104702118 0x1047062c4 0x1047062b5 0x10477ac98 0x104790624 0x10478f90c 0x105fd4610 0x104ab49bc 0x10600ebfc 0x104696bb4
+#	0x10468dd2f	internal/poll.runtime_pollWait+0x9f						/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/netpoll.go:351
+#	0x104702117	internal/poll.(*pollDesc).wait+0x27						/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_poll_runtime.go:84
+#	0x1047062c3	internal/poll.(*pollDesc).waitRead+0x213					/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_poll_runtime.go:89
+#	0x1047062b4	internal/poll.(*FD).Accept+0x204						/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_unix.go:613
+#	0x10477ac97	net.(*netFD).accept+0x27							/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/fd_unix.go:150
+#	0x104790623	net.(*TCPListener).accept+0x23							/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/tcpsock_posix.go:159
+#	0x10478f90b	net.(*TCPListener).AcceptTCP+0x2b						/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/tcpsock.go:374
+#	0x105fd460f	github.com/23skdu/longbow/internal/store.(*TCPNoDelayListener).Accept+0x1f	/Users/rsd/REPOS/longbow/internal/store/tcp_nodelay.go:26
+#	0x104ab49bb	google.golang.org/grpc.(*Server).Serve+0x3ab					/Users/rsd/go/pkg/mod/google.golang.org/grpc@v1.81.0/server.go:921
+#	0x10600ebfb	main.run.func4+0x7b								/Users/rsd/REPOS/longbow/cmd/longbow/main.go:735
+
+1 @ 0x10468eb1c 0x1046521d0 0x10468dd30 0x104702118 0x1047062c4 0x1047062b5 0x10477ac98 0x104790624 0x10478fa2c 0x1049ee984 0x10600fa0c 0x104696bb4
+#	0x10468dd2f	internal/poll.runtime_pollWait+0x9f		/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/netpoll.go:351
+#	0x104702117	internal/poll.(*pollDesc).wait+0x27		/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_poll_runtime.go:84
+#	0x1047062c3	internal/poll.(*pollDesc).waitRead+0x213	/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_poll_runtime.go:89
+#	0x1047062b4	internal/poll.(*FD).Accept+0x204		/opt/homebrew/Cellar/go/1.26.3/libexec/src/internal/poll/fd_unix.go:613
+#	0x10477ac97	net.(*netFD).accept+0x27			/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/fd_unix.go:150
+#	0x104790623	net.(*TCPListener).accept+0x23			/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/tcpsock_posix.go:159
+#	0x10478fa2b	net.(*TCPListener).Accept+0x2b			/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/tcpsock.go:387
+#	0x1049ee983	net/http.(*Server).Serve+0x243			/opt/homebrew/Cellar/go/1.26.3/libexec/src/net/http/server.go:3434
+#	0x10600fa0b	main.run.func3+0x47b				/Users/rsd/REPOS/longbow/cmd/longbow/main.go:575
+
+1 @ 0x10468eb1c 0x10466c77c 0x104a2be5c 0x104a2c63c 0x104a3fab8 0x104696bb4
+#	0x104a2be5b	google.golang.org/grpc/internal/transport.(*controlBuffer).get+0x13b	/Users/rsd/go/pkg/mod/google.golang.org/grpc@v1.81.0/internal/transport/controlbuf.go:420
+#	0x104a2c63b	google.golang.org/grpc/internal/transport.(*loopyWriter).run+0x6b	/Users/rsd/go/pkg/mod/google.golang.org/grpc@v1.81.0/internal/transport/controlbuf.go:597
+#	0x104a3fab7	google.golang.org/grpc/internal/transport.NewServerTransport.func3+0xb7	/Users/rsd/go/pkg/mod/google.golang.org/grpc@v1.81.0/internal/transport/http2_server.go:342
+
+1 @ 0x10468eb1c 0x10466c77c 0x104a45e84 0x104696bb4
+#	0x104a45e83	google.golang.org/grpc/internal/transport.(*http2Server).keepalive+0x163	/Users/rsd/go/pkg/mod/google.golang.org/grpc@v1.81.0/internal/transport/http2_server.go:1203
+
+1 @ 0x10468eb1c 0x10466c77c 0x104af4914 0x104696bb4
+#	0x104af4913	os/signal.NotifyContext.func1+0x73	/opt/homebrew/Cellar/go/1.26.3/libexec/src/os/signal/signal.go:292
+
+1 @ 0x10468eb1c 0x10466c77c 0x10502a7e0 0x104696bb4
+#	0x10502a7df	github.com/23skdu/longbow/internal/memory.(*GCTuner).Start+0xff	/Users/rsd/REPOS/longbow/internal/memory/gc_tuner.go:130
+
+1 @ 0x10468eb1c 0x10466c77c 0x105b98fb0 0x104696bb4
+#	0x105b98faf	github.com/23skdu/longbow/internal/storage.(*AsyncFsyncer).fsyncLoop+0x9f	/Users/rsd/REPOS/longbow/internal/storage/async_fsync.go:234
+
+1 @ 0x10468eb1c 0x10466c77c 0x105b99e4c 0x104696bb4
+#	0x105b99e4b	github.com/23skdu/longbow/internal/storage.(*WALBatcher).flushLoop+0x11b	/Users/rsd/REPOS/longbow/internal/storage/batched_wal.go:207
+
+1 @ 0x10468eb1c 0x10466c77c 0x105f44934 0x104696bb4
+#	0x105f44933	github.com/23skdu/longbow/internal/store.(*CompactionWorker).compactionLoop+0xc3	/Users/rsd/REPOS/longbow/internal/store/compaction.go:151
+
+1 @ 0x10468eb1c 0x10466c77c 0x105f8e5e0 0x104696bb4
+#	0x105f8e5df	github.com/23skdu/longbow/internal/store.(*NodeMonitor).run+0x9f	/Users/rsd/REPOS/longbow/internal/store/node_monitor.go:36
+
+1 @ 0x10468eb1c 0x10466c77c 0x105f90d24 0x104696bb4
+#	0x105f90d23	github.com/23skdu/longbow/internal/store.(*PeerReplicator).asyncWorker+0xc3	/Users/rsd/REPOS/longbow/internal/store/peer_replicator.go:336
+
+1 @ 0x10468eb1c 0x10466c77c 0x105f95bec 0x105fae688 0x104696bb4
+#	0x105f95beb	github.com/23skdu/longbow/internal/store.(*QuantizationTuner).Start+0xcb	/Users/rsd/REPOS/longbow/internal/store/quantization_tuner.go:66
+#	0x105fae687	github.com/23skdu/longbow/internal/store.NewVectorStore.func3+0x57		/Users/rsd/REPOS/longbow/internal/store/store.go:316
+
+1 @ 0x10468eb1c 0x10466c77c 0x105fb13d8 0x104696bb4
+#	0x105fb13d7	github.com/23skdu/longbow/internal/store.(*VectorStore).runPersistenceWorker+0xc7	/Users/rsd/REPOS/longbow/internal/store/store.go:972
+
+1 @ 0x10468eb1c 0x10466c77c 0x106000ec0 0x104696bb4
+#	0x106000ebf	github.com/23skdu/longbow/internal/sharding.(*RequestForwarder).healthCheckLoop+0xbf	/Users/rsd/REPOS/longbow/internal/sharding/forwarder.go:120
+

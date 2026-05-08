@@ -693,7 +693,10 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 		if g.Neighbors[l][cID] == 0 {
 			if g.Uint32Arena == nil {
-				slabSize := 16 * 1024 * 1024
+				slabSize := 1024 * 1024 * 64
+				if l > 0 {
+					slabSize = 1024 * 1024 * 8
+				}
 				g.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(slabSize))
 			}
 			ref, err := g.Uint32Arena.AllocSlice(ChunkSize * MaxNeighbors)

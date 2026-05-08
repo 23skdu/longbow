@@ -79,41 +79,67 @@ TEXT ·euclideanHighDimNEONKernel(SB), NOSPLIT, $0-52
     VEOR    V1.B16, V1.B16, V1.B16
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
+    VEOR    V16.B16, V16.B16, V16.B16
+    VEOR    V17.B16, V17.B16, V17.B16
+    VEOR    V18.B16, V18.B16, V18.B16
+    VEOR    V19.B16, V19.B16, V19.B16
 
-    CMP     $16, R1
+    CMP     $32, R1
     BLT     hd_tail_loop
 
-hd_loop_16x:
+hd_loop_32x:
+    // Interleave 8 streams of (load, sub, fmla)
     VLD1.P  16(R0), [V4.S4]
-    VLD1.P  16(R2), [V8.S4]
-    VFSUB_V(8, 4, 12)
-    
+    VLD1.P  16(R2), [V12.S4]
     VLD1.P  16(R0), [V5.S4]
-    VLD1.P  16(R2), [V9.S4]
-    VFSUB_V(9, 5, 13)
-    VFMLA   V12.S4, V12.S4, V0.S4
+    VLD1.P  16(R2), [V13.S4]
+    VFSUB_V(12, 4, 4)
+    VFSUB_V(13, 5, 5)
 
     VLD1.P  16(R0), [V6.S4]
-    VLD1.P  16(R2), [V10.S4]
-    VFSUB_V(10, 6, 14)
-    VFMLA   V13.S4, V13.S4, V1.S4
-
+    VLD1.P  16(R2), [V14.S4]
     VLD1.P  16(R0), [V7.S4]
-    VLD1.P  16(R2), [V11.S4]
-    VFSUB_V(11, 7, 15)
-    VFMLA   V14.S4, V14.S4, V2.S4
-    VFMLA   V15.S4, V15.S4, V3.S4
+    VLD1.P  16(R2), [V15.S4]
+    VFSUB_V(14, 6, 6)
+    VFSUB_V(15, 7, 7)
 
-    SUB     $16, R1
-    CMP     $16, R1
-    BGE     hd_loop_16x
+    VFMLA   V4.S4, V4.S4, V0.S4
+    VFMLA   V5.S4, V5.S4, V1.S4
+    VFMLA   V6.S4, V6.S4, V2.S4
+    VFMLA   V7.S4, V7.S4, V3.S4
 
-    // FADD V1.4S, V0.4S, V0.4S
-    WORD    $0x4e21d400
-    // FADD V2.4S, V0.4S, V0.4S
-    WORD    $0x4e22d400
-    // FADD V3.4S, V0.4S, V0.4S
-    WORD    $0x4e23d400
+    VLD1.P  16(R0), [V8.S4]
+    VLD1.P  16(R2), [V12.S4]
+    VLD1.P  16(R0), [V9.S4]
+    VLD1.P  16(R2), [V13.S4]
+    VFSUB_V(12, 8, 8)
+    VFSUB_V(13, 9, 9)
+
+    VLD1.P  16(R0), [V10.S4]
+    VLD1.P  16(R2), [V14.S4]
+    VLD1.P  16(R0), [V11.S4]
+    VLD1.P  16(R2), [V15.S4]
+    VFSUB_V(14, 10, 10)
+    VFSUB_V(15, 11, 11)
+
+    VFMLA   V8.S4, V8.S4, V16.S4
+    VFMLA   V9.S4, V9.S4, V17.S4
+    VFMLA   V10.S4, V10.S4, V18.S4
+    VFMLA   V11.S4, V11.S4, V19.S4
+
+    SUB     $32, R1
+    CMP     $32, R1
+    BGE     hd_loop_32x
+
+    // Sum accumulators
+    VFADD_V(16, 0, 0)
+    VFADD_V(17, 1, 1)
+    VFADD_V(18, 2, 2)
+    VFADD_V(19, 3, 3)
+    
+    VFADD_V(1, 0, 0)
+    VFADD_V(3, 2, 2)
+    VFADD_V(2, 0, 0)
 
 hd_tail_loop:
     CMP     $4, R1
@@ -213,39 +239,56 @@ TEXT ·dotHighDimNEONKernel(SB), NOSPLIT, $0-52
     VEOR    V1.B16, V1.B16, V1.B16
     VEOR    V2.B16, V2.B16, V2.B16
     VEOR    V3.B16, V3.B16, V3.B16
+    VEOR    V16.B16, V16.B16, V16.B16
+    VEOR    V17.B16, V17.B16, V17.B16
+    VEOR    V18.B16, V18.B16, V18.B16
+    VEOR    V19.B16, V19.B16, V19.B16
 
-    CMP     $16, R1
+    CMP     $32, R1
     BLT     dot_hd_tail_loop
 
-dot_hd_loop_16x:
-    // Prefetch PLDL1KEEP, [x0, #128] and [x2, #128]
-    WORD    $0xf8804000
-    WORD    $0xf8804040
-
+dot_hd_loop_32x:
     VLD1.P  16(R0), [V4.S4]
-    VLD1.P  16(R2), [V8.S4]
+    VLD1.P  16(R2), [V12.S4]
     VLD1.P  16(R0), [V5.S4]
-    VLD1.P  16(R2), [V9.S4]
+    VLD1.P  16(R2), [V13.S4]
     VLD1.P  16(R0), [V6.S4]
-    VLD1.P  16(R2), [V10.S4]
+    VLD1.P  16(R2), [V14.S4]
     VLD1.P  16(R0), [V7.S4]
-    VLD1.P  16(R2), [V11.S4]
+    VLD1.P  16(R2), [V15.S4]
 
-    VFMLA   V8.S4, V4.S4, V0.S4
-    VFMLA   V9.S4, V5.S4, V1.S4
-    VFMLA   V10.S4, V6.S4, V2.S4
-    VFMLA   V11.S4, V7.S4, V3.S4
+    VFMLA   V12.S4, V4.S4, V0.S4
+    VFMLA   V13.S4, V5.S4, V1.S4
+    VFMLA   V14.S4, V6.S4, V2.S4
+    VFMLA   V15.S4, V7.S4, V3.S4
 
-    SUB     $16, R1
-    CMP     $16, R1
-    BGE     dot_hd_loop_16x
+    VLD1.P  16(R0), [V8.S4]
+    VLD1.P  16(R2), [V12.S4]
+    VLD1.P  16(R0), [V9.S4]
+    VLD1.P  16(R2), [V13.S4]
+    VLD1.P  16(R0), [V10.S4]
+    VLD1.P  16(R2), [V14.S4]
+    VLD1.P  16(R0), [V11.S4]
+    VLD1.P  16(R2), [V15.S4]
 
-    // FADD V1.4S, V0.4S, V0.4S
-    WORD    $0x4e21d400
-    // FADD V2.4S, V0.4S, V0.4S
-    WORD    $0x4e22d400
-    // FADD V3.4S, V0.4S, V0.4S
-    WORD    $0x4e23d400
+    VFMLA   V12.S4, V8.S4, V16.S4
+    VFMLA   V13.S4, V9.S4, V17.S4
+    VFMLA   V14.S4, V10.S4, V18.S4
+    VFMLA   V15.S4, V11.S4, V19.S4
+
+    SUB     $32, R1
+    CMP     $32, R1
+    BGE     dot_hd_loop_32x
+
+    // Final sum of 8 accumulators
+    VFADD_V(16, 0, 0)
+    VFADD_V(17, 1, 1)
+    VFADD_V(18, 2, 2)
+    VFADD_V(19, 3, 3)
+    
+    VFADD_V(1, 0, 0)
+    VFADD_V(3, 2, 2)
+    VFADD_V(2, 0, 0)
 
 dot_hd_tail_loop:
     CMP     $4, R1

@@ -45,7 +45,7 @@ func NewMemVectorStore(opts MemStoreOptions) (*MemVectorStore, error) {
 	}
 
 	if opts.UseArena {
-		ms.baseArena = memory.NewSlabArena(1024 * 1024)
+		ms.baseArena = memory.NewSlabArena(1024 * 1024 * 64)
 		ms.floatArena = memory.NewTypedArena[float32](ms.baseArena)
 	}
 

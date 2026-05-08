@@ -1,32 +1,19 @@
 #!/bin/bash
-# Master Remote Benchmark Script (to be run on ancalagon)
 set -e
 
-DTYPES="float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant2,turboquant4,turboquant8"
+TYPES="float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant2,turboquant4,turboquant8"
 DIMS="128,384,768,1024,3072"
-COUNTS="25000,100000,250000,500000"
-QUERIES=500
+COUNTS="5000,10000,25000,100000,250000"
+MODES="all"
+MEMORY="19327352832" # 18GB
 
-echo "Starting Remote Sequential Benchmarks (CPU then CUDA) on ancalagon..."
+echo "Starting MASTER REMOTE BENCHMARK on ancalagon (CPU -> CUDA)"
 
-# Run CPU
-echo "--- Starting Remote CPU Benchmarks ---"
-./scripts/bench_tool_runner.sh \
-    --mode cpu \
-    --types "$DTYPES" \
-    --dims "$DIMS" \
-    --counts "$COUNTS" \
-    --queries $QUERIES \
-    --output "benchmark_results/remote"
+ssh ancalagon "cd REPOS/longbow && \
+export LONGBOW_MAX_MEMORY=$MEMORY && \
+echo '--- RUNNING CPU MODE ---' && \
+python3 scripts/unified_benchmark.py --mode cpu --dtypes $TYPES --dims $DIMS --counts $COUNTS --search-modes $MODES --queries 100 --pprof --label final_remote_cpu && \
+echo '--- RUNNING CUDA MODE ---' && \
+python3 scripts/unified_benchmark.py --mode cuda --dtypes $TYPES --dims $DIMS --counts $COUNTS --search-modes $MODES --queries 100 --pprof --label final_remote_cuda"
 
-# Run CUDA
-echo "--- Starting Remote CUDA Benchmarks ---"
-./scripts/bench_tool_runner.sh \
-    --mode cuda \
-    --types "$DTYPES" \
-    --dims "$DIMS" \
-    --counts "$COUNTS" \
-    --queries $QUERIES \
-    --output "benchmark_results/remote"
-
-echo "Remote Benchmarks Completed."
+echo "MASTER REMOTE BENCHMARK COMPLETE"

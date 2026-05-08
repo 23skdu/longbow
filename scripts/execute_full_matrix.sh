@@ -4,7 +4,7 @@ set -e
 # Configuration
 DTYPES=("float32" "float64" "float16" "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64" "complex64" "complex128" "turboquant2" "turboquant4" "turboquant8")
 DIMS=(128 384 768 1024 3072)
-COUNTS=(1000 5000 10000 25000 50000 250000 500000 1000000)
+COUNTS=(5000 10000 25000 100000 250000)
 
 HOST=$(hostname)
 MODE=$1 # "cpu" or "metal" or "cuda"
@@ -14,12 +14,18 @@ mkdir -p "$OUTPUT_DIR/profiles"
 
 export LONGBOW_MAX_MEMORY=19327352832
 export LONGBOW_LOG_LEVEL=info
+export LONGBOW_TEMPORAL_ENABLED=true
+export LONGBOW_HYBRID_SEARCH_ENABLED=true
+export LONGBOW_LEARNED_INDEX_ENABLED=true
+export LONGBOW_AUTOSCALE_ENABLED=false
 
-BINARY="bin/longbow-cpu"
+BINARY="bin/longbow"
 if [ "$MODE" == "metal" ]; then
     BINARY="bin/longbow-metal"
 elif [ "$MODE" == "cuda" ]; then
     BINARY="bin/longbow-cuda"
+elif [ "$MODE" == "avx2" ]; then
+    BINARY="bin/longbow-avx2"
 fi
 
 echo "========================================="
@@ -71,8 +77,9 @@ for count in "${COUNTS[@]}"; do
             start_server
             
             # Start pprof collection
-            curl -s "http://localhost:9090/debug/pprof/profile?seconds=60" > "$OUTPUT_DIR/profiles/${NAME}_cpu.pprof" &
+            curl -s "http://localhost:9090/debug/pprof/profile?seconds=10" > "$OUTPUT_DIR/profiles/${NAME}_cpu.pprof" &
             PPROF_PID=$!
+            curl -s "http://localhost:9090/debug/pprof/heap" > "$OUTPUT_DIR/profiles/${NAME}_heap.pprof" &
             
             # Run bench-tool
             WORKERS=8

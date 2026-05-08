@@ -267,67 +267,17 @@ func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 
 	// Optimized path for 4 and 8 bits
 	if bits == 8 {
-		for i := range dst {
-			norm := float32(src[i]) / maxVal
-			dst[i] = norm*2*math.Pi - math.Pi
-		}
+		simd.UnpackTQ8(src, dst, 2*math.Pi/maxVal, -math.Pi)
 		return
 	}
 
 	if bits == 4 {
-		for i := 0; i < len(dst); i += 8 {
-			if i+7 < len(dst) {
-				b0 := src[i/2]
-				b1 := src[i/2+1]
-				b2 := src[i/2+2]
-				b3 := src[i/2+3]
-				dst[i] = (float32(b0&0x0F)/maxVal)*2*math.Pi - math.Pi
-				dst[i+1] = (float32(b0>>4)/maxVal)*2*math.Pi - math.Pi
-				dst[i+2] = (float32(b1&0x0F)/maxVal)*2*math.Pi - math.Pi
-				dst[i+3] = (float32(b1>>4)/maxVal)*2*math.Pi - math.Pi
-				dst[i+4] = (float32(b2&0x0F)/maxVal)*2*math.Pi - math.Pi
-				dst[i+5] = (float32(b2>>4)/maxVal)*2*math.Pi - math.Pi
-				dst[i+6] = (float32(b3&0x0F)/maxVal)*2*math.Pi - math.Pi
-				dst[i+7] = (float32(b3>>4)/maxVal)*2*math.Pi - math.Pi
-			} else {
-				for j := i; j < len(dst); j += 2 {
-					b := src[j/2]
-					dst[j] = (float32(b&0x0F)/maxVal)*2*math.Pi - math.Pi
-					if j+1 < len(dst) {
-						dst[j+1] = (float32(b>>4)/maxVal)*2*math.Pi - math.Pi
-					}
-				}
-				break
-			}
-		}
+		simd.UnpackTQ4(src, dst, 2*math.Pi/maxVal, -math.Pi)
 		return
 	}
 
 	if bits == 2 {
-		for i := 0; i < len(dst); i += 8 {
-			if i+7 < len(dst) {
-				b0 := src[i/4]
-				b1 := src[i/4+1]
-				dst[i] = (float32(b0&0x03)/maxVal)*2*math.Pi - math.Pi
-				dst[i+1] = (float32((b0>>2)&0x03)/maxVal)*2*math.Pi - math.Pi
-				dst[i+2] = (float32((b0>>4)&0x03)/maxVal)*2*math.Pi - math.Pi
-				dst[i+3] = (float32((b0>>6)&0x03)/maxVal)*2*math.Pi - math.Pi
-				dst[i+4] = (float32(b1&0x03)/maxVal)*2*math.Pi - math.Pi
-				dst[i+5] = (float32((b1>>2)&0x03)/maxVal)*2*math.Pi - math.Pi
-				dst[i+6] = (float32((b1>>4)&0x03)/maxVal)*2*math.Pi - math.Pi
-				dst[i+7] = (float32((b1>>6)&0x03)/maxVal)*2*math.Pi - math.Pi
-			} else {
-				for j := i; j < len(dst); j += 4 {
-					b := src[j/4]
-					for k := 0; k < 4; k++ {
-						if j+k < len(dst) {
-							dst[j+k] = (float32((b>>(uint(k)*2))&0x03)/maxVal)*2*math.Pi - math.Pi
-						}
-					}
-				}
-				break
-			}
-		}
+		simd.UnpackTQ2(src, dst, 2*math.Pi/maxVal, -math.Pi)
 		return
 	}
 

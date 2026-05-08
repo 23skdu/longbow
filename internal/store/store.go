@@ -919,30 +919,15 @@ func (vs *VectorStore) DropDataset(ctx context.Context, name string) error {
 			metrics.StoreDroppedDatasets.Inc()
 			metrics.StoreActiveDatasets.Set(float64(len(newMap)))
 
-			vs.cleanupWg.Add(1)
-			go func() {
-				// Defer cleanup to background to avoid blocking DropDataset call (Fast Path)
-				defer vs.cleanupWg.Done()
-				defer func() {
-					if r := recover(); r != nil {
-						vs.logger.Error().Msgf("Panic during dataset cleanup: %v", r)
-					}
-				}()
+			// Ensure all pending indexing/ingestion for this dataset is finished
+			// before we decrement the global memory counter and release resources.
+			droppedDS.WaitForIndexing()
 
-				// Ensure no active readers? RCU guarantees new readers won't see it.
-				// Old readers might still hold the reference.
-				// Closing immediately *might* panic concurrent readers if not careful,
-				// but usually Dataset struct uses locks or is robust.
-				// Ensure all pending indexing/ingestion for this dataset is finished
-				// before we decrement the global memory counter.
-				droppedDS.WaitForIndexing()
-
-				// Decrement both record batch memory AND index memory
-				totalMemory := droppedDS.SizeBytes.Load() + droppedDS.IndexMemoryBytes.Load()
-				vs.currentMemory.Add(-totalMemory)
-				droppedDS.Close()
-				vs.logger.Info().Str("dataset", name).Int64("freed_bytes", totalMemory).Msg("Dataset dropped and resources released (async)")
-			}()
+			// Decrement both record batch memory AND index memory
+			totalMemory := droppedDS.SizeBytes.Load() + droppedDS.IndexMemoryBytes.Load()
+			vs.currentMemory.Add(-totalMemory)
+			droppedDS.Close()
+			vs.logger.Info().Str("dataset", name).Int64("freed_bytes", totalMemory).Msg("Dataset dropped and resources released synchronously")
 
 			return nil
 		}

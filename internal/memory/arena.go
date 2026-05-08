@@ -14,6 +14,7 @@ import (
 	"io"
 	"encoding/binary"
 	"os"
+	"runtime"
 )
 
 // nextPowerOf2 returns the smallest power of 2 >= n
@@ -63,28 +64,33 @@ type ArenaStats struct {
 	UsedBytes     int64
 }
 
+// ArenaStatsRecord holds atomic counters for arena pressure tracking.
+// This object is registered in the global registry to avoid leaking the arena itself.
+type ArenaStatsRecord struct {
+	TotalCapacity atomic.Int64
+	UsedBytes     atomic.Int64
+	Active        atomic.Bool
+}
+
 // SlabArena manages large blocks of memory.
 type SlabArena struct {
 	mu      sync.Mutex              // Only guards Alloc (writes)
 	slabs   atomic.Pointer[[]*slab] // Lock-free access to slabs slice
 	slabCap uint32                  // capacity in BYTES
 	alloc   memory.Allocator        // Optional custom allocator (e.g. NUMA)
+	stats   *ArenaStatsRecord
 }
 
 func (a *SlabArena) Stats() ArenaStats {
-	slabsPtr := a.slabs.Load()
-	if slabsPtr == nil {
-		return ArenaStats{}
+	return ArenaStats{
+		TotalCapacity: a.stats.TotalCapacity.Load(),
+		UsedBytes:     a.stats.UsedBytes.Load(),
 	}
-	slabs := *slabsPtr
-	stats := ArenaStats{
-		TotalCapacity: int64(len(slabs)) * int64(a.slabCap),
-	}
-	// Note: We need to sum up used portions. This is a bit slow but okay for tuning.
-	for _, s := range slabs {
-		stats.UsedBytes += int64(s.offset)
-	}
-	return stats
+}
+
+// StatsRecord returns the underlying atomic stats record.
+func (a *SlabArena) StatsRecord() *ArenaStatsRecord {
+	return a.stats
 }
 
 // NewSlabArena creates a new arena with specified slab byte size.
@@ -102,13 +108,19 @@ func NewSlabArenaWithAllocator(slabSizeBytes int, alloc memory.Allocator) *SlabA
 	s := &SlabArena{
 		slabCap: uint32(slabSizeBytes), // #nosec G115
 		alloc:   alloc,
+		stats:   &ArenaStatsRecord{},
 	}
+	s.stats.Active.Store(true)
+
 	// Initialize with empty slice
 	empty := make([]*slab, 0)
 	s.slabs.Store(&empty)
 
-	// Register with global registry for GC tuning
-	RegisterArena(s)
+	// Set finalizer to automatically unregister when the arena is GC'd.
+	// This ensures we don't leak stats records even if Release/Free isn't called.
+	runtime.SetFinalizer(s, func(arena *SlabArena) {
+		UnregisterArena(arena.stats)
+	})
 
 	return s
 }
@@ -214,6 +226,7 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 		if offset, ok := a.allocFast(size); ok {
 			a.mu.Unlock()
 			metrics.ArenaFastPathTotal.Inc()
+			a.stats.UsedBytes.Add(int64(size))
 			return offset, nil
 		}
 		fastPathFailed = true
@@ -247,6 +260,7 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 				if atomic.CompareAndSwapUint32(&active.offset, oldOffset, newOffset) {
 					start = oldOffset + pad
 					claimed = true
+					a.stats.UsedBytes.Add(int64(newOffset - oldOffset))
 					// Metrics moved out of lock
 					break
 				}
@@ -295,6 +309,9 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 		copy(newSlabs, currentSlabs)
 		newSlabs[len(currentSlabs)] = newSlab
 		a.slabs.Store(&newSlabs)
+
+		a.stats.TotalCapacity.Add(int64(a.slabCap))
+		a.stats.UsedBytes.Add(int64(newOffset))
 
 		active = newSlab
 		newSlabAllocated = true
@@ -351,7 +368,10 @@ func (a *SlabArena) Free() {
 	empty := make([]*slab, 0)
 	a.slabs.Store(&empty)
 
-	UnregisterArena(a)
+	UnregisterArena(a.stats)
+	a.stats.Active.Store(false)
+	a.stats.TotalCapacity.Store(0)
+	a.stats.UsedBytes.Store(0)
 }
 
 // Get returns the byte slice.

@@ -674,27 +674,25 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	}
 
 
-	// Ensure Neighbors, Counts, Versions for ALL possible HNSW layers to avoid concurrent appends.
+	// Optimization: Ensure Neighbors, Counts, Versions for the requested chunk index.
+	// This function ensures that the underlying slices (Layers -> Chunks) are large enough.
 	if len(g.Neighbors) == 0 {
 		g.Neighbors = make([][]uint64, ArrowMaxLayers)
 		g.Counts = make([][]uint64, ArrowMaxLayers)
 		g.Versions = make([][]uint64, ArrowMaxLayers)
 	}
- 
+
+	requiredLen := cID + 1
 	for l := 0; l < ArrowMaxLayers; l++ {
-		requiredLen := cID + 1
 		if len(g.Neighbors[l]) < requiredLen {
 			delta := requiredLen - len(g.Neighbors[l])
 			g.Neighbors[l] = append(g.Neighbors[l], make([]uint64, delta)...)
 			g.Counts[l] = append(g.Counts[l], make([]uint64, delta)...)
 			g.Versions[l] = append(g.Versions[l], make([]uint64, delta)...)
 		}
- 
+
 		if g.Neighbors[l][cID] == 0 {
 			if g.Uint32Arena == nil {
-				// Ensure slab size can accommodate a full chunk of neighbors.
-				// ChunkSize (1024) * MaxNeighbors (512) * 4 bytes = 2MB.
-				// We use 16MB to allow for multiple concurrent chunks per slab.
 				slabSize := 16 * 1024 * 1024
 				g.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(slabSize))
 			}
@@ -707,7 +705,6 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 		if g.Counts[l][cID] == 0 {
 			if g.Int32Arena == nil {
-				// Use 4MB slab for counts (1024 * 4 = 4KB per chunk, many chunks per slab)
 				g.Int32Arena = memory.NewTypedArena[int32](memory.NewSlabArena(4 * 1024 * 1024))
 			}
 			ref, err := g.Int32Arena.AllocSlice(ChunkSize)
@@ -719,8 +716,6 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 		if g.Versions[l][cID] == 0 {
 			if g.Uint32Arena == nil {
-				// Share Uint32Arena with neighbors if it already exists.
-				// Ensure same 16MB slab size as neighbors.
 				slabSize := 16 * 1024 * 1024
 				g.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(slabSize))
 			}
@@ -2677,43 +2672,43 @@ func (g *GraphData) Release() {
 
 func (g *GraphData) Unregister() {
 	if g.Float32Arena != nil {
-		memory.UnregisterArena(g.Float32Arena.Slab())
+		memory.UnregisterArena(g.Float32Arena.Slab().StatsRecord())
 	}
 	if g.Float64Arena != nil {
-		memory.UnregisterArena(g.Float64Arena.Slab())
+		memory.UnregisterArena(g.Float64Arena.Slab().StatsRecord())
 	}
 	if g.Uint8Arena != nil {
-		memory.UnregisterArena(g.Uint8Arena.Slab())
+		memory.UnregisterArena(g.Uint8Arena.Slab().StatsRecord())
 	}
 	if g.Uint16Arena != nil {
-		memory.UnregisterArena(g.Uint16Arena.Slab())
+		memory.UnregisterArena(g.Uint16Arena.Slab().StatsRecord())
 	}
 	if g.Uint32Arena != nil {
-		memory.UnregisterArena(g.Uint32Arena.Slab())
+		memory.UnregisterArena(g.Uint32Arena.Slab().StatsRecord())
 	}
 	if g.Uint64Arena != nil {
-		memory.UnregisterArena(g.Uint64Arena.Slab())
+		memory.UnregisterArena(g.Uint64Arena.Slab().StatsRecord())
 	}
 	if g.Int8Arena != nil {
-		memory.UnregisterArena(g.Int8Arena.Slab())
+		memory.UnregisterArena(g.Int8Arena.Slab().StatsRecord())
 	}
 	if g.Int16Arena != nil {
-		memory.UnregisterArena(g.Int16Arena.Slab())
+		memory.UnregisterArena(g.Int16Arena.Slab().StatsRecord())
 	}
 	if g.Int32Arena != nil {
-		memory.UnregisterArena(g.Int32Arena.Slab())
+		memory.UnregisterArena(g.Int32Arena.Slab().StatsRecord())
 	}
 	if g.Int64Arena != nil {
-		memory.UnregisterArena(g.Int64Arena.Slab())
+		memory.UnregisterArena(g.Int64Arena.Slab().StatsRecord())
 	}
 	if g.Float16Arena != nil {
-		memory.UnregisterArena(g.Float16Arena.Slab())
+		memory.UnregisterArena(g.Float16Arena.Slab().StatsRecord())
 	}
 	if g.Complex64Arena != nil {
-		memory.UnregisterArena(g.Complex64Arena.Slab())
+		memory.UnregisterArena(g.Complex64Arena.Slab().StatsRecord())
 	}
 	if g.Complex128Arena != nil {
-		memory.UnregisterArena(g.Complex128Arena.Slab())
+		memory.UnregisterArena(g.Complex128Arena.Slab().StatsRecord())
 	}
 }
 

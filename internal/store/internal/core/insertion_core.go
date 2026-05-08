@@ -23,8 +23,6 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 
 // InsertWithVector inserts a vector that has already been retrieved.
 func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
-	h.growMu.Lock()
-	defer h.growMu.Unlock()
 
 	data, err := h.insertInternal(id, vec, level, false, nil)
 	if err == nil && data != nil {
@@ -123,8 +121,8 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		data = h.data.Load()
 	}
 
-	h.growMu.RLock()
-	defer h.growMu.RUnlock()
+	// h.growMu.RLock() - REMOVED: causes deadlocks with promoteNode and redundant with EnsureChunks
+	// defer h.growMu.RUnlock()
 
 	if !skipSet {
 		oldVer := data.LockNode(0, id)

@@ -28,7 +28,7 @@ func TestGCTuner_ArenaAwareTuning(t *testing.T) {
 	}
 
 	stats := arena.Stats()
-	tuner.RegisterArena(arena)
+	tuner.AddArena(arena.StatsRecord())
 
 	// Use a small heap size to make arena ratio high
 	heapSize := int64(1 * 1024 * 1024) // 1MB heap

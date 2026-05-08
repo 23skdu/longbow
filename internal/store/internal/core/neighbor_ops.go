@@ -19,24 +19,26 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 	// 1. Try Lock-Free path with PackedNeighbors (High Throughput)
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
+		
+		// Pre-compute targets to avoid doing it inside the CAS loop
 		_ = pn.UpdateNeighbors(source, func(old []uint32) []uint32 {
 			for _, n := range old {
 				if n == target { return nil } // No change
 			}
 			
-			var next []uint32
 			if len(old) < maxConn {
-				next = make([]uint32, len(old)+1)
+				next := make([]uint32, len(old)+1)
 				copy(next, old)
 				next[len(old)] = target
-			} else {
-				// Pruning needed - Diversity heuristic
-				next = h.computePrunedNeighbors(ctx, data, source, old, []uint32{target}, maxConn)
+				return next
 			}
-			
-			atomic.AddUint64(&data.GlobalVersion, 1)
+
+			// Pruning needed - Diversity heuristic
+			// This is expensive, but only happens when we hit maxConn
+			next := h.computePrunedNeighbors(ctx, data, source, old, []uint32{target}, maxConn)
 			return next
 		})
+		atomic.AddUint64(&data.GlobalVersion, 1)
 		return data
 	}
 
@@ -81,17 +83,46 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 	if data == nil {
 		data = h.data.Load()
 	}
-	cID := types.ChunkID(target)
 
-	if int(target) < data.Capacity && data.GetNeighborsChunk(0, cID) != nil {
-		oldVer := data.LockNode(layer, target)
-		defer data.UnlockNode(layer, target, oldVer)
-		h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
+	// 1. Try Lock-Free path with PackedNeighbors
+	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+		pn := data.PackedNeighbors[layer]
+		_ = pn.UpdateNeighbors(target, func(old []uint32) []uint32 {
+			// Find truly new sources
+			var newSources []uint32
+			for _, s := range sources {
+				found := false
+				for _, o := range old {
+					if o == s {
+						found = true
+						break
+					}
+				}
+				if !found && s != target {
+					newSources = append(newSources, s)
+				}
+			}
+
+			if len(newSources) == 0 {
+				return nil
+			}
+
+			if len(old)+len(newSources) <= maxConn {
+				next := make([]uint32, len(old)+len(newSources))
+				copy(next, old)
+				copy(next[len(old):], newSources)
+				return next
+			}
+
+			// Pruning needed
+			return h.computePrunedNeighbors(ctx, data, target, old, newSources, maxConn)
+		})
+		atomic.AddUint64(&data.GlobalVersion, 1)
 		return data
 	}
 
+	// 2. Fallback to Mutex path
 	data = h.promoteNode(data, target)
-
 	oldVer := data.LockNode(layer, target)
 	defer data.UnlockNode(layer, target, oldVer)
 	h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)

@@ -5,23 +5,23 @@ import (
 )
 
 var (
-	globalRegistry   []*SlabArena
+	globalRegistry   []*ArenaStatsRecord
 	globalRegistryMu sync.RWMutex
 )
 
-// RegisterArena adds an arena to the global registry.
-func RegisterArena(a *SlabArena) {
+// RegisterArena adds an arena's stats record to the global registry.
+func RegisterArena(s *ArenaStatsRecord) {
 	globalRegistryMu.Lock()
 	defer globalRegistryMu.Unlock()
-	globalRegistry = append(globalRegistry, a)
+	globalRegistry = append(globalRegistry, s)
 }
 
-// UnregisterArena removes an arena from the global registry.
-func UnregisterArena(a *SlabArena) {
+// UnregisterArena removes an arena's stats record from the global registry.
+func UnregisterArena(s *ArenaStatsRecord) {
 	globalRegistryMu.Lock()
 	defer globalRegistryMu.Unlock()
-	for i, arena := range globalRegistry {
-		if arena == a {
+	for i, record := range globalRegistry {
+		if record == s {
 			globalRegistry[i] = globalRegistry[len(globalRegistry)-1]
 			globalRegistry = globalRegistry[:len(globalRegistry)-1]
 			return
@@ -29,12 +29,12 @@ func UnregisterArena(a *SlabArena) {
 	}
 }
 
-// GetGlobalArenas returns a snapshot of all registered arenas.
-func GetGlobalArenas() []*SlabArena {
+// GetGlobalArenas returns a snapshot of all registered arena stats records.
+func GetGlobalArenas() []*ArenaStatsRecord {
 	globalRegistryMu.RLock()
 	defer globalRegistryMu.RUnlock()
 
-	snapshot := make([]*SlabArena, len(globalRegistry))
+	snapshot := make([]*ArenaStatsRecord, len(globalRegistry))
 	copy(snapshot, globalRegistry)
 	return snapshot
 }

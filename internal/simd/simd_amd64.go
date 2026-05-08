@@ -42,8 +42,7 @@ func euclidean128AVX2(a, b []float32) (float32, error) {
 	if len(a) != 128 || len(b) != 128 {
 		return euclideanAVX2(a, b)
 	}
-	sum := euclidean128AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])))
-	return sum, nil
+	return euclidean128AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
 // AVX2 optimized Euclidean distance for 384 dims
@@ -51,8 +50,7 @@ func euclidean384AVX2(a, b []float32) (float32, error) {
 	if len(a) != 384 || len(b) != 384 {
 		return euclideanAVX2(a, b)
 	}
-	sum := l2Squared384AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])))
-	return float32(math.Sqrt(float64(sum))), nil
+	return euclidean384AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
 // AVX2 optimized Euclidean distance for 768 dims.
@@ -60,13 +58,15 @@ func euclidean768AVX2(a, b []float32) (float32, error) {
 	if len(a) != 768 || len(b) != 768 {
 		return euclideanAVX2(a, b)
 	}
-	sum := l2Squared768AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])))
-	return float32(math.Sqrt(float64(sum))), nil
+	return euclidean768AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
 // AVX2 optimized Euclidean distance for 1024 dims.
 func euclidean1024AVX2(a, b []float32) (float32, error) {
-	return euclideanAVX2(a, b)
+	if len(a) != 1024 || len(b) != 1024 {
+		return euclideanAVX2(a, b)
+	}
+	return euclidean1024AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
 // AVX2 optimized Euclidean distance for 1536 dims.
@@ -76,8 +76,12 @@ func euclidean1536AVX2(a, b []float32) (float32, error) {
 
 // AVX2 optimized Euclidean distance for 3072 dims.
 func euclidean3072AVX2(a, b []float32) (float32, error) {
-	return euclideanAVX2(a, b)
+	if len(a) != 3072 || len(b) != 3072 {
+		return euclideanAVX2(a, b)
+	}
+	return euclidean3072AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
+
 
 // AVX2 optimized dot product for specific dimensions
 func dot128AVX2(a, b []float32) (float32, error) {

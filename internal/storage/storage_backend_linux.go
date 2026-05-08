@@ -1,10 +1,9 @@
-//go:build linux
+//go:build linux && iouring
 
 package storage
 
 import (
 	"fmt"
-	"io"
 	"os"
 	"sync"
 	"sync/atomic"

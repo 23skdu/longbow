@@ -25,6 +25,7 @@ type SharedWorkerPool struct {
 	// NUMA-aware pooling
 	topo      *memory.NUMATopology
 	nodePools [][]chan func()
+	highPriorityNodePools [][]chan func() // New: High-priority channels
 	nodeRobin []uint32
 }
 
@@ -47,6 +48,7 @@ func GetSharedPool() *SharedWorkerPool {
 			shards:     make([]chan func(), numWorkers),
 			topo:       topo,
 			nodePools:  make([][]chan func(), topo.NumNodes),
+			highPriorityNodePools: make([][]chan func(), topo.NumNodes),
 			nodeRobin:  make([]uint32, topo.NumNodes),
 		}
 
@@ -59,9 +61,12 @@ func GetSharedPool() *SharedWorkerPool {
 		workerIdx := 0
 		for n := 0; n < topo.NumNodes; n++ {
 			p.nodePools[n] = make([]chan func(), workersPerNode)
+			p.highPriorityNodePools[n] = make([]chan func(), workersPerNode)
 			for w := 0; w < workersPerNode; w++ {
 				ch := make(chan func(), 1024)
+				hpCh := make(chan func(), 512) // Smaller buffer for high priority
 				p.nodePools[n][w] = ch
+				p.highPriorityNodePools[n][w] = hpCh
 				
 				coreID := -1
 				cpus := topo.PhysicalCPUs[n]
@@ -76,15 +81,17 @@ func GetSharedPool() *SharedWorkerPool {
 					p.shards[workerIdx] = ch
 					workerIdx++
 				}
-				go p.numaWorker(ch, n, coreID)
+				go p.numaWorker(ch, hpCh, n, coreID)
 			}
 		}
 
 		// Handle remaining workers if numWorkers not divisible by NumNodes
 		for workerIdx < numWorkers {
 			ch := make(chan func(), 1024)
+			hpCh := make(chan func(), 512)
 			p.shards[workerIdx] = ch
 			p.nodePools[0] = append(p.nodePools[0], ch)
+			p.highPriorityNodePools[0] = append(p.highPriorityNodePools[0], hpCh)
 			
 			coreID := -1
 			cpus := topo.PhysicalCPUs[0]
@@ -95,7 +102,7 @@ func GetSharedPool() *SharedWorkerPool {
 				coreID = cpus[workerIdx%len(cpus)]
 			}
 			
-			go p.numaWorker(ch, 0, coreID)
+			go p.numaWorker(ch, hpCh, 0, coreID)
 			workerIdx++
 		}
 
@@ -104,7 +111,7 @@ func GetSharedPool() *SharedWorkerPool {
 	return globalPool.Load()
 }
 
-func (p *SharedWorkerPool) numaWorker(tasks chan func(), nodeID int, coreID int) {
+func (p *SharedWorkerPool) numaWorker(tasks chan func(), hpTasks chan func(), nodeID int, coreID int) {
 	// Pin thread to specific core if available, otherwise NUMA node
 	if coreID >= 0 {
 		_ = memory.PinThreadToCore(coreID)
@@ -112,16 +119,31 @@ func (p *SharedWorkerPool) numaWorker(tasks chan func(), nodeID int, coreID int)
 		_ = memory.PinToNUMANode(p.topo, nodeID)
 	}
 
-	for task := range tasks {
-		func() {
-			defer func() {
-				if r := recover(); r != nil {
-					// Log and recover
-				}
-			}()
-			task()
-		}()
+	for {
+		select {
+		case task, ok := <-hpTasks:
+			if !ok { return }
+			executeTask(task)
+		default:
+			select {
+			case task, ok := <-hpTasks:
+				if !ok { return }
+				executeTask(task)
+			case task, ok := <-tasks:
+				if !ok { return }
+				executeTask(task)
+			}
+		}
 	}
+}
+
+func executeTask(task func()) {
+	defer func() {
+		if r := recover(); r != nil {
+			// Log and recover (metrics are handled elsewhere if needed)
+		}
+	}()
+	task()
 }
 
 // SetTuner attaches a system tuner to the pool.
@@ -135,13 +157,40 @@ func (p *SharedWorkerPool) Submit(task func()) {
 	p.shards[shardIdx] <- task
 }
 
+// SubmitHighPriority adds a high-priority task using global round-robin distribution.
+func (p *SharedWorkerPool) SubmitHighPriority(task func()) {
+	// Find the NUMA node for this thread or default to 0
+	nodeID := 0
+	if p.topo != nil && p.topo.NumNodes > 0 {
+		// Use round-robin across nodes for high priority global submit
+		nodeID = int(atomic.AddUint32(&p.nextShard, 1) % uint32(p.topo.NumNodes))
+	}
+	p.SubmitToNodeHighPriority(nodeID, task)
+}
+
 // SubmitToNode adds a task to a specific NUMA node's pool.
 func (p *SharedWorkerPool) SubmitToNode(nodeID int, task func()) {
+	p.submitToNodeInternal(nodeID, task, false)
+}
+
+// SubmitToNodeHighPriority adds a high-priority task to a specific NUMA node's pool.
+func (p *SharedWorkerPool) SubmitToNodeHighPriority(nodeID int, task func()) {
+	p.submitToNodeInternal(nodeID, task, true)
+}
+
+func (p *SharedWorkerPool) submitToNodeInternal(nodeID int, task func(), highPriority bool) {
 	if nodeID < 0 || nodeID >= len(p.nodePools) {
-		p.Submit(task)
+		p.Submit(task) // Fallback to global
 		return
 	}
-	pools := p.nodePools[nodeID]
+	
+	var pools []chan func()
+	if highPriority {
+		pools = p.highPriorityNodePools[nodeID]
+	} else {
+		pools = p.nodePools[nodeID]
+	}
+
 	if len(pools) == 0 {
 		p.Submit(task)
 		return
@@ -169,6 +218,15 @@ func (p *SharedWorkerPool) SubmitLowPriority(task func()) {
 
 // ParallelFor executes a loop in parallel using the worker pool.
 func (p *SharedWorkerPool) ParallelFor(n int, chunkSize int, task func(start, end int)) {
+	p.parallelForInternal(n, chunkSize, task, false)
+}
+
+// ParallelForHighPriority executes a loop in parallel with high priority.
+func (p *SharedWorkerPool) ParallelForHighPriority(n int, chunkSize int, task func(start, end int)) {
+	p.parallelForInternal(n, chunkSize, task, true)
+}
+
+func (p *SharedWorkerPool) parallelForInternal(n int, chunkSize int, task func(start, end int), highPriority bool) {
 	if n <= 0 {
 		return
 	}
@@ -192,7 +250,12 @@ func (p *SharedWorkerPool) ParallelFor(n int, chunkSize int, task func(start, en
 			end = n
 		}
 
-		p.Submit(func() {
+		submitFunc := p.Submit
+		if highPriority {
+			submitFunc = p.SubmitHighPriority
+		}
+
+		submitFunc(func() {
 			defer wg.Done()
 			task(start, end)
 		})

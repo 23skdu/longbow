@@ -147,15 +147,16 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 	// Yes, usually WAL replay feeds into memory and index.
 	// But we must NOT write to WAL again.
 
-	// queue for indexing
+	// queue for indexing with high priority during replay phase to accelerate startup
 	ds.PendingIndexJobs.Add(rec.NumRows())
 	bIdx := len(ds.Records.Read()) - 1
-	s.logger.Debug().Str("dataset", name).Int("batch_idx", bIdx).Msg("Sending indexing job")
+	s.logger.Debug().Str("dataset", name).Int("batch_idx", bIdx).Msg("Sending high-priority indexing job (replay)")
 	s.indexQueue.Send(IndexJob{
-		DatasetName: name,
-		Record:      rec, // Queue takes ownership (Retain?)
-		CreatedAt:   time.Now(),
-		BatchIdx:    bIdx,
+		DatasetName:  name,
+		Record:       rec,
+		CreatedAt:    time.Now(),
+		BatchIdx:     bIdx,
+		HighPriority: true, // Prioritize replay indexing
 	})
 	rec.Retain() // For Queue
 

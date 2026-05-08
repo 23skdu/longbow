@@ -393,7 +393,12 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		h.levelMultiplier = 1.0 / math.Log(float64(h.m.Load()))
 	}
 
-	// Initialize types.GraphData
+	// Initialize types.GraphData with NUMA awareness if configured
+	var numaAlloc *memory.NUMAAllocator
+	if config.NUMANode >= 0 && topo != nil {
+		numaAlloc = memory.NewNUMAAllocator(topo, config.NUMANode)
+	}
+
 	gd := types.NewGraphData(
 		capacity,
 		config.Dims,
@@ -409,7 +414,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		config.TurboQuantEnabled,
 		config.TurboQuantBits,
 		h.name,
-		nil,
+		numaAlloc,
 	)
 	if h.oopqEncoder != nil {
 		switch enc := h.oopqEncoder.(type) {

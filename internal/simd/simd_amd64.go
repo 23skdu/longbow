@@ -106,7 +106,10 @@ func dot768AVX2(a, b []float32) (float32, error) {
 }
 
 func dot1024AVX2(a, b []float32) (float32, error) {
-	return dotAVX2(a, b)
+	if len(a) != 1024 || len(b) != 1024 {
+		return dotAVX2(a, b)
+	}
+	return dot1024AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
 func dot1536AVX2(a, b []float32) (float32, error) {
@@ -114,7 +117,10 @@ func dot1536AVX2(a, b []float32) (float32, error) {
 }
 
 func dot3072AVX2(a, b []float32) (float32, error) {
-	return dotAVX2(a, b)
+	if len(a) != 3072 || len(b) != 3072 {
+		return dotAVX2(a, b)
+	}
+	return dot3072AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
 // L2Squared AVX2 dimension-specialized wrappers (no sqrt)
@@ -208,6 +214,122 @@ func dotAVX2(a, b []float32) (float32, error) {
 	)
 
 	return sum, nil
+}
+
+// AVX512 specialized dot product wrappers
+func dot128AVX512(a, b []float32) (float32, error) {
+	if len(a) != 128 || len(b) != 128 {
+		return dotAVX512(a, b)
+	}
+	return dot128AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func dot384AVX512(a, b []float32) (float32, error) {
+	if len(a) != 384 || len(b) != 384 {
+		return dotAVX512(a, b)
+	}
+	return dot384AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func dot768AVX512(a, b []float32) (float32, error) {
+	if len(a) != 768 || len(b) != 768 {
+		return dotAVX512(a, b)
+	}
+	return dot768AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func dot1024AVX512(a, b []float32) (float32, error) {
+	if len(a) != 1024 || len(b) != 1024 {
+		return dotAVX512(a, b)
+	}
+	return dot1024AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func dot1536AVX512(a, b []float32) (float32, error) {
+	return dotAVX512(a, b)
+}
+
+func dot3072AVX512(a, b []float32) (float32, error) {
+	if len(a) != 3072 || len(b) != 3072 {
+		return dotAVX512(a, b)
+	}
+	return dot3072AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+// AVX512 specialized L2Squared wrappers
+func l2Squared128AVX512(a, b []float32) (float32, error) {
+	if len(a) != 128 || len(b) != 128 {
+		return l2SquaredAVX512(a, b)
+	}
+	return l2Squared128AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func l2Squared384AVX512(a, b []float32) (float32, error) {
+	if len(a) != 384 || len(b) != 384 {
+		return l2SquaredAVX512(a, b)
+	}
+	return l2Squared384AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func l2Squared768AVX512(a, b []float32) (float32, error) {
+	if len(a) != 768 || len(b) != 768 {
+		return l2SquaredAVX512(a, b)
+	}
+	return l2Squared768AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func l2Squared1024AVX512(a, b []float32) (float32, error) {
+	if len(a) != 1024 || len(b) != 1024 {
+		return l2SquaredAVX512(a, b)
+	}
+	return l2Squared1024AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func l2Squared3072AVX512(a, b []float32) (float32, error) {
+	if len(a) != 3072 || len(b) != 3072 {
+		return l2SquaredAVX512(a, b)
+	}
+	return l2Squared3072AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+// AVX512 specialized Euclidean distance wrappers
+func euclidean128AVX512(a, b []float32) (float32, error) {
+	if len(a) != 128 || len(b) != 128 {
+		return euclideanAVX512(a, b)
+	}
+	return euclidean128AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func euclidean384AVX512(a, b []float32) (float32, error) {
+	if len(a) != 384 || len(b) != 384 {
+		return euclideanAVX512(a, b)
+	}
+	return euclidean384AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func euclidean768AVX512(a, b []float32) (float32, error) {
+	if len(a) != 768 || len(b) != 768 {
+		return euclideanAVX512(a, b)
+	}
+	return euclidean768AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func euclidean1024AVX512(a, b []float32) (float32, error) {
+	if len(a) != 1024 || len(b) != 1024 {
+		return euclideanAVX512(a, b)
+	}
+	return euclidean1024AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func euclidean1536AVX512(a, b []float32) (float32, error) {
+	return euclideanAVX512(a, b)
+}
+
+func euclidean3072AVX512(a, b []float32) (float32, error) {
+	if len(a) != 3072 || len(b) != 3072 {
+		return euclideanAVX512(a, b)
+	}
+	return euclidean3072AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
 // AVX2 optimized Batch Euclidean distance

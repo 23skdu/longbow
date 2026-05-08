@@ -125,7 +125,13 @@ if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
     case "$MODE" in
         metal) SERVER_BIN="$REPO_DIR/bin/longbow-metal" ;;
         cuda)  SERVER_BIN="$REPO_DIR/bin/longbow-cuda" ;;
-        *)     SERVER_BIN="$REPO_DIR/bin/longbow-cpu" ;;
+        *)     
+            if [[ -x "$REPO_DIR/bin/longbow-avx2" ]] && [[ "$(uname -m)" == "x86_64" ]]; then
+                SERVER_BIN="$REPO_DIR/bin/longbow-avx2"
+            else
+                SERVER_BIN="$REPO_DIR/bin/longbow-cpu"
+            fi
+            ;;
     esac
     
     if [[ ! -x "$SERVER_BIN" ]]; then
@@ -182,6 +188,9 @@ for count in "${COUNTS[@]}"; do
 
             echo "[$(date +%H:%M:%S)] Running: $dataset (dim=$dim, dtype=$dtype, bits=$tq_bits, count=$count)"
 
+            SEARCH_MODES="dense,hybrid,sparse,filtered,byid,graphrag,geo,temporal,learned_index"
+            WORKERS=4
+
             $BENCH_TOOL \
                 -uri "$URI" \
                 -dataset "$dataset" \
@@ -190,6 +199,8 @@ for count in "${COUNTS[@]}"; do
                 -tq-bits $tq_bits \
                 -scale $count \
                 -queries $QUERIES \
+                -workers $WORKERS \
+                -search-modes "$SEARCH_MODES" \
                 -json "$json_out" \
                 -drop \
                 >> "$LOG_FILE" 2>&1

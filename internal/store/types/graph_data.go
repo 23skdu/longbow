@@ -2375,7 +2375,7 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	
 	var f32Arena, u8Arena, f64Arena, i8Arena, c64Arena, c128Arena, i64Arena, i16Arena, u16Arena, i32Arena, f16Arena, u64Arena, u32Arena *memory.SlabArena
 	if dim > 0 {
-		minSlabSize := 16 * 1024 * 1024 // 16MB minimum for all arenas
+		minSlabSize := 64 * 1024 * 1024 // 64MB minimum for all arenas to reduce GC overhead
 
 		f32SlabSize := ChunkSize*dim*4 + 64
 		if f32SlabSize < minSlabSize { f32SlabSize = minSlabSize }

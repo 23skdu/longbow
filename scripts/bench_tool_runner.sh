@@ -188,7 +188,7 @@ for count in "${COUNTS[@]}"; do
 
             echo "[$(date +%H:%M:%S)] Running: $dataset (dim=$dim, dtype=$dtype, bits=$tq_bits, count=$count)"
 
-            SEARCH_MODES="dense,hybrid,sparse,filtered,byid,graphrag,geo,temporal,learned_index"
+            SEARCH_MODES="all"
             WORKERS=4
 
             $BENCH_TOOL \

@@ -8,6 +8,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	lbmem "github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
@@ -431,8 +432,12 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 						}
 					}
 
-					// Propagate store shutdown context
-					docIDs, addErr = idx.AddBatch(s.ctx, recs, rowIdxs, batchIdxs)
+					// Propagate store shutdown context and priority
+					batchCtx := s.ctx
+					if len(dsGroup) > 0 && dsGroup[0].HighPriority {
+						batchCtx = types.WithHighPriority(batchCtx)
+					}
+					docIDs, addErr = idx.AddBatch(batchCtx, recs, rowIdxs, batchIdxs)
 					if addErr != nil {
 						s.logger.Error().
 							Str("dataset", dsName).

@@ -7,7 +7,21 @@ import (
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/prometheus/client_golang/prometheus"
+	"context"
 )
+
+type priorityKey struct{}
+
+// WithHighPriority returns a context with high priority flag set.
+func WithHighPriority(ctx context.Context) context.Context {
+	return context.WithValue(ctx, priorityKey{}, true)
+}
+
+// IsHighPriority returns true if the context has high priority flag set.
+func IsHighPriority(ctx context.Context) bool {
+	v, ok := ctx.Value(priorityKey{}).(bool)
+	return ok && v
+}
 
 func runtimeNumCPU() int {
 	return 4 // Simple fallback, usually overridden
@@ -15,10 +29,11 @@ func runtimeNumCPU() int {
 
 // IndexJob represents a background task to index an Arrow RecordBatch.
 type IndexJob struct {
-	DatasetName string
-	Record      arrow.RecordBatch
-	BatchIdx    int
-	CreatedAt   time.Time
+	DatasetName  string
+	Record       arrow.RecordBatch
+	BatchIdx     int
+	CreatedAt    time.Time
+	HighPriority bool // If true, job should be prioritized by workers
 }
 
 // RowLocation represents the physical address of a row (Batch + Row offset).

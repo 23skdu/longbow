@@ -72,3 +72,18 @@ This document tracks the remaining tasks for hardening the Longbow storage engin
 - [ ] **NUMA-Aware Memory Affinity**: Optimize memory allocation on multi-socket AMD64 nodes to reduce cross-socket latency during large-scale searches.
 
 *Document updated for v0.2.2-rc1 release preparation.*
+
+## Observations & Performance Recommendations (2026-05-07)
+
+Based on the performance validation matrix for v0.2.1-rc1, the following regressions and stability risks were identified:
+
+1. **WAL Replay Bottleneck**: Background indexing throughput for replayed WAL records is significantly lower than real-time ingestion. 
+   - *Recommendation*: Implement batch-vectorized WAL decoding and increase the `SharedWorkerPool` priority for replay-phase indexing to reduce system startup time.
+2. **Filtering Concurrency Stability**: Observed sporadic panics in `roaring.Bitmap.Contains` during high-concurrency `Search_Filtered` benchmarks.
+   - *Recommendation*: Audit all `filterBitmap` usage for thread-safety. Although workers have independent state, the underlying bitmaps generated from Arrow filters may share memory. Implement a "Copy-on-Write" or "Clone" strategy for shared filter bitmaps in concurrent search paths.
+3. **M3 vs Xeon SIMD Gap**: Local M3 (NEON) consistently underperforms remote Xeon (AVX-512) for float32 dot-product and L2 search by ~30%.
+   - *Recommendation*: Optimize NEON kernels with dual-issue instruction scheduling and investigate `AMX` (Apple Matrix Extension) integration for high-dimensional vector math.
+4. **HNSW Indexing Stalls**: pprof data indicates high contention in `AddConnection` for datasets >100k.
+   - *Recommendation*: Implement the "Lock-Free Entry Point" strategy mentioned in Future Optimization Paths to allow multiple indexing workers to traverse the graph without acquiring global locks.
+5. **Memory Pressure & GC Jitter**: Aggressive GCTuner cycles were observed at 18GB limit.
+   - *Recommendation*: Refine the `SlabArena` to use larger chunks (e.g., 64MB) to reduce the number of individual allocations tracked by the Go runtime, thereby reducing GC overhead.

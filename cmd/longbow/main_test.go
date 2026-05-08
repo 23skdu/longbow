@@ -105,8 +105,8 @@ func startServer(t *testing.T) *serverInstance {
 		"LONGBOW_DATA_PATH="+dataDir,
 		"LONGBOW_MAX_MEMORY=104857600", // 100MB
 	)
-	si.cmd.Stdout = io.Discard
-	si.cmd.Stderr = io.Discard
+	si.cmd.Stdout = os.Stdout
+	si.cmd.Stderr = os.Stderr
 
 	if err := si.cmd.Start(); err != nil {
 		_ = os.RemoveAll(dataDir)

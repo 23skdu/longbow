@@ -459,9 +459,11 @@ func (d *Dataset) GenerateFilterBitset(filters []qry.Filter, filterExpr FilterEx
 	d.filterMu.RLock()
 	if bs, ok := d.filterCache[hash]; ok {
 		d.filterMu.RUnlock()
-		return bs, nil
+		metrics.BitmapCacheHitsTotal.Inc()
+		return bs.Clone(), nil
 	}
 	d.filterMu.RUnlock()
+	metrics.BitmapCacheMissesTotal.Inc()
 
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
@@ -549,7 +551,7 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr Fi
 	d.filterCache[hash] = bitset
 	d.filterMu.Unlock()
 
-	return bitset, nil
+	return bitset.Clone(), nil
 }
 
 // MigrateToShardedIndex migrates the current index to a sharded index.

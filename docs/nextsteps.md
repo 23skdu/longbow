@@ -19,8 +19,9 @@ The following items represent incomplete implementations or stubbed functionalit
   - [x] Disabled keyword-matching fallback in `internal/store/ml_reranker.go` to ensure production model usage.
 
 - [ ] **Security & Bounds Hardening**
-  - [ ] Complete 100% `gosec` audit and remediate all remaining G115 (integer overflow) and G304 (path traversal) findings.
-  - [ ] Implement exhaustive bounds checking for all CGO/assembly boundary crossings in the SIMD engine.
+  - [x] Remediated all G115 (integer overflow) findings in `internal/simd/amx` for Darwin ARM64.
+  - [ ] Complete remaining 100% `gosec` audit for G304 (path traversal) findings.
+  - [x] Implemented explicit bounds checking for CGO/AMX boundary crossings.
   - [ ] *Rationale:* Production release requires guaranteed memory safety, especially at the hardware interface level.
 
 This document tracks the remaining tasks for hardening the Longbow storage engine for production readiness.
@@ -68,9 +69,9 @@ This document tracks the remaining tasks for hardening the Longbow storage engin
 
 ## Future Optimization Paths (v0.2.3+)
 
-- [ ] **HNSW Indexing Parallelism**: Preliminary pprof data indicates a stall in HNSW construction during high-load ingestion. Investigating lock-free entry point selection to further reduce contention.
+- [x] **HNSW Indexing Parallelism**: Implemented sharded locking and lock-free entry point updates to reduce contention during high-load HNSW construction.
 - [ ] **SIMD DotProduct Specialization**: Extend the dimension-specialization pattern to DotProduct kernels for cosine similarity acceleration.
-- [ ] **Quantization-Aware Kernels**: Implement specialized kernels for TurboQuant 2-bit and 4-bit formats to eliminate bit-unpacking overhead in the distance computation hot path.
+- [x] **Quantization-Aware Kernels**: Implemented bit-specialized kernels and trigonometric lookup tables for TurboQuant 2-bit, 4-bit, and 8-bit formats to eliminate bit-unpacking overhead in the distance computation hot path.
 - [ ] **NUMA-Aware Memory Affinity**: Optimize memory allocation on multi-socket AMD64 nodes to reduce cross-socket latency during large-scale searches.
 
 *Document updated for v0.2.2-rc1 release preparation.*
@@ -85,14 +86,14 @@ Based on the performance validation matrix for v0.2.1-rc1, the following regress
    - *Recommendation*: Audit all `filterBitmap` usage for thread-safety. Although workers have independent state, the underlying bitmaps generated from Arrow filters may share memory. Implement a "Copy-on-Write" or "Clone" strategy for shared filter bitmaps in concurrent search paths.
 3. **M3 vs Xeon SIMD Gap**: Local M3 (NEON) consistently underperforms remote Xeon (AVX-512) for float32 dot-product and L2 search by ~30%.
    - *Recommendation*:
-     - **NEON Dual-Issue**: Refactor `dotHighDimNEONKernel` and `l2SquaredNEONKernel` to better utilize the Apple M3's dual-issue pipeline by interleaving 4-8 independent load/compute streams.
-     - **AMX Integration**: Investigate `Accelerate.framework` integration for high-dimensional distance calculations. For >1024 dimensions, AMX (via `vDSP_dotpr` or `BNNS`) may provide a 5-10x throughput boost, potentially closing the gap with AVX-512.
-     - **TurboQuant ARM**: Implement specialized NEON kernels for TurboQuant 2/4/8-bit distance calculations to eliminate bit-shifting overhead.
+      - [x] **NEON Dual-Issue**: Refactored `dotHighDimNEONKernel` and `euclideanHighDimNEONKernel` with 8-way interleaving to utilize the Apple M3's dual-issue pipeline.
+      - [x] **AMX Integration**: Integrated `Accelerate.framework` for high-dimensional distance calculations (>1024 dimensions) on Apple Silicon.
+      - [x] **TurboQuant ARM**: Implemented bit-specialized NEON kernels and lookup tables for TurboQuant 2/4/8-bit distance calculations.
 4. **HNSW Indexing Stalls**: pprof data indicates high contention in `AddConnection` for datasets >100k.
-   - *Recommendation*: Implement the "Lock-Free Entry Point" strategy mentioned in Future Optimization Paths to allow multiple indexing workers to traverse the graph without acquiring global locks.
+   - [x] *Fix*: Implemented sharded locking for HNSW `AddConnection` and `Insert` paths, allowing multiple indexing workers to operate with minimal contention.
 5. **Memory Pressure & GC Jitter**: Aggressive GCTuner cycles were observed at 18GB limit.
-   - *Recommendation*: Refine the `SlabArena` to use larger chunks (e.g., 64MB) to reduce the number of individual allocations tracked by the Go runtime, thereby reducing GC overhead.
+   - [x] *Fix*: Refined `SlabArena` to use 64MB minimum chunks, significantly reducing the number of individual allocations tracked by the Go runtime and lowering GC overhead.
 6. **Temporal Index Initialization (v0.2.2-rc1)**: Identified and resolved a systematic failure in temporal benchmarks due to the `temporalIndex` being nil even when enabled.
-   - *Fix*: Validated that `SetTemporalIndex` is called BEFORE the server starts listening and that environment variables are correctly exported to background processes.
+   - [x] *Fix*: Validated that `SetTemporalIndex` is called BEFORE the server starts listening and that environment variables are correctly exported to background processes.
 7. **TurboQuant Scaling**: Verified that TurboQuant 4-bit ingestion throughput matches target expectations (>1M vec/s), but search latency scales non-linearly at >250k vectors.
-   - *Recommendation*: Implement bit-specialized SIMD kernels for TurboQuant to avoid bit-shifting overhead during distance computation.
+    - [x] *Fix*: Implemented bit-specialized SIMD kernels and lookup tables for TurboQuant to eliminate bit-shifting and trigonometric overhead during distance computation.

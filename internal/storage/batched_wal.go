@@ -345,10 +345,10 @@ func (w *WALBatcher) flush() {
 		}
 
 		// 3. Construct Compressed Block Header
-		lastSeq := batch[len(batch)-1].Seq
+		firstSeq := batch[0].Seq
 
 		var header [32]byte
-		encodeWALEntryHeader(header[:], 0xFFFFFFFF, lastSeq, int64(len(src)), 1, uint64(len(payload)))
+		encodeWALEntryHeader(header[:], 0xFFFFFFFF, firstSeq, int64(len(src)), 1, uint64(len(payload)))
 
 		w.flushBuf.Write(header[:])
 		w.flushBuf.Write([]byte{compType}) // Name (Type)

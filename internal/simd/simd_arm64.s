@@ -84,26 +84,23 @@ TEXT ·euclideanHighDimNEONKernel(SB), NOSPLIT, $0-52
     BLT     hd_tail_loop
 
 hd_loop_16x:
-    // Prefetch PLDL1KEEP, [x0, #128] and [x2, #128]
-    WORD    $0xf8804000
-    WORD    $0xf8804040
-
     VLD1.P  16(R0), [V4.S4]
     VLD1.P  16(R2), [V8.S4]
+    VFSUB_V(8, 4, 12)
+    
     VLD1.P  16(R0), [V5.S4]
     VLD1.P  16(R2), [V9.S4]
+    VFSUB_V(9, 5, 13)
+    VFMLA   V12.S4, V12.S4, V0.S4
+
     VLD1.P  16(R0), [V6.S4]
     VLD1.P  16(R2), [V10.S4]
+    VFSUB_V(10, 6, 14)
+    VFMLA   V13.S4, V13.S4, V1.S4
+
     VLD1.P  16(R0), [V7.S4]
     VLD1.P  16(R2), [V11.S4]
-
-    VFSUB_V(8, 4, 12)
-    VFSUB_V(9, 5, 13)
-    VFSUB_V(10, 6, 14)
     VFSUB_V(11, 7, 15)
-
-    VFMLA   V12.S4, V12.S4, V0.S4
-    VFMLA   V13.S4, V13.S4, V1.S4
     VFMLA   V14.S4, V14.S4, V2.S4
     VFMLA   V15.S4, V15.S4, V3.S4
 
@@ -1505,26 +1502,26 @@ TEXT ·l2Squared128NEONKernel(SB), NOSPLIT, $0-52
 l2sq128_loop:
     VLD1.P  16(R0), [V4.S4]
     VLD1.P  16(R2), [V8.S4]
+    VFSUB_V(8, 4, 12)
+    
     VLD1.P  16(R0), [V5.S4]
     VLD1.P  16(R2), [V9.S4]
+    VFSUB_V(9, 5, 13)
+    VFMLA   V12.S4, V12.S4, V0.S4
+
     VLD1.P  16(R0), [V6.S4]
     VLD1.P  16(R2), [V10.S4]
+    VFSUB_V(10, 6, 14)
+    VFMLA   V13.S4, V13.S4, V1.S4
+
     VLD1.P  16(R0), [V7.S4]
     VLD1.P  16(R2), [V11.S4]
-
-    VFSUB_V(8, 4, 12)
-    VFSUB_V(9, 5, 13)
-    VFSUB_V(10, 6, 14)
     VFSUB_V(11, 7, 15)
-
-    VFMLA   V12.S4, V12.S4, V0.S4
-    VFMLA   V13.S4, V13.S4, V1.S4
     VFMLA   V14.S4, V14.S4, V2.S4
     VFMLA   V15.S4, V15.S4, V3.S4
 
     SUB     $1, R1
-    CMP     $0, R1
-    BGT     l2sq128_loop
+    CBNZ    R1, l2sq128_loop
 
     WORD    $0x4e21d400
     WORD    $0x4e22d400

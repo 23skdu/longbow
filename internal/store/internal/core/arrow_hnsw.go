@@ -103,7 +103,8 @@ type ArrowHNSW struct {
 	commitMu   sync.Mutex
 	commitCond *sync.Cond
 
-	deleted *roaring.Bitmap
+	deleted   *roaring.Bitmap
+	deletedMu sync.RWMutex
 
 	repairAgent *RepairAgent
 
@@ -685,12 +686,19 @@ func (h *ArrowHNSW) SetDimension(dim int) error {
 
 // Delete invokes Delete for a single id.
 func (h *ArrowHNSW) Delete(id uint32) error {
+	h.deletedMu.Lock()
+	defer h.deletedMu.Unlock()
+	if h.deleted == nil {
+		h.deleted = roaring.New()
+	}
 	h.deleted.Add(id)
 	h.locationStore.Delete(types.VectorID(id))
 	return nil
 }
 
 func (h *ArrowHNSW) IsDeleted(id uint32) bool {
+	h.deletedMu.RLock()
+	defer h.deletedMu.RUnlock()
 	if h.deleted == nil {
 		return false
 	}
@@ -1480,7 +1488,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		sort.Slice(res, func(i, j int) bool { return res[i].Dist < res[j].Dist })
 		result := make([]types.SearchResult, 0, k)
 		for _, c := range res {
-			if (h.deleted != nil && h.deleted.Contains(c.ID)) || (filter != nil && !filter.Contains(c.ID)) {
+			if h.IsDeleted(c.ID) || (filter != nil && !filter.Contains(c.ID)) {
 				continue
 			}
 			result = append(result, types.SearchResult{ID: types.VectorID(c.ID), Distance: c.Dist, Score: 1.0 / (1.0 + c.Dist)})
@@ -1910,13 +1918,12 @@ func (h *ArrowHNSW) EnsureChunks(startCID, endCID int, dims int) (*types.GraphDa
 	for i := startCID; i <= endCID; i++ {
 		// Crucial: Pre-ensure chunks for ALL possible HNSW layers to avoid concurrent
 		// slice appends during parallel ingestion.
-		for l := 0; l < types.ArrowMaxLayers; l++ {
-			if err := newData.EnsureChunk(i, l, dims); err != nil {
-				return nil, err
-			}
+		// Optimized: Only call EnsureChunk once per chunk as it already covers all layers.
+		if err := newData.EnsureChunk(i, 0, dims); err != nil {
+			return nil, err
 		}
 	}
-	// h.data.Store(newData) // Removed to avoid publishing half-initialized snapshots
+	h.data.Store(newData)
 	return newData, nil
 }
 
@@ -2058,9 +2065,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		h.growMu.Unlock()
 	}
 
-	// Bulk optimization path - only use for large batches on an established index
-	// to ensure reachability and graph diversity.
-	if n >= 5000 && h.nodeCount.Load() > 0 && !h.IsSharded() {
+	// Bulk optimization path - only use for large batches.
+	// AddBatchBulk handles its own bootstrap sequentially if the index is empty.
+	if n >= 1000 && !h.IsSharded() {
 
 		if vecColIdx != -1 {
 			// Extract all vectors into a typed slice for bulk processing
@@ -2429,17 +2436,17 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		// Insert sequentially to establish graph backbone
 		var newData *types.GraphData
 		newData, err = h.insertInternal(id, vec, -1, false, data)
-		if err == nil {
-			if newData != nil {
-				h.compareAndSwapData(newData.Clone())
-				data = newData
-			}
+		if err == nil && newData != nil {
+			data = newData
 			h.commitID(id) // Make visible immediately for subsequent bootstrap nodes
 			ids[i] = id
-		} else {
+		} else if err != nil {
 			return nil, err
 		}
 	}
+	
+	// Publish the bootstrap backbone
+	h.compareAndSwapData(data.Clone())
 
 	// Phase 2: Sequential Insertion
 	// Now that the graph backbone is established, we can perform insertion for the rest.
@@ -2469,19 +2476,15 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			return nil, fmt.Errorf("vector missing for row %d", rowIdxs[i])
 		}
 
-		data, err := h.insertInternal(id, vec, -1, true, nil)
-		if err == nil && data != nil {
-			h.compareAndSwapData(data.Clone())
-		}
+		data, err = h.insertInternal(id, vec, -1, true, data)
 		if err != nil {
 			return nil, err
 		}
 		h.commitID(id) // Make visible for subsequent nodes in this batch
 		ids[i] = id
-		
-		// Advance visibility periodically or at the end. 
-		// For sequential fallback, we advance at the end of the whole batch.
 	}
+	
+	h.compareAndSwapData(data.Clone())
 	
 	// Commit the entire block at once to avoid worker pool saturation deadlocks.
 	// Ensure we only advance to the final ID for this batch and don't double count.
@@ -2721,7 +2724,7 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 		if c.Dist > threshold {
 			continue
 		}
-		if h.deleted != nil && h.deleted.Contains(c.ID) {
+		if h.IsDeleted(c.ID) {
 			continue
 		}
 		if roaringFilter != nil && !roaringFilter.Contains(c.ID) {
@@ -3350,7 +3353,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 	if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(entryPoint) {
 		passes = false
 	}
-	if passes && h.deleted != nil && h.deleted.Contains(entryPoint) {
+	if passes && h.IsDeleted(entryPoint) {
 		passes = false
 	}
 	if passes && ctx.predicate != nil && !ctx.predicate.IsMatch(entryPoint) {
@@ -3496,7 +3499,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
 						continue
 					}
-					if h.deleted != nil && h.deleted.Contains(n) {
+					if h.IsDeleted(n) {
 						continue
 					}
 

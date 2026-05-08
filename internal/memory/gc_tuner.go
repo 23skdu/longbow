@@ -34,7 +34,7 @@ type GCTuner struct {
 	EnableGPUTuning    bool
 	GPUUtilizationHigh float32 // Threshold for "high" GPU utilization (0-100)
 	GPUUtilizationLow  float32 // Threshold for "low" GPU utilization (0-100)
-	arenas             []*SlabArena
+	arenas             []*ArenaStatsRecord
 	mu                 sync.RWMutex
 
 	reader MemStatsReader
@@ -90,11 +90,24 @@ func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger)
 	return tuner
 }
 
-// RegisterArena adds an arena to be tracked by the tuner.
-func (t *GCTuner) RegisterArena(a *SlabArena) {
+// AddArena registers an arena for tuning
+func (t *GCTuner) AddArena(a *ArenaStatsRecord) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.arenas = append(t.arenas, a)
+}
+
+// RemoveArena unregisters an arena
+func (t *GCTuner) RemoveArena(a *ArenaStatsRecord) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	for i, arena := range t.arenas {
+		if arena == a {
+			t.arenas[i] = t.arenas[len(t.arenas)-1]
+			t.arenas = t.arenas[:len(t.arenas)-1]
+			return
+		}
+	}
 }
 
 // Start runs the tuner loop until context is canceled.
@@ -154,12 +167,13 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 		arenas := t.arenas
 		global := GetGlobalArenas()
 
-		seen := make(map[*SlabArena]bool)
+		seen := make(map[*ArenaStatsRecord]bool)
 		for _, a := range arenas {
 			seen[a] = true
-			stats := a.Stats()
-			totalArenaCapacity += stats.TotalCapacity
-			unused := stats.TotalCapacity - stats.UsedBytes
+			totalCapacity := a.TotalCapacity.Load()
+			usedBytes := a.UsedBytes.Load()
+			totalArenaCapacity += totalCapacity
+			unused := totalCapacity - usedBytes
 			if unused > 0 {
 				unusedArenaMemory += unused
 			}
@@ -168,9 +182,10 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 			if seen[a] {
 				continue
 			}
-			stats := a.Stats()
-			totalArenaCapacity += stats.TotalCapacity
-			unused := stats.TotalCapacity - stats.UsedBytes
+			totalCapacity := a.TotalCapacity.Load()
+			usedBytes := a.UsedBytes.Load()
+			totalArenaCapacity += totalCapacity
+			unused := totalCapacity - usedBytes
 			if unused > 0 {
 				unusedArenaMemory += unused
 			}
@@ -302,4 +317,9 @@ func (t *GCTuner) GetUtilizationRatio() float64 {
 // IsBursting returns true if the tuner has detected a heavy ingestion burst.
 func (t *GCTuner) IsBursting() bool {
 	return t.isBursting.Load()
+}
+
+// IsHighPressure returns true if memory utilization is above 85% of limit.
+func (t *GCTuner) IsHighPressure() bool {
+	return t.GetUtilizationRatio() > 0.85
 }

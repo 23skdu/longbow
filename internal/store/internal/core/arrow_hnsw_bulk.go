@@ -685,8 +685,6 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 	if h.config.SQ8Enabled && h.quantizer != nil && !h.sq8Ready.Load() {
 		if vecsF32, ok := vecs.([][]float32); ok {
-			growMuReleased = true
-			h.growMu.RUnlock()
 			h.ensureTrained(int(startID)+n-1, vecsF32)
 			return nil
 		}

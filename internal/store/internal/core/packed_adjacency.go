@@ -12,6 +12,7 @@ import (
 
 const (
 	AdjacencyChunkSize = 1024
+	AdjacencyLockShards = 1024
 
 	// PackedRef: [48 bits Offset | 16 bits Length]
 	PackedRefLenMask  = 0xFFFF
@@ -38,6 +39,10 @@ type PackedAdjacency struct {
 	// Value = Offset to Page (in pageArena).
 	chunks atomic.Pointer[[]uint64]
 	mu     sync.RWMutex // Protects chunks growth
+	
+	// locks provides sharded synchronization for writers.
+	// Readers remain lock-free.
+	locks [AdjacencyLockShards]sync.Mutex
 }
 
 func NewPackedAdjacency(arena *memory.SlabArena, initialCapacity int) *PackedAdjacency {
@@ -259,22 +264,31 @@ func (pa *PackedAdjacency) Unlock(id uint32) {
 }
 
 func (pa *PackedAdjacency) UpdateNeighbors(id uint32, fn func(old []uint32) []uint32) error {
-	for {
-		packed, _ := pa.getPackedRef(id)
-		off, ln := UnpackRef(packed)
-		oldRef := memory.SliceRef{Offset: off, Len: uint32(ln), Cap: uint32(ln)}
-		old := pa.neighborArena.Get(oldRef)
+	lock := &pa.locks[id%AdjacencyLockShards]
+	lock.Lock()
+	defer lock.Unlock()
 
-		new := fn(old)
-		if new == nil {
-			return nil // No change requested
-		}
+	packed, _ := pa.getPackedRef(id)
+	off, ln := UnpackRef(packed)
+	oldRef := memory.SliceRef{Offset: off, Len: uint32(ln), Cap: uint32(ln)}
+	old := pa.neighborArena.Get(oldRef)
 
-		if pa.CASNeighbors(id, packed, new) {
-			return nil
-		}
-		// Lost race, retry
+	new := fn(old)
+	if new == nil {
+		return nil // No change requested
 	}
+
+	// In-place update with sharded lock ensures no retries needed
+	var newPacked uint64
+	ref, err := pa.neighborArena.AllocSliceAligned(len(new), 64)
+	if err != nil {
+		return err
+	}
+	dest := pa.neighborArena.Get(ref)
+	copy(dest, new)
+	newPacked = PackRef(ref.Offset, uint32(len(new))) // #nosec G115
+
+	return pa.updatePage(id, newPacked)
 }
 
 func (pa *PackedAdjacency) GetNeighborsFromPacked(packed uint64) []uint32 {

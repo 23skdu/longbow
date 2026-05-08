@@ -907,7 +907,7 @@ func ImplementSigmoidAVX2() {
 	RET()
 }
 
-func ImplementSpecializedAVX2(dim int) {
+	func ImplementSpecializedAVX2(dim int) {
 	// L2Squared specialized
 	TEXT(fmt.Sprintf("l2Squared%dAVX2Kernel", dim), NOSPLIT, "func(a, b uintptr) float32")
 	a := Load(Param("a"), GP64())
@@ -963,31 +963,36 @@ func ImplementSpecializedAVX2(dim int) {
 	VZEROUPPER()
 	RET()
 
-    // Euclidean specialized (some code uses this name)
-    if dim == 128 {
-        TEXT("euclidean128AVX2Kernel", NOSPLIT, "func(a, b uintptr) float32")
-        a3 := Load(Param("a"), GP64())
-        b3 := Load(Param("b"), GP64())
-        acc3 := YMM()
-        VXORPS(acc3, acc3, acc3)
-        for i := 0; i < 128; i += 8 {
-            y0 := YMM(); VMOVUPS(Mem{Base: a3, Disp: i * 4}, y0)
-            y1 := YMM(); VMOVUPS(Mem{Base: b3, Disp: i * 4}, y1)
-            VSUBPS(y1, y0, y0)
-            VFMADD231PS(y0, y0, acc3)
-        }
-        xLow3 := XMM(); VEXTRACTF128(Imm(0), acc3, xLow3)
-        xHigh3 := XMM(); VEXTRACTF128(Imm(1), acc3, xHigh3)
-        VADDPS(xLow3, xHigh3, xHigh3)
-        xSum3 := XMM(); VMOVHLPS(xHigh3, xSum3, xSum3)
-        VADDPS(xSum3, xHigh3, xHigh3)
-        xNext3 := XMM(); VMOVSHDUP(xHigh3, xNext3)
-        VADDSS(xNext3, xHigh3, xHigh3)
-        Store(xHigh3, ReturnIndex(0))
-        VZEROUPPER()
-        RET()
-    }
+	// Euclidean specialized
+	TEXT(fmt.Sprintf("euclidean%dAVX2Kernel", dim), NOSPLIT, "func(a, b uintptr) float32")
+	a3 := Load(Param("a"), GP64())
+	b3 := Load(Param("b"), GP64())
+	
+	acc3 := YMM()
+	VXORPS(acc3, acc3, acc3)
+	
+	for i := 0; i < dim; i += 8 {
+		y0 := YMM(); VMOVUPS(Mem{Base: a3, Disp: i * 4}, y0)
+		y1 := YMM(); VMOVUPS(Mem{Base: b3, Disp: i * 4}, y1)
+		VSUBPS(y1, y0, y0)
+		VFMADD231PS(y0, y0, acc3)
+	}
+	
+	// Reduce YMM
+	xLow3 := XMM(); VEXTRACTF128(Imm(0), acc3, xLow3)
+	xHigh3 := XMM(); VEXTRACTF128(Imm(1), acc3, xHigh3)
+	VADDPS(xLow3, xHigh3, xHigh3)
+	xSum3 := XMM(); VMOVHLPS(xHigh3, xSum3, xSum3)
+	VADDPS(xSum3, xHigh3, xHigh3)
+	xNext3 := XMM(); VMOVSHDUP(xHigh3, xNext3)
+	VADDSS(xNext3, xHigh3, xHigh3)
+	
+	VSQRTSS(xHigh3, xHigh3, xHigh3)
+	Store(xHigh3, ReturnIndex(0))
+	VZEROUPPER()
+	RET()
 }
+
 
 func ImplementSpecializedAVX512(dim int) {
 	// L2Squared specialized

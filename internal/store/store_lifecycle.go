@@ -427,6 +427,18 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 						adaptive.SetEfConstruction(targetEf)
 					}
 
+					// Granular Backpressure: if memory pressure is extreme, throttle indexing
+					tuner := s.tuner.Load()
+					if tuner != nil && tuner.IsHighPressure() {
+						s.logger.Warn().Str("dataset", dsName).Msg("High memory pressure detected, throttling indexing worker")
+						select {
+						case <-s.ctx.Done():
+							return
+						case <-time.After(100 * time.Millisecond):
+							// Wait and continue
+						}
+					}
+
 					// Propagate store shutdown context
 					docIDs, addErr = idx.AddBatch(s.ctx, recs, rowIdxs, batchIdxs)
 					if addErr != nil {

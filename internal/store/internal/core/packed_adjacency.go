@@ -7,7 +7,6 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
-	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -38,7 +37,6 @@ type PackedAdjacency struct {
 	// Index = NodeID / types.ChunkSize.
 	// Value = Offset to Page (in pageArena).
 	chunks atomic.Pointer[[]uint64]
-	shardedMus [1024]types.PaddedMutex
 	mu     sync.RWMutex // Protects chunks growth
 }
 
@@ -113,9 +111,6 @@ func (pa *PackedAdjacency) EnsureCapacity(nodeID uint32) {
 }
 
 func (pa *PackedAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
-	mu := &pa.shardedMus[id%1024]
-	mu.Lock()
-	defer mu.Unlock()
 
 	if len(neighbors) == 0 {
 		// Store empty reference (offset 0, length 0)
@@ -140,9 +135,6 @@ func (pa *PackedAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
 }
 
 func (pa *PackedAdjacency) SetNeighborsF16(id uint32, neighbors []uint32, distances []float16.Num) error {
-	mu := &pa.shardedMus[id%1024]
-	mu.Lock()
-	defer mu.Unlock()
 
 	if len(neighbors) != len(distances) {
 		return errors.New("packed adjacency: neighbors and distances length mismatch")
@@ -226,19 +218,6 @@ func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
 }
 
 func (pa *PackedAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint32) bool {
-	mu := &pa.shardedMus[id%1024]
-	mu.Lock()
-	defer mu.Unlock()
-
-	packed, ok := pa.getPackedRef(id)
-	if !ok {
-		if oldPacked != 0 {
-			return false
-		}
-	} else if packed != oldPacked {
-		return false
-	}
-
 	var newPacked uint64
 	if len(new) > 0 {
 		ref, err := pa.neighborArena.AllocSliceAligned(len(new), 64)
@@ -272,41 +251,30 @@ func (pa *PackedAdjacency) GetPackedNeighbors(id uint32) (uint64, bool) {
 }
 
 func (pa *PackedAdjacency) Lock(id uint32) {
-	pa.shardedMus[id%1024].Lock()
+	// No-op in lock-free version
 }
 
 func (pa *PackedAdjacency) Unlock(id uint32) {
-	pa.shardedMus[id%1024].Unlock()
+	// No-op in lock-free version
 }
 
 func (pa *PackedAdjacency) UpdateNeighbors(id uint32, fn func(old []uint32) []uint32) error {
-	mu := &pa.shardedMus[id%1024]
-	mu.Lock()
-	defer mu.Unlock()
+	for {
+		packed, _ := pa.getPackedRef(id)
+		off, ln := UnpackRef(packed)
+		oldRef := memory.SliceRef{Offset: off, Len: uint32(ln), Cap: uint32(ln)}
+		old := pa.neighborArena.Get(oldRef)
 
-	packed, _ := pa.getPackedRef(id)
-	off, ln := UnpackRef(packed)
-	oldRef := memory.SliceRef{Offset: off, Len: uint32(ln), Cap: uint32(ln)}
-	old := pa.neighborArena.Get(oldRef)
+		new := fn(old)
+		if new == nil {
+			return nil // No change requested
+		}
 
-	new := fn(old)
-	if new == nil {
-		return nil // No change requested
+		if pa.CASNeighbors(id, packed, new) {
+			return nil
+		}
+		// Lost race, retry
 	}
-
-	// Logic from SetNeighbors (but without lock)
-	if len(new) == 0 {
-		return pa.updatePage(id, PackRef(0, 0))
-	}
-
-	ref, err := pa.neighborArena.AllocSliceAligned(len(new), 64)
-	if err != nil {
-		return err
-	}
-	dest := pa.neighborArena.Get(ref)
-	copy(dest, new)
-
-	return pa.updatePage(id, PackRef(ref.Offset, uint32(len(new)))) // #nosec G115
 }
 
 func (pa *PackedAdjacency) GetNeighborsFromPacked(packed uint64) []uint32 {

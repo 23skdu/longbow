@@ -182,6 +182,14 @@ var (
 		},
 	)
 
+	HnswLockWaitDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_lock_wait_duration_seconds",
+			Help:    "Time spent waiting for HNSW node locks",
+			Buckets: []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01},
+		},
+	)
+
 	HnswSearchEarlyExitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_search_early_exits_total",
@@ -429,6 +437,20 @@ var (
 		},
 		[]string{"dataset"},
 	)
+
+	BitmapCacheHitsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bitmap_cache_hits_total",
+			Help: "Total number of filter bitset cache hits",
+		},
+	)
+
+	BitmapCacheMissesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bitmap_cache_misses_total",
+			Help: "Total number of filter bitset cache misses",
+		},
+	)
 )
 
 // =============================================================================
@@ -515,6 +537,13 @@ var (
 			Name:    "longbow_wal_write_duration_seconds",
 			Help:    "Duration of WAL writes",
 			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05},
+		},
+	)
+
+	WalReplayParallelism = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_wal_replay_parallelism_total",
+			Help: "Current number of parallel WAL replay applier workers",
 		},
 	)
 

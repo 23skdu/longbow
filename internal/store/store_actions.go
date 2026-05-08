@@ -1175,11 +1175,14 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 	schema := batches[0].Schema()
 	numCols := int(schema.NumFields())
 	columns := make([]arrow.Array, numCols)
+	success := false
 	defer func() {
-		// Clean up if we fail mid-way
-		for _, col := range columns {
-			if col != nil {
-				col.Release()
+		if !success {
+			// Clean up if we fail mid-way
+			for _, col := range columns {
+				if col != nil {
+					col.Release()
+				}
 			}
 		}
 	}()
@@ -1205,7 +1208,12 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 		totalRows += b.NumRows()
 	}
 
-	return array.NewRecordBatch(schema, columns, totalRows), nil
+	success = true
+	batch := array.NewRecordBatch(schema, columns, totalRows)
+	for _, col := range columns {
+		col.Release()
+	}
+	return batch, nil
 }
 
 // applyBatchToMemory applies a batch to the in-memory dataset and dispatches indexing
@@ -1422,19 +1430,24 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			timestamps := make([]int64, numRows)
 			
 			idArr := rec.Column(idColIdx).(*array.String)
-			vecArr := rec.Column(vecColIdx).(*array.FixedSizeList)
+			vecCol := rec.Column(vecColIdx)
+			
 			var tsArr arrow.Array
 			if tsColIdx != -1 {
 				tsArr = rec.Column(tsColIdx)
 			}
 
-			listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
+			// Handle both FixedSizeList and variable-length List
+			var listLen int
+			if fs, ok := vecCol.DataType().(*arrow.FixedSizeListType); ok {
+				listLen = int(fs.Len())
+			}
 			
 			// Parallel Extraction
 			pool := internalcore.GetSharedPool()
 			pool.ParallelFor(numRows, 1024, func(start, end int) {
 				for i := start; i < end; i++ {
-					if idArr.IsValid(i) && vecArr.IsValid(i) {
+					if idArr.IsValid(i) && vecCol.IsValid(i) {
 						idStr := idArr.Value(i)
 						id, _ := strconv.ParseUint(idStr, 10, 64)
 						ids[i] = id
@@ -1452,21 +1465,38 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 							timestamps[i] = ts
 						}
 
-						vStart := i * listLen
-						vEnd := (i + 1) * listLen
-						switch values := vecArr.ListValues().(type) {
-						case *array.Float32:
-							src := values.Float32Values()[vStart:vEnd]
-							sub := make([]float32, len(src))
-							copy(sub, src)
-							vectors[i] = sub
-						case *array.Float64:
-							f64Values := values.Float64Values()[vStart:vEnd]
-							sub := make([]float32, len(f64Values))
-							for j, v := range f64Values {
-								sub[j] = float32(v)
+						var vStart, vEnd int
+						var values arrow.Array
+						if fs, ok := vecCol.(*array.FixedSizeList); ok {
+							vStart = i * listLen
+							vEnd = (i + 1) * listLen
+							values = fs.ListValues()
+						} else if l, ok := vecCol.(*array.List); ok {
+							offsets := l.Offsets()
+							vStart = int(offsets[i])
+							vEnd = int(offsets[i+1])
+							values = l.ListValues()
+						}
+
+						if values != nil {
+							switch valArr := values.(type) {
+							case *array.Float32:
+								if vStart < valArr.Len() && vEnd <= valArr.Len() {
+									src := valArr.Float32Values()[vStart:vEnd]
+									sub := make([]float32, len(src))
+									copy(sub, src)
+									vectors[i] = sub
+								}
+							case *array.Float64:
+								if vStart < valArr.Len() && vEnd <= valArr.Len() {
+									f64Values := valArr.Float64Values()[vStart:vEnd]
+									sub := make([]float32, len(f64Values))
+									for j, v := range f64Values {
+										sub[j] = float32(v)
+									}
+									vectors[i] = sub
+								}
 							}
-							vectors[i] = sub
 						}
 					}
 				}

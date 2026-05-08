@@ -64,6 +64,7 @@ func (m *HBMManager) Allocate(size int64) (uintptr, error) {
 	
 	// In a real TPU implementation, this would call tpu_malloc or similar.
 	// We simulate this by returning a pseudo-pointer based on current usage.
+	// #nosec G115 - Simulated HBM pointer conversion is safe on 64-bit systems
 	ptr := uintptr(0x700000000000 + m.used)
 	m.allocations[ptr] = size
 	m.used += size

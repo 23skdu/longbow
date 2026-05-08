@@ -141,7 +141,7 @@ if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
     
     # Set environment variables for server
     export LONGBOW_DATA_PATH="$OUTPUT_DIR/data"
-    export LONGBOW_MAX_MEMORY="18GB"
+    export LONGBOW_MAX_MEMORY="19327352832" # 18GB
     
     mkdir -p "$LONGBOW_DATA_PATH"
     

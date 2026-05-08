@@ -139,6 +139,12 @@ if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
         exit 1
     fi
     
+    # Set environment variables for server
+    export LONGBOW_DATA_PATH="$OUTPUT_DIR/data"
+    export LONGBOW_MAX_MEMORY="18GB"
+    
+    mkdir -p "$LONGBOW_DATA_PATH"
+    
     nohup "$SERVER_BIN" > "$OUTPUT_DIR/logs/server.log" 2>&1 &
     SERVER_PID=$!
     echo "Server PID: $SERVER_PID"

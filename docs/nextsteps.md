@@ -70,9 +70,9 @@ This document tracks the remaining tasks for hardening the Longbow storage engin
 ## Future Optimization Paths (v0.2.3+)
 
 - [x] **HNSW Indexing Parallelism**: Implemented sharded locking and lock-free entry point updates to reduce contention during high-load HNSW construction.
-- [ ] **SIMD DotProduct Specialization**: Extend the dimension-specialization pattern to DotProduct kernels for cosine similarity acceleration.
+- [x] **SIMD DotProduct Specialization**: Extended the dimension-specialization pattern to DotProduct kernels for cosine similarity acceleration.
 - [x] **Quantization-Aware Kernels**: Implemented bit-specialized kernels and trigonometric lookup tables for TurboQuant 2-bit, 4-bit, and 8-bit formats to eliminate bit-unpacking overhead in the distance computation hot path.
-- [ ] **NUMA-Aware Memory Affinity**: Optimize memory allocation on multi-socket AMD64 nodes to reduce cross-socket latency during large-scale searches.
+- [x] **NUMA-Aware Memory Affinity**: Optimized memory allocation on multi-socket AMD64 nodes to reduce cross-socket latency during large-scale searches.
 
 *Document updated for v0.2.2-rc1 release preparation.*
 
@@ -80,8 +80,7 @@ This document tracks the remaining tasks for hardening the Longbow storage engin
 
 Based on the performance validation matrix for v0.2.1-rc1, the following regressions and stability risks were identified:
 
-1. **WAL Replay Bottleneck**: Background indexing throughput for replayed WAL records is significantly lower than real-time ingestion.
-   - *Recommendation*: Implement batch-vectorized WAL decoding and increase the `SharedWorkerPool` priority for replay-phase indexing to reduce system startup time.
+1. **WAL Replay Bottleneck**: [x] Fixed: Implemented batch-vectorized WAL decoding and increased the `SharedWorkerPool` priority for replay-phase indexing to reduce system startup time.
 2. **Filtering Concurrency Stability**: Observed sporadic panics in `roaring.Bitmap.Contains` during high-concurrency `Search_Filtered` benchmarks.
    - *Recommendation*: Audit all `filterBitmap` usage for thread-safety. Although workers have independent state, the underlying bitmaps generated from Arrow filters may share memory. Implement a "Copy-on-Write" or "Clone" strategy for shared filter bitmaps in concurrent search paths.
 3. **M3 vs Xeon SIMD Gap**: Local M3 (NEON) consistently underperforms remote Xeon (AVX-512) for float32 dot-product and L2 search by ~30%.

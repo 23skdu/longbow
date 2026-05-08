@@ -199,7 +199,13 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		chunkSize = 64 // Minimum chunk size to justify overhead
 	}
 
-	pool.ParallelFor(n, chunkSize, func(start, end int) {
+	highPriority := types.IsHighPriority(ctx)
+	parallelFor := pool.ParallelFor
+	if highPriority {
+		parallelFor = pool.ParallelForHighPriority
+	}
+
+	parallelFor(n, chunkSize, func(start, end int) {
 		errMu.Lock()
 		if errPrep != nil || ctx.Err() != nil {
 			if errPrep == nil { errPrep = ctx.Err() }

@@ -216,121 +216,6 @@ func dotAVX2(a, b []float32) (float32, error) {
 	return sum, nil
 }
 
-// AVX512 specialized dot product wrappers
-func dot128AVX512(a, b []float32) (float32, error) {
-	if len(a) != 128 || len(b) != 128 {
-		return dotAVX512(a, b)
-	}
-	return dot128AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-func dot384AVX512(a, b []float32) (float32, error) {
-	if len(a) != 384 || len(b) != 384 {
-		return dotAVX512(a, b)
-	}
-	return dot384AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-func dot768AVX512(a, b []float32) (float32, error) {
-	if len(a) != 768 || len(b) != 768 {
-		return dotAVX512(a, b)
-	}
-	return dot768AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-func dot1024AVX512(a, b []float32) (float32, error) {
-	if len(a) != 1024 || len(b) != 1024 {
-		return dotAVX512(a, b)
-	}
-	return dot1024AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-func dot1536AVX512(a, b []float32) (float32, error) {
-	return dotAVX512(a, b)
-}
-
-func dot3072AVX512(a, b []float32) (float32, error) {
-	if len(a) != 3072 || len(b) != 3072 {
-		return dotAVX512(a, b)
-	}
-	return dot3072AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-// AVX512 specialized L2Squared wrappers
-func l2Squared128AVX512(a, b []float32) (float32, error) {
-	if len(a) != 128 || len(b) != 128 {
-		return l2SquaredAVX512(a, b)
-	}
-	return l2Squared128AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-func l2Squared384AVX512(a, b []float32) (float32, error) {
-	if len(a) != 384 || len(b) != 384 {
-		return l2SquaredAVX512(a, b)
-	}
-	return l2Squared384AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-func l2Squared768AVX512(a, b []float32) (float32, error) {
-	if len(a) != 768 || len(b) != 768 {
-		return l2SquaredAVX512(a, b)
-	}
-	return l2Squared768AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-func l2Squared1024AVX512(a, b []float32) (float32, error) {
-	if len(a) != 1024 || len(b) != 1024 {
-		return l2SquaredAVX512(a, b)
-	}
-	return l2Squared1024AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-func l2Squared3072AVX512(a, b []float32) (float32, error) {
-	if len(a) != 3072 || len(b) != 3072 {
-		return l2SquaredAVX512(a, b)
-	}
-	return l2Squared3072AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-// AVX512 specialized Euclidean distance wrappers
-func euclidean128AVX512(a, b []float32) (float32, error) {
-	if len(a) != 128 || len(b) != 128 {
-		return euclideanAVX512(a, b)
-	}
-	return euclidean128AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-func euclidean384AVX512(a, b []float32) (float32, error) {
-	if len(a) != 384 || len(b) != 384 {
-		return euclideanAVX512(a, b)
-	}
-	return euclidean384AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-func euclidean768AVX512(a, b []float32) (float32, error) {
-	if len(a) != 768 || len(b) != 768 {
-		return euclideanAVX512(a, b)
-	}
-	return euclidean768AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-func euclidean1024AVX512(a, b []float32) (float32, error) {
-	if len(a) != 1024 || len(b) != 1024 {
-		return euclideanAVX512(a, b)
-	}
-	return euclidean1024AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
-
-func euclidean1536AVX512(a, b []float32) (float32, error) {
-	return euclideanAVX512(a, b)
-}
-
-func euclidean3072AVX512(a, b []float32) (float32, error) {
-	if len(a) != 3072 || len(b) != 3072 {
-		return euclideanAVX512(a, b)
-	}
-	return euclidean3072AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
-}
 
 // AVX2 optimized Batch Euclidean distance
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
@@ -724,16 +609,7 @@ func euclideanFloat64AVX2(a, b []float64) (float32, error) {
 }
 
 func dotFloat64AVX2(a, b []float64) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if !features.HasAVX2 {
-		return dotFloat64Unrolled4x(a, b)
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return dotFloat64AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), len(a)), nil
+	return dotFloat64Unrolled4x(a, b)
 }
 
 // =============================================================================
@@ -747,16 +623,7 @@ func dotFloat64AVX2(a, b []float64) (float32, error) {
 // =============================================================================
 
 func euclideanInt8AVX2(a, b []int8) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	if !features.HasAVX2 {
-		return euclideanInt8Unrolled4x(a, b)
-	}
-	return euclideanInt8AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), len(a)), nil
+	return euclideanInt8Unrolled4x(a, b)
 }
 
 // =============================================================================
@@ -764,43 +631,19 @@ func euclideanInt8AVX2(a, b []int8) (float32, error) {
 // =============================================================================
 
 func euclideanInt16AVX2(a, b []int16) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanInt16AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), len(a)), nil
+	return euclideanInt16Unrolled4x(a, b)
 }
 
 func euclideanUint16AVX2(a, b []uint16) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanUint16AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), len(a)), nil
+	return euclideanUint16Unrolled4x(a, b)
 }
 
 func dotInt16AVX2(a, b []int16) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return dotInt16AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), len(a)), nil
+	return dotInt16Unrolled4x(a, b)
 }
 
 func dotUint16AVX2(a, b []uint16) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return dotUint16AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), len(a)), nil
+	return dotUint16Unrolled4x(a, b)
 }
 
 func dotInt4AVX512(a, b []byte) (float32, error) {

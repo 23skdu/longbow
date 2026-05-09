@@ -307,7 +307,7 @@ func initDispatchTable() {
 			ChebyshevDistance: chebyshevNEON,
 			BrayCurtisDistance: brayCurtisNEON,
 			AccumulateWeightedScatter: accumulateWeightedScatterNEON,
-			BM25ScoreBatch: bm25ScoreBatchArch,
+			BM25ScoreBatch: bm25ScoreBatchGeneric,
 			HaversineBatch: haversineBatchGeneric,
 			UnpackTQ2:      UnpackTQ2Generic,
 			UnpackTQ4:      UnpackTQ4Generic,

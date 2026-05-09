@@ -2487,88 +2487,191 @@ t_lef64: FCMPD F1, F0; CSET GE, R6; B t_storef64
 t_storef64: MOVB R6, (R3); ADD $1, R3; SUB $1, R4; B tailf64
 matchf64_done: RET
 
-// func dotInt4NeonKernel(a, b unsafe.Pointer, n int) float32
-TEXT ·dotInt4NeonKernel(SB), NOSPLIT, $0-28
+// func dotInt4NeonKernel(a, b unsafe.Pointer, n int) int32
+TEXT ·dotInt4NeonKernel(SB), NOSPLIT, $0-32
     MOVD    a+0(FP), R0
     MOVD    b+8(FP), R1
     MOVD    n+16(FP), R2
-    MOVD    $0, R3
-loop_int4:
-    CMP     $4, R2
-    BLT     tail_int4
     
-    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
-    AND $0x0F, R4, R6; AND $0x0F, R5, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $4, R4, R6; LSR $4, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    MOVD    $0, R3                 // Total accumulator
+    MOVD    $0x0F0F0F0F0F0F0F0F, R4 // Low nibble mask
+    
+    VEOR    V0.B16, V0.B16, V0.B16 // Clear vector accumulator (16-bit lanes)
 
-    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
-    AND $0x0F, R4, R6; AND $0x0F, R5, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $4, R4, R6; LSR $4, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    CMP     $16, R2
+    BLT     dot4_tail
 
-    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
-    AND $0x0F, R4, R6; AND $0x0F, R5, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $4, R4, R6; LSR $4, R5, R7; MUL R6, R7, R6; ADD R6, R3
+dot4_loop_16x:
+    VLD1.P  16(R0), [V1.B16]       // Load 16 bytes (32x 4-bit)
+    VLD1.P  16(R1), [V2.B16]
+    
+    VMOV    R4, V10.D[0]
+    VMOV    R4, V10.D[1]
+    
+    // Extract low 4 bits (low nibble)
+    VAND    V1.B16, V10.B16, V3.B16 
+    VAND    V2.B16, V10.B16, V4.B16 
+    
+    // Extract high 4 bits (high nibble)
+    VUSHR   $4, V1.B16, V5.B16      
+    VUSHR   $4, V2.B16, V6.B16      
+    
+    // Multiply and accumulate: (a_low * b_low) + (a_high * b_high)
+    // VMLAL V3.8B, V4.8B, V0.8H
+    WORD    $0x2e248060
+    // VMLAL2 V3.16B, V4.16B, V0.8H
+    WORD    $0x6e248060
+    // VMLAL V5.8B, V6.8B, V0.8H
+    WORD    $0x2e2680a0
+    // VMLAL2 V5.16B, V6.16B, V0.8H
+    WORD    $0x6e2680a0
 
-    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
-    AND $0x0F, R4, R6; AND $0x0F, R5, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $4, R4, R6; LSR $4, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    SUB     $16, R2
+    CMP     $16, R2
+    BGE     dot4_loop_16x
 
-    SUB     $4, R2
-    B       loop_int4
-tail_int4:
-    CBZ     R2, done_int4
-    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
-    AND $0x0F, R4, R6; AND $0x0F, R5, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $4, R4, R6; LSR $4, R5, R7; MUL R6, R7, R6; ADD R6, R3
-    SUB     $1, R2; B tail_int4
-done_int4:
+    // Manual reduction of V0.8H into R3
+    VMOV    V0.H[0], R3
+    VMOV    V0.H[1], R10
+    ADD     R10, R3
+    VMOV    V0.H[2], R10
+    ADD     R10, R3
+    VMOV    V0.H[3], R10
+    ADD     R10, R3
+    VMOV    V0.H[4], R10
+    ADD     R10, R3
+    VMOV    V0.H[5], R10
+    ADD     R10, R3
+    VMOV    V0.H[6], R10
+    ADD     R10, R3
+    VMOV    V0.H[7], R10
+    ADD     R10, R3
+
+dot4_tail:
+    CBZ     R2, dot4_done
+    MOVBU.P 1(R0), R10
+    MOVBU.P 1(R1), R11
+    
+    // Low nibble
+    AND     $0x0F, R10, R12
+    AND     $0x0F, R11, R13
+    MUL     R12, R13, R12
+    ADD     R12, R3
+    
+    // High nibble
+    LSR     $4, R10, R10
+    LSR     $4, R11, R11
+    MUL     R10, R11, R10
+    ADD     R10, R3
+    
+    SUB     $1, R2
+    B       dot4_tail
+
+dot4_done:
     MOVW    R3, ret+24(FP)
     RET
 
-// func dotInt2NeonKernel(a, b unsafe.Pointer, n int) float32
-TEXT ·dotInt2NeonKernel(SB), NOSPLIT, $0-28
+// func dotInt2NeonKernel(a, b unsafe.Pointer, n int) int32
+TEXT ·dotInt2NeonKernel(SB), NOSPLIT, $0-32
     MOVD    a+0(FP), R0
     MOVD    b+8(FP), R1
     MOVD    n+16(FP), R2
-    MOVD    $0, R3
-loop_int2:
-    CMP     $4, R2
-    BLT     tail_int2
     
-    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
-    AND $0x03, R4, R6; AND $0x03, R5, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $2, R4, R6; LSR $2, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $4, R4, R6; LSR $4, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $6, R4, R6; LSR $6, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    MOVD    $0, R3                 // Total accumulator
+    MOVD    $0x0303030303030303, R4 // 2-bit mask
+    
+    VEOR    V0.B16, V0.B16, V0.B16 // Accumulator
 
-    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
-    AND $0x03, R4, R6; AND $0x03, R5, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $2, R4, R6; LSR $2, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $4, R4, R6; LSR $4, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $6, R4, R6; LSR $6, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    CMP     $16, R2
+    BLT     dot2_tail
 
-    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
-    AND $0x03, R4, R6; AND $0x03, R5, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $2, R4, R6; LSR $2, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $4, R4, R6; LSR $4, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $6, R4, R6; LSR $6, R5, R7; MUL R6, R7, R6; ADD R6, R3
+dot2_loop_16x:
+    VLD1.P  16(R0), [V1.B16]
+    VLD1.P  16(R1), [V2.B16]
+    
+    VMOV    R4, V10.D[0]
+    VMOV    R4, V10.D[1]
+    
+    // 2-bit extraction (4 elements per byte)
+    // Element 0: bits 0-1
+    VAND    V1.B16, V10.B16, V3.B16
+    VAND    V2.B16, V10.B16, V4.B16
+    // VMLAL V3.8B, V4.8B, V0.8H
+    WORD    $0x2e248060
+    // VMLAL2 V3.16B, V4.16B, V0.8H
+    WORD    $0x6e248060
+    
+    // Element 1: bits 2-3
+    VUSHR   $2, V1.B16, V1.B16
+    VUSHR   $2, V2.B16, V2.B16
+    VAND    V1.B16, V10.B16, V3.B16
+    VAND    V2.B16, V10.B16, V4.B16
+    // VMLAL V3.8B, V4.8B, V0.8H
+    WORD    $0x2e248060
+    // VMLAL2 V3.16B, V4.16B, V0.8H
+    WORD    $0x6e248060
+    
+    // Element 2: bits 4-5
+    VUSHR   $2, V1.B16, V1.B16
+    VUSHR   $2, V2.B16, V2.B16
+    VAND    V1.B16, V10.B16, V3.B16
+    VAND    V2.B16, V10.B16, V4.B16
+    // VMLAL V3.8B, V4.8B, V0.8H
+    WORD    $0x2e248060
+    // VMLAL2 V3.16B, V4.16B, V0.8H
+    WORD    $0x6e248060
+    
+    // Element 3: bits 6-7
+    VUSHR   $2, V1.B16, V1.B16
+    VUSHR   $2, V2.B16, V2.B16
+    VAND    V1.B16, V10.B16, V3.B16
+    VAND    V2.B16, V10.B16, V4.B16
+    // VMLAL V3.8B, V4.8B, V0.8H
+    WORD    $0x2e248060
+    // VMLAL2 V3.16B, V4.16B, V0.8H
+    WORD    $0x6e248060
 
-    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
-    AND $0x03, R4, R6; AND $0x03, R5, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $2, R4, R6; LSR $2, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $4, R4, R6; LSR $4, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $6, R4, R6; LSR $6, R5, R7; MUL R6, R7, R6; ADD R6, R3
+    SUB     $16, R2
+    CMP     $16, R2
+    BGE     dot2_loop_16x
 
-    SUB     $4, R2
-    B       loop_int2
-tail_int2:
-    CBZ     R2, done_int2
-    MOVBU.P 1(R0), R4; MOVBU.P 1(R1), R5
-    AND $0x03, R4, R6; AND $0x03, R5, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $2, R4, R6; LSR $2, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $4, R4, R6; LSR $4, R5, R7; AND $0x03, R6, R6; AND $0x03, R7, R7; MUL R6, R7, R6; ADD R6, R3
-    LSR $6, R4, R6; LSR $6, R5, R7; MUL R6, R7, R6; ADD R6, R3
-    SUB     $1, R2; B tail_int2
-done_int2:
+    // Manual reduction of V0.8H into R3
+    VMOV    V0.H[0], R3
+    VMOV    V0.H[1], R10
+    ADD     R10, R3
+    VMOV    V0.H[2], R10
+    ADD     R10, R3
+    VMOV    V0.H[3], R10
+    ADD     R10, R3
+    VMOV    V0.H[4], R10
+    ADD     R10, R3
+    VMOV    V0.H[5], R10
+    ADD     R10, R3
+    VMOV    V0.H[6], R10
+    ADD     R10, R3
+    VMOV    V0.H[7], R10
+    ADD     R10, R3
+
+dot2_tail:
+    CBZ     R2, dot2_done
+    MOVBU.P 1(R0), R10
+    MOVBU.P 1(R1), R11
+    
+    // 4 elements per byte
+    MOVD    $4, R14
+dot2_scalar_inner:
+    AND     $0x03, R10, R12
+    AND     $0x03, R11, R13
+    MUL     R12, R13, R12
+    ADD     R12, R3
+    LSR     $2, R10, R10
+    LSR     $2, R11, R11
+    SUB     $1, R14
+    CBNZ    R14, dot2_scalar_inner
+    
+    SUB     $1, R2
+    B       dot2_tail
+
+dot2_done:
     MOVW    R3, ret+24(FP)
     RET

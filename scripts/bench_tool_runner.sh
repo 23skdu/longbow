@@ -14,8 +14,8 @@ DTYPES=("float32" "float64" "float16" "int8" "int16" "int32" "int64" "uint8" "ui
 DIMS=(128 384 768 1024 3072)
 COUNTS=(1000 5000 10000 50000 100000)
 QUERIES=1000
-URI="${URI:-127.0.0.1:3000}"
-METRICS_URI="${METRICS_URI:-127.0.0.1:9090}"
+URI="${URI:-127.0.0.1:4000}"
+METRICS_URI="${METRICS_URI:-127.0.0.1:9095}"
 HOST=$(hostname)
 MODE="${MODE:-cpu}"
 
@@ -117,6 +117,11 @@ if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
     
     export LONGBOW_MAX_MEMORY=19327352832
     export LONGBOW_AUTOSCALE_ENABLED=false
+    export LONGBOW_TEMPORAL_ENABLED=true
+    export LONGBOW_SPARSE_ENABLED=true
+    export LONGBOW_GEOSPATIAL_ENABLED=true
+    export LONGBOW_GRAPHRAG_ENABLED=true
+    export LONGBOW_LEARNED_INDEX_ENABLED=true
     export LONGBOW_LISTEN_ADDR="0.0.0.0:$PORT"
     export LONGBOW_METRICS_ADDR="0.0.0.0:$METRICS_PORT"
     export LONGBOW_META_ADDR="0.0.0.0:$META_PORT"
@@ -145,6 +150,7 @@ if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
     
     mkdir -p "$LONGBOW_DATA_PATH"
     
+    export GOTRACEBACK=all
     nohup "$SERVER_BIN" > "$OUTPUT_DIR/logs/server.log" 2>&1 &
     SERVER_PID=$!
     echo "Server PID: $SERVER_PID"
@@ -223,5 +229,10 @@ done
 echo "Benchmark run completed at $(date)"
 echo "Results saved to: $OUTPUT_DIR"
 
-# Stop pprof
+# Stop pprof and server
 kill $PPROF_PID 2>/dev/null || true
+if [[ -n "$SERVER_PID" ]]; then
+    kill $SERVER_PID 2>/dev/null || true
+    # Wait for it to actually stop
+    wait $SERVER_PID 2>/dev/null || true
+fi

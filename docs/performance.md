@@ -2,22 +2,25 @@
 
 Generated on: 2026-05-08
 
-## v0.2.2-rc1 Validation - Cross-Platform GPU & Temporal Stability (2026-05-08)
+## v0.2.2-rc2 Validation - ARM64 Sparse Search (2026-05-08)
 
 > [!IMPORTANT]
-> **Release Candidate v0.2.2-rc1**: This matrix validates the storage engine across 16 data types, including TurboQuant variants. It confirms that the **Temporal Index** initialization issue has been resolved and provides a comprehensive baseline for both Apple Silicon (Metal) and NVIDIA (CUDA) backends.
+> **Architecture Hardening**: This release candidate resolves a critical failure on ARM64 platforms where Sparse Search (BM25) would fail with a "dataset does not support sparse queries" error. The fix routes ARM64 to the generic SIMD fallback path, ensuring full feature parity across architectures.
 
-### Search Performance Breakdown (dim=128, count=5000)
+### Search Performance Breakdown (dim=128, count=1000)
 
 | Mode | Platform | DType | Throughput | P50 (ms) | P95 (ms) | Status |
 |------|----------|-------|------------|----------|----------|--------|
-| **Dense Search** | Local Metal (M3) | float32 | **30,245 QPS** | 0.24 | 0.38 | **STABLE** |
-| **Dense Search** | Remote CUDA (NVIDIA) | float32 | **28,110 QPS** | 0.48 | 0.76 | **OK** |
-| **Temporal Search** | Local Metal (M3) | float32 | **35,233 QPS** | 0.21 | 0.35 | **VERIFIED** |
-| **Temporal Search** | Remote CUDA (NVIDIA) | float32 | **31,450 QPS** | 0.35 | 0.62 | **VERIFIED** |
-| **Hybrid Search** | Local Metal (M3) | float32 | **24,812 QPS** | 0.28 | 0.45 | **STABLE** |
-| **Sparse Search** | Local Metal (M3) | float32 | **48,975 QPS** | 0.16 | 0.30 | **OK** |
-| **Learned Index** | Local Metal (M3) | float32 | **4,850 QPS** | 1.65 | 2.42 | **OK** |
+| **Dense Search** | Local M3 Pro | float32 | **8,058 QPS** | 1.85 | 2.52 | **STABLE** |
+| **Sparse Search** | Local M3 Pro | float32 | **28,195 QPS** | 0.13 | 0.20 | **FIXED** |
+| **Hybrid Search** | Local M3 Pro | float32 | **7,358 QPS** | 2.15 | 2.85 | **STABLE** |
+
+> [!NOTE]
+> **Generic Baseline**: The Sparse Search performance reflects the generic SIMD implementation. While functional and robust, it remains a candidate for future NEON-specific manual optimization to match the peaks seen on AVX-512 platforms.
+
+---
+
+## v0.2.2-rc1 Validation - Cross-Platform GPU & Temporal Stability (2026-05-08)
 
 ### High-Scale Performance Observations (count=100,000)
 

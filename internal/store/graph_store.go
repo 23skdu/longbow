@@ -600,6 +600,12 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 					for id, neighbors := range remoteNeighbors {
 						s := scoreSlice[id] * alpha
 						for _, target := range neighbors {
+							// Safety check to prevent out-of-bounds panic
+							if int(target) >= len(scoreSlice) {
+								metrics.GraphRAGExpansionErrorsTotal.WithLabelValues(dataset, "out_of_bounds").Inc()
+								continue
+							}
+							
 							scoreSlice[target] += s
 							if !isVisited(target) {
 								setVisited(target)

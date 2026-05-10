@@ -23,7 +23,10 @@ type GraphSearchContext struct {
 
 // Reset clears the context for reuse.
 func (ctx *GraphSearchContext) Reset(maxID int, initialCount int) {
-	requiredLen := maxID + 1024
+	requiredLen := maxID + 8192
+	if requiredLen < 65536 {
+		requiredLen = 65536
+	}
 	if cap(ctx.scores) < requiredLen {
 		ctx.scores = make([]float32, requiredLen)
 	} else {

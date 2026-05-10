@@ -17,7 +17,7 @@ const (
 
 	// PackedRefLenMask is the bitmask for extracting the neighbor list length.
 	PackedRefLenMask  = 0xFFFF
-	// PackedRefOffShift is the bit shift used to encode/decode the offset in a packed reference.
+	// PackedRefOffShift is the bit shift for the offset in a packed adjacency reference.
 	PackedRefOffShift = 16
 )
 

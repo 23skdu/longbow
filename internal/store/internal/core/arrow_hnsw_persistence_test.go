@@ -103,12 +103,11 @@ func TestArrowHNSW_PersistenceRefactor(t *testing.T) {
 	t.Logf("Imported index: Neighbors of 0: %v", n0)
 	
 	n5, _ := idx2.GetRawNeighbors(5)
-	t.Logf("Imported index: Neighbors of 5: %v", n5)
-
 	results5, _ := idx2.SearchVectors(ctx, []float32{5, 5, 5, 5}, 1, nil, nil)
 	t.Logf("Imported index: Search results for 5: %+v", results5)
 	assert.NotEmpty(t, results5)
 	assert.Equal(t, types.VectorID(5), results5[0].ID)
+	_ = n5
 	
 	assert.Equal(t, types.VectorID(0), results[0].ID)
 

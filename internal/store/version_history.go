@@ -115,6 +115,26 @@ func (vh *VersionHistory) GetVersionAt(id uint64, timestamp int64) (*VersionedVe
 	return nil, fmt.Errorf("no version found at or before timestamp %d for vector %d", timestamp, id)
 }
 
+// GetVersionsAtBatch retrieves active versions for multiple IDs at a specific timestamp.
+func (vh *VersionHistory) GetVersionsAtBatch(ids []uint64, timestamp int64, out map[uint64]VersionedVector) {
+	vh.mu.RLock()
+	defer vh.mu.RUnlock()
+
+	for _, id := range ids {
+		versions, ok := vh.history[id]
+		if !ok || len(versions) == 0 {
+			continue
+		}
+
+		for i := len(versions) - 1; i >= 0; i-- {
+			if versions[i].Timestamp <= timestamp {
+				out[id] = versions[i]
+				break
+			}
+		}
+	}
+}
+
 // GetHistory returns the entire version history for a specific vector ID.
 func (vh *VersionHistory) GetHistory(id uint64) []VersionedVector {
 	vh.mu.RLock()

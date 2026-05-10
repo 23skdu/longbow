@@ -24,15 +24,18 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 
 // InsertWithVector inserts a vector that has already been retrieved.
 func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
+	first := true
 	for {
-		data, err := h.insertInternal(id, vec, level, false, nil)
+		current := h.data.Load()
+		data, err := h.insertInternal(id, vec, level, !first, current)
 		if err != nil {
 			return err
 		}
-		if data == nil || h.compareAndSwapData(data) {
+		if data == nil || h.compareAndSwapData(current, data) {
 			h.commitID(id)
 			return nil
 		}
+		first = false
 		// CAS failed, retry insertion on the new global state
 	}
 }

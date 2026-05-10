@@ -486,12 +486,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 			return nil, err
 		}
 
-		typeCandidates := make([]types.Candidate, len(res))
-		for i, c := range res {
-			typeCandidates[i] = types.Candidate{ID: c.ID, Dist: c.Dist}
-		}
-
-		results = h.ProcessResultsParallel(ctx, qv, queryVec, typeCandidates, k, filter)
+		results = h.ProcessResultsParallel(ctx, qv, queryVec, res, k, filter)
 		if len(results) >= k || attempt == 2 || efSearch >= maxNodeCount {
 			break
 		}
@@ -997,7 +992,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		}
 
 		// Explore neighbors
-		neighbors := h.GetNeighborsCombinedManual(data, layer, curr.ID, maxGen)
+		neighbors := h.GetNeighborsCombinedManual(data, layer, curr.ID, ctx.neighborBatch, ctx.MaxGeneration)
 
 		prefetchLimit := h.mMax.Load()
 		if prefetchLimit > 64 {
@@ -1164,7 +1159,18 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 	// resultSet is a MaxHeap, so popping from it gives largest first.
 	// We populate the result slice from end to beginning.
 	count := len(ctx.resultSet)
-	res := make([]types.Candidate, count)
+	var res []types.Candidate
+	if ctx != nil {
+		if cap(ctx.layerCandidates) >= count {
+			res = ctx.layerCandidates[:count]
+		} else {
+			res = make([]types.Candidate, count)
+			ctx.layerCandidates = res
+		}
+	} else {
+		res = make([]types.Candidate, count)
+	}
+
 	for i := count - 1; i >= 0; i-- {
 		res[i] = heap.Pop(resultSetAdapter).(types.Candidate)
 	}

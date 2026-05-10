@@ -60,14 +60,6 @@ func TestArrowHNSW_PersistenceRefactor(t *testing.T) {
 	rb.Retain() // MockDataset keeps a ref
 
 	// Add
-	n0Src := map[uint32][]uint32{
-		1: {2, 3},
-		2: {1},
-	}
-	resultsSrc := map[uint32][]uint32{
-		1: {2, 3},
-		2: {1},
-	}
 	for i := 0; i < count; i++ {
 		_, err := idx.AddByRecord(ctx, rb, i, 0)
 		assert.NoError(t, err)
@@ -76,9 +68,10 @@ func TestArrowHNSW_PersistenceRefactor(t *testing.T) {
 	// Verify Size
 	assert.Equal(t, count, idx.Size())
 	
-	n0Src, _ := idx.GetRawNeighbors(0)
-	t.Logf("Source index: Neighbors of 0: %v", n0Src)
-	resultsSrc, _ := idx.SearchVectors(ctx, []float32{0, 0, 0, 0}, 10, nil, nil)
+	n0, _ := idx.GetRawNeighbors(0)
+	t.Logf("Source index: Neighbors of 0: %v", n0)
+	resultsSrc, err := idx.SearchVectors(ctx, []float32{0, 0, 0, 0}, 10, nil, nil)
+	assert.NoError(t, err)
 	t.Logf("Source index: Search results: %+v", resultsSrc)
 
 	// Export State
@@ -106,7 +99,7 @@ func TestArrowHNSW_PersistenceRefactor(t *testing.T) {
 		t.Logf("Result %d: ID=%d, Dist=%f", i, r.ID, r.Distance)
 	}
 
-	n0, _ := idx2.GetRawNeighbors(0)
+	n0, _ = idx2.GetRawNeighbors(0)
 	t.Logf("Imported index: Neighbors of 0: %v", n0)
 	
 	n5, _ := idx2.GetRawNeighbors(5)

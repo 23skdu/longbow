@@ -11,12 +11,12 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// Adjacency and reference packing constants for HNSW graph storage.
 const (
 	// AdjacencyChunkSize defines the number of nodes per adjacency page.
 	AdjacencyChunkSize = 1024
-
 	// PackedRefLenMask is the bitmask for extracting the neighbor list length.
-	PackedRefLenMask  = 0xFFFF
+	PackedRefLenMask = 0xFFFF
 	// PackedRefOffShift is the bit shift for the offset in a packed adjacency reference.
 	PackedRefOffShift = 16
 )

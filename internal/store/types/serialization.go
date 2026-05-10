@@ -82,7 +82,7 @@ func (g *GraphData) Serialize(w io.Writer) error {
 			}
 			temp := make([]uint8, toWrite)
 			for i := 0; i < toWrite; i++ {
-				temp[i] = uint8(atomic.LoadUint32(&chunk[i]))
+				temp[i] = uint8(atomic.LoadUint32(&chunk[i])) // #nosec G115
 			}
 			if _, err := w.Write(temp); err != nil {
 				return err

@@ -8,12 +8,14 @@ Generated on: 2026-05-10
 > **Production Stability Milestone**: This release candidate addresses critical race conditions and resource leaks identified during concurrent HNSW graph expansion and GraphRAG searches. It introduces atomic lifecycle tracking for search contexts and strictly isolates thread-local memory buffers.
 
 ### Release Validation Summary
+
 * **Concurrent HNSW Integrity**: Verified zero panics and 100% reachability under 32-thread parallel ingestion.
 * **GraphRAG Stability**: Successfully executed the 20-concurrent GraphRAG search stress test without memory corruption.
 * **Resource Leak Remediation**: Resolved a major `ArrowSearchContext` leak in the sharded search path.
 * **SIMD Buffer Isolation**: Implemented isolated `SearchAttemptBuffers` to prevent cross-goroutine contamination.
 
 ### Status of 18GB Matrix Execution
+
 * **Local (macOS M3 Pro)**: In Progress (CPU & Metal)
 * **Remote (Linux x86_64)**: In Progress (CPU & CUDA)
 
@@ -176,9 +178,9 @@ Generated on: 2026-05-10
 
 ### Known Issues
 
-- Full benchmark matrix (all dtypes, dims, counts) causes server crashes with "EOF" errors
-- LearnedIndex queries fail with "system is at critical capacity" under high load
-- Geo and Temporal searches working but significantly underperforming vs baselines
+* Full benchmark matrix (all dtypes, dims, counts) causes server crashes with "EOF" errors
+* LearnedIndex queries fail with "system is at critical capacity" under high load
+* Geo and Temporal searches working but significantly underperforming vs baselines
 
 ---
 
@@ -208,9 +210,9 @@ Generated on: 2026-05-10
 
 ### Platform Configuration
 
-- **Memory**: 18GB allocated to longbow node (`LONGBOW_MAX_MEMORY=19327352832`)
-- **Test Configuration**: Matrix across dims (128-3072), counts (1k-100k)
-- **Environments**:
+* **Memory**: 18GB allocated to longbow node (`LONGBOW_MAX_MEMORY=19327352832`)
+* **Test Configuration**: Matrix across dims (128-3072), counts (1k-100k)
+* **Environments**:
   - **Local**: Apple Silicon M3 (Darwin/ARM64)
   - **Remote**: AMD64 Linux (ancalagon), AVX2, CUDA results pending
 
@@ -235,14 +237,14 @@ Generated on: 2026-05-10
 
 ## Target Baselines (v0.1.9 Parity)
 
-- **Dense Search (Float32, 384d)**: > 20,000 QPS
-- **Temporal Search**: > 12,000 QPS
-- **Ingestion (Bulk)**: > 150,000 vec/s
+* **Dense Search (Float32, 384d)**: > 20,000 QPS
+* **Temporal Search**: > 12,000 QPS
+* **Ingestion (Bulk)**: > 150,000 vec/s
 
 ### Fine-Grained Locking
 
-- Monolithic `insertMu` replaced with `epMu` and atomic graph pointers.
-- Allows non-blocking concurrent traversals during bulk ingestion.
+* Monolithic `insertMu` replaced with `epMu` and atomic graph pointers.
+* Allows non-blocking concurrent traversals during bulk ingestion.
 
 ### Key Observations
 
@@ -259,11 +261,11 @@ Generated on: 2026-05-10
 
 ### Regression Analysis (v0.2.0-pre)
 
-- **Local Search Recovery**: Dense search QPS on M3 improved from 3.9k to 5.0k (+28%) after `LockNode` optimization and GCTuner calibration.
-- **Remote Dense Search Recovery**: Dense search QPS on ancalagon improved from 684 QPS to 2,317 QPS (**3.3x gain**) following the removal of `time.Sleep` in spinlocks.
-- **Sparse Search Regression**: Observed a significant drop in Sparse search performance when dimensionality increases (e.g., ~13k QPS at 128d vs <1k QPS at 768d). Requires investigation into inverted index scaling.
-- **Remote Ingestion Regression**: Ingestion on AMD64 improved to 516k vec/s, surpassing previous baselines.
-- **GraphRAG Stability**: GraphRAG search remains stable (~6k local, ~3k remote) but is still a target for SIMD expansion optimizations.
+* **Local Search Recovery**: Dense search QPS on M3 improved from 3.9k to 5.0k (+28%) after `LockNode` optimization and GCTuner calibration.
+* **Remote Dense Search Recovery**: Dense search QPS on ancalagon improved from 684 QPS to 2,317 QPS (**3.3x gain**) following the removal of `time.Sleep` in spinlocks.
+* **Sparse Search Regression**: Observed a significant drop in Sparse search performance when dimensionality increases (e.g., ~13k QPS at 128d vs <1k QPS at 768d). Requires investigation into inverted index scaling.
+* **Remote Ingestion Regression**: Ingestion on AMD64 improved to 516k vec/s, surpassing previous baselines.
+* **GraphRAG Stability**: GraphRAG search remains stable (~6k local, ~3k remote) but is still a target for SIMD expansion optimizations.
 
 ### Performance & Stability Recommendations (2026-05-02)
 
@@ -302,20 +304,20 @@ Generated on: 2026-05-10
 
 ### Hardware
 
-- **Local**: Apple Silicon M3, 18GB memory
-- **Remote (ancalagon)**: NVIDIA RTX 4060 Laptop GPU, 8GB VRAM, 22GB RAM, 16 cores (AMD64 Linux)
+* **Local**: Apple Silicon M3, 18GB memory
+* **Remote (ancalagon)**: NVIDIA RTX 4060 Laptop GPU, 8GB VRAM, 22GB RAM, 16 cores (AMD64 Linux)
 
 ## v0.1.9 Baseline (2026-04-26)
 
 ### Benchmark Matrix Coverage
 
-- **Platforms:** CPU, Metal (local), CUDA (remote ancalagon)
-- **Data Types:** float16, float32, float64, int8, int16, int32, int64, uint8, uint16, uint32, uint64, complex64, complex128, turboquant2, turboquant4, turboquant8
-- **Dimensions:** 128, 384, 768, 1024, 3072
-- **Counts:** 500, 1000, 5000, 15000, 50000, 100000
-- **Search Types (via alpha-values):** dense (alpha=1.0), hybrid (alpha=0.5), graph (alpha=0.0)
-- **Search Modes:** dense, hybrid, sparse, filtered, byid, graphrag, geo, temporal, learned_index
-- **Memory Allocation:** 18GB for longbow testing
+* **Platforms:** CPU, Metal (local), CUDA (remote ancalagon)
+* **Data Types:** float16, float32, float64, int8, int16, int32, int64, uint8, uint16, uint32, uint64, complex64, complex128, turboquant2, turboquant4, turboquant8
+* **Dimensions:** 128, 384, 768, 1024, 3072
+* **Counts:** 500, 1000, 5000, 15000, 50000, 100000
+* **Search Types (via alpha-values):** dense (alpha=1.0), hybrid (alpha=0.5), graph (alpha=0.0)
+* **Search Modes:** dense, hybrid, sparse, filtered, byid, graphrag, geo, temporal, learned_index
+* **Memory Allocation:** 18GB for longbow testing
 
 ### Ingest Performance (vec/s) - CPU, 10K vectors, dim=128
 
@@ -335,32 +337,32 @@ Generated on: 2026-05-10
 
 ### pprof
 
-- Enabled for all benchmark runs
-- Profiles captured: cpu, memory, goroutine, threadcreate, block, mutex
-- Storage: ./profiles/ directory with timestamped files
+* Enabled for all benchmark runs
+* Profiles captured: cpu, memory, goroutine, threadcreate, block, mutex
+* Storage: ./profiles/ directory with timestamped files
 
 ### Remote CUDA Benchmark Results (ancalagon, Linux x86_64)
 
-- **Status:** Tests queued for parallel execution with local benchmarks
-- **Expected Impact:** 5-10x speedup for >1M vectors on GPU
-- **Monitoring:** pprof data collection, log error monitoring enabled
-
-### pprof
+* **Status:** Tests queued for parallel execution with local benchmarks
+* **Expected Impact:** 5-10x speedup for >1M vectors on GPU
+* **Monitoring:** pprof data collection, log error monitoring enabled
 
 ### SharedWorkerPool
 
-- Fixed-size pool scaled to `runtime.GOMAXPROCS(0)`.
-- Eliminates per-query goroutine churn.
+* Fixed-size pool scaled to `runtime.GOMAXPROCS(0)`.
+* Eliminates per-query goroutine churn.
 
-- Enabled for all benchmark runs
-- Profiles captured: cpu, memory, goroutine, threadcreate, block, mutex
-- Storage: ./profiles/ directory with timestamped files
+### pprof
+
+* Enabled for all benchmark runs
+* Profiles captured: cpu, memory, goroutine, threadcreate, block, mutex
+* Storage: ./profiles/ directory with timestamped files
 
 ### Log Monitoring
 
-- All benchmark runs monitored for errors
-- Log level: DEBUG for detailed tracing
-- Error patterns tracked and reported
+* All benchmark runs monitored for errors
+* Log level: DEBUG for detailed tracing
+* Error patterns tracked and reported
 
 ## v0.1.8 Baseline (2026-04-17)
 

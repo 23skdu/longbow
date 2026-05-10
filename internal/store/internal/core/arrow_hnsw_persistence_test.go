@@ -60,6 +60,14 @@ func TestArrowHNSW_PersistenceRefactor(t *testing.T) {
 	rb.Retain() // MockDataset keeps a ref
 
 	// Add
+	n0Src := map[uint32][]uint32{
+		1: {2, 3},
+		2: {1},
+	}
+	resultsSrc := map[uint32][]uint32{
+		1: {2, 3},
+		2: {1},
+	}
 	for i := 0; i < count; i++ {
 		_, err := idx.AddByRecord(ctx, rb, i, 0)
 		assert.NoError(t, err)

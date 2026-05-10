@@ -624,9 +624,6 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 	return results
 }
 
-func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
-	return gs.Traverse(start, opts)
-}
 
 // Close releases all resources associated with the graph store.
 func (gs *GraphStore) Close() error {
@@ -638,6 +635,9 @@ func (gs *GraphStore) Close() error {
 
 	return nil
 }
+
+// PackedRefOffShift is the bit shift for the offset in a packed adjacency reference.
+const PackedRefOffShift = 32
 
 // ToArrowBatch exports the GraphStore's edges to an Arrow Record.
 // It uses Dictionary Encoding for the 'predicate' column to ensure the

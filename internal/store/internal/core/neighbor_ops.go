@@ -56,6 +56,7 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 	oldVer := data.LockNode(layer, source)
 	defer data.UnlockNode(layer, source, oldVer)
 	h.addConnectionLocked(ctx, data, source, target, layer, maxConn)
+	atomic.AddUint64(&data.GlobalVersion, 1)
 	return data
 }
 
@@ -131,6 +132,7 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 	oldVer := data.LockNode(layer, target)
 	defer data.UnlockNode(layer, target, oldVer)
 	h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
+	atomic.AddUint64(&data.GlobalVersion, 1)
 	return data
 }
 // AddConnectionsBatchLocked adds multiple connections while holding a lock on the target node.
@@ -144,6 +146,7 @@ func (h *ArrowHNSW) AddConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 		oldVer := data.LockNode(layer, target)
 		defer data.UnlockNode(layer, target, oldVer)
 		h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
+		atomic.AddUint64(&data.GlobalVersion, 1)
 		return data
 	}
 
@@ -189,7 +192,7 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 	neighborsChunk := data.GetNeighborsChunk(layer, cID)
 	
 	var currentNeighbors []uint32
-	currentNeighbors = h.GetNeighborsCombinedManualLocked(data, layer, source, ctx.MaxGeneration)
+	currentNeighbors = h.GetNeighborsCombinedManualLocked(data, layer, source, ctx.neighborBatch, math.MaxUint64)
 
 	for _, n := range currentNeighbors {
 		if n == target { return }
@@ -264,7 +267,7 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 		h.pruneConnectionsLocked(ctx, data, target, maxConn, layer, nil)
 	} else if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
-		newNeighbors := h.GetNeighborsCombinedManualLocked(data, layer, target, ctx.MaxGeneration)
+		newNeighbors := h.GetNeighborsCombinedManualLocked(data, layer, target, ctx.neighborBatch, ctx.MaxGeneration)
 		_ = pn.SetNeighbors(target, newNeighbors)
 	}
 }
@@ -305,7 +308,7 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 // pruneConnectionsLocked reduces connections using robust diversity heuristic.
 // Legacy method for non-PackedNeighbors storage.
 func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, maxConn, layer int, newNeighbors []uint32) {
-	selected := h.computePrunedNeighbors(ctx, data, nodeID, h.GetNeighborsCombinedManualLocked(data, layer, nodeID, ctx.MaxGeneration), newNeighbors, maxConn)
+	selected := h.computePrunedNeighbors(ctx, data, nodeID, h.GetNeighborsCombinedManualLocked(data, layer, nodeID, ctx.neighborBatch, math.MaxUint64), newNeighbors, maxConn)
 
 	if h.topLayerManager != nil {
 		h.topLayerManager.ClearNeighbors(layer, nodeID)

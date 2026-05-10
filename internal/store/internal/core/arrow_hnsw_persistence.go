@@ -324,7 +324,7 @@ func (h *ArrowHNSW) promoteNodeLocked(data *types.GraphData, id uint32) *types.G
 	}
 
 	// Publish the newly consistent data structure using CAS
-	h.compareAndSwapData(newData)
+	h.compareAndSwapData(h.data.Load(), newData)
 	return newData
 }
 

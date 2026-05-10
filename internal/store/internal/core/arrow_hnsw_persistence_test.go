@@ -68,10 +68,10 @@ func TestArrowHNSW_PersistenceRefactor(t *testing.T) {
 	// Verify Size
 	assert.Equal(t, count, idx.Size())
 	
-	n0_src, _ := idx.GetRawNeighbors(0)
-	t.Logf("Source index: Neighbors of 0: %v", n0_src)
-	results_src, _ := idx.SearchVectors(ctx, []float32{0, 0, 0, 0}, 10, nil, nil)
-	t.Logf("Source index: Search results: %+v", results_src)
+	n0Src, _ := idx.GetRawNeighbors(0)
+	t.Logf("Source index: Neighbors of 0: %v", n0Src)
+	resultsSrc, _ := idx.SearchVectors(ctx, []float32{0, 0, 0, 0}, 10, nil, nil)
+	t.Logf("Source index: Search results: %+v", resultsSrc)
 
 	// Export State
 	stateBytes, err := idx.ExportState()

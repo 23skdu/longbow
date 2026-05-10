@@ -217,4 +217,13 @@ var (
 			Buckets: prometheus.ExponentialBuckets(1024, 2, 10), // 1KB to 512KB
 		},
 	)
+
+	// GraphRAGExpansionErrorsTotal tracks errors during graph expansion
+	GraphRAGExpansionErrorsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_graphrag_expansion_errors_total",
+			Help: "Total number of errors encountered during GraphRAG graph expansion",
+		},
+		[]string{"dataset", "error_type"},
+	)
 )

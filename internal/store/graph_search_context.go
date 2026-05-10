@@ -21,6 +21,64 @@ type GraphSearchContext struct {
 	distCache    map[uint32]float32
 }
 
+// EnsureCapacity ensures the scores and visited buffers can accommodate the given ID.
+func (ctx *GraphSearchContext) EnsureCapacity(id uint32) {
+	idx := int(id)
+	if idx < len(ctx.scores) {
+		return
+	}
+
+	newLen := idx + 16384
+	if newLen < len(ctx.scores)*2 {
+		newLen = len(ctx.scores) * 2
+	}
+
+	// Grow scores
+	newScores := make([]float32, newLen)
+	copy(newScores, ctx.scores)
+	ctx.scores = newScores
+
+	// Grow visited
+	newVisitedLen := (newLen + 63) / 64
+	newVisited := make([]uint64, newVisitedLen)
+	copy(newVisited, ctx.visited)
+	ctx.visited = newVisited
+}
+
+// SetScore safely sets the score for a node, growing the buffer if needed.
+func (ctx *GraphSearchContext) SetScore(id uint32, score float32) {
+	ctx.EnsureCapacity(id)
+	ctx.scores[id] = score
+}
+
+// GetScore safely gets the score for a node.
+func (ctx *GraphSearchContext) GetScore(id uint32) float32 {
+	if int(id) >= len(ctx.scores) {
+		return 0
+	}
+	return ctx.scores[id]
+}
+
+// AddScore safely adds to the score of a node.
+func (ctx *GraphSearchContext) AddScore(id uint32, delta float32) {
+	ctx.EnsureCapacity(id)
+	ctx.scores[id] += delta
+}
+
+// SetVisited safely marks a node as visited.
+func (ctx *GraphSearchContext) SetVisited(id uint32) {
+	ctx.EnsureCapacity(id)
+	ctx.visited[id>>6] |= 1 << (id & 63)
+}
+
+// IsVisited safely checks if a node was visited.
+func (ctx *GraphSearchContext) IsVisited(id uint32) bool {
+	if int(id) >= len(ctx.scores) {
+		return false
+	}
+	return (ctx.visited[id>>6] & (1 << (id & 63))) != 0
+}
+
 // Reset clears the context for reuse.
 func (ctx *GraphSearchContext) Reset(maxID int, initialCount int) {
 	requiredLen := maxID + 8192

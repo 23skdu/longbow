@@ -330,35 +330,22 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 	}
 
 	// Use pooled context for buffers
-	ctx := getGraphSearchContext(maxID, len(results))
-	defer putGraphSearchContext(ctx)
+	gCtx := getGraphSearchContext(maxID, len(results))
+	defer putGraphSearchContext(gCtx)
 
-	scoreSlice := ctx.scores
-	visited := ctx.visited
-
-	setVisited := func(id uint32) {
-		visited[id>>6] |= 1 << (id & 63)
-	}
-	isVisited := func(id uint32) bool {
-		return (visited[id>>6] & (1 << (id & 63))) != 0
-	}
-
-	currentNodes := ctx.currentNodes
 	for _, r := range results {
 		id := uint32(r.ID)
-		if int(id) >= len(scoreSlice) {
-			continue
-		}
-		scoreSlice[id] = r.Score
-		if !isVisited(id) {
-			setVisited(id)
-			currentNodes = append(currentNodes, id)
+		gCtx.SetScore(id, r.Score)
+		if !gCtx.IsVisited(id) {
+			gCtx.SetVisited(id)
+			gCtx.currentNodes = append(gCtx.currentNodes, id)
 		}
 	}
 
 	// 2. Multi-hop BFS Expansion
-	nextNodes := ctx.nextNodes
-	allInfluenced := ctx.allInfluenced
+	currentNodes := gCtx.currentNodes
+	nextNodes := gCtx.nextNodes
+	allInfluenced := gCtx.allInfluenced
 	allInfluenced = append(allInfluenced, currentNodes...)
 
 	for d := 0; d < depth; d++ {
@@ -378,49 +365,13 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 			}
 
 			if edges, ok := gs.forwardEdges.Get(id); ok {
-				s := scoreSlice[id] * alpha
+				s := gCtx.GetScore(id) * alpha
 				
-				// Advanced 8x Unrolled expansion with aggressive prefetching
-				edgeCount := len(edges)
-				j := 0
-				for ; j <= edgeCount-8; j += 8 {
-					e0, e1, e2, e3 := edges[j], edges[j+1], edges[j+2], edges[j+3]
-					e4, e5, e6, e7 := edges[j+4], edges[j+5], edges[j+6], edges[j+7]
-					
-					t0, t1, t2, t3 := uint32(e0.Object), uint32(e1.Object), uint32(e2.Object), uint32(e3.Object)
-					t4, t5, t6, t7 := uint32(e4.Object), uint32(e5.Object), uint32(e6.Object), uint32(e7.Object)
-					
-					// Prefetch next batch of score slots
-					simd.Prefetch(unsafe.Pointer(&scoreSlice[t0])) // #nosec G103
-					simd.Prefetch(unsafe.Pointer(&scoreSlice[t4])) // #nosec G103
-					
-					scoreSlice[t0] += s * e0.Weight
-					scoreSlice[t1] += s * e1.Weight
-					scoreSlice[t2] += s * e2.Weight
-					scoreSlice[t3] += s * e3.Weight
-					scoreSlice[t4] += s * e4.Weight
-					scoreSlice[t5] += s * e5.Weight
-					scoreSlice[t6] += s * e6.Weight
-					scoreSlice[t7] += s * e7.Weight
-					
-					// Grouped visited checks to improve branch prediction
-					if !isVisited(t0) { setVisited(t0); nextNodes = append(nextNodes, t0); allInfluenced = append(allInfluenced, t0) }
-					if !isVisited(t1) { setVisited(t1); nextNodes = append(nextNodes, t1); allInfluenced = append(allInfluenced, t1) }
-					if !isVisited(t2) { setVisited(t2); nextNodes = append(nextNodes, t2); allInfluenced = append(allInfluenced, t2) }
-					if !isVisited(t3) { setVisited(t3); nextNodes = append(nextNodes, t3); allInfluenced = append(allInfluenced, t3) }
-					if !isVisited(t4) { setVisited(t4); nextNodes = append(nextNodes, t4); allInfluenced = append(allInfluenced, t4) }
-					if !isVisited(t5) { setVisited(t5); nextNodes = append(nextNodes, t5); allInfluenced = append(allInfluenced, t5) }
-					if !isVisited(t6) { setVisited(t6); nextNodes = append(nextNodes, t6); allInfluenced = append(allInfluenced, t6) }
-					if !isVisited(t7) { setVisited(t7); nextNodes = append(nextNodes, t7); allInfluenced = append(allInfluenced, t7) }
-				}
-				
-				// Handle remainder
-				for ; j < edgeCount; j++ {
-					edge := edges[j]
+				for _, edge := range edges {
 					target := uint32(edge.Object)
-					scoreSlice[target] += s * edge.Weight
-					if !isVisited(target) {
-						setVisited(target)
+					gCtx.AddScore(target, s*edge.Weight)
+					if !gCtx.IsVisited(target) {
+						gCtx.SetVisited(target)
 						nextNodes = append(nextNodes, target)
 						allInfluenced = append(allInfluenced, target)
 					}
@@ -437,20 +388,14 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 	metrics.GraphRAGNodesVisitedTotal.WithLabelValues(dataset).Observe(float64(len(allInfluenced)))
 
 	// 3. Rebuild results (SPARSE rebuild - only iterate over influenced nodes)
-	newResults := ctx.results[:0]
-	
-	// Deduplicate allInfluenced to avoid double-adding if multiple paths hit same node
-	// (Though scoreSlice is already aggregated correctly)
-	// We use the visited bitset to help deduplicate if needed, but actually 
-	// allInfluenced might contain duplicates if we don't check.
-	// However, it's faster to just iterate and clear the score after use.
+	newResults := gCtx.results[:0]
 	
 	for _, id := range allInfluenced {
-		score := scoreSlice[id]
+		score := gCtx.GetScore(id)
 		if score > 0 {
 			newResults = append(newResults, SearchResult{ID: lbtypes.VectorID(id), Score: score})
-			scoreSlice[id] = 0 // Reset for next use in pool
 		}
+		gCtx.SetScore(id, 0) // Reset for pool reuse (CRITICAL: always reset)
 	}
 
 	sort.Slice(newResults, func(i, j int) bool {
@@ -492,30 +437,17 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 	gCtx := getGraphSearchContext(maxID, len(results))
 	defer putGraphSearchContext(gCtx)
 
-	scoreSlice := gCtx.scores
-	visited := gCtx.visited
-
-	setVisited := func(id uint32) {
-		visited[id>>6] |= 1 << (id & 63)
-	}
-	isVisited := func(id uint32) bool {
-		return (visited[id>>6] & (1 << (id & 63))) != 0
-	}
-
-	currentNodes := gCtx.currentNodes
 	for _, r := range results {
 		id := uint32(r.ID)
-		if int(id) >= len(scoreSlice) {
-			continue
-		}
-		scoreSlice[id] = r.Score
-		if !isVisited(id) {
-			setVisited(id)
-			currentNodes = append(currentNodes, id)
+		gCtx.SetScore(id, r.Score)
+		if !gCtx.IsVisited(id) {
+			gCtx.SetVisited(id)
+			gCtx.currentNodes = append(gCtx.currentNodes, id)
 		}
 	}
 
 	// 2. Multi-hop Distributed BFS Expansion
+	currentNodes := gCtx.currentNodes
 	nextNodes := gCtx.nextNodes
 	allInfluenced := gCtx.allInfluenced
 	allInfluenced = append(allInfluenced, currentNodes...)
@@ -530,19 +462,13 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 			id := currentNodes[i]
 			
 			if edges, ok := gs.forwardEdges.Get(id); ok {
-				s := scoreSlice[id] * alpha
+				s := gCtx.GetScore(id) * alpha
 				
 				for _, edge := range edges {
 					target := uint32(edge.Object)
-					// Safety check to prevent out-of-bounds panic
-					if int(target) >= len(scoreSlice) {
-						metrics.GraphRAGExpansionErrorsTotal.WithLabelValues(dataset, "out_of_bounds").Inc()
-						continue
-					}
-					
-					scoreSlice[target] += s * edge.Weight
-					if !isVisited(target) {
-						setVisited(target)
+					gCtx.AddScore(target, s*edge.Weight)
+					if !gCtx.IsVisited(target) {
+						gCtx.SetVisited(target)
 						nextNodes = append(nextNodes, target)
 						allInfluenced = append(allInfluenced, target)
 					}
@@ -563,17 +489,11 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 				remoteNeighbors, err := provider.GetNeighborsBulk(ctx, dataset, missing)
 				if err == nil {
 					for id, neighbors := range remoteNeighbors {
-						s := scoreSlice[id] * alpha
+						s := gCtx.GetScore(id) * alpha
 						for _, target := range neighbors {
-							// Safety check to prevent out-of-bounds panic
-							if int(target) >= len(scoreSlice) {
-								metrics.GraphRAGExpansionErrorsTotal.WithLabelValues(dataset, "out_of_bounds").Inc()
-								continue
-							}
-							
-							scoreSlice[target] += s
-							if !isVisited(target) {
-								setVisited(target)
+							gCtx.AddScore(target, s)
+							if !gCtx.IsVisited(target) {
+								gCtx.SetVisited(target)
 								nextNodes = append(nextNodes, target)
 								allInfluenced = append(allInfluenced, target)
 							}
@@ -594,11 +514,11 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 	// 3. Rebuild results from dense score slice
 	newResults := gCtx.results[:0]
 	for _, id := range allInfluenced {
-		score := scoreSlice[id]
+		score := gCtx.GetScore(id)
 		if score > 0 {
 			newResults = append(newResults, SearchResult{ID: lbtypes.VectorID(id), Score: score})
 		}
-		scoreSlice[id] = 0 // Reset for pool reuse (CRITICAL: always reset)
+		gCtx.SetScore(id, 0) // Reset for pool reuse (CRITICAL: always reset)
 	}
 
 	sort.Slice(newResults, func(i, j int) bool {
@@ -631,17 +551,9 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 		heap.Init(pq)
 
 		var results []Path
-		// Use a bitset for visited tracking if we want global visited,
-		// but Traverse per-path usually needs per-path visited to avoid cycles.
-		// However, for GraphRAG spreading, a global visited is often used.
-		// The test expects all paths of length 1, so we'll stick to BFS.
-		
-		// If we want to optimize this with a bitset:
-		visited := make([]uint64, (gs.CommunityCount()+64000)/64) // Basic bitset
-		setVisited := func(id uint32) { visited[id>>6] |= 1 << (id & 63) }
-		isVisited := func(id uint32) bool { return (visited[id>>6] & (1 << (id & 63))) != 0 }
-
-		setVisited(uint32(start))
+		// Cycle check (Global in this BFS)
+		visited := make(map[uint32]struct{})
+		visited[uint32(start)] = struct{}{}
 
 		// We return all valid paths found up to MaxHops
 		// But in a weighted search, we might just want "best" paths?
@@ -664,20 +576,16 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 			if len(curr.Nodes)-1 >= opts.MaxHops {
 				results = append(results, curr)
 				continue
-			}
-
-			// If not at max hops, expand
-			// Collecting intermediate paths is also possible, usually only leaf paths or invalid-continuation paths are returned?
-			// Tests imply we want the paths of length MaxHops or less?
-			// GraphStore_TraverseIncoming expects 2 paths of length 1 (nodes=2).
-
 			if len(curr.Nodes) > 1 {
 				results = append(results, curr)
 			}
 
+			if len(curr.Nodes)-1 >= opts.MaxHops {
+				continue
+			}
+
 			lastNode := curr.Nodes[len(curr.Nodes)-1]
 
-			// Get Edges based on direction
 			var edges []Edge
 			switch opts.Direction {
 			case DirectionOutgoing:
@@ -687,17 +595,20 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 			case DirectionBoth:
 				fwd, _ := gs.forwardEdges.Get(uint32(lastNode))
 				bwd, _ := gs.backwardEdges.Get(uint32(lastNode))
+				edges = make([]Edge, 0, len(fwd)+len(bwd))
 				edges = append(edges, fwd...)
 				edges = append(edges, bwd...)
 			}
 
-			for _, e := range edges {
+			for i := 0; i < len(edges); i++ {
+				e := edges[i]
+				
 				var nextNode VectorID
 				switch opts.Direction {
-				case DirectionIncoming:
-					nextNode = e.Subject
 				case DirectionOutgoing:
 					nextNode = e.Object
+				case DirectionIncoming:
+					nextNode = e.Subject
 				default:
 					if e.Subject == lastNode {
 						nextNode = e.Object
@@ -706,11 +617,11 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 					}
 				}
 
-				// Cycle Check (Global in this traversal for BFS efficiency)
-				if isVisited(uint32(nextNode)) {
+				// Cycle Check
+				if _, ok := visited[uint32(nextNode)]; ok {
 					continue
 				}
-				setVisited(uint32(nextNode))
+				visited[uint32(nextNode)] = struct{}{}
 
 				// New Path
 				newPath := Path{
@@ -742,10 +653,8 @@ func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
 	var results []Path
 
 	// Cycle check (Global in this BFS)
-	visited := make([]uint64, (gs.CommunityCount()+64000)/64)
-	setVisited := func(id uint32) { visited[id>>6] |= 1 << (id & 63) }
-	isVisited := func(id uint32) bool { return (visited[id>>6] & (1 << (id & 63))) != 0 }
-	setVisited(uint32(start))
+	visited := make(map[uint32]struct{})
+	visited[uint32(start)] = struct{}{}
 
 	for len(queue) > 0 {
 		curr := queue[0]
@@ -797,10 +706,11 @@ func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
 				}
 			}
 
-			if isVisited(uint32(nextNode)) {
+			// Cycle Check
+			if _, ok := visited[uint32(nextNode)]; ok {
 				continue
 			}
-			setVisited(uint32(nextNode))
+			visited[uint32(nextNode)] = struct{}{}
 
 			newPath := Path{
 				Nodes: make([]VectorID, len(curr.Nodes)+1),

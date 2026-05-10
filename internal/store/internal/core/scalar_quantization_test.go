@@ -121,7 +121,7 @@ func TestSQ8EncoderTrainFromData(t *testing.T) {
 	}
 
 	// Check that min/max were learned correctly
-	minVals, maxVals := enc.GetBounds()
+	minVals, maxVals := enc.Params()
 
 	expectedMin := []float32{-1.0, -1.0, -0.5, -1.0}
 	expectedMax := []float32{0.5, 1.0, 1.0, 1.0}

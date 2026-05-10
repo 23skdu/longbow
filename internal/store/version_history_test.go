@@ -21,7 +21,7 @@ func TestVersionHistory_Add(t *testing.T) {
 
 	vector := []float32{1.0, 2.0, 3.0}
 	now := time.Now().UnixNano()
-	vh.Add(1, vector, now, nil)
+	vh.Add(1, vector, 0.0, now, nil)
 
 	history := vh.GetHistory(1)
 	assert.Len(t, history, 1)
@@ -32,8 +32,8 @@ func TestVersionHistory_GetLatestVersion(t *testing.T) {
 	vh := NewVersionHistory(DefaultVersionHistoryConfig())
 
 	now := time.Now().UnixNano()
-	vh.Add(1, []float32{1.0}, now, nil)
-	vh.Add(1, []float32{2.0}, now+1000, nil)
+	vh.Add(1, []float32{1.0}, 0.0, now, nil)
+	vh.Add(1, []float32{2.0}, 0.0, now+1000, nil)
 
 	latest, err := vh.GetLatestVersion(1)
 	assert.NoError(t, err)
@@ -44,9 +44,9 @@ func TestVersionHistory_GetVersionAt(t *testing.T) {
 	vh := NewVersionHistory(DefaultVersionHistoryConfig())
 
 	now := time.Now().UnixNano()
-	vh.Add(1, []float32{1.0}, now-1000, nil)
-	vh.Add(1, []float32{2.0}, now, nil)
-	vh.Add(1, []float32{3.0}, now+1000, nil)
+	vh.Add(1, []float32{1.0}, 0.0, now-1000, nil)
+	vh.Add(1, []float32{2.0}, 0.0, now, nil)
+	vh.Add(1, []float32{3.0}, 0.0, now+1000, nil)
 
 	version, err := vh.GetVersionAt(1, now)
 	assert.NoError(t, err)
@@ -57,9 +57,9 @@ func TestVersionHistory_Prune(t *testing.T) {
 	vh := NewVersionHistory(DefaultVersionHistoryConfig())
 
 	now := time.Now().UnixNano()
-	vh.Add(1, []float32{1.0}, now-2000, nil)
-	vh.Add(1, []float32{2.0}, now-1000, nil)
-	vh.Add(1, []float32{3.0}, now, nil)
+	vh.Add(1, []float32{1.0}, 0.0, now-2000, nil)
+	vh.Add(1, []float32{2.0}, 0.0, now-1000, nil)
+	vh.Add(1, []float32{3.0}, 0.0, now, nil)
 
 	pruned := vh.Prune(context.Background(), now-500)
 
@@ -77,7 +77,7 @@ func TestVersionHistory_MaxVersions(t *testing.T) {
 
 	now := time.Now().UnixNano()
 	for i := 0; i < 5; i++ {
-		vh.Add(1, []float32{float32(i)}, now+int64(i)*1000, nil)
+		vh.Add(1, []float32{float32(i)}, 0.0, now+int64(i)*1000, nil)
 	}
 
 	history := vh.GetHistory(1)

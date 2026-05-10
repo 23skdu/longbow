@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// GPUBatchBuildConfig holds configuration for GPU-accelerated HNSW index building.
 type GPUBatchBuildConfig struct {
 	BatchSize       int
 	ParallelSearch  int
@@ -20,6 +21,7 @@ type GPUBatchBuildConfig struct {
 	MaxGPUQueueSize int
 }
 
+// DefaultGPUBatchBuildConfig returns a default configuration for GPU batch building.
 func DefaultGPUBatchBuildConfig() GPUBatchBuildConfig {
 	return GPUBatchBuildConfig{
 		BatchSize:       1000,
@@ -30,6 +32,7 @@ func DefaultGPUBatchBuildConfig() GPUBatchBuildConfig {
 	}
 }
 
+// GPUBatchBuilder manages the pipeline for building an HNSW index using GPU acceleration.
 type GPUBatchBuilder struct {
 	index     *ArrowHNSW
 	config    GPUBatchBuildConfig
@@ -54,6 +57,7 @@ type buildResult struct {
 	err       error
 }
 
+// NewGPUBatchBuilder creates a new GPU batch builder for the given index.
 func NewGPUBatchBuilder(index *ArrowHNSW, config GPUBatchBuildConfig, logger zerolog.Logger) (*GPUBatchBuilder, error) {
 	if index == nil {
 		return nil, fmt.Errorf("index cannot be nil")
@@ -85,6 +89,7 @@ func NewGPUBatchBuilder(index *ArrowHNSW, config GPUBatchBuildConfig, logger zer
 	return builder, nil
 }
 
+// StartPipeline begins the background GPU build pipeline.
 func (b *GPUBatchBuilder) StartPipeline(ctx context.Context) error {
 	b.gpuMu.Lock()
 	defer b.gpuMu.Unlock()
@@ -102,6 +107,7 @@ func (b *GPUBatchBuilder) StartPipeline(ctx context.Context) error {
 	return nil
 }
 
+// StopPipeline signals the background GPU build pipeline to shut down.
 func (b *GPUBatchBuilder) StopPipeline() {
 	b.gpuMu.Lock()
 	defer b.gpuMu.Unlock()
@@ -175,6 +181,7 @@ func (b *GPUBatchBuilder) processTask(task buildTask) {
 	}
 }
 
+// BatchInsertWithGPU inserts a batch of vectors using GPU acceleration for candidate search.
 func (h *ArrowHNSW) BatchInsertWithGPU(ctx context.Context, ids []uint32, vectors [][]float32, level int) error {
 	start := time.Now()
 
@@ -243,6 +250,7 @@ func (h *ArrowHNSW) BatchInsertWithGPU(ctx context.Context, ids []uint32, vector
 }
 
 func (h *ArrowHNSW) insertWithGPUCandidates(id uint32, vec any, level int, gpuCandidates []types.Candidate) error {
+	meta := h.metadataRegistry.Load()
 	data := h.data.Load()
 	if data == nil {
 		return fmt.Errorf("index data not initialized")
@@ -323,6 +331,8 @@ func (h *ArrowHNSW) insertWithGPUCandidates(id uint32, vec any, level int, gpuCa
 			selected := selectNeighborsSimple(neighbors, m)
 
 			searchCtx := h.searchPool.Get()
+			searchCtx.MaxNodeCount = meta.NodeCount
+			searchCtx.MaxGeneration = meta.Generation
 			maxConn := int(h.mMax.Load())
 			if l == 0 {
 				maxConn = int(h.mMax0.Load())
@@ -371,6 +381,7 @@ func selectNeighborsSimple(candidates []types.Candidate, m int) []types.Candidat
 	return candidates[:m]
 }
 
+// BuildIndexWithGPU builds the entire HNSW index from a set of vectors using GPU acceleration.
 func (h *ArrowHNSW) BuildIndexWithGPU(ctx context.Context, vectors [][]float32, ids []uint32, config GPUBatchBuildConfig, logger zerolog.Logger) error {
 	start := time.Now()
 

@@ -7,6 +7,7 @@ import (
 	"unsafe"
 )
 
+// SizeClass defines the configuration for a specific memory size range.
 type SizeClass struct {
 	MinSize   int
 	MaxSize   int
@@ -14,6 +15,7 @@ type SizeClass struct {
 	AllocName string
 }
 
+// SizeClasses is the default set of size classes for memory allocation.
 var SizeClasses = []SizeClass{
 	{MinSize: 0, MaxSize: 64, SlabSize: 1 << 20, AllocName: "tiny"},
 	{MinSize: 65, MaxSize: 256, SlabSize: 2 << 20, AllocName: "small"},
@@ -23,12 +25,14 @@ var SizeClasses = []SizeClass{
 	{MinSize: 16385, MaxSize: 65536, SlabSize: 32 << 20, AllocName: "huge"},
 }
 
+// SizeClassArena provides optimized allocation for different object sizes using multiple arenas.
 type SizeClassArena[T any] struct {
 	mu       sync.RWMutex
 	arenas   map[string]*TypedArena[T]
 	classMap map[int]string
 }
 
+// NewSizeClassArena creates a new size-classed arena.
 func NewSizeClassArena[T any]() *SizeClassArena[T] {
 	sca := &SizeClassArena[T]{
 		arenas:   make(map[string]*TypedArena[T]),
@@ -152,17 +156,18 @@ func (sca *SizeClassArena[T]) Compact(liveRefs map[string][]SliceRef) (map[strin
 	return compactStats, nil
 }
 
-func (sca *SizeClassArena[T]) MemoryUsage() MemoryUsageSummary {
+// MemoryUsage returns a summary of memory usage across all size classes.
+func (sca *SizeClassArena[T]) MemoryUsage() UsageSummary {
 	sca.mu.RLock()
 	defer sca.mu.RUnlock()
 
-	summary := MemoryUsageSummary{
-		ByClass: make(map[string]MemoryClassUsage),
+	summary := UsageSummary{
+		ByClass: make(map[string]ClassUsage),
 	}
 
 	for className, arena := range sca.arenas {
 		stats := arena.Slab().Stats()
-		classUsage := MemoryClassUsage{
+		classUsage := ClassUsage{
 			TotalCapacity: stats.TotalCapacity,
 			UsedBytes:     stats.UsedBytes,
 			Utilization:   float64(stats.UsedBytes) / float64(stats.TotalCapacity) * 100,
@@ -189,24 +194,28 @@ func (sca *SizeClassArena[T]) MemoryUsage() MemoryUsageSummary {
 	return summary
 }
 
-type MemoryUsageSummary struct {
+// UsageSummary provides an overview of memory usage across all size classes.
+type UsageSummary struct {
 	TotalCapacity      int64
 	TotalUsed          int64
 	OverallUtilization float64
-	ByClass            map[string]MemoryClassUsage
+	ByClass            map[string]ClassUsage
 	SortedClasses      []string
 }
 
-type MemoryClassUsage struct {
+// ClassUsage contains memory usage statistics for a specific size class.
+type ClassUsage struct {
 	TotalCapacity int64
 	UsedBytes     int64
 	Utilization   float64
 }
 
+// AllocateOptimized allocates a slice of the given size in the best-fitting size class.
 func AllocateOptimized[T any](sca *SizeClassArena[T], data []T) (SliceRef, string, error) {
 	return sca.AllocSlice(len(data))
 }
 
+// CopyBetweenArenas copies data from one arena to another.
 func CopyBetweenArenas[T any](srcArena, dstArena *TypedArena[T], srcRef SliceRef) (SliceRef, error) {
 	srcData := srcArena.Get(srcRef)
 	if srcData == nil {

@@ -163,7 +163,7 @@ func (p *SharedWorkerPool) SubmitHighPriority(task func()) {
 	nodeID := 0
 	if p.topo != nil && p.topo.NumNodes > 0 {
 		// Use round-robin across nodes for high priority global submit
-		nodeID = int(atomic.AddUint32(&p.nextShard, 1) % uint32(p.topo.NumNodes))
+		nodeID = int(atomic.AddUint32(&p.nextShard, 1) % uint32(p.topo.NumNodes)) // #nosec G115
 	}
 	p.SubmitToNodeHighPriority(nodeID, task)
 }

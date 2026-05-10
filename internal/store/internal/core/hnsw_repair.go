@@ -2,7 +2,6 @@ package core
 
 import (
 	"context"
-	"fmt"
 	"math"
 	"strconv"
 	"sync/atomic"
@@ -29,9 +28,12 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 		return 0
 	}
 
-	maxID := int(h.nodeCount.Load())
+	meta := h.metadataRegistry.Load()
+	maxID := int(meta.NodeCount)
 
-	poolCtx := h.searchPool.Get() // Already returns *ArrowSearchContext if searchPool is ArrowSearchContextPool
+	poolCtx := h.searchPool.Get()
+	poolCtx.MaxNodeCount = meta.NodeCount
+	poolCtx.MaxGeneration = meta.Generation
 	poolCtx.Reset()
 	defer h.searchPool.PutWithMetrics(poolCtx, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 
@@ -86,8 +88,22 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 			}
 
 			// Scan neighbors using unified accessor (Shadow Topology support)
-			neighbors := h.GetNeighborsCombined(lvl, nid)
-			if len(neighbors) == 0 {
+			neighbors := h.GetNeighborsCombinedManual(data, lvl, nid)
+			
+			// Also check legacy arena directly to ensure we catch stale connections
+			// that might have been pruned from PackedNeighbors but are still in the arena.
+			legacyNeighbors := data.GetNeighborsLockFree(lvl, nid)
+			
+			// Combine both sets for a comprehensive tombstone scan
+			combinedSet := make(map[uint32]struct{}, len(neighbors)+len(legacyNeighbors))
+			for _, n := range neighbors { combinedSet[n] = struct{}{} }
+			for _, n := range legacyNeighbors { combinedSet[n] = struct{}{} }
+			
+			var allNeighbors []uint32
+			for n := range combinedSet { allNeighbors = append(allNeighbors, n) }
+
+			if len(allNeighbors) == 0 {
+				data.UnlockNode(lvl, nid, oldVer)
 				continue
 			}
 
@@ -95,7 +111,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 			hasTombstone := false
 			var knownTombstones []uint32
 
-			for _, neighborID := range neighbors {
+			for _, neighborID := range allNeighbors {
 				if h.deleted.Contains(neighborID) {
 					hasTombstone = true
 					knownTombstones = append(knownTombstones, neighborID)
@@ -103,10 +119,9 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 			}
 
 			if !hasTombstone {
-				// Don't unlock here, just continue to next layer
+				data.UnlockNode(lvl, nid, oldVer)
 				continue
 			} else {
-				fmt.Printf("[DEBUG] RepairTombstones node %d layer %d: found tombstones %v\n", nid, lvl, knownTombstones)
 				// Repair Logic
 				// 1. Identify valid candidates: (Current Neighbors - Tombstones) U (Tombstones' Neighbors)
 
@@ -115,7 +130,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				poolCtx.visited.ClearSIMD()
 
 				// Add existing VALID neighbors
-				for _, neighborID := range neighbors {
+				for _, neighborID := range allNeighbors {
 					if !h.deleted.Contains(neighborID) {
 						dist, err := h.distFunc(getVec(h, data, nid), getVec(h, data, neighborID))
 						if err != nil {
@@ -202,13 +217,22 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 					atomic.StoreUint32(&neighborsChunk[baseIdx+writeIdx], sel.ID)
 					writeIdx++
 				}
-				// Clear remainder
-				for k := writeIdx; k < maxConn; k++ {
+				// Clear remainder up to MaxNeighbors to ensure no tombstones left in legacy arena
+				for k := writeIdx; k < types.MaxNeighbors; k++ {
 					atomic.StoreUint32(&neighborsChunk[baseIdx+k], 0)
 				}
 
 				atomic.StoreInt32(countAddr, int32(writeIdx))
 				atomic.AddUint32(verAddr, 1) // Even
+
+				// Also update PackedNeighbors for consistency
+				if lvl < len(data.PackedNeighbors) && data.PackedNeighbors[lvl] != nil {
+					newIDs := make([]uint32, len(selected))
+					for k, sel := range selected {
+						newIDs[k] = sel.ID
+					}
+					_ = data.PackedNeighbors[lvl].SetNeighbors(nid, newIDs)
+				}
 
 				repaired++
 				

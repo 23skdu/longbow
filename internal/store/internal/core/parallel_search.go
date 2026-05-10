@@ -56,6 +56,7 @@ type SearchAttemptBuffers struct {
 	Scores    []float32
 }
 
+// EnsureCapacity grows the internal slices to accommodate at least n elements.
 func (b *SearchAttemptBuffers) EnsureCapacity(n int) {
 	if cap(b.Locations) < n {
 		b.Locations = make([]types.Location, n)
@@ -79,6 +80,7 @@ func (b *SearchAttemptBuffers) EnsureCapacity(n int) {
 	}
 }
 
+// Reset clears the buffers for reuse without releasing underlying memory.
 func (b *SearchAttemptBuffers) Reset() {
 	b.Locations = b.Locations[:0]
 	b.Found = b.Found[:0]

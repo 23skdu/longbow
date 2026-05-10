@@ -14,10 +14,10 @@ func main() {
 		xLow := XMM(); VEXTRACTF128(Imm(0), y, xLow)
 		xHigh := XMM(); VEXTRACTF128(Imm(1), y, xHigh)
 		VADDPS(xLow, xHigh, xHigh)
-		xSum := XMM(); VMOVHLPS(xHigh, xSum, xSum)
-		VADDPS(xSum, xHigh, xHigh)
 		xNext := XMM(); VMOVSHDUP(xHigh, xNext)
-		VADDSS(xNext, xHigh, xHigh)
+		VADDPS(xNext, xHigh, xHigh)
+		xSum := XMM(); VMOVHLPS(xHigh, xHigh, xSum)
+		VADDSS(xSum, xHigh, xHigh)
 		return xHigh
 	}
 	reduceZMM := func(z reg.VecVirtual) reg.VecVirtual {
@@ -541,10 +541,10 @@ func ImplementEuclideanVertical4AVX2() {
 		xl := XMM(); VEXTRACTF128(Imm(0), y, xl)
 		xh := XMM(); VEXTRACTF128(Imm(1), y, xh)
 		VADDPS(xl, xh, xh)
-		xf := XMM(); VMOVHLPS(xh, xf, xf)
-		VADDPS(xf, xh, xh)
 		xn := XMM(); VMOVSHDUP(xh, xn)
-		VADDSS(xn, xh, xh)
+		VADDPS(xn, xh, xh)
+		xs := XMM(); VMOVHLPS(xh, xh, xs)
+		VADDSS(xs, xh, xh)
 		return xh
 	}
 	r0 := reduceToScalar(s0); r1 := reduceToScalar(s1); r2 := reduceToScalar(s2); r3 := reduceToScalar(s3)
@@ -671,10 +671,10 @@ func ImplementEuclideanVertical4AVX512() {
 		xl := XMM(); VEXTRACTF128(Imm(0), yh, xl)
 		xh := XMM(); VEXTRACTF128(Imm(1), yh, xh)
 		VADDPS(xl, xh, xh)
-		xf := XMM(); VMOVHLPS(xh, xf, xf)
-		VADDPS(xf, xh, xh)
 		xn := XMM(); VMOVSHDUP(xh, xn)
-		VADDSS(xn, xh, xh)
+		VADDPS(xn, xh, xh)
+		xs := XMM(); VMOVHLPS(xh, xh, xs)
+		VADDSS(xs, xh, xh)
 		return xh
 	}
 	r0 := reduceZToScalar(s0); r1 := reduceZToScalar(s1); r2 := reduceZToScalar(s2); r3 := reduceZToScalar(s3)
@@ -737,10 +737,10 @@ func ImplementDotVertical4AVX512() {
 		xl := XMM(); VEXTRACTF128(Imm(0), yh, xl)
 		xh := XMM(); VEXTRACTF128(Imm(1), yh, xh)
 		VADDPS(xl, xh, xh)
-		xf := XMM(); VMOVHLPS(xh, xf, xf)
-		VADDPS(xf, xh, xh)
 		xn := XMM(); VMOVSHDUP(xh, xn)
-		VADDSS(xn, xh, xh)
+		VADDPS(xn, xh, xh)
+		xs := XMM(); VMOVHLPS(xh, xh, xs)
+		VADDSS(xs, xh, xh)
 		return xh
 	}
 	r0 := reduceZToScalar(s0); r1 := reduceZToScalar(s1); r2 := reduceZToScalar(s2); r3 := reduceZToScalar(s3)

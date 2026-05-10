@@ -126,7 +126,7 @@ func TestTurboQuant_LargeDimensions(t *testing.T) {
 	assert.True(t, len(encoded) > 0)
 }
 
-func FuzzTurboQuant_EncodeDecode(f *testing.F) {
+func FuzzTurboQuantEncodeDecode(f *testing.F) {
 	f.Fuzz(func(t *testing.T, dim int, bits int, seed int64) {
 		if dim <= 0 || dim > 8192 || bits < 2 || bits > 8 {
 			t.Skip()
@@ -156,7 +156,7 @@ func FuzzTurboQuant_EncodeDecode(f *testing.F) {
 	})
 }
 
-func FuzzTurboQuant_Compression(f *testing.F) {
+func FuzzTurboQuantCompression(f *testing.F) {
 	f.Fuzz(func(t *testing.T, dim int, bits int) {
 		if dim <= 0 || dim > 8192 || bits < 2 || bits > 8 {
 			t.Skip()

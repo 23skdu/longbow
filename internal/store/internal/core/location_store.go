@@ -152,14 +152,7 @@ func (s *ChunkedLocationStore) Set(id types.VectorID, loc types.Location) {
 	if chunkIdx < len(chunks) {
 		// Update data
 		oldPacked := chunks[chunkIdx].data[offset].Swap(packed)
-		
-		// Update reverse map
-		if oldPacked != 0 {
-			oldShard := s.getShard(oldPacked)
-			oldShard.mu.Lock()
-			delete(oldShard.data, oldPacked)
-			oldShard.mu.Unlock()
-		}
+		_ = oldPacked // Performance trade-off: We don't remove old keys from reverse map
 		
 		newShard := s.getShard(packed)
 		newShard.mu.Lock()

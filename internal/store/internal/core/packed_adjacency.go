@@ -11,18 +11,21 @@ import (
 )
 
 const (
+	// AdjacencyChunkSize defines the number of nodes per adjacency page.
 	AdjacencyChunkSize = 1024
 	AdjacencyLockShards = 1024
 
-	// PackedRef: [48 bits Offset | 16 bits Length]
+	// PackedRefLenMask is the bitmask for extracting the neighbor list length.
 	PackedRefLenMask  = 0xFFFF
 	PackedRefOffShift = 16
 )
 
+// PackRef combines an offset and length into a single 64-bit reference.
 func PackRef(offset uint64, length uint32) uint64 {
 	return (offset << PackedRefOffShift) | (uint64(length) & PackedRefLenMask)
 }
 
+// UnpackRef extracts the offset and length from a 64-bit reference.
 func UnpackRef(packed uint64) (offset uint64, length uint32) {
 	return packed >> PackedRefOffShift, uint32(packed & PackedRefLenMask)
 }
@@ -45,6 +48,7 @@ type PackedAdjacency struct {
 	locks [AdjacencyLockShards]sync.Mutex
 }
 
+// NewPackedAdjacency creates a new PackedAdjacency structure with the given arena.
 func NewPackedAdjacency(arena *memory.SlabArena, initialCapacity int) *PackedAdjacency {
 	return NewPackedAdjacencyWithArenas(arena,
 		memory.NewTypedArena[uint32](arena),
@@ -115,6 +119,7 @@ func (pa *PackedAdjacency) EnsureCapacity(nodeID uint32) {
 	pa.chunks.Store(&newChunks)
 }
 
+// SetNeighbors updates the neighbor list for a node.
 func (pa *PackedAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
 
 	if len(neighbors) == 0 {
@@ -139,6 +144,7 @@ func (pa *PackedAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
 	return pa.updatePage(id, packed)
 }
 
+// SetNeighborsF16 updates the neighbor list and associated distances for a node.
 func (pa *PackedAdjacency) SetNeighborsF16(id uint32, neighbors []uint32, distances []float16.Num) error {
 
 	if len(neighbors) != len(distances) {
@@ -222,6 +228,7 @@ func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
 	return nil
 }
 
+// CASNeighbors performs an atomic Compare-And-Swap operation on a node's neighbor list.
 func (pa *PackedAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint32) bool {
 	var newPacked uint64
 	if len(new) > 0 {
@@ -251,18 +258,22 @@ func (pa *PackedAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint3
 	return atomic.CompareAndSwapUint64(&page[offsetInPage], oldPacked, newPacked)
 }
 
+// GetPackedNeighbors retrieves the packed reference for a node's neighbors.
 func (pa *PackedAdjacency) GetPackedNeighbors(id uint32) (uint64, bool) {
 	return pa.getPackedRef(id)
 }
 
+// Lock is a no-op for the lock-free implementation.
 func (pa *PackedAdjacency) Lock(id uint32) {
 	// No-op in lock-free version
 }
 
+// Unlock is a no-op for the lock-free implementation.
 func (pa *PackedAdjacency) Unlock(id uint32) {
 	// No-op in lock-free version
 }
 
+// UpdateNeighbors modifies a node's neighbor list using a transformation function.
 func (pa *PackedAdjacency) UpdateNeighbors(id uint32, fn func(old []uint32) []uint32) error {
 	lock := &pa.locks[id%AdjacencyLockShards]
 	lock.Lock()
@@ -291,6 +302,7 @@ func (pa *PackedAdjacency) UpdateNeighbors(id uint32, fn func(old []uint32) []ui
 	return pa.updatePage(id, newPacked)
 }
 
+// GetNeighborsFromPacked retrieves the neighbor list from a packed reference.
 func (pa *PackedAdjacency) GetNeighborsFromPacked(packed uint64) []uint32 {
 	if packed == 0 {
 		return nil
@@ -300,6 +312,7 @@ func (pa *PackedAdjacency) GetNeighborsFromPacked(packed uint64) []uint32 {
 	return pa.neighborArena.Get(nRef)
 }
 
+// GetNeighbors retrieves the neighbor list for a node.
 func (pa *PackedAdjacency) GetNeighbors(id uint32) ([]uint32, bool) {
 	packed, ok := pa.getPackedRef(id)
 	if !ok {
@@ -311,6 +324,7 @@ func (pa *PackedAdjacency) GetNeighbors(id uint32) ([]uint32, bool) {
 	return pa.neighborArena.Get(nRef), true
 }
 
+// GetNeighborsF16 retrieves the neighbor list and distances for a node.
 func (pa *PackedAdjacency) GetNeighborsF16(id uint32) ([]uint32, []float16.Num, bool) {
 	packed, ok := pa.getPackedRef(id)
 	if !ok {

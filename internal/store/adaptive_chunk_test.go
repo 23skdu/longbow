@@ -266,7 +266,7 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = idx.ProcessResultsParallel(context.Background(), query, neighbors500, 10, nil)
+			_ = idx.ProcessResultsParallel(context.Background(), query, query, neighbors500, 10, nil)
 		}
 	})
 
@@ -279,7 +279,7 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = idx.ProcessResultsParallel(context.Background(), query, neighbors5000, 10, nil)
+			_ = idx.ProcessResultsParallel(context.Background(), query, query, neighbors5000, 10, nil)
 		}
 	})
 }

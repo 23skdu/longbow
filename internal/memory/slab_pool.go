@@ -85,6 +85,7 @@ func PutSlab(b []byte) {
 	// Else drop it
 }
 
+// Get retrieves a slab from the pool or allocates a new one.
 func (p *SlabPool) Get() []byte {
 	atomic.AddInt64(&p.activeCount, 1)
 	// Only decrement pooledCount if there was actually something in the pool
@@ -99,6 +100,7 @@ func (p *SlabPool) Get() []byte {
 	return *p.pool.Get().(*[]byte)
 }
 
+// Put returns a slab to the pool for reuse.
 func (p *SlabPool) Put(b []byte) {
 	if cap(b) != p.size {
 		return

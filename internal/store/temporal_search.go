@@ -58,6 +58,7 @@ func DefaultTemporalConfig() TemporalConfig {
 type TemporalVector struct {
 	ID        uint64
 	Vector    []float32
+	Norm      float32 // Pre-calculated norm
 	Timestamp int64
 	Metadata  []byte
 	Tombstone bool
@@ -69,7 +70,7 @@ type TemporalIndex struct {
 	dimension    int
 	vectors      sync.Map
 	temporalTree atomic.Pointer[TemporalTree]
-	byTimestamp  sync.Map
+	history      *VersionHistory
 	cache        *TemporalResultCache
 	pointCount   atomic.Int64
 	gpuIndex     atomic.Value // holds gputypes.Index
@@ -340,6 +341,50 @@ func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
 	return results
 }
 
+// GetUniqueIDsInRange returns unique vector IDs within the specified timestamp range, 
+// keeping only the most recent version of each ID.
+func (tt *TemporalTree) GetUniqueIDsInRange(start, end int64) []uint64 {
+	tt.mu.RLock()
+	defer tt.mu.RUnlock()
+
+	if len(tt.chunks) == 0 {
+		return nil
+	}
+
+	// Find the end chunk
+	endChunkIdx := sort.Search(len(tt.chunks), func(i int) bool {
+		return tt.chunks[i].maxTs >= end
+	})
+	if endChunkIdx == len(tt.chunks) {
+		endChunkIdx = len(tt.chunks) - 1
+	}
+
+	uniqueIDs := make(map[uint64]struct{})
+	var results []uint64
+	
+	for i := endChunkIdx; i >= 0; i-- {
+		chunk := tt.chunks[i]
+		if chunk.maxTs < start {
+			break
+		}
+		
+		for j := len(chunk.nodes) - 1; j >= 0; j-- {
+			node := &chunk.nodes[j]
+			if node.Timestamp >= start && node.Timestamp <= end {
+				for _, id := range node.VectorIDs {
+					if _, seen := uniqueIDs[id]; !seen {
+						uniqueIDs[id] = struct{}{}
+						results = append(results, id)
+					}
+				}
+			} else if node.Timestamp < start {
+				return results
+			}
+		}
+	}
+	return results
+}
+
 // GetBefore returns all vector IDs with timestamps before the specified value.
 func (tt *TemporalTree) GetBefore(timestamp int64) []uint64 {
 	return tt.GetRange(0, timestamp-1)
@@ -350,34 +395,6 @@ func (tt *TemporalTree) GetAfter(timestamp int64) []uint64 {
 	return tt.GetRange(timestamp+1, math.MaxInt64)
 }
 
-
-// GetLatest returns the vector IDs from the last n timestamps.
-func (tt *TemporalTree) GetLatest(n int) []uint64 {
-	tt.mu.RLock()
-	defer tt.mu.RUnlock()
-
-	if len(tt.chunks) == 0 {
-		return nil
-	}
-
-	var results []uint64
-	remaining := n
-	for i := len(tt.chunks) - 1; i >= 0 && remaining > 0; i-- {
-		chunk := tt.chunks[i]
-		count := len(chunk.nodes)
-		take := remaining
-		if take > count {
-			take = count
-		}
-		
-		startIdx := count - take
-		for j := startIdx; j < count; j++ {
-			results = append(results, chunk.nodes[j].VectorIDs...)
-		}
-		remaining -= take
-	}
-	return results
-}
 
 // GetEarliest returns the vector IDs from the first n timestamps.
 func (tt *TemporalTree) GetEarliest(n int) []uint64 {
@@ -406,6 +423,66 @@ func (tt *TemporalTree) GetEarliest(n int) []uint64 {
 	return results
 }
 
+// GetLatest returns the last n vector IDs added to the tree.
+func (tt *TemporalTree) GetLatest(n int) []uint64 {
+	tt.mu.RLock()
+	defer tt.mu.RUnlock()
+
+	if len(tt.chunks) == 0 {
+		return nil
+	}
+
+	var results []uint64
+	remaining := n
+	// Iterate backwards from the most recent chunk
+	for i := len(tt.chunks) - 1; i >= 0 && remaining > 0; i-- {
+		chunk := tt.chunks[i]
+		nodes := chunk.nodes
+		count := len(nodes)
+		take := remaining
+		if take > count {
+			take = count
+		}
+		
+		for j := count - 1; j >= count-take; j-- {
+			results = append(results, nodes[j].VectorIDs...)
+		}
+		remaining -= take
+	}
+	return results
+}
+
+// GetUniqueLatest returns the last n unique vector IDs added to the tree.
+func (tt *TemporalTree) GetUniqueLatest(n int) []uint64 {
+	tt.mu.RLock()
+	defer tt.mu.RUnlock()
+
+	if len(tt.chunks) == 0 {
+		return nil
+	}
+
+	uniqueIDs := make(map[uint64]struct{})
+	var results []uint64
+	remaining := n
+	
+	for i := len(tt.chunks) - 1; i >= 0 && remaining > 0; i-- {
+		chunk := tt.chunks[i]
+		for j := len(chunk.nodes) - 1; j >= 0 && remaining > 0; j-- {
+			for _, id := range chunk.nodes[j].VectorIDs {
+				if _, seen := uniqueIDs[id]; !seen {
+					uniqueIDs[id] = struct{}{}
+					results = append(results, id)
+					remaining--
+					if remaining == 0 {
+						break
+					}
+				}
+			}
+		}
+	}
+	return results
+}
+
 // Len returns the number of unique timestamps in the tree.
 func (tt *TemporalTree) Len() int {
 	tt.mu.RLock()
@@ -422,6 +499,7 @@ func NewTemporalIndex(dimension int) *TemporalIndex {
 	ti := &TemporalIndex{
 		dimension: dimension,
 		cache:     NewTemporalResultCache(1024),
+		history:   NewVersionHistory(DefaultVersionHistoryConfig()),
 	}
 	ti.temporalTree.Store(NewTemporalTree())
 	return ti
@@ -436,9 +514,11 @@ func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metad
 		return fmt.Errorf("dimension mismatch: expected %d, got %d", ti.dimension, len(vector))
 	}
 
+	norm := ti.computeNorm(vector)
 	vec := &TemporalVector{
 		ID:        id,
 		Vector:    vector,
+		Norm:      norm,
 		Timestamp: timestamp,
 		Metadata:  metadata,
 		Tombstone: false,
@@ -451,10 +531,9 @@ func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metad
 	}
 	ti.pointCount.Add(1)
 
-	val, _ := ti.byTimestamp.LoadOrStore(timestamp, &[]uint64{})
-	ids := val.(*[]uint64)
-	newIds := append(*ids, id)
-	ti.byTimestamp.Store(timestamp, &newIds)
+	if ti.history != nil {
+		ti.history.Add(id, vector, norm, timestamp, metadata)
+	}
 
 	return nil
 }
@@ -467,27 +546,28 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 	tree := ti.temporalTree.Load()
 	for i := range ids {
 		if len(vectors[i]) != ti.dimension {
-			continue // Or return error? For batch, maybe skip or return first error.
+			continue
 		}
 
 		var m []byte
 		if i < len(metadata) {
 			m = metadata[i]
 		}
+		
+		norm := ti.computeNorm(vectors[i])
 		vec := &TemporalVector{
 			ID:        ids[i],
 			Vector:    vectors[i],
+			Norm:      norm,
 			Timestamp: timestamps[i],
 			Metadata:  m,
 			Tombstone: false,
 		}
 
 		ti.vectors.Store(ids[i], vec)
-		
-		val, _ := ti.byTimestamp.LoadOrStore(timestamps[i], &[]uint64{})
-		tsIds := val.(*[]uint64)
-		newIds := append(*tsIds, ids[i])
-		ti.byTimestamp.Store(timestamps[i], &newIds)
+		if ti.history != nil {
+			ti.history.Add(ids[i], vectors[i], norm, timestamps[i], m)
+		}
 	}
 	
 	if tree != nil {
@@ -531,9 +611,11 @@ func (ti *TemporalIndex) Update(id uint64, vector []float32, timestamp int64, me
 	newOldVec.Tombstone = true
 	ti.vectors.Store(id, &newOldVec)
 
+	norm := ti.computeNorm(vector)
 	newVec := &TemporalVector{
 		ID:        id,
 		Vector:    vector,
+		Norm:      norm,
 		Timestamp: timestamp,
 		Metadata:  metadata,
 		Tombstone: false,
@@ -544,12 +626,10 @@ func (ti *TemporalIndex) Update(id uint64, vector []float32, timestamp int64, me
 	if tree != nil {
 		tree.Insert(timestamp, id)
 	}
-	// Note: id was already counted, so no pointCount.Add(1)
-
-	val, _ = ti.byTimestamp.LoadOrStore(timestamp, &[]uint64{})
-	ids := val.(*[]uint64)
-	newIds := append(*ids, id)
-	ti.byTimestamp.Store(timestamp, &newIds)
+	
+	if ti.history != nil {
+		ti.history.Add(id, vector, norm, timestamp, metadata)
+	}
 
 	return nil
 }
@@ -566,101 +646,64 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	validIDs := tree.GetBefore(timestamp + 1)
-
-	type scoredResult struct {
-		id       uint64
-		distance float64
-	}
-
-	results := make([]scoredResult, 0, len(validIDs))
-	pool := internalcore.GetSharedPool()
-
-	// 1. Filter out tombstones and collect vectors
-	type candidate struct {
-		id     uint64
-		vector []float32
-	}
-	candidates := make([]candidate, len(validIDs))
-	pool.ParallelFor(len(validIDs), 2048, func(start, end int) {
-		for i := start; i < end; i++ {
-			id := validIDs[i]
-			val, ok := ti.vectors.Load(id)
-			if !ok {
-				continue
-			}
-			vec := val.(*TemporalVector)
-			if vec.Tombstone {
-				continue
-			}
-			candidates[i] = candidate{id: id, vector: vec.Vector}
-		}
-	})
-
-	// Compact candidates
-	filteredCandidates := make([]candidate, 0, len(candidates))
-	for _, c := range candidates {
-		if c.vector != nil {
-			filteredCandidates = append(filteredCandidates, c)
-		}
-	}
-	candidates = filteredCandidates
-
-	if len(candidates) == 0 {
+	// Get latest version of each unique ID before or at timestamp
+	validIDs := tree.GetUniqueIDsInRange(0, timestamp)
+	if len(validIDs) == 0 {
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	// 2. Compute norms (distances)
-	distances := make([]float32, len(candidates))
+	type scoredResult struct {
+		id       uint64
+		distance float32
+	}
+
+	results := make([]scoredResult, 0, len(validIDs))
 	
-	var gpuIdx gputypes.Index
-	if val := ti.gpuIndex.Load(); val != nil {
-		gpuIdx = val.(gputypes.Index)
-	}
-
-	if gpuIdx != nil {
-		// Batch all vectors into flat slice for GPU
-		flatVectors := make([]float32, len(candidates)*ti.dimension)
-		pool.ParallelFor(len(candidates), 512, func(start, end int) {
-			for i := start; i < end; i++ {
-				copy(flatVectors[i*ti.dimension:(i+1)*ti.dimension], candidates[i].vector)
+	// Collect norms for the valid versions
+	for _, id := range validIDs {
+		var norm float32
+		var found bool
+		
+		// If history is enabled, get the specific version's norm
+		if ti.history != nil {
+			if v, err := ti.history.GetVersionAt(id, timestamp); err == nil {
+				norm = v.Norm
+				found = true
 			}
-		})
-		gpuRes, err := gpuIdx.NormBatch(flatVectors, ti.dimension)
-		if err == nil {
-			distances = gpuRes
-		} else {
-			// Fallback to CPU
-			pool.ParallelFor(len(candidates), 1024, func(start, end int) {
-				for i := start; i < end; i++ {
-					distances[i] = ti.computeNorm(candidates[i].vector)
-				}
-			})
 		}
-	} else {
-		// CPU Parallel
-		pool.ParallelFor(len(candidates), 1024, func(start, end int) {
-			for i := start; i < end; i++ {
-				distances[i] = ti.computeNorm(candidates[i].vector)
+		
+		// Fallback to latest norm if history lookup failed or disabled
+		if !found {
+			if val, ok := ti.vectors.Load(id); ok {
+				vec := val.(*TemporalVector)
+				if !vec.Tombstone {
+					norm = vec.Norm
+					found = true
+				}
 			}
-		})
+		}
+		
+		if found {
+			results = append(results, scoredResult{id: id, distance: norm})
+		}
 	}
 
-	// 3. Collect results
-	for i, c := range candidates {
-		results = append(results, scoredResult{id: c.id, distance: float64(distances[i])})
-	}
-
+	// Sort by norm (ascending)
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].distance < results[j].distance
 	})
 
-	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
-	for i := 0; i < min(k, len(results)); i++ {
+	limit := k
+	if len(results) < limit {
+		limit = len(results)
+	}
+
+	searchResults := make([]lbtypes.SearchResult, 0, limit)
+	for i := 0; i < limit; i++ {
 		searchResults = append(searchResults, lbtypes.SearchResult{
 			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: float32(results[i].distance),
-			Score:    float32(1.0 / (1.0 + results[i].distance)),
+			Distance: results[i].distance,
+			Score:    1.0 / (1.0 + results[i].distance),
 		})
 	}
 
@@ -710,93 +753,64 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	validIDs := tree.GetRange(startTime, endTime)
-
-	type scoredResult struct {
-		id       uint64
-		distance float64
-	}
-
-	pool := internalcore.GetSharedPool()
-	// Collect vectors for batch norm computation
-	type candidate struct {
-		id     uint64
-		vector []float32
-	}
-	candidates := make([]candidate, len(validIDs))
-	pool.ParallelFor(len(validIDs), 2048, func(start, end int) {
-		for i := start; i < end; i++ {
-			id := validIDs[i]
-			val, ok := ti.vectors.Load(id)
-			if !ok {
-				continue
-			}
-			vec := val.(*TemporalVector)
-			if vec.Tombstone {
-				continue
-			}
-			candidates[i] = candidate{id: id, vector: vec.Vector}
-		}
-	})
-
-	filteredCandidates := make([]candidate, 0, len(candidates))
-	for _, c := range candidates {
-		if c.vector != nil {
-			filteredCandidates = append(filteredCandidates, c)
-		}
-	}
-	candidates = filteredCandidates
-
-	if len(candidates) == 0 {
+	// Get unique IDs in range (most recent versions within range)
+	validIDs := tree.GetUniqueIDsInRange(startTime, endTime)
+	if len(validIDs) == 0 {
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	distances := make([]float32, len(candidates))
-	var gpuIdx gputypes.Index
-	if val := ti.gpuIndex.Load(); val != nil {
-		gpuIdx = val.(gputypes.Index)
+	type scoredResult struct {
+		id       uint64
+		distance float32
 	}
 
-	if gpuIdx != nil {
-		flatVectors := make([]float32, len(candidates)*ti.dimension)
-		pool.ParallelFor(len(candidates), 512, func(start, end int) {
-			for i := start; i < end; i++ {
-				copy(flatVectors[i*ti.dimension:(i+1)*ti.dimension], candidates[i].vector)
+	results := make([]scoredResult, 0, len(validIDs))
+	
+	// Collect norms for the versions in the range
+	for _, id := range validIDs {
+		var norm float32
+		var found bool
+		
+		// If history is enabled, get the best version within the range
+		if ti.history != nil {
+			if v, err := ti.history.GetVersionAt(id, endTime); err == nil && v.Timestamp >= startTime {
+				norm = v.Norm
+				found = true
 			}
-		})
-		gpuRes, err := gpuIdx.NormBatch(flatVectors, ti.dimension)
-		if err == nil {
-			distances = gpuRes
-		} else {
-			pool.ParallelFor(len(candidates), 1024, func(start, end int) {
-				for i := start; i < end; i++ {
-					distances[i] = ti.computeNorm(candidates[i].vector)
-				}
-			})
 		}
-	} else {
-		pool.ParallelFor(len(candidates), 1024, func(start, end int) {
-			for i := start; i < end; i++ {
-				distances[i] = ti.computeNorm(candidates[i].vector)
+		
+		// Fallback to latest norm if historylookup failed or disabled
+		if !found {
+			if val, ok := ti.vectors.Load(id); ok {
+				vec := val.(*TemporalVector)
+				if !vec.Tombstone && vec.Timestamp >= startTime && vec.Timestamp <= endTime {
+					norm = vec.Norm
+					found = true
+				}
 			}
-		})
+		}
+		
+		if found {
+			results = append(results, scoredResult{id: id, distance: norm})
+		}
 	}
 
-	results := make([]scoredResult, len(candidates))
-	for i, c := range candidates {
-		results[i] = scoredResult{id: c.id, distance: float64(distances[i])}
-	}
-
+	// Sort by norm (ascending)
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].distance < results[j].distance
 	})
 
-	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
-	for i := 0; i < min(k, len(results)); i++ {
+	limit := k
+	if len(results) < limit {
+		limit = len(results)
+	}
+
+	searchResults := make([]lbtypes.SearchResult, 0, limit)
+	for i := 0; i < limit; i++ {
 		searchResults = append(searchResults, lbtypes.SearchResult{
 			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: float32(results[i].distance),
-			Score:    float32(1.0 / (1.0 + results[i].distance)),
+			Distance: results[i].distance,
+			Score:    1.0 / (1.0 + results[i].distance),
 		})
 	}
 
@@ -810,93 +824,45 @@ func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	validIDs := tree.GetLatest(windowSize)
-	type scoredResult struct {
-		id       uint64
-		distance float64
-	}
-
-	// Collect vectors for batch norm computation
-	type candidate struct {
-		id     uint64
-		vector []float32
-	}
-
-	pool := internalcore.GetSharedPool()
-	candidates := make([]candidate, len(validIDs))
-	pool.ParallelFor(len(validIDs), 2048, func(start, end int) {
-		for i := start; i < end; i++ {
-			id := validIDs[i]
-			val, ok := ti.vectors.Load(id)
-			if !ok {
-				continue
-			}
-			vec := val.(*TemporalVector)
-			if vec.Tombstone {
-				continue
-			}
-			candidates[i] = candidate{id: id, vector: vec.Vector}
-		}
-	})
-
-	filteredCandidates := make([]candidate, 0, len(candidates))
-	for _, c := range candidates {
-		if c.vector != nil {
-			filteredCandidates = append(filteredCandidates, c)
-		}
-	}
-	candidates = filteredCandidates
-
-	if len(candidates) == 0 {
+	// Use optimized unique latest retrieval
+	validIDs := tree.GetUniqueLatest(windowSize)
+	if len(validIDs) == 0 {
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	distances := make([]float32, len(candidates))
-	var gpuIdx gputypes.Index
-	if val := ti.gpuIndex.Load(); val != nil {
-		gpuIdx = val.(gputypes.Index)
+	type scoredResult struct {
+		id       uint64
+		distance float32
 	}
 
-	if gpuIdx != nil {
-		flatVectors := make([]float32, len(candidates)*ti.dimension)
-		pool.ParallelFor(len(candidates), 512, func(start, end int) {
-			for i := start; i < end; i++ {
-				copy(flatVectors[i*ti.dimension:(i+1)*ti.dimension], candidates[i].vector)
+	results := make([]scoredResult, 0, len(validIDs))
+	
+	// Collect norms for the latest versions
+	for _, id := range validIDs {
+		if val, ok := ti.vectors.Load(id); ok {
+			vec := val.(*TemporalVector)
+			if !vec.Tombstone {
+				results = append(results, scoredResult{id: id, distance: vec.Norm})
 			}
-		})
-		gpuRes, err := gpuIdx.NormBatch(flatVectors, ti.dimension)
-		if err == nil {
-			distances = gpuRes
-		} else {
-			pool.ParallelFor(len(candidates), 1024, func(start, end int) {
-				for i := start; i < end; i++ {
-					distances[i] = ti.computeNorm(candidates[i].vector)
-				}
-			})
 		}
-	} else {
-		pool.ParallelFor(len(candidates), 1024, func(start, end int) {
-			for i := start; i < end; i++ {
-				distances[i] = ti.computeNorm(candidates[i].vector)
-			}
-		})
 	}
 
-	results := make([]scoredResult, len(candidates))
-	for i, c := range candidates {
-		results[i] = scoredResult{id: c.id, distance: float64(distances[i])}
-	}
-
+	// Sort by norm (ascending)
 	sort.Slice(results, func(i, j int) bool {
 		return results[i].distance < results[j].distance
 	})
 
-	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
-	for i := 0; i < min(k, len(results)); i++ {
+	limit := k
+	if len(results) < limit {
+		limit = len(results)
+	}
+
+	searchResults := make([]lbtypes.SearchResult, 0, limit)
+	for i := 0; i < limit; i++ {
 		searchResults = append(searchResults, lbtypes.SearchResult{
 			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: float32(results[i].distance),
-			Score:    float32(1.0 / (1.0 + results[i].distance)),
+			Distance: results[i].distance,
+			Score:    1.0 / (1.0 + results[i].distance),
 		})
 	}
 

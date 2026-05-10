@@ -8,6 +8,7 @@ type QueryPlanner struct {
 	parallelBfs NavigationStrategy
 }
 
+// NewQueryPlanner creates a new QueryPlanner with default navigation strategies.
 func NewQueryPlanner() *QueryPlanner {
 	return &QueryPlanner{
 		bfs:         &BFSStrategy{},

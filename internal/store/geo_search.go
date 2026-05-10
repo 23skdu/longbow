@@ -21,6 +21,24 @@ import (
 // GeoPoint represents a geographic location with latitude and longitude.
 type GeoPoint = lbcore.GeoPoint
 
+var (
+	geoFloat32Pool = sync.Pool{
+		New: func() any {
+			return make([]float32, 0, 1024)
+		},
+	}
+	geoPointPool = sync.Pool{
+		New: func() any {
+			return make([]lbcore.GeoPoint, 0, 1024)
+		},
+	}
+	geoScoredResultPool = sync.Pool{
+		New: func() any {
+			return make([]scoredResult, 0, 1024)
+		},
+	}
+)
+
 // BoundingBox calculates a bounding box around a point with the given radius.
 func BoundingBox(p GeoPoint, radiusKm float64) GeoBoundingBox {
 	latDelta := radiusKm / 111.0
@@ -39,6 +57,13 @@ type GeoBoundingBox = lbtypes.GeoBoundingBox
 
 // GeoPolygon represents a sequence of GeoPoints forming a closed area.
 type GeoPolygon []GeoPoint
+
+type scoredResult struct {
+	id       uint64
+	distance float64
+	vector   []float32
+	score    float64
+}
 
 // GeoDistanceType defines the method used for distance calculations.
 type GeoDistanceType string
@@ -365,19 +390,34 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 	if len(candidates) == 0 {
 		return []lbtypes.SearchResult{}, nil
 	}
+	
 
-	type scoredResult struct {
-		id       uint64
-		distance float64
-		vector   []float32
+	results := geoScoredResultPool.Get().([]scoredResult)
+	if cap(results) < len(candidates) {
+		results = make([]scoredResult, len(candidates))
+	} else {
+		results = results[:len(candidates)]
 	}
+	defer geoScoredResultPool.Put(results)
 
-	results := make([]scoredResult, len(candidates))
 	pool := internalcore.GetSharedPool()
 
 	if gi.config.DistanceType == GeoDistanceHaversine {
-		distances := make([]float32, len(candidates))
-		pts := make([]lbcore.GeoPoint, len(candidates))
+		distances := geoFloat32Pool.Get().([]float32)
+		if cap(distances) < len(candidates) {
+			distances = make([]float32, len(candidates))
+		} else {
+			distances = distances[:len(candidates)]
+		}
+		defer geoFloat32Pool.Put(distances)
+
+		pts := geoPointPool.Get().([]lbcore.GeoPoint)
+		if cap(pts) < len(candidates) {
+			pts = make([]lbcore.GeoPoint, len(candidates))
+		} else {
+			pts = pts[:len(candidates)]
+		}
+		defer geoPointPool.Put(pts)
 
 		// Parallel point preparation
 		pool.ParallelFor(len(candidates), 2048, func(start, end int) {
@@ -394,7 +434,14 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 
 		if gpuIdx != nil {
 			// GPU acceleration path
-			pointsF32 := make([]float32, len(candidates)*2)
+			pointsF32 := geoFloat32Pool.Get().([]float32)
+			if cap(pointsF32) < len(candidates)*2 {
+				pointsF32 = make([]float32, len(candidates)*2)
+			} else {
+				pointsF32 = pointsF32[:len(candidates)*2]
+			}
+			defer geoFloat32Pool.Put(pointsF32)
+
 			pool.ParallelFor(len(candidates), 2048, func(start, end int) {
 				for i := start; i < end; i++ {
 					pointsF32[i*2] = float32(candidates[i].GeoPoint.Lat)
@@ -519,8 +566,22 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 	}
 
 	// Batch compute geo distances
-	geoDistances := make([]float32, len(candidates))
-	points := make([]float32, len(candidates)*2)
+	geoDistances := geoFloat32Pool.Get().([]float32)
+	if cap(geoDistances) < len(candidates) {
+		geoDistances = make([]float32, len(candidates))
+	} else {
+		geoDistances = geoDistances[:len(candidates)]
+	}
+	defer geoFloat32Pool.Put(geoDistances)
+
+	points := geoFloat32Pool.Get().([]float32)
+	if cap(points) < len(candidates)*2 {
+		points = make([]float32, len(candidates)*2)
+	} else {
+		points = points[:len(candidates)*2]
+	}
+	defer geoFloat32Pool.Put(points)
+
 	pool := internalcore.GetSharedPool()
 
 	pool.ParallelFor(len(candidates), 2048, func(start, end int) {
@@ -538,9 +599,16 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 	if gpuIdx != nil {
 		gpuRes, err := gpuIdx.HaversineSearch(float32(center.Lat), float32(center.Lon), points, float32(gi.config.EarthRadius))
 		if err == nil {
-			geoDistances = gpuRes
+			copy(geoDistances, gpuRes)
 		} else {
-			pts := make([]lbcore.GeoPoint, len(candidates))
+			pts := geoPointPool.Get().([]lbcore.GeoPoint)
+			if cap(pts) < len(candidates) {
+				pts = make([]lbcore.GeoPoint, len(candidates))
+			} else {
+				pts = pts[:len(candidates)]
+			}
+			defer geoPointPool.Put(pts)
+
 			pool.ParallelFor(len(candidates), 2048, func(start, end int) {
 				for i := start; i < end; i++ {
 					pts[i] = candidates[i].GeoPoint
@@ -551,7 +619,14 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 			})
 		}
 	} else {
-		pts := make([]lbcore.GeoPoint, len(candidates))
+		pts := geoPointPool.Get().([]lbcore.GeoPoint)
+		if cap(pts) < len(candidates) {
+			pts = make([]lbcore.GeoPoint, len(candidates))
+		} else {
+			pts = pts[:len(candidates)]
+		}
+		defer geoPointPool.Put(pts)
+
 		pool.ParallelFor(len(candidates), 2048, func(start, end int) {
 			for i := start; i < end; i++ {
 				pts[i] = candidates[i].GeoPoint
@@ -562,7 +637,14 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 		})
 	}
 
-	results := make([]scoredResult, len(candidates))
+	results := geoScoredResultPool.Get().([]scoredResult)
+	if cap(results) < len(candidates) {
+		results = make([]scoredResult, len(candidates))
+	} else {
+		results = results[:len(candidates)]
+	}
+	defer geoScoredResultPool.Put(results)
+
 	pool = internalcore.GetSharedPool()
 
 	pool.ParallelFor(len(candidates), 512, func(start, end int) {

@@ -31,6 +31,12 @@ const ShardedLockCount = 1024
 // AddBatchBulk attempts to insert a batch of vectors in parallel using a bulk strategy.
 // It assumes IDs, locations, and capacity have already been prepared/reserved.
 func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vecs any) error {
+	h.bulkMu.Lock()
+	defer h.bulkMu.Unlock()
+	return h.addBatchBulkInternal(ctx, startID, n, vecs)
+}
+
+func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n int, vecs any) error {
 	if n <= 0 {
 		return nil
 	}
@@ -449,7 +455,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			// Init levels chunk if needed
 			levelsChunk := data.GetLevelsChunk(cID)
 			if levelsChunk != nil {
-				atomic.StoreUint32(&levelsChunk[cOff], uint32(level))
+				atomic.StoreUint32(&levelsChunk[cOff], uint32(level)) // #nosec G115
 			}
 		}
 	})
@@ -460,7 +466,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
  
 	// Create a stable, read-only version for other workers to clone from
 	stableData := data.Clone()
-	h.compareAndSwapData(stableData)
+	h.compareAndSwapData(h.data.Load(), stableData)
 
 	// 3. Sequential Bootstrap Phase
 	// Establish a stable hierarchy by inserting a portion sequentially.
@@ -494,7 +500,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			h.updateMetadataIfHigher(bootstrapEp, bootstrapMaxL)
 		}
 	}
-	h.compareAndSwapData(data.Clone())
+	h.compareAndSwapData(h.data.Load(), data.Clone())
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -764,13 +770,13 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			// Only clone if there are more sub-batches to process to avoid final redundant clone
 			if i+subBatchSize < len(activeIndices) {
 				data = data.Clone()
-				h.compareAndSwapData(data)
+				h.compareAndSwapData(h.data.Load(), data)
 			}
 		}
 
 		// Final layer publish
 		data = data.Clone()
-		h.compareAndSwapData(data)
+		h.compareAndSwapData(h.data.Load(), data)
 	}
 
 
@@ -796,7 +802,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	}
 	h.initMu.Unlock()
 
-	h.compareAndSwapData(data.Clone())
+	h.compareAndSwapData(h.data.Load(), data.Clone())
 
 	if h.config.SQ8Enabled && h.quantizer != nil && !h.sq8Ready.Load() {
 		if vecsF32, ok := vecs.([][]float32); ok {

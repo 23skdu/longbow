@@ -61,7 +61,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 			data = h.data.Load()
 
 			// Scan neighbors using unified accessor (Shadow Topology support)
-			neighbors := h.GetNeighborsCombinedManual(data, lvl, nid, meta.Generation)
+			neighbors := h.GetNeighborsCombinedManual(data, lvl, nid, poolCtx.neighborBatch, meta.Generation)
 			if len(neighbors) == 0 {
 				continue
 			}
@@ -142,7 +142,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 					if lvl >= len(data.Neighbors) || int(tCID) >= len(data.Neighbors[lvl]) || data.Neighbors[lvl][tCID] == 0 {
 						continue
 					}
-					tNeighbors := h.GetNeighborsCombinedManual(data, lvl, tID, meta.Generation)
+					tNeighbors := h.GetNeighborsCombinedManual(data, lvl, tID, poolCtx.neighborBatch, meta.Generation)
 					tCount := len(tNeighbors)
 
 					for k := 0; k < tCount; k++ {

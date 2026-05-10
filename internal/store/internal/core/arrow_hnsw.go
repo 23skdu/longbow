@@ -103,6 +103,7 @@ type ArrowHNSW struct {
 
 	initMu sync.Mutex
 	growMu sync.RWMutex
+	bulkMu sync.Mutex
 	epMu       sync.Mutex
 	commitMu   sync.Mutex
 	commitCond *sync.Cond
@@ -784,6 +785,8 @@ func (h *ArrowHNSW) generateLevel() int {
 
 // AddBatch implements VectorIndex.
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+	h.bulkMu.Lock()
+	defer h.bulkMu.Unlock()
 	n := len(rowIdxs)
 	if n == 0 {
 		return nil, nil
@@ -1130,7 +1133,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			}
 
 			if supported && vecs != nil {
-				err := h.AddBatchBulk(ctx, startID, n, vecs)
+				err := h.addBatchBulkInternal(ctx, startID, n, vecs)
 				if err == nil {
 					ids := make([]uint32, n)
 					for i := 0; i < n; i++ {
@@ -1144,7 +1147,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	}
 
 	// Use optimized bulk ingestion path
-	err := h.AddBatchBulk(ctx, startID, len(rowIdxs), recs)
+	err := h.addBatchBulkInternal(ctx, startID, len(rowIdxs), recs)
 	if err == nil {
 		ids := make([]uint32, len(rowIdxs))
 		for i := range rowIdxs {
@@ -1194,7 +1197,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	}
 
 	// Publish the populated snapshot
-	h.compareAndSwapData(data.Clone())
+	h.compareAndSwapData(h.data.Load(), data.Clone())
 
 	// Phase 1.5: Sequential Bootstrap
 	// If the index is empty or very small, we must insert some nodes sequentially

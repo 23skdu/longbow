@@ -271,7 +271,7 @@ func (h *ArrowHNSW) insertWithGPUCandidates(id uint32, vec any, level int, gpuCa
 	cOff := types.ChunkOffset(id)
 	levelsChunk := data.GetLevelsChunk(cID)
 	if levelsChunk != nil {
-		atomic.StoreUint32(&levelsChunk[cOff], uint32(level))
+		atomic.StoreUint32(&levelsChunk[cOff], uint32(level)) // #nosec G115
 	}
 
 	var bestCandidate types.Candidate

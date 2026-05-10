@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"container/heap"
 	"container/list"
 	"encoding/json"
 	"fmt"
@@ -16,6 +17,29 @@ import (
 	internalcore "github.com/23skdu/longbow/internal/store/internal/core"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
+
+var (
+	temporalIDMapPool = sync.Pool{
+		New: func() any {
+			return make(map[uint64]struct{}, 1024)
+		},
+	}
+	temporalScoredResultPool = sync.Pool{
+		New: func() any {
+			return make([]temporalScoredResult, 0, 1024)
+		},
+	}
+	temporalVersionMapPool = sync.Pool{
+		New: func() any {
+			return make(map[uint64]VersionedVector, 1024)
+		},
+	}
+)
+
+type temporalScoredResult struct {
+	id       uint64
+	distance float32
+}
 
 // TemporalConfig defines the configuration for temporal indexing and retention.
 type TemporalConfig struct {
@@ -359,7 +383,12 @@ func (tt *TemporalTree) GetUniqueIDsInRange(start, end int64) []uint64 {
 		endChunkIdx = len(tt.chunks) - 1
 	}
 
-	uniqueIDs := make(map[uint64]struct{})
+	uniqueIDs := temporalIDMapPool.Get().(map[uint64]struct{})
+	defer func() {
+		clear(uniqueIDs)
+		temporalIDMapPool.Put(uniqueIDs)
+	}()
+
 	var results []uint64
 	
 	for i := endChunkIdx; i >= 0; i-- {
@@ -652,24 +681,28 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	type scoredResult struct {
-		id       uint64
-		distance float32
+	// 2. Batch lookup versions from history
+	versionMap := temporalVersionMapPool.Get().(map[uint64]VersionedVector)
+	defer func() {
+		clear(versionMap)
+		temporalVersionMapPool.Put(versionMap)
+	}()
+
+	if ti.history != nil {
+		ti.history.GetVersionsAtBatch(validIDs, timestamp, versionMap)
 	}
 
-	results := make([]scoredResult, 0, len(validIDs))
-	
-	// Collect norms for the valid versions
+	// 3. Select top-k using max-heap
+	h := &temporalMaxHeap{}
+	heap.Init(h)
+
 	for _, id := range validIDs {
 		var norm float32
 		var found bool
 		
-		// If history is enabled, get the specific version's norm
-		if ti.history != nil {
-			if v, err := ti.history.GetVersionAt(id, timestamp); err == nil {
-				norm = v.Norm
-				found = true
-			}
+		if v, ok := versionMap[id]; ok {
+			norm = v.Norm
+			found = true
 		}
 		
 		// Fallback to latest norm if history lookup failed or disabled
@@ -684,27 +717,24 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 		}
 		
 		if found {
-			results = append(results, scoredResult{id: id, distance: norm})
+			if h.Len() < k {
+				heap.Push(h, temporalScoredResult{id: id, distance: norm})
+			} else if norm < (*h)[0].distance {
+				heap.Pop(h)
+				heap.Push(h, temporalScoredResult{id: id, distance: norm})
+			}
 		}
 	}
 
-	// Sort by norm (ascending)
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].distance < results[j].distance
-	})
-
-	limit := k
-	if len(results) < limit {
-		limit = len(results)
-	}
-
-	searchResults := make([]lbtypes.SearchResult, 0, limit)
-	for i := 0; i < limit; i++ {
-		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: results[i].distance,
-			Score:    1.0 / (1.0 + results[i].distance),
-		})
+	limit := h.Len()
+	searchResults := make([]lbtypes.SearchResult, limit)
+	for i := limit - 1; i >= 0; i-- {
+		res := heap.Pop(h).(temporalScoredResult)
+		searchResults[i] = lbtypes.SearchResult{
+			ID:       lbtypes.VectorID(res.id), // #nosec G115
+			Distance: res.distance,
+			Score:    1.0 / (1.0 + res.distance),
+		}
 	}
 
 	ti.cache.Set(cacheKey, searchResults, 5*time.Minute)
@@ -759,24 +789,28 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	type scoredResult struct {
-		id       uint64
-		distance float32
+	// 2. Batch lookup versions from history
+	versionMap := temporalVersionMapPool.Get().(map[uint64]VersionedVector)
+	defer func() {
+		clear(versionMap)
+		temporalVersionMapPool.Put(versionMap)
+	}()
+
+	if ti.history != nil {
+		ti.history.GetVersionsAtBatch(validIDs, endTime, versionMap)
 	}
 
-	results := make([]scoredResult, 0, len(validIDs))
-	
-	// Collect norms for the versions in the range
+	// 3. Select top-k using max-heap
+	h := &temporalMaxHeap{}
+	heap.Init(h)
+
 	for _, id := range validIDs {
 		var norm float32
 		var found bool
 		
-		// If history is enabled, get the best version within the range
-		if ti.history != nil {
-			if v, err := ti.history.GetVersionAt(id, endTime); err == nil && v.Timestamp >= startTime {
-				norm = v.Norm
-				found = true
-			}
+		if v, ok := versionMap[id]; ok && v.Timestamp >= startTime {
+			norm = v.Norm
+			found = true
 		}
 		
 		// Fallback to latest norm if historylookup failed or disabled
@@ -791,27 +825,24 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 		}
 		
 		if found {
-			results = append(results, scoredResult{id: id, distance: norm})
+			if h.Len() < k {
+				heap.Push(h, temporalScoredResult{id: id, distance: norm})
+			} else if norm < (*h)[0].distance {
+				heap.Pop(h)
+				heap.Push(h, temporalScoredResult{id: id, distance: norm})
+			}
 		}
 	}
 
-	// Sort by norm (ascending)
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].distance < results[j].distance
-	})
-
-	limit := k
-	if len(results) < limit {
-		limit = len(results)
-	}
-
-	searchResults := make([]lbtypes.SearchResult, 0, limit)
-	for i := 0; i < limit; i++ {
-		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: results[i].distance,
-			Score:    1.0 / (1.0 + results[i].distance),
-		})
+	limit := h.Len()
+	searchResults := make([]lbtypes.SearchResult, limit)
+	for i := limit - 1; i >= 0; i-- {
+		res := heap.Pop(h).(temporalScoredResult)
+		searchResults[i] = lbtypes.SearchResult{
+			ID:       lbtypes.VectorID(res.id), // #nosec G115
+			Distance: res.distance,
+			Score:    1.0 / (1.0 + res.distance),
+		}
 	}
 
 	return searchResults, nil
@@ -830,40 +861,34 @@ func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int
 		return []lbtypes.SearchResult{}, nil
 	}
 
-	type scoredResult struct {
-		id       uint64
-		distance float32
-	}
+	// 2. Select top-k using max-heap
+	h := &temporalMaxHeap{}
+	heap.Init(h)
 
-	results := make([]scoredResult, 0, len(validIDs))
-	
-	// Collect norms for the latest versions
 	for _, id := range validIDs {
 		if val, ok := ti.vectors.Load(id); ok {
 			vec := val.(*TemporalVector)
 			if !vec.Tombstone {
-				results = append(results, scoredResult{id: id, distance: vec.Norm})
+				norm := vec.Norm
+				if h.Len() < k {
+					heap.Push(h, temporalScoredResult{id: id, distance: norm})
+				} else if norm < (*h)[0].distance {
+					heap.Pop(h)
+					heap.Push(h, temporalScoredResult{id: id, distance: norm})
+				}
 			}
 		}
 	}
 
-	// Sort by norm (ascending)
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].distance < results[j].distance
-	})
-
-	limit := k
-	if len(results) < limit {
-		limit = len(results)
-	}
-
-	searchResults := make([]lbtypes.SearchResult, 0, limit)
-	for i := 0; i < limit; i++ {
-		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: results[i].distance,
-			Score:    1.0 / (1.0 + results[i].distance),
-		})
+	limit := h.Len()
+	searchResults := make([]lbtypes.SearchResult, limit)
+	for i := limit - 1; i >= 0; i-- {
+		res := heap.Pop(h).(temporalScoredResult)
+		searchResults[i] = lbtypes.SearchResult{
+			ID:       lbtypes.VectorID(res.id), // #nosec G115
+			Distance: res.distance,
+			Score:    1.0 / (1.0 + res.distance),
+		}
 	}
 
 	return searchResults, nil
@@ -881,17 +906,16 @@ func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration
 
 	validIDs := tree.GetRange(start, now)
 
-	type scoredResult struct {
-		id       uint64
-		distance float64
-	}
+	// 2. Select top-k using max-heap
+	h := &temporalMaxHeap{}
+	heap.Init(h)
 
-	results := make([]scoredResult, 0, len(validIDs))
+	results := make([]temporalScoredResult, 0, len(validIDs))
 	var resMu sync.Mutex
 	pool := internalcore.GetSharedPool()
 
 	pool.ParallelFor(len(validIDs), 1024, func(start, end int) {
-		localResults := make([]scoredResult, 0, end-start)
+		localResults := make([]temporalScoredResult, 0, end-start)
 		for i := start; i < end; i++ {
 			id := validIDs[i]
 			val, ok := ti.vectors.Load(id)
@@ -902,8 +926,7 @@ func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration
 			if vec.Tombstone {
 				continue
 			}
-			dist := float64(ti.computeNorm(vec.Vector))
-			localResults = append(localResults, scoredResult{id: id, distance: dist})
+			localResults = append(localResults, temporalScoredResult{id: id, distance: vec.Norm})
 		}
 		if len(localResults) > 0 {
 			resMu.Lock()
@@ -912,17 +935,24 @@ func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration
 		}
 	})
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].distance < results[j].distance
-	})
+	for _, res := range results {
+		if h.Len() < k {
+			heap.Push(h, res)
+		} else if res.distance < (*h)[0].distance {
+			heap.Pop(h)
+			heap.Push(h, res)
+		}
+	}
 
-	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
-	for i := 0; i < min(k, len(results)); i++ {
-		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: float32(results[i].distance),
-			Score:    float32(1.0 / (1.0 + results[i].distance)),
-		})
+	limit := h.Len()
+	searchResults := make([]lbtypes.SearchResult, limit)
+	for i := limit - 1; i >= 0; i-- {
+		res := heap.Pop(h).(temporalScoredResult)
+		searchResults[i] = lbtypes.SearchResult{
+			ID:       lbtypes.VectorID(res.id), // #nosec G115
+			Distance: res.distance,
+			Score:    1.0 / (1.0 + res.distance),
+		}
 	}
 
 	return searchResults, nil
@@ -1086,4 +1116,23 @@ func (ti *TemporalIndex) MarshalJSON() ([]byte, error) {
 		Dimension: ti.dimension,
 		Vectors:   vectors,
 	})
+}
+
+// temporalMaxHeap implements heap.Interface for top-k temporal results (Max-Heap by Distance).
+type temporalMaxHeap []temporalScoredResult
+
+func (h temporalMaxHeap) Len() int           { return len(h) }
+func (h temporalMaxHeap) Less(i, j int) bool { return h[i].distance > h[j].distance }
+func (h temporalMaxHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+func (h *temporalMaxHeap) Push(x any) {
+	*h = append(*h, x.(temporalScoredResult))
+}
+
+func (h *temporalMaxHeap) Pop() any {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
 }

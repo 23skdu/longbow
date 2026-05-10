@@ -56,7 +56,7 @@ func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *typ
 	if err := newData.EnsureChunk(cID, cOff, dims); err != nil {
 		return nil, false, err
 	}
-	h.compareAndSwapData(newData)
+	h.compareAndSwapData(data, newData)
 	return newData, true, nil
 }
 
@@ -133,7 +133,7 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 		return err
 	}
 
-	h.compareAndSwapData(newData)
+	h.compareAndSwapData(oldData, newData)
 	return nil
 }
 
@@ -180,23 +180,18 @@ func (h *ArrowHNSW) ensureChunksLocked(startCID, endCID int, dims int) (*types.G
 	}
 
 	if dirty {
-		h.compareAndSwapData(newData)
+		h.compareAndSwapData(data, newData)
 		return newData, nil
 	}
 	return data, nil
 }
 
-func (h *ArrowHNSW) compareAndSwapData(newData *types.GraphData) bool {
-	for {
-		current := h.data.Load()
-		if current == newData {
-			return true
-		}
-		if current != nil && newData != nil && newData.Capacity < current.Capacity {
-			return false
-		}
-		if h.data.CompareAndSwap(current, newData) {
-			return true
-		}
+func (h *ArrowHNSW) compareAndSwapData(current, newData *types.GraphData) bool {
+	if current == newData {
+		return true
 	}
+	if current != nil && newData != nil && newData.Capacity < current.Capacity {
+		return false
+	}
+	return h.data.CompareAndSwap(current, newData)
 }

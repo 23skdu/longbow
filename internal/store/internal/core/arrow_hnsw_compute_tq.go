@@ -1,10 +1,11 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"fmt"
+	"math"
 
 	"github.com/23skdu/longbow/internal/simd"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // TurboQuantCompute handles distance computations using TurboQuant encoding.
@@ -54,12 +55,12 @@ func (c *TurboQuantCompute) DistanceWithVector(id uint32, vec []float32) (float3
 
 // DistanceWithRotatedQuery computes the distance between a vector ID and a pre-rotated query vector.
 func (c *TurboQuantCompute) DistanceWithRotatedQuery(id uint32, rotatedQuery []float32) (float32, error) {
-	return c.DistanceWithRotatedQueryAndDisk(id, rotatedQuery, nil)
+	return c.DistanceWithRotatedQueryAndDisk(id, rotatedQuery, nil, math.MaxUint64)
 }
 
 // DistanceWithRotatedQueryAndDisk computes the distance using a pre-rotated query, allowing fallback to a DiskGraph.
-func (c *TurboQuantCompute) DistanceWithRotatedQueryAndDisk(id uint32, rotatedQuery []float32, dg *DiskGraph) (float32, error) {
-	vec1, err := c.getVectorWithDisk(id, dg)
+func (c *TurboQuantCompute) DistanceWithRotatedQueryAndDisk(id uint32, rotatedQuery []float32, dg *DiskGraph, maxGen uint64) (float32, error) {
+	vec1, err := c.getVectorWithDisk(id, dg, maxGen)
 	if err != nil {
 		return 0, err
 	}
@@ -76,14 +77,14 @@ func (c *TurboQuantCompute) PrecomputeRotatedQuery(vec []float32, output []float
 }
 
 func (c *TurboQuantCompute) getVector(id uint32) ([]float32, error) {
-	return c.getVectorWithDisk(id, nil)
+	return c.getVectorWithDisk(id, nil, math.MaxUint64)
 }
 
-func (c *TurboQuantCompute) getVectorWithDisk(id uint32, dg *DiskGraph) ([]float32, error) {
+func (c *TurboQuantCompute) getVectorWithDisk(id uint32, dg *DiskGraph, maxGen uint64) ([]float32, error) {
 	cID := types.ChunkID(id)
 	cOff := types.ChunkOffset(id)
 	data := c.h.data.Load()
-	chunk := data.GetVectorsTQChunk(cID)
+	chunk := data.GetVectorsTQChunkWithGen(int(cID), maxGen)
 
 	var tqCode []byte
 	var stride int
@@ -113,11 +114,11 @@ func (c *TurboQuantCompute) getVectorWithDisk(id uint32, dg *DiskGraph) ([]float
 	return c.encoder.Decode(tqCode)
 }
 // GetRadius extracts the radius information for a TurboQuant encoded vector.
-func (c *TurboQuantCompute) GetRadius(id uint32, dg *DiskGraph) (float32, error) {
+func (c *TurboQuantCompute) GetRadius(id uint32, dg *DiskGraph, maxGen uint64) (float32, error) {
 	cID := types.ChunkID(id)
 	cOff := types.ChunkOffset(id)
 	data := c.h.data.Load()
-	chunk := data.GetVectorsTQChunk(cID)
+	chunk := data.GetVectorsTQChunkWithGen(int(cID), maxGen)
 
 	var tqCode []byte
 	var stride int

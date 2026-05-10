@@ -88,8 +88,11 @@ type ConstraintType int
 const (
 	// NoConstraint indicates no specific limit is applied.
 	NoConstraint ConstraintType = iota
+	// MaxDistanceConstraint defines the upper bound for distance calculations during graph navigation.
 	MaxDistanceConstraint
+	// MinSimilarityConstraint ensures path edges meet a minimum similarity threshold.
 	MinSimilarityConstraint
+	// AvoidNodesConstraint specifies a list of nodes that the navigation path must not traverse.
 	AvoidNodesConstraint
 )
 

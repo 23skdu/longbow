@@ -1,0 +1,153 @@
+Top 1 ID: 50, Score: 1.000000
+Generating 2000 vectors (384 dims)...
+MockDataset Memory: 17592186043245 MB
+Building Index...
+Inserting 0/2000
+Inserting 1000/2000
+Indexing took 6.328125ms (316049.38 vec/s)
+Index Overhead: -86020 KB
+Overhead per vector: -44042.28 bytes
+--- FAIL: TestSearchContextPooling (0.00s)
+    comprehensive_internal_test.go:22: 
+        	Error Trace:	/Users/rsd/REPOS/longbow/internal/store/internal/core/comprehensive_internal_test.go:22
+        	Error:      	Should be true
+        	Test:       	TestSearchContextPooling
+        	Messages:   	Should reuse context from pool
+Final neighbor count for node 0: 6 (Max: 64)
+Original Size: 3072 bytes
+TurboQuant Size (3-bit): 516 bytes
+Compression Ratio: 5.95x
+DEBUG: Results[0]: ID=500, Dist=0.000000, Score=1.000000
+DEBUG: Results[0]: ID=500, Dist=0.000000, Score=1.000000
+DEBUG: Results[0]: ID=500, Dist=0.000000, Score=1.000000
+DEBUG: Results[0]: ID=500, Dist=0.000000, Score=1.000000
+DEBUG: Results[0]: ID=500, Dist=0.000000, Score=1.000000
+DEBUG: Results[0]: ID=500, Dist=0.000000, Score=1.000000
+DEBUG: Results[0]: ID=500, Dist=0.000000, Score=1.000000
+DEBUG: Results[0]: ID=500, Dist=0.000000, Score=1.000000
+DEBUG: Results[0]: ID=500, Dist=0.000000, Score=1.000000
+DEBUG: Results[0]: ID=500, Dist=0.000000, Score=1.000000
+panic: test timed out after 10m0s
+	running tests:
+		TestArrowHNSW_AddBatch_Sequential (2s)
+
+goroutine 3114 [running]:
+testing.(*M).startAlarm.func1()
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2802 +0x498
+created by time.goFunc
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/time/sleep.go:215 +0x44
+
+goroutine 1 [chan receive]:
+testing.(*T).Run(0xc00017a908, {0x1055e4d17, 0x21}, 0x1063b0f00)
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2109 +0x7dc
+testing.runTests.func1(0xc00017a908)
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2585 +0x78
+testing.tRunner(0xc00017a908, 0xc000053ab8)
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2036 +0x168
+testing.runTests({0x1055d9602, 0x19}, {0x1055ff6bf, 0x36}, 0xc00038d3e0, {0x1064b5d40, 0xd1, 0xd1}, {0xc00038fc00?, 0xc0003c79a0?, ...})
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2583 +0x7a4
+testing.(*M).Run(0xc000494aa0)
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2443 +0xb3c
+main.main()
+	_testmain.go:554 +0x104
+
+goroutine 781 [select]:
+github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker(0xc0000161b0, 0xc0001ba150, 0xc0001ba1c0, 0x1054ad80c?, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:128 +0x10c
+created by github.com/23skdu/longbow/internal/store/internal/core.GetSharedPool.func1 in goroutine 777
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:84 +0x640
+
+goroutine 782 [select]:
+github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker(0xc0000161b0, 0xc0001ba230, 0xc0001ba2a0, 0x1054ad80c?, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:128 +0x10c
+created by github.com/23skdu/longbow/internal/store/internal/core.GetSharedPool.func1 in goroutine 777
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:84 +0x640
+
+goroutine 783 [select]:
+github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker(0xc0000161b0, 0xc0001ba310, 0xc0001ba380, 0x1054ad80c?, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:128 +0x10c
+created by github.com/23skdu/longbow/internal/store/internal/core.GetSharedPool.func1 in goroutine 777
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:84 +0x640
+
+goroutine 784 [select]:
+github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker(0xc0000161b0, 0xc0001ba3f0, 0xc0001ba460, 0x1044b85c4?, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:128 +0x10c
+created by github.com/23skdu/longbow/internal/store/internal/core.GetSharedPool.func1 in goroutine 777
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:84 +0x640
+
+goroutine 785 [select]:
+github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker(0xc0000161b0, 0xc0001ba540, 0xc0001ba620, 0x1044b85c4?, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:128 +0x10c
+created by github.com/23skdu/longbow/internal/store/internal/core.GetSharedPool.func1 in goroutine 777
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:84 +0x640
+
+goroutine 786 [select]:
+github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker(0xc0000161b0, 0xc0001ba690, 0xc0001ba770, 0x1044b85c4?, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:128 +0x10c
+created by github.com/23skdu/longbow/internal/store/internal/core.GetSharedPool.func1 in goroutine 777
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:84 +0x640
+
+goroutine 787 [select]:
+github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker(0xc0000161b0, 0xc0001ba7e0, 0xc0001ba850, 0x1044b85c4?, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:128 +0x10c
+created by github.com/23skdu/longbow/internal/store/internal/core.GetSharedPool.func1 in goroutine 777
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:84 +0x640
+
+goroutine 788 [select]:
+github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker(0xc0000161b0, 0xc0001ba930, 0xc0001ba9a0, 0x1044b85c4?, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:128 +0x10c
+created by github.com/23skdu/longbow/internal/store/internal/core.GetSharedPool.func1 in goroutine 777
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:84 +0x640
+
+goroutine 789 [select]:
+github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker(0xc0000161b0, 0xc0001baa10, 0xc0001baa80, 0x0?, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:128 +0x10c
+created by github.com/23skdu/longbow/internal/store/internal/core.GetSharedPool.func1 in goroutine 777
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:84 +0x640
+
+goroutine 790 [select]:
+github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker(0xc0000161b0, 0xc0001bab60, 0xc0001bac40, 0x0?, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:128 +0x10c
+created by github.com/23skdu/longbow/internal/store/internal/core.GetSharedPool.func1 in goroutine 777
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:84 +0x640
+
+goroutine 791 [select]:
+github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker(0xc0000161b0, 0xc0001bad90, 0xc0001bae00, 0x0?, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:128 +0x10c
+created by github.com/23skdu/longbow/internal/store/internal/core.GetSharedPool.func1 in goroutine 777
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:84 +0x640
+
+goroutine 792 [select]:
+github.com/23skdu/longbow/internal/store/internal/core.(*SharedWorkerPool).numaWorker(0xc0000161b0, 0xc0001bb030, 0xc0001bb110, 0x1054ad80c?, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:128 +0x10c
+created by github.com/23skdu/longbow/internal/store/internal/core.GetSharedPool.func1 in goroutine 777
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/worker_pool.go:84 +0x640
+
+goroutine 989 [runnable]:
+github.com/23skdu/longbow/internal/simd.EuclideanDistance({0xc105f8e008, 0x10, 0x3800}, {0xc105f90ec8, 0x10, 0x2c50})
+	/Users/rsd/REPOS/longbow/internal/simd/distance_functions.go:16 +0x198
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).selectNeighborsFloat32(0xc021c46000, 0xc002eca008, {0xc003308d80, 0x41, 0xc003300400?}, 0x40, 0xc0021c4000)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_insert.go:337 +0x650
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).computePrunedNeighbors(0xc021c46000, 0xc002eca008, 0xc0021c4000, 0x14e, {0xc00869d280, 0x40, 0x40}, {0xc000144004, 0x1, 0x104c2e550?}, ...)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/neighbor_ops.go:296 +0x280
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).AddConnection.func1({0xc00869d280, 0x40, 0x40})
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/neighbor_ops.go:39 +0x17c
+github.com/23skdu/longbow/internal/store/internal/core.(*PackedAdjacency).UpdateNeighbors(0xc021b1b300, 0x14e, 0xc0032fe6c0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/packed_adjacency.go:292 +0xac
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).AddConnection(0xc021c46000, 0xc002eca008, 0xc0021c4000, 0x14e, 0x1f1, 0x0, 0x40, 0xde?)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/neighbor_ops.go:25 +0x364
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).insertInternal(0xc021c46000, 0x1f1, {0x1061bc4e0, 0xc00223e078}, 0x0, 0x1, 0xc0021c4000)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/insertion_core.go:248 +0x1304
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).AddBatchBulk(0xc021c46000, {0x1063cc058, 0x107437b00}, 0x190, 0x64, {0x1061b9660, 0xc0020c1c38})
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_bulk.go:487 +0x1098
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).AddBatch(0xc021c46000, {0x1063cc058, 0x107437b00}, {0xc010702a60, 0x1, 0x1}, {0xc00214ca80, 0x64, 0x64}, {0xc00214ce00, ...})
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:1147 +0xa3c
+github.com/23skdu/longbow/internal/store/internal/core_test.TestArrowHNSW_AddBatch_Sequential(0xc021956488)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/hnsw_batch_modification_test.go:51 +0x1f0
+testing.tRunner(0xc021956488, 0x1063b0f00)
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2036 +0x168
+created by testing.(*T).Run in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2101 +0x7c0
+FAIL	github.com/23skdu/longbow/internal/store/internal/core	600.810s
+ok  	github.com/23skdu/longbow/internal/store/types	(cached)
+FAIL

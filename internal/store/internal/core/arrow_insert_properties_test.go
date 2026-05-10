@@ -43,7 +43,7 @@ func TestInsertProperties(t *testing.T) {
 			ensureChunk := func(id uint32) {
 				cID := types.ChunkID(id)
 				cOff := types.ChunkOffset(id)
-				_, err := index.ensureChunk(data, int(cID), int(cOff), 2)
+				_, err := index.ensureChunk(int(cID), int(cOff), 2)
 				if err != nil {
 					t.Fatalf("ensureChunk failed for ID %d: %v", id, err)
 				}
@@ -144,7 +144,7 @@ func TestInsertProperties(t *testing.T) {
 				cOff := types.ChunkOffset(uint32(i))
 
 				// Ensure chunk is allocated
-				data, _ = index.ensureChunk(data, int(cID), int(cOff), int(index.dims.Load()))
+				data, _ = index.ensureChunk(int(cID), int(cOff), int(index.dims.Load()))
 
 				// Check vector (optional)
 				// storedVec := (*data.Vectors[cID])[int(cOff)*index.dims : (int(cOff)+1)*index.dims]

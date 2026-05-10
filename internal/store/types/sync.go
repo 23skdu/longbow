@@ -8,6 +8,7 @@ type SyncState struct {
 	Dims       int
 	EntryPoint uint32
 	MaxLevel   int32
+	Generation uint64
 	Locations  []core.Location
 	GraphData  []byte
 }

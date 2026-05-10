@@ -36,6 +36,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 	poolCtx.MaxGeneration = meta.Generation
 	poolCtx.Reset()
 	defer h.searchPool.PutWithMetrics(poolCtx, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+	
 
 	// Iterate valid nodes to check THEIR outgoing connections
 	for i := 0; i < maxID; i++ {
@@ -59,12 +60,9 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 			// Reload data regularly to see latest snapshots from other threads/COW
 			data = h.data.Load()
 
-			cID := types.ChunkID(nid)
-			cOff := types.ChunkOffset(nid)
-
-			// Get Neighbors
-			// NOTE: We need direct access to modify.
-			if lvl >= len(data.Neighbors) || int(cID) >= len(data.Neighbors[lvl]) || data.Neighbors[lvl][cID] == 0 {
+			// Scan neighbors using unified accessor (Shadow Topology support)
+			neighbors := h.GetNeighborsCombinedManual(data, lvl, nid, meta.Generation)
+			if len(neighbors) == 0 {
 				continue
 			}
 
@@ -73,34 +71,23 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 
 			// Acquire Node Lock for this layer
 			oldVer := data.LockNode(lvl, nid)
+			if oldVer&types.NodeLockMask != 0 {
+				continue
+			}
 
-
+			cID := types.ChunkID(nid)
+			cOff := types.ChunkOffset(nid)
 			neighborsChunk := data.GetNeighborsChunk(lvl, cID)
 			countsChunk := data.GetCountsChunk(lvl, cID)
+			
 			if neighborsChunk == nil || countsChunk == nil {
+				data.UnlockNode(lvl, nid, oldVer)
 				continue
 			}
 
 			countAddr := &countsChunk[cOff]
-			count := int(atomic.LoadInt32(countAddr))
-			if count == 0 {
-				continue
-			}
-
-			// Scan neighbors using unified accessor (Shadow Topology support)
-			neighbors := h.GetNeighborsCombinedManual(data, lvl, nid)
 			
-			// Also check legacy arena directly to ensure we catch stale connections
-			// that might have been pruned from PackedNeighbors but are still in the arena.
-			legacyNeighbors := data.GetNeighborsLockFree(lvl, nid)
-			
-			// Combine both sets for a comprehensive tombstone scan
-			combinedSet := make(map[uint32]struct{}, len(neighbors)+len(legacyNeighbors))
-			for _, n := range neighbors { combinedSet[n] = struct{}{} }
-			for _, n := range legacyNeighbors { combinedSet[n] = struct{}{} }
-			
-			var allNeighbors []uint32
-			for n := range combinedSet { allNeighbors = append(allNeighbors, n) }
+			allNeighbors := neighbors
 
 			if len(allNeighbors) == 0 {
 				data.UnlockNode(lvl, nid, oldVer)
@@ -112,17 +99,21 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 			var knownTombstones []uint32
 
 			for _, neighborID := range allNeighbors {
-				if h.deleted.Contains(neighborID) {
+				isDel := h.deleted.Contains(neighborID)
+				if nid == 0 {
+				}
+				if isDel {
 					hasTombstone = true
 					knownTombstones = append(knownTombstones, neighborID)
 				}
 			}
 
 			if !hasTombstone {
+				if nid % 10 == 0 {
+				}
 				data.UnlockNode(lvl, nid, oldVer)
 				continue
 			} else {
-				// Repair Logic
 				// 1. Identify valid candidates: (Current Neighbors - Tombstones) U (Tombstones' Neighbors)
 
 				// Reuse candidate heap
@@ -147,22 +138,15 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				for _, tID := range knownTombstones {
 					// Read T's neighbors at SAME level
 					tCID := types.ChunkID(tID)
-					tCOff := types.ChunkOffset(tID)
 
 					if lvl >= len(data.Neighbors) || int(tCID) >= len(data.Neighbors[lvl]) || data.Neighbors[lvl][tCID] == 0 {
 						continue
 					}
-					tNeighbors := data.GetNeighborsChunk(lvl, tCID)
-					tCounts := data.GetCountsChunk(lvl, tCID)
-					if tNeighbors == nil || tCounts == nil {
-						continue
-					}
-
-					tCount := int(atomic.LoadInt32(&tCounts[tCOff]))
-					tBase := int(tCOff) * types.MaxNeighbors
+					tNeighbors := h.GetNeighborsCombinedManual(data, lvl, tID, meta.Generation)
+					tCount := len(tNeighbors)
 
 					for k := 0; k < tCount; k++ {
-						candidateID := tNeighbors[tBase+k]
+						candidateID := tNeighbors[k]
 						if candidateID == nid {
 							continue
 						} // Don't add self
@@ -203,6 +187,9 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				}
 
 				selected := h.selectNeighbors(poolCtx, candList, limitM, data)
+				
+				if nid % 10 == 0 {
+				}
 
 				// Write back
 				versChunk := data.GetVersionsChunk(lvl, cID)
@@ -233,12 +220,19 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 					}
 					_ = data.PackedNeighbors[lvl].SetNeighbors(nid, newIDs)
 				}
+				
+				// CRITICAL: Clear shadow neighbors in TopLayerManager so they don't hide the repair
+				if h.topLayerManager != nil {
+					h.topLayerManager.ClearNeighbors(lvl, nid)
+				}
 
 				repaired++
 				
 				// CAS the updated data pointer back to h.data to ensure visibility
 				latest := h.data.Load()
-				h.data.CompareAndSwap(latest, data)
+				swapped := h.data.CompareAndSwap(latest, data)
+				if !swapped {
+				}
 			}
 			data.UnlockNode(lvl, nid, oldVer)
 		}

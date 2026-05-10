@@ -2,6 +2,7 @@ package memory
 
 import (
 	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -205,6 +206,11 @@ func (ta *TypedArena[T]) AllocSliceAligned(count, align int) (SliceRef, error) {
 
 // Get retrieves a typed slice from the arena using a SliceRef.
 func (ta *TypedArena[T]) Get(ref SliceRef) []T {
+	return ta.GetWithGeneration(ref, math.MaxUint64)
+}
+
+// GetWithGeneration retrieves a typed slice from the arena, enforcing generation isolation.
+func (ta *TypedArena[T]) GetWithGeneration(ref SliceRef, maxGeneration uint64) []T {
 	if ref.Offset == 0 || ref.Len == 0 {
 		return nil
 	}
@@ -215,7 +221,7 @@ func (ta *TypedArena[T]) Get(ref SliceRef) []T {
 	if a == nil {
 		return nil
 	}
-	byteSlice := a.Get(ref.Offset, ref.Len*elemSize)
+	byteSlice := a.GetWithGeneration(ref.Offset, ref.Len*elemSize, maxGeneration)
 	if len(byteSlice) == 0 {
 		return nil
 	}

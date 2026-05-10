@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/23skdu/longbow/internal/gpu"
@@ -270,7 +271,7 @@ func (h *ArrowHNSW) insertWithGPUCandidates(id uint32, vec any, level int, gpuCa
 	cOff := types.ChunkOffset(id)
 	levelsChunk := data.GetLevelsChunk(cID)
 	if levelsChunk != nil {
-		levelsChunk[cOff] = uint8(level) // #nosec G115
+		atomic.StoreUint32(&levelsChunk[cOff], uint32(level))
 	}
 
 	var bestCandidate types.Candidate

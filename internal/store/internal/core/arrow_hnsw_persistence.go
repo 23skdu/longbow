@@ -44,6 +44,15 @@ func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
 
 	if data := h.data.Load(); data != nil {
 		snapshot = data.CloneForSnapshot()
+		// Capture PackedNeighbors state into legacy slices for serialization
+		for l, pn := range snapshot.PackedNeighbors {
+			if pn == nil { continue }
+			for i := uint32(0); i < uint32(snapshot.Capacity); i++ { // #nosec G115
+				if neighbors, ok := pn.GetNeighbors(i); ok {
+					_ = snapshot.SetNeighborsAtLayer(l, i, neighbors)
+				}
+			}
+		}
 	}
 
 	size := h.locationStore.Len()
@@ -60,11 +69,13 @@ func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
 		return fmt.Errorf("no graph data to export")
 	}
 
+	meta := h.GetMetadataSnapshot()
 	state := types.SyncState{
 		Version:    1,
 		Dims:       dims,
-		EntryPoint: h.entryPoint.Load(),
-		MaxLevel:   h.maxLevel.Load(),
+		EntryPoint: meta.EntryPoint,
+		MaxLevel:   meta.MaxLevel,
+		Generation: meta.Generation,
 		Locations:  locs,
 	}
 
@@ -113,8 +124,12 @@ func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
 		return fmt.Errorf("state dimensions %d exceed MaxInt32", state.Dims)
 	}
 	h.dims.Store(int32(state.Dims)) // #nosec G115
-	h.entryPoint.Store(state.EntryPoint)
-	h.maxLevel.Store(state.MaxLevel)
+	h.updateMetadata(func(meta *HNSWMetadata) {
+		meta.EntryPoint = state.EntryPoint
+		meta.MaxLevel = state.MaxLevel
+		meta.Generation = state.Generation
+		meta.NodeCount = int64(len(state.Locations))
+	})
 	h.locationStore.Reset()
 	for _, loc := range state.Locations {
 		h.locationStore.Append(loc)
@@ -127,7 +142,8 @@ func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
 	}
 
 	// Recalculate EntryPoint and MaxLevel if they are missing or uninitialized
-	if h.entryPoint.Load() == math.MaxUint32 && len(state.Locations) > 0 {
+	meta := h.GetMetadataSnapshot()
+	if meta.EntryPoint == math.MaxUint32 && len(state.Locations) > 0 {
 		var bestID uint32 = 0
 		var maxL int8 = -1
 		// Scan levels to find entry point
@@ -136,7 +152,7 @@ func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
 			cOff := i % types.ChunkSize
 			levels := data.GetLevelsChunk(cID)
 			if levels != nil {
-				l := int8(levels[cOff]) // #nosec G115
+				l := int8(atomic.LoadUint32(&levels[cOff])) // #nosec G115
 				if l > maxL {
 					maxL = l
 					bestID = uint32(i)

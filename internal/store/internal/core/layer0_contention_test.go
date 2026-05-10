@@ -2,6 +2,7 @@ package core
 
 import (
 	"fmt"
+	"math"
 	"sync"
 	"testing"
 	"github.com/23skdu/longbow/internal/store/types"
@@ -70,7 +71,7 @@ func TestConcurrentLayer0Adds(t *testing.T) {
 	
 	wg.Wait()
 	
-	neighbors := idx.GetNeighborsCombined(0, target)
+	neighbors := idx.GetNeighborsCombined(0, target, math.MaxUint64)
 	fmt.Printf("Final neighbor count for node 0: %d (Max: %d)\n", len(neighbors), config.MMax0)
 	if len(neighbors) > config.MMax0 {
 		t.Errorf("Neighbor count %d exceeds MMax0 %d", len(neighbors), config.MMax0)

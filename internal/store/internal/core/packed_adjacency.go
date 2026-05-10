@@ -2,6 +2,7 @@ package core
 
 import (
 	"errors"
+	"math"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -13,7 +14,6 @@ import (
 const (
 	// AdjacencyChunkSize defines the number of nodes per adjacency page.
 	AdjacencyChunkSize = 1024
-	AdjacencyLockShards = 1024
 
 	// PackedRefLenMask is the bitmask for extracting the neighbor list length.
 	PackedRefLenMask  = 0xFFFF
@@ -42,10 +42,6 @@ type PackedAdjacency struct {
 	// Value = Offset to Page (in pageArena).
 	chunks atomic.Pointer[[]uint64]
 	mu     sync.RWMutex // Protects chunks growth
-	
-	// locks provides sharded synchronization for writers.
-	// Readers remain lock-free.
-	locks [AdjacencyLockShards]sync.Mutex
 }
 
 // NewPackedAdjacency creates a new PackedAdjacency structure with the given arena.
@@ -112,7 +108,11 @@ func (pa *PackedAdjacency) EnsureCapacity(nodeID uint32) {
 
 	newChunks := make([]uint64, newLen)
 	if curPtr != nil {
-		copy(newChunks, *curPtr)
+		// Atomic copy to prevent race with concurrent CAS on slice elements
+		oldChunks := *curPtr
+		for i := 0; i < len(oldChunks); i++ {
+			newChunks[i] = atomic.LoadUint64(&oldChunks[i])
+		}
 	}
 	
 	// Atomic replace
@@ -275,57 +275,69 @@ func (pa *PackedAdjacency) Unlock(id uint32) {
 
 // UpdateNeighbors modifies a node's neighbor list using a transformation function.
 func (pa *PackedAdjacency) UpdateNeighbors(id uint32, fn func(old []uint32) []uint32) error {
-	lock := &pa.locks[id%AdjacencyLockShards]
-	lock.Lock()
-	defer lock.Unlock()
+	for {
+		packed, ok := pa.getPackedRef(id)
+		if !ok {
+			// Page doesn't exist yet, we must ensure it exists
+			if err := pa.updatePage(id, 0); err != nil {
+				return err
+			}
+			continue
+		}
 
-	packed, _ := pa.getPackedRef(id)
-	off, ln := UnpackRef(packed)
-	oldRef := memory.SliceRef{Offset: off, Len: uint32(ln), Cap: uint32(ln)}
-	old := pa.neighborArena.Get(oldRef)
+		off, ln := UnpackRef(packed)
+		oldRef := memory.SliceRef{Offset: off, Len: uint32(ln), Cap: uint32(ln)}
+		old := pa.neighborArena.Get(oldRef)
 
-	new := fn(old)
-	if new == nil {
-		return nil // No change requested
+		new := fn(old)
+		if new == nil {
+			return nil // No change requested
+		}
+
+		if pa.CASNeighbors(id, packed, new) {
+			return nil
+		}
+		// CAS failed, retry
 	}
-
-	// In-place update with sharded lock ensures no retries needed
-	var newPacked uint64
-	ref, err := pa.neighborArena.AllocSliceAligned(len(new), 64)
-	if err != nil {
-		return err
-	}
-	dest := pa.neighborArena.Get(ref)
-	copy(dest, new)
-	newPacked = PackRef(ref.Offset, uint32(len(new))) // #nosec G115
-
-	return pa.updatePage(id, newPacked)
-}
-
-// GetNeighborsFromPacked retrieves the neighbor list from a packed reference.
-func (pa *PackedAdjacency) GetNeighborsFromPacked(packed uint64) []uint32 {
-	if packed == 0 {
-		return nil
-	}
-	off, ln := UnpackRef(packed)
-	nRef := memory.SliceRef{Offset: off, Len: uint32(ln), Cap: uint32(ln)}
-	return pa.neighborArena.Get(nRef)
 }
 
 // GetNeighbors retrieves the neighbor list for a node.
 func (pa *PackedAdjacency) GetNeighbors(id uint32) ([]uint32, bool) {
+	return pa.GetNeighborsWithGen(id, math.MaxUint64)
+}
+
+// GetNeighborsWithGen retrieves the neighbor list for a node with generation isolation.
+func (pa *PackedAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint32, bool) {
 	packed, ok := pa.getPackedRef(id)
 	if !ok {
 		return nil, false
 	}
 
+	return pa.GetNeighborsFromPackedWithGen(packed, maxGen), true
+}
+
+// GetNeighborsFromPacked retrieves the neighbor list from a packed reference.
+func (pa *PackedAdjacency) GetNeighborsFromPacked(packed uint64) []uint32 {
+	return pa.GetNeighborsFromPackedWithGen(packed, math.MaxUint64)
+}
+
+// GetNeighborsFromPackedWithGen retrieves the neighbor list from a packed reference with generation isolation.
+func (pa *PackedAdjacency) GetNeighborsFromPackedWithGen(packed uint64, maxGen uint64) []uint32 {
+	if packed == 0 {
+		return nil
+	}
 	off, ln := UnpackRef(packed)
 	nRef := memory.SliceRef{Offset: off, Len: uint32(ln), Cap: uint32(ln)}
-	return pa.neighborArena.Get(nRef), true
+	return pa.neighborArena.GetWithGeneration(nRef, maxGen)
 }
 
 // GetNeighborsF16 retrieves the neighbor list and distances for a node.
 func (pa *PackedAdjacency) GetNeighborsF16(id uint32) ([]uint32, []float16.Num, bool) {
+	return pa.GetNeighborsF16WithGen(id, math.MaxUint64)
+}
+
+// GetNeighborsF16WithGen retrieves the neighbor list and distances with generation isolation.
+func (pa *PackedAdjacency) GetNeighborsF16WithGen(id uint32, maxGen uint64) ([]uint32, []float16.Num, bool) {
 	packed, ok := pa.getPackedRef(id)
 	if !ok {
 		return nil, nil, false
@@ -335,8 +347,8 @@ func (pa *PackedAdjacency) GetNeighborsF16(id uint32) ([]uint32, []float16.Num, 
 	length := int(ln)
 
 	// Get combined block
-	totalBytes := length*4 + length*2
-	dest := pa.baseArena.Get(off, uint32(totalBytes)) // #nosec G115
+	totalBytes := uint32(length*4 + length*2) // #nosec G115
+	dest := pa.baseArena.GetWithGeneration(off, totalBytes, maxGen)
 	if len(dest) == 0 {
 		return nil, nil, false
 	}

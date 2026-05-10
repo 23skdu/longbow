@@ -3,6 +3,8 @@ package core
 import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"math"
+	"unsafe"
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 // int16Computer handles Int16 vectors
@@ -12,6 +14,7 @@ type int16Computer struct {
 	dims      int
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
+	maxGen    uint64
 }
 
 func (c *int16Computer) Compute(ids []uint32, dists []float32) error {
@@ -26,7 +29,7 @@ func (c *int16Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
 		if v, ok := vecAny.([]int16); ok {
 			return c.h.distFuncInt16(c.q, v)
@@ -35,7 +38,7 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 
 	// Fallback to direct chunk access if type-specific GetVector fails (COW path)
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt16Chunk(cID)
+	chunk := c.data.GetVectorsInt16ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt16)
@@ -48,6 +51,19 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+func (c *int16Computer) Prefetch(id uint32) {
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsInt16ChunkWithGen(int(cID), c.maxGen)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt16)
+		start := cOff * pd
+		if start < len(chunk) {
+			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
+		}
+	}
+}
+
 // uint16Computer handles Uint16 vectors
 type uint16Computer struct {
 	data      *types.GraphData
@@ -55,6 +71,7 @@ type uint16Computer struct {
 	dims      int
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
+	maxGen    uint64
 }
 
 func (c *uint16Computer) Compute(ids []uint32, dists []float32) error {
@@ -69,7 +86,7 @@ func (c *uint16Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
 		if v, ok := vecAny.([]uint16); ok {
 			return c.h.distFuncUint16(c.q, v)
@@ -78,7 +95,7 @@ func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 
 	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint16Chunk(cID)
+	chunk := c.data.GetVectorsUint16ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint16)
@@ -90,6 +107,19 @@ func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+func (c *uint16Computer) Prefetch(id uint32) {
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsUint16ChunkWithGen(int(cID), c.maxGen)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint16)
+		start := cOff * pd
+		if start < len(chunk) {
+			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
+		}
+	}
+}
+
 // int32Computer handles Int32 vectors
 type int32Computer struct {
 	data      *types.GraphData
@@ -97,6 +127,7 @@ type int32Computer struct {
 	dims      int
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
+	maxGen    uint64
 }
 
 func (c *int32Computer) Compute(ids []uint32, dists []float32) error {
@@ -111,7 +142,7 @@ func (c *int32Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
 		if v, ok := vecAny.([]int32); ok {
 			return c.h.distFuncInt32(c.q, v)
@@ -120,7 +151,7 @@ func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
 
 	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt32Chunk(cID)
+	chunk := c.data.GetVectorsInt32ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt32)
@@ -132,6 +163,19 @@ func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+func (c *int32Computer) Prefetch(id uint32) {
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsInt32ChunkWithGen(int(cID), c.maxGen)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt32)
+		start := cOff * pd
+		if start < len(chunk) {
+			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
+		}
+	}
+}
+
 // uint32Computer handles Uint32 vectors
 type uint32Computer struct {
 	data      *types.GraphData
@@ -139,6 +183,7 @@ type uint32Computer struct {
 	dims      int
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
+	maxGen    uint64
 }
 
 func (c *uint32Computer) Compute(ids []uint32, dists []float32) error {
@@ -153,7 +198,7 @@ func (c *uint32Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
 		if v, ok := vecAny.([]uint32); ok {
 			return c.h.distFuncUint32(c.q, v)
@@ -162,7 +207,7 @@ func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 
 	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint32Chunk(cID)
+	chunk := c.data.GetVectorsUint32ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint32)
@@ -174,6 +219,19 @@ func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+func (c *uint32Computer) Prefetch(id uint32) {
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsUint32ChunkWithGen(int(cID), c.maxGen)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint32)
+		start := cOff * pd
+		if start < len(chunk) {
+			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
+		}
+	}
+}
+
 // int64Computer handles Int64 vectors
 type int64Computer struct {
 	data      *types.GraphData
@@ -181,6 +239,7 @@ type int64Computer struct {
 	dims      int
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
+	maxGen    uint64
 }
 
 func (c *int64Computer) Compute(ids []uint32, dists []float32) error {
@@ -195,7 +254,7 @@ func (c *int64Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
 		if v, ok := vecAny.([]int64); ok {
 			return c.h.distFuncInt64(c.q, v)
@@ -204,7 +263,7 @@ func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
 
 	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt64Chunk(cID)
+	chunk := c.data.GetVectorsInt64ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt64)
@@ -216,6 +275,19 @@ func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+func (c *int64Computer) Prefetch(id uint32) {
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsInt64ChunkWithGen(int(cID), c.maxGen)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt64)
+		start := cOff * pd
+		if start < len(chunk) {
+			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
+		}
+	}
+}
+
 // uint64Computer handles Uint64 vectors
 type uint64Computer struct {
 	data      *types.GraphData
@@ -223,6 +295,7 @@ type uint64Computer struct {
 	dims      int
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
+	maxGen    uint64
 }
 
 func (c *uint64Computer) Compute(ids []uint32, dists []float32) error {
@@ -237,7 +310,7 @@ func (c *uint64Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
 		if v, ok := vecAny.([]uint64); ok {
 			return c.h.distFuncUint64(c.q, v)
@@ -246,7 +319,7 @@ func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
 
 	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint64Chunk(cID)
+	chunk := c.data.GetVectorsUint64ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint64)
@@ -256,4 +329,17 @@ func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 	}
 	return math.MaxFloat32, nil
+}
+
+func (c *uint64Computer) Prefetch(id uint32) {
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsUint64ChunkWithGen(int(cID), c.maxGen)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint64)
+		start := cOff * pd
+		if start < len(chunk) {
+			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
+		}
+	}
 }

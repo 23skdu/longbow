@@ -225,7 +225,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	if dataset != nil {
 		h.name = dataset.GetName()
 	} else {
-		h.name = "unknown"
+		h.name = "unnamed"
 	}
 
 	if dataset != nil {

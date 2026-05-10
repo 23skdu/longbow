@@ -233,6 +233,9 @@ func processChunkInternal[T float32 | float64](ctx context.Context, h ParallelSe
 
 	locations := buf.Locations
 	found := buf.Found
+	for i := range found {
+		found[i] = false
+	}
 
 	prefetchCount := 4 // Prefetch 4 items ahead
 	prefetchOps := 0

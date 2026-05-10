@@ -1,7 +1,6 @@
 package store
 
 import (
-	"container/heap"
 	"fmt"
 	"sort"
 	"sync"
@@ -537,122 +536,14 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 
 // Traverse performs a graph traversal starting from a specific node.
 func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
-
-	// Initial Path
-	initPath := Path{
-		Nodes: []VectorID{start},
-		Edges: []Edge{},
-		Score: 1.0,
-	}
-
-	if opts.Weighted {
-		// Priority Queue for weighted traversal (Best-First Search)
-		pq := &PathPriorityQueue{initPath}
-		heap.Init(pq)
-
-		var results []Path
-		// Cycle check (Global in this BFS)
-		visited := make(map[uint32]struct{})
-		visited[uint32(start)] = struct{}{}
-
-		// We return all valid paths found up to MaxHops
-		// But in a weighted search, we might just want "best" paths?
-		// "Traverse" typically returns all reachable subgraphs or paths.
-		// Given the test expects multiple paths, we collect them.
-
-		// Let's implement a BFS that expands layers.
-		// Replacing PQ with standard queue for simple BFS if "Weighted" just means edge weights exist.
-		// If "Weighted" means "Prioritize high weight paths", then PQ is correct.
-		// The test expects ALL paths of length 1.
-
-		// Revert to simple BFS for correctness with tests, but handle weights in score.
-		// Using a queue for BFS.
-		queue := []Path{initPath}
-
-		for len(queue) > 0 {
-			curr := queue[0]
-			queue = queue[1:]
-
-			if len(curr.Nodes)-1 >= opts.MaxHops {
-				results = append(results, curr)
-				continue
-			if len(curr.Nodes) > 1 {
-				results = append(results, curr)
-			}
-
-			if len(curr.Nodes)-1 >= opts.MaxHops {
-				continue
-			}
-
-			lastNode := curr.Nodes[len(curr.Nodes)-1]
-
-			var edges []Edge
-			switch opts.Direction {
-			case DirectionOutgoing:
-				edges, _ = gs.forwardEdges.Get(uint32(lastNode))
-			case DirectionIncoming:
-				edges, _ = gs.backwardEdges.Get(uint32(lastNode))
-			case DirectionBoth:
-				fwd, _ := gs.forwardEdges.Get(uint32(lastNode))
-				bwd, _ := gs.backwardEdges.Get(uint32(lastNode))
-				edges = make([]Edge, 0, len(fwd)+len(bwd))
-				edges = append(edges, fwd...)
-				edges = append(edges, bwd...)
-			}
-
-			for i := 0; i < len(edges); i++ {
-				e := edges[i]
-				
-				var nextNode VectorID
-				switch opts.Direction {
-				case DirectionOutgoing:
-					nextNode = e.Object
-				case DirectionIncoming:
-					nextNode = e.Subject
-				default:
-					if e.Subject == lastNode {
-						nextNode = e.Object
-					} else {
-						nextNode = e.Subject
-					}
-				}
-
-				// Cycle Check
-				if _, ok := visited[uint32(nextNode)]; ok {
-					continue
-				}
-				visited[uint32(nextNode)] = struct{}{}
-
-				// New Path
-				newPath := Path{
-					Nodes: make([]VectorID, len(curr.Nodes)+1),
-					Edges: make([]Edge, len(curr.Edges)+1),
-					Score: curr.Score * e.Weight * opts.Decay, // Decay score
-				}
-				copy(newPath.Nodes, curr.Nodes)
-				newPath.Nodes[len(curr.Nodes)] = nextNode
-				copy(newPath.Edges, curr.Edges)
-				newPath.Edges[len(curr.Edges)] = e
-
-				queue = append(queue, newPath)
-			}
-		}
-		return results
-	}
-
-	// Unweighted (BFS) - Placeholder fallback, but actually above logic handles both if weight=1.0
-	// For simplicity, reusing same logic.
-	return gs.traverseBFS(start, opts)
-}
-
-func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
 	queue := []Path{{
 		Nodes: []VectorID{start},
+		Edges: []Edge{},
 		Score: 1.0,
 	}}
 	var results []Path
 
-	// Cycle check (Global in this BFS)
+	// Cycle check (Global in this traversal for efficiency)
 	visited := make(map[uint32]struct{})
 	visited[uint32(start)] = struct{}{}
 
@@ -660,10 +551,12 @@ func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
 		curr := queue[0]
 		queue = queue[1:]
 
+		// Add path to results if it has at least one edge
 		if len(curr.Nodes) > 1 {
 			results = append(results, curr)
 		}
 
+		// Stop if we reached max hops
 		if len(curr.Nodes)-1 >= opts.MaxHops {
 			continue
 		}
@@ -687,17 +580,12 @@ func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
 		for i := 0; i < len(edges); i++ {
 			e := edges[i]
 			
-			// Prefetch next edge's target vector data if possible
-			if i+1 < len(edges) {
-				simd.Prefetch(unsafe.Pointer(&edges[i+1])) // #nosec G103
-			}
-
 			var nextNode VectorID
 			switch opts.Direction {
-			case DirectionIncoming:
-				nextNode = e.Subject
 			case DirectionOutgoing:
 				nextNode = e.Object
+			case DirectionIncoming:
+				nextNode = e.Subject
 			default:
 				if e.Subject == lastNode {
 					nextNode = e.Object
@@ -712,10 +600,18 @@ func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
 			}
 			visited[uint32(nextNode)] = struct{}{}
 
+			// New Path
+			newScore := curr.Score
+			if opts.Weighted {
+				newScore *= e.Weight * opts.Decay
+			} else {
+				newScore *= opts.Decay
+			}
+
 			newPath := Path{
 				Nodes: make([]VectorID, len(curr.Nodes)+1),
 				Edges: make([]Edge, len(curr.Edges)+1),
-				Score: curr.Score * opts.Decay,
+				Score: newScore,
 			}
 			copy(newPath.Nodes, curr.Nodes)
 			newPath.Nodes[len(curr.Nodes)] = nextNode
@@ -726,6 +622,10 @@ func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
 		}
 	}
 	return results
+}
+
+func (gs *GraphStore) traverseBFS(start VectorID, opts TraverseOptions) []Path {
+	return gs.Traverse(start, opts)
 }
 
 // Close releases all resources associated with the graph store.

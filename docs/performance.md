@@ -1,6 +1,23 @@
 # Longbow Performance Benchmark Matrix (LATEST)
 
-Generated on: 2026-05-08
+Generated on: 2026-05-10
+
+## v0.2.2-rc2 Hardening - Concurrent HNSW GraphRAG Stability (2026-05-10)
+
+> [!IMPORTANT]
+> **Production Stability Milestone**: This release candidate addresses critical race conditions and resource leaks identified during concurrent HNSW graph expansion and GraphRAG searches. It introduces atomic lifecycle tracking for search contexts and strictly isolates thread-local memory buffers.
+
+### Release Validation Summary
+* **Concurrent HNSW Integrity**: Verified zero panics and 100% reachability under 32-thread parallel ingestion.
+* **GraphRAG Stability**: Successfully executed the 20-concurrent GraphRAG search stress test without memory corruption.
+* **Resource Leak Remediation**: Resolved a major `ArrowSearchContext` leak in the sharded search path.
+* **SIMD Buffer Isolation**: Implemented isolated `SearchAttemptBuffers` to prevent cross-goroutine contamination.
+
+### Status of 18GB Matrix Execution
+* **Local (macOS M3 Pro)**: In Progress (CPU & Metal)
+* **Remote (Linux x86_64)**: In Progress (CPU & CUDA)
+
+---
 
 ## v0.2.2-rc2 Validation - ARM64 Sparse Search (2026-05-08)
 

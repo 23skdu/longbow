@@ -15,16 +15,22 @@ import (
 // CandidateHeap implements a max-heap of Candidates for search results
 type CandidateHeap []types.Candidate
 
-func (h CandidateHeap) Len() int           { return len(h) }
-func (h CandidateHeap) Less(i, j int) bool { return h[i].Dist > h[j].Dist } // Max Heap (furthest on top)
-func (h CandidateHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-// Push adds a candidate to the heap.
-func (h *CandidateHeap) Push(x any)        { *h = append(*h, x.(types.Candidate)) }
+func (h *CandidateHeap) Len() int           { return len(*h) }
+func (h *CandidateHeap) Less(i, j int) bool { return (*h)[i].Dist < (*h)[j].Dist }
+func (h *CandidateHeap) Swap(i, j int) {
+	(*h)[i], (*h)[j] = (*h)[j], (*h)[i]
+}
 
-// Pop removes and returns the last element (heap maintenance handled externally).
+func (h *CandidateHeap) Push(x any) {
+	*h = append(*h, x.(types.Candidate))
+}
+
 func (h *CandidateHeap) Pop() any {
 	old := *h
 	n := len(old)
+	if n == 0 {
+		panic("CandidateHeap.Pop: heap is empty! (possible concurrent modification)")
+	}
 	x := old[n-1]
 	*h = old[0 : n-1]
 	return x
@@ -225,6 +231,10 @@ type ArrowSearchContext struct {
 
 	// Reset tracking
 	dirty bool
+	
+	// inUse tracks if the context is currently being used by a search operation.
+	// This is used to detect concurrent access or double-puts to the pool.
+	inUse atomic.Bool
 
 	// Thread-local metrics
 	operations        int
@@ -290,35 +300,45 @@ func NewArrowSearchContextPool() *ArrowSearchContextPool {
 // Get retrieves an ArrowSearchContext from the pool.
 func (p *ArrowSearchContextPool) Get() *ArrowSearchContext {
 	p.gets.Add(1)
-
 	ctx := p.pool.Get().(*ArrowSearchContext)
+	
+	if !ctx.inUse.CompareAndSwap(false, true) {
+		panic("ArrowSearchContextPool.Get: retrieved context is already in use! (possible internal pool corruption)")
+	}
+	
 	ctx.Reset()
 	return ctx
 }
 
-// Put returns an ArrowSearchContext to the pool without recording metrics.
 func (p *ArrowSearchContextPool) Put(ctx *ArrowSearchContext) {
 	if ctx == nil {
 		return
 	}
- 
+	
+	if !ctx.inUse.CompareAndSwap(true, false) {
+		panic("ArrowSearchContextPool.Put: context is not in use! (possible double-put)")
+	}
+	
 	p.puts.Add(1)
-
 	p.pool.Put(ctx)
 }
 
-// PutWithMetrics returns an ArrowSearchContext to the pool and records accumulated metrics.
-func (p *ArrowSearchContextPool) PutWithMetrics(ctx *ArrowSearchContext, dtype, dimension string) {
+func (p *ArrowSearchContextPool) PutWithMetrics(ctx *ArrowSearchContext, dataType, dims string) {
 	if ctx == nil {
 		return
+	}
+	
+	if !ctx.inUse.CompareAndSwap(true, false) {
+		panic("ArrowSearchContextPool.PutWithMetrics: context is not in use! (possible double-put)")
 	}
 
 	// Flush accumulated metrics if present
 	if ctx.distComputeCount > 0 {
-		metrics.RecordSearchBatchMetrics(dtype, dimension, "euclidean", ctx.distComputeCount, ctx.distComputeTime)
+		metrics.RecordSearchBatchMetrics(dataType, dims, "euclidean", ctx.distComputeCount, ctx.distComputeTime)
 	}
 
-	p.Put(ctx)
+	p.puts.Add(1)
+	p.pool.Put(ctx)
 }
 
 // Reset clears the context for reuse.

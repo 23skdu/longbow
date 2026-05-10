@@ -16,12 +16,17 @@ import (
 
 // Navigator defines the interface for graph navigation operations.
 type Navigator interface {
+	// Initialize prepares the navigator for use.
 	Initialize() error
+	// FindPath searches for a path between two nodes based on the query.
 	FindPath(ctx context.Context, query NavigatorQuery) (*NavigatorPath, error)
+	// GetMetrics returns the current performance metrics for the navigator.
 	GetMetrics() *NavigatorMetrics
+	// IsInitialized returns whether the navigator is ready for use.
 	IsInitialized() bool
 }
 
+// GraphNavigator implements the Navigator interface for pathfinding within HNSW graphs.
 type GraphNavigator struct {
 	mu            sync.RWMutex
 	graphProvider func() *types.GraphData
@@ -41,6 +46,7 @@ type cachedResult struct {
 	timestamp time.Time
 }
 
+// NavigatorConfig defines the operational parameters for the GraphNavigator.
 type NavigatorConfig struct {
 	MaxHops           int
 	SearchRadius      float32
@@ -52,6 +58,7 @@ type NavigatorConfig struct {
 	MaxNodesVisited   int
 }
 
+// NavigatorPath represents the result of a successful navigation query.
 type NavigatorPath struct {
 	StartID   uint32
 	EndID     uint32
@@ -61,6 +68,7 @@ type NavigatorPath struct {
 	Found     bool
 }
 
+// NavigatorQuery contains the parameters for a graph navigation request.
 type NavigatorQuery struct {
 	StartID     uint32
 	TargetID    uint32
@@ -68,20 +76,24 @@ type NavigatorQuery struct {
 	Constraints []PathConstraint
 }
 
+// PathConstraint specifies a heuristic or hard limit for the navigation path.
 type PathConstraint struct {
 	Type      ConstraintType
 	Threshold float32
 }
 
+// ConstraintType identifies the nature of a PathConstraint.
 type ConstraintType int
 
 const (
+	// NoConstraint indicates no specific limit is applied.
 	NoConstraint ConstraintType = iota
 	MaxDistanceConstraint
 	MinSimilarityConstraint
 	AvoidNodesConstraint
 )
 
+// NavigatorMetrics tracks performance and utilization of the navigator.
 type NavigatorMetrics struct {
 	QueriesTotal      prometheus.Counter
 	QueriesDuration   prometheus.Histogram
@@ -93,6 +105,7 @@ type NavigatorMetrics struct {
 	CacheMisses       prometheus.Counter
 }
 
+// NewNavigatorMetrics creates and registers prometheus metrics for navigation.
 func NewNavigatorMetrics(reg prometheus.Registerer) *NavigatorMetrics {
 	m := &NavigatorMetrics{
 		QueriesTotal: prometheus.NewCounter(prometheus.CounterOpts{
@@ -147,6 +160,7 @@ func NewNavigatorMetrics(reg prometheus.Registerer) *NavigatorMetrics {
 	return m
 }
 
+// NewGraphNavigator constructs a new GraphNavigator instance.
 func NewGraphNavigator(datasetName string, graphProvider func() *types.GraphData, config NavigatorConfig, reg prometheus.Registerer) *GraphNavigator {
 	return &GraphNavigator{
 		datasetName:   datasetName,
@@ -165,6 +179,7 @@ func (gn *GraphNavigator) SetDistanceKernel(k simd.DistanceKernel[float32]) {
 	gn.distFunc = k
 }
 
+// Initialize prepares the GraphNavigator by validating its provider and state.
 func (gn *GraphNavigator) Initialize() error {
 	gn.mu.Lock()
 	defer gn.mu.Unlock()
@@ -180,6 +195,7 @@ func (gn *GraphNavigator) Initialize() error {
 	return nil
 }
 
+// FindPath executes a navigation query to find a path between two nodes.
 func (gn *GraphNavigator) FindPath(ctx context.Context, query NavigatorQuery) (*NavigatorPath, error) {
 	if !gn.isInitialized.Load() {
 		return nil, fmt.Errorf("navigator not initialized")
@@ -368,10 +384,12 @@ func (gn *GraphNavigator) calculateDistance(node1, node2 uint32) float32 {
 	return dist
 }
 
+// GetMetrics returns the current performance metrics for the navigator.
 func (gn *GraphNavigator) GetMetrics() *NavigatorMetrics {
 	return gn.metrics
 }
 
+// IsInitialized returns whether the navigator is ready for use.
 func (gn *GraphNavigator) IsInitialized() bool {
 	return gn.isInitialized.Load()
 }

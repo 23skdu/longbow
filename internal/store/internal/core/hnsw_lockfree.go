@@ -12,6 +12,7 @@ import (
 )
 
 const (
+	// MaxConnections defines the maximum number of neighbors per node per level.
 	MaxConnections = 16
 	MaxLayers      = 16
 	EfConstruction = 128
@@ -49,6 +50,7 @@ type LockFreeHNSW struct {
 	distFunc func(a, b []float32) (float32, error)
 }
 
+// NewLockFreeHNSW initializes a new LockFreeHNSW index.
 func NewLockFreeHNSW() *LockFreeHNSW {
 	h := &LockFreeHNSW{
 		distFunc: simd.EuclideanDistance,
@@ -65,6 +67,7 @@ func (h *LockFreeHNSW) getNode(id types.VectorID) *LockFreeNode {
 	return v.(*LockFreeNode)
 }
 
+// Search finds the nearest neighbors for a query vector.
 func (h *LockFreeHNSW) Search(query []float32, k, ef int) []types.VectorID {
 	ep := h.entryPoint.Load()
 	if ep == nil {
@@ -115,6 +118,7 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []types.VectorID {
 	return []types.VectorID{currObj.ID}
 }
 
+// Add inserts a new vector into the lock-free HNSW index.
 func (h *LockFreeHNSW) Add(id types.VectorID, vec []float32) {
 	level := h.randomLevel()
 	node := &LockFreeNode{

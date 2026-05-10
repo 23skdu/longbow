@@ -37,20 +37,24 @@ func DotAMX(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	if len(a) > math.MaxInt32 { // #nosec G115
-		return 0, fmt.Errorf("vector length %d exceeds MaxInt32 for AMX", len(a))
+	n := len(a)
+	if n > math.MaxInt32 {
+		return 0, fmt.Errorf("vector length %d exceeds MaxInt32 for AMX", n)
 	}
-	return float32(C.dot_amx((*C.float)(unsafe.Pointer(&a[0])), (*C.float)(unsafe.Pointer(&b[0])), C.int(len(a)))), nil // #nosec G115
+	n32 := int32(n) // #nosec G115
+	return float32(C.dot_amx((*C.float)(unsafe.Pointer(&a[0])), (*C.float)(unsafe.Pointer(&b[0])), C.int(n32))), nil // #nosec G103
 }
 
 func L2AMX(a, b []float32) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	if len(a) > math.MaxInt32 { // #nosec G115
-		return 0, fmt.Errorf("vector length %d exceeds MaxInt32 for AMX", len(a))
+	n := len(a)
+	if n > math.MaxInt32 {
+		return 0, fmt.Errorf("vector length %d exceeds MaxInt32 for AMX", n)
 	}
 	// Note: malloc/free in every call is slow. 
 	// For high-dim, we should use a pre-allocated scratch buffer per worker.
-	return float32(C.l2_amx((*C.float)(unsafe.Pointer(&a[0])), (*C.float)(unsafe.Pointer(&b[0])), C.int(len(a)))), nil // #nosec G115
+	n32 := int32(n) // #nosec G115
+	return float32(C.l2_amx((*C.float)(unsafe.Pointer(&a[0])), (*C.float)(unsafe.Pointer(&b[0])), C.int(n32))), nil // #nosec G103
 }

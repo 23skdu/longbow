@@ -15,6 +15,7 @@ type ParallelBFSStrategy struct {
 	concurrency int
 }
 
+// NewParallelBFSStrategy creates a new instance of ParallelBFSStrategy with specified concurrency.
 func NewParallelBFSStrategy(concurrency int) *ParallelBFSStrategy {
 	if concurrency <= 0 {
 		concurrency = 4
@@ -22,10 +23,12 @@ func NewParallelBFSStrategy(concurrency int) *ParallelBFSStrategy {
 	return &ParallelBFSStrategy{concurrency: concurrency}
 }
 
+// Name returns the identifier for the ParallelBFS strategy.
 func (s *ParallelBFSStrategy) Name() string {
 	return "ParallelBFS"
 }
 
+// FindPath executes a concurrent BFS to find paths between nodes.
 func (s *ParallelBFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query NavigatorQuery) (*NavigatorPath, error) {
 	// Concurrent visited set.
 	// For high performance, we might want a bitset, but sync.Map is safer for generic IDs.

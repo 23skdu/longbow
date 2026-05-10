@@ -7,6 +7,7 @@ import (
 	"time"
 )
 
+// IndexJobQueueLockFree is a lock-free queue for managing asynchronous index jobs.
 type IndexJobQueueLockFree struct {
 	cfg types.IndexJobQueueConfig
 
@@ -24,6 +25,7 @@ type IndexJobQueueLockFree struct {
 	notify         chan struct{}
 }
 
+// NewIndexJobQueueLockFree creates a new lock-free index job queue.
 func NewIndexJobQueueLockFree(cfg types.IndexJobQueueConfig) *IndexJobQueueLockFree {
 	bufferSize := cfg.MainChannelSize + cfg.OverflowBufferSize
 	q := &IndexJobQueueLockFree{
@@ -36,6 +38,7 @@ func NewIndexJobQueueLockFree(cfg types.IndexJobQueueConfig) *IndexJobQueueLockF
 	return q
 }
 
+// Send attempts to add a job to the queue without blocking.
 func (q *IndexJobQueueLockFree) Send(job types.IndexJob) bool {
 	if atomic.LoadInt32(&q.stopped) == 1 {
 		return false
@@ -67,6 +70,7 @@ func (q *IndexJobQueueLockFree) Send(job types.IndexJob) bool {
 	return false
 }
 
+// Pop retrieves a job from the queue.
 func (q *IndexJobQueueLockFree) Pop() (types.IndexJob, bool) {
 	job, ok := q.buffer.Pop()
 	if ok {
@@ -79,6 +83,7 @@ func (q *IndexJobQueueLockFree) Pop() (types.IndexJob, bool) {
 	return job, ok
 }
 
+// Block attempts to add a job to the queue, blocking until space is available or timeout.
 func (q *IndexJobQueueLockFree) Block(job types.IndexJob, timeout time.Duration) bool {
 	if atomic.LoadInt32(&q.stopped) == 1 {
 		return false
@@ -105,6 +110,7 @@ func (q *IndexJobQueueLockFree) Block(job types.IndexJob, timeout time.Duration)
 	return false
 }
 
+// SendBatch attempts to add multiple jobs to the queue.
 func (q *IndexJobQueueLockFree) SendBatch(jobs []types.IndexJob) int {
 	accepted := 0
 	for i := range jobs {
@@ -115,6 +121,7 @@ func (q *IndexJobQueueLockFree) SendBatch(jobs []types.IndexJob) int {
 	return accepted
 }
 
+// Stats returns the current statistics for the queue.
 func (q *IndexJobQueueLockFree) Stats() types.IndexJobQueueStats {
 	return types.IndexJobQueueStats{
 		TotalSent:     atomic.LoadUint64(&q.totalSent),
@@ -125,10 +132,12 @@ func (q *IndexJobQueueLockFree) Stats() types.IndexJobQueueStats {
 	}
 }
 
+// IsStopped returns true if the queue has been stopped.
 func (q *IndexJobQueueLockFree) IsStopped() bool {
 	return atomic.LoadInt32(&q.stopped) == 1
 }
 
+// Stop shuts down the queue.
 func (q *IndexJobQueueLockFree) Stop() {
 	q.stopOnce.Do(func() {
 		atomic.StoreInt32(&q.stopped, 1)
@@ -136,17 +145,21 @@ func (q *IndexJobQueueLockFree) Stop() {
 	})
 }
 
+// Len returns the current number of jobs in the queue.
 func (q *IndexJobQueueLockFree) Len() int {
 	return q.buffer.Len()
 }
 
+// EstimatedBytes returns the estimated memory usage of the jobs in the queue.
 func (q *IndexJobQueueLockFree) EstimatedBytes() int64 {
 	return atomic.LoadInt64(&q.estimatedBytes)
 }
 
+// DecreaseEstimatedBytes is a no-op for the lock-free implementation.
 func (q *IndexJobQueueLockFree) DecreaseEstimatedBytes(amount int64) {
 }
 
+// Notify returns a channel that is signaled when a new job is added.
 func (q *IndexJobQueueLockFree) Notify() <-chan struct{} {
 	return q.notify
 }

@@ -11,6 +11,7 @@ import (
 type VersionedVector struct {
 	ID        uint64
 	Vector    []float32
+	Norm      float32 // Pre-calculated norm
 	Timestamp int64
 	Metadata  []byte
 	Version   int
@@ -50,7 +51,7 @@ func NewVersionHistory(cfg VersionHistoryConfig) *VersionHistory {
 }
 
 // Add inserts a new version for a vector ID, pruning old versions if necessary.
-func (vh *VersionHistory) Add(id uint64, vector []float32, timestamp int64, metadata []byte) {
+func (vh *VersionHistory) Add(id uint64, vector []float32, norm float32, timestamp int64, metadata []byte) {
 	vh.mu.Lock()
 	defer vh.mu.Unlock()
 
@@ -63,6 +64,7 @@ func (vh *VersionHistory) Add(id uint64, vector []float32, timestamp int64, meta
 	versioned := VersionedVector{
 		ID:        id,
 		Vector:    vector,
+		Norm:      norm,
 		Timestamp: timestamp,
 		Metadata:  metadata,
 		Version:   newVersion,

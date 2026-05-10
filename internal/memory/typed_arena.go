@@ -13,6 +13,7 @@ type TypedArena[T any] struct {
 	mu    sync.RWMutex
 }
 
+// NewTypedArena creates a new typed arena wrapper around a SlabArena.
 func NewTypedArena[T any](arena *SlabArena) *TypedArena[T] {
 	ta := &TypedArena[T]{}
 	ta.arena.Store(arena)
@@ -20,15 +21,43 @@ func NewTypedArena[T any](arena *SlabArena) *TypedArena[T] {
 }
 
 func (ta *TypedArena[T]) Free() {
+	ta.Release()
+}
+
+func (ta *TypedArena[T]) Retain() {
 	a := ta.arena.Load()
 	if a != nil {
-		a.Free()
+		a.Retain()
+	}
+}
+
+func (ta *TypedArena[T]) Release() {
+	a := ta.arena.Load()
+	if a != nil {
+		a.Release()
 		ta.arena.Store(nil)
 	}
 }
 
 func (ta *TypedArena[T]) Slab() *SlabArena {
 	return ta.arena.Load()
+}
+
+// BumpGeneration increments the underlying arena's generation.
+func (ta *TypedArena[T]) BumpGeneration() uint64 {
+	a := ta.arena.Load()
+	if a != nil {
+		return a.BumpGeneration()
+	}
+	return 0
+}
+
+// SetGeneration sets the underlying arena's generation.
+func (ta *TypedArena[T]) SetGeneration(gen uint64) {
+	a := ta.arena.Load()
+	if a != nil {
+		a.generation.Store(gen)
+	}
 }
 
 // TotalAllocated returns total bytes allocated in the arena.

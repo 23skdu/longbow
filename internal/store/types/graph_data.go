@@ -178,6 +178,31 @@ func (g *GraphData) GetNodeCount() int {
 	return g.Capacity
 }
 
+// BumpGeneration increments the generation for all arenas in the graph.
+func (g *GraphData) BumpGeneration() uint64 {
+	gen := g.GlobalVersion + 1
+	g.SetGeneration(gen)
+	g.GlobalVersion = gen
+	return gen
+}
+
+// SetGeneration sets the generation for all arenas in the graph.
+func (g *GraphData) SetGeneration(gen uint64) {
+	if g.Float32Arena != nil { g.Float32Arena.SetGeneration(gen) }
+	if g.Float64Arena != nil { g.Float64Arena.SetGeneration(gen) }
+	if g.Uint8Arena != nil { g.Uint8Arena.SetGeneration(gen) }
+	if g.Uint16Arena != nil { g.Uint16Arena.SetGeneration(gen) }
+	if g.Uint32Arena != nil { g.Uint32Arena.SetGeneration(gen) }
+	if g.Uint64Arena != nil { g.Uint64Arena.SetGeneration(gen) }
+	if g.Int8Arena != nil { g.Int8Arena.SetGeneration(gen) }
+	if g.Int16Arena != nil { g.Int16Arena.SetGeneration(gen) }
+	if g.Int32Arena != nil { g.Int32Arena.SetGeneration(gen) }
+	if g.Int64Arena != nil { g.Int64Arena.SetGeneration(gen) }
+	if g.Float16Arena != nil { g.Float16Arena.SetGeneration(gen) }
+	if g.Complex64Arena != nil { g.Complex64Arena.SetGeneration(gen) }
+	if g.Complex128Arena != nil { g.Complex128Arena.SetGeneration(gen) }
+}
+
 // NeedsChunk returns true if the given chunk ID requires allocation for any enabled data type.
 func (g *GraphData) NeedsChunk(cID int) bool {
 	// 1. Primary Float32 check
@@ -575,12 +600,27 @@ func (g *GraphData) GetVectorsUint16Chunk(chunkID int) []uint16 {
 	return nil
 }
 
+// EnsureChunks ensures that all chunks up to newCap are allocated.
+func (g *GraphData) EnsureChunks(newCap, dims int) error {
+	numChunks := (newCap + ChunkSize - 1) / ChunkSize
+	for i := 0; i < numChunks; i++ {
+		if err := g.EnsureChunk(i, 0, dims); err != nil {
+			return err
+		}
+	}
+	g.Capacity = numChunks * ChunkSize
+	return nil
+}
+
 func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
+	if g.Dims == 0 && dims > 0 {
+		g.Dims = dims
+	}
 	// 1. Ensure Vectors (Float32 / Unknown)
 	if g.Type == VectorTypeFloat32 || g.Type == VectorTypeUnknown {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat32)
 		for len(g.VectorsF32) <= cID {
-			if dims == 0 {
+			if dims == 0 || paddedDims == 0 {
 				g.VectorsF32 = append(g.VectorsF32, 0)
 				g.Vectors = append(g.Vectors, nil)
 				continue
@@ -611,7 +651,7 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	if g.SQ8Enabled {
 		paddedDims := (dims + 63) & ^63
 		for len(g.VectorsSQ8) <= cID {
-			if dims == 0 {
+			if dims == 0 || paddedDims == 0 {
 				g.VectorsSQ8 = append(g.VectorsSQ8, 0)
 				continue
 			}
@@ -640,7 +680,7 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	if g.PQEnabled && g.PQM > 0 {
 		numWordsPerNode := (g.PQM + 7) / 8
 		for len(g.VectorsPQ) <= cID {
-			if dims == 0 {
+			if dims == 0 || numWordsPerNode == 0 {
 				g.VectorsPQ = append(g.VectorsPQ, 0)
 				continue
 			}
@@ -1546,6 +1586,33 @@ func (g *GraphData) GetNeighbors(layer int, id uint32, buf []uint32) []uint32 {
 
 	return nil
 }
+
+// GetNeighborsLockFree returns neighbors without seqlock checks. 
+// Should only be used when the node lock is already held.
+func (g *GraphData) GetNeighborsLockFree(layer int, id uint32) []uint32 {
+	cID := int(id) / ChunkSize
+	cOff := int(id) % ChunkSize
+
+	counts := g.GetCountsChunk(layer, cID)
+	neighbors := g.GetNeighborsChunk(layer, cID)
+
+	if counts == nil || neighbors == nil {
+		return nil
+	}
+
+	count := int(atomic.LoadInt32(&counts[cOff]))
+	if count == 0 {
+		return nil
+	}
+
+	base := cOff * MaxNeighbors
+	res := make([]uint32, count)
+	for i := 0; i < count; i++ {
+		res[i] = atomic.LoadUint32(&neighbors[base+i])
+	}
+	return res
+}
+
 // GetVersion returns the current version/lock state of a node at a given layer.
 func (g *GraphData) GetVersion(layer int, id uint32) uint32 {
 	versions := g.GetVersionsChunk(layer, int(id)/ChunkSize)
@@ -1668,19 +1735,59 @@ func (g *GraphData) Clone() *GraphData {
 	// New chunks allocated via EnsureChunk will use the original's arena.
 	// This is safe because COW is serialized (protected by growMu lock).
 	// Clone's Vectors* slices reference chunks allocated from original's arena.
-	newG.Float32Arena = g.Float32Arena
-	newG.Float64Arena = g.Float64Arena
-	newG.Uint8Arena = g.Uint8Arena
-	newG.Uint16Arena = g.Uint16Arena
-	newG.Uint32Arena = g.Uint32Arena
-	newG.Uint64Arena = g.Uint64Arena
-	newG.Int8Arena = g.Int8Arena
-	newG.Int16Arena = g.Int16Arena
-	newG.Int32Arena = g.Int32Arena
-	newG.Int64Arena = g.Int64Arena
-	newG.Float16Arena = g.Float16Arena
-	newG.Complex64Arena = g.Complex64Arena
-	newG.Complex128Arena = g.Complex128Arena
+	// Slabs/Arenas - Create new wrappers but share underlying SlabArena
+	if g.Float32Arena != nil {
+		newG.Float32Arena = memory.NewTypedArena[float32](g.Float32Arena.Slab())
+		newG.Float32Arena.Retain()
+	}
+	if g.Float64Arena != nil {
+		newG.Float64Arena = memory.NewTypedArena[float64](g.Float64Arena.Slab())
+		newG.Float64Arena.Retain()
+	}
+	if g.Uint8Arena != nil {
+		newG.Uint8Arena = memory.NewTypedArena[uint8](g.Uint8Arena.Slab())
+		newG.Uint8Arena.Retain()
+	}
+	if g.Uint16Arena != nil {
+		newG.Uint16Arena = memory.NewTypedArena[uint16](g.Uint16Arena.Slab())
+		newG.Uint16Arena.Retain()
+	}
+	if g.Uint32Arena != nil {
+		newG.Uint32Arena = memory.NewTypedArena[uint32](g.Uint32Arena.Slab())
+		newG.Uint32Arena.Retain()
+	}
+	if g.Uint64Arena != nil {
+		newG.Uint64Arena = memory.NewTypedArena[uint64](g.Uint64Arena.Slab())
+		newG.Uint64Arena.Retain()
+	}
+	if g.Int8Arena != nil {
+		newG.Int8Arena = memory.NewTypedArena[int8](g.Int8Arena.Slab())
+		newG.Int8Arena.Retain()
+	}
+	if g.Int16Arena != nil {
+		newG.Int16Arena = memory.NewTypedArena[int16](g.Int16Arena.Slab())
+		newG.Int16Arena.Retain()
+	}
+	if g.Int32Arena != nil {
+		newG.Int32Arena = memory.NewTypedArena[int32](g.Int32Arena.Slab())
+		newG.Int32Arena.Retain()
+	}
+	if g.Int64Arena != nil {
+		newG.Int64Arena = memory.NewTypedArena[int64](g.Int64Arena.Slab())
+		newG.Int64Arena.Retain()
+	}
+	if g.Float16Arena != nil {
+		newG.Float16Arena = memory.NewTypedArena[float16.Num](g.Float16Arena.Slab())
+		newG.Float16Arena.Retain()
+	}
+	if g.Complex64Arena != nil {
+		newG.Complex64Arena = memory.NewTypedArena[complex64](g.Complex64Arena.Slab())
+		newG.Complex64Arena.Retain()
+	}
+	if g.Complex128Arena != nil {
+		newG.Complex128Arena = memory.NewTypedArena[complex128](g.Complex128Arena.Slab())
+		newG.Complex128Arena.Retain()
+	}
 
 
 	// Deep copy Levels
@@ -1697,7 +1804,39 @@ func (g *GraphData) Clone() *GraphData {
 	// Deep copy Vectors (Slice of slices)
 	if g.Vectors != nil {
 		newG.Vectors = make([][]float32, len(g.Vectors))
-		copy(newG.Vectors, g.Vectors)
+		for i := range g.Vectors {
+			if g.Vectors[i] != nil {
+				newG.Vectors[i] = make([]float32, len(g.Vectors[i]))
+				copy(newG.Vectors[i], g.Vectors[i])
+			}
+		}
+	}
+	if g.VectorsFloat64 != nil {
+		newG.VectorsFloat64 = make([][]float64, len(g.VectorsFloat64))
+		for i := range g.VectorsFloat64 {
+			if g.VectorsFloat64[i] != nil {
+				newG.VectorsFloat64[i] = make([]float64, len(g.VectorsFloat64[i]))
+				copy(newG.VectorsFloat64[i], g.VectorsFloat64[i])
+			}
+		}
+	}
+	if g.VectorsComplex64 != nil {
+		newG.VectorsComplex64 = make([][]complex64, len(g.VectorsComplex64))
+		for i := range g.VectorsComplex64 {
+			if g.VectorsComplex64[i] != nil {
+				newG.VectorsComplex64[i] = make([]complex64, len(g.VectorsComplex64[i]))
+				copy(newG.VectorsComplex64[i], g.VectorsComplex64[i])
+			}
+		}
+	}
+	if g.VectorsComplex128 != nil {
+		newG.VectorsComplex128 = make([][]complex128, len(g.VectorsComplex128))
+		for i := range g.VectorsComplex128 {
+			if g.VectorsComplex128[i] != nil {
+				newG.VectorsComplex128[i] = make([]complex128, len(g.VectorsComplex128[i]))
+				copy(newG.VectorsComplex128[i], g.VectorsComplex128[i])
+			}
+		}
 	}
 
 	// Deep copy Neighbors (Layer -> Chunk -> Offset)
@@ -1780,35 +1919,20 @@ func (g *GraphData) Clone() *GraphData {
 	newG.VectorsPQ = copyOffsetSlice(g.VectorsPQ, g.PQEnabled)
 	newG.VectorsBQ = copyOffsetSlice(g.VectorsBQ, g.BQEnabled)
 	newG.VectorsTQ = copyOffsetSlice(g.VectorsTQ, g.TurboQuantEnabled)
-	newG.VectorsF16 = copyOffsetSlice(g.VectorsF16, false)
-	newG.VectorsInt8 = copyOffsetSlice(g.VectorsInt8, false)
-	newG.VectorsInt16 = copyOffsetSlice(g.VectorsInt16, false)
-	newG.VectorsUint16 = copyOffsetSlice(g.VectorsUint16, false)
-	newG.VectorsInt32 = copyOffsetSlice(g.VectorsInt32, false)
-	newG.VectorsUint32 = copyOffsetSlice(g.VectorsUint32, false)
-	newG.VectorsInt64 = copyOffsetSlice(g.VectorsInt64, false)
-	newG.VectorsUint64 = copyOffsetSlice(g.VectorsUint64, false)
-	newG.VectorsFloat64Offsets = copyOffsetSlice(g.VectorsFloat64Offsets, false)
-	newG.VectorsComplex64Offsets = copyOffsetSlice(g.VectorsComplex64Offsets, false)
-	newG.VectorsComplex128Offsets = copyOffsetSlice(g.VectorsComplex128Offsets, false)
+	newG.VectorsF16 = copyOffsetSlice(g.VectorsF16, g.Type == VectorTypeFloat16)
+	newG.VectorsInt8 = copyOffsetSlice(g.VectorsInt8, g.Type == VectorTypeInt8 || g.Type == VectorTypeUint8)
+	newG.VectorsInt16 = copyOffsetSlice(g.VectorsInt16, g.Type == VectorTypeInt16)
+	newG.VectorsUint16 = copyOffsetSlice(g.VectorsUint16, g.Type == VectorTypeUint16)
+	newG.VectorsInt32 = copyOffsetSlice(g.VectorsInt32, g.Type == VectorTypeInt32)
+	newG.VectorsUint32 = copyOffsetSlice(g.VectorsUint32, g.Type == VectorTypeUint32)
+	newG.VectorsInt64 = copyOffsetSlice(g.VectorsInt64, g.Type == VectorTypeInt64)
+	newG.VectorsUint64 = copyOffsetSlice(g.VectorsUint64, g.Type == VectorTypeUint64)
+	newG.VectorsFloat64Offsets = copyOffsetSlice(g.VectorsFloat64Offsets, g.Type == VectorTypeFloat64)
+	newG.VectorsComplex64Offsets = copyOffsetSlice(g.VectorsComplex64Offsets, g.Type == VectorTypeComplex64)
+	newG.VectorsComplex128Offsets = copyOffsetSlice(g.VectorsComplex128Offsets, g.Type == VectorTypeComplex128)
 
-	// Legacy compatibility: some older code might still check g.Vectors[chunkID] == nil
-	if g.Vectors != nil {
-		newG.Vectors = make([][]float32, len(g.Vectors))
-		copy(newG.Vectors, g.Vectors)
-	}
-	if g.VectorsFloat64 != nil {
-		newG.VectorsFloat64 = make([][]float64, len(g.VectorsFloat64))
-		copy(newG.VectorsFloat64, g.VectorsFloat64)
-	}
-	if g.VectorsComplex64 != nil {
-		newG.VectorsComplex64 = make([][]complex64, len(g.VectorsComplex64))
-		copy(newG.VectorsComplex64, g.VectorsComplex64)
-	}
-	if g.VectorsComplex128 != nil {
-		newG.VectorsComplex128 = make([][]complex128, len(g.VectorsComplex128))
-		copy(newG.VectorsComplex128, g.VectorsComplex128)
-	}
+	// Set finalizer to ensure automatic Release when snapshot is orphaned
+	runtime.SetFinalizer(newG, func(gd *GraphData) { gd.Release() })
 
 	return newG
 }
@@ -2567,6 +2691,9 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 		_ = gd.PreAllocate(capacity)
 	}
 
+	// Set finalizer to ensure automatic Release when snapshot is orphaned
+	runtime.SetFinalizer(gd, func(g *GraphData) { g.Release() })
+
 	return gd
 }
 
@@ -2620,55 +2747,55 @@ func (g *GraphData) Release() {
 	g.Vectors = nil
 
 	if g.Float32Arena != nil {
-		g.Float32Arena.Free()
+		g.Float32Arena.Release()
 		g.Float32Arena = nil
 	}
 	if g.Float64Arena != nil {
-		g.Float64Arena.Free()
+		g.Float64Arena.Release()
 		g.Float64Arena = nil
 	}
 	if g.Uint8Arena != nil {
-		g.Uint8Arena.Free()
+		g.Uint8Arena.Release()
 		g.Uint8Arena = nil
 	}
 	if g.Uint16Arena != nil {
-		g.Uint16Arena.Free()
+		g.Uint16Arena.Release()
 		g.Uint16Arena = nil
 	}
 	if g.Uint32Arena != nil {
-		g.Uint32Arena.Free()
+		g.Uint32Arena.Release()
 		g.Uint32Arena = nil
 	}
 	if g.Uint64Arena != nil {
-		g.Uint64Arena.Free()
+		g.Uint64Arena.Release()
 		g.Uint64Arena = nil
 	}
 	if g.Int8Arena != nil {
-		g.Int8Arena.Free()
+		g.Int8Arena.Release()
 		g.Int8Arena = nil
 	}
 	if g.Int16Arena != nil {
-		g.Int16Arena.Free()
+		g.Int16Arena.Release()
 		g.Int16Arena = nil
 	}
 	if g.Int32Arena != nil {
-		g.Int32Arena.Free()
+		g.Int32Arena.Release()
 		g.Int32Arena = nil
 	}
 	if g.Int64Arena != nil {
-		g.Int64Arena.Free()
+		g.Int64Arena.Release()
 		g.Int64Arena = nil
 	}
 	if g.Float16Arena != nil {
-		g.Float16Arena.Free()
+		g.Float16Arena.Release()
 		g.Float16Arena = nil
 	}
 	if g.Complex64Arena != nil {
-		g.Complex64Arena.Free()
+		g.Complex64Arena.Release()
 		g.Complex64Arena = nil
 	}
 	if g.Complex128Arena != nil {
-		g.Complex128Arena.Free()
+		g.Complex128Arena.Release()
 		g.Complex128Arena = nil
 	}
 }

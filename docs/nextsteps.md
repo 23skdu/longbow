@@ -18,11 +18,11 @@ The following items represent incomplete implementations or stubbed functionalit
   - [x] Enforced strict model validation by removing the `LONGBOW_ALLOW_STUBS` environment variable bypass.
   - [x] Disabled keyword-matching fallback in `internal/store/ml_reranker.go` to ensure production model usage.
 
-- [ ] **Security & Bounds Hardening**
+- [x] **Security & Bounds Hardening**
   - [x] Remediated all G115 (integer overflow) findings in `internal/simd/amx` for Darwin ARM64.
-  - [ ] Complete remaining 100% `gosec` audit for G304 (path traversal) findings.
+  - [x] Completed 100% `gosec` audit for G115 (integer overflow) and G304 (path traversal) findings across core storage engine.
   - [x] Implemented explicit bounds checking for CGO/AMX boundary crossings.
-  - [ ] *Rationale:* Production release requires guaranteed memory safety, especially at the hardware interface level.
+  - [x] *Rationale:* Production release requires guaranteed memory safety, especially at the hardware interface level.
 
 This document tracks the remaining tasks for hardening the Longbow storage engine for production readiness.
 
@@ -96,3 +96,19 @@ Based on the performance validation matrix for v0.2.1-rc1, the following regress
    - [x] *Fix*: Validated that `SetTemporalIndex` is called BEFORE the server starts listening and that environment variables are correctly exported to background processes.
 7. **TurboQuant Scaling**: Verified that TurboQuant 4-bit ingestion throughput matches target expectations (>1M vec/s), but search latency scales non-linearly at >250k vectors.
     - [x] *Fix*: Implemented bit-specialized SIMD kernels and lookup tables for TurboQuant to eliminate bit-shifting and trigonometric overhead during distance computation.
+
+## Refactoring & Maintainability Plan (v0.2.3+)
+
+The following 10-part plan outlines the strategy for improving the Longbow codebase to ensure long-term maintainability, faster debugging (specifically for concurrency), and better context-window fit for AI-assisted development.
+
+1.  **Modularize Storage Layers**: Decompose `arrow_hnsw.go` into specialized modules: `navigation.go` (search/traversal), `persistence.go` (mmap/disk), and `quantization_bridge.go`.
+2.  **Atomic Snapshot Registry**: Implement a `MetadataRegistry` that uses a single atomic pointer to a versioned struct containing `entryPoint`, `maxLevel`, and `nodeCount`. This prevents inconsistent views of index state during concurrent ingestion.
+3.  **Arena Isolation (Generation Tracking)**: Add "generation IDs" to memory chunks in `internal/memory`. Workers will only access chunks belonging to their snapshot's generation, preventing cross-batch data corruption.
+4.  **Unified Computer Interface**: Refactor distance computers into a cleaner interface hierarchy, reducing the polymorphic overhead and simplifying the `resolveHNSWComputer` logic.
+5.  **Lock-Free Neighbor Management**: Expand the use of `PackedNeighbors` to more layers and formalize the transition from lock-based to lock-free access as nodes stabilize.
+6.  **Deterministic Concurrency Testing**: Implement a suite of tests that use fixed seeds and controllable worker interleaving to reproduce race conditions reliably.
+7.  **SIMD Kernel Abstraction**: Decouple assembly kernels from the storage engine via a unified `internal/simd` API that supports runtime dispatching without circular dependencies.
+8.  **Fast-Path Race Auditing**: Optimize `go test -race` by creating "micro-indices" (tiny capacities and dimensions) that exercise the same logic paths with 10x less memory pressure and faster execution.
+9.  **Pluggable Ingestion Policies**: Refactor `AddBatchBulk` to support different ingestion strategies (e.g., sort-by-level, spatial clustering) to improve bootstrap quality and reduce graph construction time.
+10. **Function Decomposition for Context Clarity**: Systematically break down large functions into smaller, logically complete units (<100 lines) to ensure that code changes and reviews fit reliably within modern AI context windows.
+11. **HNSW Concurrency Stability (v0.2.2-rc2)**: [x] Resolved data race conditions and inconsistent metadata registry snapshots during bulk ingestion. Verified with `go test -race`.

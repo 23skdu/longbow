@@ -23,17 +23,26 @@ func (h *ArrowHNSW) Insert(id uint32, level int) error {
 
 // InsertWithVector inserts a vector that has already been retrieved.
 func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
-
-	data, err := h.insertInternal(id, vec, level, false, nil)
-	if err == nil && data != nil {
-		h.compareAndSwapData(data)
+	for {
+		data, err := h.insertInternal(id, vec, level, false, nil)
+		if err != nil {
+			return err
+		}
+		if data == nil {
+			return nil
+		}
+		if h.compareAndSwapData(data) {
+			h.commitID(id)
+			return nil
+		}
+		// CAS failed, retry insertion on the new global state
 	}
-	return err
 }
 
 // insertInternal is the core HNSW insertion logic.
 // It accepts an optional 'data' snapshot to optimize batch operations.
 func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, data *types.GraphData) (*types.GraphData, error) {
+	meta := h.metadataRegistry.Load()
 	if level < 0 {
 		level = h.generateLevel()
 	}
@@ -44,7 +53,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	var dims int
 	defer func() {
 		duration := time.Since(start).Seconds()
-		nodeCount := float64(h.nodeCount.Load())
+		nodeCount := float64(meta.NodeCount)
 		typeStr := h.config.DataType.String()
 		if int(id)%100 == 0 {
 			metrics.HNSWNodesAddedTotal.WithLabelValues(h.name).Add(100)
@@ -70,14 +79,17 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 
 	if h.config.SQ8Enabled {
 		if vecF32, ok := vec.([]float32); ok {
-			h.ensureTrained(int(h.nodeCount.Load()), [][]float32{vecF32}, h.data.Load())
+			h.ensureTrained(int(meta.NodeCount), [][]float32{vecF32}, h.data.Load())
 		}
 	}
 
 	dims = int(h.dims.Load())
 	if dims == 0 || data == nil || int(id) >= data.Capacity {
 		h.growMu.Lock()
-		data = h.data.Load()
+		// Only load from global if we don't already have a working copy
+		if data == nil {
+			data = h.data.Load()
+		}
 		dims = int(h.dims.Load())
 		if dims == 0 {
 			inputDims := 0
@@ -105,7 +117,17 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 				h.growMu.Unlock()
 				return nil, err
 			}
-			data = h.data.Load()
+			// Important: If we were using a private clone, we must also grow the clone
+			if data != nil && data != h.data.Load() {
+				// Grow our local copy too
+				if err := data.EnsureChunks(newCap, dims); err != nil {
+					h.growMu.Unlock()
+					return nil, err
+				}
+			} else {
+				// Otherwise adopt the new global state
+				data = h.data.Load()
+			}
 		}
 		h.growMu.Unlock()
 	}
@@ -113,12 +135,21 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	cID := types.ChunkID(id)
 	if data.NeedsChunk(cID) {
 		h.growMu.Lock()
+		// Ensure global state is grown so others can benefit
 		if _, err := h.ensureChunkInternal(int(cID), int(types.ChunkOffset(id)), dims); err != nil {
 			h.growMu.Unlock()
 			return nil, err
 		}
+
+		// Ensure our local private copy also has the chunk without discarding previous changes
+		if data.Dims == 0 && dims > 0 {
+			data.Dims = dims
+		}
+		if err := data.EnsureChunk(int(cID), int(types.ChunkOffset(id)), dims); err != nil {
+			h.growMu.Unlock()
+			return nil, err
+		}
 		h.growMu.Unlock()
-		data = h.data.Load()
 	}
 
 	// h.growMu.RLock() - REMOVED: causes deadlocks with promoteNode and redundant with EnsureChunks
@@ -146,7 +177,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	}
 
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
-		if int(h.nodeCount.Load()) >= h.config.AdaptiveMThreshold {
+		if int(meta.NodeCount) >= h.config.AdaptiveMThreshold {
 			if h.adaptiveMTriggered.CompareAndSwap(false, true) {
 				newM := int64(h.config.M) * 2
 				newMMax := int64(h.config.MMax) * 2
@@ -185,6 +216,8 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	}
 
 	ctx := h.searchPool.Get()
+	ctx.MaxNodeCount = meta.NodeCount
+	ctx.MaxGeneration = meta.Generation
 	computer := h.resolveHNSWComputer(data, ctx, vec, true)
 	defer h.searchPool.PutWithMetrics(ctx, h.config.DataType.String(), strconv.Itoa(dims))
 	ctx.Reset()
@@ -193,11 +226,11 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())
 
-	if maxL >= 0 {
+	if maxL >= 0 && ep != math.MaxUint32 {
 		// Optimization: If we have multiple entry points at the highest layer,
 		// pick one randomly to reduce contention on the search start node.
 		if randomizedEP, ok := h.topLayerManager.entryPoints[maxL].GetRandom(); ok {
-			if int64(randomizedEP) < h.nodeCount.Load() {
+			if int64(randomizedEP) < meta.NodeCount {
 				ep = randomizedEP
 			}
 		}
@@ -209,7 +242,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		}
 	}
 
-	for l := min(level, maxL+1); l >= 0; l-- {
+	for l := min(level, maxL+1); l >= 0 && ep != math.MaxUint32; l-- {
 		ef := max(int(h.efConstruction.Load()), int(h.m.Load()))
 		neighbors, err := h.searchLayerForInsert(context.Background(), ctx, vec, ep, ef, l, data)
 		if err != nil { return nil, err }

@@ -7,6 +7,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
+// TopLayerManager manages the upper layers of the HNSW graph using lock-free structures.
 type TopLayerManager struct {
 	// layers[layer] stores map[nodeID]*atomic.Pointer[LockFreeAdjacency]
 	layers [types.ArrowMaxLayers]sync.Map
@@ -19,6 +20,7 @@ type LockFreeAdjacency struct {
 	Neighbors []uint32
 }
 
+// NewTopLayerManager creates a new instance of TopLayerManager.
 func NewTopLayerManager(threshold int) *TopLayerManager {
 	tlm := &TopLayerManager{
 		threshold: threshold,
@@ -159,6 +161,37 @@ func (h *ArrowHNSW) GetNeighborsCombinedManual(data *types.GraphData, layer int,
 	// 3. Fallback to standard types.GraphData
 	if data != nil {
 		neighbors := data.GetNeighbors(layer, id, nil)
+		if len(neighbors) > 0 {
+			return neighbors
+		}
+	}
+	
+	// 4. Fallback to DiskGraph
+	dg := h.diskGraph.Load()
+	if dg != nil {
+		return dg.GetNeighbors(layer, id, nil)
+	}
+	
+	return nil
+}
+// GetNeighborsCombinedManualLocked returns neighbors while holding the node lock.
+func (h *ArrowHNSW) GetNeighborsCombinedManualLocked(data *types.GraphData, layer int, id uint32) []uint32 {
+	// 1. Try TopLayerManager
+	lf := h.topLayerManager.GetNeighborsLockFree(layer, id)
+	if lf != nil {
+		return lf
+	}
+	
+	// 2. Try GraphData PackedNeighbors
+	if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+		if neighbors, ok := data.PackedNeighbors[layer].GetNeighbors(id); ok {
+			return neighbors
+		}
+	}
+	
+	// 3. Fallback to standard types.GraphData (BYPASS LOCK)
+	if data != nil {
+		neighbors := data.GetNeighborsLockFree(layer, id)
 		if len(neighbors) > 0 {
 			return neighbors
 		}

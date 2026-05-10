@@ -17,6 +17,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"math"
+	"sync/atomic"
 )
 
 // BulkInsertThreshold defines the minimum batch size to trigger parallel bulk insert
@@ -38,6 +39,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		return err
 	}
 	start := time.Now()
+	
 	// Ensure nodeCount is advanced even on error/cancellation to unblock subsequent writers.
 	defer func(batchSize int) {
 		// Always advance to the end of the requested batch range to unblock sequential writers,
@@ -447,7 +449,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			// Init levels chunk if needed
 			levelsChunk := data.GetLevelsChunk(cID)
 			if levelsChunk != nil {
-				levelsChunk[cOff] = uint8(level) // #nosec G115
+				atomic.StoreUint32(&levelsChunk[cOff], uint32(level))
 			}
 		}
 	})

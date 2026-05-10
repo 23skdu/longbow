@@ -103,12 +103,12 @@ func (tlm *TopLayerManager) ClearNeighbors(layer int, id uint32) {
 
 // GetNeighborsCombined returns neighbors from both the standard graph data
 // and the lock-free upper layers, ensuring a consistent view.
-func (h *ArrowHNSW) GetNeighborsCombined(layer int, id uint32) []uint32 {
-	return h.GetNeighborsCombinedCached(layer, id, nil)
+func (h *ArrowHNSW) GetNeighborsCombined(layer int, id uint32, maxGen uint64) []uint32 {
+	return h.GetNeighborsCombinedCached(layer, id, nil, maxGen)
 }
 
 // GetNeighborsCombinedCached returns neighbors, using the provided DiskGraph cache if available.
-func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGraph) []uint32 {
+func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGraph, maxGen uint64) []uint32 {
 	// 1. Try TopLayerManager (Persistent lock-free upper layers)
 	lf := h.topLayerManager.GetNeighborsLockFree(layer, id)
 	if lf != nil {
@@ -118,14 +118,14 @@ func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGra
 	// 2. Try GraphData PackedNeighbors (Dynamic lock-free adjacency)
 	data := h.data.Load()
 	if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
-		if neighbors, ok := data.PackedNeighbors[layer].GetNeighbors(id); ok {
+		if neighbors, ok := data.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
 			return neighbors
 		}
 	}
 	
 	// 3. Fallback to standard types.GraphData (lock-safe for reads)
 	if data != nil {
-		neighbors := data.GetNeighbors(layer, id, nil)
+		neighbors := data.GetNeighborsWithGen(layer, id, nil, maxGen)
 		if len(neighbors) > 0 {
 			return neighbors
 		}
@@ -144,38 +144,53 @@ func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGra
 
 // GetNeighborsCombinedManual returns neighbors using the provided GraphData pointer.
 // This is critical for internal operations (like linkage) that operate on a local COW pointer.
-func (h *ArrowHNSW) GetNeighborsCombinedManual(data *types.GraphData, layer int, id uint32) []uint32 {
+func (h *ArrowHNSW) GetNeighborsCombinedManual(data *types.GraphData, layer int, id uint32, maxGen uint64) []uint32 {
+	var res []uint32
+	
 	// 1. Try TopLayerManager
-	lf := h.topLayerManager.GetNeighborsLockFree(layer, id)
-	if lf != nil {
-		return lf
-	}
-	
-	// 2. Try GraphData PackedNeighbors
-	if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
-		if neighbors, ok := data.PackedNeighbors[layer].GetNeighbors(id); ok {
-			return neighbors
+	if h.topLayerManager != nil {
+		lf := h.topLayerManager.GetNeighborsLockFree(layer, id)
+		if lf != nil {
+			res = lf
 		}
 	}
 	
-	// 3. Fallback to standard types.GraphData
-	if data != nil {
-		neighbors := data.GetNeighbors(layer, id, nil)
-		if len(neighbors) > 0 {
-			return neighbors
+	if res == nil {
+		// 2. Try GraphData PackedNeighbors
+		if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+			if neighbors, ok := data.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
+				if len(neighbors) > 0 {
+					res = neighbors
+				}
+			}
 		}
 	}
 	
-	// 4. Fallback to DiskGraph
-	dg := h.diskGraph.Load()
-	if dg != nil {
-		return dg.GetNeighbors(layer, id, nil)
+	if res == nil {
+		// 3. Fallback to standard types.GraphData
+		if data != nil {
+			neighbors := data.GetNeighborsWithGen(layer, id, nil, maxGen)
+			if len(neighbors) > 0 {
+				res = neighbors
+			}
+		}
+	}
+
+	if res == nil {
+		// 4. Fallback to DiskGraph
+		dg := h.diskGraph.Load()
+		if dg != nil {
+			res = dg.GetNeighbors(layer, id, nil)
+		}
 	}
 	
-	return nil
+	if id == 0 || id == 90 {
+	}
+	
+	return res
 }
 // GetNeighborsCombinedManualLocked returns neighbors while holding the node lock.
-func (h *ArrowHNSW) GetNeighborsCombinedManualLocked(data *types.GraphData, layer int, id uint32) []uint32 {
+func (h *ArrowHNSW) GetNeighborsCombinedManualLocked(data *types.GraphData, layer int, id uint32, maxGen uint64) []uint32 {
 	// 1. Try TopLayerManager
 	lf := h.topLayerManager.GetNeighborsLockFree(layer, id)
 	if lf != nil {
@@ -184,7 +199,7 @@ func (h *ArrowHNSW) GetNeighborsCombinedManualLocked(data *types.GraphData, laye
 	
 	// 2. Try GraphData PackedNeighbors
 	if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
-		if neighbors, ok := data.PackedNeighbors[layer].GetNeighbors(id); ok {
+		if neighbors, ok := data.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
 			return neighbors
 		}
 	}

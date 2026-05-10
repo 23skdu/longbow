@@ -159,6 +159,8 @@ func (h *CandidateHeap) down(i0, n int) {
 // ArrowSearchContext holds pre-allocated buffers for Arrow-based HNSW search operations
 // to minimize allocation overhead during high-frequency searches.
 type ArrowSearchContext struct {
+	QueryID uint32 // ID of the node being searched for (for debugging)
+
 	// Pre-allocated result buffers
 	candidates CandidateHeap
 	visited    *types.ArrowBitset

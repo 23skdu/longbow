@@ -40,31 +40,8 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 			return next
 		})
 
-		// Sync with legacy arena for backward compatibility and testing
-		cID := types.ChunkID(source)
-		cOff := types.ChunkOffset(source)
-		countsChunk := data.GetCountsChunk(layer, cID)
-		neighborsChunk := data.GetNeighborsChunk(layer, cID)
-		if countsChunk != nil && neighborsChunk != nil {
-			oldVer := data.LockNode(layer, source)
-			currentCount := int(atomic.LoadInt32(&countsChunk[cOff]))
-			if currentCount < types.MaxNeighbors && currentCount < maxConn {
-				baseIdx := int(cOff) * types.MaxNeighbors
-				// Check for duplicates in legacy arena too
-				found := false
-				for i := 0; i < currentCount; i++ {
-					if atomic.LoadUint32(&neighborsChunk[baseIdx+i]) == target {
-						found = true
-						break
-					}
-				}
-				if !found {
-					atomic.StoreUint32(&neighborsChunk[baseIdx+currentCount], target)
-					atomic.StoreInt32(&countsChunk[cOff], int32(currentCount+1)) // #nosec G115
-				}
-			}
-			data.UnlockNode(layer, source, oldVer)
-		}
+		// Note: Legacy arena sync removed to achieve true lock-free access.
+		// Adjacency is now managed exclusively by PackedNeighbors in the hot path.
 
 		atomic.AddUint64(&data.GlobalVersion, 1)
 		return data
@@ -212,7 +189,7 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 	neighborsChunk := data.GetNeighborsChunk(layer, cID)
 	
 	var currentNeighbors []uint32
-	currentNeighbors = h.GetNeighborsCombinedManualLocked(data, layer, source)
+	currentNeighbors = h.GetNeighborsCombinedManualLocked(data, layer, source, ctx.MaxGeneration)
 
 	for _, n := range currentNeighbors {
 		if n == target { return }
@@ -287,7 +264,7 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 		h.pruneConnectionsLocked(ctx, data, target, maxConn, layer, nil)
 	} else if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
-		newNeighbors := h.GetNeighborsCombinedManualLocked(data, layer, target)
+		newNeighbors := h.GetNeighborsCombinedManualLocked(data, layer, target, ctx.MaxGeneration)
 		_ = pn.SetNeighbors(target, newNeighbors)
 	}
 }
@@ -328,7 +305,7 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 // pruneConnectionsLocked reduces connections using robust diversity heuristic.
 // Legacy method for non-PackedNeighbors storage.
 func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, maxConn, layer int, newNeighbors []uint32) {
-	selected := h.computePrunedNeighbors(ctx, data, nodeID, h.GetNeighborsCombinedManualLocked(data, layer, nodeID), newNeighbors, maxConn)
+	selected := h.computePrunedNeighbors(ctx, data, nodeID, h.GetNeighborsCombinedManualLocked(data, layer, nodeID, ctx.MaxGeneration), newNeighbors, maxConn)
 
 	if h.topLayerManager != nil {
 		h.topLayerManager.ClearNeighbors(layer, nodeID)

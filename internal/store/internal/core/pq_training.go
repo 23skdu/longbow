@@ -106,6 +106,10 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 		}
 		// Refresh pointer after growth
 		data = h.data.Load()
+		
+		if err := data.PreAllocate(targetCap); err != nil {
+			return err
+		}
 
 		if data.VectorsPQ != nil {
 			nodeCount := int(h.nodeCount.Load())

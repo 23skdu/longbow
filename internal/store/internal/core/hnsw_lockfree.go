@@ -14,9 +14,12 @@ import (
 const (
 	// MaxConnections defines the maximum number of neighbors per node per level.
 	MaxConnections = 16
-	MaxLayers      = 16
+	// MaxLayers defines the maximum height of the HNSW graph.
+	MaxLayers = 16
+	// EfConstruction defines the size of the dynamic candidate list during construction.
 	EfConstruction = 128
-	ML             = 0.36 // 1 / ln(MaxConnections)
+	// ML is the level multiplier for random level generation.
+	ML = 0.36 // 1 / ln(MaxConnections)
 )
 
 // LockFreeNode represents a node in the HNSW graph with concurrent access support.

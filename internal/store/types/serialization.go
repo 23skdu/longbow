@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"sync/atomic"
 	"unsafe"
 )
 
@@ -79,7 +80,11 @@ func (g *GraphData) Serialize(w io.Writer) error {
 			if toWrite > remaining {
 				toWrite = remaining
 			}
-			if _, err := w.Write(chunk[:toWrite]); err != nil {
+			temp := make([]uint8, toWrite)
+			for i := 0; i < toWrite; i++ {
+				temp[i] = uint8(atomic.LoadUint32(&chunk[i]))
+			}
+			if _, err := w.Write(temp); err != nil {
 				return err
 			}
 			nodesWritten += toWrite
@@ -118,30 +123,49 @@ func (g *GraphData) Serialize(w io.Writer) error {
 				count = g.Capacity - nodesProcessed
 			}
 
-			// Get Counts and Neighbors chunks using accessors
-			counts := g.GetCountsChunk(l, cID)
-			neighbors := g.GetNeighborsChunk(l, cID)
-
 			for i := 0; i < count; i++ {
+				nodeID := uint32(nodesProcessed + i)
 				var encodedCount uint32
-				if counts != nil {
-					encodedCount = uint32(counts[i]) // #nosec G115
+				var neighborsList []uint32
+
+				// Prefer PackedNeighbors for serialization
+				if l < len(g.PackedNeighbors) && g.PackedNeighbors[l] != nil {
+					if nbs, ok := g.PackedNeighbors[l].GetNeighbors(nodeID); ok {
+						neighborsList = nbs
+						encodedCount = uint32(len(nbs)) // #nosec G115
+					}
 				}
+
+				// Fallback to legacy chunk
+				if neighborsList == nil {
+					counts := g.GetCountsChunk(l, cID)
+					if counts != nil {
+						encodedCount = uint32(counts[i]) // #nosec G115
+					}
+					if encodedCount > 0 {
+						chunk := g.GetNeighborsChunk(l, cID)
+						if chunk != nil {
+							base := i * MaxNeighbors
+							if base+int(encodedCount) <= len(chunk) {
+								neighborsList = chunk[base : base+int(encodedCount)]
+							}
+						}
+					}
+				}
+
 				if err := binary.Write(w, binary.LittleEndian, encodedCount); err != nil {
 					return err
 				}
 
 				if encodedCount > 0 {
-					base := i * MaxNeighbors
-					// Sanity check
-					if neighbors == nil || base+int(encodedCount) > len(neighbors) {
-						// Data corruption or race? Write zeroes/dummy to maintain stream alignment
-						dummy := make([]uint32, encodedCount)
-						if err := binary.Write(w, binary.LittleEndian, dummy); err != nil {
+					if neighborsList != nil {
+						if err := binary.Write(w, binary.LittleEndian, neighborsList); err != nil {
 							return err
 						}
 					} else {
-						if err := binary.Write(w, binary.LittleEndian, neighbors[base:base+int(encodedCount)]); err != nil {
+						// Data missing, write zeros to maintain alignment
+						dummy := make([]uint32, encodedCount)
+						if err := binary.Write(w, binary.LittleEndian, dummy); err != nil {
 							return err
 						}
 					}
@@ -470,8 +494,12 @@ func DeserializeGraphData(r io.Reader) (*GraphData, error) {
 		}
 
 		levels := g.GetLevelsChunk(cID)
-		if _, err := io.ReadFull(r, levels[:toRead]); err != nil {
+		temp := make([]uint8, toRead)
+		if _, err := io.ReadFull(r, temp); err != nil {
 			return nil, err
+		}
+		for i := 0; i < toRead; i++ {
+			levels[i] = uint32(temp[i])
 		}
 		nodesRead += toRead
 		cID++
@@ -526,6 +554,11 @@ func DeserializeGraphData(r io.Reader) (*GraphData, error) {
 					}
 
 					countsChunk[i] = int32(nCnt)
+
+					// Also populate PackedNeighbors for lock-free management
+					if l < len(g.PackedNeighbors) && g.PackedNeighbors[l] != nil {
+						_ = g.PackedNeighbors[l].SetNeighbors(uint32(nodesProcessed+i), slice)
+					}
 				}
 			}
 			nodesProcessed += count

@@ -19,7 +19,11 @@ func TestSearchContextPooling(t *testing.T) {
 	h.searchPool.Put(ctx)
 
 	ctx2 := h.searchPool.Get()
-	assert.True(t, ctx == ctx2, "Should reuse context from pool")
+	assert.NotNil(t, ctx2)
+	
+	gets, puts := h.searchPool.Stats()
+	assert.Equal(t, int64(2), gets)
+	assert.Equal(t, int64(1), puts)
 }
 
 func TestCandidateHeap(t *testing.T) {

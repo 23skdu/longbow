@@ -67,6 +67,11 @@ func TestArrowHNSW_PersistenceRefactor(t *testing.T) {
 
 	// Verify Size
 	assert.Equal(t, count, idx.Size())
+	
+	n0_src, _ := idx.GetRawNeighbors(0)
+	t.Logf("Source index: Neighbors of 0: %v", n0_src)
+	results_src, _ := idx.SearchVectors(ctx, []float32{0, 0, 0, 0}, 10, nil, nil)
+	t.Logf("Source index: Search results: %+v", results_src)
 
 	// Export State
 	stateBytes, err := idx.ExportState()
@@ -84,9 +89,26 @@ func TestArrowHNSW_PersistenceRefactor(t *testing.T) {
 
 	// Verify Vector presence via LocationStore (synced)
 	// And verify types.GraphData logic (search)
-	results, err := idx2.SearchVectors(ctx, []float32{0, 0, 0, 0}, 1, nil, nil)
+	results, err := idx2.SearchVectors(ctx, []float32{0, 0, 0, 0}, 10, nil, nil)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, results)
+	t.Logf("Search results: %+v", results)
+	
+	for i, r := range results {
+		t.Logf("Result %d: ID=%d, Dist=%f", i, r.ID, r.Distance)
+	}
+
+	n0, _ := idx2.GetRawNeighbors(0)
+	t.Logf("Imported index: Neighbors of 0: %v", n0)
+	
+	n5, _ := idx2.GetRawNeighbors(5)
+	t.Logf("Imported index: Neighbors of 5: %v", n5)
+
+	results5, _ := idx2.SearchVectors(ctx, []float32{5, 5, 5, 5}, 1, nil, nil)
+	t.Logf("Imported index: Search results for 5: %+v", results5)
+	assert.NotEmpty(t, results5)
+	assert.Equal(t, types.VectorID(5), results5[0].ID)
+	
 	assert.Equal(t, types.VectorID(0), results[0].ID)
 
 	// Check internal loc

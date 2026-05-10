@@ -456,6 +456,15 @@ func (h *ArrowHNSW) SetDiskGraph(disk *DiskGraph) {
 // setDims sets the vector dimensions
 func (h *ArrowHNSW) setDims(dims int32) {
 	h.dims.Store(dims)
+	h.updateMetadata(func(meta *HNSWMetadata) {
+		// Dims are not in HNSWMetadata currently, should we add them?
+		// The plan mentions entryPoint, maxLevel, and nodeCount.
+	})
+}
+
+// GetMetadataSnapshot returns a consistent snapshot of the index metadata.
+func (h *ArrowHNSW) GetMetadataSnapshot() *HNSWMetadata {
+	return h.metadataRegistry.Load()
 }
 
 // SetDimension sets the absolute dimension of the index.
@@ -506,7 +515,7 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 
 func (h *ArrowHNSW) commitID(id uint32) {
 	h.commitMu.Lock()
-	for h.nodeCount.Load() < int64(id) {
+	for h.GetMetadataSnapshot().NodeCount < int64(id) {
 		h.commitCond.Wait()
 	}
 
@@ -522,26 +531,34 @@ func (h *ArrowHNSW) commitID(id uint32) {
 				levels := data.GetLevelsChunk(cID)
 				nodeLevel := 0
 				if levels != nil {
-					nodeLevel = int(levels[cOff])
+					nodeLevel = int(atomic.LoadUint32(&levels[cOff]))
 				}
 
 				epLevel := -1
-				if meta.EntryPoint != math.MaxUint32 {
-					epCID := int(meta.EntryPoint) / types.ChunkSize
-					epCOff := int(meta.EntryPoint) % types.ChunkSize
+				ep := meta.EntryPoint
+				if ep != math.MaxUint32 {
+					epCID := int(ep) / types.ChunkSize
+					epCOff := int(ep) % types.ChunkSize
 					epLevels := data.GetLevelsChunk(epCID)
 					if epLevels != nil {
-						epLevel = int(epLevels[epCOff])
+						epLevel = int(atomic.LoadUint32(&epLevels[epCOff]))
 					}
 				}
 
-				if meta.EntryPoint == math.MaxUint32 || nodeLevel > epLevel {
+				if ep == math.MaxUint32 || nodeLevel > epLevel {
 					meta.EntryPoint = id
 					meta.MaxLevel = int32(nodeLevel)
 				}
 			}
 		}
 	})
+	
+	// Sync atomics with the newly committed metadata
+	meta := h.GetMetadataSnapshot()
+	h.nodeCount.Store(meta.NodeCount)
+	h.entryPoint.Store(meta.EntryPoint)
+	h.maxLevel.Store(meta.MaxLevel)
+
 	h.commitCond.Broadcast()
 	h.commitMu.Unlock()
 }
@@ -745,8 +762,7 @@ func (h *ArrowHNSW) NeedsCompaction() bool {
 			total += int64(ts.Count()) // #nosec G115
 		}
 	}
-	// Threshold for compaction: 10% of total nodes or at least 5000 entries
-	nodeCount := h.nodeCount.Load()
+	nodeCount := h.GetMetadataSnapshot().NodeCount
 	return total > 5000 || (nodeCount > 0 && float64(total)/float64(nodeCount) > 0.1)
 }
 
@@ -1139,9 +1155,8 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	
 	// Fallback to sequential insertion if bulk fails (rare)
 	ids := make([]uint32, len(rowIdxs))
-
-	// Ensure chunks are allocated before parallel ingestion
 	maxID := startID + uint32(len(rowIdxs)) - 1 // #nosec G115
+	fmt.Printf("AddBatch startID=%d n=%d\n", startID, len(rowIdxs))
 	data, err := h.EnsureChunks(int(types.ChunkID(startID)), int(types.ChunkID(maxID)), int(h.dims.Load()))
 	if err == nil {
 		data = data.Clone()
@@ -1185,7 +1200,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	// If the index is empty or very small, we must insert some nodes sequentially
 	// to establish an entry point and basic graph structure before parallel insertion.
 	bootstrapEnd := 0
-	nodeCount := h.nodeCount.Load()
+	nodeCount := h.GetMetadataSnapshot().NodeCount
 	seedCount := 256
 	if nodeCount < int64(seedCount) {
 		bootstrapEnd = seedCount - int(nodeCount)
@@ -1197,44 +1212,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		}
 	}
 
-	data = h.data.Load().Clone()
-	for i := 0; i < bootstrapEnd; i++ {
+	for i := 0; i < len(rowIdxs); i++ {
 		id := startID + uint32(i) // #nosec G115
 		
-		var rec arrow.RecordBatch
-		bIdx := batchIdxs[i]
-		if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
-			rec = recs[bIdx]
-		} else if len(recs) == 1 {
-			rec = recs[0]
-		}
-		
-		if rec == nil { continue }
-		vec := h.extractVector(rec, vecColIdx, rowIdxs[i])
-		if vec == nil { continue }
-
-		// Insert sequentially to establish graph backbone
-		var newData *types.GraphData
-		newData, err = h.insertInternal(id, vec, -1, false, data)
-		if err == nil && newData != nil {
-			data = newData
-			h.commitID(id) // Make visible immediately for subsequent bootstrap nodes
-			ids[i] = id
-		} else if err != nil {
-			return nil, err
-		}
-	}
-	
-	// Publish the bootstrap backbone
-	h.compareAndSwapData(data.Clone())
-
-	// Phase 2: Sequential Insertion
-	// Now that the graph backbone is established, we can perform insertion for the rest.
-	// Note: fallback insertion is sequential to ensure graph integrity without complex merging.
-	for i := bootstrapEnd; i < len(rowIdxs); i++ {
-		id := startID + uint32(i) // #nosec G115
-		
-		// Resolve record batch
 		var rec arrow.RecordBatch
 		bIdx := batchIdxs[i]
 		if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
@@ -1247,37 +1227,18 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			return nil, fmt.Errorf("could not resolve record batch for index %d", i)
 		}
 
-		var vec any
-		if vecColIdx != -1 {
-			vec = h.extractVector(rec, vecColIdx, rowIdxs[i])
-		}
-
+		vec := h.extractVector(rec, vecColIdx, rowIdxs[i])
 		if vec == nil {
 			return nil, fmt.Errorf("vector missing for row %d", rowIdxs[i])
 		}
 
-		data, err = h.insertInternal(id, vec, -1, true, data)
-		if err != nil {
+		// Insert node-by-node. InsertWithVector uses in-place arena updates (lock-free)
+		// and commitID for sequential metadata commitment (serialized).
+		if err := h.InsertWithVector(id, vec, -1); err != nil {
 			return nil, err
 		}
-		h.commitID(id) // Make visible for subsequent nodes in this batch
 		ids[i] = id
 	}
-	
-	h.compareAndSwapData(data.Clone())
-	
-	// Commit the entire block at once to avoid worker pool saturation deadlocks.
-	// Ensure we only advance to the final ID for this batch and don't double count.
-	finalID := int64(startID + uint32(len(rowIdxs))) // #nosec G115
-	h.commitMu.Lock()
-	for h.nodeCount.Load() < int64(startID) {
-		h.commitCond.Wait()
-	}
-	if h.nodeCount.Load() < finalID {
-		h.nodeCount.Store(finalID)
-		h.commitCond.Broadcast()
-	}
-	h.commitMu.Unlock()
 
 	return ids, nil
 }

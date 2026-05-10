@@ -9,6 +9,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
+	"sync/atomic"
 )
 
 // Insert adds a new vector to the HNSW graph.
@@ -28,10 +29,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		if err != nil {
 			return err
 		}
-		if data == nil {
-			return nil
-		}
-		if h.compareAndSwapData(data) {
+		if data == nil || h.compareAndSwapData(data) {
 			h.commitID(id)
 			return nil
 		}
@@ -39,15 +37,25 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 	}
 }
 
-// insertInternal is the core HNSW insertion logic.
-// It accepts an optional 'data' snapshot to optimize batch operations.
-func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, data *types.GraphData) (*types.GraphData, error) {
+func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, existingData *types.GraphData) (*types.GraphData, error) {
 	meta := h.metadataRegistry.Load()
 	if level < 0 {
 		level = h.generateLevel()
 	}
+	data := existingData
+	isPrivate := false
 	if data == nil {
-		data = h.data.Load().Clone()
+		data = h.data.Load()
+	} else {
+		isPrivate = true // We assume existingData provided by the caller is a private copy they own
+	}
+
+	// Helper to ensure we are working on a private clone before any modification
+	ensurePrivate := func() {
+		if !isPrivate {
+			data = data.Clone()
+			isPrivate = true
+		}
 	}
 	start := time.Now()
 	var dims int
@@ -117,16 +125,11 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 				h.growMu.Unlock()
 				return nil, err
 			}
-			// Important: If we were using a private clone, we must also grow the clone
-			if data != nil && data != h.data.Load() {
-				// Grow our local copy too
-				if err := data.EnsureChunks(newCap, dims); err != nil {
-					h.growMu.Unlock()
-					return nil, err
-				}
-			} else {
-				// Otherwise adopt the new global state
-				data = h.data.Load()
+			// Adopt the new global state
+			data = h.data.Load()
+			// If we were supposed to be private, clone it again
+			if !skipSet || existingData != nil {
+				data = data.Clone()
 			}
 		}
 		h.growMu.Unlock()
@@ -134,28 +137,23 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 
 	cID := types.ChunkID(id)
 	if data.NeedsChunk(cID) {
-		h.growMu.Lock()
-		// Ensure global state is grown so others can benefit
-		if _, err := h.ensureChunkInternal(int(cID), int(types.ChunkOffset(id)), dims); err != nil {
-			h.growMu.Unlock()
+		// Use ensureChunk which handles the COW and publishing of the grown state
+		var err error
+		data, err = h.ensureChunk(int(cID), int(types.ChunkOffset(id)), dims)
+		if err != nil {
 			return nil, err
 		}
-
-		// Ensure our local private copy also has the chunk without discarding previous changes
-		if data.Dims == 0 && dims > 0 {
-			data.Dims = dims
+		// If we were supposed to have a private copy, clone it
+		if !skipSet || existingData != nil {
+			data = data.Clone()
 		}
-		if err := data.EnsureChunk(int(cID), int(types.ChunkOffset(id)), dims); err != nil {
-			h.growMu.Unlock()
-			return nil, err
-		}
-		h.growMu.Unlock()
 	}
 
 	// h.growMu.RLock() - REMOVED: causes deadlocks with promoteNode and redundant with EnsureChunks
 	// defer h.growMu.RUnlock()
 
 	if !skipSet {
+		ensurePrivate()
 		oldVer := data.LockNode(0, id)
 		err := data.SetVector(id, vec)
 		data.UnlockNode(0, id, oldVer)
@@ -172,7 +170,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			if safeLevel > 255 {
 				safeLevel = 255
 			}
-			levelsChunk[cOff] = uint8(safeLevel) // #nosec G115
+			atomic.StoreUint32(&levelsChunk[cOff], uint32(safeLevel))
 		}
 	}
 
@@ -253,11 +251,31 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 
 		maxConn := int(h.mMax.Load())
 		if l == 0 { maxConn = int(h.mMax0.Load()) }
-		for _, nb := range neighbors {
-			data = h.AddConnection(ctx, data, id, nb.ID, l, maxConn, nb.Dist)
-			data = h.AddConnection(ctx, data, nb.ID, id, l, maxConn, nb.Dist)
+		
+		if len(neighbors) > 0 {
+			ensurePrivate()
+			for _, nb := range neighbors {
+				h.AddConnection(ctx, data, id, nb.ID, l, maxConn, nb.Dist)
+				h.AddConnection(ctx, data, nb.ID, id, l, maxConn, nb.Dist)
+			}
+			ep = neighbors[0].ID
 		}
-		if len(neighbors) > 0 { ep = neighbors[0].ID }
+	}
+
+	// If we modified in-place (no clone), we must update metadata and published state
+	// If we modified in-place (no clone), we must update metadata for Entry Point promotion
+	if !skipSet && existingData == nil {
+		h.updateMetadata(func(meta *HNSWMetadata) {
+			if level > int(meta.MaxLevel) {
+				meta.MaxLevel = int32(level) // #nosec G115
+				meta.EntryPoint = id
+			} else if meta.EntryPoint == math.MaxUint32 {
+				meta.EntryPoint = id
+			}
+			meta.Generation++
+		})
+		// We don't return data because it was updated in-place and already published
+		return nil, nil
 	}
 
 	return data, nil

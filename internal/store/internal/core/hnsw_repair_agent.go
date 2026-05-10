@@ -183,7 +183,7 @@ func (r *RepairAgent) detectOrphans() []uint32 {
 		}
 
 		// Get neighbors at layer 0 using unified accessor with cached DiskGraph
-		neighbors := r.index.GetNeighborsCombinedCached(0, current, dg)
+		neighbors := r.index.GetNeighborsCombinedCached(0, current, dg, meta.Generation)
 		for _, neighbor := range neighbors {
 			if !reachable[neighbor] && !r.index.deleted.Contains(neighbor) {
 				queue = append(queue, neighbor)

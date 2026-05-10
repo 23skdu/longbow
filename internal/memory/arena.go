@@ -413,8 +413,13 @@ func (a *SlabArena) Free() {
 	a.stats.UsedBytes.Store(0)
 }
 
-// Get returns the byte slice.
+// Get retrieves the byte slice from the arena.
 func (a *SlabArena) Get(offset uint64, length uint32) []byte {
+	return a.GetWithGeneration(offset, length, math.MaxUint64)
+}
+
+// GetWithGeneration retrieves the byte slice from the arena, enforcing generation isolation.
+func (a *SlabArena) GetWithGeneration(offset uint64, length uint32, maxGeneration uint64) []byte {
 	if offset == 0 || length == 0 {
 		return nil
 	}
@@ -431,6 +436,11 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 	}
 
 	s := slabs[slabIdx]
+	// Generation isolation check
+	if s.generation > maxGeneration {
+		return nil
+	}
+
 	if uint64(localOffset)+uint64(length) > uint64(len(s.data)) {
 		return nil
 	}

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"sync/atomic"
 )
 
 func TestDelete(t *testing.T) {
@@ -29,7 +30,7 @@ func TestDelete(t *testing.T) {
 		// Mock dimensions
 		dims := 128
 		var err error
-		data, err = index.ensureChunk(data, i, 0, dims)
+		data, err = index.ensureChunk(i, 0, dims)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -50,20 +51,24 @@ func TestDelete(t *testing.T) {
 		// Set level 0 for simplicity
 		lvlChunk := data.GetLevelsChunk(cID)
 		if lvlChunk != nil {
-			lvlChunk[cOff] = 0
-			if lvlChunk[cOff] != 0 {
+			atomic.StoreUint32(&lvlChunk[cOff], 0)
+			if atomic.LoadUint32(&lvlChunk[cOff]) != 0 {
 				t.Errorf("Level should be 0")
 			}
 		}
 
 		// Normally Insert would do more, but we just want to test Search filtering
-		// Insert needs nodeCount to be updated
-		index.nodeCount.Add(1)
+		// Insert needs nodeCount to be updated via metadataRegistry
+		index.updateMetadata(func(meta *HNSWMetadata) {
+			meta.NodeCount++
+		})
 	}
 
 	// Set entry point to 0
-	index.entryPoint.Store(0)
-	index.maxLevel.Store(0)
+	index.updateMetadata(func(meta *HNSWMetadata) {
+		meta.EntryPoint = 0
+		meta.MaxLevel = 0
+	})
 
 	// Verify they all exist in search
 	query := make([]float32, 128)

@@ -44,7 +44,6 @@ func makeTestRecordBatch(mem memory.Allocator, dims, numRows int) arrow.RecordBa
 }
 
 func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
-	t.Skip("Skipping: concurrent AddBatch to same GraphData is not thread-safe - use single writer or external synchronization")
 
 	mem := memory.NewGoAllocator()
 	numRows := 500
@@ -98,14 +97,40 @@ func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
 
 	time.Sleep(100 * time.Millisecond)
 
-	actualLen := idx.Len()
-	if actualLen != numRows {
-		t.Errorf("Expected index size %d, got %d", numRows, actualLen)
+	// Verify all vectors are searchable
+	for i := 0; i < numRows; i++ {
+		// Use a dummy query that should find the vector itself if it exists
+		// In this test, we don't have the original vectors easily accessible here without more work,
+		// but we can at least check if GetLocation returns correctly.
+		lAny, ok := idx.GetLocation(uint32(i))
+		if !ok {
+			t.Errorf("Vector %d missing from LocationStore", i)
+			continue
+		}
+		loc := lAny.(types.Location)
+		if loc.RowIdx != i {
+			t.Errorf("Vector %d has wrong RowIdx: expected %d, got %d", i, i, loc.RowIdx)
+		}
+		
+		// Check if vector exists in GraphData
+		vec, err := idx.GetVector(uint32(i))
+		if err != nil || vec == nil {
+			t.Errorf("Vector %d missing from GraphData", i)
+		}
+		
+		// For all but the first few nodes, they should have neighbors if graph is connected
+		if i > 20 {
+			neighbors, _ := idx.GetLayerNeighbors(uint32(i), 0)
+			if len(neighbors) == 0 {
+				t.Errorf("Vector %d has no neighbors (isolated node)", i)
+			}
+		}
 	}
+	
+	t.Logf("Verified reachability for %d vectors", numRows)
 }
 
 func TestArrowHNSW_Concurrency_MixedReadWrite(t *testing.T) {
-	t.Skip("Skipping: concurrent AddBatch to same GraphData is not thread-safe - use single writer or external synchronization")
 
 	mem := memory.NewGoAllocator()
 	numRows := 256

@@ -10,7 +10,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
-func (h *ArrowHNSW) ensureChunk(data *types.GraphData, cID, cOff, dims int) (*types.GraphData, error) {
+func (h *ArrowHNSW) ensureChunk(cID, cOff, dims int) (*types.GraphData, error) {
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
 	
@@ -18,13 +18,6 @@ func (h *ArrowHNSW) ensureChunk(data *types.GraphData, cID, cOff, dims int) (*ty
 	return newData, err
 }
 
-func (h *ArrowHNSW) ensureChunkInternal(cID, cOff, dims int) (*types.GraphData, error) {
-	h.growMu.Lock()
-	defer h.growMu.Unlock()
-	
-	newData, _, err := h.ensureChunkInternalLocked(cID, cOff, dims)
-	return newData, err
-}
 
 func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *types.GraphData, cloned bool, err error) {
 	data := h.data.Load()
@@ -67,6 +60,7 @@ func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *typ
 	return newData, true, nil
 }
 
+// Grow expands the index capacity to the specified size.
 func (h *ArrowHNSW) Grow(capacity, dims int) error {
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
@@ -147,10 +141,15 @@ func (h *ArrowHNSW) growNoLock(capacity, dims int) error {
 	return h.growInternal(capacity, dims)
 }
 
+// EnsureChunks guarantees that the specified range of chunks is allocated and ready for ingestion.
+// It handles thread-safe growth if the current capacity is insufficient.
 func (h *ArrowHNSW) EnsureChunks(startCID, endCID int, dims int) (*types.GraphData, error) {
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
+	return h.ensureChunksLocked(startCID, endCID, dims)
+}
 
+func (h *ArrowHNSW) ensureChunksLocked(startCID, endCID int, dims int) (*types.GraphData, error) {
 	data := h.data.Load()
 	needsGrow := false
 	if data == nil || (endCID+1)*types.ChunkSize > data.Capacity {

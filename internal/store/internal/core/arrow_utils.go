@@ -11,9 +11,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
-// ExtractVectorFromArrow extracts a vector from an Arrow record batch at the given row index.
-// This is a zero-copy operation that returns a slice pointing directly to Arrow's memory.
 // ExtractVectorAny extracts a vector and returns it as a slice of the appropriate type.
+// This is a zero-copy operation that returns a slice pointing directly to Arrow's memory.
 func ExtractVectorAny(rec arrow.RecordBatch, rowIdx, colIdx int) (any, error) {
 	if rec == nil {
 		return nil, fmt.Errorf("record is nil")
@@ -398,6 +397,7 @@ func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float3
 	}
 }
 
+// InferVectorDataType determines the vector data type from the Arrow schema and metadata.
 func InferVectorDataType(schema *arrow.Schema, fieldName string) types.VectorDataType {
 	if schema == nil {
 		return types.VectorTypeFloat32
@@ -479,37 +479,3 @@ func InferVectorDataType(schema *arrow.Schema, fieldName string) types.VectorDat
 	return finalType
 }
 
-func parseVectorType(val string) types.VectorDataType {
-	switch val {
-	case "complex64":
-		return types.VectorTypeComplex64
-	case "complex128":
-		return types.VectorTypeComplex128
-	case "float16":
-		return types.VectorTypeFloat16
-	case "float32":
-		return types.VectorTypeFloat32
-	case "float64":
-		return types.VectorTypeFloat64
-	case "int8":
-		return types.VectorTypeInt8
-	case "uint8":
-		return types.VectorTypeUint8
-	case "int16":
-		return types.VectorTypeInt16
-	case "uint16":
-		return types.VectorTypeUint16
-	case "int32":
-		return types.VectorTypeInt32
-	case "uint32":
-		return types.VectorTypeUint32
-	case "int64":
-		return types.VectorTypeInt64
-	case "uint64":
-		return types.VectorTypeUint64
-	case "turboquant", "tq":
-		return types.VectorTypeTQ
-	default:
-		return types.VectorTypeFloat32
-	}
-}

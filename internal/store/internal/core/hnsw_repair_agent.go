@@ -148,7 +148,8 @@ func (r *RepairAgent) detectOrphans() []uint32 {
 		return nil
 	}
 
-	nodeCount := int(r.index.nodeCount.Load())
+	meta := r.index.metadataRegistry.Load()
+	nodeCount := int(meta.NodeCount)
 	if nodeCount == 0 {
 		return nil
 	}
@@ -225,7 +226,8 @@ func (r *RepairAgent) repairOrphan(orphan uint32, layer int) {
 
 	// Find K nearest neighbors in the reachable set
 	// We'll do a simple linear scan for now (could be optimized)
-	nodeCount := int(r.index.nodeCount.Load())
+	meta := r.index.metadataRegistry.Load()
+	nodeCount := int(meta.NodeCount)
 	k := int(r.index.m.Load()) // Use M as target neighbor count
 
 	type candidate struct {
@@ -280,6 +282,8 @@ func (r *RepairAgent) repairOrphan(orphan uint32, layer int) {
 
 	// Add bidirectional edges
 	searchCtx := r.index.searchPool.Get()
+	searchCtx.MaxNodeCount = meta.NodeCount
+	searchCtx.MaxGeneration = meta.Generation
 	defer r.index.searchPool.Put(searchCtx)
 
 	maxConn := int(r.index.mMax.Load())

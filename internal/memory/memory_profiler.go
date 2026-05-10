@@ -6,7 +6,8 @@ import (
 	"time"
 )
 
-type MemoryProfiler struct {
+// Profiler tracks memory allocation and free events.
+type Profiler struct {
 	startTime   time.Time
 	allocations int64
 	allocBytes  int64
@@ -17,19 +18,21 @@ type MemoryProfiler struct {
 	gcCount     uint32
 }
 
-var globalProfiler atomic.Pointer[MemoryProfiler]
+var globalProfiler atomic.Pointer[Profiler]
 
 func init() {
-	globalProfiler.Store(&MemoryProfiler{
+	globalProfiler.Store(&Profiler{
 		startTime: time.Now(),
 	})
 }
 
-func GetProfiler() *MemoryProfiler {
+// GetProfiler returns the global memory profiler.
+func GetProfiler() *Profiler {
 	return globalProfiler.Load()
 }
 
-func (mp *MemoryProfiler) RecordAllocation(size int64) {
+// RecordAllocation records a memory allocation of the given size.
+func (mp *Profiler) RecordAllocation(size int64) {
 	atomic.AddInt64(&mp.allocations, 1)
 	atomic.AddInt64(&mp.allocBytes, size)
 
@@ -39,13 +42,15 @@ func (mp *MemoryProfiler) RecordAllocation(size int64) {
 	}
 }
 
-func (mp *MemoryProfiler) RecordFree(size int64) {
+// RecordFree records a memory free of the given size.
+func (mp *Profiler) RecordFree(size int64) {
 	atomic.AddInt64(&mp.frees, 1)
 	atomic.AddInt64(&mp.freedBytes, size)
 }
 
-func (mp *MemoryProfiler) GetStats() MemoryStats {
-	return MemoryStats{
+// GetStats returns the current memory statistics.
+func (mp *Profiler) GetStats() Stats {
+	return Stats{
 		Duration:         time.Since(mp.startTime),
 		TotalAllocations: atomic.LoadInt64(&mp.allocations),
 		TotalAllocBytes:  atomic.LoadInt64(&mp.allocBytes),
@@ -58,7 +63,8 @@ func (mp *MemoryProfiler) GetStats() MemoryStats {
 	}
 }
 
-type MemoryStats struct {
+// Stats contains memory usage statistics.
+type Stats struct {
 	Duration         time.Duration
 	TotalAllocations int64
 	TotalAllocBytes  int64
@@ -70,28 +76,32 @@ type MemoryStats struct {
 	LastGC           time.Time
 }
 
-func (ms *MemoryStats) AllocationRate() float64 {
+// AllocationRate returns the number of allocations per second.
+func (ms *Stats) AllocationRate() float64 {
 	if ms.Duration == 0 {
 		return 0
 	}
 	return float64(ms.TotalAllocations) / ms.Duration.Seconds()
 }
 
-func (ms *MemoryStats) ThroughputMBps() float64 {
+// ThroughputMBps returns the memory throughput in MB per second.
+func (ms *Stats) ThroughputMBps() float64 {
 	if ms.Duration == 0 {
 		return 0
 	}
 	return (float64(ms.TotalAllocBytes) / (1024 * 1024)) / ms.Duration.Seconds()
 }
 
-func (ms *MemoryStats) FragmentationRatio() float64 {
+// FragmentationRatio returns the ratio of allocated memory that has been freed.
+func (ms *Stats) FragmentationRatio() float64 {
 	if ms.TotalAllocBytes == 0 {
 		return 0
 	}
 	return float64(ms.TotalAllocBytes-ms.TotalFreedBytes) / float64(ms.TotalAllocBytes)
 }
 
-type RuntimeMemoryStats struct {
+// RuntimeStats contains memory statistics from the Go runtime.
+type RuntimeStats struct {
 	HeapAlloc          uint64
 	HeapSys            uint64
 	HeapIdle           uint64
@@ -114,7 +124,8 @@ type RuntimeMemoryStats struct {
 	NumGoroutines      int
 }
 
-func GetRuntimeMemoryStats() RuntimeMemoryStats {
+// GetRuntimeStats returns current Go runtime memory statistics.
+func GetRuntimeStats() RuntimeStats {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 
@@ -123,7 +134,7 @@ func GetRuntimeMemoryStats() RuntimeMemoryStats {
 		gcCPUFraction = m.GCCPUFraction / float64(m.NumGC)
 	}
 
-	return RuntimeMemoryStats{
+	return RuntimeStats{
 		HeapAlloc:          m.HeapAlloc,
 		HeapSys:            m.HeapSys,
 		HeapIdle:           m.HeapIdle,
@@ -147,49 +158,58 @@ func GetRuntimeMemoryStats() RuntimeMemoryStats {
 	}
 }
 
-type MemoryAnalyzer struct {
-	profiler *MemoryProfiler
+// Analyzer analyzes memory usage and provides recommendations.
+type Analyzer struct {
+	profiler *Profiler
 }
 
-func NewMemoryAnalyzer() *MemoryAnalyzer {
-	return &MemoryAnalyzer{
+// NewAnalyzer creates a new memory analyzer.
+func NewAnalyzer() *Analyzer {
+	return &Analyzer{
 		profiler: GetProfiler(),
 	}
 }
 
-func (ma *MemoryAnalyzer) AnalyzeUsage() MemoryAnalysis {
+// AnalyzeUsage analyzes the current memory usage.
+func (ma *Analyzer) AnalyzeUsage() Analysis {
 	profilerStats := ma.profiler.GetStats()
-	runtimeStats := GetRuntimeMemoryStats()
+	runtimeStats := GetRuntimeStats()
 
-	analysis := MemoryAnalysis{
+	analysis := Analysis{
 		ProfilerStats:   profilerStats,
 		RuntimeStats:    runtimeStats,
 		HeapUtilization: float64(runtimeStats.HeapInuse) / float64(runtimeStats.HeapSys) * 100,
-		MemoryPressure:  ma.calculateMemoryPressure(runtimeStats),
+		Pressure:        ma.calculatePressure(runtimeStats),
 		Recommendations: ma.generateRecommendations(&profilerStats, runtimeStats),
 	}
 
 	return analysis
 }
 
-type MemoryAnalysis struct {
-	ProfilerStats   MemoryStats
-	RuntimeStats    RuntimeMemoryStats
+// Analysis contains the results of a memory usage analysis.
+type Analysis struct {
+	ProfilerStats   Stats
+	RuntimeStats    RuntimeStats
 	HeapUtilization float64
-	MemoryPressure  MemoryPressure
+	Pressure        Pressure
 	Recommendations []string
 }
 
-type MemoryPressure string
+// Pressure represents the level of memory pressure.
+type Pressure string
 
 const (
-	PressureLow      MemoryPressure = "low"
-	PressureMedium   MemoryPressure = "medium"
-	PressureHigh     MemoryPressure = "high"
-	PressureCritical MemoryPressure = "critical"
+	// PressureLow indicates low memory pressure.
+	PressureLow Pressure = "low"
+	// PressureMedium indicates medium memory pressure.
+	PressureMedium Pressure = "medium"
+	// PressureHigh indicates high memory pressure.
+	PressureHigh Pressure = "high"
+	// PressureCritical indicates critical memory pressure.
+	PressureCritical Pressure = "critical"
 )
 
-func (ma *MemoryAnalyzer) calculateMemoryPressure(runtimeStats RuntimeMemoryStats) MemoryPressure {
+func (ma *Analyzer) calculatePressure(runtimeStats RuntimeStats) Pressure {
 	heapUtilization := float64(runtimeStats.HeapInuse) / float64(runtimeStats.HeapSys)
 	goroutineCount := float64(runtimeStats.NumGoroutines)
 	gcFraction := runtimeStats.GCCPUFraction
@@ -206,7 +226,7 @@ func (ma *MemoryAnalyzer) calculateMemoryPressure(runtimeStats RuntimeMemoryStat
 	return PressureLow
 }
 
-func (ma *MemoryAnalyzer) generateRecommendations(profilerStats *MemoryStats, runtimeStats RuntimeMemoryStats) []string {
+func (ma *Analyzer) generateRecommendations(profilerStats *Stats, runtimeStats RuntimeStats) []string {
 	var recs []string
 
 	if profilerStats.FragmentationRatio() > 0.3 {
@@ -236,12 +256,14 @@ func (ma *MemoryAnalyzer) generateRecommendations(profilerStats *MemoryStats, ru
 	return recs
 }
 
+// TrackAllocation records a memory allocation in the global profiler.
 func TrackAllocation(size int64) {
 	if profiler := GetProfiler(); profiler != nil {
 		profiler.RecordAllocation(size)
 	}
 }
 
+// TrackFree records a memory free in the global profiler.
 func TrackFree(size int64) {
 	if profiler := GetProfiler(); profiler != nil {
 		profiler.RecordFree(size)

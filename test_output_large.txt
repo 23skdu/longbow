@@ -1,0 +1,29 @@
+=== RUN   TestArrowHNSW_LargeBatchIngestion_30k
+    arrow_hnsw_scale_test.go:73: Generated 5000 vectors in 2.162708ms
+--- FAIL: TestArrowHNSW_LargeBatchIngestion_30k (0.54s)
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x2 addr=0x0 pc=0x105306528]
+
+goroutine 687 [running]:
+testing.tRunner.func1.2({0x105e660a0, 0x1060ae0a0})
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:1974 +0x1a0
+testing.tRunner.func1()
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:1977 +0x318
+panic({0x105e660a0?, 0x1060ae0a0?})
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/panic.go:860 +0x12c
+github.com/23skdu/longbow/internal/store/internal/core.(*ConcurrentSkipList).find(...)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/skip_list.go:100
+github.com/23skdu/longbow/internal/store/internal/core.(*ConcurrentSkipList).Insert(0x0, 0x413)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/skip_list.go:45 +0xf8
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).AddBatchBulk(0x28e61e76e000, {0x105ff4278, 0x10610f500}, 0x0, 0xf88, {0x105def960, 0x28e62efb3b60})
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_bulk.go:694 +0x12c0
+github.com/23skdu/longbow/internal/store/internal/core.(*ArrowHNSW).AddBatch(0x28e61e76e000, {0x105ff4278, 0x10610f500}, {0x28e61e790060, 0x1, 0x1}, {0x28e61e7e4000, 0x1388, 0x1388}, {0x28e61e7ee000, ...})
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:2345 +0xdd4
+github.com/23skdu/longbow/internal/store/internal/core.TestArrowHNSW_LargeBatchIngestion_30k(0x28e61e764248)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_scale_test.go:86 +0x2e0
+testing.tRunner(0x28e61e764248, 0x105fda270)
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2036 +0xc4
+created by testing.(*T).Run in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2101 +0x3a8
+FAIL	github.com/23skdu/longbow/internal/store/internal/core	0.936s
+FAIL

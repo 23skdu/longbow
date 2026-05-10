@@ -2488,7 +2488,7 @@ t_storef64: MOVB R6, (R3); ADD $1, R3; SUB $1, R4; B tailf64
 matchf64_done: RET
 
 // func dotInt4NeonKernel(a, b unsafe.Pointer, n int) int32
-TEXT ·dotInt4NeonKernel(SB), NOSPLIT, $0-32
+TEXT ·dotInt4NeonKernel(SB), NOSPLIT, $0-28
     MOVD    a+0(FP), R0
     MOVD    b+8(FP), R1
     MOVD    n+16(FP), R2
@@ -2572,7 +2572,7 @@ dot4_done:
     RET
 
 // func dotInt2NeonKernel(a, b unsafe.Pointer, n int) int32
-TEXT ·dotInt2NeonKernel(SB), NOSPLIT, $0-32
+TEXT ·dotInt2NeonKernel(SB), NOSPLIT, $0-28
     MOVD    a+0(FP), R0
     MOVD    b+8(FP), R1
     MOVD    n+16(FP), R2

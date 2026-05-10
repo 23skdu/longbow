@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func FuzzSlabPool_ConcurrentOperations(f *testing.F) {
+func FuzzSlabPoolConcurrentOperations(f *testing.F) {
 	// Seed corpus with various operation patterns
 	f.Add(uint8(10), uint8(5), uint8(3))
 	f.Add(uint8(100), uint8(50), uint8(10))
@@ -65,7 +65,7 @@ func FuzzSlabPool_ConcurrentOperations(f *testing.F) {
 	})
 }
 
-func FuzzSlabPool_ReleaseUnused(f *testing.F) {
+func FuzzSlabPoolReleaseUnused(f *testing.F) {
 	f.Add(uint8(50), uint8(10))
 	f.Add(uint8(100), uint8(50))
 

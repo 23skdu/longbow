@@ -1,0 +1,36 @@
+=== RUN   TestArrowHNSW_Coverage_ExtractVectorByIDForParallel
+--- FAIL: TestArrowHNSW_Coverage_ExtractVectorByIDForParallel (0.00s)
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x2 addr=0x8 pc=0x1027d9b88]
+
+goroutine 739 [running]:
+testing.tRunner.func1.2({0x10392e0a0, 0x103b760a0})
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:1974 +0x1a0
+testing.tRunner.func1()
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:1977 +0x318
+panic({0x10392e0a0?, 0x103b760a0?})
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/panic.go:860 +0x12c
+github.com/23skdu/longbow/internal/memory.(*NUMAAllocator).Allocate(0x0?, 0x0?)
+	/Users/rsd/REPOS/longbow/internal/memory/numa_allocator.go:30 +0x18
+github.com/23skdu/longbow/internal/memory.(*SlabArena).allocCommon(0x1eb6e6983920, 0x10000, 0x8, 0x1)
+	/Users/rsd/REPOS/longbow/internal/memory/arena.go:279 +0x334
+github.com/23skdu/longbow/internal/memory.(*SlabArena).Alloc(0x1eb6e6983920, 0x10000)
+	/Users/rsd/REPOS/longbow/internal/memory/arena.go:140 +0x58
+github.com/23skdu/longbow/internal/memory.(*TypedArena[...]).AllocSlice(0x103ae6320?, 0x4000?)
+	/Users/rsd/REPOS/longbow/internal/memory/typed_arena.go:120 +0x30
+github.com/23skdu/longbow/internal/store/types.(*GraphData).PreAllocate(0x1eb6e69e0000, 0xc350)
+	/Users/rsd/REPOS/longbow/internal/store/types/graph_data.go:1897 +0x2440
+github.com/23skdu/longbow/internal/store/types.NewGraphData(0x103bd7f40?, 0x4, 0xc8?, 0x88?, 0x1028ca9a4?, 0xec?, 0x0, 0xe6?, 0x1, 0x0, ...)
+	/Users/rsd/REPOS/longbow/internal/store/types/graph_data.go:2567 +0xcd4
+github.com/23skdu/longbow/internal/store/internal/core.NewArrowHNSWWithConfig({_, _}, {0x20, 0x40, 0x40, 0x190, 0x32, 0x0, 0x32, 0x0, ...}, ...)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:402 +0x8ec
+github.com/23skdu/longbow/internal/store/internal/core.NewArrowHNSW(...)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:271
+github.com/23skdu/longbow/internal/store/internal/core.TestArrowHNSW_Coverage_ExtractVectorByIDForParallel(0x1eb6e69b6248)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw_coverage_test.go:17 +0x138
+testing.tRunner(0x1eb6e69b6248, 0x103aa2230)
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2036 +0xc4
+created by testing.(*T).Run in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2101 +0x3a8
+FAIL	github.com/23skdu/longbow/internal/store/internal/core	0.387s
+FAIL

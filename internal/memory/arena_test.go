@@ -208,7 +208,7 @@ func BenchmarkSlabArena_Comparison(b *testing.B) {
 	})
 }
 
-func FuzzSlabArena_FastPath(f *testing.F) {
+func FuzzSlabArenaFastPath(f *testing.F) {
 	f.Add(uint32(1024), uint32(100))
 	f.Add(uint32(4096), uint32(500))
 	f.Add(uint32(8192), uint32(1000))
@@ -249,7 +249,7 @@ func FuzzSlabArena_FastPath(f *testing.F) {
 	})
 }
 
-func FuzzSlabArena_FastPathConcurrent(f *testing.F) {
+func FuzzSlabArenaFastPathConcurrent(f *testing.F) {
 	f.Add(uint32(4096), uint32(10), uint32(100))
 	f.Add(uint32(8192), uint32(20), uint32(200))
 

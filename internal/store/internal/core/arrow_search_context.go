@@ -18,7 +18,10 @@ type CandidateHeap []types.Candidate
 func (h CandidateHeap) Len() int           { return len(h) }
 func (h CandidateHeap) Less(i, j int) bool { return h[i].Dist > h[j].Dist } // Max Heap (furthest on top)
 func (h CandidateHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+// Push adds a candidate to the heap.
 func (h *CandidateHeap) Push(x any)        { *h = append(*h, x.(types.Candidate)) }
+
+// Pop removes and returns the last element (heap maintenance handled externally).
 func (h *CandidateHeap) Pop() any {
 	old := *h
 	n := len(old)
@@ -27,6 +30,7 @@ func (h *CandidateHeap) Pop() any {
 	return x
 }
 
+// Clear removes all elements from the heap.
 func (h *CandidateHeap) Clear() {
 	*h = (*h)[:0]
 }
@@ -39,7 +43,7 @@ func (h *CandidateHeap) PopCandidate() (types.Candidate, bool) {
 	return heap.Pop(h).(types.Candidate), true
 }
 
-// PopCandidate pops the top candidate and returns it (typed helper)
+// PopAndReturn pops the top candidate and returns it (typed helper).
 // Returns (types.Candidate, ok) to match usage "c, _ := ctx.resultSet.Pop()"
 // Assuming standard heap interface Pop returns 'any', but if we execute heap.Pop(h), we don't call method directly.
 // The code calls ctx.resultSet.Pop(). This implies resultSet has a Pop method.
@@ -232,6 +236,8 @@ type ArrowSearchContext struct {
 	// AllowUncommitted allows search to see nodes beyond global nodeCount
 	// (used during internal bootstrap/linkage operations)
 	AllowUncommitted bool
+	MaxNodeCount     int64
+	MaxGeneration    uint64
 }
 
 // ArrowSearchContextPool manages reusable ArrowSearchContext objects.

@@ -17,10 +17,12 @@ type NavigationStrategy interface {
 // BFSStrategy implements Breadth-First Search.
 type BFSStrategy struct{}
 
+// Name returns the identifier for the BFS strategy.
 func (s *BFSStrategy) Name() string {
 	return "BFS"
 }
 
+// FindPath executes a breadth-first search to find paths between nodes.
 func (s *BFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query NavigatorQuery) (*NavigatorPath, error) {
 	type queueItem struct {
 		id   uint32

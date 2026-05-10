@@ -213,8 +213,8 @@ Generated on: 2026-05-10
 * **Memory**: 18GB allocated to longbow node (`LONGBOW_MAX_MEMORY=19327352832`)
 * **Test Configuration**: Matrix across dims (128-3072), counts (1k-100k)
 * **Environments**:
-  - **Local**: Apple Silicon M3 (Darwin/ARM64)
-  - **Remote**: AMD64 Linux (ancalagon), AVX2, CUDA results pending
+  * **Local**: Apple Silicon M3 (Darwin/ARM64)
+  * **Remote**: AMD64 Linux (ancalagon), AVX2, CUDA results pending
 
 ### Results Summary (float32, dim=128, count=1000)
 
@@ -251,9 +251,9 @@ Generated on: 2026-05-10
 1. **Ingestion Performance Milestone**: Ingested datasets up to 500k vectors without OOM by implementing client-side backpressure and chunked uploads.
 
 2. **Search QPS Improvements (v0.2.0-rc1)**:
-   - **Lock-Free Traversal**: Removed redundant shard locks (`insertMus`) in the ingestion path, relying on fine-grained `LockNode` spinlocks. This significantly reduces search/ingestion contention.
-   - **Scheduler Latency**: Refactored `DoGet` and `DoGetPipeline` to use the `SharedWorkerPool`. Eliminated `runIndexWorker` polling with `Notify()` signaling, reducing CPU idle wakeups.
-   - **Temporal Cache Stability**: Implemented $O(1)$ LRU cache and $O(\log N)$ binary search for temporal tree range queries, stabilizing Temporal search QPS under load.
+   * **Lock-Free Traversal**: Removed redundant shard locks (`insertMus`) in the ingestion path, relying on fine-grained `LockNode` spinlocks. This significantly reduces search/ingestion contention.
+   * **Scheduler Latency**: Refactored `DoGet` and `DoGetPipeline` to use the `SharedWorkerPool`. Eliminated `runIndexWorker` polling with `Notify()` signaling, reducing CPU idle wakeups.
+   * **Temporal Cache Stability**: Implemented $O(1)$ LRU cache and $O(\log N)$ binary search for temporal tree range queries, stabilizing Temporal search QPS under load.
 
 3. **Filter Evaluator Stability**: Fixed a critical panic in the filter evaluator where `Reset` was not correctly re-binding all Arrow types (Boolean, Int32, UInt64) across record batch transitions.
 
@@ -272,17 +272,17 @@ Generated on: 2026-05-10
 **Observations from v0.2.1-rc1:**
 
 1. **Dense Search Throughput**: Currently limited by single-threaded benchmark client and per-query allocation churn.
-    - *Action taken*: Implemented `SearchAttemptBuffers` pool in `parallel_search.go`.
-    - *Action taken*: Added concurrent worker support to `bench-tool`.
-    - *Result*: Anticipating 5-10x improvement in measurable QPS once full matrix completes.
+    * *Action taken*: Implemented `SearchAttemptBuffers` pool in `parallel_search.go`.
+    * *Action taken*: Added concurrent worker support to `bench-tool`.
+    * *Result*: Anticipating 5-10x improvement in measurable QPS once full matrix completes.
 
 2. **ARM64 Distance Kernels**: Generic unrolled loops were used as fallbacks.
-    - *Action taken*: Explicitly enabled NEON assembly kernels in `simd_arm64.go`.
-    - *Impact*: 20-40% reduction in CPU cycles for Euclidean and Dot product computations.
+    * *Action taken*: Explicitly enabled NEON assembly kernels in `simd_arm64.go`.
+    * *Impact*: 20-40% reduction in CPU cycles for Euclidean and Dot product computations.
 
 3. **Metal Stability**: Missing shader kernels caused SIGABRT.
-    - *Action taken*: Implemented `MTLFunction` nil-checks in `metal_gpu.go`.
-    - *Result*: Stable initialization across all M-series chips.
+    * *Action taken*: Implemented `MTLFunction` nil-checks in `metal_gpu.go`.
+    * *Result*: Stable initialization across all M-series chips.
 
 **Future Optimization Priorities:**
 

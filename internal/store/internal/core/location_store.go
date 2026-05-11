@@ -71,7 +71,7 @@ func (s *ChunkedLocationStore) Close() {
 	// Clear reverse sharded maps
 	for i := 0; i < ReverseShards; i++ {
 		s.reverseShards[i].mu.Lock()
-		s.reverseShards[i].data = nil
+		s.reverseShards[i].data = make(map[uint64]types.VectorID)
 		s.reverseShards[i].mu.Unlock()
 	}
 }

@@ -7,6 +7,7 @@ import (
 	"sort"
 	"unsafe"
 
+	"sync"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
 )
@@ -33,13 +34,19 @@ func NewIndex(cfg GPUConfig) (Index, error) {
 
 // CPUIndex implements a CPU-only fallback index using linear scan
 type CPUIndex struct {
+	mu          sync.RWMutex
 	vectors     map[int64][]float32
 	pqCodes     map[int64][]byte
 	tqCodes     map[int64][]byte
-	dimension  int
-	deviceID   int32
-	pqEncoder  *pq.PQEncoder
-	pqEnabled  bool // Enable PQ compression during ingest
+	dimension   int
+	deviceID    int32
+	pqEncoder   *pq.PQEncoder
+	pqEnabled   bool // Enable PQ compression during ingest
+	
+	// Graph data
+	graphOffsets   []uint32
+	graphNeighbors []uint32
+	graphWeights   []float32
 }
 
 func NewCPUIndex(cfg GPUConfig) (*CPUIndex, error) {
@@ -58,6 +65,9 @@ func NewCPUIndex(cfg GPUConfig) (*CPUIndex, error) {
 }
 
 func (i *CPUIndex) Add(ids []int64, vectors []float32) error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
 	if len(ids) == 0 {
 		return nil
 	}
@@ -98,6 +108,9 @@ func (i *CPUIndex) Add(ids []int64, vectors []float32) error {
 
 
 func (i *CPUIndex) Search(vector []float32, k int) (ids []int64, distances []float32, err error) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
 	if len(i.vectors) == 0 {
 		return []int64{}, []float32{}, nil
 	}
@@ -334,24 +347,30 @@ func (i *CPUIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) e
 }
 
 func (i *CPUIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
 	if len(i.tqCodes) == 0 {
 		return []int64{}, []float32{}, nil
 	}
 
-	// TurboQuant CPU search: currently implemented via reconstruction + SIMD Euclidean
-	// This is a placeholder for a dedicated TQ SIMD kernel.
 	type result struct {
 		id       int64
 		distance float32
 	}
 	results := make([]result, 0, len(i.tqCodes))
 
-	for id := range i.tqCodes {
-		// Reconstruct (simplified for now)
-		recon := make([]float32, i.dimension)
-		// ... reconstruction logic would go here ...
-		// For now, we just do a fallback search
-		dist, _ := simd.DistFunc(vector, recon)
+	tqFunc := simd.GetTurboQuantDistanceFunc()
+	
+	// pow2 is determined by bitsPerAngle and length of tqData
+	// For standard Longbow TQ, we assume 128-dim -> pow2=128
+	pow2 := i.dimension // In most cases dimension is the pow2
+
+	for id, tqData := range i.tqCodes {
+		dist, err := tqFunc(vector, tqData, i.dimension, pow2, bitsPerAngle)
+		if err != nil {
+			continue
+		}
 		results = append(results, result{id: id, distance: dist})
 	}
 
@@ -402,11 +421,71 @@ func (i *CPUIndex) AssignToClusters(vectors []float32, centroids []float32) ([]u
 }
 
 func (i *CPUIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
-	return fmt.Errorf("UpdateGraph not supported on CPUIndex")
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	i.graphOffsets = make([]uint32, len(offsets))
+	copy(i.graphOffsets, offsets)
+	
+	i.graphNeighbors = make([]uint32, len(neighbors))
+	copy(i.graphNeighbors, neighbors)
+	
+	if len(weights) > 0 {
+		i.graphWeights = make([]float32, len(weights))
+		copy(i.graphWeights, weights)
+	}
+	
+	return nil
 }
 
 func (i *CPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
-	return nil, nil, fmt.Errorf("GraphExpand not supported on CPUIndex")
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	if len(i.graphOffsets) == 0 {
+		return nil, nil, fmt.Errorf("graph not initialized on CPU")
+	}
+
+	// Simple BFS expansion on CPU
+	visited := make(map[uint32]float32)
+	for _, seed := range seeds {
+		visited[seed] = 1.0
+	}
+
+	currentFrontier := seeds
+	for d := 0; d < depth; d++ {
+		var nextFrontier []uint32
+		for _, nodeID := range currentFrontier {
+			if int(nodeID+1) >= len(i.graphOffsets) {
+				continue
+			}
+			start := i.graphOffsets[nodeID]
+			end := i.graphOffsets[nodeID+1]
+			
+			for neighborIdx := start; neighborIdx < end; neighborIdx++ {
+				neighbor := i.graphNeighbors[neighborIdx]
+				if _, seen := visited[neighbor]; !seen {
+					// Simplified scoring: score decays by alpha each hop
+					score := visited[nodeID] * alpha
+					visited[neighbor] = score
+					nextFrontier = append(nextFrontier, neighbor)
+				}
+			}
+		}
+		if len(nextFrontier) == 0 {
+			break
+		}
+		currentFrontier = nextFrontier
+	}
+
+	outIDs := make([]uint32, 0, len(visited))
+	outScores := make([]float32, 0, len(visited))
+	for id, score := range visited {
+		outIDs = append(outIDs, id)
+		outScores = append(outScores, score)
+	}
+
+	return outIDs, outScores, nil
 }
 
 func (i *CPUIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {

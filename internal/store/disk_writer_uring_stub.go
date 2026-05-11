@@ -29,7 +29,7 @@ func NewDiskWriterUring(path string, bufferSize int, maxBuffers int) (*DiskWrite
 	}, nil
 }
 
-// SubmitWrite submits a write request to the underlying file (stub implementation).
+// SubmitWrite submits a write request to the underlying file (asynchronous simulation).
 func (d *DiskWriterUring) SubmitWrite(data []byte, offset int64) (chan error, error) {
 	d.mu.RLock()
 	defer d.mu.RUnlock()
@@ -41,12 +41,16 @@ func (d *DiskWriterUring) SubmitWrite(data []byte, offset int64) (chan error, er
 	// Create completion channel
 	done := make(chan error, 1)
 
-	// Fallback to synchronous WriteAt
-	_, err := d.f.WriteAt(data, offset)
-	
-	// Report result immediately (synchronous fallback)
-	done <- err
-	close(done)
+	// Copy data to ensure it remains valid during async write
+	dataCopy := make([]byte, len(data))
+	copy(dataCopy, data)
+
+	// Simulate async I/O with a goroutine
+	go func() {
+		_, err := d.f.WriteAt(dataCopy, offset)
+		done <- err
+		close(done)
+	}()
 	
 	return done, nil
 }

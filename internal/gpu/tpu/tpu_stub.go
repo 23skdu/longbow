@@ -99,9 +99,13 @@ func tpuEnqueueBatch(deviceID int32, data []float32) error {
 }
 
 func tpuMalloc(deviceID int32, size int64) (unsafe.Pointer, error) {
+	if size < 0 {
+		return nil, fmt.Errorf("invalid tpuMalloc size: %d", size)
+	}
 	var ptr unsafe.Pointer
-	// #nosec G115
-	status := C.tpu_malloc(C.int(deviceID), C.size_t(size), &ptr)
+	cDeviceID := C.int(deviceID) // #nosec G115
+	cSize := C.size_t(uint64(size)) // #nosec G115
+	status := C.tpu_malloc(cDeviceID, cSize, &ptr)
 	if status != C.TPU_SUCCESS {
 		return nil, fmt.Errorf("tpu_malloc failed with status %d", status)
 	}
@@ -120,10 +124,11 @@ func tpuMemcpyH2D(dst unsafe.Pointer, src []float32) error {
 	if len(src) == 0 {
 		return nil
 	}
-	size := len(src) * 4 // #nosec G115
+	// Use uint64 to avoid overflow before conversion to size_t
+	size := uint64(len(src)) * 4
 	s := unsafe.Pointer(&src[0])
-	// #nosec G115
-	status := C.tpu_memcpy_h2d(dst, s, C.size_t(size))
+	cSize := C.size_t(size) // #nosec G115
+	status := C.tpu_memcpy_h2d(dst, s, cSize)
 	if status != C.TPU_SUCCESS {
 		return fmt.Errorf("tpu_memcpy_h2d failed with status %d", status)
 	}
@@ -134,10 +139,11 @@ func tpuMemcpyD2H(dst []float32, src unsafe.Pointer) error {
 	if len(dst) == 0 {
 		return nil
 	}
-	size := len(dst) * 4 // #nosec G115
+	// Use uint64 to avoid overflow before conversion to size_t
+	size := uint64(len(dst)) * 4
 	d := unsafe.Pointer(&dst[0])
-	// #nosec G115
-	status := C.tpu_memcpy_d2h(d, src, C.size_t(size))
+	cSize := C.size_t(size) // #nosec G115
+	status := C.tpu_memcpy_d2h(d, src, cSize)
 	if status != C.TPU_SUCCESS {
 		return fmt.Errorf("tpu_memcpy_d2h failed with status %d", status)
 	}
@@ -148,17 +154,22 @@ func tpuLaunchXLA(deviceID int32, name string, args []unsafe.Pointer) error {
 	cName := C.CString(name)
 	defer C.free(unsafe.Pointer(cName))
 	
+	cDeviceID := C.int(deviceID) // #nosec G115
 	if len(args) == 0 {
-		// #nosec G115
-		status := C.tpu_launch_xla(C.int(deviceID), cName, nil, 0)
+		status := C.tpu_launch_xla(cDeviceID, cName, nil, 0)
 		if status != C.TPU_SUCCESS {
 			return fmt.Errorf("tpu_launch_xla failed with status %d", status)
 		}
 		return nil
 	}
 
-	// #nosec G115
-	status := C.tpu_launch_xla(C.int(deviceID), cName, &args[0], C.int(len(args)))
+	numArgs := len(args)
+	if numArgs > math.MaxInt32 {
+		return fmt.Errorf("too many TPU arguments: %d", numArgs)
+	}
+	cNumArgs := C.int(numArgs) // #nosec G115
+
+	status := C.tpu_launch_xla(cDeviceID, cName, &args[0], cNumArgs)
 	if status != C.TPU_SUCCESS {
 		return fmt.Errorf("tpu_launch_xla failed with status %d", status)
 	}

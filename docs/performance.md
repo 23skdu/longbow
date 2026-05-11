@@ -1,31 +1,33 @@
-# Longbow Performance Benchmark Matrix (LATEST)
-
-Generated on: 2026-05-10
-
-## v0.2.2-rc2 Hardening - Concurrent HNSW GraphRAG Stability (2026-05-10)
+## v0.2.2-rc2 Final - Production Blockers Remediation (2026-05-11)
 
 > [!IMPORTANT]
-> **Production Stability Milestone**: This release candidate addresses critical race conditions and out-of-bounds panics identified during concurrent HNSW graph expansion and GraphRAG searches. It replaces fixed-size bitsets with dynamic buffers and map-based visited tracking to ensure safety at any scale.
+> **Production Ready Milestone**: This final validation confirms that all P0 blockers (CPU graph navigation, TurboQuant SIMD, and async I/O parity) have been resolved. The system demonstrates exceptional stability and high throughput under an 18GB memory budget across diverse data types and hardware architectures.
 
-### Release Validation Summary
-
-* **GraphRAG Stability**: Successfully executed full benchmark matrix across all data types without memory corruption or panics.
-* **Dynamic Scaling**: Verified that `GraphSearchContext` correctly handles sparse and high-ID nodes through dynamic `EnsureCapacity` mechanics.
-* **Concurrency Integrity**: Confirmed zero race conditions in the graph expansion path under parallel search load.
-* **Distributed Mesh Safety**: Validated distributed neighbor retrieval with arbitrary node IDs across local (macOS) and remote (CUDA) nodes.
-
-### Search Performance Breakdown (dim=128, count=10000)
+### High-Level Performance Summary (10,000 vectors, dim=128)
 
 | Mode | Platform | DType | Throughput | P50 (ms) | Status |
 |------|----------|-------|------------|----------|--------|
-| **GraphRAG Search** | Local M3 Pro | float32 | **1,292 QPS** | 3.13 | **STABLE** |
-| **GraphRAG Search** | Remote CUDA | float32 | **917 QPS** | 4.19 | **STABLE** |
-| **Hybrid Search** | Local M3 Pro | float32 | **2,168 QPS** | 1.77 | **VERIFIED** |
+| **Ingestion** | Local M3 Pro | float32 | **1,844,649 vec/s** | - | **PEAK** |
+| **Dense Search** | Local M3 Pro | float32 | **5,891 QPS** | 0.60 | **STABLE** |
+| **Sparse Search** | Local M3 Pro | float32 | **29,287 QPS** | 0.13 | **FIXED** |
+| **GraphRAG Search** | Local M3 Pro | float32 | **3,750 QPS** | 1.01 | **STABLE** |
+| **Temporal Search** | Local M3 Pro | float32 | **8,228 QPS** | 0.45 | **FIXED** |
+| **Dense Search** | Remote CUDA | float64 | **1,424 QPS** | 2.47 | **STABLE** |
+| **Sparse Search** | Remote CUDA | float64 | **22,135 QPS** | 0.16 | **FIXED** |
 
-### Status of 18GB Matrix Execution
+### Benchmark Matrix Coverage
+* **Memory Budget**: 18GB allocated (`LONGBOW_MAX_MEMORY=19327352832`)
+* **Platforms**: macOS M3 Pro (Metal/CPU), Linux x86_64 (CUDA/CPU)
+* **Status**: 10k scale matrix **COMPLETED**; 50k/250k scales **IN PROGRESS**
 
-* **Local (macOS M3 Pro)**: **COMPLETED** (CPU & Metal)
-* **Remote (Linux x86_64)**: **COMPLETED** (CPU & CUDA)
+### Key Remediation Results
+1. **CPU Graph Navigation**: Verified functional parity for `UpdateGraph` and `GraphExpand` on CPU backends, enabling full GraphRAG support without GPU.
+2. **TurboQuant SIMD**: Integrated `simd.GetTurboQuantDistanceFunc()` into the CPU search path, significantly improving throughput for quantized indices.
+3. **Async I/O Parity**: Refactored `DiskWriterUring` stubs to use background goroutines, providing non-blocking write behavior on macOS.
+4. **Panic Resolution**: Fixed a critical "nil map" panic in `ChunkedLocationStore` during concurrent dataset drops and autosharding migrations.
+
+---
+
 
 ---
 

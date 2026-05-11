@@ -7,6 +7,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 type TPUIndex struct {
@@ -14,7 +15,13 @@ type TPUIndex struct {
 	cfg     types.GPUConfig
 	backend *TPUBackend
 	vectors map[int64][]float32
+	tqCodes map[int64][]byte
 	closed  bool
+	
+	// Graph data
+	graphOffsets   []uint32
+	graphNeighbors []uint32
+	graphWeights   []float32
 }
 
 func NewTPUIndexImpl(cfg types.GPUConfig) (types.Index, error) {
@@ -29,6 +36,7 @@ func NewTPUIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 		cfg:     cfg,
 		backend: backend,
 		vectors: make(map[int64][]float32),
+		tqCodes: make(map[int64][]byte),
 	}, nil
 }
 
@@ -209,11 +217,70 @@ func (i *TPUIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32
 }
 
 func (i *TPUIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
-	return fmt.Errorf("AddTurboQuant not implemented for TPUIndex (emulated)")
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	if i.closed {
+		return fmt.Errorf("index closed")
+	}
+
+	// For the stub, we store TQ data in memory
+	tqSize := len(tqData) / len(ids)
+	for idx, id := range ids {
+		data := make([]byte, tqSize)
+		copy(data, tqData[idx*tqSize:(idx+1)*tqSize])
+		i.tqCodes[id] = data
+	}
+
+	return nil
 }
 
 func (i *TPUIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchTurboQuant not implemented for TPUIndex (emulated)")
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	if i.closed {
+		return nil, nil, fmt.Errorf("index closed")
+	}
+
+	if len(i.tqCodes) == 0 {
+		return []int64{}, []float32{}, nil
+	}
+
+	// For the TPU stub, we fallback to the Go SIMD TQ implementation
+	type result struct {
+		id       int64
+		distance float32
+	}
+	results := make([]result, 0, len(i.tqCodes))
+
+	tqFunc := simd.GetTurboQuantDistanceFunc()
+	pow2 := i.cfg.Dimension
+
+	for id, tqData := range i.tqCodes {
+		dist, err := tqFunc(vector, tqData, i.cfg.Dimension, pow2, bitsPerAngle)
+		if err != nil {
+			continue
+		}
+		results = append(results, result{id: id, distance: dist})
+	}
+
+	sort.Slice(results, func(a, b int) bool {
+		return results[a].distance < results[b].distance
+	})
+
+	if k > len(results) {
+		k = len(results)
+	}
+
+	resIDs := make([]int64, k)
+	resDists := make([]float32, k)
+	for idx := 0; idx < k; idx++ {
+		resIDs[idx] = results[idx].id
+		resDists[idx] = results[idx].distance
+	}
+
+	return resIDs, resDists, nil
 }
 
 func (i *TPUIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
@@ -257,11 +324,78 @@ func (i *TPUIndex) AssignToClusters(vectors []float32, centroids []float32) ([]u
 }
 
 func (i *TPUIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
-	return fmt.Errorf("UpdateGraph not implemented for TPUIndex (experimental stub)")
+	i.mu.Lock()
+	defer i.mu.Unlock()
+
+	if i.closed {
+		return fmt.Errorf("index closed")
+	}
+
+	i.graphOffsets = make([]uint32, len(offsets))
+	copy(i.graphOffsets, offsets)
+	
+	i.graphNeighbors = make([]uint32, len(neighbors))
+	copy(i.graphNeighbors, neighbors)
+	
+	if len(weights) > 0 {
+		i.graphWeights = make([]float32, len(weights))
+		copy(i.graphWeights, weights)
+	}
+
+	return nil
 }
 
 func (i *TPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
-	return nil, nil, fmt.Errorf("GraphExpand not implemented for TPUIndex (experimental stub)")
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	if i.closed {
+		return nil, nil, fmt.Errorf("index closed")
+	}
+
+	if len(i.graphOffsets) == 0 {
+		return nil, nil, fmt.Errorf("graph not initialized on TPU")
+	}
+
+	// Simple BFS expansion (simulated)
+	visited := make(map[uint32]float32)
+	for _, seed := range seeds {
+		visited[seed] = 1.0
+	}
+
+	currentFrontier := seeds
+	for d := 0; d < depth; d++ {
+		var nextFrontier []uint32
+		for _, nodeID := range currentFrontier {
+			if int(nodeID+1) >= len(i.graphOffsets) {
+				continue
+			}
+			start := i.graphOffsets[nodeID]
+			end := i.graphOffsets[nodeID+1]
+			
+			for neighborIdx := start; neighborIdx < end; neighborIdx++ {
+				neighbor := i.graphNeighbors[neighborIdx]
+				if _, seen := visited[neighbor]; !seen {
+					score := visited[nodeID] * alpha
+					visited[neighbor] = score
+					nextFrontier = append(nextFrontier, neighbor)
+				}
+			}
+		}
+		if len(nextFrontier) == 0 {
+			break
+		}
+		currentFrontier = nextFrontier
+	}
+
+	outIDs := make([]uint32, 0, len(visited))
+	outScores := make([]float32, 0, len(visited))
+	for id, score := range visited {
+		outIDs = append(outIDs, id)
+		outScores = append(outScores, score)
+	}
+
+	return outIDs, outScores, nil
 }
 
 func (i *TPUIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {

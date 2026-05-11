@@ -2876,60 +2876,47 @@ func (g *GraphData) Release() {
 			ref.Release()
 		}
 	}
-	g.ArrowRefs = nil
-	g.Vectors = nil
+	// We don't set slices to nil here to avoid panics in concurrent search threads.
+	// The search threads hold a reference to this GraphData object and will finish safely.
 
 	if g.Float32Arena != nil {
 		g.Float32Arena.Release()
-		g.Float32Arena = nil
 	}
 	if g.Float64Arena != nil {
 		g.Float64Arena.Release()
-		g.Float64Arena = nil
 	}
 	if g.Uint8Arena != nil {
 		g.Uint8Arena.Release()
-		g.Uint8Arena = nil
 	}
 	if g.Uint16Arena != nil {
 		g.Uint16Arena.Release()
-		g.Uint16Arena = nil
 	}
 	if g.Uint32Arena != nil {
 		g.Uint32Arena.Release()
-		g.Uint32Arena = nil
 	}
 	if g.Uint64Arena != nil {
 		g.Uint64Arena.Release()
-		g.Uint64Arena = nil
 	}
 	if g.Int8Arena != nil {
 		g.Int8Arena.Release()
-		g.Int8Arena = nil
 	}
 	if g.Int16Arena != nil {
 		g.Int16Arena.Release()
-		g.Int16Arena = nil
 	}
 	if g.Int32Arena != nil {
 		g.Int32Arena.Release()
-		g.Int32Arena = nil
 	}
 	if g.Int64Arena != nil {
 		g.Int64Arena.Release()
-		g.Int64Arena = nil
 	}
 	if g.Float16Arena != nil {
 		g.Float16Arena.Release()
-		g.Float16Arena = nil
 	}
 	if g.Complex64Arena != nil {
 		g.Complex64Arena.Release()
-		g.Complex64Arena = nil
 	}
 	if g.Complex128Arena != nil {
 		g.Complex128Arena.Release()
-		g.Complex128Arena = nil
 	}
 }
 

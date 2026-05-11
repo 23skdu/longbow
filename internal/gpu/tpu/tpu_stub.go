@@ -120,7 +120,7 @@ func tpuMemcpyH2D(dst unsafe.Pointer, src []float32) error {
 	if len(src) == 0 {
 		return nil
 	}
-	size := len(src) * 4
+	size := len(src) * 4 // #nosec G115
 	s := unsafe.Pointer(&src[0])
 	// #nosec G115
 	status := C.tpu_memcpy_h2d(dst, s, C.size_t(size))
@@ -134,7 +134,7 @@ func tpuMemcpyD2H(dst []float32, src unsafe.Pointer) error {
 	if len(dst) == 0 {
 		return nil
 	}
-	size := len(dst) * 4
+	size := len(dst) * 4 // #nosec G115
 	d := unsafe.Pointer(&dst[0])
 	// #nosec G115
 	status := C.tpu_memcpy_d2h(d, src, C.size_t(size))

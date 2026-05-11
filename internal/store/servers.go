@@ -621,7 +621,7 @@ func (s *MetaServer) handleGetIndexRecommendation(action *flight.Action, stream 
 }
 
 func (s *MetaServer) handleTemporalSearch(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-	if s.temporalIndex == nil {
+	if !s.temporalConfig.Enabled {
 		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
 	}
 
@@ -645,20 +645,28 @@ func (s *MetaServer) handleTemporalSearch(action *flight.Action, stream flight.F
 		return status.Errorf(codes.InvalidArgument, "invalid request: %v", err)
 	}
 
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+	}
+	if ds.TemporalIndex == nil {
+		return status.Error(codes.FailedPrecondition, "temporal index not initialized for dataset")
+	}
+ 
 	var results []SearchResult
 	var err error
 
 	switch req.SearchType {
 	case "as_of":
-		results, err = s.temporalIndex.SearchAsOf(stream.Context(), req.Timestamp, req.K)
+		results, err = ds.TemporalIndex.SearchAsOf(stream.Context(), req.Timestamp, req.K)
 	case "range":
-		results, err = s.temporalIndex.SearchRange(stream.Context(), req.StartTime, req.EndTime, req.K)
+		results, err = ds.TemporalIndex.SearchRange(stream.Context(), req.StartTime, req.EndTime, req.K)
 	case "sliding_window":
-		results, err = s.temporalIndex.SearchSlidingWindow(stream.Context(), req.WindowSize, req.K)
+		results, err = ds.TemporalIndex.SearchSlidingWindow(stream.Context(), req.WindowSize, req.K)
 	case "sliding_window_time":
-		results, err = s.temporalIndex.SearchSlidingWindowByTime(stream.Context(), req.Duration, req.K)
+		results, err = ds.TemporalIndex.SearchSlidingWindowByTime(stream.Context(), req.Duration, req.K)
 	default:
-		results, err = s.temporalIndex.SearchAsOf(stream.Context(), req.Timestamp, req.K)
+		results, err = ds.TemporalIndex.SearchAsOf(stream.Context(), req.Timestamp, req.K)
 	}
 
 	if err != nil {
@@ -690,13 +698,14 @@ func (s *MetaServer) handleTemporalSearch(action *flight.Action, stream flight.F
 }
 
 func (s *MetaServer) handleTemporalRangeSearch(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-	if s.temporalIndex == nil {
+	if !s.temporalConfig.Enabled {
 		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
 	}
 
 	var req struct {
-		StartTime int64 `json:"start_time"`
-		EndTime   int64 `json:"end_time"`
+		Dataset   string `json:"dataset"`
+		StartTime int64  `json:"start_time"`
+		EndTime   int64  `json:"end_time"`
 	}
 	if len(action.Body) > 0 {
 		i := 0
@@ -712,6 +721,10 @@ func (s *MetaServer) handleTemporalRangeSearch(action *flight.Action, stream fli
 				if i < len(action.Body) && action.Body[i] == ':' { i++ }
 				i = query.SkipWhitespace(action.Body, i)
 				switch key {
+				case "dataset":
+					val, newPos, _ := query.ParseString(action.Body, i)
+					req.Dataset = val
+					i = newPos
 				case "start_time":
 					val, newPos, _ := query.ParseInt64(action.Body, i)
 					req.StartTime = val
@@ -728,8 +741,16 @@ func (s *MetaServer) handleTemporalRangeSearch(action *flight.Action, stream fli
 			}
 		}
 	}
-
-	vectors := s.temporalIndex.GetVectorsInRange(req.StartTime, req.EndTime)
+ 
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+	}
+	if ds.TemporalIndex == nil {
+		return status.Error(codes.FailedPrecondition, "temporal index not initialized for dataset")
+	}
+ 
+	vectors := ds.TemporalIndex.GetVectorsInRange(req.StartTime, req.EndTime)
 
 	data, err := json.Marshal(map[string]interface{}{
 		"vectors": vectors,
@@ -742,7 +763,7 @@ func (s *MetaServer) handleTemporalRangeSearch(action *flight.Action, stream fli
 }
 
 func (s *MetaServer) handleTemporalVersionHistory(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-	if s.temporalIndex == nil {
+	if !s.temporalConfig.Enabled {
 		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
 	}
 
@@ -761,6 +782,10 @@ func (s *MetaServer) handleTemporalVersionHistory(action *flight.Action, stream 
 				if i < len(action.Body) && action.Body[i] == ':' { i++ }
 				i = query.SkipWhitespace(action.Body, i)
 				switch key {
+				case "dataset":
+					val, newPos, _ := query.ParseString(action.Body, i)
+					req.Dataset = val
+					i = newPos
 				case "vector_id":
 					val, newPos, _ := query.ParseInt64(action.Body, i)
 					req.VectorID = uint64(val) // #nosec G115 -- val is within uint64 range
@@ -774,7 +799,15 @@ func (s *MetaServer) handleTemporalVersionHistory(action *flight.Action, stream 
 		}
 	}
 
-	history := s.temporalIndex.GetHistory(req.VectorID)
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+	}
+	if ds.TemporalIndex == nil {
+		return status.Error(codes.FailedPrecondition, "temporal index not initialized for dataset")
+	}
+ 
+	history := ds.TemporalIndex.GetHistory(req.VectorID)
 
 	data, err := json.Marshal(map[string]interface{}{
 		"history": history,
@@ -787,7 +820,7 @@ func (s *MetaServer) handleTemporalVersionHistory(action *flight.Action, stream 
 }
 
 func (s *MetaServer) handleTemporalAggregation(action *flight.Action, stream flight.FlightService_DoActionServer) error {
-	if s.temporalIndex == nil || s.temporalAggregator == nil {
+	if !s.temporalConfig.Enabled {
 		return status.Error(codes.FailedPrecondition, "temporal index or aggregator not enabled")
 	}
 
@@ -807,6 +840,15 @@ func (s *MetaServer) handleTemporalAggregation(action *flight.Action, stream fli
 		}
 	}
 
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+	}
+	if ds.TemporalIndex == nil {
+		return status.Error(codes.FailedPrecondition, "temporal index not initialized for dataset")
+	}
+
+
 	aggReq := TemporalAggRequest{
 		AggType:     TemporalAggType(req.AggregationType),
 		StartTime:   req.StartTime,
@@ -815,7 +857,7 @@ func (s *MetaServer) handleTemporalAggregation(action *flight.Action, stream fli
 		MetricField: req.MetricField,
 	}
 
-	vectors := s.temporalIndex.GetVectorsInRange(req.StartTime, req.EndTime)
+	vectors := ds.TemporalIndex.GetVectorsInRange(req.StartTime, req.EndTime)
 	s.logger.Info().
 		Int64("start", req.StartTime).
 		Int64("end", req.EndTime).
@@ -823,7 +865,8 @@ func (s *MetaServer) handleTemporalAggregation(action *flight.Action, stream fli
 		Str("type", req.AggregationType).
 		Msg("Executing temporal aggregation")
 
-	buckets := s.temporalAggregator.Aggregate(aggReq, vectors)
+	aggregator := NewTemporalAggregator(int(s.temporalConfig.MaxBuckets))
+	buckets := aggregator.Aggregate(aggReq, vectors)
 
 	data, err := json.Marshal(map[string]interface{}{
 		"aggregation_type": req.AggregationType,

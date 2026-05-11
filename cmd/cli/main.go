@@ -1209,6 +1209,10 @@ func runCreateDataset(_ context.Context, args []string) {
 	dims := fs.Int("dims", 128, "Dimensions")
 	vtype := fs.String("type", "float32", "Vector type")
 	geo := fs.Bool("geo", false, "Enable geo index")
+	m := fs.Int("m", 32, "HNSW M parameter")
+	ef := fs.Int("ef", 400, "HNSW efConstruction parameter")
+	shards := fs.Int("shards", 0, "Number of shards (0 for auto)")
+	tqBits := fs.Int("tq_bits", 8, "TurboQuant bits (4 or 8)")
 	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
@@ -1220,10 +1224,14 @@ func runCreateDataset(_ context.Context, args []string) {
 	defer sc.Close()
 
 	req := map[string]interface{}{
-		"name":        *name,
-		"dimension":   *dims,
-		"vector_type": *vtype,
-		"geo_enabled": *geo,
+		"name":            *name,
+		"dimension":       *dims,
+		"vector_type":     *vtype,
+		"geo_enabled":     *geo,
+		"hnsw_m":          *m,
+		"hnsw_ef":         *ef,
+		"num_shards":      *shards,
+		"turboquant_bits": *tqBits,
 	}
 	actionBody, _ := json.Marshal(req)
 	action := &flight.Action{Type: "CreateDataset", Body: actionBody}

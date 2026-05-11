@@ -30,48 +30,35 @@ func newColumnIndex() *columnIndex {
 	}
 }
 
-// datasetIndex holds all column indices for a dataset
-type datasetIndex struct {
+// ColumnInvertedIndex provides O(1) equality lookups on indexed columns for a single dataset
+type ColumnInvertedIndex struct {
 	mu      sync.RWMutex
 	columns map[string]*columnIndex // column_name -> columnIndex
-}
-
-func newDatasetIndex() *datasetIndex {
-	return &datasetIndex{
-		columns: make(map[string]*columnIndex),
-	}
-}
-
-// ColumnInvertedIndex provides O(1) equality lookups on indexed columns
-// Structure: dataset -> column -> value -> []RowPosition
-type ColumnInvertedIndex struct {
-	mu       sync.RWMutex
-	datasets map[string]*datasetIndex
 }
 
 // NewColumnInvertedIndex creates a new column-based inverted index
 func NewColumnInvertedIndex() *ColumnInvertedIndex {
 	return &ColumnInvertedIndex{
-		datasets: make(map[string]*datasetIndex),
+		columns: make(map[string]*columnIndex),
 	}
 }
 
+// Close releases resources associated with the index.
+func (idx *ColumnInvertedIndex) Close() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	idx.columns = make(map[string]*columnIndex)
+	return nil
+}
+
 // IndexRecord indexes specified columns of a record batch
-func (idx *ColumnInvertedIndex) IndexRecord(datasetName string, recordIdx int, rec arrow.RecordBatch, columnsToIndex []string) {
+func (idx *ColumnInvertedIndex) IndexRecord(recordIdx int, rec arrow.RecordBatch, columnsToIndex []string) {
 	if len(columnsToIndex) == 0 {
 		return
 	}
 
 	idx.mu.Lock()
-	dsIdx, exists := idx.datasets[datasetName]
-	if !exists {
-		dsIdx = newDatasetIndex()
-		idx.datasets[datasetName] = dsIdx
-	}
-	idx.mu.Unlock()
-
-	dsIdx.mu.Lock()
-	defer dsIdx.mu.Unlock()
+	defer idx.mu.Unlock()
 
 	schema := rec.Schema()
 	numRows := int(rec.NumRows())
@@ -86,10 +73,10 @@ func (idx *ColumnInvertedIndex) IndexRecord(datasetName string, recordIdx int, r
 		col := rec.Column(colIdx)
 
 		// Get or create column index
-		colIndex, exists := dsIdx.columns[colName]
+		colIndex, exists := idx.columns[colName]
 		if !exists {
 			colIndex = newColumnIndex()
-			dsIdx.columns[colName] = colIndex
+			idx.columns[colName] = colIndex
 		}
 
 		// Index each row based on column type
@@ -129,19 +116,11 @@ func (idx *ColumnInvertedIndex) IndexRecord(datasetName string, recordIdx int, r
 
 // Lookup returns all row positions matching the given value
 // Returns empty slice if not found (O(1) lookup)
-func (idx *ColumnInvertedIndex) Lookup(datasetName, columnName, value string) []RowPosition {
+func (idx *ColumnInvertedIndex) Lookup(columnName, value string) []RowPosition {
 	idx.mu.RLock()
-	dsIdx, exists := idx.datasets[datasetName]
-	idx.mu.RUnlock()
+	defer idx.mu.RUnlock()
 
-	if !exists {
-		return nil
-	}
-
-	dsIdx.mu.RLock()
-	defer dsIdx.mu.RUnlock()
-
-	colIndex, exists := dsIdx.columns[columnName]
+	colIndex, exists := idx.columns[columnName]
 	if !exists {
 		return nil
 	}
@@ -158,8 +137,8 @@ func (idx *ColumnInvertedIndex) Lookup(datasetName, columnName, value string) []
 }
 
 // GetMatchingRowIndices returns row indices within a specific record
-func (idx *ColumnInvertedIndex) GetMatchingRowIndices(datasetName string, recordIdx int, columnName, value string) []int {
-	positions := idx.Lookup(datasetName, columnName, value)
+func (idx *ColumnInvertedIndex) GetMatchingRowIndices(recordIdx int, columnName, value string) []int {
+	positions := idx.Lookup(columnName, value)
 	if len(positions) == 0 {
 		return nil
 	}
@@ -173,37 +152,21 @@ func (idx *ColumnInvertedIndex) GetMatchingRowIndices(datasetName string, record
 	return result
 }
 
-// HasIndex checks if an index exists for the given dataset and column
-func (idx *ColumnInvertedIndex) HasIndex(datasetName, columnName string) bool {
+// HasIndex checks if an index exists for the given column
+func (idx *ColumnInvertedIndex) HasIndex(columnName string) bool {
 	idx.mu.RLock()
-	dsIdx, exists := idx.datasets[datasetName]
-	idx.mu.RUnlock()
+	defer idx.mu.RUnlock()
 
-	if !exists {
-		return false
-	}
-
-	dsIdx.mu.RLock()
-	defer dsIdx.mu.RUnlock()
-
-	_, exists = dsIdx.columns[columnName]
+	_, exists := idx.columns[columnName]
 	return exists
 }
 
 // RemoveRecord removes all index entries for a specific record
-func (idx *ColumnInvertedIndex) RemoveRecord(datasetName string, recordIdx int) {
-	idx.mu.RLock()
-	dsIdx, exists := idx.datasets[datasetName]
-	idx.mu.RUnlock()
+func (idx *ColumnInvertedIndex) RemoveRecord(recordIdx int) {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
 
-	if !exists {
-		return
-	}
-
-	dsIdx.mu.Lock()
-	defer dsIdx.mu.Unlock()
-
-	for _, colIndex := range dsIdx.columns {
+	for _, colIndex := range idx.columns {
 		for value, positions := range colIndex.values {
 			// Filter out positions from this record
 			filtered := positions[:0]
@@ -221,11 +184,11 @@ func (idx *ColumnInvertedIndex) RemoveRecord(datasetName string, recordIdx int) 
 	}
 }
 
-// RemoveDataset removes all indices for a dataset
-func (idx *ColumnInvertedIndex) RemoveDataset(datasetName string) {
+// RemoveDataset is deprecated as index is now dataset-local
+func (idx *ColumnInvertedIndex) RemoveDataset(_ string) {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
-	delete(idx.datasets, datasetName)
+	idx.columns = make(map[string]*columnIndex)
 }
 
 // ColumnInvertedIndexStats contains statistics about the column inverted index.
@@ -236,25 +199,21 @@ type ColumnInvertedIndexStats struct {
 	TotalPositions int
 }
 
-// Stats returns statistics about the index across all datasets.
+// Stats returns statistics about the index.
 func (idx *ColumnInvertedIndex) Stats() ColumnInvertedIndexStats {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
 	stats := ColumnInvertedIndexStats{
-		Datasets: len(idx.datasets),
+		Datasets:     1,
+		TotalColumns: len(idx.columns),
 	}
 
-	for _, dsIdx := range idx.datasets {
-		dsIdx.mu.RLock()
-		stats.TotalColumns += len(dsIdx.columns)
-		for _, colIndex := range dsIdx.columns {
-			stats.TotalValues += len(colIndex.values)
-			for _, positions := range colIndex.values {
-				stats.TotalPositions += len(positions)
-			}
+	for _, colIndex := range idx.columns {
+		stats.TotalValues += len(colIndex.values)
+		for _, positions := range colIndex.values {
+			stats.TotalPositions += len(positions)
 		}
-		dsIdx.mu.RUnlock()
 	}
 
 	return stats
@@ -262,8 +221,8 @@ func (idx *ColumnInvertedIndex) Stats() ColumnInvertedIndexStats {
 
 // BuildFilterMask creates a boolean mask for filtering using indexed lookup
 // Returns nil if no index exists for the column
-func (idx *ColumnInvertedIndex) BuildFilterMask(datasetName string, recordIdx int, columnName, value string, numRows int, mem memory.Allocator) *array.Boolean {
-	positions := idx.GetMatchingRowIndices(datasetName, recordIdx, columnName, value)
+func (idx *ColumnInvertedIndex) BuildFilterMask(recordIdx int, columnName, value string, numRows int, mem memory.Allocator) *array.Boolean {
+	positions := idx.GetMatchingRowIndices(recordIdx, columnName, value)
 	if positions == nil {
 		return nil
 	}
@@ -287,19 +246,19 @@ func (idx *ColumnInvertedIndex) BuildFilterMask(datasetName string, recordIdx in
 
 // FilterRecordWithIndex applies an equality filter using the index for O(1) lookup
 // Falls back to compute.Filter if no index exists
-func (idx *ColumnInvertedIndex) FilterRecordWithIndex(ctx context.Context, datasetName string, recordIdx int, rec arrow.RecordBatch, filter *query.Filter, mem memory.Allocator) (arrow.RecordBatch, error) {
+func (idx *ColumnInvertedIndex) FilterRecordWithIndex(ctx context.Context, recordIdx int, rec arrow.RecordBatch, filter *query.Filter, mem memory.Allocator) (arrow.RecordBatch, error) {
 	// Only optimize equality filters
 	if filter.Operator != "=" {
 		return nil, fmt.Errorf("FilterRecordWithIndex only supports equality filters")
 	}
 
 	// Check if we have an index
-	if !idx.HasIndex(datasetName, filter.Field) {
+	if !idx.HasIndex(filter.Field) {
 		return nil, fmt.Errorf("no index for column %s", filter.Field)
 	}
 
 	// Build filter mask using O(1) index lookup
-	mask := idx.BuildFilterMask(datasetName, recordIdx, filter.Field, filter.Value, int(rec.NumRows()), mem)
+	mask := idx.BuildFilterMask(recordIdx, filter.Field, filter.Value, int(rec.NumRows()), mem)
 	if mask == nil {
 		rec.Retain()
 		return rec, nil

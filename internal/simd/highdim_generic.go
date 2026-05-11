@@ -207,3 +207,364 @@ func Dot384Float16(a, b []float16.Num) (float32, error) {
 func Dot768Float16(a, b []float16.Num) (float32, error) {
 	return dot768Float16(a, b), nil
 }
+
+// --- Uint8 Specialized Kernels ---
+
+func l2Squared384Uint8(a, b []uint8) float32 {
+	var sum uint32
+	for i := 0; i < 384; i += 8 {
+		d0 := int32(a[i]) - int32(b[i])
+		d1 := int32(a[i+1]) - int32(b[i+1])
+		d2 := int32(a[i+2]) - int32(b[i+2])
+		d3 := int32(a[i+3]) - int32(b[i+3])
+		d4 := int32(a[i+4]) - int32(b[i+4])
+		d5 := int32(a[i+5]) - int32(b[i+5])
+		d6 := int32(a[i+6]) - int32(b[i+6])
+		d7 := int32(a[i+7]) - int32(b[i+7])
+		sum += uint32(d0*d0 + d1*d1 + d2*d2 + d3*d3 + d4*d4 + d5*d5 + d6*d6 + d7*d7)
+	}
+	return float32(sum)
+}
+
+func l2Squared768Uint8(a, b []uint8) float32 {
+	var sum uint32
+	for i := 0; i < 768; i += 8 {
+		d0 := int32(a[i]) - int32(b[i])
+		d1 := int32(a[i+1]) - int32(b[i+1])
+		d2 := int32(a[i+2]) - int32(b[i+2])
+		d3 := int32(a[i+3]) - int32(b[i+3])
+		d4 := int32(a[i+4]) - int32(b[i+4])
+		d5 := int32(a[i+5]) - int32(b[i+5])
+		d6 := int32(a[i+6]) - int32(b[i+6])
+		d7 := int32(a[i+7]) - int32(b[i+7])
+		sum += uint32(d0*d0 + d1*d1 + d2*d2 + d3*d3 + d4*d4 + d5*d5 + d6*d6 + d7*d7)
+	}
+	return float32(sum)
+}
+
+func dot384Uint8(a, b []uint8) float32 {
+	var sum uint32
+	for i := 0; i < 384; i += 8 {
+		sum += uint32(a[i])*uint32(b[i]) + uint32(a[i+1])*uint32(b[i+1]) + uint32(a[i+2])*uint32(b[i+2]) + uint32(a[i+3])*uint32(b[i+3]) +
+			uint32(a[i+4])*uint32(b[i+4]) + uint32(a[i+5])*uint32(b[i+5]) + uint32(a[i+6])*uint32(b[i+6]) + uint32(a[i+7])*uint32(b[i+7])
+	}
+	return float32(sum)
+}
+
+func dot768Uint8(a, b []uint8) float32 {
+	var sum uint32
+	for i := 0; i < 768; i += 8 {
+		sum += uint32(a[i])*uint32(b[i]) + uint32(a[i+1])*uint32(b[i+1]) + uint32(a[i+2])*uint32(b[i+2]) + uint32(a[i+3])*uint32(b[i+3]) +
+			uint32(a[i+4])*uint32(b[i+4]) + uint32(a[i+5])*uint32(b[i+5]) + uint32(a[i+6])*uint32(b[i+6]) + uint32(a[i+7])*uint32(b[i+7])
+	}
+	return float32(sum)
+}
+
+func Euclidean384Uint8(a, b []uint8) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared384Uint8(a, b)))), nil
+}
+
+func Euclidean768Uint8(a, b []uint8) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared768Uint8(a, b)))), nil
+}
+
+func Dot384Uint8(a, b []uint8) (float32, error) {
+	return dot384Uint8(a, b), nil
+}
+
+func Dot768Uint8(a, b []uint8) (float32, error) {
+	return dot768Uint8(a, b), nil
+}
+
+// --- Uint16 Specialized Kernels ---
+
+func l2Squared384Uint16(a, b []uint16) float32 {
+	var sum float64
+	for i := 0; i < 384; i += 4 {
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		sum += d0*d0 + d1*d1 + d2*d2 + d3*d3
+	}
+	return float32(sum)
+}
+
+func l2Squared768Uint16(a, b []uint16) float32 {
+	var sum float64
+	for i := 0; i < 768; i += 4 {
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		sum += d0*d0 + d1*d1 + d2*d2 + d3*d3
+	}
+	return float32(sum)
+}
+
+func dot384Uint16(a, b []uint16) float32 {
+	var sum float64
+	for i := 0; i < 384; i += 4 {
+		sum += float64(a[i])*float64(b[i]) + float64(a[i+1])*float64(b[i+1]) + float64(a[i+2])*float64(b[i+2]) + float64(a[i+3])*float64(b[i+3])
+	}
+	return float32(sum)
+}
+
+func dot768Uint16(a, b []uint16) float32 {
+	var sum float64
+	for i := 0; i < 768; i += 4 {
+		sum += float64(a[i])*float64(b[i]) + float64(a[i+1])*float64(b[i+1]) + float64(a[i+2])*float64(b[i+2]) + float64(a[i+3])*float64(b[i+3])
+	}
+	return float32(sum)
+}
+
+func Euclidean384Uint16(a, b []uint16) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared384Uint16(a, b)))), nil
+}
+
+func Euclidean768Uint16(a, b []uint16) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared768Uint16(a, b)))), nil
+}
+
+func Dot384Uint16(a, b []uint16) (float32, error) {
+	return dot384Uint16(a, b), nil
+}
+
+func Dot768Uint16(a, b []uint16) (float32, error) {
+	return dot768Uint16(a, b), nil
+}
+
+// --- 1024 Specialized Kernels ---
+
+func l2Squared1024Uint8(a, b []uint8) float32 {
+	var sum uint32
+	for i := 0; i < 1024; i += 8 {
+		d0 := int32(a[i]) - int32(b[i])
+		d1 := int32(a[i+1]) - int32(b[i+1])
+		d2 := int32(a[i+2]) - int32(b[i+2])
+		d3 := int32(a[i+3]) - int32(b[i+3])
+		d4 := int32(a[i+4]) - int32(b[i+4])
+		d5 := int32(a[i+5]) - int32(b[i+5])
+		d6 := int32(a[i+6]) - int32(b[i+6])
+		d7 := int32(a[i+7]) - int32(b[i+7])
+		sum += uint32(d0*d0 + d1*d1 + d2*d2 + d3*d3 + d4*d4 + d5*d5 + d6*d6 + d7*d7)
+	}
+	return float32(sum)
+}
+
+func dot1024Uint8(a, b []uint8) float32 {
+	var sum uint32
+	for i := 0; i < 1024; i += 8 {
+		sum += uint32(a[i])*uint32(b[i]) + uint32(a[i+1])*uint32(b[i+1]) + uint32(a[i+2])*uint32(b[i+2]) + uint32(a[i+3])*uint32(b[i+3]) +
+			uint32(a[i+4])*uint32(b[i+4]) + uint32(a[i+5])*uint32(b[i+5]) + uint32(a[i+6])*uint32(b[i+6]) + uint32(a[i+7])*uint32(b[i+7])
+	}
+	return float32(sum)
+}
+
+func l2Squared1024Uint16(a, b []uint16) float32 {
+	var sum float64
+	for i := 0; i < 1024; i += 4 {
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		sum += d0*d0 + d1*d1 + d2*d2 + d3*d3
+	}
+	return float32(sum)
+}
+
+func dot1024Uint16(a, b []uint16) float32 {
+	var sum float64
+	for i := 0; i < 1024; i += 4 {
+		sum += float64(a[i])*float64(b[i]) + float64(a[i+1])*float64(b[i+1]) + float64(a[i+2])*float64(b[i+2]) + float64(a[i+3])*float64(b[i+3])
+	}
+	return float32(sum)
+}
+
+func Euclidean1024Uint8(a, b []uint8) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared1024Uint8(a, b)))), nil
+}
+
+func Dot1024Uint8(a, b []uint8) (float32, error) {
+	return dot1024Uint8(a, b), nil
+}
+
+func Euclidean1024Uint16(a, b []uint16) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared1024Uint16(a, b)))), nil
+}
+
+func Dot1024Uint16(a, b []uint16) (float32, error) {
+	return dot1024Uint16(a, b), nil
+}
+
+// --- Uint32 Specialized Kernels ---
+
+func l2Squared384Uint32(a, b []uint32) float32 {
+	var sum float64
+	for i := 0; i < 384; i += 4 {
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		sum += d0*d0 + d1*d1 + d2*d2 + d3*d3
+	}
+	return float32(sum)
+}
+
+func l2Squared768Uint32(a, b []uint32) float32 {
+	var sum float64
+	for i := 0; i < 768; i += 4 {
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		sum += d0*d0 + d1*d1 + d2*d2 + d3*d3
+	}
+	return float32(sum)
+}
+
+func l2Squared1024Uint32(a, b []uint32) float32 {
+	var sum float64
+	for i := 0; i < 1024; i += 4 {
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		sum += d0*d0 + d1*d1 + d2*d2 + d3*d3
+	}
+	return float32(sum)
+}
+
+func dot384Uint32(a, b []uint32) float32 {
+	var sum float64
+	for i := 0; i < 384; i += 4 {
+		sum += float64(a[i])*float64(b[i]) + float64(a[i+1])*float64(b[i+1]) + float64(a[i+2])*float64(b[i+2]) + float64(a[i+3])*float64(b[i+3])
+	}
+	return float32(sum)
+}
+
+func dot768Uint32(a, b []uint32) float32 {
+	var sum float64
+	for i := 0; i < 768; i += 4 {
+		sum += float64(a[i])*float64(b[i]) + float64(a[i+1])*float64(b[i+1]) + float64(a[i+2])*float64(b[i+2]) + float64(a[i+3])*float64(b[i+3])
+	}
+	return float32(sum)
+}
+
+func dot1024Uint32(a, b []uint32) float32 {
+	var sum float64
+	for i := 0; i < 1024; i += 4 {
+		sum += float64(a[i])*float64(b[i]) + float64(a[i+1])*float64(b[i+1]) + float64(a[i+2])*float64(b[i+2]) + float64(a[i+3])*float64(b[i+3])
+	}
+	return float32(sum)
+}
+
+func Euclidean384Uint32(a, b []uint32) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared384Uint32(a, b)))), nil
+}
+
+func Euclidean768Uint32(a, b []uint32) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared768Uint32(a, b)))), nil
+}
+
+func Euclidean1024Uint32(a, b []uint32) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared1024Uint32(a, b)))), nil
+}
+
+func Dot384Uint32(a, b []uint32) (float32, error) {
+	return dot384Uint32(a, b), nil
+}
+
+func Dot768Uint32(a, b []uint32) (float32, error) {
+	return dot768Uint32(a, b), nil
+}
+
+func Dot1024Uint32(a, b []uint32) (float32, error) {
+	return dot1024Uint32(a, b), nil
+}
+
+// --- Uint64 Specialized Kernels ---
+
+func l2Squared384Uint64(a, b []uint64) float32 {
+	var sum float64
+	for i := 0; i < 384; i += 4 {
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		sum += d0*d0 + d1*d1 + d2*d2 + d3*d3
+	}
+	return float32(sum)
+}
+
+func l2Squared768Uint64(a, b []uint64) float32 {
+	var sum float64
+	for i := 0; i < 768; i += 4 {
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		sum += d0*d0 + d1*d1 + d2*d2 + d3*d3
+	}
+	return float32(sum)
+}
+
+func l2Squared1024Uint64(a, b []uint64) float32 {
+	var sum float64
+	for i := 0; i < 1024; i += 4 {
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		sum += d0*d0 + d1*d1 + d2*d2 + d3*d3
+	}
+	return float32(sum)
+}
+
+func dot384Uint64(a, b []uint64) float32 {
+	var sum float64
+	for i := 0; i < 384; i += 4 {
+		sum += float64(a[i])*float64(b[i]) + float64(a[i+1])*float64(b[i+1]) + float64(a[i+2])*float64(b[i+2]) + float64(a[i+3])*float64(b[i+3])
+	}
+	return float32(sum)
+}
+
+func dot768Uint64(a, b []uint64) float32 {
+	var sum float64
+	for i := 0; i < 768; i += 4 {
+		sum += float64(a[i])*float64(b[i]) + float64(a[i+1])*float64(b[i+1]) + float64(a[i+2])*float64(b[i+2]) + float64(a[i+3])*float64(b[i+3])
+	}
+	return float32(sum)
+}
+
+func dot1024Uint64(a, b []uint64) float32 {
+	var sum float64
+	for i := 0; i < 1024; i += 4 {
+		sum += float64(a[i])*float64(b[i]) + float64(a[i+1])*float64(b[i+1]) + float64(a[i+2])*float64(b[i+2]) + float64(a[i+3])*float64(b[i+3])
+	}
+	return float32(sum)
+}
+
+func Euclidean384Uint64(a, b []uint64) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared384Uint64(a, b)))), nil
+}
+
+func Euclidean768Uint64(a, b []uint64) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared768Uint64(a, b)))), nil
+}
+
+func Euclidean1024Uint64(a, b []uint64) (float32, error) {
+	return float32(math.Sqrt(float64(l2Squared1024Uint64(a, b)))), nil
+}
+
+func Dot384Uint64(a, b []uint64) (float32, error) {
+	return dot384Uint64(a, b), nil
+}
+
+func Dot768Uint64(a, b []uint64) (float32, error) {
+	return dot768Uint64(a, b), nil
+}
+
+func Dot1024Uint64(a, b []uint64) (float32, error) {
+	return dot1024Uint64(a, b), nil
+}

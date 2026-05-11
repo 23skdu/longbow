@@ -105,8 +105,13 @@ func (s *VectorStore) filterRecordOptimized(ctx context.Context, datasetName str
 	var indexableFilters []query.Filter
 	var remainingFilters []query.Filter
 
+	ds, ok := s.getDataset(datasetName)
+	if !ok {
+		return filterRecord(ctx, s.mem, rec, filters)
+	}
+
 	for _, f := range filters {
-		if f.Operator == "=" && s.columnIndex != nil && s.columnIndex.HasIndex(datasetName, f.Field) {
+		if f.Operator == "=" && ds.ColumnIndex != nil && ds.ColumnIndex.HasIndex(f.Field) {
 			indexableFilters = append(indexableFilters, f)
 		} else {
 			remainingFilters = append(remainingFilters, f)
@@ -122,7 +127,7 @@ func (s *VectorStore) filterRecordOptimized(ctx context.Context, datasetName str
 	var finalMask *array.Boolean
 	for _, f := range indexableFilters {
 		// Build mask for this filter using the index
-		mask := s.columnIndex.BuildFilterMask(datasetName, batchIdx, f.Field, f.Value, int(rec.NumRows()), s.mem)
+		mask := ds.ColumnIndex.BuildFilterMask(batchIdx, f.Field, f.Value, int(rec.NumRows()), s.mem)
 		if mask == nil {
 			// No index data, fall back to full filter
 			if finalMask != nil {

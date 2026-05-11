@@ -596,13 +596,14 @@ cos_f16_tail:
     MOVHU.P 2(R0), R3
     MOVHU.P 2(R2), R4
     
-    VEOR    V1.B16, V1.B16, V1.B16
-    VEOR    V2.B16, V2.B16, V2.B16
-    VMOV    R3, V1.H[0]
-    VMOV    R4, V2.H[0]
+    VEOR    V5.B16, V5.B16, V5.B16 // Use V5 as temp
+    VEOR    V6.B16, V6.B16, V6.B16 // Use V6 as temp
+    VMOV    R3, V5.H[0]
+    VMOV    R4, V6.H[0]
     
-    WORD    $0x0e217823
-    WORD    $0x0e217844
+    // Convert V5, V6 to float32 (V3, V4)
+    WORD    $0x0e2178a3 // FCVT S3, H5
+    WORD    $0x0e2178c4 // FCVT S4, H6
     
     // Dot
     FMULS   F4, F3, F5

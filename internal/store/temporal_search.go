@@ -18,17 +18,23 @@ import (
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
+const (
+	// TemporalShards is the number of shards for the temporal vector map.
+	TemporalShards = 128
+)
+
+type temporalShard struct {
+	mu   sync.RWMutex
+	data map[uint64]*TemporalVector
+}
+
 var (
 	temporalIDMapPool = sync.Pool{
 		New: func() any {
 			return make(map[uint64]struct{}, 1024)
 		},
 	}
-	temporalScoredResultPool = sync.Pool{
-		New: func() any {
-			return make([]temporalScoredResult, 0, 1024)
-		},
-	}
+
 	temporalVersionMapPool = sync.Pool{
 		New: func() any {
 			return make(map[uint64]VersionedVector, 1024)
@@ -92,7 +98,7 @@ type TemporalVector struct {
 type TemporalIndex struct {
 	mu           sync.Mutex
 	dimension    int
-	vectors      sync.Map
+	shards       [TemporalShards]temporalShard
 	temporalTree atomic.Pointer[TemporalTree]
 	history      *VersionHistory
 	cache        *TemporalResultCache
@@ -530,8 +536,39 @@ func NewTemporalIndex(dimension int) *TemporalIndex {
 		cache:     NewTemporalResultCache(1024),
 		history:   NewVersionHistory(DefaultVersionHistoryConfig()),
 	}
+	for i := 0; i < TemporalShards; i++ {
+		ti.shards[i].data = make(map[uint64]*TemporalVector)
+	}
 	ti.temporalTree.Store(NewTemporalTree())
 	return ti
+}
+
+// getShard returns the shard for a given ID.
+func (ti *TemporalIndex) getShard(id uint64) *temporalShard {
+	return &ti.shards[id%uint64(TemporalShards)]
+}
+
+// Close releases resources associated with the temporal index.
+func (ti *TemporalIndex) Close() error {
+	ti.mu.Lock()
+	defer ti.mu.Unlock()
+
+	// Clear the sharded maps
+	for i := 0; i < TemporalShards; i++ {
+		ti.shards[i].mu.Lock()
+		ti.shards[i].data = nil
+		ti.shards[i].mu.Unlock()
+	}
+
+	if gpuIdx := ti.gpuIndex.Load(); gpuIdx != nil {
+		if gi, ok := gpuIdx.(gputypes.Index); ok {
+			_ = gi.Close()
+		}
+		ti.gpuIndex.Store(nil)
+	}
+
+	ti.pointCount.Store(0)
+	return nil
 }
 
 // Add inserts a new vector with a timestamp into the temporal index.
@@ -553,7 +590,10 @@ func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metad
 		Tombstone: false,
 	}
 
-	ti.vectors.Store(id, vec)
+	shard := ti.getShard(id)
+	shard.mu.Lock()
+	shard.data[id] = vec
+	shard.mu.Unlock()
 	tree := ti.temporalTree.Load()
 	if tree != nil {
 		tree.Insert(timestamp, id)
@@ -593,7 +633,10 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 			Tombstone: false,
 		}
 
-		ti.vectors.Store(ids[i], vec)
+		shard := ti.getShard(ids[i])
+		shard.mu.Lock()
+		shard.data[ids[i]] = vec
+		shard.mu.Unlock()
 		if ti.history != nil {
 			ti.history.Add(ids[i], vectors[i], norm, timestamps[i], m)
 		}
@@ -612,15 +655,19 @@ func (ti *TemporalIndex) Delete(id uint64) error {
 	ti.mu.Lock()
 	defer ti.mu.Unlock()
 
-	val, ok := ti.vectors.Load(id)
+	shard := ti.getShard(id)
+	shard.mu.RLock()
+	vec, ok := shard.data[id]
+	shard.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("vector id %d not found", id)
 	}
 
-	vec := val.(*TemporalVector)
 	newVec := *vec
 	newVec.Tombstone = true
-	ti.vectors.Store(id, &newVec)
+	shard.mu.Lock()
+	shard.data[id] = &newVec
+	shard.mu.Unlock()
 	// We don't decrement pointCount here because it's a tombstone
 	return nil
 }
@@ -630,15 +677,19 @@ func (ti *TemporalIndex) Update(id uint64, vector []float32, timestamp int64, me
 	ti.mu.Lock()
 	defer ti.mu.Unlock()
 
-	val, ok := ti.vectors.Load(id)
+	shard := ti.getShard(id)
+	shard.mu.RLock()
+	oldVec, ok := shard.data[id]
+	shard.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("vector id %d not found", id)
 	}
 
-	oldVec := val.(*TemporalVector)
 	newOldVec := *oldVec
 	newOldVec.Tombstone = true
-	ti.vectors.Store(id, &newOldVec)
+	shard.mu.Lock()
+	shard.data[id] = &newOldVec
+	shard.mu.Unlock()
 
 	norm := ti.computeNorm(vector)
 	newVec := &TemporalVector{
@@ -650,7 +701,9 @@ func (ti *TemporalIndex) Update(id uint64, vector []float32, timestamp int64, me
 		Tombstone: false,
 	}
 
-	ti.vectors.Store(id, newVec)
+	shard.mu.Lock()
+	shard.data[id] = newVec
+	shard.mu.Unlock()
 	tree := ti.temporalTree.Load()
 	if tree != nil {
 		tree.Insert(timestamp, id)
@@ -707,8 +760,11 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 		
 		// Fallback to latest norm if history lookup failed or disabled
 		if !found {
-			if val, ok := ti.vectors.Load(id); ok {
-				vec := val.(*TemporalVector)
+			shard := ti.getShard(id)
+			shard.mu.RLock()
+			vec, ok := shard.data[id]
+			shard.mu.RUnlock()
+			if ok {
 				if !vec.Tombstone {
 					norm = vec.Norm
 					found = true
@@ -815,8 +871,11 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 		
 		// Fallback to latest norm if historylookup failed or disabled
 		if !found {
-			if val, ok := ti.vectors.Load(id); ok {
-				vec := val.(*TemporalVector)
+			shard := ti.getShard(id)
+			shard.mu.RLock()
+			vec, ok := shard.data[id]
+			shard.mu.RUnlock()
+			if ok {
 				if !vec.Tombstone && vec.Timestamp >= startTime && vec.Timestamp <= endTime {
 					norm = vec.Norm
 					found = true
@@ -866,8 +925,11 @@ func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int
 	heap.Init(h)
 
 	for _, id := range validIDs {
-		if val, ok := ti.vectors.Load(id); ok {
-			vec := val.(*TemporalVector)
+		shard := ti.getShard(id)
+		shard.mu.RLock()
+		vec, ok := shard.data[id]
+		shard.mu.RUnlock()
+		if ok {
 			if !vec.Tombstone {
 				norm := vec.Norm
 				if h.Len() < k {
@@ -918,11 +980,13 @@ func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration
 		localResults := make([]temporalScoredResult, 0, end-start)
 		for i := start; i < end; i++ {
 			id := validIDs[i]
-			val, ok := ti.vectors.Load(id)
+			shard := ti.getShard(id)
+			shard.mu.RLock()
+			vec, ok := shard.data[id]
+			shard.mu.RUnlock()
 			if !ok {
 				continue
 			}
-			vec := val.(*TemporalVector)
 			if vec.Tombstone {
 				continue
 			}
@@ -971,11 +1035,16 @@ func (ti *TemporalIndex) DeleteByTime(ctx context.Context, beforeTimestamp int64
 	deleted := 0
 
 	for _, id := range toDelete {
-		if val, ok := ti.vectors.Load(id); ok {
-			vec := val.(*TemporalVector)
+		shard := ti.getShard(id)
+		shard.mu.RLock()
+		vec, ok := shard.data[id]
+		shard.mu.RUnlock()
+		if ok {
 			newVec := *vec
 			newVec.Tombstone = true
-			ti.vectors.Store(id, &newVec)
+			shard.mu.Lock()
+			shard.data[id] = &newVec
+			shard.mu.Unlock()
 			deleted++
 		}
 	}
@@ -985,12 +1054,14 @@ func (ti *TemporalIndex) DeleteByTime(ctx context.Context, beforeTimestamp int64
 
 // GetVersion retrieves the vector data for a specific ID as it existed at a given timestamp.
 func (ti *TemporalIndex) GetVersion(id uint64, timestamp int64) ([]float32, bool) {
-	val, ok := ti.vectors.Load(id)
+	shard := ti.getShard(id)
+	shard.mu.RLock()
+	vec, ok := shard.data[id]
+	shard.mu.RUnlock()
 	if !ok {
 		return nil, false
 	}
 
-	vec := val.(*TemporalVector)
 	if vec.Timestamp > timestamp {
 		return nil, false
 	}
@@ -1000,12 +1071,14 @@ func (ti *TemporalIndex) GetVersion(id uint64, timestamp int64) ([]float32, bool
 
 // GetHistory returns the temporal version history for a specific vector ID.
 func (ti *TemporalIndex) GetHistory(id uint64) []TemporalVector {
-	val, ok := ti.vectors.Load(id)
+	shard := ti.getShard(id)
+	shard.mu.RLock()
+	vec, ok := shard.data[id]
+	shard.mu.RUnlock()
 	if !ok {
 		return nil
 	}
 
-	vec := val.(*TemporalVector)
 	if vec.Timestamp == 0 {
 		return nil
 	}
@@ -1027,13 +1100,15 @@ func (ti *TemporalIndex) Size() int {
 // ActiveCount returns the number of non-tombstoned vectors in the index.
 func (ti *TemporalIndex) ActiveCount() int {
 	count := 0
-	ti.vectors.Range(func(key, value any) bool {
-		v := value.(*TemporalVector)
-		if !v.Tombstone {
-			count++
+	for i := 0; i < TemporalShards; i++ {
+		ti.shards[i].mu.RLock()
+		for _, v := range ti.shards[i].data {
+			if !v.Tombstone {
+				count++
+			}
 		}
-		return true
-	})
+		ti.shards[i].mu.RUnlock()
+	}
 	return count
 }
 
@@ -1063,11 +1138,13 @@ func (ti *TemporalIndex) GetVectorsInRange(startTime, endTime int64) []VectorTim
 
 	results := make([]VectorTimestamp, 0, len(ids))
 	for _, id := range ids {
-		val, ok := ti.vectors.Load(id)
+		shard := ti.getShard(id)
+		shard.mu.RLock()
+		vec, ok := shard.data[id]
+		shard.mu.RUnlock()
 		if !ok {
 			continue
 		}
-		vec := val.(*TemporalVector)
 		if vec.Tombstone {
 			continue
 		}
@@ -1097,17 +1174,19 @@ func (ti *TemporalIndex) MarshalJSON() ([]byte, error) {
 	}
 
 	var vectors []TempVec
-	ti.vectors.Range(func(key, value any) bool {
-		v := value.(*TemporalVector)
-		vectors = append(vectors, TempVec{
-			ID:        v.ID,
-			Vector:    v.Vector,
-			Timestamp: v.Timestamp,
-			Metadata:  v.Metadata,
-			Tombstone: v.Tombstone,
-		})
-		return true
-	})
+	for i := 0; i < TemporalShards; i++ {
+		ti.shards[i].mu.RLock()
+		for _, v := range ti.shards[i].data {
+			vectors = append(vectors, TempVec{
+				ID:        v.ID,
+				Vector:    v.Vector,
+				Timestamp: v.Timestamp,
+				Metadata:  v.Metadata,
+				Tombstone: v.Tombstone,
+			})
+		}
+		ti.shards[i].mu.RUnlock()
+	}
 
 	return json.Marshal(struct {
 		Dimension int       `json:"dimension"`

@@ -13,22 +13,22 @@ import (
 
 // Adjacency and reference packing constants for HNSW graph storage.
 const (
-	// AdjacencyChunkSize defines the number of nodes per adjacency page.
-	AdjacencyChunkSize = 1024
-	// PackedRefLenMask is the bitmask for extracting the neighbor list length.
-	PackedRefLenMask = 0xFFFF
-	// PackedRefOffShift is the bit shift for the offset in a packed adjacency reference.
-	PackedRefOffShift = 16
+	// adjacencyChunkSize defines the number of nodes per adjacency page.
+	adjacencyChunkSize = 1024
+	// packedRefLenMask is the bitmask for extracting the neighbor list length.
+	packedRefLenMask = 0xFFFF
+	// packedRefOffShift is the bit shift for the offset in a packed adjacency reference.
+	packedRefOffShift = 16
 )
 
 // PackRef combines an offset and length into a single 64-bit reference.
 func PackRef(offset uint64, length uint32) uint64 {
-	return (offset << PackedRefOffShift) | (uint64(length) & PackedRefLenMask)
+	return (offset << packedRefOffShift) | (uint64(length) & packedRefLenMask)
 }
 
 // UnpackRef extracts the offset and length from a 64-bit reference.
 func UnpackRef(packed uint64) (offset uint64, length uint32) {
-	return packed >> PackedRefOffShift, uint32(packed & PackedRefLenMask)
+	return packed >> packedRefOffShift, uint32(packed & packedRefLenMask)
 }
 
 // PackedAdjacency manages neighbor lists using 2-level indirection.
@@ -61,7 +61,7 @@ func NewPackedAdjacencyWithArenas(arena *memory.SlabArena,
 	pageArena *memory.TypedArena[uint64],
 	initialCapacity int) *PackedAdjacency {
 
-	numChunks := (initialCapacity + AdjacencyChunkSize - 1) / AdjacencyChunkSize
+	numChunks := (initialCapacity + adjacencyChunkSize - 1) / adjacencyChunkSize
 	if numChunks < 1 {
 		numChunks = 1
 	}
@@ -80,7 +80,7 @@ func NewPackedAdjacencyWithArenas(arena *memory.SlabArena,
 // EnsureCapacity resizes the directory if needed.
 // thread-safe across multiple concurrent writers.
 func (pa *PackedAdjacency) EnsureCapacity(nodeID uint32) {
-	chunkIdx := int(nodeID) / AdjacencyChunkSize
+	chunkIdx := int(nodeID) / adjacencyChunkSize
 
 	// Quick check without lock
 	curPtr := pa.chunks.Load()
@@ -185,8 +185,8 @@ func (pa *PackedAdjacency) SetNeighborsF16(id uint32, neighbors []uint32, distan
 }
 
 func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
-	chunkIdx := int(id) / AdjacencyChunkSize
-	offsetInPage := int(id) % AdjacencyChunkSize
+	chunkIdx := int(id) / adjacencyChunkSize
+	offsetInPage := int(id) % adjacencyChunkSize
 
 	// Auto-grow if needed
 	chunksPtr := pa.chunks.Load()
@@ -202,7 +202,7 @@ func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
 	if pageOffset == 0 {
 		// We still need to coordinate page allocation to avoid leaks/double-alloc,
 		// but we can use CAS on the chunk slot.
-		pRef, err := pa.pageArena.AllocSlice(AdjacencyChunkSize)
+		pRef, err := pa.pageArena.AllocSlice(adjacencyChunkSize)
 		if err != nil {
 			return err
 		}
@@ -219,7 +219,7 @@ func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
 		}
 	}
 
-	pageRef := memory.SliceRef{Offset: pageOffset, Len: AdjacencyChunkSize, Cap: AdjacencyChunkSize}
+	pageRef := memory.SliceRef{Offset: pageOffset, Len: adjacencyChunkSize, Cap: adjacencyChunkSize}
 	page := pa.pageArena.Get(pageRef)
 	if page == nil {
 		return errors.New("packed adjacency: failed to get page")
@@ -243,8 +243,8 @@ func (pa *PackedAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint3
 	}
 
 	// 2. CAS in page
-	chunkIdx := int(id) / AdjacencyChunkSize
-	offsetInPage := int(id) % AdjacencyChunkSize
+	chunkIdx := int(id) / adjacencyChunkSize
+	offsetInPage := int(id) % adjacencyChunkSize
 	chunksPtr := pa.chunks.Load()
 	if chunksPtr == nil || chunkIdx >= len(*chunksPtr) {
 		return false
@@ -254,7 +254,7 @@ func (pa *PackedAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint3
 	if pageOffset == 0 {
 		return false
 	}
-	page := pa.pageArena.Get(memory.SliceRef{Offset: pageOffset, Len: AdjacencyChunkSize, Cap: AdjacencyChunkSize})
+	page := pa.pageArena.Get(memory.SliceRef{Offset: pageOffset, Len: adjacencyChunkSize, Cap: adjacencyChunkSize})
 	
 	return atomic.CompareAndSwapUint64(&page[offsetInPage], oldPacked, newPacked)
 }
@@ -361,8 +361,8 @@ func (pa *PackedAdjacency) GetNeighborsF16WithGen(id uint32, maxGen uint64) ([]u
 }
 
 func (pa *PackedAdjacency) getPackedRef(id uint32) (uint64, bool) {
-	chunkIdx := int(id) / AdjacencyChunkSize
-	offsetInPage := int(id) % AdjacencyChunkSize
+	chunkIdx := int(id) / adjacencyChunkSize
+	offsetInPage := int(id) % adjacencyChunkSize
 
 	chunksPtr := pa.chunks.Load()
 	if chunksPtr == nil {
@@ -378,7 +378,7 @@ func (pa *PackedAdjacency) getPackedRef(id uint32) (uint64, bool) {
 		return 0, false
 	}
 
-	pageRef := memory.SliceRef{Offset: pageOffset, Len: AdjacencyChunkSize, Cap: AdjacencyChunkSize}
+	pageRef := memory.SliceRef{Offset: pageOffset, Len: adjacencyChunkSize, Cap: adjacencyChunkSize}
 	page := pa.pageArena.Get(pageRef)
 	if page == nil {
 		return 0, false

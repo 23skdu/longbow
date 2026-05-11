@@ -231,3 +231,17 @@ func ChebyshevDistanceFloat32AVX2(a, b []float32) (float32, error) {
 func BrayCurtisDistanceFloat32AVX2(a, b []float32) (float32, error) {
 	return BrayCurtisDistanceFloat32(a, b)
 }
+
+func UnpackTQ2AVX2(src []byte, dst []float32, scale, bias float32) { UnpackTQ2Generic(src, dst, scale, bias) }
+func UnpackTQ4AVX2(src []byte, dst []float32, scale, bias float32) { UnpackTQ4Generic(src, dst, scale, bias) }
+func UnpackTQ8AVX2(src []byte, dst []float32, scale, bias float32) { UnpackTQ8Generic(src, dst, scale, bias) }
+func PackTQ2AVX2(src []float32, dst []byte) { PackTQ2Generic(src, dst) }
+func PackTQ4AVX2(src []float32, dst []byte) { PackTQ4Generic(src, dst) }
+func PackTQ8AVX2(src []float32, dst []byte) { PackTQ8Generic(src, dst) }
+
+func UnpackTQ2AVX512(src []byte, dst []float32, scale, bias float32) { UnpackTQ2Generic(src, dst, scale, bias) }
+func UnpackTQ4AVX512(src []byte, dst []float32, scale, bias float32) { UnpackTQ4Generic(src, dst, scale, bias) }
+func UnpackTQ8AVX512(src []byte, dst []float32, scale, bias float32) { UnpackTQ8Generic(src, dst, scale, bias) }
+func PackTQ2AVX512(src []float32, dst []byte) { PackTQ2Generic(src, dst) }
+func PackTQ4AVX512(src []float32, dst []byte) { PackTQ4Generic(src, dst) }
+func PackTQ8AVX512(src []float32, dst []byte) { PackTQ8Generic(src, dst) }

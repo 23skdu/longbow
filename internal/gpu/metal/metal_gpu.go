@@ -32,6 +32,8 @@ typedef struct {
     void* sigmoidPipeline;
     void* haversinePipeline;
     void* normPipeline;
+    void* sumCentroidsPipeline;
+    void* finalizeCentroidsPipeline;
     int vectorCount;
     int dimensions;
     int capacity;
@@ -449,7 +451,80 @@ int metal_assign_to_clusters(MetalIndexHandle* handle, float* vectors, float* ce
         [commandBuffer waitUntilCompleted];
 
         memcpy(assignments, [assignBuf contents], assignSize);
+        return 0;
+    }
+}
 
+int metal_train_kmeans(MetalIndexHandle* handle, float* data, float* centroids, int n, int dim, int k, int maxIter) {
+    @autoreleasepool {
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLComputePipelineState> assignPipeline = (__bridge id<MTLComputePipelineState>)handle->assignPipeline;
+        id<MTLComputePipelineState> sumPipeline = (__bridge id<MTLComputePipelineState>)handle->sumCentroidsPipeline;
+        id<MTLComputePipelineState> finalizePipeline = (__bridge id<MTLComputePipelineState>)handle->finalizeCentroidsPipeline;
+
+        if (!assignPipeline || !sumPipeline || !finalizePipeline) return -1;
+
+        size_t dataSize = (size_t)n * dim * sizeof(float);
+        size_t centSize = (size_t)k * dim * sizeof(float);
+        size_t assignSize = (size_t)n * sizeof(uint32_t);
+        size_t countSize = (size_t)k * sizeof(uint32_t);
+
+        id<MTLBuffer> dataBuf = [device newBufferWithBytes:data length:dataSize options:MTLResourceStorageModeShared];
+        id<MTLBuffer> centBuf = [device newBufferWithBytes:centroids length:centSize options:MTLResourceStorageModeShared];
+        id<MTLBuffer> assignBuf = [device newBufferWithLength:assignSize options:MTLResourceStorageModeShared];
+        id<MTLBuffer> countBuf = [device newBufferWithLength:countSize options:MTLResourceStorageModeShared];
+
+        for (int iter = 0; iter < maxIter; iter++) {
+            // E-step: Assign
+            id<MTLCommandBuffer> cb1 = [queue commandBuffer];
+            id<MTLComputeCommandEncoder> enc1 = [cb1 computeCommandEncoder];
+            [enc1 setComputePipelineState:assignPipeline];
+            [enc1 setBuffer:dataBuf offset:0 atIndex:0];
+            [enc1 setBuffer:centBuf offset:0 atIndex:1];
+            [enc1 setBuffer:assignBuf offset:0 atIndex:2];
+            [enc1 setBytes:&dim length:sizeof(int) atIndex:3];
+            [enc1 setBytes:&n length:sizeof(int) atIndex:4];
+            [enc1 setBytes:&k length:sizeof(int) atIndex:5];
+            [enc1 dispatchThreads:MTLSizeMake(n, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(n, 256), 1, 1)];
+            [enc1 endEncoding];
+            [cb1 commit];
+            [cb1 waitUntilCompleted];
+
+            // M-step: Sum
+            // Reset counts and centroids (sum)
+            memset([countBuf contents], 0, countSize);
+            memset([centBuf contents], 0, centSize);
+
+            id<MTLCommandBuffer> cb2 = [queue commandBuffer];
+            id<MTLComputeCommandEncoder> enc2 = [cb2 computeCommandEncoder];
+            [enc2 setComputePipelineState:sumPipeline];
+            [enc2 setBuffer:dataBuf offset:0 atIndex:0];
+            [enc2 setBuffer:assignBuf offset:0 atIndex:1];
+            [enc2 setBuffer:centBuf offset:0 atIndex:2];
+            [enc2 setBuffer:countBuf offset:0 atIndex:3];
+            [enc2 setBytes:&dim length:sizeof(int) atIndex:4];
+            [enc2 setBytes:&n length:sizeof(int) atIndex:5];
+            [enc2 dispatchThreads:MTLSizeMake(n, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(n, 256), 1, 1)];
+            [enc2 endEncoding];
+            [cb2 commit];
+            [cb2 waitUntilCompleted];
+
+            // Finalize
+            id<MTLCommandBuffer> cb3 = [queue commandBuffer];
+            id<MTLComputeCommandEncoder> enc3 = [cb3 computeCommandEncoder];
+            [enc3 setComputePipelineState:finalizePipeline];
+            [enc3 setBuffer:centBuf offset:0 atIndex:0];
+            [enc3 setBuffer:countBuf offset:0 atIndex:1];
+            [enc3 setBytes:&dim length:sizeof(int) atIndex:2];
+            [enc3 setBytes:&k length:sizeof(int) atIndex:3];
+            [enc3 dispatchThreads:MTLSizeMake(k, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(k, 256), 1, 1)];
+            [enc3 endEncoding];
+            [cb3 commit];
+            [cb3 waitUntilCompleted];
+        }
+
+        memcpy(centroids, [centBuf contents], centSize);
         return 0;
     }
 }
@@ -614,6 +689,7 @@ import (
 )
 import (
 	"math"
+	"math/rand"
 	"runtime"
 	"sync"
 	"time"
@@ -662,6 +738,8 @@ func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
 	handle.sigmoidPipeline, _ = ctx.GetPipelineState("sigmoid_f32")
 	handle.haversinePipeline, _ = ctx.GetPipelineState("haversine_batch")
 	handle.normPipeline, _ = ctx.GetPipelineState("norm_batch_f32")
+	handle.sumCentroidsPipeline, _ = ctx.GetPipelineState("sum_centroids")
+	handle.finalizeCentroidsPipeline, _ = ctx.GetPipelineState("finalize_centroids")
 	// Note: bfsExpandPipeline and actPropagatePipeline are legacy, merged into fusedGraphPipeline
 	handle.bfsExpandPipeline = nil
 	handle.actPropagatePipeline = nil
@@ -969,30 +1047,44 @@ func (idx *MetalIndex) TrainPQ(vectors []float32, m int, k int) error {
 		return fmt.Errorf("index is closed")
 	}
 
-	// CPU fallback: Train PQ codebooks using K-Means
 	dims := idx.dim
 	if dims%m != 0 {
 		return fmt.Errorf("dimension %d must be divisible by M %d", dims, m)
 	}
+	subDim := dims / m
+	numVecs := len(vectors) / dims
 
-	// Create encoder and train
+	// Create encoder
 	encoder, err := pq.NewPQEncoder(dims, m, k)
 	if err != nil {
 		return fmt.Errorf("failed to create PQ encoder: %w", err)
 	}
 
-	// Convert flat vectors to [][]float32
-	numVecs := len(vectors) / dims
-	vecs2d := make([][]float32, numVecs)
-	for i := 0; i < numVecs; i++ {
-		vecs2d[i] = vectors[i*dims : (i+1)*dims]
+	// Train each subspace on GPU
+	for i := 0; i < m; i++ {
+		// Extract subspace data
+		subData := make([]float32, numVecs*subDim)
+		for j := 0; j < numVecs; j++ {
+			copy(subData[j*subDim:(j+1)*subDim], vectors[j*dims+i*subDim:j*dims+(i+1)*subDim])
+		}
+
+		// Initialize centroids randomly
+		centroids := make([]float32, k*subDim)
+		perm := rand.Perm(numVecs)
+		for j := 0; j < k; j++ {
+			copy(centroids[j*subDim:(j+1)*subDim], subData[perm[j]*subDim:(perm[j]+1)*subDim])
+		}
+
+		// Run GPU K-Means
+		res := C.metal_train_kmeans(idx.handle, (*C.float)(&subData[0]), (*C.float)(&centroids[0]), C.int(numVecs), C.int(subDim), C.int(k), 20)
+		if res != 0 {
+			return fmt.Errorf("GPU K-Means failed for subspace %d", i)
+		}
+
+		// Update encoder codebook
+		copy(encoder.Codebooks[i], centroids)
 	}
 
-	if err := encoder.Train(vecs2d); err != nil {
-		return fmt.Errorf("PQ training failed: %w", err)
-	}
-
-	// Store encoder in index for later use
 	idx.pqEncoder = encoder
 	return nil
 }

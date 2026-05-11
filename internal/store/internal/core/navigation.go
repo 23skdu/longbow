@@ -265,7 +265,11 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		}
 	}
 
-	searchCtx.filterBitmap = filter
+	if filter != nil {
+		searchCtx.filterBitmap = filter.Clone()
+	} else {
+		searchCtx.filterBitmap = nil
+	}
 	if filter != nil {
 		metrics.HNSWPreFilteredSearchesTotal.WithLabelValues(h.name).Inc()
 		if filter.IsEmpty() {

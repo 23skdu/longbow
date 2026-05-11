@@ -1,5 +1,9 @@
 //go:build gpu && linux
 
+// NOTE: This file requires the "gpu" and "linux" build tags. 
+// If your IDE reports "no packages found", ensure your gopls/build configuration 
+// includes these tags (e.g., -tags=gpu,linux).
+
 package cuda
 
 /*
@@ -42,6 +46,14 @@ void launch_graph_bfs_expand_kernel(const uint32_t* frontier, int frontierSize, 
 void launch_graph_activation_propagate_kernel(const float* activations, float* newActivations, const uint32_t* frontier, int frontierSize, const uint32_t* offsets, const uint32_t* neighbors, const float* weights, float alpha, cudaStream_t stream);
 void launch_haversine_distance_kernel(const float* center, const float* points, float* distances, float earthRadius, int count, cudaStream_t stream);
 void launch_l2_squared_kernel(const float* vectors, float* results, int dimensions, int count, cudaStream_t stream);
+
+// K-Means Training Kernels
+void launch_assign_to_clusters(const float* vectors, const float* centroids, uint32_t* assignments, int dim, int numVectors, int numCentroids, cudaStream_t stream);
+void launch_sum_centroids(const float* vectors, const uint32_t* assignments, float* centroids, uint32_t* counts, int dim, int numVectors, cudaStream_t stream);
+void launch_finalize_centroids(float* centroids, const uint32_t* counts, int dim, int numCentroids, cudaStream_t stream);
+
+int cuda_train_kmeans(CUDAIndexHandle* handle, float* vectors, float* centroids, int numVectors, int dim, int k, int iterations);
+int cuda_pq_encode(CUDAIndexHandle* handle, float* h_vectors, float* h_codebooks, unsigned char* h_codes, int numVectors, int m, int subDim);
 
 CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
     int device = 0;
@@ -99,6 +111,44 @@ void cuda_get_device_info(CUDAIndexHandle* handle, char* name, int maxLen, uint6
         name[0] = '\0';
         *totalMem = 0;
     }
+}
+
+int cuda_train_kmeans(CUDAIndexHandle* handle, float* h_vectors, float* h_centroids, int numVectors, int dim, int k, int iterations) {
+    if (!handle) return -1;
+    
+    float *d_vectors, *d_centroids, *d_sumCentroids;
+    uint32_t *d_assignments, *d_counts;
+    
+    cudaMalloc((void**)&d_vectors, (size_t)numVectors * dim * sizeof(float));
+    cudaMalloc((void**)&d_centroids, (size_t)k * dim * sizeof(float));
+    cudaMalloc((void**)&d_sumCentroids, (size_t)k * dim * sizeof(float));
+    cudaMalloc((void**)&d_assignments, (size_t)numVectors * sizeof(uint32_t));
+    cudaMalloc((void**)&d_counts, (size_t)k * sizeof(uint32_t));
+    
+    cudaMemcpy(d_vectors, h_vectors, (size_t)numVectors * dim * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_centroids, h_centroids, (size_t)k * dim * sizeof(float), cudaMemcpyHostToDevice);
+    
+    for (int i = 0; i < iterations; i++) {
+        cudaMemset(d_counts, 0, (size_t)k * sizeof(uint32_t));
+        cudaMemset(d_sumCentroids, 0, (size_t)k * dim * sizeof(float));
+        
+        launch_assign_to_clusters(d_vectors, d_centroids, d_assignments, dim, numVectors, k, handle->streams[0]);
+        launch_sum_centroids(d_vectors, d_assignments, d_sumCentroids, d_counts, dim, numVectors, handle->streams[0]);
+        launch_finalize_centroids(d_sumCentroids, d_counts, dim, k, handle->streams[0]);
+        
+        // Update centroids for next iteration
+        cudaMemcpy(d_centroids, d_sumCentroids, (size_t)k * dim * sizeof(float), cudaMemcpyDeviceToDevice);
+    }
+    
+    cudaMemcpy(h_centroids, d_centroids, (size_t)k * dim * sizeof(float), cudaMemcpyDeviceToHost);
+    
+    cudaFree(d_vectors);
+    cudaFree(d_centroids);
+    cudaFree(d_sumCentroids);
+    cudaFree(d_assignments);
+    cudaFree(d_counts);
+    
+    return 0;
 }
 
 void* cuda_ensure_buffer(CUDAIndexHandle* handle, int type, size_t elementSize) {
@@ -432,6 +482,7 @@ import "C"
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"runtime"
 	"sync"
 	"time"
@@ -736,25 +787,39 @@ func (idx *CUDAIndex) TrainPQ(vectors []float32, m int, k int) error {
 		return fmt.Errorf("index is closed")
 	}
 
-	// CPU fallback: Train PQ codebooks using K-Means
-	if idx.dim%m != 0 {
-		return fmt.Errorf("dimension %d must be divisible by M %d", idx.dim, m)
+	dims := idx.dim
+	if dims%m != 0 {
+		return fmt.Errorf("dimension %d must be divisible by M %d", dims, m)
 	}
+	subDim := dims / m
+	numVecs := len(vectors) / dims
 
-	encoder, err := pq.NewPQEncoder(idx.dim, m, k)
+	encoder, err := pq.NewPQEncoder(dims, m, k)
 	if err != nil {
 		return fmt.Errorf("failed to create PQ encoder: %w", err)
 	}
 
-	// Convert flat vectors to [][]float32
-	numVecs := len(vectors) / idx.dim
-	vecs2d := make([][]float32, numVecs)
-	for i := 0; i < numVecs; i++ {
-		vecs2d[i] = vectors[i*idx.dim : (i+1)*idx.dim]
-	}
+	// Train each subspace
+	for i := 0; i < m; i++ {
+		subData := make([]float32, numVecs*subDim)
+		for j := 0; j < numVecs; j++ {
+			copy(subData[j*subDim:(j+1)*subDim], vectors[j*dims+i*subDim:j*dims+(i+1)*subDim])
+		}
 
-	if err := encoder.Train(vecs2d); err != nil {
-		return fmt.Errorf("PQ training failed: %w", err)
+		// Initialize centroids randomly
+		centroids := make([]float32, k*subDim)
+		perm := rand.Perm(numVecs)
+		for j := 0; j < k; j++ {
+			copy(centroids[j*subDim:(j+1)*subDim], subData[perm[j]*subDim:(perm[j]+1)*subDim])
+		}
+
+		// Run GPU K-Means
+		res := C.cuda_train_kmeans(idx.handle, (*C.float)(&subData[0]), (*C.float)(&centroids[0]), C.int(numVecs), C.int(subDim), C.int(k), 20)
+		if res != 0 {
+			return fmt.Errorf("GPU K-Means failed for subspace %d", i)
+		}
+
+		copy(encoder.Codebooks[i], centroids)
 	}
 
 	idx.pqEncoder = encoder
@@ -1327,6 +1392,41 @@ func (idx *CUDAIndex) NormBatch(vectors []float32, dims int) ([]float32, error) 
 		return nil, fmt.Errorf("cuda_norm_batch_f32 failed")
 	}
 	
-	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "norm_batch").Observe(time.Since(start).Seconds())
+	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "norm").Observe(time.Since(start).Seconds())
 	return results, nil
+}
+
+func (idx *CUDAIndex) PQEncode(vectors []float32, codebooks []float32, m, subDim int) ([]byte, error) {
+	idx.mu.RLock()
+	closed := idx.closed
+	idx.mu.RUnlock()
+
+	if closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	numVectors := len(vectors) / (m * subDim)
+	if numVectors == 0 {
+		return nil, nil
+	}
+
+	codes := make([]byte, numVectors*m)
+	
+	start := time.Now()
+	ret := C.cuda_pq_encode(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&vectors[0])),
+		(*C.float)(unsafe.Pointer(&codebooks[0])),
+		(*C.uchar)(unsafe.Pointer(&codes[0])),
+		C.int(numVectors),
+		C.int(m),
+		C.int(subDim),
+	)
+	
+	if ret != 0 {
+		return nil, fmt.Errorf("cuda_pq_encode failed")
+	}
+	
+	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "pq_encode").Observe(time.Since(start).Seconds())
+	return codes, nil
 }

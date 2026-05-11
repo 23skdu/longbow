@@ -101,6 +101,9 @@ type ImplementationDispatch struct {
 	UnpackTQ2 func(src []byte, dst []float32, scale, bias float32)
 	UnpackTQ4 func(src []byte, dst []float32, scale, bias float32)
 	UnpackTQ8 func(src []byte, dst []float32, scale, bias float32)
+	PackTQ2   func(src []float32, dst []byte)
+	PackTQ4   func(src []float32, dst []byte)
+	PackTQ8   func(src []float32, dst []byte)
 }
 
 // Global dispatch table - one per implementation
@@ -159,6 +162,12 @@ func initDispatchTable() {
 			Softmax: softmaxAVX512,
 			Exp:     expAVX512,
 			Log:     logAVX512,
+			UnpackTQ2: UnpackTQ2AVX512,
+			UnpackTQ4: UnpackTQ4AVX512,
+			UnpackTQ8: UnpackTQ8AVX512,
+			PackTQ2:   PackTQ2AVX512,
+			PackTQ4:   PackTQ4AVX512,
+			PackTQ8:   PackTQ8AVX512,
 
 			Sum: sumGeneric,
 			Max: maxGeneric,
@@ -221,6 +230,12 @@ func initDispatchTable() {
 			Softmax: softmaxAVX2,
 			Exp:     expAVX2,
 			Log:     logAVX2,
+			UnpackTQ2: UnpackTQ2AVX2,
+			UnpackTQ4: UnpackTQ4AVX2,
+			UnpackTQ8: UnpackTQ8AVX2,
+			PackTQ2:   PackTQ2AVX2,
+			PackTQ4:   PackTQ4AVX2,
+			PackTQ8:   PackTQ8AVX2,
 
 			Sum: sumAVX2,
 			Max: maxAVX2,
@@ -312,6 +327,9 @@ func initDispatchTable() {
 			UnpackTQ2:      UnpackTQ2Generic,
 			UnpackTQ4:      UnpackTQ4Generic,
 			UnpackTQ8:      UnpackTQ8Generic,
+			PackTQ2:        PackTQ2Generic,
+			PackTQ4:        PackTQ4Generic,
+			PackTQ8:        PackTQ8Generic,
 		}
 
 		dispatchTable["generic"] = &ImplementationDispatch{
@@ -371,6 +389,9 @@ func initDispatchTable() {
 			UnpackTQ2:      UnpackTQ2Generic,
 			UnpackTQ4:      UnpackTQ4Generic,
 			UnpackTQ8:      UnpackTQ8Generic,
+			PackTQ2:        PackTQ2Generic,
+			PackTQ4:        PackTQ4Generic,
+			PackTQ8:        PackTQ8Generic,
 		}
 	})
 }
@@ -475,6 +496,12 @@ func initializeDispatch() {
 		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
 		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
 		haversineBatchImpl = dispatch.HaversineBatch
+		unpackTQ2Impl = dispatch.UnpackTQ2
+		unpackTQ4Impl = dispatch.UnpackTQ4
+		unpackTQ8Impl = dispatch.UnpackTQ8
+		packTQ2Impl = dispatch.PackTQ2
+		packTQ4Impl = dispatch.PackTQ4
+		packTQ8Impl = dispatch.PackTQ8
 	case "avx2":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -561,6 +588,12 @@ func initializeDispatch() {
 		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
 		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
 		haversineBatchImpl = dispatch.HaversineBatch
+		unpackTQ2Impl = dispatch.UnpackTQ2
+		unpackTQ4Impl = dispatch.UnpackTQ4
+		unpackTQ8Impl = dispatch.UnpackTQ8
+		packTQ2Impl = dispatch.PackTQ2
+		packTQ4Impl = dispatch.PackTQ4
+		packTQ8Impl = dispatch.PackTQ8
 	case "neon":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384
@@ -650,6 +683,12 @@ func initializeDispatch() {
 		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
 		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
 		haversineBatchImpl = dispatch.HaversineBatch
+		unpackTQ2Impl = dispatch.UnpackTQ2
+		unpackTQ4Impl = dispatch.UnpackTQ4
+		unpackTQ8Impl = dispatch.UnpackTQ8
+		packTQ2Impl = dispatch.PackTQ2
+		packTQ4Impl = dispatch.PackTQ4
+		packTQ8Impl = dispatch.PackTQ8
 	case "generic":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance128Impl = dispatch.EuclideanDistance128
@@ -731,6 +770,12 @@ func initializeDispatch() {
 		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
 		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
 		haversineBatchImpl = dispatch.HaversineBatch
+		unpackTQ2Impl = dispatch.UnpackTQ2
+		unpackTQ4Impl = dispatch.UnpackTQ4
+		unpackTQ8Impl = dispatch.UnpackTQ8
+		packTQ2Impl = dispatch.PackTQ2
+		packTQ4Impl = dispatch.PackTQ4
+		packTQ8Impl = dispatch.PackTQ8
 	}
 
 	// Register current implementations into the new dynamic registry.

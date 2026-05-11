@@ -641,6 +641,49 @@ kernel void assign_to_clusters(
     assignments[gid] = bestCent;
 }
 
+kernel void sum_centroids(
+    device const float* vectors [[buffer(0)]],
+    device const uint* assignments [[buffer(1)]],
+    device atomic_float* centroids [[buffer(2)]],
+    device atomic_uint* counts [[buffer(3)]],
+    constant uint& dim [[buffer(4)]],
+    constant uint& numVectors [[buffer(5)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numVectors) return;
+    uint clusterID = assignments[gid];
+    uint vecOffset = gid * dim;
+    uint centOffset = clusterID * dim;
+    
+    atomic_fetch_add_explicit(&counts[clusterID], 1, memory_order_relaxed);
+    
+    for (uint i = 0; i < dim; i++) {
+        device atomic_float& target = centroids[centOffset + i];
+        float val = vectors[vecOffset + i];
+        
+        float expected = atomic_load_explicit(&target, memory_order_relaxed);
+        while (!atomic_compare_exchange_weak_explicit(&target, &expected, expected + val, memory_order_relaxed, memory_order_relaxed));
+    }
+}
+
+kernel void finalize_centroids(
+    device float* centroids [[buffer(0)]],
+    device const uint* counts [[buffer(1)]],
+    constant uint& dim [[buffer(2)]],
+    constant uint& numCentroids [[buffer(3)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numCentroids) return;
+    uint count = counts[gid];
+    if (count == 0) return;
+    
+    float invCount = 1.0f / (float)count;
+    uint offset = gid * dim;
+    for (uint i = 0; i < dim; i++) {
+        centroids[offset + i] *= invCount;
+    }
+}
+
 // ===========================================================================
 // Top-K & Selection Kernels
 // ===========================================================================

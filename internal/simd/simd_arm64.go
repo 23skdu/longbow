@@ -97,15 +97,24 @@ func dot3072NEON(a, b []float32) (float32, error) {
 }
 
 func euclideanF16NEON(a, b []float16.Num) (float32, error) {
-	return euclideanF16Unrolled4x(a, b)
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	return euclideanF16NEONKernel(a, b), nil
 }
 
 func dotF16NEON(a, b []float16.Num) (float32, error) {
-	return dotF16Unrolled4x(a, b)
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	return dotF16NEONKernel(a, b), nil
 }
 
 func cosineF16NEON(a, b []float16.Num) (float32, error) {
-	return cosineF16Unrolled4x(a, b)
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	return cosineF16NEONKernel(a, b), nil
 }
 
 func dotInt4Neon(a, b []byte) (float32, error) {

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/gpu/types"
 )
@@ -61,19 +62,40 @@ func (i *TPUIndex) Search(vector []float32, k int) ([]int64, []float32, error) {
 		return []int64{}, []float32{}, nil
 	}
 
-	// In a real production implementation, we would:
-	// 1. Batch the query vector
-	// 2. Transfer to TPU HBM
-	// 3. Launch the XLA-compiled search kernel
-	// 4. Retrieve results from TPU memory
+	// 1. Allocate and transfer query to HBM
+	querySize := int64(len(vector) * 4)
+	queryPtr, err := i.backend.hbm.Allocate(i.cfg.DeviceID, querySize)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer i.backend.hbm.Free(queryPtr)
+	if err := tpuMemcpyH2D(queryPtr, vector); err != nil {
+		return nil, nil, err
+	}
 
-	// Simulate XLA kernel launch via our C stub
-	if err := tpuEnqueueBatch(i.cfg.DeviceID, vector); err != nil {
+	// 2. Allocate results buffer on device
+	// Each result is {float32 dist, int64 id} = 12 bytes
+	resSize := int64(k * 12)
+	resPtr, err := i.backend.hbm.Allocate(i.cfg.DeviceID, resSize)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer i.backend.hbm.Free(resPtr)
+
+	// 3. Launch XLA kernel
+	// In a real implementation, we would pass a handle to the stored vectors as well.
+	// For the stub, we pass the queryPtr and resPtr.
+	if err := tpuLaunchXLA(i.cfg.DeviceID, "l2_search", []unsafe.Pointer{queryPtr, resPtr}); err != nil {
 		return nil, nil, fmt.Errorf("TPU XLA kernel dispatch failed: %w", err)
 	}
 
-	// For now, we still use the CPU fallback for the actual distance computation 
-	// until the XLA kernel is fully verified on hardware.
+	// 4. Retrieve results (simulated)
+	// We call tpuMemcpyD2H to simulate the retrieval, though for the stub
+	// we'll still do the sort on CPU to provide deterministic mock results.
+	mockResultBuffer := make([]float32, k*3) // Simulate k * {f32, i64}
+	if err := tpuMemcpyD2H(mockResultBuffer, resPtr); err != nil {
+		return nil, nil, fmt.Errorf("TPU D2H copy failed: %w", err)
+	}
 	type result struct {
 		id   int64
 		dist float32

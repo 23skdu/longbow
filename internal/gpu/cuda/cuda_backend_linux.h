@@ -56,6 +56,12 @@ void launch_graph_activation_propagate_kernel(
     void* stream
 );
 
+// K-Means Training Kernels
+void launch_assign_to_clusters(const float* vectors, const float* centroids, uint32_t* assignments, int dim, int numVectors, int numCentroids, void* stream);
+void launch_sum_centroids(const float* vectors, const uint32_t* assignments, float* centroids, uint32_t* counts, int dim, int numVectors, void* stream);
+void launch_finalize_centroids(float* centroids, const uint32_t* counts, int dim, int numCentroids, void* stream);
+int cuda_pq_encode(void* handle, float* h_vectors, float* h_codebooks, unsigned char* h_codes, int numVectors, int m, int subDim);
+
 #ifdef __cplusplus
 }
 #endif

@@ -546,4 +546,188 @@ void launch_l2_squared_kernel(const float* vectors, float* results, int dimensio
     l2_squared_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, results, dimensions, count);
 }
 
+// K-Means E-step: Assign vectors to nearest clusters
+__global__ void assign_to_clusters_kernel(
+    const float* vectors,
+    const float* centroids,
+    uint32_t* assignments,
+    int dimensions,
+    int numVectors,
+    int numCentroids
+) {
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid >= numVectors) return;
+
+    float minDist = 1e38f;
+    uint32_t bestCent = 0;
+    const float* vec = vectors + gid * dimensions;
+
+    for (uint32_t c = 0; c < numCentroids; c++) {
+        float dist = 0.0f;
+        const float* cent = centroids + c * dimensions;
+        for (int i = 0; i < dimensions; i++) {
+            float diff = vec[i] - cent[i];
+            dist += diff * diff;
+        }
+        if (dist < minDist) {
+            minDist = dist;
+            bestCent = c;
+        }
+    }
+    assignments[gid] = bestCent;
+}
+
+// K-Means M-step: Sum vectors in each cluster
+__global__ void sum_centroids_kernel(
+    const float* vectors,
+    const uint32_t* assignments,
+    float* centroids,
+    uint32_t* counts,
+    int dimensions,
+    int numVectors
+) {
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid >= numVectors) return;
+
+    uint32_t clusterID = assignments[gid];
+    const float* vec = vectors + gid * dimensions;
+    float* cent = centroids + clusterID * dimensions;
+
+    atomicAdd(&counts[clusterID], 1);
+    for (int i = 0; i < dimensions; i++) {
+        atomicAdd(&cent[i], vec[i]);
+    }
+}
+
+// K-Means M-step: Finalize centroids by dividing by counts
+__global__ void finalize_centroids_kernel(
+    float* centroids,
+    const uint32_t* counts,
+    int dimensions,
+    int numCentroids
+) {
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid >= numCentroids) return;
+
+    uint32_t count = counts[gid];
+    if (count == 0) return;
+
+    float invCount = 1.0f / (float)count;
+    float* cent = centroids + gid * dimensions;
+    for (int i = 0; i < dimensions; i++) {
+        cent[i] *= invCount;
+    }
+}
+
+void launch_assign_to_clusters(const float* vectors, const float* centroids, uint32_t* assignments, int dim, int numVectors, int numCentroids, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (numVectors + threadsPerBlock - 1) / threadsPerBlock;
+    assign_to_clusters_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, centroids, assignments, dim, numVectors, numCentroids);
+}
+
+void launch_sum_centroids(const float* vectors, const uint32_t* assignments, float* centroids, uint32_t* counts, int dim, int numVectors, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (numVectors + threadsPerBlock - 1) / threadsPerBlock;
+    sum_centroids_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, assignments, centroids, counts, dim, numVectors);
+}
+
+void launch_finalize_centroids(float* centroids, const uint32_t* counts, int dim, int numCentroids, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (numCentroids + threadsPerBlock - 1) / threadsPerBlock;
+    finalize_centroids_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(centroids, counts, dim, numCentroids);
+}
+// PQ Encoding: Assign subspace segments of vectors to nearest codebook centroids
+__global__ void pq_encode_kernel(
+    const float* vectors,
+    const float* codebooks, // [m][256][subDim]
+    unsigned char* codes,   // [numVectors][m]
+    int dimensions,
+    int numVectors,
+    int m,
+    int subDim
+) {
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid >= numVectors) return;
+
+    for (int sub = 0; sub < m; sub++) {
+        const float* vecSub = vectors + (size_t)gid * dimensions + (size_t)sub * subDim;
+        const float* cb = codebooks + (size_t)sub * 256 * subDim;
+        
+        float minDist = 1e38f;
+        unsigned char bestIdx = 0;
+        
+        for (int c = 0; c < 256; c++) {
+            float dist = 0.0f;
+            const float* cent = cb + (size_t)c * subDim;
+            for (int i = 0; i < subDim; i++) {
+                float diff = vecSub[i] - cent[i];
+                dist += diff * diff;
+            }
+            if (dist < minDist) {
+                minDist = dist;
+                bestIdx = (unsigned char)c;
+            }
+        }
+        codes[(size_t)gid * m + sub] = bestIdx;
+    }
+}
+
+void launch_pq_encode_kernel(
+    const float* vectors,
+    const float* codebooks,
+    unsigned char* codes,
+    int dimensions,
+    int numVectors,
+    int m,
+    int subDim,
+    cudaStream_t stream
+) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (numVectors + threadsPerBlock - 1) / threadsPerBlock;
+    pq_encode_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(
+        vectors, codebooks, codes, dimensions, numVectors, m, subDim
+    );
+}
+
+int cuda_pq_encode(
+    void* handle,
+    float* h_vectors,
+    float* h_codebooks,
+    unsigned char* h_codes,
+    int numVectors,
+    int m,
+    int subDim
+) {
+    float *d_vectors, *d_codebooks;
+    unsigned char *d_codes;
+    
+    size_t vecSize = (size_t)numVectors * m * subDim * sizeof(float);
+    size_t cbSize = (size_t)m * 256 * subDim * sizeof(float);
+    size_t codeSize = (size_t)numVectors * m * sizeof(unsigned char);
+    
+    if (cudaMalloc(&d_vectors, vecSize) != cudaSuccess) return -1;
+    if (cudaMalloc(&d_codebooks, cbSize) != cudaSuccess) {
+        cudaFree(d_vectors);
+        return -1;
+    }
+    if (cudaMalloc(&d_codes, codeSize) != cudaSuccess) {
+        cudaFree(d_vectors);
+        cudaFree(d_codebooks);
+        return -1;
+    }
+    
+    cudaMemcpy(d_vectors, h_vectors, vecSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_codebooks, h_codebooks, cbSize, cudaMemcpyHostToDevice);
+    
+    launch_pq_encode_kernel(d_vectors, d_codebooks, d_codes, m * subDim, numVectors, m, subDim, 0);
+    
+    cudaMemcpy(h_codes, d_codes, codeSize, cudaMemcpyDeviceToHost);
+    
+    cudaFree(d_vectors);
+    cudaFree(d_codebooks);
+    cudaFree(d_codes);
+    
+    return 0;
+}
+
 } // extern "C"

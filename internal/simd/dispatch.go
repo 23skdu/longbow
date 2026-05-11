@@ -324,12 +324,12 @@ func initDispatchTable() {
 			AccumulateWeightedScatter: accumulateWeightedScatterNEON,
 			BM25ScoreBatch: bm25ScoreBatchGeneric,
 			HaversineBatch: haversineBatchGeneric,
-			UnpackTQ2:      UnpackTQ2Generic,
-			UnpackTQ4:      UnpackTQ4Generic,
-			UnpackTQ8:      UnpackTQ8Generic,
-			PackTQ2:        PackTQ2Generic,
-			PackTQ4:        PackTQ4Generic,
-			PackTQ8:        PackTQ8Generic,
+			UnpackTQ2:      UnpackTQ2NEON,
+			UnpackTQ4:      UnpackTQ4NEON,
+			UnpackTQ8:      UnpackTQ8NEON,
+			PackTQ2:        PackTQ2NEON,
+			PackTQ4:        PackTQ4NEON,
+			PackTQ8:        PackTQ8NEON,
 		}
 
 		dispatchTable["generic"] = &ImplementationDispatch{

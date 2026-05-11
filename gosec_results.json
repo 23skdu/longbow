@@ -1,0 +1,233 @@
+{
+	"Golang errors": {
+		"": [
+			{
+				"line": 0,
+				"column": 0,
+				"error": "# command-line-arguments\ninternal/simd/sparse_score_arm64.go:9:6: missing function body\ninternal/simd/simd_arm64.go:325:6: missing function body\ninternal/simd/simd_arm64.go:442:6: missing function body\ninternal/simd/turboquant_arm64.go:57:6: missing function body\ninternal/simd/turboquant_arm64.go:59:6: missing function body\ninternal/simd/turboquant_arm64.go:61:6: missing function body\ninternal/simd/turboquant_arm64.go:63:6: missing function body\ninternal/simd/turboquant_arm64.go:65:6: missing function body\ninternal/simd/turboquant_arm64.go:67:6: missing function body\ninternal/simd/bitops_arm64.go:20:6: missing function body\ninternal/simd/bitops_arm64.go:20:6: too many errors"
+			},
+			{
+				"line": 0,
+				"column": 0,
+				"error": "# command-line-arguments\ninternal/query/simd_filter_neon_arm64.go:10:6: missing function body\ninternal/query/simd_filter_neon_arm64.go:15:6: missing function body\ninternal/query/simd_filter_neon_arm64.go:19:6: missing function body\ninternal/query/simd_filter_neon_arm64.go:23:6: missing function body"
+			}
+		]
+	},
+	"Issues": [
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uint64 -\u003e int64",
+			"file": "/Users/rsd/REPOS/longbow/internal/store/admission.go",
+			"code": "41: \truntime.ReadMemStats(\u0026m)\n42: \theapMem := int64(m.HeapAlloc)\n43: \t\n",
+			"line": "42",
+			"column": "18",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/simd/turboquant_arm64.go",
+			"code": "52: \t}\n53: \tunpackTQ8NEONKernel(unsafe.Pointer(\u0026src[0]), unsafe.Pointer(\u0026dst[0]), len(dst), scale, bias)\n54: }\n",
+			"line": "53",
+			"column": "47",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/simd/turboquant_arm64.go",
+			"code": "52: \t}\n53: \tunpackTQ8NEONKernel(unsafe.Pointer(\u0026src[0]), unsafe.Pointer(\u0026dst[0]), len(dst), scale, bias)\n54: }\n",
+			"line": "53",
+			"column": "22",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/simd/turboquant_arm64.go",
+			"code": "44: \t}\n45: \tunpackTQ4NEONKernel(unsafe.Pointer(\u0026src[0]), unsafe.Pointer(\u0026dst[0]), len(dst), scale, bias)\n46: }\n",
+			"line": "45",
+			"column": "22",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/simd/turboquant_arm64.go",
+			"code": "44: \t}\n45: \tunpackTQ4NEONKernel(unsafe.Pointer(\u0026src[0]), unsafe.Pointer(\u0026dst[0]), len(dst), scale, bias)\n46: }\n",
+			"line": "45",
+			"column": "47",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/simd/turboquant_arm64.go",
+			"code": "36: \t}\n37: \tunpackTQ2NEONKernel(unsafe.Pointer(\u0026src[0]), unsafe.Pointer(\u0026dst[0]), len(dst), scale, bias)\n38: }\n",
+			"line": "37",
+			"column": "22",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/simd/turboquant_arm64.go",
+			"code": "36: \t}\n37: \tunpackTQ2NEONKernel(unsafe.Pointer(\u0026src[0]), unsafe.Pointer(\u0026dst[0]), len(dst), scale, bias)\n38: }\n",
+			"line": "37",
+			"column": "47",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/simd/turboquant_arm64.go",
+			"code": "28: \t}\n29: \tpackTQ8NEONKernel(unsafe.Pointer(\u0026src[0]), unsafe.Pointer(\u0026dst[0]), len(src))\n30: }\n",
+			"line": "29",
+			"column": "45",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/simd/turboquant_arm64.go",
+			"code": "28: \t}\n29: \tpackTQ8NEONKernel(unsafe.Pointer(\u0026src[0]), unsafe.Pointer(\u0026dst[0]), len(src))\n30: }\n",
+			"line": "29",
+			"column": "20",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/simd/turboquant_arm64.go",
+			"code": "20: \t}\n21: \tpackTQ4NEONKernel(unsafe.Pointer(\u0026src[0]), unsafe.Pointer(\u0026dst[0]), len(src))\n22: }\n",
+			"line": "21",
+			"column": "45",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/simd/turboquant_arm64.go",
+			"code": "20: \t}\n21: \tpackTQ4NEONKernel(unsafe.Pointer(\u0026src[0]), unsafe.Pointer(\u0026dst[0]), len(src))\n22: }\n",
+			"line": "21",
+			"column": "20",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/simd/turboquant_arm64.go",
+			"code": "12: \t}\n13: \tpackTQ2NEONKernel(unsafe.Pointer(\u0026src[0]), unsafe.Pointer(\u0026dst[0]), len(src))\n14: }\n",
+			"line": "13",
+			"column": "20",
+			"nosec": false,
+			"suppressions": null
+		},
+		{
+			"severity": "LOW",
+			"confidence": "HIGH",
+			"cwe": {
+				"id": "242",
+				"url": "https://cwe.mitre.org/data/definitions/242.html"
+			},
+			"rule_id": "G103",
+			"details": "Use of unsafe calls should be audited",
+			"file": "/Users/rsd/REPOS/longbow/internal/simd/turboquant_arm64.go",
+			"code": "12: \t}\n13: \tpackTQ2NEONKernel(unsafe.Pointer(\u0026src[0]), unsafe.Pointer(\u0026dst[0]), len(src))\n14: }\n",
+			"line": "13",
+			"column": "45",
+			"nosec": false,
+			"suppressions": null
+		}
+	],
+	"Stats": {
+		"files": 503,
+		"lines": 126411,
+		"nosec": 694,
+		"found": 13
+	},
+	"GosecVersion": "2.26.1"
+}

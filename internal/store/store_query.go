@@ -120,13 +120,23 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 		return nil, status.Error(codes.InvalidArgument, "Empty path")
 	}
 	name := desc.Path[0]
+	if name == "_health" {
+		metadata := s.getPooledMetadataBuffer(loadbalancing.LoadHintsSize)
+		hints := s.nodeMonitor.GetLoadHints()
+		hints.Serialize(metadata)
+		return &flight.FlightInfo{
+			FlightDescriptor: desc,
+			AppMetadata:      metadata,
+		}, nil
+	}
+
 	ds, ok := s.getDataset(name)
 	if !ok {
-		return nil, status.Error(codes.NotFound, "dataset not found")
+		return nil, status.Errorf(codes.NotFound, "dataset %s not found", name)
 	}
 
 	if !ds.IsReady.Load() {
-		return nil, status.Error(codes.Unavailable, "dataset is being initialized")
+		return nil, status.Errorf(codes.Unavailable, "dataset %s is being initialized", name)
 	}
 
 	// Include load balancing hints in AppMetadata (Apache Arrow Zero-Alloc approach)

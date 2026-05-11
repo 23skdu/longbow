@@ -19,7 +19,16 @@
 - **Distributed Result Fusion**: Optimize the RRF (Reciprocal Rank Fusion) pipeline for multi-node cluster configurations.
 - **Memory-Mapped HNSW**: Explore `mmap`-backed vector storage to reduce heap pressure and allow datasets larger than physical RAM.
 
-## Future Considerations
+- Cross-Node WAL Replication: Implement synchronous WAL replication for high-availability deployments.
 
-- **Dynamic Kernel Auto-Tuning**: Implement a runtime profiler to automatically select the optimal SIMD kernel based on dimension and data distribution.
-- **Cross-Node WAL Replication**: Implement synchronous WAL replication for high-availability deployments.
+## Benchmark-Driven Recommendations (v0.2.2-rc2 Observations)
+
+### Stability Improvements
+
+- **Dataset Initialization Handshake**: Investigate intermittent `NotFound` errors during rapid ingestion/search transitions. Implement a more robust "Ready" handshake between the storage engine and the benchmarking tool.
+- **Memory Pressure Livelock Mitigation**: Although 18GB is allocated, high-scale (100k+) tests suggest GCTuner contention. Evaluate more aggressive pre-emptive garbage collection or fine-grained memory sharding to prevent livelocks under extreme pressure.
+
+### Performance Gains
+
+- **TurboQuant Packing Kernels**: Current TurboQuant ingestion is CPU-bound due to vector packing. Implement SIMD-accelerated packing/unpacking in the `DoPut` path to match the throughput of raw data types.
+- **Remote gRPC Loopback Tuning**: Search throughput on Linux (ancalagon) is ~50% lower than macOS for loopback requests. Profile Go's gRPC stack on amd64 to identify potential context switching or syscall bottlenecks.

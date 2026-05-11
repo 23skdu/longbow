@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"runtime"
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/autoscale"
@@ -32,16 +33,29 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 		return nil // No limit enforced
 	}
 
+	// 1. Get Manual Estimate
 	currMem := ac.currentMemory.Load()
-	memoryUsage := float64(currMem) / float64(maxMem)
+	
+	// 2. Get Actual Heap Usage (more accurate for OOM protection)
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	heapMem := int64(m.HeapAlloc) // #nosec G115
+	
+	// Use the maximum of manual tracking and actual heap usage
+	effectiveMem := currMem
+	if heapMem > effectiveMem {
+		effectiveMem = heapMem
+	}
 
-	// Hard Limit: 96% Memory Usage
-	if memoryUsage > 0.96 {
+	memoryUsage := float64(effectiveMem) / float64(maxMem)
+
+	// Hard Limit: 94% Memory Usage (Reduced from 96% for safety margin)
+	if memoryUsage > 0.94 {
 		return status.Errorf(codes.ResourceExhausted, "critical memory pressure (%.1f%% usage): request rejected", memoryUsage*100)
 	}
 
-	// Soft Limit: 92% Memory Usage for Ingestion
-	if opType == "ingest" && memoryUsage > 0.92 {
+	// Soft Limit: 90% Memory Usage for Ingestion (Reduced from 92%)
+	if opType == "ingest" && memoryUsage > 0.90 {
 		return status.Errorf(codes.ResourceExhausted, "high memory pressure (%.1f%% usage): ingestion throttled", memoryUsage*100)
 	}
 

@@ -29,6 +29,7 @@ scratch/
 .temp/
 *.bak
 *.orig
+/*.txt
 
 # Data and snapshots
 data/

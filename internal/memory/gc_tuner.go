@@ -250,12 +250,23 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 		// CPU is doing more work, so be less aggressive with GC
 		targetGOGC = t.highGOGC
 	} else {
-		// Standard logic based on heap utilization
+	// Standard logic based on heap utilization
 		switch {
 		case ratio < 0.5:
 			targetGOGC = t.highGOGC
 		case ratio > 0.9:
-			targetGOGC = t.lowGOGC
+			// If ratio is very high (> 0.95), we might want to be even more aggressive than lowGOGC
+			if aggressive && ratio > 0.95 {
+				targetGOGC = t.lowGOGC / 2
+				if targetGOGC < 10 {
+					targetGOGC = 10
+				}
+				// Force a manual GC if we are hitting the ceiling to avoid OOM/Livelock
+				runtime.GC()
+				debug.FreeOSMemory()
+			} else {
+				targetGOGC = t.lowGOGC
+			}
 		default:
 			// Interpolate: 0.5 -> High, 0.9 -> Low
 			// Slope = (Low - High) / (0.9 - 0.5)
@@ -269,7 +280,7 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 		targetGOGC += 50
 	}
 
-	if aggressive && ratio > 0.7 {
+	if aggressive && ratio > 0.8 {
 		if t.logger != nil {
 			t.logger.Warn().Float64("ratio", ratio).Int64("effective", effectiveInUse).Msg("High effective heap utilization")
 		}
@@ -283,8 +294,8 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 	}
 
 	// Clamp
-	if targetGOGC < t.lowGOGC {
-		targetGOGC = t.lowGOGC
+	if targetGOGC < 10 {
+		targetGOGC = 10
 	}
 	if targetGOGC > t.highGOGC {
 		targetGOGC = t.highGOGC

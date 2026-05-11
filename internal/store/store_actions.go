@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -762,7 +763,20 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	// 0. Admission Control (Backpressure)
 	if s.admission != nil {
 		if err := s.admission.Admit(stream.Context(), "ingest"); err != nil {
-			return err
+			// If throttled, try one aggressive GC and retry
+			if status.Code(err) == codes.ResourceExhausted {
+				s.logger.Warn().Msg("Ingestion throttled, triggering emergency GC and retrying...")
+				runtime.GC()
+				debug.FreeOSMemory()
+				time.Sleep(100 * time.Millisecond)
+				
+				if err2 := s.admission.Admit(stream.Context(), "ingest"); err2 != nil {
+					return err2
+				}
+				s.logger.Info().Msg("Emergency GC successful, ingestion resumed")
+			} else {
+				return err
+			}
 		}
 	}
 

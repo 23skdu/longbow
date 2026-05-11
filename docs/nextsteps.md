@@ -1,13 +1,25 @@
 # Longbow Storage Engine - Future Roadmap
 
+## Recently Completed (v0.2.2-rc2 Final)
+
+- **CPU Graph Navigation**: Implemented `UpdateGraph` and `GraphExpand` for `CPUIndex`, ensuring full feature parity for non-GPU environments.
+- **TurboQuant CPU SIMD**: Optimized `SearchTurboQuant` with high-performance SIMD distance kernels, eliminating reconstruction overhead.
+- **Async I/O Parity**: Refactored `DiskWriterUring` stubs to simulate non-blocking behavior via background goroutines.
+- **Strict Embedding Loading**: Hardened `EmbeddingGenerator` to enforce model loading and prevent silent fallback to stubs.
+- **Location Store Stability**: Resolved critical race conditions in `ChunkedLocationStore` maps during concurrent sharding transitions.
+
+## P0 Blockers (Remaining)
+
+- **TPU Physical Driver Integration**: Replace CGO stubs in `internal/gpu/tpu/tpu_index.go` with actual `libtpu.so` bindings once hardware-linked libraries are provided.
+- **Sparse Search ARM64 Assembly**: While functional via generic SIMD, Sparse Search (BM25) requires dedicated NEON assembly kernels to match AVX-512 throughput.
+
 ## Performance Optimizations (v0.2.5+)
 
-The following items are remaining research and optimization tasks to further improve throughput and cross-platform parity.
-
 - **AVX-512 VBMI Bitpacking**: Implement 2-bit packing using `VPMULTISHIFTQB` for further throughput gains on modern CPUs.
-- **CUDA/Metal PQ Training Parity**: Refine the K-Means training kernels for even larger batch sizes and multi-GPU configurations.
+- **Distributed Result Fusion**: Optimize the RRF (Reciprocal Rank Fusion) pipeline for multi-node cluster configurations.
+- **Memory-Mapped HNSW**: Explore `mmap`-backed vector storage to reduce heap pressure and allow datasets larger than physical RAM.
 
 ## Future Considerations
 
-- **TPU Physical Hardware Validation**: Once TPU v7x hardware is accessible, replace the current XLA/HBM stubs with actual driver-level calls and perform end-to-end latency benchmarks.
-- **Dynamic Kernel Auto-Tuning**: Implement a runtime profiler to automatically select the optimal SIMD kernel based on the specific dimension and data distribution at ingestion time.
+- **Dynamic Kernel Auto-Tuning**: Implement a runtime profiler to automatically select the optimal SIMD kernel based on dimension and data distribution.
+- **Cross-Node WAL Replication**: Implement synchronous WAL replication for high-availability deployments.

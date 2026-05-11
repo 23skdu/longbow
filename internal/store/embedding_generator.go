@@ -726,39 +726,7 @@ func (le *localEmbeddingGenerator) Close() error {
 	return nil
 }
 
-type stubEmbeddingModel struct {
-	dimension int
-	path      string
-}
 
-func (m *stubEmbeddingModel) Inference(input []string) ([][]float32, error) {
-	metrics.StubModelUsageTotal.WithLabelValues(m.path).Add(float64(len(input)))
-	results := make([][]float32, len(input))
-	for i := range input {
-		results[i] = make([]float32, m.dimension)
-		hash := hashString(input[i])
-		for j := 0; j < m.dimension; j++ {
-			results[i][j] = float32((hash >> uint(j%32)) & 0xFFFF)
-			if results[i][j] > 1 {
-				results[i][j] = results[i][j] / 65535
-			}
-		}
-	}
-	return results, nil
-}
-
-func (m *stubEmbeddingModel) Close() error {
-	return nil
-}
-
-func hashString(s string) uint64 {
-	h := uint64(2166136261)
-	for i := 0; i < len(s); i++ {
-		h ^= uint64(s[i])
-		h *= 16777619
-	}
-	return h
-}
 
 type onnxEmbeddingModel struct {
 	path    string

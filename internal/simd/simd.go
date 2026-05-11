@@ -170,6 +170,14 @@ var (
 	atan2Float32Impl func(y, x, dst []float32)
 
 	pauseImpl func()
+	
+	// TurboQuant kernels
+	unpackTQ2Impl func(src []byte, dst []float32, scale, bias float32)
+	unpackTQ4Impl func(src []byte, dst []float32, scale, bias float32)
+	unpackTQ8Impl func(src []byte, dst []float32, scale, bias float32)
+	packTQ2Impl   func(src []float32, dst []byte)
+	packTQ4Impl   func(src []float32, dst []byte)
+	packTQ8Impl   func(src []float32, dst []byte)
 )
 
 type haversineBatchFunc func(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32)
@@ -1458,8 +1466,8 @@ func MemcpyNTA(dst, src unsafe.Pointer, n int) {
 
 // UnpackTQ2 unpacks 2-bit TurboQuant data.
 func UnpackTQ2(src []byte, dst []float32, scale, bias float32) {
-	if currentDispatch.UnpackTQ2 != nil {
-		currentDispatch.UnpackTQ2(src, dst, scale, bias)
+	if unpackTQ2Impl != nil {
+		unpackTQ2Impl(src, dst, scale, bias)
 	} else {
 		UnpackTQ2Generic(src, dst, scale, bias)
 	}
@@ -1467,8 +1475,8 @@ func UnpackTQ2(src []byte, dst []float32, scale, bias float32) {
 
 // UnpackTQ4 unpacks 4-bit TurboQuant data.
 func UnpackTQ4(src []byte, dst []float32, scale, bias float32) {
-	if currentDispatch.UnpackTQ4 != nil {
-		currentDispatch.UnpackTQ4(src, dst, scale, bias)
+	if unpackTQ4Impl != nil {
+		unpackTQ4Impl(src, dst, scale, bias)
 	} else {
 		UnpackTQ4Generic(src, dst, scale, bias)
 	}
@@ -1476,8 +1484,8 @@ func UnpackTQ4(src []byte, dst []float32, scale, bias float32) {
 
 // UnpackTQ8 unpacks 8-bit TurboQuant data.
 func UnpackTQ8(src []byte, dst []float32, scale, bias float32) {
-	if currentDispatch.UnpackTQ8 != nil {
-		currentDispatch.UnpackTQ8(src, dst, scale, bias)
+	if unpackTQ8Impl != nil {
+		unpackTQ8Impl(src, dst, scale, bias)
 	} else {
 		UnpackTQ8Generic(src, dst, scale, bias)
 	}
@@ -1547,6 +1555,80 @@ func UnpackTQ8Generic(src []byte, dst []float32, scale, bias float32) {
 	}
 	for ; i < n; i++ {
 		dst[i] = float32(src[i])*scale + bias
+	}
+}
+
+// PackTQ2 packs float32 data into 2-bit TurboQuant format.
+func PackTQ2(src []float32, dst []byte) {
+	if packTQ2Impl != nil {
+		packTQ2Impl(src, dst)
+	} else {
+		PackTQ2Generic(src, dst)
+	}
+}
+
+// PackTQ4 packs float32 data into 4-bit TurboQuant format.
+func PackTQ4(src []float32, dst []byte) {
+	if packTQ4Impl != nil {
+		packTQ4Impl(src, dst)
+	} else {
+		PackTQ4Generic(src, dst)
+	}
+}
+
+// PackTQ8 packs float32 data into 8-bit TurboQuant format.
+func PackTQ8(src []float32, dst []byte) {
+	if packTQ8Impl != nil {
+		packTQ8Impl(src, dst)
+	} else {
+		PackTQ8Generic(src, dst)
+	}
+}
+
+func PackTQ2Generic(src []float32, dst []byte) {
+	maxVal := float32(3)
+	inv2Pi := float32(1.0 / (2 * math.Pi))
+	pi32 := float32(math.Pi)
+	for i := 0; i < len(src); i += 4 {
+		var b byte
+		for j := 0; j < 4; j++ {
+			if i+j < len(src) {
+				norm := (src[i+j] + pi32) * inv2Pi
+				if norm < 0 { norm = 0 } else if norm > 1 { norm = 1 }
+				q := byte(norm*maxVal + 0.5)
+				b |= (q << (uint(j) * 2))
+			}
+		}
+		dst[i/4] = b
+	}
+}
+
+func PackTQ4Generic(src []float32, dst []byte) {
+	maxVal := float32(15)
+	inv2Pi := float32(1.0 / (2 * math.Pi))
+	pi32 := float32(math.Pi)
+	for i := 0; i < len(src); i += 2 {
+		norm1 := (src[i] + pi32) * inv2Pi
+		if norm1 < 0 { norm1 = 0 } else if norm1 > 1 { norm1 = 1 }
+		q1 := byte(norm1*maxVal + 0.5)
+		var q2 byte
+		if i+1 < len(src) {
+			norm2 := (src[i+1] + pi32) * inv2Pi
+			if norm2 < 0 { norm2 = 0 } else if norm2 > 1 { norm2 = 1 }
+			q2 = byte(norm2*maxVal + 0.5)
+		}
+		dst[i/2] = q1 | (q2 << 4)
+	}
+}
+
+func PackTQ8Generic(src []float32, dst []byte) {
+	maxVal := float32(255)
+	inv2Pi := float32(1.0 / (2 * math.Pi))
+	pi32 := float32(math.Pi)
+	for i, val := range src {
+		norm := (val + pi32) * inv2Pi
+		if norm < 0 { norm = 0 } else if norm > 1 { norm = 1 }
+		dst[i] = byte(norm*maxVal + 0.5)
 	}
 }
 

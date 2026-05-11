@@ -21,6 +21,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/autoscale"
 	lbflight "github.com/23skdu/longbow/internal/flight"
+	"github.com/23skdu/longbow/internal/gc"
 	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
@@ -275,6 +276,15 @@ func run() error {
 	scaler := autoscale.NewAutoScaler(logger)
 	// Initialize vector store
 	vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL)
+	if err := os.Setenv("GODEBUG", "madvdontneed=1"); err != nil {
+		logger.Warn().Err(err).Msg("Failed to set GODEBUG")
+	}
+	gcConfig := gc.DefaultAdaptiveGCConfig()
+	gcConfig.Enabled = true
+	gcConfig.MinGOGC = 20
+	gcConfig.MaxGOGC = 100
+	vectorStore.EnableAdaptiveGC(gcConfig)
+
 	vectorStore.SetGCTuner(tuner)
 	vectorStore.SetAutoScaler(scaler)
 	scaler.SetReconciler(vectorStore)
@@ -473,7 +483,7 @@ func run() error {
 			}
 		}
 		temporalIndex = store.NewTemporalIndex(temporalDim)
-		vectorStore.SetTemporalIndex(temporalIndex, temporalConfig)
+		vectorStore.SetTemporalIndex(temporalConfig)
 		logger.Info().
 			Bool("version_history", cfg.TemporalVersionHistory).
 			Int("max_versions", cfg.TemporalMaxVersions).

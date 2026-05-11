@@ -1383,7 +1383,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	}
 
 	// Temporal Index Hook
-	if s.temporalIndex != nil {
+	if s.temporalConfig.Enabled && ds.TemporalIndex != nil {
 		idColIdx := -1
 		vecColIdx := -1
 		tsColIdx := -1
@@ -1478,7 +1478,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			})
 
 			// Batch Add
-			_ = s.temporalIndex.AddBatch(ids, vectors, timestamps, nil)
+			_ = ds.TemporalIndex.AddBatch(ids, vectors, timestamps, nil)
 		}
 	}
 

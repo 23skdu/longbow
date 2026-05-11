@@ -58,6 +58,24 @@ func NewChunkedLocationStore() *ChunkedLocationStore {
 	return s
 }
 
+// Close releases resources associated with the store.
+func (s *ChunkedLocationStore) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	// Clear forward mapping chunks
+	emptyChunks := make([]*locationChunk, 0)
+	s.chunks.Store(&emptyChunks)
+	s.size.Store(0)
+
+	// Clear reverse sharded maps
+	for i := 0; i < ReverseShards; i++ {
+		s.reverseShards[i].mu.Lock()
+		s.reverseShards[i].data = nil
+		s.reverseShards[i].mu.Unlock()
+	}
+}
+
 func (s *ChunkedLocationStore) getShard(packed uint64) *reverseShard {
 	return &s.reverseShards[packed%uint64(ReverseShards)]
 }

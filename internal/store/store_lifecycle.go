@@ -651,7 +651,9 @@ func (s *VectorStore) ReleaseMemory() {
 }
 
 func (s *VectorStore) performTemporalPrewarm(ctx context.Context) {
-	if s.temporalIndex != nil {
-		_ = s.temporalIndex.Prewarm(ctx)
-	}
+	s.IterateDatasets(func(name string, ds *Dataset) {
+		if ds.TemporalIndex != nil {
+			_ = ds.TemporalIndex.Prewarm(ctx)
+		}
+	})
 }

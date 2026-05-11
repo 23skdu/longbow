@@ -44,10 +44,10 @@ func BenchmarkFilterPushdown_Vs_PostFilter(b *testing.B) {
 		record := rec.NewRecord()
 		defer record.Release()
 
-		idx.IndexRecord("test", 0, record, colIndex)
+		idx.IndexRecord(0, record, colIndex)
 
 		for i := 0; i < b.N; i++ {
-			results := idx.Lookup("test", "category", "42")
+			results := idx.Lookup("category", "42")
 			_ = results
 		}
 	})
@@ -76,13 +76,13 @@ func BenchmarkCompositeFilter_And(b *testing.B) {
 	defer record.Release()
 
 	idx := NewColumnInvertedIndex()
-	idx.IndexRecord("test", 0, record, []string{"category", "status"})
+	idx.IndexRecord(0, record, []string{"category", "status"})
 
 	b.ResetTimer()
 	b.Run("Separate", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
-			catResults := idx.Lookup("test", "category", "42")
-			statusResults := idx.Lookup("test", "status", "1")
+			catResults := idx.Lookup("category", "42")
+			statusResults := idx.Lookup("status", "1")
 			_ = len(catResults) + len(statusResults)
 		}
 	})

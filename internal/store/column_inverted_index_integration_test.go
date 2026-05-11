@@ -33,10 +33,10 @@ func TestColumnInvertedIndex_FilterWithIndex(t *testing.T) {
 	defer rec.Release()
 
 	// Index the category and status columns
-	idx.IndexRecord("test", 0, rec, []string{"category", "status"})
+	idx.IndexRecord(0, rec, []string{"category", "status"})
 
 	// Test: lookup category="A" should return 3 rows (indices 0, 2, 4)
-	rows := idx.Lookup("test", "category", "A")
+	rows := idx.Lookup("category", "A")
 	if len(rows) != 3 {
 		t.Errorf("Expected 3 rows for category=A, got %d", len(rows))
 	}
@@ -65,10 +65,10 @@ func TestColumnInvertedIndex_BuildFilterMask(t *testing.T) {
 	bldr.Release()
 	defer rec.Release()
 
-	idx.IndexRecord("test", 0, rec, []string{"category"})
+	idx.IndexRecord(0, rec, []string{"category"})
 
 	// Build filter mask for category="A"
-	mask := idx.BuildFilterMask("test", 0, "category", "A", int(rec.NumRows()), mem)
+	mask := idx.BuildFilterMask(0, "category", "A", int(rec.NumRows()), mem)
 	if mask == nil {
 		t.Fatal("BuildFilterMask returned nil")
 	}
@@ -104,11 +104,11 @@ func TestColumnInvertedIndex_FilterRecordWithIndex(t *testing.T) {
 	bldr.Release()
 	defer rec.Release()
 
-	idx.IndexRecord("ds", 0, rec, []string{"category"})
+	idx.IndexRecord(0, rec, []string{"category"})
 
 	// Use FilterRecordWithIndex - should use O(1) lookup
 	filter := query.Filter{Field: "category", Operator: "=", Value: "X"}
-	filtered, err := idx.FilterRecordWithIndex(context.Background(), "ds", 0, rec, &filter, mem)
+	filtered, err := idx.FilterRecordWithIndex(context.Background(), 0, rec, &filter, mem)
 	if err != nil {
 		t.Fatalf("FilterRecordWithIndex failed: %v", err)
 	}
@@ -148,13 +148,13 @@ func BenchmarkColumnInvertedIndex_FilterWithIndex(b *testing.B) {
 	bldr.Release()
 	defer rec.Release()
 
-	idx.IndexRecord("ds", 0, rec, []string{"category"})
+	idx.IndexRecord(0, rec, []string{"category"})
 
 	filter := query.Filter{Field: "category", Operator: "=", Value: "cat5"}
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		filtered, _ := idx.FilterRecordWithIndex(context.Background(), "ds", 0, rec, &filter, mem)
+		filtered, _ := idx.FilterRecordWithIndex(context.Background(), 0, rec, &filter, mem)
 		filtered.Release()
 	}
 }

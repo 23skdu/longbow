@@ -148,6 +148,9 @@ type Dataset struct {
 	// Filter Cache: maps filter hash -> Bitset
 	filterCache map[string]*types.Bitset
 	filterMu    sync.RWMutex
+	ColumnIndex *ColumnInvertedIndex
+
+	TemporalIndex *TemporalIndex
 
 	Logger zerolog.Logger
 }
@@ -371,7 +374,10 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		InvertedIndexes: make(map[string]*InvertedIndex),
 		Graph:           NewGraphStore(),
 		filterCache:     make(map[string]*types.Bitset),
+		ColumnIndex:     NewColumnInvertedIndex(),
 		Metric:          MetricEuclidean, // Default
+		TemporalIndex:   NewTemporalIndex(0), // Dimension will be updated on first Add
+		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
 	}
 
 	// Initialize Schema Manager
@@ -613,6 +619,16 @@ func (d *Dataset) Close() {
 	if d.BM25ArenaIndex != nil {
 		_ = d.BM25ArenaIndex.Close()
 		d.BM25ArenaIndex = nil
+	}
+
+	if d.TemporalIndex != nil {
+		_ = d.TemporalIndex.Close()
+		d.TemporalIndex = nil
+	}
+
+	if d.ColumnIndex != nil {
+		_ = d.ColumnIndex.Close()
+		d.ColumnIndex = nil
 	}
 
 	if d.Graph != nil {

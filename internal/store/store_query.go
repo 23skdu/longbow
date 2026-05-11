@@ -1542,7 +1542,7 @@ func (s *VectorStore) handleDoGetGeoSearch(req *types.GeoSearchRequest, wfs []qr
 }
 
 func (s *VectorStore) handleDoGetTemporalSearch(req *types.TemporalSearchRequest, wfs []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem *lbmem.ArenaAllocator) error {
-	if s.temporalIndex == nil {
+	if !s.temporalConfig.Enabled {
 		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
 	}
 
@@ -1556,13 +1556,13 @@ func (s *VectorStore) handleDoGetTemporalSearch(req *types.TemporalSearchRequest
 
 	switch req.SearchType {
 	case "as_of":
-		results, err = s.temporalIndex.SearchAsOf(stream.Context(), req.Timestamp, req.K)
+		results, err = ds.TemporalIndex.SearchAsOf(stream.Context(), req.Timestamp, req.K)
 	case "range":
-		results, err = s.temporalIndex.SearchRange(stream.Context(), req.StartTime, req.EndTime, req.K)
+		results, err = ds.TemporalIndex.SearchRange(stream.Context(), req.StartTime, req.EndTime, req.K)
 	case "sliding_window":
-		results, err = s.temporalIndex.SearchSlidingWindow(stream.Context(), req.WindowSize, req.K)
+		results, err = ds.TemporalIndex.SearchSlidingWindow(stream.Context(), req.WindowSize, req.K)
 	case "sliding_window_time":
-		results, err = s.temporalIndex.SearchSlidingWindowByTime(stream.Context(), req.Duration, req.K)
+		results, err = ds.TemporalIndex.SearchSlidingWindowByTime(stream.Context(), req.Duration, req.K)
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid temporal search_type: %s", req.SearchType)
 	}

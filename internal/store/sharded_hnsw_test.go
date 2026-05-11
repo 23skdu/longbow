@@ -85,7 +85,7 @@ func TestShardedHNSW_ShardRouting(t *testing.T) {
 	cfg.ShardSplitThreshold = 100 // Set threshold to force splits
 	cfg.NumShards = 1             // Initial shards
 
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	// Range-based routing: shard = id / threshold
@@ -118,7 +118,7 @@ func TestShardedHNSW_RingRouting(t *testing.T) {
 	cfg.NumShards = 4
 	cfg.UseRingSharding = true
 
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	// In Ring sharding, distribution is probabilistic but consistent
@@ -146,7 +146,7 @@ func TestShardedHNSW_AddToShard(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 4
 
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	mem := memory.NewGoAllocator()
@@ -191,7 +191,7 @@ func TestShardedHNSW_ParallelAdds(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 8
 
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	numGoroutines := 16
@@ -236,7 +236,7 @@ func TestShardedHNSW_Search(t *testing.T) {
 	cfg.M = 8
 	cfg.EfConstruction = 50
 
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	mem := memory.NewGoAllocator()
@@ -268,7 +268,7 @@ func TestShardedHNSW_SearchEmpty(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 4
 
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	query := []float32{1.0, 2.0, 3.0}
@@ -284,7 +284,7 @@ func TestShardedHNSW_GetLocation(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 4
 
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	mem := memory.NewGoAllocator()
@@ -324,7 +324,7 @@ func TestShardedHNSW_ShardStats(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 4
 
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	mem := memory.NewGoAllocator()
@@ -362,7 +362,7 @@ func TestShardedHNSW_ConcurrentAddAndSearch(t *testing.T) {
 	cfg.M = 8
 	cfg.EfConstruction = 50
 
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	mem := memory.NewGoAllocator()
@@ -407,7 +407,7 @@ func TestShardedHNSW_ConcurrentAddAndSearch(t *testing.T) {
 func BenchmarkHNSW_SingleAdd(b *testing.B) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 1
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 	mem := memory.NewGoAllocator()
 	rec := makeShardedTestRecord(mem, 128, b.N)
@@ -422,7 +422,7 @@ func BenchmarkHNSW_SingleAdd(b *testing.B) {
 func BenchmarkHNSW_ShardedParallelAdd(b *testing.B) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = runtime.NumCPU()
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 	mem := memory.NewGoAllocator()
 	rec := makeShardedTestRecord(mem, 128, b.N)
@@ -440,7 +440,7 @@ func BenchmarkHNSW_ShardedParallelAdd(b *testing.B) {
 func BenchmarkHNSW_ShardedSearch(b *testing.B) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = runtime.NumCPU()
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 	mem := memory.NewGoAllocator()
 	rec := makeShardedTestRecord(mem, 128, 1000)
@@ -461,7 +461,7 @@ func TestShardedHNSW_SearchByID(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 1
 	cfg.UseRingSharding = false
-	ds := &Dataset{Name: "test", dataMu: sync.RWMutex{}}
+	ds := NewDataset("search_by_id_test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 	mem := memory.NewGoAllocator()
 	rec := makeShardedTestRecord(mem, 3, 10)
@@ -497,7 +497,7 @@ func TestShardedHNSW_SearchByID(t *testing.T) {
 
 func TestShardedHNSW_GetDimension(t *testing.T) {
 	cfg := DefaultShardedHNSWConfig()
-	ds := &Dataset{dataMu: sync.RWMutex{}}
+	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 	if sharded.GetDimension() != 0 {
 		t.Error("expected 0")

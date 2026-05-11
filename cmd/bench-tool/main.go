@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"os"
@@ -555,7 +556,9 @@ func uploadBatch(ctx context.Context, sc *client.SmartClient, dataset string, re
 		return err
 	}
 
-	_, _ = stream.Recv()
+	if _, err := stream.Recv(); err != nil && err != io.EOF {
+		return err
+	}
 
 	return nil
 }

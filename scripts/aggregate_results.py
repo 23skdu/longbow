@@ -90,10 +90,17 @@ def generate_markdown_report(df, output_file):
             f.write(group.to_markdown(index=False))
             f.write("\n\n")
 
+import argparse
+ 
 if __name__ == "__main__":
-    df = aggregate_benchmarks("bench_results")
+    parser = argparse.ArgumentParser(description='Aggregate Longbow benchmarks')
+    parser.add_argument('--dir', type=str, default='bench_results', help='Directory containing results')
+    parser.add_argument('--out', type=str, default='docs/performance_new.md', help='Output markdown file')
+    args = parser.parse_args()
+ 
+    df = aggregate_benchmarks(args.dir)
     if df is not None:
-        generate_markdown_report(df, "docs/performance_new.md")
-        print("Generated docs/performance_new.md")
+        generate_markdown_report(df, args.out)
+        print(f"Generated {args.out} from {args.dir}")
     else:
-        print("No results found.")
+        print(f"No results found in {args.dir}")

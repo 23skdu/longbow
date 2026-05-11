@@ -78,14 +78,11 @@ type VectorStore struct {
 
 	// Hybrid search (Phase 20)
 	hybridSearchConfig HybridSearchConfig
-	bm25Index          *BM25InvertedIndex
 
 	// DoGet pipeline subsystem
 	doGetPipelinePool *DoGetPipelinePool
 	pipelineThreshold int
 
-	// Column-based inverted index for O(1) equality filter lookups
-	columnIndex    *ColumnInvertedIndex
 	indexedColumns []string // columns to index for fast equality lookups
 
 	// Compaction (Phase 11/14)
@@ -188,9 +185,6 @@ type VectorStore struct {
 	activeEmbeddingProvider string
 	activeEmbeddingModel    string
 
-	// Temporal Index (Part 22)
-	temporalIndex      *TemporalIndex
-	temporalAggregator *TemporalAggregator
 	temporalConfig TemporalConfig
 
 	// Quantization auto-tuner (v0.1.9)
@@ -243,8 +237,6 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
  
 	vs.nsManager = newNamespaceManager()
 	vs.versionManager = NewVersionManager()
-	vs.columnIndex = NewColumnInvertedIndex()
-	vs.temporalAggregator = NewTemporalAggregator(1000)
  
 	// Default Cache: 1024 entries, 60s TTL
  
@@ -561,7 +553,12 @@ func (vs *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset)
 		newDs := createFn()
 		if newDs != nil {
 			if vs.hybridSearchConfig.Enabled {
-				newDs.BM25Index = NewBM25InvertedIndex(DefaultBM25Config())
+				newDs.BM25Index = NewBM25InvertedIndex(vs.hybridSearchConfig.BM25)
+			}
+			if vs.temporalConfig.Enabled {
+				newDs.TemporalIndex = NewTemporalIndex(0)
+				// Apply history/retention settings from global config if needed
+				// For now, the global config is used by the VectorStore to check if enabled
 			}
 			m[name] = newDs
 			result = newDs
@@ -639,10 +636,11 @@ func (vs *VectorStore) GetIndexedColumns() []string {
 
 // IndexRecordColumns indexes specific columns for fast equality lookups
 func (vs *VectorStore) IndexRecordColumns(datasetName string, rec arrow.RecordBatch, batchIdx int) {
-	if vs.columnIndex == nil || len(vs.indexedColumns) == 0 {
+	ds, ok := vs.getDataset(datasetName)
+	if !ok || ds.ColumnIndex == nil || len(vs.indexedColumns) == 0 {
 		return
 	}
-	vs.columnIndex.IndexRecord(datasetName, batchIdx, rec, vs.indexedColumns)
+	ds.ColumnIndex.IndexRecord(batchIdx, rec, vs.indexedColumns)
 }
 
 // SetAutoShardingConfig updates the auto-sharding configuration
@@ -702,21 +700,21 @@ func (vs *VectorStore) SetGPUConfig(backend gpu.GPUBackend, deviceID int32) {
 		// Initialize GPU index pool
 		vs.gpuIndexPool = gpu.NewGPUIndexPool(gpu.DefaultGPUIndexPoolConfig())
 
-		// Create a reusable GPU index for global operations (e.g. TemporalIndex)
-		// We use a dummy dimension or a common one if available.
-		// For now, let's use the temporal dimension if temporal index is initialized.
-		if vs.temporalIndex != nil {
-			cfg := gpu.GPUConfig{
-				DeviceID:  deviceID,
-				Dimension: vs.temporalIndex.dimension,
-				Enabled:   true,
-				Backend:   backend,
+		// Update all dataset-local temporal indices with GPU acceleration
+		vs.IterateDatasets(func(name string, ds *Dataset) {
+			if ds.TemporalIndex != nil {
+				cfg := gpu.GPUConfig{
+					DeviceID:  deviceID,
+					Dimension: ds.TemporalIndex.dimension,
+					Enabled:   true,
+					Backend:   backend,
+				}
+				gIdx, err := gpu.NewIndexWithBackend(cfg, backend)
+				if err == nil {
+					ds.TemporalIndex.SetGPUIndex(gIdx)
+				}
 			}
-			gIdx, err := gpu.NewIndexWithBackend(cfg, backend)
-			if err == nil {
-				vs.temporalIndex.SetGPUIndex(gIdx)
-			}
-		}
+		})
 
 		// Also update any existing GeoIndexes
 		vs.IterateDatasets(func(name string, ds *Dataset) {
@@ -759,19 +757,20 @@ func (vs *VectorStore) getGPUIndex(dim int) (gputypes.Index, error) {
 }
 
 // SetTemporalIndex configures the temporal index for Part 22
-func (vs *VectorStore) SetTemporalIndex(idx *TemporalIndex, cfg TemporalConfig) {
-	vs.temporalIndex = idx
+func (vs *VectorStore) SetTemporalIndex(cfg TemporalConfig) {
 	vs.temporalConfig = cfg
-
-	// Wire GPU if enabled
-	if gIdx, err := vs.getGPUIndex(idx.dimension); err == nil {
-		idx.SetGPUIndex(gIdx)
-	}
+ 
+	// Apply to existing datasets
+	vs.IterateDatasets(func(name string, ds *Dataset) {
+		if ds.TemporalIndex == nil && cfg.Enabled {
+			ds.TemporalIndex = NewTemporalIndex(0)
+		}
+	})
 }
 
-// GetTemporalIndex returns the temporal index
+// GetTemporalIndex is deprecated
 func (vs *VectorStore) GetTemporalIndex() *TemporalIndex {
-	return vs.temporalIndex
+	return nil
 }
 
 // GetGPUIndexPool returns the GPU index pool for this store

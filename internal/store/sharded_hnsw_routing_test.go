@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"sync"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/query"
@@ -57,7 +56,7 @@ func TestShardedHNSW_Routing(t *testing.T) {
 	cfg.NumShards = 1
 	cfg.UseRingSharding = false
 
-	ds := &Dataset{Name: "routing_test", dataMu: sync.RWMutex{}}
+	ds := NewDataset("routing_test", nil)
 	idx := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	rec := makeRoutingTestRecord(mem, 16, 100)
@@ -89,7 +88,7 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 	cfg.NumShards = 1
 	cfg.UseRingSharding = false
 
-	ds := &Dataset{Name: "merged_search_test", dataMu: sync.RWMutex{}}
+	ds := NewDataset("merged_search_test", nil)
 	idx := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	rec := makeRoutingTestRecord(mem, 16, 100)
@@ -106,9 +105,9 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 		q[i] = 50.0
 	}
 
-	results, err := idx.SearchVectors(context.Background(), q, 5, nil, SearchOptions{})
+	results, err := idx.SearchVectors(context.Background(), q, 10, nil, SearchOptions{})
 	require.NoError(t, err)
-	require.Len(t, results, 5)
+	require.Len(t, results, 10)
 
 	// Range based: Shard 0 has 0-49, Shard 1 has 50-99
 	// Query 50.0 is ID 50, which is in Shard 1.
@@ -128,7 +127,7 @@ func TestShardedHNSW_Filtering(t *testing.T) {
 	cfg.ShardSplitThreshold = 50 // IDs 0-49 in Shard 0, 50-99 in Shard 1
 	cfg.NumShards = 1
 
-	ds := &Dataset{Name: "filtering_test", dataMu: sync.RWMutex{}}
+	ds := NewDataset("filtering_test", nil)
 	idx := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
 	rec := makeRoutingTestRecord(mem, 16, 100)

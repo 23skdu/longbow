@@ -184,6 +184,7 @@ type TemporalSearchRequest struct {
 
 // TemporalAggregationRequest defines analytical temporal query
 type TemporalAggregationRequest struct {
+	Dataset         string `json:"dataset"`
 	AggregationType string `json:"aggregation_type"` // count, min, max, mean, sum
 	StartTime       int64  `json:"start_time"`
 	EndTime         int64  `json:"end_time"`
@@ -224,5 +225,6 @@ func (req *TemporalAggregationRequest) Validate() error {
 
 // TemporalVersionHistoryRequest defines request for version history
 type TemporalVersionHistoryRequest struct {
+	Dataset  string `json:"dataset"`
 	VectorID uint64 `json:"vector_id"`
 }

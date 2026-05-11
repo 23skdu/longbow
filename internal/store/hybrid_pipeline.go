@@ -306,7 +306,7 @@ func (p *HybridSearchPipeline) applyExactFilters(filters []query.Filter) *roarin
 			continue // Only exact matches supported for now
 		}
 
-		positions := p.columnIndex.Lookup(p.dataset.Name, f.Field, f.Value)
+		positions := p.columnIndex.Lookup(f.Field, f.Value)
 		if len(positions) == 0 {
 			return roaring.New() // Empty intersection
 		}

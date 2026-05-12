@@ -124,15 +124,30 @@ func hammingNEON(a, b []uint64) (float32, error) {
 	return float32(HammingDistanceGeneric(a, b)), nil
 }
 
+func dotFloat64NEON(a, b []float64) (float32, error) { return dotFloat64Unrolled4x(a, b) }
+
+func dotInt4NeonKernel(_, _ unsafe.Pointer, _ int) int32 { return 0 }
+func dotInt2NeonKernel(_, _ unsafe.Pointer, _ int) int32 { return 0 }
+
 // Static assertion to keep Go functions "used" even if not in the active dispatch path.
 var _ = func() {
 	if false {
 		_ = adcBatchNEON(nil, nil, 0, nil)
 		_ = euclideanVerticalBatchNEON(nil, nil, nil)
-		_, _ = manhattanNEON(nil, nil)
-		_, _ = chebyshevNEON(nil, nil)
-		_, _ = brayCurtisNEON(nil, nil)
+		andBitVectorsNEON(nil, nil)
+		_ = countBitVectorNEON(nil)
+		_, _ = hammingNEON(nil, nil)
+		_, _ = dotFloat64NEON(nil, nil)
+		_ = dotInt4NeonKernel(nil, nil, 0)
+		_ = dotInt2NeonKernel(nil, nil, 0)
 	}
 }
+
+func UnpackTQ2NEON(src []byte, dst []float32, scale, bias float32) { UnpackTQ2Generic(src, dst, scale, bias) }
+func UnpackTQ4NEON(src []byte, dst []float32, scale, bias float32) { UnpackTQ4Generic(src, dst, scale, bias) }
+func UnpackTQ8NEON(src []byte, dst []float32, scale, bias float32) { UnpackTQ8Generic(src, dst, scale, bias) }
+func PackTQ2NEON(src []float32, dst []byte) { PackTQ2Generic(src, dst) }
+func PackTQ4NEON(src []float32, dst []byte) { PackTQ4Generic(src, dst) }
+func PackTQ8NEON(src []float32, dst []byte) { PackTQ8Generic(src, dst) }
 
 

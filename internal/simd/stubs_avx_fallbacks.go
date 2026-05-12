@@ -245,3 +245,13 @@ func UnpackTQ8AVX512(src []byte, dst []float32, scale, bias float32) { UnpackTQ8
 func PackTQ2AVX512(src []float32, dst []byte) { PackTQ2Generic(src, dst) }
 func PackTQ4AVX512(src []float32, dst []byte) { PackTQ4Generic(src, dst) }
 func PackTQ8AVX512(src []float32, dst []byte) { PackTQ8Generic(src, dst) }
+
+func UnpackTQ2AVX512VBMI(src []byte, dst []float32, scale, bias float32) { UnpackTQ2Generic(src, dst, scale, bias) }
+func PackTQ2AVX512VBMI(src []float32, dst []byte) { PackTQ2Generic(src, dst) }
+
+func euclideanF16AVX2(a, b []float16.Num) (float32, error)   { return euclideanF16Unrolled4x(a, b) }
+func euclideanF16AVX512(a, b []float16.Num) (float32, error) { return euclideanF16Unrolled4x(a, b) }
+func dotF16AVX2(a, b []float16.Num) (float32, error)         { return dotF16Unrolled4x(a, b) }
+func dotF16AVX512(a, b []float16.Num) (float32, error)       { return dotF16Unrolled4x(a, b) }
+func cosineF16AVX2(a, b []float16.Num) (float32, error)      { return cosineF16Unrolled4x(a, b) }
+func cosineF16AVX512(a, b []float16.Num) (float32, error)    { return cosineF16Unrolled4x(a, b) }

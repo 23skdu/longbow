@@ -83,6 +83,17 @@ def generate_markdown_report(df, output_file):
         ).round(2)
         f.write(ingest.to_markdown())
         f.write("\n\n")
+
+        # Search Latency (P95)
+        f.write("## Search Latency Summary (P95 ms)\n\n")
+        latency = df[df['Action'].str.startswith('Search_')].pivot_table(
+            index=['Host', 'Mode', 'Dim', 'DType'],
+            columns='Action',
+            values='P95_ms',
+            aggfunc='mean'
+        ).round(2)
+        f.write(latency.to_markdown())
+        f.write("\n\n")
         
         # Detailed results for each host/mode
         for (host, mode), group in df.groupby(['Host', 'Mode']):

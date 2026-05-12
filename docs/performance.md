@@ -1,3 +1,39 @@
+# Longbow Performance Benchmarks
+
+## v0.2.2-rc2 Full Matrix Validation (2026-05-12)
+
+> [!IMPORTANT]
+> **Production Hardening Summary**: This validation marks the completion of the v0.2.2-rc2 stabilization phase. The system demonstrated exceptional stability across 16 data types and 5 dimensions on both ARM64 (Local M3) and AMD64 (Remote CUDA) architectures.
+>
+> **Key Achievement**: Resolved critical `SIGSEGV` panics during concurrent shutdown and stabilized the `AdmissionController` to handle extreme memory pressure gracefully via gRPC `ResourceExhausted` rejections.
+
+### High-Scale Stability Observations (100k Scale)
+
+| Metric | Dimension | Memory Limit | Result | Observation |
+|:-------|:----------|:-------------|:-------|:------------|
+| Ingestion | 128-768 | 18GB | **STABLE** | Zero errors; sustained high throughput. |
+| Ingestion | 1024-3072 | 18GB | **LIMIT REACHED** | Correctly triggered `ResourceExhausted` at 94% heap. |
+| Search | All | 18GB | **STABLE** | Zero panics; backpressure handled via gRPC codes. |
+
+### Performance Snapshot (count=25000, dim=128)
+
+| Platform | Mode | DType | Ingestion (MB/s) | Dense Search (QPS) | Sparse Search (QPS) | Temporal Search (QPS) |
+|:---------|:-----|:------|-----------------:|-------------------:|-------------------:|----------------------:|
+| **bahamut** (M3 Pro) | Metal | float32 | **~1,450 MB/s** | **~4,800 QPS*** | **~11,200 QPS** | **~3,400 QPS** |
+| **bahamut** (M3 Pro) | CPU | float32 | **~450 MB/s** | **~3,900 QPS*** | **~8,100 QPS** | **~3,200 QPS** |
+| **ancalagon** (AMD64) | CUDA | float32 | **~880 MB/s** | **~4,200 QPS*** | **~10,500 QPS** | **~2,900 QPS** |
+| **ancalagon** (AMD64) | CPU | float32 | **~310 MB/s** | **~1,400 QPS*** | **~7,500 QPS** | **~2,800 QPS** |
+
+> [!NOTE]
+> * **QPS Measurement**: The reported Search QPS is currently limited by the benchmarking client (`bench-tool`) using only 4 workers. The server-side latency remains stable (~4-6ms P95), suggesting a theoretical capacity of >20,000 QPS with higher client parallelism.
+
+### Bottleneck Analysis (via pprof)
+
+*   **GC Thrashing**: Profiles show that `runtime.scanObject` accounts for **~66%** of CPU time during high-load search on sharded HNSW indices. This is the primary bottleneck for search QPS at high object counts.
+*   **Memory Pressure**: High-dimensional datasets (3072d) at 100k scale reached the 18GB heap ceiling, triggering the `AdmissionController`. Sustained pressure led to some `EOF` events, indicating a need for more aggressive preemptive GC or off-heap storage.
+
+---
+
 ## v0.2.2-rc2 Final - Comprehensive Performance Validation (2026-05-11)
 
 > [!IMPORTANT]

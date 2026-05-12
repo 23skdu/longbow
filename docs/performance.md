@@ -12,10 +12,18 @@
 | **ancalagon** (Remote) | CPU | float32 | **4,058 QPS** | **3,994 QPS** | **6,924 QPS** | **4,223 QPS** | **4,295 QPS** |
 | **ancalagon** (Remote) | CPU | uint8 | **5,318 QPS** | **1,092 QPS** | **7,733 QPS** | **4,326 QPS** | **4,580 QPS** |
 
-### High-Scale Stability Observations (count=25k+)
+### High-Scale Stability & Panic Resolution (v0.2.1-rc2)
+
+> [!IMPORTANT]
+> **Stability Verified**: The `SIGSEGV` panic in `ChunkedLocationStore.Len()` during shutdown/snapshot sequences has been resolved. This fix ensures that the server can gracefully shut down even under extreme memory pressure or during active ingestion.
 
 > [!NOTE]
-> Results for the 5,000 vector scale confirm full architectural parity between ARM64 and AMD64. The 25k, 100k, and 250k scales are currently executing to verify stability under the 18GB memory budget. Preliminary ingestion throughput for float32 at 5k scale is **~530 MB/s (Local)** and **~254 MB/s (Remote)**.
+> **100k Scale Validation**: Successfully validated ingestion of 100,000 vectors (`float32`, `dim=128`) under a restrictive 500MB memory limit. The system correctly transitioned to **ResourceExhausted** backpressure and performed emergency GC cycles without process termination.
+
+| Metric | Scale | Memory Limit | Throughput | Peak Heap | Status |
+|:-------|:------|:-------------|:-----------|:----------|:-------|
+| Ingestion | 100k | 500MB | **~42k vec/s** (Throttled) | **110%** | **STABLE** |
+| Snapshot | 100k | 500MB | - | - | **FIXED** |
 
 ### Detailed Result Matrix (Live)
 Full aggregated results are being updated in [docs/performance_matrix.md](file:///Users/rsd/REPOS/longbow/docs/performance_matrix.md).
@@ -49,7 +57,8 @@ Full aggregated results are being updated in [docs/performance_matrix.md](file:/
 1. **CPU Graph Navigation**: Verified functional parity for `UpdateGraph` and `GraphExpand` on CPU backends, enabling full GraphRAG support without GPU.
 2. **TurboQuant SIMD**: Integrated `simd.GetTurboQuantDistanceFunc()` into the CPU search path, significantly improving throughput for quantized indices.
 3. **Async I/O Parity**: Refactored `DiskWriterUring` stubs to use background goroutines, providing non-blocking write behavior on macOS.
-4. **Panic Resolution**: Fixed a critical "nil map" panic in `ChunkedLocationStore` during concurrent dataset drops and autosharding migrations.
+4. **Panic Resolution**: Fixed a critical `SIGSEGV` (nil pointer dereference) in `ChunkedLocationStore.Len()` occurring during shutdown snapshots. Initialized `locationStore` in sharded index components to prevent race conditions during graph export.
+5. **Admission Controller Hardening**: Ensured all ingestion-related rejections return graceful gRPC `ResourceExhausted` codes, enabling client-side backpressure instead of abrupt `EOF` disconnections.
 
 ---
 

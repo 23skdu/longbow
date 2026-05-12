@@ -153,6 +153,8 @@ type Dataset struct {
 
 	TemporalIndex *TemporalIndex
 
+	Admission *AdmissionController
+
 	Logger zerolog.Logger
 }
 
@@ -355,7 +357,11 @@ func (d *Dataset) ResetTombstones() {
 	d.Tombstones = make(map[int]*types.Bitset)
 }
 
-// NewDataset creates a new dataset with the given name and schema.
+// SetAdmission associates an AdmissionController with the dataset.
+func (d *Dataset) SetAdmission(admission *AdmissionController) {
+	d.Admission = admission
+}
+
 // NewDataset creates a new Dataset with the specified name and schema.
 func NewDataset(name string, schema *arrow.Schema) *Dataset {
 

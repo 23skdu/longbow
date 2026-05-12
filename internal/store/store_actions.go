@@ -89,9 +89,10 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			} else {
 				pending := ds.PendingIndexJobs.Load()
 				pendingIngestion := ds.PendingIngestion.Load()
-				if pending > 0 || pendingIngestion > 0 {
+				activeStreams := ds.ActiveIngestStreams.Load()
+				if pending > 0 || pendingIngestion > 0 || activeStreams > 0 {
 					resp["status"] = "BUSY"
-					resp["reason"] = fmt.Sprintf("dataset has %d pending index jobs, %d pending ingestion jobs", pending, pendingIngestion)
+					resp["reason"] = fmt.Sprintf("dataset has %d pending index jobs, %d pending ingestion jobs, %d active streams", pending, pendingIngestion, activeStreams)
 				} else if ds.Index == nil {
 					resp["status"] = "BUSY"
 					resp["reason"] = "index not initialized"
@@ -818,6 +819,9 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	if ds == nil {
 		return status.Errorf(codes.Internal, "failed to retrieve or create dataset %s", name)
 	}
+
+	ds.ActiveIngestStreams.Add(1)
+	defer ds.ActiveIngestStreams.Add(-1)
 
 	// Namespace quota check (will be done per-flush in the loop below)
 	nsName, _ := ParseNamespacedPath(name)

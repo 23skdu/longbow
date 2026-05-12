@@ -298,7 +298,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	// Initialize Flight client pool for distributed coordination
 	vs.pool = NewFlightClientPool(DefaultFlightClientPoolConfig())
  
-	vs.admission = NewAdmissionController(&vs.maxMemory, &vs.currentMemory, nil)
+	vs.admission = NewAdmissionController(&vs.maxMemory, &vs.currentMemory, nil, vs.logger)
  
 	// Initialize Quantization Auto-Tuner (v0.1.9)
 	vs.quantTuner = NewQuantizationTuner(vs.logger, vs)
@@ -471,6 +471,12 @@ func stackTrace() string {
 // SetGCTuner sets the memory tuner for backpressure.
 func (vs *VectorStore) SetGCTuner(tuner *lbmem.GCTuner) {
 	vs.tuner.Store(tuner)
+	if tuner != nil {
+		tuner.RegisterCleanup(func() {
+			vs.logger.Warn().Msg("Emergency memory cleanup: clearing query cache")
+			vs.queryCache.Clear()
+		})
+	}
 	// Wire to global worker pool for indexing backpressure
 	lbcore.GetSharedPool().SetTuner(tuner)
 }

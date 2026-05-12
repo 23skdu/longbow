@@ -51,7 +51,10 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 
 	// Hard Limit: 94% Memory Usage (Reduced from 96% for safety margin)
 	if memoryUsage > 0.94 {
-		return status.Errorf(codes.ResourceExhausted, "critical memory pressure (%.1f%% usage): request rejected", memoryUsage*100)
+		// Allow deletions and maintenance to proceed even under pressure, as they often free resources
+		if opType != "maintenance" && opType != "delete" && opType != "drop" {
+			return status.Errorf(codes.ResourceExhausted, "critical memory pressure (%.1f%% usage): request rejected", memoryUsage*100)
+		}
 	}
 
 	// Soft Limit: 90% Memory Usage for Ingestion (Reduced from 92%)

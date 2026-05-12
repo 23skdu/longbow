@@ -77,6 +77,16 @@ func andBytesAVX512(dst, src []byte) { andBytesAVX2(dst, src) }
 func orBytesAVX512(dst, src []byte) { orBytesAVX2(dst, src) }
 func isAllZerosAVX512(data []byte) bool { return isAllZerosAVX2(data) }
 
+func UnpackTQ2AVX512(src []byte, dst []float32, scale, bias float32) { UnpackTQ2AVX2(src, dst, scale, bias) }
+func UnpackTQ4AVX512(src []byte, dst []float32, scale, bias float32) { UnpackTQ4AVX2(src, dst, scale, bias) }
+func UnpackTQ8AVX512(src []byte, dst []float32, scale, bias float32) { UnpackTQ8AVX2(src, dst, scale, bias) }
+func PackTQ2AVX512(src []float32, dst []byte) { PackTQ2AVX2(src, dst) }
+func PackTQ4AVX512(src []float32, dst []byte) { PackTQ4AVX2(src, dst) }
+func PackTQ8AVX512(src []float32, dst []byte) { PackTQ8AVX2(src, dst) }
+
+func UnpackTQ2AVX512VBMI(src []byte, dst []float32, scale, bias float32) { UnpackTQ2AVX2(src, dst, scale, bias) }
+func PackTQ2AVX512VBMI(src []float32, dst []byte) { PackTQ2AVX2(src, dst) }
+
 func euclideanInt8AVX512(a, b []int8) (float32, error) { return euclideanInt8Unrolled4x(a, b) }
 func euclideanInt16AVX512(a, b []int16) (float32, error) { return euclideanInt16AVX2(a, b) }
 func euclideanUint16AVX512(a, b []uint16) (float32, error) { return euclideanUint16AVX2(a, b) }

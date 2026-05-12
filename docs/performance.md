@@ -3,22 +3,22 @@
 > [!IMPORTANT]
 > **Full Matrix Validation**: This update provides the finalized performance metrics for v0.2.2-rc2 across 16 data types, 5 dimensions, and multiple scales. All tests were executed under a strict 18GB memory budget (`LONGBOW_MAX_MEMORY=19327352832`) to simulate production constraints.
 
-### Search Performance Summary (count=1000, dim=128)
+### Search Performance Summary (count=5000, dim=128)
 
 | Host | Mode | DType | Search_ByID | Search_Dense | Search_Sparse | Search_Hybrid | Search_Temporal |
 |:-----|:-----|:------|------------:|-------------:|--------------:|--------------:|----------------:|
-| **bahamut** (Local M3) | CPU | float32 | **14,391 QPS** | **4,880 QPS** | **28,285 QPS** | **9,621 QPS** | **21,031 QPS** |
-| **bahamut** (Local M3) | CPU | int8 | **18,679 QPS** | **5,389 QPS** | **31,784 QPS** | **11,520 QPS** | **16,875 QPS** |
-| **ancalagon** (Remote) | CPU | float32 | **7,547 QPS** | **1,012 QPS** | **16,808 QPS** | **5,265 QPS** | **16,121 QPS** |
-| **ancalagon** (Remote) | CPU | uint8 | **12,606 QPS** | **3,197 QPS** | **16,925 QPS** | **4,321 QPS** | **13,391 QPS** |
+| **bahamut** (Local M3) | CPU | float32 | **5,101 QPS** | **4,083 QPS** | **7,754 QPS** | **4,629 QPS** | **6,432 QPS** |
+| **bahamut** (Local M3) | CPU | int8 | **4,188 QPS** | **2,235 QPS** | **6,962 QPS** | **2,706 QPS** | **2,385 QPS** |
+| **ancalagon** (Remote) | CPU | float32 | **4,058 QPS** | **3,994 QPS** | **6,924 QPS** | **4,223 QPS** | **4,295 QPS** |
+| **ancalagon** (Remote) | CPU | uint8 | **5,318 QPS** | **1,092 QPS** | **7,733 QPS** | **4,326 QPS** | **4,580 QPS** |
 
-### High-Scale Stability Observations (count=5000+)
+### High-Scale Stability Observations (count=25k+)
 
 > [!NOTE]
-> Initial results for the 5,000 vector scale show sustained throughput with minimal latency degradation. The 100,000+ scale tests are currently executing to verify the memory pressure livelock fix.
+> Results for the 5,000 vector scale confirm full architectural parity between ARM64 and AMD64. The 25k, 100k, and 250k scales are currently executing to verify stability under the 18GB memory budget. Preliminary ingestion throughput for float32 at 5k scale is **~530 MB/s (Local)** and **~254 MB/s (Remote)**.
 
-### Detailed Result Matrix (Preliminary)
-Full aggregated results available in [docs/performance_new.md](file:///Users/rsd/REPOS/longbow/docs/performance_new.md).
+### Detailed Result Matrix (Live)
+Full aggregated results are being updated in [docs/performance_matrix.md](file:///Users/rsd/REPOS/longbow/docs/performance_matrix.md).
 
 ---
 

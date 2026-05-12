@@ -723,13 +723,13 @@ func (g *GraphData) ReleaseChunk(cID int) {
 		offset := atomic.SwapUint64(&g.VectorsF32[cID], 0)
 		if offset != 0 {
 			pd := g.GetPaddedDimsForType(VectorTypeFloat32)
-			g.releaseArenaMemory(g.Float32Arena.Slab(), offset, uint32(ChunkSize*pd)*4)
+			g.releaseArenaMemory(g.Float32Arena.Slab(), offset, uint32(ChunkSize*pd)*4) // #nosec G115
 		}
 	}
 	if g.Float64Arena != nil && cID < len(g.VectorsFloat64Offsets) {
 		offset := atomic.SwapUint64(&g.VectorsFloat64Offsets[cID], 0)
 		if offset != 0 {
-			g.releaseArenaMemory(g.Float64Arena.Slab(), offset, uint32(ChunkSize*g.Dims)*8)
+			g.releaseArenaMemory(g.Float64Arena.Slab(), offset, uint32(ChunkSize*g.Dims)*8) // #nosec G115
 		}
 	}
 	if g.Uint8Arena != nil {
@@ -737,14 +737,14 @@ func (g *GraphData) ReleaseChunk(cID int) {
 			offset := atomic.SwapUint64(&g.VectorsSQ8[cID], 0)
 			if offset != 0 {
 				paddedDims := (g.Dims + 63) & ^63
-				g.releaseArenaMemory(g.Uint8Arena.Slab(), offset, uint32(ChunkSize*paddedDims))
+				g.releaseArenaMemory(g.Uint8Arena.Slab(), offset, uint32(ChunkSize*paddedDims)) // #nosec G115
 			}
 		}
 		if cID < len(g.VectorsTQ) {
 			offset := atomic.SwapUint64(&g.VectorsTQ[cID], 0)
 			if offset != 0 {
 				stride := g.PackedSize()
-				g.releaseArenaMemory(g.Uint8Arena.Slab(), offset, uint32(ChunkSize*stride))
+				g.releaseArenaMemory(g.Uint8Arena.Slab(), offset, uint32(ChunkSize*stride)) // #nosec G115
 			}
 		}
 	}
@@ -756,7 +756,7 @@ func (g *GraphData) ReleaseNeighborsChunk(layer, cID int) {
 	if layer < len(g.Neighbors) && cID < len(g.Neighbors[layer]) && g.Uint32Arena != nil {
 		offset := atomic.SwapUint64(&g.Neighbors[layer][cID], 0)
 		if offset != 0 {
-			g.releaseArenaMemory(g.Uint32Arena.Slab(), offset, uint32(ChunkSize*MaxNeighbors)*4)
+			g.releaseArenaMemory(g.Uint32Arena.Slab(), offset, uint32(ChunkSize*MaxNeighbors)*4) // #nosec G115
 		}
 	}
 }

@@ -10,9 +10,8 @@ import (
 )
 
 var (
-	kernel32         = syscall.NewLazyDLL("kernel32.dll")
-	procVirtualAlloc = kernel32.NewProc("VirtualAlloc")
-	procVirtualFree  = kernel32.NewProc("VirtualFree")
+	kernel32        = syscall.NewLazyDLL("kernel32.dll")
+	procVirtualFree = kernel32.NewProc("VirtualFree")
 )
 
 const (

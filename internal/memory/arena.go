@@ -10,7 +10,6 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/23skdu/longbow/internal/metrics"
-	"golang.org/x/sys/unix"
 	"io"
 	"encoding/binary"
 	"os"
@@ -597,8 +596,7 @@ func (a *SlabArena) LoadMmap(f *os.File) error {
 		}
 		
 		// Mmap the slab data
-		// fmt.Printf("Mmapping slab %d at offset %d size %d (pageSize %d)\n", i, currOff, a.slabCap, pageSize)
-		data, err := unix.Mmap(int(f.Fd()), currOff, int(a.slabCap), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED) // #nosec G115 -- intentional conversion
+		data, err := Mmap(int(f.Fd()), currOff, int(a.slabCap), true)
 		if err != nil {
 			return fmt.Errorf("mmap slab %d failed: %v", i, err)
 		}

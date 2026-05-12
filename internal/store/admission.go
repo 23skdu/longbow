@@ -7,6 +7,7 @@ import (
 
 	"github.com/rs/zerolog"
 	"github.com/23skdu/longbow/internal/autoscale"
+	lbmem "github.com/23skdu/longbow/internal/memory"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -39,20 +40,27 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 	// 1. Get Manual Estimate
 	currMem := ac.currentMemory.Load()
 	
-	// 2. Get Actual Heap Usage (more accurate for OOM protection)
+	// 2. Get Actual Heap Usage
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	heapMem := int64(m.HeapAlloc) // #nosec G115
 	
-	// Use the maximum of manual tracking and actual heap usage
+	// 3. Get Off-Heap Arena Usage
+	var offHeapMem int64
+	for _, a := range lbmem.GetGlobalArenas() {
+		offHeapMem += a.UsedBytes.Load()
+	}
+	
+	// Use the maximum of manual tracking and actual physical usage (Heap + Off-Heap)
 	effectiveMem := currMem
-	if heapMem > effectiveMem {
-		effectiveMem = heapMem
+	physicalMem := heapMem + offHeapMem
+	if physicalMem > effectiveMem {
+		effectiveMem = physicalMem
 	}
 
 	memoryUsage := float64(effectiveMem) / float64(maxMem)
 
-	// Hard Limit: 92% Memory Usage (Reduced from 94% for safety margin)
+	// Hard Limit: 92% Memory Usage
 	if memoryUsage > 0.92 {
 		// Allow deletions and maintenance to proceed even under pressure, as they often free resources
 		if opType != "maintenance" && opType != "delete" && opType != "drop" {

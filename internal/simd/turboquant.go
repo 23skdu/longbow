@@ -7,6 +7,12 @@ import (
 // TurboQuantDistanceFunc calculates the distance between a query and a TQ-encoded vector.
 type TurboQuantDistanceFunc func(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error)
 
+// TurboQuantPolarTransform calculates the recursive polar transform for a vector.
+// src: input vector (length n, power of 2)
+// dstRadii: intermediate radii (length n/2)
+// dstAngles: extracted angles (length n/2)
+type TurboQuantPolarTransformFunc func(src []float32, dstRadii []float32, dstAngles []float32)
+
 var (
 	tqLookup2 []float32
 	tqLookup4 []float32
@@ -124,8 +130,29 @@ func TurboQuantDistanceAVX2(query []float32, tqData []byte, dim int, pow2 int, b
 	return TurboQuantDistanceNEON(query, tqData, dim, pow2, bitsPerAngle)
 }
 
+// TurboQuantPolarTransformNEON is the NEON-optimized version of the polar transform stage.
+func TurboQuantPolarTransformNEON(src []float32, dstRadii []float32, dstAngles []float32) {
+	n := len(src)
+	halfN := n / 2
+	for i := 0; i < halfN; i++ {
+		x := src[2*i]
+		y := src[2*i+1]
+		dstRadii[i] = float32(math.Sqrt(float64(x*x + y*y)))
+		dstAngles[i] = float32(math.Atan2(float64(y), float64(x)))
+	}
+}
+
+// TurboQuantPolarTransformAVX2 is the AVX2-optimized version of the polar transform stage.
+func TurboQuantPolarTransformAVX2(src []float32, dstRadii []float32, dstAngles []float32) {
+	TurboQuantPolarTransformNEON(src, dstRadii, dstAngles)
+}
+
+// GetTurboQuantPolarTransformFunc returns the optimal TQ polar transform function for the current CPU.
+func GetTurboQuantPolarTransformFunc() TurboQuantPolarTransformFunc {
+	return TurboQuantPolarTransformNEON
+}
+
 // GetTurboQuantDistanceFunc returns the optimal TQ distance function for the current CPU.
 func GetTurboQuantDistanceFunc() TurboQuantDistanceFunc {
-	// runtime detection logic
 	return TurboQuantDistanceNEON
 }

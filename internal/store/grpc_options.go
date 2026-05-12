@@ -80,9 +80,9 @@ func DefaultGRPCConfig() GRPCConfig {
 		// Enable compression by default for 50-70% bandwidth reduction
 		CompressionEnabled: true,
 
-		// 1MB socket buffers for high-bandwidth remote nodes (ancalagon)
-		WriteBufferSize: 1 * 1024 * 1024,
-		ReadBufferSize:  1 * 1024 * 1024,
+		// 4MB socket buffers for high-bandwidth loopback and remote nodes
+		WriteBufferSize: 4 * 1024 * 1024,
+		ReadBufferSize:  4 * 1024 * 1024,
 	}
 }
 

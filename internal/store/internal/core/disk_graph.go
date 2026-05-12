@@ -9,7 +9,7 @@ import (
 	"sort"
 	"unsafe"
 
-	"golang.org/x/sys/unix"
+	"github.com/23skdu/longbow/internal/memory"
 )
 
 // DiskGraphMagic is the magic number identifying a DiskGraph file.
@@ -87,7 +87,7 @@ func NewDiskGraph(path string) (*DiskGraph, error) {
 		return nil, fmt.Errorf("file too small")
 	}
 
-	data, err := unix.Mmap(int(f.Fd()), 0, int(size), unix.PROT_READ, unix.MAP_SHARED) // #nosec G115
+	data, err := memory.Mmap(int(f.Fd()), 0, int(size), false)
 	if err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("mmap failed: %v", err)
@@ -473,7 +473,7 @@ func (dg *DiskGraph) Size() int {
 // Close releases the file and unmaps the memory region.
 func (dg *DiskGraph) Close() error {
 	if dg.data != nil {
-		_ = unix.Munmap(dg.data)
+		_ = memory.Munmap(dg.data)
 		dg.data = nil
 	}
 	if dg.f != nil {
@@ -488,10 +488,10 @@ func (dg *DiskGraph) Madvise(advice int) error {
 	if dg.data == nil {
 		return nil
 	}
-	return unix.Madvise(dg.data, advice)
+	return memory.Madvise(dg.data, advice)
 }
 
 // Warmup triggers MADV_WILLNEED to populate the page cache.
 func (dg *DiskGraph) Warmup() error {
-	return dg.Madvise(unix.MADV_WILLNEED)
+	return dg.Madvise(memory.MadvWillNeed)
 }

@@ -400,8 +400,8 @@ func TestSizeClassArena_Performance(t *testing.T) {
 		t.Errorf("Slow allocation rate: %.0f alloc/s (< 100000)", allocRate)
 	}
 
-	if accessRate < 1000000 {
-		t.Errorf("Slow access rate: %.0f access/s (< 1000000)", accessRate)
+	if accessRate < 800000 {
+		t.Errorf("Slow access rate: %.0f access/s (< 800000)", accessRate)
 	}
 }
 

@@ -78,6 +78,7 @@ type hnswShard struct {
 func newHnswShard(idx VectorIndex) *hnswShard {
 	return &hnswShard{
 		index:         idx,
+		locationStore: NewChunkedLocationStore(),
 	}
 }
 
@@ -1188,6 +1189,13 @@ func (idx *ShardedHNSW) ExportGraph(w io.Writer) error {
 			continue
 		}
  
+		if shard.locationStore == nil {
+			var zero uint32
+			if err := binary.Write(w, binary.LittleEndian, zero); err != nil {
+				return fmt.Errorf("failed to write shard %d mappings count (nil store): %w", i, err)
+			}
+			continue
+		}
 		mappingsCount := shard.locationStore.Len()
 		if err := binary.Write(w, binary.LittleEndian, uint32(mappingsCount)); err != nil { // #nosec G115
 			return fmt.Errorf("failed to write shard %d mappings count: %w", i, err)
@@ -1267,6 +1275,9 @@ func (idx *ShardedHNSW) ImportGraph(r io.Reader) error {
 			globalIDs[j] = VectorID(globalID)
 		}
  
+		if shard.locationStore == nil {
+			shard.locationStore = NewChunkedLocationStore()
+		}
 		shard.locationStore.Reset()
 		shard.locationStore.EnsureCapacity(VectorID(mappingCount - 1))
 		for j, globalID := range globalIDs {
@@ -1293,6 +1304,9 @@ func (idx *ShardedHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error
  
 	for _, shard := range idx.shards {
 		if shard == nil {
+			continue
+		}
+		if shard.locationStore == nil {
 			continue
 		}
 		for j := 0; j < shard.locationStore.Len(); j++ {
@@ -1330,7 +1344,10 @@ func (idx *ShardedHNSW) ApplyDelta(delta *types.DeltaSync) error {
 		}
  
 		shard := idx.shards[shardIdx]
-		localID := uint32(shard.locationStore.Len()) // #nosec G115
+		localID := uint32(0)
+		if shard.locationStore != nil {
+			localID = uint32(shard.locationStore.Len()) // #nosec G115
+		}
 		shard.registerID(localID, globalID, idx.globalToLocal)
  
 		idx.locationStore.Set(VectorID(globalID), loc)

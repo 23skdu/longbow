@@ -2,13 +2,13 @@ package store
 
 import (
 	"context"
+	"io"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
-
-	"io"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
@@ -119,6 +119,10 @@ func (idx *AutoShardingIndex) AddByLocation(ctx context.Context, batchIdx, rowId
 	if err == nil {
 		idx.checkShardThreshold()
 	}
+
+	if idx.migrating.Load() {
+		idx.checkMigrationPressure()
+	}
 	return id, err
 }
 
@@ -147,6 +151,10 @@ func (idx *AutoShardingIndex) AddByRecord(ctx context.Context, rec arrow.RecordB
 	if err == nil {
 		idx.checkShardThreshold()
 	}
+
+	if idx.migrating.Load() {
+		idx.checkMigrationPressure()
+	}
 	return id, err
 }
 
@@ -171,6 +179,10 @@ func (idx *AutoShardingIndex) AddBatch(ctx context.Context, recs []arrow.RecordB
 	if err == nil {
 		idx.checkShardThreshold()
 	}
+
+	if idx.migrating.Load() {
+		idx.checkMigrationPressure()
+	}
 	return ids, err
 }
 
@@ -188,6 +200,26 @@ func (idx *AutoShardingIndex) checkShardThreshold() {
 		if !idx.sharded && idx.migrating.CompareAndSwap(false, true) {
 			go idx.migrateToSharded()
 		}
+	}
+}
+
+// checkMigrationPressure monitors memory during active migration and throttles the caller
+func (idx *AutoShardingIndex) checkMigrationPressure() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	var maxMem int64
+	if idx.dataset.Admission != nil {
+		maxMem = idx.dataset.Admission.maxMemory.Load()
+	}
+	if maxMem <= 0 {
+		return
+	}
+
+	usage := float64(m.HeapAlloc) / float64(maxMem)
+	if usage > 0.85 {
+		// Migration is happening and we are above 85% heap.
+		// Slow down the caller to allow GC and migration loop to keep up.
+		time.Sleep(5 * time.Millisecond)
 	}
 }
 
@@ -245,12 +277,23 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	idx.mu.Unlock()
 
 	// Migrate data in batches, releasing locks between items
-	batchSize := 50
+	batchSize := 500 // Increased from 50 to reduce loop overhead
 	lastMigrated := 0
 
-	// Migration started
-
 	for {
+		// 1. Memory Check: If heap usage > 80%, pause and trigger GC
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		var maxMem int64
+		if idx.dataset.Admission != nil {
+			maxMem = idx.dataset.Admission.maxMemory.Load()
+		}
+		if maxMem > 0 && int64(m.HeapAlloc) > (maxMem*8/10) {
+			runtime.GC()
+			debug.FreeOSMemory()
+			time.Sleep(100 * time.Millisecond) // Cool-down
+		}
+
 		// Read state under lock
 		idx.mu.RLock()
 		oldIdx := idx.current
@@ -280,8 +323,8 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 			vid := VectorID(id)
 			locAny, ok := oldIdx.GetLocation(uint32(vid))
 			if ok {
-				if loc, ok := locAny.(Location); ok && loc.BatchIdx >= 0 && loc.BatchIdx < len(idx .dataset.Records.Read()) {
-					rec := idx .dataset.Records.Read()[loc.BatchIdx]
+				if loc, ok := locAny.(Location); ok && loc.BatchIdx >= 0 && loc.BatchIdx < len(idx.dataset.Records.Read()) {
+					rec := idx.dataset.Records.Read()[loc.BatchIdx]
 					rec.Retain()
 					items = append(items, item{rec: rec, loc: loc, id: vid})
 				}
@@ -294,15 +337,15 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 			_, err := newIndex.AddByRecord(context.Background(), it.rec, it.loc.RowIdx, it.loc.BatchIdx)
 			it.rec.Release()
 			if err != nil {
-				// migration skip
 				continue
 			}
 		}
 
 		lastMigrated = endIdx
-		if lastMigrated%1000 == 0 {
-			// progress logging (future)
-			_ = lastMigrated
+
+		// Trigger GC every 10k items to prevent accumulation of interim Arrow buffers
+		if lastMigrated % 10000 == 0 {
+			runtime.GC()
 		}
 
 		// Give other threads a window
@@ -356,6 +399,9 @@ func (idx *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, f
 	}
 
 	if interim != nil {
+		if idx.migrating.Load() {
+			idx.checkMigrationPressure()
+		}
 		res2, err := interim.SearchVectors(ctx, q, k, filters, options)
 		if err == nil {
 			res = idx.mergeSearchResults(res, res2, k)

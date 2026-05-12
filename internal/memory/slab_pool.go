@@ -29,6 +29,8 @@ var (
 	global8MBPool  = newSlabPool(size8MB)
 	global16MBPool = newSlabPool(size16MB)
 	global32MBPool = newSlabPool(size32MB)
+
+	offHeapAlloc = NewOffHeapAllocator()
 )
 
 func newSlabPool(size int) *SlabPool {
@@ -37,7 +39,7 @@ func newSlabPool(size int) *SlabPool {
 		maxPooled: 100, // Keep at most 100 slabs in pool before releasing
 		pool: sync.Pool{
 			New: func() any {
-				b := make([]byte, size)
+				b := offHeapAlloc.Allocate(size)
 				return &b
 			},
 		},
@@ -64,8 +66,11 @@ func GetSlab(capacity int) []byte {
 		metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "hit").Inc()
 		return global32MBPool.Get()
 	}
-	// Fallback to make (or add more pools logic here)
+	// Fallback to off-heap alloc for non-standard large sizes
 	metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "miss").Inc()
+	if capacity >= 1024*1024 {
+		return offHeapAlloc.Allocate(capacity)
+	}
 	return make([]byte, capacity)
 }
 

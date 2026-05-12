@@ -586,18 +586,34 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					if h.distFuncF64 == nil {
 						return math.MaxFloat32, nil
 					}
-					q64 := make([]float64, len(q))
-					for i, val := range q {
-						q64[i] = float64(val)
+					var q64 []float64
+					if ctx != nil {
+						if cap(ctx.queryF64) < len(q) {
+							ctx.queryF64 = make([]float64, len(q))
+						}
+						ctx.queryF64 = ctx.queryF64[:len(q)]
+						for i, val := range q { ctx.queryF64[i] = float64(val) }
+						q64 = ctx.queryF64
+					} else {
+						q64 = make([]float64, len(q))
+						for i, val := range q { q64[i] = float64(val) }
 					}
 					return h.distFuncF64(q64, v)
 				case []float16.Num:
 					if h.distFuncF16 == nil {
 						return math.MaxFloat32, nil
 					}
-					q16 := make([]float16.Num, len(q))
-					for i, val := range q {
-						q16[i] = float16.New(val)
+					var q16 []float16.Num
+					if ctx != nil {
+						if cap(ctx.queryF16) < len(q) {
+							ctx.queryF16 = make([]float16.Num, len(q))
+						}
+						ctx.queryF16 = ctx.queryF16[:len(q)]
+						for i, val := range q { ctx.queryF16[i] = float16.New(val) }
+						q16 = ctx.queryF16
+					} else {
+						q16 = make([]float16.Num, len(q))
+						for i, val := range q { q16[i] = float16.New(val) }
 					}
 					return h.distFuncF16(q16, v)
 				case []int8, []uint8:
@@ -628,9 +644,17 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					return float32(math.Sqrt(float64(sum))), nil
 				case []complex64:
 					qLen := len(q)
-					qComplex := make([]complex64, qLen/2)
-					for i := 0; i < qLen/2; i++ {
-						qComplex[i] = complex(q[2*i], q[2*i+1])
+					var qComplex []complex64
+					if ctx != nil {
+						if cap(ctx.queryC64) < qLen/2 {
+							ctx.queryC64 = make([]complex64, qLen/2)
+						}
+						ctx.queryC64 = ctx.queryC64[:qLen/2]
+						for i := 0; i < qLen/2; i++ { ctx.queryC64[i] = complex(q[2*i], q[2*i+1]) }
+						qComplex = ctx.queryC64
+					} else {
+						qComplex = make([]complex64, qLen/2)
+						for i := 0; i < qLen/2; i++ { qComplex[i] = complex(q[2*i], q[2*i+1]) }
 					}
 					var sum float32
 					for i, val := range qComplex {
@@ -643,9 +667,17 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					return float32(math.Sqrt(float64(sum))), nil
 				case []complex128:
 					qLen := len(q)
-					qComplex := make([]complex128, qLen/2)
-					for i := 0; i < qLen/2; i++ {
-						qComplex[i] = complex(float64(q[2*i]), float64(q[2*i+1]))
+					var qComplex []complex128
+					if ctx != nil {
+						if cap(ctx.queryC128) < qLen/2 {
+							ctx.queryC128 = make([]complex128, qLen/2)
+						}
+						ctx.queryC128 = ctx.queryC128[:qLen/2]
+						for i := 0; i < qLen/2; i++ { ctx.queryC128[i] = complex(float64(q[2*i]), float64(q[2*i+1])) }
+						qComplex = ctx.queryC128
+					} else {
+						qComplex = make([]complex128, qLen/2)
+						for i := 0; i < qLen/2; i++ { qComplex[i] = complex(float64(q[2*i]), float64(q[2*i+1])) }
 					}
 					var sum float64
 					for i, val := range qComplex {

@@ -1,3 +1,5 @@
+//go:build !windows
+
 package main
 
 // nosec G404 - math/rand is used for benchmark test data, not security-sensitive
@@ -200,7 +202,7 @@ func runMmapBenchmark(dir string, sizeMB int, blockSize int, workers int, durati
 	printStats("Mmap "+modeStr, elapsed, totalOps, totalBytes)
 }
 
-func runWriteBenchmark(dir string, sizeMB int, blockSize int, workers int, duration time.Duration, doSync bool) {
+func runWriteBenchmark(dir string, _ int, blockSize int, workers int, duration time.Duration, doSync bool) {
 	fmt.Println("\n--- Write Benchmark (Sequential Append) ---")
 
 	// Pre-generate a data block to avoid measuring generation time
@@ -316,7 +318,7 @@ func runReadBenchmark(dir string, sizeMB int, blockSize int, workers int, durati
 	printStats("Read", elapsed, totalOps, totalBytes)
 }
 
-func prepFile(dir string, sizeMB int, blockSize int) int64 {
+func prepFile(dir string, sizeMB int, _ int) int64 {
 	filename := filepath.Join(dir, "bench_read_master.dat")
 	info, err := os.Stat(filename)
 	targetSize := int64(sizeMB) * 1024 * 1024
@@ -401,7 +403,7 @@ type BenchmarkResult struct {
 	TemporalWindowP99Ms float64 `json:"temporal_window_p99_ms"`
 }
 
-func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, queries int, dataset, jsonFile, searchModes string) {
+func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int, dataset, jsonFile, searchModes string) {
 	ctx := context.Background()
 	result := &BenchmarkResult{
 		Dim:   dim,
@@ -625,7 +627,7 @@ data, _ := json.MarshalIndent(result, "", "  ")
 	}
 }
 
-func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec arrow.Record, sch *arrow.Schema) error {
+func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec arrow.Record, _ *arrow.Schema) error {
 	desc := &flight.FlightDescriptor{
 		Type: flight.DescriptorPATH,
 		Path: []string{dataset},

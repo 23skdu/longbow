@@ -16,7 +16,7 @@
 
 > [!IMPORTANT]
 > **Stability Verified**: The `SIGSEGV` panic in `ChunkedLocationStore.Len()` during shutdown/snapshot sequences has been resolved. This fix ensures that the server can gracefully shut down even under extreme memory pressure or during active ingestion.
-
+>
 > [!NOTE]
 > **100k Scale Validation**: Successfully validated ingestion of 100,000 vectors (`float32`, `dim=128`) under a restrictive 500MB memory limit. The system correctly transitioned to **ResourceExhausted** backpressure and performed emergency GC cycles without process termination.
 
@@ -26,12 +26,12 @@
 | Snapshot | 100k | 500MB | - | - | **FIXED** |
 
 ### Detailed Result Matrix (Live)
+
 Full aggregated results are being updated in [docs/performance_matrix.md](file:///Users/rsd/REPOS/longbow/docs/performance_matrix.md).
 
 ---
 
 ## v0.2.2-rc2 Final - Production Blockers Remediation (2026-05-11)
-
 
 > [!IMPORTANT]
 > **Production Ready Milestone**: This final validation confirms that all P0 blockers (CPU graph navigation, TurboQuant SIMD, and async I/O parity) have been resolved. The system demonstrates exceptional stability and high throughput under an 18GB memory budget across diverse data types and hardware architectures.
@@ -49,11 +49,13 @@ Full aggregated results are being updated in [docs/performance_matrix.md](file:/
 | **Sparse Search** | Remote CUDA | float64 | **22,135 QPS** | 0.16 | **FIXED** |
 
 ### Benchmark Matrix Coverage
+
 * **Memory Budget**: 18GB allocated (`LONGBOW_MAX_MEMORY=19327352832`)
 * **Platforms**: macOS M3 Pro (Metal/CPU), Linux x86_64 (CUDA/CPU)
 * **Status**: 10k scale matrix **COMPLETED**; 50k/250k scales **IN PROGRESS**
 
 ### Key Remediation Results
+
 1. **CPU Graph Navigation**: Verified functional parity for `UpdateGraph` and `GraphExpand` on CPU backends, enabling full GraphRAG support without GPU.
 2. **TurboQuant SIMD**: Integrated `simd.GetTurboQuantDistanceFunc()` into the CPU search path, significantly improving throughput for quantized indices.
 3. **Async I/O Parity**: Refactored `DiskWriterUring` stubs to use background goroutines, providing non-blocking write behavior on macOS.
@@ -61,7 +63,6 @@ Full aggregated results are being updated in [docs/performance_matrix.md](file:/
 5. **Admission Controller Hardening**: Ensured all ingestion-related rejections return graceful gRPC `ResourceExhausted` codes, enabling client-side backpressure instead of abrupt `EOF` disconnections.
 
 ---
-
 
 ---
 

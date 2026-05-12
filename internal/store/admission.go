@@ -12,12 +12,12 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-// AdmissionController protects the system from OOM and overload.
 type AdmissionController struct {
 	maxMemory     *atomic.Int64
 	currentMemory *atomic.Int64
 	scaler        *autoscale.AutoScaler
-	logger        zerolog.Logger
+	migratingCount atomic.Int32
+	logger         zerolog.Logger
 }
 
 // NewAdmissionController creates a new admission controller.
@@ -28,6 +28,14 @@ func NewAdmissionController(maxMemory, currentMemory *atomic.Int64, scaler *auto
 		scaler:        scaler,
 		logger:        logger,
 	}
+}
+
+func (ac *AdmissionController) MigrationStarted() {
+	ac.migratingCount.Add(1)
+}
+
+func (ac *AdmissionController) MigrationFinished() {
+	ac.migratingCount.Add(-1)
 }
 
 // Admit checks if a request of the given type should be admitted.
@@ -60,8 +68,17 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 
 	memoryUsage := float64(effectiveMem) / float64(maxMem)
 
-	// Hard Limit: 92% Memory Usage
-	if memoryUsage > 0.92 {
+	// Migration-aware thresholds: Apply tighter limits if any index is currently migrating
+	// as migration is a high-memory, non-interruptible background process.
+	hardLimit := 0.92
+	ingestLimit := 0.88
+	if ac.migratingCount.Load() > 0 {
+		hardLimit = 0.80   // Tighter limit during migration
+		ingestLimit = 0.75 // Tighter ingest limit during migration
+	}
+
+	// Hard Limit
+	if memoryUsage > hardLimit {
 		// Allow deletions and maintenance to proceed even under pressure, as they often free resources
 		if opType != "maintenance" && opType != "delete" && opType != "drop" {
 			ac.logger.Warn().
@@ -74,8 +91,8 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 		}
 	}
 
-	// Soft Limit: 88% Memory Usage for Ingestion (Reduced from 90%)
-	if opType == "ingest" && memoryUsage > 0.88 {
+	// Soft Limit for Ingestion
+	if opType == "ingest" && memoryUsage > ingestLimit {
 		ac.logger.Warn().
 			Float64("usage_ratio", memoryUsage).
 			Int64("effective_bytes", effectiveMem).

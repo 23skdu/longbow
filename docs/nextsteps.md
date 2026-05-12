@@ -7,6 +7,10 @@
 - **Async I/O Parity**: Refactored `DiskWriterUring` stubs to simulate non-blocking behavior via background goroutines.
 - **Strict Embedding Loading**: Hardened `EmbeddingGenerator` to enforce model loading and prevent silent fallback to stubs.
 - **Location Store Stability**: Resolved critical race conditions in `ChunkedLocationStore` maps during concurrent sharding transitions.
+- **Admission Hardening**: Lowered `AdmissionController` thresholds to 92% and implemented structured logging for rejection observability.
+- **Ready Handshake**: Added `ActiveIngestStreams` tracking and enhanced `check_readiness` to prevent `NotFound` races during ingestion/search transitions.
+- **Livelock Mitigation**: Integrated emergency memory cleanup (Query Cache clearing) and aggressive GC triggers into `GCTuner` at 88%+ pressure.
+- **gRPC Resilience**: Tuned keepalive settings (30s) and enabled without-stream pings to maintain connection stability during heavy GC cycles.
 
 ## P0 Blockers (Remaining)
 
@@ -20,17 +24,6 @@
 - **Memory-Mapped HNSW**: Explore `mmap`-backed vector storage to reduce heap pressure and allow datasets larger than physical RAM.
 
 - Cross-Node WAL Replication: Implement synchronous WAL replication for high-availability deployments.
-
-## Benchmark-Driven Recommendations (v0.2.2-rc2 Observations)
-
-### Stability Improvements
-
-- **Dataset Initialization Handshake**: Investigate intermittent `NotFound` errors during rapid ingestion/search transitions. Implement a more robust "Ready" handshake between the storage engine and the benchmarking tool.
-- **Memory Pressure Livelock Mitigation**: Although 18GB is allocated, high-scale (100k+) tests suggest GCTuner contention. Evaluate more aggressive pre-emptive garbage collection or fine-grained memory sharding to prevent livelocks under extreme pressure.
-- **AdmissionController Observability**: Implement explicit structured logging in `AdmissionController.Admit` when a request is rejected. This will help distinguish between client-side timeouts and server-side backpressure in production logs.
-- **EOF Resilience**: Investigate the transition from `ResourceExhausted` to `EOF` during sustained high-dimensional ingestion at 100k scale. Evaluate if lowering the hard rejection threshold (currently 94%) or increasing gRPC keepalive/timeout settings improves connection stability.
-
-### Performance Gains
 
 - **TurboQuant Packing Kernels**: Current TurboQuant ingestion is CPU-bound due to vector packing. Implement SIMD-accelerated packing/unpacking in the `DoPut` path to match the throughput of raw data types.
 - **Remote gRPC Loopback Tuning**: Search throughput on Linux (ancalagon) is ~50% lower than macOS for loopback requests. Profile Go's gRPC stack on amd64 to identify potential context switching or syscall bottlenecks.

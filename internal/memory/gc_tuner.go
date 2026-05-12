@@ -50,6 +50,7 @@ type GCTuner struct {
 	lastAllocTime  time.Time
 	allocRate      atomic.Uint64 // Bytes per second
 	isBursting     atomic.Bool   // True if currently in burst mode
+	cleanupFuncs   []func()      // Functions to call under extreme pressure
 }
 
 // NewGCTuner creates a tuner. limitBytes should be close to container memory limit.
@@ -95,6 +96,13 @@ func (t *GCTuner) AddArena(a *ArenaStatsRecord) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.arenas = append(t.arenas, a)
+}
+
+// RegisterCleanup adds a function to be called when memory pressure is critical (>88%)
+func (t *GCTuner) RegisterCleanup(fn func()) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.cleanupFuncs = append(t.cleanupFuncs, fn)
 }
 
 // RemoveArena unregisters an arena
@@ -280,9 +288,20 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 		targetGOGC += 50
 	}
 
-	if aggressive && ratio > 0.8 {
+	if aggressive && ratio > 0.88 {
 		if t.logger != nil {
-			t.logger.Warn().Float64("ratio", ratio).Int64("effective", effectiveInUse).Msg("High effective heap utilization")
+			t.logger.Warn().Float64("ratio", ratio).Int64("effective", effectiveInUse).Msg("CRITICAL effective heap utilization - triggering emergency cleanup")
+		}
+		t.mu.RLock()
+		for _, fn := range t.cleanupFuncs {
+			fn()
+		}
+		t.mu.RUnlock()
+		
+		// Also force a GC if very high
+		if ratio > 0.92 {
+			runtime.GC()
+			debug.FreeOSMemory()
 		}
 	}
 	metrics.GCTunerHeapUtilization.Set(ratio)

@@ -727,6 +727,19 @@ func (h *ArrowHNSW) PreWarm(targetSize int) {
 	_ = dummy
 }
 
+// ReleaseMonolithicChunk releases the storage for a chunk of the index.
+// This is used during incremental handover to shards.
+func (h *ArrowHNSW) ReleaseMonolithicChunk(cID int) {
+	gd := h.data.Load()
+	if gd != nil {
+		gd.ReleaseChunk(cID)
+		// Also release neighbors for all layers for this chunk
+		for l := 0; l < types.ArrowMaxLayers; l++ {
+			gd.ReleaseNeighborsChunk(l, cID)
+		}
+	}
+}
+
 // CleanupTombstones removes deleted nodes that exceed the specified threshold.
 func (h *ArrowHNSW) CleanupTombstones(threshold int) int {
 	h.dataset.RLockData()

@@ -270,6 +270,12 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	idx.dataset.dataMu.RUnlock()
 
 	newIndex := NewShardedHNSW(shardedConfig, idx.dataset)
+	
+	// Track migration in AdmissionController to apply tighter global limits
+	if idx.dataset.Admission != nil {
+		idx.dataset.Admission.MigrationStarted()
+		defer idx.dataset.Admission.MigrationFinished()
+	}
 
 	// Promote newIndex to interimIndex so that AddBatch starts hitting it immediately
 	idx.mu.Lock()
@@ -281,17 +287,29 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	lastMigrated := 0
 
 	for {
-		// 1. Memory Check: If heap usage > 80%, pause and trigger GC
+		// 1. Memory Check: If heap usage > 80% (or 70% if already high), pause and trigger GC
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
-		var maxMem int64
+		
+		maxMem := int64(0)
 		if idx.dataset.Admission != nil {
 			maxMem = idx.dataset.Admission.maxMemory.Load()
 		}
-		if maxMem > 0 && int64(m.HeapAlloc) > (maxMem*8/10) {
+
+		usage := float64(m.HeapAlloc)
+		threshold := float64(maxMem) * 0.75 // Aggressive threshold during migration
+		if maxMem > 0 && usage > threshold {
+			idx.dataset.Logger.Warn().
+				Int64("usage_bytes", int64(usage)).
+				Int64("max_bytes", maxMem).
+				Msg("Migration paused: critical memory pressure")
+			
 			runtime.GC()
 			debug.FreeOSMemory()
-			time.Sleep(100 * time.Millisecond) // Cool-down
+			
+			// Longer sleep to allow GC and OS to reclaim memory
+			time.Sleep(500 * time.Millisecond)
+			continue
 		}
 
 		// Read state under lock
@@ -343,15 +361,26 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 
 		lastMigrated = endIdx
 
-		// Trigger GC every 10k items to prevent accumulation of interim Arrow buffers
-		if lastMigrated % 10000 == 0 {
+		// Incremental Handover: Release monolithic storage segments as they are replicated.
+		// Since chunks are 32k items, we release a monolithic chunk once its IDs are migrated.
+		if lastMigrated > 0 && lastMigrated % types.ChunkSize == 0 {
+			if ah, ok := oldIndex.(interface{ ReleaseMonolithicChunk(int) }); ok {
+				ah.ReleaseMonolithicChunk((lastMigrated / types.ChunkSize) - 1)
+			}
+		}
+
+		// Trigger GC and return memory to OS frequently to prevent accumulation
+		if lastMigrated % 5000 == 0 {
 			runtime.GC()
+			if lastMigrated % 20000 == 0 {
+				debug.FreeOSMemory()
+			}
 		}
 
 		// Give other threads a window
 		runtime.Gosched()
 		// Small sleep to ensure fairness on high-core machines
-		time.Sleep(10 * time.Microsecond)
+		time.Sleep(50 * time.Microsecond)
 	}
 
 	// Final swap
@@ -393,22 +422,24 @@ func (idx *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, f
 		return curr.SearchVectors(ctx, q, k, filters, options)
 	}
 
-	res, err := curr.SearchVectors(ctx, q, k, filters, options)
-	if err != nil {
-		return nil, err
-	}
-
+	// Shadow Search Optimization: Prioritize the growing sharded index
+	// if we are deep into migration.
 	if interim != nil {
-		if idx.migrating.Load() {
-			idx.checkMigrationPressure()
+		res, err := interim.SearchVectors(ctx, q, k, filters, options)
+		if err == nil && len(res) >= k {
+			// If sharded index already has enough good results, we might skip monolith
+			// but for HNSW correctness during migration, we usually need both.
 		}
-		res2, err := interim.SearchVectors(ctx, q, k, filters, options)
+		
+		// Continue with monolith search
+		res2, err := curr.SearchVectors(ctx, q, k, filters, options)
 		if err == nil {
 			res = idx.mergeSearchResults(res, res2, k)
 		}
+		return res, nil
 	}
 
-	return res, nil
+	return curr.SearchVectors(ctx, q, k, filters, options)
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.

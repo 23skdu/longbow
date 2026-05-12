@@ -715,6 +715,62 @@ func (g *GraphData) EnsureChunks(newCap, dims int) error {
 	return nil
 }
 
+// ReleaseChunk releases the memory for a vector chunk back to the OS using MADV_DONTNEED.
+// This is used for incremental handover during index migration.
+func (g *GraphData) ReleaseChunk(cID int) {
+	// Release primary vector storage
+	if g.Float32Arena != nil && cID < len(g.VectorsF32) {
+		offset := atomic.SwapUint64(&g.VectorsF32[cID], 0)
+		if offset != 0 {
+			pd := g.GetPaddedDimsForType(VectorTypeFloat32)
+			g.releaseArenaMemory(g.Float32Arena.Slab(), offset, uint32(ChunkSize*pd)*4)
+		}
+	}
+	if g.Float64Arena != nil && cID < len(g.VectorsFloat64Offsets) {
+		offset := atomic.SwapUint64(&g.VectorsFloat64Offsets[cID], 0)
+		if offset != 0 {
+			g.releaseArenaMemory(g.Float64Arena.Slab(), offset, uint32(ChunkSize*g.Dims)*8)
+		}
+	}
+	if g.Uint8Arena != nil {
+		if cID < len(g.VectorsSQ8) {
+			offset := atomic.SwapUint64(&g.VectorsSQ8[cID], 0)
+			if offset != 0 {
+				paddedDims := (g.Dims + 63) & ^63
+				g.releaseArenaMemory(g.Uint8Arena.Slab(), offset, uint32(ChunkSize*paddedDims))
+			}
+		}
+		if cID < len(g.VectorsTQ) {
+			offset := atomic.SwapUint64(&g.VectorsTQ[cID], 0)
+			if offset != 0 {
+				stride := g.PackedSize()
+				g.releaseArenaMemory(g.Uint8Arena.Slab(), offset, uint32(ChunkSize*stride))
+			}
+		}
+	}
+	// Release other types as needed...
+}
+
+// ReleaseNeighborsChunk releases neighbor storage for a specific layer and chunk.
+func (g *GraphData) ReleaseNeighborsChunk(layer, cID int) {
+	if layer < len(g.Neighbors) && cID < len(g.Neighbors[layer]) && g.Uint32Arena != nil {
+		offset := atomic.SwapUint64(&g.Neighbors[layer][cID], 0)
+		if offset != 0 {
+			g.releaseArenaMemory(g.Uint32Arena.Slab(), offset, uint32(ChunkSize*MaxNeighbors)*4)
+		}
+	}
+}
+
+func (g *GraphData) releaseArenaMemory(s *memory.SlabArena, offset uint64, size uint32) {
+	if s == nil { return }
+	data := s.Get(offset, size)
+	if len(data) > 0 {
+		// Use Madvise to tell the OS we don't need these physical pages anymore.
+		// This is safer than Munmap because pointers/offsets remain valid (but point to zeroed pages).
+		_ = memory.Madvise(data, memory.MadvDontNeed)
+	}
+}
+
 func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	if g.Dims == 0 && dims > 0 {
 		g.Dims = dims

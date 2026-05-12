@@ -32,3 +32,8 @@
 
 - **TurboQuant Packing Kernels**: Current TurboQuant ingestion is CPU-bound due to vector packing. Implement SIMD-accelerated packing/unpacking in the `DoPut` path to match the throughput of raw data types.
 - **Remote gRPC Loopback Tuning**: Search throughput on Linux (ancalagon) is ~50% lower than macOS for loopback requests. Profile Go's gRPC stack on amd64 to identify potential context switching or syscall bottlenecks.
+
+### Cross-Platform Integrity Recommendations
+
+- **Consolidate SIMD Stubs**: Future development should favor a centralized `internal/simd/stubs_generic.go` for all non-native architecture fallbacks to prevent symbol redeclaration conflicts as new kernels are added (e.g., AVX-512 VBMI).
+- **TurboQuant Scaling Validation**: Monitor TQ2/TQ4 search latency at 250k+ scales to verify that the SIMD distance kernels scale linearly without cache-line contention under the 18GB memory budget.

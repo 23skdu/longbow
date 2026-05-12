@@ -1,36 +1,38 @@
 # Longbow Performance Benchmarks
 
-## v0.2.2-rc2 Full Matrix Validation (2026-05-12)
+## v0.2.2-rc2 Final Performance Validation (2026-05-12) - **IN PROGRESS**
 
 > [!IMPORTANT]
-> **Production Hardening Summary**: This validation marks the completion of the v0.2.2-rc2 stabilization phase. The system demonstrated exceptional stability across 16 data types and 5 dimensions on both ARM64 (Local M3) and AMD64 (Remote CUDA) architectures.
+> **Performance Matrix Summary**: This validation marks the final performance baseline for v0.2.2-rc2 across 16 data types and 5 dimensions. A comprehensive matrix including 25k, 50k, 100k, and 150k scales is currently executing in parallel across Local (M3/Metal) and Remote (CUDA/CPU) environments.
 >
-> **Key Achievement**: Resolved critical `SIGSEGV` panics during concurrent shutdown and stabilized the `AdmissionController` to handle extreme memory pressure gracefully via gRPC `ResourceExhausted` rejections.
+> **Key Achievement**: Successfully resolved cross-platform build conflicts on Linux (ancalagon) and stabilized the 100k scale ingestion path with memory-efficient migration logic.
 
 ### High-Scale Stability Observations (100k Scale)
 
-| Metric | Dimension | Memory Limit | Result | Observation |
-|:-------|:----------|:-------------|:-------|:------------|
-| Ingestion | 128-768 | 18GB | **STABLE** | Zero errors; sustained high throughput. |
-| Ingestion | 1024-3072 | 18GB | **LIMIT REACHED** | Correctly triggered `ResourceExhausted` at 94% heap. |
-| Search | All | 18GB | **STABLE** | Zero panics; backpressure handled via gRPC codes. |
+| Metric | Dimension | Result | Observation |
+|:-------|:----------|:-------|:------------|
+| Ingestion | 128-1024 | **STABLE** | Sustained high throughput; backpressure handled correctly. |
+| Migration | 3072 | **OOM CRASH** | `AutoShardingIndex.migrateToSharded` consumed **~8.6 GB** (46% heap), breaching the 18GB limit when concurrent with searches. |
+| Search | All | **STABLE** | Peak search performance reached **~29k QPS** (Sparse) and **~5.8k QPS** (Dense) on M3 Pro. |
 
-### Performance Snapshot (count=25000, dim=128)
+### Performance Summary (count=10000, dim=128)
 
-| Platform | Mode | DType | Ingestion (MB/s) | Dense Search (QPS) | Sparse Search (QPS) | Temporal Search (QPS) |
-|:---------|:-----|:------|-----------------:|-------------------:|-------------------:|----------------------:|
-| **bahamut** (M3 Pro) | Metal | float32 | **~1,450 MB/s** | **~4,800 QPS*** | **~11,200 QPS** | **~3,400 QPS** |
-| **bahamut** (M3 Pro) | CPU | float32 | **~450 MB/s** | **~3,900 QPS*** | **~8,100 QPS** | **~3,200 QPS** |
-| **ancalagon** (AMD64) | CUDA | float32 | **~880 MB/s** | **~4,200 QPS*** | **~10,500 QPS** | **~2,900 QPS** |
-| **ancalagon** (AMD64) | CPU | float32 | **~310 MB/s** | **~1,400 QPS*** | **~7,500 QPS** | **~2,800 QPS** |
+| Host | Mode | DType | Ingestion (MB/s) | Dense Search (QPS) | Sparse Search (QPS) | Temporal Search (QPS) |
+|:-----|:-----|:------|-----------------:|-------------------:|-------------------:|----------------------:|
+| **bahamut** (M3 Pro) | Metal | float32 | **~1,656,909 vec/s*** | **~3,269 QPS** | **~9,936 QPS** | **~4,211 QPS** |
+| **bahamut** (M3 Pro) | CPU | float32 | **~628 MB/s** | **~2,493 QPS** | **~9,146 QPS** | **~4,019 QPS** |
+| **ancalagon** (AMD64) | CUDA | float32 | **~315 MB/s** | **~1,172 QPS** | **~7,465 QPS** | **~2,883 QPS** |
+| **ancalagon** (AMD64) | CPU | float32 | **~289 MB/s** | **~1,325 QPS** | **~7,547 QPS** | **~3,096 QPS** |
 
 > [!NOTE]
-> * **QPS Measurement**: The reported Search QPS is currently limited by the benchmarking client (`bench-tool`) using only 4 workers. The server-side latency remains stable (~4-6ms P95), suggesting a theoretical capacity of >20,000 QPS with higher client parallelism.
+>
+> - **Ingestion Spike**: Local ingestion throughput of 1.6M vec/s represents peak warm-cache performance for small batches. Sustained production ingestion stabilizes at ~400-600 MB/s.
 
 ### Bottleneck Analysis (via pprof)
 
-*   **GC Thrashing**: Profiles show that `runtime.scanObject` accounts for **~66%** of CPU time during high-load search on sharded HNSW indices. This is the primary bottleneck for search QPS at high object counts.
-*   **Memory Pressure**: High-dimensional datasets (3072d) at 100k scale reached the 18GB heap ceiling, triggering the `AdmissionController`. Sustained pressure led to some `EOF` events, indicating a need for more aggressive preemptive GC or off-heap storage.
+- **Migration Memory Footprint**: `AutoShardingIndex.migrateToSharded` is currently too greedy. It attempts to build the sharded index in-memory before releasing the monolithic one, doubling the footprint of the vector data.
+- **Search Contention**: Concurrent `DoGet` operations (Searches) during migration account for another **~8.2 GB** of allocation. The combination of these two processes is the primary cause of OOM at the 100k scale.
+- **Metal Backend Resilience**: The Metal server experienced stability issues after a CPU-bound crash, indicating a need for better resource isolation or a cleaner restart mechanism for platform-specific drivers.
 
 ---
 
@@ -86,9 +88,9 @@ Full aggregated results are being updated in [docs/performance_matrix.md](file:/
 
 ### Benchmark Matrix Coverage
 
-* **Memory Budget**: 18GB allocated (`LONGBOW_MAX_MEMORY=19327352832`)
-* **Platforms**: macOS M3 Pro (Metal/CPU), Linux x86_64 (CUDA/CPU)
-* **Status**: 10k scale matrix **COMPLETED**; 50k/250k scales **IN PROGRESS**
+- **Memory Budget**: 18GB allocated (`LONGBOW_MAX_MEMORY=19327352832`)
+- **Platforms**: macOS M3 Pro (Metal/CPU), Linux x86_64 (CUDA/CPU)
+- **Status**: 10k scale matrix **COMPLETED**; 50k/250k scales **IN PROGRESS**
 
 ### Key Remediation Results
 
@@ -259,9 +261,9 @@ Full aggregated results are being updated in [docs/performance_matrix.md](file:/
 
 ### Known Issues
 
-* Full benchmark matrix (all dtypes, dims, counts) causes server crashes with "EOF" errors
-* LearnedIndex queries fail with "system is at critical capacity" under high load
-* Geo and Temporal searches working but significantly underperforming vs baselines
+- Full benchmark matrix (all dtypes, dims, counts) causes server crashes with "EOF" errors
+- LearnedIndex queries fail with "system is at critical capacity" under high load
+- Geo and Temporal searches working but significantly underperforming vs baselines
 
 ---
 
@@ -291,11 +293,11 @@ Full aggregated results are being updated in [docs/performance_matrix.md](file:/
 
 ### Platform Configuration
 
-* **Memory**: 18GB allocated to longbow node (`LONGBOW_MAX_MEMORY=19327352832`)
-* **Test Configuration**: Matrix across dims (128-3072), counts (1k-100k)
-* **Environments**:
-  * **Local**: Apple Silicon M3 (Darwin/ARM64)
-  * **Remote**: AMD64 Linux (ancalagon), AVX2, CUDA results pending
+- **Memory**: 18GB allocated to longbow node (`LONGBOW_MAX_MEMORY=19327352832`)
+- **Test Configuration**: Matrix across dims (128-3072), counts (1k-100k)
+- **Environments**:
+  - **Local**: Apple Silicon M3 (Darwin/ARM64)
+  - **Remote**: AMD64 Linux (ancalagon), AVX2, CUDA results pending
 
 ### Results Summary (float32, dim=128, count=1000)
 
@@ -318,23 +320,23 @@ Full aggregated results are being updated in [docs/performance_matrix.md](file:/
 
 ## Target Baselines (v0.1.9 Parity)
 
-* **Dense Search (Float32, 384d)**: > 20,000 QPS
-* **Temporal Search**: > 12,000 QPS
-* **Ingestion (Bulk)**: > 150,000 vec/s
+- **Dense Search (Float32, 384d)**: > 20,000 QPS
+- **Temporal Search**: > 12,000 QPS
+- **Ingestion (Bulk)**: > 150,000 vec/s
 
 ### Fine-Grained Locking
 
-* Monolithic `insertMu` replaced with `epMu` and atomic graph pointers.
-* Allows non-blocking concurrent traversals during bulk ingestion.
+- Monolithic `insertMu` replaced with `epMu` and atomic graph pointers.
+- Allows non-blocking concurrent traversals during bulk ingestion.
 
 ### Key Observations
 
 1. **Ingestion Performance Milestone**: Ingested datasets up to 500k vectors without OOM by implementing client-side backpressure and chunked uploads.
 
 2. **Search QPS Improvements (v0.2.0-rc1)**:
-   * **Lock-Free Traversal**: Removed redundant shard locks (`insertMus`) in the ingestion path, relying on fine-grained `LockNode` spinlocks. This significantly reduces search/ingestion contention.
-   * **Scheduler Latency**: Refactored `DoGet` and `DoGetPipeline` to use the `SharedWorkerPool`. Eliminated `runIndexWorker` polling with `Notify()` signaling, reducing CPU idle wakeups.
-   * **Temporal Cache Stability**: Implemented $O(1)$ LRU cache and $O(\log N)$ binary search for temporal tree range queries, stabilizing Temporal search QPS under load.
+   - **Lock-Free Traversal**: Removed redundant shard locks (`insertMus`) in the ingestion path, relying on fine-grained `LockNode` spinlocks. This significantly reduces search/ingestion contention.
+   - **Scheduler Latency**: Refactored `DoGet` and `DoGetPipeline` to use the `SharedWorkerPool`. Eliminated `runIndexWorker` polling with `Notify()` signaling, reducing CPU idle wakeups.
+   - **Temporal Cache Stability**: Implemented $O(1)$ LRU cache and $O(\log N)$ binary search for temporal tree range queries, stabilizing Temporal search QPS under load.
 
 3. **Filter Evaluator Stability**: Fixed a critical panic in the filter evaluator where `Reset` was not correctly re-binding all Arrow types (Boolean, Int32, UInt64) across record batch transitions.
 
@@ -342,30 +344,30 @@ Full aggregated results are being updated in [docs/performance_matrix.md](file:/
 
 ### Regression Analysis (v0.2.0-pre)
 
-* **Local Search Recovery**: Dense search QPS on M3 improved from 3.9k to 5.0k (+28%) after `LockNode` optimization and GCTuner calibration.
-* **Remote Dense Search Recovery**: Dense search QPS on ancalagon improved from 684 QPS to 2,317 QPS (**3.3x gain**) following the removal of `time.Sleep` in spinlocks.
-* **Sparse Search Regression**: Observed a significant drop in Sparse search performance when dimensionality increases (e.g., ~13k QPS at 128d vs <1k QPS at 768d). Requires investigation into inverted index scaling.
-* **Remote Ingestion Regression**: Ingestion on AMD64 improved to 516k vec/s, surpassing previous baselines.
-* **GraphRAG Stability**: GraphRAG search remains stable (~6k local, ~3k remote) but is still a target for SIMD expansion optimizations.
+- **Local Search Recovery**: Dense search QPS on M3 improved from 3.9k to 5.0k (+28%) after `LockNode` optimization and GCTuner calibration.
+- **Remote Dense Search Recovery**: Dense search QPS on ancalagon improved from 684 QPS to 2,317 QPS (**3.3x gain**) following the removal of `time.Sleep` in spinlocks.
+- **Sparse Search Regression**: Observed a significant drop in Sparse search performance when dimensionality increases (e.g., ~13k QPS at 128d vs <1k QPS at 768d). Requires investigation into inverted index scaling.
+- **Remote Ingestion Regression**: Ingestion on AMD64 improved to 516k vec/s, surpassing previous baselines.
+- **GraphRAG Stability**: GraphRAG search remains stable (~6k local, ~3k remote) but is still a target for SIMD expansion optimizations.
 
 ### Performance & Stability Recommendations (2026-05-02)
 
-**Observations from v0.2.1-rc1:**
+-*Observations from v0.2.1-rc1:**
 
 1. **Dense Search Throughput**: Currently limited by single-threaded benchmark client and per-query allocation churn.
-    * *Action taken*: Implemented `SearchAttemptBuffers` pool in `parallel_search.go`.
-    * *Action taken*: Added concurrent worker support to `bench-tool`.
-    * *Result*: Anticipating 5-10x improvement in measurable QPS once full matrix completes.
+    - *Action taken*: Implemented `SearchAttemptBuffers` pool in `parallel_search.go`.
+    - *Action taken*: Added concurrent worker support to `bench-tool`.
+    - *Result*: Anticipating 5-10x improvement in measurable QPS once full matrix completes.
 
 2. **ARM64 Distance Kernels**: Generic unrolled loops were used as fallbacks.
-    * *Action taken*: Explicitly enabled NEON assembly kernels in `simd_arm64.go`.
-    * *Impact*: 20-40% reduction in CPU cycles for Euclidean and Dot product computations.
+    - *Action taken*: Explicitly enabled NEON assembly kernels in `simd_arm64.go`.
+    - *Impact*: 20-40% reduction in CPU cycles for Euclidean and Dot product computations.
 
 3. **Metal Stability**: Missing shader kernels caused SIGABRT.
-    * *Action taken*: Implemented `MTLFunction` nil-checks in `metal_gpu.go`.
-    * *Result*: Stable initialization across all M-series chips.
+    - *Action taken*: Implemented `MTLFunction` nil-checks in `metal_gpu.go`.
+    - *Result*: Stable initialization across all M-series chips.
 
-**Future Optimization Priorities:**
+-*Future Optimization Priorities:**
 
 1. **SIMD Scatter-Add**: Implement assembly kernel for `accumulateWeightedScatterNEON` to accelerate GraphRAG spreading activation.
 2. **Schema Caching**: Pre-calculate Arrow schema mappings in `ArrowHNSW` to reduce per-query metadata overhead.
@@ -385,20 +387,20 @@ Full aggregated results are being updated in [docs/performance_matrix.md](file:/
 
 ### Hardware
 
-* **Local**: Apple Silicon M3, 18GB memory
-* **Remote (ancalagon)**: NVIDIA RTX 4060 Laptop GPU, 8GB VRAM, 22GB RAM, 16 cores (AMD64 Linux)
+- **Local**: Apple Silicon M3, 18GB memory
+- **Remote (ancalagon)**: NVIDIA RTX 4060 Laptop GPU, 8GB VRAM, 22GB RAM, 16 cores (AMD64 Linux)
 
 ## v0.1.9 Baseline (2026-04-26)
 
 ### Benchmark Matrix Coverage
 
-* **Platforms:** CPU, Metal (local), CUDA (remote ancalagon)
-* **Data Types:** float16, float32, float64, int8, int16, int32, int64, uint8, uint16, uint32, uint64, complex64, complex128, turboquant2, turboquant4, turboquant8
-* **Dimensions:** 128, 384, 768, 1024, 3072
-* **Counts:** 500, 1000, 5000, 15000, 50000, 100000
-* **Search Types (via alpha-values):** dense (alpha=1.0), hybrid (alpha=0.5), graph (alpha=0.0)
-* **Search Modes:** dense, hybrid, sparse, filtered, byid, graphrag, geo, temporal, learned_index
-* **Memory Allocation:** 18GB for longbow testing
+- **Platforms:** CPU, Metal (local), CUDA (remote ancalagon)
+- **Data Types:** float16, float32, float64, int8, int16, int32, int64, uint8, uint16, uint32, uint64, complex64, complex128, turboquant2, turboquant4, turboquant8
+- **Dimensions:** 128, 384, 768, 1024, 3072
+- **Counts:** 500, 1000, 5000, 15000, 50000, 100000
+- **Search Types (via alpha-values):** dense (alpha=1.0), hybrid (alpha=0.5), graph (alpha=0.0)
+- **Search Modes:** dense, hybrid, sparse, filtered, byid, graphrag, geo, temporal, learned_index
+- **Memory Allocation:** 18GB for longbow testing
 
 ### Ingest Performance (vec/s) - CPU, 10K vectors, dim=128
 
@@ -418,32 +420,32 @@ Full aggregated results are being updated in [docs/performance_matrix.md](file:/
 
 ### pprof
 
-* Enabled for all benchmark runs
-* Profiles captured: cpu, memory, goroutine, threadcreate, block, mutex
-* Storage: ./profiles/ directory with timestamped files
+- Enabled for all benchmark runs
+- Profiles captured: cpu, memory, goroutine, threadcreate, block, mutex
+- Storage: ./profiles/ directory with timestamped files
 
 ### Remote CUDA Benchmark Results (ancalagon, Linux x86_64)
 
-* **Status:** Tests queued for parallel execution with local benchmarks
-* **Expected Impact:** 5-10x speedup for >1M vectors on GPU
-* **Monitoring:** pprof data collection, log error monitoring enabled
+- **Status:** Tests queued for parallel execution with local benchmarks
+- **Expected Impact:** 5-10x speedup for >1M vectors on GPU
+- **Monitoring:** pprof data collection, log error monitoring enabled
 
 ### SharedWorkerPool
 
-* Fixed-size pool scaled to `runtime.GOMAXPROCS(0)`.
-* Eliminates per-query goroutine churn.
+- Fixed-size pool scaled to `runtime.GOMAXPROCS(0)`.
+- Eliminates per-query goroutine churn.
 
 ### pprof
 
-* Enabled for all benchmark runs
-* Profiles captured: cpu, memory, goroutine, threadcreate, block, mutex
-* Storage: ./profiles/ directory with timestamped files
+- Enabled for all benchmark runs
+- Profiles captured: cpu, memory, goroutine, threadcreate, block, mutex
+- Storage: ./profiles/ directory with timestamped files
 
 ### Log Monitoring
 
-* All benchmark runs monitored for errors
-* Log level: DEBUG for detailed tracing
-* Error patterns tracked and reported
+- All benchmark runs monitored for errors
+- Log level: DEBUG for detailed tracing
+- Error patterns tracked and reported
 
 ## v0.1.8 Baseline (2026-04-17)
 

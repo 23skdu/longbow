@@ -1564,7 +1564,9 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 						vStart := i * listLen
 						vEnd := (i + 1) * listLen
-						switch values := vecArr.ListValues().(type) {
+						listValues := vecArr.ListValues()
+						
+						switch values := listValues.(type) {
 						case *array.Float32:
 							src := values.Float32Values()[vStart:vEnd]
 							sub := make([]float32, len(src))
@@ -1577,10 +1579,57 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 								sub[j] = float32(v)
 							}
 							vectors[i] = sub
+						case *array.Int8:
+							src := values.Int8Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Int16:
+							src := values.Int16Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Int32:
+							src := values.Int32Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Int64:
+							src := values.Int64Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Uint8:
+							src := values.Uint8Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Uint16:
+							src := values.Uint16Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Uint32:
+							src := values.Uint32Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Uint64:
+							src := values.Uint64Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Float16:
+							src := values.Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = v.Float32() }
+							vectors[i] = sub
 						}
 
-						points[i] = types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]}
-						valid[i] = true
+						if vectors[i] != nil {
+							points[i] = types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]}
+							valid[i] = true
+						}
 					}
 				}
 			})

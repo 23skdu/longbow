@@ -283,11 +283,11 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	idx.mu.Unlock()
 
 	// Migrate data in batches, releasing locks between items
-	batchSize := 500 // Increased from 50 to reduce loop overhead
+	batchSize := 1000 // Increased to further reduce loop overhead
 	lastMigrated := 0
 
 	for {
-		// 1. Memory Check: If heap usage > 80% (or 70% if already high), pause and trigger GC
+		// 1. Memory Check: If heap usage > 80% (or 75% if already high), pause and trigger GC
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		
@@ -297,8 +297,8 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		}
 
 		usage := float64(m.HeapAlloc)
-		threshold := float64(maxMem) * 0.75 // Aggressive threshold during migration
-		if maxMem > 0 && usage > threshold {
+		// Only trigger aggressive reclamation if we are actually under pressure (> 80%)
+		if maxMem > 0 && usage > float64(maxMem)*0.80 {
 			idx.dataset.Logger.Warn().
 				Int64("usage_bytes", int64(usage)).
 				Int64("max_bytes", maxMem).
@@ -307,12 +307,11 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 			runtime.GC()
 			debug.FreeOSMemory()
 			
-			// Longer sleep to allow GC and OS to reclaim memory
-			time.Sleep(500 * time.Millisecond)
+			time.Sleep(200 * time.Millisecond)
 			continue
 		}
 
-		// Read state under lock
+		// ... (reading state)
 		idx.mu.RLock()
 		oldIdx := idx.current
 		isSharded := idx.sharded
@@ -362,25 +361,19 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		lastMigrated = endIdx
 
 		// Incremental Handover: Release monolithic storage segments as they are replicated.
-		// Since chunks are 32k items, we release a monolithic chunk once its IDs are migrated.
-		if lastMigrated > 0 && lastMigrated % types.ChunkSize == 0 {
+		if lastMigrated > 0 && lastMigrated%types.ChunkSize == 0 {
 			if ah, ok := oldIndex.(interface{ ReleaseMonolithicChunk(int) }); ok {
 				ah.ReleaseMonolithicChunk((lastMigrated / types.ChunkSize) - 1)
 			}
 		}
 
-		// Trigger GC and return memory to OS frequently to prevent accumulation
-		if lastMigrated % 5000 == 0 {
+		// Frequent GC (every 10k) but NO FreeOSMemory unless pressured
+		if lastMigrated%10000 == 0 {
 			runtime.GC()
-			if lastMigrated % 20000 == 0 {
-				debug.FreeOSMemory()
-			}
 		}
 
 		// Give other threads a window
 		runtime.Gosched()
-		// Small sleep to ensure fairness on high-core machines
-		time.Sleep(50 * time.Microsecond)
 	}
 
 	// Final swap
@@ -422,24 +415,34 @@ func (idx *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, f
 		return curr.SearchVectors(ctx, q, k, filters, options)
 	}
 
-	// Shadow Search Optimization: Prioritize the growing sharded index
-	// if we are deep into migration.
-	if interim != nil {
-		res, err := interim.SearchVectors(ctx, q, k, filters, options)
-		if err == nil && len(res) >= k {
-			// If sharded index already has enough good results, we might skip monolith
-			// but for HNSW correctness during migration, we usually need both.
-		}
-		
-		// Continue with monolith search
-		res2, err := curr.SearchVectors(ctx, q, k, filters, options)
-		if err == nil {
-			res = idx.mergeSearchResults(res, res2, k)
-		}
-		return res, nil
+	// If no migration is active, search monolith only
+	if interim == nil {
+		return curr.SearchVectors(ctx, q, k, filters, options)
 	}
 
-	return curr.SearchVectors(ctx, q, k, filters, options)
+	// Parallel Shadow Search: Query both indices concurrently
+	var res1, res2 []SearchResult
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		res1, err1 = interim.SearchVectors(ctx, q, k, filters, options)
+	}()
+
+	go func() {
+		defer wg.Done()
+		res2, err2 = curr.SearchVectors(ctx, q, k, filters, options)
+	}()
+
+	wg.Wait()
+
+	if err1 != nil && err2 != nil {
+		return nil, err1 // Return first error if both fail
+	}
+
+	return idx.mergeSearchResults(res1, res2, k), nil
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
@@ -454,43 +457,75 @@ func (idx *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any
 		return curr.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	}
 
-	res, err := curr.SearchVectorsWithBitmap(ctx, q, k, filter, options)
-	if err != nil {
-		return nil, err
-	}
-	if interim != nil {
-		res2, err := interim.SearchVectorsWithBitmap(ctx, q, k, filter, options)
-		if err == nil {
-			res = idx.mergeSearchResults(res, res2, k)
-		}
+	if interim == nil {
+		return curr.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	}
 
-	return res, nil
+	// Parallel Shadow Search
+	var res1, res2 []SearchResult
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		res1, err1 = interim.SearchVectorsWithBitmap(ctx, q, k, filter, options)
+	}()
+
+	go func() {
+		defer wg.Done()
+		res2, err2 = curr.SearchVectorsWithBitmap(ctx, q, k, filter, options)
+	}()
+
+	wg.Wait()
+
+	if err1 != nil && err2 != nil {
+		return nil, err1
+	}
+
+	return idx.mergeSearchResults(res1, res2, k), nil
 }
 
 // SearchVectorsInRange returns nearest neighbors within a distance threshold.
 func (idx *AutoShardingIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
 	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-
 	sharded := idx.sharded
-	if sharded {
-		return idx.current.SearchVectorsInRange(ctx, q, threshold, filters, options)
-	}
-
 	interim := idx.interimIndex
-	res, err := idx.current.SearchVectorsInRange(ctx, q, threshold, filters, options)
-	if err != nil {
-		return nil, err
-	}
-	if interim != nil {
-		res2, err := interim.SearchVectorsInRange(ctx, q, threshold, filters, options)
-		if err == nil {
-			res = append(res, res2...)
-		}
+	curr := idx.current
+	idx.mu.RUnlock()
+
+	if sharded {
+		return curr.SearchVectorsInRange(ctx, q, threshold, filters, options)
 	}
 
-	return res, nil
+	if interim == nil {
+		return curr.SearchVectorsInRange(ctx, q, threshold, filters, options)
+	}
+
+	// Parallel Shadow Search
+	var res1, res2 []SearchResult
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		res1, err1 = interim.SearchVectorsInRange(ctx, q, threshold, filters, options)
+	}()
+
+	go func() {
+		defer wg.Done()
+		res2, err2 = curr.SearchVectorsInRange(ctx, q, threshold, filters, options)
+	}()
+
+	wg.Wait()
+
+	if err1 != nil && err2 != nil {
+		return nil, err1
+	}
+
+	combined := append(res1, res2...)
+	return combined, nil
 }
 
 func (idx *AutoShardingIndex) mergeSearchResults(res1, res2 []SearchResult, k int) []SearchResult {

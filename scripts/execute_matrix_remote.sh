@@ -6,5 +6,5 @@ DIMS="128,384,768,1024,3072"
 COUNTS="25000,50000,100000,150000"
 
 # Remote ancalagon (CPU then CUDA)
-ssh ancalagon "cd ~/longbow && ./scripts/bench_tool_runner.sh --mode cpu --dims \"$DIMS\" --counts \"$COUNTS\" --types \"$DTYPES\" --output bench_results/ancalagon_cpu"
-ssh ancalagon "cd ~/longbow && ./scripts/bench_tool_runner.sh --mode cuda --dims \"$DIMS\" --counts \"$COUNTS\" --types \"$DTYPES\" --output bench_results/ancalagon_cuda"
+./scripts/bench_tool_runner.sh --mode cpu --dims "$DIMS" --counts "$COUNTS" --types "$DTYPES" --output bench_results/ancalagon_cpu
+./scripts/bench_tool_runner.sh --mode cuda --dims "$DIMS" --counts "$COUNTS" --types "$DTYPES" --output bench_results/ancalagon_cuda

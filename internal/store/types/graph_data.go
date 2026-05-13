@@ -2791,9 +2791,6 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 		} else {
 			u32Arena = memory.NewSlabArena(u32SlabSize)
 		}
-	} else {
-		u64Arena = memory.NewSlabArena(16 * 1024 * 1024)
-		u32Arena = memory.NewSlabArena(16 * 1024 * 1024)
 	}
 
 

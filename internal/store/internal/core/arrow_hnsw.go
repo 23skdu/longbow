@@ -199,16 +199,13 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		topLayerManager: NewTopLayerManager(config.LockFreeThreshold),
 		topo:            topo,
 	}
-	// Ensure config parameters fit in int32 and are valid for HNSW
-	if config.M > math.MaxInt32 || config.M <= 1 {
-		config.M = 16 // Default safe value
-	}
-	if config.MMax > math.MaxInt32 || config.MMax <= 0 {
-		config.MMax = config.M * 2
-	}
-	if config.MMax0 > math.MaxInt32 || config.MMax0 <= 0 {
-		config.MMax0 = config.M * 2
-	}
+	h.metadataRegistry.Store(&HNSWMetadata{
+		EntryPoint: math.MaxUint32,
+		MaxLevel:   -1,
+		NodeCount:  0,
+		Version:    0,
+		Generation: 0,
+	})
 
 	h.m.Store(int32(config.M))     // #nosec G115
 	h.mMax.Store(int32(config.MMax))   // #nosec G115
@@ -516,6 +513,8 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 
 func (h *ArrowHNSW) commitID(id uint32) {
 	h.commitMu.Lock()
+	defer h.commitMu.Unlock()
+	
 	for h.GetMetadataSnapshot().NodeCount < int64(id) {
 		h.commitCond.Wait()
 	}
@@ -551,17 +550,19 @@ func (h *ArrowHNSW) commitID(id uint32) {
 					meta.MaxLevel = int32(nodeLevel)
 				}
 			}
+			meta.Generation++
+		} else {
+			// Already committed or skipped
 		}
 	})
+
+	h.commitCond.Broadcast()
 	
 	// Sync atomics with the newly committed metadata
 	meta := h.GetMetadataSnapshot()
 	h.nodeCount.Store(meta.NodeCount)
 	h.entryPoint.Store(meta.EntryPoint)
 	h.maxLevel.Store(meta.MaxLevel)
-
-	h.commitCond.Broadcast()
-	h.commitMu.Unlock()
 }
 
 func (h *ArrowHNSW) updateMetadata(update func(*HNSWMetadata)) {
@@ -600,7 +601,6 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 		return 0, fmt.Errorf("index overflow: nextID %d exceeds uint32 max", next)
 	}
 	id := uint32(next - 1) // #nosec G115
-	defer h.commitID(id)
 
 	var vec any
 	if h.dataset != nil {
@@ -637,7 +637,6 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 		return 0, fmt.Errorf("index overflow: nextID %d exceeds uint32 max", next)
 	}
 	id := uint32(next - 1) // #nosec G115
-	defer h.commitID(id)
 
 	var vec any
 	// Find vector column
@@ -1172,7 +1171,6 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	// Fallback to sequential insertion if bulk fails (rare)
 	ids := make([]uint32, len(rowIdxs))
 	maxID := startID + uint32(len(rowIdxs)) - 1 // #nosec G115
-	fmt.Printf("AddBatch startID=%d n=%d\n", startID, len(rowIdxs))
 	data, err := h.EnsureChunks(int(types.ChunkID(startID)), int(types.ChunkID(maxID)), int(h.dims.Load()))
 	if err == nil {
 		data = data.Clone()

@@ -1982,7 +1982,10 @@ func (h *ArrowHNSW) GetLayerNeighbors(id uint32, layer int) ([]uint32, error) {
 
 	maxLevel := h.GetMaxLevel()
 	meta := h.GetMetadataSnapshot()
-	if meta.MaxLevel < 0 || int64(id) >= meta.NodeCount {
+	if int64(id) >= meta.NodeCount {
+		return nil, fmt.Errorf("%w: id=%d", ErrVectorNotFound, id)
+	}
+	if meta.MaxLevel < 0 {
 		return nil, nil
 	}
 

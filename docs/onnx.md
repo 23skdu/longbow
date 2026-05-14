@@ -6,12 +6,12 @@ Longbow integrates the **ONNX Runtime (ORT)** to provide high-performance infere
 
 Longbow's ONNX integration is designed for zero-copy data flow and hardware acceleration:
 
-1.  **Hardware Providers**: Longbow automatically detects and enables the best available provider:
-    -   **Metal (Darwin/ARM64)**: Uses the custom Metal shader backend for ultra-low latency on macOS.
-    -   **CUDA (Linux)**: Uses NVIDIA GPUs via the CUDA Execution Provider.
-    -   **CPU**: Fallback to highly optimized AVX-512/NEON SIMD kernels.
-2.  **Smart Pooling**: Longbow supports Mean, Max, and CLS pooling strategies for transformer-based models, allowing you to generate sentence embeddings directly from hidden states.
-3.  **Tokenizer Integration**: Includes a built-in WordPiece tokenizer for BERT/RoBERTa/MiniLM models, removing the need for external pre-processing.
+1. **Hardware Providers**: Longbow automatically detects and enables the best available provider:
+   - **Metal (Darwin/ARM64)**: Uses the custom Metal shader backend for ultra-low latency on macOS.
+   - **CUDA (Linux)**: Uses NVIDIA GPUs via the CUDA Execution Provider.
+   - **CPU**: Fallback to highly optimized AVX-512/NEON SIMD kernels.
+2. **Smart Pooling**: Longbow supports Mean, Max, and CLS pooling strategies for transformer-based models, allowing you to generate sentence embeddings directly from hidden states.
+3. **Tokenizer Integration**: Includes a built-in WordPiece tokenizer for BERT/RoBERTa/MiniLM models, removing the need for external pre-processing.
 
 ## Model Management
 
@@ -24,6 +24,7 @@ longbow-cli download-model -repo <huggingface_repo_id> -dest <local_directory>
 ```
 
 The CLI will attempt to download:
+
 - `model.onnx`: The core model graph.
 - `config.json`: Model configuration.
 - `vocab.txt`: Tokenizer vocabulary.
@@ -33,12 +34,13 @@ The CLI will attempt to download:
 For users looking for a balance of speed and accuracy, we recommend:
 
 - **Model**: `sentence-transformers/all-MiniLM-L6-v2`
-- **Why**: 
-    -   **Small Size**: ~80MB in ONNX format.
-    -   **Fast**: Optimized for CPU and edge inference.
-    -   **Accurate**: State-of-the-art performance for its parameter count.
+- **Why**:
+  - **Small Size**: ~80MB in ONNX format.
+  - **Fast**: Optimized for CPU and edge inference.
+  - **Accurate**: State-of-the-art performance for its parameter count.
 
 **Download Command:**
+
 ```bash
 longbow-cli download-model -repo sentence-transformers/all-MiniLM-L6-v2 -dest models/all-mini
 ```

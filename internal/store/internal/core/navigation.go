@@ -13,13 +13,13 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
-	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
 	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
+	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -1078,18 +1078,15 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		}
 
 		// Optimization: Prefetch neighbor vectors to hide memory latency
-		for i, n := range neighbors {
-			if i+2 < len(neighbors) {
-				nextN := neighbors[i+2]
-				if int64(nextN) < maxCommitted {
-					cID := types.ChunkID(nextN)
-					cOff := types.ChunkOffset(nextN)
-					if vChunk := data.GetVectorsChunkWithGen(cID, maxGen); vChunk != nil {
-						simd.Prefetch(unsafe.Pointer(&vChunk[cOff*data.Dims])) // #nosec G103
+		if comp, ok := computer.(DistanceComputer); ok {
+			for i := range neighbors {
+				if i+2 < len(neighbors) {
+					nextN := neighbors[i+2]
+					if int64(nextN) < maxCommitted {
+						comp.Prefetch(nextN)
 					}
 				}
 			}
-			_ = n
 		}
 
 		if ctx.predicate != nil {
@@ -1243,6 +1240,29 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		if data.Type == types.VectorTypeFloat32 {
 			maxGen := uint64(math.MaxUint64)
 			if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+			
+			// Detect Shared Vector Space and use specialized computer
+			if h.sharedVectorSpace.Load() && h.dataset != nil {
+				recs := h.dataset.GetRecords()
+				slices := make([][]float32, len(recs))
+				vecColIdx := -1
+				for i, rec := range recs {
+					if rec == nil { continue }
+					if vecColIdx == -1 {
+						vecColIdx = h.getVectorColumnIndex(rec)
+					}
+					if vecColIdx != -1 {
+						col := rec.Column(vecColIdx)
+						if list, ok := col.(*arrowarray.FixedSizeList); ok {
+							if values, ok := list.ListValues().(*arrowarray.Float32); ok {
+								slices[i] = values.Float32Values()
+							}
+						}
+					}
+				}
+				return &sharedFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen, slices: slices}
+			}
+
 			return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen}
 		}
 		maxGen := uint64(math.MaxUint64)
@@ -1275,6 +1295,32 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		}
 		maxGen := uint64(math.MaxUint64)
 		if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+
+		// Detect Shared Vector Space for Int8
+		if h.sharedVectorSpace.Load() && h.dataset != nil && (data.Type == types.VectorTypeInt8 || data.Type == types.VectorTypeUint8) {
+			recs := h.dataset.GetRecords()
+			slices := make([][]int8, len(recs))
+			vecColIdx := -1
+			for i, rec := range recs {
+				if rec == nil { continue }
+				if vecColIdx == -1 {
+					vecColIdx = h.getVectorColumnIndex(rec)
+				}
+				if vecColIdx != -1 {
+					col := rec.Column(vecColIdx)
+					if list, ok := col.(*arrowarray.FixedSizeList); ok {
+						if values, ok := list.ListValues().(*arrowarray.Int8); ok {
+							slices[i] = values.Int8Values()
+						} else if values, ok := list.ListValues().(*arrowarray.Uint8); ok {
+							u8s := values.Uint8Values()
+							slices[i] = *(*[]int8)(unsafe.Pointer(&u8s)) // #nosec G103
+						}
+					}
+				}
+			}
+			return &sharedInt8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg, maxGen: maxGen, slices: slices}
+		}
+
 		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg, maxGen: maxGen}
 	case []float64:
 		var dg *DiskGraph

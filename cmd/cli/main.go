@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/client"
+	"github.com/23skdu/longbow/internal/onnx"
 	"github.com/23skdu/longbow/pkg/version"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -78,6 +79,8 @@ func main() {
 		runTemporalSearch(ctx, os.Args[2:])
 	case "drop":
 		runDrop(ctx, os.Args[2:])
+	case "download-model":
+		runDownloadModel(ctx, os.Args[2:])
 	case "version", "-v", "--version":
 		version.Print()
 	case "help", "-h", "--help":
@@ -115,6 +118,7 @@ Commands:
   detect-communities Run community detection (LPA)
   temporal-search  Search temporal index (as-of, range, window)
   drop             Explicitly drop a dataset from memory
+  download-model   Download an ONNX model from Hugging Face
 
 Global Options:
   -uri string    Longbow server URI (default: grpc://127.0.0.1:3000)
@@ -144,9 +148,11 @@ Examples:
   # Export dataset to Arrow file
   longbow-cli export -dataset mydata -output dataset.arrow -compression lz4
 
+  # Download ONNX model from Hugging Face
+  longbow-cli download-model -repo sentence-transformers/all-MiniLM-L6-v2 -dest models/all-MiniLM-L6-v2
+
 Use "longbow-cli <command> --help" for more information about a command.`)
 }
-
 
 func mustGetClient(uri string) *client.SmartClient {
 	// Sanitize URI for logging to prevent log injection (G706)
@@ -653,8 +659,6 @@ func runDeleteNamespace(ctx context.Context, args []string) {
 	fmt.Printf("Namespace '%s' deleted successfully\n", *name)
 }
 
-
-
 func runListNamespaces(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("list-namespaces", flag.ExitOnError)
 	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
@@ -775,7 +779,6 @@ func runStats(ctx context.Context, args []string) {
 		fmt.Printf("  Health:      %d%%\n\n", hints.Health)
 	}
 }
-
 
 func runImportS3(ctx context.Context, sc *client.SmartClient, dataset, s3Path string) {
 	// Parse s3://bucket/key
@@ -932,10 +935,10 @@ func runGeoSearch(ctx context.Context, args []string) {
 	defer sc.Close()
 
 	req := map[string]interface{}{
-		"dataset":   *dataset,
-		"k":         *k,
-		"center":    map[string]float64{"lat": *lat, "lon": *lon},
-		"radius_km": *radius,
+		"dataset":     *dataset,
+		"k":           *k,
+		"center":      map[string]float64{"lat": *lat, "lon": *lon},
+		"radius_km":   *radius,
 		"search_type": "radius",
 	}
 
@@ -1397,4 +1400,22 @@ func runExport(ctx context.Context, args []string) {
 	}
 
 	fmt.Printf("Successfully exported %d rows to %s in %v\n", totalRows, *fileFlag, time.Since(start))
+}
+
+func runDownloadModel(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("download-model", flag.ExitOnError)
+	repo := fs.String("repo", "", "Hugging Face repo ID (e.g., sentence-transformers/all-MiniLM-L6-v2) (required)")
+	dest := fs.String("dest", "models", "Destination directory")
+	_ = fs.Parse(args)
+
+	if *repo == "" {
+		fmt.Fprintf(os.Stderr, "Usage: longbow-cli download-model -repo <repo_id> [-dest <path>]\n")
+		os.Exit(1)
+	}
+
+	if err := onnx.DownloadModel(*repo, *dest); err != nil {
+		log.Fatalf("Failed to download model: %v", err)
+	}
+
+	fmt.Printf("Successfully downloaded model %s to %s\n", *repo, *dest)
 }

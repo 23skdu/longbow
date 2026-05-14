@@ -24,6 +24,7 @@ type VectorIndexer interface {
 	// Returns all vectors where distance <= threshold (or score >= minScore for similarity metrics).
 	SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []core.Filter, options any) ([]SearchResult, error)
 	IsSharded() bool
+	RelocateToOffHeap() error
 
 	// Metadata operations
 	Size() int

@@ -99,6 +99,7 @@ type ArrowHNSW struct {
 	distFuncInt64 func([]int64, []int64) (float32, error)
 	distFuncUint64 func([]uint64, []uint64) (float32, error)
 
+	sharedVectorSpace atomic.Bool
 	adaptiveMTriggered atomic.Bool
 
 	initMu sync.Mutex
@@ -246,6 +247,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		return nil
 	}
 	h.dims.Store(int32(config.Dims)) // #nosec G115
+	h.sharedVectorSpace.Store(config.SharedVectorSpace)
 
 	// Initialize distance functions using resolvers
 	h.resolveAllDistanceFuncs()
@@ -318,6 +320,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		config.TurboQuantBits,
 		h.name,
 		numaAlloc,
+		h.sharedVectorSpace.Load(),
 	)
 	if h.oopqEncoder != nil {
 		switch enc := h.oopqEncoder.(type) {
@@ -327,6 +330,8 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 			gd.PQM = enc.CodeSize()
 		}
 	}
+	gd.SharedVectorSpace = config.SharedVectorSpace
+	h.sharedVectorSpace.Store(config.SharedVectorSpace)
 
 	// Initialize Lock-Free Adjacency for all layers ([#11] Lock-Free Adjacency)
 	gd.PackedNeighbors = make([]types.PackedNeighbors, types.ArrowMaxLayers)
@@ -1473,4 +1478,12 @@ func (h *ArrowHNSW) SetEfConstruction(ef int32) {
 // GetNUMANode returns the NUMA node and topology for the index.
 func (h *ArrowHNSW) GetNUMANode() (int, *memory.NUMATopology) {
 	return h.config.NUMANode, h.topo
+}
+
+func (h *ArrowHNSW) RelocateToOffHeap() error {
+	gd := h.data.Load()
+	if gd == nil {
+		return nil
+	}
+	return gd.RelocateToOffHeap()
 }

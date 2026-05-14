@@ -325,6 +325,14 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	idx.interimIndex = newIndex
 	idx.mu.Unlock()
 
+	// Transition monolithic index to off-heap shadow mode to free up heap for the new index
+	if err := oldIndex.RelocateToOffHeap(); err != nil {
+		idx.dataset.Logger.Error().Err(err).Msg("Failed to relocate monolithic index to off-heap")
+	}
+	// Reclaim memory immediately
+	runtime.GC()
+	debug.FreeOSMemory()
+
 	// Migration parameters
 	baseBatchSize := 5000 // Increased for throughput
 	lastMigrated := 0
@@ -377,6 +385,16 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 			runtime.GC()
 			debug.FreeOSMemory()
 			time.Sleep(500 * time.Millisecond)
+		}
+
+		// 1b. Migration Lane Throttling
+		if idx.dataset.Admission != nil {
+			for {
+				if err := idx.dataset.Admission.AdmitMigration(context.Background()); err == nil {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
 		}
 
 		idx.mu.RLock()
@@ -918,4 +936,16 @@ func (idx *AutoShardingIndex) GetGPUIndex() any {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return idx.current.GetGPUIndex()
+}
+
+func (idx *AutoShardingIndex) RelocateToOffHeap() error {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if err := idx.current.RelocateToOffHeap(); err != nil {
+		return err
+	}
+	if idx.interimIndex != nil {
+		return idx.interimIndex.RelocateToOffHeap()
+	}
+	return nil
 }

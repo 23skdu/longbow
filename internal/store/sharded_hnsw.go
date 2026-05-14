@@ -36,6 +36,7 @@ type ShardedHNSWConfig struct {
 	ShardSplitThreshold    int
 	UseRingSharding        bool // If true, use Consistent Hashing (Ring). If false, use Linear Range.
 	PackedAdjacencyEnabled bool // If true, use thread-safe packed neighbor storage (v0.1.4)
+	SharedVectorSpace      bool // If true, shards use primary Dataset records for vector lookups
 	IndexFactory           func(shardIdx int) VectorIndex
 }
 
@@ -66,6 +67,7 @@ func DefaultShardedHNSWConfig() ShardedHNSWConfig {
 		ShardSplitThreshold:    65536, // ~64k vectors per shard (L3 Cache Alignment)
 		UseRingSharding:        true,  // Default to Ring
 		PackedAdjacencyEnabled: true,
+		SharedVectorSpace:      true, // Enable by default for sharded indexes (v0.2.5)
 	}
 }
 
@@ -1391,4 +1393,19 @@ func (idx *ShardedHNSW) RemapLocations(ctx context.Context, mapping map[uint32]a
 // GetShardedIndex returns this index as a ShardedHNSW pointer.
 func (idx *ShardedHNSW) GetShardedIndex() *ShardedHNSW {
 	return idx
+}
+
+func (idx *ShardedHNSW) RelocateToOffHeap() error {
+	idx.shardsMu.RLock()
+	defer idx.shardsMu.RUnlock()
+	for _, shard := range idx.shards {
+		if err := shard.RelocateToOffHeap(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (s *hnswShard) RelocateToOffHeap() error {
+	return s.index.RelocateToOffHeap()
 }

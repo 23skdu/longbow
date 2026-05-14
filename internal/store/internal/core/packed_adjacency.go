@@ -386,3 +386,42 @@ func (pa *PackedAdjacency) getPackedRef(id uint32) (uint64, bool) {
 
 	return atomic.LoadUint64(&page[offsetInPage]), true
 }
+func (pa *PackedAdjacency) RelocateToOffHeap(alloc *memory.OffHeapAllocator) {
+	pa.mu.Lock()
+	defer pa.mu.Unlock()
+
+	curPtr := pa.chunks.Load()
+	if curPtr == nil {
+		return
+	}
+	oldChunks := *curPtr
+	
+	// Allocate off-heap slice
+	size := len(oldChunks) * 8
+	newData := alloc.Allocate(size)
+	if newData == nil {
+		return
+	}
+	
+	// Zero-copy view as []uint64
+	newChunksTyped := unsafe.Slice((*uint64)(unsafe.Pointer(&newData[0])), len(oldChunks)) // #nosec G103
+	
+	copy(newChunksTyped, oldChunks)
+	pa.chunks.Store(&newChunksTyped)
+
+	// Also relocate the underlying arena if it exists
+	if pa.baseArena != nil {
+		_ = pa.baseArena.ConvertToOffHeap(alloc)
+	}
+}
+
+func (pa *PackedAdjacency) GetArena() *memory.SlabArena {
+	return pa.baseArena
+}
+// IsOffHeap returns true if the backing arena is off-heap.
+func (pa *PackedAdjacency) IsOffHeap() bool {
+	if pa.baseArena == nil {
+		return false
+	}
+	return pa.baseArena.IsOffHeap()
+}

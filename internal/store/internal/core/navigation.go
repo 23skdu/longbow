@@ -2203,6 +2203,17 @@ func (h *ArrowHNSW) getVectorWithCachedDisk(data *types.GraphData, dg *DiskGraph
 		return v, nil
 	}
 
+	// Shared Vector Space Path
+	if h.sharedVectorSpace.Load() {
+		loc, ok := h.locationStore.Get(types.VectorID(id))
+		if ok {
+			vec := h.extractFromDataset(loc.BatchIdx, loc.RowIdx)
+			if vec != nil {
+				return vec, nil
+			}
+		}
+	}
+
 	// Fallback to DiskGraph
 	if dg == nil {
 		dg = h.diskGraph.Load()

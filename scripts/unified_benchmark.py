@@ -262,8 +262,10 @@ class BenchmarkRunner:
             env["LONGBOW_GPU_ENABLED"] = "false"
 
         limit_gb = 18
-        if "ancalagon" not in os.uname().nodename.lower() and "darwin" in sys.platform.lower():
-            limit_gb = 12
+        if "ancalagon" in os.uname().nodename.lower():
+            limit_gb = 14
+        elif "darwin" in sys.platform.lower():
+            limit_gb = 18
         env["LONGBOW_MAX_MEMORY"] = str(limit_gb * 1024 * 1024 * 1024) 
         env["ARROW_DISABLE_LOCKING"] = "1"
         if self.args.rdma:
@@ -512,7 +514,7 @@ class BenchmarkRunner:
         label_full = f"{label}_{self.args.label}" if self.args.label else label
         pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
+        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=5"
         
         pprof_proc = None
         if "127.0.0.1" in self.server_addr or "localhost" in self.server_addr:
@@ -869,7 +871,7 @@ class BenchmarkRunner:
                         label_full = f"{label}_{self.args.label}" if self.args.label else label
                         pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
                         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
+                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=5"
                         pprof_proc = subprocess.Popen(
                             f"curl -s -o {pprof_file} \"{pprof_url}\"",
                             shell=True,
@@ -1208,7 +1210,7 @@ class BenchmarkRunner:
                         label_full = f"{label}_{self.args.label}" if self.args.label else label
                         pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
                         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
+                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=5"
                         pprof_proc = subprocess.Popen(
                             f"curl -s -o {pprof_file} \"{pprof_url}\"",
                             shell=True,

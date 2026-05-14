@@ -13,13 +13,58 @@ Longbow ensures zero data loss using a combination of Write-Ahead Logs (WAL) and
 - **Performance**: High-throughput writes using `io_uring` (Linux) and asynchronous fsync options.
 - **Recovery**: On startup, Longbow replays the WAL to reconstruct the in-memory HNSW index and Arrow buffers.
 
-### Snapshots (Parquet)
+### Snapshots (Parquet & Arrow)
 - **Format**: Data is periodically flushed to Apache Parquet files, providing a columnar, compressed representation of the dataset.
-- **Cloud-Native**: Snapshots can be offloaded to **S3-compatible storage** for long-term retention and cross-region recovery.
+- **Cloud-Native**: Snapshots can be offloaded to **S3-compatible storage** and **Google Cloud Storage (GCS)** for long-term retention and cross-region recovery.
 
 ---
 
-## 2. Data Lifecycle: Eviction & TTL
+## 2. Remote Persistence (S3 & GCS)
+
+Longbow supports reading and writing directly to cloud storage for both ingestion and exports.
+
+### Supported URIs
+- **S3**: `s3://bucket-name/path/to/file.parquet`
+- **GCS**: `gs://bucket-name/path/to/file.parquet`
+
+### Ingestion via CLI
+You can import large datasets directly from cloud buckets without local buffering (where supported by the format):
+
+```bash
+# Import from S3
+longbow-cli import -dataset my-collection -input s3://my-bucket/data.parquet
+
+# Import from GCS
+longbow-cli import -dataset my-collection -input gs://my-bucket/data.parquet
+```
+
+### Export to Cloud
+Longbow can export resident datasets directly to Arrow IPC (.arrow) or Parquet files in the cloud:
+
+```bash
+# Export to GCS
+longbow-cli export -dataset my-collection -file gs://my-bucket/exports/today.arrow
+```
+
+---
+
+## 3. Tiered Storage Configuration
+
+For large-scale deployments, Longbow can offload "cold" or "warm" data to remote tiers.
+
+### Configuration Environment Variables
+
+| Variable | Description |
+| :--- | :--- |
+| `STORAGE_REMOTE_TYPE` | `s3` or `gcs` |
+| `S3_BUCKET` | S3 bucket name |
+| `S3_ENDPOINT` | Custom S3 endpoint (e.g. MinIO) |
+| `GCS_BUCKET` | GCS bucket name |
+| `GOOGLE_APPLICATION_CREDENTIALS` | Path to Google service account JSON key |
+
+---
+
+## 4. Data Lifecycle: Eviction & TTL
 
 Longbow automatically manages memory pressure and data staleness through active eviction policies.
 
@@ -33,7 +78,7 @@ Longbow automatically manages memory pressure and data staleness through active 
 
 ---
 
-## 3. Temporal Capabilities & Versioning
+## 5. Temporal Capabilities & Versioning
 
 Longbow supports time-travel queries and multi-version concurrency control (MVCC) for evolving datasets.
 
@@ -48,7 +93,7 @@ Maintain a log of changes per vector ID (configured via `TEMPORAL_MAX_VERSIONS`)
 
 ---
 
-## 4. Schema Evolution
+## 6. Schema Evolution
 
 Longbow allows datasets to evolve their metadata schema without requiring re-indexing or downtime.
 
@@ -58,9 +103,10 @@ Longbow allows datasets to evolve their metadata schema without requiring re-ind
 
 ---
 
-## 5. Metrics & Observability
+## 7. Metrics & Observability
 
 Monitor storage health via Prometheus:
 - `longbow_evictions_total{reason="ttl|lru"}`: Count of dataset evictions.
 - `longbow_persistence_wal_bytes_total`: WAL throughput.
-- `longbow_temporal_index_size`: Resident temporal vectors.
+- `longbow_remote_storage_duration_seconds{provider="s3|gcs"}`: Latency of remote operations.
+- `longbow_remote_storage_ops_total{status="success|error"}`: Remote operation counters.

@@ -38,7 +38,7 @@ require (
 	github.com/sbinet/npyio v0.9.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/tetratelabs/wazero v1.11.0
-	github.com/yalue/onnxruntime_go v1.30.0
+	github.com/yalue/onnxruntime_go v1.30.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.43.0

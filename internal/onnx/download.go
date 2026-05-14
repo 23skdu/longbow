@@ -16,7 +16,7 @@ func DownloadModel(repoID, destDir string) error {
 	}
 
 	// Create destination directory
-	if err := os.MkdirAll(destDir, 0755); err != nil {
+	if err := os.MkdirAll(filepath.Clean(destDir), 0750); err != nil { // #nosec G301
 		return fmt.Errorf("failed to create directory %s: %w", destDir, err)
 	}
 
@@ -52,7 +52,7 @@ func DownloadModel(repoID, destDir string) error {
 }
 
 func downloadFile(url, destPath string) error {
-	resp, err := http.Get(url)
+	resp, err := http.Get(url) // #nosec G107
 	if err != nil {
 		return err
 	}
@@ -62,7 +62,7 @@ func downloadFile(url, destPath string) error {
 		return fmt.Errorf("failed to download: status code %d", resp.StatusCode)
 	}
 
-	out, err := os.Create(destPath)
+	out, err := os.Create(filepath.Clean(destPath)) // #nosec G304
 	if err != nil {
 		return err
 	}

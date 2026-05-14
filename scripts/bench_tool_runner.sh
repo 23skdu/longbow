@@ -12,7 +12,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-bench_results}"
 # Default configuration
 DTYPES=("float32" "float64" "float16" "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64" "complex64" "complex128" "turboquant2" "turboquant4" "turboquant8")
 DIMS=(128 384 768 1024 3072)
-COUNTS=(1000 5000 10000 50000 100000)
+COUNTS=(1000 5000 10000 25000 50000 100000)
 QUERIES=1000
 URI="${URI:-127.0.0.1:4000}"
 METRICS_URI="${METRICS_URI:-127.0.0.1:9095}"
@@ -115,7 +115,7 @@ if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
     METRICS_PORT=$(echo "$METRICS_URI" | cut -d: -f2)
     META_PORT=$((PORT + 1))
     
-    export LONGBOW_MAX_MEMORY=19327352832
+    export LONGBOW_MAX_MEMORY=${LONGBOW_MAX_MEMORY:-15032385536}
     export LONGBOW_AUTOSCALE_ENABLED=false
     export LONGBOW_TEMPORAL_ENABLED=true
     export LONGBOW_SPARSE_ENABLED=true
@@ -146,7 +146,6 @@ if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
     
     # Set environment variables for server
     export LONGBOW_DATA_PATH="$OUTPUT_DIR/data"
-    export LONGBOW_MAX_MEMORY="19327352832" # 18GB
     
     mkdir -p "$LONGBOW_DATA_PATH"
     

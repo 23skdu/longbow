@@ -4,6 +4,7 @@ import (
 	"context"
 	"runtime"
 	"sync/atomic"
+	"time"
 
 	"github.com/rs/zerolog"
 	"github.com/23skdu/longbow/internal/autoscale"
@@ -18,6 +19,10 @@ type AdmissionController struct {
 	scaler        *autoscale.AutoScaler
 	migratingCount atomic.Int32
 	logger         zerolog.Logger
+	
+	// Migration thresholds
+	maxSearchLatency  time.Duration
+	maxIngestThroughput float64
 }
 
 // NewAdmissionController creates a new admission controller.
@@ -27,6 +32,8 @@ func NewAdmissionController(maxMemory, currentMemory *atomic.Int64, scaler *auto
 		currentMemory: currentMemory,
 		scaler:        scaler,
 		logger:        logger,
+		maxSearchLatency:  500 * time.Millisecond,
+		maxIngestThroughput: 50000, // 50k vectors/sec
 	}
 }
 
@@ -36,6 +43,27 @@ func (ac *AdmissionController) MigrationStarted() {
 
 func (ac *AdmissionController) MigrationFinished() {
 	ac.migratingCount.Add(-1)
+}
+
+// AdmitMigration checks if a background migration/rebalancing task should proceed.
+func (ac *AdmissionController) AdmitMigration(ctx context.Context) error {
+	if ac.scaler == nil {
+		return nil
+	}
+	
+	snapshot := ac.scaler.GetLoadSnapshot()
+	
+	// 80% Rule for Search Latency
+	if snapshot.SearchLatency > time.Duration(float64(ac.maxSearchLatency)*0.8) {
+		return status.Errorf(codes.ResourceExhausted, "migration throttled: search latency (%.1fms) exceeds 80%% capacity", float64(snapshot.SearchLatency.Milliseconds()))
+	}
+	
+	// 80% Rule for Ingestion Pressure
+	if snapshot.IngestThroughput > ac.maxIngestThroughput*0.8 {
+		return status.Errorf(codes.ResourceExhausted, "migration throttled: ingestion throughput (%.1f vectors/s) exceeds 80%% capacity", snapshot.IngestThroughput)
+	}
+
+	return nil
 }
 
 // Admit checks if a request of the given type should be admitted.

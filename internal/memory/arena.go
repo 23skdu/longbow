@@ -615,3 +615,33 @@ func (a *SlabArena) LoadMmap(f *os.File) error {
 	a.slabs.Store(&slabs)
 	return nil
 }
+// IsOffHeap returns true if the arena is backed by off-heap memory.
+func (a *SlabArena) IsOffHeap() bool {
+	if a.alloc == nil {
+		return false
+	}
+	_, ok := a.alloc.(*OffHeapAllocator)
+	return ok
+}
+
+// ConvertToOffHeap migrates all existing slabs to off-heap memory using the provided allocator.
+func (a *SlabArena) ConvertToOffHeap(alloc memory.Allocator) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	ptr := a.slabs.Load()
+	if ptr == nil {
+		return nil
+	}
+	slabs := *ptr
+	for _, s := range slabs {
+		newData := alloc.Allocate(len(s.data))
+		if newData == nil {
+			return fmt.Errorf("off-heap allocation failed")
+		}
+		copy(newData, s.data)
+		s.data = newData
+	}
+	a.alloc = alloc
+	return nil
+}

@@ -10,6 +10,25 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+func (h *ArrowHNSW) extractFromDataset(batchIdx, rowIdx int) any {
+	if h.dataset == nil {
+		return nil
+	}
+	recs := h.dataset.GetRecords()
+	if batchIdx < 0 || batchIdx >= len(recs) {
+		return nil
+	}
+	rec := recs[batchIdx]
+	if rec == nil {
+		return nil
+	}
+	vecColIdx := h.getVectorColumnIndex(rec)
+	if vecColIdx == -1 {
+		return nil
+	}
+	return h.extractVector(rec, vecColIdx, rowIdx)
+}
+
 func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any {
 	col := rec.Column(colIdx)
 
@@ -49,9 +68,8 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 			}
 			return complexes
 		}
-		res := make([]float32, len(floats))
-		copy(res, floats)
-		return res
+		// Zero-copy: return the underlying slice directly
+		return floats
 
 	case *arrowarray.Float64:
 		floats := arr.Float64Values()[start:end]
@@ -63,9 +81,8 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 			}
 			return complexes
 		}
-		res := make([]float64, len(floats))
-		copy(res, floats)
-		return res
+		// Zero-copy: return the underlying slice directly
+		return floats
 
 	default:
 		// Generic fallback using Value(i)

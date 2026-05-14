@@ -1135,3 +1135,19 @@ func (idx *AdaptiveIndex) GetShardedIndex() *ShardedHNSW {
 	}
 	return nil
 }
+
+func (idx *AdaptiveIndex) RelocateToOffHeap() error {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.hnsw != nil {
+		return idx.hnsw.RelocateToOffHeap()
+	}
+	if idx.bruteForce != nil {
+		return idx.bruteForce.RelocateToOffHeap()
+	}
+	return nil
+}
+
+func (idx *BruteForceIndex) RelocateToOffHeap() error {
+	return nil
+}

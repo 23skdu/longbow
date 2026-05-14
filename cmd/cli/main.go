@@ -1402,7 +1402,7 @@ func runExport(ctx context.Context, args []string) {
 	fmt.Printf("Successfully exported %d rows to %s in %v\n", totalRows, *fileFlag, time.Since(start))
 }
 
-func runDownloadModel(ctx context.Context, args []string) {
+func runDownloadModel(_ context.Context, args []string) {
 	fs := flag.NewFlagSet("download-model", flag.ExitOnError)
 	repo := fs.String("repo", "", "Hugging Face repo ID (e.g., sentence-transformers/all-MiniLM-L6-v2) (required)")
 	dest := fs.String("dest", "models", "Destination directory")

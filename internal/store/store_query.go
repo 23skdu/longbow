@@ -694,12 +694,28 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchRe
 			}
 		}
 
+		// Deep copy metadata and vector to release Arrow buffers.
+		// This is critical because these results may be cached in the QueryCache,
+		// and keeping a slice into a 2MB+ RecordBatch buffer prevents the entire
+		// buffer from being garbage collected.
+		var metaCopy []byte
+		if len(metadata) > 0 {
+			metaCopy = make([]byte, len(metadata))
+			copy(metaCopy, metadata)
+		}
+
+		var vecCopy []byte
+		if len(res.Vector) > 0 {
+			vecCopy = make([]byte, len(res.Vector))
+			copy(vecCopy, res.Vector)
+		}
+
 		mappedResults = append(mappedResults, types.SearchResult{
 			ID:       resolvedID,
 			Score:    res.Score,
 			Distance: res.Distance,
-			Metadata: metadata,
-			Vector:   res.Vector,
+			Metadata: metaCopy,
+			Vector:   vecCopy,
 		})
 	}
 

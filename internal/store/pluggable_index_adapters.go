@@ -592,3 +592,7 @@ func (a *PluggableInternalAdapter) GetGPUIndex() any {
 	}
 	return nil
 }
+
+func (a *PluggableInternalAdapter) RelocateToOffHeap() error {
+	return nil
+}

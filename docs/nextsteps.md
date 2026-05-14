@@ -2,21 +2,19 @@
 
 ## P0 Blockers (Remaining)
 
-- **Optimizing Index Migration (AutoShardingIndex)**: Implement a more memory-efficient migration path that avoids doubling the graph memory footprint during the monolithic-to-sharded transition. This is critical for 3072d+ vectors at 100k scale.
-  - **Subtasks**:
-    - **Incremental Handover**: Implement a mechanism to release monolithic graph segments as they are successfully replicated into shards.
-    - **Migration GC Tuning**: Integrate explicit `runtime.GC()` triggers and `debug.FreeOSMemory()` calls between migration batches (5k-10k vectors) to clear interim allocation buffers.
-    - **Shadow Search Optimization**: Refactor `SearchVectors` to prioritize the growing sharded index and use a memory-mapped snapshot of the monolithic index if heap pressure exceeds 85%.
-    - **Admission Control**: Throttling of concurrent search/ingest operations specifically during the `migrateToSharded` window to prevent OOM spikes.
-  - **Validation**:
-    - **Unit Test**: `internal/store/hnsw_autoshard_test.go:TestMigrationStability` - Verify zero-loss concurrent operations.
-    - **Fuzz Test**: `internal/store/hnsw_migration_fuzz_test.go` - Fuzz ingestion scales and memory limits to identify edge-case OOMs.
-    - **PProf Audit**: Confirm memory overhead remains below 1.2x (down from 2.0x) during peak migration.
+- **Streaming Shard Rebalancing (v0.2.5)**: Implement a more memory-efficient migration path that avoids doubling the graph memory footprint during the monolithic-to-sharded transition. This is critical for 3072d+ vectors at 100k scale.
+  - **Strategy**:
+    - **Shared Vector Storage**: Refactor `ShardedHNSW` to use the primary `Dataset` Arrow records for vector lookups, eliminating shard-local vector copies and reducing memory footprint by 40-60%.
+    - **Mmap-backed Shadow Index**: Transition the monolithic index to a read-only, `mmap`-backed snapshot during migration to free up Go heap for the new sharded index.
+    - **Fragmented Handover**: Migrate data in shard-aligned blocks and call `ReleaseMonolithicChunk` immediately after each block is successfully replicated.
+    - **Priority-Aware Admission**: Implement a "Migration Lane" in the `AdmissionController` to throttle migration background tasks when Search QPS or real-time Ingestion pressure exceeds 80% capacity.
+- **Off-heap Graph Nodes**: Transition HNSW nodes and edges to off-heap arenas to eliminate `runtime.scanObject` overhead, which currently consumes >60% CPU during high-load search.
 - **TPU Physical Driver Integration**: Replace CGO stubs in `internal/gpu/tpu/tpu_index.go` with actual `libtpu.so` bindings once hardware-linked libraries are provided.
 - **Sparse Search ARM64 Assembly**: While functional via generic SIMD, Sparse Search (BM25) requires dedicated NEON assembly kernels to match AVX-512 throughput.
 
-## Recently Completed (v0.2.2-rc2 Final)
-
+- **GCS/S3 Dual-Cloud Persistence**: Implemented full native support for GCS and S3 backends, including `gs://` and `s3://` URI schemas for data ingestion and export.
+- **Production gosec Remediation**: Resolved all G301, G304, and G104 security warnings; applied verified `#nosec` pragmas for non-sensitive utility contexts.
+- **Hugging Face Model Downloader**: Added `longbow-cli` functionality to download ONNX models directly from Hugging Face.
 - **CPU Graph Navigation**: Implemented `UpdateGraph` and `GraphExpand` for `CPUIndex`, ensuring full feature parity for non-GPU environments.
 - **TurboQuant CPU SIMD**: Optimized `SearchTurboQuant` with high-performance SIMD distance kernels, eliminating reconstruction overhead.
 - **Async I/O Parity**: Refactored `DiskWriterUring` stubs to simulate non-blocking behavior via background goroutines.

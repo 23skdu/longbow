@@ -180,6 +180,11 @@ func (m *MockVectorIndex) SearchVectorsInRange(ctx context.Context, q any, thres
 	return args.Get(0).([]SearchResult), args.Error(1)
 }
 
+func (m *MockVectorIndex) RelocateToOffHeap() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
 func (m *MockVectorIndex) GetGPUIndex() any {
 	args := m.Called()
 	return args.Get(0)

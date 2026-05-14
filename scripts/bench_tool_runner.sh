@@ -236,3 +236,9 @@ if [[ -n "$SERVER_PID" ]]; then
     # Wait for it to actually stop
     wait $SERVER_PID 2>/dev/null || true
 fi
+
+# Cleanup large data files to prevent disk exhaustion
+if [[ -d "$LONGBOW_DATA_PATH" ]]; then
+    echo "Cleaning up benchmark data: $LONGBOW_DATA_PATH"
+    rm -rf "$LONGBOW_DATA_PATH"
+fi

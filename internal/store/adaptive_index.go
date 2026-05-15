@@ -81,6 +81,7 @@ func NewAdaptiveIndex(ds *Dataset, cfg AdaptiveIndexConfig) VectorIndex {
 }
 
 // IsSharded returns true if the adaptive index is currently using a sharded HNSW index.
+// IsSharded returns true if the adaptive index is currently using a sharded HNSW index.
 func (idx *AdaptiveIndex) IsSharded() bool {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -88,6 +89,11 @@ func (idx *AdaptiveIndex) IsSharded() bool {
 		return idx.hnsw.IsSharded()
 	}
 	return false
+}
+
+func (idx *AdaptiveIndex) ReleaseMonolithicChunk(cID int) error {
+	// AdaptiveIndex delegates if needed, but usually not used for BruteForce
+	return nil
 }
 
 // =============================================================================
@@ -114,6 +120,11 @@ func NewBruteForceIndex(ds *Dataset) VectorIndex {
 
 // IsSharded returns true if the index is sharded. BruteForceIndex is never sharded.
 func (b *BruteForceIndex) IsSharded() bool { return false }
+
+func (b *BruteForceIndex) ReleaseMonolithicChunk(cID int) error {
+	// BruteForceIndex doesn't use the monolithic chunking model
+	return nil
+}
 
 // AddByLocation adds a vector to the brute-force index using its storage location.
 func (b *BruteForceIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {

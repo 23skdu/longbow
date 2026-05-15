@@ -733,7 +733,7 @@ func (h *ArrowHNSW) PreWarm(targetSize int) {
 
 // ReleaseMonolithicChunk releases the storage for a chunk of the index.
 // This is used during incremental handover to shards.
-func (h *ArrowHNSW) ReleaseMonolithicChunk(cID int) {
+func (h *ArrowHNSW) ReleaseMonolithicChunk(cID int) error {
 	gd := h.data.Load()
 	if gd != nil {
 		gd.ReleaseChunk(cID)
@@ -742,6 +742,7 @@ func (h *ArrowHNSW) ReleaseMonolithicChunk(cID int) {
 			gd.ReleaseNeighborsChunk(l, cID)
 		}
 	}
+	return nil
 }
 
 // CleanupTombstones removes deleted nodes that exceed the specified threshold.
@@ -1483,7 +1484,7 @@ func (h *ArrowHNSW) GetNUMANode() (int, *memory.NUMATopology) {
 func (h *ArrowHNSW) RelocateToOffHeap() error {
 	gd := h.data.Load()
 	if gd == nil {
-		return nil
+		return fmt.Errorf("no graph data to relocate")
 	}
 	return gd.RelocateToOffHeap()
 }

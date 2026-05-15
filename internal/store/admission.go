@@ -33,7 +33,7 @@ func NewAdmissionController(maxMemory, currentMemory *atomic.Int64, scaler *auto
 		scaler:        scaler,
 		logger:        logger,
 		maxSearchLatency:  500 * time.Millisecond,
-		maxIngestThroughput: 50000, // 50k vectors/sec
+		maxIngestThroughput: 150000, // Updated for 1M scale target
 	}
 }
 
@@ -61,6 +61,21 @@ func (ac *AdmissionController) AdmitMigration(ctx context.Context) error {
 	// 80% Rule for Ingestion Pressure
 	if snapshot.IngestThroughput > ac.maxIngestThroughput*0.8 {
 		return status.Errorf(codes.ResourceExhausted, "migration throttled: ingestion throughput (%.1f vectors/s) exceeds 80%% capacity", snapshot.IngestThroughput)
+	}
+
+	// 80% Rule for Memory Pressure specifically for migration
+	maxMem := ac.maxMemory.Load()
+	if maxMem > 0 {
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		offHeapMem := int64(0)
+		for _, a := range lbmem.GetGlobalArenas() {
+			offHeapMem += a.UsedBytes.Load()
+		}
+		usage := (float64(m.HeapAlloc) + float64(offHeapMem)) / float64(maxMem)
+		if usage > 0.80 {
+			return status.Errorf(codes.ResourceExhausted, "migration throttled: memory usage (%.1f%%) exceeds 80%% background threshold", usage*100)
+		}
 	}
 
 	return nil
@@ -98,11 +113,11 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 
 	// Migration-aware thresholds: Apply tighter limits if any index is currently migrating
 	// as migration is a high-memory, non-interruptible background process.
-	hardLimit := 0.92
-	ingestLimit := 0.88
+	hardLimit := 0.94
+	ingestLimit := 0.90
 	if ac.migratingCount.Load() > 0 {
-		hardLimit = 0.80   // Tighter limit during migration
-		ingestLimit = 0.75 // Tighter ingest limit during migration
+		hardLimit = 0.88   // Tighter limit during migration (88%)
+		ingestLimit = 0.85 // Tighter ingest limit during migration (85%)
 	}
 
 	// Hard Limit

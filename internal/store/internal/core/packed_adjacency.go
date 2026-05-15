@@ -425,3 +425,16 @@ func (pa *PackedAdjacency) IsOffHeap() bool {
 	}
 	return pa.baseArena.IsOffHeap()
 }
+
+func (pa *PackedAdjacency) Release() {
+	if pa.neighborArena != nil {
+		pa.neighborArena.Release()
+	}
+	if pa.distanceArena != nil {
+		pa.distanceArena.Release()
+	}
+	if pa.pageArena != nil {
+		pa.pageArena.Release()
+	}
+	pa.chunks.Store(nil)
+}

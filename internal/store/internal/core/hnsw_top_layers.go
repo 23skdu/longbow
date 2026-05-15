@@ -185,7 +185,7 @@ func (h *ArrowHNSW) GetNeighborsCombinedManual(data *types.GraphData, layer int,
 			}
 		}
 	}
-
+	
 	if res == nil {
 		// 4. Fallback to DiskGraph
 		dg := h.diskGraph.Load()

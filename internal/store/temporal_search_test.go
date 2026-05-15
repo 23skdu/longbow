@@ -13,8 +13,8 @@ func TestTemporalTree_Insert(t *testing.T) {
 	tt := NewTemporalTree()
 
 	now := time.Now().UnixNano()
-	tt.Insert(now, 1)
-	tt.Insert(now+1, 2)
+	tt.Insert(now, 1, 0.0)
+	tt.Insert(now+1, 2, 0.0)
 
 	assert.Equal(t, 2, tt.Len())
 }
@@ -23,9 +23,9 @@ func TestTemporalTree_GetRange(t *testing.T) {
 	tt := NewTemporalTree()
 
 	now := time.Now().UnixNano()
-	tt.Insert(now-1000, 1)
-	tt.Insert(now, 2)
-	tt.Insert(now+1000, 3)
+	tt.Insert(now-1000, 1, 0.0)
+	tt.Insert(now, 2, 0.0)
+	tt.Insert(now+1000, 3, 0.0)
 
 	results := tt.GetRange(now-500, now+500)
 
@@ -36,9 +36,9 @@ func TestTemporalTree_GetRangeReversed(t *testing.T) {
 	tt := NewTemporalTree()
 
 	now := time.Now().UnixNano()
-	tt.Insert(now-1000, 1)
-	tt.Insert(now, 2)
-	tt.Insert(now+1000, 3)
+	tt.Insert(now-1000, 1, 0.0)
+	tt.Insert(now, 2, 0.0)
+	tt.Insert(now+1000, 3, 0.0)
 
 	results := tt.GetRangeReversed(now-500, now+500)
 
@@ -49,9 +49,9 @@ func TestTemporalTree_GetBefore(t *testing.T) {
 	tt := NewTemporalTree()
 
 	now := time.Now().UnixNano()
-	tt.Insert(now-1000, 1)
-	tt.Insert(now, 2)
-	tt.Insert(now+1000, 3)
+	tt.Insert(now-1000, 1, 0.0)
+	tt.Insert(now, 2, 0.0)
+	tt.Insert(now+1000, 3, 0.0)
 
 	results := tt.GetBefore(now)
 
@@ -62,9 +62,9 @@ func TestTemporalTree_GetLatest(t *testing.T) {
 	tt := NewTemporalTree()
 
 	now := time.Now().UnixNano()
-	tt.Insert(now-1000, 1)
-	tt.Insert(now, 2)
-	tt.Insert(now+1000, 3)
+	tt.Insert(now-1000, 1, 0.0)
+	tt.Insert(now, 2, 0.0)
+	tt.Insert(now+1000, 3, 0.0)
 
 	results := tt.GetLatest(2)
 

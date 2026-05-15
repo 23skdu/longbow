@@ -262,11 +262,10 @@ class BenchmarkRunner:
             env["LONGBOW_GPU_ENABLED"] = "false"
 
         limit_gb = 18
-        if "ancalagon" in os.uname().nodename.lower():
-            limit_gb = 14
-        elif "darwin" in sys.platform.lower():
-            limit_gb = 18
-        env["LONGBOW_MAX_MEMORY"] = str(limit_gb * 1024 * 1024 * 1024) 
+        if "LONGBOW_MAX_MEMORY" in os.environ:
+            env["LONGBOW_MAX_MEMORY"] = os.environ["LONGBOW_MAX_MEMORY"]
+        else:
+            env["LONGBOW_MAX_MEMORY"] = str(limit_gb * 1024 * 1024 * 1024) 
         env["ARROW_DISABLE_LOCKING"] = "1"
         if self.args.rdma:
             env["LONGBOW_RDMA_ENABLED"] = "true"

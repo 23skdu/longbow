@@ -165,6 +165,8 @@ type PackedNeighbors interface {
 	GetNeighborsF16(id uint32) ([]uint32, []float16.Num, bool)
 	// Release frees the underlying memory resources.
 	Release()
+	// Retain increments the reference count of the structure.
+	Retain()
 	// SetNeighborsF16 updates neighbors and their distances in float16 precision.
 	SetNeighborsF16(id uint32, neighbors []uint32, dists []float16.Num) error
 	// EnsureCapacity ensures the underlying storage can accommodate the given node ID.
@@ -2088,10 +2090,15 @@ func (g *GraphData) Clone() *GraphData {
 	}
 
 
-	// Shallow copy PackedNeighbors (the structures themselves are thread-safe and manage their own growth)
+	// Shallow copy PackedNeighbors and retain them (they are thread-safe and shared)
 	if g.PackedNeighbors != nil {
 		newG.PackedNeighbors = make([]PackedNeighbors, len(g.PackedNeighbors))
 		copy(newG.PackedNeighbors, g.PackedNeighbors)
+		for i := range newG.PackedNeighbors {
+			if newG.PackedNeighbors[i] != nil {
+				newG.PackedNeighbors[i].Retain()
+			}
+		}
 	}
 
 	// Copy Arrow References (with Retain if not nil)

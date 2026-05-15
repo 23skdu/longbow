@@ -43,6 +43,7 @@ type PackedAdjacency struct {
 	// Value = Offset to Page (in pageArena).
 	chunks atomic.Pointer[[]uint64]
 	mu     sync.RWMutex // Protects chunks growth
+	refCount atomic.Int64
 }
 
 // NewPackedAdjacency creates a new PackedAdjacency structure with the given arena.
@@ -74,6 +75,7 @@ func NewPackedAdjacencyWithArenas(arena *memory.SlabArena,
 		pageArena:     pageArena,
 	}
 	pa.chunks.Store(&chunks)
+	pa.refCount.Store(1)
 	return pa
 }
 
@@ -314,7 +316,8 @@ func (pa *PackedAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint
 		return nil, false
 	}
 
-	return pa.GetNeighborsFromPackedWithGen(packed, maxGen), true
+	res := pa.GetNeighborsFromPackedWithGen(packed, maxGen)
+	return res, true
 }
 
 // GetNeighborsFromPacked retrieves the neighbor list from a packed reference.
@@ -427,14 +430,21 @@ func (pa *PackedAdjacency) IsOffHeap() bool {
 }
 
 func (pa *PackedAdjacency) Release() {
-	if pa.neighborArena != nil {
-		pa.neighborArena.Release()
+	if pa.refCount.Add(-1) == 0 {
+		if pa.neighborArena != nil {
+			pa.neighborArena.Release()
+		}
+		if pa.distanceArena != nil {
+			pa.distanceArena.Release()
+		}
+		if pa.pageArena != nil {
+			pa.pageArena.Release()
+		}
+		pa.chunks.Store(nil)
 	}
-	if pa.distanceArena != nil {
-		pa.distanceArena.Release()
-	}
-	if pa.pageArena != nil {
-		pa.pageArena.Release()
-	}
-	pa.chunks.Store(nil)
+}
+
+// Retain increments the reference count.
+func (pa *PackedAdjacency) Retain() {
+	pa.refCount.Add(1)
 }

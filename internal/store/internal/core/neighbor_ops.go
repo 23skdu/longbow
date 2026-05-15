@@ -274,7 +274,8 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 
 // computePrunedNeighbors is the core diversity-aware pruning logic, reusable by CAS loops.
 func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, current []uint32, extra []uint32, maxConn int) []uint32 {
-	pool := current
+	pool := make([]uint32, len(current), len(current)+len(extra))
+	copy(pool, current)
 	if len(extra) > 0 {
 		seen := make(map[uint32]struct{}, len(current)+len(extra))
 		for _, n := range current { seen[n] = struct{}{} }

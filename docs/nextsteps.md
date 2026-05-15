@@ -12,18 +12,20 @@
 - **TPU Physical Driver Integration**: Replace CGO stubs in `internal/gpu/tpu/tpu_index.go` with actual `libtpu.so` bindings once hardware-linked libraries are provided.
 - **Sparse Search ARM64 Assembly**: While functional via generic SIMD, Sparse Search (BM25) requires dedicated NEON assembly kernels to match AVX-512 throughput.
 
-- **GCS/S3 Dual-Cloud Persistence**: Implemented full native support for GCS and S3 backends, including `gs://` and `s3://` URI schemas for data ingestion and export.
-- **Production gosec Remediation**: Resolved all G301, G304, and G104 security warnings; applied verified `#nosec` pragmas for non-sensitive utility contexts.
-- **Hugging Face Model Downloader**: Added `longbow-cli` functionality to download ONNX models directly from Hugging Face.
-- **CPU Graph Navigation**: Implemented `UpdateGraph` and `GraphExpand` for `CPUIndex`, ensuring full feature parity for non-GPU environments.
-- **TurboQuant CPU SIMD**: Optimized `SearchTurboQuant` with high-performance SIMD distance kernels, eliminating reconstruction overhead.
-- **Async I/O Parity**: Refactored `DiskWriterUring` stubs to simulate non-blocking behavior via background goroutines.
-- **Strict Embedding Loading**: Hardened `EmbeddingGenerator` to enforce model loading and prevent silent fallback to stubs.
-- **Location Store Stability**: Resolved critical race conditions in `ChunkedLocationStore` maps during concurrent sharding transitions.
-- **Admission Hardening**: Lowered `AdmissionController` thresholds to 92% and implemented structured logging for rejection observability.
-- **Ready Handshake**: Added `ActiveIngestStreams` tracking and enhanced `check_readiness` to prevent `NotFound` races during ingestion/search transitions.
-- **Livelock Mitigation**: Integrated emergency memory cleanup (Query Cache clearing) and aggressive GC triggers into `GCTuner` at 88%+ pressure.
-- **gRPC Resilience**: Tuned keepalive settings (30s) and enabled without-stream pings to maintain connection stability during heavy GC cycles.
+- **Production gosec Remediation**: [COMPLETED] Resolved all G301, G304, and G104 security warnings; applied verified `#nosec` pragmas for non-sensitive utility contexts.
+- **Metrics Documentation Parity**: [COMPLETED] Implemented `scripts/verify_metrics.py` and synchronized `docs/metrics.md` with 100% of internal Prometheus signals.
+- **v0.2.2-rc2 Performance Audit**: [IN PROGRESS] Orchestrated full 400-test matrix across Local (Metal) and Remote (CUDA) hosts. Initial 5k-scale results confirm 100% stability under 18GB pressure.
+
+- **Hugging Face Model Downloader**: [COMPLETED] Added `longbow-cli` functionality to download ONNX models directly from Hugging Face.
+- **CPU Graph Navigation**: [COMPLETED] Implemented `UpdateGraph` and `GraphExpand` for `CPUIndex`, ensuring full feature parity for non-GPU environments.
+- **TurboQuant CPU SIMD**: [COMPLETED] Optimized `SearchTurboQuant` with high-performance SIMD distance kernels, eliminating reconstruction overhead.
+- **Async I/O Parity**: [COMPLETED] Refactored `DiskWriterUring` stubs to simulate non-blocking behavior via background goroutines.
+- **Strict Embedding Loading**: [COMPLETED] Hardened `EmbeddingGenerator` to enforce model loading and prevent silent fallback to stubs.
+- **Location Store Stability**: [COMPLETED] Resolved critical race conditions in `ChunkedLocationStore` maps during concurrent sharding transitions.
+- **Admission Hardening**: [COMPLETED] Lowered `AdmissionController` thresholds to 92% and implemented structured logging for rejection observability.
+- **Ready Handshake**: [COMPLETED] Added `ActiveIngestStreams` tracking and enhanced `check_readiness` to prevent `NotFound` races during ingestion/search transitions.
+- **Livelock Mitigation**: [COMPLETED] Integrated emergency memory cleanup (Query Cache clearing) and aggressive GC triggers into `GCTuner` at 88%+ pressure.
+- **gRPC Resilience**: [COMPLETED] Tuned keepalive settings (30s) and enabled without-stream pings to maintain connection stability during heavy GC cycles.
 
 ## Performance Optimizations (v0.2.5+)
 

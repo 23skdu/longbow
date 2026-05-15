@@ -2,239 +2,450 @@
 
 ## Search Performance Summary (QPS)
 
-|                                       |   Search_ByID |   Search_Dense |   Search_Filtered |   Search_FilteredBool |   Search_FilteredString |   Search_Geo |   Search_GlobalGraphRAG |   Search_GraphRAG |   Search_Hybrid |   Search_LearnedIndex |   Search_Recommend |   Search_Sparse |   Search_Temporal |
-|:--------------------------------------|--------------:|---------------:|------------------:|----------------------:|------------------------:|-------------:|------------------------:|------------------:|----------------:|----------------------:|-------------------:|----------------:|------------------:|
-| ('ancalagon', 'cpu', 128, 'float16')  |       2954.4  |        3209.12 |           3014.03 |               2793.62 |                 2667.92 |      2761.52 |                 2150.68 |           1989.1  |         3118.62 |               1904.45 |            1764.93 |         19153.3 |           2995.55 |
-| ('ancalagon', 'cpu', 128, 'float32')  |       1833.16 |        2623.51 |           2170.99 |               2057.65 |                 2021.78 |      2622.84 |                 1558.71 |           1705.29 |         2140.11 |               1196.7  |            1327.63 |         15550.9 |           6064.57 |
-| ('ancalagon', 'cpu', 128, 'float64')  |       2747.23 |        2084.83 |           2421.36 |               2293.42 |                 2248.62 |      2170.57 |                 1777.7  |           1710.45 |         2451.09 |               1196.72 |            1329.22 |         19913.8 |           5641.05 |
-| ('ancalagon', 'cuda', 128, 'float32') |        682.86 |        1036.2  |           1116.19 |               1074.96 |                 1127.95 |      1521.04 |                  771.89 |            820.3  |         1085.36 |                573.09 |             810.57 |         12469.7 |           5527.65 |
-| ('ancalagon', 'cuda', 128, 'float64') |       1988.05 |        1424.52 |           1589.59 |               1451.88 |                 1568.49 |      1091.07 |                 1229.76 |           1246.21 |         1588.13 |                592.4  |             768.19 |         22135   |           5412.85 |
-| ('bahamut', 'cpu', 128, 'float16')    |      10122.6  |        5583.16 |           6810.61 |               6652.4  |                 5511.37 |      7357.15 |                 2751.05 |           3490.25 |         6219.62 |               3063.29 |            3311.71 |         33087.6 |           4559.35 |
-| ('bahamut', 'cpu', 128, 'float32')    |       5843.1  |        5891.57 |           6031.01 |               5937.84 |                 5655.24 |      7236.18 |                 3565.19 |           3750.39 |         6141.39 |               4354.78 |            3578.8  |         29287.5 |           8228.12 |
-| ('bahamut', 'cpu', 128, 'float64')    |       9073.32 |        3455.95 |           6271.86 |               6522.61 |                 6157.52 |      5499.37 |                 4221.48 |           5442.49 |         6135.98 |               4250.3  |            3806.72 |         34440.5 |           8327.42 |
-| ('bahamut', 'cpu', 128, 'int8')       |       9493.54 |        4396.78 |           6931.62 |               6696.74 |                 6708.72 |      6060.86 |                 4256.68 |           4907.96 |         6860.58 |               3006.13 |            3742.55 |         31633.1 |           4243.49 |
+|                                         |   Search_ByID |   Search_Dense |   Search_Filtered |   Search_FilteredBool |   Search_FilteredString |   Search_Geo |   Search_GlobalGraphRAG |   Search_GraphRAG |   Search_Hybrid |   Search_LearnedIndex |   Search_Recommend |   Search_Sparse |   Search_Temporal |
+|:----------------------------------------|--------------:|---------------:|------------------:|----------------------:|------------------------:|-------------:|------------------------:|------------------:|----------------:|----------------------:|-------------------:|----------------:|------------------:|
+| ('unknown', 'unknown', 128, 'float16')  |       9997.99 |        6293.22 |           8058.06 |               8847.58 |                 8592.58 |      3556.86 |                 8251.8  |           8301.38 |         6459.46 |               3641.53 |            9049.12 |         9551.56 |           3198.57 |
+| ('unknown', 'unknown', 128, 'float32')  |       9835.42 |        6175.06 |           8177.34 |               7904.87 |                 8353.02 |      3664.5  |                 8252.63 |           8273.11 |         6854.16 |               3496.54 |            7206.49 |         9667.2  |           4354.21 |
+| ('unknown', 'unknown', 128, 'float64')  |       9939.69 |        7193.25 |           7321.52 |               7991.49 |                 8526.06 |      3536.82 |                 8176.39 |           8185.43 |         7686.34 |               4043    |            9619.02 |         9386.16 |           4725.09 |
+| ('unknown', 'unknown', 384, 'float16')  |       9858.6  |        6709.38 |           6178.99 |               6883.65 |                 7250.26 |      4255.92 |                 7043.83 |           7029.76 |         7170.56 |               3557.13 |            9429.34 |         9606.18 |           3278.1  |
+| ('unknown', 'unknown', 384, 'float32')  |       9831.89 |        6797.17 |           6763.45 |               7304.15 |                 7110.1  |      3741.48 |                 6959.61 |           7055.31 |         6425.99 |               3679.7  |            9291.42 |         9615.61 |           4588    |
+| ('unknown', 'unknown', 384, 'float64')  |      10573.6  |        7093.44 |           7387.01 |               7696.44 |                 7827.03 |      3900.08 |                 7666.23 |           7279.86 |         6655.94 |               3566.84 |           10176.5  |         9625    |           4960.28 |
+| ('unknown', 'unknown', 768, 'float16')  |       8906.94 |        4951.47 |           5208.16 |               5471.78 |                 5541.24 |      3387.15 |                 5330.89 |           5258.19 |         6037.11 |               3720.31 |            8164.86 |         8825.06 |           3359.36 |
+| ('unknown', 'unknown', 768, 'float32')  |       8868.67 |        5778.73 |           5359.22 |               5880.59 |                 5393.35 |      3116.76 |                 5352.06 |           5438.67 |         5250.24 |               3589.19 |            8244.65 |         8836.55 |           4511.47 |
+| ('unknown', 'unknown', 768, 'float64')  |       6554.18 |        6380.59 |           5692.92 |               6181.61 |                 6614.99 |      2867.49 |                 3880.32 |           3815.41 |         5615.09 |               2166.4  |            5852.06 |         8914.32 |           2990.55 |
+| ('unknown', 'unknown', 1024, 'float32') |      10477.2  |        4953.88 |           5047.83 |               5842.44 |                 6112.43 |      3787.19 |                 5844.99 |           5810.14 |         5747.76 |               3639.51 |            9146.37 |        10413.6  |           4963.95 |
+| ('unknown', 'unknown', 1024, 'float64') |       9895.78 |        4955.02 |           4867.21 |               5395.84 |                 5214.75 |      3778.15 |                 5176.45 |           5231.48 |         5395.63 |               3279.9  |            7445.57 |         9533.86 |           4442.08 |
+| ('unknown', 'unknown', 3072, 'float32') |       8951.1  |        3335.94 |           3494.37 |               3431.86 |                 3622.1  |      4110.52 |                 3467.7  |           3550.46 |         3722.17 |               2621.09 |            8156.38 |         9344.47 |           4790.18 |
+| ('unknown', 'unknown', 3072, 'float64') |       9928.81 |        3353.75 |           3420.72 |               3519.74 |                 3638.63 |      3019.48 |                 3142.81 |           3351.27 |         3782.74 |               2568.1  |            6685.85 |         9508.86 |           4579.54 |
 
 ## Ingestion Performance (MB/s)
 
-|                                       |   Throughput_MBs |
-|:--------------------------------------|-----------------:|
-| ('ancalagon', 'cpu', 128, 'float16')  |           280.58 |
-| ('ancalagon', 'cpu', 128, 'float32')  |           369.39 |
-| ('ancalagon', 'cpu', 128, 'float64')  |           428.77 |
-| ('ancalagon', 'cuda', 128, 'float32') |           387.36 |
-| ('ancalagon', 'cuda', 128, 'float64') |           391.43 |
-| ('bahamut', 'cpu', 128, 'float16')    |           501.56 |
-| ('bahamut', 'cpu', 128, 'float32')    |           900.71 |
-| ('bahamut', 'cpu', 128, 'float64')    |           659.35 |
-| ('bahamut', 'cpu', 128, 'int8')       |           449.39 |
+|                                         |   Throughput_MBs |
+|:----------------------------------------|-----------------:|
+| ('unknown', 'unknown', 128, 'float16')  |           190.24 |
+| ('unknown', 'unknown', 128, 'float32')  |           305.76 |
+| ('unknown', 'unknown', 128, 'float64')  |           399.74 |
+| ('unknown', 'unknown', 384, 'float16')  |           367.9  |
+| ('unknown', 'unknown', 384, 'float32')  |           476.16 |
+| ('unknown', 'unknown', 384, 'float64')  |           551.43 |
+| ('unknown', 'unknown', 768, 'float16')  |           530.24 |
+| ('unknown', 'unknown', 768, 'float32')  |           535.45 |
+| ('unknown', 'unknown', 768, 'float64')  |           617.64 |
+| ('unknown', 'unknown', 1024, 'float32') |           568.31 |
+| ('unknown', 'unknown', 1024, 'float64') |           622.29 |
+| ('unknown', 'unknown', 3072, 'float32') |           676.42 |
+| ('unknown', 'unknown', 3072, 'float64') |           735.25 |
 
-### Details: ancalagon (cpu)
+## Search Latency Summary (P95 ms)
 
-| Host      | Mode   | Dataset                      | DType   |   Dim |   Count | Action                |   Throughput_QPS |   Throughput_MBs |   P50_ms |    P95_ms |    P99_ms |
-|:----------|:-------|:-----------------------------|:--------|------:|--------:|:----------------------|-----------------:|-----------------:|---------:|----------:|----------:|
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | DoPut                 | 465421           |          454.512 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | DoGet                 | 436268           |          426.043 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Dense          |   1269.4         |            0     | 2.42284  |  4.28603  | 27.7542   |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Hybrid         |   1582.94        |            0     | 2.45804  |  3.52897  |  4.17657  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Filtered       |   1579.66        |            0     | 2.42688  |  3.57289  |  4.16445  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_FilteredBool   |   1434.86        |            0     | 2.55946  |  4.16892  |  6.12475  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_FilteredString |   1577.11        |            0     | 2.47371  |  3.70183  |  4.15654  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Sparse         |  20836.3         |            0     | 0.171144 |  0.351345 |  0.427239 |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_ByID           |   1922.71        |            0     | 2.01248  |  2.99701  |  3.53099  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_GraphRAG       |   1300.64        |            0     | 2.85052  |  5.09079  |  6.32613  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_GlobalGraphRAG |   1246.66        |            0     | 2.89802  |  5.5313   |  7.89555  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Recommend      |    749.104       |            0     | 4.8331   |  9.06213  | 11.2453   |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Geo            |   1087.85        |            0     | 3.31977  |  6.02539  |  6.75445  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Temporal       |   5584.73        |            0     | 0.622101 |  0.985812 |  1.08745  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_LearnedIndex   |    596.738       |            0     | 5.88588  | 11.2394   | 12.5108   |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | DoPut                 | 700322           |          341.954 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | DoGet                 | 709183           |          346.281 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Dense          |   1157.83        |            0     | 3.23902  |  5.18086  |  5.67663  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Hybrid         |   1070.62        |            0     | 3.52419  |  5.32523  |  6.31459  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Filtered       |   1104.37        |            0     | 3.46597  |  5.15608  |  6.57857  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_FilteredBool   |   1052.19        |            0     | 3.45587  |  5.51946  |  7.36476  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_FilteredString |   1173.91        |            0     | 3.34591  |  5.10788  |  6.16581  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Sparse         |   9991.37        |            0     | 0.359756 |  0.766994 |  1.37218  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_ByID           |    656.348       |            0     | 5.13024  | 11.9413   | 16.074    |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_GraphRAG       |    836.778       |            0     | 4.44557  |  8.39898  |  9.40625  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_GlobalGraphRAG |    799.564       |            0     | 4.59045  |  8.56244  | 10.8148   |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Recommend      |    824.052       |            0     | 4.71933  |  6.96322  |  7.82314  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Geo            |   1592.38        |            0     | 2.47985  |  3.07948  |  3.43997  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Temporal       |   5330.19        |            0     | 0.654838 |  0.985265 |  1.26079  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_LearnedIndex   |    590.751       |            0     | 6.14341  | 10.9856   | 13.0136   |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | DoPut                 | 435406           |          425.201 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | DoGet                 | 555546           |          542.525 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Dense          |   1814.46        |            0     | 0.971798 | 11.5069   | 30.2649   |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Hybrid         |   3121.5         |            0     | 1.2279   |  1.71196  |  2.10338  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Filtered       |   3065.82        |            0     | 1.2311   |  1.7562   |  2.97316  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_FilteredBool   |   2920.16        |            0     | 1.35724  |  1.88168  |  2.33665  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_FilteredString |   2877.54        |            0     | 1.35131  |  1.92802  |  2.3158   |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Sparse         |  20173.6         |            0     | 0.186384 |  0.259279 |  0.424581 |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_ByID           |   3372.78        |            0     | 1.13925  |  1.5858   |  2.00201  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_GraphRAG       |   2106.09        |            0     | 1.70764  |  3.02876  |  3.6208   |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_GlobalGraphRAG |   2138.62        |            0     | 1.75899  |  2.74481  |  3.62362  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Recommend      |   1523.66        |            0     | 2.13419  |  3.22461  | 28.2509   |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Geo            |   2693.74        |            0     | 1.20798  |  3.03484  |  6.25486  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Temporal       |   5923.32        |            0     | 0.653811 |  0.958238 |  1.27618  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_LearnedIndex   |   1024.97        |            0     | 4.02597  |  5.14607  |  5.84977  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | DoPut                 | 692155           |          337.966 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | DoGet                 |      1.00063e+06 |          488.589 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Dense          |   3355.61        |            0     | 0.596129 |  0.966513 | 23.7958   |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Hybrid         |   2892.13        |            0     | 0.98988  |  2.03072  |  6.06763  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Filtered       |   2818.82        |            0     | 1.34591  |  2.06384  |  2.4355   |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_FilteredBool   |   2719.73        |            0     | 1.4404   |  2.01726  |  2.58845  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_FilteredString |   2599.83        |            0     | 1.52103  |  2.11521  |  2.38029  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Sparse         |  18087.3         |            0     | 0.207893 |  0.347544 |  0.544043 |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_ByID           |   2625.3         |            0     | 1.49518  |  2.04862  |  2.30794  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_GraphRAG       |   2143.45        |            0     | 1.75516  |  2.88497  |  3.47831  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_GlobalGraphRAG |   1857.14        |            0     | 1.93336  |  3.52233  |  4.98264  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Recommend      |   1678.32        |            0     | 2.28382  |  3.35817  |  3.93359  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Geo            |   3336.76        |            0     | 1.14234  |  1.50318  |  2.4827   |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Temporal       |   6738.52        |            0     | 0.51008  |  0.817075 |  1.1217   |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_LearnedIndex   |    985.464       |            0     | 4.14425  |  5.258    |  5.61136  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | DoPut                 | 416344           |          406.586 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | DoGet                 | 679131           |          663.213 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Dense          |   3170.63        |            0     | 1.17839  |  1.75839  |  2.14904  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Hybrid         |   2648.84        |            0     | 1.46203  |  2.09215  |  2.48005  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Filtered       |   2618.6         |            0     | 1.4886   |  2.07821  |  2.78938  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_FilteredBool   |   2525.25        |            0     | 1.54524  |  2.23242  |  2.62623  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_FilteredString |   2291.21        |            0     | 1.66003  |  2.43203  |  4.61504  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Sparse         |  18731.6         |            0     | 0.201343 |  0.313693 |  0.371826 |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_ByID           |   2946.2         |            0     | 1.32115  |  1.82147  |  2.23821  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_GraphRAG       |   1724.6         |            0     | 2.20134  |  3.83306  |  4.70413  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_GlobalGraphRAG |   1947.82        |            0     | 1.89664  |  3.40999  |  3.96949  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Recommend      |   1714.9         |            0     | 2.24185  |  3.2952   |  3.70221  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Geo            |   2730.13        |            0     | 1.28159  |  2.51754  |  5.22783  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Temporal       |   5415.1         |            0     | 0.748695 |  0.944918 |  1.35188  |
-| ancalagon | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_LearnedIndex   |   1968.46        |            0     | 2.00574  |  2.7599   |  3.10364  |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | DoPut                 |      1.14924e+06 |          280.575 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | DoGet                 |      2.00082e+06 |          488.48  | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Dense          |   3209.12        |            0     | 1.02235  |  1.457    |  9.31305  |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Hybrid         |   3118.62        |            0     | 1.25069  |  1.71992  |  1.91359  |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Filtered       |   3014.03        |            0     | 1.2905   |  1.83237  |  2.31791  |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_FilteredBool   |   2793.62        |            0     | 1.41433  |  1.99427  |  2.38824  |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_FilteredString |   2667.92        |            0     | 1.40023  |  2.11582  |  3.42451  |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Sparse         |  19153.3         |            0     | 0.187399 |  0.338843 |  0.517817 |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_ByID           |   2954.4         |            0     | 1.30923  |  1.80474  |  2.32048  |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_GraphRAG       |   1989.1         |            0     | 1.8293   |  3.28084  |  3.90839  |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_GlobalGraphRAG |   2150.68        |            0     | 1.72846  |  2.66426  |  3.28849  |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Recommend      |   1764.93        |            0     | 2.14945  |  2.95212  |  3.52044  |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Geo            |   2761.52        |            0     | 1.17366  |  3.04275  |  4.51289  |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Temporal       |   2995.55        |            0     | 1.17466  |  1.88506  |  2.90188  |
-| ancalagon | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_LearnedIndex   |   1904.45        |            0     | 2.10353  |  2.94154  |  3.55449  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | DoPut                 | 877027           |          428.236 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | DoGet                 | 715775           |          349.499 | 0        |  0        |  0        |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Dense          |   3357.1         |            0     | 1.13639  |  1.73061  |  2.26886  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Hybrid         |   2457.58        |            0     | 1.43437  |  2.24588  |  8.45516  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Filtered       |   2589.78        |            0     | 1.49862  |  2.0412   |  2.8448   |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_FilteredBool   |   2401.04        |            0     | 1.62074  |  2.24098  |  2.7166   |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_FilteredString |   2291.6         |            0     | 1.69008  |  2.37675  |  3.07919  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Sparse         |  18574.1         |            0     | 0.200553 |  0.305784 |  0.437497 |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_ByID           |   2217.83        |            0     | 1.71063  |  2.59946  |  3.35762  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_GraphRAG       |   2135.64        |            0     | 1.78631  |  2.79903  |  3.43332  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_GlobalGraphRAG |   2019.41        |            0     | 1.92316  |  2.63753  |  3.08447  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Recommend      |   1480.51        |            0     | 2.57332  |  3.67238  |  4.166    |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Geo            |   2939.39        |            0     | 1.19059  |  2.29997  |  4.23075  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Temporal       |   6125.01        |            0     | 0.600611 |  0.851551 |  1.25927  |
-| ancalagon | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_LearnedIndex   |   2013.88        |            0     | 1.94084  |  2.66613  |  2.90784  |
+|                                         |   Search_ByID |   Search_Dense |   Search_Filtered |   Search_FilteredBool |   Search_FilteredString |   Search_Geo |   Search_GlobalGraphRAG |   Search_GraphRAG |   Search_Hybrid |   Search_LearnedIndex |   Search_Recommend |   Search_Sparse |   Search_Temporal |
+|:----------------------------------------|--------------:|---------------:|------------------:|----------------------:|------------------------:|-------------:|------------------------:|------------------:|----------------:|----------------------:|-------------------:|----------------:|------------------:|
+| ('unknown', 'unknown', 128, 'float16')  |          1.14 |           2.07 |              1.27 |                  1.17 |                    1.19 |         4.92 |                    1.4  |              1.28 |            8.51 |                  3.44 |               1.54 |            1.31 |              4.05 |
+| ('unknown', 'unknown', 128, 'float32')  |          1.15 |           2.08 |              1.25 |                  1.72 |                    1.28 |         8.7  |                    1.36 |              1.29 |            6.03 |                  3.71 |               1.36 |            1.24 |              3.07 |
+| ('unknown', 'unknown', 128, 'float64')  |          1.14 |           1.51 |              1.59 |                  1.33 |                    1.31 |         4.56 |                    1.31 |              1.32 |            1.49 |                  2.9  |               1.17 |            1.26 |              2.44 |
+| ('unknown', 'unknown', 384, 'float16')  |          1.17 |           1.47 |              1.43 |                  1.55 |                    1.55 |         2.48 |                    1.43 |              1.44 |            1.47 |                  3.44 |               1.19 |            1.28 |              4.44 |
+| ('unknown', 'unknown', 384, 'float32')  |          1.14 |           1.47 |              1.5  |                  1.42 |                    1.61 |         7.27 |                    1.44 |              1.43 |            1.54 |                  3.29 |               1.18 |            1.24 |              2.85 |
+| ('unknown', 'unknown', 384, 'float64')  |          1.1  |           1.47 |              1.27 |                  1.25 |                    1.23 |         6.56 |                    1.25 |              1.45 |            1.46 |                  4.66 |               1.05 |            1.31 |              2.31 |
+| ('unknown', 'unknown', 768, 'float16')  |          1.63 |           2.15 |              1.95 |                  2.35 |                    2.21 |        10.23 |                    2.51 |              2.39 |            1.68 |                  3.12 |               1.62 |            1.76 |              4.21 |
+| ('unknown', 'unknown', 768, 'float32')  |          1.58 |           1.84 |              1.87 |                  1.74 |                    2.87 |        10.48 |                    2.37 |              2.22 |            2.38 |                  3.45 |               1.68 |            1.76 |              3.02 |
+| ('unknown', 'unknown', 768, 'float64')  |          0.39 |           1.45 |              1.57 |                  1.63 |                    1.49 |         0.96 |                    0.58 |              0.6  |            1.69 |                  1.29 |               0.42 |            1.17 |              0.96 |
+| ('unknown', 'unknown', 1024, 'float32') |          1.01 |           2.17 |              1.75 |                  1.66 |                    1.55 |         9.07 |                    1.66 |              1.69 |            1.72 |                  3.57 |               1.22 |            1.16 |              2.37 |
+| ('unknown', 'unknown', 1024, 'float64') |          1.14 |           2    |              2.02 |                  1.89 |                    2    |         5.21 |                    2.08 |              1.98 |            1.9  |                  3.71 |               1.63 |            1.3  |              3.02 |
+| ('unknown', 'unknown', 3072, 'float32') |          1.23 |           3.21 |              3.09 |                  3.14 |                    2.88 |         2.86 |                    3.03 |              2.99 |            2.82 |                  4.79 |               1.32 |            1.31 |              2.66 |
+| ('unknown', 'unknown', 3072, 'float64') |          1.12 |           3.11 |              3.09 |                  3.08 |                    2.93 |         5.56 |                    4.02 |              3.38 |            2.79 |                  4.93 |               2.13 |            1.25 |              2.88 |
 
-### Details: ancalagon (cuda)
+### Details: unknown (unknown)
 
-| Host      | Mode   | Dataset                      | DType   |   Dim |   Count | Action                |   Throughput_QPS |   Throughput_MBs |   P50_ms |    P95_ms |    P99_ms |
-|:----------|:-------|:-----------------------------|:--------|------:|--------:|:----------------------|-----------------:|-----------------:|---------:|----------:|----------:|
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | DoPut                 |       400828     |          391.434 | 0        |  0        |  0        |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | DoGet                 |       251909     |          246.005 | 0        |  0        |  0        |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Dense          |         1424.52  |            0     | 2.47712  |  4.05584  |  6.51578  |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Hybrid         |         1588.13  |            0     | 2.43185  |  3.47803  |  3.93433  |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Filtered       |         1589.59  |            0     | 2.44085  |  3.62022  |  4.01311  |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_FilteredBool   |         1451.88  |            0     | 2.57583  |  4.3644   |  5.09548  |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_FilteredString |         1568.49  |            0     | 2.47632  |  3.60927  |  4.072    |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Sparse         |        22135     |            0     | 0.166699 |  0.299643 |  0.362941 |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_ByID           |         1988.05  |            0     | 1.94706  |  2.89766  |  3.47176  |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_GraphRAG       |         1246.21  |            0     | 2.87739  |  5.30983  |  6.79173  |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_GlobalGraphRAG |         1229.76  |            0     | 2.91919  |  5.4357   |  6.79896  |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Recommend      |          768.195 |            0     | 4.89037  |  8.30059  | 10.3171   |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Geo            |         1091.07  |            0     | 3.25449  |  5.94669  |  6.83147  |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Temporal       |         5412.85  |            0     | 0.658209 |  1.04339  |  1.26577  |
-| ancalagon | cuda   | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_LearnedIndex   |          592.4   |            0     | 5.9857   | 11.1996   | 12.5258   |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | DoPut                 |       793305     |          387.356 | 0        |  0        |  0        |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | DoGet                 |       907734     |          443.229 | 0        |  0        |  0        |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Dense          |         1036.2   |            0     | 3.40389  |  5.66362  | 17.6668   |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Hybrid         |         1085.36  |            0     | 3.55262  |  5.42506  |  6.58866  |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Filtered       |         1116.19  |            0     | 3.45114  |  5.35467  |  6.23673  |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_FilteredBool   |         1074.96  |            0     | 3.547    |  5.39456  |  7.03667  |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_FilteredString |         1127.95  |            0     | 3.41582  |  5.26125  |  6.09209  |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Sparse         |        12469.7   |            0     | 0.278199 |  0.606101 |  0.834292 |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_ByID           |          682.856 |            0     | 5.27257  | 11.9797   | 14.2509   |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_GraphRAG       |          820.301 |            0     | 4.38958  |  8.48687  | 10.5054   |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_GlobalGraphRAG |          771.891 |            0     | 4.52579  |  8.41796  | 10.2231   |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Recommend      |          810.566 |            0     | 4.73889  |  6.95543  |  7.82878  |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Geo            |         1521.04  |            0     | 2.49533  |  3.26466  |  6.13022  |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Temporal       |         5527.65  |            0     | 0.655762 |  1.00442  |  1.28659  |
-| ancalagon | cuda   | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_LearnedIndex   |          573.092 |            0     | 6.36673  | 11.7032   | 13.4556   |
-
-### Details: bahamut (cpu)
-
-| Host    | Mode   | Dataset                      | DType   |   Dim |   Count | Action                |   Throughput_QPS |   Throughput_MBs |   P50_ms |   P95_ms |    P99_ms |
-|:--------|:-------|:-----------------------------|:--------|------:|--------:|:----------------------|-----------------:|-----------------:|---------:|---------:|----------:|
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | DoPut                 | 675176           |          659.351 | 0        | 0        |  0        |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | DoGet                 |      1.8477e+06  |         1804.4   | 0        | 0        |  0        |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Dense          |   3455.95        |            0     | 0.562458 | 0.822084 | 24.6056   |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Hybrid         |   6135.98        |            0     | 0.641416 | 0.818459 |  0.91675  |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Filtered       |   6271.86        |            0     | 0.626709 | 0.826334 |  1.04704  |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_FilteredBool   |   6522.61        |            0     | 0.59775  | 0.777042 |  1.07362  |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_FilteredString |   6157.52        |            0     | 0.620792 | 0.931    |  1.34308  |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Sparse         |  34440.5         |            0     | 0.111959 | 0.150042 |  0.174708 |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_ByID           |   9073.32        |            0     | 0.432708 | 0.589791 |  0.667125 |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_GraphRAG       |   5442.49        |            0     | 0.7205   | 0.98325  |  1.12392  |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_GlobalGraphRAG |   4221.48        |            0     | 0.90425  | 1.35775  |  1.64017  |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Recommend      |   3806.72        |            0     | 1.03233  | 1.38271  |  1.57037  |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Geo            |   5499.37        |            0     | 0.611875 | 1.125    |  2.47917  |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_Temporal       |   8327.42        |            0     | 0.448875 | 0.689375 |  0.861917 |
-| bahamut | cpu    | bench_float64_128_10000.json | float64 |   128 |   10000 | Search_LearnedIndex   |   4250.3         |            0     | 0.938875 | 1.17942  |  1.33058  |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | DoPut                 |      3.68138e+06 |          449.387 | 0        | 0        |  0        |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | DoGet                 |      3.14614e+06 |          384.05  | 0        | 0        |  0        |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_Dense          |   4396.78        |            0     | 0.304042 | 0.727375 | 16.145    |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_Hybrid         |   6860.58        |            0     | 0.580083 | 0.750167 |  0.9005   |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_Filtered       |   6931.62        |            0     | 0.562334 | 0.764125 |  1.05833  |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_FilteredBool   |   6696.74        |            0     | 0.587625 | 0.784666 |  0.98825  |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_FilteredString |   6708.72        |            0     | 0.571625 | 0.814583 |  0.905875 |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_Sparse         |  31633.1         |            0     | 0.121667 | 0.184    |  0.255042 |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_ByID           |   9493.54        |            0     | 0.403708 | 0.599    |  0.717291 |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_GraphRAG       |   4907.96        |            0     | 0.769083 | 1.21383  |  1.55246  |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_GlobalGraphRAG |   4256.68        |            0     | 0.874542 | 1.40542  |  1.8535   |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_Recommend      |   3742.55        |            0     | 1.03887  | 1.47342  |  1.68983  |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_Geo            |   6060.86        |            0     | 0.582875 | 0.926916 |  1.97983  |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_Temporal       |   4243.49        |            0     | 0.876208 | 1.28083  |  1.83487  |
-| bahamut | cpu    | bench_int8_128_10000.json    | int8    |   128 |   10000 | Search_LearnedIndex   |   3006.13        |            0     | 1.32929  | 1.58221  |  2.024    |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | DoPut                 |      2.05439e+06 |          501.56  | 0        | 0        |  0        |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | DoGet                 |      4.18264e+06 |         1021.15  | 0        | 0        |  0        |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Dense          |   5583.16        |            0     | 0.530459 | 0.780167 |  9.60617  |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Hybrid         |   6219.62        |            0     | 0.635417 | 0.802083 |  0.900459 |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Filtered       |   6810.61        |            0     | 0.572208 | 0.759667 |  1.07996  |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_FilteredBool   |   6652.4         |            0     | 0.584917 | 0.82275  |  1.01604  |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_FilteredString |   5511.37        |            0     | 0.687084 | 1.02675  |  1.568    |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Sparse         |  33087.6         |            0     | 0.11375  | 0.159041 |  0.282416 |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_ByID           |  10122.6         |            0     | 0.383334 | 0.542041 |  0.601458 |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_GraphRAG       |   3490.25        |            0     | 1.06421  | 1.79612  |  2.03154  |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_GlobalGraphRAG |   2751.05        |            0     | 1.26504  | 2.37921  |  5.73925  |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Recommend      |   3311.71        |            0     | 1.15508  | 1.63046  |  2.04404  |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Geo            |   7357.15        |            0     | 0.531792 | 0.684417 |  0.815292 |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_Temporal       |   4559.35        |            0     | 0.840833 | 0.988542 |  1.28742  |
-| bahamut | cpu    | bench_float16_128_10000.json | float16 |   128 |   10000 | Search_LearnedIndex   |   3063.29        |            0     | 1.29779  | 1.5995   |  2.15088  |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | DoPut                 |      1.84465e+06 |          900.708 | 0        | 0        |  0        |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | DoGet                 |      2.83437e+06 |         1383.97  | 0        | 0        |  0        |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Dense          |   5891.57        |            0     | 0.599208 | 1.05675  |  1.60854  |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Hybrid         |   6141.39        |            0     | 0.63825  | 0.835125 |  1.01583  |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Filtered       |   6031.01        |            0     | 0.641916 | 0.898792 |  1.44408  |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_FilteredBool   |   5937.84        |            0     | 0.649375 | 0.885084 |  1.13575  |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_FilteredString |   5655.24        |            0     | 0.674625 | 1.01375  |  1.42788  |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Sparse         |  29287.5         |            0     | 0.128334 | 0.192666 |  0.318083 |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_ByID           |   5843.1         |            0     | 0.658291 | 0.975292 |  1.25875  |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_GraphRAG       |   3750.39        |            0     | 1.011    | 1.59987  |  1.72558  |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_GlobalGraphRAG |   3565.19        |            0     | 1.04754  | 1.70788  |  1.87208  |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Recommend      |   3578.8         |            0     | 1.11354  | 1.45525  |  1.69308  |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Geo            |   7236.18        |            0     | 0.539583 | 0.711584 |  0.907792 |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_Temporal       |   8228.12        |            0     | 0.451125 | 0.69725  |  1.38158  |
-| bahamut | cpu    | bench_float32_128_10000.json | float32 |   128 |   10000 | Search_LearnedIndex   |   4354.78        |            0     | 0.899959 | 1.17167  |  1.55758  |
+| Host    | Mode    | Dataset                           | DType   |   Dim |   Count | Action                |   Throughput_QPS |   Throughput_MBs |   P50_ms |    P95_ms |    P99_ms |
+|:--------|:--------|:----------------------------------|:--------|------:|--------:|:----------------------|-----------------:|-----------------:|---------:|----------:|----------:|
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | DoPut                 |        685076    |          334.51  | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | DoGet                 |        373298    |          182.274 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Dense          |          9091.1  |            0     | 0.713833 |  1.13621  |  5.13604  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Hybrid         |         10386.5  |            0     | 0.75925  |  1.00929  |  1.17529  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Filtered       |         10857.4  |            0     | 0.697    |  0.813209 |  0.945625 |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_FilteredBool   |         11116.4  |            0     | 0.706416 |  0.831542 |  0.993583 |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_FilteredString |         11363.3  |            0     | 0.695125 |  0.8185   |  0.932584 |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Sparse         |         12131.6  |            0     | 0.63925  |  1.02596  |  1.25017  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_ByID           |         13063.3  |            0     | 0.601542 |  0.776708 |  0.859875 |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_GraphRAG       |         11288.8  |            0     | 0.700458 |  0.820666 |  0.920292 |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_GlobalGraphRAG |         11335.3  |            0     | 0.696917 |  0.843958 |  1.06608  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Recommend      |          8274.48 |            0     | 0.616291 |  1.16333  | 15.8412   |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Geo            |          5690.69 |            0     | 1.3375   |  2.08808  |  3.8605   |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Temporal       |          5913.45 |            0     | 1.32658  |  1.92296  |  2.20575  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_LearnedIndex   |          4625.9  |            0     | 1.73417  |  2.49454  |  2.82375  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | DoPut                 |        257604    |          754.698 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | DoGet                 |        147831    |          433.098 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Dense          |          8337.86 |            0     | 0.85675  |  1.37158  |  3.95546  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Hybrid         |          9179.77 |            0     | 0.84575  |  1.04746  |  1.65683  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Filtered       |          8878.41 |            0     | 0.868208 |  0.981042 |  1.07046  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_FilteredBool   |          9270.63 |            0     | 0.845792 |  1.01833  |  1.18983  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_FilteredString |          9661    |            0     | 0.816    |  0.928875 |  0.995833 |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Sparse         |         11984.9  |            0     | 0.653917 |  1.02354  |  1.2505   |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_ByID           |         13439    |            0     | 0.584292 |  0.790417 |  0.894042 |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_GraphRAG       |          8701.56 |            0     | 0.878417 |  1.19829  |  1.6685   |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_GlobalGraphRAG |          9188.69 |            0     | 0.861292 |  0.992541 |  1.08171  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Recommend      |         12662.6  |            0     | 0.614916 |  0.792584 |  0.845291 |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Geo            |          5286.55 |            0     | 1.32171  |  1.93096  |  5.07158  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Temporal       |          6103.29 |            0     | 1.29842  |  1.79112  |  2.01496  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_LearnedIndex   |          4542.81 |            0     | 1.74433  |  2.51771  |  2.92542  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | DoPut                 |        120999    |          945.302 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | DoGet                 |         87204.5  |          681.285 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Dense          |          6401.84 |            0     | 1.153    |  1.35175  |  4.17004  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Hybrid         |          7027.65 |            0     | 1.12896  |  1.34442  |  1.45642  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Filtered       |          6734.53 |            0     | 1.15121  |  1.34892  |  1.45612  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_FilteredBool   |          6997.94 |            0     | 1.13917  |  1.31442  |  1.41358  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_FilteredString |          6929.83 |            0     | 1.14833  |  1.31854  |  1.42413  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Sparse         |         12453    |            0     | 0.614541 |  0.985166 |  1.17983  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_ByID           |         13457.1  |            0     | 0.592709 |  0.75575  |  0.917834 |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_GraphRAG       |          6884.34 |            0     | 1.16146  |  1.34396  |  1.39758  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_GlobalGraphRAG |          6908.58 |            0     | 1.15562  |  1.3255   |  1.42408  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Recommend      |          9494.41 |            0     | 0.685541 |  1.21858  |  1.64079  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Geo            |          5934.7  |            0     | 1.32371  |  1.84404  |  2.10529  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Temporal       |          6057.67 |            0     | 1.31233  |  1.85267  |  2.15804  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_LearnedIndex   |          4192.68 |            0     | 1.82479  |  2.69417  |  3.04154  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | DoPut                 |        147500    |          864.259 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | DoGet                 |        102095    |          598.212 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Dense          |          7420.15 |            0     | 1.02517  |  1.18996  |  2.10804  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Hybrid         |          7754.6  |            0     | 1.02462  |  1.19779  |  1.31533  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Filtered       |          6073.08 |            0     | 1.02975  |  1.35646  | 13.5415   |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_FilteredBool   |          7360.33 |            0     | 1.05183  |  1.3735   |  1.85717  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_FilteredString |          7946.1  |            0     | 0.994375 |  1.13521  |  1.26312  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Sparse         |         12291.7  |            0     | 0.638583 |  0.994375 |  1.18358  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_ByID           |         13108.4  |            0     | 0.609375 |  0.772667 |  0.847209 |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_GraphRAG       |          7630.82 |            0     | 1.04237  |  1.20762  |  1.27937  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_GlobalGraphRAG |          7760.63 |            0     | 1.02612  |  1.16138  |  1.25125  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Recommend      |         11704.1  |            0     | 0.660125 |  0.833584 |  1.12658  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Geo            |          5734.99 |            0     | 1.35996  |  1.92596  |  2.85733  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Temporal       |          5981.1  |            0     | 1.32742  |  1.92383  |  2.26083  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_LearnedIndex   |          4332.8  |            0     | 1.82083  |  2.58717  |  3.04833  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | DoPut                 |         88076.2  |         1032.14  | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | DoGet                 |         73627.5  |          862.822 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Dense          |          4140.82 |            0     | 1.85946  |  2.39825  |  3.06267  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Hybrid         |          4252.28 |            0     | 1.85404  |  2.32854  |  2.61808  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Filtered       |          4163.76 |            0     | 1.87054  |  2.43975  |  3.11533  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_FilteredBool   |          4243.18 |            0     | 1.84825  |  2.38408  |  2.67867  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_FilteredString |          4271.82 |            0     | 1.86371  |  2.30017  |  2.49438  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Sparse         |         12069.9  |            0     | 0.657416 |  0.993    |  1.18763  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_ByID           |         11854    |            0     | 0.640125 |  0.849959 |  0.93525  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_GraphRAG       |          4428.5  |            0     | 1.78988  |  2.24279  |  2.37983  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_GlobalGraphRAG |          4186.2  |            0     | 1.83662  |  2.38088  |  3.42321  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Recommend      |         10747.8  |            0     | 0.727125 |  0.909792 |  0.984916 |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Geo            |          5441.51 |            0     | 1.35358  |  1.982    |  4.28029  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Temporal       |          6294.78 |            0     | 1.26883  |  1.72867  |  1.94879  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_LearnedIndex   |          3430.39 |            0     | 2.29188  |  3.08796  |  3.35808  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | DoPut                 |        841574    |          205.462 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | DoGet                 |        940203    |          229.542 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Dense          |          7967.55 |            0     | 0.694625 |  1.74412  |  8.46554  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Hybrid         |         10317.5  |            0     | 0.76225  |  1.05321  |  1.18625  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Filtered       |         10803.8  |            0     | 0.69775  |  0.81875  |  0.944167 |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_FilteredBool   |         11908.9  |            0     | 0.646834 |  0.762042 |  0.889833 |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_FilteredString |         11385.9  |            0     | 0.686791 |  0.82925  |  1.15275  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Sparse         |         12344.2  |            0     | 0.637917 |  1.01271  |  1.22275  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_ByID           |         13564.3  |            0     | 0.583791 |  0.776084 |  0.943709 |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_GraphRAG       |         11384.7  |            0     | 0.694875 |  0.818709 |  0.894    |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_GlobalGraphRAG |         11494.5  |            0     | 0.687459 |  0.802583 |  0.881959 |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Recommend      |         12979.9  |            0     | 0.604792 |  0.759417 |  0.823083 |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Geo            |          5559.3  |            0     | 1.36071  |  1.99637  |  3.12404  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Temporal       |          4099.4  |            0     | 1.91608  |  2.58279  |  3.16492  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_LearnedIndex   |          4509.76 |            0     | 1.73658  |  2.60237  |  2.95496  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | DoPut                 |        665008    |          487.066 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | DoGet                 |        732771    |          536.697 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Dense          |          8397.4  |            0     | 0.850542 |  1.13929  |  3.727    |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Hybrid         |          9478.22 |            0     | 0.834125 |  1.00504  |  1.11838  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Filtered       |          8681.36 |            0     | 0.8695   |  0.994084 |  1.16021  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_FilteredBool   |          8723.75 |            0     | 0.855875 |  1.10038  |  2.03837  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_FilteredString |          9875.78 |            0     | 0.799541 |  0.903833 |  1.03337  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Sparse         |         12164.2  |            0     | 0.636875 |  1.03946  |  1.18142  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_ByID           |         13437.8  |            0     | 0.586875 |  0.767584 |  0.837667 |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_GraphRAG       |          9228.46 |            0     | 0.86     |  0.973083 |  1.046    |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_GlobalGraphRAG |          9274.05 |            0     | 0.85775  |  0.974667 |  1.01588  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Recommend      |         12731.3  |            0     | 0.612375 |  0.783333 |  0.852959 |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Geo            |          5045.28 |            0     | 1.37683  |  2.04038  | 12.6952   |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Temporal       |          4189.14 |            0     | 1.88746  |  2.53054  |  2.85371  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_LearnedIndex   |          4498.31 |            0     | 1.72892  |  2.57117  |  3.02325  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | DoPut                 |        201714    |          787.946 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | DoGet                 |        193990    |          757.774 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Dense          |          6733.91 |            0     | 1.11692  |  1.34404  |  3.51208  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Hybrid         |          7089.64 |            0     | 1.12292  |  1.33504  |  1.42783  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Filtered       |          5734.01 |            0     | 1.13104  |  1.38992  | 15.269    |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_FilteredBool   |          7012.14 |            0     | 1.12758  |  1.30392  |  1.50871  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_FilteredString |          7267.71 |            0     | 1.09537  |  1.2585   |  1.37317  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Sparse         |         12334.5  |            0     | 0.638708 |  0.978708 |  1.1635   |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_ByID           |         12706.7  |            0     | 0.61225  |  0.786166 |  0.856959 |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_GraphRAG       |          6919.56 |            0     | 1.13879  |  1.34862  |  1.51829  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_GlobalGraphRAG |          6929.4  |            0     | 1.14704  |  1.34633  |  1.46158  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Recommend      |         10560.6  |            0     | 0.677417 |  1.11688  |  1.58696  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Geo            |          5699.04 |            0     | 1.35579  |  1.98037  |  2.53908  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Temporal       |          6165.06 |            0     | 1.26808  |  1.81379  |  2.00963  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_LearnedIndex   |          4254.62 |            0     | 1.83192  |  2.64779  |  2.93737  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | DoPut                 |        494209    |          723.94  | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | DoGet                 |        220391    |          322.839 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Dense          |          5639.87 |            0     | 1.01196  |  2.13371  | 14.8389   |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Hybrid         |          7741.21 |            0     | 1.02229  |  1.21125  |  1.301    |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Filtered       |          7564.2  |            0     | 1.01608  |  1.175    |  1.3325   |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_FilteredBool   |          7751.94 |            0     | 1.01012  |  1.17908  |  1.33729  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_FilteredString |          7869.1  |            0     | 1.01271  |  1.152    |  1.26129  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Sparse         |         12683.8  |            0     | 0.613083 |  0.984792 |  1.11342  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_ByID           |         13186.4  |            0     | 0.588875 |  0.763875 |  0.810958 |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_GraphRAG       |          7487.15 |            0     | 1.03117  |  1.29633  |  1.79438  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_GlobalGraphRAG |          7817.93 |            0     | 1.01188  |  1.18317  |  1.289    |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Recommend      |         11714.8  |            0     | 0.670375 |  0.826459 |  0.883625 |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Geo            |          5553.43 |            0     | 1.27704  |  1.94458  |  4.73621  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Temporal       |          4094.25 |            0     | 1.88875  |  2.66608  |  3.19237  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_LearnedIndex   |          4550.26 |            0     | 1.74267  |  2.44092  |  2.70463  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | DoPut                 |         48623.7  |         1139.62  | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | DoGet                 |         51803.8  |         1214.15  | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Dense          |          4106.01 |            0     | 1.88496  |  2.389    |  3.77463  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Hybrid         |          4253.32 |            0     | 1.86363  |  2.32483  |  2.52142  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Filtered       |          4141.79 |            0     | 1.88437  |  2.45413  |  3.40429  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_FilteredBool   |          4232.8  |            0     | 1.86029  |  2.36296  |  2.69475  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_FilteredString |          4328.82 |            0     | 1.83042  |  2.28987  |  2.50425  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Sparse         |         12266.1  |            0     | 0.640625 |  0.970708 |  1.19071  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_ByID           |         13410    |            0     | 0.580125 |  0.753417 |  0.8245   |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_GraphRAG       |          4224.13 |            0     | 1.86983  |  2.39754  |  2.67425  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_GlobalGraphRAG |          4300.06 |            0     | 1.83187  |  2.30229  |  2.50963  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Recommend      |         10094.1  |            0     | 0.774208 |  0.980625 |  1.04771  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Geo            |          4576.7  |            0     | 1.318    |  2.4865   | 17.054    |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Temporal       |          6357.98 |            0     | 1.24858  |  1.74629  |  1.93242  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_LearnedIndex   |          3446.16 |            0     | 2.30171  |  3.03921  |  3.38454  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | DoPut                 |        529792    |          517.375 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | DoGet                 |        302431    |          295.343 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Dense          |          9308.96 |            0     | 0.714125 |  1.18975  |  3.33125  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Hybrid         |         10216.6  |            0     | 0.764375 |  1.0605   |  1.26175  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Filtered       |         10586.5  |            0     | 0.717375 |  0.828958 |  0.939416 |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_FilteredBool   |         10835.9  |            0     | 0.715875 |  0.864042 |  1.10554  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_FilteredString |         11838.6  |            0     | 0.666958 |  0.778834 |  0.921125 |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Sparse         |         12143.3  |            0     | 0.638583 |  1.011    |  1.25333  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_ByID           |         13295.6  |            0     | 0.59075  |  0.798    |  0.922291 |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_GraphRAG       |         11158.9  |            0     | 0.707083 |  0.855709 |  1.09929  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_GlobalGraphRAG |         11191.3  |            0     | 0.708542 |  0.829208 |  0.92     |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Recommend      |         12784    |            0     | 0.614542 |  0.785125 |  0.839083 |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Geo            |          3900.51 |            0     | 1.38413  |  6.30154  | 15.2172   |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Temporal       |          5814.2  |            0     | 1.32771  |  1.93646  |  2.14408  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_LearnedIndex   |          4495.24 |            0     | 1.76708  |  2.59267  |  3.04329  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | DoPut                 |        241708    |          708.129 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | DoGet                 |        151601    |          444.144 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Dense          |          7264.11 |            0     | 1.00933  |  1.56083  |  2.52271  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Hybrid         |          6215.2  |            0     | 1.0605   |  2.59513  |  4.91046  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Filtered       |          7148.13 |            0     | 1.002    |  1.37371  |  4.82963  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_FilteredBool   |          7837.89 |            0     | 1.01471  |  1.15804  |  1.25842  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_FilteredString |          7880.9  |            0     | 1.01004  |  1.16812  |  1.25742  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Sparse         |         12211.9  |            0     | 0.638667 |  1.00333  |  1.29867  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_ByID           |         12988.7  |            0     | 0.595834 |  0.780166 |  0.874042 |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_GraphRAG       |          7748.86 |            0     | 1.02233  |  1.19325  |  1.27771  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_GlobalGraphRAG |          7693.14 |            0     | 1.02762  |  1.19271  |  1.28975  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Recommend      |         12162.4  |            0     | 0.641667 |  0.823833 |  0.882958 |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Geo            |          5088.67 |            0     | 1.35954  |  2.36425  | 11.511    |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Temporal       |          6232.61 |            0     | 1.24404  |  1.81204  |  2.07646  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_LearnedIndex   |          4433.56 |            0     | 1.79104  |  2.52392  |  2.82788  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | DoPut                 |        442850    |          648.706 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | DoGet                 |        306595    |          449.114 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Dense          |          8545.13 |            0     | 0.862166 |  1.15321  |  2.49679  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Hybrid         |          9412.5  |            0     | 0.841417 |  0.990125 |  1.08971  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Filtered       |          8767.14 |            0     | 0.871458 |  1.00733  |  1.15367  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_FilteredBool   |          9276    |            0     | 0.820125 |  1.04842  |  1.78229  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_FilteredString |          9801.97 |            0     | 0.803208 |  0.912417 |  1.00658  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Sparse         |         12138.7  |            0     | 0.638333 |  1.00642  |  1.234    |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_ByID           |         13172.9  |            0     | 0.596542 |  0.762    |  0.834375 |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_GraphRAG       |          9192.11 |            0     | 0.86275  |  0.990625 |  1.074    |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_GlobalGraphRAG |          9017.4  |            0     | 0.865667 |  1.03783  |  1.28954  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Recommend      |         12225.7  |            0     | 0.625375 |  0.855041 |  1.01496  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Geo            |          5143.71 |            0     | 1.35254  |  2.07412  | 12.4829   |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Temporal       |          6137.99 |            0     | 1.27542  |  1.86629  |  2.15025  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_LearnedIndex   |          4596.54 |            0     | 1.73804  |  2.50004  |  2.76625  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | DoPut                 |        567310    |          277.007 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | DoGet                 |        524555    |          256.13  | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Dense          |          3259.03 |            0     | 1.50741  |  3.017    | 34.2072   |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Hybrid         |          3321.87 |            0     | 1.52425  | 11.0593   | 19.7907   |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Filtered       |          5497.26 |            0     | 1.44253  |  1.67826  |  1.88248  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_FilteredBool   |          4693.36 |            0     | 1.5021   |  2.60894  |  3.0171   |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_FilteredString |          5342.75 |            0     | 1.46731  |  1.73369  |  2.10168  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Sparse         |          7202.77 |            0     | 1.11379  |  1.46231  |  1.59258  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_ByID           |          6607.5  |            0     | 1.19356  |  1.52913  |  1.73405  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_GraphRAG       |          5257.4  |            0     | 1.50907  |  1.75092  |  1.8482   |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_GlobalGraphRAG |          5169.99 |            0     | 1.52455  |  1.88264  |  2.10544  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Recommend      |          6138.49 |            0     | 1.29195  |  1.54898  |  1.68145  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Geo            |          1638.31 |            0     | 2.7387   | 15.3205   | 35.2366   |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_Temporal       |          2794.96 |            0     | 2.75669  |  4.21156  |  6.28499  |
+| unknown | unknown | result_cpu_float32_128_5000.json  | float32 |   128 |    5000 | Search_LearnedIndex   |          2367.18 |            0     | 2.81809  |  4.92736  | 20.7819   |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | DoPut                 |        118837    |          348.156 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | DoGet                 |        110161    |          322.738 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Dense          |          5849.02 |            0     | 1.30677  |  1.5666   |  2.5452   |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Hybrid         |          4132.11 |            0     | 1.43425  |  1.87585  | 31.8428   |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Filtered       |          5895.6  |            0     | 1.32694  |  1.55952  |  1.71403  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_FilteredBool   |          6122.26 |            0     | 1.29555  |  1.4911   |  1.58498  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_FilteredString |          5993.06 |            0     | 1.32572  |  1.52172  |  1.65032  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Sparse         |          7265.09 |            0     | 1.06487  |  1.59618  |  1.99066  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_ByID           |          7708.17 |            0     | 1.00966  |  1.40711  |  1.77136  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_GraphRAG       |          5858.17 |            0     | 1.32285  |  1.71075  |  1.95544  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_GlobalGraphRAG |          6143.77 |            0     | 1.29023  |  1.4989   |  1.63121  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Recommend      |          7690.5  |            0     | 1.01999  |  1.31029  |  1.504    |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Geo            |          2513.61 |            0     | 1.78858  | 11.1873   | 34.0566   |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_Temporal       |          3817.27 |            0     | 2.08126  |  2.83341  |  3.22114  |
+| unknown | unknown | result_cpu_float64_384_5000.json  | float64 |   384 |    5000 | Search_LearnedIndex   |          2590.88 |            0     | 2.41553  |  6.80412  | 11.3439   |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | DoPut                 |         38307.1  |          299.274 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | DoGet                 |         50440.8  |          394.069 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Dense          |          3508.19 |            0     | 2.22361  |  2.64604  |  3.09748  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Hybrid         |          3763.62 |            0     | 2.11894  |  2.4652   |  2.71128  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Filtered       |          2999.88 |            0     | 2.08944  |  2.69836  | 29.9707   |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_FilteredBool   |          3793.74 |            0     | 2.08304  |  2.47406  |  2.84326  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_FilteredString |          3499.67 |            0     | 2.25585  |  2.68221  |  3.3351   |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Sparse         |          6614.72 |            0     | 1.2064   |  1.6107   |  1.97607  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_ByID           |          6334.45 |            0     | 1.25709  |  1.52744  |  1.6409   |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_GraphRAG       |          3578.63 |            0     | 2.22165  |  2.61733  |  2.86589  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_GlobalGraphRAG |          3444.31 |            0     | 2.26564  |  2.83572  |  3.695    |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Recommend      |          5396.73 |            0     | 1.41139  |  2.03713  |  2.90787  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Geo            |          1621.59 |            0     | 4.14265  |  8.57619  | 22.1978   |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_Temporal       |          2826.49 |            0     | 2.73715  |  4.17949  |  5.21973  |
+| unknown | unknown | result_cpu_float64_1024_5000.json | float64 |  1024 |    5000 | Search_LearnedIndex   |          2367.11 |            0     | 3.28523  |  4.73553  |  6.27971  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | DoPut                 |         63321.4  |          371.024 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | DoGet                 |         65702.1  |          384.973 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Dense          |          5341.03 |            0     | 1.43395  |  1.70682  |  2.66226  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Hybrid         |          3475.58 |            0     | 1.54685  |  2.19158  | 35.9336   |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Filtered       |          5312.77 |            0     | 1.45949  |  1.77622  |  2.1415   |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_FilteredBool   |          5002.88 |            0     | 1.58402  |  1.88897  |  2.02852  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_FilteredString |          5283.89 |            0     | 1.49227  |  1.83483  |  2.16993  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Sparse         |          5536.93 |            0     | 0.9956   |  1.34697  |  1.45187  |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_ByID           |             0    |            0     | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_GraphRAG       |             0    |            0     | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_GlobalGraphRAG |             0    |            0     | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Recommend      |             0    |            0     | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Geo            |             0    |            0     | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_Temporal       |             0    |            0     | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_768_5000.json  | float64 |   768 |    5000 | Search_LearnedIndex   |             0    |            0     | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | DoPut                 |         27365.4  |          320.688 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | DoGet                 |         35190.7  |          412.391 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Dense          |          2531.06 |            0     | 2.94816  |  4.03138  |  6.11737  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Hybrid         |          3192.07 |            0     | 2.41464  |  3.31301  |  3.65508  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Filtered       |          2824.98 |            0     | 2.82315  |  3.74201  |  4.18672  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_FilteredBool   |          2620.55 |            0     | 2.79499  |  3.89376  |  5.31092  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_FilteredString |          2972.39 |            0     | 2.71483  |  3.46948  |  3.78446  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Sparse         |          6619.06 |            0     | 1.1983   |  1.62425  |  1.87062  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_ByID           |          6048.17 |            0     | 1.30952  |  1.61557  |  1.78496  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_GraphRAG       |          2672.43 |            0     | 3.02946  |  3.73319  |  3.9781   |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_GlobalGraphRAG |          2749.21 |            0     | 2.97278  |  3.6812   |  3.99343  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Recommend      |          5564.99 |            0     | 1.42862  |  1.72689  |  1.85349  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Geo            |          2779.53 |            0     | 2.47413  |  3.73244  | 14.7895   |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_Temporal       |          3285.58 |            0     | 2.30776  |  3.59355  |  5.64014  |
+| unknown | unknown | result_cpu_float32_3072_5000.json | float32 |  3072 |    5000 | Search_LearnedIndex   |          1811.79 |            0     | 4.28933  |  6.50097  |  7.76163  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | DoPut                 |        716857    |          175.014 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | DoGet                 |        674799    |          164.746 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Dense          |          4618.89 |            0     | 1.53929  |  2.403    |  4.89978  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Hybrid         |          2601.42 |            0     | 1.48159  | 15.9741   | 38.2631   |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Filtered       |          5312.3  |            0     | 1.47703  |  1.72001  |  2.12223  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_FilteredBool   |          5786.29 |            0     | 1.37545  |  1.57313  |  1.72262  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_FilteredString |          5799.24 |            0     | 1.37583  |  1.55984  |  1.70414  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Sparse         |          6758.88 |            0     | 1.18486  |  1.59977  |  1.88948  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_ByID           |          6431.68 |            0     | 1.23851  |  1.50676  |  1.70322  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_GraphRAG       |          5218.08 |            0     | 1.52549  |  1.73983  |  2.11901  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_GlobalGraphRAG |          5009.11 |            0     | 1.54591  |  2.00033  |  2.69876  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Recommend      |          5118.36 |            0     | 1.51168  |  2.31451  |  3.02861  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Geo            |          1554.43 |            0     | 4.53697  |  7.83993  | 19.9023   |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_Temporal       |          2297.73 |            0     | 3.08625  |  5.51019  |  8.10189  |
+| unknown | unknown | result_cpu_float16_128_5000.json  | float16 |   128 |    5000 | Search_LearnedIndex   |          2773.3  |            0     | 2.78343  |  4.26989  |  4.88823  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | DoPut                 |        339596    |          248.727 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | DoGet                 |        402442    |          294.757 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Dense          |          5021.36 |            0     | 1.5666   |  1.79491  |  2.6332   |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Hybrid         |          4862.9  |            0     | 1.64517  |  1.92984  |  2.0403   |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Filtered       |          3676.61 |            0     | 1.54158  |  1.85601  | 36.3353   |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_FilteredBool   |          5043.55 |            0     | 1.54203  |  1.99038  |  2.81488  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_FilteredString |          4624.73 |            0     | 1.69129  |  2.20089  |  2.6755   |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Sparse         |          7048.12 |            0     | 1.12728  |  1.52427  |  1.70709  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_ByID           |          6279.43 |            0     | 1.26728  |  1.57782  |  1.68933  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_GraphRAG       |          4831.06 |            0     | 1.64503  |  1.91342  |  2.025    |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_GlobalGraphRAG |          4813.6  |            0     | 1.65621  |  1.8868   |  2.00386  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Recommend      |          6127.35 |            0     | 1.29512  |  1.59112  |  1.68209  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Geo            |          3466.55 |            0     | 2.21222  |  2.91593  |  3.89439  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_Temporal       |          2367.07 |            0     | 2.94447  |  6.3448   |  8.81171  |
+| unknown | unknown | result_cpu_float16_384_5000.json  | float16 |   384 |    5000 | Search_LearnedIndex   |          2615.95 |            0     | 3.01005  |  4.30612  |  4.97506  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | DoPut                 |         89259.8  |          348.671 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | DoGet                 |         85957.9  |          335.773 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Dense          |          3173.84 |            0     | 1.61674  |  3.00345  | 38.5253   |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Hybrid         |          4405.88 |            0     | 1.8143   |  2.10076  |  2.24023  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Filtered       |          4361.65 |            0     | 1.80153  |  2.10953  |  2.96636  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_FilteredBool   |          4672.74 |            0     | 1.69102  |  2.00642  |  2.38898  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_FilteredString |          4957.15 |            0     | 1.60252  |  1.84487  |  2.00983  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Sparse         |          8492.7  |            0     | 0.907207 |  1.33161  |  1.50214  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_ByID           |          8247.71 |            0     | 0.950951 |  1.22895  |  1.3663   |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_GraphRAG       |          4700.72 |            0     | 1.67098  |  2.03298  |  2.44087  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_GlobalGraphRAG |          4760.58 |            0     | 1.66308  |  1.97917  |  2.21128  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Recommend      |          7732.15 |            0     | 1.01755  |  1.31583  |  1.50134  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Geo            |          1875.34 |            0     | 1.86704  | 16.1683   | 37.866    |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_Temporal       |          3762.84 |            0     | 2.10648  |  2.91676  |  3.31415  |
+| unknown | unknown | result_cpu_float32_1024_5000.json | float32 |  1024 |    5000 | Search_LearnedIndex   |          3024.39 |            0     | 2.39175  |  4.49448  |  7.27332  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | DoPut                 |        229749    |          336.547 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | DoGet                 |        169524    |          248.326 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Dense          |          4263.08 |            0     | 1.81664  |  2.15683  |  3.21545  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Hybrid         |          4333.01 |            0     | 1.84346  |  2.14006  |  2.29844  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Filtered       |          2852.12 |            0     | 1.84471  |  2.72505  | 38.1838   |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_FilteredBool   |          3191.62 |            0     | 2.44329  |  3.52463  |  4.07535  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_FilteredString |          3213.38 |            0     | 2.41196  |  3.26706  |  4.12427  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Sparse         |          4966.29 |            0     | 1.52529  |  2.53439  |  3.59909  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_ByID           |          4627.46 |            0     | 1.66217  |  2.49431  |  3.25749  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_GraphRAG       |          3029.24 |            0     | 2.55864  |  3.49145  |  4.29669  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_GlobalGraphRAG |          2843.85 |            0     | 2.68782  |  3.83691  |  4.76828  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Recommend      |          4614.95 |            0     | 1.67271  |  2.42243  |  3.0072   |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Geo            |          1220.87 |            0     | 4.89989  | 18.518    | 29.2411   |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_Temporal       |          2624.48 |            0     | 2.64038  |  5.7628   |  7.40022  |
+| unknown | unknown | result_cpu_float16_768_5000.json  | float16 |   768 |    5000 | Search_LearnedIndex   |          2890.36 |            0     | 2.68482  |  3.80491  |  4.59065  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | DoPut                 |         14117.7  |          330.884 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | DoGet                 |         25504.4  |          597.76  | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Dense          |          2601.49 |            0     | 2.87042  |  3.82446  | 14.0935   |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Hybrid         |          3312.15 |            0     | 2.38913  |  3.25268  |  3.68827  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Filtered       |          2699.65 |            0     | 2.87472  |  3.72568  |  4.41013  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_FilteredBool   |          2806.68 |            0     | 2.88319  |  3.79099  |  4.27328  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_FilteredString |          2948.45 |            0     | 2.72864  |  3.56612  |  3.9299   |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Sparse         |          6751.58 |            0     | 1.18731  |  1.52314  |  1.64255  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_ByID           |          6447.59 |            0     | 1.22902  |  1.49001  |  1.68374  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_GraphRAG       |          2478.42 |            0     | 3.19007  |  4.36148  |  5.44547  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_GlobalGraphRAG |          1985.56 |            0     | 3.9074   |  5.73846  |  6.94116  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Recommend      |          3277.63 |            0     | 2.02616  |  3.28044  |  4.70101  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Geo            |          1462.27 |            0     | 4.61901  |  8.6305   | 19.2299   |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_Temporal       |          2801.11 |            0     | 2.7556   |  4.01077  |  5.61355  |
+| unknown | unknown | result_cpu_float64_3072_5000.json | float64 |  3072 |    5000 | Search_LearnedIndex   |          1690.05 |            0     | 4.5609   |  6.8219   |  7.75987  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | DoPut                 |        288884    |          282.113 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | DoGet                 |        257407    |          251.374 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Dense          |          5077.55 |            0     | 1.53595  |  1.83228  |  2.69993  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Hybrid         |          5156.12 |            0     | 1.54264  |  1.92918  |  2.17613  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Filtered       |          4056.53 |            0     | 1.51342  |  2.34382  | 29.1207   |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_FilteredBool   |          5147.05 |            0     | 1.54534  |  1.79837  |  1.94886  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_FilteredString |          5213.56 |            0     | 1.51596  |  1.84528  |  2.12731  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Sparse         |          6628.97 |            0     | 1.21215  |  1.50798  |  1.70227  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_ByID           |          6583.8  |            0     | 1.20811  |  1.49009  |  1.64367  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_GraphRAG       |          5211.96 |            0     | 1.524    |  1.78515  |  1.92553  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_GlobalGraphRAG |          5161.52 |            0     | 1.54455  |  1.79659  |  2.00257  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Recommend      |          6454.06 |            0     | 1.23586  |  1.56375  |  1.70236  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Geo            |          3173.13 |            0     | 2.20495  |  2.81787  | 13.7094   |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_Temporal       |          3635.98 |            0     | 2.19073  |  2.94982  |  3.28507  |
+| unknown | unknown | result_cpu_float64_128_5000.json  | float64 |   128 |    5000 | Search_LearnedIndex   |          3590.76 |            0     | 2.20673  |  3.21057  |  3.80881  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | DoPut                 |        123824    |          362.766 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | DoGet                 |        114658    |          335.914 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Dense          |          4293.34 |            0     | 1.83102  |  2.12449  |  2.66459  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Hybrid         |          4285.29 |            0     | 1.83618  |  2.17013  |  2.70386  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Filtered       |          3570.32 |            0     | 1.90782  |  2.36418  |  6.06655  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_FilteredBool   |          3923.29 |            0     | 2.03332  |  2.3255   |  2.47963  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_FilteredString |          2905.8  |            0     | 2.50528  |  4.56856  |  6.43085  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Sparse         |          5461.25 |            0     | 1.35077  |  2.51625  |  4.56823  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_ByID           |          4748.7  |            0     | 1.59186  |  2.37535  |  3.65221  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_GraphRAG       |          3128.48 |            0     | 2.51838  |  3.23853  |  3.60477  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_GlobalGraphRAG |          3010.99 |            0     | 2.60164  |  3.54215  |  4.22888  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Recommend      |          4326.9  |            0     | 1.7905   |  2.54405  |  3.25094  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Geo            |          1144.85 |            0     | 4.99585  | 18.6038   | 55.0546   |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_Temporal       |          2790.33 |            0     | 2.74726  |  4.22976  |  5.01105  |
+| unknown | unknown | result_cpu_float32_768_5000.json  | float32 |   768 |    5000 | Search_LearnedIndex   |          2744.82 |            0     | 2.76173  |  4.371    |  5.31912  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | DoPut                 |        207270    |          303.618 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | DoGet                 |        216218    |          316.726 | 0        |  0        |  0        |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Dense          |          5049.2  |            0     | 1.54854  |  1.77822  |  2.77466  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Hybrid         |          3439.48 |            0     | 1.60495  |  2.09623  | 35.0837   |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Filtered       |          4759.76 |            0     | 1.64644  |  1.99773  |  2.2666   |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_FilteredBool   |          5332.31 |            0     | 1.48261  |  1.79599  |  2.27162  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_FilteredString |          4418.24 |            0     | 1.81107  |  2.30149  |  2.50571  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Sparse         |          7092.48 |            0     | 1.13186  |  1.48306  |  1.60404  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_ByID           |          6490.86 |            0     | 1.22407  |  1.52765  |  1.63253  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_GraphRAG       |          4918.52 |            0     | 1.61442  |  1.86834  |  2.02196  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_GlobalGraphRAG |          4901.81 |            0     | 1.62643  |  1.84334  |  2.0746   |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Recommend      |          6357.19 |            0     | 1.26012  |  1.51323  |  1.63984  |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Geo            |          2339.26 |            0     | 2.33518  | 12.4582   | 35.6589   |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Temporal       |          3038    |            0     | 2.52268  |  3.83705  |  4.4252   |
+| unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_LearnedIndex   |          2762.87 |            0     | 2.82542  |  4.08662  |  4.88429  |
 

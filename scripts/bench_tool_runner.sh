@@ -11,8 +11,8 @@ OUTPUT_DIR="${OUTPUT_DIR:-bench_results}"
 
 # Default configuration
 DTYPES=("float32" "float64" "float16" "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64" "complex64" "complex128" "turboquant2" "turboquant4" "turboquant8")
-DIMS=(128 384 768 1024 3072)
-COUNTS=(1000 5000 10000 25000 50000 100000)
+DIMS=(384)
+COUNTS=(100000 250000 500000 1000000)
 QUERIES=1000
 URI="${URI:-127.0.0.1:4000}"
 METRICS_URI="${METRICS_URI:-127.0.0.1:9095}"
@@ -107,74 +107,97 @@ start_pprof() {
     echo $!
 }
 
-# Check if we need to start local server
-if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
-    echo "Starting local longbow server..."
-    # Extract ports from URI and METRICS_URI
-    PORT=$(echo "$URI" | cut -d: -f2)
-    METRICS_PORT=$(echo "$METRICS_URI" | cut -d: -f2)
-    META_PORT=$((PORT + 1))
-    
-    export LONGBOW_MAX_MEMORY=${LONGBOW_MAX_MEMORY:-15032385536}
-    export LONGBOW_AUTOSCALE_ENABLED=false
-    export LONGBOW_TEMPORAL_ENABLED=true
-    export LONGBOW_SPARSE_ENABLED=true
-    export LONGBOW_GEOSPATIAL_ENABLED=true
-    export LONGBOW_GRAPHRAG_ENABLED=true
-    export LONGBOW_LEARNED_INDEX_ENABLED=true
-    export LONGBOW_LISTEN_ADDR="0.0.0.0:$PORT"
-    export LONGBOW_METRICS_ADDR="0.0.0.0:$METRICS_PORT"
-    export LONGBOW_META_ADDR="0.0.0.0:$META_PORT"
-    
-    # Select binary based on mode
-    case "$MODE" in
-        metal) SERVER_BIN="$REPO_DIR/bin/longbow-metal" ;;
-        cuda)  SERVER_BIN="$REPO_DIR/bin/longbow-cuda" ;;
-        *)     
-            if [[ -x "$REPO_DIR/bin/longbow-avx2" ]] && [[ "$(uname -m)" == "x86_64" ]]; then
-                SERVER_BIN="$REPO_DIR/bin/longbow-avx2"
-            else
-                SERVER_BIN="$REPO_DIR/bin/longbow-cpu"
-            fi
-            ;;
-    esac
-    
-    if [[ ! -x "$SERVER_BIN" ]]; then
-        echo "ERROR: Server binary $SERVER_BIN not found!"
-        exit 1
-    fi
-    
-    # Set environment variables for server
-    export LONGBOW_DATA_PATH="$OUTPUT_DIR/data"
-    
-    mkdir -p "$LONGBOW_DATA_PATH"
-    
-    export GOTRACEBACK=all
-    nohup "$SERVER_BIN" > "$OUTPUT_DIR/logs/server.log" 2>&1 &
-    SERVER_PID=$!
-    echo "Server PID: $SERVER_PID"
+## Global PID tracking
+SERVER_PID=""
+PPROF_PID=""
 
-    # Wait for server to be ready
-    for i in {1..30}; do
-        if curl -s "http://$URI/health" &>/dev/null || curl -s "http://$METRICS_URI/health" &>/dev/null; then
-            echo "Server is ready"
-            break
+# Function to start the local Longbow server
+start_local_server() {
+    if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
+        echo "Starting local longbow server for mode: $MODE"
+        # Extract ports from URI and METRICS_URI
+        PORT=$(echo "$URI" | cut -d: -f2)
+        METRICS_PORT=$(echo "$METRICS_URI" | cut -d: -f2)
+        META_PORT=$((PORT + 1))
+        
+        export LONGBOW_MAX_MEMORY=${LONGBOW_MAX_MEMORY:-19327352832} # Default 18GB
+        export LONGBOW_AUTOSCALE_ENABLED=false
+        export LONGBOW_TEMPORAL_ENABLED=true
+        export LONGBOW_SPARSE_ENABLED=true
+        export LONGBOW_GEOSPATIAL_ENABLED=true
+        export LONGBOW_GRAPHRAG_ENABLED=true
+        export LONGBOW_LEARNED_INDEX_ENABLED=true
+        export LONGBOW_LISTEN_ADDR="0.0.0.0:$PORT"
+        export LONGBOW_METRICS_ADDR="0.0.0.0:$METRICS_PORT"
+        export LONGBOW_META_ADDR="0.0.0.0:$META_PORT"
+        
+        # Select binary based on mode
+        case "$MODE" in
+            metal) SERVER_BIN="$REPO_DIR/bin/longbow-metal" ;;
+            cuda)  SERVER_BIN="$REPO_DIR/bin/longbow-cuda" ;;
+            *)     
+                if [[ -x "$REPO_DIR/bin/longbow-avx2" ]] && [[ "$(uname -m)" == "x86_64" ]]; then
+                    SERVER_BIN="$REPO_DIR/bin/longbow-avx2"
+                else
+                    SERVER_BIN="$REPO_DIR/bin/longbow-cpu"
+                fi
+                ;;
+        esac
+        
+        if [[ ! -x "$SERVER_BIN" ]]; then
+            echo "ERROR: Server binary $SERVER_BIN not found!"
+            exit 1
         fi
-        sleep 1
-    done
-fi
-
-# Start pprof
-PPROF_PID=$(start_pprof)
-echo "pprof PID: $PPROF_PID"
-
-# Cleanup function
-cleanup() {
-    echo "Cleaning up..."
-    kill $PPROF_PID 2>/dev/null || true
-    if [[ -n "$SERVER_PID" ]]; then
-        kill $SERVER_PID 2>/dev/null || true
+        
+        # Set environment variables for server
+        export LONGBOW_DATA_PATH="$OUTPUT_DIR/data"
+        rm -rf "$LONGBOW_DATA_PATH"
+        mkdir -p "$LONGBOW_DATA_PATH"
+        
+        export GOTRACEBACK=all
+        nohup "$SERVER_BIN" > "$OUTPUT_DIR/logs/server_$(date +%H%M%S).log" 2>&1 &
+        SERVER_PID=$!
+        
+        # Wait for server to be ready
+        for i in {1..30}; do
+            if curl -s "http://$URI/health" &>/dev/null || curl -s "http://$METRICS_URI/health" &>/dev/null; then
+                echo "Server ready (PID: $SERVER_PID)"
+                break
+            fi
+            sleep 1
+        done
+        
+        # Start pprof for this instance
+        PPROF_PID=$(start_pprof)
     fi
+}
+
+# Function to stop the local Longbow server
+stop_local_server() {
+    if [[ -n "$PPROF_PID" ]]; then
+        kill $PPROF_PID 2>/dev/null || true
+        PPROF_PID=""
+    fi
+    if [[ -n "$SERVER_PID" ]]; then
+        echo "Stopping server (PID: $SERVER_PID)..."
+        kill $SERVER_PID 2>/dev/null || true
+        # Wait for it to actually stop and release resources
+        for i in {1..10}; do
+            if ! kill -0 $SERVER_PID 2>/dev/null; then
+                break
+            fi
+            sleep 1
+        done
+        SERVER_PID=""
+        # Aggressive cleanup of any orphaned data files
+        rm -rf "$OUTPUT_DIR/data"
+    fi
+}
+
+# Cleanup function for traps
+cleanup() {
+    echo "Emergency cleanup..."
+    stop_local_server
 }
 trap cleanup SIGINT SIGTERM
 
@@ -185,6 +208,10 @@ ERROR_LOG="$OUTPUT_DIR/errors.log"
 for count in "${COUNTS[@]}"; do
     for dim in "${DIMS[@]}"; do
         for dtype_raw in "${DTYPES[@]}"; do
+            # Restart server for EACH dataset to ensure 0MB heap baseline
+            stop_local_server
+            start_local_server
+
             dtype=$dtype_raw
             tq_bits=4
 
@@ -225,19 +252,8 @@ for count in "${COUNTS[@]}"; do
     done
 done
 
+# Final cleanup
+stop_local_server
+
 echo "Benchmark run completed at $(date)"
 echo "Results saved to: $OUTPUT_DIR"
-
-# Stop pprof and server
-kill $PPROF_PID 2>/dev/null || true
-if [[ -n "$SERVER_PID" ]]; then
-    kill $SERVER_PID 2>/dev/null || true
-    # Wait for it to actually stop
-    wait $SERVER_PID 2>/dev/null || true
-fi
-
-# Cleanup large data files to prevent disk exhaustion
-if [[ -d "$LONGBOW_DATA_PATH" ]]; then
-    echo "Cleaning up benchmark data: $LONGBOW_DATA_PATH"
-    rm -rf "$LONGBOW_DATA_PATH"
-fi

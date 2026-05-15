@@ -1406,6 +1406,12 @@ func (idx *ShardedHNSW) RelocateToOffHeap() error {
 	return nil
 }
 
+func (idx *ShardedHNSW) ReleaseMonolithicChunk(cID int) error {
+	// ShardedHNSW doesn't have a single monolithic store to release.
+	// Memory is managed at the shard level.
+	return nil
+}
+
 func (s *hnswShard) RelocateToOffHeap() error {
 	return s.index.RelocateToOffHeap()
 }

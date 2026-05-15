@@ -76,6 +76,9 @@ type VectorIndexer interface {
 	// Maintenance
 	RemapLocations(ctx context.Context, mapping map[uint32]any) error
 
+	// Migration
+	ReleaseMonolithicChunk(cID int) error
+
 	// GPU
 	GetGPUIndex() any // Returns types.Index (gpu index)
 }

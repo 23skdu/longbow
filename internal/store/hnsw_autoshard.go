@@ -442,7 +442,7 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 			for i, it := range items {
 				recs[i] = it.rec
 				rowIdxs[i] = it.rowIdx
-				batchIdxs[i] = it.batchIdx
+				batchIdxs[i] = i // Use local index in recs slice
 			}
 
 			// Add batch to new index (Parallelized inside ShardedHNSW)
@@ -454,19 +454,28 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 			}
 
 			if err != nil {
-				idx.dataset.Logger.Error().Err(err).Msg("Migration batch failed")
-				// Continue to next batch, some items might be lost but we avoid total crash
+				idx.dataset.Logger.Error().Err(err).Msg("Migration batch failed - aborting")
+				// Critical failure: abort migration to prevent inconsistent state
+				return
 			}
 		}
 
 		lastMigrated = endIdx
 
 		// Incremental Handover: Release monolithic storage segments as they are replicated.
-		if lastMigrated > 0 && lastMigrated%types.ChunkSize == 0 {
-			if ah, ok := oldIndex.(interface{ ReleaseMonolithicChunk(int) }); ok {
-				ah.ReleaseMonolithicChunk((lastMigrated / types.ChunkSize) - 1)
+		// We track the highest chunk migrated to handle cases where batch boundaries don't align with ChunkSize.
+		currentChunk := (lastMigrated / types.ChunkSize) - 1
+		if currentChunk >= 0 {
+			if ah, ok := oldIndex.(interface{ ReleaseMonolithicChunk(int) error }); ok {
+				// Release all chunks up to currentChunk that haven't been released yet
+				// (The index's implementation handles atomic/idempotent release)
+				for c := 0; c <= currentChunk; c++ {
+					_ = ah.ReleaseMonolithicChunk(c)
+				}
 				// Reclaim memory immediately after chunk release
-				runtime.GC()
+				if currentChunk%4 == 0 { // Don't GC on every chunk to avoid too much jitter
+					runtime.GC()
+				}
 			}
 		}
 
@@ -501,6 +510,17 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		Dur("duration", duration).
 		Int("vectors", nTotal).
 		Msg("Index migration complete")
+}
+
+func (idx *AutoShardingIndex) ReleaseMonolithicChunk(cID int) error {
+	idx.mu.RLock()
+	curr := idx.current
+	idx.mu.RUnlock()
+	
+	if curr != nil {
+		return curr.ReleaseMonolithicChunk(cID)
+	}
+	return nil
 }
 
 // SearchVectors returns the k nearest neighbors for a query vector.

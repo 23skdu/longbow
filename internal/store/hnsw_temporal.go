@@ -46,7 +46,7 @@ func (thi *TemporalHNSWIndex) Add(id uint64, vector []float32, timestamp int64) 
 	thi.mu.Lock()
 	defer thi.mu.Unlock()
 
-	thi.temporalTree.Insert(timestamp, id)
+	thi.temporalTree.Insert(timestamp, id, 0.0)
 
 	return nil
 }

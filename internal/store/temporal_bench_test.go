@@ -10,7 +10,7 @@ func BenchmarkTemporalTree_GetRange(b *testing.B) {
 	n := 100000
 	startTs := time.Now().UnixNano()
 	for i := 0; i < n; i++ {
-		tt.Insert(startTs+int64(i), uint64(i))
+		tt.Insert(startTs+int64(i), uint64(i), 0.0)
 	}
 
 	b.ResetTimer()
@@ -24,7 +24,7 @@ func BenchmarkTemporalTree_GetLatest(b *testing.B) {
 	n := 100000
 	startTs := time.Now().UnixNano()
 	for i := 0; i < n; i++ {
-		tt.Insert(startTs+int64(i), uint64(i))
+		tt.Insert(startTs+int64(i), uint64(i), 0.0)
 	}
 
 	b.ResetTimer()

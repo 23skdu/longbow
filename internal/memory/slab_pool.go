@@ -86,8 +86,13 @@ func PutSlab(b []byte) {
 		global16MBPool.Put(b)
 	case size32MB:
 		global32MBPool.Put(b)
+	default:
+		// If it's a large non-standard slab (>= 1MB), it was likely allocated
+		// via offHeapAlloc.Allocate in GetSlab. We must free it to avoid leaks.
+		if c >= 1024*1024 {
+			offHeapAlloc.Free(b)
+		}
 	}
-	// Else drop it
 }
 
 // Get retrieves a slab from the pool or allocates a new one.
@@ -117,7 +122,8 @@ func (p *SlabPool) Put(b []byte) {
 	pooled := atomic.LoadInt64(&p.pooledCount)
 	if pooled >= p.maxPooled {
 		// Release memory back to OS instead of pooling
-		_ = ReleaseSlab(b) // Ignore error, worst case we just don't release
+		// We MUST call Free to unmap and decrement the allocator's counter
+		offHeapAlloc.Free(b)
 		// Update metrics after releasing
 		p.updateMetrics()
 		return

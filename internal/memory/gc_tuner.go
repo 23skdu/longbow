@@ -51,6 +51,13 @@ type GCTuner struct {
 	allocRate      atomic.Uint64 // Bytes per second
 	isBursting     atomic.Bool   // True if currently in burst mode
 	cleanupFuncs   []func()      // Functions to call under extreme pressure
+
+	// GetPhysicalStats allows mocking the physical memory stats (off-heap)
+	GetPhysicalStats func() (int64, int64)
+}
+
+func defaultPhysicalStats() (int64, int64) {
+	return GetGlobalOffHeapAllocated(), GetGlobalSlabPoolUnusedMemory()
 }
 
 // NewGCTuner creates a tuner. limitBytes should be close to container memory limit.
@@ -76,6 +83,7 @@ func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger)
 		EnableGPUTuning:    types.GetDeviceCount() > 0,
 		GPUUtilizationHigh: 60.0,
 		GPUUtilizationLow:  20.0,
+		GetPhysicalStats:   defaultPhysicalStats,
 	}
 
 	if tuner.logger != nil {
@@ -176,17 +184,26 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 		seen := make(map[*ArenaStatsRecord]bool)
 		for _, a := range arenas {
 			seen[a] = true
-			totalArenaUsed += a.UsedBytes.Load()
+			totalArenaUsed += a.TotalCapacity.Load()
 		}
 		for _, a := range global {
-			if seen[a] { continue }
-			totalArenaUsed += a.UsedBytes.Load()
+			if seen[a] {
+				continue
+			}
+			totalArenaUsed += a.TotalCapacity.Load()
 		}
 	}
 	t.mu.RUnlock()
 
-	// Total Physical Memory in use by the process
-	totalPhysicalUsed := int64(heapAlloc) + totalArenaUsed // #nosec G115
+	// Total Physical Memory in use by the process.
+	// We include the global off-heap allocated counter to catch memory in SlabPools
+	// or leaked mappings that aren't tied to an active Arena record.
+	var globalOffHeap, unusedSlabPool int64
+	if t.GetPhysicalStats != nil {
+		globalOffHeap, unusedSlabPool = t.GetPhysicalStats()
+	}
+
+	totalPhysicalUsed := int64(heapAlloc) + globalOffHeap + unusedSlabPool // #nosec G115
 	
 	// headroom is what's left for the Go heap and metadata
 	ratio := float64(totalPhysicalUsed) / float64(t.limitBytes)

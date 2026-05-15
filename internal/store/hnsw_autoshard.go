@@ -226,13 +226,11 @@ func (idx *AutoShardingIndex) checkMigrationPressure() {
 		return
 	}
 
-	// Calculate physical memory (Heap + Off-Heap Arenas)
-	var offHeapMem int64
-	for _, a := range lbmem.GetGlobalArenas() {
-		offHeapMem += a.UsedBytes.Load()
-	}
+	// Calculate physical memory (Heap + Off-Heap Arenas + SlabPool)
+	offHeapMem := lbmem.GetGlobalOffHeapAllocated()
+	unusedSlabs := lbmem.GetGlobalSlabPoolUnusedMemory()
 	
-	usage := float64(int64(m.HeapAlloc)+offHeapMem) / float64(maxMem) // #nosec G115
+	usage := float64(int64(m.HeapAlloc)+offHeapMem+unusedSlabs) / float64(maxMem) // #nosec G115
 	if usage > 0.85 {
 		// Migration is happening and we are above 85% total memory limit.
 		// Slow down the caller to allow GC and migration loop to keep up.
@@ -342,17 +340,15 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		
-		var offHeapMem int64
-		for _, a := range lbmem.GetGlobalArenas() {
-			offHeapMem += a.UsedBytes.Load()
-		}
+		offHeapMem := lbmem.GetGlobalOffHeapAllocated()
+		unusedSlabs := lbmem.GetGlobalSlabPoolUnusedMemory()
 		
 		maxMem := int64(0)
 		if idx.dataset.Admission != nil {
 			maxMem = idx.dataset.Admission.maxMemory.Load()
 		}
 
-		physicalMem := int64(m.HeapAlloc) + offHeapMem // #nosec G115
+		physicalMem := int64(m.HeapAlloc) + offHeapMem + unusedSlabs // #nosec G115
 		usageRatio := 0.0
 		if maxMem > 0 {
 			usageRatio = float64(physicalMem) / float64(maxMem)

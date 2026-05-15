@@ -11,8 +11,8 @@ OUTPUT_DIR="${OUTPUT_DIR:-bench_results}"
 
 # Default configuration
 DTYPES=("float32" "float64" "float16" "int8" "int16" "int32" "int64" "uint8" "uint16" "uint32" "uint64" "complex64" "complex128" "turboquant2" "turboquant4" "turboquant8")
-DIMS=(384)
-COUNTS=(100000 250000 500000 1000000)
+DIMS=(128 384 768 1024 3072)
+COUNTS=(5000 10000 25000 100000 250000 500000)
 QUERIES=1000
 URI="${URI:-127.0.0.1:4000}"
 METRICS_URI="${METRICS_URI:-127.0.0.1:9095}"
@@ -60,6 +60,10 @@ done
 TIMESTAMP=$(date +%Y%m%d_%H%M%S)
 OUTPUT_DIR="$OUTPUT_DIR/${HOST}_${MODE}_${TIMESTAMP}"
 mkdir -p "$OUTPUT_DIR"/{profiles,logs}
+
+# Initial cleanup to ensure no orphaned servers are running
+pkill -9 longbow 2>/dev/null || true
+sleep 1
 
 echo "========================================="
 echo "Benchmark Configuration"
@@ -114,6 +118,14 @@ PPROF_PID=""
 # Function to start the local Longbow server
 start_local_server() {
     if [[ -z "$REMOTE_HOST" ]] && [[ "$URI" == "127.0.0.1"* ]]; then
+        # Aggressive cleanup of any existing longbow processes on this port
+        PORT=$(echo "$URI" | cut -d: -f2)
+        lsof -ti :$PORT | xargs kill -9 2>/dev/null || true
+        # Kill the server specifically, avoid killing bench-tool if it has 'longbow' in its path
+        pkill -9 -x longbow 2>/dev/null || true
+        pkill -9 -f "bin/longbow" 2>/dev/null || true
+        sleep 2
+
         echo "Starting local longbow server for mode: $MODE"
         # Extract ports from URI and METRICS_URI
         PORT=$(echo "$URI" | cut -d: -f2)
@@ -135,14 +147,14 @@ start_local_server() {
         case "$MODE" in
             metal) SERVER_BIN="$REPO_DIR/bin/longbow-metal" ;;
             cuda)  SERVER_BIN="$REPO_DIR/bin/longbow-cuda" ;;
-            *)     
-                if [[ -x "$REPO_DIR/bin/longbow-avx2" ]] && [[ "$(uname -m)" == "x86_64" ]]; then
-                    SERVER_BIN="$REPO_DIR/bin/longbow-avx2"
-                else
-                    SERVER_BIN="$REPO_DIR/bin/longbow-cpu"
-                fi
-                ;;
+            avx2)  SERVER_BIN="$REPO_DIR/bin/longbow-avx2" ;;
+            *)     SERVER_BIN="$REPO_DIR/bin/longbow" ;;
         esac
+        
+        if [[ ! -x "$SERVER_BIN" ]]; then
+            # Fallback to unified binary if specialized one is missing
+            SERVER_BIN="$REPO_DIR/bin/longbow"
+        fi
         
         if [[ ! -x "$SERVER_BIN" ]]; then
             echo "ERROR: Server binary $SERVER_BIN not found!"
@@ -182,16 +194,27 @@ stop_local_server() {
         echo "Stopping server (PID: $SERVER_PID)..."
         kill $SERVER_PID 2>/dev/null || true
         # Wait for it to actually stop and release resources
-        for i in {1..10}; do
+        for i in {1..5}; do
             if ! kill -0 $SERVER_PID 2>/dev/null; then
                 break
             fi
             sleep 1
         done
+        
+        # Force kill if still running
+        if kill -0 $SERVER_PID 2>/dev/null; then
+            echo "Server (PID: $SERVER_PID) did not exit gracefully, force killing..."
+            kill -9 $SERVER_PID 2>/dev/null || true
+            sleep 1
+        fi
         SERVER_PID=""
-        # Aggressive cleanup of any orphaned data files
-        rm -rf "$OUTPUT_DIR/data"
     fi
+    
+    # Pre-emptive cleanup of any orphaned longbow processes to avoid port conflicts and memory bloat
+    pkill -9 longbow 2>/dev/null || true
+    
+    # Aggressive cleanup of any orphaned data files
+    rm -rf "$OUTPUT_DIR/data"
 }
 
 # Cleanup function for traps
@@ -227,7 +250,7 @@ for count in "${COUNTS[@]}"; do
             echo "[$(date +%H:%M:%S)] Running: $dataset (dim=$dim, dtype=$dtype, bits=$tq_bits, count=$count)"
 
             SEARCH_MODES="all"
-            WORKERS=4
+            WORKERS=8
 
             $BENCH_TOOL \
                 -uri "$URI" \

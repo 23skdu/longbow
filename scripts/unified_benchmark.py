@@ -134,6 +134,7 @@ class BenchmarkRunner:
         )
         self.results = []
         self.server_pid = None
+        self.test_counter = 0
 
     def get_server_binary(self):
         mode_binaries = {
@@ -206,8 +207,12 @@ class BenchmarkRunner:
         """Start a fresh Longbow server for a specific configuration."""
         self.stop_server()
         
-        # Aggressive port cleanup to avoid "address already in use"
-        port = self.args.port
+        # Calculate dynamic port to avoid TIME_WAIT issues
+        base_port = self.args.port + (self.test_counter % 50) * 10
+        self.server_addr = f"127.0.0.1:{base_port}"
+        port = base_port
+        self.test_counter += 1
+
         print(f"  Cleaning up ports starting from {port}...")
         for p in [port, port + 1, port + 80, port + 6000]:
             subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
@@ -219,16 +224,19 @@ class BenchmarkRunner:
         for p in [port, port + 1, port + 80, port + 6000]:
             for _ in range(30):
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    if s.connect_ex(('127.0.0.1', p)) != 0:
-                        break
-                time.sleep(0.5)
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    try:
+                        s.bind(('127.0.0.1', p))
+                        break # Success, we can bind!
+                    except socket.error:
+                        pass # Still in use
+                time.sleep(1.0)
         
         # Also kill any lingering longbow processes by name to be sure
         for name in ["longbow", "longbow-metal", "longbow-cuda", "bench-tool", "benchmark-tool", "longbow-cli"]:
-            subprocess.run(f"pkill -9 {name} 2>/dev/null || true", shell=True)
-            subprocess.run(f"pkill -9 -f {name} 2>/dev/null || true", shell=True)
+            subprocess.run(f"pkill -9 -x {name} 2>/dev/null || true", shell=True)
         
-        time.sleep(5) 
+        time.sleep(10) 
         
         server_bin = self.get_server_binary()
         if not os.path.exists(server_bin):
@@ -274,10 +282,10 @@ class BenchmarkRunner:
 
         log_file = os.path.join(self.log_dir, f"longbow_{current_mode}_{label}.log")
 
-        env["LONGBOW_LISTEN_ADDR"] = f"127.0.0.1:{port}"
-        env["LONGBOW_META_ADDR"] = f"127.0.0.1:{port + 1}"
-        env["LONGBOW_REST_ADDR"] = f"127.0.0.1:{port + 80}"
-        env["LONGBOW_METRICS_ADDR"] = f"127.0.0.1:{port + 6000}"
+        env["LONGBOW_LISTEN_ADDR"] = f"0.0.0.0:{port}"
+        env["LONGBOW_META_ADDR"] = f"0.0.0.0:{port + 1}"
+        env["LONGBOW_REST_ADDR"] = f"0.0.0.0:{port + 80}"
+        env["LONGBOW_METRICS_ADDR"] = f"0.0.0.0:{port + 6000}"
         env["LONGBOW_DATA_PATH"] = data_root
         env["LONGBOW_NODE_ID"] = self.node_id
         env["LONGBOW_GOGC"] = "200"
@@ -340,7 +348,7 @@ class BenchmarkRunner:
             result = run_command(f"lsof -i :{port} 2>/dev/null | grep LISTEN", shell=True)
             if result and result.returncode == 0:
                 # Additional wait for indexing workers to start
-                time.sleep(3)
+                time.sleep(10)
                 return True
             time.sleep(1)
 
@@ -351,8 +359,8 @@ class BenchmarkRunner:
         if self.server_pid:
             try:
                 os.kill(self.server_pid, signal.SIGTERM)
-                # Wait up to 5 seconds for graceful stop
-                for _ in range(10):
+                # Wait up to 45 seconds for graceful stop
+                for _ in range(90):
                     time.sleep(0.5)
                     try:
                         os.kill(self.server_pid, 0)

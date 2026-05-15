@@ -38,3 +38,9 @@ func GetGlobalArenas() []*ArenaStatsRecord {
 	copy(snapshot, globalRegistry)
 	return snapshot
 }
+
+// GetGlobalOffHeapAllocated returns the total bytes currently allocated via the global off-heap allocator.
+// This includes slabs in use by arenas, slabs sitting in the SlabPool, and any other off-heap mappings.
+func GetGlobalOffHeapAllocated() int64 {
+	return offHeapAlloc.Allocated()
+}

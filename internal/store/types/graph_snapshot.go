@@ -15,7 +15,7 @@ func (g *GraphData) CloneForSnapshot() *GraphData {
 		BQEnabled:     g.BQEnabled,
 		PQEnabled:     g.PQEnabled,
 		PQM:           g.PQM,
-		GlobalVersion: g.GlobalVersion,
+		GlobalVersion: atomic.LoadUint64(&g.GlobalVersion),
 		BackingGraph:  g.BackingGraph,
 		Name:          g.Name,
 		Allocator:     g.Allocator,

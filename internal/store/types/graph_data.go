@@ -163,6 +163,8 @@ type PackedNeighbors interface {
 	CASNeighbors(id uint32, oldPacked uint64, new []uint32) bool
 	// GetNeighborsF16 returns neighbors and their distances in float16 precision.
 	GetNeighborsF16(id uint32) ([]uint32, []float16.Num, bool)
+	// Release frees the underlying memory resources.
+	Release()
 	// SetNeighborsF16 updates neighbors and their distances in float16 precision.
 	SetNeighborsF16(id uint32, neighbors []uint32, dists []float16.Num) error
 	// EnsureCapacity ensures the underlying storage can accommodate the given node ID.
@@ -190,9 +192,8 @@ func (g *GraphData) GetNodeCount() int {
 
 // BumpGeneration increments the generation for all arenas in the graph.
 func (g *GraphData) BumpGeneration() uint64 {
-	gen := g.GlobalVersion + 1
+	gen := atomic.AddUint64(&g.GlobalVersion, 1)
 	g.SetGeneration(gen)
-	g.GlobalVersion = gen
 	return gen
 }
 
@@ -1267,10 +1268,9 @@ func (g *GraphData) SetNeighborsAtLayer(layer int, id uint32, neighbors []uint32
 
 	// Write neighbors
 	for i, n := range neighbors {
-		neighborsChunk[baseIdx+i] = n
+		atomic.StoreUint32(&neighborsChunk[baseIdx+i], n)
 	}
-
-	countsChunk[cOff] = int32(len(neighbors)) // #nosec G115
+	atomic.StoreInt32(&countsChunk[cOff], int32(len(neighbors))) // #nosec G115
 
 	if versionsChunk != nil {
 		atomic.AddUint32(&versionsChunk[cOff], 1)
@@ -2135,9 +2135,6 @@ func (g *GraphData) Clone() *GraphData {
 	newG.VectorsComplex64Offsets = copyOffsetSlice(g.VectorsComplex64Offsets, g.Type == VectorTypeComplex64)
 	newG.VectorsComplex128Offsets = copyOffsetSlice(g.VectorsComplex128Offsets, g.Type == VectorTypeComplex128)
 
-	// Set finalizer to ensure automatic Release when snapshot is orphaned
-	runtime.SetFinalizer(newG, func(gd *GraphData) { gd.Release() })
-
 	return newG
 }
 
@@ -2996,6 +2993,14 @@ func (g *GraphData) Release() {
 	}
 	if g.Complex128Arena != nil {
 		g.Complex128Arena.Release()
+	}
+
+	// Release PackedNeighbors
+	for i := range g.PackedNeighbors {
+		if g.PackedNeighbors[i] != nil {
+			g.PackedNeighbors[i].Release()
+			g.PackedNeighbors[i] = nil
+		}
 	}
 }
 

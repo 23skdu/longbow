@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -933,6 +934,13 @@ func (vs *VectorStore) DropDataset(ctx context.Context, name string) error {
 			totalMemory := droppedDS.SizeBytes.Load() + droppedDS.IndexMemoryBytes.Load()
 			vs.currentMemory.Add(-totalMemory)
 			droppedDS.Close()
+
+			// Synchronous Memory Reclamation for Benchmarking stability
+			// 1. Trigger GC to finalize all unreachable objects and arenas
+			runtime.GC()
+			// 2. Force the runtime to return all freed memory to the OS
+			debug.FreeOSMemory()
+
 			vs.logger.Info().Str("dataset", name).Int64("freed_bytes", totalMemory).Msg("Dataset dropped and resources released synchronously")
 
 			return nil

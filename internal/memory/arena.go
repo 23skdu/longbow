@@ -393,6 +393,8 @@ func (a *SlabArena) Free() {
 		return
 	}
 	currentSlabs := *currentSlabsPtr
+	empty := make([]*slab, 0)
+	a.slabs.Store(&empty)
 
 	for _, s := range currentSlabs {
 		if a.alloc != nil {
@@ -400,11 +402,8 @@ func (a *SlabArena) Free() {
 		} else {
 			PutSlab(s.data)
 		}
-		s.data = nil
 	}
 
-	empty := make([]*slab, 0)
-	a.slabs.Store(&empty)
 
 	UnregisterArena(a.stats)
 	a.stats.Active.Store(false)

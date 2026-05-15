@@ -1,5 +1,38 @@
 # Longbow Storage Engine - Future Roadmap
 
+## Production Stability & Performance Hardening (v0.2.3 Blockers)
+
+The following items are identified as critical blockers for v0.2.3 to ensure scalability beyond 1M vectors and 100k+ search QPS on high-dimensional data. Each task **must** include comprehensive unit/fuzz tests and corresponding Prometheus metrics for observability.
+
+- [ ] **GPU-Based Neighbor Pruning Kernel (Metal/CUDA)**: Offload the entire `UpdateNeighbors` logic (including heuristic pruning) to the GPU. 
+  - **Goal**: Eliminate the CPU-GPU data "ping-pong" during ingestion.
+  - **Observability**: Add `longbow_gpu_ingest_kernel_duration_seconds` and `longbow_gpu_neighbor_prune_ops_total`.
+  - **Testing**: Fuzz test neighbor connectivity parity between CPU and GPU implementations.
+- [ ] **Chunked Flat-Tree for Temporal Data**: Replace pointer-based `TemporalTree` nodes with contiguous memory blocks (Arenas) representing tree levels.
+  - **Goal**: Enable hardware prefetching and reduce cache misses for range/window queries at 250k+ scale.
+  - **Observability**: Add `longbow_temporal_tree_cache_hit_ratio` and `longbow_temporal_query_scanned_nodes_total`.
+  - **Testing**: Benchmarks comparing cache-miss rates using `perf` or `instruments`.
+- [ ] **Fused Dequantize-Distance (TurboQuant)**: Move TurboQuant decoding directly into the GPU registers/SIMD distance kernels.
+  - **Goal**: Maintain reduced memory footprint without the "decoding tax" in a separate pass.
+  - **Observability**: Add `longbow_search_dequantize_latency_seconds`.
+  - **Testing**: Unit tests for bit-exact parity between fused and separate dequantization paths.
+- [ ] **Transparent Hugepages (THP) for SlabPool**: Implement explicit support for `madvise(MADV_HUGEPAGE)` in the off-heap slab allocator.
+  - **Goal**: Reduce TLB misses during high-concurrency searches on Linux (ancalagon).
+  - **Observability**: Add `longbow_slab_hugepage_count`.
+  - **Testing**: Integration tests validating hugepage alignment on supported systems.
+- [ ] **Wait-Free Graph Updates (CoW Adjacency)**: Implement a Copy-on-Write strategy for HNSW adjacency lists at the shard level.
+  - **Goal**: Eliminate lock contention during massive parallel ingestion bursts.
+  - **Observability**: Add `longbow_hnsw_cow_copy_count` and `longbow_hnsw_update_contention_seconds`.
+  - **Testing**: High-concurrency race-enabled fuzz tests for graph integrity during CoW.
+- [ ] **Benchmark Health Check Loop**: Refactor `unified_benchmark.py` to use a dedicated gRPC `/ready` polling loop.
+  - **Goal**: Eliminate "connection refused" races on macOS by waiting for full service readiness.
+  - **Observability**: Log server readiness handshake duration in benchmark summaries.
+  - **Testing**: Validate that benchmark scripts retry gracefully on transient port collisions.
+- [ ] **SlabPool & RefCount Prometheus Metrics**: Expose internal slab utilization and `PackedAdjacency` reference counts.
+  - **Goal**: Enable real-time detection of "dangling arenas" and memory leaks before they trigger OOMs.
+  - **Observability**: Add `longbow_slab_active_arenas`, `longbow_slab_refcount_distribution`, and `longbow_slab_leak_probability`.
+  - **Testing**: Unit tests that purposefully create and then reclaim arenas, verifying metric delta accuracy.
+
 ## P0 Blockers (Remaining)
 
 - **Streaming Shard Rebalancing (v0.2.5)**: Implement a more memory-efficient migration path that avoids doubling the graph memory footprint during the monolithic-to-sharded transition. This is critical for 3072d+ vectors at 100k scale.

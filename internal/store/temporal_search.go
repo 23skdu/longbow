@@ -189,26 +189,6 @@ func (c *TemporalResultCache) Set(key string, results []lbtypes.SearchResult, tt
 	}
 }
 
-type TemporalTree struct {
-	mu             sync.RWMutex
-	nodeArena      *memory.TypedArena[TemporalNode]
-	entryArena     *memory.TypedArena[TemporalEntry]
-	nodeBaseOffset uint64
-	nodeCount      atomic.Uint32
-	minTs          int64
-	maxTs          int64
-	
-	// Optional: Metadata for fast range skipping
-	chunks      []temporalChunkMetadata
-}
-
-type temporalChunkMetadata struct {
-	minTs int64
-	maxTs int64
-	start uint32
-	end   uint32
-}
-
 const nodesPerChunk = 1024
 
 // TemporalEntry represents a vector ID and its norm at a specific point in time.
@@ -224,23 +204,44 @@ type TemporalNode struct {
 	Len       uint32 // Number of entries for this timestamp
 }
 
+type temporalLeaf struct {
+	Nodes [nodesPerChunk]TemporalNode
+	Len   uint32
+}
+
+type temporalLeafRef struct {
+	MinTs int64
+	MaxTs int64
+	Ref   memory.SliceRef
+}
+
+type TemporalTree struct {
+	mu             sync.RWMutex
+	leafArena      *memory.TypedArena[temporalLeaf]
+	entryArena     *memory.TypedArena[TemporalEntry]
+	leafRefs       []temporalLeafRef
+	minTs          int64
+	maxTs          int64
+	nodeCount      atomic.Uint32
+}
+
 // NewTemporalTree creates a new TemporalTree instance with an optional arena.
 func NewTemporalTree(arena *memory.SlabArena) *TemporalTree {
 	if arena == nil {
-		arena = memory.NewSlabArena(4 * 1024 * 1024) // 4MB default
+		arena = memory.NewSlabArena(16 * 1024 * 1024) // 16MB default
 	}
 	return &TemporalTree{
-		nodeArena:  memory.NewTypedArena[TemporalNode](arena),
+		leafArena:  memory.NewTypedArena[temporalLeaf](arena),
 		entryArena: memory.NewTypedArena[TemporalEntry](arena),
-		chunks:     make([]temporalChunkMetadata, 0),
+		leafRefs:   make([]temporalLeafRef, 0),
 		minTs:      math.MaxInt64,
 		maxTs:      math.MinInt64,
 	}
 }
 
 func (tt *TemporalTree) Release() {
-	if tt.nodeArena != nil {
-		tt.nodeArena.Release()
+	if tt.leafArena != nil {
+		tt.leafArena.Release()
 	}
 	if tt.entryArena != nil {
 		tt.entryArena.Release()
@@ -258,89 +259,147 @@ func (tt *TemporalTree) Insert(timestamp int64, id uint64, norm float32) {
 	if timestamp < tt.minTs { tt.minTs = timestamp }
 	if timestamp > tt.maxTs { tt.maxTs = timestamp }
 
-	nodeCount := tt.nodeCount.Load()
-	
-	var nodes []TemporalNode
-	if nodeCount > 0 {
-		ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
-		nodes = tt.nodeArena.Get(ref)
-	}
-
-	idx := sort.Search(int(nodeCount), func(i int) bool {
-		return nodes[i].Timestamp >= timestamp
+	// Find the leaf chunk where this timestamp should reside
+	idx := sort.Search(len(tt.leafRefs), func(i int) bool {
+		return tt.leafRefs[i].MaxTs >= timestamp
 	})
 
-	if idx < int(nodeCount) && nodes[idx].Timestamp == timestamp {
-		// Existing node: append to entryArena
-		oldOffset := nodes[idx].Offset
-		oldLen := nodes[idx].Len
+	if idx == len(tt.leafRefs) {
+		// New chunk at the end or tree is empty
+		if idx > 0 && tt.leafRefs[idx-1].MaxTs < timestamp {
+			// Try to append to last chunk if not full
+			lastLeaf := &tt.leafRefs[idx-1]
+			leaf := &tt.leafArena.Get(lastLeaf.Ref)[0]
+			if leaf.Len < nodesPerChunk {
+				tt.insertInLeaf(leaf, timestamp, entry)
+				lastLeaf.MaxTs = leaf.Nodes[leaf.Len-1].Timestamp
+				return
+			}
+		}
 		
-		newRef, _ := tt.entryArena.AllocSlice(int(oldLen + 1))
-		newEntries := tt.entryArena.Get(newRef)
-		oldEntriesRef := memory.SliceRef{Offset: uint64(oldOffset), Len: oldLen, Cap: oldLen}
-		oldEntries := tt.entryArena.Get(oldEntriesRef)
-		
-		copy(newEntries, oldEntries)
-		newEntries[oldLen] = entry
-		
-		// Update existing node in place (it's already in the arena)
-		nodes[idx].Offset = uint32(newRef.Offset) // #nosec G115
-		nodes[idx].Len = oldLen + 1
+		// Create new chunk
+		ref, _ := tt.leafArena.AllocSlice(1)
+		leaf := &tt.leafArena.Get(ref)[0]
+		tt.insertInLeaf(leaf, timestamp, entry)
+		tt.leafRefs = append(tt.leafRefs, temporalLeafRef{
+			MinTs: timestamp,
+			MaxTs: timestamp,
+			Ref:   ref,
+		})
+		tt.nodeCount.Add(1)
+		metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
 		return
 	}
 
-	// New node: must re-allocate entire node list to maintain contiguity in arena
-	newEntryRef, _ := tt.entryArena.AllocSlice(1)
-	tt.entryArena.Get(newEntryRef)[0] = entry
+	// Insert into existing chunk
+	leafRef := &tt.leafRefs[idx]
+	leaf := &tt.leafArena.Get(leafRef.Ref)[0]
+	
+	// Check if timestamp exists
+	nodeIdx := sort.Search(int(leaf.Len), func(i int) bool {
+		return leaf.Nodes[i].Timestamp >= timestamp
+	})
+
+	if nodeIdx < int(leaf.Len) && leaf.Nodes[nodeIdx].Timestamp == timestamp {
+		// Append to existing node
+		tt.appendEntryToNode(&leaf.Nodes[nodeIdx], entry)
+		return
+	}
+
+	// New node in existing chunk
+	if leaf.Len < nodesPerChunk {
+		tt.insertInLeaf(leaf, timestamp, entry)
+		leafRef.MinTs = leaf.Nodes[0].Timestamp
+		leafRef.MaxTs = leaf.Nodes[leaf.Len-1].Timestamp
+		tt.nodeCount.Add(1)
+		metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
+		return
+	}
+
+	// Chunk full - Split it
+	tt.splitAndInsert(idx, timestamp, entry)
+	tt.nodeCount.Add(1)
+	metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
+	
+	stats := tt.leafArena.Slab().Stats()
+	metrics.TemporalTreeAllocatedBytesTotal.Set(float64(stats.TotalCapacity))
+}
+
+func (tt *TemporalTree) appendEntryToNode(node *TemporalNode, entry TemporalEntry) {
+	oldRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+	oldEntries := tt.entryArena.Get(oldRef)
+	
+	newRef, _ := tt.entryArena.AllocSlice(int(node.Len + 1))
+	newEntries := tt.entryArena.Get(newRef)
+	copy(newEntries, oldEntries)
+	newEntries[node.Len] = entry
+	
+	node.Offset = uint32(newRef.Offset) // #nosec G115
+	node.Len++
+}
+
+func (tt *TemporalTree) insertInLeaf(leaf *temporalLeaf, timestamp int64, entry TemporalEntry) {
+	nodeIdx := sort.Search(int(leaf.Len), func(i int) bool {
+		return leaf.Nodes[i].Timestamp >= timestamp
+	})
+
+	entryRef, _ := tt.entryArena.AllocSlice(1)
+	tt.entryArena.Get(entryRef)[0] = entry
 	
 	newNode := TemporalNode{
 		Timestamp: timestamp,
-		Offset:    uint32(newEntryRef.Offset), // #nosec G115
+		Offset:    uint32(entryRef.Offset), // #nosec G115
 		Len:       1,
 	}
 
-	// Re-allocate and copy all nodes
-	ref, _ := tt.nodeArena.AllocSlice(int(nodeCount + 1))
-	newNodes := tt.nodeArena.Get(ref)
-	if nodeCount > 0 {
-		copy(newNodes[:idx], nodes[:idx])
-		newNodes[idx] = newNode
-		copy(newNodes[idx+1:], nodes[idx:])
-	} else {
-		newNodes[0] = newNode
-	}
-	
-	tt.nodeBaseOffset = ref.Offset
-	tt.nodeCount.Add(1)
-	
-	metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
-	stats := tt.nodeArena.Slab().Stats()
-	metrics.TemporalTreeAllocatedBytesTotal.Set(float64(stats.TotalCapacity))
-	
-	if tt.nodeCount.Load()%nodesPerChunk == 0 {
-		tt.rebuildChunks()
-	}
+	copy(leaf.Nodes[nodeIdx+1:leaf.Len+1], leaf.Nodes[nodeIdx:leaf.Len])
+	leaf.Nodes[nodeIdx] = newNode
+	leaf.Len++
 }
 
-func (tt *TemporalTree) rebuildChunks() {
-	count := tt.nodeCount.Load()
-	numChunks := (count + nodesPerChunk - 1) / nodesPerChunk
-	tt.chunks = make([]temporalChunkMetadata, numChunks)
+func (tt *TemporalTree) splitAndInsert(idx int, timestamp int64, entry TemporalEntry) {
+	oldLeafRef := tt.leafRefs[idx]
+	oldLeaf := tt.leafArena.Get(oldLeafRef.Ref)[0]
+
+	// Create new leaf
+	newRef, _ := tt.leafArena.AllocSlice(1)
+	newLeaf := &tt.leafArena.Get(newRef)[0]
+
+	splitIdx := nodesPerChunk / 2
+	copy(newLeaf.Nodes[:], oldLeaf.Nodes[splitIdx:])
+	newLeaf.Len = uint32(nodesPerChunk - splitIdx)
 	
-	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: count, Cap: count}
-	nodes := tt.nodeArena.Get(ref)
+	// Update old leaf (in place)
+	// Since TypedArena returns a slice, we can modify the element directly if it's a pointer or we write it back.
+	// In our case tt.leafArena.Get(oldLeafRef.Ref)[0] gives us the value. We need to update it in the arena.
+	// Wait! I'll get a pointer instead.
 	
-	for i := uint32(0); i < numChunks; i++ {
-		start := i * nodesPerChunk
-		end := start + nodesPerChunk
-		if end > count { end = count }
-		
-		tt.chunks[i] = temporalChunkMetadata{
-			minTs: nodes[start].Timestamp,
-			maxTs: nodes[end-1].Timestamp,
-			start: start,
-			end:   end,
-		}
+	leafPtr := &tt.leafArena.Get(oldLeafRef.Ref)[0]
+	leafPtr.Len = uint32(splitIdx)
+
+	// Create new leaf ref
+	newLeafRef := temporalLeafRef{
+		MinTs: newLeaf.Nodes[0].Timestamp,
+		MaxTs: newLeaf.Nodes[newLeaf.Len-1].Timestamp,
+		Ref:   newRef,
+	}
+
+	// Insert into refs
+	tt.leafRefs = append(tt.leafRefs, temporalLeafRef{})
+	copy(tt.leafRefs[idx+2:], tt.leafRefs[idx+1:])
+	tt.leafRefs[idx+1] = newLeafRef
+	
+	// Update old ref
+	tt.leafRefs[idx].MaxTs = leafPtr.Nodes[leafPtr.Len-1].Timestamp
+
+	// Now insert the new node into the correct half
+	if timestamp <= tt.leafRefs[idx].MaxTs {
+		tt.insertInLeaf(leafPtr, timestamp, entry)
+		tt.leafRefs[idx].MaxTs = leafPtr.Nodes[leafPtr.Len-1].Timestamp
+	} else {
+		tt.insertInLeaf(newLeaf, timestamp, entry)
+		tt.leafRefs[idx+1].MaxTs = newLeaf.Nodes[newLeaf.Len-1].Timestamp
+		tt.leafRefs[idx+1].MinTs = newLeaf.Nodes[0].Timestamp
 	}
 }
 
@@ -360,27 +419,36 @@ func (tt *TemporalTree) GetRange(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	nodeCount := tt.nodeCount.Load()
-	if nodeCount == 0 { return nil }
+	if len(tt.leafRefs) == 0 { return nil }
 
-	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
-	nodes := tt.nodeArena.Get(ref)
-
-	startIdx := sort.Search(int(nodeCount), func(i int) bool {
-		return nodes[i].Timestamp >= start
+	startIdx := sort.Search(len(tt.leafRefs), func(i int) bool {
+		return tt.leafRefs[i].MaxTs >= start
 	})
 
 	var results []uint64
-	for i := startIdx; i < int(nodeCount); i++ {
-		node := &nodes[i]
-		if node.Timestamp > end { break }
+	for i := startIdx; i < len(tt.leafRefs); i++ {
+		leafRef := tt.leafRefs[i]
+		if leafRef.MinTs > end { break }
 		
-		metrics.TemporalQueryScannedNodesTotal.Add(1)
+		leaf := tt.leafArena.Get(leafRef.Ref)[0]
+		nodeIdx := 0
+		if i == startIdx {
+			nodeIdx = sort.Search(int(leaf.Len), func(j int) bool {
+				return leaf.Nodes[j].Timestamp >= start
+			})
+		}
 		
-		entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
-		entries := tt.entryArena.Get(entryRef)
-		for _, e := range entries {
-			results = append(results, e.ID)
+		for j := nodeIdx; j < int(leaf.Len); j++ {
+			node := &leaf.Nodes[j]
+			if node.Timestamp > end { return results }
+			
+			metrics.TemporalQueryScannedNodesTotal.Add(1)
+			
+			entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+			entries := tt.entryArena.Get(entryRef)
+			for _, e := range entries {
+				results = append(results, e.ID)
+			}
 		}
 	}
 	return results
@@ -391,28 +459,40 @@ func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	nodeCount := tt.nodeCount.Load()
-	if nodeCount == 0 { return nil }
+	if len(tt.leafRefs) == 0 { return nil }
 
-	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
-	nodes := tt.nodeArena.Get(ref)
-
-	// Find the first node > end, then go backwards
-	idx := sort.Search(int(nodeCount), func(i int) bool {
-		return nodes[i].Timestamp > end
+	// Find the chunk containing 'end'
+	idx := sort.Search(len(tt.leafRefs), func(i int) bool {
+		return tt.leafRefs[i].MaxTs >= end
 	})
+	if idx == len(tt.leafRefs) { idx-- }
 
 	var results []uint64
-	for i := idx - 1; i >= 0; i-- {
-		node := &nodes[i]
-		if node.Timestamp < start { break }
+	for i := idx; i >= 0; i-- {
+		leafRef := tt.leafRefs[i]
+		if leafRef.MaxTs < start { break }
 		
-		metrics.TemporalQueryScannedNodesTotal.Add(1)
+		leaf := tt.leafArena.Get(leafRef.Ref)[0]
 		
-		entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
-		entries := tt.entryArena.Get(entryRef)
-		for j := len(entries) - 1; j >= 0; j-- {
-			results = append(results, entries[j].ID)
+		// Find end in leaf
+		nodeIdx := int(leaf.Len) - 1
+		if i == idx {
+			nodeIdx = sort.Search(int(leaf.Len), func(j int) bool {
+				return leaf.Nodes[j].Timestamp > end
+			}) - 1
+		}
+		
+		for j := nodeIdx; j >= 0; j-- {
+			node := &leaf.Nodes[j]
+			if node.Timestamp < start { return results }
+			
+			metrics.TemporalQueryScannedNodesTotal.Add(1)
+			
+			entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+			entries := tt.entryArena.Get(entryRef)
+			for k := len(entries) - 1; k >= 0; k-- {
+				results = append(results, entries[k].ID)
+			}
 		}
 	}
 	return results
@@ -424,16 +504,12 @@ func (tt *TemporalTree) GetUniqueIDsInRange(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	nodeCount := tt.nodeCount.Load()
-	if nodeCount == 0 { return nil }
+	if len(tt.leafRefs) == 0 { return nil }
 
-	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
-	nodes := tt.nodeArena.Get(ref)
-
-	// Find the end point
-	idx := sort.Search(int(nodeCount), func(i int) bool {
-		return nodes[i].Timestamp > end
+	idx := sort.Search(len(tt.leafRefs), func(i int) bool {
+		return tt.leafRefs[i].MaxTs >= end
 	})
+	if idx == len(tt.leafRefs) { idx-- }
 
 	uniqueIDs := temporalIDMapPool.Get().(map[uint64]struct{})
 	defer func() {
@@ -442,19 +518,32 @@ func (tt *TemporalTree) GetUniqueIDsInRange(start, end int64) []uint64 {
 	}()
 
 	var results []uint64
-	for i := idx - 1; i >= 0; i-- {
-		node := &nodes[i]
-		if node.Timestamp < start { break }
+	for i := idx; i >= 0; i-- {
+		leafRef := tt.leafRefs[i]
+		if leafRef.MaxTs < start { break }
 		
-		metrics.TemporalQueryScannedNodesTotal.Add(1)
+		leaf := tt.leafArena.Get(leafRef.Ref)[0]
+		nodeIdx := int(leaf.Len) - 1
+		if i == idx {
+			nodeIdx = sort.Search(int(leaf.Len), func(j int) bool {
+				return leaf.Nodes[j].Timestamp > end
+			}) - 1
+		}
 		
-		entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
-		entries := tt.entryArena.Get(entryRef)
-		for j := len(entries) - 1; j >= 0; j-- {
-			id := entries[j].ID
-			if _, exists := uniqueIDs[id]; !exists {
-				results = append(results, id)
-				uniqueIDs[id] = struct{}{}
+		for j := nodeIdx; j >= 0; j-- {
+			node := &leaf.Nodes[j]
+			if node.Timestamp < start { return results }
+			
+			metrics.TemporalQueryScannedNodesTotal.Add(1)
+			
+			entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+			entries := tt.entryArena.Get(entryRef)
+			for k := len(entries) - 1; k >= 0; k-- {
+				id := entries[k].ID
+				if _, exists := uniqueIDs[id]; !exists {
+					results = append(results, id)
+					uniqueIDs[id] = struct{}{}
+				}
 			}
 		}
 	}
@@ -471,30 +560,28 @@ func (tt *TemporalTree) GetAfter(timestamp int64) []uint64 {
 	return tt.GetRange(timestamp+1, math.MaxInt64)
 }
 
-
 // GetEarliest returns the vector IDs from the first n timestamps.
 func (tt *TemporalTree) GetEarliest(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	nodeCount := tt.nodeCount.Load()
-	if nodeCount == 0 { return nil }
-
-	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
-	nodes := tt.nodeArena.Get(ref)
+	if len(tt.leafRefs) == 0 { return nil }
 
 	var results []uint64
 	remaining := n
-	for i := 0; i < int(nodeCount) && remaining > 0; i++ {
-		node := &nodes[i]
-		metrics.TemporalQueryScannedNodesTotal.Add(1)
-		
-		entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
-		entries := tt.entryArena.Get(entryRef)
-		for _, e := range entries {
-			results = append(results, e.ID)
-			remaining--
-			if remaining <= 0 { break }
+	for i := 0; i < len(tt.leafRefs) && remaining > 0; i++ {
+		leaf := tt.leafArena.Get(tt.leafRefs[i].Ref)[0]
+		for j := 0; j < int(leaf.Len) && remaining > 0; j++ {
+			node := &leaf.Nodes[j]
+			metrics.TemporalQueryScannedNodesTotal.Add(1)
+			
+			entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+			entries := tt.entryArena.Get(entryRef)
+			for _, e := range entries {
+				results = append(results, e.ID)
+				remaining--
+				if remaining <= 0 { break }
+			}
 		}
 	}
 	return results
@@ -505,24 +592,23 @@ func (tt *TemporalTree) GetLatest(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	nodeCount := tt.nodeCount.Load()
-	if nodeCount == 0 { return nil }
-
-	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
-	nodes := tt.nodeArena.Get(ref)
+	if len(tt.leafRefs) == 0 { return nil }
 
 	var results []uint64
 	remaining := n
-	for i := int(nodeCount) - 1; i >= 0 && remaining > 0; i-- {
-		node := &nodes[i]
-		metrics.TemporalQueryScannedNodesTotal.Add(1)
-		
-		entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
-		entries := tt.entryArena.Get(entryRef)
-		for j := len(entries) - 1; j >= 0; j-- {
-			results = append(results, entries[j].ID)
-			remaining--
-			if remaining <= 0 { break }
+	for i := len(tt.leafRefs) - 1; i >= 0 && remaining > 0; i-- {
+		leaf := tt.leafArena.Get(tt.leafRefs[i].Ref)[0]
+		for j := int(leaf.Len) - 1; j >= 0 && remaining > 0; j-- {
+			node := &leaf.Nodes[j]
+			metrics.TemporalQueryScannedNodesTotal.Add(1)
+			
+			entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+			entries := tt.entryArena.Get(entryRef)
+			for k := len(entries) - 1; k >= 0; k-- {
+				results = append(results, entries[k].ID)
+				remaining--
+				if remaining <= 0 { break }
+			}
 		}
 	}
 	return results
@@ -533,11 +619,7 @@ func (tt *TemporalTree) GetUniqueLatest(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	nodeCount := tt.nodeCount.Load()
-	if nodeCount == 0 { return nil }
-
-	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
-	nodes := tt.nodeArena.Get(ref)
+	if len(tt.leafRefs) == 0 { return nil }
 
 	uniqueIDs := temporalIDMapPool.Get().(map[uint64]struct{})
 	defer func() {
@@ -546,18 +628,21 @@ func (tt *TemporalTree) GetUniqueLatest(n int) []uint64 {
 	}()
 
 	var results []uint64
-	for i := int(nodeCount) - 1; i >= 0 && len(results) < n; i-- {
-		node := &nodes[i]
-		metrics.TemporalQueryScannedNodesTotal.Add(1)
-		
-		entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
-		entries := tt.entryArena.Get(entryRef)
-		for j := len(entries) - 1; j >= 0; j-- {
-			id := entries[j].ID
-			if _, exists := uniqueIDs[id]; !exists {
-				results = append(results, id)
-				uniqueIDs[id] = struct{}{}
-				if len(results) >= n { break }
+	for i := len(tt.leafRefs) - 1; i >= 0 && len(results) < n; i-- {
+		leaf := tt.leafArena.Get(tt.leafRefs[i].Ref)[0]
+		for j := int(leaf.Len) - 1; j >= 0 && len(results) < n; j-- {
+			node := &leaf.Nodes[j]
+			metrics.TemporalQueryScannedNodesTotal.Add(1)
+			
+			entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+			entries := tt.entryArena.Get(entryRef)
+			for k := len(entries) - 1; k >= 0; k-- {
+				id := entries[k].ID
+				if _, exists := uniqueIDs[id]; !exists {
+					results = append(results, id)
+					uniqueIDs[id] = struct{}{}
+					if len(results) >= n { break }
+				}
 			}
 		}
 	}
@@ -848,7 +933,7 @@ func (ti *TemporalIndex) Prewarm(ctx context.Context) error {
 	}
 
 	tree.mu.RLock()
-	if len(tree.chunks) == 0 {
+	if len(tree.leafRefs) == 0 {
 		tree.mu.RUnlock()
 		return nil
 	}

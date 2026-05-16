@@ -1507,3 +1507,41 @@ func (idx *CUDAIndex) PruneNeighbors(candidateIds []uint32, candidateDists []flo
 
 	return selectedIds[:selectedCount], nil
 }
+
+func (idx *CUDAIndex) Clear() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	idx.batchMu.Lock()
+	idx.batchIDs = idx.batchIDs[:0]
+	idx.batchVectors = idx.batchVectors[:0]
+	idx.batchMu.Unlock()
+
+	idx.handle.vectorCount = 0
+	return nil
+}
+
+func (idx *CUDAIndex) Reset() error {
+	return idx.Clear()
+}
+
+func (idx *CUDAIndex) Sync() error {
+	return idx.Flush()
+}
+
+func (idx *CUDAIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return 0, 0, fmt.Errorf("index is closed")
+	}
+
+	// For CUDA, we don't have a greedy search kernel yet, so we return the entry point.
+	// This is consistent with the CPU fallback behavior in other indices.
+	return entryPoint, entryDist, nil
+}

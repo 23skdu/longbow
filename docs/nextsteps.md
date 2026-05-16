@@ -8,13 +8,6 @@ The following items are identified as critical blockers for v0.2.3 to ensure sca
 
 ## P0 Blockers (Remaining)
 
-- **Off-heap Graph Nodes**: Transition HNSW nodes and edges to off-heap arenas to eliminate `runtime.scanObject` overhead, which currently consumes >60% CPU during high-load search.
-- **Streaming Shard Rebalancing (v0.2.5)**: Implement a more memory-efficient migration path that avoids doubling the graph memory footprint during the monolithic-to-sharded transition. This is critical for 3072d+ vectors at 100k scale.
-  - **Strategy**:
-    - **Shared Vector Storage**: Refactor `ShardedHNSW` to use the primary `Dataset` Arrow records for vector lookups, eliminating shard-local vector copies and reducing memory footprint by 40-60%.
-    - **Mmap-backed Shadow Index**: Transition the monolithic index to a read-only, `mmap`-backed snapshot during migration to free up Go heap for the new sharded index.
-    - **Fragmented Handover**: Migrate data in shard-aligned blocks and call `ReleaseMonolithicChunk` immediately after each block is successfully replicated.
-    - **Priority-Aware Admission**: Implement a "Migration Lane" in the `AdmissionController` to throttle migration background tasks when Search QPS or real-time Ingestion pressure exceeds 80% capacity.
 - **TPU Physical Driver Integration**: Replace CGO stubs in `internal/gpu/tpu/tpu_index.go` with actual `libtpu.so` bindings once hardware-linked libraries are provided.
 - **Sparse Search ARM64 Assembly**: While functional via generic SIMD, Sparse Search (BM25) requires dedicated NEON assembly kernels to match AVX-512 throughput.
 
@@ -24,7 +17,6 @@ The following items are identified as critical blockers for v0.2.3 to ensure sca
 - **AVX-512 VBMI Bitpacking**: Implement 2-bit packing using `VPMULTISHIFTQB` for further throughput gains on modern CPUs.
 - **Distributed Result Fusion**: Optimize the RRF (Reciprocal Rank Fusion) pipeline for multi-node cluster configurations.
 - **Cross-Node WAL Replication**: Implement synchronous WAL replication for high-availability deployments.
-- [x] **TurboQuant Packing Kernels**: Implemented SIMD-accelerated packing kernels for NEON (ARM64), AVX2, and AVX-512 (AMD64) to resolve the ingestion throughput bottleneck.
 - **Remote gRPC Loopback Tuning**: Search throughput on Linux (ancalagon) is ~50% lower than macOS for loopback requests. Profile Go's gRPC stack on amd64 to identify potential context switching or syscall bottlenecks.
 
 ## COMPLETED MILESTONES
@@ -52,5 +44,8 @@ The following items are identified as critical blockers for v0.2.3 to ensure sca
 - [x] **Livelock Mitigation**: Integrated emergency memory cleanup and GC triggers.
 - [x] **gRPC Resilience**: Tuned keepalive settings and enabled without-stream pings.
 - [x] **Hugging Face Model Downloader**: Added ONNX model download functionality to `longbow-cli`.
-- [x] **v0.2.3 Performance Audit (Local/Remote Matrix)**: Executed comprehensive 16-type, 5-dimension, 5-count performance matrix on Local (Metal) and Remote (CUDA) hosts. Resolved interface implementation gaps in `CUDAIndex` (`Clear`, `Reset`, `Sync`, `SearchGreedy`) to achieve 100% cross-backend compatibility. Validated system stability under high-throughput ingestion and search cycles with 24GB (local) and 16GB (remote) memory budgets. Collected pprof data and Prometheus metrics to verify zero-regression baseline for production release.
-- [x] **SIMD-Accelerated TurboQuant Packing**: Finalized and integrated assembly kernels for TQ2, TQ4, and TQ8 across NEON (ARM64), AVX2, and AVX-512 (AMD64) architectures. Achieved high-performance bit-packing using vector narrowing and shift-OR patterns, eliminating the ingestion CPU bottleneck.
+- [x] **v0.2.1-rc3 Performance Audit (Local/Remote Matrix)**: Executed comprehensive 16-type, 5-dimension, 5-count performance matrix on Local (Metal) and Remote (CUDA) hosts. Resolved interface implementation gaps in `CUDAIndex` (`Clear`, `Reset`, `Sync`, `SearchGreedy`) to achieve 100% cross-backend compatibility. Validated system stability under high-throughput ingestion and search cycles with 24GB (local) and 16GB (remote) memory budgets. Collected pprof data and Prometheus metrics to verify zero-regression baseline for production release.
+- [x] **SIMD-Accelerated TurboQuant Packing (v0.2.1-rc3)**: Finalized and integrated assembly kernels for TQ2, TQ4, and TQ8 across NEON (ARM64), AVX2, and AVX-512 (AMD64) architectures. Achieved high-performance bit-packing using vector narrowing and shift-OR patterns, eliminating the ingestion CPU bottleneck.
+- [x] **Graceful Server Lifecycle (v0.2.1-rc3)**: Implemented robust shutdown logic in `cmd/longbow` to ensure metrics flush and pprof profiles are persisted before exit. Replaced `SIGKILL` dependency with a 2-second flush window and 15-second total timeout.
+- [x] **Off-heap Graph Migration (v0.2.1-rc3)**: Transitioned HNSW nodes and edges to off-heap arenas during autoshard migration to eliminate `runtime.scanObject` overhead. Implemented `RelocateToOffHeap` across the storage stack to enable `mmap`-backed shadow indices.
+- [x] **Streaming Shard Rebalancing (v0.2.1-rc3)**: Implemented a memory-efficient migration path using shared vector storage, fragmented handover, and priority-aware admission control to bypass the GC bottleneck during large-scale index transitions.

@@ -134,6 +134,10 @@ func (m *MockIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	return nil, nil
 }
 
+func (m *MockIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	return entryPoint, entryDist, nil
+}
+
 func (m *MockIndex) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()

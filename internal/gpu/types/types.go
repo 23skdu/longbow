@@ -113,6 +113,7 @@ type Index interface {
 	UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error
 	GraphExpand(seeds []uint32, depth int, alpha float32) (ids []uint32, scores []float32, err error)
 	PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error)
+	SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error)
 
 	// Spatial and Temporal Acceleration
 	HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error)

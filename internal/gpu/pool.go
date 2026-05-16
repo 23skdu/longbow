@@ -355,6 +355,10 @@ func (w *pooledIndexWrapper) SearchComplex128(vector []float32, k int) ([]int64,
 	return w.pooled.index.SearchComplex128(vector, k)
 }
 
+func (p *pooledIndexWrapper) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	return p.pooled.index.SearchGreedy(query, entryPoint, entryDist)
+}
+
 func (w *pooledIndexWrapper) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
 	return w.pooled.index.UpdateGraph(offsets, neighbors, weights)
 }

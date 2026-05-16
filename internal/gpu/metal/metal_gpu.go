@@ -1647,3 +1647,21 @@ func (m *MetalIndex) PruneNeighbors(candidateIds []uint32, candidateDists []floa
 
 	return selectedIds[:selectedCount], nil
 }
+
+func (idx *MetalIndex) Sync() error {
+	return nil
+}
+
+func (idx *MetalIndex) Clear() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+	idx.handle.vectorCount = 0
+	return nil
+}
+
+func (idx *MetalIndex) Reset() error {
+	return idx.Clear()
+}

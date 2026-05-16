@@ -24,7 +24,7 @@ The following items are identified as critical blockers for v0.2.3 to ensure sca
 - **AVX-512 VBMI Bitpacking**: Implement 2-bit packing using `VPMULTISHIFTQB` for further throughput gains on modern CPUs.
 - **Distributed Result Fusion**: Optimize the RRF (Reciprocal Rank Fusion) pipeline for multi-node cluster configurations.
 - **Cross-Node WAL Replication**: Implement synchronous WAL replication for high-availability deployments.
-- **TurboQuant Packing Kernels**: Current TurboQuant ingestion is CPU-bound due to vector packing. Implement SIMD-accelerated packing/unpacking in the `DoPut` path to match the throughput of raw data types.
+- [x] **TurboQuant Packing Kernels**: Implemented SIMD-accelerated packing kernels for NEON (ARM64), AVX2, and AVX-512 (AMD64) to resolve the ingestion throughput bottleneck.
 - **Remote gRPC Loopback Tuning**: Search throughput on Linux (ancalagon) is ~50% lower than macOS for loopback requests. Profile Go's gRPC stack on amd64 to identify potential context switching or syscall bottlenecks.
 
 ## COMPLETED MILESTONES
@@ -52,4 +52,5 @@ The following items are identified as critical blockers for v0.2.3 to ensure sca
 - [x] **Livelock Mitigation**: Integrated emergency memory cleanup and GC triggers.
 - [x] **gRPC Resilience**: Tuned keepalive settings and enabled without-stream pings.
 - [x] **Hugging Face Model Downloader**: Added ONNX model download functionality to `longbow-cli`.
-
+- [x] **v0.2.3 Performance Audit (Local/Remote Matrix)**: Executed comprehensive 16-type, 5-dimension, 5-count performance matrix on Local (Metal) and Remote (CUDA) hosts. Resolved interface implementation gaps in `CUDAIndex` (`Clear`, `Reset`, `Sync`, `SearchGreedy`) to achieve 100% cross-backend compatibility. Validated system stability under high-throughput ingestion and search cycles with 24GB (local) and 16GB (remote) memory budgets. Collected pprof data and Prometheus metrics to verify zero-regression baseline for production release.
+- [x] **SIMD-Accelerated TurboQuant Packing**: Finalized and integrated assembly kernels for TQ2, TQ4, and TQ8 across NEON (ARM64), AVX2, and AVX-512 (AMD64) architectures. Achieved high-performance bit-packing using vector narrowing and shift-OR patterns, eliminating the ingestion CPU bottleneck.

@@ -77,7 +77,7 @@ func NewPackedAdjacencyWithArenas(arena *memory.SlabArena,
 	}
 	pa.chunks.Store(&chunks)
 	pa.refCount.Store(1)
-	metrics.SlabRefCountDistribution.Observe(1)
+	metrics.SlabRefCountDistribution.WithLabelValues("adjacency").Observe(1)
 	return pa
 }
 
@@ -430,7 +430,7 @@ func (pa *PackedAdjacency) IsOffHeap() bool {
 
 func (pa *PackedAdjacency) Release() {
 	newRef := pa.refCount.Add(-1)
-	metrics.SlabRefCountDistribution.Observe(float64(newRef))
+	metrics.SlabRefCountDistribution.WithLabelValues("adjacency").Observe(float64(newRef))
 	if newRef == 0 {
 		if pa.neighborArena != nil {
 			pa.neighborArena.Release()
@@ -447,5 +447,5 @@ func (pa *PackedAdjacency) Release() {
 
 func (pa *PackedAdjacency) Retain() {
 	newRef := pa.refCount.Add(1)
-	metrics.SlabRefCountDistribution.Observe(float64(newRef))
+	metrics.SlabRefCountDistribution.WithLabelValues("adjacency").Observe(float64(newRef))
 }

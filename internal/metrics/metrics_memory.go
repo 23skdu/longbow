@@ -108,19 +108,21 @@ var (
 	)
 
 	// SlabRefCountDistribution tracks the distribution of RefCounts for PackedAdjacency
-	SlabRefCountDistribution = promauto.NewHistogram(
+	SlabRefCountDistribution = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_slab_refcount_distribution",
 			Help:    "Distribution of RefCounts for PackedAdjacency structures",
-			Buckets: []float64{0, 1, 2, 5, 10, 20, 50, 100},
+			Buckets: []float64{1, 2, 4, 8, 16, 32, 64, 128, 256},
 		},
+		[]string{"size"},
 	)
 
 	// SlabLeakProbability tracks the potential memory leak probability based on long-lived arenas
-	SlabLeakProbability = promauto.NewGauge(
+	SlabLeakProbability = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_slab_leak_probability",
 			Help: "Heuristic probability (0-1) of memory leaks based on arena lifecycle duration",
 		},
+		[]string{"size"},
 	)
 )

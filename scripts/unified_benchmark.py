@@ -336,7 +336,10 @@ class BenchmarkRunner:
             )
             self.server_pid = process.pid
 
-        # Wait for server to be ready with robust checking
+        # Wait for server to be ready with robust gRPC /ready polling.
+        # Records the handshake duration and surfaces transient port-collision retries.
+        startup_start = time.time()
+        connection_refused_retries = 0
         for i in range(self.args.startup_timeout):
             # Check if process is still running
             if process.poll() is not None:
@@ -348,7 +351,7 @@ class BenchmarkRunner:
             # Metrics port is configured as port + 6000 in start_server
             metrics_port = port + 6000
             ready_url = f"http://127.0.0.1:{metrics_port}/ready"
-            
+
             # 1. First check if port is at least listening
             lsof_res = run_command(f"lsof -i :{port} 2>/dev/null | grep LISTEN", shell=True)
             if lsof_res and lsof_res.returncode == 0:
@@ -362,15 +365,28 @@ class BenchmarkRunner:
                         timeout=1
                     )
                     if ready_res.returncode == 0 and "OK" in ready_res.stdout:
+                        handshake_duration = time.time() - startup_start
                         # Additional wait for indexing workers to settle
                         time.sleep(2)
+                        # Log readiness handshake duration in benchmark summaries
+                        if connection_refused_retries > 0:
+                            print(f"  [readiness] server ready after {handshake_duration:.2f}s "
+                                  f"({connection_refused_retries} transient port-collision retries)")
+                        else:
+                            print(f"  [readiness] server ready in {handshake_duration:.2f}s")
                         return True
+                    elif ready_res.returncode != 0:
+                        # Transient connection-refused race – count for summary
+                        connection_refused_retries += 1
                 except Exception:
-                    pass
-            
+                    # curl timeout or other transient error – count and retry
+                    connection_refused_retries += 1
+
             time.sleep(1)
 
-        print(f"  WARNING: Server startup timeout on port {port}")
+        elapsed = time.time() - startup_start
+        print(f"  WARNING: Server startup timeout after {elapsed:.1f}s on port {port} "
+              f"({connection_refused_retries} transient retries recorded)")
         return False
 
     def stop_server(self):

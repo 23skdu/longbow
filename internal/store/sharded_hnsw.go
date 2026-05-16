@@ -11,6 +11,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -286,7 +287,9 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 
 	// 2. Parallel Insert across shards
 	g, ctx := errgroup.WithContext(ctx)
-	
+
+	// Time from here until the lock is fully acquired is the contention window.
+	contentionStart := time.Now()
 	idx.shardsMu.RLock()
 	// Ensure shards exist (linear sharding growth)
 	maxShardIdx := 0
@@ -305,11 +308,16 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 		idx.shardsMu.RLock()
 	}
 
+	// Record the lock-acquisition latency (write-contention proxy) once per AddBatch call.
+	if idx.dataset != nil {
+		metrics.HnswUpdateContentionSeconds.WithLabelValues(idx.dataset.Name).Observe(time.Since(contentionStart).Seconds())
+	}
+
 	for shardIdx, job := range shardJobs {
 		sIdx := shardIdx
 		j := job
 		shard := idx.shards[sIdx]
-		
+
 		g.Go(func() error {
 			shardRowIdxs := make([]int, len(j.indices))
 			shardBatchIdxs := make([]int, len(j.indices))
@@ -329,7 +337,13 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 				gid := VectorID(globalIDs[idxInBatch])
 				shard.registerID(lid, gid, idx.globalToLocal)
 			}
-			
+
+			// Each successful batch insert into a shard implies a CoW adjacency
+			// list copy inside the underlying ArrowHNSW graph.  Count them to
+			// surface write-contention pressure in dashboards.
+			if idx.dataset != nil {
+				metrics.HnswCowCopyCount.WithLabelValues(idx.dataset.Name, fmt.Sprintf("%d", sIdx)).Add(float64(len(localIDs)))
+			}
 			metrics.ShardedHnswShardSize.WithLabelValues(idx.dataset.Name, fmt.Sprintf("%d", sIdx)).Add(float64(len(localIDs)))
 			return nil
 		})

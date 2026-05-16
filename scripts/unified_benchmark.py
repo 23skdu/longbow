@@ -418,7 +418,7 @@ class BenchmarkRunner:
         host, port = self.server_addr.split(":")
         # Metrics server is typically on base_port + 6000.
         # unified_benchmark sets LONGBOW_METRICS_ADDR to 127.0.0.1:{port + 6000}
-        metrics_port = 9000
+        metrics_port = int(self.server_addr.split(":")[-1]) + 6000
         
         for profile in profiles:
             url = f"http://{host}:{metrics_port}/debug/pprof/{profile}"

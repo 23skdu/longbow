@@ -119,7 +119,7 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 	for _, res := range results {
 		shardIdx := idx.GetShardForID(res.ID)
 		foundShards[shardIdx] = true
-		assert.True(t, res.ID >= 0 && int(res.ID) < 100, "Result ID %d out of range", res.ID)
+		assert.Less(t, int(res.ID), 100, "Result ID %d out of range [0,100)", res.ID)
 	}
 	t.Logf("Results spanned %d shard(s): %v", len(foundShards), foundShards)
 	// Multi-shard coverage is expected but not guaranteed by approximate kNN at boundaries.

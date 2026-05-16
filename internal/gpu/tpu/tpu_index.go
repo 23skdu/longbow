@@ -551,6 +551,55 @@ func (i *TPUIndex) Clear() error {
 	return nil
 }
 
+func (i *TPUIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	if i.closed {
+		return 0, 0, fmt.Errorf("index closed")
+	}
+
+	if len(i.graphOffsets) == 0 {
+		return entryPoint, entryDist, nil
+	}
+
+	currID := entryPoint
+	currDist := entryDist
+	improved := true
+
+	for improved {
+		improved = false
+		if int(currID+1) >= len(i.graphOffsets) {
+			break
+		}
+		start := i.graphOffsets[currID]
+		end := i.graphOffsets[currID+1]
+
+		for neighborIdx := start; neighborIdx < end; neighborIdx++ {
+			neighborID := i.graphNeighbors[neighborIdx]
+			vec, ok := i.vectors[int64(neighborID)]
+			if !ok {
+				continue
+			}
+
+			var dist float32
+			for j := 0; j < len(query) && j < len(vec); j++ {
+				diff := query[j] - vec[j]
+				dist += diff * diff
+			}
+			dist = float32(math.Sqrt(float64(dist)))
+
+			if dist < currDist {
+				currDist = dist
+				currID = neighborID
+				improved = true
+			}
+		}
+	}
+
+	return currID, currDist, nil
+}
+
 func (i *TPUIndex) Sync() error {
 	return nil
 }

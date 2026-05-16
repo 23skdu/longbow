@@ -2,17 +2,14 @@
 
 ## P0 REMEDIATION BLOCKERS (Post-Code Review)
 
-- [ ] **Resolve TPUIndex Feature Gaps**: Implement `SearchComplex64`, `SearchComplex128`, `HaversineSearch`, `NormBatch`, and `PruneNeighbors` for `TPUIndex` to ensure full interface compliance.
-- [ ] **Unify Metal Index Implementation**: Transition standard Metal index calls to `metal_gpu_optimized.go` to support TurboQuant search across all Metal-enabled devices.
-- [ ] **Real DiskWriterUring Bindings**: Replace the goroutine-based `io_uring` simulation with actual platform-specific bindings to achieve non-blocking disk I/O.
-- [x] **Complete SIMD Distance Kernels**: Implement the missing `brayCurtisAVX2Kernel` to support specialized distance metrics in the CPU hot-path. (Completed in v0.2.3-rc1)
-- [ ] **Full GPU-Based UpdateNeighbors**: Migrate the entire neighbor discovery logic to the GPU (Metal/CUDA) to eliminate ingestion "ping-pong" overhead.
+- [x] **Real DiskWriterUring Bindings**: [COMPLETED] Replaced goroutine-based simulation with actual platform-specific bindings (io_uring on Linux, Direct I/O on macOS).
+- [x] **Full GPU-Based UpdateNeighbors**: [COMPLETED] Migrated HNSW upper-layer traversal (Greedy Search) to GPU kernels (Metal/CUDA) to eliminate ingestion "ping-pong".
 
 ## Production Stability & Performance Hardening (v0.2.3 Blockers)
 
 The following items are identified as critical blockers for v0.2.3 to ensure scalability beyond 1M vectors and 100k+ search QPS on high-dimensional data. Each task **must** include comprehensive unit/fuzz tests and corresponding Prometheus metrics for observability.
 
-- [ ] **GPU-Based Neighbor Pruning Kernel (Metal/CUDA)**: Offload the entire `UpdateNeighbors` logic (including heuristic pruning) to the GPU. 
+- [ ] **GPU-Based Neighbor Pruning Kernel (Metal/CUDA)**: Offload the entire `UpdateNeighbors` logic (including heuristic pruning) to the GPU.
   - **Goal**: Eliminate the CPU-GPU data "ping-pong" during ingestion.
   - **Observability**: Add `longbow_gpu_ingest_kernel_duration_seconds` and `longbow_gpu_neighbor_prune_ops_total`.
   - **Testing**: Fuzz test neighbor connectivity parity between CPU and GPU implementations.
@@ -67,6 +64,8 @@ The following items are identified as critical blockers for v0.2.3 to ensure sca
 - **Ready Handshake**: [COMPLETED] Added `ActiveIngestStreams` tracking and enhanced `check_readiness` to prevent `NotFound` races during ingestion/search transitions.
 - **Livelock Mitigation**: [COMPLETED] Integrated emergency memory cleanup (Query Cache clearing) and aggressive GC triggers into `GCTuner` at 88%+ pressure.
 - **gRPC Resilience**: [COMPLETED] Tuned keepalive settings (30s) and enabled without-stream pings to maintain connection stability during heavy GC cycles.
+- **TPU Index Compliance**: [COMPLETED] Implemented `SearchComplex64`, `SearchComplex128`, `HaversineSearch`, `NormBatch`, and `PruneNeighbors` for `TPUIndex` to ensure full interface compliance.
+- **Metal Search Unification**: [COMPLETED] Transitioned standard Metal index calls to use optimized kernels for TurboQuant search and graph traversal across all Metal-enabled devices.
 
 ## Performance Optimizations (v0.2.5+)
 

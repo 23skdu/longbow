@@ -95,3 +95,32 @@ var (
 		},
 	)
 )
+
+// SlabPool and RefCount Metrics (Production Readiness)
+var (
+	// SlabActiveArenas tracks the number of currently active SlabArenas across all pools
+	SlabActiveArenas = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_slab_active_arenas",
+			Help: "Number of active SlabArenas currently managed by the pool",
+		},
+		[]string{"size"},
+	)
+
+	// SlabRefCountDistribution tracks the distribution of RefCounts for PackedAdjacency
+	SlabRefCountDistribution = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_slab_refcount_distribution",
+			Help:    "Distribution of RefCounts for PackedAdjacency structures",
+			Buckets: []float64{0, 1, 2, 5, 10, 20, 50, 100},
+		},
+	)
+
+	// SlabLeakProbability tracks the potential memory leak probability based on long-lived arenas
+	SlabLeakProbability = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_slab_leak_probability",
+			Help: "Heuristic probability (0-1) of memory leaks based on arena lifecycle duration",
+		},
+	)
+)

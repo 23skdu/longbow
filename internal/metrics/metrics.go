@@ -540,6 +540,48 @@ var (
 		},
 	)
 
+	// PackedAdjacencyCoWTotal counts total number of PackedAdjacency Copy-on-Write updates
+	PackedAdjacencyCoWTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_packed_adjacency_cow_total",
+			Help: "Total number of PackedAdjacency Copy-on-Write updates",
+		},
+	)
+
+	// Temporal Tree Metrics
+	TemporalTreeCacheHitRatio = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_temporal_tree_cache_hit_ratio",
+			Help: "Current cache hit ratio for temporal queries",
+		},
+	)
+
+	TemporalQueryScannedNodesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_temporal_query_scanned_nodes_total",
+			Help: "Total number of tree nodes scanned during temporal queries",
+		},
+	)
+	TemporalTreeNodesTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_temporal_tree_nodes_total",
+			Help: "Total number of unique timestamps in the temporal tree",
+		},
+	)
+	TemporalTreeAllocatedBytesTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_temporal_tree_allocated_bytes_total",
+			Help: "Total bytes allocated in the temporal tree arenas",
+		},
+	)
+
+	SlabHugePageCount = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_slab_hugepage_count",
+			Help: "Number of slabs successfully advised for hugepages",
+		},
+	)
+
 	WalReplayParallelism = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_wal_replay_parallelism_total",

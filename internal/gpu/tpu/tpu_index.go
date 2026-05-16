@@ -405,3 +405,7 @@ func (i *TPUIndex) HaversineSearch(centerLat, centerLon float32, points []float3
 func (i *TPUIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	return nil, fmt.Errorf("NormBatch not implemented for TPUIndex (emulated)")
 }
+
+func (i *TPUIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
+	return nil, fmt.Errorf("PruneNeighbors not implemented for TPUIndex (emulated)")
+}

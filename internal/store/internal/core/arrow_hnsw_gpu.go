@@ -82,6 +82,13 @@ func (h *ArrowHNSW) searchGPU(_ context.Context, queryVec any, k int) ([]types.S
 			return nil, fmt.Errorf("complex128 search requires complex128 query, got %T", queryVec)
 		}
 
+	case types.VectorTypeTQ:
+		if q, ok := queryVec.([]float32); ok {
+			ids, distances, err = h.gpuIndex.SearchTurboQuant(q, k, h.config.TurboQuantBits)
+		} else {
+			return nil, fmt.Errorf("TurboQuant search requires float32 query, got %T", queryVec)
+		}
+
 	default:
 		return nil, fmt.Errorf("GPU search not supported for type %s", h.config.DataType)
 	}

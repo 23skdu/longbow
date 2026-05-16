@@ -6,11 +6,13 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/memory"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestTemporalTree_Insert(t *testing.T) {
-	tt := NewTemporalTree()
+	arena := memory.NewSlabArena(1024*1024)
+	tt := NewTemporalTree(arena)
 
 	now := time.Now().UnixNano()
 	tt.Insert(now, 1, 0.0)
@@ -20,7 +22,8 @@ func TestTemporalTree_Insert(t *testing.T) {
 }
 
 func TestTemporalTree_GetRange(t *testing.T) {
-	tt := NewTemporalTree()
+	arena := memory.NewSlabArena(1024*1024)
+	tt := NewTemporalTree(arena)
 
 	now := time.Now().UnixNano()
 	tt.Insert(now-1000, 1, 0.0)
@@ -33,7 +36,8 @@ func TestTemporalTree_GetRange(t *testing.T) {
 }
 
 func TestTemporalTree_GetRangeReversed(t *testing.T) {
-	tt := NewTemporalTree()
+	arena := memory.NewSlabArena(1024*1024)
+	tt := NewTemporalTree(arena)
 
 	now := time.Now().UnixNano()
 	tt.Insert(now-1000, 1, 0.0)
@@ -46,7 +50,8 @@ func TestTemporalTree_GetRangeReversed(t *testing.T) {
 }
 
 func TestTemporalTree_GetBefore(t *testing.T) {
-	tt := NewTemporalTree()
+	arena := memory.NewSlabArena(1024 * 1024)
+	tt := NewTemporalTree(arena)
 
 	now := time.Now().UnixNano()
 	tt.Insert(now-1000, 1, 0.0)
@@ -59,7 +64,8 @@ func TestTemporalTree_GetBefore(t *testing.T) {
 }
 
 func TestTemporalTree_GetLatest(t *testing.T) {
-	tt := NewTemporalTree()
+	arena := memory.NewSlabArena(1024 * 1024)
+	tt := NewTemporalTree(arena)
 
 	now := time.Now().UnixNano()
 	tt.Insert(now-1000, 1, 0.0)

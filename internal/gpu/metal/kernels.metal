@@ -434,7 +434,6 @@ kernel void compute_tq_distances(
 {
     if (gid >= numVectors) return;
     
-    // Format: [Radius (4B)][Packed Angles][QJL Bits]
     uint angleCount = pow2 - 1;
     uint angleBytes = (angleCount * bitsPerAngle + 7) / 8;
     uint bitBytes = (pow2 + 7) / 8;
@@ -445,8 +444,12 @@ kernel void compute_tq_distances(
     device const uchar* packedAngles = data + 4;
     device const uchar* qjlBits = data + 4 + angleBytes;
     
-    // Iterative Polar Reconstruction
-    float recon[1024];
+    float recon[256]; 
+    if (pow2 > 256) {
+        distances[gid] = INFINITY;
+        return;
+    }
+    
     recon[0] = radius;
     uint currentLevelSize = 1;
     uint angleOffset = angleCount;
@@ -460,25 +463,16 @@ kernel void compute_tq_distances(
             uint bitStart = (angleOffset + i) * bitsPerAngle;
             uint q = 0;
             
-            // Manual unrolling for common bit depths (2, 4, 8)
-            if (bitsPerAngle == 4) {
-                uint byteIdx = bitStart / 8;
-                uint bitShift = bitStart % 8;
-                q = (packedAngles[byteIdx] >> bitShift) & 0x0F;
-            } else if (bitsPerAngle == 8) {
-                q = packedAngles[bitStart / 8];
-            } else {
-                for (uint k = 0; k < bitsPerAngle; k++) {
-                    uint bitIdx = bitStart + k;
-                    if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1) {
-                        q |= (1 << k);
-                    }
+            for (uint k = 0; k < bitsPerAngle; k++) {
+                uint bitIdx = bitStart + k;
+                if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1) {
+                    q |= (1 << k);
                 }
             }
             
             float theta = (float(q) * invMaxVal) * 2.0f * M_PI_F - M_PI_F;
-            float s, c;
-            s = sincos(theta, c);
+            float s = sin(theta);
+            float c = cos(theta);
             recon[2*i] = r * c;
             recon[2*i+1] = r * s;
         }
@@ -488,29 +482,7 @@ kernel void compute_tq_distances(
     float sum = 0.0f;
     float correctionFactor = radius / sqrt((float)pow2) * 0.1f;
     
-    uint vectorWidth = dim / 4;
-    
-    for (uint i = 0; i < vectorWidth; i++) {
-        float4 q = *(device const float4*)(query + i * 4);
-        float4 r;
-        
-        // Load recon and apply QJL
-        for (uint j = 0; j < 4; j++) {
-            uint idx = i * 4 + j;
-            float val = recon[idx];
-            if ((qjlBits[idx / 8] >> (idx % 8)) & 1) {
-                val += correctionFactor;
-            } else {
-                val -= 0.1f;
-            }
-            r[j] = val;
-        }
-        
-        float4 diff = q - r;
-        sum += dot(diff, diff);
-    }
-    
-    for (uint i = vectorWidth * 4; i < dim; i++) {
+    for (uint i = 0; i < dim && i < pow2; i++) {
         float val = recon[i];
         if ((qjlBits[i / 8] >> (i % 8)) & 1) {
             val += correctionFactor;
@@ -521,7 +493,7 @@ kernel void compute_tq_distances(
         sum += diff * diff;
     }
     
-    distances[gid] = sqrt(sum);
+    distances[gid] = sum; // Use squared L2 for HNSW
 }
 
 // ===========================================================================
@@ -750,4 +722,57 @@ kernel void find_top_k_heap(
             }
         }
     }
+}
+// ===========================================================================
+// HNSW & Graph Maintenance Kernels
+// ===========================================================================
+
+kernel void hnsw_prune_neighbors(
+    device const uint* candidateIds [[buffer(0)]],
+    device const float* candidateDists [[buffer(1)]],
+    device uint* selectedIds [[buffer(2)]],
+    device uint* selectedCount [[buffer(3)]],
+    device const float* allVectors [[buffer(4)]],
+    constant uint& maxNeighbors [[buffer(5)]],
+    constant uint& numCandidates [[buffer(6)]],
+    constant uint& dim [[buffer(7)]],
+    constant bool& extendedHeuristic [[buffer(8)]],
+    uint gid [[thread_position_in_grid]]
+) {
+    // This kernel is intended to be run with 1 thread (or a small workgroup) per pruning task
+    // For simplicity in this v1, we assume 1 thread per prune task.
+    if (gid > 0) return; 
+
+    uint count = 0;
+    for (uint i = 0; i < numCandidates && count < maxNeighbors; i++) {
+        uint currId = candidateIds[i];
+        float currDist = candidateDists[i];
+        bool good = true;
+
+        // Heuristic: Is currId closer to the entry point than to any already selected neighbor?
+        for (uint j = 0; j < count; j++) {
+            uint selId = selectedIds[j];
+            
+            // Compute distance between currId and selId
+            float distBetween = 0.0f;
+            uint off1 = currId * dim;
+            uint off2 = selId * dim;
+            
+            for (uint k = 0; k < dim; k++) {
+                float d = allVectors[off1 + k] - allVectors[off2 + k];
+                distBetween += d * d;
+            }
+            distBetween = sqrt(distBetween);
+
+            if (distBetween < currDist) {
+                good = false;
+                break;
+            }
+        }
+
+        if (good) {
+            selectedIds[count++] = currId;
+        }
+    }
+    *selectedCount = count;
 }

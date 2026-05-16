@@ -418,7 +418,7 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 
 // GetWithGeneration retrieves the byte slice from the arena, enforcing generation isolation.
 func (a *SlabArena) GetWithGeneration(offset uint64, length uint32, maxGeneration uint64) []byte {
-	if offset == 0 || length == 0 {
+	if length == 0 {
 		return nil
 	}
 

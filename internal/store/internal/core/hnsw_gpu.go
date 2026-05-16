@@ -588,3 +588,22 @@ func (h *ArrowHNSW) ResetGPUCircuitBreaker() {
 	// The circuit breaker should recover naturally
 	// This is useful for testing or emergency recovery
 }
+
+// pruneNeighborsGPU offloads the HNSW neighbor selection heuristic to the GPU.
+func (h *ArrowHNSW) pruneNeighborsGPU(candidateIds []uint32, candidateDists []float32, maxNeighbors int, data *types.GraphData) ([]uint32, error) {
+	h.gpuMu.RLock()
+	defer h.gpuMu.RUnlock()
+
+	if !h.gpuEnabled || h.gpuIndex == nil {
+		return nil, fmt.Errorf("GPU not enabled")
+	}
+
+	// For now, we pass nil for allVectors to tell the GPU to use its internal buffer.
+	// We assume that the vectors have been synced to GPU via SyncGPU/Flush.
+	selected, err := h.gpuIndex.PruneNeighbors(candidateIds, candidateDists, maxNeighbors, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return selected, nil
+}

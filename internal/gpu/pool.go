@@ -370,3 +370,18 @@ func (w *pooledIndexWrapper) HaversineSearch(centerLat, centerLon float32, point
 func (w *pooledIndexWrapper) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	return w.pooled.index.NormBatch(vectors, dims)
 }
+func (w *pooledIndexWrapper) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
+	return w.pooled.index.PruneNeighbors(candidateIds, candidateDists, maxNeighbors, allVectors)
+}
+
+func (w *pooledIndexWrapper) Sync() error {
+	return w.pooled.index.Sync()
+}
+
+func (w *pooledIndexWrapper) Clear() error {
+	return w.pooled.index.Clear()
+}
+
+func (w *pooledIndexWrapper) Reset() error {
+	return w.pooled.index.Reset()
+}

@@ -51,6 +51,7 @@ void launch_l2_squared_kernel(const float* vectors, float* results, int dimensio
 void launch_assign_to_clusters(const float* vectors, const float* centroids, uint32_t* assignments, int dim, int numVectors, int numCentroids, cudaStream_t stream);
 void launch_sum_centroids(const float* vectors, const uint32_t* assignments, float* centroids, uint32_t* counts, int dim, int numVectors, cudaStream_t stream);
 void launch_finalize_centroids(float* centroids, const uint32_t* counts, int dim, int numCentroids, cudaStream_t stream);
+void launch_hnsw_prune_neighbors_kernel(const uint32_t* candidateIds, const float* candidateDists, uint32_t* selectedIds, uint32_t* selectedCount, const float* allVectors, int maxNeighbors, int numCandidates, int dim, bool extendedHeuristic, cudaStream_t stream);
 
 int cuda_train_kmeans(CUDAIndexHandle* handle, float* vectors, float* centroids, int numVectors, int dim, int k, int iterations);
 int cuda_pq_encode(CUDAIndexHandle* handle, float* h_vectors, float* h_codebooks, unsigned char* h_codes, int numVectors, int m, int subDim);
@@ -475,6 +476,47 @@ int cuda_update_graph(CUDAIndexHandle* handle, uint32_t* h_offsets, uint32_t* h_
 
     handle->graphNodeCount = nodeCount;
     handle->graphEdgeCount = edgeCount;
+    return 0;
+}
+
+int cuda_prune_neighbors(CUDAIndexHandle* handle, uint32_t* candidateIds, float* candidateDists, uint32_t* selectedIds, uint32_t* selectedCount, float* allVectors, int maxNeighbors, int numCandidates, int dim, bool extended) {
+    if (!handle) return -1;
+
+    uint32_t *d_candIds, *d_selIds, *d_selCount;
+    float *d_candDists, *d_allVectors;
+
+    cudaMalloc((void**)&d_candIds, (size_t)numCandidates * sizeof(uint32_t));
+    cudaMalloc((void**)&d_candDists, (size_t)numCandidates * sizeof(float));
+    cudaMalloc((void**)&d_selIds, (size_t)maxNeighbors * sizeof(uint32_t));
+    cudaMalloc((void**)&d_selCount, sizeof(uint32_t));
+    
+    if (allVectors != NULL) {
+        size_t allVecSize = (size_t)handle->vectorCount * dim * sizeof(float);
+        cudaMalloc((void**)&d_allVectors, allVecSize);
+        cudaMemcpy(d_allVectors, allVectors, allVecSize, cudaMemcpyHostToDevice);
+    } else {
+        d_allVectors = (float*)handle->buffers[0];
+    }
+
+    if (!d_allVectors) return -2;
+
+    cudaMemcpy(d_candIds, candidateIds, (size_t)numCandidates * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_candDists, candidateDists, (size_t)numCandidates * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemset(d_selCount, 0, sizeof(uint32_t));
+
+    launch_hnsw_prune_neighbors_kernel(d_candIds, d_candDists, d_selIds, d_selCount, d_allVectors, maxNeighbors, numCandidates, dim, extended, handle->streams[0]);
+
+    uint32_t h_selCount;
+    cudaMemcpy(&h_selCount, d_selCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    *selectedCount = h_selCount;
+    cudaMemcpy(selectedIds, d_selIds, (size_t)h_selCount * sizeof(uint32_t), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_candIds);
+    cudaFree(d_candDists);
+    cudaFree(d_selIds);
+    cudaFree(d_selCount);
+    if (allVectors != NULL) cudaFree(d_allVectors);
+
     return 0;
 }
 */
@@ -1429,4 +1471,39 @@ func (idx *CUDAIndex) PQEncode(vectors []float32, codebooks []float32, m, subDim
 	
 	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "pq_encode").Observe(time.Since(start).Seconds())
 	return codes, nil
+}
+func (idx *CUDAIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.closed {
+		return nil, fmt.Errorf("index closed")
+	}
+
+	numCandidates := len(candidateIds)
+	selectedIds := make([]uint32, maxNeighbors)
+	var selectedCount uint32
+
+	var vecPtr *C.float
+	if len(allVectors) > 0 {
+		vecPtr = (*C.float)(unsafe.Pointer(&allVectors[0]))
+	}
+
+	ret := C.cuda_prune_neighbors(
+		idx.handle,
+		(*C.uint32_t)(unsafe.Pointer(&candidateIds[0])),
+		(*C.float)(unsafe.Pointer(&candidateDists[0])),
+		(*C.uint32_t)(unsafe.Pointer(&selectedIds[0])),
+		(*C.uint32_t)(unsafe.Pointer(&selectedCount)),
+		vecPtr,
+		C.int(maxNeighbors),
+		C.int(numCandidates),
+		C.int(idx.dim),
+		C.bool(true),
+	)
+
+	if ret != 0 {
+		return nil, fmt.Errorf("cuda_prune_neighbors failed: %d", ret)
+	}
+
+	return selectedIds[:selectedCount], nil
 }

@@ -287,6 +287,29 @@ func (m *MockIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	return make([]float32, len(vectors)/dims), nil
 }
 
+func (m *MockIndex) Clear() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.vectors = make(map[int64][]float32)
+	return nil
+}
+
+func (m *MockIndex) Sync() error {
+	return nil
+}
+
+func (m *MockIndex) Reset() error {
+	return m.Clear()
+}
+
+func (m *MockIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
+	// Simple mock: return first maxNeighbors candidates
+	if len(candidateIds) <= maxNeighbors {
+		return candidateIds, nil
+	}
+	return candidateIds[:maxNeighbors], nil
+}
+
 // float16ToFloat32Mock converts a uint16 float16 value to float32
 func float16ToFloat32Mock(v uint16) float32 {
 	sign := uint32(v >> 15)

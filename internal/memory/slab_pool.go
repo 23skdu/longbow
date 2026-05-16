@@ -40,6 +40,9 @@ func newSlabPool(size int) *SlabPool {
 		pool: sync.Pool{
 			New: func() any {
 				b := offHeapAlloc.Allocate(size)
+				if err := AdviseHugePage(b); err == nil {
+					metrics.SlabHugePageCount.Inc()
+				}
 				return &b
 			},
 		},
@@ -185,6 +188,7 @@ func (p *SlabPool) updateMetrics() {
 	// Update arena memory bytes (active slabs * size)
 	arenaBytes := float64(active * int64(p.size))
 	metrics.ArenaMemoryBytes.WithLabelValues(sizeLabel).Set(arenaBytes)
+	metrics.SlabActiveArenas.WithLabelValues(sizeLabel).Set(float64(active))
 
 	// Calculate fragmentation ratio (pooled/active)
 	// Higher ratio means more fragmentation (more slabs sitting idle in pool)

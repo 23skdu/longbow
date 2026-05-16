@@ -284,7 +284,7 @@ func (tt *TemporalTree) Insert(timestamp int64, id uint64, norm float32) {
 		newEntries[oldLen] = entry
 		
 		// Update existing node in place (it's already in the arena)
-		nodes[idx].Offset = uint32(newRef.Offset)
+		nodes[idx].Offset = uint32(newRef.Offset) // #nosec G115
 		nodes[idx].Len = oldLen + 1
 		return
 	}
@@ -295,7 +295,7 @@ func (tt *TemporalTree) Insert(timestamp int64, id uint64, norm float32) {
 	
 	newNode := TemporalNode{
 		Timestamp: timestamp,
-		Offset:    uint32(newEntryRef.Offset),
+		Offset:    uint32(newEntryRef.Offset), // #nosec G115
 		Len:       1,
 	}
 

@@ -216,6 +216,25 @@ func dotAVX2(a, b []float32) (float32, error) {
 	return sum, nil
 }
 
+// AVX2 optimized Bray-Curtis distance
+func brayCurtisAVX2(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if !features.HasAVX2 {
+		return BrayCurtisDistanceFloat32(a, b)
+	}
+
+	return brayCurtisAVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a),
+	), nil
+}
+
 
 // AVX2 optimized Batch Euclidean distance
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) error {

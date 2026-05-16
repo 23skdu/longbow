@@ -1,5 +1,13 @@
 # Longbow Storage Engine - Future Roadmap
 
+## P0 REMEDIATION BLOCKERS (Post-Code Review)
+
+- [ ] **Resolve TPUIndex Feature Gaps**: Implement `SearchComplex64`, `SearchComplex128`, `HaversineSearch`, `NormBatch`, and `PruneNeighbors` for `TPUIndex` to ensure full interface compliance.
+- [ ] **Unify Metal Index Implementation**: Transition standard Metal index calls to `metal_gpu_optimized.go` to support TurboQuant search across all Metal-enabled devices.
+- [ ] **Real DiskWriterUring Bindings**: Replace the goroutine-based `io_uring` simulation with actual platform-specific bindings to achieve non-blocking disk I/O.
+- [x] **Complete SIMD Distance Kernels**: Implement the missing `brayCurtisAVX2Kernel` to support specialized distance metrics in the CPU hot-path. (Completed in v0.2.3-rc1)
+- [ ] **Full GPU-Based UpdateNeighbors**: Migrate the entire neighbor discovery logic to the GPU (Metal/CUDA) to eliminate ingestion "ping-pong" overhead.
+
 ## Production Stability & Performance Hardening (v0.2.3 Blockers)
 
 The following items are identified as critical blockers for v0.2.3 to ensure scalability beyond 1M vectors and 100k+ search QPS on high-dimensional data. Each task **must** include comprehensive unit/fuzz tests and corresponding Prometheus metrics for observability.
@@ -45,7 +53,7 @@ The following items are identified as critical blockers for v0.2.3 to ensure sca
 - **TPU Physical Driver Integration**: Replace CGO stubs in `internal/gpu/tpu/tpu_index.go` with actual `libtpu.so` bindings once hardware-linked libraries are provided.
 - **Sparse Search ARM64 Assembly**: While functional via generic SIMD, Sparse Search (BM25) requires dedicated NEON assembly kernels to match AVX-512 throughput.
 
-- **Production gosec Remediation**: [COMPLETED] Resolved all G301, G304, and G104 security warnings; applied verified `#nosec` pragmas for non-sensitive utility contexts.
+- **Production gosec Remediation**: [COMPLETED] Resolved all G301, G304, G115 (Integer Overflow), and G104 security warnings; applied verified `#nosec` pragmas for non-sensitive utility contexts.
 - **Metrics Documentation Parity**: [COMPLETED] Implemented `scripts/verify_metrics.py` and synchronized `docs/metrics.md` with 100% of internal Prometheus signals.
 - **v0.2.2-rc2 Performance Audit**: [IN PROGRESS] Orchestrated full 400-test matrix across Local (Metal) and Remote (CUDA) hosts. Initial 5k-scale results confirm 100% stability under 18GB pressure.
 

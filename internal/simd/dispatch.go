@@ -248,7 +248,7 @@ func initDispatchTable() {
 			ArgMin: argMinAVX2,
 			ManhattanDistance: ManhattanDistanceFloat32,
 			ChebyshevDistance: ChebyshevDistanceFloat32,
-			BrayCurtisDistance: BrayCurtisDistanceFloat32,
+			BrayCurtisDistance: brayCurtisAVX2,
 			AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
 			BM25ScoreBatch: bm25ScoreBatchGeneric,
 			HaversineBatch: haversineBatchGeneric,

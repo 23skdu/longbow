@@ -1174,3 +1174,25 @@ func RecordSimdBatch(impl string, op string, count int) {
 	simdDispatchCache.Store(key, counter)
 	counter.Add(float64(count))
 }
+
+// =============================================================================
+// TPU Backend Metrics
+// =============================================================================
+
+var (
+	TPUOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_tpu_operations_total",
+			Help: "Total number of TPU operations",
+		},
+		[]string{"operation", "status"},
+	)
+	TPUOperationLatency = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_tpu_operation_latency_seconds",
+			Help:    "Latency of TPU operations",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"operation"},
+	)
+)

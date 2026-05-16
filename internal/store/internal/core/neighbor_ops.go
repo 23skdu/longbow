@@ -294,7 +294,7 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 	
 	// Try GPU pruning if enabled
 	if h.gpuEnabled && h.gpuIndex != nil {
-		selected, err := h.pruneNeighborsGPU(pool, dists, maxConn, data)
+		selected, err := h.pruneNeighborsGPU(pool, dists, maxConn)
 		if err == nil {
 			return selected
 		}

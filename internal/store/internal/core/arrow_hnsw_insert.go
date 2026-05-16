@@ -307,7 +307,7 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 			candDists[i] = c.Dist
 		}
 		
-		selectedIds, err := h.pruneNeighborsGPU(candIds, candDists, m, data)
+		selectedIds, err := h.pruneNeighborsGPU(candIds, candDists, m)
 		if err == nil {
 			// Convert back to types.Candidate
 			res := make([]types.Candidate, 0, len(selectedIds))

@@ -100,6 +100,7 @@ sequenceDiagram
 - **ParallelRecordReader**: Distributes Arrow IPC decoding across multiple CPU cores.
 - **Reorder Buffer**: Ensures that batches are committed to the WAL and storage in the exact order they were sent by the client, even if decoding happens out of order.
 - **Double-Buffering WAL**: Uses a swap-buffer strategy for zero-allocation logging, minimizing I/O stalls.
+- **GPU-Accelerated Ingestion**: Offloads HNSW upper-layer greedy searches and neighbor pruning to the GPU (Metal/CUDA) to eliminate CPU-GPU 'ping-pong' overhead.
 
 ---
 
@@ -152,9 +153,18 @@ graph LR
 `ChunkedLocationStore` maps every `VectorID` to a `Location` (batch + row offset). Prior to v0.2.0, it held a global `sync.RWMutex` that serialized all ingestion writes.
 
 The v0.2.x rewrite uses two complementary techniques:
+
 - **Lock-free reads**: The chunk slice is published via `atomic.Pointer`. Readers load the pointer and iterate without acquiring any lock.
 - **Sharded reverse index**: The reverse index is split into 64 independent shards.
 - **Atomic ID reservation**: `Append` and `BatchAppend` use `atomic.Uint32.Add` to atomically claim a contiguous range of IDs.
+
+### 3.4 Platform-Specific Async I/O (DiskWriterUring)
+
+Longbow achieves high-throughput persistence through native asynchronous I/O bindings:
+
+- **Linux (io_uring)**: Utilizes a submission/completion ring architecture for zero-syscall overhead during bulk writes.
+- **macOS (Direct I/O)**: Employs `F_NOCACHE` to bypass the system page cache and a dedicated background worker pool for non-blocking I/O.
+- **Windows (IOCP)**: (Experimental) Leverages I/O Completion Ports for scalable async operations.
 
 ---
 
@@ -168,6 +178,14 @@ Vector distance calculations are optimized for modern hardware using hand-writte
 - **NEON**: For ARM64 systems (Apple Silicon, AWS Graviton).
 - **TPU Kernels**: Specialized F16/Complex kernels for Google TPU.
 - **TurboQuant**: SIMD-accelerated bit-packing for 3-8x throughput in quantized search.
+
+### 4.3 GPU-Resident HNSW Traversal
+
+Starting in v0.2.3, Longbow supports full GPU residency for the HNSW graph topology:
+
+- **Graph Synchronization**: Adjacency lists (offsets, neighbors) are mirrored in unified GPU memory.
+- **Greedy Search Kernel**: Offloads the upper-layer traversal (hopping from entry point to level 0) to the GPU.
+- **Parallel Distance Reduction**: Uses threadgroup shared memory to find the best neighbor in parallel, significantly faster than sequential CPU traversal.
 
 ### 4.2 AVX-512 Activation Kernels (exp, softmax)
 
@@ -186,9 +204,38 @@ exp(x) ≈ 2^f * 2^n
 
 ## 5. Sharding & Scalability
 
-Longbow scales from a single node to massive clusters through transparent auto-sharding.
+Longbow scales from a single node to massive clusters through transparent auto-sharding and consistent hashing.
 
-### 5.1 Auto-Sharding & Migration
+### 5.1 Consistent Hashing & Data Partitioning
+
+Data is partitioned across nodes using a consistent hash ring, ensuring minimal data movement when nodes join or leave the cluster.
+
+```mermaid
+graph LR
+    subgraph Cluster["Consistent Hash Ring"]
+        NodeA["Node A (0-90)"]
+        NodeB["Node B (91-180)"]
+        NodeC["Node C (181-270)"]
+        NodeD["Node D (271-360)"]
+    end
+
+    subgraph Data["Ingested Vectors"]
+        V1["V1 (Hash: 45)"]
+        V2["V2 (Hash: 120)"]
+        V3["V3 (Hash: 300)"]
+    end
+
+    V1 --> NodeA
+    V2 --> NodeB
+    V3 --> NodeD
+    
+    NodeA <-->|Gossip| NodeB
+    NodeB <-->|Gossip| NodeC
+    NodeC <-->|Gossip| NodeD
+    NodeD <-->|Gossip| NodeA
+```
+
+### 5.2 Auto-Sharding & Migration
 
 When a dataset exceeds the `ShardThreshold` (default 100k), the system triggers a background migration.
 
@@ -262,20 +309,60 @@ graph TD
 
 ---
 
-## 7. Reliability & Load Balancing
+## 7. Search Execution Pipeline
 
-### 7.1 Load-Aware Routing
+The search pipeline coordinates between multiple indices, filters, and rerankers to provide high-precision results.
+
+```mermaid
+graph TD
+    subgraph Query["Query Input"]
+        V[Query Vector]
+        F[Metadata Filter]
+    end
+
+    subgraph Search["Vector Search"]
+        HNSW[HNSW Layer Search]
+        GPU[GPU Brute-Force/PQ]
+        HNSW & GPU --> Merge[Initial Result Merge]
+    end
+
+    subgraph Filtering["Post-Filtering"]
+        Merge --> Bitset[Bitmap/Bloom Filter]
+        Bitset --> Valid[Validated Candidates]
+    end
+
+    subgraph Scoring["Scoring & Reranking"]
+        Valid --> Graph[GraphRAG Expansion]
+        Graph --> Rerank[ML Reranker / Cohere]
+        Rerank --> Final[Top-K Results]
+    end
+
+    V --> HNSW & GPU
+    F --> Bitset
+
+    subgraph GPU_Flow["GPU Acceleration Path"]
+        HNSW -.->|Upper Layers| Greedy[GPU Greedy Search Kernel]
+        Greedy -.->|Level 0| Search0[CPU/GPU ef-Search]
+        Search0 -.->|Refine| Prune[GPU Neighbor Pruning]
+    end
+```
+
+---
+
+## 8. Reliability & Load Balancing
+
+### 8.1 Load-Aware Routing
 
 Nodes broadcast `LoadHints` (CPU, memory, queue depth) via the gossip protocol.
 
 - **Dynamic Weighting**: Clients use these hints to steer traffic away from hot nodes.
 - **Admission Control**: Each node monitors its own health and rejects requests if memory pressure or CPU load exceeds safety thresholds.
 
-### 7.2 gRPC Retry Protocol (`pkg/retry`)
+### 8.2 gRPC Retry Protocol (`pkg/retry`)
 
 Implements **Exponential Backoff with Jitter** for transient failure recovery. It identifies retryable codes (`Unavailable`, `DeadlineExceeded`, etc.) and ensures that total request time never exceeds the parent context deadline.
 
-### 7.3 Fault Tolerance
+### 8.3 Fault Tolerance
 
 - **Gossip Protocol**: Rapidly detects node failures and updates the hash ring.
 - **WAL Replication**: (Optional) Logs can be streamed to replicas for high availability.

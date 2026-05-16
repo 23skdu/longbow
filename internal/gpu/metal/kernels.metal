@@ -572,7 +572,7 @@ kernel void norm_batch_f32(
         float v = vectors[base + i];
         sum += v * v;
     }
-    results[idx] = sum;
+    results[idx] = sqrt(sum);
 }
 
 kernel void sigmoid_f32(
@@ -775,4 +775,80 @@ kernel void hnsw_prune_neighbors(
         }
     }
     *selectedCount = count;
+}
+
+kernel void hnsw_greedy_search(
+    device const float* query [[buffer(0)]],
+    device const float* vectors [[buffer(1)]],
+    device const uint* graphOffsets [[buffer(2)]],
+    device const uint* graphNeighbors [[buffer(3)]],
+    device uint* entryPoint [[buffer(4)]],
+    device float* entryDist [[buffer(5)]],
+    constant uint& dim [[buffer(6)]],
+    constant uint& numNodes [[buffer(7)]],
+    uint gid [[thread_position_in_grid]],
+    uint tid [[thread_index_in_threadgroup]]
+) {
+    if (gid >= 1) return;
+
+    threadgroup float scratchDists[32];
+    threadgroup uint scratchIds[32];
+    threadgroup bool sharedImproved;
+
+    uint currId = *entryPoint;
+    float currDist = *entryDist;
+    bool improved = true;
+
+    while (improved) {
+        if (tid == 0) sharedImproved = false;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        uint start = graphOffsets[currId];
+        uint end = graphOffsets[currId + 1];
+        uint numNeighbors = end - start;
+
+        uint bestId = currId;
+        float bestDist = currDist;
+
+        for (uint i = tid; i < numNeighbors; i += 32) {
+            uint neighborId = graphNeighbors[start + i];
+            float dist = 0.0f;
+            uint off1 = neighborId * dim;
+            for (uint k = 0; k < dim; k++) {
+                float d = query[k] - vectors[off1 + k];
+                dist += d * d;
+            }
+            dist = sqrt(dist);
+
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestId = neighborId;
+            }
+        }
+
+        scratchDists[tid] = bestDist;
+        scratchIds[tid] = bestId;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        if (tid == 0) {
+            for (uint i = 1; i < 32; i++) {
+                if (scratchDists[i] < bestDist) {
+                    bestDist = scratchDists[i];
+                    bestId = scratchIds[i];
+                }
+            }
+            if (bestDist < currDist) {
+                currDist = bestDist;
+                currId = bestId;
+                sharedImproved = true;
+            }
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        improved = sharedImproved;
+    }
+
+    if (tid == 0) {
+        *entryPoint = currId;
+        *entryDist = currDist;
+    }
 }

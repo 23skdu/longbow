@@ -1,0 +1,41 @@
+{
+	"Golang errors": {
+		"": [
+			{
+				"line": 0,
+				"column": 0,
+				"error": "# command-line-arguments\ninternal/query/simd_filter_neon_arm64.go:10:6: missing function body\ninternal/query/simd_filter_neon_arm64.go:15:6: missing function body\ninternal/query/simd_filter_neon_arm64.go:19:6: missing function body\ninternal/query/simd_filter_neon_arm64.go:23:6: missing function body"
+			},
+			{
+				"line": 0,
+				"column": 0,
+				"error": "# command-line-arguments\ninternal/simd/sparse_score_arm64.go:9:6: missing function body\ninternal/simd/simd_arm64.go:325:6: missing function body\ninternal/simd/simd_arm64.go:442:6: missing function body\ninternal/simd/turboquant_arm64.go:57:6: missing function body\ninternal/simd/turboquant_arm64.go:59:6: missing function body\ninternal/simd/turboquant_arm64.go:61:6: missing function body\ninternal/simd/turboquant_arm64.go:63:6: missing function body\ninternal/simd/turboquant_arm64.go:65:6: missing function body\ninternal/simd/turboquant_arm64.go:67:6: missing function body\ninternal/simd/bitops_arm64.go:20:6: missing function body\ninternal/simd/bitops_arm64.go:20:6: too many errors"
+			}
+		]
+	},
+	"Issues": [
+		{
+			"severity": "HIGH",
+			"confidence": "MEDIUM",
+			"cwe": {
+				"id": "190",
+				"url": "https://cwe.mitre.org/data/definitions/190.html"
+			},
+			"rule_id": "G115",
+			"details": "integer overflow conversion uintptr -\u003e int32",
+			"file": "/Users/rsd/Library/Caches/go-build/07/077b942337f18b889d851aca312a7b4874c3db8a0b15361ba6ef094d4c10f54e-d",
+			"code": "52: \t\treturn nil, err\n53: \t}\n54: \n",
+			"line": "53",
+			"column": "24",
+			"nosec": false,
+			"suppressions": null
+		}
+	],
+	"Stats": {
+		"files": 505,
+		"lines": 128570,
+		"nosec": 720,
+		"found": 1
+	},
+	"GosecVersion": "2.26.1"
+}

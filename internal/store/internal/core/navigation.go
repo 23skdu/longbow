@@ -427,6 +427,18 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	}
 
 	// 1. Initial Greedy Search to find entry point at level 0
+	if h.gpuEnabled && h.gpuIndex != nil && maxLevel > 0 {
+		var qf32 []float32
+		var ok bool
+		if qf32, ok = queryVec.([]float32); ok {
+			newEP, newDist, err := h.gpuIndex.SearchGreedy(qf32, currObj.ID, currObj.Dist)
+			if err == nil {
+				currObj = types.Candidate{ID: newEP, Dist: newDist}
+				goto search_layer0
+			}
+		}
+	}
+
 	for level := int(maxLevel); level > 0; level-- { // #nosec G115
 		// Greedy search: keep 1 best candidate
 		res, err := h.searchLayer(ctx, computer, currObj.ID, 1, level, searchCtx, data, queryVec)
@@ -441,6 +453,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		}
 	}
 
+search_layer0:
 	// 2. Search at layer 0 with adaptive retry
 	efSearch := int(h.config.EfSearch)
 	if searchOptions.Ef > 0 {

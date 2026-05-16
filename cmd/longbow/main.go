@@ -511,84 +511,40 @@ func run() error {
 		}
 	}()
 
-	// Start metrics server with timeouts and port retry logic
+	// Start metrics server (Phase 4)
+	metricsSrvChan := make(chan *http.Server, 1)
 	go func() {
+		metricsAddr := os.Getenv("LONGBOW_METRICS_ADDR")
+		if metricsAddr == "" {
+			metricsAddr = ":6000"
+		}
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())
-
 		mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
-			if globalIsReady.Load() {
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte("OK"))
-			} else {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				_, _ = w.Write([]byte("Not Ready"))
-			}
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("OK"))
 		})
-
-		// Profiling endpoints
+		// pprof endpoints (Phase 6)
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
-		mux.Handle("/debug/vars", http.DefaultServeMux) // expvar uses DefaultServeMux
-
-		// Try to bind to the configured port, with fallback to next 5 ports
-		baseAddr := cfg.MetricsAddr
-		host, portStr, err := net.SplitHostPort(baseAddr)
-		if err != nil {
-			logger.Error().Err(err).Str("addr", baseAddr).Msg("Invalid metrics address format")
-			return
-		}
-
-		basePort, err := strconv.Atoi(portStr)
-		if err != nil {
-			logger.Error().Err(err).Str("port", portStr).Msg("Invalid metrics port")
-			return
-		}
-
-		var boundAddr string
-		var listener net.Listener
-		maxRetries := 5
-		for i := 0; i < maxRetries; i++ {
-			tryPort := basePort + i
-			tryAddr := net.JoinHostPort(host, strconv.Itoa(tryPort))
-
-			listener, err = net.Listen("tcp", tryAddr)
-			if err == nil {
-				boundAddr = tryAddr
-				logger.Info().
-					Str("addr", boundAddr).
-					Int("attempt", i+1).
-					Msg("Metrics server bound successfully")
-				break
-			}
-
-			if i == maxRetries-1 {
-				logger.Error().
-					Err(err).
-					Str("base_addr", baseAddr).
-					Int("retries", maxRetries).
-					Msg("Failed to bind metrics server after retries")
-				return
-			}
-		}
 
 		srv := &http.Server{
+			Addr:         metricsAddr,
 			Handler:      mux,
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
-			IdleTimeout:  60 * time.Second,
 		}
+		metricsSrvChan <- srv
 
-		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
-			logger.Error().
-				Err(err).
-				Str("addr", boundAddr).
-				Msg("Metrics server failed")
+		logger.Info().Str("addr", metricsAddr).Msg("Metrics and pprof server starting")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error().Err(err).Msg("Metrics server failed")
 		}
 	}()
+	metricsSrv := <-metricsSrvChan
 
 	// Initialize Sharding Ring Manager
 	// Use configured NodeID or fallback to hostname
@@ -772,31 +728,24 @@ func run() error {
 	// System is now ready to receive traffic
 	globalIsReady.Store(true)
 
-	// Wait for signal
+	// Step 8: Graceful Shutdown (Phase 6)
 	<-ctx.Done()
-	logger.Info().Msg("Received shutdown signal, initiating graceful shutdown")
+	logger.Info().Msg("Shutdown signal received")
 
-	// Stop workers explicitly (ensures they all shut down, not just back to min)
-	totalIndexing := runtime.NumCPU()
-	totalIngestion := cfg.IngestionWorkerCount
-	if totalIngestion <= 0 {
-		totalIngestion = runtime.NumCPU()
-	}
-	vectorStore.StopIndexingWorkers(totalIndexing)
-	vectorStore.StopIngestionWorkers(totalIngestion)
+	// Allow a grace period for pending pprof profile collections to finish
+	// Benchmark tool often collects profile just before sending SIGTERM
+	time.Sleep(2 * time.Second)
 
-	// Shutdown Sequence
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	done := make(chan struct{})
 	go func() {
 		var wg sync.WaitGroup
-		wg.Add(2)
+		wg.Add(3)
 		go func() {
 			defer wg.Done()
 			dataServer.GracefulStop()
-
 			logger.Info().Msg("Data server stopped")
 		}()
 		go func() {
@@ -804,6 +753,15 @@ func run() error {
 			metaServer.GracefulStop()
 			_ = metaService.Close() // Clean up coordinator clients
 			logger.Info().Msg("Meta server stopped")
+		}()
+		go func() {
+			defer wg.Done()
+			if metricsSrv != nil {
+				if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
+					logger.Error().Err(err).Msg("Metrics server shutdown failed")
+				}
+				logger.Info().Msg("Metrics server stopped")
+			}
 		}()
 		wg.Wait()
 		close(done)

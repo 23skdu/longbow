@@ -131,6 +131,10 @@ Examples:
   # Search with dense vectors
   longbow-cli search -dataset mydata -mode dense -vector "0.1,0.2,0.3" -k 10
 
+  # Create TurboQuant dataset
+  longbow-cli create-namespace -name mytq -dims 768 -data_type turboquant2
+
+
   # Search with compound filters
   longbow-cli search -dataset mydata -mode filtered -vector "0.1,0.2" -filters '{
     "logic": "AND",
@@ -591,12 +595,13 @@ func runCreateNamespace(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("create-namespace", flag.ExitOnError)
 	name := fs.String("name", "", "Namespace name (required)")
 	dims := fs.Int("dims", 128, "Vector dimensions")
-	dtype := fs.String("data_type", "float32", "Data type (float32, int8, turboquant)")
+	dtype := fs.String("data_type", "float32", "Data type (float32, int8, turboquant2, turboquant4, turboquant8)")
 	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
 	if *name == "" {
 		fmt.Fprintf(os.Stderr, "Usage: longbow-cli create-namespace -name <name> [-dims <n>] [-data_type <type>]\n")
+
 		os.Exit(1)
 	}
 
@@ -643,8 +648,9 @@ func runDeleteNamespace(ctx context.Context, args []string) {
 	sc := mustGetClient(*uri)
 	defer sc.Close()
 
-	actionBody, _ := json.Marshal(map[string]string{"namespace": *name})
-	action := &flight.Action{Type: "delete_namespace", Body: actionBody}
+	actionBody, _ := json.Marshal(map[string]string{"name": *name})
+	action := &flight.Action{Type: "DeleteNamespace", Body: actionBody}
+
 
 	stream, err := sc.DoAction(ctx, action)
 	if err != nil {
@@ -671,7 +677,8 @@ func runListNamespaces(ctx context.Context, args []string) {
 	sc := mustGetClient(*uri)
 	defer sc.Close()
 
-	action := &flight.Action{Type: "list_actions"}
+	action := &flight.Action{Type: "ListNamespaces"}
+
 	stream, err := sc.DoAction(ctx, action)
 	if err != nil {
 		log.Fatalf("Failed to list namespaces: %v", err)
@@ -749,7 +756,8 @@ func runStats(ctx context.Context, args []string) {
 	defer sc.Close()
 
 	actionBody, _ := json.Marshal(map[string]string{"dataset": *name})
-	action := &flight.Action{Type: "check_readiness", Body: actionBody}
+	action := &flight.Action{Type: "DiscoveryStatus", Body: actionBody}
+
 
 	stream, err := sc.DoAction(ctx, action)
 	if err != nil {
@@ -1020,7 +1028,8 @@ func runDelete(ctx context.Context, args []string) {
 
 	req := map[string]string{"dataset": *dataset, "id": *id}
 	actionBody, _ := json.Marshal(req)
-	action := &flight.Action{Type: "delete", Body: actionBody}
+	action := &flight.Action{Type: "Delete", Body: actionBody}
+
 
 	_, err := sc.DoAction(ctx, action)
 	if err != nil {
@@ -1065,7 +1074,8 @@ func runAddEdge(_ context.Context, args []string) {
 		"weight":    *weight,
 	}
 	actionBody, _ := json.Marshal(req)
-	action := &flight.Action{Type: "add-edge", Body: actionBody}
+	action := &flight.Action{Type: "AddEdge", Body: actionBody}
+
 	_, err := sc.DoAction(context.Background(), action)
 	if err != nil {
 		log.Fatalf("Add edge failed: %v", err)
@@ -1090,7 +1100,8 @@ func runTraverse(_ context.Context, args []string) {
 		"max_hops": *hops,
 	}
 	actionBody, _ := json.Marshal(req)
-	action := &flight.Action{Type: "traverse-graph", Body: actionBody}
+	action := &flight.Action{Type: "TraverseGraph", Body: actionBody}
+
 	stream, err := sc.DoAction(context.Background(), action)
 	if err != nil {
 		log.Fatalf("Traverse failed: %v", err)
@@ -1138,7 +1149,8 @@ func runPageRank(_ context.Context, args []string) {
 
 	req := map[string]interface{}{"dataset": *dataset, "max_iterations": *iter}
 	actionBody, _ := json.Marshal(req)
-	action := &flight.Action{Type: "calculate-pagerank", Body: actionBody}
+	action := &flight.Action{Type: "CalculatePageRank", Body: actionBody}
+
 	stream, err := sc.DoAction(context.Background(), action)
 	if err != nil {
 		log.Fatalf("PageRank failed: %v", err)
@@ -1159,7 +1171,8 @@ func runDetectCommunities(_ context.Context, args []string) {
 
 	req := map[string]string{"dataset": *dataset}
 	actionBody, _ := json.Marshal(req)
-	action := &flight.Action{Type: "detect-communities", Body: actionBody}
+	action := &flight.Action{Type: "DetectCommunities", Body: actionBody}
+
 	stream, err := sc.DoAction(context.Background(), action)
 	if err != nil {
 		log.Fatalf("Community detection failed: %v", err)
@@ -1265,7 +1278,8 @@ func runDrop(ctx context.Context, args []string) {
 	defer sc.Close()
 
 	actionBody, _ := json.Marshal(map[string]string{"dataset": *dataset})
-	action := &flight.Action{Type: "drop", Body: actionBody}
+	action := &flight.Action{Type: "DropDataset", Body: actionBody}
+
 
 	stream, err := sc.DoAction(ctx, action)
 	if err != nil {

@@ -12676,7 +12676,93 @@ TEXT ·dotFloat64AVX2Kernel(SB), NOSPLIT, $0-28
 // func brayCurtisAVX2Kernel(a uintptr, b uintptr, n int) float32
 // Requires: SSE
 TEXT ·brayCurtisAVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
+	MOVQ a+0(FP), AX
+	MOVQ b+8(FP), CX
+	MOVQ n+16(FP), DX
+
+	VXORPS Y0, Y0, Y0 // sum_abs_diff
+	VXORPS Y1, Y1, Y1 // sum_abs_total
+
+	// Mask for ABS: 0x7FFFFFFF
+	MOVQ   $0x7FFFFFFF, R8
+	VPBROADCASTD R8, Y2
+
+loop:
+	CMPQ DX, $8
+	JL   tail
+
+	VMOVUPS (AX), Y3
+	VMOVUPS (CX), Y4
+
+	// |a - b|
+	VSUBPS Y4, Y3, Y5
+	VANDPS Y2, Y5, Y5
+	VADDPS Y5, Y0, Y0
+
+	// |a + b|
+	VADDPS Y4, Y3, Y6
+	VANDPS Y2, Y6, Y6
+	VADDPS Y6, Y1, Y1
+
+	ADDQ $32, AX
+	ADDQ $32, CX
+	SUBQ $8, DX
+	JMP  loop
+
+tail:
+	// Reduction for Y0 (sum_abs_diff)
+	VEXTRACTF128 $0x00, Y0, X2
+	VEXTRACTF128 $0x01, Y0, X3
+	VADDPS       X2, X3, X3
+	VMOVSHDUP    X3, X2
+	VADDPS       X2, X3, X3
+	VMOVHLPS     X3, X3, X2
+	VADDSS       X2, X3, X3 // X3[0] = sum_abs_diff (vector part)
+
+	// Reduction for Y1 (sum_abs_total)
+	VEXTRACTF128 $0x00, Y1, X4
+	VEXTRACTF128 $0x01, Y1, X5
+	VADDPS       X4, X5, X5
+	VMOVSHDUP    X5, X4
+	VADDPS       X4, X5, X5
+	VMOVHLPS     X5, X5, X4
+	VADDSS       X4, X5, X5 // X5[0] = sum_abs_total (vector part)
+
+	// Extract lower 32-bits of Y2 into X2 for scalar ABS
+	VEXTRACTF128 $0x00, Y2, X2
+
+scalar_loop:
+	CMPQ DX, $0
+	JE   done
+	VMOVSS (AX), X6
+	VMOVSS (CX), X7
+
+	// |a - b|
+	VSUBSS X7, X6, X8
+	VANDPS X2, X8, X8
+	VADDSS X8, X3, X3
+
+	// |a + b|
+	VADDSS X7, X6, X8
+	VANDPS X2, X8, X8
+	VADDSS X8, X5, X5
+
+	ADDQ $4, AX
+	ADDQ $4, CX
+	DECQ DX
+	JMP  scalar_loop
+
+done:
+	// If sum_abs_total == 0, return 0
+	VXORPS X0, X0, X0
+	VCOMISS X0, X5
+	JE return_zero
+
+	VDIVSS X5, X3, X0
+
+return_zero:
+	VMOVSS X0, ret+24(FP)
+	VZEROUPPER
 	RET
 
 // func manhattanAVX2Kernel(a uintptr, b uintptr, n int) float32

@@ -590,7 +590,7 @@ func (h *ArrowHNSW) ResetGPUCircuitBreaker() {
 }
 
 // pruneNeighborsGPU offloads the HNSW neighbor selection heuristic to the GPU.
-func (h *ArrowHNSW) pruneNeighborsGPU(candidateIds []uint32, candidateDists []float32, maxNeighbors int, data *types.GraphData) ([]uint32, error) {
+func (h *ArrowHNSW) pruneNeighborsGPU(candidateIds []uint32, candidateDists []float32, maxNeighbors int) ([]uint32, error) {
 	h.gpuMu.RLock()
 	defer h.gpuMu.RUnlock()
 

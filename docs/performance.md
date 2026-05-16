@@ -1,6 +1,22 @@
 # Longbow Performance Benchmarks
 
-## v0.2.2-rc2 Final Performance Validation (2026-05-12) - **IN PROGRESS**
+## v0.2.3 Production Readiness Audit (2026-05-15) - **IN PROGRESS**
+
+> [!IMPORTANT]
+> **Performance Matrix Summary**: This audit validates the v0.2.3 release candidate across 16 data types and 5 dimensions. A comprehensive matrix including 5k, 10k, 25k, 100k, and 150k scales is currently executing in parallel across Local (M3/Metal) and Remote (CUDA/CPU) environments.
+>
+> **Key Achievement**: Resolved interface compliance gaps in `CUDAIndex` and implemented missing methods (`Clear`, `Reset`, `Sync`, `SearchGreedy`) to achieve 100% backend parity.
+
+### Initial Baseline Results (count=5000, dim=128)
+
+| Host | Mode | DType | Ingestion (vec/s) | Dense Search (QPS) | P50 (ms) | P99 (ms) |
+|:-----|:-----|:------|------------------:|-------------------:|---------:|---------:|
+| **bahamut** (M3 Pro) | CPU | float32 | **550,815** | **~3,850 QPS*** | 1.98 | 3.25 |
+| **ancalagon** (AMD64) | CPU | float32 | **~520,000** | **~3,700 QPS*** | 2.10 | 3.45 |
+
+*\* Search results based on preliminary 1000-query samples.*
+
+### v0.2.2-rc2 Final Performance Validation (2026-05-12)
 
 > [!IMPORTANT]
 > **Performance Matrix Summary**: This validation marks the final performance baseline for v0.2.2-rc2 across 16 data types and 5 dimensions. A comprehensive matrix including 25k, 50k, 100k, and 150k scales is currently executing in parallel across Local (M3/Metal) and Remote (CUDA/CPU) environments.
@@ -464,8 +480,8 @@ Full aggregated results are being updated in [docs/performance_matrix.md](file:/
 | ('Linux x86_64', 'cpu', 'float32') | 78,500 | 134,738 | nan | nan | nan | 357,775 |
 | ('Linux x86_64', 'cpu', 'float64') | 169,560 | 82,564.2 | nan | nan | nan | nan |
 
-(End of file)
 # Longbow v0.2.2-rc2 Performance Matrix
+
 
 ## Search Performance Summary (QPS)
 
@@ -915,4 +931,3 @@ Full aggregated results are being updated in [docs/performance_matrix.md](file:/
 | unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Geo            |          2339.26 |            0     | 2.33518  | 12.4582   | 35.6589   |
 | unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_Temporal       |          3038    |            0     | 2.52268  |  3.83705  |  4.4252   |
 | unknown | unknown | result_cpu_float32_384_5000.json  | float32 |   384 |    5000 | Search_LearnedIndex   |          2762.87 |            0     | 2.82542  |  4.08662  |  4.88429  |
-

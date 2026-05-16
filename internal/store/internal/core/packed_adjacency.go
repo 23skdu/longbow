@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -76,6 +77,7 @@ func NewPackedAdjacencyWithArenas(arena *memory.SlabArena,
 	}
 	pa.chunks.Store(&chunks)
 	pa.refCount.Store(1)
+	metrics.SlabRefCountDistribution.Observe(1)
 	return pa
 }
 
@@ -190,45 +192,42 @@ func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
 	chunkIdx := int(id) / adjacencyChunkSize
 	offsetInPage := int(id) % adjacencyChunkSize
 
-	// Auto-grow if needed
-	chunksPtr := pa.chunks.Load()
-	if chunksPtr == nil || chunkIdx >= len(*chunksPtr) {
-		pa.EnsureCapacity(id)
-		chunksPtr = pa.chunks.Load()
-	}
+	pa.EnsureCapacity(id)
+	chunks := *pa.chunks.Load()
 
-	chunks := *chunksPtr
+	for {
+		oldPageRef := atomic.LoadUint64(&chunks[chunkIdx])
 
-	// Get or Alloc Page
-	pageOffset := atomic.LoadUint64(&chunks[chunkIdx])
-	if pageOffset == 0 {
-		// We still need to coordinate page allocation to avoid leaks/double-alloc,
-		// but we can use CAS on the chunk slot.
-		pRef, err := pa.pageArena.AllocSlice(adjacencyChunkSize)
+		// Allocate new page
+		newRef, err := pa.pageArena.AllocSlice(adjacencyChunkSize)
 		if err != nil {
 			return err
 		}
-		pDest := pa.pageArena.Get(pRef)
-		for i := range pDest {
-			pDest[i] = 0
-		}
-		if !atomic.CompareAndSwapUint64(&chunks[chunkIdx], 0, pRef.Offset) {
-			// Someone else won the race, return our slice to arena (if possible)
-			// or just accept the tiny leak (it's internal arena so it stays till Close)
-			pageOffset = atomic.LoadUint64(&chunks[chunkIdx])
+		newDest := pa.pageArena.Get(newRef)
+
+		if oldPageRef != 0 {
+			oldPage := pa.pageArena.Get(memory.SliceRef{Offset: oldPageRef, Len: adjacencyChunkSize, Cap: adjacencyChunkSize})
+			// Atomic copy of all entries to ensure consistency
+			for i := 0; i < adjacencyChunkSize; i++ {
+				newDest[i] = atomic.LoadUint64(&oldPage[i])
+			}
 		} else {
-			pageOffset = pRef.Offset
+			// New page, zero it
+			for i := 0; i < adjacencyChunkSize; i++ {
+				newDest[i] = 0
+			}
 		}
-	}
 
-	pageRef := memory.SliceRef{Offset: pageOffset, Len: adjacencyChunkSize, Cap: adjacencyChunkSize}
-	page := pa.pageArena.Get(pageRef)
-	if page == nil {
-		return errors.New("packed adjacency: failed to get page")
-	}
+		// Apply change to new page
+		newDest[offsetInPage] = packed
 
-	atomic.StoreUint64(&page[offsetInPage], packed)
-	return nil
+		// CAS update chunk pointer to the new page
+		if atomic.CompareAndSwapUint64(&chunks[chunkIdx], oldPageRef, newRef.Offset) {
+			metrics.PackedAdjacencyCoWTotal.Inc()
+			return nil
+		}
+		// Retry on CAS failure (concurrency)
+	}
 }
 
 // CASNeighbors performs an atomic Compare-And-Swap operation on a node's neighbor list.
@@ -430,7 +429,9 @@ func (pa *PackedAdjacency) IsOffHeap() bool {
 }
 
 func (pa *PackedAdjacency) Release() {
-	if pa.refCount.Add(-1) == 0 {
+	newRef := pa.refCount.Add(-1)
+	metrics.SlabRefCountDistribution.Observe(float64(newRef))
+	if newRef == 0 {
 		if pa.neighborArena != nil {
 			pa.neighborArena.Release()
 		}
@@ -444,7 +445,7 @@ func (pa *PackedAdjacency) Release() {
 	}
 }
 
-// Retain increments the reference count.
 func (pa *PackedAdjacency) Retain() {
-	pa.refCount.Add(1)
+	newRef := pa.refCount.Add(1)
+	metrics.SlabRefCountDistribution.Observe(float64(newRef))
 }

@@ -731,3 +731,69 @@ int cuda_pq_encode(
 }
 
 } // extern "C"
+
+// HNSW Neighbor Pruning Kernel (CUDA)
+__global__ void hnsw_prune_neighbors_kernel(
+    const uint32_t* candidateIds,
+    const float* candidateDists,
+    uint32_t* selectedIds,
+    uint32_t* selectedCount,
+    const float* allVectors,
+    int maxNeighbors,
+    int numCandidates,
+    int dim,
+    bool extendedHeuristic
+) {
+    if (blockIdx.x > 0 || threadIdx.x > 0) return;
+
+    int count = 0;
+    for (int i = 0; i < numCandidates && count < maxNeighbors; i++) {
+        uint32_t currId = candidateIds[i];
+        float currDist = candidateDists[i];
+        bool good = true;
+
+        for (int j = 0; j < count; j++) {
+            uint32_t selId = selectedIds[j];
+            
+            float distBetween = 0.0f;
+            const float* v1 = allVectors + (size_t)currId * dim;
+            const float* v2 = allVectors + (size_t)selId * dim;
+            
+            for (int k = 0; k < dim; k++) {
+                float d = v1[k] - v2[k];
+                distBetween += d * d;
+            }
+            distBetween = sqrtf(distBetween);
+
+            if (distBetween < currDist) {
+                good = false;
+                break;
+            }
+        }
+
+        if (good) {
+            selectedIds[count++] = currId;
+        }
+    }
+    *selectedCount = (uint32_t)count;
+}
+
+extern "C" {
+void launch_hnsw_prune_neighbors_kernel(
+    const uint32_t* candidateIds,
+    const float* candidateDists,
+    uint32_t* selectedIds,
+    uint32_t* selectedCount,
+    const float* allVectors,
+    int maxNeighbors,
+    int numCandidates,
+    int dim,
+    bool extendedHeuristic,
+    cudaStream_t stream
+) {
+    hnsw_prune_neighbors_kernel<<<1, 1, 0, stream>>>(
+        candidateIds, candidateDists, selectedIds, selectedCount, allVectors,
+        maxNeighbors, numCandidates, dim, extendedHeuristic
+    );
+}
+}

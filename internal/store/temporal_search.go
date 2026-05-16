@@ -15,6 +15,8 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 const (
@@ -188,17 +190,26 @@ func (c *TemporalResultCache) Set(key string, results []lbtypes.SearchResult, tt
 }
 
 type TemporalTree struct {
-	mu     sync.RWMutex
-	chunks []*temporalChunk
+	mu             sync.RWMutex
+	nodeArena      *memory.TypedArena[TemporalNode]
+	entryArena     *memory.TypedArena[TemporalEntry]
+	nodeBaseOffset uint64
+	nodeCount      atomic.Uint32
+	minTs          int64
+	maxTs          int64
+	
+	// Optional: Metadata for fast range skipping
+	chunks      []temporalChunkMetadata
 }
 
-type temporalChunk struct {
-	nodes []TemporalNode
+type temporalChunkMetadata struct {
 	minTs int64
 	maxTs int64
+	start uint32
+	end   uint32
 }
 
-const maxNodesPerChunk = 1024
+const nodesPerChunk = 1024
 
 // TemporalEntry represents a vector ID and its norm at a specific point in time.
 type TemporalEntry struct {
@@ -209,14 +220,30 @@ type TemporalEntry struct {
 // TemporalNode represents a set of vector IDs sharing a specific timestamp.
 type TemporalNode struct {
 	Timestamp int64
-	VectorIDs []uint64 // Deprecated: use Entries instead
-	Entries   []TemporalEntry
+	Offset    uint32 // Offset into entryArena
+	Len       uint32 // Number of entries for this timestamp
 }
 
-// NewTemporalTree creates a new TemporalTree instance.
-func NewTemporalTree() *TemporalTree {
+// NewTemporalTree creates a new TemporalTree instance with an optional arena.
+func NewTemporalTree(arena *memory.SlabArena) *TemporalTree {
+	if arena == nil {
+		arena = memory.NewSlabArena(4 * 1024 * 1024) // 4MB default
+	}
 	return &TemporalTree{
-		chunks: make([]*temporalChunk, 0),
+		nodeArena:  memory.NewTypedArena[TemporalNode](arena),
+		entryArena: memory.NewTypedArena[TemporalEntry](arena),
+		chunks:     make([]temporalChunkMetadata, 0),
+		minTs:      math.MaxInt64,
+		maxTs:      math.MinInt64,
+	}
+}
+
+func (tt *TemporalTree) Release() {
+	if tt.nodeArena != nil {
+		tt.nodeArena.Release()
+	}
+	if tt.entryArena != nil {
+		tt.entryArena.Release()
 	}
 }
 
@@ -225,70 +252,94 @@ func (tt *TemporalTree) Insert(timestamp int64, id uint64, norm float32) {
 	tt.mu.Lock()
 	defer tt.mu.Unlock()
 
-	if len(tt.chunks) == 0 {
-		tt.chunks = append(tt.chunks, &temporalChunk{
-			nodes: []TemporalNode{{Timestamp: timestamp, Entries: []TemporalEntry{{ID: id, Norm: norm}}}},
-			minTs: timestamp,
-			maxTs: timestamp,
-		})
+	entry := TemporalEntry{ID: id, Norm: norm}
+	
+	// Update global min/max
+	if timestamp < tt.minTs { tt.minTs = timestamp }
+	if timestamp > tt.maxTs { tt.maxTs = timestamp }
+
+	nodeCount := tt.nodeCount.Load()
+	
+	var nodes []TemporalNode
+	if nodeCount > 0 {
+		ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
+		nodes = tt.nodeArena.Get(ref)
+	}
+
+	idx := sort.Search(int(nodeCount), func(i int) bool {
+		return nodes[i].Timestamp >= timestamp
+	})
+
+	if idx < int(nodeCount) && nodes[idx].Timestamp == timestamp {
+		// Existing node: append to entryArena
+		oldOffset := nodes[idx].Offset
+		oldLen := nodes[idx].Len
+		
+		newRef, _ := tt.entryArena.AllocSlice(int(oldLen + 1))
+		newEntries := tt.entryArena.Get(newRef)
+		oldEntriesRef := memory.SliceRef{Offset: uint64(oldOffset), Len: oldLen, Cap: oldLen}
+		oldEntries := tt.entryArena.Get(oldEntriesRef)
+		
+		copy(newEntries, oldEntries)
+		newEntries[oldLen] = entry
+		
+		// Update existing node in place (it's already in the arena)
+		nodes[idx].Offset = uint32(newRef.Offset)
+		nodes[idx].Len = oldLen + 1
 		return
 	}
 
-	// 1. Find the target chunk
-	idx := sort.Search(len(tt.chunks), func(i int) bool {
-		return tt.chunks[i].maxTs >= timestamp
-	})
-
-	if idx == len(tt.chunks) {
-		idx = len(tt.chunks) - 1
+	// New node: must re-allocate entire node list to maintain contiguity in arena
+	newEntryRef, _ := tt.entryArena.AllocSlice(1)
+	tt.entryArena.Get(newEntryRef)[0] = entry
+	
+	newNode := TemporalNode{
+		Timestamp: timestamp,
+		Offset:    uint32(newEntryRef.Offset),
+		Len:       1,
 	}
 
-	chunk := tt.chunks[idx]
-	
-	// 2. Insert into chunk
-	nodeIdx := sort.Search(len(chunk.nodes), func(i int) bool {
-		return chunk.nodes[i].Timestamp >= timestamp
-	})
-
-	if nodeIdx < len(chunk.nodes) && chunk.nodes[nodeIdx].Timestamp == timestamp {
-		chunk.nodes[nodeIdx].Entries = append(chunk.nodes[nodeIdx].Entries, TemporalEntry{ID: id, Norm: norm})
+	// Re-allocate and copy all nodes
+	ref, _ := tt.nodeArena.AllocSlice(int(nodeCount + 1))
+	newNodes := tt.nodeArena.Get(ref)
+	if nodeCount > 0 {
+		copy(newNodes[:idx], nodes[:idx])
+		newNodes[idx] = newNode
+		copy(newNodes[idx+1:], nodes[idx:])
 	} else {
-		node := TemporalNode{
-			Timestamp: timestamp,
-			Entries: []TemporalEntry{{ID: id, Norm: norm}},
-		}
-		
-		if nodeIdx == len(chunk.nodes) {
-			chunk.nodes = append(chunk.nodes, node)
-		} else {
-			chunk.nodes = append(chunk.nodes, TemporalNode{})
-			copy(chunk.nodes[nodeIdx+1:], chunk.nodes[nodeIdx:])
-			chunk.nodes[nodeIdx] = node
-		}
-		
-		// Update chunk bounds
-		if timestamp < chunk.minTs {
-			chunk.minTs = timestamp
-		}
-		if timestamp > chunk.maxTs {
-			chunk.maxTs = timestamp
-		}
+		newNodes[0] = newNode
+	}
+	
+	tt.nodeBaseOffset = ref.Offset
+	tt.nodeCount.Add(1)
+	
+	metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
+	stats := tt.nodeArena.Slab().Stats()
+	metrics.TemporalTreeAllocatedBytesTotal.Set(float64(stats.TotalCapacity))
+	
+	if tt.nodeCount.Load()%nodesPerChunk == 0 {
+		tt.rebuildChunks()
+	}
+}
 
-		// 3. Split chunk if too large
-		if len(chunk.nodes) > maxNodesPerChunk {
-			mid := len(chunk.nodes) / 2
-			newChunk := &temporalChunk{
-				nodes: chunk.nodes[mid:],
-				minTs: chunk.nodes[mid].Timestamp,
-				maxTs: chunk.nodes[len(chunk.nodes)-1].Timestamp,
-			}
-			chunk.nodes = chunk.nodes[:mid]
-			chunk.maxTs = chunk.nodes[len(chunk.nodes)-1].Timestamp
-			
-			// Insert new chunk into tt.chunks
-			tt.chunks = append(tt.chunks, nil)
-			copy(tt.chunks[idx+2:], tt.chunks[idx+1:])
-			tt.chunks[idx+1] = newChunk
+func (tt *TemporalTree) rebuildChunks() {
+	count := tt.nodeCount.Load()
+	numChunks := (count + nodesPerChunk - 1) / nodesPerChunk
+	tt.chunks = make([]temporalChunkMetadata, numChunks)
+	
+	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: count, Cap: count}
+	nodes := tt.nodeArena.Get(ref)
+	
+	for i := uint32(0); i < numChunks; i++ {
+		start := i * nodesPerChunk
+		end := start + nodesPerChunk
+		if end > count { end = count }
+		
+		tt.chunks[i] = temporalChunkMetadata{
+			minTs: nodes[start].Timestamp,
+			maxTs: nodes[end-1].Timestamp,
+			start: start,
+			end:   end,
 		}
 	}
 }
@@ -309,38 +360,27 @@ func (tt *TemporalTree) GetRange(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	if len(tt.chunks) == 0 {
-		return nil
-	}
+	nodeCount := tt.nodeCount.Load()
+	if nodeCount == 0 { return nil }
 
-	startChunkIdx := sort.Search(len(tt.chunks), func(i int) bool {
-		return tt.chunks[i].maxTs >= start
+	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
+	nodes := tt.nodeArena.Get(ref)
+
+	startIdx := sort.Search(int(nodeCount), func(i int) bool {
+		return nodes[i].Timestamp >= start
 	})
 
 	var results []uint64
-	for i := startChunkIdx; i < len(tt.chunks); i++ {
-		chunk := tt.chunks[i]
-		if chunk.minTs > end {
-			break
-		}
+	for i := startIdx; i < int(nodeCount); i++ {
+		node := &nodes[i]
+		if node.Timestamp > end { break }
 		
-		nodeIdx := sort.Search(len(chunk.nodes), func(j int) bool {
-			return chunk.nodes[j].Timestamp >= start
-		})
+		metrics.TemporalQueryScannedNodesTotal.Add(1)
 		
-		for j := nodeIdx; j < len(chunk.nodes); j++ {
-			node := &chunk.nodes[j]
-			if node.Timestamp > end {
-				return results // Done with the whole range
-			}
-			// Use Entries if available, fallback to VectorIDs
-			if len(node.Entries) > 0 {
-				for _, e := range node.Entries {
-					results = append(results, e.ID)
-				}
-			} else {
-				results = append(results, node.VectorIDs...)
-			}
+		entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+		entries := tt.entryArena.Get(entryRef)
+		for _, e := range entries {
+			results = append(results, e.ID)
 		}
 	}
 	return results
@@ -351,41 +391,28 @@ func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	if len(tt.chunks) == 0 {
-		return nil
-	}
+	nodeCount := tt.nodeCount.Load()
+	if nodeCount == 0 { return nil }
 
-	// Find the end chunk
-	endChunkIdx := sort.Search(len(tt.chunks), func(i int) bool {
-		return tt.chunks[i].maxTs >= end
+	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
+	nodes := tt.nodeArena.Get(ref)
+
+	// Find the first node > end, then go backwards
+	idx := sort.Search(int(nodeCount), func(i int) bool {
+		return nodes[i].Timestamp > end
 	})
-	if endChunkIdx == len(tt.chunks) {
-		endChunkIdx = len(tt.chunks) - 1
-	}
 
 	var results []uint64
-	for i := endChunkIdx; i >= 0; i-- {
-		chunk := tt.chunks[i]
-		if chunk.maxTs < start {
-			break
-		}
+	for i := idx - 1; i >= 0; i-- {
+		node := &nodes[i]
+		if node.Timestamp < start { break }
 		
-		for j := len(chunk.nodes) - 1; j >= 0; j-- {
-			node := &chunk.nodes[j]
-			ts := node.Timestamp
-			if ts >= start && ts <= end {
-				if len(node.Entries) > 0 {
-					for x := len(node.Entries) - 1; x >= 0; x-- {
-						results = append(results, node.Entries[x].ID)
-					}
-				} else {
-					for x := len(node.VectorIDs) - 1; x >= 0; x-- {
-						results = append(results, node.VectorIDs[x])
-					}
-				}
-			} else if ts < start {
-				return results
-			}
+		metrics.TemporalQueryScannedNodesTotal.Add(1)
+		
+		entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+		entries := tt.entryArena.Get(entryRef)
+		for j := len(entries) - 1; j >= 0; j-- {
+			results = append(results, entries[j].ID)
 		}
 	}
 	return results
@@ -397,17 +424,16 @@ func (tt *TemporalTree) GetUniqueIDsInRange(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	if len(tt.chunks) == 0 {
-		return nil
-	}
+	nodeCount := tt.nodeCount.Load()
+	if nodeCount == 0 { return nil }
 
-	// Find the end chunk
-	endChunkIdx := sort.Search(len(tt.chunks), func(i int) bool {
-		return tt.chunks[i].maxTs >= end
+	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
+	nodes := tt.nodeArena.Get(ref)
+
+	// Find the end point
+	idx := sort.Search(int(nodeCount), func(i int) bool {
+		return nodes[i].Timestamp > end
 	})
-	if endChunkIdx == len(tt.chunks) {
-		endChunkIdx = len(tt.chunks) - 1
-	}
 
 	uniqueIDs := temporalIDMapPool.Get().(map[uint64]struct{})
 	defer func() {
@@ -416,35 +442,19 @@ func (tt *TemporalTree) GetUniqueIDsInRange(start, end int64) []uint64 {
 	}()
 
 	var results []uint64
-	
-	for i := endChunkIdx; i >= 0; i-- {
-		chunk := tt.chunks[i]
-		if chunk.maxTs < start {
-			break
-		}
+	for i := idx - 1; i >= 0; i-- {
+		node := &nodes[i]
+		if node.Timestamp < start { break }
 		
-		for j := len(chunk.nodes) - 1; j >= 0; j-- {
-			node := &chunk.nodes[j]
-			if node.Timestamp >= start && node.Timestamp <= end {
-				if len(node.Entries) > 0 {
-					for x := len(node.Entries) - 1; x >= 0; x-- {
-						id := node.Entries[x].ID
-						if _, seen := uniqueIDs[id]; !seen {
-							uniqueIDs[id] = struct{}{}
-							results = append(results, id)
-						}
-					}
-				} else {
-					for x := len(node.VectorIDs) - 1; x >= 0; x-- {
-						id := node.VectorIDs[x]
-						if _, seen := uniqueIDs[id]; !seen {
-							uniqueIDs[id] = struct{}{}
-							results = append(results, id)
-						}
-					}
-				}
-			} else if node.Timestamp < start {
-				return results
+		metrics.TemporalQueryScannedNodesTotal.Add(1)
+		
+		entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+		entries := tt.entryArena.Get(entryRef)
+		for j := len(entries) - 1; j >= 0; j-- {
+			id := entries[j].ID
+			if _, exists := uniqueIDs[id]; !exists {
+				results = append(results, id)
+				uniqueIDs[id] = struct{}{}
 			}
 		}
 	}
@@ -467,114 +477,87 @@ func (tt *TemporalTree) GetEarliest(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	if len(tt.chunks) == 0 {
-		return nil
-	}
+	nodeCount := tt.nodeCount.Load()
+	if nodeCount == 0 { return nil }
+
+	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
+	nodes := tt.nodeArena.Get(ref)
 
 	var results []uint64
 	remaining := n
-	for i := 0; i < len(tt.chunks) && remaining > 0; i++ {
-		chunk := tt.chunks[i]
-		count := len(chunk.nodes)
-		take := remaining
-		if take > count {
-			take = count
-		}
+	for i := 0; i < int(nodeCount) && remaining > 0; i++ {
+		node := &nodes[i]
+		metrics.TemporalQueryScannedNodesTotal.Add(1)
 		
-		for j := 0; j < take; j++ {
-			node := &chunk.nodes[j]
-			if len(node.Entries) > 0 {
-				for _, e := range node.Entries {
-					results = append(results, e.ID)
-				}
-			} else {
-				results = append(results, node.VectorIDs...)
-			}
+		entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+		entries := tt.entryArena.Get(entryRef)
+		for _, e := range entries {
+			results = append(results, e.ID)
+			remaining--
+			if remaining <= 0 { break }
 		}
-		remaining -= take
 	}
 	return results
 }
 
-// GetLatest returns the last n vector IDs added to the tree.
+// GetLatest returns the vector IDs from the last n timestamps.
 func (tt *TemporalTree) GetLatest(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	if len(tt.chunks) == 0 {
-		return nil
-	}
+	nodeCount := tt.nodeCount.Load()
+	if nodeCount == 0 { return nil }
+
+	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
+	nodes := tt.nodeArena.Get(ref)
 
 	var results []uint64
 	remaining := n
-	// Iterate backwards from the most recent chunk
-	for i := len(tt.chunks) - 1; i >= 0 && remaining > 0; i-- {
-		chunk := tt.chunks[i]
-		nodes := chunk.nodes
-		count := len(nodes)
-		take := remaining
-		if take > count {
-			take = count
-		}
+	for i := int(nodeCount) - 1; i >= 0 && remaining > 0; i-- {
+		node := &nodes[i]
+		metrics.TemporalQueryScannedNodesTotal.Add(1)
 		
-		for j := count - 1; j >= count-take; j-- {
-			node := &nodes[j]
-			if len(node.Entries) > 0 {
-				for x := len(node.Entries) - 1; x >= 0; x-- {
-					results = append(results, node.Entries[x].ID)
-				}
-			} else {
-				for x := len(node.VectorIDs) - 1; x >= 0; x-- {
-					results = append(results, node.VectorIDs[x])
-				}
-			}
+		entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+		entries := tt.entryArena.Get(entryRef)
+		for j := len(entries) - 1; j >= 0; j-- {
+			results = append(results, entries[j].ID)
+			remaining--
+			if remaining <= 0 { break }
 		}
-		remaining -= take
 	}
 	return results
 }
 
-// GetUniqueLatest returns the last n unique vector IDs added to the tree.
+// GetUniqueLatest returns the n most recent unique vector IDs.
 func (tt *TemporalTree) GetUniqueLatest(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	if len(tt.chunks) == 0 {
-		return nil
-	}
+	nodeCount := tt.nodeCount.Load()
+	if nodeCount == 0 { return nil }
 
-	uniqueIDs := make(map[uint64]struct{})
+	ref := memory.SliceRef{Offset: tt.nodeBaseOffset, Len: nodeCount, Cap: nodeCount}
+	nodes := tt.nodeArena.Get(ref)
+
+	uniqueIDs := temporalIDMapPool.Get().(map[uint64]struct{})
+	defer func() {
+		clear(uniqueIDs)
+		temporalIDMapPool.Put(uniqueIDs)
+	}()
+
 	var results []uint64
-	remaining := n
-	
-	for i := len(tt.chunks) - 1; i >= 0 && remaining > 0; i-- {
-		chunk := tt.chunks[i]
-		for j := len(chunk.nodes) - 1; j >= 0 && remaining > 0; j-- {
-			node := &chunk.nodes[j]
-			if len(node.Entries) > 0 {
-				for x := len(node.Entries) - 1; x >= 0; x-- {
-					id := node.Entries[x].ID
-					if _, seen := uniqueIDs[id]; !seen {
-						uniqueIDs[id] = struct{}{}
-						results = append(results, id)
-						remaining--
-						if remaining == 0 {
-							break
-						}
-					}
-				}
-			} else {
-				for x := len(node.VectorIDs) - 1; x >= 0; x-- {
-					id := node.VectorIDs[x]
-					if _, seen := uniqueIDs[id]; !seen {
-						uniqueIDs[id] = struct{}{}
-						results = append(results, id)
-						remaining--
-						if remaining == 0 {
-							break
-						}
-					}
-				}
+	for i := int(nodeCount) - 1; i >= 0 && len(results) < n; i-- {
+		node := &nodes[i]
+		metrics.TemporalQueryScannedNodesTotal.Add(1)
+		
+		entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+		entries := tt.entryArena.Get(entryRef)
+		for j := len(entries) - 1; j >= 0; j-- {
+			id := entries[j].ID
+			if _, exists := uniqueIDs[id]; !exists {
+				results = append(results, id)
+				uniqueIDs[id] = struct{}{}
+				if len(results) >= n { break }
 			}
 		}
 	}
@@ -583,13 +566,7 @@ func (tt *TemporalTree) GetUniqueLatest(n int) []uint64 {
 
 // Len returns the number of unique timestamps in the tree.
 func (tt *TemporalTree) Len() int {
-	tt.mu.RLock()
-	defer tt.mu.RUnlock()
-	total := 0
-	for _, c := range tt.chunks {
-		total += len(c.nodes)
-	}
-	return total
+	return int(tt.nodeCount.Load())
 }
 
 // NewTemporalIndex creates a new TemporalIndex instance.
@@ -602,7 +579,8 @@ func NewTemporalIndex(dimension int) *TemporalIndex {
 	for i := 0; i < TemporalShards; i++ {
 		ti.shards[i].data = make(map[uint64]*TemporalVector)
 	}
-	ti.temporalTree.Store(NewTemporalTree())
+	arena := memory.NewSlabArena(1024 * 1024)
+	ti.temporalTree.Store(NewTemporalTree(arena))
 	return ti
 }
 
@@ -874,8 +852,7 @@ func (ti *TemporalIndex) Prewarm(ctx context.Context) error {
 		tree.mu.RUnlock()
 		return nil
 	}
-	lastChunk := tree.chunks[len(tree.chunks)-1]
-	latestTs := lastChunk.nodes[len(lastChunk.nodes)-1].Timestamp
+	latestTs := tree.maxTs
 	tree.mu.RUnlock()
 
 	// 1. Latest results

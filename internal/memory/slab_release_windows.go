@@ -43,3 +43,9 @@ func ReleaseSlab(b []byte) error {
 
 	return nil
 }
+
+// AdviseHugePage hints the OS to use hugepages for the memory backing this slab.
+// No-op on Windows unless using specific Large Page APIs (which require privileges).
+func AdviseHugePage(b []byte) error {
+	return nil
+}

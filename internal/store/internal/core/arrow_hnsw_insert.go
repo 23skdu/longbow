@@ -297,6 +297,40 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 		vectorCache = make(map[uint32]any, len(candidates))
 	}
 
+
+	// Try GPU pruning first if enabled
+	if h.gpuEnabled && h.gpuIndex != nil && len(candidates) > 16 {
+		candIds := make([]uint32, len(candidates))
+		candDists := make([]float32, len(candidates))
+		for i, c := range candidates {
+			candIds[i] = uint32(c.ID)
+			candDists[i] = c.Dist
+		}
+		
+		selectedIds, err := h.pruneNeighborsGPU(candIds, candDists, m, data)
+		if err == nil {
+			// Convert back to types.Candidate
+			res := make([]types.Candidate, 0, len(selectedIds))
+			// We need distances to keep the Candidate structure consistent
+			// But for pruning results, we only care about IDs usually.
+			// However, HNSW might need them. 
+			// For simplicity, we find the original candidate for each ID.
+			candMap := make(map[uint32]float32)
+			for i := range candidates {
+				candMap[uint32(candidates[i].ID)] = candidates[i].Dist
+			}
+			
+			for _, id := range selectedIds {
+				res = append(res, types.Candidate{ID: id, Dist: candMap[id]})
+			}
+			
+			if ctx != nil {
+				ctx.scratchSelected = res
+			}
+			return res
+		}
+	}
+
 	for _, cand := range candidates {
 		if len(selected) >= m {
 			break

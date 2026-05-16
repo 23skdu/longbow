@@ -292,6 +292,14 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 	dists := make([]float32, len(pool))
 	h.computeDistances(ctx, data, nodeID, pool, dists)
 	
+	// Try GPU pruning if enabled
+	if h.gpuEnabled && h.gpuIndex != nil {
+		selected, err := h.pruneNeighborsGPU(pool, dists, maxConn, data)
+		if err == nil {
+			return selected
+		}
+	}
+
 	candidates := make([]types.Candidate, len(pool))
 	for i := 0; i < len(pool); i++ {
 		candidates[i] = types.Candidate{ID: pool[i], Dist: dists[i]}

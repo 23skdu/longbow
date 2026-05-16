@@ -344,12 +344,30 @@ class BenchmarkRunner:
                 self.server_pid = None
                 return False
 
-            # Check if port is listening
-            result = run_command(f"lsof -i :{port} 2>/dev/null | grep LISTEN", shell=True)
-            if result and result.returncode == 0:
-                # Additional wait for indexing workers to start
-                time.sleep(10)
-                return True
+            # Check if port is listening and server is READY via gRPC/HTTP health check
+            # Metrics port is configured as port + 6000 in start_server
+            metrics_port = port + 6000
+            ready_url = f"http://127.0.0.1:{metrics_port}/ready"
+            
+            # 1. First check if port is at least listening
+            lsof_res = run_command(f"lsof -i :{port} 2>/dev/null | grep LISTEN", shell=True)
+            if lsof_res and lsof_res.returncode == 0:
+                # 2. Then check the /ready endpoint
+                try:
+                    # Use curl for cross-platform compatibility without extra python deps
+                    ready_res = subprocess.run(
+                        ["curl", "-s", "-f", ready_url],
+                        capture_output=True,
+                        text=True,
+                        timeout=1
+                    )
+                    if ready_res.returncode == 0 and "OK" in ready_res.stdout:
+                        # Additional wait for indexing workers to settle
+                        time.sleep(2)
+                        return True
+                except Exception:
+                    pass
+            
             time.sleep(1)
 
         print(f"  WARNING: Server startup timeout on port {port}")

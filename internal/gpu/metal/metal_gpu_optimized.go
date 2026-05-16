@@ -1048,11 +1048,73 @@ func (idx *MetalIndexOptimized) SearchTurboQuant(vector []float32, k int, bitsPe
 }
 
 func (idx *MetalIndexOptimized) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index closed")
+	}
+
+	// For the optimized backend, we store the graph in unified memory buffers
+	// for direct access by Metal kernels.
+	idx.graphOffsets = offsets
+	idx.graphNeighbors = neighbors
+	idx.graphWeights = weights
+
 	return nil
 }
 
 func (idx *MetalIndexOptimized) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
-	return nil, nil, nil
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index closed")
+	}
+
+	if len(idx.graphOffsets) == 0 {
+		return nil, nil, fmt.Errorf("graph not initialized")
+	}
+
+	// BFS expansion (initially on CPU for stability, kernels to follow)
+	visited := make(map[uint32]float32)
+	for _, seed := range seeds {
+		visited[seed] = 1.0
+	}
+
+	currentFrontier := seeds
+	for d := 0; d < depth; d++ {
+		var nextFrontier []uint32
+		for _, nodeID := range currentFrontier {
+			if int(nodeID)+1 >= len(idx.graphOffsets) {
+				continue
+			}
+			start := idx.graphOffsets[nodeID]
+			end := idx.graphOffsets[nodeID+1]
+			
+			for neighborIdx := start; neighborIdx < end; neighborIdx++ {
+				neighbor := idx.graphNeighbors[neighborIdx]
+				if _, seen := visited[neighbor]; !seen {
+					score := visited[nodeID] * alpha
+					visited[neighbor] = score
+					nextFrontier = append(nextFrontier, neighbor)
+				}
+			}
+		}
+		if len(nextFrontier) == 0 {
+			break
+		}
+		currentFrontier = nextFrontier
+	}
+
+	outIDs := make([]uint32, 0, len(visited))
+	outScores := make([]float32, 0, len(visited))
+	for id, score := range visited {
+		outIDs = append(outIDs, id)
+		outScores = append(outScores, score)
+	}
+
+	return outIDs, outScores, nil
 }
 
 func (idx *MetalIndexOptimized) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {

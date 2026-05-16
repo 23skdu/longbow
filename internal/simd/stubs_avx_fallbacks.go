@@ -17,6 +17,7 @@ func cosineAVX2(a, b []float32) (float32, error)      { return cosineGeneric(a, 
 func cosineAVX512(a, b []float32) (float32, error)    { return cosineGeneric(a, b) }
 func dotAVX2(a, b []float32) (float32, error)         { return dotGeneric(a, b) }
 func dotAVX512(a, b []float32) (float32, error)       { return dotGeneric(a, b) }
+func brayCurtisAVX2(a, b []float32) (float32, error)   { return BrayCurtisDistanceFloat32(a, b) }
 
 func euclidean128AVX2(a, b []float32) (float32, error)   { return euclideanGeneric(a, b) }
 func euclidean384AVX2(a, b []float32) (float32, error)  { return euclideanGeneric(a, b) }

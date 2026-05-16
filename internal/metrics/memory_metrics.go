@@ -170,3 +170,4 @@ var (
 		[]string{"size", "result"}, // result: "hit", "miss"
 	)
 )
+

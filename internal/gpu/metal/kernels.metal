@@ -430,39 +430,50 @@ kernel void compute_tq_distances(
     constant uint& pow2 [[buffer(4)]],
     constant uint& bitsPerAngle [[buffer(5)]],
     constant uint& numVectors [[buffer(6)]],
+    device const float* trigTable [[buffer(7)]],
     uint gid [[thread_position_in_grid]])
 {
     if (gid >= numVectors) return;
     
+    // TurboQuant format: [Radius (4B)][Packed Angles (Variable)][QJL Bits (Variable)]
     uint angleCount = pow2 - 1;
     uint angleBytes = (angleCount * bitsPerAngle + 7) / 8;
     uint bitBytes = (pow2 + 7) / 8;
-    uint stride = 4 + angleBytes + bitBytes;
+    uint stride = (4 + angleBytes + bitBytes + 3) & ~3;
     
     device const uchar* data = tqData + (gid * stride);
     float radius = *(device const float*)data;
     device const uchar* packedAngles = data + 4;
     device const uchar* qjlBits = data + 4 + angleBytes;
     
-    float recon[256]; 
+    float invMaxVal = 1.0f / ((1 << bitsPerAngle) - 1);
+    float correctionFactor = radius / sqrt((float)pow2) * 0.1f;
+    
+    // Use a small local array for folding. Max dimension supported in one pass is 256.
+    float work[256];
     if (pow2 > 256) {
-        distances[gid] = INFINITY;
+        distances[gid] = 1e38f;
         return;
     }
     
-    recon[0] = radius;
-    uint currentLevelSize = 1;
-    uint angleOffset = angleCount;
+    float normSq = 0.0f;
+    for (uint i = 0; i < pow2; i++) {
+        float q_i = (i < dim) ? query[i] : 0.0f;
+        float c_i = ((qjlBits[i / 8] >> (i % 8)) & 1) ? correctionFactor : -0.1f;
+        float x_prime = q_i - c_i;
+        work[i] = x_prime;
+        normSq += x_prime * x_prime;
+    }
     
-    float invMaxVal = 1.0f / ((1 << bitsPerAngle) - 1);
+    // Folding bottom-up: converts query-space to polar-space coefficients
+    uint currentLevelSize = pow2;
+    uint angleOffset = 0;
     
-    while (currentLevelSize < pow2) {
-        angleOffset -= currentLevelSize;
-        for (int i = (int)currentLevelSize - 1; i >= 0; i--) {
-            float r = recon[i];
+    while (currentLevelSize > 1) {
+        uint nextLevelSize = currentLevelSize / 2;
+        for (uint i = 0; i < nextLevelSize; i++) {
             uint bitStart = (angleOffset + i) * bitsPerAngle;
             uint q = 0;
-            
             for (uint k = 0; k < bitsPerAngle; k++) {
                 uint bitIdx = bitStart + k;
                 if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1) {
@@ -470,30 +481,21 @@ kernel void compute_tq_distances(
                 }
             }
             
-            float theta = (float(q) * invMaxVal) * 2.0f * M_PI_F - M_PI_F;
-            float s = sin(theta);
-            float c = cos(theta);
-            recon[2*i] = r * c;
-            recon[2*i+1] = r * s;
+            // Look up sin/cos from table
+            uint q_mapped = (q * 255) / ((1 << bitsPerAngle) - 1);
+            float c = trigTable[2 * q_mapped];
+            float s = trigTable[2 * q_mapped + 1];
+            
+            // Reverse polar step: fold two components into one
+            work[i] = work[2*i] * c + work[2*i+1] * s;
         }
-        currentLevelSize *= 2;
+        angleOffset += nextLevelSize;
+        currentLevelSize = nextLevelSize;
     }
     
-    float sum = 0.0f;
-    float correctionFactor = radius / sqrt((float)pow2) * 0.1f;
-    
-    for (uint i = 0; i < dim && i < pow2; i++) {
-        float val = recon[i];
-        if ((qjlBits[i / 8] >> (i % 8)) & 1) {
-            val += correctionFactor;
-        } else {
-            val -= 0.1f;
-        }
-        float diff = query[i] - val;
-        sum += diff * diff;
-    }
-    
-    distances[gid] = sum; // Use squared L2 for HNSW
+    // Squared L2 Distance = ||query - corrections||^2 + radius^2 - 2 * radius * folded_query[0]
+    float distSq = normSq + radius * radius - 2.0f * radius * work[0];
+    distances[gid] = sqrt(max(0.0f, distSq));
 }
 
 // ===========================================================================
@@ -737,44 +739,64 @@ kernel void hnsw_prune_neighbors(
     constant uint& numCandidates [[buffer(6)]],
     constant uint& dim [[buffer(7)]],
     constant bool& extendedHeuristic [[buffer(8)]],
-    uint gid [[thread_position_in_grid]]
+    uint tid [[thread_index_in_threadgroup]],
+    uint gid [[threadgroup_position_in_grid]]
 ) {
-    // This kernel is intended to be run with 1 thread (or a small workgroup) per pruning task
-    // For simplicity in this v1, we assume 1 thread per prune task.
-    if (gid > 0) return; 
+    // One threadgroup per pruning task. Currently we assume one task at a time for simplicity.
+    if (gid > 0) return;
 
-    uint count = 0;
-    for (uint i = 0; i < numCandidates && count < maxNeighbors; i++) {
+    threadgroup uint sharedSelectedIds[256];
+    threadgroup uint sharedCount;
+    threadgroup bool sharedDiverse;
+
+    if (tid == 0) sharedCount = 0;
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    for (uint i = 0; i < numCandidates; i++) {
+        if (sharedCount >= maxNeighbors) break;
+
         uint currId = candidateIds[i];
         float currDist = candidateDists[i];
-        bool good = true;
 
-        // Heuristic: Is currId closer to the entry point than to any already selected neighbor?
-        for (uint j = 0; j < count; j++) {
-            uint selId = selectedIds[j];
+        if (tid == 0) sharedDiverse = true;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        for (uint j = 0; j < sharedCount; j++) {
+            uint selId = sharedSelectedIds[j];
             
-            // Compute distance between currId and selId
-            float distBetween = 0.0f;
+            float partialDist = 0.0f;
             uint off1 = currId * dim;
             uint off2 = selId * dim;
-            
-            for (uint k = 0; k < dim; k++) {
+            // Parallel distance computation across threadgroup
+            for (uint k = tid; k < dim; k += 32) {
                 float d = allVectors[off1 + k] - allVectors[off2 + k];
-                distBetween += d * d;
+                partialDist += d * d;
             }
-            distBetween = sqrt(distBetween);
-
-            if (distBetween < currDist) {
-                good = false;
-                break;
+            
+            // Warp-level reduction
+            float distSum = simd_sum(partialDist);
+            
+            if (tid == 0) {
+                if (sqrt(distSum) < currDist) {
+                    sharedDiverse = false;
+                }
             }
+            threadgroup_barrier(mem_flags::mem_threadgroup);
+            if (!sharedDiverse) break;
         }
 
-        if (good) {
-            selectedIds[count++] = currId;
+        if (tid == 0 && sharedDiverse) {
+            sharedSelectedIds[sharedCount++] = currId;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+    }
+
+    if (tid == 0) {
+        *selectedCount = sharedCount;
+        for (uint i = 0; i < sharedCount; i++) {
+            selectedIds[i] = sharedSelectedIds[i];
         }
     }
-    *selectedCount = count;
 }
 
 kernel void hnsw_greedy_search(
@@ -812,13 +834,142 @@ kernel void hnsw_greedy_search(
 
         for (uint i = tid; i < numNeighbors; i += 32) {
             uint neighborId = graphNeighbors[start + i];
-            float dist = 0.0f;
+            float distSq = 0.0f;
             uint off1 = neighborId * dim;
             for (uint k = 0; k < dim; k++) {
                 float d = query[k] - vectors[off1 + k];
-                dist += d * d;
+                distSq += d * d;
             }
-            dist = sqrt(dist);
+            float dist = sqrt(distSq);
+
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestId = neighborId;
+            }
+        }
+
+        scratchDists[tid] = bestDist;
+        scratchIds[tid] = bestId;
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        if (tid == 0) {
+            for (uint i = 1; i < 32; i++) {
+                if (scratchDists[i] < bestDist) {
+                    bestDist = scratchDists[i];
+                    bestId = scratchIds[i];
+                }
+            }
+            if (bestDist < currDist) {
+                currDist = bestDist;
+                currId = bestId;
+                sharedImproved = true;
+            }
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+        improved = sharedImproved;
+    }
+
+    if (tid == 0) {
+        *entryPoint = currId;
+        *entryDist = currDist;
+    }
+}
+
+kernel void hnsw_greedy_search_tq(
+    device const float* query [[buffer(0)]],
+    device const uchar* tqData [[buffer(1)]],
+    device const uint* graphOffsets [[buffer(2)]],
+    device const uint* graphNeighbors [[buffer(3)]],
+    device uint* entryPoint [[buffer(4)]],
+    device float* entryDist [[buffer(5)]],
+    constant uint& dim [[buffer(6)]],
+    constant uint& pow2 [[buffer(7)]],
+    constant uint& bitsPerAngle [[buffer(8)]],
+    device const float* trigTable [[buffer(9)]],
+    uint gid [[thread_position_in_grid]],
+    uint tid [[thread_index_in_threadgroup]]
+) {
+    if (gid >= 1) return;
+
+    threadgroup float scratchDists[32];
+    threadgroup uint scratchIds[32];
+    threadgroup bool sharedImproved;
+    
+    threadgroup_barrier(mem_flags::mem_threadgroup);
+
+    uint currId = *entryPoint;
+    float currDist = *entryDist;
+    bool improved = true;
+
+    // Stride for TQ data
+    uint angleCount = pow2 - 1;
+    uint angleBytes = (angleCount * bitsPerAngle + 7) / 8;
+    uint bitBytes = (pow2 + 7) / 8;
+    uint stride = (4 + angleBytes + bitBytes + 3) & ~3;
+    float invMaxVal = 1.0f / ((1 << bitsPerAngle) - 1);
+
+    while (improved) {
+        if (tid == 0) {
+            for (uint i = 0; i < 32; i++) {
+                scratchDists[i] = 1e38f;
+                scratchIds[i] = 0xFFFFFFFF;
+            }
+            sharedImproved = false;
+        }
+        threadgroup_barrier(mem_flags::mem_threadgroup);
+
+        uint start = graphOffsets[currId];
+        uint end = graphOffsets[currId + 1];
+        uint numNeighbors = end - start;
+
+        uint bestId = currId;
+        float bestDist = currDist;
+
+        for (uint i = tid; i < numNeighbors; i += 32) {
+            uint neighborId = graphNeighbors[start + i];
+            
+            // Fused TQ Distance logic
+            device const uchar* data = tqData + (neighborId * stride);
+            float radius = *(device const float*)data;
+            device const uchar* packedAngles = data + 4;
+            device const uchar* qjlBits = data + 4 + angleBytes;
+            
+            float correctionFactor = radius / sqrt((float)pow2) * 0.1f;
+            float normSq = 0.0f;
+            float work[256]; // Note: stack usage per thread. Limit to 256.
+            if (pow2 > 256) return; // Safety
+
+            for (uint k = 0; k < pow2; k++) {
+                float q_k = (k < dim) ? query[k] : 0.0f;
+                float c_k = ((qjlBits[k / 8] >> (k % 8)) & 1) ? correctionFactor : -0.1f;
+                float x_prime = q_k - c_k;
+                work[k] = x_prime;
+                normSq += x_prime * x_prime;
+            }
+
+            uint currentLevelSize = pow2;
+            uint angleOffset = 0;
+            while (currentLevelSize > 1) {
+                uint nextLevelSize = currentLevelSize / 2;
+                for (uint k = 0; k < nextLevelSize; k++) {
+                    uint bitStart = (angleOffset + k) * bitsPerAngle;
+                    uint q = 0;
+                    for (uint b = 0; b < bitsPerAngle; b++) {
+                        uint bitIdx = bitStart + b;
+                        if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1) q |= (1 << b);
+                    }
+                    
+                    uint q_mapped = (q * 255) / ((1 << bitsPerAngle) - 1);
+                    float c = trigTable[2 * q_mapped];
+                    float s = trigTable[2 * q_mapped + 1];
+                    work[k] = work[2*k] * c + work[2*k+1] * s;
+                }
+                angleOffset += nextLevelSize;
+                currentLevelSize = nextLevelSize;
+            }
+
+            float distSq = normSq + radius * radius - 2.0f * radius * work[0];
+            float dist = sqrt(max(0.0f, distSq));
 
             if (dist < bestDist) {
                 bestDist = dist;

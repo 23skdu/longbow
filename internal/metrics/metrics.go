@@ -548,6 +548,31 @@ var (
 		},
 	)
 
+	// GPU Ingestion Metrics
+	GPUIngestKernelDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_gpu_ingest_kernel_duration_seconds",
+			Help:    "Duration of GPU-accelerated ingestion kernels",
+			Buckets: []float64{0.0001, 0.001, 0.01, 0.1, 1},
+		},
+	)
+
+	GPUNeighborPruneOpsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_neighbor_prune_ops_total",
+			Help: "Total number of GPU neighbor prune operations",
+		},
+	)
+
+	// TurboQuant Metrics
+	TurboQuantDequantizeLatencySeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_search_dequantize_latency_seconds",
+			Help:    "Latency of TurboQuant dequantization during search",
+			Buckets: []float64{0.0001, 0.001, 0.01, 0.1, 1},
+		},
+	)
+
 	// Temporal Tree Metrics
 	TemporalTreeCacheHitRatio = promauto.NewGauge(
 		prometheus.GaugeOpts{
@@ -575,10 +600,10 @@ var (
 		},
 	)
 
-	SlabHugePageCount = promauto.NewGauge(
-		prometheus.GaugeOpts{
+	SlabHugePageCount = promauto.NewCounter(
+		prometheus.CounterOpts{
 			Name: "longbow_slab_hugepage_count",
-			Help: "Number of slabs successfully advised for hugepages",
+			Help: "Total slab allocations successfully backed by transparent hugepages via madvise(MADV_HUGEPAGE)",
 		},
 	)
 

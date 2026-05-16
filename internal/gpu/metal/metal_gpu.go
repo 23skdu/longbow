@@ -1477,6 +1477,13 @@ func (idx *MetalIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights
 	return nil
 }
 
+func (idx *MetalIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	// Standard MetalIndex doesn't support GPU-side greedy search yet, fallback to CPU handled by caller
+	return entryPoint, entryDist, fmt.Errorf("SearchGreedy not implemented for standard MetalIndex")
+}
+
+
+
 func (idx *MetalIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()

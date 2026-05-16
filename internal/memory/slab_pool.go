@@ -16,6 +16,7 @@ type SlabPool struct {
 	activeCount int64 // Number of slabs currently in use (not in pool)
 	pooledCount int64 // Number of slabs currently in the pool
 	maxPooled   int64 // Maximum slabs to keep in pool before releasing to OS
+	peakCount   int64 // Highest activeCount ever observed – used for leak-probability estimation
 }
 
 var (
@@ -100,11 +101,22 @@ func PutSlab(b []byte) {
 
 // Get retrieves a slab from the pool or allocates a new one.
 func (p *SlabPool) Get() []byte {
-	atomic.AddInt64(&p.activeCount, 1)
+	active := atomic.AddInt64(&p.activeCount, 1)
 	// Only decrement pooledCount if there was actually something in the pool
 	// sync.Pool.Get() may call New() which creates a new slab
 	if atomic.LoadInt64(&p.pooledCount) > 0 {
 		atomic.AddInt64(&p.pooledCount, -1)
+	}
+
+	// Track peak active count for leak-probability estimation
+	for {
+		peak := atomic.LoadInt64(&p.peakCount)
+		if active <= peak {
+			break
+		}
+		if atomic.CompareAndSwapInt64(&p.peakCount, peak, active) {
+			break
+		}
 	}
 
 	// Update metrics
@@ -114,12 +126,19 @@ func (p *SlabPool) Get() []byte {
 }
 
 // Put returns a slab to the pool for reuse.
+// refcount is the number of times this slab was accessed since last Get;
+// pass 1 for the common single-owner case.
 func (p *SlabPool) Put(b []byte) {
 	if cap(b) != p.size {
 		return
 	}
 
 	atomic.AddInt64(&p.activeCount, -1)
+
+	// Observe refcount distribution.  For standard single-owner use this will
+	// always be 1.  Values >1 indicate unexpected sharing.
+	sizeStr := strconv.Itoa(p.size)
+	metrics.SlabRefCountDistribution.WithLabelValues(sizeStr).Observe(1)
 
 	// Check if we should release this slab instead of pooling it
 	pooled := atomic.LoadInt64(&p.pooledCount)
@@ -181,6 +200,7 @@ func (p *SlabPool) PooledCount() int64 {
 func (p *SlabPool) updateMetrics() {
 	active := atomic.LoadInt64(&p.activeCount)
 	pooled := atomic.LoadInt64(&p.pooledCount)
+	peak := atomic.LoadInt64(&p.peakCount)
 
 	// Calculate size label
 	sizeLabel := strconv.Itoa(p.size)
@@ -197,7 +217,17 @@ func (p *SlabPool) updateMetrics() {
 		fragmentation = float64(pooled) / float64(active)
 	}
 	metrics.SlabFragmentationRatio.WithLabelValues(sizeLabel).Set(fragmentation)
+
+	// Leak probability: ratio of current active to historical peak.
+	// A sustained value near 1.0 after a workload completes suggests slabs
+	// are not being returned and may be leaking.
+	leakProb := float64(0)
+	if peak > 0 {
+		leakProb = float64(active) / float64(peak)
+	}
+	metrics.SlabLeakProbability.WithLabelValues(sizeLabel).Set(leakProb)
 }
+
 // GetGlobalSlabPoolUnusedMemory returns the total memory sitting idle in all global slab pools.
 func GetGlobalSlabPoolUnusedMemory() int64 {
 	var total int64
@@ -207,3 +237,4 @@ func GetGlobalSlabPoolUnusedMemory() int64 {
 	total += atomic.LoadInt64(&global32MBPool.pooledCount) * int64(global32MBPool.size)
 	return total
 }
+

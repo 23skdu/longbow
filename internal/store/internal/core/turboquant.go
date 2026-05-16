@@ -267,7 +267,8 @@ func PackedSize(dims int, bitsPerAngle int) int {
 	p2 := int(1 << uint(math.Ceil(math.Log2(float64(dims)))))
 	angleBytes := ((p2-1)*bitsPerAngle + 7) / 8
 	bitBytes := (p2 + 7) / 8
-	return 4 + angleBytes + bitBytes
+	size := 4 + angleBytes + bitBytes
+	return (size + 3) &^ 3 // Pad to 4 bytes for GPU alignment
 }
 
 // PackedSize returns the stride needed for this encoder's configuration.

@@ -50,7 +50,7 @@ func movePages(pid int, pages []unsafe.Pointer, nodes []int, status []int, flags
 	_, _, e1 := unix.Syscall6(
 		unix.SYS_MOVE_PAGES,
 		uintptr(pid),
-		uintptr(len(pages)),
+		uintptr(len(pages)), // #nosec G115
 		pPages,
 		pNodes,
 		pStatus,

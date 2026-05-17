@@ -273,6 +273,46 @@ func TestBM25InvertedIndexLimit(t *testing.T) {
 	}
 }
 
+func TestBlockMaxWANDCorrectness(t *testing.T) {
+	idx := NewBM25InvertedIndex(DefaultBM25Config())
+
+	// Add enough documents to span across blocks (blockSize is 64)
+	for i := 1; i <= 200; i++ {
+		text := "common term"
+		if i%10 == 0 {
+			text += " rare term"
+		}
+		if i%50 == 0 {
+			text += " unique term"
+		}
+		idx.Add(VectorID(i), text)
+	}
+
+	// Test various queries
+	queries := []string{
+		"common",
+		"rare",
+		"unique",
+		"common rare",
+		"rare unique",
+		"common rare unique",
+	}
+
+	for _, q := range queries {
+		results := idx.SearchBM25(q, 10, nil, nil)
+		if len(results) == 0 {
+			t.Errorf("expected results for query %q, got 0", q)
+		}
+		
+		// Ensure scores are in descending order
+		for i := 1; i < len(results); i++ {
+			if results[i].Score > results[i-1].Score {
+				t.Errorf("results not correctly sorted for query %q at index %d: %f > %f", q, i, results[i].Score, results[i-1].Score)
+			}
+		}
+	}
+}
+
 // =============================================================================
 // Benchmarks
 // =============================================================================

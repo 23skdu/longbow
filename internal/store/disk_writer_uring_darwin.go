@@ -2,22 +2,13 @@
 
 package store
 
-/*
-#include <fcntl.h>
-#include <unistd.h>
-#include <errno.h>
-
-// Helper to set F_NOCACHE on macOS (Direct I/O equivalent)
-int set_nocache(int fd) {
-    return fcntl(fd, F_NOCACHE, 1);
-}
-*/
-import "C"
 import (
 	"fmt"
 	"os"
 	"path/filepath"
 	"sync"
+
+	"golang.org/x/sys/unix"
 )
 
 // DiskWriterUring is the macOS implementation using Direct I/O (F_NOCACHE)
@@ -50,9 +41,10 @@ func NewDiskWriterUring(path string, bufferSize int, maxBuffers int) (*DiskWrite
 	}
 
 	// Set F_NOCACHE for Direct I/O behavior
-	if C.set_nocache(C.int(f.Fd())) == -1 {
+	_, fcntlErr := unix.FcntlInt(f.Fd(), unix.F_NOCACHE, 1)
+	if fcntlErr != nil {
 		// Fallback if F_NOCACHE fails, but log it
-		fmt.Printf("Warning: failed to set F_NOCACHE on %s\n", path)
+		fmt.Printf("Warning: failed to set F_NOCACHE on %s: %v\n", path, fcntlErr)
 	}
 
 	d := &DiskWriterUring{

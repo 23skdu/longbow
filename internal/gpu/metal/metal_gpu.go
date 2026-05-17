@@ -853,6 +853,41 @@ func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
 	return nil
 }
 
+// Heal re-initializes the global Metal context and all indices' pipelines on resource exhaustion or panics
+func (m *MetalIndex) Heal() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	libData, err := metalFS.ReadFile("kernels.metallib")
+	if err != nil {
+		return fmt.Errorf("failed to read metal library for healing: %w", err)
+	}
+
+	if err := ResetGlobalContext(libData); err != nil {
+		return fmt.Errorf("failed to reset global context for healing: %w", err)
+	}
+
+	ctx := GetContext()
+	m.handle.device = ctx.GetDevice()
+	m.handle.commandQueue = ctx.GetCommandQueue()
+
+	// Re-load all compute pipelines
+	m.handle.pqPipeline, _ = ctx.GetPipelineState("compute_pq_distances")
+	m.handle.assignPipeline, _ = ctx.GetPipelineState("assign_to_clusters")
+	m.handle.fusedGraphPipeline, _ = ctx.GetPipelineState("graph_rag_fused")
+	m.handle.l2DistancePipeline, _ = ctx.GetPipelineState("vector_distance_l2")
+	m.handle.ipDistancePipeline, _ = ctx.GetPipelineState("vector_distance_ip")
+	m.handle.quantizeSQ8Pipeline, _ = ctx.GetPipelineState("quantize_sq8")
+	m.handle.sigmoidPipeline, _ = ctx.GetPipelineState("sigmoid_f32")
+	m.handle.haversinePipeline, _ = ctx.GetPipelineState("haversine_batch")
+	m.handle.normPipeline, _ = ctx.GetPipelineState("norm_batch_f32")
+	m.handle.sumCentroidsPipeline, _ = ctx.GetPipelineState("sum_centroids")
+	m.handle.finalizeCentroidsPipeline, _ = ctx.GetPipelineState("finalize_centroids")
+	m.handle.prunePipeline, _ = ctx.GetPipelineState("hnsw_prune_neighbors")
+
+	return nil
+}
+
 type MetalIndex struct {
 	handle     *C.MetalIndexHandle
 	dim        int
@@ -1070,13 +1105,27 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
 		(*C.float)(unsafe.Pointer(&resultDistances[0])),
 	)
+	
+	if ret != 0 {
+		// Watchdog: attempt self-healing recovery and retry
+		if healErr := idx.Heal(); healErr == nil {
+			ret = C.metal_search(
+				idx.handle,
+				(*C.float)(unsafe.Pointer(&vector[0])),
+				C.int(k),
+				(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
+				(*C.float)(unsafe.Pointer(&resultDistances[0])),
+			)
+		}
+	}
+	
 	duration := time.Since(start)
 
 	if ret != 0 {
 		return nil, nil, &gputypes.GPUComputeError{
 			Operation: "search",
 			DeviceID:  idx.deviceInfo.DeviceID,
-			Cause:     fmt.Errorf("Metal search failed"),
+			Cause:     fmt.Errorf("Metal search failed after self-healing retry"),
 		}
 	}
 

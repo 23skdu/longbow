@@ -155,7 +155,7 @@ def main():
             # Ingest random data
             data = pd.DataFrame({
                 "id": [str(i) for i in range(args.rows)],
-                "vector": [np.random.randn(args.dim).astype(np.float32).tolist() for _ in range(args.rows)],
+                "vector": [np.random.randn(args.dim).astype(np.float32) for _ in range(args.rows)],
                 "metadata": [f"Metadata value {i}" for i in range(args.rows)]
             })
             client.insert(args.dataset, data)
@@ -208,7 +208,7 @@ def main():
             except:
                 pass
                 
-            query_vec = np.random.randn(dim).astype(np.float32).tolist()
+            query_vec = np.random.randn(dim).astype(np.float32)
             
             kwargs = {}
             if args.text_query:
@@ -361,7 +361,7 @@ def run_validation(client):
     print_info("Ingesting 100 benchmark rows...")
     data = pd.DataFrame({
         "id": [str(i) for i in range(100)],
-        "vector": [np.random.randn(dim).astype(np.float32).tolist() for _ in range(100)],
+        "vector": [np.random.randn(dim).astype(np.float32) for _ in range(100)],
         "metadata": [f"Validation point {i}" for i in range(100)]
     })
     client.insert(dataset, data)

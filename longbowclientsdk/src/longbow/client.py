@@ -578,8 +578,13 @@ class LongbowClient:
         self.delete(dataset)
 
     def drop_dataset(self, dataset: str):
-        """Drop (delete) an entire dataset. Alias for delete_namespace."""
-        self.delete_namespace(dataset)
+        """Drop (delete) an entire dataset."""
+        if self._meta_client is None:
+            self.connect()
+        req = {"dataset": dataset}
+        action_body = json.dumps(req).encode("utf-8")
+        action = flight.Action("delete-dataset", action_body)
+        list(self._meta_client.do_action(action, options=self._get_call_options()))
 
     def snapshot(self):
         """Trigger a manual snapshot of the database."""

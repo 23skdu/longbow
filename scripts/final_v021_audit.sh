@@ -1,10 +1,10 @@
 #!/bin/bash
-# scripts/final_v025_audit.sh
+# scripts/final_v021_audit.sh
 
 # User-requested parameters
 DTYPES="float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant2,turboquant4,turboquant8"
-DIMS="128,384"
-COUNTS="10000,25000,100000,250000"
+DIMS="128,384,768,1024,3072"
+COUNTS="10000,50000,100000,250000"
 MAX_MEM=19327352832 # 18 GB
 
 # Ensure binaries are built and directories exist
@@ -87,23 +87,22 @@ echo "Syncing remote results..."
 rsync -avz ancalagon:REPOS/longbow/data/perf_logs/ data/perf_logs/
 
 echo "Collecting all results..."
-python3 scripts/aggregate_results.py --dir data/perf_logs --out docs/performance_matrix_v025.md
+python3 scripts/aggregate_results.py --dir data/perf_logs --out docs/performance_matrix_v021.md
 
 echo "Merging results into docs/performance.md..."
 python3 -c "
-with open('docs/performance_matrix_v025.md') as f:
+with open('docs/performance_matrix_v021.md') as f:
     new_data = f.read()
 # Strip the title from the generated report if present
-if new_data.startswith('# Longbow v0.2.5 Performance Matrix'):
-    new_data = new_data[len('# Longbow v0.2.5 Performance Matrix'):].strip()
+if new_data.startswith('# Longbow v0.2.1 Performance Matrix'):
+    new_data = new_data[len('# Longbow v0.2.1 Performance Matrix'):].strip()
 with open('docs/performance.md') as f:
     old_data = f.read()
 title = '# Longbow Performance Benchmarks\n\n'
 if old_data.startswith(title):
-    merged = title + '## v0.2.5 Final Performance Validation (2026-05-16)\n\n' + new_data + '\n\n' + old_data[len(title):]
+    merged = title + '## v0.2.1 Final Performance Validation (2026-05-16)\n\n' + new_data + '\n\n' + old_data[len(title):]
 else:
-    merged = '## v0.2.5 Final Performance Validation (2026-05-16)\n\n' + new_data + '\n\n' + old_data
+    merged = '## v0.2.1 Final Performance Validation (2026-05-16)\n\n' + new_data + '\n\n' + old_data
 with open('docs/performance.md', 'w') as f:
     f.write(merged)
 "
-

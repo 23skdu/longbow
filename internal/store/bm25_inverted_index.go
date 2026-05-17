@@ -6,7 +6,6 @@ import (
 	"strings"
 	"sync/atomic"
  
-	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/core"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
@@ -306,8 +305,6 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 		shardTerms[shardIdx] = append(shardTerms[shardIdx], term)
 	}
  
-	// docScores: docID -> accumulated BM25 score
-	docScores := make(map[VectorID]float32)
 	// Track which docs we need lengths for
 	docSet := make(map[VectorID]struct{})
 
@@ -378,54 +375,185 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 	}
 	idx.GetDocLengthsBatch(docIDs, docLengths)
  
-	// Calculate BM25 scores in batch using SIMD
+	// Calculate BM25 scores in batch using Block-Max WAND (Weak AND)
 	avgDL := float32(idx.scorer.AvgDocLength())
 	k1 := float32(idx.config.K1)
 	b := float32(idx.config.B)
  
+	scoreSingle := func(tf int, docLen int, avgDL, idf, k1, b float32) float32 {
+		tfF := float32(tf)
+		docLenF := float32(docLen)
+		numerator := idf * tfF * (k1 + 1)
+		denominator := tfF + k1*(1-b+b*(docLenF/avgDL))
+		return numerator / denominator
+	}
+
+	// Active pointers
+	type termPointer struct {
+		term           string
+		pl             *BM25PostingList
+		pos            int
+		maxScore       float32
+		blockMaxScores []float32
+		blockSize      int
+	}
+
+	pointers := make([]*termPointer, 0, len(termDocTF))
 	for term, pl := range termDocTF {
 		df := termDF[term]
 		idf := float32(idx.scorer.IDF(df))
- 
-		batchDocLens := make([]int, len(pl.DocIDs))
-		for i, docID := range pl.DocIDs {
-			batchDocLens[i] = docLengths[docID]
+		
+		blockSize := 64
+		numBlocks := (len(pl.DocIDs) + blockSize - 1) / blockSize
+		blockMaxScores := make([]float32, numBlocks)
+		globalMaxScore := float32(0.0)
+		
+		for bi := 0; bi < numBlocks; bi++ {
+			maxTF := 0
+			minLen := 99999999
+			start := bi * blockSize
+			end := start + blockSize
+			if end > len(pl.DocIDs) {
+				end = len(pl.DocIDs)
+			}
+			for i := start; i < end; i++ {
+				if pl.TFs[i] > maxTF {
+					maxTF = pl.TFs[i]
+				}
+				l := docLengths[pl.DocIDs[i]]
+				if l < minLen {
+					minLen = l
+				}
+			}
+			score := scoreSingle(maxTF, minLen, avgDL, idf, k1, b)
+			blockMaxScores[bi] = score
+			if score > globalMaxScore {
+				globalMaxScore = score
+			}
 		}
- 
-		scores := simd.BM25ScoreBatch(pl.TFs, batchDocLens, avgDL, idf, k1, b)
- 
-		for i, docID := range pl.DocIDs {
-			docScores[docID] += scores[i]
+		
+		pointers = append(pointers, &termPointer{
+			term:           term,
+			pl:             pl,
+			pos:            0,
+			maxScore:       globalMaxScore,
+			blockMaxScores: blockMaxScores,
+			blockSize:      blockSize,
+		})
+	}
+
+	// Priority queue: sorted ascending by score (heap[0] is the minimum score).
+	// We keep a maximum of limit entries.
+	searchLimit := limit
+	if searchLimit <= 0 {
+		searchLimit = 1000 // default fallback
+	}
+
+	var heap []SearchResult
+	theta := float32(0.0)
+	
+	insertHeap := func(res SearchResult) {
+		if len(heap) < searchLimit {
+			heap = append(heap, res)
+			sort.Slice(heap, func(i, j int) bool {
+				return heap[i].Score < heap[j].Score
+			})
+			if len(heap) == searchLimit {
+				theta = heap[0].Score
+			}
+		} else if res.Score > theta {
+			heap[0] = res
+			sort.Slice(heap, func(i, j int) bool {
+				return heap[i].Score < heap[j].Score
+			})
+			theta = heap[0].Score
 		}
 	}
- 
-	// Convert to results and sort
-	var results []SearchResult
-	if pool != nil {
-		results = pool.Get(len(docScores))
-	} else {
-		results = make([]SearchResult, 0, len(docScores))
+
+	for {
+		// 1. Filter out pointers that have reached the end
+		active := pointers[:0]
+		for _, p := range pointers {
+			if p.pos < len(p.pl.DocIDs) {
+				active = append(active, p)
+			}
+		}
+		pointers = active
+		if len(pointers) == 0 {
+			break
+		}
+		
+		// 2. Sort pointers by their current DocID
+		sort.Slice(pointers, func(i, j int) bool {
+			return pointers[i].pl.DocIDs[pointers[i].pos] < pointers[j].pl.DocIDs[pointers[j].pos]
+		})
+		
+		// 3. Find pivot
+		accum := float32(0.0)
+		pivotIdx := -1
+		for i, p := range pointers {
+			bi := p.pos / p.blockSize
+			blockMax := p.blockMaxScores[bi]
+			accum += blockMax
+			if accum > theta {
+				pivotIdx = i
+				break
+			}
+		}
+		
+		if pivotIdx == -1 {
+			// No document can mathematically exceed the current threshold theta!
+			break
+		}
+		
+		pivotDocID := pointers[pivotIdx].pl.DocIDs[pointers[pivotIdx].pos]
+		firstDocID := pointers[0].pl.DocIDs[pointers[0].pos]
+		
+		if firstDocID == pivotDocID {
+			// Score pivotDocID!
+			actualScore := float32(0.0)
+			for _, p := range pointers {
+				if p.pos < len(p.pl.DocIDs) && p.pl.DocIDs[p.pos] == pivotDocID {
+					df := termDF[p.term]
+					idf := float32(idx.scorer.IDF(df))
+					actualScore += scoreSingle(p.pl.TFs[p.pos], docLengths[pivotDocID], avgDL, idf, k1, b)
+				}
+			}
+			
+			// Try to insert in heap
+			insertHeap(SearchResult{ID: lbtypes.VectorID(pivotDocID), Score: actualScore})
+			
+			// Advance pointers that matched pivotDocID
+			for _, p := range pointers {
+				if p.pos < len(p.pl.DocIDs) && p.pl.DocIDs[p.pos] == pivotDocID {
+					p.pos++
+				}
+			}
+		} else {
+			// Skip pointers of all terms before pivot that are less than pivotDocID
+			for i := 0; i < pivotIdx; i++ {
+				p := pointers[i]
+				n := len(p.pl.DocIDs)
+				target := sort.Search(n-p.pos, func(j int) bool {
+					return p.pl.DocIDs[p.pos+j] >= pivotDocID
+				})
+				p.pos += target
+			}
+		}
 	}
- 
-	for id, score := range docScores {
-		results = append(results, SearchResult{ID: lbtypes.VectorID(id), Score: score})
+
+	// Convert sorted ascending heap to descending results
+	results := make([]SearchResult, len(heap))
+	for i := range heap {
+		results[i] = heap[len(heap)-1-i]
 	}
- 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].Score > results[j].Score
-	})
- 
-	if limit > 0 && len(results) > limit {
-		results = results[:limit]
-	}
- 
+	
 	if pool != nil {
 		final := make([]SearchResult, len(results))
 		copy(final, results)
-		pool.Put(results)
 		return final
 	}
- 
+	
 	return results
 }
  

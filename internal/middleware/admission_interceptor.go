@@ -25,6 +25,7 @@ func AdmissionInterceptor(admission *store.AdmissionController) grpc.UnaryServer
 		if err := admission.Admit(ctx, opType); err != nil {
 			return nil, err
 		}
+		defer admission.Release(opType)
 
 		return handler(ctx, req)
 	}
@@ -47,6 +48,7 @@ func AdmissionStreamInterceptor(admission *store.AdmissionController) grpc.Strea
 		if err := admission.Admit(ss.Context(), opType); err != nil {
 			return err
 		}
+		defer admission.Release(opType)
 
 		return handler(srv, ss)
 	}

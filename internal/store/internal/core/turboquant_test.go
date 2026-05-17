@@ -35,8 +35,8 @@ func TestTurboQuant_EncoderDecoder(t *testing.T) {
 	// 3. Prepare original rotated vector for comparison
 	rotatedOrig := make([]float32, encoder.pow2)
 	copy(rotatedOrig, vec)
-	if err := simd.RandomRotation(rotatedOrig, 42); err != nil {
-		t.Fatalf("RandomRotation failed: %v", err)
+	if err := encoder.had.Transform(rotatedOrig); err != nil {
+		t.Fatalf("Transform failed: %v", err)
 	}
 
 	// 4. Compare Dot Product or L2

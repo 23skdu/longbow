@@ -203,13 +203,13 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 	// In the paper, QJL error correction allows the model to calculate
 	// attention scores more accurately by eliminating bias.
 	for i := 0; i < e.pow2; i++ {
+		correction := radius / float32(math.Sqrt(float64(e.pow2))) * 0.1 // Heuristic
 		if (qjlBits[i/8] & (byte(1) << (i % 8))) != 0 {
 			// If bit is set, the residual was positive.
 			// Add a small correction factor based on the radius/dims.
-			correction := radius / float32(math.Sqrt(float64(e.pow2))) * 0.1 // Heuristic
 			recon[i] += correction
 		} else {
-			recon[i] -= 0.1 // Heuristic
+			recon[i] -= correction
 		}
 	}
 

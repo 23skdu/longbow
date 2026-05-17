@@ -743,11 +743,17 @@ func (g *GraphData) ReleaseChunk(cID int) {
 			g.releaseArenaMemory(g.Float32Arena.Slab(), offset, uint32(ChunkSize*pd)*4) // #nosec G115
 		}
 	}
+	if cID < len(g.Vectors) {
+		g.Vectors[cID] = nil
+	}
 	if g.Float64Arena != nil && cID < len(g.VectorsFloat64Offsets) {
 		offset := atomic.SwapUint64(&g.VectorsFloat64Offsets[cID], 0)
 		if offset != 0 {
 			g.releaseArenaMemory(g.Float64Arena.Slab(), offset, uint32(ChunkSize*g.Dims)*8) // #nosec G115
 		}
+	}
+	if cID < len(g.VectorsFloat64) {
+		g.VectorsFloat64[cID] = nil
 	}
 	if g.Uint8Arena != nil {
 		if cID < len(g.VectorsSQ8) {
@@ -765,7 +771,33 @@ func (g *GraphData) ReleaseChunk(cID int) {
 			}
 		}
 	}
-	// Release other types as needed...
+	if cID < len(g.VectorsComplex64) {
+		g.VectorsComplex64[cID] = nil
+	}
+	if cID < len(g.VectorsComplex128) {
+		g.VectorsComplex128[cID] = nil
+	}
+	if cID < len(g.VectorsInt8) {
+		g.VectorsInt8[cID] = 0
+	}
+	if cID < len(g.VectorsInt16) {
+		g.VectorsInt16[cID] = 0
+	}
+	if cID < len(g.VectorsUint16) {
+		g.VectorsUint16[cID] = 0
+	}
+	if cID < len(g.VectorsInt32) {
+		g.VectorsInt32[cID] = 0
+	}
+	if cID < len(g.VectorsUint32) {
+		g.VectorsUint32[cID] = 0
+	}
+	if cID < len(g.VectorsInt64) {
+		g.VectorsInt64[cID] = 0
+	}
+	if cID < len(g.VectorsUint64) {
+		g.VectorsUint64[cID] = 0
+	}
 }
 
 // ReleaseNeighborsChunk releases neighbor storage for a specific layer and chunk.

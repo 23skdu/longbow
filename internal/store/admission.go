@@ -14,12 +14,16 @@ import (
 )
 
 type AdmissionController struct {
-	maxMemory     *atomic.Int64
-	currentMemory *atomic.Int64
-	scaler        *autoscale.AutoScaler
+	maxMemory      *atomic.Int64
+	currentMemory  *atomic.Int64
+	scaler         *autoscale.AutoScaler
 	migratingCount atomic.Int32
 	logger         zerolog.Logger
 	
+	activeQueries  atomic.Int32
+	walReplaying   atomic.Bool
+	querySem       chan struct{}
+
 	// Migration thresholds
 	maxSearchLatency  time.Duration
 	maxIngestThroughput float64
@@ -28,12 +32,13 @@ type AdmissionController struct {
 // NewAdmissionController creates a new admission controller.
 func NewAdmissionController(maxMemory, currentMemory *atomic.Int64, scaler *autoscale.AutoScaler, logger zerolog.Logger) *AdmissionController {
 	return &AdmissionController{
-		maxMemory:     maxMemory,
-		currentMemory: currentMemory,
-		scaler:        scaler,
-		logger:        logger,
-		maxSearchLatency:  500 * time.Millisecond,
+		maxMemory:           maxMemory,
+		currentMemory:       currentMemory,
+		scaler:              scaler,
+		logger:              logger,
+		maxSearchLatency:    500 * time.Millisecond,
 		maxIngestThroughput: 150000, // Updated for 1M scale target
+		querySem:            make(chan struct{}, 2), // Cap query concurrency to 2 during sharding/WAL
 	}
 }
 
@@ -43,6 +48,24 @@ func (ac *AdmissionController) MigrationStarted() {
 
 func (ac *AdmissionController) MigrationFinished() {
 	ac.migratingCount.Add(-1)
+}
+
+func (ac *AdmissionController) SetWALReplay(active bool) {
+	ac.walReplaying.Store(active)
+}
+
+func (ac *AdmissionController) IsWALReplay() bool {
+	return ac.walReplaying.Load()
+}
+
+func (ac *AdmissionController) Release(opType string) {
+	if opType == "search" || opType == "query" {
+		ac.activeQueries.Add(-1)
+		select {
+		case <-ac.querySem:
+		default:
+		}
+	}
 }
 
 // AdmitMigration checks if a background migration/rebalancing task should proceed.
@@ -84,6 +107,31 @@ func (ac *AdmissionController) AdmitMigration(ctx context.Context) error {
 
 // Admit checks if a request of the given type should be admitted.
 func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
+	if opType == "search" || opType == "query" {
+		if ac.walReplaying.Load() || ac.migratingCount.Load() > 0 {
+			// Search throttling active!
+			// Try to acquire slot from querySem
+			select {
+			case ac.querySem <- struct{}{}:
+				// Slot acquired!
+				ac.activeQueries.Add(1)
+			default:
+				// No slot available immediately. Let's wait up to 50ms
+				select {
+				case ac.querySem <- struct{}{}:
+					ac.activeQueries.Add(1)
+				case <-ctx.Done():
+					return ctx.Err()
+				case <-time.After(50 * time.Millisecond):
+					return status.Errorf(codes.ResourceExhausted, "search throttled during hot WAL replay / sharding phase to prioritize ingestion")
+				}
+			}
+		} else {
+			// Normal operation
+			ac.activeQueries.Add(1)
+		}
+	}
+
 	maxMem := ac.maxMemory.Load()
 	if maxMem <= 0 {
 		return nil // No limit enforced

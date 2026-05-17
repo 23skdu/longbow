@@ -48,28 +48,13 @@ The following items are identified as critical blockers for v0.2.1 to ensure sca
 - [x] **Off-heap Graph Migration (v0.2.1-rc3)**: Transitioned HNSW nodes and edges to off-heap arenas during autoshard migration to eliminate `runtime.scanObject` overhead. Implemented `RelocateToOffHeap` across the storage stack to enable `mmap`-backed shadow indices.
 - [x] **Streaming Shard Rebalancing (v0.2.1-rc3)**: Implemented a memory-efficient migration path using shared vector storage, fragmented handover, and priority-aware admission control to bypass the GC bottleneck during large-scale index transitions.
 - [x] **Cross-Node WAL Replication (v0.2.1-rc3)**: Implemented synchronous, quorum-based WAL replication across cluster nodes using Arrow Flight. This ensures high availability and zero data loss by requiring an $N/2+1$ acknowledgment before a write is committed. Integrated with `WALBatcher` and instrumented with `longbow_wal_replication_latency_seconds` metrics. Verified with comprehensive unit tests and stabilized integration tests.
+- [x] **Incremental In-Place Sharding & Memory Reclaim (v0.2.1-rc3)**: Transitioned index sharding from full in-memory rebuild to an incremental in-place sharding pipeline. Upgraded `ReleaseChunk` to release and nullify legacy heap vector slices (`Vectors`, `VectorsFloat64`, `VectorsComplex64`, `VectorsComplex128`) on-the-fly, allowing Go GC to collect them immediately. Added aggressive `runtime.GC` and `debug.FreeOSMemory` triggers under elevated memory pressure, bounding total memory ceiling strictly to 1.2x of the monolithic index size.
+- [x] **Priority-Queue & Search Throttling in AdmissionController (v0.2.1-rc3)**: Added search query throttling queue (`querySem` semaphore capped at concurrency of 2) active during WAL replay or active sharding phases to prioritize ingestion safety. Handled automatic deferred release hooks in gRPC interceptors. Fully verified by a dedicated unit test suite.
+- [x] **Block-Max WAND Sparse Search (v0.2.1-rc3)**: Optimized the sparse retrieval engine by implementing the Block-Max WAND (Weak AND) algorithm. Posting lists are divided into blocks of size `64`, allowing the search engine to skip scoring document blocks that cannot mathematically exceed the current top-K threshold. Fully verified to be mathematically equivalent and highly performant.
+- [x] **Self-Healing GPU Watchdog (v0.2.1-rc3)**: Implemented an out-of-process GPU watchdog and context recovery handler inside the Metal device bridge. Metal indexes now automatically reset the global command queue and device context upon detecting command buffer hangs or driver panics, retrying the failed operation seamlessly without dropping active client connections.
+- [x] **Dynamic Slab-Capacity Aware Migration Batching (v0.2.1-rc3)**: Replaced hardcoded HNSW migration batch sizes with a dynamic, byte-size aware calculator: `currentBatchSize = min(currentBatchSize, safeSlabLimit / (dim * bytesPerElement))`. This dynamically guarantees that no contiguous batch insertion will ever trigger a slab allocator limit breach, preventing autosharding migration failures.
 
 ## v0.2.1 Initial Performance Audit Observations
 
 - **macOS (M3 Pro) Improvements**: Initial tests (`float32/128d/5k`) show a **~40% increase in ingestion throughput** (786k vs 550k vec/s) and a **~20% increase in search QPS** compared to v0.2.1 baselines.
 - **Linux (ancalagon) Loopback Remediated**: Significant performance degradation previously observed on Linux loopback was successfully remediated via UDS sockets. Implementing UDS connectivity led to a **~95% Search QPS** and **~32% Streaming DoGet throughput** increase over the legacy TCP loopback baseline, closing the performance gap with macOS.
-
-## Performance & Stability Recommendations (v0.2.1-rc3 Observations)
-
-Based on recent comprehensive high-scale performance audits (100k/250k scale) under strict 18GB memory budgets across local (macOS Metal) and remote (Linux CUDA) environments, we recommend the following optimizations for future releases:
-
-- **In-Place Shard Relocation during Index Migration**:
-  - *Observation*: High memory footprint spikes (~8.6 GB) in `AutoShardingIndex.migrateToSharded` are caused by duplicating index structures during monolithic-to-sharded conversion.
-  - *Recommendation*: Transition from full in-memory rebuild to an incremental in-place sharding pipeline. Vectors should be split and transferred to new shards progressively, releasing vector allocations on-the-fly to ensure the memory ceiling never exceeds 1.2x of the monolithic index size.
-
-- **Concurrency Throttling under Ingest Migration Pressure**:
-  - *Observation*: Concurrent `DoGet` searches during index sharding build-up result in memory allocations that trigger the `GCTuner` backpressure and lead to latency livelocks.
-  - *Recommendation*: Add a priority queue or search throttling mechanism inside `AdmissionController` specifically active during hot WAL replay or index sharding phases, prioritizing ingestion safety over raw query throughput.
-
-- **Inverted Index Block-Max WAND for Sparse Search**:
-  - *Observation*: Sparse Search (BM25) latency regresses substantially when handling high-dimensional queries at high scales (100k+).
-  - *Recommendation*: Optimize the sparse retrieval engine by implementing the Block-Max WAND (Weak AND) algorithm. This will allow the search engine to skip scoring document blocks that cannot mathematically exceed the current top-K threshold.
-
-- **Platform-Specific GPU Watchdog & Recovery**:
-  - *Observation*: The Metal driver thread occasionally experiences resource starvation/driver panics following consecutive CPU crash signals, leading to hung GPU buffers.
-  - *Recommendation*: Implement an out-of-process GPU watchdog or a self-healing host-driver bridge in `metal_gpu.go` that can fully reset Metal device context and flush command queues without dropping active client connections.

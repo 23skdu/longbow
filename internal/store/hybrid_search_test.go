@@ -245,7 +245,7 @@ func (hs *HybridSearcher) SearchSparse(query string, k int) []SearchResult {
 	return results
 }
 
-func (hs *HybridSearcher) SearchHybrid(query []float32, textQuery string, k int, alpha float32, rrfK int) []SearchResult {
+func (hs *HybridSearcher) SearchHybrid(query []float32, textQuery string, k int, alpha float32, rrfK int, rawHybrid bool) []SearchResult {
 	dense := hs.SearchDense(query, k*2)
 	sparse := hs.SearchSparse(textQuery, k*2)
 
@@ -269,7 +269,7 @@ func (hs *HybridSearcher) SearchHybrid(query []float32, textQuery string, k int,
 }
 
 func (hs *HybridSearcher) SearchHybridWeighted(query []float32, textQuery string, k int, alpha float32, rrfK int) []SearchResult {
-	return hs.SearchHybrid(query, textQuery, k, alpha, rrfK)
+	return hs.SearchHybrid(query, textQuery, k, alpha, rrfK, false)
 }
 
 func (hs *HybridSearcher) Delete(id VectorID) {
@@ -318,7 +318,7 @@ func TestHybridSearch_Integration(t *testing.T) {
 	}
 
 	// Hybrid search
-	hybridResults := hs.SearchHybrid(query, "error", 5, 0.5, 60)
+	hybridResults := hs.SearchHybrid(query, "error", 5, 0.5, 60, false)
 	if len(hybridResults) == 0 {
 		t.Error("expected hybrid results")
 	}

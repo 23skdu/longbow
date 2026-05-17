@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
@@ -91,9 +93,14 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 	// We map each group to one output channel
 	groupChs := make([]chan []SearchResult, len(peerGroups))
 
+	isHybrid := req.TextQuery != "" || (req.Alpha > 0 && req.Alpha < 1.0)
+	
 	// Request Body
 	remoteReq := *req // Copy struct
 	remoteReq.LocalOnly = true
+	if isHybrid {
+		remoteReq.RawHybrid = true
+	}
 
 	var wg sync.WaitGroup
 
@@ -166,12 +173,24 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 
 							ids := col0.(*array.Uint64).Uint64Values()
 							scores := col1.(*array.Float32).Float32Values()
+							
+							var sourceValues []uint8
+							for i, f := range rec.Schema().Fields() {
+								if f.Name == "source" {
+									sourceValues = rec.Column(i).(*array.Uint8).Uint8Values()
+									break
+								}
+							}
 
 							for k := 0; k < len(ids); k++ {
-								results = append(results, SearchResult{
+								res := SearchResult{
 									ID:    lbtypes.VectorID(ids[k]), // #nosec G115
 									Score: scores[k],
-								})
+								}
+								if sourceValues != nil {
+									res.Source = sourceValues[k]
+								}
+								results = append(results, res)
 							}
 						}
 						if reader.Err() != nil {
@@ -238,38 +257,60 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 	// Wait, the previous code didn't wait *here*. It launched a goroutine to wait.
 	// But here I'm setting up channels. It's fine.
 
-	// 3. Launch Merger
-	// Merger runs concurrently and consumes from channels as they become available
-	mergedCh := MergeSortedStreams(channels, req.K)
-
-	// 4. Collect Final Results
-	finalResults := make([]SearchResult, 0, req.K)
-	for r := range mergedCh {
-		finalResults = append(finalResults, r)
-	}
-
-	// Ensure peer goroutines finish (they should have closed their channels)
-	// Actually we don't strictly need to wait for WG if we only want Top K and Merger closes early?
-	// MergeSortedStreams drain logic: it closes output when it has K items or all inputs closed.
-	// If it hits K, it closes output. But peer goroutines might still be running/blocked on write?
-	// The peerChs are buffered (size 1). If peer writes 1 batch, it unblocks.
-	// Peer goroutine then closes channel and exits.
-	// So we don't leak goroutines even if we return early.
-	// However, for cleanliness, we might want to ensure they are done or cancel context?
-	// DoAction context `subCtx` will timeout anyway.
-
-	// Wait for peers to cleanup if needed, but not strictly required for correctness of result
-	// Let's run Wait in background to avoid blocking return if K is satisfied early?
-	// But `mergedCh` only closes when K items yielded OR all sources exhausted.
-	// If K satisfied, `MergeSortedStreams` loop yields K and returns (closing output).
-	// But it does NOT close input channels. Peer goroutines close input channels.
-	// The merger logic itself is:
-	// "for h.Len() > 0 && count < k"
-	// If count < k is hit, merger exits and closes `out`.
-	// Peer goroutines are independent.
+	// Wait for all peer requests to complete
 	go func() {
 		wg.Wait()
+		for _, ch := range groupChs {
+			close(ch)
+		}
 	}()
+
+	var finalResults []SearchResult
+
+	if isHybrid {
+		// Hybrid Mode: Drain all channels, separate by Source, then apply global RRF
+		var allDense []SearchResult
+		var allSparse []SearchResult
+
+		for _, ch := range channels {
+			for batch := range ch {
+				for _, r := range batch {
+					switch r.Source {
+					case core.SourceDense:
+						allDense = append(allDense, r)
+					case core.SourceSparse:
+						allSparse = append(allSparse, r)
+					}
+				}
+			}
+		}
+		
+		metrics.GlobalSearchFanoutSize.Observe(float64(len(allDense) + len(allSparse)))
+
+		// Sort each list globally
+		// Dense scores (e.g., Cosine/DotProduct) are descending. Distance (L2) is ascending.
+		// RRF assumes sorted lists where index 0 is best. 
+		// We use a simple descending sort, assuming scores are higher-is-better for hybrid.
+		sort.Slice(allDense, func(i, j int) bool { return allDense[i].Score > allDense[j].Score })
+		sort.Slice(allSparse, func(i, j int) bool { return allSparse[i].Score > allSparse[j].Score })
+
+		// Record payload size (number of elements fused globally)
+		metrics.GlobalRRFPayloadBytes.Observe(float64(len(allDense) + len(allSparse)))
+
+		// Apply Global Reciprocal Rank Fusion on the complete gathered lists
+		rrfStart := time.Now()
+		finalResults = ReciprocalRankFusion(req.Dataset, allDense, allSparse, 60, req.K, nil)
+		metrics.GlobalRRFLatencySeconds.Observe(time.Since(rrfStart).Seconds())
+	} else {
+		// 3. Launch Merger for standard sorted streams
+		mergedCh := MergeSortedStreams(channels, req.K)
+
+		// 4. Collect Final Results
+		finalResults = make([]SearchResult, 0, req.K)
+		for r := range mergedCh {
+			finalResults = append(finalResults, r)
+		}
+	}
 
 	metrics.GlobalSearchDuration.Observe(time.Since(start).Seconds())
 	return finalResults, nil

@@ -95,7 +95,7 @@ func TestRace_ConcurrentSearchAndInsert(t *testing.T) {
 						query[i] = rand.Float32()
 					}
 					// Use SearchHybrid as it exercises RCU and Index
-					_, err := s.SearchHybrid(searchCtx, datasetName, query, "", 10, 1.0, 60, 0.1, 2)
+					_, err := s.SearchHybrid(searchCtx, datasetName, query, "", 10, 1.0, 60, 0.1, 2, false)
 					if err != nil {
 						// Dataset might be empty initially, which is fine
 						_ = err

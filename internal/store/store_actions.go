@@ -26,6 +26,7 @@ import (
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/storage"
 	internalcore "github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/tracing"
@@ -56,6 +57,35 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 
 		if err := stream.Send(&flight.Result{Body: body}); err != nil {
+			return err
+		}
+		return nil
+
+	case "ReplicateWAL":
+		if len(action.Body) == 0 {
+			return status.Error(codes.InvalidArgument, "empty WAL payload")
+		}
+		
+		// Decode and apply in memory
+		engine := s.engine.Load()
+		if engine != nil {
+			err := engine.AppendReplicatedWAL(action.Body)
+			if err != nil {
+				return status.Errorf(codes.Internal, "failed to append replicated WAL: %v", err)
+			}
+			
+			entries, err := storage.DecodeWALBlock(action.Body, engine.GetAllocator())
+			if err != nil {
+				return status.Errorf(codes.Internal, "failed to decode replicated WAL: %v", err)
+			}
+			for _, entry := range entries {
+				// Apply to in-memory datasets
+				_ = s.applyReplayBatch(entry.Name, entry.Record, entry.Seq, entry.Ts)
+				entry.Record.Release()
+			}
+		}
+
+		if err := stream.Send(&flight.Result{Body: []byte("ACK")}); err != nil {
 			return err
 		}
 		return nil
@@ -495,6 +525,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 				60,  // Default RRF k
 				0.0, // Default Graph Alpha
 				0,   // Default Graph Depth
+				false, // RawHybrid
 			)
 		})
 		

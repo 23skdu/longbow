@@ -525,6 +525,14 @@ var (
 		},
 	)
 
+	WALReplicationLatencySeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_wal_replication_latency_seconds",
+			Help:    "Latency of synchronous WAL replication across the cluster",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0},
+		},
+	)
+
 	WALWriteErrors = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_wal_write_errors_total",

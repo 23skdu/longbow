@@ -27,7 +27,7 @@ type HybridSearchRequest struct {
 
 // SearchHybrid performs a hybrid search combining dense vector search and sparse keyword search.
 // If alpha is < 0, it is automatically estimated using EstimateAlpha.
-func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]SearchResult, error) {
+func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int, rawHybrid bool) ([]SearchResult, error) {
 	// Adaptive Alpha
 	if alpha < 0 {
 		alpha = EstimateAlpha(textQuery)
@@ -109,13 +109,24 @@ func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []
 	case 0.0:
 		finalResults = sparseResults
 	default:
-		// Fusion! Use RRF.
-		if rrfK <= 0 {
-			rrfK = 60 // Default
+		if rawHybrid {
+			// Return raw un-fused results (Dense marked with Source=0, Sparse marked with Source=1)
+			for i := range denseResults {
+				denseResults[i].Source = 0
+			}
+			for i := range sparseResults {
+				sparseResults[i].Source = 1
+			}
+			finalResults = append(denseResults, sparseResults...)
+		} else {
+			// Fusion! Use RRF.
+			if rrfK <= 0 {
+				rrfK = 60 // Default
+			}
+			finalResults = ReciprocalRankFusion(name, denseResults, sparseResults, rrfK, k, s.resultPool)
+			metrics.HybridSearchMergeDuration.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
+			metrics.HybridRRFFusionLatencySeconds.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
 		}
-		finalResults = ReciprocalRankFusion(name, denseResults, sparseResults, rrfK, k, s.resultPool)
-		metrics.HybridSearchMergeDuration.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
-		metrics.HybridRRFFusionLatencySeconds.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
 	}
 
 	// 4. Graph Re-ranking (GraphRAG) - Re-acquire RLock for post-processing
@@ -256,8 +267,12 @@ func ReciprocalRankFusion(dataset string, list1, list2 []SearchResult, rrfK, k i
 	add(list2)
  
 	// Get result slice from pool
-	final := pool.Get(len(scores))
- 
+	var final []SearchResult
+	if pool != nil {
+		final = pool.Get(len(scores))
+	} else {
+		final = make([]SearchResult, 0, len(scores))
+	} 
 	for id, score := range scores {
 		final = append(final, SearchResult{ID: types.VectorID(id), Score: score})
 	}
@@ -277,7 +292,9 @@ func ReciprocalRankFusion(dataset string, list1, list2 []SearchResult, rrfK, k i
 	
 	results := make([]SearchResult, len(final))
 	copy(results, final)
-	pool.Put(final)
+	if pool != nil {
+		pool.Put(final)
+	}
 	
 	return results
 }

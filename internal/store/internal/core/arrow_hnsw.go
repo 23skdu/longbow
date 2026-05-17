@@ -1159,7 +1159,6 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 					}
 					return ids, nil
 				}
-				fmt.Printf("AddBatchBulk failed for %s: %v\n", h.config.DataType.String(), err)
 			}
 		}
 	}

@@ -26,9 +26,19 @@ type SmartClient struct {
 
 // NewSmartClient creates a new smart client connected to the initial address
 func NewSmartClient(addr string) (*SmartClient, error) {
-	// Strip schemes from address
-	addr = strings.TrimPrefix(addr, "grpc://")
-	addr = strings.TrimPrefix(addr, "http://")
+	// Strip non-UDS schemes from address
+	if !strings.HasPrefix(addr, "unix://") {
+		addr = strings.TrimPrefix(addr, "grpc://")
+		addr = strings.TrimPrefix(addr, "http://")
+	} else {
+		// Normalize unix://path to unix:path for gRPC dialer
+		// unix:///path stays unix:///path
+		if strings.HasPrefix(addr, "unix:///") {
+			// already absolute
+		} else {
+			addr = "unix:" + strings.TrimPrefix(addr, "unix://")
+		}
+	}
 
 	sc := &SmartClient{
 		primaryAddr: addr,

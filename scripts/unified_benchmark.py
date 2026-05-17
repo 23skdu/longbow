@@ -397,16 +397,24 @@ class BenchmarkRunner:
                 for _ in range(90):
                     time.sleep(0.5)
                     try:
+                        pid_reaped, status = os.waitpid(self.server_pid, os.WNOHANG)
+                        if pid_reaped == self.server_pid:
+                            self.server_pid = None
+                            return
                         os.kill(self.server_pid, 0)
-                    except ProcessLookupError:
+                    except (ProcessLookupError, ChildProcessError):
                         self.server_pid = None
                         return
                 
                 # Fallback to kill -9
                 print(f"  Server PID {self.server_pid} didn't stop gracefully, killing -9")
                 os.kill(self.server_pid, signal.SIGKILL)
+                try:
+                    os.waitpid(self.server_pid, 0)
+                except (ProcessLookupError, ChildProcessError):
+                    pass
                 time.sleep(1)
-            except ProcessLookupError:
+            except (ProcessLookupError, ChildProcessError):
                 pass
             self.server_pid = None
 

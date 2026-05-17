@@ -59,5 +59,40 @@ func TestAdmissionController(t *testing.T) {
 			assert.Contains(t, err.Error(), "critical capacity")
 		}
 	})
+
+	t.Run("WAL Replay & Sharding Throttling", func(t *testing.T) {
+		maxMem.Store(1024 * 1024 * 1024)
+		currMem.Store(100)
+		ac.scaler = nil // disable autoscaler for this test
+
+		// Enable WAL Replay
+		ac.SetWALReplay(true)
+		assert.True(t, ac.IsWALReplay())
+
+		// Acquire 2 slots (the limit querySem buffer is 2)
+		err1 := ac.Admit(context.Background(), "search")
+		assert.NoError(t, err1)
+		
+		err2 := ac.Admit(context.Background(), "search")
+		assert.NoError(t, err2)
+
+		// Third search should be throttled because capacity is 2
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // trigger immediate cancel to speed up the test
+		err3 := ac.Admit(ctx, "search")
+		assert.Error(t, err3)
+
+		// Release one slot
+		ac.Release("search")
+
+		// Now we should be able to acquire again
+		err4 := ac.Admit(context.Background(), "search")
+		assert.NoError(t, err4)
+
+		// Disable WAL replay
+		ac.SetWALReplay(false)
+		ac.Release("search")
+		ac.Release("search")
+	})
 }
 

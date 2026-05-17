@@ -357,13 +357,37 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		// Adaptive Batch Sizing & Pressure Management
 		currentBatchSize := baseBatchSize
 		
-		// Slab-Aware Batching: Reduce batch size for extremely high dimensions 
-		// to ensure we stay within arena slab capacities (typically 16-64MB).
-		if dims > 1024 {
-			currentBatchSize = 1000
+		// Dynamic Slab-Capacity Aware Migration Batch Size Calculator
+		getBytesPerElement := func(dt types.VectorDataType) int {
+			switch dt {
+			case types.VectorTypeFloat32, types.VectorTypeInt32, types.VectorTypeUint32:
+				return 4
+			case types.VectorTypeFloat16, types.VectorTypeInt16, types.VectorTypeUint16:
+				return 2
+			case types.VectorTypeInt8, types.VectorTypeUint8, types.VectorTypeTQ:
+				return 1
+			case types.VectorTypeFloat64, types.VectorTypeInt64, types.VectorTypeUint64, types.VectorTypeComplex64:
+				return 8
+			case types.VectorTypeComplex128:
+				return 16
+			default:
+				return 4
+			}
 		}
-		if dims > 3072 {
-			currentBatchSize = 500
+
+		safeSlabLimit := 512 * 1024 // 512 KB maximum batch size allocation window
+		bytesPerElement := getBytesPerElement(oldDataType)
+		vectorBytes := dims * bytesPerElement
+		if vectorBytes > 0 {
+			dynamicLimit := safeSlabLimit / vectorBytes
+			if dynamicLimit > 0 {
+				currentBatchSize = min(currentBatchSize, dynamicLimit)
+			}
+		}
+
+		// Enforce sensible bounds (minimum 50 to avoid absolute thrashing, max baseBatchSize)
+		if currentBatchSize < 50 {
+			currentBatchSize = 50
 		}
 
 		if usageRatio > 0.75 {
@@ -469,7 +493,10 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 					_ = ah.ReleaseMonolithicChunk(c)
 				}
 				// Reclaim memory immediately after chunk release
-				if currentChunk%4 == 0 { // Don't GC on every chunk to avoid too much jitter
+				if usageRatio > 0.60 {
+					runtime.GC()
+					debug.FreeOSMemory()
+				} else if currentChunk%4 == 0 { // Don't GC on every chunk to avoid too much jitter
 					runtime.GC()
 				}
 			}

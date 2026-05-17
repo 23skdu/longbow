@@ -32,6 +32,12 @@ func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 		return fmt.Errorf("failed to initialize WAL: %w", err)
 	}
 
+	// 2.5 Initialize WAL Replicator for HA if Mesh is active
+	if s.Mesh != nil {
+		replicator := NewFlightWALReplicator(s.pool, s.Mesh)
+		engine.SetReplicator(replicator)
+	}
+
 	// 3. Replay WAL
 	maxSeq, err := engine.ReplayWAL(s.applyReplayBatch)
 	if err != nil {

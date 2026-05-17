@@ -55,6 +55,7 @@ type Config struct {
 	KeepAlivePermitWithoutStream bool          `envconfig:"GRPC_KEEPALIVE_PERMIT_WITHOUT_STREAM" default:"false"`
 
 	ListenAddr       string        `envconfig:"LISTEN_ADDR" default:"0.0.0.0:3000"`
+	ListenUDS        string        `envconfig:"LISTEN_UDS" default:""` // Path to Unix Domain Socket
 	NodeID           string        `envconfig:"NODE_ID" default:""` // Optional override
 	MetaAddr         string        `envconfig:"META_ADDR" default:"0.0.0.0:3001"`
 	MetricsAddr      string        `envconfig:"METRICS_ADDR" default:"0.0.0.0:9090"`
@@ -704,6 +705,27 @@ func run() error {
 	}()
 
 	// Start UDS Data Server if configured
+	if cfg.ListenUDS != "" {
+		if err := os.RemoveAll(cfg.ListenUDS); err != nil {
+			logger.Error().Err(err).Str("path", cfg.ListenUDS).Msg("Failed to remove existing UDS socket")
+		}
+		udsLisBase, err := net.Listen("unix", cfg.ListenUDS)
+		if err != nil {
+			logger.Error().Err(err).Str("path", cfg.ListenUDS).Msg("Failed to listen on UDS")
+		} else {
+			// Ensure the socket is accessible
+			if err := os.Chmod(cfg.ListenUDS, 0666); err != nil {
+				logger.Warn().Err(err).Str("path", cfg.ListenUDS).Msg("Failed to set UDS socket permissions")
+			}
+			udsLis := store.NewUDSListener(udsLisBase)
+			go func() {
+				logger.Info().Str("path", cfg.ListenUDS).Msg("Listening for Data gRPC connections (UDS)")
+				if err := dataServer.Serve(udsLis); err != nil {
+					logger.Error().Err(err).Msg("UDS Data gRPC server failed")
+				}
+			}()
+		}
+	}
 
 	// Start Meta Server
 	go func() {

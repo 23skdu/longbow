@@ -34,6 +34,12 @@ func (l *TCPNoDelayListener) Accept() (net.Conn, error) {
 		_ = err
 	}
 
+	// Set TCP_QUICKACK for Linux optimization
+	if err := setQuickAck(conn); err != nil {
+		// Log but don't fail
+		_ = err
+	}
+
 	// Increment metrics
 	tcpNoDelayConnectionsTotal.Add(1)
 	metrics.TCPNoDelayConnectionsTotal.Inc()

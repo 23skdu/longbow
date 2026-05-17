@@ -52,7 +52,7 @@ func main() {
 		}
 	}
 
-	uri := flag.String("uri", "127.0.0.1:3000", "Data plane address (host:port)")
+	uri := flag.String("uri", "127.0.0.1:3000", "Data plane address (host:port or unix:///path/to/socket)")
 	dim := flag.Int("dim", 128, "Vector dimension (up to 3072)")
 	scale := flag.Int("scale", 1000, "Vector count")
 	dtype := flag.String("dtype", "float32", "Data type (float32, int32, etc, including turboquant)")

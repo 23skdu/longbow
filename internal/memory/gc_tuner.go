@@ -284,7 +284,7 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 
 	if aggressive && ratio > 0.88 {
 		if t.logger != nil {
-			t.logger.Warn().Float64("ratio", ratio).Int64("total_physical", totalPhysicalUsed).Msg("CRITICAL total memory utilization - triggering emergency cleanup")
+			t.logger.Warn().Float64("ratio", ratio).Int64("total_physical", totalPhysicalUsed).Int64("limit_bytes", t.limitBytes).Msg("CRITICAL total memory utilization - triggering emergency cleanup")
 		}
 		t.mu.RLock()
 		for _, fn := range t.cleanupFuncs {

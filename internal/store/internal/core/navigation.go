@@ -524,9 +524,6 @@ search_layer0:
 }
 
 func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]types.Candidate, error) {
-	if layer == 0 && ef > 1 {
-		fmt.Printf("Searching Layer 0: ep=%d, ef=%d\n", entryPoint, ef)
-	}
 	meta := h.GetMetadataSnapshot()
 
 	if entryPoint == math.MaxUint32 {

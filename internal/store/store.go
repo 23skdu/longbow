@@ -592,9 +592,16 @@ func (vs *VectorStore) SetCoordinator(c *GlobalSearchCoordinator) {
 	vs.coordinator = c
 }
 
-// SetMesh sets the mesh gossip instance for the vector store.
+// SetMesh sets the mesh gossip instance for the vector store and initializes the WAL replicator.
 func (vs *VectorStore) SetMesh(m *mesh.Gossip) {
 	vs.Mesh = m
+	if m != nil {
+		engine := vs.engine.Load()
+		if engine != nil {
+			replicator := NewFlightWALReplicator(vs.pool, m)
+			engine.SetReplicator(replicator)
+		}
+	}
 }
 
 // GetMeshMembers returns the current members from the mesh gossip instance.

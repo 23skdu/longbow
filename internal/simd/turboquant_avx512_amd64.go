@@ -42,13 +42,16 @@ func PackTQ2AVX512VBMI(src []float32, dst []byte) {
 	if len(src) == 0 {
 		return
 	}
-	packTQ2AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+	packTQ2AVX512VBMIKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
 }
 
 // Assembly kernel stubs
 
 //go:noescape
 func unpackTQ2AVX512VBMIKernel(src, dst unsafe.Pointer, n int, scale, bias float32)
+
+//go:noescape
+func packTQ2AVX512VBMIKernel(src, dst unsafe.Pointer, n int)
 
 //go:noescape
 func packTQ2AVX512Kernel(src, dst unsafe.Pointer, n int)

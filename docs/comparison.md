@@ -2,16 +2,16 @@
 
 Longbow is designed to provide FAISS-level performance with Arrow-native ergonomics and GraphRAG integration.
 
-| Feature | Chroma | Milvus | Qdrant | **FAISS** | Pinecone | **Longbow** |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Primary Focus** | Prototyping | Massive Scale | Speed & Efficiency | **Perf Library** | Managed SaaS | **Structural Discovery** |
-| **Quantization** | No | **RaBitQ / PQ** | PQ/SQ/BQ | **PQ/SQ/OPQ** | Proprietary | **IVF-OPQ / TurboQuant (2/4/8-bit)** |
-| **Architecture** | SQLite | Distributed | Rust | **C++/CUDA** | Closed/Cloud | **Zero-Copy Arrow** |
-| **GPU Support** | CPU-Only | **Tier 1** | **Tier 1** | **Tier 1 (NVIDIA)** | Managed | **Tier 1 (Metal/CUDA)** |
-| **SIMD Optim.** | Library | Extensive | **Native** | **Extensive** | Managed | **Custom AVX2/AVX512/NEON** |
-| **GraphRAG** | No | Basic | No | No | No | **Dual-Path: Spreading + Knowledge Graph** |
-| **Temporal** | No | No | No | No | No | **Native Versioning (Default On)** |
-| **Geo-Spatial** | No | No | Native | No | No | **Native Quadtree** |
+| Feature | Chroma | Milvus | Qdrant | **FAISS** | Pinecone | TencentDB | **Longbow** |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| **Primary Focus** | Prototyping | Massive Scale | Speed & Efficiency | **Perf Library** | Managed SaaS | Enterprise SaaS | **Structural Discovery** |
+| **Quantization** | No | **RaBitQ / PQ** | PQ/SQ/BQ | **PQ/SQ/OPQ** | Proprietary | PQ / SQ | **IVF-OPQ / TurboQuant (2/4/8-bit)** |
+| **Architecture** | SQLite | Distributed | Rust | **C++/CUDA** | Closed/Cloud | Distributed (OLAMA) | **Zero-Copy Arrow** |
+| **GPU Support** | CPU-Only | **Tier 1** | **Tier 1** | **Tier 1 (NVIDIA)** | Managed | Managed | **Tier 1 (Metal/CUDA)** |
+| **SIMD Optim.** | Library | Extensive | **Native** | **Extensive** | Managed | Extensive | **Custom AVX2/AVX512/NEON** |
+| **GraphRAG** | No | Basic | No | No | No | External (Langchain) | **Dual-Path: Spreading + Knowledge Graph** |
+| **Temporal** | No | No | No | No | No | No | **Native Versioning (Default On)** |
+| **Geo-Spatial** | No | No | Native | No | No | Basic | **Native Quadtree** |
 
 ---
 
@@ -36,21 +36,25 @@ Our internal benchmarks on 1M vectors (1536D) show that Longbow is within 5% of 
 ## New Features in 0.1.9
 
 ### Quantization
+
 - **IVF-OPQ**: Optimized Product Quantization with iterative training
 - **TurboQuant**: 2-bit, 4-bit, and 8-bit compression modes
 - **Auto-Tuning**: Automatic selection between float32/int8/PQ/TQ based on memory/recall
 
 ### Performance
+
 - **SIMD**: Complete AVX2, AVX512, and NEON kernels
 - **Batching**: DoPut bulk path for >=100 vectors
 - **io_uring**: Linux async I/O for WAL operations
 
 ### Search
+
 - **Temporal**: Native versioning (enabled by default)
 - **Hybrid**: Vector + BM25 + metadata filtering
 - **GraphRAG**: Dual-path (Spreading + Knowledge Graph) with PageRank & Community Detection
 
 ### Quality
+
 - **Fuzz Tests**: IVF index build, TurboQuant encode/decode
 - **Metrics**: Prometheus metrics for batching, quantization, SIMD
 
@@ -60,14 +64,20 @@ Our internal benchmarks on 1M vectors (1536D) show that Longbow is within 5% of 
 
 ### **FAISS**
 
-* **GPU**: The industry benchmark for NVIDIA GPU acceleration. Supports massive parallelization and multi-GPU indexing via **IVF-PQ** and **HNSW-Flat**.
-* **SIMD**: Highly optimized C++ core utilizing AVX2, AVX-512, and ARM Neon for maximum throughput on dense vector operations.
+- **GPU**: The industry benchmark for NVIDIA GPU acceleration. Supports massive parallelization and multi-GPU indexing via **IVF-PQ** and **HNSW-Flat**.
+- **SIMD**: Highly optimized C++ core utilizing AVX2, AVX-512, and ARM Neon for maximum throughput on dense vector operations.
+
+### **Tencent Cloud VectorDB**
+
+- **Architecture**: A fully managed, enterprise-level distributed database powered by the "AI Native" **OLAMA** vector engine, designed to support up to 1 billion vectors in a single index with high availability.
+- **Quantization & Indexing**: Employs standard quantization methods like Scalar Quantization (SQ) and Product Quantization (PQ) to balance the memory intensity of its HNSW-backed indexing, though heavy reliance on in-memory indexes can lead to "cold start" latency spikes if not actively warmed.
+- **Ecosystem**: Relies on external frameworks (e.g., LangChain, LlamaIndex) and Ollama for LLM runtimes to implement GraphRAG and entity extraction, whereas Longbow provides a native dual-path approach.
 
 ### **Longbow**
 
-* **Arrow-Native**: No serialization overhead when interacting with Arrow-based data pipelines or DuckDB.
-* **GraphRAG**: Dual-path architecture combining:
-  * **Spreading Activation**: Vector-based re-ranking using HNSW Layer 0 graph expansion
-  * **Knowledge Graph**: Triple-based (SPOW) explicit relationships with PageRank & Community Detection
-* **Hybrid Search**: Seamless integration of vector similarity with full-text search (BM25) and metadata filtering.
-* **TurboQuant**: Novel two-stage compression achieving extreme density with fast search.
+- **Arrow-Native**: No serialization overhead when interacting with Arrow-based data pipelines or DuckDB.
+- **GraphRAG**: Dual-path architecture combining:
+  - **Spreading Activation**: Vector-based re-ranking using HNSW Layer 0 graph expansion
+  - **Knowledge Graph**: Triple-based (SPOW) explicit relationships with PageRank & Community Detection
+- **Hybrid Search**: Seamless integration of vector similarity with full-text search (BM25) and metadata filtering.
+- **TurboQuant**: Novel two-stage compression achieving extreme density with fast search.

@@ -29,6 +29,15 @@ GLOBL tq_max8_arm<>(SB), RODATA, $4
 GLOBL tq_max4_arm<>(SB), RODATA, $4
 GLOBL tq_max2_arm<>(SB), RODATA, $4
 
+// VTBL masks for collecting packed bytes
+DATA neon_tq2_collect<>+0x00(SB)/8, $0x0c08040000000000
+DATA neon_tq2_collect<>+0x08(SB)/8, $0x0000000000000000
+GLOBL neon_tq2_collect<>(SB), RODATA, $16
+
+DATA neon_tq4_collect<>+0x00(SB)/8, $0x0e0c0a0806040200
+DATA neon_tq4_collect<>+0x08(SB)/8, $0x0000000000000000
+GLOBL neon_tq4_collect<>(SB), RODATA, $16
+
 // func packTQ8NEONKernel(src, dst unsafe.Pointer, n int)
 TEXT ·packTQ8NEONKernel(SB), NOSPLIT, $0-24
     MOVD    src+0(FP), R0
@@ -183,11 +192,14 @@ TEXT ·packTQ4NEONKernel(SB), NOSPLIT, $0-24
 loop_pack4:
     CMP     $16, R2
     BLT     tail_pack4_outer
-    
+
     // Process 16 elements -> 8 bytes
-    VLD1.P  16(R0), [V6.S4]; VLD1.P  16(R0), [V7.S4]
-    VLD1.P  16(R0), [V8.S4]; VLD1.P  16(R0), [V9.S4]
-    
+    VLD1.P  16(R0), [V6.S4]
+    VLD1.P  16(R0), [V7.S4]
+    VLD1.P  16(R0), [V8.S4]
+    VLD1.P  16(R0), [V9.S4]
+
+    // Quantize 
     VFADD_V(0, 6, 6); VFMUL_V(1, 6, 6); VFMAX_V(5, 6, 6); VFMIN_V(4, 6, 6); VFMUL_V(2, 6, 6); VFADD_V(3, 6, 6); VFCVTZS_V(6, 6)
     VFADD_V(0, 7, 7); VFMUL_V(1, 7, 7); VFMAX_V(5, 7, 7); VFMIN_V(4, 7, 7); VFMUL_V(2, 7, 7); VFADD_V(3, 7, 7); VFCVTZS_V(7, 7)
     VFADD_V(0, 8, 8); VFMUL_V(1, 8, 8); VFMAX_V(5, 8, 8); VFMIN_V(4, 8, 8); VFMUL_V(2, 8, 8); VFADD_V(3, 8, 8); VFCVTZS_V(8, 8)
@@ -197,50 +209,23 @@ loop_pack4:
     VXTN_S_H(6, 6); VXTN2_S_H(7, 6)
     VXTN_S_H(8, 8); VXTN2_S_H(9, 8)
     VXTN_H_B(6, 6); VXTN2_H_B(8, 6)
+
+    // V6 now has 16 elements as bytes: [e15, e14, ..., e0]
+    // Unzip to separate even and odd elements
+    VUZP1   V6.B16, V6.B16, V7.B16 // V7 = [e14, e12, e10, e8, e6, e4, e2, e0]
+    VUZP2   V6.B16, V6.B16, V8.B16 // V8 = [e15, e13, e11, e9, e7, e5, e3, e1]
     
-    // Combine nibbles: V6.B[1], V6.B[0] -> Byte 0
-    // Use USHR and ORR on vector
-    VUSHR   $4, V6.B16, V7.B16 // No, they are already [0, 15] in bytes
-    // We want byte 0 = V6.B[1]<<4 | V6.B[0]
+    VSHL    $4, V8.B16, V8.B16
+    VORR    V7.B16, V8.B16, V9.B16
     
-    // PSHUFB pattern to group them
-    // Actually, simple shift and mask is fine.
-    // [n15, n14, ..., n1, n0]
-    VSHL    $4, V6.H8, V7.H8 // Shift odd bytes by 4? No, VSHL is bitwise on elements.
-    // Elements are bytes.
-    // We want to combine adjacent bytes.
-    VUZP1   V6.B16, V6.B16, V10.B16 // [n14, n12, ..., n0, n14, n12, ..., n0]? No.
-    // I'll just use the scalar-like vector approach
-    VSHL    $4, V6.B16, V7.B16 // V7 = [n15<<4, n14<<4, ...]
-    // Masking?
-    VUZP1   V6.B16, V7.B16, V8.B16 // V8 = [n15<<4, n13<<4, ..., n1<<4, n14, n12, ..., n0]
-    VUZP2   V6.B16, V7.B16, V9.B16 // ...
-    // This is complex. I'll just use the lanes.
+    // V9.D[0] now has 8 packed bytes
+    VMOV    V9.D[0], R3
+    MOVD    R3, (R1)
     
-    VMOV    V6.D[0], R4
-    VMOV    V6.D[1], R5
-    // R4 = [n7, n6, n5, n4, n3, n2, n1, n0]
-    // Pack R4
-    AND     $0x0F0F000000000000, R4 // ... too slow.
-    
-    // Better: use VTRN
-    VTRN1   V6.B16, V7.B16, V8.B16
-    VTRN2   V6.B16, V7.B16, V9.B16
-    // ... I'll stick to a simpler vector pack.
-    
-    VMOV    V6.S[0], R4; VMOV    V6.S[1], R5
-    LSL     $4, R5, R7; ORR R7, R4, R6; MOVB R6, (R1)
-    VMOV    V6.S[2], R4; VMOV    V6.S[3], R5
-    LSL     $4, R5, R7; ORR R7, R4, R6; MOVB R6, 1(R1)
-    VMOV    V7.S[0], R4; VMOV    V7.S[1], R5
-    LSL     $4, R5, R7; ORR R7, R4, R6; MOVB R6, 2(R1)
-    VMOV    V7.S[2], R4; VMOV    V7.S[3], R5
-    LSL     $4, R5, R7; ORR R7, R4, R6; MOVB R6, 3(R1)
-    
-    // ... etc. I'll use the existing loop but optimized for 8 elements.
     ADD     $8, R1
     SUB     $16, R2
     B       loop_pack4
+
 
 tail_pack4_outer:
 loop_pack4_small:
@@ -377,39 +362,42 @@ TEXT ·packTQ2NEONKernel(SB), NOSPLIT, $0-24
     VEOR    V5.B16, V5.B16, V5.B16
 
 loop_pack2:
-    CMP     $4, R2
+    CMP     $16, R2
     BLT     tail_pack2
     
+    // Process 16 elements -> 4 bytes
     VLD1.P  16(R0), [V6.S4]
+    VLD1.P  16(R0), [V7.S4]
+    VLD1.P  16(R0), [V8.S4]
+    VLD1.P  16(R0), [V9.S4]
     
-    VFADD_V(0, 6, 6)
-    VFMUL_V(1, 6, 6)
-    VFMAX_V(5, 6, 6)
-    VFMIN_V(4, 6, 6)
-    VFMUL_V(2, 6, 6)
-    VFADD_V(3, 6, 6)
-    VFCVTZS_V(6, 6)
+    // Quantize 
+    VFADD_V(0, 6, 6); VFMUL_V(1, 6, 6); VFMAX_V(5, 6, 6); VFMIN_V(4, 6, 6); VFMUL_V(2, 6, 6); VFADD_V(3, 6, 6); VFCVTZS_V(6, 6)
+    VFADD_V(0, 7, 7); VFMUL_V(1, 7, 7); VFMAX_V(5, 7, 7); VFMIN_V(4, 7, 7); VFMUL_V(2, 7, 7); VFADD_V(3, 7, 7); VFCVTZS_V(7, 7)
+    VFADD_V(0, 8, 8); VFMUL_V(1, 8, 8); VFMAX_V(5, 8, 8); VFMIN_V(4, 8, 8); VFMUL_V(2, 8, 8); VFADD_V(3, 8, 8); VFCVTZS_V(8, 8)
+    VFADD_V(0, 9, 9); VFMUL_V(1, 9, 9); VFMAX_V(5, 9, 9); VFMIN_V(4, 9, 9); VFMUL_V(2, 9, 9); VFADD_V(3, 9, 9); VFCVTZS_V(9, 9)
+
+    // Narrow
+    VXTN_S_H(6, 6); VXTN2_S_H(7, 6)
+    VXTN_S_H(8, 8); VXTN2_S_H(9, 8)
+    VXTN_H_B(6, 6); VXTN2_H_B(8, 6)
     
-    VMOV    V6.S[0], R3
-    VMOV    V6.S[1], R4
-    VMOV    V6.S[2], R5
-    VMOV    V6.S[3], R6
+    // V6 now has 16 elements as bytes: [e15...e0]
+    VUZP1   V6.B16, V6.B16, V7.B16 // V7 = [e14, e12, ..., e0]
+    VUZP2   V6.B16, V6.B16, V8.B16 // V8 = [e15, e13, ..., e1]
+    VSHL    $2, V8.B16, V8.B16
+    VORR    V7.B16, V8.B16, V9.B16 // V9 has 8 elements, each 2 packed
     
-    AND     $0x03, R3, R3
-    AND     $0x03, R4, R4
-    AND     $0x03, R5, R5
-    AND     $0x03, R6, R6
+    VUZP1   V9.B16, V9.B16, V10.B16 // V10 = [p6, p4, p2, p0, ...]
+    VUZP2   V9.B16, V9.B16, V11.B16 // V11 = [p7, p5, p3, p1, ...]
+    VSHL    $4, V11.B16, V11.B16
+    VORR    V10.B16, V11.B16, V12.B16
     
-    LSL     $2, R4, R7
-    ORR     R7, R3, R3
-    LSL     $4, R5, R7
-    ORR     R7, R3, R3
-    LSL     $6, R6, R7
-    ORR     R7, R3, R3
-    
-    MOVB    R3, (R1)
-    ADD     $1, R1
-    SUB     $4, R2
+    // Store 4 bytes
+    VMOV    V12.S[0], R3
+    MOVW    R3, (R1)
+    ADD     $4, R1
+    SUB     $16, R2
     B       loop_pack2
 
 tail_pack2:

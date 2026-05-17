@@ -65,7 +65,7 @@ func TestStore_IPCReliability(t *testing.T) {
 	// Search on empty dataset (SearchHybrid)
 	query := make([]float32, 128)
 	// SearchHybrid(ctx, name, query, textQuery, k, alpha, rrfK, graphAlpha, graphDepth)
-	results, err := s.SearchHybrid(ctx, datasetName, query, "", 10, 1.0, 60, 0, 0)
+	results, err := s.SearchHybrid(ctx, datasetName, query, "", 10, 1.0, 60, 0, 0, false)
 	assert.NoError(t, err)
 	assert.Equal(t, 0, len(results), "Search on empty dataset should return zero results")
 }

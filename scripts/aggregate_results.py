@@ -70,7 +70,7 @@ def aggregate_benchmarks(results_dir):
 
 def generate_markdown_report(df, output_file):
     with open(output_file, 'w') as f:
-        f.write("# Longbow v0.2.2-rc2 Performance Matrix\n\n")
+        f.write("# Longbow v0.2.5 Performance Matrix\n\n")
         
         # Summary by Search Mode
         f.write("## Search Performance Summary (QPS)\n\n")

@@ -24,7 +24,7 @@ Where:
 
 ## 2. Distributed Global Reciprocal Rank Fusion
 
-In a distributed, sharded search architecture, traditional RRF exhibits a major regression: **local rank skew**. 
+In a distributed, sharded search architecture, traditional RRF exhibits a major regression: **local rank skew**.
 
 If each cluster node executes dense and sparse searches on its own local shard and applies RRF locally, the local ranks are highly distorted because the node only has visibility into a fraction of the corpus. When the coordinator attempts to merge these pre-fused lists, the aggregate rank is mathematically incorrect.
 
@@ -36,6 +36,7 @@ Longbow solves this regression by implementing **Global Reciprocal Rank Fusion**
 2. **Global Gather**: All raw candidate lists are streamed back to the coordinator using zero-copy Arrow Flight streams.
 3. **Global Sort**: The coordinator aggregates all dense candidates into a single global dense list, and all sparse candidates into a single global sparse list, sorting each by score to establish a **true global rank**.
 4. **Global Fusion**: The coordinator executes the RRF calculation on these globally ranked lists:
+
    ```go
    finalResults = ReciprocalRankFusion(req.Dataset, allDense, allSparse, 60, req.K, nil)
    ```
@@ -49,9 +50,11 @@ Longbow's **Unified ML Inference Engine** allows developers to embed lightweight
 ### In-Process Ingestion & Search Pipeline
 
 1. **WASM Embedding**: Download a model (e.g., `all-MiniLM-L6-v2`) to a database node using the administrative command:
+
    ```bash
    longbow-cli download-model -repo sentence-transformers/all-MiniLM-L6-v2 -dest models/all-mini
    ```
+
 2. **Dense & Sparse Inference**: The in-process WASM/ONNX runtime executes the model to generate:
 
    - A **Dense vector** (e.g., 384-dimensional float array).

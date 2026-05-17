@@ -35,6 +35,16 @@ import (
 // DoAction handles custom actions like deletion, status, and graph operations.
 func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	switch action.Type {
+	case "ForceSnapshot":
+		err := s.Snapshot(stream.Context())
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to trigger manual snapshot: %v", err)
+		}
+		if err := stream.Send(&flight.Result{Body: []byte("ACK")}); err != nil {
+			return err
+		}
+		return nil
+
 	case "cluster-status":
 		if s.Mesh == nil {
 			return status.Error(codes.Unavailable, "gossip mesh not enabled")

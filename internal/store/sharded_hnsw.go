@@ -68,7 +68,7 @@ func DefaultShardedHNSWConfig() ShardedHNSWConfig {
 		ShardSplitThreshold:    65536, // ~64k vectors per shard (L3 Cache Alignment)
 		UseRingSharding:        true,  // Default to Ring
 		PackedAdjacencyEnabled: true,
-		SharedVectorSpace:      true, // Enable by default for sharded indexes (v0.2.5)
+		SharedVectorSpace:      true, // Enable by default for sharded indexes (v0.2.1)
 	}
 }
 

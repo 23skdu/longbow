@@ -14,7 +14,7 @@ Longbow ensures zero data loss using a combination of Write-Ahead Logs (WAL) and
 - **Performance**: High-throughput writes using `io_uring` (Linux) and asynchronous fsync options.
 - **Recovery**: On startup, Longbow replays the WAL to reconstruct the in-memory HNSW index and Arrow buffers.
 
-### High Availability & Replication (v0.2.5+)
+### High Availability & Replication (v0.2.1+)
 
 - **Quorum-based Replication**: When running in a cluster (via Gossip), Longbow performs **synchronous WAL replication** to peer nodes.
 - **Durability Guarantee**: A write is only acknowledged to the client after it has been persisted locally AND replicated to a quorum ($N/2 + 1$) of nodes.
@@ -81,6 +81,7 @@ For large-scale deployments, Longbow can offload "cold" or "warm" data to remote
 Longbow automatically manages memory pressure and data staleness through active eviction policies.
 
 ### Time-To-Live (TTL)
+
 - **Behavior**: Removes datasets that have not been accessed within a configured duration.
 - **Configuration**: Set `LONGBOW_TTL` (e.g., `24h`) to enable automated cleanup of transient caches.
 

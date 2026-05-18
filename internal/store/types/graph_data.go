@@ -376,8 +376,10 @@ func (g *GraphData) PackedSize() int {
 	p2 := int(1 << uint(math.Ceil(math.Log2(float64(g.Dims)))))
 	angleBytes := ((p2-1)*g.TurboQuantBits + 7) / 8
 	bitBytes := (p2 + 7) / 8
-	return 4 + angleBytes + bitBytes
+	size := 4 + angleBytes + bitBytes
+	return (size + 3) &^ 3 // Pad to 4 bytes for GPU alignment
 }
+
 
 // GetVectorsTQChunk returns a chunk of TurboQuant compressed vectors.
 func (g *GraphData) GetVectorsTQChunk(chunkID int) []byte {

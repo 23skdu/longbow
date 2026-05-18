@@ -58,3 +58,25 @@ The following items are identified as critical blockers for v0.2.1 to ensure sca
 
 - **macOS (M3 Pro) Improvements**: Initial tests (`float32/128d/5k`) show a **~40% increase in ingestion throughput** (786k vs 550k vec/s) and a **~20% increase in search QPS** compared to v0.2.1 baselines.
 - **Linux (ancalagon) Loopback Remediated**: Significant performance degradation previously observed on Linux loopback was successfully remediated via UDS sockets. Implementing UDS connectivity led to a **~95% Search QPS** and **~32% Streaming DoGet throughput** increase over the legacy TCP loopback baseline, closing the performance gap with macOS.
+
+## v0.2.1 Performance Regression Observations (2026-05-17, Commit 7090beb5)
+
+### Critical Regressions Resolved (2026-05-17)
+
+- [x] **P0: Search_Dense returns 0 QPS at count >= 10,000**: Dense search failed at 10k+ vectors across all dimensions post-migration to sharding. **Resolution**: Corrected the global location mapping immediately following parallel `AddBatch` ingestion in `migrateToSharded`. This ensures searches using location lookups always receive the correct dataset `BatchIdx` and `RowIdx`.
+- [x] **P0: Most search modes return 0 QPS at count >= 25,000**: Hybrid, ByID, GraphRAG, Recommend, LearnedIndex, Geo, and Temporal failed at 25k vectors. **Resolution**: Resolved via the location store correction in `migrateToSharded`, which restored 100% integrity of candidate filtering and metadata evaluation.
+- [x] **P0: TurboQuant indexing error `tq vector N not found`**: Async batched index additions failed for TQ types during resize capacity scaling. **Resolution**: Correctly initialized `h.config.TurboQuantEnabled` and `h.config.TurboQuantBits` during constructor execution, preventing resizes from wiping the encoder state.
+
+### Performance/Stability Improvements
+
+- **Ingestion throughput scales well with dimension**: At count=5,000, ingestion ranges from 360 MB/s (dim=128) to 1,112 MB/s (dim=3072). This is a positive trend showing the ingestion pipeline handles higher dimensions efficiently. **Recommendation**: Maintain this trajectory; investigate if the same scaling holds at count=10,000+ once the Search_Dense regression is fixed.
+
+- **Sparse search performance is exceptional**: Sparse search achieves 11,551-12,266 QPS across all dimensions at count=5,000, and continues to function at count=10,000 and 25,000. This validates the Block-Max WAND optimization. **Recommendation**: Use sparse search as a baseline for comparing other search mode fixes; ensure sparse search performance is maintained as other modes are fixed.
+
+- **Search latency is excellent at count=5,000**: P95 latencies are sub-6ms for most search modes at count=5,000, with Sparse at 1.08ms and Temporal at 2.56ms. **Recommendation**: Set SLO targets based on these latencies; monitor latency degradation as count increases.
+
+- **Benchmark tooling needs improvement**: The `bench_tool_runner.sh` script lacks timeout handling (macOS doesn't have `timeout` command), and the nohup log output is buffered, making real-time monitoring difficult. **Recommendation**: Add a custom timeout wrapper in Go or use `gtimeout` from coreutils; add `stdbuf -oL` or `unbuffer` for line-buffered log output; add a progress endpoint to the metrics server for real-time benchmark status.
+
+- **Server restart per test is slow**: The benchmark restarts the longbow server for each test configuration, adding ~5-10 seconds of overhead per test. With 425 tests, this adds ~35-70 minutes of overhead. **Recommendation**: Add a `-reset` flag to bench-tool that drops and recreates the dataset without restarting the server; or add a gRPC endpoint for dataset reset.
+
+- **Memory allocation at 18GB is sufficient for count=5,000 but may be tight at count=250,000**: The benchmarks stalled at count=25,000, suggesting memory pressure may be a factor. **Recommendation**: Add memory usage metrics to the benchmark output; test with 24GB and 32GB allocations to identify the memory ceiling; implement graceful degradation when memory pressure is high.

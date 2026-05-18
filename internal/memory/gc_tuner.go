@@ -57,7 +57,9 @@ type GCTuner struct {
 }
 
 func defaultPhysicalStats() (int64, int64) {
-	return GetGlobalOffHeapAllocated(), GetGlobalSlabPoolUnusedMemory()
+	// Return 0 for unusedSlabPool because GetGlobalOffHeapAllocated() already includes
+	// all allocated slabs (both active and pooled). Adding unusedSlabPool causes double counting.
+	return GetGlobalOffHeapAllocated(), 0
 }
 
 // NewGCTuner creates a tuner. limitBytes should be close to container memory limit.

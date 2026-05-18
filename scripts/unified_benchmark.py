@@ -2584,6 +2584,8 @@ class BenchmarkRunner:
             )
 
             for r in self.results:
+                if not isinstance(r, dict) or "search" not in r:
+                    continue
                 search = r["search"]
                 dense = search.get("dense", {"qps": 0, "p50": 0})
                 hybrid = search.get("hybrid", {"qps": 0, "p50": 0})
@@ -2610,8 +2612,9 @@ class BenchmarkRunner:
             )
 
             # Use largest count for the summary table
-            max_count = max(r["count"] for r in self.results) if self.results else 0
-            for r in self.results:
+            valid_results = [r for r in self.results if isinstance(r, dict) and "count" in r and "search" in r]
+            max_count = max(r["count"] for r in valid_results) if valid_results else 0
+            for r in valid_results:
                 if r["count"] == max_count:
                     dense = r["search"].get(
                         "dense", {"qps": 0, "p50": 0, "p90": 0, "p95": 0, "p99": 0}

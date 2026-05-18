@@ -385,7 +385,12 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	_ = h.navigator.Initialize()
 
 	if config.DataType == types.VectorTypeTQ {
-		bits := 3
+		bits := config.TurboQuantBits
+		if bits == 0 {
+			bits = 8
+		}
+		h.config.TurboQuantEnabled = true
+		h.config.TurboQuantBits = bits
 		h.tqEncoder = NewTurboQuantEncoder(config.Dims, bits, 42)
 		h.data.Load().TurboQuantEnabled = true
 		h.data.Load().TurboQuantBits = bits
@@ -481,8 +486,26 @@ func (h *ArrowHNSW) SetDimension(dim int) error {
 	h.initMu.Lock()
 	defer h.initMu.Unlock()
 	h.resolveAllDistanceFuncs()
+
+	if h.config.DataType == types.VectorTypeTQ || h.config.TurboQuantEnabled {
+		bits := h.config.TurboQuantBits
+		if bits == 0 {
+			bits = 8
+		}
+		h.tqEncoder = NewTurboQuantEncoder(dim, bits, 42)
+		h.tqCompute = NewTurboQuantCompute(h)
+	}
+
 	data := h.data.Load()
 	if data != nil {
+		if h.config.DataType == types.VectorTypeTQ || h.config.TurboQuantEnabled {
+			data.TurboQuantEnabled = true
+			if h.config.TurboQuantBits > 0 {
+				data.TurboQuantBits = h.config.TurboQuantBits
+			} else {
+				data.TurboQuantBits = 8
+			}
+		}
 		if err := h.Grow(data.Capacity, dim); err != nil {
 			return err
 		}

@@ -238,3 +238,14 @@ func GetGlobalSlabPoolUnusedMemory() int64 {
 	return total
 }
 
+// ReleaseGlobalSlabPoolsUnused forces all global slab pools to release excess slabs back to the OS.
+func ReleaseGlobalSlabPoolsUnused() int {
+	released := 0
+	released += global4MBPool.ReleaseUnused()
+	released += global8MBPool.ReleaseUnused()
+	released += global16MBPool.ReleaseUnused()
+	released += global32MBPool.ReleaseUnused()
+	return released
+}
+
+

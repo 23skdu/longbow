@@ -749,12 +749,12 @@ func checkBackpressure(ctx context.Context, sc *client.SmartClient, dataset stri
 	checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
 	checkStream, err := sc.DoAction(ctx, checkAction)
 	if err != nil {
-		return false, ""
+		return true, fmt.Sprintf("connection error: %v", err)
 	}
 
 	result, err := checkStream.Recv()
 	if err != nil {
-		return false, ""
+		return true, fmt.Sprintf("recv error: %v", err)
 	}
 
 	var status map[string]interface{}

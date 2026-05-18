@@ -32,7 +32,7 @@ elif command -v unbuffer &> /dev/null; then
 fi
 
 echo "Starting Local CPU Benchmark..."
-run_with_timeout 18000 $STDBUF python3 -u scripts/unified_benchmark.py --mode cpu --dtypes $DTYPES --dims $DIMS --counts $COUNTS --queries 100 --search-modes all --label local_cpu --duration 3 --pprof --memory 19327352832 2>&1 | tee local_cpu.log
+run_with_timeout 18000 $STDBUF python3 -u scripts/unified_benchmark.py --mode cpu,temporal,geo,graphrag,learned_index --dtypes $DTYPES --dims $DIMS --counts $COUNTS --queries 100 --search-modes all --label local_cpu --duration 3 --pprof --memory 19327352832 2>&1 | tee local_cpu.log
 
 echo "Starting Local Metal Benchmark..."
 run_with_timeout 18000 $STDBUF python3 -u scripts/unified_benchmark.py --mode metal --dtypes $DTYPES --dims $DIMS --counts $COUNTS --queries 100 --search-modes all --label local_metal --duration 3 --pprof --memory 19327352832 2>&1 | tee local_metal.log

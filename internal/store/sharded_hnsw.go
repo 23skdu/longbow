@@ -191,6 +191,15 @@ func (idx *ShardedHNSW) newShard(shardIdx int) *hnswShard {
 	if idx.config.DataType != types.VectorTypeUnknown {
 		arrowConfig.DataType = idx.config.DataType
 	}
+
+	if idx.config.DataType == types.VectorTypeTQ {
+		arrowConfig.TurboQuantEnabled = true
+		if idx.dataset != nil && idx.dataset.TurboQuantBits > 0 {
+			arrowConfig.TurboQuantBits = idx.dataset.TurboQuantBits
+		} else if arrowConfig.TurboQuantBits == 0 {
+			arrowConfig.TurboQuantBits = 8
+		}
+	}
  
 	// We pass nil for ChunkedLocationStore because shards use local IDs and don't manage global locations
 	// The ShardedHNSW manages the global location store.

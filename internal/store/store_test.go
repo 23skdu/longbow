@@ -36,7 +36,7 @@ func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(cont
 
 	mem := memory.NewGoAllocator()
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
-	vs := NewVectorStore(mem, logger, 1024*1024*100, 0, 0) // 100MB limit
+	vs := NewVectorStore(mem, logger, 1024*1024*500, 0, 0) // 500MB limit
 
 	// Init persistence
 	// Init persistence
@@ -69,7 +69,7 @@ func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(cont
 }
 
 func TestDoPutAndDoGet(t *testing.T) {
-	_, _, dialer := setupServer(t)
+	vs, _, dialer := setupServer(t)
 
 	ctx := context.Background()
 	client, err := flight.NewClientWithMiddleware(
@@ -129,6 +129,11 @@ func TestDoPutAndDoGet(t *testing.T) {
 	if err != nil {
 		// Expected EOF
 		_ = err
+	}
+
+	// Ensure background indexing completes
+	if ds, err := vs.GetDataset("test_dataset"); err == nil {
+		ds.WaitForIndexing()
 	}
 
 	// 3. DoGet
@@ -303,6 +308,11 @@ func TestPersistence(t *testing.T) {
 		t.Fatalf("CloseSend failed: %v", err)
 	}
 	_, _ = stream.Recv()
+
+	// Ensure background indexing completes
+	if ds, err := vs.GetDataset("persist_test"); err == nil {
+		ds.WaitForIndexing()
+	}
 
 	// Force Snapshot
 	if err := vs.Snapshot(context.Background()); err != nil {

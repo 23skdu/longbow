@@ -226,11 +226,10 @@ func (idx *AutoShardingIndex) checkMigrationPressure() {
 		return
 	}
 
-	// Calculate physical memory (Heap + Off-Heap Arenas + SlabPool)
+	// Calculate physical memory (Heap + Off-Heap Arenas)
 	offHeapMem := lbmem.GetGlobalOffHeapAllocated()
-	unusedSlabs := lbmem.GetGlobalSlabPoolUnusedMemory()
 	
-	usage := float64(int64(m.HeapAlloc)+offHeapMem+unusedSlabs) / float64(maxMem) // #nosec G115
+	usage := float64(int64(m.HeapAlloc)+offHeapMem) / float64(maxMem) // #nosec G115
 	if usage > 0.85 {
 		// Migration is happening and we are above 85% total memory limit.
 		// Slow down the caller to allow GC and migration loop to keep up.
@@ -341,14 +340,13 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		runtime.ReadMemStats(&m)
 		
 		offHeapMem := lbmem.GetGlobalOffHeapAllocated()
-		unusedSlabs := lbmem.GetGlobalSlabPoolUnusedMemory()
 		
 		maxMem := int64(0)
 		if idx.dataset.Admission != nil {
 			maxMem = idx.dataset.Admission.maxMemory.Load()
 		}
 
-		physicalMem := int64(m.HeapAlloc) + offHeapMem + unusedSlabs // #nosec G115
+		physicalMem := int64(m.HeapAlloc) + offHeapMem // #nosec G115
 		usageRatio := 0.0
 		if maxMem > 0 {
 			usageRatio = float64(physicalMem) / float64(maxMem)
@@ -466,7 +464,7 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 			}
 
 			// Add batch to new index (Parallelized inside ShardedHNSW)
-			_, err := newIndex.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
+			gIDs, err := newIndex.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
 			
 			// Release records
 			for _, r := range recs {
@@ -477,6 +475,14 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 				idx.dataset.Logger.Error().Err(err).Msg("Migration batch failed - aborting")
 				// Critical failure: abort migration to prevent inconsistent state
 				return
+			}
+
+			// Correct locations in global locationStore of newIndex
+			if sh, ok := newIndex.(*ShardedHNSW); ok {
+				for i, gid := range gIDs {
+					vid := VectorID(gid)
+					sh.locationStore.Set(vid, Location{BatchIdx: items[i].batchIdx, RowIdx: items[i].rowIdx})
+				}
 			}
 		}
 
@@ -523,6 +529,14 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 
 	// Close old index to release all remaining resources
 	_ = oldIndex.Close()
+
+	// Reclaim memory immediately back to OS
+	released := lbmem.ReleaseGlobalSlabPoolsUnused()
+	if released > 0 {
+		idx.dataset.Logger.Info().Int("released_slabs", released).Msg("Released unused monolithic index slabs back to the OS")
+	}
+	runtime.GC()
+	debug.FreeOSMemory()
 
 	idx.dataset.dataMu.RUnlock()
 	idx.mu.Unlock()

@@ -474,8 +474,12 @@ func (vs *VectorStore) SetGCTuner(tuner *lbmem.GCTuner) {
 	vs.tuner.Store(tuner)
 	if tuner != nil {
 		tuner.RegisterCleanup(func() {
-			vs.logger.Warn().Msg("Emergency memory cleanup: clearing query cache")
+			vs.logger.Warn().Msg("Emergency memory cleanup: clearing query cache and releasing slab pools")
 			vs.queryCache.Clear()
+			released := lbmem.ReleaseGlobalSlabPoolsUnused()
+			if released > 0 {
+				vs.logger.Info().Int("released_slabs", released).Msg("Released unused slabs back to the OS during emergency cleanup")
+			}
 		})
 	}
 	// Wire to global worker pool for indexing backpressure

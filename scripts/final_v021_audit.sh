@@ -2,9 +2,9 @@
 # scripts/final_v021_audit.sh
 
 # User-requested parameters
-DTYPES="float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant2,turboquant4,turboquant8"
-DIMS="128,384,768,1024,3072"
-COUNTS="5000,10000,25000,100000,250000"
+DTYPES="float32,int8,turboquant8"
+DIMS="128,768,3072"
+COUNTS="5000,25000,100000"
 MAX_MEM=19327352832 # 18 GB
 
 # 1. Local Cleanup

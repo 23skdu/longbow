@@ -86,19 +86,16 @@ func (ac *AdmissionController) AdmitMigration(ctx context.Context) error {
 		return status.Errorf(codes.ResourceExhausted, "migration throttled: ingestion throughput (%.1f vectors/s) exceeds 80%% capacity", snapshot.IngestThroughput)
 	}
 
-	// 80% Rule for Memory Pressure specifically for migration
+	// 95% Rule for Memory Pressure specifically for migration to prevent sharding deadlocks
 	maxMem := ac.maxMemory.Load()
 	if maxMem > 0 {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
-
-		// Include global off-heap and slab pool unused memory
 		offHeapMem := lbmem.GetGlobalOffHeapAllocated()
-		unusedSlabs := lbmem.GetGlobalSlabPoolUnusedMemory()
-
-		usage := (float64(m.HeapAlloc) + float64(offHeapMem) + float64(unusedSlabs)) / float64(maxMem)
-		if usage > 0.80 {
-			return status.Errorf(codes.ResourceExhausted, "migration throttled: memory usage (%.1f%%) exceeds 80%% background threshold", usage*100)
+		physicalMem := int64(m.HeapAlloc) + offHeapMem
+		usage := float64(physicalMem) / float64(maxMem)
+		if usage > 0.95 {
+			return status.Errorf(codes.ResourceExhausted, "migration throttled: memory usage (%.1f%%) exceeds 95%% background threshold", usage*100)
 		}
 	}
 
@@ -147,11 +144,10 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 	
 	// 3. Get Off-Heap Arena Usage (using TotalCapacity for actual footprint)
 	offHeapMem := lbmem.GetGlobalOffHeapAllocated()
-	unusedSlabs := lbmem.GetGlobalSlabPoolUnusedMemory()
 
 	// Use the maximum of manual tracking and actual physical usage (Heap + Off-Heap)
 	effectiveMem := currMem
-	physicalMem := heapMem + offHeapMem + unusedSlabs
+	physicalMem := heapMem + offHeapMem
 	if physicalMem > effectiveMem {
 		effectiveMem = physicalMem
 	}

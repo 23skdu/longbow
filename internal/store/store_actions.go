@@ -130,9 +130,10 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 				pending := ds.PendingIndexJobs.Load()
 				pendingIngestion := ds.PendingIngestion.Load()
 				activeStreams := ds.ActiveIngestStreams.Load()
-				if pending > 0 || pendingIngestion > 0 || activeStreams > 0 {
+				isMigrating := ds.Admission != nil && ds.Admission.migratingCount.Load() > 0
+				if pending > 0 || pendingIngestion > 0 || activeStreams > 0 || isMigrating {
 					resp["status"] = "BUSY"
-					resp["reason"] = fmt.Sprintf("dataset has %d pending index jobs, %d pending ingestion jobs, %d active streams", pending, pendingIngestion, activeStreams)
+					resp["reason"] = fmt.Sprintf("dataset has %d pending index jobs, %d pending ingestion jobs, %d active streams, migrating=%t", pending, pendingIngestion, activeStreams, isMigrating)
 				} else if ds.Index == nil {
 					resp["status"] = "BUSY"
 					resp["reason"] = "index not initialized"

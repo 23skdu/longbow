@@ -628,7 +628,16 @@ func euclideanFloat64AVX2(a, b []float64) (float32, error) {
 }
 
 func dotFloat64AVX2(a, b []float64) (float32, error) {
-	return dotFloat64Unrolled4x(a, b)
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if !features.HasAVX2 {
+		return 0, errors.New("avx2 not supported")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotFloat64AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), len(a)), nil
 }
 
 // =============================================================================

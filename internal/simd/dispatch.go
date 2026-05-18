@@ -547,8 +547,8 @@ func initializeDispatch() {
 		euclideanDistanceF16Impl = euclideanF16Unrolled4x
 		cosineDistanceF16Impl = cosineF16Unrolled4x
 		dotProductF16Impl = dotF16Unrolled4x
-		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
-		dotProductFloat64Impl = dotFloat64Unrolled4x
+		euclideanDistanceFloat64Impl = euclideanFloat64AVX2
+		dotProductFloat64Impl = dotFloat64AVX2
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
 		dotProductInt8Impl = dotInt8Unrolled4x
@@ -867,9 +867,9 @@ func initializeDispatch() {
 	Registry.Register(MetricDotProduct, DataTypeUint64, 768, Dot768Uint64)
 	Registry.Register(MetricDotProduct, DataTypeUint64, 1024, Dot1024Uint64)
 
-	Registry.Register(MetricEuclidean, DataTypeFloat64, 0, euclideanFloat64Unrolled4x)
-	Registry.Register(MetricCosine, DataTypeFloat64, 0, cosineFloat64Unrolled4x)
-	Registry.Register(MetricDotProduct, DataTypeFloat64, 0, dotFloat64Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeFloat64, 0, EuclideanDistanceFloat64)
+	Registry.Register(MetricCosine, DataTypeFloat64, 0, CosineDistanceFloat64)
+	Registry.Register(MetricDotProduct, DataTypeFloat64, 0, DotProductF64)
 
 	Registry.Register(MetricEuclidean, DataTypeComplex64, 0, euclideanComplex64Unrolled)
 	Registry.Register(MetricCosine, DataTypeComplex64, 0, CosineDistanceComplex64)

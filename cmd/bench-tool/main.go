@@ -67,6 +67,7 @@ func main() {
 	outputFbin := flag.String("output-fbin", "", "Save generated vectors to .fbin file and exit")
 	mode := flag.String("mode", "vec", "Benchmark mode (vec, kv, cluster)")
 	searchModes := flag.String("search-modes", "all", "Comma-separated search modes to run (dense, hybrid, sparse, filtered, byid, graphrag, geo, temporal, learned_index)")
+	reset := flag.Bool("reset", false, "Reset dataset in-place before running the benchmark")
 	flag.Parse()
 
 	if *drop {
@@ -97,6 +98,15 @@ func main() {
 		log.Fatalf("Failed to connect SmartClient: %v", err)
 	}
 	defer sc.Close()
+
+	if *reset {
+		log.Printf("Performing in-place reset for dataset %s before benchmark...\n", *dataset)
+		if err := resetDataset(context.Background(), sc, *dataset); err != nil {
+			log.Printf("In-place reset status/info: %v (this is normal if dataset was not already present)\n", err)
+		} else {
+			log.Printf("In-place reset for dataset %s completed successfully.\n", *dataset)
+		}
+	}
 
 	var results []BenchmarkResult
 
@@ -1090,6 +1100,26 @@ func dropDataset(ctx context.Context, sc *client.SmartClient, dataset string) er
 
 	action := &flight.Action{
 		Type: "drop",
+		Body: body,
+	}
+
+	stream, err := sc.DoAction(ctx, action)
+	if err != nil {
+		return err
+	}
+
+	_, err = stream.Recv()
+	return err
+}
+
+func resetDataset(ctx context.Context, sc *client.SmartClient, dataset string) error {
+	req := struct {
+		Name string `json:"name"`
+	}{Name: dataset}
+	body, _ := json.Marshal(req)
+
+	action := &flight.Action{
+		Type: "ResetDataset",
 		Body: body,
 	}
 

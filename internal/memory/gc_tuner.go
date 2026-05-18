@@ -267,7 +267,9 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 				}
 				// Force a manual GC if we are hitting the ceiling to avoid OOM/Livelock
 				runtime.GC()
-				debug.FreeOSMemory()
+				if ratio > 0.97 {
+					debug.FreeOSMemory()
+				}
 			} else {
 				targetGOGC = t.lowGOGC
 			}
@@ -297,7 +299,9 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 		// Also force a GC if very high
 		if ratio > 0.92 {
 			runtime.GC()
-			debug.FreeOSMemory()
+			if ratio > 0.97 {
+				debug.FreeOSMemory()
+			}
 		}
 	}
 	metrics.GCTunerHeapUtilization.Set(ratio)

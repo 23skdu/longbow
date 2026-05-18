@@ -411,9 +411,9 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 						var targetEf int
 						switch {
 						case depth > 5000:
-							targetEf = 50
+							targetEf = 100 // Raised from 50 to avoid graph search deadlocks (ef < M)
 						case depth > 1000:
-							targetEf = 100
+							targetEf = 200 // Raised from 100
 						default:
 							targetEf = 400 // Default high quality
 						}

@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
@@ -190,6 +191,7 @@ func main() {
 }
 
 func run() error {
+	startTime := time.Now()
 	// Handle --version and -v flags early
 	if len(os.Args) > 1 {
 		for _, arg := range os.Args[1:] {
@@ -524,6 +526,72 @@ func run() error {
 		mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("OK"))
+		})
+		mux.HandleFunc("/progress", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+
+			var limitBytes, usedBytes int64
+			var ratio float64
+			var isHighPressure, isBursting bool
+			tuner := vectorStore.GetGCTuner()
+			if tuner != nil {
+				limitBytes = cfg.MaxMemory
+				ratio = tuner.GetUtilizationRatio()
+				usedBytes = int64(float64(limitBytes) * ratio)
+				isHighPressure = tuner.IsHighPressure()
+				isBursting = tuner.IsBursting()
+			} else {
+				var m runtime.MemStats
+				runtime.ReadMemStats(&m)
+				usedBytes = int64(m.HeapAlloc) // #nosec G115
+			}
+
+			backpressure := vectorStore.CheckIngestionBackpressure()
+			delay := vectorStore.IngestionBackpressureDelay()
+
+			type DatasetProgress struct {
+				Name      string `json:"name"`
+				NodeCount int64  `json:"node_count"`
+				MaxLevel  int32  `json:"max_level"`
+				OffHeap   bool   `json:"off_heap"`
+			}
+			var datasets []DatasetProgress
+			activeNames := vectorStore.GetActiveDatasets()
+			for _, name := range activeNames {
+				nodeCount, maxLevel, isOffHeap, exists := vectorStore.GetDatasetIndexStats(name)
+				if exists {
+					datasets = append(datasets, DatasetProgress{
+						Name:      name,
+						NodeCount: nodeCount,
+						MaxLevel:  maxLevel,
+						OffHeap:   isOffHeap,
+					})
+				}
+			}
+
+			resp := map[string]any{
+				"status":         "running",
+				"uptime_seconds": time.Since(startTime).Seconds(),
+				"memory": map[string]any{
+					"limit_bytes":       limitBytes,
+					"used_bytes":        usedBytes,
+					"utilization_ratio": ratio,
+					"high_pressure":     isHighPressure,
+					"bursting":          isBursting,
+				},
+				"ingestion": map[string]any{
+					"queue_len":       vectorStore.IngestionQueueLen(),
+					"queue_cap":       vectorStore.IngestionQueueCap(),
+					"backpressure":    backpressure,
+					"backpressure_ms": delay.Milliseconds(),
+				},
+				"datasets": datasets,
+			}
+
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(err.Error()))
+			}
 		})
 		// pprof endpoints (Phase 6)
 		mux.HandleFunc("/debug/pprof/", pprof.Index)

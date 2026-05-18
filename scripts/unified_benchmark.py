@@ -236,7 +236,7 @@ class BenchmarkRunner:
         for name in ["longbow", "longbow-metal", "longbow-cuda", "bench-tool", "benchmark-tool", "longbow-cli"]:
             subprocess.run(f"pkill -9 -x {name} 2>/dev/null || true", shell=True)
         
-        time.sleep(10) 
+        time.sleep(1) 
         
         server_bin = self.get_server_binary()
         if not os.path.exists(server_bin):
@@ -420,7 +420,7 @@ class BenchmarkRunner:
         for profile in profiles:
             url = f"http://{host}:{metrics_port}/debug/pprof/{profile}"
             if profile == "profile":
-                url += "?seconds=5"
+                url += "?seconds=1"
             
             output_file = os.path.join("profiles", f"{label}_{profile}_{self.timestamp}.pprof")
             try:
@@ -552,7 +552,7 @@ class BenchmarkRunner:
         label_full = f"{label}_{self.args.label}" if self.args.label else label
         pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=5"
+        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=1"
         
         pprof_proc = None
         if "127.0.0.1" in self.server_addr or "localhost" in self.server_addr:
@@ -909,7 +909,7 @@ class BenchmarkRunner:
                         label_full = f"{label}_{self.args.label}" if self.args.label else label
                         pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
                         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=5"
+                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=1"
                         pprof_proc = subprocess.Popen(
                             f"curl -s -o {pprof_file} \"{pprof_url}\"",
                             shell=True,
@@ -1248,7 +1248,7 @@ class BenchmarkRunner:
                         label_full = f"{label}_{self.args.label}" if self.args.label else label
                         pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
                         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=5"
+                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=1"
                         pprof_proc = subprocess.Popen(
                             f"curl -s -o {pprof_file} \"{pprof_url}\"",
                             shell=True,
@@ -2264,7 +2264,7 @@ class BenchmarkRunner:
                                 )
                             if self.args.pprof:
                                 self.collect_pprof(label)
-                                time.sleep(5)
+                                time.sleep(1)
                         finally:
                             self.stop_server()
                             # Clean up data directory

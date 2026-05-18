@@ -759,6 +759,7 @@ class LongbowClient:
         window_size: Optional[int] = None,
         duration: Optional[str] = None,
         k: int = 10,
+        dataset: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         """
         Perform a temporal search on the temporal index.
@@ -771,6 +772,7 @@ class LongbowClient:
             window_size: Window size for sliding_window
             duration: Duration for sliding_window_time (e.g., "1h", "30m")
             k: Number of results
+            dataset: Target dataset (optional, auto-inferred if omitted)
 
         Returns:
             List of search results with id, distance, and score
@@ -778,7 +780,15 @@ class LongbowClient:
         if self._meta_client is None:
             self.connect()
 
+        if dataset is None:
+            namespaces = self.list_namespaces()
+            if namespaces:
+                dataset = namespaces[0]
+            else:
+                dataset = ""
+
         req = {
+            "dataset": dataset,
             "search_type": search_type,
             "k": k,
         }
@@ -851,12 +861,13 @@ class LongbowClient:
             "endpoints": [str(e.locations) for e in info.endpoints]
         }
 
-    def temporal_version_history(self, vector_id: int) -> List[Dict[str, Any]]:
+    def temporal_version_history(self, vector_id: int, dataset: Optional[str] = None) -> List[Dict[str, Any]]:
         """
         Get version history for a vector.
 
         Args:
             vector_id: ID of the vector
+            dataset: Target dataset (optional, auto-inferred if omitted)
 
         Returns:
             List of versioned vectors with timestamps
@@ -864,7 +875,14 @@ class LongbowClient:
         if self._meta_client is None:
             self.connect()
 
-        req = {"vector_id": vector_id}
+        if dataset is None:
+            namespaces = self.list_namespaces()
+            if namespaces:
+                dataset = namespaces[0]
+            else:
+                dataset = ""
+
+        req = {"dataset": dataset, "vector_id": vector_id}
         action = flight.Action(
             "TemporalVersionHistory", json.dumps(req).encode("utf-8")
         )
@@ -884,6 +902,7 @@ class LongbowClient:
         start_time: int,
         end_time: int,
         interval: Optional[int] = None,
+        dataset: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         Perform temporal aggregation (count, min, max, mean) over time buckets.
@@ -893,6 +912,7 @@ class LongbowClient:
             start_time: Start time (unix nanoseconds)
             end_time: End time (unix nanoseconds)
             interval: Bucket interval in nanoseconds (default: 1 hour)
+            dataset: Target dataset (optional, auto-inferred if omitted)
 
         Returns:
             Dictionary with buckets and total_count
@@ -900,7 +920,15 @@ class LongbowClient:
         if self._meta_client is None:
             self.connect()
 
+        if dataset is None:
+            namespaces = self.list_namespaces()
+            if namespaces:
+                dataset = namespaces[0]
+            else:
+                dataset = ""
+
         req = {
+            "dataset": dataset,
             "aggregation_type": aggregation_type,
             "start_time": start_time,
             "end_time": end_time,

@@ -31,7 +31,13 @@ func (s *VectorStore) runIngestionWorkerWithCtx(ctx context.Context) {
 			// Granular Backpressure: if memory pressure is extreme, throttle ingestion
 			tuner := s.tuner.Load()
 			if tuner != nil && tuner.IsHighPressure() {
-				s.logger.Warn().Msg("High memory pressure detected, throttling ingestion worker")
+				now := time.Now().Unix()
+				lastLog := s.lastThrottlingLogTime.Load()
+				if now-lastLog >= 5 {
+					if s.lastThrottlingLogTime.CompareAndSwap(lastLog, now) {
+						s.logger.Warn().Msg("High memory pressure detected, throttling ingestion worker")
+					}
+				}
 				select {
 				case <-s.stopChan:
 					return

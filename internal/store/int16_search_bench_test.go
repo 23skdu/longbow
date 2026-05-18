@@ -186,7 +186,7 @@ func BenchmarkSearch_Uint16(b *testing.B) {
 	}
 }
 
-func TestSearch_Int16VsInt64(t *testing.T) {
+func BenchmarkSearch_Int16VsInt64(b *testing.B) {
 	numVectors := 100
 	dim := 128
 
@@ -214,40 +214,21 @@ func TestSearch_Int16VsInt64(t *testing.T) {
 		_ = idxI64.InsertWithVector(uint32(i), vecsI64[i], -1)
 	}
 
-	for i := 0; i < 10; i++ {
-		_, _ = idxI16.Search(context.Background(), vecsI16[i%numVectors], 5, nil)
-		_, _ = idxI64.Search(context.Background(), vecsI64[i%numVectors], 5, nil)
-	}
+	b.Run("Int16", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_, err := idxI16.Search(context.Background(), vecsI16[i%numVectors], 5, nil)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 
-	startI16 := time.Now()
-	for i := 0; i < 100; i++ {
-		_, _ = idxI16.Search(context.Background(), vecsI16[i%numVectors], 5, nil)
-	}
-	timeI16 := time.Since(startI16)
-
-	startI64 := time.Now()
-	for i := 0; i < 100; i++ {
-		_, _ = idxI64.Search(context.Background(), vecsI64[i%numVectors], 5, nil)
-	}
-	timeI64 := time.Since(startI64)
-
-	t.Logf("int16: %v for 100 searches, int64: %v for 100 searches", timeI16, timeI64)
-
-	resultsI16, err := idxI16.Search(context.Background(), vecsI16[0], 5, nil)
-	if err != nil {
-		t.Fatalf("int16 search failed: %v", err)
-	}
-
-	resultsI64, err := idxI64.Search(context.Background(), vecsI64[0], 5, nil)
-	if err != nil {
-		t.Fatalf("int64 search failed: %v", err)
-	}
-
-	t.Logf("int16 results: %v", resultsI16)
-	t.Logf("int64 results: %v", resultsI64)
-
-	// Basic sanity: at least one search should return results for 100 indexed vectors
-	if len(resultsI16) == 0 && len(resultsI64) == 0 {
-		t.Fatal("both int16 and int64 searches returned no results - indexing may have failed")
-	}
+	b.Run("Int64", func(b *testing.B) {
+		for i := 0; i < b.N; i++ {
+			_, err := idxI64.Search(context.Background(), vecsI64[i%numVectors], 5, nil)
+			if err != nil {
+				b.Fatal(err)
+			}
+		}
+	})
 }

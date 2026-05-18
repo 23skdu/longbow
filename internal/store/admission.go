@@ -92,7 +92,7 @@ func (ac *AdmissionController) AdmitMigration(ctx context.Context) error {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		offHeapMem := lbmem.GetGlobalOffHeapAllocated()
-		physicalMem := int64(m.HeapAlloc) + offHeapMem
+		physicalMem := int64(m.HeapAlloc) + offHeapMem // #nosec G115
 		usage := float64(physicalMem) / float64(maxMem)
 		if usage > 0.95 {
 			return status.Errorf(codes.ResourceExhausted, "migration throttled: memory usage (%.1f%%) exceeds 95%% background threshold", usage*100)

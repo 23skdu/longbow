@@ -401,7 +401,9 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 				Msg("Migration throttled: critical memory pressure")
 			
 			runtime.GC()
-			debug.FreeOSMemory()
+			if usageRatio > 0.97 {
+				debug.FreeOSMemory()
+			}
 			time.Sleep(500 * time.Millisecond)
 		}
 
@@ -499,9 +501,8 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 					_ = ah.ReleaseMonolithicChunk(c)
 				}
 				// Reclaim memory immediately after chunk release
-				if usageRatio > 0.60 {
+				if usageRatio > 0.85 {
 					runtime.GC()
-					debug.FreeOSMemory()
 				} else if currentChunk%4 == 0 { // Don't GC on every chunk to avoid too much jitter
 					runtime.GC()
 				}

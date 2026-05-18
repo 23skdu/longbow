@@ -250,83 +250,72 @@ class BenchmarkRunner:
         env = os.environ.copy()
         if env_overrides:
             env.update(env_overrides)
-        
-        # Dynamic mode-based env overrides
-        current_mode = getattr(self, 'current_mode', self.args.mode)
-        if self.args.mode == "temporal" or "temporal" in self.args.search_modes or self.args.search_modes == "all":
-            env["LONGBOW_TEMPORAL_ENABLED"] = "true"
-            env["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
-        
-        if "geo" in self.args.search_modes or self.args.search_modes == "all":
-            env["GEO_ENABLED"] = "true"
-            env["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
-        if current_mode == "geo":
-            env["LONGBOW_GEO_ENABLED"] = "true"
-        if current_mode == "graphrag":
-            env["LONGBOW_GRAPHRAG_ENABLED"] = "true"
-        if current_mode in ["metal", "cuda"]:
-            env["LONGBOW_GPU_ENABLED"] = "true"
-        else:
-            env["LONGBOW_GPU_ENABLED"] = "false"
 
-        limit_gb = 18
-        if "LONGBOW_MAX_MEMORY" in os.environ:
-            env["LONGBOW_MAX_MEMORY"] = os.environ["LONGBOW_MAX_MEMORY"]
-        else:
-            env["LONGBOW_MAX_MEMORY"] = str(limit_gb * 1024 * 1024 * 1024) 
+        # ── Core resource limits ──────────────────────────────────────────
+        limit_gb = getattr(self.args, "memory", 18 * 1024 * 1024 * 1024)
+        env["LONGBOW_MAX_MEMORY"] = str(limit_gb)
         env["ARROW_DISABLE_LOCKING"] = "1"
-        if self.args.rdma:
-            env["LONGBOW_RDMA_ENABLED"] = "true"
-        if self.args.iouring:
-            env["LONGBOW_STORAGE_USE_IOURING"] = "true"
+        env["LONGBOW_GOGC"] = "200"
+        env["LONGBOW_INGESTION_WORKER_COUNT"] = "0"
+        env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"
+        env["LONGBOW_AUTOSCALE_ENABLED"] = "false"
 
-        log_file = os.path.join(self.log_dir, f"longbow_{current_mode}_{label}.log")
-
+        # ── Network addresses ─────────────────────────────────────────────
         env["LONGBOW_LISTEN_ADDR"] = f"0.0.0.0:{port}"
         env["LONGBOW_META_ADDR"] = f"0.0.0.0:{port + 1}"
         env["LONGBOW_REST_ADDR"] = f"0.0.0.0:{port + 80}"
         env["LONGBOW_METRICS_ADDR"] = f"0.0.0.0:{port + 6000}"
         env["LONGBOW_DATA_PATH"] = data_root
         env["LONGBOW_NODE_ID"] = self.node_id
-        env["LONGBOW_GOGC"] = "200"
-        env["LONGBOW_INGESTION_WORKER_COUNT"] = "0"
-        env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"
-        
+
+        # ── GPU mode ──────────────────────────────────────────────────────
+        current_mode = getattr(self, "current_mode", self.args.mode)
+        if current_mode in ("metal", "cuda"):
+            env["LONGBOW_GPU_ENABLED"] = "true"
+        else:
+            env["LONGBOW_GPU_ENABLED"] = "false"
+
+        # ── Feature flags (always enabled for comprehensive benchmarking) ─
+        env["LONGBOW_TEMPORAL_ENABLED"] = "true"
+        env["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
+        env["LONGBOW_SPARSE_ENABLED"] = "true"
+        env["LONGBOW_GEOSPATIAL_ENABLED"] = "true"
+        env["LONGBOW_GEO_SEARCH_ENABLED"] = "true"
+        env["LONGBOW_GRAPHRAG_ENABLED"] = "true"
+        env["LONGBOW_LEARNED_INDEX_ENABLED"] = "true"
+        env["LONGBOW_HYBRID_SEARCH_ENABLED"] = "true"
+        env["LONGBOW_HNSW_TURBOQUANT_ENABLED"] = "true"
+        env["LONGBOW_RERANKER_ENABLED"] = "true"
+        env["LONGBOW_INDEXING_ADAPTIVE_ENABLED"] = "true"
+
+        # ── Optional feature flags (CLI-driven) ───────────────────────────
+        if self.args.rdma:
+            env["LONGBOW_RDMA_ENABLED"] = "true"
+        if self.args.iouring:
+            env["LONGBOW_STORAGE_USE_IOURING"] = "true"
         if self.args.low_mem:
             env["LONGBOW_LOW_MEM"] = "1"
         if self.args.use_disk:
             env["LONGBOW_USE_DISK"] = "1"
         if self.args.pq_ingest:
             env["LONGBOW_PQ_INGEST"] = "1"
-        
-        # Dynamically scale gRPC message size for workloads > 100k vectors
-        # Also helpful for high-dimensional vectors (e.g. 1536d, 3072d)
-        max_count = max([int(c) for c in self.args.counts.split(",")])
+        if self.args.debug:
+            env["LONGBOW_DEBUG"] = "true"
+        if getattr(self.args, "learned_samples", 0) > 0:
+            env["LONGBOW_LEARNED_MIN_SAMPLES"] = str(self.args.learned_samples)
+        if getattr(self.args, "learned_confidence", 0.0) > 0:
+            env["LONGBOW_LEARNED_CONFIDENCE_THRESHOLD"] = str(self.args.learned_confidence)
+        if getattr(self.args, "learned_interval", 0) > 0:
+            env["LONGBOW_LEARNED_UPDATE_INTERVAL"] = str(self.args.learned_interval)
+
+        # ── Scale gRPC message size for large workloads ───────────────────
+        max_count = max(int(c) for c in self.args.counts.split(","))
         if max_count >= 100000:
-            # Scale up to 2GB for large batches
             env["LONGBOW_GRPC_MAX_RECV_MSG_SIZE"] = "2147483647"
             env["LONGBOW_GRPC_MAX_SEND_MSG_SIZE"] = "2147483647"
             print(f"  Scaling gRPC message size for {max_count} vectors")
-        
-        env["LONGBOW_LEARNED_INDEX_ENABLED"] = "true"
-        if self.args.learned_samples:
-            env["LONGBOW_LEARNED_MIN_SAMPLES"] = str(self.args.learned_samples)
 
-        if not os.path.exists(self.log_dir):
-            os.makedirs(self.log_dir, exist_ok=True)
-
-        # Enable GPU for metal/cuda benchmark modes
-        if self.args.mode in ["metal", "cuda"]:
-            env["LONGBOW_GPU_ENABLED"] = "true"
-        else:
-            env["LONGBOW_GPU_ENABLED"] = "false"
-
-        # Enable RDMA for cluster mode
-        if self.args.rdma:
-            env["LONGBOW_RDMA_ENABLED"] = "true"
-
-        if not os.path.exists(self.log_dir):
-            os.makedirs(self.log_dir, exist_ok=True)
+        log_file = os.path.join(self.log_dir, f"longbow_{current_mode}_{label}.log")
         with open(log_file, "w") as f:
             process = subprocess.Popen(
                 [server_bin],

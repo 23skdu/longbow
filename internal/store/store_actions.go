@@ -71,6 +71,47 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return nil
 
+	case "ResetDataset":
+		var req struct {
+			Name string `json:"name"`
+		}
+		if len(action.Body) > 0 {
+			if err := json.Unmarshal(action.Body, &req); err != nil {
+				return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+			}
+		}
+
+		if req.Name != "" && req.Name != "all" {
+			s.logger.Info().Str("dataset", req.Name).Msg("In-place ResetDataset called for specific dataset")
+			if err := s.DropDataset(stream.Context(), req.Name); err != nil {
+				return ToGRPCStatus(err)
+			}
+			debug.FreeOSMemory()
+			if err := stream.Send(&flight.Result{Body: []byte(`{"status": "reset_success"}`)}); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		// Reset ALL datasets!
+		s.logger.Info().Msg("In-place ResetDataset called for ALL datasets")
+		datasetsPtr := s.datasets.Load()
+		if datasetsPtr != nil {
+			datasets := *datasetsPtr
+			for name := range datasets {
+				s.logger.Info().Str("dataset", name).Msg("Dropping dataset during global in-place reset")
+				if err := s.DropDataset(stream.Context(), name); err != nil {
+					s.logger.Error().Err(err).Str("dataset", name).Msg("Failed to drop dataset during global reset")
+				}
+			}
+		}
+
+		debug.FreeOSMemory()
+		if err := stream.Send(&flight.Result{Body: []byte(`{"status": "reset_all_success"}`)}); err != nil {
+			return err
+		}
+		return nil
+
 	case "ReplicateWAL":
 		if len(action.Body) == 0 {
 			return status.Error(codes.InvalidArgument, "empty WAL payload")

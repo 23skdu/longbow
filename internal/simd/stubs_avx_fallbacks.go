@@ -256,3 +256,16 @@ func dotF16AVX2(a, b []float16.Num) (float32, error)         { return dotF16Unro
 func dotF16AVX512(a, b []float16.Num) (float32, error)       { return dotF16Unrolled4x(a, b) }
 func cosineF16AVX2(a, b []float16.Num) (float32, error)      { return cosineF16Unrolled4x(a, b) }
 func cosineF16AVX512(a, b []float16.Num) (float32, error)    { return cosineF16Unrolled4x(a, b) }
+
+// Dummy reference block to silence IDE unused function warnings on !amd64 systems.
+var _ = []interface{}{
+	matchInt32AVX2,
+	haversineBatchAVX2,
+	dotInt4AVX2,
+	dotInt2AVX2,
+	euclideanUint16AVX2,
+	dotInt16AVX2,
+	dotUint16AVX2,
+	matMulAVX2Go,
+}
+

@@ -5,6 +5,7 @@ import (
 	"math/rand"
 	"testing"
 	"github.com/stretchr/testify/assert"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // Reference implementations using float64 for maximum precision
@@ -101,6 +102,89 @@ func TestSimdParity_FloatingPoint(t *testing.T) {
 			got, _ = DispatchDistance(MetricCosine, a, b)
 			expected = refCosine(a, b)
 			assert.InDelta(t, expected, got, 1e-5, "Cosine parity mismatch at dims %d", d)
+		}
+	})
+
+	t.Run("Float16", func(t *testing.T) {
+		for _, d := range dims {
+			a := make([]float16.Num, d)
+			b := make([]float16.Num, d)
+			refA := make([]float32, d)
+			refB := make([]float32, d)
+			for i := 0; i < d; i++ {
+				valA := rand.Float32() * 10
+				valB := rand.Float32() * 10
+				a[i] = float16.New(valA)
+				b[i] = float16.New(valB)
+				refA[i] = a[i].Float32()
+				refB[i] = b[i].Float32()
+			}
+
+			// Euclidean
+			got, err := EuclideanDistanceF16(a, b)
+			assert.NoError(t, err)
+			expected := refEuclidean(refA, refB)
+			assert.InDelta(t, expected, got, 1e-2, "Float16 Euclidean parity mismatch at dims %d", d)
+
+			// Dot Product
+			got, err = DotProductF16(a, b)
+			assert.NoError(t, err)
+			expected = refDot(refA, refB)
+			assert.InDelta(t, expected, got, 5e-2, "Float16 Dot parity mismatch at dims %d", d)
+
+			// Cosine
+			got, err = CosineDistanceF16(a, b)
+			assert.NoError(t, err)
+			expected = refCosine(refA, refB)
+			assert.InDelta(t, expected, got, 1e-2, "Float16 Cosine parity mismatch at dims %d", d)
+		}
+	})
+
+	t.Run("Complex64", func(t *testing.T) {
+		for _, d := range dims {
+			a := make([]complex64, d)
+			b := make([]complex64, d)
+			refA := make([]float32, d*2)
+			refB := make([]float32, d*2)
+			for i := 0; i < d; i++ {
+				realA, imagA := rand.Float32()*10, rand.Float32()*10
+				realB, imagB := rand.Float32()*10, rand.Float32()*10
+				a[i] = complex(realA, imagA)
+				b[i] = complex(realB, imagB)
+				refA[2*i] = realA
+				refA[2*i+1] = imagA
+				refB[2*i] = realB
+				refB[2*i+1] = imagB
+			}
+
+			got, err := EuclideanDistanceComplex64(a, b)
+			assert.NoError(t, err)
+			expected := refEuclidean(refA, refB)
+			assert.InDelta(t, expected, got, 1e-4, "Complex64 Euclidean parity mismatch at dims %d", d)
+		}
+	})
+
+	t.Run("Complex128", func(t *testing.T) {
+		for _, d := range dims {
+			a := make([]complex128, d)
+			b := make([]complex128, d)
+			refA := make([]float64, d*2)
+			refB := make([]float64, d*2)
+			for i := 0; i < d; i++ {
+				realA, imagA := rand.Float64()*10, rand.Float64()*10
+				realB, imagB := rand.Float64()*10, rand.Float64()*10
+				a[i] = complex(realA, imagA)
+				b[i] = complex(realB, imagB)
+				refA[2*i] = realA
+				refA[2*i+1] = imagA
+				refB[2*i] = realB
+				refB[2*i+1] = imagB
+			}
+
+			got, err := EuclideanDistanceComplex128(a, b)
+			assert.NoError(t, err)
+			expected := refEuclidean(refA, refB)
+			assert.InDelta(t, expected, got, 1e-4, "Complex128 Euclidean parity mismatch at dims %d", d)
 		}
 	})
 }

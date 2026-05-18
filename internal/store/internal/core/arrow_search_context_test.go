@@ -1,6 +1,7 @@
 package core
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,6 +30,9 @@ func TestArrowSearchContext_DynamicResizing(t *testing.T) {
 }
 
 func TestArrowSearchContextPool_MemoryAlignment(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	pool := NewArrowSearchContextPool()
 
 	// Get context
@@ -41,6 +45,10 @@ func TestArrowSearchContextPool_MemoryAlignment(t *testing.T) {
 
 	// Get again
 	ctx2 := pool.Get()
-	assert.GreaterOrEqual(t, cap(ctx2.querySQ8), dim, "Pooled context should retain its large capacity")
+	// Since sync.Pool is not strictly guaranteed to return the exact same item,
+	// we only assert if the pool returned the recycled context.
+	if ctx2 == ctx1 {
+		assert.GreaterOrEqual(t, cap(ctx2.querySQ8), dim, "Pooled context should retain its large capacity")
+	}
 	pool.Put(ctx2)
 }

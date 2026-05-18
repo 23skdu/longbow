@@ -38,9 +38,10 @@ type VectorStore struct {
 	replicator    *PeerReplicator
 	pooledMem     memory.Allocator // Pooled allocator for transient ingestion buffers
 	logger        zerolog.Logger
-	maxMemory     atomic.Int64
-	currentMemory atomic.Int64
-	memoryConfig  MemoryConfig
+	maxMemory             atomic.Int64
+	currentMemory         atomic.Int64
+	lastThrottlingLogTime atomic.Int64 // Unix timestamp in seconds of last throttling log
+	memoryConfig          MemoryConfig
 
 	sequence atomic.Uint64 // Global operation sequence
 
@@ -484,6 +485,54 @@ func (vs *VectorStore) SetGCTuner(tuner *lbmem.GCTuner) {
 	}
 	// Wire to global worker pool for indexing backpressure
 	lbcore.GetSharedPool().SetTuner(tuner)
+}
+
+// GetGCTuner returns the memory tuner.
+func (vs *VectorStore) GetGCTuner() *lbmem.GCTuner {
+	return vs.tuner.Load()
+}
+
+// IngestionQueueLen returns the current length of the ingestion queue.
+func (vs *VectorStore) IngestionQueueLen() int {
+	if vs.ingestionQueue == nil {
+		return 0
+	}
+	return vs.ingestionQueue.Len()
+}
+
+// IngestionQueueCap returns the capacity of the ingestion queue.
+func (vs *VectorStore) IngestionQueueCap() int {
+	if vs.ingestionQueue == nil {
+		return 0
+	}
+	return vs.ingestionQueue.Capacity()
+}
+
+// GetActiveDatasets returns a list of active dataset names.
+func (vs *VectorStore) GetActiveDatasets() []string {
+	var list []string
+	vs.IterateDatasets(func(name string, ds *Dataset) {
+		list = append(list, name)
+	})
+	return list
+}
+
+// GetDatasetIndexStats returns core progress statistics for a dataset's index.
+func (vs *VectorStore) GetDatasetIndexStats(name string) (nodeCount int64, maxLevel int32, isOffHeap bool, exists bool) {
+	ds, ok := vs.getDataset(name)
+	if !ok || ds.Index == nil {
+		return 0, 0, false, false
+	}
+	hnsw, ok := ds.Index.(*lbcore.ArrowHNSW)
+	if !ok {
+		return 0, 0, false, true
+	}
+	snap := hnsw.GetMetadataSnapshot()
+	isOff := false
+	if hnsw.GetData() != nil && len(hnsw.GetData().PackedNeighbors) > 0 {
+		isOff = true
+	}
+	return snap.NodeCount, snap.MaxLevel, isOff, true
 }
 
 // GetAdmissionController returns the admission controller for the store.

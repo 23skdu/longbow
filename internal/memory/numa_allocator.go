@@ -18,7 +18,7 @@ type NUMAAllocator struct {
 func NewNUMAAllocator(topo *NUMATopology, nodeID int) *NUMAAllocator {
 	return &NUMAAllocator{
 		nodeID: nodeID,
-		base:   memory.NewGoAllocator(),
+		base:   NewOffHeapAllocator(),
 		topo:   topo,
 	}
 }

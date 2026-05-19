@@ -2248,11 +2248,21 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		numChunks = 1
 	}
 
+	// Helper helper function to calculate safe power-of-2 slab size capped at 64MB
+	getSafeSlabSize := func(requiredSize int) int {
+		slabSize := requiredSize + 4096
+		if slabSize < 1024*1024 {
+			slabSize = 1024 * 1024
+		}
+		if slabSize > 64*1024*1024 {
+			slabSize = 64 * 1024 * 1024
+		}
+		return slabSize
+	}
+
 	// Pre-allocate Float32 arena chunks
 	if !g.SharedVectorSpace && (g.Type == VectorTypeFloat32 || g.Type == VectorTypeUnknown) {
-		// FIX: Use padded dims for SIMD alignment
 		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat32)
-		// Use a reasonable slab size (e.g. 64MB) instead of calculating it from capacity
 		slabSize := 64 * 1024 * 1024 
 		if g.Float32Arena == nil {
 			g.Float32Arena = memory.NewTypedArena[float32](memory.NewSlabArena(slabSize))
@@ -2276,10 +2286,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	if !g.SharedVectorSpace && g.Type == VectorTypeFloat64 {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat64)
 		requiredSize := numChunks * ChunkSize * paddedDims * 8
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Float64Arena == nil {
 			g.Float64Arena = memory.NewTypedArena[float64](memory.NewSlabArena(slabSize))
 		}
@@ -2298,10 +2305,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	if g.TurboQuantEnabled {
 		stride := g.PackedSize()
 		requiredSize := numChunks * ChunkSize * stride
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Uint8Arena == nil {
 			g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
 		}
@@ -2320,10 +2324,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	if g.Type == VectorTypeComplex64 {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeComplex64)
 		requiredSize := numChunks * ChunkSize * paddedDims * 8
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Complex64Arena == nil {
 			g.Complex64Arena = memory.NewTypedArena[complex64](memory.NewSlabArena(slabSize))
 		}
@@ -2342,10 +2343,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	if g.Type == VectorTypeComplex128 {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeComplex128)
 		requiredSize := numChunks * ChunkSize * paddedDims * 16
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Complex128Arena == nil {
 			g.Complex128Arena = memory.NewTypedArena[complex128](memory.NewSlabArena(slabSize))
 		}
@@ -2364,10 +2362,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	if g.SQ8Enabled {
 		paddedDims := (g.Dims + 63) & ^63
 		requiredSize := numChunks * ChunkSize * paddedDims
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Uint8Arena == nil {
 			g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
 		}
@@ -2387,10 +2382,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		numWordsPerNode := (g.PQM + 7) / 8
 		numWords := ChunkSize * numWordsPerNode
 		requiredSize := numChunks * numWords * 8
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Uint64Arena == nil {
 			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
 		}
@@ -2411,10 +2403,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		numWordsPerNode := paddedDims / 64
 		numWords := ChunkSize * numWordsPerNode
 		requiredSize := numChunks * numWords * 8
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Uint64Arena == nil {
 			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
 		}
@@ -2433,10 +2422,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	if g.Type == VectorTypeInt8 || g.Type == VectorTypeUint8 {
 		paddedDims := g.GetPaddedDimsForType(g.Type)
 		requiredSize := numChunks * ChunkSize * paddedDims
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Int8Arena == nil {
 			g.Int8Arena = memory.NewTypedArena[int8](memory.NewSlabArena(slabSize))
 		}
@@ -2449,34 +2435,11 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		}
 	}
 
-	// Pre-allocate Complex128 arena chunks
-	if g.Type == VectorTypeComplex128 {
-		paddedDims := g.GetPaddedDimsForType(VectorTypeComplex128)
-		requiredSize := numChunks * ChunkSize * paddedDims * 16
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
-		if g.Complex128Arena == nil {
-			g.Complex128Arena = memory.NewTypedArena[complex128](memory.NewSlabArena(slabSize))
-		}
-		for i := len(g.VectorsComplex128Offsets); i < numChunks; i++ {
-			ref, err := g.Complex128Arena.AllocSlice(ChunkSize * paddedDims)
-			if err != nil {
-				return err
-			}
-			g.VectorsComplex128Offsets = append(g.VectorsComplex128Offsets, ref.Offset)
-		}
-	}
-
 	// Pre-allocate Int64 arena chunks
 	if g.Type == VectorTypeInt64 {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeInt64)
 		requiredSize := numChunks * ChunkSize * paddedDims * 8
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Int64Arena == nil {
 			g.Int64Arena = memory.NewTypedArena[int64](memory.NewSlabArena(slabSize))
 		}
@@ -2493,10 +2456,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	if g.Type == VectorTypeUint64 {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeUint64)
 		requiredSize := numChunks * ChunkSize * paddedDims * 8
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Uint64Arena == nil {
 			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
 		}
@@ -2513,10 +2473,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	if g.Type == VectorTypeInt32 {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeInt32)
 		requiredSize := numChunks * ChunkSize * paddedDims * 4
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Int32Arena == nil {
 			g.Int32Arena = memory.NewTypedArena[int32](memory.NewSlabArena(slabSize))
 		}
@@ -2533,10 +2490,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	if g.Type == VectorTypeUint32 {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeUint32)
 		requiredSize := numChunks * ChunkSize * paddedDims * 4
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Uint32Arena == nil {
 			g.Uint32Arena = memory.NewTypedArena[uint32](memory.NewSlabArena(slabSize))
 		}
@@ -2553,10 +2507,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	if g.Type == VectorTypeInt16 {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeInt16)
 		requiredSize := numChunks * ChunkSize * paddedDims * 2
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Int16Arena == nil {
 			g.Int16Arena = memory.NewTypedArena[int16](memory.NewSlabArena(slabSize))
 		}
@@ -2573,10 +2524,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	if g.Type == VectorTypeUint16 {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeUint16)
 		requiredSize := numChunks * ChunkSize * paddedDims * 2
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Uint16Arena == nil {
 			g.Uint16Arena = memory.NewTypedArena[uint16](memory.NewSlabArena(slabSize))
 		}
@@ -2593,10 +2541,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	if g.Type == VectorTypeFloat16 {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
 		requiredSize := numChunks * ChunkSize * paddedDims * 2
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
+		slabSize := getSafeSlabSize(requiredSize)
 		if g.Float16Arena == nil {
 			g.Float16Arena = memory.NewTypedArena[float16.Num](memory.NewSlabArena(slabSize))
 		}
@@ -2606,73 +2551,6 @@ func (g *GraphData) PreAllocate(capacity int) error {
 				return err
 			}
 			g.VectorsF16 = append(g.VectorsF16, ref.Offset)
-		}
-	}
-
-	// Pre-allocate SQ8 arena chunks if enabled
-	if g.SQ8Enabled {
-		paddedDims := (g.Dims + 63) & ^63
-		requiredSize := numChunks * ChunkSize * paddedDims
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
-		if g.Uint8Arena == nil {
-			g.Uint8Arena = memory.NewTypedArena[uint8](memory.NewSlabArena(slabSize))
-		}
-		if len(g.VectorsSQ8) < numChunks {
-			for i := len(g.VectorsSQ8); i < numChunks; i++ {
-				ref, err := g.Uint8Arena.AllocSlice(ChunkSize * paddedDims)
-				if err != nil {
-					return err
-				}
-				g.VectorsSQ8 = append(g.VectorsSQ8, ref.Offset)
-			}
-		}
-	}
-
-	// Pre-allocate BQ arena chunks if enabled
-	if g.BQEnabled {
-		paddedDims := (g.Dims + 63) & ^63
-		numWords := paddedDims / 64
-		requiredSize := numChunks * ChunkSize * numWords * 8
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
-		if g.Uint64Arena == nil {
-			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
-		}
-		if len(g.VectorsBQ) < numChunks {
-			for i := len(g.VectorsBQ); i < numChunks; i++ {
-				ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
-				if err != nil {
-					return err
-				}
-				g.VectorsBQ = append(g.VectorsBQ, ref.Offset)
-			}
-		}
-	}
-
-	// Pre-allocate PQ arena chunks if enabled
-	if g.PQEnabled && g.PQM > 0 {
-		numWords := (g.PQM + 7) / 8
-		requiredSize := numChunks * ChunkSize * numWords * 8
-		slabSize := requiredSize + 4096
-		if slabSize < 1024*1024 {
-			slabSize = 1024 * 1024
-		}
-		if g.Uint64Arena == nil {
-			g.Uint64Arena = memory.NewTypedArena[uint64](memory.NewSlabArena(slabSize))
-		}
-		if len(g.VectorsPQ) < numChunks {
-			for i := len(g.VectorsPQ); i < numChunks; i++ {
-				ref, err := g.Uint64Arena.AllocSliceDirty(ChunkSize * numWords)
-				if err != nil {
-					return err
-				}
-				g.VectorsPQ = append(g.VectorsPQ, ref.Offset)
-			}
 		}
 	}
 

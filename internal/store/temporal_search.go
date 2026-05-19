@@ -273,6 +273,8 @@ func (tt *TemporalTree) Insert(timestamp int64, id uint64, norm float32) {
 			if leaf.Len < nodesPerChunk {
 				tt.insertInLeaf(leaf, timestamp, entry)
 				lastLeaf.MaxTs = leaf.Nodes[leaf.Len-1].Timestamp
+				tt.nodeCount.Add(1)
+				metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
 				return
 			}
 		}

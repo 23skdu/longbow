@@ -213,6 +213,22 @@ func DotProductF64(a, b []float64) (float32, error) {
 	return dotFloat64Unrolled4x(a, b)
 }
 
+// L2SquaredFloat64 calculates the squared Euclidean distance between two Float64 vectors.
+func L2SquaredFloat64(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+
+	if l2SquaredFloat64Impl != nil {
+		return l2SquaredFloat64Impl(a, b)
+	}
+	return l2SquaredFloat64Unrolled4x(a, b)
+}
+
+
 // DotProductComplex64 calculates the real part of the dot product of two Complex64 vectors.
 func DotProductComplex64(a, b []complex64) (float32, error) {
 	if len(a) != len(b) {

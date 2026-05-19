@@ -278,6 +278,13 @@ class BenchmarkRunner:
         # ── Feature flags (always enabled for comprehensive benchmarking) ─
         env["LONGBOW_TEMPORAL_ENABLED"] = "true"
         env["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
+        try:
+            parts = label.split("_")
+            if len(parts) >= 4:
+                dim = parts[-2]
+                env["LONGBOW_TEMPORAL_DIM"] = str(dim)
+        except Exception:
+            pass
         env["LONGBOW_SPARSE_ENABLED"] = "true"
         env["LONGBOW_GEOSPATIAL_ENABLED"] = "true"
         env["LONGBOW_GEO_SEARCH_ENABLED"] = "true"
@@ -2161,9 +2168,6 @@ class BenchmarkRunner:
                 continue
             if mode == "graphrag":
                 self.execute_graphrag()
-                continue
-            if mode == "temporal":
-                self.execute_temporal()
                 continue
             if mode == "geo":
                 self.execute_geo()

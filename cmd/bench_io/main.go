@@ -430,23 +430,29 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 
 	mem := memory.NewGoAllocator()
 	sch := arrow.NewSchema([]arrow.Field{
-		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "id", Type: arrow.BinaryTypes.String},
 		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)}, // #nosec G115
+		{Name: "timestamp", Type: arrow.PrimitiveTypes.Int64},
 	}, nil)
 
-	idBuilder := array.NewInt64Builder(mem)
+	idBuilder := array.NewStringBuilder(mem)
 	defer idBuilder.Release()
 	listBuilder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32) // #nosec G115
 	defer listBuilder.Release()
 	vecBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
+	tsBuilder := array.NewInt64Builder(mem)
+	defer tsBuilder.Release()
 
 	idBuilder.Reserve(scale)
 	listBuilder.Reserve(scale)
 	vecBuilder.Reserve(scale * dim)
+	tsBuilder.Reserve(scale)
 
+	now := time.Now().UnixNano()
 	for i := 0; i < scale; i++ {
-		idBuilder.Append(int64(i))
+		idBuilder.Append(fmt.Sprintf("%d", i))
 		listBuilder.Append(true)
+		tsBuilder.Append(now + int64(i)*1000000000)
 	}
 	vecBuilder.AppendValues(vecs, nil)
 
@@ -454,8 +460,10 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 	defer idArr.Release()
 	vecArr := listBuilder.NewArray()
 	defer vecArr.Release()
+	tsArr := tsBuilder.NewArray()
+	defer tsArr.Release()
 
-	rec := array.NewRecordBatch(sch, []arrow.Array{idArr, vecArr}, int64(scale))
+	rec := array.NewRecordBatch(sch, []arrow.Array{idArr, vecArr, tsArr}, int64(scale))
 	defer rec.Release()
 
 	if err := uploadData(ctx, sc, dataset, rec, sch); err != nil {
@@ -510,7 +518,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 								"timestamp": ts,
 								"k":         10,
 							}
-							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal": req})
+							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
 						} else if m == "temporal_range" {
 							req := map[string]interface{}{
 								"dataset":   dataset,
@@ -519,7 +527,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 								"end_time":   ts,
 								"k":        10,
 							}
-							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal": req})
+							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
 						} else if m == "temporal_window" {
 							req := map[string]interface{}{
 								"dataset":    dataset,
@@ -527,7 +535,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 								"window_size": 10,
 								"k":          10,
 							}
-							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal": req})
+							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
 						}
 					} else {
 						req := map[string]interface{}{

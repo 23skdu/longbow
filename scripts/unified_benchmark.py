@@ -322,6 +322,11 @@ class BenchmarkRunner:
             env["LONGBOW_GRPC_MAX_SEND_MSG_SIZE"] = "2147483647"
             print(f"  Scaling gRPC message size for {max_count} vectors")
 
+        # ── Autoshard threshold: set well above max count to prevent
+        #    mid-benchmark shard migration from distorting timing ──────────
+        shard_threshold = max_count * 2
+        env["AUTO_SHARDING_THRESHOLD"] = str(shard_threshold)
+
         log_file = os.path.join(self.log_dir, f"longbow_{current_mode}_{label}.log")
         with open(log_file, "w") as f:
             process = subprocess.Popen(

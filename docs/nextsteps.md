@@ -39,3 +39,69 @@ This document outlines the outstanding roadmap items and stability enhancements 
 * **Target Release**: `v0.2.5`
 * **Priority**: **P2 (Medium)**
 
+---
+
+## 4. 0.2.2 Roadmap Items: Google ALTS Integration
+
+This 6-part integration plan outlines the architectural and implementation tasks required to support Google's **Application Layer Transport Security (ALTS)** for secure, mutually authenticated, and high-performance service-to-service gRPC communication inside Google Compute Engine (GCE) and Google Kubernetes Engine (GKE).
+
+### 🔳 Part 1: Design & Protocol Analysis
+* **Description**: Analyze GCE/GKE ALTS requirements, transport ciphers (AES-128-GCM vs integrity-only GMAC), and connection lifecycles to design the Longbow gRPC security architecture.
+* **Subtasks**:
+  - [ ] Map out trust domains and identify peer service account naming formats inside GKE/GCE.
+  - [ ] Evaluate ALTS handshake latency and performance overhead compared to traditional TLS.
+  - [ ] Document fallback security policies for non-GCP development/local testing.
+  - [ ] Define the authorization schema based on Google service account structures.
+* **Priority**: **High**
+* **Target Release**: `v0.2.2-rc3`
+
+### 🔳 Part 2: gRPC Server ALTS Credentials Integration
+* **Description**: Implement server-side ALTS gRPC transport credentials to secure incoming connections from client SDKs.
+* **Subtasks**:
+  - [ ] Integrate Go gRPC ALTS server credentials (`credentials/alts` package) via `alts.NewServerCreds()`.
+  - [ ] Configure server startup configuration to dynamically load ALTS options if GCP environment is detected.
+  - [ ] Implement handshake timeout controls to prevent resource exhaustion during connection handshakes.
+  - [ ] Build server-side fallback to standard TLS or local credentials for hybrid deployments.
+* **Priority**: **Critical**
+* **Target Release**: `v0.2.2-rc3`
+
+### 🔳 Part 3: gRPC Client ALTS Credentials Integration
+* **Description**: Configure the client-side gRPC dialer to request mutually authenticated ALTS channels.
+* **Subtasks**:
+  - [ ] Integrate client-side credentials handler via `alts.NewClientCreds()`.
+  - [ ] Implement targeted peer verification by configuring target service accounts on connection dial.
+  - [ ] Configure client reconnection policies and session resumption handles.
+  - [ ] Build client command-line flags (e.g. `--use-alts`) and auto-detection parameters.
+* **Priority**: **Critical**
+* **Target Release**: `v0.2.2-rc3`
+
+### 🔳 Part 4: Peer Authentication & Context Parsing
+* **Description**: Extract client/peer authentication metadata from gRPC incoming context to enforce identity-based access control.
+* **Subtasks**:
+  - [ ] Implement gRPC interceptors to extract ALTS `AuthInfo` using `alts.AuthInfoFromContext`.
+  - [ ] Parse client credentials to extract Google service accounts and project details.
+  - [ ] Build a robust service account authorization engine supporting whitelist/blacklist rules.
+  - [ ] Log peer identities for all write/ingestion actions to satisfy security auditing requirements.
+* **Priority**: **High**
+* **Target Release**: `v0.2.2-rc3`
+
+### 🔳 Part 5: Observability, Metrics & Telemetry
+* **Description**: Instrument the authentication and handshake layer with Prometheus telemetry to ensure operational visibility.
+* **Subtasks**:
+  - [ ] Create Prometheus counters for ALTS handshake success (`longbow_alts_handshake_success_total`) and failure (`longbow_alts_handshake_failure_total`).
+  - [ ] Implement histogram metrics for ALTS handshake latency (`longbow_alts_handshake_latency_seconds`).
+  - [ ] Add counters for unauthorized service account access attempts categorized by identity.
+  - [ ] Build alerts for authentication failures and service account authorization mismatches.
+* **Priority**: **Medium**
+* **Target Release**: `v0.2.2-rc3`
+
+### 🔳 Part 6: Multi-Node Deployment & GCE/GKE Validation
+* **Description**: Package, deploy, and validate the ALTS configuration on a multi-node GCP environment.
+* **Subtasks**:
+  - [ ] Package Longbow within Docker images configured with GKE workload identity support.
+  - [ ] Deploy test server and client instances on GKE/GCE instances.
+  - [ ] Execute automated connection and data validation suites across nodes using ALTS transport.
+  - [ ] Verify session resumption ciphers and validate the security posturing on wide area networks (WAN).
+* **Priority**: **High**
+* **Target Release**: `v0.2.2-rc3`
+

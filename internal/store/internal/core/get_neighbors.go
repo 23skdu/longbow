@@ -171,11 +171,13 @@ func resolveInternalID(h *ArrowHNSW, externalID uint64) (uint32, bool) {
 
 // emitGetNeighborsMetrics emits the three GetNeighbors Prometheus metrics.
 func emitGetNeighborsMetrics(dataset, indexType string, err error, elapsed time.Duration, resultCount int) {
-	label := resultLabel(err)
-	metrics.GetNeighborsTotal.WithLabelValues(dataset, indexType, label).Inc()
-	metrics.GetNeighborsLatencySeconds.WithLabelValues(dataset, indexType).Observe(elapsed.Seconds())
-	if err == nil {
-		metrics.GetNeighborsResultSize.WithLabelValues(dataset).Observe(float64(resultCount))
+	if should, mult := metrics.GlobalHotpathSampler.ShouldSample(); should {
+		label := resultLabel(err)
+		metrics.GetNeighborsTotal.WithLabelValues(dataset, indexType, label).Add(mult)
+		metrics.GetNeighborsLatencySeconds.WithLabelValues(dataset, indexType).Observe(elapsed.Seconds())
+		if err == nil {
+			metrics.GetNeighborsResultSize.WithLabelValues(dataset).Observe(float64(resultCount))
+		}
 	}
 }
 

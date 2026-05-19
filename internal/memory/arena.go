@@ -27,8 +27,10 @@ func nextPowerOf2(n int) int {
 	n |= n >> 4
 	n |= n >> 8
 	n |= n >> 16
+	n |= n >> 32
 	return n + 1
 }
+
 
 // Verify nextPowerOf2 works correctly at compile time
 var _ = nextPowerOf2(1024)      // Should be 1024

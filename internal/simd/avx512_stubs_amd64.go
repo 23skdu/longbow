@@ -60,6 +60,7 @@ func l2Squared1024AVX512(a, b []float32) (float32, error) { return l2Squared1024
 func l2Squared3072AVX512(a, b []float32) (float32, error) { return l2Squared3072AVX2(a, b) }
 
 func euclideanFloat64AVX512(a, b []float64) (float32, error) { return euclideanFloat64AVX2(a, b) }
+func l2SquaredFloat64AVX512(a, b []float64) (float32, error) { return l2SquaredFloat64AVX2(a, b) }
 func dotFloat64AVX512(a, b []float64) (float32, error) { return dotFloat64AVX2(a, b) }
 
 func euclideanSQ8BatchAVX512(query []byte, vectors [][]byte, results []float32) error {

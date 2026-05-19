@@ -223,12 +223,16 @@ func (gn *GraphNavigator) FindPath(ctx context.Context, query NavigatorQuery) (*
 	strategyName := strategy.Name()
 
 	// Record selection
-	metrics.GraphNavigationStrategySelectionTotal.WithLabelValues(gn.datasetName, strategyName).Inc()
+	if should, mult := metrics.GlobalHotpathSampler.ShouldSample(); should {
+		metrics.GraphNavigationStrategySelectionTotal.WithLabelValues(gn.datasetName, strategyName).Add(mult)
+	}
 
 	defer func() {
 		dur := time.Since(start).Seconds()
 		gn.metrics.QueriesDuration.Observe(dur)
-		metrics.GraphNavigationLatencySeconds.WithLabelValues(gn.datasetName, strategyName).Observe(dur)
+		if should, _ := metrics.GlobalHotpathSampler.ShouldSample(); should {
+			metrics.GraphNavigationLatencySeconds.WithLabelValues(gn.datasetName, strategyName).Observe(dur)
+		}
 		gn.metrics.QueriesTotal.Inc()
 	}()
 
@@ -270,19 +274,25 @@ func (gn *GraphNavigator) FindPath(ctx context.Context, query NavigatorQuery) (*
 			resultLabel = "fail"
 		}
 
-		metrics.GraphNavigationOperationsTotal.WithLabelValues(gn.datasetName, strategyName, resultLabel).Inc()
+		if should, mult := metrics.GlobalHotpathSampler.ShouldSample(); should {
+			metrics.GraphNavigationOperationsTotal.WithLabelValues(gn.datasetName, strategyName, resultLabel).Add(mult)
+		}
 		return nil, err
 	}
 
 	if !path.Found {
 		resultLabel = "not_found"
 	}
-	metrics.GraphNavigationOperationsTotal.WithLabelValues(gn.datasetName, strategyName, resultLabel).Inc()
+	if should, mult := metrics.GlobalHotpathSampler.ShouldSample(); should {
+		metrics.GraphNavigationOperationsTotal.WithLabelValues(gn.datasetName, strategyName, resultLabel).Add(mult)
+	}
 
 	if path.Found {
 		gn.metrics.PathsFound.Inc()
 		gn.metrics.HopsPerQuery.Observe(float64(path.Hops))
-		metrics.GraphNavigationHopsTotal.WithLabelValues(gn.datasetName, strategyName).Observe(float64(path.Hops))
+		if should, _ := metrics.GlobalHotpathSampler.ShouldSample(); should {
+			metrics.GraphNavigationHopsTotal.WithLabelValues(gn.datasetName, strategyName).Observe(float64(path.Hops))
+		}
 	}
 
 	// Update cache

@@ -283,27 +283,31 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	}
 
 	defer func() {
-		duration := time.Since(start).Seconds()
-		metrics.HNSWSearchDurationSeconds.Observe(duration)
-
-		typeLabel := h.config.DataType.String()
-		dimsStr := strconv.Itoa(int(h.dims.Load()))
-		metrics.HNSWSearchOpsTotal.WithLabelValues(h.name, typeLabel, dimsStr).Inc()
-
-		// Polymorphic metrics needed for test
-		metrics.HNSWPolymorphicSearchCount.WithLabelValues(typeLabel).Inc()
-		metrics.HNSWPolymorphicLatency.WithLabelValues(typeLabel).Observe(duration)
-
-		byteThroughput := float64(int(h.dims.Load()) * h.config.DataType.ElementSize())
-		metrics.HNSWPolymorphicThroughput.WithLabelValues(typeLabel).Add(byteThroughput)
-
 		searchCtx.filterBitmap = nil
 		h.flushSearchMetrics(searchCtx)
 
-		if metrics.HNSWSearchPoolPutTotal != nil {
-			metrics.HNSWSearchPoolPutTotal.Inc()
+		if should, mult := metrics.GlobalHotpathSampler.ShouldSample(); should {
+			duration := time.Since(start).Seconds()
+			metrics.HNSWSearchDurationSeconds.Observe(duration)
+
+			typeLabel := h.config.DataType.String()
+			dimsStr := strconv.Itoa(int(h.dims.Load()))
+			metrics.HNSWSearchOpsTotal.WithLabelValues(h.name, typeLabel, dimsStr).Add(mult)
+
+			// Polymorphic metrics needed for test
+			metrics.HNSWPolymorphicSearchCount.WithLabelValues(typeLabel).Add(mult)
+			metrics.HNSWPolymorphicLatency.WithLabelValues(typeLabel).Observe(duration)
+
+			byteThroughput := float64(int(h.dims.Load()) * h.config.DataType.ElementSize())
+			metrics.HNSWPolymorphicThroughput.WithLabelValues(typeLabel).Add(byteThroughput * mult)
+
+			if metrics.HNSWSearchPoolPutTotal != nil {
+				metrics.HNSWSearchPoolPutTotal.Add(mult)
+			}
+			h.searchPool.PutWithMetrics(searchCtx, typeLabel, dimsStr)
+		} else {
+			h.searchPool.Put(searchCtx)
 		}
-		h.searchPool.PutWithMetrics(searchCtx, typeLabel, dimsStr)
 	}()
 
 	ep := meta.EntryPoint

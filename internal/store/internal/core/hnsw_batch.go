@@ -40,7 +40,9 @@ func (h *ArrowHNSW) SearchWithBatchDistance(query []float32, k int) []RankedResu
 
 	start := time.Now()
 	defer func() {
-		metrics.BatchDistanceDurationSeconds.Observe(time.Since(start).Seconds())
+		if should, _ := metrics.GlobalHotpathSampler.ShouldSample(); should {
+			metrics.BatchDistanceDurationSeconds.Observe(time.Since(start).Seconds())
+		}
 	}()
 
 	// Stage 1: Get candidates from HNSW graph
@@ -72,8 +74,10 @@ func (h *ArrowHNSW) SearchWithBatchDistance(query []float32, k int) []RankedResu
 	}
 
 	// Stage 3: Batch distance calculation using SIMD
-	metrics.BatchDistanceCallsTotal.Inc()
-	metrics.BatchDistanceBatchSize.Observe(float64(len(candidateVectors)))
+	if should, mult := metrics.GlobalHotpathSampler.ShouldSample(); should {
+		metrics.BatchDistanceCallsTotal.Add(mult)
+		metrics.BatchDistanceBatchSize.Observe(float64(len(candidateVectors)))
+	}
 
 	distances := make([]float32, len(candidateVectors))
 	h.computeBatchDistance(query, candidateVectors, distances)
@@ -109,7 +113,9 @@ func (h *ArrowHNSW) SearchBatchOptimized(queries [][]float32, k int) [][]RankedR
 
 	start := time.Now()
 	defer func() {
-		metrics.BatchDistanceDurationSeconds.Observe(time.Since(start).Seconds())
+		if should, _ := metrics.GlobalHotpathSampler.ShouldSample(); should {
+			metrics.BatchDistanceDurationSeconds.Observe(time.Since(start).Seconds())
+		}
 	}()
 
 	results := make([][]RankedResult, len(queries))
@@ -165,8 +171,10 @@ func (h *ArrowHNSW) SearchBatchOptimized(queries [][]float32, k int) [][]RankedR
 		}
 
 		// Batch distance calculation
-		metrics.BatchDistanceCallsTotal.Inc()
-		metrics.BatchDistanceBatchSize.Observe(float64(len(candVectors)))
+		if should, mult := metrics.GlobalHotpathSampler.ShouldSample(); should {
+			metrics.BatchDistanceCallsTotal.Add(mult)
+			metrics.BatchDistanceBatchSize.Observe(float64(len(candVectors)))
+		}
 
 		distances := make([]float32, len(candVectors))
 		h.computeBatchDistance(query, candVectors, distances)

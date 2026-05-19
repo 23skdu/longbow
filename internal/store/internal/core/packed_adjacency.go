@@ -173,7 +173,7 @@ func (pa *PackedAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
 		oldOffset, _, oldCap = UnpackRef(packed)
 	}
 
-	newLen := uint32(len(neighbors))
+	newLen := uint32(len(neighbors)) // #nosec G115
 
 	if oldOffset != 0 && newLen <= oldCap {
 		// Reuse existing allocation
@@ -233,7 +233,7 @@ func (pa *PackedAdjacency) SetNeighborsF16(id uint32, neighbors []uint32, distan
 		oldOffset, _, oldCap = UnpackRef(packed)
 	}
 
-	newLen := uint32(len(neighbors))
+	newLen := uint32(len(neighbors)) // #nosec G115
 
 	if oldOffset != 0 && newLen <= oldCap {
 		// Reuse existing allocation
@@ -334,7 +334,7 @@ func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
 func (pa *PackedAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint32) bool {
 	var newPacked uint64
 	if len(new) > 0 {
-		newLen := uint32(len(new))
+		newLen := uint32(len(new)) // #nosec G115
 		
 		var oldCap uint32
 		var oldOffset uint64

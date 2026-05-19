@@ -18,6 +18,10 @@ type TurboQuantEncoder struct {
 	params TurboQuantParams
 	dims   int
 	pow2   int
+	had    *simd.HadamardTransformer
+
+	// Workspace for recursive transforms to avoid allocations
+	workspace []float32
 }
 
 // NewTurboQuantEncoder creates a new encoder.
@@ -27,20 +31,27 @@ func NewTurboQuantEncoder(dims int, bitsPerAngle int, seed int64) *TurboQuantEnc
 		pow2 <<= 1
 	}
 	return &TurboQuantEncoder{
-		params: TurboQuantParams{BitsPerAngle: bitsPerAngle, Seed: seed},
-		dims:   dims,
-		pow2:   pow2,
+		params:    TurboQuantParams{BitsPerAngle: bitsPerAngle, Seed: seed},
+		dims:      dims,
+		pow2:      pow2,
+		had:       simd.NewHadamardTransformer(pow2),
+		workspace: make([]float32, pow2*2), // Workspace for recursion
 	}
 }
 
 // Encode compresses a float32 vector into a TurboQuant byte stream.
 func (e *TurboQuantEncoder) Encode(vec []float32) ([]byte, error) {
 	// 1. Padding to power of 2 for Hadamard
-	work := make([]float32, e.pow2)
+	work := e.workspace[:e.pow2]
 	copy(work, vec)
+	if len(vec) < e.pow2 {
+		for i := len(vec); i < e.pow2; i++ {
+			work[i] = 0
+		}
+	}
 
 	// 2. Random Rotation (Hadamard Transform)
-	if err := simd.RandomRotation(work, e.params.Seed); err != nil {
+	if err := e.had.Transform(work); err != nil {
 		return nil, err
 	}
 
@@ -55,7 +66,8 @@ func (e *TurboQuantEncoder) Encode(vec []float32) ([]byte, error) {
 	}
 
 	// 4. Reconstruction (to calculate residuals)
-	recon := make([]float32, e.pow2)
+	// Use the second half of the workspace for recon
+	recon := e.workspace[e.pow2 : e.pow2*2]
 	e.polarReconstructRecursive(radius, angles, recon)
 
 	// 5. Stage 2: QJL (Sign bit of residual)
@@ -91,25 +103,15 @@ func (e *TurboQuantEncoder) polarTransformRecursive(vec []float32, angles []floa
 		return vec[0], nil
 	}
 
-	nextVec := make([]float32, n/2)
+	// Use part of the workspace for nextRadii
+	// Workspace layout: [p2] nextRadii, [p2] ...
+	// We need n/2 for nextRadii
+	nextRadii := e.workspace[:n/2]
 
-	// This is a simplified recursive polar transform:
-	// Each pair (x, y) -> (r, theta)
-	// The radii become the input for the next level.
-	for i := 0; i < n/2; i++ {
-		x := vec[2*i]
-		y := vec[2*i+1]
-		r := float32(math.Sqrt(float64(x*x + y*y)))
-		theta := float32(math.Atan2(float64(y), float64(x)))
-
-		nextVec[i] = r
-		// Store angles in reverse order of levels or similar
-		// Here we'll just pack them predictably
-		angles[i] = theta
-	}
+	simd.GetTurboQuantPolarTransformFunc()(vec, nextRadii, angles[:n/2])
 
 	// Recursive call on the radii
-	return e.polarTransformRecursive(nextVec, angles[n/2:])
+	return e.polarTransformRecursive(nextRadii, angles[n/2:])
 }
 
 // polarReconstructRecursive converts [1 Radius, N-1 Angles] back to Cartesian.
@@ -120,8 +122,18 @@ func (e *TurboQuantEncoder) polarReconstructRecursive(radius float32, angles []f
 		return
 	}
 
-	// First, reconstruct the intermediate radii from the top-level radius and last (n-1)-(n/2) angles
-	nextRadii := make([]float32, n/2)
+	// Use part of the workspace for nextRadii
+	// Since we are reconstructing, we need to be careful with workspace reuse in recursion.
+	// We'll use an offset into the workspace based on depth.
+	depth := 0
+	tmpN := n
+	for tmpN < e.pow2 {
+		tmpN *= 2
+		depth++
+	}
+	// Simplified: use a separate workspace area or just the second half of the main workspace
+	nextRadii := e.workspace[e.pow2 : e.pow2+n/2]
+
 	e.polarReconstructRecursive(radius, angles[n/2:], nextRadii)
 
 	// Now expand each radius to a pair (x, y) using the first n/2 angles
@@ -140,45 +152,15 @@ func (e *TurboQuantEncoder) packAngles(angles []float32, dst []byte) {
 
 	// Optimized path for 4 and 8 bits
 	if bits == 8 {
-		for i, angle := range angles {
-			norm := (angle + math.Pi) / (2 * math.Pi)
-			if norm < 0 { norm = 0 } else if norm > 1 { norm = 1 }
-			dst[i] = byte(norm*maxVal + 0.5)
-		}
+		simd.PackTQ8(angles, dst)
 		return
 	}
-
 	if bits == 4 {
-		for i := 0; i < len(angles); i += 2 {
-			norm1 := (angles[i] + math.Pi) / (2 * math.Pi)
-			if norm1 < 0 { norm1 = 0 } else if norm1 > 1 { norm1 = 1 }
-			q1 := byte(norm1*maxVal + 0.5)
-			
-			var q2 byte
-			if i+1 < len(angles) {
-				norm2 := (angles[i+1] + math.Pi) / (2 * math.Pi)
-				if norm2 < 0 { norm2 = 0 } else if norm2 > 1 { norm2 = 1 }
-				q2 = byte(norm2*maxVal + 0.5)
-			}
-			
-			dst[i/2] = q1 | (q2 << 4)
-		}
+		simd.PackTQ4(angles, dst)
 		return
 	}
-
 	if bits == 2 {
-		for i := 0; i < len(angles); i += 4 {
-			var b byte
-			for j := 0; j < 4; j++ {
-				if i+j < len(angles) {
-					norm := (angles[i+j] + math.Pi) / (2 * math.Pi)
-					if norm < 0 { norm = 0 } else if norm > 1 { norm = 1 }
-					q := byte(norm*maxVal + 0.5)
-					b |= (q << (uint(j) * 2))
-				}
-			}
-			dst[i/4] = b
-		}
+		simd.PackTQ2(angles, dst)
 		return
 	}
 
@@ -211,7 +193,7 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 	e.unpackAngles(data[4:qjlOffset], angles)
 
 	// Reconstruct Cartesian
-	recon := make([]float32, e.pow2)
+	recon := make([]float32, e.pow2) // We can't use e.workspace here if Decode is called concurrently, but e is usually owned by a dataset
 	e.polarReconstructRecursive(radius, angles, recon)
 
 	// Apply QJL Correction
@@ -221,17 +203,25 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 	// In the paper, QJL error correction allows the model to calculate
 	// attention scores more accurately by eliminating bias.
 	for i := 0; i < e.pow2; i++ {
+		correction := radius / float32(math.Sqrt(float64(e.pow2))) * 0.1 // Heuristic
 		if (qjlBits[i/8] & (byte(1) << (i % 8))) != 0 {
 			// If bit is set, the residual was positive.
 			// Add a small correction factor based on the radius/dims.
-			correction := radius / float32(math.Sqrt(float64(e.pow2))) * 0.1 // Heuristic
 			recon[i] += correction
 		} else {
-			recon[i] -= 0.1 // Heuristic
+			recon[i] -= correction
 		}
 	}
 
 	return recon, nil
+}
+
+// GetRadius extracts the radius (magnitude) from an encoded TurboQuant byte stream.
+func (e *TurboQuantEncoder) GetRadius(data []byte) float32 {
+	if len(data) < 4 {
+		return 0
+	}
+	return math.Float32frombits(binary.LittleEndian.Uint32(data[0:4]))
 }
 
 func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
@@ -240,38 +230,17 @@ func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 
 	// Optimized path for 4 and 8 bits
 	if bits == 8 {
-		for i := range dst {
-			norm := float32(src[i]) / maxVal
-			dst[i] = norm*2*math.Pi - math.Pi
-		}
+		simd.UnpackTQ8(src, dst, 2*math.Pi/maxVal, -math.Pi)
 		return
 	}
 
 	if bits == 4 {
-		for i := 0; i < len(dst); i += 2 {
-			b := src[i/2]
-			
-			q1 := float32(b & 0x0F)
-			dst[i] = (q1/maxVal)*2*math.Pi - math.Pi
-			
-			if i+1 < len(dst) {
-				q2 := float32(b >> 4)
-				dst[i+1] = (q2/maxVal)*2*math.Pi - math.Pi
-			}
-		}
+		simd.UnpackTQ4(src, dst, 2*math.Pi/maxVal, -math.Pi)
 		return
 	}
 
 	if bits == 2 {
-		for i := 0; i < len(dst); i += 4 {
-			b := src[i/4]
-			for j := 0; j < 4; j++ {
-				if i+j < len(dst) {
-					q := float32((b >> (uint(j) * 2)) & 0x03)
-					dst[i+j] = (q/maxVal)*2*math.Pi - math.Pi
-				}
-			}
-		}
+		simd.UnpackTQ2(src, dst, 2*math.Pi/maxVal, -math.Pi)
 		return
 	}
 
@@ -298,7 +267,8 @@ func PackedSize(dims int, bitsPerAngle int) int {
 	p2 := int(1 << uint(math.Ceil(math.Log2(float64(dims)))))
 	angleBytes := ((p2-1)*bitsPerAngle + 7) / 8
 	bitBytes := (p2 + 7) / 8
-	return 4 + angleBytes + bitBytes
+	size := 4 + angleBytes + bitBytes
+	return (size + 3) &^ 3 // Pad to 4 bytes for GPU alignment
 }
 
 // PackedSize returns the stride needed for this encoder's configuration.

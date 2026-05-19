@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+// RecordVersion represents a specific version of a record or dataset.
 type RecordVersion struct {
 	VersionID   int64
 	Timestamp   time.Time
@@ -14,6 +15,7 @@ type RecordVersion struct {
 	IsTombstone bool
 }
 
+// VersionedDataset manages versions and branches for a single dataset.
 type VersionedDataset struct {
 	Name     string
 	Versions map[int64]RecordVersion
@@ -21,6 +23,7 @@ type VersionedDataset struct {
 	mu       sync.RWMutex
 }
 
+// BranchConfig defines the configuration for a dataset branch.
 type BranchConfig struct {
 	Name         string
 	BaseVersion  int64
@@ -28,6 +31,7 @@ type BranchConfig struct {
 	LastCommitID string
 }
 
+// NewVersionedDataset creates a new versioned dataset instance.
 func NewVersionedDataset(name string) *VersionedDataset {
 	return &VersionedDataset{
 		Name:     name,
@@ -36,12 +40,14 @@ func NewVersionedDataset(name string) *VersionedDataset {
 	}
 }
 
+// AddVersion adds a new version to the dataset.
 func (vd *VersionedDataset) AddVersion(version RecordVersion) {
 	vd.mu.Lock()
 	defer vd.mu.Unlock()
 	vd.Versions[version.VersionID] = version
 }
 
+// GetVersion retrieves a specific version by its ID.
 func (vd *VersionedDataset) GetVersion(versionID int64) (RecordVersion, bool) {
 	vd.mu.RLock()
 	defer vd.mu.RUnlock()
@@ -49,6 +55,7 @@ func (vd *VersionedDataset) GetVersion(versionID int64) (RecordVersion, bool) {
 	return v, ok
 }
 
+// ListVersions returns all versions in the dataset.
 func (vd *VersionedDataset) ListVersions() []RecordVersion {
 	vd.mu.RLock()
 	defer vd.mu.RUnlock()
@@ -60,6 +67,7 @@ func (vd *VersionedDataset) ListVersions() []RecordVersion {
 	return versions
 }
 
+// CreateBranch creates a new branch starting from the specified version.
 func (vd *VersionedDataset) CreateBranch(name string, baseVersionID int64) error {
 	vd.mu.Lock()
 	defer vd.mu.Unlock()
@@ -76,6 +84,7 @@ func (vd *VersionedDataset) CreateBranch(name string, baseVersionID int64) error
 	return nil
 }
 
+// GetBranch retrieves the configuration for a branch by its name.
 func (vd *VersionedDataset) GetBranch(name string) (BranchConfig, bool) {
 	vd.mu.RLock()
 	defer vd.mu.RUnlock()
@@ -83,6 +92,7 @@ func (vd *VersionedDataset) GetBranch(name string) (BranchConfig, bool) {
 	return b, ok
 }
 
+// ListBranches returns all branches in the dataset.
 func (vd *VersionedDataset) ListBranches() []BranchConfig {
 	vd.mu.RLock()
 	defer vd.mu.RUnlock()
@@ -94,6 +104,7 @@ func (vd *VersionedDataset) ListBranches() []BranchConfig {
 	return branches
 }
 
+// DeleteBranch removes a branch by its name.
 func (vd *VersionedDataset) DeleteBranch(name string) error {
 	vd.mu.Lock()
 	defer vd.mu.Unlock()
@@ -106,12 +117,14 @@ func (vd *VersionedDataset) DeleteBranch(name string) error {
 	return nil
 }
 
+// VersionRetentionPolicy defines the rules for retaining dataset versions.
 type VersionRetentionPolicy struct {
 	MaxVersions    int
 	MaxAge         time.Duration
 	KeepTombstones bool
 }
 
+// ApplyRetentionPolicy removes versions that exceed the retention criteria.
 func (vd *VersionedDataset) ApplyRetentionPolicy(policy VersionRetentionPolicy) (int, error) {
 	vd.mu.Lock()
 	defer vd.mu.Unlock()
@@ -161,12 +174,14 @@ func sortVersionsDesc(versions []int64) {
 	}
 }
 
+// VersionQuery defines the criteria for querying a specific version.
 type VersionQuery struct {
 	VersionID *int64
 	AsOfTime  *time.Time
 	Branch    string
 }
 
+// QueryVersion retrieves a version based on the specified query criteria.
 func (vd *VersionedDataset) QueryVersion(q VersionQuery) (RecordVersion, error) {
 	vd.mu.RLock()
 	defer vd.mu.RUnlock()
@@ -211,17 +226,20 @@ func (vd *VersionedDataset) QueryVersion(q VersionQuery) (RecordVersion, error) 
 	return RecordVersion{}, errors.New("must specify version ID, as-of time, or branch")
 }
 
+// VersionManager coordinates versioned datasets across the system.
 type VersionManager struct {
 	datasets map[string]*VersionedDataset
 	mu       sync.RWMutex
 }
 
+// NewVersionManager creates a new VersionManager instance.
 func NewVersionManager() *VersionManager {
 	return &VersionManager{
 		datasets: make(map[string]*VersionedDataset),
 	}
 }
 
+// GetOrCreateDataset retrieves a versioned dataset or creates one if it doesn't exist.
 func (vm *VersionManager) GetOrCreateDataset(name string) *VersionedDataset {
 	vm.mu.RLock()
 	vd, ok := vm.datasets[name]
@@ -243,6 +261,7 @@ func (vm *VersionManager) GetOrCreateDataset(name string) *VersionedDataset {
 	return vd
 }
 
+// GetDataset retrieves a versioned dataset by name.
 func (vm *VersionManager) GetDataset(name string) (*VersionedDataset, bool) {
 	vm.mu.RLock()
 	defer vm.mu.RUnlock()
@@ -250,6 +269,7 @@ func (vm *VersionManager) GetDataset(name string) (*VersionedDataset, bool) {
 	return vd, ok
 }
 
+// DeleteDataset removes a versioned dataset by name.
 func (vm *VersionManager) DeleteDataset(name string) {
 	vm.mu.Lock()
 	defer vm.mu.Unlock()

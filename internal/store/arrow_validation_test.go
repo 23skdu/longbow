@@ -57,8 +57,8 @@ func (h *DualIndexHarness) AddVector(id uint32, vec []float32) {
 	rec := b.NewRecordBatch()
 	// Do not release rec immediately, it belongs to dataset now
 
-	h.dataset.Records = append(h.dataset.Records, rec)
-	batchIdx := len(h.dataset.Records) - 1
+	h .dataset.Records.UpdateInPlace(append(h .dataset.Records.Read(), rec))
+	batchIdx := len(h .dataset.Records.Read()) - 1
 
 	// Insert into candidate
 	if _, err := h.candidate.AddByLocation(context.Background(), batchIdx, 0); err != nil {

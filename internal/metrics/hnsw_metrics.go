@@ -472,4 +472,29 @@ var (
 		},
 		[]string{"dataset"},
 	)
+
+	// HnswCowCopyCount counts Copy-on-Write adjacency list copy operations per dataset/shard.
+	// Each increment represents a full slice copy of a neighbor list during a concurrent
+	// graph update.  A rising trend during ingestion indicates high write contention and
+	// is the primary signal used to justify a full wait-free adjacency design.
+	HnswCowCopyCount = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_cow_copy_count",
+			Help: "Total CoW adjacency list copy operations performed per dataset shard",
+		},
+		[]string{"dataset", "shard"},
+	)
+
+	// HnswUpdateContentionSeconds measures the duration of write-lock acquisitions
+	// during HNSW graph updates (neighbor list mutations).  P99 values above 1 ms
+	// indicate that the sharded-mutex strategy is insufficient and a wait-free CoW
+	// implementation should be prioritised.
+	HnswUpdateContentionSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_update_contention_seconds",
+			Help:    "Write-lock wait time during HNSW adjacency list updates",
+			Buckets: []float64{0.000001, 0.00001, 0.0001, 0.001, 0.005, 0.01, 0.05, 0.1},
+		},
+		[]string{"dataset"},
+	)
 )

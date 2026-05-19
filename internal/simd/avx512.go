@@ -311,30 +311,17 @@ func matchFloat64AVX512(src []float64, val float64, op CompareOp, dst []byte) er
 // =============================================================================
 
 func euclideanFloat64AVX512(a, b []float64) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if !features.HasAVX512 {
-		return euclideanFloat64AVX2(a, b)
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return float32(euclideanFloat64AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))), nil
+	return euclideanFloat64Unrolled4x(a, b)
 }
 
 func dotFloat64AVX512(a, b []float64) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if !features.HasAVX512 {
-		return dotFloat64AVX2(a, b)
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return dotFloat64AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)), nil
+	return dotFloat64Unrolled4x(a, b)
 }
+
+func l2SquaredFloat64AVX512(a, b []float64) (float32, error) {
+	return l2SquaredFloat64Unrolled4x(a, b)
+}
+
 
 func euclideanF16AVX512(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
@@ -382,6 +369,90 @@ func cosineF16AVX512(a, b []float16.Num) (float32, error) {
 }
 
 // =============================================================================
+// L2Squared Fixed Dimension Specializations (no sqrt)
+// =============================================================================
+
+func l2Squared128AVX512(a, b []float32) (float32, error) {
+	if len(a) != 128 || len(b) != 128 {
+		return l2SquaredAVX512(a, b)
+	}
+	if !features.HasAVX512 {
+		return l2Squared128AVX2(a, b)
+	}
+	return l2Squared128AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func dot128AVX512(a, b []float32) (float32, error) {
+	if len(a) != 128 || len(b) != 128 {
+		return dotAVX512(a, b)
+	}
+	if !features.HasAVX512 {
+		return dot128AVX2(a, b)
+	}
+	return dot128AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func l2Squared384AVX512(a, b []float32) (float32, error) {
+	if len(a) != 384 || len(b) != 384 {
+		return l2SquaredAVX512(a, b)
+	}
+	if !features.HasAVX512 {
+		return l2SquaredAVX2(a, b)
+	}
+	return l2Squared384AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func l2Squared768AVX512(a, b []float32) (float32, error) {
+	if len(a) != 768 || len(b) != 768 {
+		return l2SquaredAVX512(a, b)
+	}
+	if !features.HasAVX512 {
+		return l2SquaredAVX2(a, b)
+	}
+	return l2Squared768AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func l2Squared1024AVX512(a, b []float32) (float32, error) {
+	if len(a) != 1024 || len(b) != 1024 {
+		return l2SquaredAVX512(a, b)
+	}
+	if !features.HasAVX512 {
+		return l2Squared1024AVX2(a, b)
+	}
+	return l2Squared1024AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func dot1024AVX512(a, b []float32) (float32, error) {
+	if len(a) != 1024 || len(b) != 1024 {
+		return dotAVX512(a, b)
+	}
+	if !features.HasAVX512 {
+		return dot1024AVX2(a, b)
+	}
+	return dot1024AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func l2Squared3072AVX512(a, b []float32) (float32, error) {
+	if len(a) != 3072 || len(b) != 3072 {
+		return l2SquaredAVX512(a, b)
+	}
+	if !features.HasAVX512 {
+		return l2Squared3072AVX2(a, b)
+	}
+	return l2Squared3072AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+func dot3072AVX512(a, b []float32) (float32, error) {
+	if len(a) != 3072 || len(b) != 3072 {
+		return dotAVX512(a, b)
+	}
+	if !features.HasAVX512 {
+		return dot3072AVX2(a, b)
+	}
+	return dot3072AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+// =============================================================================
 // Fixed Dimension Specializations
 // =============================================================================
 
@@ -392,8 +463,9 @@ func euclidean384AVX512(a, b []float32) (float32, error) {
 	if !features.HasAVX512 {
 		return euclidean384AVX2(a, b)
 	}
-	return float32(math.Sqrt(float64(euclidean384AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))))), nil
+	return euclidean384AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
+
 
 func euclidean768AVX512(a, b []float32) (float32, error) {
 	if len(a) != 768 || len(b) != 768 {
@@ -402,8 +474,9 @@ func euclidean768AVX512(a, b []float32) (float32, error) {
 	if !features.HasAVX512 {
 		return euclidean768AVX2(a, b)
 	}
-	return float32(math.Sqrt(float64(euclidean768AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))))), nil
+	return euclidean768AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
+
 
 func euclidean1536AVX512(a, b []float32) (float32, error) {
 	if len(a) != 1536 || len(b) != 1536 {
@@ -412,8 +485,10 @@ func euclidean1536AVX512(a, b []float32) (float32, error) {
 	if !features.HasAVX512 {
 		return euclidean1536AVX2(a, b)
 	}
-	return float32(math.Sqrt(float64(euclidean1536AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]))))), nil
+	// No specialized 1536 kernel yet, use general AVX512
+	return euclideanAVX512(a, b)
 }
+
 
 func dot384AVX512(a, b []float32) (float32, error) {
 	if len(a) != 384 || len(b) != 384 {
@@ -422,7 +497,7 @@ func dot384AVX512(a, b []float32) (float32, error) {
 	if !features.HasAVX512 {
 		return dotGeneric(a, b)
 	}
-	return dot384AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])), nil
+	return dot384AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
 func dot768AVX512(a, b []float32) (float32, error) {
@@ -432,7 +507,7 @@ func dot768AVX512(a, b []float32) (float32, error) {
 	if !features.HasAVX512 {
 		return dotGeneric(a, b)
 	}
-	return dot768AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])), nil
+	return dot768AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
 func dot1536AVX512(a, b []float32) (float32, error) {
@@ -442,8 +517,41 @@ func dot1536AVX512(a, b []float32) (float32, error) {
 	if !features.HasAVX512 {
 		return dotGeneric(a, b)
 	}
-	return dot1536AVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0])), nil
+	return dot1536AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
+
+func euclidean128AVX512(a, b []float32) (float32, error) {
+	if len(a) != 128 || len(b) != 128 {
+		return euclideanAVX512(a, b)
+	}
+	if !features.HasAVX512 {
+		return euclidean128AVX2(a, b)
+	}
+	return euclidean128AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+
+func euclidean1024AVX512(a, b []float32) (float32, error) {
+	if len(a) != 1024 || len(b) != 1024 {
+		return euclideanAVX512(a, b)
+	}
+	if !features.HasAVX512 {
+		return euclidean1024AVX2(a, b)
+	}
+	return euclidean1024AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
+
+func euclidean3072AVX512(a, b []float32) (float32, error) {
+	if len(a) != 3072 || len(b) != 3072 {
+		return euclideanAVX512(a, b)
+	}
+	if !features.HasAVX512 {
+		return euclidean3072AVX2(a, b)
+	}
+	return euclidean3072AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+}
+
 
 func euclidean16AVX512Wrapper(a, b []float32) (float32, error) {
 	if len(a) != 16 || len(b) != 16 {
@@ -567,3 +675,4 @@ func isAllZerosAVX512(data []byte) bool {
 	}
 	return isAllZerosAVX2(data)
 }
+

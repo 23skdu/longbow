@@ -174,7 +174,7 @@ func TestArrowHNSW_SIMDPredicate(t *testing.T) {
 	// Create a SIMD predicate manually for testing the low-level path
 	// (Normally this is extracted from FilterExpr by store_query.go)
 	filterExpr := &types.GtExpr{Field: "timestamp", Value: int64(150)}
-	predicate := query.ExtractPushablePredicate(filterExpr, ds.Records)
+	predicate := query.ExtractPushablePredicate(filterExpr, ds.Records.Read())
 	require.NotNil(t, predicate)
 
 	results, err := ds.Index.SearchVectors(context.Background(), qVec, 10, nil, types.SearchOptions{

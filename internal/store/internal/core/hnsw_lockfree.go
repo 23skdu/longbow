@@ -12,10 +12,14 @@ import (
 )
 
 const (
+	// MaxConnections defines the maximum number of neighbors per node per level.
 	MaxConnections = 16
-	MaxLayers      = 16
+	// MaxLayers defines the maximum height of the HNSW graph.
+	MaxLayers = 16
+	// EfConstruction defines the size of the dynamic candidate list during construction.
 	EfConstruction = 128
-	ML             = 0.36 // 1 / ln(MaxConnections)
+	// ML is the level multiplier for random level generation.
+	ML = 0.36 // 1 / ln(MaxConnections)
 )
 
 // LockFreeNode represents a node in the HNSW graph with concurrent access support.
@@ -49,6 +53,7 @@ type LockFreeHNSW struct {
 	distFunc func(a, b []float32) (float32, error)
 }
 
+// NewLockFreeHNSW initializes a new LockFreeHNSW index.
 func NewLockFreeHNSW() *LockFreeHNSW {
 	h := &LockFreeHNSW{
 		distFunc: simd.EuclideanDistance,
@@ -65,6 +70,7 @@ func (h *LockFreeHNSW) getNode(id types.VectorID) *LockFreeNode {
 	return v.(*LockFreeNode)
 }
 
+// Search finds the nearest neighbors for a query vector.
 func (h *LockFreeHNSW) Search(query []float32, k, ef int) []types.VectorID {
 	ep := h.entryPoint.Load()
 	if ep == nil {
@@ -115,6 +121,7 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []types.VectorID {
 	return []types.VectorID{currObj.ID}
 }
 
+// Add inserts a new vector into the lock-free HNSW index.
 func (h *LockFreeHNSW) Add(id types.VectorID, vec []float32) {
 	level := h.randomLevel()
 	node := &LockFreeNode{

@@ -10,7 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
-// VectorIndexer defines the interface for vector indexing operations
+// VectorIndexer defines the core operations for vector similarity search indexes.
 type VectorIndexer interface {
 	// Core indexing operations
 	AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error)
@@ -24,6 +24,7 @@ type VectorIndexer interface {
 	// Returns all vectors where distance <= threshold (or score >= minScore for similarity metrics).
 	SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []core.Filter, options any) ([]SearchResult, error)
 	IsSharded() bool
+	RelocateToOffHeap() error
 
 	// Metadata operations
 	Size() int
@@ -45,6 +46,9 @@ type VectorIndexer interface {
 	// Maintenance
 	Warmup() int
 	EstimateMemory() int64
+
+	// GetIndexType returns the type of the index (e.g., "hnsw", "sharded_hnsw", "brute_force", "adaptive")
+	GetIndexType() string
 
 	// PQ
 	TrainPQ(vectors [][]float32) error
@@ -72,11 +76,14 @@ type VectorIndexer interface {
 	// Maintenance
 	RemapLocations(ctx context.Context, mapping map[uint32]any) error
 
+	// Migration
+	ReleaseMonolithicChunk(cID int) error
+
 	// GPU
 	GetGPUIndex() any // Returns types.Index (gpu index)
 }
 
-// GraphDataInterface defines the interface for graph data operations
+// GraphDataInterface defines the interface for accessing underlying graph storage.
 type GraphDataInterface interface {
 	// Data access operations
 	GetVector(id uint32) (any, error)
@@ -92,7 +99,7 @@ type GraphDataInterface interface {
 	Close() error
 }
 
-// HNSWGraphInterface defines the interface for HNSW graph operations
+// HNSWGraphInterface defines the specific operations required for HNSW-style graphs.
 type HNSWGraphInterface interface {
 	// Graph construction
 	Insert(id uint32, vec any, level int) error
@@ -111,7 +118,7 @@ type HNSWGraphInterface interface {
 	MaxLevel() int
 }
 
-// CompactionWorkerInterface defines the interface for background compaction
+// CompactionWorkerInterface defines the control interface for background index compaction.
 type CompactionWorkerInterface interface {
 	Start()
 	Stop()
@@ -119,7 +126,7 @@ type CompactionWorkerInterface interface {
 	Trigger(dataset string)
 }
 
-// StorageInterface defines the interface for persistent storage operations
+// StorageInterface defines the interface for generic persistent storage operations.
 type StorageInterface interface {
 	// Persistence operations
 	Save(data any) error
@@ -131,7 +138,7 @@ type StorageInterface interface {
 	Size() int64
 }
 
-// IndexDataProvider defines the interface for data access required by vector indexes
+// IndexDataProvider provides the necessary data and synchronization for index building and search.
 type IndexDataProvider interface {
 	GetName() string
 	GetRecords() []arrow.RecordBatch

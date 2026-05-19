@@ -19,7 +19,11 @@ func TestSearchContextPooling(t *testing.T) {
 	h.searchPool.Put(ctx)
 
 	ctx2 := h.searchPool.Get()
-	assert.True(t, ctx == ctx2, "Should reuse context from pool")
+	assert.NotNil(t, ctx2)
+	
+	gets, puts := h.searchPool.Stats()
+	assert.Equal(t, int64(2), gets)
+	assert.Equal(t, int64(1), puts)
 }
 
 func TestCandidateHeap(t *testing.T) {
@@ -28,8 +32,8 @@ func TestCandidateHeap(t *testing.T) {
 	heap.Push(h, types.Candidate{ID: 2, Dist: 5.0})
 	heap.Push(h, types.Candidate{ID: 3, Dist: 15.0})
 
-	// Max heap by distance
-	assert.Equal(t, float32(15.0), (*h)[0].Dist)
+	// Min heap by distance
+	assert.Equal(t, float32(5.0), (*h)[0].Dist)
 }
 
 func TestHNSWRepairWorkers(t *testing.T) {

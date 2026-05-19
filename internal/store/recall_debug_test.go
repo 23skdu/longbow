@@ -52,7 +52,7 @@ func TestRecallDebug(t *testing.T) {
 
 	// Create dataset
 	ds := store.NewDataset("debug_test", schema)
-	ds.Records = []arrow.RecordBatch{rec}
+	ds.Records = store.NewLockFreeSliceFrom([]arrow.RecordBatch{rec})
 
 	// Build hnsw2 index
 	config := store.DefaultArrowHNSWConfig()

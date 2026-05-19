@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// OllamaClient provides a client for interacting with the Ollama embedding API.
 type OllamaClient struct {
 	baseURL    string
 	model      string
@@ -21,21 +22,25 @@ type OllamaClient struct {
 	enabled    bool
 }
 
+// OllamaEmbedRequest represents a request to the Ollama embedding API.
 type OllamaEmbedRequest struct {
 	Model string `json:"model"`
 	Input string `json:"input"`
 }
 
+// OllamaEmbedResponse represents a response from the Ollama embedding API.
 type OllamaEmbedResponse struct {
 	Embeddings [][]float64 `json:"embeddings"`
 }
 
+// OllamaConfig defines the configuration for the Ollama client.
 type OllamaConfig struct {
 	Endpoint string `json:"endpoint"`
 	Model    string `json:"model"`
 	Timeout  int    `json:"timeout"`
 }
 
+// NewOllamaClient creates a new Ollama client with the provided configuration.
 func NewOllamaClient(logger zerolog.Logger, config OllamaConfig) *OllamaClient {
 	if config.Endpoint == "" {
 		config.Endpoint = "http://localhost:11434"
@@ -55,12 +60,14 @@ func NewOllamaClient(logger zerolog.Logger, config OllamaConfig) *OllamaClient {
 	}
 }
 
+// IsEnabled returns whether the Ollama client is currently enabled.
 func (o *OllamaClient) IsEnabled() bool {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
 	return o.enabled
 }
 
+// Embed generates an embedding for the given text using the Ollama API.
 func (o *OllamaClient) Embed(ctx context.Context, text string) ([]float64, error) {
 	o.mu.RLock()
 	baseURL := o.baseURL
@@ -109,6 +116,7 @@ func (o *OllamaClient) Embed(ctx context.Context, text string) ([]float64, error
 	return result.Embeddings[0], nil
 }
 
+// GetConfig returns the current configuration of the Ollama client.
 func (o *OllamaClient) GetConfig() OllamaConfig {
 	o.mu.RLock()
 	defer o.mu.RUnlock()
@@ -118,24 +126,28 @@ func (o *OllamaClient) GetConfig() OllamaConfig {
 	}
 }
 
+// Disable disables the Ollama client.
 func (o *OllamaClient) Disable() {
 	o.mu.Lock()
 	o.enabled = false
 	o.mu.Unlock()
 }
 
+// Enable enables the Ollama client.
 func (o *OllamaClient) Enable() {
 	o.mu.Lock()
 	o.enabled = true
 	o.mu.Unlock()
 }
 
+// LearnedIndexWithOllama wraps a performance predictor with Ollama-based embedding enrichment.
 type LearnedIndexWithOllama struct {
 	predictor *IndexPerformancePredictor
 	ollama    *OllamaClient
 	logger    zerolog.Logger
 }
 
+// NewLearnedIndexWithOllama creates a new LearnedIndexWithOllama.
 func NewLearnedIndexWithOllama(logger zerolog.Logger, predictor *IndexPerformancePredictor, config OllamaConfig) *LearnedIndexWithOllama {
 	var ollama *OllamaClient
 	if config.Model != "" {
@@ -153,6 +165,7 @@ func NewLearnedIndexWithOllama(logger zerolog.Logger, predictor *IndexPerformanc
 	}
 }
 
+// Predict predicts the index performance for the given features, using Ollama for embedding enrichment if available.
 func (l *LearnedIndexWithOllama) Predict(ctx context.Context, features QueryFeatures) IndexPrediction {
 	if l.ollama != nil && l.ollama.IsEnabled() {
 		embedding, err := l.ollama.Embed(ctx, features.String())

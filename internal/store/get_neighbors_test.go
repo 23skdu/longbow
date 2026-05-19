@@ -23,14 +23,14 @@ func buildSmallDataset(t *testing.T, n, dim int) (*Dataset, *ArrowHNSW) {
 		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
 	}, nil)
 
-	bId := arrowarray.NewInt64Builder(mem)
-	defer bId.Release()
+	bID := arrowarray.NewInt64Builder(mem)
+	defer bID.Release()
 	bVec := arrowarray.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32)
 	defer bVec.Release()
 	bVecValues := bVec.ValueBuilder().(*arrowarray.Float32Builder)
 
 	for i := 0; i < n; i++ {
-		bId.Append(int64(i))
+		bID.Append(int64(i))
 		bVec.Append(true)
 		vec := make([]float32, dim)
 		for j := 0; j < dim; j++ {
@@ -39,19 +39,19 @@ func buildSmallDataset(t *testing.T, n, dim int) (*Dataset, *ArrowHNSW) {
 		bVecValues.AppendValues(vec, nil)
 	}
 
-	arrId := bId.NewArray()
-	defer arrId.Release()
+	arrID := bID.NewArray()
+	defer arrID.Release()
 	arrVec := bVec.NewArray()
 	defer arrVec.Release()
 
-	batch := arrowarray.NewRecordBatch(schema, []arrow.Array{arrId, arrVec}, int64(n))
+	batch := arrowarray.NewRecordBatch(schema, []arrow.Array{arrID, arrVec}, int64(n))
 
 	ds := NewDataset("test_gn", schema)
 	batch.Retain()
-	ds.Records = append(ds.Records, batch)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), batch))
 
 	t.Cleanup(func() {
-		for _, r := range ds.Records {
+		for _, r := range ds.Records.Read() {
 			r.Release()
 		}
 	})

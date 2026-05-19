@@ -63,7 +63,7 @@ func benchmarkAddBatch(b *testing.B, sq8 bool) {
 	ds := &Dataset{
 		Name:    "bench_dataset",
 		Schema:  schema,
-		Records: batches, // Not strictly used by AddBatch logic but implicitly correct
+		Records: NewLockFreeSliceFrom(batches), // Not strictly used by AddBatch logic but implicitly correct
 	}
 
 	config := DefaultArrowHNSWConfig()

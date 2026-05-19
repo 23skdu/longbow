@@ -13,7 +13,7 @@ type MockIndex struct {
 	mu        sync.RWMutex
 	vectors   map[int64][]float32
 	dimension int
-	deviceID  int
+	deviceID  int32
 	backend   GPUBackend
 	closed    bool
 }
@@ -134,6 +134,10 @@ func (m *MockIndex) EncodePQ(vectors []float32) ([]byte, error) {
 	return nil, nil
 }
 
+func (m *MockIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	return entryPoint, entryDist, nil
+}
+
 func (m *MockIndex) Close() error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -146,7 +150,7 @@ func (m *MockIndex) Backend() GPUBackend {
 	return m.backend
 }
 
-func (m *MockIndex) DeviceID() int {
+func (m *MockIndex) DeviceID() int32 {
 	return m.deviceID
 }
 
@@ -275,6 +279,39 @@ func (m *MockIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []
 func (m *MockIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	// Simple mock return: the seeds themselves
 	return seeds, make([]float32, len(seeds)), nil
+}
+
+func (m *MockIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
+	// Simple mock: return zeros for now or implement if needed for tests
+	return make([]float32, len(points)/2), nil
+}
+
+func (m *MockIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
+	// Simple mock: return zeros
+	return make([]float32, len(vectors)/dims), nil
+}
+
+func (m *MockIndex) Clear() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.vectors = make(map[int64][]float32)
+	return nil
+}
+
+func (m *MockIndex) Sync() error {
+	return nil
+}
+
+func (m *MockIndex) Reset() error {
+	return m.Clear()
+}
+
+func (m *MockIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
+	// Simple mock: return first maxNeighbors candidates
+	if len(candidateIds) <= maxNeighbors {
+		return candidateIds, nil
+	}
+	return candidateIds[:maxNeighbors], nil
 }
 
 // float16ToFloat32Mock converts a uint16 float16 value to float32

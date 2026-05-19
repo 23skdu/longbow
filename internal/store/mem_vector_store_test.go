@@ -7,7 +7,7 @@ import (
 	"github.com/23skdu/longbow/internal/memory"
 )
 
-func FuzzArenaVector_ConcurrentAlloc(f *testing.F) {
+func FuzzArenaVectorConcurrentAlloc(f *testing.F) {
 	fuzzDims := []int{64, 128, 256, 512, 1024}
 	fuzzConcurrency := []int{1, 2, 4, 8, 16}
 
@@ -73,7 +73,7 @@ func FuzzArenaVector_ConcurrentAlloc(f *testing.F) {
 	})
 }
 
-func TestArenaVector_ConcurrentAlloc(t *testing.T) {
+func TestArenaVectorConcurrentAlloc(t *testing.T) {
 	arena := memory.NewTypedArena[float32](memory.NewSlabArena(1024 * 1024))
 	dim := 128
 	conc := 8

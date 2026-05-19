@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -71,7 +72,7 @@ func TestGeoIndex_New(t *testing.T) {
 
 	assert.NotNil(t, idx)
 	assert.Equal(t, 128, idx.dimension)
-	assert.NotNil(t, idx.pointIndex)
+	assert.NotNil(t, idx.pointIndex.Load())
 }
 
 func TestGeoIndex_AddAndSearchRadius(t *testing.T) {
@@ -227,4 +228,79 @@ func TestQuadtree_QueryBox(t *testing.T) {
 	results := q.QueryBox(box)
 
 	assert.GreaterOrEqual(t, len(results), 1)
+}
+
+func TestGeoIndex_Concurrency(t *testing.T) {
+	config := &GeoSearchConfig{
+		DistanceType: GeoDistanceHaversine,
+		EarthRadius:  6371.0,
+		IndexType:    "quadtree",
+	}
+	bounds := GeoBoundingBox{
+		MinLat: -90, MaxLat: 90, MinLon: -180, MaxLon: 180,
+	}
+	gi := NewGeoIndex("test", 128, config)
+	gi.pointIndex.Store(NewQuadtree(bounds, 64, "test"))
+	
+	// Start concurrent inserters
+	numInserters := 4
+	vectorsPerInserter := 1000
+	var wg sync.WaitGroup
+	wg.Add(numInserters)
+	
+	for i := 0; i < numInserters; i++ {
+		go func(idx int) {
+			defer wg.Done()
+			for j := 0; j < vectorsPerInserter; j++ {
+				id := uint64(idx*vectorsPerInserter + j)
+				vec := make([]float32, 128)
+				point := GeoPoint{Lat: 40.0 + float64(j)*0.001, Lon: -74.0 + float64(idx)*0.1}
+				_ = gi.Add(id, vec, point, nil)
+			}
+		}(i)
+	}
+	
+	// Start concurrent searchers
+	numSearchers := 4
+	wg.Add(numSearchers)
+	for i := 0; i < numSearchers; i++ {
+		go func() {
+			defer wg.Done()
+			for j := 0; j < 100; j++ {
+				_, _ = gi.SearchRadius(context.Background(), GeoPoint{Lat: 40.5, Lon: -73.5}, 50, 10)
+			}
+		}()
+	}
+	
+	wg.Wait()
+	
+	expectedCount := int64(numInserters * vectorsPerInserter)
+	assert.Equal(t, expectedCount, gi.pointCount.Load())
+}
+
+func BenchmarkGeoIndex_SearchRadius(b *testing.B) {
+	config := &GeoSearchConfig{
+		DistanceType: GeoDistanceHaversine,
+		EarthRadius:  6371.0,
+		IndexType:    "quadtree",
+	}
+	bounds := GeoBoundingBox{
+		MinLat: -90, MaxLat: 90, MinLon: -180, MaxLon: 180,
+	}
+	gi := NewGeoIndex("bench", 128, config)
+	gi.pointIndex.Store(NewQuadtree(bounds, 64, "bench"))
+	
+	// Pre-fill with 10k points
+	for i := 0; i < 10000; i++ {
+		id := uint64(i)
+		vec := make([]float32, 128)
+		point := GeoPoint{Lat: 40.0 + float64(i)*0.0001, Lon: -74.0 + float64(i)*0.0001}
+		_ = gi.Add(id, vec, point, nil)
+	}
+	
+	center := GeoPoint{Lat: 40.5, Lon: -73.5}
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = gi.SearchRadius(context.Background(), center, 100, 10)
+	}
 }

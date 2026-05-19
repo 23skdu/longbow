@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"math"
 	"time"
 	"unsafe"
 )
@@ -58,13 +59,13 @@ func (idx *CUVSIndex) Search(ctx context.Context, query []float32, k int) ([]int
 		return nil, nil, fmt.Errorf("query dimension mismatch: expected %d, got %d", idx.dim, len(query))
 	}
 
-	cDistances := make([]C.float, k)
-	cIds := make([]*C.char, k)
-	// cuVS might return string IDs or integer IDs depending on configuration.
-	// For consistency with gpu.Index, we assume integer IDs can be derived.
-	// In this wrapper, we'll convert them to int64 if they are numeric strings.
-
-	ret := C.cuvs_search(&idx.res, (*C.float)(&query[0]), C.int(k), (**C.char)(unsafe.Pointer(&cIds[0])), (*C.float)(&cDistances[0]))
+	if k < 0 || k > math.MaxInt32 {
+		return nil, nil, fmt.Errorf("k invalid or too large")
+	}
+	ki32 := int32(k) // #nosec G115
+	cDistances := make([]C.float, ki32)
+	cIds := make([]*C.char, ki32)
+	ret := C.cuvs_search(&idx.res, (*C.float)(&query[0]), C.int(ki32), (**C.char)(unsafe.Pointer(&cIds[0])), (*C.float)(&cDistances[0]))
 	if ret != 0 {
 		return nil, nil, fmt.Errorf("cuVS search failed: error %d", int(ret))
 	}
@@ -91,7 +92,12 @@ func (idx *CUVSIndex) AddBatch(ctx context.Context, ids []int64, vectors []float
 		return nil
 	}
 	n := len(vectors) / idx.dim
-	ret := C.cuvs_index_build(&idx.res, (*C.float)(&vectors[0]), C.int(n), C.int(idx.dim))
+	if n < 0 || n > math.MaxInt32 || idx.dim < 0 || idx.dim > math.MaxInt32 {
+		return fmt.Errorf("n or dim too large or invalid")
+	}
+	ni32 := int32(n)      // #nosec G115
+	di32 := int32(idx.dim) // #nosec G115
+	ret := C.cuvs_index_build(&idx.res, (*C.float)(&vectors[0]), C.int(ni32), C.int(di32))
 	if ret != 0 {
 		return fmt.Errorf("cuVS index build failed: error %d", int(ret))
 	}

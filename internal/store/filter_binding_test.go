@@ -81,7 +81,7 @@ func TestShardedHNSW_FilterPanicReproduction(t *testing.T) {
 
 	rec0 := array.NewRecordBatch(schema, []arrow.Array{id0Builder.NewArray(), v0Builder.NewArray(), c0Builder.NewArray()}, 2)
 	ds.dataMu.Lock()
-	ds.Records = append(ds.Records, rec0)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec0))
 	ds.dataMu.Unlock()
 	if _, err := idx.AddByRecord(context.Background(), rec0, 0, 0); err != nil {
 		t.Fatalf("AddByRecord failed: %v", err)
@@ -102,7 +102,7 @@ func TestShardedHNSW_FilterPanicReproduction(t *testing.T) {
 
 	rec1 := array.NewRecordBatch(schema, []arrow.Array{id1Builder.NewArray(), v1Builder.NewArray(), c1Builder.NewArray()}, 1)
 	ds.dataMu.Lock()
-	ds.Records = append(ds.Records, rec1)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec1))
 	ds.dataMu.Unlock()
 	if _, err := idx.AddByRecord(context.Background(), rec1, 0, 1); err != nil {
 		t.Fatalf("AddByRecord failed: %v", err)

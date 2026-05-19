@@ -22,6 +22,7 @@ func TestGraphRAG_SearchHybrid(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.New(os.Stderr)
 	s := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
+	s.StartIndexingWorkers(1)
 	defer s.Close()
 
 	datasetName := "test_graphrag"
@@ -90,12 +91,12 @@ func TestGraphRAG_SearchHybrid(t *testing.T) {
 	t.Logf("Dataset %s index len: %d", datasetName, ds.IndexLen())
 
 	// Case 1: alpha=0.1 (Mostly Graph expansion)
-	results, err := SearchHybrid(ctx, s, datasetName, query, "", 5, 0.1, 0, 0.5, 2)
+	results, err := s.SearchHybrid(ctx, datasetName, query, "", 5, 0.1, 0, 0.5, 2, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, results)
 
 	// Case 2: alpha=1 (Full GraphRAG re-ranking)
-	results, err = SearchHybrid(ctx, s, datasetName, query, "", 5, 1.0, 0, 0.5, 2)
+	results, err = s.SearchHybrid(ctx, datasetName, query, "", 5, 1.0, 0, 0.5, 2, false)
 	require.NoError(t, err)
 	assert.NotEmpty(t, results)
 }
@@ -194,7 +195,7 @@ func TestGraphRAG_Stability_Large(t *testing.T) {
 	query[0] = 0.5
 
 	start := time.Now()
-	results, err := SearchHybrid(ctx, s, datasetName, query, "", 10, 1.0, 0, 0.5, 10)
+	results, err := s.SearchHybrid(ctx, datasetName, query, "", 10, 1.0, 0, 0.5, 10, false)
 	require.NoError(t, err)
 	duration := time.Since(start)
 

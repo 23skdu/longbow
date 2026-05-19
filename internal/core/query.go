@@ -110,10 +110,11 @@ type VectorSearchRequest struct {
 	VectorFormat    string                 `json:"vector_format,omitempty"`
 	VectorType      string                 `json:"vector_type,omitempty"`     // "float32", "turboquant", etc.
 	TurboQuantBits  int                    `json:"turboquant_bits,omitempty"` // 4, 8 bits
-	Consistency     string                 `json:"consistency,omitempty"`     // "ONE", "QUORUM", "ALL"
+	Consistency        string                 `json:"consistency,omitempty"`     // "ONE", "QUORUM", "ALL"
 	EfSearch           int                    `json:"ef_search,omitempty"`
 	EnableLearnedIndex bool                   `json:"enable_learned_index,omitempty"`
 	WindowFunctions    []WindowFunction       `json:"window_functions,omitempty"`
+	RawHybrid          bool                   `json:"raw_hybrid,omitempty"`      // If true, returns un-fused dense and sparse results
 }
 
 // VectorSearchByIDRequest defines the request format for searching by User ID
@@ -184,6 +185,7 @@ type TemporalSearchRequest struct {
 
 // TemporalAggregationRequest defines analytical temporal query
 type TemporalAggregationRequest struct {
+	Dataset         string `json:"dataset"`
 	AggregationType string `json:"aggregation_type"` // count, min, max, mean, sum
 	StartTime       int64  `json:"start_time"`
 	EndTime         int64  `json:"end_time"`
@@ -224,5 +226,6 @@ func (req *TemporalAggregationRequest) Validate() error {
 
 // TemporalVersionHistoryRequest defines request for version history
 type TemporalVersionHistoryRequest struct {
+	Dataset  string `json:"dataset"`
 	VectorID uint64 `json:"vector_id"`
 }

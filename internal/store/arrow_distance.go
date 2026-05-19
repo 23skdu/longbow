@@ -15,15 +15,21 @@ import (
 // BatchDistanceComputer uses Apache Arrow compute kernels for vectorized distance calculations.
 // This provides significant performance improvements for large candidate sets (>32 vectors).
 type BatchDistanceComputer struct {
-	mem memory.Allocator
-	dim int
+	mem      memory.Allocator
+	dim      int
+	distFunc simd.DistanceKernel[float32]
 }
 
 // NewBatchDistanceComputer creates a new batch distance computer.
 func NewBatchDistanceComputer(mem memory.Allocator, dim int) *BatchDistanceComputer {
+	kernel := simd.GetKernel[float32](simd.MetricEuclidean, dim)
+	if kernel == nil {
+		kernel = simd.EuclideanDistance
+	}
 	return &BatchDistanceComputer{
-		mem: mem,
-		dim: dim,
+		mem:      mem,
+		dim:      dim,
+		distFunc: kernel,
 	}
 }
 
@@ -86,7 +92,7 @@ func (b *BatchDistanceComputer) ComputeL2DistancesInto(
 	// Use serial loop fallback.
 	if n < 32 {
 		for i, vec := range candidateVectors {
-			d, err := simd.EuclideanDistance(query, vec)
+			d, err := b.distFunc(query, vec)
 			if err != nil {
 				return nil, err
 			}
@@ -110,7 +116,7 @@ func (b *BatchDistanceComputer) ComputeL2DistancesSIMDFallback(
 ) ([]float32, error) {
 	distances := make([]float32, len(candidateVectors))
 	for i, candidate := range candidateVectors {
-		d, err := simd.EuclideanDistance(query, candidate)
+		d, err := b.distFunc(query, candidate)
 		if err != nil {
 			return nil, err
 		}

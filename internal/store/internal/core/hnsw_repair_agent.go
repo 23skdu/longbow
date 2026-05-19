@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/simd"
 	"github.com/prometheus/client_golang/prometheus"
 )
 
@@ -149,7 +148,8 @@ func (r *RepairAgent) detectOrphans() []uint32 {
 		return nil
 	}
 
-	nodeCount := int(r.index.nodeCount.Load())
+	meta := r.index.metadataRegistry.Load()
+	nodeCount := int(meta.NodeCount)
 	if nodeCount == 0 {
 		return nil
 	}
@@ -183,7 +183,7 @@ func (r *RepairAgent) detectOrphans() []uint32 {
 		}
 
 		// Get neighbors at layer 0 using unified accessor with cached DiskGraph
-		neighbors := r.index.GetNeighborsCombinedCached(0, current, dg)
+		neighbors := r.index.GetNeighborsCombinedCached(0, current, dg, meta.Generation)
 		for _, neighbor := range neighbors {
 			if !reachable[neighbor] && !r.index.deleted.Contains(neighbor) {
 				queue = append(queue, neighbor)
@@ -226,8 +226,9 @@ func (r *RepairAgent) repairOrphan(orphan uint32, layer int) {
 
 	// Find K nearest neighbors in the reachable set
 	// We'll do a simple linear scan for now (could be optimized)
-	nodeCount := int(r.index.nodeCount.Load())
-	k := r.index.m // Use M as target neighbor count
+	meta := r.index.metadataRegistry.Load()
+	nodeCount := int(meta.NodeCount)
+	k := int(r.index.m.Load()) // Use M as target neighbor count
 
 	type candidate struct {
 		id   uint32
@@ -253,8 +254,8 @@ func (r *RepairAgent) repairOrphan(orphan uint32, layer int) {
 			continue
 		}
 
-		// Use SIMD distance function
-		dist, err := simd.DistFunc(orphanVec, nodeVec)
+		// Use cached SIMD distance function from the index
+		dist, err := r.index.distFunc(orphanVec, nodeVec)
 		if err != nil {
 			dist = math.MaxFloat32
 		}
@@ -281,11 +282,13 @@ func (r *RepairAgent) repairOrphan(orphan uint32, layer int) {
 
 	// Add bidirectional edges
 	searchCtx := r.index.searchPool.Get()
+	searchCtx.MaxNodeCount = meta.NodeCount
+	searchCtx.MaxGeneration = meta.Generation
 	defer r.index.searchPool.Put(searchCtx)
 
-	maxConn := r.index.mMax
+	maxConn := int(r.index.mMax.Load())
 	if layer == 0 {
-		maxConn = r.index.mMax0
+		maxConn = int(r.index.mMax0.Load())
 	}
 
 	for _, c := range candidates {

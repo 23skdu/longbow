@@ -125,6 +125,7 @@ func (b *BatchDistanceComputer) SelectTopKNeighbors(
 	return resIDs, resDists, nil
 }
 
+// NewNeighborSelectionFailedError creates a new error for failed neighbor selection operations.
 func NewNeighborSelectionFailedError(op string, err error) error {
 	return fmt.Errorf("neighbor selection failed during %s: %w", op, err)
 }

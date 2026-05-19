@@ -205,10 +205,14 @@ func (f *IndexFactory) ListTypes() []IndexType {
 
 // createHNSWIndex creates an HNSW index adapter
 func createHNSWIndex(cfg IndexConfig) (PluggableVectorIndex, error) {
+	config := lbtypes.ArrowHNSWConfig{}
+	if cfg.HNSWConfig != nil {
+		config = *cfg.HNSWConfig
+	}
 	return &HNSWPluggableAdapter{
-		dimension: cfg.Dimension,
-		vectors:   make(map[uint64][]float32),
-		config:    cfg.HNSWConfig,
+		dimension:  cfg.Dimension,
+		vectors:    make(map[uint64][]float32),
+		hnswConfig: config,
 	}, nil
 }
 

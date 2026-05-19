@@ -38,7 +38,7 @@ func (s *VectorStore) Close() error {
 	if s.replicator != nil {
 		s.replicator.Stop()
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
 	defer cancel()
 	return s.Shutdown(ctx)
 }

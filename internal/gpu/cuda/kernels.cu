@@ -2,7 +2,6 @@
 #include <device_launch_parameters.h>
 #include <cuda_fp16.h>
 #include <math.h>
-#include <float.h>
 #include <stdint.h>
 
 // Top-K implementation using shared memory heap
@@ -424,7 +423,6 @@ void launch_graph_activation_propagate_kernel(
     );
 }
 
-}
 
 // Euclidean Distance Kernel for Large Dimensions (Vectorized with float4)
 __global__ void l2_distance_kernel_large(const float* vectors, const float* query, float* distances, int dimensions, int count) {
@@ -500,4 +498,302 @@ void launch_dot_product_large_kernel(const float* vectors, const float* query, f
     int threadsPerBlock = 256;
     int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
     dot_product_kernel_large<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, query, distances, dimensions, count);
+}
+
+// Haversine Distance Kernel
+__global__ void haversine_distance_kernel(const float* center, const float* points, float* distances, float earthRadius, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < count) {
+        float lat1 = center[0] * 3.14159265f / 180.0f;
+        float lon1 = center[1] * 3.14159265f / 180.0f;
+        float lat2 = points[idx * 2] * 3.14159265f / 180.0f;
+        float lon2 = points[idx * 2 + 1] * 3.14159265f / 180.0f;
+        
+        float dLat = lat2 - lat1;
+        float dLon = lon2 - lon1;
+        
+        float a = sinf(dLat / 2.0f) * sinf(dLat / 2.0f) + 
+                  cosf(lat1) * cosf(lat2) * 
+                  sinf(dLon / 2.0f) * sinf(dLon / 2.0f);
+        float c = 2.0f * atan2f(sqrtf(a), sqrtf(1.0f - a));
+        distances[idx] = earthRadius * c;
+    }
+}
+
+// Norm Squared Kernel
+__global__ void l2_squared_kernel(const float* vectors, float* results, int dimensions, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx < count) {
+        float sum = 0.0f;
+        const float* vec = vectors + idx * dimensions;
+        for (int i = 0; i < dimensions; i++) {
+            float v = vec[i];
+            sum += v * v;
+        }
+        results[idx] = sum;
+    }
+}
+
+void launch_haversine_distance_kernel(const float* center, const float* points, float* distances, float earthRadius, int count, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
+    haversine_distance_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(center, points, distances, earthRadius, count);
+}
+
+void launch_l2_squared_kernel(const float* vectors, float* results, int dimensions, int count, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
+    l2_squared_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, results, dimensions, count);
+}
+
+// K-Means E-step: Assign vectors to nearest clusters
+__global__ void assign_to_clusters_kernel(
+    const float* vectors,
+    const float* centroids,
+    uint32_t* assignments,
+    int dimensions,
+    int numVectors,
+    int numCentroids
+) {
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid >= numVectors) return;
+
+    float minDist = 1e38f;
+    uint32_t bestCent = 0;
+    const float* vec = vectors + gid * dimensions;
+
+    for (uint32_t c = 0; c < numCentroids; c++) {
+        float dist = 0.0f;
+        const float* cent = centroids + c * dimensions;
+        for (int i = 0; i < dimensions; i++) {
+            float diff = vec[i] - cent[i];
+            dist += diff * diff;
+        }
+        if (dist < minDist) {
+            minDist = dist;
+            bestCent = c;
+        }
+    }
+    assignments[gid] = bestCent;
+}
+
+// K-Means M-step: Sum vectors in each cluster
+__global__ void sum_centroids_kernel(
+    const float* vectors,
+    const uint32_t* assignments,
+    float* centroids,
+    uint32_t* counts,
+    int dimensions,
+    int numVectors
+) {
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid >= numVectors) return;
+
+    uint32_t clusterID = assignments[gid];
+    const float* vec = vectors + gid * dimensions;
+    float* cent = centroids + clusterID * dimensions;
+
+    atomicAdd(&counts[clusterID], 1);
+    for (int i = 0; i < dimensions; i++) {
+        atomicAdd(&cent[i], vec[i]);
+    }
+}
+
+// K-Means M-step: Finalize centroids by dividing by counts
+__global__ void finalize_centroids_kernel(
+    float* centroids,
+    const uint32_t* counts,
+    int dimensions,
+    int numCentroids
+) {
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid >= numCentroids) return;
+
+    uint32_t count = counts[gid];
+    if (count == 0) return;
+
+    float invCount = 1.0f / (float)count;
+    float* cent = centroids + gid * dimensions;
+    for (int i = 0; i < dimensions; i++) {
+        cent[i] *= invCount;
+    }
+}
+
+void launch_assign_to_clusters(const float* vectors, const float* centroids, uint32_t* assignments, int dim, int numVectors, int numCentroids, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (numVectors + threadsPerBlock - 1) / threadsPerBlock;
+    assign_to_clusters_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, centroids, assignments, dim, numVectors, numCentroids);
+}
+
+void launch_sum_centroids(const float* vectors, const uint32_t* assignments, float* centroids, uint32_t* counts, int dim, int numVectors, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (numVectors + threadsPerBlock - 1) / threadsPerBlock;
+    sum_centroids_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, assignments, centroids, counts, dim, numVectors);
+}
+
+void launch_finalize_centroids(float* centroids, const uint32_t* counts, int dim, int numCentroids, cudaStream_t stream) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (numCentroids + threadsPerBlock - 1) / threadsPerBlock;
+    finalize_centroids_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(centroids, counts, dim, numCentroids);
+}
+// PQ Encoding: Assign subspace segments of vectors to nearest codebook centroids
+__global__ void pq_encode_kernel(
+    const float* vectors,
+    const float* codebooks, // [m][256][subDim]
+    unsigned char* codes,   // [numVectors][m]
+    int dimensions,
+    int numVectors,
+    int m,
+    int subDim
+) {
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
+    if (gid >= numVectors) return;
+
+    for (int sub = 0; sub < m; sub++) {
+        const float* vecSub = vectors + (size_t)gid * dimensions + (size_t)sub * subDim;
+        const float* cb = codebooks + (size_t)sub * 256 * subDim;
+        
+        float minDist = 1e38f;
+        unsigned char bestIdx = 0;
+        
+        for (int c = 0; c < 256; c++) {
+            float dist = 0.0f;
+            const float* cent = cb + (size_t)c * subDim;
+            for (int i = 0; i < subDim; i++) {
+                float diff = vecSub[i] - cent[i];
+                dist += diff * diff;
+            }
+            if (dist < minDist) {
+                minDist = dist;
+                bestIdx = (unsigned char)c;
+            }
+        }
+        codes[(size_t)gid * m + sub] = bestIdx;
+    }
+}
+
+void launch_pq_encode_kernel(
+    const float* vectors,
+    const float* codebooks,
+    unsigned char* codes,
+    int dimensions,
+    int numVectors,
+    int m,
+    int subDim,
+    cudaStream_t stream
+) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid = (numVectors + threadsPerBlock - 1) / threadsPerBlock;
+    pq_encode_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(
+        vectors, codebooks, codes, dimensions, numVectors, m, subDim
+    );
+}
+
+int cuda_pq_encode(
+    void* handle,
+    float* h_vectors,
+    float* h_codebooks,
+    unsigned char* h_codes,
+    int numVectors,
+    int m,
+    int subDim
+) {
+    float *d_vectors, *d_codebooks;
+    unsigned char *d_codes;
+    
+    size_t vecSize = (size_t)numVectors * m * subDim * sizeof(float);
+    size_t cbSize = (size_t)m * 256 * subDim * sizeof(float);
+    size_t codeSize = (size_t)numVectors * m * sizeof(unsigned char);
+    
+    if (cudaMalloc(&d_vectors, vecSize) != cudaSuccess) return -1;
+    if (cudaMalloc(&d_codebooks, cbSize) != cudaSuccess) {
+        cudaFree(d_vectors);
+        return -1;
+    }
+    if (cudaMalloc(&d_codes, codeSize) != cudaSuccess) {
+        cudaFree(d_vectors);
+        cudaFree(d_codebooks);
+        return -1;
+    }
+    
+    cudaMemcpy(d_vectors, h_vectors, vecSize, cudaMemcpyHostToDevice);
+    cudaMemcpy(d_codebooks, h_codebooks, cbSize, cudaMemcpyHostToDevice);
+    
+    launch_pq_encode_kernel(d_vectors, d_codebooks, d_codes, m * subDim, numVectors, m, subDim, 0);
+    
+    cudaMemcpy(h_codes, d_codes, codeSize, cudaMemcpyDeviceToHost);
+    
+    cudaFree(d_vectors);
+    cudaFree(d_codebooks);
+    cudaFree(d_codes);
+    
+    return 0;
+}
+
+} // extern "C"
+
+// HNSW Neighbor Pruning Kernel (CUDA)
+__global__ void hnsw_prune_neighbors_kernel(
+    const uint32_t* candidateIds,
+    const float* candidateDists,
+    uint32_t* selectedIds,
+    uint32_t* selectedCount,
+    const float* allVectors,
+    int maxNeighbors,
+    int numCandidates,
+    int dim,
+    bool extendedHeuristic
+) {
+    if (blockIdx.x > 0 || threadIdx.x > 0) return;
+
+    int count = 0;
+    for (int i = 0; i < numCandidates && count < maxNeighbors; i++) {
+        uint32_t currId = candidateIds[i];
+        float currDist = candidateDists[i];
+        bool good = true;
+
+        for (int j = 0; j < count; j++) {
+            uint32_t selId = selectedIds[j];
+            
+            float distBetween = 0.0f;
+            const float* v1 = allVectors + (size_t)currId * dim;
+            const float* v2 = allVectors + (size_t)selId * dim;
+            
+            for (int k = 0; k < dim; k++) {
+                float d = v1[k] - v2[k];
+                distBetween += d * d;
+            }
+            distBetween = sqrtf(distBetween);
+
+            if (distBetween < currDist) {
+                good = false;
+                break;
+            }
+        }
+
+        if (good) {
+            selectedIds[count++] = currId;
+        }
+    }
+    *selectedCount = (uint32_t)count;
+}
+
+extern "C" {
+void launch_hnsw_prune_neighbors_kernel(
+    const uint32_t* candidateIds,
+    const float* candidateDists,
+    uint32_t* selectedIds,
+    uint32_t* selectedCount,
+    const float* allVectors,
+    int maxNeighbors,
+    int numCandidates,
+    int dim,
+    bool extendedHeuristic,
+    cudaStream_t stream
+) {
+    hnsw_prune_neighbors_kernel<<<1, 1, 0, stream>>>(
+        candidateIds, candidateDists, selectedIds, selectedCount, allVectors,
+        maxNeighbors, numCandidates, dim, extendedHeuristic
+    );
+}
 }

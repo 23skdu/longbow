@@ -2,61 +2,85 @@ package core
 
 import (
 	"context"
-	"fmt"
+	"math"
 	"strconv"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
-	"github.com/apache/arrow-go/v18/arrow/float16"
+	"sync/atomic"
 )
 
 // Insert adds a new vector to the HNSW graph.
-// The vector is identified by its types.VectorID and assigned a random level.
 func (h *ArrowHNSW) Insert(id uint32, level int) error {
 	defer h.commitID(id)
-	// Zero-Copy Ingestion Path
-	// Get vector for distance calculations (and caching)
-	// We use generic GetVectorAny to support all types.
 	vec, err := h.GetVectorAny(id)
 	if err != nil {
 		return err
 	}
-
 	return h.InsertWithVector(id, vec, level)
 }
 
 // InsertWithVector inserts a vector that has already been retrieved.
 func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
+	first := true
+	for {
+		current := h.data.Load()
+		data, err := h.insertInternal(id, vec, level, !first, current)
+		if err != nil {
+			return err
+		}
+		if data == nil || h.compareAndSwapData(current, data) {
+			h.commitID(id)
+			return nil
+		}
+		first = false
+		// CAS failed, retry insertion on the new global state
+	}
+}
+
+func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, existingData *types.GraphData) (*types.GraphData, error) {
+	meta := h.metadataRegistry.Load()
 	if level < 0 {
 		level = h.generateLevel()
+	}
+	data := existingData
+	isPrivate := false
+	if data == nil {
+		data = h.data.Load()
+	} else {
+		isPrivate = true // We assume existingData provided by the caller is a private copy they own
+	}
+
+	// Helper to ensure we are working on a private clone before any modification
+	ensurePrivate := func() {
+		if !isPrivate {
+			data = data.Clone()
+			isPrivate = true
+		}
 	}
 	start := time.Now()
 	var dims int
 	defer func() {
 		duration := time.Since(start).Seconds()
-		nodeCount := float64(h.nodeCount.Load())
-		// Metrics Sampling: Reduce atomic overhead in hot paths
+		nodeCount := float64(meta.NodeCount)
 		typeStr := h.config.DataType.String()
 		if int(id)%100 == 0 {
 			metrics.HNSWNodesAddedTotal.WithLabelValues(h.name).Add(100)
 			metrics.HNSWInsertOpsTotal.WithLabelValues(h.name, typeStr).Add(100)
 			metrics.HNSWIngestionThroughputVectorsPerSecond.WithLabelValues(h.name, typeStr).Add(100)
 		}
-
 		if int(id)%10 == 0 {
 			metrics.HNSWInsertDurationSeconds.Observe(duration)
 			metrics.HNSWInsertLatencyByType.WithLabelValues(typeStr).Observe(duration)
 			metrics.HNSWInsertLatencyByDim.WithLabelValues(strconv.Itoa(dims)).Observe(duration)
 		}
-
 		if !h.disableNodeCountMetric.Load() && int(id)%100 == 0 {
 			metrics.HNSWNodeCount.WithLabelValues(h.name, "0").Set(nodeCount)
 		}
 	}()
 
-	// Issue 2: Use insert context pool and track metrics
 	if h.insertPool != nil {
 		insertCtx := h.insertPool.Get()
 		defer h.insertPool.Put(insertCtx)
@@ -64,33 +88,24 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		metrics.HNSWInsertPoolPutTotal.Inc()
 	}
 
-	// 1. SQ8 Training (Outside any lock to avoid deadlock with ensureTrained -> growMu.Lock())
 	if h.config.SQ8Enabled {
 		if vecF32, ok := vec.([]float32); ok {
-			h.ensureTrained(int(h.nodeCount.Load()), [][]float32{vecF32})
+			h.ensureTrained(int(meta.NodeCount), [][]float32{vecF32}, h.data.Load())
 		}
 	}
 
-	if level < 0 {
-		level = h.generateLevel()
-	}
-
-	data := h.data.Load()
 	dims = int(h.dims.Load())
-
-	// Phase 0: Initial Dimension Setup & Growth (Strictly Serialized)
 	if dims == 0 || data == nil || int(id) >= data.Capacity {
 		h.growMu.Lock()
-		// Re-check under lock
-		data = h.data.Load()
+		// Only load from global if we don't already have a working copy
+		if data == nil {
+			data = h.data.Load()
+		}
 		dims = int(h.dims.Load())
 		if dims == 0 {
 			inputDims := 0
 			switch v := vec.(type) {
 			case []float32: inputDims = len(v)
-			case []float16.Num: inputDims = len(v)
-			case []complex64: inputDims = len(v)
-			case []complex128: inputDims = len(v)
 			case []float64: inputDims = len(v)
 			case []int8: inputDims = len(v)
 			case []uint8: inputDims = len(v)
@@ -107,56 +122,86 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 				dims = inputDims
 			}
 		}
-
 		if data == nil || int(id) >= data.Capacity {
-			newCap := int(id) + 1
-			if data != nil && data.Capacity > 0 {
-				newCap = max(int(id)+1, data.Capacity*2)
-			}
-			newCap = (newCap + types.ChunkSize - 1) & ^(types.ChunkSize - 1)
-			
+			newCap := (int(id) + types.ChunkSize) & ^(types.ChunkSize - 1)
 			if err := h.growInternal(newCap, dims); err != nil {
 				h.growMu.Unlock()
-				return fmt.Errorf("failed to grow for ID %d: %w", id, err)
+				return nil, err
 			}
+			// Adopt the new global state
 			data = h.data.Load()
+			// If we were supposed to be private, clone it again
+			if !skipSet || existingData != nil {
+				data = data.Clone()
+			}
 		}
 		h.growMu.Unlock()
 	}
 
-	// Phase 1: Ensure Chunk Allocation (Optimistic Check)
 	cID := types.ChunkID(id)
-	cOff := types.ChunkOffset(id)
-	if h.data.Load().NeedsChunk(cID) {
-		h.growMu.Lock()
-		if _, err := h.ensureChunkInternal(int(cID), int(cOff), dims); err != nil {
-			h.growMu.Unlock()
-			return err
+	if data.NeedsChunk(cID) {
+		// Use ensureChunk which handles the COW and publishing of the grown state
+		var err error
+		data, err = h.ensureChunk(int(cID), int(types.ChunkOffset(id)), dims)
+		if err != nil {
+			return nil, err
 		}
-		h.growMu.Unlock()
+		// If we were supposed to have a private copy, clone it
+		if !skipSet || existingData != nil {
+			data = data.Clone()
+		}
 	}
-	data = h.data.Load()
 
-	// Store raw vector in GraphData (idempotent if already set)
-	if err := data.SetVector(id, vec); err != nil {
-		return err
+	// h.growMu.RLock() - REMOVED: causes deadlocks with promoteNode and redundant with EnsureChunks
+	// defer h.growMu.RUnlock()
+
+	if !skipSet {
+		ensurePrivate()
+		
+		if !h.sharedVectorSpace.Load() {
+			oldVer := data.LockNode(0, id)
+			err := data.SetVector(id, vec)
+			data.UnlockNode(0, id, oldVer)
+			if err != nil {
+				return nil, err
+			}
+		}
+		
+		// PERSIST LEVEL: Ensure the node's hierarchical level is stored in metadata
+		cID := int(id) / types.ChunkSize
+		cOff := int(id) % types.ChunkSize
+		levelsChunk := data.GetLevelsChunk(cID)
+		if levelsChunk != nil {
+			safeLevel := level
+			if safeLevel > 255 {
+				safeLevel = 255
+			}
+			atomic.StoreUint32(&levelsChunk[cOff], uint32(safeLevel))
+		}
 	}
 
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
-		count := int(h.nodeCount.Load())
-		threshold := h.config.AdaptiveMThreshold
-		if threshold <= 0 {
-			threshold = 2048
-		}
-		if count >= threshold {
+		if int(meta.NodeCount) >= h.config.AdaptiveMThreshold {
 			if h.adaptiveMTriggered.CompareAndSwap(false, true) {
-				h.m = h.config.M * 2
-				h.mMax = h.config.MMax * 2
-				h.mMax0 = h.config.MMax0 * 2
-				// Update config struct so GetConfig() reflects the change
-				h.config.M = h.m
-				h.config.MMax = h.mMax
-				h.config.MMax0 = h.mMax0
+				newM := int64(h.config.M) * 2
+				newMMax := int64(h.config.MMax) * 2
+				newMMax0 := int64(h.config.MMax0) * 2
+
+				if newM > math.MaxInt32 {
+					newM = math.MaxInt32
+				}
+				if newMMax > math.MaxInt32 {
+					newMMax = math.MaxInt32
+				}
+				if newMMax0 > math.MaxInt32 {
+					newMMax0 = math.MaxInt32
+				}
+
+				h.m.Store(int32(newM))       // #nosec G115
+				h.mMax.Store(int32(newMMax))   // #nosec G115
+				h.mMax0.Store(int32(newMMax0)) // #nosec G115
+				h.config.M, h.config.MMax, h.config.MMax0 = int(newM), int(newMMax), int(newMMax0)
+				h.levelMultiplier = 1.0 / math.Log(float64(newM))
 			}
 		}
 	}
@@ -166,83 +211,78 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 			switch enc := h.oopqEncoder.(type) {
 			case *pq.PQEncoder:
 				code, err := enc.Encode(v32)
-				if err == nil {
-					_ = data.SetVectorPQ(id, code)
-				}
+				if err == nil { _ = data.SetVectorPQ(id, code) }
 			case *pq.OPQEncoder:
 				code, err := enc.Encode(v32)
-				if err == nil {
-					_ = data.SetVectorPQ(id, code)
-				}
+				if err == nil { _ = data.SetVectorPQ(id, code) }
 			}
 		}
 	}
+
 	ctx := h.searchPool.Get()
+	ctx.MaxNodeCount = meta.NodeCount
+	ctx.MaxGeneration = meta.Generation
+	computer := h.resolveHNSWComputer(data, ctx, vec, true)
 	defer h.searchPool.PutWithMetrics(ctx, h.config.DataType.String(), strconv.Itoa(dims))
 	ctx.Reset()
+	ctx.AllowUncommitted = true
 
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())
 
-	// Phase 1: Descend layers
-	if maxL >= 0 {
+	if maxL >= 0 && ep != math.MaxUint32 {
+		// Optimization: If we have multiple entry points at the highest layer,
+		// pick one randomly to reduce contention on the search start node.
+		if randomizedEP, ok := h.topLayerManager.entryPoints[maxL].GetRandom(); ok {
+			if int64(randomizedEP) < meta.NodeCount {
+				ep = randomizedEP
+			}
+		}
+
 		for l := maxL; l > level; l-- {
-			neighbors, err := h.searchLayer(context.Background(), nil, ep, 1, l, ctx, data, vec)
-			if err != nil {
-				return err
-			}
-			if len(neighbors) > 0 {
-				ep = neighbors[0].ID
-			}
+			neighbors, err := h.searchLayer(context.Background(), computer, ep, 1, l, ctx, data, vec)
+			if err != nil { return nil, err }
+			if len(neighbors) > 0 { ep = neighbors[0].ID }
 		}
 	}
 
-
-	// Phase 2: Layer-by-Layer Insertion
-	for l := min(level, maxL+1); l >= 0; l-- {
-		ef := int(h.efConstruction.Load())
-		m := h.m
-		if ef < m {
-			ef = m
-		}
-
+	for l := min(level, maxL+1); l >= 0 && ep != math.MaxUint32; l-- {
+		ef := max(int(h.efConstruction.Load()), int(h.m.Load()))
 		neighbors, err := h.searchLayerForInsert(context.Background(), ctx, vec, ep, ef, l, data)
-		if err != nil {
-			return err
-		}
+		if err != nil { return nil, err }
+		
+		var filtered []types.Candidate
+		for _, nb := range neighbors { if nb.ID != id { filtered = append(filtered, nb) } }
+		neighbors = filtered
 
-		// Filter out self-loops (can happen for first node insertion)
-		var filteredNeighbors []types.Candidate
-		for _, nb := range neighbors {
-			if nb.ID != id {
-				filteredNeighbors = append(filteredNeighbors, nb)
+		maxConn := int(h.mMax.Load())
+		if l == 0 { maxConn = int(h.mMax0.Load()) }
+		
+		if len(neighbors) > 0 {
+			ensurePrivate()
+			for _, nb := range neighbors {
+				h.AddConnection(ctx, data, id, nb.ID, l, maxConn, nb.Dist)
+				h.AddConnection(ctx, data, nb.ID, id, l, maxConn, nb.Dist)
 			}
+			ep = neighbors[0].ID
 		}
-		neighbors = filteredNeighbors
-
-		maxConn := h.mMax
-		if l == 0 { maxConn = h.mMax0 }
-
-		for _, nb := range neighbors {
-			data = h.AddConnection(ctx, data, id, nb.ID, l, maxConn, nb.Dist)
-			data = h.AddConnection(ctx, data, nb.ID, id, l, maxConn, nb.Dist)
-		}
-
-		if len(neighbors) > 0 { ep = neighbors[0].ID }
 	}
 
-	if level > int(h.maxLevel.Load()) {
-		h.epMu.Lock()
-		if level > int(h.maxLevel.Load()) {
-			h.maxLevel.Store(int32(level)) // #nosec G115
-			h.entryPoint.Store(id)
-		}
-		h.epMu.Unlock()
+	// If we modified in-place (no clone), we must update metadata and published state
+	// If we modified in-place (no clone), we must update metadata for Entry Point promotion
+	if !skipSet && existingData == nil {
+		h.updateMetadata(func(meta *HNSWMetadata) {
+			if level > int(meta.MaxLevel) {
+				meta.MaxLevel = int32(level) // #nosec G115
+				meta.EntryPoint = id
+			} else if meta.EntryPoint == math.MaxUint32 {
+				meta.EntryPoint = id
+			}
+			meta.Generation++
+		})
+		// We don't return data because it was updated in-place and already published
+		return nil, nil
 	}
 
-	// Publish the final consistent state to the atomic pointer
-	h.data.Store(data)
-
-	return nil
+	return data, nil
 }
-

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,13 +26,25 @@ import (
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/storage"
+	internalcore "github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/tracing"
 )
 
-// DoAction handles custom actions like deletion and status
+// DoAction handles custom actions like deletion, status, and graph operations.
 func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	switch action.Type {
+	case "ForceSnapshot":
+		err := s.Snapshot(stream.Context())
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to trigger manual snapshot: %v", err)
+		}
+		if err := stream.Send(&flight.Result{Body: []byte("ACK")}); err != nil {
+			return err
+		}
+		return nil
+
 	case "cluster-status":
 		if s.Mesh == nil {
 			return status.Error(codes.Unavailable, "gossip mesh not enabled")
@@ -54,6 +67,76 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 
 		if err := stream.Send(&flight.Result{Body: body}); err != nil {
+			return err
+		}
+		return nil
+
+	case "ResetDataset":
+		var req struct {
+			Name string `json:"name"`
+		}
+		if len(action.Body) > 0 {
+			if err := json.Unmarshal(action.Body, &req); err != nil {
+				return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+			}
+		}
+
+		if req.Name != "" && req.Name != "all" {
+			s.logger.Info().Str("dataset", req.Name).Msg("In-place ResetDataset called for specific dataset")
+			if err := s.DropDataset(stream.Context(), req.Name); err != nil {
+				return ToGRPCStatus(err)
+			}
+			debug.FreeOSMemory()
+			if err := stream.Send(&flight.Result{Body: []byte(`{"status": "reset_success"}`)}); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		// Reset ALL datasets!
+		s.logger.Info().Msg("In-place ResetDataset called for ALL datasets")
+		datasetsPtr := s.datasets.Load()
+		if datasetsPtr != nil {
+			datasets := *datasetsPtr
+			for name := range datasets {
+				s.logger.Info().Str("dataset", name).Msg("Dropping dataset during global in-place reset")
+				if err := s.DropDataset(stream.Context(), name); err != nil {
+					s.logger.Error().Err(err).Str("dataset", name).Msg("Failed to drop dataset during global reset")
+				}
+			}
+		}
+
+		debug.FreeOSMemory()
+		if err := stream.Send(&flight.Result{Body: []byte(`{"status": "reset_all_success"}`)}); err != nil {
+			return err
+		}
+		return nil
+
+	case "ReplicateWAL":
+		if len(action.Body) == 0 {
+			return status.Error(codes.InvalidArgument, "empty WAL payload")
+		}
+		
+		// Decode and apply in memory
+		engine := s.engine.Load()
+		if engine != nil {
+			err := engine.AppendReplicatedWAL(action.Body)
+			if err != nil {
+				return status.Errorf(codes.Internal, "failed to append replicated WAL: %v", err)
+			}
+			
+			entries, err := storage.DecodeWALBlock(action.Body, engine.GetAllocator())
+			if err != nil {
+				return status.Errorf(codes.Internal, "failed to decode replicated WAL: %v", err)
+			}
+			for _, entry := range entries {
+				// Apply to in-memory datasets
+				_ = s.applyReplayBatch(entry.Name, entry.Record, entry.Seq, entry.Ts)
+				entry.Record.Release()
+			}
+		}
+
+		if err := stream.Send(&flight.Result{Body: []byte("ACK")}); err != nil {
 			return err
 		}
 		return nil
@@ -87,12 +170,17 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			} else {
 				pending := ds.PendingIndexJobs.Load()
 				pendingIngestion := ds.PendingIngestion.Load()
-				if pending > 0 || pendingIngestion > 0 {
+				activeStreams := ds.ActiveIngestStreams.Load()
+				isMigrating := ds.Admission != nil && ds.Admission.migratingCount.Load() > 0
+				if pending > 0 || pendingIngestion > 0 || activeStreams > 0 || isMigrating {
 					resp["status"] = "BUSY"
-					resp["reason"] = fmt.Sprintf("dataset has %d pending index jobs, %d pending ingestion jobs", pending, pendingIngestion)
+					resp["reason"] = fmt.Sprintf("dataset has %d pending index jobs, %d pending ingestion jobs, %d active streams, migrating=%t", pending, pendingIngestion, activeStreams, isMigrating)
 				} else if ds.Index == nil {
 					resp["status"] = "BUSY"
 					resp["reason"] = "index not initialized"
+				} else if !ds.IsReady.Load() {
+					resp["status"] = "BUSY"
+					resp["reason"] = "metadata registration in progress"
 				}
 				resp["index_len"] = ds.IndexLen()
 				resp["index_ready"] = ds.Index != nil
@@ -127,6 +215,25 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			return err
 		}
 		return nil
+
+	case "drop", "Drop":
+		var req struct {
+			Dataset string `json:"dataset"`
+		}
+		if err := json.Unmarshal(action.Body, &req); err != nil {
+			// Fallback to simple string if not JSON object
+			var name string
+			if err := json.Unmarshal(action.Body, &name); err == nil {
+				req.Dataset = name
+			} else {
+				return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+			}
+		}
+		if err := s.DropDataset(stream.Context(), req.Dataset); err != nil {
+			return status.Errorf(codes.Internal, "failed to drop dataset: %v", err)
+		}
+		s.logger.Info().Str("dataset", req.Dataset).Msg("Dataset dropped via action")
+		return stream.Send(&flight.Result{Body: []byte(`{"status": "dropped"}`)})
 
 	case "delete", "Delete":
 		var req core.VectorSearchByIDRequest
@@ -172,7 +279,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 
 		// Fallback Linear Scan (if not found in PrimaryIndex)
 		if !found {
-			for i, rec := range ds.Records {
+			for i, rec := range ds.Records.Read() {
 				idColIdx := -1
 				for j, field := range rec.Schema().Fields() {
 					if field.Name == "id" {
@@ -457,30 +564,26 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		)
 
 		// Check Cache
-		if cached, ok := s.queryCache.GetUint64(cacheKey); ok {
-			// Hit!
-			body, err := json.Marshal(cached)
-			if err != nil {
-				return status.Errorf(codes.Internal, "failed to marshal cached results: %v", err)
-			}
-			return stream.Send(&flight.Result{Body: body})
-		}
-
-		// Use SearchHybrid for text+vector search
-		// Signature: (ctx, name, query, textQuery, k, alpha, rrfK, graphAlpha, graphDepth)
-		// Filters are currently not supported in this pipeline path
-		results, err := s.SearchHybrid(
-			stream.Context(),
-			req.Dataset,
-			req.Vector,
-			req.TextQuery,
-			req.K,
-			req.Alpha,
-			60,  // Default RRF k
-			0.0, // Default Graph Alpha
-			0,   // Default Graph Depth
-		)
+		// Use SearchHybrid for text+vector search with Circuit Breaker
+		cb := s.Breakers.GetOrCreate(req.Dataset)
+		resultsAny, err := cb.Execute(func() (any, error) {
+			return s.SearchHybrid(
+				stream.Context(),
+				req.Dataset,
+				req.Vector,
+				req.TextQuery,
+				req.K,
+				req.Alpha,
+				60,  // Default RRF k
+				0.0, // Default Graph Alpha
+				0,   // Default Graph Depth
+				false, // RawHybrid
+			)
+		})
+		
+		var results []types.SearchResult
 		if err == nil {
+			results = resultsAny.([]types.SearchResult)
 			// Cache the result
 			s.queryCache.PutUint64(cacheKey, results)
 		}
@@ -623,6 +726,9 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 					EarthRadius:  6371.0,
 				}
 				ds.GeoIndex = NewGeoIndex(ds.Name, req.Dimension, geoCfg)
+				if gIdx, err := s.getGPUIndex(req.Dimension); err == nil {
+					ds.GeoIndex.SetGPUIndex(gIdx)
+				}
 			}
 			if req.DiskEnabled {
 				ds.DiskStore, _ = NewDiskVectorStore(filepath.Join(s.dataPath, "disk", ds.Name), req.Dimension)
@@ -678,20 +784,28 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		ds.dataMu.RLock()
 		defer ds.dataMu.RUnlock()
 
-		var results []types.SearchResult
-		var err error
-		switch req.SearchType {
-		case "radius":
-			results, err = ds.GeoIndex.SearchRadius(stream.Context(), req.Center, req.RadiusKm, req.K)
-		case "box":
-			if req.Box == nil {
-				return status.Error(codes.InvalidArgument, "box required")
+		// Wrap with Circuit Breaker
+		cb := s.Breakers.GetOrCreate(req.Dataset)
+		resultsAny, err := cb.Execute(func() (any, error) {
+			switch req.SearchType {
+			case "radius":
+				return ds.GeoIndex.SearchRadius(stream.Context(), req.Center, req.RadiusKm, req.K)
+			case "box":
+				if req.Box == nil {
+					return nil, status.Error(codes.InvalidArgument, "box required")
+				}
+				return ds.GeoIndex.SearchBox(stream.Context(), *req.Box, req.K)
+			case "hybrid":
+				return ds.GeoIndex.HybridSearch(stream.Context(), nil, req.Center, req.RadiusKm, req.K)
+			default:
+				return nil, status.Error(codes.InvalidArgument, "invalid search type")
 			}
-			results, err = ds.GeoIndex.SearchBox(stream.Context(), *req.Box, req.K)
-		case "hybrid":
-			results, err = ds.GeoIndex.HybridSearch(stream.Context(), nil, req.Center, req.RadiusKm, req.K)
-		}
-		if err != nil {
+		})
+		
+		var results []types.SearchResult
+		if err == nil {
+			results = resultsAny.([]types.SearchResult)
+		} else {
 			return status.Errorf(codes.Internal, "geo search failed: %v", err)
 		}
 		results = s.mapInternalToUserIDsLocked(ds, results)
@@ -701,7 +815,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 	return status.Error(codes.Unimplemented, "unknown action type "+action.Type)
 }
 
-// DoPut - Optimized implementation with batching
+// DoPut handles streaming ingestion of Arrow RecordBatches into the store.
 func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	_, span := tracing.CreateSpan(stream.Context(), "DoPut")
 	if span != nil {
@@ -729,6 +843,27 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	s.logger.Info().Str("dataset", name).Msg("DoPut started (Batched)")
+	
+	// 0. Admission Control (Backpressure)
+	if s.admission != nil {
+		if err := s.admission.Admit(stream.Context(), "ingest"); err != nil {
+			// If throttled, try one aggressive GC and retry
+			if status.Code(err) == codes.ResourceExhausted {
+				s.logger.Warn().Msg("Ingestion throttled, triggering emergency GC and retrying...")
+				runtime.GC()
+				debug.FreeOSMemory()
+				time.Sleep(100 * time.Millisecond)
+				
+				if err2 := s.admission.Admit(stream.Context(), "ingest"); err2 != nil {
+					return err2
+				}
+				s.logger.Info().Msg("Emergency GC successful, ingestion resumed")
+			} else {
+				return err
+			}
+		}
+	}
+
 	s.logger.Info().Str("schema", r.Schema().String()).Msg("DoPut Schema")
 	// Use RCU helper for create
 	ds, created := s.getOrCreateDataset(name, func() *Dataset {
@@ -767,6 +902,9 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	if ds == nil {
 		return status.Errorf(codes.Internal, "failed to retrieve or create dataset %s", name)
 	}
+
+	ds.ActiveIngestStreams.Add(1)
+	defer ds.ActiveIngestStreams.Add(-1)
 
 	// Namespace quota check (will be done per-flush in the loop below)
 	nsName, _ := ParseNamespacedPath(name)
@@ -863,8 +1001,11 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			}
 		}
 
-		// Flush single combined batch
-		err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{combined})
+		// Flush single combined batch with Circuit Breaker
+		cb := s.Breakers.GetOrCreate(ds.Name)
+		_, err := cb.Execute(func() (any, error) {
+			return nil, s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{combined})
+		})
 		combined.Release()
 		if err != nil {
 			return err
@@ -1003,12 +1144,21 @@ func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []ar
 		s.scaler.RecordIngest(totalRows)
 	}
 
-	// Backpressure: Check if we should throttle
+	// Soft Backpressure: Apply linear delay if system is starting to get stressed
+	if delay := s.IngestionBackpressureDelay(); delay > 0 {
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+		}
+	}
+
+	// Hard Backpressure: Block if system is at capacity
 	if s.CheckIngestionBackpressure() {
 		// Log warning occasionally (every 5 seconds?) or use rate limiter
-		s.logger.Warn().Msg("Applying ingestion backpressure (throttling)")
+		s.logger.Warn().Msg("Applying ingestion backpressure (HARD block)")
 		// Loop with sleep until pressure relieves or context done
-		ticker := time.NewTicker(100 * time.Millisecond) // Check every 100ms
+		ticker := time.NewTicker(200 * time.Millisecond) // Check every 200ms
 		defer ticker.Stop()
 
 		// Wait loop
@@ -1044,7 +1194,7 @@ func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []ar
 		// Increment pending ingestion count
 		ds.PendingIngestion.Add(1)
 
-		if !s.ingestionQueue.PushBlocking(ingestionJob{ds: ds, batch: rec, ts: ts}, 5*time.Second) {
+		if !s.ingestionQueue.PushBlocking(IngestionJob{DS: ds, Batch: rec, TS: ts}, 5*time.Second) {
 			// If PushBlocking fails (timeout or stop), we must adjust PendingIngestion
 			ds.PendingIngestion.Add(-1)
 			return errors.New("failed to enqueue ingestion job (timeout or queue closed)")
@@ -1054,6 +1204,7 @@ func (s *VectorStore) flushPutBatch(ctx context.Context, ds *Dataset, batch []ar
 	return nil
 }
 
+// StoreRecordBatch ingests a record batch into the specified dataset.
 func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arrow.RecordBatch) error {
 	if rec == nil {
 		return errors.New("nil record batch")
@@ -1082,7 +1233,7 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	ds.PendingIngestion.Add(1)
 
 	// Dispatch for ingestion
-	if !s.ingestionQueue.PushBlocking(ingestionJob{ds: ds, batch: rec, ts: ts}, 10*time.Second) {
+	if !s.ingestionQueue.PushBlocking(IngestionJob{DS: ds, Batch: rec, TS: ts}, 10*time.Second) {
 		ds.PendingIngestion.Add(-1)
 		return errors.New("failed to enqueue ingestion job")
 	}
@@ -1090,34 +1241,7 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 	return nil
 }
 
-// estimateBatchSize calculates appropriate size in bytes of a record batch
-func estimateBatchSize(rec arrow.RecordBatch) int64 {
-	if rec == nil {
-		return 0
-	}
-	size := int64(0)
-	for _, col := range rec.Columns() {
-		// Approximate: sum of all buffer lengths
-		for _, buf := range col.Data().Buffers() {
-			if buf != nil {
-				size += int64(buf.Len())
-			}
-		}
-		// Recurse for children (e.g. List arrays)
-		// Note: Children() returns []ArrowData, which is internal.
-		// For correctness with Arrow Go, we might rely on Buffers() mostly.
-		// Detailed recursion is complex without `array.Data` access if not exported.
-		// However col.Data() gives ArrayData which has Children().
-		for _, child := range col.Data().Children() {
-			for _, buf := range child.Buffers() {
-				if buf != nil {
-					size += int64(buf.Len())
-				}
-			}
-		}
-	}
-	return size
-}
+
 
 // concatenateBatches merges multiple record batches into one
 func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.RecordBatch, error) {
@@ -1127,11 +1251,14 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 	schema := batches[0].Schema()
 	numCols := int(schema.NumFields())
 	columns := make([]arrow.Array, numCols)
+	success := false
 	defer func() {
-		// Clean up if we fail mid-way
-		for _, col := range columns {
-			if col != nil {
-				col.Release()
+		if !success {
+			// Clean up if we fail mid-way
+			for _, col := range columns {
+				if col != nil {
+					col.Release()
+				}
 			}
 		}
 	}()
@@ -1143,8 +1270,8 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 			colArrays[j] = batch.Column(i)
 		}
 
-		// Use Arrow's array.Concatenate
-		concatenated, err := array.Concatenate(colArrays, s.mem)
+		// Use Arrow's array.Concatenate with pooled allocator for transient ingestion buffers
+		concatenated, err := array.Concatenate(colArrays, s.pooledMem)
 		if err != nil {
 			return nil, fmt.Errorf("failed to concatenate column %d: %w", i, err)
 		}
@@ -1157,7 +1284,12 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 		totalRows += b.NumRows()
 	}
 
-	return array.NewRecordBatch(schema, columns, totalRows), nil
+	success = true
+	batch := array.NewRecordBatch(schema, columns, totalRows)
+	for _, col := range columns {
+		col.Release()
+	}
+	return batch, nil
 }
 
 // applyBatchToMemory applies a batch to the in-memory dataset and dispatches indexing
@@ -1296,7 +1428,9 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 				case VectorTypeComplex64, VectorTypeComplex128:
 					dim /= 2
 				}
-				aIdx.SetInitialDimension(dim)
+				if setter, ok := aIdx.(interface{ SetInitialDimension(int) }); ok {
+					setter.SetInitialDimension(dim)
+				}
 			}
 		} else {
 			s.logger.Error().Str("dataset", name).Msg("findVectorColumn returned nil")
@@ -1304,16 +1438,30 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		ds.Index = aIdx
 	}
 
-	batchIdx := len(ds.Records)
-	ds.Records = append(ds.Records, rec)
+	currentRecords := ds.Records.Read()
+	batchIdx := len(currentRecords)
+	newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
+	copy(newRecords, currentRecords)
+	newRecords[len(currentRecords)] = rec
+	ds.Records.UpdateInPlace(newRecords)
 	rec.Retain()
 
+	// Mark dataset as ready after first successful ingestion
+	if !ds.IsReady.Load() {
+		ds.IsReady.Store(true)
+		s.logger.Info().Str("dataset", name).Msg("Dataset metadata registration complete (Ready for queries)")
+	}
+ 
 	currCPU := lmem.GetCurrentCPU()
 	currNode := -1
 	if s.numaTopology != nil {
 		currNode = s.numaTopology.GetNodeForCPU(currCPU)
 	}
-	ds.BatchNodes = append(ds.BatchNodes, currNode)
+	currentNodes := ds.BatchNodes.Read()
+	newNodes := make([]int, len(currentNodes)+1)
+	copy(newNodes, currentNodes)
+	newNodes[len(currentNodes)] = currNode
+	ds.BatchNodes.UpdateInPlace(newNodes)
 
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
 
@@ -1336,7 +1484,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	}
 
 	// Temporal Index Hook
-	if s.temporalIndex != nil {
+	if s.temporalConfig.Enabled && ds.TemporalIndex != nil {
 		idColIdx := -1
 		vecColIdx := -1
 		tsColIdx := -1
@@ -1352,56 +1500,86 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		}
 
 		if idColIdx != -1 && vecColIdx != -1 {
+			numRows := int(rec.NumRows())
+			ids := make([]uint64, numRows)
+			vectors := make([][]float32, numRows)
+			timestamps := make([]int64, numRows)
+			
 			idArr := rec.Column(idColIdx).(*array.String)
-			vecArr := rec.Column(vecColIdx).(*array.FixedSizeList)
-
+			vecCol := rec.Column(vecColIdx)
+			
 			var tsArr arrow.Array
 			if tsColIdx != -1 {
 				tsArr = rec.Column(tsColIdx)
 			}
 
-			var tsInt64 *array.Int64
-			if tsArr != nil {
-				tsInt64, _ = tsArr.(*array.Int64)
+			// Handle both FixedSizeList and variable-length List
+			var listLen int
+			if fs, ok := vecCol.DataType().(*arrow.FixedSizeListType); ok {
+				listLen = int(fs.Len())
 			}
+			
+			// Parallel Extraction
+			pool := internalcore.GetSharedPool()
+			pool.ParallelFor(numRows, 1024, func(start, end int) {
+				for i := start; i < end; i++ {
+					if idArr.IsValid(i) && vecCol.IsValid(i) {
+						idStr := idArr.Value(i)
+						id, _ := strconv.ParseUint(idStr, 10, 64)
+						ids[i] = id
 
-			for i := 0; i < int(rec.NumRows()); i++ {
-				if idArr.IsValid(i) && vecArr.IsValid(i) {
-					idStr := idArr.Value(i)
-					id, _ := strconv.ParseUint(idStr, 10, 64)
-
-					// Extract timestamp from record column if available, otherwise use ingestion time
-					var vectorTs int64
-					if tsInt64 != nil && tsInt64.IsValid(i) {
-						vectorTs = tsInt64.Value(i)
-					} else {
-						vectorTs = ts
-					}
-
-					// Extract vector slice based on actual type
-					listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
-					start := i * listLen
-					end := (i + 1) * listLen
-
-					var sub []float32
-					switch values := vecArr.ListValues().(type) {
-					case *array.Float32:
-						sub = values.Float32Values()[start:end]
-					case *array.Float64:
-						f64Values := values.Float64Values()[start:end]
-						sub = make([]float32, len(f64Values))
-						for j, v := range f64Values {
-							sub[j] = float32(v)
+						if tsArr != nil && tsArr.IsValid(i) {
+							switch arr := tsArr.(type) {
+							case *array.Int64:
+								timestamps[i] = arr.Value(i)
+							case *array.Timestamp:
+								timestamps[i] = int64(arr.Value(i))
+							default:
+								timestamps[i] = ts
+							}
+						} else {
+							timestamps[i] = ts
 						}
-					default:
-						s.logger.Warn().Str("type", vecArr.ListValues().DataType().String()).Msg("Temporal index hook: unsupported vector type")
-						continue
-					}
 
-					// Note: Metadata is nil for now as benchmark doesn't use it for temporal search results
-					_ = s.temporalIndex.Add(id, sub, vectorTs, nil)
+						var vStart, vEnd int
+						var values arrow.Array
+						if fs, ok := vecCol.(*array.FixedSizeList); ok {
+							vStart = i * listLen
+							vEnd = (i + 1) * listLen
+							values = fs.ListValues()
+						} else if l, ok := vecCol.(*array.List); ok {
+							offsets := l.Offsets()
+							vStart = int(offsets[i])
+							vEnd = int(offsets[i+1])
+							values = l.ListValues()
+						}
+
+						if values != nil {
+							switch valArr := values.(type) {
+							case *array.Float32:
+								if vStart < valArr.Len() && vEnd <= valArr.Len() {
+									src := valArr.Float32Values()[vStart:vEnd]
+									sub := make([]float32, len(src))
+									copy(sub, src)
+									vectors[i] = sub
+								}
+							case *array.Float64:
+								if vStart < valArr.Len() && vEnd <= valArr.Len() {
+									f64Values := valArr.Float64Values()[vStart:vEnd]
+									sub := make([]float32, len(f64Values))
+									for j, v := range f64Values {
+										sub[j] = float32(v)
+									}
+									vectors[i] = sub
+								}
+							}
+						}
+					}
 				}
-			}
+			})
+
+			// Batch Add
+			_ = ds.TemporalIndex.AddBatch(ids, vectors, timestamps, nil)
 		}
 	}
 
@@ -1446,39 +1624,112 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		}
 
 		if idColIdx != -1 && vecColIdx != -1 {
+			numRows := int(rec.NumRows())
+			ids := make([]uint64, numRows)
+			vectors := make([][]float32, numRows)
+			points := make([]types.GeoPoint, numRows)
+			valid := make([]bool, numRows)
+
 			idArr := rec.Column(idColIdx).(*array.String)
 			vecArr := rec.Column(vecColIdx).(*array.FixedSizeList)
 			geoArr := rec.Column(geoPointIdx).(*array.FixedSizeList)
 			geoValues := geoArr.ListValues().(*array.Float64).Float64Values()
+			listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
 
-			for i := 0; i < int(rec.NumRows()); i++ {
-				if idArr.IsValid(i) && vecArr.IsValid(i) && geoArr.IsValid(i) {
-					idStr := idArr.Value(i)
-					id, _ := strconv.ParseUint(idStr, 10, 64)
+			// Parallel Extraction
+			pool := internalcore.GetSharedPool()
+			pool.ParallelFor(numRows, 1024, func(start, end int) {
+				for i := start; i < end; i++ {
+					if idArr.IsValid(i) && vecArr.IsValid(i) && geoArr.IsValid(i) {
+						idStr := idArr.Value(i)
+						id, _ := strconv.ParseUint(idStr, 10, 64)
+						ids[i] = id
 
-					// Extract vector
-					listLen := int(vecArr.DataType().(*arrow.FixedSizeListType).Len())
-					vStart := i * listLen
-					vEnd := (i + 1) * listLen
-					var sub []float32
-					switch values := vecArr.ListValues().(type) {
-					case *array.Float32:
-						sub = values.Float32Values()[vStart:vEnd]
-					case *array.Float64:
-						f64Values := values.Float64Values()[vStart:vEnd]
-						sub = make([]float32, len(f64Values))
-						for j, v := range f64Values {
-							sub[j] = float32(v)
+						vStart := i * listLen
+						vEnd := (i + 1) * listLen
+						listValues := vecArr.ListValues()
+						
+						switch values := listValues.(type) {
+						case *array.Float32:
+							src := values.Float32Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							copy(sub, src)
+							vectors[i] = sub
+						case *array.Float64:
+							f64Values := values.Float64Values()[vStart:vEnd]
+							sub := make([]float32, len(f64Values))
+							for j, v := range f64Values {
+								sub[j] = float32(v)
+							}
+							vectors[i] = sub
+						case *array.Int8:
+							src := values.Int8Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Int16:
+							src := values.Int16Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Int32:
+							src := values.Int32Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Int64:
+							src := values.Int64Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Uint8:
+							src := values.Uint8Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Uint16:
+							src := values.Uint16Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Uint32:
+							src := values.Uint32Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Uint64:
+							src := values.Uint64Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Float16:
+							src := values.Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = v.Float32() }
+							vectors[i] = sub
+						}
+
+						if vectors[i] != nil {
+							points[i] = types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]}
+							valid[i] = true
 						}
 					}
+				}
+			})
 
-					// Extract GeoPoint
-					lat := geoValues[i*2]
-					lon := geoValues[i*2+1]
-
-					_ = ds.GeoIndex.Add(id, sub, types.GeoPoint{Lat: lat, Lon: lon}, nil)
+			// Filter valid and Batch Add
+			validIds := make([]uint64, 0, numRows)
+			validVectors := make([][]float32, 0, numRows)
+			validPoints := make([]types.GeoPoint, 0, numRows)
+			for i := 0; i < numRows; i++ {
+				if valid[i] {
+					validIds = append(validIds, ids[i])
+					validVectors = append(validVectors, vectors[i])
+					validPoints = append(validPoints, points[i])
 				}
 			}
+
+			_ = ds.GeoIndex.AddBatch(validIds, validVectors, validPoints, nil)
 		}
 	}
 

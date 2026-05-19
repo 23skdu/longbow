@@ -14,7 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func FuzzRecommend_EdgeCases(f *testing.F) {
+func FuzzRecommendEdgeCases(f *testing.F) {
 	f.Add(float32(0.5), 2, float32(0.5), 10)
 	f.Add(float32(0.0), 1, float32(0.0), 5)
 	f.Add(float32(1.0), 3, float32(1.0), 20)
@@ -113,7 +113,7 @@ func FuzzRecommend_EdgeCases(f *testing.F) {
 	})
 }
 
-func FuzzRecommend_AlphaRange(f *testing.F) {
+func FuzzRecommendAlphaRange(f *testing.F) {
 	f.Add(float32(0.0))
 	f.Add(float32(0.25))
 	f.Add(float32(0.5))
@@ -195,7 +195,7 @@ func FuzzRecommend_AlphaRange(f *testing.F) {
 	})
 }
 
-func FuzzRecommend_DecayRange(f *testing.F) {
+func FuzzRecommendDecayRange(f *testing.F) {
 	f.Add(float32(0.0))
 	f.Add(float32(0.1))
 	f.Add(float32(0.5))
@@ -276,7 +276,7 @@ func FuzzRecommend_DecayRange(f *testing.F) {
 	})
 }
 
-func FuzzRecommend_MaxHopsRange(f *testing.F) {
+func FuzzRecommendMaxHopsRange(f *testing.F) {
 	f.Add(0)
 	f.Add(1)
 	f.Add(2)

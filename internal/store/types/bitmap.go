@@ -8,10 +8,10 @@ import (
 	"github.com/RoaringBitmap/roaring/v2"
 )
 
-// Bitset is a thread-safe wrapper around a Roaring Bitmap
 type Bitset struct {
 	bitmap *roaring.Bitmap
 	mu     sync.RWMutex
+	shared bool // if true, must clone before modification
 }
 
 func (b *Bitset) AsRoaring() *roaring.Bitmap {
@@ -26,19 +26,35 @@ func (b *Bitset) AsRoaring() *roaring.Bitmap {
 func NewBitset() *Bitset {
 	return &Bitset{
 		bitmap: pool.GetBitmap(),
+		shared: false,
 	}
 }
 
 func NewBitsetFromRoaring(bm *roaring.Bitmap) *Bitset {
+	if bm == nil {
+		return &Bitset{bitmap: roaring.New(), shared: false}
+	}
 	return &Bitset{
 		bitmap: bm,
+		shared: true,
+	}
+}
+
+func (b *Bitset) ensurePrivateLocked() {
+	if b.shared && b.bitmap != nil {
+		b.bitmap = b.bitmap.Clone()
+		b.shared = false
 	}
 }
 
 func (b *Bitset) And(other *roaring.Bitmap) {
+	if other == nil {
+		return
+	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	if b.bitmap != nil && other != nil {
+	b.ensurePrivateLocked()
+	if b.bitmap != nil {
 		b.bitmap.And(other)
 	}
 }
@@ -46,6 +62,7 @@ func (b *Bitset) And(other *roaring.Bitmap) {
 func (b *Bitset) Set(i int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.ensurePrivateLocked()
 	if b.bitmap != nil {
 		b.bitmap.Add(uint32(i)) // #nosec G115
 	}
@@ -54,6 +71,7 @@ func (b *Bitset) Set(i int) {
 func (b *Bitset) Clear(i int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	b.ensurePrivateLocked()
 	if b.bitmap != nil {
 		b.bitmap.Remove(uint32(i)) // #nosec G115
 	}

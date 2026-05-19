@@ -25,9 +25,6 @@ func (s *VectorStore) SetHybridSearchConfig(cfg HybridSearchConfig) {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 	s.hybridSearchConfig = cfg
-	if cfg.Enabled && s.bm25Index == nil {
-		s.bm25Index = NewBM25InvertedIndex(cfg.BM25)
-	}
 }
 
 // GetBM25Index returns the BM25 inverted index for text search for a dataset.
@@ -53,9 +50,6 @@ func NewVectorStoreWithHybridConfig(mem memory.Allocator, logger zerolog.Logger,
 	vs := NewVectorStore(mem, logger, 1024*1024*1024, 1024*1024*100, 24*time.Hour)
 
 	vs.hybridSearchConfig = cfg
-	if cfg.Enabled {
-		vs.bm25Index = NewBM25InvertedIndex(cfg.BM25)
-	}
 
 	return vs, nil
 }

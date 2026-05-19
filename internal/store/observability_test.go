@@ -40,7 +40,7 @@ func TestObservability_GranularMetrics(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "granular_test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 		Schema:  schema,
 	}
 
@@ -112,7 +112,7 @@ func TestHNSW_ObservabilityMetrics(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "observability_test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 		Schema:  rec.Schema(),
 	}
 

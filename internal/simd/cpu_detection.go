@@ -13,7 +13,9 @@ type CPUFeatures struct {
 	HasVNNI      bool // AVX512-VNNI
 	HasAVXVNNI   bool // AVX-VNNI (Alder Lake+)
 	HasAVX512FP16 bool // AVX512-FP16 (Sapphire Rapids+)
-	HasNEON      bool
+	HasVBMI       bool // AVX512-VBMI (Ice Lake+)
+	HasNEON       bool
+	HasDotProd    bool // ARM64 FEAT_DotProd (udot/sdot)
 }
 
 // Global CPU detection state
@@ -33,9 +35,11 @@ func detectCPU() {
 	hasVNNI := cpuid.CPU.Supports(cpuid.AVX512VNNI)
 	hasAVXVNNI := cpuid.CPU.Supports(cpuid.AVXVNNI)
 	hasAVX512FP16 := cpuid.CPU.Supports(cpuid.AVX512FP16)
+	hasVBMI := cpuid.CPU.Supports(cpuid.AVX512VBMI)
 
 	// Only detect NEON on ARM platforms
 	hasNEON := runtime.GOARCH == "arm64" && cpuid.CPU.Supports(cpuid.ASIMD)
+	hasDotProd := runtime.GOARCH == "arm64" && cpuid.CPU.Supports(cpuid.ASIMDDP)
 
 	features = CPUFeatures{
 		Vendor:        cpuid.CPU.VendorString,
@@ -44,7 +48,9 @@ func detectCPU() {
 		HasVNNI:       hasVNNI,
 		HasAVXVNNI:    hasAVXVNNI,
 		HasAVX512FP16: hasAVX512FP16,
+		HasVBMI:       hasVBMI,
 		HasNEON:       hasNEON,
+		HasDotProd:    hasDotProd,
 	}
 
 	// Select best implementation with fallback logic

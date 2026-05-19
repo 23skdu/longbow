@@ -10,7 +10,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-func FuzzArrow_Extraction(f *testing.F) {
+func FuzzArrowExtraction(f *testing.F) {
 	mem := memory.DefaultAllocator
 
 	f.Add(int(arrow.FLOAT32), 128, true)

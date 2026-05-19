@@ -15,6 +15,9 @@ import (
 
 	"github.com/23skdu/longbow/internal/simd"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow"
+	"bytes"
+	"encoding/gob"
 )
 
 const (
@@ -26,7 +29,7 @@ const (
 // IVF-Flat Index Implementation
 // =============================================================================
 
-// IVFFlatIndex implements PluggableVectorIndex for IVF-Flat algorithm
+// IVFFlatIndex implements PluggableVectorIndex for the IVF-Flat algorithm.
 // IVF-Flat (Inverted File with Flat quantization) partitions vectors into clusters
 // using k-means and searches only the nearest clusters (n_probe).
 type IVFFlatIndex struct {
@@ -37,9 +40,12 @@ type IVFFlatIndex struct {
 	assignments map[uint64]int // Vector ID -> Cluster ID
 	config      *IVFFlatConfig
 	built       bool
+	distFunc    simd.DistanceKernel[float32]
+	locationToID map[uint64]uint64 // Packed Location -> Vector ID
+	idToLocation map[uint64]uint64 // Vector ID -> Packed Location
 }
 
-// NewIVFFlatIndex creates a new IVF-Flat index
+// NewIVFFlatIndex creates a new IVF-Flat index with the specified configuration.
 func NewIVFFlatIndex(cfg IndexConfig) (*IVFFlatIndex, error) {
 	if cfg.Dimension <= 0 {
 		return nil, fmt.Errorf("invalid dimension: %d", cfg.Dimension)
@@ -52,34 +58,43 @@ func NewIVFFlatIndex(cfg IndexConfig) (*IVFFlatIndex, error) {
 		}
 	}
 
-	return &IVFFlatIndex{
+	ivf := &IVFFlatIndex{
 		dimension:   cfg.Dimension,
 		vectors:     make(map[uint64][]float32),
 		centroids:   make([][]float32, 0),
 		assignments: make(map[uint64]int),
+		locationToID: make(map[uint64]uint64),
+		idToLocation: make(map[uint64]uint64),
 		config:      cfg.IVFFlatConfig,
 		built:       false,
-	}, nil
+	}
+	ivf.ensureKernel()
+	return ivf, nil
 }
 
+// Type returns the index type identifier (IVFFlat).
 func (ivf *IVFFlatIndex) Type() IndexType {
 	return IndexTypeIVFFlat
 }
 
+// Dimension returns the dimensionality of the vectors in the index.
 func (ivf *IVFFlatIndex) Dimension() int {
 	return ivf.dimension
 }
 
+// Size returns the total number of vectors in the index.
 func (ivf *IVFFlatIndex) Size() int {
 	ivf.mu.RLock()
 	defer ivf.mu.RUnlock()
 	return len(ivf.vectors)
 }
 
+// NeedsBuild returns true because IVF requires training/clustering.
 func (ivf *IVFFlatIndex) NeedsBuild() bool {
 	return true // IVF requires training/clustering
 }
 
+// Add inserts a single vector into the index.
 func (ivf *IVFFlatIndex) Add(id uint64, vector []float32) error {
 	ivf.mu.Lock()
 	defer ivf.mu.Unlock()
@@ -89,7 +104,7 @@ func (ivf *IVFFlatIndex) Add(id uint64, vector []float32) error {
 	}
 
 	ivf.vectors[id] = vector
-
+	
 	// If already built, assign to nearest cluster
 	if ivf.built {
 		clusterID := ivf.findNearestCluster(vector)
@@ -99,6 +114,34 @@ func (ivf *IVFFlatIndex) Add(id uint64, vector []float32) error {
 	return nil
 }
 
+// AddByRecord extracts a vector from an Arrow record and adds it to the index.
+func (ivf *IVFFlatIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
+	vec, err := ExtractVectorFromArrow(rec, rowIdx, -1)
+	if err != nil {
+		return 0, err
+	}
+
+	// Use sequential ID or something unique.
+	// For IVFFlatIndex, we'll use a simple counter if nextID is added, 
+	// or just use the current size as ID.
+	ivf.mu.Lock()
+	n := len(ivf.vectors)
+	if n >= math.MaxUint32 {
+		ivf.mu.Unlock()
+		return 0, fmt.Errorf("index full (max 4B vectors)")
+	}
+	id := uint32(n)
+	ivf.mu.Unlock()
+
+	if err := ivf.Add(uint64(id), vec); err != nil {
+		return 0, err
+	}
+
+	ivf.SetLocation(id, Location{BatchIdx: batchIdx, RowIdx: rowIdx})
+	return id, nil
+}
+
+// AddBatchRaw inserts a batch of vectors with explicit IDs.
 func (ivf *IVFFlatIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
 	ivf.mu.Lock()
 	defer ivf.mu.Unlock()
@@ -125,7 +168,7 @@ func (ivf *IVFFlatIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
 	return nil
 }
 
-// Build trains the k-means clustering model
+// Build trains the k-means clustering model using the vectors currently in the index.
 func (ivf *IVFFlatIndex) Build() error {
 	ivf.mu.Lock()
 	defer ivf.mu.Unlock()
@@ -150,10 +193,16 @@ func (ivf *IVFFlatIndex) Build() error {
 	ivf.assignments = assignments
 	ivf.built = true
 
+	// Resolve kernel for the dimension
+	ivf.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, ivf.dimension)
+	if ivf.distFunc == nil {
+		ivf.distFunc = simd.L2Squared
+	}
+
 	return nil
 }
 
-// Search finds k nearest neighbors by probing n_probe nearest clusters
+// Search finds the k nearest neighbors by probing n_probe nearest clusters.
 func (ivf *IVFFlatIndex) Search(query []float32, k int) ([]IndexSearchResult, error) {
 	ivf.mu.RLock()
 	defer ivf.mu.RUnlock()
@@ -182,7 +231,7 @@ func (ivf *IVFFlatIndex) Search(query []float32, k int) ([]IndexSearchResult, er
 		for id, assignedCluster := range ivf.assignments {
 			if assignedCluster == clusterID {
 				vector := ivf.vectors[id]
-				dist, _ := simd.L2Squared(query, vector)
+				dist, _ := ivf.distFunc(query, vector)
 				results = append(results, result{id: id, distance: dist})
 			}
 		}
@@ -208,6 +257,7 @@ func (ivf *IVFFlatIndex) Search(query []float32, k int) ([]IndexSearchResult, er
 	return searchResults, nil
 }
 
+// SearchBatch performs nearest neighbor search for multiple queries.
 func (ivf *IVFFlatIndex) SearchBatch(queries [][]float32, k int) ([][]IndexSearchResult, error) {
 	results := make([][]IndexSearchResult, len(queries))
 	for i, query := range queries {
@@ -225,6 +275,7 @@ func (ivf *IVFFlatIndex) GetNeighbors(ctx context.Context, id lbtypes.VectorID, 
 	return nil, fmt.Errorf("graph-based neighbor retrieval not supported for IVF-Flat: %w", os.ErrPermission)
 }
 
+// Save serializes the index to a file.
 func (ivf *IVFFlatIndex) Save(path string) error {
 	ivf.mu.RLock()
 	defer ivf.mu.RUnlock()
@@ -324,6 +375,7 @@ func (ivf *IVFFlatIndex) Save(path string) error {
 	return nil
 }
 
+// Load restores the index from a file.
 func (ivf *IVFFlatIndex) Load(path string) error {
 	path = filepath.Clean(path)
 	f, err := os.Open(path) // #nosec G304
@@ -427,31 +479,143 @@ func (ivf *IVFFlatIndex) Load(path string) error {
 		return fmt.Errorf("failed to read built flag: %w", err)
 	}
 	ivf.built = builtFlag == 1
+	ivf.ensureKernel()
 
 	return nil
 }
 
+// Close releases resources held by the index.
 func (ivf *IVFFlatIndex) Close() error {
 	return nil
 }
 
+// ExportState returns the serialized state of the index.
 func (ivf *IVFFlatIndex) ExportState() ([]byte, error) {
-	return nil, nil
+	ivf.mu.RLock()
+	defer ivf.mu.RUnlock()
+
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+
+	state := struct {
+		Dimension    int
+		Vectors      map[uint64][]float32
+		Centroids    [][]float32
+		Assignments  map[uint64]int
+		Config       *IVFFlatConfig
+		Built        bool
+		LocationToID map[uint64]uint64
+		IDToLocation map[uint64]uint64
+	}{
+		Dimension:    ivf.dimension,
+		Vectors:      ivf.vectors,
+		Centroids:    ivf.centroids,
+		Assignments:  ivf.assignments,
+		Config:       ivf.config,
+		Built:        ivf.built,
+		LocationToID: ivf.locationToID,
+		IDToLocation: ivf.idToLocation,
+	}
+
+	if err := enc.Encode(state); err != nil {
+		return nil, err
+	}
+
+	return buf.Bytes(), nil
 }
 
+// ImportState restores the index state from a byte slice.
 func (ivf *IVFFlatIndex) ImportState(data []byte) error {
+	ivf.mu.Lock()
+	defer ivf.mu.Unlock()
+
+	var state struct {
+		Dimension    int
+		Vectors      map[uint64][]float32
+		Centroids    [][]float32
+		Assignments  map[uint64]int
+		Config       *IVFFlatConfig
+		Built        bool
+		LocationToID map[uint64]uint64
+		IDToLocation map[uint64]uint64
+	}
+
+	dec := gob.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&state); err != nil {
+		return err
+	}
+
+	ivf.dimension = state.Dimension
+	ivf.vectors = state.Vectors
+	ivf.centroids = state.Centroids
+	ivf.assignments = state.Assignments
+	ivf.config = state.Config
+	ivf.built = state.Built
+	ivf.locationToID = state.LocationToID
+	ivf.idToLocation = state.IDToLocation
+	ivf.ensureKernel()
+
 	return nil
 }
 
+// AddByLocation is not supported for IVF-Flat; use Add instead.
 func (ivf *IVFFlatIndex) AddByLocation(batchIdx, rowIdx int) error {
-	return nil
+	return fmt.Errorf("AddByLocation not supported for IVF-Flat")
 }
 
+// GetVectorID retrieves the vector ID for a given location.
 func (ivf *IVFFlatIndex) GetVectorID(loc Location) (uint64, bool) {
-	// Not supported for IVFFlat adapter
-	return 0, false
+	ivf.mu.RLock()
+	defer ivf.mu.RUnlock()
+	
+	if ivf.locationToID == nil {
+		return 0, false
+	}
+
+	id, ok := ivf.locationToID[lbtypes.PackLocation(loc)]
+	return id, ok
 }
 
+// SetLocation registers a location-to-ID mapping.
+func (ivf *IVFFlatIndex) SetLocation(id uint32, loc any) {
+	l, ok := loc.(Location)
+	if !ok {
+		return
+	}
+
+	ivf.mu.Lock()
+	defer ivf.mu.Unlock()
+	
+	if ivf.locationToID == nil {
+		ivf.locationToID = make(map[uint64]uint64)
+	}
+	if ivf.idToLocation == nil {
+		ivf.idToLocation = make(map[uint64]uint64)
+	}
+
+	packed := lbtypes.PackLocation(l)
+	ivf.locationToID[packed] = uint64(id)
+	ivf.idToLocation[uint64(id)] = packed
+}
+
+// GetLocation returns the physical location for a given vector ID.
+func (ivf *IVFFlatIndex) GetLocation(id uint32) (any, bool) {
+	ivf.mu.RLock()
+	defer ivf.mu.RUnlock()
+
+	if ivf.idToLocation == nil {
+		return nil, false
+	}
+
+	packed, ok := ivf.idToLocation[uint64(id)]
+	if !ok {
+		return nil, false
+	}
+	
+	return lbtypes.UnpackLocation(packed), true
+}
+
+// SearchVectors performs a search and returns standard SearchResult types.
 func (ivf *IVFFlatIndex) SearchVectors(query []float32, k int, options SearchOptions) []lbtypes.SearchResult {
 	results, _ := ivf.Search(query, k)
 	searchResults := make([]lbtypes.SearchResult, len(results))
@@ -469,8 +633,14 @@ func (ivf *IVFFlatIndex) SearchVectors(query []float32, k int, options SearchOpt
 	return searchResults
 }
 
+// Len returns the number of vectors in the index.
 func (ivf *IVFFlatIndex) Len() int {
 	return ivf.Size()
+}
+
+// GetIndexType returns the type identifier of the index.
+func (ivf *IVFFlatIndex) GetIndexType() string {
+	return string(ivf.Type())
 }
 
 // =============================================================================
@@ -624,7 +794,7 @@ func (ivf *IVFFlatIndex) findNearestCentroid(vector []float32, centroids [][]flo
 	minIdx := 0
 
 	for i, centroid := range centroids {
-		dist, _ := simd.L2Squared(vector, centroid)
+		dist, _ := ivf.distFunc(vector, centroid)
 		if dist < minDist {
 			minDist = dist
 			minIdx = i
@@ -648,7 +818,7 @@ func (ivf *IVFFlatIndex) findNearestClusters(query []float32, n int) []int {
 
 	dists := make([]clusterDist, len(ivf.centroids))
 	for i, centroid := range ivf.centroids {
-		dist, _ := simd.L2Squared(query, centroid)
+		dist, _ := ivf.distFunc(query, centroid)
 		dists[i] = clusterDist{
 			id:       i,
 			distance: dist,
@@ -688,4 +858,14 @@ func min(a, b int) int {
 		return a
 	}
 	return b
+}
+
+func (ivf *IVFFlatIndex) ensureKernel() {
+	if ivf.distFunc != nil {
+		return
+	}
+	ivf.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, ivf.dimension)
+	if ivf.distFunc == nil {
+		ivf.distFunc = simd.L2Squared
+	}
 }

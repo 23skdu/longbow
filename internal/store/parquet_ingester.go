@@ -18,6 +18,7 @@ type ParquetIngester struct {
 	batchSize  int
 }
 
+// NewParquetIngester creates a new Parquet ingester for the given dataset and batch size.
 func NewParquetIngester(ds *Dataset, batchSize int) *ParquetIngester {
 	if batchSize <= 0 {
 		batchSize = 1000 // Default batch size

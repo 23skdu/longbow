@@ -15,12 +15,13 @@ type float16Computer struct {
 	dims      int
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
+	maxGen    uint64
 }
 
 func (c *float16Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
 		cID := types.ChunkID(id)
-		chunk := c.data.GetVectorsF16Chunk(cID)
+		chunk := c.data.GetVectorsF16ChunkWithGen(int(cID), c.maxGen)
 		if chunk != nil {
 			cOff := int(id) % types.ChunkSize
 			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)
@@ -41,7 +42,7 @@ func (c *float16Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *float16Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
 		if v, ok := vecAny.([]float16.Num); ok {
 			return c.h.distFuncF16(c.q, v)
@@ -49,7 +50,7 @@ func (c *float16Computer) ComputeSingle(id uint32) (float32, error) {
 	}
 
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsF16Chunk(cID)
+	chunk := c.data.GetVectorsF16ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)
@@ -64,7 +65,7 @@ func (c *float16Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *float16Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsF16Chunk(cID)
+	chunk := c.data.GetVectorsF16ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)

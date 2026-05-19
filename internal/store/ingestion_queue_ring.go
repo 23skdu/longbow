@@ -17,7 +17,7 @@ type IngestionRingBuffer struct {
 
 type ringSlot struct {
 	sequence atomic.Uint64
-	data     ingestionJob
+	data     IngestionJob
 }
 
 // NewIngestionRingBuffer creates a new ring buffer with the specified size.
@@ -51,7 +51,7 @@ func NewIngestionRingBuffer(size uint64) *IngestionRingBuffer {
 }
 
 // Push adds an item to the queue. Returns false if the queue is full.
-func (rb *IngestionRingBuffer) Push(job ingestionJob) bool {
+func (rb *IngestionRingBuffer) Push(job IngestionJob) bool {
 	var head, tail, seq, nextSeq uint64
 	var slot *ringSlot
 
@@ -86,10 +86,10 @@ func (rb *IngestionRingBuffer) Push(job ingestionJob) bool {
 }
 
 // Pop removes an item from the queue. Returns false if the queue is empty.
-func (rb *IngestionRingBuffer) Pop() (ingestionJob, bool) {
+func (rb *IngestionRingBuffer) Pop() (IngestionJob, bool) {
 	var head, tail, seq, nextSeq uint64
 	var slot *ringSlot
-	var job ingestionJob
+	var job IngestionJob
 
 	for {
 		head = rb.head.Load()
@@ -132,7 +132,7 @@ func (rb *IngestionRingBuffer) Capacity() int {
 }
 
 // PushBlocking adds an item, blocking/yielding if full until space is available or timeout.
-func (rb *IngestionRingBuffer) PushBlocking(job ingestionJob, timeout time.Duration) bool {
+func (rb *IngestionRingBuffer) PushBlocking(job IngestionJob, timeout time.Duration) bool {
 	deadline := time.Now().Add(timeout)
 	for {
 		if rb.Push(job) {

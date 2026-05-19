@@ -5,11 +5,13 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/crc32"
+	"hash/fnv"
 	"io"
 	"os"
 	"path/filepath"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -31,13 +33,13 @@ type rawWALBlock struct {
 	err      error
 }
 
-// decodedWALEntry represents a fully decoded entry ready for application
-type decodedWALEntry struct {
-	name   string
-	record arrow.RecordBatch
-	seq    uint64
-	ts     int64
-	err    error
+// DecodedWALEntry represents a fully decoded entry ready for application
+type DecodedWALEntry struct {
+	Name   string
+	Record arrow.RecordBatch
+	Seq    uint64
+	Ts     int64
+	Err    error
 }
 
 // ReplayWAL reads the WAL and calls the applier for each entry.
@@ -69,12 +71,14 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 	rawChan := make(chan rawWALBlock, 1000)
 	// decodedChan holds ready-to-apply records. Retain/Release must be handled carefully.
 	// Increased buffer size
-	decodedChan := make(chan decodedWALEntry, 1000)
+	decodedChan := make(chan DecodedWALEntry, 1000)
 
 	// Context for cancellation? We'll just use close signals.
 
+	firstSeqChan := make(chan uint64, 1)
+
 	// 1. Start Reader Goroutine
-	go e.walReaderRoutine(f, rawChan)
+	go e.walReaderRoutine(f, rawChan, firstSeqChan)
 
 	numDecoders := runtime.NumCPU()
 	if numDecoders < 1 {
@@ -89,9 +93,9 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 	var wgDecoders sync.WaitGroup
 	wgDecoders.Add(numDecoders)
 
-	reorderedChan := make(chan decodedWALEntry, 100)
+	reorderedChan := make(chan DecodedWALEntry, 100)
 
-	go e.reorderBufferRoutine(decodedChan, reorderedChan, &wgDecoders)
+	go e.reorderBufferRoutine(decodedChan, reorderedChan, &wgDecoders, firstSeqChan)
 
 	for i := 0; i < numDecoders; i++ {
 		go func(id int) {
@@ -100,48 +104,98 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 		}(i)
 	}
 
-	// 3. Main Loop: Applier (read from reorderedChan to get properly ordered entries)
+	// 3. Parallel Appliers
+	numAppliers := runtime.NumCPU()
+	if numAppliers > 16 {
+		numAppliers = 16
+	}
+	if numAppliers < 1 {
+		numAppliers = 1
+	}
+	metrics.WalReplayParallelism.Set(float64(numAppliers))
+	defer metrics.WalReplayParallelism.Set(0)
+
+	applierChans := make([]chan DecodedWALEntry, numAppliers)
+	var wgAppliers sync.WaitGroup
+	var applierErr atomic.Value
+
+	for i := 0; i < numAppliers; i++ {
+		applierChans[i] = make(chan DecodedWALEntry, 100)
+		wgAppliers.Add(1)
+		go func(ch chan DecodedWALEntry) {
+			defer wgAppliers.Done()
+			for entry := range ch {
+				if applierErr.Load() != nil {
+					entry.Record.Release()
+					continue
+				}
+
+				log.Debug().
+					Uint64("seq", entry.Seq).
+					Str("name", entry.Name).
+					Int64("rows", entry.Record.NumRows()).
+					Msg("ReplayWAL: Applying record")
+
+				err := applier(entry.Name, entry.Record, entry.Seq, entry.Ts)
+				entry.Record.Release()
+				if err != nil {
+					applierErr.Store(err)
+				}
+			}
+		}(applierChans[i])
+	}
+
+	// 4. Main Dispatch Loop
 	var maxSeq uint64
 	count := 0
 
 	for entry := range reorderedChan {
-		if entry.err != nil {
-			// Stop immediately on error
-			// We should probably drain/cancel others, but simpler to return
-			return maxSeq, entry.err
+		if entry.Err != nil {
+			applierErr.Store(entry.Err)
+			break
+		}
+
+		if errAny := applierErr.Load(); errAny != nil {
+			if entry.Record != nil {
+				entry.Record.Release()
+			}
+			break
 		}
 
 		// Update maxSeq
-		if entry.seq > maxSeq {
-			maxSeq = entry.seq
+		if entry.Seq > maxSeq {
+			maxSeq = entry.Seq
 		}
 
-		// Apply
-		rec := entry.record
-		log.Debug().
-			Uint64("seq", entry.seq).
-			Str("name", entry.name).
-			Int64("rows", rec.NumRows()).
-			Msg("ReplayWAL: Applying record")
-
-		err := applier(entry.name, rec, entry.seq, entry.ts)
-
-		// We are done with the record
-		rec.Release()
-
-		if err != nil {
-			return maxSeq, fmt.Errorf("applier failed for record: %w", err)
-		}
+		// Dispatch by hashed name to ensure per-dataset ordering
+		h := fnv.New32a()
+		_, _ = h.Write([]byte(entry.Name))
+		workerIdx := h.Sum32() % uint32(numAppliers)
+		
+		applierChans[workerIdx] <- entry
 		count++
 	}
 
+	// Close applier channels and wait
+	for i := 0; i < numAppliers; i++ {
+		close(applierChans[i])
+	}
+	wgAppliers.Wait()
+
+	if errAny := applierErr.Load(); errAny != nil {
+		return maxSeq, errAny.(error)
+	}
+
+	log.Info().Int("totalApplied", count).Msg("ReplayWAL: Completed successfully")
 	return maxSeq, nil
 }
 
-func (e *StorageEngine) walReaderRoutine(f *os.File, out chan<- rawWALBlock) {
+func (e *StorageEngine) walReaderRoutine(f *os.File, out chan<- rawWALBlock, firstSeqChan chan<- uint64) {
 	defer close(out)
+	defer close(firstSeqChan)
 
 	count := 0
+	first := true
 	for {
 		header := make([]byte, 32)
 		// Use ReadFull to ensure we get the whole header or EOF
@@ -155,6 +209,11 @@ func (e *StorageEngine) walReaderRoutine(f *os.File, out chan<- rawWALBlock) {
 
 		// Parse Header (lightweight)
 		seq := binary.LittleEndian.Uint64(header[4:12])
+		
+		if first {
+			firstSeqChan <- seq
+			first = false
+		}
 		ts := int64(binary.LittleEndian.Uint64(header[12:20])) // #nosec G115
 		nameLen := binary.LittleEndian.Uint32(header[20:24])
 		recLen := binary.LittleEndian.Uint64(header[24:32])
@@ -192,10 +251,10 @@ func (e *StorageEngine) walReaderRoutine(f *os.File, out chan<- rawWALBlock) {
 	}
 }
 
-func (e *StorageEngine) walDecoderRoutine(in <-chan rawWALBlock, out chan<- decodedWALEntry) {
+func (e *StorageEngine) walDecoderRoutine(in <-chan rawWALBlock, out chan<- DecodedWALEntry) {
 	for block := range in {
 		if block.err != nil {
-			out <- decodedWALEntry{err: block.err}
+			out <- DecodedWALEntry{Err: block.err}
 			return
 		}
 
@@ -212,7 +271,7 @@ func (e *StorageEngine) walDecoderRoutine(in <-chan rawWALBlock, out chan<- deco
 		isCompressed := (storedChecksum == 0xFFFFFFFF)
 
 		if !isCompressed && calculatedCRC != storedChecksum {
-			out <- decodedWALEntry{err: fmt.Errorf("wal crc mismatch at seq %d: expected %x, got %x", block.seq, storedChecksum, calculatedCRC)}
+			out <- DecodedWALEntry{Err: fmt.Errorf("wal crc mismatch at seq %d: expected %x, got %x", block.seq, storedChecksum, calculatedCRC)}
 			return
 		}
 
@@ -273,11 +332,11 @@ func (e *StorageEngine) walDecoderRoutine(in <-chan rawWALBlock, out chan<- deco
 						rec := r.RecordBatch()
 						rec.Retain()
 
-						out <- decodedWALEntry{
-							name:   string(inNameBytes),
-							record: rec,
-							seq:    inSeq,
-							ts:     inTs,
+						out <- DecodedWALEntry{
+							Name:   string(inNameBytes),
+							Record: rec,
+							Seq:    inSeq,
+							Ts:     inTs,
 						}
 					}
 					r.Release()
@@ -292,11 +351,11 @@ func (e *StorageEngine) walDecoderRoutine(in <-chan rawWALBlock, out chan<- deco
 					rec := r.RecordBatch()
 					rec.Retain()
 
-					out <- decodedWALEntry{
-						name:   block.name,
-						record: rec,
-						seq:    block.seq,
-						ts:     block.ts,
+					out <- DecodedWALEntry{
+						Name:   block.name,
+						Record: rec,
+						Seq:    block.seq,
+						Ts:     block.ts,
 					}
 				}
 				r.Release()
@@ -306,12 +365,20 @@ func (e *StorageEngine) walDecoderRoutine(in <-chan rawWALBlock, out chan<- deco
 }
 
 // reorderBufferRoutine reorders decoded entries by sequence number. It collects entries from multiple decoder goroutines and outputs them in order.
-func (e *StorageEngine) reorderBufferRoutine(in chan decodedWALEntry, out chan decodedWALEntry, wgDecoders *sync.WaitGroup) {
+func (e *StorageEngine) reorderBufferRoutine(in chan DecodedWALEntry, out chan DecodedWALEntry, wgDecoders *sync.WaitGroup, firstSeqChan <-chan uint64) {
 	defer close(out)
 
 	// Map to hold out-of-order entries
-	buffer := make(map[uint64]decodedWALEntry)
-	nextSeq := uint64(0)
+	buffer := make(map[uint64]DecodedWALEntry)
+	
+	// Wait for the first sequence number
+	nextSeq, ok := <-firstSeqChan
+	if !ok {
+		// WAL was empty
+		wgDecoders.Wait()
+		close(in)
+		return
+	}
 
 	// Track decoder completion - close input channel when all decoders are done
 	go func() {
@@ -321,13 +388,13 @@ func (e *StorageEngine) reorderBufferRoutine(in chan decodedWALEntry, out chan d
 
 	for entry := range in {
 		// Handle errors immediately
-		if entry.err != nil {
+		if entry.Err != nil {
 			out <- entry
 			return
 		}
 
 		// If this is the expected next sequence, output it
-		if entry.seq == nextSeq {
+		if entry.Seq == nextSeq {
 			out <- entry
 			nextSeq++
 
@@ -341,13 +408,13 @@ func (e *StorageEngine) reorderBufferRoutine(in chan decodedWALEntry, out chan d
 					break
 				}
 			}
-		} else if entry.seq > nextSeq {
+		} else if entry.Seq > nextSeq {
 			// Store out-of-order entry in buffer
-			buffer[entry.seq] = entry
+			buffer[entry.Seq] = entry
 		} else {
 			// This shouldn't happen (seq < nextSeq), but handle it
 			log.Warn().
-				Uint64("seq", entry.seq).
+				Uint64("seq", entry.Seq).
 				Uint64("nextSeq", nextSeq).
 				Msg("ReplayWAL: Received entry with seq < nextSeq, dropping")
 		}

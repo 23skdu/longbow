@@ -185,7 +185,7 @@ func TestAdaptiveChunkSize_ConcurrentSafety(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 	idx := NewTestHNSWIndex(ds)
 
@@ -232,7 +232,7 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 
 	ds := &Dataset{
 		Name:    "bench",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 	idx := NewTestHNSWIndex(ds)
 
@@ -266,7 +266,7 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = idx.ProcessResultsParallel(context.Background(), query, neighbors500, 10, nil)
+			_ = idx.ProcessResultsParallel(context.Background(), query, query, neighbors500, 10, nil)
 		}
 	})
 
@@ -279,12 +279,12 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
-			_ = idx.ProcessResultsParallel(context.Background(), query, neighbors5000, 10, nil)
+			_ = idx.ProcessResultsParallel(context.Background(), query, query, neighbors5000, 10, nil)
 		}
 	})
 }
 
-func FuzzAdaptiveChunkSize_Calculation(f *testing.F) {
+func FuzzAdaptiveChunkSizeCalculation(f *testing.F) {
 	f.Add(4, 100, 32, 500)
 	f.Add(8, 1000, 32, 500)
 	f.Add(16, 10000, 32, 500)

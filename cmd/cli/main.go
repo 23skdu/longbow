@@ -18,6 +18,8 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/client"
+	"github.com/23skdu/longbow/internal/onnx"
+	"github.com/23skdu/longbow/pkg/version"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -25,6 +27,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
+	"cloud.google.com/go/storage"
 )
 
 func main() {
@@ -39,6 +42,8 @@ func main() {
 	switch command {
 	case "import":
 		runImport(ctx, os.Args[2:])
+	case "export":
+		runExport(ctx, os.Args[2:])
 	case "search":
 		runSearch(ctx, os.Args[2:])
 	case "create-namespace":
@@ -73,6 +78,12 @@ func main() {
 		runDetectCommunities(ctx, os.Args[2:])
 	case "temporal-search":
 		runTemporalSearch(ctx, os.Args[2:])
+	case "drop":
+		runDrop(ctx, os.Args[2:])
+	case "download-model":
+		runDownloadModel(ctx, os.Args[2:])
+	case "version", "-v", "--version":
+		version.Print()
 	case "help", "-h", "--help":
 		printUsage()
 	default:
@@ -89,7 +100,8 @@ Usage:
   longbow-cli <command> [options]
 
 Commands:
-  import           Import parquet or npy files into a dataset
+  import           Import parquet, npy, or arrow files into a dataset
+  export           Export a dataset to an arrow file
   search           Search vectors with Dense, Sparse, Filtered, or Hybrid modes
   create-namespace Create a new dataset namespace
   delete-namespace Delete a dataset namespace
@@ -106,6 +118,8 @@ Commands:
   pagerank         Calculate PageRank centrality
   detect-communities Run community detection (LPA)
   temporal-search  Search temporal index (as-of, range, window)
+  drop             Explicitly drop a dataset from memory
+  download-model   Download an ONNX model from Hugging Face
 
 Global Options:
   -uri string    Longbow server URI (default: grpc://127.0.0.1:3000)
@@ -116,6 +130,10 @@ Examples:
 
   # Search with dense vectors
   longbow-cli search -dataset mydata -mode dense -vector "0.1,0.2,0.3" -k 10
+
+  # Create TurboQuant dataset
+  longbow-cli create-namespace -name mytq -dims 768 -data_type turboquant2
+
 
   # Search with compound filters
   longbow-cli search -dataset mydata -mode filtered -vector "0.1,0.2" -filters '{
@@ -132,9 +150,14 @@ Examples:
   # Hybrid search
   longbow-cli search -dataset mydata -mode hybrid -vector "0.1,0.2" -text "search query" -alpha 0.5
 
+  # Export dataset to Arrow file
+  longbow-cli export -dataset mydata -output dataset.arrow -compression lz4
+
+  # Download ONNX model from Hugging Face
+  longbow-cli download-model -repo sentence-transformers/all-MiniLM-L6-v2 -dest models/all-MiniLM-L6-v2
+
 Use "longbow-cli <command> --help" for more information about a command.`)
 }
-
 
 func mustGetClient(uri string) *client.SmartClient {
 	// Sanitize URI for logging to prevent log injection (G706)
@@ -151,32 +174,43 @@ func mustGetClient(uri string) *client.SmartClient {
 func runImport(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("import", flag.ExitOnError)
 	dataset := fs.String("dataset", "", "Target dataset name (required)")
-	input := fs.String("input", "", "Input file path. Supports .parquet, .npy, and s3://bucket/key")
+	input := fs.String("input", "", "Input file path (alias for --file)")
+	file := fs.String("file", "", "Input file path (Supports .parquet, .npy, .arrow, and s3://bucket/key)")
 	dim := fs.Int("dim", 128, "Vector dimension (used for demo data)")
 	count := fs.Int("count", 1000, "Number of vectors to generate (used for demo data if no input file)")
 	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
+	if *file == "" && *input != "" {
+		file = input
+	}
+
 	if *dataset == "" {
-		fmt.Fprintf(os.Stderr, "Usage: longbow-cli import -dataset <name> [-input <file>] [-dim <n>] [-count <n>]\n")
+		fmt.Fprintf(os.Stderr, "Usage: longbow-cli import --dataset <name> --file <file> [-dim <n>] [-count <n>]\n")
 		os.Exit(1)
 	}
 
 	sc := mustGetClient(*uri)
 	defer sc.Close()
 
-	if *input != "" {
-		if strings.HasPrefix(*input, "s3://") {
-			runImportS3(ctx, sc, *dataset, *input)
+	if *file != "" {
+		if strings.HasPrefix(*file, "s3://") {
+			runImportS3(ctx, sc, *dataset, *file)
 			return
 		}
-		ext := strings.ToLower(*input)
+		if strings.HasPrefix(*file, "gs://") {
+			runImportGCS(ctx, sc, *dataset, *file)
+			return
+		}
+		ext := strings.ToLower(*file)
 		if strings.HasSuffix(ext, ".parquet") {
-			runImportParquet(ctx, sc, *dataset, *input)
+			runImportParquet(ctx, sc, *dataset, *file)
 		} else if strings.HasSuffix(ext, ".npy") {
-			runImportNpy(ctx, sc, *dataset, *input)
+			runImportNpy(ctx, sc, *dataset, *file)
+		} else if strings.HasSuffix(ext, ".arrow") {
+			runImportArrow(ctx, sc, *dataset, *file)
 		} else {
-			log.Fatalf("Unsupported file format: %s. Only .parquet and .npy are supported.\n", *input)
+			log.Fatalf("Unsupported file format: %s. Only .parquet, .npy, and .arrow are supported.\n", *file)
 		}
 		return
 	}
@@ -561,12 +595,13 @@ func runCreateNamespace(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("create-namespace", flag.ExitOnError)
 	name := fs.String("name", "", "Namespace name (required)")
 	dims := fs.Int("dims", 128, "Vector dimensions")
-	dtype := fs.String("data_type", "float32", "Data type (float32, int8, turboquant)")
+	dtype := fs.String("data_type", "float32", "Data type (float32, int8, turboquant2, turboquant4, turboquant8)")
 	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
 	if *name == "" {
 		fmt.Fprintf(os.Stderr, "Usage: longbow-cli create-namespace -name <name> [-dims <n>] [-data_type <type>]\n")
+
 		os.Exit(1)
 	}
 
@@ -613,8 +648,9 @@ func runDeleteNamespace(ctx context.Context, args []string) {
 	sc := mustGetClient(*uri)
 	defer sc.Close()
 
-	actionBody, _ := json.Marshal(map[string]string{"namespace": *name})
-	action := &flight.Action{Type: "delete_namespace", Body: actionBody}
+	actionBody, _ := json.Marshal(map[string]string{"name": *name})
+	action := &flight.Action{Type: "DeleteNamespace", Body: actionBody}
+
 
 	stream, err := sc.DoAction(ctx, action)
 	if err != nil {
@@ -634,8 +670,6 @@ func runDeleteNamespace(ctx context.Context, args []string) {
 	fmt.Printf("Namespace '%s' deleted successfully\n", *name)
 }
 
-
-
 func runListNamespaces(ctx context.Context, args []string) {
 	fs := flag.NewFlagSet("list-namespaces", flag.ExitOnError)
 	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
@@ -643,7 +677,8 @@ func runListNamespaces(ctx context.Context, args []string) {
 	sc := mustGetClient(*uri)
 	defer sc.Close()
 
-	action := &flight.Action{Type: "list_actions"}
+	action := &flight.Action{Type: "ListNamespaces"}
+
 	stream, err := sc.DoAction(ctx, action)
 	if err != nil {
 		log.Fatalf("Failed to list namespaces: %v", err)
@@ -721,7 +756,8 @@ func runStats(ctx context.Context, args []string) {
 	defer sc.Close()
 
 	actionBody, _ := json.Marshal(map[string]string{"dataset": *name})
-	action := &flight.Action{Type: "check_readiness", Body: actionBody}
+	action := &flight.Action{Type: "DiscoveryStatus", Body: actionBody}
+
 
 	stream, err := sc.DoAction(ctx, action)
 	if err != nil {
@@ -743,8 +779,19 @@ func runStats(ctx context.Context, args []string) {
 			}
 		}
 	}
-}
 
+	// Display Load Balancing Hints
+	desc := &flight.FlightDescriptor{Type: flight.DescriptorPATH, Path: []string{*name}}
+	_, _ = sc.GetFlightInfo(ctx, desc)
+	hints := sc.GetLastLoadHints()
+	if hints != nil {
+		fmt.Printf("\nLoad Balancing Hints:\n")
+		fmt.Printf("  CPU Load:    %d%%\n", hints.CPULoad)
+		fmt.Printf("  Memory Load: %d%%\n", hints.MemLoad)
+		fmt.Printf("  Queue Depth: %d\n", hints.QueueDepth)
+		fmt.Printf("  Health:      %d%%\n\n", hints.Health)
+	}
+}
 
 func runImportS3(ctx context.Context, sc *client.SmartClient, dataset, s3Path string) {
 	// Parse s3://bucket/key
@@ -901,10 +948,10 @@ func runGeoSearch(ctx context.Context, args []string) {
 	defer sc.Close()
 
 	req := map[string]interface{}{
-		"dataset":   *dataset,
-		"k":         *k,
-		"center":    map[string]float64{"lat": *lat, "lon": *lon},
-		"radius_km": *radius,
+		"dataset":     *dataset,
+		"k":           *k,
+		"center":      map[string]float64{"lat": *lat, "lon": *lon},
+		"radius_km":   *radius,
 		"search_type": "radius",
 	}
 
@@ -981,7 +1028,8 @@ func runDelete(ctx context.Context, args []string) {
 
 	req := map[string]string{"dataset": *dataset, "id": *id}
 	actionBody, _ := json.Marshal(req)
-	action := &flight.Action{Type: "delete", Body: actionBody}
+	action := &flight.Action{Type: "Delete", Body: actionBody}
+
 
 	_, err := sc.DoAction(ctx, action)
 	if err != nil {
@@ -1026,7 +1074,8 @@ func runAddEdge(_ context.Context, args []string) {
 		"weight":    *weight,
 	}
 	actionBody, _ := json.Marshal(req)
-	action := &flight.Action{Type: "add-edge", Body: actionBody}
+	action := &flight.Action{Type: "AddEdge", Body: actionBody}
+
 	_, err := sc.DoAction(context.Background(), action)
 	if err != nil {
 		log.Fatalf("Add edge failed: %v", err)
@@ -1051,7 +1100,8 @@ func runTraverse(_ context.Context, args []string) {
 		"max_hops": *hops,
 	}
 	actionBody, _ := json.Marshal(req)
-	action := &flight.Action{Type: "traverse-graph", Body: actionBody}
+	action := &flight.Action{Type: "TraverseGraph", Body: actionBody}
+
 	stream, err := sc.DoAction(context.Background(), action)
 	if err != nil {
 		log.Fatalf("Traverse failed: %v", err)
@@ -1099,7 +1149,8 @@ func runPageRank(_ context.Context, args []string) {
 
 	req := map[string]interface{}{"dataset": *dataset, "max_iterations": *iter}
 	actionBody, _ := json.Marshal(req)
-	action := &flight.Action{Type: "calculate-pagerank", Body: actionBody}
+	action := &flight.Action{Type: "CalculatePageRank", Body: actionBody}
+
 	stream, err := sc.DoAction(context.Background(), action)
 	if err != nil {
 		log.Fatalf("PageRank failed: %v", err)
@@ -1120,7 +1171,8 @@ func runDetectCommunities(_ context.Context, args []string) {
 
 	req := map[string]string{"dataset": *dataset}
 	actionBody, _ := json.Marshal(req)
-	action := &flight.Action{Type: "detect-communities", Body: actionBody}
+	action := &flight.Action{Type: "DetectCommunities", Body: actionBody}
+
 	stream, err := sc.DoAction(context.Background(), action)
 	if err != nil {
 		log.Fatalf("Community detection failed: %v", err)
@@ -1132,21 +1184,29 @@ func runDetectCommunities(_ context.Context, args []string) {
 
 func runTemporalSearch(_ context.Context, args []string) {
 	fs := flag.NewFlagSet("temporal-search", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name (required)")
 	searchType := fs.String("type", "as_of", "Search type: as_of, range, window")
 	ts := fs.Int64("ts", 0, "Timestamp for as_of")
 	start := fs.Int64("start", 0, "Start time")
 	end := fs.Int64("end", 0, "End time")
+	k := fs.Int("k", 10, "Number of results")
 	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
+
+	if *dataset == "" {
+		log.Fatal("Dataset name is required")
+	}
 
 	sc := mustGetClient(*uri)
 	defer sc.Close()
 
 	req := map[string]interface{}{
+		"dataset":     *dataset,
 		"search_type": *searchType,
 		"timestamp":   *ts,
 		"start_time":  *start,
 		"end_time":    *end,
+		"k":           *k,
 	}
 	actionBody, _ := json.Marshal(req)
 	action := &flight.Action{Type: "TemporalSearch", Body: actionBody}
@@ -1170,6 +1230,10 @@ func runCreateDataset(_ context.Context, args []string) {
 	dims := fs.Int("dims", 128, "Dimensions")
 	vtype := fs.String("type", "float32", "Vector type")
 	geo := fs.Bool("geo", false, "Enable geo index")
+	m := fs.Int("m", 32, "HNSW M parameter")
+	ef := fs.Int("ef", 400, "HNSW efConstruction parameter")
+	shards := fs.Int("shards", 0, "Number of shards (0 for auto)")
+	tqBits := fs.Int("tq_bits", 8, "TurboQuant bits (4 or 8)")
 	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 	_ = fs.Parse(args)
 
@@ -1181,10 +1245,14 @@ func runCreateDataset(_ context.Context, args []string) {
 	defer sc.Close()
 
 	req := map[string]interface{}{
-		"name":        *name,
-		"dimension":   *dims,
-		"vector_type": *vtype,
-		"geo_enabled": *geo,
+		"name":            *name,
+		"dimension":       *dims,
+		"vector_type":     *vtype,
+		"geo_enabled":     *geo,
+		"hnsw_m":          *m,
+		"hnsw_ef":         *ef,
+		"num_shards":      *shards,
+		"turboquant_bits": *tqBits,
 	}
 	actionBody, _ := json.Marshal(req)
 	action := &flight.Action{Type: "CreateDataset", Body: actionBody}
@@ -1193,4 +1261,358 @@ func runCreateDataset(_ context.Context, args []string) {
 		log.Fatalf("Create dataset failed: %v", err)
 	}
 	fmt.Printf("Dataset '%s' created\n", *name)
+}
+
+func runDrop(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("drop", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Dataset name to drop (required)")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
+	_ = fs.Parse(args)
+
+	if *dataset == "" {
+		fmt.Fprintf(os.Stderr, "Usage: longbow-cli drop -dataset <name> [-uri <uri>]\n")
+		os.Exit(1)
+	}
+
+	sc := mustGetClient(*uri)
+	defer sc.Close()
+
+	actionBody, _ := json.Marshal(map[string]string{"dataset": *dataset})
+	action := &flight.Action{Type: "DropDataset", Body: actionBody}
+
+
+	stream, err := sc.DoAction(ctx, action)
+	if err != nil {
+		log.Fatalf("Failed to drop dataset: %v", err)
+	}
+
+	result, err := stream.Recv()
+	if err != nil {
+		log.Fatalf("Failed to receive response: %v", err)
+	}
+
+	fmt.Printf("Dataset '%s' dropped successfully: %s\n", *dataset, string(result.Body))
+}
+
+func runImportArrow(ctx context.Context, sc *client.SmartClient, dataset, inputPath string) {
+	start := time.Now()
+	fmt.Printf("Importing Arrow file %s to dataset %s...\n", inputPath, dataset)
+
+	f, err := os.Open(filepath.Clean(inputPath)) // #nosec G304
+	if err != nil {
+		log.Fatalf("Failed to open arrow file: %v\n", err)
+	}
+	defer f.Close()
+
+	rdr, err := ipc.NewFileReader(f)
+	if err != nil {
+		log.Fatalf("Failed to create arrow reader: %v\n", err)
+	}
+
+	desc := &flight.FlightDescriptor{
+		Type: flight.DescriptorPATH,
+		Path: []string{dataset},
+	}
+
+	stream, err := sc.DoPut(ctx, desc)
+	if err != nil {
+		log.Fatalf("DoPut stream failed: %v\n", err)
+	}
+
+	writer := flight.NewRecordWriter(stream, ipc.WithSchema(rdr.Schema()))
+	writer.SetFlightDescriptor(desc)
+
+	totalRows := int64(0)
+	for i := 0; i < rdr.NumRecords(); i++ {
+		rec, err := rdr.Record(i)
+		if err != nil {
+			log.Fatalf("Failed to read record %d: %v\n", i, err)
+		}
+		if err := writer.Write(rec); err != nil {
+			log.Fatalf("Failed to write record batch: %v\n", err)
+		}
+		totalRows += rec.NumRows()
+	}
+
+	_ = writer.Close()
+	if err := stream.CloseSend(); err != nil {
+		log.Fatalf("Failed to close flight stream: %v\n", err)
+	}
+	_, _ = stream.Recv()
+
+	fmt.Printf("Successfully imported %d rows from Arrow in %v\n", totalRows, time.Since(start))
+}
+
+func runExport(ctx context.Context, args []string) {
+	fs := flag.NewFlagSet("export", flag.ExitOnError)
+	dataset := fs.String("dataset", "", "Target dataset name (required)")
+	output := fs.String("output", "", "Output file path (alias for --file)")
+	fileFlag := fs.String("file", "", "Output file path (required)")
+	compression := fs.String("compression", "", "Compression codec: lz4, zstd")
+	uri := fs.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
+	_ = fs.Parse(args)
+
+	if *fileFlag == "" && *output != "" {
+		fileFlag = output
+	}
+
+	if *dataset == "" || *fileFlag == "" {
+		fmt.Fprintf(os.Stderr, "Usage: longbow-cli export --dataset <name> --file <output.arrow> [--compression lz4|zstd]\n")
+		os.Exit(1)
+	}
+
+	sc := mustGetClient(*uri)
+	defer sc.Close()
+
+	// Connect to dataset via DoGet with dataset name ticket
+	ticketBytes := []byte(*dataset)
+	stream, err := sc.DoGet(ctx, ticketBytes)
+	if err != nil {
+		log.Fatalf("DoGet failed: %v\n", err)
+	}
+
+	reader, err := flight.NewRecordReader(stream)
+	if err != nil {
+		log.Fatalf("Failed to create record reader: %v\n", err)
+	}
+	defer reader.Release()
+
+	// Prepare output file
+	f, err := os.Create(filepath.Clean(*fileFlag)) // #nosec G304
+	if err != nil {
+		log.Fatalf("Failed to create output file: %v\n", err)
+	}
+	defer f.Close()
+
+	originalFileFlag := *fileFlag
+	if strings.HasPrefix(originalFileFlag, "s3://") || strings.HasPrefix(originalFileFlag, "gs://") {
+		tmp, err := os.CreateTemp("", "longbow-export-*.arrow")
+		if err != nil {
+			log.Fatalf("Failed to create temp file for remote export: %v\n", err)
+		}
+		// Close the initial file handle and replace it with the temp file
+		_ = f.Close() // #nosec G104
+		f = tmp
+	}
+
+
+	var opts []ipc.Option
+	opts = append(opts, ipc.WithSchema(reader.Schema()))
+
+	if *compression != "" {
+		switch strings.ToLower(*compression) {
+		case "lz4":
+			opts = append(opts, ipc.WithLZ4())
+		case "zstd":
+			opts = append(opts, ipc.WithZstd())
+		default:
+			log.Fatalf("Unsupported compression codec: %s. Use 'lz4' or 'zstd'.\n", *compression)
+		}
+	}
+
+	writer, err := ipc.NewFileWriter(f, opts...)
+	if err != nil {
+		log.Fatalf("Failed to create arrow writer: %v\n", err)
+	}
+	defer writer.Close()
+
+	start := time.Now()
+	totalRows := int64(0)
+	for reader.Next() {
+		rec := reader.Record()
+		if err := writer.Write(rec); err != nil {
+			log.Fatalf("Failed to write record batch: %v\n", err)
+		}
+		totalRows += rec.NumRows()
+	}
+
+	if err := reader.Err(); err != nil {
+		log.Fatalf("Reader error: %v\n", err)
+	}
+
+	if strings.HasPrefix(*fileFlag, "s3://") {
+		// Upload temp file to S3
+		_ = f.Close() // #nosec G104
+		runExportS3(ctx, *fileFlag, f.Name())
+	} else if strings.HasPrefix(*fileFlag, "gs://") {
+		// Upload temp file to GCS
+		_ = f.Close() // #nosec G104
+		runExportGCS(ctx, *fileFlag, f.Name())
+	}
+
+
+	fmt.Printf("Successfully exported %d rows to %s in %v\n", totalRows, *fileFlag, time.Since(start))
+}
+
+func runDownloadModel(_ context.Context, args []string) {
+	fs := flag.NewFlagSet("download-model", flag.ExitOnError)
+	repo := fs.String("repo", "", "Hugging Face repo ID (e.g., sentence-transformers/all-MiniLM-L6-v2) (required)")
+	dest := fs.String("dest", "models", "Destination directory")
+	_ = fs.Parse(args)
+
+	if *repo == "" {
+		fmt.Fprintf(os.Stderr, "Usage: longbow-cli download-model -repo <repo_id> [-dest <path>]\n")
+		os.Exit(1)
+	}
+
+	if err := onnx.DownloadModel(*repo, *dest); err != nil {
+		log.Fatalf("Failed to download model: %v", err)
+	}
+
+	fmt.Printf("Successfully downloaded model %s to %s\n", *repo, *dest)
+}
+
+func runImportGCS(ctx context.Context, sc *client.SmartClient, dataset, gcsPath string) {
+	// Parse gs://bucket/key
+	u := strings.TrimPrefix(gcsPath, "gs://")
+	parts := strings.SplitN(u, "/", 2)
+	if len(parts) < 2 {
+		log.Fatalf("Invalid GCS path: %s. Expected gs://bucket/key\n", gcsPath)
+	}
+	bucket, key := parts[0], parts[1]
+
+	gcsClient, err := storage.NewClient(ctx)
+	if err != nil {
+		log.Fatalf("Failed to create GCS client: %v\n", err)
+	}
+	defer gcsClient.Close()
+
+	obj := gcsClient.Bucket(bucket).Object(key)
+	r, err := obj.NewReader(ctx)
+	if err != nil {
+		log.Fatalf("Failed to create GCS reader: %v\n", err)
+	}
+	defer r.Close()
+
+	// Since we don't know if it's Parquet, Arrow, etc. from just gs://,
+	// we'll assume Parquet for now or check extension if possible.
+	ext := strings.ToLower(key)
+	if strings.HasSuffix(ext, ".parquet") {
+		// ParquetReader needs a ReaderAt and size, so we buffer to local temp file
+		tmp, err := os.CreateTemp("", "longbow-gcs-*.parquet")
+		if err != nil {
+			log.Fatalf("Failed to create temp file: %v\n", err)
+		}
+		defer os.Remove(tmp.Name())
+		defer tmp.Close()
+
+		fmt.Printf("Buffering GCS object to temp file...\n")
+		if _, err := io.Copy(tmp, r); err != nil {
+			log.Fatalf("Failed to buffer GCS object: %v\n", err)
+		}
+
+		runImportParquet(ctx, sc, dataset, tmp.Name())
+	} else if strings.HasSuffix(ext, ".arrow") {
+		// Arrow stream can be read directly
+		runImportArrowFromReader(ctx, sc, dataset, r)
+	} else {
+		log.Fatalf("Unsupported GCS file extension: %s. Only .parquet and .arrow are supported.\n", key)
+	}
+}
+
+func runImportArrowFromReader(ctx context.Context, sc *client.SmartClient, dataset string, r io.Reader) {
+	start := time.Now()
+	fmt.Printf("Importing Arrow stream to dataset %s...\n", dataset)
+
+	reader, err := ipc.NewReader(r)
+	if err != nil {
+		log.Fatalf("Failed to create arrow reader: %v\n", err)
+	}
+	defer reader.Release()
+
+	desc := &flight.FlightDescriptor{
+		Type: flight.DescriptorPATH,
+		Path: []string{dataset},
+	}
+
+	stream, err := sc.DoPut(ctx, desc)
+	if err != nil {
+		log.Fatalf("DoPut stream failed: %v\n", err)
+	}
+
+	writer := flight.NewRecordWriter(stream, ipc.WithSchema(reader.Schema()))
+	writer.SetFlightDescriptor(desc)
+
+	totalRows := int64(0)
+	for reader.Next() {
+		rec := reader.Record()
+		if err := writer.Write(rec); err != nil {
+			log.Fatalf("Failed to write record batch: %v\n", err)
+		}
+		totalRows += rec.NumRows()
+	}
+
+	_ = writer.Close()
+	if err := stream.CloseSend(); err != nil {
+		log.Fatalf("Failed to close flight stream: %v\n", err)
+	}
+	_, _ = stream.Recv()
+
+	fmt.Printf("Successfully imported %d rows in %v\n", totalRows, time.Since(start))
+}
+
+func runExportS3(ctx context.Context, s3Path, localPath string) {
+	// Parse s3://bucket/key
+	u := strings.TrimPrefix(s3Path, "s3://")
+	parts := strings.SplitN(u, "/", 2)
+	if len(parts) < 2 {
+		log.Fatalf("Invalid S3 path: %s. Expected s3://bucket/key\n", s3Path)
+	}
+	bucket, key := parts[0], parts[1]
+
+	cfg, err := config.LoadDefaultConfig(ctx)
+	if err != nil {
+		log.Fatalf("Failed to load AWS config: %v\n", err)
+	}
+	s3Client := s3.NewFromConfig(cfg)
+
+	f, err := os.Open(filepath.Clean(localPath)) // #nosec G304
+	if err != nil {
+		log.Fatalf("Failed to open local file: %v\n", err)
+	}
+	defer f.Close()
+
+	fmt.Printf("Uploading exported data to S3: %s\n", s3Path)
+	_, err = s3Client.PutObject(ctx, &s3.PutObjectInput{
+		Bucket: &bucket,
+		Key:    &key,
+		Body:   f,
+	})
+	if err != nil {
+		log.Fatalf("Failed to upload to S3: %v\n", err)
+	}
+	fmt.Printf("Successfully uploaded export to %s\n", s3Path)
+}
+
+func runExportGCS(ctx context.Context, gcsPath, localPath string) {
+	// Parse gs://bucket/key
+	u := strings.TrimPrefix(gcsPath, "gs://")
+	parts := strings.SplitN(u, "/", 2)
+	if len(parts) < 2 {
+		log.Fatalf("Invalid GCS path: %s. Expected gs://bucket/key\n", gcsPath)
+	}
+	bucket, key := parts[0], parts[1]
+
+	gcsClient, err := storage.NewClient(ctx)
+	if err != nil {
+		log.Fatalf("Failed to create GCS client: %v\n", err)
+	}
+	defer gcsClient.Close()
+
+	f, err := os.Open(filepath.Clean(localPath)) // #nosec G304
+	if err != nil {
+		log.Fatalf("Failed to open local file: %v\n", err)
+	}
+	defer f.Close()
+
+	fmt.Printf("Uploading exported data to GCS: %s\n", gcsPath)
+	w := gcsClient.Bucket(bucket).Object(key).NewWriter(ctx)
+	if _, err := io.Copy(w, f); err != nil {
+		_ = w.Close()
+		log.Fatalf("Failed to upload to GCS: %v\n", err)
+	}
+	if err := w.Close(); err != nil {
+		log.Fatalf("Failed to close GCS writer: %v\n", err)
+	}
+	fmt.Printf("Successfully uploaded export to %s\n", gcsPath)
 }

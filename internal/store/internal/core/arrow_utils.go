@@ -11,9 +11,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
-// ExtractVectorFromArrow extracts a vector from an Arrow record batch at the given row index.
-// This is a zero-copy operation that returns a slice pointing directly to Arrow's memory.
 // ExtractVectorAny extracts a vector and returns it as a slice of the appropriate type.
+// This is a zero-copy operation that returns a slice pointing directly to Arrow's memory.
 func ExtractVectorAny(rec arrow.RecordBatch, rowIdx, colIdx int) (any, error) {
 	if rec == nil {
 		return nil, fmt.Errorf("record is nil")
@@ -127,11 +126,32 @@ func ExtractVectorGeneric[T any](rec arrow.RecordBatch, rowIdx, colIdx int) ([]T
 	}
 
 	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-	listOffset := listArr.Data().Offset()
-	start := (listOffset + rowIdx) * width
-	values := listArr.Data().Children()[0]
+	
+	// SCALE WIDTH: If the requested type T is larger than the underlying Arrow element type,
+	// we must adjust the width to avoid out-of-bounds access.
+	// For Complex64 (8 bytes) on Float32 (4 bytes), width should be halved.
+	elemType := listArr.DataType().(*arrow.FixedSizeListType).Elem()
+	var arrowElemSize int
+	switch elemType.ID() {
+	case arrow.INT8, arrow.UINT8: arrowElemSize = 1
+	case arrow.INT16, arrow.UINT16, arrow.FLOAT16: arrowElemSize = 2
+	case arrow.INT32, arrow.UINT32, arrow.FLOAT32: arrowElemSize = 4
+	case arrow.INT64, arrow.UINT64, arrow.FLOAT64: arrowElemSize = 8
+	default: arrowElemSize = 1 // Fallback
+	}
+
 	var zero T
-	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
+	requestedElemSize := int(unsafe.Sizeof(zero))
+	
+	if requestedElemSize > arrowElemSize && arrowElemSize > 0 {
+		ratio := requestedElemSize / arrowElemSize
+		width /= ratio
+	}
+
+	listOffset := listArr.Data().Offset()
+	start := (listOffset + rowIdx) * int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+	values := listArr.Data().Children()[0]
+	elemSize := requestedElemSize // #nosec G115
 
 	// Validate bounds and handle potentially truncated buffers (e.g. from Flight IPC)
 	if len(values.Buffers()) > 1 && values.Buffers()[1] != nil {
@@ -377,6 +397,7 @@ func ExtractVectorFromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]float3
 	}
 }
 
+// InferVectorDataType determines the vector data type from the Arrow schema and metadata.
 func InferVectorDataType(schema *arrow.Schema, fieldName string) types.VectorDataType {
 	if schema == nil {
 		return types.VectorTypeFloat32
@@ -458,37 +479,3 @@ func InferVectorDataType(schema *arrow.Schema, fieldName string) types.VectorDat
 	return finalType
 }
 
-func parseVectorType(val string) types.VectorDataType {
-	switch val {
-	case "complex64":
-		return types.VectorTypeComplex64
-	case "complex128":
-		return types.VectorTypeComplex128
-	case "float16":
-		return types.VectorTypeFloat16
-	case "float32":
-		return types.VectorTypeFloat32
-	case "float64":
-		return types.VectorTypeFloat64
-	case "int8":
-		return types.VectorTypeInt8
-	case "uint8":
-		return types.VectorTypeUint8
-	case "int16":
-		return types.VectorTypeInt16
-	case "uint16":
-		return types.VectorTypeUint16
-	case "int32":
-		return types.VectorTypeInt32
-	case "uint32":
-		return types.VectorTypeUint32
-	case "int64":
-		return types.VectorTypeInt64
-	case "uint64":
-		return types.VectorTypeUint64
-	case "turboquant", "tq":
-		return types.VectorTypeTQ
-	default:
-		return types.VectorTypeFloat32
-	}
-}

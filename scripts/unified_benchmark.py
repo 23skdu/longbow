@@ -18,11 +18,16 @@ import json
 import os
 import platform
 import re
+import signal
 import subprocess
 import sys
 import time
-import numpy as np
-import pandas as pd
+try:
+    import numpy as np
+    import pandas as pd
+    HAS_ANALYSIS_LIBS = True
+except ImportError:
+    HAS_ANALYSIS_LIBS = False
 from datetime import datetime
 
 try:
@@ -57,15 +62,21 @@ DTYPE_BYTES = {
 }
 
 
-def run_command(cmd, env=None, capture_output=True, timeout=None):
+def run_command(cmd, env=None, capture_output=True, timeout=None, shell=False):
+    import shlex
     try:
+        if shell:
+            args = cmd
+        else:
+            args = shlex.split(cmd)
+        
         result = subprocess.run(
-            cmd,
+            args,
             env=env,
             capture_output=capture_output,
             text=True,
             timeout=timeout,
-            shell=True,
+            shell=shell,
         )
         return result
     except subprocess.TimeoutExpired:
@@ -109,12 +120,13 @@ class BenchmarkRunner:
         self.data_dir = os.environ.get(
             "LONGBOW_DATA_PATH", os.path.join(os.getcwd(), "data/bench")
         )
-
-        self.bin_dir = os.path.join(os.getcwd(), "bin")
         self.log_dir = os.path.join(os.getcwd(), "data/perf_logs")
+        print(f"DEBUG: data_dir={self.data_dir}")
+        print(f"DEBUG: log_dir={self.log_dir}")
         os.makedirs(self.log_dir, exist_ok=True)
         os.makedirs(self.data_dir, exist_ok=True)
 
+        self.bin_dir = os.path.join(os.getcwd(), "bin")
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         label_suffix = f"_{args.label}" if args.label else ""
         self.output_file = os.path.join(
@@ -122,6 +134,7 @@ class BenchmarkRunner:
         )
         self.results = []
         self.server_pid = None
+        self.test_counter = 0
 
     def get_server_binary(self):
         mode_binaries = {
@@ -194,11 +207,36 @@ class BenchmarkRunner:
         """Start a fresh Longbow server for a specific configuration."""
         self.stop_server()
         
-        # Aggressive port cleanup to avoid "address already in use"
-        port = 3000
+        # Calculate dynamic port to avoid TIME_WAIT issues
+        base_port = self.args.port + (self.test_counter % 50) * 10
+        self.server_addr = f"127.0.0.1:{base_port}"
+        port = base_port
+        self.test_counter += 1
+
+        print(f"  Cleaning up ports starting from {port}...")
         for p in [port, port + 1, port + 80, port + 6000]:
             subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
-        time.sleep(5) # Increased wait time for OS to release sockets
+            if platform.system() == "Linux":
+                subprocess.run(f"fuser -k {p}/tcp 2>/dev/null || true", shell=True)
+        
+        # Wait for ports to be actually free
+        import socket
+        for p in [port, port + 1, port + 80, port + 6000]:
+            for _ in range(30):
+                with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    try:
+                        s.bind(('127.0.0.1', p))
+                        break # Success, we can bind!
+                    except socket.error:
+                        pass # Still in use
+                time.sleep(1.0)
+        
+        # Also kill any lingering longbow processes by name to be sure
+        for name in ["longbow", "longbow-metal", "longbow-cuda", "bench-tool", "benchmark-tool", "longbow-cli"]:
+            subprocess.run(f"pkill -9 -x {name} 2>/dev/null || true", shell=True)
+        
+        time.sleep(1) 
         
         server_bin = self.get_server_binary()
         if not os.path.exists(server_bin):
@@ -209,84 +247,87 @@ class BenchmarkRunner:
         subprocess.run(f"rm -rf {data_root}", shell=True)
         os.makedirs(data_root, exist_ok=True)
 
-        # Build env overrides based on mode
-        if env_overrides is None:
-            env_overrides = {}
-        
-        # Enable temporal index for temporal mode
-        if self.args.mode == "temporal":
-            env_overrides["LONGBOW_TEMPORAL_ENABLED"] = "true"
-            env_overrides["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
-        
-        # Enable geo index for geo mode
-        if self.args.mode == "geo":
-            env_overrides["LONGBOW_GEO_ENABLED"] = "true"
-        
-        # Enable graphrag for graphrag mode
-        if self.args.mode == "graphrag":
-            env_overrides["LONGBOW_GRAPHRAG_ENABLED"] = "true"
-        
         env = os.environ.copy()
         if env_overrides:
             env.update(env_overrides)
-        env["LONGBOW_MAX_MEMORY"] = str(self.args.memory)
+
+        # ── Core resource limits ──────────────────────────────────────────
+        limit_gb = getattr(self.args, "memory", 18 * 1024 * 1024 * 1024)
+        env["LONGBOW_MAX_MEMORY"] = str(limit_gb)
         env["ARROW_DISABLE_LOCKING"] = "1"
+        env["LONGBOW_GOGC"] = "200"
+        env["LONGBOW_INGESTION_WORKER_COUNT"] = "0"
+        env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"
+        env["LONGBOW_AUTOSCALE_ENABLED"] = "false"
+
+        # ── Network addresses ─────────────────────────────────────────────
+        env["LONGBOW_LISTEN_ADDR"] = f"0.0.0.0:{port}"
+        env["LONGBOW_META_ADDR"] = f"0.0.0.0:{port + 1}"
+        env["LONGBOW_REST_ADDR"] = f"0.0.0.0:{port + 80}"
+        env["LONGBOW_METRICS_ADDR"] = f"0.0.0.0:{port + 6000}"
+        env["LONGBOW_DATA_PATH"] = data_root
+        env["LONGBOW_NODE_ID"] = self.node_id
+
+        # ── GPU mode ──────────────────────────────────────────────────────
+        current_mode = getattr(self, "current_mode", self.args.mode)
+        if current_mode in ("metal", "cuda"):
+            env["LONGBOW_GPU_ENABLED"] = "true"
+        else:
+            env["LONGBOW_GPU_ENABLED"] = "false"
+
+        # ── Feature flags (always enabled for comprehensive benchmarking) ─
+        env["LONGBOW_TEMPORAL_ENABLED"] = "true"
+        env["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
+        try:
+            parts = label.split("_")
+            if len(parts) >= 4:
+                dim = parts[-2]
+                env["LONGBOW_TEMPORAL_DIM"] = str(dim)
+        except Exception:
+            pass
+        env["LONGBOW_SPARSE_ENABLED"] = "true"
+        env["LONGBOW_GEOSPATIAL_ENABLED"] = "true"
+        env["LONGBOW_GEO_SEARCH_ENABLED"] = "true"
+        env["LONGBOW_GRAPHRAG_ENABLED"] = "true"
+        env["LONGBOW_LEARNED_INDEX_ENABLED"] = "true"
+        env["LONGBOW_HYBRID_SEARCH_ENABLED"] = "true"
+        env["LONGBOW_HNSW_TURBOQUANT_ENABLED"] = "true"
+        env["LONGBOW_RERANKER_ENABLED"] = "true"
+        env["LONGBOW_INDEXING_ADAPTIVE_ENABLED"] = "true"
+
+        # ── Optional feature flags (CLI-driven) ───────────────────────────
         if self.args.rdma:
             env["LONGBOW_RDMA_ENABLED"] = "true"
         if self.args.iouring:
             env["LONGBOW_STORAGE_USE_IOURING"] = "true"
-
-        # Standardize on port 3000 to ensure single-instance testing
-        port = 3000
-
-        log_file = os.path.join(self.log_dir, f"longbow_{self.args.mode}_{label}.log")
-
-        # Server uses envconfig, not command-line flags
-        env["LONGBOW_LISTEN_ADDR"] = f"127.0.0.1:{port}"
-        env["LONGBOW_META_ADDR"] = f"127.0.0.1:{port + 1}"
-        env["LONGBOW_REST_ADDR"] = f"127.0.0.1:{port + 80}"  # e.g. 3080
-        env["LONGBOW_METRICS_ADDR"] = f"127.0.0.1:{port + 6000}"  # e.g. 9000
-        env["LONGBOW_DATA_PATH"] = data_root
-        env["LONGBOW_NODE_ID"] = self.node_id
-
-        # Performance tuning for benchmarks
-        env["LONGBOW_GOGC"] = "200"  # Reduce GC overhead
-        env["LONGBOW_MAX_MEMORY"] = str(18 * 1024 * 1024 * 1024)  # 18GB - monitor for memory pressure
-        env["LONGBOW_INGESTION_WORKER_COUNT"] = "0"  # Use all CPUs
-        env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"  # Disable snapshots during bench
-        
-        # Storage tuning
         if self.args.low_mem:
             env["LONGBOW_LOW_MEM"] = "1"
         if self.args.use_disk:
             env["LONGBOW_USE_DISK"] = "1"
-        
-        # Benchmark feature flags
         if self.args.pq_ingest:
-            env["LONGBOW_PQ_INGEST"] = "1"  # PQ encode during ingest
-        
-        # Learned index tuning
-        env["LONGBOW_LEARNED_INDEX_ENABLED"] = "true"
-        if self.args.learned_samples:
-            env["LONGBOW_LEARNED_MIN_SAMPLES"] = str(self.args.learned_samples)
-        if self.args.learned_confidence:
-            env["LONGBOW_LEARNED_CONFIDENCE_THRESHOLD"] = str(self.args.learned_confidence)
-        if self.args.learned_interval:
-            env["LONGBOW_LEARNED_UPDATE_INTERVAL"] = str(self.args.learned_interval)
-        
-        # Telemetry
+            env["LONGBOW_PQ_INGEST"] = "1"
         if self.args.debug:
             env["LONGBOW_DEBUG"] = "true"
-            env["LONGBOW_METRICS_SAMPLING_RATE"] = "100"
+        if getattr(self.args, "learned_samples", 0) > 0:
+            env["LONGBOW_LEARNED_MIN_SAMPLES"] = str(self.args.learned_samples)
+        if getattr(self.args, "learned_confidence", 0.0) > 0:
+            env["LONGBOW_LEARNED_CONFIDENCE_THRESHOLD"] = str(self.args.learned_confidence)
+        if getattr(self.args, "learned_interval", 0) > 0:
+            env["LONGBOW_LEARNED_UPDATE_INTERVAL"] = str(self.args.learned_interval)
 
-        # Enable GPU for metal/cuda benchmark modes
-        if self.args.mode in ["metal", "cuda"]:
-            env["LONGBOW_GPU_ENABLED"] = "true"
+        # ── Scale gRPC message size for large workloads ───────────────────
+        max_count = max(int(c) for c in self.args.counts.split(","))
+        if max_count >= 100000:
+            env["LONGBOW_GRPC_MAX_RECV_MSG_SIZE"] = "2147483647"
+            env["LONGBOW_GRPC_MAX_SEND_MSG_SIZE"] = "2147483647"
+            print(f"  Scaling gRPC message size for {max_count} vectors")
 
-        # Enable RDMA for cluster mode
-        if self.args.rdma:
-            env["LONGBOW_RDMA_ENABLED"] = "true"
+        # ── Autoshard threshold: set well above max count to prevent
+        #    mid-benchmark shard migration from distorting timing ──────────
+        shard_threshold = max_count * 2
+        env["AUTO_SHARDING_THRESHOLD"] = str(shard_threshold)
 
+        log_file = os.path.join(self.log_dir, f"longbow_{current_mode}_{label}.log")
         with open(log_file, "w") as f:
             process = subprocess.Popen(
                 [server_bin],
@@ -296,7 +337,10 @@ class BenchmarkRunner:
             )
             self.server_pid = process.pid
 
-        # Wait for server to be ready with robust checking
+        # Wait for server to be ready with robust gRPC /ready polling.
+        # Records the handshake duration and surfaces transient port-collision retries.
+        startup_start = time.time()
+        connection_refused_retries = 0
         for i in range(self.args.startup_timeout):
             # Check if process is still running
             if process.poll() is not None:
@@ -304,26 +348,108 @@ class BenchmarkRunner:
                 self.server_pid = None
                 return False
 
-            # Check if port is listening
-            result = run_command(f"lsof -i :{port} 2>/dev/null | grep LISTEN")
-            if result and result.returncode == 0:
-                # Additional wait for indexing workers to start
-                time.sleep(3)
-                return True
+            # Check if port is listening and server is READY via gRPC/HTTP health check
+            # Metrics port is configured as port + 6000 in start_server
+            metrics_port = port + 6000
+            ready_url = f"http://127.0.0.1:{metrics_port}/ready"
+
+            # 1. First check if port is at least listening
+            lsof_res = run_command(f"lsof -i :{port} 2>/dev/null | grep LISTEN", shell=True)
+            if lsof_res and lsof_res.returncode == 0:
+                # 2. Then check the /ready endpoint
+                try:
+                    # Use curl for cross-platform compatibility without extra python deps
+                    ready_res = subprocess.run(
+                        ["curl", "-s", "-f", ready_url],
+                        capture_output=True,
+                        text=True,
+                        timeout=1
+                    )
+                    if ready_res.returncode == 0 and "OK" in ready_res.stdout:
+                        handshake_duration = time.time() - startup_start
+                        # Additional wait for indexing workers to settle
+                        time.sleep(2)
+                        # Log readiness handshake duration in benchmark summaries
+                        if connection_refused_retries > 0:
+                            print(f"  [readiness] server ready after {handshake_duration:.2f}s "
+                                  f"({connection_refused_retries} transient port-collision retries)")
+                        else:
+                            print(f"  [readiness] server ready in {handshake_duration:.2f}s")
+                        return True
+                    elif ready_res.returncode != 0:
+                        # Transient connection-refused race – count for summary
+                        connection_refused_retries += 1
+                except Exception:
+                    # curl timeout or other transient error – count and retry
+                    connection_refused_retries += 1
+
             time.sleep(1)
 
-        print(f"  WARNING: Server startup timeout on port {port}")
+        elapsed = time.time() - startup_start
+        print(f"  WARNING: Server startup timeout after {elapsed:.1f}s on port {port} "
+              f"({connection_refused_retries} transient retries recorded)")
         return False
 
     def stop_server(self):
         if self.server_pid:
             try:
-                subprocess.run(
-                    f"kill -9 {self.server_pid}", shell=True, stderr=subprocess.DEVNULL
-                )
-            except:
+                os.kill(self.server_pid, signal.SIGTERM)
+                # Wait up to 45 seconds for graceful stop
+                for _ in range(90):
+                    time.sleep(0.5)
+                    try:
+                        pid_reaped, status = os.waitpid(self.server_pid, os.WNOHANG)
+                        if pid_reaped == self.server_pid:
+                            self.server_pid = None
+                            print("  Waiting 5 seconds for port cooling...")
+                            time.sleep(5)
+                            return
+                        os.kill(self.server_pid, 0)
+                    except (ProcessLookupError, ChildProcessError):
+                        self.server_pid = None
+                        print("  Waiting 5 seconds for port cooling...")
+                        time.sleep(5)
+                        return
+                
+                # Fallback to kill -9
+                print(f"  Server PID {self.server_pid} didn't stop gracefully, killing -9")
+                os.kill(self.server_pid, signal.SIGKILL)
+                try:
+                    os.waitpid(self.server_pid, 0)
+                except (ProcessLookupError, ChildProcessError):
+                    pass
+                time.sleep(1)
+            except (ProcessLookupError, ChildProcessError):
                 pass
             self.server_pid = None
+            print("  Waiting 5 seconds for port cooling...")
+            time.sleep(5)
+
+    def collect_pprof(self, label):
+        """Collect pprof profiles from the running server."""
+        profiles = ["profile", "heap", "allocs", "goroutine", "threadcreate", "block", "mutex"]
+        os.makedirs("profiles", exist_ok=True)
+        
+        host, port = self.server_addr.split(":")
+        # Metrics server is typically on base_port + 6000.
+        # unified_benchmark sets LONGBOW_METRICS_ADDR to 127.0.0.1:{port + 6000}
+        metrics_port = int(self.server_addr.split(":")[-1]) + 6000
+        
+        for profile in profiles:
+            url = f"http://{host}:{metrics_port}/debug/pprof/{profile}"
+            if profile == "profile":
+                url += "?seconds=1"
+            
+            output_file = os.path.join("profiles", f"{label}_{profile}_{self.timestamp}.pprof")
+            try:
+                res = subprocess.run(f"curl -s -v -o {output_file} {url}", shell=True, capture_output=True, text=True, timeout=15)
+                if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                    print(f"  Collected {profile} profile")
+                else:
+                    print(f"  Failed to collect {profile} profile: {res.stderr}")
+            except Exception as e:
+                print(f"  Error collecting {profile}: {e}")
+                continue
 
     def run_benchmark_cli(self, dim, dtype, count, label):
         """Run benchmark using longbow-cli for comparison"""
@@ -346,6 +472,9 @@ class BenchmarkRunner:
     
     def run_benchmark_sdk(self, dim, dtype, count, label):
         """Run benchmark using Python SDK for accuracy comparison"""
+        if not HAS_ANALYSIS_LIBS:
+            print("  Skipping SDK test: numpy/pandas not installed")
+            return False
         client = self.get_sdk_client()
         if not client:
             return False
@@ -395,7 +524,7 @@ class BenchmarkRunner:
     def run_benchmark(self, dim, dtype, count, label):
         """Run benchmark-tool with JSON output for a configuration."""
         bench_tool = self.get_bench_tool()
-        batch_size = min(count, self.args.batch_size)
+        batch_size = count
         duration = self.args.duration
         json_file = os.path.join(self.log_dir, f"result_{label}.json")
 
@@ -417,18 +546,31 @@ class BenchmarkRunner:
             uri = f"grpc://{self.server_addr}"
         
         # Build search-modes string based on mode
-        search_modes = "dense,hybrid,sparse,filtered,byid"
-        if self.args.mode == "temporal":
+        search_modes = self.args.search_modes
+        if self.args.mode == "temporal" and search_modes == "all":
             search_modes = "temporal_as_of,temporal_range,temporal_window"
         
-        cmd = f"{bench_tool} -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -dataset {label} -json {json_file}"
+        extra_args = ""
+        if self.args.fbin:
+            extra_args += f" -fbin {self.args.fbin}"
+        if self.args.arrow:
+            extra_args += f" -fbin {self.args.arrow}"
+            
+        if self.args.generate_only:
+            os.makedirs(self.args.output_dir, exist_ok=True)
+            output_path = os.path.join(self.args.output_dir, f"{label}.fbin")
+            extra_args += f" -output-fbin {output_path}"
+            print(f"  Generating {dtype} dim={dim} count={batch_size} -> {output_path}")
+        
+        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
+        print(f"DEBUG: cmd={cmd}", flush=True)
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)
         
         label_full = f"{label}_{self.args.label}" if self.args.label else label
         pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
+        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=1"
         
         pprof_proc = None
         if "127.0.0.1" in self.server_addr or "localhost" in self.server_addr:
@@ -456,6 +598,7 @@ class BenchmarkRunner:
                 print(f"    Error: {result.stderr.strip()}")
             return False
 
+        print(f"DEBUG: json_file={json_file}")
         metrics = parse_bench_json(json_file)
         if not metrics:
             print(" NO DATA")
@@ -499,9 +642,9 @@ class BenchmarkRunner:
         return True
 
     def execute_recommend(self):
-        if not HAS_LONGBOW_SDK:
+        if not HAS_LONGBOW_SDK or not HAS_ANALYSIS_LIBS:
             print(
-                "Error: longbow Python SDK not installed. Install with: pip install longbow"
+                "Error: longbow SDK or numpy/pandas not installed."
             )
             return
 
@@ -735,9 +878,9 @@ class BenchmarkRunner:
 
     def execute_graphrag(self):
         """Test GraphRAG graph spreading activation operations."""
-        if not HAS_LONGBOW_SDK:
+        if not HAS_LONGBOW_SDK or not HAS_ANALYSIS_LIBS:
             print(
-                "Error: longbow Python SDK not installed. Install with: pip install longbow"
+                "Error: longbow SDK or numpy/pandas not installed."
             )
             return
 
@@ -784,7 +927,7 @@ class BenchmarkRunner:
                         label_full = f"{label}_{self.args.label}" if self.args.label else label
                         pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
                         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
+                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=1"
                         pprof_proc = subprocess.Popen(
                             f"curl -s -o {pprof_file} \"{pprof_url}\"",
                             shell=True,
@@ -1123,7 +1266,7 @@ class BenchmarkRunner:
                         label_full = f"{label}_{self.args.label}" if self.args.label else label
                         pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
                         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
+                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=1"
                         pprof_proc = subprocess.Popen(
                             f"curl -s -o {pprof_file} \"{pprof_url}\"",
                             shell=True,
@@ -2015,106 +2158,135 @@ class BenchmarkRunner:
             )
 
     def execute(self):
-        if self.args.mode == "learned_index":
-            self.execute_learned_index()
-            return
-        if self.args.mode == "recommend":
-            self.execute_recommend()
-            return
-        if self.args.mode == "deletion":
-            self.execute_deletion()
-            return
-        if self.args.mode in ["graphrag", "recommend", "geo", "temporal"]:
-            # All specialized modes now use Go bench-tool for performance
-            pass
-        else:
-            if self.args.mode == "exchange":
+        modes = self.args.mode.split(",")
+        print(f"Executing benchmarks for modes: {modes}")
+        
+        for mode in modes:
+            mode = mode.strip()
+            self.current_mode = mode
+            print(f"\n{'#' * 80}")
+            print(f"SWITCHING TO MODE: {mode}")
+            print(f"{'#' * 80}")
+            
+            if mode == "learned_index":
+                self.execute_learned_index()
+                continue
+            if mode == "recommend":
+                self.execute_recommend()
+                continue
+            if mode == "deletion":
+                self.execute_deletion()
+                continue
+            if mode == "graphrag":
+                self.execute_graphrag()
+                continue
+            if mode == "geo":
+                self.execute_geo()
+                continue
+            if mode == "exchange":
                 self.execute_exchange()
-                return
-            if self.args.mode == "cluster":
+                continue
+            if mode == "cluster":
                 self.execute_cluster()
-                return
-            if self.args.mode == "onnx":
+                continue
+            if mode == "onnx":
                 self.execute_onnx()
-                return
-            if self.args.mode == "churn":
+                continue
+            if mode == "churn":
                 self.execute_churn()
-                return
+                continue
 
-        dims = [int(d) for d in self.args.dims.split(",")]
-        counts = [int(c) for c in self.args.counts.split(",")]
-        dtypes = self.args.dtypes.split(",")
+            # Default logic for cpu/metal/cuda
+            dims = [int(d) for d in self.args.dims.split(",")]
+            counts = [int(c) for c in self.args.counts.split(",")]
+            dtypes = self.args.dtypes.split(",")
 
-        count = counts[0] if counts else 1000
+            count = counts[0] if counts else 1000
 
-        total = len(dims) * len(dtypes)
-        current = 0
+            self.check_cuda()
 
-        self.check_cuda()
+            print("=" * 80)
+            print(f"UNIFIED BENCHMARK MATRIX ({mode.upper()})")
+            print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+            print(f"Platform: {platform.system()} {platform.machine()}")
+            print(f"Dims: {dims}")
+            print(f"Count: {count}")
+            print(f"Types: {dtypes}")
+            print("=" * 80)
+            
+            print("=" * 80)
+            
+            self.results = [] # Clear results for each mode
+            total = len(dims) * len(dtypes)
+            current = 0
+            
+            print(f"Duration per test: {self.args.duration}s")
+            print("=" * 80)
 
-        print("=" * 80)
-        print(f"UNIFIED BENCHMARK MATRIX ({self.args.mode.upper()})")
-        print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-        print(f"Platform: {platform.system()} {platform.machine()}")
-        print(f"Dims: {dims}")
-        print(f"Count: {count}")
-        print(f"Types: {dtypes}")
-        print(f"Duration per test: {self.args.duration}s")
-        print("=" * 80)
+            for count in counts:
+                print(f"\n{'=' * 70}")
+                print(f"Vector Count: {count}")
+                print(f"{'=' * 70}")
 
-        for count in counts:
-            print(f"\n{'=' * 70}")
-            print(f"Vector Count: {count}")
-            print(f"{'=' * 70}")
+                for dtype in dtypes:
+                    print(f"\n{'━' * 70}")
+                    print(f"Data Type: {dtype} (Count: {count})")
+                    print(f"{'━' * 70}")
 
-            for dtype in dtypes:
-                print(f"\n{'━' * 70}")
-                print(f"Data Type: {dtype} (Count: {count})")
-                print(f"{'━' * 70}")
-
-                base_port = 3000
-                port_offset = 0
-                for dim in dims:
-                    current += 1
-                    current_port = 3000
-                    self.server_addr = f"127.0.0.1:{current_port}"
-                    
-                    label = f"{self.args.mode}_{dtype}_{dim}_{count}"
-                    print(
-                        f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count} port={current_port}"
-                    )
-
-                    # Start fresh server for this config
-                    if not self.start_server(label):
-                        print("  Failed to start server!")
-                        continue
-
-                    try:
-                        self.run_benchmark(dim, dtype, count, label)
+                    for dim in dims:
+                        current += 1
+                        current_port = self.args.port
+                        self.server_addr = f"127.0.0.1:{current_port}"
                         
-                        # Partial save for real-time monitoring
-                        with open(self.output_file, "w") as f:
-                            json.dump(
-                                {
-                                    "mode": self.args.mode,
-                                    "timestamp": self.timestamp,
-                                    "platform": f"{platform.system()} {platform.machine()}",
-                                    "config": {
-                                        "dims": dims,
-                                        "counts": counts,
-                                        "dtypes": dtypes,
-                                        "duration": self.args.duration,
+                        label = f"{mode}_{dtype}_{dim}_{count}"
+                        print(
+                            f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count} port={current_port}"
+                        )
+
+                        # Skip server startup if only generating data
+                        if self.args.generate_only:
+                            try:
+                                self.run_benchmark(dim, dtype, count, label)
+                            except Exception as e:
+                                print(f"  Generation failed: {e}")
+                            continue
+
+                        # Start fresh server for this config
+                        if not self.start_server(label):
+                            print("  Failed to start server!")
+                            continue
+
+                        try:
+                            self.run_benchmark(dim, dtype, count, label)
+                            
+                            # Partial save for real-time monitoring
+                            with open(self.output_file, "w") as f:
+                                json.dump(
+                                    {
+                                        "mode": mode,
+                                        "timestamp": self.timestamp,
+                                        "platform": f"{platform.system()} {platform.machine()}",
+                                        "config": {
+                                            "dims": dims,
+                                            "counts": counts,
+                                            "dtypes": dtypes,
+                                            "duration": self.args.duration,
+                                        },
+                                        "results": self.results,
                                     },
-                                    "results": self.results,
-                                },
-                                f,
-                                indent=2,
-                            )
-                    finally:
-                        self.stop_server()
-                        # Clean up data directory
-                        data_root = os.path.join(self.data_dir, label)
-                        subprocess.run(f"rm -rf {data_root}", shell=True)
+                                    f,
+                                    indent=2,
+                                )
+                            if self.args.pprof:
+                                self.collect_pprof(label)
+                                time.sleep(1)
+                        finally:
+                            self.stop_server()
+                            # Clean up data directory
+                            data_root = os.path.join(self.data_dir, label)
+                            subprocess.run(f"rm -rf {data_root}", shell=True)
+        
+        self.print_summary()
 
         # Save results
         with open(self.output_file, "w") as f:
@@ -2241,16 +2413,17 @@ class BenchmarkRunner:
         print("─" * 100)
 
         for r in self.results:
-            for s_type, s_data in r["search"].items():
+            search_results = r.get("search", {})
+            for s_type, s_data in search_results.items():
                 print(
-                    f"{r['dim']:<8} "
-                    f"{r['dtype']:<12} "
-                    f"{r['count']:<8} "
+                    f"{r.get('dim', 'N/A'):<8} "
+                    f"{r.get('dtype', 'N/A'):<12} "
+                    f"{r.get('count', 'N/A'):<8} "
                     f"{s_type:<15} "
-                    f"{s_data['qps']:<10.1f} "
-                    f"{s_data['p50']:<8.3f} "
-                    f"{s_data['p95']:<8.3f} "
-                    f"{s_data['p99']:<8.3f}"
+                    f"{s_data.get('qps', 0):<10.1f} "
+                    f"{s_data.get('p50', 0):<8.3f} "
+                    f"{s_data.get('p95', 0):<8.3f} "
+                    f"{s_data.get('p99', 0):<8.3f}"
                 )
         print("─" * 100)
 
@@ -2415,6 +2588,8 @@ class BenchmarkRunner:
             )
 
             for r in self.results:
+                if not isinstance(r, dict) or "search" not in r:
+                    continue
                 search = r["search"]
                 dense = search.get("dense", {"qps": 0, "p50": 0})
                 hybrid = search.get("hybrid", {"qps": 0, "p50": 0})
@@ -2441,8 +2616,9 @@ class BenchmarkRunner:
             )
 
             # Use largest count for the summary table
-            max_count = max(r["count"] for r in self.results) if self.results else 0
-            for r in self.results:
+            valid_results = [r for r in self.results if isinstance(r, dict) and "count" in r and "search" in r]
+            max_count = max(r["count"] for r in valid_results) if valid_results else 0
+            for r in valid_results:
                 if r["count"] == max_count:
                     dense = r["search"].get(
                         "dense", {"qps": 0, "p50": 0, "p90": 0, "p95": 0, "p99": 0}
@@ -2457,26 +2633,11 @@ class BenchmarkRunner:
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Unified Longbow Benchmark Script")
+    parser = argparse.ArgumentParser(description="Longbow Unified Benchmark Orchestrator")
     parser.add_argument(
         "--mode",
-        choices=[
-            "cpu",
-            "metal",
-            "cuda",
-            "onnx",
-            "recommend",
-            "deletion",
-            "graphrag",
-            "exchange",
-            "cluster",
-            "temporal",
-            "geo",
-            "churn",
-            "learned_index",
-        ],
         default="cpu",
-        help="Benchmark mode: cpu, metal, cuda, onnx, recommend, deletion, graphrag, exchange, cluster, temporal, geo, churn, learned_index (k-NN adaptive index scorer)",
+        help="Benchmark mode(s), comma-separated: cpu, metal, cuda, onnx, recommend, deletion, graphrag, exchange, cluster, temporal, geo, churn, learned_index",
     )
     parser.add_argument(
         "--dims", default="128,384,768,1536,3072", help="Comma-separated dimensions"
@@ -2511,7 +2672,7 @@ if __name__ == "__main__":
         "--batch-size", type=int, default=1000, help="Batch size for ingest"
     )
     parser.add_argument(
-        "--startup-timeout", type=int, default=60, help="Server startup timeout"
+        "--startup-timeout", type=int, default=120, help="Server startup timeout"
     )
     parser.add_argument("--addr", default="127.0.0.1:3000", help="Server address")
     parser.add_argument(
@@ -2638,7 +2799,49 @@ if __name__ == "__main__":
         action="store_true",
         help="Enable io_uring optimized Parquet snapshots",
     )
+    # Benchmarking Infrastructure (Large Scale)
+    parser.add_argument(
+        "--fbin",
+        help="Path to an .fbin file for ingestion benchmarks",
+    )
+    parser.add_argument(
+        "--arrow",
+        help="Path to an Arrow IPC file for ingestion benchmarks",
+    )
+    parser.add_argument(
+        "--generate-only",
+        action="store_true",
+        help="Only generate the test data files and exit",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="data/generated",
+        help="Directory to save generated data files",
+    )
+    parser.add_argument(
+        "--pprof",
+        action="store_true",
+        help="Enable pprof collection during benchmarks",
+    )
 
+    parser.add_argument(
+        "--port",
+        type=int,
+        default=3000,
+        help="Base port for server instances (default 3000)",
+    )
+    parser.add_argument(
+        "--workers",
+        type=int,
+        default=8,
+        help="Number of concurrent search workers (default 8)",
+    )
+    parser.add_argument(
+        "--search-modes",
+        type=str,
+        default="all",
+        help="Comma-separated search modes to run (default: all)",
+    )
     args = parser.parse_args()
     runner = BenchmarkRunner(args)
     runner.execute()

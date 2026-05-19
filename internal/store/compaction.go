@@ -9,32 +9,38 @@ import (
 
 // CompactionConfig holds configuration for background compaction processes.
 type CompactionConfig struct {
-	// Enable compaction background process
+	// Enabled controls whether the background compaction process is active.
 	Enabled bool
 
-	// How often to check for compaction needs
+	// CheckInterval is how often to check for compaction needs.
 	CheckInterval time.Duration
 
-	// Size-based triggers
-	TargetBatchSize     int
+	// TargetBatchSize is the desired size of a batch after compaction.
+	TargetBatchSize int
+	// MinBatchesToCompact is the minimum number of fragmented batches required to trigger compaction.
 	MinBatchesToCompact int
 
-	// Minimum threshold to trigger compaction
+	// MinFragmentationRatio is the ratio of deleted nodes to trigger compaction.
 	MinFragmentationRatio float64
-	MinDeletedNodes       int
+	// MinDeletedNodes is the minimum number of deleted nodes to trigger compaction.
+	MinDeletedNodes int
 
-	// Compaction behavior
+	// MaxCompactionTime is the maximum allowed duration for a single compaction run.
 	MaxCompactionTime time.Duration
-	ParallelWorkers   int
+	// ParallelWorkers is the number of goroutines to use for compaction.
+	ParallelWorkers int
 
-	// Resource limits
+	// MaxMemoryUsageMB is the memory limit for the compaction process.
 	MaxMemoryUsageMB int
-	MaxCPUUsage      float64
+	// MaxCPUUsage is the CPU limit for the compaction process (0.0 to 1.0).
+	MaxCPUUsage float64
 
-	// Strategy settings
-	TriggerThresholds  map[string]int64
+	// TriggerThresholds holds named thresholds for triggering compaction.
+	TriggerThresholds map[string]int64
+	// CompactionStrategy defines the compaction algorithm to use.
 	CompactionStrategy string
 
+	// RateLimitBytesPerSec limits the I/O rate of compaction.
 	RateLimitBytesPerSec int64
 }
 
@@ -214,12 +220,15 @@ func (w *CompactionWorker) compactDataset(name string) {
 
 // GetStats returns compaction worker statistics.
 func (w *CompactionWorker) GetStats() (total, failed int64, lastTime time.Time, isRunning bool) {
+	w.mu.RLock()
+	defer w.mu.RUnlock()
 	return w.totalCompactions.Load(),
 		w.failedCompactions.Load(),
 		w.lastCompaction,
 		w.running.Load()
 }
 
-func (cw *CompactionWorker) TriggerCompaction() {
+// TriggerCompaction signals the worker to start a compaction cycle.
+func (w *CompactionWorker) TriggerCompaction() {
 	// Signal worker to start compaction cycle
 }

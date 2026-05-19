@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"sort"
 	"sync"
 
@@ -14,12 +15,15 @@ import (
 )
 
 // MLModel defines the interface for ML model inference
+// MLModel defines the interface for ML model inference.
 type MLModel interface {
+	// Score calculates relevance scores for a query and a set of documents.
 	Score(query string, documents []string) ([]float32, error)
+	// Close releases resources associated with the model.
 	Close() error
 }
 
-// ONNXReranker uses ONNX Runtime for cross-encoder reranking
+// ONNXReranker uses ONNX Runtime or WASM for cross-encoder reranking.
 type ONNXReranker struct {
 	model     MLModel
 	modelPath string
@@ -27,7 +31,7 @@ type ONNXReranker struct {
 	mu        sync.RWMutex
 }
 
-// NewONNXReranker creates a new ONNX-based reranker
+// NewONNXReranker creates a new ONNX-based reranker.
 func NewONNXReranker(modelPath string, logger zerolog.Logger) (*ONNXReranker, error) {
 	if modelPath == "" {
 		return nil, errors.New("model path is required")
@@ -70,10 +74,7 @@ func (r *ONNXReranker) initModel() error {
 			r.logger.Warn().Err(err).Str("path", r.modelPath).Msg("Failed to initialize ONNX session, using fallback")
 		}
 	}
-	// Default: use heuristic stub model
-	r.logger.Warn().Str("path", r.modelPath).Msg("Using heuristic fallback reranker (stubMLModel) - real ONNX/WASM models highly recommended for production")
-	r.model = &stubMLModel{path: r.modelPath}
-	return nil
+	return fmt.Errorf("strict model validation failed: unknown model extension for %s (use .onnx or .wasm)", r.modelPath)
 }
 
 type onnxModelWrapper struct {
@@ -123,6 +124,7 @@ func (w *wasmModelWrapper) Close() error {
 	return w.runner.Close(context.Background())
 }
 
+// Rerank performs second-stage reranking on search results using an ML model.
 func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {
 	if len(results) == 0 {
 		return results, nil
@@ -133,7 +135,7 @@ func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []Searc
 	r.mu.RUnlock()
 
 	if model == nil {
-		hr := &CrossEncoderReranker{ModelName: "fallback"}
+		hr := &HeuristicReranker{ModelName: "fallback"}
 		return hr.Rerank(ctx, query, results)
 	}
 
@@ -158,7 +160,7 @@ func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []Searc
 
 	scores, err := model.Score(query, documents)
 	if err != nil {
-		hr := &CrossEncoderReranker{ModelName: "fallback"}
+		hr := &HeuristicReranker{ModelName: "fallback"}
 		return hr.Rerank(ctx, query, results)
 	}
 
@@ -188,6 +190,7 @@ func (r *ONNXReranker) Rerank(ctx context.Context, query string, results []Searc
 	return reranked, nil
 }
 
+// Close releases the underlying ML model resources.
 func (r *ONNXReranker) Close() error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -211,6 +214,7 @@ func (r *stubMLModel) Score(query string, documents []string) ([]float32, error)
 			if contains(docLower, queryLower) {
 				score = 0.9
 			} else {
+				// Use the logic from HeuristicReranker if available, or stay simple here
 				matchCount := countKeywordMatches(queryLower, docLower)
 				score = float32(0.3) + float32(matchCount)*float32(0.15)
 				if score > 0.8 {
@@ -221,6 +225,93 @@ func (r *stubMLModel) Score(query string, documents []string) ([]float32, error)
 		scores[i] = score
 	}
 	return scores, nil
+}
+
+// Reranker defines the interface for the second-stage re-ranking
+type Reranker interface {
+	Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error)
+}
+
+// HeuristicReranker implements a second-stage reranker using text-matching heuristics.
+type HeuristicReranker struct {
+	ModelName string
+}
+
+// Rerank re-orders the search results based on a cross-encoder model or heuristic.
+func (r *HeuristicReranker) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {
+	if len(results) == 0 {
+		return results, nil
+	}
+
+	type scoredResult struct {
+		result SearchResult
+		score  float32
+	}
+
+	scored := make([]scoredResult, len(results))
+	for i, result := range results {
+		score := r.scoreResult(query, result)
+		scored[i] = scoredResult{result: result, score: score}
+	}
+
+	sort.Slice(scored, func(i, j int) bool {
+		return scored[i].score > scored[j].score
+	})
+
+	reranked := make([]SearchResult, len(results))
+	for i, sr := range scored {
+		reranked[i] = sr.result
+		reranked[i].Score = sr.score
+	}
+
+	return reranked, nil
+}
+
+func (r *HeuristicReranker) scoreResult(query string, result SearchResult) float32 {
+	distanceScore := 1.0 / (1.0 + float32(result.Distance))
+
+	textMatchScore := float32(0.0)
+	if len(result.Metadata) > 0 {
+		metaMap, _ := core.DecodeMetadata(result.Metadata)
+		if metaMap != nil {
+			if title, ok := metaMap["title"].(string); ok {
+				textMatchScore += r.textMatchScore(query, title)
+			}
+			if description, ok := metaMap["description"].(string); ok {
+				textMatchScore += r.textMatchScore(query, description) * 0.5
+			}
+			if content, ok := metaMap["content"].(string); ok {
+				textMatchScore += r.textMatchScore(query, content) * 0.3
+			}
+		}
+	}
+
+	finalScore := 0.7*distanceScore + 0.3*textMatchScore
+
+	return finalScore
+}
+
+func (r *HeuristicReranker) textMatchScore(query, text string) float32 {
+	if query == "" || text == "" {
+		return 0.0
+	}
+
+	queryLower := toLowerCase(query)
+	textLower := toLowerCase(text)
+
+	matchCount := 0
+	queryTerms := splitWords(queryLower)
+	for _, term := range queryTerms {
+		if contains(textLower, term) {
+			matchCount++
+		}
+	}
+
+	if len(queryTerms) == 0 {
+		return 0.0
+	}
+
+	return float32(matchCount) / float32(len(queryTerms))
 }
 
 func toLowerCase(s string) string {
@@ -284,8 +375,10 @@ func (r *stubMLModel) Close() error {
 	return nil
 }
 
+// RerankerFactory creates reranker instances based on configuration.
 type RerankerFactory struct{}
 
+// CreateReranker builds a reranker from a configuration map.
 func (f *RerankerFactory) CreateReranker(config map[string]interface{}) (Reranker, error) {
 	rerankerType, _ := config["type"].(string)
 	modelPath, _ := config["model_path"].(string)
@@ -303,16 +396,18 @@ func (f *RerankerFactory) CreateReranker(config map[string]interface{}) (Reranke
 		logger := zerolog.Nop()
 		return NewONNXReranker(modelPath, logger)
 	case "heuristic", "":
-		return &CrossEncoderReranker{ModelName: "default"}, nil
+		return &HeuristicReranker{ModelName: "default"}, nil
 	default:
 		return nil, errors.New("unknown reranker type: " + rerankerType)
 	}
 }
 
+// NewDefaultRerankerFactory creates a new RerankerFactory instance.
 func NewDefaultRerankerFactory() *RerankerFactory {
 	return &RerankerFactory{}
 }
 
+// AutoSelectReranker returns a default reranker suitable for general use.
 func AutoSelectReranker() Reranker {
-	return &CrossEncoderReranker{ModelName: "auto"}
+	return &HeuristicReranker{ModelName: "auto"}
 }

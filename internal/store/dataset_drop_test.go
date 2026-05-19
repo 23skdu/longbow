@@ -22,9 +22,9 @@ func TestStore_DropDataset_FastPath(t *testing.T) {
 
 	ctx := context.Background()
 
-	// 2. Inject Dataset using internal helper if available, or public API
+	// 2. Inject Dataset using internal helper
 	dsName := "test_drop_heavy"
-	ds := &Dataset{Name: dsName}
+	ds := NewDataset(dsName, nil)
 
 	// Use updateDatasets if available (package private)
 	s.updateDatasets(func(m map[string]*Dataset) {

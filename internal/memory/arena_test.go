@@ -69,11 +69,22 @@ func TestSlabArena_Alloc_Growth(t *testing.T) {
 	assert.GreaterOrEqual(t, int(off3), 128)
 }
 func TestSlabArena_Alloc_TooLarge(t *testing.T) {
-	arena := NewSlabArena(100) // Will be clamped to 1024 internally
+	arena := NewSlabArena(1024)
 
-	// Alloc 2000 bytes > 1KB slab limit
-	_, err := arena.Alloc(2000)
-	assert.Error(t, err)
+	// Alloc 2000 bytes > 1KB slab limit. This should succeed via dynamic slab capacity expansion!
+	offset, err := arena.Alloc(2000)
+	require.NoError(t, err)
+	assert.NotZero(t, offset)
+
+	// Verify we can write and read the entire 2000 bytes contiguously
+	slice := arena.Get(offset, 2000)
+	require.Len(t, slice, 2000)
+	slice[0] = 0xAA
+	slice[1999] = 0x55
+
+	sliceAgain := arena.Get(offset, 2000)
+	assert.Equal(t, byte(0xAA), sliceAgain[0])
+	assert.Equal(t, byte(0x55), sliceAgain[1999])
 }
 
 func TestRef_Encoding(t *testing.T) {
@@ -208,7 +219,7 @@ func BenchmarkSlabArena_Comparison(b *testing.B) {
 	})
 }
 
-func FuzzSlabArena_FastPath(f *testing.F) {
+func FuzzSlabArenaFastPath(f *testing.F) {
 	f.Add(uint32(1024), uint32(100))
 	f.Add(uint32(4096), uint32(500))
 	f.Add(uint32(8192), uint32(1000))
@@ -249,7 +260,7 @@ func FuzzSlabArena_FastPath(f *testing.F) {
 	})
 }
 
-func FuzzSlabArena_FastPathConcurrent(f *testing.F) {
+func FuzzSlabArenaFastPathConcurrent(f *testing.F) {
 	f.Add(uint32(4096), uint32(10), uint32(100))
 	f.Add(uint32(8192), uint32(20), uint32(200))
 

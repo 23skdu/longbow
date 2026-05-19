@@ -21,9 +21,12 @@ import (
 )
 
 const (
+	// DatasetFileExtension is the default file extension for exported datasets.
 	DatasetFileExtension = ".parquet"
-	DatasetMagic         = "LONGDATASET"
-	DatasetVersion       = 1
+	// DatasetMagic is the magic string used to identify Longbow dataset files.
+	DatasetMagic = "LONGDATASET"
+	// DatasetVersion is the current version of the dataset export format.
+	DatasetVersion = 1
 )
 
 var datasetExportBufferPool = sync.Pool{
@@ -41,14 +44,17 @@ func putDatasetBuffer(b *bytes.Buffer) {
 	datasetExportBufferPool.Put(b)
 }
 
+// DatasetIO handles importing and exporting datasets in various formats.
 type DatasetIO struct {
 	vs *VectorStore
 }
 
+// NewDatasetIO creates a new DatasetIO instance.
 func NewDatasetIO(vs *VectorStore) *DatasetIO {
 	return &DatasetIO{vs: vs}
 }
 
+// DatasetHeader contains metadata for an exported dataset.
 type DatasetHeader struct {
 	Magic      string    `json:"magic"`
 	Version    int       `json:"version"`
@@ -62,6 +68,7 @@ type DatasetHeader struct {
 	VectorType string    `json:"vector_type"`
 }
 
+// Validate checks if the header magic and version are supported.
 func (d *DatasetHeader) Validate() error {
 	if d.Magic != DatasetMagic {
 		return fmt.Errorf("invalid magic: expected %s, got %s", DatasetMagic, d.Magic)
@@ -72,6 +79,7 @@ func (d *DatasetHeader) Validate() error {
 	return nil
 }
 
+// DatasetParquetRecord defines the structure of a single record when exporting to Parquet.
 type DatasetParquetRecord struct {
 	ID        int64  `parquet:"id,optional"`
 	Vector    []byte `parquet:"vector,optional"`
@@ -79,6 +87,7 @@ type DatasetParquetRecord struct {
 	CreatedAt int64  `parquet:"created_at,optional"`
 }
 
+// ExportToParquet exports a dataset to Parquet format using the provided backend.
 func (d *DatasetIO) ExportToParquet(ctx context.Context, name string, backend storage.SnapshotBackend) (int64, error) {
 	startTime := time.Now()
 	ds, ok := d.vs.getDataset(name)
@@ -88,7 +97,7 @@ func (d *DatasetIO) ExportToParquet(ctx context.Context, name string, backend st
 	}
 
 	ds.dataMu.RLock()
-	numRecords := len(ds.Records)
+	numRecords := len(ds.Records.Read())
 	ds.dataMu.RUnlock()
 
 	if numRecords == 0 {
@@ -104,8 +113,8 @@ func (d *DatasetIO) ExportToParquet(ctx context.Context, name string, backend st
 
 	var vectorDim int
 	ds.dataMu.RLock()
-	if len(ds.Records) > 0 {
-		rec := ds.Records[0]
+	if len(ds.Records.Read()) > 0 {
+		rec := ds.Records.Read()[0]
 		for _, f := range rec.Schema().Fields() {
 			if f.Name == "vector" {
 				if fType, ok := f.Type.(*arrow.FixedSizeListType); ok {
@@ -148,7 +157,7 @@ func (d *DatasetIO) ExportToParquet(ctx context.Context, name string, backend st
 	parquetBuf := getDatasetBuffer()
 	defer putDatasetBuffer(parquetBuf)
 	ds.dataMu.RLock()
-	totalVectors, err := d.writeRecordsToParquet(ds.Records, parquetBuf)
+	totalVectors, err := d.writeRecordsToParquet(ds.Records.Read(), parquetBuf)
 	ds.dataMu.RUnlock()
 
 	if err != nil {
@@ -295,6 +304,7 @@ func (d *DatasetIO) writeRecordsToParquet(records []arrow.RecordBatch, buf *byte
 	return totalRows, nil
 }
 
+// ImportFromParquet imports a dataset from Parquet format.
 func (d *DatasetIO) ImportFromParquet(ctx context.Context, snapshotName, datasetName string, backend storage.SnapshotBackend, schema *arrow.Schema) (int64, error) {
 	startTime := time.Now()
 
@@ -402,6 +412,7 @@ func (d *DatasetIO) readParquetToRecords(r io.Reader, ds *Dataset) (int64, error
 	return ingester.Ingest(context.Background(), tmpPath)
 }
 
+// ExportToArrowIPC exports a dataset to Arrow IPC format.
 func (d *DatasetIO) ExportToArrowIPC(ctx context.Context, name string, backend storage.SnapshotBackend) (int64, error) {
 	startTime := time.Now()
 	ds, ok := d.vs.getDataset(name)
@@ -411,7 +422,7 @@ func (d *DatasetIO) ExportToArrowIPC(ctx context.Context, name string, backend s
 	}
 
 	ds.dataMu.RLock()
-	numRecords := len(ds.Records)
+	numRecords := len(ds.Records.Read())
 	ds.dataMu.RUnlock()
 
 	if numRecords == 0 {
@@ -428,7 +439,7 @@ func (d *DatasetIO) ExportToArrowIPC(ctx context.Context, name string, backend s
 
 	ds.dataMu.RLock()
 	totalRows := int64(0)
-	for _, rec := range ds.Records {
+	for _, rec := range ds.Records.Read() {
 		totalRows += rec.NumRows()
 		if err := writer.Write(rec); err != nil {
 			ds.dataMu.RUnlock()
@@ -455,6 +466,7 @@ func (d *DatasetIO) ExportToArrowIPC(ctx context.Context, name string, backend s
 	return totalRows, nil
 }
 
+// ImportFromArrowIPC imports a dataset from Arrow IPC format.
 func (d *DatasetIO) ImportFromArrowIPC(ctx context.Context, name string, backend storage.SnapshotBackend, schema *arrow.Schema) (int64, error) {
 	startTime := time.Now()
 
@@ -489,9 +501,18 @@ func (d *DatasetIO) ImportFromArrowIPC(ctx context.Context, name string, backend
 			break
 		}
 		totalRows += rec.NumRows()
-		batchIdx := len(ds.Records)
-		ds.Records = append(ds.Records, rec)
-		ds.BatchNodes = append(ds.BatchNodes, -1)
+		currentRecords := ds.Records.Read()
+		batchIdx := len(currentRecords)
+		newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
+		copy(newRecords, currentRecords)
+		newRecords[len(currentRecords)] = rec
+		ds.Records.UpdateInPlace(newRecords)
+ 
+		currentNodes := ds.BatchNodes.Read()
+		newNodes := make([]int, len(currentNodes)+1)
+		copy(newNodes, currentNodes)
+		newNodes[len(currentNodes)] = -1
+		ds.BatchNodes.UpdateInPlace(newNodes)
 
 		if d.vs.indexQueue != nil {
 			job := IndexJob{

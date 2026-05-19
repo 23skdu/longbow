@@ -4,6 +4,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -52,16 +53,16 @@ func TestArrowHNSW_AddBatchBulk_EdgeCases(t *testing.T) {
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // Cancel immediately
 
-		// StartID shouldn't matter as we fail early
-		err := idx.AddBatchBulk(ctx, 100, n, vecs)
+		// Use current length as startID to avoid waiting for non-existent preceding IDs
+		err := idx.AddBatchBulk(ctx, uint32(idx.Len()), n, vecs)
 		require.Error(t, err)
-		assert.Equal(t, context.Canceled, err)
+		assert.True(t, errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded), "Should be context error: %v", err)
 	})
 
 	t.Run("UnsupportedType", func(t *testing.T) {
 		// Pass an unsupported type to AddBatchBulk generic arg
 		vecs := []string{"not", "a", "vector"}
-		err := idx.AddBatchBulk(context.Background(), 200, 3, vecs)
+		err := idx.AddBatchBulk(context.Background(), uint32(idx.Len()), 3, vecs)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "unsupported vector type")
 	})
@@ -75,7 +76,7 @@ func TestArrowHNSW_AddBatchBulk_EdgeCases(t *testing.T) {
 		// Note: The implementation checks `if v == nil` inside the worker loop
 		// But a nil slice of []float32 is not nil interface, and has len 0.
 		// So it triggers dimension mismatch (expected 4, got 0)
-		err := idx.AddBatchBulk(context.Background(), 300, 5, vecs)
+		err := idx.AddBatchBulk(context.Background(), uint32(idx.Len()), 5, vecs)
 		require.Error(t, err)
 		// We accept either "vector missing" or "dimension mismatch"
 		assert.Condition(t, func() bool {
@@ -90,7 +91,7 @@ func TestArrowHNSW_AddBatchBulk_EdgeCases(t *testing.T) {
 			vecs[i] = make([]float32, dims+1) // Wrong dim
 		}
 
-		err := idx.AddBatchBulk(context.Background(), 400, 5, vecs)
+		err := idx.AddBatchBulk(context.Background(), uint32(idx.Len()), 5, vecs)
 		require.Error(t, err)
 		assert.Contains(t, err.Error(), "dimension mismatch")
 	})

@@ -120,7 +120,7 @@ func TestConcurrentSnapshot_NonBlocking(t *testing.T) {
 	require.NoError(t, err)
 	count := 0
 	ds.dataMu.RLock()
-	for _, r := range ds.Records {
+	for _, r := range ds.Records.Read() {
 		count += int(r.NumRows())
 	}
 	ds.dataMu.RUnlock()

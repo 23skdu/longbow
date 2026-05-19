@@ -1,56 +1,119 @@
 package types
 
+import "sync/atomic"
+
 // CloneForSnapshot creates a deep copy of the graph topology (Neighbors, Counts, Levels)
 // and a shallow copy of vectors (assuming append-only).
 // This allows serialization to proceed concurrently with modifications.
 func (g *GraphData) CloneForSnapshot() *GraphData {
-	clone := *g // Shallow copy of struct
+	clone := GraphData{
+		Capacity:      g.Capacity,
+		Dims:          g.Dims,
+		Type:          g.Type,
+		SQ8Enabled:    g.SQ8Enabled,
+		SQ8Ready:      g.SQ8Ready,
+		BQEnabled:     g.BQEnabled,
+		PQEnabled:     g.PQEnabled,
+		PQM:           g.PQM,
+		GlobalVersion: atomic.LoadUint64(&g.GlobalVersion),
+		BackingGraph:  g.BackingGraph,
+		Name:          g.Name,
+		Allocator:     g.Allocator,
+		PackedNeighbors: g.PackedNeighbors,
+		TurboQuantEnabled: g.TurboQuantEnabled,
+		TurboQuantBits:    g.TurboQuantBits,
+	}
+
+	// Copy Arena pointers for read-only access (persistence will read from them)
+	g.CopyArenaReferences(&clone)
 
 	// 1. Deep Copy Neighbors (Mutable Topology)
-	clone.Neighbors = make([][][]uint32, len(g.Neighbors))
+	clone.Neighbors = make([][]uint64, len(g.Neighbors))
 	for l := range g.Neighbors {
 		if g.Neighbors[l] == nil {
 			continue
 		}
-		clone.Neighbors[l] = make([][]uint32, len(g.Neighbors[l]))
+		clone.Neighbors[l] = make([]uint64, len(g.Neighbors[l]))
 		for c := range g.Neighbors[l] {
-			if chunk := g.Neighbors[l][c]; chunk != nil {
-				// Allocate new chunk and copy
-				newChunk := make([]uint32, len(chunk))
-				copy(newChunk, chunk)
-				clone.Neighbors[l][c] = newChunk
+			if offset := g.Neighbors[l][c]; offset != 0 {
+				chunk := g.GetNeighborsChunk(l, c)
+				if chunk == nil {
+					continue
+				}
+				// Allocate new chunk in arena and copy
+				if g.Uint32Arena != nil {
+					ref, err := g.Uint32Arena.AllocSlice(len(chunk))
+					if err == nil {
+						newChunk := g.Uint32Arena.Get(ref)
+						copy(newChunk, chunk)
+						clone.Neighbors[l][c] = ref.Offset
+					}
+				}
 			}
 		}
 	}
 
 	// 2. Deep Copy Counts
-	clone.Counts = make([][][]int32, len(g.Counts))
+	clone.Counts = make([][]uint64, len(g.Counts))
 	for l := range g.Counts {
 		if g.Counts[l] == nil {
 			continue
 		}
-		clone.Counts[l] = make([][]int32, len(g.Counts[l]))
+		clone.Counts[l] = make([]uint64, len(g.Counts[l]))
 		for c := range g.Counts[l] {
-			if chunk := g.Counts[l][c]; chunk != nil {
-				newChunk := make([]int32, len(chunk))
-				copy(newChunk, chunk)
-				clone.Counts[l][c] = newChunk
+			if offset := g.Counts[l][c]; offset != 0 {
+				chunk := g.GetCountsChunk(l, c)
+				if chunk == nil {
+					continue
+				}
+				if g.Int32Arena != nil {
+					ref, err := g.Int32Arena.AllocSlice(len(chunk))
+					if err == nil {
+						newChunk := g.Int32Arena.Get(ref)
+						copy(newChunk, chunk)
+						clone.Counts[l][c] = ref.Offset
+					}
+				}
 			}
 		}
 	}
 
 	// 3. Deep Copy Levels
-	clone.Levels = make([][]uint8, len(g.Levels))
+	clone.Levels = make([][]uint32, len(g.Levels))
 	for c := range g.Levels {
 		if chunk := g.Levels[c]; chunk != nil {
-			newChunk := make([]uint8, len(chunk))
-			copy(newChunk, chunk)
+			newChunk := make([]uint32, len(chunk))
+			for i := range chunk {
+				newChunk[i] = atomic.LoadUint32(&chunk[i])
+			}
 			clone.Levels[c] = newChunk
 		}
 	}
 
-	// 4. Trace Versions? Not strictly needed for snapshot, but good for consistency
-	clone.Versions = nil // Versions are for runtime optimistic locking, not persisted
+	// 4. Deep Copy Versions
+	clone.Versions = make([][]uint64, len(g.Versions))
+	for l := range g.Versions {
+		if g.Versions[l] == nil {
+			continue
+		}
+		clone.Versions[l] = make([]uint64, len(g.Versions[l]))
+		for c := range g.Versions[l] {
+			if offset := g.Versions[l][c]; offset != 0 {
+				chunk := g.GetVersionsChunk(l, c)
+				if chunk == nil {
+					continue
+				}
+				if g.Uint32Arena != nil {
+					ref, err := g.Uint32Arena.AllocSlice(len(chunk))
+					if err == nil {
+						newChunk := g.Uint32Arena.Get(ref)
+						copy(newChunk, chunk)
+						clone.Versions[l][c] = ref.Offset
+					}
+				}
+			}
+		}
+	}
 
 	// 5. Shallow Copy Vectors (Slice of Slices)
 	// We copy the slice structure so if 'g' appends new chunks, 'clone' doesn't see them.

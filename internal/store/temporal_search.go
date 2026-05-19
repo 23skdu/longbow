@@ -2,28 +2,75 @@ package store
 
 import (
 	"context"
+	"container/heap"
 	"container/list"
 	"encoding/json"
 	"fmt"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
+	"math"
 
+	"github.com/23skdu/longbow/internal/simd"
+	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
+const (
+	// TemporalShards is the number of shards for the temporal vector map.
+	TemporalShards = 128
+)
+
+type temporalShard struct {
+	mu   sync.RWMutex
+	data map[uint64]*TemporalVector
+}
+
+var (
+	temporalIDMapPool = sync.Pool{
+		New: func() any {
+			return make(map[uint64]struct{}, 1024)
+		},
+	}
+
+	temporalVersionMapPool = sync.Pool{
+		New: func() any {
+			return make(map[uint64]VersionedVector, 1024)
+		},
+	}
+)
+
+type temporalScoredResult struct {
+	id       uint64
+	distance float32
+}
+
+// TemporalConfig defines the configuration for temporal indexing and retention.
 type TemporalConfig struct {
+	// Enabled indicates whether temporal features are active.
 	Enabled            bool
+	// VersionHistory indicates whether to keep a full history of vector updates.
 	VersionHistory     bool
+	// MaxVersions is the maximum number of versions to keep per vector.
 	MaxVersions        int
+	// RetentionPeriod is the duration for which temporal data is kept.
 	RetentionPeriod    time.Duration
+	// TTLEnabled indicates whether Time-To-Live (TTL) is active for vectors.
 	TTLEnabled         bool
+	// DefaultTTL is the default duration a vector remains valid.
 	DefaultTTL         time.Duration
+	// CleanupInterval is the frequency of background cleanup tasks.
 	CleanupInterval    time.Duration
+	// AggregationEnabled indicates whether temporal aggregation features are active.
 	AggregationEnabled bool
+	// MaxBuckets is the maximum number of buckets for temporal aggregation.
 	MaxBuckets         int
 }
 
+// DefaultTemporalConfig returns a default configuration for temporal features.
 func DefaultTemporalConfig() TemporalConfig {
 	return TemporalConfig{
 		Enabled:            false,
@@ -38,28 +85,37 @@ func DefaultTemporalConfig() TemporalConfig {
 	}
 }
 
+// TemporalVector represents a vector with an associated timestamp for temporal search.
 type TemporalVector struct {
 	ID        uint64
 	Vector    []float32
+	Norm      float32 // Pre-calculated norm
 	Timestamp int64
 	Metadata  []byte
 	Tombstone bool
 }
 
+// TemporalIndex provides efficient search and retrieval based on vector timestamps.
 type TemporalIndex struct {
-	mu           sync.RWMutex
+	mu           sync.Mutex
 	dimension    int
-	vectors      map[uint64]*TemporalVector
-	temporalTree *TemporalTree
-	byTimestamp  map[int64][]uint64
+	shards       [TemporalShards]temporalShard
+	temporalTree atomic.Pointer[TemporalTree]
+	history      *VersionHistory
 	cache        *TemporalResultCache
+	pointCount   atomic.Int64
+	gpuIndex     atomic.Value // holds gputypes.Index
 }
 
+// TemporalResultCache provides LRU caching for temporal search results.
 type TemporalResultCache struct {
-	mu    sync.Mutex
-	items map[string]*list.Element
-	evict *list.List
-	max   int
+	mu        sync.Mutex
+	items     map[string]*list.Element
+	evict     *list.List
+	max       int
+	hits      atomic.Int64
+	misses    atomic.Int64
+	evictions atomic.Int64
 }
 
 type temporalCacheEntry struct {
@@ -68,6 +124,7 @@ type temporalCacheEntry struct {
 	expiry  time.Time
 }
 
+// NewTemporalResultCache creates a new TemporalResultCache with the specified capacity.
 func NewTemporalResultCache(size int) *TemporalResultCache {
 	return &TemporalResultCache{
 		items: make(map[string]*list.Element),
@@ -76,12 +133,14 @@ func NewTemporalResultCache(size int) *TemporalResultCache {
 	}
 }
 
+// Get retrieves search results from the cache if they exist and are not expired.
 func (c *TemporalResultCache) Get(key string) ([]lbtypes.SearchResult, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	element, ok := c.items[key]
 	if !ok {
+		c.misses.Add(1)
 		return nil, false
 	}
 
@@ -89,13 +148,17 @@ func (c *TemporalResultCache) Get(key string) ([]lbtypes.SearchResult, bool) {
 	if time.Now().After(entry.expiry) {
 		c.evict.Remove(element)
 		delete(c.items, key)
+		c.evictions.Add(1)
+		c.misses.Add(1)
 		return nil, false
 	}
 
 	c.evict.MoveToFront(element)
+	c.hits.Add(1)
 	return entry.results, true
 }
 
+// Set adds search results to the cache with the specified TTL.
 func (c *TemporalResultCache) Set(key string, results []lbtypes.SearchResult, ttl time.Duration) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -121,156 +184,522 @@ func (c *TemporalResultCache) Set(key string, results []lbtypes.SearchResult, tt
 		if oldest != nil {
 			c.evict.Remove(oldest)
 			delete(c.items, oldest.Value.(*temporalCacheEntry).key)
+			c.evictions.Add(1)
 		}
 	}
+}
+
+const nodesPerChunk = 1024
+
+// TemporalEntry represents a vector ID and its norm at a specific point in time.
+type TemporalEntry struct {
+	ID   uint64
+	Norm float32
+}
+
+// TemporalNode represents a set of vector IDs sharing a specific timestamp.
+type TemporalNode struct {
+	Timestamp int64
+	Offset    uint32 // Offset into entryArena
+	Len       uint32 // Number of entries for this timestamp
+}
+
+type temporalLeaf struct {
+	Nodes [nodesPerChunk]TemporalNode
+	Len   uint32
+}
+
+type temporalLeafRef struct {
+	MinTs int64
+	MaxTs int64
+	Ref   memory.SliceRef
 }
 
 type TemporalTree struct {
-	mu     sync.RWMutex
-	nodes  map[int64]*TemporalNode
-	sorted []int64
+	mu             sync.RWMutex
+	leafArena      *memory.TypedArena[temporalLeaf]
+	entryArena     *memory.TypedArena[TemporalEntry]
+	leafRefs       []temporalLeafRef
+	minTs          int64
+	maxTs          int64
+	nodeCount      atomic.Uint32
 }
 
-type TemporalNode struct {
-	Timestamp int64
-	VectorIDs []uint64
-}
-
-func NewTemporalTree() *TemporalTree {
+// NewTemporalTree creates a new TemporalTree instance with an optional arena.
+func NewTemporalTree(arena *memory.SlabArena) *TemporalTree {
+	if arena == nil {
+		arena = memory.NewSlabArena(16 * 1024 * 1024) // 16MB default
+	}
 	return &TemporalTree{
-		nodes:  make(map[int64]*TemporalNode),
-		sorted: make([]int64, 0),
+		leafArena:  memory.NewTypedArena[temporalLeaf](arena),
+		entryArena: memory.NewTypedArena[TemporalEntry](arena),
+		leafRefs:   make([]temporalLeafRef, 0),
+		minTs:      math.MaxInt64,
+		maxTs:      math.MinInt64,
 	}
 }
 
-func (tt *TemporalTree) Insert(timestamp int64, id uint64) {
+func (tt *TemporalTree) Release() {
+	if tt.leafArena != nil {
+		tt.leafArena.Release()
+	}
+	if tt.entryArena != nil {
+		tt.entryArena.Release()
+	}
+}
+
+// Insert adds a vector ID and its norm to the tree at the specified timestamp.
+func (tt *TemporalTree) Insert(timestamp int64, id uint64, norm float32) {
 	tt.mu.Lock()
 	defer tt.mu.Unlock()
 
-	if node, ok := tt.nodes[timestamp]; ok {
-		node.VectorIDs = append(node.VectorIDs, id)
-	} else {
-		tt.nodes[timestamp] = &TemporalNode{
-			Timestamp: timestamp,
-			VectorIDs: []uint64{id},
+	entry := TemporalEntry{ID: id, Norm: norm}
+	
+	// Update global min/max
+	if timestamp < tt.minTs { tt.minTs = timestamp }
+	if timestamp > tt.maxTs { tt.maxTs = timestamp }
+
+	// Find the leaf chunk where this timestamp should reside
+	idx := sort.Search(len(tt.leafRefs), func(i int) bool {
+		return tt.leafRefs[i].MaxTs >= timestamp
+	})
+
+	if idx == len(tt.leafRefs) {
+		// New chunk at the end or tree is empty
+		if idx > 0 && tt.leafRefs[idx-1].MaxTs < timestamp {
+			// Try to append to last chunk if not full
+			lastLeaf := &tt.leafRefs[idx-1]
+			leaf := &tt.leafArena.Get(lastLeaf.Ref)[0]
+			if leaf.Len < nodesPerChunk {
+				tt.insertInLeaf(leaf, timestamp, entry)
+				lastLeaf.MaxTs = leaf.Nodes[leaf.Len-1].Timestamp
+				tt.nodeCount.Add(1)
+				metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
+				return
+			}
 		}
-		tt.sorted = append(tt.sorted, timestamp)
-		sort.Slice(tt.sorted, func(i, j int) bool {
-			return tt.sorted[i] < tt.sorted[j]
+		
+		// Create new chunk
+		ref, _ := tt.leafArena.AllocSlice(1)
+		leaf := &tt.leafArena.Get(ref)[0]
+		tt.insertInLeaf(leaf, timestamp, entry)
+		tt.leafRefs = append(tt.leafRefs, temporalLeafRef{
+			MinTs: timestamp,
+			MaxTs: timestamp,
+			Ref:   ref,
 		})
+		tt.nodeCount.Add(1)
+		metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
+		return
+	}
+
+	// Insert into existing chunk
+	leafRef := &tt.leafRefs[idx]
+	leaf := &tt.leafArena.Get(leafRef.Ref)[0]
+	
+	// Check if timestamp exists
+	nodeIdx := sort.Search(int(leaf.Len), func(i int) bool {
+		return leaf.Nodes[i].Timestamp >= timestamp
+	})
+
+	if nodeIdx < int(leaf.Len) && leaf.Nodes[nodeIdx].Timestamp == timestamp {
+		// Append to existing node
+		tt.appendEntryToNode(&leaf.Nodes[nodeIdx], entry)
+		return
+	}
+
+	// New node in existing chunk
+	if leaf.Len < nodesPerChunk {
+		tt.insertInLeaf(leaf, timestamp, entry)
+		leafRef.MinTs = leaf.Nodes[0].Timestamp
+		leafRef.MaxTs = leaf.Nodes[leaf.Len-1].Timestamp
+		tt.nodeCount.Add(1)
+		metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
+		return
+	}
+
+	// Chunk full - Split it
+	tt.splitAndInsert(idx, timestamp, entry)
+	tt.nodeCount.Add(1)
+	metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
+	
+	stats := tt.leafArena.Slab().Stats()
+	metrics.TemporalTreeAllocatedBytesTotal.Set(float64(stats.TotalCapacity))
+}
+
+func (tt *TemporalTree) appendEntryToNode(node *TemporalNode, entry TemporalEntry) {
+	oldRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+	oldEntries := tt.entryArena.Get(oldRef)
+	
+	newRef, _ := tt.entryArena.AllocSlice(int(node.Len + 1))
+	newEntries := tt.entryArena.Get(newRef)
+	copy(newEntries, oldEntries)
+	newEntries[node.Len] = entry
+	
+	node.Offset = uint32(newRef.Offset) // #nosec G115
+	node.Len++
+}
+
+func (tt *TemporalTree) insertInLeaf(leaf *temporalLeaf, timestamp int64, entry TemporalEntry) {
+	nodeIdx := sort.Search(int(leaf.Len), func(i int) bool {
+		return leaf.Nodes[i].Timestamp >= timestamp
+	})
+
+	entryRef, _ := tt.entryArena.AllocSlice(1)
+	tt.entryArena.Get(entryRef)[0] = entry
+	
+	newNode := TemporalNode{
+		Timestamp: timestamp,
+		Offset:    uint32(entryRef.Offset), // #nosec G115
+		Len:       1,
+	}
+
+	copy(leaf.Nodes[nodeIdx+1:leaf.Len+1], leaf.Nodes[nodeIdx:leaf.Len])
+	leaf.Nodes[nodeIdx] = newNode
+	leaf.Len++
+}
+
+func (tt *TemporalTree) splitAndInsert(idx int, timestamp int64, entry TemporalEntry) {
+	oldLeafRef := tt.leafRefs[idx]
+	oldLeaf := tt.leafArena.Get(oldLeafRef.Ref)[0]
+
+	// Create new leaf
+	newRef, _ := tt.leafArena.AllocSlice(1)
+	newLeaf := &tt.leafArena.Get(newRef)[0]
+
+	splitIdx := nodesPerChunk / 2
+	copy(newLeaf.Nodes[:], oldLeaf.Nodes[splitIdx:])
+	newLeaf.Len = uint32(nodesPerChunk - splitIdx)
+	
+	// Update old leaf (in place)
+	// Since TypedArena returns a slice, we can modify the element directly if it's a pointer or we write it back.
+	// In our case tt.leafArena.Get(oldLeafRef.Ref)[0] gives us the value. We need to update it in the arena.
+	// Wait! I'll get a pointer instead.
+	
+	leafPtr := &tt.leafArena.Get(oldLeafRef.Ref)[0]
+	leafPtr.Len = uint32(splitIdx)
+
+	// Create new leaf ref
+	newLeafRef := temporalLeafRef{
+		MinTs: newLeaf.Nodes[0].Timestamp,
+		MaxTs: newLeaf.Nodes[newLeaf.Len-1].Timestamp,
+		Ref:   newRef,
+	}
+
+	// Insert into refs
+	tt.leafRefs = append(tt.leafRefs, temporalLeafRef{})
+	copy(tt.leafRefs[idx+2:], tt.leafRefs[idx+1:])
+	tt.leafRefs[idx+1] = newLeafRef
+	
+	// Update old ref
+	tt.leafRefs[idx].MaxTs = leafPtr.Nodes[leafPtr.Len-1].Timestamp
+
+	// Now insert the new node into the correct half
+	if timestamp <= tt.leafRefs[idx].MaxTs {
+		tt.insertInLeaf(leafPtr, timestamp, entry)
+		tt.leafRefs[idx].MaxTs = leafPtr.Nodes[leafPtr.Len-1].Timestamp
+	} else {
+		tt.insertInLeaf(newLeaf, timestamp, entry)
+		tt.leafRefs[idx+1].MaxTs = newLeaf.Nodes[newLeaf.Len-1].Timestamp
+		tt.leafRefs[idx+1].MinTs = newLeaf.Nodes[0].Timestamp
 	}
 }
 
+// InsertBatch adds multiple vector IDs and their norms to the tree.
+func (tt *TemporalTree) InsertBatch(timestamps []int64, ids []uint64, norms []float32) {
+	if len(timestamps) == 0 {
+		return
+	}
+	// For simplicity and correctness with splits, we call Insert for each
+	for i := range timestamps {
+		tt.Insert(timestamps[i], ids[i], norms[i])
+	}
+}
+
+// GetRange returns all vector IDs within the specified timestamp range.
 func (tt *TemporalTree) GetRange(start, end int64) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	n := len(tt.sorted)
-	if n == 0 {
-		return nil
-	}
+	if len(tt.leafRefs) == 0 { return nil }
 
-	startIdx := sort.Search(n, func(i int) bool {
-		return tt.sorted[i] >= start
+	startIdx := sort.Search(len(tt.leafRefs), func(i int) bool {
+		return tt.leafRefs[i].MaxTs >= start
 	})
 
 	var results []uint64
-	for i := startIdx; i < n && tt.sorted[i] <= end; i++ {
-		results = append(results, tt.nodes[tt.sorted[i]].VectorIDs...)
-	}
-	return results
-}
-
-func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
-	tt.mu.RLock()
-	defer tt.mu.RUnlock()
-
-	var results []uint64
-	for i := len(tt.sorted) - 1; i >= 0; i-- {
-		ts := tt.sorted[i]
-		if ts >= start && ts <= end {
-			results = append(results, tt.nodes[ts].VectorIDs...)
+	for i := startIdx; i < len(tt.leafRefs); i++ {
+		leafRef := tt.leafRefs[i]
+		if leafRef.MinTs > end { break }
+		
+		leaf := tt.leafArena.Get(leafRef.Ref)[0]
+		nodeIdx := 0
+		if i == startIdx {
+			nodeIdx = sort.Search(int(leaf.Len), func(j int) bool {
+				return leaf.Nodes[j].Timestamp >= start
+			})
+		}
+		
+		for j := nodeIdx; j < int(leaf.Len); j++ {
+			node := &leaf.Nodes[j]
+			if node.Timestamp > end { return results }
+			
+			metrics.TemporalQueryScannedNodesTotal.Add(1)
+			
+			entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+			entries := tt.entryArena.Get(entryRef)
+			for _, e := range entries {
+				results = append(results, e.ID)
+			}
 		}
 	}
 	return results
 }
 
+// GetRangeReversed returns all vector IDs within the specified timestamp range in descending order.
+func (tt *TemporalTree) GetRangeReversed(start, end int64) []uint64 {
+	tt.mu.RLock()
+	defer tt.mu.RUnlock()
+
+	if len(tt.leafRefs) == 0 { return nil }
+
+	// Find the chunk containing 'end'
+	idx := sort.Search(len(tt.leafRefs), func(i int) bool {
+		return tt.leafRefs[i].MaxTs >= end
+	})
+	if idx == len(tt.leafRefs) { idx-- }
+
+	var results []uint64
+	for i := idx; i >= 0; i-- {
+		leafRef := tt.leafRefs[i]
+		if leafRef.MaxTs < start { break }
+		
+		leaf := tt.leafArena.Get(leafRef.Ref)[0]
+		
+		// Find end in leaf
+		nodeIdx := int(leaf.Len) - 1
+		if i == idx {
+			nodeIdx = sort.Search(int(leaf.Len), func(j int) bool {
+				return leaf.Nodes[j].Timestamp > end
+			}) - 1
+		}
+		
+		for j := nodeIdx; j >= 0; j-- {
+			node := &leaf.Nodes[j]
+			if node.Timestamp < start { return results }
+			
+			metrics.TemporalQueryScannedNodesTotal.Add(1)
+			
+			entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+			entries := tt.entryArena.Get(entryRef)
+			for k := len(entries) - 1; k >= 0; k-- {
+				results = append(results, entries[k].ID)
+			}
+		}
+	}
+	return results
+}
+
+// GetUniqueIDsInRange returns unique vector IDs within the specified timestamp range, 
+// keeping only the most recent version of each ID.
+func (tt *TemporalTree) GetUniqueIDsInRange(start, end int64) []uint64 {
+	tt.mu.RLock()
+	defer tt.mu.RUnlock()
+
+	if len(tt.leafRefs) == 0 { return nil }
+
+	idx := sort.Search(len(tt.leafRefs), func(i int) bool {
+		return tt.leafRefs[i].MaxTs >= end
+	})
+	if idx == len(tt.leafRefs) { idx-- }
+
+	uniqueIDs := temporalIDMapPool.Get().(map[uint64]struct{})
+	defer func() {
+		clear(uniqueIDs)
+		temporalIDMapPool.Put(uniqueIDs)
+	}()
+
+	var results []uint64
+	for i := idx; i >= 0; i-- {
+		leafRef := tt.leafRefs[i]
+		if leafRef.MaxTs < start { break }
+		
+		leaf := tt.leafArena.Get(leafRef.Ref)[0]
+		nodeIdx := int(leaf.Len) - 1
+		if i == idx {
+			nodeIdx = sort.Search(int(leaf.Len), func(j int) bool {
+				return leaf.Nodes[j].Timestamp > end
+			}) - 1
+		}
+		
+		for j := nodeIdx; j >= 0; j-- {
+			node := &leaf.Nodes[j]
+			if node.Timestamp < start { return results }
+			
+			metrics.TemporalQueryScannedNodesTotal.Add(1)
+			
+			entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+			entries := tt.entryArena.Get(entryRef)
+			for k := len(entries) - 1; k >= 0; k-- {
+				id := entries[k].ID
+				if _, exists := uniqueIDs[id]; !exists {
+					results = append(results, id)
+					uniqueIDs[id] = struct{}{}
+				}
+			}
+		}
+	}
+	return results
+}
+
+// GetBefore returns all vector IDs with timestamps before the specified value.
 func (tt *TemporalTree) GetBefore(timestamp int64) []uint64 {
-	tt.mu.RLock()
-	defer tt.mu.RUnlock()
-
-	idx := sort.Search(len(tt.sorted), func(i int) bool {
-		return tt.sorted[i] >= timestamp
-	})
-
-	var results []uint64
-	for i := 0; i < idx; i++ {
-		results = append(results, tt.nodes[tt.sorted[i]].VectorIDs...)
-	}
-	return results
+	return tt.GetRange(0, timestamp-1)
 }
 
+// GetAfter returns all vector IDs with timestamps after the specified value.
 func (tt *TemporalTree) GetAfter(timestamp int64) []uint64 {
-	tt.mu.RLock()
-	defer tt.mu.RUnlock()
-
-	idx := sort.Search(len(tt.sorted), func(i int) bool {
-		return tt.sorted[i] > timestamp
-	})
-
-	var results []uint64
-	for i := idx; i < len(tt.sorted); i++ {
-		results = append(results, tt.nodes[tt.sorted[i]].VectorIDs...)
-	}
-	return results
+	return tt.GetRange(timestamp+1, math.MaxInt64)
 }
 
-func (tt *TemporalTree) GetLatest(n int) []uint64 {
-	tt.mu.RLock()
-	defer tt.mu.RUnlock()
-
-	if n > len(tt.sorted) {
-		n = len(tt.sorted)
-	}
-
-	var results []uint64
-	for i := len(tt.sorted) - n; i < len(tt.sorted); i++ {
-		results = append(results, tt.nodes[tt.sorted[i]].VectorIDs...)
-	}
-	return results
-}
-
+// GetEarliest returns the vector IDs from the first n timestamps.
 func (tt *TemporalTree) GetEarliest(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
 
-	if n > len(tt.sorted) {
-		n = len(tt.sorted)
-	}
+	if len(tt.leafRefs) == 0 { return nil }
 
 	var results []uint64
-	for i := 0; i < n; i++ {
-		results = append(results, tt.nodes[tt.sorted[i]].VectorIDs...)
+	remaining := n
+	for i := 0; i < len(tt.leafRefs) && remaining > 0; i++ {
+		leaf := tt.leafArena.Get(tt.leafRefs[i].Ref)[0]
+		for j := 0; j < int(leaf.Len) && remaining > 0; j++ {
+			node := &leaf.Nodes[j]
+			metrics.TemporalQueryScannedNodesTotal.Add(1)
+			
+			entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+			entries := tt.entryArena.Get(entryRef)
+			for _, e := range entries {
+				results = append(results, e.ID)
+				remaining--
+				if remaining <= 0 { break }
+			}
+		}
 	}
 	return results
 }
 
-func (tt *TemporalTree) Len() int {
+// GetLatest returns the vector IDs from the last n timestamps.
+func (tt *TemporalTree) GetLatest(n int) []uint64 {
 	tt.mu.RLock()
 	defer tt.mu.RUnlock()
-	return len(tt.sorted)
-}
 
-func NewTemporalIndex(dimension int) *TemporalIndex {
-	return &TemporalIndex{
-		dimension:    dimension,
-		vectors:      make(map[uint64]*TemporalVector),
-		temporalTree: NewTemporalTree(),
-		byTimestamp:  make(map[int64][]uint64),
-		cache:        NewTemporalResultCache(1024),
+	if len(tt.leafRefs) == 0 { return nil }
+
+	var results []uint64
+	remaining := n
+	for i := len(tt.leafRefs) - 1; i >= 0 && remaining > 0; i-- {
+		leaf := tt.leafArena.Get(tt.leafRefs[i].Ref)[0]
+		for j := int(leaf.Len) - 1; j >= 0 && remaining > 0; j-- {
+			node := &leaf.Nodes[j]
+			metrics.TemporalQueryScannedNodesTotal.Add(1)
+			
+			entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+			entries := tt.entryArena.Get(entryRef)
+			for k := len(entries) - 1; k >= 0; k-- {
+				results = append(results, entries[k].ID)
+				remaining--
+				if remaining <= 0 { break }
+			}
+		}
 	}
+	return results
 }
 
+// GetUniqueLatest returns the n most recent unique vector IDs.
+func (tt *TemporalTree) GetUniqueLatest(n int) []uint64 {
+	tt.mu.RLock()
+	defer tt.mu.RUnlock()
+
+	if len(tt.leafRefs) == 0 { return nil }
+
+	uniqueIDs := temporalIDMapPool.Get().(map[uint64]struct{})
+	defer func() {
+		clear(uniqueIDs)
+		temporalIDMapPool.Put(uniqueIDs)
+	}()
+
+	var results []uint64
+	for i := len(tt.leafRefs) - 1; i >= 0 && len(results) < n; i-- {
+		leaf := tt.leafArena.Get(tt.leafRefs[i].Ref)[0]
+		for j := int(leaf.Len) - 1; j >= 0 && len(results) < n; j-- {
+			node := &leaf.Nodes[j]
+			metrics.TemporalQueryScannedNodesTotal.Add(1)
+			
+			entryRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
+			entries := tt.entryArena.Get(entryRef)
+			for k := len(entries) - 1; k >= 0; k-- {
+				id := entries[k].ID
+				if _, exists := uniqueIDs[id]; !exists {
+					results = append(results, id)
+					uniqueIDs[id] = struct{}{}
+					if len(results) >= n { break }
+				}
+			}
+		}
+	}
+	return results
+}
+
+// Len returns the number of unique timestamps in the tree.
+func (tt *TemporalTree) Len() int {
+	return int(tt.nodeCount.Load())
+}
+
+// NewTemporalIndex creates a new TemporalIndex instance.
+func NewTemporalIndex(dimension int) *TemporalIndex {
+	ti := &TemporalIndex{
+		dimension: dimension,
+		cache:     NewTemporalResultCache(1024),
+		history:   NewVersionHistory(DefaultVersionHistoryConfig()),
+	}
+	for i := 0; i < TemporalShards; i++ {
+		ti.shards[i].data = make(map[uint64]*TemporalVector)
+	}
+	arena := memory.NewSlabArena(1024 * 1024)
+	ti.temporalTree.Store(NewTemporalTree(arena))
+	return ti
+}
+
+// getShard returns the shard for a given ID.
+func (ti *TemporalIndex) getShard(id uint64) *temporalShard {
+	return &ti.shards[id%uint64(TemporalShards)]
+}
+
+// Close releases resources associated with the temporal index.
+func (ti *TemporalIndex) Close() error {
+	ti.mu.Lock()
+	defer ti.mu.Unlock()
+
+	// Clear the sharded maps
+	for i := 0; i < TemporalShards; i++ {
+		ti.shards[i].mu.Lock()
+		ti.shards[i].data = nil
+		ti.shards[i].mu.Unlock()
+	}
+
+	if gpuIdx := ti.gpuIndex.Load(); gpuIdx != nil {
+		if gi, ok := gpuIdx.(gputypes.Index); ok {
+			_ = gi.Close()
+		}
+		ti.gpuIndex.Store(nil)
+	}
+
+	ti.pointCount.Store(0)
+	return nil
+}
+
+// Add inserts a new vector with a timestamp into the temporal index.
 func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metadata []byte) error {
 	ti.mu.Lock()
 	defer ti.mu.Unlock()
@@ -279,111 +708,239 @@ func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metad
 		return fmt.Errorf("dimension mismatch: expected %d, got %d", ti.dimension, len(vector))
 	}
 
+	norm := ti.computeNorm(vector)
 	vec := &TemporalVector{
 		ID:        id,
 		Vector:    vector,
+		Norm:      norm,
 		Timestamp: timestamp,
 		Metadata:  metadata,
 		Tombstone: false,
 	}
 
-	ti.vectors[id] = vec
-	ti.temporalTree.Insert(timestamp, id)
-	ti.byTimestamp[timestamp] = append(ti.byTimestamp[timestamp], id)
+	shard := ti.getShard(id)
+	shard.mu.Lock()
+	shard.data[id] = vec
+	shard.mu.Unlock()
+	tree := ti.temporalTree.Load()
+	if tree != nil {
+		tree.Insert(timestamp, id, norm)
+	}
+	ti.pointCount.Add(1)
+
+	if ti.history != nil {
+		ti.history.Add(id, vector, norm, timestamp, metadata)
+	}
 
 	return nil
 }
 
+// AddBatch inserts multiple vectors into the TemporalIndex.
+func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps []int64, metadata [][]byte) error {
+	ti.mu.Lock()
+	defer ti.mu.Unlock()
+
+	tree := ti.temporalTree.Load()
+	norms := make([]float32, len(ids))
+	for i := range ids {
+		if len(vectors[i]) != ti.dimension {
+			continue
+		}
+
+		var m []byte
+		if i < len(metadata) {
+			m = metadata[i]
+		}
+		
+		norm := ti.computeNorm(vectors[i])
+		norms[i] = norm
+		vec := &TemporalVector{
+			ID:        ids[i],
+			Vector:    vectors[i],
+			Norm:      norm,
+			Timestamp: timestamps[i],
+			Metadata:  m,
+			Tombstone: false,
+		}
+
+		shard := ti.getShard(ids[i])
+		shard.mu.Lock()
+		shard.data[ids[i]] = vec
+		shard.mu.Unlock()
+		if ti.history != nil {
+			ti.history.Add(ids[i], vectors[i], norm, timestamps[i], m)
+		}
+	}
+	
+	if tree != nil {
+		tree.InsertBatch(timestamps, ids, norms)
+	}
+	ti.pointCount.Add(int64(len(ids)))
+
+	return nil
+}
+
+// Delete marks a vector as deleted (tombstoned) in the temporal index.
 func (ti *TemporalIndex) Delete(id uint64) error {
 	ti.mu.Lock()
 	defer ti.mu.Unlock()
 
-	vec, ok := ti.vectors[id]
+	shard := ti.getShard(id)
+	shard.mu.RLock()
+	vec, ok := shard.data[id]
+	shard.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("vector id %d not found", id)
 	}
 
-	vec.Tombstone = true
+	newVec := *vec
+	newVec.Tombstone = true
+	shard.mu.Lock()
+	shard.data[id] = &newVec
+	shard.mu.Unlock()
+	// We don't decrement pointCount here because it's a tombstone
 	return nil
 }
 
+// Update updates an existing vector and metadata at a new timestamp.
 func (ti *TemporalIndex) Update(id uint64, vector []float32, timestamp int64, metadata []byte) error {
 	ti.mu.Lock()
 	defer ti.mu.Unlock()
 
-	oldVec, ok := ti.vectors[id]
+	shard := ti.getShard(id)
+	shard.mu.RLock()
+	oldVec, ok := shard.data[id]
+	shard.mu.RUnlock()
 	if !ok {
 		return fmt.Errorf("vector id %d not found", id)
 	}
 
-	oldVec.Tombstone = true
+	newOldVec := *oldVec
+	newOldVec.Tombstone = true
+	shard.mu.Lock()
+	shard.data[id] = &newOldVec
+	shard.mu.Unlock()
 
+	norm := ti.computeNorm(vector)
 	newVec := &TemporalVector{
 		ID:        id,
 		Vector:    vector,
+		Norm:      norm,
 		Timestamp: timestamp,
 		Metadata:  metadata,
 		Tombstone: false,
 	}
 
-	ti.vectors[id] = newVec
-	ti.temporalTree.Insert(timestamp, id)
-	ti.byTimestamp[timestamp] = append(ti.byTimestamp[timestamp], id)
+	shard.mu.Lock()
+	shard.data[id] = newVec
+	shard.mu.Unlock()
+	tree := ti.temporalTree.Load()
+	if tree != nil {
+		tree.Insert(timestamp, id, norm)
+	}
+	
+	if ti.history != nil {
+		ti.history.Add(id, vector, norm, timestamp, metadata)
+	}
 
 	return nil
 }
 
+// SearchAsOf performs a vector search considering only data available at a specific timestamp.
 func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int) ([]lbtypes.SearchResult, error) {
 	cacheKey := fmt.Sprintf("asof:%d:%d", timestamp, k)
 	if results, ok := ti.cache.Get(cacheKey); ok {
 		return results, nil
 	}
 
-	ti.mu.RLock()
-	defer ti.mu.RUnlock()
-
-	validIDs := ti.temporalTree.GetBefore(timestamp + 1)
-
-	type scoredResult struct {
-		id       uint64
-		distance float64
+	tree := ti.temporalTree.Load()
+	if tree == nil {
+		return []lbtypes.SearchResult{}, nil
 	}
 
-	var results []scoredResult
+	// Get latest version of each unique ID before or at timestamp
+	validIDs := tree.GetUniqueIDsInRange(0, timestamp)
+	if len(validIDs) == 0 {
+		return []lbtypes.SearchResult{}, nil
+	}
+
+	// 2. Batch lookup versions from history
+	versionMap := temporalVersionMapPool.Get().(map[uint64]VersionedVector)
+	defer func() {
+		clear(versionMap)
+		temporalVersionMapPool.Put(versionMap)
+	}()
+
+	if ti.history != nil {
+		ti.history.GetVersionsAtBatch(validIDs, timestamp, versionMap)
+	}
+
+	// 3. Select top-k using max-heap
+	h := &temporalMaxHeap{}
+	heap.Init(h)
+
 	for _, id := range validIDs {
-		vec := ti.vectors[id]
-		if vec.Tombstone {
-			continue
+		var norm float32
+		var found bool
+		
+		if v, ok := versionMap[id]; ok {
+			norm = v.Norm
+			found = true
 		}
-		dist := float64(ti.computeNorm(vec.Vector))
-		results = append(results, scoredResult{id: id, distance: dist})
+		
+		// Fallback to latest norm if history lookup failed or disabled
+		if !found {
+			shard := ti.getShard(id)
+			shard.mu.RLock()
+			vec, ok := shard.data[id]
+			shard.mu.RUnlock()
+			if ok {
+				if !vec.Tombstone {
+					norm = vec.Norm
+					found = true
+				}
+			}
+		}
+		
+		if found {
+			if h.Len() < k {
+				heap.Push(h, temporalScoredResult{id: id, distance: norm})
+			} else if norm < (*h)[0].distance {
+				heap.Pop(h)
+				heap.Push(h, temporalScoredResult{id: id, distance: norm})
+			}
+		}
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].distance < results[j].distance
-	})
-
-	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
-	for i := 0; i < min(k, len(results)); i++ {
-		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: float32(results[i].distance),
-			Score:    float32(1.0 / (1.0 + results[i].distance)),
-		})
+	limit := h.Len()
+	searchResults := make([]lbtypes.SearchResult, limit)
+	for i := limit - 1; i >= 0; i-- {
+		res := heap.Pop(h).(temporalScoredResult)
+		searchResults[i] = lbtypes.SearchResult{
+			ID:       lbtypes.VectorID(res.id), // #nosec G115
+			Distance: res.distance,
+			Score:    1.0 / (1.0 + res.distance),
+		}
 	}
 
 	ti.cache.Set(cacheKey, searchResults, 5*time.Minute)
 	return searchResults, nil
 }
 
+// Prewarm populates the temporal cache with common search results.
 func (ti *TemporalIndex) Prewarm(ctx context.Context) error {
-	ti.mu.RLock()
-	if len(ti.temporalTree.sorted) == 0 {
-		ti.mu.RUnlock()
+	tree := ti.temporalTree.Load()
+	if tree == nil {
 		return nil
 	}
-	latestTs := ti.temporalTree.sorted[len(ti.temporalTree.sorted)-1]
-	ti.mu.RUnlock()
+
+	tree.mu.RLock()
+	if len(tree.leafRefs) == 0 {
+		tree.mu.RUnlock()
+		return nil
+	}
+	latestTs := tree.maxTs
+	tree.mu.RUnlock()
 
 	// 1. Latest results
 	_, _ = ti.SearchAsOf(ctx, latestTs, 100)
@@ -404,141 +961,217 @@ func (ti *TemporalIndex) Prewarm(ctx context.Context) error {
 	return nil
 }
 
+// SearchRange performs a vector search over data within a specific timestamp range.
 func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int64, k int) ([]lbtypes.SearchResult, error) {
-	ti.mu.RLock()
-	defer ti.mu.RUnlock()
-
-	validIDs := ti.temporalTree.GetRange(startTime, endTime)
-
-	type scoredResult struct {
-		id       uint64
-		distance float64
+	tree := ti.temporalTree.Load()
+	if tree == nil {
+		return []lbtypes.SearchResult{}, nil
 	}
 
-	var results []scoredResult
+	// Get unique IDs in range (most recent versions within range)
+	validIDs := tree.GetUniqueIDsInRange(startTime, endTime)
+	if len(validIDs) == 0 {
+		return []lbtypes.SearchResult{}, nil
+	}
+
+	// 2. Batch lookup versions from history
+	versionMap := temporalVersionMapPool.Get().(map[uint64]VersionedVector)
+	defer func() {
+		clear(versionMap)
+		temporalVersionMapPool.Put(versionMap)
+	}()
+
+	if ti.history != nil {
+		ti.history.GetVersionsAtBatch(validIDs, endTime, versionMap)
+	}
+
+	// 3. Select top-k using max-heap
+	h := &temporalMaxHeap{}
+	heap.Init(h)
+
 	for _, id := range validIDs {
-		vec := ti.vectors[id]
-		if vec.Tombstone {
-			continue
+		var norm float32
+		var found bool
+		
+		if v, ok := versionMap[id]; ok && v.Timestamp >= startTime {
+			norm = v.Norm
+			found = true
 		}
-		dist := float64(ti.computeNorm(vec.Vector))
-		results = append(results, scoredResult{id: id, distance: dist})
+		
+		// Fallback to latest norm if historylookup failed or disabled
+		if !found {
+			shard := ti.getShard(id)
+			shard.mu.RLock()
+			vec, ok := shard.data[id]
+			shard.mu.RUnlock()
+			if ok {
+				if !vec.Tombstone && vec.Timestamp >= startTime && vec.Timestamp <= endTime {
+					norm = vec.Norm
+					found = true
+				}
+			}
+		}
+		
+		if found {
+			if h.Len() < k {
+				heap.Push(h, temporalScoredResult{id: id, distance: norm})
+			} else if norm < (*h)[0].distance {
+				heap.Pop(h)
+				heap.Push(h, temporalScoredResult{id: id, distance: norm})
+			}
+		}
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].distance < results[j].distance
-	})
-
-	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
-	for i := 0; i < min(k, len(results)); i++ {
-		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: float32(results[i].distance),
-			Score:    float32(1.0 / (1.0 + results[i].distance)),
-		})
+	limit := h.Len()
+	searchResults := make([]lbtypes.SearchResult, limit)
+	for i := limit - 1; i >= 0; i-- {
+		res := heap.Pop(h).(temporalScoredResult)
+		searchResults[i] = lbtypes.SearchResult{
+			ID:       lbtypes.VectorID(res.id), // #nosec G115
+			Distance: res.distance,
+			Score:    1.0 / (1.0 + res.distance),
+		}
 	}
 
 	return searchResults, nil
 }
 
+// SearchSlidingWindow performs a search over the last n vector updates.
 func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int, k int) ([]lbtypes.SearchResult, error) {
-	ti.mu.RLock()
-	defer ti.mu.RUnlock()
-
-	validIDs := ti.temporalTree.GetLatest(windowSize)
-
-	type scoredResult struct {
-		id       uint64
-		distance float64
+	tree := ti.temporalTree.Load()
+	if tree == nil {
+		return []lbtypes.SearchResult{}, nil
 	}
 
-	var results []scoredResult
+	// Use optimized unique latest retrieval
+	validIDs := tree.GetUniqueLatest(windowSize)
+	if len(validIDs) == 0 {
+		return []lbtypes.SearchResult{}, nil
+	}
+
+	// 2. Select top-k using max-heap
+	h := &temporalMaxHeap{}
+	heap.Init(h)
+
 	for _, id := range validIDs {
-		vec := ti.vectors[id]
-		if vec.Tombstone {
-			continue
+		shard := ti.getShard(id)
+		shard.mu.RLock()
+		vec, ok := shard.data[id]
+		shard.mu.RUnlock()
+		if ok {
+			if !vec.Tombstone {
+				norm := vec.Norm
+				if h.Len() < k {
+					heap.Push(h, temporalScoredResult{id: id, distance: norm})
+				} else if norm < (*h)[0].distance {
+					heap.Pop(h)
+					heap.Push(h, temporalScoredResult{id: id, distance: norm})
+				}
+			}
 		}
-		dist := float64(ti.computeNorm(vec.Vector))
-		results = append(results, scoredResult{id: id, distance: dist})
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].distance < results[j].distance
-	})
-
-	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
-	for i := 0; i < min(k, len(results)); i++ {
-		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: float32(results[i].distance),
-			Score:    float32(1.0 / (1.0 + results[i].distance)),
-		})
+	limit := h.Len()
+	searchResults := make([]lbtypes.SearchResult, limit)
+	for i := limit - 1; i >= 0; i-- {
+		res := heap.Pop(h).(temporalScoredResult)
+		searchResults[i] = lbtypes.SearchResult{
+			ID:       lbtypes.VectorID(res.id), // #nosec G115
+			Distance: res.distance,
+			Score:    1.0 / (1.0 + res.distance),
+		}
 	}
 
 	return searchResults, nil
 }
 
+// SearchSlidingWindowByTime performs a search over vector updates from the last duration.
 func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration time.Duration, k int) ([]lbtypes.SearchResult, error) {
-	ti.mu.RLock()
-	defer ti.mu.RUnlock()
+	tree := ti.temporalTree.Load()
+	if tree == nil {
+		return []lbtypes.SearchResult{}, nil
+	}
 
 	now := time.Now().UnixNano()
-	windowStart := now - duration.Nanoseconds()
+	start := now - duration.Nanoseconds()
 
-	validIDs := ti.temporalTree.GetRange(windowStart, now)
-
-	type scoredResult struct {
-		id       uint64
-		distance float64
+	validIDs := tree.GetRange(start, now)
+	if len(validIDs) == 0 {
+		return []lbtypes.SearchResult{}, nil
 	}
 
-	var results []scoredResult
+	// 2. Select top-k using max-heap
+	h := &temporalMaxHeap{}
+	heap.Init(h)
+
 	for _, id := range validIDs {
-		vec := ti.vectors[id]
-		if vec.Tombstone {
-			continue
+		shard := ti.getShard(id)
+		shard.mu.RLock()
+		vec, ok := shard.data[id]
+		shard.mu.RUnlock()
+		if ok {
+			if !vec.Tombstone {
+				norm := vec.Norm
+				if h.Len() < k {
+					heap.Push(h, temporalScoredResult{id: id, distance: norm})
+				} else if norm < (*h)[0].distance {
+					heap.Pop(h)
+					heap.Push(h, temporalScoredResult{id: id, distance: norm})
+				}
+			}
 		}
-		dist := float64(ti.computeNorm(vec.Vector))
-		results = append(results, scoredResult{id: id, distance: dist})
 	}
 
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].distance < results[j].distance
-	})
-
-	searchResults := make([]lbtypes.SearchResult, 0, min(k, len(results)))
-	for i := 0; i < min(k, len(results)); i++ {
-		searchResults = append(searchResults, lbtypes.SearchResult{
-			ID:       lbtypes.VectorID(results[i].id), // #nosec G115
-			Distance: float32(results[i].distance),
-			Score:    float32(1.0 / (1.0 + results[i].distance)),
-		})
+	limit := h.Len()
+	searchResults := make([]lbtypes.SearchResult, limit)
+	for i := limit - 1; i >= 0; i-- {
+		res := heap.Pop(h).(temporalScoredResult)
+		searchResults[i] = lbtypes.SearchResult{
+			ID:       lbtypes.VectorID(res.id), // #nosec G115
+			Distance: res.distance,
+			Score:    1.0 / (1.0 + res.distance),
+		}
 	}
 
 	return searchResults, nil
 }
 
+// DeleteByTime removes or tombstones vectors with timestamps before the specified value.
 func (ti *TemporalIndex) DeleteByTime(ctx context.Context, beforeTimestamp int64) (int, error) {
 	ti.mu.Lock()
 	defer ti.mu.Unlock()
 
-	toDelete := ti.temporalTree.GetBefore(beforeTimestamp)
+	tree := ti.temporalTree.Load()
+	if tree == nil {
+		return 0, nil
+	}
+	toDelete := tree.GetBefore(beforeTimestamp)
 	deleted := 0
 
 	for _, id := range toDelete {
-		vec := ti.vectors[id]
-		vec.Tombstone = true
-		deleted++
+		shard := ti.getShard(id)
+		shard.mu.RLock()
+		vec, ok := shard.data[id]
+		shard.mu.RUnlock()
+		if ok {
+			newVec := *vec
+			newVec.Tombstone = true
+			shard.mu.Lock()
+			shard.data[id] = &newVec
+			shard.mu.Unlock()
+			deleted++
+		}
 	}
 
 	return deleted, nil
 }
 
+// GetVersion retrieves the vector data for a specific ID as it existed at a given timestamp.
 func (ti *TemporalIndex) GetVersion(id uint64, timestamp int64) ([]float32, bool) {
-	ti.mu.RLock()
-	defer ti.mu.RUnlock()
-
-	vec, ok := ti.vectors[id]
+	shard := ti.getShard(id)
+	shard.mu.RLock()
+	vec, ok := shard.data[id]
+	shard.mu.RUnlock()
 	if !ok {
 		return nil, false
 	}
@@ -550,11 +1183,12 @@ func (ti *TemporalIndex) GetVersion(id uint64, timestamp int64) ([]float32, bool
 	return vec.Vector, true
 }
 
+// GetHistory returns the temporal version history for a specific vector ID.
 func (ti *TemporalIndex) GetHistory(id uint64) []TemporalVector {
-	ti.mu.RLock()
-	defer ti.mu.RUnlock()
-
-	vec, ok := ti.vectors[id]
+	shard := ti.getShard(id)
+	shard.mu.RLock()
+	vec, ok := shard.data[id]
+	shard.mu.RUnlock()
 	if !ok {
 		return nil
 	}
@@ -566,35 +1200,40 @@ func (ti *TemporalIndex) GetHistory(id uint64) []TemporalVector {
 	return []TemporalVector{*vec}
 }
 
-func (ti *TemporalIndex) Size() int {
-	ti.mu.RLock()
-	defer ti.mu.RUnlock()
-	return len(ti.vectors)
+// SetGPUIndex sets the GPU acceleration index for this TemporalIndex.
+func (ti *TemporalIndex) SetGPUIndex(idx gputypes.Index) {
+	ti.gpuIndex.Store(idx)
 }
 
-func (ti *TemporalIndex) ActiveCount() int {
-	ti.mu.RLock()
-	defer ti.mu.RUnlock()
+// Size returns the total number of vectors in the temporal index.
+func (ti *TemporalIndex) Size() int {
+	return int(ti.pointCount.Load())
+}
 
+// ActiveCount returns the number of non-tombstoned vectors in the index.
+func (ti *TemporalIndex) ActiveCount() int {
 	count := 0
-	for _, v := range ti.vectors {
-		if !v.Tombstone {
-			count++
+	for i := 0; i < TemporalShards; i++ {
+		ti.shards[i].mu.RLock()
+		for _, v := range ti.shards[i].data {
+			if !v.Tombstone {
+				count++
+			}
 		}
+		ti.shards[i].mu.RUnlock()
 	}
 	return count
 }
 
-func (ti *TemporalIndex) computeNorm(vector []float32) float32 {
-	var sum float32
-	for _, v := range vector {
-		sum += v * v
+func (ti *TemporalIndex) computeNorm(v []float32) float32 {
+	if len(v) == 0 {
+		return 0
 	}
-	return sum
+	norm, _ := simd.DotProduct(v, v)
+	return norm
 }
 
-
-
+// VectorTimestamp pairs a vector with its creation/update timestamp for JSON export.
 type VectorTimestamp struct {
 	ID        uint64                 `json:"id"`
 	Timestamp time.Time              `json:"timestamp"`
@@ -602,16 +1241,23 @@ type VectorTimestamp struct {
 	Metadata  []byte                 `json:"metadata,omitempty"`
 }
 
+// GetVectorsInRange retrieves all vectors within a timestamp range as VectorTimestamp objects.
 func (ti *TemporalIndex) GetVectorsInRange(startTime, endTime int64) []VectorTimestamp {
-	ti.mu.RLock()
-	defer ti.mu.RUnlock()
-
-	ids := ti.temporalTree.GetRange(startTime, endTime)
-	// fmt.Printf("GetVectorsInRange: found %d ids in range %d to %d\n", len(ids), startTime, endTime)
+	tree := ti.temporalTree.Load()
+	if tree == nil {
+		return nil
+	}
+	ids := tree.GetRange(startTime, endTime)
 
 	results := make([]VectorTimestamp, 0, len(ids))
 	for _, id := range ids {
-		vec := ti.vectors[id]
+		shard := ti.getShard(id)
+		shard.mu.RLock()
+		vec, ok := shard.data[id]
+		shard.mu.RUnlock()
+		if !ok {
+			continue
+		}
 		if vec.Tombstone {
 			continue
 		}
@@ -630,27 +1276,29 @@ func (ti *TemporalIndex) GetVectorsInRange(startTime, endTime int64) []VectorTim
 	return results
 }
 
+// MarshalJSON provides custom JSON serialization for TemporalIndex.
 func (ti *TemporalIndex) MarshalJSON() ([]byte, error) {
-	ti.mu.RLock()
-	defer ti.mu.RUnlock()
-
 	type TempVec struct {
-		ID        uint64                 `json:"id"`
-		Vector    []float32              `json:"vector"`
-		Timestamp int64                  `json:"timestamp"`
-		Metadata  []byte                 `json:"metadata"`
-		Tombstone bool                   `json:"tombstone"`
+		ID        uint64    `json:"id"`
+		Vector    []float32 `json:"vector"`
+		Timestamp int64     `json:"timestamp"`
+		Metadata  []byte    `json:"metadata,omitempty"`
+		Tombstone bool      `json:"tombstone,omitempty"`
 	}
 
-	vectors := make([]TempVec, 0, len(ti.vectors))
-	for _, v := range ti.vectors {
-		vectors = append(vectors, TempVec{
-			ID:        v.ID,
-			Vector:    v.Vector,
-			Timestamp: v.Timestamp,
-			Metadata:  v.Metadata,
-			Tombstone: v.Tombstone,
-		})
+	var vectors []TempVec
+	for i := 0; i < TemporalShards; i++ {
+		ti.shards[i].mu.RLock()
+		for _, v := range ti.shards[i].data {
+			vectors = append(vectors, TempVec{
+				ID:        v.ID,
+				Vector:    v.Vector,
+				Timestamp: v.Timestamp,
+				Metadata:  v.Metadata,
+				Tombstone: v.Tombstone,
+			})
+		}
+		ti.shards[i].mu.RUnlock()
 	}
 
 	return json.Marshal(struct {
@@ -660,4 +1308,23 @@ func (ti *TemporalIndex) MarshalJSON() ([]byte, error) {
 		Dimension: ti.dimension,
 		Vectors:   vectors,
 	})
+}
+
+// temporalMaxHeap implements heap.Interface for top-k temporal results (Max-Heap by Distance).
+type temporalMaxHeap []temporalScoredResult
+
+func (h temporalMaxHeap) Len() int           { return len(h) }
+func (h temporalMaxHeap) Less(i, j int) bool { return h[i].distance > h[j].distance }
+func (h temporalMaxHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
+func (h *temporalMaxHeap) Push(x any) {
+	*h = append(*h, x.(temporalScoredResult))
+}
+
+func (h *temporalMaxHeap) Pop() any {
+	old := *h
+	n := len(old)
+	x := old[n-1]
+	*h = old[0 : n-1]
+	return x
 }

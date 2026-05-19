@@ -1,59 +1,76 @@
 package simd
 
 import (
-	"fmt"
-	"math/rand"
+	"math"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-func TestEuclideanDistanceTiledBatch(t *testing.T) {
-	dims := 3072
-	numVecs := 64
+func TestEuclideanDistanceTiledBatch_Remainder(t *testing.T) {
+	// Dimensions not multiple of 8 or 1024
+	dims := 1030 
 	query := make([]float32, dims)
-	vectors := make([][]float32, numVecs)
-	for i := range vectors {
-		vectors[i] = make([]float32, dims)
-		for j := 0; j < dims; j++ {
-			vectors[i][j] = rand.Float32()
+	for i := range query {
+		query[i] = float32(i)
+	}
+
+	vectors := make([][]float32, 2)
+	vectors[0] = make([]float32, dims)
+	vectors[1] = make([]float32, dims)
+
+	for i := 0; i < dims; i++ {
+		vectors[0][i] = float32(i + 1)
+		vectors[1][i] = float32(i + 2)
+	}
+
+	results := make([]float32, 2)
+	err := EuclideanDistanceTiledBatch(query, vectors, results)
+	require.NoError(t, err)
+
+	// Calculate expected
+	expected := make([]float32, 2)
+	for j := 0; j < 2; j++ {
+		var sum float64
+		for i := 0; i < dims; i++ {
+			diff := float64(vectors[j][i] - query[i])
+			sum += diff * diff
 		}
-	}
-	for j := 0; j < dims; j++ {
-		query[j] = rand.Float32()
+		expected[j] = float32(math.Sqrt(sum))
 	}
 
-	expected := make([]float32, numVecs)
-	EuclideanDistanceBatch(query, vectors, expected)
-
-	results := make([]float32, numVecs)
-	// We will implement this
-	EuclideanDistanceTiledBatch(query, vectors, results)
-
-	for i := range results {
-		assert.InDelta(t, expected[i], results[i], 0.01, fmt.Sprintf("Vector %d mismatch", i))
-	}
+	require.InDeltaSlice(t, expected, results, 1e-5)
 }
 
-func BenchmarkTiledVsStandard_3072(b *testing.B) {
-	dims := 3072
-	numVecs := 64
+func TestDotProductTiledBatch_Remainder(t *testing.T) {
+	dims := 1030
 	query := make([]float32, dims)
-	vectors := make([][]float32, numVecs)
-	for i := range vectors {
-		vectors[i] = make([]float32, dims)
+	for i := range query {
+		query[i] = float32(i)
 	}
-	results := make([]float32, numVecs)
 
-	b.Run("Standard", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			EuclideanDistanceBatch(query, vectors, results)
-		}
-	})
+	vectors := make([][]float32, 2)
+	vectors[0] = make([]float32, dims)
+	vectors[1] = make([]float32, dims)
 
-	b.Run("Tiled", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
-			EuclideanDistanceTiledBatch(query, vectors, results)
+	for i := 0; i < dims; i++ {
+		vectors[0][i] = float32(i + 1)
+		vectors[1][i] = float32(i + 2)
+	}
+
+	results := make([]float32, 2)
+	err := DotProductTiledBatch(query, vectors, results)
+	require.NoError(t, err)
+
+	// Calculate expected
+	expected := make([]float32, 2)
+	for j := 0; j < 2; j++ {
+		var sum float64
+		for i := 0; i < dims; i++ {
+			sum += float64(vectors[j][i] * query[i])
 		}
-	})
+		expected[j] = float32(sum)
+	}
+
+	require.InDeltaSlice(t, expected, results, 512.0)
 }

@@ -26,6 +26,7 @@ func detectMetalGPULive() []GPUInfo {
 	if cName == nil {
 		return nil
 	}
+	// #nosec G103
 	defer C.free(unsafe.Pointer(cName))
 	name := C.GoString(cName)
 

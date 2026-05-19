@@ -78,3 +78,36 @@ func onesCount64(x uint64) int {
 	x += x >> 32
 	return int(x & 0x7f)
 }
+
+var andBitVectorsImpl = AndBitVectorsGeneric
+var countBitVectorImpl = CountBitVectorGeneric
+
+// AndBitVectors applies bitwise AND: dst &= src
+func AndBitVectors(dst, src []uint64) {
+	andBitVectorsImpl(dst, src)
+}
+
+// CountBitVector returns the number of set bits in the vector
+func CountBitVector(src []uint64) int {
+	return countBitVectorImpl(src)
+}
+
+// AndBitVectorsGeneric is the pure-Go implementation.
+func AndBitVectorsGeneric(dst, src []uint64) {
+	n := len(dst)
+	if len(src) < n {
+		n = len(src)
+	}
+	for i := 0; i < n; i++ {
+		dst[i] &= src[i]
+	}
+}
+
+// CountBitVectorGeneric is the pure-Go implementation.
+func CountBitVectorGeneric(src []uint64) int {
+	count := 0
+	for _, v := range src {
+		count += onesCount64(v)
+	}
+	return count
+}

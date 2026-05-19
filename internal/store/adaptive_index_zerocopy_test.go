@@ -45,10 +45,10 @@ func TestBruteForceIndex_ZeroCopyVectorAccess(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "zerocopy_test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
-	idx := NewBruteForceIndex(ds)
+	idx := NewBruteForceIndex(ds).(*BruteForceIndex)
 
 	// Add vectors
 	for i := 0; i < numVectors; i++ {
@@ -165,10 +165,10 @@ func TestBruteForceIndex_SearchWithZeroCopy(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "search_zerocopy_test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
-	idx := NewBruteForceIndex(ds)
+	idx := NewBruteForceIndex(ds).(*BruteForceIndex)
 
 	// Add vectors
 	for i := 0; i < numVectors; i++ {
@@ -240,10 +240,10 @@ func BenchmarkBruteForceIndex_VectorAccess(b *testing.B) {
 
 	ds := &Dataset{
 		Name:    "bench_test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
-	idx := NewBruteForceIndex(ds)
+	idx := NewBruteForceIndex(ds).(*BruteForceIndex)
 	for i := 0; i < numVectors; i++ {
 		_, _ = idx.AddByLocation(context.Background(), 0, i)
 	}
@@ -299,7 +299,7 @@ func BenchmarkBruteForceIndex_Search(b *testing.B) {
 
 	ds := &Dataset{
 		Name:    "search_bench",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
 	idx := NewBruteForceIndex(ds)

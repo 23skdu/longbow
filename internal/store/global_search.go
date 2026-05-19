@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
@@ -14,6 +16,7 @@ import (
 	"github.com/23skdu/longbow/internal/tracing"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/23skdu/longbow/pkg/retry"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -21,15 +24,22 @@ import (
 
 // GlobalSearchCoordinator handles scatter-gather logic
 type GlobalSearchCoordinator struct {
-	logger zerolog.Logger
-	pool   *FlightClientPool
+	logger      zerolog.Logger
+	pool        *FlightClientPool
+	retryPolicy retry.RetryPolicy
 }
 
-//nolint:gocritic // Logger passed by value for simplicity
+// NewGlobalSearchCoordinator creates a new GlobalSearchCoordinator with the provided logger and client pool.
 func NewGlobalSearchCoordinator(logger zerolog.Logger, pool *FlightClientPool) *GlobalSearchCoordinator {
 	return &GlobalSearchCoordinator{
 		logger: logger,
 		pool:   pool,
+		retryPolicy: &retry.ExponentialBackoff{
+			BaseDelay:      100 * time.Millisecond,
+			MaxDelay:       2 * time.Second,
+			Retries:        3,
+			AttemptTimeout: 10 * time.Second,
+		},
 	}
 }
 
@@ -83,12 +93,16 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 	// We map each group to one output channel
 	groupChs := make([]chan []SearchResult, len(peerGroups))
 
+	isHybrid := req.TextQuery != "" || (req.Alpha > 0 && req.Alpha < 1.0)
+	
 	// Request Body
 	remoteReq := *req // Copy struct
 	remoteReq.LocalOnly = true
+	if isHybrid {
+		remoteReq.RawHybrid = true
+	}
 
 	var wg sync.WaitGroup
-	configTimeout := 30 * time.Second
 
 	groupIdx := 0
 	for _, members := range peerGroups {
@@ -115,85 +129,91 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 			failSignal := make(chan struct{}, len(replicas))
 			var wgReplicas sync.WaitGroup
 
-			subCtx, cancelTimeout := context.WithTimeout(ctxHedge, configTimeout)
-			defer cancelTimeout()
-
 			for i := range replicas {
 				rp := replicas[i]
 				wgReplicas.Add(1)
 				go func(p mesh.Member) {
 					defer wgReplicas.Done()
 
-					conn, err := c.pool.Get(subCtx, p.MetaAddr)
-					if err != nil {
-						failSignal <- struct{}{}
-						return
-					}
-					defer c.pool.Put(conn)
-					client := conn.Client()
+					err := retry.Do(ctxHedge, c.retryPolicy, func(subCtx context.Context) error {
+						conn, err := c.pool.Get(subCtx, p.MetaAddr)
+						if err != nil {
+							return err
+						}
+						defer c.pool.Put(conn)
+						client := conn.Client()
 
-					c.logger.Debug().Str("peer", p.ID).Str("addr", p.MetaAddr).Msg("Sending DoGet to peer")
+						c.logger.Debug().Str("peer", p.ID).Str("addr", p.MetaAddr).Msg("Sending DoGet to peer")
 
-					// DoGet with Search Ticket
-					ticketQuery := query.TicketQuery{
-						Search: &remoteReq,
-					}
-					ticketBytes, err := json.Marshal(ticketQuery)
-					if err != nil {
-						failSignal <- struct{}{}
-						return
-					}
+						// DoGet with Search Ticket
+						ticketQuery := query.TicketQuery{
+							Search: &remoteReq,
+						}
+						ticketBytes, err := json.Marshal(ticketQuery)
+						if err != nil {
+							return err
+						}
 
-					stream, err := client.DoGet(subCtx, &flight.Ticket{Ticket: ticketBytes})
-					if err != nil {
-						// Only log at Debug level for NotFound as it happens when Sharding skips a node
+						stream, err := client.DoGet(subCtx, &flight.Ticket{Ticket: ticketBytes})
+						if err != nil {
+							return err
+						}
+
+						reader, err := flight.NewRecordReader(stream)
+						if err != nil {
+							return err
+						}
+						defer reader.Release()
+
+						var results []SearchResult
+						for reader.Next() {
+							rec := reader.RecordBatch()
+							col0 := rec.Column(0)
+							col1 := rec.Column(1)
+
+							ids := col0.(*array.Uint64).Uint64Values()
+							scores := col1.(*array.Float32).Float32Values()
+							
+							var sourceValues []uint8
+							for i, f := range rec.Schema().Fields() {
+								if f.Name == "source" {
+									sourceValues = rec.Column(i).(*array.Uint8).Uint8Values()
+									break
+								}
+							}
+
+							for k := 0; k < len(ids); k++ {
+								res := SearchResult{
+									ID:    lbtypes.VectorID(ids[k]), // #nosec G115
+									Score: scores[k],
+								}
+								if sourceValues != nil {
+									res.Source = sourceValues[k]
+								}
+								results = append(results, res)
+							}
+						}
+						if reader.Err() != nil {
+							return reader.Err()
+						}
+
+						// Submit
+						select {
+						case resultHedge <- results:
+							cancelHedge() // Cancel others
+						case <-subCtx.Done():
+						}
+						return nil
+					})
+
+					if err != nil && ctxHedge.Err() == nil {
+						// Only log and signal failure if the hedge context wasn't cancelled by a winner
 						if status.Code(err) == codes.NotFound {
-							c.logger.Debug().Err(err).Str("peer", p.ID).Msg("Peer does not have dataset")
+							c.logger.Debug().Err(err).Str("peer", p.ID).Msg("Peer does not have dataset after retries")
 						} else {
-							c.logger.Warn().Err(err).Str("peer", p.ID).Msg("DoGet failed")
+							c.logger.Warn().Err(err).Str("peer", p.ID).Msg("DoGet failed after retries")
 						}
 						failSignal <- struct{}{}
-						return
-					}
-
-					reader, err := flight.NewRecordReader(stream)
-					if err != nil {
-						if status.Code(err) == codes.NotFound {
-							c.logger.Debug().Err(err).Str("peer", p.ID).Msg("NewRecordReader failed (NotFound)")
-						} else {
-							c.logger.Warn().Err(err).Str("peer", p.ID).Msg("NewRecordReader failed")
-						}
-						failSignal <- struct{}{}
-						return
-					}
-					defer reader.Release()
-
-					var results []SearchResult
-					for reader.Next() {
-						rec := reader.RecordBatch()
-						col0 := rec.Column(0)
-						col1 := rec.Column(1)
-
-						ids := col0.(*array.Uint64).Uint64Values()
-						scores := col1.(*array.Float32).Float32Values()
-
-						for k := 0; k < len(ids); k++ {
-							results = append(results, SearchResult{
-								ID:    lbtypes.VectorID(ids[k]), // #nosec G115
-								Score: scores[k],
-							})
-						}
-					}
-					if reader.Err() != nil {
-						failSignal <- struct{}{}
-						return
-					}
-
-					// Submit
-					select {
-					case resultHedge <- results:
-						cancelHedge() // Cancel others
-					case <-subCtx.Done():
 					}
 				}(rp)
 			}
@@ -222,7 +242,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 				case <-finishedAll:
 					// Double check if we missed a result? theoretically shouldn't happen with resultHedge
 					return
-				case <-subCtx.Done():
+				case <-ctxHedge.Done():
 					metrics.GlobalSearchPartialFailures.Inc()
 					return
 				}
@@ -237,43 +257,66 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 	// Wait, the previous code didn't wait *here*. It launched a goroutine to wait.
 	// But here I'm setting up channels. It's fine.
 
-	// 3. Launch Merger
-	// Merger runs concurrently and consumes from channels as they become available
-	mergedCh := MergeSortedStreams(channels, req.K)
-
-	// 4. Collect Final Results
-	finalResults := make([]SearchResult, 0, req.K)
-	for r := range mergedCh {
-		finalResults = append(finalResults, r)
-	}
-
-	// Ensure peer goroutines finish (they should have closed their channels)
-	// Actually we don't strictly need to wait for WG if we only want Top K and Merger closes early?
-	// MergeSortedStreams drain logic: it closes output when it has K items or all inputs closed.
-	// If it hits K, it closes output. But peer goroutines might still be running/blocked on write?
-	// The peerChs are buffered (size 1). If peer writes 1 batch, it unblocks.
-	// Peer goroutine then closes channel and exits.
-	// So we don't leak goroutines even if we return early.
-	// However, for cleanliness, we might want to ensure they are done or cancel context?
-	// DoAction context `subCtx` will timeout anyway.
-
-	// Wait for peers to cleanup if needed, but not strictly required for correctness of result
-	// Let's run Wait in background to avoid blocking return if K is satisfied early?
-	// But `mergedCh` only closes when K items yielded OR all sources exhausted.
-	// If K satisfied, `MergeSortedStreams` loop yields K and returns (closing output).
-	// But it does NOT close input channels. Peer goroutines close input channels.
-	// The merger logic itself is:
-	// "for h.Len() > 0 && count < k"
-	// If count < k is hit, merger exits and closes `out`.
-	// Peer goroutines are independent.
+	// Wait for all peer requests to complete
 	go func() {
 		wg.Wait()
+		for _, ch := range groupChs {
+			close(ch)
+		}
 	}()
+
+	var finalResults []SearchResult
+
+	if isHybrid {
+		// Hybrid Mode: Drain all channels, separate by Source, then apply global RRF
+		var allDense []SearchResult
+		var allSparse []SearchResult
+
+		for _, ch := range channels {
+			for batch := range ch {
+				for _, r := range batch {
+					switch r.Source {
+					case core.SourceDense:
+						allDense = append(allDense, r)
+					case core.SourceSparse:
+						allSparse = append(allSparse, r)
+					}
+				}
+			}
+		}
+		
+		metrics.GlobalSearchFanoutSize.Observe(float64(len(allDense) + len(allSparse)))
+
+		// Sort each list globally
+		// Dense scores (e.g., Cosine/DotProduct) are descending. Distance (L2) is ascending.
+		// RRF assumes sorted lists where index 0 is best. 
+		// We use a simple descending sort, assuming scores are higher-is-better for hybrid.
+		sort.Slice(allDense, func(i, j int) bool { return allDense[i].Score > allDense[j].Score })
+		sort.Slice(allSparse, func(i, j int) bool { return allSparse[i].Score > allSparse[j].Score })
+
+		// Record payload size (number of elements fused globally)
+		metrics.GlobalRRFPayloadBytes.Observe(float64(len(allDense) + len(allSparse)))
+
+		// Apply Global Reciprocal Rank Fusion on the complete gathered lists
+		rrfStart := time.Now()
+		finalResults = ReciprocalRankFusion(req.Dataset, allDense, allSparse, 60, req.K, nil)
+		metrics.GlobalRRFLatencySeconds.Observe(time.Since(rrfStart).Seconds())
+	} else {
+		// 3. Launch Merger for standard sorted streams
+		mergedCh := MergeSortedStreams(channels, req.K)
+
+		// 4. Collect Final Results
+		finalResults = make([]SearchResult, 0, req.K)
+		for r := range mergedCh {
+			finalResults = append(finalResults, r)
+		}
+	}
 
 	metrics.GlobalSearchDuration.Observe(time.Since(start).Seconds())
 	return finalResults, nil
 }
 
+// Close releases any resources held by the coordinator.
 func (c *GlobalSearchCoordinator) Close() error {
 	// The pool is managed externally, so we don't need to close it here.
 	return nil

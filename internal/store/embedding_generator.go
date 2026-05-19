@@ -14,9 +14,9 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/wasm"
 	"github.com/23skdu/longbow/internal/ml"
-	"os"
 )
 
+// EmbeddingGenerator defines the interface for generating vector embeddings from text.
 type EmbeddingGenerator interface {
 	Generate(ctx context.Context, texts []string) ([][]float32, error)
 	GenerateSingle(ctx context.Context, text string) ([]float32, error)
@@ -24,6 +24,7 @@ type EmbeddingGenerator interface {
 	Close() error
 }
 
+// EmbeddingConfig holds configuration for an embedding generator.
 type EmbeddingConfig struct {
 	ModelPath    string
 	ModelType    string
@@ -39,6 +40,7 @@ type EmbeddingConfig struct {
 	CacheTTL     time.Duration
 }
 
+// ModelVersion tracks metadata for a specific version of an embedding model.
 type ModelVersion struct {
 	Version   string    `json:"version"`
 	ModelName string    `json:"model_name"`
@@ -49,6 +51,7 @@ type ModelVersion struct {
 	Checksum  string    `json:"checksum,omitempty"`
 }
 
+// EmbeddingModelRegistry manages available embedding models and their generators.
 type EmbeddingModelRegistry struct {
 	mu         sync.RWMutex
 	models     map[string]map[string]ModelVersion
@@ -56,6 +59,7 @@ type EmbeddingModelRegistry struct {
 	cache      *EmbeddingCache
 }
 
+// EmbeddingCache provides a simple LRU-like cache for embeddings.
 type EmbeddingCache struct {
 	mu         sync.RWMutex
 	entries    map[string][]float32
@@ -65,6 +69,7 @@ type EmbeddingCache struct {
 	misses     int64
 }
 
+// NewEmbeddingModelRegistry creates a new model registry.
 func NewEmbeddingModelRegistry(cacheTTL time.Duration, maxCacheEntries int) *EmbeddingModelRegistry {
 	return &EmbeddingModelRegistry{
 		models:     make(map[string]map[string]ModelVersion),
@@ -73,6 +78,7 @@ func NewEmbeddingModelRegistry(cacheTTL time.Duration, maxCacheEntries int) *Emb
 	}
 }
 
+// NewEmbeddingCache creates a new EmbeddingCache with the given TTL and capacity.
 func NewEmbeddingCache(ttl time.Duration, maxEntries int) *EmbeddingCache {
 	return &EmbeddingCache{
 		entries:    make(map[string][]float32),
@@ -81,6 +87,7 @@ func NewEmbeddingCache(ttl time.Duration, maxEntries int) *EmbeddingCache {
 	}
 }
 
+// Get retrieves an embedding from the cache if it exists and is not expired.
 func (c *EmbeddingCache) Get(key string) ([]float32, bool) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -91,6 +98,7 @@ func (c *EmbeddingCache) Get(key string) ([]float32, bool) {
 	return entry, ok
 }
 
+// Set adds or updates an embedding in the cache.
 func (c *EmbeddingCache) Set(key string, value []float32) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -103,12 +111,14 @@ func (c *EmbeddingCache) Set(key string, value []float32) {
 	c.entries[key] = value
 }
 
+// Stats returns the cache hit/miss statistics and current size.
 func (c *EmbeddingCache) Stats() (hits, misses int64, size int) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.hits, c.misses, len(c.entries)
 }
 
+// RegisterModel adds a model version to the registry.
 func (r *EmbeddingModelRegistry) RegisterModel(provider, modelName string, version ModelVersion) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -119,6 +129,7 @@ func (r *EmbeddingModelRegistry) RegisterModel(provider, modelName string, versi
 	return nil
 }
 
+// GetModel retrieves a model version from the registry.
 func (r *EmbeddingModelRegistry) GetModel(provider, modelName string) (ModelVersion, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -126,6 +137,7 @@ func (r *EmbeddingModelRegistry) GetModel(provider, modelName string) (ModelVers
 	return v, ok
 }
 
+// ListModels returns all model versions for a given provider.
 func (r *EmbeddingModelRegistry) ListModels(provider string) []ModelVersion {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -136,12 +148,14 @@ func (r *EmbeddingModelRegistry) ListModels(provider string) []ModelVersion {
 	return versions
 }
 
+// SetGenerator registers an active generator for a model key.
 func (r *EmbeddingModelRegistry) SetGenerator(key string, gen EmbeddingGenerator) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	r.generators[key] = gen
 }
 
+// GetGenerator retrieves an active generator for a model key.
 func (r *EmbeddingModelRegistry) GetGenerator(key string) (EmbeddingGenerator, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -149,10 +163,12 @@ func (r *EmbeddingModelRegistry) GetGenerator(key string) (EmbeddingGenerator, b
 	return g, ok
 }
 
+// GetCache returns the shared embedding cache.
 func (r *EmbeddingModelRegistry) GetCache() *EmbeddingCache {
 	return r.cache
 }
 
+// ModelHealthStatus tracks the availability and performance of an embedding model.
 type ModelHealthStatus struct {
 	ModelName   string    `json:"model_name"`
 	Provider    string    `json:"provider"`
@@ -162,6 +178,7 @@ type ModelHealthStatus struct {
 	ErrorCount  int       `json:"error_count"`
 }
 
+// ListAllModels returns all registered model versions grouped by provider.
 func (r *EmbeddingModelRegistry) ListAllModels() map[string][]ModelVersion {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -176,6 +193,7 @@ func (r *EmbeddingModelRegistry) ListAllModels() map[string][]ModelVersion {
 	return result
 }
 
+// UpdateModelVersion updates an existing model version's metadata.
 func (r *EmbeddingModelRegistry) UpdateModelVersion(provider, modelName string, version ModelVersion) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -189,6 +207,7 @@ func (r *EmbeddingModelRegistry) UpdateModelVersion(provider, modelName string, 
 	return nil
 }
 
+// SetDefaultModel marks a specific model as the default for its provider.
 func (r *EmbeddingModelRegistry) SetDefaultModel(provider, modelName string) error {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -211,6 +230,7 @@ func (r *EmbeddingModelRegistry) SetDefaultModel(provider, modelName string) err
 	return nil
 }
 
+// GetDefaultModel returns the default model version for a provider.
 func (r *EmbeddingModelRegistry) GetDefaultModel(provider string) (ModelVersion, bool) {
 	r.mu.RLock()
 	defer r.mu.RUnlock()
@@ -225,6 +245,7 @@ func (r *EmbeddingModelRegistry) GetDefaultModel(provider string) (ModelVersion,
 	return ModelVersion{}, false
 }
 
+// NewEmbeddingGenerator creates an embedding generator based on the provided configuration.
 func NewEmbeddingGenerator(config EmbeddingConfig) (EmbeddingGenerator, error) {
 	switch config.Provider {
 	case "openai":
@@ -250,7 +271,8 @@ type openAIEmbeddingGenerator struct {
 	httpClient *http.Client
 }
 
-func NewOpenAIEmbedding(config EmbeddingConfig) (*openAIEmbeddingGenerator, error) {
+// NewOpenAIEmbedding creates an OpenAI embedding generator.
+func NewOpenAIEmbedding(config EmbeddingConfig) (EmbeddingGenerator, error) {
 	if config.APIKey == "" {
 		return nil, errors.New("API key is required for OpenAI embedding")
 	}
@@ -375,7 +397,8 @@ type cohereEmbeddingGenerator struct {
 	httpClient *http.Client
 }
 
-func NewCohereEmbedding(config EmbeddingConfig) (*cohereEmbeddingGenerator, error) {
+// NewCohereEmbedding creates a Cohere embedding generator.
+func NewCohereEmbedding(config EmbeddingConfig) (EmbeddingGenerator, error) {
 	if config.APIKey == "" {
 		return nil, errors.New("API key is required for Cohere embedding")
 	}
@@ -482,7 +505,8 @@ type huggingFaceEmbeddingGenerator struct {
 	httpClient *http.Client
 }
 
-func NewHuggingFaceEmbedding(config EmbeddingConfig) (*huggingFaceEmbeddingGenerator, error) {
+// NewHuggingFaceEmbedding creates a HuggingFace embedding generator.
+func NewHuggingFaceEmbedding(config EmbeddingConfig) (EmbeddingGenerator, error) {
 	if config.APIKey == "" {
 		return nil, errors.New("API key is required for HuggingFace embedding")
 	}
@@ -576,11 +600,13 @@ type localEmbeddingGenerator struct {
 	initialized bool
 }
 
+// EmbeddingModel defines the interface for local model inference.
 type EmbeddingModel interface {
 	Inference(input []string) ([][]float32, error)
 	Close() error
 }
 
+// EmbeddingLogger defines the logging interface used by embedding generators.
 type EmbeddingLogger interface {
 	Debug(msg string, keysAndValues ...interface{})
 	Info(msg string, keysAndValues ...interface{})
@@ -595,7 +621,8 @@ func (l noopLogger) Debug(msg string, keysAndValues ...interface{}) {}
 func (l noopLogger) Info(msg string, keysAndValues ...interface{})  {}
 func (l noopLogger) Error(msg string, keysAndValues ...interface{}) {}
 
-func NewLocalEmbeddingGenerator(config EmbeddingConfig) (*localEmbeddingGenerator, error) {
+// NewLocalEmbeddingGenerator creates a local embedding generator using ONNX or WASM.
+func NewLocalEmbeddingGenerator(config EmbeddingConfig) (EmbeddingGenerator, error) {
 	dim := config.Dimension
 	if dim <= 0 {
 		dim = 384
@@ -623,12 +650,7 @@ func NewLocalEmbeddingGenerator(config EmbeddingConfig) (*localEmbeddingGenerato
 
 func (le *localEmbeddingGenerator) initModel() error {
 	if le.modelPath == "" {
-		if os.Getenv("LONGBOW_STRICT_MODELS") == "1" {
-			return errors.New("strict model validation failed: no model path specified and LONGBOW_STRICT_MODELS=1")
-		}
-		le.model = &stubEmbeddingModel{dimension: le.dimension, path: "empty"}
-		le.initialized = true
-		return nil
+		return errors.New("strict model validation failed: no model path specified")
 	}
 
 	ext := ""
@@ -646,13 +668,7 @@ func (le *localEmbeddingGenerator) initModel() error {
 		le.initialized = true
 		le.logger.Info("ONNX embedding model loaded", "path", le.modelPath)
 	default:
-		if os.Getenv("LONGBOW_STRICT_MODELS") == "1" {
-			return fmt.Errorf("strict model validation failed: unknown model extension for %s and LONGBOW_STRICT_MODELS=1", le.modelPath)
-		}
-		le.model = &stubEmbeddingModel{dimension: le.dimension, path: le.modelPath}
-		le.initialized = true
-		// Use a more visible warning for stub models in production-critical path
-		fmt.Printf("WARNING: Using stub embedding model for path: %s. This is NOT recommended for production.\n", le.modelPath)
+		return fmt.Errorf("strict model validation failed: unknown model extension for %s (use .onnx or .wasm)", le.modelPath)
 	}
 
 	return nil
@@ -710,39 +726,7 @@ func (le *localEmbeddingGenerator) Close() error {
 	return nil
 }
 
-type stubEmbeddingModel struct {
-	dimension int
-	path      string
-}
 
-func (m *stubEmbeddingModel) Inference(input []string) ([][]float32, error) {
-	metrics.StubModelUsageTotal.WithLabelValues(m.path).Add(float64(len(input)))
-	results := make([][]float32, len(input))
-	for i := range input {
-		results[i] = make([]float32, m.dimension)
-		hash := hashString(input[i])
-		for j := 0; j < m.dimension; j++ {
-			results[i][j] = float32((hash >> uint(j%32)) & 0xFFFF)
-			if results[i][j] > 1 {
-				results[i][j] = results[i][j] / 65535
-			}
-		}
-	}
-	return results, nil
-}
-
-func (m *stubEmbeddingModel) Close() error {
-	return nil
-}
-
-func hashString(s string) uint64 {
-	h := uint64(2166136261)
-	for i := 0; i < len(s); i++ {
-		h ^= uint64(s[i])
-		h *= 16777619
-	}
-	return h
-}
 
 type onnxEmbeddingModel struct {
 	path    string
@@ -789,16 +773,24 @@ func (m *wasmEmbeddingModel) Inference(input []string) ([][]float32, error) {
 	}
 
 	if m.tokenizer == nil {
-		tok, _ := ml.NewTokenizer("vocab.txt", 512)
+		tok, err := ml.NewTokenizer("vocab.txt", 512)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load tokenizer: %w", err)
+		}
 		m.tokenizer = tok
 	}
+
+	start := time.Now()
+	defer func() {
+		metrics.EmbeddingGenerationDurationSeconds.WithLabelValues("local", "wasm").Observe(time.Since(start).Seconds())
+	}()
 
 	results := make([][]float32, len(input))
 	for i, text := range input {
 		ids, mask := m.tokenizer.Encode(text)
 		output, err := m.runner.InferenceWithTokens(context.Background(), ids, mask)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("WASM inference failed for text %d: %w", i, err)
 		}
 		results[i] = output
 	}

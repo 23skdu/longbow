@@ -1,6 +1,7 @@
 package memory
 
 import (
+	"runtime"
 	"testing"
 
 	"github.com/rs/zerolog"
@@ -26,27 +27,19 @@ func TestGCTuner_ArenaAwareTuning(t *testing.T) {
 		_, _ = arena.Alloc(256 * 1024) // 256KB at a time, ignore errors in test
 	}
 
-	stats := arena.Stats()
-	tuner.RegisterArena(arena)
+	tuner.AddArena(arena.StatsRecord())
 
-	// Use a small heap size to make arena ratio high
-	heapSize := int64(1 * 1024 * 1024) // 1MB heap
+	// Use a large heap size to make total ratio high (> 85% of 50MB)
+	heapSize := int64(45 * 1024 * 1024) // 45MB heap
 	mockReader := &mockMemStatsReader{
 		heapInUse: uint64(heapSize),
 	}
 	tuner.reader = mockReader
 
-	// Calculate expected arena ratio
-	arenaRatio := float64(stats.TotalCapacity) / float64(heapSize)
-	if arenaRatio > 0.7 {
-		tuner.tune(uint64(heapSize))
-		// Should set GOGC to 50 due to high arena ratio
-		assert.Equal(t, 50, tuner.currentGOGC, "Should set aggressive GOGC=50 when arena ratio >0.7 (ratio=%.2f, capacity=%d, heap=%d)", arenaRatio, stats.TotalCapacity, heapSize)
-	} else {
-		t.Logf("Arena ratio %.2f <= 0.7, testing standard logic instead", arenaRatio)
-		// Test that standard logic still works
-		tuner.tune(uint64(heapSize))
-		// With small heap (1MB) vs limit (50MB), should be high GOGC
-		assert.Equal(t, 100, tuner.currentGOGC, "Should use standard high GOGC for low utilization")
-	}
+	// Total Physical = 45MB (heap) + 1.25MB (arena) = 46.25MB
+	// Ratio = 46.25 / 50 = 0.925 (> 0.85)
+	tuner.tune(&runtime.MemStats{HeapAlloc: uint64(heapSize)}, true)
+	
+	// Should set GOGC to lowGOGC (10) due to high total physical pressure
+	assert.Equal(t, 10, tuner.currentGOGC, "Should set aggressive GOGC=10 when total physical ratio >0.85")
 }

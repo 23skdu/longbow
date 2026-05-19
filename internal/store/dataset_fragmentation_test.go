@@ -33,7 +33,7 @@ func TestDataset_FragmentationTracking(t *testing.T) {
 	}
 
 	rec := b.NewRecordBatch()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 
 	// Update batch size
 	ds.UpdateBatchSize(0, 100)
@@ -73,7 +73,7 @@ func TestDataset_FragmentationMultipleBatches(t *testing.T) {
 		}
 
 		rec := b.NewRecordBatch()
-		ds.Records = append(ds.Records, rec)
+		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 		b.Release()
 
 		ds.UpdateBatchSize(batchIdx, size)

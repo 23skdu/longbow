@@ -32,7 +32,7 @@ func CompactArena[T any](ta *TypedArena[T], liveRefs []SliceRef) (*CompactionSta
 	}
 
 	// Get old arena stats
-	oldSlabs := *ta.arena.slabs.Load()
+	oldSlabs := *ta.Slab().slabs.Load()
 	oldSlabCount := len(oldSlabs)
 	var oldTotalBytes int64
 	for _, slab := range oldSlabs {
@@ -40,7 +40,7 @@ func CompactArena[T any](ta *TypedArena[T], liveRefs []SliceRef) (*CompactionSta
 	}
 
 	// Create a new arena for compacted data
-	newArena := NewSlabArena(int(ta.arena.slabCap))
+	newArena := NewSlabArena(int(ta.Slab().slabCap))
 	newTypedArena := NewTypedArena[T](newArena)
 
 	// Copy all live data to the new arena
@@ -78,7 +78,7 @@ func CompactArena[T any](ta *TypedArena[T], liveRefs []SliceRef) (*CompactionSta
 	}
 
 	// Swap the arenas (caller must update references)
-	ta.arena = newArena
+	ta.arena.Store(newArena)
 
 	return stats, nil
 }
@@ -148,7 +148,7 @@ func (ca *CompactableArena[T]) TotalAllocated() int64 {
 	ca.mu.RLock()
 	defer ca.mu.RUnlock()
 
-	slabs := *ca.arena.arena.slabs.Load()
+	slabs := *ca.arena.Slab().slabs.Load()
 	var total int64
 	for _, slab := range slabs {
 		total += int64(slab.offset)

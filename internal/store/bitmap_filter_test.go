@@ -52,7 +52,7 @@ func TestGenerateFilterBitset(t *testing.T) {
 	rec := builder.NewRecordBatch()
 	defer rec.Release()
 
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 
 	// Add to index to populate location store
 	for i := 0; i < 5; i++ {
@@ -127,7 +127,7 @@ func TestSearchWithBitmapFiltering(t *testing.T) {
 
 	rec := builder.NewRecordBatch()
 	defer rec.Release()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 
 	for i := range vecs {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -190,7 +190,7 @@ func TestShardedSearchWithBitmapFiltering(t *testing.T) {
 
 	rec := builder.NewRecordBatch()
 	defer rec.Release()
-	ds.Records = append(ds.Records, rec)
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 
 	for i := range vecs {
 		_, err := idx.AddByLocation(context.Background(), 0, i)

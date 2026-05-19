@@ -75,9 +75,9 @@ func NewSQ8Encoder(cfg *SQ8Config) (*SQ8Encoder, error) {
 	invScale := make([]float32, dims)
 
 	for i := 0; i < dims; i++ {
-		range_ := cfg.Max[i] - cfg.Min[i]
-		scale[i] = 255.0 / range_
-		invScale[i] = range_ / 255.0
+		rangeVal := cfg.Max[i] - cfg.Min[i]
+		scale[i] = 255.0 / rangeVal
+		invScale[i] = rangeVal / 255.0
 	}
 
 	return &SQ8Encoder{
@@ -135,6 +135,7 @@ func TrainSQ8Encoder(vectors [][]float32) (*SQ8Encoder, error) {
 	return NewSQ8Encoder(cfg)
 }
 
+// TrainSQ8EncoderFloat16 creates an encoder by learning min/max from Float16 sample vectors.
 func TrainSQ8EncoderFloat16(vectors [][]float16.Num) (*SQ8Encoder, error) {
 	if len(vectors) == 0 {
 		return nil, errors.New("no vectors provided for training")
@@ -157,6 +158,7 @@ func TrainSQ8EncoderFloat16(vectors [][]float16.Num) (*SQ8Encoder, error) {
 	return TrainSQ8Encoder(f32s)
 }
 
+// TrainSQ8EncoderInt8 creates an encoder by learning min/max from Int8 sample vectors.
 func TrainSQ8EncoderInt8(vectors [][]int8) (*SQ8Encoder, error) {
 	if len(vectors) == 0 {
 		return nil, errors.New("no vectors provided for training")
@@ -184,9 +186,14 @@ func (e *SQ8Encoder) Dims() int {
 	return len(e.config.Min)
 }
 
-// GetBounds returns the learned min and max values.
+// Params returns the learned min and max values.
+func (e *SQ8Encoder) Params() (minVals, maxVals []float32) {
+	return e.config.Min, e.config.Max
+}
+
+// GetBounds is an alias for Params.
 func (e *SQ8Encoder) GetBounds() (minVals, maxVals []float32) {
-	return e.config.Min, e.config.Max /* minVals, maxVals */
+	return e.Params()
 }
 
 // Encode converts a float32 vector to uint8 with clamping.
@@ -222,6 +229,7 @@ func (e *SQ8Encoder) Decode(quantized []uint8) []float32 {
 	return result
 }
 
+// EncodeFloat16 encodes a Float16 vector into uint8.
 func (e *SQ8Encoder) EncodeFloat16(vec []float16.Num) []uint8 {
 	f32 := make([]float32, len(vec))
 	for i, val := range vec {
@@ -230,6 +238,7 @@ func (e *SQ8Encoder) EncodeFloat16(vec []float16.Num) []uint8 {
 	return e.Encode(f32)
 }
 
+// EncodeInt8 encodes an Int8 vector into uint8.
 func (e *SQ8Encoder) EncodeInt8(vec []int8) []uint8 {
 	f32 := make([]float32, len(vec))
 	for i, val := range vec {

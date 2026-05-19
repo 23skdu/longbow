@@ -2,6 +2,7 @@ package core
 
 import (
 	"context"
+	"math"
 	"sync/atomic"
 	"testing"
 
@@ -124,7 +125,7 @@ func TestAddConnection(t *testing.T) {
 	index := NewArrowHNSW(dataset, &config, nil)
 
 	// Initialize GraphData manually
-	data := types.NewGraphData(0, 64, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test")
+	data := types.NewGraphData(0, 64, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 	index.data.Store(data)
 
 	// Allocate chunks
@@ -133,7 +134,7 @@ func TestAddConnection(t *testing.T) {
 	numChunks := (64 + types.ChunkSize - 1) / types.ChunkSize
 	for i := 0; i < numChunks; i++ {
 		var err error
-		data, err = index.ensureChunk(data, int(i), 0, 64) // dim not critical here?
+		data, err = index.ensureChunk(int(i), 0, 64) // dim not critical here?
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -163,7 +164,7 @@ func TestAddConnection(t *testing.T) {
 	}
 
 	// Check neighbor
-	neighbors := data.GetNeighborsChunk(0, 0)
+	neighbors := index.GetNeighborsCombined(0, 0, math.MaxUint64)
 	if len(neighbors) > 0 && neighbors[0] != 1 {
 		t.Errorf("expected neighbor 1, got %d", neighbors[0])
 	}
@@ -192,7 +193,7 @@ func TestPruneConnections(t *testing.T) {
 	index := NewArrowHNSW(dataset, &config, nil)
 
 	// Initialize GraphData manually
-	data := types.NewGraphData(20, 11, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test")
+	data := types.NewGraphData(20, 11, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 	index.data.Store(data)
 
 	// Allocate chunks
@@ -200,7 +201,7 @@ func TestPruneConnections(t *testing.T) {
 	numChunks := (20 + types.ChunkSize - 1) / types.ChunkSize
 	for i := 0; i < numChunks; i++ {
 		var err error
-		data, err = index.ensureChunk(data, int(i), 0, 11)
+		data, err = index.ensureChunk(int(i), 0, 11)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -247,7 +248,7 @@ func TestPruneConnections(t *testing.T) {
 	data = index.data.Load()
 
 	// Verify we actually have 10 neighbors before pruning
-	n1 := index.GetNeighborsCombined(0, 0)
+	n1 := index.GetNeighborsCombined(0, 0, math.MaxUint64)
 	if len(n1) != 10 {
 		t.Fatalf("expected 10 neighbors before prune, got %d. n1=%v", len(n1), n1)
 	}

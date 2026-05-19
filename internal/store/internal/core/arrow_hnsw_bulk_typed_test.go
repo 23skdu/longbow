@@ -1,10 +1,13 @@
 package core_test
 
 import (
+	"context"
+	"fmt"
+	"math"
+	"testing"
+
 	"github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
-	"context"
-	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -39,8 +42,10 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 		t.Run(tt.desc, func(t *testing.T) {
 			// Setup Index
 			config := types.DefaultArrowHNSWConfig()
-			config.M = 64
-			config.EfConstruction = 800
+			config.M = 32
+			config.MMax = 32
+			config.MMax0 = 64
+			config.EfConstruction = 64
 			config.DataType = tt.dataType
 			config.Dims = tt.dims
 
@@ -139,13 +144,90 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
 			require.NoError(t, err)
 			assert.Len(t, ids, numVecs)
+			t.Logf("DEBUG: Added %d nodes, current idx.Len(): %d, MaxLevel: %d, EP: %d", numVecs, idx.Len(), idx.GetMaxLevel(), idx.GetEntryPoint())
 			assert.Equal(t, numVecs, idx.Len())
 
 			// Verify Retrievablity of one vector
 			qID := uint32(500)
-			vecAny, err := idx.GetVectorAny(qID)
+			vecAny, err := idx.GetVector(qID)
 			require.NoError(t, err)
+			t.Logf("DEBUG: Vector 500 type: %T, val: %v", vecAny, vecAny)
+			// Verify Data Integrity
 			require.NotNil(t, vecAny)
+			if tt.dataType != types.VectorTypeInt8 { // Skip Int8 as it has duplicate vectors in this test
+				expected := make([]float64, tt.dims)
+				for j := 0; j < tt.dims; j++ {
+					if tt.dataType == types.VectorTypeComplex64 || tt.dataType == types.VectorTypeComplex128 ||
+						tt.dataType == types.VectorTypeFloat32 || tt.dataType == types.VectorTypeFloat64 {
+						expected[j] = float64(500) + float64(j)*0.1
+					} else {
+						expected[j] = float64(500 + j)
+					}
+				}
+
+				switch v := vecAny.(type) {
+				case []float32:
+					for j := 0; j < tt.dims; j++ {
+						if math.Abs(float64(v[j]) - expected[j]) > 1e-4 {
+							t.Errorf("CORRUPTION at index %d: expected %f, got %f", j, expected[j], v[j])
+						}
+					}
+				case []float64:
+					for j := 0; j < tt.dims; j++ {
+						if math.Abs(v[j] - expected[j]) > 1e-9 {
+							t.Errorf("CORRUPTION at index %d: expected %f, got %f", j, expected[j], v[j])
+						}
+					}
+				case []int16:
+					for j := 0; j < tt.dims; j++ {
+						if int64(v[j]) != int64(expected[j]) {
+							t.Errorf("CORRUPTION at index %d: expected %d, got %d", j, int64(expected[j]), v[j])
+						}
+					}
+				case []uint16:
+					for j := 0; j < tt.dims; j++ {
+						if int64(v[j]) != int64(expected[j]) {
+							t.Errorf("CORRUPTION at index %d: expected %d, got %d", j, int64(expected[j]), v[j])
+						}
+					}
+				case []int32:
+					for j := 0; j < tt.dims; j++ {
+						if int64(v[j]) != int64(expected[j]) {
+							t.Errorf("CORRUPTION at index %d: expected %d, got %d", j, int64(expected[j]), v[j])
+						}
+					}
+				case []uint32:
+					for j := 0; j < tt.dims; j++ {
+						if int64(v[j]) != int64(expected[j]) {
+							t.Errorf("CORRUPTION at index %d: expected %d, got %d", j, int64(expected[j]), v[j])
+						}
+					}
+				case []int64:
+					for j := 0; j < tt.dims; j++ {
+						if v[j] != int64(expected[j]) {
+							t.Errorf("CORRUPTION at index %d: expected %d, got %d", j, int64(expected[j]), v[j])
+						}
+					}
+				case []uint64:
+					for j := 0; j < tt.dims; j++ {
+						if v[j] != uint64(expected[j]) {
+							t.Errorf("CORRUPTION at index %d: expected %d, got %d", j, uint64(expected[j]), v[j])
+						}
+					}
+				case []complex64:
+					for j := 0; j < tt.dims; j++ {
+						if math.Abs(float64(real(v[j])) - expected[j]) > 1e-4 {
+							t.Errorf("CORRUPTION (Real) at index %d: expected %f, got %f", j, expected[j], real(v[j]))
+						}
+					}
+				case []complex128:
+					for j := 0; j < tt.dims; j++ {
+						if math.Abs(real(v[j]) - expected[j]) > 1e-9 {
+							t.Errorf("CORRUPTION (Real) at index %d: expected %f, got %f", j, expected[j], real(v[j]))
+						}
+					}
+				}
+			}
 
 			// Verify Type
 			switch tt.dataType {
@@ -178,10 +260,10 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			// Verify Search (sanity check)
 			// Use higher Ef to ensure exact match is found for these similar vectors
 			opts := types.DefaultSearchOptions()
-			opts.Ef = 400
-			res, err := idx.SearchVectors(context.Background(), vecAny, 20, nil, opts) // Top 20
-			require.NoError(t, err)
-			require.NotEmpty(t, res)
+			opts.Ef = 1100
+			res, err := idx.SearchVectors(context.Background(), vecAny, 1100, nil, opts) // Everyone
+			fmt.Printf("DEBUG: Results[0]: ID=%d, Dist=%f, Score=%f\n", res[0].ID, res[0].Distance, res[0].Score)
+			require.Equal(t, uint32(500), uint32(res[0].ID))
 			
 			// For Int8, multiple vectors might be identical in distance (0).
 			// We check if our target ID is at least in the results.

@@ -62,11 +62,15 @@ func (s *HNSWGraphSync) ImportState(data []byte) error {
 
 // ExportGraph exports just the HNSW graph structure.
 func (s *HNSWGraphSync) ExportGraph(w io.Writer) error {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
 	return s.index.ExportGraph(w)
 }
 
 // ImportGraph imports just the HNSW graph structure.
 func (s *HNSWGraphSync) ImportGraph(r io.Reader) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
 	return s.index.ImportGraph(r)
 }
 

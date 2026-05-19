@@ -7,14 +7,17 @@ import (
 	"time"
 )
 
+// VersionedVector represents a specific version of a vector with its metadata and timestamp.
 type VersionedVector struct {
 	ID        uint64
 	Vector    []float32
+	Norm      float32 // Pre-calculated norm
 	Timestamp int64
 	Metadata  []byte
 	Version   int
 }
 
+// VersionHistory manages the storage and retrieval of multiple versions for each vector ID.
 type VersionHistory struct {
 	mu          sync.RWMutex
 	maxVersions int
@@ -22,11 +25,15 @@ type VersionHistory struct {
 	history     map[uint64][]VersionedVector
 }
 
+// VersionHistoryConfig defines the retention settings for version history.
 type VersionHistoryConfig struct {
+	// MaxVersions is the maximum number of versions to keep per vector ID.
 	MaxVersions     int
+	// RetentionPeriod is the duration for which older versions are kept.
 	RetentionPeriod time.Duration
 }
 
+// DefaultVersionHistoryConfig returns a default configuration for version history.
 func DefaultVersionHistoryConfig() VersionHistoryConfig {
 	return VersionHistoryConfig{
 		MaxVersions:     10,
@@ -34,6 +41,7 @@ func DefaultVersionHistoryConfig() VersionHistoryConfig {
 	}
 }
 
+// NewVersionHistory creates a new VersionHistory instance with the provided configuration.
 func NewVersionHistory(cfg VersionHistoryConfig) *VersionHistory {
 	return &VersionHistory{
 		maxVersions: cfg.MaxVersions,
@@ -42,7 +50,8 @@ func NewVersionHistory(cfg VersionHistoryConfig) *VersionHistory {
 	}
 }
 
-func (vh *VersionHistory) Add(id uint64, vector []float32, timestamp int64, metadata []byte) {
+// Add inserts a new version for a vector ID, pruning old versions if necessary.
+func (vh *VersionHistory) Add(id uint64, vector []float32, norm float32, timestamp int64, metadata []byte) {
 	vh.mu.Lock()
 	defer vh.mu.Unlock()
 
@@ -55,6 +64,7 @@ func (vh *VersionHistory) Add(id uint64, vector []float32, timestamp int64, meta
 	versioned := VersionedVector{
 		ID:        id,
 		Vector:    vector,
+		Norm:      norm,
 		Timestamp: timestamp,
 		Metadata:  metadata,
 		Version:   newVersion,
@@ -67,6 +77,7 @@ func (vh *VersionHistory) Add(id uint64, vector []float32, timestamp int64, meta
 	}
 }
 
+// GetVersion retrieves a specific version of a vector by its ID and version number.
 func (vh *VersionHistory) GetVersion(id uint64, version int) (*VersionedVector, error) {
 	vh.mu.RLock()
 	defer vh.mu.RUnlock()
@@ -85,6 +96,7 @@ func (vh *VersionHistory) GetVersion(id uint64, version int) (*VersionedVector, 
 	return nil, fmt.Errorf("version %d not found for vector %d", version, id)
 }
 
+// GetVersionAt retrieves the version of a vector that was active at a specific timestamp.
 func (vh *VersionHistory) GetVersionAt(id uint64, timestamp int64) (*VersionedVector, error) {
 	vh.mu.RLock()
 	defer vh.mu.RUnlock()
@@ -103,6 +115,27 @@ func (vh *VersionHistory) GetVersionAt(id uint64, timestamp int64) (*VersionedVe
 	return nil, fmt.Errorf("no version found at or before timestamp %d for vector %d", timestamp, id)
 }
 
+// GetVersionsAtBatch retrieves active versions for multiple IDs at a specific timestamp.
+func (vh *VersionHistory) GetVersionsAtBatch(ids []uint64, timestamp int64, out map[uint64]VersionedVector) {
+	vh.mu.RLock()
+	defer vh.mu.RUnlock()
+
+	for _, id := range ids {
+		versions, ok := vh.history[id]
+		if !ok || len(versions) == 0 {
+			continue
+		}
+
+		for i := len(versions) - 1; i >= 0; i-- {
+			if versions[i].Timestamp <= timestamp {
+				out[id] = versions[i]
+				break
+			}
+		}
+	}
+}
+
+// GetHistory returns the entire version history for a specific vector ID.
 func (vh *VersionHistory) GetHistory(id uint64) []VersionedVector {
 	vh.mu.RLock()
 	defer vh.mu.RUnlock()
@@ -117,6 +150,7 @@ func (vh *VersionHistory) GetHistory(id uint64) []VersionedVector {
 	return result
 }
 
+// GetLatestVersion retrieves the most recent version for a vector ID.
 func (vh *VersionHistory) GetLatestVersion(id uint64) (*VersionedVector, error) {
 	vh.mu.RLock()
 	defer vh.mu.RUnlock()
@@ -129,6 +163,7 @@ func (vh *VersionHistory) GetLatestVersion(id uint64) (*VersionedVector, error) 
 	return &versions[len(versions)-1], nil
 }
 
+// Prune removes all versions with timestamps before the specified value.
 func (vh *VersionHistory) Prune(ctx context.Context, beforeTimestamp int64) int {
 	vh.mu.Lock()
 	defer vh.mu.Unlock()
@@ -153,12 +188,14 @@ func (vh *VersionHistory) Prune(ctx context.Context, beforeTimestamp int64) int 
 	return pruned
 }
 
+// Size returns the number of unique vector IDs tracked in the version history.
 func (vh *VersionHistory) Size() int {
 	vh.mu.RLock()
 	defer vh.mu.RUnlock()
 	return len(vh.history)
 }
 
+// TotalVersions returns the total number of versions across all vector IDs.
 func (vh *VersionHistory) TotalVersions() int {
 	vh.mu.RLock()
 	defer vh.mu.RUnlock()

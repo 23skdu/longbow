@@ -16,9 +16,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// FuzzIngestionIntegrity_Concurrent verifies that concurrent ingestion
+// FuzzIngestionIntegrityConcurrent verifies that concurrent ingestion
 // results in a consistent index state where all vectors are retrievable.
-func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
+func FuzzIngestionIntegrityConcurrent(f *testing.F) {
 	// Seed corpus: (writers, batches, rowsPerBatch)
 	f.Add(4, 5, 20)
 	f.Add(2, 10, 50)
@@ -105,7 +105,7 @@ func FuzzIngestionIntegrity_Concurrent(f *testing.F) {
 			// We check Records length (memory applied)
 			// total rows calculation:
 			count := 0
-			for _, r := range ds.Records {
+			for _, r := range ds.Records.Read() {
 				count += int(r.NumRows())
 			}
 			return count == totalExpected

@@ -2,37 +2,38 @@ package core
 
 // nosec G404 - math/rand is used for HNSW operations, not security-sensitive
 import (
-	"bytes"
-	"container/heap"
 	"context"
-	"encoding/binary"
-	"encoding/gob"
 	"fmt"
-	"io"
 	"math"
 	"math/rand"
 	"runtime"
-	"sort"
-	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
 	"unsafe"
 
-	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
-	"github.com/23skdu/longbow/internal/query"
-	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
+	arrowmemory "github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
+
+// HNSWMetadata contains core index state that must be updated atomically
+// to ensure consistent views during concurrent ingestion.
+type HNSWMetadata struct {
+	EntryPoint uint32
+	MaxLevel   int32
+	NodeCount  int64
+	Version    uint64
+	Generation uint64
+}
 
 
 // ArrowHNSW implements a Hierarchical Navigable Small World (HNSW) index
@@ -51,12 +52,16 @@ type ArrowHNSW struct {
 	maxLevel       atomic.Int32
 	efConstruction atomic.Int32
 
-	m     int
-	mMax  int
-	mMax0 int
+	metadataRegistry atomic.Pointer[HNSWMetadata]
+	// entryPointPools provides multiple entry points per layer to reduce contention
+	entryPointPools [types.ArrowMaxLayers]*ConcurrentSkipList
+
+	m     atomic.Int32
+	mMax  atomic.Int32
+	mMax0 atomic.Int32
 
 	// Mutexes for thread-safe concurrent writes (sharded to 1024 to reduce contention)
-	insertMus [ShardedLockCount]sync.Mutex
+	insertMus [ShardedLockCount]types.PaddedMutex
 
 	// Insert context pool for reducing allocations (Issue 2: PoolMetrics)
 	insertPool *InsertContextPool
@@ -78,12 +83,15 @@ type ArrowHNSW struct {
 	topLayerManager        *TopLayerManager
 
 	distFunc     func([]float32, []float32) (float32, error)
+	distFuncSquared  func([]float32, []float32) (float32, error)
 	distFuncF64  func([]float64, []float64) (float32, error)
 	distFuncF16  func([]float16.Num, []float16.Num) (float32, error)
 	distFuncC64  func([]complex64, []complex64) (float32, error)
 	distFuncC128 func([]complex128, []complex128) (float32, error)
 	distFuncInt8 func([]int8, []int8) (float32, error)
+	distFuncInt8Squared func([]int8, []int8) (float32, error)
 	distFuncUint8 func([]uint8, []uint8) (float32, error)
+	distFuncUint8Squared func([]uint8, []uint8) (float32, error)
 	distFuncInt16 func([]int16, []int16) (float32, error)
 	distFuncUint16 func([]uint16, []uint16) (float32, error)
 	distFuncInt32 func([]int32, []int32) (float32, error)
@@ -91,13 +99,18 @@ type ArrowHNSW struct {
 	distFuncInt64 func([]int64, []int64) (float32, error)
 	distFuncUint64 func([]uint64, []uint64) (float32, error)
 
+	sharedVectorSpace atomic.Bool
 	adaptiveMTriggered atomic.Bool
 
 	initMu sync.Mutex
 	growMu sync.RWMutex
-	epMu   sync.Mutex
+	bulkMu sync.Mutex
+	epMu       sync.Mutex
+	commitMu   sync.Mutex
+	commitCond *sync.Cond
 
-	deleted *roaring.Bitmap
+	deleted   *roaring.Bitmap
+	deletedMu sync.RWMutex
 
 	repairAgent *RepairAgent
 
@@ -132,107 +145,21 @@ type ArrowHNSW struct {
 	gpuTrained atomic.Bool
 	topo       *memory.NUMATopology
 	efTuner     *PIDTuner
+
+	// MetadataRegistry for pre-cached field lookups
+	metadata struct {
+		vecColIdx atomic.Int32
+		tqBits    atomic.Int32
+		metric    atomic.Int32
+		vecType   atomic.Int32 // stores types.VectorDataType
+		isComplex atomic.Bool
+		cached    atomic.Bool
+		fieldMap  sync.Map // map[string]int
+	}
 }
 
-func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
-	data := h.data.Load()
-	if data == nil {
-		return nil, fmt.Errorf("index data not initialized")
-	}
 
-	// 1. Try raw vector from memory first (most accurate)
-	if v, err := data.GetVector(id); v != nil || err != nil {
-		return v, err
-	}
 
-	// 2. Fallback to DiskGraph in hybrid mode
-	dg := h.diskGraph.Load()
-	if dg != nil {
-		if h.config.SQ8Enabled {
-			if v := dg.GetVectorSQ8(id); v != nil {
-				return v, nil
-			}
-		}
-		if h.config.PQEnabled {
-			if v := dg.GetVectorPQ(id); v != nil {
-				return v, nil
-			}
-		}
-		// Try raw from disk if available
-		if v, _ := dg.GetVector(id); v != nil {
-			return v, nil
-		}
-	}
-
-	// 3. Last resort: internal compressed copies in types.GraphData (only if raw wasn't found)
-	if h.config.SQ8Enabled {
-		if v := data.GetVectorSQ8(id); v != nil {
-			return v, nil
-		}
-	}
-	if h.config.PQEnabled {
-		if v := data.GetVectorPQ(id); v != nil {
-			return v, nil
-		}
-	}
-	if h.config.BQEnabled {
-		if v, err := data.GetVectorBQ(id); err == nil && v != nil {
-			return v, nil
-		}
-	}
-	if h.tqEncoder != nil {
-		chunk := data.GetVectorsTQChunk(types.ChunkID(id))
-		if chunk != nil {
-			// TQ stride calculation must match GraphData's layout
-			paddedDims := data.GetPaddedDimsForType(types.VectorTypeTQ)
-			stride := (paddedDims * data.TurboQuantBits) / 8
-			start := int(types.ChunkOffset(id)) * stride // #nosec G115
-			return h.tqEncoder.Decode(chunk[start : start+stride])
-		}
-	}
-
-	return nil, nil
-}
-
-// GetVectorAny returns the vector with the given ID as an interface{}.
-func (h *ArrowHNSW) GetVectorAny(id uint32) (any, error) {
-	return h.GetVector(id)
-}
-
-func (h *ArrowHNSW) getVectorWithData(data *types.GraphData, id uint32) (any, error) {
-	return h.getVectorWithCachedDisk(data, nil, id)
-}
-
-func (h *ArrowHNSW) getVectorWithCachedDisk(data *types.GraphData, dg *DiskGraph, id uint32) (any, error) {
-	v, err := data.GetVector(id)
-	if v != nil || err != nil {
-		return v, err
-	}
-
-	// Fallback to DiskGraph
-	if dg == nil {
-		dg = h.diskGraph.Load()
-	}
-	if dg != nil {
-		if h.config.SQ8Enabled {
-			return dg.GetVectorSQ8(id), nil
-		}
-		if h.config.PQEnabled {
-			return dg.GetVectorPQ(id), nil
-		}
-	}
-
-	// 4. If all else fails, return a sentinel vector of the correct dimensionality
-	// This prevents panics in distance calculations during edge case lookups
-	metrics.VectorSentinelHitTotal.Inc()
-	if data != nil && data.Dims > 0 {
-		return make([]float32, data.Dims), nil
-	}
-	if dims := h.GetDims(); dims > 0 {
-		return make([]float32, dims), nil
-	}
-	return nil, fmt.Errorf("could not resolve dimensions for Sentinel vector")
-}
 
 // GetRecords is a helper to get records from the dataset.
 func (h *ArrowHNSW) GetRecords() []arrow.RecordBatch {
@@ -256,9 +183,9 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	h := &ArrowHNSW{
 		config:          config,
 		dataset:         dataset,
-		m:               config.M,
-		mMax:            config.MMax,
-		mMax0:           config.MMax0,
+		m:               atomic.Int32{},
+		mMax:            atomic.Int32{},
+		mMax0:           atomic.Int32{},
 		searchPool:      NewArrowSearchContextPool(),
 		insertPool:     NewInsertContextPool(), // Issue 2: Pool metrics
 		candidatePool: sync.Pool{
@@ -273,6 +200,22 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		topLayerManager: NewTopLayerManager(config.LockFreeThreshold),
 		topo:            topo,
 	}
+	h.metadataRegistry.Store(&HNSWMetadata{
+		EntryPoint: math.MaxUint32,
+		MaxLevel:   -1,
+		NodeCount:  0,
+		Version:    0,
+		Generation: 0,
+	})
+
+	h.m.Store(int32(config.M))     // #nosec G115
+	h.mMax.Store(int32(config.MMax))   // #nosec G115
+	h.mMax0.Store(int32(config.MMax0)) // #nosec G115
+	// Initialize metadata cache to -1 to avoid defaulting to column 0
+	h.metadata.vecColIdx.Store(-1)
+	h.metadata.tqBits.Store(-1)
+	h.metadata.metric.Store(-1)
+	h.metadata.vecType.Store(-1)
 
 	if h.topLayerManager.threshold == 0 {
 		h.topLayerManager.threshold = 2 // Default to layer 2+
@@ -281,7 +224,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	if dataset != nil {
 		h.name = dataset.GetName()
 	} else {
-		h.name = "unknown"
+		h.name = "unnamed"
 	}
 
 	if dataset != nil {
@@ -292,29 +235,22 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		}
 	}
 
-	// Initialize distance functions using resolvers
-	h.distFunc = h.resolveDistanceFunc()
-	h.distFuncF64 = h.resolveDistanceFuncF64()
-	h.distFuncF16 = h.resolveDistanceFuncF16()
-	h.distFuncC64 = h.resolveDistanceFuncC64()
-	h.distFuncC128 = h.resolveDistanceFuncC128()
-	h.distFuncInt8 = h.resolveDistanceFuncInt8()
-	h.distFuncUint8 = h.resolveDistanceFuncUint8()
-	h.distFuncInt16 = h.resolveDistanceFuncInt16()
-	h.distFuncUint16 = h.resolveDistanceFuncUint16()
-	h.distFuncInt32 = h.resolveDistanceFuncInt32()
-	h.distFuncUint32 = h.resolveDistanceFuncUint32()
-	h.distFuncInt64 = h.resolveDistanceFuncInt64()
-	h.distFuncUint64 = h.resolveDistanceFuncUint64()
-
 	// Initialize atomic values
-	h.efConstruction.Store(int32(config.EfConstruction))
+	if config.EfConstruction <= 0 {
+		config.EfConstruction = 200
+	}
+	h.efConstruction.Store(int32(config.EfConstruction)) // #nosec G115
 	h.maxLevel.Store(-1)
+	h.entryPoint.Store(math.MaxUint32)
 	if config.Dims > math.MaxInt32 {
 		fmt.Printf("Error: dimensions %d exceed MaxInt32, returning nil index\n", config.Dims)
 		return nil
 	}
 	h.dims.Store(int32(config.Dims)) // #nosec G115
+	h.sharedVectorSpace.Store(config.SharedVectorSpace)
+
+	// Initialize distance functions using resolvers
+	h.resolveAllDistanceFuncs()
 
 	// Initialize quantization if enabled
 	if config.SQ8Enabled {
@@ -347,23 +283,27 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 			dt == types.VectorTypeInt8 ||
 			dt == types.VectorTypeInt16 ||
 			dt == types.VectorTypeInt32 ||
-			dt == types.VectorTypeUint32 ||
 			dt == types.VectorTypeComplex64 ||
 			dt == types.VectorTypeComplex128 ||
 			dt == types.VectorTypeTQ) {
-		if h.m < 24 {
-			h.m = 24
+		if h.m.Load() < 24 {
+			h.m.Store(24)
 		}
-		if h.mMax < h.m*2 {
-			h.mMax = h.m * 2
+		if h.mMax.Load() < int32(h.m.Load()*2) {
+			h.mMax.Store(int32(h.m.Load() * 2)) // #nosec G115
 		}
-		if h.mMax0 < h.m*2 {
-			h.mMax0 = h.m * 2
+		if h.mMax0.Load() < int32(h.m.Load()*2) {
+			h.mMax0.Store(int32(h.m.Load() * 2)) // #nosec G115
 		}
-		h.levelMultiplier = 1.0 / math.Log(float64(h.m))
+		h.levelMultiplier = 1.0 / math.Log(float64(h.m.Load()))
 	}
 
-	// Initialize types.GraphData
+	// Initialize types.GraphData with NUMA awareness if configured
+	var numaAlloc arrowmemory.Allocator
+	if config.NUMANode >= 0 && topo != nil {
+		numaAlloc = memory.NewNUMAAllocator(topo, config.NUMANode)
+	}
+
 	gd := types.NewGraphData(
 		capacity,
 		config.Dims,
@@ -379,6 +319,8 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		config.TurboQuantEnabled,
 		config.TurboQuantBits,
 		h.name,
+		numaAlloc,
+		h.sharedVectorSpace.Load(),
 	)
 	if h.oopqEncoder != nil {
 		switch enc := h.oopqEncoder.(type) {
@@ -388,20 +330,45 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 			gd.PQM = enc.CodeSize()
 		}
 	}
+	gd.SharedVectorSpace = config.SharedVectorSpace
+	h.sharedVectorSpace.Store(config.SharedVectorSpace)
 
-	// Initialize Layer 0 Lock-Free Adjacency ([#11] Lock-Free Adjacency)
+	// Initialize Lock-Free Adjacency for all layers ([#11] Lock-Free Adjacency)
 	gd.PackedNeighbors = make([]types.PackedNeighbors, types.ArrowMaxLayers)
-	// We use a dedicated SlabArena for Layer 0 adjacency to maximize throughput
 	
-	var adjArena *memory.SlabArena
-	if config.NUMANode >= 0 && topo != nil {
-		numaAlloc := memory.NewNUMAAllocator(topo, config.NUMANode)
-		adjArena = memory.NewSlabArenaWithAllocator(1024*1024*32, numaAlloc)
-	} else {
-		adjArena = memory.NewSlabArena(1024 * 1024 * 32) // 32MB initial slab
+	for l := 0; l < types.ArrowMaxLayers; l++ {
+		var adjArena *memory.SlabArena
+		// We use a dedicated SlabArena for each layer to minimize contention
+		if config.NUMANode >= 0 && topo != nil {
+			numaAlloc := memory.NewNUMAAllocator(topo, config.NUMANode)
+			// Lower layers are larger, use larger slabs
+			slabSize := 1024 * 1024 * 64
+			if l > 0 {
+				slabSize = 1024 * 1024 * 8 // Upper layers are smaller but still benefit from larger slabs
+			}
+			adjArena = memory.NewSlabArenaWithAllocator(slabSize, numaAlloc)
+		} else {
+			slabSize := 1024 * 1024 * 32
+			if l > 0 {
+				slabSize = 1024 * 1024 * 4
+			}
+			offHeapAlloc := memory.NewOffHeapAllocator()
+			adjArena = memory.NewSlabArenaWithAllocator(slabSize, offHeapAlloc)
+		}
+		gd.PackedNeighbors[l] = NewPackedAdjacency(adjArena, capacity)
 	}
-	gd.PackedNeighbors[0] = NewPackedAdjacency(adjArena, capacity)
 
+	for i := range h.entryPointPools {
+		h.entryPointPools[i] = NewConcurrentSkipList()
+	}
+
+	h.metadataRegistry.Store(&HNSWMetadata{
+		EntryPoint: math.MaxUint32,
+		MaxLevel:   -1,
+		NodeCount:  0,
+		Version:    0,
+		Generation: 0,
+	})
 	h.data.Store(gd)
 
 	// Initialize Graph Navigator
@@ -419,13 +386,19 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	_ = h.navigator.Initialize()
 
 	if config.DataType == types.VectorTypeTQ {
-		bits := 3
+		bits := config.TurboQuantBits
+		if bits == 0 {
+			bits = 8
+		}
+		h.config.TurboQuantEnabled = true
+		h.config.TurboQuantBits = bits
 		h.tqEncoder = NewTurboQuantEncoder(config.Dims, bits, 42)
 		h.data.Load().TurboQuantEnabled = true
 		h.data.Load().TurboQuantBits = bits
 		h.tqCompute = NewTurboQuantCompute(h)
 	}
 
+	h.commitCond = sync.NewCond(&h.commitMu)
 	return h
 }
 
@@ -457,65 +430,17 @@ func (h *ArrowHNSW) GetData() *types.GraphData {
 	return h.data.Load()
 }
 
+// IsSharded returns whether the index is sharded (currently always false).
 func (h *ArrowHNSW) IsSharded() bool {
 	return false
 }
 
-func (h *ArrowHNSW) GetGPUIndex() any {
-	h.gpuMu.RLock()
-	defer h.gpuMu.RUnlock()
-	return h.gpuIndex
-}
 
 // GetConfig returns the current configuration
 func (h *ArrowHNSW) GetConfig() types.ArrowHNSWConfig {
 	return h.config
 }
 
-// GetM returns the M parameter (connections per layer)
-func (h *ArrowHNSW) GetM() int {
-	return h.m
-}
-
-// GetMMax returns the MMax parameter (max connections)
-func (h *ArrowHNSW) GetMMax() int {
-	return h.mMax
-}
-
-// GetMMax0 returns the MMax0 parameter (max connections in layer 0)
-func (h *ArrowHNSW) GetMMax0() int {
-	return h.mMax0
-}
-
-// GetEfConstruction returns the efConstruction parameter
-func (h *ArrowHNSW) GetEfConstruction() int32 {
-	return h.efConstruction.Load()
-}
-
-// GetNodeCount returns the current number of nodes
-func (h *ArrowHNSW) GetNodeCount() int64 {
-	return h.nodeCount.Load()
-}
-
-// GetDims returns the vector dimensions
-func (h *ArrowHNSW) GetDims() int32 {
-	return h.dims.Load()
-}
-
-// GetDistanceMetric returns the configured distance metric.
-func (h *ArrowHNSW) GetDistanceMetric() basecore.DistanceMetric {
-	return h.config.Metric
-}
-
-// GetEntryPoint returns the current entry point node
-func (h *ArrowHNSW) GetEntryPoint() uint32 {
-	return h.entryPoint.Load()
-}
-
-// GetMaxLevel returns the maximum level in the graph
-func (h *ArrowHNSW) GetMaxLevel() int32 {
-	return h.maxLevel.Load()
-}
 
 // GetShardedLocks returns the sharded mutex for concurrent access
 
@@ -529,98 +454,26 @@ func (h *ArrowHNSW) SetDiskGraph(disk *DiskGraph) {
 	h.diskGraph.Store(disk)
 }
 
-// GetQuantizer returns the scalar quantizer
-func (h *ArrowHNSW) GetQuantizer() *ScalarQuantizer {
-	return h.quantizer
-}
 
-// IsSQ8Ready returns whether scalar quantization is ready
-func (h *ArrowHNSW) IsSQ8Ready() bool {
-	return h.sq8Ready.Load()
-}
 
-// GetBQEncoder returns the BQ encoder
-func (h *ArrowHNSW) GetBQEncoder() *types.BQEncoder {
-	return h.bqEncoder
-}
 
-// SetBQEncoder sets the BQ encoder
-func (h *ArrowHNSW) SetBQEncoder(encoder *types.BQEncoder) {
-	h.bqEncoder = encoder
-}
 
-// GetOPQEncoder returns the OPQ encoder (or legacy PQ if OPQ not used)
-func (h *ArrowHNSW) GetOPQEncoder() any {
-	return h.oopqEncoder
-}
 
-// GetPQEncoder returns legacy PQ encoder (for VectorIndexer interface compliance)
-// For new code, use GetOPQEncoder instead
-func (h *ArrowHNSW) GetPQEncoder() *pq.PQEncoder {
-	if h.oopqEncoder != nil {
-		if enc, ok := h.oopqEncoder.(*pq.PQEncoder); ok {
-			return enc
-		}
-	}
-	return nil
-}
 
 // SetOPQEncoder sets the OPQ encoder (accepts both OPQ and legacy PQ for backward compatibility)
-func (h *ArrowHNSW) SetOPQEncoder(encoder any) {
-	var m, k int
-	switch enc := encoder.(type) {
-	case *pq.PQEncoder:
-		h.oopqEncoder = encoder
-		if encoder != nil {
-			m = enc.M
-			k = enc.K
-			h.config.PQM = m
-			h.config.PQK = k
-			h.config.PQEnabled = true
-		}
-	case *pq.OPQEncoder:
-		h.oopqEncoder = encoder
-		if encoder != nil {
-			m = enc.M
-			k = enc.K
-			h.config.PQM = m
-			h.config.PQK = k
-			h.config.PQEnabled = true
-		}
-	default:
-		return
-	}
-
-	// Initialize data if not yet created
-	if h.data.Load() == nil {
-		if err := h.growInternal(1024, 0); err != nil {
-			return
-		}
-	}
-
-	data := h.data.Load()
-	if data != nil && m > 0 {
-		data.PQEnabled = true
-		data.PQM = m
-
-		// Force re-allocation if current offset is 0 (placeholder from dims=0 call)
-		if len(data.VectorsPQ) > 0 && data.VectorsPQ[0] == 0 && data.Dims > 0 {
-			// Re-allocate with proper dims
-			data.VectorsPQ = nil // Reset to trigger real allocation
-		}
-
-		// Explicitly ensure PQ chunk 0 if capacity > 0
-		if data.Capacity > 0 && data.Dims > 0 {
-			if err := data.EnsureChunk(0, 0, data.Dims); err != nil {
-				return
-			}
-		}
-	}
-}
 
 // setDims sets the vector dimensions
 func (h *ArrowHNSW) setDims(dims int32) {
 	h.dims.Store(dims)
+	h.updateMetadata(func(meta *HNSWMetadata) {
+		// Dims are not in HNSWMetadata currently, should we add them?
+		// The plan mentions entryPoint, maxLevel, and nodeCount.
+	})
+}
+
+// GetMetadataSnapshot returns a consistent snapshot of the index metadata.
+func (h *ArrowHNSW) GetMetadataSnapshot() *HNSWMetadata {
+	return h.metadataRegistry.Load()
 }
 
 // SetDimension sets the absolute dimension of the index.
@@ -633,8 +486,27 @@ func (h *ArrowHNSW) SetDimension(dim int) error {
 	// This is critical if the index was initialized with 0 dims but large capacity (default config).
 	h.initMu.Lock()
 	defer h.initMu.Unlock()
+	h.resolveAllDistanceFuncs()
+
+	if h.config.DataType == types.VectorTypeTQ || h.config.TurboQuantEnabled {
+		bits := h.config.TurboQuantBits
+		if bits == 0 {
+			bits = 8
+		}
+		h.tqEncoder = NewTurboQuantEncoder(dim, bits, 42)
+		h.tqCompute = NewTurboQuantCompute(h)
+	}
+
 	data := h.data.Load()
 	if data != nil {
+		if h.config.DataType == types.VectorTypeTQ || h.config.TurboQuantEnabled {
+			data.TurboQuantEnabled = true
+			if h.config.TurboQuantBits > 0 {
+				data.TurboQuantBits = h.config.TurboQuantBits
+			} else {
+				data.TurboQuantBits = 8
+			}
+		}
 		if err := h.Grow(data.Capacity, dim); err != nil {
 			return err
 		}
@@ -644,80 +516,19 @@ func (h *ArrowHNSW) SetDimension(dim int) error {
 
 // Delete invokes Delete for a single id.
 func (h *ArrowHNSW) Delete(id uint32) error {
+	h.deletedMu.Lock()
+	defer h.deletedMu.Unlock()
+	if h.deleted == nil {
+		h.deleted = roaring.New()
+	}
 	h.deleted.Add(id)
 	h.locationStore.Delete(types.VectorID(id))
 	return nil
 }
 
-func (h *ArrowHNSW) IsDeleted(id uint32) bool {
-	if h.deleted == nil {
-		return false
-	}
-	return h.deleted.Contains(id)
-}
-
-// mustGetVectorFromData retrieves a vector from the given data snapshot.
-func (h *ArrowHNSW) mustGetVectorFromData(data *types.GraphData, id uint32) any {
-	vec, err := h.getVectorWithData(data, id)
-	if err != nil {
-		return nil
-	}
-	return vec
-}
 
 
 
-// ensureChunk ensures that the data structures for the given chunk are allocated.
-func (h *ArrowHNSW) ensureChunk(data *types.GraphData, cID, cOff, dims int) (*types.GraphData, error) {
-	if data == nil {
-		return nil, fmt.Errorf("data is nil")
-	}
-
-	// Strictly serialized growth to avoid structural races in types.GraphData
-	h.growMu.Lock()
-	defer h.growMu.Unlock()
-	return h.ensureChunkInternal(cID, cOff, dims)
-}
-
-func (h *ArrowHNSW) ensureChunkInternal(cID, cOff, dims int) (*types.GraphData, error) {
-	newData, cloned, err := h.ensureChunkInternalLocked(cID, cOff, dims)
-	if err != nil {
-		return nil, err
-	}
-	if cloned {
-		h.data.Store(newData)
-	}
-	return newData, nil
-}
-
-func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *types.GraphData, cloned bool, err error) {
-	// Reload data to ensure we have the latest view before modifying
-	data := h.data.Load()
-
-	// Check if we actually need a new chunk
-	if !data.NeedsChunk(cID) {
-		// Even if chunk exists, we might need to sync dims if it was 0
-		if data.Dims == 0 && dims > 0 {
-			newData := data.Clone()
-			newData.Dims = dims
-			return newData, true, nil
-		}
-		return data, false, nil
-	}
-
-	// Structural growth requires COW to avoid racing with readers
-	newData = data.Clone()
-	if newData.Dims == 0 && dims > 0 {
-		newData.Dims = dims
-	}
-
-	err = newData.EnsureChunk(cID, cOff, dims)
-	if err != nil {
-		return nil, false, err
-	}
-
-	return newData, true, nil
-}
 
 // DeleteBatch invokes Delete for each id.
 func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
@@ -730,20 +541,95 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 }
 
 func (h *ArrowHNSW) commitID(id uint32) {
-	for h.nodeCount.Load() < int64(id) {
-		runtime.Gosched()
+	h.commitMu.Lock()
+	defer h.commitMu.Unlock()
+	
+	for h.GetMetadataSnapshot().NodeCount < int64(id) {
+		h.commitCond.Wait()
 	}
-	h.nodeCount.CompareAndSwap(int64(id), int64(id+1))
+
+	h.updateMetadata(func(meta *HNSWMetadata) {
+		if meta.NodeCount == int64(id) {
+			meta.NodeCount++
+
+			// Entry Point Promotion: Only promote if this node reached a higher level than current EP
+			data := h.data.Load()
+			if data != nil {
+				cID := int(id) / types.ChunkSize
+				cOff := int(id) % types.ChunkSize
+				levels := data.GetLevelsChunk(cID)
+				nodeLevel := 0
+				if levels != nil {
+					nodeLevel = int(atomic.LoadUint32(&levels[cOff]))
+				}
+
+				epLevel := -1
+				ep := meta.EntryPoint
+				if ep != math.MaxUint32 {
+					epCID := int(ep) / types.ChunkSize
+					epCOff := int(ep) % types.ChunkSize
+					epLevels := data.GetLevelsChunk(epCID)
+					if epLevels != nil {
+						epLevel = int(atomic.LoadUint32(&epLevels[epCOff]))
+					}
+				}
+
+				if ep == math.MaxUint32 || nodeLevel > epLevel {
+					meta.EntryPoint = id
+					meta.MaxLevel = int32(nodeLevel)
+				}
+			}
+			meta.Generation++
+		} else {
+			// Already committed or skipped
+		}
+	})
+
+	h.commitCond.Broadcast()
+	
+	// Sync atomics with the newly committed metadata
+	meta := h.GetMetadataSnapshot()
+	h.nodeCount.Store(meta.NodeCount)
+	h.entryPoint.Store(meta.EntryPoint)
+	h.maxLevel.Store(meta.MaxLevel)
 }
 
-// Interface implementation: AddByLocation adds a vector by its location
+func (h *ArrowHNSW) updateMetadata(update func(*HNSWMetadata)) {
+	for {
+		oldMeta := h.metadataRegistry.Load()
+		newMeta := &HNSWMetadata{}
+		if oldMeta != nil {
+			*newMeta = *oldMeta
+		}
+		update(newMeta)
+		newMeta.Version++
+		if h.metadataRegistry.CompareAndSwap(oldMeta, newMeta) {
+			// Backwards compatibility: keep legacy atomics in sync
+			h.entryPoint.Store(newMeta.EntryPoint)
+			h.maxLevel.Store(newMeta.MaxLevel)
+			h.nodeCount.Store(newMeta.NodeCount)
+			break
+		}
+	}
+}
+
+// updateMetadataIfHigher updates the entry point and max level if the provided node has a higher level.
+func (h *ArrowHNSW) updateMetadataIfHigher(id uint32, level int32) {
+	h.updateMetadata(func(meta *HNSWMetadata) {
+		if meta.EntryPoint == math.MaxUint32 || level > meta.MaxLevel {
+			meta.MaxLevel = level
+			meta.EntryPoint = id
+		}
+	})
+}
+
+// AddByLocation adds a vector by its location in the dataset.
 func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	next := h.nextID.Add(1)
 	if next > math.MaxUint32 {
 		return 0, fmt.Errorf("index overflow: nextID %d exceeds uint32 max", next)
 	}
 	id := uint32(next - 1) // #nosec G115
-	defer h.commitID(id)
 
 	var vec any
 	if h.dataset != nil {
@@ -751,13 +637,7 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 		if batchIdx < len(records) {
 			record := records[batchIdx]
 			// Find vector column
-			vecColIdx := -1
-			for i := 0; i < int(record.NumCols()); i++ {
-				if record.ColumnName(i) == "vector" {
-					vecColIdx = i
-					break
-				}
-			}
+			vecColIdx := h.getVectorColumnIndex(record)
 			if vecColIdx != -1 {
 				vec = h.extractVector(record, vecColIdx, rowIdx)
 			}
@@ -786,17 +666,10 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 		return 0, fmt.Errorf("index overflow: nextID %d exceeds uint32 max", next)
 	}
 	id := uint32(next - 1) // #nosec G115
-	defer h.commitID(id)
 
 	var vec any
 	// Find vector column
-	vecColIdx := -1
-	for i := 0; i < int(rec.NumCols()); i++ {
-		if rec.ColumnName(i) == "vector" {
-			vecColIdx = i
-			break
-		}
-	}
+	vecColIdx := h.getVectorColumnIndex(rec)
 	if vecColIdx != -1 {
 		vec = h.extractVector(rec, vecColIdx, rowIdx)
 	}
@@ -816,718 +689,15 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 	return id, nil
 }
 
-func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any {
-	col := rec.Column(colIdx)
-
-	// Helper to extract values from underlying array
-	extractValues := func(values arrow.Array, start, end int64) any {
-		switch arr := values.(type) {
-		case *arrowarray.Float32:
-			// Handle Complex64
-			if h.config.DataType == types.VectorTypeComplex64 {
-				floats := arr.Float32Values()[start:end]
-				// size should be 2 * dims
-				size := int(end - start)
-				complexes := make([]complex64, size/2)
-				for i := 0; i < size/2; i++ {
-					complexes[i] = complex(floats[2*i], floats[2*i+1])
-				}
-				return complexes
-			}
-			// Important: Return copy or ensuring safety?
-			// Float32Values returns slice. Arrow semantics: slice is view.
-			// But we copy into types.GraphData immediately in InsertWithVector (SetVector does copy).
-			return arr.Float32Values()[start:end]
-
-		case *arrowarray.Float64:
-			// Handle Complex128
-			if h.config.DataType == types.VectorTypeComplex128 {
-				floats := arr.Float64Values()[start:end]
-				size := int(end - start)
-				complexes := make([]complex128, size/2)
-				for i := 0; i < size/2; i++ {
-					complexes[i] = complex(floats[2*i], floats[2*i+1])
-				}
-				return complexes
-			}
-			return arr.Float64Values()[start:end]
-
-		case *arrowarray.Uint32:
-			return arr.Uint32Values()[start:end]
-		case *arrowarray.Int32:
-			return arr.Int32Values()[start:end]
-		case *arrowarray.Uint16:
-			return arr.Uint16Values()[start:end]
-		case *arrowarray.Int16:
-			return arr.Int16Values()[start:end]
-		case *arrowarray.Uint8:
-			return arr.Uint8Values()[start:end]
-		case *arrowarray.Int8:
-			return arr.Int8Values()[start:end]
-		case *arrowarray.Int64:
-			return arr.Int64Values()[start:end]
-		case *arrowarray.Uint64:
-			return arr.Uint64Values()[start:end]
-
-		case *arrowarray.Float16:
-			return arr.Values()[start:end]
-
-		// Add other types as needed
-		default:
-			return nil
-		}
-	}
-
-	if list, ok := col.(*arrowarray.FixedSizeList); ok {
-		values := list.ListValues()
-		size := int64(list.DataType().(*arrow.FixedSizeListType).Len())
-		// Account for list array offset
-		listOffset := int64(list.Data().Offset())
-		offset := (listOffset + int64(rowIdx)) * size
-		return extractValues(values, offset, offset+size)
-	}
-
-	if list, ok := col.(*arrowarray.List); ok {
-		offsets := list.Offsets()
-		start := int64(offsets[rowIdx])
-		end := int64(offsets[rowIdx+1])
-		values := list.ListValues()
-		return extractValues(values, start, end)
-	}
-
-	return nil
-}
-
-// Interface implementation: Search performs k-nearest neighbor search
-func (h *ArrowHNSW) Search(ctx context.Context, queryVal any, k int, filter any) ([]types.Candidate, error) {
-	start := time.Now()
-
-	if h.nodeCount.Load() == 0 {
-		return []types.Candidate{}, nil
-	}
-
-	// Perform search to find closest neighbors
-	results, err := h.SearchVectorsWithBitmap(ctx, queryVal, k, nil, nil)
-
-	// Record search metrics
-	duration := time.Since(start).Seconds()
-	typeStr := h.config.DataType.String()
-	dimStr := strconv.Itoa(int(h.dims.Load()))
-	metrics.HNSWSearchLatencyByType.WithLabelValues(typeStr).Observe(duration)
-	metrics.HNSWSearchLatencyByDim.WithLabelValues(dimStr).Observe(duration)
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert []types.SearchResult to []types.Candidate
-	typeResults := make([]types.Candidate, len(results))
-	for i, r := range results {
-		typeResults[i] = types.Candidate{
-			ID:   uint32(r.ID),
-			Dist: r.Distance,
-		}
-	}
-
-	return typeResults, nil
-}
-
-// Interface implementation: Size returns the number of nodes in the index
-func (h *ArrowHNSW) Size() int {
-	return int(h.nodeCount.Load())
-}
-
-// Interface implementation: Close cleans up resources
-func (h *ArrowHNSW) Close() error {
-	if h == nil {
-		return nil
-	}
-	if h.navigator != nil {
-		if err := h.navigator.Close(); err != nil {
-			return err
-		}
-	}
-	// Atomically swap in nil to stop new operations
-	data := h.data.Swap(nil)
-	if data != nil {
-		data.Release()
-	}
-	// We do NOT nil locationStore, searchPool, etc. here because concurrent 
-	// background tasks (like indexing workers or migration) might still 
-	// be accessing them. The memory will be reclaimed when the ArrowHNSW 
-	// object itself is no longer referenced.
-	return nil
-}
-
-// Navigate performs a graph navigation query
-func (h *ArrowHNSW) Navigate(ctx context.Context, navQuery NavigatorQuery) (*NavigatorPath, error) {
-	if h.navigator == nil {
-		return nil, fmt.Errorf("graph navigator not initialized")
-	}
-	return h.navigator.FindPath(ctx, navQuery)
-}
-
-// Extended methods for AdaptiveIndex compatibility
-
-func (h *ArrowHNSW) GetDimension() uint32 {
-	dims := h.GetDims()
-	if dims > 0 {
-		return uint32(dims)
-	}
-	if h.dataset != nil && h.dataset.GetSchema() != nil {
-		for _, f := range h.dataset.GetSchema().Fields() {
-			if f.Name == "vector" || f.Name == "embedding" {
-				if fslType, ok := f.Type.(*arrow.FixedSizeListType); ok {
-					return uint32(fslType.Len()) // #nosec G115
-				}
-			}
-		}
-	}
-	return 0
-}
-
 
 // MinCandidateHeap for exploration (closest first)
 // Uses store.Candidate (ID, Dist) to match ArrowSearchContext
-type MinCandidateHeap []types.Candidate
 
-func (h MinCandidateHeap) Len() int           { return len(h) }
-func (h MinCandidateHeap) Less(i, j int) bool { return h[i].Dist < h[j].Dist }
-func (h MinCandidateHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-func (h *MinCandidateHeap) Push(x any)        { *h = append(*h, x.(types.Candidate)) }
-func (h *MinCandidateHeap) Pop() any {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[0 : n-1]
-	return x
-}
 
-func (h *ArrowHNSW) ensureReady() {
-	if h.searchPool == nil {
-		h.initMu.Lock()
-		if h.searchPool == nil {
-			h.searchPool = NewArrowSearchContextPool()
-		}
-		if h.deleted == nil {
-			h.deleted = roaring.New()
-		}
-		if h.locationStore == nil {
-			h.locationStore = NewChunkedLocationStore()
-		}
 
-		h.initMu.Unlock()
-	}
-}
 
-// searchGPU performs automatic GPU dispatch based on data type
-func (h *ArrowHNSW) searchGPU(_ context.Context, queryVec any, k int) ([]types.SearchResult, error) {
-	if h.gpuIndex == nil {
-		return nil, fmt.Errorf("GPU index not initialized")
-	}
 
-	// Check circuit breaker
-	if h.gpuCircuitBreaker != nil && !h.gpuCircuitBreaker.Allow() {
-		return nil, fmt.Errorf("circuit breaker open")
-	}
-
-	var ids []int64
-	var distances []float32
-	var err error
-
-	switch h.config.DataType {
-	case types.VectorTypeFloat32:
-		if q, ok := queryVec.([]float32); ok {
-			ids, distances, err = h.gpuIndex.Search(q, k)
-		} else {
-			return nil, fmt.Errorf("float32 search requires float32 query, got %T", queryVec)
-		}
-
-	case types.VectorTypeFloat16:
-		if q, ok := queryVec.([]float32); ok {
-			// Convert float32 to uint16 (fp16 encoding)
-			fp16Query := make([]uint16, len(q))
-			for i, v := range q {
-				fp16Query[i] = float16.New(v).Uint16()
-			}
-			ids, distances, err = h.gpuIndex.SearchFloat16(fp16Query, k)
-		} else if q16, ok := queryVec.([]float16.Num); ok {
-			fp16Query := make([]uint16, len(q16))
-			for i, v := range q16 {
-				fp16Query[i] = v.Uint16()
-			}
-			ids, distances, err = h.gpuIndex.SearchFloat16(fp16Query, k)
-		} else {
-			return nil, fmt.Errorf("float16 search requires float32 or float16 query, got %T", queryVec)
-		}
-
-	case types.VectorTypeComplex64:
-		if q, ok := queryVec.([]complex64); ok {
-			// Convert complex64 to uint16 pairs (half precision)
-			fp16Query := make([]uint16, len(q)*2)
-			for i, v := range q {
-				fp16Query[i*2] = float16.New(real(v)).Uint16()
-				fp16Query[i*2+1] = float16.New(imag(v)).Uint16()
-			}
-			ids, distances, err = h.gpuIndex.SearchComplex64(fp16Query, k)
-		} else {
-			return nil, fmt.Errorf("complex64 search requires complex64 query, got %T", queryVec)
-		}
-
-	case types.VectorTypeComplex128:
-		if q, ok := queryVec.([]complex128); ok {
-			// Convert complex128 to float32 pairs (stored as float32 for this implementation)
-			f32Query := make([]float32, len(q)*2)
-			for i, v := range q {
-				f32Query[i*2] = float32(real(v))
-				f32Query[i*2+1] = float32(imag(v))
-			}
-			ids, distances, err = h.gpuIndex.SearchComplex128(f32Query, k)
-		} else {
-			return nil, fmt.Errorf("complex128 search requires complex128 query, got %T", queryVec)
-		}
-
-	default:
-		return nil, fmt.Errorf("GPU search not supported for type %s", h.config.DataType)
-	}
-
-	if err != nil {
-		if h.gpuCircuitBreaker != nil {
-			h.gpuCircuitBreaker.RecordFailure()
-		}
-		return nil, err
-	}
-
-	if h.gpuCircuitBreaker != nil {
-		h.gpuCircuitBreaker.RecordSuccess()
-	}
-
-	// Convert to SearchResult
-	results := make([]types.SearchResult, len(ids))
-	for i, id := range ids {
-		results[i] = types.SearchResult{
-			ID:       types.VectorID(id), // #nosec G115 -- id is uint32
-			Distance: distances[i],
-			Score:    1.0 / (1.0 + distances[i]),
-		}
-	}
-
-	return results, nil
-}
-
-func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k int, filter *roaring.Bitmap, options any) ([]types.SearchResult, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-	data := h.data.Load()
-	if data == nil {
-		return nil, fmt.Errorf("graph data is nil")
-	}
-
-	h.ensureReady()
-
-	logicalDims := int(h.dims.Load())
-	if logicalDims > 0 {
-		var physicalDims int
-		switch h.config.DataType {
-		case types.VectorTypeComplex128, types.VectorTypeComplex64:
-			physicalDims = logicalDims * 2
-		default:
-			physicalDims = logicalDims
-		}
-
-		queryLen := 0
-		var isComplexIndexWithFloatQuery bool
-		switch q := queryVec.(type) {
-		case []float32:
-			queryLen = len(q)
-			if (h.config.DataType == types.VectorTypeComplex64 || h.config.DataType == types.VectorTypeComplex128) &&
-				queryLen == physicalDims {
-				isComplexIndexWithFloatQuery = true
-			}
-		case []float64:
-			queryLen = len(q)
-		case []complex64:
-			queryLen = len(q) * 2
-		case []complex128:
-			queryLen = len(q) * 2
-		}
-
-		if queryLen > 0 && !isComplexIndexWithFloatQuery && queryLen != physicalDims {
-			return nil, fmt.Errorf("index expects %d elements (logical dims=%d), got query len %d", physicalDims, logicalDims, queryLen)
-		}
-	}
-
-	if h.nodeCount.Load() == 0 {
-		return nil, nil
-	}
-
-	// Automatic GPU dispatch for supported types
-	if h.gpuEnabled && h.gpuIndex != nil && h.nodeCount.Load() >= 5000 {
-		gpuResults, err := h.searchGPU(ctx, queryVec, k)
-		if err == nil && len(gpuResults) > 0 {
-			return gpuResults, nil
-		}
-		// Fall through to CPU on GPU error
-	}
-
-	if metrics.HNSWSearchPoolGetTotal != nil {
-		metrics.HNSWSearchPoolGetTotal.Inc()
-	}
-	start := time.Now()
-	searchCtx := h.searchPool.Get()
-
-	// Extract search options
-	searchOptions := types.SearchOptions{}
-	if opt, ok := options.(types.SearchOptions); ok {
-		searchOptions = opt
-	}
-
-	searchCtx.diskGraph = h.diskGraph.Load()
-	searchCtx.predicate = searchOptions.Predicate
-
-	// Handle BQ (Binary Quantization) search path
-	// If index has BQ enabled and user requests BQ search, use Hamming distance
-	useBQSearch := searchOptions.VectorFormat == types.VectorTypeBQ
-	if useBQSearch {
-		if h.bqEncoder == nil {
-			return nil, fmt.Errorf("BQ search requested but index does not have BQ enabled")
-		}
-		if qf32, ok := queryVec.([]float32); ok {
-			searchCtx.queryBQ = h.bqEncoder.Encode(qf32)
-			searchCtx.useBQSearch = true
-		} else {
-			return nil, fmt.Errorf("BQ search requires float32 query vector")
-		}
-	}
-
-	searchCtx.filterBitmap = filter
-	if filter != nil {
-		metrics.HNSWPreFilteredSearchesTotal.WithLabelValues(h.name).Inc()
-		if filter.IsEmpty() {
-			metrics.HNSWFilterEarlyExitTotal.WithLabelValues(h.name).Inc()
-			if metrics.HNSWSearchPoolPutTotal != nil {
-				metrics.HNSWSearchPoolPutTotal.Inc()
-			}
-			h.searchPool.Put(searchCtx)
-			return nil, nil
-		}
-	}
-
-	defer func() {
-		duration := time.Since(start).Seconds()
-		metrics.HNSWSearchDurationSeconds.Observe(duration)
-
-		typeLabel := h.config.DataType.String()
-		dimsStr := strconv.Itoa(int(h.dims.Load()))
-		metrics.HNSWSearchOpsTotal.WithLabelValues(h.name, typeLabel, dimsStr).Inc()
-
-		// Polymorphic metrics needed for test
-		metrics.HNSWPolymorphicSearchCount.WithLabelValues(typeLabel).Inc()
-		metrics.HNSWPolymorphicLatency.WithLabelValues(typeLabel).Observe(duration)
-
-		byteThroughput := float64(int(h.dims.Load()) * h.config.DataType.ElementSize())
-		metrics.HNSWPolymorphicThroughput.WithLabelValues(typeLabel).Add(byteThroughput)
-
-		searchCtx.filterBitmap = nil
-		h.flushSearchMetrics(searchCtx)
-
-		if metrics.HNSWSearchPoolPutTotal != nil {
-			metrics.HNSWSearchPoolPutTotal.Inc()
-		}
-		h.searchPool.PutWithMetrics(searchCtx, typeLabel, dimsStr)
-	}()
-
-	ep := h.entryPoint.Load()
-	maxLevel := h.maxLevel.Load()
-
-	if ep >= uint32(data.Capacity) { // #nosec G115 -- intentional comparison
-		// During initial bulk ingestion, ep might be 0 while data is empty.
-		// If data is empty, just return nil.
-		if h.nodeCount.Load() == 0 {
-			return nil, nil
-		}
-		return nil, fmt.Errorf("entry point %d out of bounds (capacity %d)", ep, data.Capacity)
-	}
-
-	// Calculate distance to entry point
-	var dist float32
-	vec, err := h.getVectorWithCachedDisk(data, searchCtx.diskGraph, ep)
-	if err != nil {
-		return nil, err
-	}
-
-	if vec == nil {
-		return nil, fmt.Errorf("entry point vector not found for id %d", ep)
-	}
-
-	// Use specialized computer if possible
-	computer := h.resolveHNSWComputer(data, searchCtx, queryVec, false)
-	if comp, ok := computer.(interface {
-		ComputeSingle(id uint32) (float32, error)
-	}); ok {
-		dist, err = comp.ComputeSingle(ep)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		// Fallback
-		switch q := queryVec.(type) {
-		case []float32:
-			switch v := vec.(type) {
-			case []float32:
-				dist, err = h.distFunc(q, v)
-			case []float64:
-				q64 := make([]float64, len(q))
-				for i, val := range q {
-					q64[i] = float64(val)
-				}
-				dist, err = h.distFuncF64(q64, v)
-			default:
-				return nil, fmt.Errorf("unsupported vector type %T for float32 query", vec)
-			}
-		case []float64:
-			if v, ok := vec.([]float64); ok {
-				dist, err = h.distFuncF64(q, v)
-			}
-		case []float16.Num:
-			if v, ok := vec.([]float16.Num); ok {
-				dist, err = h.distFuncF16(q, v)
-			}
-		case []complex64:
-			if v, ok := vec.([]complex64); ok {
-				dist, err = simd.EuclideanDistanceComplex64(q, v)
-			}
-		case []complex128:
-			if v, ok := vec.([]complex128); ok {
-				dist, err = simd.EuclideanDistanceComplex128(q, v)
-			}
-		case []int8:
-			if v, ok := vec.([]int8); ok {
-				dist, _ = h.distFuncInt8(q, v)
-			}
-		case []uint8:
-			if v, ok := vec.([]uint8); ok {
-				dist, _ = h.distFuncUint8(q, v)
-			}
-		case []int16:
-			if v, ok := vec.([]int16); ok {
-				dist, _ = h.distFuncInt16(q, v)
-			}
-		case []uint16:
-			if v, ok := vec.([]uint16); ok {
-				dist, _ = h.distFuncUint16(q, v)
-			}
-		case []int32:
-			if v, ok := vec.([]int32); ok {
-				dist, _ = h.distFuncInt32(q, v)
-			}
-		case []uint32:
-			if v, ok := vec.([]uint32); ok {
-				dist, _ = h.distFuncUint32(q, v)
-			}
-		case []int64:
-			if v, ok := vec.([]int64); ok {
-				dist, _ = h.distFuncInt64(q, v)
-			}
-		case []uint64:
-			if v, ok := vec.([]uint64); ok {
-				dist, _ = h.distFuncUint64(q, v)
-			}
-		default:
-			return nil, fmt.Errorf("unsupported query vector type %T", queryVec)
-		}
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// 1. Search from top layer to 1
-	distToEp := dist
-	currObj := types.Candidate{ID: ep, Dist: distToEp}
-
-	// 2. Greedy search down through levels
-	for level := int(maxLevel); level > 0; level-- { // #nosec G115
-		// Greedy search: keep 1 best candidate
-		res, err := h.searchLayer(ctx, computer, currObj.ID, 1, level, searchCtx, data, queryVec)
-		if err != nil {
-			h.flushSearchMetrics(searchCtx)
-			return nil, err
-		}
-
-		candidates := res
-		if len(candidates) > 0 {
-			currObj = candidates[0]
-		}
-	}
-
-	// 2. Search at layer 0 with adaptive retry
-	efSearch := int(h.config.EfSearch)
-	if searchOptions.Ef > 0 {
-		efSearch = searchOptions.Ef
-	}
-	if h.config.SQ8Enabled && efSearch < 100 {
-		// Provide more search buffer by default for SQ8 to compensate for quantization noise
-		efSearch = 100
-	}
-
-	if k > efSearch {
-		efSearch = k
-	}
-
-	var results []types.SearchResult
-	var qv []float32
-	var ok bool
-	if qv, ok = queryVec.([]float32); !ok {
-		// Fallback to non-retry path if not float32 (unlikely for this path)
-		res, err := h.searchLayer(ctx, computer, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
-		if err != nil {
-			return nil, err
-		}
-		sort.Slice(res, func(i, j int) bool { return res[i].Dist < res[j].Dist })
-		result := make([]types.SearchResult, 0, k)
-		for _, c := range res {
-			if (h.deleted != nil && h.deleted.Contains(c.ID)) || (filter != nil && !filter.Contains(c.ID)) {
-				continue
-			}
-			result = append(result, types.SearchResult{ID: types.VectorID(c.ID), Distance: c.Dist, Score: 1.0 / (1.0 + c.Dist)})
-			if len(result) >= k {
-				break
-			}
-		}
-		return result, nil
-	}
-
-	maxNodeCount := int(h.nodeCount.Load())
-	for attempt := 0; attempt < 3; attempt++ {
-		if err := ctx.Err(); err != nil {
-			h.flushSearchMetrics(searchCtx)
-			return nil, err
-		}
-		res, err := h.searchLayer(ctx, computer, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
-		if err != nil {
-			h.flushSearchMetrics(searchCtx)
-			return nil, err
-		}
-
-		typeCandidates := make([]types.Candidate, len(res))
-		for i, c := range res {
-			typeCandidates[i] = types.Candidate{ID: c.ID, Dist: c.Dist}
-		}
-
-		results = h.processResultsParallel(ctx, qv, queryVec, typeCandidates, k, filter)
-		if len(results) >= k || attempt == 2 || efSearch >= maxNodeCount {
-			break
-		}
-
-		// Item 3: Adaptive Search Expansion Policy
-		// Instead of a blind 5x multiplier, use a heuristic based on the distance distribution
-		// and the number of results found vs requested.
-		// Use PID-based autonomous efSearch tuning
-		// Proxy recall = len(results) / k
-		recallProxy := float64(len(results)) / float64(k)
-		if recallProxy > 1.0 { recallProxy = 1.0 }
-		
-		efSearch = h.efTuner.Update(recallProxy)
-	}
-
-	h.flushSearchMetrics(searchCtx)
-	return results, nil
-}
-
-func (h *ArrowHNSW) Warmup() int {
-	return int(h.nodeCount.Load())
-}
-
-// GetLayerNeighbors returns internal neighbor IDs for a specific layer
-func (h *ArrowHNSW) GetLayerNeighbors(id uint32, layer int) ([]uint32, error) {
-	data := h.data.Load()
-	if data == nil {
-		return nil, fmt.Errorf("index data is nil")
-	}
-
-	maxLevel := h.GetMaxLevel()
-	if maxLevel < 0 || int64(id) >= h.nodeCount.Load() {
-		return nil, nil
-	}
-
-	if layer < 0 || int32(layer) > maxLevel { // #nosec G115
-		return nil, fmt.Errorf("invalid layer: %d", layer)
-	}
-
-	cID := types.ChunkID(id)
-	cOff := types.ChunkOffset(id)
-
-	neighborhood := data.GetNeighborsChunk(layer, cID)
-	counts := data.GetCountsChunk(layer, cID)
-	if neighborhood == nil || counts == nil {
-		return nil, nil
-	}
-
-	count := atomic.LoadInt32(&counts[cOff])
-	if count == 0 {
-		return nil, nil
-	}
-
-	neighbors := make([]uint32, count)
-	startIdx := int(cOff) * types.MaxNeighbors // #nosec G115
-	copy(neighbors, neighborhood[startIdx:startIdx+int(count)]) // #nosec G115
-
-	return neighbors, nil
-}
-
-// GetRawNeighbors implements the VectorIndexer interface
-func (h *ArrowHNSW) GetRawNeighbors(id uint32) ([]uint32, error) {
-	return h.GetLayerNeighbors(id, 0)
-}
-
-func (h *ArrowHNSW) GetNeighbors(ctx context.Context, id uint32, k int) ([]types.SearchResult, error) {
-	neighbors, err := h.GetLayerNeighbors(id, 0)
-	if err != nil || len(neighbors) == 0 {
-		return nil, err
-	}
-
-	// 1. Get query vector
-	qVecAny, err := h.GetVector(id)
-	if err != nil {
-		return nil, err
-	}
-	qVec, ok := qVecAny.([]float32)
-	if !ok {
-		// If not float32, we can't easily compute distances here for now
-		// but we still return the neighbors without distances or with 0
-		results := make([]types.SearchResult, 0, min(k, len(neighbors)))
-		for i := 0; i < len(neighbors) && i < k; i++ {
-			results = append(results, types.SearchResult{
-				ID: types.VectorID(neighbors[i]),
-			})
-		}
-		return results, nil
-	}
-
-	results := make([]types.SearchResult, 0, min(k, len(neighbors)))
-	for i := 0; i < len(neighbors) && i < k; i++ {
-		nID := neighbors[i]
-		nVecAny, err := h.GetVector(nID)
-		if err != nil || nVecAny == nil {
-			continue
-		}
-
-		dist := float32(0.0)
-		if nVec, ok := nVecAny.([]float32); ok {
-			dist, _ = h.distFunc(qVec, nVec)
-		}
-
-		results = append(results, types.SearchResult{
-			ID:       types.VectorID(nID),
-			Distance: dist,
-			Score:    dist,
-		})
-	}
-
-	return results, nil
-}
-
+// PreWarm proactively loads chunks of data into memory based on target size.
 func (h *ArrowHNSW) PreWarm(targetSize int) {
 	start := time.Now()
 	defer func() {
@@ -1549,9 +719,9 @@ func (h *ArrowHNSW) PreWarm(targetSize int) {
 	var dummy uint32
 
 	// Prewarm Neighbors (Layer 0) - this is usually the largest memory block
-	if len(data.Neighbors) > 0 && len(data.Neighbors[0]) > 0 {
+	if len(data.Neighbors) > 0 {
 		for i := 0; i < targetChunks && i < len(data.Neighbors[0]); i++ {
-			chunk := data.Neighbors[0][i]
+			chunk := data.GetNeighborsChunk(0, i)
 			if chunk == nil {
 				continue
 			}
@@ -1585,215 +755,21 @@ func (h *ArrowHNSW) PreWarm(targetSize int) {
 	_ = dummy
 }
 
-func (h *ArrowHNSW) growNoLock(capacity, dims int) error {
-	return h.growInternal(capacity, dims)
-}
-
-func (h *ArrowHNSW) Grow(capacity, dims int) error {
-	h.growMu.Lock()
-	defer h.growMu.Unlock()
-
-	return h.growInternal(capacity, dims)
-}
-
-func (h *ArrowHNSW) growInternal(capacity, dims int) error {
-	start := time.Now()
-	defer func() {
-		metrics.HNSWIndexGrowthDuration.Observe(time.Since(start).Seconds())
-	}()
-
-	data := h.data.Load()
-	if data == nil {
-		gd := types.NewGraphData(
-			capacity,
-			dims,
-			false,
-			h.config.UseDisk,
-			0,
-			h.config.Quantization,
-			h.config.SQ8Enabled,
-			h.config.UseDisk,
-			h.config.DataType,
-			h.config.BQEnabled,
-			h.config.PQEnabled,
-			h.config.TurboQuantEnabled,
-			h.config.TurboQuantBits,
-			h.name,
-		)
-		h.data.Store(gd)
-		data = gd
-	}
-
-	if dims > math.MaxInt32 {
-		return fmt.Errorf("dimensions %d exceed MaxInt32", dims)
-	}
-	h.dims.Store(int32(dims)) // #nosec G115
-	currentDims := data.Dims
-	if currentDims == 0 && dims > 0 {
-		h.config.Dims = dims
-	}
-
-	// Calculate current vs target
-	currentCapacity := data.Capacity
-
-	// Never shrink capacity
-	if capacity < currentCapacity {
-		capacity = currentCapacity
-	}
-
-	// If no structural change needed, return early
-	if capacity <= currentCapacity && dims == currentDims &&
-		data.PQEnabled == h.config.PQEnabled &&
-		data.SQ8Enabled == h.config.SQ8Enabled &&
-		data.BQEnabled == h.config.BQEnabled &&
-		data.TurboQuantEnabled == h.config.TurboQuantEnabled {
-
-		// Ensure all enabled quantization types already have allocated vectors
-		alreadyInitialized := true
-		if h.config.PQEnabled && len(data.VectorsPQ) == 0 {
-			alreadyInitialized = false
-		}
-		if h.config.SQ8Enabled && len(data.VectorsSQ8) == 0 {
-			alreadyInitialized = false
-		}
-		if h.config.BQEnabled && len(data.VectorsBQ) == 0 {
-			alreadyInitialized = false
-		}
-
-		if alreadyInitialized {
-			return nil
+// ReleaseMonolithicChunk releases the storage for a chunk of the index.
+// This is used during incremental handover to shards.
+func (h *ArrowHNSW) ReleaseMonolithicChunk(cID int) error {
+	gd := h.data.Load()
+	if gd != nil {
+		gd.ReleaseChunk(cID)
+		// Also release neighbors for all layers for this chunk
+		for l := 0; l < types.ArrowMaxLayers; l++ {
+			gd.ReleaseNeighborsChunk(l, cID)
 		}
 	}
-
-	// COW: Clone the current data structure
-	newData := data.Clone()
-	newData.Capacity = capacity
-	newData.Dims = dims
-
-	// Update flags from config
-	newData.PQEnabled = h.config.PQEnabled
-	if newData.PQEnabled {
-		if h.oopqEncoder != nil {
-			switch enc := h.oopqEncoder.(type) {
-			case *pq.PQEncoder:
-				newData.PQM = enc.CodeSize()
-			case *pq.OPQEncoder:
-				newData.PQM = enc.CodeSize()
-			}
-		} else {
-			newData.PQM = h.config.PQM
-		}
-	}
-	newData.SQ8Enabled = h.config.SQ8Enabled
-	if newData.SQ8Enabled && len(newData.VectorsSQ8) == 0 {
-		newData.VectorsSQ8 = []uint64{}
-	}
-	newData.BQEnabled = h.config.BQEnabled
-	if newData.BQEnabled && len(newData.VectorsBQ) == 0 {
-		newData.VectorsBQ = []uint64{}
-	}
-	newData.TurboQuantEnabled = h.config.TurboQuantEnabled
-	newData.TurboQuantBits = h.config.TurboQuantBits
-	if newData.TurboQuantEnabled && len(newData.VectorsTQ) == 0 {
-		newData.VectorsTQ = []uint64{}
-	}
-
-	// Ensure PackedNeighbors are resized for new capacity
-	for _, pn := range newData.PackedNeighbors {
-		if pn != nil {
-			pn.EnsureCapacity(uint32(capacity)) // #nosec G115
-		}
-	}
-
-	// If dims changed OR structural flags changed OR required feature slices are missing
-	structuralChange := (dims != currentDims) ||
-		(data.PQEnabled != h.config.PQEnabled) ||
-		(data.SQ8Enabled != h.config.SQ8Enabled) ||
-		(data.BQEnabled != h.config.BQEnabled) ||
-		(data.TurboQuantEnabled != h.config.TurboQuantEnabled) ||
-		(h.config.PQEnabled && len(newData.VectorsPQ) == 0) ||
-		(h.config.SQ8Enabled && len(newData.VectorsSQ8) == 0) ||
-		(h.config.BQEnabled && len(newData.VectorsBQ) == 0)
-
-	if structuralChange {
-		// If dims changed, we must reset all dimension-dependent state
-		if dims != currentDims {
-			newData.Float32Arena = nil
-			newData.Float64Arena = nil
-			newData.Uint8Arena = nil
-			newData.Uint16Arena = nil
-			newData.Uint32Arena = nil
-			newData.Uint64Arena = nil
-			newData.Int8Arena = nil
-			newData.Int16Arena = nil
-			newData.Int32Arena = nil
-			newData.Int64Arena = nil
-			newData.Float16Arena = nil
-			newData.Complex64Arena = nil
-			newData.Complex128Arena = nil
-
-			newData.VectorsF32 = nil
-			newData.VectorsSQ8 = nil
-			newData.VectorsPQ = nil
-			newData.VectorsBQ = nil
-			newData.VectorsTQ = nil
-			newData.VectorsF16 = nil
-			newData.VectorsInt8 = nil
-			newData.VectorsInt16 = nil
-			newData.VectorsUint16 = nil
-			newData.VectorsInt32 = nil
-			newData.VectorsUint32 = nil
-			newData.VectorsInt64 = nil
-			newData.VectorsUint64 = nil
-			newData.VectorsFloat64Offsets = nil
-			newData.VectorsComplex64Offsets = nil
-			newData.VectorsComplex128Offsets = nil
-
-			// Legacy legacy
-			newData.Vectors = nil
-			newData.VectorsFloat64 = nil
-			newData.VectorsComplex64 = nil
-			newData.VectorsComplex128 = nil
-		}
-
-		// Re-run pre-allocation for the current/new structure
-		// PreAllocate is now idempotent, so it won't duplicate if nothing changed
-		if err := newData.PreAllocate(capacity); err != nil {
-			return err
-		}
-	} else if capacity > currentCapacity {
-		// Just capacity growth - PreAllocate is already capacity-aware
-		if err := newData.PreAllocate(capacity); err != nil {
-			return err
-		}
-	}
-
-	newData.Dims = dims
-	newData.Capacity = capacity
-
-	// Optimized Grow: Ensure metadata slices are sized for the new capacity,
-	// but only allocate inner data chunks for the existing node count.
-	// This reduces memory spikes by deferring allocation of future chunks.
-	numChunks := (capacity + types.ChunkSize - 1) / types.ChunkSize
-	numExistingChunks := (int(h.nodeCount.Load()) + types.ChunkSize - 1) / types.ChunkSize
-
-	if numChunks > 0 {
-		for i := 0; i < numExistingChunks; i++ {
-			if err := newData.EnsureChunk(i, 0, dims); err != nil {
-				return err
-			}
-		}
-		newData.GrowMetadataSlices(numChunks)
-	}
-
-	h.data.Store(newData)
 	return nil
 }
 
-func (h *ArrowHNSW) SetEfConstruction(ef int32) {
-	h.efConstruction.Store(ef)
-}
-
+// CleanupTombstones removes deleted nodes that exceed the specified threshold.
 func (h *ArrowHNSW) CleanupTombstones(threshold int) int {
 	h.dataset.RLockData()
 	
@@ -1818,6 +794,22 @@ func (h *ArrowHNSW) CleanupTombstones(threshold int) int {
 	return totalPruned
 }
 
+// NeedsCompaction returns true if the index has accumulated significant tombstoned entries.
+func (h *ArrowHNSW) NeedsCompaction() bool {
+	if h.dataset == nil {
+		return false
+	}
+	var total int64
+	for _, ts := range h.dataset.GetTombstones() {
+		if ts != nil {
+			total += int64(ts.Count()) // #nosec G115
+		}
+	}
+	nodeCount := h.GetMetadataSnapshot().NodeCount
+	return total > 5000 || (nodeCount > 0 && float64(total)/float64(nodeCount) > 0.1)
+}
+
+// SetIndexedColumns is a no-op as column indexing is managed at a higher level.
 func (h *ArrowHNSW) SetIndexedColumns(columns []string) {
 	// No-op: Column indexing is handled at the VectorStore level, not ArrowHNSW.
 	// VectorStore.SetIndexedColumns() stores columns in s.indexedColumns,
@@ -1835,27 +827,88 @@ func (h *ArrowHNSW) generateLevel() int {
 
 // AddBatch implements VectorIndex.
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
+	h.bulkMu.Lock()
+	defer h.bulkMu.Unlock()
 	n := len(rowIdxs)
 	if n == 0 {
 		return nil, nil
 	}
 
 	// Discover vector column
-	vecColIdx := -1
-	if len(recs) > 0 && recs[0] != nil {
-		for i := 0; i < int(recs[0].NumCols()); i++ {
-			name := recs[0].ColumnName(i)
-			if name == "vector" || name == "embedding" || name == "vec" {
-				vecColIdx = i
-				break
-			}
+	var schemaSource arrow.RecordBatch
+	for _, r := range recs {
+		if r != nil {
+			schemaSource = r
+			break
 		}
 	}
 
+	vecColIdx := h.getVectorColumnIndex(schemaSource)
+
+	if vecColIdx == -1 {
+		var colNames []string
+		if schemaSource != nil {
+			for i := 0; i < int(schemaSource.NumCols()); i++ {
+				colNames = append(colNames, schemaSource.ColumnName(i))
+			}
+		}
+		return nil, fmt.Errorf("no vector column found (looked for 'vector', 'embedding', 'vec'); available columns: %v", colNames)
+	}
+
 	var startID uint32
-	// Bulk optimization path - only use for large batches to avoid individual gRPC overhead
-	if n >= 100 && !h.IsSharded() {
-		startID = uint32(h.nextID.Add(int64(n)) - int64(n)) // #nosec G115
+	// Allocate local IDs for the entire batch to ensure monotonic assignment and avoid overwrites
+	startID = uint32(h.nextID.Add(int64(n)) - int64(n)) // #nosec G115
+
+	// Ensure the index is grown to accommodate the new batch before parallel ingestion.
+	if n > 0 && vecColIdx != -1 {
+		h.growMu.Lock()
+		data := h.data.Load()
+		if data == nil || int(startID)+n > data.Capacity || h.dims.Load() == 0 {
+			// Extract first vector to determine dimensions
+			var recFirst arrow.RecordBatch
+			if len(recs) == 1 {
+				recFirst = recs[0]
+			} else if batchIdxs[0] >= 0 && batchIdxs[0] < len(recs) {
+				recFirst = recs[batchIdxs[0]]
+			}
+			
+			if recFirst != nil {
+				v := h.extractVector(recFirst, vecColIdx, rowIdxs[0])
+				if v != nil {
+					dims := 0
+					switch vt := v.(type) {
+					case []float32: dims = len(vt)
+					case []float16.Num: dims = len(vt)
+					case []float64: dims = len(vt)
+					case []int32: dims = len(vt)
+					case []uint32: dims = len(vt)
+					case []int16: dims = len(vt)
+					case []uint16: dims = len(vt)
+					case []int8: dims = len(vt)
+					case []uint8: dims = len(vt)
+					case []int64: dims = len(vt)
+					case []uint64: dims = len(vt)
+					case []complex64: dims = len(vt)
+					case []complex128: dims = len(vt)
+					}
+					
+					if dims > 0 {
+						newCap := int(startID) + n
+						if data != nil && data.Capacity > 0 {
+							newCap = int(math.Max(float64(newCap), float64(data.Capacity*2)))
+						}
+						newCap = (newCap + types.ChunkSize - 1) & ^(types.ChunkSize - 1)
+						_ = h.growInternal(newCap, dims)
+					}
+				}
+			}
+		}
+		h.growMu.Unlock()
+	}
+
+	// Bulk optimization path - only use for large batches.
+	// AddBatchBulk handles its own bootstrap sequentially if the index is empty.
+	if n >= 1000 && !h.IsSharded() {
 
 		if vecColIdx != -1 {
 			// Extract all vectors into a typed slice for bulk processing
@@ -1867,7 +920,16 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				// Cache raw slices per record batch to avoid expensive column calls
 				valuesCache := make(map[arrow.RecordBatch][]float32)
 				// Pre-populate valuesCache
-				for _, rec := range recs {
+				for i := range rowIdxs {
+					// Robust record resolution: if we only have one record, use it regardless of batchIdx
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
+					}
+
 					if rec != nil {
 						if _, ok := valuesCache[rec]; !ok {
 							col := rec.Column(vecColIdx)
@@ -1884,13 +946,26 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				var supportedAtomic atomic.Bool
 				supportedAtomic.Store(true)
 				
-				pool.ParallelFor(n, (n+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
+				pool.ParallelFor(n, max(256, (n+runtime.NumCPU()-1)/runtime.NumCPU()), func(start, end int) {
 					if !supportedAtomic.Load() {
 						return
 					}
 					
 					for i := start; i < end; i++ {
-						rec := recs[batchIdxs[i]]
+					// Robust record resolution
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
+					}
+
+						if rec == nil {
+							supportedAtomic.Store(false)
+							return
+						}
+
 						values := valuesCache[rec]
 						
 						if values != nil {
@@ -2100,22 +1175,20 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			}
 
 			if supported && vecs != nil {
-				if err := h.AddBatchBulk(ctx, startID, n, vecs); err == nil {
+				err := h.addBatchBulkInternal(ctx, startID, n, vecs)
+				if err == nil {
 					ids := make([]uint32, n)
 					for i := 0; i < n; i++ {
 						ids[i] = startID + uint32(i)
 					}
 					return ids, nil
-				} else {
-					fmt.Printf("AddBatchBulk failed for %s: %v\n", h.config.DataType.String(), err)
 				}
 			}
 		}
 	}
 
 	// Use optimized bulk ingestion path
-	startID = uint32(rowIdxs[0]) // #nosec G115 -- rowIdxs values are within uint32 range
-	err := h.AddBatchBulk(ctx, startID, len(rowIdxs), recs)
+	err := h.addBatchBulkInternal(ctx, startID, len(rowIdxs), recs)
 	if err == nil {
 		ids := make([]uint32, len(rowIdxs))
 		for i := range rowIdxs {
@@ -2126,82 +1199,104 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	
 	// Fallback to sequential insertion if bulk fails (rare)
 	ids := make([]uint32, len(rowIdxs))
-	var errFinal error
-	var errMu sync.Mutex
-	
-	pool := GetSharedPool()
-	pool.ParallelFor(len(rowIdxs), (len(rowIdxs)+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
-		for i := start; i < end; i++ {
-			errMu.Lock()
-			if errFinal != nil {
-				errMu.Unlock()
-				return
-			}
-			errMu.Unlock()
-			
-			id := startID + uint32(i) // #nosec G115
-			rec := recs[batchIdxs[i]]
-			h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-			
-			var vec any
-			if vecColIdx != -1 {
-				vec = h.extractVector(rec, vecColIdx, rowIdxs[i])
-			}
-			
-			// Use sharded lock for this pre-reserved ID
-			shard := id % ShardedLockCount
-			lockStart := time.Now()
-			h.insertMus[shard].Lock()
-			metrics.InsertMuWaitDurationSeconds.WithLabelValues(h.name).Observe(time.Since(lockStart).Seconds())
-			err := h.InsertWithVector(id, vec, -1)
-			h.insertMus[shard].Unlock()
-			
-			if err != nil {
-				errMu.Lock()
-				errFinal = err
-				errMu.Unlock()
-				return
-			}
-			ids[i] = id
-			h.commitID(id)
-		}
-	})
-	
-	if errFinal != nil {
-		return nil, errFinal
+	maxID := startID + uint32(len(rowIdxs)) - 1 // #nosec G115
+	data, err := h.EnsureChunks(int(types.ChunkID(startID)), int(types.ChunkID(maxID)), int(h.dims.Load()))
+	if err == nil {
+		data = data.Clone()
 	}
+	if err != nil {
+		return nil, err
+	}
+	// h.data.Store(data)
+
+	// Phase 1: Sequential Vector Ingestion
+	// Ensures all vectors are persistent in arenas before we start linking nodes.
+	for i := 0; i < len(rowIdxs); i++ {
+		id := startID + uint32(i) // #nosec G115
+		
+		// Resolve record batch
+		var rec arrow.RecordBatch
+		bIdx := batchIdxs[i]
+		if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+			rec = recs[bIdx]
+		} else if len(recs) == 1 {
+			rec = recs[0]
+		}
+		
+		if rec == nil {
+			continue
+		}
+
+		v := h.extractVector(rec, vecColIdx, rowIdxs[i])
+		if v != nil {
+			if err := data.SetVector(id, v); err != nil {
+				return nil, err
+			}
+			h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+		}
+	}
+
+	// Publish the populated snapshot
+	h.compareAndSwapData(h.data.Load(), data.Clone())
+
+	// Phase 1.5: Sequential Bootstrap
+	// If the index is empty or very small, we must insert some nodes sequentially
+	// to establish an entry point and basic graph structure before parallel insertion.
+	bootstrapEnd := 0
+	nodeCount := h.GetMetadataSnapshot().NodeCount
+	seedCount := 256
+	if nodeCount < int64(seedCount) {
+		bootstrapEnd = seedCount - int(nodeCount)
+		if bootstrapEnd > len(rowIdxs) {
+			bootstrapEnd = len(rowIdxs)
+		}
+		if bootstrapEnd < 0 {
+			bootstrapEnd = 0
+		}
+	}
+
+	for i := 0; i < len(rowIdxs); i++ {
+		id := startID + uint32(i) // #nosec G115
+		
+		var rec arrow.RecordBatch
+		bIdx := batchIdxs[i]
+		if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+			rec = recs[bIdx]
+		} else if len(recs) == 1 {
+			rec = recs[0]
+		}
+		
+		if rec == nil {
+			return nil, fmt.Errorf("could not resolve record batch for index %d", i)
+		}
+
+		vec := h.extractVector(rec, vecColIdx, rowIdxs[i])
+		if vec == nil {
+			return nil, fmt.Errorf("vector missing for row %d", rowIdxs[i])
+		}
+
+		// Insert node-by-node. InsertWithVector uses in-place arena updates (lock-free)
+		// and commitID for sequential metadata commitment (serialized).
+		if err := h.InsertWithVector(id, vec, -1); err != nil {
+			return nil, err
+		}
+		ids[i] = id
+	}
+
 	return ids, nil
 }
 
+// EstimateMemory returns an estimated memory usage of the index in bytes.
 func (h *ArrowHNSW) EstimateMemory() int64 {
 	if h == nil {
 		return 0
 	}
-	nodeCount := int(h.nodeCount.Load())
-	dims := int(h.dims.Load())
-
-	if nodeCount == 0 || dims == 0 {
-		return 0
+	
+	var total int64
+	gd := h.data.Load()
+	if gd != nil {
+		total += gd.EstimateMemory()
 	}
-
-	vecBytesPer := int64(dims * 4)
-
-	vectorMemory := int64(nodeCount) * vecBytesPer
-
-	m := h.m
-	if m == 0 {
-		m = 32
-	}
-	maxLevel := int(h.maxLevel.Load())
-	if maxLevel == 0 {
-		maxLevel = int(math.Log2(float64(nodeCount)))
-		if maxLevel < 1 {
-			maxLevel = 1
-		}
-	}
-	graphMemory := int64(nodeCount) * int64(maxLevel) * int64(m) * 4
-
-	levelsMemory := int64(nodeCount) * 1
 
 	var locMemory int64
 	if h.locationStore != nil {
@@ -2209,1255 +1304,11 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 		locMemory = int64(locCount) * 8
 	}
 
-	return vectorMemory + graphMemory + levelsMemory + locMemory
+	return total + locMemory
 }
 
 
-// ProcessResultsParallel is a method wrapper for the parallel search logic.
-func (h *ArrowHNSW) ProcessResultsParallel(ctx context.Context, qv any, candidates []types.Candidate, k int, filter any) []types.SearchResult {
-	return h.processResultsParallel(ctx, qv, qv, candidates, k, filter)
-}
 
-func (h *ArrowHNSW) processResultsParallel(ctx context.Context, qv any, originalQuery any, candidates []types.Candidate, k int, filter any) []types.SearchResult {
-	var roaringFilter *roaring.Bitmap
-	if f, ok := filter.(*roaring.Bitmap); ok {
-		roaringFilter = f
-	}
-
-	switch vec := qv.(type) {
-	case []float32:
-		return processResultsParallelInternal(ctx, parallelSearchHostF32{h}, vec, candidates, k, nil, roaringFilter)
-	case []float64:
-		return processResultsParallelInternal(ctx, parallelSearchHostF64{h}, vec, candidates, k, nil, roaringFilter)
-	default:
-		// Check originalQuery for complex types
-		switch oq := originalQuery.(type) {
-		case []complex128:
-			// Treat as float64 with 2N dims
-			raw := unsafe.Slice((*float64)(unsafe.Pointer(&oq[0])), len(oq)*2) // #nosec G103
-			return processResultsParallelInternal(ctx, parallelSearchHostF64{h}, raw, candidates, k, nil, roaringFilter)
-		case []complex64:
-			// Treat as float32 with 2N dims
-			raw := unsafe.Slice((*float32)(unsafe.Pointer(&oq[0])), len(oq)*2) // #nosec G103
-			return processResultsParallelInternal(ctx, parallelSearchHostF32{h}, raw, candidates, k, nil, roaringFilter)
-		}
-	}
-	return nil
-}
-
-
-type parallelSearchHostF32 struct{ h *ArrowHNSW }
-
-func (p parallelSearchHostF32) GetDataset() types.IndexDataProvider { return p.h.dataset }
-func (p parallelSearchHostF32) GetLocationForParallel(id uint32) (types.Location, bool) {
-	return p.h.locationStore.Get(types.VectorID(id))
-}
-func (p parallelSearchHostF32) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float32) error {
-	return p.h.ExtractVectorToBufferForParallel(rec, rowIdx, dst)
-}
-func (p parallelSearchHostF32) GetParallelSearchConfig() types.ParallelSearchConfig {
-	return p.h.parallelConfig
-}
-func (p parallelSearchHostF32) GetDistanceFuncForParallel() func(a, b []float32) float32 {
-	return func(a, b []float32) float32 {
-		d, _ := p.h.distFunc(a, b)
-		return d
-	}
-}
-func (p parallelSearchHostF32) ExtractVectorByIDToBufferForParallel(id uint32, dst []float32) error {
-	return p.h.ExtractVectorByIDToBufferForParallel(id, dst)
-}
-func (p parallelSearchHostF32) GetDistanceMetric() basecore.DistanceMetric { return p.h.config.Metric }
-func (p parallelSearchHostF32) IsDeleted(id uint32) bool                   { return p.h.IsDeleted(id) }
-func (p parallelSearchHostF32) GetNUMAConfig() (*memory.NUMATopology, int) {
-	return p.h.topo, p.h.config.NUMANode
-}
-
-type parallelSearchHostF64 struct{ h *ArrowHNSW }
-
-func (p parallelSearchHostF64) GetDataset() types.IndexDataProvider { return p.h.dataset }
-func (p parallelSearchHostF64) GetLocationForParallel(id uint32) (types.Location, bool) {
-	return p.h.locationStore.Get(types.VectorID(id))
-}
-func (p parallelSearchHostF64) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float64) error {
-	return p.h.ExtractVectorF64ToBufferForParallel(rec, rowIdx, dst)
-}
-func (p parallelSearchHostF64) GetParallelSearchConfig() types.ParallelSearchConfig {
-	return p.h.parallelConfig
-}
-func (p parallelSearchHostF64) GetDistanceFuncForParallel() func(a, b []float64) float32 {
-	return func(a, b []float64) float32 {
-		d, _ := p.h.distFuncF64(a, b)
-		return d
-	}
-}
-func (p parallelSearchHostF64) ExtractVectorByIDToBufferForParallel(id uint32, dst []float64) error {
-	return p.h.ExtractVectorF64ByIDToBufferForParallel(id, dst)
-}
-func (p parallelSearchHostF64) GetDistanceMetric() basecore.DistanceMetric { return p.h.config.Metric }
-func (p parallelSearchHostF64) IsDeleted(id uint32) bool                   { return p.h.IsDeleted(id) }
-func (p parallelSearchHostF64) GetNUMAConfig() (*memory.NUMATopology, int) {
-	return p.h.topo, p.h.config.NUMANode
-}
-
-func (h *ArrowHNSW) SearchVectors(ctx context.Context, queryVec any, k int, filters []query.Filter, options any) ([]types.SearchResult, error) {
-	// Optimization: Convert filters to bitset
-	var filterExpr types.FilterExpr
-	if opts, ok := options.(types.SearchOptions); ok {
-		filterExpr = opts.FilterExpr
-	}
-
-	var bitset *types.Bitset
-	if (len(filters) > 0 || filterExpr != nil) && h.dataset != nil {
-		var err error
-		bitset, err = h.dataset.GenerateFilterBitset(filters, filterExpr)
-		if err != nil {
-			return nil, err
-		}
-		if bitset != nil {
-			defer bitset.Release()
-		}
-	}
-
-	var roaringFilter *roaring.Bitmap
-	if bitset != nil {
-		roaringFilter = bitset.AsRoaring()
-	}
-
-	// Returns []types.SearchResult, error
-	return h.SearchVectorsWithBitmap(ctx, queryVec, k, roaringFilter, options)
-}
-
-func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, threshold float32, filters []query.Filter, options any) ([]types.SearchResult, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
-
-	h.ensureReady()
-
-	if h.nodeCount.Load() == 0 {
-		return nil, nil
-	}
-
-	var filterExpr types.FilterExpr
-	if opts, ok := options.(types.SearchOptions); ok {
-		filterExpr = opts.FilterExpr
-	}
-
-	var bitset *types.Bitset
-	if (len(filters) > 0 || filterExpr != nil) && h.dataset != nil {
-		var err error
-		bitset, err = h.dataset.GenerateFilterBitset(filters, filterExpr)
-		if err != nil {
-			return nil, err
-		}
-		if bitset != nil {
-			defer bitset.Release()
-		}
-	}
-
-	var roaringFilter *roaring.Bitmap
-	if bitset != nil {
-		roaringFilter = bitset.AsRoaring()
-	}
-
-	start := time.Now()
-
-	data := h.data.Load()
-	if data == nil {
-		return nil, nil
-	}
-
-	computer := h.resolveHNSWComputer(data, nil, queryVec, false)
-	if computer == nil {
-		return nil, fmt.Errorf("failed to resolve search computer")
-	}
-
-	maxNodeCount := int(h.nodeCount.Load())
-	ep := h.entryPoint.Load()
-	maxLevel := h.maxLevel.Load()
-
-	searchCtx := h.searchPool.Get()
-	defer func() {
-		searchCtx.filterBitmap = nil
-		if metrics.HNSWSearchPoolPutTotal != nil {
-			metrics.HNSWSearchPoolPutTotal.Inc()
-		}
-		h.searchPool.Put(searchCtx)
-	}()
-
-	searchCtx.filterBitmap = roaringFilter
-	if roaringFilter != nil {
-		metrics.HNSWPreFilteredSearchesTotal.WithLabelValues(h.name).Inc()
-	}
-
-	computer = h.resolveHNSWComputer(data, searchCtx, queryVec, false)
-
-	currObj := types.Candidate{ID: ep, Dist: math.MaxFloat32}
-	for level := int(maxLevel); level > 0; level-- {
-		res, err := h.searchLayer(ctx, computer, currObj.ID, 1, level, searchCtx, data, queryVec)
-		if err != nil {
-			return nil, err
-		}
-		if len(res) > 0 {
-			currObj = res[0]
-		}
-	}
-
-	res, err := h.searchLayer(ctx, computer, currObj.ID, maxNodeCount, 0, searchCtx, data, queryVec)
-	if err != nil {
-		return nil, err
-	}
-
-	var results []types.SearchResult
-	for _, c := range res {
-		if c.Dist > threshold {
-			continue
-		}
-		if h.deleted != nil && h.deleted.Contains(c.ID) {
-			continue
-		}
-		if roaringFilter != nil && !roaringFilter.Contains(c.ID) {
-			continue
-		}
-		results = append(results, types.SearchResult{
-			ID:       types.VectorID(c.ID),
-			Distance: c.Dist,
-			Score:    1.0 / (1.0 + c.Dist),
-		})
-	}
-
-	_ = time.Since(start)
-	_ = maxNodeCount
-
-	return results, nil
-}
-
-func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowSearchContext, queryVal any, _ bool) any {
-	switch q := queryVal.(type) {
-	case []float32:
-		if h.tqCompute != nil && data.TurboQuantEnabled && searchCtx != nil {
-			if len(searchCtx.rotatedQueryTQ) < h.tqCompute.encoder.pow2 {
-				searchCtx.rotatedQueryTQ = make([]float32, h.tqCompute.encoder.pow2)
-			}
-			_ = h.tqCompute.PrecomputeRotatedQuery(q, searchCtx.rotatedQueryTQ)
-			return &tqComputer{data: data, h: h, rotatedQuery: searchCtx.rotatedQueryTQ, diskGraph: searchCtx.diskGraph}
-		}
-		if h.config.PQEnabled && h.oopqEncoder != nil {
-			var table any
-			var err error
-			switch enc := h.oopqEncoder.(type) {
-			case *pq.PQEncoder:
-				table, err = enc.BuildADCTable(q)
-			case *pq.OPQEncoder:
-				table, err = enc.BuildADCTable(q)
-			}
-			if err == nil && table != nil {
-				return &pqComputer{data: data, q: q, table: table, h: h, diskGraph: searchCtx.GetDiskGraph()}
-			}
-		}
-		// Temporarily disabled specialized computer to isolate test regressions
-		// if data.Type == types.VectorTypeFloat32 {
-		// 	return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: searchCtx.GetDiskGraph()}
-		// }
-		var dg *DiskGraph
-		if searchCtx != nil {
-			dg = searchCtx.GetDiskGraph()
-		}
-		comp := &float32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
-		if searchCtx != nil {
-			// Populate conversion buffers once
-			if data.Type == types.VectorTypeFloat64 {
-				searchCtx.queryF64 = searchCtx.queryF64[:0]
-				for _, val := range q { searchCtx.queryF64 = append(searchCtx.queryF64, float64(val)) }
-				comp.qF64 = searchCtx.queryF64
-			}
-		}
-		return comp
-	case []int8, []uint8:
-		var q8 []uint8
-		var qInt8 []int8
-		if qi8, ok := queryVal.([]int8); ok {
-			q8 = *(*[]uint8)(unsafe.Pointer(&qi8)) // #nosec G103
-			qInt8 = qi8
-		} else {
-			q8 = queryVal.([]uint8)
-			qInt8 = *(*[]int8)(unsafe.Pointer(&q8)) // #nosec G103
-		}
-		var dg *DiskGraph
-		if searchCtx != nil {
-			dg = searchCtx.diskGraph
-		} else {
-			dg = h.diskGraph.Load()
-		}
-		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg}
-	case []float64:
-		var dg *DiskGraph
-		if searchCtx != nil {
-			dg = searchCtx.diskGraph
-		} else {
-			dg = h.diskGraph.Load()
-		}
-		return &float64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
-	case []float16.Num:
-		var dg *DiskGraph
-		if searchCtx != nil {
-			dg = searchCtx.diskGraph
-		} else {
-			dg = h.diskGraph.Load()
-		}
-		return &float16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
-	case []complex64:
-		var dg *DiskGraph
-		if searchCtx != nil {
-			dg = searchCtx.diskGraph
-			if cap(searchCtx.queryC64) < len(q) {
-				searchCtx.queryC64 = make([]complex64, len(q))
-			}
-			searchCtx.queryC64 = searchCtx.queryC64[:len(q)]
-			copy(searchCtx.queryC64, q)
-			return &complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q), h: h, diskGraph: dg}
-		}
-		dg = h.diskGraph.Load()
-		return &complex64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
-	case []complex128:
-		var dg *DiskGraph
-		if searchCtx != nil {
-			dg = searchCtx.diskGraph
-			if cap(searchCtx.queryC128) < len(q) {
-				searchCtx.queryC128 = make([]complex128, len(q))
-			}
-			searchCtx.queryC128 = searchCtx.queryC128[:len(q)]
-			copy(searchCtx.queryC128, q)
-			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: dg}
-		}
-		dg = h.diskGraph.Load()
-		return &complex128Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
-	case []int16:
-		var dg *DiskGraph
-		if searchCtx != nil {
-			dg = searchCtx.diskGraph
-		} else {
-			dg = h.diskGraph.Load()
-		}
-		return &int16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
-	case []uint16:
-		var dg *DiskGraph
-		if searchCtx != nil {
-			dg = searchCtx.diskGraph
-		} else {
-			dg = h.diskGraph.Load()
-		}
-		return &uint16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
-	case []int32:
-		var dg *DiskGraph
-		if searchCtx != nil {
-			dg = searchCtx.diskGraph
-		} else {
-			dg = h.diskGraph.Load()
-		}
-		return &int32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
-	case []uint32:
-		var dg *DiskGraph
-		if searchCtx != nil {
-			dg = searchCtx.diskGraph
-		} else {
-			dg = h.diskGraph.Load()
-		}
-		return &uint32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
-	case []int64:
-		var dg *DiskGraph
-		if searchCtx != nil {
-			dg = searchCtx.diskGraph
-		} else {
-			dg = h.diskGraph.Load()
-		}
-		return &int64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
-	case []uint64:
-		var dg *DiskGraph
-		if searchCtx != nil {
-			dg = searchCtx.diskGraph
-		} else {
-			dg = h.diskGraph.Load()
-		}
-		return &uint64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg}
-	}
-	return nil
-}
-
-// MinCandidateHeapAdapter makes a []types.Candidate a Min-Heap (closest on top)
-type MinCandidateHeapAdapter []types.Candidate
-
-func (h MinCandidateHeapAdapter) Len() int           { return len(h) }
-func (h MinCandidateHeapAdapter) Less(i, j int) bool { return h[i].Dist < h[j].Dist }
-func (h MinCandidateHeapAdapter) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-func (h *MinCandidateHeapAdapter) Push(x any)        { *h = append(*h, x.(types.Candidate)) }
-func (h *MinCandidateHeapAdapter) Pop() any {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[:n-1]
-	return x
-}
-
-// MaxCandidateHeapAdapter makes a []types.Candidate a Max-Heap (furthest on top)
-type MaxCandidateHeapAdapter []types.Candidate
-
-func (h MaxCandidateHeapAdapter) Len() int           { return len(h) }
-func (h MaxCandidateHeapAdapter) Less(i, j int) bool { return h[i].Dist > h[j].Dist }
-func (h MaxCandidateHeapAdapter) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
-func (h *MaxCandidateHeapAdapter) Push(x any)        { *h = append(*h, x.(types.Candidate)) }
-func (h *MaxCandidateHeapAdapter) Pop() any {
-	old := *h
-	n := len(old)
-	x := old[n-1]
-	*h = old[:n-1]
-	return x
-}
-
-// searchLayer is used by insertion logic
-// searchLayer implements HNSW layer search
-func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]types.Candidate, error) {
-	start := time.Now()
-	defer func() {
-		if ctx != nil {
-			ctx.distComputeTime += time.Since(start)
-		}
-	}()
-
-	// Define polymorphic distance computer
-	var distComputer func(uint32) (float32, error)
-	var epDist float32
-
-	var disk *DiskGraph
-	if ctx != nil {
-		disk = ctx.diskGraph
-	}
-
-	// Optimization: Use specialized computer if available
-	if comp, ok := computer.(interface {
-		ComputeSingle(id uint32) (float32, error)
-	}); ok {
-		distComputer = comp.ComputeSingle
-		var err error
-		if ctx != nil {
-			ctx.distComputeCount++
-		}
-		epDist, err = comp.ComputeSingle(entryPoint)
-		if err != nil {
-			return nil, err
-		}
-	} else {
-		switch q := queryVec.(type) {
-		case []float32:
-			distComputer = func(id uint32) (float32, error) {
-				var disk *DiskGraph
-				if ctx != nil {
-					disk = ctx.diskGraph
-				}
-				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
-				if err != nil {
-					return 0, err
-				}
-				switch v := vecAny.(type) {
-				case []float32:
-					return h.distFunc(q, v)
-				case []float64:
-					if h.distFuncF64 == nil {
-						return math.MaxFloat32, nil
-					}
-					q64 := make([]float64, len(q))
-					for i, val := range q {
-						q64[i] = float64(val)
-					}
-					return h.distFuncF64(q64, v)
-				case []float16.Num:
-					if h.distFuncF16 == nil {
-						return math.MaxFloat32, nil
-					}
-					q16 := make([]float16.Num, len(q))
-					for i, val := range q {
-						q16[i] = float16.New(val)
-					}
-					return h.distFuncF16(q16, v)
-				case []int8, []uint8:
-					var v8 []uint8
-					if vi8, ok := v.([]int8); ok {
-						v8 = *(*[]uint8)(unsafe.Pointer(&vi8)) // #nosec G103
-					} else {
-						v8 = v.([]uint8)
-					}
-
-					if h.quantizer != nil && h.sq8Ready.Load() {
-						minV, maxV := h.quantizer.Params()
-						scale := (maxV - minV) / 255.0
-						var sum float32
-						for i, val := range q {
-							deq := minV + float32(v8[i])*scale
-							diff := val - deq
-							sum += diff * diff
-						}
-						return float32(math.Sqrt(float64(sum))), nil
-					}
-					// Fallback
-					var sum float32
-					for i, val := range q {
-						diff := val - float32(v8[i])
-						sum += diff * diff
-					}
-					return float32(math.Sqrt(float64(sum))), nil
-				case []complex64:
-					qLen := len(q)
-					qComplex := make([]complex64, qLen/2)
-					for i := 0; i < qLen/2; i++ {
-						qComplex[i] = complex(q[2*i], q[2*i+1])
-					}
-					var sum float32
-					for i, val := range qComplex {
-						if i < len(v) {
-							diff := val - v[i]
-							modSq := real(diff)*real(diff) + imag(diff)*imag(diff)
-							sum += modSq
-						}
-					}
-					return float32(math.Sqrt(float64(sum))), nil
-				case []complex128:
-					qLen := len(q)
-					qComplex := make([]complex128, qLen/2)
-					for i := 0; i < qLen/2; i++ {
-						qComplex[i] = complex(float64(q[2*i]), float64(q[2*i+1]))
-					}
-					var sum float64
-					for i, val := range qComplex {
-						if i < len(v) {
-							diff := val - v[i]
-							modSq := real(diff)*real(diff) + imag(diff)*imag(diff)
-							sum += modSq
-						}
-					}
-					return float32(math.Sqrt(sum)), nil
-				}
-				return math.MaxFloat32, nil
-			}
-			epDist, _ = distComputer(entryPoint)
-
-		case []int8:
-			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
-				if err != nil {
-					return 0, err
-				}
-				switch vAny := vecAny.(type) {
-				case []float32:
-					// Convert q to float32
-					minV, maxV := h.quantizer.Params()
-					scale := (maxV - minV) / 255.0
-					var sum float32
-					for i, val := range q {
-						deq := minV + float32(val)*scale
-						diff := deq - vAny[i]
-						sum += diff * diff
-					}
-					return float32(math.Sqrt(float64(sum))), nil
-				case []int8, []uint8:
-					var v8 []uint8
-					if vi8, ok := vAny.([]int8); ok {
-						v8 = *(*[]uint8)(unsafe.Pointer(&vi8)) // #nosec G103
-					} else {
-						v8 = vAny.([]uint8)
-					}
-
-					var q8 []uint8
-					q8 = *(*[]uint8)(unsafe.Pointer(&q)) // #nosec G103
-
-					if len(q8) != len(v8) {
-						return math.MaxFloat32, nil
-					}
-
-					var sum float32
-					if h.quantizer != nil && h.sq8Ready.Load() {
-						minV, maxV := h.quantizer.Params()
-						scale := (maxV - minV) / 255.0
-						for i, val := range q8 {
-							// De-quantize: min + level * scale
-							deqQ := minV + float32(val)*scale
-							deqV := minV + float32(v8[i])*scale
-							diff := deqQ - deqV
-							sum += diff * diff
-						}
-					} else {
-						// use optimized SIMD kernel
-						qI8 := *(*[]int8)(unsafe.Pointer(&q8)) // #nosec G103
-						vI8 := *(*[]int8)(unsafe.Pointer(&v8)) // #nosec G103
-						return h.distFuncInt8(qI8, vI8)
-					}
-				}
-				return math.MaxFloat32, nil
-			}
-			epDist, _ = distComputer(entryPoint)
-
-		case []complex64:
-			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
-				if err != nil {
-					return 0, err
-				}
-				if v, ok := vecAny.([]complex64); ok {
-					if len(q) != len(v) {
-						return math.MaxFloat32, nil
-					}
-					var sum float32
-					for i, val := range q {
-						diff := val - v[i]
-						modSq := real(diff)*real(diff) + imag(diff)*imag(diff)
-						sum += modSq
-					}
-					return float32(math.Sqrt(float64(sum))), nil
-				}
-				return math.MaxFloat32, nil
-			}
-			epDist, _ = distComputer(entryPoint)
-
-		case []complex128:
-			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
-				if err != nil {
-					return 0, err
-				}
-				if v, ok := vecAny.([]complex128); ok {
-					if len(q) != len(v) {
-						return math.MaxFloat32, nil
-					}
-					var sum float64
-					for i, val := range q {
-						diff := val - v[i]
-						modSq := real(diff)*real(diff) + imag(diff)*imag(diff)
-						sum += modSq
-					}
-					return float32(math.Sqrt(sum)), nil
-				}
-				return math.MaxFloat32, nil
-			}
-			epDist, _ = distComputer(entryPoint)
-
-		case []float64:
-			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
-				if err != nil {
-					return 0, err
-				}
-				if v, ok := vecAny.([]float64); ok {
-					if len(q) != len(v) {
-						return math.MaxFloat32, nil
-					}
-					if h.distFuncF64 != nil {
-						return h.distFuncF64(q, v)
-					}
-					// Fallback Euclidean
-					var sum float64
-					for i, val := range q {
-						diff := val - v[i]
-						sum += diff * diff
-					}
-					return float32(math.Sqrt(sum)), nil
-				}
-				return math.MaxFloat32, nil
-			}
-			epDist, _ = distComputer(entryPoint)
-
-		case []float16.Num:
-			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
-				if err != nil {
-					return 0, err
-				}
-				if v, ok := vecAny.([]float16.Num); ok {
-					if len(q) != len(v) {
-						return math.MaxFloat32, nil
-					}
-					if h.distFuncF16 != nil {
-						return h.distFuncF16(q, v)
-					}
-					// Fallback Euclidean
-					var sum float32
-					for i, val := range q {
-						diff := val.Float32() - v[i].Float32()
-						sum += diff * diff
-					}
-					return float32(math.Sqrt(float64(sum))), nil
-				}
-				return math.MaxFloat32, nil
-			}
-			epDist, _ = distComputer(entryPoint)
-
-		case []uint32:
-			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
-				if err != nil {
-					return 0, err
-				}
-				if v, ok := vecAny.([]uint32); ok {
-					if len(q) != len(v) {
-						return math.MaxFloat32, nil
-					}
-					var sum float32
-					for i, val := range q {
-						diff := float32(val) - float32(v[i])
-						sum += diff * diff
-					}
-					return float32(math.Sqrt(float64(sum))), nil
-				}
-				return math.MaxFloat32, nil
-			}
-			epDist, _ = distComputer(entryPoint)
-
-		case []int32:
-			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
-				if err != nil {
-					return 0, err
-				}
-				if v, ok := vecAny.([]int32); ok {
-					if len(q) != len(v) {
-						return math.MaxFloat32, nil
-					}
-					return euclideanDistanceInt32(q, v), nil
-				}
-				return math.MaxFloat32, nil
-			}
-			epDist, _ = distComputer(entryPoint)
-
-		case []int16:
-			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
-				if err != nil {
-					return 0, err
-				}
-				if v, ok := vecAny.([]int16); ok {
-					if len(q) != len(v) {
-						return math.MaxFloat32, nil
-					}
-					return euclideanDistanceInt16(q, v), nil
-				}
-				return math.MaxFloat32, nil
-			}
-			epDist, _ = distComputer(entryPoint)
-
-		case []uint16:
-			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
-				if err != nil {
-					return 0, err
-				}
-				if v, ok := vecAny.([]uint16); ok {
-					if len(q) != len(v) {
-						return math.MaxFloat32, nil
-					}
-					return euclideanDistanceUint16(q, v), nil
-				}
-				return math.MaxFloat32, nil
-			}
-			epDist, _ = distComputer(entryPoint)
-
-		case []int64:
-			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
-				if err != nil {
-					return 0, err
-				}
-				if v, ok := vecAny.([]int64); ok {
-					if len(q) != len(v) {
-						return math.MaxFloat32, nil
-					}
-					return euclideanDistanceInt64(q, v), nil
-				}
-				return math.MaxFloat32, nil
-			}
-			epDist, _ = distComputer(entryPoint)
-
-		case []uint64:
-			distComputer = func(id uint32) (float32, error) {
-				vecAny, err := h.getVectorWithCachedDisk(data, disk, id)
-				if err != nil {
-					return 0, err
-				}
-				if v, ok := vecAny.([]uint64); ok {
-					if len(q) != len(v) {
-						return math.MaxFloat32, nil
-					}
-					return euclideanDistanceUint64(q, v), nil
-				}
-				return math.MaxFloat32, nil
-			}
-			epDist, _ = distComputer(entryPoint)
-
-		default:
-			return nil, fmt.Errorf("searchLayer: unsupported query vector type %T", queryVec)
-		}
-	}
-
-	// 1. Reset Frontier for this layer
-	ctx.candidates = ctx.candidates[:0]
-	ctx.resultSet = ctx.resultSet[:0]
-	ctx.visited.Clear()
-
-	minHeap := (*MinCandidateHeapAdapter)(&ctx.candidates)
-	resultSetAdapter := (*MaxCandidateHeapAdapter)(&ctx.resultSet)
-
-	epCand := types.Candidate{ID: entryPoint, Dist: epDist}
-	heap.Push(minHeap, epCand)
-	
-	// Only add to result set if it passes filters and isn't deleted
-	passes := true
-	if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(entryPoint) {
-		passes = false
-	}
-	if passes && h.deleted != nil && h.deleted.Contains(entryPoint) {
-		passes = false
-	}
-	if passes && ctx.predicate != nil && !ctx.predicate.IsMatch(entryPoint) {
-		passes = false
-	}
-	if passes {
-		heap.Push(resultSetAdapter, epCand)
-	}
-	ctx.visited.Set(int(entryPoint)) // #nosec G115
-
-	for minHeap.Len() > 0 {
-		if err := goCtx.Err(); err != nil {
-			return nil, err
-		}
-		// Pop closest candidate
-		curr := heap.Pop(minHeap).(types.Candidate)
-		ctx.nodesVisitedCount++
-
-		// Furthest in resultSet (MaxHeap Top)
-		// We can Peek using index 0 if internal structure is known (slice)
-		// MaxCandidateHeapAdapter wraps basecore.CandidateHeap which is slice.
-		// heap.Interface doesn't strictly expose Peek, but we can access underlying slice logic.
-		// Or just trust logic.
-
-		if len(ctx.resultSet) > 0 {
-			furthest := ctx.resultSet[0]
-			threshold := furthest.Dist
-			if h.config.SQ8Enabled {
-				// Be more lenient for SQ8 during searching as distance might be slightly noisy
-				threshold *= 1.05
-			}
-			if curr.Dist > threshold && ctx.resultSet.Len() >= ef {
-				// Optimization: if closest candidate is worse than worst result, stop
-				break
-			}
-		}
-
-		// Explore neighbors
-		// Use computer.GetNeighbors logic?
-		// Or standard HNSW neighbor retrieval.
-		// GetNeighbors returns the Neighbors slice.
-
-		// Lock/RLock needed?
-		// Neighbors are atomic unless resize?
-		neighbors := h.GetNeighborsCombinedCached(layer, curr.ID, disk)
-
-		prefetchLimit := h.mMax
-		if prefetchLimit > 64 {
-			prefetchLimit = 64
-		}
-		if prefetchLimit < 16 {
-			prefetchLimit = 16
-		}
-		maxCommitted := h.nodeCount.Load()
-		for i := 0; i < len(neighbors) && i < prefetchLimit; i++ {
-			nID := neighbors[i]
-			if int64(nID) >= maxCommitted {
-				continue
-			}
-			cID := int(nID) / types.ChunkSize // #nosec G115
-			cOff := int(nID) % types.ChunkSize // #nosec G115
-			chunk := data.GetVectorsChunk(cID)
-			if chunk != nil {
-				start := cOff * data.Dims
-				if start+data.Dims <= len(chunk) {
-					_ = chunk[start]
-					_ = chunk[start+data.Dims-1]
-				}
-			}
-			if len(data.VectorsSQ8) > cID {
-				if sq8Chunk := data.GetVectorsSQ8Chunk(cID); sq8Chunk != nil {
-					paddedDims := (data.Dims + 63) & ^63
-					start := cOff * paddedDims
-					if start+data.Dims <= len(sq8Chunk) {
-						if int64(nID) < maxCommitted {
-							_ = sq8Chunk[start]
-						}
-					}
-				}
-			}
-			if len(data.VectorsTQ) > cID {
-				if tqChunk := data.GetVectorsTQChunk(cID); tqChunk != nil {
-					stride := 4 + (data.Dims-1)*data.TurboQuantBits/8 + (data.Dims+7)/8
-					start := cOff * stride
-					if start+stride <= len(tqChunk) {
-						if int64(nID) < maxCommitted {
-							_ = tqChunk[start]
-						}
-					}
-				}
-			}
-		}
-
-		if ctx.predicate != nil {
-			// Vectorized Predicate Path
-			batch := ctx.neighborBatch[:0]
-			for _, n := range neighbors {
-				if int64(n) >= maxCommitted {
-					continue
-				}
-				if ctx.visited.IsSet(int(n)) {
-					continue
-				}
-				ctx.visited.Set(int(n))
-				batch = append(batch, n)
-			}
-
-			if len(batch) > 0 {
-				// Ensure results buffer is large enough
-				if len(ctx.matchResultBuf) < len(batch) {
-					ctx.matchResultBuf = make([]byte, len(batch)*2)
-				}
-				results := ctx.matchResultBuf[:len(batch)]
-				ctx.predicate.MatchBatch(batch, results)
-
-				for i, n := range batch {
-					if results[i] == 0 {
-						metrics.HNSWNodesSkippedTotal.WithLabelValues(h.name).Inc()
-						continue
-					}
-
-					ctx.distComputeCount++
-					d, err := distComputer(n)
-					if err != nil {
-						continue
-					}
-
-					cand := types.Candidate{ID: n, Dist: d}
-					heap.Push(minHeap, cand)
-
-					if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
-						continue
-					}
-					if h.deleted != nil && h.deleted.Contains(n) {
-						continue
-					}
-
-					if len(ctx.resultSet) > 0 {
-						furthest := ctx.resultSet[0]
-						if ctx.resultSet.Len() < ef || d < furthest.Dist {
-							heap.Push(resultSetAdapter, cand)
-							if ctx.resultSet.Len() > ef {
-								heap.Pop(resultSetAdapter)
-							}
-						}
-					} else {
-						heap.Push(resultSetAdapter, cand)
-					}
-				}
-			}
-		} else {
-			// Standard Path (No Predicate)
-			for _, n := range neighbors {
-				if int64(n) >= maxCommitted {
-					continue
-				}
-				if ctx.visited.IsSet(int(n)) { // #nosec G115
-					continue
-				}
-				ctx.visited.Set(int(n)) // #nosec G115
-
-				ctx.distComputeCount++
-				d, err := distComputer(n)
-				if err != nil {
-					continue
-				}
-
-				cand := types.Candidate{ID: n, Dist: d}
-
-				// Add to candidates for traversal regardless of filter
-				heap.Push(minHeap, cand)
-
-				// Only add to resultSet if it passes filters
-				if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
-					continue
-				}
-				if h.deleted != nil && h.deleted.Contains(n) {
-					continue
-				}
-
-				if len(ctx.resultSet) > 0 {
-					furthest := ctx.resultSet[0]
-
-					if ctx.resultSet.Len() < ef || d < furthest.Dist {
-						heap.Push(resultSetAdapter, cand)
-						if ctx.resultSet.Len() > ef {
-							heap.Pop(resultSetAdapter) // Remove furthest
-						}
-					}
-				} else {
-					// Empty resultSet
-					heap.Push(resultSetAdapter, cand)
-				}
-			}
-		}
-	}
-
-	// Return results as sorted slice (ascending distance)
-	// resultSet is a MaxHeap, so popping from it gives largest first.
-	// We populate the result slice from end to beginning.
-	count := len(ctx.resultSet)
-	res := make([]types.Candidate, count)
-	for i := count - 1; i >= 0; i-- {
-		res[i] = heap.Pop(resultSetAdapter).(types.Candidate)
-	}
-	return res, nil
-}
-
-// flushSearchMetrics handles the efficient emission of search-layer metrics,
-// including sampling logic for Histogram metrics to avoid overhead.
-func (h *ArrowHNSW) flushSearchMetrics(ctx *ArrowSearchContext) {
-	if ctx == nil {
-		return
-	}
-
-	// Always increment global distance counter (low overhead atomic)
-	if ctx.distComputeCount > 0 {
-		metrics.HnswDistanceCalculations.Add(float64(ctx.distComputeCount))
-	}
-
-	// Sampling for Histogram metrics (e.g. nodes visited)
-	if h.config.SearchLayerSampleRate > 0 {
-		count := h.metricsSampleCounter.Add(1)
-		// Deterministic sampling: if rate is 0.1, record every 10th search.
-		// For very small rates, it might never trigger if rate < 1/MaxUint64 (unlikely).
-		interval := uint64(1.0 / h.config.SearchLayerSampleRate)
-		if interval == 0 {
-			interval = 1
-		}
-
-		if count%interval == 0 {
-			metrics.HnswNodesVisited.WithLabelValues(h.name).Observe(float64(ctx.nodesVisitedCount))
-		}
-	}
-}
-
-func (h *ArrowHNSW) Len() int {
-	return h.Size()
-}
-
-// ExportState implements VectorIndex.
-func (h *ArrowHNSW) ExportState() ([]byte, error) {
-	var buf bytes.Buffer
-	if err := h.ExportGraph(&buf); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
-}
-
-// ImportState implements VectorIndex.
-func (h *ArrowHNSW) ImportState(data []byte) error {
-	return h.ImportGraph(bytes.NewReader(data))
-}
-
-// ExportGraph implements VectorIndex.
-// SnapshotGraph captures the current graph state for serialization.
-// It returns a copy-on-write snapshot that is safe to serialize concurrently with updates.
-func (h *ArrowHNSW) SnapshotGraph() (*types.GraphData, *types.SyncState, error) {
-	h.growMu.RLock()
-	defer h.growMu.RUnlock()
-
-	data := h.data.Load()
-	if data == nil {
-		return nil, nil, fmt.Errorf("no graph data to snapshot")
-	}
-
-	snap := data.CloneForSnapshot()
-
-	locs := make([]types.Location, 0, h.locationStore.Len())
-	h.locationStore.IterateMutable(func(_ types.VectorID, val *atomic.Uint64) {
-		loc := basecore.UnpackLocation(val.Load())
-		locs = append(locs, loc)
-	})
-
-	state := &types.SyncState{
-		Version:   1,
-		Dims:      int(h.dims.Load()),
-		Locations: locs,
-	}
-
-	return snap, state, nil
-}
-
-// ExportGraph implements VectorIndex.
-func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
-	h.growMu.Lock() // Use Write Lock to ensure consistent snapshot against concurrent insertions
-	defer h.growMu.Unlock()
-
-	// 1. Capture Snapshot + Metadata
-	var snapshot *types.GraphData
-	locs := make([]types.Location, 0, h.locationStore.Len())
-	dims := int(h.dims.Load())
-
-	if data := h.data.Load(); data != nil {
-		snapshot = data.CloneForSnapshot()
-	}
-
-	h.locationStore.IterateMutable(func(_ types.VectorID, val *atomic.Uint64) {
-		loc := basecore.UnpackLocation(val.Load())
-		locs = append(locs, loc)
-	})
-
-	if snapshot == nil {
-		return fmt.Errorf("no graph data to export")
-	}
-
-	state := types.SyncState{
-		Version:   1,
-		Dims:      dims,
-		Locations: locs,
-	}
-
-	// Use temporary buffer for metadata part
-	var metaBuf bytes.Buffer
-	if err := gob.NewEncoder(&metaBuf).Encode(state); err != nil {
-		return fmt.Errorf("failed to encode metadata: %w", err)
-	}
-	metaBytes := metaBuf.Bytes()
-
-	// Write Metadata Length + Bytes
-	if err := binary.Write(w, binary.LittleEndian, uint32(len(metaBytes))); err != nil { // #nosec G115
-		return err
-	}
-	if _, err := w.Write(metaBytes); err != nil {
-		return err
-	}
-
-	// 3. Export Snapshot types.GraphData
-	return snapshot.Serialize(w)
-}
-
-// ImportGraph implements VectorIndex.
-func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
-	h.growMu.Lock()
-	defer h.growMu.Unlock()
-
-	// 1. Read Metadata
-	var metaLen uint32
-	if err := binary.Read(r, binary.LittleEndian, &metaLen); err != nil {
-		return fmt.Errorf("failed to read metadata length: %w", err)
-	}
-
-	metaBytes := make([]byte, metaLen)
-	if _, err := io.ReadFull(r, metaBytes); err != nil {
-		return fmt.Errorf("failed to read metadata: %w", err)
-	}
-
-	var state types.SyncState
-	if err := gob.NewDecoder(bytes.NewReader(metaBytes)).Decode(&state); err != nil {
-		return fmt.Errorf("failed to decode metadata: %w", err)
-	}
-
-	// Apply Metadata
-	if state.Dims > math.MaxInt32 {
-		return fmt.Errorf("state dimensions %d exceed MaxInt32", state.Dims)
-	}
-	h.dims.Store(int32(state.Dims)) // #nosec G115
-	h.locationStore.Reset()
-	for _, loc := range state.Locations {
-		h.locationStore.Append(loc)
-	}
-
-	// 2. Read types.GraphData
-	data, err := types.DeserializeGraphData(r)
-	if err != nil {
-		return fmt.Errorf("failed to deserialize graph data: %w", err)
-	}
-
-	// Swap data
-	h.data.Store(data)
-
-	// Restore configuration flags
-	h.config.BQEnabled = data.BQEnabled
-	h.config.PQEnabled = data.PQEnabled
-	h.config.PQM = data.PQM
-	h.config.SQ8Enabled = data.SQ8Enabled
-	// Restore node count from metadata (number of valid locations)
-	h.nodeCount.Store(int64(len(state.Locations)))
-	// Capacity isn't count. Size is count.
-	// But serialize loops up to Capacity. If nodes were added sequentially, Len ~ Capacity.
-	// We might need to track actual `Len` or `NodeCount` in `GraphData`.
-	// For now, assume Capacity matches loaded size (sparse gaps handled as zeros).
-	// Ideally `SyncState` should have `NodeCount`.
-	// Let's assume capacity for now or update SyncState next time.
-
-	// Reset runtime structures
-	if h.searchPool == nil {
-		h.searchPool = NewArrowSearchContextPool()
-	}
-
-	return nil
-}
-
-// ExportDelta implements VectorIndex.
-func (h *ArrowHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
-	h.growMu.RLock()
-	defer h.growMu.RUnlock()
-
-	currentLen := h.locationStore.Len()
-	// Export locations starting from fromVersion up to currentLen
-	startIdx := int(fromVersion) // #nosec G115
-	if startIdx >= currentLen {
-		return &types.DeltaSync{
-			FromVersion:  fromVersion,
-			ToVersion:    uint64(currentLen), // #nosec G115
-			NewLocations: nil,
-			StartIndex:   startIdx,
-		}, nil
-	}
-
-	newLocs := make([]types.Location, 0, currentLen-startIdx)
-	idx := 0
-	h.locationStore.IterateMutable(func(_ types.VectorID, val *atomic.Uint64) {
-		if idx >= startIdx {
-			loc := basecore.UnpackLocation(val.Load())
-			newLocs = append(newLocs, loc)
-		}
-		idx++
-	})
-
-	return &types.DeltaSync{
-		FromVersion:  fromVersion,
-		ToVersion:    uint64(currentLen), // #nosec G115
-		NewLocations: newLocs,
-		StartIndex:   startIdx,
-	}, nil
-}
-
-// ApplyDelta implements VectorIndex.
-func (h *ArrowHNSW) ApplyDelta(delta *types.DeltaSync) error {
-	if delta == nil || len(delta.NewLocations) == 0 {
-		return nil
-	}
-
-	h.growMu.Lock()
-	defer h.growMu.Unlock()
-
-	for i, loc := range delta.NewLocations {
-		globalID := types.VectorID(delta.StartIndex + i) // #nosec G115
-		h.locationStore.EnsureCapacity(globalID)
-		h.locationStore.Set(globalID, loc)
-	}
-
-	return nil
-}
 
 // GetParallelSearchConfig implements VectorIndex.
 func (h *ArrowHNSW) GetParallelSearchConfig() types.ParallelSearchConfig {
@@ -3469,23 +1320,17 @@ func (h *ArrowHNSW) SetParallelSearchConfig(cfg types.ParallelSearchConfig) {
 	h.parallelConfig = cfg
 }
 
-
-
+// GetLocationForParallel retrieves a vector location for parallel processing.
 func (h *ArrowHNSW) GetLocationForParallel(id uint32) (types.Location, bool) {
 	return h.locationStore.Get(types.VectorID(id))
 }
 
+// ExtractVectorForParallel extracts a vector for parallel search refinement.
 func (h *ArrowHNSW) ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) ([]float32, error) {
 	if rec == nil {
 		return nil, fmt.Errorf("record is nil")
 	}
-	vecColIdx := -1
-	for i := 0; i < int(rec.NumCols()); i++ {
-		if rec.ColumnName(i) == "vector" {
-			vecColIdx = i
-			break
-		}
-	}
+	vecColIdx := h.getVectorColumnIndex(rec)
 	if vecColIdx == -1 {
 		if rec.NumCols() == 1 {
 			vecColIdx = 0
@@ -3557,303 +1402,8 @@ func (h *ArrowHNSW) ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) 
 	return nil, fmt.Errorf("unsupported vector type %T for parallel search refinement", vec)
 }
 
-func (h *ArrowHNSW) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float32) error {
-	vecColIdx := -1
-	for i, field := range rec.Schema().Fields() {
-		if field.Name == "vector" || field.Name == "embedding" {
-			vecColIdx = i
-			break
-		}
-	}
 
-	if vecColIdx == -1 {
-		return fmt.Errorf("vector column not found in record")
-	}
-
-	vec, err := ExtractVectorRaw(rec, rowIdx, vecColIdx)
-	if err != nil {
-		return err
-	}
-
-	// Optimized buffer-based conversion
-	switch v := vec.(type) {
-	case []float32:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		copy(dst, v)
-		return nil
-	case []float64:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float32(val)
-		}
-		return nil
-	case []complex128:
-		if len(dst) != len(v)*2 {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
-		}
-		for i, val := range v {
-			dst[i*2] = float32(real(val))
-			dst[i*2+1] = float32(imag(val))
-		}
-		return nil
-	case []complex64:
-		if len(dst) != len(v)*2 {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
-		}
-		// Complex64 is 2x float32 in memory
-		if len(v) == 0 {
-			return nil
-		}
-		raw := unsafe.Slice((*float32)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
-		copy(dst, raw)
-		return nil
-	case []float16.Num:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = val.Float32()
-		}
-		return nil
-	case []int8:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float32(val)
-		}
-		return nil
-	case []uint8:
-		if h.quantizer != nil && h.sq8Ready.Load() {
-			decoded := h.quantizer.Decode(v)
-			if len(dst) != len(decoded) {
-				return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(decoded))
-			}
-			copy(dst, decoded)
-			return nil
-		}
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float32(val)
-		}
-		return nil
-	case []int32:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float32(val)
-		}
-		return nil
-	}
-
-	return fmt.Errorf("unsupported vector type %T for buffer-based extraction", vec)
-}
-
-func (h *ArrowHNSW) ExtractVectorF64ToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float64) error {
-	vecColIdx := -1
-	for i, field := range rec.Schema().Fields() {
-		if field.Name == "vector" || field.Name == "embedding" {
-			vecColIdx = i
-			break
-		}
-	}
-
-	if vecColIdx == -1 {
-		return fmt.Errorf("vector column not found in record")
-	}
-
-	vec, err := ExtractVectorRaw(rec, rowIdx, vecColIdx)
-	if err != nil {
-		return err
-	}
-
-	switch v := vec.(type) {
-	case []float64:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		copy(dst, v)
-		return nil
-	case []complex128:
-		if len(dst) != len(v)*2 {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
-		}
-		if len(v) == 0 {
-			return nil
-		}
-		raw := unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
-		copy(dst, raw)
-		return nil
-	case []float32:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float64(val)
-		}
-		return nil
-	default:
-		return fmt.Errorf("unsupported vector type for F64 extraction: %T", vec)
-	}
-}
-
-func (h *ArrowHNSW) GetDistanceFuncForParallel() func([]float32, []float32) float32 {
-	return func(a, b []float32) float32 {
-		d, _ := h.distFunc(a, b)
-		return d
-	}
-}
-
-func (h *ArrowHNSW) GetPQEnabledForParallel() bool          { return h.config.PQEnabled }
-func (h *ArrowHNSW) GetPQEncoderForParallel() any {
-	if h.oopqEncoder != nil {
-		switch enc := h.oopqEncoder.(type) {
-		case *pq.PQEncoder:
-			return enc
-		case *pq.OPQEncoder:
-			return enc
-		}
-	}
-	return nil
-}
-
-func (h *ArrowHNSW) ExtractVectorByIDToBufferForParallel(id uint32, dst []float32) error {
-	vecAny, err := h.GetVector(id)
-	if err != nil {
-		return err
-	}
-
-	switch v := vecAny.(type) {
-	case []float32:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		copy(dst, v)
-		return nil
-	case []complex128:
-		if len(dst) != len(v)*2 {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
-		}
-		for i, val := range v {
-			dst[i*2] = float32(real(val))
-			dst[i*2+1] = float32(imag(val))
-		}
-		return nil
-	case []complex64:
-		if len(dst) != len(v)*2 {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
-		}
-		if len(v) == 0 {
-			return nil
-		}
-		raw := unsafe.Slice((*float32)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
-		copy(dst, raw)
-		return nil
-	case []float64:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float32(val)
-		}
-		return nil
-	case []float16.Num:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = val.Float32()
-		}
-		return nil
-	case []int8:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float32(val)
-		}
-		return nil
-	case []uint8:
-		if h.quantizer != nil && h.sq8Ready.Load() {
-			decoded := h.quantizer.Decode(v)
-			if len(dst) != len(decoded) {
-				return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(decoded))
-			}
-			copy(dst, decoded)
-			return nil
-		}
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float32(val)
-		}
-		return nil
-	case []int32:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float32(val)
-		}
-		return nil
-	case []uint32:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float32(val)
-		}
-		return nil
-	}
-
-	return fmt.Errorf("unsupported vector type %T for buffer-based extraction", vecAny)
-}
-
-func (h *ArrowHNSW) ExtractVectorF64ByIDToBufferForParallel(id uint32, dst []float64) error {
-	vecAny, err := h.GetVector(id)
-	if err != nil {
-		return err
-	}
-
-	switch v := vecAny.(type) {
-	case []float64:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		copy(dst, v)
-		return nil
-	case []complex128:
-		if len(dst) != len(v)*2 {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
-		}
-		if len(v) == 0 {
-			return nil
-		}
-		raw := unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
-		copy(dst, raw)
-		return nil
-	case []float32:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float64(val)
-		}
-		return nil
-	default:
-		return fmt.Errorf("unsupported vector type for ID F64 extraction: %T", vecAny)
-	}
-}
-
-
+// ExtractVectorByIDForParallel extracts a vector by ID as a float32 slice.
 func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
 	vecAny, err := h.GetVector(id)
 	if err != nil {
@@ -3926,381 +1476,9 @@ func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
 	return nil, fmt.Errorf("unsupported vector type %T for parallel search", vecAny)
 }
 
-func (h *ArrowHNSW) SearchForParallel(queryVec []float32, k int) []types.Candidate {
-	// Use the existing Search implementation which handles bitmask and conversion
-	res, err := h.Search(context.Background(), queryVec, k, nil)
-	if err != nil {
-		return nil
-	}
-	return res
-}
-
-// SearchWithArena performs k-NN search using an arena allocator for results.
-func (h *ArrowHNSW) SearchWithArena(queryVec []float32, k int, arena any) []types.VectorID {
-	// Fallback to standard search if no arena
-	if arena == nil {
-		results, _ := h.SearchVectorsWithBitmap(context.Background(), queryVec, k, nil, nil)
-		ids := make([]types.VectorID, len(results))
-		for i, r := range results {
-			ids[i] = types.VectorID(r.ID)
-		}
-		return ids
-	}
-
-	searchArena, ok := arena.(*SearchArena)
-	if !ok {
-		// Try casting if it's passed as interface
-		results, _ := h.SearchVectorsWithBitmap(context.Background(), queryVec, k, nil, nil)
-		ids := make([]types.VectorID, len(results))
-		for i, r := range results {
-			ids[i] = types.VectorID(r.ID)
-		}
-		return ids
-	}
-
-	results, err := h.SearchVectorsWithBitmap(context.Background(), queryVec, k, nil, nil)
-	if err != nil || len(results) == 0 {
-		return nil
-	}
-
-	ids := searchArena.AllocVectorIDSlice(len(results))
-	if ids == nil {
-		// Fallback to heap if arena exhausted
-		ids = make([]types.VectorID, len(results))
-	}
-
-	for i, r := range results {
-		ids[i] = types.VectorID(r.ID)
-	}
-	return ids
-}
-
-type pqComputer struct {
-	data      *types.GraphData
-	q         []float32
-	table     any // Accepts []float32 or pq.ADCTable
-	h         *ArrowHNSW
-	diskGraph *DiskGraph
-}
-
-type tqComputer struct {
-	data         *types.GraphData
-	h            *ArrowHNSW
-	rotatedQuery []float32
-	diskGraph    *DiskGraph
-}
-
-func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
-	// If it's a TQ search, the TQ distance logic usually needs the TQ code.
-	// We can check if it's in data or DiskGraph.
-	return c.h.tqCompute.DistanceWithRotatedQueryAndDisk(id, c.rotatedQuery, c.diskGraph)
-}
-
-func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
-	code := c.data.GetVectorPQ(id)
-	if code == nil {
-		// Try DiskGraph
-		if c.diskGraph != nil {
-			code = c.diskGraph.GetVectorPQ(id)
-		} else {
-			// fallback/atomic
-			dg := c.h.diskGraph.Load()
-			if dg != nil {
-				code = dg.GetVectorPQ(id)
-			}
-		}
-	}
-
-	if code == nil {
-		return math.MaxFloat32, nil
-	}
-	var distSq float32
-	var err error
-	switch enc := c.h.oopqEncoder.(type) {
-	case *pq.PQEncoder:
-		if t, ok := c.table.([]float32); ok {
-			distSq, err = enc.ADCDistance(t, code)
-		}
-	case *pq.OPQEncoder:
-		if t, ok := c.table.([]float32); ok {
-			distSq, err = enc.ADCDistance(t, code)
-		}
-	default:
-		return 0, fmt.Errorf("unsupported encoder type")
-	}
-	if err != nil {
-		return 0, err
-	}
-	// HNSW Euclidean metric expects distance (sqrt), but ADCDistance returns squared distance.
-	if c.h.config.Metric == basecore.MetricEuclidean {
-		return float32(math.Sqrt(float64(distSq))), nil
-	}
-	return distSq, nil
-}
-
-type float32Computer struct {
-	data *types.GraphData
-	q    []float32
-	dims int
-	h    *ArrowHNSW
-	// Pre-converted query buffers for cross-type comparison
-	qF64  []float64
-	qF16  []float16.Num
-	qC64  []complex64
-	qC128 []complex128
-	diskGraph *DiskGraph
-}
-
-func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
-	if err != nil {
-		return 0, err
-	}
-	switch v := vecAny.(type) {
-	case []float32:
-		return c.h.distFunc(c.q, v)
-	case []int8, []uint8:
-		var v8 []uint8
-		if vi8, ok := v.([]int8); ok {
-			v8 = *(*[]uint8)(unsafe.Pointer(&vi8)) // #nosec G103
-		} else {
-			v8 = v.([]uint8)
-		}
-
-		if c.h.quantizer != nil && c.h.sq8Ready.Load() {
-			minV, maxV := c.h.quantizer.Params()
-			scale := (maxV - minV) / 255.0
-			var sum float32
-			for i, val := range c.q {
-				deq := minV + float32(v8[i])*scale
-				diff := val - deq
-				sum += diff * diff
-			}
-			return float32(math.Sqrt(float64(sum))), nil
-		}
-		var sum float32
-		for i, val := range c.q {
-			diff := val - float32(v8[i])
-			sum += diff * diff
-		}
-		return float32(math.Sqrt(float64(sum))), nil
-	case []complex64:
-		// Treats complex64 as flattened []float32 [re, im, re, im...]
-		if len(c.q) != len(v)*2 {
-			return math.MaxFloat32, nil
-		}
-		// Unsafe cast to []float32
-		vf := unsafe.Slice((*float32)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
-		return simd.EuclideanDistance(c.q, vf)
-	case []complex128:
-		// Treats complex128 as flattened []float64, but query is float32
-		if len(c.q) != len(v)*2 {
-			return math.MaxFloat32, nil
-		}
-		// Calculate Euclidean distance between []float32 and []complex128
-		var sum float64
-		for i, val := range v {
-			re := float64(real(val))
-			im := float64(imag(val))
-			diffRe := float64(c.q[i*2]) - re
-			diffIm := float64(c.q[i*2+1]) - im
-			sum += diffRe*diffRe + diffIm*diffIm
-		}
-		return float32(math.Sqrt(sum)), nil
-	case []float64:
-		if len(c.q) != len(v) {
-			return math.MaxFloat32, nil
-		}
-		var q64 []float64
-		if len(c.qF64) == len(c.q) {
-			q64 = c.qF64
-		} else {
-			q64 = make([]float64, len(c.q))
-			for i, val := range c.q { q64[i] = float64(val) }
-		}
-		return c.h.distFuncF64(q64, v)
-	}
-	return math.MaxFloat32, nil
-}
-
-type float32ToFloat32Computer struct {
-	data      *types.GraphData
-	q         []float32
-	dims      int
-	h         *ArrowHNSW
-	diskGraph *DiskGraph
-}
-
-func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsChunk(cID)
-	if chunk == nil {
-		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
-		if err != nil {
-			return 0, err
-		}
-		if v, ok := vecAny.([]float32); ok {
-			return c.h.distFunc(c.q, v)
-		}
-		return math.MaxFloat32, nil
-	}
-	
-	cOff := int(id) % types.ChunkSize
-	start := cOff * c.data.Dims
-	if start+c.dims <= len(chunk) {
-		v := chunk[start : start+c.dims]
-		return c.h.distFunc(c.q, v)
-	}
-	// Fallback to cached disk for out-of-bounds in memory
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
-	if err == nil {
-		if v, ok := vecAny.([]float32); ok {
-			return c.h.distFunc(c.q, v)
-		}
-	}
-	return math.MaxFloat32, nil
-}
-
-func euclideanDistanceInt16(a, b []int16) float32 {
-	if len(a) != len(b) || len(a) == 0 {
-		return math.MaxFloat32
-	}
-	var sum float64
-	for i := range a {
-		diff := float64(a[i]) - float64(b[i])
-		sum += diff * diff
-	}
-	return float32(math.Sqrt(sum))
-}
-
-func euclideanDistanceUint16(a, b []uint16) float32 {
-	if len(a) != len(b) || len(a) == 0 {
-		return math.MaxFloat32
-	}
-	var sum float64
-	for i := range a {
-		diff := float64(a[i]) - float64(b[i])
-		sum += diff * diff
-	}
-	return float32(math.Sqrt(sum))
-}
-
-func euclideanDistanceInt32(a, b []int32) float32 {
-	if len(a) != len(b) || len(a) == 0 {
-		return math.MaxFloat32
-	}
-	var sum float64
-	for i := range a {
-		diff := float64(a[i]) - float64(b[i])
-		sum += diff * diff
-	}
-	return float32(math.Sqrt(sum))
-}
 
 
-func euclideanDistanceInt64(a, b []int64) float32 {
-	if len(a) != len(b) || len(a) == 0 {
-		return math.MaxFloat32
-	}
-	var sum float64
-	for i := range a {
-		diff := float64(a[i]) - float64(b[i])
-		sum += diff * diff
-	}
-	return float32(math.Sqrt(sum))
-}
-
-func euclideanDistanceUint64(a, b []uint64) float32 {
-	if len(a) != len(b) || len(a) == 0 {
-		return math.MaxFloat32
-	}
-	var sum float64
-	for i := range a {
-		diff := float64(a[i]) - float64(b[i])
-		sum += diff * diff
-	}
-	return float32(math.Sqrt(sum))
-}
-
-type int8Computer struct {
-	data      *types.GraphData
-	q         []uint8
-	qInt8     []int8
-	dims      int
-	h         *ArrowHNSW
-	diskGraph *DiskGraph
-}
-
-func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
-	cID := types.ChunkID(id)
-	// Try direct arena access first (COW path or Bulk ingested)
-	if chunk := c.data.GetVectorsInt8Chunk(int(cID)); chunk != nil {
-		cOff := int(id) % types.ChunkSize // #nosec G115
-		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt8)
-		start := cOff * pd // #nosec G115
-		if start+c.dims <= len(chunk) {
-			v8 := chunk[start : start+c.dims]
-			return c.h.distFuncInt8(c.qInt8, v8)
-		}
-	}
-	// Fallback to SQ8 chunks if specifically enabled for Int8 (rare but supported)
-	if chunk := c.data.GetVectorsSQ8Chunk(cID); chunk != nil {
-		cOff := int(id) % types.ChunkSize
-		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint8) // SQ8 uses Uint8
-		start := cOff * pd
-		if start+c.dims <= len(chunk) {
-			v8 := chunk[start : start+c.dims]
-			return c.h.distFuncInt8(c.qInt8, *(*[]int8)(unsafe.Pointer(&v8))) // #nosec G103
-		}
-	}
-
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
-	if err != nil {
-		return 0, err
-	}
-	switch v := vecAny.(type) {
-	case []float32:
-		if c.h.quantizer != nil && c.h.sq8Ready.Load() {
-			minV, maxV := c.h.quantizer.Params()
-			scale := (maxV - minV) / 255.0
-			var sum float32
-			for i, val := range c.q {
-				deq := minV + float32(val)*scale
-				diff := deq - v[i]
-				sum += diff * diff
-			}
-			return float32(math.Sqrt(float64(sum))), nil
-		}
-		var sum float32
-		for i, val := range c.q {
-			diff := float32(val) - v[i]
-			sum += diff * diff
-		}
-		return float32(math.Sqrt(float64(sum))), nil
-	case []int8:
-		return c.h.distFuncInt8(c.qInt8, v)
-	case []uint8:
-		v8 := v
-		if c.h.quantizer != nil && c.h.sq8Ready.Load() {
-			minV, maxV := c.h.quantizer.Params()
-			scale := (maxV - minV) / 255.0
-			var sum float32
-			for i, val := range c.q {
-				deqQ := minV + float32(val)*scale
-				deqV := minV + float32(v8[i])*scale
-				diff := deqQ - deqV
-				sum += diff * diff
-			}
-			return float32(math.Sqrt(float64(sum))), nil
-		} else {
-			// use optimized SIMD kernel
-			vI8 := *(*[]int8)(unsafe.Pointer(&v8)) // #nosec G103
-			return c.h.distFuncInt8(c.qInt8, vI8)
-		}
-	}
-	return math.MaxFloat32, nil
-}
-
+// RemapLocations updates the vector ID to location mapping.
 func (h *ArrowHNSW) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
 	if h.locationStore == nil {
 		return fmt.Errorf("location store not initialized")
@@ -4309,12 +1487,27 @@ func (h *ArrowHNSW) RemapLocations(ctx context.Context, mapping map[uint32]any) 
 	for id, locAny := range mapping {
 		if loc, ok := locAny.(types.Location); ok {
 			h.locationStore.Set(types.VectorID(id), loc)
-		} else if loc, ok := locAny.(types.Location); ok {
-			h.locationStore.Set(types.VectorID(id), loc)
+		} else if loc, ok := locAny.(*types.Location); ok && loc != nil {
+			h.locationStore.Set(types.VectorID(id), *loc)
 		}
 	}
 	return nil
 }
+
+// SetEfConstruction sets the efConstruction parameter.
+func (h *ArrowHNSW) SetEfConstruction(ef int32) {
+	h.efConstruction.Store(ef)
+}
+
+// GetNUMANode returns the NUMA node and topology for the index.
 func (h *ArrowHNSW) GetNUMANode() (int, *memory.NUMATopology) {
 	return h.config.NUMANode, h.topo
+}
+
+func (h *ArrowHNSW) RelocateToOffHeap() error {
+	gd := h.data.Load()
+	if gd == nil {
+		return fmt.Errorf("no graph data to relocate")
+	}
+	return gd.RelocateToOffHeap()
 }

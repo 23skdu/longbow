@@ -51,6 +51,7 @@ type recordResult struct {
 	seq        int
 }
 
+// NewParallelRecordReader creates a new ParallelRecordReader that decodes Flight data in parallel.
 func NewParallelRecordReader(stream flight.FlightService_DoPutServer, alloc memory.Allocator, logger zerolog.Logger) (*ParallelRecordReader, error) {
 	// First message MUST contain the schema
 	data, err := stream.Recv()
@@ -260,6 +261,7 @@ func (pr *ParallelRecordReader) decodePayload(data *flight.FlightData) (arrow.Re
 	return nil, reader.Err()
 }
 
+// Next advances to the next record batch. It returns false if there are no more batches or an error occurred.
 func (pr *ParallelRecordReader) Next() bool {
 	if pr.err != nil {
 		return false
@@ -324,22 +326,27 @@ func (pr *ParallelRecordReader) Next() bool {
 	}
 }
 
+// RecordBatch returns the most recently read record batch.
 func (pr *ParallelRecordReader) RecordBatch() arrow.RecordBatch {
 	return pr.latestRec
 }
 
+// Schema returns the Arrow schema for the records being read.
 func (pr *ParallelRecordReader) Schema() *arrow.Schema {
 	return pr.schema
 }
 
+// LatestFlightDescriptor returns the flight descriptor from the most recent message.
 func (pr *ParallelRecordReader) LatestFlightDescriptor() *flight.FlightDescriptor {
 	return pr.descriptor
 }
 
+// Err returns the first error encountered during reading.
 func (pr *ParallelRecordReader) Err() error {
 	return pr.err
 }
 
+// Release shuts down the reader and releases all resources.
 func (pr *ParallelRecordReader) Release() {
 	pr.cancel()
 	pr.wg.Wait() // Now safe to wait because workers will exit on ctx.Done() or dataChan close

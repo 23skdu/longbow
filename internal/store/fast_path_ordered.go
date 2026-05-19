@@ -14,9 +14,13 @@ import (
 type CompareOp int
 
 const (
+	// CompareOpLess represents the < operator
 	CompareOpLess CompareOp = iota
+	// CompareOpGreater represents the > operator
 	CompareOpGreater
+	// CompareOpLessEqual represents the <= operator
 	CompareOpLessEqual
+	// CompareOpGreaterEqual represents the >= operator
 	CompareOpGreaterEqual
 )
 

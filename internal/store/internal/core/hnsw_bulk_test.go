@@ -19,7 +19,7 @@ func TestHNSW_BulkInsert(t *testing.T) {
 	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
 	defer mem.AssertSize(t, 0)
 
-	dims := 16 // Small dims for speed
+	dims := 128
 	numVectors := 5000
 
 	schema := arrow.NewSchema([]arrow.Field{
@@ -78,7 +78,7 @@ func TestHNSW_BulkInsert(t *testing.T) {
 
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.Dims = dims
-	cfg.M = 16
+	cfg.M = 32
 	cfg.EfConstruction = 100
 	// Ensure auto-sharding doesn't mess with us (though we use raw HNSW here)
 
@@ -105,26 +105,28 @@ func TestHNSW_BulkInsert(t *testing.T) {
 
 	// Verify Size
 	require.Equal(t, numVectors, idx.Len())
+	t.Logf("Index Max Level: %d, Entry Point: %d", idx.GetMaxLevel(), idx.GetEntryPoint())
 
 	// Verify Search (Recall Check)
 	// We expect to find the exact vector we inserted (distance ~0)
 	t.Logf("Starting Search for target")
-	results, err := idx.SearchVectors(context.Background(), queryVec, 10, nil, types.SearchOptions{})
+	results, err := idx.SearchVectors(context.Background(), queryVec, 10, nil, types.SearchOptions{Ef: 500})
 	t.Logf("Finished Search, err=%v, len=%d", err, len(results))
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
 
 	found := false
 	for _, res := range results {
-		// ID 2500 corresponds to the insertion index 2500 (since we started empty)
-		// Wait, AddBatch returns assigned IDs. In empty store, they should match 0..N-1?
-		// Note: AddBatch calls locationStore.BatchAppend.
-		// If store is empty, IDs start at 0.
 		if uint32(res.ID) == 2500 {
 			found = true
-			// Check Distance (not Score) - for exact match, distance should be 0
 			require.InDelta(t, 0.0, res.Distance, 1e-4, "Expected distance to self to be 0")
 			break
+		}
+	}
+	if !found {
+		t.Logf("Search results (top %d):", len(results))
+		for i, res := range results {
+			t.Logf("  [%d] ID=%d, Dist=%f", i, res.ID, res.Distance)
 		}
 	}
 	require.True(t, found, "Target vector %s not found in search results", targetDesc)

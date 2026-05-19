@@ -1,52 +1,49 @@
 package core_test
 
 import (
+	"context"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/internal/core"
+	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
-// TestHNSW_UnsafeAccess verifies that unsafe access patterns are somewhat consistent
-// or at least compilation is fixed.
-// Since methods getVectorUnsafe, enterEpoch etc are internal/missing, we stub tests or commented out.
-
 func TestHNSW_UnsafeAccess(t *testing.T) {
-	// idx := core.NewTestHNSWIndex(nil) // Stub
-	// _ = idx
-}
-
-// Keeping rest of file commented out to pass compilation cleanly.
-// The original test relied on internal unsafe methods that may have been removed or renamed.
-
-/*
-func TestHNSW_UnsafeVectorAccess(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vectors := [][]float32{{1.0, 2.0}, {3.0, 4.0}}
 	rec := core.MakeBatchTestRecord(mem, 2, vectors)
 	defer rec.Release()
 
 	ds := &core.MockDataset{
+		Name:    "test_unsafe",
 		Records: []arrow.RecordBatch{rec},
+		Schema:  rec.Schema(),
 	}
 	idx := core.NewTestHNSWIndex(ds)
 
-	_, err := idx.Add(context.Background(), 0, 0)
+	_, err := idx.AddByLocation(context.Background(), 0, 0)
+	require.NoError(t, err)
+	_, err = idx.AddByLocation(context.Background(), 0, 1)
 	require.NoError(t, err)
 
-	// Unsafe check
-	idx.enterEpoch()
-	defer idx.exitEpoch()
+	// Verify we can access the graph data
+	data := idx.GetData()
+	require.NotNil(t, data)
 
-	ptr := idx.getVectorUnsafe(0)
-	require.NotNil(t, ptr)
-
-	// Convert to slice
-	sh := &reflect.SliceHeader{
-		Data: uintptr(ptr),
-		Len:  2,
-		Cap:  2,
-	}
-	v := *(*[]float32)(unsafe.Pointer(sh))
-
-	assert.Equal(t, float32(1.0), v[0])
-	assert.Equal(t, float32(2.0), v[1])
+	// Check vector in first chunk
+	chunk := data.GetVectorsChunk(0)
+	require.NotNil(t, chunk)
+	
+	paddedDims := data.GetPaddedDimsForType(types.VectorTypeFloat32)
+	assert.Equal(t, float32(1.0), chunk[0])
+	assert.Equal(t, float32(2.0), chunk[1])
+	
+	// Node 1 starts at paddedDims
+	require.True(t, len(chunk) >= paddedDims+2)
+	assert.Equal(t, float32(3.0), chunk[paddedDims])
+	assert.Equal(t, float32(4.0), chunk[paddedDims+1])
 }
-*/

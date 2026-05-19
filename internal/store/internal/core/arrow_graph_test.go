@@ -21,8 +21,8 @@ func TestArrowHNSW_NewIndex(t *testing.T) {
 		t.Errorf("new index size = %d, want 0", index.Size())
 	}
 
-	if index.m != config.M {
-		t.Errorf("index.m = %d, want %d", index.m, config.M)
+	if int(index.m.Load()) != config.M {
+		t.Errorf("index.m = %d, want %d", index.m.Load(), config.M)
 	}
 }
 
@@ -47,7 +47,7 @@ func TestArrowHNSW_DefaultArrowHNSWConfig(t *testing.T) {
 // TestGraphData_Initialization validates GraphData structure.
 func TestGraphData_Initialization(t *testing.T) {
 	capacity := 100
-	data := types.NewGraphData(100, 10, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test")
+	data := types.NewGraphData(100, 10, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 
 	if data.Capacity < capacity {
 		t.Errorf("Capacity = %d, want >= %d", data.Capacity, capacity)
@@ -60,9 +60,17 @@ func TestGraphData_Initialization(t *testing.T) {
 	}
 
 	// Check Neighbors array allocation (chunked)
+	// NOTE: Only layer 0 is pre-allocated by default in NewGraphData/PreAllocate optimization.
 	for i := 0; i < types.ArrowMaxLayers; i++ {
-		if len(data.Neighbors[i]) != expectedChunks {
-			t.Errorf("Layer %d Neighbors chunks = %d, want %d", i, len(data.Neighbors[i]), expectedChunks)
+		if i == 0 {
+			if len(data.Neighbors[i]) != expectedChunks {
+				t.Errorf("Layer %d Neighbors chunks = %d, want %d", i, len(data.Neighbors[i]), expectedChunks)
+			}
+		} else {
+			// Higher layers are lazy, but the slice should exist (just maybe empty or length 0)
+			if len(data.Neighbors[i]) > expectedChunks {
+				t.Errorf("Layer %d Neighbors chunks = %d, want <= %d", i, len(data.Neighbors[i]), expectedChunks)
+			}
 		}
 	}
 }

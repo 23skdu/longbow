@@ -13,14 +13,19 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// CDCEventType represents the type of Change Data Capture event.
 type CDCEventType int
 
 const (
+	// CDCEventInsert indicates a new record has been inserted.
 	CDCEventInsert CDCEventType = iota
+	// CDCEventUpdate indicates an existing record has been updated.
 	CDCEventUpdate
+	// CDCEventDelete indicates a record has been deleted.
 	CDCEventDelete
 )
 
+// String returns the string representation of the CDCEventType.
 func (t CDCEventType) String() string {
 	switch t {
 	case CDCEventInsert:
@@ -34,6 +39,7 @@ func (t CDCEventType) String() string {
 	}
 }
 
+// CDCEvent represents a single Change Data Capture event.
 type CDCEvent struct {
 	EventType  CDCEventType
 	Dataset    string
@@ -43,12 +49,14 @@ type CDCEvent struct {
 	PrimaryKey []string
 }
 
+// CDCFilter defines criteria for filtering CDC events.
 type CDCFilter struct {
 	EventTypes []CDCEventType
 	Columns    []string
 	Since      time.Time
 }
 
+// CDCSubscription represents a subscription to CDC events for a specific dataset.
 type CDCSubscription struct {
 	ID         string
 	Dataset    string
@@ -61,30 +69,35 @@ type CDCSubscription struct {
 	closed     bool
 }
 
+// Pause temporarily stops event delivery for the subscription.
 func (s *CDCSubscription) Pause() {
 	s.mu.Lock()
 	s.paused = true
 	s.mu.Unlock()
 }
 
+// Resume restarts event delivery for a paused subscription.
 func (s *CDCSubscription) Resume() {
 	s.mu.Lock()
 	s.paused = false
 	s.mu.Unlock()
 }
 
+// IsPaused returns true if the subscription is currently paused.
 func (s *CDCSubscription) IsPaused() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.paused
 }
 
+// IsClosed returns true if the subscription has been closed.
 func (s *CDCSubscription) IsClosed() bool {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	return s.closed
 }
 
+// Close terminates the subscription and closes the event channel.
 func (s *CDCSubscription) Close() {
 	s.mu.Lock()
 	if s.closed {
@@ -96,6 +109,7 @@ func (s *CDCSubscription) Close() {
 	s.mu.Unlock()
 }
 
+// CDCConfig holds configuration settings for the Change Data Capture system.
 type CDCConfig struct {
 	Enabled                bool `json:"enabled"`
 	BufferSize             int  `json:"buffer_size"`
@@ -110,6 +124,7 @@ type CDCConfig struct {
 	EventTypeFilterEnabled bool `json:"event_type_filter_enabled"`
 }
 
+// CDCMetrics tracks performance and operational metrics for CDC.
 type CDCMetrics struct {
 	EventsReceived atomic.Int64
 	EventsSent     atomic.Int64
@@ -119,6 +134,7 @@ type CDCMetrics struct {
 	ChannelFull    atomic.Int64
 }
 
+// Reset clears all recorded CDC metrics.
 func (m *CDCMetrics) Reset() {
 	m.EventsReceived.Store(0)
 	m.EventsSent.Store(0)
@@ -128,6 +144,7 @@ func (m *CDCMetrics) Reset() {
 	m.ChannelFull.Store(0)
 }
 
+// ChangeDataCapture manages real-time data change notifications.
 type ChangeDataCapture struct {
 	store         *VectorStore
 	logger        zerolog.Logger
@@ -141,6 +158,7 @@ type ChangeDataCapture struct {
 	batchAggregator *CDCBatchAggregator
 }
 
+// NewChangeDataCapture creates a new CDC manager for the given store.
 func NewChangeDataCapture(store *VectorStore, logger zerolog.Logger) *ChangeDataCapture {
 	cdc := &ChangeDataCapture{
 		store:         store,
@@ -166,6 +184,7 @@ func NewChangeDataCapture(store *VectorStore, logger zerolog.Logger) *ChangeData
 	return cdc
 }
 
+// Subscribe creates a new CDC subscription for the specified dataset.
 func (c *ChangeDataCapture) Subscribe(dataset string, filter CDCFilter, bufferSize int) (*CDCSubscription, error) {
 	if dataset == "" {
 		return nil, fmt.Errorf("dataset name required")
@@ -210,6 +229,7 @@ func (c *ChangeDataCapture) Subscribe(dataset string, filter CDCFilter, bufferSi
 	return sub, nil
 }
 
+// Unsubscribe cancels and removes an existing CDC subscription.
 func (c *ChangeDataCapture) Unsubscribe(subID string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -238,6 +258,7 @@ func (c *ChangeDataCapture) Unsubscribe(subID string) error {
 	return nil
 }
 
+// GetSubscription retrieves a subscription by its ID.
 func (c *ChangeDataCapture) GetSubscription(subID string) (*CDCSubscription, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -249,6 +270,7 @@ func (c *ChangeDataCapture) GetSubscription(subID string) (*CDCSubscription, err
 	return sub, nil
 }
 
+// ListSubscriptions returns a list of all active subscription IDs.
 func (c *ChangeDataCapture) ListSubscriptions() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -260,6 +282,7 @@ func (c *ChangeDataCapture) ListSubscriptions() []string {
 	return ids
 }
 
+// GetSubscriptionByDataset returns all active subscriptions for a given dataset.
 func (c *ChangeDataCapture) GetSubscriptionByDataset(dataset string) []*CDCSubscription {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -273,6 +296,7 @@ func (c *ChangeDataCapture) GetSubscriptionByDataset(dataset string) []*CDCSubsc
 	return subs
 }
 
+// HandleCDCBatch processes a batch of record batches and dispatches to subscribers.
 func (c *ChangeDataCapture) HandleCDCBatch(dataset string, batches []arrow.RecordBatch) {
 	if !c.config.Enabled {
 		return
@@ -427,6 +451,7 @@ func (c *ChangeDataCapture) extractPrimaryKeys(batch arrow.RecordBatch) []string
 	return pkCols
 }
 
+// EventToJSON serializes a CDC event to JSON format.
 func (c *ChangeDataCapture) EventToJSON(event CDCEvent) ([]byte, error) {
 	if !c.config.EnableJSON {
 		return nil, fmt.Errorf("JSON serialization disabled")
@@ -468,6 +493,7 @@ func (c *ChangeDataCapture) EventToJSON(event CDCEvent) ([]byte, error) {
 	return json.Marshal(jsonEvent)
 }
 
+// GetValueAt retrieves the value at the specified row index in an arrow array.
 func GetValueAt(col arrow.Array, row int) (interface{}, error) {
 	switch col := col.(type) {
 	case *array.Int8:
@@ -515,18 +541,21 @@ func GetValueAt(col arrow.Array, row int) (interface{}, error) {
 	}
 }
 
+// SetConfig updates the CDC configuration.
 func (c *ChangeDataCapture) SetConfig(config CDCConfig) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.config = config
 }
 
+// GetConfig returns the current CDC configuration.
 func (c *ChangeDataCapture) GetConfig() CDCConfig {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.config
 }
 
+// GetMetrics returns the current operational metrics for CDC.
 func (c *ChangeDataCapture) GetMetrics() (received, sent, dropped, filtered, subs, full int64) {
 	return c.metrics.EventsReceived.Load(),
 		c.metrics.EventsSent.Load(),
@@ -536,12 +565,14 @@ func (c *ChangeDataCapture) GetMetrics() (received, sent, dropped, filtered, sub
 		c.metrics.ChannelFull.Load()
 }
 
+// IsEnabled returns true if CDC is currently enabled.
 func (c *ChangeDataCapture) IsEnabled() bool {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return c.config.Enabled
 }
 
+// Enable activates the CDC system.
 func (c *ChangeDataCapture) Enable() {
 	c.mu.Lock()
 	c.config.Enabled = true
@@ -549,6 +580,7 @@ func (c *ChangeDataCapture) Enable() {
 	c.logger.Info().Msg("CDC enabled")
 }
 
+// Disable deactivates the CDC system.
 func (c *ChangeDataCapture) Disable() {
 	c.mu.Lock()
 	c.config.Enabled = false
@@ -556,11 +588,13 @@ func (c *ChangeDataCapture) Disable() {
 	c.logger.Info().Msg("CDC disabled")
 }
 
+// Stop stops the CDC manager and waits for background workers to finish.
 func (c *ChangeDataCapture) Stop() {
 	close(c.stopChan)
 	c.wg.Wait()
 }
 
+// CDCBatchAggregator aggregates small CDC events into larger batches.
 type CDCBatchAggregator struct {
 	mu          sync.Mutex
 	batches     [][]arrow.RecordBatch
@@ -573,6 +607,7 @@ type CDCBatchAggregator struct {
 	closed      bool
 }
 
+// NewCDCBatchAggregator creates a new CDC batch aggregator.
 func NewCDCBatchAggregator(dataset string, maxSize int, interval time.Duration, onFlush func(string, [][]arrow.RecordBatch)) *CDCBatchAggregator {
 	return &CDCBatchAggregator{
 		dataset:  dataset,
@@ -583,6 +618,7 @@ func NewCDCBatchAggregator(dataset string, maxSize int, interval time.Duration, 
 	}
 }
 
+// AddBatch adds a record batch to the aggregator.
 func (ba *CDCBatchAggregator) AddBatch(batch arrow.RecordBatch) {
 	ba.mu.Lock()
 	defer ba.mu.Unlock()
@@ -620,12 +656,14 @@ func (ba *CDCBatchAggregator) flushLocked() {
 	ba.pendingSize = 0
 }
 
+// Flush manually triggers a flush of aggregated batches.
 func (ba *CDCBatchAggregator) Flush() {
 	ba.mu.Lock()
 	defer ba.mu.Unlock()
 	ba.flushLocked()
 }
 
+// Close stops the aggregator and flushes any pending batches.
 func (ba *CDCBatchAggregator) Close() {
 	ba.mu.Lock()
 	defer ba.mu.Unlock()

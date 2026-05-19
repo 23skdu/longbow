@@ -8,10 +8,15 @@ import (
 	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow/float16"
+	"github.com/23skdu/longbow/internal/metrics"
+	lbcore "github.com/23skdu/longbow/internal/core"
+	"time"
 )
 
 var (
-	ErrDimensionMismatch    = errors.New("simd: vector dimension mismatch")
+	// ErrDimensionMismatch is returned when input vectors have different lengths.
+	ErrDimensionMismatch = errors.New("simd: vector dimension mismatch")
+	// ErrInitializationFailed is returned when SIMD dispatch or JIT fails to initialize.
 	ErrInitializationFailed = errors.New("simd: initialization failed")
 )
 
@@ -30,16 +35,25 @@ type (
 	distanceComplex128Func func(a, b []complex128) (float32, error)
 	distanceFloat64Func    func(a, b []float64) (float32, error)
 
+	// DistanceKernel is a generic distance function type for cached kernels.
+	DistanceKernel[T any] func(a, b []T) (float32, error)
+
 	// CompareOp represents a comparison operator for SIMD filters
 	CompareOp int
 )
 
 const (
+	// CompareEq represents equality (==).
 	CompareEq CompareOp = iota
+	// CompareNeq represents inequality (!=).
 	CompareNeq
+	// CompareGt represents greater than (>).
 	CompareGt
+	// CompareGe represents greater than or equal to (>=).
 	CompareGe
+	// CompareLt represents less than (<).
 	CompareLt
+	// CompareLe represents less than or equal to (<=).
 	CompareLe
 )
 
@@ -76,6 +90,11 @@ var (
 	cosineDistanceBatchImpl    distanceBatchFunc
 	dotProductBatchImpl        distanceBatchFunc
 	l2SquaredImpl              distanceFunc
+	l2Squared128Impl            distanceFunc // optimized for dimensions=128
+	l2Squared384Impl            distanceFunc // optimized for dimensions=384
+	l2Squared768Impl            distanceFunc // optimized for dimensions=768
+	l2Squared1024Impl           distanceFunc // optimized for dimensions=1024
+	l2Squared3072Impl           distanceFunc // optimized for dimensions=3072
 
 	matchInt64Impl   matchInt64Func
 	matchInt32Impl   matchInt32Func
@@ -97,11 +116,16 @@ var (
 	cosineDistanceF16Impl    distanceF16Func
 	dotProductF16Impl        distanceF16Func
 
+	manhattanDistanceImpl  distanceFunc
+	chebyshevDistanceImpl  distanceFunc
+	brayCurtisDistanceImpl distanceFunc
+
 	euclideanDistanceComplex64Impl  distanceComplex64Func
 	euclideanDistanceComplex128Impl distanceComplex128Func
 	euclideanDistanceFloat64Impl    distanceFloat64Func
 	cosineDistanceFloat64Impl       distanceFloat64Func
 	dotProductFloat64Impl           distanceFloat64Func
+	l2SquaredFloat64Impl            distanceFloat64Func
 
 	euclideanDistanceInt8Impl  func(a, b []int8) (float32, error)
 	euclideanDistanceUint8Impl func(a, b []uint8) (float32, error)
@@ -131,9 +155,80 @@ var (
 	softmaxFloat32Impl func(src, dst []float32)
 	expFloat32Impl     func(src, dst []float32)
 	logFloat32Impl     func(src, dst []float32)
+
+	sumFloat32Impl    func(src []float32) float32
+	maxFloat32Impl    func(src []float32) float32
+	minFloat32Impl    func(src []float32) float32
+	argMaxFloat32Impl func(src []float32) int
+	argMinFloat32Impl func(src []float32) int
+	matMulFloat32Impl func(a, b []float32, m, n, k int, dst []float32)
+	accumulateWeightedScatterFloat32Impl func(dst []float32, targets []uint32, weights []float32, factor float32)
+	haversineBatchImpl                   haversineBatchFunc
+ 
+	// Transcendental kernels
+	sinFloat32Impl   func(src, dst []float32)
+	cosFloat32Impl   func(src, dst []float32)
+	atan2Float32Impl func(y, x, dst []float32)
+
+	pauseImpl func()
+	
+	// TurboQuant kernels
+	unpackTQ2Impl func(src []byte, dst []float32, scale, bias float32)
+	unpackTQ4Impl func(src []byte, dst []float32, scale, bias float32)
+	unpackTQ8Impl func(src []byte, dst []float32, scale, bias float32)
+	packTQ2Impl   func(src []float32, dst []byte)
+	packTQ4Impl   func(src []float32, dst []byte)
+	packTQ8Impl   func(src []float32, dst []byte)
 )
 
+type haversineBatchFunc func(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32)
+
+// SinFloat32 calculates the sine of each element in src.
+func SinFloat32(src, dst []float32) {
+	sinFloat32Impl(src, dst)
+}
+
+// CosFloat32 calculates the cosine of each element in src.
+func CosFloat32(src, dst []float32) {
+	cosFloat32Impl(src, dst)
+}
+
+// Atan2Float32 calculates the arc tangent of y/x for each pair of elements.
+func Atan2Float32(y, x, dst []float32) {
+	atan2Float32Impl(y, x, dst)
+}
+
+// ManhattanDistance calculates the L1 distance between two vectors.
+func ManhattanDistance(a, b []float32) (float32, error) {
+	return manhattanDistanceImpl(a, b)
+}
+
+// ChebyshevDistance calculates the L-infinity distance between two vectors.
+func ChebyshevDistance(a, b []float32) (float32, error) {
+	return chebyshevDistanceImpl(a, b)
+}
+
+// BrayCurtisDistance calculates the Bray-Curtis distance between two vectors.
+func BrayCurtisDistance(a, b []float32) (float32, error) {
+	return brayCurtisDistanceImpl(a, b)
+}
+
+// MatMul performs matrix multiplication: dst = a * b
+func MatMul(a, b []float32, m, n, k int, dst []float32) {
+	matMulFloat32Impl(a, b, m, n, k, dst)
+}
+
+// HaversineBatch calculates the haversine distance between a center point and a batch of points.
+func HaversineBatch(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32) {
+	if haversineBatchImpl != nil {
+		haversineBatchImpl(centerLat, centerLon, points, earthRadius, results)
+	} else {
+		haversineBatchGeneric(centerLat, centerLon, points, earthRadius, results)
+	}
+}
+
 func init() {
+	pauseImpl = pause
 	detectCPU()
 	initializeDispatch()
 
@@ -187,6 +282,21 @@ func IsAllZeros(src []byte) bool {
 	return isAllZerosImpl(src)
 }
 
+// Pause yields the processor for a short time.
+// On x86 it uses the PAUSE instruction, on ARM64 it uses YIELD.
+func Pause() {
+	pauseImpl()
+}
+
+// pause is implemented in assembly.
+
+// PauseN calls Pause n times.
+func PauseN(n int) {
+	for i := 0; i < n; i++ {
+		pauseImpl()
+	}
+}
+
 // GetCPUFeatures returns detected CPU SIMD capabilities
 
 // Generic implementations (fallback)
@@ -225,17 +335,13 @@ func dotGeneric(a, b []float32) (float32, error) {
 	return sum, nil
 }
 
+// DotProductInt4 calculates the dot product for 4-bit packed integer vectors.
 func DotProductInt4(a, b []byte) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
 	return dotProductInt4Impl(a, b)
 }
 
+// DotProductInt2 calculates the dot product for 2-bit packed integer vectors.
 func DotProductInt2(a, b []byte) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
 	return dotProductInt2Impl(a, b)
 }
 
@@ -1141,51 +1247,76 @@ func float16ToFloat32Generic(src []float16.Num, dst []float32) {
 
 // Public API for type conversion
 
+// Int8ToFloat32 converts a slice of int8 to float32 using SIMD if available.
 func Int8ToFloat32(src []int8, dst []float32) {
 	int8ToFloat32Impl(src, dst)
 }
 
+// Uint8ToFloat32 converts a slice of uint8 to float32 using SIMD if available.
 func Uint8ToFloat32(src []uint8, dst []float32) {
 	uint8ToFloat32Impl(src, dst)
 }
 
+// Int16ToFloat32 converts a slice of int16 to float32 using SIMD if available.
 func Int16ToFloat32(src []int16, dst []float32) {
 	int16ToFloat32Impl(src, dst)
 }
 
+// Uint16ToFloat32 converts a slice of uint16 to float32 using SIMD if available.
 func Uint16ToFloat32(src []uint16, dst []float32) {
 	uint16ToFloat32Impl(src, dst)
 }
 
+// Int32ToFloat32 converts a slice of int32 to float32 using SIMD if available.
 func Int32ToFloat32(src []int32, dst []float32) {
 	int32ToFloat32Impl(src, dst)
 }
 
+// Uint32ToFloat32 converts a slice of uint32 to float32 using SIMD if available.
 func Uint32ToFloat32(src []uint32, dst []float32) {
 	uint32ToFloat32Impl(src, dst)
 }
 
+// Float16ToFloat32 converts a slice of float16 to float32 using SIMD if available.
 func Float16ToFloat32(src []float16.Num, dst []float32) {
 	float16ToFloat32Impl(src, dst)
 }
 
 // Activation Functions
 
+// Sigmoid applies the sigmoid activation function element-wise.
 func Sigmoid(src, dst []float32) {
+	start := time.Now()
 	sigmoidFloat32Impl(src, dst)
+	metrics.SIMDActivationDuration.WithLabelValues("sigmoid", implementation).Observe(time.Since(start).Seconds())
 }
 
+// Softmax applies the softmax activation function to the input slice.
 func Softmax(src, dst []float32) {
+	start := time.Now()
 	softmaxFloat32Impl(src, dst)
+	metrics.SIMDActivationDuration.WithLabelValues("softmax", implementation).Observe(time.Since(start).Seconds())
 }
 
+// Exp applies the exponential function element-wise.
 func Exp(src, dst []float32) {
+	start := time.Now()
 	expFloat32Impl(src, dst)
+	metrics.SIMDActivationDuration.WithLabelValues("exp", implementation).Observe(time.Since(start).Seconds())
 }
 
+// Log applies the natural logarithm function element-wise.
 func Log(src, dst []float32) {
+	start := time.Now()
 	logFloat32Impl(src, dst)
+	metrics.SIMDActivationDuration.WithLabelValues("log", implementation).Observe(time.Since(start).Seconds())
 }
+
+// AccumulateWeightedScatter adds weighted values to a destination slice using scatter indices.
+func AccumulateWeightedScatter(dst []float32, targets []uint32, weights []float32, factor float32) {
+	accumulateWeightedScatterFloat32Impl(dst, targets, weights, factor)
+}
+
 
 func sigmoidGeneric(src, dst []float32) {
 	for i, x := range src {
@@ -1221,12 +1352,315 @@ func softmaxGeneric(src, dst []float32) {
 		dst[i] /= sum
 	}
 }
+
+func sumGeneric(src []float32) float32 {
+	var sum float32
+	for _, x := range src {
+		sum += x
+	}
+	return sum
+}
+
+func maxGeneric(src []float32) float32 {
+	if len(src) == 0 {
+		return -math.MaxFloat32
+	}
+	max := src[0]
+	for _, x := range src[1:] {
+		if x > max {
+			max = x
+		}
+	}
+	return max
+}
+
+func minGeneric(src []float32) float32 {
+	if len(src) == 0 {
+		return math.MaxFloat32
+	}
+	min := src[0]
+	for _, x := range src[1:] {
+		if x < min {
+			min = x
+		}
+	}
+	return min
+}
+
+// Sum calculates the sum of all elements in a float32 slice.
+func Sum(src []float32) float32 {
+	return sumFloat32Impl(src)
+}
+
+// Max finds the maximum value in a float32 slice.
+func Max(src []float32) float32 {
+	return maxFloat32Impl(src)
+}
+
+// Min finds the minimum value in a float32 slice.
+func Min(src []float32) float32 {
+	return minFloat32Impl(src)
+}
+
+// ArgMax returns the index of the maximum value in a float32 slice.
+func ArgMax(src []float32) int {
+	return argMaxFloat32Impl(src)
+}
+
+// ArgMin returns the index of the minimum value in a float32 slice.
+func ArgMin(src []float32) int {
+	return argMinFloat32Impl(src)
+}
+
+func argMaxGeneric(src []float32) int {
+	if len(src) == 0 {
+		return -1
+	}
+	maxIdx := 0
+	maxVal := src[0]
+	for i, x := range src[1:] {
+		if x > maxVal {
+			maxVal = x
+			maxIdx = i + 1
+		}
+	}
+	return maxIdx
+}
+
+func argMinGeneric(src []float32) int {
+	if len(src) == 0 {
+		return -1
+	}
+	minIdx := 0
+	minVal := src[0]
+	for i, x := range src[1:] {
+		if x < minVal {
+			minVal = x
+			minIdx = i + 1
+		}
+	}
+	return minIdx
+}
+
+func matMulGeneric(a, b []float32, m, n, k int, dst []float32) {
+	// a: m x k, b: k x n, dst: m x n
+	for i := 0; i < m; i++ {
+		for j := 0; j < n; j++ {
+			var sum float32
+			for l := 0; l < k; l++ {
+				sum += a[i*k+l] * b[l*n+j]
+			}
+			dst[i*n+j] = sum
+		}
+	}
+}
 func memcpyGeneric(dst, src unsafe.Pointer, n int) {
-	d := unsafe.Slice((*byte)(dst), n)
-	s := unsafe.Slice((*byte)(src), n)
+	d := unsafe.Slice((*byte)(dst), n) // #nosec G103
+	s := unsafe.Slice((*byte)(src), n) // #nosec G103
 	copy(d, s)
 }
 
+// MemcpyNTA performs a memory copy using non-temporal hints to avoid cache pollution.
 func MemcpyNTA(dst, src unsafe.Pointer, n int) {
 	memcpyNTAImpl(dst, src, n)
+}
+
+// UnpackTQ2 unpacks 2-bit TurboQuant data.
+func UnpackTQ2(src []byte, dst []float32, scale, bias float32) {
+	if unpackTQ2Impl != nil {
+		unpackTQ2Impl(src, dst, scale, bias)
+	} else {
+		UnpackTQ2Generic(src, dst, scale, bias)
+	}
+}
+
+// UnpackTQ4 unpacks 4-bit TurboQuant data.
+func UnpackTQ4(src []byte, dst []float32, scale, bias float32) {
+	if unpackTQ4Impl != nil {
+		unpackTQ4Impl(src, dst, scale, bias)
+	} else {
+		UnpackTQ4Generic(src, dst, scale, bias)
+	}
+}
+
+// UnpackTQ8 unpacks 8-bit TurboQuant data.
+func UnpackTQ8(src []byte, dst []float32, scale, bias float32) {
+	if unpackTQ8Impl != nil {
+		unpackTQ8Impl(src, dst, scale, bias)
+	} else {
+		UnpackTQ8Generic(src, dst, scale, bias)
+	}
+}
+
+func UnpackTQ2Generic(src []byte, dst []float32, scale, bias float32) {
+	n := len(dst)
+	i := 0
+	for ; i <= n-8; i += 8 {
+		b0 := src[i/4]
+		b1 := src[i/4+1]
+		dst[i]   = float32(b0&0x03)*scale + bias
+		dst[i+1] = float32((b0>>2)&0x03)*scale + bias
+		dst[i+2] = float32((b0>>4)&0x03)*scale + bias
+		dst[i+3] = float32((b0>>6)&0x03)*scale + bias
+		dst[i+4] = float32(b1&0x03)*scale + bias
+		dst[i+5] = float32((b1>>2)&0x03)*scale + bias
+		dst[i+6] = float32((b1>>4)&0x03)*scale + bias
+		dst[i+7] = float32((b1>>6)&0x03)*scale + bias
+	}
+	for ; i < n; i++ {
+		val := (src[i/4] >> (uint(i%4) * 2)) & 0x03
+		dst[i] = float32(val)*scale + bias
+	}
+}
+
+func UnpackTQ4Generic(src []byte, dst []float32, scale, bias float32) {
+	n := len(dst)
+	i := 0
+	for ; i <= n-8; i += 8 {
+		b0 := src[i/2]
+		b1 := src[i/2+1]
+		b2 := src[i/2+2]
+		b3 := src[i/2+3]
+		dst[i]   = float32(b0&0x0F)*scale + bias
+		dst[i+1] = float32(b0>>4)*scale + bias
+		dst[i+2] = float32(b1&0x0F)*scale + bias
+		dst[i+3] = float32(b1>>4)*scale + bias
+		dst[i+4] = float32(b2&0x0F)*scale + bias
+		dst[i+5] = float32(b2>>4)*scale + bias
+		dst[i+6] = float32(b3&0x0F)*scale + bias
+		dst[i+7] = float32(b3>>4)*scale + bias
+	}
+	for ; i < n; i++ {
+		var val byte
+		if i%2 == 0 {
+			val = src[i/2] & 0x0F
+		} else {
+			val = src[i/2] >> 4
+		}
+		dst[i] = float32(val)*scale + bias
+	}
+}
+
+func UnpackTQ8Generic(src []byte, dst []float32, scale, bias float32) {
+	n := len(dst)
+	i := 0
+	for ; i <= n-8; i += 8 {
+		dst[i]   = float32(src[i])*scale + bias
+		dst[i+1] = float32(src[i+1])*scale + bias
+		dst[i+2] = float32(src[i+2])*scale + bias
+		dst[i+3] = float32(src[i+3])*scale + bias
+		dst[i+4] = float32(src[i+4])*scale + bias
+		dst[i+5] = float32(src[i+5])*scale + bias
+		dst[i+6] = float32(src[i+6])*scale + bias
+		dst[i+7] = float32(src[i+7])*scale + bias
+	}
+	for ; i < n; i++ {
+		dst[i] = float32(src[i])*scale + bias
+	}
+}
+
+// PackTQ2 packs float32 data into 2-bit TurboQuant format.
+func PackTQ2(src []float32, dst []byte) {
+	if packTQ2Impl != nil {
+		packTQ2Impl(src, dst)
+	} else {
+		PackTQ2Generic(src, dst)
+	}
+}
+
+// PackTQ4 packs float32 data into 4-bit TurboQuant format.
+func PackTQ4(src []float32, dst []byte) {
+	if packTQ4Impl != nil {
+		packTQ4Impl(src, dst)
+	} else {
+		PackTQ4Generic(src, dst)
+	}
+}
+
+// PackTQ8 packs float32 data into 8-bit TurboQuant format.
+func PackTQ8(src []float32, dst []byte) {
+	if packTQ8Impl != nil {
+		packTQ8Impl(src, dst)
+	} else {
+		PackTQ8Generic(src, dst)
+	}
+}
+
+func PackTQ2Generic(src []float32, dst []byte) {
+	maxVal := float32(3)
+	inv2Pi := float32(1.0 / (2 * math.Pi))
+	pi32 := float32(math.Pi)
+	for i := 0; i < len(src); i += 4 {
+		var b byte
+		for j := 0; j < 4; j++ {
+			if i+j < len(src) {
+				norm := (src[i+j] + pi32) * inv2Pi
+				if norm < 0 { norm = 0 } else if norm > 1 { norm = 1 }
+				q := byte(norm*maxVal + 0.5)
+				b |= (q << (uint(j) * 2))
+			}
+		}
+		dst[i/4] = b
+	}
+}
+
+func PackTQ4Generic(src []float32, dst []byte) {
+	maxVal := float32(15)
+	inv2Pi := float32(1.0 / (2 * math.Pi))
+	pi32 := float32(math.Pi)
+	for i := 0; i < len(src); i += 2 {
+		norm1 := (src[i] + pi32) * inv2Pi
+		if norm1 < 0 { norm1 = 0 } else if norm1 > 1 { norm1 = 1 }
+		q1 := byte(norm1*maxVal + 0.5)
+		var q2 byte
+		if i+1 < len(src) {
+			norm2 := (src[i+1] + pi32) * inv2Pi
+			if norm2 < 0 { norm2 = 0 } else if norm2 > 1 { norm2 = 1 }
+			q2 = byte(norm2*maxVal + 0.5)
+		}
+		dst[i/2] = q1 | (q2 << 4)
+	}
+}
+
+func PackTQ8Generic(src []float32, dst []byte) {
+	maxVal := float32(255)
+	inv2Pi := float32(1.0 / (2 * math.Pi))
+	pi32 := float32(math.Pi)
+	for i, val := range src {
+		norm := (val + pi32) * inv2Pi
+		if norm < 0 { norm = 0 } else if norm > 1 { norm = 1 }
+		dst[i] = byte(norm*maxVal + 0.5)
+	}
+}
+
+func l2SquaredTQCorrectionGeneric(query, recon []float32, qjlBits []byte, correction float32, n int) float32 {
+	var sum float32
+	i := 0
+	// 8x unrolling
+	for ; i <= n-8; i += 8 {
+		bits := qjlBits[i/8]
+		for j := 0; j < 8; j++ {
+			idx := i + j
+			val := recon[idx]
+			if (bits >> uint(j)) & 1 != 0 {
+				val += correction
+			} else {
+				val -= 0.1
+			}
+			diff := query[idx] - val
+			sum += diff * diff
+		}
+	}
+	// Remainder
+	for ; i < n; i++ {
+		val := recon[i]
+		if (qjlBits[i/8] >> (i % 8)) & 1 != 0 {
+			val += correction
+		} else {
+			val -= 0.1
+		}
+		diff := query[i] - val
+		sum += diff * diff
+	}
+	return sum
 }

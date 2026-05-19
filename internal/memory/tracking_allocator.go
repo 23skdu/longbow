@@ -24,6 +24,7 @@ func NewTrackingAllocator(base memory.Allocator) *TrackingAllocator {
 	return &TrackingAllocator{Allocator: base}
 }
 
+// Allocate reserves space for 'size' bytes and updates metrics.
 func (a *TrackingAllocator) Allocate(size int) []byte {
 	a.BytesAllocated.Add(int64(size))
 	metrics.AllocatorBytesAllocatedTotal.Add(float64(size))
@@ -31,6 +32,7 @@ func (a *TrackingAllocator) Allocate(size int) []byte {
 	return a.Allocator.Allocate(size)
 }
 
+// Reallocate resizes the given byte slice and updates metrics.
 func (a *TrackingAllocator) Reallocate(size int, b []byte) []byte {
 	// Reallocate is hard to track accurately without knowing old size.
 	// We count it as new allocation for "AllocatedTotal" metrics to show churn/activity.
@@ -40,6 +42,7 @@ func (a *TrackingAllocator) Reallocate(size int, b []byte) []byte {
 	return a.Allocator.Reallocate(size, b)
 }
 
+// Free releases the given byte slice and updates metrics.
 func (a *TrackingAllocator) Free(b []byte) {
 	a.BytesFreed.Add(int64(len(b)))
 	metrics.AllocatorBytesFreedTotal.Add(float64(len(b)))

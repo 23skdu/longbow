@@ -18,13 +18,14 @@ func AdmissionInterceptor(admission *store.AdmissionController) grpc.UnaryServer
 		opType := "search"
 		if strings.Contains(info.FullMethod, "DoPut") || strings.Contains(info.FullMethod, "Put") {
 			opType = "ingest"
-		} else if strings.Contains(info.FullMethod, "Admin") {
+		} else if strings.Contains(info.FullMethod, "Admin") || strings.Contains(info.FullMethod, "DoAction") {
 			opType = "maintenance"
 		}
 
 		if err := admission.Admit(ctx, opType); err != nil {
 			return nil, err
 		}
+		defer admission.Release(opType)
 
 		return handler(ctx, req)
 	}
@@ -40,13 +41,14 @@ func AdmissionStreamInterceptor(admission *store.AdmissionController) grpc.Strea
 		opType := "search"
 		if strings.Contains(info.FullMethod, "DoPut") || strings.Contains(info.FullMethod, "Put") {
 			opType = "ingest"
-		} else if strings.Contains(info.FullMethod, "Admin") {
+		} else if strings.Contains(info.FullMethod, "Admin") || strings.Contains(info.FullMethod, "DoAction") {
 			opType = "maintenance"
 		}
 
 		if err := admission.Admit(ss.Context(), opType); err != nil {
 			return err
 		}
+		defer admission.Release(opType)
 
 		return handler(srv, ss)
 	}

@@ -33,8 +33,23 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 	if len(vectors) == 0 {
 		return nil
 	}
+	
+	metrics.SimdDispatchTotal.WithLabelValues(implementation, "euclidean_batch").Inc()
+
+	// Special handling for common dimensions to bypass generic batch overhead if possible
 	dims := len(query)
-	if dims == 384 {
+	switch dims {
+	case 128:
+		for i, v := range vectors {
+			if v == nil || len(v) != 128 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.EuclideanDistance128(query, v)
+			results[i] = d
+		}
+		return nil
+	case 384:
 		for i, v := range vectors {
 			if v == nil || len(v) != 384 {
 				results[i] = math.MaxFloat32
@@ -45,17 +60,7 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 		}
 		return nil
 	}
-	if dims == 128 {
-		for i, v := range vectors {
-			if v == nil || len(v) != 128 {
-				results[i] = math.MaxFloat32
-				continue
-			}
-			d, _ := currentDispatch.EuclideanDistance128(query, v)
-			results[i] = d
-		}
-		return nil
-	}
+
 	return currentDispatch.EuclideanDistanceBatch(query, vectors, results)
 }
 
@@ -140,6 +145,7 @@ func CosineDistanceBatch(query []float32, vectors [][]float32, results []float32
 	}
 	metrics.CosineBatchCallsTotal.Inc()
 	metrics.ParallelReductionVectorsProcessed.Add(float64(len(vectors)))
+	metrics.SimdDispatchTotal.WithLabelValues(implementation, "cosine_batch").Inc()
 	_ = cosineDistanceBatchImpl(query, vectors, results)
 	return nil
 }
@@ -155,6 +161,7 @@ func DotProductBatch(query []float32, vectors [][]float32, results []float32) er
 	}
 	metrics.DotProductBatchCallsTotal.Inc()
 	metrics.ParallelReductionVectorsProcessed.Add(float64(len(vectors)))
+	metrics.SimdDispatchTotal.WithLabelValues(implementation, "dot_batch").Inc()
 	_ = dotProductBatchImpl(query, vectors, results)
 	return nil
 }

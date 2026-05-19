@@ -1,10 +1,8 @@
 package core
 
 import (
-	"container/heap"
 	"context"
 	"fmt"
-	"math"
 	"runtime"
 	"slices"
 	"strconv"
@@ -16,23 +14,51 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	types "github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/float16"
+	"math"
+	"sync/atomic"
 )
 
-// BULK_INSERT_THRESHOLD defines the minimum batch size to trigger parallel bulk insert
-const BULK_INSERT_THRESHOLD = 1000
+// BulkInsertThreshold defines the minimum batch size to trigger parallel bulk insert
+const BulkInsertThreshold = 1000
 
 
+// ShardedLockCount is the number of shards for node locking.
 const ShardedLockCount = 1024
 
 
 // AddBatchBulk attempts to insert a batch of vectors in parallel using a bulk strategy.
 // It assumes IDs, locations, and capacity have already been prepared/reserved.
 func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vecs any) error {
+	h.bulkMu.Lock()
+	defer h.bulkMu.Unlock()
+	return h.addBatchBulkInternal(ctx, startID, n, vecs)
+}
+
+func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n int, vecs any) error {
 	if n <= 0 {
 		return nil
 	}
+	totalN := n
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	start := time.Now()
+	
+	// Ensure nodeCount is advanced even on error/cancellation to unblock subsequent writers.
+	defer func(batchSize int) {
+		finalID := int64(startID + uint32(batchSize)) // #nosec G115
+		h.commitMu.Lock()
+		for h.nodeCount.Load() < int64(startID) {
+			h.commitCond.Wait()
+		}
+		if h.nodeCount.Load() < finalID {
+			h.nodeCount.Store(finalID)
+		}
+		h.commitCond.Broadcast()
+		h.commitMu.Unlock()
+	}(n)
 	defer func() {
 		duration := time.Since(start).Seconds()
 		metrics.HNSWBulkInsertDurationSeconds.Observe(duration)
@@ -57,6 +83,22 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		case [][]float32:
 			if len(vs) > 0 {
 				dims = len(vs[0])
+			}
+		case []arrow.RecordBatch:
+			if len(vs) > 0 {
+				// Find first valid record
+				for _, r := range vs {
+					if r != nil {
+						idx := h.getVectorColumnIndex(r)
+						if idx != -1 {
+							col := r.Column(idx)
+							if fsl, ok := col.DataType().(*arrow.FixedSizeListType); ok {
+								dims = int(fsl.Len())
+								break
+							}
+						}
+					}
+				}
 			}
 		case [][]float16.Num:
 			if len(vs) > 0 {
@@ -147,46 +189,20 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		return fmt.Errorf("failed to determine dimensions for bulk insert")
 	}
 
-	maxID := startID + uint32(n) - 1
-	cID_start := types.ChunkID(startID)
-	cID_end := types.ChunkID(maxID)
+	maxID := startID + uint32(n) - 1 // #nosec G115
+	cIDStart := types.ChunkID(startID)
+	cIDEnd := types.ChunkID(maxID)
 
-	// Retry loop to handle concurrent Grow operations that might swap data pointer
-	// between ensureChunk calls and the actual insertion.
-	for {
-		// Capture data pointer before ensureChunk
-		data := h.data.Load()
-
-		// Ensure all required chunks on the current data pointer
-		for cid := cID_start; cid <= cID_end; cid++ {
-			_, err := h.ensureChunk(data, cid, 0, dims)
-			if err != nil {
-				return fmt.Errorf("failed to pre-allocate chunk %d for bulk insert: %w", cid, err)
-			}
-		}
-
-		// Acquire Read Lock to stabilize the data pointer
-		h.growMu.RLock()
-
-		// Check if data pointer changed while we were ensuring chunks
-		currentData := h.data.Load()
-		if data == currentData {
-			// Data pointer is stable, use the CURRENT data pointer (not the one from before ensureChunk)
-			// This ensures we use the latest data that includes our chunk allocations
-			break
-		}
-
-		// Data pointer changed (Grow happened), release lock and retry
-		h.growMu.RUnlock()
+	// Pre-allocate all required chunks in a single COW operation
+	data, err := h.EnsureChunks(int(cIDStart), int(cIDEnd), dims)
+	if err != nil {
+		return err
 	}
+	// Use a private clone for the entire batch operation
+	data = data.Clone()
 
-	data := h.data.Load()
-	growMuReleased := false
-	defer func() {
-		if !growMuReleased {
-			h.growMu.RUnlock()
-		}
-	}()
+	growMuReleased := true // #nosec G101 - No longer needed with EnsureChunks
+	_ = growMuReleased
 
 	type activeNode struct {
 		id    uint32
@@ -205,13 +221,20 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 	// Slice into chunks for workers to amortize goroutine overhead
 	chunkSize := (n + runtime.NumCPU() - 1) / runtime.NumCPU()
-	if chunkSize < 256 {
-		chunkSize = 256 // Minimum chunk size to justify overhead
+	if chunkSize < 64 {
+		chunkSize = 64 // Minimum chunk size to justify overhead
 	}
 
-	pool.ParallelFor(n, chunkSize, func(start, end int) {
+	highPriority := types.IsHighPriority(ctx)
+	parallelFor := pool.ParallelFor
+	if highPriority {
+		parallelFor = pool.ParallelForHighPriority
+	}
+
+	parallelFor(n, chunkSize, func(start, end int) {
 		errMu.Lock()
-		if errPrep != nil {
+		if errPrep != nil || ctx.Err() != nil {
+			if errPrep == nil { errPrep = ctx.Err() }
 			errMu.Unlock()
 			return
 		}
@@ -247,6 +270,20 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 					v = c128s
 				default:
 					v = vs[j]
+				}
+			case []arrow.RecordBatch:
+				// Discover vector within the batch of records
+				// Assuming standard sequential mapping
+				row := j
+				recIdx := 0
+				for row >= int(vs[recIdx].NumRows()) {
+					row -= int(vs[recIdx].NumRows())
+					recIdx++
+				}
+				rec := vs[recIdx]
+				idx := h.getVectorColumnIndex(rec)
+				if idx != -1 {
+					v = h.extractVector(rec, idx, row)
 				}
 			case [][]uint32:
 				v = vs[j]
@@ -329,8 +366,8 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			}
 
 			// Always ingest into hot storage using method that handles all types
-			// Use h.data.Load() to ensure we write to the latest version that includes our ensured chunks
-			if err := h.data.Load().SetVector(id, v); err != nil {
+			// Use private data snapshot for vector storage
+			if err := data.SetVector(id, v); err != nil {
 				errMu.Lock()
 				errPrep = err
 				errMu.Unlock()
@@ -416,7 +453,7 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			// Init levels chunk if needed
 			levelsChunk := data.GetLevelsChunk(cID)
 			if levelsChunk != nil {
-				levelsChunk[cOff] = uint8(level) // #nosec G115
+				atomic.StoreUint32(&levelsChunk[cOff], uint32(level)) // #nosec G115
 			}
 		}
 	})
@@ -424,37 +461,113 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 	if errPrep != nil {
 		return errPrep
 	}
+ 
+	// Create a stable, read-only version for other workers to clone from
+	stableData := data.Clone()
+	h.compareAndSwapData(h.data.Load(), stableData)
 
-	// Update node count BEFORE discovery/linkage so internal checks permit these IDs
-	h.nodeCount.Add(int64(n))
+	// 3. Sequential Bootstrap Phase
+	// Establish a stable hierarchy by inserting a portion sequentially.
+	seedCount := 1024
+	if n < seedCount {
+		seedCount = n
+	}
 
-	// 2. Global Entry Point
-	// We start search from the current global entry point.
-	// We need to update entry point potentially at the end.
+	// Verify first and last vector
+	vStart, _ := data.GetVector(startID)
+	if vStart == nil {
+		return fmt.Errorf("failed to retrieve first vector %d after fill", startID)
+	}
+	vEnd, _ := data.GetVector(startID + uint32(n) - 1)
+	if vEnd == nil {
+		return fmt.Errorf("failed to retrieve last vector %d after fill", startID+uint32(n)-1)
+	}
+
+	var bootstrapEp uint32 = math.MaxUint32
+	var bootstrapMaxL int32 = -1
+	for i := 0; i < seedCount; i++ {
+		node := activeNodes[i]
+		var err error
+		data, err = h.insertInternal(node.id, node.vec, node.level, true, data)
+		if err != nil {
+			return err
+		}
+		if int32(node.level) > bootstrapMaxL || bootstrapEp == math.MaxUint32 { // #nosec G115
+			bootstrapMaxL = int32(node.level) // #nosec G115
+			bootstrapEp = node.id
+			h.updateMetadataIfHigher(bootstrapEp, bootstrapMaxL)
+		}
+	}
+	h.compareAndSwapData(h.data.Load(), data.Clone())
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+
+	if n <= seedCount {
+		// Update metadata registry with new node count and entry point BEFORE returning
+		h.updateMetadata(func(meta *HNSWMetadata) {
+			if int32(bootstrapMaxL) > meta.MaxLevel || meta.EntryPoint == math.MaxUint32 {
+				meta.MaxLevel = int32(bootstrapMaxL)
+				meta.EntryPoint = bootstrapEp
+			}
+			if int64(startID)+int64(n) > meta.NodeCount {
+				meta.NodeCount = int64(startID) + int64(n)
+			}
+		})
+
+		// Even for small batches, we should register nodes in pools
+		h.initMu.Lock()
+		for i := 0; i < n; i++ {
+			node := activeNodes[i]
+			if node.level > 0 && node.level < len(h.entryPointPools) {
+				h.entryPointPools[node.level].Insert(node.id)
+			}
+		}
+		h.initMu.Unlock()
+		return nil
+	}
+
+	// 4. Parallel Linkage Phase
+	// Link remaining nodes to the bootstrap backbone and each other.
+
+	// Advance nodeCount so search kernels see the new data
+	// (Safe because we are under growMu/initMu or sequentially ordered)
+	finalID := int64(startID + uint32(n))
+	h.commitMu.Lock()
+	if h.nodeCount.Load() < finalID {
+		h.nodeCount.Store(finalID)
+		h.commitCond.Broadcast()
+	}
+	h.commitMu.Unlock()
+
+	// Refresh data snapshot after bootstrap loop as InsertWithVector updated the global state
+	data = h.data.Load()
+	
+	// Shift to remaining nodes for parallel linkage
+	remainingNodes := activeNodes[seedCount:]
+	numRemaining := len(remainingNodes)
+
+	// Refresh metadata after bootstrap
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())
 
-	// Determine max level in this batch to update global max later
+	// Determine max level in remaining batch
 	batchMaxLevel := -1
-	batchEpCandidate := uint32(0) // ID of node with max level in batch
-
-	for _, node := range activeNodes {
+	batchEpCandidate := uint32(0)
+	for _, node := range remainingNodes {
 		if node.level > batchMaxLevel {
 			batchMaxLevel = node.level
 			batchEpCandidate = node.id
 		}
 	}
 
-	// 3. Layer-by-Layer Insertion (Top Down)
-	// We iterate max(maxL, batchMaxLevel) down to 0.
-
 	topL := maxL
 	if batchMaxLevel > topL {
 		topL = batchMaxLevel
 	}
 
-	// Current entry points for all active nodes. Initially global EP.
-	currentEps := make([]uint32, n)
+	// Current entry points for remaining active nodes. Initially global EP.
+	currentEps := make([]uint32, numRemaining)
 	for i := range currentEps {
 		currentEps[i] = ep
 	}
@@ -465,29 +578,16 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 
 	// 2.5 Pre-Promote all nodes in the batch and SET VECTORS (Parallel)
 	// This ensures chunks are allocated and vectors are persistent before linkage.
-	pool.ParallelFor(n, (n+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
+	pool.ParallelFor(numRemaining, (numRemaining+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
 		// Vector data is already set in the previous ParallelFor using the latest h.data pointer.
 		// No need to promote nodes here as chunks were pre-allocated and published.
 	})
-	data = h.data.Load()
-
-	// 2.6 Initial Linkage: Link each node to its predecessor to form a simple chain
-	// This provides a fallback path for reachability during the initial build.
-	// Small serial overhead for chain construction.
-	for i := 0; i < n; i++ {
-		if i > 0 {
-			// AddConnection now respects the passed 'data' pointer and handles node-level locking
-			data = h.AddConnection(nil, data, activeNodes[i].id, activeNodes[i-1].id, 0, h.mMax0, 0.0)
-			data = h.AddConnection(nil, data, activeNodes[i-1].id, activeNodes[i].id, 0, h.mMax0, 0.0)
-		}
-	}
-	h.data.Store(data) // Publish initial chain to enable traversal
 
 	for lc := topL; lc >= 0; lc-- {
 
 		// Identify nodes active at this layer
-		activeIndices := make([]int, 0, n)
-		for i, node := range activeNodes {
+		activeIndices := make([]int, 0, numRemaining)
+		for i, node := range remainingNodes {
 			if node.level >= lc {
 				activeIndices = append(activeIndices, i)
 			}
@@ -497,387 +597,214 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 			continue // Should not happen if topL is correct
 		}
 
-		// 3a. Search against Graph (Parallel)
-		// ... (Same logic as before) ...
 
-		// Outputs
-		graphCandidates := make([]*[]types.Candidate, n)
-
-		var errLayer error
-		var layerMu sync.Mutex
-
-		// Batch active activeIndices
-		layerChunkSize := (len(activeIndices) + runtime.NumCPU() - 1) / runtime.NumCPU()
-		if layerChunkSize < 50 {
-			layerChunkSize = 50
+		// 3. Layer-by-Layer Insertion with Organic Growth
+		// Divide nodes into sub-batches to ensure the graph grows organically,
+		// preventing the "star graph" problem where all nodes link to the same few bootstrap nodes.
+		subBatchSize := 4
+		if lc > 0 {
+			subBatchSize = len(activeIndices) // Higher layers are small, process in one go
 		}
 
-		pool.ParallelFor(len(activeIndices), layerChunkSize, func(start, end int) {
-			layerMu.Lock()
-			if errLayer != nil {
+		for i := 0; i < len(activeIndices); i += subBatchSize {
+			endBatch := i + subBatchSize
+			if endBatch > len(activeIndices) {
+				endBatch = len(activeIndices)
+			}
+			subIndices := activeIndices[i:endBatch]
+
+			// 3a. Search against Graph (Parallel for Sub-Batch)
+			graphCandidates := make([]*[]types.Candidate, numRemaining)
+			var errLayer error
+			var layerMu sync.Mutex
+
+			layerChunkSize := (len(subIndices) + runtime.NumCPU() - 1) / runtime.NumCPU()
+			if layerChunkSize < 32 {
+				layerChunkSize = 32
+			}
+
+			pool.ParallelFor(len(subIndices), layerChunkSize, func(start, end int) {
+				layerMu.Lock()
+				if errLayer != nil {
+					layerMu.Unlock()
+					return
+				}
 				layerMu.Unlock()
-				return
-			}
-			layerMu.Unlock()
 
-			indices := activeIndices[start:end]
-			workerData := h.data.Load() // Capture stable pointer for this layer
+				indices := subIndices[start:end]
+				workerData := data // Use the current snapshot (updated after each sub-batch)
+				meta := h.metadataRegistry.Load()
 
-			// Thread-local context
-			ctxSearch := h.searchPool.Get()
-			ctxSearch.Reset()
-			defer h.searchPool.PutWithMetrics(ctxSearch, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+				ctxSearch := h.searchPool.Get()
+				ctxSearch.MaxNodeCount = h.nodeCount.Load()
+				ctxSearch.MaxGeneration = meta.Generation
+				ctxSearch.Reset()
+				ctxSearch.AllowUncommitted = true
+				defer h.searchPool.PutWithMetrics(ctxSearch, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
 
-			for _, idx := range indices {
-				node := activeNodes[idx]
-				currEp := currentEps[idx]
+				for _, idx := range indices {
+					node := remainingNodes[idx]
+					currEp := currentEps[idx]
 
-				if lc > node.level {
-					// Descent phase: ef=1
-					res, err := h.searchLayerForInsert(ctx, ctxSearch, node.vec, currEp, 1, lc, workerData)
-					if err != nil {
-						layerMu.Lock()
-						errLayer = err
-						layerMu.Unlock()
-						return
-					}
-					if len(res) > 0 {
-						currentEps[idx] = res[0].ID
-					}
-				} else {
-					// Insertion phase
-					// Use adaptive EF
-					ef := int(h.efConstruction.Load())
-					if h.config.AdaptiveEf {
-						ef = h.getAdaptiveEf(int(h.nodeCount.Load()))
-					}
-
-					res, err := h.searchLayerForInsert(ctx, ctxSearch, node.vec, currEp, ef, lc, workerData)
-					if err != nil {
-						layerMu.Lock()
-						errLayer = err
-						layerMu.Unlock()
-						return
-					}
-					// Store candidates (make copy as ctx is reused)
-					pBuf := new([]types.Candidate)
-					*pBuf = make([]types.Candidate, 0, len(res))
-					*pBuf = append(*pBuf, res...)
-					graphCandidates[idx] = pBuf
-
-					// Update ep for next layer
-					if len(res) > 0 {
-						currentEps[idx] = res[0].ID
-					}
-				}
-			}
-		})
-
-		if errLayer != nil {
-			return errLayer
-		}
-
-		// 3b. Intra-Batch Matching (Blocked Matrix Multiplication)
-		// Intra-batch matching: find neighbors among the nodes in this batch
-		// that are active at this layer.
-		insertingIndices := activeIndices
-		numNew := len(insertingIndices)
-		// Cap intra-batch matching to avoid O(N^2) explosion on massive batches.
-		// For very large batches, graph-based discovery is sufficient.
-		if numNew > 1 && numNew <= 1000 {
-
-			// Pre-cast vectors to avoid type assertions in hot loop
-			var activeF32 [][]float32
-			if h.config.DataType == types.VectorTypeFloat32 {
-				activeF32 = make([][]float32, len(activeNodes))
-				for i, node := range activeNodes {
-					if v, ok := node.vec.([]float32); ok {
-						activeF32[i] = v
-					}
-				}
-			}
-
-			// Blocked Matrix Multiplication
-			// Tile size for cache locality
-			const tileSize = 64
-
-			pool.ParallelFor(numNew, tileSize, func(start, end int) {
-				iStart := start
-				iEnd := end
-
-					// Prepare Quantizer helpers once per tile/worker
-					useSQ8 := h.config.SQ8Enabled && h.quantizer != nil && h.sq8Ready.Load()
-					useBQ := h.config.BQEnabled && h.bqEncoder != nil
-					var qSQ8, tSQ8 []byte
-					var qBQ, tBQ []uint64
-					var scale float32
-
-					// Pre-allocation for reuse within this tile's worker
-					if useBQ {
-						// ...
-					} else if useSQ8 {
-						dims := int(h.dims.Load())
-						qSQ8 = make([]byte, dims)
-						tSQ8 = make([]byte, dims)
-						scale = h.quantizer.L2Scale()
-					}
-
-					for row := iStart; row < iEnd; row++ {
-						qIdx := insertingIndices[row]
-						qVec := activeNodes[qIdx].vec // generic
-
-						// Pre-encode Q for optimization if supported (float32 only currently)
-						if v, ok := qVec.([]float32); ok {
-							switch {
-							case useBQ:
-								qBQ = h.bqEncoder.Encode(v)
-							case useSQ8:
-								h.quantizer.Encode(v, qSQ8)
-							}
+					if lc > node.level {
+						// Descent phase: ef=1
+						res, err := h.searchLayerForInsert(ctx, ctxSearch, node.vec, currEp, 1, lc, workerData)
+						if err != nil {
+							layerMu.Lock()
+							errLayer = err
+							layerMu.Unlock()
+							return
+						}
+						if len(res) > 0 {
+							currentEps[idx] = res[0].ID
+						}
+					} else {
+						// Insertion phase
+						ef := int(h.efConstruction.Load())
+						if h.config.AdaptiveEf {
+							ef = h.getAdaptiveEf(int(h.nodeCount.Load()))
 						}
 
-						// Inner loop (Tiles)
-						for j := 0; j < numNew; j += tileSize {
-							jEnd := j + tileSize
-							if jEnd > numNew {
-								jEnd = numNew
-							}
+						res, err := h.searchLayerForInsert(ctx, ctxSearch, node.vec, currEp, ef, lc, workerData)
+						if err != nil {
+							layerMu.Lock()
+							errLayer = err
+							layerMu.Unlock()
+							return
+						}
+						pBuf := new([]types.Candidate)
+						*pBuf = make([]types.Candidate, 0, len(res))
+						*pBuf = append(*pBuf, res...)
+						graphCandidates[idx] = pBuf
 
-							for col := j; col < jEnd; col++ {
-								if row == col {
-									continue
-								}
-
-								tIdx := insertingIndices[col]
-								tVec := activeNodes[tIdx].vec // generic
-
-								var dist float32
-								done := false
-
-								if activeF32 != nil {
-									qF32 := activeF32[qIdx]
-									tF32 := activeF32[tIdx]
-									if qF32 != nil && tF32 != nil {
-										switch {
-										case useBQ:
-											tBQ = h.bqEncoder.Encode(tF32)
-											dist = float32(h.bqEncoder.HammingDistance(qBQ, tBQ))
-											done = true
-										case useSQ8:
-											h.quantizer.Encode(tF32, tSQ8)
-											d, err := h.quantizer.Distance(qSQ8, tSQ8)
-											if err != nil {
-												dist = math.MaxFloat32
-											} else {
-												dist = float32(d) * scale
-											}
-											done = true
-										default:
-											d, err := h.distFunc(qF32, tF32)
-											if err == nil {
-												dist = d
-												done = true
-											}
-										}
-									}
-								}
-
-								if !done {
-									// Fallback dispatch for other types or if optimization skipped
-									switch q := qVec.(type) {
-									case []float16.Num:
-										if t, ok := tVec.([]float16.Num); ok {
-											d, err := h.distFuncF16(q, t)
-											if err == nil {
-												dist = d
-												done = true
-											}
-										}
-									case []float64:
-										if t, ok := tVec.([]float64); ok {
-											d, err := h.distFuncF64(q, t)
-											if err == nil {
-												dist = d
-												done = true
-											}
-										}
-									case []complex64:
-										if t, ok := tVec.([]complex64); ok {
-											d, err := h.distFuncC64(q, t)
-											if err == nil {
-												dist = d
-												done = true
-											}
-										}
-									case []complex128:
-										if t, ok := tVec.([]complex128); ok {
-											d, err := h.distFuncC128(q, t)
-											if err == nil {
-												dist = float32(d)
-												done = true
-											}
-										}
-									case []int8:
-										if t, ok := tVec.([]int8); ok {
-											dist, _ = h.distFuncInt8(q, t)
-											done = true
-										}
-									case []int16:
-										if t, ok := tVec.([]int16); ok {
-											dist, _ = h.distFuncInt16(q, t)
-											done = true
-										}
-									case []uint16:
-										if t, ok := tVec.([]uint16); ok {
-											dist, _ = h.distFuncUint16(q, t)
-											done = true
-										}
-									default:
-										dist = math.MaxFloat32
-									}
-								}
-								otherID := activeNodes[tIdx].id
-								
-								// Memory Optimization: Bounded types.Candidate List
-								efC := int(h.efConstruction.Load())
-								buf := graphCandidates[qIdx]
-								if buf == nil {
-									continue
-								}
-								cands := *buf
-								if len(cands) < efC {
-									cands = append(cands, types.Candidate{ID: otherID, Dist: dist})
-									*buf = cands
-									if len(cands) == efC {
-										heap.Init((*CandidateHeap)(buf))
-									}
-								} else if dist < cands[0].Dist {
-									cands[0] = types.Candidate{ID: otherID, Dist: dist}
-									heap.Fix((*CandidateHeap)(buf), 0)
-								}
-							}
+						if len(res) > 0 {
+							currentEps[idx] = res[0].ID
 						}
 					}
+				}
 			})
-		}
 
-		// 3c. Linkage (Parallelized with Sharded Locks)
-		linkageChunkSize := (len(activeIndices) + runtime.NumCPU() - 1) / runtime.NumCPU()
-		if linkageChunkSize < 32 {
-			linkageChunkSize = 32
-		}
-
-		// Optimization: Clone once per layer for the entire batch to avoid 
-		// massive per-node cloning and memory pressure during linkage.
-		// Since we use shard locks, workers can safely share this clone.
-		data = h.data.Load().Clone()
-
-
-		pool.ParallelFor(len(activeIndices), linkageChunkSize, func(start, end int) {
-			for _, idx := range activeIndices[start:end] {
-				node := activeNodes[idx]
-				if lc > node.level {
-					continue
-				}
-
-				candidatesBuf := graphCandidates[idx]
-				if candidatesBuf == nil {
-					continue
-				}
-
-				// Filter out self-loops to avoid poisoning the diversity heuristic
-				allCandidates := *candidatesBuf
-				var candidates []types.Candidate
-				for _, c := range allCandidates {
-					if c.ID != node.id {
-						candidates = append(candidates, c)
-					}
-				}
-
-				if len(candidates) == 0 {
-					continue
-				}
-
-				// Determine M and MaxConn
-				m := h.m
-				maxConn := h.mMax
-				if lc == 0 {
-					m = h.m * 2
-					maxConn = h.mMax0
-				}
-				if m > maxConn {
-					m = maxConn
-				}
-
-				// Sort candidates by distance for robust pruning
-				slices.SortFunc(candidates, func(a, b types.Candidate) int {
-					if a.Dist < b.Dist { return -1 }
-					if a.Dist > b.Dist { return 1 }
-					return 0
-				})
-
-				// Thread-local context for pruning
-				ctxPrune := h.searchPool.Get()
-				ctxPrune.Reset()
-
-				// Direct Linkage
-				limit := m
-				if len(candidates) < limit { limit = len(candidates) }
-				neighbors := candidates[:limit]
-				
-				if len(neighbors) == 0 {
-					h.searchPool.PutWithMetrics(ctxPrune, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
-					continue
-				}
-
-				// Forward connections (this node -> neighbors)
-				fSources := make([]uint32, 0, len(neighbors))
-				fDists := make([]float32, 0, len(neighbors))
-				for _, n := range neighbors {
-					fSources = append(fSources, n.ID)
-					fDists = append(fDists, n.Dist)
-				}
-				
-				// Use the shared 'data' clone prepared for this layer
-				_ = h.AddConnectionsBatch(ctxPrune, data, node.id, fSources, fDists, lc, maxConn)
-
-				for _, neighbor := range neighbors {
-					// Use the shared 'data' clone prepared for this layer
-					_ = h.AddConnectionsBatch(ctxPrune, data, neighbor.ID, []uint32{node.id}, []float32{neighbor.Dist}, lc, maxConn)
-				}
-
-				h.searchPool.PutWithMetrics(ctxPrune, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+			if errLayer != nil {
+				return errLayer
 			}
-		})
 
-		// Clean up for next layer
-		for _, idx := range activeIndices {
-			graphCandidates[idx] = nil
+			// 3b. Linkage (Parallel for Sub-Batch)
+			linkageChunkSize := (len(subIndices) + runtime.NumCPU() - 1) / runtime.NumCPU()
+			if linkageChunkSize < 16 {
+				linkageChunkSize = 16
+			}
+
+			pool.ParallelFor(len(subIndices), linkageChunkSize, func(start, end int) {
+				for _, idx := range subIndices[start:end] {
+					node := remainingNodes[idx]
+					if lc > node.level {
+						continue
+					}
+
+					candidatesBuf := graphCandidates[idx]
+					if candidatesBuf == nil {
+						continue
+					}
+
+					allCandidates := *candidatesBuf
+					var candidates []types.Candidate
+					for _, c := range allCandidates {
+						if c.ID != node.id {
+							candidates = append(candidates, c)
+						}
+					}
+
+					if len(candidates) == 0 {
+						continue
+					}
+
+					m := h.m.Load()
+					maxConn := h.mMax.Load()
+					if lc == 0 {
+						m = h.m.Load() * 2
+						maxConn = h.mMax0.Load()
+					}
+					if m > maxConn {
+						m = maxConn
+					}
+
+					slices.SortFunc(candidates, func(a, b types.Candidate) int {
+						if a.Dist < b.Dist { return -1 }
+						if a.Dist > b.Dist { return 1 }
+						return 0
+					})
+
+					meta := h.metadataRegistry.Load()
+					ctxPrune := h.searchPool.Get()
+					ctxPrune.MaxNodeCount = h.nodeCount.Load()
+					ctxPrune.MaxGeneration = meta.Generation
+					ctxPrune.Reset()
+					ctxPrune.AllowUncommitted = true
+
+					neighbors := h.selectNeighbors(ctxPrune, candidates, int(m), data)
+					if len(neighbors) == 0 {
+						h.searchPool.PutWithMetrics(ctxPrune, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+						continue
+					}
+
+					fSources := make([]uint32, 0, len(neighbors))
+					fDists := make([]float32, 0, len(neighbors))
+					for _, n := range neighbors {
+						fSources = append(fSources, n.ID)
+						fDists = append(fDists, n.Dist)
+					}
+					
+					_ = h.AddConnectionsBatch(ctxPrune, data, node.id, fSources, fDists, lc, int(maxConn))
+
+					for _, neighbor := range neighbors {
+						_ = h.AddConnectionsBatch(ctxPrune, data, neighbor.ID, []uint32{node.id}, []float32{neighbor.Dist}, lc, int(maxConn))
+					}
+
+					h.searchPool.PutWithMetrics(ctxPrune, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
+				}
+			})
+
+			// Update the global snapshot for organic growth so next sub-batch sees these nodes
+			// Only clone if there are more sub-batches to process to avoid final redundant clone
+			if i+subBatchSize < len(activeIndices) {
+				data = data.Clone()
+				h.compareAndSwapData(h.data.Load(), data)
+			}
 		}
 
-		// End of Layer Linkage
-		// Publish the updated graph data for this layer so the next layer's search can use it.
-		h.data.Store(data)
+		// Final layer publish
+		data = data.Clone()
+		h.compareAndSwapData(h.data.Load(), data)
 	}
 
 
 	// 4. Update Global Stats
 	// Update Max Level / Entry Point atomically
+	h.updateMetadata(func(meta *HNSWMetadata) {
+		if int32(batchMaxLevel) > meta.MaxLevel { // #nosec G115
+			meta.MaxLevel = int32(batchMaxLevel) // #nosec G115
+			meta.EntryPoint = batchEpCandidate
+		}
+		// Update NodeCount to include the new batch
+		if int64(startID)+int64(totalN) > meta.NodeCount {
+			meta.NodeCount = int64(startID) + int64(totalN)
+		}
+	})
+
+	// Register all nodes in this batch into entry point pools if they have upper layer presence
 	h.initMu.Lock()
-	currentMax := int(h.maxLevel.Load())
-	if batchMaxLevel > currentMax {
-		h.maxLevel.Store(int32(batchMaxLevel))
-		h.entryPoint.Store(batchEpCandidate)
+	for _, node := range activeNodes {
+		if node.level > 0 && node.level < len(h.entryPointPools) {
+			h.entryPointPools[node.level].Insert(node.id)
+		}
 	}
 	h.initMu.Unlock()
 
-	h.data.Store(data)
+	h.compareAndSwapData(h.data.Load(), data.Clone())
 
 	if h.config.SQ8Enabled && h.quantizer != nil && !h.sq8Ready.Load() {
 		if vecsF32, ok := vecs.([][]float32); ok {
-			growMuReleased = true
-			h.growMu.RUnlock()
-			h.ensureTrained(int(startID)+n-1, vecsF32)
+			h.ensureTrained(int(startID)+totalN-1, vecsF32, data)
 			return nil
 		}
 	}

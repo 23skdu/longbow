@@ -10,4 +10,6 @@ const (
 	MetricCosine DistanceMetric = "cosine"
 	// MetricDotProduct is the Inner Product (higher is usually better, but handling depends mostly on impl).
 	MetricDotProduct DistanceMetric = "dot_product"
+	// MetricL2Squared is the squared Euclidean distance (L2^2).
+	MetricL2Squared DistanceMetric = "l2_squared"
 )

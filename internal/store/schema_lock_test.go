@@ -15,7 +15,7 @@ import (
 // allowing concurrent reads without blocking
 func TestSchemaCheckUsesRLock(t *testing.T) {
 	ds := &Dataset{
-		Records: make([]arrow.RecordBatch, 0),
+		Records: NewLockFreeSlice[arrow.RecordBatch](),
 	}
 
 	// Simulate multiple concurrent schema checks - should not block each other
@@ -55,7 +55,7 @@ func TestSchemaCheckUsesRLock(t *testing.T) {
 // TestSchemaEvolutionUpgradesToWriteLock verifies lock upgrade on schema change
 func TestSchemaEvolutionUpgradesToWriteLock(t *testing.T) {
 	ds := &Dataset{
-		Records: make([]arrow.RecordBatch, 0),
+		Records: NewLockFreeSlice[arrow.RecordBatch](),
 		Version: 1,
 	}
 
@@ -88,7 +88,7 @@ func TestConcurrentSchemaChecksAndWrites(t *testing.T) {
 	defer rec.Release()
 
 	ds := &Dataset{
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 		Version: 1,
 	}
 
@@ -101,8 +101,8 @@ func TestConcurrentSchemaChecksAndWrites(t *testing.T) {
 			defer wg.Done()
 			for j := 0; j < 100; j++ {
 				ds.dataMu.RLock()
-				if len(ds.Records) > 0 {
-					_ = ds.Records[0].Schema()
+				if len(ds.Records.Read()) > 0 {
+					_ = ds.Records.Read()[0].Schema()
 				}
 				ds.dataMu.RUnlock()
 			}
@@ -142,12 +142,12 @@ func TestSchemaCheckWithRLockReturnsCorrectSchema(t *testing.T) {
 	defer rec.Release()
 
 	ds := &Dataset{
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
 	// Read schema under RLock
 	ds.dataMu.RLock()
-	gotSchema := ds.Records[0].Schema()
+	gotSchema := ds.Records.Read()[0].Schema()
 	ds.dataMu.RUnlock()
 
 	if len(gotSchema.Fields()) != 2 {
@@ -161,7 +161,7 @@ func TestSchemaCheckWithRLockReturnsCorrectSchema(t *testing.T) {
 // TestSchemaEvolutionOnlyLocksWhenNeeded verifies minimal lock time
 func TestSchemaEvolutionOnlyLocksWhenNeeded(t *testing.T) {
 	ds := &Dataset{
-		Records: make([]arrow.RecordBatch, 0),
+		Records: NewLockFreeSlice[arrow.RecordBatch](),
 		Version: 1,
 	}
 
@@ -200,7 +200,7 @@ func TestGetExistingSchemaWithRLock(t *testing.T) {
 	defer rec.Release()
 
 	ds := &Dataset{
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
 	// Test GetExistingSchema method
@@ -216,7 +216,7 @@ func TestGetExistingSchemaWithRLock(t *testing.T) {
 // TestGetExistingSchemaEmptyDataset verifies nil return for empty dataset
 func TestGetExistingSchemaEmptyDataset(t *testing.T) {
 	ds := &Dataset{
-		Records: make([]arrow.RecordBatch, 0),
+		Records: NewLockFreeSlice[arrow.RecordBatch](),
 	}
 
 	gotSchema := ds.GetExistingSchema()
@@ -271,7 +271,7 @@ func TestCheckSchemaCompatibility(t *testing.T) {
 // TestUpgradeSchemaVersionSafe tests safe version upgrade
 func TestUpgradeSchemaVersionSafe(t *testing.T) {
 	ds := &Dataset{
-		Records: make([]arrow.RecordBatch, 0),
+		Records: NewLockFreeSlice[arrow.RecordBatch](),
 		Version: 5,
 	}
 
@@ -295,13 +295,13 @@ func BenchmarkSchemaCheckRLockVsLock(b *testing.B) {
 	defer rec.Release()
 
 	ds := &Dataset{
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
 	b.Run("RLock", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			ds.dataMu.RLock()
-			_ = ds.Records[0].Schema()
+			_ = ds.Records.Read()[0].Schema()
 			ds.dataMu.RUnlock()
 		}
 	})
@@ -309,7 +309,7 @@ func BenchmarkSchemaCheckRLockVsLock(b *testing.B) {
 	b.Run("Lock", func(b *testing.B) {
 		for i := 0; i < b.N; i++ {
 			ds.dataMu.Lock()
-			_ = ds.Records[0].Schema()
+			_ = ds.Records.Read()[0].Schema()
 			ds.dataMu.Unlock()
 		}
 	})
@@ -328,13 +328,13 @@ func BenchmarkConcurrentSchemaChecks(b *testing.B) {
 	defer rec.Release()
 
 	ds := &Dataset{
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
 	b.RunParallel(func(pb *testing.PB) {
 		for pb.Next() {
 			ds.dataMu.RLock()
-			_ = ds.Records[0].Schema()
+			_ = ds.Records.Read()[0].Schema()
 			ds.dataMu.RUnlock()
 		}
 	})

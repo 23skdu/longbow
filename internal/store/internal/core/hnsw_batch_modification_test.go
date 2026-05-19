@@ -93,8 +93,6 @@ func TestArrowHNSW_AddBatch_Concurrent(t *testing.T) {
 
 	var wg sync.WaitGroup
 	wg.Add(numWorkers)
-
-	var mu sync.Mutex
 	for w := 0; w < numWorkers; w++ {
 		go func(workerID int) {
 			defer wg.Done()
@@ -108,10 +106,10 @@ func TestArrowHNSW_AddBatch_Concurrent(t *testing.T) {
 
 				// Safely append to dataset
 				rec.Retain()
-				mu.Lock()
+				ds.Lock()
 				ds.Records = append(ds.Records, rec)
 				currentBatchIdx := len(ds.Records) - 1
-				mu.Unlock()
+				ds.Unlock()
 
 				rowIdxs := make([]int, batchSize)
 				batchIdxs := make([]int, batchSize)

@@ -1,119 +1,151 @@
-# Next Steps for Longbow (0.2.0 Roadmap)
+# Longbow Storage Engine - Future Roadmap & Next Steps
 
-This document outlines the active work items and planned features for the upcoming 0.2.0 release, derived from v0.1.9 performance benchmarks and profiling.
-
----
-
-## Suggestions for Next Release (from 0.2.0-pre Benchmarks)
-
-### P0: SIMD & Acceleration (Performance Scaling)
-
-- [x] **SIMD Kernel: Vectorized Type Conversion**: Implement hardware-accelerated kernels for converting all supported types (int8, uint8, fp16, etc.) to float32. (Implemented for NEON/ARM64, AVX2/x86_64, and AVX-512/x86_64).
-- [ ] **SIMD Kernel: Math & Activations**: Implement vectorized `Exp`, `Log`, `Softmax`, and `Sigmoid` for NEON and AVX. (Currently using generic fallbacks).
-- [x] **SIMD Kernel: Memory Pipeline**: Use non-temporal SIMD instructions (VMOVNTDQ/STNP) for zero-copy memory operations in `GraphData` chunk promotions. (Implemented for NEON/ARM64 and AVX2/AVX-512).
-- [ ] **SIMD Kernel: Matrix & Reductions**: Implement vectorized `matmul`, `dot products` (beyond Euclidean), `sum`, `max`, and `min` for all supported SIMD architectures.
-- [x] **SIMD Cross-Platform Parity**: Implement AVX2/AVX-512 counterparts for type conversions and memory pipeline to match ARM64 performance. (COMPLETED).
-
-### P0: Resolve Search QPS Regressions
-
-- [x] **Fine-grained locking for index traversal**: Removed redundant `insertMus` shard locks in `ArrowHNSW` ingestion path.
-
-### P0: Stabilize Scheduler Latency
-
-- [x] **Scheduler optimization**: Refactored `DoGet` and `DoGetPipeline` to use `SharedWorkerPool`. Eliminated `runIndexWorker` polling with `Notify()` signaling.
-
-### P1: Temporal Cache Stabilization
-
-- [x] **Temporal cache stabilization**: Optimized `TemporalResultCache` with LRU ($O(1)$) and `TemporalTree` with binary search ($O(\log N)$).
-- [x] **Observability around contention**: Added labels and optimized instrumentation for `LockNode` spin cycles and `insertMus` wait times.
+This document outlines the outstanding roadmap items, stability enhancements, and long-term architectural designs prioritized for upcoming releases of the Longbow Vector Storage Engine.
 
 ---
 
-## 0.2.0 Roadmap - Core Features
+## 1. P0 Blockers: Hardware Backend Integration
 
-### 1. TPU Production Implementation
-
-- Move TPU index from experimental to production-ready.
-- Implement missing TurboQuant and PQ operations for TPU.
-- Optimize XLA kernels for high-dimensional vector search.
-
-### 2. High-Performance Concurrency & Sharding
-
-- **GPU Sharding / Multi-device**: Support for distributing workloads across multiple GPUs.
-- **Advanced Graph Updates**: Support for dynamic graph updates in Metal Hybrid Index.
-- **NVIDIA/CUDA Offloading**: Port Metal-optimized distance kernels (dim > 1024) and Top-K selection to CUDA (using CUB/Thrust) for Linux/NVIDIA environments.
-- **Metal Performance Shaders (MPS)**: Leverage `MPS` for Apple Silicon to accelerate high-dimensional distance computation and batch processing.
-
-### 3. Cross-Platform Support
-
-- **Windows Port**: Bring Longbow to Windows environments (WSL2 and Native).
-- **Advanced SIMD for all platforms**: Complete bit-packing for NEON TurboQuant.
-
-### 4. Robustness & Stability
-
-- **Comprehensive Fuzzing**: Expand fuzz tests for all index types (IVF, HNSW, TQ).
-- **171 Skipped Tests**: Resolve and enable platform-specific tests that are currently skipped.
+### 🔳 TPU Physical Driver Integration
+* **Description**: Replace the currently implemented architectural stubs and metrics instrumentation in `internal/gpu/tpu/tpu_index.go` with native `libtpu.so` physical driver bindings once the hardware-linked libraries are provided by the vendor.
+* **Impact**: Enables actual hardware acceleration on TPU-equipped hosts, completing compliance with the v0.2.3 hardware acceleration contract.
+* **Metric Observability**: Leverage the existing Prometheus metrics framework (`longbow_tpu_ops_total`, `longbow_tpu_latency_seconds`) to track hardware execution in production environments.
+* **Target Release**: `v0.2.3-rc2`
+* **Priority**: **P0 (Critical Blocker)**
 
 ---
 
-## Trigonometric SIMD Kernel Optimization (0.2.0)
+## 2. High-Scale Architectural Roadmap (100k+ Scale)
 
-**Expected Impact:** 10-50x for vectorized trig operations.
+### 🔳 Off-Heap HNSW Graph Node Storage
+* **Description**: Transition all HNSW graph structures (neighbor tables, node maps, and node arrays) from Go's garbage-collected heap into our custom off-heap `SlabArena` or direct memory-mapped (mmap) files.
+* **Impact**: Completely eliminates Go GC scanning overhead (`runtime.scanObject`), which currently consumes up to **66%** of CPU time under active sharding and insertion loops at high scales (100k+ vectors). This guarantees predictable, sub-millisecond latencies and avoids GC-induced CPU spikes.
+* **Subtasks**:
+  - [ ] Refactor `core.ArrowHNSW` neighbor list allocations to utilize direct off-heap pointer offsets via `SlabArena`.
+  - [ ] Implement manual node lifecycle management to avoid memory fragmentation inside the off-heap slab pools.
+  - [ ] Benchmark memory-mapped pages vs. anonymous off-heap memory allocations for active graph traversals.
+* **Priority**: **Critical / P0**
+* **Target Release**: `v0.2.4`
 
-### Subtasks
+### 🔳 Dynamic / Distributed Auto-Sharding Strategies
+* **Description**: Enhance the auto-sharding coordinator to support dynamic, multi-node partition splits and parallel graph handover without blocking active search lanes.
+* **Impact**: Avoids ingestion stalling during monolithic-to-sharded transitions at scale by performing the HNSW graph partition splits in a completely lock-free, streaming fashion.
+* **Subtasks**:
+  - [ ] Implement lock-free interim index promotion that routes search queries concurrently to monolithic chunks and sharded partitions during migration.
+  - [ ] Optimize the parallel migration batch size dynamically based on CPU core counts and hardware cache sizes to minimize thread thrashing.
+  - [ ] Build shard balance metrics to monitor cluster-wide data distribution.
+* **Priority**: **High / P1**
+* **Target Release**: `v0.2.4`
 
-- **AVX-512 (x86_64)**: Implement `sin`, `cos`, `tan`, `asin`, `acos`, `atan`, `sinh`, `cosh`, `tanh` kernels.
-- **AVX2 (x86_64)**: Implement 8-element float32 variants.
-- **NEON (ARM64)**: Implement 4-element float32 kernels and `fastTanh` approximations.
-- **Integration**: Add dispatch table entries and metrics.
-
----
-
-## External Dependency Replacement Candidates (0.2.0)
-
-We aim to reduce the external dependency surface to improve build times and security.
-
-### HIGH Priority
-
-- **Replace zerolog**: Implement `internal/logger` with a compatible API. (Estimated: 2 weeks)
-
-### MEDIUM Priority
-
-- **Replace joho/godotenv + envconfig**: Create `internal/env` for simplified environment management.
-
-### LOW Priority
-
-- **Replace klauspost/cpuid/v2**: Implement `internal/cpu` for hardware feature detection.
-- **Replace gonum/v1/gonum**: Implement `internal/math/matrix` for specific matrix operations.
+### 🔳 Admission Controller & Dynamic GOGC Tuning Hardening
+* **Description**: Harden the `AdmissionController` memory ceiling (e.g. 18GB) to dynamically adjust gRPC backpressure and auto-throttle ingest rate as memory pressure grows.
+* **Impact**: Prevents OOM crashes under burst ingestion by coupling the dynamic GC tuner (reducing GOGC down to 20/80 under memory spikes) directly with gRPC `ResourceExhausted` rejections, ensuring the system stabilizes gracefully rather than crashing.
+* **Priority**: **High / P1**
+* **Target Release**: `v0.2.3-rc2`
 
 ---
 
-## Technical Debt & Feature Gaps
+## 3. P1 Tasks: Continuous Performance Assurance
 
-- **IVF-PQ Method Gaps**: Implement `makeClusterDists`, `decodeVector`, and `computeResidualScore` in `ivf_opq_index.go`.
-- **Metal Hybrid Index**: Add missing `AddPQ`, `UpdateGraph`, and `GraphExpand` operations.
-- **Tiled Batch Precision**: Resolve numerical precision differences in `EuclideanDistanceTiledBatch`.
+### 🔳 Automated CI/CD Performance Regression Framework
+* **Description**: Integrate the streamlined performance benchmarks (`scripts/local_perf.sh` and `scripts/remote_perf_clean.sh`) into the repository's GitHub Actions / GitLab CI pipeline.
+* **Impact**: Detects QPS and ingestion rate regressions automatically on every Pull Request, enforcing high performance budgets.
+* **Target Release**: `v0.2.4`
+* **Priority**: **P1 (High)**
+
+### 🔳 Slab Pool Autoscaling & Metrics Hardening
+* **Description**: Instrument the dynamic off-heap `SlabPool` resizing and self-healing operations with Prometheus telemetry to track memory capacity expansion events and buffer hit ratios.
+* **Impact**: Provides operational engineers with deep real-time observability of off-heap pool states under heavy burst ingestion loads.
+* **Target Release**: `v0.2.4`
+* **Priority**: **P1 (High)**
 
 ---
 
-## Suggestions for Next Release (v0.2.0 Roadmap)
+## 4. Storage Architecture Optimizations
 
-### P0: Shared-Read Optimization for GraphData
+### 🔳 Disk-ANN Solid State Page Tuning
+* **Description**: Optimize low-level SSD page alignment and read-ahead block sizing in the Disk-ANN index offloader for sub-millisecond multi-gigabyte vector fetches.
+* **Impact**: Achieves ultra-low latency searches on datasets exceeding physical RAM sizes.
+* **Target Release**: `v0.2.5`
+* **Priority**: **P2 (Medium)**
 
-- **Observation**: Even with single-clone-per-layer, large-scale ingestion (500k+) creates temporary memory spikes during the linkage phase.
-- **Action**: Implement a lock-free or shared-read model for `GraphData` to avoid cloning entirely during bulk updates.
+---
 
-### P0: Recursive Filter Evaluator Safety
+## 5. EMLgo Math Library Evaluation
 
-- **Observation**: `FilterEvaluator.Reset` was missing cases for boolean, int32, and uint64 types, and didn't recursively handle compound filters, leading to panics on batch size transitions.
-- **Action**: Periodically audit the `Bind` and `Reset` paths in `filter_evaluator.go` to ensure parity with all supported Arrow types.
+### 🔳 EMLgo Library Math Acceleration
+* **Description**: Create a dedicated test branch to integrate and evaluate the **EMLgo** library as a drop-in replacement for standard Go `math` functions inside performance-critical distance metrics and SIMD kernels.
+* **Impact**: Unlocks potential performance gains for non-assembly fallback routines and transcendental functions across large vector computations.
+* **Subtasks**:
+  - [ ] Spin up a dedicated test branch `experiment/emlgo-math-evaluation`.
+  - [ ] Replace standard library `math` calls with `emlgo` mathematical equivalents in baseline metric implementations.
+  - [ ] Execute the unified benchmark runner across various dimensions (128, 384, 768, 1024, 3072) to capture direct QPS/latency comparisons.
+  - [ ] Document compilation stability and any potential hardware dependencies under Go cross-platform builds.
+* **Priority**: **Medium**
+* **Target Release**: `v0.2.2` (Experimental)
 
-### P1: Adaptive Client Throttling
+---
 
-- **Observation**: Server-side backpressure logs (100+ queue length) effectively signal saturation.
-- **Action**: Enhance the Flight API to return a formal `SHOULD_BACKOFF` signal, allowing clients like `bench-tool` to automatically adjust ingestion rates without polling `check_readiness`.
+## 6. Google ALTS Integration
 
-### P1: Index Worker Starvation Check
+This 6-part integration plan outlines the architectural and implementation tasks required to support Google's **Application Layer Transport Security (ALTS)** for secure, mutually authenticated, and high-performance service-to-service gRPC communication inside Google Compute Engine (GCE) and Google Kubernetes Engine (GKE).
 
-- **Observation**: High search load can sometimes starve index workers, leading to "Still indexing..." hangs.
-- **Action**: Implement priority-based scheduling in the server's shared worker pool to ensure background indexing progress during heavy query bursts.
+### 🔳 Part 1: Design & Protocol Analysis
+* **Description**: Analyze GCE/GKE ALTS requirements, transport ciphers (AES-128-GCM vs integrity-only GMAC), and connection lifecycles to design the Longbow gRPC security architecture.
+* **Subtasks**:
+  - [ ] Map out trust domains and identify peer service account naming formats inside GKE/GCE.
+  - [ ] Evaluate ALTS handshake latency and performance overhead compared to traditional TLS.
+  - [ ] Document fallback security policies for non-GCP development/local testing.
+  - [ ] Define the authorization schema based on Google service account structures.
+* **Priority**: **High**
+* **Target Release**: `v0.2.2-rc3`
+
+### 🔳 Part 2: gRPC Server ALTS Credentials Integration
+* **Description**: Implement server-side ALTS gRPC transport credentials to secure incoming connections from client SDKs.
+* **Subtasks**:
+  - [ ] Integrate Go gRPC ALTS server credentials (`credentials/alts` package) via `alts.NewServerCreds()`.
+  - [ ] Configure server startup configuration to dynamically load ALTS options if GCP environment is detected.
+  - [ ] Implement handshake timeout controls to prevent resource exhaustion during connection handshakes.
+  - [ ] Build server-side fallback to standard TLS or local credentials for hybrid deployments.
+* **Priority**: **Critical**
+* **Target Release**: `v0.2.2-rc3`
+
+### 🔳 Part 3: gRPC Client ALTS Credentials Integration
+* **Description**: Configure the client-side gRPC dialer to request mutually authenticated ALTS channels.
+* **Subtasks**:
+  - [ ] Integrate client-side credentials handler via `alts.NewClientCreds()`.
+  - [ ] Implement targeted peer verification by configuring target service accounts on connection dial.
+  - [ ] Configure client reconnection policies and session resumption handles.
+  - [ ] Build client command-line flags (e.g. `--use-alts`) and auto-detection parameters.
+* **Priority**: **Critical**
+* **Target Release**: `v0.2.2-rc3`
+
+### 🔳 Part 4: Peer Authentication & Context Parsing
+* **Description**: Extract client/peer authentication metadata from gRPC incoming context to enforce identity-based access control.
+* **Subtasks**:
+  - [ ] Implement gRPC interceptors to extract ALTS `AuthInfo` using `alts.AuthInfoFromContext`.
+  - [ ] Parse client credentials to extract Google service accounts and project details.
+  - [ ] Build a robust service account authorization engine supporting whitelist/blacklist rules.
+  - [ ] Log peer identities for all write/ingestion actions to satisfy security auditing requirements.
+* **Priority**: **High**
+* **Target Release**: `v0.2.2-rc3`
+
+### 🔳 Part 5: Observability, Metrics & Telemetry
+* **Description**: Instrument the authentication and handshake layer with Prometheus telemetry to ensure operational visibility.
+* **Subtasks**:
+  - [ ] Create Prometheus counters for ALTS handshake success (`longbow_alts_handshake_success_total`) and failure (`longbow_alts_handshake_failure_total`).
+  - [ ] Implement histogram metrics for ALTS handshake latency (`longbow_alts_handshake_latency_seconds`).
+  - [ ] Add counters for unauthorized service account access attempts categorized by identity.
+  - [ ] Build alerts for authentication failures and service account authorization mismatches.
+* **Priority**: **Medium**
+* **Target Release**: `v0.2.2-rc3`
+
+### 🔳 Part 6: Multi-Node Deployment & GCE/GKE Validation
+* **Description**: Package, deploy, and validate the ALTS configuration on a multi-node GCP environment.
+* **Subtasks**:
+  - [ ] Package Longbow within Docker images configured with GKE workload identity support.
+  - [ ] Deploy test server and client instances on GKE/GCE instances.
+  - [ ] Execute automated connection and data validation suites across nodes using ALTS transport.
+  - [ ] Verify session resumption ciphers and validate the security posturing on wide area networks (WAN).
+* **Priority**: **High**
+* **Target Release**: `v0.2.2-rc3`

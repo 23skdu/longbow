@@ -210,11 +210,12 @@ func l2DistanceExec(ctx *exec.KernelCtx, batch *exec.ExecSpan, out *exec.ExecRes
 	return nil
 }
 
-// SelectKOptions
+// SelectKOptions provides parameters for the select_k_neighbors kernel.
 type SelectKOptions struct {
 	K int
 }
 
+// TypeName returns the unique identifier for the SelectKOptions type.
 func (s *SelectKOptions) TypeName() string {
 	return "select_k_options"
 }

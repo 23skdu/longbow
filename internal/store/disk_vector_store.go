@@ -51,10 +51,12 @@ type DiskVectorStore struct {
 	blockCache *storage.LRUCache
 }
 
+// NewDiskVectorStore creates a new DiskVectorStore with default settings.
 func NewDiskVectorStore(path string, dim int) (*DiskVectorStore, error) {
 	return NewDiskVectorStoreWithConfig(path, dim, false, false)
 }
 
+// NewDiskVectorStoreWithConfig creates a new DiskVectorStore with specific I/O settings.
 func NewDiskVectorStoreWithConfig(path string, dim int, useUring, useDirect bool) (*DiskVectorStore, error) {
 	backend, err := storage.NewStorageBackend(path, useUring, useDirect)
 	if err != nil {
@@ -77,6 +79,7 @@ func NewDiskVectorStoreWithConfig(path string, dim int, useUring, useDirect bool
 	return dvs, nil
 }
 
+// SetTieredConfig configures the remote storage backend and cache size for tiered storage.
 func (dvs *DiskVectorStore) SetTieredConfig(remote storage.RemoteStorage, cacheMB int) {
 	dvs.mu.Lock()
 	defer dvs.mu.Unlock()
@@ -86,12 +89,14 @@ func (dvs *DiskVectorStore) SetTieredConfig(remote storage.RemoteStorage, cacheM
 	}
 }
 
+// SetCompression updates the compression algorithm used for new blocks.
 func (dvs *DiskVectorStore) SetCompression(c string) {
 	dvs.mu.Lock()
 	defer dvs.mu.Unlock()
 	dvs.compression = c
 }
 
+// Close releases resources and closes the underlying storage backend.
 func (dvs *DiskVectorStore) Close() error {
 	dvs.mu.Lock()
 	defer dvs.mu.Unlock()
@@ -197,6 +202,7 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 	return numRows, nil
 }
 
+// BatchAppend appends a list of raw vectors to the disk store.
 func (dvs *DiskVectorStore) BatchAppend(vectors [][]float32) (int, error) {
 	if len(vectors) == 0 {
 		return 0, nil
@@ -284,6 +290,7 @@ func (dvs *DiskVectorStore) findBlock(idx int) int {
 	return res
 }
 
+// GetBatch retrieves multiple vectors by their absolute indices.
 func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 	if len(indices) == 0 {
 		return nil, nil
@@ -393,6 +400,7 @@ func (dvs *DiskVectorStore) fetchBlockData(bIdx int) ([]byte, error) {
 	return dvs.decompressBlock(buf)
 }
 
+// OffloadBlock moves a local block to remote storage.
 func (dvs *DiskVectorStore) OffloadBlock(ctx context.Context, bIdx int) error {
 	dvs.mu.Lock()
 	defer dvs.mu.Unlock()
@@ -430,6 +438,7 @@ func (dvs *DiskVectorStore) OffloadBlock(ctx context.Context, bIdx int) error {
 	return nil
 }
 
+// EnforcePolicy applies retention/offloading policies based on block age.
 func (dvs *DiskVectorStore) EnforcePolicy(ctx context.Context, maxAge time.Duration) (int, error) {
 	dvs.mu.RLock()
 	var hotBlockIdxs []int
@@ -477,6 +486,7 @@ func (dvs *DiskVectorStore) decompressBlock(buf []byte) ([]byte, error) {
 	return raw, err
 }
 
+// Delete marks a vector as deleted in the store's tombstone map.
 func (dvs *DiskVectorStore) Delete(idx int) bool {
 	dvs.mu.Lock()
 	defer dvs.mu.Unlock()
@@ -493,6 +503,7 @@ func (dvs *DiskVectorStore) Delete(idx int) bool {
 	return true
 }
 
+// DeleteBatch marks multiple vectors as deleted.
 func (dvs *DiskVectorStore) DeleteBatch(indices []int) int {
 	dvs.mu.Lock()
 	defer dvs.mu.Unlock()
@@ -507,12 +518,14 @@ func (dvs *DiskVectorStore) DeleteBatch(indices []int) int {
 	return deleted
 }
 
+// IsDeleted checks if a vector has been marked as deleted.
 func (dvs *DiskVectorStore) IsDeleted(idx int) bool {
 	dvs.mu.RLock()
 	defer dvs.mu.RUnlock()
 	return dvs.deleted[idx]
 }
 
+// Compact removes deleted markers (currently a simplified implementation).
 func (dvs *DiskVectorStore) Compact() (int, error) {
 	dvs.mu.Lock()
 	defer dvs.mu.Unlock()

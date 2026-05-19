@@ -12,7 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func FuzzGoroutineLeak_RapidCycles(f *testing.F) {
+func FuzzGoroutineLeakRapidCycles(f *testing.F) {
 	f.Add(uint8(1), uint8(10))
 	f.Add(uint8(5), uint8(50))
 	f.Add(uint8(10), uint8(25))

@@ -35,8 +35,8 @@ func TestTurboQuant_EncoderDecoder(t *testing.T) {
 	// 3. Prepare original rotated vector for comparison
 	rotatedOrig := make([]float32, encoder.pow2)
 	copy(rotatedOrig, vec)
-	if err := simd.RandomRotation(rotatedOrig, 42); err != nil {
-		t.Fatalf("RandomRotation failed: %v", err)
+	if err := encoder.had.Transform(rotatedOrig); err != nil {
+		t.Fatalf("Transform failed: %v", err)
 	}
 
 	// 4. Compare Dot Product or L2
@@ -126,7 +126,7 @@ func TestTurboQuant_LargeDimensions(t *testing.T) {
 	assert.True(t, len(encoded) > 0)
 }
 
-func FuzzTurboQuant_EncodeDecode(f *testing.F) {
+func FuzzTurboQuantEncodeDecode(f *testing.F) {
 	f.Fuzz(func(t *testing.T, dim int, bits int, seed int64) {
 		if dim <= 0 || dim > 8192 || bits < 2 || bits > 8 {
 			t.Skip()
@@ -156,7 +156,7 @@ func FuzzTurboQuant_EncodeDecode(f *testing.F) {
 	})
 }
 
-func FuzzTurboQuant_Compression(f *testing.F) {
+func FuzzTurboQuantCompression(f *testing.F) {
 	f.Fuzz(func(t *testing.T, dim int, bits int) {
 		if dim <= 0 || dim > 8192 || bits < 2 || bits > 8 {
 			t.Skip()

@@ -37,7 +37,7 @@ func TestHighDimGrowth(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "growth_test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
 	config := DefaultArrowHNSWConfig()
@@ -52,13 +52,10 @@ func TestHighDimGrowth(t *testing.T) {
 
 	require.Equal(t, 0, idx.Len())
 
-	start := time.Now()
 	for i := 0; i < numVecs; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err, "Insert failed at index %d", i)
 	}
-	duration := time.Since(start)
-	t.Logf("Inserted %d high-dim vectors in %v", numVecs, duration)
 
 	require.Equal(t, numVecs, idx.Len())
 

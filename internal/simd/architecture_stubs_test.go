@@ -68,7 +68,7 @@ func TestArchitectureStubs_Coverage(t *testing.T) {
 	_, _ = dot768AVX512(f32, f32)
 	_, _ = dot1536AVX512(f32, f32)
 
-	prefetchNTA(p)
+	prefetchNTA(uintptr(p))
 
 	_, _ = euclideanFloat64AVX2(f64, f64)
 	_, _ = euclideanFloat64AVX512(f64, f64)

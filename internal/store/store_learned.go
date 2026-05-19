@@ -152,8 +152,8 @@ func (s *VectorStore) SwitchIndex(collection string, to IndexType) error {
 
 		// 4. Populate the new index from existing records.
 		ds.dataMu.RLock()
-		records := make([]arrow.RecordBatch, len(ds.Records))
-		copy(records, ds.Records)
+		records := make([]arrow.RecordBatch, len(ds.Records.Read()))
+		copy(records, ds.Records.Read())
 		ds.dataMu.RUnlock()
 
 		for _, rec := range records {
@@ -192,7 +192,7 @@ func (s *VectorStore) SwitchIndex(collection string, to IndexType) error {
 		// 6. Atomic Swap.
 		ds.dataMu.Lock()
 		oldIdx := ds.Index
-		ds.Index = NewPluggableInternalAdapter(newIdx)
+		ds.Index = NewPluggableInternalAdapter(newIdx, ds)
 		ds.dataMu.Unlock()
 
 		// 7. Cleanup and Callback.
@@ -271,6 +271,7 @@ func (s *VectorStore) GetWebSocketServer() *WebSocketServer {
 
 // MetricsCollector Implementation
 
+// GetCollections returns a list of names of all monitored collections.
 func (s *VectorStore) GetCollections() []string {
 	var names []string
 	s.IterateDatasets(func(name string, _ *Dataset) {
@@ -279,6 +280,7 @@ func (s *VectorStore) GetCollections() []string {
 	return names
 }
 
+// GetQueryLatencies returns the P50, P99, and average query latencies for a collection.
 func (s *VectorStore) GetQueryLatencies(collection string) (p50, p99, avg float64) {
 	ds, ok := s.getDataset(collection)
 	if !ok || ds.queryStats == nil {
@@ -288,6 +290,7 @@ func (s *VectorStore) GetQueryLatencies(collection string) (p50, p99, avg float6
 	return
 }
 
+// GetQueriesPerSecond returns the throughput in queries per second for a collection.
 func (s *VectorStore) GetQueriesPerSecond(collection string) float64 {
 	ds, ok := s.getDataset(collection)
 	if !ok || ds.queryStats == nil {
@@ -297,6 +300,7 @@ func (s *VectorStore) GetQueriesPerSecond(collection string) float64 {
 	return qps
 }
 
+// GetRecall returns the recall achieved by the index for a collection.
 func (s *VectorStore) GetRecall(collection string) float64 {
 	ds, ok := s.getDataset(collection)
 	if !ok || ds.queryStats == nil {
@@ -306,6 +310,7 @@ func (s *VectorStore) GetRecall(collection string) float64 {
 	return recall
 }
 
+// GetIndexSize returns the size of the index in megabytes for a collection.
 func (s *VectorStore) GetIndexSize(collection string) float64 {
 	ds, ok := s.getDataset(collection)
 	if !ok {
@@ -314,6 +319,7 @@ func (s *VectorStore) GetIndexSize(collection string) float64 {
 	return float64(ds.IndexMemoryBytes.Load()) / 1024.0 / 1024.0
 }
 
+// GetMemoryUsage returns the total memory usage in megabytes for a collection.
 func (s *VectorStore) GetMemoryUsage(collection string) float64 {
 	ds, ok := s.getDataset(collection)
 	if !ok {
@@ -322,6 +328,7 @@ func (s *VectorStore) GetMemoryUsage(collection string) float64 {
 	return float64(ds.SizeBytes.Load()) / 1024.0 / 1024.0
 }
 
+// GetCurrentIndex returns the current index type for a collection.
 func (s *VectorStore) GetCurrentIndex(collection string) IndexType {
 	ds, ok := s.getDataset(collection)
 	if !ok || ds.Index == nil {

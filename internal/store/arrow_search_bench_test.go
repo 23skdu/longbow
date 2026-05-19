@@ -22,7 +22,7 @@ func BenchmarkSearchScaling(b *testing.B) {
 			// Create dataset
 			schema := arrow.NewSchema([]arrow.Field{
 				{Name: "id", Type: arrow.PrimitiveTypes.Uint32},
-				{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+				{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)}, // #nosec G115
 			}, nil)
 
 			ds := &Dataset{
@@ -53,7 +53,7 @@ func BenchmarkSearchScaling(b *testing.B) {
 			}
 
 			rec := builder.NewRecordBatch()
-			ds.Records = []arrow.RecordBatch{rec}
+			ds.Records = NewLockFreeSliceFrom([]arrow.RecordBatch{rec})
 
 			// Create level generator
 			ml := 1.0 / math.Log(float64(config.M))

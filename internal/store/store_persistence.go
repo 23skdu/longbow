@@ -10,12 +10,12 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 )
 
-// InitPersistence initializes the storage layer, replays WAL, and loads snapshots.
+// InitPersistence initializes the storage layer, replays Write-Ahead Log (WAL), and loads snapshots for disaster recovery.
 func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 
-	if s.engine != nil {
+	if s.engine.Load() != nil {
 		return fmt.Errorf("persistence already initialized")
 	}
 
@@ -24,23 +24,29 @@ func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 	if err != nil {
 		return fmt.Errorf("failed to create storage engine: %w", err)
 	}
-	s.engine = engine
+	s.engine.Store(engine)
 	s.dataPath = cfg.DataPath
 
 	// 2. Initialize WAL (and Batcher)
-	if err := s.engine.InitWAL(); err != nil {
+	if err := engine.InitWAL(); err != nil {
 		return fmt.Errorf("failed to initialize WAL: %w", err)
 	}
 
+	// 2.5 Initialize WAL Replicator for HA if Mesh is active
+	if s.Mesh != nil {
+		replicator := NewFlightWALReplicator(s.pool, s.Mesh)
+		engine.SetReplicator(replicator)
+	}
+
 	// 3. Replay WAL
-	maxSeq, err := s.engine.ReplayWAL(s.applyReplayBatch)
+	maxSeq, err := engine.ReplayWAL(s.applyReplayBatch)
 	if err != nil {
 		return fmt.Errorf("failed to replay WAL: %w", err)
 	}
 	s.sequence.Store(maxSeq)
 
 	// 4. Load Snapshots
-	err = s.engine.LoadSnapshots(s.loadSnapshotItem)
+	err = engine.LoadSnapshots(s.loadSnapshotItem)
 	if err != nil {
 		return fmt.Errorf("failed to load snapshots: %w", err)
 	}
@@ -91,7 +97,9 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 				config.Enabled = true
 			}
 			aIdx := NewAutoShardingIndex(d, config)
-			aIdx.SetInitialDimension(vectorDim)
+			if setter, ok := aIdx.(interface{ SetInitialDimension(int) }); ok {
+				setter.SetInitialDimension(vectorDim)
+			}
 			d.Index = aIdx
 		}
 
@@ -118,9 +126,13 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 	defer ds.dataMu.Unlock()
 
 	rec.Retain() // Dataset takes ownership
-	batchIdx := len(ds.Records)
-	ds.Records = append(ds.Records, rec)
-
+	currentRecords := ds.Records.Read()
+	batchIdx := len(currentRecords)
+	newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
+	copy(newRecords, currentRecords)
+	newRecords[len(currentRecords)] = rec
+	ds.Records.UpdateInPlace(newRecords)
+ 
 	// Update Primary Index and natively process RowLocation tombstones for Upserts
 	ds.UpdatePrimaryIndex(batchIdx, ds.ExtractIDs(rec))
 
@@ -141,15 +153,16 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 	// Yes, usually WAL replay feeds into memory and index.
 	// But we must NOT write to WAL again.
 
-	// queue for indexing
+	// queue for indexing with high priority during replay phase to accelerate startup
 	ds.PendingIndexJobs.Add(rec.NumRows())
-	bIdx := len(ds.Records) - 1
-	s.logger.Debug().Str("dataset", name).Int("batch_idx", bIdx).Msg("Sending indexing job")
+	bIdx := len(ds.Records.Read()) - 1
+	s.logger.Debug().Str("dataset", name).Int("batch_idx", bIdx).Msg("Sending high-priority indexing job (replay)")
 	s.indexQueue.Send(IndexJob{
-		DatasetName: name,
-		Record:      rec, // Queue takes ownership (Retain?)
-		CreatedAt:   time.Now(),
-		BatchIdx:    bIdx,
+		DatasetName:  name,
+		Record:       rec,
+		CreatedAt:    time.Now(),
+		BatchIdx:     bIdx,
+		HighPriority: true, // Prioritize replay indexing
 	})
 	rec.Retain() // For Queue
 
@@ -207,7 +220,9 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 			hnswCfg.DataType = dataType
 			config.IndexConfig = &hnswCfg
 			aIdx := NewAutoShardingIndex(d, config)
-			aIdx.SetInitialDimension(vectorDim)
+			if setter, ok := aIdx.(interface{ SetInitialDimension(int) }); ok {
+				setter.SetInitialDimension(vectorDim)
+			}
 			d.Index = aIdx
 
 			// Restore Index Graph
@@ -225,8 +240,11 @@ func (s *VectorStore) loadSnapshotItem(item *storage.SnapshotItem) error {
 	defer ds.dataMu.Unlock()
 
 	for _, rec := range item.Records {
-		rec.Retain()
-		ds.Records = append(ds.Records, rec)
+		currentRecords := ds.Records.Read()
+		newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
+		copy(newRecords, currentRecords)
+		newRecords[len(currentRecords)] = rec
+		ds.Records.UpdateInPlace(newRecords)
 
 		size := estimateBatchSize(rec)
 		ds.SizeBytes.Add(size)

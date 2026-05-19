@@ -11,7 +11,7 @@ import (
 )
 
 func TestMetalIndex_Basic(t *testing.T) {
-	idx, err := metal.NewMetalIndexImpl(GPUConfig{
+	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
 		Dimension: 128,
 	})
@@ -44,7 +44,7 @@ func TestMetalIndex_Basic(t *testing.T) {
 }
 
 func TestMetalIndex_LargeDataset(t *testing.T) {
-	idx, err := metal.NewMetalIndexImpl(GPUConfig{
+	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
 		Dimension: 128,
 	})
@@ -77,7 +77,7 @@ func TestMetalIndex_LargeDataset(t *testing.T) {
 }
 
 func BenchmarkMetalSearch(b *testing.B) {
-	idx, err := metal.NewMetalIndexImpl(GPUConfig{
+	idx, err := metal.NewMetalIndexOptimized(GPUConfig{
 		DeviceID:  0,
 		Dimension: 128,
 	})

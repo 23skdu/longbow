@@ -1,23 +1,21 @@
 package store
-
+ 
 import (
 	"fmt"
 	"math"
-	"sync"
+	"sync/atomic"
 )
-
+ 
 // =============================================================================
 // BM25Config - Configuration for BM25 scoring
 // =============================================================================
-
+ 
 // BM25Config holds BM25 algorithm parameters.
-// K1 controls term frequency saturation (typically 1.2-2.0)
-// B controls document length normalization (0=no normalization, 1=full normalization)
 type BM25Config struct {
 	K1 float64 // Term frequency saturation parameter (default: 1.2)
 	B  float64 // Length normalization parameter (default: 0.75)
 }
-
+ 
 // DefaultBM25Config returns standard BM25 parameters.
 func DefaultBM25Config() BM25Config {
 	return BM25Config{
@@ -25,7 +23,7 @@ func DefaultBM25Config() BM25Config {
 		B:  0.75,
 	}
 }
-
+ 
 // Validate checks if the BM25 configuration is valid.
 func (c BM25Config) Validate() error {
 	if c.K1 < 0 {
@@ -42,169 +40,108 @@ func (c BM25Config) Validate() error {
 	}
 	return nil
 }
-
+ 
 // =============================================================================
-// BM25Scorer - Thread-safe BM25 scoring engine
+// BM25Scorer - Lock-free BM25 scoring engine
 // =============================================================================
-
+ 
 // BM25Scorer computes BM25 relevance scores for documents.
-// It maintains corpus statistics for IDF calculation and length normalization.
+// It uses atomic operations to maintain corpus statistics without locks.
 type BM25Scorer struct {
-	mu           sync.RWMutex
-	config       BM25Config
-	totalDocs    int
-	totalLength  int64   // Sum of all document lengths
-	avgDocLength float64 // Cached average document length
+	config      atomic.Pointer[BM25Config]
+	totalDocs   atomic.Int64
+	totalLength atomic.Int64 // Sum of all document lengths
 }
-
+ 
 // NewBM25Scorer creates a new BM25 scorer with the given configuration.
 func NewBM25Scorer(config BM25Config) *BM25Scorer {
-	return &BM25Scorer{
-		config: config,
-	}
+	s := &BM25Scorer{}
+	s.config.Store(&config)
+	return s
 }
-
+ 
 // Config returns the BM25 configuration.
 func (s *BM25Scorer) Config() BM25Config {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.config
+	return *s.config.Load()
 }
-
+ 
 // TotalDocs returns the number of documents in the corpus.
 func (s *BM25Scorer) TotalDocs() int {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.totalDocs
+	return int(s.totalDocs.Load())
 }
-
+ 
 // AvgDocLength returns the average document length in the corpus.
 func (s *BM25Scorer) AvgDocLength() float64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.avgDocLength
+	docs := s.totalDocs.Load()
+	if docs <= 0 {
+		return 0
+	}
+	return float64(s.totalLength.Load()) / float64(docs)
 }
-
+ 
 // AddDocument registers a document with the given length to the corpus.
 func (s *BM25Scorer) AddDocument(docLength int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	s.totalDocs++
-	s.totalLength += int64(docLength)
-	s.updateAvgDocLength()
+	s.totalDocs.Add(1)
+	s.totalLength.Add(int64(docLength))
 }
-
+ 
 // RemoveDocument removes a document with the given length from the corpus.
 func (s *BM25Scorer) RemoveDocument(docLength int) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	if s.totalDocs > 0 {
-		s.totalDocs--
-		s.totalLength -= int64(docLength)
-		if s.totalLength < 0 {
-			s.totalLength = 0
-		}
-		s.updateAvgDocLength()
-	}
+	s.totalDocs.Add(-1)
+	s.totalLength.Add(-int64(docLength))
 }
-
-// updateAvgDocLength recalculates the average document length.
-// Must be called with lock held.
-func (s *BM25Scorer) updateAvgDocLength() {
-	if s.totalDocs > 0 {
-		s.avgDocLength = float64(s.totalLength) / float64(s.totalDocs)
-	} else {
-		s.avgDocLength = 0
-	}
-}
-
+ 
 // IDF computes the Inverse Document Frequency for a term.
 // Uses the BM25 IDF formula: log((N - df + 0.5) / (df + 0.5) + 1)
-// where N is total documents and df is document frequency.
 func (s *BM25Scorer) IDF(docFreq int) float64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
-	if s.totalDocs == 0 {
+	n := float64(s.totalDocs.Load())
+	if n <= 0 {
 		return 0
 	}
-
-	n := float64(s.totalDocs)
 	df := float64(docFreq)
-
-	// BM25 IDF formula with smoothing to avoid negative values
 	return math.Log((n-df+0.5)/(df+0.5) + 1.0)
 }
-
+ 
 // Score computes the BM25 score for a term in a document.
-// Parameters:
-//   - tf: term frequency in the document
-//   - docLength: length of the document (number of terms)
-//   - docFreq: number of documents containing the term
-//
-// Returns the BM25 score component for this term.
 func (s *BM25Scorer) Score(tf, docLength, docFreq int) float64 {
-	// Score should be called with lock held or by unlocked helper if needed.
-	// But to avoid API breakage, we'll keep Score locking IF called individually.
-	// Actually, best pattern is: Score does NOT lock, caller locks.
-	// But `Score` is public.
-	// Let's make `Score` call an internal `scoreUnlocked` (already done by user? No, reverted).
-	// We will duplicate the logic in `scoreUnlocked` and make `Score` call it with lock.
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-	return s.scoreUnlocked(tf, docLength, docFreq)
-}
-
-// scoreUnlocked computes the BM25 score without locking.
-// Caller must hold the read lock.
-func (s *BM25Scorer) scoreUnlocked(tf, docLength, docFreq int) float64 {
-	// Handle edge cases
-	if s.totalDocs == 0 || tf == 0 {
+	tfFloat := float64(tf)
+	if tfFloat <= 0 {
 		return 0
 	}
-
-	// Get IDF
-	n := float64(s.totalDocs)
+ 
+	n := float64(s.totalDocs.Load())
+	if n <= 0 {
+		return 0
+	}
+ 
 	df := float64(docFreq)
 	idf := math.Log((n-df+0.5)/(df+0.5) + 1.0)
-
-	// BM25 term frequency saturation
-	// score = IDF * (tf * (k1 + 1)) / (tf + k1 * (1 - b + b * docLen/avgDocLen))
-	tfFloat := float64(tf)
-	docLenFloat := float64(docLength)
-	k1 := s.config.K1
-	b := s.config.B
-
-	// Avoid division by zero for avgDocLength
-	avgDL := s.avgDocLength
-	if avgDL == 0 {
-		avgDL = 1.0 // Prevent division by zero
+ 
+	cfg := s.config.Load()
+	k1 := cfg.K1
+	b := cfg.B
+ 
+	avgDL := s.AvgDocLength()
+	if avgDL <= 0 {
+		avgDL = 1.0
 	}
-
-	// Length normalization factor
-	lengthNorm := 1.0 - b + b*(docLenFloat/avgDL)
+ 
+	lengthNorm := 1.0 - b + b*(float64(docLength)/avgDL)
 	if lengthNorm <= 0 {
-		lengthNorm = 0.0001 // Prevent division by zero
+		lengthNorm = 0.0001
 	}
-
-	// BM25 formula
+ 
 	numerator := tfFloat * (k1 + 1.0)
 	denominator := tfFloat + k1*lengthNorm
-
+ 
 	return idf * (numerator / denominator)
 }
-
+ 
 // ScoreMultiTerm computes the total BM25 score for multiple terms.
-// Optimization: Acquires read lock ONCE for all terms.
 func (s *BM25Scorer) ScoreMultiTerm(docLength int, terms []struct{ TF, DocFreq int }) float64 {
-	s.mu.RLock()
-	defer s.mu.RUnlock()
-
 	var totalScore float64
 	for _, term := range terms {
-		totalScore += s.scoreUnlocked(term.TF, docLength, term.DocFreq)
+		totalScore += s.Score(term.TF, docLength, term.DocFreq)
 	}
 	return totalScore
 }

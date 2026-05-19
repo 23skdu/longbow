@@ -1,0 +1,30 @@
+=== RUN   TestReproShardedSearchRace
+--- FAIL: TestReproShardedSearchRace (0.00s)
+panic: runtime error: invalid memory address or nil pointer dereference [recovered, repanicked]
+[signal SIGSEGV: segmentation violation code=0x2 addr=0x0 pc=0x102ddce08]
+
+goroutine 755 [running]:
+testing.tRunner.func1.2({0x105663420, 0x105dafb70})
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:1974 +0x2b8
+testing.tRunner.func1()
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:1977 +0x460
+panic({0x105663420?, 0x105dafb70?})
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/runtime/panic.go:860 +0x12c
+github.com/23skdu/longbow/internal/store.(*Dataset).GetName(0x0)
+	/Users/rsd/REPOS/longbow/internal/store/dataset.go:302 +0x28
+github.com/23skdu/longbow/internal/store/internal/core.NewArrowHNSWWithConfig({_, _}, {0x20, 0x60, 0x40, 0x190, 0x32, 0x0, 0x32, 0x0, ...}, ...)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:226 +0xa08
+github.com/23skdu/longbow/internal/store/internal/core.NewArrowHNSW({0x105c128e8, 0x0}, 0xc000766000, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/internal/core/arrow_hnsw.go:176 +0xd0
+github.com/23skdu/longbow/internal/store.(*ShardedHNSW).newShard(0xc0003dc2a0, 0x0)
+	/Users/rsd/REPOS/longbow/internal/store/sharded_hnsw.go:218 +0x3e4
+github.com/23skdu/longbow/internal/store.NewShardedHNSW({0x4, 0x20, 0x190, {0x10325dc6d, 0x9}, 0x80, 0x0, 0x10000, 0x1, 0x1, ...}, ...)
+	/Users/rsd/REPOS/longbow/internal/store/sharded_hnsw.go:172 +0x34c
+github.com/23skdu/longbow/internal/store.TestReproShardedSearchRace(0xc0007f8488?)
+	/Users/rsd/REPOS/longbow/internal/store/repro_sharded_race_test.go:17 +0xd0
+testing.tRunner(0xc0007f8488, 0x105b82238)
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2036 +0x168
+created by testing.(*T).Run in goroutine 1
+	/opt/homebrew/Cellar/go/1.26.3/libexec/src/testing/testing.go:2101 +0x7c0
+FAIL	github.com/23skdu/longbow/internal/store	0.811s
+FAIL

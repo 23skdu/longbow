@@ -1,5 +1,9 @@
 //go:build gpu && linux
 
+// NOTE: This file requires the "gpu" and "linux" build tags. 
+// If your IDE reports "no packages found", ensure your gopls/build configuration 
+// includes these tags (e.g., -tags=gpu,linux).
+
 package cuda
 
 /*
@@ -9,6 +13,7 @@ package cuda
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdint.h>
 
 typedef struct {
     int device;
@@ -39,6 +44,17 @@ int cuda_add_vectors_pq(CUDAIndexHandle* handle, unsigned char* h_codes, int64_t
 // Graph functions
 void launch_graph_bfs_expand_kernel(const uint32_t* frontier, int frontierSize, const uint32_t* offsets, const uint32_t* neighbors, unsigned long long* visited, uint32_t* nextFrontier, int* nextFrontierSize, cudaStream_t stream);
 void launch_graph_activation_propagate_kernel(const float* activations, float* newActivations, const uint32_t* frontier, int frontierSize, const uint32_t* offsets, const uint32_t* neighbors, const float* weights, float alpha, cudaStream_t stream);
+void launch_haversine_distance_kernel(const float* center, const float* points, float* distances, float earthRadius, int count, cudaStream_t stream);
+void launch_l2_squared_kernel(const float* vectors, float* results, int dimensions, int count, cudaStream_t stream);
+
+// K-Means Training Kernels
+void launch_assign_to_clusters(const float* vectors, const float* centroids, uint32_t* assignments, int dim, int numVectors, int numCentroids, cudaStream_t stream);
+void launch_sum_centroids(const float* vectors, const uint32_t* assignments, float* centroids, uint32_t* counts, int dim, int numVectors, cudaStream_t stream);
+void launch_finalize_centroids(float* centroids, const uint32_t* counts, int dim, int numCentroids, cudaStream_t stream);
+void launch_hnsw_prune_neighbors_kernel(const uint32_t* candidateIds, const float* candidateDists, uint32_t* selectedIds, uint32_t* selectedCount, const float* allVectors, int maxNeighbors, int numCandidates, int dim, bool extendedHeuristic, cudaStream_t stream);
+
+int cuda_train_kmeans(CUDAIndexHandle* handle, float* vectors, float* centroids, int numVectors, int dim, int k, int iterations);
+int cuda_pq_encode(CUDAIndexHandle* handle, float* h_vectors, float* h_codebooks, unsigned char* h_codes, int numVectors, int m, int subDim);
 
 CUDAIndexHandle* cuda_init(int dimensions, int initialCapacity) {
     int device = 0;
@@ -98,6 +114,44 @@ void cuda_get_device_info(CUDAIndexHandle* handle, char* name, int maxLen, uint6
     }
 }
 
+int cuda_train_kmeans(CUDAIndexHandle* handle, float* h_vectors, float* h_centroids, int numVectors, int dim, int k, int iterations) {
+    if (!handle) return -1;
+    
+    float *d_vectors, *d_centroids, *d_sumCentroids;
+    uint32_t *d_assignments, *d_counts;
+    
+    cudaMalloc((void**)&d_vectors, (size_t)numVectors * dim * sizeof(float));
+    cudaMalloc((void**)&d_centroids, (size_t)k * dim * sizeof(float));
+    cudaMalloc((void**)&d_sumCentroids, (size_t)k * dim * sizeof(float));
+    cudaMalloc((void**)&d_assignments, (size_t)numVectors * sizeof(uint32_t));
+    cudaMalloc((void**)&d_counts, (size_t)k * sizeof(uint32_t));
+    
+    cudaMemcpy(d_vectors, h_vectors, (size_t)numVectors * dim * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_centroids, h_centroids, (size_t)k * dim * sizeof(float), cudaMemcpyHostToDevice);
+    
+    for (int i = 0; i < iterations; i++) {
+        cudaMemset(d_counts, 0, (size_t)k * sizeof(uint32_t));
+        cudaMemset(d_sumCentroids, 0, (size_t)k * dim * sizeof(float));
+        
+        launch_assign_to_clusters(d_vectors, d_centroids, d_assignments, dim, numVectors, k, handle->streams[0]);
+        launch_sum_centroids(d_vectors, d_assignments, d_sumCentroids, d_counts, dim, numVectors, handle->streams[0]);
+        launch_finalize_centroids(d_sumCentroids, d_counts, dim, k, handle->streams[0]);
+        
+        // Update centroids for next iteration
+        cudaMemcpy(d_centroids, d_sumCentroids, (size_t)k * dim * sizeof(float), cudaMemcpyDeviceToDevice);
+    }
+    
+    cudaMemcpy(h_centroids, d_centroids, (size_t)k * dim * sizeof(float), cudaMemcpyDeviceToHost);
+    
+    cudaFree(d_vectors);
+    cudaFree(d_centroids);
+    cudaFree(d_sumCentroids);
+    cudaFree(d_assignments);
+    cudaFree(d_counts);
+    
+    return 0;
+}
+
 void* cuda_ensure_buffer(CUDAIndexHandle* handle, int type, size_t elementSize) {
     if (handle->buffers[type]) return handle->buffers[type];
     size_t size = (size_t)handle->capacity * handle->dimensions * elementSize;
@@ -111,11 +165,36 @@ void* cuda_ensure_buffer(CUDAIndexHandle* handle, int type, size_t elementSize) 
 }
 
 int cuda_add_vectors(CUDAIndexHandle* handle, float* h_vectors, int64_t* h_ids, int count) {
-    void* buf = cuda_ensure_buffer(handle, 0, sizeof(float));
-    if (!buf || count <= 0) return -1;
+    if (count <= 0) return 0;
+    
+    if (handle->vectorCount + count > handle->capacity) {
+        int newCapacity = handle->capacity * 2;
+        if (newCapacity < handle->vectorCount + count) newCapacity = handle->vectorCount + count;
+        
+        // Resize idBuffer
+        void* newIdBuf;
+        if (cudaMalloc(&newIdBuf, newCapacity * sizeof(int64_t)) != cudaSuccess) return -1;
+        if (handle->idBuffer) {
+            cudaMemcpy(newIdBuf, handle->idBuffer, handle->vectorCount * sizeof(int64_t), cudaMemcpyDeviceToDevice);
+            cudaFree(handle->idBuffer);
+        }
+        handle->idBuffer = newIdBuf;
+        
+        // Resize float buffer
+        if (handle->buffers[0]) {
+            void* newVecBuf;
+            size_t newSize = (size_t)newCapacity * handle->dimensions * sizeof(float);
+            if (cudaMalloc(&newVecBuf, newSize) != cudaSuccess) return -1;
+            cudaMemcpy(newVecBuf, handle->buffers[0], (size_t)handle->vectorCount * handle->dimensions * sizeof(float), cudaMemcpyDeviceToDevice);
+            cudaFree(handle->buffers[0]);
+            handle->buffers[0] = newVecBuf;
+        }
+        
+        handle->capacity = newCapacity;
+    }
 
-    // Check capacity and realloc if needed (simplified for brevity, should handle all buffers)
-    if (handle->vectorCount + count > handle->capacity) return -2; 
+    void* buf = cuda_ensure_buffer(handle, 0, sizeof(float));
+    if (!buf) return -1;
 
     size_t vOffset = (size_t)handle->vectorCount * handle->dimensions * sizeof(float);
     size_t iOffset = (size_t)handle->vectorCount * sizeof(int64_t);
@@ -151,9 +230,33 @@ int cuda_search(CUDAIndexHandle* handle, float* h_query, int k, int64_t* h_resul
 }
 
 int cuda_add_vectors_fp16(CUDAIndexHandle* handle, uint16_t* h_vectors, int64_t* h_ids, int count) {
+    if (count <= 0) return 0;
+    
+    if (handle->vectorCount + count > handle->capacity) {
+        int newCapacity = handle->capacity * 2;
+        if (newCapacity < handle->vectorCount + count) newCapacity = handle->vectorCount + count;
+        
+        void* newIdBuf;
+        if (cudaMalloc(&newIdBuf, newCapacity * sizeof(int64_t)) != cudaSuccess) return -1;
+        if (handle->idBuffer) {
+            cudaMemcpy(newIdBuf, handle->idBuffer, handle->vectorCount * sizeof(int64_t), cudaMemcpyDeviceToDevice);
+            cudaFree(handle->idBuffer);
+        }
+        handle->idBuffer = newIdBuf;
+        
+        if (handle->buffers[1]) {
+            void* newVecBuf;
+            size_t newSize = (size_t)newCapacity * handle->dimensions * sizeof(uint16_t);
+            if (cudaMalloc(&newVecBuf, newSize) != cudaSuccess) return -1;
+            cudaMemcpy(newVecBuf, handle->buffers[1], (size_t)handle->vectorCount * handle->dimensions * sizeof(uint16_t), cudaMemcpyDeviceToDevice);
+            cudaFree(handle->buffers[1]);
+            handle->buffers[1] = newVecBuf;
+        }
+        handle->capacity = newCapacity;
+    }
+
     void* buf = cuda_ensure_buffer(handle, 1, sizeof(uint16_t));
-    if (!buf || count <= 0) return -1;
-    if (handle->vectorCount + count > handle->capacity) return -2;
+    if (!buf) return -1;
 
     size_t vOffset = (size_t)handle->vectorCount * handle->dimensions * sizeof(uint16_t);
     size_t iOffset = (size_t)handle->vectorCount * sizeof(int64_t);
@@ -191,9 +294,33 @@ int cuda_search_fp16(CUDAIndexHandle* handle, uint16_t* h_query, int k, int metr
 }
 
 int cuda_add_tq_vectors(CUDAIndexHandle* handle, unsigned char* h_tqData, int stride, int64_t* h_ids, int count) {
+    if (count <= 0) return 0;
+    
+    if (handle->vectorCount + count > handle->capacity) {
+        int newCapacity = handle->capacity * 2;
+        if (newCapacity < handle->vectorCount + count) newCapacity = handle->vectorCount + count;
+        
+        void* newIdBuf;
+        if (cudaMalloc(&newIdBuf, newCapacity * sizeof(int64_t)) != cudaSuccess) return -1;
+        if (handle->idBuffer) {
+            cudaMemcpy(newIdBuf, handle->idBuffer, handle->vectorCount * sizeof(int64_t), cudaMemcpyDeviceToDevice);
+            cudaFree(handle->idBuffer);
+        }
+        handle->idBuffer = newIdBuf;
+        
+        if (handle->buffers[3]) {
+            void* newVecBuf;
+            size_t newSize = (size_t)newCapacity * 128; // TQ estimate from ensure_buffer
+            if (cudaMalloc(&newVecBuf, newSize) != cudaSuccess) return -1;
+            cudaMemcpy(newVecBuf, handle->buffers[3], (size_t)handle->vectorCount * stride, cudaMemcpyDeviceToDevice);
+            cudaFree(handle->buffers[3]);
+            handle->buffers[3] = newVecBuf;
+        }
+        handle->capacity = newCapacity;
+    }
+
     void* buf = cuda_ensure_buffer(handle, 3, 1); // Stride handled manually
-    if (!buf || count <= 0) return -1;
-    if (handle->vectorCount + count > handle->capacity) return -2;
+    if (!buf) return -1;
 
     size_t vOffset = (size_t)handle->vectorCount * stride;
     size_t iOffset = (size_t)handle->vectorCount * sizeof(int64_t);
@@ -233,9 +360,33 @@ void cuda_get_ids(CUDAIndexHandle* handle, int64_t* h_ids, int count) {
 }
 
 int cuda_add_vectors_pq(CUDAIndexHandle* handle, unsigned char* h_codes, int64_t* h_ids, int count, int m) {
+    if (count <= 0) return 0;
+    
+    if (handle->vectorCount + count > handle->capacity) {
+        int newCapacity = handle->capacity * 2;
+        if (newCapacity < handle->vectorCount + count) newCapacity = handle->vectorCount + count;
+        
+        void* newIdBuf;
+        if (cudaMalloc(&newIdBuf, newCapacity * sizeof(int64_t)) != cudaSuccess) return -1;
+        if (handle->idBuffer) {
+            cudaMemcpy(newIdBuf, handle->idBuffer, handle->vectorCount * sizeof(int64_t), cudaMemcpyDeviceToDevice);
+            cudaFree(handle->idBuffer);
+        }
+        handle->idBuffer = newIdBuf;
+        
+        if (handle->buffers[2]) {
+            void* newVecBuf;
+            size_t newSize = (size_t)newCapacity * handle->dimensions;
+            if (cudaMalloc(&newVecBuf, newSize) != cudaSuccess) return -1;
+            cudaMemcpy(newVecBuf, handle->buffers[2], (size_t)handle->vectorCount * m, cudaMemcpyDeviceToDevice);
+            cudaFree(handle->buffers[2]);
+            handle->buffers[2] = newVecBuf;
+        }
+        handle->capacity = newCapacity;
+    }
+
     void* buf = cuda_ensure_buffer(handle, 2, 1);
-    if (!buf || count <= 0) return -1;
-    if (handle->vectorCount + count > handle->capacity) return -2;
+    if (!buf) return -1;
 
     size_t vOffset = (size_t)handle->vectorCount * m;
     size_t iOffset = (size_t)handle->vectorCount * sizeof(int64_t);
@@ -274,6 +425,38 @@ int cuda_search_pq(CUDAIndexHandle* handle, float* h_lookupTable, int m, int k, 
     return 0;
 }
 
+int cuda_haversine_batch(CUDAIndexHandle* handle, float* h_center, float* h_points, float* h_results, float earthRadius, int count) {
+    float *d_center, *d_points, *d_results;
+    cudaMalloc((void**)&d_center, 2 * sizeof(float));
+    cudaMalloc((void**)&d_points, count * 2 * sizeof(float));
+    cudaMalloc((void**)&d_results, count * sizeof(float));
+
+    cudaMemcpy(d_center, h_center, 2 * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_points, h_points, count * 2 * sizeof(float), cudaMemcpyHostToDevice);
+
+    launch_haversine_distance_kernel(d_center, d_points, d_results, earthRadius, count, 0);
+
+    cudaMemcpy(h_results, d_results, count * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_center); cudaFree(d_points); cudaFree(d_results);
+    return 0;
+}
+
+int cuda_norm_batch_f32(CUDAIndexHandle* handle, float* h_vectors, float* h_results, int dimensions, int count) {
+    float *d_vectors, *d_results;
+    cudaMalloc((void**)&d_vectors, (size_t)count * dimensions * sizeof(float));
+    cudaMalloc((void**)&d_results, count * sizeof(float));
+
+    cudaMemcpy(d_vectors, h_vectors, (size_t)count * dimensions * sizeof(float), cudaMemcpyHostToDevice);
+
+    launch_l2_squared_kernel(d_vectors, d_results, dimensions, count, 0);
+
+    cudaMemcpy(h_results, d_results, count * sizeof(float), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_vectors); cudaFree(d_results);
+    return 0;
+}
+
 void cuda_cleanup(CUDAIndexHandle* handle) {
     cuda_free(handle);
 }
@@ -295,11 +478,53 @@ int cuda_update_graph(CUDAIndexHandle* handle, uint32_t* h_offsets, uint32_t* h_
     handle->graphEdgeCount = edgeCount;
     return 0;
 }
+
+int cuda_prune_neighbors(CUDAIndexHandle* handle, uint32_t* candidateIds, float* candidateDists, uint32_t* selectedIds, uint32_t* selectedCount, float* allVectors, int maxNeighbors, int numCandidates, int dim, bool extended) {
+    if (!handle) return -1;
+
+    uint32_t *d_candIds, *d_selIds, *d_selCount;
+    float *d_candDists, *d_allVectors;
+
+    cudaMalloc((void**)&d_candIds, (size_t)numCandidates * sizeof(uint32_t));
+    cudaMalloc((void**)&d_candDists, (size_t)numCandidates * sizeof(float));
+    cudaMalloc((void**)&d_selIds, (size_t)maxNeighbors * sizeof(uint32_t));
+    cudaMalloc((void**)&d_selCount, sizeof(uint32_t));
+    
+    if (allVectors != NULL) {
+        size_t allVecSize = (size_t)handle->vectorCount * dim * sizeof(float);
+        cudaMalloc((void**)&d_allVectors, allVecSize);
+        cudaMemcpy(d_allVectors, allVectors, allVecSize, cudaMemcpyHostToDevice);
+    } else {
+        d_allVectors = (float*)handle->buffers[0];
+    }
+
+    if (!d_allVectors) return -2;
+
+    cudaMemcpy(d_candIds, candidateIds, (size_t)numCandidates * sizeof(uint32_t), cudaMemcpyHostToDevice);
+    cudaMemcpy(d_candDists, candidateDists, (size_t)numCandidates * sizeof(float), cudaMemcpyHostToDevice);
+    cudaMemset(d_selCount, 0, sizeof(uint32_t));
+
+    launch_hnsw_prune_neighbors_kernel(d_candIds, d_candDists, d_selIds, d_selCount, d_allVectors, maxNeighbors, numCandidates, dim, extended, handle->streams[0]);
+
+    uint32_t h_selCount;
+    cudaMemcpy(&h_selCount, d_selCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
+    *selectedCount = h_selCount;
+    cudaMemcpy(selectedIds, d_selIds, (size_t)h_selCount * sizeof(uint32_t), cudaMemcpyDeviceToHost);
+
+    cudaFree(d_candIds);
+    cudaFree(d_candDists);
+    cudaFree(d_selIds);
+    cudaFree(d_selCount);
+    if (allVectors != NULL) cudaFree(d_allVectors);
+
+    return 0;
+}
 */
 import "C"
 import (
 	"fmt"
 	"math"
+	"math/rand"
 	"runtime"
 	"sync"
 	"time"
@@ -350,7 +575,10 @@ func NewCUDAIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 	}
 
 	initialCapacity := 10000
-	handle := C.cuda_init(C.int(cfg.Dimension), C.int(initialCapacity))
+	if cfg.Dimension > 2147483647 || initialCapacity > 2147483647 {
+		return nil, fmt.Errorf("dimension or capacity too large")
+	}
+	handle := C.cuda_init(C.int(cfg.Dimension), C.int(initialCapacity)) // #nosec G115
 	if handle == nil {
 		return nil, &types.GPUInitializationError{
 			DeviceID: cfg.DeviceID,
@@ -361,7 +589,7 @@ func NewCUDAIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 
 	nameBuf := make([]C.char, 256)
 	var totalMem C.uint64_t
-	C.cuda_get_device_info(handle, &nameBuf[0], C.int(len(nameBuf)), &totalMem)
+	C.cuda_get_device_info(handle, &nameBuf[0], C.int(len(nameBuf)), &totalMem) // #nosec G115
 
 	idx := &CUDAIndex{
 		handle: handle,
@@ -370,7 +598,7 @@ func NewCUDAIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 			Backend:  types.BackendCUDA,
 			Name:     C.GoString(&nameBuf[0]),
 			DeviceID: cfg.DeviceID,
-			MemoryMB: int64(totalMem) / (1024 * 1024),
+			MemoryMB: int64(totalMem) / (1024 * 1024), // #nosec G115 -- safe division
 		},
 		lastSyncTime: time.Now(),
 		stopSync:     make(chan struct{}),
@@ -456,11 +684,14 @@ func (idx *CUDAIndex) Flush() error {
 		}
 	}
 
+	if len(idx.batchIDs) > 2147483647 {
+		return fmt.Errorf("batch too large")
+	}
 	ret := C.cuda_add_vectors(
 		idx.handle,
 		(*C.float)(unsafe.Pointer(&idx.batchVectors[0])),
 		(*C.int64_t)(unsafe.Pointer(&idx.batchIDs[0])),
-		C.int(len(idx.batchIDs)),
+		C.int(len(idx.batchIDs)), // #nosec G115
 	)
 
 	duration := time.Since(start)
@@ -490,12 +721,15 @@ func (idx *CUDAIndex) AddPQ(ids []int64, codes []byte, m int) error {
 		return fmt.Errorf("index is closed")
 	}
 
+	if len(ids) > 2147483647 || m > 2147483647 {
+		return fmt.Errorf("ids or M too large")
+	}
 	ret := C.cuda_add_vectors_pq(
 		idx.handle,
 		(*C.uchar)(unsafe.Pointer(&codes[0])),
 		(*C.int64_t)(unsafe.Pointer(&ids[0])),
-		C.int(len(ids)),
-		C.int(m),
+		C.int(len(ids)), // #nosec G115
+		C.int(m),        // #nosec G115
 	)
 
 	if ret != 0 {
@@ -528,11 +762,14 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 		resultDistances[i] = math.MaxFloat32
 	}
 
+	if k > 2147483647 {
+		return nil, nil, fmt.Errorf("k too large")
+	}
 	start := time.Now()
 	ret := C.cuda_search(
 		idx.handle,
 		(*C.float)(unsafe.Pointer(&vector[0])),
-		C.int(k),
+		C.int(k), // #nosec G115
 		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
 		(*C.float)(unsafe.Pointer(&resultDistances[0])),
 	)
@@ -562,12 +799,15 @@ func (idx *CUDAIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []
 	resultIDs := make([]int64, k)
 	resultDistances := make([]float32, k)
 
+	if m > 2147483647 || k > 2147483647 {
+		return nil, nil, fmt.Errorf("m or k too large")
+	}
 	start := time.Now()
 	ret := C.cuda_search_pq(
 		idx.handle,
 		(*C.float)(unsafe.Pointer(&lookupTable[0])),
-		C.int(m),
-		C.int(k),
+		C.int(m), // #nosec G115
+		C.int(k), // #nosec G115
 		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
 		(*C.float)(unsafe.Pointer(&resultDistances[0])),
 	)
@@ -589,25 +829,39 @@ func (idx *CUDAIndex) TrainPQ(vectors []float32, m int, k int) error {
 		return fmt.Errorf("index is closed")
 	}
 
-	// CPU fallback: Train PQ codebooks using K-Means
-	if idx.dim%m != 0 {
-		return fmt.Errorf("dimension %d must be divisible by M %d", idx.dim, m)
+	dims := idx.dim
+	if dims%m != 0 {
+		return fmt.Errorf("dimension %d must be divisible by M %d", dims, m)
 	}
+	subDim := dims / m
+	numVecs := len(vectors) / dims
 
-	encoder, err := pq.NewPQEncoder(idx.dim, m, k)
+	encoder, err := pq.NewPQEncoder(dims, m, k)
 	if err != nil {
 		return fmt.Errorf("failed to create PQ encoder: %w", err)
 	}
 
-	// Convert flat vectors to [][]float32
-	numVecs := len(vectors) / idx.dim
-	vecs2d := make([][]float32, numVecs)
-	for i := 0; i < numVecs; i++ {
-		vecs2d[i] = vectors[i*idx.dim : (i+1)*idx.dim]
-	}
+	// Train each subspace
+	for i := 0; i < m; i++ {
+		subData := make([]float32, numVecs*subDim)
+		for j := 0; j < numVecs; j++ {
+			copy(subData[j*subDim:(j+1)*subDim], vectors[j*dims+i*subDim:j*dims+(i+1)*subDim])
+		}
 
-	if err := encoder.Train(vecs2d); err != nil {
-		return fmt.Errorf("PQ training failed: %w", err)
+		// Initialize centroids randomly
+		centroids := make([]float32, k*subDim)
+		perm := rand.Perm(numVecs)
+		for j := 0; j < k; j++ {
+			copy(centroids[j*subDim:(j+1)*subDim], subData[perm[j]*subDim:(perm[j]+1)*subDim])
+		}
+
+		// Run GPU K-Means
+		res := C.cuda_train_kmeans(idx.handle, (*C.float)(&subData[0]), (*C.float)(&centroids[0]), C.int(numVecs), C.int(subDim), C.int(k), 20)
+		if res != 0 {
+			return fmt.Errorf("GPU K-Means failed for subspace %d", i)
+		}
+
+		copy(encoder.Codebooks[i], centroids)
 	}
 
 	idx.pqEncoder = encoder
@@ -693,7 +947,7 @@ func (idx *CUDAIndex) Backend() types.GPUBackend {
 	return types.BackendCUDA
 }
 
-func (idx *CUDAIndex) DeviceID() int {
+func (idx *CUDAIndex) DeviceID() int32 {
 	return idx.deviceInfo.DeviceID
 }
 
@@ -786,7 +1040,7 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 	return resultIDs, resultDistances, nil
 }
 
-func (idx *CUDAIndex) Initialize(deviceID int) error {
+func (idx *CUDAIndex) Initialize(deviceID int32) error {
 	return SetDevice(deviceID)
 }
 
@@ -1115,4 +1369,179 @@ func (idx *CUDAIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]u
 	}
 
 	return resIDs, resScores, nil
+}
+func (idx *CUDAIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
+	idx.mu.RLock()
+	closed := idx.closed
+	idx.mu.RUnlock()
+
+	if closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	count := len(points) / 2
+	if count == 0 {
+		return nil, nil
+	}
+
+	results := make([]float32, count)
+	center := []float32{centerLat, centerLon}
+
+	start := time.Now()
+	ret := C.cuda_haversine_batch(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&center[0])),
+		(*C.float)(unsafe.Pointer(&points[0])),
+		(*C.float)(unsafe.Pointer(&results[0])),
+		C.float(earthRadius),
+		C.int(count),
+	)
+	
+	if ret != 0 {
+		return nil, fmt.Errorf("cuda_haversine_batch failed")
+	}
+	
+	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "haversine").Observe(time.Since(start).Seconds())
+	return results, nil
+}
+
+func (idx *CUDAIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
+	idx.mu.RLock()
+	closed := idx.closed
+	idx.mu.RUnlock()
+
+	if closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	count := len(vectors) / dims
+	if count == 0 {
+		return nil, nil
+	}
+
+	results := make([]float32, count)
+	
+	start := time.Now()
+	ret := C.cuda_norm_batch_f32(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&vectors[0])),
+		(*C.float)(unsafe.Pointer(&results[0])),
+		C.int(dims),
+		C.int(count),
+	)
+	
+	if ret != 0 {
+		return nil, fmt.Errorf("cuda_norm_batch_f32 failed")
+	}
+	
+	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "norm").Observe(time.Since(start).Seconds())
+	return results, nil
+}
+
+func (idx *CUDAIndex) PQEncode(vectors []float32, codebooks []float32, m, subDim int) ([]byte, error) {
+	idx.mu.RLock()
+	closed := idx.closed
+	idx.mu.RUnlock()
+
+	if closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	numVectors := len(vectors) / (m * subDim)
+	if numVectors == 0 {
+		return nil, nil
+	}
+
+	codes := make([]byte, numVectors*m)
+	
+	start := time.Now()
+	ret := C.cuda_pq_encode(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&vectors[0])),
+		(*C.float)(unsafe.Pointer(&codebooks[0])),
+		(*C.uchar)(unsafe.Pointer(&codes[0])),
+		C.int(numVectors),
+		C.int(m),
+		C.int(subDim),
+	)
+	
+	if ret != 0 {
+		return nil, fmt.Errorf("cuda_pq_encode failed")
+	}
+	
+	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "pq_encode").Observe(time.Since(start).Seconds())
+	return codes, nil
+}
+func (idx *CUDAIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.closed {
+		return nil, fmt.Errorf("index closed")
+	}
+
+	numCandidates := len(candidateIds)
+	selectedIds := make([]uint32, maxNeighbors)
+	var selectedCount uint32
+
+	var vecPtr *C.float
+	if len(allVectors) > 0 {
+		vecPtr = (*C.float)(unsafe.Pointer(&allVectors[0]))
+	}
+
+	ret := C.cuda_prune_neighbors(
+		idx.handle,
+		(*C.uint32_t)(unsafe.Pointer(&candidateIds[0])),
+		(*C.float)(unsafe.Pointer(&candidateDists[0])),
+		(*C.uint32_t)(unsafe.Pointer(&selectedIds[0])),
+		(*C.uint32_t)(unsafe.Pointer(&selectedCount)),
+		vecPtr,
+		C.int(maxNeighbors),
+		C.int(numCandidates),
+		C.int(idx.dim),
+		C.bool(true),
+	)
+
+	if ret != 0 {
+		return nil, fmt.Errorf("cuda_prune_neighbors failed: %d", ret)
+	}
+
+	return selectedIds[:selectedCount], nil
+}
+
+func (idx *CUDAIndex) Clear() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	idx.batchMu.Lock()
+	idx.batchIDs = idx.batchIDs[:0]
+	idx.batchVectors = idx.batchVectors[:0]
+	idx.batchMu.Unlock()
+
+	idx.handle.vectorCount = 0
+	return nil
+}
+
+func (idx *CUDAIndex) Reset() error {
+	return idx.Clear()
+}
+
+func (idx *CUDAIndex) Sync() error {
+	return idx.Flush()
+}
+
+func (idx *CUDAIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return 0, 0, fmt.Errorf("index is closed")
+	}
+
+	// For CUDA, we don't have a greedy search kernel yet, so we return the entry point.
+	// This is consistent with the CPU fallback behavior in other indices.
+	return entryPoint, entryDist, nil
 }

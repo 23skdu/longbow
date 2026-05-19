@@ -243,45 +243,11 @@ func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32)
 
 
 func euclideanSQ8BatchAVX2(query []byte, vectors [][]byte, results []float32) error {
-	if len(query) == 0 {
-		return nil
-	}
-	if len(query) == 0 {
-		return nil
-	}
-	qPtr := uintptr(unsafe.Pointer(&query[0]))
-	qLen := len(query)
-	for i, v := range vectors {
-		if v == nil {
-			continue
-		}
-		if len(v) != qLen {
-			return errors.New("simd: vector length mismatch")
-		}
-		results[i] = float32(euclideanSQ8AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v[0])), qLen))
-	}
-	return nil
+	return euclideanSQ8BatchGeneric(query, vectors, results)
 }
 
 func euclideanF16BatchAVX2(query []float16.Num, vectors [][]float16.Num, results []float32) error {
-	if len(query) == 0 {
-		return nil
-	}
-	if len(query) == 0 {
-		return nil
-	}
-	qPtr := uintptr(unsafe.Pointer(&query[0]))
-	qLen := len(query)
-	for i, v := range vectors {
-		if v == nil {
-			continue
-		}
-		if len(v) != qLen {
-			return errors.New("simd: vector length mismatch")
-		}
-		results[i] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v[0])), qLen)
-	}
-	return nil
+	return euclideanF16BatchGeneric(query, vectors, results)
 }
 
 // EuclideanDistanceVerticalBatch implementations
@@ -325,11 +291,7 @@ func euclideanVerticalBatchAVX2(query []float32, vectors [][]float32, results []
 }
 
 func adcBatchAVX2(table []float32, flatCodes []byte, m int, results []float32) error {
-	if len(results) == 0 {
-		return nil
-	}
-	adcBatchAVX2Kernel(uintptr(unsafe.Pointer(&table[0])), uintptr(unsafe.Pointer(&flatCodes[0])), m, uintptr(unsafe.Pointer(&results[0])), len(results))
-	return nil
+	return adcBatchGeneric(table, flatCodes, m, results)
 }
 
 // AVX2 optimized Batch Dot Product
@@ -561,32 +523,14 @@ func euclideanF16AVX2(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	if !features.HasAVX2 {
-		return euclideanF16Unrolled4x(a, b)
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	if len(a) < 8 {
-		return euclideanF16Unrolled4x(a, b)
-	}
-	return euclideanF16AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), len(a)), nil
+	return euclideanF16Unrolled4x(a, b)
 }
 
 func dotF16AVX2(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	if !features.HasAVX2 {
-		return dotF16Unrolled4x(a, b)
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	if len(a) < 8 {
-		return dotF16Unrolled4x(a, b)
-	}
-	return dotF16AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), len(a)), nil
+	return dotF16Unrolled4x(a, b)
 }
 
 func cosineF16AVX2(a, b []float16.Num) (float32, error) {
@@ -719,11 +663,19 @@ func atan2AVX2(y, x, dst []float32) {
 }
 
 func argMaxAVX2(src []float32) int {
-	return argMaxGeneric(src)
+	if len(src) < 8 {
+		return argMaxGeneric(src)
+	}
+	_, idx := argMaxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), len(src))
+	return idx
 }
 
 func argMinAVX2(src []float32) int {
-	return argMinGeneric(src)
+	if len(src) < 8 {
+		return argMinGeneric(src)
+	}
+	_, idx := argMinAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), len(src))
+	return idx
 }
 
 func matMulAVX2(a, b []float32, m, n, k int, dst []float32) {

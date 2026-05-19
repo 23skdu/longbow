@@ -58,20 +58,22 @@ func (r *ONNXReranker) initModel() error {
 		case ".wasm":
 			// WebAssembly model - use wazero runtime
 			runner, err := wasm.NewRunner(context.Background(), r.modelPath)
-			if err == nil {
-				tokenizer, _ := ml.NewTokenizer("vocab.txt", 512)
-				r.model = &wasmModelWrapper{runner: runner, tokenizer: tokenizer}
-				return nil
+			if err != nil {
+				r.logger.Warn().Err(err).Str("path", r.modelPath).Msg("Failed to initialize WASM runner, returning error")
+				return fmt.Errorf("failed to initialize WASM runner: %w", err)
 			}
-			r.logger.Warn().Err(err).Str("path", r.modelPath).Msg("Failed to initialize WASM runner, using fallback")
+			tokenizer, _ := ml.NewTokenizer("vocab.txt", 512)
+			r.model = &wasmModelWrapper{runner: runner, tokenizer: tokenizer}
+			return nil
 		case ".onnx":
 			// ONNX model - use our internal onnx bridge
 			session, err := onnx.NewSession(r.modelPath)
-			if err == nil {
-				r.model = &onnxModelWrapper{session: session}
-				return nil
+			if err != nil {
+				r.logger.Warn().Err(err).Str("path", r.modelPath).Msg("Failed to initialize ONNX session, returning error")
+				return fmt.Errorf("failed to initialize ONNX session: %w", err)
 			}
-			r.logger.Warn().Err(err).Str("path", r.modelPath).Msg("Failed to initialize ONNX session, using fallback")
+			r.model = &onnxModelWrapper{session: session}
+			return nil
 		}
 	}
 	return fmt.Errorf("strict model validation failed: unknown model extension for %s (use .onnx or .wasm)", r.modelPath)
@@ -200,32 +202,7 @@ func (r *ONNXReranker) Close() error {
 	return nil
 }
 
-type stubMLModel struct {
-	path string
-}
 
-func (r *stubMLModel) Score(query string, documents []string) ([]float32, error) {
-	scores := make([]float32, len(documents))
-	queryLower := toLowerCase(query)
-	for i, doc := range documents {
-		docLower := toLowerCase(doc)
-		score := float32(0.3)
-		if len(docLower) > 0 {
-			if contains(docLower, queryLower) {
-				score = 0.9
-			} else {
-				// Use the logic from HeuristicReranker if available, or stay simple here
-				matchCount := countKeywordMatches(queryLower, docLower)
-				score = float32(0.3) + float32(matchCount)*float32(0.15)
-				if score > 0.8 {
-					score = 0.8
-				}
-			}
-		}
-		scores[i] = score
-	}
-	return scores, nil
-}
 
 // Reranker defines the interface for the second-stage re-ranking
 type Reranker interface {
@@ -371,9 +348,6 @@ func splitWords(s string) []string {
 	return words
 }
 
-func (r *stubMLModel) Close() error {
-	return nil
-}
 
 // RerankerFactory creates reranker instances based on configuration.
 type RerankerFactory struct{}

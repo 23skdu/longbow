@@ -1,6 +1,6 @@
 # Longbow Storage Engine - Future Roadmap & Next Steps
 
-This document outlines the outstanding roadmap items and stability enhancements prioritized for the upcoming releases of the Longbow Vector Storage Engine.
+This document outlines the outstanding roadmap items, stability enhancements, and long-term architectural designs prioritized for upcoming releases of the Longbow Vector Storage Engine.
 
 ---
 
@@ -15,7 +15,37 @@ This document outlines the outstanding roadmap items and stability enhancements 
 
 ---
 
-## 2. P1 Tasks: Continuous Performance Assurance
+## 2. High-Scale Architectural Roadmap (100k+ Scale)
+
+### 🔳 Off-Heap HNSW Graph Node Storage
+* **Description**: Transition all HNSW graph structures (neighbor tables, node maps, and node arrays) from Go's garbage-collected heap into our custom off-heap `SlabArena` or direct memory-mapped (mmap) files.
+* **Impact**: Completely eliminates Go GC scanning overhead (`runtime.scanObject`), which currently consumes up to **66%** of CPU time under active sharding and insertion loops at high scales (100k+ vectors). This guarantees predictable, sub-millisecond latencies and avoids GC-induced CPU spikes.
+* **Subtasks**:
+  - [ ] Refactor `core.ArrowHNSW` neighbor list allocations to utilize direct off-heap pointer offsets via `SlabArena`.
+  - [ ] Implement manual node lifecycle management to avoid memory fragmentation inside the off-heap slab pools.
+  - [ ] Benchmark memory-mapped pages vs. anonymous off-heap memory allocations for active graph traversals.
+* **Priority**: **Critical / P0**
+* **Target Release**: `v0.2.4`
+
+### 🔳 Dynamic / Distributed Auto-Sharding Strategies
+* **Description**: Enhance the auto-sharding coordinator to support dynamic, multi-node partition splits and parallel graph handover without blocking active search lanes.
+* **Impact**: Avoids ingestion stalling during monolithic-to-sharded transitions at scale by performing the HNSW graph partition splits in a completely lock-free, streaming fashion.
+* **Subtasks**:
+  - [ ] Implement lock-free interim index promotion that routes search queries concurrently to monolithic chunks and sharded partitions during migration.
+  - [ ] Optimize the parallel migration batch size dynamically based on CPU core counts and hardware cache sizes to minimize thread thrashing.
+  - [ ] Build shard balance metrics to monitor cluster-wide data distribution.
+* **Priority**: **High / P1**
+* **Target Release**: `v0.2.4`
+
+### 🔳 Admission Controller & Dynamic GOGC Tuning Hardening
+* **Description**: Harden the `AdmissionController` memory ceiling (e.g. 18GB) to dynamically adjust gRPC backpressure and auto-throttle ingest rate as memory pressure grows.
+* **Impact**: Prevents OOM crashes under burst ingestion by coupling the dynamic GC tuner (reducing GOGC down to 20/80 under memory spikes) directly with gRPC `ResourceExhausted` rejections, ensuring the system stabilizes gracefully rather than crashing.
+* **Priority**: **High / P1**
+* **Target Release**: `v0.2.3-rc2`
+
+---
+
+## 3. P1 Tasks: Continuous Performance Assurance
 
 ### 🔳 Automated CI/CD Performance Regression Framework
 * **Description**: Integrate the streamlined performance benchmarks (`scripts/local_perf.sh` and `scripts/remote_perf_clean.sh`) into the repository's GitHub Actions / GitLab CI pipeline.
@@ -31,7 +61,7 @@ This document outlines the outstanding roadmap items and stability enhancements 
 
 ---
 
-## 3. P2 Tasks: Storage Architecture Optimizations
+## 4. Storage Architecture Optimizations
 
 ### 🔳 Disk-ANN Solid State Page Tuning
 * **Description**: Optimize low-level SSD page alignment and read-ahead block sizing in the Disk-ANN index offloader for sub-millisecond multi-gigabyte vector fetches.
@@ -41,7 +71,7 @@ This document outlines the outstanding roadmap items and stability enhancements 
 
 ---
 
-## 4. 0.2.2 Roadmap Items: EMLgo Math Library Evaluation
+## 5. EMLgo Math Library Evaluation
 
 ### 🔳 EMLgo Library Math Acceleration
 * **Description**: Create a dedicated test branch to integrate and evaluate the **EMLgo** library as a drop-in replacement for standard Go `math` functions inside performance-critical distance metrics and SIMD kernels.
@@ -56,7 +86,7 @@ This document outlines the outstanding roadmap items and stability enhancements 
 
 ---
 
-## 5. 0.2.2 Roadmap Items: Google ALTS Integration
+## 6. Google ALTS Integration
 
 This 6-part integration plan outlines the architectural and implementation tasks required to support Google's **Application Layer Transport Security (ALTS)** for secure, mutually authenticated, and high-performance service-to-service gRPC communication inside Google Compute Engine (GCE) and Google Kubernetes Engine (GKE).
 
@@ -119,4 +149,3 @@ This 6-part integration plan outlines the architectural and implementation tasks
   - [ ] Verify session resumption ciphers and validate the security posturing on wide area networks (WAN).
 * **Priority**: **High**
 * **Target Release**: `v0.2.2-rc3`
-

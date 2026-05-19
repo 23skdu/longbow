@@ -352,7 +352,8 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 			if l > 0 {
 				slabSize = 1024 * 1024 * 4
 			}
-			adjArena = memory.NewSlabArena(slabSize)
+			offHeapAlloc := memory.NewOffHeapAllocator()
+			adjArena = memory.NewSlabArenaWithAllocator(slabSize, offHeapAlloc)
 		}
 		gd.PackedNeighbors[l] = NewPackedAdjacency(adjArena, capacity)
 	}

@@ -19,6 +19,7 @@ type AdmissionController struct {
 	scaler         *autoscale.AutoScaler
 	migratingCount atomic.Int32
 	logger         zerolog.Logger
+	tuner          *lbmem.GCTuner
 	
 	activeQueries  atomic.Int32
 	walReplaying   atomic.Bool
@@ -40,6 +41,11 @@ func NewAdmissionController(maxMemory, currentMemory *atomic.Int64, scaler *auto
 		maxIngestThroughput: 150000, // Updated for 1M scale target
 		querySem:            make(chan struct{}, 2), // Cap query concurrency to 2 during sharding/WAL
 	}
+}
+
+// SetTuner associates a GCTuner with the admission controller.
+func (ac *AdmissionController) SetTuner(tuner *lbmem.GCTuner) {
+	ac.tuner = tuner
 }
 
 func (ac *AdmissionController) MigrationStarted() {
@@ -153,6 +159,12 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 	}
 
 	memoryUsage := float64(effectiveMem) / float64(maxMem)
+	if ac.tuner != nil {
+		ratio := ac.tuner.GetUtilizationRatio()
+		if ratio > memoryUsage {
+			memoryUsage = ratio
+		}
+	}
 
 	// Migration-aware thresholds: Apply tighter limits if any index is currently migrating
 	// as migration is a high-memory, non-interruptible background process.

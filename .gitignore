@@ -121,3 +121,4 @@ server_*.log
 
 coverage.*
 *.out
+vendor/

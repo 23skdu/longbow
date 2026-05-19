@@ -41,7 +41,22 @@ This document outlines the outstanding roadmap items and stability enhancements 
 
 ---
 
-## 4. 0.2.2 Roadmap Items: Google ALTS Integration
+## 4. 0.2.2 Roadmap Items: EMLgo Math Library Evaluation
+
+### 🔳 EMLgo Library Math Acceleration
+* **Description**: Create a dedicated test branch to integrate and evaluate the **EMLgo** library as a drop-in replacement for standard Go `math` functions inside performance-critical distance metrics and SIMD kernels.
+* **Impact**: Unlocks potential performance gains for non-assembly fallback routines and transcendental functions across large vector computations.
+* **Subtasks**:
+  - [ ] Spin up a dedicated test branch `experiment/emlgo-math-evaluation`.
+  - [ ] Replace standard library `math` calls with `emlgo` mathematical equivalents in baseline metric implementations.
+  - [ ] Execute the unified benchmark runner across various dimensions (128, 384, 768, 1024, 3072) to capture direct QPS/latency comparisons.
+  - [ ] Document compilation stability and any potential hardware dependencies under Go cross-platform builds.
+* **Priority**: **Medium**
+* **Target Release**: `v0.2.2` (Experimental)
+
+---
+
+## 5. 0.2.2 Roadmap Items: Google ALTS Integration
 
 This 6-part integration plan outlines the architectural and implementation tasks required to support Google's **Application Layer Transport Security (ALTS)** for secure, mutually authenticated, and high-performance service-to-service gRPC communication inside Google Compute Engine (GCE) and Google Kubernetes Engine (GKE).
 

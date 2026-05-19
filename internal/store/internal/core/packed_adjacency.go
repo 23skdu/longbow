@@ -42,6 +42,7 @@ type PackedAdjacency struct {
 	neighborArena *memory.TypedArena[uint32]
 	distanceArena *memory.TypedArena[float16.Num]
 	pageArena     *memory.TypedArena[uint64]
+	offHeapAlloc  *memory.OffHeapAllocator
 
 	// chunks stores pointers to "Pages".
 	// Index = NodeID / types.ChunkSize.
@@ -72,12 +73,26 @@ func NewPackedAdjacencyWithArenas(arena *memory.SlabArena,
 		numChunks = 1
 	}
 
-	chunks := make([]uint64, numChunks)
+	var chunks []uint64
+	var offHeapAlloc *memory.OffHeapAllocator
+	if arena != nil && arena.IsOffHeap() {
+		offHeapAlloc = memory.NewOffHeapAllocator()
+		size := numChunks * 8
+		newData := offHeapAlloc.Allocate(size)
+		if newData != nil {
+			chunks = unsafe.Slice((*uint64)(unsafe.Pointer(&newData[0])), numChunks) // #nosec G103
+		}
+	}
+	if chunks == nil {
+		chunks = make([]uint64, numChunks)
+	}
+
 	pa := &PackedAdjacency{
 		baseArena:     arena,
 		neighborArena: neighborArena,
 		distanceArena: distanceArena,
 		pageArena:     pageArena,
+		offHeapAlloc:  offHeapAlloc,
 	}
 	pa.chunks.Store(&chunks)
 	pa.refCount.Store(1)
@@ -115,12 +130,27 @@ func (pa *PackedAdjacency) EnsureCapacity(nodeID uint32) {
 		newLen = curLen * 2
 	}
 
-	newChunks := make([]uint64, newLen)
+	var newChunks []uint64
+	if pa.offHeapAlloc != nil {
+		size := newLen * 8
+		newData := pa.offHeapAlloc.Allocate(size)
+		if newData != nil {
+			newChunks = unsafe.Slice((*uint64)(unsafe.Pointer(&newData[0])), newLen) // #nosec G103
+		}
+	}
+	if newChunks == nil {
+		newChunks = make([]uint64, newLen)
+	}
+
 	if curPtr != nil {
 		// Atomic copy to prevent race with concurrent CAS on slice elements
 		oldChunks := *curPtr
 		for i := 0; i < len(oldChunks); i++ {
 			newChunks[i] = atomic.LoadUint64(&oldChunks[i])
+		}
+		if pa.offHeapAlloc != nil {
+			oldBytes := unsafe.Slice((*byte)(unsafe.Pointer(&oldChunks[0])), len(oldChunks)*8) // #nosec G103
+			pa.offHeapAlloc.Free(oldBytes)
 		}
 	}
 	
@@ -536,6 +566,16 @@ func (pa *PackedAdjacency) Release() {
 		}
 		if pa.pageArena != nil {
 			pa.pageArena.Release()
+		}
+		if pa.offHeapAlloc != nil {
+			curPtr := pa.chunks.Load()
+			if curPtr != nil {
+				chunks := *curPtr
+				if len(chunks) > 0 {
+					bytes := unsafe.Slice((*byte)(unsafe.Pointer(&chunks[0])), len(chunks)*8) // #nosec G103
+					pa.offHeapAlloc.Free(bytes)
+				}
+			}
 		}
 		pa.chunks.Store(nil)
 	}

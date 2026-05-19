@@ -364,6 +364,7 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 		return nil, err
 	}
 
+	idx.updateShardBalanceMetrics()
 	return globalIDs, nil
 }
 
@@ -439,6 +440,9 @@ func (idx *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, 
 		}
 		shard.registerID(localID, id, idx.globalToLocal)
 		metrics.ShardedHnswShardSize.WithLabelValues(idx.dataset.Name, fmt.Sprintf("%d", shardIdx)).Inc()
+		if id%1000 == 0 {
+			idx.updateShardBalanceMetrics()
+		}
 		return uint32(id), nil
 	}
 	idx.shardsMu.RUnlock()
@@ -461,6 +465,9 @@ func (idx *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, 
 		}
 		shard.registerID(localID, id, idx.globalToLocal)
 		metrics.ShardedHnswShardSize.WithLabelValues(idx.dataset.Name, fmt.Sprintf("%d", shardIdx)).Inc()
+		if id%1000 == 0 {
+			idx.updateShardBalanceMetrics()
+		}
 		return uint32(id), nil
 	}
  
@@ -480,6 +487,9 @@ func (idx *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, 
 	shard.registerID(localID, id, idx.globalToLocal)
  
 	metrics.ShardedHnswShardSize.WithLabelValues(idx.dataset.Name, fmt.Sprintf("%d", shardIdx)).Inc()
+	if id%1000 == 0 {
+		idx.updateShardBalanceMetrics()
+	}
 	return uint32(id), nil
 }
 
@@ -1437,4 +1447,50 @@ func (idx *ShardedHNSW) ReleaseMonolithicChunk(cID int) error {
 
 func (s *hnswShard) RelocateToOffHeap() error {
 	return s.index.RelocateToOffHeap()
+}
+
+func (idx *ShardedHNSW) updateShardBalanceMetrics() {
+	idx.shardsMu.RLock()
+	defer idx.shardsMu.RUnlock()
+
+	numShards := len(idx.shards)
+	if numShards <= 1 {
+		return
+	}
+
+	counts := make([]float64, numShards)
+	sum := 0.0
+	for i, s := range idx.shards {
+		if s != nil && s.index != nil {
+			cnt := float64(s.index.Len())
+			counts[i] = cnt
+			sum += cnt
+			
+			datasetName := ""
+			if idx.dataset != nil {
+				datasetName = idx.dataset.Name
+			}
+			metrics.HNSWNodeCount.WithLabelValues(datasetName, fmt.Sprintf("%d", i)).Set(cnt)
+		}
+	}
+
+	mean := sum / float64(numShards)
+	if mean <= 0 {
+		return
+	}
+
+	varianceSum := 0.0
+	for _, c := range counts {
+		diff := c - mean
+		varianceSum += diff * diff
+	}
+	variance := varianceSum / float64(numShards)
+	stdDev := math.Sqrt(variance)
+	coefficientOfVariation := stdDev / mean
+
+	datasetName := ""
+	if idx.dataset != nil {
+		datasetName = idx.dataset.Name
+	}
+	metrics.ShardBalanceImbalanceRatio.WithLabelValues(datasetName).Set(coefficientOfVariation)
 }

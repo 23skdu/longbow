@@ -228,9 +228,18 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 	// Arena-aware tuning: if total physical usage > 85% of limit, set GOGC=50
 	var targetGOGC int
 
-	if aggressive && ratio > 0.85 {
-		// High physical pressure: be very aggressive
-		targetGOGC = t.lowGOGC
+	if aggressive && ratio > 0.80 {
+		// High physical pressure: scale down GOGC progressively
+		if ratio > 0.95 {
+			targetGOGC = 10
+		} else if ratio > 0.90 {
+			targetGOGC = 20
+		} else if ratio > 0.85 {
+			targetGOGC = 40
+		} else {
+			targetGOGC = t.lowGOGC
+		}
+
 		if t.logger != nil {
 			t.logger.Warn().
 				Float64("ratio", ratio).

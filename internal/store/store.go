@@ -473,6 +473,9 @@ func stackTrace() string {
 // SetGCTuner sets the memory tuner for backpressure.
 func (vs *VectorStore) SetGCTuner(tuner *lbmem.GCTuner) {
 	vs.tuner.Store(tuner)
+	if vs.admission != nil {
+		vs.admission.SetTuner(tuner)
+	}
 	if tuner != nil {
 		tuner.RegisterCleanup(func() {
 			vs.logger.Warn().Msg("Emergency memory cleanup: clearing query cache and releasing slab pools")

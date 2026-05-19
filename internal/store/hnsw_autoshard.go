@@ -797,8 +797,77 @@ func (idx *AutoShardingIndex) GetVectorID(loc any) (uint32, bool) {
 // Search implements VectorIndexer.
 func (idx *AutoShardingIndex) Search(ctx context.Context, q any, k int, options any) ([]types.Candidate, error) {
 	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-	return idx.current.Search(ctx, q, k, options)
+	sharded := idx.sharded
+	interim := idx.interimIndex
+	curr := idx.current
+	idx.mu.RUnlock()
+
+	if sharded || interim == nil {
+		return curr.Search(ctx, q, k, options)
+	}
+
+	// Parallel Shadow Search: Query both indices concurrently
+	var res1, res2 []types.Candidate
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		res1, err1 = interim.Search(ctx, q, k, options)
+	}()
+
+	go func() {
+		defer wg.Done()
+		res2, err2 = curr.Search(ctx, q, k, options)
+	}()
+
+	wg.Wait()
+
+	if err1 != nil && err2 != nil {
+		return nil, err1
+	}
+
+	return idx.mergeCandidates(res1, res2, k), nil
+}
+
+func (idx *AutoShardingIndex) mergeCandidates(res1, res2 []types.Candidate, k int) []types.Candidate {
+	if len(res1) == 0 {
+		if len(res2) > k {
+			return res2[:k]
+		}
+		return res2
+	}
+	if len(res2) == 0 {
+		if len(res1) > k {
+			return res1[:k]
+		}
+		return res1
+	}
+
+	combined := make([]types.Candidate, 0, len(res1)+len(res2))
+	combined = append(combined, res1...)
+	combined = append(combined, res2...)
+
+	// Deduplicate by ID
+	seen := make(map[uint32]struct{})
+	unique := make([]types.Candidate, 0, len(combined))
+	for _, cand := range combined {
+		if _, ok := seen[cand.ID]; !ok {
+			seen[cand.ID] = struct{}{}
+			unique = append(unique, cand)
+		}
+	}
+
+	// Sort by distance ascending
+	sort.Slice(unique, func(i, j int) bool {
+		return unique[i].Dist < unique[j].Dist
+	})
+
+	if len(unique) > k {
+		return unique[:k]
+	}
+	return unique
 }
 
 // Warmup delegates to the current index.

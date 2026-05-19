@@ -396,10 +396,14 @@ class BenchmarkRunner:
                         pid_reaped, status = os.waitpid(self.server_pid, os.WNOHANG)
                         if pid_reaped == self.server_pid:
                             self.server_pid = None
+                            print("  Waiting 5 seconds for port cooling...")
+                            time.sleep(5)
                             return
                         os.kill(self.server_pid, 0)
                     except (ProcessLookupError, ChildProcessError):
                         self.server_pid = None
+                        print("  Waiting 5 seconds for port cooling...")
+                        time.sleep(5)
                         return
                 
                 # Fallback to kill -9
@@ -413,6 +417,8 @@ class BenchmarkRunner:
             except (ProcessLookupError, ChildProcessError):
                 pass
             self.server_pid = None
+            print("  Waiting 5 seconds for port cooling...")
+            time.sleep(5)
 
     def collect_pprof(self, label):
         """Collect pprof profiles from the running server."""

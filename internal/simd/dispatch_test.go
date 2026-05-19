@@ -316,3 +316,48 @@ func TestMetricsIntegration(t *testing.T) {
 	_, err := EuclideanDistance(query, vector)
 	assert.NoError(t, err)
 }
+
+// TestFloat64SIMDDispatch verifies that float64 SIMD dispatch function pointers
+// are correctly configured based on active hardware capabilities.
+func TestFloat64SIMDDispatch(t *testing.T) {
+	originalFeatures := features
+	originalImplementation := implementation
+	defer func() {
+		features = originalFeatures
+		implementation = originalImplementation
+		initializeDispatch()
+	}()
+
+	t.Run("AVX2 float64 dispatch verification", func(t *testing.T) {
+		// Mock AVX2 support
+		features = CPUFeatures{
+			Vendor:    "GenuineIntel",
+			HasAVX2:   true,
+			HasAVX512: false,
+			HasNEON:   false,
+		}
+		implementation = "avx2"
+		initializeDispatch()
+
+		// Verify float64 implementations point to AVX2 kernels
+		assert.NotNil(t, euclideanDistanceFloat64Impl, "euclideanDistanceFloat64Impl should not be nil under AVX2")
+		assert.NotNil(t, dotProductFloat64Impl, "dotProductFloat64Impl should not be nil under AVX2")
+
+		// Verify registry has entries and they resolve correctly
+		euclKernel := GetKernel[float64](MetricEuclidean, 0)
+		require.NotNil(t, euclKernel, "Registry should resolve float64 Euclidean distance kernel")
+		dotKernel := GetKernel[float64](MetricDotProduct, 0)
+		require.NotNil(t, dotKernel, "Registry should resolve float64 Dot distance kernel")
+
+		// Verify that executing them gives correct values
+		a := []float64{1.0, 2.0, 3.0, 4.0}
+		b := []float64{5.0, 6.0, 7.0, 8.0}
+		res, err := euclKernel(a, b)
+		assert.NoError(t, err)
+		assert.InDelta(t, float32(8.0), res, 0.0001)
+
+		dotRes, err := dotKernel(a, b)
+		assert.NoError(t, err)
+		assert.InDelta(t, float32(70.0), dotRes, 0.0001)
+	})
+}

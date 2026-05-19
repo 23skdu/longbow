@@ -7,7 +7,7 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/klauspost/cpuid/v2 v2.3.0
-	github.com/parquet-go/parquet-go v0.29.0
+	github.com/parquet-go/parquet-go v0.30.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sys v0.44.0
@@ -15,8 +15,9 @@ require (
 )
 
 require (
+
 	cloud.google.com/go/storage v1.62.2
-	github.com/IBM/sarama v1.48.2
+	github.com/IBM/sarama v1.49.0
 	github.com/RoaringBitmap/roaring/v2 v2.18.0
 	github.com/apache/pulsar-client-go v0.19.0
 	github.com/aws/aws-sdk-go-v2 v1.41.7

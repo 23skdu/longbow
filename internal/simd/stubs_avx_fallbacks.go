@@ -3,8 +3,6 @@
 package simd
 
 import (
-	"errors"
-
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	lbcore "github.com/23skdu/longbow/internal/core"
 )
@@ -177,10 +175,10 @@ func dotFloat64AVX512(a, b []float64) (float32, error)      { return dotFloat64U
 func l2SquaredFloat64AVX512(a, b []float64) (float32, error) { return l2SquaredFloat64Unrolled4x(a, b) }
 
 func euclideanInt8AVX512(a, b []int8) (float32, error) { return euclideanInt8Unrolled4x(a, b) }
-func euclideanInt16AVX512(a, b []int16) (float32, error) { return 0, errors.New("avx512 not supported") }
-func euclideanUint16AVX512(a, b []uint16) (float32, error) { return 0, errors.New("avx512 not supported") }
-func dotInt16AVX512(a, b []int16) (float32, error) { return 0, errors.New("avx512 not supported") }
-func dotUint16AVX512(a, b []uint16) (float32, error) { return 0, errors.New("avx512 not supported") }
+func euclideanInt16AVX512(a, b []int16) (float32, error) { return euclideanInt16Unrolled4x(a, b) }
+func euclideanUint16AVX512(a, b []uint16) (float32, error) { return euclideanUint16Unrolled4x(a, b) }
+func dotInt16AVX512(a, b []int16) (float32, error) { return dotInt16Unrolled4x(a, b) }
+func dotUint16AVX512(a, b []uint16) (float32, error) { return dotUint16Unrolled4x(a, b) }
 
 func euclideanBatchAVX512(query []float32, vectors [][]float32, results []float32) error {
 	return euclideanBatchGeneric(query, vectors, results)
@@ -198,11 +196,11 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 	return euclideanBatchGeneric(query, vectors, results)
 }
 
-func euclideanInt8AVX2(_, _ []int8) (float32, error)   { return 0, errors.New("avx2 not supported") }
-func euclideanInt16AVX2(_, _ []int16) (float32, error) { return 0, errors.New("avx2 not supported") }
-func euclideanUint16AVX2(_, _ []uint16) (float32, error) { return 0, errors.New("avx2 not supported") }
-func dotInt16AVX2(_, _ []int16) (float32, error) { return 0, errors.New("avx2 not supported") }
-func dotUint16AVX2(_, _ []uint16) (float32, error) { return 0, errors.New("avx2 not supported") }
+func euclideanInt8AVX2(a, b []int8) (float32, error)   { return euclideanInt8Unrolled4x(a, b) }
+func euclideanInt16AVX2(a, b []int16) (float32, error) { return euclideanInt16Unrolled4x(a, b) }
+func euclideanUint16AVX2(a, b []uint16) (float32, error) { return euclideanUint16Unrolled4x(a, b) }
+func dotInt16AVX2(a, b []int16) (float32, error) { return dotInt16Unrolled4x(a, b) }
+func dotUint16AVX2(a, b []uint16) (float32, error) { return dotUint16Unrolled4x(a, b) }
 
 func euclideanSQ8BatchAVX2(query []byte, vectors [][]byte, results []float32) error {
 	return euclideanSQ8BatchGeneric(query, vectors, results)

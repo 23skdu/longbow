@@ -497,4 +497,14 @@ var (
 		},
 		[]string{"dataset"},
 	)
+
+	// ShardBalanceImbalanceRatio tracks the coefficient of variation (stddev / mean)
+	// of vector counts across shards. A higher value indicates poor shard balance.
+	ShardBalanceImbalanceRatio = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_shard_balance_imbalance_ratio",
+			Help: "Coefficient of variation of vector distribution across shards",
+		},
+		[]string{"dataset"},
+	)
 )

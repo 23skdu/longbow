@@ -4,8 +4,6 @@ This document outlines the outstanding roadmap items, stability enhancements, an
 
 ---
 
-
-
 ## 1. P0 Blockers: Hardware Backend Integration
 
 ### 🔳 TPU Physical Driver Integration
@@ -20,33 +18,33 @@ This document outlines the outstanding roadmap items, stability enhancements, an
 
 ## 2. High-Scale Architectural Roadmap (100k+ Scale)
 
-### 🔳 Off-Heap HNSW Graph Node Storage
+### 🗹 Off-Heap HNSW Graph Node Storage
 
 * **Description**: Transition all HNSW graph structures (neighbor tables, node maps, and node arrays) from Go's garbage-collected heap into our custom off-heap `SlabArena` or direct memory-mapped (mmap) files.
 * **Impact**: Completely eliminates Go GC scanning overhead (`runtime.scanObject`), which currently consumes up to **66%** of CPU time under active sharding and insertion loops at high scales (100k+ vectors). This guarantees predictable, sub-millisecond latencies and avoids GC-induced CPU spikes.
 * **Subtasks**:
-  * [ ] Refactor `core.ArrowHNSW` neighbor list allocations to utilize direct off-heap pointer offsets via `SlabArena`.
-  * [ ] Implement manual node lifecycle management to avoid memory fragmentation inside the off-heap slab pools.
-  * [ ] Benchmark memory-mapped pages vs. anonymous off-heap memory allocations for active graph traversals.
-* **Priority**: **Critical / P0**
+  * [x] Refactor `core.ArrowHNSW` neighbor list allocations to utilize direct off-heap pointer offsets via `SlabArena`.
+  * [x] Implement manual node lifecycle management to avoid memory fragmentation inside the off-heap slab pools.
+  * [x] Benchmark memory-mapped pages vs. anonymous off-heap memory allocations for active graph traversals.
+* **Priority**: **Critical / P0 (Completed)**
 * **Target Release**: `v0.2.4`
 
-### 🔳 Dynamic / Distributed Auto-Sharding Strategies
+### 🗹 Dynamic / Distributed Auto-Sharding Strategies
 
 * **Description**: Enhance the auto-sharding coordinator to support dynamic, multi-node partition splits and parallel graph handover without blocking active search lanes.
 * **Impact**: Avoids ingestion stalling during monolithic-to-sharded transitions at scale by performing the HNSW graph partition splits in a completely lock-free, streaming fashion.
 * **Subtasks**:
-  * [ ] Implement lock-free interim index promotion that routes search queries concurrently to monolithic chunks and sharded partitions during migration.
-  * [ ] Optimize the parallel migration batch size dynamically based on CPU core counts and hardware cache sizes to minimize thread thrashing.
-  * [ ] Build shard balance metrics to monitor cluster-wide data distribution.
-* **Priority**: **High / P1**
+  * [x] Implement lock-free interim index promotion that routes search queries concurrently to monolithic chunks and sharded partitions during migration.
+  * [x] Optimize the parallel migration batch size dynamically based on CPU core counts and hardware cache sizes to minimize thread thrashing.
+  * [x] Build shard balance metrics to monitor cluster-wide data distribution.
+* **Priority**: **High / P1 (Completed)**
 * **Target Release**: `v0.2.4`
 
-### 🔳 Admission Controller & Dynamic GOGC Tuning Hardening
+### 🗹 Admission Controller & Dynamic GOGC Tuning Hardening
 
 * **Description**: Harden the `AdmissionController` memory ceiling (e.g. 18GB) to dynamically adjust gRPC backpressure and auto-throttle ingest rate as memory pressure grows.
 * **Impact**: Prevents OOM crashes under burst ingestion by coupling the dynamic GC tuner (reducing GOGC down to 20/80 under memory spikes) directly with gRPC `ResourceExhausted` rejections, ensuring the system stabilizes gracefully rather than crashing.
-* **Priority**: **High / P1**
+* **Priority**: **High / P1 (Completed)**
 * **Target Release**: `v0.2.3-rc2`
 
 ---

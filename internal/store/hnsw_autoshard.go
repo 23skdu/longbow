@@ -383,6 +383,18 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 			}
 		}
 
+		// Scale batch size dynamically based on CPU core counts to minimize thread thrashing.
+		// Machines with more cores can process larger parallel batches without lock contention.
+		numCPU := runtime.NumCPU()
+		cpuScaleFactor := float64(numCPU) / 4.0
+		if cpuScaleFactor < 1.0 {
+			cpuScaleFactor = 1.0
+		}
+		if cpuScaleFactor > 8.0 {
+			cpuScaleFactor = 8.0
+		}
+		currentBatchSize = int(float64(currentBatchSize) * cpuScaleFactor)
+
 		// Enforce sensible bounds (minimum 50 to avoid absolute thrashing, max baseBatchSize)
 		if currentBatchSize < 50 {
 			currentBatchSize = 50

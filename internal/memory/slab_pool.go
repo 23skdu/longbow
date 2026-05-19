@@ -17,6 +17,8 @@ type SlabPool struct {
 	pooledCount int64 // Number of slabs currently in the pool
 	maxPooled   int64 // Maximum slabs to keep in pool before releasing to OS
 	peakCount   int64 // Highest activeCount ever observed – used for leak-probability estimation
+	hits        int64 // Running pool hits
+	misses      int64 // Running pool misses
 }
 
 var (
@@ -35,6 +37,7 @@ var (
 )
 
 func newSlabPool(size int) *SlabPool {
+	sizeLabel := strconv.Itoa(size)
 	return &SlabPool{
 		size:      size,
 		maxPooled: 100, // Keep at most 100 slabs in pool before releasing
@@ -44,6 +47,7 @@ func newSlabPool(size int) *SlabPool {
 				if err := AdviseHugePage(b); err == nil {
 					metrics.SlabHugePageCount.Inc()
 				}
+				metrics.SlabPoolGrowthTotal.WithLabelValues(sizeLabel).Inc()
 				return &b
 			},
 		},
@@ -55,23 +59,20 @@ func newSlabPool(size int) *SlabPool {
 // The returned slice has len=cap (fully usable buffer).
 // NOTE: buffer content is DIRTY (not zeroed) if reused.
 func GetSlab(capacity int) []byte {
-	sizeStr := strconv.Itoa(capacity)
 	switch capacity {
 	case size4MB:
-		metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "hit").Inc()
 		return global4MBPool.Get()
 	case size8MB:
-		metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "hit").Inc()
 		return global8MBPool.Get()
 	case size16MB:
-		metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "hit").Inc()
 		return global16MBPool.Get()
 	case size32MB:
-		metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "hit").Inc()
 		return global32MBPool.Get()
 	}
 	// Fallback to off-heap alloc for non-standard large sizes
+	sizeStr := strconv.Itoa(capacity)
 	metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "miss").Inc()
+	metrics.SlabPoolGrowthTotal.WithLabelValues(sizeStr).Inc()
 	if capacity >= 1024*1024 {
 		return offHeapAlloc.Allocate(capacity)
 	}
@@ -94,7 +95,9 @@ func PutSlab(b []byte) {
 		// If it's a large non-standard slab (>= 1MB), it was likely allocated
 		// via offHeapAlloc.Allocate in GetSlab. We must free it to avoid leaks.
 		if c >= 1024*1024 {
+			sizeStr := strconv.Itoa(c)
 			offHeapAlloc.Free(b)
+			metrics.SlabPoolShrinkTotal.WithLabelValues(sizeStr, "non_standard_free").Inc()
 		}
 	}
 }
@@ -102,10 +105,17 @@ func PutSlab(b []byte) {
 // Get retrieves a slab from the pool or allocates a new one.
 func (p *SlabPool) Get() []byte {
 	active := atomic.AddInt64(&p.activeCount, 1)
-	// Only decrement pooledCount if there was actually something in the pool
-	// sync.Pool.Get() may call New() which creates a new slab
-	if atomic.LoadInt64(&p.pooledCount) > 0 {
+	sizeStr := strconv.Itoa(p.size)
+
+	// Check if we have pooled items
+	pooled := atomic.LoadInt64(&p.pooledCount)
+	if pooled > 0 {
 		atomic.AddInt64(&p.pooledCount, -1)
+		atomic.AddInt64(&p.hits, 1)
+		metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "hit").Inc()
+	} else {
+		atomic.AddInt64(&p.misses, 1)
+		metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "miss").Inc()
 	}
 
 	// Track peak active count for leak-probability estimation
@@ -126,8 +136,6 @@ func (p *SlabPool) Get() []byte {
 }
 
 // Put returns a slab to the pool for reuse.
-// refcount is the number of times this slab was accessed since last Get;
-// pass 1 for the common single-owner case.
 func (p *SlabPool) Put(b []byte) {
 	if cap(b) != p.size {
 		return
@@ -135,8 +143,8 @@ func (p *SlabPool) Put(b []byte) {
 
 	atomic.AddInt64(&p.activeCount, -1)
 
-	// Observe refcount distribution.  For standard single-owner use this will
-	// always be 1.  Values >1 indicate unexpected sharing.
+	// Observe refcount distribution. For standard single-owner use this will
+	// always be 1. Values >1 indicate unexpected sharing.
 	sizeStr := strconv.Itoa(p.size)
 	metrics.SlabRefCountDistribution.WithLabelValues(sizeStr).Observe(1)
 
@@ -146,6 +154,7 @@ func (p *SlabPool) Put(b []byte) {
 		// Release memory back to OS instead of pooling
 		// We MUST call Free to unmap and decrement the allocator's counter
 		offHeapAlloc.Free(b)
+		metrics.SlabPoolShrinkTotal.WithLabelValues(sizeStr, "max_pooled").Inc()
 		// Update metrics after releasing
 		p.updateMetrics()
 		return
@@ -166,6 +175,7 @@ func (p *SlabPool) ReleaseUnused() int {
 
 	// Release slabs beyond a reasonable threshold
 	threshold := p.maxPooled / 2 // Keep 50% of max as buffer
+	sizeStr := strconv.Itoa(p.size)
 
 	for i := int64(0); i < pooled-threshold; i++ {
 		if slab := p.pool.Get(); slab != nil {
@@ -173,6 +183,7 @@ func (p *SlabPool) ReleaseUnused() int {
 			if err := ReleaseSlab(b); err == nil {
 				released++
 				atomic.AddInt64(&p.pooledCount, -1)
+				metrics.SlabPoolShrinkTotal.WithLabelValues(sizeStr, "manual_release").Inc()
 			} else {
 				// Put it back if release failed
 				p.pool.Put(slab)
@@ -201,6 +212,8 @@ func (p *SlabPool) updateMetrics() {
 	active := atomic.LoadInt64(&p.activeCount)
 	pooled := atomic.LoadInt64(&p.pooledCount)
 	peak := atomic.LoadInt64(&p.peakCount)
+	hits := atomic.LoadInt64(&p.hits)
+	misses := atomic.LoadInt64(&p.misses)
 
 	// Calculate size label
 	sizeLabel := strconv.Itoa(p.size)
@@ -226,6 +239,14 @@ func (p *SlabPool) updateMetrics() {
 		leakProb = float64(active) / float64(peak)
 	}
 	metrics.SlabLeakProbability.WithLabelValues(sizeLabel).Set(leakProb)
+
+	// Calculate and set running slab pool hit-to-total allocation ratio
+	totalAlloc := hits + misses
+	hitRatio := float64(0)
+	if totalAlloc > 0 {
+		hitRatio = float64(hits) / float64(totalAlloc)
+	}
+	metrics.SlabPoolBufferHitRatio.WithLabelValues(sizeLabel).Set(hitRatio)
 }
 
 // GetGlobalSlabPoolUnusedMemory returns the total memory sitting idle in all global slab pools.
@@ -247,5 +268,3 @@ func ReleaseGlobalSlabPoolsUnused() int {
 	released += global32MBPool.ReleaseUnused()
 	return released
 }
-
-

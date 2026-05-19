@@ -1,5 +1,11 @@
 package core
 
+const (
+	SourceDense  uint8 = 0
+	SourceSparse uint8 = 1
+	SourceFused  uint8 = 2
+)
+
 // SearchResult represents a single flight search result
 type SearchResult struct {
 	ID       VectorID
@@ -7,6 +13,7 @@ type SearchResult struct {
 	Score    float32
 	Metadata []byte                 // Binary metadata payload (zero-copy optimized)
 	Vector   []byte                 // Binary payload for the vector if requested
+	Source   uint8                  // 0=Dense, 1=Sparse, 2=Fused (see constants)
 }
 
 // Candidate represents a search result candidate with ID and distance

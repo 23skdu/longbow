@@ -592,3 +592,12 @@ func (a *PluggableInternalAdapter) GetGPUIndex() any {
 	}
 	return nil
 }
+
+func (a *PluggableInternalAdapter) RelocateToOffHeap() error {
+	return nil
+}
+
+func (a *PluggableInternalAdapter) ReleaseMonolithicChunk(cID int) error {
+	// Pluggable indexes manage their own lifecycle
+	return nil
+}

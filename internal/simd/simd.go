@@ -125,6 +125,7 @@ var (
 	euclideanDistanceFloat64Impl    distanceFloat64Func
 	cosineDistanceFloat64Impl       distanceFloat64Func
 	dotProductFloat64Impl           distanceFloat64Func
+	l2SquaredFloat64Impl            distanceFloat64Func
 
 	euclideanDistanceInt8Impl  func(a, b []int8) (float32, error)
 	euclideanDistanceUint8Impl func(a, b []uint8) (float32, error)

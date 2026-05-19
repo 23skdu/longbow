@@ -157,11 +157,14 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 
 	if !skipSet {
 		ensurePrivate()
-		oldVer := data.LockNode(0, id)
-		err := data.SetVector(id, vec)
-		data.UnlockNode(0, id, oldVer)
-		if err != nil {
-			return nil, err
+		
+		if !h.sharedVectorSpace.Load() {
+			oldVer := data.LockNode(0, id)
+			err := data.SetVector(id, vec)
+			data.UnlockNode(0, id, oldVer)
+			if err != nil {
+				return nil, err
+			}
 		}
 		
 		// PERSIST LEVEL: Ensure the node's hierarchical level is stored in metadata

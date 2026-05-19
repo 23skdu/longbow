@@ -316,6 +316,7 @@ Automatic index selection using k-NN classifier.
 ### Feature Vector
 
 11-dimensional features including:
+
 - `DatasetSize` (Most discriminating)
 - `QueryComplexity`
 - `AvgVectorNorm`
@@ -334,8 +335,10 @@ Scatter-gather search across multiple Longbow nodes.
 ### Architecture
 
 ```
-Query → Local HNSW Search → Scatter to Peers → Gather & Merge (RRF) → Top-K
+Query → Local HNSW Search → Scatter to Peers → Gather Raw Vectors → Global Sort → Merge (RRF) → Top-K
 ```
+
+For Hybrid searches, the `GlobalSearchCoordinator` gathers the full `top-K` raw Dense and Sparse lists globally *before* applying Global Reciprocal Rank Fusion (RRF) to ensure mathematical correctness of the rank denominators.
 
 ### Python SDK
 
@@ -384,6 +387,8 @@ results = client.search(
 | `longbow_global_search_partial_failures` | Failed peer queries |
 | `longbow_global_search_duration_seconds` | Scatter-gather latency |
 | `longbow_gossip_active_members` | Healthy cluster nodes |
+| `longbow_global_rrf_latency_seconds` | Latency of global reciprocal rank fusion |
+| `longbow_global_rrf_payload_bytes` | Payload elements passed to global RRF |
 
 ### CLI Benchmark
 

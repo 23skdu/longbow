@@ -50,6 +50,16 @@ type GCTuner struct {
 	lastAllocTime  time.Time
 	allocRate      atomic.Uint64 // Bytes per second
 	isBursting     atomic.Bool   // True if currently in burst mode
+	cleanupFuncs   []func()      // Functions to call under extreme pressure
+
+	// GetPhysicalStats allows mocking the physical memory stats (off-heap)
+	GetPhysicalStats func() (int64, int64)
+}
+
+func defaultPhysicalStats() (int64, int64) {
+	// Return 0 for unusedSlabPool because GetGlobalOffHeapAllocated() already includes
+	// all allocated slabs (both active and pooled). Adding unusedSlabPool causes double counting.
+	return GetGlobalOffHeapAllocated(), 0
 }
 
 // NewGCTuner creates a tuner. limitBytes should be close to container memory limit.
@@ -75,6 +85,7 @@ func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger)
 		EnableGPUTuning:    types.GetDeviceCount() > 0,
 		GPUUtilizationHigh: 60.0,
 		GPUUtilizationLow:  20.0,
+		GetPhysicalStats:   defaultPhysicalStats,
 	}
 
 	if tuner.logger != nil {
@@ -95,6 +106,13 @@ func (t *GCTuner) AddArena(a *ArenaStatsRecord) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	t.arenas = append(t.arenas, a)
+}
+
+// RegisterCleanup adds a function to be called when memory pressure is critical (>88%)
+func (t *GCTuner) RegisterCleanup(fn func()) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.cleanupFuncs = append(t.cleanupFuncs, fn)
 }
 
 // RemoveArena unregisters an arena
@@ -158,10 +176,8 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 	// Use HeapAlloc (live objects) for better accuracy with MADV_DONTNEED/FREE
 	heapAlloc := m.HeapAlloc
 
-
 	t.mu.RLock()
-	totalArenaCapacity := int64(0)
-	unusedArenaMemory := int64(0)
+	totalArenaUsed := int64(0)
 	if aggressive {
 		// Use both registered and global arenas
 		arenas := t.arenas
@@ -170,40 +186,29 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 		seen := make(map[*ArenaStatsRecord]bool)
 		for _, a := range arenas {
 			seen[a] = true
-			totalCapacity := a.TotalCapacity.Load()
-			usedBytes := a.UsedBytes.Load()
-			totalArenaCapacity += totalCapacity
-			unused := totalCapacity - usedBytes
-			if unused > 0 {
-				unusedArenaMemory += unused
-			}
+			totalArenaUsed += a.TotalCapacity.Load()
 		}
 		for _, a := range global {
 			if seen[a] {
 				continue
 			}
-			totalCapacity := a.TotalCapacity.Load()
-			usedBytes := a.UsedBytes.Load()
-			totalArenaCapacity += totalCapacity
-			unused := totalCapacity - usedBytes
-			if unused > 0 {
-				unusedArenaMemory += unused
-			}
+			totalArenaUsed += a.TotalCapacity.Load()
 		}
-		
-		// Add global slab pools to unused tracking
-		unusedArenaMemory += GetGlobalSlabPoolUnusedMemory()
 	}
 	t.mu.RUnlock()
 
-	// Effective Usage = Total Heap Alloc - Memory reserved by arenas/pools but not actually used.
-	// We use HeapAlloc because it's the actual live object space.
-	effectiveInUse := int64(heapAlloc) - unusedArenaMemory // #nosec G115
-	if effectiveInUse < 0 {
-		effectiveInUse = 0
+	// Total Physical Memory in use by the process.
+	// We include the global off-heap allocated counter to catch memory in SlabPools
+	// or leaked mappings that aren't tied to an active Arena record.
+	var globalOffHeap, unusedSlabPool int64
+	if t.GetPhysicalStats != nil {
+		globalOffHeap, unusedSlabPool = t.GetPhysicalStats()
 	}
 
-	ratio := float64(effectiveInUse) / float64(t.limitBytes)
+	totalPhysicalUsed := int64(heapAlloc) + globalOffHeap + unusedSlabPool // #nosec G115
+	
+	// headroom is what's left for the Go heap and metadata
+	ratio := float64(totalPhysicalUsed) / float64(t.limitBytes)
 	
 	// Burst mode detection: if alloc rate > 512MB/s and we are using > 60% of heap,
 	// or if rate > 1GB/s, we are likely in a heavy ingestion phase.
@@ -220,20 +225,28 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 		}
 	}
 
-	// Arena-aware tuning: if arena usage >70% of heap, set GOGC=50
-	arenaRatio := float64(totalArenaCapacity) / float64(heapAlloc)
+	// Arena-aware tuning: if total physical usage > 85% of limit, set GOGC=50
 	var targetGOGC int
 
-	if aggressive && arenaRatio > 0.7 {
-		// Arena-dominated heap: be very aggressive
-		targetGOGC = t.lowGOGC
+	if aggressive && ratio > 0.80 {
+		// High physical pressure: scale down GOGC progressively
+		if ratio > 0.95 {
+			targetGOGC = 10
+		} else if ratio > 0.90 {
+			targetGOGC = 20
+		} else if ratio > 0.85 {
+			targetGOGC = 40
+		} else {
+			targetGOGC = t.lowGOGC
+		}
+
 		if t.logger != nil {
 			t.logger.Warn().
-				Float64("arenaRatio", arenaRatio).
-				Int64("totalArenaCapacity", totalArenaCapacity).
+				Float64("ratio", ratio).
+				Int64("totalArenaUsed", totalArenaUsed).
 				Uint64("heapAlloc", heapAlloc).
 				Int("targetGOGC", targetGOGC).
-				Msg("Arena-dominated heap detected, setting aggressive GOGC")
+				Msg("High memory pressure detected, setting aggressive GOGC")
 		}
 	} else if t.EnableGPUTuning && gpuUtilization >= t.GPUUtilizationHigh {
 		// GPU is highly utilized - reduce GOGC to reduce CPU overhead
@@ -250,12 +263,25 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 		// CPU is doing more work, so be less aggressive with GC
 		targetGOGC = t.highGOGC
 	} else {
-		// Standard logic based on heap utilization
+	// Standard logic based on heap utilization
 		switch {
 		case ratio < 0.5:
 			targetGOGC = t.highGOGC
 		case ratio > 0.9:
-			targetGOGC = t.lowGOGC
+			// If ratio is very high (> 0.95), we might want to be even more aggressive than lowGOGC
+			if aggressive && ratio > 0.95 {
+				targetGOGC = t.lowGOGC / 2
+				if targetGOGC < 10 {
+					targetGOGC = 10
+				}
+				// Force a manual GC if we are hitting the ceiling to avoid OOM/Livelock
+				runtime.GC()
+				if ratio > 0.97 {
+					debug.FreeOSMemory()
+				}
+			} else {
+				targetGOGC = t.lowGOGC
+			}
 		default:
 			// Interpolate: 0.5 -> High, 0.9 -> Low
 			// Slope = (Low - High) / (0.9 - 0.5)
@@ -269,9 +295,22 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 		targetGOGC += 50
 	}
 
-	if aggressive && ratio > 0.7 {
+	if aggressive && ratio > 0.88 {
 		if t.logger != nil {
-			t.logger.Warn().Float64("ratio", ratio).Int64("effective", effectiveInUse).Msg("High effective heap utilization")
+			t.logger.Warn().Float64("ratio", ratio).Int64("total_physical", totalPhysicalUsed).Int64("limit_bytes", t.limitBytes).Msg("CRITICAL total memory utilization - triggering emergency cleanup")
+		}
+		t.mu.RLock()
+		for _, fn := range t.cleanupFuncs {
+			fn()
+		}
+		t.mu.RUnlock()
+		
+		// Also force a GC if very high
+		if ratio > 0.92 {
+			runtime.GC()
+			if ratio > 0.97 {
+				debug.FreeOSMemory()
+			}
 		}
 	}
 	metrics.GCTunerHeapUtilization.Set(ratio)
@@ -283,8 +322,8 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 	}
 
 	// Clamp
-	if targetGOGC < t.lowGOGC {
-		targetGOGC = t.lowGOGC
+	if targetGOGC < 10 {
+		targetGOGC = 10
 	}
 	if targetGOGC > t.highGOGC {
 		targetGOGC = t.highGOGC

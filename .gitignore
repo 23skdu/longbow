@@ -29,6 +29,7 @@ scratch/
 .temp/
 *.bak
 *.orig
+/*.txt
 
 # Data and snapshots
 data/
@@ -107,6 +108,7 @@ longbowclientsdk/**/*.py[cod]
 # Performance Profiles and Results
 profiles/
 *.prof
+*.pprof
 results_parallel/
 results_remote_*.json
 remote_profiles/
@@ -119,3 +121,4 @@ server_*.log
 
 coverage.*
 *.out
+vendor/

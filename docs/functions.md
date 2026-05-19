@@ -133,8 +133,8 @@ Executes specific control commands.
 | :--- | :--- | :--- |
 | `add-edge` | Add semantic edge (Subject->Predicate->Object). | `python3 scripts/ops_test.py add-edge ...` |
 | `traverse-graph` | Traverse graph from start node. | `python3 scripts/ops_test.py traverse ...` |
-| `calculate-pagerank`| Compute importance scores for nodes. | `scripts/graph_functional_test.py` |
-| `detect-communities`| Group nodes into clusters based on topology. | `scripts/graph_functional_test.py` |
+| `calculate-pagerank`| Compute importance scores for nodes. | `python3 scripts/ops_test.py pagerank ...` |
+| `detect-communities`| Group nodes into clusters based on topology. | `python3 scripts/ops_test.py communities ...` |
 | `GetGraphStats` | Get graph statistics (nodes, edges). | `python3 scripts/ops_test.py graph-stats ...` |
 
 #### System

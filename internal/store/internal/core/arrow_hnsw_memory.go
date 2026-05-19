@@ -103,6 +103,7 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 			h.config.TurboQuantBits,
 			h.name,
 			nil, // allocator
+			h.sharedVectorSpace.Load(),
 		)
 	} else {
 		newData = oldData.Clone()

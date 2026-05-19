@@ -529,6 +529,96 @@ func (i *CPUIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	return results, nil
 }
 
+func (i *CPUIndex) Clear() error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.vectors = make(map[int64][]float32)
+	i.pqCodes = make(map[int64][]byte)
+	i.tqCodes = make(map[int64][]byte)
+	return nil
+}
+
+func (i *CPUIndex) Sync() error {
+	return nil
+}
+
+func (i *CPUIndex) Reset() error {
+	return i.Clear()
+}
+
+func (i *CPUIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	numCandidates := len(candidateIds)
+	selectedIds := make([]uint32, 0, maxNeighbors)
+
+	for idx := 0; idx < numCandidates && len(selectedIds) < maxNeighbors; idx++ {
+		currId := candidateIds[idx]
+		currDist := candidateDists[idx]
+		good := true
+
+		for _, selId := range selectedIds {
+			// Compute distance between currId and selId
+			v1 := allVectors[int(currId)*i.dimension : int(currId+1)*i.dimension]
+			v2 := allVectors[int(selId)*i.dimension : int(selId+1)*i.dimension]
+			
+			distBetween := math.Sqrt(float64(euclideanDistance(v1, v2)))
+			if float32(distBetween) < currDist {
+				good = false
+				break
+			}
+		}
+
+		if good {
+			selectedIds = append(selectedIds, currId)
+		}
+	}
+
+	return selectedIds, nil
+}
+
+func (i *CPUIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	if len(i.graphOffsets) == 0 {
+		return entryPoint, entryDist, nil
+	}
+
+	currID := entryPoint
+	currDist := entryDist
+	improved := true
+
+	for improved {
+		improved = false
+		if int(currID+1) >= len(i.graphOffsets) {
+			break
+		}
+		start := i.graphOffsets[currID]
+		end := i.graphOffsets[currID+1]
+
+		for neighborIdx := start; neighborIdx < end; neighborIdx++ {
+			neighborID := i.graphNeighbors[neighborIdx]
+			vec, ok := i.vectors[int64(neighborID)]
+			if !ok {
+				continue
+			}
+
+			dist := euclideanDistance(query, vec)
+			dist = float32(math.Sqrt(float64(dist)))
+
+			if dist < currDist {
+				currDist = dist
+				currID = neighborID
+				improved = true
+			}
+		}
+	}
+
+	return currID, currDist, nil
+}
+
 // float16ToFloat32 ...
 func float16ToFloat32(v uint16) float32 {
 	// Extract float16 components

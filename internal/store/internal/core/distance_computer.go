@@ -423,6 +423,8 @@ var (
 	_ DistanceComputer = (*float32Computer)(nil)
 	_ DistanceComputer = (*float32ToFloat32Computer)(nil)
 	_ DistanceComputer = (*int8Computer)(nil)
+	_ DistanceComputer = (*sharedFloat32Computer)(nil)
+	_ DistanceComputer = (*sharedInt8Computer)(nil)
 	_ DistanceComputer = (*complex64Computer)(nil)
 	_ DistanceComputer = (*complex128Computer)(nil)
 	_ DistanceComputer = (*float16Computer)(nil)
@@ -434,3 +436,126 @@ var (
 	_ DistanceComputer = (*uint16Computer)(nil)
 	_ DistanceComputer = (*uint64Computer)(nil)
 )
+
+type sharedFloat32Computer struct {
+	squared   bool
+	data      *types.GraphData
+	q         []float32
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
+	maxGen    uint64
+	slices    [][]float32
+}
+
+func (c *sharedFloat32Computer) ComputeSingle(id uint32) (float32, error) {
+	loc, ok := c.h.locationStore.Get(types.VectorID(id))
+	if !ok || loc.BatchIdx < 0 || loc.BatchIdx >= len(c.slices) {
+		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+		if err != nil {
+			return 0, err
+		}
+		if v, ok := vecAny.([]float32); ok {
+			if c.squared {
+				return c.h.distFuncSquared(c.q, v)
+			}
+			return c.h.distFunc(c.q, v)
+		}
+		return math.MaxFloat32, nil
+	}
+
+	start := loc.RowIdx * c.dims
+	if start+c.dims > len(c.slices[loc.BatchIdx]) {
+		return math.MaxFloat32, nil
+	}
+	vec := c.slices[loc.BatchIdx][start : start+c.dims]
+	if c.squared {
+		return c.h.distFuncSquared(c.q, vec)
+	}
+	return c.h.distFunc(c.q, vec)
+}
+
+func (c *sharedFloat32Computer) Prefetch(id uint32) {
+	// Optimized hot-path: bypass Get() abstraction
+	chunksPtr := c.h.locationStore.chunks.Load()
+	if chunksPtr == nil { return }
+	chunks := *chunksPtr
+	idx := int(id)
+	cIdx := idx / 1024
+	if cIdx < len(chunks) {
+		packed := chunks[cIdx].data[idx % 1024].Load()
+		if packed != 0 {
+			// Fast unpack (batchIdx is high 32 bits, rowIdx is low 32 bits)
+			bIdx := int(packed >> 32)
+			rIdx := int(packed & 0xFFFFFFFF)
+			if bIdx < len(c.slices) {
+				start := rIdx * c.dims
+				if start < len(c.slices[bIdx]) {
+					simd.Prefetch(unsafe.Pointer(&c.slices[bIdx][start])) // #nosec G103
+				}
+			}
+		}
+	}
+}
+
+type sharedInt8Computer struct {
+	squared   bool
+	data      *types.GraphData
+	q         []uint8
+	qInt8     []int8
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
+	maxGen    uint64
+	slices    [][]int8
+}
+
+func (c *sharedInt8Computer) ComputeSingle(id uint32) (float32, error) {
+	loc, ok := c.h.locationStore.Get(types.VectorID(id))
+	if !ok || loc.BatchIdx < 0 || loc.BatchIdx >= len(c.slices) {
+		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+		if err != nil {
+			return 0, err
+		}
+		if v, ok := vecAny.([]int8); ok {
+			if c.squared {
+				return c.h.distFuncInt8Squared(c.qInt8, v)
+			}
+			return c.h.distFuncInt8(c.qInt8, v)
+		}
+		return math.MaxFloat32, nil
+	}
+
+	start := loc.RowIdx * c.dims
+	if start+c.dims > len(c.slices[loc.BatchIdx]) {
+		return math.MaxFloat32, nil
+	}
+	vec := c.slices[loc.BatchIdx][start : start+c.dims]
+	if c.squared {
+		return c.h.distFuncInt8Squared(c.qInt8, vec)
+	}
+	return c.h.distFuncInt8(c.qInt8, vec)
+}
+
+func (c *sharedInt8Computer) Prefetch(id uint32) {
+	// Optimized hot-path: bypass Get() abstraction
+	chunksPtr := c.h.locationStore.chunks.Load()
+	if chunksPtr == nil { return }
+	chunks := *chunksPtr
+	idx := int(id)
+	cIdx := idx / 1024
+	if cIdx < len(chunks) {
+		packed := chunks[cIdx].data[idx % 1024].Load()
+		if packed != 0 {
+			// Fast unpack
+			bIdx := int(packed >> 32)
+			rIdx := int(packed & 0xFFFFFFFF)
+			if bIdx < len(c.slices) {
+				start := rIdx * c.dims
+				if start < len(c.slices[bIdx]) {
+					simd.Prefetch(unsafe.Pointer(&c.slices[bIdx][start])) // #nosec G103
+				}
+			}
+		}
+	}
+}

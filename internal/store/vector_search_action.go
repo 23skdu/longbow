@@ -94,7 +94,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 
 		if isHybrid {
 			// Perform Hybrid Search
-			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2)
+			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2, req.RawHybrid)
 			if err != nil {
 				metrics.VectorSearchActionErrors.Inc()
 				continue

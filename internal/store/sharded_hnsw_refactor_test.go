@@ -161,6 +161,26 @@ func (m *MockVectorIndex) ApplyDelta(delta *types.DeltaSync) error {
 	return args.Error(0)
 }
 
+func (m *MockVectorIndex) RelocateToOffHeap() error {
+	args := m.Called()
+	return args.Error(0)
+}
+
+func (m *MockVectorIndex) ReleaseMonolithicChunk(cID int) error {
+	args := m.Called(cID)
+	return args.Error(0)
+}
+
+func (m *MockVectorIndex) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
+	args := m.Called(ctx, mapping)
+	return args.Error(0)
+}
+
+func (m *MockVectorIndex) GetGPUIndex() any {
+	args := m.Called()
+	return args.Get(0)
+}
+
 func (m *MockVectorIndex) SetParallelSearchConfig(cfg types.ParallelSearchConfig) {
 	m.Called(cfg)
 }
@@ -170,19 +190,9 @@ func (m *MockVectorIndex) GetParallelSearchConfig() types.ParallelSearchConfig {
 	return args.Get(0).(types.ParallelSearchConfig)
 }
 
-func (m *MockVectorIndex) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
-	args := m.Called(ctx, mapping)
-	return args.Error(0)
-}
-
 func (m *MockVectorIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []core.Filter, options any) ([]SearchResult, error) {
 	args := m.Called(ctx, q, threshold, filters, options)
 	return args.Get(0).([]SearchResult), args.Error(1)
-}
-
-func (m *MockVectorIndex) GetGPUIndex() any {
-	args := m.Called()
-	return args.Get(0)
 }
 
 func (m *MockVectorIndex) GetIndexType() string {

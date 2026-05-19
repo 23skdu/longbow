@@ -13,13 +13,13 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
-	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
 	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
+	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -427,6 +427,18 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	}
 
 	// 1. Initial Greedy Search to find entry point at level 0
+	if h.gpuEnabled && h.gpuIndex != nil && maxLevel > 0 {
+		var qf32 []float32
+		var ok bool
+		if qf32, ok = queryVec.([]float32); ok {
+			newEP, newDist, err := h.gpuIndex.SearchGreedy(qf32, currObj.ID, currObj.Dist)
+			if err == nil {
+				currObj = types.Candidate{ID: newEP, Dist: newDist}
+				goto search_layer0
+			}
+		}
+	}
+
 	for level := int(maxLevel); level > 0; level-- { // #nosec G115
 		// Greedy search: keep 1 best candidate
 		res, err := h.searchLayer(ctx, computer, currObj.ID, 1, level, searchCtx, data, queryVec)
@@ -441,6 +453,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		}
 	}
 
+search_layer0:
 	// 2. Search at layer 0 with adaptive retry
 	efSearch := int(h.config.EfSearch)
 	if searchOptions.Ef > 0 {
@@ -510,8 +523,6 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	return results, nil
 }
 
-// searchLayer is used by insertion logic
-// searchLayer implements HNSW layer search
 func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint uint32, ef, layer int, ctx *ArrowSearchContext, data *types.GraphData, queryVec any) ([]types.Candidate, error) {
 	meta := h.GetMetadataSnapshot()
 
@@ -586,18 +597,34 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					if h.distFuncF64 == nil {
 						return math.MaxFloat32, nil
 					}
-					q64 := make([]float64, len(q))
-					for i, val := range q {
-						q64[i] = float64(val)
+					var q64 []float64
+					if ctx != nil {
+						if cap(ctx.queryF64) < len(q) {
+							ctx.queryF64 = make([]float64, len(q))
+						}
+						ctx.queryF64 = ctx.queryF64[:len(q)]
+						for i, val := range q { ctx.queryF64[i] = float64(val) }
+						q64 = ctx.queryF64
+					} else {
+						q64 = make([]float64, len(q))
+						for i, val := range q { q64[i] = float64(val) }
 					}
 					return h.distFuncF64(q64, v)
 				case []float16.Num:
 					if h.distFuncF16 == nil {
 						return math.MaxFloat32, nil
 					}
-					q16 := make([]float16.Num, len(q))
-					for i, val := range q {
-						q16[i] = float16.New(val)
+					var q16 []float16.Num
+					if ctx != nil {
+						if cap(ctx.queryF16) < len(q) {
+							ctx.queryF16 = make([]float16.Num, len(q))
+						}
+						ctx.queryF16 = ctx.queryF16[:len(q)]
+						for i, val := range q { ctx.queryF16[i] = float16.New(val) }
+						q16 = ctx.queryF16
+					} else {
+						q16 = make([]float16.Num, len(q))
+						for i, val := range q { q16[i] = float16.New(val) }
 					}
 					return h.distFuncF16(q16, v)
 				case []int8, []uint8:
@@ -628,9 +655,17 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					return float32(math.Sqrt(float64(sum))), nil
 				case []complex64:
 					qLen := len(q)
-					qComplex := make([]complex64, qLen/2)
-					for i := 0; i < qLen/2; i++ {
-						qComplex[i] = complex(q[2*i], q[2*i+1])
+					var qComplex []complex64
+					if ctx != nil {
+						if cap(ctx.queryC64) < qLen/2 {
+							ctx.queryC64 = make([]complex64, qLen/2)
+						}
+						ctx.queryC64 = ctx.queryC64[:qLen/2]
+						for i := 0; i < qLen/2; i++ { ctx.queryC64[i] = complex(q[2*i], q[2*i+1]) }
+						qComplex = ctx.queryC64
+					} else {
+						qComplex = make([]complex64, qLen/2)
+						for i := 0; i < qLen/2; i++ { qComplex[i] = complex(q[2*i], q[2*i+1]) }
 					}
 					var sum float32
 					for i, val := range qComplex {
@@ -643,9 +678,17 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					return float32(math.Sqrt(float64(sum))), nil
 				case []complex128:
 					qLen := len(q)
-					qComplex := make([]complex128, qLen/2)
-					for i := 0; i < qLen/2; i++ {
-						qComplex[i] = complex(float64(q[2*i]), float64(q[2*i+1]))
+					var qComplex []complex128
+					if ctx != nil {
+						if cap(ctx.queryC128) < qLen/2 {
+							ctx.queryC128 = make([]complex128, qLen/2)
+						}
+						ctx.queryC128 = ctx.queryC128[:qLen/2]
+						for i := 0; i < qLen/2; i++ { ctx.queryC128[i] = complex(float64(q[2*i]), float64(q[2*i+1])) }
+						qComplex = ctx.queryC128
+					} else {
+						qComplex = make([]complex128, qLen/2)
+						for i := 0; i < qLen/2; i++ { qComplex[i] = complex(float64(q[2*i]), float64(q[2*i+1])) }
 					}
 					var sum float64
 					for i, val := range qComplex {
@@ -1046,18 +1089,15 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		}
 
 		// Optimization: Prefetch neighbor vectors to hide memory latency
-		for i, n := range neighbors {
-			if i+2 < len(neighbors) {
-				nextN := neighbors[i+2]
-				if int64(nextN) < maxCommitted {
-					cID := types.ChunkID(nextN)
-					cOff := types.ChunkOffset(nextN)
-					if vChunk := data.GetVectorsChunkWithGen(cID, maxGen); vChunk != nil {
-						simd.Prefetch(unsafe.Pointer(&vChunk[cOff*data.Dims])) // #nosec G103
+		if comp, ok := computer.(DistanceComputer); ok {
+			for i := range neighbors {
+				if i+2 < len(neighbors) {
+					nextN := neighbors[i+2]
+					if int64(nextN) < maxCommitted {
+						comp.Prefetch(nextN)
 					}
 				}
 			}
-			_ = n
 		}
 
 		if ctx.predicate != nil {
@@ -1211,6 +1251,29 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		if data.Type == types.VectorTypeFloat32 {
 			maxGen := uint64(math.MaxUint64)
 			if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+			
+			// Detect Shared Vector Space and use specialized computer
+			if h.sharedVectorSpace.Load() && h.dataset != nil {
+				recs := h.dataset.GetRecords()
+				slices := make([][]float32, len(recs))
+				vecColIdx := -1
+				for i, rec := range recs {
+					if rec == nil { continue }
+					if vecColIdx == -1 {
+						vecColIdx = h.getVectorColumnIndex(rec)
+					}
+					if vecColIdx != -1 {
+						col := rec.Column(vecColIdx)
+						if list, ok := col.(*arrowarray.FixedSizeList); ok {
+							if values, ok := list.ListValues().(*arrowarray.Float32); ok {
+								slices[i] = values.Float32Values()
+							}
+						}
+					}
+				}
+				return &sharedFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen, slices: slices}
+			}
+
 			return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen}
 		}
 		maxGen := uint64(math.MaxUint64)
@@ -1243,6 +1306,32 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		}
 		maxGen := uint64(math.MaxUint64)
 		if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+
+		// Detect Shared Vector Space for Int8
+		if h.sharedVectorSpace.Load() && h.dataset != nil && (data.Type == types.VectorTypeInt8 || data.Type == types.VectorTypeUint8) {
+			recs := h.dataset.GetRecords()
+			slices := make([][]int8, len(recs))
+			vecColIdx := -1
+			for i, rec := range recs {
+				if rec == nil { continue }
+				if vecColIdx == -1 {
+					vecColIdx = h.getVectorColumnIndex(rec)
+				}
+				if vecColIdx != -1 {
+					col := rec.Column(vecColIdx)
+					if list, ok := col.(*arrowarray.FixedSizeList); ok {
+						if values, ok := list.ListValues().(*arrowarray.Int8); ok {
+							slices[i] = values.Int8Values()
+						} else if values, ok := list.ListValues().(*arrowarray.Uint8); ok {
+							u8s := values.Uint8Values()
+							slices[i] = *(*[]int8)(unsafe.Pointer(&u8s)) // #nosec G103
+						}
+					}
+				}
+			}
+			return &sharedInt8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg, maxGen: maxGen, slices: slices}
+		}
+
 		return &int8Computer{data: data, q: q8, qInt8: qInt8, dims: len(q8), h: h, diskGraph: dg, maxGen: maxGen}
 	case []float64:
 		var dg *DiskGraph
@@ -1950,7 +2039,10 @@ func (h *ArrowHNSW) GetLayerNeighbors(id uint32, layer int) ([]uint32, error) {
 
 	maxLevel := h.GetMaxLevel()
 	meta := h.GetMetadataSnapshot()
-	if meta.MaxLevel < 0 || int64(id) >= meta.NodeCount {
+	if int64(id) >= meta.NodeCount {
+		return nil, fmt.Errorf("%w: id=%d", ErrVectorNotFound, id)
+	}
+	if meta.MaxLevel < 0 {
 		return nil, nil
 	}
 
@@ -2166,6 +2258,17 @@ func (h *ArrowHNSW) getVectorWithCachedDisk(data *types.GraphData, dg *DiskGraph
 	v, _ := data.GetVectorWithGen(id, maxGen)
 	if v != nil {
 		return v, nil
+	}
+
+	// Shared Vector Space Path
+	if h.sharedVectorSpace.Load() {
+		loc, ok := h.locationStore.Get(types.VectorID(id))
+		if ok {
+			vec := h.extractFromDataset(loc.BatchIdx, loc.RowIdx)
+			if vec != nil {
+				return vec, nil
+			}
+		}
 	}
 
 	// Fallback to DiskGraph

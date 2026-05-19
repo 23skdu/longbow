@@ -52,7 +52,7 @@ func main() {
 		}
 	}
 
-	uri := flag.String("uri", "127.0.0.1:3000", "Data plane address (host:port)")
+	uri := flag.String("uri", "127.0.0.1:3000", "Data plane address (host:port or unix:///path/to/socket)")
 	dim := flag.Int("dim", 128, "Vector dimension (up to 3072)")
 	scale := flag.Int("scale", 1000, "Vector count")
 	dtype := flag.String("dtype", "float32", "Data type (float32, int32, etc, including turboquant)")
@@ -67,6 +67,7 @@ func main() {
 	outputFbin := flag.String("output-fbin", "", "Save generated vectors to .fbin file and exit")
 	mode := flag.String("mode", "vec", "Benchmark mode (vec, kv, cluster)")
 	searchModes := flag.String("search-modes", "all", "Comma-separated search modes to run (dense, hybrid, sparse, filtered, byid, graphrag, geo, temporal, learned_index)")
+	reset := flag.Bool("reset", false, "Reset dataset in-place before running the benchmark")
 	flag.Parse()
 
 	if *drop {
@@ -97,6 +98,15 @@ func main() {
 		log.Fatalf("Failed to connect SmartClient: %v", err)
 	}
 	defer sc.Close()
+
+	if *reset {
+		log.Printf("Performing in-place reset for dataset %s before benchmark...\n", *dataset)
+		if err := resetDataset(context.Background(), sc, *dataset); err != nil {
+			log.Printf("In-place reset status/info: %v (this is normal if dataset was not already present)\n", err)
+		} else {
+			log.Printf("In-place reset for dataset %s completed successfully.\n", *dataset)
+		}
+	}
 
 	var results []BenchmarkResult
 
@@ -132,7 +142,7 @@ func main() {
 				}
 				record.Retain()
 
-				putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
 				if err := uploadBatch(putCtx, sc, *dataset, record, record.Schema()); err != nil {
 					putCancel()
 					log.Fatalf("DoPut failed at record %d: %v", i, err)
@@ -201,7 +211,7 @@ func main() {
 				vecArr := vecBldr.NewArray()
 				record := array.NewRecordBatch(fbinSchema, []arrow.Array{idArr, vecArr}, int64(currentChunk))
 				
-				putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
 				if err := uploadBatch(putCtx, sc, *dataset, record, fbinSchema); err != nil {
 					putCancel()
 					log.Fatalf("DoPut failed at chunk starting %d: %v", totalUploaded, err)
@@ -315,7 +325,7 @@ func main() {
 			currentChunk := int(record.NumRows())
 
 			// Upload chunk
-			putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+			putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
 			if err := uploadBatch(putCtx, sc, *dataset, record, genSchema); err != nil {
 				putCancel()
 				log.Fatalf("DoPut failed at %d: %v", totalUploaded, err)
@@ -749,12 +759,12 @@ func checkBackpressure(ctx context.Context, sc *client.SmartClient, dataset stri
 	checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
 	checkStream, err := sc.DoAction(ctx, checkAction)
 	if err != nil {
-		return false, ""
+		return true, fmt.Sprintf("connection error: %v", err)
 	}
 
 	result, err := checkStream.Recv()
 	if err != nil {
-		return false, ""
+		return true, fmt.Sprintf("recv error: %v", err)
 	}
 
 	var status map[string]interface{}
@@ -773,50 +783,47 @@ func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, datase
 	pollCtx, pollCancel := context.WithTimeout(context.Background(), timeout)
 	defer pollCancel()
 
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	checkBody := []byte(`{"dataset":"` + dataset + `"}`)
+	checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
 		select {
 		case <-ctx.Done():
 			return "cancelled"
 		case <-pollCtx.Done():
 			log.Printf("WARNING: Timeout (%v) waiting for indexing to complete for dataset %s", timeout, dataset)
 			return "timeout"
-		default:
-		}
+		case <-ticker.C:
+			checkStream, err := sc.DoAction(pollCtx, checkAction)
+			if err != nil {
+				if strings.Contains(err.Error(), "NotFound") {
+					continue
+				}
+				log.Printf("  Readiness check failed: %v", err)
+				continue
+			}
 
-		checkBody := []byte(`{"dataset":"` + dataset + `"}`)
-		checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
-		checkStream, err := sc.DoAction(pollCtx, checkAction)
-		if err != nil {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-
-		for {
 			result, err := checkStream.Recv()
 			if err != nil {
-				break
+				continue
 			}
-			body := result.Body
-			if len(body) > 0 {
-				var status map[string]interface{}
-				if err := json.Unmarshal(body, &status); err == nil {
-					if s, ok := status["status"].(string); ok {
-						if s == "READY" {
-							return s
-						}
-						if reason, ok := status["reason"].(string); ok {
-							log.Printf("  Still indexing... (%s)", reason)
-						}
+
+			var status map[string]interface{}
+			if err := json.Unmarshal(result.Body, &status); err == nil {
+				if s, ok := status["status"].(string); ok {
+					if s == "READY" {
+						return s
+					}
+					if reason, ok := status["reason"].(string); ok {
+						log.Printf("  Still indexing %s... (%s)", dataset, reason)
 					}
 				}
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
-
-	log.Printf("WARNING: Timeout (%v) waiting for indexing to complete for dataset %s", timeout, dataset)
-	return "timeout"
 }
 
 // generateRecord is a multi-type arrow table builder
@@ -1093,6 +1100,26 @@ func dropDataset(ctx context.Context, sc *client.SmartClient, dataset string) er
 
 	action := &flight.Action{
 		Type: "drop",
+		Body: body,
+	}
+
+	stream, err := sc.DoAction(ctx, action)
+	if err != nil {
+		return err
+	}
+
+	_, err = stream.Recv()
+	return err
+}
+
+func resetDataset(ctx context.Context, sc *client.SmartClient, dataset string) error {
+	req := struct {
+		Name string `json:"name"`
+	}{Name: dataset}
+	body, _ := json.Marshal(req)
+
+	action := &flight.Action{
+		Type: "ResetDataset",
 		Body: body,
 	}
 

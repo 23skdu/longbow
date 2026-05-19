@@ -410,6 +410,30 @@ func euclideanFloat64Unrolled4x(a, b []float64) (float32, error) {
 	return float32(math.Sqrt(sum0 + sum1 + sum2 + sum3)), nil
 }
 
+func l2SquaredFloat64Unrolled4x(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 float64
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := a[i] - b[i]
+		d1 := a[i+1] - b[i+1]
+		d2 := a[i+2] - b[i+2]
+		d3 := a[i+3] - b[i+3]
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	for ; i < n; i++ {
+		d := a[i] - b[i]
+		sum0 += d * d
+	}
+	return float32(sum0 + sum1 + sum2 + sum3), nil
+}
+
 func dotFloat64Unrolled4x(a, b []float64) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")

@@ -130,7 +130,26 @@ var (
 		},
 		[]string{"direction", "error_type"}, // error_type: canceled|deadline_exceeded|transport|other
 	)
+
+	// GlobalRRFLatencySeconds measures latency of global reciprocal rank fusion
+	GlobalRRFLatencySeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_global_rrf_latency_seconds",
+			Help:    "Latency of global reciprocal rank fusion operations",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
+		},
+	)
+
+	// GlobalRRFPayloadBytes measures the number of elements passed to global reciprocal rank fusion
+	GlobalRRFPayloadBytes = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_global_rrf_payload_bytes",
+			Help:    "Number of elements (payload) passed to global RRF",
+			Buckets: []float64{10, 100, 1000, 10000, 100000},
+		},
+	)
 )
+
 
 // =============================================================================
 // Search Consistency Level Metrics (Item 2)

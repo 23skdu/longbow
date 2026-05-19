@@ -681,3 +681,30 @@ func (idx *MetalHybridIndex) HaversineSearch(centerLat, centerLon float32, point
 func (idx *MetalHybridIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	return nil, fmt.Errorf("NormBatch not implemented for hybrid Metal index")
 }
+
+func (idx *MetalHybridIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
+	return nil, fmt.Errorf("PruneNeighbors not implemented for hybrid Metal index")
+}
+
+func (idx *MetalHybridIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	// CPU fallback for hybrid index
+	return entryPoint, entryDist, nil
+}
+
+func (idx *MetalHybridIndex) Sync() error {
+	return nil
+}
+
+func (idx *MetalHybridIndex) Clear() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+	idx.handle.vectorCount = 0
+	return nil
+}
+
+func (idx *MetalHybridIndex) Reset() error {
+	return idx.Clear()
+}

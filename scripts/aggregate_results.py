@@ -10,6 +10,10 @@ def aggregate_benchmarks(results_dir):
     json_files = glob.glob(os.path.join(results_dir, "**/*.json"), recursive=True)
     
     for f in json_files:
+        fname = os.path.basename(f)
+        if not fname.startswith('result_'):
+            continue
+            
         # Infer host and mode from directory name
         parts = os.path.basename(os.path.dirname(f)).split('_')
         if len(parts) >= 2:
@@ -19,11 +23,16 @@ def aggregate_benchmarks(results_dir):
             host = "unknown"
             mode = "unknown"
             
-        # Parse dim/dtype/count from filename: bench_<dtype>_<dim>_<count>.json
+        # Parse dim/dtype/count from filename: result_mode_dtype_dim_count.json
         fname = os.path.basename(f)
         fparts = fname.replace('.json', '').split('_')
-        # bench, dtype, dim, count
-        if len(fparts) >= 4:
+        # result, mode, dtype, dim, count
+        if len(fparts) >= 5:
+            dtype = fparts[2]
+            dim = int(fparts[3])
+            count = int(fparts[4])
+        elif len(fparts) >= 4:
+            # bench, dtype, dim, count
             dtype = fparts[1]
             dim = int(fparts[2])
             count = int(fparts[3])
@@ -61,7 +70,7 @@ def aggregate_benchmarks(results_dir):
 
 def generate_markdown_report(df, output_file):
     with open(output_file, 'w') as f:
-        f.write("# Longbow v0.2.2-rc2 Performance Matrix\n\n")
+        f.write("# Longbow v0.2.1 Performance Matrix\n\n")
         
         # Summary by Search Mode
         f.write("## Search Performance Summary (QPS)\n\n")
@@ -82,6 +91,17 @@ def generate_markdown_report(df, output_file):
             aggfunc='mean'
         ).round(2)
         f.write(ingest.to_markdown())
+        f.write("\n\n")
+
+        # Search Latency (P95)
+        f.write("## Search Latency Summary (P95 ms)\n\n")
+        latency = df[df['Action'].str.startswith('Search_')].pivot_table(
+            index=['Host', 'Mode', 'Dim', 'DType'],
+            columns='Action',
+            values='P95_ms',
+            aggfunc='mean'
+        ).round(2)
+        f.write(latency.to_markdown())
         f.write("\n\n")
         
         # Detailed results for each host/mode

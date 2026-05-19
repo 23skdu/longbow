@@ -134,6 +134,7 @@ class BenchmarkRunner:
         )
         self.results = []
         self.server_pid = None
+        self.test_counter = 0
 
     def get_server_binary(self):
         mode_binaries = {
@@ -206,8 +207,12 @@ class BenchmarkRunner:
         """Start a fresh Longbow server for a specific configuration."""
         self.stop_server()
         
-        # Aggressive port cleanup to avoid "address already in use"
-        port = self.args.port
+        # Calculate dynamic port to avoid TIME_WAIT issues
+        base_port = self.args.port + (self.test_counter % 50) * 10
+        self.server_addr = f"127.0.0.1:{base_port}"
+        port = base_port
+        self.test_counter += 1
+
         print(f"  Cleaning up ports starting from {port}...")
         for p in [port, port + 1, port + 80, port + 6000]:
             subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
@@ -219,16 +224,19 @@ class BenchmarkRunner:
         for p in [port, port + 1, port + 80, port + 6000]:
             for _ in range(30):
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
-                    if s.connect_ex(('127.0.0.1', p)) != 0:
-                        break
-                time.sleep(0.5)
+                    s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+                    try:
+                        s.bind(('127.0.0.1', p))
+                        break # Success, we can bind!
+                    except socket.error:
+                        pass # Still in use
+                time.sleep(1.0)
         
         # Also kill any lingering longbow processes by name to be sure
         for name in ["longbow", "longbow-metal", "longbow-cuda", "bench-tool", "benchmark-tool", "longbow-cli"]:
-            subprocess.run(f"pkill -9 {name} 2>/dev/null || true", shell=True)
-            subprocess.run(f"pkill -9 -f {name} 2>/dev/null || true", shell=True)
+            subprocess.run(f"pkill -9 -x {name} 2>/dev/null || true", shell=True)
         
-        time.sleep(5) 
+        time.sleep(1) 
         
         server_bin = self.get_server_binary()
         if not os.path.exists(server_bin):
@@ -242,82 +250,84 @@ class BenchmarkRunner:
         env = os.environ.copy()
         if env_overrides:
             env.update(env_overrides)
-        
-        # Dynamic mode-based env overrides
-        current_mode = getattr(self, 'current_mode', self.args.mode)
-        if self.args.mode == "temporal" or "temporal" in self.args.search_modes or self.args.search_modes == "all":
-            env["LONGBOW_TEMPORAL_ENABLED"] = "true"
-            env["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
-        
-        if "geo" in self.args.search_modes or self.args.search_modes == "all":
-            env["GEO_ENABLED"] = "true"
-            env["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
-        if current_mode == "geo":
-            env["LONGBOW_GEO_ENABLED"] = "true"
-        if current_mode == "graphrag":
-            env["LONGBOW_GRAPHRAG_ENABLED"] = "true"
-        if current_mode in ["metal", "cuda"]:
+
+        # ── Core resource limits ──────────────────────────────────────────
+        limit_gb = getattr(self.args, "memory", 18 * 1024 * 1024 * 1024)
+        env["LONGBOW_MAX_MEMORY"] = str(limit_gb)
+        env["ARROW_DISABLE_LOCKING"] = "1"
+        env["LONGBOW_GOGC"] = "200"
+        env["LONGBOW_INGESTION_WORKER_COUNT"] = "0"
+        env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"
+        env["LONGBOW_AUTOSCALE_ENABLED"] = "false"
+
+        # ── Network addresses ─────────────────────────────────────────────
+        env["LONGBOW_LISTEN_ADDR"] = f"0.0.0.0:{port}"
+        env["LONGBOW_META_ADDR"] = f"0.0.0.0:{port + 1}"
+        env["LONGBOW_REST_ADDR"] = f"0.0.0.0:{port + 80}"
+        env["LONGBOW_METRICS_ADDR"] = f"0.0.0.0:{port + 6000}"
+        env["LONGBOW_DATA_PATH"] = data_root
+        env["LONGBOW_NODE_ID"] = self.node_id
+
+        # ── GPU mode ──────────────────────────────────────────────────────
+        current_mode = getattr(self, "current_mode", self.args.mode)
+        if current_mode in ("metal", "cuda"):
             env["LONGBOW_GPU_ENABLED"] = "true"
         else:
             env["LONGBOW_GPU_ENABLED"] = "false"
 
-        limit_gb = 18
-        if "ancalagon" not in os.uname().nodename.lower() and "darwin" in sys.platform.lower():
-            limit_gb = 12
-        env["LONGBOW_MAX_MEMORY"] = str(limit_gb * 1024 * 1024 * 1024) 
-        env["ARROW_DISABLE_LOCKING"] = "1"
+        # ── Feature flags (always enabled for comprehensive benchmarking) ─
+        env["LONGBOW_TEMPORAL_ENABLED"] = "true"
+        env["LONGBOW_TEMPORAL_AGGREGATION_ENABLED"] = "true"
+        try:
+            parts = label.split("_")
+            if len(parts) >= 4:
+                dim = parts[-2]
+                env["LONGBOW_TEMPORAL_DIM"] = str(dim)
+        except Exception:
+            pass
+        env["LONGBOW_SPARSE_ENABLED"] = "true"
+        env["LONGBOW_GEOSPATIAL_ENABLED"] = "true"
+        env["LONGBOW_GEO_SEARCH_ENABLED"] = "true"
+        env["LONGBOW_GRAPHRAG_ENABLED"] = "true"
+        env["LONGBOW_LEARNED_INDEX_ENABLED"] = "true"
+        env["LONGBOW_HYBRID_SEARCH_ENABLED"] = "true"
+        env["LONGBOW_HNSW_TURBOQUANT_ENABLED"] = "true"
+        env["LONGBOW_RERANKER_ENABLED"] = "true"
+        env["LONGBOW_INDEXING_ADAPTIVE_ENABLED"] = "true"
+
+        # ── Optional feature flags (CLI-driven) ───────────────────────────
         if self.args.rdma:
             env["LONGBOW_RDMA_ENABLED"] = "true"
         if self.args.iouring:
             env["LONGBOW_STORAGE_USE_IOURING"] = "true"
-
-        log_file = os.path.join(self.log_dir, f"longbow_{current_mode}_{label}.log")
-
-        env["LONGBOW_LISTEN_ADDR"] = f"127.0.0.1:{port}"
-        env["LONGBOW_META_ADDR"] = f"127.0.0.1:{port + 1}"
-        env["LONGBOW_REST_ADDR"] = f"127.0.0.1:{port + 80}"
-        env["LONGBOW_METRICS_ADDR"] = f"127.0.0.1:{port + 6000}"
-        env["LONGBOW_DATA_PATH"] = data_root
-        env["LONGBOW_NODE_ID"] = self.node_id
-        env["LONGBOW_GOGC"] = "200"
-        env["LONGBOW_INGESTION_WORKER_COUNT"] = "0"
-        env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"
-        
         if self.args.low_mem:
             env["LONGBOW_LOW_MEM"] = "1"
         if self.args.use_disk:
             env["LONGBOW_USE_DISK"] = "1"
         if self.args.pq_ingest:
             env["LONGBOW_PQ_INGEST"] = "1"
-        
-        # Dynamically scale gRPC message size for workloads > 100k vectors
-        # Also helpful for high-dimensional vectors (e.g. 1536d, 3072d)
-        max_count = max([int(c) for c in self.args.counts.split(",")])
+        if self.args.debug:
+            env["LONGBOW_DEBUG"] = "true"
+        if getattr(self.args, "learned_samples", 0) > 0:
+            env["LONGBOW_LEARNED_MIN_SAMPLES"] = str(self.args.learned_samples)
+        if getattr(self.args, "learned_confidence", 0.0) > 0:
+            env["LONGBOW_LEARNED_CONFIDENCE_THRESHOLD"] = str(self.args.learned_confidence)
+        if getattr(self.args, "learned_interval", 0) > 0:
+            env["LONGBOW_LEARNED_UPDATE_INTERVAL"] = str(self.args.learned_interval)
+
+        # ── Scale gRPC message size for large workloads ───────────────────
+        max_count = max(int(c) for c in self.args.counts.split(","))
         if max_count >= 100000:
-            # Scale up to 2GB for large batches
             env["LONGBOW_GRPC_MAX_RECV_MSG_SIZE"] = "2147483647"
             env["LONGBOW_GRPC_MAX_SEND_MSG_SIZE"] = "2147483647"
             print(f"  Scaling gRPC message size for {max_count} vectors")
-        
-        env["LONGBOW_LEARNED_INDEX_ENABLED"] = "true"
-        if self.args.learned_samples:
-            env["LONGBOW_LEARNED_MIN_SAMPLES"] = str(self.args.learned_samples)
 
-        if not os.path.exists(self.log_dir):
-            os.makedirs(self.log_dir, exist_ok=True)
+        # ── Autoshard threshold: set well above max count to prevent
+        #    mid-benchmark shard migration from distorting timing ──────────
+        shard_threshold = max_count * 2
+        env["AUTO_SHARDING_THRESHOLD"] = str(shard_threshold)
 
-        # Enable GPU for metal/cuda benchmark modes
-        if self.args.mode in ["metal", "cuda"]:
-            env["LONGBOW_GPU_ENABLED"] = "true"
-        else:
-            env["LONGBOW_GPU_ENABLED"] = "false"
-
-        # Enable RDMA for cluster mode
-        if self.args.rdma:
-            env["LONGBOW_RDMA_ENABLED"] = "true"
-
-        if not os.path.exists(self.log_dir):
-            os.makedirs(self.log_dir, exist_ok=True)
+        log_file = os.path.join(self.log_dir, f"longbow_{current_mode}_{label}.log")
         with open(log_file, "w") as f:
             process = subprocess.Popen(
                 [server_bin],
@@ -327,7 +337,10 @@ class BenchmarkRunner:
             )
             self.server_pid = process.pid
 
-        # Wait for server to be ready with robust checking
+        # Wait for server to be ready with robust gRPC /ready polling.
+        # Records the handshake duration and surfaces transient port-collision retries.
+        startup_start = time.time()
+        connection_refused_retries = 0
         for i in range(self.args.startup_timeout):
             # Check if process is still running
             if process.poll() is not None:
@@ -335,37 +348,82 @@ class BenchmarkRunner:
                 self.server_pid = None
                 return False
 
-            # Check if port is listening
-            result = run_command(f"lsof -i :{port} 2>/dev/null | grep LISTEN", shell=True)
-            if result and result.returncode == 0:
-                # Additional wait for indexing workers to start
-                time.sleep(3)
-                return True
+            # Check if port is listening and server is READY via gRPC/HTTP health check
+            # Metrics port is configured as port + 6000 in start_server
+            metrics_port = port + 6000
+            ready_url = f"http://127.0.0.1:{metrics_port}/ready"
+
+            # 1. First check if port is at least listening
+            lsof_res = run_command(f"lsof -i :{port} 2>/dev/null | grep LISTEN", shell=True)
+            if lsof_res and lsof_res.returncode == 0:
+                # 2. Then check the /ready endpoint
+                try:
+                    # Use curl for cross-platform compatibility without extra python deps
+                    ready_res = subprocess.run(
+                        ["curl", "-s", "-f", ready_url],
+                        capture_output=True,
+                        text=True,
+                        timeout=1
+                    )
+                    if ready_res.returncode == 0 and "OK" in ready_res.stdout:
+                        handshake_duration = time.time() - startup_start
+                        # Additional wait for indexing workers to settle
+                        time.sleep(2)
+                        # Log readiness handshake duration in benchmark summaries
+                        if connection_refused_retries > 0:
+                            print(f"  [readiness] server ready after {handshake_duration:.2f}s "
+                                  f"({connection_refused_retries} transient port-collision retries)")
+                        else:
+                            print(f"  [readiness] server ready in {handshake_duration:.2f}s")
+                        return True
+                    elif ready_res.returncode != 0:
+                        # Transient connection-refused race – count for summary
+                        connection_refused_retries += 1
+                except Exception:
+                    # curl timeout or other transient error – count and retry
+                    connection_refused_retries += 1
+
             time.sleep(1)
 
-        print(f"  WARNING: Server startup timeout on port {port}")
+        elapsed = time.time() - startup_start
+        print(f"  WARNING: Server startup timeout after {elapsed:.1f}s on port {port} "
+              f"({connection_refused_retries} transient retries recorded)")
         return False
 
     def stop_server(self):
         if self.server_pid:
             try:
                 os.kill(self.server_pid, signal.SIGTERM)
-                # Wait up to 5 seconds for graceful stop
-                for _ in range(10):
+                # Wait up to 45 seconds for graceful stop
+                for _ in range(90):
                     time.sleep(0.5)
                     try:
+                        pid_reaped, status = os.waitpid(self.server_pid, os.WNOHANG)
+                        if pid_reaped == self.server_pid:
+                            self.server_pid = None
+                            print("  Waiting 5 seconds for port cooling...")
+                            time.sleep(5)
+                            return
                         os.kill(self.server_pid, 0)
-                    except ProcessLookupError:
+                    except (ProcessLookupError, ChildProcessError):
                         self.server_pid = None
+                        print("  Waiting 5 seconds for port cooling...")
+                        time.sleep(5)
                         return
                 
                 # Fallback to kill -9
                 print(f"  Server PID {self.server_pid} didn't stop gracefully, killing -9")
                 os.kill(self.server_pid, signal.SIGKILL)
+                try:
+                    os.waitpid(self.server_pid, 0)
+                except (ProcessLookupError, ChildProcessError):
+                    pass
                 time.sleep(1)
-            except ProcessLookupError:
+            except (ProcessLookupError, ChildProcessError):
                 pass
             self.server_pid = None
+            print("  Waiting 5 seconds for port cooling...")
+            time.sleep(5)
 
     def collect_pprof(self, label):
         """Collect pprof profiles from the running server."""
@@ -375,12 +433,12 @@ class BenchmarkRunner:
         host, port = self.server_addr.split(":")
         # Metrics server is typically on base_port + 6000.
         # unified_benchmark sets LONGBOW_METRICS_ADDR to 127.0.0.1:{port + 6000}
-        metrics_port = 9000
+        metrics_port = int(self.server_addr.split(":")[-1]) + 6000
         
         for profile in profiles:
             url = f"http://{host}:{metrics_port}/debug/pprof/{profile}"
             if profile == "profile":
-                url += "?seconds=5"
+                url += "?seconds=1"
             
             output_file = os.path.join("profiles", f"{label}_{profile}_{self.timestamp}.pprof")
             try:
@@ -512,7 +570,7 @@ class BenchmarkRunner:
         label_full = f"{label}_{self.args.label}" if self.args.label else label
         pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
+        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=1"
         
         pprof_proc = None
         if "127.0.0.1" in self.server_addr or "localhost" in self.server_addr:
@@ -869,7 +927,7 @@ class BenchmarkRunner:
                         label_full = f"{label}_{self.args.label}" if self.args.label else label
                         pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
                         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
+                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=1"
                         pprof_proc = subprocess.Popen(
                             f"curl -s -o {pprof_file} \"{pprof_url}\"",
                             shell=True,
@@ -1208,7 +1266,7 @@ class BenchmarkRunner:
                         label_full = f"{label}_{self.args.label}" if self.args.label else label
                         pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
                         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=20"
+                        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=1"
                         pprof_proc = subprocess.Popen(
                             f"curl -s -o {pprof_file} \"{pprof_url}\"",
                             shell=True,
@@ -2122,9 +2180,6 @@ class BenchmarkRunner:
             if mode == "graphrag":
                 self.execute_graphrag()
                 continue
-            if mode == "temporal":
-                self.execute_temporal()
-                continue
             if mode == "geo":
                 self.execute_geo()
                 continue
@@ -2224,7 +2279,7 @@ class BenchmarkRunner:
                                 )
                             if self.args.pprof:
                                 self.collect_pprof(label)
-                                time.sleep(5)
+                                time.sleep(1)
                         finally:
                             self.stop_server()
                             # Clean up data directory
@@ -2533,6 +2588,8 @@ class BenchmarkRunner:
             )
 
             for r in self.results:
+                if not isinstance(r, dict) or "search" not in r:
+                    continue
                 search = r["search"]
                 dense = search.get("dense", {"qps": 0, "p50": 0})
                 hybrid = search.get("hybrid", {"qps": 0, "p50": 0})
@@ -2559,8 +2616,9 @@ class BenchmarkRunner:
             )
 
             # Use largest count for the summary table
-            max_count = max(r["count"] for r in self.results) if self.results else 0
-            for r in self.results:
+            valid_results = [r for r in self.results if isinstance(r, dict) and "count" in r and "search" in r]
+            max_count = max(r["count"] for r in valid_results) if valid_results else 0
+            for r in valid_results:
                 if r["count"] == max_count:
                     dense = r["search"].get(
                         "dense", {"qps": 0, "p50": 0, "p90": 0, "p95": 0, "p99": 0}

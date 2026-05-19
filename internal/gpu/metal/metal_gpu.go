@@ -34,6 +34,13 @@ typedef struct {
     void* normPipeline;
     void* sumCentroidsPipeline;
     void* finalizeCentroidsPipeline;
+    void* prunePipeline;
+    // Scratch buffers for pruning to avoid allocations
+    void* pruneCandIdBuffer;
+    void* pruneCandDistBuffer;
+    void* pruneSelIdBuffer;
+    void* pruneSelCountBuffer;
+    int pruneScratchCapacity;
     int vectorCount;
     int dimensions;
     int capacity;
@@ -329,6 +336,18 @@ void metal_cleanup(MetalIndexHandle* handle) {
         }
         if (handle->graphWeights) {
             CFRelease(handle->graphWeights);
+        }
+        if (handle->pruneCandIdBuffer) {
+            CFRelease(handle->pruneCandIdBuffer);
+        }
+        if (handle->pruneCandDistBuffer) {
+            CFRelease(handle->pruneCandDistBuffer);
+        }
+        if (handle->pruneSelIdBuffer) {
+            CFRelease(handle->pruneSelIdBuffer);
+        }
+        if (handle->pruneSelCountBuffer) {
+            CFRelease(handle->pruneSelCountBuffer);
         }
         // device, commandQueue, and pipelines are shared and managed by MetalContext
         free(handle);
@@ -680,6 +699,72 @@ int metal_quantize_sq8(MetalIndexHandle* handle, float* vectors, float* mins, fl
         return 0;
     }
 }
+
+int metal_prune_neighbors(MetalIndexHandle* handle, uint32_t* candidateIds, float* candidateDists, uint32_t* selectedIds, uint32_t* selectedCount, float* allVectors, int maxNeighbors, int numCandidates, int dim, bool extended) {
+    @autoreleasepool {
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->prunePipeline;
+
+        if (!pipeline) return -1;
+
+        // Use scratch buffers if capacity is sufficient
+        id<MTLBuffer> candIdBuf;
+        id<MTLBuffer> candDistBuf;
+        id<MTLBuffer> selIdBuf;
+        id<MTLBuffer> selCountBuf;
+
+        if (handle->pruneScratchCapacity >= numCandidates && handle->pruneScratchCapacity >= maxNeighbors) {
+            candIdBuf = (__bridge id<MTLBuffer>)handle->pruneCandIdBuffer;
+            candDistBuf = (__bridge id<MTLBuffer>)handle->pruneCandDistBuffer;
+            selIdBuf = (__bridge id<MTLBuffer>)handle->pruneSelIdBuffer;
+            selCountBuf = (__bridge id<MTLBuffer>)handle->pruneSelCountBuffer;
+            
+            memcpy([candIdBuf contents], candidateIds, numCandidates * sizeof(uint32_t));
+            memcpy([candDistBuf contents], candidateDists, numCandidates * sizeof(float));
+        } else {
+            // Fallback to on-the-fly allocation (rare)
+            candIdBuf = [device newBufferWithBytes:candidateIds length:numCandidates * sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            candDistBuf = [device newBufferWithBytes:candidateDists length:numCandidates * sizeof(float) options:MTLResourceStorageModeShared];
+            selIdBuf = [device newBufferWithLength:maxNeighbors * sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            selCountBuf = [device newBufferWithLength:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+        }
+        
+        id<MTLBuffer> allVecBuf;
+        if (allVectors != NULL) {
+            // NOTE: Copying all vectors is very expensive. In production, this should always be the GPU buffer.
+            allVecBuf = [device newBufferWithBytes:allVectors length:(size_t)handle->vectorCount * dim * sizeof(float) options:MTLResourceStorageModeShared];
+        } else {
+            allVecBuf = (__bridge id<MTLBuffer>)handle->vectorBuffer;
+        }
+
+        if (!allVecBuf) return -2;
+
+        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+        [encoder setComputePipelineState:pipeline];
+        [encoder setBuffer:candIdBuf offset:0 atIndex:0];
+        [encoder setBuffer:candDistBuf offset:0 atIndex:1];
+        [encoder setBuffer:selIdBuf offset:0 atIndex:2];
+        [encoder setBuffer:selCountBuf offset:0 atIndex:3];
+        [encoder setBuffer:allVecBuf offset:0 atIndex:4];
+        
+        [encoder setBytes:&maxNeighbors length:sizeof(int) atIndex:5];
+        [encoder setBytes:&numCandidates length:sizeof(int) atIndex:6];
+        [encoder setBytes:&dim length:sizeof(int) atIndex:7];
+        [encoder setBytes:&extended length:sizeof(bool) atIndex:8];
+
+        [encoder dispatchThreads:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+        [encoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+
+        *selectedCount = *(uint32_t*)[selCountBuf contents];
+        memcpy(selectedIds, [selIdBuf contents], (*selectedCount) * sizeof(uint32_t));
+        return 0;
+    }
+}
 */
 import "C"
 
@@ -740,6 +825,7 @@ func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
 	handle.normPipeline, _ = ctx.GetPipelineState("norm_batch_f32")
 	handle.sumCentroidsPipeline, _ = ctx.GetPipelineState("sum_centroids")
 	handle.finalizeCentroidsPipeline, _ = ctx.GetPipelineState("finalize_centroids")
+	handle.prunePipeline, _ = ctx.GetPipelineState("hnsw_prune_neighbors")
 	// Note: bfsExpandPipeline and actPropagatePipeline are legacy, merged into fusedGraphPipeline
 	handle.bfsExpandPipeline = nil
 	handle.actPropagatePipeline = nil
@@ -750,6 +836,13 @@ func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
 	handle.graphNodeCount = 0
 	handle.graphEdgeCount = 0
 
+	// Initialize pruning scratch buffers
+	handle.pruneScratchCapacity = 1024; // Sufficient for most HNSW pruning tasks
+	handle.pruneCandIdBuffer = C.create_shared_buffer(handle.device, C.size_t(handle.pruneScratchCapacity) * C.sizeof_uint32_t)
+	handle.pruneCandDistBuffer = C.create_shared_buffer(handle.device, C.size_t(handle.pruneScratchCapacity) * C.sizeof_float)
+	handle.pruneSelIdBuffer = C.create_shared_buffer(handle.device, C.size_t(handle.pruneScratchCapacity) * C.sizeof_uint32_t)
+	handle.pruneSelCountBuffer = C.create_shared_buffer(handle.device, C.sizeof_uint32_t)
+
 	bufferSize := C.size_t(handle.capacity) * C.size_t(dimensions) * C.sizeof_float
 	buffer := C.create_shared_buffer(handle.device, bufferSize)
 	if buffer != nil {
@@ -757,6 +850,41 @@ func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
 	}
 
 	m.handle = handle
+	return nil
+}
+
+// Heal re-initializes the global Metal context and all indices' pipelines on resource exhaustion or panics
+func (m *MetalIndex) Heal() error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	libData, err := metalFS.ReadFile("kernels.metallib")
+	if err != nil {
+		return fmt.Errorf("failed to read metal library for healing: %w", err)
+	}
+
+	if err := ResetGlobalContext(libData); err != nil {
+		return fmt.Errorf("failed to reset global context for healing: %w", err)
+	}
+
+	ctx := GetContext()
+	m.handle.device = ctx.GetDevice()
+	m.handle.commandQueue = ctx.GetCommandQueue()
+
+	// Re-load all compute pipelines
+	m.handle.pqPipeline, _ = ctx.GetPipelineState("compute_pq_distances")
+	m.handle.assignPipeline, _ = ctx.GetPipelineState("assign_to_clusters")
+	m.handle.fusedGraphPipeline, _ = ctx.GetPipelineState("graph_rag_fused")
+	m.handle.l2DistancePipeline, _ = ctx.GetPipelineState("vector_distance_l2")
+	m.handle.ipDistancePipeline, _ = ctx.GetPipelineState("vector_distance_ip")
+	m.handle.quantizeSQ8Pipeline, _ = ctx.GetPipelineState("quantize_sq8")
+	m.handle.sigmoidPipeline, _ = ctx.GetPipelineState("sigmoid_f32")
+	m.handle.haversinePipeline, _ = ctx.GetPipelineState("haversine_batch")
+	m.handle.normPipeline, _ = ctx.GetPipelineState("norm_batch_f32")
+	m.handle.sumCentroidsPipeline, _ = ctx.GetPipelineState("sum_centroids")
+	m.handle.finalizeCentroidsPipeline, _ = ctx.GetPipelineState("finalize_centroids")
+	m.handle.prunePipeline, _ = ctx.GetPipelineState("hnsw_prune_neighbors")
+
 	return nil
 }
 
@@ -977,13 +1105,27 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
 		(*C.float)(unsafe.Pointer(&resultDistances[0])),
 	)
+	
+	if ret != 0 {
+		// Watchdog: attempt self-healing recovery and retry
+		if healErr := idx.Heal(); healErr == nil {
+			ret = C.metal_search(
+				idx.handle,
+				(*C.float)(unsafe.Pointer(&vector[0])),
+				C.int(k),
+				(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
+				(*C.float)(unsafe.Pointer(&resultDistances[0])),
+			)
+		}
+	}
+	
 	duration := time.Since(start)
 
 	if ret != 0 {
 		return nil, nil, &gputypes.GPUComputeError{
 			Operation: "search",
 			DeviceID:  idx.deviceInfo.DeviceID,
-			Cause:     fmt.Errorf("Metal search failed"),
+			Cause:     fmt.Errorf("Metal search failed after self-healing retry"),
 		}
 	}
 
@@ -1384,6 +1526,13 @@ func (idx *MetalIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights
 	return nil
 }
 
+func (idx *MetalIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	// Standard MetalIndex doesn't support GPU-side greedy search yet, fallback to CPU handled by caller
+	return entryPoint, entryDist, fmt.Errorf("SearchGreedy not implemented for standard MetalIndex")
+}
+
+
+
 func (idx *MetalIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -1518,4 +1667,57 @@ func (idx *MetalIndex) NormBatch(vectors []float32, dims int) ([]float32, error)
 
 	metrics.GPUComputeDurationSeconds.WithLabelValues(idx.deviceInfo.Name, "norm_batch").Observe(time.Since(start).Seconds())
 	return results, nil
+}
+func (m *MetalIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed {
+		return nil, fmt.Errorf("index closed")
+	}
+
+	numCandidates := len(candidateIds)
+	selectedIds := make([]uint32, maxNeighbors)
+	var selectedCount uint32
+
+	var vecPtr *C.float
+	if len(allVectors) > 0 {
+		vecPtr = (*C.float)(unsafe.Pointer(&allVectors[0]))
+	}
+
+	ret := C.metal_prune_neighbors(
+		m.handle,
+		(*C.uint32_t)(unsafe.Pointer(&candidateIds[0])),
+		(*C.float)(unsafe.Pointer(&candidateDists[0])),
+		(*C.uint32_t)(unsafe.Pointer(&selectedIds[0])),
+		(*C.uint32_t)(unsafe.Pointer(&selectedCount)),
+		vecPtr,
+		C.int(maxNeighbors),
+		C.int(numCandidates),
+		C.int(m.dim),
+		C.bool(true),
+	)
+
+	if ret != 0 {
+		return nil, fmt.Errorf("metal_prune_neighbors failed: %d", ret)
+	}
+
+	return selectedIds[:selectedCount], nil
+}
+
+func (idx *MetalIndex) Sync() error {
+	return nil
+}
+
+func (idx *MetalIndex) Clear() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+	idx.handle.vectorCount = 0
+	return nil
+}
+
+func (idx *MetalIndex) Reset() error {
+	return idx.Clear()
 }

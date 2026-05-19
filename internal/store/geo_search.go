@@ -489,6 +489,9 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 	// Use a max-heap to keep track of the k closest results (highest score)
 	h := &geoResultHeap{}
 	for _, res := range results {
+		if res.distance < 0 {
+			continue // Skip invalid distances
+		}
 		score := float32(1.0 / (1.0 + res.distance))
 		if h.Len() < k {
 			heap.Push(h, lbtypes.SearchResult{
@@ -651,13 +654,23 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 		for i := start; i < end; i++ {
 			c := candidates[i]
 			geoDist := float64(geoDistances[i])
+			if geoDist < 0 {
+				continue
+			}
 			geoScore := 1.0 / (1.0 + geoDist)
 
-			vectorDist := VectorDistance(queryVector, c.Vector)
-			vectorScore := 1.0 / (1.0 + vectorDist)
-
-			// Combined score using equal weighting
-			combinedScore := 0.5*geoScore + 0.5*vectorScore
+			combinedScore := 0.0
+			if c.Vector != nil {
+				vectorDist := VectorDistance(queryVector, c.Vector)
+				if vectorDist >= 0 {
+					vectorScore := 1.0 / (1.0 + vectorDist)
+					combinedScore = 0.5*geoScore + 0.5*vectorScore
+				} else {
+					combinedScore = 0.5 * geoScore
+				}
+			} else {
+				combinedScore = 0.5 * geoScore
+			}
 
 			results[i] = scoredResult{
 				id:    c.ID,

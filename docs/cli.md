@@ -110,7 +110,19 @@ Administrative tools for managing the HNSW graph as a knowledge graph.
 - **PageRank:** `longbow-cli pagerank -dataset <ds> -iterations <n>`
 - **Community Detection:** `longbow-cli detect-communities -dataset <ds>`
 
-### 5. Temporal Search
+### 5. ONNX Model Management
+
+Manage and download ONNX models from external repositories like Hugging Face.
+
+- **Download Model:** `longbow-cli download-model -repo <repo_id> [-dest <path>]`
+
+**Example:**
+
+```bash
+longbow-cli download-model -repo sentence-transformers/all-MiniLM-L6-v2 -dest models/all-mini
+```
+
+### 6. Temporal Search
 
 Query the temporal index for versioned data.
 

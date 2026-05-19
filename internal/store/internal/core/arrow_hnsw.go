@@ -99,6 +99,7 @@ type ArrowHNSW struct {
 	distFuncInt64 func([]int64, []int64) (float32, error)
 	distFuncUint64 func([]uint64, []uint64) (float32, error)
 
+	sharedVectorSpace atomic.Bool
 	adaptiveMTriggered atomic.Bool
 
 	initMu sync.Mutex
@@ -199,16 +200,13 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		topLayerManager: NewTopLayerManager(config.LockFreeThreshold),
 		topo:            topo,
 	}
-	// Ensure config parameters fit in int32 and are valid for HNSW
-	if config.M > math.MaxInt32 || config.M <= 1 {
-		config.M = 16 // Default safe value
-	}
-	if config.MMax > math.MaxInt32 || config.MMax <= 0 {
-		config.MMax = config.M * 2
-	}
-	if config.MMax0 > math.MaxInt32 || config.MMax0 <= 0 {
-		config.MMax0 = config.M * 2
-	}
+	h.metadataRegistry.Store(&HNSWMetadata{
+		EntryPoint: math.MaxUint32,
+		MaxLevel:   -1,
+		NodeCount:  0,
+		Version:    0,
+		Generation: 0,
+	})
 
 	h.m.Store(int32(config.M))     // #nosec G115
 	h.mMax.Store(int32(config.MMax))   // #nosec G115
@@ -249,6 +247,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		return nil
 	}
 	h.dims.Store(int32(config.Dims)) // #nosec G115
+	h.sharedVectorSpace.Store(config.SharedVectorSpace)
 
 	// Initialize distance functions using resolvers
 	h.resolveAllDistanceFuncs()
@@ -321,6 +320,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		config.TurboQuantBits,
 		h.name,
 		numaAlloc,
+		h.sharedVectorSpace.Load(),
 	)
 	if h.oopqEncoder != nil {
 		switch enc := h.oopqEncoder.(type) {
@@ -330,6 +330,8 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 			gd.PQM = enc.CodeSize()
 		}
 	}
+	gd.SharedVectorSpace = config.SharedVectorSpace
+	h.sharedVectorSpace.Store(config.SharedVectorSpace)
 
 	// Initialize Lock-Free Adjacency for all layers ([#11] Lock-Free Adjacency)
 	gd.PackedNeighbors = make([]types.PackedNeighbors, types.ArrowMaxLayers)
@@ -350,7 +352,8 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 			if l > 0 {
 				slabSize = 1024 * 1024 * 4
 			}
-			adjArena = memory.NewSlabArena(slabSize)
+			offHeapAlloc := memory.NewOffHeapAllocator()
+			adjArena = memory.NewSlabArenaWithAllocator(slabSize, offHeapAlloc)
 		}
 		gd.PackedNeighbors[l] = NewPackedAdjacency(adjArena, capacity)
 	}
@@ -383,7 +386,12 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	_ = h.navigator.Initialize()
 
 	if config.DataType == types.VectorTypeTQ {
-		bits := 3
+		bits := config.TurboQuantBits
+		if bits == 0 {
+			bits = 8
+		}
+		h.config.TurboQuantEnabled = true
+		h.config.TurboQuantBits = bits
 		h.tqEncoder = NewTurboQuantEncoder(config.Dims, bits, 42)
 		h.data.Load().TurboQuantEnabled = true
 		h.data.Load().TurboQuantBits = bits
@@ -479,8 +487,26 @@ func (h *ArrowHNSW) SetDimension(dim int) error {
 	h.initMu.Lock()
 	defer h.initMu.Unlock()
 	h.resolveAllDistanceFuncs()
+
+	if h.config.DataType == types.VectorTypeTQ || h.config.TurboQuantEnabled {
+		bits := h.config.TurboQuantBits
+		if bits == 0 {
+			bits = 8
+		}
+		h.tqEncoder = NewTurboQuantEncoder(dim, bits, 42)
+		h.tqCompute = NewTurboQuantCompute(h)
+	}
+
 	data := h.data.Load()
 	if data != nil {
+		if h.config.DataType == types.VectorTypeTQ || h.config.TurboQuantEnabled {
+			data.TurboQuantEnabled = true
+			if h.config.TurboQuantBits > 0 {
+				data.TurboQuantBits = h.config.TurboQuantBits
+			} else {
+				data.TurboQuantBits = 8
+			}
+		}
 		if err := h.Grow(data.Capacity, dim); err != nil {
 			return err
 		}
@@ -516,6 +542,8 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 
 func (h *ArrowHNSW) commitID(id uint32) {
 	h.commitMu.Lock()
+	defer h.commitMu.Unlock()
+	
 	for h.GetMetadataSnapshot().NodeCount < int64(id) {
 		h.commitCond.Wait()
 	}
@@ -551,17 +579,19 @@ func (h *ArrowHNSW) commitID(id uint32) {
 					meta.MaxLevel = int32(nodeLevel)
 				}
 			}
+			meta.Generation++
+		} else {
+			// Already committed or skipped
 		}
 	})
+
+	h.commitCond.Broadcast()
 	
 	// Sync atomics with the newly committed metadata
 	meta := h.GetMetadataSnapshot()
 	h.nodeCount.Store(meta.NodeCount)
 	h.entryPoint.Store(meta.EntryPoint)
 	h.maxLevel.Store(meta.MaxLevel)
-
-	h.commitCond.Broadcast()
-	h.commitMu.Unlock()
 }
 
 func (h *ArrowHNSW) updateMetadata(update func(*HNSWMetadata)) {
@@ -600,7 +630,6 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 		return 0, fmt.Errorf("index overflow: nextID %d exceeds uint32 max", next)
 	}
 	id := uint32(next - 1) // #nosec G115
-	defer h.commitID(id)
 
 	var vec any
 	if h.dataset != nil {
@@ -637,7 +666,6 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 		return 0, fmt.Errorf("index overflow: nextID %d exceeds uint32 max", next)
 	}
 	id := uint32(next - 1) // #nosec G115
-	defer h.commitID(id)
 
 	var vec any
 	// Find vector column
@@ -725,6 +753,20 @@ func (h *ArrowHNSW) PreWarm(targetSize int) {
 	}
 
 	_ = dummy
+}
+
+// ReleaseMonolithicChunk releases the storage for a chunk of the index.
+// This is used during incremental handover to shards.
+func (h *ArrowHNSW) ReleaseMonolithicChunk(cID int) error {
+	gd := h.data.Load()
+	if gd != nil {
+		gd.ReleaseChunk(cID)
+		// Also release neighbors for all layers for this chunk
+		for l := 0; l < types.ArrowMaxLayers; l++ {
+			gd.ReleaseNeighborsChunk(l, cID)
+		}
+	}
+	return nil
 }
 
 // CleanupTombstones removes deleted nodes that exceed the specified threshold.
@@ -1141,7 +1183,6 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 					}
 					return ids, nil
 				}
-				fmt.Printf("AddBatchBulk failed for %s: %v\n", h.config.DataType.String(), err)
 			}
 		}
 	}
@@ -1159,7 +1200,6 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	// Fallback to sequential insertion if bulk fails (rare)
 	ids := make([]uint32, len(rowIdxs))
 	maxID := startID + uint32(len(rowIdxs)) - 1 // #nosec G115
-	fmt.Printf("AddBatch startID=%d n=%d\n", startID, len(rowIdxs))
 	data, err := h.EnsureChunks(int(types.ChunkID(startID)), int(types.ChunkID(maxID)), int(h.dims.Load()))
 	if err == nil {
 		data = data.Clone()
@@ -1462,4 +1502,12 @@ func (h *ArrowHNSW) SetEfConstruction(ef int32) {
 // GetNUMANode returns the NUMA node and topology for the index.
 func (h *ArrowHNSW) GetNUMANode() (int, *memory.NUMATopology) {
 	return h.config.NUMANode, h.topo
+}
+
+func (h *ArrowHNSW) RelocateToOffHeap() error {
+	gd := h.data.Load()
+	if gd == nil {
+		return fmt.Errorf("no graph data to relocate")
+	}
+	return gd.RelocateToOffHeap()
 }

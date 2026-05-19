@@ -489,6 +489,24 @@ func (p *FlightClientPool) DoGetFromPeer(ctx context.Context, host, dataset stri
 	return records, nil
 }
 
+// DoAction performs a Flight action on a peer host.
+func (p *FlightClientPool) DoAction(ctx context.Context, host string, action *flight.Action) error {
+	conn, err := p.Get(ctx, host)
+	if err != nil {
+		return err
+	}
+	defer p.Put(conn)
+
+	stream, err := conn.client.DoAction(ctx, action)
+	if err != nil {
+		return err
+	}
+
+	// Consume and close stream
+	_, err = stream.Recv()
+	return err
+}
+
 // DoPutToPeer sends Arrow RecordBatches to a peer via Flight DoPut.
 func (p *FlightClientPool) DoPutToPeer(ctx context.Context, host, dataset string, records []arrow.RecordBatch) error {
 	if len(records) == 0 {

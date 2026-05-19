@@ -45,7 +45,7 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 
 	var datasets []*Dataset
 	s.IterateDatasets(func(name string, ds *Dataset) {
-		if ds != nil && ds.IsReady.Load() {
+		if ds != nil {
 			datasets = append(datasets, ds)
 		}
 	})
@@ -120,13 +120,23 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 		return nil, status.Error(codes.InvalidArgument, "Empty path")
 	}
 	name := desc.Path[0]
+	if name == "_health" {
+		metadata := s.getPooledMetadataBuffer(loadbalancing.LoadHintsSize)
+		hints := s.nodeMonitor.GetLoadHints()
+		hints.Serialize(metadata)
+		return &flight.FlightInfo{
+			FlightDescriptor: desc,
+			AppMetadata:      metadata,
+		}, nil
+	}
+
 	ds, ok := s.getDataset(name)
 	if !ok {
-		return nil, status.Error(codes.NotFound, "dataset not found")
+		return nil, status.Errorf(codes.NotFound, "dataset %s not found", name)
 	}
 
 	if !ds.IsReady.Load() {
-		return nil, status.Error(codes.Unavailable, "dataset is being initialized")
+		return nil, status.Errorf(codes.Unavailable, "dataset %s is being initialized", name)
 	}
 
 	// Include load balancing hints in AppMetadata (Apache Arrow Zero-Alloc approach)
@@ -684,12 +694,28 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchRe
 			}
 		}
 
+		// Deep copy metadata and vector to release Arrow buffers.
+		// This is critical because these results may be cached in the QueryCache,
+		// and keeping a slice into a 2MB+ RecordBatch buffer prevents the entire
+		// buffer from being garbage collected.
+		var metaCopy []byte
+		if len(metadata) > 0 {
+			metaCopy = make([]byte, len(metadata))
+			copy(metaCopy, metadata)
+		}
+
+		var vecCopy []byte
+		if len(res.Vector) > 0 {
+			vecCopy = make([]byte, len(res.Vector))
+			copy(vecCopy, res.Vector)
+		}
+
 		mappedResults = append(mappedResults, types.SearchResult{
 			ID:       resolvedID,
 			Score:    res.Score,
 			Distance: res.Distance,
-			Metadata: metadata,
-			Vector:   res.Vector,
+			Metadata: metaCopy,
+			Vector:   vecCopy,
 		})
 	}
 
@@ -794,7 +820,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 			if depth <= 0 {
 				depth = 2
 			}
-			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, depth)
+			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, depth, req.RawHybrid)
 		} else {
 			// Standard Vector Search
 			ds, ok := s.getDataset(req.Dataset)
@@ -916,6 +942,9 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 	if req.IncludeVectors {
 		fields = append(fields, arrow.Field{Name: "vector", Type: arrow.BinaryTypes.Binary})
 	}
+	if req.RawHybrid {
+		fields = append(fields, arrow.Field{Name: "source", Type: arrow.PrimitiveTypes.Uint8})
+	}
 
 	// Add dynamic Window Function columns
 	for _, wf := range windowFunctions {
@@ -945,6 +974,18 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 	if req.IncludeVectors {
 		vectorBuilder = builder.Field(2).(*array.BinaryBuilder)
 	}
+	
+	var sourceBuilder *array.Uint8Builder
+	var sourceColIdx = -1
+	for i, f := range fields {
+		if f.Name == "source" {
+			sourceColIdx = i
+			break
+		}
+	}
+	if sourceColIdx >= 0 {
+		sourceBuilder = builder.Field(sourceColIdx).(*array.Uint8Builder)
+	}
 
 	// Chunk results if necessary (e.g. > 64k) to stream effectively
 	// For K usually < 1000, single batch is fine.
@@ -957,6 +998,9 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 
 		idBuilder.Reserve(end - i)
 		scoreBuilder.Reserve(end - i)
+		if sourceBuilder != nil {
+			sourceBuilder.Reserve(end - i)
+		}
 
 		for j := i; j < end; j++ {
 			idBuilder.Append(uint64(searchResults[j].ID))
@@ -969,6 +1013,10 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 				} else {
 					vectorBuilder.AppendNull()
 				}
+				colOffset++
+			}
+			if sourceBuilder != nil {
+				sourceBuilder.Append(searchResults[j].Source)
 				colOffset++
 			}
 
@@ -1282,7 +1330,7 @@ func (s *VectorStore) executeInternalSearch(ctx context.Context, req *qry.Vector
 	}
 
 	if isHybrid {
-		return s.SearchHybrid(ctx, req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2)
+		return s.SearchHybrid(ctx, req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2, req.RawHybrid)
 	}
 
 	ds, ok := s.getDataset(req.Dataset)

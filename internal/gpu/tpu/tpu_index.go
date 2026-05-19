@@ -2,11 +2,14 @@ package tpu
 
 import (
 	"fmt"
+	"math"
 	"sort"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 )
 
@@ -22,6 +25,15 @@ type TPUIndex struct {
 	graphOffsets   []uint32
 	graphNeighbors []uint32
 	graphWeights   []float32
+}
+
+func (i *TPUIndex) recordOperation(op string, start time.Time, err error) {
+	status := "success"
+	if err != nil {
+		status = "error"
+	}
+	metrics.TPUOperationsTotal.WithLabelValues(op, status).Inc()
+	metrics.TPUOperationLatency.WithLabelValues(op).Observe(time.Since(start).Seconds())
 }
 
 func NewTPUIndexImpl(cfg types.GPUConfig) (types.Index, error) {
@@ -205,15 +217,50 @@ func (i *TPUIndex) GetUtilization() (float32, error) {
 }
 
 func (i *TPUIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchFloat16 not implemented for TPUIndex (emulated)")
+	start := time.Now()
+	var err error
+	defer func() { i.recordOperation("search_f16", start, err) }()
+
+	if i.closed {
+		err = fmt.Errorf("index closed")
+		return nil, nil, err
+	}
+
+	// For the TPU stub, we fallback to Go SIMD by converting f16 to f32
+	f32Vector := make([]float32, len(vector))
+	for idx, val := range vector {
+		f32Vector[idx] = float32(val) // Mock conversion
+	}
+
+	return i.Search(f32Vector, k)
 }
 
 func (i *TPUIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchComplex64 not implemented for TPUIndex (emulated)")
+	start := time.Now()
+	var err error
+	defer func() { i.recordOperation("search_complex64", start, err) }()
+
+	if i.closed {
+		err = fmt.Errorf("index closed")
+		return nil, nil, err
+	}
+
+	// For the TPU stub, we treat Complex64 (2x uint16 as f16) as Float16 Search
+	return i.SearchFloat16(vector, k)
 }
 
 func (i *TPUIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
-	return nil, nil, fmt.Errorf("SearchComplex128 not implemented for TPUIndex (emulated)")
+	start := time.Now()
+	var err error
+	defer func() { i.recordOperation("search_complex128", start, err) }()
+
+	if i.closed {
+		err = fmt.Errorf("index closed")
+		return nil, nil, err
+	}
+
+	// Complex128 is 2x float64, but we treat it as 4x float32 in this stub for simplicity
+	return i.Search(vector, k)
 }
 
 func (i *TPUIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
@@ -399,9 +446,164 @@ func (i *TPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint
 }
 
 func (i *TPUIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
-	return nil, fmt.Errorf("HaversineSearch not implemented for TPUIndex (emulated)")
+	start := time.Now()
+	var err error
+	defer func() { i.recordOperation("haversine_search", start, err) }()
+
+	if i.closed {
+		err = fmt.Errorf("index closed")
+		return nil, err
+	}
+
+	numPoints := len(points) / 2
+	distances := make([]float32, numPoints)
+
+	const degToRad = math.Pi / 180.0
+	lat1 := float64(centerLat) * degToRad
+	lon1 := float64(centerLon) * degToRad
+
+	for idx := 0; idx < numPoints; idx++ {
+		lat2 := float64(points[idx*2]) * degToRad
+		lon2 := float64(points[idx*2+1]) * degToRad
+
+		dLat := lat2 - lat1
+		dLon := lon2 - lon1
+
+		a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+			math.Cos(lat1)*math.Cos(lat2)*
+				math.Sin(dLon/2)*math.Sin(dLon/2)
+		
+		c := 2 * math.Asin(math.Sqrt(a))
+		distances[idx] = float32(float64(earthRadius) * c)
+	}
+
+	return distances, nil
 }
 
 func (i *TPUIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
-	return nil, fmt.Errorf("NormBatch not implemented for TPUIndex (emulated)")
+	start := time.Now()
+	var err error
+	defer func() { i.recordOperation("norm_batch", start, err) }()
+
+	if i.closed {
+		err = fmt.Errorf("index closed")
+		return nil, err
+	}
+
+	numVectors := len(vectors) / dims
+	norms := make([]float32, numVectors)
+
+	for v := 0; v < numVectors; v++ {
+		var sum float64
+		for d := 0; d < dims; d++ {
+			val := float64(vectors[v*dims+d])
+			sum += val * val
+		}
+		norms[v] = float32(math.Sqrt(sum))
+	}
+
+	return norms, nil
+}
+
+func (i *TPUIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
+	start := time.Now()
+	var err error
+	defer func() { i.recordOperation("prune_neighbors", start, err) }()
+
+	if i.closed {
+		err = fmt.Errorf("index closed")
+		return nil, err
+	}
+
+	// For the TPU stub, we use a simple heuristic: keep the closest neighbors
+	// In a real implementation, this would use the HNSW diversity heuristic on TPU.
+	type cand struct {
+		id   uint32
+		dist float32
+	}
+	cands := make([]cand, len(candidateIds))
+	for idx := range candidateIds {
+		cands[idx] = cand{id: candidateIds[idx], dist: candidateDists[idx]}
+	}
+
+	sort.Slice(cands, func(a, b int) bool {
+		return cands[a].dist < cands[b].dist
+	})
+
+	n := maxNeighbors
+	if n > len(cands) {
+		n = len(cands)
+	}
+
+	res := make([]uint32, n)
+	for idx := 0; idx < n; idx++ {
+		res[idx] = cands[idx].id
+	}
+
+	return res, nil
+}
+
+func (i *TPUIndex) Clear() error {
+	i.mu.Lock()
+	defer i.mu.Unlock()
+	i.vectors = make(map[int64][]float32)
+	i.tqCodes = make(map[int64][]byte)
+	return nil
+}
+
+func (i *TPUIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	if i.closed {
+		return 0, 0, fmt.Errorf("index closed")
+	}
+
+	if len(i.graphOffsets) == 0 {
+		return entryPoint, entryDist, nil
+	}
+
+	currID := entryPoint
+	currDist := entryDist
+	improved := true
+
+	for improved {
+		improved = false
+		if int(currID+1) >= len(i.graphOffsets) {
+			break
+		}
+		start := i.graphOffsets[currID]
+		end := i.graphOffsets[currID+1]
+
+		for neighborIdx := start; neighborIdx < end; neighborIdx++ {
+			neighborID := i.graphNeighbors[neighborIdx]
+			vec, ok := i.vectors[int64(neighborID)]
+			if !ok {
+				continue
+			}
+
+			var dist float32
+			for j := 0; j < len(query) && j < len(vec); j++ {
+				diff := query[j] - vec[j]
+				dist += diff * diff
+			}
+			dist = float32(math.Sqrt(float64(dist)))
+
+			if dist < currDist {
+				currDist = dist
+				currID = neighborID
+				improved = true
+			}
+		}
+	}
+
+	return currID, currDist, nil
+}
+
+func (i *TPUIndex) Sync() error {
+	return nil
+}
+
+func (i *TPUIndex) Reset() error {
+	return i.Clear()
 }

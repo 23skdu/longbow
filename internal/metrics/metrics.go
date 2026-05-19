@@ -525,6 +525,14 @@ var (
 		},
 	)
 
+	WALReplicationLatencySeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_wal_replication_latency_seconds",
+			Help:    "Latency of synchronous WAL replication across the cluster",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0},
+		},
+	)
+
 	WALWriteErrors = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_wal_write_errors_total",
@@ -537,6 +545,73 @@ var (
 			Name:    "longbow_wal_write_duration_seconds",
 			Help:    "Duration of WAL writes",
 			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05},
+		},
+	)
+
+	// PackedAdjacencyCoWTotal counts total number of PackedAdjacency Copy-on-Write updates
+	PackedAdjacencyCoWTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_packed_adjacency_cow_total",
+			Help: "Total number of PackedAdjacency Copy-on-Write updates",
+		},
+	)
+
+	// GPU Ingestion Metrics
+	GPUIngestKernelDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_gpu_ingest_kernel_duration_seconds",
+			Help:    "Duration of GPU-accelerated ingestion kernels",
+			Buckets: []float64{0.0001, 0.001, 0.01, 0.1, 1},
+		},
+	)
+
+	GPUNeighborPruneOpsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_neighbor_prune_ops_total",
+			Help: "Total number of GPU neighbor prune operations",
+		},
+	)
+
+	// TurboQuant Metrics
+	TurboQuantDequantizeLatencySeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_search_dequantize_latency_seconds",
+			Help:    "Latency of TurboQuant dequantization during search",
+			Buckets: []float64{0.0001, 0.001, 0.01, 0.1, 1},
+		},
+	)
+
+	// Temporal Tree Metrics
+	TemporalTreeCacheHitRatio = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_temporal_tree_cache_hit_ratio",
+			Help: "Current cache hit ratio for temporal queries",
+		},
+	)
+
+	TemporalQueryScannedNodesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_temporal_query_scanned_nodes_total",
+			Help: "Total number of tree nodes scanned during temporal queries",
+		},
+	)
+	TemporalTreeNodesTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_temporal_tree_nodes_total",
+			Help: "Total number of unique timestamps in the temporal tree",
+		},
+	)
+	TemporalTreeAllocatedBytesTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_temporal_tree_allocated_bytes_total",
+			Help: "Total bytes allocated in the temporal tree arenas",
+		},
+	)
+
+	SlabHugePageCount = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_slab_hugepage_count",
+			Help: "Total slab allocations successfully backed by transparent hugepages via madvise(MADV_HUGEPAGE)",
 		},
 	)
 
@@ -1132,3 +1207,25 @@ func RecordSimdBatch(impl string, op string, count int) {
 	simdDispatchCache.Store(key, counter)
 	counter.Add(float64(count))
 }
+
+// =============================================================================
+// TPU Backend Metrics
+// =============================================================================
+
+var (
+	TPUOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_tpu_operations_total",
+			Help: "Total number of TPU operations",
+		},
+		[]string{"operation", "status"},
+	)
+	TPUOperationLatency = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_tpu_operation_latency_seconds",
+			Help:    "Latency of TPU operations",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"operation"},
+	)
+)

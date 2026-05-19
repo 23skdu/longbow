@@ -74,6 +74,7 @@ type AutoScaler struct {
 	// Sliding windows for derived metrics
 	searchWindow *RollingWindow
 	ingestWindow *RollingWindow
+	lastSearchLatency atomic.Int64 // nanoseconds
 
 	// Configuration
 	monitorInterval time.Duration
@@ -145,6 +146,11 @@ func (as *AutoScaler) sample() {
 
 	as.searchWindow.Add(sCount)
 	as.ingestWindow.Add(iCount)
+	
+	latNs := as.totalLatencyNs.Swap(0)
+	if sCount > 0 {
+		as.lastSearchLatency.Store(latNs / sCount)
+	}
 
 	// Log load if search activity detected
 	qps := float64(as.searchWindow.Sum()) / 60.0
@@ -214,6 +220,7 @@ func (as *AutoScaler) GetLoadSnapshot() LoadSnapshot {
 
 	return LoadSnapshot{
 		SearchQPS:        qps,
+		SearchLatency:    time.Duration(as.lastSearchLatency.Load()),
 		IngestThroughput: vps,
 		Health:           health,
 		Timestamp:        time.Now(),

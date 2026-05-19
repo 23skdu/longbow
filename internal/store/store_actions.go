@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
@@ -25,6 +26,7 @@ import (
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/storage"
 	internalcore "github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/tracing"
@@ -33,6 +35,16 @@ import (
 // DoAction handles custom actions like deletion, status, and graph operations.
 func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	switch action.Type {
+	case "ForceSnapshot":
+		err := s.Snapshot(stream.Context())
+		if err != nil {
+			return status.Errorf(codes.Internal, "failed to trigger manual snapshot: %v", err)
+		}
+		if err := stream.Send(&flight.Result{Body: []byte("ACK")}); err != nil {
+			return err
+		}
+		return nil
+
 	case "cluster-status":
 		if s.Mesh == nil {
 			return status.Error(codes.Unavailable, "gossip mesh not enabled")
@@ -55,6 +67,76 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 
 		if err := stream.Send(&flight.Result{Body: body}); err != nil {
+			return err
+		}
+		return nil
+
+	case "ResetDataset":
+		var req struct {
+			Name string `json:"name"`
+		}
+		if len(action.Body) > 0 {
+			if err := json.Unmarshal(action.Body, &req); err != nil {
+				return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+			}
+		}
+
+		if req.Name != "" && req.Name != "all" {
+			s.logger.Info().Str("dataset", req.Name).Msg("In-place ResetDataset called for specific dataset")
+			if err := s.DropDataset(stream.Context(), req.Name); err != nil {
+				return ToGRPCStatus(err)
+			}
+			debug.FreeOSMemory()
+			if err := stream.Send(&flight.Result{Body: []byte(`{"status": "reset_success"}`)}); err != nil {
+				return err
+			}
+			return nil
+		}
+
+		// Reset ALL datasets!
+		s.logger.Info().Msg("In-place ResetDataset called for ALL datasets")
+		datasetsPtr := s.datasets.Load()
+		if datasetsPtr != nil {
+			datasets := *datasetsPtr
+			for name := range datasets {
+				s.logger.Info().Str("dataset", name).Msg("Dropping dataset during global in-place reset")
+				if err := s.DropDataset(stream.Context(), name); err != nil {
+					s.logger.Error().Err(err).Str("dataset", name).Msg("Failed to drop dataset during global reset")
+				}
+			}
+		}
+
+		debug.FreeOSMemory()
+		if err := stream.Send(&flight.Result{Body: []byte(`{"status": "reset_all_success"}`)}); err != nil {
+			return err
+		}
+		return nil
+
+	case "ReplicateWAL":
+		if len(action.Body) == 0 {
+			return status.Error(codes.InvalidArgument, "empty WAL payload")
+		}
+		
+		// Decode and apply in memory
+		engine := s.engine.Load()
+		if engine != nil {
+			err := engine.AppendReplicatedWAL(action.Body)
+			if err != nil {
+				return status.Errorf(codes.Internal, "failed to append replicated WAL: %v", err)
+			}
+			
+			entries, err := storage.DecodeWALBlock(action.Body, engine.GetAllocator())
+			if err != nil {
+				return status.Errorf(codes.Internal, "failed to decode replicated WAL: %v", err)
+			}
+			for _, entry := range entries {
+				// Apply to in-memory datasets
+				_ = s.applyReplayBatch(entry.Name, entry.Record, entry.Seq, entry.Ts)
+				entry.Record.Release()
+			}
+		}
+
+		if err := stream.Send(&flight.Result{Body: []byte("ACK")}); err != nil {
 			return err
 		}
 		return nil
@@ -88,9 +170,11 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			} else {
 				pending := ds.PendingIndexJobs.Load()
 				pendingIngestion := ds.PendingIngestion.Load()
-				if pending > 0 || pendingIngestion > 0 {
+				activeStreams := ds.ActiveIngestStreams.Load()
+				isMigrating := ds.Admission != nil && ds.Admission.migratingCount.Load() > 0
+				if pending > 0 || pendingIngestion > 0 || activeStreams > 0 || isMigrating {
 					resp["status"] = "BUSY"
-					resp["reason"] = fmt.Sprintf("dataset has %d pending index jobs, %d pending ingestion jobs", pending, pendingIngestion)
+					resp["reason"] = fmt.Sprintf("dataset has %d pending index jobs, %d pending ingestion jobs, %d active streams, migrating=%t", pending, pendingIngestion, activeStreams, isMigrating)
 				} else if ds.Index == nil {
 					resp["status"] = "BUSY"
 					resp["reason"] = "index not initialized"
@@ -493,6 +577,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 				60,  // Default RRF k
 				0.0, // Default Graph Alpha
 				0,   // Default Graph Depth
+				false, // RawHybrid
 			)
 		})
 		
@@ -762,7 +847,20 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	// 0. Admission Control (Backpressure)
 	if s.admission != nil {
 		if err := s.admission.Admit(stream.Context(), "ingest"); err != nil {
-			return err
+			// If throttled, try one aggressive GC and retry
+			if status.Code(err) == codes.ResourceExhausted {
+				s.logger.Warn().Msg("Ingestion throttled, triggering emergency GC and retrying...")
+				runtime.GC()
+				debug.FreeOSMemory()
+				time.Sleep(100 * time.Millisecond)
+				
+				if err2 := s.admission.Admit(stream.Context(), "ingest"); err2 != nil {
+					return err2
+				}
+				s.logger.Info().Msg("Emergency GC successful, ingestion resumed")
+			} else {
+				return err
+			}
 		}
 	}
 
@@ -804,6 +902,9 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	if ds == nil {
 		return status.Errorf(codes.Internal, "failed to retrieve or create dataset %s", name)
 	}
+
+	ds.ActiveIngestStreams.Add(1)
+	defer ds.ActiveIngestStreams.Add(-1)
 
 	// Namespace quota check (will be done per-flush in the loop below)
 	nsName, _ := ParseNamespacedPath(name)
@@ -1546,7 +1647,9 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 						vStart := i * listLen
 						vEnd := (i + 1) * listLen
-						switch values := vecArr.ListValues().(type) {
+						listValues := vecArr.ListValues()
+						
+						switch values := listValues.(type) {
 						case *array.Float32:
 							src := values.Float32Values()[vStart:vEnd]
 							sub := make([]float32, len(src))
@@ -1559,10 +1662,57 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 								sub[j] = float32(v)
 							}
 							vectors[i] = sub
+						case *array.Int8:
+							src := values.Int8Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Int16:
+							src := values.Int16Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Int32:
+							src := values.Int32Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Int64:
+							src := values.Int64Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Uint8:
+							src := values.Uint8Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Uint16:
+							src := values.Uint16Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Uint32:
+							src := values.Uint32Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Uint64:
+							src := values.Uint64Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = float32(v) }
+							vectors[i] = sub
+						case *array.Float16:
+							src := values.Values()[vStart:vEnd]
+							sub := make([]float32, len(src))
+							for j, v := range src { sub[j] = v.Float32() }
+							vectors[i] = sub
 						}
 
-						points[i] = types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]}
-						valid[i] = true
+						if vectors[i] != nil {
+							points[i] = types.GeoPoint{Lat: geoValues[i*2], Lon: geoValues[i*2+1]}
+							valid[i] = true
+						}
 					}
 				}
 			})

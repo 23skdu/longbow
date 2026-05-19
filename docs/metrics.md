@@ -46,6 +46,8 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_batch_search_queries_total` | Total number of queries processed in batch searches |
 | `longbow_batch_search_requests_total` | Total number of batch search requests |
 | `longbow_binary_quantize_ops_total` | Total number of binary quantization operations |
+| `longbow_bitmap_cache_hits_total` | Total number of filter bitset cache hits |
+| `longbow_bitmap_cache_misses_total` | Total number of filter bitset cache misses |
 | `longbow_bitmap_pool_discards_total` | Total number of bitmap pool discards (oversized) |
 | `longbow_bitmap_pool_gets_total` | Total number of bitmap pool retrievals |
 | `longbow_bitmap_pool_hits_total` | Total number of bitmap pool hits (reused) |
@@ -86,6 +88,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_compaction_runs_total` | Total number of compaction runs performed |
 | `longbow_compaction_tombstone_density_ratio` | Current tombstone density per batch (0-1) |
 | `longbow_compaction_triggers_total` | Total number of compaction triggers by reason |
+| `longbow_compression_ratio` | Compression ratio achieved by Turboquant V2 |
 | `longbow_compound_filter_depth` | Depth of compound filter expression trees |
 | `longbow_compound_filter_ops_total` | Total compound filter operations by logic type |
 | `longbow_compressed_vectors_sent_total` | Total number of quantized (SQ8/PQ) vectors sent in search results |
@@ -115,6 +118,8 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_dataset_record_batches_count` | Number of record batches per dataset (high = fragmentation) |
 | `longbow_dataset_update_retries_total` | Total number of retries during lock-free dataset map updates (CAS failures) |
 | `longbow_dataset_vector_type_total` | Number of datasets by declared vector type |
+| `longbow_cuvs_search_latency_ms` | Latency of cuVS GPU search operations in milliseconds |
+| `longbow_cuvs_search_ops_total` | Total number of cuVS GPU search operations |
 | `longbow_dimension_buffer_bytes` | Buffer memory allocated per dimension |
 | `longbow_disk_store_read_bytes_total` | Total bytes read from disk vector store |
 | `longbow_disk_store_write_bytes_total` | Total bytes written to disk vector store |
@@ -227,6 +232,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_graph_store_predicate_count` | Number of unique predicates in GraphStore |
 | `longbow_graph_traversal_duration_seconds` | Duration of graph traversal operations |
 | `longbow_graphrag_expansion_duration_seconds` | Detailed latency of the GraphRAG expansion step |
+| `longbow_graphrag_expansion_errors_total` | Total number of errors encountered during GraphRAG graph expansion |
 | `longbow_graphrag_nodes_visited_total` | Total number of unique nodes visited during GraphRAG expansion. |
 | `longbow_grpc_call_duration_seconds` | Duration of gRPC calls |
 | `longbow_grpc_call_total` | Total number of gRPC calls |
@@ -253,6 +259,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_hnsw_bitmap_filter_duration_seconds` | Time spent evaluating bitmap filters during HNSW search |
 | `longbow_hnsw_bitmap_index_entries_total` | Number of entries in the HNSW bitmap metadata index |
 | `longbow_hnsw_bitset_grow_total` | Total number of bitset grows during HNSW operations |
+| `longbow_hnsw_lock_wait_duration_seconds` | Time spent waiting for HNSW node locks |
 | `longbow_hnsw_branch_prediction_likely_total` | Total number of branches marked as likely (true) |
 | `longbow_hnsw_branch_prediction_total` | Total number of branch predictions by type |
 | `longbow_hnsw_branch_prediction_unlikely_total` | Total number of branches marked as unlikely (false) |
@@ -392,6 +399,27 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_io_write_bytes_total` | Total bytes written to disk storage |
 | `longbow_io_write_latency_seconds` | Latency of I/O write operations by backend |
 | `longbow_io_write_ops_total` | Total write operations (syscalls) |
+| `longbow_iouring_arrow_records_read_total` | Total Arrow records read |
+| `longbow_iouring_arrow_records_written_total` | Total Arrow records written |
+| `longbow_iouring_arrow_serialization_latency_seconds` | Arrow IPC serialization latency |
+| `longbow_iouring_buffer_pool_allocated` | Number of currently allocated buffers |
+| `longbow_iouring_buffer_pool_available` | Number of available buffers in pool |
+| `longbow_iouring_buffer_pool_hits_total` | Total buffer pool hits (buffer reused) |
+| `longbow_iouring_buffer_pool_misses_total` | Total buffer pool misses (allocation required) |
+| `longbow_iouring_buffer_pool_total` | Total number of buffers in pool |
+| `longbow_iouring_bytes_read_total` | Total bytes read via io_uring |
+| `longbow_iouring_bytes_written_total` | Total bytes written via io_uring |
+| `longbow_iouring_complete_latency_seconds` | Latency of io_uring completion operations |
+| `longbow_iouring_cq_capacity` | Total completion queue capacity |
+| `longbow_iouring_cq_depth` | Current completion queue depth (available completions) |
+| `longbow_iouring_errors_total` | Total number of io_uring errors |
+| `longbow_iouring_ops_completed_total` | Total number of operations completed |
+| `longbow_iouring_ops_submitted_total` | Total number of operations submitted |
+| `longbow_iouring_ring_active` | Whether the io_uring ring is active (1) or closed (0) |
+| `longbow_iouring_sq_capacity` | Total submission queue capacity |
+| `longbow_iouring_sq_depth` | Current submission queue depth (pending entries) |
+| `longbow_iouring_submit_latency_seconds` | Latency of io_uring submission operations |
+| `longbow_iouring_vectored_chunks` | Number of chunks in vectored operations |
 | `longbow_ipc_buffer_pool_evictions_total` | Total number of IPC buffer pool evictions |
 | `longbow_ipc_buffer_pool_hits_total` | Total number of IPC buffer pool hits |
 | `longbow_ipc_buffer_pool_misses_total` | Total number of IPC buffer pool misses |
@@ -419,6 +447,8 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_load_balancer_unhealthy_total` | Total number of unhealthy replicas |
 | `longbow_lock_contention_duration_seconds` | Time spent waiting for generic instrumented locks |
 | `longbow_lock_node_spin_cycles_total` | Total number of spin cycles performed by LockNode spinlocks |
+| `longbow_log_entries_total` | Total number of log entries by level |
+| `longbow_log_errors_total` | Total number of error log entries |
 | `longbow_memory_backpressure_acquires_total` | Total number of memory permits acquired |
 | `longbow_memory_backpressure_rejects_total` | Total number of requests rejected due to memory backpressure |
 | `longbow_memory_backpressure_releases_total` | Total number of memory permits released |
@@ -511,6 +541,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_proxy_requests_forwarded_total` | Total number of requests forwarded to other nodes |
 | `longbow_quadtree_subdivisions_total` | Total number of quadtree subdivisions (node splits) |
 | `longbow_quantization_active_type` | Current active quantization type for the dataset (1 if active). |
+| `longbow_quantization_error_mse` | Mean Squared Error of current quantization bit-depth |
 | `longbow_quantization_memory_savings_bytes` | Estimated memory savings in bytes achieved through quantization. |
 | `longbow_quantization_recall_estimate` | Estimated search recall for quantized index compared to full precision. |
 | `longbow_quantization_switches_total` | Total number of quantization type transitions triggered by auto-tuning. |
@@ -694,6 +725,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_wal_ring_buffer_full_total` | Total number of times ring buffer was full (backpressure) |
 | `longbow_wal_ring_buffer_pushes_total` | Total number of successful ring buffer push operations |
 | `longbow_wal_ring_buffer_utilization` | Current utilization of WAL ring buffer (0-1) |
+| `longbow_wal_replay_parallelism_total` | Current number of parallel WAL replay applier workers |
 | `longbow_wal_uring_cq_depth` | Current depth of the io_uring completion queue |
 | `longbow_wal_uring_sq_depth` | Current depth of the io_uring submission queue |
 | `longbow_wal_uring_submit_latency_seconds` | Latency of io_uring Enter/Submit calls |

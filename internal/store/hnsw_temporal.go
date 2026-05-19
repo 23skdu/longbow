@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/23skdu/longbow/internal/memory"
 )
 
 // TemporalHNSWConfig defines configuration for time-aware HNSW indices, specifying connectivity and search parameters.
@@ -34,10 +35,12 @@ type TemporalHNSWIndex struct {
 
 // NewTemporalHNSWIndex creates a new temporal index instance.
 func NewTemporalHNSWIndex(dimension int, config TemporalHNSWConfig) *TemporalHNSWIndex {
+	// Create a dedicated arena for the temporal tree
+	arena := memory.NewSlabArena(1024 * 1024)
 	return &TemporalHNSWIndex{
 		dimension:    dimension,
 		config:       config,
-		temporalTree: NewTemporalTree(),
+		temporalTree: NewTemporalTree(arena),
 	}
 }
 
@@ -46,7 +49,7 @@ func (thi *TemporalHNSWIndex) Add(id uint64, vector []float32, timestamp int64) 
 	thi.mu.Lock()
 	defer thi.mu.Unlock()
 
-	thi.temporalTree.Insert(timestamp, id)
+	thi.temporalTree.Insert(timestamp, id, 0.0)
 
 	return nil
 }

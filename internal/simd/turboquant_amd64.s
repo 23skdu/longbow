@@ -47,6 +47,111 @@ GLOBL tq_max8<>(SB), RODATA, $4
 GLOBL tq_max4<>(SB), RODATA, $4
 GLOBL tq_max2<>(SB), RODATA, $4
 
+// Control masks for VPMULTISHIFTQB packing (TQ2)
+// Each qword lane has 8 bytes. We want to extract 2 bits from each and pack into 2 bytes.
+// pack_ctrl_0: extracts bits into position 0 (e0 and e4)
+DATA vbmi_tq2_pack_ctrl_0<>+0x00(SB)/8, $0x0000000000002000
+DATA vbmi_tq2_pack_ctrl_0<>+0x08(SB)/8, $0x0000000000002000
+DATA vbmi_tq2_pack_ctrl_0<>+0x10(SB)/8, $0x0000000000002000
+DATA vbmi_tq2_pack_ctrl_0<>+0x18(SB)/8, $0x0000000000002000
+DATA vbmi_tq2_pack_ctrl_0<>+0x20(SB)/8, $0x0000000000002000
+DATA vbmi_tq2_pack_ctrl_0<>+0x28(SB)/8, $0x0000000000002000
+DATA vbmi_tq2_pack_ctrl_0<>+0x30(SB)/8, $0x0000000000002000
+DATA vbmi_tq2_pack_ctrl_0<>+0x38(SB)/8, $0x0000000000002000
+GLOBL vbmi_tq2_pack_ctrl_0<>(SB), RODATA, $64
+
+// pack_ctrl_1: extracts bits into position 2 (e1 and e5)
+DATA vbmi_tq2_pack_ctrl_1<>+0x00(SB)/8, $0x0000000000002606
+DATA vbmi_tq2_pack_ctrl_1<>+0x08(SB)/8, $0x0000000000002606
+DATA vbmi_tq2_pack_ctrl_1<>+0x10(SB)/8, $0x0000000000002606
+DATA vbmi_tq2_pack_ctrl_1<>+0x18(SB)/8, $0x0000000000002606
+DATA vbmi_tq2_pack_ctrl_1<>+0x20(SB)/8, $0x0000000000002606
+DATA vbmi_tq2_pack_ctrl_1<>+0x28(SB)/8, $0x0000000000002606
+DATA vbmi_tq2_pack_ctrl_1<>+0x30(SB)/8, $0x0000000000002606
+DATA vbmi_tq2_pack_ctrl_1<>+0x38(SB)/8, $0x0000000000002606
+GLOBL vbmi_tq2_pack_ctrl_1<>(SB), RODATA, $64
+
+// pack_ctrl_2: extracts bits into position 4 (e2 and e6)
+DATA vbmi_tq2_pack_ctrl_2<>+0x00(SB)/8, $0x0000000000002c0c
+DATA vbmi_tq2_pack_ctrl_2<>+0x08(SB)/8, $0x0000000000002c0c
+DATA vbmi_tq2_pack_ctrl_2<>+0x10(SB)/8, $0x0000000000002c0c
+DATA vbmi_tq2_pack_ctrl_2<>+0x18(SB)/8, $0x0000000000002c0c
+DATA vbmi_tq2_pack_ctrl_2<>+0x20(SB)/8, $0x0000000000002c0c
+DATA vbmi_tq2_pack_ctrl_2<>+0x28(SB)/8, $0x0000000000002c0c
+DATA vbmi_tq2_pack_ctrl_2<>+0x30(SB)/8, $0x0000000000002c0c
+DATA vbmi_tq2_pack_ctrl_2<>+0x38(SB)/8, $0x0000000000002c0c
+GLOBL vbmi_tq2_pack_ctrl_2<>(SB), RODATA, $64
+
+// pack_ctrl_3: extracts bits into position 6 (e3 and e7)
+DATA vbmi_tq2_pack_ctrl_3<>+0x00(SB)/8, $0x0000000000003212
+DATA vbmi_tq2_pack_ctrl_3<>+0x08(SB)/8, $0x0000000000003212
+DATA vbmi_tq2_pack_ctrl_3<>+0x10(SB)/8, $0x0000000000003212
+DATA vbmi_tq2_pack_ctrl_3<>+0x18(SB)/8, $0x0000000000003212
+DATA vbmi_tq2_pack_ctrl_3<>+0x20(SB)/8, $0x0000000000003212
+DATA vbmi_tq2_pack_ctrl_3<>+0x28(SB)/8, $0x0000000000003212
+DATA vbmi_tq2_pack_ctrl_3<>+0x30(SB)/8, $0x0000000000003212
+DATA vbmi_tq2_pack_ctrl_3<>+0x38(SB)/8, $0x0000000000003212
+GLOBL vbmi_tq2_pack_ctrl_3<>(SB), RODATA, $64
+
+// collect_mask: selects byte 0 and 1 from each qword
+DATA vbmi_tq2_collect_mask<>+0x00(SB)/8, $0x0b0a090803020100
+DATA vbmi_tq2_collect_mask<>+0x08(SB)/8, $0x1b1a191813121110
+DATA vbmi_tq2_collect_mask<>+0x10(SB)/8, $0x2b2a292823222120
+DATA vbmi_tq2_collect_mask<>+0x18(SB)/8, $0x3b3a393833323130
+DATA vbmi_tq2_collect_mask<>+0x20(SB)/8, $0x0000000000000000
+DATA vbmi_tq2_collect_mask<>+0x28(SB)/8, $0x0000000000000000
+DATA vbmi_tq2_collect_mask<>+0x30(SB)/8, $0x0000000000000000
+DATA vbmi_tq2_collect_mask<>+0x38(SB)/8, $0x0000000000000000
+GLOBL vbmi_tq2_collect_mask<>(SB), RODATA, $64
+
+DATA mask_pos0<>+0x00(SB)/8, $0x0000000000000303
+DATA mask_pos0<>+0x08(SB)/8, $0x0000000000000303
+DATA mask_pos0<>+0x10(SB)/8, $0x0000000000000303
+DATA mask_pos0<>+0x18(SB)/8, $0x0000000000000303
+DATA mask_pos0<>+0x20(SB)/8, $0x0000000000000303
+DATA mask_pos0<>+0x28(SB)/8, $0x0000000000000303
+DATA mask_pos0<>+0x30(SB)/8, $0x0000000000000303
+DATA mask_pos0<>+0x38(SB)/8, $0x0000000000000303
+GLOBL mask_pos0<>(SB), RODATA, $64
+
+DATA mask_pos2<>+0x00(SB)/8, $0x0000000000000c0c
+DATA mask_pos2<>+0x08(SB)/8, $0x0000000000000c0c
+DATA mask_pos2<>+0x10(SB)/8, $0x0000000000000c0c
+DATA mask_pos2<>+0x18(SB)/8, $0x0000000000000c0c
+DATA mask_pos2<>+0x20(SB)/8, $0x0000000000000c0c
+DATA mask_pos2<>+0x28(SB)/8, $0x0000000000000c0c
+DATA mask_pos2<>+0x30(SB)/8, $0x0000000000000c0c
+DATA mask_pos2<>+0x38(SB)/8, $0x0000000000000c0c
+GLOBL mask_pos2<>(SB), RODATA, $64
+
+DATA mask_pos4<>+0x00(SB)/8, $0x0000000000003030
+DATA mask_pos4<>+0x08(SB)/8, $0x0000000000003030
+DATA mask_pos4<>+0x10(SB)/8, $0x0000000000003030
+DATA mask_pos4<>+0x18(SB)/8, $0x0000000000003030
+DATA mask_pos4<>+0x20(SB)/8, $0x0000000000003030
+DATA mask_pos4<>+0x28(SB)/8, $0x0000000000003030
+DATA mask_pos4<>+0x30(SB)/8, $0x0000000000003030
+DATA mask_pos4<>+0x38(SB)/8, $0x0000000000003030
+GLOBL mask_pos4<>(SB), RODATA, $64
+
+DATA mask_pos6<>+0x00(SB)/8, $0x000000000000c0c0
+DATA mask_pos6<>+0x08(SB)/8, $0x000000000000c0c0
+DATA mask_pos6<>+0x10(SB)/8, $0x000000000000c0c0
+DATA mask_pos6<>+0x18(SB)/8, $0x000000000000c0c0
+DATA mask_pos6<>+0x20(SB)/8, $0x000000000000c0c0
+DATA mask_pos6<>+0x28(SB)/8, $0x000000000000c0c0
+DATA mask_pos6<>+0x30(SB)/8, $0x000000000000c0c0
+DATA mask_pos6<>+0x38(SB)/8, $0x000000000000c0c0
+GLOBL mask_pos6<>(SB), RODATA, $64
+
+DATA pack2_weights_0<>+0x00(SB)/8, $0x0401040104010401
+DATA pack2_weights_0<>+0x08(SB)/8, $0x0401040104010401
+GLOBL pack2_weights_0<>(SB), RODATA, $16
+
+DATA pack2_weights_1<>+0x00(SB)/8, $0x0010000100100001
+DATA pack2_weights_1<>+0x08(SB)/8, $0x0010000100100001
+GLOBL pack2_weights_1<>(SB), RODATA, $16
+
 // func unpackTQ2AVX2Kernel(src, dst unsafe.Pointer, n int, scale, bias float32)
 TEXT ·unpackTQ2AVX2Kernel(SB), NOSPLIT, $0-40
     MOVQ    src+0(FP), SI
@@ -297,50 +402,107 @@ TEXT ·packTQ8AVX2Kernel(SB), NOSPLIT, $0-24
     VMOVSS  tq_half<>(SB), X0
     VBROADCASTSS X0, Y3 // 0.5
     
-    // Constant for clamping [0, 255]
     VPXOR   Y4, Y4, Y4  // 0.0
+    VMOVSS  $1.0, X6
+    VBROADCASTSS X6, Y6 // 1.0
     
 loop_pack8:
+    CMPQ    CX, $32
+    JL      tail_pack8_outer
+    
+    // Process 32 elements (4 YMMs) -> 32 bytes
+    VMOVDQU (SI), Y7
+    VMOVDQU 32(SI), Y8
+    VMOVDQU 64(SI), Y9
+    VMOVDQU 96(SI), Y10
+    
+    // Quantize Y7
+    VADDPS  Y0, Y7, Y7
+    VMULPS  Y1, Y7, Y7
+    VMAXPS  Y4, Y7, Y7
+    VMINPS  Y6, Y7, Y7
+    VMULPS  Y2, Y7, Y7
+    VADDPS  Y3, Y7, Y7
+    VCVTPS2DQ Y7, Y7
+    
+    // Quantize Y8
+    VADDPS  Y0, Y8, Y8
+    VMULPS  Y1, Y8, Y8
+    VMAXPS  Y4, Y8, Y8
+    VMINPS  Y6, Y8, Y8
+    VMULPS  Y2, Y8, Y8
+    VADDPS  Y3, Y8, Y8
+    VCVTPS2DQ Y8, Y8
+    
+    // Quantize Y9
+    VADDPS  Y0, Y9, Y9
+    VMULPS  Y1, Y9, Y9
+    VMAXPS  Y4, Y9, Y9
+    VMINPS  Y6, Y9, Y9
+    VMULPS  Y2, Y9, Y9
+    VADDPS  Y3, Y9, Y9
+    VCVTPS2DQ Y9, Y9
+    
+    // Quantize Y10
+    VADDPS  Y0, Y10, Y10
+    VMULPS  Y1, Y10, Y10
+    VMAXPS  Y4, Y10, Y10
+    VMINPS  Y6, Y10, Y10
+    VMULPS  Y2, Y10, Y10
+    VADDPS  Y3, Y10, Y10
+    VCVTPS2DQ Y10, Y10
+
+    // Pack Y7, Y8 -> X7 (16 bytes)
+    VPERMPD $0xD8, Y7, Y7
+    VPERMPD $0xD8, Y8, Y8
+    VEXTRACTI128 $0, Y7, X11
+    VEXTRACTI128 $1, Y7, X12
+    VPACKUSDW X12, X11, X11
+    VEXTRACTI128 $0, Y8, X13
+    VEXTRACTI128 $1, Y8, X14
+    VPACKUSDW X14, X13, X13
+    VPACKUSWB X13, X11, X11
+    VMOVDQU X11, (DI)
+    
+    // Pack Y9, Y10 -> X9 (16 bytes)
+    VPERMPD $0xD8, Y9, Y9
+    VPERMPD $0xD8, Y10, Y10
+    VEXTRACTI128 $0, Y9, X11
+    VEXTRACTI128 $1, Y9, X12
+    VPACKUSDW X12, X11, X11
+    VEXTRACTI128 $0, Y10, X13
+    VEXTRACTI128 $1, Y10, X14
+    VPACKUSDW X14, X13, X13
+    VPACKUSWB X13, X11, X11
+    VMOVDQU X11, 16(DI)
+    
+    ADDQ    $128, SI
+    ADDQ    $32, DI
+    SUBQ    $32, CX
+    JMP     loop_pack8
+
+tail_pack8_outer:
+loop_pack8_small:
     CMPQ    CX, $8
     JL      tail_pack8
-    
-    VMOVDQU (SI), Y5    // Load 8 floats
-    VADDPS  Y0, Y5, Y5   // + PI
-    VMULPS  Y1, Y5, Y5   // * INV_2PI
-    
-    // Clamp to [0, 1]
+    VMOVDQU (SI), Y5
+    VADDPS  Y0, Y5, Y5
+    VMULPS  Y1, Y5, Y5
     VMAXPS  Y4, Y5, Y5
-    VMOVSS  $1.0, X6
-    VBROADCASTSS X6, Y6
     VMINPS  Y6, Y5, Y5
-    
-    VMULPS  Y2, Y5, Y5   // * 255.0
-    VADDPS  Y3, Y5, Y5   // + 0.5
-    VCVTPS2DQ Y5, Y5     // Round to int32
-    
-    // Pack int32 to uint8
-    VPMOVUSDB Y5, X5    // Only in AVX-512? No, VPMOVUSDB is AVX-512.
-    // In AVX2 we use VPACKUSWB + VPACKUSDW.
-    
-    // Wait! VPMOVUSDB is indeed AVX-512.
-    // In AVX2:
-    // Y5 = [i7, i6, i5, i4, i3, i2, i1, i0] (each 32-bit)
-    // We need to pack them into 8 bytes.
-    VPERMPD $0xD8, Y5, Y5 // Reorder to get 0,1,2,3,4,5,6,7 in order
-    // This is getting complicated. I'll use a simpler way.
-    // Just use VPACKUS if possible.
-    
-    // Actually, I'll use a scalar loop for packing in AVX2 for now or just VMOVD extraction.
-    VEXTRACTI128 $0, Y5, X6
-    VEXTRACTI128 $1, Y5, X7
-    VPACKUSDW X7, X6, X6 // 16-bit
-    VPACKUSWB X6, X6, X6 // 8-bit
-    VMOVQ   X6, (DI)
-    
+    VMULPS  Y2, Y5, Y5
+    VADDPS  Y3, Y5, Y5
+    VCVTPS2DQ Y5, Y5
+    VPERMPD $0xD8, Y5, Y5
+    VEXTRACTI128 $0, Y5, X11
+    VEXTRACTI128 $1, Y5, X12
+    VPACKUSDW X12, X11, X11
+    VPACKUSWB X11, X11, X11
+    VMOVQ   X11, (DI)
     ADDQ    $32, SI
     ADDQ    $8, DI
     SUBQ    $8, CX
-    JMP     loop_pack8
+    JMP     loop_pack8_small
 
 tail_pack8:
     TESTQ   CX, CX
@@ -348,9 +510,7 @@ tail_pack8:
     VMOVSS  (SI), X5
     VADDSS  X0, X5, X5
     VMULSS  X1, X5, X5
-    // Clamp
     VMAXSS  X4, X5, X5
-    VMOVSS  $1.0, X6
     VMINSS  X6, X5, X5
     VMULSS  X2, X5, X5
     VADDSS  X3, X5, X5
@@ -431,74 +591,185 @@ TEXT ·packTQ2AVX512VBMIKernel(SB), NOSPLIT, $0-24
     VBROADCASTSS X5, Z5 // 1.0
     
 loop_pack2_vbmi:
-    CMPQ    CX, $16
+    CMPQ    CX, $64
     JL      tail_pack2_vbmi
     
-    VMOVDQU64 (SI), Z6    // Load 16 floats
-    VADDPS  Z0, Z6, Z6
-    VMULPS  Z1, Z6, Z6
-    VMAXPS  Z4, Z6, Z6
-    VMINPS  Z5, Z6, Z6
-    VMULPS  Z2, Z6, Z6
-    VADDPS  Z3, Z6, Z6
-    VCVTPS2DQ Z6, Z6     // Round to int32 (0-3)
+    // Load 64 floats
+    VMOVDQU32 (SI), Z6
+    VMOVDQU32 64(SI), Z7
+    VMOVDQU32 128(SI), Z8
+    VMOVDQU32 192(SI), Z9
     
-    // Pack 16 int32s into 4 bytes (32 bits)
-    // First, pack int32 to byte
-    VPMOVDB Z6, X7      // 16 int32 -> 16 bytes
-    // Now X7 has [e15, e14, ..., e0] (each 1 byte)
-    // We want to pack 4 into each byte: [e3:e2:e1:e0], [e7:e6:e5:e4], ...
+    // Quantize 
+    VADDPS  Z0, Z6, Z6; VMULPS  Z1, Z6, Z6; VMAXPS  Z4, Z6, Z6; VMINPS  Z5, Z6, Z6; VMULPS  Z2, Z6, Z6; VADDPS  Z3, Z6, Z6; VCVTPS2DQ Z6, Z6
+    VADDPS  Z0, Z7, Z7; VMULPS  Z1, Z7, Z7; VMAXPS  Z4, Z7, Z7; VMINPS  Z5, Z7, Z7; VMULPS  Z2, Z7, Z7; VADDPS  Z3, Z7, Z7; VCVTPS2DQ Z7, Z7
+    VADDPS  Z0, Z8, Z8; VMULPS  Z1, Z8, Z8; VMAXPS  Z4, Z8, Z8; VMINPS  Z5, Z8, Z8; VMULPS  Z2, Z8, Z8; VADDPS  Z3, Z8, Z8; VCVTPS2DQ Z8, Z8
+    VADDPS  Z0, Z9, Z9; VMULPS  Z1, Z9, Z9; VMAXPS  Z4, Z9, Z9; VMINPS  Z5, Z9, Z9; VMULPS  Z2, Z9, Z9; VADDPS  Z3, Z9, Z9; VCVTPS2DQ Z9, Z9
     
-    // In AVX-512 VBMI we can use VPMULTISHIFTQB to pack bits if we treat it as qwords
-    // But VPMOVD and shifts are easier here.
-    // Each byte has 2 bits.
-    // Byte [000000ab]
+    // Narrow to bytes
+    VPMOVDB Z6, X6
+    VPMOVDB Z7, X7
+    VPMOVDB Z8, X8
+    VPMOVDB Z9, X9
     
-    MOVQ    $0x0C, AX
-    VMOVQ   AX, X11
-    VPSLLW  $2, X7, X8
-    VPAND   X11, X8, X8 // e1 bits
+    // Combine 4 XMMs into 1 ZMM (64 bytes)
+    VINSERTI32X4 $1, X7, Z6, Z6
+    VINSERTI32X4 $2, X8, Z6, Z6
+    VINSERTI32X4 $3, X9, Z6, Z6
+    
+    // Use VPMULTISHIFTQB to align bits.
+    VMOVDQU64 vbmi_tq2_pack_ctrl_0<>(SB), Z10
+    VMOVDQU64 vbmi_tq2_pack_ctrl_1<>(SB), Z11
+    VMOVDQU64 vbmi_tq2_pack_ctrl_2<>(SB), Z12
+    VMOVDQU64 vbmi_tq2_pack_ctrl_3<>(SB), Z13
 
-    MOVQ    $0x30, AX
-    VMOVQ   AX, X11
-    VPSLLW  $4, X7, X9
-    VPAND   X11, X9, X9 // e2 bits
-
-    MOVQ    $0xC0, AX
-    VMOVQ   AX, X11
-    VPSLLW  $6, X7, X10
-    VPAND   X11, X10, X10 // e3 bits
+    VPMULTISHIFTQB Z6, Z10, Z14
+    VPMULTISHIFTQB Z6, Z11, Z15
+    VPMULTISHIFTQB Z6, Z12, Z16
+    VPMULTISHIFTQB Z6, Z13, Z17
     
-    MOVQ    $0x03, AX
-    VMOVQ   AX, X11
-    VPAND   X11, X7, X7 // e0 bits
-    VPOR    X8, X7, X7
-    VPOR    X9, X7, X7
-    VPOR    X10, X7, X7
+    // Mask to positions
+    VMOVDQU64 mask_pos0<>(SB), Z18
+    VPANDQ  Z18, Z14, Z14
+    VMOVDQU64 mask_pos2<>(SB), Z18
+    VPANDQ  Z18, Z15, Z15
+    VMOVDQU64 mask_pos4<>(SB), Z18
+    VPANDQ  Z18, Z16, Z16
+    VMOVDQU64 mask_pos6<>(SB), Z18
+    VPANDQ  Z18, Z17, Z17
     
-    // Now X7 has the packed bytes in positions 0, 4, 8, 12?
-    // No, each byte in X7 was an element.
-    // We need to gather them.
+    // OR together
+    VPTERNLOGD $0xFE, Z15, Z16, Z14 // Z14 = Z14 | Z15 | Z16
+    VPORQ   Z17, Z14, Z14
     
-    // Actually, VPMULTISHIFTQB is for GATHERING bits.
-    // If we have a qword with [byte3, byte2, byte1, byte0]
-    // where each byte has 2 bits.
-    // We want to gather them into one byte.
+    // Collect the 16 packed bytes using VPERMB
+    VMOVDQU64 vbmi_tq2_collect_mask<>(SB), Z15
+    VPERMB  Z14, Z15, Z14
     
-    VMOVD   X7, AX // elements 0, 1, 2, 3
-    // ... scalar pack for now ...
-    STOSL   // Store 4 bytes? No, we want 4 elements = 1 byte.
+    // Store 16 bytes
+    VMOVDQU X14, (DI)
     
-    ADDQ    $64, SI
-    ADDQ    $4, DI // 16 elements = 4 bytes
-    SUBQ    $16, CX
+    ADDQ    $256, SI
+    ADDQ    $16, DI
+    SUBQ    $64, CX
     JMP     loop_pack2_vbmi
-    
+
 tail_pack2_vbmi:
+    TESTQ   CX, CX
     JZ      done_pack2_vbmi
-    JMP     done_pack2_vbmi
+    // Fallback to AVX2 kernel for tail
+    JMP     ·packTQ2AVX2Kernel(SB)
 
 done_pack2_vbmi:
+    VZEROUPPER
+    RET
+// func packTQ4AVX2Kernel(src, dst unsafe.Pointer, n int)
+TEXT ·packTQ4AVX2Kernel(SB), NOSPLIT, $0-24
+    MOVQ    src+0(FP), SI
+    MOVQ    dst+8(FP), DI
+    MOVQ    n+16(FP), CX
+    
+    VMOVSS  tq_pi<>(SB), X0
+    VBROADCASTSS X0, Y0
+    VMOVSS  tq_inv2pi<>(SB), X0
+    VBROADCASTSS X0, Y1
+    VMOVSS  tq_max4<>(SB), X0
+    VBROADCASTSS X0, Y2
+    VMOVSS  tq_half<>(SB), X0
+    VBROADCASTSS X0, Y3
+    VPXOR   Y4, Y4, Y4
+    VMOVSS  $1.0, X6
+    VBROADCASTSS X6, Y6
+    
+    MOVQ    $0x00FF00FF00FF00FF, AX
+    VMOVQ   AX, X15 // Mask for e0, e2, ...
+
+loop_pack4:
+    CMPQ    CX, $16
+    JL      tail_pack4
+    
+    VMOVDQU (SI), Y7
+    VMOVDQU 32(SI), Y8
+    
+    VADDPS  Y0, Y7, Y7
+    VMULPS  Y1, Y7, Y7
+    VMAXPS  Y4, Y7, Y7
+    VMINPS  Y6, Y7, Y7
+    VMULPS  Y2, Y7, Y7
+    VADDPS  Y3, Y7, Y7
+    VCVTPS2DQ Y7, Y7
+    
+    VADDPS  Y0, Y8, Y8
+    VMULPS  Y1, Y8, Y8
+    VMAXPS  Y4, Y8, Y8
+    VMINPS  Y6, Y8, Y8
+    VMULPS  Y2, Y8, Y8
+    VADDPS  Y3, Y8, Y8
+    VCVTPS2DQ Y8, Y8
+
+    // Narrow to 16 bytes: [e15, ..., e0]
+    VPERMPD $0xD8, Y7, Y7
+    VPERMPD $0xD8, Y8, Y8
+    VEXTRACTI128 $0, Y7, X11
+    VEXTRACTI128 $1, Y7, X12
+    VPACKUSDW X12, X11, X11
+    VEXTRACTI128 $0, Y8, X13
+    VEXTRACTI128 $1, Y8, X14
+    VPACKUSDW X14, X13, X13
+    VPACKUSWB X13, X11, X11 // X11 = [e15, ..., e0]
+    
+    // Combine nibbles
+    VPAND   X11, X15, X13 // X13 = [0, e14, 0, e12, ..., 0, e0]
+    VPSRLW  $8, X11, X12  // X12 = [0, e15, 0, e13, ..., 0, e1]
+    VPSLLW  $4, X12, X12  // X12 = [0, e15<<4, 0, e13<<4, ..., 0, e1<<4]
+    VPOR    X12, X13, X13 // X13 = [0, e15:e14, 0, e13:e12, ..., 0, e1:e0]
+    
+    VPACKUSWB X13, X13, X13
+    VMOVQ   X13, (DI)
+    
+    ADDQ    $64, SI
+    ADDQ    $8, DI
+    SUBQ    $16, CX
+    JMP     loop_pack4
+
+tail_pack4:
+    TESTQ   CX, CX
+    JZ      done_pack4
+    VMOVSS  (SI), X5
+    VADDSS  X0, X5, X5
+    VMULSS  X1, X5, X5
+    VMAXSS  X4, X5, X5
+    VMINSS  X6, X5, X5
+    VMULSS  X2, X5, X5
+    VADDSS  X3, X5, X5
+    VCVTSS2SI X5, AX
+    ANDL    $0x0F, AX
+    
+    DECQ    CX
+    JZ      last_e0_4
+    VMOVSS  4(SI), X5
+    VADDSS  X0, X5, X5
+    VMULSS  X1, X5, X5
+    VMAXSS  X4, X5, X5
+    VMINSS  X6, X5, X5
+    VMULSS  X2, X5, X5
+    VADDSS  X3, X5, X5
+    VCVTSS2SI X5, BX
+    ANDL    $0x0F, BX
+    SHLL    $4, BX
+    ORL     BX, AX
+    MOVB    AL, (DI)
+    ADDQ    $8, SI
+    INCQ    DI
+    DECQ    CX
+    JMP     tail_pack4
+
+last_e0_4:
+    MOVB    AL, (DI)
+    INCQ    DI
+    ADDQ    $4, SI
+    
+done_pack4:
     VZEROUPPER
     RET
 
@@ -507,33 +778,317 @@ TEXT ·packTQ2AVX2Kernel(SB), NOSPLIT, $0-24
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
+    
+    VMOVSS  tq_pi<>(SB), X0
+    VBROADCASTSS X0, Y0
+    VMOVSS  tq_inv2pi<>(SB), X0
+    VBROADCASTSS X0, Y1
+    VMOVSS  tq_max2<>(SB), X0
+    VBROADCASTSS X0, Y2
+    VMOVSS  tq_half<>(SB), X0
+    VBROADCASTSS X0, Y3
+    VPXOR   Y4, Y4, Y4
+    VMOVSS  $1.0, X6
+    VBROADCASTSS X6, Y6
+    
+    MOVQ    $0x00FF00FF00FF00FF, AX
+    VMOVQ   AX, X15 // 8-bit mask
+
+loop_pack2:
+    CMPQ    CX, $16
+    JL      tail_pack2
+    
+    VMOVDQU (SI), Y7
+    VMOVDQU 32(SI), Y8
+    
+    VADDPS  Y0, Y7, Y7
+    VMULPS  Y1, Y7, Y7
+    VMAXPS  Y4, Y7, Y7
+    VMINPS  Y6, Y7, Y7
+    VMULPS  Y2, Y7, Y7
+    VADDPS  Y3, Y7, Y7
+    VCVTPS2DQ Y7, Y7
+    
+    VADDPS  Y0, Y8, Y8
+    VMULPS  Y1, Y8, Y8
+    VMAXPS  Y4, Y8, Y8
+    VMINPS  Y6, Y8, Y8
+    VMULPS  Y2, Y8, Y8
+    VADDPS  Y3, Y8, Y8
+    VCVTPS2DQ Y8, Y8
+
+    VCVTPS2DQ Y8, Y8
+
+    // Narrow to bytes
+    VPACKUSDW Y8, Y7, Y7 // Y7 = [Y8_high, Y8_low, Y7_high, Y7_low] as words? No.
+    // Use VPERMQ to fix order if needed.
+    VPERMPD $0xD8, Y7, Y7
+    VPACKUSWB Y7, Y7, Y7 // Narrow to bytes
+    
+    // Now X7 has 16 bytes: [e15, ..., e0]
+    // Use VPMADDUBSW to pack 2 elements into 1 word
+    VMOVDQU pack2_weights_0<>(SB), X8
+    VPMADDUBSW X8, X7, X7 // X7 = [e15*4+e14, ..., e1*4+e0] (words)
+    
+    // Use VPMADDWD to pack 2 words into 1 dword
+    VMOVDQU pack2_weights_1<>(SB), X8
+    VPMADDWD X8, X7, X7 // X7 = [e15:e14:e13:e12, ..., e3:e2:e1:e0] (dwords)
+    
+    // Pack dwords to bytes
+    VPACKUSDW X7, X7, X7
+    VPACKUSWB X7, X7, X7
+    VMOVD   X7, (DI)
+    
+    ADDQ    $64, SI
+    ADDQ    $4, DI
+    SUBQ    $16, CX
+    JMP     loop_pack2
+
 tail_pack2:
     TESTQ   CX, CX
     JZ      done_pack2
-    VMOVSS  (SI), X0
-    VCVTSS2SI X0, AX
-    MOVB    AL, (DI)
+    XORL    AX, AX // byte accumulator
+    
+    // Element 0
+    VMOVSS  (SI), X5
+    VADDSS  X0, X5, X5
+    VMULSS  X1, X5, X5
+    VMAXSS  X4, X5, X5
+    VMINSS  X6, X5, X5
+    VMULSS  X2, X5, X5
+    VADDSS  X3, X5, X5
+    VCVTSS2SI X5, DX
+    ANDL    $0x03, DX
+    ORL     DX, AX
     ADDQ    $4, SI
-    INCQ    DI
     DECQ    CX
+    JZ      flush_pack2
+    
+    // Element 1
+    VMOVSS  (SI), X5
+    VADDSS  X0, X5, X5
+    VMULSS  X1, X5, X5
+    VMAXSS  X4, X5, X5
+    VMINSS  X6, X5, X5
+    VMULSS  X2, X5, X5
+    VADDSS  X3, X5, X5
+    VCVTSS2SI X5, DX
+    ANDL    $0x03, DX
+    SHLL    $2, DX
+    ORL     DX, AX
+    ADDQ    $4, SI
+    DECQ    CX
+    JZ      flush_pack2
+
+    // Element 2
+    VMOVSS  (SI), X5
+    VADDSS  X0, X5, X5
+    VMULSS  X1, X5, X5
+    VMAXSS  X4, X5, X5
+    VMINSS  X6, X5, X5
+    VMULSS  X2, X5, X5
+    VADDSS  X3, X5, X5
+    VCVTSS2SI X5, DX
+    ANDL    $0x03, DX
+    SHLL    $4, DX
+    ORL     DX, AX
+    ADDQ    $4, SI
+    DECQ    CX
+    JZ      flush_pack2
+
+    // Element 3
+    VMOVSS  (SI), X5
+    VADDSS  X0, X5, X5
+    VMULSS  X1, X5, X5
+    VMAXSS  X4, X5, X5
+    VMINSS  X6, X5, X5
+    VMULSS  X2, X5, X5
+    VADDSS  X3, X5, X5
+    VCVTSS2SI X5, DX
+    ANDL    $0x03, DX
+    SHLL    $6, DX
+    ORL     DX, AX
+    ADDQ    $4, SI
+    DECQ    CX
+
+flush_pack2:
+    MOVB    AL, (DI)
+    INCQ    DI
     JMP     tail_pack2
+
 done_pack2:
+    VZEROUPPER
     RET
 
-// func packTQ4AVX2Kernel(src, dst unsafe.Pointer, n int)
-TEXT ·packTQ4AVX2Kernel(SB), NOSPLIT, $0-24
+// func packTQ8AVX512Kernel(src, dst unsafe.Pointer, n int)
+TEXT ·packTQ8AVX512Kernel(SB), NOSPLIT, $0-24
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
-tail_pack4:
+    
+    VMOVSS  tq_pi<>(SB), X0
+    VBROADCASTSS X0, Z0
+    VMOVSS  tq_inv2pi<>(SB), X0
+    VBROADCASTSS X0, Z1
+    VMOVSS  tq_max8<>(SB), X0
+    VBROADCASTSS X0, Z2
+    VMOVSS  tq_half<>(SB), X0
+    VBROADCASTSS X0, Z3
+    VPXORD  Z4, Z4, Z4
+    VMOVSS  $1.0, X6
+    VBROADCASTSS X6, Z6
+
+loop_pack8_512:
+    CMPQ    CX, $16
+    JL      tail_pack8_512
+    
+    VMOVDQU32 (SI), Z7
+    VADDPS  Z0, Z7, Z7
+    VMULPS  Z1, Z7, Z7
+    VMAXPS  Z4, Z7, Z7
+    VMINPS  Z6, Z7, Z7
+    VMULPS  Z2, Z7, Z7
+    VADDPS  Z3, Z7, Z7
+    VCVTPS2DQ Z7, Z7
+    
+    VPMOVDB Z7, X7 // 16 dwords -> 16 bytes
+    VMOVDQU X7, (DI)
+    
+    ADDQ    $64, SI
+    ADDQ    $16, DI
+    SUBQ    $16, CX
+    JMP     loop_pack8_512
+
+tail_pack8_512:
     TESTQ   CX, CX
-    JZ      done_pack4
-    VMOVSS  (SI), X0
-    VCVTSS2SI X0, AX
+    JZ      done_pack8_512
+    VMOVSS  (SI), X5
+    VADDSS  X0, X5, X5
+    VMULSS  X1, X5, X5
+    VMAXSS  X4, X5, X5
+    VMINSS  X6, X5, X5
+    VMULSS  X2, X5, X5
+    VADDSS  X3, X5, X5
+    VCVTSS2SI X5, AX
     MOVB    AL, (DI)
     ADDQ    $4, SI
     INCQ    DI
     DECQ    CX
-    JMP     tail_pack4
-done_pack4:
+    JMP     tail_pack8_512
+    
+done_pack8_512:
+    VZEROUPPER
     RET
+
+// func packTQ4AVX512Kernel(src, dst unsafe.Pointer, n int)
+TEXT ·packTQ4AVX512Kernel(SB), NOSPLIT, $0-24
+    MOVQ    src+0(FP), SI
+    MOVQ    dst+8(FP), DI
+    MOVQ    n+16(FP), CX
+    
+    VMOVSS  tq_pi<>(SB), X0
+    VBROADCASTSS X0, Z0
+    VMOVSS  tq_inv2pi<>(SB), X0
+    VBROADCASTSS X0, Z1
+    VMOVSS  tq_max4<>(SB), X0
+    VBROADCASTSS X0, Z2
+    VMOVSS  tq_half<>(SB), X0
+    VBROADCASTSS X0, Z3
+    VPXORD  Z4, Z4, Z4
+    VMOVSS  $1.0, X6
+    VBROADCASTSS X6, Z6
+
+loop_pack4_512:
+    CMPQ    CX, $16
+    JL      tail_pack4_512
+    
+    VMOVDQU32 (SI), Z7
+    VADDPS  Z0, Z7, Z7
+    VMULPS  Z1, Z7, Z7
+    VMAXPS  Z4, Z7, Z7
+    VMINPS  Z6, Z7, Z7
+    VMULPS  Z2, Z7, Z7
+    VADDPS  Z3, Z7, Z7
+    VCVTPS2DQ Z7, Z7
+    
+    VPMOVDB Z7, X7 // 16 bytes (low nibbles)
+    
+    // Combine nibbles: [e1:e0], [e3:e2], ...
+    VPSRLW  $8, X7, X8
+    VPSLLW  $4, X8, X8
+    MOVQ    $0x00FF00FF00FF00FF, AX
+    VMOVQ   AX, X9
+    VPAND   X7, X9, X7
+    VPOR    X8, X7, X7
+    
+    VPACKUSWB X7, X7, X7
+    VMOVQ   X7, (DI)
+    
+    ADDQ    $64, SI
+    ADDQ    $8, DI
+    SUBQ    $16, CX
+    JMP     loop_pack4_512
+
+tail_pack4_512:
+    JMP ·packTQ4AVX2Kernel+0(SB) // Reuse tail
+
+// func packTQ2AVX512Kernel(src, dst unsafe.Pointer, n int)
+TEXT ·packTQ2AVX512Kernel(SB), NOSPLIT, $0-24
+    MOVQ    src+0(FP), SI
+    MOVQ    dst+8(FP), DI
+    MOVQ    n+16(FP), CX
+    
+    VMOVSS  tq_pi<>(SB), X0
+    VBROADCASTSS X0, Z0
+    VMOVSS  tq_inv2pi<>(SB), X0
+    VBROADCASTSS X0, Z1
+    VMOVSS  tq_max2<>(SB), X0
+    VBROADCASTSS X0, Z2
+    VMOVSS  tq_half<>(SB), X0
+    VBROADCASTSS X0, Z3
+    VPXORD  Z4, Z4, Z4
+    VMOVSS  $1.0, X6
+    VBROADCASTSS X6, Z6
+
+loop_pack2_512:
+    CMPQ    CX, $16
+    JL      tail_pack2_512
+    
+    VMOVDQU32 (SI), Z7
+    VADDPS  Z0, Z7, Z7
+    VMULPS  Z1, Z7, Z7
+    VMAXPS  Z4, Z7, Z7
+    VMINPS  Z6, Z7, Z7
+    VMULPS  Z2, Z7, Z7
+    VADDPS  Z3, Z7, Z7
+    VCVTPS2DQ Z7, Z7
+    
+    VPMOVDB Z7, X7 // 16 bytes (low bits)
+    
+    // Combine 4x2 bits
+    VPSRLW  $8, X7, X8
+    VPSLLW  $2, X8, X8
+    MOVQ    $0x00FF00FF00FF00FF, AX
+    VMOVQ   AX, X9
+    VPAND   X7, X9, X7
+    VPOR    X8, X7, X7 // 8 words, each e1:e0
+    
+    VMOVDQU X7, X8
+    VPSRLD  $16, X8, X8
+    VPSLLD  $4, X8, X8
+    MOVQ    $0x0000FFFF0000FFFF, AX
+    VMOVQ   AX, X9
+    VPAND   X7, X9, X7
+    VPOR    X8, X7, X7 // 4 dwords, each e3:e2:e1:e0
+    
+    VPACKUSWB X7, X7, X7
+    VPACKUSDW X7, X7, X7
+    VMOVD   X7, (DI)
+    
+    ADDQ    $64, SI
+    ADDQ    $4, DI
+    SUBQ    $16, CX
+    JMP     loop_pack2_512
+
+tail_pack2_512:
+    JMP ·packTQ2AVX2Kernel+0(SB)

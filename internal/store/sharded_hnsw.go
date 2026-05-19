@@ -11,6 +11,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -36,6 +37,7 @@ type ShardedHNSWConfig struct {
 	ShardSplitThreshold    int
 	UseRingSharding        bool // If true, use Consistent Hashing (Ring). If false, use Linear Range.
 	PackedAdjacencyEnabled bool // If true, use thread-safe packed neighbor storage (v0.1.4)
+	SharedVectorSpace      bool // If true, shards use primary Dataset records for vector lookups
 	IndexFactory           func(shardIdx int) VectorIndex
 }
 
@@ -66,6 +68,7 @@ func DefaultShardedHNSWConfig() ShardedHNSWConfig {
 		ShardSplitThreshold:    65536, // ~64k vectors per shard (L3 Cache Alignment)
 		UseRingSharding:        true,  // Default to Ring
 		PackedAdjacencyEnabled: true,
+		SharedVectorSpace:      true, // Enable by default for sharded indexes (v0.2.1)
 	}
 }
 
@@ -78,6 +81,7 @@ type hnswShard struct {
 func newHnswShard(idx VectorIndex) *hnswShard {
 	return &hnswShard{
 		index:         idx,
+		locationStore: NewChunkedLocationStore(),
 	}
 }
 
@@ -187,6 +191,15 @@ func (idx *ShardedHNSW) newShard(shardIdx int) *hnswShard {
 	if idx.config.DataType != types.VectorTypeUnknown {
 		arrowConfig.DataType = idx.config.DataType
 	}
+
+	if idx.config.DataType == types.VectorTypeTQ {
+		arrowConfig.TurboQuantEnabled = true
+		if idx.dataset != nil && idx.dataset.TurboQuantBits > 0 {
+			arrowConfig.TurboQuantBits = idx.dataset.TurboQuantBits
+		} else if arrowConfig.TurboQuantBits == 0 {
+			arrowConfig.TurboQuantBits = 8
+		}
+	}
  
 	// We pass nil for ChunkedLocationStore because shards use local IDs and don't manage global locations
 	// The ShardedHNSW manages the global location store.
@@ -283,7 +296,9 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 
 	// 2. Parallel Insert across shards
 	g, ctx := errgroup.WithContext(ctx)
-	
+
+	// Time from here until the lock is fully acquired is the contention window.
+	contentionStart := time.Now()
 	idx.shardsMu.RLock()
 	// Ensure shards exist (linear sharding growth)
 	maxShardIdx := 0
@@ -302,11 +317,16 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 		idx.shardsMu.RLock()
 	}
 
+	// Record the lock-acquisition latency (write-contention proxy) once per AddBatch call.
+	if idx.dataset != nil {
+		metrics.HnswUpdateContentionSeconds.WithLabelValues(idx.dataset.Name).Observe(time.Since(contentionStart).Seconds())
+	}
+
 	for shardIdx, job := range shardJobs {
 		sIdx := shardIdx
 		j := job
 		shard := idx.shards[sIdx]
-		
+
 		g.Go(func() error {
 			shardRowIdxs := make([]int, len(j.indices))
 			shardBatchIdxs := make([]int, len(j.indices))
@@ -326,7 +346,13 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 				gid := VectorID(globalIDs[idxInBatch])
 				shard.registerID(lid, gid, idx.globalToLocal)
 			}
-			
+
+			// Each successful batch insert into a shard implies a CoW adjacency
+			// list copy inside the underlying ArrowHNSW graph.  Count them to
+			// surface write-contention pressure in dashboards.
+			if idx.dataset != nil {
+				metrics.HnswCowCopyCount.WithLabelValues(idx.dataset.Name, fmt.Sprintf("%d", sIdx)).Add(float64(len(localIDs)))
+			}
 			metrics.ShardedHnswShardSize.WithLabelValues(idx.dataset.Name, fmt.Sprintf("%d", sIdx)).Add(float64(len(localIDs)))
 			return nil
 		})
@@ -1188,6 +1214,13 @@ func (idx *ShardedHNSW) ExportGraph(w io.Writer) error {
 			continue
 		}
  
+		if shard.locationStore == nil {
+			var zero uint32
+			if err := binary.Write(w, binary.LittleEndian, zero); err != nil {
+				return fmt.Errorf("failed to write shard %d mappings count (nil store): %w", i, err)
+			}
+			continue
+		}
 		mappingsCount := shard.locationStore.Len()
 		if err := binary.Write(w, binary.LittleEndian, uint32(mappingsCount)); err != nil { // #nosec G115
 			return fmt.Errorf("failed to write shard %d mappings count: %w", i, err)
@@ -1267,6 +1300,9 @@ func (idx *ShardedHNSW) ImportGraph(r io.Reader) error {
 			globalIDs[j] = VectorID(globalID)
 		}
  
+		if shard.locationStore == nil {
+			shard.locationStore = NewChunkedLocationStore()
+		}
 		shard.locationStore.Reset()
 		shard.locationStore.EnsureCapacity(VectorID(mappingCount - 1))
 		for j, globalID := range globalIDs {
@@ -1293,6 +1329,9 @@ func (idx *ShardedHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error
  
 	for _, shard := range idx.shards {
 		if shard == nil {
+			continue
+		}
+		if shard.locationStore == nil {
 			continue
 		}
 		for j := 0; j < shard.locationStore.Len(); j++ {
@@ -1330,7 +1369,10 @@ func (idx *ShardedHNSW) ApplyDelta(delta *types.DeltaSync) error {
 		}
  
 		shard := idx.shards[shardIdx]
-		localID := uint32(shard.locationStore.Len()) // #nosec G115
+		localID := uint32(0)
+		if shard.locationStore != nil {
+			localID = uint32(shard.locationStore.Len()) // #nosec G115
+		}
 		shard.registerID(localID, globalID, idx.globalToLocal)
  
 		idx.locationStore.Set(VectorID(globalID), loc)
@@ -1374,4 +1416,25 @@ func (idx *ShardedHNSW) RemapLocations(ctx context.Context, mapping map[uint32]a
 // GetShardedIndex returns this index as a ShardedHNSW pointer.
 func (idx *ShardedHNSW) GetShardedIndex() *ShardedHNSW {
 	return idx
+}
+
+func (idx *ShardedHNSW) RelocateToOffHeap() error {
+	idx.shardsMu.RLock()
+	defer idx.shardsMu.RUnlock()
+	for _, shard := range idx.shards {
+		if err := shard.RelocateToOffHeap(); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (idx *ShardedHNSW) ReleaseMonolithicChunk(cID int) error {
+	// ShardedHNSW doesn't have a single monolithic store to release.
+	// Memory is managed at the shard level.
+	return nil
+}
+
+func (s *hnswShard) RelocateToOffHeap() error {
+	return s.index.RelocateToOffHeap()
 }

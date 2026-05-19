@@ -3,14 +3,16 @@ package store
 import (
 	"testing"
 	"time"
+	"github.com/23skdu/longbow/internal/memory"
 )
 
 func BenchmarkTemporalTree_GetRange(b *testing.B) {
-	tt := NewTemporalTree()
+	arena := memory.NewSlabArena(1024*1024)
+	tt := NewTemporalTree(arena)
 	n := 100000
 	startTs := time.Now().UnixNano()
 	for i := 0; i < n; i++ {
-		tt.Insert(startTs+int64(i), uint64(i))
+		tt.Insert(startTs+int64(i), uint64(i), 0.0)
 	}
 
 	b.ResetTimer()
@@ -20,11 +22,12 @@ func BenchmarkTemporalTree_GetRange(b *testing.B) {
 }
 
 func BenchmarkTemporalTree_GetLatest(b *testing.B) {
-	tt := NewTemporalTree()
+	arena := memory.NewSlabArena(1024*1024)
+	tt := NewTemporalTree(arena)
 	n := 100000
 	startTs := time.Now().UnixNano()
 	for i := 0; i < n; i++ {
-		tt.Insert(startTs+int64(i), uint64(i))
+		tt.Insert(startTs+int64(i), uint64(i), 0.0)
 	}
 
 	b.ResetTimer()

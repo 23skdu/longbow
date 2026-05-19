@@ -211,7 +211,7 @@ func (ta *TypedArena[T]) Get(ref SliceRef) []T {
 
 // GetWithGeneration retrieves a typed slice from the arena, enforcing generation isolation.
 func (ta *TypedArena[T]) GetWithGeneration(ref SliceRef, maxGeneration uint64) []T {
-	if ref.Offset == 0 || ref.Len == 0 {
+	if ref.Len == 0 {
 		return nil
 	}
 

@@ -41,6 +41,15 @@ struct MetalIndexOptimized {
     void* tqPipeline;
     void* pqPipeline;
     void* pqBuffer;
+    void* haversinePipeline;
+    void* normPipeline;
+    void* prunePipeline;
+    void* greedySearchPipeline;
+    void* greedyTQSearchPipeline;
+    void* graphOffsetsBuffer;
+    void* graphNeighborsBuffer;
+    void* graphWeightsBuffer;
+    void* trigBuffer; // [256 * 2] float table for sin/cos
     int vectorCount;
     int dimensions;
     int capacity;
@@ -68,7 +77,7 @@ void metal_set_pipelines_optimized(MetalIndexOptimized* handle, void* device, vo
                                  void* l2, void* cosine, void* dot, void* topK,
                                  void* l2Fp16, void* cosineFp16, void* dotFp16,
                                  void* l2C128, void* cosineC128, void* l2C64, void* cosineC64,
-                                 void* tq) {
+                                 void* tq, void* haversine, void* norm, void* prune, void* greedy, void* greedyTQ) {
     handle->device = device;
     handle->commandQueue = queue;
     handle->distanceComputePipeline = l2;
@@ -83,6 +92,139 @@ void metal_set_pipelines_optimized(MetalIndexOptimized* handle, void* device, vo
     handle->l2C64Pipeline = l2C64;
     handle->cosineC64Pipeline = cosineC64;
     handle->tqPipeline = tq;
+    handle->haversinePipeline = haversine;
+    handle->normPipeline = norm;
+    handle->prunePipeline = prune;
+    handle->greedySearchPipeline = greedy;
+    handle->greedyTQSearchPipeline = greedyTQ;
+
+    // Initialize trig table (256 entries for 8-bit max)
+    id<MTLDevice> mtlDevice = (__bridge id<MTLDevice>)device;
+    float* trigData = (float*)malloc(256 * 2 * sizeof(float));
+    for (int i = 0; i < 256; i++) {
+        // Use 255.0 for 8-bit normalization
+        double theta = ((double)i / 255.0) * 2.0 * M_PI - M_PI;
+        trigData[2 * i] = (float)cos(theta);
+        trigData[2 * i + 1] = (float)sin(theta);
+    }
+    id<MTLBuffer> trigBuffer = [mtlDevice newBufferWithBytes:trigData length:256 * 2 * sizeof(float) options:MTLResourceStorageModeShared];
+    handle->trigBuffer = (__bridge_retained void*)trigBuffer;
+    free(trigData);
+}
+
+// Perform HNSW greedy search on GPU
+int metal_greedy_search_optimized(MetalIndexOptimized* handle, float* query, uint32_t* entryPoint, float* entryDist) {
+    @autoreleasepool {
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLComputePipelineState> greedyPipeline = (__bridge id<MTLComputePipelineState>)handle->greedySearchPipeline;
+        
+        if (!greedyPipeline || !handle->graphOffsetsBuffer || !handle->graphNeighborsBuffer) {
+            return -1;
+        }
+
+        id<MTLBuffer> queryBuf = [device newBufferWithBytes:query length:handle->dimensions * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> epBuf = [device newBufferWithBytes:entryPoint length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> distBuf = [device newBufferWithBytes:entryDist length:sizeof(float) options:MTLResourceStorageModeShared];
+
+        id<MTLCommandBuffer> cmdBuf = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [cmdBuf computeCommandEncoder];
+
+        [encoder setComputePipelineState:greedyPipeline];
+        [encoder setBuffer:queryBuf offset:0 atIndex:0];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->vectorBuffer offset:0 atIndex:1];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->graphOffsetsBuffer offset:0 atIndex:2];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->graphNeighborsBuffer offset:0 atIndex:3];
+        [encoder setBuffer:epBuf offset:0 atIndex:4];
+        [encoder setBuffer:distBuf offset:0 atIndex:5];
+        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:6];
+        [encoder setBytes:&handle->vectorCount length:sizeof(uint32_t) atIndex:7];
+
+        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+        [encoder endEncoding];
+        [cmdBuf commit];
+        [cmdBuf waitUntilCompleted];
+
+        *entryPoint = *(uint32_t*)epBuf.contents;
+        *entryDist = *(float*)distBuf.contents;
+
+        return 0;
+    }
+}
+
+int metal_greedy_search_tq_optimized(MetalIndexOptimized* handle, float* query, int pow2, int bitsPerAngle, uint32_t* entryPoint, float* entryDist) {
+    @autoreleasepool {
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLComputePipelineState> greedyPipeline = (__bridge id<MTLComputePipelineState>)handle->greedyTQSearchPipeline;
+        
+        if (!greedyPipeline || !handle->graphOffsetsBuffer || !handle->graphNeighborsBuffer) {
+            return -1;
+        }
+
+        id<MTLBuffer> queryBuf = [device newBufferWithBytes:query length:pow2 * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> epBuf = [device newBufferWithBytes:entryPoint length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> distBuf = [device newBufferWithBytes:entryDist length:sizeof(float) options:MTLResourceStorageModeShared];
+
+        id<MTLCommandBuffer> cmdBuf = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [cmdBuf computeCommandEncoder];
+
+        [encoder setComputePipelineState:greedyPipeline];
+        [encoder setBuffer:queryBuf offset:0 atIndex:0];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->vectorBuffer offset:0 atIndex:1];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->graphOffsetsBuffer offset:0 atIndex:2];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->graphNeighborsBuffer offset:0 atIndex:3];
+        [encoder setBuffer:epBuf offset:0 atIndex:4];
+        [encoder setBuffer:distBuf offset:0 atIndex:5];
+        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:6];
+        [encoder setBytes:&pow2 length:sizeof(uint32_t) atIndex:7];
+        [encoder setBytes:&bitsPerAngle length:sizeof(uint32_t) atIndex:8];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->trigBuffer offset:0 atIndex:9];
+
+        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+        [encoder endEncoding];
+        [cmdBuf commit];
+        [cmdBuf waitUntilCompleted];
+
+        *entryPoint = *(uint32_t*)epBuf.contents;
+        *entryDist = *(float*)distBuf.contents;
+
+        return 0;
+    }
+}
+
+// Update graph buffers for HNSW traversal
+int metal_update_graph_optimized(MetalIndexOptimized* handle, uint32_t* offsets, int numOffsets, uint32_t* neighbors, int numNeighbors, float* weights, int numWeights) {
+    @autoreleasepool {
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        
+        if (handle->graphOffsetsBuffer) {
+            handle->graphOffsetsBuffer = nil;
+        }
+        if (handle->graphNeighborsBuffer) {
+            handle->graphNeighborsBuffer = nil;
+        }
+        if (handle->graphWeightsBuffer) {
+            handle->graphWeightsBuffer = nil;
+        }
+
+        if (numOffsets > 0) {
+            handle->graphOffsetsBuffer = (__bridge_retained void*)[device newBufferWithBytes:offsets
+                                                                                     length:numOffsets * sizeof(uint32_t)
+                                                                                    options:MTLResourceStorageModeShared];
+        }
+        if (numNeighbors > 0) {
+            handle->graphNeighborsBuffer = (__bridge_retained void*)[device newBufferWithBytes:neighbors
+                                                                                       length:numNeighbors * sizeof(uint32_t)
+                                                                                      options:MTLResourceStorageModeShared];
+        }
+        if (numWeights > 0) {
+            handle->graphWeightsBuffer = (__bridge_retained void*)[device newBufferWithBytes:weights
+                                                                                     length:numWeights * sizeof(float)
+                                                                                    options:MTLResourceStorageModeShared];
+        }
+        return 0;
+    }
 }
 
 // Set distance metric
@@ -278,6 +420,7 @@ void metal_cleanup_optimized(MetalIndexOptimized* handle) {
             if (handle->idBuffer) CFRelease(handle->idBuffer);
             if (handle->vectorBuffer) CFRelease(handle->vectorBuffer);
             if (handle->pqBuffer) CFRelease(handle->pqBuffer);
+            if (handle->trigBuffer) CFRelease(handle->trigBuffer);
             free(handle);
         }
     }
@@ -450,7 +593,7 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
         id<MTLComputePipelineState> tqPipeline = (__bridge id<MTLComputePipelineState>)handle->tqPipeline;
         id<MTLComputePipelineState> topKPipeline = (__bridge id<MTLComputePipelineState>)handle->topKPipeline;
 
-        id<MTLBuffer> queryBuffer = [device newBufferWithBytes:query length:handle->dimensions * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> queryBuffer = [device newBufferWithBytes:query length:pow2 * sizeof(float) options:MTLResourceStorageModeShared];
         id<MTLBuffer> distBuffer = [device newBufferWithLength:handle->vectorCount * sizeof(float) options:MTLResourceStorageModeShared];
         id<MTLBuffer> indicesBuffer = [device newBufferWithLength:k * sizeof(int) options:MTLResourceStorageModeShared];
         id<MTLBuffer> topDistancesBuffer = [device newBufferWithLength:k * sizeof(float) options:MTLResourceStorageModeShared];
@@ -471,6 +614,7 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
         [encoder setBytes:&pow2 length:sizeof(uint32_t) atIndex:4];
         [encoder setBytes:&bitsPerAngle length:sizeof(uint32_t) atIndex:5];
         [encoder setBytes:&handle->vectorCount length:sizeof(uint32_t) atIndex:6];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->trigBuffer offset:0 atIndex:7];
 
         [encoder dispatchThreads:MTLSizeMake(handle->vectorCount, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(handle->vectorCount, (int)tqPipeline.maxTotalThreadsPerThreadgroup), 1, 1)];
 
@@ -584,26 +728,141 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
             return 0;
         }
     }
+
+    int metal_haversine_batch_optimized(MetalIndexOptimized* handle, float* center, float* points, float* results, float earthRadius, int count) {
+        @autoreleasepool {
+            if (!handle || !handle->haversinePipeline) return -1;
+            id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+            id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+            id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->haversinePipeline;
+
+            id<MTLBuffer> centerBuf = [device newBufferWithBytes:center length:2 * sizeof(float) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> pointsBuf = [device newBufferWithBytes:points length:count * 2 * sizeof(float) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> resBuf = [device newBufferWithLength:count * sizeof(float) options:MTLResourceStorageModeShared];
+
+            id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+            id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+            [encoder setComputePipelineState:pipeline];
+            [encoder setBuffer:centerBuf offset:0 atIndex:0];
+            [encoder setBuffer:pointsBuf offset:0 atIndex:1];
+            [encoder setBuffer:resBuf offset:0 atIndex:2];
+            [encoder setBytes:&earthRadius length:sizeof(float) atIndex:3];
+            [encoder setBytes:&count length:sizeof(uint32_t) atIndex:4];
+
+            [encoder dispatchThreads:MTLSizeMake(count, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(count, (int)pipeline.maxTotalThreadsPerThreadgroup), 1, 1)];
+            [encoder endEncoding];
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+
+            memcpy(results, [resBuf contents], count * sizeof(float));
+            return 0;
+        }
+    }
+
+    int metal_norm_batch_optimized(MetalIndexOptimized* handle, float* vectors, float* results, int dims, int count) {
+        @autoreleasepool {
+            if (!handle || !handle->normPipeline) return -1;
+            id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+            id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+            id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->normPipeline;
+
+            id<MTLBuffer> vecBuf = [device newBufferWithBytes:vectors length:count * dims * sizeof(float) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> resBuf = [device newBufferWithLength:count * sizeof(float) options:MTLResourceStorageModeShared];
+
+            id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+            id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+            [encoder setComputePipelineState:pipeline];
+            [encoder setBuffer:vecBuf offset:0 atIndex:0];
+            [encoder setBuffer:resBuf offset:0 atIndex:1];
+            [encoder setBytes:&dims length:sizeof(uint32_t) atIndex:2];
+            [encoder setBytes:&count length:sizeof(uint32_t) atIndex:3];
+
+            [encoder dispatchThreads:MTLSizeMake(count, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(count, (int)pipeline.maxTotalThreadsPerThreadgroup), 1, 1)];
+            [encoder endEncoding];
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+
+            memcpy(results, [resBuf contents], count * sizeof(float));
+            return 0;
+        }
+    }
+
+    int metal_prune_neighbors_optimized(MetalIndexOptimized* handle, uint32_t* candidateIds, float* candidateDists, uint32_t* selectedIds, uint32_t* selectedCount, float* allVectors, int maxNeighbors, int numCandidates, int dim, bool extended) {
+        @autoreleasepool {
+            if (!handle || !handle->prunePipeline) return -1;
+            id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+            id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+            id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->prunePipeline;
+
+            id<MTLBuffer> candIdBuf = [device newBufferWithBytes:candidateIds length:numCandidates * sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> candDistBuf = [device newBufferWithBytes:candidateDists length:numCandidates * sizeof(float) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> selIdBuf = [device newBufferWithLength:maxNeighbors * sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> selCountBuf = [device newBufferWithLength:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            
+            id<MTLBuffer> allVecBuf;
+            if (allVectors != NULL) {
+                uint32_t maxID = 0;
+                for (int i = 0; i < numCandidates; i++) {
+                    if (candidateIds[i] > maxID) maxID = candidateIds[i];
+                }
+                allVecBuf = [device newBufferWithBytes:allVectors length:(size_t)(maxID + 1) * dim * sizeof(float) options:MTLResourceStorageModeShared];
+            } else {
+                allVecBuf = (__bridge id<MTLBuffer>)handle->vectorBuffer;
+            }
+
+            id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+            id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+            [encoder setComputePipelineState:pipeline];
+            [encoder setBuffer:candIdBuf offset:0 atIndex:0];
+            [encoder setBuffer:candDistBuf offset:0 atIndex:1];
+            [encoder setBuffer:selIdBuf offset:0 atIndex:2];
+            [encoder setBuffer:selCountBuf offset:0 atIndex:3];
+            [encoder setBuffer:allVecBuf offset:0 atIndex:4];
+            [encoder setBytes:&maxNeighbors length:sizeof(int) atIndex:5];
+            [encoder setBytes:&numCandidates length:sizeof(int) atIndex:6];
+            [encoder setBytes:&dim length:sizeof(int) atIndex:7];
+            [encoder setBytes:&extended length:sizeof(bool) atIndex:8];
+
+            [encoder dispatchThreads:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+            [encoder endEncoding];
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+
+            *selectedCount = *(uint32_t*)[selCountBuf contents];
+            memcpy(selectedIds, [selIdBuf contents], (*selectedCount) * sizeof(uint32_t));
+            return 0;
+        }
+    }
 */
 import "C"
 import (
 	"fmt"
 	"math"
 	"runtime"
+	"sort"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 // MetalIndexOptimized implements GPU-accelerated vector search using Metal compute shaders
 type MetalIndexOptimized struct {
-	handle    *C.MetalIndexOptimized
-	dim       int
-	mu        sync.RWMutex
-	closed    bool
-	pqEncoder *pq.PQEncoder
+	handle         *C.MetalIndexOptimized
+	dim            int
+	mu             sync.RWMutex
+	closed         bool
+	pqEncoder      *pq.PQEncoder
+	graphOffsets   []uint32
+	graphNeighbors []uint32
+	graphWeights   []float32
 }
 
 // NewMetalIndexOptimized creates an optimized Metal-based GPU index with compute shaders
@@ -628,27 +887,48 @@ func NewMetalIndexOptimized(cfg types.GPUConfig) (types.Index, error) {
 	}
 
 	// Resolve all required pipelines
-	l2, _ := ctx.GetPipelineState("compute_l2_distances")
-	cosine, _ := ctx.GetPipelineState("compute_cosine_similarity")
-	dot, _ := ctx.GetPipelineState("compute_dot_product")
-	topK, _ := ctx.GetPipelineState("find_top_k_heap")
-	l2Fp16, _ := ctx.GetPipelineState("compute_l2_distances_fp16")
-	cosineFp16, _ := ctx.GetPipelineState("compute_cosine_similarity_fp16")
-	dotFp16, _ := ctx.GetPipelineState("compute_dot_product_fp16")
-	l2C128, _ := ctx.GetPipelineState("compute_l2_distances_complex128")
-	cosineC128, _ := ctx.GetPipelineState("compute_cosine_similarity_complex128")
-	l2C64, _ := ctx.GetPipelineState("compute_l2_distances_complex64")
-	cosineC64, _ := ctx.GetPipelineState("compute_cosine_similarity_complex64")
-	tq, _ := ctx.GetPipelineState("compute_tq_distances")
+	l2, err := ctx.GetPipelineState("compute_l2_distances")
+	if err != nil { return nil, err }
+	cosine, err := ctx.GetPipelineState("compute_cosine_similarity")
+	if err != nil { return nil, err }
+	dot, err := ctx.GetPipelineState("compute_dot_product")
+	if err != nil { return nil, err }
+	topK, err := ctx.GetPipelineState("find_top_k_heap")
+	if err != nil { return nil, err }
+	l2Fp16, err := ctx.GetPipelineState("compute_l2_distances_fp16")
+	if err != nil { return nil, err }
+	cosineFp16, err := ctx.GetPipelineState("compute_cosine_similarity_fp16")
+	if err != nil { return nil, err }
+	dotFp16, err := ctx.GetPipelineState("compute_dot_product_fp16")
+	if err != nil { return nil, err }
+	l2C128, err := ctx.GetPipelineState("compute_l2_distances_complex128")
+	if err != nil { return nil, err }
+	cosineC128, err := ctx.GetPipelineState("compute_cosine_similarity_complex128")
+	if err != nil { return nil, err }
+	l2C64, err := ctx.GetPipelineState("compute_l2_distances_complex64")
+	if err != nil { return nil, err }
+	cosineC64, err := ctx.GetPipelineState("compute_cosine_similarity_complex64")
+	if err != nil { return nil, err }
+	tq, err := ctx.GetPipelineState("compute_tq_distances")
+	if err != nil { return nil, err }
+	haversine, err := ctx.GetPipelineState("haversine_batch")
+	if err != nil { return nil, err }
+	norm, err := ctx.GetPipelineState("norm_batch_f32")
+	if err != nil { return nil, err }
+	prune, err := ctx.GetPipelineState("hnsw_prune_neighbors")
+	if err != nil { return nil, err }
+	greedy, err := ctx.GetPipelineState("hnsw_greedy_search")
+	if err != nil { return nil, err }
+	greedyTQ, err := ctx.GetPipelineState("hnsw_greedy_search_tq")
+	if err != nil { return nil, err }
 
-	// Set shared resources from context
-	C.metal_set_pipelines_optimized(handle,
-		ctx.GetDevice(),
-		ctx.GetCommandQueue(),
+	C.metal_set_pipelines_optimized(
+		handle,
+		ctx.GetDevice(), ctx.GetCommandQueue(),
 		l2, cosine, dot, topK,
 		l2Fp16, cosineFp16, dotFp16,
 		l2C128, cosineC128, l2C64, cosineC64,
-		tq,
+		tq, haversine, norm, prune, greedy, greedyTQ,
 	)
 
 	idx := &MetalIndexOptimized{
@@ -980,36 +1260,6 @@ func (idx *MetalIndexOptimized) GetUtilization() (float32, error) {
 	return 50.0, nil
 }
 
-func (idx *MetalIndexOptimized) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
-
-	if idx.closed {
-		return fmt.Errorf("index is closed")
-	}
-
-	count := len(ids)
-	if count == 0 {
-		return nil
-	}
-
-	stride := len(tqData) / count
-
-	ret := C.metal_add_tq_vectors_optimized(
-		idx.handle,
-		(*C.uchar)(unsafe.Pointer(&tqData[0])),
-		C.int(stride),
-		(*C.int64_t)(unsafe.Pointer(&ids[0])),
-		C.int(count),
-	)
-
-	if ret != 0 {
-		return fmt.Errorf("failed to add TQ vectors to optimized Metal buffer")
-	}
-
-	return nil
-}
-
 func (idx *MetalIndexOptimized) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -1027,12 +1277,22 @@ func (idx *MetalIndexOptimized) SearchTurboQuant(vector []float32, k int, bitsPe
 		pow2 <<= 1
 	}
 
+	// TurboQuant requires query rotation for distance parity (seed 42 is currently used)
+	rotatedQuery := make([]float32, pow2)
+	copy(rotatedQuery, vector)
+	// We use the same hardcoded seed 42 as the CPU implementation for now.
+	// In the future, this should be configurable via the index.
+	if err := simd.RandomRotation(rotatedQuery, 42); err != nil {
+		return nil, nil, fmt.Errorf("failed to rotate query for TQ search: %w", err)
+	}
+
 	resultIDs := make([]int64, k)
 	resultDistances := make([]float32, k)
 
+	start := time.Now()
 	ret := C.metal_search_tq_optimized(
 		idx.handle,
-		(*C.float)(unsafe.Pointer(&vector[0])),
+		(*C.float)(unsafe.Pointer(&rotatedQuery[0])),
 		C.int(k),
 		C.int(pow2),
 		C.int(bitsPerAngle),
@@ -1044,23 +1304,236 @@ func (idx *MetalIndexOptimized) SearchTurboQuant(vector []float32, k int, bitsPe
 		return nil, nil, fmt.Errorf("optimized Metal TQ search failed")
 	}
 
+	metrics.TurboQuantDequantizeLatencySeconds.Observe(time.Since(start).Seconds())
 	return resultIDs, resultDistances, nil
 }
 
+func packedSize(dims int, bitsPerAngle int) int {
+	pow2 := 1
+	for pow2 < dims {
+		pow2 <<= 1
+	}
+	angleCount := pow2 - 1
+	angleBytes := (angleCount*bitsPerAngle + 7) / 8
+	bitBytes := (pow2 + 7) / 8
+	size := 4 + angleBytes + bitBytes
+	return (size + 3) &^ 3 // Pad to 4 bytes for GPU alignment
+}
+
+func (idx *MetalIndexOptimized) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	stride := packedSize(idx.dim, bitsPerAngle)
+	n := len(tqData) / stride
+	if len(ids) != n {
+		return fmt.Errorf("id count %d does not match TQ vector count %d", len(ids), n)
+	}
+
+	start := time.Now()
+	ret := C.metal_add_tq_vectors_optimized(
+		idx.handle,
+		(*C.uchar)(unsafe.Pointer(&tqData[0])),
+		C.int(stride),
+		(*C.int64_t)(unsafe.Pointer(&ids[0])),
+		C.int(n),
+	)
+	metrics.GPUIngestKernelDurationSeconds.Observe(time.Since(start).Seconds())
+
+	if ret != 0 {
+		return fmt.Errorf("failed to add TQ vectors to optimized Metal buffer")
+	}
+
+	return nil
+}
+
 func (idx *MetalIndexOptimized) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index closed")
+	}
+
+	// For the optimized backend, we store the graph in unified memory buffers
+	// for direct access by Metal kernels.
+	idx.graphOffsets = offsets
+	idx.graphNeighbors = neighbors
+	idx.graphWeights = weights
+
+	// Sync to GPU
+	var offsetsPtr, neighborsPtr *C.uint32_t
+	var weightsPtr *C.float
+
+	if len(offsets) > 0 {
+		offsetsPtr = (*C.uint32_t)(unsafe.Pointer(&offsets[0]))
+	}
+	if len(neighbors) > 0 {
+		neighborsPtr = (*C.uint32_t)(unsafe.Pointer(&neighbors[0]))
+	}
+	if len(weights) > 0 {
+		weightsPtr = (*C.float)(unsafe.Pointer(&weights[0]))
+	}
+
+	ret := C.metal_update_graph_optimized(
+		idx.handle,
+		offsetsPtr, C.int(len(offsets)),
+		neighborsPtr, C.int(len(neighbors)),
+		weightsPtr, C.int(len(weights)),
+	)
+
+	if ret != 0 {
+		return fmt.Errorf("failed to update graph on GPU")
+	}
+
 	return nil
 }
 
 func (idx *MetalIndexOptimized) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
-	return nil, nil, nil
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index closed")
+	}
+
+	if len(idx.graphOffsets) == 0 {
+		return nil, nil, fmt.Errorf("graph not initialized")
+	}
+
+	// BFS expansion (initially on CPU for stability, kernels to follow)
+	visited := make(map[uint32]float32)
+	for _, seed := range seeds {
+		visited[seed] = 1.0
+	}
+
+	currentFrontier := seeds
+	for d := 0; d < depth; d++ {
+		var nextFrontier []uint32
+		for _, nodeID := range currentFrontier {
+			if int(nodeID)+1 >= len(idx.graphOffsets) {
+				continue
+			}
+			start := idx.graphOffsets[nodeID]
+			end := idx.graphOffsets[nodeID+1]
+			
+			for neighborIdx := start; neighborIdx < end; neighborIdx++ {
+				neighbor := idx.graphNeighbors[neighborIdx]
+				if _, seen := visited[neighbor]; !seen {
+					score := visited[nodeID] * alpha
+					visited[neighbor] = score
+					nextFrontier = append(nextFrontier, neighbor)
+				}
+			}
+		}
+		if len(nextFrontier) == 0 {
+			break
+		}
+		currentFrontier = nextFrontier
+	}
+
+	outIDs := make([]uint32, 0, len(visited))
+	outScores := make([]float32, 0, len(visited))
+	for id, score := range visited {
+		outIDs = append(outIDs, id)
+		outScores = append(outScores, score)
+	}
+
+	return outIDs, outScores, nil
 }
 
 func (idx *MetalIndexOptimized) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
-	return nil, nil
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	count := len(points) / 2
+	if count == 0 {
+		return nil, nil
+	}
+
+	results := make([]float32, count)
+	center := []float32{centerLat, centerLon}
+
+	start := time.Now()
+	ret := C.metal_haversine_batch_optimized(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&center[0])),
+		(*C.float)(unsafe.Pointer(&points[0])),
+		(*C.float)(unsafe.Pointer(&results[0])),
+		C.float(earthRadius),
+		C.int(count),
+	)
+
+	if ret != 0 {
+		// CPU fallback
+		const degToRad = math.Pi / 180.0
+		lat1 := float64(centerLat) * degToRad
+		lon1 := float64(centerLon) * degToRad
+
+		for i := 0; i < count; i++ {
+			lat2 := float64(points[i*2]) * degToRad
+			lon2 := float64(points[i*2+1]) * degToRad
+
+			dLat := lat2 - lat1
+			dLon := lon2 - lon1
+
+			a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+				math.Cos(lat1)*math.Cos(lat2)*math.Sin(dLon/2)*math.Sin(dLon/2)
+			c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+			results[i] = float32(float64(earthRadius) * c)
+		}
+	} else {
+		metrics.GPUComputeDurationSeconds.WithLabelValues("Apple Silicon GPU (Optimized)", "haversine").Observe(time.Since(start).Seconds())
+	}
+	return results, nil
 }
 
 func (idx *MetalIndexOptimized) NormBatch(vectors []float32, dims int) ([]float32, error) {
-	return nil, nil
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	count := len(vectors) / dims
+	if count == 0 {
+		return nil, nil
+	}
+
+	results := make([]float32, count)
+
+	start := time.Now()
+	ret := C.metal_norm_batch_optimized(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&vectors[0])),
+		(*C.float)(unsafe.Pointer(&results[0])),
+		C.int(dims),
+		C.int(count),
+	)
+
+	if ret != 0 {
+		// CPU fallback
+		for i := 0; i < count; i++ {
+			var sum float64
+			for j := 0; j < dims; j++ {
+				val := float64(vectors[i*dims+j])
+				sum += val * val
+			}
+			results[i] = float32(math.Sqrt(sum))
+		}
+	} else {
+		metrics.GPUComputeDurationSeconds.WithLabelValues("Apple Silicon GPU (Optimized)", "norm_batch").Observe(time.Since(start).Seconds())
+	}
+	return results, nil
 }
 
 func (idx *MetalIndexOptimized) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
@@ -1089,4 +1562,171 @@ func (idx *MetalIndexOptimized) AssignToClusters(vectors []float32, centroids []
 		assignments[i] = bestCluster
 	}
 	return assignments, nil
+}
+
+func (idx *MetalIndexOptimized) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return 0, 0, fmt.Errorf("index closed")
+	}
+
+	ep := entryPoint
+	ed := entryDist
+	ret := C.metal_greedy_search_optimized(idx.handle, (*C.float)(unsafe.Pointer(&query[0])), (*C.uint32_t)(unsafe.Pointer(&ep)), (*C.float)(unsafe.Pointer(&ed)))
+	if ret != 0 {
+		return 0, 0, fmt.Errorf("GPU greedy search failed")
+	}
+	return ep, ed, nil
+}
+
+func (idx *MetalIndexOptimized) SearchGreedyTQ(query []float32, entryPoint uint32, entryDist float32, bitsPerAngle int) (uint32, float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return 0, 0, fmt.Errorf("index closed")
+	}
+
+	pow2 := 1
+	for pow2 < idx.dim {
+		pow2 <<= 1
+	}
+
+	// TurboQuant requires query rotation for distance parity
+	rotatedQuery := make([]float32, pow2)
+	copy(rotatedQuery, query)
+	if err := simd.RandomRotation(rotatedQuery, 42); err != nil {
+		return 0, 0, fmt.Errorf("failed to rotate query for TQ greedy search: %w", err)
+	}
+
+	ep := entryPoint
+	ed := entryDist
+	start := time.Now()
+	ret := C.metal_greedy_search_tq_optimized(idx.handle, (*C.float)(unsafe.Pointer(&rotatedQuery[0])), C.int(pow2), C.int(bitsPerAngle), (*C.uint32_t)(unsafe.Pointer(&ep)), (*C.float)(unsafe.Pointer(&ed)))
+	if ret != 0 {
+		return 0, 0, fmt.Errorf("GPU greedy TQ search failed")
+	}
+	metrics.TurboQuantDequantizeLatencySeconds.Observe(time.Since(start).Seconds())
+	return ep, ed, nil
+}
+
+func (idx *MetalIndexOptimized) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	numCandidates := len(candidateIds)
+	if numCandidates == 0 {
+		return []uint32{}, nil
+	}
+
+	selectedIds := make([]uint32, maxNeighbors)
+	var selectedCount uint32
+
+	var vecPtr *C.float
+	if len(allVectors) > 0 {
+		vecPtr = (*C.float)(unsafe.Pointer(&allVectors[0]))
+	}
+
+	start := time.Now()
+	ret := C.metal_prune_neighbors_optimized(
+		idx.handle,
+		(*C.uint32_t)(unsafe.Pointer(&candidateIds[0])),
+		(*C.float)(unsafe.Pointer(&candidateDists[0])),
+		(*C.uint32_t)(unsafe.Pointer(&selectedIds[0])),
+		(*C.uint32_t)(unsafe.Pointer(&selectedCount)),
+		vecPtr,
+		C.int(maxNeighbors),
+		C.int(numCandidates),
+		C.int(idx.dim),
+		C.bool(true),
+	)
+
+	if ret == 0 {
+		metrics.GPUComputeDurationSeconds.WithLabelValues("Apple Silicon GPU (Optimized)", "prune_neighbors").Observe(time.Since(start).Seconds())
+		return selectedIds[:selectedCount], nil
+	}
+
+	// CPU fallback: simple distance-based pruning
+	type cand struct {
+		id   uint32
+		dist float32
+	}
+	cands := make([]cand, len(candidateIds))
+	for i := range candidateIds {
+		cands[i] = cand{id: candidateIds[i], dist: candidateDists[i]}
+	}
+
+	sort.Slice(cands, func(i, j int) bool {
+		return cands[i].dist < cands[j].dist
+	})
+
+	n := maxNeighbors
+	if n > len(cands) {
+		n = len(cands)
+	}
+
+	pruned := make([]uint32, n)
+	for i := 0; i < n; i++ {
+		pruned[i] = cands[i].id
+	}
+
+	return pruned, nil
+}
+
+func (idx *MetalIndexOptimized) searchGreedyGPU(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return 0, 0, fmt.Errorf("index closed")
+	}
+
+	ep := entryPoint
+	ed := entryDist
+
+	ret := C.metal_greedy_search_optimized(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&query[0])),
+		(*C.uint32_t)(unsafe.Pointer(&ep)),
+		(*C.float)(unsafe.Pointer(&ed)),
+	)
+
+	if ret != 0 {
+		return 0, 0, fmt.Errorf("GPU greedy search failed")
+	}
+
+	return ep, ed, nil
+}
+
+func (idx *MetalIndexOptimized) Sync() error {
+	return nil
+}
+
+func (idx *MetalIndexOptimized) Clear() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	// Reset vector count in handle
+	idx.handle.vectorCount = 0
+	
+	// Reset graph metadata
+	idx.graphOffsets = nil
+	idx.graphNeighbors = nil
+	idx.graphWeights = nil
+
+	return nil
+}
+
+func (idx *MetalIndexOptimized) Reset() error {
+	return idx.Clear()
 }

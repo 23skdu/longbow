@@ -2,14 +2,15 @@ package store
 
 import (
 	"context"
+	"io"
 	"runtime"
+	"runtime/debug"
 	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
 
-	"io"
-
+	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
@@ -119,6 +120,10 @@ func (idx *AutoShardingIndex) AddByLocation(ctx context.Context, batchIdx, rowId
 	if err == nil {
 		idx.checkShardThreshold()
 	}
+
+	if idx.migrating.Load() {
+		idx.checkMigrationPressure()
+	}
 	return id, err
 }
 
@@ -147,6 +152,10 @@ func (idx *AutoShardingIndex) AddByRecord(ctx context.Context, rec arrow.RecordB
 	if err == nil {
 		idx.checkShardThreshold()
 	}
+
+	if idx.migrating.Load() {
+		idx.checkMigrationPressure()
+	}
 	return id, err
 }
 
@@ -171,30 +180,94 @@ func (idx *AutoShardingIndex) AddBatch(ctx context.Context, recs []arrow.RecordB
 	if err == nil {
 		idx.checkShardThreshold()
 	}
+
+	if idx.migrating.Load() {
+		idx.checkMigrationPressure()
+	}
 	return ids, err
 }
 
 func (idx *AutoShardingIndex) checkShardThreshold() {
 	idx.mu.RLock()
-	if idx.sharded || !idx.config.Enabled {
-		idx.mu.RUnlock()
-		return
-	}
-	currentLen := idx.current.Len()
-	threshold := idx.config.ShardThreshold
+	curr := idx.current
+	sharded := idx.sharded
+	migrating := idx.migrating.Load()
 	idx.mu.RUnlock()
 
+	if sharded || migrating {
+		return
+	}
+
+	currentLen := curr.Len()
+	threshold := idx.config.ShardThreshold
+	
 	if currentLen >= threshold {
-		if !idx.sharded && idx.migrating.CompareAndSwap(false, true) {
+		if idx.config.Enabled && idx.migrating.CompareAndSwap(false, true) {
+			idx.dataset.Logger.Info().
+				Int("current_len", currentLen).
+				Int("threshold", threshold).
+				Msg("Triggering auto-sharding migration")
 			go idx.migrateToSharded()
+		}
+	}
+}
+
+// checkMigrationPressure monitors memory during active migration and throttles the caller.
+// It accounts for both Go heap and off-heap arena memory.
+func (idx *AutoShardingIndex) checkMigrationPressure() {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	
+	var maxMem int64
+	if idx.dataset.Admission != nil {
+		maxMem = idx.dataset.Admission.maxMemory.Load()
+	}
+	if maxMem <= 0 {
+		return
+	}
+
+	// Calculate physical memory (Heap + Off-Heap Arenas)
+	offHeapMem := lbmem.GetGlobalOffHeapAllocated()
+	
+	usage := float64(int64(m.HeapAlloc)+offHeapMem) / float64(maxMem) // #nosec G115
+	if usage > 0.85 {
+		// Migration is happening and we are above 85% total memory limit.
+		// Slow down the caller to allow GC and migration loop to keep up.
+		time.Sleep(10 * time.Millisecond)
+		if usage > 0.92 {
+			runtime.GC()
 		}
 	}
 }
 
 // migrateToSharded performs the migration from HNSWIndex to ShardedHNSW.
 func (idx *AutoShardingIndex) migrateToSharded() {
-	defer idx.migrating.Store(false) // Ensure migrating flag is reset on exit
 	start := time.Now()
+	
+	// Robust recovery to prevent background migration failures from crashing the server
+	defer func() {
+		if r := recover(); r != nil {
+			idx.dataset.Logger.Error().
+				Interface("panic", r).
+				Msg("Index migration failed due to panic")
+			idx.migrating.Store(false)
+		}
+	}()
+	defer idx.migrating.Store(false)
+
+	idx.mu.RLock()
+	oldIndex := idx.current
+	nTotal := oldIndex.Len()
+	dims := 0
+	if ah, ok := oldIndex.(interface{ GetConfig() types.ArrowHNSWConfig }); ok {
+		dims = int(ah.GetConfig().Dims)
+	}
+	idx.mu.RUnlock()
+
+	idx.dataset.Logger.Info().
+		Int("vectors", nTotal).
+		Int("dims", dims).
+		Msg("Index migration started")
 
 	// LOCK ORDER: ds.dataMu MUST be locked before idx.mu to avoid deadlock with Search
 	idx.dataset.dataMu.RLock()
@@ -204,54 +277,146 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		idx.dataset.dataMu.RUnlock()
 		return
 	}
-	if idx.current.Len() < idx.config.ShardThreshold {
+	
+	nTotal = idx.current.Len()
+	if nTotal < idx.config.ShardThreshold {
 		idx.mu.Unlock()
 		idx.dataset.dataMu.RUnlock()
 		return
 	}
 
-	// Starting migration
-	oldIndex := idx.current
-
-	// Get DataType from old index (it's ArrowHNSW at this point)
+	// Capture snapshots for migration
+	oldIndex = idx.current
 	var oldDataType types.VectorDataType
 	if ah, ok := oldIndex.(*ArrowHNSW); ok {
 		oldDataType = ah.GetConfig().DataType
 	}
 
-	// Create new ShardedHNSW config
 	shardedConfig := DefaultShardedHNSWConfig()
 	shardedConfig.Metric = idx.dataset.Metric
 	shardedConfig.Dimension = oldIndex.GetDimension()
-	shardedConfig.DataType = oldDataType // Preserve DataType for complex64/complex128
+	shardedConfig.DataType = oldDataType
 	if idx.config.ShardCount > 0 {
 		shardedConfig.NumShards = idx.config.ShardCount
 	}
 	if idx.config.ShardSplitThreshold > 0 {
 		shardedConfig.ShardSplitThreshold = idx.config.ShardSplitThreshold
 	}
-	shardedConfig.UseRingSharding = idx.config.UseRingSharding // Propagate ring sharding setting
+	shardedConfig.UseRingSharding = idx.config.UseRingSharding
 
-	// IMPORTANT: Unlock here! We have captured our snapshots (oldIndex, n, shardedConfig).
-	// We can now create the new index and run the migration without holding these global locks.
 	idx.mu.Unlock()
 	idx.dataset.dataMu.RUnlock()
 
 	newIndex := NewShardedHNSW(shardedConfig, idx.dataset)
+	
+	// Pre-warm the new index to the total expected size to reduce allocation churn
+	newIndex.PreWarm(nTotal)
+
+	if idx.dataset.Admission != nil {
+		idx.dataset.Admission.MigrationStarted()
+		defer idx.dataset.Admission.MigrationFinished()
+	}
 
 	// Promote newIndex to interimIndex so that AddBatch starts hitting it immediately
 	idx.mu.Lock()
 	idx.interimIndex = newIndex
 	idx.mu.Unlock()
 
-	// Migrate data in batches, releasing locks between items
-	batchSize := 50
+	// Transition monolithic index to off-heap shadow mode to free up heap for the new index
+	if err := oldIndex.RelocateToOffHeap(); err != nil {
+		idx.dataset.Logger.Error().Err(err).Msg("Failed to relocate monolithic index to off-heap")
+	}
+	// Reclaim memory immediately
+	runtime.GC()
+	debug.FreeOSMemory()
+
+	// Migration parameters
+	baseBatchSize := 5000 // Increased for throughput
 	lastMigrated := 0
 
-	// Migration started
-
 	for {
-		// Read state under lock
+		// 1. Memory Check (Heap + Off-Heap)
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		
+		offHeapMem := lbmem.GetGlobalOffHeapAllocated()
+		
+		maxMem := int64(0)
+		if idx.dataset.Admission != nil {
+			maxMem = idx.dataset.Admission.maxMemory.Load()
+		}
+
+		physicalMem := int64(m.HeapAlloc) + offHeapMem // #nosec G115
+		usageRatio := 0.0
+		if maxMem > 0 {
+			usageRatio = float64(physicalMem) / float64(maxMem)
+		}
+
+		// Adaptive Batch Sizing & Pressure Management
+		currentBatchSize := baseBatchSize
+		
+		// Dynamic Slab-Capacity Aware Migration Batch Size Calculator
+		getBytesPerElement := func(dt types.VectorDataType) int {
+			switch dt {
+			case types.VectorTypeFloat32, types.VectorTypeInt32, types.VectorTypeUint32:
+				return 4
+			case types.VectorTypeFloat16, types.VectorTypeInt16, types.VectorTypeUint16:
+				return 2
+			case types.VectorTypeInt8, types.VectorTypeUint8, types.VectorTypeTQ:
+				return 1
+			case types.VectorTypeFloat64, types.VectorTypeInt64, types.VectorTypeUint64, types.VectorTypeComplex64:
+				return 8
+			case types.VectorTypeComplex128:
+				return 16
+			default:
+				return 4
+			}
+		}
+
+		safeSlabLimit := 512 * 1024 // 512 KB maximum batch size allocation window
+		bytesPerElement := getBytesPerElement(oldDataType)
+		vectorBytes := dims * bytesPerElement
+		if vectorBytes > 0 {
+			dynamicLimit := safeSlabLimit / vectorBytes
+			if dynamicLimit > 0 {
+				currentBatchSize = min(currentBatchSize, dynamicLimit)
+			}
+		}
+
+		// Enforce sensible bounds (minimum 50 to avoid absolute thrashing, max baseBatchSize)
+		if currentBatchSize < 50 {
+			currentBatchSize = 50
+		}
+
+		if usageRatio > 0.75 {
+			currentBatchSize = min(currentBatchSize, 1000)
+		}
+		if usageRatio > 0.85 {
+			currentBatchSize = min(currentBatchSize, 250)
+			
+			idx.dataset.Logger.Warn().
+				Int64("usage_bytes", physicalMem).
+				Int64("max_bytes", maxMem).
+				Float64("ratio", usageRatio).
+				Msg("Migration throttled: critical memory pressure")
+			
+			runtime.GC()
+			if usageRatio > 0.97 {
+				debug.FreeOSMemory()
+			}
+			time.Sleep(500 * time.Millisecond)
+		}
+
+		// 1b. Migration Lane Throttling
+		if idx.dataset.Admission != nil {
+			for {
+				if err := idx.dataset.Admission.AdmitMigration(context.Background()); err == nil {
+					break
+				}
+				time.Sleep(100 * time.Millisecond)
+			}
+		}
+
 		idx.mu.RLock()
 		oldIdx := idx.current
 		isSharded := idx.sharded
@@ -262,58 +427,93 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 			break
 		}
 
-		endIdx := lastMigrated + batchSize
+		endIdx := lastMigrated + currentBatchSize
 		if endIdx > nSnap {
 			endIdx = nSnap
 		}
 
-		// Process batch: capture records under lock, then add outside.
+		// 2. Process batch: collect locations and records
 		type item struct {
-			rec arrow.RecordBatch
-			loc Location
-			id  VectorID
+			rec      arrow.RecordBatch
+			rowIdx   int
+			batchIdx int
 		}
 		items := make([]item, 0, endIdx-lastMigrated)
 
 		idx.dataset.dataMu.RLock()
+		records := idx.dataset.Records.Read()
 		for id := lastMigrated; id < endIdx; id++ {
-			vid := VectorID(id)
-			locAny, ok := oldIdx.GetLocation(uint32(vid))
+			locAny, ok := oldIdx.GetLocation(uint32(id))
 			if ok {
-				if loc, ok := locAny.(Location); ok && loc.BatchIdx >= 0 && loc.BatchIdx < len(idx .dataset.Records.Read()) {
-					rec := idx .dataset.Records.Read()[loc.BatchIdx]
+				if loc, ok := locAny.(Location); ok && loc.BatchIdx >= 0 && loc.BatchIdx < len(records) {
+					rec := records[loc.BatchIdx]
 					rec.Retain()
-					items = append(items, item{rec: rec, loc: loc, id: vid})
+					items = append(items, item{rec: rec, rowIdx: loc.RowIdx, batchIdx: loc.BatchIdx})
 				}
 			}
 		}
 		idx.dataset.dataMu.RUnlock()
 
-		// Perform expensive additions outside dataMu
-		for _, it := range items {
-			_, err := newIndex.AddByRecord(context.Background(), it.rec, it.loc.RowIdx, it.loc.BatchIdx)
-			it.rec.Release()
+		if len(items) > 0 {
+			// Convert to batch parameters
+			recs := make([]arrow.RecordBatch, len(items))
+			rowIdxs := make([]int, len(items))
+			batchIdxs := make([]int, len(items))
+			for i, it := range items {
+				recs[i] = it.rec
+				rowIdxs[i] = it.rowIdx
+				batchIdxs[i] = i // Use local index in recs slice
+			}
+
+			// Add batch to new index (Parallelized inside ShardedHNSW)
+			gIDs, err := newIndex.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
+			
+			// Release records
+			for _, r := range recs {
+				r.Release()
+			}
+
 			if err != nil {
-				// migration skip
-				continue
+				idx.dataset.Logger.Error().Err(err).Msg("Migration batch failed - aborting")
+				// Critical failure: abort migration to prevent inconsistent state
+				return
+			}
+
+			// Correct locations in global locationStore of newIndex
+			if sh, ok := newIndex.(*ShardedHNSW); ok {
+				for i, gid := range gIDs {
+					vid := VectorID(gid)
+					sh.locationStore.Set(vid, Location{BatchIdx: items[i].batchIdx, RowIdx: items[i].rowIdx})
+				}
 			}
 		}
 
 		lastMigrated = endIdx
-		if lastMigrated%1000 == 0 {
-			// progress logging (future)
-			_ = lastMigrated
+
+		// Incremental Handover: Release monolithic storage segments as they are replicated.
+		// We track the highest chunk migrated to handle cases where batch boundaries don't align with ChunkSize.
+		currentChunk := (lastMigrated / types.ChunkSize) - 1
+		if currentChunk >= 0 {
+			if ah, ok := oldIndex.(interface{ ReleaseMonolithicChunk(int) error }); ok {
+				// Release all chunks up to currentChunk that haven't been released yet
+				// (The index's implementation handles atomic/idempotent release)
+				for c := 0; c <= currentChunk; c++ {
+					_ = ah.ReleaseMonolithicChunk(c)
+				}
+				// Reclaim memory immediately after chunk release
+				if usageRatio > 0.85 {
+					runtime.GC()
+				} else if currentChunk%4 == 0 { // Don't GC on every chunk to avoid too much jitter
+					runtime.GC()
+				}
+			}
 		}
 
 		// Give other threads a window
 		runtime.Gosched()
-		// Small sleep to ensure fairness on high-core machines
-		time.Sleep(10 * time.Microsecond)
 	}
 
 	// Final swap
-
-	// LOCK ORDER: ds.dataMu MUST be locked before idx.mu to avoid deadlock with Search
 	idx.dataset.dataMu.RLock()
 	idx.mu.Lock()
 
@@ -326,16 +526,39 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	// Swap
 	idx.current = newIndex
 	idx.sharded = true
-	idx.interimIndex = nil // Clear interim index
+	idx.interimIndex = nil
 
-	// Close old index to release resources
+	// Close old index to release all remaining resources
 	_ = oldIndex.Close()
+
+	// Reclaim memory immediately back to OS
+	released := lbmem.ReleaseGlobalSlabPoolsUnused()
+	if released > 0 {
+		idx.dataset.Logger.Info().Int("released_slabs", released).Msg("Released unused monolithic index slabs back to the OS")
+	}
+	runtime.GC()
+	debug.FreeOSMemory()
 
 	idx.dataset.dataMu.RUnlock()
 	idx.mu.Unlock()
 
 	duration := time.Since(start)
 	metrics.IndexMigrationDuration.Observe(duration.Seconds())
+	idx.dataset.Logger.Info().
+		Dur("duration", duration).
+		Int("vectors", nTotal).
+		Msg("Index migration complete")
+}
+
+func (idx *AutoShardingIndex) ReleaseMonolithicChunk(cID int) error {
+	idx.mu.RLock()
+	curr := idx.current
+	idx.mu.RUnlock()
+	
+	if curr != nil {
+		return curr.ReleaseMonolithicChunk(cID)
+	}
+	return nil
 }
 
 // SearchVectors returns the k nearest neighbors for a query vector.
@@ -350,19 +573,34 @@ func (idx *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, f
 		return curr.SearchVectors(ctx, q, k, filters, options)
 	}
 
-	res, err := curr.SearchVectors(ctx, q, k, filters, options)
-	if err != nil {
-		return nil, err
+	// If no migration is active, search monolith only
+	if interim == nil {
+		return curr.SearchVectors(ctx, q, k, filters, options)
 	}
 
-	if interim != nil {
-		res2, err := interim.SearchVectors(ctx, q, k, filters, options)
-		if err == nil {
-			res = idx.mergeSearchResults(res, res2, k)
-		}
+	// Parallel Shadow Search: Query both indices concurrently
+	var res1, res2 []SearchResult
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		res1, err1 = interim.SearchVectors(ctx, q, k, filters, options)
+	}()
+
+	go func() {
+		defer wg.Done()
+		res2, err2 = curr.SearchVectors(ctx, q, k, filters, options)
+	}()
+
+	wg.Wait()
+
+	if err1 != nil && err2 != nil {
+		return nil, err1 // Return first error if both fail
 	}
 
-	return res, nil
+	return idx.mergeSearchResults(res1, res2, k), nil
 }
 
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
@@ -377,43 +615,75 @@ func (idx *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any
 		return curr.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	}
 
-	res, err := curr.SearchVectorsWithBitmap(ctx, q, k, filter, options)
-	if err != nil {
-		return nil, err
-	}
-	if interim != nil {
-		res2, err := interim.SearchVectorsWithBitmap(ctx, q, k, filter, options)
-		if err == nil {
-			res = idx.mergeSearchResults(res, res2, k)
-		}
+	if interim == nil {
+		return curr.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	}
 
-	return res, nil
+	// Parallel Shadow Search
+	var res1, res2 []SearchResult
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		res1, err1 = interim.SearchVectorsWithBitmap(ctx, q, k, filter, options)
+	}()
+
+	go func() {
+		defer wg.Done()
+		res2, err2 = curr.SearchVectorsWithBitmap(ctx, q, k, filter, options)
+	}()
+
+	wg.Wait()
+
+	if err1 != nil && err2 != nil {
+		return nil, err1
+	}
+
+	return idx.mergeSearchResults(res1, res2, k), nil
 }
 
 // SearchVectorsInRange returns nearest neighbors within a distance threshold.
 func (idx *AutoShardingIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
 	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-
 	sharded := idx.sharded
-	if sharded {
-		return idx.current.SearchVectorsInRange(ctx, q, threshold, filters, options)
-	}
-
 	interim := idx.interimIndex
-	res, err := idx.current.SearchVectorsInRange(ctx, q, threshold, filters, options)
-	if err != nil {
-		return nil, err
-	}
-	if interim != nil {
-		res2, err := interim.SearchVectorsInRange(ctx, q, threshold, filters, options)
-		if err == nil {
-			res = append(res, res2...)
-		}
+	curr := idx.current
+	idx.mu.RUnlock()
+
+	if sharded {
+		return curr.SearchVectorsInRange(ctx, q, threshold, filters, options)
 	}
 
-	return res, nil
+	if interim == nil {
+		return curr.SearchVectorsInRange(ctx, q, threshold, filters, options)
+	}
+
+	// Parallel Shadow Search
+	var res1, res2 []SearchResult
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		res1, err1 = interim.SearchVectorsInRange(ctx, q, threshold, filters, options)
+	}()
+
+	go func() {
+		defer wg.Done()
+		res2, err2 = curr.SearchVectorsInRange(ctx, q, threshold, filters, options)
+	}()
+
+	wg.Wait()
+
+	if err1 != nil && err2 != nil {
+		return nil, err1
+	}
+
+	combined := append(res1, res2...)
+	return combined, nil
 }
 
 func (idx *AutoShardingIndex) mergeSearchResults(res1, res2 []SearchResult, k int) []SearchResult {
@@ -527,8 +797,77 @@ func (idx *AutoShardingIndex) GetVectorID(loc any) (uint32, bool) {
 // Search implements VectorIndexer.
 func (idx *AutoShardingIndex) Search(ctx context.Context, q any, k int, options any) ([]types.Candidate, error) {
 	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-	return idx.current.Search(ctx, q, k, options)
+	sharded := idx.sharded
+	interim := idx.interimIndex
+	curr := idx.current
+	idx.mu.RUnlock()
+
+	if sharded || interim == nil {
+		return curr.Search(ctx, q, k, options)
+	}
+
+	// Parallel Shadow Search: Query both indices concurrently
+	var res1, res2 []types.Candidate
+	var err1, err2 error
+	var wg sync.WaitGroup
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		res1, err1 = interim.Search(ctx, q, k, options)
+	}()
+
+	go func() {
+		defer wg.Done()
+		res2, err2 = curr.Search(ctx, q, k, options)
+	}()
+
+	wg.Wait()
+
+	if err1 != nil && err2 != nil {
+		return nil, err1
+	}
+
+	return idx.mergeCandidates(res1, res2, k), nil
+}
+
+func (idx *AutoShardingIndex) mergeCandidates(res1, res2 []types.Candidate, k int) []types.Candidate {
+	if len(res1) == 0 {
+		if len(res2) > k {
+			return res2[:k]
+		}
+		return res2
+	}
+	if len(res2) == 0 {
+		if len(res1) > k {
+			return res1[:k]
+		}
+		return res1
+	}
+
+	combined := make([]types.Candidate, 0, len(res1)+len(res2))
+	combined = append(combined, res1...)
+	combined = append(combined, res2...)
+
+	// Deduplicate by ID
+	seen := make(map[uint32]struct{})
+	unique := make([]types.Candidate, 0, len(combined))
+	for _, cand := range combined {
+		if _, ok := seen[cand.ID]; !ok {
+			seen[cand.ID] = struct{}{}
+			unique = append(unique, cand)
+		}
+	}
+
+	// Sort by distance ascending
+	sort.Slice(unique, func(i, j int) bool {
+		return unique[i].Dist < unique[j].Dist
+	})
+
+	if len(unique) > k {
+		return unique[:k]
+	}
+	return unique
 }
 
 // Warmup delegates to the current index.
@@ -724,4 +1063,16 @@ func (idx *AutoShardingIndex) GetGPUIndex() any {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return idx.current.GetGPUIndex()
+}
+
+func (idx *AutoShardingIndex) RelocateToOffHeap() error {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if err := idx.current.RelocateToOffHeap(); err != nil {
+		return err
+	}
+	if idx.interimIndex != nil {
+		return idx.interimIndex.RelocateToOffHeap()
+	}
+	return nil
 }

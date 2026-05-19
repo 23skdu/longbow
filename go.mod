@@ -7,16 +7,17 @@ require (
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/klauspost/cpuid/v2 v2.3.0
-	github.com/parquet-go/parquet-go v0.29.0
+	github.com/parquet-go/parquet-go v0.30.0
 	github.com/prometheus/client_golang v1.23.2
 	github.com/stretchr/testify v1.11.1
 	golang.org/x/sys v0.44.0
-	google.golang.org/grpc v1.81.0
+	google.golang.org/grpc v1.81.1
 )
 
 require (
-	cloud.google.com/go/storage v1.62.1
-	github.com/IBM/sarama v1.48.1
+
+	cloud.google.com/go/storage v1.62.2
+	github.com/IBM/sarama v1.49.0
 	github.com/RoaringBitmap/roaring/v2 v2.18.0
 	github.com/apache/pulsar-client-go v0.19.0
 	github.com/aws/aws-sdk-go-v2 v1.41.7
@@ -38,7 +39,7 @@ require (
 	github.com/sbinet/npyio v0.9.0
 	github.com/shirou/gopsutil/v3 v3.24.5
 	github.com/tetratelabs/wazero v1.11.0
-	github.com/yalue/onnxruntime_go v1.30.0
+	github.com/yalue/onnxruntime_go v1.30.1
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.68.0
 	go.opentelemetry.io/otel v1.43.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc v1.43.0
@@ -49,7 +50,7 @@ require (
 	golang.org/x/sync v0.20.0
 	golang.org/x/time v0.15.0
 	gonum.org/v1/gonum v0.17.0
-	google.golang.org/api v0.278.0
+	google.golang.org/api v0.279.0
 	google.golang.org/protobuf v1.36.12-0.20260120151049-f2248ac996af
 )
 

@@ -248,7 +248,7 @@ func initDispatchTable() {
 			ArgMin: argMinAVX2,
 			ManhattanDistance: ManhattanDistanceFloat32,
 			ChebyshevDistance: ChebyshevDistanceFloat32,
-			BrayCurtisDistance: BrayCurtisDistanceFloat32,
+			BrayCurtisDistance: brayCurtisAVX2,
 			AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
 			BM25ScoreBatch: bm25ScoreBatchGeneric,
 			HaversineBatch: haversineBatchGeneric,
@@ -324,12 +324,12 @@ func initDispatchTable() {
 			AccumulateWeightedScatter: accumulateWeightedScatterNEON,
 			BM25ScoreBatch: bm25ScoreBatchGeneric,
 			HaversineBatch: haversineBatchGeneric,
-			UnpackTQ2:      UnpackTQ2Generic,
-			UnpackTQ4:      UnpackTQ4Generic,
-			UnpackTQ8:      UnpackTQ8Generic,
-			PackTQ2:        PackTQ2Generic,
-			PackTQ4:        PackTQ4Generic,
-			PackTQ8:        PackTQ8Generic,
+			UnpackTQ2:      UnpackTQ2NEON,
+			UnpackTQ4:      UnpackTQ4NEON,
+			UnpackTQ8:      UnpackTQ8NEON,
+			PackTQ2:        PackTQ2NEON,
+			PackTQ4:        PackTQ4NEON,
+			PackTQ8:        PackTQ8NEON,
 		}
 
 		dispatchTable["generic"] = &ImplementationDispatch{
@@ -457,6 +457,7 @@ func initializeDispatch() {
 		dotProductF16Impl = dotF16AVX512
 		euclideanDistanceFloat64Impl = euclideanFloat64AVX512
 		dotProductFloat64Impl = dotFloat64AVX512
+		l2SquaredFloat64Impl = l2SquaredFloat64AVX512
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8AVX512
 		dotProductInt8Impl = dotInt8Unrolled4x
@@ -547,8 +548,9 @@ func initializeDispatch() {
 		euclideanDistanceF16Impl = euclideanF16Unrolled4x
 		cosineDistanceF16Impl = cosineF16Unrolled4x
 		dotProductF16Impl = dotF16Unrolled4x
-		euclideanDistanceFloat64Impl = euclideanFloat64Unrolled4x
-		dotProductFloat64Impl = dotFloat64Unrolled4x
+		euclideanDistanceFloat64Impl = euclideanFloat64AVX2
+		dotProductFloat64Impl = dotFloat64AVX2
+		l2SquaredFloat64Impl = l2SquaredFloat64AVX2
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
 		dotProductInt8Impl = dotInt8Unrolled4x
@@ -643,6 +645,7 @@ func initializeDispatch() {
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
 		euclideanDistanceFloat64Impl = euclideanFloat64NEON
 		dotProductFloat64Impl = dotFloat64Unrolled4x
+		l2SquaredFloat64Impl = l2SquaredFloat64Unrolled4x
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
 		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
 		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
@@ -867,9 +870,10 @@ func initializeDispatch() {
 	Registry.Register(MetricDotProduct, DataTypeUint64, 768, Dot768Uint64)
 	Registry.Register(MetricDotProduct, DataTypeUint64, 1024, Dot1024Uint64)
 
-	Registry.Register(MetricEuclidean, DataTypeFloat64, 0, euclideanFloat64Unrolled4x)
-	Registry.Register(MetricCosine, DataTypeFloat64, 0, cosineFloat64Unrolled4x)
-	Registry.Register(MetricDotProduct, DataTypeFloat64, 0, dotFloat64Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeFloat64, 0, EuclideanDistanceFloat64)
+	Registry.Register(MetricCosine, DataTypeFloat64, 0, CosineDistanceFloat64)
+	Registry.Register(MetricDotProduct, DataTypeFloat64, 0, DotProductF64)
+	Registry.Register(MetricL2Squared, DataTypeFloat64, 0, L2SquaredFloat64)
 
 	Registry.Register(MetricEuclidean, DataTypeComplex64, 0, euclideanComplex64Unrolled)
 	Registry.Register(MetricCosine, DataTypeComplex64, 0, CosineDistanceComplex64)

@@ -58,11 +58,11 @@ type GRPCConfig struct {
 // These defaults are tuned for vector database workloads with large message payloads.
 func DefaultGRPCConfig() GRPCConfig {
 	return GRPCConfig{
-		// Keepalive: 2h default, conservative for long-lived connections
-		KeepAliveTime:                2 * time.Hour,
-		KeepAliveTimeout:             20 * time.Second,
-		KeepAliveMinTime:             5 * time.Minute,
-		KeepAlivePermitWithoutStream: false,
+		// Keepalive: 30s for faster detection of broken connections during heavy GC
+		KeepAliveTime:                30 * time.Second,
+		KeepAliveTimeout:             10 * time.Second,
+		KeepAliveMinTime:             10 * time.Second,
+		KeepAlivePermitWithoutStream: true,
 
 		// Allow 250 concurrent streams per connection (up from default 100)
 		MaxConcurrentStreams: 250,
@@ -80,9 +80,9 @@ func DefaultGRPCConfig() GRPCConfig {
 		// Enable compression by default for 50-70% bandwidth reduction
 		CompressionEnabled: true,
 
-		// 1MB socket buffers for high-bandwidth remote nodes (ancalagon)
-		WriteBufferSize: 1 * 1024 * 1024,
-		ReadBufferSize:  1 * 1024 * 1024,
+		// 4MB socket buffers for high-bandwidth loopback and remote nodes
+		WriteBufferSize: 4 * 1024 * 1024,
+		ReadBufferSize:  4 * 1024 * 1024,
 	}
 }
 

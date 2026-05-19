@@ -169,4 +169,32 @@ var (
 		},
 		[]string{"size", "result"}, // result: "hit", "miss"
 	)
+
+	// SlabPoolGrowthTotal tracks dynamic capacity expansion events of off-heap arenas
+	SlabPoolGrowthTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_slab_pool_growth_total",
+			Help: "Total number of off-heap arena slab growth allocations",
+		},
+		[]string{"size"},
+	)
+
+	// SlabPoolShrinkTotal tracks self-healing and excess slab releases back to the OS
+	SlabPoolShrinkTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_slab_pool_shrink_total",
+			Help: "Total number of slabs released back to the OS",
+		},
+		[]string{"size", "reason"}, // reason: "max_pooled", "manual_release"
+	)
+
+	// SlabPoolBufferHitRatio tracks the current hit ratio of standard slab acquisitions
+	SlabPoolBufferHitRatio = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_slab_pool_buffer_hit_ratio",
+			Help: "Running hit ratio of the slab pool (0-1)",
+		},
+		[]string{"size"},
+	)
 )
+

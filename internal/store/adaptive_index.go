@@ -81,6 +81,7 @@ func NewAdaptiveIndex(ds *Dataset, cfg AdaptiveIndexConfig) VectorIndex {
 }
 
 // IsSharded returns true if the adaptive index is currently using a sharded HNSW index.
+// IsSharded returns true if the adaptive index is currently using a sharded HNSW index.
 func (idx *AdaptiveIndex) IsSharded() bool {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -88,6 +89,11 @@ func (idx *AdaptiveIndex) IsSharded() bool {
 		return idx.hnsw.IsSharded()
 	}
 	return false
+}
+
+func (idx *AdaptiveIndex) ReleaseMonolithicChunk(cID int) error {
+	// AdaptiveIndex delegates if needed, but usually not used for BruteForce
+	return nil
 }
 
 // =============================================================================
@@ -114,6 +120,11 @@ func NewBruteForceIndex(ds *Dataset) VectorIndex {
 
 // IsSharded returns true if the index is sharded. BruteForceIndex is never sharded.
 func (b *BruteForceIndex) IsSharded() bool { return false }
+
+func (b *BruteForceIndex) ReleaseMonolithicChunk(cID int) error {
+	// BruteForceIndex doesn't use the monolithic chunking model
+	return nil
+}
 
 // AddByLocation adds a vector to the brute-force index using its storage location.
 func (b *BruteForceIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
@@ -630,14 +641,19 @@ func (idx *AdaptiveIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx in
 	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	defer idx.mu.Unlock()
 
-	if idx.usingHNSW.Load() {
+	// Double-check hnsw under the lock to avoid race during migration
+	if idx.hnsw != nil {
 		return idx.hnsw.AddByLocation(ctx, batchIdx, rowIdx)
+	}
+
+	if idx.bruteForce == nil {
+		return 0, errors.New("index is closed or uninitialized")
 	}
 
 	id, err := idx.bruteForce.AddByLocation(ctx, batchIdx, rowIdx)
 	if err == nil {
 		newCount := idx.vectorCount.Add(1)
-		if idx.config.Enabled && int(newCount) >= idx.config.Threshold {
+		if idx.config.Enabled && newCount >= int64(idx.config.Threshold) && idx.hnsw == nil && !idx.usingHNSW.Load() {
 			idx.migrateToHNSW()
 		}
 	}
@@ -680,8 +696,13 @@ func (idx *AdaptiveIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch
 	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "write").Observe(time.Since(start).Seconds())
 	defer idx.mu.Unlock()
 
-	if idx.usingHNSW.Load() {
+	// Double-check hnsw under the lock to avoid race during migration
+	if idx.hnsw != nil {
 		return idx.hnsw.AddBatch(ctx, recs, rowIdxs, batchIdxs)
+	}
+
+	if idx.bruteForce == nil {
+		return nil, errors.New("index is closed or uninitialized")
 	}
 
 	ids := make([]uint32, len(rowIdxs))
@@ -694,7 +715,7 @@ func (idx *AdaptiveIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch
 	}
 	
 	newCount := idx.vectorCount.Add(int64(len(rowIdxs)))
-	if idx.config.Enabled && int(newCount) >= idx.config.Threshold {
+	if idx.config.Enabled && newCount >= int64(idx.config.Threshold) && idx.hnsw == nil && !idx.usingHNSW.Load() {
 		idx.migrateToHNSW()
 	}
 
@@ -709,6 +730,9 @@ func (idx *AdaptiveIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k 
 	defer idx.mu.RUnlock()
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.SearchVectorsWithBitmap(ctx, q, k, filter, options)
+	}
+	if idx.bruteForce != nil {
+		return idx.bruteForce.SearchVectorsWithBitmap(ctx, q, k, filter, options)
 	}
 	return nil, nil
 }
@@ -967,6 +991,7 @@ func (idx *AdaptiveIndex) migrateToHNSW() {
 	if idx.usingHNSW.Load() || !idx.migrating.CompareAndSwap(false, true) {
 		return
 	}
+	idx.migrationCount.Add(1)
 
 	go func() {
 		defer idx.migrating.Store(false)
@@ -976,10 +1001,8 @@ func (idx *AdaptiveIndex) migrateToHNSW() {
 		config.Logger = idx.dataset.Logger
 		newHNSW := NewArrowHNSW(idx.dataset, &config, idx.dataset.Topo)
 
-		// Set hnsw pointer and snapshot locations while holding the lock
-		// to ensure no NEW vectors are added to bruteForce but missed by HNSW.
+		// Snapshot current brute force state
 		idx.mu.Lock()
-		idx.hnsw = newHNSW
 		bf := idx.bruteForce.(*BruteForceIndex)
 		snapshotLocations := make([]Location, len(bf.locations))
 		copy(snapshotLocations, bf.locations)
@@ -1006,22 +1029,27 @@ func (idx *AdaptiveIndex) migrateToHNSW() {
 			}
 		}
 
-		// Final swap to mark as fully ready for search
+		// Final swap and delta handling
 		swapStart := time.Now()
 		idx.mu.Lock()
 		metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "write").Observe(time.Since(swapStart).Seconds())
 		defer idx.mu.Unlock()
 
-		if idx.usingHNSW.Load() || idx.bruteForce == nil {
-			return
+		// Re-snapshot to find any vectors added to bruteForce while we were building HNSW
+		bf = idx.bruteForce.(*BruteForceIndex)
+		currentLocations := bf.locations
+		if len(currentLocations) > len(snapshotLocations) {
+			delta := currentLocations[len(snapshotLocations):]
+			for _, loc := range delta {
+				// Use AddByLocation on the new HNSW before we publish it
+				_, _ = newHNSW.AddByLocation(context.Background(), loc.BatchIdx, loc.RowIdx)
+			}
 		}
 
+		idx.hnsw = newHNSW
 		idx.usingHNSW.Store(true)
-		idx.migrationCount.Add(1)
+
 		metrics.AdaptiveIndexMigrationsTotal.WithLabelValues("brute_force", "hnsw").Inc()
-		
-		// Note: We don't need a final catch-up loop here because AddBatch 
-		// now adds to both indices during migration.
 		idx.bruteForce = nil
 	}()
 }
@@ -1116,5 +1144,21 @@ func (idx *AdaptiveIndex) GetShardedIndex() *ShardedHNSW {
 	if s, ok := hnsw.(interface{ GetShardedIndex() *ShardedHNSW }); ok {
 		return s.GetShardedIndex()
 	}
+	return nil
+}
+
+func (idx *AdaptiveIndex) RelocateToOffHeap() error {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.hnsw != nil {
+		return idx.hnsw.RelocateToOffHeap()
+	}
+	if idx.bruteForce != nil {
+		return idx.bruteForce.RelocateToOffHeap()
+	}
+	return nil
+}
+
+func (idx *BruteForceIndex) RelocateToOffHeap() error {
 	return nil
 }

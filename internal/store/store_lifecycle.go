@@ -411,26 +411,18 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 						var targetEf int
 						switch {
 						case depth > 5000:
-							targetEf = 50
+							targetEf = 100 // Raised from 50 to avoid graph search deadlocks (ef < M)
 						case depth > 1000:
-							targetEf = 100
+							targetEf = 200 // Raised from 100
 						default:
 							targetEf = 400 // Default high quality
 						}
 						adaptive.SetEfConstruction(targetEf)
 					}
 
-					// Granular Backpressure: if memory pressure is extreme, throttle indexing
-					tuner := s.tuner.Load()
-					if tuner != nil && tuner.IsHighPressure() {
-						s.logger.Warn().Str("dataset", dsName).Msg("High memory pressure detected, throttling indexing worker")
-						select {
-						case <-s.ctx.Done():
-							return
-						case <-time.After(100 * time.Millisecond):
-							// Wait and continue
-						}
-					}
+					// Granular Backpressure: if memory pressure is extreme, we rely on the 
+					// AdmissionController at the ingestion gate to throttle new input.
+					// Throttling workers here only delays queue drainage and keeps RSS high.
 
 					// Propagate store shutdown context and priority
 					batchCtx := s.ctx

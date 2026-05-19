@@ -473,6 +473,41 @@ func (e *StorageEngine) GetSnapshotBackend() SnapshotBackend {
 	return e.snapshotBackend
 }
 
+// SetReplicator injects the WAL Replicator for HA deployments.
+func (e *StorageEngine) SetReplicator(r WALReplicator) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.walBatcher != nil {
+		e.walBatcher.SetReplicator(r)
+	}
+}
+
+// AppendReplicatedWAL writes a raw replicated WAL block directly to disk.
+func (e *StorageEngine) AppendReplicatedWAL(data []byte) error {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if e.walBatcher != nil && e.walBatcher.backend != nil {
+		_, err := e.walBatcher.backend.Write(data)
+		if err != nil {
+			return err
+		}
+		// Synchronous replication implies sync to disk locally too
+		return e.walBatcher.backend.Sync()
+	}
+	
+	if e.wal != nil {
+		return fmt.Errorf("AppendReplicatedWAL not supported for non-batched WAL")
+	}
+
+	return fmt.Errorf("WAL not initialized")
+}
+
+// GetAllocator returns the memory allocator used by the engine.
+func (e *StorageEngine) GetAllocator() memory.Allocator {
+	return e.mem
+}
+
 func (e *StorageEngine) WriteWAL(name string, rec arrow.RecordBatch, seq uint64, ts int64) error {
 	return e.WriteToWAL(name, rec, seq, ts)
 }

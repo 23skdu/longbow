@@ -21,7 +21,7 @@ func FuzzFindPath(f *testing.F) {
 			return
 		}
 
-		g := types.NewGraphData(100, 2, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil)
+		g := types.NewGraphData(100, 2, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 		err := g.EnsureChunk(0, 0, 2)
 		require.NoError(t, err)
 

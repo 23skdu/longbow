@@ -28,14 +28,8 @@ func TestIngestionPipeline_AsyncDecoupling(t *testing.T) {
 	// Mock WAL (optional, but store uses a real engine if config provided, here likely nil which is fine for test logic flow)
 
 	// Measure DoPut duration - should be fast (just queueing)
-	start := time.Now()
-	// Using StoreRecordBatch directly as it mimics DoPut's internal logic or is called by it
-	// Note: We need to ensure StoreRecordBatch uses the new pipeline.
 	err := store.StoreRecordBatch(context.Background(), dsName, rec)
 	require.NoError(t, err)
-	duration := time.Since(start)
-
-	t.Logf("StoreRecordBatch took %v", duration)
 
 	// In a real decoupled system, check weak consistency:
 	// immediate visibility isn't guaranteed if we rely solely on the queue worker.

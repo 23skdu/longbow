@@ -91,25 +91,42 @@ type MetalContext struct {
 
 var (
 	globalContext *MetalContext
-	contextOnce   sync.Once
+	contextMu     sync.Mutex
 )
 
 // Initialize the global Metal context from embedded library data
 func InitGlobalContext(libData []byte) error {
-	var err error
-	contextOnce.Do(func() {
-		ptr := unsafe.Pointer(&libData[0])
-		handle := C.init_metal_context(ptr, C.int(len(libData)))
-		if handle == nil {
-			err = fmt.Errorf("failed to initialize Metal context")
-			return
-		}
-		globalContext = &MetalContext{
-			handle: handle,
-			cache:  NewShaderCache(),
-		}
-	})
-	return err
+	contextMu.Lock()
+	defer contextMu.Unlock()
+	if globalContext != nil {
+		return nil
+	}
+	ptr := unsafe.Pointer(&libData[0])
+	handle := C.init_metal_context(ptr, C.int(len(libData)))
+	if handle == nil {
+		return fmt.Errorf("failed to initialize Metal context")
+	}
+	globalContext = &MetalContext{
+		handle: handle,
+		cache:  NewShaderCache(),
+	}
+	return nil
+}
+
+// ResetGlobalContext explicitly re-initializes the global Metal context
+func ResetGlobalContext(libData []byte) error {
+	contextMu.Lock()
+	defer contextMu.Unlock()
+	ptr := unsafe.Pointer(&libData[0])
+	handle := C.init_metal_context(ptr, C.int(len(libData)))
+	if handle == nil {
+		return fmt.Errorf("failed to reset Metal context")
+	}
+	globalContext = &MetalContext{
+		handle: handle,
+		cache:  NewShaderCache(),
+	}
+	return nil
 }
 
 func GetContext() *MetalContext {

@@ -39,7 +39,11 @@ func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
 
 	// 1. Capture Snapshot + Metadata
 	var snapshot *types.GraphData
-	locs := make([]types.Location, 0, h.locationStore.Len())
+	storeLen := 0
+	if h.locationStore != nil {
+		storeLen = h.locationStore.Len()
+	}
+	locs := make([]types.Location, 0, storeLen)
 	dims := int(h.dims.Load())
 
 	if data := h.data.Load(); data != nil {
@@ -55,7 +59,10 @@ func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
 		}
 	}
 
-	size := h.locationStore.Len()
+	size := 0
+	if h.locationStore != nil {
+		size = h.locationStore.Len()
+	}
 	for i := 0; i < size; i++ {
 		loc, ok := h.locationStore.Get(types.VectorID(i))
 		if ok {
@@ -130,6 +137,9 @@ func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
 		meta.Generation = state.Generation
 		meta.NodeCount = int64(len(state.Locations))
 	})
+	if h.locationStore == nil {
+		h.locationStore = NewChunkedLocationStore()
+	}
 	h.locationStore.Reset()
 	for _, loc := range state.Locations {
 		h.locationStore.Append(loc)
@@ -189,7 +199,10 @@ func (h *ArrowHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
 	h.growMu.RLock()
 	defer h.growMu.RUnlock()
 
-	currentLen := h.locationStore.Len()
+	currentLen := 0
+	if h.locationStore != nil {
+		currentLen = h.locationStore.Len()
+	}
 	// Export locations starting from fromVersion up to currentLen
 	startIdx := int(fromVersion) // #nosec G115
 	if startIdx >= currentLen {
@@ -202,14 +215,16 @@ func (h *ArrowHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
 	}
 
 	newLocs := make([]types.Location, 0, currentLen-startIdx)
-	idx := 0
-	h.locationStore.IterateMutable(func(_ types.VectorID, val *atomic.Uint64) {
-		if idx >= startIdx {
-			loc := basecore.UnpackLocation(val.Load())
-			newLocs = append(newLocs, loc)
-		}
-		idx++
-	})
+	if h.locationStore != nil {
+		idx := 0
+		h.locationStore.IterateMutable(func(_ types.VectorID, val *atomic.Uint64) {
+			if idx >= startIdx {
+				loc := basecore.UnpackLocation(val.Load())
+				newLocs = append(newLocs, loc)
+			}
+			idx++
+		})
+	}
 
 	return &types.DeltaSync{
 		FromVersion:  fromVersion,
@@ -230,11 +245,16 @@ func (h *ArrowHNSW) ApplyDelta(delta *types.DeltaSync) error {
 
 	for i, loc := range delta.NewLocations {
 		globalID := types.VectorID(delta.StartIndex + i) // #nosec G115
+		if h.locationStore == nil {
+			h.locationStore = NewChunkedLocationStore()
+		}
 		h.locationStore.EnsureCapacity(globalID)
 		h.locationStore.Set(globalID, loc)
 	}
 
-	h.locationStore.UpdateSize(types.VectorID(delta.StartIndex + len(delta.NewLocations) - 1)) // #nosec G115
+	if h.locationStore != nil {
+		h.locationStore.UpdateSize(types.VectorID(delta.StartIndex + len(delta.NewLocations) - 1)) // #nosec G115
+	}
 
 	return nil
 }
@@ -362,11 +382,17 @@ func (h *ArrowHNSW) SnapshotGraph() (*types.GraphData, *types.SyncState, error) 
 
 	snap := data.CloneForSnapshot()
 
-	locs := make([]types.Location, 0, h.locationStore.Len())
-	h.locationStore.IterateMutable(func(_ types.VectorID, val *atomic.Uint64) {
-		loc := basecore.UnpackLocation(val.Load())
-		locs = append(locs, loc)
-	})
+	storeLen := 0
+	if h.locationStore != nil {
+		storeLen = h.locationStore.Len()
+	}
+	locs := make([]types.Location, 0, storeLen)
+	if h.locationStore != nil {
+		h.locationStore.IterateMutable(func(_ types.VectorID, val *atomic.Uint64) {
+			loc := basecore.UnpackLocation(val.Load())
+			locs = append(locs, loc)
+		})
+	}
 
 	// Capture PackedNeighbors state
 	for l, pn := range data.PackedNeighbors {

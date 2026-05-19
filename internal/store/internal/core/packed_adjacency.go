@@ -8,6 +8,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -17,18 +18,22 @@ const (
 	adjacencyChunkSize = 1024
 	// packedRefLenMask is the bitmask for extracting the neighbor list length.
 	packedRefLenMask = 0xFFFF
+	// packedRefCapMask is the bitmask for extracting the neighbor list capacity.
+	packedRefCapMask = 0xFF
+	// packedRefCapShift is the bit shift for the capacity
+	packedRefCapShift = 16
 	// packedRefOffShift is the bit shift for the offset in a packed adjacency reference.
-	packedRefOffShift = 16
+	packedRefOffShift = 24
 )
 
-// PackRef combines an offset and length into a single 64-bit reference.
-func PackRef(offset uint64, length uint32) uint64 {
-	return (offset << packedRefOffShift) | (uint64(length) & packedRefLenMask)
+// PackRef combines an offset, length, and capacity into a single 64-bit reference.
+func PackRef(offset uint64, length uint32, capacity uint32) uint64 {
+	return (offset << packedRefOffShift) | ((uint64(capacity) & packedRefCapMask) << packedRefCapShift) | (uint64(length) & packedRefLenMask)
 }
 
-// UnpackRef extracts the offset and length from a 64-bit reference.
-func UnpackRef(packed uint64) (offset uint64, length uint32) {
-	return packed >> packedRefOffShift, uint32(packed & packedRefLenMask)
+// UnpackRef extracts the offset, length, and capacity from a 64-bit reference.
+func UnpackRef(packed uint64) (offset uint64, length uint32, capacity uint32) {
+	return packed >> packedRefOffShift, uint32(packed & packedRefLenMask), uint32((packed >> packedRefCapShift) & packedRefCapMask)
 }
 
 // PackedAdjacency manages neighbor lists using 2-level indirection.
@@ -43,6 +48,7 @@ type PackedAdjacency struct {
 	// Value = Offset to Page (in pageArena).
 	chunks atomic.Pointer[[]uint64]
 	mu     sync.RWMutex // Protects chunks growth
+	refCount atomic.Int64
 }
 
 // NewPackedAdjacency creates a new PackedAdjacency structure with the given arena.
@@ -74,6 +80,8 @@ func NewPackedAdjacencyWithArenas(arena *memory.SlabArena,
 		pageArena:     pageArena,
 	}
 	pa.chunks.Store(&chunks)
+	pa.refCount.Store(1)
+	metrics.SlabRefCountDistribution.WithLabelValues("adjacency").Observe(1)
 	return pa
 }
 
@@ -125,11 +133,43 @@ func (pa *PackedAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
 
 	if len(neighbors) == 0 {
 		// Store empty reference (offset 0, length 0)
-		return pa.updatePage(id, PackRef(0, 0))
+		return pa.updatePage(id, PackRef(0, 0, 0))
+	}
+
+	packed, ok := pa.getPackedRef(id)
+	var oldCap uint32
+	var oldOffset uint64
+	if ok && packed != 0 {
+		oldOffset, _, oldCap = UnpackRef(packed)
+	}
+
+	newLen := uint32(len(neighbors))
+
+	if oldOffset != 0 && newLen <= oldCap {
+		// Reuse existing allocation
+		dest := pa.neighborArena.Get(memory.SliceRef{Offset: oldOffset, Len: oldCap, Cap: oldCap})
+		copy(dest, neighbors)
+		return pa.updatePage(id, PackRef(oldOffset, newLen, oldCap))
+	}
+
+	// Calculate new capacity (power of 2)
+	newCap := oldCap
+	if newCap == 0 {
+		newCap = 8
+	}
+	for newCap < newLen {
+		newCap *= 2
+	}
+	// Max capacity to prevent overflow of 8-bit capacity field
+	if newCap > 255 {
+		newCap = 255
+	}
+	if newLen > 255 {
+		return errors.New("packed adjacency: max capacity 255 exceeded")
 	}
 
 	// 1. Alloc neighbor list (Aligned to 64 bytes)
-	ref, err := pa.neighborArena.AllocSliceAligned(len(neighbors), 64)
+	ref, err := pa.neighborArena.AllocSliceAligned(int(newCap), 64)
 	if err != nil {
 		return err
 	}
@@ -139,10 +179,10 @@ func (pa *PackedAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
 	copy(dest, neighbors)
 
 	// 2. Pack Ref
-	packed := PackRef(ref.Offset, uint32(len(neighbors))) // #nosec G115
+	newPacked := PackRef(ref.Offset, newLen, newCap)
 
 	// 3. Update Page
-	return pa.updatePage(id, packed)
+	return pa.updatePage(id, newPacked)
 }
 
 // SetNeighborsF16 updates the neighbor list and associated distances for a node.
@@ -153,11 +193,45 @@ func (pa *PackedAdjacency) SetNeighborsF16(id uint32, neighbors []uint32, distan
 	}
 
 	if len(neighbors) == 0 {
-		return pa.updatePage(id, PackRef(0, 0))
+		return pa.updatePage(id, PackRef(0, 0, 0))
 	}
 
-	// Alloc a block of size len*4 + len*2
-	totalBytes := len(neighbors)*4 + len(distances)*2
+	packed, ok := pa.getPackedRef(id)
+	var oldCap uint32
+	var oldOffset uint64
+	if ok && packed != 0 {
+		oldOffset, _, oldCap = UnpackRef(packed)
+	}
+
+	newLen := uint32(len(neighbors))
+
+	if oldOffset != 0 && newLen <= oldCap {
+		// Reuse existing allocation
+		totalBytes := int(oldCap)*4 + int(oldCap)*2
+		dest := pa.baseArena.Get(oldOffset, uint32(totalBytes))
+		nDest := unsafe.Slice((*uint32)(unsafe.Pointer(&dest[0])), oldCap) // #nosec G103
+		copy(nDest, neighbors)
+		dDest := unsafe.Slice((*float16.Num)(unsafe.Pointer(&dest[int(oldCap)*4])), oldCap) // #nosec G103
+		copy(dDest, distances)
+		return pa.updatePage(id, PackRef(oldOffset, newLen, oldCap))
+	}
+
+	newCap := oldCap
+	if newCap == 0 {
+		newCap = 8
+	}
+	for newCap < newLen {
+		newCap *= 2
+	}
+	if newCap > 255 {
+		newCap = 255
+	}
+	if newLen > 255 {
+		return errors.New("packed adjacency: max capacity 255 exceeded")
+	}
+
+	// Alloc a block of size newCap*4 + newCap*2
+	totalBytes := int(newCap)*4 + int(newCap)*2
 	// Align to 64 bytes for SIMD operations
 	offset, err := pa.baseArena.AllocAligned(totalBytes, 64)
 	if err != nil {
@@ -171,75 +245,97 @@ func (pa *PackedAdjacency) SetNeighborsF16(id uint32, neighbors []uint32, distan
 
 	// Layout: [neighbors...][distances...]
 	// Use unsafe to get headers. Pointer to start of dest.
-	nDest := unsafe.Slice((*uint32)(unsafe.Pointer(&dest[0])), len(neighbors)) // #nosec G103
+	nDest := unsafe.Slice((*uint32)(unsafe.Pointer(&dest[0])), newCap) // #nosec G103
 	copy(nDest, neighbors)
 
-	dDest := unsafe.Slice((*float16.Num)(unsafe.Pointer(&dest[len(neighbors)*4])), len(distances)) // #nosec G103
+	dDest := unsafe.Slice((*float16.Num)(unsafe.Pointer(&dest[int(newCap)*4])), newCap) // #nosec G103
 	copy(dDest, distances)
 
 	// 2. Pack Ref
-	packed := PackRef(offset, uint32(len(neighbors))) // #nosec G115
+	newPacked := PackRef(offset, newLen, newCap)
 
 	// 3. Update Page
-	return pa.updatePage(id, packed)
+	return pa.updatePage(id, newPacked)
 }
 
 func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
 	chunkIdx := int(id) / adjacencyChunkSize
 	offsetInPage := int(id) % adjacencyChunkSize
 
-	// Auto-grow if needed
-	chunksPtr := pa.chunks.Load()
-	if chunksPtr == nil || chunkIdx >= len(*chunksPtr) {
-		pa.EnsureCapacity(id)
-		chunksPtr = pa.chunks.Load()
-	}
+	pa.EnsureCapacity(id)
+	chunks := *pa.chunks.Load()
 
-	chunks := *chunksPtr
+	for {
+		oldPageRef := atomic.LoadUint64(&chunks[chunkIdx])
 
-	// Get or Alloc Page
-	pageOffset := atomic.LoadUint64(&chunks[chunkIdx])
-	if pageOffset == 0 {
-		// We still need to coordinate page allocation to avoid leaks/double-alloc,
-		// but we can use CAS on the chunk slot.
-		pRef, err := pa.pageArena.AllocSlice(adjacencyChunkSize)
+		// Allocate new page
+		newRef, err := pa.pageArena.AllocSlice(adjacencyChunkSize)
 		if err != nil {
 			return err
 		}
-		pDest := pa.pageArena.Get(pRef)
-		for i := range pDest {
-			pDest[i] = 0
-		}
-		if !atomic.CompareAndSwapUint64(&chunks[chunkIdx], 0, pRef.Offset) {
-			// Someone else won the race, return our slice to arena (if possible)
-			// or just accept the tiny leak (it's internal arena so it stays till Close)
-			pageOffset = atomic.LoadUint64(&chunks[chunkIdx])
+		newDest := pa.pageArena.Get(newRef)
+
+		if oldPageRef != 0 {
+			oldPage := pa.pageArena.Get(memory.SliceRef{Offset: oldPageRef, Len: adjacencyChunkSize, Cap: adjacencyChunkSize})
+			// Atomic copy of all entries to ensure consistency
+			for i := 0; i < adjacencyChunkSize; i++ {
+				newDest[i] = atomic.LoadUint64(&oldPage[i])
+			}
 		} else {
-			pageOffset = pRef.Offset
+			// New page, zero it
+			for i := 0; i < adjacencyChunkSize; i++ {
+				newDest[i] = 0
+			}
 		}
-	}
 
-	pageRef := memory.SliceRef{Offset: pageOffset, Len: adjacencyChunkSize, Cap: adjacencyChunkSize}
-	page := pa.pageArena.Get(pageRef)
-	if page == nil {
-		return errors.New("packed adjacency: failed to get page")
-	}
+		// Apply change to new page
+		newDest[offsetInPage] = packed
 
-	atomic.StoreUint64(&page[offsetInPage], packed)
-	return nil
+		// CAS update chunk pointer to the new page
+		if atomic.CompareAndSwapUint64(&chunks[chunkIdx], oldPageRef, newRef.Offset) {
+			metrics.PackedAdjacencyCoWTotal.Inc()
+			return nil
+		}
+		// Retry on CAS failure (concurrency)
+	}
 }
 
 // CASNeighbors performs an atomic Compare-And-Swap operation on a node's neighbor list.
 func (pa *PackedAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint32) bool {
 	var newPacked uint64
 	if len(new) > 0 {
-		ref, err := pa.neighborArena.AllocSliceAligned(len(new), 64)
-		if err != nil {
-			return false
+		newLen := uint32(len(new))
+		
+		var oldCap uint32
+		var oldOffset uint64
+		if oldPacked != 0 {
+			oldOffset, _, oldCap = UnpackRef(oldPacked)
 		}
-		dest := pa.neighborArena.Get(ref)
-		copy(dest, new)
-		newPacked = PackRef(ref.Offset, uint32(len(new))) // #nosec G115
+
+		if oldOffset != 0 && newLen <= oldCap {
+			dest := pa.neighborArena.Get(memory.SliceRef{Offset: oldOffset, Len: oldCap, Cap: oldCap})
+			copy(dest, new)
+			newPacked = PackRef(oldOffset, newLen, oldCap)
+		} else {
+			newCap := oldCap
+			if newCap == 0 {
+				newCap = 8
+			}
+			for newCap < newLen {
+				newCap *= 2
+			}
+			if newCap > 255 {
+				newCap = 255
+			}
+			
+			ref, err := pa.neighborArena.AllocSliceAligned(int(newCap), 64)
+			if err != nil {
+				return false
+			}
+			dest := pa.neighborArena.Get(ref)
+			copy(dest, new)
+			newPacked = PackRef(ref.Offset, newLen, newCap)
+		}
 	}
 
 	// 2. CAS in page
@@ -286,7 +382,7 @@ func (pa *PackedAdjacency) UpdateNeighbors(id uint32, fn func(old []uint32) []ui
 			continue
 		}
 
-		off, ln := UnpackRef(packed)
+		off, ln, _ := UnpackRef(packed)
 		oldRef := memory.SliceRef{Offset: off, Len: uint32(ln), Cap: uint32(ln)}
 		old := pa.neighborArena.Get(oldRef)
 
@@ -314,7 +410,8 @@ func (pa *PackedAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint
 		return nil, false
 	}
 
-	return pa.GetNeighborsFromPackedWithGen(packed, maxGen), true
+	res := pa.GetNeighborsFromPackedWithGen(packed, maxGen)
+	return res, true
 }
 
 // GetNeighborsFromPacked retrieves the neighbor list from a packed reference.
@@ -327,7 +424,7 @@ func (pa *PackedAdjacency) GetNeighborsFromPackedWithGen(packed uint64, maxGen u
 	if packed == 0 {
 		return nil
 	}
-	off, ln := UnpackRef(packed)
+	off, ln, _ := UnpackRef(packed)
 	nRef := memory.SliceRef{Offset: off, Len: uint32(ln), Cap: uint32(ln)}
 	return pa.neighborArena.GetWithGeneration(nRef, maxGen)
 }
@@ -344,18 +441,19 @@ func (pa *PackedAdjacency) GetNeighborsF16WithGen(id uint32, maxGen uint64) ([]u
 		return nil, nil, false
 	}
 
-	off, ln := UnpackRef(packed)
+	off, ln, oldCap := UnpackRef(packed)
 	length := int(ln)
+	capacity := int(oldCap)
 
 	// Get combined block
-	totalBytes := uint32(length*4 + length*2) // #nosec G115
+	totalBytes := uint32(capacity*4 + capacity*2) // #nosec G115
 	dest := pa.baseArena.GetWithGeneration(off, totalBytes, maxGen)
 	if len(dest) == 0 {
 		return nil, nil, false
 	}
 
 	neighbors := unsafe.Slice((*uint32)(unsafe.Pointer(&dest[0])), length) // #nosec G103
-	distances := unsafe.Slice((*float16.Num)(unsafe.Pointer(&dest[length*4])), length) // #nosec G103
+	distances := unsafe.Slice((*float16.Num)(unsafe.Pointer(&dest[capacity*4])), length) // #nosec G103
 
 	return neighbors, distances, true
 }
@@ -385,4 +483,65 @@ func (pa *PackedAdjacency) getPackedRef(id uint32) (uint64, bool) {
 	}
 
 	return atomic.LoadUint64(&page[offsetInPage]), true
+}
+func (pa *PackedAdjacency) RelocateToOffHeap(alloc *memory.OffHeapAllocator) {
+	pa.mu.Lock()
+	defer pa.mu.Unlock()
+
+	curPtr := pa.chunks.Load()
+	if curPtr == nil {
+		return
+	}
+	oldChunks := *curPtr
+	
+	// Allocate off-heap slice
+	size := len(oldChunks) * 8
+	newData := alloc.Allocate(size)
+	if newData == nil {
+		return
+	}
+	
+	// Zero-copy view as []uint64
+	newChunksTyped := unsafe.Slice((*uint64)(unsafe.Pointer(&newData[0])), len(oldChunks)) // #nosec G103
+	
+	copy(newChunksTyped, oldChunks)
+	pa.chunks.Store(&newChunksTyped)
+
+	// Also relocate the underlying arena if it exists
+	if pa.baseArena != nil {
+		_ = pa.baseArena.ConvertToOffHeap(alloc)
+	}
+}
+
+func (pa *PackedAdjacency) GetArena() *memory.SlabArena {
+	return pa.baseArena
+}
+// IsOffHeap returns true if the backing arena is off-heap.
+func (pa *PackedAdjacency) IsOffHeap() bool {
+	if pa.baseArena == nil {
+		return false
+	}
+	return pa.baseArena.IsOffHeap()
+}
+
+func (pa *PackedAdjacency) Release() {
+	newRef := pa.refCount.Add(-1)
+	metrics.SlabRefCountDistribution.WithLabelValues("adjacency").Observe(float64(newRef))
+	if newRef == 0 {
+		if pa.neighborArena != nil {
+			pa.neighborArena.Release()
+		}
+		if pa.distanceArena != nil {
+			pa.distanceArena.Release()
+		}
+		if pa.pageArena != nil {
+			pa.pageArena.Release()
+		}
+		pa.chunks.Store(nil)
+	}
+}
+
+func (pa *PackedAdjacency) Retain() {
+	newRef := pa.refCount.Add(1)
+	metrics.SlabRefCountDistribution.WithLabelValues("adjacency").Observe(float64(newRef))
 }

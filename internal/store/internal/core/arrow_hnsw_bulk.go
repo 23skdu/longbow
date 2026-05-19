@@ -48,8 +48,6 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 	
 	// Ensure nodeCount is advanced even on error/cancellation to unblock subsequent writers.
 	defer func(batchSize int) {
-		// Always advance to the end of the requested batch range to unblock sequential writers,
-		// even if this specific batch failed or only partially committed.
 		finalID := int64(startID + uint32(batchSize)) // #nosec G115
 		h.commitMu.Lock()
 		for h.nodeCount.Load() < int64(startID) {
@@ -57,8 +55,8 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		}
 		if h.nodeCount.Load() < finalID {
 			h.nodeCount.Store(finalID)
-			h.commitCond.Broadcast()
 		}
+		h.commitCond.Broadcast()
 		h.commitMu.Unlock()
 	}(n)
 	defer func() {

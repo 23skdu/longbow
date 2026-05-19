@@ -136,6 +136,7 @@ type ArrowHNSWConfig struct {
 	TurboQuantBits    int
 	LockFreeThreshold int // Layer threshold for CAS-based lock-free updates (e.g. 2)
 	NUMANode          int // Target NUMA node for memory pinning (-1 for default)
+	SharedVectorSpace bool // If true, perform zero-copy lookups from primary Dataset records
 }
 
 // DefaultArrowHNSWConfig returns a configuration with sensible defaults
@@ -164,6 +165,7 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		Metric:                  core.MetricEuclidean,
 		ParallelSearch:          DefaultParallelSearchConfig(),
 		NUMANode:                -1,
+		SharedVectorSpace:       false,
 	}
 
 	if os.Getenv("LONGBOW_LOW_MEM") == "1" || os.Getenv("LONGBOW_LOW_MEM") == "true" {

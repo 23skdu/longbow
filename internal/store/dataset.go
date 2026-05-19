@@ -106,6 +106,7 @@ type Dataset struct {
 	// In-flight Indexing Tracking (Compaction Safety)
 	PendingIndexJobs atomic.Int64
 	PendingIngestion atomic.Int64
+	ActiveIngestStreams atomic.Int64 // Number of active DoPut streams for this dataset
 	IsReady          atomic.Bool // Set to true after first successful ingestion (v0.2.0)
 	RegistryPublished atomic.Bool // Set to true when advertised to the cluster
 
@@ -151,6 +152,8 @@ type Dataset struct {
 	ColumnIndex *ColumnInvertedIndex
 
 	TemporalIndex *TemporalIndex
+
+	Admission *AdmissionController
 
 	Logger zerolog.Logger
 }
@@ -354,7 +357,11 @@ func (d *Dataset) ResetTombstones() {
 	d.Tombstones = make(map[int]*types.Bitset)
 }
 
-// NewDataset creates a new dataset with the given name and schema.
+// SetAdmission associates an AdmissionController with the dataset.
+func (d *Dataset) SetAdmission(admission *AdmissionController) {
+	d.Admission = admission
+}
+
 // NewDataset creates a new Dataset with the specified name and schema.
 func NewDataset(name string, schema *arrow.Schema) *Dataset {
 
@@ -782,7 +789,7 @@ func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap *IDMap) {
 
 // WaitForIndexing blocks until all pending indexing jobs for this dataset are complete.
 func (d *Dataset) WaitForIndexing() {
-	for d.PendingIndexJobs.Load() > 0 || d.PendingIngestion.Load() > 0 {
+	for d.PendingIndexJobs.Load() > 0 || d.PendingIngestion.Load() > 0 || (d.Admission != nil && d.Admission.migratingCount.Load() > 0) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }

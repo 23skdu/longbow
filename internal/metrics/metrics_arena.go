@@ -46,4 +46,12 @@ var (
 			Help: "Total number of fast path allocations that failed and fell back to slow path",
 		},
 	)
+
+	// ArenaOffHeapBytes tracks total bytes allocated in off-heap SlabArenas
+	ArenaOffHeapBytes = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_arena_off_heap_bytes",
+			Help: "Total bytes allocated in off-heap SlabArenas (mmap/C.malloc)",
+		},
+	)
 )

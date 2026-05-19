@@ -199,4 +199,12 @@ var (
 			Help: "Total number of gRPC stream stalls detected",
 		},
 	)
+
+	// UDSConnectionsTotal counts total UDS connections
+	UDSConnectionsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_grpc_uds_connections_total",
+			Help: "Total number of gRPC UDS connections",
+		},
+	)
 )

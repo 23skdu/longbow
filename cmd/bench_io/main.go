@@ -1,3 +1,5 @@
+//go:build !windows
+
 package main
 
 // nosec G404 - math/rand is used for benchmark test data, not security-sensitive
@@ -200,7 +202,7 @@ func runMmapBenchmark(dir string, sizeMB int, blockSize int, workers int, durati
 	printStats("Mmap "+modeStr, elapsed, totalOps, totalBytes)
 }
 
-func runWriteBenchmark(dir string, sizeMB int, blockSize int, workers int, duration time.Duration, doSync bool) {
+func runWriteBenchmark(dir string, _ int, blockSize int, workers int, duration time.Duration, doSync bool) {
 	fmt.Println("\n--- Write Benchmark (Sequential Append) ---")
 
 	// Pre-generate a data block to avoid measuring generation time
@@ -316,7 +318,7 @@ func runReadBenchmark(dir string, sizeMB int, blockSize int, workers int, durati
 	printStats("Read", elapsed, totalOps, totalBytes)
 }
 
-func prepFile(dir string, sizeMB int, blockSize int) int64 {
+func prepFile(dir string, sizeMB int, _ int) int64 {
 	filename := filepath.Join(dir, "bench_read_master.dat")
 	info, err := os.Stat(filename)
 	targetSize := int64(sizeMB) * 1024 * 1024
@@ -401,7 +403,7 @@ type BenchmarkResult struct {
 	TemporalWindowP99Ms float64 `json:"temporal_window_p99_ms"`
 }
 
-func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, queries int, dataset, jsonFile, searchModes string) {
+func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int, dataset, jsonFile, searchModes string) {
 	ctx := context.Background()
 	result := &BenchmarkResult{
 		Dim:   dim,
@@ -428,23 +430,29 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 
 	mem := memory.NewGoAllocator()
 	sch := arrow.NewSchema([]arrow.Field{
-		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "id", Type: arrow.BinaryTypes.String},
 		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)}, // #nosec G115
+		{Name: "timestamp", Type: arrow.PrimitiveTypes.Int64},
 	}, nil)
 
-	idBuilder := array.NewInt64Builder(mem)
+	idBuilder := array.NewStringBuilder(mem)
 	defer idBuilder.Release()
 	listBuilder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32) // #nosec G115
 	defer listBuilder.Release()
 	vecBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
+	tsBuilder := array.NewInt64Builder(mem)
+	defer tsBuilder.Release()
 
 	idBuilder.Reserve(scale)
 	listBuilder.Reserve(scale)
 	vecBuilder.Reserve(scale * dim)
+	tsBuilder.Reserve(scale)
 
+	now := time.Now().UnixNano()
 	for i := 0; i < scale; i++ {
-		idBuilder.Append(int64(i))
+		idBuilder.Append(fmt.Sprintf("%d", i))
 		listBuilder.Append(true)
+		tsBuilder.Append(now + int64(i)*1000000000)
 	}
 	vecBuilder.AppendValues(vecs, nil)
 
@@ -452,8 +460,10 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 	defer idArr.Release()
 	vecArr := listBuilder.NewArray()
 	defer vecArr.Release()
+	tsArr := tsBuilder.NewArray()
+	defer tsArr.Release()
 
-	rec := array.NewRecordBatch(sch, []arrow.Array{idArr, vecArr}, int64(scale))
+	rec := array.NewRecordBatch(sch, []arrow.Array{idArr, vecArr, tsArr}, int64(scale))
 	defer rec.Release()
 
 	if err := uploadData(ctx, sc, dataset, rec, sch); err != nil {
@@ -508,7 +518,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 								"timestamp": ts,
 								"k":         10,
 							}
-							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal": req})
+							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
 						} else if m == "temporal_range" {
 							req := map[string]interface{}{
 								"dataset":   dataset,
@@ -517,7 +527,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 								"end_time":   ts,
 								"k":        10,
 							}
-							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal": req})
+							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
 						} else if m == "temporal_window" {
 							req := map[string]interface{}{
 								"dataset":    dataset,
@@ -525,7 +535,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, tqBits, scale, querie
 								"window_size": 10,
 								"k":          10,
 							}
-							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal": req})
+							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
 						}
 					} else {
 						req := map[string]interface{}{
@@ -625,7 +635,7 @@ data, _ := json.MarshalIndent(result, "", "  ")
 	}
 }
 
-func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec arrow.Record, sch *arrow.Schema) error {
+func uploadData(ctx context.Context, sc *client.SmartClient, dataset string, rec arrow.Record, _ *arrow.Schema) error {
 	desc := &flight.FlightDescriptor{
 		Type: flight.DescriptorPATH,
 		Path: []string{dataset},

@@ -98,13 +98,6 @@ func EuclideanDistanceF16(a, b []float16.Num) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Use specialized dispatch for common dimensions
-	switch len(a) {
-	case 384:
-		return Euclidean384Float16(a, b)
-	case 768:
-		return Euclidean768Float16(a, b)
-	}
 
 	if euclideanDistanceF16Impl != nil {
 		return euclideanDistanceF16Impl(a, b)
@@ -149,19 +142,11 @@ func EuclideanDistanceFloat64(a, b []float64) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Use specialized dispatch for common dimensions
-	switch len(a) {
-	case 384:
-		return Euclidean384Float64(a, b)
-	case 768:
-		return Euclidean768Float64(a, b)
-	}
 
-	// Use blocked SIMD for high dimensions (> 768)
-	if len(a) > 768 {
-		return EuclideanFloat64Blocked(a, b)
+	if euclideanDistanceFloat64Impl != nil {
+		return euclideanDistanceFloat64Impl(a, b)
 	}
-	return euclideanDistanceFloat64Impl(a, b)
+	return euclideanFloat64Unrolled4x(a, b)
 }
 
 // CosineDistanceFloat64 calculates the cosine distance (1 - similarity) for Float64 vectors.
@@ -221,20 +206,28 @@ func DotProductF64(a, b []float64) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Use specialized dispatch for common dimensions
-	switch len(a) {
-	case 384:
-		return Dot384Float64(a, b)
-	case 768:
-		return Dot768Float64(a, b)
-	}
 
-	// Use blocked SIMD for high dimensions (> 768)
-	if len(a) > 768 {
-		return DotProductFloat64Blocked(a, b)
+	if dotProductFloat64Impl != nil {
+		return dotProductFloat64Impl(a, b)
 	}
 	return dotFloat64Unrolled4x(a, b)
 }
+
+// L2SquaredFloat64 calculates the squared Euclidean distance between two Float64 vectors.
+func L2SquaredFloat64(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+
+	if l2SquaredFloat64Impl != nil {
+		return l2SquaredFloat64Impl(a, b)
+	}
+	return l2SquaredFloat64Unrolled4x(a, b)
+}
+
 
 // DotProductComplex64 calculates the real part of the dot product of two Complex64 vectors.
 func DotProductComplex64(a, b []complex64) (float32, error) {
@@ -336,6 +329,9 @@ func EuclideanDistanceUint8(a, b []uint8) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	if euclideanDistanceUint8Impl != nil {
+		return euclideanDistanceUint8Impl(a, b)
+	}
 	return euclideanUint8Unrolled4x(a, b)
 }
 
@@ -358,6 +354,9 @@ func DotProductUint8(a, b []uint8) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	if dotProductUint8Impl != nil {
+		return dotProductUint8Impl(a, b)
+	}
 	return dotUint8Unrolled4x(a, b)
 }
 
@@ -369,19 +368,10 @@ func EuclideanDistanceInt8(a, b []int8) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Use specialized dispatch for common dimensions
-	switch len(a) {
-	case 384:
-		return Euclidean384Int8(a, b)
-	case 768:
-		return Euclidean768Int8(a, b)
+	if euclideanDistanceInt8Impl != nil {
+		return euclideanDistanceInt8Impl(a, b)
 	}
-
-	// Use blocked SIMD for high dimensions (> 768)
-	if len(a) > 768 {
-		return EuclideanInt8Blocked(a, b)
-	}
-	return euclideanDistanceInt8Impl(a, b)
+	return euclideanInt8Unrolled4x(a, b)
 }
 
 // CosineDistanceInt8 calculates the cosine distance for Int8 vectors.
@@ -403,17 +393,8 @@ func DotProductInt8(a, b []int8) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Use specialized dispatch for common dimensions
-	switch len(a) {
-	case 384:
-		return Dot384Int8(a, b)
-	case 768:
-		return Dot768Int8(a, b)
-	}
-
-	// Use blocked SIMD for high dimensions (> 768)
-	if len(a) > 768 {
-		return DotProductInt8Blocked(a, b)
+	if dotProductInt8Impl != nil {
+		return dotProductInt8Impl(a, b)
 	}
 	return dotInt8Unrolled4x(a, b)
 }
@@ -426,11 +407,10 @@ func EuclideanDistanceInt16(a, b []int16) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Use blocked SIMD for high dimensions (768+)
-	if len(a) >= 768 {
-		return EuclideanInt16Blocked(a, b)
+	if euclideanDistanceInt16Impl != nil {
+		return euclideanDistanceInt16Impl(a, b)
 	}
-	return euclideanDistanceInt16Impl(a, b)
+	return euclideanInt16Unrolled4x(a, b)
 }
 
 // CosineDistanceInt16 calculates the cosine distance for Int16 vectors.
@@ -452,9 +432,8 @@ func DotProductInt16(a, b []int16) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Use blocked SIMD for high dimensions (768+)
-	if len(a) >= 768 {
-		return DotProductInt16Blocked(a, b)
+	if dotProductInt16Impl != nil {
+		return dotProductInt16Impl(a, b)
 	}
 	return dotInt16Unrolled4x(a, b)
 }
@@ -508,8 +487,8 @@ func EuclideanDistanceUint16(a, b []uint16) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	if len(a) >= 768 {
-		return EuclideanUint16Blocked(a, b)
+	if euclideanDistanceUint16Impl != nil {
+		return euclideanDistanceUint16Impl(a, b)
 	}
 	return euclideanUint16Unrolled4x(a, b)
 }
@@ -533,8 +512,8 @@ func DotProductUint16(a, b []uint16) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	if len(a) >= 768 {
-		return DotProductUint16Blocked(a, b)
+	if dotProductUint16Impl != nil {
+		return dotProductUint16Impl(a, b)
 	}
 	return dotUint16Unrolled4x(a, b)
 }

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"runtime/debug"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -37,9 +38,10 @@ type VectorStore struct {
 	replicator    *PeerReplicator
 	pooledMem     memory.Allocator // Pooled allocator for transient ingestion buffers
 	logger        zerolog.Logger
-	maxMemory     atomic.Int64
-	currentMemory atomic.Int64
-	memoryConfig  MemoryConfig
+	maxMemory             atomic.Int64
+	currentMemory         atomic.Int64
+	lastThrottlingLogTime atomic.Int64 // Unix timestamp in seconds of last throttling log
+	memoryConfig          MemoryConfig
 
 	sequence atomic.Uint64 // Global operation sequence
 
@@ -298,7 +300,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	// Initialize Flight client pool for distributed coordination
 	vs.pool = NewFlightClientPool(DefaultFlightClientPoolConfig())
  
-	vs.admission = NewAdmissionController(&vs.maxMemory, &vs.currentMemory, nil)
+	vs.admission = NewAdmissionController(&vs.maxMemory, &vs.currentMemory, nil, vs.logger)
  
 	// Initialize Quantization Auto-Tuner (v0.1.9)
 	vs.quantTuner = NewQuantizationTuner(vs.logger, vs)
@@ -471,8 +473,69 @@ func stackTrace() string {
 // SetGCTuner sets the memory tuner for backpressure.
 func (vs *VectorStore) SetGCTuner(tuner *lbmem.GCTuner) {
 	vs.tuner.Store(tuner)
+	if vs.admission != nil {
+		vs.admission.SetTuner(tuner)
+	}
+	if tuner != nil {
+		tuner.RegisterCleanup(func() {
+			vs.logger.Warn().Msg("Emergency memory cleanup: clearing query cache and releasing slab pools")
+			vs.queryCache.Clear()
+			released := lbmem.ReleaseGlobalSlabPoolsUnused()
+			if released > 0 {
+				vs.logger.Info().Int("released_slabs", released).Msg("Released unused slabs back to the OS during emergency cleanup")
+			}
+		})
+	}
 	// Wire to global worker pool for indexing backpressure
 	lbcore.GetSharedPool().SetTuner(tuner)
+}
+
+// GetGCTuner returns the memory tuner.
+func (vs *VectorStore) GetGCTuner() *lbmem.GCTuner {
+	return vs.tuner.Load()
+}
+
+// IngestionQueueLen returns the current length of the ingestion queue.
+func (vs *VectorStore) IngestionQueueLen() int {
+	if vs.ingestionQueue == nil {
+		return 0
+	}
+	return vs.ingestionQueue.Len()
+}
+
+// IngestionQueueCap returns the capacity of the ingestion queue.
+func (vs *VectorStore) IngestionQueueCap() int {
+	if vs.ingestionQueue == nil {
+		return 0
+	}
+	return vs.ingestionQueue.Capacity()
+}
+
+// GetActiveDatasets returns a list of active dataset names.
+func (vs *VectorStore) GetActiveDatasets() []string {
+	var list []string
+	vs.IterateDatasets(func(name string, ds *Dataset) {
+		list = append(list, name)
+	})
+	return list
+}
+
+// GetDatasetIndexStats returns core progress statistics for a dataset's index.
+func (vs *VectorStore) GetDatasetIndexStats(name string) (nodeCount int64, maxLevel int32, isOffHeap bool, exists bool) {
+	ds, ok := vs.getDataset(name)
+	if !ok || ds.Index == nil {
+		return 0, 0, false, false
+	}
+	hnsw, ok := ds.Index.(*lbcore.ArrowHNSW)
+	if !ok {
+		return 0, 0, false, true
+	}
+	snap := hnsw.GetMetadataSnapshot()
+	isOff := false
+	if hnsw.GetData() != nil && len(hnsw.GetData().PackedNeighbors) > 0 {
+		isOff = true
+	}
+	return snap.NodeCount, snap.MaxLevel, isOff, true
 }
 
 // GetAdmissionController returns the admission controller for the store.
@@ -552,6 +615,7 @@ func (vs *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset)
 		// Create
 		newDs := createFn()
 		if newDs != nil {
+			newDs.SetAdmission(vs.admission)
 			if vs.hybridSearchConfig.Enabled {
 				newDs.BM25Index = NewBM25InvertedIndex(vs.hybridSearchConfig.BM25)
 			}
@@ -584,9 +648,16 @@ func (vs *VectorStore) SetCoordinator(c *GlobalSearchCoordinator) {
 	vs.coordinator = c
 }
 
-// SetMesh sets the mesh gossip instance for the vector store.
+// SetMesh sets the mesh gossip instance for the vector store and initializes the WAL replicator.
 func (vs *VectorStore) SetMesh(m *mesh.Gossip) {
 	vs.Mesh = m
+	if m != nil {
+		engine := vs.engine.Load()
+		if engine != nil {
+			replicator := NewFlightWALReplicator(vs.pool, m)
+			engine.SetReplicator(replicator)
+		}
+	}
 }
 
 // GetMeshMembers returns the current members from the mesh gossip instance.
@@ -926,6 +997,13 @@ func (vs *VectorStore) DropDataset(ctx context.Context, name string) error {
 			totalMemory := droppedDS.SizeBytes.Load() + droppedDS.IndexMemoryBytes.Load()
 			vs.currentMemory.Add(-totalMemory)
 			droppedDS.Close()
+
+			// Synchronous Memory Reclamation for Benchmarking stability
+			// 1. Trigger GC to finalize all unreachable objects and arenas
+			runtime.GC()
+			// 2. Force the runtime to return all freed memory to the OS
+			debug.FreeOSMemory()
+
 			vs.logger.Info().Str("dataset", name).Int64("freed_bytes", totalMemory).Msg("Dataset dropped and resources released synchronously")
 
 			return nil

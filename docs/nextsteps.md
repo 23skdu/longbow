@@ -4,6 +4,34 @@ This document outlines the outstanding roadmap items, stability enhancements, an
 
 ---
 
+## 0. P0 Blockers: Unimplemented Stubs & Dead Code Paths
+
+### 🔳 Resolve SIMD amd64 Fallback Stubs
+* **Description**: Several SIMD AMD64 kernel operations are currently mocked, stubbed, or missing assembly implementations, causing them to fall back to unoptimized generic Go routines.
+* **Impact**: Significant performance degradation for large-scale operations relying on these math kernels.
+* **Subtasks**:
+  - [ ] Implement `euclideanF16AVX2`, `dotF16AVX2`, and `cosineF16AVX2` assembly kernels for `float16` lengths < 8 (currently falls back to unrolled generic).
+  - [ ] Provide assembly implementation for `adcBatchAVX2Kernel` (currently commented as "in stubs").
+  - [ ] Implement AVX2/AVX512 kernels for `dotInt2`, `sin`, `cos`, `atan2`, `argMax`, and `argMin` which currently fall back to generic routines.
+  - [ ] Address the `sq8` AVX2 kernel which is explicitly marked as "currently a stub; fallback to generic".
+* **Priority**: **P0 (Critical Blocker)**
+
+### 🔳 Resolve Non-AMD64 SIMD Hard Errors
+* **Description**: Many AVX-specific stubs for non-AMD64 architectures (e.g., `stubs_avx_fallbacks.go`) are returning hard `errors.New("avx2 not supported")` instead of gracefully delegating to ARM NEON or generic equivalents.
+* **Impact**: Distance operations utilizing Int8, Int16, and Uint16 on ARM64 or other architectures will immediately error out during vectorized execution.
+* **Subtasks**:
+  - [ ] Fix `euclideanInt8AVX2`, `euclideanInt16AVX2`, `dotInt16AVX2`, and related stubs to return generic distance calculations instead of hard errors.
+* **Priority**: **P0 (Critical Blocker)**
+
+### 🔳 Implement ML Reranker Interface
+* **Description**: The `MLReranker` interface in `internal/store/ml_reranker.go` relies on a hardcoded `stubMLModel` that bypasses any actual machine learning inference.
+* **Impact**: Hybrid search pipelines using ML reranking will produce un-reranked scores without actual model evaluation.
+* **Subtasks**:
+  - [ ] Remove `stubMLModel` and implement a functional ONNX or external gRPC ML model reranking integration.
+* **Priority**: **P0 (Critical Blocker)**
+
+---
+
 ## 1. P0 Blockers: Hardware Backend Integration
 
 ### 🔳 TPU Physical Driver Integration

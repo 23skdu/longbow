@@ -81,7 +81,7 @@ func TestEnsureTimestampZeroCopy_MissingTimestamp(t *testing.T) {
 	defer rec.Release()
 
 	// Capture original data pointers for zero-copy verification
-	origIdData := rec.Column(0).Data()
+	origIDData := rec.Column(0).Data()
 	origValData := rec.Column(1).Data()
 
 	// Call ensureTimestampZeroCopy
@@ -112,10 +112,10 @@ func TestEnsureTimestampZeroCopy_MissingTimestamp(t *testing.T) {
 	}
 
 	// Check data pointer equality (zero-copy verification)
-	newIdData := result.Column(0).Data()
+	newIDData := result.Column(0).Data()
 	newValData := result.Column(1).Data()
 
-	if len(origIdData.Buffers()) != len(newIdData.Buffers()) {
+	if len(origIDData.Buffers()) != len(newIDData.Buffers()) {
 		t.Error("buffer count mismatch for id column")
 	}
 	if len(origValData.Buffers()) != len(newValData.Buffers()) {

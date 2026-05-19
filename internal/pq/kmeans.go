@@ -95,6 +95,11 @@ func TrainKMeansWithOptions(data []float32, n, dim, k int, opts KMeansOptions) (
 	sums := buf.sums
 
 	// 2. Iteration
+	kernel := simd.GetKernel[float32](simd.MetricEuclidean, dim)
+	if kernel == nil {
+		kernel = simd.L2Squared
+	}
+
 	for iter := 0; iter < maxIter; iter++ {
 		// Reset accumulators using clear() (more efficient than manual loops)
 		clear(sums)
@@ -121,10 +126,10 @@ func TrainKMeansWithOptions(data []float32, n, dim, k int, opts KMeansOptions) (
 				}
 			} else {
 				// Fallback to CPU on GPU error
-				changed = runCPUEstep(data, centroids, assignments, counts, sums, n, k, dim)
+				changed = runCPUEstep(data, centroids, assignments, counts, sums, n, k, dim, kernel)
 			}
 		} else {
-			changed = runCPUEstep(data, centroids, assignments, counts, sums, n, k, dim)
+			changed = runCPUEstep(data, centroids, assignments, counts, sums, n, k, dim, kernel)
 		}
 
 		// M-step: Update centroids
@@ -152,7 +157,7 @@ func TrainKMeansWithOptions(data []float32, n, dim, k int, opts KMeansOptions) (
 	return centroids, nil
 }
 
-func runCPUEstep(data, centroids []float32, assignments, counts []int, sums []float32, n, k, dim int) int {
+func runCPUEstep(data, centroids []float32, assignments, counts []int, sums []float32, n, k, dim int, kernel simd.DistanceKernel[float32]) int {
 	changed := 0
 	for i := 0; i < n; i++ {
 		vec := data[i*dim : (i+1)*dim]
@@ -161,7 +166,7 @@ func runCPUEstep(data, centroids []float32, assignments, counts []int, sums []fl
 
 		for c := 0; c < k; c++ {
 			cent := centroids[c*dim : (c+1)*dim]
-			dist, _ := simd.L2Squared(vec, cent)
+			dist, _ := kernel(vec, cent)
 			if dist < bestDist {
 				bestDist = dist
 				bestC = c

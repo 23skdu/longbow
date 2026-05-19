@@ -34,7 +34,7 @@ func (b GPUBackend) String() string {
 
 type GPUConfig struct {
 	Backend            GPUBackend
-	DeviceID           int
+	DeviceID           int32
 	Dimension          int
 	Enabled            bool
 	CUDAHome           string
@@ -76,7 +76,7 @@ func DefaultGPUConfig() GPUConfig {
 type GPUInfo struct {
 	Name             string
 	Backend          GPUBackend
-	DeviceID         int
+	DeviceID         int32
 	MemoryMB         int64
 	ComputeMajor     int
 	ComputeMinor     int
@@ -94,18 +94,13 @@ type Index interface {
 	Add(ids []int64, vectors []float32) error
 	Search(vector []float32, k int) (ids []int64, distances []float32, err error)
 	SearchBatch(vectors [][]float32, k int) (ids [][]int64, distances [][]float32, err error)
+	
 	// PQ methods
 	AddPQ(ids []int64, codes []byte, m int) error
 	SearchPQ(lookupTable []float32, m int, k int) (ids []int64, distances []float32, err error)
 	TrainPQ(vectors []float32, m int, k int) error
 	EncodePQ(vectors []float32) ([]byte, error)
 	AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error)
-	Close() error
-	Backend() GPUBackend
-	DeviceID() int // Returns the device ID this index runs on
-	GetDeviceInfo() (*GPUInfo, error)
-	GetMemoryInfo() (total, free, used int64, err error)
-	GetUtilization() (float32, error)
 
 	// Typed search methods for different vector types
 	SearchFloat16(vector []uint16, k int) (ids []int64, distances []float32, err error)
@@ -117,6 +112,23 @@ type Index interface {
 	// Graph methods
 	UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error
 	GraphExpand(seeds []uint32, depth int, alpha float32) (ids []uint32, scores []float32, err error)
+	PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error)
+	SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error)
+
+	// Spatial and Temporal Acceleration
+	HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error)
+	NormBatch(vectors []float32, dims int) ([]float32, error)
+
+	// Lifecycle and Metadata
+	Close() error
+	Sync() error
+	Clear() error
+	Reset() error
+	Backend() GPUBackend
+	DeviceID() int32
+	GetDeviceInfo() (*GPUInfo, error)
+	GetMemoryInfo() (total, free, used int64, err error)
+	GetUtilization() (float32, error)
 }
 
 func DetectGPUBackend() GPUBackend {
@@ -127,7 +139,7 @@ func DetectGPUBackend() GPUBackend {
 	return BackendCPU
 }
 
-func GetDeviceCount() int {
+func GetDeviceCount() int32 {
 	backend := DetectGPUBackend()
 	switch backend {
 	case BackendMetal:

@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
+	"sync/atomic"
 )
 
 func TestDelete(t *testing.T) {
@@ -19,7 +20,7 @@ func TestDelete(t *testing.T) {
 	index.dims.Store(128)
 
 	// Initialize GraphData manually with dimensions
-	data := types.NewGraphData(100, 128, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test")
+	data := types.NewGraphData(100, 128, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 	index.data.Store(data)
 
 	// Manually allocate chunks for testing using ensureChunk
@@ -29,7 +30,7 @@ func TestDelete(t *testing.T) {
 		// Mock dimensions
 		dims := 128
 		var err error
-		data, err = index.ensureChunk(data, i, 0, dims)
+		data, err = index.ensureChunk(i, 0, dims)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -50,20 +51,24 @@ func TestDelete(t *testing.T) {
 		// Set level 0 for simplicity
 		lvlChunk := data.GetLevelsChunk(cID)
 		if lvlChunk != nil {
-			lvlChunk[cOff] = 0
-			if lvlChunk[cOff] != 0 {
+			atomic.StoreUint32(&lvlChunk[cOff], 0)
+			if atomic.LoadUint32(&lvlChunk[cOff]) != 0 {
 				t.Errorf("Level should be 0")
 			}
 		}
 
 		// Normally Insert would do more, but we just want to test Search filtering
-		// Insert needs nodeCount to be updated
-		index.nodeCount.Add(1)
+		// Insert needs nodeCount to be updated via metadataRegistry
+		index.updateMetadata(func(meta *HNSWMetadata) {
+			meta.NodeCount++
+		})
 	}
 
 	// Set entry point to 0
-	index.entryPoint.Store(0)
-	index.maxLevel.Store(0)
+	index.updateMetadata(func(meta *HNSWMetadata) {
+		meta.EntryPoint = 0
+		meta.MaxLevel = 0
+	})
 
 	// Verify they all exist in search
 	query := make([]float32, 128)

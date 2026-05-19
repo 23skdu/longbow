@@ -28,7 +28,7 @@ type Index = types.Index
 // Memory management re-exports
 type GPUMemPool = memory.GPUMemPool
 
-func NewGPUMemPool(backend GPUBackend, deviceID int) (*GPUMemPool, error) {
+func NewGPUMemPool(backend GPUBackend, deviceID int32) (*GPUMemPool, error) {
 	return memory.NewGPUMemPool(backend, deviceID)
 }
 

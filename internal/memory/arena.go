@@ -10,10 +10,10 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/23skdu/longbow/internal/metrics"
-	"golang.org/x/sys/unix"
 	"io"
 	"encoding/binary"
 	"os"
+	"runtime"
 )
 
 // nextPowerOf2 returns the smallest power of 2 >= n
@@ -27,8 +27,10 @@ func nextPowerOf2(n int) int {
 	n |= n >> 4
 	n |= n >> 8
 	n |= n >> 16
+	n |= n >> 32
 	return n + 1
 }
+
 
 // Verify nextPowerOf2 works correctly at compile time
 var _ = nextPowerOf2(1024)      // Should be 1024
@@ -47,14 +49,16 @@ type SliceRef struct {
 	Cap    uint32
 }
 
+// IsNil returns true if the slice reference is empty.
 func (r SliceRef) IsNil() bool {
 	return r.Offset == 0 && r.Len == 0
 }
 
 type slab struct {
-	id     uint32
-	data   []byte
-	offset uint32 // current allocation pointer (relative to slab)
+	id         uint32
+	generation uint64 // Generation ID for isolation
+	data       []byte
+	offset     uint32 // current allocation pointer (relative to slab)
 }
 
 // ArenaStats holds memory usage information about the arena.
@@ -63,28 +67,48 @@ type ArenaStats struct {
 	UsedBytes     int64
 }
 
-// SlabArena manages large blocks of memory.
-type SlabArena struct {
-	mu      sync.Mutex              // Only guards Alloc (writes)
-	slabs   atomic.Pointer[[]*slab] // Lock-free access to slabs slice
-	slabCap uint32                  // capacity in BYTES
-	alloc   memory.Allocator        // Optional custom allocator (e.g. NUMA)
+// ArenaStatsRecord holds atomic counters for arena pressure tracking.
+// This object is registered in the global registry to avoid leaking the arena itself.
+type ArenaStatsRecord struct {
+	TotalCapacity atomic.Int64
+	UsedBytes     atomic.Int64
+	Active        atomic.Bool
 }
 
+// SlabArena manages large blocks of memory.
+type SlabArena struct {
+	mu         sync.Mutex              // Only guards Alloc (writes)
+	slabs      atomic.Pointer[[]*slab] // Lock-free access to slabs slice
+	slabCap    uint32                  // capacity in BYTES
+	generation atomic.Uint64           // Current generation for new slabs
+	alloc      memory.Allocator        // Optional custom allocator (e.g. NUMA)
+	stats      *ArenaStatsRecord
+	refs       atomic.Int32            // Reference count for safe shared use
+}
+
+// Stats returns the current memory usage statistics for the arena.
 func (a *SlabArena) Stats() ArenaStats {
-	slabsPtr := a.slabs.Load()
-	if slabsPtr == nil {
-		return ArenaStats{}
+	return ArenaStats{
+		TotalCapacity: a.stats.TotalCapacity.Load(),
+		UsedBytes:     a.stats.UsedBytes.Load(),
 	}
-	slabs := *slabsPtr
-	stats := ArenaStats{
-		TotalCapacity: int64(len(slabs)) * int64(a.slabCap),
+}
+
+// StatsRecord returns the underlying atomic stats record.
+func (a *SlabArena) StatsRecord() *ArenaStatsRecord {
+	return a.stats
+}
+
+// Retain increments the reference count.
+func (a *SlabArena) Retain() {
+	a.refs.Add(1)
+}
+
+// Release decrements the reference count and calls Free if it reaches zero.
+func (a *SlabArena) Release() {
+	if a.refs.Add(-1) == 0 {
+		a.Free()
 	}
-	// Note: We need to sum up used portions. This is a bit slow but okay for tuning.
-	for _, s := range slabs {
-		stats.UsedBytes += int64(s.offset)
-	}
-	return stats
 }
 
 // NewSlabArena creates a new arena with specified slab byte size.
@@ -102,15 +126,33 @@ func NewSlabArenaWithAllocator(slabSizeBytes int, alloc memory.Allocator) *SlabA
 	s := &SlabArena{
 		slabCap: uint32(slabSizeBytes), // #nosec G115
 		alloc:   alloc,
+		stats:   &ArenaStatsRecord{},
 	}
+	s.refs.Store(1) // Initial reference
+	s.stats.Active.Store(true)
+
 	// Initialize with empty slice
 	empty := make([]*slab, 0)
 	s.slabs.Store(&empty)
 
-	// Register with global registry for GC tuning
-	RegisterArena(s)
+	// Set finalizer to automatically unregister when the arena is GC'd.
+	// This ensures we don't leak stats records even if Release/Free isn't called.
+	runtime.SetFinalizer(s, func(arena *SlabArena) {
+		UnregisterArena(arena.stats)
+	})
 
 	return s
+}
+
+// BumpGeneration increments the arena's generation ID.
+// All subsequent allocations will occur in a new slab belonging to this generation.
+func (a *SlabArena) BumpGeneration() uint64 {
+	return a.generation.Add(1)
+}
+
+// GetGeneration returns the current generation ID of the arena.
+func (a *SlabArena) GetGeneration() uint64 {
+	return a.generation.Load()
 }
 
 // Alloc reserves space for 'size' bytes.
@@ -172,6 +214,9 @@ func (a *SlabArena) allocFast(size int) (uint64, bool) {
 		}
 
 		active := slabs[len(slabs)-1]
+		if active.generation != a.generation.Load() {
+			return 0, false // Force slow path for new generation
+		}
 
 		oldOffset := atomic.LoadUint32(&active.offset)
 		newOffset := oldOffset + totalNeeded
@@ -200,19 +245,88 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	}
 	needed := uint32(size) // #nosec G115
 	if needed > a.slabCap {
-		return 0, fmt.Errorf("alloc request %d exceeds slab capacity %d", size, a.slabCap)
+		// Dynamic slab capacity expansion: allocate a contiguous block spanning multiple virtual slots
+		numSlots := (needed + a.slabCap - 1) / a.slabCap
+		allocSize := int(numSlots * a.slabCap)
+
+		var buf []byte
+		if a.alloc != nil {
+			buf = a.alloc.Allocate(allocSize)
+		} else {
+			buf = GetSlab(allocSize)
+		}
+
+		a.mu.Lock()
+		currentSlabsPtr := a.slabs.Load()
+		var currentSlabs []*slab
+		if currentSlabsPtr != nil {
+			currentSlabs = *currentSlabsPtr
+		}
+
+		newID := uint32(len(currentSlabs) + 1) // #nosec G115
+		var start uint32
+		if newID == 1 {
+			start = uint32(align) // #nosec G115 -- intentional conversion
+		}
+
+		newOffset := start + needed
+		if newOffset%8 != 0 {
+			newOffset += 8 - (newOffset % 8)
+		}
+
+		primarySlab := &slab{
+			id:         newID,
+			generation: a.generation.Load(),
+			data:       buf,
+			offset:     newOffset,
+		}
+
+		if zero {
+			clear(buf[start : start+needed])
+		}
+
+		newSlabs := make([]*slab, len(currentSlabs)+int(numSlots))
+		copy(newSlabs, currentSlabs)
+		newSlabs[len(currentSlabs)] = primarySlab
+
+		for i := 1; i < int(numSlots); i++ {
+			newSlabs[len(currentSlabs)+i] = &slab{
+				id:         newID + uint32(i),
+				generation: a.generation.Load(),
+				data:       nil,
+				offset:     0,
+			}
+		}
+
+		a.slabs.Store(&newSlabs)
+
+		a.stats.TotalCapacity.Add(int64(allocSize))
+		a.stats.UsedBytes.Add(int64(newOffset))
+
+		a.mu.Unlock()
+
+		metrics.ArenaSlabsTotal.Add(float64(numSlots))
+		metrics.ArenaAllocatedBytes.WithLabelValues("slab").Add(float64(allocSize))
+
+		globalOffset := (uint64(newID-1) * uint64(a.slabCap)) + uint64(start)
+		return globalOffset, nil
 	}
 
+	var isFastPath bool
+	var fastPathFailed bool
+	var newSlabAllocated bool
+
 	a.mu.Lock()
-	defer a.mu.Unlock()
 
 	// Try fast path while holding the mutex
-	if size <= 64 && align <= 8 {
+	if size <= 256 && align <= 8 {
 		if offset, ok := a.allocFast(size); ok {
+			a.mu.Unlock()
 			metrics.ArenaFastPathTotal.Inc()
+			a.stats.UsedBytes.Add(int64(size))
 			return offset, nil
 		}
-		metrics.ArenaFastPathFailedTotal.Inc()
+		fastPathFailed = true
 	}
 
 	// Load current state
@@ -222,6 +336,11 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	var active *slab
 	if len(currentSlabs) > 0 {
 		active = currentSlabs[len(currentSlabs)-1]
+		// Generation isolation: if the active slab belongs to an older generation,
+		// force a new slab allocation to ensure isolation.
+		if active.generation != a.generation.Load() {
+			active = nil
+		}
 	}
 
 	uAlign := uint32(align) // #nosec G115
@@ -243,9 +362,8 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 				if atomic.CompareAndSwapUint32(&active.offset, oldOffset, newOffset) {
 					start = oldOffset + pad
 					claimed = true
-					if pad > 0 {
-						metrics.AdjacencyPaddingBytes.Add(float64(pad))
-					}
+					a.stats.UsedBytes.Add(int64(newOffset - oldOffset))
+					// Metrics moved out of lock
 					break
 				}
 			} else {
@@ -264,10 +382,10 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 		} else {
 			buf = GetSlab(int(a.slabCap))
 		}
-		newId := uint32(len(currentSlabs) + 1) // #nosec G115
+		newID := uint32(len(currentSlabs) + 1) // #nosec G115
 
 		var pad uint32
-		if newId == 1 {
+		if newID == 1 {
 			// Burn alignment bytes to move away from 0
 			pad = uAlign
 			start = pad
@@ -279,9 +397,10 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 		}
 
 		newSlab := &slab{
-			id:     newId,
-			data:   buf,
-			offset: newOffset,
+			id:         newID,
+			generation: a.generation.Load(),
+			data:       buf,
+			offset:     newOffset,
 		}
 
 		// Zero memory before publishing
@@ -294,14 +413,29 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 		newSlabs[len(currentSlabs)] = newSlab
 		a.slabs.Store(&newSlabs)
 
-		active = newSlab
+		a.stats.TotalCapacity.Add(int64(a.slabCap))
+		a.stats.UsedBytes.Add(int64(newOffset))
 
-		metrics.ArenaSlabsTotal.Inc()
-		metrics.ArenaAllocatedBytes.WithLabelValues("slab").Add(float64(a.slabCap))
+		active = newSlab
+		newSlabAllocated = true
 	} else {
 		if zero {
 			clear(active.data[start : start+needed])
 		}
+	}
+
+	a.mu.Unlock()
+
+	// Update metrics outside the lock
+	if isFastPath {
+		metrics.ArenaFastPathTotal.Inc()
+	} else if fastPathFailed {
+		metrics.ArenaFastPathFailedTotal.Inc()
+	}
+
+	if newSlabAllocated {
+		metrics.ArenaSlabsTotal.Inc()
+		metrics.ArenaAllocatedBytes.WithLabelValues("slab").Add(float64(a.slabCap))
 	}
 
 	slabIdx := uint64(active.id - 1)
@@ -315,6 +449,7 @@ func (a *SlabArena) SlabSize() int {
 	return int(a.slabCap)
 }
 
+// Free releases all memory associated with the arena.
 func (a *SlabArena) Free() {
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -324,25 +459,34 @@ func (a *SlabArena) Free() {
 		return
 	}
 	currentSlabs := *currentSlabsPtr
-
-	for _, s := range currentSlabs {
-		if a.alloc != nil {
-			a.alloc.Free(s.data)
-		} else {
-			PutSlab(s.data)
-		}
-		s.data = nil
-	}
-
 	empty := make([]*slab, 0)
 	a.slabs.Store(&empty)
 
-	UnregisterArena(a)
+	for _, s := range currentSlabs {
+		if s.data != nil {
+			if a.alloc != nil {
+				a.alloc.Free(s.data)
+			} else {
+				PutSlab(s.data)
+			}
+		}
+	}
+
+
+	UnregisterArena(a.stats)
+	a.stats.Active.Store(false)
+	a.stats.TotalCapacity.Store(0)
+	a.stats.UsedBytes.Store(0)
 }
 
-// Get returns the byte slice.
+// Get retrieves the byte slice from the arena.
 func (a *SlabArena) Get(offset uint64, length uint32) []byte {
-	if offset == 0 || length == 0 {
+	return a.GetWithGeneration(offset, length, math.MaxUint64)
+}
+
+// GetWithGeneration retrieves the byte slice from the arena, enforcing generation isolation.
+func (a *SlabArena) GetWithGeneration(offset uint64, length uint32, maxGeneration uint64) []byte {
+	if length == 0 {
 		return nil
 	}
 
@@ -358,6 +502,37 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 	}
 
 	s := slabs[slabIdx]
+
+	// Handle placeholder slabs for large allocations
+	if s.data == nil {
+		var realSlab *slab
+		var realIdx int
+		for j := int(slabIdx); j >= 0; j-- { // #nosec G115 -- intentional conversion
+			if slabs[j].data != nil {
+				realSlab = slabs[j]
+				realIdx = j
+				break
+			}
+		}
+		if realSlab == nil {
+			return nil
+		}
+		// Generation isolation check
+		if realSlab.generation > maxGeneration {
+			return nil
+		}
+		adjustedOffset := localOffset + uint32(int(slabIdx)-realIdx)*a.slabCap // #nosec G115 -- intentional conversion
+		if uint64(adjustedOffset)+uint64(length) > uint64(len(realSlab.data)) {
+			return nil
+		}
+		return realSlab.data[adjustedOffset : adjustedOffset+length]
+	}
+
+	// Generation isolation check
+	if s.generation > maxGeneration {
+		return nil
+	}
+
 	if uint64(localOffset)+uint64(length) > uint64(len(s.data)) {
 		return nil
 	}
@@ -365,8 +540,6 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 	return s.data[localOffset : localOffset+length]
 }
 
-// GetPointer returns unsafe.Pointer to the data.
-// Use with caution.
 // GetPointer returns unsafe.Pointer to the data.
 // Use with caution.
 func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
@@ -384,8 +557,25 @@ func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
 		return nil
 	}
 	s := slabs[slabIdx]
+	if s.data == nil {
+		var realSlab *slab
+		var realIdx int
+		for j := int(slabIdx); j >= 0; j-- { // #nosec G115 -- intentional conversion
+			if slabs[j].data != nil {
+				realSlab = slabs[j]
+				realIdx = j
+				break
+			}
+		}
+		if realSlab != nil {
+			adjusted := localOffset + uint32(int(slabIdx)-realIdx)*a.slabCap // #nosec G115 -- intentional conversion
+			return unsafe.Pointer(&realSlab.data[adjusted]) // #nosec G103
+		}
+		return nil
+	}
 	return unsafe.Pointer(&s.data[localOffset]) // #nosec G103
 }
+// Save serializes the arena's contents to the given writer.
 func (a *SlabArena) Save(w io.Writer) error {
 	slabsPtr := a.slabs.Load()
 	if slabsPtr == nil {
@@ -425,13 +615,18 @@ func (a *SlabArena) Save(w io.Writer) error {
 
 		// Write data
 		// fmt.Printf("Saving slab %d, data len %d, offset %d\n", s.id, len(s.data), s.offset)
-		if _, err := w.Write(s.data); err != nil {
+		data := s.data
+		if len(data) == 0 {
+			data = make([]byte, a.slabCap)
+		}
+		if _, err := w.Write(data); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
+// Load deserializes the arena's contents from the given reader.
 func (a *SlabArena) Load(r io.Reader) error {
 	var slabCap uint32
 	if err := binary.Read(r, binary.LittleEndian, &slabCap); err != nil {
@@ -480,6 +675,7 @@ func (a *SlabArena) Load(r io.Reader) error {
 	return nil
 }
 
+// LoadMmap maps the arena's contents from the given file using mmap.
 func (a *SlabArena) LoadMmap(f *os.File) error {
 	var slabCap uint32
 	if err := binary.Read(f, binary.LittleEndian, &slabCap); err != nil {
@@ -511,8 +707,7 @@ func (a *SlabArena) LoadMmap(f *os.File) error {
 		}
 		
 		// Mmap the slab data
-		// fmt.Printf("Mmapping slab %d at offset %d size %d (pageSize %d)\n", i, currOff, a.slabCap, pageSize)
-		data, err := unix.Mmap(int(f.Fd()), currOff, int(a.slabCap), unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED) // #nosec G115 -- intentional conversion
+		data, err := Mmap(int(f.Fd()), currOff, int(a.slabCap), true)
 		if err != nil {
 			return fmt.Errorf("mmap slab %d failed: %v", i, err)
 		}
@@ -529,5 +724,35 @@ func (a *SlabArena) LoadMmap(f *os.File) error {
 		}
 	}
 	a.slabs.Store(&slabs)
+	return nil
+}
+// IsOffHeap returns true if the arena is backed by off-heap memory.
+func (a *SlabArena) IsOffHeap() bool {
+	if a.alloc == nil {
+		return false
+	}
+	_, ok := a.alloc.(*OffHeapAllocator)
+	return ok
+}
+
+// ConvertToOffHeap migrates all existing slabs to off-heap memory using the provided allocator.
+func (a *SlabArena) ConvertToOffHeap(alloc memory.Allocator) error {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	ptr := a.slabs.Load()
+	if ptr == nil {
+		return nil
+	}
+	slabs := *ptr
+	for _, s := range slabs {
+		newData := alloc.Allocate(len(s.data))
+		if newData == nil {
+			return fmt.Errorf("off-heap allocation failed")
+		}
+		copy(newData, s.data)
+		s.data = newData
+	}
+	a.alloc = alloc
 	return nil
 }

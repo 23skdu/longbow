@@ -5,43 +5,53 @@ import "errors"
 var (
 	// Function pointer for SQ8 distance
 	euclideanSQ8Impl func(a, b []byte) (int32, error)
+	dotSQ8Impl       func(a, b []byte) (int32, error)
 )
 
 func init() {
 	euclideanSQ8Impl = EuclideanSQ8Generic
-	// Architecture specific overrides will be set in their respective files or here if exported?
-	// Actually, usually we set the global variable in init() but we need to know features.
-	// features are in simd.go.
-	// We can update the pointer in a wrapper init or expose a SetUp function.
-	// Note: simd.go likely has an init() that runs. We should ensure order or do it lazily?
-	// Easier: Just let init() in this file set default, and platform specific files use init to override
-	// provided they run after features calculation.
-	// BUT features calculation is in simd.go init().
-	// Go init order is file name lexical? No.
-	// Safe way: call setup in simd.go or usage lazy load.
-	// Let's use lazy initialization or rely on simd package init.
-	// Actually simd package init calculates features.
-	// We can just use a function that checks implementation string or features struct.
+	dotSQ8Impl = DotSQ8Generic
+	// Architecture specific overrides will be set in their respective files
 }
 
 // EuclideanDistanceSQ8 computes the Euclidean distance between two uint8 vectors.
 // It returns the squared Euclidean distance as an int32 to avoid overflow and expensive sqrt.
-// The actual float distance would be scale * scale * distance.
-// Arguments:
-//
-//	a, b: Quantized vectors (uint8)
-//
-// Returns:
-//
-//	Squared L2 distance (int32)
 func EuclideanDistanceSQ8(a, b []byte) (int32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: vector length mismatch")
 	}
-	// Direct Call to function pointer
 	return euclideanSQ8Impl(a, b)
 }
 
+// DotDistanceSQ8 computes the dot product between two uint8 vectors.
+func DotDistanceSQ8(a, b []byte) (int32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: vector length mismatch")
+	}
+	return dotSQ8Impl(a, b)
+}
+
+// DotSQ8Generic calculates the dot product for SQ8 quantized vectors.
+func DotSQ8Generic(a, b []byte) (int32, error) {
+	var sum int32
+	i := 0
+	for ; i <= len(a)-8; i += 8 {
+		sum += int32(a[i+0])*int32(b[i+0]) +
+			int32(a[i+1])*int32(b[i+1]) +
+			int32(a[i+2])*int32(b[i+2]) +
+			int32(a[i+3])*int32(b[i+3]) +
+			int32(a[i+4])*int32(b[i+4]) +
+			int32(a[i+5])*int32(b[i+5]) +
+			int32(a[i+6])*int32(b[i+6]) +
+			int32(a[i+7])*int32(b[i+7])
+	}
+	for ; i < len(a); i++ {
+		sum += int32(a[i]) * int32(b[i])
+	}
+	return sum, nil
+}
+
+// EuclideanSQ8Generic calculates the squared Euclidean distance for SQ8 quantized vectors.
 func EuclideanSQ8Generic(a, b []byte) (int32, error) {
 	var sum int32
 	i := 0

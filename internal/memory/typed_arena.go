@@ -1,36 +1,73 @@
 package memory
 
 import (
+	"errors"
+	"math"
 	"sync"
+	"sync/atomic"
 	"unsafe"
 )
 
 // TypedArena wraps a SlabArena to provide typed slice access.
 type TypedArena[T any] struct {
-	arena *SlabArena
+	arena atomic.Pointer[SlabArena]
 	mu    sync.RWMutex
 }
 
+// NewTypedArena creates a new typed arena wrapper around a SlabArena.
 func NewTypedArena[T any](arena *SlabArena) *TypedArena[T] {
-	return &TypedArena[T]{
-		arena: arena,
-	}
+	ta := &TypedArena[T]{}
+	ta.arena.Store(arena)
+	return ta
 }
 
 func (ta *TypedArena[T]) Free() {
-	if ta.arena != nil {
-		ta.arena.Free()
-		ta.arena = nil
+	ta.Release()
+}
+
+func (ta *TypedArena[T]) Retain() {
+	a := ta.arena.Load()
+	if a != nil {
+		a.Retain()
+	}
+}
+
+func (ta *TypedArena[T]) Release() {
+	a := ta.arena.Load()
+	if a != nil {
+		a.Release()
+		ta.arena.Store(nil)
 	}
 }
 
 func (ta *TypedArena[T]) Slab() *SlabArena {
-	return ta.arena
+	return ta.arena.Load()
+}
+
+// BumpGeneration increments the underlying arena's generation.
+func (ta *TypedArena[T]) BumpGeneration() uint64 {
+	a := ta.arena.Load()
+	if a != nil {
+		return a.BumpGeneration()
+	}
+	return 0
+}
+
+// SetGeneration sets the underlying arena's generation.
+func (ta *TypedArena[T]) SetGeneration(gen uint64) {
+	a := ta.arena.Load()
+	if a != nil {
+		a.generation.Store(gen)
+	}
 }
 
 // TotalAllocated returns total bytes allocated in the arena.
 func (ta *TypedArena[T]) TotalAllocated() int64 {
-	slabsPtr := ta.arena.slabs.Load()
+	a := ta.arena.Load()
+	if a == nil {
+		return 0
+	}
+	slabsPtr := a.slabs.Load()
 	if slabsPtr == nil {
 		return 0
 	}
@@ -57,14 +94,14 @@ func (ta *TypedArena[T]) Compact(liveRefs []SliceRef) (*CompactionStats, error) 
 		totalLiveBytes += int64(ref.Len) * int64(elemSize)
 	}
 
-	oldSlabs := *ta.arena.slabs.Load()
+	oldSlabs := *ta.Slab().slabs.Load()
 	oldSlabCount := len(oldSlabs)
 	var oldTotalBytes int64
 	for _, slab := range oldSlabs {
 		oldTotalBytes += int64(slab.offset)
 	}
 
-	newArena := NewSlabArena(int(ta.arena.slabCap))
+	newArena := NewSlabArena(int(ta.Slab().slabCap))
 	newTypedArena := NewTypedArena[T](newArena)
 
 	newRefs := make([]SliceRef, len(liveRefs))
@@ -96,7 +133,7 @@ func (ta *TypedArena[T]) Compact(liveRefs []SliceRef) (*CompactionStats, error) 
 		FragmentationPct: fragmentationPct,
 	}
 
-	ta.arena = newArena
+	ta.arena.Store(newArena)
 
 	return stats, nil
 }
@@ -106,7 +143,11 @@ func (ta *TypedArena[T]) AllocSlice(count int) (SliceRef, error) {
 	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
 	totalBytes := count * elemSize
 
-	offset, err := ta.arena.Alloc(totalBytes)
+	a := ta.arena.Load()
+	if a == nil {
+		return SliceRef{}, errors.New("arena is nil")
+	}
+	offset, err := a.Alloc(totalBytes)
 	if err != nil {
 		return SliceRef{}, err
 	}
@@ -125,7 +166,11 @@ func (ta *TypedArena[T]) AllocSliceDirty(count int) (SliceRef, error) {
 	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
 	totalBytes := count * elemSize
 
-	offset, err := ta.arena.AllocDirty(totalBytes)
+	a := ta.arena.Load()
+	if a == nil {
+		return SliceRef{}, errors.New("arena is nil")
+	}
+	offset, err := a.AllocDirty(totalBytes)
 	if err != nil {
 		return SliceRef{}, err
 	}
@@ -143,7 +188,11 @@ func (ta *TypedArena[T]) AllocSliceAligned(count, align int) (SliceRef, error) {
 	elemSize := int(unsafe.Sizeof(zero)) // #nosec G115
 	totalBytes := count * elemSize
 
-	offset, err := ta.arena.AllocAligned(totalBytes, align)
+	a := ta.arena.Load()
+	if a == nil {
+		return SliceRef{}, errors.New("arena is nil")
+	}
+	offset, err := a.AllocAligned(totalBytes, align)
 	if err != nil {
 		return SliceRef{}, err
 	}
@@ -157,13 +206,22 @@ func (ta *TypedArena[T]) AllocSliceAligned(count, align int) (SliceRef, error) {
 
 // Get retrieves a typed slice from the arena using a SliceRef.
 func (ta *TypedArena[T]) Get(ref SliceRef) []T {
-	if ref.Offset == 0 || ref.Len == 0 {
+	return ta.GetWithGeneration(ref, math.MaxUint64)
+}
+
+// GetWithGeneration retrieves a typed slice from the arena, enforcing generation isolation.
+func (ta *TypedArena[T]) GetWithGeneration(ref SliceRef, maxGeneration uint64) []T {
+	if ref.Len == 0 {
 		return nil
 	}
 
 	var zero T
 	elemSize := uint32(unsafe.Sizeof(zero)) // #nosec G115
-	byteSlice := ta.arena.Get(ref.Offset, ref.Len*elemSize)
+	a := ta.arena.Load()
+	if a == nil {
+		return nil
+	}
+	byteSlice := a.GetWithGeneration(ref.Offset, ref.Len*elemSize, maxGeneration)
 	if len(byteSlice) == 0 {
 		return nil
 	}

@@ -14,10 +14,15 @@ import (
 type QuantizationType string
 
 const (
+	// QuantizationFloat32 uses 32-bit floating point numbers (full precision).
 	QuantizationFloat32 QuantizationType = "float32"
+	// QuantizationFloat16 uses 16-bit floating point numbers.
 	QuantizationFloat16 QuantizationType = "float16"
+	// QuantizationInt8 uses 8-bit integers.
 	QuantizationInt8        QuantizationType = "int8"
+	// QuantizationPQ uses Product Quantization.
 	QuantizationPQ          QuantizationType = "pq"
+	// QuantizationTurboQuant uses the high-performance TurboQuant compression.
 	QuantizationTurboQuant QuantizationType = "turboquant"
 )
 
@@ -100,8 +105,9 @@ func (t *QuantizationTuner) TuneDataset(name string, ds *Dataset) {
 
 	// 2. Memory Pressure Check
 	var memoryPressure float64
-	if t.store.tuner != nil {
-		memoryPressure = t.store.tuner.GetUtilizationRatio()
+	tuner := t.store.tuner.Load()
+	if tuner != nil {
+		memoryPressure = tuner.GetUtilizationRatio()
 	}
 
 	// 3. Decision Logic

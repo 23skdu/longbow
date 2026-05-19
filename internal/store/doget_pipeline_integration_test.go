@@ -18,11 +18,11 @@ import (
 func (s *VectorStore) StoreRecords(name string, records []arrow.RecordBatch) error {
 	ds := &Dataset{
 		Name:    name,
-		Records: make([]arrow.RecordBatch, 0, len(records)),
+		Records: NewLockFreeSlice[arrow.RecordBatch](),
 	}
 	for _, rec := range records {
 		rec.Retain()
-		ds.Records = append(ds.Records, rec)
+		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	}
 	s.updateDatasets(func(m map[string]*Dataset) {
 		m[name] = ds

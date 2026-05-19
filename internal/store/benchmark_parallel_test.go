@@ -38,7 +38,7 @@ func BenchmarkParallelSearch(b *testing.B) {
 	ds := &Dataset{
 		Name:    "bench_parallel",
 		Schema:  schema,
-		Records: make([]arrow.RecordBatch, 0),
+		Records: NewLockFreeSlice[arrow.RecordBatch](),
 		dataMu:  sync.RWMutex{},
 	}
 	ds.Index = NewTestHNSWIndex(ds)
@@ -60,12 +60,12 @@ func BenchmarkParallelSearch(b *testing.B) {
 
 		rec := bld.NewRecordBatch()
 		ds.dataMu.Lock()
-		ds.Records = append(ds.Records, rec)
+		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 		ds.dataMu.Unlock()
 
 		// Add to index
 		for j := 0; j < int(rec.NumRows()); j++ {
-			_, _ = ds.Index.AddByLocation(context.Background(), len(ds.Records)-1, j)
+			_, _ = ds.Index.AddByLocation(context.Background(), len(ds.Records.Read())-1, j)
 		}
 		bld.Release()
 	}

@@ -21,22 +21,39 @@ type HNSWPredicate interface {
 type VectorDataType int
 
 const (
+	// VectorTypeUnknown represents an uninitialized or unsupported vector type.
 	VectorTypeUnknown VectorDataType = iota
+	// VectorTypeFloat32 represents a 32-bit floating point vector.
 	VectorTypeFloat32
+	// VectorTypeInt8 represents an 8-bit integer vector.
 	VectorTypeInt8
+	// VectorTypeUint8 represents an 8-bit unsigned integer vector.
 	VectorTypeUint8
+	// VectorTypeFloat16 represents a 16-bit floating point vector.
 	VectorTypeFloat16
+	// VectorTypeFloat64 represents a 64-bit floating point vector.
 	VectorTypeFloat64
+	// VectorTypeComplex64 represents a 64-bit complex number vector.
 	VectorTypeComplex64
+	// VectorTypeComplex128 represents a 128-bit complex number vector.
 	VectorTypeComplex128
+	// VectorTypeInt16 represents a 16-bit integer vector.
 	VectorTypeInt16
+	// VectorTypeUint16 represents a 16-bit unsigned integer vector.
 	VectorTypeUint16
+	// VectorTypeInt32 represents a 32-bit integer vector.
 	VectorTypeInt32
+	// VectorTypeUint32 represents a 32-bit unsigned integer vector.
 	VectorTypeUint32
+	// VectorTypeInt64 represents a 64-bit integer vector.
 	VectorTypeInt64
+	// VectorTypeUint64 represents a 64-bit unsigned integer vector.
 	VectorTypeUint64
+	// VectorTypeBQ represents a binary quantized vector.
 	VectorTypeBQ
+	// VectorTypePQ represents a product quantized vector.
 	VectorTypePQ
+	// VectorTypeTQ represents a TurboQuant compressed vector.
 	VectorTypeTQ
 )
 
@@ -130,11 +147,11 @@ func (vdt VectorDataType) ElementSize() int {
 	}
 }
 
-// Candidate represents a search result candidate with ID and distance
+// Candidate represents a search result candidate before metadata retrieval.
 type Candidate = basecore.Candidate
 
 // MaxNeighbors is the maximum number of neighbors per node in HNSW
-const MaxNeighbors = 128
+const MaxNeighbors = 512
 
 // ChunkSize is the size of data chunks for memory allocation
 const ChunkSize = 1024
@@ -146,23 +163,39 @@ const ArrowMaxLayers = 16
 // HNSW version fields are uint32: [Lock Bit (1 bit) | Version (31 bits)]
 const NodeLockMask uint32 = 1 << 31
 
-// VectorID is a type alias for vector identifiers
+// VectorID is a type alias for the unique identifier of a vector.
 type VectorID = basecore.VectorID
 
-// SearchResult represents a single flight search result
+// SearchResult represents a final search result with ID, distance, and metadata.
 type SearchResult = basecore.SearchResult
 
-// Location represents a physical location of a row
+// Location represents the physical batch and row coordinates of a record.
 type Location = basecore.Location
+
+// PackLocation packs a Location into a uint64.
+func PackLocation(loc Location) uint64 {
+	return basecore.PackLocation(loc)
+}
+
+// UnpackLocation unpacks a uint64 into a Location.
+func UnpackLocation(val uint64) Location {
+	return basecore.UnpackLocation(val)
+}
 
 // LocationChunkSize is the size of chunks in the location store
 const LocationChunkSize = 1024
 
+// GeoPoint alias for basecore.GeoPoint.
 type GeoPoint = basecore.GeoPoint
+// GeoBoundingBox alias for basecore.GeoBoundingBox.
 type GeoBoundingBox = basecore.GeoBoundingBox
+// GeoSearchRequest alias for basecore.GeoSearchRequest.
 type GeoSearchRequest = basecore.GeoSearchRequest
+// VectorSearchRequest alias for basecore.VectorSearchRequest.
 type VectorSearchRequest = basecore.VectorSearchRequest
+// TemporalSearchRequest alias for basecore.TemporalSearchRequest.
 type TemporalSearchRequest = basecore.TemporalSearchRequest
+// TemporalAggregationRequest alias for basecore.TemporalAggregationRequest.
 type TemporalAggregationRequest = basecore.TemporalAggregationRequest
 
 // SearchOptions defines the options for search operations

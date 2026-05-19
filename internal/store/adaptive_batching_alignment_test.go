@@ -24,6 +24,8 @@ func TestDoPut_AdaptiveBatchingAlignment(t *testing.T) {
 		logger:           logger,
 		persistenceQueue: make(chan persistenceJob, 100),
 		ingestionQueue:   NewIngestionRingBuffer(100),
+		pooledMem:        mem,
+		Breakers:         NewCircuitBreakerRegistry(DefaultCircuitBreakerConfig()),
 	}
 	emptyMap := make(map[string]*Dataset)
 	s.datasets.Store(&emptyMap)
@@ -60,17 +62,30 @@ func TestDoPut_AdaptiveBatchingAlignment(t *testing.T) {
 	// Create a writer that sends to our mock client stream
 	w := flight.NewRecordWriter(clientStream, ipc.WithSchema(schema), ipc.WithAllocator(mem))
 
+	// Collect chunks from channel with timeout
+	chunks := make([]*flight.FlightData, 0)
+	collectDone := make(chan struct{})
+	go func() {
+		for fd := range recvCh {
+			chunks = append(chunks, fd)
+		}
+		close(collectDone)
+	}()
+
 	for i := 0; i < 10; i++ {
 		err := w.Write(rec)
 		require.NoError(t, err)
 	}
 	err := w.Close()
 	require.NoError(t, err)
+	_ = clientStream.CloseSend()
 
-	// Collect chunks from channel
-	chunks := make([]*flight.FlightData, 0)
-	for fd := range recvCh {
-		chunks = append(chunks, fd)
+	// Wait for collection to finish with timeout
+	select {
+	case <-collectDone:
+		// Success
+	case <-time.After(5 * time.Second):
+		t.Fatal("Timeout waiting for FlightData chunks")
 	}
 
 	// Add descriptor to the first chunk (schema)
@@ -89,7 +104,7 @@ func TestDoPut_AdaptiveBatchingAlignment(t *testing.T) {
 
 	// Drain persistenceQueue to count flushes
 	// We might need to wait a tiny bit since s.DoPut sends to channels
-	time.Sleep(100 * time.Millisecond)
+	time.Sleep(500 * time.Millisecond)
 
 	flushCount := 0
 drain_p:
@@ -102,16 +117,20 @@ drain_p:
 			break drain_p
 		}
 	}
+	t.Logf("Flush count: %d", flushCount)
 
 	// Drain ingestionQueue to avoid leaks
+	ingestCount := 0
 drain_i:
 	for {
 		job, ok := s.ingestionQueue.Pop()
 		if !ok {
 			break drain_i
 		}
-		job.batch.Release()
+		job.Batch.Release()
+		ingestCount++
 	}
+	t.Logf("Ingest count: %d", ingestCount)
 
 	// With 32MB batching limit:
 	// Each rec is 2MB. 10 records = 20MB total.

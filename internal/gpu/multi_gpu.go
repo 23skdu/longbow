@@ -15,7 +15,7 @@ import (
 )
 
 type MultiGPUConfig struct {
-	DeviceIDs       []int
+	DeviceIDs       []int32
 	Strategy        MultiGPUStrategy
 	MaxMemoryPerGPU int64
 	EnableMigration bool
@@ -47,7 +47,7 @@ func (s MultiGPUStrategy) String() string {
 }
 
 type GPUDevice struct {
-	ID         int
+	ID         int32
 	Index      types.Index
 	MemPool    *memory.GPUMemPool
 	Info       *types.GPUInfo
@@ -81,7 +81,7 @@ func NewMultiGPUManager(config MultiGPUConfig, logger zerolog.Logger) (*MultiGPU
 		if err != nil {
 			logger.Warn().
 				Err(err).
-				Int("device_id", id).
+				Int32("device_id", id).
 				Msg("Failed to initialize GPU device")
 			continue
 		}
@@ -121,7 +121,7 @@ func (m *MultiGPUManager) startMetricsCollector() {
 	}()
 }
 
-func (m *MultiGPUManager) initializeDevice(deviceID int) (*GPUDevice, error) {
+func (m *MultiGPUManager) initializeDevice(deviceID int32) (*GPUDevice, error) {
 	gpuConfig := types.GPUConfig{
 		Backend:  types.BackendCUDA,
 		DeviceID: deviceID,
@@ -154,7 +154,7 @@ func (m *MultiGPUManager) initializeDevice(deviceID int) (*GPUDevice, error) {
 	}
 
 	m.logger.Info().
-		Int("device_id", deviceID).
+		Int32("device_id", deviceID).
 		Str("name", info.Name).
 		Int64("memory_mb", info.MemoryMB).
 		Msg("GPU device initialized")
@@ -162,7 +162,7 @@ func (m *MultiGPUManager) initializeDevice(deviceID int) (*GPUDevice, error) {
 	return device, nil
 }
 
-func (m *MultiGPUManager) GetDevice(deviceID int) (*GPUDevice, error) {
+func (m *MultiGPUManager) GetDevice(deviceID int32) (*GPUDevice, error) {
 	m.deviceMu.RLock()
 	defer m.deviceMu.RUnlock()
 
@@ -493,7 +493,7 @@ type MultiGPUStats struct {
 }
 
 type DeviceStats struct {
-	ID          int
+	ID          int32
 	Name        string
 	TotalMemory int64
 	UsedMemory  int64
@@ -568,7 +568,7 @@ func (m *MultiGPUManager) ReplicateToAll(ids []int64, vectors []float32) error {
 
 func DefaultMultiGPUConfig() MultiGPUConfig {
 	return MultiGPUConfig{
-		DeviceIDs:       []int{0},
+		DeviceIDs:       []int32{0},
 		Strategy:        StrategyRoundRobin,
 		MaxMemoryPerGPU: 0,
 		EnableMigration: false,
@@ -576,15 +576,15 @@ func DefaultMultiGPUConfig() MultiGPUConfig {
 	}
 }
 
-func DetectAvailableDevices() ([]int, error) {
+func DetectAvailableDevices() ([]int32, error) {
 	count := GetDeviceCount()
 	if count == 0 {
 		return nil, fmt.Errorf("no GPU devices detected")
 	}
 
-	devices := make([]int, count)
+	devices := make([]int32, count)
 	for i := 0; i < count; i++ {
-		devices[i] = i
+		devices[i] = int32(i) // #nosec G115
 	}
 
 	return devices, nil

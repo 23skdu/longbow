@@ -6,12 +6,10 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
-// ConsistencyEventual is the default fast search mode.
-// HNSW uses its configured ef and ExactK=false.
+// ConsistencyEventual is the default fast search mode where HNSW uses its configured parameters.
 const ConsistencyEventual = "eventual"
 
-// ConsistencyStrong requests exhaustive search:
-// ExactK is set to true and Ef is promoted to at least 2*K.
+// ConsistencyStrong requests exhaustive search by promoting search parameters to ensure high recall.
 const ConsistencyStrong = "strong"
 
 // ApplyConsistency enforces the Consistency field of opts onto the option

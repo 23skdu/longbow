@@ -7,7 +7,7 @@ import (
 
 // ensureTrained checks if SQ8 training is needed and performs it if sufficient data is accumulated.
 // limitID specifies the max ID to backfill (inclusive).
-func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
+func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32, data *types.GraphData) {
 	if h.sq8Ready.Load() {
 		return
 	}
@@ -47,18 +47,17 @@ func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
 		h.quantizer.Train(h.sq8TrainingBuffer)
 
 		// Backfill existing vectors
-		if limitID >= 0 {
-			currentData := h.data.Load()
+		if limitID >= 0 && data != nil {
 			for i := uint32(0); i <= uint32(limitID); i++ { // #nosec G115
 				cID := types.ChunkID(i)
 				cOff := types.ChunkOffset(i)
 
-				vecChunk := currentData.GetVectorsChunk(cID)
+				vecChunk := data.GetVectorsChunk(cID)
 				if vecChunk == nil {
 					continue
 				}
 
-				f32Stride := currentData.GetPaddedDims()
+				f32Stride := data.GetPaddedDims()
 				sq8Stride := (dims + 63) & ^63
 
 				f32Off := int(cOff) * f32Stride
@@ -68,7 +67,7 @@ func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
 				srcVec := vecChunk[f32Off : f32Off+dims]
 
 				// Encode to SQ8 chunk
-				sq8Chunk := currentData.GetVectorsSQ8Chunk(cID)
+				sq8Chunk := data.GetVectorsSQ8Chunk(cID)
 				if sq8Chunk != nil {
 					sq8Off := int(cOff) * sq8Stride
 					if sq8Off+dims <= len(sq8Chunk) {
@@ -82,6 +81,9 @@ func (h *ArrowHNSW) ensureTrained(limitID int, extraSamples [][]float32) {
 		// Clear buffer
 		h.sq8TrainingBuffer = nil
 		h.sq8Ready.Store(true)
+		if data != nil {
+			atomic.StoreUint32(&data.SQ8Ready, 1)
+		}
 		if gd := h.data.Load(); gd != nil {
 			atomic.StoreUint32(&gd.SQ8Ready, 1)
 		}

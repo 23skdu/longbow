@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestVectorPrefetch_Basic(t *testing.T) {
+func TestVectorPrefetchBasic(t *testing.T) {
 	// Test that prefetching valid memory doesn't crash
 	data := make([]byte, 1024)
 	for i := 0; i < len(data); i += 64 {
@@ -24,7 +24,7 @@ func TestVectorPrefetch_Basic(t *testing.T) {
 	simd.Prefetch(nil)
 }
 
-func TestVectorPrefetch_ProcessChunkWithPrefetch(t *testing.T) {
+func TestVectorPrefetchProcessChunkWithPrefetch(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	dims := 128
 	numVectors := 50
@@ -44,7 +44,7 @@ func TestVectorPrefetch_ProcessChunkWithPrefetch(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 	// Correct constructor usage
 	idx := NewTestHNSWIndex(ds)
@@ -82,7 +82,7 @@ func TestVectorPrefetch_ProcessChunkWithPrefetch(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestVectorPrefetch_Stress(t *testing.T) {
+func TestVectorPrefetchStress(t *testing.T) {
 	// Simplified stress test using public API
 	mem := memory.NewGoAllocator()
 	dims := 64
@@ -96,7 +96,7 @@ func TestVectorPrefetch_Stress(t *testing.T) {
 	rec := makeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
-	ds := &Dataset{Records: []arrow.RecordBatch{rec}}
+	ds := &Dataset{Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec})}
 	idx := NewTestHNSWIndex(ds)
 
 	rowIdxs := make([]int, numVectors)
@@ -114,7 +114,7 @@ func TestVectorPrefetch_Stress(t *testing.T) {
 }
 
 // Fuzz tests preserved but using standard operations
-func FuzzVectorPrefetch_SIMDPrefetch(f *testing.F) {
+func FuzzVectorPrefetchSIMDPrefetch(f *testing.F) {
 	f.Fuzz(func(t *testing.T, size int, offset int) {
 		if size < 0 || size > 10000 {
 			t.Skip()

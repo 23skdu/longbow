@@ -15,6 +15,7 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/23skdu/longbow/pkg/loadbalancing"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -31,6 +32,7 @@ import (
 	"github.com/23skdu/longbow/internal/tracing"
 )
 
+// ListFlights returns a list of available datasets as FlightInfo objects.
 func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightService_ListFlightsServer) error {
 	var ticketQuery qry.TicketQuery
 	var err error
@@ -62,7 +64,7 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 			case "rows":
 				var numRows int64
 				ds.dataMu.RLock()
-				for _, rec := range ds.Records {
+				for _, rec := range ds.Records.Read() {
 					numRows += rec.NumRows()
 				}
 				ds.dataMu.RUnlock()
@@ -93,11 +95,16 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 		}
 
 		if match {
+			metadata := s.getPooledMetadataBuffer(loadbalancing.LoadHintsSize)
+			hints := s.GetLoadHints()
+			hints.Serialize(metadata)
+
 			info := &flight.FlightInfo{
 				FlightDescriptor: &flight.FlightDescriptor{
 					Type: flight.DescriptorPATH,
 					Path: []string{ds.Name},
 				},
+				AppMetadata: metadata,
 			}
 			if err := stream.Send(info); err != nil {
 				return err
@@ -107,27 +114,49 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 	return nil
 }
 
+// GetFlightInfo returns metadata about a specific dataset.
 func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDescriptor) (*flight.FlightInfo, error) {
 	if len(desc.Path) == 0 {
 		return nil, status.Error(codes.InvalidArgument, "Empty path")
 	}
 	name := desc.Path[0]
+	if name == "_health" {
+		metadata := s.getPooledMetadataBuffer(loadbalancing.LoadHintsSize)
+		hints := s.nodeMonitor.GetLoadHints()
+		hints.Serialize(metadata)
+		return &flight.FlightInfo{
+			FlightDescriptor: desc,
+			AppMetadata:      metadata,
+		}, nil
+	}
+
 	ds, ok := s.getDataset(name)
 	if !ok {
-		return nil, status.Error(codes.NotFound, "dataset not found")
+		return nil, status.Errorf(codes.NotFound, "dataset %s not found", name)
 	}
+
+	if !ds.IsReady.Load() {
+		return nil, status.Errorf(codes.Unavailable, "dataset %s is being initialized", name)
+	}
+
+	// Include load balancing hints in AppMetadata (Apache Arrow Zero-Alloc approach)
+	metadata := s.getPooledMetadataBuffer(loadbalancing.LoadHintsSize)
+	hints := s.nodeMonitor.GetLoadHints()
+	hints.Serialize(metadata)
 
 	return &flight.FlightInfo{
 		FlightDescriptor: desc,
-		TotalRecords:     int64(len(ds.Records)),
+		TotalRecords:     int64(len(ds.Records.Read())),
 		TotalBytes:       ds.SizeBytes.Load(),
+		AppMetadata:      metadata,
 	}, nil
 }
+// GetSchema returns the Arrow schema for a specific dataset.
 func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescriptor) (*flight.SchemaResult, error) {
 	return nil, nil
 }
 
-// DoGet - Minimal implementation
+// DoGet handles data retrieval and vector search queries via Arrow Tickets.
 func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGetServer) error {
 	startDoGet := time.Now()
 	// Parse ticket
@@ -141,9 +170,13 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			s.logger.Error().Err(err).Str("ticket_preview", string(tkt.Ticket)).Msg("Failed to parse ticket")
 			return status.Error(codes.InvalidArgument, "invalid ticket format")
 		}
-		err = nil // Clear error after fallback
 	}
-	// s.logger.Info().Interface("parsed_query", query).Msg("DEBUG: DoGet parsed query")
+		// 0. Admission Control (Backpressure)
+	if s.admission != nil {
+		if err := s.admission.Admit(stream.Context(), "search"); err != nil {
+			return err
+		}
+	}
 
 	// Resolve CTEs if present
 	cteResults := make(map[string][]types.SearchResult)
@@ -181,7 +214,13 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		if isGlobal {
 			query.Search.LocalOnly = false
 		}
-		return s.handleDoGetSearch(query.Search, query.WindowFunctions, stream, mem)
+		
+		// Wrap with Circuit Breaker
+		cb := s.Breakers.GetOrCreate(query.Search.Dataset)
+		_, err := cb.Execute(func() (any, error) {
+			return nil, s.handleDoGetSearch(query.Search, query.WindowFunctions, stream, mem)
+		})
+		return err
 	case query.SearchByID != nil:
 		return s.handleDoGetSearchByID(query.SearchByID, stream, mem)
 	case query.Recommend != nil:
@@ -220,22 +259,23 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	ds.dataMu.RLock()
 	// Check if dataset is already empty or if we have records
-	if len(ds.Records) == 0 {
+	if len(ds.Records.Read()) == 0 {
 		ds.dataMu.RUnlock()
 		s.logger.Warn().Msg("Dataset empty")
 		return nil
 	}
 
 	// Use first record's schema (all records in a dataset must share schema)
-	schema := ds.Records[0].Schema()
+	schema := ds.Records.Read()[0].Schema()
 
 	// Adaptive Chunking (Byte-Aware Optimization)
 	// We estimate row size to ensure chunks are at least ~2MB to saturate bandwidth
 	// while keeping overhead low.
 	avgRowSize := int64(256) // Default fallback
-	if ds.Records[0].NumRows() > 0 {
-		batchSize := estimateBatchSize(ds.Records[0])
-		avgRowSize = batchSize / ds.Records[0].NumRows()
+	firstBatch := ds.Records.Read()[0]
+	if firstBatch.NumRows() > 0 {
+		batchSize := estimateBatchSize(firstBatch)
+		avgRowSize = batchSize / firstBatch.NumRows()
 		if avgRowSize == 0 {
 			avgRowSize = 1
 		}
@@ -256,7 +296,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	}
 
 	chunkStrategy := lbflight.NewAdaptiveChunkStrategy(minChunkRows, maxChunkRows, 2.0)
-	recordsToProcess, tombstonesToProcess := AdaptivelySliceBatches(ds.Records, ds.Tombstones, chunkStrategy)
+	recordsToProcess, tombstonesToProcess := AdaptivelySliceBatches(ds.Records.Read(), ds.Tombstones, chunkStrategy)
 	ds.dataMu.RUnlock() // RELEASE LOCK IMMEDIATELY AFTER CLONING REFERENCES
 
 	s.logger.Info().Str("name", name).Int("batches", len(recordsToProcess)).Msg("DoGet streaming started")
@@ -517,10 +557,11 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	return nil
 }
 
+
 // MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
 // MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
 // This is the public wrapper that acquires a read lock.
-func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []types.SearchResult) []types.SearchResult {
+func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []SearchResult) []SearchResult {
 	start := time.Now()
 	defer func() {
 		metrics.IDResolutionDuration.Observe(time.Since(start).Seconds())
@@ -533,7 +574,7 @@ func (s *VectorStore) MapInternalToUserIDs(ds *Dataset, results []types.SearchRe
 
 // mapInternalToUserIDsLocked maps internal HNSW IDs to user-provided IDs.
 // Caller MUST hold ds.dataMu.RLock (or Lock).
-func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []types.SearchResult) []types.SearchResult {
+func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchResult) []SearchResult {
 	// Use the VectorIndex interface directly to look up locations.
 	// This supports HNSWIndex, ArrowHNSW, AutoShardingIndex, etc.
 	if ds.Index == nil {
@@ -554,11 +595,12 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []types.Se
 		}
 
 		// 2. Access RecordBatch
-		if loc.BatchIdx >= len(ds.Records) {
-
+		currentRecords := ds.Records.Read()
+		if loc.BatchIdx >= len(currentRecords) {
+ 
 			continue
 		}
-		rec := ds.Records[loc.BatchIdx]
+		rec := currentRecords[loc.BatchIdx]
 
 		// 3. Find 'id' column
 		// Optimization: could cache column index if schema is consistent
@@ -652,12 +694,28 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []types.Se
 			}
 		}
 
+		// Deep copy metadata and vector to release Arrow buffers.
+		// This is critical because these results may be cached in the QueryCache,
+		// and keeping a slice into a 2MB+ RecordBatch buffer prevents the entire
+		// buffer from being garbage collected.
+		var metaCopy []byte
+		if len(metadata) > 0 {
+			metaCopy = make([]byte, len(metadata))
+			copy(metaCopy, metadata)
+		}
+
+		var vecCopy []byte
+		if len(res.Vector) > 0 {
+			vecCopy = make([]byte, len(res.Vector))
+			copy(vecCopy, res.Vector)
+		}
+
 		mappedResults = append(mappedResults, types.SearchResult{
 			ID:       resolvedID,
 			Score:    res.Score,
 			Distance: res.Distance,
-			Metadata: metadata,
-			Vector:   res.Vector,
+			Metadata: metaCopy,
+			Vector:   vecCopy,
 		})
 	}
 
@@ -673,16 +731,7 @@ func (s *VectorStore) GetDataset(name string) (*Dataset, error) {
 	return ds, nil
 }
 
-// HybridSearch is a wrapper for the HybridSearch function
-func (s *VectorStore) HybridSearch(ctx context.Context, name string, query []float32, k int, filters map[string]string) ([]types.SearchResult, error) {
-	return HybridSearch(ctx, s, name, query, k, filters)
-}
 
-// SearchHybrid is a wrapper for the SearchHybrid function (RRF version)
-func (s *VectorStore) SearchHybrid(ctx context.Context, name string, query []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]types.SearchResult, error) {
-	// Expose graph params in future? For now default to 0 (disabled)
-	return SearchHybrid(ctx, s, name, query, textQuery, k, alpha, rrfK, graphAlpha, graphDepth)
-}
 
 func findVectorColumn(rec arrow.RecordBatch) arrow.Array {
 	if rec == nil || rec.Schema() == nil {
@@ -718,6 +767,13 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 		defer func() {
 			s.scaler.RecordSearch(time.Since(start))
 		}()
+	}
+
+	// 0. Learned Index Rate Limiting (Phase 16)
+	if s.rateLimiter != nil {
+		if err := s.rateLimiter.Wait(stream.Context()); err != nil {
+			return status.Errorf(codes.Aborted, "rate limit wait failed: %v", err)
+		}
 	}
 
 	// 1. Validate Request
@@ -764,7 +820,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 			if depth <= 0 {
 				depth = 2
 			}
-			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, depth)
+			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, depth, req.RawHybrid)
 		} else {
 			// Standard Vector Search
 			ds, ok := s.getDataset(req.Dataset)
@@ -809,7 +865,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 				IncludeVectors: req.IncludeVectors,
 				VectorFormat:   types.MapStringToVectorDataType(req.VectorFormat),
 				FilterExpr:     filterExpr,
-				Predicate:      qry.ExtractPushablePredicate(filterExpr, ds.Records),
+				Predicate:      qry.ExtractPushablePredicate(filterExpr, ds.Records.Read()),
 			})
 			if searchErr != nil {
 				return status.Errorf(codes.Internal, "search failed: %v", searchErr)
@@ -819,14 +875,16 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 			ds.dataMu.RLock()
 			// Graph Re-ranking
 			if req.GraphAlpha > 0 && graph != nil {
+				ds.dataMu.RUnlock()
 				depth := req.GraphDepth
 				if depth <= 0 {
 					depth = 2
 				}
-				ranked := graph.RankWithGraphDistributed(stream.Context(), req.Dataset, searchResults, req.GraphAlpha, depth, s)
+				ranked := graph.RankWithGraphDistributed(stream.Context(), req.Dataset, req.Vector, searchResults, req.GraphAlpha, depth, s)
 				if len(ranked) > 0 {
 					searchResults = ranked
 				}
+				ds.dataMu.RLock()
 			}
 
 			// Map internal IDs to user IDs
@@ -884,6 +942,9 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 	if req.IncludeVectors {
 		fields = append(fields, arrow.Field{Name: "vector", Type: arrow.BinaryTypes.Binary})
 	}
+	if req.RawHybrid {
+		fields = append(fields, arrow.Field{Name: "source", Type: arrow.PrimitiveTypes.Uint8})
+	}
 
 	// Add dynamic Window Function columns
 	for _, wf := range windowFunctions {
@@ -913,6 +974,18 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 	if req.IncludeVectors {
 		vectorBuilder = builder.Field(2).(*array.BinaryBuilder)
 	}
+	
+	var sourceBuilder *array.Uint8Builder
+	var sourceColIdx = -1
+	for i, f := range fields {
+		if f.Name == "source" {
+			sourceColIdx = i
+			break
+		}
+	}
+	if sourceColIdx >= 0 {
+		sourceBuilder = builder.Field(sourceColIdx).(*array.Uint8Builder)
+	}
 
 	// Chunk results if necessary (e.g. > 64k) to stream effectively
 	// For K usually < 1000, single batch is fine.
@@ -925,6 +998,9 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 
 		idBuilder.Reserve(end - i)
 		scoreBuilder.Reserve(end - i)
+		if sourceBuilder != nil {
+			sourceBuilder.Reserve(end - i)
+		}
 
 		for j := i; j < end; j++ {
 			idBuilder.Append(uint64(searchResults[j].ID))
@@ -937,6 +1013,10 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 				} else {
 					vectorBuilder.AppendNull()
 				}
+				colOffset++
+			}
+			if sourceBuilder != nil {
+				sourceBuilder.Append(searchResults[j].Source)
 				colOffset++
 			}
 
@@ -1017,8 +1097,8 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 			if ts, ok := ds.Tombstones[loc.BatchIdx]; ok && ts != nil && ts.Contains(loc.RowIdx) {
 				isDeleted = true
 			}
-			if !isDeleted && loc.BatchIdx < len(ds.Records) {
-				rec := ds.Records[loc.BatchIdx]
+			if !isDeleted && loc.BatchIdx < len(ds.Records.Read()) {
+				rec := ds.Records.Read()[loc.BatchIdx]
 				vec, err := internalcore.ExtractVectorRaw(rec, loc.RowIdx, -1)
 				if err != nil {
 					ds.dataMu.RUnlock()
@@ -1031,7 +1111,7 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 	}
 
 	if !found {
-		for batchIdx, rec := range ds.Records {
+		for batchIdx, rec := range ds.Records.Read() {
 			idColIdx := -1
 			for i, field := range rec.Schema().Fields() {
 				if field.Name == "id" {
@@ -1250,7 +1330,7 @@ func (s *VectorStore) executeInternalSearch(ctx context.Context, req *qry.Vector
 	}
 
 	if isHybrid {
-		return s.SearchHybrid(ctx, req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2)
+		return s.SearchHybrid(ctx, req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2, req.RawHybrid)
 	}
 
 	ds, ok := s.getDataset(req.Dataset)
@@ -1316,7 +1396,7 @@ func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]types.Sear
 		limit = 1000 // Default internal limit
 	}
 
-	for i, rec := range ds.Records {
+	for i, rec := range ds.Records.Read() {
 		if len(results) >= limit {
 			break
 		}
@@ -1389,7 +1469,7 @@ func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]types.Sear
 }
 
 func (s *VectorStore) evaluateFilters(ds *Dataset, batchIdx int, filters []core.Filter) (*qry.FilterEvaluator, error) {
-	rec := ds.Records[batchIdx]
+	rec := ds.Records.Read()[batchIdx]
 	eval, err := qry.NewFilterEvaluator(rec, filters)
 	if err != nil {
 		return nil, err
@@ -1510,7 +1590,7 @@ func (s *VectorStore) handleDoGetGeoSearch(req *types.GeoSearchRequest, wfs []qr
 }
 
 func (s *VectorStore) handleDoGetTemporalSearch(req *types.TemporalSearchRequest, wfs []qry.WindowFunction, stream flight.FlightService_DoGetServer, mem *lbmem.ArenaAllocator) error {
-	if s.temporalIndex == nil {
+	if !s.temporalConfig.Enabled {
 		return status.Error(codes.FailedPrecondition, "temporal index not enabled")
 	}
 
@@ -1524,13 +1604,13 @@ func (s *VectorStore) handleDoGetTemporalSearch(req *types.TemporalSearchRequest
 
 	switch req.SearchType {
 	case "as_of":
-		results, err = s.temporalIndex.SearchAsOf(stream.Context(), req.Timestamp, req.K)
+		results, err = ds.TemporalIndex.SearchAsOf(stream.Context(), req.Timestamp, req.K)
 	case "range":
-		results, err = s.temporalIndex.SearchRange(stream.Context(), req.StartTime, req.EndTime, req.K)
+		results, err = ds.TemporalIndex.SearchRange(stream.Context(), req.StartTime, req.EndTime, req.K)
 	case "sliding_window":
-		results, err = s.temporalIndex.SearchSlidingWindow(stream.Context(), req.WindowSize, req.K)
+		results, err = ds.TemporalIndex.SearchSlidingWindow(stream.Context(), req.WindowSize, req.K)
 	case "sliding_window_time":
-		results, err = s.temporalIndex.SearchSlidingWindowByTime(stream.Context(), req.Duration, req.K)
+		results, err = ds.TemporalIndex.SearchSlidingWindowByTime(stream.Context(), req.Duration, req.K)
 	default:
 		return status.Errorf(codes.InvalidArgument, "invalid temporal search_type: %s", req.SearchType)
 	}

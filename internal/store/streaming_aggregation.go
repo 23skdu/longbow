@@ -9,6 +9,7 @@ import (
 	"github.com/rs/zerolog"
 )
 
+// AggregationType defines the type of streaming aggregation to perform.
 type AggregationType string
 
 const (
@@ -18,6 +19,7 @@ const (
 	AggregationTypeWeighted      AggregationType = "weighted"
 )
 
+// StreamAggregate represents a single data point in a stream.
 type StreamAggregate struct {
 	VectorID  string
 	Vector    []float32
@@ -26,6 +28,7 @@ type StreamAggregate struct {
 	Sequence  uint64
 }
 
+// StreamingAggregation manages multiple vector aggregates for streaming data.
 type StreamingAggregation struct {
 	logger      zerolog.Logger
 	config      StreamingAggregationConfig
@@ -36,6 +39,7 @@ type StreamingAggregation struct {
 	stopChan    chan struct{}
 }
 
+// VectorAggregate stores the aggregated state for a specific vector ID.
 type VectorAggregate struct {
 	VectorID      string
 	Dimension     int
@@ -56,6 +60,7 @@ type VectorAggregate struct {
 	sequence   uint64
 }
 
+// StreamingAggregationConfig defines the configuration for streaming aggregation.
 type StreamingAggregationConfig struct {
 	WindowSize      int     `json:"window_size"`
 	DecayFactor     float64 `json:"decay_factor"`
@@ -65,6 +70,7 @@ type StreamingAggregationConfig struct {
 	EnableWeighted  bool    `json:"enable_weighted"`
 }
 
+// StreamingAggregationStats tracks operational statistics for streaming aggregation.
 type StreamingAggregationStats struct {
 	EventsReceived    atomic.Int64
 	EventsAggregated  atomic.Int64
@@ -72,6 +78,7 @@ type StreamingAggregationStats struct {
 	AggregatesEvicted atomic.Int64
 }
 
+// NewStreamingAggregation creates a new StreamingAggregation manager.
 func NewStreamingAggregation(logger zerolog.Logger, config StreamingAggregationConfig) *StreamingAggregation {
 	if config.WindowSize <= 0 {
 		config.WindowSize = 100
@@ -91,6 +98,7 @@ func NewStreamingAggregation(logger zerolog.Logger, config StreamingAggregationC
 	}
 }
 
+// CreateAggregate initializes a new aggregate for a specific vector ID.
 func (s *StreamingAggregation) CreateAggregate(vectorID string, dimension int, aggType AggregationType) error {
 	s.aggregateMu.Lock()
 	defer s.aggregateMu.Unlock()
@@ -122,6 +130,7 @@ func (s *StreamingAggregation) CreateAggregate(vectorID string, dimension int, a
 	return nil
 }
 
+// AddVector adds a new vector data point to the specified aggregate.
 func (s *StreamingAggregation) AddVector(vectorID string, vector []float32, timestamp time.Time) error {
 	s.stats.EventsReceived.Add(1)
 
@@ -165,6 +174,7 @@ func (s *StreamingAggregation) AddVector(vectorID string, vector []float32, time
 	return nil
 }
 
+// CreateAggregateAndAdd is a helper that creates an aggregate if it doesn't exist and then adds a vector.
 func (s *StreamingAggregation) CreateAggregateAndAdd(vectorID string, vector []float32, timestamp time.Time) error {
 	err := s.CreateAggregate(vectorID, len(vector), AggregationTypeMovingAverage)
 	if err != nil {
@@ -241,6 +251,7 @@ func (s *StreamingAggregation) updateCumulative(agg *VectorAggregate) {
 	}
 }
 
+// GetMovingAverage retrieves the current simple moving average for a vector ID.
 func (s *StreamingAggregation) GetMovingAverage(vectorID string) ([]float32, error) {
 	s.aggregateMu.RLock()
 	agg, ok := s.aggregates[vectorID]
@@ -258,6 +269,7 @@ func (s *StreamingAggregation) GetMovingAverage(vectorID string) ([]float32, err
 	return result, nil
 }
 
+// GetExponentialMovingAverage retrieves the current exponential moving average for a vector ID.
 func (s *StreamingAggregation) GetExponentialMovingAverage(vectorID string) ([]float32, error) {
 	s.aggregateMu.RLock()
 	agg, ok := s.aggregates[vectorID]
@@ -275,6 +287,7 @@ func (s *StreamingAggregation) GetExponentialMovingAverage(vectorID string) ([]f
 	return result, nil
 }
 
+// GetCumulative retrieves the current cumulative sum for a vector ID.
 func (s *StreamingAggregation) GetCumulative(vectorID string) ([]float32, error) {
 	s.aggregateMu.RLock()
 	agg, ok := s.aggregates[vectorID]
@@ -292,6 +305,7 @@ func (s *StreamingAggregation) GetCumulative(vectorID string) ([]float32, error)
 	return result, nil
 }
 
+// GetAggregate retrieves the full aggregate state for a vector ID.
 func (s *StreamingAggregation) GetAggregate(vectorID string) (*VectorAggregate, bool) {
 	s.aggregateMu.RLock()
 	defer s.aggregateMu.RUnlock()
@@ -312,6 +326,7 @@ func (s *StreamingAggregation) GetAggregate(vectorID string) (*VectorAggregate, 
 	}, true
 }
 
+// RemoveAggregate deletes the aggregate state for a vector ID.
 func (s *StreamingAggregation) RemoveAggregate(vectorID string) {
 	s.aggregateMu.Lock()
 	defer s.aggregateMu.Unlock()
@@ -346,6 +361,7 @@ func (s *StreamingAggregation) evictOldestLocked() {
 	s.stats.AggregatesEvicted.Add(1)
 }
 
+// Clear removes all aggregate states.
 func (s *StreamingAggregation) Clear() {
 	s.aggregateMu.Lock()
 	defer s.aggregateMu.Unlock()
@@ -353,6 +369,7 @@ func (s *StreamingAggregation) Clear() {
 	s.aggregates = make(map[string]*VectorAggregate, s.config.MaxAggregates)
 }
 
+// GetStats returns current operational statistics for the streaming aggregation manager.
 func (s *StreamingAggregation) GetStats() (received, aggregated, created, evicted int64) {
 	return s.stats.EventsReceived.Load(),
 		s.stats.EventsAggregated.Load(),
@@ -360,14 +377,17 @@ func (s *StreamingAggregation) GetStats() (received, aggregated, created, evicte
 		s.stats.AggregatesEvicted.Load()
 }
 
+// GetConfig returns the current configuration.
 func (s *StreamingAggregation) GetConfig() StreamingAggregationConfig {
 	return s.config
 }
 
+// SetConfig updates the configuration.
 func (s *StreamingAggregation) SetConfig(config StreamingAggregationConfig) {
 	s.config = config
 }
 
+// ListAggregates returns a list of all active vector IDs being aggregated.
 func (s *StreamingAggregation) ListAggregates() []string {
 	s.aggregateMu.RLock()
 	defer s.aggregateMu.RUnlock()
@@ -379,6 +399,7 @@ func (s *StreamingAggregation) ListAggregates() []string {
 	return ids
 }
 
+// GetAggregateCount returns the number of active aggregates.
 func (s *StreamingAggregation) GetAggregateCount() int {
 	s.aggregateMu.RLock()
 	defer s.aggregateMu.RUnlock()

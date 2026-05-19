@@ -68,7 +68,7 @@ func TestGRPCConfig_ValidationWithPolicy(t *testing.T) {
 	}
 }
 
-func FuzzGRPCConfig_PolicySelection(f *testing.F) {
+func FuzzGRPCConfigPolicySelection(f *testing.F) {
 	f.Add(int(PolicyDefault))
 	f.Add(int(PolicyHighBandwidth))
 	f.Add(int(PolicyAuto))

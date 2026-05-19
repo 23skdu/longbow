@@ -3,6 +3,11 @@ package simd
 import (
 	"errors"
 	"math"
+	"runtime"
+	"sync"
+
+	lbcore "github.com/23skdu/longbow/internal/core"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // =============================================================================
@@ -52,6 +57,54 @@ func dotInt8Unrolled4x(a, b []int8) (float32, error) {
 	}
 	return float32(sum0 + sum1 + sum2 + sum3), nil
 }
+func l2SquaredInt8Unrolled4x(a, b []int8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 int32
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := int32(a[i]) - int32(b[i])
+		d1 := int32(a[i+1]) - int32(b[i+1])
+		d2 := int32(a[i+2]) - int32(b[i+2])
+		d3 := int32(a[i+3]) - int32(b[i+3])
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	for ; i < n; i++ {
+		d := int32(a[i]) - int32(b[i])
+		sum0 += d * d
+	}
+	return float32(sum0 + sum1 + sum2 + sum3), nil
+}
+
+func l2SquaredUint8Unrolled4x(a, b []uint8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 int32
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := int32(a[i]) - int32(b[i])
+		d1 := int32(a[i+1]) - int32(b[i+1])
+		d2 := int32(a[i+2]) - int32(b[i+2])
+		d3 := int32(a[i+3]) - int32(b[i+3])
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	for ; i < n; i++ {
+		d := int32(a[i]) - int32(b[i])
+		sum0 += d * d
+	}
+	return float32(sum0 + sum1 + sum2 + sum3), nil
+}
+
 
 // ... Repeat for Int16, Int32, Int64 and Uint equivalents ...
 // Note: Int64 might need float64 for better precision if values are huge.
@@ -355,6 +408,30 @@ func euclideanFloat64Unrolled4x(a, b []float64) (float32, error) {
 		sum0 += d * d
 	}
 	return float32(math.Sqrt(sum0 + sum1 + sum2 + sum3)), nil
+}
+
+func l2SquaredFloat64Unrolled4x(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum0, sum1, sum2, sum3 float64
+	n := len(a)
+	i := 0
+	for ; i <= n-4; i += 4 {
+		d0 := a[i] - b[i]
+		d1 := a[i+1] - b[i+1]
+		d2 := a[i+2] - b[i+2]
+		d3 := a[i+3] - b[i+3]
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
+	}
+	for ; i < n; i++ {
+		d := a[i] - b[i]
+		sum0 += d * d
+	}
+	return float32(sum0 + sum1 + sum2 + sum3), nil
 }
 
 func dotFloat64Unrolled4x(a, b []float64) (float32, error) {
@@ -744,16 +821,16 @@ func cosineComplex64Unrolled(a, b []complex64) (float32, error) {
 	}
 	var dotR, dotI, normA, normB float64
 	for i := range a {
-		va_r, va_i := float64(real(a[i])), float64(imag(a[i]))
-		vb_r, vb_i := float64(real(b[i])), float64(imag(b[i]))
+		vaR, vaI := float64(real(a[i])), float64(imag(a[i]))
+		vbR, vbI := float64(real(b[i])), float64(imag(b[i]))
 		
 		// dot(a, b) = sum(a[i] * conj(b[i]))
 		// (ar + i*ai) * (br - i*bi) = (ar*br + ai*bi) + i*(ai*br - ar*bi)
-		dotR += va_r*vb_r + va_i*vb_i
-		dotI += va_i*vb_r - va_r*vb_i
+		dotR += vaR*vbR + vaI*vbI
+		dotI += vaI*vbR - vaR*vbI
 		
-		normA += va_r*va_r + va_i*va_i
-		normB += vb_r*vb_r + vb_i*vb_i
+		normA += vaR*vaR + vaI*vaI
+		normB += vbR*vbR + vbI*vbI
 	}
 	if normA <= 0 || normB <= 0 {
 		return 1.0, nil
@@ -772,18 +849,237 @@ func cosineComplex128Unrolled(a, b []complex128) (float32, error) {
 	}
 	var dotR, dotI, normA, normB float64
 	for i := range a {
-		va_r, va_i := real(a[i]), imag(a[i])
-		vb_r, vb_i := real(b[i]), imag(b[i])
+		vaR, vaI := real(a[i]), imag(a[i])
+		vbR, vbI := real(b[i]), imag(b[i])
 		
-		dotR += va_r*vb_r + va_i*vb_i
-		dotI += va_i*vb_r - va_r*vb_i
+		dotR += vaR*vbR + vaI*vbI
+		dotI += vaI*vbR - vaR*vbI
 		
-		normA += va_r*va_r + va_i*va_i
-		normB += vb_r*vb_r + vb_i*vb_i
+		normA += vaR*vaR + vaI*vaI
+		normB += vbR*vbR + vbI*vbI
 	}
 	if normA <= 0 || normB <= 0 {
 		return 1.0, nil
 	}
 	similarity := dotR / (math.Sqrt(normA) * math.Sqrt(normB))
 	return float32(1.0 - similarity), nil
+}
+
+// ManhattanDistanceFloat32 calculates the L1 distance between two float32 vectors.
+func ManhattanDistanceFloat32(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum float32
+	for i := range a {
+		d := a[i] - b[i]
+		if d < 0 {
+			sum -= d
+		} else {
+			sum += d
+		}
+	}
+	return sum, nil
+}
+
+// ChebyshevDistanceFloat32 calculates the L-infinity distance between two float32 vectors.
+func ChebyshevDistanceFloat32(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	var max float32
+	for i := range a {
+		d := a[i] - b[i]
+		if d < 0 {
+			d = -d
+		}
+		if d > max {
+			max = d
+		}
+	}
+	return max, nil
+}
+
+// BrayCurtisDistanceFloat32 calculates the Bray-Curtis distance between two float32 vectors.
+func BrayCurtisDistanceFloat32(a, b []float32) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sumAbsDiff, sumAbsTotal float32
+	for i := range a {
+		d := a[i] - b[i]
+		if d < 0 {
+			sumAbsDiff -= d
+		} else {
+			sumAbsDiff += d
+		}
+		s := a[i] + b[i]
+		if s < 0 {
+			sumAbsTotal -= s
+		} else {
+			sumAbsTotal += s
+		}
+	}
+	if sumAbsTotal == 0 {
+		return 0, nil
+	}
+	return sumAbsDiff / sumAbsTotal, nil
+}
+
+// ManhattanDistanceF16 calculates the L1 distance between two float16 vectors.
+func ManhattanDistanceF16(a, b []float16.Num) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sum float32
+	for i := range a {
+		d := a[i].Float32() - b[i].Float32()
+		if d < 0 {
+			sum -= d
+		} else {
+			sum += d
+		}
+	}
+	return sum, nil
+}
+
+// ChebyshevDistanceF16 calculates the L-infinity distance between two float16 vectors.
+func ChebyshevDistanceF16(a, b []float16.Num) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	var max float32
+	for i := range a {
+		d := a[i].Float32() - b[i].Float32()
+		if d < 0 {
+			d = -d
+		}
+		if d > max {
+			max = d
+		}
+	}
+	return max, nil
+}
+
+// BrayCurtisDistanceF16 calculates the Bray-Curtis distance between two float16 vectors.
+func BrayCurtisDistanceF16(a, b []float16.Num) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	var sumAbsDiff, sumAbsTotal float32
+	for i := range a {
+		va, vb := a[i].Float32(), b[i].Float32()
+		d := va - vb
+		if d < 0 {
+			sumAbsDiff -= d
+		} else {
+			sumAbsDiff += d
+		}
+		s := va + vb
+		if s < 0 {
+			sumAbsTotal -= s
+		} else {
+			sumAbsTotal += s
+		}
+	}
+	if sumAbsTotal == 0 {
+		return 0, nil
+	}
+	return sumAbsDiff / sumAbsTotal, nil
+}
+
+// AccumulateWeightedScatterFloat32 adds weighted values to a destination slice using scatter indices.
+// dst[targets[i]] += weights[i] * factor
+func AccumulateWeightedScatterFloat32(dst []float32, targets []uint32, weights []float32, factor float32) {
+	n := len(targets)
+	if len(weights) < n {
+		n = len(weights)
+	}
+	
+	// Unrolled 4x for better performance
+	i := 0
+	for ; i <= n-4; i += 4 {
+		t0, t1, t2, t3 := targets[i], targets[i+1], targets[i+2], targets[i+3]
+		w0, w1, w2, w3 := weights[i], weights[i+1], weights[i+2], weights[i+3]
+		
+		dst[t0] += w0 * factor
+		dst[t1] += w1 * factor
+		dst[t2] += w2 * factor
+		dst[t3] += w3 * factor
+	}
+	
+	for ; i < n; i++ {
+		dst[targets[i]] += weights[i] * factor
+	}
+}
+
+func sinFloat32Generic(src, dst []float32) {
+	for i, v := range src {
+		dst[i] = float32(math.Sin(float64(v)))
+	}
+}
+
+func cosFloat32Generic(src, dst []float32) {
+	for i, v := range src {
+		dst[i] = float32(math.Cos(float64(v)))
+	}
+}
+
+func atan2Float32Generic(y, x, dst []float32) {
+	for i := range y {
+		dst[i] = float32(math.Atan2(float64(y[i]), float64(x[i])))
+	}
+}
+
+func haversineBatchGeneric(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32) {
+	lat1 := centerLat * math.Pi / 180.0
+	lon1 := centerLon * math.Pi / 180.0
+	cosLat1 := math.Cos(lat1)
+	
+	// Parallelize for large batches
+	if len(points) < 1024 {
+		for i, p := range points {
+			lat2 := p.Lat * math.Pi / 180.0
+			lon2 := p.Lon * math.Pi / 180.0
+			dLat := lat2 - lat1
+			dLon := lon2 - lon1
+			a := math.Sin(dLat/2)*math.Sin(dLat/2) + cosLat1*math.Cos(lat2)*math.Sin(dLon/2)*math.Sin(dLon/2)
+			c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+			results[i] = float32(earthRadius * c)
+		}
+		return
+	}
+
+	numCPUs := runtime.NumCPU()
+	if numCPUs < 1 { numCPUs = 1 }
+	chunkSize := (len(points) + numCPUs - 1) / numCPUs
+	
+	var wg sync.WaitGroup
+	for i := 0; i < len(points); i += chunkSize {
+		start := i
+		end := i + chunkSize
+		if end > len(points) { end = len(points) }
+		
+		wg.Add(1)
+		go func(s, e int) {
+			defer wg.Done()
+			for j := s; j < e; j++ {
+				p := points[j]
+				lat2 := p.Lat * math.Pi / 180.0
+				lon2 := p.Lon * math.Pi / 180.0
+				dLat := lat2 - lat1
+				dLon := lon2 - lon1
+				a := math.Sin(dLat/2)*math.Sin(dLat/2) + cosLat1*math.Cos(lat2)*math.Sin(dLon/2)*math.Sin(dLon/2)
+				c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+				results[j] = float32(earthRadius * c)
+			}
+		}(start, end)
+	}
+	wg.Wait()
 }

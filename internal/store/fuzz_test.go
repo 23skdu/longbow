@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
@@ -57,7 +58,7 @@ func FuzzIngestion(f *testing.F) {
 		// Also basic append safety
 		ds.dataMu.Lock()
 		batch.Retain()
-		ds.Records = append(ds.Records, batch)
+		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), batch))
 		ds.dataMu.Unlock()
 	})
 }
@@ -92,7 +93,7 @@ func FuzzCompaction(f *testing.F) {
 			rows := rng.Intn(10) + 1
 			batch := GenerateRandomRecordBatch(mem, rng, schema, rows)
 			ds.dataMu.Lock()
-			ds.Records = append(ds.Records, batch)
+			ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), batch))
 			ds.dataMu.Unlock()
 		}
 

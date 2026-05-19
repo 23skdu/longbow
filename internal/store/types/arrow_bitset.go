@@ -2,7 +2,6 @@ package types
 
 import (
 	"math/bits"
-	"sync"
 )
 
 // ArrowBitset is a memory-efficient bitset implementation for tracking visited nodes
@@ -10,7 +9,6 @@ import (
 type ArrowBitset struct {
 	bits   []uint64
 	size   int
-	mu     sync.RWMutex
 	blocks int
 	growth int // How much to grow when capacity is exceeded
 }
@@ -36,9 +34,6 @@ func (b *ArrowBitset) Set(pos int) {
 		return
 	}
 
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	// Grow if necessary
 	if pos >= b.blocks*64 {
 		b.growInternal(pos + 1)
@@ -59,9 +54,6 @@ func (b *ArrowBitset) IsSet(pos int) bool {
 		return false
 	}
 
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
 	if pos >= b.blocks*64 {
 		return false
 	}
@@ -73,9 +65,6 @@ func (b *ArrowBitset) IsSet(pos int) bool {
 
 // Clear resets all bits to 0.
 func (b *ArrowBitset) Clear() {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-
 	for i := range b.bits {
 		b.bits[i] = 0
 	}
@@ -84,8 +73,6 @@ func (b *ArrowBitset) Clear() {
 
 // Grow ensures the bitset can accommodate positions up to newSize.
 func (b *ArrowBitset) Grow(newSize int) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
 	b.growInternal(newSize)
 }
 
@@ -105,9 +92,6 @@ func (b *ArrowBitset) growInternal(newSize int) {
 
 // Count returns the number of set bits in the bitset.
 func (b *ArrowBitset) Count() int {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-
 	count := 0
 	for _, block := range b.bits {
 		count += bits.OnesCount64(block)
@@ -117,15 +101,11 @@ func (b *ArrowBitset) Count() int {
 
 // Size returns the maximum position that has been set.
 func (b *ArrowBitset) Size() int {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
 	return b.size
 }
 
 // Capacity returns the current capacity in bits.
 func (b *ArrowBitset) Capacity() int {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
 	return b.blocks * 64
 }
 // Clear resets all bits to 0. Consistent with HNSW usage.

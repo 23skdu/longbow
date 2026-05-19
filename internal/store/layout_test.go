@@ -54,7 +54,7 @@ func TestGraphData_CacheLinePadding(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			gd := lbtypes.NewGraphData(100, tt.dims, false, false, 0, false, false, false, tt.dataType, false, false, false, 8, "test")
+			gd := lbtypes.NewGraphData(100, tt.dims, false, false, 0, false, false, false, tt.dataType, false, false, false, 8, "test", nil, false)
 
 			// Verify PaddedDims
 			elementSize := tt.dataType.ElementSize()

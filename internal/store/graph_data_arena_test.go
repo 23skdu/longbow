@@ -13,7 +13,7 @@ func TestGraphData_ArenaNeighbors(t *testing.T) {
 	// The new signature is likely: func NewGraphData(capacity, dims int, sq8, pq bool, pqDims int, bq bool, false, false, VectorTypeFloat32, false, false, false, 8, "test") *GraphData
 	initialCapacity := 100
 	dims := 128
-	data := lbtypes.NewGraphData(initialCapacity, dims, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test")
+	data := lbtypes.NewGraphData(initialCapacity, dims, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 
 	// Simulate node allocation
 	// We need to ensure chunks are allocated for ID 0
@@ -51,7 +51,7 @@ func TestGraphData_ArenaNeighbors(t *testing.T) {
 
 func TestGraphData_ArenaGrowth(t *testing.T) {
 	// Verify that we can store widespread IDs (triggering multiple chunks/slabs)
-	gd := lbtypes.NewGraphData(10000, 16, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test")
+	gd := lbtypes.NewGraphData(10000, 16, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 
 	// Add neighbors for node 5000
 	id := uint32(5000)
@@ -92,7 +92,7 @@ func TestGraphData_PreAllocate(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			gd := lbtypes.NewGraphData(0, tc.dims, false, false, 0, false, false, false, tc.dataType, false, false, false, 8, "test")
+			gd := lbtypes.NewGraphData(0, tc.dims, false, false, 0, false, false, false, tc.dataType, false, false, false, 8, "test", nil, false)
 
 			err := gd.PreAllocate(tc.capacity)
 			if err != nil {
@@ -179,7 +179,7 @@ func TestGraphData_PreAllocate(t *testing.T) {
 }
 
 func TestGraphData_PreAllocate_SQ8(t *testing.T) {
-	gd := lbtypes.NewGraphData(0, 128, false, false, 0, false, true, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test")
+	gd := lbtypes.NewGraphData(0, 128, false, false, 0, false, true, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 	gd.SQ8Enabled = true
 
 	err := gd.PreAllocate(10000)
@@ -194,7 +194,7 @@ func TestGraphData_PreAllocate_SQ8(t *testing.T) {
 }
 
 func TestGraphData_PreAllocate_PQ(t *testing.T) {
-	gd := lbtypes.NewGraphData(0, 128, false, false, 0, true, false, false, lbtypes.VectorTypeFloat32, false, true, false, 8, "test")
+	gd := lbtypes.NewGraphData(0, 128, false, false, 0, true, false, false, lbtypes.VectorTypeFloat32, false, true, false, 8, "test", nil, false)
 	gd.PQM = 64
 
 	err := gd.PreAllocate(10000)
@@ -209,7 +209,7 @@ func TestGraphData_PreAllocate_PQ(t *testing.T) {
 }
 
 func TestGraphData_PreAllocate_BQ(t *testing.T) {
-	gd := lbtypes.NewGraphData(0, 128, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, true, false, false, 8, "test")
+	gd := lbtypes.NewGraphData(0, 128, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, true, false, false, 8, "test", nil, false)
 
 	err := gd.PreAllocate(10000)
 	if err != nil {
@@ -223,7 +223,7 @@ func TestGraphData_PreAllocate_BQ(t *testing.T) {
 }
 
 func TestGraphData_PreAllocate_ZeroCapacity(t *testing.T) {
-	gd := lbtypes.NewGraphData(0, 128, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test")
+	gd := lbtypes.NewGraphData(0, 128, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 
 	err := gd.PreAllocate(0)
 	if err != nil {
@@ -238,7 +238,7 @@ func TestGraphData_PreAllocate_ZeroCapacity(t *testing.T) {
 
 func TestGraphData_NewGraphData_AutoPreAllocate(t *testing.T) {
 	// Verify NewGraphData automatically pre-allocates when capacity > 0
-	gd := lbtypes.NewGraphData(5000, 64, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test")
+	gd := lbtypes.NewGraphData(5000, 64, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 
 	// NewGraphData creates initial chunks + calls PreAllocate
 	// So we should have at least numChunks pre-allocated

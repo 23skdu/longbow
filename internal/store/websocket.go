@@ -20,9 +20,11 @@ var upgrader = websocket.Upgrader{
 	WriteBufferSize: 1024,
 }
 
+// WSMessageType defines the category of a WebSocket message.
 type WSMessageType string
 
 const (
+	// WSTypeSubscribe is the message type for subscribing to a dataset stream.
 	WSTypeSubscribe   WSMessageType = "subscribe"
 	WSTypeUnsubscribe WSMessageType = "unsubscribe"
 	WSTypeData        WSMessageType = "data"
@@ -31,24 +33,28 @@ const (
 	WSTypePong        WSMessageType = "pong"
 )
 
+// WSMessage represents a standard envelope for all WebSocket communications.
 type WSMessage struct {
 	Type    WSMessageType   `json:"type"`
 	Payload json.RawMessage `json:"payload,omitempty"`
 	Error   string          `json:"error,omitempty"`
 }
 
+// WSSubscribePayload contains parameters for subscribing to a dataset.
 type WSSubscribePayload struct {
 	Dataset    string   `json:"dataset"`
 	Columns    []string `json:"columns,omitempty"`
 	EventTypes []string `json:"event_types,omitempty"`
 }
 
+// WSDataPayload contains the actual data being streamed over a WebSocket.
 type WSDataPayload struct {
 	Dataset string          `json:"dataset"`
 	Event   string          `json:"event"`
 	Data    json.RawMessage `json:"data"`
 }
 
+// WebSocketServer manages real-time data streaming to connected clients.
 type WebSocketServer struct {
 	logger     zerolog.Logger
 	cdc        *ChangeDataCapture
@@ -60,6 +66,7 @@ type WebSocketServer struct {
 	pool       *WSConnectionPool
 }
 
+// WSConnectionPool manages a pool of active WebSocket connections.
 type WSConnectionPool struct {
 	mu          sync.Mutex
 	available   []*WSConnection
@@ -68,6 +75,7 @@ type WSConnectionPool struct {
 	idleTimeout time.Duration
 }
 
+// NewWSConnectionPool creates a new connection pool with the specified limits.
 func NewWSConnectionPool(maxSize int, idleTimeout time.Duration) *WSConnectionPool {
 	return &WSConnectionPool{
 		active:      make(map[string]*WSConnection),
@@ -76,6 +84,7 @@ func NewWSConnectionPool(maxSize int, idleTimeout time.Duration) *WSConnectionPo
 	}
 }
 
+// Add registers a new connection in the pool.
 func (p *WSConnectionPool) Add(conn *WSConnection) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -88,6 +97,7 @@ func (p *WSConnectionPool) Add(conn *WSConnection) error {
 	return nil
 }
 
+// Remove deletes a connection from the pool and closes it.
 func (p *WSConnectionPool) Remove(id string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -98,6 +108,7 @@ func (p *WSConnectionPool) Remove(id string) {
 	}
 }
 
+// Get retrieves a connection from the pool by its ID.
 func (p *WSConnectionPool) Get(id string) (*WSConnection, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -105,12 +116,14 @@ func (p *WSConnectionPool) Get(id string) (*WSConnection, bool) {
 	return conn, ok
 }
 
+// Len returns the number of active connections in the pool.
 func (p *WSConnectionPool) Len() int {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	return len(p.active)
 }
 
+// Close shuts down all connections in the pool.
 func (p *WSConnectionPool) Close() {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -121,6 +134,7 @@ func (p *WSConnectionPool) Close() {
 	p.active = make(map[string]*WSConnection)
 }
 
+// WSConnection wraps a WebSocket connection with its associated subscriptions.
 type WSConnection struct {
 	id        string
 	conn      *websocket.Conn
@@ -132,6 +146,7 @@ type WSConnection struct {
 	closed    bool
 }
 
+// Close terminates the WebSocket connection and releases resources.
 func (ws *WSConnection) Close() {
 	ws.mu.Lock()
 	if ws.closed {
@@ -148,10 +163,12 @@ func (ws *WSConnection) Close() {
 }
 
 const (
+	// DefaultWSMaxConnections is the default maximum number of concurrent WebSocket connections allowed.
 	DefaultWSMaxConnections = 1000
 	DefaultWSIdleTimeout    = 5 * time.Minute
 )
 
+// NewWebSocketServer creates a new server instance.
 func NewWebSocketServer(logger zerolog.Logger, cdc *ChangeDataCapture) *WebSocketServer {
 	return &WebSocketServer{
 		logger:   logger,
@@ -162,6 +179,7 @@ func NewWebSocketServer(logger zerolog.Logger, cdc *ChangeDataCapture) *WebSocke
 	}
 }
 
+// Start begins listening for WebSocket connections on the specified address.
 func (w *WebSocketServer) Start(addr string) error {
 	w.logger.Info().Str("addr", addr).Msg("Starting WebSocket server")
 
@@ -184,6 +202,7 @@ func (w *WebSocketServer) Start(addr string) error {
 	return nil
 }
 
+// Stop shuts down the WebSocket server and closes all active connections.
 func (w *WebSocketServer) Stop() error {
 	close(w.stopChan)
 
@@ -483,12 +502,14 @@ func (w *WebSocketServer) removeConnection(wsConn *WSConnection) {
 	w.logger.Info().Str("id", wsConn.id).Msg("WebSocket connection removed")
 }
 
+// GetConnectionCount returns the number of currently active connections.
 func (w *WebSocketServer) GetConnectionCount() int {
 	w.connMu.RLock()
 	defer w.connMu.RUnlock()
 	return len(w.conns)
 }
 
+// GetConnectionIDs returns a list of IDs for all active connections.
 func (w *WebSocketServer) GetConnectionIDs() []string {
 	w.connMu.RLock()
 	defer w.connMu.RUnlock()

@@ -21,6 +21,8 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 const testBufSize = 1024 * 1024
@@ -346,7 +348,7 @@ func putDataViaVectorStore(vs *VectorStore, name string) {
 	vs.updateDatasets(func(m map[string]*Dataset) {
 		m[name] = &Dataset{
 			Name:    name,
-			Records: []arrow.RecordBatch{rec},
+			Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 		}
 	})
 	rec.Retain() // Keep record alive in dataset
@@ -532,3 +534,37 @@ func TestMetaServerDoActionNil(t *testing.T) {
 	// Either InvalidArgument or Unimplemented is acceptable here
 	_, _ = status.FromError(err)
 }
+
+// TestResetDatasetAction tests the in-place ResetDataset action on MetaServer/DataServer
+func TestResetDatasetAction(t *testing.T) {
+	client, vs := setupMetaServerTest(t)
+	ctx := context.Background()
+
+	// Put test data in the store
+	putDataViaVectorStore(vs, "reset_test_ds")
+
+	// Ensure the dataset exists
+	datasetsPtr := vs.datasets.Load()
+	require.NotNil(t, datasetsPtr)
+	require.Contains(t, *datasetsPtr, "reset_test_ds")
+
+	// Call ResetDataset action for specific dataset
+	reqBody, _ := json.Marshal(map[string]string{"name": "reset_test_ds"})
+	action := &flight.Action{
+		Type: "ResetDataset",
+		Body: reqBody,
+	}
+
+	stream, err := client.DoAction(ctx, action)
+	require.NoError(t, err)
+
+	res, err := stream.Recv()
+	require.NoError(t, err)
+	assert.Contains(t, string(res.Body), "reset_success")
+
+	// Verify the dataset is dropped
+	datasetsPtr = vs.datasets.Load()
+	require.NotNil(t, datasetsPtr)
+	assert.NotContains(t, *datasetsPtr, "reset_test_ds")
+}
+

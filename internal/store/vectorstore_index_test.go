@@ -34,16 +34,21 @@ func TestVectorStore_IndexRecordColumns(t *testing.T) {
 	rec := builder.NewRecordBatch()
 	defer rec.Release()
 
+	// Create dataset first so IndexRecordColumns works
+	ds, _ := store.getOrCreateDataset("test-dataset", func() *Dataset {
+		return &Dataset{Name: "test-dataset", ColumnIndex: NewColumnInvertedIndex()}
+	})
+
 	// Index the record
 	store.IndexRecordColumns("test-dataset", rec, 0)
 
 	// Verify index was created
-	if !store.columnIndex.HasIndex("test-dataset", "category") {
+	if !ds.ColumnIndex.HasIndex("category") {
 		t.Error("Expected index to be created for category column")
 	}
 
 	// Lookup should return correct rows
-	rows := store.columnIndex.GetMatchingRowIndices("test-dataset", 0, "category", "A")
+	rows := ds.ColumnIndex.GetMatchingRowIndices(0, "category", "A")
 	if len(rows) != 2 {
 		t.Errorf("Expected 2 matching rows for category=A, got %d", len(rows))
 	}
@@ -66,11 +71,16 @@ func TestVectorStore_IndexRecordColumns_NoIndexedColumns(t *testing.T) {
 	rec := builder.NewRecordBatch()
 	defer rec.Release()
 
+	// Create dataset
+	ds, _ := store.getOrCreateDataset("test-dataset", func() *Dataset {
+		return &Dataset{Name: "test-dataset", ColumnIndex: NewColumnInvertedIndex()}
+	})
+
 	// Should not panic when no indexed columns configured
 	store.IndexRecordColumns("test-dataset", rec, 0)
 
 	// Verify no index was created
-	if store.columnIndex.HasIndex("test-dataset", "id") {
+	if ds.ColumnIndex.HasIndex("id") {
 		t.Error("Expected no index to be created when indexedColumns is empty")
 	}
 }
@@ -109,6 +119,11 @@ func TestVectorStore_FilterRecordOptimized_NoFilters(t *testing.T) {
 	rec := builder.NewRecordBatch()
 	defer rec.Release()
 
+	// Create dataset
+	_, _ = store.getOrCreateDataset("test", func() *Dataset {
+		return &Dataset{Name: "test", ColumnIndex: NewColumnInvertedIndex()}
+	})
+
 	// No filters should return record as-is
 	result, err := store.filterRecordOptimized(context.Background(), "test", rec, 0, nil)
 	if err != nil {
@@ -135,6 +150,11 @@ func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
 
 	builder := array.NewRecordBuilder(mem, schema)
 	defer builder.Release()
+
+	// Create dataset
+	_, _ = store.getOrCreateDataset("test-dataset", func() *Dataset {
+		return &Dataset{Name: "test-dataset", ColumnIndex: NewColumnInvertedIndex()}
+	})
 
 	builder.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4, 5}, nil)
 	builder.Field(1).(*array.StringBuilder).AppendValues([]string{"A", "B", "A", "C", "A"}, nil)
@@ -177,6 +197,11 @@ func TestVectorStore_FilterRecordOptimized_FallbackToCompute(t *testing.T) {
 	rec := builder.NewRecordBatch()
 	defer rec.Release()
 
+	// Create dataset
+	_, _ = store.getOrCreateDataset("test", func() *Dataset {
+		return &Dataset{Name: "test", ColumnIndex: NewColumnInvertedIndex()}
+	})
+
 	// Filter on non-indexed column using non-equality operator
 	filters := []query.Filter{{Field: "value", Operator: ">", Value: "15"}}
 	result, err := store.filterRecordOptimized(context.Background(), "test", rec, 0, filters)
@@ -215,6 +240,11 @@ func BenchmarkFilterRecordOptimized_WithIndex(b *testing.B) {
 			categories[i] = "OTHER"
 		}
 	}
+	// Create dataset
+	_, _ = store.getOrCreateDataset("benchmark", func() *Dataset {
+		return &Dataset{Name: "benchmark", ColumnIndex: NewColumnInvertedIndex()}
+	})
+
 	builder.Field(0).(*array.Int64Builder).AppendValues(ids, nil)
 	builder.Field(1).(*array.StringBuilder).AppendValues(categories, nil)
 	rec := builder.NewRecordBatch()

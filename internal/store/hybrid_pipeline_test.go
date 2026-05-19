@@ -309,7 +309,7 @@ func TestHybridSearchPipeline_ExactFilters(t *testing.T) {
 	colIdx := NewColumnInvertedIndex()
 	// RowPosition {0, 5} matches "category=electronics"
 	// We'll mock the mapping in findVectorID test by using RecordIdx=0 and VectorID=RowIdx
-	colIdx.IndexRecord("test_ds", 0, createHybridTestRecordBatch(), []string{"category"})
+	colIdx.IndexRecord(0, createHybridTestRecordBatch(), []string{"category"})
 	p.SetColumnIndex(colIdx)
 
 	// Set up HNSW with locations

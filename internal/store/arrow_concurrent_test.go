@@ -80,7 +80,7 @@ func TestConcurrentSearchAndInsert(t *testing.T) {
 	dataset := &Dataset{
 		Name:    "test",
 		Schema:  schema,
-		Records: []arrow.RecordBatch{batch},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{batch}),
 	}
 
 	defaultConfig := DefaultArrowHNSWConfig()

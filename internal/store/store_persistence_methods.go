@@ -14,12 +14,13 @@ import (
 
 // ApplyDelta applies an Arrow record batch as a delta to the specified dataset.
 func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64, ts int64) error {
-	if s.engine == nil {
+	engine := s.engine.Load()
+	if engine == nil {
 		return fmt.Errorf("persistence not initialized")
 	}
 
 	// 1. Write to WAL
-	if err := s.engine.WriteWAL(name, rec, seq, ts); err != nil {
+	if err := engine.WriteWAL(name, rec, seq, ts); err != nil {
 		return fmt.Errorf("failed to write to WAL: %w", err)
 	}
 
@@ -29,11 +30,12 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 
 // Snapshot triggers a snapshot of all state.
 func (s *VectorStore) Snapshot(ctx context.Context) error {
-	if s.engine == nil {
+	engine := s.engine.Load()
+	if engine == nil {
 		return fmt.Errorf("persistence not initialized")
 	}
 
-	return s.engine.Snapshot(&storeSnapshotSource{s: s})
+	return engine.Snapshot(&storeSnapshotSource{s: s})
 }
 
 type storeSnapshotSource struct {
@@ -51,8 +53,8 @@ func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) 
 
 	for name, ds := range *datasets {
 		ds.dataMu.RLock()
-		records := make([]arrow.RecordBatch, len(ds.Records))
-		copy(records, ds.Records)
+		records := make([]arrow.RecordBatch, len(ds.Records.Read()))
+		copy(records, ds.Records.Read())
 		// Access PQEncoder under lock
 		var pqBytes []byte
 		if ds.PQEncoder != nil {
@@ -60,10 +62,20 @@ func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) 
 		}
 		ds.dataMu.RUnlock()
 
+		// Retain records for parallel snapshot
+		for _, r := range records {
+			r.Retain()
+		}
+
 		item := storage.SnapshotItem{
 			Name:       name,
 			Records:    records,
 			PQCodebook: pqBytes,
+			Cleanup: func() {
+				for _, r := range records {
+					r.Release()
+				}
+			},
 		}
 
 		// Export Index Graph
@@ -116,18 +128,20 @@ func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) 
 
 // FlushWAL flushes any pending WAL writes.
 func (s *VectorStore) FlushWAL() error {
-	if s.engine == nil {
+	engine := s.engine.Load()
+	if engine == nil {
 		return nil
 	}
-	return s.engine.FlushWAL()
+	return engine.FlushWAL()
 }
 
 // TruncateWAL truncates the WAL up to the given sequence.
 func (s *VectorStore) TruncateWAL(seq uint64) error {
-	if s.engine == nil {
+	engine := s.engine.Load()
+	if engine == nil {
 		return nil
 	}
-	return s.engine.TruncateWAL(seq)
+	return engine.TruncateWAL(seq)
 }
 
 // writeToWAL is an internal helper for tests that expect it.

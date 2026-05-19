@@ -36,7 +36,7 @@ func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(cont
 
 	mem := memory.NewGoAllocator()
 	logger := zerolog.New(zerolog.ConsoleWriter{Out: os.Stderr}).With().Timestamp().Logger()
-	vs := NewVectorStore(mem, logger, 1024*1024*100, 0, 0) // 100MB limit
+	vs := NewVectorStore(mem, logger, 1024*1024*500, 0, 0) // 500MB limit
 
 	// Init persistence
 	// Init persistence
@@ -69,7 +69,7 @@ func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(cont
 }
 
 func TestDoPutAndDoGet(t *testing.T) {
-	_, _, dialer := setupServer(t)
+	vs, _, dialer := setupServer(t)
 
 	ctx := context.Background()
 	client, err := flight.NewClientWithMiddleware(
@@ -129,6 +129,11 @@ func TestDoPutAndDoGet(t *testing.T) {
 	if err != nil {
 		// Expected EOF
 		_ = err
+	}
+
+	// Ensure background indexing completes
+	if ds, err := vs.GetDataset("test_dataset"); err == nil {
+		ds.WaitForIndexing()
 	}
 
 	// 3. DoGet
@@ -304,6 +309,11 @@ func TestPersistence(t *testing.T) {
 	}
 	_, _ = stream.Recv()
 
+	// Ensure background indexing completes
+	if ds, err := vs.GetDataset("persist_test"); err == nil {
+		ds.WaitForIndexing()
+	}
+
 	// Force Snapshot
 	if err := vs.Snapshot(context.Background()); err != nil {
 		t.Fatalf("Snapshot failed: %v", err)
@@ -348,7 +358,7 @@ func TestEviction(t *testing.T) {
 		// Add 3 datasets. 3rd one should force eviction of the 1st one.
 		// Dataset 1
 
-		ds1 := &Dataset{Name: "ds1", Records: []arrow.RecordBatch{rec}}
+		ds1 := &Dataset{Name: "ds1", Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec})}
 		ds1.SetLastAccess(time.Now().Add(-time.Minute))
 		rec.Retain()
 		ds1.SizeBytes.Store(calculateRecordSize(rec))
@@ -360,7 +370,7 @@ func TestEviction(t *testing.T) {
 		store.currentMemory.Add(calculateRecordSize(rec))
 
 		// Dataset 2
-		ds2 := &Dataset{Name: "ds2", Records: []arrow.RecordBatch{rec}}
+		ds2 := &Dataset{Name: "ds2", Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec})}
 		ds2.SetLastAccess(time.Now())
 		rec.Retain()
 		ds2.SizeBytes.Store(calculateRecordSize(rec))
@@ -370,7 +380,7 @@ func TestEviction(t *testing.T) {
 		store.currentMemory.Add(calculateRecordSize(rec))
 
 		// Dataset 3 (Triggers eviction of ds1)
-		ds3 := &Dataset{Name: "ds3", Records: []arrow.RecordBatch{rec}}
+		ds3 := &Dataset{Name: "ds3", Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec})}
 		ds3.SetLastAccess(time.Now())
 		rec.Retain()
 		ds3.SizeBytes.Store(calculateRecordSize(rec))
@@ -386,7 +396,7 @@ func TestEviction(t *testing.T) {
 		ds1Res, ok1 := store.getDataset("ds1")
 		_, ok2 := store.getDataset("ds2")
 
-		if ok1 && len(ds1Res.Records) > 0 {
+		if ok1 && len(ds1Res.Records.Read()) > 0 {
 			t.Error("ds1 records should have been evicted")
 		}
 		if !ok2 {

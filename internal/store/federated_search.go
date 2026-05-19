@@ -11,6 +11,7 @@ import (
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
+// CollectionInfo contains metadata and statistics for a search collection.
 type CollectionInfo struct {
 	Name        string            `json:"name"`
 	Description string            `json:"description"`
@@ -23,12 +24,14 @@ type CollectionInfo struct {
 	UpdatedAt   int64             `json:"updated_at"`
 }
 
+// CollectionRegistry manages the registration and lookup of search collections and routing rules.
 type CollectionRegistry struct {
 	mu           sync.RWMutex
 	collections  map[string]*CollectionInfo
 	routingRules map[string]*RoutingRule
 }
 
+// RoutingRule defines how queries should be routed to collections based on tags.
 type RoutingRule struct {
 	Tag        string   `json:"tag"`
 	Collection string   `json:"collection"`
@@ -36,6 +39,7 @@ type RoutingRule struct {
 	Conditions []string `json:"conditions"`
 }
 
+// NewCollectionRegistry creates a new empty collection registry.
 func NewCollectionRegistry() *CollectionRegistry {
 	return &CollectionRegistry{
 		collections:  make(map[string]*CollectionInfo),
@@ -43,6 +47,7 @@ func NewCollectionRegistry() *CollectionRegistry {
 	}
 }
 
+// RegisterCollection adds a new collection to the registry.
 func (cr *CollectionRegistry) RegisterCollection(info *CollectionInfo) error {
 	cr.mu.Lock()
 	defer cr.mu.Unlock()
@@ -59,6 +64,7 @@ func (cr *CollectionRegistry) RegisterCollection(info *CollectionInfo) error {
 	return nil
 }
 
+// GetCollection retrieves collection information by name.
 func (cr *CollectionRegistry) GetCollection(name string) (*CollectionInfo, bool) {
 	cr.mu.RLock()
 	defer cr.mu.RUnlock()
@@ -66,6 +72,7 @@ func (cr *CollectionRegistry) GetCollection(name string) (*CollectionInfo, bool)
 	return info, ok
 }
 
+// ListCollections returns a slice of all registered collections.
 func (cr *CollectionRegistry) ListCollections() []*CollectionInfo {
 	cr.mu.RLock()
 	defer cr.mu.RUnlock()
@@ -77,6 +84,7 @@ func (cr *CollectionRegistry) ListCollections() []*CollectionInfo {
 	return collections
 }
 
+// UpdateCollection updates the metadata for an existing collection.
 func (cr *CollectionRegistry) UpdateCollection(name string, info *CollectionInfo) error {
 	cr.mu.Lock()
 	defer cr.mu.Unlock()
@@ -89,6 +97,7 @@ func (cr *CollectionRegistry) UpdateCollection(name string, info *CollectionInfo
 	return nil
 }
 
+// DeleteCollection removes a collection from the registry.
 func (cr *CollectionRegistry) DeleteCollection(name string) error {
 	cr.mu.Lock()
 	defer cr.mu.Unlock()
@@ -101,6 +110,7 @@ func (cr *CollectionRegistry) DeleteCollection(name string) error {
 	return nil
 }
 
+// RegisterRoutingRule adds a new routing rule to the registry.
 func (cr *CollectionRegistry) RegisterRoutingRule(rule *RoutingRule) error {
 	cr.mu.Lock()
 	defer cr.mu.Unlock()
@@ -109,6 +119,7 @@ func (cr *CollectionRegistry) RegisterRoutingRule(rule *RoutingRule) error {
 	return nil
 }
 
+// GetRoutingRule retrieves a routing rule by its tag.
 func (cr *CollectionRegistry) GetRoutingRule(tag string) (*RoutingRule, bool) {
 	cr.mu.RLock()
 	defer cr.mu.RUnlock()
@@ -116,6 +127,7 @@ func (cr *CollectionRegistry) GetRoutingRule(tag string) (*RoutingRule, bool) {
 	return rule, ok
 }
 
+// ListRoutingRules returns all registered routing rules sorted by priority.
 func (cr *CollectionRegistry) ListRoutingRules() []*RoutingRule {
 	cr.mu.RLock()
 	defer cr.mu.RUnlock()
@@ -130,11 +142,13 @@ func (cr *CollectionRegistry) ListRoutingRules() []*RoutingRule {
 	return rules
 }
 
+// VectorSearcher is the interface for performing vector similarity search.
 type VectorSearcher interface {
 	Search(ctx context.Context, query []float32, k int, options SearchOptions) ([]lbtypes.SearchResult, error)
 	GetDimension() int
 }
 
+// FederatedQueryRouter routes search queries to multiple collections and merges results.
 type FederatedQueryRouter struct {
 	mu           sync.RWMutex
 	registry     *CollectionRegistry
@@ -143,6 +157,7 @@ type FederatedQueryRouter struct {
 	defaultLimit int
 }
 
+// NewFederatedQueryRouter creates a new federated query router with default settings.
 func NewFederatedQueryRouter() *FederatedQueryRouter {
 	return &FederatedQueryRouter{
 		registry:     NewCollectionRegistry(),
@@ -152,6 +167,7 @@ func NewFederatedQueryRouter() *FederatedQueryRouter {
 	}
 }
 
+// RegisterCollection registers a searcher and its metadata with the router.
 func (fqr *FederatedQueryRouter) RegisterCollection(name string, searcher VectorSearcher, info *CollectionInfo) error {
 	fqr.mu.Lock()
 	defer fqr.mu.Unlock()
@@ -162,6 +178,7 @@ func (fqr *FederatedQueryRouter) RegisterCollection(name string, searcher Vector
 	return fqr.registry.RegisterCollection(info)
 }
 
+// Search performs a parallel search across specified collections and merges results using RRF.
 func (fqr *FederatedQueryRouter) Search(ctx context.Context, query []float32, collections []string, k int) ([]lbtypes.SearchResult, error) {
 	fqr.mu.RLock()
 	defer fqr.mu.RUnlock()
@@ -201,6 +218,7 @@ func (fqr *FederatedQueryRouter) Search(ctx context.Context, query []float32, co
 	return merged, nil
 }
 
+// SearchByTags routes a search query to collections matching the specified tags.
 func (fqr *FederatedQueryRouter) SearchByTags(ctx context.Context, query []float32, tags []string, k int) ([]lbtypes.SearchResult, error) {
 	fqr.mu.RLock()
 	collections := fqr.getCollectionsForTags(tags)
@@ -241,94 +259,107 @@ type partialResult struct {
 }
 
 func (fqr *FederatedQueryRouter) mergeResultsRRF(partials []partialResult, k int) []lbtypes.SearchResult {
+	if len(partials) == 0 {
+		return nil
+	}
+ 
 	type scoredResult struct {
 		id         lbtypes.VectorID
-		score      float64
+		score      float32
 		collection string
 		distance   float32
 	}
-
-	var allScored []scoredResult
-
+ 
+	// Estimate unique results to minimize reallocations
+	totalPotential := 0
+	for _, p := range partials {
+		totalPotential += len(p.results)
+	}
+ 
+	scoreMap := make(map[lbtypes.VectorID]*scoredResult, totalPotential/2)
+	rrfConstant := float32(fqr.defaultRRF)
+ 
 	for _, p := range partials {
 		for i, r := range p.results {
 			rank := i + 1
-			rrfScore := 1.0 / (fqr.defaultRRF * float64(rank))
-			allScored = append(allScored, scoredResult{
-				id:         r.ID,
-				score:      rrfScore,
-				collection: p.collection,
-				distance:   r.Distance,
-			})
+			rrfScore := 1.0 / (rrfConstant * float32(rank))
+			
+			if existing, ok := scoreMap[r.ID]; ok {
+				existing.score += rrfScore
+			} else {
+				scoreMap[r.ID] = &scoredResult{
+					id:         r.ID,
+					score:      rrfScore,
+					collection: p.collection,
+					distance:   r.Distance,
+				}
+			}
 		}
 	}
-
-	scoreMap := make(map[lbtypes.VectorID]*scoredResult)
-	for i := range allScored {
-		s := &allScored[i]
-		if existing, ok := scoreMap[s.id]; ok {
-			existing.score += s.score
-		} else {
-			scoreMap[s.id] = s
-		}
-	}
-
-	uniqueScored := make([]scoredResult, 0, len(scoreMap))
+ 
+	uniqueScored := make([]*scoredResult, 0, len(scoreMap))
 	for _, s := range scoreMap {
-		uniqueScored = append(uniqueScored, *s)
+		uniqueScored = append(uniqueScored, s)
 	}
-
+ 
 	sort.Slice(uniqueScored, func(i, j int) bool {
 		return uniqueScored[i].score > uniqueScored[j].score
 	})
-
+ 
 	limit := k
 	if limit > len(uniqueScored) {
 		limit = len(uniqueScored)
 	}
-
+ 
 	results := make([]lbtypes.SearchResult, limit)
 	for i := 0; i < limit; i++ {
+		s := uniqueScored[i]
 		metaBytes, _ := core.EncodeMetadata(map[string]interface{}{
-			"collection": uniqueScored[i].collection,
+			"collection": s.collection,
 		})
 		results[i] = lbtypes.SearchResult{
-			ID:       uniqueScored[i].id,
-			Distance: uniqueScored[i].distance,
-			Score:    float32(uniqueScored[i].score),
+			ID:       s.id,
+			Distance: s.distance,
+			Score:    s.score,
 			Metadata: metaBytes,
 		}
 	}
-
+ 
 	return results
 }
 
+// SetRRFFactor updates the Reciprocal Rank Fusion factor.
 func (fqr *FederatedQueryRouter) SetRRFFactor(rraf float64) {
 	fqr.mu.Lock()
 	defer fqr.mu.Unlock()
 	fqr.defaultRRF = rraf
 }
 
+// GetRRFFactor returns the current Reciprocal Rank Fusion factor.
 func (fqr *FederatedQueryRouter) GetRRFFactor() float64 {
 	fqr.mu.RLock()
 	defer fqr.mu.RUnlock()
 	return fqr.defaultRRF
 }
 
+// GetCollectionCount returns the number of registered collections.
 func (fqr *FederatedQueryRouter) GetCollectionCount() int {
 	fqr.mu.RLock()
 	defer fqr.mu.RUnlock()
 	return len(fqr.searchers)
 }
 
+// FederatedBenchmark provides tools for benchmarking federated search performance.
 type FederatedBenchmark struct {
 	router *FederatedQueryRouter
 }
 
+// NewFederatedBenchmark creates a new benchmark tool for the given router.
 func NewFederatedBenchmark(router *FederatedQueryRouter) *FederatedBenchmark {
 	return &FederatedBenchmark{router: router}
 }
 
+// BenchmarkResult holds the performance metrics for a search benchmark.
 type BenchmarkResult struct {
 	Collection         string  `json:"collection"`
 	QueryCount         int     `json:"query_count"`
@@ -339,6 +370,7 @@ type BenchmarkResult struct {
 	ThroughputQPS      float64 `json:"throughput_qps"`
 }
 
+// RunSingleCollection benchmarks search performance for a single collection.
 func (fb *FederatedBenchmark) RunSingleCollection(ctx context.Context, collection string, queries [][]float32, k int) (*BenchmarkResult, error) {
 	latencies := make([]float64, len(queries))
 	resultCounts := make([]int, len(queries))
@@ -364,6 +396,7 @@ func (fb *FederatedBenchmark) RunSingleCollection(ctx context.Context, collectio
 	}, nil
 }
 
+// RunFederated benchmarks search performance across multiple collections.
 func (fb *FederatedBenchmark) RunFederated(ctx context.Context, collections []string, queries [][]float32, k int) (*BenchmarkResult, error) {
 	latencies := make([]float64, len(queries))
 	resultCounts := make([]int, len(queries))
@@ -389,6 +422,7 @@ func (fb *FederatedBenchmark) RunFederated(ctx context.Context, collections []st
 	}, nil
 }
 
+// CompareSingleVsFederated runs benchmarks for both single and federated search for comparison.
 func (fb *FederatedBenchmark) CompareSingleVsFederated(ctx context.Context, collections []string, queries [][]float32, k int) (map[string]*BenchmarkResult, error) {
 	federatedResult, err := fb.RunFederated(ctx, collections, queries, k)
 	if err != nil {

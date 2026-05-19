@@ -21,8 +21,7 @@ graph TB
     subgraph Longbow["Longbow Cluster"]
         subgraph Node1["Node 1"]
             FlightSrv["Flight Server:3000"]
-            MetaSrv["Meta Server:3001"]
-            Metrics["Metrics:9090"]
+            Admission["Admission Controller"]
             VectorStore1["Vector Store"]
             HNSW1["HNSW Index"]
             WAL1["WAL"]
@@ -30,7 +29,7 @@ graph TB
 
         subgraph NodeN["Node N"]
             FlightSrvN["Flight Server:3000"]
-            MetaSrvN["Meta Server:3001"]
+            AdmissionN["Admission Controller"]
             VectorStoreN["Vector Store"]
             HNSW_N["HNSW Index"]
             WALN["WAL"]
@@ -39,6 +38,7 @@ graph TB
         subgraph Mesh["Distributed Mesh"]
             Gossip["Gossip Protocol"]
             Ring["Consistent Hash Ring"]
+            LoadBalancer["Load Balancer (Round-Robin)"]
         end
 
         subgraph Storage["Shared Storage"]
@@ -49,8 +49,10 @@ graph TB
 
     Python --> Flight
     Go --> Flight
-    Flight --> FlightSrv
-    FlightSrv --> VectorStore1
+    Flight --> LoadBalancer
+    LoadBalancer --> FlightSrv
+    FlightSrv --> Admission
+    Admission --> VectorStore1
     VectorStore1 --> HNSW1
     HNSW1 --> WAL1
     VectorStore1 --> Ring
@@ -62,271 +64,132 @@ graph TB
 
 ---
 
-## 2. Core Components
+## 2. Ingest Pipeline
 
-### Flight Servers
+Longbow features a high-concurrency ingestion pipeline optimized for zero-copy data flow from gRPC streams to off-heap storage.
 
-Longbow separates data and control traffic to prevent head-of-line blocking:
+### 2.1 Parallel Ingestion Flow
 
-- **Data Server (Port 3000)**: Implements Arrow Flight for `DoPut` (ingestion) and `DoGet` (search).
-- **Meta Server (Port 3001)**: Handles `ListFlights` and `DoAction` for cluster management.
-
-### In-Memory Vector Store
-
-- **SlabArena**: Off-heap memory management using 1MB slabs to eliminate Go GC overhead.
-- **Atomic COW (Copy-On-Write)**: Structural updates (e.g., index growth, metadata resizing) utilize a strict COW pattern. Modifications are applied to private clones before being atomically published, ensuring zero-lock read stability even during high-concurrency ingestion.
-- **Auto-Sharding Index**: Dynamically transitions from a flat index to a lock-striped **ShardedHNSW** index as datasets grow.
-- **Leveled Compaction**: Incremental merging of Arrow RecordBatches to maintain read performance without full index rebuilds.
-
-### Distance & SIMD Engine
-
-Vector distance calculations are optimized for modern CPU architectures:
-
-- **AVX2/AVX-512**: For x86_64 systems.
-- **NEON**: For ARM64 systems.
-- **TurboQuant**: SIMD-accelerated bit-packing for extreme throughput.
-
----
-
-## 3. Storage & Persistence
-
-### Write-Ahead Log (WAL)
-
-Every mutation is logged to a CRC32-protected WAL.
-
-- **Double-Buffering**: Uses a swap-buffer strategy for zero-allocation logging.
-- **Async Flush**: Ingestion continues while the WAL is periodically synced to disk.
-
-### Snapshotting
-
-Full index states are persisted as Parquet files. Snapshotting is triggered by WAL size limits or time intervals, and utilizes zero-copy Arrow-to-Parquet conversion.
-
----
-
-## 4. Hardware Acceleration
-
-### NVIDIA CUDA Architecture
-
-Supports GPU-accelerated HNSW traversal and distance kernels.
+The ingestion process utilizes a producer-consumer model with a reorder buffer to maintain strict sequence order while allowing parallel decoding.
 
 ```mermaid
-graph TB
-    subgraph Host["CPU Host"]
-        FlightSrv["Flight Server"]
-        VectorStore["Vector Store"]
-        WAL["WAL"]
-        CPUSearch["CPU Search Path"]
+sequenceDiagram
+    participant Client as Client (SDK)
+    participant Flight as Flight Server (DoPut)
+    participant Buffer as Reorder Buffer
+    participant Reader as ParallelRecordReader
+    participant WAL as Write-Ahead Log
+    participant Arena as SlabArena (Off-Heap)
+    participant Store as Vector Store
+    participant Index as Vector Index (COW)
+
+    Client->>Flight: Stream Arrow RecordBatches
+    Flight->>Reader: Dispatch Chunks to Workers
+    par Parallel Decoding
+        Reader->>Reader: Decode IPC (Worker 1)
+        Reader->>Reader: Decode IPC (Worker N)
+    end
+    Reader->>Buffer: Store Decoded Batches
+    Buffer->>WAL: Log Mutation (Ordered)
+    Buffer->>Arena: Allocate Row Slabs
+    Arena->>Store: Append to RecordBatches
+    Store->>Index: Update Graph/Index (COW Publication)
+    Index-->>Client: Acknowledge (ID Range)
+```
+
+- **ParallelRecordReader**: Distributes Arrow IPC decoding across multiple CPU cores.
+- **Reorder Buffer**: Ensures that batches are committed to the WAL and storage in the exact order they were sent by the client, even if decoding happens out of order.
+- **Double-Buffering WAL**: Uses a swap-buffer strategy for zero-allocation logging, minimizing I/O stalls.
+- **GPU-Accelerated Ingestion**: Offloads HNSW upper-layer greedy searches and neighbor pruning to the GPU (Metal/CUDA) to eliminate CPU-GPU 'ping-pong' overhead.
+
+---
+
+## 3. Storage & Memory Architecture
+
+### 3.1 Off-Heap Management (SlabPool)
+
+To bypass Go's Garbage Collector (GC) overhead during large-scale ingestion, Longbow manages its own memory:
+
+- **SlabArena**: Allocates memory in 1MB contiguous slabs.
+- **SlabPool**: A global pool of slabs that can be reclaimed using `Munmap` to return memory to the OS, preventing virtual memory fragmentation.
+- **NUMA-Aware Allocation**: Memory is allocated on the same NUMA node as the processing thread to minimize cross-socket latency.
+
+### 3.2 Atomic COW Publication
+
+Longbow uses a Copy-On-Write (COW) strategy for the primary index structure (`GraphData`).
+
+```mermaid
+graph LR
+    subgraph Readers["Search Threads"]
+        R1[Search 1]
+        R2[Search 2]
     end
 
-    subgraph GPU["NVIDIA GPU (CUDA)"]
-        GPUIndex["GPU HNSW Index"]
-        GPUMem["GPU Memory Pool"]
-        CUDA["CUDA Runtime"]
-        cuBLAS["cuBLAS"]
-        Memcpy["Memcpy H2D/D2H"]
-        
-        subgraph GPUCompute["GPU Compute"]
-            Distance["Distance Kernels"]
-            GraphTraverse["Graph Traversal"]
-            TopK["Top-K Selection"]
-        end
+    subgraph State["Global State"]
+        Ptr["Atomic Pointer (GraphData)"]
     end
 
-    VectorStore --> GPUIndex
-    GPUIndex --> GPUMem
-    GPUMem --> CUDA
-    CUDA --> cuBLAS
-    CUDA --> GPUCompute
+    subgraph Versions["Graph Versions"]
+        V1["V1 (Stable)"]
+        V2["V2 (In-Progress)"]
+    end
+
+    R1 --> V1
+    R2 --> V1
+    Ptr --> V1
     
-    VectorStore --> Memcpy
-    Memcpy --> GPUIndex
-```
-
-### Apple Metal Architecture
-
-Leverages Unified Memory on Apple Silicon for zero-copy CPU/GPU sharing.
-
-```mermaid
-graph TB
-    subgraph Mac["macOS System"]
-        subgraph CPU["CPU Layer"]
-            FlightSrv["Flight Server"]
-            VectorStore["Vector Store"]
-        end
-
-        subgraph Unified["Unified Memory Architecture"]
-            SharedMem["Shared System Memory"]
-        end
-
-        subgraph GPU["Apple GPU (Metal)"]
-            MetalCmd["Metal Command Buffer"]
-            MPS["Metal Performance Shaders"]
-        end
+    subgraph Writer["Ingest Worker"]
+        W1[Insert Node]
     end
 
-    FlightSrv --> VectorStore
-    VectorStore --> SharedMem
-    SharedMem --> MetalCmd
-    MetalCmd --> MPS
+    W1 -.->|Clone| V1
+    W1 --> V2
+    W1 -.->|CAS| Ptr
+    Ptr -.->|New State| V2
 ```
 
-### Google TPU Architecture
+### 3.3 RCU ChunkedLocationStore
 
-Utilizes the HBM (High Bandwidth Memory) and VMEM scratchpad for massive vector operations.
+`ChunkedLocationStore` maps every `VectorID` to a `Location` (batch + row offset). Prior to v0.2.0, it held a global `sync.RWMutex` that serialized all ingestion writes.
 
-- **Backend**: `BackendTPU` (Ironwood).
-- **Optimization**: Optimized for petabyte-scale retrieval in GCP environments.
+The v0.2.x rewrite uses two complementary techniques:
+
+- **Lock-free reads**: The chunk slice is published via `atomic.Pointer`. Readers load the pointer and iterate without acquiring any lock.
+- **Sharded reverse index**: The reverse index is split into 64 independent shards.
+- **Atomic ID reservation**: `Append` and `BatchAppend` use `atomic.Uint32.Add` to atomically claim a contiguous range of IDs.
+
+### 3.4 Platform-Specific Async I/O (DiskWriterUring)
+
+Longbow achieves high-throughput persistence through native asynchronous I/O bindings:
+
+- **Linux (io_uring)**: Utilizes a submission/completion ring architecture for zero-syscall overhead during bulk writes.
+- **macOS (Direct I/O)**: Employs `F_NOCACHE` to bypass the system page cache and a dedicated background worker pool for non-blocking I/O.
+- **Windows (IOCP)**: (Experimental) Leverages I/O Completion Ports for scalable async operations.
 
 ---
 
-## 5. Advanced Search Features
+## 4. Distance & SIMD Engine
 
-### Hybrid Search & Reranking
+Vector distance calculations are optimized for modern hardware using hand-written assembly and specialized kernels.
 
-Combines dense HNSW search with sparse BM25 indexing using Reciprocal Rank Fusion (RRF).
+### 4.1 SIMD Acceleration
 
-```mermaid
-graph TB
-    subgraph Query["Query Processing"]
-        VecQuery["Vector Query"]
-        TextQuery["Text Query (BM25)"]
-    end
+- **AVX2/AVX-512**: Featuring optimized `brayCurtisAVX2Kernel` and activation kernels (`exp`, `softmax`).
+- **NEON**: For ARM64 systems (Apple Silicon, AWS Graviton).
+- **TPU Kernels**: Specialized F16/Complex kernels for Google TPU.
+- **TurboQuant**: SIMD-accelerated bit-packing for 3-8x throughput in quantized search.
 
-    subgraph Fusion["RRF Fusion"]
-        BM25["BM25 Score"]
-        Vector["Vector Score"]
-        RRF["Reciprocal Rank Fusion"]
-    end
+### 4.3 GPU-Resident HNSW Traversal
 
-    subgraph Rerank["Cross-Encoder Reranking"]
-        Candidates["Top-K Candidates"]
-        CrossEncoder["Cross-Encoder Model"]
-        ReScore["Re-scored Results"]
-    end
+Starting in v0.2.3, Longbow supports full GPU residency for the HNSW graph topology:
 
-    VecQuery --> BM25
-    TextQuery --> Vector
-    BM25 --> RRF
-    Vector --> RRF
-    RRF --> Candidates
-    Candidates --> CrossEncoder
-    CrossEncoder --> ReScore
-```
+- **Graph Synchronization**: Adjacency lists (offsets, neighbors) are mirrored in unified GPU memory.
+- **Greedy Search Kernel**: Offloads the upper-layer traversal (hopping from entry point to level 0) to the GPU.
+- **Parallel Distance Reduction**: Uses threadgroup shared memory to find the best neighbor in parallel, significantly faster than sequential CPU traversal.
 
-### Geospatial & Temporal Search
+### 4.2 AVX-512 Activation Kernels (exp, softmax)
 
-- **Quadtree Indexing**: For efficient spatial range and radius queries.
-- **Temporal Versioning**: Maintains historical versions of vectors with TTL-based retention.
-
-### GraphStore & GraphRAG
-
-Longbow integrates a high-performance **GraphStore** that operates alongside the vector store to enable GraphRAG (Retrieval-Augmented Generation) and complex knowledge graph traversal. The architecture treats the vector index (HNSW) and the knowledge graph as two views of the same underlying data.
-
-- **Unified GraphData Structure**: Both semantic HNSW connections and explicit domain-specific relationships (e.g., "mentions", "belongs_to") are stored in a unified `GraphData` structure. This enables high-locality traversals that hop between semantic similarity and structural links.
-- **Atomic Ingestion Pipeline**: Mutations follow a strict Copy-On-Write (COW) flow:
-    1. **Private Workspace**: Structural updates are prepared in a private clone of the `GraphData`.
-    2. **Linear Publication**: Once all connections (both vector and relational) are established, the `GraphData` pointer is atomically updated in the `ArrowHNSW` index.
-    3. **Visibility Consistency**: This ensures that a single search request sees a perfectly consistent snapshot of both the vector space and the relationship graph, preventing "ghost" nodes or broken edges.
-- **Search Context Isolation**: Each query utilizes a `SearchContext` which pins a specific atomic pointer to `GraphData`. This provides a stable, immutable view for the duration of complex multi-hop traversals, even if background ingestion continues to publish new graph versions.
-- **Hybrid Traversal (Knowledge Graph + Semantic)**: Enables queries like "Find the 5 most similar documents to *User Query* that are also within 2 hops of *Entity A* in the knowledge graph".
-
----
-
-## 6. Multi-Tenancy & Data Lifecycle
-
-### Namespaces
-
-Longbow provides logical isolation through **Namespaces**.
-
-- **Isolation**: Each namespace has its own set of datasets, quotas, and metadata.
-- **Recursive Cleanup**: Deleting a namespace automatically drops all contained datasets and releases associated memory and disk resources.
-- **Quota Management**: Support for per-namespace limits on total vectors, dimensions, and storage bytes.
-
-### Data Mutation & Deletion Lifecycle
-
-Longbow implements an **LSM-tree inspired mutation model** for vector data, prioritizing high-ingestion throughput and search stability.
-
-#### 1. The Tombstone Strategy (Soft Delete)
-
-To avoid expensive real-time index re-balancing, Longbow uses a bitset-based soft deletion mechanism:
-
-- **Mutation**: When `Delete` is called for an ID, the `PrimaryIndex` is consulted to find the `RecordBatch` index and `RowOffset`.
-- **Bitset Mapping**: A bit is flipped in the `Tombstone` bitset corresponding to that batch.
-- **Masked Search**: During the search phase, distance kernels apply the tombstone bitset as a mask, effectively ignoring deleted vectors with zero overhead on the traversal logic.
-
-#### 2. Identity & Updates
-
-- **Deterministic IDs**: If a vector is ingested with an existing ID, the system performs an atomic "Tombstone-then-Insert" operation.
-- **Version Tracking**: The WAL ensures that even if a node crashes between tombstoning and inserting, the final state remains consistent upon replay.
-
-#### 3. Fragmentation-Aware Compaction
-
-Background hygiene is managed by the **Compaction Worker**:
-
-- **Tracking**: Each `Dataset` maintains a fragmentation score based on the density of active vs. tombstoned rows.
-- **Merging**: When fragmentation exceeds the configured threshold (default 20%), the worker:
-    1. Snapshots the fragmented batches.
-    2. Physically "squashes" the data into new, dense `RecordBatches`.
-    3. Atomically swaps the `Dataset.Records` pointer.
-    4. Re-maps the `PrimaryIndex` to the new physical locations.
-    5. Triggers a `RemapLocations` call on the underlying `Index` (HNSW/DiskANN) to update its internal graph pointers.
-
-#### 4. Resource Reclamation
-
-- **Memory**: Once a batch is released, the `SlabArena` reclaims the underlying slabs for future allocations.
-- **Disk**: Compaction triggers WAL truncation. Once a `Snapshot` is persisted containing the compacted state, all preceding WAL segments are safely deleted.
-
----
-
-## 7. Performance Optimizations
-
-### 7.1 RCU ChunkedLocationStore
-
-`ChunkedLocationStore` maps every `VectorID` to a `Location` (batch + row offset) and maintains a reverse index (location → ID). Prior to this change it held a global `sync.RWMutex` that serialized all ingestion writes through a single critical section.
-
-The rewrite uses two complementary techniques:
-
-- **Lock-free reads**: The chunk slice is published via `atomic.Pointer[[]*locationChunk]`. Readers load the pointer and iterate without acquiring any lock. Readers and writers never block each other.
-- **Sharded reverse index**: Instead of one global `map[uint64]VectorID`, the reverse index is split into 64 independent shards (each with its own `sync.RWMutex`). The shard is selected by `packedLocation % 64`, so 64 parallel ingestion goroutines contend on different shards.
-- **Atomic ID reservation**: `Append` and `BatchAppend` use `atomic.Uint32.Add` to atomically claim a contiguous range of IDs before acquiring the growth lock. The growth lock is held only while allocating new `locationChunk` objects — a very infrequent operation.
-
-```
-Before:  global RWMutex → serialized ingestion (~25% regression under load)
-After:   atomic.Add (ID reservation) + per-shard lock (reverse map only)
-         chunk reads: fully lock-free
-```
-
-### 7.2 Adaptive GPU Dispatch
-
-Graph-RAG expansion via `RankWithGraphGPU` incurs a fixed GPU kernel launch overhead of ~50–200 µs regardless of workload size. For small result sets (e.g., reranking 10–20 seed nodes) this latency dominates and the GPU provides no speedup.
-
-**Threshold logic** (`graph_store.go`):
-
-```go
-const GPUWorkloadThreshold = 128 // nodes
-
-func (gs *GraphStore) RankWithGraphGPU(...) {
-    if len(results) < GPUWorkloadThreshold {
-        return gs.RankWithGraph(results, alpha, depth), nil // CPU path
-    }
-    // GPU path ...
-}
-```
-
-| Workload Size | Path | Rationale |
-|---|---|---|
-| < 128 results | CPU (`RankWithGraph`) | Launch overhead dominates; CPU is faster |
-| ≥ 128 results | GPU (`RankWithGraphGPU`) | Parallelism justifies the fixed overhead |
-
-The threshold value of 128 is derived from empirical benchmarks on RTX 3090 hardware. It can be tuned by changing the `GPUWorkloadThreshold` constant in `internal/store/graph_store.go`.
-
-### 7.3 AVX-512 Activation Kernels (exp, softmax)
-
-GraphRAG re-scoring and temporal search modes apply `softmax` and `exp` to score vectors. These operations are now accelerated by hand-written AVX-512 assembly on x86-64.
-
-**Algorithm** (`internal/simd/simd_amd64.s`):
-
-Both kernels use a 5-term minimax polynomial for `2^f` combined with an integer exponent-field trick for `2^n`:
+GraphRAG re-scoring and temporal search modes apply `softmax` and `exp` to score vectors, accelerated by a 5-term minimax polynomial approximation in AVX-512.
 
 ```
 exp(x) ≈ 2^f * 2^n
@@ -334,19 +197,172 @@ exp(x) ≈ 2^f * 2^n
         n = floor(z + 0.5)         -- via VRNDSCALEPS
         f = z - n                  -- fractional part
         2^f ≈ c0 + f(c1 + f(c2 + f(c3 + f(c4 + f·c5))))
-        2^n = (n + 127) << 23      -- IEEE 754 exponent trick, FCVTPS2DQ + VPSLLD
+        2^n = (n + 127) << 23      -- IEEE 754 exponent trick
 ```
 
-**Softmax** follows the numerically-stable variant: subtract max before exp, then normalize by the sum.
+---
 
-Both kernels process 16 `float32` elements per cycle using AVX-512 ZMM registers, with masked-load/store for arbitrary-length tails.
+## 5. Sharding & Scalability
 
-| Architecture | `exp` dispatch | `softmax` dispatch |
-|---|---|---|
-| amd64 (AVX-512) | `expAVX512Kernel` (asm) | `softmaxAVX512Kernel` (asm) |
-| arm64 (NEON) | `expGeneric` (Go, pending validated WORD opcodes) | `softmaxGeneric` (Go) |
-| other | `expGeneric` | `softmaxGeneric` |
+Longbow scales from a single node to massive clusters through transparent auto-sharding and consistent hashing.
 
-> **Observability**: kernel calls and latency are tracked via
-> `longbow_simd_activation_kernel_calls_total` and
-> `longbow_simd_activation_kernel_duration_seconds` (see `docs/metrics.md §8`).
+### 5.1 Consistent Hashing & Data Partitioning
+
+Data is partitioned across nodes using a consistent hash ring, ensuring minimal data movement when nodes join or leave the cluster.
+
+```mermaid
+graph LR
+    subgraph Cluster["Consistent Hash Ring"]
+        NodeA["Node A (0-90)"]
+        NodeB["Node B (91-180)"]
+        NodeC["Node C (181-270)"]
+        NodeD["Node D (271-360)"]
+    end
+
+    subgraph Data["Ingested Vectors"]
+        V1["V1 (Hash: 45)"]
+        V2["V2 (Hash: 120)"]
+        V3["V3 (Hash: 300)"]
+    end
+
+    V1 --> NodeA
+    V2 --> NodeB
+    V3 --> NodeD
+    
+    NodeA <-->|Gossip| NodeB
+    NodeB <-->|Gossip| NodeC
+    NodeC <-->|Gossip| NodeD
+    NodeD <-->|Gossip| NodeA
+```
+
+### 5.2 Auto-Sharding & Migration
+
+When a dataset exceeds the `ShardThreshold` (default 100k), the system triggers a background migration.
+
+```mermaid
+graph TD
+    subgraph Mono["Monolithic State"]
+        IndexM["ArrowHNSW"]
+    end
+
+    subgraph Sharded["Sharded State"]
+        IndexS["ShardedHNSW"]
+        S1["Shard 1"]
+        S2["Shard 2"]
+        SN["Shard N"]
+    end
+
+    subgraph Migration["Migration Logic"]
+        Shadow[Shadow Search]
+        Batch[Batch Transfer]
+        Release[Chunk Release]
+    end
+
+    IndexM --> Shadow
+    Shadow --> IndexS
+    IndexS --> S1 & S2 & SN
+    
+    IndexM --> Batch
+    Batch --> S1 & S2 & SN
+    
+    Batch --> Release
+    Release --> IndexM
+```
+
+- **Shadow Search**: Queries are executed against both the monolithic index and the new shards during migration, with results merged by distance.
+- **Incremental Release**: Memory is reclaimed from the monolithic index chunk-by-chunk as soon as they are successfully migrated to shards.
+
+---
+
+## 6. GraphRAG & Graph Rendering
+
+Longbow integrates a high-performance **GraphStore** that enables Retrieval-Augmented Generation (RAG) through complex knowledge graph traversal.
+
+### 6.1 Adaptive Expansion Pipeline
+
+The graph engine supports adaptive dispatch between CPU and GPU based on workload size.
+
+```mermaid
+graph TD
+    subgraph Query["Query Phase"]
+        Q[Vector Query] --> HNSW[HNSW Search]
+        HNSW --> Results[Top-K Results]
+    end
+
+    subgraph Expansion["Graph Expansion"]
+        Results --> Dispatch{Count > 5000?}
+        Dispatch -- No --> CPU[CPU BFS / Lock-Free Map]
+        Dispatch -- Yes --> GPU[GPU CSR / Metal Performance Shaders]
+    end
+
+    subgraph Rerank["Post-Processing"]
+        CPU --> Score[Softmax Reranking]
+        GPU --> Score
+        Score --> Final[Top-K Context]
+    end
+
+    Final --> RAG[LLM Generation]
+```
+
+- **CSR (Compressed Sparse Row)**: Used on the GPU for efficient parallel traversal of large graphs.
+- **Lock-Free Edge Map**: Used on the CPU for high-concurrency small-scale expansions.
+
+---
+
+## 7. Search Execution Pipeline
+
+The search pipeline coordinates between multiple indices, filters, and rerankers to provide high-precision results.
+
+```mermaid
+graph TD
+    subgraph Query["Query Input"]
+        V[Query Vector]
+        F[Metadata Filter]
+    end
+
+    subgraph Search["Vector Search"]
+        HNSW[HNSW Layer Search]
+        GPU[GPU Brute-Force/PQ]
+        HNSW & GPU --> Merge[Initial Result Merge]
+    end
+
+    subgraph Filtering["Post-Filtering"]
+        Merge --> Bitset[Bitmap/Bloom Filter]
+        Bitset --> Valid[Validated Candidates]
+    end
+
+    subgraph Scoring["Scoring & Reranking"]
+        Valid --> Graph[GraphRAG Expansion]
+        Graph --> Rerank[ML Reranker / Cohere]
+        Rerank --> Final[Top-K Results]
+    end
+
+    V --> HNSW & GPU
+    F --> Bitset
+
+    subgraph GPU_Flow["GPU Acceleration Path"]
+        HNSW -.->|Upper Layers| Greedy[GPU Greedy Search Kernel]
+        Greedy -.->|Level 0| Search0[CPU/GPU ef-Search]
+        Search0 -.->|Refine| Prune[GPU Neighbor Pruning]
+    end
+```
+
+---
+
+## 8. Reliability & Load Balancing
+
+### 8.1 Load-Aware Routing
+
+Nodes broadcast `LoadHints` (CPU, memory, queue depth) via the gossip protocol.
+
+- **Dynamic Weighting**: Clients use these hints to steer traffic away from hot nodes.
+- **Admission Control**: Each node monitors its own health and rejects requests if memory pressure or CPU load exceeds safety thresholds.
+
+### 8.2 gRPC Retry Protocol (`pkg/retry`)
+
+Implements **Exponential Backoff with Jitter** for transient failure recovery. It identifies retryable codes (`Unavailable`, `DeadlineExceeded`, etc.) and ensures that total request time never exceeds the parent context deadline.
+
+### 8.3 Fault Tolerance
+
+- **Gossip Protocol**: Rapidly detects node failures and updates the hash ring.
+- **WAL Replication**: (Optional) Logs can be streamed to replicas for high availability.

@@ -168,6 +168,7 @@ func GenerateKernels(hasSIMD bool) []byte {
 	return g.buf
 }
 
+// GenerateScalarBody generates the WebAssembly body for a scalar Euclidean distance calculation.
 func GenerateScalarBody() []byte {
 	body := []byte{
 		OpF32Const, 0, 0, 0, 0,
@@ -228,6 +229,7 @@ func GenerateScalarBody() []byte {
 	return buf.buf
 }
 
+// GenerateBatchBody generates the WebAssembly body for a batch Euclidean distance calculation.
 func GenerateBatchBody() []byte {
 	body := []byte{
 		OpI32Const, 0,
@@ -330,6 +332,7 @@ func GenerateBatchBody() []byte {
 	return buf.buf
 }
 
+// GenerateBatchBodySIMD generates the WebAssembly body for a SIMD-accelerated batch Euclidean distance calculation.
 func GenerateBatchBodySIMD() []byte {
 	// Locals:
 	// 5: v_idx (i32)
@@ -414,7 +417,7 @@ func GenerateBatchBodySIMD() []byte {
 		// Reduction of acc (v128) to sum (f32)
 		OpF32Const, 0, 0, 0, 0,
 		OpLocalSet, 7, // sum = 0
-
+		
 		// Lane 0
 		OpLocalGet, 8,
 		OpSIMDPrefix, OpF32x4ExtractLane, 0x00,

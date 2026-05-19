@@ -30,7 +30,7 @@ func TestHNSW_SearchPadding(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "padding_test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 
 	cfg := DefaultArrowHNSWConfig()

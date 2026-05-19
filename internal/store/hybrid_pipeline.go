@@ -4,9 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
-	"strings"
 
-	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/query"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
@@ -20,6 +18,7 @@ type HybridPipelineConfig struct {
 	UseColumnIndex bool       // Use column index for exact filters
 }
 
+// Validate checks if the hybrid pipeline configuration is within valid ranges.
 func (c *HybridPipelineConfig) Validate() error {
 	if c.Alpha < 0 || c.Alpha > 1 {
 		return errors.New("alpha must be between 0 and 1")
@@ -37,9 +36,12 @@ func (c *HybridPipelineConfig) Validate() error {
 type FusionMode int
 
 const (
-	FusionModeRRF     FusionMode = iota // Reciprocal Rank Fusion
-	FusionModeLinear                    // Linear weighted combination
-	FusionModeCascade                   // Cascade: filters -> keyword -> vector
+	// FusionModeRRF uses Reciprocal Rank Fusion to combine results.
+	FusionModeRRF     FusionMode = iota
+	// FusionModeLinear uses a linear weighted combination of scores.
+	FusionModeLinear
+	// FusionModeCascade uses cascade-style filtering (exact -> keyword -> vector).
+	FusionModeCascade
 )
 
 // DefaultHybridPipelineConfig returns sensible defaults
@@ -61,10 +63,12 @@ type HybridSearchQuery struct {
 	ExactFilters  []query.Filter // Exact match filters (for column index)
 }
 
+// DefaultHybridSearchQuery returns a HybridSearchQuery with default limit.
 func DefaultHybridSearchQuery() HybridSearchQuery {
 	return HybridSearchQuery{K: 10}
 }
 
+// Validate ensures the hybrid search query has all required fields and valid parameters.
 func (q *HybridSearchQuery) Validate() error {
 	if q.K <= 0 {
 		return errors.New("k must be positive")
@@ -164,7 +168,7 @@ func (p *HybridSearchPipeline) Search(q *HybridSearchQuery) ([]SearchResult, err
 	// 3. Keyword search (sparse) using BM25
 	var sparseResults []SearchResult
 	if q.KeywordQuery != "" && p.bm25Index != nil && alpha < 1 {
-		sparseResults = p.bm25Index.SearchBM25(q.KeywordQuery, q.K*2, filterBitmap)
+		sparseResults = p.bm25Index.SearchBM25(q.KeywordQuery, q.K*2, filterBitmap, nil)
 	}
 
 	// 4. Fuse results based on mode
@@ -176,13 +180,13 @@ func (p *HybridSearchPipeline) Search(q *HybridSearchQuery) ([]SearchResult, err
 
 	switch p.config.FusionMode {
 	case FusionModeRRF:
-		fused = ReciprocalRankFusion(datasetName, denseResults, sparseResults, p.config.RRFk, q.K)
+		fused = ReciprocalRankFusion(datasetName, denseResults, sparseResults, p.config.RRFk, q.K, nil)
 	case FusionModeLinear:
 		fused = FuseLinear(denseResults, sparseResults, alpha, q.K)
 	case FusionModeCascade:
 		fused = FuseCascade(filterBitmap, sparseResults, denseResults, q.K)
 	default:
-		fused = ReciprocalRankFusion(datasetName, denseResults, sparseResults, p.config.RRFk, q.K)
+		fused = ReciprocalRankFusion(datasetName, denseResults, sparseResults, p.config.RRFk, q.K, nil)
 	}
 
 	// 5. Re-ranking stage (Stage 2)
@@ -239,7 +243,7 @@ func FuseLinear(dense, sparse []SearchResult, alpha float32, limit int) []Search
 
 // FuseRRF is an alias for ReciprocalRankFusion (legacy alignment)
 func FuseRRF(dataset string, dense, sparse []SearchResult, k, limit int) []SearchResult {
-	return ReciprocalRankFusion(dataset, dense, sparse, k, limit)
+	return ReciprocalRankFusion(dataset, dense, sparse, k, limit, nil)
 }
 
 // FuseCascade implements cascade-style filtering: exact -> keyword -> vector
@@ -302,7 +306,7 @@ func (p *HybridSearchPipeline) applyExactFilters(filters []query.Filter) *roarin
 			continue // Only exact matches supported for now
 		}
 
-		positions := p.columnIndex.Lookup(p.dataset.Name, f.Field, f.Value)
+		positions := p.columnIndex.Lookup(f.Field, f.Value)
 		if len(positions) == 0 {
 			return roaring.New() // Empty intersection
 		}
@@ -338,91 +342,6 @@ func (p *HybridSearchPipeline) findVectorID(pos RowPosition) (VectorID, bool) {
 	// O(1) Reverse Lookup relying on reverseMap in ChunkedLocationStore
 	id, ok := p.hnswIndex.GetVectorID(Location{BatchIdx: pos.RecordIdx, RowIdx: pos.RowIdx})
 	return VectorID(id), ok
-}
-
-// Reranker defines the interface for the second-stage re-ranking
-type Reranker interface {
-	Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error)
-}
-
-type CrossEncoderReranker struct {
-	ModelName string
-}
-
-func (r *CrossEncoderReranker) Rerank(ctx context.Context, query string, results []SearchResult) ([]SearchResult, error) {
-	if len(results) == 0 {
-		return results, nil
-	}
-
-	type scoredResult struct {
-		result SearchResult
-		score  float32
-	}
-
-	scored := make([]scoredResult, len(results))
-	for i, result := range results {
-		score := r.scoreResult(query, result)
-		scored[i] = scoredResult{result: result, score: score}
-	}
-
-	sort.Slice(scored, func(i, j int) bool {
-		return scored[i].score > scored[j].score
-	})
-
-	reranked := make([]SearchResult, len(results))
-	for i, sr := range scored {
-		reranked[i] = sr.result
-		reranked[i].Score = sr.score
-	}
-
-	return reranked, nil
-}
-
-func (r *CrossEncoderReranker) scoreResult(query string, result SearchResult) float32 {
-	distanceScore := 1.0 / (1.0 + float32(result.Distance))
-
-	textMatchScore := float32(0.0)
-	if len(result.Metadata) > 0 {
-		metaMap, _ := core.DecodeMetadata(result.Metadata)
-		if metaMap != nil {
-			if title, ok := metaMap["title"].(string); ok {
-				textMatchScore += r.textMatchScore(query, title)
-			}
-			if description, ok := metaMap["description"].(string); ok {
-				textMatchScore += r.textMatchScore(query, description) * 0.5
-			}
-			if content, ok := metaMap["content"].(string); ok {
-				textMatchScore += r.textMatchScore(query, content) * 0.3
-			}
-		}
-	}
-
-	finalScore := 0.7*distanceScore + 0.3*textMatchScore
-
-	return finalScore
-}
-
-func (r *CrossEncoderReranker) textMatchScore(query, text string) float32 {
-	if query == "" || text == "" {
-		return 0.0
-	}
-
-	queryLower := strings.ToLower(query)
-	textLower := strings.ToLower(text)
-
-	matchCount := 0
-	queryTerms := strings.Fields(queryLower)
-	for _, term := range queryTerms {
-		if strings.Contains(textLower, term) {
-			matchCount++
-		}
-	}
-
-	if len(queryTerms) == 0 {
-		return 0.0
-	}
-
-	return float32(matchCount) / float32(len(queryTerms))
 }
 
 // dedupeAndSort removes duplicates (keeping highest score) and sorts by score descending

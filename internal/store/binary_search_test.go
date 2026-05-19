@@ -161,7 +161,7 @@ func setupTestDataset(t *testing.T, s *VectorStore, name string) {
 
 	ds := &Dataset{
 		Name:    name,
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 	}
 	ds.SetLastAccess(time.Now())
 	// Init Index

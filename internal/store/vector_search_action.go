@@ -94,7 +94,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 
 		if isHybrid {
 			// Perform Hybrid Search
-			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2)
+			searchResults, err = s.SearchHybrid(stream.Context(), req.Dataset, queryVec, req.TextQuery, req.K, req.Alpha, 60, req.GraphAlpha, 2, req.RawHybrid)
 			if err != nil {
 				metrics.VectorSearchActionErrors.Inc()
 				continue
@@ -177,7 +177,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 				// gs (GraphStore) has its OWN lock. ds.Graph is just a pointer.
 				// So calling it while holding ds.dataMu RLock is safe (assuming no lock inversion).
 				graphDepth := 2
-				ranked := ds.Graph.RankWithGraph(searchResults, req.GraphAlpha, graphDepth)
+				ranked := ds.Graph.RankWithGraph(req.Dataset, req.Vector, searchResults, req.GraphAlpha, graphDepth)
 				if len(ranked) > 0 {
 					searchResults = ranked
 				}
@@ -358,8 +358,8 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 			}
 
 			if !isDeleted {
-				if loc.BatchIdx < len(ds.Records) {
-					rec := ds.Records[loc.BatchIdx]
+				if loc.BatchIdx < len(ds.Records.Read()) {
+					rec := ds.Records.Read()[loc.BatchIdx]
 					vec, err := ExtractVectorFromArrow(rec, loc.RowIdx, -1)
 					if err != nil {
 						return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
@@ -374,7 +374,7 @@ func (s *VectorStore) handleVectorSearchByIDAction(action *flight.Action, stream
 	// Fallback to linear scan if index miss (shouldn't happen if index is fully populated)
 	// or if PrimaryIndex wasn't initialized.
 	if !found && ds.PrimaryIndex == nil {
-		for i, rec := range ds.Records {
+		for i, rec := range ds.Records.Read() {
 			// Check for "id" column
 			idColIdx := -1
 			for j, field := range rec.Schema().Fields() {

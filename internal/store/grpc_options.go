@@ -11,16 +11,20 @@ import (
 	"google.golang.org/grpc/keepalive"
 )
 
-// GRPCConfig holds all gRPC server/client tuning parameters for optimal throughput.
-// Configuring these parameters can yield 5-10% improvement in sustained throughput.
+// FlowControlPolicy defines the strategy for HTTP/2 flow control window management.
 type FlowControlPolicy int
 
 const (
-	PolicyDefault       FlowControlPolicy = iota // 4MB windows
-	PolicyHighBandwidth                          // 16MB windows (10GbE+)
-	PolicyAuto                                   // Reserved for auto-tuning
+	// PolicyDefault uses 4MB window sizes.
+	PolicyDefault FlowControlPolicy = iota // 4MB windows
+	// PolicyHighBandwidth uses 16MB window sizes (recommended for 10GbE+ networks).
+	PolicyHighBandwidth
+	// PolicyAuto is reserved for future auto-tuning functionality.
+	PolicyAuto
 )
 
+// GRPCConfig holds all gRPC server/client tuning parameters for optimal throughput.
+// Configuring these parameters can yield 5-10% improvement in sustained throughput.
 type GRPCConfig struct {
 	// Keepalive parameters
 	KeepAliveTime                time.Duration // Time between keepalive pings (server sends to client)
@@ -44,17 +48,21 @@ type GRPCConfig struct {
 
 	// Compression settings - enables gzip compression for 50-70% bandwidth reduction
 	CompressionEnabled bool // Enable gzip compression for streaming data
+
+	// Socket-level buffer sizes
+	WriteBufferSize int // Size of the socket write buffer
+	ReadBufferSize  int // Size of the socket read buffer
 }
 
 // DefaultGRPCConfig returns a GRPCConfig with sensible defaults optimized for throughput.
 // These defaults are tuned for vector database workloads with large message payloads.
 func DefaultGRPCConfig() GRPCConfig {
 	return GRPCConfig{
-		// Keepalive: 2h default, conservative for long-lived connections
-		KeepAliveTime:                2 * time.Hour,
-		KeepAliveTimeout:             20 * time.Second,
-		KeepAliveMinTime:             5 * time.Minute,
-		KeepAlivePermitWithoutStream: false,
+		// Keepalive: 30s for faster detection of broken connections during heavy GC
+		KeepAliveTime:                30 * time.Second,
+		KeepAliveTimeout:             10 * time.Second,
+		KeepAliveMinTime:             10 * time.Second,
+		KeepAlivePermitWithoutStream: true,
 
 		// Allow 250 concurrent streams per connection (up from default 100)
 		MaxConcurrentStreams: 250,
@@ -71,6 +79,10 @@ func DefaultGRPCConfig() GRPCConfig {
 
 		// Enable compression by default for 50-70% bandwidth reduction
 		CompressionEnabled: true,
+
+		// 4MB socket buffers for high-bandwidth loopback and remote nodes
+		WriteBufferSize: 4 * 1024 * 1024,
+		ReadBufferSize:  4 * 1024 * 1024,
 	}
 }
 
@@ -163,6 +175,10 @@ func (c GRPCConfig) BuildServerOptions() []grpc.ServerOption {
 		// OpenTelemetry stats handler
 		grpc.StatsHandler(otelgrpc.NewServerHandler()),
 		grpc.MaxSendMsgSize(c.MaxSendMsgSize),
+
+		// Socket buffers
+		grpc.WriteBufferSize(c.WriteBufferSize),
+		grpc.ReadBufferSize(c.ReadBufferSize),
 	}
 }
 
@@ -195,6 +211,10 @@ func (c GRPCConfig) BuildClientOptions() []grpc.DialOption {
 
 		// Message size limits and compression
 		grpc.WithDefaultCallOptions(callOpts...),
+
+		// Socket buffers
+		grpc.WithWriteBufferSize(c.WriteBufferSize),
+		grpc.WithReadBufferSize(c.ReadBufferSize),
 	}
 
 	return opts

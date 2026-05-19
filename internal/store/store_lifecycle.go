@@ -8,6 +8,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	lbmem "github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
@@ -15,8 +16,7 @@ import (
 // StoreLifecycle manages startup/shutdown of standard components
 // such as managing memory pressure, eviction, and startup.
 
-// evictDataset evicts a dataset from memory.
-// evictDataset evicts a dataset from memory.
+// evictDataset removes a dataset from memory and releases its resources safely.
 func (s *VectorStore) evictDataset(name string) {
 	var ds *Dataset
 	s.updateDatasets(func(m map[string]*Dataset) {
@@ -30,28 +30,21 @@ func (s *VectorStore) evictDataset(name string) {
 		return
 	}
 
-	size := ds.SizeBytes.Load()
-	s.currentMemory.Add(-size)
+	// Ensure all pending indexing/ingestion for this dataset is finished
+	// before we decrement the global memory counter and release resources.
+	ds.WaitForIndexing()
 
-	if ds.Index != nil {
-		_ = ds.Index.Close()
-	}
+	// Account for both records and index overhead
+	totalMemory := ds.SizeBytes.Load() + ds.IndexMemoryBytes.Load()
+	s.currentMemory.Add(-totalMemory)
 
-	// Release records
-	// Note: We need lock to safely read records?
-	// The dataset is removed from map, but other readers might still hold a pointer.
-	// We can't immediately release if RCU readers are active.
-	// But Arrow Release() decrements refcount. If readers retained, it's fine.
-	// If store owns the "base" refcount, we release it here.
-	ds.dataMu.Lock()
-	defer ds.dataMu.Unlock()
-	for _, r := range ds.Records {
-		r.Release()
-	}
-
-	// Metrics updated elsewhere
+	// Robust cleanup
+	ds.Close()
+	
+	s.logger.Info().Str("dataset", name).Int64("freed_bytes", totalMemory).Msg("Dataset evicted safely")
 }
 
+// PrewarmDataset ensures a dataset is initialized in memory, creating it if necessary.
 func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 	_, created := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, schema)
@@ -65,10 +58,20 @@ func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 	}
 }
 
-const (
-	MinIndexingWorkers    = 2
-	MinIngestionWorkers = 2
+var (
+	// MinIndexingWorkers is the minimum number of indexing workers to keep running.
+	MinIndexingWorkers = calculateMinWorkers(8) // 1/8th of CPU
+	// MinIngestionWorkers is the minimum number of ingestion workers to keep running.
+	MinIngestionWorkers = calculateMinWorkers(4) // 1/4th of CPU
 )
+
+func calculateMinWorkers(divisor int) int {
+	n := runtime.NumCPU() / divisor
+	if n < 4 {
+		return 4
+	}
+	return n
+}
 
 // StartLifecycleManager starts the lifecycle manager background task.
 func (s *VectorStore) StartLifecycleManager(ctx context.Context) {
@@ -167,7 +170,7 @@ func (s *VectorStore) StartWALCheckTicker(d time.Duration) {
 	}()
 }
 
-// UpdateConfig updates store configuration dynamically
+// UpdateConfig updates store configuration parameters like memory limits dynamically.
 func (s *VectorStore) UpdateConfig(maxMemory, maxWALSize int64, snapshotInterval time.Duration) {
 	if maxMemory > 0 {
 		s.maxMemory.Store(maxMemory)
@@ -195,7 +198,7 @@ func (s *VectorStore) StartMetricsTicker(d time.Duration) {
 
 // StartEvictionTicker is defined later
 
-// StartIndexingWorkers starts more background indexing workers
+// StartIndexingWorkers spawns a specified number of background indexing workers.
 func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 	s.workerMu.Lock()
 	defer s.workerMu.Unlock()
@@ -218,7 +221,7 @@ func (s *VectorStore) StartIndexingWorkers(numWorkers int) {
 	s.logger.Info().Int("added", numWorkers).Int("total", len(s.indexingWorkerCancels)).Msg("Started indexing workers")
 }
 
-// StopIndexingWorkers stops n background indexing workers
+// StopIndexingWorkers stops a specified number of background indexing workers.
 func (s *VectorStore) StopIndexingWorkers(numWorkers int) {
 	s.workerMu.Lock()
 	defer s.workerMu.Unlock()
@@ -236,7 +239,7 @@ func (s *VectorStore) StopIndexingWorkers(numWorkers int) {
 	s.logger.Info().Int("stopped", numWorkers).Int("remaining", len(s.indexingWorkerCancels)).Msg("Stopped indexing workers")
 }
 
-// StartIngestionWorkers starts background ingestion workers.
+// StartIngestionWorkers spawns a specified number of background ingestion workers.
 func (s *VectorStore) StartIngestionWorkers(count int) {
 	if count <= 0 {
 		count = runtime.NumCPU()
@@ -262,7 +265,7 @@ func (s *VectorStore) StartIngestionWorkers(count int) {
 	s.logger.Info().Int("added", count).Int("total", len(s.ingestionWorkerCancels)).Msg("Started ingestion workers")
 }
 
-// StopIngestionWorkers stops n background ingestion workers
+// StopIngestionWorkers stops a specified number of background ingestion workers.
 func (s *VectorStore) StopIngestionWorkers(numWorkers int) {
 	s.workerMu.Lock()
 	defer s.workerMu.Unlock()
@@ -280,7 +283,7 @@ func (s *VectorStore) StopIngestionWorkers(numWorkers int) {
 	s.logger.Info().Int("stopped", numWorkers).Int("remaining", len(s.ingestionWorkerCancels)).Msg("Stopped ingestion workers")
 }
 
-// AdjustWorkerCounts resizes pools to match target counts
+// AdjustWorkerCounts resizes the indexing and ingestion worker pools to match target counts.
 func (s *VectorStore) AdjustWorkerCounts(indexing, ingestion int) {
 	s.workerMu.Lock()
 	currIndexing := len(s.indexingWorkerCancels)
@@ -408,17 +411,25 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 						var targetEf int
 						switch {
 						case depth > 5000:
-							targetEf = 50
+							targetEf = 100 // Raised from 50 to avoid graph search deadlocks (ef < M)
 						case depth > 1000:
-							targetEf = 100
+							targetEf = 200 // Raised from 100
 						default:
 							targetEf = 400 // Default high quality
 						}
 						adaptive.SetEfConstruction(targetEf)
 					}
 
-					// Propagate store shutdown context
-					docIDs, addErr = idx.AddBatch(s.ctx, recs, rowIdxs, batchIdxs)
+					// Granular Backpressure: if memory pressure is extreme, we rely on the 
+					// AdmissionController at the ingestion gate to throttle new input.
+					// Throttling workers here only delays queue drainage and keeps RSS high.
+
+					// Propagate store shutdown context and priority
+					batchCtx := s.ctx
+					if len(dsGroup) > 0 && dsGroup[0].HighPriority {
+						batchCtx = types.WithHighPriority(batchCtx)
+					}
+					docIDs, addErr = idx.AddBatch(batchCtx, recs, rowIdxs, batchIdxs)
 					if addErr != nil {
 						s.logger.Error().
 							Str("dataset", dsName).
@@ -613,8 +624,7 @@ func (s *VectorStore) StartEvictionTicker(interval time.Duration) {
 	}()
 }
 
-// ReleaseMemory explicitly triggers GC and frees OS memory.
-// It also waits for async cleanups to complete.
+// ReleaseMemory explicitly triggers garbage collection and returns memory to the OS.
 func (s *VectorStore) ReleaseMemory() {
 	s.logger.Info().Msg("Explicitly releasing memory")
 
@@ -633,7 +643,9 @@ func (s *VectorStore) ReleaseMemory() {
 }
 
 func (s *VectorStore) performTemporalPrewarm(ctx context.Context) {
-	if s.temporalIndex != nil {
-		_ = s.temporalIndex.Prewarm(ctx)
-	}
+	s.IterateDatasets(func(name string, ds *Dataset) {
+		if ds.TemporalIndex != nil {
+			_ = ds.TemporalIndex.Prewarm(ctx)
+		}
+	})
 }

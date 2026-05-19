@@ -9,13 +9,13 @@ import (
 	"sort"
 	"unsafe"
 
-	"golang.org/x/sys/unix"
+	"github.com/23skdu/longbow/internal/memory"
 )
 
-const (
-	DiskGraphMagic   = 0x484E5357 // "HNSW"
-	DiskGraphVersion = 5
-)
+// DiskGraphMagic is the magic number identifying a DiskGraph file.
+const DiskGraphMagic   = 0x484E5357 // "HNSW"
+// DiskGraphVersion is the current version of the DiskGraph file format.
+const DiskGraphVersion = 5
 
 // DiskGraph implements a read-only GraphBackend backed by a file (via mmap).
 type DiskGraph struct {
@@ -33,11 +33,13 @@ type DiskGraph struct {
 	upperLayers []SparseLayerIndex
 }
 
+// SparseLayerIndex stores node IDs and their offsets for sparse upper layers.
 type SparseLayerIndex struct {
-	NodeIDs []uint32 // Sorted
-	Offsets []uint64
+	NodeIDs []uint32 // Sorted list of node identifiers present in this layer
+	Offsets []uint64 // Corresponding file offsets for the neighbor lists
 }
 
+// DiskGraphHeader defines the file format header for serialized HNSW graphs.
 type DiskGraphHeader struct {
 	Magic     uint32
 	Version   uint32
@@ -85,7 +87,7 @@ func NewDiskGraph(path string) (*DiskGraph, error) {
 		return nil, fmt.Errorf("file too small")
 	}
 
-	data, err := unix.Mmap(int(f.Fd()), 0, int(size), unix.PROT_READ, unix.MAP_SHARED) // #nosec G115
+	data, err := memory.Mmap(int(f.Fd()), 0, int(size), false)
 	if err != nil {
 		_ = f.Close()
 		return nil, fmt.Errorf("mmap failed: %v", err)
@@ -225,6 +227,7 @@ func (dg *DiskGraph) parse() error {
 }
 
 // GetNeighbors implements GraphBackend.
+// GetNeighbors retrieves the neighbors for a node at a specific layer from disk.
 func (dg *DiskGraph) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint32 {
 	if layer >= int(dg.header.MaxLayers) {
 		return nil
@@ -308,34 +311,34 @@ func (dg *DiskGraph) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint
 			offset += n
 		}
 		return res
-
-	} else {
-		// V3: Fixed Layout [Count:4b][N...:4b]
-		if int(dataOffset)+4 > len(dg.data) { // #nosec G115
-			return nil
-		}
-		count = binary.LittleEndian.Uint32(dg.data[dataOffset : dataOffset+4])
-		start = int(dataOffset) + 4 // #nosec G115
-		// Check bounds
-		end := start + int(count)*4
-		if end > len(dg.data) {
-			return nil
-		}
-
-		// Copy to buf
-		var res []uint32
-		if cap(buf) >= int(count) {
-			res = buf[:count]
-		} else {
-			res = make([]uint32, count)
-		}
-
-		src := unsafe.Slice((*uint32)(unsafe.Pointer(&dg.data[start])), int(count)) // #nosec G103
-		copy(res, src)
-		return res
 	}
+
+	// V3: Fixed Layout [Count:4b][N...:4b]
+	if int(dataOffset)+4 > len(dg.data) { // #nosec G115
+		return nil
+	}
+	count = binary.LittleEndian.Uint32(dg.data[dataOffset : dataOffset+4])
+	start = int(dataOffset) + 4 // #nosec G115
+	// Check bounds
+	end := start + int(count)*4
+	if end > len(dg.data) {
+		return nil
+	}
+
+	// Copy to buf
+	var res []uint32
+	if cap(buf) >= int(count) {
+		res = buf[:count]
+	} else {
+		res = make([]uint32, count)
+	}
+
+	src := unsafe.Slice((*uint32)(unsafe.Pointer(&dg.data[start])), int(count)) // #nosec G103
+	copy(res, src)
+	return res
 }
 
+// GetVectorSQ8 retrieves the SQ8-quantized vector for a node from disk.
 func (dg *DiskGraph) GetVectorSQ8(nodeID uint32) []byte {
 	if dg.header.SQ8Offset == 0 || dg.header.Dims == 0 {
 		return nil
@@ -358,6 +361,7 @@ func (dg *DiskGraph) GetVectorSQ8(nodeID uint32) []byte {
 	return dg.data[start:end]
 }
 
+// GetVectorPQ retrieves the PQ-quantized vector for a node from disk.
 func (dg *DiskGraph) GetVectorPQ(nodeID uint32) []byte {
 	if dg.header.PQOffset == 0 || dg.header.PQDims == 0 {
 		return nil
@@ -377,6 +381,7 @@ func (dg *DiskGraph) GetVectorPQ(nodeID uint32) []byte {
 	return dg.data[start:end]
 }
 
+// GetVector retrieves the vector for a node from disk in its native format.
 func (dg *DiskGraph) GetVector(id uint32) (any, error) {
 	if dg.header.SQ8Offset > 0 {
 		return dg.GetVectorSQ8(id), nil
@@ -390,6 +395,7 @@ func (dg *DiskGraph) GetVector(id uint32) (any, error) {
 	return nil, nil
 }
 
+// GetVectorTQ retrieves the TurboQuant-quantized vector for a node from disk.
 func (dg *DiskGraph) GetVectorTQ(nodeID uint32) []byte {
 	if dg.header.TQOffset == 0 || dg.header.Dims == 0 || dg.header.TQBits == 0 {
 		return nil
@@ -412,6 +418,7 @@ func (dg *DiskGraph) GetVectorTQ(nodeID uint32) []byte {
 	return dg.data[start:end]
 }
 
+// GetVectorBQ retrieves the BQ-quantized vector for a node from disk.
 func (dg *DiskGraph) GetVectorBQ(nodeID uint32) []uint64 {
 	if dg.header.BQOffset == 0 || dg.header.Dims == 0 {
 		return nil
@@ -433,10 +440,12 @@ func (dg *DiskGraph) GetVectorBQ(nodeID uint32) []uint64 {
 	return unsafe.Slice((*uint64)(ptr), numWords) // #nosec G103
 }
 
+// Capacity returns the total number of nodes in the disk graph.
 func (dg *DiskGraph) Capacity() int {
 	return int(dg.header.NumNodes)
 }
 
+// GetLevel returns the maximum level a node reaches in the graph.
 func (dg *DiskGraph) GetLevel(nodeID uint32) int {
 	// To find max level, we check from top down?
 	// Or we store levels explicitly?
@@ -456,13 +465,15 @@ func (dg *DiskGraph) GetLevel(nodeID uint32) int {
 	return 0 // Every node is at least at layer 0 (if valid)
 }
 
+// Size returns the number of nodes in the disk graph.
 func (dg *DiskGraph) Size() int {
 	return int(dg.header.NumNodes)
 }
 
+// Close releases the file and unmaps the memory region.
 func (dg *DiskGraph) Close() error {
 	if dg.data != nil {
-		_ = unix.Munmap(dg.data)
+		_ = memory.Munmap(dg.data)
 		dg.data = nil
 	}
 	if dg.f != nil {
@@ -477,10 +488,10 @@ func (dg *DiskGraph) Madvise(advice int) error {
 	if dg.data == nil {
 		return nil
 	}
-	return unix.Madvise(dg.data, advice)
+	return memory.Madvise(dg.data, advice)
 }
 
 // Warmup triggers MADV_WILLNEED to populate the page cache.
 func (dg *DiskGraph) Warmup() error {
-	return dg.Madvise(unix.MADV_WILLNEED)
+	return dg.Madvise(memory.MadvWillNeed)
 }

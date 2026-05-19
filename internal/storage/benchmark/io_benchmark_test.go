@@ -51,7 +51,7 @@ func writeWALEntries(backend storage.WALBackend, count int) error {
 		buf := make([]byte, size)
 		offset := 0
 
-		buf[offset] = byte(len(name))
+		buf[offset] = byte(len(name)) // #nosec G115
 		offset++
 		copy(buf[offset:], name)
 		offset += len(name)
@@ -63,7 +63,7 @@ func writeWALEntries(backend storage.WALBackend, count int) error {
 		offset += 8
 
 		data := binaryData.Value(0)
-		binary.LittleEndian.PutUint32(buf[offset:], uint32(len(data)))
+		binary.LittleEndian.PutUint32(buf[offset:], uint32(len(data))) // #nosec G115
 		offset += 4
 		copy(buf[offset:], data)
 

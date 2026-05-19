@@ -36,14 +36,14 @@ func TestInsertProperties(t *testing.T) {
 			index.dims.Store(2)
 
 			// Init data
-			data := types.NewGraphData(nodeCount+10, 2, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test")
+			data := types.NewGraphData(nodeCount+10, 2, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 			index.data.Store(data)
 
 			// Helper to add fake vector chunk
 			ensureChunk := func(id uint32) {
 				cID := types.ChunkID(id)
 				cOff := types.ChunkOffset(id)
-				_, err := index.ensureChunk(data, int(cID), int(cOff), 2)
+				_, err := index.ensureChunk(int(cID), int(cOff), 2)
 				if err != nil {
 					t.Fatalf("ensureChunk failed for ID %d: %v", id, err)
 				}
@@ -135,7 +135,7 @@ func TestInsertProperties(t *testing.T) {
 			index.dims.Store(1) // use 1-dim vectors
 
 			// Initialize GraphData manually
-			data := types.NewGraphData(1000, 1, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test") // capacity 1000, dim 1
+			data := types.NewGraphData(1000, 1, false, false, 0, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false) // capacity 1000, dim 1
 			index.data.Store(data)
 
 			// Setup dummy vectors
@@ -144,7 +144,7 @@ func TestInsertProperties(t *testing.T) {
 				cOff := types.ChunkOffset(uint32(i))
 
 				// Ensure chunk is allocated
-				data, _ = index.ensureChunk(data, int(cID), int(cOff), int(index.dims.Load()))
+				data, _ = index.ensureChunk(int(cID), int(cOff), int(index.dims.Load()))
 
 				// Check vector (optional)
 				// storedVec := (*data.Vectors[cID])[int(cOff)*index.dims : (int(cOff)+1)*index.dims]

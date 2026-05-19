@@ -33,16 +33,12 @@ func TestDimensionSpecificBlocked(t *testing.T) {
 			var err2 error
 
 			switch dim {
-			case 768:
-				result, err2 = euclidean768Blocked(a, b)
 			case 1024:
 				result, err2 = euclidean1024Blocked(a, b)
-			case 1536:
-				result, err2 = euclidean1536Blocked(a, b)
-			case 2048:
-				result, err2 = euclidean2048Blocked(a, b)
 			case 3072:
 				result, err2 = euclidean3072Blocked(a, b)
+			default:
+				result, err2 = euclideanBlocked(a, b)
 			}
 
 			assert.NoError(t, err2)

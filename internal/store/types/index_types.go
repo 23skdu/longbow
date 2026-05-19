@@ -7,27 +7,42 @@ import (
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/prometheus/client_golang/prometheus"
+	"context"
 )
+
+type priorityKey struct{}
+
+// WithHighPriority returns a context with high priority flag set.
+func WithHighPriority(ctx context.Context) context.Context {
+	return context.WithValue(ctx, priorityKey{}, true)
+}
+
+// IsHighPriority returns true if the context has high priority flag set.
+func IsHighPriority(ctx context.Context) bool {
+	v, ok := ctx.Value(priorityKey{}).(bool)
+	return ok && v
+}
 
 func runtimeNumCPU() int {
 	return 4 // Simple fallback, usually overridden
 }
 
-// IndexJob represents a job for the indexing worker
+// IndexJob represents a background task to index an Arrow RecordBatch.
 type IndexJob struct {
-	DatasetName string
-	Record      arrow.RecordBatch
-	BatchIdx    int
-	CreatedAt   time.Time
+	DatasetName  string
+	Record       arrow.RecordBatch
+	BatchIdx     int
+	CreatedAt    time.Time
+	HighPriority bool // If true, job should be prioritized by workers
 }
 
-// RowLocation represents a physical location of a row
+// RowLocation represents the physical address of a row (Batch + Row offset).
 type RowLocation struct {
 	BatchIdx int
 	RowIdx   int
 }
 
-// IndexJobQueueStats tracks queue statistics.
+// IndexJobQueueStats provides visibility into the state of the indexing queue.
 type IndexJobQueueStats struct {
 	TotalSent     uint64 // Total jobs sent
 	DirectSent    uint64 // Jobs sent directly to main channel
@@ -36,7 +51,7 @@ type IndexJobQueueStats struct {
 	DroppedCount  uint64 // Jobs dropped when both buffers full
 }
 
-// IndexJobQueueConfig holds settings for the indexing job queue
+// IndexJobQueueConfig defines the behavior of the producer-consumer indexing queue.
 type IndexJobQueueConfig struct {
 	MainChannelSize    int           // Primary channel buffer size
 	OverflowBufferSize int           // Secondary overflow buffer size
@@ -54,7 +69,7 @@ func DefaultIndexJobQueueConfig() IndexJobQueueConfig {
 	}
 }
 
-// ParallelSearchConfig holds settings for parallelized vector search
+// ParallelSearchConfig controls the degree of parallelism for vector similarity search.
 type ParallelSearchConfig struct {
 	Enabled      bool
 	Workers      int
@@ -74,7 +89,7 @@ func DefaultParallelSearchConfig() ParallelSearchConfig {
 	}
 }
 
-// ArrowHNSWConfig holds configuration for ArrowHNSW index
+// ArrowHNSWConfig defines the hyperparameters and runtime settings for an HNSW index.
 type ArrowHNSWConfig struct {
 	M              int
 	MMax           int
@@ -121,6 +136,7 @@ type ArrowHNSWConfig struct {
 	TurboQuantBits    int
 	LockFreeThreshold int // Layer threshold for CAS-based lock-free updates (e.g. 2)
 	NUMANode          int // Target NUMA node for memory pinning (-1 for default)
+	SharedVectorSpace bool // If true, perform zero-copy lookups from primary Dataset records
 }
 
 // DefaultArrowHNSWConfig returns a configuration with sensible defaults
@@ -149,6 +165,7 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		Metric:                  core.MetricEuclidean,
 		ParallelSearch:          DefaultParallelSearchConfig(),
 		NUMANode:                -1,
+		SharedVectorSpace:       false,
 	}
 
 	if os.Getenv("LONGBOW_LOW_MEM") == "1" || os.Getenv("LONGBOW_LOW_MEM") == "true" {

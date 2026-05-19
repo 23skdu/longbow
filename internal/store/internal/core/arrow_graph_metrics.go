@@ -45,7 +45,7 @@ func (h *ArrowHNSW) AnalyzeGraph() GraphMetrics {
 		// Level Distribution
 		levelsChunk := data.GetLevelsChunk(cID)
 		if levelsChunk != nil {
-			lvl := int(levelsChunk[cOff])
+			lvl := int(atomic.LoadUint32(&levelsChunk[cOff]))
 			metrics.LevelDistribution[lvl]++
 		}
 

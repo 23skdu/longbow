@@ -41,6 +41,15 @@ struct MetalIndexOptimized {
     void* tqPipeline;
     void* pqPipeline;
     void* pqBuffer;
+    void* haversinePipeline;
+    void* normPipeline;
+    void* prunePipeline;
+    void* greedySearchPipeline;
+    void* greedyTQSearchPipeline;
+    void* graphOffsetsBuffer;
+    void* graphNeighborsBuffer;
+    void* graphWeightsBuffer;
+    void* trigBuffer; // [256 * 2] float table for sin/cos
     int vectorCount;
     int dimensions;
     int capacity;
@@ -48,937 +57,173 @@ struct MetalIndexOptimized {
 };
 
 // Metal shader source for optimized L2 distance calculation, top-k selection, and batched queries
-const char* metalShaderSource =
-"#include <metal_stdlib>\n"
-"using namespace metal;\n"
-"\n"
-"// Optimized L2 distance with SIMD vectorization and loop unrolling\n"
-"kernel void compute_l2_distances(\n"
-"    device const float* query [[buffer(0)]],\n"
-"    device const float* vectors [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]],\n"
-"    uint tid [[thread_index_in_threadgroup]],\n"
-"    uint tg_size [[threads_per_threadgroup]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    // Use SIMD vector loads for 4-way parallelism\n"
-"    float sum = 0.0f;\n"
-"    uint vectorWidth = dim / 4;\n"
-"    uint remainder = dim % 4;\n"
-"    \n"
-"    // Process 4 elements at a time using vector loads\n"
-"    for (uint i = 0; i < vectorWidth; i++) {\n"
-"        float4 queryVec = float4(query[i*4], query[i*4+1], query[i*4+2], query[i*4+3]);\n"
-"        float4 vecVec = float4(vectors[offset + i*4], vectors[offset + i*4+1], \n"
-"                              vectors[offset + i*4+2], vectors[offset + i*4+3]);\n"
-"        float4 diff = queryVec - vecVec;\n"
-"        sum += dot(diff, diff);\n"
-"    }\n"
-"    \n"
-"    // Handle remainder\n"
-"    for (uint i = 0; i < remainder; i++) {\n"
-"        float diff = query[vectorWidth * 4 + i] - vectors[offset + vectorWidth * 4 + i];\n"
-"        sum += diff * diff;\n"
-"    }\n"
-"    \n"
-"    distances[gid] = sqrt(sum);\n"
-"}\n"
-"\n"
-"// Optimized L2 distance - simple version for small dimensions\n"
-"kernel void compute_l2_distances_simple(\n"
-"    device const float* query [[buffer(0)]],\n"
-"    device const float* vectors [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    float sum = 0.0f;\n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    // Unrolled loop for better instruction-level parallelism\n"
-"    for (uint i = 0; i < dim; i++) {\n"
-"        float diff = query[i] - vectors[offset + i];\n"
-"        sum += diff * diff;\n"
-"    }\n"
-"    \n"
-"    distances[gid] = sqrt(sum);\n"
-"}\n"
-"\n"
-"// Cosine similarity computation\n"
-"kernel void compute_cosine_similarity(\n"
-"    device const float* query [[buffer(0)]],\n"
-"    device const float* vectors [[buffer(1)]],\n"
-"    device float* similarities [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    float dotProd = 0.0f;\n"
-"    float queryMag = 0.0f;\n"
-"    float vecMag = 0.0f;\n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    for (uint i = 0; i < dim; i++) {\n"
-"        float q = query[i];\n"
-"        float v = vectors[offset + i];\n"
-"        dotProd += q * v;\n"
-"        queryMag += q * q;\n"
-"        vecMag += v * v;\n"
-"    }\n"
-"    \n"
-"    float denom = sqrt(queryMag) * sqrt(vecMag);\n"
-"    similarities[gid] = (denom > 1e-10f) ? (dotProd / denom) : 0.0f;\n"
-"}\n"
-"\n"
-"// Dot product computation\n"
-"kernel void compute_dot_product(\n"
-"    device const float* query [[buffer(0)]],\n"
-"    device const float* vectors [[buffer(1)]],\n"
-"    device float* products [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    float sum = 0.0f;\n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    for (uint i = 0; i < dim; i++) {\n"
-"        sum += query[i] * vectors[offset + i];\n"
-"    }\n"
-"    \n"
-"    products[gid] = sum;\n"
-"}\n"
-"\n"
-"// Asymmetric PQ distance computation\n"
-"kernel void compute_pq_distances(\n"
-"    device const float* lookupTable [[buffer(0)]],\n"
-"    device const uchar* codes [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    constant uint& m [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    float sum = 0.0f;\n"
-"    uint offset = gid * m;\n"
-"    \n"
-"    for (uint i = 0; i < m; i++) {\n"
-"        sum += lookupTable[i * 256 + codes[offset + i]];\n"
-"    }\n"
-"    \n"
-"    distances[gid] = sum;\n"
-"}\n"
-"\n"
-"// Parallel reduction for top-k using threadgroups\n"
-"kernel void find_top_k_parallel(\n"
-"    device const float* distances [[buffer(0)]],\n"
-"    device int* indices [[buffer(1)]],\n"
-"    device float* topDistances [[buffer(2)]],\n"
-"    constant uint& numVectors [[buffer(3)]],\n"
-"    constant uint& k [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]],\n"
-"    uint tid [[thread_index_in_threadgroup]],\n"
-"    uint tg_size [[threads_per_threadgroup]])\n"
-"{\n"
-"    // Each threadgroup finds local top-k\n"
-"    threadgroup float localDists[256];\n"
-"    threadgroup uint localIndices[256];\n"
-"    \n"
-"    // Load into local memory with bounds checking\n"
-"    if (gid < numVectors) {\n"
-"        localDists[tid] = distances[gid];\n"
-"        localIndices[tid] = gid;\n"
-"    } else {\n"
-"        localDists[tid] = INFINITY;\n"
-"        localIndices[tid] = UINT_MAX;\n"
-"    }\n"
-"    \n"
-"    threadgroup_barrier(mem_flags::mem_threadgroup);\n"
-"    \n"
-"    // Parallel selection within threadgroup\n"
-"    for (uint i = 0; i < k && i < tg_size; i++) {\n"
-"        if (tid == i) {\n"
-"            // Find minimum in remaining\n"
-"            float minDist = localDists[tid];\n"
-"            uint minIdx = tid;\n"
-"            \n"
-"            for (uint j = tid + 1; j < tg_size; j++) {\n"
-"                if (localDists[j] < minDist) {\n"
-"                    minDist = localDists[j];\n"
-"                    minIdx = j;\n"
-"                }\n"
-"            }\n"
-"            \n"
-"            // Store to global if within top-k\n"
-"            if (i < k) {\n"
-"                topDistances[i] = minDist;\n"
-"                indices[i] = localIndices[minIdx];\n"
-"            }\n"
-"            \n"
-"            // Mark as used\n"
-"            localDists[minIdx] = INFINITY;\n"
-"        }\n"
-"        \n"
-"        threadgroup_barrier(mem_flags::mem_threadgroup);\n"
-"    }\n"
-"}\n"
-"\n"
-"// Fast top-k using heap-based selection (better for large k)\n"
-"kernel void find_top_k_heap(\n"
-"    device const float* distances [[buffer(0)]],\n"
-"    device int* indices [[buffer(1)]],\n"
-"    device float* topDistances [[buffer(2)]],\n"
-"    constant uint& numVectors [[buffer(3)]],\n"
-"    constant uint& k [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    // Single-threaded heap construction\n"
-"    if (gid == 0) {\n"
-"        uint heapSize = min(k, numVectors);\n"
-"        \n"
-"        // Initialize heap with default values\n"
-"        for (uint i = 0; i < heapSize; i++) {\n"
-"            topDistances[i] = INFINITY;\n"
-"            indices[i] = -1;\n"
-"        }\n"
-"        \n"
-"        // Iterate all elements and maintain max-heap\n"
-"        for (uint i = 0; i < numVectors; i++) {\n"
-"            float currentDist = distances[i];\n"
-"            if (currentDist < topDistances[0]) {\n"
-"                // Replace root\n"
-"                float parentDist = currentDist;\n"
-"                int parentIdx = i;\n"
-"                topDistances[0] = parentDist;\n"
-"                indices[0] = parentIdx;\n"
-"                \n"
-"                // Heapify down\n"
-"                uint parent = 0;\n"
-"                while (true) {\n"
-"                    uint child = 2 * parent + 1;\n"
-"                    if (child >= heapSize) break;\n"
-"                    \n"
-"                    if (child + 1 < heapSize && topDistances[child + 1] > topDistances[child]) {\n"
-"                        child++;\n"
-"                    }\n"
-"                    \n"
-"                    if (parentDist >= topDistances[child]) break;\n"
-"                    \n"
-"                    topDistances[parent] = topDistances[child];\n"
-"                    indices[parent] = indices[child];\n"
-"                    \n"
-"                    parent = child;\n"
-"                }\n"
-"                \n"
-"                topDistances[parent] = parentDist;\n"
-"                indices[parent] = parentIdx;\n"
-"            }\n"
-"        }\n"
-"        \n"
-"        // Sort final heap (ascending for top-k)\n"
-"        for (uint i = heapSize - 1; i > 0; i--) {\n"
-"            float tempDist = topDistances[0];\n"
-"            int tempIdx = indices[0];\n"
-"            topDistances[0] = topDistances[i];\n"
-"            indices[0] = indices[i];\n"
-"            topDistances[i] = tempDist;\n"
-"            indices[i] = tempIdx;\n"
-"            \n"
-"            // Heapify\n"
-"            uint parent = 0;\n"
-"            uint child = 1;\n"
-"            while (child < i) {\n"
-"                if (child + 1 < i && topDistances[child + 1] > topDistances[child]) {\n"
-"                    child++;\n"
-"                }\n"
-"                if (topDistances[parent] >= topDistances[child]) break;\n"
-"                \n"
-"                float swapDist = topDistances[parent];\n"
-"                int swapIdx = indices[parent];\n"
-"                topDistances[parent] = topDistances[child];\n"
-"                indices[parent] = indices[child];\n"
-"                topDistances[child] = swapDist;\n"
-"                indices[child] = swapIdx;\n"
-"                \n"
-"                parent = child;\n"
-"                child = 2 * parent + 1;\n"
-"            }\n"
-"        }\n"
-"    }\n"
-"}\n"
-"\n"
-"// ============================================================================\n"
-"// FP16 (half-precision) Kernels - Memory bandwidth optimization\n"
-"// ============================================================================\n"
-"\n"
-"// FP16 L2 distance with half storage and float32 accumulation\n"
-"// Uses half4 vector loads for 4-way parallelism (Metal only supports up to half4)\n"
-"kernel void compute_l2_distances_fp16(\n"
-"    device const half* query [[buffer(0)]],\n"
-"    device const half* vectors [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    // Use half4 vector loads for 4-way parallelism with half -> float conversion\n"
-"    float sum = 0.0f;\n"
-"    uint vectorWidth = dim / 4;\n"
-"    uint remainder = dim % 4;\n"
-"    \n"
-"    // Process 4 elements at a time using half4 vector loads\n"
-"    for (uint i = 0; i < vectorWidth; i++) {\n"
-"        half4 queryVec = half4(query[i*4], query[i*4+1], query[i*4+2], query[i*4+3]);\n"
-"        half4 vecVec = half4(vectors[offset + i*4], vectors[offset + i*4+1],\n"
-"                            vectors[offset + i*4+2], vectors[offset + i*4+3]);\n"
-"        float4 diff = float4(queryVec) - float4(vecVec);\n"
-"        sum += dot(diff, diff);\n"
-"    }\n"
-"    \n"
-"    // Handle remainder\n"
-"    for (uint i = 0; i < remainder; i++) {\n"
-"        float diff = float(query[vectorWidth * 4 + i]) - float(vectors[offset + vectorWidth * 4 + i]);\n"
-"        sum += diff * diff;\n"
-"    }\n"
-"    \n"
-"    distances[gid] = sqrt(sum);\n"
-"}\n"
-"\n"
-"// FP16 cosine similarity with half storage and float32 accumulation\n"
-"kernel void compute_cosine_similarity_fp16(\n"
-"    device const half* query [[buffer(0)]],\n"
-"    device const half* vectors [[buffer(1)]],\n"
-"    device float* similarities [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    float dotProd = 0.0f;\n"
-"    float queryMag = 0.0f;\n"
-"    float vecMag = 0.0f;\n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    // Process 4 elements at a time using half4\n"
-"    uint vectorWidth = dim / 4;\n"
-"    uint remainder = dim % 4;\n"
-"    \n"
-"    for (uint i = 0; i < vectorWidth; i++) {\n"
-"        half4 q4 = half4(query[i*4], query[i*4+1], query[i*4+2], query[i*4+3]);\n"
-"        half4 v4 = half4(vectors[offset + i*4], vectors[offset + i*4+1],\n"
-"                        vectors[offset + i*4+2], vectors[offset + i*4+3]);\n"
-"        float4 q = float4(q4);\n"
-"        float4 v = float4(v4);\n"
-"        dotProd += dot(q, v);\n"
-"        queryMag += dot(q, q);\n"
-"        vecMag += dot(v, v);\n"
-"    }\n"
-"    \n"
-"    // Handle remainder\n"
-"    for (uint i = 0; i < remainder; i++) {\n"
-"        float q = float(query[vectorWidth * 4 + i]);\n"
-"        float v = float(vectors[offset + vectorWidth * 4 + i]);\n"
-"        dotProd += q * v;\n"
-"        queryMag += q * q;\n"
-"        vecMag += v * v;\n"
-"    }\n"
-"    \n"
-"    float denom = sqrt(queryMag) * sqrt(vecMag);\n"
-"    similarities[gid] = (denom > 1e-10f) ? (dotProd / denom) : 0.0f;\n"
-"}\n"
-"\n"
-"// FP16 dot product with half storage and float32 accumulation\n"
-"kernel void compute_dot_product_fp16(\n"
-"    device const half* query [[buffer(0)]],\n"
-"    device const half* vectors [[buffer(1)]],\n"
-"    device float* products [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    float sum = 0.0f;\n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    // Process 4 elements at a time using half4\n"
-"    uint vectorWidth = dim / 4;\n"
-"    uint remainder = dim % 4;\n"
-"    \n"
-"    for (uint i = 0; i < vectorWidth; i++) {\n"
-"        half4 q4 = half4(query[i*4], query[i*4+1], query[i*4+2], query[i*4+3]);\n"
-"        half4 v4 = half4(vectors[offset + i*4], vectors[offset + i*4+1],\n"
-"                        vectors[offset + i*4+2], vectors[offset + i*4+3]);\n"
-"        sum += dot(float4(q4), float4(v4));\n"
-"    }\n"
-"    \n"
-"    // Handle remainder\n"
-"    for (uint i = 0; i < remainder; i++) {\n"
-"        sum += float(query[vectorWidth * 4 + i]) * float(vectors[offset + vectorWidth * 4 + i]);\n"
-"    }\n"
-"    \n"
-"    products[gid] = sum;\n"
-"}\n"
-"\n"
-"// ============================================================================\n"
-"// Complex64 / Complex128 Kernels - Phasor & signal processing\n"
-"// ============================================================================\n"
-"\n"
-"// complex128 L2 distance: treat real/imag pairs as 2D vectors\n"
-"kernel void compute_l2_distances_complex128(\n"
-"    device const float* query [[buffer(0)]],\n"
-"    device const float* vectors [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    uint vecDim = dim / 2;  // logical complex dims\n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    float sumReal = 0.0f;\n"
-"    float sumImag = 0.0f;\n"
-"    \n"
-"    // Process pairs: [real0, imag0, real1, imag1, ...]\n"
-"    for (uint i = 0; i < vecDim; i++) {\n"
-"        float2 q2 = float2(query[i*2], query[i*2+1]);\n"
-"        float2 v2 = float2(vectors[offset + i*2], vectors[offset + i*2+1]);\n"
-"        float2 diff = q2 - v2;\n"
-"        sumReal += diff.x * diff.x;\n"
-"        sumImag += diff.y * diff.y;\n"
-"    }\n"
-"    \n"
-"    distances[gid] = sqrt(sumReal + sumImag);\n"
-"}\n"
-"\n"
-"// complex128 cosine similarity\n"
-"kernel void compute_cosine_similarity_complex128(\n"
-"    device const float* query [[buffer(0)]],\n"
-"    device const float* vectors [[buffer(1)]],\n"
-"    device float* similarities [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    uint vecDim = dim / 2;\n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    float dotReal = 0.0f;\n"
-"    float dotImag = 0.0f;\n"
-"    float qMag = 0.0f;\n"
-"    float vMag = 0.0f;\n"
-"    \n"
-"    for (uint i = 0; i < vecDim; i++) {\n"
-"        float qRe = query[i*2];\n"
-"        float qIm = query[i*2+1];\n"
-"        float vRe = vectors[offset + i*2];\n"
-"        float vIm = vectors[offset + i*2+1];\n"
-"        dotReal += qRe*vRe + qIm*vIm;\n"
-"        dotImag += qRe*vIm - qIm*vRe;\n"
-"        qMag += qRe*qRe + qIm*qIm;\n"
-"        vMag += vRe*vRe + vIm*vIm;\n"
-"    }\n"
-"    \n"
-"    float dotMod = sqrt(dotReal*dotReal + dotImag*dotImag);\n"
-"    float denom = sqrt(qMag) * sqrt(vMag);\n"
-"    similarities[gid] = (denom > 1e-10f) ? (dotMod / denom) : 0.0f;\n"
-"}\n"
-"\n"
-"// complex128 dot product = (a_r*b_r - a_i*b_i) + (a_r*b_i + a_i*b_r)i\n"
-"kernel void compute_dot_product_complex128(\n"
-"    device const float* query [[buffer(0)]],\n"
-"    device const float* vectors [[buffer(1)]],\n"
-"    device float* realOut [[buffer(2)]],\n"
-"    device float* imagOut [[buffer(3)]],\n"
-"    constant uint& dim [[buffer(4)]],\n"
-"    constant uint& numVectors [[buffer(5)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    uint vecDim = dim / 2;\n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    float dotReal = 0.0f;\n"
-"    float dotImag = 0.0f;\n"
-"    \n"
-"    for (uint i = 0; i < vecDim; i++) {\n"
-"        float qRe = query[i*2];\n"
-"        float qIm = query[i*2+1];\n"
-"        float vRe = vectors[offset + i*2];\n"
-"        float vIm = vectors[offset + i*2+1];\n"
-"        dotReal += qRe*vRe - qIm*vIm;\n"
-"        dotImag += qRe*vIm + qIm*vRe;\n"
-"    }\n"
-"    \n"
-"    realOut[gid] = dotReal;\n"
-"    imagOut[gid] = dotImag;\n"
-"}\n"
-"\n"
-"// complex64 L2 distance (half storage, float32 accumulation)\n"
-"kernel void compute_l2_distances_complex64(\n"
-"    device const half* query [[buffer(0)]],\n"
-"    device const half* vectors [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    uint vecDim = dim / 2;\n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    float sumReal = 0.0f;\n"
-"    float sumImag = 0.0f;\n"
-"    \n"
-"    for (uint i = 0; i < vecDim; i++) {\n"
-"        half2 q2 = half2(query[i*2], query[i*2+1]);\n"
-"        half2 v2 = half2(vectors[offset + i*2], vectors[offset + i*2+1]);\n"
-"        float2 q = float2(q2);\n"
-"        float2 v = float2(v2);\n"
-"        float2 diff = q - v;\n"
-"        sumReal += diff.x * diff.x;\n"
-"        sumImag += diff.y * diff.y;\n"
-"    }\n"
-"    \n"
-"    distances[gid] = sqrt(sumReal + sumImag);\n"
-"}\n"
-"\n"
-"// complex64 cosine similarity\n"
-"kernel void compute_cosine_similarity_complex64(\n"
-"    device const half* query [[buffer(0)]],\n"
-"    device const half* vectors [[buffer(1)]],\n"
-"    device float* similarities [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    uint vecDim = dim / 2;\n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    float dotReal = 0.0f;\n"
-"    float dotImag = 0.0f;\n"
-"    float qMag = 0.0f;\n"
-"    float vMag = 0.0f;\n"
-"    \n"
-"    for (uint i = 0; i < vecDim; i++) {\n"
-"        half2 qh = half2(query[i*2], query[i*2+1]);\n"
-"        half2 vh = half2(vectors[offset + i*2], vectors[offset + i*2+1]);\n"
-"        float2 q = float2(qh);\n"
-"        float2 v = float2(vh);\n"
-"        dotReal += q.x*v.x + q.y*v.y;\n"
-"        dotImag += q.x*v.y - q.y*v.x;\n"
-"        qMag += dot(q,q);\n"
-"        vMag += dot(v,v);\n"
-"    }\n"
-"    \n"
-"    float dotMod = sqrt(dotReal*dotReal + dotImag*dotImag);\n"
-"    float denom = sqrt(qMag) * sqrt(vMag);\n"
-"    similarities[gid] = (denom > 1e-10f) ? (dotMod / denom) : 0.0f;\n"
-"}\n"
-"\n"
-"// complex64 dot product\n"
-"kernel void compute_dot_product_complex64(\n"
-"    device const half* query [[buffer(0)]],\n"
-"    device const half* vectors [[buffer(1)]],\n"
-"    device float* realOut [[buffer(2)]],\n"
-"    device float* imagOut [[buffer(3)]],\n"
-"    constant uint& dim [[buffer(4)]],\n"
-"    constant uint& numVectors [[buffer(5)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    uint vecDim = dim / 2;\n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    float dotReal = 0.0f;\n"
-"    float dotImag = 0.0f;\n"
-"    \n"
-"    for (uint i = 0; i < vecDim; i++) {\n"
-"        half2 qh = half2(query[i*2], query[i*2+1]);\n"
-"        half2 vh = half2(vectors[offset + i*2], vectors[offset + i*2+1]);\n"
-"        float2 q = float2(qh);\n"
-"        float2 v = float2(vh);\n"
-"        dotReal += q.x*v.x - q.y*v.y;\n"
-"        dotImag += q.x*v.y + q.y*v.x;\n"
-"    }\n"
-"    \n"
-"    realOut[gid] = dotReal;\n"
-"    imagOut[gid] = dotImag;\n"
-"}\n"
-"\n"
-"// ============================================================================\n"
-"// SIMD/Warp-level Reduction Kernels - Optimized for Apple Silicon\n"
-"// ============================================================================\n"
-"\n"
-"// L2 distance kernel optimized for Apple Silicon (each thread computes one vector)\n"
-"kernel void compute_l2_distances_warp(\n"
-"    device const float* query [[buffer(0)]],\n"
-"    device const float* vectors [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    // Each thread computes its distance using float4 for vectorization\n"
-"    float sum = 0.0f;\n"
-"    uint vectorWidth = dim / 4;\n"
-"    uint remainder = dim % 4;\n"
-"    \n"
-"    for (uint i = 0; i < vectorWidth; i++) {\n"
-"        float4 queryVec = float4(query[i*4], query[i*4+1], query[i*4+2], query[i*4+3]);\n"
-"        float4 vecVec = float4(vectors[offset + i*4], vectors[offset + i*4+1],\n"
-"                              vectors[offset + i*4+2], vectors[offset + i*4+3]);\n"
-"        float4 diff = queryVec - vecVec;\n"
-"        sum += dot(diff, diff);\n"
-"    }\n"
-"    \n"
-"    // Handle remainder\n"
-"    for (uint i = 0; i < remainder; i++) {\n"
-"        float diff = query[vectorWidth * 4 + i] - vectors[offset + vectorWidth * 4 + i];\n"
-"        sum += diff * diff;\n"
-"    }\n"
-"    \n"
-"    distances[gid] = sqrt(sum);\n"
-"}\n"
-"\n"
-"// Fused distance computation with local reduction\n"
-"kernel void compute_l2_and_topk_warp(\n"
-"    device const float* query [[buffer(0)]],\n"
-"    device const float* vectors [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    device int* indices [[buffer(3)]],\n"
-"    constant uint& dim [[buffer(4)]],\n"
-"    constant uint& numVectors [[buffer(5)]],\n"
-"    constant uint& k [[buffer(6)]],\n"
-"    uint gid [[thread_position_in_grid]],\n"
-"    uint tid [[thread_index_in_threadgroup]],\n"
-"    uint tg_size [[threads_per_threadgroup]])\n"
-"{\n"
-"    // Each thread computes one distance\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    uint offset = gid * dim;\n"
-"    \n"
-"    // Compute L2 distance using float4\n"
-"    float sum = 0.0f;\n"
-"    uint vectorWidth = dim / 4;\n"
-"    uint remainder = dim % 4;\n"
-"    \n"
-"    for (uint i = 0; i < vectorWidth; i++) {\n"
-"        float4 queryVec = float4(query[i*4], query[i*4+1], query[i*4+2], query[i*4+3]);\n"
-"        float4 vecVec = float4(vectors[offset + i*4], vectors[offset + i*4+1],\n"
-"                              vectors[offset + i*4+2], vectors[offset + i*4+3]);\n"
-"        float4 diff = queryVec - vecVec;\n"
-"        sum += dot(diff, diff);\n"
-"    }\n"
-"    \n"
-"    // Handle remainder\n"
-"    for (uint i = 0; i < remainder; i++) {\n"
-"        float diff = query[vectorWidth * 4 + i] - vectors[offset + vectorWidth * 4 + i];\n"
-"        sum += diff * diff;\n"
-"    }\n"
-"    \n"
-"    distances[gid] = sqrt(sum);\n"
-"    indices[gid] = int(gid);\n"
-"}\n"
-"\n"
-"// Batched distance computation - multiple queries at once\n"
-"kernel void compute_l2_distances_batch(\n"
-"    device const float* queries [[buffer(0)]],\n"
-"    device const float* vectors [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& numVectors [[buffer(4)]],\n"
-"    constant uint& numQueries [[buffer(5)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    // gid = queryIdx * numVectors + vectorIdx\n"
-"    uint queryIdx = gid / numVectors;\n"
-"    uint vectorIdx = gid % numVectors;\n"
-"    \n"
-"    if (queryIdx >= numQueries || vectorIdx >= numVectors) return;\n"
-"    \n"
-"    uint queryOffset = queryIdx * dim;\n"
-"    uint vectorOffset = vectorIdx * dim;\n"
-"    \n"
-"    float sum = 0.0f;\n"
-"    for (uint i = 0; i < dim; i++) {\n"
-"        float diff = queries[queryOffset + i] - vectors[vectorOffset + i];\n"
-"        sum += diff * diff;\n"
-"    }\n"
-"    \n"
-"    distances[gid] = sqrt(sum);\n"
-"}\n"
-"\n"
-"// Batched top-k for multiple queries\n"
-"kernel void find_top_k_batch(\n"
-"    device const float* distances [[buffer(0)]],\n"
-"    device int* indices [[buffer(1)]],\n"
-"    device float* topDistances [[buffer(2)]],\n"
-"    constant uint& numVectors [[buffer(3)]],\n"
-"    constant uint& numQueries [[buffer(4)]],\n"
-"    constant uint& k [[buffer(5)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    // Process one query per threadgroup\n"
-"    uint queryIdx = gid;\n"
-"    if (queryIdx >= numQueries) return;\n"
-"    \n"
-"    uint distOffset = queryIdx * numVectors;\n"
-"    \n"
-"    // Simple selection for each query\n"
-"    for (uint i = 0; i < k && i < numVectors; i++) {\n"
-"        float minDist = INFINITY;\n"
-"        int minIdx = -1;\n"
-"        \n"
-"        for (uint j = i; j < numVectors; j++) {\n"
-"            float d = distances[distOffset + j];\n"
-"            if (d < minDist) {\n"
-"                minDist = d;\n"
-"                minIdx = j;\n"
-"            }\n"
-"        }\n"
-"        \n"
-"        topDistances[queryIdx * k + i] = minDist;\n"
-"        indices[queryIdx * k + i] = minIdx;\n"
-"    }\n"
-"}\n"
-"\n"
-"// TurboQuant distance computation for high-dimensional vectors (768d+)\n"
-"kernel void compute_tq_distances(\n"
-"    device const float* query [[buffer(0)]],\n"
-"    device const uchar* tqData [[buffer(1)]],\n"
-"    device float* distances [[buffer(2)]],\n"
-"    constant uint& dim [[buffer(3)]],\n"
-"    constant uint& pow2 [[buffer(4)]],\n"
-"    constant uint& bitsPerAngle [[buffer(5)]],\n"
-"    constant uint& numVectors [[buffer(6)]],\n"
-"    uint gid [[thread_position_in_grid]])\n"
-"{\n"
-"    if (gid >= numVectors) return;\n"
-"    \n"
-"    // Format: [Radius (4B)][Packed Angles][QJL Bits]\n"
-"    uint angleCount = pow2 - 1;\n"
-"    uint angleBytes = (angleCount * bitsPerAngle + 7) / 8;\n"
-"    uint bitBytes = (pow2 + 7) / 8;\n"
-"    uint stride = 4 + angleBytes + bitBytes;\n"
-"    \n"
-"    device const uchar* data = tqData + (gid * stride);\n"
-"    \n"
-"    float radius = *(device const float*)data;\n"
-"    device const uchar* packedAngles = data + 4;\n"
-"    device const uchar* qjlBits = data + 4 + angleBytes;\n"
-"    \n"
-"    // Iterative Polar Reconstruction (using local registers/stack)\n"
-"    // Max supported dimension in this kernel is 1024 (pow2)\n"
-"    float recon[1024];\n"
-"    \n"
-"    recon[0] = radius;\n"
-"    uint currentLevelSize = 1;\n"
-"    uint angleOffset = angleCount;\n"
-"    \n"
-"    while (currentLevelSize < pow2) {\n"
-"        angleOffset -= currentLevelSize;\n"
-"        for (int i = (int)currentLevelSize - 1; i >= 0; i--) {\n"
-"            float r = recon[i];\n"
-"            \n"
-"            uint bitStart = (angleOffset + i) * bitsPerAngle;\n"
-"            uint q = 0;\n"
-"            for (uint k = 0; k < bitsPerAngle; k++) {\n"
-"                uint bitIdx = bitStart + k;\n"
-"                if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1) {\n"
-"                    q |= (1 << k);\n"
-"                }\n"
-"            }\n"
-"            float theta = (float(q) / ((1 << bitsPerAngle) - 1)) * 2.0f * 3.14159265f - 3.14159265f;\n"
-"            \n"
-"            float s, c;\n"
-"            s = sincos(theta, c);\n"
-"            recon[2*i] = r * c;\n"
-"            recon[2*i+1] = r * s;\n"
-"        }\n"
-"        currentLevelSize *= 2;\n"
-"    }\n"
-"    \n"
-"    // QJL Correction & Distance\n"
-"    float sum = 0.0f;\n"
-"    float correctionFactor = radius / sqrt((float)pow2) * 0.1f;\n"
-"    \n"
-"    for (uint i = 0; i < dim; i++) {\n"
-"        float val = recon[i];\n"
-"        if ((qjlBits[i / 8] >> (i % 8)) & 1) {\n"
-"            val += correctionFactor;\n"
-"        } else {\n"
-"            val -= 0.1f;\n"
-"        }\n"
-"        \n"
-"        float diff = query[i] - val;\n"
-"        sum += diff * diff;\n"
-"    }\n"
-"    \n"
-"    distances[gid] = sqrt(sum);\n"
-"}\n";
+// Removed runtime shader source as it is now in kernels.metal and kernels.metallib
 
 
 
-// Initialize Metal device with compute shaders
+// Initialize Metal device using shared context
 MetalIndexOptimized* metal_init_optimized(int dimensions) {
     @autoreleasepool {
-        id<MTLDevice> device = MTLCreateSystemDefaultDevice();
-        if (!device) {
-            return NULL;
-        }
-
-        id<MTLCommandQueue> queue = [device newCommandQueue];
-        if (!queue) {
-            return NULL;
-        }
-
-        // Compile Metal shaders
-        NSError* error = nil;
-        NSString* shaderSource = [NSString stringWithUTF8String:metalShaderSource];
-        id<MTLLibrary> library = [device newLibraryWithSource:shaderSource options:nil error:&error];
-        if (!library) {
-            NSLog(@"Failed to compile Metal shaders: %@", error);
-            return NULL;
-        }
-
-        // Create compute pipelines for all distance metrics
-        id<MTLFunction> l2DistanceFunc = [library newFunctionWithName:@"compute_l2_distances"];
-        id<MTLFunction> cosineFunc = [library newFunctionWithName:@"compute_cosine_similarity"];
-        id<MTLFunction> dotFunc = [library newFunctionWithName:@"compute_dot_product"];
-        id<MTLFunction> topKFunc = [library newFunctionWithName:@"find_top_k_heap"];
-
-        // FP16 pipelines
-        id<MTLFunction> l2Fp16Func = [library newFunctionWithName:@"compute_l2_distances_fp16"];
-        id<MTLFunction> cosineFp16Func = [library newFunctionWithName:@"compute_cosine_similarity_fp16"];
-        id<MTLFunction> dotFp16Func = [library newFunctionWithName:@"compute_dot_product_fp16"];
-
-        // Complex pipelines
-        id<MTLFunction> l2C128Func = [library newFunctionWithName:@"compute_l2_distances_complex128"];
-        id<MTLFunction> cosineC128Func = [library newFunctionWithName:@"compute_cosine_similarity_complex128"];
-        id<MTLFunction> l2C64Func = [library newFunctionWithName:@"compute_l2_distances_complex64"];
-        id<MTLFunction> cosineC64Func = [library newFunctionWithName:@"compute_cosine_similarity_complex64"];
-        id<MTLFunction> tqFunc = [library newFunctionWithName:@"compute_tq_distances"];
-
-        id<MTLComputePipelineState> l2Pipeline = nil;
-        id<MTLComputePipelineState> cosinePipeline = nil;
-        id<MTLComputePipelineState> dotPipeline = nil;
-        id<MTLComputePipelineState> topKPipeline = nil;
-        id<MTLComputePipelineState> l2Fp16Pipeline = nil;
-        id<MTLComputePipelineState> cosineFp16Pipeline = nil;
-        id<MTLComputePipelineState> dotFp16Pipeline = nil;
-        id<MTLComputePipelineState> l2C128Pipeline = nil;
-        id<MTLComputePipelineState> cosineC128Pipeline = nil;
-        id<MTLComputePipelineState> tqPipeline = nil;
-        id<MTLComputePipelineState> l2C64Pipeline = nil;
-        id<MTLComputePipelineState> cosineC64Pipeline = nil;
-        id<MTLComputePipelineState> pqPipeline = nil;
-        
-        id<MTLFunction> pqFunc = [library newFunctionWithName:@"compute_pq_distances"];
-        if (pqFunc) {
-            pqPipeline = [device newComputePipelineStateWithFunction:pqFunc error:&error];
-        }
-
-        if (l2DistanceFunc) {
-            l2Pipeline = [device newComputePipelineStateWithFunction:l2DistanceFunc error:&error];
-        }
-        if (cosineFunc) {
-            cosinePipeline = [device newComputePipelineStateWithFunction:cosineFunc error:&error];
-        }
-        if (dotFunc) {
-            dotPipeline = [device newComputePipelineStateWithFunction:dotFunc error:&error];
-        }
-        if (topKFunc) {
-            topKPipeline = [device newComputePipelineStateWithFunction:topKFunc error:&error];
-        }
-        if (l2Fp16Func) {
-            l2Fp16Pipeline = [device newComputePipelineStateWithFunction:l2Fp16Func error:&error];
-        }
-        if (cosineFp16Func) {
-            cosineFp16Pipeline = [device newComputePipelineStateWithFunction:cosineFp16Func error:&error];
-        }
-        if (dotFp16Func) {
-            dotFp16Pipeline = [device newComputePipelineStateWithFunction:dotFp16Func error:&error];
-        }
-        if (l2C128Func) {
-            l2C128Pipeline = [device newComputePipelineStateWithFunction:l2C128Func error:&error];
-        }
-        if (cosineC128Func) {
-            cosineC128Pipeline = [device newComputePipelineStateWithFunction:cosineC128Func error:&error];
-        }
-        if (l2C64Func) {
-            l2C64Pipeline = [device newComputePipelineStateWithFunction:l2C64Func error:&error];
-        }
-        if (cosineC64Func) {
-            cosineC64Pipeline = [device newComputePipelineStateWithFunction:cosineC64Func error:&error];
-        }
-        if (tqFunc) {
-            tqPipeline = [device newComputePipelineStateWithFunction:tqFunc error:&error];
-        }
-
-        if (!l2Pipeline || !topKPipeline) {
-            NSLog(@"Failed to create compute pipelines: %@", error);
-            return NULL;
-        }
-
         MetalIndexOptimized* handle = (MetalIndexOptimized*)malloc(sizeof(MetalIndexOptimized));
-        handle->device = (__bridge_retained void*)device;
-        handle->commandQueue = (__bridge_retained void*)queue;
-        handle->vectorBuffer = NULL;
-        handle->idBuffer = NULL;
-        handle->distanceComputePipeline = (__bridge_retained void*)l2Pipeline;
-        handle->cosinePipeline = (__bridge_retained void*)cosinePipeline;
-        handle->dotPipeline = (__bridge_retained void*)dotPipeline;
-        handle->topKPipeline = (__bridge_retained void*)topKPipeline;
-        handle->l2Fp16Pipeline = (__bridge_retained void*)l2Fp16Pipeline;
-        handle->cosineFp16Pipeline = (__bridge_retained void*)cosineFp16Pipeline;
-        handle->dotFp16Pipeline = (__bridge_retained void*)dotFp16Pipeline;
-        handle->l2C128Pipeline = (__bridge_retained void*)l2C128Pipeline;
-        handle->cosineC128Pipeline = (__bridge_retained void*)cosineC128Pipeline;
-        handle->l2C64Pipeline = (__bridge_retained void*)l2C64Pipeline;
-        handle->cosineC64Pipeline = (__bridge_retained void*)cosineC64Pipeline;
-        handle->tqPipeline = (__bridge_retained void*)tqPipeline;
-        handle->pqPipeline = (__bridge_retained void*)pqPipeline;
-        handle->pqBuffer = NULL;
-        handle->vectorCount = 0;
+        memset(handle, 0, sizeof(MetalIndexOptimized));
         handle->dimensions = dimensions;
         handle->capacity = 0;
-        handle->metric = METRIC_L2;
-
+        handle->vectorCount = 0;
         return handle;
+    }
+}
+
+void metal_set_pipelines_optimized(MetalIndexOptimized* handle, void* device, void* queue,
+                                 void* l2, void* cosine, void* dot, void* topK,
+                                 void* l2Fp16, void* cosineFp16, void* dotFp16,
+                                 void* l2C128, void* cosineC128, void* l2C64, void* cosineC64,
+                                 void* tq, void* haversine, void* norm, void* prune, void* greedy, void* greedyTQ) {
+    handle->device = device;
+    handle->commandQueue = queue;
+    handle->distanceComputePipeline = l2;
+    handle->cosinePipeline = cosine;
+    handle->dotPipeline = dot;
+    handle->topKPipeline = topK;
+    handle->l2Fp16Pipeline = l2Fp16;
+    handle->cosineFp16Pipeline = cosineFp16;
+    handle->dotFp16Pipeline = dotFp16;
+    handle->l2C128Pipeline = l2C128;
+    handle->cosineC128Pipeline = cosineC128;
+    handle->l2C64Pipeline = l2C64;
+    handle->cosineC64Pipeline = cosineC64;
+    handle->tqPipeline = tq;
+    handle->haversinePipeline = haversine;
+    handle->normPipeline = norm;
+    handle->prunePipeline = prune;
+    handle->greedySearchPipeline = greedy;
+    handle->greedyTQSearchPipeline = greedyTQ;
+
+    // Initialize trig table (256 entries for 8-bit max)
+    id<MTLDevice> mtlDevice = (__bridge id<MTLDevice>)device;
+    float* trigData = (float*)malloc(256 * 2 * sizeof(float));
+    for (int i = 0; i < 256; i++) {
+        // Use 255.0 for 8-bit normalization
+        double theta = ((double)i / 255.0) * 2.0 * M_PI - M_PI;
+        trigData[2 * i] = (float)cos(theta);
+        trigData[2 * i + 1] = (float)sin(theta);
+    }
+    id<MTLBuffer> trigBuffer = [mtlDevice newBufferWithBytes:trigData length:256 * 2 * sizeof(float) options:MTLResourceStorageModeShared];
+    handle->trigBuffer = (__bridge_retained void*)trigBuffer;
+    free(trigData);
+}
+
+// Perform HNSW greedy search on GPU
+int metal_greedy_search_optimized(MetalIndexOptimized* handle, float* query, uint32_t* entryPoint, float* entryDist) {
+    @autoreleasepool {
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLComputePipelineState> greedyPipeline = (__bridge id<MTLComputePipelineState>)handle->greedySearchPipeline;
+        
+        if (!greedyPipeline || !handle->graphOffsetsBuffer || !handle->graphNeighborsBuffer) {
+            return -1;
+        }
+
+        id<MTLBuffer> queryBuf = [device newBufferWithBytes:query length:handle->dimensions * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> epBuf = [device newBufferWithBytes:entryPoint length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> distBuf = [device newBufferWithBytes:entryDist length:sizeof(float) options:MTLResourceStorageModeShared];
+
+        id<MTLCommandBuffer> cmdBuf = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [cmdBuf computeCommandEncoder];
+
+        [encoder setComputePipelineState:greedyPipeline];
+        [encoder setBuffer:queryBuf offset:0 atIndex:0];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->vectorBuffer offset:0 atIndex:1];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->graphOffsetsBuffer offset:0 atIndex:2];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->graphNeighborsBuffer offset:0 atIndex:3];
+        [encoder setBuffer:epBuf offset:0 atIndex:4];
+        [encoder setBuffer:distBuf offset:0 atIndex:5];
+        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:6];
+        [encoder setBytes:&handle->vectorCount length:sizeof(uint32_t) atIndex:7];
+
+        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(32, 1, 1)];
+        [encoder endEncoding];
+        [cmdBuf commit];
+        [cmdBuf waitUntilCompleted];
+
+        *entryPoint = *(uint32_t*)epBuf.contents;
+        *entryDist = *(float*)distBuf.contents;
+
+        return 0;
+    }
+}
+
+int metal_greedy_search_tq_optimized(MetalIndexOptimized* handle, float* query, int pow2, int bitsPerAngle, uint32_t* entryPoint, float* entryDist) {
+    @autoreleasepool {
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLComputePipelineState> greedyPipeline = (__bridge id<MTLComputePipelineState>)handle->greedyTQSearchPipeline;
+        
+        if (!greedyPipeline || !handle->graphOffsetsBuffer || !handle->graphNeighborsBuffer) {
+            return -1;
+        }
+
+        id<MTLBuffer> queryBuf = [device newBufferWithBytes:query length:pow2 * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> epBuf = [device newBufferWithBytes:entryPoint length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> distBuf = [device newBufferWithBytes:entryDist length:sizeof(float) options:MTLResourceStorageModeShared];
+
+        id<MTLCommandBuffer> cmdBuf = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [cmdBuf computeCommandEncoder];
+
+        [encoder setComputePipelineState:greedyPipeline];
+        [encoder setBuffer:queryBuf offset:0 atIndex:0];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->vectorBuffer offset:0 atIndex:1];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->graphOffsetsBuffer offset:0 atIndex:2];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->graphNeighborsBuffer offset:0 atIndex:3];
+        [encoder setBuffer:epBuf offset:0 atIndex:4];
+        [encoder setBuffer:distBuf offset:0 atIndex:5];
+        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:6];
+        [encoder setBytes:&pow2 length:sizeof(uint32_t) atIndex:7];
+        [encoder setBytes:&bitsPerAngle length:sizeof(uint32_t) atIndex:8];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->trigBuffer offset:0 atIndex:9];
+
+        [encoder dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+        [encoder endEncoding];
+        [cmdBuf commit];
+        [cmdBuf waitUntilCompleted];
+
+        *entryPoint = *(uint32_t*)epBuf.contents;
+        *entryDist = *(float*)distBuf.contents;
+
+        return 0;
+    }
+}
+
+// Update graph buffers for HNSW traversal
+int metal_update_graph_optimized(MetalIndexOptimized* handle, uint32_t* offsets, int numOffsets, uint32_t* neighbors, int numNeighbors, float* weights, int numWeights) {
+    @autoreleasepool {
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        
+        if (handle->graphOffsetsBuffer) {
+            handle->graphOffsetsBuffer = nil;
+        }
+        if (handle->graphNeighborsBuffer) {
+            handle->graphNeighborsBuffer = nil;
+        }
+        if (handle->graphWeightsBuffer) {
+            handle->graphWeightsBuffer = nil;
+        }
+
+        if (numOffsets > 0) {
+            handle->graphOffsetsBuffer = (__bridge_retained void*)[device newBufferWithBytes:offsets
+                                                                                     length:numOffsets * sizeof(uint32_t)
+                                                                                    options:MTLResourceStorageModeShared];
+        }
+        if (numNeighbors > 0) {
+            handle->graphNeighborsBuffer = (__bridge_retained void*)[device newBufferWithBytes:neighbors
+                                                                                       length:numNeighbors * sizeof(uint32_t)
+                                                                                      options:MTLResourceStorageModeShared];
+        }
+        if (numWeights > 0) {
+            handle->graphWeightsBuffer = (__bridge_retained void*)[device newBufferWithBytes:weights
+                                                                                     length:numWeights * sizeof(float)
+                                                                                    options:MTLResourceStorageModeShared];
+        }
+        return 0;
     }
 }
 
@@ -1172,54 +417,10 @@ int metal_search_optimized(MetalIndexOptimized* handle, float* query, int k, int
 void metal_cleanup_optimized(MetalIndexOptimized* handle) {
     @autoreleasepool {
         if (handle) {
-            if (handle->idBuffer) {
-                CFRelease(handle->idBuffer);
-            }
-            if (handle->vectorBuffer) {
-                CFRelease(handle->vectorBuffer);
-            }
-            if (handle->topKPipeline) {
-                CFRelease(handle->topKPipeline);
-            }
-            if (handle->tqPipeline) {
-                CFRelease(handle->tqPipeline);
-            }
-            if (handle->cosinePipeline) {
-                CFRelease(handle->cosinePipeline);
-            }
-            if (handle->dotPipeline) {
-                CFRelease(handle->dotPipeline);
-            }
-            if (handle->distanceComputePipeline) {
-                CFRelease(handle->distanceComputePipeline);
-            }
-            if (handle->l2Fp16Pipeline) {
-                CFRelease(handle->l2Fp16Pipeline);
-            }
-            if (handle->cosineFp16Pipeline) {
-                CFRelease(handle->cosineFp16Pipeline);
-            }
-            if (handle->dotFp16Pipeline) {
-                CFRelease(handle->dotFp16Pipeline);
-            }
-            if (handle->l2C128Pipeline) {
-                CFRelease(handle->l2C128Pipeline);
-            }
-            if (handle->cosineC128Pipeline) {
-                CFRelease(handle->cosineC128Pipeline);
-            }
-            if (handle->l2C64Pipeline) {
-                CFRelease(handle->l2C64Pipeline);
-            }
-            if (handle->cosineC64Pipeline) {
-                CFRelease(handle->cosineC64Pipeline);
-            }
-            if (handle->commandQueue) {
-                CFRelease(handle->commandQueue);
-            }
-            if (handle->device) {
-                CFRelease(handle->device);
-            }
+            if (handle->idBuffer) CFRelease(handle->idBuffer);
+            if (handle->vectorBuffer) CFRelease(handle->vectorBuffer);
+            if (handle->pqBuffer) CFRelease(handle->pqBuffer);
+            if (handle->trigBuffer) CFRelease(handle->trigBuffer);
             free(handle);
         }
     }
@@ -1392,7 +593,7 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
         id<MTLComputePipelineState> tqPipeline = (__bridge id<MTLComputePipelineState>)handle->tqPipeline;
         id<MTLComputePipelineState> topKPipeline = (__bridge id<MTLComputePipelineState>)handle->topKPipeline;
 
-        id<MTLBuffer> queryBuffer = [device newBufferWithBytes:query length:handle->dimensions * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> queryBuffer = [device newBufferWithBytes:query length:pow2 * sizeof(float) options:MTLResourceStorageModeShared];
         id<MTLBuffer> distBuffer = [device newBufferWithLength:handle->vectorCount * sizeof(float) options:MTLResourceStorageModeShared];
         id<MTLBuffer> indicesBuffer = [device newBufferWithLength:k * sizeof(int) options:MTLResourceStorageModeShared];
         id<MTLBuffer> topDistancesBuffer = [device newBufferWithLength:k * sizeof(float) options:MTLResourceStorageModeShared];
@@ -1413,6 +614,7 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
         [encoder setBytes:&pow2 length:sizeof(uint32_t) atIndex:4];
         [encoder setBytes:&bitsPerAngle length:sizeof(uint32_t) atIndex:5];
         [encoder setBytes:&handle->vectorCount length:sizeof(uint32_t) atIndex:6];
+        [encoder setBuffer:(__bridge id<MTLBuffer>)handle->trigBuffer offset:0 atIndex:7];
 
         [encoder dispatchThreads:MTLSizeMake(handle->vectorCount, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(handle->vectorCount, (int)tqPipeline.maxTotalThreadsPerThreadgroup), 1, 1)];
 
@@ -1448,7 +650,7 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
             if (requiredCapacity > handle->capacity) {
                 int newCapacity = handle->capacity > 0 ? handle->capacity : 1024;
                 while (newCapacity < requiredCapacity) newCapacity *= 2;
-                
+
                 size_t pqSize = (size_t)newCapacity * m;
                 id<MTLBuffer> newPQBuffer = [device newBufferWithLength:pqSize options:MTLResourceStorageModeShared];
                 if (handle->pqBuffer) {
@@ -1466,7 +668,7 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
                 handle->idBuffer = (__bridge_retained void*)newIDBuffer;
                 handle->capacity = newCapacity;
             }
-            
+
             memcpy((unsigned char*)[(__bridge id<MTLBuffer>)handle->pqBuffer contents] + (handle->vectorCount * m), codes, count * m);
             memcpy((int64_t*)[(__bridge id<MTLBuffer>)handle->idBuffer contents] + handle->vectorCount, ids, count * sizeof(int64_t));
             handle->vectorCount += count;
@@ -1494,14 +696,14 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
 
             id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
             id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
-            
+
             [encoder setComputePipelineState:pqPipeline];
             [encoder setBuffer:tableBuf offset:0 atIndex:0];
             [encoder setBuffer:(__bridge id<MTLBuffer>)handle->pqBuffer offset:0 atIndex:1];
             [encoder setBuffer:distBuf offset:0 atIndex:2];
             [encoder setBytes:&m length:sizeof(int) atIndex:3];
             [encoder setBytes:&handle->vectorCount length:sizeof(int) atIndex:4];
-            
+
             [encoder dispatchThreads:MTLSizeMake(handle->vectorCount, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(handle->vectorCount, (int)pqPipeline.maxTotalThreadsPerThreadgroup), 1, 1)];
 
             [encoder setComputePipelineState:topKPipeline];
@@ -1526,34 +728,208 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
             return 0;
         }
     }
+
+    int metal_haversine_batch_optimized(MetalIndexOptimized* handle, float* center, float* points, float* results, float earthRadius, int count) {
+        @autoreleasepool {
+            if (!handle || !handle->haversinePipeline) return -1;
+            id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+            id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+            id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->haversinePipeline;
+
+            id<MTLBuffer> centerBuf = [device newBufferWithBytes:center length:2 * sizeof(float) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> pointsBuf = [device newBufferWithBytes:points length:count * 2 * sizeof(float) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> resBuf = [device newBufferWithLength:count * sizeof(float) options:MTLResourceStorageModeShared];
+
+            id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+            id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+            [encoder setComputePipelineState:pipeline];
+            [encoder setBuffer:centerBuf offset:0 atIndex:0];
+            [encoder setBuffer:pointsBuf offset:0 atIndex:1];
+            [encoder setBuffer:resBuf offset:0 atIndex:2];
+            [encoder setBytes:&earthRadius length:sizeof(float) atIndex:3];
+            [encoder setBytes:&count length:sizeof(uint32_t) atIndex:4];
+
+            [encoder dispatchThreads:MTLSizeMake(count, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(count, (int)pipeline.maxTotalThreadsPerThreadgroup), 1, 1)];
+            [encoder endEncoding];
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+
+            memcpy(results, [resBuf contents], count * sizeof(float));
+            return 0;
+        }
+    }
+
+    int metal_norm_batch_optimized(MetalIndexOptimized* handle, float* vectors, float* results, int dims, int count) {
+        @autoreleasepool {
+            if (!handle || !handle->normPipeline) return -1;
+            id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+            id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+            id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->normPipeline;
+
+            id<MTLBuffer> vecBuf = [device newBufferWithBytes:vectors length:count * dims * sizeof(float) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> resBuf = [device newBufferWithLength:count * sizeof(float) options:MTLResourceStorageModeShared];
+
+            id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+            id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+            [encoder setComputePipelineState:pipeline];
+            [encoder setBuffer:vecBuf offset:0 atIndex:0];
+            [encoder setBuffer:resBuf offset:0 atIndex:1];
+            [encoder setBytes:&dims length:sizeof(uint32_t) atIndex:2];
+            [encoder setBytes:&count length:sizeof(uint32_t) atIndex:3];
+
+            [encoder dispatchThreads:MTLSizeMake(count, 1, 1) threadsPerThreadgroup:MTLSizeMake(MIN(count, (int)pipeline.maxTotalThreadsPerThreadgroup), 1, 1)];
+            [encoder endEncoding];
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+
+            memcpy(results, [resBuf contents], count * sizeof(float));
+            return 0;
+        }
+    }
+
+    int metal_prune_neighbors_optimized(MetalIndexOptimized* handle, uint32_t* candidateIds, float* candidateDists, uint32_t* selectedIds, uint32_t* selectedCount, float* allVectors, int maxNeighbors, int numCandidates, int dim, bool extended) {
+        @autoreleasepool {
+            if (!handle || !handle->prunePipeline) return -1;
+            id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+            id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+            id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->prunePipeline;
+
+            id<MTLBuffer> candIdBuf = [device newBufferWithBytes:candidateIds length:numCandidates * sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> candDistBuf = [device newBufferWithBytes:candidateDists length:numCandidates * sizeof(float) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> selIdBuf = [device newBufferWithLength:maxNeighbors * sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            id<MTLBuffer> selCountBuf = [device newBufferWithLength:sizeof(uint32_t) options:MTLResourceStorageModeShared];
+            
+            id<MTLBuffer> allVecBuf;
+            if (allVectors != NULL) {
+                uint32_t maxID = 0;
+                for (int i = 0; i < numCandidates; i++) {
+                    if (candidateIds[i] > maxID) maxID = candidateIds[i];
+                }
+                allVecBuf = [device newBufferWithBytes:allVectors length:(size_t)(maxID + 1) * dim * sizeof(float) options:MTLResourceStorageModeShared];
+            } else {
+                allVecBuf = (__bridge id<MTLBuffer>)handle->vectorBuffer;
+            }
+
+            id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+            id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+            [encoder setComputePipelineState:pipeline];
+            [encoder setBuffer:candIdBuf offset:0 atIndex:0];
+            [encoder setBuffer:candDistBuf offset:0 atIndex:1];
+            [encoder setBuffer:selIdBuf offset:0 atIndex:2];
+            [encoder setBuffer:selCountBuf offset:0 atIndex:3];
+            [encoder setBuffer:allVecBuf offset:0 atIndex:4];
+            [encoder setBytes:&maxNeighbors length:sizeof(int) atIndex:5];
+            [encoder setBytes:&numCandidates length:sizeof(int) atIndex:6];
+            [encoder setBytes:&dim length:sizeof(int) atIndex:7];
+            [encoder setBytes:&extended length:sizeof(bool) atIndex:8];
+
+            [encoder dispatchThreads:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+            [encoder endEncoding];
+            [commandBuffer commit];
+            [commandBuffer waitUntilCompleted];
+
+            *selectedCount = *(uint32_t*)[selCountBuf contents];
+            memcpy(selectedIds, [selIdBuf contents], (*selectedCount) * sizeof(uint32_t));
+            return 0;
+        }
+    }
 */
 import "C"
 import (
 	"fmt"
 	"math"
 	"runtime"
+	"sort"
 	"sync"
+	"time"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 // MetalIndexOptimized implements GPU-accelerated vector search using Metal compute shaders
 type MetalIndexOptimized struct {
-	handle *C.MetalIndexOptimized
-	dim    int
-	mu     sync.RWMutex
-	closed bool
-	pqEncoder *pq.PQEncoder
+	handle         *C.MetalIndexOptimized
+	dim            int
+	mu             sync.RWMutex
+	closed         bool
+	pqEncoder      *pq.PQEncoder
+	graphOffsets   []uint32
+	graphNeighbors []uint32
+	graphWeights   []float32
 }
 
 // NewMetalIndexOptimized creates an optimized Metal-based GPU index with compute shaders
 func NewMetalIndexOptimized(cfg types.GPUConfig) (types.Index, error) {
+	libData, err := metalFS.ReadFile("kernels.metallib")
+	if err != nil {
+		return nil, fmt.Errorf("failed to read embedded metal library: %w", err)
+	}
+
+	if err := InitGlobalContext(libData); err != nil {
+		return nil, err
+	}
+
+	ctx := GetContext()
+	if ctx == nil {
+		return nil, fmt.Errorf("failed to get shared metal context")
+	}
+
 	handle := C.metal_init_optimized(C.int(cfg.Dimension))
 	if handle == nil {
 		return nil, fmt.Errorf("failed to initialize optimized Metal device")
 	}
+
+	// Resolve all required pipelines
+	l2, err := ctx.GetPipelineState("compute_l2_distances")
+	if err != nil { return nil, err }
+	cosine, err := ctx.GetPipelineState("compute_cosine_similarity")
+	if err != nil { return nil, err }
+	dot, err := ctx.GetPipelineState("compute_dot_product")
+	if err != nil { return nil, err }
+	topK, err := ctx.GetPipelineState("find_top_k_heap")
+	if err != nil { return nil, err }
+	l2Fp16, err := ctx.GetPipelineState("compute_l2_distances_fp16")
+	if err != nil { return nil, err }
+	cosineFp16, err := ctx.GetPipelineState("compute_cosine_similarity_fp16")
+	if err != nil { return nil, err }
+	dotFp16, err := ctx.GetPipelineState("compute_dot_product_fp16")
+	if err != nil { return nil, err }
+	l2C128, err := ctx.GetPipelineState("compute_l2_distances_complex128")
+	if err != nil { return nil, err }
+	cosineC128, err := ctx.GetPipelineState("compute_cosine_similarity_complex128")
+	if err != nil { return nil, err }
+	l2C64, err := ctx.GetPipelineState("compute_l2_distances_complex64")
+	if err != nil { return nil, err }
+	cosineC64, err := ctx.GetPipelineState("compute_cosine_similarity_complex64")
+	if err != nil { return nil, err }
+	tq, err := ctx.GetPipelineState("compute_tq_distances")
+	if err != nil { return nil, err }
+	haversine, err := ctx.GetPipelineState("haversine_batch")
+	if err != nil { return nil, err }
+	norm, err := ctx.GetPipelineState("norm_batch_f32")
+	if err != nil { return nil, err }
+	prune, err := ctx.GetPipelineState("hnsw_prune_neighbors")
+	if err != nil { return nil, err }
+	greedy, err := ctx.GetPipelineState("hnsw_greedy_search")
+	if err != nil { return nil, err }
+	greedyTQ, err := ctx.GetPipelineState("hnsw_greedy_search_tq")
+	if err != nil { return nil, err }
+
+	C.metal_set_pipelines_optimized(
+		handle,
+		ctx.GetDevice(), ctx.GetCommandQueue(),
+		l2, cosine, dot, topK,
+		l2Fp16, cosineFp16, dotFp16,
+		l2C128, cosineC128, l2C64, cosineC64,
+		tq, haversine, norm, prune, greedy, greedyTQ,
+	)
 
 	idx := &MetalIndexOptimized{
 		handle: handle,
@@ -1781,7 +1157,7 @@ func (idx *MetalIndexOptimized) Backend() types.GPUBackend {
 	return types.BackendMetal
 }
 
-func (idx *MetalIndexOptimized) DeviceID() int {
+func (idx *MetalIndexOptimized) DeviceID() int32 {
 	return 0
 }
 
@@ -1884,36 +1260,6 @@ func (idx *MetalIndexOptimized) GetUtilization() (float32, error) {
 	return 50.0, nil
 }
 
-func (idx *MetalIndexOptimized) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
-
-	if idx.closed {
-		return fmt.Errorf("index is closed")
-	}
-
-	count := len(ids)
-	if count == 0 {
-		return nil
-	}
-
-	stride := len(tqData) / count
-
-	ret := C.metal_add_tq_vectors_optimized(
-		idx.handle,
-		(*C.uchar)(unsafe.Pointer(&tqData[0])),
-		C.int(stride),
-		(*C.int64_t)(unsafe.Pointer(&ids[0])),
-		C.int(count),
-	)
-
-	if ret != 0 {
-		return fmt.Errorf("failed to add TQ vectors to optimized Metal buffer")
-	}
-
-	return nil
-}
-
 func (idx *MetalIndexOptimized) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -1931,12 +1277,22 @@ func (idx *MetalIndexOptimized) SearchTurboQuant(vector []float32, k int, bitsPe
 		pow2 <<= 1
 	}
 
+	// TurboQuant requires query rotation for distance parity (seed 42 is currently used)
+	rotatedQuery := make([]float32, pow2)
+	copy(rotatedQuery, vector)
+	// We use the same hardcoded seed 42 as the CPU implementation for now.
+	// In the future, this should be configurable via the index.
+	if err := simd.RandomRotation(rotatedQuery, 42); err != nil {
+		return nil, nil, fmt.Errorf("failed to rotate query for TQ search: %w", err)
+	}
+
 	resultIDs := make([]int64, k)
 	resultDistances := make([]float32, k)
 
+	start := time.Now()
 	ret := C.metal_search_tq_optimized(
 		idx.handle,
-		(*C.float)(unsafe.Pointer(&vector[0])),
+		(*C.float)(unsafe.Pointer(&rotatedQuery[0])),
 		C.int(k),
 		C.int(pow2),
 		C.int(bitsPerAngle),
@@ -1948,7 +1304,236 @@ func (idx *MetalIndexOptimized) SearchTurboQuant(vector []float32, k int, bitsPe
 		return nil, nil, fmt.Errorf("optimized Metal TQ search failed")
 	}
 
+	metrics.TurboQuantDequantizeLatencySeconds.Observe(time.Since(start).Seconds())
 	return resultIDs, resultDistances, nil
+}
+
+func packedSize(dims int, bitsPerAngle int) int {
+	pow2 := 1
+	for pow2 < dims {
+		pow2 <<= 1
+	}
+	angleCount := pow2 - 1
+	angleBytes := (angleCount*bitsPerAngle + 7) / 8
+	bitBytes := (pow2 + 7) / 8
+	size := 4 + angleBytes + bitBytes
+	return (size + 3) &^ 3 // Pad to 4 bytes for GPU alignment
+}
+
+func (idx *MetalIndexOptimized) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	stride := packedSize(idx.dim, bitsPerAngle)
+	n := len(tqData) / stride
+	if len(ids) != n {
+		return fmt.Errorf("id count %d does not match TQ vector count %d", len(ids), n)
+	}
+
+	start := time.Now()
+	ret := C.metal_add_tq_vectors_optimized(
+		idx.handle,
+		(*C.uchar)(unsafe.Pointer(&tqData[0])),
+		C.int(stride),
+		(*C.int64_t)(unsafe.Pointer(&ids[0])),
+		C.int(n),
+	)
+	metrics.GPUIngestKernelDurationSeconds.Observe(time.Since(start).Seconds())
+
+	if ret != 0 {
+		return fmt.Errorf("failed to add TQ vectors to optimized Metal buffer")
+	}
+
+	return nil
+}
+
+func (idx *MetalIndexOptimized) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index closed")
+	}
+
+	// For the optimized backend, we store the graph in unified memory buffers
+	// for direct access by Metal kernels.
+	idx.graphOffsets = offsets
+	idx.graphNeighbors = neighbors
+	idx.graphWeights = weights
+
+	// Sync to GPU
+	var offsetsPtr, neighborsPtr *C.uint32_t
+	var weightsPtr *C.float
+
+	if len(offsets) > 0 {
+		offsetsPtr = (*C.uint32_t)(unsafe.Pointer(&offsets[0]))
+	}
+	if len(neighbors) > 0 {
+		neighborsPtr = (*C.uint32_t)(unsafe.Pointer(&neighbors[0]))
+	}
+	if len(weights) > 0 {
+		weightsPtr = (*C.float)(unsafe.Pointer(&weights[0]))
+	}
+
+	ret := C.metal_update_graph_optimized(
+		idx.handle,
+		offsetsPtr, C.int(len(offsets)),
+		neighborsPtr, C.int(len(neighbors)),
+		weightsPtr, C.int(len(weights)),
+	)
+
+	if ret != 0 {
+		return fmt.Errorf("failed to update graph on GPU")
+	}
+
+	return nil
+}
+
+func (idx *MetalIndexOptimized) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index closed")
+	}
+
+	if len(idx.graphOffsets) == 0 {
+		return nil, nil, fmt.Errorf("graph not initialized")
+	}
+
+	// BFS expansion (initially on CPU for stability, kernels to follow)
+	visited := make(map[uint32]float32)
+	for _, seed := range seeds {
+		visited[seed] = 1.0
+	}
+
+	currentFrontier := seeds
+	for d := 0; d < depth; d++ {
+		var nextFrontier []uint32
+		for _, nodeID := range currentFrontier {
+			if int(nodeID)+1 >= len(idx.graphOffsets) {
+				continue
+			}
+			start := idx.graphOffsets[nodeID]
+			end := idx.graphOffsets[nodeID+1]
+			
+			for neighborIdx := start; neighborIdx < end; neighborIdx++ {
+				neighbor := idx.graphNeighbors[neighborIdx]
+				if _, seen := visited[neighbor]; !seen {
+					score := visited[nodeID] * alpha
+					visited[neighbor] = score
+					nextFrontier = append(nextFrontier, neighbor)
+				}
+			}
+		}
+		if len(nextFrontier) == 0 {
+			break
+		}
+		currentFrontier = nextFrontier
+	}
+
+	outIDs := make([]uint32, 0, len(visited))
+	outScores := make([]float32, 0, len(visited))
+	for id, score := range visited {
+		outIDs = append(outIDs, id)
+		outScores = append(outScores, score)
+	}
+
+	return outIDs, outScores, nil
+}
+
+func (idx *MetalIndexOptimized) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	count := len(points) / 2
+	if count == 0 {
+		return nil, nil
+	}
+
+	results := make([]float32, count)
+	center := []float32{centerLat, centerLon}
+
+	start := time.Now()
+	ret := C.metal_haversine_batch_optimized(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&center[0])),
+		(*C.float)(unsafe.Pointer(&points[0])),
+		(*C.float)(unsafe.Pointer(&results[0])),
+		C.float(earthRadius),
+		C.int(count),
+	)
+
+	if ret != 0 {
+		// CPU fallback
+		const degToRad = math.Pi / 180.0
+		lat1 := float64(centerLat) * degToRad
+		lon1 := float64(centerLon) * degToRad
+
+		for i := 0; i < count; i++ {
+			lat2 := float64(points[i*2]) * degToRad
+			lon2 := float64(points[i*2+1]) * degToRad
+
+			dLat := lat2 - lat1
+			dLon := lon2 - lon1
+
+			a := math.Sin(dLat/2)*math.Sin(dLat/2) +
+				math.Cos(lat1)*math.Cos(lat2)*math.Sin(dLon/2)*math.Sin(dLon/2)
+			c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+			results[i] = float32(float64(earthRadius) * c)
+		}
+	} else {
+		metrics.GPUComputeDurationSeconds.WithLabelValues("Apple Silicon GPU (Optimized)", "haversine").Observe(time.Since(start).Seconds())
+	}
+	return results, nil
+}
+
+func (idx *MetalIndexOptimized) NormBatch(vectors []float32, dims int) ([]float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	count := len(vectors) / dims
+	if count == 0 {
+		return nil, nil
+	}
+
+	results := make([]float32, count)
+
+	start := time.Now()
+	ret := C.metal_norm_batch_optimized(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&vectors[0])),
+		(*C.float)(unsafe.Pointer(&results[0])),
+		C.int(dims),
+		C.int(count),
+	)
+
+	if ret != 0 {
+		// CPU fallback
+		for i := 0; i < count; i++ {
+			var sum float64
+			for j := 0; j < dims; j++ {
+				val := float64(vectors[i*dims+j])
+				sum += val * val
+			}
+			results[i] = float32(math.Sqrt(sum))
+		}
+	} else {
+		metrics.GPUComputeDurationSeconds.WithLabelValues("Apple Silicon GPU (Optimized)", "norm_batch").Observe(time.Since(start).Seconds())
+	}
+	return results, nil
 }
 
 func (idx *MetalIndexOptimized) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {
@@ -1978,10 +1563,170 @@ func (idx *MetalIndexOptimized) AssignToClusters(vectors []float32, centroids []
 	}
 	return assignments, nil
 }
-func (idx *MetalIndexOptimized) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
-	return fmt.Errorf("UpdateGraph not implemented for optimized Metal index")
+
+func (idx *MetalIndexOptimized) SearchGreedy(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return 0, 0, fmt.Errorf("index closed")
+	}
+
+	ep := entryPoint
+	ed := entryDist
+	ret := C.metal_greedy_search_optimized(idx.handle, (*C.float)(unsafe.Pointer(&query[0])), (*C.uint32_t)(unsafe.Pointer(&ep)), (*C.float)(unsafe.Pointer(&ed)))
+	if ret != 0 {
+		return 0, 0, fmt.Errorf("GPU greedy search failed")
+	}
+	return ep, ed, nil
 }
 
-func (idx *MetalIndexOptimized) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
-	return nil, nil, fmt.Errorf("GraphExpand not implemented for optimized Metal index")
+func (idx *MetalIndexOptimized) SearchGreedyTQ(query []float32, entryPoint uint32, entryDist float32, bitsPerAngle int) (uint32, float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return 0, 0, fmt.Errorf("index closed")
+	}
+
+	pow2 := 1
+	for pow2 < idx.dim {
+		pow2 <<= 1
+	}
+
+	// TurboQuant requires query rotation for distance parity
+	rotatedQuery := make([]float32, pow2)
+	copy(rotatedQuery, query)
+	if err := simd.RandomRotation(rotatedQuery, 42); err != nil {
+		return 0, 0, fmt.Errorf("failed to rotate query for TQ greedy search: %w", err)
+	}
+
+	ep := entryPoint
+	ed := entryDist
+	start := time.Now()
+	ret := C.metal_greedy_search_tq_optimized(idx.handle, (*C.float)(unsafe.Pointer(&rotatedQuery[0])), C.int(pow2), C.int(bitsPerAngle), (*C.uint32_t)(unsafe.Pointer(&ep)), (*C.float)(unsafe.Pointer(&ed)))
+	if ret != 0 {
+		return 0, 0, fmt.Errorf("GPU greedy TQ search failed")
+	}
+	metrics.TurboQuantDequantizeLatencySeconds.Observe(time.Since(start).Seconds())
+	return ep, ed, nil
+}
+
+func (idx *MetalIndexOptimized) PruneNeighbors(candidateIds []uint32, candidateDists []float32, maxNeighbors int, allVectors []float32) ([]uint32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	numCandidates := len(candidateIds)
+	if numCandidates == 0 {
+		return []uint32{}, nil
+	}
+
+	selectedIds := make([]uint32, maxNeighbors)
+	var selectedCount uint32
+
+	var vecPtr *C.float
+	if len(allVectors) > 0 {
+		vecPtr = (*C.float)(unsafe.Pointer(&allVectors[0]))
+	}
+
+	start := time.Now()
+	ret := C.metal_prune_neighbors_optimized(
+		idx.handle,
+		(*C.uint32_t)(unsafe.Pointer(&candidateIds[0])),
+		(*C.float)(unsafe.Pointer(&candidateDists[0])),
+		(*C.uint32_t)(unsafe.Pointer(&selectedIds[0])),
+		(*C.uint32_t)(unsafe.Pointer(&selectedCount)),
+		vecPtr,
+		C.int(maxNeighbors),
+		C.int(numCandidates),
+		C.int(idx.dim),
+		C.bool(true),
+	)
+
+	if ret == 0 {
+		metrics.GPUComputeDurationSeconds.WithLabelValues("Apple Silicon GPU (Optimized)", "prune_neighbors").Observe(time.Since(start).Seconds())
+		return selectedIds[:selectedCount], nil
+	}
+
+	// CPU fallback: simple distance-based pruning
+	type cand struct {
+		id   uint32
+		dist float32
+	}
+	cands := make([]cand, len(candidateIds))
+	for i := range candidateIds {
+		cands[i] = cand{id: candidateIds[i], dist: candidateDists[i]}
+	}
+
+	sort.Slice(cands, func(i, j int) bool {
+		return cands[i].dist < cands[j].dist
+	})
+
+	n := maxNeighbors
+	if n > len(cands) {
+		n = len(cands)
+	}
+
+	pruned := make([]uint32, n)
+	for i := 0; i < n; i++ {
+		pruned[i] = cands[i].id
+	}
+
+	return pruned, nil
+}
+
+func (idx *MetalIndexOptimized) searchGreedyGPU(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return 0, 0, fmt.Errorf("index closed")
+	}
+
+	ep := entryPoint
+	ed := entryDist
+
+	ret := C.metal_greedy_search_optimized(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&query[0])),
+		(*C.uint32_t)(unsafe.Pointer(&ep)),
+		(*C.float)(unsafe.Pointer(&ed)),
+	)
+
+	if ret != 0 {
+		return 0, 0, fmt.Errorf("GPU greedy search failed")
+	}
+
+	return ep, ed, nil
+}
+
+func (idx *MetalIndexOptimized) Sync() error {
+	return nil
+}
+
+func (idx *MetalIndexOptimized) Clear() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if idx.closed {
+		return fmt.Errorf("index is closed")
+	}
+
+	// Reset vector count in handle
+	idx.handle.vectorCount = 0
+	
+	// Reset graph metadata
+	idx.graphOffsets = nil
+	idx.graphNeighbors = nil
+	idx.graphWeights = nil
+
+	return nil
+}
+
+func (idx *MetalIndexOptimized) Reset() error {
+	return idx.Clear()
 }

@@ -5,7 +5,7 @@ import (
 	"testing"
 )
 
-func FuzzCompactableArena_Operations(f *testing.F) {
+func FuzzCompactableArenaOperations(f *testing.F) {
 	// Seed corpus
 	f.Add(uint8(10), uint8(5), uint8(100))
 	f.Add(uint8(50), uint8(25), uint8(200))
@@ -75,7 +75,7 @@ func FuzzCompactableArena_Operations(f *testing.F) {
 	})
 }
 
-func FuzzCompactableArena_ConcurrentAccess(f *testing.F) {
+func FuzzCompactableArenaConcurrentAccess(f *testing.F) {
 	f.Add(uint8(5), uint8(10))
 
 	f.Fuzz(func(t *testing.T, numGoroutines, allocsPerGoroutine uint8) {

@@ -18,6 +18,7 @@ type PIDTuner struct {
 	currentEf float64
 }
 
+// NewPIDTuner initializes a new PID controller for dynamic parameter tuning.
 func NewPIDTuner(targetRecall float64, initialEf int) *PIDTuner {
 	return &PIDTuner{
 		targetRecall: targetRecall,
@@ -64,6 +65,7 @@ func (t *PIDTuner) Update(observedRecall float64) int {
 	return int(t.currentEf)
 }
 
+// GetCurrentEf returns the current tuned efSearch value.
 func (t *PIDTuner) GetCurrentEf() int {
 	t.mu.Lock()
 	defer t.mu.Unlock()

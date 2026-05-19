@@ -10,10 +10,12 @@ import (
 // AStarStrategy implements A* search algorithm.
 type AStarStrategy struct{}
 
+// Name returns the identifier for the A* strategy.
 func (s *AStarStrategy) Name() string {
 	return "AStar"
 }
 
+// FindPath executes an A* search to find the shortest path between nodes.
 func (s *AStarStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query NavigatorQuery) (*NavigatorPath, error) {
 	// A* Implementation
 	// Priority Queue Item

@@ -1,10 +1,10 @@
 package store
 
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
-	"sort"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,7 +17,9 @@ import (
 )
 
 const (
+	// LearnedIndexTypeAuto allows the system to automatically select the best index type.
 	LearnedIndexTypeAuto IndexType = "auto"
+	// LearnedIVFPQ specifies a learned IVF-PQ index.
 	LearnedIVFPQ         IndexType = "ivf_pq"
 )
 
@@ -187,6 +189,7 @@ func embeddingModelDimRatio(provider, model string, actualDim int) float64 {
 	}
 }
 
+// QueryFeatures encapsulates signals used to predict the optimal index type for a search query.
 type QueryFeatures struct {
 	VectorDimension    int     `json:"vector_dimension"`
 	NumQueryVectors    int     `json:"num_query_vectors"`
@@ -218,6 +221,7 @@ func (f *QueryFeatures) UpdateFromEmbedding(embedding []float64) {
 	f.AvgVectorNorm = math.Sqrt(sumSq)
 }
 
+// IndexPrediction contains the recommended index type and its estimated performance.
 type IndexPrediction struct {
 	RecommendedIndex IndexType     `json:"recommended_index"`
 	Confidence       float64       `json:"confidence"`
@@ -226,6 +230,7 @@ type IndexPrediction struct {
 	Alternatives     []IndexType   `json:"alternatives"`
 }
 
+// TrainingSample represents an observed search performance event used for model training.
 type TrainingSample struct {
 	Features QueryFeatures
 	Latency  time.Duration
@@ -233,6 +238,7 @@ type TrainingSample struct {
 	Index    IndexType
 }
 
+// IndexPerformancePredictor predicts the best index type based on query features.
 type IndexPerformancePredictor struct {
 	logger           zerolog.Logger
 	config           LearnedIndexConfig
@@ -247,12 +253,50 @@ type IndexPerformancePredictor struct {
 	lastPredictedIdx atomic.Value // stores IndexType; written by Predict, read by AddTrainingSample
 }
 
+// LearnedIndexRateLimiter protects search hot-paths during background model training.
+type LearnedIndexRateLimiter struct {
+	predictor *IndexPerformancePredictor
+	logger    zerolog.Logger
+}
+
+// NewLearnedIndexRateLimiter creates a new rate limiter for the predictor.
+func NewLearnedIndexRateLimiter(predictor *IndexPerformancePredictor, logger zerolog.Logger) *LearnedIndexRateLimiter {
+	return &LearnedIndexRateLimiter{
+		predictor: predictor,
+		logger:    logger,
+	}
+}
+
+// Wait blocks if background training is in progress and search load is high.
+// This ensures that model training doesn't starve the search hot-path.
+func (rl *LearnedIndexRateLimiter) Wait(ctx context.Context) error {
+	if rl.predictor == nil {
+		return nil
+	}
+
+	// If background update is in progress, introduce a small adaptive delay
+	if rl.predictor.updateInProgress.Load() {
+		// During training, we introduce a 10-50ms delay to give the trainer some breathing room
+		// while still allowing searches to complete.
+		select {
+		case <-time.After(20 * time.Millisecond):
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
+
+	return nil
+}
+
+// PredictorStats tracks the performance and accuracy of the predictor.
 type PredictorStats struct {
 	TrainingSamplesCollected atomic.Int64
 	PredictionsMade          atomic.Int64
 	PredictionCorrect        atomic.Int64
 }
 
+// LearnedIndexConfig defines the configuration for the learned index predictor.
 type LearnedIndexConfig struct {
 	EnableAutoSelection bool          `json:"enable_auto_selection"`
 	MinTrainingSamples  int           `json:"min_training_samples"`
@@ -264,6 +308,7 @@ type LearnedIndexConfig struct {
 	KNN int `json:"knn"`
 }
 
+// NewIndexPerformancePredictor creates a new predictor with the given configuration.
 func NewIndexPerformancePredictor(logger zerolog.Logger, config LearnedIndexConfig) *IndexPerformancePredictor {
 	if val := os.Getenv("LONGBOW_LEARNED_MIN_SAMPLES"); val != "" {
 		if i, err := strconv.Atoi(val); err == nil {
@@ -327,6 +372,7 @@ func (p *IndexPerformancePredictor) initializeWeights() {
 	}
 }
 
+// AddTrainingSample incorporates a new observation into the predictor's training set.
 func (p *IndexPerformancePredictor) AddTrainingSample(sample TrainingSample) {
 	// Correctness tracking: if the last k-NN prediction matched this observed outcome, count it.
 	if v := p.lastPredictedIdx.Load(); v != nil {
@@ -367,6 +413,7 @@ func (p *IndexPerformancePredictor) AddTrainingSample(sample TrainingSample) {
 	}
 }
 
+// Predict estimates the optimal index type and performance for a given set of query features.
 func (p *IndexPerformancePredictor) Predict(features QueryFeatures) IndexPrediction {
 	p.stats.PredictionsMade.Add(1)
 
@@ -416,7 +463,17 @@ func (p *IndexPerformancePredictor) Predict(features QueryFeatures) IndexPredict
 	}
 }
 
-// Heuristic scoring methods were removed in favor of data-driven k-NN prediction (v0.1.9).
+// Pool for knnHeap entries to avoid allocations in kNNPredict
+var knnHeapPool = sync.Pool{
+	New: func() any {
+		return &knnHeap{entries: make([]distEntry, 0, 32)} // typical k=7-15
+	},
+}
+
+type distEntry struct {
+	dist  float64
+	index IndexType
+}
 
 // kNNPredict scores candidate index types using weighted k-nearest-neighbour
 // classification over the accumulated TrainingSamples. Neighbours are ranked by
@@ -425,12 +482,6 @@ func (p *IndexPerformancePredictor) Predict(features QueryFeatures) IndexPredict
 //
 // Returns a map of index type → aggregated vote score (higher = preferred).
 func (p *IndexPerformancePredictor) kNNPredict(features QueryFeatures, k int) map[IndexType]float64 {
-	scores := map[IndexType]float64{
-		IndexTypeHNSW:    0.0,
-		LearnedIVFPQ:     0.0,
-		IndexTypeDiskANN: 0.0,
-	}
-
 	if k <= 0 {
 		k = 7
 	}
@@ -438,20 +489,14 @@ func (p *IndexPerformancePredictor) kNNPredict(features QueryFeatures, k int) ma
 	queryVec := extractFeatureVector(features)
 	normalisedQuery := p.normalizer.Normalize(queryVec)
 
-	// Snapshot samples under RLock to avoid blocking AddTrainingSample.
+	// Snapshot weights and sample length under RLock.
 	p.samplesMu.RLock()
-	snap := make([]TrainingSample, len(p.samples))
-	copy(snap, p.samples)
-	weights := p.featureWeights
-	p.samplesMu.RUnlock()
-
-	if len(snap) == 0 {
+	if len(p.samples) == 0 {
+		p.samplesMu.RUnlock()
 		return map[IndexType]float64{IndexTypeHNSW: 1.0}
 	}
-	if k > len(snap) {
-		k = len(snap)
-	}
-
+	weights := p.featureWeights
+	
 	// Build a weight vector aligned to featureKeys.
 	var wVec [numFeatures]float64
 	total := 0.0
@@ -469,36 +514,103 @@ func (p *IndexPerformancePredictor) kNNPredict(features QueryFeatures, k int) ma
 		}
 	}
 
-	type distEntry struct {
-		dist  float64
-		index IndexType
-	}
+	// Use a max-heap to track top-k neighbors without sorting the entire sample set.
+	// This reduces complexity from O(N log N) to O(N log K).
+	h := knnHeapPool.Get().(*knnHeap)
+	h.entries = h.entries[:0]
+	h.k = k
 
-	entries := make([]distEntry, len(snap))
-	for i, s := range snap {
+	for _, s := range p.samples {
 		sVec := extractFeatureVector(s.Features)
 		normS := p.normalizer.Normalize(sVec)
-		entries[i] = distEntry{
-			dist:  weightedEuclidean(normalisedQuery, normS, wVec),
-			index: s.Index,
+		dist := weightedEuclidean(normalisedQuery, normS, wVec)
+		
+		if h.Len() < k {
+			h.push(distEntry{dist: dist, index: s.Index})
+		} else if dist < h.peek().dist {
+			h.pop()
+			h.push(distEntry{dist: dist, index: s.Index})
 		}
 	}
+	p.samplesMu.RUnlock()
 
-	// Partial sort: pull k smallest-distance neighbours to front.
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].dist < entries[j].dist
-	})
+	scores := map[IndexType]float64{
+		IndexTypeHNSW:    0.0,
+		LearnedIVFPQ:     0.0,
+		IndexTypeDiskANN: 0.0,
+	}
 
 	const eps = 1e-9
-	for _, e := range entries[:k] {
+	for _, e := range h.entries {
 		scores[e.index] += 1.0 / (e.dist + eps)
 	}
 
+	knnHeapPool.Put(h)
 	return scores
 }
 
-// weightedEuclidean computes the weighted Euclidean distance between two
-// feature vectors using the provided per-dimension weight vector.
+// knnHeap implements a simple max-heap for distEntry.
+type knnHeap struct {
+	entries []distEntry
+	k       int
+}
+
+func (h *knnHeap) Len() int           { return len(h.entries) }
+func (h *knnHeap) Less(i, j int) bool { return h.entries[i].dist > h.entries[j].dist } // Max-heap
+func (h *knnHeap) Swap(i, j int)      { h.entries[i], h.entries[j] = h.entries[j], h.entries[i] }
+
+func (h *knnHeap) push(x distEntry) {
+	h.entries = append(h.entries, x)
+	h.up(h.Len() - 1)
+}
+
+func (h *knnHeap) pop() distEntry {
+	n := h.Len() - 1
+	h.Swap(0, n)
+	h.down(0, n)
+	x := h.entries[n]
+	h.entries = h.entries[:n]
+	return x
+}
+
+func (h *knnHeap) peek() distEntry {
+	if len(h.entries) == 0 {
+		return distEntry{dist: math.MaxFloat64}
+	}
+	return h.entries[0]
+}
+
+func (h *knnHeap) up(j int) {
+	for {
+		i := (j - 1) / 2 // parent
+		if i == j || !h.Less(j, i) {
+			break
+		}
+		h.Swap(i, j)
+		j = i
+	}
+}
+
+func (h *knnHeap) down(i0, n int) bool {
+	i := i0
+	for {
+		j1 := 2*i + 1
+		if j1 >= n || j1 < 0 { // j1 < 0 after int overflow
+			break
+		}
+		j := j1 // left child
+		if j2 := j1 + 1; j2 < n && h.Less(j2, j) {
+			j = j2 // = 2*i + 2  // right child
+		}
+		if !h.Less(j, i) {
+			break
+		}
+		h.Swap(i, j)
+		i = j
+	}
+	return i > i0
+}
+
 func weightedEuclidean(a, b, w [numFeatures]float64) float64 {
 	sum := 0.0
 	for i := range a {
@@ -695,32 +807,38 @@ func (p *IndexPerformancePredictor) getAlternatives(scores map[IndexType]float64
 	return alternatives
 }
 
+// GetStats returns the current performance statistics of the predictor.
 func (p *IndexPerformancePredictor) GetStats() (samples, predictions, correct int64) {
 	return p.stats.TrainingSamplesCollected.Load(),
 		p.stats.PredictionsMade.Load(),
 		p.stats.PredictionCorrect.Load()
 }
 
+// GetConfig returns the current configuration of the learned index predictor.
 func (p *IndexPerformancePredictor) GetConfig() LearnedIndexConfig {
 	return p.config
 }
 
+// SetConfig updates the configuration of the learned index predictor.
 func (p *IndexPerformancePredictor) SetConfig(config LearnedIndexConfig) {
 	p.config = config
 }
 
+// GetTrainingSampleCount returns the number of samples currently in the training set.
 func (p *IndexPerformancePredictor) GetTrainingSampleCount() int {
 	p.samplesMu.RLock()
 	defer p.samplesMu.RUnlock()
 	return len(p.samples)
 }
 
+// ClearTrainingData removes all training samples and resets the predictor stats.
 func (p *IndexPerformancePredictor) ClearTrainingData() {
 	p.samplesMu.Lock()
 	defer p.samplesMu.Unlock()
 	p.samples = make([]TrainingSample, 0, 10000)
 }
 
+// QueryIndexMapper manages the mapping between queries and optimal index types.
 type QueryIndexMapper struct {
 	logger       zerolog.Logger
 	predictor    *IndexPerformancePredictor
@@ -730,6 +848,7 @@ type QueryIndexMapper struct {
 	stats        IndexMapperStats
 }
 
+// IndexMapperConfig defines the configuration for the query-to-index mapper.
 type IndexMapperConfig struct {
 	EnableAutoMapping  bool          `json:"enable_auto_mapping"`
 	CacheEnabled       bool          `json:"cache_enabled"`
@@ -740,6 +859,7 @@ type IndexMapperConfig struct {
 	AdaptationInterval time.Duration `json:"adaptation_interval"`
 }
 
+// IndexMapperStats tracks the mapping operations and cache performance.
 type IndexMapperStats struct {
 	QueriesMapped atomic.Int64
 	CacheHits     atomic.Int64
@@ -748,6 +868,7 @@ type IndexMapperStats struct {
 	Errors        atomic.Int64
 }
 
+// NewQueryIndexMapper creates a new mapper with specified predictor and configuration.
 func NewQueryIndexMapper(logger zerolog.Logger, predictor *IndexPerformancePredictor, config IndexMapperConfig) *QueryIndexMapper {
 	if config.CacheTTL <= 0 {
 		config.CacheTTL = 10 * time.Minute
@@ -764,6 +885,7 @@ func NewQueryIndexMapper(logger zerolog.Logger, predictor *IndexPerformancePredi
 	}
 }
 
+// GetIndexForQuery determines the best index type for a given query and its features.
 func (m *QueryIndexMapper) GetIndexForQuery(queryID string, features QueryFeatures) IndexType {
 	m.stats.QueriesMapped.Add(1)
 
@@ -797,18 +919,21 @@ func (m *QueryIndexMapper) GetIndexForQuery(queryID string, features QueryFeatur
 	return selectedIndex
 }
 
+// InvalidateCache removes a specific query from the index mapping cache.
 func (m *QueryIndexMapper) InvalidateCache(queryID string) {
 	m.mappingMu.Lock()
 	defer m.mappingMu.Unlock()
 	delete(m.indexMapping, queryID)
 }
 
+// ClearCache removes all entries from the index mapping cache.
 func (m *QueryIndexMapper) ClearCache() {
 	m.mappingMu.Lock()
 	defer m.mappingMu.Unlock()
 	m.indexMapping = make(map[string]IndexType)
 }
 
+// GetStats returns the current mapping and cache performance statistics.
 func (m *QueryIndexMapper) GetStats() (mapped, hits, misses, adaptions, errors int64) {
 	return m.stats.QueriesMapped.Load(),
 		m.stats.CacheHits.Load(),
@@ -817,14 +942,17 @@ func (m *QueryIndexMapper) GetStats() (mapped, hits, misses, adaptions, errors i
 		m.stats.Errors.Load()
 }
 
+// GetConfig returns the current index mapper configuration.
 func (m *QueryIndexMapper) GetConfig() IndexMapperConfig {
 	return m.config
 }
 
+// SetConfig updates the index mapper configuration.
 func (m *QueryIndexMapper) SetConfig(config IndexMapperConfig) {
 	m.config = config
 }
 
+// GetCachedMappings returns a copy of the current query-to-index mappings.
 func (m *QueryIndexMapper) GetCachedMappings() map[string]IndexType {
 	m.mappingMu.RLock()
 	defer m.mappingMu.RUnlock()
@@ -836,12 +964,14 @@ func (m *QueryIndexMapper) GetCachedMappings() map[string]IndexType {
 	return result
 }
 
+// GetMappingCount returns the total number of cached query mappings.
 func (m *QueryIndexMapper) GetMappingCount() int {
 	m.mappingMu.RLock()
 	defer m.mappingMu.RUnlock()
 	return len(m.indexMapping)
 }
 
+// IndexAdaptation records an instance of the system recommending and applying an index change.
 type IndexAdaptation struct {
 	CollectionName string
 	CurrentIndex   IndexType
@@ -853,6 +983,7 @@ type IndexAdaptation struct {
 	Features       QueryFeatures // Features that triggered the adaptation
 }
 
+// AdaptationMetrics captures the performance state that triggered an index adaptation.
 type AdaptationMetrics struct {
 	AvgLatencyMs   float64
 	P50LatencyMs   float64
@@ -863,9 +994,11 @@ type AdaptationMetrics struct {
 	MemoryUsageMB  float64
 }
 
+// AdaptationStatus defines the lifecycle states of an index adaptation process.
 type AdaptationStatus string
 
 const (
+	// AdaptationStatusPending indicates that an adaptation has been triggered but not yet started.
 	AdaptationStatusPending   AdaptationStatus = "pending"
 	AdaptationStatusRunning   AdaptationStatus = "running"
 	AdaptationStatusComplete  AdaptationStatus = "complete"
@@ -880,6 +1013,7 @@ type IndexSwitcher interface {
 	SwitchIndex(collection string, to IndexType) error
 }
 
+// RuntimeIndexAdapter monitors index performance and applies learned index changes in real-time.
 type RuntimeIndexAdapter struct {
 	logger           zerolog.Logger
 	predictor        *IndexPerformancePredictor
@@ -893,6 +1027,7 @@ type RuntimeIndexAdapter struct {
 	switcher         IndexSwitcher // optional; nil → rollback is logged but not applied
 }
 
+// MetricsCollector defines an interface for retrieving operational metrics used by the adaptive indexer.
 type MetricsCollector interface {
 	GetCollections() []string
 	GetQueryLatencies(collection string) (p50, p99, avg float64)
@@ -903,6 +1038,7 @@ type MetricsCollector interface {
 	GetCurrentIndex(collection string) IndexType
 }
 
+// IndexAdaptationConfig defines thresholds and timing for automatic index adaptation.
 type IndexAdaptationConfig struct {
 	EnableAutoAdaptation    bool          `json:"enable_auto_adaptation"`
 	MinSamplesForAdaptation int           `json:"min_samples_for_adaptation"`
@@ -914,6 +1050,7 @@ type IndexAdaptationConfig struct {
 	RollbackWindow          time.Duration `json:"rollback_window"`
 }
 
+// AdapterStats tracks the operational performance of the RuntimeIndexAdapter.
 type AdapterStats struct {
 	AdaptationsTriggered atomic.Int64
 	AdaptationsCompleted atomic.Int64
@@ -922,6 +1059,7 @@ type AdapterStats struct {
 	QueriesAnalyzed      atomic.Int64
 }
 
+// NewRuntimeIndexAdapter creates a new RuntimeIndexAdapter with the provided configuration and dependencies.
 func NewRuntimeIndexAdapter(logger zerolog.Logger, predictor *IndexPerformancePredictor, config IndexAdaptationConfig, collector MetricsCollector) *RuntimeIndexAdapter {
 	if config.MinSamplesForAdaptation <= 0 {
 		config.MinSamplesForAdaptation = 1000
@@ -952,6 +1090,7 @@ func NewRuntimeIndexAdapter(logger zerolog.Logger, predictor *IndexPerformancePr
 	}
 }
 
+// Start begins the background monitoring and adaptation loop.
 func (a *RuntimeIndexAdapter) Start() {
 	if !a.config.EnableAutoAdaptation {
 		a.logger.Info().Msg("Auto-adaptation disabled")
@@ -964,6 +1103,7 @@ func (a *RuntimeIndexAdapter) Start() {
 	a.logger.Info().Msg("Runtime index adapter started")
 }
 
+// Stop terminates the background adaptation loop and waits for it to finish.
 func (a *RuntimeIndexAdapter) Stop() {
 	close(a.stopChan)
 	a.wg.Wait()
@@ -1112,6 +1252,7 @@ func (a *RuntimeIndexAdapter) determineTriggerReason(m AdaptationMetrics) string
 	return "performance_degradation"
 }
 
+// GetAdaptation retrieves the current adaptation state for a specific collection.
 func (a *RuntimeIndexAdapter) GetAdaptation(collection string) (*IndexAdaptation, bool) {
 	a.adaptationMu.RLock()
 	defer a.adaptationMu.RUnlock()
@@ -1120,6 +1261,7 @@ func (a *RuntimeIndexAdapter) GetAdaptation(collection string) (*IndexAdaptation
 	return adaptation, ok
 }
 
+// ListAdaptations returns all current index adaptations across all collections.
 func (a *RuntimeIndexAdapter) ListAdaptations() []*IndexAdaptation {
 	a.adaptationMu.RLock()
 	defer a.adaptationMu.RUnlock()
@@ -1131,6 +1273,7 @@ func (a *RuntimeIndexAdapter) ListAdaptations() []*IndexAdaptation {
 	return adaptations
 }
 
+// StartAdaptation marks an adaptation as running for the given collection.
 func (a *RuntimeIndexAdapter) StartAdaptation(collection string) error {
 	a.adaptationMu.Lock()
 	defer a.adaptationMu.Unlock()
@@ -1146,6 +1289,7 @@ func (a *RuntimeIndexAdapter) StartAdaptation(collection string) error {
 	return nil
 }
 
+// CompleteAdaptation finalizes an adaptation process, recording success or failure signal.
 func (a *RuntimeIndexAdapter) CompleteAdaptation(collection string, success bool) error {
 	a.adaptationMu.Lock()
 	defer a.adaptationMu.Unlock()
@@ -1195,6 +1339,7 @@ func (a *RuntimeIndexAdapter) WithIndexSwitcher(s IndexSwitcher) {
 	a.switcher = s
 }
 
+// Rollback reverts an index adaptation, switching back to the previous index type.
 func (a *RuntimeIndexAdapter) Rollback(collection string) error {
 	if !a.config.EnableRollback {
 		return fmt.Errorf("rollback is disabled for this adapter")
@@ -1243,6 +1388,7 @@ func (a *RuntimeIndexAdapter) Rollback(collection string) error {
 	return nil
 }
 
+// GetStats returns current operational statistics for the index adapter.
 func (a *RuntimeIndexAdapter) GetStats() (triggered, completed, failed, rolledback, analyzed int64) {
 	return a.stats.AdaptationsTriggered.Load(),
 		a.stats.AdaptationsCompleted.Load(),
@@ -1251,14 +1397,17 @@ func (a *RuntimeIndexAdapter) GetStats() (triggered, completed, failed, rolledba
 		a.stats.QueriesAnalyzed.Load()
 }
 
+// GetConfig returns the current configuration for the index adapter.
 func (a *RuntimeIndexAdapter) GetConfig() IndexAdaptationConfig {
 	return a.config
 }
 
+// SetConfig updates the configuration for the index adapter.
 func (a *RuntimeIndexAdapter) SetConfig(config IndexAdaptationConfig) {
 	a.config = config
 }
 
+// IndexBenchmark manages performance comparisons between learned and fixed index configurations.
 type IndexBenchmark struct {
 	logger            zerolog.Logger
 	predictor         *IndexPerformancePredictor
@@ -1268,6 +1417,7 @@ type IndexBenchmark struct {
 	stats             BenchmarkStats
 }
 
+// LearnedBenchmarkResult holds the outcome of a single performance comparison.
 type LearnedBenchmarkResult struct {
 	Features       QueryFeatures
 	LearnedIndex   IndexType
@@ -1281,6 +1431,7 @@ type LearnedBenchmarkResult struct {
 	IndexType      IndexType
 }
 
+// BenchmarkStats tracks cumulative performance across multiple benchmark runs.
 type BenchmarkStats struct {
 	BenchmarksRun      atomic.Int64
 	LearnedWins        atomic.Int64
@@ -1289,6 +1440,7 @@ type BenchmarkStats struct {
 	TotalQueriesTested atomic.Int64
 }
 
+// NewIndexBenchmark creates a new IndexBenchmark for comparing learned index performance against fixed configurations.
 func NewIndexBenchmark(logger zerolog.Logger, predictor *IndexPerformancePredictor, fixedIndices []IndexType) *IndexBenchmark {
 	if len(fixedIndices) == 0 {
 		fixedIndices = []IndexType{IndexTypeHNSW, LearnedIVFPQ, IndexTypeDiskANN}
@@ -1301,6 +1453,7 @@ func NewIndexBenchmark(logger zerolog.Logger, predictor *IndexPerformancePredict
 	}
 }
 
+// RunComparison executes a performance comparison between the recommended learned index and a fixed configuration.
 func (b *IndexBenchmark) RunComparison(features QueryFeatures, numIterations int) LearnedBenchmarkResult {
 	b.stats.BenchmarksRun.Add(1)
 
@@ -1389,6 +1542,7 @@ func (b *IndexBenchmark) simulateRecall(index IndexType, _ QueryFeatures) float6
 	return 0.95
 }
 
+// RunBatchBenchmark runs a series of benchmarks across multiple feature sets.
 func (b *IndexBenchmark) RunBatchBenchmark(featureSets []QueryFeatures, iterationsPerSet int) []LearnedBenchmarkResult {
 	results := make([]LearnedBenchmarkResult, 0, len(featureSets)*iterationsPerSet)
 
@@ -1402,6 +1556,7 @@ func (b *IndexBenchmark) RunBatchBenchmark(featureSets []QueryFeatures, iteratio
 	return results
 }
 
+// GetAggregatedStats computes summary statistics across all benchmark results.
 func (b *IndexBenchmark) GetAggregatedStats() BenchmarkSummary {
 	b.resultsMu.RLock()
 	defer b.resultsMu.RUnlock()
@@ -1437,6 +1592,7 @@ func (b *IndexBenchmark) GetAggregatedStats() BenchmarkSummary {
 	}
 }
 
+// GetResults returns a copy of all individual benchmark results.
 func (b *IndexBenchmark) GetResults() []LearnedBenchmarkResult {
 	b.resultsMu.RLock()
 	defer b.resultsMu.RUnlock()
@@ -1446,12 +1602,14 @@ func (b *IndexBenchmark) GetResults() []LearnedBenchmarkResult {
 	return result
 }
 
+// ClearResults removes all accumulated benchmark results.
 func (b *IndexBenchmark) ClearResults() {
 	b.resultsMu.Lock()
 	defer b.resultsMu.Unlock()
 	b.results = make([]LearnedBenchmarkResult, 0)
 }
 
+// GetStats returns high-level counters for the benchmark runner.
 func (b *IndexBenchmark) GetStats() (runs, learnedWins, fixedWins, totalQueries int64) {
 	return b.stats.BenchmarksRun.Load(),
 		b.stats.LearnedWins.Load(),
@@ -1459,6 +1617,7 @@ func (b *IndexBenchmark) GetStats() (runs, learnedWins, fixedWins, totalQueries 
 		b.stats.TotalQueriesTested.Load()
 }
 
+// BenchmarkSummary provides a high-level overview of benchmark outcomes.
 type BenchmarkSummary struct {
 	TotalBenchmarks     int
 	LearnedIndexWins    int
@@ -1469,6 +1628,7 @@ type BenchmarkSummary struct {
 	TotalQueriesTested  int
 }
 
+// IndexRecommendationAPI provides external access to index selection recommendations.
 type IndexRecommendationAPI struct {
 	logger      zerolog.Logger
 	predictor   *IndexPerformancePredictor
@@ -1477,17 +1637,20 @@ type IndexRecommendationAPI struct {
 	stats       APIStats
 }
 
+// APIStats tracks the usage and reliability of the recommendation API.
 type APIStats struct {
 	RecommendationsGiven atomic.Int64
 	APIErrors            atomic.Int64
 }
 
+// IndexRecommendationEngine maintains history and manages the recommendation logic.
 type IndexRecommendationEngine struct {
 	logger    zerolog.Logger
 	history   []RecommendationRecord
 	historyMu sync.RWMutex
 }
 
+// RecommendationRecord stores a single recommendation event and its acceptance state.
 type RecommendationRecord struct {
 	QueryID        string
 	Features       QueryFeatures
@@ -1496,6 +1659,7 @@ type RecommendationRecord struct {
 	Accepted       bool
 }
 
+// NewIndexRecommendationAPI creates a new recommendation API instance.
 func NewIndexRecommendationAPI(logger zerolog.Logger, predictor *IndexPerformancePredictor, mapper *QueryIndexMapper) *IndexRecommendationAPI {
 	return &IndexRecommendationAPI{
 		logger:      logger,
@@ -1505,6 +1669,7 @@ func NewIndexRecommendationAPI(logger zerolog.Logger, predictor *IndexPerformanc
 	}
 }
 
+// GetRecommendation generates an index recommendation based on query features.
 func (api *IndexRecommendationAPI) GetRecommendation(features QueryFeatures) IndexPrediction {
 	api.stats.RecommendationsGiven.Add(1)
 
@@ -1526,6 +1691,7 @@ func (api *IndexRecommendationAPI) GetRecommendation(features QueryFeatures) Ind
 	return prediction
 }
 
+// GetRecommendationWithContext generates a recommendation using both query features and historical ID mapping.
 func (api *IndexRecommendationAPI) GetRecommendationWithContext(queryID string, features QueryFeatures) IndexPrediction {
 	api.stats.RecommendationsGiven.Add(1)
 
@@ -1556,6 +1722,7 @@ func (api *IndexRecommendationAPI) GetRecommendationWithContext(queryID string, 
 	return prediction
 }
 
+// AcceptRecommendation records that a generated recommendation was accepted by the user.
 func (api *IndexRecommendationAPI) AcceptRecommendation(queryID string, index IndexType) error {
 	api.recommender.historyMu.Lock()
 	defer api.recommender.historyMu.Unlock()
@@ -1570,6 +1737,7 @@ func (api *IndexRecommendationAPI) AcceptRecommendation(queryID string, index In
 	return fmt.Errorf("no recommendation found for query %s", queryID)
 }
 
+// GetRecommendationHistory returns a list of recent recommendation events.
 func (api *IndexRecommendationAPI) GetRecommendationHistory() []RecommendationRecord {
 	api.recommender.historyMu.RLock()
 	defer api.recommender.historyMu.RUnlock()
@@ -1579,11 +1747,13 @@ func (api *IndexRecommendationAPI) GetRecommendationHistory() []RecommendationRe
 	return result
 }
 
+// GetStats returns the current API usage statistics.
 func (api *IndexRecommendationAPI) GetStats() (recommendations, errors int64) {
 	return api.stats.RecommendationsGiven.Load(),
 		api.stats.APIErrors.Load()
 }
 
+// GetAcceptanceRate calculates the percentage of recommendations that were accepted by users.
 func (api *IndexRecommendationAPI) GetAcceptanceRate() float64 {
 	api.recommender.historyMu.RLock()
 	defer api.recommender.historyMu.RUnlock()
@@ -1602,6 +1772,7 @@ func (api *IndexRecommendationAPI) GetAcceptanceRate() float64 {
 	return float64(accepted) / float64(len(api.recommender.history))
 }
 
+// GetTopRecommendations returns the most frequently recommended index configurations.
 func (api *IndexRecommendationAPI) GetTopRecommendations(limit int) []IndexPrediction {
 	api.recommender.historyMu.RLock()
 	defer api.recommender.historyMu.RUnlock()

@@ -6,25 +6,29 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/memory"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestTemporalTree_Insert(t *testing.T) {
-	tt := NewTemporalTree()
+	arena := memory.NewSlabArena(1024*1024)
+	tt := NewTemporalTree(arena)
 
-	tt.Insert(time.Now().UnixNano(), 1)
-	tt.Insert(time.Now().UnixNano(), 2)
+	now := time.Now().UnixNano()
+	tt.Insert(now, 1, 0.0)
+	tt.Insert(now+1, 2, 0.0)
 
 	assert.Equal(t, 2, tt.Len())
 }
 
 func TestTemporalTree_GetRange(t *testing.T) {
-	tt := NewTemporalTree()
+	arena := memory.NewSlabArena(1024*1024)
+	tt := NewTemporalTree(arena)
 
 	now := time.Now().UnixNano()
-	tt.Insert(now-1000, 1)
-	tt.Insert(now, 2)
-	tt.Insert(now+1000, 3)
+	tt.Insert(now-1000, 1, 0.0)
+	tt.Insert(now, 2, 0.0)
+	tt.Insert(now+1000, 3, 0.0)
 
 	results := tt.GetRange(now-500, now+500)
 
@@ -32,12 +36,13 @@ func TestTemporalTree_GetRange(t *testing.T) {
 }
 
 func TestTemporalTree_GetRangeReversed(t *testing.T) {
-	tt := NewTemporalTree()
+	arena := memory.NewSlabArena(1024*1024)
+	tt := NewTemporalTree(arena)
 
 	now := time.Now().UnixNano()
-	tt.Insert(now-1000, 1)
-	tt.Insert(now, 2)
-	tt.Insert(now+1000, 3)
+	tt.Insert(now-1000, 1, 0.0)
+	tt.Insert(now, 2, 0.0)
+	tt.Insert(now+1000, 3, 0.0)
 
 	results := tt.GetRangeReversed(now-500, now+500)
 
@@ -45,12 +50,13 @@ func TestTemporalTree_GetRangeReversed(t *testing.T) {
 }
 
 func TestTemporalTree_GetBefore(t *testing.T) {
-	tt := NewTemporalTree()
+	arena := memory.NewSlabArena(1024 * 1024)
+	tt := NewTemporalTree(arena)
 
 	now := time.Now().UnixNano()
-	tt.Insert(now-1000, 1)
-	tt.Insert(now, 2)
-	tt.Insert(now+1000, 3)
+	tt.Insert(now-1000, 1, 0.0)
+	tt.Insert(now, 2, 0.0)
+	tt.Insert(now+1000, 3, 0.0)
 
 	results := tt.GetBefore(now)
 
@@ -58,12 +64,13 @@ func TestTemporalTree_GetBefore(t *testing.T) {
 }
 
 func TestTemporalTree_GetLatest(t *testing.T) {
-	tt := NewTemporalTree()
+	arena := memory.NewSlabArena(1024 * 1024)
+	tt := NewTemporalTree(arena)
 
 	now := time.Now().UnixNano()
-	tt.Insert(now-1000, 1)
-	tt.Insert(now, 2)
-	tt.Insert(now+1000, 3)
+	tt.Insert(now-1000, 1, 0.0)
+	tt.Insert(now, 2, 0.0)
+	tt.Insert(now+1000, 3, 0.0)
 
 	results := tt.GetLatest(2)
 
@@ -75,7 +82,7 @@ func TestTemporalIndex_New(t *testing.T) {
 
 	assert.NotNil(t, ti)
 	assert.Equal(t, 128, ti.dimension)
-	assert.NotNil(t, ti.temporalTree)
+	assert.NotNil(t, ti.temporalTree.Load())
 }
 
 func TestTemporalIndex_Add(t *testing.T) {

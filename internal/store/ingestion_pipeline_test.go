@@ -28,14 +28,8 @@ func TestIngestionPipeline_AsyncDecoupling(t *testing.T) {
 	// Mock WAL (optional, but store uses a real engine if config provided, here likely nil which is fine for test logic flow)
 
 	// Measure DoPut duration - should be fast (just queueing)
-	start := time.Now()
-	// Using StoreRecordBatch directly as it mimics DoPut's internal logic or is called by it
-	// Note: We need to ensure StoreRecordBatch uses the new pipeline.
 	err := store.StoreRecordBatch(context.Background(), dsName, rec)
 	require.NoError(t, err)
-	duration := time.Since(start)
-
-	t.Logf("StoreRecordBatch took %v", duration)
 
 	// In a real decoupled system, check weak consistency:
 	// immediate visibility isn't guaranteed if we rely solely on the queue worker.
@@ -50,7 +44,7 @@ func TestIngestionPipeline_AsyncDecoupling(t *testing.T) {
 		}
 		ds.dataMu.RLock()
 		defer ds.dataMu.RUnlock()
-		return len(ds.Records) > 0
+		return len(ds.Records.Read()) > 0
 	}, 2*time.Second, 10*time.Millisecond, "Dataset should eventually have records")
 }
 
@@ -80,7 +74,7 @@ func TestIngestionPipeline_Backpressure(t *testing.T) {
 
 	// Fill the queue
 	for i := 0; i < queueCap; i++ {
-		job := ingestionJob{ds: ds, batch: rec}
+		job := IngestionJob{DS: ds, Batch: rec}
 		rec.Retain()
 		if !store.ingestionQueue.Push(job) {
 			t.Fatalf("Queue should not be full at %d", i)
@@ -93,7 +87,7 @@ func TestIngestionPipeline_Backpressure(t *testing.T) {
 	// Start a goroutine that blocks
 	done := make(chan bool)
 	go func() {
-		job := ingestionJob{ds: ds, batch: rec}
+		job := IngestionJob{DS: ds, Batch: rec}
 		rec.Retain()
 		// Wait up to 5s. Should succeed after we drain.
 		if store.ingestionQueue.PushBlocking(job, 5*time.Second) {
@@ -111,8 +105,8 @@ func TestIngestionPipeline_Backpressure(t *testing.T) {
 	// Unblock by draining one
 	item, ok := store.ingestionQueue.Pop()
 	require.True(t, ok, "Queue should have item")
-	if item.batch != nil {
-		item.batch.Release()
+	if item.Batch != nil {
+		item.Batch.Release()
 	}
 
 	select {

@@ -9,7 +9,7 @@ import (
 // ReciprocalRankFusion combines results from multiple search systems using their ranks.
 // Formula: score = sum(1 / (k + rank))
 // Reference: https://dl.acm.org/doi/10.1145/1571941.1572114
-func ReciprocalRankFusion(dataset string, dense, sparse []SearchResult, k, limit int) []SearchResult {
+func ReciprocalRankFusionLegacy(dataset string, dense, sparse []SearchResult, k, limit int) []SearchResult {
 	scores := make(map[VectorID]float64)
 	denseSet := make(map[VectorID]bool)
 	sparseSet := make(map[VectorID]bool)

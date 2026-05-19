@@ -12,9 +12,9 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// FuzzIngestionPipeline_ConcurrentWrites simulates multiple concurrent writers
+// FuzzIngestionPipelineConcurrentWrites simulates multiple concurrent writers
 // to verify data integrity with the async pipeline.
-func FuzzIngestionPipeline_ConcurrentWrites(f *testing.F) {
+func FuzzIngestionPipelineConcurrentWrites(f *testing.F) {
 	f.Add(10, 5) // 10 writers, 5 batches each
 
 	f.Fuzz(func(t *testing.T, numWriters int, batchesPerWriter int) {
@@ -65,7 +65,7 @@ func FuzzIngestionPipeline_ConcurrentWrites(f *testing.F) {
 		deadline := time.Now().Add(5 * time.Second)
 		for time.Now().Before(deadline) {
 			ds.dataMu.RLock()
-			count := len(ds.Records)
+			count := len(ds.Records.Read())
 			ds.dataMu.RUnlock()
 			if count == expected {
 				return // Success
@@ -74,7 +74,7 @@ func FuzzIngestionPipeline_ConcurrentWrites(f *testing.F) {
 		}
 
 		ds.dataMu.RLock()
-		finalCount := len(ds.Records)
+		finalCount := len(ds.Records.Read())
 		ds.dataMu.RUnlock()
 		require.Equal(t, expected, finalCount, "Data loss detected in async pipeline")
 	})

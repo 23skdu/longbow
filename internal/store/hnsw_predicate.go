@@ -6,17 +6,23 @@ import (
 	"github.com/23skdu/longbow/internal/query"
 )
 
+// HNSWPredicate defines an interface for evaluating filtering conditions on HNSW nodes to support metadata filtering.
 type HNSWPredicate interface {
+	// CanAcceptFilter returns true if the predicate can evaluate the given filter.
 	CanAcceptFilter(filter query.Filter) bool
+	// ApplyFilter returns the set of node IDs that satisfy the filter criteria.
 	ApplyFilter(filter query.Filter) ([]uint32, error)
+	// GetIndexedFields returns the list of fields that this predicate can evaluate.
 	GetIndexedFields() []string
 }
 
+// ArrowHNSWPredicate implements HNSWPredicate for Arrow-backed indices using memory-mapped data.
 type ArrowHNSWPredicate struct {
 	hnsw          *ArrowHNSW
 	indexedFields map[string]bool
 }
 
+// NewArrowHNSWPredicate creates a new predicate evaluator for a set of indexed fields.
 func NewArrowHNSWPredicate(hnsw *ArrowHNSW, indexedFields []string) *ArrowHNSWPredicate {
 	fields := make(map[string]bool)
 	for _, f := range indexedFields {
@@ -28,6 +34,7 @@ func NewArrowHNSWPredicate(hnsw *ArrowHNSW, indexedFields []string) *ArrowHNSWPr
 	}
 }
 
+// CanAcceptFilter returns true if the predicate can evaluate the given filter.
 func (hp *ArrowHNSWPredicate) CanAcceptFilter(filter query.Filter) bool {
 	if hp == nil || hp.hnsw == nil {
 		return false
@@ -35,6 +42,7 @@ func (hp *ArrowHNSWPredicate) CanAcceptFilter(filter query.Filter) bool {
 	return hp.indexedFields[filter.Field]
 }
 
+// ApplyFilter returns the set of node IDs that satisfy the filter criteria.
 func (hp *ArrowHNSWPredicate) ApplyFilter(filter query.Filter) ([]uint32, error) {
 	if hp == nil || hp.hnsw == nil {
 		return nil, fmt.Errorf("HNSW not initialized")
@@ -47,6 +55,7 @@ func (hp *ArrowHNSWPredicate) ApplyFilter(filter query.Filter) ([]uint32, error)
 	return nil, nil
 }
 
+// GetIndexedFields returns the list of fields that this predicate can evaluate.
 func (hp *ArrowHNSWPredicate) GetIndexedFields() []string {
 	if hp == nil {
 		return nil
@@ -58,20 +67,24 @@ func (hp *ArrowHNSWPredicate) GetIndexedFields() []string {
 	return fields
 }
 
+// PredicatePushdownOptimizer manages filter pushdown optimizations for multiple indices to accelerate filtered search.
 type PredicatePushdownOptimizer struct {
 	hnswPredicates map[string]*ArrowHNSWPredicate
 }
 
+// NewPredicatePushdownOptimizer creates a new optimizer instance.
 func NewPredicatePushdownOptimizer() *PredicatePushdownOptimizer {
 	return &PredicatePushdownOptimizer{
 		hnswPredicates: make(map[string]*ArrowHNSWPredicate),
 	}
 }
 
+// RegisterHNSW associates an HNSW index with the optimizer.
 func (ppo *PredicatePushdownOptimizer) RegisterHNSW(name string, hnsw *ArrowHNSW, fields []string) {
 	ppo.hnswPredicates[name] = NewArrowHNSWPredicate(hnsw, fields)
 }
 
+// Optimize separates filters into those that can be pushed down and those that cannot.
 func (ppo *PredicatePushdownOptimizer) Optimize(filters []query.Filter) (pushable []query.Filter, nonPushable []query.Filter) {
 	for _, f := range filters {
 		pushableToAny := false
@@ -90,6 +103,7 @@ func (ppo *PredicatePushdownOptimizer) Optimize(filters []query.Filter) (pushabl
 	return pushable, nonPushable
 }
 
+// ApplyPushdown executes the pushdown optimization and returns the resulting node ID sets.
 func (ppo *PredicatePushdownOptimizer) ApplyPushdown(filters []query.Filter) (map[string][]uint32, error) {
 	result := make(map[string][]uint32)
 
@@ -126,6 +140,7 @@ func (ppo *PredicatePushdownOptimizer) ApplyPushdown(filters []query.Filter) (ma
 	return result, nil
 }
 
+// GetStats returns usage statistics for the optimizer.
 func (ppo *PredicatePushdownOptimizer) GetStats() map[string]interface{} {
 	stats := make(map[string]interface{})
 	for name, hp := range ppo.hnswPredicates {

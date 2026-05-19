@@ -51,7 +51,7 @@ func TestDetectAvailableDevices(t *testing.T) {
 	}
 
 	for i, d := range devices {
-		if d != i {
+		if d != int32(i) {
 			t.Errorf("Expected device %d at index %d, got %d", i, i, d)
 		}
 	}
@@ -60,7 +60,7 @@ func TestDetectAvailableDevices(t *testing.T) {
 func TestNewMultiGPUManager_NoDevices(t *testing.T) {
 	logger := zerolog.Nop()
 	config := MultiGPUConfig{
-		DeviceIDs: []int{},
+		DeviceIDs: []int32{},
 		Strategy:  StrategyRoundRobin,
 	}
 
@@ -73,7 +73,7 @@ func TestNewMultiGPUManager_NoDevices(t *testing.T) {
 func TestNewMultiGPUManager_InvalidDevice(t *testing.T) {
 	logger := zerolog.Nop()
 	config := MultiGPUConfig{
-		DeviceIDs: []int{999},
+		DeviceIDs: []int32{999},
 		Strategy:  StrategyRoundRobin,
 	}
 

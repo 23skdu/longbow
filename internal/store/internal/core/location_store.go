@@ -58,6 +58,24 @@ func NewChunkedLocationStore() *ChunkedLocationStore {
 	return s
 }
 
+// Close releases resources associated with the store.
+func (s *ChunkedLocationStore) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	// Clear forward mapping chunks
+	emptyChunks := make([]*locationChunk, 0)
+	s.chunks.Store(&emptyChunks)
+	s.size.Store(0)
+
+	// Clear reverse sharded maps
+	for i := 0; i < ReverseShards; i++ {
+		s.reverseShards[i].mu.Lock()
+		s.reverseShards[i].data = make(map[uint64]types.VectorID)
+		s.reverseShards[i].mu.Unlock()
+	}
+}
+
 func (s *ChunkedLocationStore) getShard(packed uint64) *reverseShard {
 	return &s.reverseShards[packed%uint64(ReverseShards)]
 }
@@ -152,14 +170,7 @@ func (s *ChunkedLocationStore) Set(id types.VectorID, loc types.Location) {
 	if chunkIdx < len(chunks) {
 		// Update data
 		oldPacked := chunks[chunkIdx].data[offset].Swap(packed)
-		
-		// Update reverse map
-		if oldPacked != 0 {
-			oldShard := s.getShard(oldPacked)
-			oldShard.mu.Lock()
-			delete(oldShard.data, oldPacked)
-			oldShard.mu.Unlock()
-		}
+		_ = oldPacked // Performance trade-off: We don't remove old keys from reverse map
 		
 		newShard := s.getShard(packed)
 		newShard.mu.Lock()
@@ -222,7 +233,7 @@ func (s *ChunkedLocationStore) BatchAppend(locs []types.Location) (startID types
 	}
 
 	// 1. Reserve block of IDs
-	count := uint32(len(locs))
+	count := uint32(len(locs)) // #nosec G115
 	startIDVal := s.size.Add(count) - count
 	startID = types.VectorID(startIDVal)
 	
@@ -231,6 +242,14 @@ func (s *ChunkedLocationStore) BatchAppend(locs []types.Location) (startID types
 	
 	// 3. Update data and reverse maps
 	chunks := *s.chunks.Load()
+	
+	// Map to group IDs and packed locations by shard
+	type shardUpdate struct {
+		id     types.VectorID
+		packed uint64
+	}
+	shardGroups := make([][]shardUpdate, ReverseShards)
+
 	for i, loc := range locs {
 		currID := types.VectorID(startIDVal + uint32(i))
 		idx := int(currID)
@@ -240,9 +259,20 @@ func (s *ChunkedLocationStore) BatchAppend(locs []types.Location) (startID types
 		packed := packLocation(loc)
 		chunks[chunkIdx].data[offset].Store(packed)
 		
-		shard := s.getShard(packed)
+		shardIdx := packed % uint64(ReverseShards)
+		shardGroups[shardIdx] = append(shardGroups[shardIdx], shardUpdate{currID, packed})
+	}
+
+	// Batch update reverse maps per shard
+	for shardIdx, updates := range shardGroups {
+		if len(updates) == 0 {
+			continue
+		}
+		shard := &s.reverseShards[shardIdx]
 		shard.mu.Lock()
-		shard.data[packed] = currID
+		for _, up := range updates {
+			shard.data[up.packed] = up.id
+		}
 		shard.mu.Unlock()
 	}
 	

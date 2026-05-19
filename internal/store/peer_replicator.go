@@ -131,7 +131,7 @@ func (r *PeerReplicator) GetPeers() []*ReplicatorPeerInfo {
 	return result
 }
 
-// GetCircuitBreaker returns the circuit breaker for a peer
+// GetCircuitBreaker returns the circuit breaker for a peer, providing fault tolerance for replication.
 func (r *PeerReplicator) GetCircuitBreaker(peerID string) *CircuitBreaker {
 	return r.circuits.GetOrCreate(peerID)
 }

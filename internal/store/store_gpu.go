@@ -3,6 +3,7 @@
 package store
 
 import (
+	"fmt"
 	"time"
 
 	"github.com/23skdu/longbow/internal/gpu"
@@ -10,7 +11,7 @@ import (
 )
 
 // InitGPUBackend initializes GPU acceleration for the vector store
-func (s *VectorStore) InitGPUBackend(backend gpu.GPUBackend, deviceID int) error {
+func (s *VectorStore) InitGPUBackend(backend gpu.GPUBackend, deviceID int32) error {
 	s.configMu.Lock()
 	defer s.configMu.Unlock()
 
@@ -46,7 +47,7 @@ func (s *VectorStore) InitGPUBackend(backend gpu.GPUBackend, deviceID int) error
 			s.logger.Error().
 				Err(err).
 				Str("backend", backend.String()).
-				Int("device", deviceID).
+				Int32("device", deviceID).
 				Msg("Failed to create GPU memory pool, falling back to CPU")
 			s.gpuBackend = gpu.BackendCPU
 			s.gpuEnabled = true
@@ -56,21 +57,21 @@ func (s *VectorStore) InitGPUBackend(backend gpu.GPUBackend, deviceID int) error
 
 		// Initialize memory metrics
 		total := pool.GetTotalMemory()
-		metrics.GPUMemoryBytes.WithLabelValues(string(rune(deviceID)), "total").Set(float64(total))
+		metrics.GPUMemoryBytes.WithLabelValues(fmt.Sprintf("%d", deviceID), "total").Set(float64(total))
 
 		// Update free memory
 		if s.gpuMemPool != nil {
 			availableMem := s.gpuMemPool.GetAvailableMemory()
-			metrics.GPUMemoryBytes.WithLabelValues(string(rune(deviceID)), "free").Set(float64(availableMem))
+			metrics.GPUMemoryBytes.WithLabelValues(fmt.Sprintf("%d", deviceID), "free").Set(float64(availableMem))
 			used := total - availableMem
-			metrics.GPUMemoryBytes.WithLabelValues(string(rune(deviceID)), "used").Set(float64(used))
+			metrics.GPUMemoryBytes.WithLabelValues(fmt.Sprintf("%d", deviceID), "used").Set(float64(used))
 		}
 	}
 
 	s.gpuEnabled = true
 	s.logger.Info().
 		Str("backend", backend.String()).
-		Int("device", deviceID).
+		Int32("device", deviceID).
 		Msg("GPU backend initialized successfully")
 
 	return nil
@@ -90,7 +91,7 @@ func (s *VectorStore) initGPUIfEnabled(idx VectorIndex) {
 			metrics.GPUFallbackTotal.WithLabelValues("hnsw_init_error").Inc()
 			s.logger.Warn().
 				Err(err).
-				Int("device", s.gpuDeviceID).
+				Int32("device", s.gpuDeviceID).
 				Msg("GPU initialization failed for HNSW index, using CPU-only")
 			return
 		}
@@ -100,7 +101,7 @@ func (s *VectorStore) initGPUIfEnabled(idx VectorIndex) {
 
 		s.logger.Info().
 			Str("backend", s.gpuBackend.String()).
-			Int("device", s.gpuDeviceID).
+			Int32("device", s.gpuDeviceID).
 			Uint32("dimensions", hnswIdx.GetDimension()).
 			Dur("duration", time.Since(start)).
 			Msg("GPU acceleration enabled for index")
@@ -125,7 +126,7 @@ func (s *VectorStore) UpdateGPUMemoryMetrics() {
 		return
 	}
 
-	deviceID := string(rune(s.gpuDeviceID))
+	deviceID := fmt.Sprintf("%d", s.gpuDeviceID)
 	total := s.gpuMemPool.GetTotalMemory()
 	used := s.gpuMemPool.GetUsedMemory()
 	free := total - used

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"bufio"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
@@ -22,6 +23,7 @@ import (
 type WALIterator struct {
 	path   string
 	f      *os.File
+	br     *bufio.Reader // New: Buffered reader
 	mem    memory.Allocator
 	closed bool
 	mu     sync.Mutex
@@ -40,6 +42,7 @@ func NewWALIterator(dir string, mem memory.Allocator) (*WALIterator, error) {
 	return &WALIterator{
 		path: path,
 		f:    f,
+		br:   bufio.NewReaderSize(f, 1024*1024), // 1MB buffer
 		mem:  mem,
 	}, nil
 }
@@ -54,6 +57,7 @@ func (it *WALIterator) Seek(seq uint64) error {
 	if _, err := it.f.Seek(0, 0); err != nil {
 		return err
 	}
+	it.br.Reset(it.f)
 	it.inner = nil
 
 	header := make([]byte, 32)
@@ -63,7 +67,7 @@ func (it *WALIterator) Seek(seq uint64) error {
 			return err
 		}
 
-		if _, err := io.ReadFull(it.f, header); err != nil {
+		if _, err := io.ReadFull(it.br, header); err != nil {
 			if err == io.EOF {
 				return nil
 			}
@@ -83,6 +87,7 @@ func (it *WALIterator) Seek(seq uint64) error {
 			if _, err := it.f.Seek(startPos, 0); err != nil {
 				return err
 			}
+			it.br.Reset(it.f)
 			// We can't use Next() here easily because it returns values.
 			// Let's just decompress and check.
 			_, _, _, r, err := it.nextLocked()
@@ -103,12 +108,14 @@ func (it *WALIterator) Seek(seq uint64) error {
 			if _, err := it.f.Seek(startPos, 0); err != nil {
 				return err
 			}
+			it.br.Reset(it.f)
 			return nil
 		}
 
 		if _, err := it.f.Seek(int64(nameLen)+int64(recLen), 1); err != nil { // #nosec G115
 			return err
 		}
+		it.br.Reset(it.f)
 	}
 }
 
@@ -143,7 +150,7 @@ func (it *WALIterator) nextLocked() (seq uint64, ts int64, name string, rec arro
 
 	// 2. Read next from file
 	header := make([]byte, 32)
-	if _, err := io.ReadFull(it.f, header); err != nil {
+	if _, err := io.ReadFull(it.br, header); err != nil {
 		return 0, 0, "", nil, err
 	}
 
@@ -154,12 +161,12 @@ func (it *WALIterator) nextLocked() (seq uint64, ts int64, name string, rec arro
 	recLen := binary.LittleEndian.Uint64(header[24:32])
 
 	nameBytes := make([]byte, nameLen)
-	if _, err := io.ReadFull(it.f, nameBytes); err != nil {
+	if _, err := io.ReadFull(it.br, nameBytes); err != nil {
 		return 0, 0, "", nil, err
 	}
 
 	recBytes := make([]byte, recLen)
-	if _, err := io.ReadFull(it.f, recBytes); err != nil {
+	if _, err := io.ReadFull(it.br, recBytes); err != nil {
 		return 0, 0, "", nil, err
 	}
 
@@ -229,7 +236,7 @@ func (it *WALIterator) nextRawLocked() (seq uint64, ts int64, name string, recBy
 
 	// 2. Read next from file
 	header := make([]byte, 32)
-	if _, err := io.ReadFull(it.f, header); err != nil {
+	if _, err := io.ReadFull(it.br, header); err != nil {
 		return 0, 0, "", nil, err
 	}
 
@@ -240,12 +247,12 @@ func (it *WALIterator) nextRawLocked() (seq uint64, ts int64, name string, recBy
 	recLen := binary.LittleEndian.Uint64(header[24:32])
 
 	nameBytes := make([]byte, nameLen)
-	if _, err := io.ReadFull(it.f, nameBytes); err != nil {
+	if _, err := io.ReadFull(it.br, nameBytes); err != nil {
 		return 0, 0, "", nil, err
 	}
 
 	recBytes = make([]byte, recLen)
-	if _, err := io.ReadFull(it.f, recBytes); err != nil {
+	if _, err := io.ReadFull(it.br, recBytes); err != nil {
 		return 0, 0, "", nil, err
 	}
 

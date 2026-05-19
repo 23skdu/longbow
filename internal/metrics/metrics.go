@@ -1,6 +1,7 @@
 package metrics
 
 import (
+	"sync"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
@@ -181,12 +182,28 @@ var (
 		},
 	)
 
+	HnswLockWaitDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_hnsw_lock_wait_duration_seconds",
+			Help:    "Time spent waiting for HNSW node locks",
+			Buckets: []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01},
+		},
+	)
+
 	HnswSearchEarlyExitsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_search_early_exits_total",
 			Help: "Total number of HNSW search early exits by reason",
 		},
 		[]string{"reason"}, // "timeout", "threshold", "no_candidates"
+	)
+ 
+	HNSWEarlyTerminationTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_early_termination_total",
+			Help: "Total number of HNSW searches that hit the visited nodes budget",
+		},
+		[]string{"reason"},
 	)
 
 	// NUMA Metrics
@@ -420,6 +437,20 @@ var (
 		},
 		[]string{"dataset"},
 	)
+
+	BitmapCacheHitsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bitmap_cache_hits_total",
+			Help: "Total number of filter bitset cache hits",
+		},
+	)
+
+	BitmapCacheMissesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_bitmap_cache_misses_total",
+			Help: "Total number of filter bitset cache misses",
+		},
+	)
 )
 
 // =============================================================================
@@ -469,6 +500,15 @@ var (
 		},
 	)
 
+	GPUComputeDurationSeconds = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_gpu_compute_duration_seconds",
+			Help:    "Time spent in GPU compute operations",
+			Buckets: []float64{0.0001, 0.001, 0.01, 0.1, 1},
+		},
+		[]string{"backend", "operation"},
+	)
+
 	// WAL Metrics
 	WALQueueDepth = promauto.NewGauge(
 		prometheus.GaugeOpts{
@@ -485,6 +525,14 @@ var (
 		},
 	)
 
+	WALReplicationLatencySeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_wal_replication_latency_seconds",
+			Help:    "Latency of synchronous WAL replication across the cluster",
+			Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0, 5.0},
+		},
+	)
+
 	WALWriteErrors = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_wal_write_errors_total",
@@ -497,6 +545,88 @@ var (
 			Name:    "longbow_wal_write_duration_seconds",
 			Help:    "Duration of WAL writes",
 			Buckets: []float64{0.0001, 0.001, 0.005, 0.01, 0.05},
+		},
+	)
+
+	// PackedAdjacencyCoWTotal counts total number of PackedAdjacency Copy-on-Write updates
+	PackedAdjacencyCoWTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_packed_adjacency_cow_total",
+			Help: "Total number of PackedAdjacency Copy-on-Write updates",
+		},
+	)
+
+	// GPU Ingestion Metrics
+	GPUIngestKernelDurationSeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_gpu_ingest_kernel_duration_seconds",
+			Help:    "Duration of GPU-accelerated ingestion kernels",
+			Buckets: []float64{0.0001, 0.001, 0.01, 0.1, 1},
+		},
+	)
+
+	GPUNeighborPruneOpsTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_gpu_neighbor_prune_ops_total",
+			Help: "Total number of GPU neighbor prune operations",
+		},
+	)
+
+	// TurboQuant Metrics
+	TurboQuantDequantizeLatencySeconds = promauto.NewHistogram(
+		prometheus.HistogramOpts{
+			Name:    "longbow_search_dequantize_latency_seconds",
+			Help:    "Latency of TurboQuant dequantization during search",
+			Buckets: []float64{0.0001, 0.001, 0.01, 0.1, 1},
+		},
+	)
+
+	// Temporal Tree Metrics
+	TemporalTreeCacheHitRatio = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_temporal_tree_cache_hit_ratio",
+			Help: "Current cache hit ratio for temporal queries",
+		},
+	)
+
+	TemporalQueryScannedNodesTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_temporal_query_scanned_nodes_total",
+			Help: "Total number of tree nodes scanned during temporal queries",
+		},
+	)
+	TemporalTreeNodesTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_temporal_tree_nodes_total",
+			Help: "Total number of unique timestamps in the temporal tree",
+		},
+	)
+	TemporalTreeAllocatedBytesTotal = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_temporal_tree_allocated_bytes_total",
+			Help: "Total bytes allocated in the temporal tree arenas",
+		},
+	)
+
+	SlabHugePageCount = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_slab_hugepage_count",
+			Help: "Total slab allocations successfully backed by transparent hugepages via madvise(MADV_HUGEPAGE)",
+		},
+	)
+
+	WalReplayParallelism = promauto.NewGauge(
+		prometheus.GaugeOpts{
+			Name: "longbow_wal_replay_parallelism_total",
+			Help: "Current number of parallel WAL replay applier workers",
+		},
+	)
+
+	// IndexingPausedDurationSeconds tracks total time background indexing is paused
+	IndexingPausedDurationSeconds = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_indexing_paused_duration_seconds",
+			Help: "Total time background graph maintenance is delayed due to ingestion bursts",
 		},
 	)
 
@@ -771,6 +901,15 @@ var (
 	)
 
 
+	// SimdDispatchTotal counts SIMD dispatch calls by implementation type
+	SimdDispatchTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_simd_dispatch_total",
+			Help: "Total number of SIMD dispatch calls by implementation",
+		},
+		[]string{"implementation", "operation"},
+	)
+
 	// =============================================================================
 	// Remote Storage Metrics (S3/GCS)
 	// =============================================================================
@@ -1028,5 +1167,65 @@ var (
 			Help: "Total number of SIMD activation kernel calls",
 		},
 		[]string{"kernel", "arch"},
+	)
+
+	// Graph GPU Adaptive Dispatch Metrics
+	GraphGPUDispatchTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_graph_gpu_dispatch_total",
+			Help: "Total GraphRAG expansion calls to GPU backend",
+		},
+		[]string{"dataset"},
+	)
+
+	GraphGPUDispatchFallbackTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_graph_gpu_dispatch_fallback_total",
+			Help: "Total GraphRAG expansion calls falling back to CPU due to threshold",
+		},
+		[]string{"dataset"},
+	)
+)
+
+var (
+	simdDispatchCache sync.Map // map[string]prometheus.Counter
+)
+
+// RecordSimdBatch records multiple SIMD calls at once to reduce contention
+func RecordSimdBatch(impl string, op string, count int) {
+	if count <= 0 {
+		return
+	}
+
+	key := impl + ":" + op
+	if val, ok := simdDispatchCache.Load(key); ok {
+		val.(prometheus.Counter).Add(float64(count))
+		return
+	}
+
+	counter := SimdDispatchTotal.WithLabelValues(impl, op)
+	simdDispatchCache.Store(key, counter)
+	counter.Add(float64(count))
+}
+
+// =============================================================================
+// TPU Backend Metrics
+// =============================================================================
+
+var (
+	TPUOperationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_tpu_operations_total",
+			Help: "Total number of TPU operations",
+		},
+		[]string{"operation", "status"},
+	)
+	TPUOperationLatency = promauto.NewHistogramVec(
+		prometheus.HistogramOpts{
+			Name:    "longbow_tpu_operation_latency_seconds",
+			Help:    "Latency of TPU operations",
+			Buckets: prometheus.DefBuckets,
+		},
+		[]string{"operation"},
 	)
 )

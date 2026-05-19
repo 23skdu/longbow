@@ -152,6 +152,9 @@ type SnapshotItem struct {
 	// OnSnapshot is a callback to handle custom snapshot logic (e.g. large file streaming)
 	// It is called with the active snapshot backend if one is configured.
 	OnSnapshot func(backend SnapshotBackend) error
+
+	// Cleanup is called after the item has been processed (either successfully or with error).
+	Cleanup func()
 }
 
 type SnapshotSource interface {
@@ -171,16 +174,41 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 		return fmt.Errorf("failed to create temp snapshot dir: %w", err)
 	}
 
+	var wg sync.WaitGroup
+	errCh := make(chan error, 1024) // Buffer to avoid blocking workers
+
 	err := source.Iterate(func(item SnapshotItem) error {
 		if e.snapshotBackend != nil && item.OnSnapshot != nil {
 			if err := item.OnSnapshot(e.snapshotBackend); err != nil {
 				return err
 			}
 		}
-		return e.writeSnapshotItem(&item, tempDir)
+
+		wg.Add(1)
+		go func(it SnapshotItem) {
+			defer wg.Done()
+			if it.Cleanup != nil {
+				defer it.Cleanup()
+			}
+			if err := e.writeSnapshotItem(&it, tempDir); err != nil {
+				errCh <- err
+			}
+		}(item)
+		return nil
 	})
+
+	wg.Wait()
+	close(errCh)
+
 	if err != nil {
 		return err
+	}
+
+	// Check for errors from parallel workers
+	for e := range errCh {
+		if e != nil {
+			return e
+		}
 	}
 
 	if err := os.RemoveAll(snapshotDir); err != nil {
@@ -443,6 +471,41 @@ func (e *StorageEngine) SetSnapshotBackend(backend SnapshotBackend) {
 
 func (e *StorageEngine) GetSnapshotBackend() SnapshotBackend {
 	return e.snapshotBackend
+}
+
+// SetReplicator injects the WAL Replicator for HA deployments.
+func (e *StorageEngine) SetReplicator(r WALReplicator) {
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	if e.walBatcher != nil {
+		e.walBatcher.SetReplicator(r)
+	}
+}
+
+// AppendReplicatedWAL writes a raw replicated WAL block directly to disk.
+func (e *StorageEngine) AppendReplicatedWAL(data []byte) error {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+
+	if e.walBatcher != nil && e.walBatcher.backend != nil {
+		_, err := e.walBatcher.backend.Write(data)
+		if err != nil {
+			return err
+		}
+		// Synchronous replication implies sync to disk locally too
+		return e.walBatcher.backend.Sync()
+	}
+	
+	if e.wal != nil {
+		return fmt.Errorf("AppendReplicatedWAL not supported for non-batched WAL")
+	}
+
+	return fmt.Errorf("WAL not initialized")
+}
+
+// GetAllocator returns the memory allocator used by the engine.
+func (e *StorageEngine) GetAllocator() memory.Allocator {
+	return e.mem
 }
 
 func (e *StorageEngine) WriteWAL(name string, rec arrow.RecordBatch, seq uint64, ts int64) error {

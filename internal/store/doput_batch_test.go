@@ -31,17 +31,17 @@ func TestConcatenateBatches(t *testing.T) {
 	totalRows := 0
 
 	for i := 0; i < 3; i++ {
-		bId := array.NewInt64Builder(mem)
-		bId.Append(int64(i))
+		bID := array.NewInt64Builder(mem)
+		bID.Append(int64(i))
 
 		bVal := array.NewFloat64Builder(mem)
 		bVal.Append(float64(i * 10))
 
 		cols := []arrow.Array{
-			bId.NewArray(),
+			bID.NewArray(),
 			bVal.NewArray(),
 		}
-		bId.Release()
+		bID.Release()
 		bVal.Release()
 
 		batch := array.NewRecordBatch(schema, cols, 1)
@@ -100,12 +100,12 @@ func TestDoPut_AdaptiveBatching(t *testing.T) {
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 	}, nil)
 
-	bId := array.NewInt64Builder(mem)
+	bID := array.NewInt64Builder(mem)
 	for i := 0; i < 150; i++ {
-		bId.Append(int64(i))
+		bID.Append(int64(i))
 	}
-	arr := bId.NewArray()
-	bId.Release()
+	arr := bID.NewArray()
+	bID.Release()
 
 	rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 150)
 	arr.Release()

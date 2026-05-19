@@ -328,7 +328,7 @@ func BenchmarkShardedVsLegacyDataset(b *testing.B) {
 				bldr.Field(0).(*array.Int64Builder).Append(1)
 				rec := bldr.NewRecordBatch()
 				ds.dataMu.Lock()
-				ds.Records = append(ds.Records, rec)
+				ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 				ds.dataMu.Unlock()
 				bldr.Release()
 			}

@@ -3,7 +3,9 @@ package core
 import (
 	"sync"
 
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 var float32DecodePool = sync.Pool{
@@ -158,4 +160,93 @@ func (sq *ScalarQuantizer) Params() (minVal, maxVal float32) {
 	sq.mu.RLock()
 	defer sq.mu.RUnlock()
 	return sq.minVal, sq.maxVal
+}
+
+// GetQuantizer returns the scalar quantizer
+func (h *ArrowHNSW) GetQuantizer() *ScalarQuantizer {
+	return h.quantizer
+}
+
+// IsSQ8Ready returns whether scalar quantization is ready
+func (h *ArrowHNSW) IsSQ8Ready() bool {
+	return h.sq8Ready.Load()
+}
+
+// GetBQEncoder returns the BQ encoder
+func (h *ArrowHNSW) GetBQEncoder() *types.BQEncoder {
+	return h.bqEncoder
+}
+
+// SetBQEncoder sets the BQ encoder
+func (h *ArrowHNSW) SetBQEncoder(encoder *types.BQEncoder) {
+	h.bqEncoder = encoder
+}
+
+// GetOPQEncoder returns the OPQ encoder (or legacy PQ if OPQ not used)
+func (h *ArrowHNSW) GetOPQEncoder() any {
+	return h.oopqEncoder
+}
+
+// GetPQEncoder returns legacy PQ encoder (for VectorIndexer interface compliance)
+// For new code, use GetOPQEncoder instead
+func (h *ArrowHNSW) GetPQEncoder() *pq.PQEncoder {
+	if h.oopqEncoder != nil {
+		if enc, ok := h.oopqEncoder.(*pq.PQEncoder); ok {
+			return enc
+		}
+	}
+	return nil
+}
+
+// SetOPQEncoder sets the OPQ encoder (accepts both OPQ and legacy PQ for backward compatibility)
+func (h *ArrowHNSW) SetOPQEncoder(encoder any) {
+	var m, k int
+	switch enc := encoder.(type) {
+	case *pq.PQEncoder:
+		h.oopqEncoder = encoder
+		if encoder != nil {
+			m = enc.M
+			k = enc.K
+			h.config.PQM = m
+			h.config.PQK = k
+			h.config.PQEnabled = true
+		}
+	case *pq.OPQEncoder:
+		h.oopqEncoder = encoder
+		if encoder != nil {
+			m = enc.M
+			k = enc.K
+			h.config.PQM = m
+			h.config.PQK = k
+			h.config.PQEnabled = true
+		}
+	default:
+		return
+	}
+
+	// Initialize data if not yet created
+	if h.data.Load() == nil {
+		if err := h.growInternal(1024, 0); err != nil {
+			return
+		}
+	}
+
+	data := h.data.Load()
+	if data != nil && m > 0 {
+		data.PQEnabled = true
+		data.PQM = m
+
+		// Force re-allocation if current offset is 0 (placeholder from dims=0 call)
+		if len(data.VectorsPQ) > 0 && data.VectorsPQ[0] == 0 && data.Dims > 0 {
+			// Re-allocate with proper dims
+			data.VectorsPQ = nil // Reset to trigger real allocation
+		}
+
+		// Explicitly ensure PQ chunk 0 if capacity > 0
+		if data.Capacity > 0 && data.Dims > 0 {
+			if err := data.EnsureChunk(0, 0, data.Dims); err != nil {
+				return
+			}
+		}
+	}
 }

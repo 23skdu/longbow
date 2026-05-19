@@ -252,27 +252,23 @@ func (d *Dataset) EvictExpiredRecords() []arrow.RecordBatch {
 	}
 
 	// Compact d.Records in-place (remove expired)
+	currentRecords := d.Records.Read()
+	newRecords := make([]arrow.RecordBatch, 0, len(currentRecords))
 	var evicted []arrow.RecordBatch
-	n := 0
-	for _, rec := range d.Records {
+	
+	for _, rec := range currentRecords {
 		if rec == nil {
-			continue // Skip existing tombstones
+			continue
 		}
 		ptr := evictionRecordKey(rec)
 		if expiredSet[ptr] {
 			evicted = append(evicted, rec)
-			// item evicted, do not keep in d.Records
 		} else {
-			d.Records[n] = rec
-			n++
+			newRecords = append(newRecords, rec)
 		}
 	}
-
-	// Nil out the rest to help GC
-	for i := n; i < len(d.Records); i++ {
-		d.Records[i] = nil
-	}
-	d.Records = d.Records[:n]
+	
+	d.Records.UpdateInPlace(newRecords)
 
 	return evicted
 }

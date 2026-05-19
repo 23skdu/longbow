@@ -2,16 +2,21 @@ package main
 
 import (
 	"context"
+	"encoding/binary"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"math/rand"
 	"os"
 	"sort"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/23skdu/longbow/client"
+	"github.com/23skdu/longbow/pkg/version"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -37,7 +42,17 @@ type BenchmarkResult struct {
 }
 
 func main() {
-	uri := flag.String("uri", "127.0.0.1:3000", "Data plane address (host:port)")
+	// Handle version flags early
+	if len(os.Args) > 1 {
+		for _, arg := range os.Args[1:] {
+			if arg == "--version" || arg == "-v" {
+				version.Print()
+				return
+			}
+		}
+	}
+
+	uri := flag.String("uri", "127.0.0.1:3000", "Data plane address (host:port or unix:///path/to/socket)")
 	dim := flag.Int("dim", 128, "Vector dimension (up to 3072)")
 	scale := flag.Int("scale", 1000, "Vector count")
 	dtype := flag.String("dtype", "float32", "Data type (float32, int32, etc, including turboquant)")
@@ -45,13 +60,38 @@ func main() {
 	queries := flag.Int("queries", 1000, "Number of search queries")
 	outputJson := flag.String("json", "", "Save stats as JSON file")
 	tqBits := flag.Int("tq-bits", 4, "TurboQuant bit depth (2, 4, 8)")
+	workers := flag.Int("workers", 1, "Number of concurrent search workers")
+	drop := flag.Bool("drop", false, "Drop dataset after benchmark")
+	fbin := flag.String("fbin", "", "Read vectors from Arrow IPC binary file or true .fbin instead of generating them")
+	outputArrow := flag.String("output-arrow", "", "Save generated vectors to Arrow IPC file and exit")
+	outputFbin := flag.String("output-fbin", "", "Save generated vectors to .fbin file and exit")
+	mode := flag.String("mode", "vec", "Benchmark mode (vec, kv, cluster)")
+	searchModes := flag.String("search-modes", "all", "Comma-separated search modes to run (dense, hybrid, sparse, filtered, byid, graphrag, geo, temporal, learned_index)")
+	reset := flag.Bool("reset", false, "Reset dataset in-place before running the benchmark")
 	flag.Parse()
+
+	if *drop {
+		defer func() {
+			sc, err := client.NewSmartClient(*uri)
+			if err != nil {
+				log.Printf("Failed to create client for drop: %v\n", err)
+				return
+			}
+			defer sc.Close()
+			if err := dropDataset(context.Background(), sc, *dataset); err != nil {
+				log.Printf("Failed to drop dataset %s: %v\n", *dataset, err)
+			} else {
+				log.Printf("Dataset %s dropped successfully\n", *dataset)
+			}
+		}()
+	}
+
 
 	if *dim > 3072 {
 		log.Printf("WARNING: Dimension %d exceeds recommended 3072 limit. Proceeding anyway.\n", *dim)
 	}
 
-	log.Printf("Starting Go Benchmark: Dataset=%s, Scale=%d, Dim=%d, Type=%s\n", *dataset, *scale, *dim, *dtype)
+	log.Printf("Starting Go Benchmark: Mode=%s, Dataset=%s, Scale=%d, Dim=%d, Type=%s\n", *mode, *dataset, *scale, *dim, *dtype)
 
 	sc, err := client.NewSmartClient(*uri)
 	if err != nil {
@@ -59,64 +99,265 @@ func main() {
 	}
 	defer sc.Close()
 
-	var results []BenchmarkResult
-
-	// 1. Ingest/DoPut
-	log.Printf("[PUT] Generating vectors and uploading in chunks (back-pressure aware)...\n")
-	
-	chunkSize := 25000
-	if *scale < chunkSize {
-		chunkSize = *scale
+	if *reset {
+		log.Printf("Performing in-place reset for dataset %s before benchmark...\n", *dataset)
+		if err := resetDataset(context.Background(), sc, *dataset); err != nil {
+			log.Printf("In-place reset status/info: %v (this is normal if dataset was not already present)\n", err)
+		} else {
+			log.Printf("In-place reset for dataset %s completed successfully.\n", *dataset)
+		}
 	}
 
-	totalUploaded := 0
-	start := time.Now()
-	
-	for totalUploaded < *scale {
-		currentChunk := chunkSize
-		if totalUploaded+currentChunk > *scale {
-			currentChunk = *scale - totalUploaded
-		}
+	var results []BenchmarkResult
 
-		// Generate chunk
-		record, schema, err := generateRecord(currentChunk, *dim, *dtype, *tqBits)
+	var totalUploaded int
+	var start time.Time
+
+	if *fbin != "" {
+		f, err := os.Open(*fbin)
 		if err != nil {
-			log.Fatalf("Generation failed: %v", err)
+			log.Fatalf("Failed to open input file: %v", err)
 		}
-		
-		// Upload chunk
-		putCtx, putCancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		if err := uploadBatch(putCtx, sc, *dataset, record, schema); err != nil {
-			record.Release()
-			putCancel()
-			log.Fatalf("DoPut failed at %d: %v", totalUploaded, err)
-		}
-		record.Release()
-		putCancel()
-		
-		totalUploaded += currentChunk
-		if totalUploaded % 50000 == 0 || totalUploaded == *scale {
-			log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, *scale)
-		}
+		defer f.Close()
 
-		// Back-pressure awareness: check server status before sending more
-		if totalUploaded < *scale {
-			backoff := 500 * time.Millisecond
-			for {
-				isBusy, reason := checkBackpressure(context.Background(), sc, *dataset)
-				if !isBusy {
-					break
+		// Peek first 6 bytes to check for ARROW1
+		magic := make([]byte, 6)
+		_, _ = f.ReadAt(magic, 0)
+		
+		if string(magic) == "ARROW1" {
+			log.Printf("[PUT] Ingesting from Arrow IPC file: %s\n", *fbin)
+			reader, err := ipc.NewFileReader(f)
+			if err != nil {
+				log.Fatalf("Failed to create IPC reader: %v", err)
+			}
+
+			numRecords := reader.NumRecords()
+			totalUploaded = 0
+			start = time.Now()
+
+			for i := 0; i < numRecords; i++ {
+				record, err := reader.Record(i)
+				if err != nil {
+					log.Fatalf("Failed to read record %d: %v", i, err)
 				}
-				// Log backpressure at most every 5 seconds to avoid client-side log spam
-				log.Printf("  Server is BUSY: %s. Waiting %v...\n", reason, backoff)
-				time.Sleep(backoff)
-				
-				// Adaptive backoff
-				backoff += 500 * time.Millisecond
-				if backoff > 10*time.Second {
-					backoff = 10 * time.Second
+				record.Retain()
+
+			putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
+				if err := uploadBatch(putCtx, sc, *dataset, record, record.Schema()); err != nil {
+					putCancel()
+					log.Fatalf("DoPut failed at record %d: %v", i, err)
+				}
+				putCancel()
+
+				totalUploaded += int(record.NumRows())
+				record.Release()
+
+				if totalUploaded%50000 == 0 || i == numRecords-1 {
+					log.Printf("  Progress: %d vectors uploaded\n", totalUploaded)
 				}
 			}
+		} else {
+			// Try as true .fbin (4B count, 4B dim, then floats)
+			log.Printf("[PUT] Ingesting from true .fbin file: %s\n", *fbin)
+			var countVal, dimVal uint32
+			if err := binary.Read(f, binary.LittleEndian, &countVal); err != nil {
+				log.Fatalf("Failed to read fbin count: %v", err)
+			}
+			if err := binary.Read(f, binary.LittleEndian, &dimVal); err != nil {
+				log.Fatalf("Failed to read fbin dim: %v", err)
+			}
+			
+			log.Printf("  fbin: count=%d, dim=%d\n", countVal, dimVal)
+			*scale = int(countVal)
+			*dim = int(dimVal)
+			
+			// Build schema for fbin (minimal schema)
+			fbinSchema := arrow.NewSchema(
+				[]arrow.Field{
+					{Name: "id", Type: arrow.BinaryTypes.String},
+					{Name: "vector", Type: arrow.FixedSizeListOf(int32(dimVal), arrow.PrimitiveTypes.Float32)},
+				},
+				nil,
+			)
+			
+			totalUploaded = 0
+			start = time.Now()
+			
+			chunkSize := 10000
+			for totalUploaded < int(countVal) {
+				currentChunk := chunkSize
+				if totalUploaded+currentChunk > int(countVal) {
+					currentChunk = int(countVal) - totalUploaded
+				}
+				
+				// Generate IDs
+				pool := memory.NewGoAllocator()
+				idBldr := array.NewStringBuilder(pool)
+				vecBldr := array.NewFixedSizeListBuilder(pool, int32(dimVal), arrow.PrimitiveTypes.Float32)
+				valBldr := vecBldr.ValueBuilder().(*array.Float32Builder)
+				
+				for i := 0; i < currentChunk; i++ {
+					idBldr.Append(fmt.Sprintf("%d", totalUploaded+i))
+					vecBldr.Append(true)
+					
+					row := make([]float32, dimVal)
+					if err := binary.Read(f, binary.LittleEndian, &row); err != nil {
+						log.Fatalf("Failed to read fbin data at %d: %v", totalUploaded+i, err)
+					}
+					valBldr.AppendValues(row, nil)
+				}
+				
+				idArr := idBldr.NewArray()
+				vecArr := vecBldr.NewArray()
+				record := array.NewRecordBatch(fbinSchema, []arrow.Array{idArr, vecArr}, int64(currentChunk))
+				
+			putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
+				if err := uploadBatch(putCtx, sc, *dataset, record, fbinSchema); err != nil {
+					putCancel()
+					log.Fatalf("DoPut failed at chunk starting %d: %v", totalUploaded, err)
+				}
+				putCancel()
+				
+				totalUploaded += currentChunk
+				record.Release()
+				idArr.Release()
+				vecArr.Release()
+				idBldr.Release()
+				vecBldr.Release()
+				
+				if totalUploaded%50000 == 0 || totalUploaded == int(countVal) {
+					log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, countVal)
+				}
+			}
+		}
+		*scale = totalUploaded
+	} else {
+		log.Printf("[PUT] Pre-generating vectors...\n")
+
+		chunkSize := 25000
+		if *scale < chunkSize {
+			chunkSize = *scale
+		}
+
+		// First pass: generate all records
+		numChunks := (*scale + chunkSize - 1) / chunkSize
+		preGenerated := make([]arrow.Record, 0, numChunks)
+		var genSchema *arrow.Schema
+
+		for i := 0; i < *scale; {
+			currentChunk := chunkSize
+			if i+currentChunk > *scale {
+				currentChunk = *scale - i
+			}
+			rec, schema, err := generateRecord(currentChunk, *dim, *dtype, *tqBits)
+			if err != nil {
+				log.Fatalf("Pre-generation failed: %v", err)
+			}
+			preGenerated = append(preGenerated, rec)
+			genSchema = schema
+			i += currentChunk
+		}
+
+		// Check for generation-only mode (saving to file)
+		if *outputArrow != "" {
+			log.Printf("[GEN] Saving generated vectors to Arrow IPC: %s\n", *outputArrow)
+			f, err := os.Create(*outputArrow)
+			if err != nil {
+				log.Fatalf("Failed to create output file: %v", err)
+			}
+			writer, err := ipc.NewFileWriter(f, ipc.WithSchema(genSchema))
+			if err != nil {
+				log.Fatalf("Failed to create IPC writer: %v", err)
+			}
+			for _, rec := range preGenerated {
+				if err := writer.Write(rec); err != nil {
+					log.Fatalf("Failed to write record: %v", err)
+				}
+			}
+			if err := writer.Close(); err != nil {
+				log.Printf("Warning: failed to close IPC writer: %v", err)
+			}
+			if err := f.Close(); err != nil {
+				log.Printf("Warning: failed to close output file: %v", err)
+			}
+			log.Printf("[GEN] Saved %d vectors. Exiting.\n", *scale)
+			os.Exit(0)
+		}
+
+		if *outputFbin != "" {
+			log.Printf("[GEN] Saving generated vectors to .fbin: %s\n", *outputFbin)
+			f, err := os.Create(*outputFbin)
+			if err != nil {
+				log.Fatalf("Failed to create output file: %v", err)
+			}
+			
+			// Header: count, dim
+			if err := binary.Write(f, binary.LittleEndian, uint32(*scale)); err != nil { // #nosec G115
+				log.Fatalf("Failed to write .fbin header (count): %v", err)
+			}
+			if err := binary.Write(f, binary.LittleEndian, uint32(*dim)); err != nil { // #nosec G115
+				log.Fatalf("Failed to write .fbin header (dim): %v", err)
+			}
+			
+			for _, rec := range preGenerated {
+				// Assuming vectors is the second column (index 1)
+				vecArr := rec.Column(1).(*array.FixedSizeList)
+				floatArr := vecArr.ListValues().(*array.Float32)
+				
+				// Standard .fbin only supports float32
+				if err := binary.Write(f, binary.LittleEndian, floatArr.Float32Values()); err != nil {
+					log.Fatalf("Failed to write .fbin vector data: %v", err)
+				}
+			}
+			if err := f.Close(); err != nil {
+				log.Printf("Warning: failed to close output file: %v", err)
+			}
+			log.Printf("[GEN] Saved %d vectors. Exiting.\n", *scale)
+			os.Exit(0)
+		}
+
+		log.Printf("[PUT] Uploading %d pre-generated chunks (back-pressure aware)...\n", numChunks)
+
+		totalUploaded = 0
+		start = time.Now()
+
+		for _, record := range preGenerated {
+			currentChunk := int(record.NumRows())
+
+			// Upload chunk
+			putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
+			if err := uploadBatch(putCtx, sc, *dataset, record, genSchema); err != nil {
+				putCancel()
+				log.Fatalf("DoPut failed at %d: %v", totalUploaded, err)
+			}
+			putCancel()
+
+			totalUploaded += currentChunk
+			if totalUploaded%50000 == 0 || totalUploaded == *scale {
+				log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, *scale)
+			}
+
+			// Back-pressure awareness: check server status before sending more
+			if totalUploaded < *scale {
+				backoff := 500 * time.Millisecond
+				for {
+					isBusy, reason := checkBackpressure(context.Background(), sc, *dataset)
+					if !isBusy {
+						break
+					}
+					log.Printf("  Server is BUSY: %s. Waiting %v...\n", reason, backoff)
+					time.Sleep(backoff)
+
+					backoff += 500 * time.Millisecond
+					if backoff > 10*time.Second {
+						backoff = 10 * time.Second
+					}
+				}
+			}
+		}
+		// Release pre-generated records
+		for _, rec := range preGenerated {
+			rec.Release()
 		}
 	}
 	duration := time.Since(start).Seconds()
@@ -166,6 +407,7 @@ func main() {
 	waitCancel()
 	indexingSeconds := time.Since(indexingStart).Seconds()
 	log.Printf("Indexing complete in %.4fs (status: %s).", indexingSeconds, readyStatus)
+	logLoadHints(sc)
 
 	// 2. DoGet
 	log.Println("[GET] Downloading to verify scan...")
@@ -191,23 +433,71 @@ func main() {
 	log.Printf("[GET] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
 
 	// 3. Search
-	modes := []string{"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString", "Sparse", "ByID", "GraphRAG", "GlobalGraphRAG", "Recommend", "Geo", "Temporal", "LearnedIndex"}
+	allModes := []string{"Dense", "Hybrid", "Filtered", "FilteredBool", "FilteredString", "Sparse", "ByID", "GraphRAG", "GlobalGraphRAG", "Recommend", "Geo", "Temporal", "LearnedIndex"}
+	var modes []string
+	if *searchModes == "all" {
+		modes = allModes
+	} else {
+		selected := strings.Split(*searchModes, ",")
+		for _, m := range selected {
+			m = strings.TrimSpace(m)
+			// Match case-insensitive for convenience
+			for _, am := range allModes {
+				if strings.EqualFold(m, am) {
+					modes = append(modes, am)
+					break
+				}
+			}
+		}
+	}
+	if len(modes) == 0 && *searchModes != "" {
+		log.Printf("Warning: No valid search modes found for %s, skipping search phase\n", *searchModes)
+	}
 	searchCtx, searchCancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer searchCancel()
 	for _, mode := range modes {
 
-		log.Printf("[SEARCH][%s] Running queries...\n", mode)
+		log.Printf("[SEARCH][%s] Running %d queries with %d workers...\n", mode, *queries, *workers)
 		start = time.Now()
+		
 		var latencies []float64
-		state := NewReusableSearchState(*dim)
-		for i := 0; i < *queries; i++ {
-			qStart := time.Now()
-			if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode, state); err != nil {
-				log.Printf("[%s] Query %d failed: %v\n", mode, i, err)
-				continue
-			}
-			latencies = append(latencies, time.Since(qStart).Seconds()*1000)
+		var mu sync.Mutex
+		var wg sync.WaitGroup
+		
+		queriesPerWorker := *queries / *workers
+		if queriesPerWorker == 0 {
+			queriesPerWorker = 1
+			*workers = *queries
 		}
+
+		for w := 0; w < *workers; w++ {
+			wg.Add(1)
+			go func(workerID int) {
+				defer wg.Done()
+				state := NewReusableSearchState(*dim)
+				localLatencies := make([]float64, 0, queriesPerWorker)
+				
+				numToRun := queriesPerWorker
+				if workerID == *workers-1 {
+					numToRun = *queries - (queriesPerWorker * (*workers - 1))
+				}
+
+				for i := 0; i < numToRun; i++ {
+					qStart := time.Now()
+					if err := executeSearch(searchCtx, sc, *dataset, *dim, *dtype, mode, state); err != nil {
+						logDetailedError(fmt.Sprintf("[%s][Worker %d] Query %d", mode, workerID, i), err, sc)
+						continue
+					}
+					localLatencies = append(localLatencies, time.Since(qStart).Seconds()*1000)
+				}
+				
+				mu.Lock()
+				latencies = append(latencies, localLatencies...)
+				mu.Unlock()
+			}(w)
+		}
+		wg.Wait()
+		
 		duration = time.Since(start).Seconds()
 
 		p50, p95, p99 := 0.0, 0.0, 0.0
@@ -276,7 +566,9 @@ func uploadBatch(ctx context.Context, sc *client.SmartClient, dataset string, re
 		return err
 	}
 
-	_, _ = stream.Recv()
+	if _, err := stream.Recv(); err != nil && err != io.EOF {
+		return err
+	}
 
 	return nil
 }
@@ -302,7 +594,7 @@ func downloadBatch(ctx context.Context, sc *client.SmartClient, dataset string) 
 			total += reader.Record().NumRows()
 		}
 		err = reader.Err()
-		reader.Release()
+		// reader does not have Release
 
 		if total > 0 || time.Now().After(deadline) {
 			return total, err
@@ -455,7 +747,7 @@ func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) er
 	if err != nil {
 		return err
 	}
-	defer reader.Release()
+		// reader does not have Release
 	for reader.Next() {
 		_ = reader.Record()
 	}
@@ -467,12 +759,12 @@ func checkBackpressure(ctx context.Context, sc *client.SmartClient, dataset stri
 	checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
 	checkStream, err := sc.DoAction(ctx, checkAction)
 	if err != nil {
-		return false, ""
+		return true, fmt.Sprintf("connection error: %v", err)
 	}
 
 	result, err := checkStream.Recv()
 	if err != nil {
-		return false, ""
+		return true, fmt.Sprintf("recv error: %v", err)
 	}
 
 	var status map[string]interface{}
@@ -491,50 +783,47 @@ func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, datase
 	pollCtx, pollCancel := context.WithTimeout(context.Background(), timeout)
 	defer pollCancel()
 
-	deadline := time.Now().Add(timeout)
-	for time.Now().Before(deadline) {
+	checkBody := []byte(`{"dataset":"` + dataset + `"}`)
+	checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
+
+	ticker := time.NewTicker(500 * time.Millisecond)
+	defer ticker.Stop()
+
+	for {
 		select {
 		case <-ctx.Done():
 			return "cancelled"
 		case <-pollCtx.Done():
 			log.Printf("WARNING: Timeout (%v) waiting for indexing to complete for dataset %s", timeout, dataset)
 			return "timeout"
-		default:
-		}
+		case <-ticker.C:
+			checkStream, err := sc.DoAction(pollCtx, checkAction)
+			if err != nil {
+				if strings.Contains(err.Error(), "NotFound") {
+					continue
+				}
+				log.Printf("  Readiness check failed: %v", err)
+				continue
+			}
 
-		checkBody := []byte(`{"dataset":"` + dataset + `"}`)
-		checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
-		checkStream, err := sc.DoAction(pollCtx, checkAction)
-		if err != nil {
-			time.Sleep(100 * time.Millisecond)
-			continue
-		}
-
-		for {
 			result, err := checkStream.Recv()
 			if err != nil {
-				break
+				continue
 			}
-			body := result.Body
-			if len(body) > 0 {
-				var status map[string]interface{}
-				if err := json.Unmarshal(body, &status); err == nil {
-					if s, ok := status["status"].(string); ok {
-						if s == "READY" {
-							return s
-						}
-						if reason, ok := status["reason"].(string); ok {
-							log.Printf("  Still indexing... (%s)", reason)
-						}
+
+			var status map[string]interface{}
+			if err := json.Unmarshal(result.Body, &status); err == nil {
+				if s, ok := status["status"].(string); ok {
+					if s == "READY" {
+						return s
+					}
+					if reason, ok := status["reason"].(string); ok {
+						log.Printf("  Still indexing %s... (%s)", dataset, reason)
 					}
 				}
 			}
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
-
-	log.Printf("WARNING: Timeout (%v) waiting for indexing to complete for dataset %s", timeout, dataset)
-	return "timeout"
 }
 
 // generateRecord is a multi-type arrow table builder
@@ -803,3 +1092,74 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 	return array.NewRecordBatch(schema, []arrow.Array{idArr, vecArr, tsArr, geoArr, activeArr, catArr}, int64(count)), schema, nil
 }
 
+func dropDataset(ctx context.Context, sc *client.SmartClient, dataset string) error {
+	req := struct {
+		Dataset string `json:"dataset"`
+	}{Dataset: dataset}
+	body, _ := json.Marshal(req)
+
+	action := &flight.Action{
+		Type: "drop",
+		Body: body,
+	}
+
+	stream, err := sc.DoAction(ctx, action)
+	if err != nil {
+		return err
+	}
+
+	_, err = stream.Recv()
+	return err
+}
+
+func resetDataset(ctx context.Context, sc *client.SmartClient, dataset string) error {
+	req := struct {
+		Name string `json:"name"`
+	}{Name: dataset}
+	body, _ := json.Marshal(req)
+
+	action := &flight.Action{
+		Type: "ResetDataset",
+		Body: body,
+	}
+
+	stream, err := sc.DoAction(ctx, action)
+	if err != nil {
+		return err
+	}
+
+	_, err = stream.Recv()
+	return err
+}
+
+func logLoadHints(sc *client.SmartClient) {
+	// Trigger a GetFlightInfo to refresh hints
+	desc := &flight.FlightDescriptor{
+		Type: flight.DescriptorPATH,
+		Path: []string{"_health"},
+	}
+	// We use a short timeout for this background refresh
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	
+	_, err := sc.GetFlightInfo(ctx, desc)
+	if err != nil {
+		// Log error but don't fail, hints might still be available from previous calls
+		log.Printf("[LOAD-REFRESH-ERROR] %v\n", err)
+	}
+
+	hints := sc.GetLastLoadHints()
+	if hints != nil {
+		log.Printf("[LOAD] CPU: %d%%, Mem: %d%%, Queue: %d, Health: %d%%\n", 
+			hints.CPULoad, hints.MemLoad, hints.QueueDepth, hints.Health)
+	}
+}
+
+func logDetailedError(cmd string, err error, sc *client.SmartClient) {
+	log.Printf("[ERROR] %s failed: %v\n", cmd, err)
+	hints := sc.GetLastLoadHints()
+	if hints != nil {
+		log.Printf("[LOAD-AT-FAILURE] CPU: %d%%, Mem: %d%%, Queue: %d, Health: %d%%\n", 
+			hints.CPULoad, hints.MemLoad, hints.QueueDepth, hints.Health)
+	}
+}

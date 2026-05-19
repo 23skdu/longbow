@@ -3,179 +3,239 @@
 package storage
 
 import (
-	"io"
+	"fmt"
 	"os"
 	"sync"
-	"time"
+	"sync/atomic"
 
+	"github.com/23skdu/longbow/internal/iouring"
 	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/iceber/iouring-go"
 )
 
-// UringStorageBackend implements StorageBackend using io_uring.
+// UringStorageBackend implements StorageBackend using our custom high-performance io_uring library.
 type UringStorageBackend struct {
-	f    *os.File
-	ring *iouring.IOURing
-	mu   sync.Mutex
-	path string
+	f          *os.File
+	ring       *iouring.Ring
+	bufferPool *iouring.BufferPool
+	path       string
+	
+	mu          sync.RWMutex
+	active      bool
+	nextID      uint64
+	pendingRead  map[uint64]*storageRequest
+	pendingWrite map[uint64]*storageRequest
+	
+	stopChan chan struct{}
+}
+
+type storageRequest struct {
+	done chan int
+	err  chan error
 }
 
 func NewUringStorageBackend(path string) (StorageBackend, error) {
-	// Open for Read/Write
+	// 1. Open file with standard flags. 
+	// Note: We don't use O_DIRECT here yet, but we will if requested via BufferPool alignment.
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {
 		return nil, err
 	}
 
-	// Initialize io_uring with reasonable queue depth
-	ring, err := iouring.New(2048)
+	// 2. Initialize io_uring with 1024 depth
+	ring, err := iouring.NewRing(1024, 0)
 	if err != nil {
 		f.Close()
-		return nil, err
+		return nil, fmt.Errorf("failed to init io_uring: %w", err)
 	}
 
-	return &UringStorageBackend{
-		f:    f,
-		ring: ring,
-		path: path,
-	}, nil
+	// 3. Optional: Initialize BufferPool for O_DIRECT alignment if needed
+	// For now, we use a 1MB pool for large vectored I/O
+	pool, _ := iouring.NewBufferPool(1024*1024, 128)
+
+	b := &UringStorageBackend{
+		f:            f,
+		ring:         ring,
+		bufferPool:   pool,
+		path:         path,
+		active:       true,
+		pendingRead:  make(map[uint64]*storageRequest),
+		pendingWrite: make(map[uint64]*storageRequest),
+		stopChan:     make(chan struct{}),
+	}
+
+	go b.completionLoop()
+
+	return b, nil
 }
 
 func (b *UringStorageBackend) ReadAt(p []byte, off int64) (int, error) {
-	start := time.Now()
-
-	req, err := b.ring.SubmitRequest(iouring.Pread(int(b.f.Fd()), p, uint64(off)), nil)
-	if err != nil {
-		return 0, err
-	}
-
-	<-req.Done()
-	metrics.IOReadLatencySeconds.WithLabelValues("disk_store_uring").Observe(time.Since(start).Seconds())
-
-	n, err := req.ReturnInt()
-	if err != nil {
-		return 0, err
-	}
-
-	if n > 0 {
-		metrics.IOReadBytesTotal.WithLabelValues("disk_store").Add(float64(n))
-		metrics.IOReadOpsTotal.WithLabelValues("disk_store").Inc()
-	}
-
-	if n == 0 && len(p) > 0 {
-		return 0, io.EOF
-	}
-
-	return n, nil
+	return b.submitOp(p, off, true)
 }
 
 func (b *UringStorageBackend) WriteAt(p []byte, off int64) (int, error) {
-	start := time.Now()
+	return b.submitOp(p, off, false)
+}
 
-	req, err := b.ring.SubmitRequest(iouring.Pwrite(int(b.f.Fd()), p, uint64(off)), nil)
+func (b *UringStorageBackend) submitOp(p []byte, off int64, isRead bool) (int, error) {
+	b.mu.RLock()
+	active := b.active
+	b.mu.RUnlock()
+
+	if !active {
+		return 0, fmt.Errorf("backend inactive")
+	}
+
+	id := atomic.AddUint64(&b.nextID, 1)
+	req := &storageRequest{
+		done: make(chan int, 1),
+		err:  make(chan error, 1),
+	}
+
+	b.mu.Lock()
+	if isRead {
+		b.pendingRead[id] = req
+	} else {
+		b.pendingWrite[id] = req
+	}
+	b.mu.Unlock()
+
+	var err error
+	if isRead {
+		err = b.ring.SubmitRead(int(b.f.Fd()), p, uint64(off), id)
+	} else {
+		err = b.ring.SubmitWrite(int(b.f.Fd()), p, uint64(off), id)
+	}
+
 	if err != nil {
+		b.mu.Lock()
+		if isRead {
+			delete(b.pendingRead, id)
+		} else {
+			delete(b.pendingWrite, id)
+		}
+		b.mu.Unlock()
 		return 0, err
 	}
 
-	<-req.Done()
-	metrics.IOWriteLatencySeconds.WithLabelValues("disk_store_uring").Observe(time.Since(start).Seconds())
+	if _, err := b.ring.Flush(); err != nil {
+		// Ignore flush error if submission succeeded
+	}
 
-	n, err := req.ReturnInt()
-	if err != nil {
+	select {
+	case n := <-req.done:
+		if isRead {
+			metrics.IOReadBytesTotal.WithLabelValues("disk_store").Add(float64(n))
+			metrics.IOReadOpsTotal.WithLabelValues("disk_store").Inc()
+		} else {
+			metrics.IOWriteBytesTotal.WithLabelValues("disk_store").Add(float64(n))
+			metrics.IOWriteOpsTotal.WithLabelValues("disk_store").Inc()
+		}
+		return n, nil
+	case err := <-req.err:
 		return 0, err
+	case <-b.stopChan:
+		return 0, fmt.Errorf("backend closed")
 	}
-
-	if n > 0 {
-		metrics.IOWriteBytesTotal.WithLabelValues("disk_store").Add(float64(n))
-		metrics.IOWriteOpsTotal.WithLabelValues("disk_store").Inc()
-	}
-
-	return n, nil
 }
 
 func (b *UringStorageBackend) Readv(iovs [][]byte, off int64) (int, error) {
-	// Note: iouring-go might have a Readv/Writev specific helper or we use raw opcode.
-	// Looking at common iouring wrappers, they often support multiple iovecs.
-	// If not directly available as easy helper, we can use the low-level Submission Queue Entry.
-
-	// For now, let's see if iouring.Readv exists in the library.
-	// Actually, let's check iouring_linux.go in the library or assume it exists.
-	// In many libraries it is iouring.Readv(fd, iovs, off).
-
-	start := time.Now()
-
-	// For prototyping, if Readv helper is missing, we use standard opcode logic via the library's SubmitRequest
-	// In absence of certain docs, I'll use a loop of Preads if I'm unsure,
-	// but the goal is "vectored I/O".
-
-	// Actually, let's implement a loop of SubmitRequests but wait for them all at once?
-	// That would be true async batching.
-
-	reqs := make([]iouring.Request, len(iovs))
-	currOff := off
-	for i, buf := range iovs {
-		req, err := b.ring.SubmitRequest(iouring.Pread(int(b.f.Fd()), buf, uint64(currOff)), nil)
-		if err != nil {
-			return 0, err
-		}
-		reqs[i] = req
-		currOff += int64(len(buf))
-	}
-
+	// Simplified vectored I/O using multiple SQEs
 	total := 0
-	for _, req := range reqs {
-		<-req.Done()
-		n, err := req.ReturnInt()
+	currOff := off
+	for _, buf := range iovs {
+		n, err := b.ReadAt(buf, currOff)
+		if n > 0 {
+			total += n
+			currOff += int64(n)
+		}
 		if err != nil {
 			return total, err
 		}
-		total += n
 	}
-
-	metrics.IOReadLatencySeconds.WithLabelValues("disk_store_uring_vectored").Observe(time.Since(start).Seconds())
 	return total, nil
 }
 
 func (b *UringStorageBackend) Writev(iovs [][]byte, off int64) (int, error) {
-	start := time.Now()
-	reqs := make([]iouring.Request, len(iovs))
-	currOff := off
-	for i, buf := range iovs {
-		req, err := b.ring.SubmitRequest(iouring.Pwrite(int(b.f.Fd()), buf, uint64(currOff)), nil)
-		if err != nil {
-			return 0, err
-		}
-		reqs[i] = req
-		currOff += int64(len(buf))
-	}
-
 	total := 0
-	for _, req := range reqs {
-		<-req.Done()
-		n, err := req.ReturnInt()
+	currOff := off
+	for _, buf := range iovs {
+		n, err := b.WriteAt(buf, currOff)
+		if n > 0 {
+			total += n
+			currOff += int64(n)
+		}
 		if err != nil {
 			return total, err
 		}
-		total += n
 	}
-
-	metrics.IOWriteLatencySeconds.WithLabelValues("disk_store_uring_vectored").Observe(time.Since(start).Seconds())
 	return total, nil
 }
 
 func (b *UringStorageBackend) Sync() error {
-	req, err := b.ring.SubmitRequest(iouring.Fsync(int(b.f.Fd())), nil)
-	if err != nil {
-		return err
+	// Standard Sync for WAL consistency
+	return b.f.Sync()
+}
+
+func (b *UringStorageBackend) completionLoop() {
+	for {
+		select {
+		case <-b.stopChan:
+			return
+		default:
+			cqe, err := b.ring.Wait()
+			if err != nil {
+				return
+			}
+			if cqe == nil {
+				continue
+			}
+
+			id := cqe.UserData
+			res := cqe.Res
+
+			b.mu.Lock()
+			req, ok := b.pendingRead[id]
+			if ok {
+				delete(b.pendingRead, id)
+			} else {
+				req, ok = b.pendingWrite[id]
+				if ok {
+					delete(b.pendingWrite, id)
+				}
+			}
+			b.mu.Unlock()
+
+			if ok {
+				if res < 0 {
+					req.err <- fmt.Errorf("uring op failed: %d", res)
+				} else {
+					req.done <- int(res)
+				}
+				close(req.done)
+				close(req.err)
+			}
+
+			b.ring.Advance(1)
+		}
 	}
-	<-req.Done()
-	return req.Err()
 }
 
 func (b *UringStorageBackend) Close() error {
 	b.mu.Lock()
-	defer b.mu.Unlock()
-	b.ring.Close()
+	if !b.active {
+		b.mu.Unlock()
+		return nil
+	}
+	b.active = false
+	b.mu.Unlock()
+
+	close(b.stopChan)
+	if b.ring != nil {
+		_ = b.ring.Close()
+	}
+	if b.bufferPool != nil {
+		_ = b.bufferPool.Close()
+	}
 	return b.f.Close()
 }
 

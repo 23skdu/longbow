@@ -17,12 +17,12 @@ import (
 func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 	// 1. Snapshot current state for background processing
 	d.dataMu.RLock()
-	if len(d.Records) == 0 {
+	if len(d.Records.Read()) == 0 {
 		d.dataMu.RUnlock()
 		return nil
 	}
-	oldRecords := make([]arrow.RecordBatch, len(d.Records))
-	for i, r := range d.Records {
+	oldRecords := make([]arrow.RecordBatch, len(d.Records.Read()))
+	for i, r := range d.Records.Read() {
 		r.Retain()
 		oldRecords[i] = r
 	}
@@ -130,14 +130,16 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 	defer d.dataMu.Unlock()
 
 	// Handle records added during compaction
-	addedDuring := d.Records[len(oldRecords):]
+	currentRecords := d.Records.Read()
+	addedDuring := currentRecords[len(oldRecords):]
 	
 	// Release old records that were part of compaction
-	for _, r := range d.Records[:len(oldRecords)] {
+	for _, r := range currentRecords[:len(oldRecords)] {
 		r.Release()
 	}
 	
-	d.Records = append(newRecords, addedDuring...)
+	finalRecords := append(newRecords, addedDuring...)
+	d.Records.UpdateInPlace(finalRecords)
 	d.Tombstones = newTombstones
 
 	// Update PrimaryIndex for remapped IDs

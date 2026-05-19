@@ -31,7 +31,7 @@ func TestGraphRAG_GPUExpansion(t *testing.T) {
 	alpha := float32(0.9)
 	depth := 1
 	
-	res, err := gs.RankWithGraphGPU(seeds, alpha, depth, mockGPU)
+	res, err := gs.RankWithGraphGPU("test_dataset", nil, seeds, alpha, depth, mockGPU)
 	assert.NoError(t, err)
 	assert.NotEmpty(t, res)
 	

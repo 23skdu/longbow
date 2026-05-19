@@ -27,7 +27,7 @@ type HybridSearchRequest struct {
 
 // SearchHybrid performs a hybrid search combining dense vector search and sparse keyword search.
 // If alpha is < 0, it is automatically estimated using EstimateAlpha.
-func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int) ([]SearchResult, error) {
+func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []float32, textQuery string, k int, alpha float32, rrfK int, graphAlpha float32, graphDepth int, rawHybrid bool) ([]SearchResult, error) {
 	// Adaptive Alpha
 	if alpha < 0 {
 		alpha = EstimateAlpha(textQuery)
@@ -87,7 +87,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 				metrics.HybridSearchKeywordTotal.Inc()
 				metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
 			} else if bm25 != nil {
-				sparseResults = bm25.SearchBM25(textQuery, k*2, nil)
+				sparseResults = bm25.SearchBM25(textQuery, k*2, nil, s.resultPool)
 				metrics.HybridSearchKeywordTotal.Inc()
 				metrics.HybridSearchBM25Duration.WithLabelValues(name).Observe(time.Since(bm25Start).Seconds())
 			}
@@ -109,13 +109,24 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 	case 0.0:
 		finalResults = sparseResults
 	default:
-		// Fusion! Use RRF.
-		if rrfK <= 0 {
-			rrfK = 60 // Default
+		if rawHybrid {
+			// Return raw un-fused results (Dense marked with Source=0, Sparse marked with Source=1)
+			for i := range denseResults {
+				denseResults[i].Source = 0
+			}
+			for i := range sparseResults {
+				sparseResults[i].Source = 1
+			}
+			finalResults = append(denseResults, sparseResults...)
+		} else {
+			// Fusion! Use RRF.
+			if rrfK <= 0 {
+				rrfK = 60 // Default
+			}
+			finalResults = ReciprocalRankFusion(name, denseResults, sparseResults, rrfK, k, s.resultPool)
+			metrics.HybridSearchMergeDuration.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
+			metrics.HybridRRFFusionLatencySeconds.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
 		}
-		finalResults = ReciprocalRankFusion(name, denseResults, sparseResults, rrfK, k)
-		metrics.HybridSearchMergeDuration.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
-		metrics.HybridRRFFusionLatencySeconds.WithLabelValues(name).Observe(time.Since(mergeStart).Seconds())
 	}
 
 	// 4. Graph Re-ranking (GraphRAG) - Re-acquire RLock for post-processing
@@ -134,7 +145,9 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 		}
 
 		// Rerank using graph topology (Distributed BFS expansion)
-		ranked := ds.Graph.RankWithGraphDistributed(ctx, name, finalResults, graphAlpha, graphDepth, s)
+		ds.dataMu.RUnlock()
+		ranked := ds.Graph.RankWithGraphDistributed(ctx, name, queryVec, finalResults, graphAlpha, graphDepth, s)
+		ds.dataMu.RLock()
 		metrics.HybridGraphReRankLatencySeconds.WithLabelValues(name).Observe(time.Since(rerankStart).Seconds())
 
 		if len(ranked) > 0 {
@@ -178,7 +191,7 @@ func SearchHybrid(ctx context.Context, s *VectorStore, name string, queryVec []f
 }
 
 // HybridSearch performs a filtered vector search using inverted indexes for pre-filtering.
-func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []float32, k int, filters map[string]string) ([]SearchResult, error) {
+func (s *VectorStore) HybridSearch(ctx context.Context, name string, queryVec []float32, k int, filters map[string]string) ([]SearchResult, error) {
 	defer func(start time.Time) {
 		metrics.SearchLatencySeconds.WithLabelValues(name, "hybrid_filtered").Observe(time.Since(start).Seconds())
 	}(time.Now())
@@ -237,10 +250,10 @@ func HybridSearch(ctx context.Context, s *VectorStore, name string, queryVec []f
 	return results, nil
 }
 
-// RankFusion performs Reciprocal Rank Fusion.
-func RankFusion(list1, list2 []SearchResult, k, rrfK int) []SearchResult {
+// ReciprocalRankFusion performs Reciprocal Rank Fusion.
+func ReciprocalRankFusion(dataset string, list1, list2 []SearchResult, rrfK, k int, pool *SearchResultPool) []SearchResult {
 	scores := make(map[uint32]float32) // Use VectorID (uint32)
-
+ 
 	// Helper to add scores
 	add := func(list []SearchResult) {
 		for rank, item := range list {
@@ -249,24 +262,41 @@ func RankFusion(list1, list2 []SearchResult, k, rrfK int) []SearchResult {
 			scores[uint32(item.ID)] += score
 		}
 	}
-
+ 
 	add(list1)
 	add(list2)
-
-	// Sort
-	final := make([]SearchResult, 0, len(scores))
+ 
+	// Get result slice from pool
+	var final []SearchResult
+	if pool != nil {
+		final = pool.Get(len(scores))
+	} else {
+		final = make([]SearchResult, 0, len(scores))
+	} 
 	for id, score := range scores {
 		final = append(final, SearchResult{ID: types.VectorID(id), Score: score})
 	}
-
+ 
 	sort.Slice(final, func(i, j int) bool {
 		return final[i].Score > final[j].Score
 	})
-
+ 
 	if len(final) > k {
 		final = final[:k]
 	}
-	return final
+ 
+	// Note: The caller is responsible for returning the slice to the pool
+	// but since SearchHybrid is the main caller and it returns the results to the user,
+	// we have a lifetime issue. 
+	// For now, we'll return a copy and Put the pooled slice back.
+	
+	results := make([]SearchResult, len(final))
+	copy(results, final)
+	if pool != nil {
+		pool.Put(final)
+	}
+	
+	return results
 }
 
 // HybridSearchWithBitmap performs hybrid search using a pre-computed bitmap for filtering.

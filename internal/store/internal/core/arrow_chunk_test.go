@@ -6,6 +6,7 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/stretchr/testify/assert"
+	"sync/atomic"
 )
 
 func TestChunkedGrowth(t *testing.T) {
@@ -53,7 +54,7 @@ func TestChunkedGrowth(t *testing.T) {
 	// Ensure Chunk 0 is allocated for testing
 	// Use ensureChunk which handles Arena allocation
 	var err error
-	newData, err = h.ensureChunk(newData, 0, 0, 128)
+	newData, err = h.ensureChunk(0, 0, 128)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -64,7 +65,7 @@ func TestChunkedGrowth(t *testing.T) {
 	cOff := types.ChunkOffset(0)
 	levels := newData.GetLevelsChunk(cID)
 	if levels != nil {
-		levels[cOff] = 99
+		atomic.StoreUint32(&levels[cOff], 99)
 	}
 	neighbors := newData.GetNeighborsChunk(0, cID)
 	if neighbors != nil {
@@ -79,7 +80,7 @@ func TestChunkedGrowth(t *testing.T) {
 
 	// Check old data preserved
 	gLevels2 := grownData.GetLevelsChunk(0)
-	if gLevels2 == nil || len(gLevels2) <= int(cOff) || gLevels2[cOff] != 99 {
+	if gLevels2 == nil || len(gLevels2) <= int(cOff) || atomic.LoadUint32(&gLevels2[cOff]) != 99 {
 		t.Error("Level data lost after grow")
 	}
 	gNeighbors2 := grownData.GetNeighborsChunk(0, 0)

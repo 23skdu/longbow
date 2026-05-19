@@ -49,7 +49,7 @@ func TestVectorStore_DoAction_Extended(t *testing.T) {
 		b.Field(0).(*array.Int64Builder).AppendValues([]int64{101, 102}, nil)
 		b.Field(1).(*array.Float64Builder).AppendValues([]float64{1.1, 2.2}, nil)
 		rec := b.NewRecordBatch()
-		ds.Records = []arrow.RecordBatch{rec}
+		ds.Records = NewLockFreeSliceFrom([]arrow.RecordBatch{rec})
 		
 		return ds
 	})

@@ -15,12 +15,13 @@ type complex64Computer struct {
 	dims      int
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
+	maxGen    uint64
 }
 
 func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
 		cID := types.ChunkID(id)
-		chunk := c.data.GetVectorsComplex64Chunk(cID)
+		chunk := c.data.GetVectorsComplex64ChunkWithGen(int(cID), c.maxGen)
 		if chunk != nil {
 			cOff := int(id) % types.ChunkSize
 			pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex64)
@@ -41,7 +42,7 @@ func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *complex64Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
 		if v, ok := vecAny.([]complex64); ok {
 			return c.h.distFuncC64(c.q, v)
@@ -50,7 +51,7 @@ func (c *complex64Computer) ComputeSingle(id uint32) (float32, error) {
 
 	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsComplex64Chunk(cID)
+	chunk := c.data.GetVectorsComplex64ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex64)
@@ -65,7 +66,7 @@ func (c *complex64Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *complex64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsComplex64Chunk(cID)
+	chunk := c.data.GetVectorsComplex64ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex64)
@@ -83,12 +84,13 @@ type complex128Computer struct {
 	dims      int
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
+	maxGen    uint64
 }
 
 func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
 		cID := types.ChunkID(id)
-		chunk := c.data.GetVectorsComplex128Chunk(cID)
+		chunk := c.data.GetVectorsComplex128ChunkWithGen(int(cID), c.maxGen)
 		if chunk != nil {
 			cOff := int(id) % types.ChunkSize
 			pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex128)
@@ -109,7 +111,7 @@ func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
-	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id)
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
 		if v, ok := vecAny.([]complex128); ok {
 			return c.h.distFuncC128(c.q, v)
@@ -118,7 +120,7 @@ func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
 
 	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsComplex128Chunk(cID)
+	chunk := c.data.GetVectorsComplex128ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex128)
@@ -133,7 +135,7 @@ func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *complex128Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsComplex128Chunk(cID)
+	chunk := c.data.GetVectorsComplex128ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex128)

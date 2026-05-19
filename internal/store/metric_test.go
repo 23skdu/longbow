@@ -29,7 +29,7 @@ func TestHNSW_Metrics(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "metrics_test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 		Schema:  rec.Schema(),
 	}
 
@@ -95,7 +95,7 @@ func TestShardedHNSW_Metrics(t *testing.T) {
 
 	ds := &Dataset{
 		Name:    "sharded_metrics_test",
-		Records: []arrow.RecordBatch{rec},
+		Records: NewLockFreeSliceFrom([]arrow.RecordBatch{rec}),
 		Schema:  rec.Schema(),
 	}
 

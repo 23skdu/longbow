@@ -3,32 +3,60 @@ package core
 // Neighbor operations extracted from arrow_hnsw_insert.go
 
 import (
+	"fmt"
 	"math"
 	"sync/atomic"
 
-	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
-	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+// AddConnection establishes a directed edge between two nodes in the HNSW graph.
 func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData, source, target uint32, layer, maxConn int, dist float32) *types.GraphData {
 	if h.topLayerManager != nil && h.topLayerManager.AddConnectionCAS(layer, source, target) {
 		if data != nil { return data }
 		return h.data.Load()
 	}
 
-	// Ensure node is in memory and we are working on a private clone
-	// If 'data' is the published one, promoteNode will return a clone.
-	// If 'data' was already a private clone from a previous step in InsertWithVector,
-	// promoteNode will still check if the specific node chunk needs promotion.
-	if data == h.data.Load() {
-		data = data.Clone()
+	// 1. Try Lock-Free path with PackedNeighbors (High Throughput)
+	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+		pn := data.PackedNeighbors[layer]
+		
+		// Pre-compute targets to avoid doing it inside the CAS loop
+		_ = pn.UpdateNeighbors(source, func(old []uint32) []uint32 {
+			for _, n := range old {
+				if n == target { return nil } // No change
+			}
+			
+			if len(old) < maxConn {
+				next := make([]uint32, len(old)+1)
+				copy(next, old)
+				next[len(old)] = target
+				return next
+			}
+
+			// Pruning needed - Diversity heuristic
+			// This is expensive, but only happens when we hit maxConn
+			next := h.computePrunedNeighbors(ctx, data, source, old, []uint32{target}, maxConn)
+			return next
+		})
+
+		// Note: Legacy arena sync removed to achieve true lock-free access.
+		// Adjacency is now managed exclusively by PackedNeighbors in the hot path.
+
+		atomic.AddUint64(&data.GlobalVersion, 1)
+		return data
 	}
+
+	// 2. Fallback to Mutex path for legacy storage
+	// Note: We don't need to clone here anymore because Neighbor/Count updates
+	// are performed on the shared arena using atomic operations and per-node locks.
+	// We only clone if we need to GROW the GraphData structure (handled in EnsureChunk).
 	data = h.promoteNode(data, source)
 
 	oldVer := data.LockNode(layer, source)
 	defer data.UnlockNode(layer, source, oldVer)
 	h.addConnectionLocked(ctx, data, source, target, layer, maxConn)
+	atomic.AddUint64(&data.GlobalVersion, 1)
 	return data
 }
 
@@ -61,22 +89,53 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 	if data == nil {
 		data = h.data.Load()
 	}
-	cID := types.ChunkID(target)
 
-	if int(target) < data.Capacity && data.GetNeighborsChunk(0, cID) != nil {
-		oldVer := data.LockNode(layer, target)
-		defer data.UnlockNode(layer, target, oldVer)
-		h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
+	// 1. Try Lock-Free path with PackedNeighbors
+	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+		pn := data.PackedNeighbors[layer]
+		_ = pn.UpdateNeighbors(target, func(old []uint32) []uint32 {
+			// Find truly new sources
+			var newSources []uint32
+			for _, s := range sources {
+				found := false
+				for _, o := range old {
+					if o == s {
+						found = true
+						break
+					}
+				}
+				if !found && s != target {
+					newSources = append(newSources, s)
+				}
+			}
+
+			if len(newSources) == 0 {
+				return nil
+			}
+
+			if len(old)+len(newSources) <= maxConn {
+				next := make([]uint32, len(old)+len(newSources))
+				copy(next, old)
+				copy(next[len(old):], newSources)
+				return next
+			}
+
+			// Pruning needed
+			return h.computePrunedNeighbors(ctx, data, target, old, newSources, maxConn)
+		})
+		atomic.AddUint64(&data.GlobalVersion, 1)
 		return data
 	}
 
+	// 2. Fallback to Mutex path
 	data = h.promoteNode(data, target)
-
 	oldVer := data.LockNode(layer, target)
 	defer data.UnlockNode(layer, target, oldVer)
 	h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
+	atomic.AddUint64(&data.GlobalVersion, 1)
 	return data
 }
+// AddConnectionsBatchLocked adds multiple connections while holding a lock on the target node.
 func (h *ArrowHNSW) AddConnectionsBatchLocked(ctx *ArrowSearchContext, data *types.GraphData, target uint32, sources []uint32, dists []float32, layer, maxConn int) *types.GraphData {
 	if len(sources) == 0 {
 		return data
@@ -87,6 +146,7 @@ func (h *ArrowHNSW) AddConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 		oldVer := data.LockNode(layer, target)
 		defer data.UnlockNode(layer, target, oldVer)
 		h.addConnectionsBatchLocked(ctx, data, target, sources, layer, maxConn)
+		atomic.AddUint64(&data.GlobalVersion, 1)
 		return data
 	}
 
@@ -98,9 +158,21 @@ func (h *ArrowHNSW) AddConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 	return data
 }
 
-// PruneConnections removes excess connections from a node's neighbor list.
+// PruneConnections removes excess connections from a node's neighbor list using lock-free CAS.
 func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *types.GraphData, id uint32, maxConn, layer int) *types.GraphData {
-	// COW Promotion and Locking
+	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+		pn := data.PackedNeighbors[layer]
+		_ = pn.UpdateNeighbors(id, func(old []uint32) []uint32 {
+			if len(old) <= maxConn { return nil }
+
+			next := h.computePrunedNeighbors(ctx, data, id, old, nil, maxConn)
+			atomic.AddUint64(&data.GlobalVersion, 1)
+			return next
+		})
+		return data
+	}
+
+	// Legacy path
 	data = h.promoteNode(data, id)
 
 	func() {
@@ -120,16 +192,7 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 	neighborsChunk := data.GetNeighborsChunk(layer, cID)
 	
 	var currentNeighbors []uint32
-	if countsChunk != nil && neighborsChunk != nil {
-		count := int(atomic.LoadInt32(&countsChunk[cOff]))
-		currentNeighbors = make([]uint32, count)
-		baseIdx := int(cOff) * types.MaxNeighbors
-		for i := 0; i < count; i++ {
-			currentNeighbors[i] = atomic.LoadUint32(&neighborsChunk[baseIdx+i])
-		}
-	} else {
-		currentNeighbors = h.GetNeighborsCombinedManual(data, layer, source)
-	}
+	currentNeighbors = h.GetNeighborsCombinedManualLocked(data, layer, source, ctx.neighborBatch, math.MaxUint64)
 
 	for _, n := range currentNeighbors {
 		if n == target { return }
@@ -143,7 +206,10 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 	if len(currentNeighbors) >= types.MaxNeighbors { return }
 	
 	if countsChunk != nil && neighborsChunk != nil {
-		slot := len(currentNeighbors)
+		slot := int(atomic.LoadInt32(&countsChunk[cOff]))
+		if slot >= maxConn {
+			return
+		}
 		baseIdx := int(cOff) * types.MaxNeighbors
 		atomic.StoreUint32(&neighborsChunk[baseIdx+slot], target)
 		atomic.StoreInt32(&countsChunk[cOff], int32(slot+1)) // #nosec G115
@@ -201,72 +267,74 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 		h.pruneConnectionsLocked(ctx, data, target, maxConn, layer, nil)
 	} else if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
-		newNeighbors := h.GetNeighborsCombinedManual(data, layer, target)
+		newNeighbors := h.GetNeighborsCombinedManualLocked(data, layer, target, ctx.neighborBatch, ctx.MaxGeneration)
 		_ = pn.SetNeighbors(target, newNeighbors)
 	}
 }
 
-// pruneConnectionsLocked reduces connections using robust diversity heuristic.
-func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, maxConn, layer int, newNeighbors []uint32) {
-	cID := types.ChunkID(nodeID)
-	cOff := types.ChunkOffset(nodeID)
-	countsChunk := data.GetCountsChunk(layer, cID)
-	neighborsChunk := data.GetNeighborsChunk(layer, cID)
-
-	var currentNeighbors []uint32
-	if countsChunk != nil && neighborsChunk != nil {
-		count := int(atomic.LoadInt32(&countsChunk[cOff]))
-		currentNeighbors = make([]uint32, count)
-		baseIdx := int(cOff) * types.MaxNeighbors
-		for i := 0; i < count; i++ {
-			currentNeighbors[i] = atomic.LoadUint32(&neighborsChunk[baseIdx+i])
-		}
-	} else {
-		currentNeighbors = h.GetNeighborsCombinedManual(data, layer, nodeID)
-	}
-
-	// Include new candidates in the pruning pool
-	if len(newNeighbors) > 0 {
-		seen := make(map[uint32]struct{}, len(currentNeighbors)+len(newNeighbors))
-		for _, n := range currentNeighbors { seen[n] = struct{}{} }
-		for _, n := range newNeighbors {
+// computePrunedNeighbors is the core diversity-aware pruning logic, reusable by CAS loops.
+func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, current []uint32, extra []uint32, maxConn int) []uint32 {
+	pool := make([]uint32, len(current), len(current)+len(extra))
+	copy(pool, current)
+	if len(extra) > 0 {
+		seen := make(map[uint32]struct{}, len(current)+len(extra))
+		for _, n := range current { seen[n] = struct{}{} }
+		for _, n := range extra {
 			if _, exists := seen[n]; !exists && n != nodeID {
-				currentNeighbors = append(currentNeighbors, n)
+				pool = append(pool, n)
 				seen[n] = struct{}{}
 			}
 		}
 	}
 
-	count := len(currentNeighbors)
-	if count <= maxConn { return }
+	if len(pool) <= maxConn { return pool }
 
-	dists := make([]float32, count)
-	h.computeDistances(data, nodeID, currentNeighbors, dists)
+	dists := make([]float32, len(pool))
+	h.computeDistances(ctx, data, nodeID, pool, dists)
 	
-	candidates := make([]types.Candidate, count)
-	for i := 0; i < count; i++ {
-		candidates[i] = types.Candidate{ID: currentNeighbors[i], Dist: dists[i]}
+	// Try GPU pruning if enabled
+	if h.gpuEnabled && h.gpuIndex != nil {
+		selected, err := h.pruneNeighborsGPU(pool, dists, maxConn)
+		if err == nil {
+			return selected
+		}
 	}
 
-	selected := h.selectNeighbors(ctx, candidates, maxConn, data)
-	if len(selected) > maxConn { selected = selected[:maxConn] }
+	candidates := make([]types.Candidate, len(pool))
+	for i := 0; i < len(pool); i++ {
+		candidates[i] = types.Candidate{ID: pool[i], Dist: dists[i]}
+	}
+
+	selected := h.selectNeighborsFloat32(ctx, candidates, maxConn, data)
+	
+	result := make([]uint32, len(selected))
+	for i, cand := range selected {
+		result[i] = cand.ID
+	}
+	return result
+}
+
+// pruneConnectionsLocked reduces connections using robust diversity heuristic.
+// Legacy method for non-PackedNeighbors storage.
+func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, maxConn, layer int, newNeighbors []uint32) {
+	selected := h.computePrunedNeighbors(ctx, data, nodeID, h.GetNeighborsCombinedManualLocked(data, layer, nodeID, ctx.neighborBatch, math.MaxUint64), newNeighbors, maxConn)
 
 	if h.topLayerManager != nil {
 		h.topLayerManager.ClearNeighbors(layer, nodeID)
 	}
 
-	cID = types.ChunkID(nodeID)
-	cOff = types.ChunkOffset(nodeID)
+	cID := types.ChunkID(nodeID)
+	cOff := types.ChunkOffset(nodeID)
 	
-	countsChunk = data.GetCountsChunk(layer, cID)
-	neighborsChunk = data.GetNeighborsChunk(layer, cID)
+	countsChunk := data.GetCountsChunk(layer, cID)
+	neighborsChunk := data.GetNeighborsChunk(layer, cID)
 	if countsChunk == nil || neighborsChunk == nil {
 		return
 	}
 
 	baseIdx := int(cOff) * types.MaxNeighbors
-	for i, cand := range selected {
-		atomic.StoreUint32(&neighborsChunk[baseIdx+i], cand.ID)
+	for i, id := range selected {
+		atomic.StoreUint32(&neighborsChunk[baseIdx+i], id)
 	}
 	atomic.StoreInt32(&countsChunk[cOff], int32(len(selected))) // #nosec G115
 
@@ -274,21 +342,46 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
-		ids := make([]uint32, len(selected))
-		for i, cand := range selected { ids[i] = cand.ID }
-		_ = pn.SetNeighbors(nodeID, ids)
+		_ = pn.SetNeighbors(nodeID, selected)
 	}
 }
 
 // computeDistances calculates distance from nodeID to multiple targets using type-aware helper.
-func (h *ArrowHNSW) computeDistances(data *types.GraphData, nodeID uint32, neighbors []uint32, dists []float32) {
-	v1 := h.getVectorF32(data, nodeID)
-	if v1 == nil { return }
+func (h *ArrowHNSW) computeDistances(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, neighbors []uint32, dists []float32) {
+	vQuery, err := data.GetVector(nodeID)
+	if err != nil || vQuery == nil { return }
+
+	computer := h.resolveHNSWComputer(data, ctx, vQuery, false)
+	if computer == nil { return }
+
+	// Use specialized computer if available
+	if comp, ok := computer.(interface {
+		ComputeSingle(id uint32) (float32, error)
+	}); ok {
+		for i, nbID := range neighbors {
+			d, err := comp.ComputeSingle(nbID)
+			if err == nil {
+				dists[i] = d
+			} else {
+				dists[i] = math.MaxFloat32
+			}
+		}
+		return
+	}
+
+	// Fallback to manual computation
+	v1, err := data.GetVector(nodeID)
+	if err != nil || v1 == nil { return }
 
 	for i, nbID := range neighbors {
-		v2 := h.getVectorF32(data, nbID)
-		if v2 != nil {
-			d, _ := h.distFunc(v1, v2)
+		v2, err := data.GetVector(nbID)
+		if err != nil || v2 == nil {
+			dists[i] = math.MaxFloat32
+			continue
+		}
+		
+		d, err := h.DispatchDistance(data.Type, v1, v2)
+		if err == nil {
 			dists[i] = d
 		} else {
 			dists[i] = math.MaxFloat32
@@ -296,62 +389,34 @@ func (h *ArrowHNSW) computeDistances(data *types.GraphData, nodeID uint32, neigh
 	}
 }
 
-// getVectorF32 ensures the vector is returned as []float32 for distance calculations.
-func (h *ArrowHNSW) getVectorF32(data *types.GraphData, id uint32) []float32 {
-	vecAny, err := data.GetVector(id)
-	if err != nil || vecAny == nil { return nil }
-
-	switch v := vecAny.(type) {
-	case []float32: return v
-	case []int32:
-		f := make([]float32, len(v))
-		simd.Int32ToFloat32(v, f)
-		return f
-	case []uint32:
-		f := make([]float32, len(v))
-		simd.Uint32ToFloat32(v, f)
-		return f
-	case []int8:
-		f := make([]float32, len(v))
-		simd.Int8ToFloat32(v, f)
-		return f
-	case []uint8:
-		f := make([]float32, len(v))
-		simd.Uint8ToFloat32(v, f)
-		return f
-	case []int16:
-		f := make([]float32, len(v))
-		simd.Int16ToFloat32(v, f)
-		return f
-	case []uint16:
-		f := make([]float32, len(v))
-		simd.Uint16ToFloat32(v, f)
-		return f
-	case []float64:
-		f := make([]float32, len(v))
-		for i, val := range v { f[i] = float32(val) }
-		return f
-	case []float16.Num:
-		f := make([]float32, len(v))
-		simd.Float16ToFloat32(v, f)
-		return f
-	case []complex64:
-		// Use real part or magnitude? Standard HNSW for complex usually uses magnitude.
-		// But here we need []float32. Let's return real parts for now if that's the pattern,
-		// or better, return it in a way that matches extractVector.
-		f := make([]float32, len(v)*2)
-		for i, val := range v {
-			f[2*i] = real(val)
-			f[2*i+1] = imag(val)
-		}
-		return f
-	case []complex128:
-		f := make([]float32, len(v)*2)
-		for i, val := range v {
-			f[2*i] = float32(real(val))
-			f[2*i+1] = float32(imag(val))
-		}
-		return f
-	default: return nil
+// DispatchDistance is a helper to compute distance between any two vectors of the same type.
+func (h *ArrowHNSW) DispatchDistance(vt types.VectorDataType, a, b any) (float32, error) {
+	switch vt {
+	case types.VectorTypeFloat32:
+		return h.distFunc(a.([]float32), b.([]float32))
+	case types.VectorTypeFloat64:
+		return h.distFuncF64(a.([]float64), b.([]float64))
+	case types.VectorTypeInt8:
+		return h.distFuncInt8(a.([]int8), b.([]int8))
+	case types.VectorTypeInt16:
+		return h.distFuncInt16(a.([]int16), b.([]int16))
+	case types.VectorTypeInt32:
+		return h.distFuncInt32(a.([]int32), b.([]int32))
+	case types.VectorTypeInt64:
+		return h.distFuncInt64(a.([]int64), b.([]int64))
+	case types.VectorTypeUint8:
+		return h.distFuncUint8(a.([]uint8), b.([]uint8))
+	case types.VectorTypeUint16:
+		return h.distFuncUint16(a.([]uint16), b.([]uint16))
+	case types.VectorTypeUint32:
+		return h.distFuncUint32(a.([]uint32), b.([]uint32))
+	case types.VectorTypeUint64:
+		return h.distFuncUint64(a.([]uint64), b.([]uint64))
+	case types.VectorTypeComplex64:
+		return h.distFuncC64(a.([]complex64), b.([]complex64))
+	case types.VectorTypeComplex128:
+		return h.distFuncC128(a.([]complex128), b.([]complex128))
+	default:
+		return 0, fmt.Errorf("unsupported vector type for distance: %v", vt)
 	}
 }

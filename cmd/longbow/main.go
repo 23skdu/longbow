@@ -2,10 +2,12 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/pprof" // Register pprof handlers manually
+	_ "expvar"       // Register expvar handlers
 	"os"
 	"os/signal"
 	"strconv" // Added for hostname fallback
@@ -20,6 +22,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/autoscale"
 	lbflight "github.com/23skdu/longbow/internal/flight"
+	"github.com/23skdu/longbow/internal/gc"
 	"github.com/23skdu/longbow/internal/gpu"
 	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
@@ -29,6 +32,7 @@ import (
 	"github.com/23skdu/longbow/internal/middleware"
 	"github.com/23skdu/longbow/internal/sharding"
 	"github.com/23skdu/longbow/internal/store"
+	"github.com/23skdu/longbow/pkg/version"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/joho/godotenv"
@@ -52,6 +56,7 @@ type Config struct {
 	KeepAlivePermitWithoutStream bool          `envconfig:"GRPC_KEEPALIVE_PERMIT_WITHOUT_STREAM" default:"false"`
 
 	ListenAddr       string        `envconfig:"LISTEN_ADDR" default:"0.0.0.0:3000"`
+	ListenUDS        string        `envconfig:"LISTEN_UDS" default:""` // Path to Unix Domain Socket
 	NodeID           string        `envconfig:"NODE_ID" default:""` // Optional override
 	MetaAddr         string        `envconfig:"META_ADDR" default:"0.0.0.0:3001"`
 	MetricsAddr      string        `envconfig:"METRICS_ADDR" default:"0.0.0.0:9090"`
@@ -99,7 +104,7 @@ type Config struct {
 	HybridSearchAlpha       float32 `envconfig:"HYBRID_ALPHA" default:"0.5"`
 
 	// GPU Configuration
-	GPUEnabled  bool `envconfig:"GPU_ENABLED" default:"false"`
+	GPUEnabled  bool `envconfig:"GPU_ENABLED" default:"true"`
 	GPUDeviceID int  `envconfig:"GPU_DEVICE_ID" default:"0"`
 
 	// Rate Limiting Configuration
@@ -159,8 +164,8 @@ type Config struct {
 	OllamaTimeout  int    `envconfig:"OLLAMA_TIMEOUT" default:"30"`
 
 	// Temporal Query Configuration (Part 22)
-	TemporalEnabled            bool          `envconfig:"TEMPORAL_ENABLED" default:"true"`
-	TemporalVersionHistory     bool          `envconfig:"TEMPORAL_VERSION_HISTORY" default:"true"`
+	TemporalEnabled            bool          `envconfig:"TEMPORAL_ENABLED" default:"false"`
+	TemporalVersionHistory     bool          `envconfig:"TEMPORAL_VERSION_HISTORY" default:"false"`
 	TemporalMaxVersions        int           `envconfig:"TEMPORAL_MAX_VERSIONS" default:"10"`
 	TemporalRetentionPeriod    time.Duration `envconfig:"TEMPORAL_RETENTION_PERIOD" default:"168h"` // 7 days
 	TemporalTTLEnabled         bool          `envconfig:"TEMPORAL_TTL_ENABLED" default:"false"`
@@ -186,6 +191,17 @@ func main() {
 }
 
 func run() error {
+	startTime := time.Now()
+	// Handle --version and -v flags early
+	if len(os.Args) > 1 {
+		for _, arg := range os.Args[1:] {
+			if arg == "--version" || arg == "-v" {
+				version.Print()
+				return nil
+			}
+		}
+	}
+
 	// Load .env file if it exists (do this before logger init to read LOG_* vars)
 	_ = godotenv.Load()
 
@@ -243,7 +259,7 @@ func run() error {
 	// Dynamic GOGC Tuning
 	var tuner *lbmem.GCTuner
 	if cfg.MaxMemory > 0 {
-		tuner = lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 10, &logger)
+		tuner = lbmem.NewGCTuner(cfg.MaxMemory, cfg.GOGC, 80, &logger)
 		tuner.IsAggressive = true
 		// Run in background, tied to ctx (stops on signal)
 		go tuner.Start(ctx, 500*time.Millisecond)
@@ -263,6 +279,15 @@ func run() error {
 	scaler := autoscale.NewAutoScaler(logger)
 	// Initialize vector store
 	vectorStore := store.NewVectorStore(mem, logger, cfg.MaxMemory, cfg.MaxWALSize, cfg.TTL)
+	if err := os.Setenv("GODEBUG", "madvdontneed=1"); err != nil {
+		logger.Warn().Err(err).Msg("Failed to set GODEBUG")
+	}
+	gcConfig := gc.DefaultAdaptiveGCConfig()
+	gcConfig.Enabled = true
+	gcConfig.MinGOGC = 20
+	gcConfig.MaxGOGC = 100
+	vectorStore.EnableAdaptiveGC(gcConfig)
+
 	vectorStore.SetGCTuner(tuner)
 	vectorStore.SetAutoScaler(scaler)
 	scaler.SetReconciler(vectorStore)
@@ -318,7 +343,7 @@ func run() error {
 		detectedBackend := gpu.DetectGPUBackend()
 
 		if detectedBackend == gpu.BackendCUDA || detectedBackend == gpu.BackendMetal {
-			vectorStore.SetGPUConfig(detectedBackend, cfg.GPUDeviceID)
+			vectorStore.SetGPUConfig(detectedBackend, int32(cfg.GPUDeviceID)) // #nosec G115
 			logger.Info().
 				Str("backend", detectedBackend.String()).
 				Bool("enabled", cfg.GPUEnabled).
@@ -461,7 +486,7 @@ func run() error {
 			}
 		}
 		temporalIndex = store.NewTemporalIndex(temporalDim)
-		vectorStore.SetTemporalIndex(temporalIndex, temporalConfig)
+		vectorStore.SetTemporalIndex(temporalConfig)
 		logger.Info().
 			Bool("version_history", cfg.TemporalVersionHistory).
 			Int("max_versions", cfg.TemporalMaxVersions).
@@ -472,8 +497,12 @@ func run() error {
 	}
 	_ = temporalIndex // Reserved for future API exposure
 
-	// Start background indexing workers
-	vectorStore.StartIndexingWorkers(runtime.NumCPU())
+	// Start background indexing
+	indexingWorkers := runtime.NumCPU() / 2
+	if indexingWorkers < 2 {
+		indexingWorkers = 2
+	}
+	vectorStore.StartIndexingWorkers(indexingWorkers)
 	// Start ingestion workers
 	vectorStore.StartIngestionWorkers(cfg.IngestionWorkerCount)
 
@@ -485,83 +514,106 @@ func run() error {
 		}
 	}()
 
-	// Start metrics server with timeouts and port retry logic
+	// Start metrics server (Phase 4)
+	metricsSrvChan := make(chan *http.Server, 1)
 	go func() {
+		metricsAddr := os.Getenv("LONGBOW_METRICS_ADDR")
+		if metricsAddr == "" {
+			metricsAddr = ":6000"
+		}
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())
-
 		mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
-			if globalIsReady.Load() {
-				w.WriteHeader(http.StatusOK)
-				_, _ = w.Write([]byte("OK"))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("OK"))
+		})
+		mux.HandleFunc("/progress", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+
+			var limitBytes, usedBytes int64
+			var ratio float64
+			var isHighPressure, isBursting bool
+			tuner := vectorStore.GetGCTuner()
+			if tuner != nil {
+				limitBytes = cfg.MaxMemory
+				ratio = tuner.GetUtilizationRatio()
+				usedBytes = int64(float64(limitBytes) * ratio)
+				isHighPressure = tuner.IsHighPressure()
+				isBursting = tuner.IsBursting()
 			} else {
-				w.WriteHeader(http.StatusServiceUnavailable)
-				_, _ = w.Write([]byte("Not Ready"))
+				var m runtime.MemStats
+				runtime.ReadMemStats(&m)
+				usedBytes = int64(m.HeapAlloc) // #nosec G115
+			}
+
+			backpressure := vectorStore.CheckIngestionBackpressure()
+			delay := vectorStore.IngestionBackpressureDelay()
+
+			type DatasetProgress struct {
+				Name      string `json:"name"`
+				NodeCount int64  `json:"node_count"`
+				MaxLevel  int32  `json:"max_level"`
+				OffHeap   bool   `json:"off_heap"`
+			}
+			var datasets []DatasetProgress
+			activeNames := vectorStore.GetActiveDatasets()
+			for _, name := range activeNames {
+				nodeCount, maxLevel, isOffHeap, exists := vectorStore.GetDatasetIndexStats(name)
+				if exists {
+					datasets = append(datasets, DatasetProgress{
+						Name:      name,
+						NodeCount: nodeCount,
+						MaxLevel:  maxLevel,
+						OffHeap:   isOffHeap,
+					})
+				}
+			}
+
+			resp := map[string]any{
+				"status":         "running",
+				"uptime_seconds": time.Since(startTime).Seconds(),
+				"memory": map[string]any{
+					"limit_bytes":       limitBytes,
+					"used_bytes":        usedBytes,
+					"utilization_ratio": ratio,
+					"high_pressure":     isHighPressure,
+					"bursting":          isBursting,
+				},
+				"ingestion": map[string]any{
+					"queue_len":       vectorStore.IngestionQueueLen(),
+					"queue_cap":       vectorStore.IngestionQueueCap(),
+					"backpressure":    backpressure,
+					"backpressure_ms": delay.Milliseconds(),
+				},
+				"datasets": datasets,
+			}
+
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+				_, _ = w.Write([]byte(err.Error()))
 			}
 		})
-
-		// Profiling endpoints
+		// pprof endpoints (Phase 6)
 		mux.HandleFunc("/debug/pprof/", pprof.Index)
 		mux.HandleFunc("/debug/pprof/cmdline", pprof.Cmdline)
 		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
 
-		// Try to bind to the configured port, with fallback to next 5 ports
-		baseAddr := cfg.MetricsAddr
-		host, portStr, err := net.SplitHostPort(baseAddr)
-		if err != nil {
-			logger.Error().Err(err).Str("addr", baseAddr).Msg("Invalid metrics address format")
-			return
-		}
-
-		basePort, err := strconv.Atoi(portStr)
-		if err != nil {
-			logger.Error().Err(err).Str("port", portStr).Msg("Invalid metrics port")
-			return
-		}
-
-		var boundAddr string
-		var listener net.Listener
-		maxRetries := 5
-		for i := 0; i < maxRetries; i++ {
-			tryPort := basePort + i
-			tryAddr := net.JoinHostPort(host, strconv.Itoa(tryPort))
-
-			listener, err = net.Listen("tcp", tryAddr)
-			if err == nil {
-				boundAddr = tryAddr
-				logger.Info().
-					Str("addr", boundAddr).
-					Int("attempt", i+1).
-					Msg("Metrics server bound successfully")
-				break
-			}
-
-			if i == maxRetries-1 {
-				logger.Error().
-					Err(err).
-					Str("base_addr", baseAddr).
-					Int("retries", maxRetries).
-					Msg("Failed to bind metrics server after retries")
-				return
-			}
-		}
-
 		srv := &http.Server{
+			Addr:         metricsAddr,
 			Handler:      mux,
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
-			IdleTimeout:  60 * time.Second,
 		}
+		metricsSrvChan <- srv
 
-		if err := srv.Serve(listener); err != nil && err != http.ErrServerClosed {
-			logger.Error().
-				Err(err).
-				Str("addr", boundAddr).
-				Msg("Metrics server failed")
+		logger.Info().Str("addr", metricsAddr).Msg("Metrics and pprof server starting")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			logger.Error().Err(err).Msg("Metrics server failed")
 		}
 	}()
+	metricsSrv := <-metricsSrvChan
 
 	// Initialize Sharding Ring Manager
 	// Use configured NodeID or fallback to hostname
@@ -721,6 +773,28 @@ func run() error {
 	}()
 
 	// Start UDS Data Server if configured
+	if cfg.ListenUDS != "" {
+		if err := os.RemoveAll(cfg.ListenUDS); err != nil {
+			logger.Error().Err(err).Str("path", cfg.ListenUDS).Msg("Failed to remove existing UDS socket")
+		}
+		udsLisBase, err := net.Listen("unix", cfg.ListenUDS)
+		if err != nil {
+			logger.Error().Err(err).Str("path", cfg.ListenUDS).Msg("Failed to listen on UDS")
+		} else {
+			// Ensure the socket is accessible
+			// #nosec G302 - UDS permissions require 0666 for multi-process IPC access
+			if err := os.Chmod(cfg.ListenUDS, 0666); err != nil {
+				logger.Warn().Err(err).Str("path", cfg.ListenUDS).Msg("Failed to set UDS socket permissions")
+			}
+			udsLis := store.NewUDSListener(udsLisBase)
+			go func() {
+				logger.Info().Str("path", cfg.ListenUDS).Msg("Listening for Data gRPC connections (UDS)")
+				if err := dataServer.Serve(udsLis); err != nil {
+					logger.Error().Err(err).Msg("UDS Data gRPC server failed")
+				}
+			}()
+		}
+	}
 
 	// Start Meta Server
 	go func() {
@@ -745,31 +819,24 @@ func run() error {
 	// System is now ready to receive traffic
 	globalIsReady.Store(true)
 
-	// Wait for signal
+	// Step 8: Graceful Shutdown (Phase 6)
 	<-ctx.Done()
-	logger.Info().Msg("Received shutdown signal, initiating graceful shutdown")
+	logger.Info().Msg("Shutdown signal received")
 
-	// Stop workers explicitly (ensures they all shut down, not just back to min)
-	totalIndexing := runtime.NumCPU()
-	totalIngestion := cfg.IngestionWorkerCount
-	if totalIngestion <= 0 {
-		totalIngestion = runtime.NumCPU()
-	}
-	vectorStore.StopIndexingWorkers(totalIndexing)
-	vectorStore.StopIngestionWorkers(totalIngestion)
+	// Allow a grace period for pending pprof profile collections to finish
+	// Benchmark tool often collects profile just before sending SIGTERM
+	time.Sleep(2 * time.Second)
 
-	// Shutdown Sequence
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 
 	done := make(chan struct{})
 	go func() {
 		var wg sync.WaitGroup
-		wg.Add(2)
+		wg.Add(3)
 		go func() {
 			defer wg.Done()
 			dataServer.GracefulStop()
-
 			logger.Info().Msg("Data server stopped")
 		}()
 		go func() {
@@ -777,6 +844,15 @@ func run() error {
 			metaServer.GracefulStop()
 			_ = metaService.Close() // Clean up coordinator clients
 			logger.Info().Msg("Meta server stopped")
+		}()
+		go func() {
+			defer wg.Done()
+			if metricsSrv != nil {
+				if err := metricsSrv.Shutdown(shutdownCtx); err != nil {
+					logger.Error().Err(err).Msg("Metrics server shutdown failed")
+				}
+				logger.Info().Msg("Metrics server stopped")
+			}
 		}()
 		wg.Wait()
 		close(done)

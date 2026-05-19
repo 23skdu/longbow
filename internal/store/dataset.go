@@ -26,13 +26,11 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
 
-// IndexJob represents a job for the indexing worker
-
-// RowLocation represents a physical location of a row
-
-// Dataset wraps records with metadata for eviction and tombstones
+// HNSWSettings holds configuration parameters for the HNSW index construction.
 type HNSWSettings struct {
-	M              int
+	// M is the number of bi-directional links created for every new element during construction.
+	M int
+	// EfConstruction is the size of the dynamic list for the nearest neighbors (used during construction).
 	EfConstruction int
 }
 
@@ -44,6 +42,7 @@ type IDMap struct {
 	IsNumeric bool
 }
 
+// Release returns the IDMap to the pool.
 func (m *IDMap) Release() {
 	if m == nil {
 		return
@@ -66,8 +65,9 @@ var idMapPool = sync.Pool{
 	},
 }
 
+// Dataset wraps records with metadata for eviction and tombstones.
 type Dataset struct {
-	Records    []arrow.RecordBatch
+	Records    *LockFreeSlice[arrow.RecordBatch]
 	lastAccess int64 // UnixNano
 	Version    int64
 	Index      VectorIndex  // Use common interface (Item 3)
@@ -87,7 +87,7 @@ type Dataset struct {
 	Tombstones map[int]*types.Bitset
 
 	// BatchNodes tracks which NUMA node each RecordBatch is allocated on
-	BatchNodes []int
+	BatchNodes *LockFreeSlice[int]
 
 	// PrimaryIndex maps ID -> Physical Location (O(1) lookup)
 	PrimaryIndex        map[string]RowLocation
@@ -106,6 +106,9 @@ type Dataset struct {
 	// In-flight Indexing Tracking (Compaction Safety)
 	PendingIndexJobs atomic.Int64
 	PendingIngestion atomic.Int64
+	ActiveIngestStreams atomic.Int64 // Number of active DoPut streams for this dataset
+	IsReady          atomic.Bool // Set to true after first successful ingestion (v0.2.0)
+	RegistryPublished atomic.Bool // Set to true when advertised to the cluster
 
 	// LWW State
 	LWW *TimestampMap
@@ -146,6 +149,11 @@ type Dataset struct {
 	// Filter Cache: maps filter hash -> Bitset
 	filterCache map[string]*types.Bitset
 	filterMu    sync.RWMutex
+	ColumnIndex *ColumnInvertedIndex
+
+	TemporalIndex *TemporalIndex
+
+	Admission *AdmissionController
 
 	Logger zerolog.Logger
 }
@@ -179,6 +187,7 @@ func (d *Dataset) ResetBatchFragmentation(batchIdx int) {
 	}
 }
 
+// QueryStats tracks performance metrics for searches on a dataset.
 type QueryStats struct {
 	mu           sync.RWMutex
 	latencies    []time.Duration
@@ -187,6 +196,7 @@ type QueryStats struct {
 	lastReset    time.Time
 }
 
+// Record adds a new sample to the query statistics.
 func (s *QueryStats) Record(latency time.Duration, recall float64) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -201,6 +211,7 @@ func (s *QueryStats) Record(latency time.Duration, recall float64) {
 	}
 }
 
+// GetMetrics returns the calculated performance metrics.
 func (s *QueryStats) GetMetrics() (p50, p99, avg float64, recall float64, qps float64) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
@@ -242,6 +253,8 @@ func (s *QueryStats) GetMetrics() (p50, p99, avg float64, recall float64, qps fl
 
 // IsSharded returns true if the dataset's vector index is sharded.
 func (d *Dataset) IsSharded() bool {
+	d.dataMu.RLock()
+	defer d.dataMu.RUnlock()
 	if d.Index != nil {
 		return d.Index.IsSharded()
 	}
@@ -250,14 +263,18 @@ func (d *Dataset) IsSharded() bool {
 
 // GetShardedIndex returns the index as a *ShardedHNSW if it is one.
 func (d *Dataset) GetShardedIndex() *ShardedHNSW {
-	if d.Index == nil {
+	d.dataMu.RLock()
+	idx := d.Index
+	d.dataMu.RUnlock()
+
+	if idx == nil {
 		return nil
 	}
-	if s, ok := d.Index.(*ShardedHNSW); ok {
+	if s, ok := idx.(*ShardedHNSW); ok {
 		return s
 	}
 	// Also check if it's an AutoShardingIndex that is currently sharded
-	if asi, ok := d.Index.(*AutoShardingIndex); ok {
+	if asi, ok := idx.(*AutoShardingIndex); ok {
 		asi.mu.RLock()
 		defer asi.mu.RUnlock()
 		if s, ok := asi.current.(*ShardedHNSW); ok {
@@ -267,7 +284,7 @@ func (d *Dataset) GetShardedIndex() *ShardedHNSW {
 	return nil
 }
 
-// IndexLen returns the number of vectors in the index.
+// IndexLen returns the total number of vectors currently in the dataset's index.
 func (d *Dataset) IndexLen() int {
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
@@ -279,50 +296,56 @@ func (d *Dataset) IndexLen() int {
 
 // GetRecord returns the record batch at the given index in a thread-safe manner.
 func (d *Dataset) GetRecord(idx int) (arrow.RecordBatch, bool) {
-	d.dataMu.RLock()
-	defer d.dataMu.RUnlock()
-	if idx >= 0 && idx < len(d.Records) {
-		return d.Records[idx], true
+	records := d.Records.Read()
+	if idx >= 0 && idx < len(records) {
+		return records[idx], true
 	}
 	return nil, false
 }
 
-// GetName returns the name of the dataset
+// GetName returns the name of the dataset.
 func (d *Dataset) GetName() string {
 	return d.Name
 }
 
 // GetRecords returns the records in the dataset
+// GetRecords returns the records in the dataset.
 func (d *Dataset) GetRecords() []arrow.RecordBatch {
-	return d.Records
+	return d.Records.Read()
 }
 
 // GetIndex returns the underlying vector index
+// GetIndex returns the underlying vector index.
 func (d *Dataset) GetIndex() any {
 	return d.Index
 }
 
 // GetSchema returns the schema of the dataset
+// GetSchema returns the schema of the dataset.
 func (d *Dataset) GetSchema() *arrow.Schema {
 	return d.Schema
 }
 
 // GetTombstones returns the tombstones for the dataset
+// GetTombstones returns the tombstones for the dataset.
 func (d *Dataset) GetTombstones() map[int]*types.Bitset {
 	return d.Tombstones
 }
 
 // GetPQEncoder returns the PQ encoder for the dataset
+// GetPQEncoder returns the PQ encoder for the dataset.
 func (d *Dataset) GetPQEncoder() *pq.PQEncoder {
 	return d.PQEncoder
 }
 
 // RLockData acquires a read lock on the dataset data
+// RLockData acquires a read lock on the dataset data.
 func (d *Dataset) RLockData() {
 	d.dataMu.RLock()
 }
 
 // RUnlockData releases a read lock on the dataset data
+// RUnlockData releases a read lock on the dataset data.
 func (d *Dataset) RUnlockData() {
 	d.dataMu.RUnlock()
 }
@@ -334,12 +357,18 @@ func (d *Dataset) ResetTombstones() {
 	d.Tombstones = make(map[int]*types.Bitset)
 }
 
+// SetAdmission associates an AdmissionController with the dataset.
+func (d *Dataset) SetAdmission(admission *AdmissionController) {
+	d.Admission = admission
+}
+
+// NewDataset creates a new Dataset with the specified name and schema.
 func NewDataset(name string, schema *arrow.Schema) *Dataset {
 
 	ds := &Dataset{
 		Name:            name,
-		Records:         make([]arrow.RecordBatch, 0),
-		BatchNodes:      make([]int, 0),
+		Records:         NewLockFreeSlice[arrow.RecordBatch](),
+		BatchNodes:      NewLockFreeSlice[int](),
 		Schema:          schema,
 		Tombstones:          make(map[int]*types.Bitset),
 		PrimaryIndex:        make(map[string]RowLocation),
@@ -352,7 +381,10 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		InvertedIndexes: make(map[string]*InvertedIndex),
 		Graph:           NewGraphStore(),
 		filterCache:     make(map[string]*types.Bitset),
+		ColumnIndex:     NewColumnInvertedIndex(),
 		Metric:          MetricEuclidean, // Default
+		TemporalIndex:   NewTemporalIndex(0), // Dimension will be updated on first Add
+		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
 	}
 
 	// Initialize Schema Manager
@@ -390,23 +422,31 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 	return ds
 }
 
+// LastAccess returns the time of the last access to the dataset.
 func (d *Dataset) LastAccess() time.Time {
 	return time.Unix(0, atomic.LoadInt64(&d.lastAccess))
 }
 
+// SetLastAccess updates the time of the last access to the dataset.
 func (d *Dataset) SetLastAccess(t time.Time) {
 	atomic.StoreInt64(&d.lastAccess, t.UnixNano())
 }
 
 // SearchDataset delegates to the vector index if available
+// SearchDataset delegates to the vector index if available.
 func (d *Dataset) SearchDataset(ctx context.Context, queryVec []float32, k int) ([]SearchResult, error) {
-	if d.Index == nil {
+	d.dataMu.RLock()
+	idx := d.Index
+	d.dataMu.RUnlock()
+
+	if idx == nil {
 		return nil, fmt.Errorf("index not initialized")
 	}
-	return d.Index.SearchVectors(ctx, queryVec, k, nil, SearchOptions{})
+	return idx.SearchVectors(ctx, queryVec, k, nil, SearchOptions{})
 }
 
 // AddToIndex adds a vector to the index
+// AddToIndex adds a vector to the index.
 func (d *Dataset) AddToIndex(batchIdx, rowIdx int) error {
 	d.dataMu.RLock()
 	idx := d.Index
@@ -432,9 +472,11 @@ func (d *Dataset) GenerateFilterBitset(filters []qry.Filter, filterExpr FilterEx
 	d.filterMu.RLock()
 	if bs, ok := d.filterCache[hash]; ok {
 		d.filterMu.RUnlock()
-		return bs, nil
+		metrics.BitmapCacheHitsTotal.Inc()
+		return bs.Clone(), nil
 	}
 	d.filterMu.RUnlock()
+	metrics.BitmapCacheMissesTotal.Inc()
 
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
@@ -444,21 +486,22 @@ func (d *Dataset) GenerateFilterBitset(filters []qry.Filter, filterExpr FilterEx
 
 // GenerateFilterBitsetLocked is the variant that assumes d.dataMu is already held.
 func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr FilterExpr, hash string) (*types.Bitset, error) {
-	if len(d.Records) == 0 || d.Index == nil {
+	records := d.Records.Read()
+	if len(records) == 0 || d.Index == nil {
 		return nil, nil
 	}
 
 	bitset := types.NewBitset()
 
 	// Dataset records must have the same schema.
-	eval, err := qry.NewFilterEvaluator(d.Records[0], filters)
+	eval, err := qry.NewFilterEvaluator(records[0], filters)
 	if err != nil {
 		bitset.Release()
 		return nil, err
 	}
 
 	idx := d.Index
-	for batchIdx, rec := range d.Records {
+	for batchIdx, rec := range records {
 		if err := eval.Reset(rec); err != nil {
 			continue // Should not happen with consistent schema
 		}
@@ -521,10 +564,10 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr Fi
 	d.filterCache[hash] = bitset
 	d.filterMu.Unlock()
 
-	return bitset, nil
+	return bitset.Clone(), nil
 }
 
-// MigrateToShardedIndex migrates the current index to a sharded index
+// MigrateToShardedIndex migrates the current index to a sharded index.
 func (d *Dataset) MigrateToShardedIndex(cfg AutoShardingConfig) error {
 	d.dataMu.Lock()
 	defer d.dataMu.Unlock()
@@ -547,6 +590,7 @@ func (d *Dataset) MigrateToShardedIndex(cfg AutoShardingConfig) error {
 }
 
 // GetVectorIndex returns the current index safely
+// GetVectorIndex returns the current index safely.
 func (d *Dataset) GetVectorIndex() VectorIndex {
 	d.dataMu.RLock()
 	defer d.dataMu.RUnlock()
@@ -554,6 +598,7 @@ func (d *Dataset) GetVectorIndex() VectorIndex {
 }
 
 // Close releases resources associated with the dataset
+// Close releases resources associated with the dataset.
 func (d *Dataset) Close() {
 	d.dataMu.Lock()
 	defer d.dataMu.Unlock()
@@ -583,18 +628,29 @@ func (d *Dataset) Close() {
 		d.BM25ArenaIndex = nil
 	}
 
+	if d.TemporalIndex != nil {
+		_ = d.TemporalIndex.Close()
+		d.TemporalIndex = nil
+	}
+
+	if d.ColumnIndex != nil {
+		_ = d.ColumnIndex.Close()
+		d.ColumnIndex = nil
+	}
+
 	if d.Graph != nil {
 		_ = d.Graph.Close()
 		d.Graph = nil
 	}
 
 	// Release records
-	for _, r := range d.Records {
+	records := d.Records.Read()
+	for _, r := range records {
 		if r != nil {
 			r.Release()
 		}
 	}
-	d.Records = nil
+	d.Records.UpdateInPlace(nil)
 
 	d.PrimaryIndex = nil
 	d.NumericPrimaryIndex = nil
@@ -733,7 +789,7 @@ func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap *IDMap) {
 
 // WaitForIndexing blocks until all pending indexing jobs for this dataset are complete.
 func (d *Dataset) WaitForIndexing() {
-	for d.PendingIndexJobs.Load() > 0 || d.PendingIngestion.Load() > 0 {
+	for d.PendingIndexJobs.Load() > 0 || d.PendingIngestion.Load() > 0 || (d.Admission != nil && d.Admission.migratingCount.Load() > 0) {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
@@ -826,11 +882,19 @@ func (d *Dataset) IngestBatch(batch []DatasetParquetRecord) error {
 
 	rec := b.NewRecord()
 	
-	d.dataMu.Lock()
-	batchIdx := len(d.Records)
-	d.Records = append(d.Records, rec)
-	d.BatchNodes = append(d.BatchNodes, -1) // NUMA untracked for now
-	d.dataMu.Unlock()
+	records := d.Records.Read()
+	newRecords := make([]arrow.RecordBatch, len(records)+1)
+	copy(newRecords, records)
+	newRecords[len(records)] = rec
+	d.Records.UpdateInPlace(newRecords)
+ 
+	batchNodes := d.BatchNodes.Read()
+	newNodes := make([]int, len(batchNodes)+1)
+	copy(newNodes, batchNodes)
+	newNodes[len(batchNodes)] = -1
+	d.BatchNodes.UpdateInPlace(newNodes)
+ 
+	batchIdx := len(records)
 
 	// Update primary index and handle tombstones
 	idMap := d.ExtractIDs(rec)
@@ -860,7 +924,7 @@ func (d *Dataset) SearchGraphRAG(ctx context.Context, queryVec []float32, k int,
 	// 2. Try GPU Acceleration
 	if gpuIdxAny := d.Index.GetGPUIndex(); gpuIdxAny != nil {
 		if gpuIdx, ok := gpuIdxAny.(gputypes.Index); ok {
-			res, err := d.Graph.RankWithGraphGPU(results, alpha, depth, gpuIdx)
+			res, err := d.Graph.RankWithGraphGPU(d.Name, queryVec, results, alpha, depth, gpuIdx)
 			if err == nil {
 				return res, nil
 			}
@@ -870,7 +934,7 @@ func (d *Dataset) SearchGraphRAG(ctx context.Context, queryVec []float32, k int,
 	}
 
 	// 3. CPU Fallback
-	return d.Graph.RankWithGraph(results, alpha, depth), nil
+	return d.Graph.RankWithGraph(d.Name, queryVec, results, alpha, depth), nil
 }
 
 // TriggerRequantization starts a background job to change the quantization level of the dataset.
@@ -895,10 +959,7 @@ func (d *Dataset) requantizeTask(targetType types.VectorDataType) {
 	}
 
 	// 2. Iterate through all record batches and re-quantize
-	d.dataMu.RLock()
-	records := make([]arrow.RecordBatch, len(d.Records))
-	copy(records, d.Records)
-	d.dataMu.RUnlock()
+	records := d.Records.Read()
 
 	totalVectors := 0
 	for _, rec := range records {

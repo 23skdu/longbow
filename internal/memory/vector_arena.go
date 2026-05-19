@@ -133,5 +133,5 @@ func (va *VectorArena) Stats() ArenaStats {
 
 // RegisterArena registers the vector arena with the global registry.
 func (va *VectorArena) RegisterArena() {
-	RegisterArena(va.arena)
+	RegisterArena(va.arena.stats)
 }

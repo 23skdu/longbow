@@ -23,11 +23,11 @@ func (ds *Dataset) GetExistingSchema() *arrow.Schema {
 	ds.dataMu.RLock()
 	defer ds.dataMu.RUnlock()
 
-	if len(ds.Records) == 0 {
+	if len(ds.Records.Read()) == 0 {
 		return nil
 	}
 	// Return the latest schema (from the last record)
-	return ds.Records[len(ds.Records)-1].Schema()
+	return ds.Records.Read()[len(ds.Records.Read())-1].Schema()
 }
 
 // GetRecordsCount returns the number of records in the dataset.
@@ -35,7 +35,7 @@ func (ds *Dataset) GetExistingSchema() *arrow.Schema {
 func (ds *Dataset) GetRecordsCount() int {
 	ds.dataMu.RLock()
 	defer ds.dataMu.RUnlock()
-	return len(ds.Records)
+	return len(ds.Records.Read())
 }
 
 // CheckSchemaCompatibility compares existing and incoming schemas.

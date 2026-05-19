@@ -13,7 +13,7 @@ import (
 
 // CUDADevice represents a CUDA-capable GPU device
 type CUDADevice struct {
-	ID           int
+	ID           int32
 	Name         string
 	ComputeMajor int
 	ComputeMinor int
@@ -22,7 +22,7 @@ type CUDADevice struct {
 }
 
 // InitializeCUDA initializes the CUDA runtime for the specified device
-func InitializeCUDA(deviceID int) error {
+func InitializeCUDA(deviceID int32) error {
 	ret := C.lb_cuda_init_device(C.int(deviceID))
 	if ret != 0 {
 		return fmt.Errorf("failed to initialize CUDA device %d: error code %d", deviceID, ret)
@@ -31,17 +31,17 @@ func InitializeCUDA(deviceID int) error {
 }
 
 // GetCUDADeviceCount returns the number of CUDA-capable devices
-func GetCUDADeviceCount() int {
+func GetCUDADeviceCount() int32 {
 	var count C.int
 	ret := C.lb_cuda_get_device_count(&count)
 	if ret != 0 {
 		return 0
 	}
-	return int(count)
+	return int32(count)
 }
 
 // GetCUDADeviceInfo retrieves information about a CUDA device
-func GetCUDADeviceInfo(deviceID int) (*CUDADevice, error) {
+func GetCUDADeviceInfo(deviceID int32) (*CUDADevice, error) {
 	nameBuf := make([]C.char, 256)
 	var major, minor C.int
 	var totalMem C.size_t
@@ -78,7 +78,7 @@ func GetCUDADeviceInfo(deviceID int) (*CUDADevice, error) {
 }
 
 // GetCUDAMemoryInfo returns the free and total memory for the current device
-func GetCUDAMemoryInfo(deviceID int) (free, total uint64, err error) {
+func GetCUDAMemoryInfo(deviceID int32) (free, total uint64, err error) {
 	if err := InitializeCUDA(deviceID); err != nil {
 		return 0, 0, err
 	}

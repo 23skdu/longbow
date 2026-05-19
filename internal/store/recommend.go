@@ -36,8 +36,8 @@ func (s *VectorStore) Recommend(ctx context.Context, req *qry.RecommendRequest) 
 		if loc, ok := ds.PrimaryIndex[uid]; ok {
 			// Resolve internal ID (Batch*ChunkSize + Row)
 			internalID := lbtypes.VectorID(loc.BatchIdx*lbtypes.ChunkSize + loc.RowIdx) // #nosec G115
-			if loc.BatchIdx < len(ds.Records) {
-				rec := ds.Records[loc.BatchIdx]
+			if loc.BatchIdx < len(ds.Records.Read()) {
+				rec := ds.Records.Read()[loc.BatchIdx]
 				vec, err := extractVectorFromCol(rec, loc.RowIdx)
 				if err == nil && vec != nil {
 					seedVectors = append(seedVectors, vec)
@@ -131,6 +131,9 @@ func (s *VectorStore) getGraphConnectivity(ds *Dataset, seeds []lbtypes.VectorID
 	}
 
 	// BFS Layers (Multi-hop closeness)
+	const nodeLimit = 10000
+	totalVisited := len(seeds)
+
 	for h := 0; h < maxHops; h++ {
 		var nextQueue []lbtypes.VectorID
 		reward := float32(math.Pow(float64(decay), float64(h+1)))
@@ -144,6 +147,10 @@ func (s *VectorStore) getGraphConnectivity(ds *Dataset, seeds []lbtypes.VectorID
 					visited[neighborID] = h + 1
 					scores[neighborID] = reward
 					nextQueue = append(nextQueue, neighborID)
+					totalVisited++
+					if totalVisited >= nodeLimit {
+						return scores
+					}
 				}
 			}
 		}

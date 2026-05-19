@@ -12,8 +12,9 @@ import (
 
 // NUMATopology represents the NUMA topology of the system.
 type NUMATopology struct {
-	NumNodes int     // Number of NUMA nodes
-	CPUs     [][]int // CPUs[nodeID] = list of CPU IDs on that node
+	NumNodes     int     // Number of NUMA nodes
+	CPUs         [][]int // CPUs[nodeID] = list of CPU IDs on that node
+	PhysicalCPUs [][]int // PhysicalCPUs[nodeID] = list of unique physical core IDs on that node
 }
 
 // DetectNUMATopology detects the NUMA topology on Linux systems.
@@ -41,8 +42,9 @@ func DetectNUMATopology() (*NUMATopology, error) {
 	}
 
 	topo := &NUMATopology{
-		NumNodes: len(nodes),
-		CPUs:     make([][]int, len(nodes)),
+		NumNodes:     len(nodes),
+		CPUs:         make([][]int, len(nodes)),
+		PhysicalCPUs: make([][]int, len(nodes)),
 	}
 
 	// Parse CPU list for each node
@@ -50,17 +52,39 @@ func DetectNUMATopology() (*NUMATopology, error) {
 		cpuListPath := filepath.Join(nodePath, "cpulist")
 		cpuListBytes, err := os.ReadFile(cpuListPath)
 		if err != nil {
-			// Skip this node if we can't read cpulist
 			continue
 		}
 
 		cpuList := strings.TrimSpace(string(cpuListBytes))
 		cpus, err := parseCPUList(cpuList)
 		if err != nil {
-			// Skip malformed CPU lists
 			continue
 		}
 		topo.CPUs[i] = cpus
+
+		// Filter for physical cores (first CPU in each thread_siblings_list)
+		seenCores := make(map[int]bool)
+		var physicalCpus []int
+		for _, cpu := range cpus {
+			siblingsPath := fmt.Sprintf("/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", cpu)
+			siblingsBytes, err := os.ReadFile(siblingsPath)
+			if err != nil {
+				// Fallback: assume every CPU is physical if we can't read siblings
+				physicalCpus = append(physicalCpus, cpu)
+				continue
+			}
+			
+			siblings := strings.TrimSpace(string(siblingsBytes))
+			siblingList, _ := parseCPUList(siblings)
+			if len(siblingList) > 0 {
+				primaryCPU := siblingList[0]
+				if !seenCores[primaryCPU] {
+					seenCores[primaryCPU] = true
+					physicalCpus = append(physicalCpus, primaryCPU)
+				}
+			}
+		}
+		topo.PhysicalCPUs[i] = physicalCpus
 	}
 
 	return topo, nil

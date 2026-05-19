@@ -14,6 +14,7 @@ type timestampShard struct {
 	data map[VectorID]int64
 }
 
+// NewTimestampMap creates a new sharded TimestampMap for tracking LWW timestamps.
 func NewTimestampMap() *TimestampMap {
 	tm := &TimestampMap{}
 	for i := 0; i < 16; i++ {

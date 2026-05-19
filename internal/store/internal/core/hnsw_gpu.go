@@ -24,7 +24,7 @@ type GPUConfig struct {
 	SyncInterval  time.Duration // Time-based sync interval (default: 5s)
 
 	// Device settings
-	DeviceID int // GPU device ID (default: 0)
+	DeviceID int32 // GPU device ID (default: 0)
 }
 
 // DefaultGPUConfig returns the default GPU hybrid search configuration
@@ -43,7 +43,7 @@ func DefaultGPUConfig() GPUConfig {
 // Uses auto-detected backend (Metal on macOS, CUDA on Linux with NVIDIA, CPU fallback)
 //
 //nolint:gocritic // Logger passed by value for simplicity
-func (h *ArrowHNSW) InitGPU(deviceID int, logger zerolog.Logger) error {
+func (h *ArrowHNSW) InitGPU(deviceID int32, logger zerolog.Logger) error {
 	return h.InitGPUWithBackend(deviceID, logger, gpu.GetPreferredBackend())
 }
 
@@ -51,17 +51,17 @@ func (h *ArrowHNSW) InitGPU(deviceID int, logger zerolog.Logger) error {
 // Use this if you need to override auto-detection
 //
 //nolint:gocritic // Logger passed by value for simplicity
-func (h *ArrowHNSW) InitGPUWithBackend(deviceID int, logger zerolog.Logger, backend gpu.GPUBackend) error {
+func (h *ArrowHNSW) InitGPUWithBackend(deviceID int32, logger zerolog.Logger, backend gpu.GPUBackend) error {
 	return h.InitGPUWithConfigAndBackend(deviceID, logger, DefaultGPUConfig(), backend)
 }
 
 // InitGPUWithConfig initializes GPU with custom configuration using auto-detected backend
-func (h *ArrowHNSW) InitGPUWithConfig(deviceID int, logger zerolog.Logger, config GPUConfig) error {
+func (h *ArrowHNSW) InitGPUWithConfig(deviceID int32, logger zerolog.Logger, config GPUConfig) error {
 	return h.InitGPUWithConfigAndBackend(deviceID, logger, config, gpu.GetPreferredBackend())
 }
 
 // InitGPUWithConfigAndBackend initializes GPU with custom configuration and specified backend
-func (h *ArrowHNSW) InitGPUWithConfigAndBackend(deviceID int, logger zerolog.Logger, config GPUConfig, backend gpu.GPUBackend) error {
+func (h *ArrowHNSW) InitGPUWithConfigAndBackend(deviceID int32, logger zerolog.Logger, config GPUConfig, backend gpu.GPUBackend) error {
 	h.gpuMu.Lock()
 	defer h.gpuMu.Unlock()
 
@@ -99,7 +99,7 @@ func (h *ArrowHNSW) InitGPUWithConfigAndBackend(deviceID int, logger zerolog.Log
 			logger.Warn().
 				Str("backend", backend.String()).
 				Str("reason", reason).
-				Int("device", deviceID).
+				Int32("device", deviceID).
 				Msg("GPU not available, using CPU-only")
 		}
 		return &gpu.GPUNotAvailableError{Reason: reason}
@@ -117,7 +117,7 @@ func (h *ArrowHNSW) InitGPUWithConfigAndBackend(deviceID int, logger zerolog.Log
 		if logger.GetLevel() != zerolog.Disabled {
 			logger.Warn().
 				Err(err).
-				Int("device", deviceID).
+				Int32("device", deviceID).
 				Msg("GPU initialization failed, using CPU-only")
 		}
 		return &gpu.GPUInitializationError{
@@ -146,7 +146,7 @@ func (h *ArrowHNSW) InitGPUWithConfigAndBackend(deviceID int, logger zerolog.Log
 	if logger.GetLevel() != zerolog.Disabled {
 		logger.Info().
 			Str("backend", backend.String()).
-			Int("device", deviceID).
+			Int32("device", deviceID).
 			Int("dimensions", dims).
 			Bool("cache_enabled", config.EnableGPUCache).
 			Int("sync_batch_size", config.SyncBatchSize).
@@ -336,7 +336,7 @@ func (h *ArrowHNSW) SearchHybridWithConfig(ctx context.Context, query []float32,
 
 	// Check if we have enough vectors to warrant GPU usage
 	vectorCount := h.Len()
-	if vectorCount < 1000 { // Minimum threshold for GPU
+	if vectorCount < 1024 { // Minimum threshold for GPU (Adaptive Dispatch)
 		return h.searchCPUOnly(ctx, query, k)
 	}
 
@@ -587,4 +587,29 @@ func (h *ArrowHNSW) ResetGPUCircuitBreaker() {
 	// Note: This is a manual override, typically not recommended
 	// The circuit breaker should recover naturally
 	// This is useful for testing or emergency recovery
+}
+
+// pruneNeighborsGPU offloads the HNSW neighbor selection heuristic to the GPU.
+func (h *ArrowHNSW) pruneNeighborsGPU(candidateIds []uint32, candidateDists []float32, maxNeighbors int) ([]uint32, error) {
+	start := time.Now()
+	defer func() {
+		metrics.GPUIngestKernelDurationSeconds.Observe(time.Since(start).Seconds())
+	}()
+
+	h.gpuMu.RLock()
+	defer h.gpuMu.RUnlock()
+
+	if !h.gpuEnabled || h.gpuIndex == nil {
+		return nil, fmt.Errorf("GPU not enabled")
+	}
+
+	// For now, we pass nil for allVectors to tell the GPU to use its internal buffer.
+	// We assume that the vectors have been synced to GPU via SyncGPU/Flush.
+	selected, err := h.gpuIndex.PruneNeighbors(candidateIds, candidateDists, maxNeighbors, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	metrics.GPUNeighborPruneOpsTotal.Inc()
+	return selected, nil
 }

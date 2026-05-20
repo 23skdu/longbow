@@ -1,8 +1,35 @@
 # Longbow Next Steps - Stability & Performance Recommendations
 
 > Generated: 2026-05-20
-> Based on: Security audit (793 nosec suppressions reviewed), race condition analysis, full benchmark matrix
-> Commit: `e05d0296` (docs: add security audit findings and performance tracking)
+> Based on: Security audit (793 nosec suppressions reviewed), race condition analysis, AVX2 int16 smoke test
+> Commit: `5f85baaa` (feat(simd): add native AVX2 int16 kernels and optimize baseline int16/uint16 operations)
+
+---
+
+## AVX2 Int16/Uint16 Kernel Smoke Test Findings (2026-05-20)
+
+### 1. Build System Fix Required
+**Issue**: `euclideanInt16AVX2Kernel`, `euclideanUint16AVX2Kernel`, `dotInt16AVX2Kernel`, `dotUint16AVX2Kernel` were declared in both `simd_amd64.go` (with `//go:noescape`) and `all_kernels_stubs_amd64.go` (generated stubs), causing redeclaration errors on cross-compilation.
+**Fix**: Removed duplicate declarations from `all_kernels_stubs_amd64.go` (lines 121-127). The real implementations are now in `int16_kernels_amd64.s`.
+**Recommendation**: Regenerate `all_kernels_stubs_amd64.go` via `go generate` to prevent future drift, or add a build-time check for duplicate declarations.
+
+### 2. AVX2 Int16/Uint16 Kernels Verified Working
+**Result**: All 8 int/uint types dispatch correctly through AVX2 kernels on x86_64 (ancalagon). Apple Silicon uses NEON/baseline paths as expected.
+**Ingestion**: int16/uint16 DoPut throughput is competitive (374K-652K vec/s on x86_64, 155K-605K on Apple Silicon).
+**Search**: Dense QPS for int16/uint16 is stable (371-569 QPS across dims 128-768).
+**No regressions** detected from the baseline optimization changes.
+
+### 3. Baseline Integer Arithmetic Optimization
+**Change**: Replaced `float64` arithmetic with `int64`/`uint64` accumulators in baseline int16/uint16 euclidean, dot, and cosine distance functions.
+**Benefit**: Avoids FPU conversion overhead; max squared diff for int16 fits in int64 (65535^2 ≈ 4.3e9, well within int64 range).
+**Cosine distance**: Added 4x unrolling and clamped output to valid [0, 2] range.
+
+### 4. Cross-Platform Performance Observations
+| Observation | Impact |
+|-------------|--------|
+| Apple Silicon outperforms x86_64 on uint8/768 ingestion (671K vs 354K vec/s) | NEON optimization advantage |
+| x86_64 leads on int16/128 ingestion (652K vs 553K vec/s) | AVX2 kernel efficiency |
+| int64/uint64 ingestion drops sharply at dim=3072 (17K-51K vec/s) | Memory bandwidth bound on both platforms |
 
 ---
 
@@ -160,10 +187,13 @@ baseline hardware.
 - [x] Restrict UDS socket permissions
 - [x] Fix test race condition (TestDualIndexHarness_Basic, TestHNSW_GrowthRace)
 - [x] Full benchmark matrix complete (4 hosts, 190 configs)
+- [x] AVX2 int16/uint16 kernels verified working (smoke test, 5f85baaa)
+- [x] Build fix: removed duplicate stub declarations from all_kernels_stubs_amd64.go
 - [ ] Fix pprof collection in benchmark script
 - [ ] Add memory hard limit enforcement
 - [ ] Investigate remote CPU dense_qps regressions (-20% to -54%)
 - [ ] Re-run CUDA benchmark in isolated mode (not combined cpu,cuda)
+- [ ] Regenerate all_kernels_stubs_amd64.go via `go generate` to prevent future drift
 
 ### Short Term (Next Sprint)
 - [ ] Add bounds checks for remaining G115 concerns (temporal_search arena offsets)

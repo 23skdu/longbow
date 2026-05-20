@@ -42,6 +42,9 @@ func TestHNSW_GrowthRace(t *testing.T) {
 	numWorkers := 10
 	insertsPerWorker := 1000
 
+	// Use atomic counter for sequential ID assignment to avoid commitID deadlock
+	var nextID atomic.Uint32
+
 	// We want to force reallocation.
 	// IDs will range from 0 to numWorkers * insertsPerWorker
 
@@ -60,10 +63,8 @@ func TestHNSW_GrowthRace(t *testing.T) {
 			time.Sleep(time.Duration(rand.Intn(10)) * time.Millisecond)
 
 			for i := 0; i < insertsPerWorker; i++ {
-				// ID calculation: spread out to hit different chunks?
-				// Or sequential to force continuous growth?
-				// Sequential per worker, but interleaved globally.
-				id := uint32(workerID*insertsPerWorker + i)
+				// Sequential ID assignment to satisfy commitID ordering requirement
+				id := nextID.Add(1) - 1
 
 				// Insert
 				err := h.InsertWithVector(id, dummyVec, h.generateLevel())
@@ -102,23 +103,20 @@ func TestHNSW_GrowthRace(t *testing.T) {
 	// Iterate all IDs and ensure their vector chunk is present and not nil
 	data := h.data.Load()
 	missingCount := 0
+	totalInserted := successCount.Load()
 
-	for w := 0; w < numWorkers; w++ {
-		for i := 0; i < insertsPerWorker; i++ {
-			id := uint32(w*insertsPerWorker + i)
+	for id := uint32(0); id < uint32(totalInserted); id++ {
+		cID := types.ChunkID(id)
+		cOff := types.ChunkOffset(id)
+		_ = cOff // Only checking chunk existence for now
 
-			cID := types.ChunkID(id)
-			cOff := types.ChunkOffset(id)
-			_ = cOff // Only checking chunk existence for now
-
-			// Check if chunk exists (Levels/Neighbors)
-			// Vectors are not stored in GraphData anymore (unless SQ8/PQ).
-			// So checking Levels/Neighbors is the correct way to verify allocation.
-			if data.GetLevelsChunk(cID) == nil {
-				missingCount++
-				if missingCount < 5 {
-					t.Logf("Missing Levels Chunk for ID %d", id)
-				}
+		// Check if chunk exists (Levels/Neighbors)
+		// Vectors are not stored in GraphData anymore (unless SQ8/PQ).
+		// So checking Levels/Neighbors is the correct way to verify allocation.
+		if data.GetLevelsChunk(cID) == nil {
+			missingCount++
+			if missingCount < 5 {
+				t.Logf("Missing Levels Chunk for ID %d", id)
 			}
 		}
 	}

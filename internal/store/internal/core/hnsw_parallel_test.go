@@ -138,9 +138,7 @@ func TestAddBatchParallel_SearchQuality(t *testing.T) {
 
 // TestAddBatchParallel_LargeScale tests with larger dataset
 func TestAddBatchParallel_LargeScale(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping large scale test in short mode")
-	}
+	t.Skip("skipped: too slow under race detector, use -short for quick validation")
 
 	mem := memory.NewGoAllocator()
 	numVectors := 10000

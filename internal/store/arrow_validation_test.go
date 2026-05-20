@@ -117,9 +117,7 @@ func (h *DualIndexHarness) MeasureRecall(query []float32, k int) float64 {
 // TestDualIndexHarness_Basic validates the harness setup.
 func TestDualIndexHarness_Basic(t *testing.T) {
 	// Create a simple dataset
-	dataset := &Dataset{
-		Name: "test",
-	}
+	dataset := NewDataset("test", nil)
 
 	harness := NewDualIndexHarness(dataset)
 

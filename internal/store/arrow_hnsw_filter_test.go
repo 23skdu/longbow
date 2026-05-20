@@ -33,6 +33,8 @@ func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 	store := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
 	err = store.InitPersistence(config)
 	require.NoError(t, err)
+	store.StartIndexingWorkers(2)
+	store.StartIngestionWorkers(2)
 	defer func() { _ = store.Close() }()
 
 	// 1. Create MockDataset with Metadata
@@ -133,6 +135,8 @@ func TestArrowHNSW_SIMDPredicate(t *testing.T) {
 	store := NewVectorStore(mem, logger, 1024*1024*1024, 0, 0)
 	err = store.InitPersistence(config)
 	require.NoError(t, err)
+	store.StartIndexingWorkers(2)
+	store.StartIngestionWorkers(2)
 	defer func() { _ = store.Close() }()
 
 	schemaName := "simd_dataset"

@@ -185,6 +185,7 @@ func (h *ArrowHNSW) ImportGraph(r io.Reader) error {
 	h.config.SQ8Enabled = data.SQ8Enabled
 	// Restore node count from metadata (number of valid locations)
 	h.nodeCount.Store(int64(len(state.Locations)))
+	h.nextID.Store(int64(len(state.Locations)))
 
 	// Reset runtime structures
 	if h.searchPool == nil {

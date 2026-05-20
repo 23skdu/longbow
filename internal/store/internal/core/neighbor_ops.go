@@ -13,6 +13,9 @@ import (
 // AddConnection establishes a directed edge between two nodes in the HNSW graph.
 func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData, source, target uint32, layer, maxConn int, dist float32) *types.GraphData {
 	if h.topLayerManager != nil && h.topLayerManager.AddConnectionCAS(layer, source, target) {
+		if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+			h.neighborCache[layer].Remove(source)
+		}
 		if data != nil { return data }
 		return h.data.Load()
 	}
@@ -44,6 +47,9 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 		// Adjacency is now managed exclusively by PackedNeighbors in the hot path.
 
 		atomic.AddUint64(&data.GlobalVersion, 1)
+		if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+			h.neighborCache[layer].Remove(source)
+		}
 		return data
 	}
 
@@ -64,6 +70,9 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 func (h *ArrowHNSW) AddConnectionLocked(ctx *ArrowSearchContext, data *types.GraphData, source, target uint32, layer, maxConn int, dist float32) *types.GraphData {
 	// 0. Use Lock-Free path if applicable
 	if h.topLayerManager != nil && h.topLayerManager.AddConnectionCAS(layer, source, target) {
+		if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+			h.neighborCache[layer].Remove(source)
+		}
 		return data
 	}
 
@@ -124,6 +133,9 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 			return h.computePrunedNeighbors(ctx, data, target, old, newSources, maxConn)
 		})
 		atomic.AddUint64(&data.GlobalVersion, 1)
+		if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+			h.neighborCache[layer].Remove(target)
+		}
 		return data
 	}
 
@@ -169,6 +181,9 @@ func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *types.GraphD
 			atomic.AddUint64(&data.GlobalVersion, 1)
 			return next
 		})
+		if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+			h.neighborCache[layer].Remove(id)
+		}
 		return data
 	}
 
@@ -222,6 +237,10 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 	}
 
 	atomic.AddUint64(&data.GlobalVersion, 1)
+
+	if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+		h.neighborCache[layer].Remove(source)
+	}
 }
 
 // addConnectionsBatchLocked performs batch mutation assuming lock held.
@@ -269,6 +288,10 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 		pn := data.PackedNeighbors[layer]
 		newNeighbors := h.GetNeighborsCombinedManualLocked(data, layer, target, ctx.neighborBatch, ctx.MaxGeneration)
 		_ = pn.SetNeighbors(target, newNeighbors)
+	}
+
+	if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+		h.neighborCache[layer].Remove(target)
 	}
 }
 
@@ -343,6 +366,10 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
 		_ = pn.SetNeighbors(nodeID, selected)
+	}
+
+	if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+		h.neighborCache[layer].Remove(nodeID)
 	}
 }
 

@@ -43,6 +43,8 @@ type IVFFlatIndex struct {
 	distFunc    simd.DistanceKernel[float32]
 	locationToID map[uint64]uint64 // Packed Location -> Vector ID
 	idToLocation map[uint64]uint64 // Vector ID -> Packed Location
+	clusterVectors [][]uint64    // cluster ID -> list of vector IDs in this cluster
+	clusterData    [][]float32   // cluster ID -> flat slice of concatenated vector coordinates
 }
 
 // NewIVFFlatIndex creates a new IVF-Flat index with the specified configuration.
@@ -109,6 +111,10 @@ func (ivf *IVFFlatIndex) Add(id uint64, vector []float32) error {
 	if ivf.built {
 		clusterID := ivf.findNearestCluster(vector)
 		ivf.assignments[id] = clusterID
+		if clusterID >= 0 && clusterID < len(ivf.clusterVectors) {
+			ivf.clusterVectors[clusterID] = append(ivf.clusterVectors[clusterID], id)
+			ivf.clusterData[clusterID] = append(ivf.clusterData[clusterID], vector...)
+		}
 	}
 
 	return nil
@@ -162,6 +168,10 @@ func (ivf *IVFFlatIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
 		if ivf.built {
 			clusterID := ivf.findNearestCluster(vector)
 			ivf.assignments[id] = clusterID
+			if clusterID >= 0 && clusterID < len(ivf.clusterVectors) {
+				ivf.clusterVectors[clusterID] = append(ivf.clusterVectors[clusterID], id)
+				ivf.clusterData[clusterID] = append(ivf.clusterData[clusterID], vector...)
+			}
 		}
 	}
 
@@ -192,6 +202,7 @@ func (ivf *IVFFlatIndex) Build() error {
 	ivf.centroids = centroids
 	ivf.assignments = assignments
 	ivf.built = true
+	ivf.rebuildClusterSlices()
 
 	// Resolve kernel for the dimension
 	ivf.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, ivf.dimension)
@@ -227,13 +238,16 @@ func (ivf *IVFFlatIndex) Search(query []float32, k int) ([]IndexSearchResult, er
 	results := make([]result, 0, k*2)
 
 	for _, clusterID := range probeClusters {
-		// Get all vectors assigned to this cluster
-		for id, assignedCluster := range ivf.assignments {
-			if assignedCluster == clusterID {
-				vector := ivf.vectors[id]
-				dist, _ := ivf.distFunc(query, vector)
-				results = append(results, result{id: id, distance: dist})
-			}
+		if clusterID < 0 || clusterID >= len(ivf.clusterVectors) {
+			continue
+		}
+		vecIDs := ivf.clusterVectors[clusterID]
+		vecData := ivf.clusterData[clusterID]
+		dim := ivf.dimension
+		for i, id := range vecIDs {
+			vector := vecData[i*dim : (i+1)*dim]
+			dist, _ := ivf.distFunc(query, vector)
+			results = append(results, result{id: id, distance: dist})
 		}
 	}
 
@@ -480,6 +494,9 @@ func (ivf *IVFFlatIndex) Load(path string) error {
 	}
 	ivf.built = builtFlag == 1
 	ivf.ensureKernel()
+	if ivf.built {
+		ivf.rebuildClusterSlices()
+	}
 
 	return nil
 }
@@ -554,6 +571,9 @@ func (ivf *IVFFlatIndex) ImportState(data []byte) error {
 	ivf.locationToID = state.LocationToID
 	ivf.idToLocation = state.IDToLocation
 	ivf.ensureKernel()
+	if ivf.built {
+		ivf.rebuildClusterSlices()
+	}
 
 	return nil
 }
@@ -867,5 +887,37 @@ func (ivf *IVFFlatIndex) ensureKernel() {
 	ivf.distFunc = simd.GetKernel[float32](simd.MetricEuclidean, ivf.dimension)
 	if ivf.distFunc == nil {
 		ivf.distFunc = simd.L2Squared
+	}
+}
+
+func (ivf *IVFFlatIndex) rebuildClusterSlices() {
+	numClusters := len(ivf.centroids)
+	ivf.clusterVectors = make([][]uint64, numClusters)
+	ivf.clusterData = make([][]float32, numClusters)
+
+	clusterSizes := make([]int, numClusters)
+	for _, clusterID := range ivf.assignments {
+		if clusterID >= 0 && clusterID < numClusters {
+			clusterSizes[clusterID]++
+		}
+	}
+	for i := 0; i < numClusters; i++ {
+		ivf.clusterVectors[i] = make([]uint64, 0, clusterSizes[i])
+		ivf.clusterData[i] = make([]float32, 0, clusterSizes[i]*ivf.dimension)
+	}
+
+	ids := make([]uint64, 0, len(ivf.assignments))
+	for id := range ivf.assignments {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	for _, id := range ids {
+		clusterID := ivf.assignments[id]
+		if clusterID >= 0 && clusterID < numClusters {
+			vector := ivf.vectors[id]
+			ivf.clusterVectors[clusterID] = append(ivf.clusterVectors[clusterID], id)
+			ivf.clusterData[clusterID] = append(ivf.clusterData[clusterID], vector...)
+		}
 	}
 }

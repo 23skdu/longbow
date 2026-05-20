@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -32,6 +33,7 @@ func NewParquetIngester(ds *Dataset, batchSize int) *ParquetIngester {
 // Ingest performs high-throughput ingestion from a Parquet file.
 // It uses io_uring for zero-copy reads on Linux if available.
 func (pi *ParquetIngester) Ingest(ctx context.Context, path string) (int64, error) {
+	path = filepath.Clean(path)
 	start := time.Now()
 	
 	// 1. Try to use io_uring reader if on Linux
@@ -43,7 +45,7 @@ func (pi *ParquetIngester) Ingest(ctx context.Context, path string) (int64, erro
 		pi.ringReader = uring
 	} else {
 		// Fallback to standard os.File
-		f, err := os.Open(path) // #nosec G304
+		f, err := os.Open(path)
 		if err != nil {
 			return 0, fmt.Errorf("failed to open file: %w", err)
 		}

@@ -81,6 +81,7 @@ type ArrowHNSW struct {
 	disableNodeCountMetric atomic.Bool
 	metricsSampleCounter   atomic.Uint64
 	topLayerManager        *TopLayerManager
+	neighborCache          [types.ArrowMaxLayers]*LockFreeNeighborCache
 
 	distFunc     func([]float32, []float32) (float32, error)
 	distFuncSquared  func([]float32, []float32) (float32, error)
@@ -199,6 +200,9 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		levelMultiplier: 1.0 / math.Log(float64(config.M)),
 		topLayerManager: NewTopLayerManager(config.LockFreeThreshold),
 		topo:            topo,
+	}
+	for i := 0; i < types.ArrowMaxLayers; i++ {
+		h.neighborCache[i] = NewLockFreeNeighborCache()
 	}
 	h.metadataRegistry.Store(&HNSWMetadata{
 		EntryPoint: math.MaxUint32,
@@ -864,7 +868,12 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	}
 
 	// Allocate local IDs for the entire batch to ensure monotonic assignment and avoid overwrites
-	startID = uint32(h.nextID.Add(int64(n)) - int64(n)) // #nosec G115
+	newNext := h.nextID.Add(int64(n))
+	if newNext > math.MaxUint32+1 {
+		h.nextID.Add(-int64(n)) // Roll back
+		return nil, fmt.Errorf("vector ID overflow: nextID %d exceeds max uint32", newNext-1)
+	}
+	startID = uint32(newNext - int64(n)) // #nosec G115 - bounds checked above
 	startIDAssigned = true
 
 	// Ensure the index is grown to accommodate the new batch before parallel ingestion.

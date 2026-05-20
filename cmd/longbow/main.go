@@ -781,9 +781,9 @@ func run() error {
 		if err != nil {
 			logger.Error().Err(err).Str("path", cfg.ListenUDS).Msg("Failed to listen on UDS")
 		} else {
-			// Ensure the socket is accessible
-			// #nosec G302 - UDS permissions require 0666 for multi-process IPC access
-			if err := os.Chmod(cfg.ListenUDS, 0666); err != nil {
+			// Ensure the socket is accessible by owner and group
+			// Use 0660 for security; deploy with appropriate group membership for multi-process IPC
+			if err := os.Chmod(cfg.ListenUDS, 0660); err != nil { // #nosec G302 - UDS requires group access
 				logger.Warn().Err(err).Str("path", cfg.ListenUDS).Msg("Failed to set UDS socket permissions")
 			}
 			udsLis := store.NewUDSListener(udsLisBase)

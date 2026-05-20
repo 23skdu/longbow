@@ -109,42 +109,71 @@ func (h *ArrowHNSW) GetNeighborsCombined(layer int, id uint32, maxGen uint64) []
 
 // GetNeighborsCombinedCached returns neighbors, using the provided DiskGraph cache if available.
 func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGraph, maxGen uint64) []uint32 {
-	// 1. Try TopLayerManager (Persistent lock-free upper layers)
-	lf := h.topLayerManager.GetNeighborsLockFree(layer, id)
-	if lf != nil {
-		return lf
-	}
-	
-	// 2. Try GraphData PackedNeighbors (Dynamic lock-free adjacency)
-	data := h.data.Load()
-	if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
-		if neighbors, ok := data.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
-			return neighbors
-		}
-	}
-	
-	// 3. Fallback to standard types.GraphData (lock-safe for reads)
-	if data != nil {
-		neighbors := data.GetNeighborsWithGen(layer, id, nil, maxGen)
-		if len(neighbors) > 0 {
-			return neighbors
+	if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+		if cached, ok := h.neighborCache[layer].GetNeighbors(id); ok {
+			return cached
 		}
 	}
 
-	// 4. Fallback to DiskGraph in hybrid mode
-	if dg == nil {
-		dg = h.diskGraph.Load()
+	var res []uint32
+
+	// 1. Try TopLayerManager (Persistent lock-free upper layers)
+	lf := h.topLayerManager.GetNeighborsLockFree(layer, id)
+	if lf != nil {
+		res = lf
 	}
-	if dg != nil {
-		return dg.GetNeighbors(layer, id, nil)
+
+	if res == nil {
+		// 2. Try GraphData PackedNeighbors (Dynamic lock-free adjacency)
+		data := h.data.Load()
+		if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+			if neighbors, ok := data.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
+				res = neighbors
+			}
+		}
+		
+		if res == nil {
+			// 3. Fallback to standard types.GraphData (lock-safe for reads)
+			if data != nil {
+				neighbors := data.GetNeighborsWithGen(layer, id, nil, maxGen)
+				if len(neighbors) > 0 {
+					res = neighbors
+				}
+			}
+		}
 	}
-	
-	return nil
+
+	if res == nil {
+		// 4. Fallback to DiskGraph in hybrid mode
+		if dg == nil {
+			dg = h.diskGraph.Load()
+		}
+		if dg != nil {
+			res = dg.GetNeighbors(layer, id, nil)
+		}
+	}
+
+	if res != nil && layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+		h.neighborCache[layer].SetNeighbors(id, res)
+	}
+
+	return res
 }
 
 // GetNeighborsCombinedManual returns neighbors using the provided GraphData pointer.
 // This is critical for internal operations (like linkage) that operate on a local COW pointer.
 func (h *ArrowHNSW) GetNeighborsCombinedManual(data *types.GraphData, layer int, id uint32, buf []uint32, maxGen uint64) []uint32 {
+	if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+		if cached, ok := h.neighborCache[layer].GetNeighbors(id); ok {
+			if buf != nil && cap(buf) >= len(cached) {
+				res := buf[:len(cached)]
+				copy(res, cached)
+				return res
+			}
+			return cached
+		}
+	}
+
 	var res []uint32
 	
 	// 1. Try TopLayerManager
@@ -194,51 +223,79 @@ func (h *ArrowHNSW) GetNeighborsCombinedManual(data *types.GraphData, layer int,
 		}
 	}
 	
+	if res != nil && layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+		h.neighborCache[layer].SetNeighbors(id, res)
+	}
+
 	return res
 }
+
 // GetNeighborsCombinedManualLocked returns neighbors while holding the node lock.
 func (h *ArrowHNSW) GetNeighborsCombinedManualLocked(data *types.GraphData, layer int, id uint32, buf []uint32, maxGen uint64) []uint32 {
+	if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+		if cached, ok := h.neighborCache[layer].GetNeighbors(id); ok {
+			if buf != nil && cap(buf) >= len(cached) {
+				res := buf[:len(cached)]
+				copy(res, cached)
+				return res
+			}
+			return cached
+		}
+	}
+
+	var res []uint32
+
 	// 1. Try TopLayerManager
 	lf := h.topLayerManager.GetNeighborsLockFree(layer, id)
 	if lf != nil {
 		if buf != nil && cap(buf) >= len(lf) {
-			res := buf[:len(lf)]
+			res = buf[:len(lf)]
 			copy(res, lf)
-			return res
+		} else {
+			res = lf
 		}
-		return lf
 	}
 	
-	// 2. Try GraphData PackedNeighbors
-	if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
-		if neighbors, ok := data.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
-			if buf != nil && cap(buf) >= len(neighbors) {
-				res := buf[:len(neighbors)]
-				copy(res, neighbors)
-				return res
+	if res == nil {
+		// 2. Try GraphData PackedNeighbors
+		if data != nil && layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
+			if neighbors, ok := data.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
+				if buf != nil && cap(buf) >= len(neighbors) {
+					res = buf[:len(neighbors)]
+					copy(res, neighbors)
+				} else {
+					res = neighbors
+				}
 			}
-			return neighbors
 		}
 	}
 	
-	// 3. Fallback to standard types.GraphData (BYPASS LOCK)
-	if data != nil {
-		neighbors := data.GetNeighborsLockFree(layer, id)
-		if len(neighbors) > 0 {
-			if buf != nil && cap(buf) >= len(neighbors) {
-				res := buf[:len(neighbors)]
-				copy(res, neighbors)
-				return res
+	if res == nil {
+		// 3. Fallback to standard types.GraphData (BYPASS LOCK)
+		if data != nil {
+			neighbors := data.GetNeighborsLockFree(layer, id)
+			if len(neighbors) > 0 {
+				if buf != nil && cap(buf) >= len(neighbors) {
+					res = buf[:len(neighbors)]
+					copy(res, neighbors)
+				} else {
+					res = neighbors
+				}
 			}
-			return neighbors
 		}
 	}
 	
-	// 4. Fallback to DiskGraph
-	dg := h.diskGraph.Load()
-	if dg != nil {
-		return dg.GetNeighbors(layer, id, buf)
+	if res == nil {
+		// 4. Fallback to DiskGraph
+		dg := h.diskGraph.Load()
+		if dg != nil {
+			res = dg.GetNeighbors(layer, id, buf)
+		}
 	}
 	
-	return nil
+	if res != nil && layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+		h.neighborCache[layer].SetNeighbors(id, res)
+	}
+
+	return res
 }

@@ -226,6 +226,11 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 					h.topLayerManager.ClearNeighbors(lvl, nid)
 				}
 
+				// Clear lock-free neighbor cache to prevent stale reads
+				if lvl >= 0 && lvl < len(h.neighborCache) && h.neighborCache[lvl] != nil {
+					h.neighborCache[lvl].Remove(nid)
+				}
+
 				repaired++
 				
 				// CAS the updated data pointer back to h.data to ensure visibility

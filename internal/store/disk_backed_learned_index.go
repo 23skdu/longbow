@@ -110,7 +110,8 @@ func (idx *DiskBackedLearnedIndex) Save(path string) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
-	f, err := os.Create(path) // #nosec G304
+	path = filepath.Clean(path)
+	f, err := os.Create(path)
 	if err != nil {
 		return err
 	}

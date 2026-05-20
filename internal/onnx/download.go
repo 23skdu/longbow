@@ -6,13 +6,20 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 )
+
+// validRepoID matches Hugging Face repo ID format: owner/repo
+var validRepoID = regexp.MustCompile(`^[a-zA-Z0-9_.-]+/[a-zA-Z0-9_.-]+$`)
 
 // DownloadModel downloads an ONNX model and its associated files from Hugging Face
 func DownloadModel(repoID, destDir string) error {
 	if repoID == "" {
 		return fmt.Errorf("repoID cannot be empty")
+	}
+	if !validRepoID.MatchString(repoID) {
+		return fmt.Errorf("invalid repoID format: must be 'owner/repo' with alphanumeric characters, dots, hyphens, and underscores")
 	}
 
 	// Create destination directory
@@ -52,7 +59,8 @@ func DownloadModel(repoID, destDir string) error {
 }
 
 func downloadFile(url, destPath string) error {
-	resp, err := http.Get(url) // #nosec G107
+	// URL is constructed from validated repoID in DownloadModel (regex-validated)
+	resp, err := http.Get(url) // #nosec G107 - URL constructed from validated repoID
 	if err != nil {
 		return err
 	}

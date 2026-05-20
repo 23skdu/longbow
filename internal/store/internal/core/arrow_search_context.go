@@ -210,8 +210,6 @@ type ArrowSearchContext struct {
 
 	scratchDists []float32
 
-	vectorCache map[uint32]any
-	distCache   map[uint32]float32
 	vectorBuf   []float32
 
 	pruneDepth int
@@ -275,8 +273,6 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		queryBQ:          make([]uint64, 0, 256),
 		querySQ8:         make([]uint8, 0, 1536),
 		queryTQ:          make([]byte, 0, 512),
-		vectorCache:      make(map[uint32]any, 100),
-		distCache:        make(map[uint32]float32, 100),
 		vectorBuf:        make([]float32, 0, 384),
 		bufF32_2:         make([]float32, 0, 384),
 		neighborBatch:    make([]uint32, 0, 64),
@@ -366,8 +362,6 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.bufF32_2 = ctx.bufF32_2[:0]
 	ctx.bufF64 = ctx.bufF64[:0]
 	ctx.vectorBuf = ctx.vectorBuf[:0]
-	clear(ctx.vectorCache)
-	clear(ctx.distCache)
 	ctx.dirty = false
 	ctx.operations = 0
 	ctx.distComputeTime = 0

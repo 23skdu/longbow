@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"fmt"
+	"os"
 	"testing"
 	"time"
 
@@ -54,6 +55,8 @@ func TestDurability_EndToEnd(t *testing.T) {
 		SnapshotInterval: 1 * time.Hour,
 	}
 	require.NoError(t, store1.InitPersistence(cfg1))
+	store1.StartIndexingWorkers(2)
+	store1.StartIngestionWorkers(2)
 
 	// 2. Insert Data
 	rec1 := createDurabilityTestBatch(mem, 0, 10)
@@ -69,6 +72,8 @@ func TestDurability_EndToEnd(t *testing.T) {
 	// 3. Recover Store 2
 	store2 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	require.NoError(t, store2.InitPersistence(cfg1))
+	store2.StartIndexingWorkers(2)
+	store2.StartIngestionWorkers(2)
 	defer func() { _ = store2.Close() }()
 
 	// 4. Verify
@@ -77,7 +82,7 @@ func TestDurability_EndToEnd(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, ds)
 	require.Equal(t, 10, ds.IndexLen())
-	require.Len(t, ds.Records, 1)
+	require.Len(t, ds.Records.Read(), 1)
 	require.Equal(t, int64(10), ds.Records.Read()[0].NumRows())
 
 	idArr := ds.Records.Read()[0].Column(0).(*array.Int32)
@@ -88,7 +93,7 @@ func TestDurability_EndToEnd(t *testing.T) {
 // TestDurability_SnapshotAndWAL verifies recovery from a Snapshot + Subsequent WAL entries.
 func TestDurability_SnapshotAndWAL(t *testing.T) {
 	tmpDir := t.TempDir()
-	logger := zerolog.Nop()
+	logger := zerolog.New(os.Stderr).Level(zerolog.DebugLevel)
 	mem := memory.NewGoAllocator()
 
 	store1 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
@@ -97,6 +102,8 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 		SnapshotInterval: 1 * time.Hour,
 	}
 	require.NoError(t, store1.InitPersistence(cfg1))
+	store1.StartIndexingWorkers(2)
+	store1.StartIngestionWorkers(2)
 
 	// 2. Insert Batch A
 	recA := createDurabilityTestBatch(mem, 0, 5)
@@ -120,6 +127,8 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 	// 5. Recover Store 2
 	store2 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	require.NoError(t, store2.InitPersistence(cfg1))
+	store2.StartIndexingWorkers(2)
+	store2.StartIngestionWorkers(2)
 	defer func() { _ = store2.Close() }()
 
 	// 6. Verify
@@ -149,6 +158,8 @@ func TestDurability_IndexRebuild(t *testing.T) {
 	store1 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	cfg1 := storage.StorageConfig{DataPath: tmpDir}
 	require.NoError(t, store1.InitPersistence(cfg1))
+	store1.StartIndexingWorkers(2)
+	store1.StartIngestionWorkers(2)
 
 	// Vector Schema
 	schema := arrow.NewSchema([]arrow.Field{
@@ -182,6 +193,8 @@ func TestDurability_IndexRebuild(t *testing.T) {
 	// Recover
 	store2 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	require.NoError(t, store2.InitPersistence(cfg1))
+	store2.StartIndexingWorkers(2)
+	store2.StartIngestionWorkers(2)
 	defer func() { _ = store2.Close() }()
 
 	// Search
@@ -238,6 +251,8 @@ func TestDurability_WALTruncation(t *testing.T) {
 	store1 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	cfg1 := storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: 100 * time.Hour} // Manual snapshot
 	require.NoError(t, store1.InitPersistence(cfg1))
+	store1.StartIndexingWorkers(2)
+	store1.StartIngestionWorkers(2)
 
 	rec := createDurabilityTestBatch(mem, 100, 1) // 1 record
 	defer rec.Release()
@@ -254,6 +269,8 @@ func TestDurability_WALTruncation(t *testing.T) {
 	// Recover
 	store2 := NewVectorStore(mem, logger, 1<<30, 1<<30, 0)
 	require.NoError(t, store2.InitPersistence(cfg1))
+	store2.StartIndexingWorkers(2)
+	store2.StartIngestionWorkers(2)
 	defer func() { _ = store2.Close() }()
 
 	ds, _ := store2.GetDataset("ds_dup")

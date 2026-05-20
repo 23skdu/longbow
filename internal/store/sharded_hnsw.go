@@ -276,7 +276,11 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 
 	for i := 0; i < n; i++ {
 		// Allocate Global ID
-		gid := VectorID(idx.nextID.Add(1) - 1) // #nosec G115
+		rawID := idx.nextID.Add(1) - 1
+		if rawID > math.MaxUint32 {
+			return nil, fmt.Errorf("vector ID overflow: %d exceeds max uint32", rawID)
+		}
+		gid := VectorID(rawID) // #nosec G115 - bounds checked above
 		globalIDs[i] = uint32(gid)
 
 		// Set Global Location
@@ -420,7 +424,11 @@ func (idx *ShardedHNSW) GetGPUIndex() any {
 // AddByRecord adds a single vector from an Arrow RecordBatch to the sharded index.
 func (idx *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowIdx, batchIdx int) (uint32, error) {
 	// Allocate Global ID
-	id := VectorID(idx.nextID.Add(1) - 1) // #nosec G115
+	rawID := idx.nextID.Add(1) - 1
+	if rawID > math.MaxUint32 {
+		return 0, fmt.Errorf("vector ID overflow: %d exceeds max uint32", rawID)
+	}
+	id := VectorID(rawID) // #nosec G115 - bounds checked above
  
 	// Update global locations (Lock-Free)
 	idx.locationStore.EnsureCapacity(id)
@@ -1285,6 +1293,7 @@ func (idx *ShardedHNSW) ImportGraph(r io.Reader) error {
 		idx.shards = newShards
 	}
  
+	var maxGlobalID int64 = -1
 	for i := 0; i < int(header.NumShards); i++ {
 		shard := idx.shards[i]
  
@@ -1308,6 +1317,9 @@ func (idx *ShardedHNSW) ImportGraph(r io.Reader) error {
 				return fmt.Errorf("failed to read shard %d mapping %d: %w", i, j, err)
 			}
 			globalIDs[j] = VectorID(globalID)
+			if int64(globalID) > maxGlobalID {
+				maxGlobalID = int64(globalID)
+			}
 		}
  
 		if shard.locationStore == nil {
@@ -1326,6 +1338,10 @@ func (idx *ShardedHNSW) ImportGraph(r io.Reader) error {
 		}
 	}
  
+	if maxGlobalID >= 0 {
+		idx.nextID.Store(maxGlobalID + 1)
+	}
+
 	return nil
 }
 

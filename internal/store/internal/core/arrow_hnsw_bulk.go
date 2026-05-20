@@ -275,17 +275,27 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 				}
 			case []arrow.RecordBatch:
 				// Discover vector within the batch of records
-				// Assuming standard sequential mapping
+				// Assuming standard sequential mapping, skipping any nil batches
 				row := j
 				recIdx := 0
-				for row >= int(vs[recIdx].NumRows()) {
-					row -= int(vs[recIdx].NumRows())
+				for recIdx < len(vs) {
+					if vs[recIdx] == nil {
+						recIdx++
+						continue
+					}
+					numRows := int(vs[recIdx].NumRows())
+					if row < numRows {
+						break
+					}
+					row -= numRows
 					recIdx++
 				}
-				rec := vs[recIdx]
-				idx := h.getVectorColumnIndex(rec)
-				if idx != -1 {
-					v = h.extractVector(rec, idx, row)
+				if recIdx < len(vs) && vs[recIdx] != nil {
+					rec := vs[recIdx]
+					idx := h.getVectorColumnIndex(rec)
+					if idx != -1 {
+						v = h.extractVector(rec, idx, row)
+					}
 				}
 			case [][]uint32:
 				v = vs[j]

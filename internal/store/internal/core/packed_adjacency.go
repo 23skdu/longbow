@@ -73,26 +73,14 @@ func NewPackedAdjacencyWithArenas(arena *memory.SlabArena,
 		numChunks = 1
 	}
 
-	var chunks []uint64
-	var offHeapAlloc *memory.OffHeapAllocator
-	if arena != nil && arena.IsOffHeap() {
-		offHeapAlloc = memory.NewOffHeapAllocator()
-		size := numChunks * 8
-		newData := offHeapAlloc.Allocate(size)
-		if newData != nil {
-			chunks = unsafe.Slice((*uint64)(unsafe.Pointer(&newData[0])), numChunks) // #nosec G103
-		}
-	}
-	if chunks == nil {
-		chunks = make([]uint64, numChunks)
-	}
+	chunks := make([]uint64, numChunks)
 
 	pa := &PackedAdjacency{
 		baseArena:     arena,
 		neighborArena: neighborArena,
 		distanceArena: distanceArena,
 		pageArena:     pageArena,
-		offHeapAlloc:  offHeapAlloc,
+		offHeapAlloc:  nil, // Chunks initially on-heap to prevent concurrent off-heap resize races
 	}
 	pa.chunks.Store(&chunks)
 	pa.refCount.Store(1)
@@ -130,17 +118,7 @@ func (pa *PackedAdjacency) EnsureCapacity(nodeID uint32) {
 		newLen = curLen * 2
 	}
 
-	var newChunks []uint64
-	if pa.offHeapAlloc != nil {
-		size := newLen * 8
-		newData := pa.offHeapAlloc.Allocate(size)
-		if newData != nil {
-			newChunks = unsafe.Slice((*uint64)(unsafe.Pointer(&newData[0])), newLen) // #nosec G103
-		}
-	}
-	if newChunks == nil {
-		newChunks = make([]uint64, newLen)
-	}
+	newChunks := make([]uint64, newLen)
 
 	if curPtr != nil {
 		// Atomic copy to prevent race with concurrent CAS on slice elements
@@ -536,6 +514,7 @@ func (pa *PackedAdjacency) RelocateToOffHeap(alloc *memory.OffHeapAllocator) {
 	
 	copy(newChunksTyped, oldChunks)
 	pa.chunks.Store(&newChunksTyped)
+	pa.offHeapAlloc = alloc
 
 	// Also relocate the underlying arena if it exists
 	if pa.baseArena != nil {

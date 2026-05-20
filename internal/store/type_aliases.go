@@ -176,3 +176,16 @@ type TemporalSearchRequest = core.TemporalSearchRequest
 type TemporalAggregationRequest = core.TemporalAggregationRequest
 // TemporalVersionHistoryRequest defines a request for retrieving the version history of a vector.
 type TemporalVersionHistoryRequest = core.TemporalVersionHistoryRequest
+
+// LockFreeNeighborList provides lock-free reads with copy-on-write updates.
+type LockFreeNeighborList = hnswcore.LockFreeNeighborList
+
+// NewLockFreeNeighborList creates a new lock-free neighbor list.
+var NewLockFreeNeighborList = hnswcore.NewLockFreeNeighborList
+
+// LockFreeNeighborCache provides a cache of lock-free neighbor lists.
+type LockFreeNeighborCache = hnswcore.LockFreeNeighborCache
+
+// NewLockFreeNeighborCache creates a new neighbor cache.
+var NewLockFreeNeighborCache = hnswcore.NewLockFreeNeighborCache
+

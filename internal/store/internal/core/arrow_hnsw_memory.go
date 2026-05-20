@@ -194,5 +194,13 @@ func (h *ArrowHNSW) compareAndSwapData(current, newData *types.GraphData) bool {
 	if current != nil && newData != nil && newData.Capacity < current.Capacity {
 		return false
 	}
-	return h.data.CompareAndSwap(current, newData)
+	swapped := h.data.CompareAndSwap(current, newData)
+	if swapped {
+		for i := 0; i < len(h.neighborCache); i++ {
+			if h.neighborCache[i] != nil {
+				h.neighborCache[i].Clear()
+			}
+		}
+	}
+	return swapped
 }

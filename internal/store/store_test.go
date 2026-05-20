@@ -44,6 +44,9 @@ func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(cont
 		t.Fatalf("Failed to init persistence: %v", err)
 	}
 
+	vs.StartIndexingWorkers(2)
+	vs.StartIngestionWorkers(2)
+
 	s := grpc.NewServer()
 	flight.RegisterFlightServiceServer(s, vs)
 

@@ -7,6 +7,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promauto"
 )
 
+// TraceContext represents the metadata context for a distributed tracing span.
 type TraceContext struct {
 	TraceID    string
 	SpanID     string
@@ -20,6 +21,7 @@ type TraceContext struct {
 }
 
 var (
+	// TraceSpansCreated tracks the total number of trace spans created.
 	TraceSpansCreated = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_trace_spans_created_total",
@@ -121,6 +123,7 @@ var (
 	)
 )
 
+// RecordTraceSpan records the completion of a trace span.
 func RecordTraceSpan(ctx *TraceContext) {
 	status := "success"
 	if ctx.Error != "" {
@@ -135,38 +138,47 @@ func RecordTraceSpan(ctx *TraceContext) {
 	}
 }
 
+// RecordContextPropagation records a trace context propagation attempt.
 func RecordContextPropagation(source, target, status string) {
 	TraceContextPropagationTotal.WithLabelValues(source, target, status).Inc()
 }
 
+// RecordTraceSamplingRate sets the trace sampling rate for a given service and operation.
 func RecordTraceSamplingRate(service, operation string, rate float64) {
 	TraceSamplingRate.WithLabelValues(service, operation).Set(rate)
 }
 
+// RecordTraceBufferUtilization sets the current utilization of the trace buffer.
 func RecordTraceBufferUtilization(bufferType string, utilization float64) {
 	TraceBufferUtilization.WithLabelValues(bufferType).Set(utilization)
 }
 
+// RecordTraceExport records a trace export event.
 func RecordTraceExport(backend, status string) {
 	TraceExportsTotal.WithLabelValues(backend, status).Inc()
 }
 
+// SetActiveCorrelationIDs sets the number of active correlation IDs for an operation.
 func SetActiveCorrelationIDs(operation string, count float64) {
 	CorrelationIDActive.WithLabelValues(operation).Set(count)
 }
 
+// IncrementCorrelationIDs increments the correlation ID counter.
 func IncrementCorrelationIDs(operation, source string) {
 	CorrelationIDTotal.WithLabelValues(operation, source).Inc()
 }
 
+// RecordSearchLatencyTraced records search latency with tracing details.
 func RecordSearchLatencyTraced(dataset, searchType string, duration time.Duration) {
 	SearchLatencyTraced.WithLabelValues(dataset, searchType).Observe(duration.Seconds())
 }
 
+// RecordIndexingLatencyTraced records indexing latency with tracing details.
 func RecordIndexingLatencyTraced(dataset, indexType string, duration time.Duration) {
 	IndexingLatencyTraced.WithLabelValues(dataset, indexType).Observe(duration.Seconds())
 }
 
+// RecordIOLatencyTraced records I/O latency with tracing details.
 func RecordIOLatencyTraced(operation, storageType string, duration time.Duration) {
 	IOLatencyTraced.WithLabelValues(operation, storageType).Observe(duration.Seconds())
 }

@@ -91,6 +91,7 @@ func (idx *AdaptiveIndex) IsSharded() bool {
 	return false
 }
 
+// ReleaseMonolithicChunk releases a monolithic chunk from memory.
 func (idx *AdaptiveIndex) ReleaseMonolithicChunk(cID int) error {
 	// AdaptiveIndex delegates if needed, but usually not used for BruteForce
 	return nil
@@ -121,6 +122,7 @@ func NewBruteForceIndex(ds *Dataset) VectorIndex {
 // IsSharded returns true if the index is sharded. BruteForceIndex is never sharded.
 func (b *BruteForceIndex) IsSharded() bool { return false }
 
+// ReleaseMonolithicChunk releases a monolithic chunk from memory.
 func (b *BruteForceIndex) ReleaseMonolithicChunk(cID int) error {
 	// BruteForceIndex doesn't use the monolithic chunking model
 	return nil
@@ -1147,6 +1149,7 @@ func (idx *AdaptiveIndex) GetShardedIndex() *ShardedHNSW {
 	return nil
 }
 
+// RelocateToOffHeap relocates index structures to off-heap memory.
 func (idx *AdaptiveIndex) RelocateToOffHeap() error {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -1159,6 +1162,7 @@ func (idx *AdaptiveIndex) RelocateToOffHeap() error {
 	return nil
 }
 
-func (idx *BruteForceIndex) RelocateToOffHeap() error {
+// RelocateToOffHeap relocates index structures to off-heap memory.
+func (b *BruteForceIndex) RelocateToOffHeap() error {
 	return nil
 }

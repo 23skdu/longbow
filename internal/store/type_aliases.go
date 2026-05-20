@@ -40,7 +40,9 @@ type Candidate = types.Candidate
 const (
 	// MaxNeighbors is the maximum number of neighbors allowed for a node in the HNSW graph.
 	MaxNeighbors   = types.MaxNeighbors
+	// ChunkSize is the number of elements processed in a single chunk.
 	ChunkSize      = types.ChunkSize
+	// ArrowMaxLayers is the maximum number of layers in the Arrow HNSW index.
 	ArrowMaxLayers = types.ArrowMaxLayers
 )
 
@@ -102,6 +104,7 @@ type ArrowSearchContextPool = hnswcore.ArrowSearchContextPool
 const (
 	// DiskGraphMagic is a magic number used to identify DiskGraph files.
 	DiskGraphMagic   = hnswcore.DiskGraphMagic
+	// DiskGraphVersion is the current version of the DiskGraph file format.
 	DiskGraphVersion = hnswcore.DiskGraphVersion
 )
 

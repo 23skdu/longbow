@@ -34,7 +34,7 @@ var (
 	metricsCacheMap sync.Map // map[string]*MetricsCache
 )
 
-// GetMetricsCache returns a cached MetricsCache for the given labels.
+// GetMetricsCache retrieves a cached MetricsCache for the given labels.
 func GetMetricsCache(dtype, dimension, operation string) *MetricsCache {
 	key := dtype + ":" + dimension + ":" + operation
 	if val, ok := metricsCacheMap.Load(key); ok {
@@ -78,7 +78,7 @@ func RecordSearchBatchMetrics(dtype, dimension, operation string, count int, dur
 // =============================================================================
 
 var (
-	// SimdKernelDuration tracks SIMD kernel execution duration by dimension and operation
+	// SimdKernelDuration tracks SIMD kernel execution duration by dimension and operation.
 	SimdKernelDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name: "longbow_simd_kernel_duration_seconds",
@@ -162,7 +162,7 @@ var (
 // =============================================================================
 
 var (
-	// SearchAllocationBytes tracks search-related memory allocations
+	// SearchAllocationBytes tracks search-related memory allocations.
 	SearchAllocationBytes = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name: "longbow_search_allocation_bytes",

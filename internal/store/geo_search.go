@@ -134,6 +134,7 @@ func NewQuadtree(bounds GeoBoundingBox, capacity int, datasetName string) *Quadt
 	}
 }
 
+// Insert adds a geographic vector to the quadtree.
 func (q *Quadtree) Insert(vec *GeoIndexedVector) bool {
 	if !q.Contains(vec.GeoPoint) {
 		return false
@@ -718,6 +719,7 @@ func (gi *GeoIndex) Get(id uint64) (*GeoIndexedVector, bool) {
 	return val.(*GeoIndexedVector), true
 }
 
+// Delete removes a vector from the geo index by its ID.
 func (gi *GeoIndex) Delete(id uint64) {
 	
 	if _, ok := gi.vectors.Load(id); ok {

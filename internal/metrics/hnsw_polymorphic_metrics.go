@@ -43,6 +43,7 @@ var (
 		Help: "Total number of complex number distance calculations",
 	}, []string{"type"})
 
+	// HNSWPolymorphicSearchCount tracks the total number of searches by polymorphic vector type.
 	HNSWPolymorphicSearchCount = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "longbow_hnsw_polymorphic_search_count",
 		Help: "Total number of searches by polymorphic vector type",

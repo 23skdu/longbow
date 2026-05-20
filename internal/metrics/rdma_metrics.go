@@ -6,6 +6,7 @@ import (
 )
 
 var (
+	// RDMABytesProcessedTotal tracks the total number of bytes processed via RDMA transport.
 	RDMABytesProcessedTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_rdma_bytes_processed_total",
 		Help: "The total number of bytes processed via RDMA transport",

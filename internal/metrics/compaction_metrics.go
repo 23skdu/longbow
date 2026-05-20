@@ -10,6 +10,7 @@ import (
 // =============================================================================
 
 var (
+	// CompactionOperationsTotal tracks the total compaction operations by status.
 	CompactionOperationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_compaction_operations_total",
@@ -90,7 +91,7 @@ var (
 		},
 	)
 
-	// AdaptiveIndexMigrationsTotal
+	// AdaptiveIndexMigrationsTotal tracks the total number of adaptive index migrations.
 	AdaptiveIndexMigrationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_adaptive_index_migrations_total",
@@ -99,7 +100,7 @@ var (
 		[]string{"from", "to"},
 	)
 
-	// HnswSearchesTotal
+	// HnswSearchesTotal tracks the total number of HNSW index searches.
 	HnswSearchesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_searches_total",
@@ -107,7 +108,7 @@ var (
 		},
 	)
 
-	// BruteForceSearchesTotal
+	// BruteForceSearchesTotal tracks the total number of brute force searches.
 	BruteForceSearchesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_brute_force_searches_total",
@@ -115,7 +116,7 @@ var (
 		},
 	)
 
-	// BinaryQuantizeOpsTotal
+	// BinaryQuantizeOpsTotal tracks the total number of binary quantization operations.
 	BinaryQuantizeOpsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_binary_quantize_ops_total",
@@ -123,7 +124,7 @@ var (
 		},
 	)
 
-	// POPCNTDistanceOpsTotal
+	// POPCNTDistanceOpsTotal tracks the total number of POPCNT distance calculations.
 	POPCNTDistanceOpsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_popcnt_distance_ops_total",
@@ -131,7 +132,7 @@ var (
 		},
 	)
 
-	// BitmapPoolGetsTotal
+	// BitmapPoolGetsTotal tracks the total number of bitmap pool retrievals.
 	BitmapPoolGetsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bitmap_pool_gets_total",
@@ -139,7 +140,7 @@ var (
 		},
 	)
 
-	// BitmapPoolHitsTotal
+	// BitmapPoolHitsTotal tracks the total number of bitmap pool hits.
 	BitmapPoolHitsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bitmap_pool_hits_total",
@@ -147,7 +148,7 @@ var (
 		},
 	)
 
-	// BitmapPoolMissesTotal
+	// BitmapPoolMissesTotal tracks the total number of bitmap pool misses.
 	BitmapPoolMissesTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bitmap_pool_misses_total",
@@ -155,7 +156,7 @@ var (
 		},
 	)
 
-	// BitmapPoolPutsTotal
+	// BitmapPoolPutsTotal tracks the total number of bitmap pool returns.
 	BitmapPoolPutsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bitmap_pool_puts_total",
@@ -163,7 +164,7 @@ var (
 		},
 	)
 
-	// BitmapPoolDiscardsTotal
+	// BitmapPoolDiscardsTotal tracks the total number of bitmap pool discards.
 	BitmapPoolDiscardsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_bitmap_pool_discards_total",
@@ -171,7 +172,7 @@ var (
 		},
 	)
 
-	// Checkpoint Metrics
+	// CheckpointEpoch tracks the current checkpoint epoch.
 	CheckpointEpoch = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_checkpoint_epoch",
@@ -197,7 +198,7 @@ var (
 		},
 	)
 
-	// Store Circuit Breaker Metrics
+	// CircuitBreakerStateChanges tracks the total number of circuit breaker state changes.
 	CircuitBreakerStateChanges = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_store_circuit_breaker_state_changes_total",
@@ -233,7 +234,7 @@ var (
 		[]string{"stage"},
 	)
 
-	// VectorSearchLatencySeconds
+	// VectorSearchLatencySeconds measures the latency of vector search operations.
 	VectorSearchLatencySeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_vector_search_latency_seconds",
@@ -243,7 +244,7 @@ var (
 		[]string{"dataset"},
 	)
 
-	// BatchDistanceDurationSeconds
+	// BatchDistanceDurationSeconds measures the duration of batch distance calculations.
 	BatchDistanceDurationSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_batch_distance_duration_seconds",
@@ -252,7 +253,7 @@ var (
 		},
 	)
 
-	// BatchDistanceCallsTotal
+	// BatchDistanceCallsTotal tracks the total number of batch distance calculation calls.
 	BatchDistanceCallsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_batch_distance_calls_total",
@@ -260,7 +261,7 @@ var (
 		},
 	)
 
-	// BatchDistanceBatchSize
+	// BatchDistanceBatchSize tracks the distribution of batch sizes in distance calculations.
 	BatchDistanceBatchSize = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_batch_distance_batch_size",
@@ -269,7 +270,7 @@ var (
 		},
 	)
 
-	// Hybrid Search Metrics
+	// HybridSearchVectorTotal tracks the total number of hybrid searches triggered by vector queries.
 	HybridSearchVectorTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_hybrid_search_vector_total",
@@ -283,7 +284,7 @@ var (
 		},
 	)
 
-	// Namespace Metrics
+	// NamespacesTotal tracks the total number of active namespaces.
 	NamespacesTotal = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_namespaces_total",
@@ -291,7 +292,7 @@ var (
 		},
 	)
 
-	// Semaphore Metrics
+	// SemaphoreWaitingRequests tracks the number of requests waiting for the semaphore.
 	SemaphoreWaitingRequests = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_semaphore_waiting_requests",
@@ -324,7 +325,7 @@ var (
 		},
 	)
 
-	// Schema Evolution Metrics
+	// SchemaVersionCurrent tracks the current schema version of datasets.
 	SchemaVersionCurrent = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_schema_version_current",
@@ -352,7 +353,7 @@ var (
 		},
 	)
 
-	// Store Metrics
+	// DoPutPayloadSizeBytes tracks the payload size of DoPut operations.
 	DoPutPayloadSizeBytes = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_do_put_payload_size_bytes",
@@ -374,7 +375,7 @@ var (
 		},
 		[]string{"step", "status"},
 	)
-	// Inverted Index Metrics
+	// InvertedIndexBytes tracks the size of the inverted index in bytes.
 	InvertedIndexBytes = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_inverted_index_size_bytes",
@@ -390,7 +391,7 @@ var (
 		},
 	)
 
-	// Restored DoGetZeroCopyTotal
+	// DoGetZeroCopyTotal tracks the total number of zero-copy optimizations in DoGet.
 	DoGetZeroCopyTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_do_get_zero_copy_total",
@@ -399,7 +400,7 @@ var (
 		[]string{"type"},
 	)
 
-	// Network Metrics
+	// TCPNoDelayConnectionsTotal tracks the total number of TCP connections with NoDelay enabled.
 	TCPNoDelayConnectionsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_tcp_nodelay_connections_total",
@@ -407,7 +408,7 @@ var (
 		},
 	)
 
-	// Vector Search Action Metrics
+	// VectorSearchParseFallbackTotal tracks the total number of vector search parse fallbacks.
 	VectorSearchParseFallbackTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_vector_search_parse_fallback_total",
@@ -448,7 +449,7 @@ var (
 		},
 	)
 
-	// Compound Filter Metrics
+	// CompoundFilterOpsTotal tracks the total compound filter operations by logic type.
 	CompoundFilterOpsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_compound_filter_ops_total",
@@ -470,7 +471,7 @@ var (
 		},
 	)
 
-	// Parser Pool Metrics
+	// ParserPoolGets tracks the total number of parser pool retrievals.
 	ParserPoolGets = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_parser_pool_gets_total",
@@ -496,7 +497,7 @@ var (
 		},
 	)
 
-	// gRPC Configuration Metrics
+	// GRPCMaxRecvMsgSizeBytes tracks the configured maximum receive message size for gRPC.
 	GRPCMaxRecvMsgSizeBytes = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_grpc_max_recv_msg_size_bytes",

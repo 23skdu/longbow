@@ -14,7 +14,6 @@ import (
 	"github.com/rs/zerolog"
 )
 
-// MLModel defines the interface for ML model inference
 // MLModel defines the interface for ML model inference.
 type MLModel interface {
 	// Score calculates relevance scores for a query and a set of documents.
@@ -319,16 +318,6 @@ func findSubstring(s, sub string) int {
 	return -1
 }
 
-func countKeywordMatches(query, doc string) int {
-	count := 0
-	words := splitWords(query)
-	for _, word := range words {
-		if len(word) > 2 && findSubstring(doc, word) >= 0 {
-			count++
-		}
-	}
-	return count
-}
 
 func splitWords(s string) []string {
 	words := []string{}

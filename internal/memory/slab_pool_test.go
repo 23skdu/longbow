@@ -171,3 +171,27 @@ func BenchmarkSlabPool_Parallel(b *testing.B) {
 		}
 	})
 }
+
+func TestSlabPool_Autoscale(t *testing.T) {
+	pool := newSlabPool(4 * 1024 * 1024)
+	assert.Equal(t, int64(100), pool.maxPooled)
+
+	// Allocate more slabs than current maxPooled to trigger scale up
+	slabs := make([][]byte, 150)
+	for i := range slabs {
+		slabs[i] = pool.Get()
+	}
+
+	// maxPooled should have dynamically increased (incremented in steps of 50)
+	assert.Greater(t, pool.maxPooled, int64(100))
+	assert.Equal(t, int64(150), pool.maxPooled)
+
+	// Return all slabs
+	for _, slab := range slabs {
+		pool.Put(slab)
+	}
+
+	// Release unused slabs should trigger scale down back to baseline (100)
+	pool.ReleaseUnused()
+	assert.Equal(t, int64(100), pool.maxPooled)
+}

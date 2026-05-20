@@ -321,11 +321,11 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	return vs
 }
 
-func (s *VectorStore) getPooledMetadataBuffer(size int) []byte {
+func (vs *VectorStore) getPooledMetadataBuffer(size int) []byte {
 	if size > loadbalancing.LoadHintsSize {
 		return make([]byte, size)
 	}
-	bufPtr := s.metadataPool.Get().(*[]byte)
+	bufPtr := vs.metadataPool.Get().(*[]byte)
 	// Note: In a production gRPC server, we would need a way to return this to the pool.
 	// For now, we provide the pooled buffer to reduce allocation pressure.
 	return *bufPtr

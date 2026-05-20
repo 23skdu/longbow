@@ -6,6 +6,7 @@ import (
 )
 
 var (
+	// HNSWAdaptiveMValue tracks the current value of the M parameter in the HNSW graph.
 	HNSWAdaptiveMValue = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "longbow_hnsw_adaptive_m_value",
 		Help: "Current value of M parameter in HNSW graph",

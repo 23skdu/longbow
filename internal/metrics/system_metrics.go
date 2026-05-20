@@ -19,6 +19,7 @@ var (
 		},
 	)
 
+	// SimdEnabled tracks whether SIMD acceleration is enabled for the architecture.
 	SimdEnabled = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_simd_enabled",
@@ -60,19 +61,19 @@ var (
 		},
 	)
 
-	// ParallelReductionVectorsProcessed tracks the number of vectors processed using parallel reduction
+	// ParallelReductionVectorsProcessed tracks the number of vectors processed using parallel reduction.
 	ParallelReductionVectorsProcessed = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_parallel_reduction_vectors_processed_total",
 		Help: "Total number of vectors processed using parallel reduction optimizations",
 	})
 
-	// SimdF16OpsTotal tracks the number of FP16 SIMD operations performed
+	// SimdF16OpsTotal tracks the number of FP16 SIMD operations explicitly dispatched.
 	SimdF16OpsTotal = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "longbow_simd_f16_ops_total",
 		Help: "Total number of FP16 SIMD operations explicitly dispatched",
 	}, []string{"operation", "impl"})
 
-	// SimdStaticDispatchType tracks the currently active SIMD implementation type
+	// SimdStaticDispatchType tracks the currently active SIMD implementation type.
 	// 0=Generic, 1=NEON, 2=AVX2, 3=AVX512
 	SimdStaticDispatchType = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "longbow_simd_static_dispatch_type",

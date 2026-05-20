@@ -56,6 +56,7 @@ func (nm *NodeMonitor) updateStats() {
 	}
 }
 
+// Stop terminates the background monitoring loop.
 func (nm *NodeMonitor) Stop() {
 	close(nm.stopChan)
 }
@@ -70,5 +71,8 @@ func (nm *NodeMonitor) GetLoadHints() loadbalancing.LoadHints {
 	}
 }
 
+// IncrementQueue increases the queue depth by one.
 func (nm *NodeMonitor) IncrementQueue() { nm.queueDepth.Add(1) }
+
+// DecrementQueue decreases the queue depth by one.
 func (nm *NodeMonitor) DecrementQueue() { nm.queueDepth.Add(-1) }

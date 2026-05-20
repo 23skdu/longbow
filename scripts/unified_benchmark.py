@@ -529,40 +529,45 @@ class BenchmarkRunner:
         json_file = os.path.join(self.log_dir, f"result_{label}.json")
 
         # Handle TurboQuant bit-packs
+        is_turboquant = False
         tq_bits = 4
         if dtype == "turboquant2":
             dtype = "turboquant"
             tq_bits = 2
+            is_turboquant = True
         elif dtype == "turboquant4":
             dtype = "turboquant"
             tq_bits = 4
+            is_turboquant = True
         elif dtype == "turboquant8":
             dtype = "turboquant"
             tq_bits = 8
+            is_turboquant = True
 
         # Run benchmark-tool (does ingest + search + all modes)
         uri = self.server_addr
         if not uri.startswith("grpc://"):
             uri = f"grpc://{self.server_addr}"
-        
+
         # Build search-modes string based on mode
         search_modes = self.args.search_modes
         if self.args.mode == "temporal" and search_modes == "all":
             search_modes = "temporal_as_of,temporal_range,temporal_window"
-        
+
         extra_args = ""
         if self.args.fbin:
             extra_args += f" -fbin {self.args.fbin}"
         if self.args.arrow:
             extra_args += f" -fbin {self.args.arrow}"
-            
+
         if self.args.generate_only:
             os.makedirs(self.args.output_dir, exist_ok=True)
             output_path = os.path.join(self.args.output_dir, f"{label}.fbin")
             extra_args += f" -output-fbin {output_path}"
             print(f"  Generating {dtype} dim={dim} count={batch_size} -> {output_path}")
-        
-        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype} -tq-bits {tq_bits} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
+
+        tq_arg = f" -tq-bits {tq_bits}" if is_turboquant else ""
+        cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype}{tq_arg} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
         print(f"DEBUG: cmd={cmd}", flush=True)
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)

@@ -215,6 +215,7 @@ type temporalLeafRef struct {
 	Ref   memory.SliceRef
 }
 
+// TemporalTree is a memory-efficient index structure for geographic or temporal vectors.
 type TemporalTree struct {
 	mu             sync.RWMutex
 	leafArena      *memory.TypedArena[temporalLeaf]
@@ -239,6 +240,7 @@ func NewTemporalTree(arena *memory.SlabArena) *TemporalTree {
 	}
 }
 
+// Release deallocates the arenas used by the temporal tree.
 func (tt *TemporalTree) Release() {
 	if tt.leafArena != nil {
 		tt.leafArena.Release()

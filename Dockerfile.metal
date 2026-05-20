@@ -16,6 +16,8 @@ WORKDIR /app
 
 # Metal binary would be copied here if built on macOS
 COPY bin/longbow-metal /usr/local/bin/longbow
+COPY bin/longbow-cli /usr/local/bin/longbow-cli
+COPY bin/bench-tool /usr/local/bin/bench-tool
 
 ENV LONGBOW_GPU_ENABLED=true
 ENV LONGBOW_STORAGE_USE_IOURING=false

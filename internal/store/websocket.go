@@ -26,10 +26,15 @@ type WSMessageType string
 const (
 	// WSTypeSubscribe is the message type for subscribing to a dataset stream.
 	WSTypeSubscribe   WSMessageType = "subscribe"
+	// WSTypeUnsubscribe is the message type for unsubscribing from a dataset stream.
 	WSTypeUnsubscribe WSMessageType = "unsubscribe"
+	// WSTypeData is the message type for sending data updates to the client.
 	WSTypeData        WSMessageType = "data"
+	// WSTypeError is the message type for communicating error details to the client.
 	WSTypeError       WSMessageType = "error"
+	// WSTypePing is the message type for sending ping health checks.
 	WSTypePing        WSMessageType = "ping"
+	// WSTypePong is the message type for sending pong health responses.
 	WSTypePong        WSMessageType = "pong"
 )
 
@@ -165,6 +170,7 @@ func (ws *WSConnection) Close() {
 const (
 	// DefaultWSMaxConnections is the default maximum number of concurrent WebSocket connections allowed.
 	DefaultWSMaxConnections = 1000
+	// DefaultWSIdleTimeout is the duration a connection is allowed to remain idle before being disconnected.
 	DefaultWSIdleTimeout    = 5 * time.Minute
 )
 

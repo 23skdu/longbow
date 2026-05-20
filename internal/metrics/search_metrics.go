@@ -10,7 +10,7 @@ import (
 // =============================================================================
 
 var (
-	// SearchRequestsTotal counts total number of search requests (vector, hybrid, etc.)
+	// SearchRequestsTotal tracks the total number of search requests processed.
 	SearchRequestsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_search_requests_total",
@@ -111,8 +111,7 @@ var (
 // =============================================================================
 
 var (
-	// EOFNormalisationTotal counts how often stream-terminal errors are
-	// successfully normalised to nil (expected, healthy stream termination).
+	// EOFNormalisationTotal tracks the total number of stream EOF normalisations.
 	EOFNormalisationTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_eof_normalisation_total",
@@ -156,7 +155,7 @@ var (
 // =============================================================================
 
 var (
-	// SearchConsistencyLevelTotal counts searches by requested consistency level.
+	// SearchConsistencyLevelTotal tracks the total number of searches by consistency level.
 	SearchConsistencyLevelTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_search_consistency_level_total",
@@ -182,7 +181,7 @@ var (
 // =============================================================================
 
 var (
-	// GetNeighborsTotal counts GetNeighbors operations by result outcome.
+	// GetNeighborsTotal tracks the total number of GetNeighbors operations.
 	GetNeighborsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_get_neighbors_total",

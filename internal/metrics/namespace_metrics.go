@@ -6,6 +6,7 @@ import (
 )
 
 var (
+	// NamespaceQPS tracks the total number of queries per namespace.
 	NamespaceQPS = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_namespace_queries_total",
@@ -88,39 +89,48 @@ var (
 	)
 )
 
+// RecordNamespaceQuery records a query execution and its latency for a namespace.
 func RecordNamespaceQuery(namespace string, latencySeconds float64) {
 	NamespaceQPS.WithLabelValues(namespace).Inc()
 	NamespaceLatency.WithLabelValues(namespace).Observe(latencySeconds)
 }
 
+// RecordNamespaceStorage sets the current storage usage for a namespace.
 func RecordNamespaceStorage(namespace string, bytes int64) {
 	NamespaceStorageBytes.WithLabelValues(namespace).Set(float64(bytes))
 }
 
+// RecordNamespaceVectors sets the current vector count for a namespace.
 func RecordNamespaceVectors(namespace string, count int64) {
 	NamespaceVectorCount.WithLabelValues(namespace).Set(float64(count))
 }
 
+// RecordNamespaceIngestRate sets the current ingestion rate for a namespace.
 func RecordNamespaceIngestRate(namespace string, rate float64) {
 	NamespaceIngestRate.WithLabelValues(namespace).Set(rate)
 }
 
+// SetNamespaceQuotaLimit sets the quota limit for a namespace.
 func SetNamespaceQuotaLimit(namespace, quotaType string, limit float64) {
 	NamespaceQuotaLimit.WithLabelValues(namespace, quotaType).Set(limit)
 }
 
+// SetNamespaceQuotaUsed sets the used quota amount for a namespace.
 func SetNamespaceQuotaUsed(namespace, quotaType string, used float64) {
 	NamespaceQuotaUsed.WithLabelValues(namespace, quotaType).Set(used)
 }
 
+// RecordNamespaceRateLimitHit records a rate limit breach for a namespace.
 func RecordNamespaceRateLimitHit(namespace string) {
 	NamespaceRateLimitHits.WithLabelValues(namespace).Inc()
 }
 
+// RecordNamespaceCacheHit records a query cache hit for a namespace.
 func RecordNamespaceCacheHit(namespace string) {
 	NamespaceCacheHits.WithLabelValues(namespace).Inc()
 }
 
+// RecordNamespaceCacheMiss records a query cache miss for a namespace.
 func RecordNamespaceCacheMiss(namespace string) {
 	NamespaceCacheMisses.WithLabelValues(namespace).Inc()
 }

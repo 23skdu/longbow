@@ -144,36 +144,36 @@ func NewMapRCU[K comparable, V any]() *MapRCU[K, V] {
 }
  
 // Load returns the current map. The returned map MUST NOT be modified.
-func (m *MapRCU[K, V]) Load() map[K]V {
-	return m.data.Load().(map[K]V)
+func (l *MapRCU[K, V]) Load() map[K]V {
+	return l.data.Load().(map[K]V)
 }
  
 // Get retrieves a value from the map.
-func (m *MapRCU[K, V]) Get(key K) (V, bool) {
-	val, ok := m.Load()[key]
+func (l *MapRCU[K, V]) Get(key K) (V, bool) {
+	val, ok := l.Load()[key]
 	return val, ok
 }
  
 // Store updates the map using a Copy-On-Write operation.
-func (m *MapRCU[K, V]) Store(key K, val V) {
-	m.writeMu.Lock()
-	defer m.writeMu.Unlock()
+func (l *MapRCU[K, V]) Store(key K, val V) {
+	l.writeMu.Lock()
+	defer l.writeMu.Unlock()
  
-	oldMap := m.Load()
+	oldMap := l.Load()
 	newMap := make(map[K]V, len(oldMap)+1)
 	for k, v := range oldMap {
 		newMap[k] = v
 	}
 	newMap[key] = val
-	m.data.Store(newMap)
+	l.data.Store(newMap)
 }
  
 // Delete removes a key from the map using COW.
-func (m *MapRCU[K, V]) Delete(key K) {
-	m.writeMu.Lock()
-	defer m.writeMu.Unlock()
+func (l *MapRCU[K, V]) Delete(key K) {
+	l.writeMu.Lock()
+	defer l.writeMu.Unlock()
  
-	oldMap := m.Load()
+	oldMap := l.Load()
 	if _, ok := oldMap[key]; !ok {
 		return
 	}
@@ -184,12 +184,12 @@ func (m *MapRCU[K, V]) Delete(key K) {
 			newMap[k] = v
 		}
 	}
-	m.data.Store(newMap)
+	l.data.Store(newMap)
 }
  
 // Range iterates over the map. The map is a consistent snapshot.
-func (m *MapRCU[K, V]) Range(f func(key K, val V) bool) {
-	for k, v := range m.Load() {
+func (l *MapRCU[K, V]) Range(f func(key K, val V) bool) {
+	for k, v := range l.Load() {
 		if !f(k, v) {
 			break
 		}
@@ -197,14 +197,14 @@ func (m *MapRCU[K, V]) Range(f func(key K, val V) bool) {
 }
 
 // BulkStore updates multiple keys using a single Copy-On-Write operation.
-func (m *MapRCU[K, V]) BulkStore(updates map[K]V) {
+func (l *MapRCU[K, V]) BulkStore(updates map[K]V) {
 	if len(updates) == 0 {
 		return
 	}
-	m.writeMu.Lock()
-	defer m.writeMu.Unlock()
+	l.writeMu.Lock()
+	defer l.writeMu.Unlock()
 
-	oldMap := m.Load()
+	oldMap := l.Load()
 	newMap := make(map[K]V, len(oldMap)+len(updates))
 	for k, v := range oldMap {
 		newMap[k] = v
@@ -212,18 +212,18 @@ func (m *MapRCU[K, V]) BulkStore(updates map[K]V) {
 	for k, v := range updates {
 		newMap[k] = v
 	}
-	m.data.Store(newMap)
+	l.data.Store(newMap)
 }
 
 // BulkDelete removes multiple keys using COW.
-func (m *MapRCU[K, V]) BulkDelete(keys []K) {
+func (l *MapRCU[K, V]) BulkDelete(keys []K) {
 	if len(keys) == 0 {
 		return
 	}
-	m.writeMu.Lock()
-	defer m.writeMu.Unlock()
+	l.writeMu.Lock()
+	defer l.writeMu.Unlock()
 
-	oldMap := m.Load()
+	oldMap := l.Load()
 	newMap := make(map[K]V, len(oldMap))
 	for k, v := range oldMap {
 		newMap[k] = v
@@ -231,5 +231,5 @@ func (m *MapRCU[K, V]) BulkDelete(keys []K) {
 	for _, k := range keys {
 		delete(newMap, k)
 	}
-	m.data.Store(newMap)
+	l.data.Store(newMap)
 }

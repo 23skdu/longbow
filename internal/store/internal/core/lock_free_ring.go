@@ -99,11 +99,12 @@ func (rb *LockFreeRingBuffer[T]) Pop() (T, bool) {
 		seq = slot.sequence.Load()
 		nextSeq = head + 1
 
-		// Check if slot has data for this turn
 		if seq == nextSeq {
 			if rb.head.CompareAndSwap(head, nextSeq) {
 				// We claimed the item
 				item = slot.data
+				var zero T
+				slot.data = zero // Clear reference to prevent memory leak
 				// Mark as available for production (one full cycle later)
 				slot.sequence.Store(head + uint64(len(rb.buffer)))
 				return item, true

@@ -103,6 +103,7 @@ var (
 		Buckets: []float64{0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1, 5},
 	})
 
+	// DoExchangeSearchTotal tracks the total number of DoExchange search operations.
 	DoExchangeSearchTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_do_exchange_search_total",
@@ -133,6 +134,7 @@ var (
 // =============================================================================
 
 var (
+	// GRPCMaxHeaderListSize tracks the configured maximum header list size for gRPC.
 	GRPCMaxHeaderListSize = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_grpc_max_header_list_size",

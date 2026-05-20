@@ -32,8 +32,23 @@ const ShardedLockCount = 1024
 // It assumes IDs, locations, and capacity have already been prepared/reserved.
 func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vecs any) error {
 	h.bulkMu.Lock()
-	defer h.bulkMu.Unlock()
-	return h.addBatchBulkInternal(ctx, startID, n, vecs)
+	err := h.addBatchBulkInternal(ctx, startID, n, vecs)
+	h.bulkMu.Unlock()
+
+	if n > 0 {
+		finalID := int64(startID + uint32(n)) // #nosec G115
+		h.commitMu.Lock()
+		for h.nodeCount.Load() < int64(startID) {
+			h.commitCond.Wait()
+		}
+		if h.nodeCount.Load() < finalID {
+			h.nodeCount.Store(finalID)
+		}
+		h.commitCond.Broadcast()
+		h.commitMu.Unlock()
+	}
+
+	return err
 }
 
 func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n int, vecs any) error {
@@ -45,20 +60,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		return err
 	}
 	start := time.Now()
-	
-	// Ensure nodeCount is advanced even on error/cancellation to unblock subsequent writers.
-	defer func(batchSize int) {
-		finalID := int64(startID + uint32(batchSize)) // #nosec G115
-		h.commitMu.Lock()
-		for h.nodeCount.Load() < int64(startID) {
-			h.commitCond.Wait()
-		}
-		if h.nodeCount.Load() < finalID {
-			h.nodeCount.Store(finalID)
-		}
-		h.commitCond.Broadcast()
-		h.commitMu.Unlock()
-	}(n)
+
 	defer func() {
 		duration := time.Since(start).Seconds()
 		metrics.HNSWBulkInsertDurationSeconds.Observe(duration)

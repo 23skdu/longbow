@@ -116,6 +116,26 @@ func (p *SlabPool) Get() []byte {
 	} else {
 		atomic.AddInt64(&p.misses, 1)
 		metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "miss").Inc()
+
+		// Dynamic scale up: if we miss and our active usage exceeds current maxPooled,
+		// expand maxPooled capacity to reduce future allocation/zeroing costs.
+		for {
+			currMax := atomic.LoadInt64(&p.maxPooled)
+			if active <= currMax {
+				break
+			}
+			newMax := currMax + 50 // Expand in steps of 50 slabs
+			if newMax > 2000 {     // Cap at a sensible limit (e.g., 2000 slabs)
+				newMax = 2000
+			}
+			if newMax == currMax {
+				break
+			}
+			if atomic.CompareAndSwapInt64(&p.maxPooled, currMax, newMax) {
+				metrics.SlabPoolResizesTotal.WithLabelValues(sizeStr, "scale_up").Inc()
+				break
+			}
+		}
 	}
 
 	// Track peak active count for leak-probability estimation
@@ -150,7 +170,7 @@ func (p *SlabPool) Put(b []byte) {
 
 	// Check if we should release this slab instead of pooling it
 	pooled := atomic.LoadInt64(&p.pooledCount)
-	if pooled >= p.maxPooled {
+	if pooled >= atomic.LoadInt64(&p.maxPooled) {
 		// Release memory back to OS instead of pooling
 		// We MUST call Free to unmap and decrement the allocator's counter
 		offHeapAlloc.Free(b)
@@ -172,10 +192,28 @@ func (p *SlabPool) Put(b []byte) {
 func (p *SlabPool) ReleaseUnused() int {
 	released := 0
 	pooled := atomic.LoadInt64(&p.pooledCount)
-
-	// Release slabs beyond a reasonable threshold
-	threshold := p.maxPooled / 2 // Keep 50% of max as buffer
 	sizeStr := strconv.Itoa(p.size)
+
+	// Scale down capacity: set maxPooled back to baseline (100) or active count, whichever is larger,
+	// to allow garbage collection and release excess pooled capacity.
+	for {
+		currMax := atomic.LoadInt64(&p.maxPooled)
+		baseline := int64(100)
+		if active := atomic.LoadInt64(&p.activeCount); active > baseline {
+			baseline = active
+		}
+		if currMax <= baseline {
+			break
+		}
+		if atomic.CompareAndSwapInt64(&p.maxPooled, currMax, baseline) {
+			metrics.SlabPoolResizesTotal.WithLabelValues(sizeStr, "scale_down").Inc()
+			break
+		}
+	}
+
+	// Recalculate threshold based on updated maxPooled
+	currMax := atomic.LoadInt64(&p.maxPooled)
+	threshold := currMax / 2 // Keep 50% of max as buffer
 
 	for i := int64(0); i < pooled-threshold; i++ {
 		if slab := p.pool.Get(); slab != nil {
@@ -247,6 +285,9 @@ func (p *SlabPool) updateMetrics() {
 		hitRatio = float64(hits) / float64(totalAlloc)
 	}
 	metrics.SlabPoolBufferHitRatio.WithLabelValues(sizeLabel).Set(hitRatio)
+
+	// Update the dynamically configured maxPooled capacity
+	metrics.SlabPoolMaxPooled.WithLabelValues(sizeLabel).Set(float64(atomic.LoadInt64(&p.maxPooled)))
 }
 
 // GetGlobalSlabPoolUnusedMemory returns the total memory sitting idle in all global slab pools.

@@ -585,23 +585,59 @@ func euclideanInt8AVX2(a, b []int8) (float32, error) {
 }
 
 // =============================================================================
-// Int16 Implementations
+// Int16 Implementations — AVX2 native (VPMOVSXWD + VPMULLD / VPMADDWD)
 // =============================================================================
 
+//go:noescape
+func euclideanInt16AVX2Kernel(a, b uintptr, n int) float32
+
+//go:noescape
+func euclideanUint16AVX2Kernel(a, b uintptr, n int) float32
+
+//go:noescape
+func dotInt16AVX2Kernel(a, b uintptr, n int) float32
+
+//go:noescape
+func dotUint16AVX2Kernel(a, b uintptr, n int) float32
+
 func euclideanInt16AVX2(a, b []int16) (float32, error) {
-	return euclideanInt16Unrolled4x(a, b)
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanInt16AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
 }
 
 func euclideanUint16AVX2(a, b []uint16) (float32, error) {
-	return euclideanUint16Unrolled4x(a, b)
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanUint16AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
 }
 
 func dotInt16AVX2(a, b []int16) (float32, error) {
-	return dotInt16Unrolled4x(a, b)
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotInt16AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
 }
 
 func dotUint16AVX2(a, b []uint16) (float32, error) {
-	return dotUint16Unrolled4x(a, b)
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotUint16AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
 }
 
 func dotInt4AVX512(a, b []byte) (float32, error) {

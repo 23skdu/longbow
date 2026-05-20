@@ -1000,9 +1000,13 @@ type AdaptationStatus string
 const (
 	// AdaptationStatusPending indicates that an adaptation has been triggered but not yet started.
 	AdaptationStatusPending   AdaptationStatus = "pending"
+	// AdaptationStatusRunning indicates that an adaptation is currently running.
 	AdaptationStatusRunning   AdaptationStatus = "running"
+	// AdaptationStatusComplete indicates that an adaptation has completed successfully.
 	AdaptationStatusComplete  AdaptationStatus = "complete"
+	// AdaptationStatusFailed indicates that an adaptation has failed.
 	AdaptationStatusFailed    AdaptationStatus = "failed"
+	// AdaptationStatusCancelled indicates that an adaptation has been cancelled.
 	AdaptationStatusCancelled AdaptationStatus = "cancelled"
 )
 

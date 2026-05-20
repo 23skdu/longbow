@@ -6,6 +6,7 @@ import (
 )
 
 var (
+	// StoreDroppedDatasets tracks the total number of datasets explicitly dropped.
 	StoreDroppedDatasets = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_store_dropped_datasets_total",
 		Help: "Total number of datasets explicitly dropped",

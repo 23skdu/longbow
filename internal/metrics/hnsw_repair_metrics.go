@@ -6,6 +6,7 @@ import (
 )
 
 var (
+	// HNSWRepairTotal tracks the total number of tombstone repairs performed.
 	HNSWRepairTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_hnsw_repair_total",
 		Help: "Total number of tombstone repairs performed",

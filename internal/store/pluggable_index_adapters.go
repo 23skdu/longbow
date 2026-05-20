@@ -593,10 +593,12 @@ func (a *PluggableInternalAdapter) GetGPUIndex() any {
 	return nil
 }
 
+// RelocateToOffHeap relocates index structures to off-heap memory.
 func (a *PluggableInternalAdapter) RelocateToOffHeap() error {
 	return nil
 }
 
+// ReleaseMonolithicChunk releases a monolithic chunk from memory.
 func (a *PluggableInternalAdapter) ReleaseMonolithicChunk(cID int) error {
 	// Pluggable indexes manage their own lifecycle
 	return nil

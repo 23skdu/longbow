@@ -1428,6 +1428,7 @@ func (idx *ShardedHNSW) GetShardedIndex() *ShardedHNSW {
 	return idx
 }
 
+// RelocateToOffHeap relocates all shards of the sharded HNSW index to off-heap memory.
 func (idx *ShardedHNSW) RelocateToOffHeap() error {
 	idx.shardsMu.RLock()
 	defer idx.shardsMu.RUnlock()
@@ -1439,6 +1440,7 @@ func (idx *ShardedHNSW) RelocateToOffHeap() error {
 	return nil
 }
 
+// ReleaseMonolithicChunk releases a monolithic chunk from memory (no-op for sharded indexes).
 func (idx *ShardedHNSW) ReleaseMonolithicChunk(cID int) error {
 	// ShardedHNSW doesn't have a single monolithic store to release.
 	// Memory is managed at the shard level.

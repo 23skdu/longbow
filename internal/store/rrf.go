@@ -6,7 +6,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 )
 
-// ReciprocalRankFusion combines results from multiple search systems using their ranks.
+// ReciprocalRankFusionLegacy combines results from multiple search systems using their ranks.
 // Formula: score = sum(1 / (k + rank))
 // Reference: https://dl.acm.org/doi/10.1145/1571941.1572114
 func ReciprocalRankFusionLegacy(dataset string, dense, sparse []SearchResult, k, limit int) []SearchResult {

@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"runtime"
+	"runtime/debug"
 	"sync/atomic"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"google.golang.org/grpc/status"
 )
 
+// AdmissionController manages request admission and resource throttling.
 type AdmissionController struct {
 	maxMemory      *atomic.Int64
 	currentMemory  *atomic.Int64
@@ -48,22 +50,27 @@ func (ac *AdmissionController) SetTuner(tuner *lbmem.GCTuner) {
 	ac.tuner = tuner
 }
 
+// MigrationStarted increments the migrating count.
 func (ac *AdmissionController) MigrationStarted() {
 	ac.migratingCount.Add(1)
 }
 
+// MigrationFinished decrements the migrating count.
 func (ac *AdmissionController) MigrationFinished() {
 	ac.migratingCount.Add(-1)
 }
 
+// SetWALReplay flags whether WAL replay is in progress.
 func (ac *AdmissionController) SetWALReplay(active bool) {
 	ac.walReplaying.Store(active)
 }
 
+// IsWALReplay returns true if WAL replay is active.
 func (ac *AdmissionController) IsWALReplay() bool {
 	return ac.walReplaying.Load()
 }
 
+// Release releases slots and updates request counters when operations finish.
 func (ac *AdmissionController) Release(opType string) {
 	if opType == "search" || opType == "query" {
 		ac.activeQueries.Add(-1)
@@ -177,15 +184,39 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 
 	// Hard Limit
 	if memoryUsage > hardLimit {
-		// Allow deletions and maintenance to proceed even under pressure, as they often free resources
-		if opType != "maintenance" && opType != "delete" && opType != "drop" {
-			ac.logger.Warn().
-				Float64("usage_ratio", memoryUsage).
-				Int64("effective_bytes", effectiveMem).
-				Int64("max_bytes", maxMem).
-				Str("op_type", opType).
-				Msg("Request rejected: critical memory pressure")
-			return status.Errorf(codes.ResourceExhausted, "critical memory pressure (%.1f%% usage): request rejected", memoryUsage*100)
+		// Proactively run GC and release unused OS memory to see if we can bring memory down
+		runtime.GC()
+		debug.FreeOSMemory()
+
+		// Recalculate physical and effective memory usage
+		currMem = ac.currentMemory.Load()
+		runtime.ReadMemStats(&m)
+		heapMem = int64(m.HeapAlloc) // #nosec G115
+		physicalMem = heapMem + offHeapMem
+		if physicalMem > currMem {
+			effectiveMem = physicalMem
+		} else {
+			effectiveMem = currMem
+		}
+		memoryUsage = float64(effectiveMem) / float64(maxMem)
+		if ac.tuner != nil {
+			ratio := ac.tuner.GetUtilizationRatio()
+			if ratio > memoryUsage {
+				memoryUsage = ratio
+			}
+		}
+
+		if memoryUsage > hardLimit {
+			// Allow deletions and maintenance to proceed even under pressure, as they often free resources
+			if opType != "maintenance" && opType != "delete" && opType != "drop" {
+				ac.logger.Warn().
+					Float64("usage_ratio", memoryUsage).
+					Int64("effective_bytes", effectiveMem).
+					Int64("max_bytes", maxMem).
+					Str("op_type", opType).
+					Msg("Request rejected: critical memory pressure")
+				return status.Errorf(codes.ResourceExhausted, "critical memory pressure (%.1f%% usage): request rejected", memoryUsage*100)
+			}
 		}
 	}
 

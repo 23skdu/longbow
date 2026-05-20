@@ -11,6 +11,7 @@ import (
 // =============================================================================
 
 var (
+	// CompactionRateLimitWaitSeconds measures the time spent waiting for the compaction rate limiter.
 	CompactionRateLimitWaitSeconds = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_compaction_rate_limit_wait_seconds",
@@ -64,6 +65,7 @@ var (
 // =============================================================================
 
 var (
+	// AdaptiveGCCurrentGOGC is the current GOGC value set by adaptive GC controller.
 	AdaptiveGCCurrentGOGC = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "longbow_adaptive_gc_current_gogc",
 		Help: "Current GOGC value set by adaptive GC controller",
@@ -90,12 +92,13 @@ var (
 // =============================================================================
 
 var (
-	// Fragmentation-Aware Compaction Metrics
+	// CompactionTombstoneDensity tracks the current tombstone density ratio per batch.
 	CompactionTombstoneDensity = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "longbow_compaction_tombstone_density_ratio",
 		Help: "Current tombstone density per batch (0-1)",
 	}, []string{"dataset", "batch"})
 
+	// CompactionFragmentedBatches tracks the number of batches exceeding the fragmentation threshold.
 	CompactionFragmentedBatches = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "longbow_compaction_fragmented_batches_total",
 		Help: "Number of batches exceeding fragmentation threshold",
@@ -116,7 +119,7 @@ var (
 		Help: "Total number of compaction runs performed",
 	}, []string{"dataset"})
 
-	// Warmup Metrics
+	// WarmupProgressPercent tracks the current warmup progress percentage.
 	WarmupProgressPercent = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_warmup_progress_percent",
@@ -233,6 +236,7 @@ var (
 // =============================================================================
 
 var (
+	// PipelineOperationsTotal tracks the total number of pipeline operations.
 	PipelineOperationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_pipeline_operations_total",
@@ -302,6 +306,7 @@ var (
 // =============================================================================
 
 var (
+	// NamespaceDatasetsTotal tracks the total number of datasets in a namespace.
 	NamespaceDatasetsTotal = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_namespace_datasets_total",
@@ -336,7 +341,7 @@ var (
 
 var (
 
-	// Schema evolution metrics
+	// SchemaEvolutionTotal tracks the total number of schema evolution operations.
 	SchemaEvolutionTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_schema_evolution_total",
@@ -390,6 +395,7 @@ var (
 		[]string{"dataset", "type"}, // "hit", "miss", "evict", "set"
 	)
 
+	// QueryCacheSize tracks the current number of entries in the query cache.
 	QueryCacheSize = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_query_cache_size",
@@ -1213,6 +1219,7 @@ func RecordSimdBatch(impl string, op string, count int) {
 // =============================================================================
 
 var (
+	// TPUOperationsTotal tracks the total number of TPU operations.
 	TPUOperationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_tpu_operations_total",

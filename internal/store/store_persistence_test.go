@@ -85,7 +85,7 @@ func TestVectorStore_Persistence_FullFlow(t *testing.T) {
 	}, nil)
 
 	vs.PrewarmDataset("test_ds", schema)
-	ds_ingest, ok := vs.getDataset("test_ds")
+	dsIngest, ok := vs.getDataset("test_ds")
 	require.True(t, ok)
 
 	b := array.NewRecordBuilder(mem, schema)
@@ -98,7 +98,7 @@ func TestVectorStore_Persistence_FullFlow(t *testing.T) {
 	vb.AppendValues([]float32{3.0, 4.0}, nil)
 	rec := b.NewRecordBatch()
 	
-	err = vs.applyBatchToMemory(ds_ingest, rec, time.Now().UnixNano())
+	err = vs.applyBatchToMemory(dsIngest, rec, time.Now().UnixNano())
 	require.NoError(t, err)
 	rec.Release()
 	b.Release()

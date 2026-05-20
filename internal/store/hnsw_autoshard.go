@@ -562,6 +562,7 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		Msg("Index migration complete")
 }
 
+// ReleaseMonolithicChunk releases a monolithic chunk from memory.
 func (idx *AutoShardingIndex) ReleaseMonolithicChunk(cID int) error {
 	idx.mu.RLock()
 	curr := idx.current
@@ -1077,6 +1078,7 @@ func (idx *AutoShardingIndex) GetGPUIndex() any {
 	return idx.current.GetGPUIndex()
 }
 
+// RelocateToOffHeap relocates the index to off-heap memory.
 func (idx *AutoShardingIndex) RelocateToOffHeap() error {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()

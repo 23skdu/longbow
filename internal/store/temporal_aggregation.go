@@ -19,9 +19,13 @@ type TemporalAggType string
 const (
 	// TemporalAggCount counts the number of occurrences in each time bucket.
 	TemporalAggCount TemporalAggType = "count"
+	// TemporalAggMin calculates the minimum value in each time bucket.
 	TemporalAggMin   TemporalAggType = "min"
+	// TemporalAggMax calculates the maximum value in each time bucket.
 	TemporalAggMax   TemporalAggType = "max"
+	// TemporalAggMean calculates the mean value in each time bucket.
 	TemporalAggMean  TemporalAggType = "mean"
+	// TemporalAggSum calculates the sum of values in each time bucket.
 	TemporalAggSum   TemporalAggType = "sum"
 )
 

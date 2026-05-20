@@ -22,12 +22,14 @@ COPY . .
 ARG ENABLE_IOURING=false
 ARG BUILD_TAGS=linux
 
-# Build with optional io_uring support
+# Build longbow, longbow-cli, and bench-tool
 RUN if [ "$ENABLE_IOURING" = "true" ]; then \
     CGO_ENABLED=1 go build -tags="${BUILD_TAGS},iouring" -ldflags="-s -w -checklinkname=0" -o longbow ./cmd/longbow; \
 else \
     CGO_ENABLED=0 go build -tags=${BUILD_TAGS} -ldflags="-s -w" -o longbow ./cmd/longbow; \
 fi
+CGO_ENABLED=0 go build -tags=${BUILD_TAGS} -ldflags="-s -w" -o longbow-cli ./cmd/cli
+CGO_ENABLED=0 go build -tags=${BUILD_TAGS} -ldflags="-s -w" -o bench-tool ./cmd/bench-tool
 
 # -------------------------------------------------------------------
 # Stage 2: Minimal runtime
@@ -35,6 +37,8 @@ fi
 FROM scratch
 
 COPY --from=builder /app/longbow /longbow
+COPY --from=builder /app/longbow-cli /longbow-cli
+COPY --from=builder /app/bench-tool /bench-tool
 
 VOLUME /data
 

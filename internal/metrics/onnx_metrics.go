@@ -10,6 +10,7 @@ import (
 // =============================================================================
 
 var (
+	// OnnxMetalInferenceDuration measures the duration of ONNX Metal inference operations.
 	OnnxMetalInferenceDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_onnx_metal_inference_duration_seconds",
@@ -77,6 +78,7 @@ var (
 // =============================================================================
 
 var (
+	// OnnxInferenceDuration measures the duration of ONNX inference operations.
 	OnnxInferenceDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_onnx_inference_duration_seconds",
@@ -109,6 +111,7 @@ var (
 // =============================================================================
 
 var (
+	// RerankerInferenceDuration measures the duration of reranker inference operations.
 	RerankerInferenceDuration = promauto.NewHistogram(
 		prometheus.HistogramOpts{
 			Name:    "longbow_reranker_inference_duration_seconds",

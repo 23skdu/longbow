@@ -70,6 +70,7 @@ var (
 		},
 	)
 
+	// TraceSpansTotal tracks the total number of trace spans created.
 	TraceSpansTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_trace_spans_total",
@@ -78,7 +79,7 @@ var (
 		[]string{"name"},
 	)
 
-	// Vector casting metrics
+	// VectorCastF16ToF32Total tracks the total number of vector casts from Float16 to Float32.
 	VectorCastF16ToF32Total = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_vector_cast_f16_to_f32_total",
@@ -93,7 +94,7 @@ var (
 		},
 	)
 
-	// Memory allocator metrics
+	// AllocatorBytesAllocatedTotal tracks the total bytes allocated by the memory allocator.
 	AllocatorBytesAllocatedTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_allocator_bytes_allocated_total",
@@ -121,6 +122,7 @@ var (
 // =============================================================================
 
 var (
+	// IpcBufferPoolUtilization tracks the current utilization of the IPC buffer pool.
 	IpcBufferPoolUtilization = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_ipc_buffer_pool_utilization",
@@ -162,6 +164,7 @@ var (
 // =============================================================================
 
 var (
+	// SlabPoolAllocationsTotal tracks the total number of slab allocations.
 	SlabPoolAllocationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_slab_pool_allocations_total",
@@ -193,6 +196,24 @@ var (
 		prometheus.GaugeOpts{
 			Name: "longbow_slab_pool_buffer_hit_ratio",
 			Help: "Running hit ratio of the slab pool (0-1)",
+		},
+		[]string{"size"},
+	)
+
+	// SlabPoolResizesTotal tracks the number of dynamic maxPooled resize events
+	SlabPoolResizesTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_slab_pool_resizes_total",
+			Help: "Total number of dynamic slab pool capacity resize events",
+		},
+		[]string{"size", "direction"}, // direction: "scale_up", "scale_down"
+	)
+
+	// SlabPoolMaxPooled tracks the current maximum slabs kept in the pool
+	SlabPoolMaxPooled = promauto.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "longbow_slab_pool_max_pooled",
+			Help: "Current maximum slab pool capacity (maxPooled) before OS release",
 		},
 		[]string{"size"},
 	)

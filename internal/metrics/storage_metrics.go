@@ -77,6 +77,7 @@ var (
 			Help: "Total number of registered index types",
 		},
 	)
+	// IndexCreationsTotal tracks the total number of index creation attempts.
 	IndexCreationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_index_creations_total",
@@ -84,6 +85,7 @@ var (
 		},
 		[]string{"type", "status"},
 	)
+	// IndexCreationDuration measures the duration of index creation operations.
 	IndexCreationDuration = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{
 			Name:    "longbow_index_creation_duration_seconds",
@@ -830,6 +832,7 @@ var (
 		[]string{"dataset"},
 	)
 
+	// EvictionsTotal tracks the total number of evicted records due to memory limits.
 	EvictionsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_evictions_total",
@@ -993,7 +996,7 @@ var (
 // =============================================================================
 
 var (
-	// DatasetDimensionAutoDetectTotal counts auto-dimension-detection events.
+	// DatasetDimensionAutoDetectTotal tracks the total number of dataset dimension auto-detection events.
 	DatasetDimensionAutoDetectTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_dataset_dimension_auto_detect_total",

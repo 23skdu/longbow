@@ -63,6 +63,6 @@ var (
 		[]string{"shard", "type"},
 	)
 
-	// Compatibility aliases if needed (can't really alias vars this way in Go easily, so just naming them right)
+	// DatasetLockWaitDuration is a compatibility alias for DatasetLockWaitDurationSeconds.
 	DatasetLockWaitDuration = DatasetLockWaitDurationSeconds
 )

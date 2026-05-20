@@ -6,12 +6,13 @@ import (
 )
 
 var (
-	// Vector pool metrics
+	// VectorPoolHits tracks the total number of vector pool hits.
 	VectorPoolHits = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_vector_pool_hits_total",
 		Help: "Total number of vector pool hits (reused vectors)",
 	})
 
+	// VectorPoolMisses tracks the total number of vector pool misses.
 	VectorPoolMisses = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_vector_pool_misses_total",
 		Help: "Total number of vector pool misses (new allocations)",
@@ -22,7 +23,7 @@ var (
 		Help: "Total number of vectors returned to pool",
 	})
 
-	// HNSW allocation metrics
+	// HNSWVectorAllocations tracks the total number of vector allocations for HNSW graph storage.
 	HNSWVectorAllocations = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "longbow_hnsw_vector_allocations_total",
 		Help: "Total number of vector allocations for HNSW graph storage",
@@ -44,7 +45,7 @@ var (
 		Help: "Total number of nodes added to HNSW",
 	}, []string{"dataset"})
 
-	// Index growth metrics
+	// HNSWIndexGrowthDuration measures the time spent growing the HNSW index capacity.
 	HNSWIndexGrowthDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "longbow_hnsw_index_growth_duration_seconds",
 		Help:    "Time spent growing the HNSW index capacity",
@@ -62,7 +63,7 @@ var (
 		Help: "Total number of HNSW index prewarm operations executed",
 	})
 
-	// HNSW Repair Agent Metrics
+	// HNSWRepairOrphansDetected tracks the total number of orphaned nodes detected by repair agent.
 	HNSWRepairOrphansDetected = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "longbow_hnsw_repair_orphans_detected_total",
 		Help: "Total number of orphaned nodes detected by repair agent",
@@ -455,7 +456,7 @@ var (
 		Buckets: []float64{0.000001, 0.00001, 0.0001, 0.001, 0.01},
 	})
 
-	// Additional HNSW metrics
+	// HnswSearchThroughputDims tracks the total number of HNSW searches bucketed by dimension.
 	HnswSearchThroughputDims = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_search_throughput_dims_total",

@@ -10,7 +10,7 @@ import (
 // =============================================================================
 
 var (
-	// BloomFilter metrics for filter evaluation optimization
+	// BloomFalsePositiveRate tracks the estimated false positive rate of Bloom filters.
 	BloomFalsePositiveRate = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_bloom_false_positive_rate",

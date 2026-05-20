@@ -4,7 +4,7 @@ This document outlines the outstanding roadmap items, stability enhancements, an
 
 ---
 
-## 1. P0 Blockers: Hardware Backend Integration
+## 1. P0 Blockers: Hardware Backend Integration (0.2.3 roadmap)
 
 ### 🔳 TPU Physical Driver Integration
 
@@ -16,69 +16,23 @@ This document outlines the outstanding roadmap items, stability enhancements, an
 
 ---
 
-## 2. High-Scale Architectural Roadmap (100k+ Scale)
+## 2. 0.2.2 roadmap
 
-### 🗹 Off-Heap HNSW Graph Node Storage
-
-* **Description**: Transition all HNSW graph structures (neighbor tables, node maps, and node arrays) from Go's garbage-collected heap into our custom off-heap `SlabArena` or direct memory-mapped (mmap) files.
-* **Impact**: Completely eliminates Go GC scanning overhead (`runtime.scanObject`), which currently consumes up to **66%** of CPU time under active sharding and insertion loops at high scales (100k+ vectors). This guarantees predictable, sub-millisecond latencies and avoids GC-induced CPU spikes.
-* **Subtasks**:
-  * [x] Refactor `core.ArrowHNSW` neighbor list allocations to utilize direct off-heap pointer offsets via `SlabArena`.
-  * [x] Implement manual node lifecycle management to avoid memory fragmentation inside the off-heap slab pools.
-  * [x] Benchmark memory-mapped pages vs. anonymous off-heap memory allocations for active graph traversals.
-* **Priority**: **Critical / P0 (Completed)**
-* **Target Release**: `v0.2.4`
-
-### 🗹 Dynamic / Distributed Auto-Sharding Strategies
-
-* **Description**: Enhance the auto-sharding coordinator to support dynamic, multi-node partition splits and parallel graph handover without blocking active search lanes.
-* **Impact**: Avoids ingestion stalling during monolithic-to-sharded transitions at scale by performing the HNSW graph partition splits in a completely lock-free, streaming fashion.
-* **Subtasks**:
-  * [x] Implement lock-free interim index promotion that routes search queries concurrently to monolithic chunks and sharded partitions during migration.
-  * [x] Optimize the parallel migration batch size dynamically based on CPU core counts and hardware cache sizes to minimize thread thrashing.
-  * [x] Build shard balance metrics to monitor cluster-wide data distribution.
-* **Priority**: **High / P1 (Completed)**
-* **Target Release**: `v0.2.4`
-
-### 🗹 Admission Controller & Dynamic GOGC Tuning Hardening
-
-* **Description**: Harden the `AdmissionController` memory ceiling (e.g. 18GB) to dynamically adjust gRPC backpressure and auto-throttle ingest rate as memory pressure grows.
-* **Impact**: Prevents OOM crashes under burst ingestion by coupling the dynamic GC tuner (reducing GOGC down to 20/80 under memory spikes) directly with gRPC `ResourceExhausted` rejections, ensuring the system stabilizes gracefully rather than crashing.
-* **Priority**: **High / P1 (Completed)**
-* **Target Release**: `v0.2.3-rc2`
-
----
-
-## 3. P1 Tasks: Continuous Performance Assurance
-
-### 🔳 Automated CI/CD Performance Regression Framework
-
-* **Description**: Integrate the streamlined performance benchmarks (`scripts/local_perf.sh` and `scripts/remote_perf_clean.sh`) into the repository's GitHub Actions / GitLab CI pipeline.
-* **Impact**: Detects QPS and ingestion rate regressions automatically on every Pull Request, enforcing high performance budgets.
-* **Target Release**: `v0.2.4`
-* **Priority**: **P1 (High)**
+This section lists the high-scale enhancements, continuous performance assurance systems, storage optimizations, and security integrations prioritized for the `v0.2.2` release.
 
 ### 🔳 Slab Pool Autoscaling & Metrics Hardening
 
 * **Description**: Instrument the dynamic off-heap `SlabPool` resizing and self-healing operations with Prometheus telemetry to track memory capacity expansion events and buffer hit ratios.
 * **Impact**: Provides operational engineers with deep real-time observability of off-heap pool states under heavy burst ingestion loads.
-* **Target Release**: `v0.2.4`
+* **Target Release**: `v0.2.2`
 * **Priority**: **P1 (High)**
-
----
-
-## 4. Storage Architecture Optimizations
 
 ### 🔳 Disk-ANN Solid State Page Tuning
 
 * **Description**: Optimize low-level SSD page alignment and read-ahead block sizing in the Disk-ANN index offloader for sub-millisecond multi-gigabyte vector fetches.
 * **Impact**: Achieves ultra-low latency searches on datasets exceeding physical RAM sizes.
-* **Target Release**: `v0.2.5`
+* **Target Release**: `v0.2.2`
 * **Priority**: **P2 (Medium)**
-
----
-
-## 5. EMLgo Math Library Evaluation
 
 ### 🔳 EMLgo Library Math Acceleration
 
@@ -89,16 +43,14 @@ This document outlines the outstanding roadmap items, stability enhancements, an
   * [ ] Replace standard library `math` calls with `emlgo` mathematical equivalents in baseline metric implementations.
   * [ ] Execute the unified benchmark runner across various dimensions (128, 384, 768, 1024, 3072) to capture direct QPS/latency comparisons.
   * [ ] Document compilation stability and any potential hardware dependencies under Go cross-platform builds.
+* **Target Release**: `v0.2.2`
 * **Priority**: **Medium**
-* **Target Release**: `v0.2.2` (Experimental)
 
----
-
-## 6. Google ALTS Integration
+### 🔳 Google ALTS Integration
 
 This 6-part integration plan outlines the architectural and implementation tasks required to support Google's **Application Layer Transport Security (ALTS)** for secure, mutually authenticated, and high-performance service-to-service gRPC communication inside Google Compute Engine (GCE) and Google Kubernetes Engine (GKE).
 
-### 🔳 Part 1: Design & Protocol Analysis
+#### 🔳 Part 1: Design & Protocol Analysis
 
 * **Description**: Analyze GCE/GKE ALTS requirements, transport ciphers (AES-128-GCM vs integrity-only GMAC), and connection lifecycles to design the Longbow gRPC security architecture.
 * **Subtasks**:
@@ -106,10 +58,10 @@ This 6-part integration plan outlines the architectural and implementation tasks
   * [ ] Evaluate ALTS handshake latency and performance overhead compared to traditional TLS.
   * [ ] Document fallback security policies for non-GCP development/local testing.
   * [ ] Define the authorization schema based on Google service account structures.
+* **Target Release**: `v0.2.2`
 * **Priority**: **High**
-* **Target Release**: `v0.2.2-rc3`
 
-### 🔳 Part 2: gRPC Server ALTS Credentials Integration
+#### 🔳 Part 2: gRPC Server ALTS Credentials Integration
 
 * **Description**: Implement server-side ALTS gRPC transport credentials to secure incoming connections from client SDKs.
 * **Subtasks**:
@@ -117,10 +69,10 @@ This 6-part integration plan outlines the architectural and implementation tasks
   * [ ] Configure server startup configuration to dynamically load ALTS options if GCP environment is detected.
   * [ ] Implement handshake timeout controls to prevent resource exhaustion during connection handshakes.
   * [ ] Build server-side fallback to standard TLS or local credentials for hybrid deployments.
+* **Target Release**: `v0.2.2`
 * **Priority**: **Critical**
-* **Target Release**: `v0.2.2-rc3`
 
-### 🔳 Part 3: gRPC Client ALTS Credentials Integration
+#### 🔳 Part 3: gRPC Client ALTS Credentials Integration
 
 * **Description**: Configure the client-side gRPC dialer to request mutually authenticated ALTS channels.
 * **Subtasks**:
@@ -128,10 +80,10 @@ This 6-part integration plan outlines the architectural and implementation tasks
   * [ ] Implement targeted peer verification by configuring target service accounts on connection dial.
   * [ ] Configure client reconnection policies and session resumption handles.
   * [ ] Build client command-line flags (e.g. `--use-alts`) and auto-detection parameters.
+* **Target Release**: `v0.2.2`
 * **Priority**: **Critical**
-* **Target Release**: `v0.2.2-rc3`
 
-### 🔳 Part 4: Peer Authentication & Context Parsing
+#### 🔳 Part 4: Peer Authentication & Context Parsing
 
 * **Description**: Extract client/peer authentication metadata from gRPC incoming context to enforce identity-based access control.
 * **Subtasks**:
@@ -139,10 +91,10 @@ This 6-part integration plan outlines the architectural and implementation tasks
   * [ ] Parse client credentials to extract Google service accounts and project details.
   * [ ] Build a robust service account authorization engine supporting whitelist/blacklist rules.
   * [ ] Log peer identities for all write/ingestion actions to satisfy security auditing requirements.
+* **Target Release**: `v0.2.2`
 * **Priority**: **High**
-* **Target Release**: `v0.2.2-rc3`
 
-### 🔳 Part 5: Observability, Metrics & Telemetry
+#### 🔳 Part 5: Observability, Metrics & Telemetry
 
 * **Description**: Instrument the authentication and handshake layer with Prometheus telemetry to ensure operational visibility.
 * **Subtasks**:
@@ -150,10 +102,10 @@ This 6-part integration plan outlines the architectural and implementation tasks
   * [ ] Implement histogram metrics for ALTS handshake latency (`longbow_alts_handshake_latency_seconds`).
   * [ ] Add counters for unauthorized service account access attempts categorized by identity.
   * [ ] Build alerts for authentication failures and service account authorization mismatches.
+* **Target Release**: `v0.2.2`
 * **Priority**: **Medium**
-* **Target Release**: `v0.2.2-rc3`
 
-### 🔳 Part 6: Multi-Node Deployment & GCE/GKE Validation
+#### 🔳 Part 6: Multi-Node Deployment & GCE/GKE Validation
 
 * **Description**: Package, deploy, and validate the ALTS configuration on a multi-node GCP environment.
 * **Subtasks**:
@@ -161,5 +113,27 @@ This 6-part integration plan outlines the architectural and implementation tasks
   * [ ] Deploy test server and client instances on GKE/GCE instances.
   * [ ] Execute automated connection and data validation suites across nodes using ALTS transport.
   * [ ] Verify session resumption ciphers and validate the security posturing on wide area networks (WAN).
+* **Target Release**: `v0.2.2`
 * **Priority**: **High**
-* **Target Release**: `v0.2.2-rc3`
+
+---
+
+## 3. Historical Performance Observations & Regression Analyses
+
+This section traces and documents historical vector index performance regressions observed across release branches since the `v0.2.0` milestone, along with their engineering resolutions.
+
+### 🔳 Performance Regression Trace & Resolutions
+
+* **Float32 High-Dimensional Fragmentation (v0.1.7-rc2)**:
+  - *Symptom*: Rapid drop in `Search_Dense` QPS at high counts due to page-level fragmentation of float32 vector tables during capacity scaling.
+  - *Remediation*: Implemented HNSW pre-allocation schemas inside the vector table `Grow` operations and increased the default `InitialCapacity` bounds to 50k. Optimized concurrency parameters for background index worker pools to prevent CPU thread thrashing.
+* **Warmup Artifacts and Float16 Discrepancies (v0.1.8-rc4)**:
+  - *Symptom*: Apparent float16 throughput degradation during rapid benchmark cycles.
+  - *Remediation*: Confirmed to be an instrumentation warmup artifact rather than a true kernel-level regression. Fixed by adding warm-up iteration loops inside `bench-tool` and adding socket cooling cycles.
+* **Migration Flow Location Store Distortion (v0.2.1-rc1)**:
+  - *Symptom*: Complete regression where `Search_Dense` yielded 0 QPS at vector counts $\ge 10,000$ under shard-level migrations.
+  - *Remediation*: Identified location store pointer distortion occurring during sharded database page splits. Corrected migration state mappings to safely retain offset metadata during table grows.
+* **TurboQuant Capacity State Erasure (v0.2.1-rc1)**:
+  - *Symptom*: Index add crashes (`tq vector N not found` errors) and thread hangs during async batched ingestion at count $\ge 25,000$.
+  - *Remediation*: Fixed state corruption bug where TurboQuant-specific quantizer metadata maps were being erased/re-allocated during background off-heap capacity growth. Hardened bit-width persistence to survive dynamic memory transitions.
+

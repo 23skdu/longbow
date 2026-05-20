@@ -828,7 +828,25 @@ func (h *ArrowHNSW) generateLevel() int {
 // AddBatch implements VectorIndex.
 func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	h.bulkMu.Lock()
-	defer h.bulkMu.Unlock()
+	var startID uint32
+	var startIDAssigned bool
+	defer func() {
+		h.bulkMu.Unlock()
+		if startIDAssigned {
+			n := len(rowIdxs)
+			finalID := int64(startID + uint32(n)) // #nosec G115
+			h.commitMu.Lock()
+			for h.nodeCount.Load() < int64(startID) {
+				h.commitCond.Wait()
+			}
+			if h.nodeCount.Load() < finalID {
+				h.nodeCount.Store(finalID)
+			}
+			h.commitCond.Broadcast()
+			h.commitMu.Unlock()
+		}
+	}()
+
 	n := len(rowIdxs)
 	if n == 0 {
 		return nil, nil
@@ -855,9 +873,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		return nil, fmt.Errorf("no vector column found (looked for 'vector', 'embedding', 'vec'); available columns: %v", colNames)
 	}
 
-	var startID uint32
 	// Allocate local IDs for the entire batch to ensure monotonic assignment and avoid overwrites
 	startID = uint32(h.nextID.Add(int64(n)) - int64(n)) // #nosec G115
+	startIDAssigned = true
 
 	// Ensure the index is grown to accommodate the new batch before parallel ingestion.
 	if n > 0 && vecColIdx != -1 {

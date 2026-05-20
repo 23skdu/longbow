@@ -11,8 +11,8 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-// MetricsExporter handles GPU-specific metrics export
-type MetricsExporter struct {
+// Exporter handles GPU-specific metrics export
+type Exporter struct {
 	registry   *prometheus.Registry
 	gatherer   prometheus.Gatherer
 	httpServer *http.Server
@@ -20,9 +20,9 @@ type MetricsExporter struct {
 	stopChan   chan struct{}
 }
 
-// NewMetricsExporter creates a new GPU metrics exporter
-func NewMetricsExporter(interval time.Duration) *MetricsExporter {
-	return &MetricsExporter{
+// NewExporter creates a new GPU metrics exporter
+func NewExporter(interval time.Duration) *Exporter {
+	return &Exporter{
 		interval: interval,
 		stopChan: make(chan struct{}),
 	}
@@ -30,7 +30,7 @@ func NewMetricsExporter(interval time.Duration) *MetricsExporter {
 
 // StartHTTPServer starts an HTTP server to serve GPU metrics
 // This runs on a separate port from the main metrics endpoint
-func (e *MetricsExporter) StartHTTPServer(addr string) error {
+func (e *Exporter) StartHTTPServer(addr string) error {
 	mux := http.NewServeMux()
 	mux.Handle("/gpu/metrics", promhttp.Handler())
 	mux.HandleFunc("/gpu/health", e.healthHandler)
@@ -52,7 +52,7 @@ func (e *MetricsExporter) StartHTTPServer(addr string) error {
 }
 
 // healthHandler returns GPU health status
-func (e *MetricsExporter) healthHandler(w http.ResponseWriter, r *http.Request) {
+func (e *Exporter) healthHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	backend := types.DetectGPUBackend()
@@ -67,7 +67,7 @@ func (e *MetricsExporter) healthHandler(w http.ResponseWriter, r *http.Request) 
 }
 
 // Stop stops the metrics HTTP server
-func (e *MetricsExporter) Stop() error {
+func (e *Exporter) Stop() error {
 	if e.httpServer != nil {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()

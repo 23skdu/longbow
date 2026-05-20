@@ -22,7 +22,9 @@ type StrategyType string
 const (
 	// StrategyRoundRobin cycles through replicas in order.
 	StrategyRoundRobin       StrategyType = "round_robin"
+	// StrategyLeastConnections selects the replica with the fewest active connections.
 	StrategyLeastConnections StrategyType = "least_connections"
+	// StrategyWeighted selects replicas based on user-assigned weights.
 	StrategyWeighted         StrategyType = "weighted"
 )
 

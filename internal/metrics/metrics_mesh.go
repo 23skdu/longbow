@@ -75,6 +75,7 @@ var (
 			Help: "Total number of replication peers",
 		},
 	)
+	// ReplicationFailuresTotal tracks the total number of replication failures.
 	ReplicationFailuresTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_replication_failures_total",
@@ -119,6 +120,7 @@ var (
 // =============================================================================
 
 var (
+	// SplitBrainHeartbeatsTotal tracks the total number of split brain detector heartbeats.
 	SplitBrainHeartbeatsTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_split_brain_heartbeats_total",
@@ -173,6 +175,7 @@ var (
 // =============================================================================
 
 var (
+	// LoadBalancerReplicasTotal tracks the total number of replicas tracked by the load balancer.
 	LoadBalancerReplicasTotal = promauto.NewGauge(
 		prometheus.GaugeOpts{
 			Name: "longbow_load_balancer_replicas_total",
@@ -254,6 +257,7 @@ var (
 // =============================================================================
 
 var (
+	// GlobalSearchDuration measures the latency of global search operations.
 	GlobalSearchDuration = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "longbow_global_search_duration_seconds",
 		Help:    "Latency of global search operations",

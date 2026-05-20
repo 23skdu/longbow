@@ -646,12 +646,7 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 
 	h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 
-	shard := id % ShardedLockCount
-	lockStart := time.Now()
-	h.insertMus[shard].Lock()
-	metrics.InsertMuWaitDurationSeconds.WithLabelValues(h.name).Observe(time.Since(lockStart).Seconds())
 	err := h.InsertWithVector(id, vec, h.generateLevel())
-	h.insertMus[shard].Unlock()
 	if err != nil {
 		return 0, err
 	}
@@ -676,12 +671,7 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 
 	h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 
-	shard := id % ShardedLockCount
-	lockStart := time.Now()
-	h.insertMus[shard].Lock()
-	metrics.InsertMuWaitDurationSeconds.WithLabelValues(h.name).Observe(time.Since(lockStart).Seconds())
 	err := h.InsertWithVector(id, vec, h.generateLevel())
-	h.insertMus[shard].Unlock()
 	if err != nil {
 		return 0, err
 	}

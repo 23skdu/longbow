@@ -217,5 +217,14 @@ var (
 		},
 		[]string{"size"},
 	)
+
+	// SlabPoolBoundaryViolationsTotal tracks occurrences of capacity mismatches in the slab pool
+	SlabPoolBoundaryViolationsTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_slab_pool_boundary_violations_total",
+			Help: "Total number of slab pool boundary capacity mismatches detected during get or put operations",
+		},
+		[]string{"size", "operation"}, // operation: "get", "put"
+	)
 )
 

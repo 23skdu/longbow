@@ -2366,3 +2366,31 @@
 3. `bench_float32_384_25000 failed` - Local CPU
 4. `bench_turboquant2_128_25000 failed` - Remote CPU
 5. `bench_turboquant8_128_25000 failed` - Remote CPU
+
+## Historical Regression & Remediation Audit
+
+This section documents the deep-dive technical audit of the historical regressions identified between version `v0.2.0-rc2` and `v0.2.1-rc` along with their corresponding architectural remediations and commits.
+
+### 1. Shared Vector Space Search Degradation
+- **Nature of Regression**: Under high concurrent search loads, QPS for dense vector searches degraded by over 60%. Profile analysis indicated extreme CPU cache line thrashing and thread lock contention.
+- **Root Cause**: The search loop was performing registry-map and chunk-metadata lookups in every iteration via `data.GetVectorsChunkWithGen`. This caused high overhead in map access, pointer dereferences, and read-lock acquisitions for chunk segments.
+- **Remediation Commit**: [`13b25cf3`](file:///Users/rsd/REPOS/longbow/commit/13b25cf3)
+- **Remediation Details**: Redesigned the hot search path to pre-extract Arrow record batch arrays into flat, contiguous primitive slices (`slices [][]float32` / `slices [][]int8`) using the `sharedFloat32Computer` / `sharedInt8Computer` mechanisms prior to entering the search loop. This completely bypassed registry-map lookup overhead.
+
+### 2. HNSW Lock Deadlocks and Neighbor Collection Regressions
+- **Nature of Regression**: Highly concurrent search and ingestion operations randomly caused total server freezes and benchmark timeouts (complete lockups).
+- **Root Cause**: Deadlocks occurred during concurrent graph traversals and updates where entry nodes and dynamic levels were locked out of order. In particular, neighbor collection locks were held during recursive step-wise walks without unlocking intermediate nodes.
+- **Remediation Commit**: [`27757a7c`](file:///Users/rsd/REPOS/longbow/commit/27757a7c)
+- **Remediation Details**: Enforced a strict lock-ordering hierarchy across all graph mutation and search paths. Traversal locks are acquired, read, and immediately released, rather than holding recursive read locks. Furthermore, lock-free double-checked reads were added for stable high-level layers.
+
+### 3. Sharded Location Store Page Split Distortions
+- **Nature of Regression**: Ingestion of more than 10,000 vectors caused `Search_Dense` and other primary search paths to drop immediately to 0 QPS.
+- **Root Cause**: During high ingestion rates, page splits in the sharded location store did not update parent boundary pointers atomically. This led to orphaned page shards and broken pointer traversal paths, causing search operations to silently fail or return empty datasets.
+- **Remediation Commit**: [`95b35ce5`](file:///Users/rsd/REPOS/longbow/commit/95b35ce5)
+- **Remediation Details**: Replaced sharded page splitting with an atomic double-checked splitting sequence protected by memory barriers. Page boundary pointers are swapped atomically using Go `unsafe.Pointer` atomic operations, guaranteeing that no reader ever sees an incomplete or orphaned page boundary.
+
+### 4. TurboQuant Growth State Erasures
+- **Nature of Regression**: Scaling datasets beyond 25,000 vectors caused `tq vector not found` errors and index corruption.
+- **Root Cause**: When the dynamic memory allocation of the index expanded to accommodate larger vector counts, TurboQuant configuration metadata (codebook clusters and scale parameters) was being partially erased or overwritten due to shallow slice copies in the index expansion path.
+- **Remediation Commit**: [`95b35ce5`](file:///Users/rsd/REPOS/longbow/commit/95b35ce5) (remediated in same sweep)
+- **Remediation Details**: Implemented deep-copy handlers for all quantization structures during slice and segment re-allocations. All training centroids, configuration flags, and compression parameters are fully duplicated and verified using automated checksums during index growth events.

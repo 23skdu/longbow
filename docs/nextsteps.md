@@ -4,6 +4,34 @@ This document outlines the outstanding roadmap items, stability enhancements, an
 
 ---
 
+## 0. Actionable Stability Guidelines & Regression Remediation (Commit: f13ca8ee)
+
+> [!IMPORTANT]
+> Historical regressions detected between `v0.2.0` and `v0.2.1` highlighted critical vulnerabilities in core search pathways, lock scheduling, capacity growth, and location pointer indexing. To prevent any future performance regressions, the following strict architectural guidelines and remediation steps must be enforced across all upcoming storage engine developments.
+
+### 🛡️ Core Stability Guidelines for Core Storage Engine Pathways
+
+1. **Avoid Chunk-Space Lookup Thrashing in Inner Loops**:
+   - *Guideline*: Never perform index, chunk, or record batch pointer lookups using Go maps or slice iteration inside hot search loops (such as dense/sparse indexing, HNSW neighbor checks, or quantization distance calculation).
+   - *Remediation*: All target arrays must be pre-extracted using native Arrow slice wrappers or dedicated memory computers (e.g., `sharedFloat32Computer`/`sharedInt8Computer`) outside the loop, bypassing Go map registry overhead.
+
+2. **Strict Lock Ordering to Avoid HNSW Deadlocks**:
+   - *Guideline*: When updating or reading HNSW graph levels and entry nodes, ensure a deterministic lock acquisition hierarchy. Acquire entry locks before node collection lock segments, and release them immediately after traversal.
+   - *Remediation*: Restructure graph mutation logic to avoid holding multiple write locks across network-boundary gRPC requests or channel operations.
+
+3. **Atomic Location Pointer and Migration Operations**:
+   - *Guideline*: Ensure sharded index migrations or location pointer modifications occur atomically. During page split operations in location stores, protect mapping states with double-checked locks and atomic pointer swaps (`unsafe.Pointer`).
+   - *Remediation*: Guarantee that any background compaction or split does not leave standard pointers in a partially migrated state, which previously caused complete index search degradation (0 QPS).
+
+4. **Quantization (TurboQuant) Capacity-Growth Configuration Safekeeping**:
+   - *Guideline*: Memory or storage indexing capacity expansions (e.g., expanding from 10k to 25k/100k vectors) must atomically copy and preserve all quantization metadata (e.g., codebook vectors, scale dimensions, and training subsets).
+   - *Remediation*: Any slice re-allocation must employ deep copies rather than superficial pointer copies to prevent capacity-growth erasures or `tq vector not found` errors.
+
+5. **Prometheus Telemetry Coverage for Memory Bounds**:
+   - *Guideline*: Dynamically instrument all off-heap page pools (`SlabPool`) and registry indices with hit/miss ratios, boundary check violations, and memory growth events. Ensure memory limits are enforced strictly against capping boundaries.
+
+---
+
 ## 1. P0 Blockers: Hardware Backend Integration (0.2.3 roadmap)
 
 ### 🔳 TPU Physical Driver Integration

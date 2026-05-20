@@ -1,7 +1,59 @@
-<!-- Latest validated commit: e05d0296 (2026-05-20) - Security audit + performance tracking -->
-<!-- Benchmark run COMPLETE: localhost (CPU+Metal, 18GB) + ancalagon (CPU+CUDA, 14GB) -->
-<!-- Full matrix: 5 dims × 5 counts × 16 dtypes × 13 search modes × 4 hosts = 190 configs -->
-<!-- Regressions found: 16 (remote CPU dense/sparse); Improvements: 18 (local Metal + remote byid/hybrid) -->
+<!-- Latest validated commit: 5f85baaa (2026-05-20) - AVX2 int16 kernels + baseline optimization -->
+<!-- Smoke test COMPLETE: localhost CPU (Apple Silicon) + ancalagon CPU (x86_64, RTX 4060) -->
+<!-- Scope: int/uint types × dims 128/768/3072 × 5k vectors × dense+byid modes -->
+<!-- Build fix: removed duplicate int16/uint16 AVX2 stub declarations from all_kernels_stubs_amd64.go -->
+
+## AVX2 Int16/Uint16 Kernel Smoke Test (2026-05-20)
+
+**Commit**: `5f85baaa` - feat(simd): add native AVX2 int16 kernels and optimize baseline int16/uint16 operations
+
+### Build Validation
+- **Fixed**: Duplicate `euclideanInt16AVX2Kernel`, `euclideanUint16AVX2Kernel`, `dotInt16AVX2Kernel`, `dotUint16AVX2Kernel` declarations removed from `all_kernels_stubs_amd64.go`
+- **New**: Real AVX2 implementations in `int16_kernels_amd64.s` (VPMOVSXWD + VPMULLD / VPMADDWD)
+- **Baseline**: Integer arithmetic optimization for int16/uint16 euclidean, dot, and cosine distance (avoids FPU overhead)
+
+### Ingestion Throughput (DoPut vec/s, 5k vectors)
+
+| Type   | Dim  | Local CPU (M2) | Remote CPU (x86_64) | Delta |
+|--------|------|---------------:|--------------------:|-------|
+| int8   | 128  |         534,371 |             475,017 | +12%  |
+| int8   | 768  |         508,912 |             394,596 | +29%  |
+| int8   | 3072 |         264,523 |             117,630 | +125% |
+| int16  | 128  |         552,799 |             652,156 | -15%  |
+| int16  | 768  |         353,817 |             219,926 | +61%  |
+| int16  | 3072 |         155,887 |              57,986 | +169% |
+| uint8  | 128  |         534,371 |             489,740 | +9%   |
+| uint8  | 768  |         670,912 |             354,279 | +89%  |
+| uint16 | 128  |         605,269 |             374,878 | +61%  |
+| uint16 | 768  |         370,616 |             209,797 | +77%  |
+
+### Search Performance (Dense QPS, 5k vectors)
+
+| Type   | Dim  | Local CPU | Remote CPU | Notes |
+|--------|------|----------:|-----------:|-------|
+| int8   | 128  |      2,495 |      1,333 | Local SIMD advantage |
+| int8   | 768  |      1,263 |        823 | |
+| int16  | 128  |        505 |        412 | AVX2 kernel active on remote |
+| int16  | 768  |        546 |        437 | AVX2 kernel active on remote |
+| uint16 | 128  |        481 |        371 | AVX2 kernel active on remote |
+| uint16 | 768  |        569 |        399 | AVX2 kernel active on remote |
+
+### Search Performance (ByID QPS, 5k vectors)
+
+| Type   | Dim  | Local CPU | Remote CPU |
+|--------|------|----------:|-----------:|
+| int8   | 128  |      5,629 |      4,374 |
+| int16  | 128  |      5,091 |      4,691 |
+| uint16 | 128  |      5,454 |      4,851 |
+| int32  | 128  |      5,249 |      4,478 |
+
+### Stability
+- **No panics, no crashes, no race conditions detected**
+- One transient port collision on local (int8/128/5k first attempt) - non-critical
+- All int/uint types dispatch correctly through AVX2 kernels on x86_64
+- Apple Silicon uses NEON/baseline paths as expected
+
+---
 
 ## v0.2.1 Final Performance Validation (2026-05-16)
 

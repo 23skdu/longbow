@@ -118,14 +118,6 @@ func euclideanFloat64AVX2Kernel(a uintptr, b uintptr, n int) float32
 
 func euclideanInt8AVX2Kernel(a uintptr, b uintptr, n int) float32
 
-func euclideanInt16AVX2Kernel(a uintptr, b uintptr, n int) float32
-
-func euclideanUint16AVX2Kernel(a uintptr, b uintptr, n int) float32
-
-func dotInt16AVX2Kernel(a uintptr, b uintptr, n int) float32
-
-func dotUint16AVX2Kernel(a uintptr, b uintptr, n int) float32
-
 func euclideanInt8Unrolled4xAVX2Kernel(a uintptr, b uintptr, n int) float32
 
 func dotFloat64AVX2Kernel(a uintptr, b uintptr, n int) float32

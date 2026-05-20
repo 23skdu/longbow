@@ -202,6 +202,7 @@ type TemporalNode struct {
 	Timestamp int64
 	Offset    uint32 // Offset into entryArena
 	Len       uint32 // Number of entries for this timestamp
+	Cap       uint32 // Capacity of the allocated slice in entryArena
 }
 
 type temporalLeaf struct {
@@ -330,15 +331,26 @@ func (tt *TemporalTree) Insert(timestamp int64, id uint64, norm float32) {
 }
 
 func (tt *TemporalTree) appendEntryToNode(node *TemporalNode, entry TemporalEntry) {
-	oldRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Len}
-	oldEntries := tt.entryArena.Get(oldRef)
+	if node.Len >= node.Cap {
+		oldRef := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Len, Cap: node.Cap}
+		oldEntries := tt.entryArena.Get(oldRef)
+		
+		newCap := node.Cap * 2
+		if newCap == 0 {
+			newCap = 2
+		}
+		
+		newRef, _ := tt.entryArena.AllocSlice(int(newCap))
+		newEntries := tt.entryArena.Get(newRef)
+		copy(newEntries, oldEntries)
+		
+		node.Offset = uint32(newRef.Offset) // #nosec G115
+		node.Cap = newCap
+	}
 	
-	newRef, _ := tt.entryArena.AllocSlice(int(node.Len + 1))
-	newEntries := tt.entryArena.Get(newRef)
-	copy(newEntries, oldEntries)
-	newEntries[node.Len] = entry
-	
-	node.Offset = uint32(newRef.Offset) // #nosec G115
+	ref := memory.SliceRef{Offset: uint64(node.Offset), Len: node.Cap, Cap: node.Cap}
+	entries := tt.entryArena.Get(ref)
+	entries[node.Len] = entry
 	node.Len++
 }
 
@@ -354,6 +366,7 @@ func (tt *TemporalTree) insertInLeaf(leaf *temporalLeaf, timestamp int64, entry 
 		Timestamp: timestamp,
 		Offset:    uint32(entryRef.Offset), // #nosec G115
 		Len:       1,
+		Cap:       1,
 	}
 
 	copy(leaf.Nodes[nodeIdx+1:leaf.Len+1], leaf.Nodes[nodeIdx:leaf.Len])

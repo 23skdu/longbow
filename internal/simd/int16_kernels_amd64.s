@@ -1,0 +1,331 @@
+// Copyright 2024 Longbow Authors. All rights reserved.
+// Hand-written AVX2 assembly for int16/uint16 distance kernels.
+// These replace the generic Go fallbacks wired in simd_amd64.go.
+//
+// Strategy:
+//   - VPMOVSXWD/VPMOVZXWD sign/zero-extends 8x int16 → 8x int32 per 128-bit lane.
+//   - Two such loads per loop iteration → 16 elements consumed per cycle.
+//   - Integer arithmetic in int32, then VCVTDQ2PS → float32 for accumulation.
+//   - Final horizontal reduction via VEXTRACTF128 + VADDPS/VHADDPS.
+//
+// Kernel signatures (matching all_kernels_stubs_amd64.go):
+//   func euclideanInt16AVX2Kernel(a, b uintptr, n int) float32
+//   func euclideanUint16AVX2Kernel(a, b uintptr, n int) float32
+//   func dotInt16AVX2Kernel(a, b uintptr, n int) float32
+//   func dotUint16AVX2Kernel(a, b uintptr, n int) float32
+
+#include "textflag.h"
+
+// reduceYMM: horizontal sum of 8 float32 lanes in Y0 → XMM result in X0
+// Clobbers: X1, X2
+#define REDUCE_YMM(ysrc, xdst, xtmp1, xtmp2) \
+    VEXTRACTF128 $1, ysrc, xtmp1;            \
+    VEXTRACTF128 $0, ysrc, xdst;             \
+    VADDPS xtmp1, xdst, xdst;               \
+    VMOVHLPS xdst, xdst, xtmp1;             \
+    VADDPS xtmp1, xdst, xdst;               \
+    VMOVSHDUP xdst, xtmp2;                  \
+    VADDSS xtmp2, xdst, xdst
+
+// ============================================================================
+// euclideanInt16AVX2Kernel(a, b uintptr, n int) float32
+//
+// Computes sqrt(sum((a[i]-b[i])^2)) over n int16 elements.
+// Processes 16 elements per main loop iteration (2x 8-wide VPMOVSXWD).
+// ============================================================================
+TEXT ·euclideanInt16AVX2Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VXORPS Y0, Y0, Y0   // accumulator (float32 x8)
+
+loop16:
+    CMPQ CX, $16
+    JL   tail8
+
+    // Load 16 int16 from a and b (32 bytes each)
+    // Use two VPMOVSXWD to sign-extend 8 int16 → 8 int32 each
+    VPMOVSXWD 0(SI), Y1      // a[0..7]  → int32 x8
+    VPMOVSXWD 16(SI), Y2     // a[8..15] → int32 x8
+    VPMOVSXWD 0(DI), Y3      // b[0..7]  → int32 x8
+    VPMOVSXWD 16(DI), Y4     // b[8..15] → int32 x8
+
+    VPSUBD Y3, Y1, Y1        // diff0 = a[0..7] - b[0..7]
+    VPSUBD Y4, Y2, Y2        // diff1 = a[8..15] - b[8..15]
+
+    VPMULLD Y1, Y1, Y1       // diff0^2 (int32)
+    VPMULLD Y2, Y2, Y2       // diff1^2 (int32)
+
+    VCVTDQ2PS Y1, Y1         // → float32 x8
+    VCVTDQ2PS Y2, Y2         // → float32 x8
+
+    VADDPS Y1, Y0, Y0        // accumulate
+    VADDPS Y2, Y0, Y0
+
+    ADDQ $32, SI
+    ADDQ $32, DI
+    SUBQ $16, CX
+    JMP  loop16
+
+tail8:
+    CMPQ CX, $8
+    JL   tail_scalar
+
+    VPMOVSXWD 0(SI), Y1
+    VPMOVSXWD 0(DI), Y3
+    VPSUBD Y3, Y1, Y1
+    VPMULLD Y1, Y1, Y1
+    VCVTDQ2PS Y1, Y1
+    VADDPS Y1, Y0, Y0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $8, CX
+
+tail_scalar:
+    // Horizontal reduction of Y0 → X0
+    REDUCE_YMM(Y0, X0, X1, X2)
+    VZEROUPPER
+
+    // Scalar tail
+    TESTQ CX, CX
+    JZ    done_eucl_int16
+
+scalar_loop_eucl_int16:
+    MOVWLSX 0(SI), AX        // sign-extend int16 → int32
+    MOVWLSX 0(DI), BX
+    SUBL BX, AX              // diff
+    IMULL AX, AX             // diff^2
+    CVTSL2SS AX, X1          // int32 → float32
+    VADDSS X1, X0, X0
+
+    ADDQ $2, SI
+    ADDQ $2, DI
+    DECQ CX
+    JNZ  scalar_loop_eucl_int16
+
+done_eucl_int16:
+    VSQRTSS X0, X0, X0
+    MOVSS X0, ret+24(FP)
+    RET
+
+// ============================================================================
+// euclideanUint16AVX2Kernel(a, b uintptr, n int) float32
+//
+// Same as above but uses VPMOVZXWD (zero-extend) for uint16.
+// ============================================================================
+TEXT ·euclideanUint16AVX2Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VXORPS Y0, Y0, Y0
+
+loop16_u16:
+    CMPQ CX, $16
+    JL   tail8_u16
+
+    VPMOVZXWD 0(SI), Y1      // zero-extend uint16 → uint32 (treated as int32 for diff)
+    VPMOVZXWD 16(SI), Y2
+    VPMOVZXWD 0(DI), Y3
+    VPMOVZXWD 16(DI), Y4
+
+    VPSUBD Y3, Y1, Y1
+    VPSUBD Y4, Y2, Y2
+
+    VPMULLD Y1, Y1, Y1
+    VPMULLD Y2, Y2, Y2
+
+    VCVTDQ2PS Y1, Y1
+    VCVTDQ2PS Y2, Y2
+
+    VADDPS Y1, Y0, Y0
+    VADDPS Y2, Y0, Y0
+
+    ADDQ $32, SI
+    ADDQ $32, DI
+    SUBQ $16, CX
+    JMP  loop16_u16
+
+tail8_u16:
+    CMPQ CX, $8
+    JL   tail_scalar_u16
+
+    VPMOVZXWD 0(SI), Y1
+    VPMOVZXWD 0(DI), Y3
+    VPSUBD Y3, Y1, Y1
+    VPMULLD Y1, Y1, Y1
+    VCVTDQ2PS Y1, Y1
+    VADDPS Y1, Y0, Y0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $8, CX
+
+tail_scalar_u16:
+    REDUCE_YMM(Y0, X0, X1, X2)
+    VZEROUPPER
+
+    TESTQ CX, CX
+    JZ    done_eucl_uint16
+
+scalar_loop_eucl_uint16:
+    MOVWLZX 0(SI), AX        // zero-extend uint16 → uint32
+    MOVWLZX 0(DI), BX
+    SUBL BX, AX
+    IMULL AX, AX
+    CVTSL2SS AX, X1
+    VADDSS X1, X0, X0
+
+    ADDQ $2, SI
+    ADDQ $2, DI
+    DECQ CX
+    JNZ  scalar_loop_eucl_uint16
+
+done_eucl_uint16:
+    VSQRTSS X0, X0, X0
+    MOVSS X0, ret+24(FP)
+    RET
+
+// ============================================================================
+// dotInt16AVX2Kernel(a, b uintptr, n int) float32
+//
+// Computes sum(a[i]*b[i]) for n int16 elements.
+// Uses VPMADDWD which multiplies 16x int16 pairs and horizontally adds to 8x int32.
+// This is the canonical AVX2 int16 dot product instruction.
+// ============================================================================
+TEXT ·dotInt16AVX2Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VPXOR Y0, Y0, Y0         // int32 x8 accumulator
+
+loop16_dot_i16:
+    CMPQ CX, $16
+    JL   tail8_dot_i16
+
+    VMOVDQU 0(SI), Y1        // 16x int16 from a
+    VMOVDQU 0(DI), Y2        // 16x int16 from b
+    VPMADDWD Y2, Y1, Y1      // 16x (a*b) reduced to 8x int32 (pairs added)
+    VPADDD Y1, Y0, Y0        // accumulate
+
+    ADDQ $32, SI
+    ADDQ $32, DI
+    SUBQ $16, CX
+    JMP  loop16_dot_i16
+
+tail8_dot_i16:
+    CMPQ CX, $8
+    JL   tail_scalar_dot_i16
+
+    VMOVDQU 0(SI), X1        // 8x int16 (128-bit)
+    VMOVDQU 0(DI), X2
+    // Extend to 256-bit for VPMADDWD
+    VPMOVSXWD X1, Y1
+    VPMOVSXWD X2, Y2
+    VPMULLD Y2, Y1, Y1       // element-wise multiply (already 32-bit)
+    VPADDD Y1, Y0, Y0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $8, CX
+
+tail_scalar_dot_i16:
+    // Convert int32 accumulator to float32 and reduce
+    VCVTDQ2PS Y0, Y0
+    REDUCE_YMM(Y0, X0, X1, X2)
+    VZEROUPPER
+
+    TESTQ CX, CX
+    JZ    done_dot_int16
+
+scalar_loop_dot_i16:
+    MOVWLSX 0(SI), AX
+    MOVWLSX 0(DI), BX
+    IMULL BX, AX
+    CVTSL2SS AX, X1
+    VADDSS X1, X0, X0
+
+    ADDQ $2, SI
+    ADDQ $2, DI
+    DECQ CX
+    JNZ  scalar_loop_dot_i16
+
+done_dot_int16:
+    MOVSS X0, ret+24(FP)
+    RET
+
+// ============================================================================
+// dotUint16AVX2Kernel(a, b uintptr, n int) float32
+//
+// Computes sum(a[i]*b[i]) for n uint16 elements.
+// Zero-extends to uint32 and uses VPMULLD.
+// ============================================================================
+TEXT ·dotUint16AVX2Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VXORPS Y0, Y0, Y0        // float32 accumulator
+
+loop16_dot_u16:
+    CMPQ CX, $16
+    JL   tail8_dot_u16
+
+    VPMOVZXWD 0(SI), Y1      // zero-extend 8x uint16 → 8x uint32
+    VPMOVZXWD 16(SI), Y2     // next 8
+    VPMOVZXWD 0(DI), Y3
+    VPMOVZXWD 16(DI), Y4
+
+    VPMULLD Y3, Y1, Y1       // 8x uint32 products
+    VPMULLD Y4, Y2, Y2
+
+    VCVTDQ2PS Y1, Y1         // → float32 (products <= 65535^2 = 4.3e9, fits float32)
+    VCVTDQ2PS Y2, Y2
+
+    VADDPS Y1, Y0, Y0
+    VADDPS Y2, Y0, Y0
+
+    ADDQ $32, SI
+    ADDQ $32, DI
+    SUBQ $16, CX
+    JMP  loop16_dot_u16
+
+tail8_dot_u16:
+    CMPQ CX, $8
+    JL   tail_scalar_dot_u16
+
+    VPMOVZXWD 0(SI), Y1
+    VPMOVZXWD 0(DI), Y3
+    VPMULLD Y3, Y1, Y1
+    VCVTDQ2PS Y1, Y1
+    VADDPS Y1, Y0, Y0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $8, CX
+
+tail_scalar_dot_u16:
+    REDUCE_YMM(Y0, X0, X1, X2)
+    VZEROUPPER
+
+    TESTQ CX, CX
+    JZ    done_dot_uint16
+
+scalar_loop_dot_u16:
+    MOVWLZX 0(SI), AX
+    MOVWLZX 0(DI), BX
+    MULL BX                  // AX = AX * BX (unsigned 32-bit)
+    CVTSL2SS AX, X1
+    VADDSS X1, X0, X0
+
+    ADDQ $2, SI
+    ADDQ $2, DI
+    DECQ CX
+    JNZ  scalar_loop_dot_u16
+
+done_dot_uint16:
+    MOVSS X0, ret+24(FP)
+    RET

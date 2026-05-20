@@ -12637,29 +12637,8 @@ TEXT ·euclideanInt8AVX2Kernel(SB), NOSPLIT, $0-28
 	MOVSS X0, ret+24(FP)
 	RET
 
-// func euclideanInt16AVX2Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·euclideanInt16AVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
-
-// func euclideanUint16AVX2Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·euclideanUint16AVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
-
-// func dotInt16AVX2Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·dotInt16AVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
-
-// func dotUint16AVX2Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·dotUint16AVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
+// euclideanInt16AVX2Kernel, euclideanUint16AVX2Kernel, dotInt16AVX2Kernel,
+// dotUint16AVX2Kernel are implemented in int16_kernels_amd64.s (real AVX2).
 
 // func euclideanInt8Unrolled4xAVX2Kernel(a uintptr, b uintptr, n int) float32
 // Requires: SSE

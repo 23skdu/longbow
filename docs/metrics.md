@@ -25,6 +25,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_arena_fast_path_total` | Total number of allocations using the lock-free fast path |
 | `longbow_arena_hit_rate` | Arena fast-path hit rate (0-1, higher is better) |
 | `longbow_arena_memory_bytes` | Current bytes allocated in arena pools by size |
+| `longbow_arena_off_heap_bytes` | Total off-heap bytes allocated by arenas |
 | `longbow_arena_overflow_total` | Total arena capacity overflow events requiring heap fallback |
 | `longbow_arena_pool_gets_total` | Total arena acquisitions from global pool |
 | `longbow_arena_pool_puts_total` | Total arena returns to global pool |
@@ -88,10 +89,10 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_compaction_runs_total` | Total number of compaction runs performed |
 | `longbow_compaction_tombstone_density_ratio` | Current tombstone density per batch (0-1) |
 | `longbow_compaction_triggers_total` | Total number of compaction triggers by reason |
-| `longbow_compression_ratio` | Compression ratio achieved by Turboquant V2 |
 | `longbow_compound_filter_depth` | Depth of compound filter expression trees |
 | `longbow_compound_filter_ops_total` | Total compound filter operations by logic type |
 | `longbow_compressed_vectors_sent_total` | Total number of quantized (SQ8/PQ) vectors sent in search results |
+| `longbow_compression_ratio` | Compression ratio achieved by Turboquant V2 |
 | `longbow_connection_pool_active_connections` | Current number of active connections in the pool |
 | `longbow_connection_pool_close_total` | Total number of connections closed |
 | `longbow_connection_pool_create_total` | Total number of new connections created |
@@ -101,6 +102,8 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_connection_pool_refresh_total` | Total number of connection refreshes due to health check failure |
 | `longbow_correlation_id_active` | Currently active correlation IDs by operation |
 | `longbow_correlation_id_total` | Total correlation IDs generated |
+| `longbow_cuvs_search_latency_ms` | Latency of cuVS GPU search operations in milliseconds |
+| `longbow_cuvs_search_ops_total` | Total number of cuVS GPU search operations |
 | `longbow_dataset_dimension_auto_detect_total` | Total number of dataset dimension auto-detection events |
 | `longbow_dataset_dimension_mismatch_total` | Total number of vector dimension mismatch errors |
 | `longbow_dataset_export_bytes` | Number of bytes exported |
@@ -118,8 +121,6 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_dataset_record_batches_count` | Number of record batches per dataset (high = fragmentation) |
 | `longbow_dataset_update_retries_total` | Total number of retries during lock-free dataset map updates (CAS failures) |
 | `longbow_dataset_vector_type_total` | Number of datasets by declared vector type |
-| `longbow_cuvs_search_latency_ms` | Latency of cuVS GPU search operations in milliseconds |
-| `longbow_cuvs_search_ops_total` | Total number of cuVS GPU search operations |
 | `longbow_dimension_buffer_bytes` | Buffer memory allocated per dimension |
 | `longbow_disk_store_read_bytes_total` | Total bytes read from disk vector store |
 | `longbow_disk_store_write_bytes_total` | Total bytes written to disk vector store |
@@ -177,6 +178,8 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_get_neighbors_latency_seconds` | Latency of GetNeighbors operations |
 | `longbow_get_neighbors_result_size` | Number of neighbors returned per GetNeighbors call |
 | `longbow_get_neighbors_total` | Total number of GetNeighbors operations |
+| `longbow_global_rrf_latency_seconds` | Latency of global Reciprocal Rank Fusion operations |
+| `longbow_global_rrf_payload_bytes` | Payload size in bytes for global Reciprocal Rank Fusion operations |
 | `longbow_global_search_duration_seconds` | Latency of global search operations |
 | `longbow_global_search_fanout_size` | Number of peers queried during global search |
 | `longbow_global_search_partial_failures_total` | Total number of failed peer queries during global search |
@@ -199,7 +202,9 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_gpu_index_pool_idle` | Number of idle GPU indexes in the pool |
 | `longbow_gpu_index_pool_reused_total` | Total number of times GPU indexes were reused from pool |
 | `longbow_gpu_index_size` | Number of vectors stored in GPU index |
+| `longbow_gpu_ingest_kernel_duration_seconds` | Duration of GPU ingestion kernels in seconds |
 | `longbow_gpu_memory_bytes` | GPU memory usage in bytes |
+| `longbow_gpu_neighbor_prune_ops_total` | Total number of GPU neighbor pruning operations |
 | `longbow_gpu_operations_total` | Total number of GPU operations |
 | `longbow_gpu_search_duration_seconds` | Duration of GPU search operations |
 | `longbow_gpu_sync_duration_seconds` | Duration of GPU synchronization operations |
@@ -248,6 +253,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_grpc_messages_sent_total` | Total number of gRPC messages sent |
 | `longbow_grpc_stream_send_latency_seconds` | Latency of gRPC stream Send operations |
 | `longbow_grpc_stream_stall_total` | Total number of gRPC stream stalls detected |
+| `longbow_grpc_uds_connections_total` | Total number of gRPC Unix Domain Socket connections |
 | `longbow_hnsw_active_readers` | Number of active zero-copy readers per dataset |
 | `longbow_hnsw_adaptive_adjustments_total` | Total number of times M has been adjusted dynamically |
 | `longbow_hnsw_adaptive_chunk_size` | Chunk sizes used in adaptive parallel search |
@@ -259,7 +265,6 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_hnsw_bitmap_filter_duration_seconds` | Time spent evaluating bitmap filters during HNSW search |
 | `longbow_hnsw_bitmap_index_entries_total` | Number of entries in the HNSW bitmap metadata index |
 | `longbow_hnsw_bitset_grow_total` | Total number of bitset grows during HNSW operations |
-| `longbow_hnsw_lock_wait_duration_seconds` | Time spent waiting for HNSW node locks |
 | `longbow_hnsw_branch_prediction_likely_total` | Total number of branches marked as likely (true) |
 | `longbow_hnsw_branch_prediction_total` | Total number of branch predictions by type |
 | `longbow_hnsw_branch_prediction_unlikely_total` | Total number of branches marked as unlikely (false) |
@@ -270,6 +275,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_hnsw_complex_ops_total` | Total number of complex number distance calculations |
 | `longbow_hnsw_context_check_cancelled_total` | Total number of times context check detected cancellation |
 | `longbow_hnsw_context_check_total` | Total number of context checks performed during traversal |
+| `longbow_hnsw_cow_copy_count` | Number of copy-on-write page copies in HNSW graph |
 | `longbow_hnsw_disconnected_components` | Number of disconnected components in the HNSW graph |
 | `longbow_hnsw_distance_calculations_f16_total` | Total number of F16 distance calculations |
 | `longbow_hnsw_distance_calculations_total` | Total HNSW distance calculations performed |
@@ -294,6 +300,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_hnsw_insert_pool_new_total` | Total number of new insert contexts created |
 | `longbow_hnsw_insert_pool_put_total` | Total number of insert contexts returned to pool |
 | `longbow_hnsw_intrinsic_dimensionality` | Estimated intrinsic dimensionality of the data |
+| `longbow_hnsw_lock_wait_duration_seconds` | Time spent waiting for HNSW node locks |
 | `longbow_hnsw_max_component_size` | Size of the largest connected component in the HNSW graph |
 | `longbow_hnsw_memory_usage_bytes` | Memory usage of HNSW index components |
 | `longbow_hnsw_node_count` | Total number of nodes in the HNSW graph |
@@ -347,6 +354,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_hnsw_sharding_migrations_total` | Total number of HNSW index migrations to sharded format |
 | `longbow_hnsw_simd_dispatch_latency_seconds` | Latency of dynamic SIMD kernel dispatch by data type |
 | `longbow_hnsw_traversal_iterations_total` | Total number of iterations during HNSW graph traversal |
+| `longbow_hnsw_update_contention_seconds` | Time spent under update lock contention in HNSW graph |
 | `longbow_hnsw_vector_allocated_bytes_total` | Total bytes allocated for HNSW vector storage |
 | `longbow_hnsw_vector_allocations_total` | Total number of vector allocations for HNSW graph storage |
 | `longbow_hnsw_visited_reset_duration_seconds` | Time spent resetting HNSW visited set |
@@ -519,6 +527,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_onnx_metal_tensor_allocations_total` | Total number of ONNX Metal tensor allocations |
 | `longbow_onnx_model_load_duration_seconds` | Duration of ONNX model loading |
 | `longbow_opq_encoder_warmup_duration_seconds` | Time spent warming up the OPQ encoder during training |
+| `longbow_packed_adjacency_cow_total` | Total copy-on-write operations in packed adjacency structures |
 | `longbow_panic_total` | Total number of panics recovered |
 | `longbow_parallel_reduction_vectors_processed_total` | Total number of vectors processed using parallel reduction optimizations |
 | `longbow_parser_pool_gets_total` | Total number of parser pool retrievals |
@@ -591,6 +600,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_schema_version_current` | Current schema version |
 | `longbow_search_allocation_bytes` | Memory allocated during search operations in bytes |
 | `longbow_search_consistency_level_total` | Total number of vector searches by consistency level |
+| `longbow_search_dequantize_latency_seconds` | Duration of dequantization phase in searches |
 | `longbow_search_dimension_distribution_total` | Distribution of search queries by dimension |
 | `longbow_search_latency_by_dimension_seconds` | Search latency in seconds, bucketed by dimension |
 | `longbow_search_latency_seconds` | Latency of search operations by type |
@@ -609,6 +619,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_semaphore_queue_duration_seconds` | Time spent waiting in semaphore queue |
 | `longbow_semaphore_timeouts_total` | Total number of semaphore acquisition timeouts |
 | `longbow_semaphore_waiting_requests` | Number of requests waiting for semaphore |
+| `longbow_shard_balance_imbalance_ratio` | Imbalance ratio across sharded indices |
 | `longbow_shard_lock_wait_duration_seconds` | Time spent waiting for shard-level locks |
 | `longbow_sharded_hnsw_load_factor` | Sharded HNSW load factor by shard (0-1) |
 | `longbow_sharded_hnsw_shard_size` | Number of vectors in each HNSW shard |
@@ -629,8 +640,17 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_simd_operations_total` | Total number of SIMD-accelerated operations |
 | `longbow_simd_static_dispatch_type` | Type of SIMD implementation statically dispatched (0=Generic, 1=NEON, 2=AVX2, 3=AVX512) |
 | `longbow_simd_tiled_distance_batch_total` | Total number of tiled distance batch operations performed for high-dim vectors (>1024 dims) |
+| `longbow_slab_active_arenas` | Number of active arenas in the slab allocator |
 | `longbow_slab_fragmentation_ratio` | Fragmentation ratio for slab pools (pooled/active) |
+| `longbow_slab_hugepage_count` | Number of hugepages allocated by the slab allocator |
+| `longbow_slab_leak_probability` | Estimated leak probability of memory slabs |
 | `longbow_slab_pool_allocations_total` | Total number of slab allocations (both pooled and new) |
+| `longbow_slab_pool_buffer_hit_ratio` | Buffer hit ratio in slab pool allocations |
+| `longbow_slab_pool_growth_total` | Total growth events of slab pools |
+| `longbow_slab_pool_max_pooled` | Maximum size of pooled slabs in slab pools |
+| `longbow_slab_pool_resizes_total` | Total number of slab pool resizes |
+| `longbow_slab_pool_shrink_total` | Total shrink events of slab pools |
+| `longbow_slab_refcount_distribution` | Distribution of slab reference counts |
 | `longbow_snapshot_duration_seconds` | Duration of snapshot creation operations |
 | `longbow_snapshot_operations_total` | Total number of snapshot operations |
 | `longbow_snapshot_rate_limit_wait_seconds` | Time spent waiting for snapshot rate limiter |
@@ -658,11 +678,17 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_system_disk_read_bytes_per_second` | System-wide disk read throughput (from /proc/diskstats) |
 | `longbow_system_disk_write_bytes_per_second` | System-wide disk write throughput (from /proc/diskstats) |
 | `longbow_tcp_nodelay_connections_total` | Total number of TCP connections with NoDelay set |
+| `longbow_temporal_query_scanned_nodes_total` | Total number of scanned nodes in temporal queries |
+| `longbow_temporal_tree_allocated_bytes_total` | Total bytes allocated in temporal trees |
+| `longbow_temporal_tree_cache_hit_ratio` | Cache hit ratio for temporal tree nodes |
+| `longbow_temporal_tree_nodes_total` | Total number of nodes in temporal trees |
 | `longbow_tombstones_total` | Total number of active tombstones |
 | `longbow_tpu_core_utilization_ratio` | TPU core utilization ratio (0.0 to 1.0) |
 | `longbow_tpu_d2d_latency_seconds` | TPU die-to-die (D2D) interconnect latency in seconds |
 | `longbow_tpu_hbm_usage_bytes` | TPU High Bandwidth Memory usage in bytes |
 | `longbow_tpu_inference_duration_seconds` | TPU inference duration in seconds |
+| `longbow_tpu_operation_latency_seconds` | Latency of TPU operations in seconds |
+| `longbow_tpu_operations_total` | Total number of TPU operations |
 | `longbow_tq2_codes_per_vector` | Number of codes per vector for TurboQuant2 (2-bit) |
 | `longbow_tq2_decode_duration_seconds` | Time spent decoding vectors with TurboQuant2 (2-bit) |
 | `longbow_tq2_encode_duration_seconds` | Time spent encoding vectors with TurboQuant2 (2-bit) |
@@ -721,11 +747,12 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_wal_queue_depth` | Current number of batches waiting in the WAL persistence queue |
 | `longbow_wal_queue_latency_seconds` | Time spent in the persistence queue before processing |
 | `longbow_wal_replay_duration_seconds` | Time taken to replay the Write-Ahead Log |
+| `longbow_wal_replay_parallelism_total` | Current number of parallel WAL replay applier workers |
+| `longbow_wal_replication_latency_seconds` | Latency of WAL replication in seconds |
 | `longbow_wal_ring_buffer_drains_total` | Total number of ring buffer drain operations |
 | `longbow_wal_ring_buffer_full_total` | Total number of times ring buffer was full (backpressure) |
 | `longbow_wal_ring_buffer_pushes_total` | Total number of successful ring buffer push operations |
 | `longbow_wal_ring_buffer_utilization` | Current utilization of WAL ring buffer (0-1) |
-| `longbow_wal_replay_parallelism_total` | Current number of parallel WAL replay applier workers |
 | `longbow_wal_uring_cq_depth` | Current depth of the io_uring completion queue |
 | `longbow_wal_uring_sq_depth` | Current depth of the io_uring submission queue |
 | `longbow_wal_uring_submit_latency_seconds` | Latency of io_uring Enter/Submit calls |

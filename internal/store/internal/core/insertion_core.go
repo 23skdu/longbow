@@ -227,6 +227,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	ctx.Reset()
 	ctx.AllowUncommitted = true
 
+	h.epMu.Lock()
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())
 
@@ -241,10 +242,20 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 
 		for l := maxL; l > level; l-- {
 			neighbors, err := h.searchLayer(context.Background(), computer, ep, 1, l, ctx, data, vec)
-			if err != nil { return nil, err }
+			if err != nil {
+				h.epMu.Unlock()
+				return nil, err
+			}
 			if len(neighbors) > 0 { ep = neighbors[0].ID }
 		}
 	}
+	h.epMu.Unlock()
+
+	shard := id % ShardedLockCount
+	lockStart := time.Now()
+	h.insertMus[shard].Lock()
+	metrics.InsertMuWaitDurationSeconds.WithLabelValues(h.name).Observe(time.Since(lockStart).Seconds())
+	defer h.insertMus[shard].Unlock()
 
 	for l := min(level, maxL+1); l >= 0 && ep != math.MaxUint32; l-- {
 		ef := max(int(h.efConstruction.Load()), int(h.m.Load()))

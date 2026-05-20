@@ -142,12 +142,13 @@ class BenchmarkRunner:
             "metal": "longbow-metal",
             "cuda": "longbow-cuda",
         }
-        bin_name = mode_binaries.get(self.args.mode, "longbow")
+        current_mode = getattr(self, "current_mode", self.args.mode)
+        bin_name = mode_binaries.get(current_mode, "longbow")
         path = os.path.join(self.bin_dir, bin_name)
 
         # Fall back to CPU if GPU binary not found
-        if not os.path.exists(path) and self.args.mode in ["metal", "cuda"]:
-            print(f"  {self.args.mode.upper()} binary not found, using CPU")
+        if not os.path.exists(path) and current_mode in ["metal", "cuda"]:
+            print(f"  {current_mode.upper()} binary not found, using CPU")
             path = os.path.join(self.bin_dir, "longbow")
 
         return path
@@ -190,10 +191,11 @@ class BenchmarkRunner:
             return None
 
     def check_cuda(self):
-        if self.args.mode == "cuda" and platform.system() != "Linux":
+        current_mode = getattr(self, "current_mode", self.args.mode)
+        if current_mode == "cuda" and platform.system() != "Linux":
             print("  CUDA mode only supported on Linux, using CPU")
             return False
-        if self.args.mode == "cuda":
+        if current_mode == "cuda":
             result = run_command(
                 "nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null"
             )
@@ -551,7 +553,8 @@ class BenchmarkRunner:
 
         # Build search-modes string based on mode
         search_modes = self.args.search_modes
-        if self.args.mode == "temporal" and search_modes == "all":
+        current_mode = getattr(self, "current_mode", self.args.mode)
+        if current_mode == "temporal" and search_modes == "all":
             search_modes = "temporal_as_of,temporal_range,temporal_window"
 
         extra_args = ""
@@ -597,16 +600,14 @@ class BenchmarkRunner:
         if pprof_proc:
             pprof_proc.wait()
 
-        if not result or result.returncode != 0:
-            print(" FAILED")
-            if result and result.stderr:
-                print(f"    Error: {result.stderr.strip()}")
-            return False
-
+        # Parse JSON first — bench-tool logs to stderr (Go log package) which
+        # can cause non-zero exit codes even on successful runs.
         print(f"DEBUG: json_file={json_file}")
         metrics = parse_bench_json(json_file)
         if not metrics:
-            print(" NO DATA")
+            print(" FAILED")
+            if result and result.stderr:
+                print(f"    Error: {result.stderr.strip()}")
             return False
 
         # Extract all search types
@@ -2322,7 +2323,8 @@ class BenchmarkRunner:
         print("=" * 80)
 
     def print_summary(self):
-        if self.args.mode == "recommend":
+        current_mode = getattr(self, "current_mode", self.args.mode)
+        if current_mode == "recommend":
             print("\n" + "─" * 100)
             print("RECOMMEND BENCHMARK SUMMARY (Hybrid vs ANN)")
             print("─" * 100)
@@ -2343,7 +2345,7 @@ class BenchmarkRunner:
             print("─" * 100)
             return
 
-        if self.args.mode == "deletion":
+        if current_mode == "deletion":
             print("\n" + "─" * 100)
             print("DELETION BENCHMARK SUMMARY (Tombstone Operations)")
             print("─" * 100)
@@ -2358,7 +2360,7 @@ class BenchmarkRunner:
             print("─" * 100)
             return
 
-        if self.args.mode == "graphrag":
+        if current_mode == "graphrag":
             print("\n" + "─" * 100)
             print("GRAPHRAG BENCHMARK SUMMARY (Graph Spreading)")
             print("─" * 100)
@@ -2379,7 +2381,7 @@ class BenchmarkRunner:
             print("─" * 100)
             return
 
-        if self.args.mode == "exchange":
+        if current_mode == "exchange":
             print("\n" + "─" * 100)
             print("DOEXCHANGE BENCHMARK SUMMARY (Mesh Replication)")
             print("─" * 100)
@@ -2394,7 +2396,7 @@ class BenchmarkRunner:
             print("─" * 100)
             return
 
-        if self.args.mode == "cluster":
+        if current_mode == "cluster":
             print("\n" + "─" * 100)
             print("CLUSTER SEARCH BENCHMARK SUMMARY (Gossip Protocol)")
             print("─" * 100)
@@ -2433,7 +2435,8 @@ class BenchmarkRunner:
         print("─" * 100)
 
     def generate_markdown_report(self):
-        if self.args.mode == "recommend":
+        current_mode = getattr(self, "current_mode", self.args.mode)
+        if current_mode == "recommend":
             md_file = self.output_file.replace(".json", ".md")
             with open(md_file, "w") as f:
                 f.write("# Recommend Benchmark Results (Hybrid vs ANN)\n\n")
@@ -2462,7 +2465,7 @@ class BenchmarkRunner:
                 f.write("- **Alpha = 0.5**: Hybrid blend of both approaches\n")
             return
 
-        if self.args.mode == "deletion":
+        if current_mode == "deletion":
             md_file = self.output_file.replace(".json", ".md")
             with open(md_file, "w") as f:
                 f.write("# Deletion Benchmark Results (Tombstone Operations)\n\n")
@@ -2481,7 +2484,7 @@ class BenchmarkRunner:
                     )
             return
 
-        if self.args.mode == "graphrag":
+        if current_mode == "graphrag":
             md_file = self.output_file.replace(".json", ".md")
             with open(md_file, "w") as f:
                 f.write("# GraphRAG Benchmark Results (Graph Spreading)\n\n")
@@ -2502,7 +2505,7 @@ class BenchmarkRunner:
                         )
             return
 
-        if self.args.mode == "exchange":
+        if current_mode == "exchange":
             md_file = self.output_file.replace(".json", ".md")
             with open(md_file, "w") as f:
                 f.write("# DoExchange Benchmark Results (Mesh Replication)\n\n")
@@ -2517,7 +2520,7 @@ class BenchmarkRunner:
                     )
             return
 
-        if self.args.mode == "cluster":
+        if current_mode == "cluster":
             md_file = self.output_file.replace(".json", ".md")
             with open(md_file, "w") as f:
                 f.write("# Cluster Search Benchmark Results (Gossip Protocol)\n\n")
@@ -2536,7 +2539,7 @@ class BenchmarkRunner:
                     )
             return
 
-        if self.args.mode == "geo":
+        if current_mode == "geo":
             md_file = self.output_file.replace(".json", ".md")
             with open(md_file, "w") as f:
                 f.write("# Geo-Spatial Search Benchmark Results\n\n")
@@ -2555,7 +2558,7 @@ class BenchmarkRunner:
                                 f"{s['p95']:.2f} | {s['p99']:.2f} |\n")
             return
 
-        if self.args.mode == "churn":
+        if current_mode == "churn":
             md_file = self.output_file.replace(".json", ".md")
             with open(md_file, "w") as f:
                 f.write("# Churn Soak Test Results (Add/Delete Cycling)\n\n")
@@ -2572,8 +2575,8 @@ class BenchmarkRunner:
             return
 
         md_file = self.output_file.replace(".json", ".md")
-        mode_title = self.args.mode.upper()
-        if self.args.mode == "metal":
+        mode_title = current_mode.upper()
+        if current_mode == "metal":
             mode_title = "Metal GPU"
 
         with open(md_file, "w") as f:

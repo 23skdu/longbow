@@ -967,26 +967,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		}
 	}
 
-	// Optimization: Use distance cache from context if available
-	if ctx != nil {
-		innerDistComputer := distComputer
-		distComputer = func(id uint32) (float32, error) {
-			if d, ok := ctx.distCache[id]; ok {
-				return d, nil
-			}
-			d, err := innerDistComputer(id)
-			if err == nil {
-				ctx.distCache[id] = d
-			}
-			return d, err
-		}
-
-		// Ensure entry point distance is also cached
-		if _, ok := ctx.distCache[entryPoint]; !ok {
-			ctx.distCache[entryPoint] = epDist
-		}
-	}
-
 	// 1. Reset Frontier for this layer
 	ctx.candidates = ctx.candidates[:0]
 	ctx.resultSet = ctx.resultSet[:0]

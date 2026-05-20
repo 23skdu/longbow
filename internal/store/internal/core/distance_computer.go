@@ -477,9 +477,8 @@ func (c *sharedFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *sharedFloat32Computer) Prefetch(id uint32) {
 	// Optimized hot-path: bypass Get() abstraction
-	chunksPtr := c.h.locationStore.chunks.Load()
-	if chunksPtr == nil { return }
-	chunks := *chunksPtr
+	chunks := c.h.locationStore.loadChunks()
+	if chunks == nil { return }
 	idx := int(id)
 	cIdx := idx / 1024
 	if cIdx < len(chunks) {
@@ -539,9 +538,8 @@ func (c *sharedInt8Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *sharedInt8Computer) Prefetch(id uint32) {
 	// Optimized hot-path: bypass Get() abstraction
-	chunksPtr := c.h.locationStore.chunks.Load()
-	if chunksPtr == nil { return }
-	chunks := *chunksPtr
+	chunks := c.h.locationStore.loadChunks()
+	if chunks == nil { return }
 	idx := int(id)
 	cIdx := idx / 1024
 	if cIdx < len(chunks) {

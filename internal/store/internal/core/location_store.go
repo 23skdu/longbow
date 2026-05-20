@@ -3,6 +3,7 @@ package core
 import (
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
@@ -40,7 +41,7 @@ type reverseShard struct {
 // global locking during reads and massive reallocations during growth.
 type ChunkedLocationStore struct {
 	mu     sync.Mutex                   // Protects growth (appending chunks)
-	chunks atomic.Pointer[[]*locationChunk] // Stores []*locationChunk
+	chunks unsafe.Pointer // Stores *[]*locationChunk
 	size   atomic.Uint32                // Total number of locations (simulates len)
 	
 	// reverseMap is sharded to reduce contention during parallel ingestion.
@@ -51,7 +52,7 @@ type ChunkedLocationStore struct {
 func NewChunkedLocationStore() *ChunkedLocationStore {
 	s := &ChunkedLocationStore{}
 	emptyChunks := make([]*locationChunk, 0)
-	s.chunks.Store(&emptyChunks)
+	atomic.StorePointer(&s.chunks, unsafe.Pointer(&emptyChunks)) // #nosec G103
 	for i := 0; i < ReverseShards; i++ {
 		s.reverseShards[i].data = make(map[uint64]types.VectorID)
 	}
@@ -65,7 +66,7 @@ func (s *ChunkedLocationStore) Close() {
 	
 	// Clear forward mapping chunks
 	emptyChunks := make([]*locationChunk, 0)
-	s.chunks.Store(&emptyChunks)
+	atomic.StorePointer(&s.chunks, unsafe.Pointer(&emptyChunks)) // #nosec G103
 	s.size.Store(0)
 
 	// Clear reverse sharded maps
@@ -74,6 +75,15 @@ func (s *ChunkedLocationStore) Close() {
 		s.reverseShards[i].data = make(map[uint64]types.VectorID)
 		s.reverseShards[i].mu.Unlock()
 	}
+}
+
+// loadChunks safely retrieves the chunk pointer.
+func (s *ChunkedLocationStore) loadChunks() []*locationChunk {
+	ptr := atomic.LoadPointer(&s.chunks)
+	if ptr == nil {
+		return nil
+	}
+	return *(*[]*locationChunk)(ptr)
 }
 
 func (s *ChunkedLocationStore) getShard(packed uint64) *reverseShard {
@@ -87,11 +97,10 @@ func (s *ChunkedLocationStore) Get(id types.VectorID) (types.Location, bool) {
 		return types.Location{}, false
 	}
 
-	chunksPtr := s.chunks.Load()
-	if chunksPtr == nil {
+	chunks := s.loadChunks()
+	if chunks == nil {
 		return types.Location{}, false
 	}
-	chunks := *chunksPtr
 	idx := int(id)
 	chunkIdx := idx / LocationChunkSize
 	offset := idx % LocationChunkSize
@@ -120,14 +129,13 @@ func (s *ChunkedLocationStore) GetID(loc types.Location) (types.VectorID, bool) 
 
 // GetBatch retrieves locations for multiple IDs efficiently.
 func (s *ChunkedLocationStore) GetBatch(ids []types.VectorID, results []types.Location) {
-	chunksPtr := s.chunks.Load()
-	if chunksPtr == nil {
+	chunks := s.loadChunks()
+	if chunks == nil {
 		for i := range results {
 			results[i] = types.Location{BatchIdx: -1, RowIdx: -1}
 		}
 		return
 	}
-	chunks := *chunksPtr
 	maxSize := s.size.Load()
 
 	for i, id := range ids {
@@ -156,11 +164,10 @@ func (s *ChunkedLocationStore) GetBatch(ids []types.VectorID, results []types.Lo
 
 // Set updates the location for a given ID.
 func (s *ChunkedLocationStore) Set(id types.VectorID, loc types.Location) {
-	chunksPtr := s.chunks.Load()
-	if chunksPtr == nil {
+	chunks := s.loadChunks()
+	if chunks == nil {
 		return
 	}
-	chunks := *chunksPtr
 	idx := int(id)
 	chunkIdx := idx / LocationChunkSize
 	offset := idx % LocationChunkSize
@@ -181,11 +188,10 @@ func (s *ChunkedLocationStore) Set(id types.VectorID, loc types.Location) {
 
 // Delete removes the location for a given ID.
 func (s *ChunkedLocationStore) Delete(id types.VectorID) {
-	chunksPtr := s.chunks.Load()
-	if chunksPtr == nil {
+	chunks := s.loadChunks()
+	if chunks == nil {
 		return
 	}
-	chunks := *chunksPtr
 	idx := int(id)
 	chunkIdx := idx / LocationChunkSize
 	offset := idx % LocationChunkSize
@@ -210,7 +216,7 @@ func (s *ChunkedLocationStore) Append(loc types.Location) types.VectorID {
 	s.EnsureCapacity(id)
 	
 	// 3. Update data
-	chunks := *s.chunks.Load()
+	chunks := s.loadChunks()
 	chunkIdx := int(id) / LocationChunkSize
 	offset := int(id) % LocationChunkSize
 	
@@ -241,7 +247,7 @@ func (s *ChunkedLocationStore) BatchAppend(locs []types.Location) (startID types
 	s.EnsureCapacity(types.VectorID(startIDVal + count - 1))
 	
 	// 3. Update data and reverse maps
-	chunks := *s.chunks.Load()
+	chunks := s.loadChunks()
 	
 	// Map to group IDs and packed locations by shard
 	type shardUpdate struct {
@@ -295,8 +301,8 @@ func (s *ChunkedLocationStore) EnsureCapacity(id types.VectorID) {
 	chunkIdx := idx / LocationChunkSize
 
 	// Optimistic check
-	chunksPtr := s.chunks.Load()
-	if chunksPtr != nil && chunkIdx < len(*chunksPtr) {
+	chunks := s.loadChunks()
+	if chunks != nil && chunkIdx < len(chunks) {
 		return
 	}
 
@@ -305,8 +311,7 @@ func (s *ChunkedLocationStore) EnsureCapacity(id types.VectorID) {
 	defer s.mu.Unlock()
 	
 	// Re-check under lock
-	oldChunksPtr := s.chunks.Load()
-	oldChunks := *oldChunksPtr
+	oldChunks := s.loadChunks()
 	if chunkIdx < len(oldChunks) {
 		return
 	}
@@ -317,7 +322,7 @@ func (s *ChunkedLocationStore) EnsureCapacity(id types.VectorID) {
 	for i := len(oldChunks); i < neededChunks; i++ {
 		newChunks[i] = &locationChunk{}
 	}
-	s.chunks.Store(&newChunks)
+	atomic.StorePointer(&s.chunks, unsafe.Pointer(&newChunks)) // #nosec G103
 }
 
 // UpdateSize ensures size is at least id+1.
@@ -340,7 +345,7 @@ func (s *ChunkedLocationStore) Reset() {
 	defer s.mu.Unlock()
 	s.size.Store(0)
 	emptyChunks := make([]*locationChunk, 0)
-	s.chunks.Store(&emptyChunks)
+	atomic.StorePointer(&s.chunks, unsafe.Pointer(&emptyChunks)) // #nosec G103
 	for i := 0; i < ReverseShards; i++ {
 		s.reverseShards[i].mu.Lock()
 		s.reverseShards[i].data = make(map[uint64]types.VectorID)
@@ -350,11 +355,10 @@ func (s *ChunkedLocationStore) Reset() {
 
 // IterateMutable iterates over all locations, allowing atomic modification.
 func (s *ChunkedLocationStore) IterateMutable(fn func(id types.VectorID, val *atomic.Uint64)) {
-	chunksPtr := s.chunks.Load()
-	if chunksPtr == nil {
+	chunks := s.loadChunks()
+	if chunks == nil {
 		return
 	}
-	chunks := *chunksPtr
 	currentSize := int(s.size.Load())
 
 	for i, chunk := range chunks {

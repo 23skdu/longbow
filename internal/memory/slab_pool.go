@@ -98,6 +98,8 @@ func PutSlab(b []byte) {
 			sizeStr := strconv.Itoa(c)
 			offHeapAlloc.Free(b)
 			metrics.SlabPoolShrinkTotal.WithLabelValues(sizeStr, "non_standard_free").Inc()
+		} else {
+			metrics.SlabPoolBoundaryViolationsTotal.WithLabelValues(strconv.Itoa(c), "put_slab").Inc()
 		}
 	}
 }
@@ -152,12 +154,24 @@ func (p *SlabPool) Get() []byte {
 	// Update metrics
 	p.updateMetrics()
 
-	return *p.pool.Get().(*[]byte)
+	slab := p.pool.Get()
+	b := *slab.(*[]byte)
+	if cap(b) != p.size {
+		metrics.SlabPoolBoundaryViolationsTotal.WithLabelValues(sizeStr, "get").Inc()
+		newB := offHeapAlloc.Allocate(p.size)
+		if err := AdviseHugePage(newB); err == nil {
+			metrics.SlabHugePageCount.Inc()
+		}
+		b = newB
+	}
+
+	return b
 }
 
 // Put returns a slab to the pool for reuse.
 func (p *SlabPool) Put(b []byte) {
 	if cap(b) != p.size {
+		metrics.SlabPoolBoundaryViolationsTotal.WithLabelValues(strconv.Itoa(p.size), "put").Inc()
 		return
 	}
 

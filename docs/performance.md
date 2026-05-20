@@ -1,3 +1,6 @@
+<!-- Latest validated commit: 04edb659 (2026-05-20) - Security hardening + overflow checks -->
+<!-- Benchmark run in progress: localhost (CPU+Metal, 18GB) + ancalagon (CPU+CUDA, 14GB -->
+
 ## v0.2.1 Final Performance Validation (2026-05-16)
 
 ## Search Performance Summary (QPS)

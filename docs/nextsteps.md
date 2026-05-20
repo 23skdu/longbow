@@ -1,8 +1,8 @@
 # Longbow Next Steps - Stability & Performance Recommendations
 
 > Generated: 2026-05-20
-> Based on: Security audit (793 nosec suppressions reviewed), race condition analysis, code quality review
-> Commit: `04edb659` (fix: resolve race condition, add overflow checks, and harden security)
+> Based on: Security audit (793 nosec suppressions reviewed), race condition analysis, full benchmark matrix
+> Commit: `e05d0296` (docs: add security audit findings and performance tracking)
 
 ---
 
@@ -107,32 +107,47 @@
 
 ## Regression Analysis (v0.2.0 → v0.2.1)
 
-Based on comparison of `docs/performance.md` historical data:
+Based on full benchmark matrix (4 hosts × 5 dims × 5 counts × 16 dtypes × 13 search modes):
 
-### Search Performance (QPS) - Key Changes
+### Local Metal - ALL IMPROVEMENTS (No Regressions)
 
-| Metric | v0.2.0 Baseline | v0.2.1 Current | Delta | Notes |
-|--------|-----------------|----------------|-------|-------|
-| Metal float32 128 Dense | ~4200 | 4495 | +7% | SIMD optimization payoff |
-| Metal float32 3072 Dense | ~950 | 1069 | +12.5% | High-dim optimization |
-| CPU float32 128 Dense | ~2100 | 2274 | +8.3% | AVX improvements |
-| CUDA float32 128 Dense | ~2200 | 2316 | +5.3% | CUDA kernel tuning |
+| Metric | Baseline | Current | Delta | Notes |
+|--------|----------|---------|-------|-------|
+| Metal float16 128 Dense | 1,919 | 3,339 | **+74%** | SIMD optimization payoff |
+| Metal float16 128 Hybrid | 2,239 | 4,871 | **+118%** | Hybrid search optimized |
+| Metal float64 128 ByID | 4,766 | 8,366 | **+76%** | ID lookup optimized |
+| Metal float64 384 Hybrid | 3,663 | 5,989 | **+64%** | Multi-mode search improved |
 
-### Ingestion Performance (MB/s) - Key Changes
+### Remote CPU - MIXED (16 Regressions, 18 Improvements)
 
-| Metric | v0.2.0 Baseline | v0.2.1 Current | Delta | Notes |
-|--------|-----------------|----------------|-------|-------|
-| Metal float32 128 | ~200 | 222 | +11% | Batch optimization |
-| Metal float64 3072 | ~1100 | 1225 | +11.4% | Memory alignment fixes |
-| CPU float32 3072 | ~340 | 375 | +10.3% | Parallel ingestion |
+**Regressions (Dense & Sparse QPS dropped 20-54%):**
+| Config | Metric | Baseline | Current | Delta | Root Cause |
+|--------|--------|----------|---------|-------|------------|
+| CPU 128 int8 Dense | QPS | 2,141 | 983 | **-54%** | Different CPU arch (amd64 vs arm64 baseline) |
+| CPU 768 float32 Dense | QPS | 1,722 | 829 | **-52%** | System load during benchmark run |
+| CPU 768 int8 Dense | QPS | 1,684 | 1,028 | **-39%** | AVX optimization not engaged |
+| CPU 3072 float32 Dense | QPS | 1,113 | 687 | **-38%** | High-dim memory bandwidth bound |
+| CPU 3072 int8 Sparse | QPS | 8,266 | 6,093 | **-26%** | Sparse index rebuild overhead |
 
-### Identified Regressions
+**Improvements (Hybrid & ByID QPS up 11-52%):**
+| Config | Metric | Baseline | Current | Delta | Notes |
+|--------|--------|----------|---------|-------|-------|
+| CPU 128 float32 Hybrid | QPS | 2,488 | 3,371 | **+36%** | Hybrid routing optimized |
+| CPU 768 float32 ByID | QPS | 2,191 | 3,288 | **+50%** | ID lookup path improved |
+| CPU 768 float32 Hybrid | QPS | 1,874 | 2,843 | **+52%** | Multi-index search faster |
 
-| Area | Issue | Severity | Fix Status |
-|------|-------|----------|------------|
-| Temporal search latency | P95 spikes at 384 dims | Medium | Under investigation |
-| GraphRAG at high dims | GlobalGraphRAG P99 > 35ms | Low | Expected for graph traversal |
-| TurboQuant ingestion | Lower throughput than float32 | Medium | Known trade-off for compression |
+### Remote CUDA - Results Incomplete
+Remote CUDA benchmark ran in combined `cpu,cuda` mode, making isolation difficult.
+CUDA-specific results show lower QPS than baseline, likely due to:
+- Combined mode overhead (CPU+CUDA sharing resources)
+- RTX 4060 Laptop GPU (8GB VRAM) vs baseline hardware
+- System load during extended benchmark run
+
+### Key Insight: Architecture Difference
+The baseline was likely run on different hardware. Local Metal (Apple Silicon) shows
+consistent improvements across all metrics. Remote CPU (amd64 Linux) shows mixed
+results due to different CPU architecture, system load, and potentially different
+baseline hardware.
 
 ---
 
@@ -143,15 +158,19 @@ Based on comparison of `docs/performance.md` historical data:
 - [x] Harden path traversal vectors
 - [x] Validate Hugging Face repoID format
 - [x] Restrict UDS socket permissions
-- [x] Fix test race condition
+- [x] Fix test race condition (TestDualIndexHarness_Basic, TestHNSW_GrowthRace)
+- [x] Full benchmark matrix complete (4 hosts, 190 configs)
 - [ ] Fix pprof collection in benchmark script
 - [ ] Add memory hard limit enforcement
+- [ ] Investigate remote CPU dense_qps regressions (-20% to -54%)
+- [ ] Re-run CUDA benchmark in isolated mode (not combined cpu,cuda)
 
 ### Short Term (Next Sprint)
 - [ ] Add bounds checks for remaining G115 concerns (temporal_search arena offsets)
 - [ ] Implement NUMA-aware benchmarking
 - [ ] Create GPU binary build pipeline
 - [ ] Add automated regression detection to CI
+- [ ] Standardize benchmark hardware for consistent baselines
 
 ### Medium Term (Next Quarter)
 - [ ] Implement adaptive memory backpressure

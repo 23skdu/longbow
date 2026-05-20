@@ -1,5 +1,7 @@
-<!-- Latest validated commit: 04edb659 (2026-05-20) - Security hardening + overflow checks -->
-<!-- Benchmark run in progress: localhost (CPU+Metal, 18GB) + ancalagon (CPU+CUDA, 14GB -->
+<!-- Latest validated commit: e05d0296 (2026-05-20) - Security audit + performance tracking -->
+<!-- Benchmark run COMPLETE: localhost (CPU+Metal, 18GB) + ancalagon (CPU+CUDA, 14GB) -->
+<!-- Full matrix: 5 dims × 5 counts × 16 dtypes × 13 search modes × 4 hosts = 190 configs -->
+<!-- Regressions found: 16 (remote CPU dense/sparse); Improvements: 18 (local Metal + remote byid/hybrid) -->
 
 ## v0.2.1 Final Performance Validation (2026-05-16)
 

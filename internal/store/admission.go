@@ -2,8 +2,10 @@ package store
 
 import (
 	"context"
+	"os"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +20,7 @@ import (
 type AdmissionController struct {
 	maxMemory      *atomic.Int64
 	currentMemory  *atomic.Int64
+	hardMemory     int64 // Absolute hard limit (LONGBOW_MAX_MEMORY_HARD)
 	scaler         *autoscale.AutoScaler
 	migratingCount atomic.Int32
 	logger         zerolog.Logger
@@ -34,9 +37,16 @@ type AdmissionController struct {
 
 // NewAdmissionController creates a new admission controller.
 func NewAdmissionController(maxMemory, currentMemory *atomic.Int64, scaler *autoscale.AutoScaler, logger zerolog.Logger) *AdmissionController {
+	hardMem := int64(0)
+	if v := os.Getenv("LONGBOW_MAX_MEMORY_HARD"); v != "" {
+		if parsed, err := strconv.ParseInt(v, 10, 64); err == nil && parsed > 0 {
+			hardMem = parsed
+		}
+	}
 	return &AdmissionController{
 		maxMemory:           maxMemory,
 		currentMemory:       currentMemory,
+		hardMemory:          hardMem,
 		scaler:              scaler,
 		logger:              logger,
 		maxSearchLatency:    500 * time.Millisecond,
@@ -173,6 +183,19 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 		}
 	}
 
+	// Check against absolute hard memory limit (LONGBOW_MAX_MEMORY_HARD)
+	if ac.hardMemory > 0 && effectiveMem > ac.hardMemory {
+		// Hard absolute limit breached - reject immediately
+		if opType != "maintenance" && opType != "delete" && opType != "drop" {
+			ac.logger.Warn().
+				Int64("effective_bytes", effectiveMem).
+				Int64("hard_limit_bytes", ac.hardMemory).
+				Str("op_type", opType).
+				Msg("Request rejected: hard memory limit breached")
+			return status.Errorf(codes.ResourceExhausted, "hard memory limit breached (%d bytes): request rejected", effectiveMem)
+		}
+	}
+
 	// Migration-aware thresholds: Apply tighter limits if any index is currently migrating
 	// as migration is a high-memory, non-interruptible background process.
 	hardLimit := 0.94
@@ -180,6 +203,20 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 	if ac.migratingCount.Load() > 0 {
 		hardLimit = 0.88   // Tighter limit during migration (88%)
 		ingestLimit = 0.85 // Tighter ingest limit during migration (85%)
+	}
+
+	// Adaptive Memory Backpressure: as memory usage approaches the hard limit
+	// (between 80% and 95%), inject exponentially scaling sleep delays
+	// (5ms to 100ms) on ingestion threads to allow eviction and compaction
+	// workers to free memory.
+	if opType == "ingest" && memoryUsage > 0.80 && memoryUsage < hardLimit {
+		p := (memoryUsage - 0.80) / (0.95 - 0.80)
+		if p > 1.0 {
+			p = 1.0
+		}
+		// Exponential scaling: p^2 * 95ms + 5ms base = 5ms at 80%, 100ms at 95%
+		delay := time.Duration(p*p*float64(95*time.Millisecond) + float64(5*time.Millisecond))
+		time.Sleep(delay)
 	}
 
 	// Hard Limit

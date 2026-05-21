@@ -1408,7 +1408,7 @@ func (g *GraphData) GetVectorWithGen(id uint32, maxGen uint64) (any, error) {
 		start := cOff * pd
 		if start+g.Dims <= len(chunk) { return chunk[start : start+g.Dims], nil }
 	case VectorTypeFloat32:
-		chunk := g.GetVectorsChunk(cID)
+		chunk := g.GetVectorsChunkWithGen(cID, maxGen)
 		if chunk != nil {
 			pd := g.GetPaddedDimsForType(VectorTypeFloat32)
 			start := cOff * pd

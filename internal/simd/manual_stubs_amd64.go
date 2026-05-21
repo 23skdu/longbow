@@ -35,3 +35,11 @@ func ChebyshevDistanceFloat32AVX2(a, b []float32) (float32, error) {
 func BrayCurtisDistanceFloat32AVX2(a, b []float32) (float32, error) {
 	return BrayCurtisDistanceFloat32(a, b)
 }
+
+// Static assertion to keep Go functions "used" even if not in the active dispatch path.
+var _ = func() {
+	if false {
+		haversineBatchAVX2(0, 0, nil, 0, nil)
+		matMulAVX2Go(nil, nil, 0, 0, 0, nil)
+	}
+}

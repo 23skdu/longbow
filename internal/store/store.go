@@ -618,6 +618,9 @@ func (vs *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset)
 			newDs.SetAdmission(vs.admission)
 			if vs.hybridSearchConfig.Enabled {
 				newDs.BM25Index = NewBM25InvertedIndex(vs.hybridSearchConfig.BM25)
+				// Also initialize the arena-based BM25 index for reduced GC pressure
+				slabArena := lbmem.NewSlabArena(4 * 1024 * 1024)
+				newDs.BM25ArenaIndex = NewBM25ArenaIndex(slabArena, 10000)
 			}
 			if vs.temporalConfig.Enabled {
 				newDs.TemporalIndex = NewTemporalIndex(0)
@@ -802,7 +805,31 @@ func (vs *VectorStore) SetGPUConfig(backend gpu.GPUBackend, deviceID int32) {
 // Metal on macOS, CUDA on Linux with NVIDIA, CPU fallback if no GPU
 func (vs *VectorStore) SetAutoGPUConfig(deviceID int32) {
 	backend := gpu.GetPreferredBackend()
-	vs.logger.Info().Str("backend", backend.String()).Msg("Auto-detected GPU backend")
+	gpus := gpu.DetectAvailableGPUs()
+	availableGPUs := len(gpus)
+
+	vs.logger.Info().
+		Str("backend", backend.String()).
+		Int("available_gpus", availableGPUs).
+		Bool("gpu_binary_available", availableGPUs > 0).
+		Msg("Auto-detected GPU backend")
+
+	if availableGPUs == 0 {
+		vs.logger.Warn().
+			Str("backend", backend.String()).
+			Msg("GPU binary not available - operations will fall back to CPU. Build with appropriate tags for GPU acceleration (e.g., -tags metal,cuda)")
+	}
+
+	// Log GPU details
+	for i, gpuInfo := range gpus {
+		vs.logger.Debug().
+			Int("index", i).
+			Str("name", gpuInfo.Name).
+			Str("backend", gpuInfo.Backend.String()).
+			Int64("memory_mb", gpuInfo.MemoryMB).
+			Msg("Available GPU detected")
+	}
+
 	vs.SetGPUConfig(backend, deviceID)
 }
 

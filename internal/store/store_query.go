@@ -581,6 +581,20 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchRe
 		return results
 	}
 
+	// Resolve column indices once from the dataset schema (shared by all record batches)
+	idColIdx := -1
+	metadataColIdx := -1
+	if ds.Schema != nil {
+		for i, f := range ds.Schema.Fields() {
+			if f.Name == "id" {
+				idColIdx = i
+			}
+			if f.Name == "metadata" {
+				metadataColIdx = i
+			}
+		}
+	}
+
 	mappedResults := make([]types.SearchResult, 0, len(results))
 
 	for _, res := range results {
@@ -597,20 +611,10 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchRe
 		// 2. Access RecordBatch
 		currentRecords := ds.Records.Read()
 		if loc.BatchIdx >= len(currentRecords) {
- 
+  
 			continue
 		}
 		rec := currentRecords[loc.BatchIdx]
-
-		// 3. Find 'id' column
-		// Optimization: could cache column index if schema is consistent
-		idColIdx := -1
-		for i, f := range rec.Schema().Fields() {
-			if f.Name == "id" {
-				idColIdx = i
-				break
-			}
-		}
 
 		if idColIdx == -1 {
 			// No ID column, treat internal ID as valid
@@ -671,14 +675,6 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchRe
 		}
 
 		// 5. Extract Metadata
-		metadataColIdx := -1
-		for i, f := range rec.Schema().Fields() {
-			if f.Name == "metadata" {
-				metadataColIdx = i
-				break
-			}
-		}
-
 		var metadata []byte
 		if metadataColIdx != -1 {
 			metaCol := rec.Column(metadataColIdx)

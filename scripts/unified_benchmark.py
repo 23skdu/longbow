@@ -437,6 +437,20 @@ class BenchmarkRunner:
         # unified_benchmark sets LONGBOW_METRICS_ADDR to 127.0.0.1:{port + 6000}
         metrics_port = int(self.server_addr.split(":")[-1]) + 6000
         
+        # Wait briefly for metrics server to be ready
+        for retry in range(3):
+            try:
+                import socket
+                with socket.create_connection((host, metrics_port), timeout=2):
+                    break
+            except (socket.timeout, ConnectionRefusedError, OSError):
+                if retry < 2:
+                    print(f"  Waiting for metrics server on {host}:{metrics_port} (attempt {retry+1}/3)...")
+                    time.sleep(2)
+                else:
+                    print(f"  Metrics server not reachable on {host}:{metrics_port}, skipping pprof")
+                    return
+        
         for profile in profiles:
             url = f"http://{host}:{metrics_port}/debug/pprof/{profile}"
             if profile == "profile":

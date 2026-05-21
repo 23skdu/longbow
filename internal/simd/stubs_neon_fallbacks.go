@@ -140,6 +140,10 @@ var _ = func() {
 		_, _ = dotFloat64NEON(nil, nil)
 		_ = dotInt4NeonKernel(nil, nil, 0)
 		_ = dotInt2NeonKernel(nil, nil, 0)
+		_ = matchInt64Neon(nil, 0, 0, nil)
+		_ = matchInt32Neon(nil, 0, 0, nil)
+		_ = matchFloat32Neon(nil, 0, 0, nil)
+		_ = matchFloat64Neon(nil, 0, 0, nil)
 	}
 }
 

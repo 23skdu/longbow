@@ -511,8 +511,14 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 										if r < col.Len() && col.IsValid(r) {
 											text := col.Value(r)
 											invIdx.Add(text, docID)
-											if s.hybridSearchConfig.Enabled && bm25 != nil {
-												bm25.Add(VectorID(docID), text)
+											if s.hybridSearchConfig.Enabled {
+												bm25Arena := ds.BM25ArenaIndex
+												if bm25Arena != nil {
+													tokens := tokenize(text)
+													_ = bm25Arena.IndexDocument(docID, tokens)
+												} else if bm25 != nil {
+													bm25.Add(VectorID(docID), text)
+												}
 												metrics.BM25DocumentsIndexedTotal.Inc()
 											}
 										}

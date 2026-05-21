@@ -1446,6 +1446,13 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	ds.Records.UpdateInPlace(newRecords)
 	rec.Retain()
 
+	// Index text columns for hybrid BM25 search
+	baseRowID := uint32(0)
+	for _, r := range currentRecords {
+		baseRowID += uint32(r.NumRows())
+	}
+	s.indexTextColumnsForHybridSearch(ds, rec, baseRowID)
+
 	// Mark dataset as ready after first successful ingestion
 	if !ds.IsReady.Load() {
 		ds.IsReady.Store(true)

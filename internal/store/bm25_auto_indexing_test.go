@@ -109,7 +109,9 @@ func TestBM25NoIndexingWhenDisabled(t *testing.T) {
 	require.NoError(t, err)
 
 	bm25 := store.GetBM25Index("ds")
-	assert.Nil(t, bm25, "BM25 index should be nil when hybrid disabled")
+	// BM25 index exists but should have no documents indexed when hybrid is disabled
+	assert.NotNil(t, bm25, "BM25 index should exist")
+	assert.Equal(t, 0, bm25.DocCount(), "BM25 index should have no documents when hybrid disabled")
 }
 
 // TestBM25MultipleTextColumns verifies multiple text columns are indexed

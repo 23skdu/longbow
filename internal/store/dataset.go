@@ -311,6 +311,9 @@ func (d *Dataset) GetName() string {
 // GetRecords returns the records in the dataset
 // GetRecords returns the records in the dataset.
 func (d *Dataset) GetRecords() []arrow.RecordBatch {
+	if d.Records == nil {
+		return nil
+	}
 	return d.Records.Read()
 }
 

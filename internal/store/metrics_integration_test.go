@@ -9,12 +9,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestMetricsIntegration_HNSWSearch(t *testing.T) {
+	// Enable 100% metrics collection for this test
+	metrics.GlobalHotpathSampler.AlwaysSample = true
+	defer func() { metrics.GlobalHotpathSampler.AlwaysSample = false }()
+
 	// 1. Setup Metrics Handler
 	// promauto registers with the default registry
 	handler := promhttp.Handler()
@@ -51,6 +56,10 @@ func TestMetricsIntegration_HNSWSearch(t *testing.T) {
 }
 
 func TestMetricsIntegration_HNSWInsert(t *testing.T) {
+	// Enable 100% metrics collection for this test
+	metrics.GlobalHotpathSampler.AlwaysSample = true
+	defer func() { metrics.GlobalHotpathSampler.AlwaysSample = false }()
+
 	handler := promhttp.Handler()
 	ts := httptest.NewServer(handler)
 	defer ts.Close()

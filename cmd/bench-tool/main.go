@@ -789,6 +789,8 @@ func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, datase
 	ticker := time.NewTicker(500 * time.Millisecond)
 	defer ticker.Stop()
 
+	consecutiveErrors := 0
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -802,9 +804,17 @@ func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, datase
 				if strings.Contains(err.Error(), "NotFound") {
 					continue
 				}
+				if strings.Contains(err.Error(), "connection refused") || strings.Contains(err.Error(), "Unavailable") {
+					consecutiveErrors++
+					if consecutiveErrors > 10 {
+						log.Printf("  Readiness check failed 10 times consecutively, server likely dead: %v", err)
+						return "server_dead"
+					}
+				}
 				log.Printf("  Readiness check failed: %v", err)
 				continue
 			}
+			consecutiveErrors = 0
 
 			result, err := checkStream.Recv()
 			if err != nil {

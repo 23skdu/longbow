@@ -1,7 +1,6 @@
 package store
 
 import (
-	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -10,7 +9,6 @@ import (
 // This is an evolution of the LockFreeNeighborList designed for general use.
 type LockFreeSlice[T any] struct {
 	data          atomic.Pointer[[]T]
-	activeReaders atomic.Int64
 	currentEpoch  atomic.Uint64
 	writeMu       sync.Mutex
 }
@@ -33,9 +31,6 @@ func NewLockFreeSliceFrom[T any](data []T) *LockFreeSlice[T] {
 
 // Read returns the current slice without acquiring any locks.
 func (l *LockFreeSlice[T]) Read() []T {
-	l.activeReaders.Add(1)
-	defer l.activeReaders.Add(-1)
-
 	ptr := l.data.Load()
 	if ptr == nil {
 		return nil
@@ -52,7 +47,6 @@ func (l *LockFreeSlice[T]) Update(newSlice []T) {
 	copy(copied, newSlice)
 
 	l.data.Store(&copied)
-	l.waitForReaders()
 	l.currentEpoch.Add(1)
 }
 
@@ -62,14 +56,7 @@ func (l *LockFreeSlice[T]) UpdateInPlace(newSlice []T) {
 	defer l.writeMu.Unlock()
 
 	l.data.Store(&newSlice)
-	l.waitForReaders()
 	l.currentEpoch.Add(1)
-}
-
-func (l *LockFreeSlice[T]) waitForReaders() {
-	for l.activeReaders.Load() > 0 {
-		runtime.Gosched()
-	}
 }
 
 // LockFreeMap is a thread-safe map of lock-free slices.
@@ -110,7 +97,7 @@ func (l *LockFreeMap[K, T]) Set(key K, data []T) {
 		}
 		l.mu.Unlock()
 	}
-	slice.Update(data)
+	slice.UpdateInPlace(data)
 }
 
 func (l *LockFreeMap[K, T]) Len() int {

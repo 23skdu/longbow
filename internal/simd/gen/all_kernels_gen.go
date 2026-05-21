@@ -142,8 +142,6 @@ func main() {
 		"euclideanF16AVX2Kernel", "dotF16AVX2Kernel",
 		"dotInt4AVX512Kernel", "dotInt4AVX2Kernel",
 		"euclideanFloat64AVX2Kernel", "euclideanInt8AVX2Kernel", 
-		"euclideanInt16AVX2Kernel", "euclideanUint16AVX2Kernel",
-		"dotInt16AVX2Kernel", "dotUint16AVX2Kernel",
 		"euclideanInt8Unrolled4xAVX2Kernel", "dotFloat64AVX2Kernel",
 		"brayCurtisAVX2Kernel", "manhattanAVX2Kernel", "chebyshevAVX2Kernel",
 	}

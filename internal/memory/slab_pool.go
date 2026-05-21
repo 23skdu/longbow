@@ -118,6 +118,7 @@ func GetSlab(capacity int) []byte {
 
 // PutSlab returns a slab to the pool for reuse.
 func PutSlab(b []byte) {
+	b = b[:cap(b)]
 	c := cap(b)
 	switch c {
 	case size4MB:
@@ -207,6 +208,7 @@ func (p *SlabPool) Get() []byte {
 
 // Put returns a slab to the pool for reuse.
 func (p *SlabPool) Put(b []byte) {
+	b = b[:cap(b)]
 	if cap(b) != p.size {
 		metrics.SlabPoolBoundaryViolationsTotal.WithLabelValues(strconv.Itoa(p.size), "put").Inc()
 		return

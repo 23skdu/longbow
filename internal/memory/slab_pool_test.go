@@ -197,3 +197,23 @@ func TestSlabPool_Autoscale(t *testing.T) {
 	pool.ReleaseUnused()
 	assert.Equal(t, int64(100), pool.maxPooled)
 }
+
+func TestSlabPool_ReslicingProtection(t *testing.T) {
+	pool := newSlabPool(4 * 1024 * 1024)
+
+	slab := pool.Get()
+	require.Equal(t, 4*1024*1024, len(slab))
+
+	// Slice it to a smaller size
+	sliced := slab[:1024]
+	require.Equal(t, 1024, len(sliced))
+
+	// Put it back
+	pool.Put(sliced)
+
+	// Get it again
+	reclaimed := pool.Get()
+	// Length should be restored to its full capacity!
+	require.Equal(t, 4*1024*1024, len(reclaimed))
+}
+

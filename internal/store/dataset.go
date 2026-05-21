@@ -388,6 +388,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		Metric:          MetricEuclidean, // Default
 		TemporalIndex:   NewTemporalIndex(0), // Dimension will be updated on first Add
 		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
+		BM25ArenaIndex:  NewBM25ArenaIndex(memory.NewSlabArena(4*1024*1024), 10000),
 	}
 
 	// Initialize Schema Manager

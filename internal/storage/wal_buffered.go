@@ -212,32 +212,6 @@ func (w *BufferedWAL) Sync() error {
 		w.tryFlushLocked()
 	}
 
-	// If the buffer is empty and no flush in progress, check if we're already done
-	if !w.isFlushing && w.flushedSeq.Load() >= targetSeq {
-		// Our waiter was likely already completed
-		pending := w.pendingSyncs
-		w.mu.Unlock()
-		// Check if waiter was signaled - it might have been handled by tryFlush
-		select {
-		case <-waiter.done:
-			if waiter.err != nil {
-				return waiter.err
-			}
-			return nil
-		default:
-			// Not done yet - need to wait
-		}
-		// Re-acquire and wait
-		w.mu.Lock()
-		for i := range pending {
-			if &pending[i] == &waiter {
-				// Still pending
-				break
-			}
-		}
-		_ = pending
-	}
-
 	w.mu.Unlock()
 
 	// Wait for the group commit to complete
@@ -311,11 +285,18 @@ func (w *BufferedWAL) tryFlushLocked() {
 		w.mu.Lock()
 		w.isFlushing = false
 
+		var toSignal []syncWaiter
 		if err != nil {
 			metrics.WALFlushErrors.Inc()
 			for i := range batch {
 				batch[i].err = err
+				toSignal = append(toSignal, batch[i])
 			}
+			for i := range w.pendingSyncs {
+				w.pendingSyncs[i].err = err
+				toSignal = append(toSignal, w.pendingSyncs[i])
+			}
+			w.pendingSyncs = nil
 			if w.fatalErr.Load() == nil {
 				w.fatalErr.Store(err)
 			}
@@ -328,15 +309,29 @@ func (w *BufferedWAL) tryFlushLocked() {
 			}
 		} else {
 			w.flushedSeq.Store(wb.maxSeq)
+			for i := range batch {
+				toSignal = append(toSignal, batch[i])
+			}
+			var stillPending []syncWaiter
+			for _, wt := range w.pendingSyncs {
+				if wt.targetSeq <= wb.maxSeq {
+					toSignal = append(toSignal, wt)
+				} else {
+					stillPending = append(stillPending, wt)
+				}
+			}
+			w.pendingSyncs = stillPending
 		}
 
 		w.syncCond.Broadcast()
+		w.mu.Unlock()
 
-		// Signal waiters outside the lock
-		for i := range batch {
-			close(batch[i].done)
+		// Signal all satisfied/failed waiters outside the lock
+		for i := range toSignal {
+			close(toSignal[i].done)
 		}
 
+		w.mu.Lock()
 		// If more waiters arrived during the flush and there's data, loop
 		continue
 	}

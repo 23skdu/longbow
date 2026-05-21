@@ -33,10 +33,24 @@ func searchBM25Arena(idx *BM25ArenaIndex, queryText string, k int, filter *roari
 			}
 		}
 	} else {
-		// All documents
-		candidates = make([]uint32, docCount)
-		for i := uint32(0); i < docCount; i++ {
-			candidates[i] = i
+		// Optimize candidate gathering: only score documents that match at least one query token
+		docMap := make(map[uint32]struct{})
+		for _, token := range tokens {
+			if tokenID, exists := idx.GetTokenID(token); exists {
+				if postings, ok := idx.GetPostingList(tokenID); ok {
+					for _, docID := range postings {
+						if docID < docCount {
+							docMap[docID] = struct{}{}
+						}
+					}
+				}
+			}
+		}
+		if len(docMap) > 0 {
+			candidates = make([]uint32, 0, len(docMap))
+			for docID := range docMap {
+				candidates = append(candidates, docID)
+			}
 		}
 	}
 

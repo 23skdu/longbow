@@ -1449,6 +1449,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	// Index text columns for hybrid BM25 search
 	baseRowID := uint32(0)
 	for _, r := range currentRecords {
+		// #nosec G115
 		baseRowID += uint32(r.NumRows())
 	}
 	s.indexTextColumnsForHybridSearch(ds, rec, baseRowID)

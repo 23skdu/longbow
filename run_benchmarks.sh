@@ -15,6 +15,9 @@ COUNTS_2="500000,750000,1000000"
 
 # Localhost command wrapper
 run_local() {
+  echo "[LOCAL] Building fresh binaries locally..."
+  go build -o build/longbow ./cmd/longbow
+  go build -o build/bench-tool ./cmd/bench-tool
   echo "[LOCAL] Starting local benchmarks (Metal/CPU)..."
   
   echo "[LOCAL] Running Matrix 1..."
@@ -30,9 +33,12 @@ run_local() {
 
 # Ancalagon command wrapper
 run_remote() {
-  echo "[REMOTE] Starting remote benchmarks (CUDA/CPU)..."
+  echo "[REMOTE] Building fresh binaries and running benchmarks on ancalagon..."
   
   CMD="cd ~/longbow; "
+  CMD+="git pull origin main; "
+  CMD+="go build -o build/longbow ./cmd/longbow; "
+  CMD+="go build -o build/bench-tool ./cmd/bench-tool; "
   CMD+="export LONGBOW_MAX_MEMORY=15032385536; "
   CMD+="python3 scripts/unified_benchmark.py --mode cuda --dtypes $DTYPES --dims $DIMS_1 --counts $COUNTS_1 --search-modes $SEARCH_MODES --pprof || true; "
   CMD+="python3 scripts/unified_benchmark.py --mode cuda --dtypes $DTYPES --dims $DIMS_2 --counts $COUNTS_2 --search-modes $SEARCH_MODES --pprof || true;"

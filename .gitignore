@@ -12,6 +12,7 @@ longbow_bin
 longbow_local
 server
 bin/
+bin_linux/
 build/
 dist/
 longbow_server

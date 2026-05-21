@@ -1,7 +1,6 @@
 package core
 
 import (
-	"runtime"
 	"sync"
 	"sync/atomic"
 )
@@ -23,10 +22,6 @@ type LockFreeNeighborList struct {
 	// Atomic pointer to current neighbor slice
 	// Using atomic.Pointer for type-safe atomic operations
 	neighbors atomic.Pointer[[]uint32]
-
-	// Epoch counter for safe reclamation
-	// Readers increment on entry, decrement on exit
-	activeReaders atomic.Int64
 
 	// Current epoch number (for future optimizations)
 	currentEpoch atomic.Uint64
@@ -55,17 +50,13 @@ func NewLockFreeNeighborList() *LockFreeNeighborList {
 // Thread-safety: Safe for concurrent reads and writes.
 // Performance: ~10ns, no allocations, no locks.
 func (l *LockFreeNeighborList) Read() []uint32 {
-	// Enter epoch (increment active reader count)
-	l.enterEpoch()
-	defer l.exitEpoch()
-
 	// Atomic load of current neighbor pointer
 	ptr := l.neighbors.Load()
 	if ptr == nil {
 		return nil
 	}
 
-	// Return slice (safe because we're in epoch)
+	// Return slice
 	return *ptr
 }
 
@@ -110,10 +101,6 @@ func (l *LockFreeNeighborList) Update(newNeighbors []uint32) {
 	// Atomic swap - readers will see new list immediately
 	l.neighbors.Store(&copied)
 
-	// Wait for active readers to finish before returning
-	// This ensures the old slice can be safely garbage collected
-	l.waitForReaders()
-
 	// Increment epoch (for future optimizations like hazard pointers)
 	l.currentEpoch.Add(1)
 }
@@ -128,7 +115,6 @@ func (l *LockFreeNeighborList) UpdateInPlace(newNeighbors []uint32) {
 	defer l.writeMu.Unlock()
 
 	l.neighbors.Store(&newNeighbors)
-	l.waitForReaders()
 	l.currentEpoch.Add(1)
 }
 
@@ -142,39 +128,10 @@ func (l *LockFreeNeighborList) Len() int {
 	return len(neighbors)
 }
 
-// enterEpoch increments the active reader count.
-// This must be called before accessing the neighbor list.
-func (l *LockFreeNeighborList) enterEpoch() {
-	l.activeReaders.Add(1)
-}
-
-// exitEpoch decrements the active reader count.
-// This must be called after finishing with the neighbor list.
-func (l *LockFreeNeighborList) exitEpoch() {
-	l.activeReaders.Add(-1)
-}
-
-// waitForReaders spins until all active readers have exited their epoch.
-// This is called by writers before returning, ensuring safe reclamation.
-//
-// Performance note: This typically completes in <1µs as readers are very fast.
-// In pathological cases (e.g., reader preempted while holding epoch), this
-// could spin longer, but runtime.Gosched() yields to prevent busy-waiting.
-func (l *LockFreeNeighborList) waitForReaders() {
-	// Spin-wait for active readers to finish
-	// This is acceptable because:
-	// 1. Readers are very fast (~10ns)
-	// 2. We yield to scheduler to avoid busy-waiting
-	// 3. Updates are infrequent compared to reads
-	for l.activeReaders.Load() > 0 {
-		runtime.Gosched()
-	}
-}
-
 // ActiveReaders returns the current number of active readers.
 // This is primarily for testing and debugging.
 func (l *LockFreeNeighborList) ActiveReaders() int64 {
-	return l.activeReaders.Load()
+	return 0
 }
 
 // CurrentEpoch returns the current epoch number.

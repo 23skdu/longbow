@@ -2631,106 +2631,134 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 	if dim > 0 && !sharedVectorSpace {
 		minSlabSize := 64 * 1024 * 1024 // 64MB minimum for all arenas to reduce GC overhead
 
-		f32SlabSize := ChunkSize*dim*4 + 64
-		if f32SlabSize < minSlabSize { f32SlabSize = minSlabSize }
-		if alloc != nil {
-			f32Arena = memory.NewSlabArenaWithAllocator(f32SlabSize, alloc)
-		} else {
-			f32Arena = memory.NewSlabArena(f32SlabSize)
+		if dataType == VectorTypeFloat32 || dataType == VectorTypeUnknown {
+			f32SlabSize := ChunkSize*dim*4 + 64
+			if f32SlabSize < minSlabSize { f32SlabSize = minSlabSize }
+			if alloc != nil {
+				f32Arena = memory.NewSlabArenaWithAllocator(f32SlabSize, alloc)
+			} else {
+				f32Arena = memory.NewSlabArena(f32SlabSize)
+			}
 		}
 
-		u8SlabSize := ChunkSize*dim + 64
-		if u8SlabSize < minSlabSize { u8SlabSize = minSlabSize }
-		if alloc != nil {
-			u8Arena = memory.NewSlabArenaWithAllocator(u8SlabSize, alloc)
-		} else {
-			u8Arena = memory.NewSlabArena(u8SlabSize)
+		if dataType == VectorTypeUint8 {
+			u8SlabSize := ChunkSize*dim + 64
+			if u8SlabSize < minSlabSize { u8SlabSize = minSlabSize }
+			if alloc != nil {
+				u8Arena = memory.NewSlabArenaWithAllocator(u8SlabSize, alloc)
+			} else {
+				u8Arena = memory.NewSlabArena(u8SlabSize)
+			}
 		}
 
-		f64SlabSize := ChunkSize*dim*8 + 64
-		if f64SlabSize < minSlabSize { f64SlabSize = minSlabSize }
-		if alloc != nil {
-			f64Arena = memory.NewSlabArenaWithAllocator(f64SlabSize, alloc)
-		} else {
-			f64Arena = memory.NewSlabArena(f64SlabSize)
+		if dataType == VectorTypeFloat64 {
+			f64SlabSize := ChunkSize*dim*8 + 64
+			if f64SlabSize < minSlabSize { f64SlabSize = minSlabSize }
+			if alloc != nil {
+				f64Arena = memory.NewSlabArenaWithAllocator(f64SlabSize, alloc)
+			} else {
+				f64Arena = memory.NewSlabArena(f64SlabSize)
+			}
 		}
 
-		if alloc != nil {
-			i8Arena = memory.NewSlabArenaWithAllocator(u8SlabSize, alloc)
-		} else {
-			i8Arena = memory.NewSlabArena(u8SlabSize)
+		if dataType == VectorTypeInt8 {
+			u8SlabSize := ChunkSize*dim + 64
+			if u8SlabSize < minSlabSize { u8SlabSize = minSlabSize }
+			if alloc != nil {
+				i8Arena = memory.NewSlabArenaWithAllocator(u8SlabSize, alloc)
+			} else {
+				i8Arena = memory.NewSlabArena(u8SlabSize)
+			}
 		}
 
-		c64SlabSize := ChunkSize*dim*8 + 64
-		if c64SlabSize < minSlabSize { c64SlabSize = minSlabSize }
-		if alloc != nil {
-			c64Arena = memory.NewSlabArenaWithAllocator(c64SlabSize, alloc)
-		} else {
-			c64Arena = memory.NewSlabArena(c64SlabSize)
+		if dataType == VectorTypeComplex64 {
+			c64SlabSize := ChunkSize*dim*8 + 64
+			if c64SlabSize < minSlabSize { c64SlabSize = minSlabSize }
+			if alloc != nil {
+				c64Arena = memory.NewSlabArenaWithAllocator(c64SlabSize, alloc)
+			} else {
+				c64Arena = memory.NewSlabArena(c64SlabSize)
+			}
 		}
 
-		c128SlabSize := ChunkSize*dim*16 + 64
-		if c128SlabSize < minSlabSize { c128SlabSize = minSlabSize }
-		if alloc != nil {
-			c128Arena = memory.NewSlabArenaWithAllocator(c128SlabSize, alloc)
-		} else {
-			c128Arena = memory.NewSlabArena(c128SlabSize)
+		if dataType == VectorTypeComplex128 {
+			c128SlabSize := ChunkSize*dim*16 + 64
+			if c128SlabSize < minSlabSize { c128SlabSize = minSlabSize }
+			if alloc != nil {
+				c128Arena = memory.NewSlabArenaWithAllocator(c128SlabSize, alloc)
+			} else {
+				c128Arena = memory.NewSlabArena(c128SlabSize)
+			}
 		}
 
-		i64SlabSize := ChunkSize*dim*8 + 64
-		if i64SlabSize < minSlabSize { i64SlabSize = minSlabSize }
-		if alloc != nil {
-			i64Arena = memory.NewSlabArenaWithAllocator(i64SlabSize, alloc)
-		} else {
-			i64Arena = memory.NewSlabArena(i64SlabSize)
+		if dataType == VectorTypeInt64 {
+			i64SlabSize := ChunkSize*dim*8 + 64
+			if i64SlabSize < minSlabSize { i64SlabSize = minSlabSize }
+			if alloc != nil {
+				i64Arena = memory.NewSlabArenaWithAllocator(i64SlabSize, alloc)
+			} else {
+				i64Arena = memory.NewSlabArena(i64SlabSize)
+			}
 		}
 
-		i16SlabSize := ChunkSize*dim*2 + 64
-		if i16SlabSize < minSlabSize { i16SlabSize = minSlabSize }
-		if alloc != nil {
-			i16Arena = memory.NewSlabArenaWithAllocator(i16SlabSize, alloc)
-		} else {
-			i16Arena = memory.NewSlabArena(i16SlabSize)
+		if dataType == VectorTypeInt16 {
+			i16SlabSize := ChunkSize*dim*2 + 64
+			if i16SlabSize < minSlabSize { i16SlabSize = minSlabSize }
+			if alloc != nil {
+				i16Arena = memory.NewSlabArenaWithAllocator(i16SlabSize, alloc)
+			} else {
+				i16Arena = memory.NewSlabArena(i16SlabSize)
+			}
 		}
 
-		u16SlabSize := ChunkSize*dim*2 + 64
-		if u16SlabSize < minSlabSize { u16SlabSize = minSlabSize }
-		if alloc != nil {
-			u16Arena = memory.NewSlabArenaWithAllocator(u16SlabSize, alloc)
-		} else {
-			u16Arena = memory.NewSlabArena(u16SlabSize)
+		if dataType == VectorTypeUint16 {
+			u16SlabSize := ChunkSize*dim*2 + 64
+			if u16SlabSize < minSlabSize { u16SlabSize = minSlabSize }
+			if alloc != nil {
+				u16Arena = memory.NewSlabArenaWithAllocator(u16SlabSize, alloc)
+			} else {
+				u16Arena = memory.NewSlabArena(u16SlabSize)
+			}
 		}
 
-		i32SlabSize := ChunkSize*dim*4 + 64
-		if i32SlabSize < minSlabSize { i32SlabSize = minSlabSize }
-		if alloc != nil {
-			i32Arena = memory.NewSlabArenaWithAllocator(i32SlabSize, alloc)
-		} else {
-			i32Arena = memory.NewSlabArena(i32SlabSize)
+		if dataType == VectorTypeInt32 {
+			i32SlabSize := ChunkSize*dim*4 + 64
+			if i32SlabSize < minSlabSize { i32SlabSize = minSlabSize }
+			if alloc != nil {
+				i32Arena = memory.NewSlabArenaWithAllocator(i32SlabSize, alloc)
+			} else {
+				i32Arena = memory.NewSlabArena(i32SlabSize)
+			}
 		}
 
-		f16SlabSize := ChunkSize*dim*2 + 64
-		if f16SlabSize < minSlabSize { f16SlabSize = minSlabSize }
-		if alloc != nil {
-			f16Arena = memory.NewSlabArenaWithAllocator(f16SlabSize, alloc)
-		} else {
-			f16Arena = memory.NewSlabArena(f16SlabSize)
+		if dataType == VectorTypeFloat16 {
+			f16SlabSize := ChunkSize*dim*2 + 64
+			if f16SlabSize < minSlabSize { f16SlabSize = minSlabSize }
+			if alloc != nil {
+				f16Arena = memory.NewSlabArenaWithAllocator(f16SlabSize, alloc)
+			} else {
+				f16Arena = memory.NewSlabArena(f16SlabSize)
+			}
 		}
 
-		u64SlabSize := ChunkSize*dim*8 + 64
-		if u64SlabSize < minSlabSize { u64SlabSize = minSlabSize }
-		if alloc != nil {
-			u64Arena = memory.NewSlabArenaWithAllocator(u64SlabSize, alloc)
-		} else {
-			u64Arena = memory.NewSlabArena(u64SlabSize)
+		if dataType == VectorTypeUint64 {
+			u64SlabSize := ChunkSize*dim*8 + 64
+			if u64SlabSize < minSlabSize { u64SlabSize = minSlabSize }
+			if alloc != nil {
+				u64Arena = memory.NewSlabArenaWithAllocator(u64SlabSize, alloc)
+			} else {
+				u64Arena = memory.NewSlabArena(u64SlabSize)
+			}
 		}
 
-		u32SlabSize := ChunkSize*dim*4 + 64
-		if u32SlabSize < minSlabSize { u32SlabSize = minSlabSize }
-		if alloc != nil {
-			u32Arena = memory.NewSlabArenaWithAllocator(u32SlabSize, alloc)
-		} else {
-			u32Arena = memory.NewSlabArena(u32SlabSize)
+		if dataType == VectorTypeUint32 {
+			u32SlabSize := ChunkSize*dim*4 + 64
+			if u32SlabSize < minSlabSize { u32SlabSize = minSlabSize }
+			if alloc != nil {
+				u32Arena = memory.NewSlabArenaWithAllocator(u32SlabSize, alloc)
+			} else {
+				u32Arena = memory.NewSlabArena(u32SlabSize)
+			}
 		}
 	}
 

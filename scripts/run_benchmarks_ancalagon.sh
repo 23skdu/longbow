@@ -11,6 +11,7 @@ SEARCH_MODES="all"
 QUERIES=1000
 DURATION=15
 WORKERS=8
+PPROF_FLAG="--pprof"
 BIN_DIR="$HOME/longbow/bin"
 
 # Override paths for remote
@@ -32,6 +33,7 @@ for COUNT in 1000 5000; do
       --duration "$DURATION" \
       --workers "$WORKERS" \
       --search-modes "$SEARCH_MODES" \
+      $PPROF_FLAG \
       --label "ancalagon_${MODE}_${COUNT}" \
       2>&1 | tee "logs/bench_ancalagon_${MODE}_${COUNT}.log"
   done
@@ -53,6 +55,7 @@ for COUNT in 25000 100000 250000; do
       --duration "$DURATION" \
       --workers "$WORKERS" \
       --search-modes "$SEARCH_MODES" \
+      $PPROF_FLAG \
       --label "ancalagon_${MODE}_${COUNT}" \
       2>&1 | tee "logs/bench_ancalagon_${MODE}_${COUNT}.log"
   done
@@ -74,6 +77,7 @@ for COUNT in 500000 750000 1000000; do
       --duration "$DURATION" \
       --workers "$WORKERS" \
       --search-modes "$SEARCH_MODES" \
+      $PPROF_FLAG \
       --label "ancalagon_${MODE}_${COUNT}" \
       2>&1 | tee "logs/bench_ancalagon_${MODE}_${COUNT}.log"
   done

@@ -13,11 +13,11 @@ import (
 func TestGRPCConfigDefaults(t *testing.T) {
 	cfg := DefaultGRPCConfig()
 
-	// Keepalive defaults
-	assert.Equal(t, 2*time.Hour, cfg.KeepAliveTime, "default keepalive time should be 2h")
-	assert.Equal(t, 20*time.Second, cfg.KeepAliveTimeout, "default keepalive timeout should be 20s")
-	assert.Equal(t, 5*time.Minute, cfg.KeepAliveMinTime, "default keepalive min time should be 5m")
-	assert.False(t, cfg.KeepAlivePermitWithoutStream, "default permit without stream should be false")
+	// Keepalive defaults (optimized for vector DB workloads with heavy GC)
+	assert.Equal(t, 30*time.Second, cfg.KeepAliveTime, "default keepalive time should be 30s")
+	assert.Equal(t, 10*time.Second, cfg.KeepAliveTimeout, "default keepalive timeout should be 10s")
+	assert.Equal(t, 10*time.Second, cfg.KeepAliveMinTime, "default keepalive min time should be 10s")
+	assert.True(t, cfg.KeepAlivePermitWithoutStream, "default permit without stream should be true")
 
 	// Concurrent streams
 	assert.Equal(t, uint32(250), cfg.MaxConcurrentStreams, "default max concurrent streams should be 250")

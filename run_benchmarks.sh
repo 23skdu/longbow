@@ -6,8 +6,9 @@ echo "Starting parallel benchmarks..."
 # Isolate execution environments
 rm -rf /tmp/longbow_bench_data /tmp/longbow_perf_logs /tmp/longbow_bin
 mkdir -p /tmp/longbow_bench_data /tmp/longbow_perf_logs /tmp/longbow_bin
-go build -o /tmp/longbow_bin/longbow ./cmd/longbow
-go build -o /tmp/longbow_bin/bench-tool ./cmd/bench-tool
+make build
+make build-metal
+cp -P bin/* /tmp/longbow_bin/
 
 # Matrix definitions
 DTYPES="float16,float32,float64,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant2,turboquant4,turboquant8"
@@ -45,8 +46,8 @@ run_remote() {
   CMD+="git stash; git pull origin main; "
   CMD+="rm -rf /tmp/longbow_bench_data /tmp/longbow_perf_logs /tmp/longbow_bin; "
   CMD+="mkdir -p /tmp/longbow_bench_data /tmp/longbow_perf_logs /tmp/longbow_bin; "
-  CMD+="go build -o /tmp/longbow_bin/longbow ./cmd/longbow; "
-  CMD+="go build -o /tmp/longbow_bin/bench-tool ./cmd/bench-tool; "
+  CMD+="make build; make build-cuda; "
+  CMD+="cp -P bin/* /tmp/longbow_bin/; "
   CMD+="export LONGBOW_MAX_MEMORY=15032385536; "
   CMD+="export LONGBOW_DATA_PATH=/tmp/longbow_bench_data; "
   CMD+="export LONGBOW_PERF_LOGS=/tmp/longbow_perf_logs; "

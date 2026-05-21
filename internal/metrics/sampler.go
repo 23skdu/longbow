@@ -12,6 +12,7 @@ import (
 type AdaptiveSampler struct {
 	lastSampleNs atomic.Int64
 	skippedCount atomic.Int64
+	AlwaysSample bool
 }
 
 // GlobalHotpathSampler is the default sampler for extreme hotpaths.
@@ -21,6 +22,9 @@ var GlobalHotpathSampler = &AdaptiveSampler{}
 // It returns a boolean indicating whether to sample, and a float64 multiplier
 // indicating how many events this sample represents (1 + skipped counts).
 func (s *AdaptiveSampler) ShouldSample() (bool, float64) {
+	if s.AlwaysSample {
+		return true, 1.0
+	}
 	now := time.Now().UnixNano()
 	last := s.lastSampleNs.Load()
 	

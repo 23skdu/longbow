@@ -152,3 +152,62 @@ func (m *mockVectorIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx in
 	return 0, nil
 }
 func (m *mockVectorIndex) Warmup() int { return 0 }
+
+func TestDoGetSchemaAllocations(t *testing.T) {
+	logger := zerolog.Nop()
+	mem := memory.NewGoAllocator()
+	s := NewVectorStore(mem, logger, 1024*1024, 0, 0)
+	defer s.Close()
+
+	schema := arrow.NewSchema(
+		[]arrow.Field{
+			{Name: "id", Type: arrow.PrimitiveTypes.Uint32},
+			{Name: "metadata", Type: arrow.BinaryTypes.Binary},
+		},
+		nil,
+	)
+
+	ds := NewDataset("test-alloc-map", schema)
+
+	// Populate locations
+	locations := make(map[uint32]Location)
+	results := make([]SearchResult, 100)
+	for i := uint32(0); i < 100; i++ {
+		locations[i+1] = Location{BatchIdx: 0, RowIdx: int(i)}
+		results[i] = SearchResult{ID: VectorID(i + 1), Distance: float32(i) * 0.01}
+	}
+
+	ds.Index = &mockVectorIndex{
+		locations: locations,
+	}
+
+	// Append record batch
+	builder := array.NewRecordBuilder(mem, schema)
+	ids := make([]uint32, 100)
+	metas := make([][]byte, 100)
+	for i := 0; i < 100; i++ {
+		ids[i] = uint32(1000 + i)
+		metas[i] = []byte("meta")
+	}
+	builder.Field(0).(*array.Uint32Builder).AppendValues(ids, nil)
+	builder.Field(1).(*array.BinaryBuilder).AppendValues(metas, nil)
+	rec := builder.NewRecordBatch()
+	ds.Records = NewLockFreeSliceFrom([]arrow.RecordBatch{rec})
+
+	// Measure allocations per run
+	allocs := testing.AllocsPerRun(10, func() {
+		mapped := s.MapInternalToUserIDs(ds, results)
+		assert.Len(t, mapped, 100)
+	})
+
+	// With the caching optimization, the allocations per run are limited to:
+	// 1. One allocation for the output slice mappedResults.
+	// 2. 100 allocations for boxing Location (struct to any/interface{} conversion in GetLocation).
+	// 3. 100 allocations for deep-copying metadata.
+	// So total allocations is 201 (plus minor runtime overhead, <= 205).
+	// Before caching the column indexes outside the loop, rec.Schema().Fields() was called
+	// twice per loop, producing an extra 200 allocations (total 401+ allocations).
+	// This confirms the schema field allocation overhead is completely eliminated!
+	assert.LessOrEqual(t, allocs, float64(205), "MapInternalToUserIDs is allocating too much memory")
+}
+

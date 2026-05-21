@@ -595,6 +595,7 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchRe
 		}
 	}
 
+	currentRecords := ds.Records.Read()
 	mappedResults := make([]types.SearchResult, 0, len(results))
 
 	for _, res := range results {
@@ -609,9 +610,7 @@ func (s *VectorStore) mapInternalToUserIDsLocked(ds *Dataset, results []SearchRe
 		}
 
 		// 2. Access RecordBatch
-		currentRecords := ds.Records.Read()
 		if loc.BatchIdx >= len(currentRecords) {
-  
 			continue
 		}
 		rec := currentRecords[loc.BatchIdx]
@@ -1107,56 +1106,56 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 	}
 
 	if !found {
-		for batchIdx, rec := range ds.Records.Read() {
-			idColIdx := -1
-			for i, field := range rec.Schema().Fields() {
+		idColIdx := -1
+		if ds.Schema != nil {
+			for i, field := range ds.Schema.Fields() {
 				if field.Name == "id" {
 					idColIdx = i
 					break
 				}
 			}
+		}
 
-			if idColIdx == -1 {
-				continue
-			}
-
-			idCol := rec.Column(idColIdx)
-			for rowIdx := 0; rowIdx < int(rec.NumRows()); rowIdx++ {
-				var idStr string
-				switch c := idCol.(type) {
-				case *array.String:
-					idStr = c.Value(rowIdx)
-				case *array.Int64:
-					idStr = strconv.FormatInt(c.Value(rowIdx), 10)
-				case *array.Uint64:
-					idStr = strconv.FormatUint(c.Value(rowIdx), 10)
-				case *array.Int32:
-					idStr = strconv.FormatInt(int64(c.Value(rowIdx)), 10)
-				case *array.Uint32:
-					idStr = strconv.FormatUint(uint64(c.Value(rowIdx)), 10)
-				default:
-					continue
-				}
-
-				if idStr == req.ID {
-					isDeleted := false
-					if ts, ok := ds.Tombstones[batchIdx]; ok && ts != nil && ts.Contains(rowIdx) {
-						isDeleted = true
+		if idColIdx != -1 {
+			for batchIdx, rec := range ds.Records.Read() {
+				idCol := rec.Column(idColIdx)
+				for rowIdx := 0; rowIdx < int(rec.NumRows()); rowIdx++ {
+					var idStr string
+					switch c := idCol.(type) {
+					case *array.String:
+						idStr = c.Value(rowIdx)
+					case *array.Int64:
+						idStr = strconv.FormatInt(c.Value(rowIdx), 10)
+					case *array.Uint64:
+						idStr = strconv.FormatUint(c.Value(rowIdx), 10)
+					case *array.Int32:
+						idStr = strconv.FormatInt(int64(c.Value(rowIdx)), 10)
+					case *array.Uint32:
+						idStr = strconv.FormatUint(uint64(c.Value(rowIdx)), 10)
+					default:
+						continue
 					}
-					if !isDeleted {
-						vec, err := internalcore.ExtractVectorRaw(rec, rowIdx, -1)
-						if err != nil {
-							ds.dataMu.RUnlock()
-							return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
+
+					if idStr == req.ID {
+						isDeleted := false
+						if ts, ok := ds.Tombstones[batchIdx]; ok && ts != nil && ts.Contains(rowIdx) {
+							isDeleted = true
 						}
-						targetVec = vec
-						found = true
+						if !isDeleted {
+							vec, err := internalcore.ExtractVectorRaw(rec, rowIdx, -1)
+							if err != nil {
+								ds.dataMu.RUnlock()
+								return status.Errorf(codes.Internal, "failed to extract vector: %v", err)
+							}
+							targetVec = vec
+							found = true
+						}
+						break
 					}
+				}
+				if found {
 					break
 				}
-			}
-			if found {
-				break
 			}
 		}
 	}
@@ -1392,6 +1391,16 @@ func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]types.Sear
 		limit = 1000 // Default internal limit
 	}
 
+	idColIdx := -1
+	if ds.Schema != nil {
+		for j, field := range ds.Schema.Fields() {
+			if field.Name == "id" {
+				idColIdx = j
+				break
+			}
+		}
+	}
+
 	for i, rec := range ds.Records.Read() {
 		if len(results) >= limit {
 			break
@@ -1409,15 +1418,6 @@ func (s *VectorStore) executeInternalTable(query *qry.TicketQuery) ([]types.Sear
 
 		// Apply tombstones
 		ts := ds.Tombstones[i]
-
-		// Find ID column
-		idColIdx := -1
-		for j, field := range rec.Schema().Fields() {
-			if field.Name == "id" {
-				idColIdx = j
-				break
-			}
-		}
 
 		numRows := int(rec.NumRows())
 		for rowIdx := 0; rowIdx < numRows; rowIdx++ {

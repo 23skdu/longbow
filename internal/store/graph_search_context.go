@@ -34,15 +34,31 @@ func (ctx *GraphSearchContext) EnsureCapacity(id uint32) {
 	}
 
 	// Grow scores
-	newScores := make([]float32, newLen)
-	copy(newScores, ctx.scores)
-	ctx.scores = newScores
+	if newLen <= cap(ctx.scores) {
+		oldLen := len(ctx.scores)
+		ctx.scores = ctx.scores[:newLen]
+		for i := oldLen; i < newLen; i++ {
+			ctx.scores[i] = 0
+		}
+	} else {
+		newScores := make([]float32, newLen)
+		copy(newScores, ctx.scores)
+		ctx.scores = newScores
+	}
 
 	// Grow visited
 	newVisitedLen := (newLen + 63) / 64
-	newVisited := make([]uint64, newVisitedLen)
-	copy(newVisited, ctx.visited)
-	ctx.visited = newVisited
+	if newVisitedLen <= cap(ctx.visited) {
+		oldVisitedLen := len(ctx.visited)
+		ctx.visited = ctx.visited[:newVisitedLen]
+		for i := oldVisitedLen; i < newVisitedLen; i++ {
+			ctx.visited[i] = 0
+		}
+	} else {
+		newVisited := make([]uint64, newVisitedLen)
+		copy(newVisited, ctx.visited)
+		ctx.visited = newVisited
+	}
 }
 
 // SetScore safely sets the score for a node, growing the buffer if needed.

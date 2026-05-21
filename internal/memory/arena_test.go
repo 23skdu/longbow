@@ -4,6 +4,8 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/metrics"
+	dto "github.com/prometheus/client_model/go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -299,3 +301,82 @@ func FuzzSlabArenaFastPathConcurrent(f *testing.F) {
 		wg.Wait()
 	})
 }
+
+func TestSlabArena_FastPathLimit(t *testing.T) {
+	// SlabArena with 1MB slabs
+	arena := NewSlabArena(1024 * 1024)
+
+	// Allocations up to 4096 bytes should succeed and be aligned to 8 bytes.
+	sizes := []int{8, 16, 256, 512, 1024, 2048, 4096}
+	for _, size := range sizes {
+		offset, err := arena.Alloc(size)
+		require.NoError(t, err)
+		assert.NotZero(t, offset)
+		assert.Equal(t, uint64(0), offset%8)
+
+		data := arena.Get(offset, uint32(size))
+		require.Len(t, data, size)
+		data[0] = 0xFF
+		assert.Equal(t, byte(0xFF), data[0])
+	}
+}
+
+func TestArenaFastPathDimensions(t *testing.T) {
+	// SlabArena with 10MB slabs to hold all allocations
+	arena := NewSlabArena(10 * 1024 * 1024)
+
+	// Warmup: perform a single allocation to initialize the first slab,
+	// so that subsequent concurrent allocations do not trigger slow-path slab creation.
+	_, err := arena.Alloc(8)
+	require.NoError(t, err)
+
+	// We want to test size classes corresponding to float32 dimensions
+	// 128 (512 bytes), 384 (1536 bytes), 768 (3072 bytes), 1024 (4096 bytes)
+	dims := []int{128, 384, 768, 1024}
+
+	// Read initial slow path counter value
+	var initialSlowPath float64
+	pb := &dto.Metric{}
+	if err := metrics.ArenaSlowPathTotal.Write(pb); err == nil {
+		initialSlowPath = pb.GetCounter().GetValue()
+	}
+
+	const numGoroutines = 8
+	const allocsPerGoroutine = 50
+
+	var wg sync.WaitGroup
+	for g := 0; g < numGoroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < allocsPerGoroutine; i++ {
+				// Allocate for each dimension size
+				for _, dim := range dims {
+					size := dim * 4
+					offset, err := arena.Alloc(size)
+					require.NoError(t, err)
+					assert.NotZero(t, offset)
+					assert.Equal(t, uint64(0), offset%8, "offset must be 8-byte aligned")
+
+					// Verify we can read/write the memory
+					data := arena.Get(offset, uint32(size))
+					require.Len(t, data, size)
+					data[0] = 0xAA
+					data[size-1] = 0x55
+					assert.Equal(t, byte(0xAA), data[0])
+					assert.Equal(t, byte(0x55), data[size-1])
+				}
+			}
+		}()
+	}
+	wg.Wait()
+
+	// Assert that ArenaSlowPathTotal did not increment
+	pbFinal := &dto.Metric{}
+	var finalSlowPath float64
+	if err := metrics.ArenaSlowPathTotal.Write(pbFinal); err == nil {
+		finalSlowPath = pbFinal.GetCounter().GetValue()
+	}
+	assert.Equal(t, initialSlowPath, finalSlowPath, "metrics.ArenaSlowPathTotal should not have incremented (slow path should be bypassed)")
+}
+

@@ -5,6 +5,20 @@
 
 ---
 
+## Immediate Regressions Audit (v0.2.0 to current)
+Based on a recent analysis of `docs/performance.md` back to the v0.2.0 baseline, we have identified severe and previously undocumented regressions affecting float types:
+
+1. **Float16 & Float64 Dense QPS Drop**: Float16 Dense QPS dropped by 69% (6125 -> 1919) and Float64 dropped by 35% (5878 -> 3840). 
+   *Root Cause:* SIMD vector dispatch or memory alignment changes introduced since v0.2.0 are causing fallback to non-SIMD routines or severe cache misses for these specific types.
+2. **Float16 & Float64 ByID QPS Drop**: ByID search for Float16 dropped by 38% (9052 -> 5592) and Float64 dropped by 43% (8367 -> 4766).
+   *Root Cause:* The retrieval/lookup cache may have been disabled or misaligned for float vectors, breaking spatial locality.
+
+### Actionable Recommendations from New Audit
+1. **Revert/Fix Float16/64 SIMD Dispatch**: Immediately profile the dense search execution path for `float16` and `float64` to verify if they are defaulting to scalar fallback instead of AVX2/NEON.
+2. **Verify ByID Memory Locality**: Fix the ByID spatial retrieval logic to restore the 8000+ QPS performance for `float16` and `float64`.
+
+---
+
 ## P0 Blockers: Performance & Architecture Overhaul Plan
 
 This multipart implementation plan addresses critical performance and architectural blockers identified in the v0.2.1 performance audit.
@@ -306,11 +320,11 @@ baseline hardware.
 - [x] Full benchmark matrix complete (4 hosts, 190 configs)
 - [x] AVX2 int16/uint16 kernels verified working (smoke test, 5f85baaa)
 - [x] Build fix: removed duplicate stub declarations from all_kernels_stubs_amd64.go
-- [ ] Fix pprof collection in benchmark script
-- [ ] Add memory hard limit enforcement
+- [x] Fix pprof collection in benchmark script
+- [x] Add memory hard limit enforcement
 - [ ] Investigate remote CPU dense_qps regressions (-20% to -54%)
 - [ ] Re-run CUDA benchmark in isolated mode (not combined cpu,cuda)
-- [ ] Regenerate all_kernels_stubs_amd64.go via `go generate` to prevent future drift
+- [x] Regenerate all_kernels_stubs_amd64.go via `go generate` to prevent future drift
 
 ### Short Term (Next Sprint)
 - [ ] Add bounds checks for remaining G115 concerns (temporal_search arena offsets)

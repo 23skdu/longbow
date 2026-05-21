@@ -167,8 +167,12 @@ func (p *HybridSearchPipeline) Search(q *HybridSearchQuery) ([]SearchResult, err
 
 	// 3. Keyword search (sparse) using BM25
 	var sparseResults []SearchResult
-	if q.KeywordQuery != "" && p.bm25Index != nil && alpha < 1 {
-		sparseResults = p.bm25Index.SearchBM25(q.KeywordQuery, q.K*2, filterBitmap, nil)
+	if q.KeywordQuery != "" && alpha < 1 {
+		if p.dataset != nil && p.dataset.BM25ArenaIndex != nil {
+			sparseResults = searchBM25Arena(p.dataset.BM25ArenaIndex, q.KeywordQuery, q.K*2, filterBitmap)
+		} else if p.bm25Index != nil {
+			sparseResults = p.bm25Index.SearchBM25(q.KeywordQuery, q.K*2, filterBitmap, nil)
+		}
 	}
 
 	// 4. Fuse results based on mode

@@ -33,6 +33,14 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		}
 		if data == nil || h.compareAndSwapData(current, data) {
 			h.commitID(id)
+			
+			// Update HNSWNodeCount gauge on successful commit
+			if !h.disableNodeCountMetric.Load() {
+				shouldUpdateAll := metrics.GlobalHotpathSampler.AlwaysSample
+				if shouldUpdateAll || id%100 == 0 {
+					metrics.HNSWNodeCount.WithLabelValues(h.name, "0").Set(float64(h.nodeCount.Load()))
+				}
+			}
 			return nil
 		}
 		first = false
@@ -64,20 +72,23 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	var dims int
 	defer func() {
 		duration := time.Since(start).Seconds()
-		nodeCount := float64(meta.NodeCount)
 		typeStr := h.config.DataType.String()
-		if int(id)%100 == 0 {
-			metrics.HNSWNodesAddedTotal.WithLabelValues(h.name).Add(100)
-			metrics.HNSWInsertOpsTotal.WithLabelValues(h.name, typeStr).Add(100)
-			metrics.HNSWIngestionThroughputVectorsPerSecond.WithLabelValues(h.name, typeStr).Add(100)
+		
+		shouldUpdateAll := metrics.GlobalHotpathSampler.AlwaysSample
+		var increment float64 = 1.0
+		
+		if !skipSet && (shouldUpdateAll || int(id)%100 == 0) {
+			if !shouldUpdateAll {
+				increment = 100.0
+			}
+			metrics.HNSWNodesAddedTotal.WithLabelValues(h.name).Add(increment)
+			metrics.HNSWInsertOpsTotal.WithLabelValues(h.name, typeStr).Add(increment)
+			metrics.HNSWIngestionThroughputVectorsPerSecond.WithLabelValues(h.name, typeStr).Add(increment)
 		}
-		if int(id)%10 == 0 {
+		if !skipSet && (shouldUpdateAll || int(id)%10 == 0) {
 			metrics.HNSWInsertDurationSeconds.Observe(duration)
 			metrics.HNSWInsertLatencyByType.WithLabelValues(typeStr).Observe(duration)
 			metrics.HNSWInsertLatencyByDim.WithLabelValues(strconv.Itoa(dims)).Observe(duration)
-		}
-		if !h.disableNodeCountMetric.Load() && int(id)%100 == 0 {
-			metrics.HNSWNodeCount.WithLabelValues(h.name, "0").Set(nodeCount)
 		}
 	}()
 

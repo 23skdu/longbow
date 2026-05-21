@@ -2,7 +2,6 @@ package store
 
 import (
 	"bytes"
-	"io/ioutil"
 	"os"
 	"path/filepath"
 	"sync"
@@ -13,7 +12,7 @@ func TestUringReaderStress(t *testing.T) {
 	// Only run on Linux if iouring is available, or use stub on other platforms
 	// But we want to test the hardened implementation.
 
-	tempDir, err := ioutil.TempDir("", "uring_stress")
+	tempDir, err := os.MkdirTemp("", "uring_stress")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -26,7 +25,7 @@ func TestUringReaderStress(t *testing.T) {
 		data[i] = byte(i % 256)
 	}
 
-	if err := ioutil.WriteFile(testFile, data, 0644); err != nil {
+	if err := os.WriteFile(testFile, data, 0644); err != nil {
 		t.Fatal(err)
 	}
 

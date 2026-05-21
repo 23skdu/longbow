@@ -516,7 +516,8 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 												if bm25Arena != nil {
 													tokens := tokenize(text)
 													_ = bm25Arena.IndexDocument(docID, tokens)
-												} else if bm25 != nil {
+												}
+												if bm25 != nil {
 													bm25.Add(VectorID(docID), text)
 												}
 												metrics.BM25DocumentsIndexedTotal.Inc()

@@ -390,9 +390,22 @@ class BenchmarkRunner:
         elapsed = time.time() - startup_start
         print(f"  WARNING: Server startup timeout after {elapsed:.1f}s on port {port} "
               f"({connection_refused_retries} transient retries recorded)")
+        
+        # Prevent leaking the process if it times out
+        if self.server_pid:
+            try:
+                os.kill(self.server_pid, signal.SIGKILL)
+                os.waitpid(self.server_pid, 0)
+            except Exception:
+                pass
+            self.server_pid = None
+            
         return False
 
     def stop_server(self):
+        if hasattr(self, "args") and self.args and getattr(self.args, "pprof", False):
+            print("  Waiting 2 seconds for active pprof collections to complete...")
+            time.sleep(2)
         if self.server_pid:
             try:
                 os.kill(self.server_pid, signal.SIGTERM)

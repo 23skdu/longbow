@@ -166,6 +166,7 @@ func TestHNSW_HighDimensionGrowth_MemoryPressure(t *testing.T) {
 	samples := make([]memSample, 0, 10)
 
 	var m runtime.MemStats
+	runtime.GC()
 	runtime.ReadMemStats(&m)
 	samples = append(samples, memSample{0, m.HeapAlloc / (1024 * 1024)})
 
@@ -199,6 +200,7 @@ func TestHNSW_HighDimensionGrowth_MemoryPressure(t *testing.T) {
 			require.NoError(t, err)
 		}
 
+		runtime.GC()
 		runtime.ReadMemStats(&m)
 		samples = append(samples, memSample{(batch + 1) * batchSize, m.HeapAlloc / (1024 * 1024)})
 

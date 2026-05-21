@@ -3,6 +3,7 @@ package store
 import (
 	"math"
 	"sync"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -123,9 +124,21 @@ func (idx *BM25ArenaIndex) getOrCreateTokenID(token string) uint32 {
 		return tokenID
 	}
 
+	var strKey string
+	ref, err := idx.tokenArena.AllocSlice(len(token))
+	if err == nil {
+		bytes := idx.tokenArena.Get(ref)
+		copy(bytes, token)
+		if len(bytes) > 0 {
+			strKey = unsafe.String(&bytes[0], len(bytes))
+		}
+	} else {
+		strKey = token
+	}
+
 	tokenID := idx.nextTokenID
 	idx.nextTokenID++
-	idx.tokenDict[token] = tokenID
+	idx.tokenDict[strKey] = tokenID
 	return tokenID
 }
 

@@ -166,6 +166,16 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 						defer reader.Release()
 
 						var results []SearchResult
+						sourceColIdx := -1
+						if reader.Schema() != nil {
+							for i, f := range reader.Schema().Fields() {
+								if f.Name == "source" {
+									sourceColIdx = i
+									break
+								}
+							}
+						}
+
 						for reader.Next() {
 							rec := reader.RecordBatch()
 							col0 := rec.Column(0)
@@ -175,11 +185,8 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 							scores := col1.(*array.Float32).Float32Values()
 							
 							var sourceValues []uint8
-							for i, f := range rec.Schema().Fields() {
-								if f.Name == "source" {
-									sourceValues = rec.Column(i).(*array.Uint8).Uint8Values()
-									break
-								}
+							if sourceColIdx != -1 {
+								sourceValues = rec.Column(sourceColIdx).(*array.Uint8).Uint8Values()
 							}
 
 							for k := 0; k < len(ids); k++ {

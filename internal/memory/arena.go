@@ -194,7 +194,7 @@ func (a *SlabArena) AllocAligned(size, align int) (uint64, error) {
 	return a.allocCommon(size, align, true)
 }
 
-// AllocFast attempts lock-free allocation for small sizes (≤ 64 bytes).
+// AllocFast attempts lock-free allocation for small sizes (≤ 4096 bytes).
 // Returns (globalOffset, true) on success, (0, false) on failure.
 // This is an internal helper that doesn't increment metrics.
 func (a *SlabArena) allocFast(size int) (uint64, bool) {
@@ -220,20 +220,18 @@ func (a *SlabArena) allocFast(size int) (uint64, bool) {
 		}
 
 		oldOffset := atomic.LoadUint32(&active.offset)
-		newOffset := oldOffset + totalNeeded
+		var padStart uint32
+		if oldOffset == 0 && active.id == 1 {
+			padStart = align
+		}
+		newOffset := oldOffset + padStart + totalNeeded
 
 		if newOffset > uint32(len(active.data)) { // #nosec G115
 			return 0, false
 		}
 
 		if atomic.CompareAndSwapUint32(&active.offset, oldOffset, newOffset) {
-			start := oldOffset
-
-			if start == 0 && active.id == 1 {
-				start += align
-				atomic.AddUint32(&active.offset, align)
-			}
-
+			start := oldOffset + padStart
 			globalOffset := (uint64(active.id-1) * uint64(a.slabCap)) + uint64(start)
 			return globalOffset, true
 		}
@@ -320,7 +318,7 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	a.mu.Lock()
 
 	// Try fast path while holding the mutex
-	if size <= 256 && align <= 8 {
+	if size <= 4096 && align <= 8 {
 		if offset, ok := a.allocFast(size); ok {
 			a.mu.Unlock()
 			metrics.ArenaFastPathTotal.Inc()

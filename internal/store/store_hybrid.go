@@ -112,7 +112,8 @@ func (s *VectorStore) indexTextColumnsForHybridSearch(ds *Dataset, batch arrow.R
 				if err := ds.BM25ArenaIndex.IndexDocument(docID, tokens); err != nil {
 					s.logger.Error().Err(err).Uint32("doc_id", docID).Msg("hybrid search: arena index failed")
 				}
-			} else if ds.BM25Index != nil {
+			}
+			if ds.BM25Index != nil {
 				// Legacy path
 				ds.BM25Index.Add(VectorID(docID), text)
 			}

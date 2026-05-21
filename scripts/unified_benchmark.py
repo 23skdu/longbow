@@ -120,13 +120,13 @@ class BenchmarkRunner:
         self.data_dir = os.environ.get(
             "LONGBOW_DATA_PATH", os.path.join(os.getcwd(), "data/bench")
         )
-        self.log_dir = os.path.join(os.getcwd(), "data/perf_logs")
+        self.log_dir = os.environ.get("LONGBOW_PERF_LOGS", os.path.join(os.getcwd(), "data/perf_logs"))
         print(f"DEBUG: data_dir={self.data_dir}")
         print(f"DEBUG: log_dir={self.log_dir}")
         os.makedirs(self.log_dir, exist_ok=True)
         os.makedirs(self.data_dir, exist_ok=True)
 
-        self.bin_dir = os.path.join(os.getcwd(), "bin")
+        self.bin_dir = os.environ.get("LONGBOW_BIN_PATH", os.path.join(os.getcwd(), "bin"))
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         label_suffix = f"_{args.label}" if args.label else ""
         self.output_file = os.path.join(

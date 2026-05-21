@@ -16,12 +16,13 @@ COUNTS_2="500000,750000,1000000"
 # Localhost command wrapper
 run_local() {
   echo "[LOCAL] Starting local benchmarks (Metal/CPU)..."
-  export LONGBOW_MAX_MEMORY=19327352832
-
+  
   echo "[LOCAL] Running Matrix 1..."
+  export LONGBOW_MAX_MEMORY=19327352832
   python3 scripts/unified_benchmark.py --mode metal --dtypes $DTYPES --dims $DIMS_1 --counts $COUNTS_1 --search-modes $SEARCH_MODES --pprof || true
 
   echo "[LOCAL] Running Matrix 2..."
+  export LONGBOW_MAX_MEMORY=19327352832
   python3 scripts/unified_benchmark.py --mode metal --dtypes $DTYPES --dims $DIMS_2 --counts $COUNTS_2 --search-modes $SEARCH_MODES --pprof || true
 
   echo "[LOCAL] Local benchmarks completed."
@@ -31,7 +32,8 @@ run_local() {
 run_remote() {
   echo "[REMOTE] Starting remote benchmarks (CUDA/CPU)..."
   
-  CMD="export LONGBOW_MAX_MEMORY=15032385536; cd ~/longbow; "
+  CMD="cd ~/longbow; "
+  CMD+="export LONGBOW_MAX_MEMORY=15032385536; "
   CMD+="python3 scripts/unified_benchmark.py --mode cuda --dtypes $DTYPES --dims $DIMS_1 --counts $COUNTS_1 --search-modes $SEARCH_MODES --pprof || true; "
   CMD+="python3 scripts/unified_benchmark.py --mode cuda --dtypes $DTYPES --dims $DIMS_2 --counts $COUNTS_2 --search-modes $SEARCH_MODES --pprof || true;"
   

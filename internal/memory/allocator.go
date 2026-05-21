@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	// DefaultArenaChunkSize is 64MB
-	DefaultArenaChunkSize = 64 * 1024 * 1024
+	// DefaultArenaChunkSize is 4MB
+	DefaultArenaChunkSize = 4 * 1024 * 1024
 )
 
 // ArenaAllocator implements memory.Allocator using a pool of large buffers.

@@ -254,7 +254,7 @@ class BenchmarkRunner:
             env.update(env_overrides)
 
         # ── Core resource limits ──────────────────────────────────────────
-        limit_gb = getattr(self.args, "memory", 18 * 1024 * 1024 * 1024)
+        limit_gb = os.environ.get("LONGBOW_MAX_MEMORY", 18 * 1024 * 1024 * 1024)
         env["LONGBOW_MAX_MEMORY"] = str(limit_gb)
         env["ARROW_DISABLE_LOCKING"] = "1"
         env["LONGBOW_GOGC"] = "200"

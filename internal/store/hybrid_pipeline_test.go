@@ -302,19 +302,22 @@ func TestHybridSearchPipeline_Reranking(t *testing.T) {
 func TestHybridSearchPipeline_ExactFilters(t *testing.T) {
 	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
 
-	ds := &Dataset{Name: "test_ds"}
+	// Create record batch with vectors so AddByLocation can extract them
+	recordBatch := createHybridTestRecordBatch()
+	ds := &Dataset{
+		Name:    "test_ds",
+		Records: NewLockFreeSlice[arrow.RecordBatch](),
+	}
+	ds.Records.UpdateInPlace([]arrow.RecordBatch{recordBatch})
 	p.SetDataset(ds)
 
 	// Set up column index
 	colIdx := NewColumnInvertedIndex()
-	// RowPosition {0, 5} matches "category=electronics"
-	// We'll mock the mapping in findVectorID test by using RecordIdx=0 and VectorID=RowIdx
-	colIdx.IndexRecord(0, createHybridTestRecordBatch(), []string{"category"})
+	colIdx.IndexRecord(0, recordBatch, []string{"category"})
 	p.SetColumnIndex(colIdx)
 
 	// Set up HNSW with locations
 	hnsw := NewTestHNSWIndex(ds)
-	// Add locations so findVectorID works
 	for i := 0; i < 10; i++ {
 		_, _ = hnsw.AddByLocation(context.Background(), 0, i)
 	}

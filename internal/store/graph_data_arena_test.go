@@ -162,16 +162,27 @@ func TestGraphData_PreAllocate(t *testing.T) {
 				t.Errorf("Expected %d Level chunks, got %d", numChunks, len(gd.Levels))
 			}
 
-			// Verify Neighbors/Counts/Versions for all layers
-			for layer := 0; layer < lbtypes.ArrowMaxLayers; layer++ {
-				if len(gd.Neighbors) <= layer || len(gd.Neighbors[layer]) != numChunks {
-					t.Errorf("Layer %d: expected %d neighbor chunks, got %d", layer, numChunks, len(gd.Neighbors[layer]))
+			// Verify Neighbors/Counts/Versions: only layer 0 is pre-allocated by design
+			// Higher layers are lazily allocated on first use to save memory
+			if len(gd.Neighbors) == 0 || len(gd.Neighbors[0]) != numChunks {
+				t.Errorf("Layer 0: expected %d neighbor chunks, got %d", numChunks, len(gd.Neighbors[0]))
+			}
+			if len(gd.Counts) == 0 || len(gd.Counts[0]) != numChunks {
+				t.Errorf("Layer 0: expected %d count chunks, got %d", numChunks, len(gd.Counts[0]))
+			}
+			if len(gd.Versions) == 0 || len(gd.Versions[0]) != numChunks {
+				t.Errorf("Layer 0: expected %d version chunks, got %d", numChunks, len(gd.Versions[0]))
+			}
+			// Verify higher layers are NOT pre-allocated (lazy allocation)
+			for layer := 1; layer < lbtypes.ArrowMaxLayers; layer++ {
+				if len(gd.Neighbors[layer]) != 0 {
+					t.Errorf("Layer %d: expected 0 neighbor chunks (lazy), got %d", layer, len(gd.Neighbors[layer]))
 				}
-				if len(gd.Counts) <= layer || len(gd.Counts[layer]) != numChunks {
-					t.Errorf("Layer %d: expected %d count chunks, got %d", layer, numChunks, len(gd.Counts[layer]))
+				if len(gd.Counts[layer]) != 0 {
+					t.Errorf("Layer %d: expected 0 count chunks (lazy), got %d", layer, len(gd.Counts[layer]))
 				}
-				if len(gd.Versions) <= layer || len(gd.Versions[layer]) != numChunks {
-					t.Errorf("Layer %d: expected %d version chunks, got %d", layer, numChunks, len(gd.Versions[layer]))
+				if len(gd.Versions[layer]) != 0 {
+					t.Errorf("Layer %d: expected 0 version chunks (lazy), got %d", layer, len(gd.Versions[layer]))
 				}
 			}
 		})

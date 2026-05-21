@@ -55,8 +55,9 @@ func NewVectorStoreWithHybridConfig(mem memory.Allocator, logger zerolog.Logger,
 }
 
 // indexTextColumnsForHybridSearch indexes text columns in a RecordBatch for BM25 search.
+// Uses the arena-based BM25 index when available for reduced GC pressure.
 func (s *VectorStore) indexTextColumnsForHybridSearch(ds *Dataset, batch arrow.RecordBatch, baseRowID uint32) {
-	if !s.hybridSearchConfig.Enabled || ds.BM25Index == nil {
+	if !s.hybridSearchConfig.Enabled || (ds.BM25Index == nil && ds.BM25ArenaIndex == nil) {
 		return
 	}
 
@@ -103,8 +104,18 @@ func (s *VectorStore) indexTextColumnsForHybridSearch(ds *Dataset, batch arrow.R
 			}
 
 			// Use baseRowID + row as the VectorID
-			vecID := VectorID(baseRowID + uint32(row)) //nolint:gosec
-			ds.BM25Index.Add(vecID, text)
+			docID := uint32(baseRowID + uint32(row)) //nolint:gosec
+
+			if ds.BM25ArenaIndex != nil {
+				// Arena path: tokenize and index via arena-based storage
+				tokens := tokenize(text)
+				if err := ds.BM25ArenaIndex.IndexDocument(docID, tokens); err != nil {
+					s.logger.Error().Err(err).Uint32("doc_id", docID).Msg("hybrid search: arena index failed")
+				}
+			} else if ds.BM25Index != nil {
+				// Legacy path
+				ds.BM25Index.Add(VectorID(docID), text)
+			}
 			metrics.BM25DocumentsIndexedTotal.Inc()
 		}
 	}

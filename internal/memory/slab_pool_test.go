@@ -141,12 +141,14 @@ func TestGetSlab_StandardSizes(t *testing.T) {
 }
 
 func TestGetSlab_NonStandardSize(t *testing.T) {
-	// Non-standard size should still work but won't be pooled
+	// Non-standard size should be rounded up to the next standard pool size (8MB)
+	// but the returned slice should have len == requested size.
 	size := 5 * 1024 * 1024 // 5MB
 	slab := GetSlab(size)
-	require.Equal(t, size, cap(slab))
+	require.Equal(t, size, len(slab))
+	require.GreaterOrEqual(t, cap(slab), size)
 
-	// Putting it back should be a no-op
+	// Putting it back should recycle to the 8MB pool (no boundary violation)
 	PutSlab(slab)
 }
 

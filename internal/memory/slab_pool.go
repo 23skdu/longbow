@@ -4,9 +4,22 @@ import (
 	"strconv"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
 )
+
+// numaBindAlloc wraps off-heap allocation with optional NUMA node memory binding.
+// On Linux with multiple NUMA nodes, this binds allocated memory to the current
+// CPU socket to reduce remote memory access latency. On non-Linux or single-node
+// systems, MbindMemory is a no-op.
+func numaBindAlloc(capacity int) []byte {
+	b := offHeapAlloc.Allocate(capacity)
+	if len(b) > 0 {
+		_ = MbindMemory(unsafe.Pointer(&b[0]), len(b), -1) // -1 = bind to current node
+	}
+	return b
+}
 
 // SlabPool recycles byte slices of a fixed size to avoid repeated allocations and OS zeroing costs.
 // It is specifically designed for 1MB slabs used by standard SlabArena configurations.
@@ -43,7 +56,7 @@ func newSlabPool(size int) *SlabPool {
 		maxPooled: 100, // Keep at most 100 slabs in pool before releasing
 		pool: sync.Pool{
 			New: func() any {
-				b := offHeapAlloc.Allocate(size)
+				b := numaBindAlloc(size)
 				if err := AdviseHugePage(b); err == nil {
 					metrics.SlabHugePageCount.Inc()
 				}
@@ -54,27 +67,51 @@ func newSlabPool(size int) *SlabPool {
 	}
 }
 
+// roundUpSlabCapacity rounds non-standard capacities to the next standard pool size.
+// This ensures slabs are recycled through the standard size-class pools instead of
+// being individually allocated/freed, which reduces OS-level allocation churn.
+func roundUpSlabCapacity(capacity int) int {
+	switch {
+	case capacity <= size4MB:
+		return size4MB
+	case capacity <= size8MB:
+		return size8MB
+	case capacity <= size16MB:
+		return size16MB
+	case capacity <= size32MB:
+		return size32MB
+	default:
+		return capacity
+	}
+}
+
 // GetSlab retrieves a slab of capacity 'cap'.
 // If cap matches standard sizes, it returns a pooled slice.
+// Non-standard capacities are rounded up to the next pool size for recycling.
 // The returned slice has len=cap (fully usable buffer).
 // NOTE: buffer content is DIRTY (not zeroed) if reused.
 func GetSlab(capacity int) []byte {
-	switch capacity {
+	rounded := roundUpSlabCapacity(capacity)
+	switch rounded {
 	case size4MB:
-		return global4MBPool.Get()
+		b := global4MBPool.Get()
+		return b[:capacity]
 	case size8MB:
-		return global8MBPool.Get()
+		b := global8MBPool.Get()
+		return b[:capacity]
 	case size16MB:
-		return global16MBPool.Get()
+		b := global16MBPool.Get()
+		return b[:capacity]
 	case size32MB:
-		return global32MBPool.Get()
+		b := global32MBPool.Get()
+		return b[:capacity]
 	}
-	// Fallback to off-heap alloc for non-standard large sizes
+	// Fallback to off-heap alloc for oversized capacities
 	sizeStr := strconv.Itoa(capacity)
 	metrics.SlabPoolAllocationsTotal.WithLabelValues(sizeStr, "miss").Inc()
 	metrics.SlabPoolGrowthTotal.WithLabelValues(sizeStr).Inc()
 	if capacity >= 1024*1024 {
-		return offHeapAlloc.Allocate(capacity)
+		return numaBindAlloc(capacity)
 	}
 	return make([]byte, capacity)
 }

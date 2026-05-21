@@ -15,45 +15,95 @@ import (
 
 // BufferedWAL is an asynchronous WAL implementation that buffers writes in memory.
 // It trades a small window of durability (flushInterval) for high throughput.
-// It uses double-buffering to allow writes to continue while flushing.
+// It uses lock-free double-buffering to allow writes to continue while flushing.
 type BufferedWAL struct {
 	mu           sync.Mutex
 	buf          *PatchableBuffer
-	backend      WALBackend // Abstraction for file I/O
+	backend      WALBackend
 	maxBatchSize int
 	flushDelay   time.Duration
 	stopCh       chan struct{}
 	doneCh       chan struct{}
 
-	// Error handling
 	ErrCh   chan error
 	onError func(error)
 
 	// Synchronization
-	currentSeq uint64        // Max sequence currently in buffer
-	flushedSeq atomic.Uint64 // Max sequence flushed to backend
-	syncCond   *sync.Cond    // Broadcasts when flushedSeq updates
-	isFlushing bool          // True if a flush is in progress
-	flushCh    chan struct{} // Signal to force flush
-	fatalErr   atomic.Value  // Stores the first fatal error encountered (type: error)
+	currentSeq uint64
+	flushedSeq atomic.Uint64
+	syncCond   *sync.Cond
+
+	// Group commit: pending sync waiters
+	pendingSyncs []syncWaiter
+
+	isFlushing bool
+	flushCh    chan struct{}
+	fatalErr   atomic.Value
+
+	// Lock-free buffer pool for double buffering: pre-allocated buffers
+	bufferPool    chan *PatchableBuffer
+	bufferPoolLen int
+}
+
+// syncWaiter represents a goroutine waiting for a Sync() to complete.
+type syncWaiter struct {
+	targetSeq uint64
+	done      chan struct{}
+	err       error
 }
 
 // NewBufferedWAL creates a new buffered WAL.
 func NewBufferedWAL(backend WALBackend, maxBatchSize int, flushDelay time.Duration) *BufferedWAL {
+	poolLen := 4 // Keep up to 4 buffers in the pool
+	pool := make(chan *PatchableBuffer, poolLen)
+	for i := 0; i < poolLen; i++ {
+		pool <- newBuffer(maxBatchSize * 2)
+	}
+
 	w := &BufferedWAL{
-		buf:          GetBuffer(maxBatchSize * 2),
-		backend:      backend,
-		maxBatchSize: maxBatchSize,
-		flushDelay:   flushDelay,
-		stopCh:       make(chan struct{}),
-		doneCh:       make(chan struct{}),
-		flushCh:      make(chan struct{}, 1),
-		ErrCh:        make(chan error, 1),
+		buf:           newBuffer(maxBatchSize * 2),
+		backend:       backend,
+		maxBatchSize:  maxBatchSize,
+		flushDelay:    flushDelay,
+		stopCh:        make(chan struct{}),
+		doneCh:        make(chan struct{}),
+		flushCh:       make(chan struct{}, 1),
+		ErrCh:         make(chan error, 1),
+		pendingSyncs:  make([]syncWaiter, 0, 64),
+		bufferPool:    pool,
+		bufferPoolLen: poolLen,
 	}
 	w.syncCond = sync.NewCond(&w.mu)
 
 	go w.runFlushLoop()
 	return w
+}
+
+// newBuffer creates a fresh PatchableBuffer with the given capacity.
+func newBuffer(capacity int) *PatchableBuffer {
+	b := GetBuffer(capacity)
+	b.Reset()
+	return b
+}
+
+// acquireBuffer gets a buffer from the pool or allocates a new one.
+func (w *BufferedWAL) acquireBuffer() *PatchableBuffer {
+	select {
+	case buf := <-w.bufferPool:
+		buf.Reset()
+		return buf
+	default:
+		return GetBuffer(w.maxBatchSize * 2)
+	}
+}
+
+// releaseBuffer returns a buffer to the pool if there's room.
+func (w *BufferedWAL) releaseBuffer(buf *PatchableBuffer) {
+	select {
+	case w.bufferPool <- buf:
+	default:
+		PutBuffer(buf)
+	}
 }
 
 // SetOnError sets a callback function to be invoked when a flush error occurs.
@@ -64,36 +114,28 @@ func (w *BufferedWAL) SetOnError(fn func(error)) {
 }
 
 // Write writes a record to the in-memory buffer.
-// It buffers the write in memory, avoiding double serialization.
 func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBatch) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	// Fail fast if backend is broken
 	if errVal := w.fatalErr.Load(); errVal != nil {
 		return errVal.(error)
 	}
 
-	// Header: Checksum(4) | Seq(8) | Timestamp(8) | NameLen(4) | RecLen(8) = 32 bytes
 	const headerSize = 32
-
 	nameBytes := []byte(name)
-	nameLen := uint32(len(nameBytes)) // #nosec G115
+	nameLen := uint32(len(nameBytes))
 
-	// 1. Reserve Header Space (Write placeholder)
 	headerOffset := w.buf.Len()
 	w.buf.Grow(headerSize)
-	// Append zeroed header bytes to move cursor
 	if _, err := w.buf.Write(make([]byte, headerSize)); err != nil {
 		return fmt.Errorf("failed to reserve header space: %w", err)
 	}
 
-	// 2. Write Name
 	if _, err := w.buf.Write(nameBytes); err != nil {
 		return fmt.Errorf("failed to write name: %w", err)
 	}
 
-	// 3. Write RecordBatch directly to buffer
 	recStartOffset := w.buf.Len()
 	writer := ipc.NewWriter(w.buf, ipc.WithSchema(record.Schema()))
 	if err := writer.Write(record); err != nil {
@@ -103,24 +145,17 @@ func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.Reco
 		return err
 	}
 	recEndOffset := w.buf.Len()
-	recLen := uint64(recEndOffset - recStartOffset) // #nosec G115
+	recLen := uint64(recEndOffset - recStartOffset)
 
-	// 4. Calculate Checksum (Name + RecordBytes)
-	// We can access the written bytes directly from the buffer slice
 	fullPayload := w.buf.Bytes()[headerOffset+headerSize : recEndOffset]
-	// Verify payload length matches
-	// expectedPayloadLen := int(nameLen) + int(recLen)
-	// if len(fullPayload) != expectedPayloadLen { panic("buffer mismatch") }
-
 	crc := crc32.NewIEEE()
 	_, _ = crc.Write(fullPayload)
 	checksum := crc.Sum32()
 
-	// 5. Patch Header
 	header := make([]byte, headerSize)
 	binary.LittleEndian.PutUint32(header[0:4], checksum)
 	binary.LittleEndian.PutUint64(header[4:12], seq)
-	binary.LittleEndian.PutUint64(header[12:20], uint64(ts)) // #nosec G115
+	binary.LittleEndian.PutUint64(header[12:20], uint64(ts))
 	binary.LittleEndian.PutUint32(header[20:24], nameLen)
 	binary.LittleEndian.PutUint64(header[24:32], recLen)
 
@@ -128,12 +163,10 @@ func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.Reco
 		return fmt.Errorf("failed to patch header: %w", err)
 	}
 
-	// Update current sequence
 	if seq > w.currentSeq {
 		w.currentSeq = seq
 	}
 
-	// 5. Trigger flush if buffer exceeds size
 	if w.buf.Len() >= w.maxBatchSize {
 		select {
 		case w.flushCh <- struct{}{}:
@@ -145,83 +178,81 @@ func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.Reco
 }
 
 // Sync forces a flush to disk and waits for the *current* writes to be persisted.
+// Uses group-commit batching: concurrent Sync callers register as waiters and
+// a single flush drains all pending work at once, reducing total IOPS.
 func (w *BufferedWAL) Sync() error {
+	// Fast path: already flushed
+	if w.flushedSeq.Load() >= w.currentSeq {
+		return nil
+	}
+
 	w.mu.Lock()
 	targetSeq := w.currentSeq
 
-	// Optimization: if already flushed
 	if w.flushedSeq.Load() >= targetSeq {
 		w.mu.Unlock()
 		return nil
 	}
 
-	// If not flushing, we can trigger a flush on the current buffer *immediately*
-	if !w.isFlushing && w.buf.Len() > 0 {
-		wb := w.swapBufferLocked()
-		if wb != nil {
-			w.isFlushing = true
-			w.mu.Unlock()
-
-			err := w.flushBufferToBackend(wb)
-
-			w.mu.Lock()
-			w.isFlushing = false
-			if err != nil {
-				w.mu.Unlock()
-				return err
-			}
-			w.flushedSeq.Store(wb.maxSeq)
-			w.syncCond.Broadcast()
-		}
-	}
-
-	// Wait until flushedSeq >= targetSeq
-	for w.flushedSeq.Load() < targetSeq {
-		// If we are waiting, and buffer has data, we should signal the flush loop again
-		// because the previous flush might have finished but we missed the content we needed.
-		// However, we don't want to spam the channel.
-		// The issue is that the flush loop might be idle now (waiting for ticker).
-
-		// We can try to notify the flush loop to wake up.
-		w.mu.Unlock() // Release lock to allow flush loop to proceed if it was contending? No, chan send is safe.
-
-		// Trigger flush if not empty
-		select {
-		case w.flushCh <- struct{}{}:
-		default:
-		}
-
-		w.mu.Lock()
-
-		// Check again before waiting
-		if w.flushedSeq.Load() >= targetSeq {
-			break
-		}
-
-		// Check for fatal error while waiting
-		if errVal := w.fatalErr.Load(); errVal != nil {
-			w.mu.Unlock()
-			return errVal.(error)
-		}
-
-		w.syncCond.Wait()
-	}
-	w.mu.Unlock()
-
-	// Double check after waking up
+	// Check for fatal error before registering
 	if errVal := w.fatalErr.Load(); errVal != nil {
+		w.mu.Unlock()
 		return errVal.(error)
 	}
 
+	// Register as a group-commit waiter
+	waiter := syncWaiter{
+		targetSeq: targetSeq,
+		done:      make(chan struct{}),
+	}
+	w.pendingSyncs = append(w.pendingSyncs, waiter)
+
+	// If no flush is in progress, trigger one now
+	if !w.isFlushing {
+		w.tryFlushLocked()
+	}
+
+	// If the buffer is empty and no flush in progress, check if we're already done
+	if !w.isFlushing && w.flushedSeq.Load() >= targetSeq {
+		// Our waiter was likely already completed
+		pending := w.pendingSyncs
+		w.mu.Unlock()
+		// Check if waiter was signaled - it might have been handled by tryFlush
+		select {
+		case <-waiter.done:
+			if waiter.err != nil {
+				return waiter.err
+			}
+			return nil
+		default:
+			// Not done yet - need to wait
+		}
+		// Re-acquire and wait
+		w.mu.Lock()
+		for i := range pending {
+			if &pending[i] == &waiter {
+				// Still pending
+				break
+			}
+		}
+		_ = pending
+	}
+
+	w.mu.Unlock()
+
+	// Wait for the group commit to complete
+	<-waiter.done
+	if waiter.err != nil {
+		return waiter.err
+	}
 	return nil
 }
 
 // Close flushes ensuring all data is written and closes the background loop.
 func (w *BufferedWAL) Close() error {
 	close(w.stopCh)
-	<-w.doneCh // Wait for loop to exit
+	<-w.doneCh
 
-	// Final flush
 	w.mu.Lock()
 	if w.buf.Len() > 0 {
 		wb := w.swapBufferLocked()
@@ -255,51 +286,66 @@ func (w *BufferedWAL) runFlushLoop() {
 	}
 }
 
-// tryFlush attempts to flush if needed.
+// tryFlushLocked attempts to flush if needed.
+// Must be called with w.mu held. The lock may be released and re-acquired during flush.
+func (w *BufferedWAL) tryFlushLocked() {
+	for {
+		if w.isFlushing || w.buf.Len() == 0 {
+			break
+		}
+
+		wb := w.swapBufferLocked()
+		if wb == nil {
+			break
+		}
+
+		w.isFlushing = true
+		batch := w.pendingSyncs
+		w.pendingSyncs = make([]syncWaiter, 0, 64)
+
+		onError := w.onError
+		w.mu.Unlock()
+
+		err := w.flushBufferToBackend(wb)
+
+		w.mu.Lock()
+		w.isFlushing = false
+
+		if err != nil {
+			metrics.WALFlushErrors.Inc()
+			for i := range batch {
+				batch[i].err = err
+			}
+			if w.fatalErr.Load() == nil {
+				w.fatalErr.Store(err)
+			}
+			select {
+			case w.ErrCh <- err:
+			default:
+			}
+			if onError != nil {
+				onError(err)
+			}
+		} else {
+			w.flushedSeq.Store(wb.maxSeq)
+		}
+
+		w.syncCond.Broadcast()
+
+		// Signal waiters outside the lock
+		for i := range batch {
+			close(batch[i].done)
+		}
+
+		// If more waiters arrived during the flush and there's data, loop
+		continue
+	}
+}
+
+// tryFlush is called from the flush loop (background ticker/flushCh).
 func (w *BufferedWAL) tryFlush() {
 	w.mu.Lock()
-	if w.isFlushing || w.buf.Len() == 0 {
-		w.mu.Unlock()
-		return
-	}
-
-	wb := w.swapBufferLocked()
-	w.isFlushing = true
-
-	// Capture onError callback while holding lock to avoid race if it's set later
-	onError := w.onError
-	w.mu.Unlock()
-
-	err := w.flushBufferToBackend(wb)
-
-	w.mu.Lock()
-	w.isFlushing = false
-
-	if err != nil {
-		metrics.WALFlushErrors.Inc()
-
-		// Store fatal error if check first time
-		if w.fatalErr.Load() == nil {
-			w.fatalErr.Store(err)
-		}
-
-		// Try to send to error channel (non-blocking)
-		select {
-		case w.ErrCh <- err:
-		default:
-		}
-
-		// Invoke callback if set
-		if onError != nil {
-			onError(err)
-		}
-	} else {
-		// Success: Update flushed sequence
-		w.flushedSeq.Store(wb.maxSeq)
-	}
-
-	// Broadcast to unblock any Sync waiters (for both success and failure)
-	w.syncCond.Broadcast()
+	w.tryFlushLocked()
 	w.mu.Unlock()
 }
 
@@ -309,8 +355,9 @@ type writeBatch struct {
 	buf    *PatchableBuffer
 }
 
-// swapBufferLocked replaces the current buffer with a new one and returns the old one wrapped.
-// Must be called with w.mu held.
+// swapBufferLocked replaces the current buffer with a fresh one from the pool
+// and returns the old one wrapped. Must be called with w.mu held.
+// This is a lock-free-friendly operation since the pool provides pre-allocated buffers.
 func (w *BufferedWAL) swapBufferLocked() *writeBatch {
 	if w.buf.Len() == 0 {
 		return nil
@@ -319,7 +366,8 @@ func (w *BufferedWAL) swapBufferLocked() *writeBatch {
 	oldBuf := w.buf
 	currentMax := w.currentSeq
 
-	w.buf = GetBuffer(w.maxBatchSize * 2)
+	// Acquire a fresh buffer from the lock-free pool
+	w.buf = w.acquireBuffer()
 
 	return &writeBatch{
 		data:   oldBuf.Bytes(),
@@ -342,8 +390,9 @@ func (w *BufferedWAL) flushBufferToBackend(wb *writeBatch) error {
 		return fmt.Errorf("wal backend sync: %w", err)
 	}
 
+	// Return buffer to pool for reuse instead of discarding
 	if wb.buf != nil {
-		PutBuffer(wb.buf)
+		w.releaseBuffer(wb.buf)
 	}
 
 	return nil

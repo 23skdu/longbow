@@ -159,8 +159,9 @@ func (a *SlabArena) GetGeneration() uint64 {
 // Returns a GLOBAL offset.
 // Guarantees zero-initialized memory.
 func (a *SlabArena) Alloc(size int) (uint64, error) {
-	// Try fast path first for small allocations (up to 1KB)
-	if size <= 1024 {
+	// Try fast path first for small allocations (up to 4KB)
+	// This covers float32 vectors up to dim 1024 (4096 bytes)
+	if size <= 4096 {
 		if offset, ok := a.allocFast(size); ok {
 			return offset, nil
 		}
@@ -175,8 +176,8 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 // MEMORY IS NOT GUARANTEED TO BE ZEROED.
 // Use this only when you will immediately overwrite the entire range.
 func (a *SlabArena) AllocDirty(size int) (uint64, error) {
-	// Try fast path first for small allocations (up to 1KB)
-	if size <= 1024 {
+	// Try fast path first for small allocations (up to 4KB)
+	if size <= 4096 {
 		if offset, ok := a.allocFast(size); ok {
 			return offset, nil
 		}

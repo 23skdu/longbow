@@ -130,6 +130,7 @@ func (idx *BM25ArenaIndex) getOrCreateTokenID(token string) uint32 {
 		bytes := idx.tokenArena.Get(ref)
 		copy(bytes, token)
 		if len(bytes) > 0 {
+			// #nosec G103
 			strKey = unsafe.String(&bytes[0], len(bytes))
 		}
 	} else {

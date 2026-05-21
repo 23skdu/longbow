@@ -16,6 +16,7 @@ import (
 func numaBindAlloc(capacity int) []byte {
 	b := offHeapAlloc.Allocate(capacity)
 	if len(b) > 0 {
+		// #nosec G103
 		_ = MbindMemory(unsafe.Pointer(&b[0]), len(b), -1) // -1 = bind to current node
 	}
 	return b

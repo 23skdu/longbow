@@ -177,6 +177,7 @@ func TestArrowHNSW_Coverage_ComputeSingle(t *testing.T) {
 				h:    h,
 				q:    tc.query,
 				data: gd,
+				dims: tc.dims,
 			}
 
 			dist, err := computer.ComputeSingle(0)

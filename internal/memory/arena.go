@@ -206,36 +206,26 @@ func (a *SlabArena) allocFast(size int) (uint64, bool) {
 	pad := (-needed) & (align - 1)
 	totalNeeded := needed + pad
 
-	for {
-		slabsPtr := a.slabs.Load()
-		slabs := *slabsPtr
+	slabsPtr := a.slabs.Load()
+	slabs := *slabsPtr
 
-		if len(slabs) == 0 {
-			return 0, false
-		}
-
-		active := slabs[len(slabs)-1]
-		if active.generation != a.generation.Load() {
-			return 0, false // Force slow path for new generation
-		}
-
-		oldOffset := atomic.LoadUint32(&active.offset)
-		var padStart uint32
-		if oldOffset == 0 && active.id == 1 {
-			padStart = align
-		}
-		newOffset := oldOffset + padStart + totalNeeded
-
-		if newOffset > uint32(len(active.data)) { // #nosec G115
-			return 0, false
-		}
-
-		if atomic.CompareAndSwapUint32(&active.offset, oldOffset, newOffset) {
-			start := oldOffset + padStart
-			globalOffset := (uint64(active.id-1) * uint64(a.slabCap)) + uint64(start)
-			return globalOffset, true
-		}
+	if len(slabs) == 0 {
+		return 0, false
 	}
+
+	active := slabs[len(slabs)-1]
+	if active.generation != a.generation.Load() {
+		return 0, false // Force slow path for new generation
+	}
+
+	newOffset := atomic.AddUint32(&active.offset, totalNeeded)
+	if newOffset > uint32(len(active.data)) { // #nosec G115
+		return 0, false
+	}
+
+	oldOffset := newOffset - totalNeeded
+	globalOffset := (uint64(active.id-1) * uint64(a.slabCap)) + uint64(oldOffset)
+	return globalOffset, true
 }
 
 func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
@@ -756,4 +746,18 @@ func (a *SlabArena) ConvertToOffHeap(alloc memory.Allocator) error {
 	}
 	a.alloc = alloc
 	return nil
+}
+
+// TotalAllocated returns the total bytes allocated across all slabs.
+func (a *SlabArena) TotalAllocated() int64 {
+	slabsPtr := a.slabs.Load()
+	if slabsPtr == nil {
+		return 0
+	}
+	slabs := *slabsPtr
+	var total int64
+	for _, s := range slabs {
+		total += int64(atomic.LoadUint32(&s.offset))
+	}
+	return total
 }

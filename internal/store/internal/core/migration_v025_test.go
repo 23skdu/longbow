@@ -277,6 +277,7 @@ func TestGraphData_NeedsChunk_SharedVectorSpace(t *testing.T) {
 	// Needs topology for chunk 2 (outside initial capacity of 1 chunk)
 	assert.True(t, gd.NeedsChunk(2))
 	
+	gd.GrowMetadataSlices(3)
 	err := gd.EnsureChunk(2, 0, 128)
 	require.NoError(t, err)
 	

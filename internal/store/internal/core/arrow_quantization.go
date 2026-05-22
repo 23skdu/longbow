@@ -194,6 +194,9 @@ func (h *ArrowHNSW) GetPQEncoder() *pq.PQEncoder {
 		if enc, ok := h.oopqEncoder.(*pq.PQEncoder); ok {
 			return enc
 		}
+		if enc, ok := h.oopqEncoder.(*pq.OPQEncoder); ok {
+			return enc.PQEncoder
+		}
 	}
 	return nil
 }

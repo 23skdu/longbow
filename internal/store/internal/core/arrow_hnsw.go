@@ -477,7 +477,15 @@ func (h *ArrowHNSW) setDims(dims int32) {
 
 // GetMetadataSnapshot returns a consistent snapshot of the index metadata.
 func (h *ArrowHNSW) GetMetadataSnapshot() *HNSWMetadata {
-	return h.metadataRegistry.Load()
+	meta := h.metadataRegistry.Load()
+	if meta == nil {
+		return &HNSWMetadata{
+			EntryPoint: math.MaxUint32,
+			MaxLevel:   -1,
+			NodeCount:  0,
+		}
+	}
+	return meta
 }
 
 // SetDimension sets the absolute dimension of the index.

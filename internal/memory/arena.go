@@ -159,9 +159,9 @@ func (a *SlabArena) GetGeneration() uint64 {
 // Returns a GLOBAL offset.
 // Guarantees zero-initialized memory.
 func (a *SlabArena) Alloc(size int) (uint64, error) {
-	// Try fast path first for small allocations (up to 4KB)
-	// This covers float32 vectors up to dim 1024 (4096 bytes)
-	if size <= 4096 {
+	// Try fast path first for small allocations (up to 16KB)
+	// This covers float32 vectors up to dim 3072 (12288 bytes)
+	if size <= 16384 {
 		if offset, ok := a.allocFast(size); ok {
 			return offset, nil
 		}
@@ -176,8 +176,8 @@ func (a *SlabArena) Alloc(size int) (uint64, error) {
 // MEMORY IS NOT GUARANTEED TO BE ZEROED.
 // Use this only when you will immediately overwrite the entire range.
 func (a *SlabArena) AllocDirty(size int) (uint64, error) {
-	// Try fast path first for small allocations (up to 4KB)
-	if size <= 4096 {
+	// Try fast path first for small allocations (up to 16KB)
+	if size <= 16384 {
 		if offset, ok := a.allocFast(size); ok {
 			return offset, nil
 		}
@@ -194,7 +194,7 @@ func (a *SlabArena) AllocAligned(size, align int) (uint64, error) {
 	return a.allocCommon(size, align, true)
 }
 
-// AllocFast attempts lock-free allocation for small sizes (≤ 4096 bytes).
+// AllocFast attempts lock-free allocation for small sizes (≤ 16384 bytes).
 // Returns (globalOffset, true) on success, (0, false) on failure.
 // This is an internal helper that doesn't increment metrics.
 func (a *SlabArena) allocFast(size int) (uint64, bool) {
@@ -308,7 +308,7 @@ func (a *SlabArena) allocCommon(size, align int, zero bool) (uint64, error) {
 	a.mu.Lock()
 
 	// Try fast path while holding the mutex
-	if size <= 4096 && align <= 8 {
+	if size <= 16384 && align <= 8 {
 		if offset, ok := a.allocFast(size); ok {
 			a.mu.Unlock()
 			metrics.ArenaFastPathTotal.Inc()
@@ -469,8 +469,49 @@ func (a *SlabArena) Free() {
 }
 
 // Get retrieves the byte slice from the arena.
+// This is a highly optimized fast-path for committed reads.
 func (a *SlabArena) Get(offset uint64, length uint32) []byte {
-	return a.GetWithGeneration(offset, length, math.MaxUint64)
+	if length == 0 {
+		return nil
+	}
+
+	slabIdx := offset / uint64(a.slabCap)
+	localOffset := uint32(offset & (uint64(a.slabCap) - 1)) // #nosec G115
+
+	slabsPtr := a.slabs.Load()
+	slabs := *slabsPtr
+
+	if int(slabIdx) >= len(slabs) { // #nosec G115
+		return nil
+	}
+
+	s := slabs[slabIdx]
+
+	if s.data == nil {
+		var realSlab *slab
+		var realIdx int
+		for j := int(slabIdx); j >= 0; j-- { // #nosec G115
+			if slabs[j].data != nil {
+				realSlab = slabs[j]
+				realIdx = j
+				break
+			}
+		}
+		if realSlab == nil {
+			return nil
+		}
+		adjustedOffset := localOffset + uint32(int(slabIdx)-realIdx)*a.slabCap // #nosec G115
+		if uint64(adjustedOffset)+uint64(length) > uint64(len(realSlab.data)) {
+			return nil
+		}
+		return realSlab.data[adjustedOffset : adjustedOffset+length]
+	}
+
+	if uint64(localOffset)+uint64(length) > uint64(len(s.data)) {
+		return nil
+	}
+
+	return s.data[localOffset : localOffset+length]
 }
 
 // GetWithGeneration retrieves the byte slice from the arena, enforcing generation isolation.

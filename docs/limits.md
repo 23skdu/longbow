@@ -50,11 +50,15 @@ Single RecordBatch sizes are unbounded but typically 1KB–10MB in practice.
 
 | Parameter | Default | Env Variable |
 |-----------|---------|-------------|
-| Max memory | 10GB | `LONGBOW_MAX_MEMORY` |
+| Soft memory limit | 10GB | `LONGBOW_MAX_MEMORY` |
+| Hard memory limit | 0 (off) | `LONGBOW_MAX_MEMORY_HARD` |
 | WAL size | 1GB | `LONGBOW_MAX_WAL_SIZE` |
 | TTL | 0 (off) | `LONGBOW_TTL_SECONDS` |
 
-The memory limit is a hard ceiling enforced by the GC tuner. Exceeding it triggers eviction of the least-recently-used record batches before new data is ingested.
+### Soft vs Hard Memory Limits
+
+- **`LONGBOW_MAX_MEMORY` (Soft Limit)**: Enforced by the GC tuner. Exceeding this limit triggers eviction of the least-recently-used record batches to disk. The system will also apply an exponential backpressure delay (scaling from 5ms up to 100ms) on ingestion requests as memory approaches this limit to allow background eviction to catch up.
+- **`LONGBOW_MAX_MEMORY_HARD` (Hard Limit)**: An absolute hard ceiling. If memory exceeds this threshold, the server immediately stops accepting new ingestion requests and returns a `ResourceExhausted` (gRPC status code 8) error to the client. This protects the server from Out-Of-Memory (OOM) crashes under extreme sudden load.
 
 ---
 

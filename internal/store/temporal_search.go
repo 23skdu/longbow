@@ -344,6 +344,9 @@ func (tt *TemporalTree) appendEntryToNode(node *TemporalNode, entry TemporalEntr
 		newEntries := tt.entryArena.Get(newRef)
 		copy(newEntries, oldEntries)
 		
+		if newRef.Offset > math.MaxUint32 {
+			panic(fmt.Sprintf("temporal tree entry offset overflow: %d exceeds MaxUint32", newRef.Offset))
+		}
 		node.Offset = uint32(newRef.Offset) // #nosec G115
 		node.Cap = newCap
 	}
@@ -362,6 +365,9 @@ func (tt *TemporalTree) insertInLeaf(leaf *temporalLeaf, timestamp int64, entry 
 	entryRef, _ := tt.entryArena.AllocSlice(1)
 	tt.entryArena.Get(entryRef)[0] = entry
 	
+	if entryRef.Offset > math.MaxUint32 {
+		panic(fmt.Sprintf("temporal tree entry offset overflow: %d exceeds MaxUint32", entryRef.Offset))
+	}
 	newNode := TemporalNode{
 		Timestamp: timestamp,
 		Offset:    uint32(entryRef.Offset), // #nosec G115

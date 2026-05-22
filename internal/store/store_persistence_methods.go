@@ -80,7 +80,13 @@ func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) 
 
 		// Export Index Graph
 		if ds.Index != nil {
-			if hnsw, ok := ds.Index.(*ArrowHNSW); ok {
+			indexToSnapshot := ds.Index
+			if autoShard, ok := indexToSnapshot.(*AutoShardingIndex); ok {
+				autoShard.mu.RLock()
+				indexToSnapshot = autoShard.current
+				autoShard.mu.RUnlock()
+			}
+			if hnsw, ok := indexToSnapshot.(*ArrowHNSW); ok {
 				// 1. Capture lightweight clone immediately
 				snap, meta, err := hnsw.SnapshotGraph()
 				if err != nil {

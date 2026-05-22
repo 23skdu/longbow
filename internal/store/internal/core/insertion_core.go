@@ -9,6 +9,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 	"sync/atomic"
 )
 
@@ -116,6 +117,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		if dims == 0 {
 			inputDims := 0
 			switch v := vec.(type) {
+			case []float16.Num: inputDims = len(v)
 			case []float32: inputDims = len(v)
 			case []float64: inputDims = len(v)
 			case []int8: inputDims = len(v)

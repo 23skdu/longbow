@@ -1,9 +1,36 @@
 # Longbow Next Steps - Stability & Performance Recommendations
 
-> Generated: 2026-05-20
-> Based on: Security audit, race condition analysis, and comprehensive historical performance audit (v0.2.0 - v0.2.1).
+> Generated: 2026-05-21
+> Based on: Security audit, race condition analysis, comprehensive historical performance audit (v0.2.0 - v0.2.1), and HNSW search path regression analysis.
 
 ---
+
+## HNSW Search Path Regression Analysis (2026-05-21)
+
+**Critical Finding**: Dense Search QPS on local M3 dropped from ~12,000 (tag `0.2.0-rc2`, dim=128, count=10000) to ~5,200 (current `bc8092be`, dim=128, count=1000). The regression stems from a 3-layer overhead added by the lock-free generation-based COW isolation introduced between `0.2.0-rc2` and `v0.2.1-rc3`:
+
+1. **Atomic chunk offset loads** (~40-50% of regression): Every chunk accessor (`GetVectorsChunkWithGen`, `GetNeighborsChunkWithGen`, etc.) now reads `offset := atomic.LoadUint64(&g.VectorsF32[chunkID])` instead of plain `offset := g.VectorsF32[chunkID]`. Each `atomic.LoadUint64` adds a hardware memory barrier. Per node traversal: ~6 atomic loads → ~3000-6000 per query at `efSearch=100`, reading metadata that is set once at chunk creation and stable during search.
+
+2. **Generation checks on every vector/neighbor access** (~15-20%): `GetWithGeneration()` executes per read: `atomic.LoadPointer` on slab pointer, slab index computation, generation comparison, and bounds check — all previously direct slice accesses.
+
+3. **Interface dispatch via `DistanceComputer`** (~5-10%): `searchLayer` uses `comp.ComputeSingle` (interface method call) and `comp.Prefetch(...)` instead of the old per-type closures, adding polymorphism overhead on the hottest path.
+
+### Recovery Plan (4 Tiers)
+
+**Tier 1 — High Impact, Safe** (target: recover ~50-60% of regression):
+1. Add non-atomic fast-path chunk accessors (`GetVectorsChunkFast`, `GetNeighborsChunkFast`, etc.) that read offsets via plain indexing. The atomic load is unnecessary because chunk offset arrays are immutable after chunk creation — written once by `EnsureChunk` and never modified during search.
+2. Bypass generation checks for committed reads (`maxGen == math.MaxUint64`) by calling `Get()` instead of `GetWithGeneration()`.
+
+**Tier 2 — Medium Impact** (target: recover ~10-15%):
+3. Specialized `searchLayerFloat32`: Create a monomorphic version of `searchLayer` for float32 (most common type) avoiding `DistanceComputer` interface dispatch.
+4. Cache `h.mMax`, `h.m`, `h.mMax0` in search context (replace per-prefetch-round atomic loads with single load at entry).
+
+**Tier 3 — Correctness Fixes**:
+5. Fix 4 inconsistent chunk getters (`VectorsInt8`, `VectorsInt16`, `VectorsUint16`, `VectorsF16`) that use plain indexing while `ReleaseChunk` plain-writes zeros — potential data race.
+6. Fix `pqComputer.ComputeSingle` to use `GetVectorsPQChunkWithGen` instead of `GetVectorsPQChunk` for generation isolation.
+
+**Tier 4 — Ingestion Hot Path**:
+7. Profile and optimize `EnsureChunk`/`PreAllocate` atomic stores, `insertCore` neighbor updates, and `SlabArena.Allocate` CAS loops.
 
 ## Immediate Regressions Audit (v0.2.0 to current)
 Based on a recent analysis of `docs/performance.md` back to the v0.2.0 baseline, we have identified severe and previously undocumented regressions affecting float types:
@@ -96,6 +123,42 @@ This multipart implementation plan addresses critical performance and architectu
 - **Unit & Fuzz Testing Strategies**:
   - **Unit Test**: Write `TestAdmissionHardMemoryLimits` in `admission_test.go` to mock extreme memory usage and verify that new ingestions are rejected with `ResourceExhausted` and soft-pressure triggers correct backpressure delay scaling.
   - **Fuzz Test**: Implement `FuzzAdmissionBackpressure` to issue ingestion batches at different system load levels, ensuring system stays under bounds without panics.
+
+### PART 7: HNSW Search Path Optimization (Recover ~70% of Dense QPS Regression)
+- **Technical Analysis & Root Cause**:
+  Between `0.2.0-rc2` and `v0.2.1-rc3`, the HNSW search path was refactored to add lock-free generation-based COW isolation (`internal/store/internal/core/navigation.go`, `distance_computer.go`, `types/graph_data.go`). This added three compounding overheads to the search hot path:
+  1. **Atomic LoadUint64 on chunk offset arrays** (`graph_data.go:360,650,665,680`): Every chunk accessor reads the offset from a `[]uint64` slice using `atomic.LoadUint64` instead of plain indexing. These offset arrays are set once at chunk creation by `EnsureChunk` and never modified during search — the atomic barrier is unnecessary.
+  2. **Generation check per vector/neighbor access** (`typed_arena.go:213`, `arena.go:487`): `GetWithGeneration()` does an `atomic.LoadPointer` on the slab array, computes slab index, compares `s.generation > maxGeneration`, and bounds-checks. When `maxGen == math.MaxUint64` (committed data reads), this comparison is always false — entirely dead work.
+  3. **Interface dispatch via DistanceComputer** (`navigation.go:559`): `searchLayer` uses `comp.ComputeSingle` (interface call) and `comp.Prefetch(...)` instead of the old monomorphic per-type closures, adding type assertion + vtable dispatch overhead on the hottest path.
+  4. **Atomic Load per prefetch round** (`navigation.go:1028`): `prefetchLimit := h.mMax.Load()` is called once per prefetch round but `mMax` does not change during a search.
+
+- **Proposed Optimization Design**:
+  1. **Fast-Path Chunk Accessors** (`graph_data.go`): Add methods like `GetVectorsChunkFast`, `GetNeighborsChunkFast`, `GetCountsChunkFast`, etc. that read offsets via plain `g.VectorsF32[chunkID]` instead of `atomic.LoadUint64`. These are used exclusively from `DistanceComputer` implementations during search (read-only path). The atomic path remains for `ReleaseChunk` / `EnsureChunk` (write path).
+  2. **Generation Bypass for Committed Reads** (`typed_arena.go`, `arena.go`): When `maxGen == math.MaxUint64`, call `Get()` directly instead of `GetWithGeneration()` to skip the generation comparison, slab index computation, and bounds check.
+  3. **Specialized `searchLayerFloat32`** (`navigation.go`): Create a monomorphic version for float32 (most common type) that inlines `float32ToFloat32Computer.ComputeSingle` and `Prefetch` directly, avoiding `DistanceComputer` interface dispatch.
+  4. **Cache mMax/m/mMax0** (`navigation.go`): Load once at search entry into local variables instead of per-prefetch-round atomic loads.
+  5. **Fix Inconsistent Chunk Getters** (`graph_data.go`): `VectorsInt8`, `VectorsInt16`, `VectorsUint16`, `VectorsF16` accessors use plain indexing (`g.VectorsInt8[chunkID]`) while `ReleaseChunk` plain-writes zeros to the same arrays. Make `ReleaseChunk` use `atomic.SwapUint64` for these fields (consistent with all other chunk types), or add `atomic.LoadUint64` to the accessors.
+  6. **Fix pqComputer Generation Gap** (`distance_computer.go`): Change `pqComputer.ComputeSingle` to use `GetVectorsPQChunkWithGen` instead of `GetVectorsPQChunk`.
+
+- **Subtasks Checklist**:
+  - [ ] Add `GetVectorsChunkFast` / `GetNeighborsChunkFast` / `GetCountsChunkFast` / `GetVersionsChunkFast` + all typed vector variants to `graph_data.go`
+  - [ ] Update all `DistanceComputer` implementations in `distance_computer.go` to use fast-path accessors
+  - [ ] Bypass generation check in `TypedArena.GetWithGeneration` when `maxGen == math.MaxUint64`
+  - [ ] Bypass generation check in `SlabArena.GetWithGeneration` when `maxGen == math.MaxUint64`
+  - [ ] Create `searchLayerFloat32` specialized hot path in `navigation.go`
+  - [ ] Cache `mMax`/`m`/`mMax0` at search entry in `navigation.go`
+  - [ ] Fix `ReleaseChunk` to use `atomic.SwapUint64` for Int8/Int16/Uintint16/F16 fields
+  - [ ] Fix `pqComputer.ComputeSingle` generation isolation gap
+  - [ ] Add unit tests for fast-path accessor correctness
+  - [ ] Add fuzz test for concurrent read/write with generation isolation
+
+- **Unit & Fuzz Testing Strategies**:
+  - **Unit Test**: `TestFastPathChunkAccessors` to verify fast-path accessors return identical data to atomic-path accessors for all chunk types.
+  - **Unit Test**: `TestSearchLayerFloat32Parity` to verify `searchLayerFloat32` returns identical results to generic `searchLayer` for float32 queries.
+  - **Unit Test**: `TestGenerationBypass` to verify that `GetWithGeneration(maxGen=MaxUint64)` returns same data as `Get()`.
+  - **Fuzz Test**: `FuzzConcurrentChunkIO` to execute concurrent reads (via fast path) and writes (via ReleaseChunk/EnsureChunk), verifying no panics or data corruption.
+  - **Benchmark**: `BenchmarkSearchLayerFastPath` vs `BenchmarkSearchLayerAtomic` to measure QPS improvement.
+  - **Fuzz Test**: `FuzzGenerationIsolationConcurrent` to verify that concurrent search (using maxGen) and compaction (incrementing generation) never return stale or corrupted vector data.
 
 ### PART 6: Build Stubs, pprof, GPU, and NUMA Topology
 - **Technical Analysis & Root Cause**:
@@ -332,6 +395,9 @@ baseline hardware.
 - [ ] Create GPU binary build pipeline
 - [ ] Add automated regression detection to CI
 - [ ] Standardize benchmark hardware for consistent baselines
+- [ ] PART 7: Implement HNSW Search Path Optimization (all 4 tiers)
+- [ ] Run full benchmark matrix to validate QPS recovery after Tier 1 changes
+- [ ] Profile and verify generation isolation correctness under concurrent compaction
 
 ### Medium Term (Next Quarter)
 - [ ] Implement adaptive memory backpressure

@@ -197,7 +197,8 @@ class BenchmarkRunner:
             return False
         if current_mode == "cuda":
             result = run_command(
-                "nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null"
+                "nvidia-smi --query-gpu=name --format=csv,noheader",
+                shell=True
             )
             if result and result.returncode == 0 and result.stdout.strip():
                 print(f"  CUDA GPU: {result.stdout.strip()}")
@@ -258,7 +259,7 @@ class BenchmarkRunner:
         env["LONGBOW_MAX_MEMORY"] = str(limit_gb)
         env["ARROW_DISABLE_LOCKING"] = "1"
         env["LONGBOW_GOGC"] = "200"
-        env["LONGBOW_INGESTION_WORKER_COUNT"] = "0"
+        env["LONGBOW_INGESTION_WORKER_COUNT"] = "6"
         env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"
         env["LONGBOW_AUTOSCALE_ENABLED"] = "false"
 

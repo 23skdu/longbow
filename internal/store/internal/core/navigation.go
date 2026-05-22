@@ -546,6 +546,9 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		}
 	}()
 
+	// Cache atomics for hot loop
+	cachedMMax := h.mMax.Load()
+
 	// Define polymorphic distance computer
 	var distComputer func(uint32) (float32, error)
 	var epDist float32
@@ -1025,7 +1028,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		// Explore neighbors
 		neighbors := h.GetNeighborsCombinedManual(data, layer, curr.ID, ctx.neighborBatch, ctx.MaxGeneration)
 
-		prefetchLimit := h.mMax.Load()
+		prefetchLimit := cachedMMax
 		if prefetchLimit > 64 {
 			prefetchLimit = 64
 		}

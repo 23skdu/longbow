@@ -53,7 +53,7 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *int16Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt16ChunkWithGen(int(cID), c.maxGen)
+	chunk := c.data.GetVectorsInt16ChunkFast(int(cID))
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt16)
@@ -109,7 +109,7 @@ func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *uint16Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint16ChunkWithGen(int(cID), c.maxGen)
+	chunk := c.data.GetVectorsUint16ChunkFast(int(cID))
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint16)
@@ -165,7 +165,7 @@ func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *int32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt32ChunkWithGen(int(cID), c.maxGen)
+	chunk := c.data.GetVectorsInt32ChunkFast(int(cID))
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt32)
@@ -221,7 +221,7 @@ func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *uint32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint32ChunkWithGen(int(cID), c.maxGen)
+	chunk := c.data.GetVectorsUint32ChunkFast(int(cID))
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint32)
@@ -277,7 +277,7 @@ func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *int64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt64ChunkWithGen(int(cID), c.maxGen)
+	chunk := c.data.GetVectorsInt64ChunkFast(int(cID))
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt64)
@@ -333,7 +333,7 @@ func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *uint64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsUint64ChunkWithGen(int(cID), c.maxGen)
+	chunk := c.data.GetVectorsUint64ChunkFast(int(cID))
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint64)

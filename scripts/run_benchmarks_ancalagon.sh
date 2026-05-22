@@ -10,7 +10,7 @@ DTYPES="float16,float32,float64,int8,int16,int32,int64,uint8,uint16,uint32,uint6
 SEARCH_MODES="all"
 QUERIES=1000
 DURATION=15
-WORKERS=8
+WORKERS=6
 PPROF_FLAG="--pprof"
 BIN_DIR="$HOME/longbow/bin"
 

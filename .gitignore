@@ -123,3 +123,7 @@ server_*.log
 coverage.*
 *.out
 vendor/
+
+# Test scripts
+run_*.sh
+crash_repro.sh

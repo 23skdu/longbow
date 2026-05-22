@@ -484,6 +484,8 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 }
 
 // GetWithGeneration retrieves the byte slice from the arena, enforcing generation isolation.
+// When maxGeneration is math.MaxUint64, generation isolation is bypassed for performance
+// (the generation check is elided since committed data is always accessible).
 func (a *SlabArena) GetWithGeneration(offset uint64, length uint32, maxGeneration uint64) []byte {
 	if length == 0 {
 		return nil
@@ -516,8 +518,8 @@ func (a *SlabArena) GetWithGeneration(offset uint64, length uint32, maxGeneratio
 		if realSlab == nil {
 			return nil
 		}
-		// Generation isolation check
-		if realSlab.generation > maxGeneration {
+		// Generation isolation check (elided for committed data)
+		if maxGeneration != math.MaxUint64 && realSlab.generation > maxGeneration {
 			return nil
 		}
 		adjustedOffset := localOffset + uint32(int(slabIdx)-realIdx)*a.slabCap // #nosec G115 -- intentional conversion
@@ -527,8 +529,8 @@ func (a *SlabArena) GetWithGeneration(offset uint64, length uint32, maxGeneratio
 		return realSlab.data[adjustedOffset : adjustedOffset+length]
 	}
 
-	// Generation isolation check
-	if s.generation > maxGeneration {
+	// Generation isolation check (elided for committed data)
+	if maxGeneration != math.MaxUint64 && s.generation > maxGeneration {
 		return nil
 	}
 

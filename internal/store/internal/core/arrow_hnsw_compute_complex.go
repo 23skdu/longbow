@@ -66,7 +66,7 @@ func (c *complex64Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *complex64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsComplex64ChunkWithGen(int(cID), c.maxGen)
+	chunk := c.data.GetVectorsComplex64ChunkFast(int(cID))
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex64)
@@ -135,7 +135,7 @@ func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *complex128Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsComplex128ChunkWithGen(int(cID), c.maxGen)
+	chunk := c.data.GetVectorsComplex128ChunkFast(int(cID))
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex128)

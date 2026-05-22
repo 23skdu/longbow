@@ -26,7 +26,7 @@ type pqComputer struct {
 }
 
 func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
-	code := c.data.GetVectorPQ(id)
+	code := c.data.GetVectorPQWithGen(id, c.maxGen)
 	if code == nil {
 		if c.diskGraph != nil {
 			code = c.diskGraph.GetVectorPQ(id)
@@ -66,7 +66,8 @@ func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
 }
 
 func (c *pqComputer) Prefetch(id uint32) {
-	chunk := c.data.GetVectorsPQChunkWithGen(int(id)/types.ChunkSize, c.maxGen)
+	cID := int(id) / types.ChunkSize
+	chunk := c.data.GetVectorsPQChunkFast(cID)
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		numWordsPerNode := (c.data.PQM + 7) / 8
@@ -90,7 +91,7 @@ func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 }
 
 func (c *tqComputer) Prefetch(id uint32) {
-	chunk := c.data.GetVectorsTQChunkWithGen(int(id)/types.ChunkSize, c.maxGen)
+	chunk := c.data.GetVectorsTQChunkFast(int(id) / types.ChunkSize)
 	if chunk != nil {
 		stride := c.data.PackedSize()
 		cOff := int(id) % types.ChunkSize
@@ -188,7 +189,7 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *float32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsChunkWithGen(int(cID), c.maxGen)
+	chunk := c.data.GetVectorsChunkFast(int(cID))
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat32)
@@ -211,7 +212,7 @@ type float32ToFloat32Computer struct {
 
 func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsChunkWithGen(int(cID), c.maxGen)
+	chunk := c.data.GetVectorsChunkFastWithGen(int(cID), c.maxGen)
 	if chunk == nil {
 		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 		if err != nil {
@@ -250,7 +251,7 @@ func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *float32ToFloat32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsChunkWithGen(int(cID), c.maxGen)
+	chunk := c.data.GetVectorsChunkFastWithGen(int(cID), c.maxGen)
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat32)
@@ -343,7 +344,7 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 
 func (c *int8Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsInt8ChunkWithGen(int(cID), c.maxGen)
+	chunk := c.data.GetVectorsInt8ChunkFast(int(cID))
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt8)

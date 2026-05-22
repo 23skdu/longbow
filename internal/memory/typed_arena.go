@@ -210,6 +210,7 @@ func (ta *TypedArena[T]) Get(ref SliceRef) []T {
 }
 
 // GetWithGeneration retrieves a typed slice from the arena, enforcing generation isolation.
+// When maxGeneration is math.MaxUint64, generation isolation is bypassed for performance.
 func (ta *TypedArena[T]) GetWithGeneration(ref SliceRef, maxGeneration uint64) []T {
 	if ref.Len == 0 {
 		return nil
@@ -221,12 +222,22 @@ func (ta *TypedArena[T]) GetWithGeneration(ref SliceRef, maxGeneration uint64) [
 	if a == nil {
 		return nil
 	}
+
+	// Fast path: bypass generation check when not needed (committed data)
+	if maxGeneration == math.MaxUint64 {
+		byteSlice := a.Get(ref.Offset, ref.Len*elemSize)
+		if len(byteSlice) == 0 {
+			return nil
+		}
+		ptr := unsafe.Pointer(&byteSlice[0])     // #nosec G103
+		return unsafe.Slice((*T)(ptr), ref.Len) // #nosec G103
+	}
+
 	byteSlice := a.GetWithGeneration(ref.Offset, ref.Len*elemSize, maxGeneration)
 	if len(byteSlice) == 0 {
 		return nil
 	}
 
-	// Use unsafe.Slice instead of deprecated reflect.SliceHeader
 	ptr := unsafe.Pointer(&byteSlice[0])     // #nosec G103
 	return unsafe.Slice((*T)(ptr), ref.Len) // #nosec G103
 }

@@ -17,7 +17,7 @@ PPROF_FLAG="--pprof"
 echo "=== LOCALHOST PHASE 1: Small counts (1k, 5k) - all dims ==="
 for COUNT in 1000 5000; do
   DIMS="128,384,768,1024,3072"
-  for MODE in metal; do
+  for MODE in cpu metal; do
     echo "[$(date)] Running $MODE mode, count=$COUNT, dims=$DIMS"
     python3 scripts/unified_benchmark.py \
       --mode "$MODE" \
@@ -39,7 +39,7 @@ done
 echo "=== LOCALHOST PHASE 2: Medium counts (25k, 100k, 250k) - all dims ==="
 for COUNT in 25000 100000 250000; do
   DIMS="128,384,768,1024,3072"
-  for MODE in metal; do
+  for MODE in cpu metal; do
     echo "[$(date)] Running $MODE mode, count=$COUNT, dims=$DIMS"
     python3 scripts/unified_benchmark.py \
       --mode "$MODE" \
@@ -61,7 +61,7 @@ done
 echo "=== LOCALHOST PHASE 3: Large counts (500k, 750k, 1M) - dims 128,384 ==="
 for COUNT in 500000 750000 1000000; do
   DIMS="128,384"
-  for MODE in metal; do
+  for MODE in cpu metal; do
     echo "[$(date)] Running $MODE mode, count=$COUNT, dims=$DIMS"
     python3 scripts/unified_benchmark.py \
       --mode "$MODE" \

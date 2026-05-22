@@ -442,44 +442,50 @@ class BenchmarkRunner:
             time.sleep(5)
 
     def collect_pprof(self, label):
-        """Collect pprof profiles from the running server."""
-        profiles = ["profile", "heap", "allocs", "goroutine", "threadcreate", "block", "mutex"]
-        os.makedirs("profiles", exist_ok=True)
+        """Collect pprof profiles from the running server concurrently."""
+        import threading
         
-        host, port = self.server_addr.split(":")
-        # Metrics server is typically on base_port + 6000.
-        # unified_benchmark sets LONGBOW_METRICS_ADDR to 127.0.0.1:{port + 6000}
-        metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-        
-        # Wait briefly for metrics server to be ready
-        for retry in range(3):
-            try:
-                import socket
-                with socket.create_connection((host, metrics_port), timeout=2):
-                    break
-            except (socket.timeout, ConnectionRefusedError, OSError):
-                if retry < 2:
-                    print(f"  Waiting for metrics server on {host}:{metrics_port} (attempt {retry+1}/3)...")
-                    time.sleep(2)
-                else:
-                    print(f"  Metrics server not reachable on {host}:{metrics_port}, skipping pprof")
-                    return
-        
-        for profile in profiles:
-            url = f"http://{host}:{metrics_port}/debug/pprof/{profile}"
-            if profile == "profile":
-                url += "?seconds=1"
+        def _do_collect():
+            profiles = ["profile", "heap", "allocs", "goroutine", "threadcreate", "block", "mutex"]
+            os.makedirs("profiles", exist_ok=True)
             
-            output_file = os.path.join("profiles", f"{label}_{profile}_{self.timestamp}.pprof")
-            try:
-                res = subprocess.run(f"curl -s -v -o {output_file} {url}", shell=True, capture_output=True, text=True, timeout=15)
-                if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
-                    print(f"  Collected {profile} profile")
-                else:
-                    print(f"  Failed to collect {profile} profile: {res.stderr}")
-            except Exception as e:
-                print(f"  Error collecting {profile}: {e}")
-                continue
+            host, port = self.server_addr.split(":")
+            # Metrics server is typically on base_port + 6000.
+            metrics_port = int(self.server_addr.split(":")[-1]) + 6000
+            
+            # Wait briefly for metrics server to be ready and load to start
+            for retry in range(3):
+                try:
+                    import socket
+                    with socket.create_connection((host, metrics_port), timeout=2):
+                        time.sleep(2) # Give the benchmark some time to ramp up load
+                        break
+                except (socket.timeout, ConnectionRefusedError, OSError):
+                    if retry < 2:
+                        print(f"  Waiting for metrics server on {host}:{metrics_port} (attempt {retry+1}/3)...")
+                        time.sleep(2)
+                    else:
+                        print(f"  Metrics server not reachable on {host}:{metrics_port}, skipping pprof")
+                        return
+            
+            for profile in profiles:
+                url = f"http://{host}:{metrics_port}/debug/pprof/{profile}"
+                if profile == "profile":
+                    url += "?seconds=5"
+                
+                output_file = os.path.join("profiles", f"{label}_{profile}_{self.timestamp}.pprof")
+                try:
+                    res = subprocess.run(f"curl -s -o {output_file} \"{url}\"", shell=True, capture_output=True, text=True, timeout=15)
+                    if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                        print(f"  Collected {profile} profile")
+                    else:
+                        print(f"  Failed to collect {profile} profile: {res.stderr}")
+                except Exception as e:
+                    print(f"  Error collecting {profile} profile: {e}")
+
+        t = threading.Thread(target=_do_collect)
+        t.start()
+        return t
 
     def run_benchmark_cli(self, dim, dtype, count, label):
         """Run benchmark using longbow-cli for comparison"""
@@ -603,30 +609,12 @@ class BenchmarkRunner:
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         timeout = getattr(self.args, "timeout", duration * 3 + 60)
         
-        label_full = f"{label}_{self.args.label}" if self.args.label else label
-        pprof_file = os.path.join(self.log_dir, f"profile_{label_full}.pprof")
-        metrics_port = int(self.server_addr.split(":")[-1]) + 6000
-        pprof_url = f"http://127.0.0.1:{metrics_port}/debug/pprof/profile?seconds=1"
-        
-        pprof_proc = None
-        if "127.0.0.1" in self.server_addr or "localhost" in self.server_addr:
-            pprof_proc = subprocess.Popen(
-                f"curl -s -o {pprof_file} \"{pprof_url}\"",
-                shell=True,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL
-            )
-
         bench_log = os.path.join(self.log_dir, f"bench_{label}.log")
         with open(bench_log, "w") as f:
             result = run_command(cmd, timeout=timeout)
             if result:
                 f.write(result.stdout)
                 f.write(result.stderr)
-
-
-        if pprof_proc:
-            pprof_proc.wait()
 
         # Parse JSON first — bench-tool logs to stderr (Go log package) which
         # can cause non-zero exit codes even on successful runs.
@@ -2290,7 +2278,11 @@ class BenchmarkRunner:
                             print("  Failed to start server!")
                             continue
 
+                        pprof_thread = None
                         try:
+                            if self.args.pprof:
+                                pprof_thread = self.collect_pprof(label)
+                            
                             self.run_benchmark(dim, dtype, count, label)
                             
                             # Partial save for real-time monitoring
@@ -2311,10 +2303,9 @@ class BenchmarkRunner:
                                     f,
                                     indent=2,
                                 )
-                            if self.args.pprof:
-                                self.collect_pprof(label)
-                                time.sleep(1)
                         finally:
+                            if pprof_thread:
+                                pprof_thread.join()
                             self.stop_server()
                             # Clean up data directory
                             data_root = os.path.join(self.data_dir, label)

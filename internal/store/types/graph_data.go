@@ -383,12 +383,12 @@ func (g *GraphData) GetVectorsChunkWithGen(chunkID int, maxGen uint64) []float32
 
 // GetVectorsChunkFast returns the vector chunk using a non-atomic offset read.
 // Safe because chunk offset arrays are written once by EnsureChunk and are
-// GetVectorsChunkFast returns the vector chunk using an atomic offset read.
+// GetVectorsChunkFast returns the vector chunk using a non-atomic offset read.
 // This is an optimization for search threads. For committed data (no generation isolation).
 func (g *GraphData) GetVectorsChunkFast(chunkID int) []float32 {
 	if g.Float32Arena != nil && chunkID < len(g.VectorsF32) {
 		pd := g.GetPaddedDimsForType(VectorTypeFloat32)
-		offset := atomic.LoadUint64(&g.VectorsF32[chunkID])
+		offset := g.VectorsF32[chunkID]
 		if offset == 0 {
 			return nil
 		}

@@ -57,7 +57,11 @@ python3 scripts/unified_benchmark.py --modes cpu,metal --dtypes float32,turboqua
 
 ## Configuration
 
-Longbow is configured via environment variables. See [Deployment & Configuration](docs/deploy.md#2-configuration) for details.
+Longbow is configured via environment variables. Key limits include:
+- `LONGBOW_MAX_MEMORY` (Soft limit with exponential backpressure)
+- `LONGBOW_MAX_MEMORY_HARD` (Absolute hard ceiling that triggers `ResourceExhausted` rejection)
+
+See [Deployment & Configuration](docs/deploy.md#2-configuration) and [Limits](docs/limits.md) for details.
 
 Notable flags:
 

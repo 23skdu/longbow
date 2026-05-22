@@ -45,6 +45,14 @@ The following critical performance issues have been identified and resolved. Thi
 
 ---
 
+### Allocator, pprof, and Documentation Fixes
+
+- **uint16 High-Dimension Slab Allocator**: The `allocFast` limit was increased to 16384 bytes, natively supporting high-dimensional `uint16` lock-free allocations.
+- **Float16 & Float64 QPS Recovery**: Validated Float16 & Float64 QPS recovery after SIMD assembly fixes.
+- **pprof Collection Reliability**: Refactored `unified_benchmark.py` to collect pprof metrics concurrently during the benchmark run, capturing actual CPU load rather than idle state, and preventing connection refused errors upon server shutdown.
+- **Avo Duplicate Symbol Test**: Confirmed `simd_stubs_test.go` correctly implements AST-based validation to prevent symbol collision.
+- **Hard Memory Limit Docs**: Documented `LONGBOW_MAX_MEMORY_HARD` and soft-limit backpressure behavior in `README.md` and `docs/limits.md`.
+
 ## Benchmark Analysis (v0.2.0 → v0.2.1)
 
 ### Local Metal — All Improvements (No Regressions)
@@ -103,26 +111,7 @@ The following critical performance issues have been identified and resolved. Thi
 
 ## Outstanding Tasks (Prioritized Backlog)
 
-### P1 — High Impact
-
-#### 1. Profile `uint16` High-Dimension Slab Allocator Slow Path
-**Context**: Mid-run benchmarks showed `uint16 dim=1024 count=5000` ingestion dropped from 412K to 342K vec/s on Metal. This likely reflects `allocFast` failing for allocations above 4096 bytes (uint16 at dim=1024 requires 2048 bytes, but larger dims may still miss the fast path under contention).
-**Task**: Profile the slab allocator specifically for `uint16` sizes above 2KB. Verify whether the lock-free `allocFast` CAS path is being hit or falling back to `allocCommon` mutex. Extend the lock-free threshold if needed.
-**Files**: `internal/memory/arena.go`, `internal/memory/slab_pool.go`
-
-#### 2. Validate Float16 & Float64 QPS Recovery After SIMD Fix
-**Context**: The SIMD kernels for Float16 and Float64 are now fully wired. A targeted benchmark run is required to confirm the expected QPS recovery (Float16 Dense back toward 6000+, Float64 ByID back toward 8000+).
-**Task**: Run the full benchmark matrix for `float16` and `float64` types at dim=128 on both local Metal and ancalagon. Compare against the v0.2.1 baseline in `docs/performance.md`.
-**Files**: `scripts/unified_benchmark.py`, `docs/performance.md`
-
-#### 3. pprof Collection Reliability
-**Issue**: Benchmark script fails to collect pprof profiles (connection refused on metrics port 9470). Server shuts down before profile collection completes.
-**Task**: Add a configurable delay between benchmark completion and server shutdown, or collect profiles mid-run via the HTTP endpoint during active benchmarking. Update `scripts/unified_benchmark.py`.
-**Files**: `scripts/unified_benchmark.py`
-
-### P2 — Medium Impact
-
-#### 4. NUMA-Aware Benchmark Reporting
+### Task 1. NUMA-Aware Benchmark Reporting
 **Observation**: Logs show "Single NUMA node detected (no NUMA)" on localhost. On multi-socket machines like `ancalagon`, remote NUMA node access adds latency overhead that is not currently captured in benchmark output.
 **Task**:
 - Add NUMA topology detection to benchmark output (socket count, memory node layout).
@@ -130,7 +119,7 @@ The following critical performance issues have been identified and resolved. Thi
 - Integrate `lbmem.MbindMemory` in the off-heap allocator to pin slab allocations to the executing CPU socket boundary.
 **Files**: `internal/memory/numa_allocator.go`, `scripts/unified_benchmark.py`
 
-#### 5. GPU Binary Distribution & Diagnostics
+### Task 2. GPU Binary Distribution & Diagnostics
 **Issue**: Metal and CUDA binaries require platform-specific builds. Fallback to CPU occurs silently when GPU binaries are missing.
 **Task**:
 - Add build-time GPU binary detection with a clear startup warning when GPU binary is absent.
@@ -138,22 +127,10 @@ The following critical performance issues have been identified and resolved. Thi
 - Document GPU binary build requirements in `README.md` and `docs/`.
 **Files**: `gpu/detection.go`, `cmd/longbow/main.go`, `Makefile`
 
-#### 6. Benchmark Matrix Optimization
+### Task 3. Benchmark Matrix Optimization
 **Current**: Full matrix (5 dims × 8 counts × 17 dtypes × 13 search modes × 3 hosts) = 26,520 combinations.
 **Task**:
 - Run full matrix only for release candidates.
 - Define a representative CI subset: 3 dims × 3 counts × 5 dtypes × 5 modes.
 - Add result caching for unchanged code paths.
 **Files**: `scripts/unified_benchmark.py`
-
-### P3 — Low Impact / Documentation
-
-#### 7. Avo Generator Duplicate Symbol Detection Test
-**Context**: Avo-generated stubs in `all_kernels_stubs_amd64.go` can duplicate manually declared stubs in other files, causing redeclaration errors on cross-compilation.
-**Task**: Update `internal/simd/simd_stubs_test.go` to use `go/parser` and `go/ast` to detect duplicate function declarations across all files in `internal/simd`. Add this test to the CI gate.
-**Files**: `internal/simd/simd_stubs_test.go`
-
-#### 8. Memory Cap Hard Limit Documentation
-**Current**: `LONGBOW_MAX_MEMORY` environment variable sets a soft limit with exponential backpressure.
-**Task**: Add `LONGBOW_MAX_MEMORY_HARD` documentation to `README.md` and `docs/configuration.md`, clarifying the difference between soft and hard limits, the backpressure scaling behavior (5ms–100ms), and the `ResourceExhausted` gRPC response behavior.
-**Files**: `docs/configuration.md`, `README.md`

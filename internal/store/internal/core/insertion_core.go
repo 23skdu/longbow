@@ -274,8 +274,15 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	metrics.InsertMuWaitDurationSeconds.WithLabelValues(h.name).Observe(time.Since(lockStart).Seconds())
 	defer h.insertMus[shard].Unlock()
 
+	// Cache configuration atomics outside the hot insertion loop
+	cachedEfConstruction := int(h.efConstruction.Load())
+	cachedM := int(h.m.Load())
+	cachedMMax := int(h.mMax.Load())
+	cachedMMax0 := int(h.mMax0.Load())
+	cachedEf := max(cachedEfConstruction, cachedM)
+
 	for l := min(level, maxL+1); l >= 0 && ep != math.MaxUint32; l-- {
-		ef := max(int(h.efConstruction.Load()), int(h.m.Load()))
+		ef := cachedEf
 		neighbors, err := h.searchLayerForInsert(context.Background(), ctx, vec, ep, ef, l, data)
 		if err != nil { return nil, err }
 		
@@ -283,8 +290,8 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		for _, nb := range neighbors { if nb.ID != id { filtered = append(filtered, nb) } }
 		neighbors = filtered
 
-		maxConn := int(h.mMax.Load())
-		if l == 0 { maxConn = int(h.mMax0.Load()) }
+		maxConn := cachedMMax
+		if l == 0 { maxConn = cachedMMax0 }
 		
 		if len(neighbors) > 0 {
 			ensurePrivate()

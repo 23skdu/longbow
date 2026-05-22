@@ -1956,8 +1956,9 @@ func (g *GraphData) GetVectorPQWithGen(id uint32, maxGen uint64) []byte {
 		numWordsPerNode := (m + 7) / 8
 		numWords := ChunkSize * numWordsPerNode
 
+		offset := atomic.LoadUint64(&g.VectorsPQ[cID])
 		chunk := g.Uint64Arena.GetWithGeneration(memory.SliceRef{
-			Offset: g.VectorsPQ[cID],
+			Offset: offset,
 			Len:    uint32(numWords), // #nosec G115
 			Cap:    uint32(numWords), // #nosec G115
 		}, maxGen)

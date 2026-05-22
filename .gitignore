@@ -127,3 +127,5 @@ vendor/
 # Test scripts
 run_*.sh
 crash_repro.sh
+test_*.sh
+bench-tool

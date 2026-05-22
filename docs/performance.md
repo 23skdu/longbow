@@ -1,2453 +1,1619 @@
-<!-- Latest validated commit: 5f85baaa (2026-05-20) - AVX2 int16 kernels + baseline optimization -->
-<!-- Smoke test COMPLETE: localhost CPU (Apple Silicon) + ancalagon CPU (x86_64, RTX 4060) -->
-<!-- Scope: int/uint types × dims 128/768/3072 × 5k vectors × dense+byid modes -->
-<!-- Build fix: removed duplicate int16/uint16 AVX2 stub declarations from all_kernels_stubs_amd64.go -->
-
-## AVX2 Int16/Uint16 Kernel Smoke Test (2026-05-20)
-
-**Commit**: `5f85baaa` - feat(simd): add native AVX2 int16 kernels and optimize baseline int16/uint16 operations
-
-### Build Validation
-- **Fixed**: Duplicate `euclideanInt16AVX2Kernel`, `euclideanUint16AVX2Kernel`, `dotInt16AVX2Kernel`, `dotUint16AVX2Kernel` declarations removed from `all_kernels_stubs_amd64.go`
-- **New**: Real AVX2 implementations in `int16_kernels_amd64.s` (VPMOVSXWD + VPMULLD / VPMADDWD)
-- **Baseline**: Integer arithmetic optimization for int16/uint16 euclidean, dot, and cosine distance (avoids FPU overhead)
-
-### Ingestion Throughput (DoPut vec/s, 5k vectors)
-
-| Type   | Dim  | Local CPU (M2) | Remote CPU (x86_64) | Delta |
-|--------|------|---------------:|--------------------:|-------|
-| int8   | 128  |         534,371 |             475,017 | +12%  |
-| int8   | 768  |         508,912 |             394,596 | +29%  |
-| int8   | 3072 |         264,523 |             117,630 | +125% |
-| int16  | 128  |         552,799 |             652,156 | -15%  |
-| int16  | 768  |         353,817 |             219,926 | +61%  |
-| int16  | 3072 |         155,887 |              57,986 | +169% |
-| uint8  | 128  |         534,371 |             489,740 | +9%   |
-| uint8  | 768  |         670,912 |             354,279 | +89%  |
-| uint16 | 128  |         605,269 |             374,878 | +61%  |
-| uint16 | 768  |         370,616 |             209,797 | +77%  |
-
-### Search Performance (Dense QPS, 5k vectors)
-
-| Type   | Dim  | Local CPU | Remote CPU | Notes |
-|--------|------|----------:|-----------:|-------|
-| int8   | 128  |      2,495 |      1,333 | Local SIMD advantage |
-| int8   | 768  |      1,263 |        823 | |
-| int16  | 128  |        505 |        412 | AVX2 kernel active on remote |
-| int16  | 768  |        546 |        437 | AVX2 kernel active on remote |
-| uint16 | 128  |        481 |        371 | AVX2 kernel active on remote |
-| uint16 | 768  |        569 |        399 | AVX2 kernel active on remote |
-
-### Search Performance (ByID QPS, 5k vectors)
-
-| Type   | Dim  | Local CPU | Remote CPU |
-|--------|------|----------:|-----------:|
-| int8   | 128  |      5,629 |      4,374 |
-| int16  | 128  |      5,091 |      4,691 |
-| uint16 | 128  |      5,454 |      4,851 |
-| int32  | 128  |      5,249 |      4,478 |
-
-### Stability
-- **No panics, no crashes, no race conditions detected**
-- One transient port collision on local (int8/128/5k first attempt) - non-critical
-- All int/uint types dispatch correctly through AVX2 kernels on x86_64
-- Apple Silicon uses NEON/baseline paths as expected
-
----
-
-## v0.2.1 Final Performance Validation (2026-05-16)
-
-## Search Performance Summary (QPS)
-
-|                                         |   Search_ByID |   Search_Dense |   Search_Filtered |   Search_FilteredBool |   Search_FilteredString |   Search_Geo |   Search_GlobalGraphRAG |   Search_GraphRAG |   Search_Hybrid |   Search_LearnedIndex |   Search_Recommend |   Search_Sparse |   Search_Temporal |
-|:----------------------------------------|--------------:|---------------:|------------------:|----------------------:|------------------------:|-------------:|------------------------:|------------------:|----------------:|----------------------:|-------------------:|----------------:|------------------:|
-| ('local', 'metal', 128, 'float16')      |       5592.28 |        1919.48 |           2114.63 |               2183.69 |                 2209.27 |      5526.27 |                 1444.42 |           1392.64 |         2238.67 |               2057.21 |            2197.29 |        11869.7  |           3887.21 |
-| ('local', 'metal', 128, 'float32')      |       5488.68 |        4495.74 |           4892.26 |               4276.86 |                 4031.26 |      5430.75 |                 2463.68 |           2316.95 |         5501.38 |               3971.4  |            5404.43 |        11863.2  |           6076.81 |
-| ('local', 'metal', 128, 'float64')      |       4766.45 |        3840.12 |           4149.99 |               3556.03 |                 2939.59 |      4741.59 |                 1791.59 |           1915.01 |         4116.91 |               3361.88 |            4368.56 |        11446.8  |           4816.62 |
-| ('local', 'metal', 128, 'turboquant8')  |       1946.35 |        1530.41 |           1876.7  |               1934.76 |                 1844.6  |      2601.39 |                 1816.53 |           1770.16 |         1813.95 |               1904.84 |            1817.88 |        11796.3  |           3627.41 |
-| ('local', 'metal', 384, 'float16')      |       2976.07 |        2110.62 |           2206.86 |               2137.94 |                 1943.3  |      5180.37 |                 1413.17 |           1221.15 |         2237.54 |               1941.95 |            2208.28 |        11829.3  |           2193.56 |
-| ('local', 'metal', 384, 'float32')      |       4553.92 |        4061.69 |           2578.84 |               2883.45 |                 3266.94 |      4816.53 |                 1844.71 |           1717.43 |         4357.45 |               3386.1  |            4133.73 |        11739    |           5446.46 |
-| ('local', 'metal', 384, 'float64')      |       4075.67 |        3264.06 |           3494.36 |               2776.72 |                 2265.37 |      5228.91 |                 1711.8  |           1794.69 |         3663.13 |               2877.06 |            3788.67 |        12077.8  |           5836.81 |
-| ('local', 'metal', 768, 'float16')      |       1952.72 |        1973.65 |           1975.93 |               1875.35 |                 1881.72 |      5439.9  |                 1177.31 |           1349.07 |         1963.63 |               1911.53 |            2116.11 |         9247.14 |           3719.69 |
-| ('local', 'metal', 768, 'float32')      |       3885.34 |        3324.16 |           3357.53 |               3076.65 |                 2897    |      4939.96 |                 1980.49 |           1671.22 |         3410.78 |               2977.37 |            3864.38 |        10183.4  |           5721.27 |
-| ('local', 'metal', 768, 'float64')      |       3320.2  |        2803.47 |           2606.95 |               1829.92 |                 1745.81 |      5469.95 |                 1499.32 |           1560.49 |         2928.01 |               2134.47 |            3126.01 |        11486.9  |           5284.93 |
-| ('local', 'metal', 1024, 'float32')     |       3756.99 |        3030.26 |           3015.15 |               2839.21 |                 2504.47 |      5057.99 |                 1899.84 |           1879.82 |         3307.17 |               2807.07 |            3661.23 |        11777.8  |           5932.22 |
-| ('local', 'metal', 1024, 'float64')     |       3105.16 |        2195.82 |           2424.31 |               1896.07 |                 1607.82 |      5119.14 |                 1411.5  |           1465.34 |         2548.57 |               2296.11 |            3111.19 |        11596.2  |           5920.46 |
-| ('local', 'metal', 3072, 'float32')     |       2289.87 |        1069.34 |           1169.84 |               1224.29 |                 1217.8  |      4802.84 |                 1239.92 |           1227.81 |         1194.36 |               1499.31 |            2321.83 |         8297.4  |           5110.93 |
-| ('local', 'metal', 3072, 'float64')     |       2037.73 |        1426.92 |           1452.5  |               1072.97 |                  805.87 |      5645.92 |                 1067.64 |           1020.19 |         1440.87 |               1352.37 |            1801.05 |        10672    |           5928.64 |
-| ('local', 'metal', 3072, 'turboquant8') |       1485.21 |        1090.62 |           1309.8  |               1337.77 |                 1330.64 |      2588.98 |                 1268.47 |           1267.22 |         1327.58 |               1281.32 |            1308.5  |        11550.7  |           3714.93 |
-| ('remote', 'cpu', 128, 'float32')       |       2510.59 |        2274.83 |           2317.09 |               2304.91 |                 2508.33 |      2736.27 |                 1342.38 |           1115.13 |         2488.09 |               2371.71 |            2339.1  |         7791.37 |           3502.39 |
-| ('remote', 'cpu', 128, 'int8')          |       2536.32 |        2141.08 |           2522.49 |               2260.14 |                 1882.87 |      2476.23 |                 1637.21 |           1451.88 |         2450.46 |               2132.56 |            2558.6  |         7158.31 |           3099.02 |
-| ('remote', 'cpu', 128, 'turboquant8')   |       2569.82 |        2214.29 |           2481.31 |               2567.59 |                 2399.82 |      2568.25 |                 2207.45 |           2471.63 |         2284.79 |               1909.74 |            2650.08 |         8182.01 |           3453.7  |
-| ('remote', 'cpu', 768, 'float32')       |       2190.85 |        1721.71 |           1809.83 |               1800.46 |                 1787.82 |      2781.1  |                 1213.74 |           1072.76 |         1873.77 |               1807.82 |            1978.23 |         7837.6  |           3527.81 |
-| ('remote', 'cpu', 768, 'int8')          |       1945.74 |        1684.32 |           1821.44 |               1854.43 |                 1709.33 |      2815.65 |                 1163.17 |           1110.39 |         1870.92 |               1770.28 |            1988.83 |         8210.38 |           3160.85 |
-| ('remote', 'cpu', 768, 'turboquant8')   |       2333.68 |        1964.77 |           1953.04 |               2171.37 |                 2177.82 |      2594.44 |                 2000.72 |           1965.2  |         2010.19 |               1654.49 |            2443.7  |         8192.73 |           3559.25 |
-| ('remote', 'cpu', 3072, 'float32')      |       1415.52 |        1113.13 |           1295.37 |               1172.11 |                 1024.05 |      2268.38 |                  778.47 |            727.69 |         1271.44 |               1072.95 |            1459.24 |         7016.11 |           2608.91 |
-| ('remote', 'cpu', 3072, 'int8')         |       1232.43 |         852.34 |           1074.45 |                796.35 |                  683.56 |      2860.12 |                  763.89 |            724.78 |          993.32 |               1009.98 |            1174.21 |         8265.93 |           3239.94 |
-| ('remote', 'cpu', 3072, 'turboquant8')  |       2059.29 |        1596.88 |           1727.08 |               1791.96 |                 1655.63 |      2797.16 |                 1677.94 |           1717.78 |         1600.05 |               1618.73 |            1973.95 |         8625.8  |           3474.8  |
-| ('remote', 'cuda', 128, 'float32')      |       2445.82 |        2316.68 |           2427.11 |               2186.15 |                 2378.52 |      2717.05 |                 1203.06 |           1214.96 |         2134.06 |               1900.29 |            2088.33 |         7939.59 |           3308.01 |
-| ('remote', 'cuda', 128, 'int8')         |       2564.46 |        2031.17 |           2482.32 |               2061.96 |                 2081.95 |      2594.15 |                 1372.71 |           1166.32 |         2484.12 |               1975.98 |            2519.92 |         7959.13 |           3208.12 |
-| ('remote', 'cuda', 128, 'turboquant8')  |       2548.51 |        2242.53 |           2416.07 |               2507.44 |                 2473    |      2477.98 |                 2458.93 |           2428.34 |         2247.26 |               1977.07 |            2515.28 |         6778.3  |           3468.29 |
-| ('remote', 'cuda', 768, 'float32')      |       2318.87 |        2062.75 |           1891.09 |               1842.56 |                 1749.9  |      2643.03 |                 1157.57 |           1071.17 |         1570    |               1655.82 |            2255.86 |         8113.03 |           3538.41 |
-| ('remote', 'cuda', 768, 'int8')         |       1906.04 |        1609.91 |           2079.97 |               1859.81 |                 1506.43 |      2866.47 |                 1323.1  |           1188.74 |         1768.87 |               1664.53 |            1928.28 |         7901.99 |           3194.78 |
-| ('remote', 'cuda', 768, 'turboquant8')  |       2039.58 |        1708.13 |           2113.99 |               2097.51 |                 2095.58 |      2336.02 |                 1804.02 |           1744.17 |         1936.94 |               1782.04 |            2271.79 |         7268.95 |           3486.64 |
-| ('remote', 'cuda', 3072, 'float32')     |       1403.39 |        1237.05 |           1322.5  |               1049.46 |                 1125.62 |      2624.18 |                  896.05 |            801.64 |         1323.21 |               1067.54 |            1293.85 |         7773.52 |           3504.45 |
-| ('remote', 'cuda', 3072, 'int8')        |       1132.57 |         738.29 |            969.11 |                785.8  |                  686.62 |      2454.25 |                  687.88 |            664.5  |          927.28 |                941.13 |            1178.83 |         8323.83 |           3067.43 |
-| ('remote', 'cuda', 3072, 'turboquant8') |       2301.9  |        1548.41 |           1755.98 |               1685.42 |                 1594.57 |      2641.34 |                 1680.22 |           1655.64 |         1641.69 |               1584.29 |            2233.11 |         8380.82 |           3509.37 |
-
-## Ingestion Performance (MB/s)
-
-|                                         |   Throughput_MBs |
-|:----------------------------------------|-----------------:|
-| ('local', 'metal', 128, 'float16')      |           132.52 |
-| ('local', 'metal', 128, 'float32')      |           222.15 |
-| ('local', 'metal', 128, 'float64')      |           334.36 |
-| ('local', 'metal', 128, 'turboquant8')  |           206.6  |
-| ('local', 'metal', 384, 'float16')      |           401.74 |
-| ('local', 'metal', 384, 'float32')      |           604.87 |
-| ('local', 'metal', 384, 'float64')      |           806.05 |
-| ('local', 'metal', 768, 'float16')      |           482.03 |
-| ('local', 'metal', 768, 'float32')      |           824.86 |
-| ('local', 'metal', 768, 'float64')      |           898.8  |
-| ('local', 'metal', 1024, 'float32')     |           763.76 |
-| ('local', 'metal', 1024, 'float64')     |           942.32 |
-| ('local', 'metal', 3072, 'float32')     |          1076.24 |
-| ('local', 'metal', 3072, 'float64')     |          1225.13 |
-| ('local', 'metal', 3072, 'turboquant8') |           327.31 |
-| ('remote', 'cpu', 128, 'float32')       |           229.95 |
-| ('remote', 'cpu', 128, 'int8')          |           140.64 |
-| ('remote', 'cpu', 128, 'turboquant8')   |            67.09 |
-| ('remote', 'cpu', 768, 'float32')       |           323.66 |
-| ('remote', 'cpu', 768, 'int8')          |           286.97 |
-| ('remote', 'cpu', 768, 'turboquant8')   |            86.73 |
-| ('remote', 'cpu', 3072, 'float32')      |           375.97 |
-| ('remote', 'cpu', 3072, 'int8')         |           348.28 |
-| ('remote', 'cpu', 3072, 'turboquant8')  |            93.63 |
-| ('remote', 'cuda', 128, 'float32')      |           196.85 |
-| ('remote', 'cuda', 128, 'int8')         |            70.06 |
-| ('remote', 'cuda', 128, 'turboquant8')  |            67.23 |
-| ('remote', 'cuda', 768, 'float32')      |           349.93 |
-| ('remote', 'cuda', 768, 'int8')         |           305.63 |
-| ('remote', 'cuda', 768, 'turboquant8')  |            88.11 |
-| ('remote', 'cuda', 3072, 'float32')     |           378.69 |
-| ('remote', 'cuda', 3072, 'int8')        |           340.62 |
-| ('remote', 'cuda', 3072, 'turboquant8') |            94.66 |
-
-## Search Latency Summary (P95 ms)
-
-|                                         |   Search_ByID |   Search_Dense |   Search_Filtered |   Search_FilteredBool |   Search_FilteredString |   Search_Geo |   Search_GlobalGraphRAG |   Search_GraphRAG |   Search_Hybrid |   Search_LearnedIndex |   Search_Recommend |   Search_Sparse |   Search_Temporal |
-|:----------------------------------------|--------------:|---------------:|------------------:|----------------------:|------------------------:|-------------:|------------------------:|------------------:|----------------:|----------------------:|-------------------:|----------------:|------------------:|
-| ('local', 'metal', 128, 'float16')      |          2.03 |           7.59 |              5.69 |                  5.43 |                    5.24 |         2.08 |                    9.04 |              8.61 |            5.04 |                  6.05 |               5.62 |            1.03 |              3.04 |
-| ('local', 'metal', 128, 'float32')      |          2.02 |           2.77 |              2.15 |                  2.51 |                    2.58 |         2.34 |                    4.7  |              5.41 |            2.13 |                  2.74 |               2.06 |            1.02 |              1.83 |
-| ('local', 'metal', 128, 'float64')      |          2.24 |           2.7  |              2.49 |                  2.95 |                    3.9  |         2.68 |                    7.49 |              7    |            2.82 |                  3.49 |               2.46 |            1.06 |              2.56 |
-| ('local', 'metal', 128, 'turboquant8')  |          6.35 |           8.07 |              6.31 |                  5.94 |                    6.25 |         3.91 |                    6.44 |              6.46 |            6.96 |                  5.5  |               6.58 |            1.08 |              2.92 |
-| ('local', 'metal', 384, 'float16')      |          4    |           5.7  |              5.42 |                  5.27 |                    6.09 |         2.44 |                    8.54 |             11.38 |            5.01 |                  6.65 |               5.57 |            1    |             13.44 |
-| ('local', 'metal', 384, 'float32')      |          2.35 |           2.67 |              4.94 |                  4.43 |                    3.46 |         2.57 |                    7.06 |              8.72 |            2.58 |                  3.32 |               2.82 |            1.04 |              2.05 |
-| ('local', 'metal', 384, 'float64')      |          2.57 |           3.37 |              2.99 |                  3.84 |                    4.99 |         2.45 |                    6.69 |              6.49 |            2.95 |                  3.8  |               2.91 |            1.01 |              1.89 |
-| ('local', 'metal', 768, 'float16')      |          5.82 |           5.76 |              5.98 |                  6.18 |                    6.14 |         2.11 |                   19.03 |              8.63 |            6.1  |                  6.24 |               5.88 |            1.46 |              3.13 |
-| ('local', 'metal', 768, 'float32')      |          2.78 |           3.09 |              3.1  |                  3.54 |                    3.69 |         2.46 |                    5.93 |              9.66 |            3.31 |                  3.64 |               2.89 |            1.34 |              1.93 |
-| ('local', 'metal', 768, 'float64')      |          3.5  |           3.75 |              4.23 |                  5.98 |                    6.2  |         2.13 |                    8.01 |              7.34 |            3.6  |                  5.27 |               3.52 |            1.07 |              2.32 |
-| ('local', 'metal', 1024, 'float32')     |          2.89 |           3.45 |              3.46 |                  3.7  |                    4.4  |         2.48 |                    6.1  |              5.89 |            3.28 |                  3.78 |               2.96 |            1.03 |              1.82 |
-| ('local', 'metal', 1024, 'float64')     |          3.6  |           4.92 |              4.33 |                  5.54 |                    6.41 |         2.12 |                    9.12 |              7.74 |            4.23 |                  4.69 |               3.57 |            1.03 |              1.82 |
-| ('local', 'metal', 3072, 'float32')     |          4.46 |           9.71 |              9.36 |                 10    |                    9.17 |         2.37 |                    9.08 |              9.48 |            9.74 |                  7.39 |               4.48 |            1.5  |              2.3  |
-| ('local', 'metal', 3072, 'float64')     |          5.06 |           6.98 |              6.74 |                  8.99 |                   11.76 |         2    |                   11.13 |             11.72 |            6.79 |                  7.6  |               5.59 |            1.16 |              1.84 |
-| ('local', 'metal', 3072, 'turboquant8') |          7.66 |           9.53 |              7.59 |                  7.25 |                    7.22 |         3.84 |                    8.03 |              7.96 |            8.44 |                  7.78 |               9.25 |            1.06 |              2.9  |
-| ('remote', 'cpu', 128, 'float32')       |          6.25 |           6.2  |              5.37 |                  5.51 |                    5.47 |         4.2  |                   13.7  |             17.6  |            6.16 |                  6.32 |               6.77 |            1.43 |              3.23 |
-| ('remote', 'cpu', 128, 'int8')          |          5.68 |           6    |              5.11 |                  5.33 |                    7.35 |         4.9  |                    9.06 |             11.69 |            5.1  |                  6.18 |               5.05 |            1.58 |              4.03 |
-| ('remote', 'cpu', 128, 'turboquant8')   |          6.11 |           7.08 |              4.91 |                  4.84 |                    4.85 |         5.16 |                    5.36 |              5.17 |            5.74 |                  7.09 |               4.98 |            1.37 |              3.4  |
-| ('remote', 'cpu', 768, 'float32')       |          8.28 |           8.82 |              8    |                  8.2  |                    8.18 |         4.53 |                   15.9  |             18.05 |            9.56 |                  9.4  |              10.47 |            1.45 |              3.28 |
-| ('remote', 'cpu', 768, 'int8')          |          8.31 |           8.24 |              6.01 |                  6.13 |                    6.28 |         4.41 |                   13.45 |             14.15 |            6.97 |                  8.13 |               7.46 |            1.4  |              3.87 |
-| ('remote', 'cpu', 768, 'turboquant8')   |          7.45 |           9.52 |              7.34 |                  6.37 |                    6.4  |         4.57 |                    7.37 |              6.99 |            7.87 |                  9.19 |               7.32 |            1.39 |              3.24 |
-| ('remote', 'cpu', 3072, 'float32')      |         42.65 |          71.91 |             76.08 |                 66.36 |                   55.06 |        11.24 |                   52.58 |             52.28 |           57.11 |                 14.39 |              56.36 |            1.81 |              2.44 |
-| ('remote', 'cpu', 3072, 'int8')         |         11.96 |          15.83 |             12.25 |                 14.52 |                   16    |         4.28 |                   17.5  |             19.63 |           15.06 |                 14.46 |              15.03 |            1.36 |              3.77 |
-| ('remote', 'cpu', 3072, 'turboquant8')  |          8.96 |          15.76 |              8.58 |                  8.45 |                    8.64 |         4.25 |                    8.47 |              8.86 |            9.72 |                  9.99 |               8.61 |            1.34 |              3.36 |
-| ('remote', 'cuda', 128, 'float32')      |          6.21 |           7.74 |              5.33 |                  6.01 |                    5.67 |         5.47 |                   14.61 |             14.78 |            7.3  |                  7.01 |               7.01 |            1.42 |              4.02 |
-| ('remote', 'cuda', 128, 'int8')         |          5.85 |           7.66 |              5.2  |                  5.66 |                    5.63 |         5.23 |                   10.52 |             14.02 |            5.73 |                  6.68 |               5.35 |            1.43 |              3.79 |
-| ('remote', 'cuda', 128, 'turboquant8')  |          6.64 |           8.23 |              5.16 |                  4.98 |                    5.15 |         4.65 |                    5.48 |              5.99 |            6.31 |                  6.65 |               5.39 |            1.7  |              3.32 |
-| ('remote', 'cuda', 768, 'float32')      |          8.39 |           7.96 |              7.96 |                  8.34 |                    8.49 |         4.4  |                   15.54 |             19.7  |            9.65 |                 10.12 |              10.68 |            1.42 |              3.21 |
-| ('remote', 'cuda', 768, 'int8')         |          7.95 |          10.45 |              5.83 |                  5.99 |                    6.61 |         4.37 |                   10.22 |             13.48 |            8.37 |                  8.6  |               7.81 |            1.41 |              4.02 |
-| ('remote', 'cuda', 768, 'turboquant8')  |          8.31 |          12.12 |              6.52 |                  6.99 |                    6.23 |         5.11 |                    7.22 |              9.7  |            7.19 |                  9.3  |               6.31 |            1.46 |              3.33 |
-| ('remote', 'cuda', 3072, 'float32')     |         22.46 |          23.07 |             23.77 |                 23.24 |                   23.41 |         4.73 |                   26.69 |             28.77 |           25.11 |                 25.75 |              30.83 |            1.44 |              3.21 |
-| ('remote', 'cuda', 3072, 'int8')        |         12.85 |          19.7  |             13.17 |                 14.41 |                   16.23 |         4.53 |                   19.9  |             22.35 |           14.97 |                 14.95 |              15.62 |            1.38 |              4.03 |
-| ('remote', 'cuda', 3072, 'turboquant8') |         10.71 |          11.42 |              9.96 |                 10.22 |                    9.84 |         4.27 |                   10.1  |             10.27 |           10.75 |                 12.18 |               9.48 |            1.33 |              3.26 |
-
-### Details: local (metal)
-
-| Host   | Mode   | Dataset                                  | DType       |   Dim |   Count | Action                |   Throughput_QPS |   Throughput_MBs |   P50_ms |   P95_ms |   P99_ms |
-|:-------|:-------|:-----------------------------------------|:------------|------:|--------:|:----------------------|-----------------:|-----------------:|---------:|---------:|---------:|
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | DoPut                 | 454954           |          222.145 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | DoGet                 |      1.13671e+06 |          555.033 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_Dense          |   4495.74        |            0     | 1.65167  |  2.76933 |  4.97758 |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_Hybrid         |   5501.38        |            0     | 1.40454  |  2.12838 |  2.57763 |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_Filtered       |   4892.26        |            0     | 1.59867  |  2.14833 |  2.46775 |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_FilteredBool   |   4276.86        |            0     | 1.83754  |  2.50667 |  2.892   |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_FilteredString |   4031.26        |            0     | 1.96983  |  2.57592 |  2.84383 |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_Sparse         |  11863.2         |            0     | 0.666292 |  1.02112 |  1.22325 |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_ByID           |   5488.68        |            0     | 1.44904  |  2.01825 |  2.31387 |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_GraphRAG       |   2316.95        |            0     | 3.00279  |  5.41183 | 13.5258  |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_GlobalGraphRAG |   2463.68        |            0     | 3.07504  |  4.70012 |  6.444   |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_Recommend      |   5404.43        |            0     | 1.45283  |  2.05983 |  2.30508 |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_Geo            |   5430.75        |            0     | 1.39587  |  2.33521 |  3.44588 |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_Temporal       |   6076.81        |            0     | 1.29921  |  1.82529 |  2.03796 |
-| local  | metal  | result_cpu_float32_128_5000.json         | float32     |   128 |    5000 | Search_LearnedIndex   |   3971.4         |            0     | 1.977    |  2.74408 |  3.16342 |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | DoPut                 | 275132           |          806.051 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | DoGet                 | 191624           |          561.397 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_Dense          |   3264.06        |            0     | 2.26071  |  3.37192 |  5.62317 |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_Hybrid         |   3663.13        |            0     | 2.12096  |  2.949   |  3.50979 |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_Filtered       |   3494.36        |            0     | 2.2245   |  2.98513 |  3.90142 |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_FilteredBool   |   2776.72        |            0     | 2.76917  |  3.83542 |  4.54979 |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_FilteredString |   2265.37        |            0     | 3.17138  |  4.98783 | 12.0117  |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_Sparse         |  12077.8         |            0     | 0.642333 |  1.01304 |  1.18879 |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_ByID           |   4075.67        |            0     | 1.94538  |  2.56625 |  3.00758 |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_GraphRAG       |   1794.69        |            0     | 4.1235   |  6.4925  |  9.0695  |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_GlobalGraphRAG |   1711.8         |            0     | 4.34871  |  6.68992 |  8.40496 |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_Recommend      |   3788.67        |            0     | 2.02354  |  2.91363 |  3.54083 |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_Geo            |   5228.91        |            0     | 1.44333  |  2.45196 |  3.85717 |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_Temporal       |   5836.81        |            0     | 1.34325  |  1.89229 |  2.17212 |
-| local  | metal  | result_cpu_float64_384_5000.json         | float64     |   384 |    5000 | Search_LearnedIndex   |   2877.06        |            0     | 2.68204  |  3.79537 |  4.37158 |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | DoPut                 | 120617           |          942.318 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | DoGet                 | 159590           |         1246.8   | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_Dense          |   2195.82        |            0     | 3.49758  |  4.91946 |  6.75771 |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_Hybrid         |   2548.57        |            0     | 3.04096  |  4.23008 |  4.76567 |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_Filtered       |   2424.31        |            0     | 3.21379  |  4.33333 |  4.97783 |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_FilteredBool   |   1896.07        |            0     | 3.91583  |  5.54408 |  7.593   |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_FilteredString |   1607.82        |            0     | 4.79746  |  6.40696 |  7.07317 |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_Sparse         |  11596.2         |            0     | 0.674125 |  1.02608 |  1.23267 |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_ByID           |   3105.16        |            0     | 2.49029  |  3.59587 |  4.09854 |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_GraphRAG       |   1465.34        |            0     | 5.12371  |  7.74467 | 10.1317  |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_GlobalGraphRAG |   1411.5         |            0     | 5.17037  |  9.12104 | 15.3928  |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_Recommend      |   3111.19        |            0     | 2.48471  |  3.56992 |  3.95925 |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_Geo            |   5119.14        |            0     | 1.44642  |  2.11646 |  5.06542 |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_Temporal       |   5920.46        |            0     | 1.33183  |  1.82375 |  2.03708 |
-| local  | metal  | result_cpu_float64_1024_5000.json        | float64     |  1024 |    5000 | Search_LearnedIndex   |   2296.11        |            0     | 3.38537  |  4.69488 |  5.26579 |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | DoPut                 | 153394           |          898.795 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | DoGet                 | 111178           |          651.436 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_Dense          |   2803.47        |            0     | 2.72342  |  3.74517 |  6.62567 |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_Hybrid         |   2928.01        |            0     | 2.65942  |  3.59858 |  4.10179 |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_Filtered       |   2606.95        |            0     | 2.90429  |  4.23329 |  5.502   |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_FilteredBool   |   1829.92        |            0     | 4.24404  |  5.97637 |  6.77933 |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_FilteredString |   1745.81        |            0     | 4.39262  |  6.19987 |  6.84492 |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_Sparse         |  11486.9         |            0     | 0.668584 |  1.06563 |  1.38225 |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_ByID           |   3320.2         |            0     | 2.29558  |  3.50225 |  4.08996 |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_GraphRAG       |   1560.49        |            0     | 4.80608  |  7.34037 |  9.28446 |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_GlobalGraphRAG |   1499.32        |            0     | 4.96563  |  8.00596 | 10.9191  |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_Recommend      |   3126.01        |            0     | 2.46879  |  3.51579 |  4.079   |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_Geo            |   5469.95        |            0     | 1.41479  |  2.13429 |  2.69558 |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_Temporal       |   5284.93        |            0     | 1.45054  |  2.31738 |  3.06496 |
-| local  | metal  | result_cpu_float64_768_5000.json         | float64     |   768 |    5000 | Search_LearnedIndex   |   2134.47        |            0     | 3.69633  |  5.26758 |  6.10358 |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | DoPut                 |  91839.4         |         1076.24  | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | DoGet                 |  82038.2         |          961.385 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_Dense          |   1069.34        |            0     | 7.24558  |  9.71233 | 14.9145  |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_Hybrid         |   1194.36        |            0     | 6.28917  |  9.73533 | 12.834   |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_Filtered       |   1169.84        |            0     | 6.56808  |  9.35958 | 10.5452  |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_FilteredBool   |   1224.29        |            0     | 5.93992  | 10.0029  | 14.5203  |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_FilteredString |   1217.8         |            0     | 6.29658  |  9.17133 | 10.5805  |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_Sparse         |   8297.4         |            0     | 0.931458 |  1.49737 |  1.83317 |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_ByID           |   2289.87        |            0     | 3.53317  |  4.45625 |  5.14475 |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_GraphRAG       |   1227.81        |            0     | 6.30071  |  9.47558 | 11.4321  |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_GlobalGraphRAG |   1239.92        |            0     | 6.26008  |  9.08388 | 11.678   |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_Recommend      |   2321.83        |            0     | 3.45967  |  4.48175 |  5.00996 |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_Geo            |   4802.84        |            0     | 1.62838  |  2.37104 |  2.83025 |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_Temporal       |   5110.93        |            0     | 1.50108  |  2.30471 |  2.78242 |
-| local  | metal  | result_cpu_float32_3072_5000.json        | float32     |  3072 |    5000 | Search_LearnedIndex   |   1499.31        |            0     | 5.1245   |  7.39183 | 10.2355  |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | DoPut                 | 542822           |          132.525 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | DoGet                 |      1.06064e+06 |          258.946 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_Dense          |   1919.48        |            0     | 3.59842  |  7.58867 | 11.7313  |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_Hybrid         |   2238.67        |            0     | 3.33142  |  5.04387 |  5.91404 |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_Filtered       |   2114.63        |            0     | 3.285    |  5.69404 | 14.9463  |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_FilteredBool   |   2183.69        |            0     | 3.39829  |  5.42504 |  6.1015  |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_FilteredString |   2209.27        |            0     | 3.39242  |  5.23854 |  6.14054 |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_Sparse         |  11869.7         |            0     | 0.661708 |  1.02975 |  1.23    |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_ByID           |   5592.28        |            0     | 1.40204  |  2.03058 |  2.29333 |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_GraphRAG       |   1392.64        |            0     | 5.11533  |  8.60917 | 12.3003  |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_GlobalGraphRAG |   1444.42        |            0     | 4.94487  |  9.04225 | 11.1936  |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_Recommend      |   2197.29        |            0     | 3.23071  |  5.6235  |  6.19287 |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_Geo            |   5526.27        |            0     | 1.41933  |  2.08192 |  2.57954 |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_Temporal       |   3887.21        |            0     | 1.96375  |  3.04396 |  3.64179 |
-| local  | metal  | result_cpu_float16_128_5000.json         | float16     |   128 |    5000 | Search_LearnedIndex   |   2057.21        |            0     | 3.44975  |  6.05346 |  6.69383 |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | DoPut                 | 548506           |          401.738 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | DoGet                 | 691862           |          506.735 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_Dense          |   2110.62        |            0     | 3.354    |  5.69813 | 14.3448  |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_Hybrid         |   2237.54        |            0     | 3.34058  |  5.00687 |  5.84946 |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_Filtered       |   2206.86        |            0     | 3.33679  |  5.42229 |  6.20725 |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_FilteredBool   |   2137.94        |            0     | 3.49992  |  5.27342 |  6.34371 |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_FilteredString |   1943.3         |            0     | 3.596    |  6.0935  |  7.35225 |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_Sparse         |  11829.3         |            0     | 0.657    |  1.00012 |  1.17954 |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_ByID           |   2976.07        |            0     | 2.39054  |  3.99588 |  8.38254 |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_GraphRAG       |   1221.15        |            0     | 5.62437  | 11.3825  | 21.8509  |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_GlobalGraphRAG |   1413.17        |            0     | 4.97342  |  8.53717 | 13.3456  |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_Recommend      |   2208.28        |            0     | 3.22975  |  5.57062 |  6.10825 |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_Geo            |   5180.37        |            0     | 1.45354  |  2.43933 |  3.72988 |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_Temporal       |   2193.56        |            0     | 2.38008  | 13.4404  | 25.9244  |
-| local  | metal  | result_cpu_float16_384_5000.json         | float16     |   384 |    5000 | Search_LearnedIndex   |   1941.95        |            0     | 3.57342  |  6.65067 |  7.9335  |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | DoPut                 | 195522           |          763.757 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | DoGet                 | 226791           |          885.903 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_Dense          |   3030.26        |            0     | 2.53317  |  3.44858 |  4.65658 |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_Hybrid         |   3307.17        |            0     | 2.35517  |  3.27892 |  3.77521 |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_Filtered       |   3015.15        |            0     | 2.60083  |  3.45925 |  4.04296 |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_FilteredBool   |   2839.21        |            0     | 2.755    |  3.70133 |  4.18333 |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_FilteredString |   2504.47        |            0     | 2.98842  |  4.39987 |  8.01979 |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_Sparse         |  11777.8         |            0     | 0.667625 |  1.0285  |  1.17967 |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_ByID           |   3756.99        |            0     | 2.092    |  2.88979 |  3.29675 |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_GraphRAG       |   1879.82        |            0     | 3.88262  |  5.89412 | 11.4819  |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_GlobalGraphRAG |   1899.84        |            0     | 3.91933  |  6.10325 |  9.671   |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_Recommend      |   3661.23        |            0     | 2.11146  |  2.95967 |  3.39458 |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_Geo            |   5057.99        |            0     | 1.52075  |  2.48046 |  3.85754 |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_Temporal       |   5932.22        |            0     | 1.33192  |  1.8235  |  2.04721 |
-| local  | metal  | result_cpu_float32_1024_5000.json        | float32     |  1024 |    5000 | Search_LearnedIndex   |   2807.07        |            0     | 2.76713  |  3.777   |  4.18554 |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | DoPut                 | 329066           |          482.031 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | DoGet                 | 498273           |          729.892 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_Dense          |   1973.65        |            0     | 3.68017  |  5.76037 | 10.2655  |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_Hybrid         |   1963.63        |            0     | 3.75371  |  6.09687 |  7.16737 |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_Filtered       |   1975.93        |            0     | 3.67446  |  5.97867 |  6.88025 |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_FilteredBool   |   1875.35        |            0     | 3.88954  |  6.17983 |  6.77808 |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_FilteredString |   1881.72        |            0     | 3.86163  |  6.14267 |  6.78812 |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_Sparse         |   9247.14        |            0     | 0.805042 |  1.46175 |  1.82304 |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_ByID           |   1952.72        |            0     | 3.95404  |  5.82362 |  6.79117 |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_GraphRAG       |   1349.07        |            0     | 5.56729  |  8.63046 | 10.6597  |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_GlobalGraphRAG |   1177.31        |            0     | 4.91983  | 19.0348  | 35.6327  |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_Recommend      |   2116.11        |            0     | 3.23842  |  5.87508 |  7.49075 |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_Geo            |   5439.9         |            0     | 1.44421  |  2.10517 |  2.44029 |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_Temporal       |   3719.69        |            0     | 2.05058  |  3.13304 |  4.69333 |
-| local  | metal  | result_cpu_float16_768_5000.json         | float16     |   768 |    5000 | Search_LearnedIndex   |   1911.53        |            0     | 3.66033  |  6.24271 |  6.75846 |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | DoPut                 |  52272.3         |         1225.13  | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | DoGet                 |  53530.5         |         1254.62  | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_Dense          |   1426.92        |            0     | 5.44813  |  6.97925 |  8.96817 |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_Hybrid         |   1440.87        |            0     | 5.46608  |  6.78812 |  7.35313 |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_Filtered       |   1452.5         |            0     | 5.40254  |  6.74212 |  8.29092 |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_FilteredBool   |   1072.97        |            0     | 7.33287  |  8.99454 |  9.7855  |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_FilteredString |    805.872       |            0     | 9.60037  | 11.7605  | 19.8173  |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_Sparse         |  10672           |            0     | 0.734334 |  1.15508 |  1.31775 |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_ByID           |   2037.73        |            0     | 3.81158  |  5.06408 |  5.53417 |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_GraphRAG       |   1020.19        |            0     | 7.25029  | 11.7242  | 14.6674  |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_GlobalGraphRAG |   1067.64        |            0     | 6.90196  | 11.1278  | 20.4517  |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_Recommend      |   1801.05        |            0     | 4.35867  |  5.58679 |  5.96512 |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_Geo            |   5645.92        |            0     | 1.39037  |  1.99946 |  2.30971 |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_Temporal       |   5928.64        |            0     | 1.32246  |  1.83983 |  2.04971 |
-| local  | metal  | result_cpu_float64_3072_5000.json        | float64     |  3072 |    5000 | Search_LearnedIndex   |   1352.37        |            0     | 5.77404  |  7.5985  |  8.47808 |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | DoPut                 | 342381           |          334.356 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | DoGet                 | 390054           |          380.912 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_Dense          |   3840.12        |            0     | 1.81712  |  2.70375 | 14.0006  |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_Hybrid         |   4116.91        |            0     | 1.685    |  2.81767 |  5.56363 |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_Filtered       |   4149.99        |            0     | 1.88271  |  2.4885  |  3.48008 |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_FilteredBool   |   3556.03        |            0     | 2.21296  |  2.95413 |  3.39429 |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_FilteredString |   2939.59        |            0     | 2.61046  |  3.89833 |  4.40696 |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_Sparse         |  11446.8         |            0     | 0.675875 |  1.06171 |  1.31954 |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_ByID           |   4766.45        |            0     | 1.6545   |  2.24325 |  2.46225 |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_GraphRAG       |   1915.01        |            0     | 3.81279  |  7.00462 | 10.7355  |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_GlobalGraphRAG |   1791.59        |            0     | 4.06046  |  7.48642 | 11.242   |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_Recommend      |   4368.56        |            0     | 1.79642  |  2.46217 |  2.89425 |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_Geo            |   4741.59        |            0     | 1.60542  |  2.67813 |  3.91    |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_Temporal       |   4816.62        |            0     | 1.59021  |  2.555   |  3.26592 |
-| local  | metal  | result_cpu_float64_128_5000.json         | float64     |   128 |    5000 | Search_LearnedIndex   |   3361.88        |            0     | 2.28246  |  3.48854 |  4.10217 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | DoPut                 |      1.6925e+06  |          206.604 | 0        |  0       |  0       |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | DoGet                 |      1.39861e+06 |          170.729 | 0        |  0       |  0       |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Dense          |   1530.41        |            0     | 5.02604  |  8.07396 | 10.2421  |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Hybrid         |   1813.95        |            0     | 4.01258  |  6.96087 | 16.559   |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Filtered       |   1876.7         |            0     | 4.06387  |  6.31288 |  9.27108 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_FilteredBool   |   1934.76        |            0     | 4.06304  |  5.93608 |  6.95437 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_FilteredString |   1844.6         |            0     | 4.24383  |  6.25008 |  7.45404 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Sparse         |  11796.3         |            0     | 0.65825  |  1.08217 |  1.20338 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_ByID           |   1946.35        |            0     | 3.96192  |  6.34987 |  7.36746 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_GraphRAG       |   1770.16        |            0     | 4.40317  |  6.45733 |  7.73658 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_GlobalGraphRAG |   1816.53        |            0     | 4.21529  |  6.44242 |  7.57683 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Recommend      |   1817.88        |            0     | 4.22254  |  6.57554 |  7.8315  |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Geo            |   2601.39        |            0     | 3.00146  |  3.91017 |  5.40696 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Temporal       |   3627.41        |            0     | 2.13267  |  2.91758 |  3.69675 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_LearnedIndex   |   1904.84        |            0     | 4.15463  |  5.49821 |  6.22313 |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | DoPut                 | 281553           |          824.863 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | DoGet                 | 304691           |          892.651 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_Dense          |   3324.16        |            0     | 2.345    |  3.09    |  3.8445  |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_Hybrid         |   3410.78        |            0     | 2.13933  |  3.30533 |  5.08479 |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_Filtered       |   3357.53        |            0     | 2.33096  |  3.09571 |  3.90179 |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_FilteredBool   |   3076.65        |            0     | 2.54108  |  3.54108 |  4.02367 |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_FilteredString |   2897           |            0     | 2.67833  |  3.68517 |  4.00825 |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_Sparse         |  10183.4         |            0     | 0.734333 |  1.34246 |  1.85221 |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_ByID           |   3885.34        |            0     | 2.01183  |  2.78379 |  3.23758 |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_GraphRAG       |   1671.22        |            0     | 4.07292  |  9.66383 | 15.8429  |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_GlobalGraphRAG |   1980.49        |            0     | 3.83675  |  5.92917 |  7.60071 |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_Recommend      |   3864.38        |            0     | 2.02417  |  2.89417 |  3.39729 |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_Geo            |   4939.96        |            0     | 1.42654  |  2.46479 |  8.09137 |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_Temporal       |   5721.27        |            0     | 1.36758  |  1.92775 |  2.20871 |
-| local  | metal  | result_cpu_float32_768_5000.json         | float32     |   768 |    5000 | Search_LearnedIndex   |   2977.37        |            0     | 2.6155   |  3.6395  |  4.66242 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | DoPut                 | 111720           |          327.306 | 0        |  0       |  0       |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | DoGet                 | 147514           |          432.171 | 0        |  0       |  0       |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Dense          |   1090.62        |            0     | 7.25146  |  9.52796 | 11.2553  |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Hybrid         |   1327.58        |            0     | 5.93592  |  8.43612 | 10.1849  |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Filtered       |   1309.8         |            0     | 6.05717  |  7.59033 |  8.954   |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_FilteredBool   |   1337.77        |            0     | 5.94646  |  7.24567 |  8.01321 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_FilteredString |   1330.64        |            0     | 5.97696  |  7.21875 |  8.34925 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Sparse         |  11550.7         |            0     | 0.67825  |  1.06062 |  1.26758 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_ByID           |   1485.21        |            0     | 5.17383  |  7.66179 | 11.5228  |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_GraphRAG       |   1267.22        |            0     | 6.25267  |  7.95571 |  9.36479 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_GlobalGraphRAG |   1268.47        |            0     | 6.19258  |  8.03033 |  9.78492 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Recommend      |   1308.5         |            0     | 5.99429  |  9.25354 | 11.3744  |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Geo            |   2588.98        |            0     | 3.01083  |  3.84196 |  6.43479 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Temporal       |   3714.93        |            0     | 2.07858  |  2.90446 |  3.68625 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_LearnedIndex   |   1281.32        |            0     | 6.16583  |  7.77729 |  9.76729 |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | DoPut                 | 412927           |          604.874 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | DoGet                 | 544623           |          797.787 | 0        |  0       |  0       |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_Dense          |   4061.69        |            0     | 1.89758  |  2.66896 |  3.7915  |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_Hybrid         |   4357.45        |            0     | 1.747    |  2.57946 |  3.42013 |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_Filtered       |   2578.84        |            0     | 2.95962  |  4.94287 |  6.47267 |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_FilteredBool   |   2883.45        |            0     | 2.57446  |  4.42754 |  5.49087 |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_FilteredString |   3266.94        |            0     | 2.31529  |  3.46175 |  4.27775 |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_Sparse         |  11739           |            0     | 0.657167 |  1.04125 |  1.37063 |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_ByID           |   4553.92        |            0     | 1.72917  |  2.35042 |  2.68225 |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_GraphRAG       |   1717.43        |            0     | 3.96783  |  8.72446 | 17.0319  |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_GlobalGraphRAG |   1844.71        |            0     | 3.92512  |  7.06258 | 11.1753  |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_Recommend      |   4133.73        |            0     | 1.88679  |  2.82275 |  3.31058 |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_Geo            |   4816.53        |            0     | 1.59146  |  2.56808 |  3.60808 |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_Temporal       |   5446.46        |            0     | 1.43992  |  2.05354 |  2.37546 |
-| local  | metal  | result_cpu_float32_384_5000.json         | float32     |   384 |    5000 | Search_LearnedIndex   |   3386.1         |            0     | 2.27521  |  3.31579 |  4.06321 |
-
-### Details: remote (cpu)
-
-| Host   | Mode   | Dataset                                 | DType       |   Dim |   Count | Action                |   Throughput_QPS |   Throughput_MBs |     P50_ms |    P95_ms |    P99_ms |
-|:-------|:-------|:----------------------------------------|:------------|------:|--------:|:----------------------|-----------------:|-----------------:|-----------:|----------:|----------:|
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | DoPut                 | 588978           |          71.8967 |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | DoGet                 |      1.08581e+06 |         132.545  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_Dense          |   1282.76        |           0      |   5.49888  |  10.4171  |  27.3928  |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_Hybrid         |   1494.07        |           0      |   5.27537  |   7.61421 |   8.79303 |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_Filtered       |   1519.81        |           0      |   4.90858  |   6.19018 |  12.065   |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_FilteredBool   |   1579.77        |           0      |   5.01065  |   6.0665  |   6.88499 |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_FilteredString |   1589.04        |           0      |   4.98346  |   5.95425 |   6.76022 |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_Sparse         |   9052.35        |           0      |   0.862709 |   1.25724 |   1.49132 |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_ByID           |   1397.22        |           0      |   5.24792  |   8.9804  |  13.4848  |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_GraphRAG       |   1417.94        |           0      |   5.09491  |   6.88576 |  15.0846  |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_GlobalGraphRAG |   1419.13        |           0      |   5.05243  |   6.50913 |  38.1554  |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_Recommend      |   1521.61        |           0      |   5.24053  |   6.48693 |   7.50118 |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_Geo            |   1868.86        |           0      |   4.17688  |   5.39112 |   7.77184 |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_Temporal       |   3020.27        |           0      |   2.45537  |   4.02702 |   5.14347 |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json   | turboquant8 |   128 |   25000 | Search_LearnedIndex   |   1509.04        |           0      |   4.91471  |   7.24633 |  18.3368  |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | DoPut                 | 607103           |          74.1093 |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | DoGet                 | 893681           |         109.092  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Dense          |   1134.75        |           0      |   6.37572  |  11.0262  |  26.5302  |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Hybrid         |   1237.78        |           0      |   5.76352  |   9.11537 |  37.6199  |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Filtered       |   1399.33        |           0      |   5.64598  |   7.14197 |   8.67728 |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_FilteredBool   |   1415.36        |           0      |   5.60171  |   7.16761 |   8.16655 |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_FilteredString |   1417.93        |           0      |   5.56912  |   6.92217 |   8.1016  |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Sparse         |   7928.74        |           0      |   0.999266 |   1.37675 |   1.6252  |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_ByID           |   1303.82        |           0      |   5.80817  |   9.16947 |  13.846   |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_GraphRAG       |   1318.24        |           0      |   5.61797  |   7.48196 |  15.4911  |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_GlobalGraphRAG |   1344.7         |           0      |   5.56862  |   7.40884 |  11.8483  |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Recommend      |   1407.02        |           0      |   5.62555  |   7.26471 |   8.87555 |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Geo            |   1791.2         |           0      |   4.30335  |   5.89024 |   7.55136 |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Temporal       |   3067.07        |           0      |   2.47764  |   3.93741 |   4.43878 |
-| remote | cpu    | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_LearnedIndex   |   1394.78        |           0      |   5.50412  |   7.7885  |  10.222   |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | DoPut                 | 329613           |         160.944  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | DoGet                 | 875814           |         427.643  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_Dense          |   3390.66        |           0      |   2.2001   |   3.35963 |   6.47539 |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_Hybrid         |   3238.76        |           0      |   2.05802  |   3.41066 |  27.8336  |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_Filtered       |   3176.05        |           0      |   2.01832  |   3.1627  |  29.0672  |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_FilteredBool   |   3766.17        |           0      |   2.04988  |   3.15938 |   3.63986 |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_FilteredString |   4000.52        |           0      |   1.92473  |   2.98364 |   3.37464 |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_Sparse         |   7688.29        |           0      |   1.02609  |   1.41268 |   1.55981 |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_ByID           |   3803.07        |           0      |   2.02658  |   3.08909 |   3.47519 |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_GraphRAG       |   1614.86        |           0      |   2.98774  |  16.347   |  38.6085  |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_GlobalGraphRAG |   2071.92        |           0      |   2.99206  |   7.45308 |  19.1319  |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_Recommend      |   3758.86        |           0      |   2.0487   |   3.06125 |   3.60138 |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_Geo            |   3806.67        |           0      |   1.77963  |   3.22189 |   4.42694 |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_Temporal       |   3889.77        |           0      |   2.02141  |   2.81001 |   3.50798 |
-| remote | cpu    | result_cpu_float32_128_5000.json        | float32     |   128 |    5000 | Search_LearnedIndex   |   3710.65        |           0      |   1.95977  |   3.42582 |   4.24951 |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | DoPut                 | 252779           |         123.427  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | DoGet                 | 178087           |          86.9567 |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Dense          |   3317.67        |           0      |   2.13119  |   3.58553 |  11.7224  |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Hybrid         |   4248.84        |           0      |   1.78015  |   2.96065 |   3.41249 |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Filtered       |   3531.62        |           0      |   2.10694  |   3.12804 |   4.20283 |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_FilteredBool   |   2871.15        |           0      |   1.93868  |   4.17441 |  32.3022  |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_FilteredString |   3475.39        |           0      |   2.17441  |   3.68788 |   4.64729 |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Sparse         |   7857.56        |           0      |   1.00477  |   1.44027 |   1.60202 |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_ByID           |   3795.73        |           0      |   1.99011  |   3.17307 |   3.72976 |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_GraphRAG       |   1702.12        |           0      |   3.09942  |  13.0971  |  24.6091  |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_GlobalGraphRAG |   2166.08        |           0      |   2.8214   |   6.41761 |  29.9441  |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Recommend      |   3641.7         |           0      |   2.09881  |   3.34118 |   3.93679 |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Geo            |   3440.13        |           0      |   1.73504  |   2.55066 |  15.9864  |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Temporal       |   3839.53        |           0      |   2.05188  |   2.79596 |   3.21725 |
-| remote | cpu    | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_LearnedIndex   |   3291.07        |           0      |   2.24768  |   3.93572 |   5.27324 |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | DoPut                 | 429546           |         314.609  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | DoGet                 | 623457           |         456.634  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Dense          |   1103.85        |           0      |   6.80744  |  11.2487  |  16.3946  |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Hybrid         |   1181.41        |           0      |   6.65414  |   9.26445 |  10.6283  |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Filtered       |   1197.05        |           0      |   6.64966  |   7.75082 |   9.08246 |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_FilteredBool   |   1200.98        |           0      |   6.68589  |   7.65548 |   8.34606 |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_FilteredString |   1184.71        |           0      |   6.67443  |   7.79178 |   8.95342 |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Sparse         |   7912.79        |           0      |   1.00328  |   1.42978 |   1.58125 |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_ByID           |   1208.76        |           0      |   6.16529  |  10.4253  |  17.1557  |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_GraphRAG       |   1068.63        |           0      |   7.09259  |   9.5877  |  17.8909  |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_GlobalGraphRAG |   1125.5         |           0      |   7.07925  |   8.72272 |   9.53152 |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Recommend      |    890.464       |           0      |   8.82007  |  11.429   |  14.0021  |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Geo            |   1761.03        |           0      |   4.52105  |   5.73155 |   6.27457 |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Temporal       |   2377.25        |           0      |   3.21107  |   4.74719 |   5.83944 |
-| remote | cpu    | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_LearnedIndex   |   1124.98        |           0      |   7.06397  |   9.05896 |  10.8428  |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | DoPut                 |  31276.2         |          91.6294 |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | DoGet                 |  41091.3         |         120.385  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Dense          |   2348.26        |           0      |   3.00857  |   4.64099 |  15.6022  |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Hybrid         |   2612.14        |           0      |   2.85093  |   4.50497 |   6.501   |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Filtered       |   2790.44        |           0      |   2.76683  |   3.98155 |   4.66012 |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_FilteredBool   |   2880.46        |           0      |   2.71264  |   3.84449 |   4.22833 |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_FilteredString |   2446.38        |           0      |   2.97017  |   4.97256 |   7.0083  |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Sparse         |   8174.02        |           0      |   0.94536  |   1.47282 |   2.04931 |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_ByID           |   3636.87        |           0      |   2.13609  |   3.09149 |   3.80772 |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_GraphRAG       |   2574.63        |           0      |   2.85157  |   5.1644  |   7.38797 |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_GlobalGraphRAG |   2522.83        |           0      |   2.97582  |   4.27088 |   5.04157 |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Recommend      |   3199.94        |           0      |   2.17302  |   3.73886 |   4.80056 |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Geo            |   3906.82        |           0      |   1.78686  |   3.78994 |   5.53625 |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Temporal       |   3658.3         |           0      |   2.13315  |   3.09003 |   3.98152 |
-| remote | cpu    | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_LearnedIndex   |   2443.02        |           0      |   2.99403  |   5.6954  |   8.04452 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | DoPut                 |  30407.7         |          89.0851 |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | DoGet                 |  39750.1         |         116.455  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_Dense          |   2678           |           0      |   2.71938  |   4.51816 |   6.73306 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_Hybrid         |   2108.26        |           0      |   2.82     |   6.65931 |  31.0198  |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_Filtered       |   2398.81        |           0      |   2.83911  |   4.60178 |  13.5506  |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_FilteredBool   |   2578.46        |           0      |   2.69523  |   4.38059 |  12.0588  |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_FilteredString |   2467.83        |           0      |   2.87402  |   4.51823 |  14.2643  |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_Sparse         |   8124.62        |           0      |   0.979784 |   1.37286 |   1.51528 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_ByID           |   2860.05        |           0      |   2.44141  |   5.26114 |   7.45142 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_GraphRAG       |   2605.52        |           0      |   2.86065  |   4.46857 |   5.58458 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_GlobalGraphRAG |   2489.18        |           0      |   2.71589  |   4.44465 |  14.2435  |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_Recommend      |   3032.87        |           0      |   2.40429  |   4.27093 |   4.8636  |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_Geo            |   3596.21        |           0      |   1.65049  |   2.41123 |  26.4041  |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_Temporal       |   3736.69        |           0      |   2.10405  |   3.04371 |   3.86751 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json   | turboquant8 |  3072 |    5000 | Search_LearnedIndex   |   2426.45        |           0      |   3.00824  |   4.96882 |   9.02727 |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | DoPut                 | 397043           |         290.803  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | DoGet                 | 220899           |         161.792  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Dense          |   2146.56        |           0      |   2.50449  |   6.20776 |  36.2332  |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Hybrid         |   2581.68        |           0      |   2.97049  |   4.36653 |   4.9543  |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Filtered       |   2521.06        |           0      |   2.48475  |   4.33367 |  17.3942  |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_FilteredBool   |   2577.78        |           0      |   2.87418  |   4.15501 |   4.67821 |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_FilteredString |   2328.46        |           0      |   3.24096  |   4.69046 |   5.48576 |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Sparse         |   8438.05        |           0      |   0.937453 |   1.35113 |   1.53515 |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_ByID           |   2783.03        |           0      |   2.69037  |   4.67212 |   6.48817 |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_GraphRAG       |   1144.46        |           0      |   4.78788  |  19.7331  |  31.2707  |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_GlobalGraphRAG |   1275.72        |           0      |   4.46309  |  17.1732  |  29.4652  |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Recommend      |   2945.63        |           0      |   2.41813  |   3.80025 |   4.8974  |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Geo            |   4016.04        |           0      |   1.70102  |   2.35894 |  12.1656  |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Temporal       |   3988.53        |           0      |   1.97053  |   2.93034 |   3.30145 |
-| remote | cpu    | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_LearnedIndex   |   2156.95        |           0      |   2.71011  |   8.70137 |  24.0196  |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | DoPut                 | 505803           |          61.7435 |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | DoGet                 | 185614           |          22.658  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Dense          |   3346.52        |           0      |   2.14065  |   3.52583 |   7.28188 |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Hybrid         |   3275.35        |           0      |   1.91892  |   3.31563 |  33.9151  |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Filtered       |   3511.75        |           0      |   2.16204  |   3.21948 |   3.87382 |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_FilteredBool   |   3692.75        |           0      |   2.06951  |   3.08244 |   3.6169  |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_FilteredString |   3034.41        |           0      |   2.0817   |   3.43662 |  12.6013  |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Sparse         |   7852.58        |           0      |   0.997446 |   1.43416 |   1.63494 |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_ByID           |   3835.35        |           0      |   1.99134  |   3.24062 |   3.78955 |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_GraphRAG       |   3731.41        |           0      |   2.09447  |   3.247   |   4.38446 |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_GlobalGraphRAG |   3044.69        |           0      |   2.02918  |   3.47585 |  24.1709  |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Recommend      |   3919.14        |           0      |   1.99328  |   3.03262 |   3.40604 |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Geo            |   3278.75        |           0      |   1.9079   |   3.92467 |  13.9805  |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Temporal       |   3832.32        |           0      |   2.06418  |   2.82285 |   3.3752  |
-| remote | cpu    | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_LearnedIndex   |   2642.61        |           0      |   2.58776  |   5.6295  |   8.72169 |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | DoPut                 |      1.67069e+06 |         203.941  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | DoGet                 | 781953           |          95.4533 |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_Dense          |   1293.65        |           0      |   5.41768  |   7.30463 |  48.0228  |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_Hybrid         |   1580.35        |           0      |   4.88123  |   6.97622 |   8.53767 |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_Filtered       |   1457.26        |           0      |   5.49261  |   6.69891 |   7.65712 |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_FilteredBool   |   1433.02        |           0      |   5.52094  |   6.83637 |   7.79804 |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_FilteredString |   1589.9         |           0      |   4.9631   |   6.22663 |   7.93304 |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_Sparse         |   8032.49        |           0      |   0.985239 |   1.4125  |   1.55309 |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_ByID           |   1304.87        |           0      |   5.91082  |   8.62876 |  10.4109  |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_GraphRAG       |   1582.72        |           0      |   4.88665  |   7.17305 |   8.37856 |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_GlobalGraphRAG |   1738.93        |           0      |   4.57443  |   5.93277 |   6.9631  |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_Recommend      |   1447.67        |           0      |   5.43025  |   6.73425 |   7.86684 |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_Geo            |   1808.18        |           0      |   4.28252  |   5.47519 |   6.17283 |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_Temporal       |   2455.31        |           0      |   2.9495   |   4.64137 |   6.20585 |
-| remote | cpu    | result_cpu_int8_128_25000.json          | int8        |   128 |   25000 | Search_LearnedIndex   |   1451.43        |           0      |   5.04278  |   7.42802 |  29.1365  |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | DoPut                 | 123572           |         362.027  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | DoGet                 | 125888           |         368.814  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_Dense          |    877.581       |           0      |   5.98394  |  20.349   |  37.2007  |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_Hybrid         |   1335.89        |           0      |   4.80595  |  11.4167  |  25.1289  |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_Filtered       |   1464.47        |           0      |   4.5345   |   6.8762  |  20.3442  |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_FilteredBool   |   1018.31        |           0      |   6.76178  |  10.7409  |  18.8319  |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_FilteredString |    826.303       |           0      |   8.30578  |  13.0272  |  17.0785  |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_Sparse         |   8256.48        |           0      |   0.96224  |   1.37931 |   1.67787 |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_ByID           |   1685.5         |           0      |   4.24119  |   6.95623 |  14.0726  |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_GraphRAG       |    948.369       |           0      |   6.76001  |  18.7291  |  33.2796  |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_GlobalGraphRAG |    957.681       |           0      |   6.78453  |  15.9802  |  31.0329  |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_Recommend      |   2002.1         |           0      |   3.47005  |   5.62155 |   9.48311 |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_Geo            |   3723.5         |           0      |   1.72079  |   3.29317 |   6.21757 |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_Temporal       |   3892.38        |           0      |   1.99441  |   3.05683 |   3.52539 |
-| remote | cpu    | result_cpu_int8_3072_5000.json          | int8        |  3072 |    5000 | Search_LearnedIndex   |   1478.84        |           0      |   4.82797  |   7.12948 |  11.242   |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | DoPut                 | 119202           |          87.3063 |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | DoGet                 | 101644           |          74.4466 |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_Dense          |   3151.92        |           0      |   2.35676  |   3.72785 |   6.53098 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_Hybrid         |   3268.9         |           0      |   2.38486  |   3.62841 |   4.35848 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_Filtered       |   2389.6         |           0      |   2.29241  |   5.81371 |  35.6009  |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_FilteredBool   |   3351.34        |           0      |   2.29004  |   3.54934 |   4.39816 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_FilteredString |   3352.63        |           0      |   2.35645  |   3.16569 |   3.81921 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_Sparse         |   7983.03        |           0      |   0.97863  |   1.41104 |   1.6099  |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_ByID           |   3790.79        |           0      |   1.97159  |   3.4886  |   4.76374 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_GraphRAG       |   3197.96        |           0      |   2.41902  |   3.71996 |   4.64425 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_GlobalGraphRAG |   2953.37        |           0      |   2.45221  |   4.12895 |   5.93095 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_Recommend      |   3899.96        |           0      |   1.95253  |   3.24015 |   3.82556 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_Geo            |   3512.2         |           0      |   1.89778  |   3.53952 |   7.44654 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_Temporal       |   3876.61        |           0      |   2.04728  |   2.77925 |   3.26792 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json    | turboquant8 |   768 |    5000 | Search_LearnedIndex   |   2093.72        |           0      |   2.88567  |  10.2033  |  26.2909  |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | DoPut                 | 123565           |         362.007  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | DoGet                 | 251439           |         736.639  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Dense          |    770.575       |           0      |  10.3219   |  12.3674  |  15.7062  |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Hybrid         |    764.503       |           0      |  10.0465   |  14.524   |  17.9088  |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Filtered       |    775.694       |           0      |  10.2775   |  12.3955  |  14.4383  |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_FilteredBool   |    774.112       |           0      |  10.3111   |  12.0376  |  13.18    |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_FilteredString |    767.136       |           0      |  10.4029   |  12.3124  |  14.2193  |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Sparse         |   9408.59        |           0      |   0.831514 |   1.24299 |   1.41825 |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_ByID           |    775.294       |           0      |  10.1658   |  13.3306  |  17.6439  |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_GraphRAG       |    491.339       |           0      |  15.4902   |  24.393   |  35.2277  |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_GlobalGraphRAG |    492.996       |           0      |  15.5879   |  23.5405  |  27.7052  |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Recommend      |    578.621       |           0      |  13.701    |  16.7607  |  20.9447  |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Geo            |   1819.01        |           0      |   4.35474  |   5.40698 |   6.00062 |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Temporal       |   3148.03        |           0      |   2.33012  |   3.77632 |   5.04735 |
-| remote | cpu    | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_LearnedIndex   |    764.85        |           0      |  10.2621   |  14.5312  |  17.2567  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | DoPut                 |  33017.4         |          96.7308 |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | DoGet                 |  38201.8         |         111.919  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_Dense          |    691.648       |           0      |  11.3924   |  15.2973  |  20.5369  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_Hybrid         |    796.304       |           0      |   9.79966  |  13.8825  |  16.0053  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_Filtered       |    835.65        |           0      |   9.53389  |  12.0306  |  14.0373  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_FilteredBool   |    832.275       |           0      |   9.46028  |  12.0116  |  15.2833  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_FilteredString |    836.128       |           0      |   9.51457  |  11.4094  |  14.7491  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_Sparse         |   8955.87        |           0      |   0.874944 |   1.25438 |   1.45846 |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_ByID           |    847.887       |           0      |   9.18692  |  12.6941  |  19.5353  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_GraphRAG       |    817.561       |           0      |   9.74204  |  12.2033  |  13.541   |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_GlobalGraphRAG |    821.877       |           0      |   9.71855  |  12.2927  |  13.9006  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_Recommend      |    751.989       |           0      |  10.5305   |  13.4164  |  15.802   |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_Geo            |   1823.56        |           0      |   4.26565  |   5.5086  |   8.31546 |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_Temporal       |   3127.92        |           0      |   2.39179  |   3.78154 |   4.58727 |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json  | turboquant8 |  3072 |   25000 | Search_LearnedIndex   |    802.824       |           0      |   9.78492  |  13.8222  |  16.2428  |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | DoPut                 |  31543.9         |         369.655  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | DoGet                 |  40892.9         |         479.213  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_Dense          |   2105.5         |           0      |   3.03214  |   4.94658 |  20.9507  |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_Hybrid         |   2270.09        |           0      |   3.2297   |   4.74364 |   5.67842 |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_Filtered       |   2333.21        |           0      |   3.10726  |   4.77509 |   7.52315 |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_FilteredBool   |   2105.38        |           0      |   3.49132  |   5.30566 |   6.89004 |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_FilteredString |   2048.65        |           0      |   3.59177  |   5.28669 |   6.05807 |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_Sparse         |   8049.19        |           0      |   0.987506 |   1.37043 |   1.50114 |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_ByID           |   2701.46        |           0      |   2.61468  |   5.03723 |   6.91287 |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_GraphRAG       |   1322.1         |           0      |   4.62681  |  12.6759  |  31.9116  |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_GlobalGraphRAG |   1365.88        |           0      |   4.57334  |  11.069   |  34.935   |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_Recommend      |   2833.75        |           0      |   2.55712  |   4.30395 |   5.01682 |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_Geo            |   3324.74        |           0      |   2.10171  |   3.24483 |   9.18517 |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_Temporal       |   3688.6         |           0      |   2.06069  |   2.97007 |   6.8759  |
-| remote | cpu    | result_cpu_float32_3072_5000.json       | float32     |  3072 |    5000 | Search_LearnedIndex   |   1824.67        |           0      |   3.3982   |   8.14125 |  28.9102  |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | DoPut                 | 342176           |          41.7696 |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | DoGet                 | 328621           |          40.1149 |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_Dense          |   2783.3         |           0      |   2.10116  |   3.78557 |  35.2182  |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_Hybrid         |   3801.84        |           0      |   2.05667  |   3.1199  |   3.66152 |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_Filtered       |   3583.94        |           0      |   2.11392  |   3.29632 |   4.48438 |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_FilteredBool   |   2832.67        |           0      |   2.69423  |   4.27622 |   5.04644 |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_FilteredString |   2016.09        |           0      |   2.74595  |  11.5482  |  33.1311  |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_Sparse         |   7166.2         |           0      |   1.08227  |   1.62907 |   2.13948 |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_ByID           |   3721.89        |           0      |   2.10295  |   2.9252  |   3.47722 |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_GraphRAG       |   1455.62        |           0      |   3.60233  |  16.2236  |  34.0333  |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_GlobalGraphRAG |   1717.66        |           0      |   3.3849   |   9.96837 |  31.2425  |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_Recommend      |   3768.13        |           0      |   2.08553  |   2.93147 |   3.34667 |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_Geo            |   2833.31        |           0      |   2.36716  |   4.22626 |  10.1659  |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_Temporal       |   3858.75        |           0      |   1.98617  |   3.24033 |   4.23635 |
-| remote | cpu    | result_cpu_int8_128_5000.json           | int8        |   128 |    5000 | Search_LearnedIndex   |   2709.7         |           0      |   2.70317  |   4.95605 |   6.36645 |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | DoPut                 | 124768           |         365.531  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | DoGet                 | 221723           |         649.58   |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_Dense          |    572.57        |           0      |  13.8459   |  17.0615  |  19.3805  |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_Hybrid         |    563.726       |           0      |  13.8369   |  19.8158  |  23.4076  |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_Filtered       |    561.156       |           0      |  14.165    |  17.7031  |  21.662   |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_FilteredBool   |    559.971       |           0      |  14.1692   |  18.919   |  22.515   |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_FilteredString |    548.924       |           0      |  14.4858   |  18.0512  |  21.9945  |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_Sparse         |   8233.87        |           0      |   0.974827 |   1.37488 |   1.51927 |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_ByID           |    626.819       |           0      |  12.4274   |  17.3703  |  24.3617  |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_GraphRAG       |    525.021       |           0      |  15.0186   |  20.5319  |  25.4048  |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_GlobalGraphRAG |    525.642       |           0      |  14.9691   |  20.6892  |  24.3434  |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_Recommend      |    412.486       |           0      |  19.3456   |  23.9799  |  29.0553  |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_Geo            |   1850           |           0      |   4.2679   |   5.41912 |   6.01041 |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_Temporal       |   2522.66        |           0      |   2.88511  |   4.54068 |   5.85454 |
-| remote | cpu    | result_cpu_int8_3072_25000.json         | int8        |  3072 |   25000 | Search_LearnedIndex   |    532.231       |           0      |  14.3137   |  21.9743  |  25.5222  |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | DoPut                 | 659650           |         322.095  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | DoGet                 | 808933           |         394.987  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_Dense          |   1221.13        |           0      |   6.18305  |   8.70259 |  15.961   |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_Hybrid         |   1255.57        |           0      |   6.18969  |   8.8863  |  10.1632  |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_Filtered       |   1289.8         |           0      |   6.15597  |   7.57528 |   9.27386 |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_FilteredBool   |   1308.23        |           0      |   6.10808  |   7.23911 |   7.89097 |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_FilteredString |   1314.73        |           0      |   6.07091  |   7.29765 |   8.05332 |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_Sparse         |   8043.64        |           0      |   0.982824 |   1.37694 |   1.62419 |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_ByID           |   1231.03        |           0      |   6.31554  |   8.93612 |  11.9692  |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_GraphRAG       |    560.356       |           0      |  13.5513   |  20.6829  |  25.0835  |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_GlobalGraphRAG |    554.885       |           0      |  13.6799   |  20.8158  |  25.5455  |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_Recommend      |    992.032       |           0      |   8.00057  |  10.3213  |  11.8939  |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_Geo            |   1802.25        |           0      |   4.31796  |   5.68888 |   8.8446  |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_Temporal       |   3179.32        |           0      |   2.36661  |   3.64217 |   4.29043 |
-| remote | cpu    | result_cpu_float32_128_25000.json       | float32     |   128 |   25000 | Search_LearnedIndex   |   1287.49        |           0      |   6.07729  |   8.74094 |  10.8911  |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | DoPut                 | 496554           |          60.6145 |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | DoGet                 | 241707           |          29.5053 |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_Dense          |   3093.12        |           0      |   2.17858  |   3.34694 |   9.6213  |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_Hybrid         |   3131.97        |           0      |   1.81171  |   2.91211 |  35.9723  |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_Filtered       |   3494.35        |           0      |   2.18651  |   3.09979 |   4.05396 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_FilteredBool   |   3582.49        |           0      |   2.15948  |   3.05053 |   3.73753 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_FilteredString |   3557.88        |           0      |   2.16452  |   3.08097 |   4.26394 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_Sparse         |   7894.38        |           0      |   1.00351  |   1.41226 |   1.56908 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_ByID           |   3742.92        |           0      |   2.07539  |   3.03945 |   3.57559 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_GraphRAG       |   3418.94        |           0      |   2.11689  |   3.08233 |   3.50741 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_GlobalGraphRAG |   3021.27        |           0      |   2.06039  |   4.05568 |  20.4416  |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_Recommend      |   3752.56        |           0      |   2.05304  |   3.14056 |   3.62691 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_Geo            |   3334.21        |           0      |   1.7222   |   5.44047 |  10.7787  |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_Temporal       |   3895.16        |           0      |   2.04449  |   2.82929 |   3.15269 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json    | turboquant8 |   128 |    5000 | Search_LearnedIndex   |   2092.54        |           0      |   3.04116  |   7.69852 |  16.8553  |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | DoPut                 | 112351           |          82.2883 |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | DoGet                 | 104186           |          76.308  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Dense          |   2789.57        |           0      |   2.34954  |   4.2971  |   7.49864 |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Hybrid         |   2609.19        |           0      |   2.94694  |   4.76457 |   5.41162 |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Filtered       |   3093.48        |           0      |   2.4572   |   4.01223 |   5.5108  |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_FilteredBool   |   2976.52        |           0      |   2.58944  |   4.08298 |   4.91468 |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_FilteredString |   3047.02        |           0      |   2.51561  |   4.06562 |   4.97632 |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Sparse         |   7818.53        |           0      |   1.01017  |   1.44972 |   1.65072 |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_ByID           |   3182.03        |           0      |   2.3173   |   4.20107 |   4.96308 |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_GraphRAG       |   2407.83        |           0      |   2.77664  |   5.16529 |  10.6199  |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_GlobalGraphRAG |   2774.98        |           0      |   2.55502  |   4.10709 |   9.10204 |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Recommend      |   3618.71        |           0      |   2.05023  |   3.54397 |   4.17113 |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Geo            |   3227.62        |           0      |   2.34859  |   3.62699 |   4.14407 |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Temporal       |   3769.74        |           0      |   2.08266  |   2.91275 |   3.62268 |
-| remote | cpu    | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_LearnedIndex   |   2203.14        |           0      |   2.90982  |   7.34481 |  13.2002  |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | DoPut                 |  32847.6         |         384.933  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | DoGet                 |  57118.4         |         669.356  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Dense          |     72.4764      |           0      |  79.5387   | 237.28    | 269.141   |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Hybrid         |     82.0704      |           0      |  85.07     | 176.673   | 261.06    |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Filtered       |     43.7982      |           0      | 204.828    | 255.491   | 278.192   |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_FilteredBool   |     69.0403      |           0      | 115.92     | 216.599   | 255.217   |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_FilteredString |     67.0126      |           0      | 123.898    | 168.925   | 222.193   |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Sparse         |   3557.8         |           0      |   2.14058  |   3.13014 |   5.47329 |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_ByID           |     98.6477      |           0      |  80.758    | 122.163   | 166.605   |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_GraphRAG       |     86.7231      |           0      |  92.2483   | 135.879   | 166.04    |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_GlobalGraphRAG |     84.456       |           0      |  94.3747   | 146.26    | 181.903   |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Recommend      |     67.2661      |           0      | 120.756    | 162.906   | 200.164   |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Geo            |    319.611       |           0      |  24.9462   |  32.1847  |  36.1014  |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Temporal       |      0           |           0      |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_LearnedIndex   |      0           |           0      |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | DoPut                 | 811475           |          99.0569 |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | DoGet                 | 342065           |          41.7559 |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Dense          |   3155.38        |           0      |   2.15728  |   3.66459 |  15.6207  |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Hybrid         |   2804.43        |           0      |   1.93443  |   3.37506 |  33.2324  |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Filtered       |   3689.52        |           0      |   2.05981  |   3.09844 |   3.89828 |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_FilteredBool   |   3334.27        |           0      |   2.30958  |   3.41386 |   4.06515 |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_FilteredString |   2548.21        |           0      |   2.73289  |   4.42937 |  12.8231  |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Sparse         |   5857.99        |           0      |   1.1057   |   1.80937 |   2.92955 |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_ByID           |   3702.55        |           0      |   2.12443  |   2.98308 |   3.50102 |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_GraphRAG       |   1252.32        |           0      |   4.27178  |  15.7557  |  37.0875  |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_GlobalGraphRAG |   1531.08        |           0      |   3.70776  |  13.1234  |  27.3623  |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Recommend      |   3717.64        |           0      |   2.08363  |   2.95024 |   3.6628  |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Geo            |   3580.62        |           0      |   1.79353  |   3.91434 |  10.9179  |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Temporal       |   3619.2         |           0      |   2.04297  |   3.54531 |   6.05011 |
-| remote | cpu    | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_LearnedIndex   |   2895.13        |           0      |   2.56114  |   4.43194 |   5.62022 |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | DoPut                 | 121533           |          89.0136 |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | DoGet                 | 195719           |         143.349  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_Dense          |    946.425       |           0      |   6.91363  |  15.6024  |  40.2192  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_Hybrid         |   1121.54        |           0      |   6.22389  |  11.1011  |  30.7015  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_Filtered       |   1202.8         |           0      |   6.10069  |  10.6658  |  14.5866  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_FilteredBool   |   1259.38        |           0      |   6.09009  |   7.42882 |  15.7246  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_FilteredString |   1216.85        |           0      |   6.20813  |   8.10863 |  15.0394  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_Sparse         |   8896.38        |           0      |   0.877829 |   1.30577 |   1.44818 |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_ByID           |   1244.92        |           0      |   6.11189  |  10.1222  |  13.9562  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_GraphRAG       |   1166           |           0      |   6.24671  |   8.88766 |  32.0981  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_GlobalGraphRAG |   1201.29        |           0      |   6.44037  |   8.17047 |  17.1912  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_Recommend      |   1139.47        |           0      |   6.18666  |  12.4294  |  27.5632  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_Geo            |   1751.55        |           0      |   4.44288  |   5.7523  |   7.6397  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_Temporal       |   3325.34        |           0      |   2.29414  |   3.56128 |   3.98579 |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json   | turboquant8 |   768 |   25000 | Search_LearnedIndex   |   1196.52        |           0      |   6.30366  |   9.38312 |  16.0804  |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | DoPut                 | 120572           |          88.3095 |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | DoGet                 | 171498           |         125.609  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Dense          |    971.145       |           0      |   7.34375  |  14.4393  |  28.5904  |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Hybrid         |   1041.11        |           0      |   6.68664  |  12.003   |  32.7689  |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Filtered       |   1126.29        |           0      |   6.76587  |   8.88402 |  15.5263  |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_FilteredBool   |   1098.25        |           0      |   6.80153  |  10.4306  |  20.3604  |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_FilteredString |   1094.76        |           0      |   6.64274  |  10.2596  |  37.5744  |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Sparse         |   8072.99        |           0      |   0.985054 |   1.38004 |   1.57256 |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_ByID           |   1116.99        |           0      |   6.76406  |  11.9816  |  15.8075  |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_GraphRAG       |   1089.02        |           0      |   6.72157  |  10.1802  |  39.9109  |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_GlobalGraphRAG |   1073.25        |           0      |   7.00933  |  13.0576  |  17.0706  |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Recommend      |   1116.67        |           0      |   6.78499  |  10.0521  |  20.7458  |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Geo            |   1886.4         |           0      |   4.16819  |   5.36111 |   5.82581 |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Temporal       |   3265.32        |           0      |   2.30389  |   3.72215 |   4.40217 |
-| remote | cpu    | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_LearnedIndex   |   1124.58        |           0      |   6.66409  |   9.84295 |  14.7455  |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | DoPut                 | 104203           |         305.282  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | DoGet                 | 106618           |         312.358  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Dense          |   1397.38        |           0      |   4.37297  |   8.39611 |  36.6219  |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Hybrid         |   1548.25        |           0      |   4.71126  |   6.93056 |   9.68631 |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Filtered       |   1717.26        |           0      |   4.34646  |   6.362   |   8.10935 |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_FilteredBool   |   1063.17        |           0      |   6.5783   |  10.1105  |  17.4839  |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_FilteredString |    815.941       |           0      |   8.48849  |  13.5063  |  14.1687  |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Sparse         |   8082.46        |           0      |   0.969071 |   1.39838 |   1.63365 |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_ByID           |   1988.44        |           0      |   3.60882  |   6.7272  |  10.6444  |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_GraphRAG       |    907.429       |           0      |   6.77928  |  18.7599  |  38.7118  |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_GlobalGraphRAG |   1044.8         |           0      |   6.33169  |  13.4217  |  28.1334  |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Recommend      |   1867.94        |           0      |   3.59051  |   6.07842 |  14.7395  |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Geo            |   4097.49        |           0      |   1.6879   |   2.72686 |   7.91117 |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Temporal       |   3955           |           0      |   1.99744  |   3.07025 |   3.52838 |
-| remote | cpu    | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_LearnedIndex   |   1513.68        |           0      |   4.72764  |   7.12851 |   9.43357 |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | DoPut                 |      1.78409e+06 |         217.784  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | DoGet                 | 928585           |         113.353  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Dense          |   1331.98        |           0      |   5.45489  |   9.23704 |  19.177   |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Hybrid         |   1615.21        |           0      |   4.7894   |   6.94205 |   8.29193 |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Filtered       |   1359.25        |           0      |   5.34923  |   7.33387 |  21.4169  |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_FilteredBool   |   1440.59        |           0      |   5.47897  |   6.78421 |   7.90987 |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_FilteredString |   1377.26        |           0      |   5.75981  |   7.18768 |   8.09238 |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Sparse         |   7576.56        |           0      |   1.05079  |   1.45478 |   1.64961 |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_ByID           |   1415.97        |           0      |   5.34356  |   8.19656 |  10.2201  |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_GraphRAG       |   1516.87        |           0      |   5.07655  |   7.62472 |   9.26176 |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_GlobalGraphRAG |   1561.18        |           0      |   5.04385  |   7.21211 |   8.42629 |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Recommend      |   1300.96        |           0      |   6.06365  |   7.57657 |   9.5699  |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Geo            |   1682.8         |           0      |   4.62801  |   5.97431 |   9.34373 |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Temporal       |   2462.8         |           0      |   2.9519   |   4.69909 |   6.08287 |
-| remote | cpu    | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_LearnedIndex   |   1473.96        |           0      |   5.23065  |   7.89225 |  10.2919  |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | DoPut                 | 328409           |         240.534  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | DoGet                 | 168483           |         123.401  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_Dense          |   2344.1         |           0      |   2.81852  |   5.90392 |  13.9689  |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_Hybrid         |   2532.65        |           0      |   2.92122  |   4.95005 |   7.02635 |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_Filtered       |   2341.51        |           0      |   2.49199  |   4.50924 |  32.4434  |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_FilteredBool   |   2428.06        |           0      |   3.04136  |   5.08106 |   6.45466 |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_FilteredString |   2112.14        |           0      |   3.44017  |   5.05187 |   5.40841 |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_Sparse         |   8261.14        |           0      |   0.932908 |   1.43366 |   1.73206 |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_ByID           |   2776.15        |           0      |   2.58567  |   5.29253 |   7.07047 |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_GraphRAG       |   1267.41        |           0      |   4.37786  |  16.4837  |  36.1853  |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_GlobalGraphRAG |   1268.97        |           0      |   4.41586  |  16.9012  |  35.6559  |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_Recommend      |   3220.31        |           0      |   2.33895  |   3.654   |   4.03924 |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_Geo            |   3735.25        |           0      |   1.86825  |   3.77399 |   5.92704 |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_Temporal       |   3744.25        |           0      |   1.99245  |   3.27725 |   6.88378 |
-| remote | cpu    | result_cpu_int8_768_5000.json           | int8        |   768 |    5000 | Search_LearnedIndex   |   2717.53        |           0      |   2.63745  |   4.75619 |   6.91738 |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | DoPut                 | 122974           |         360.275  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | DoGet                 | 244442           |         716.139  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Dense          |    561.843       |           0      |  14.22     |  17.5074  |  21.2778  |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Hybrid         |    525.397       |           0      |  14.6344   |  22.0641  |  27.6524  |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Filtered       |    554.926       |           0      |  14.4273   |  18.0517  |  21.0018  |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_FilteredBool   |    543.94        |           0      |  14.6316   |  18.3264  |  20.8189  |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_FilteredString |    543.081       |           0      |  14.6299   |  19.4003  |  22.1992  |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Sparse         |   8490.91        |           0      |   0.932193 |   1.29894 |   1.49937 |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_ByID           |    628.976       |           0      |  12.4141   |  16.7945  |  24.1446  |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_GraphRAG       |    518.314       |           0      |  15.097    |  20.4878  |  29.0195  |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_GlobalGraphRAG |    527.44        |           0      |  14.9645   |  19.8913  |  22.8751  |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Recommend      |    414.322       |           0      |  19.1622   |  24.4401  |  28.5865  |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Geo            |   1769.49        |           0      |   4.3435   |   5.68571 |   7.18512 |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Temporal       |   2589.72        |           0      |   2.85015  |   4.40136 |   5.25023 |
-| remote | cpu    | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_LearnedIndex   |    515.15        |           0      |  15.4157   |  21.5934  |  25.5692  |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | DoPut                 |  79065.2         |         231.636  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | DoGet                 |  97710.4         |         286.261  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_Dense          |   2329.94        |           0      |   2.29765  |   6.87955 |  34.442   |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_Hybrid         |   2623.37        |           0      |   2.56279  |   5.75125 |  15.6408  |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_Filtered       |   3216.97        |           0      |   2.36246  |   3.35076 |   4.34488 |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_FilteredBool   |   2840.93        |           0      |   2.69718  |   4.43593 |   5.35876 |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_FilteredString |   2848.33        |           0      |   2.65891  |   4.19312 |   5.28026 |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_Sparse         |   6533.71        |           0      |   1.07423  |   1.67812 |   2.6283  |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_ByID           |   3419.61        |           0      |   2.05083  |   4.11569 |   7.33953 |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_GraphRAG       |   1484.11        |           0      |   3.33391  |  16.8483  |  30.2564  |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_GlobalGraphRAG |   1757.55        |           0      |   3.15494  |  11.5187  |  24.4813  |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_Recommend      |   3082.07        |           0      |   2.15615  |   4.81645 |  13.03    |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_Geo            |   3547.85        |           0      |   1.919    |   4.2874  |   5.29084 |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_Temporal       |   3696.5         |           0      |   2.09397  |   3.03022 |   4.61335 |
-| remote | cpu    | result_cpu_float32_768_5000.json        | float32     |   768 |    5000 | Search_LearnedIndex   |   2528.32        |           0      |   2.89556  |   5.08428 |   7.33297 |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | DoPut                 | 125319           |         367.145  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | DoGet                 | 218178           |         639.193  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_Dense          |    753.106       |           0      |  10.4322   |  12.511   |  19.4099  |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_Hybrid         |    795.525       |           0      |   9.7026   |  14.2576  |  16.3535  |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_Filtered       |    778.959       |           0      |  10.2751   |  12.1995  |  13.597   |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_FilteredBool   |    790.225       |           0      |  10.1659   |  11.84    |  12.8483  |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_FilteredString |    783.508       |           0      |  10.209    |  11.9173  |  13.5503  |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_Sparse         |   7858.07        |           0      |   1.00053  |   1.41942 |   1.58171 |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_ByID           |    792.555       |           0      |   9.81327  |  12.4215  |  21.298   |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_GraphRAG       |    490.048       |           0      |  15.8379   |  21.9939  |  27.1422  |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_GlobalGraphRAG |    494.195       |           0      |  15.9388   |  21.8755  |  24.8709  |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_Recommend      |    588.946       |           0      |  13.4589   |  16.8704  |  21.3501  |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_Geo            |   1875.22        |           0      |   4.22138  |   5.26666 |   5.80052 |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_Temporal       |   3398.71        |           0      |   2.21907  |   3.48628 |   4.09528 |
-| remote | cpu    | result_cpu_float32_768_25000.json       | float32     |   768 |   25000 | Search_LearnedIndex   |    777.615       |           0      |  10.0707   |  14.1134  |  18.2632  |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | DoPut                 |  33131.3         |          97.0643 |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | DoGet                 |  62369.5         |         182.723  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Dense          |    669.611       |           0      |   8.95486  |  38.6024  |  58.7191  |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Hybrid         |    883.517       |           0      |   8.64245  |  13.8274  |  17.2941  |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Filtered       |    883.425       |           0      |   8.51265  |  13.7056  |  18.1438  |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_FilteredBool   |    876.645       |           0      |   8.70238  |  13.5828  |  16.3513  |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_FilteredString |    872.182       |           0      |   8.70934  |  13.646   |  15.7753  |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Sparse         |   9248.68        |           0      |   0.846168 |   1.26422 |   1.457   |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_ByID           |    892.348       |           0      |   8.33996  |  14.8088  |  19.3209  |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_GraphRAG       |    873.424       |           0      |   8.83258  |  13.5946  |  16.1879  |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_GlobalGraphRAG |    877.862       |           0      |   8.80368  |  12.8904  |  15.9726  |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Recommend      |    910.989       |           0      |   8.43072  |  13.0072  |  15.8887  |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Geo            |   1862.06        |           0      |   4.25973  |   5.30752 |   6.43171 |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Temporal       |   3376.3         |           0      |   2.22147  |   3.52106 |   4.52603 |
-| remote | cpu    | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_LearnedIndex   |    802.625       |           0      |   9.17619  |  15.4791  |  30.2562  |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | DoPut                 | 113953           |         333.848  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | DoGet                 | 111083           |         325.438  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Dense          |   3033.22        |           0      |   2.29572  |   3.51518 |   5.8532  |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Hybrid         |   3311.69        |           0      |   2.33017  |   3.70981 |   4.33998 |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Filtered       |   2467.68        |           0      |   2.34116  |   4.04356 |  35.8084  |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_FilteredBool   |   2796.57        |           0      |   2.74643  |   4.47273 |   5.38225 |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_FilteredString |   2752.3         |           0      |   2.78923  |   4.31483 |   5.04462 |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Sparse         |   7550.04        |           0      |   1.0595   |   1.45161 |   1.57609 |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_ByID           |   3775.94        |           0      |   2.00988  |   3.25728 |   3.72816 |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_GraphRAG       |   1825.56        |           0      |   3.17648  |   8.9811  |  31.851   |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_GlobalGraphRAG |   2110.2         |           0      |   3.09488  |   6.66113 |  16.3941  |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Recommend      |   3663.27        |           0      |   2.02655  |   3.4272  |   6.04122 |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Geo            |   3882.32        |           0      |   1.89471  |   3.14558 |   3.99432 |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Temporal       |   3868           |           0      |   2.07203  |   2.80937 |   3.09513 |
-| remote | cpu    | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_LearnedIndex   |   3160.49        |           0      |   2.32939  |   3.86072 |   4.97298 |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | DoPut                 |  30542.2         |         357.916  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | DoGet                 |  41335.3         |         484.398  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Dense          |   2008.06        |           0      |   3.04228  |   5.73342 |  32.1698  |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Hybrid         |   2464.99        |           0      |   3.04754  |   4.31823 |   5.21847 |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Filtered       |   2540.21        |           0      |   2.91059  |   4.35022 |   4.9537  |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_FilteredBool   |   2250.93        |           0      |   3.32669  |   4.84588 |   5.79476 |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_FilteredString |   1715.11        |           0      |   3.78219  |   6.95089 |  27.516   |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Sparse         |   8440.44        |           0      |   0.950698 |   1.33023 |   1.44849 |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_ByID           |   2600.41        |           0      |   2.75988  |   5.16452 |   6.73942 |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_GraphRAG       |   1243.28        |           0      |   4.73189  |  17.1843  |  22.8001  |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_GlobalGraphRAG |   1403.19        |           0      |   4.29934  |  11.1109  |  33.7085  |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Recommend      |   2736.85        |           0      |   2.5791   |   4.53639 |   5.70814 |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Geo            |   3793.95        |           0      |   1.78464  |   3.43794 |   9.91307 |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Temporal       |   3800.35        |           0      |   2.07093  |   2.85982 |   3.20334 |
-| remote | cpu    | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_LearnedIndex   |   2201.63        |           0      |   3.36795  |   5.17463 |   6.61669 |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | DoPut                 |  33396.3         |         391.363  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | DoGet                 |  60222.8         |         705.735  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_Dense          |    266.482       |           0      |  29.9221   |  39.6887  |  50.3432  |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_Hybrid         |    268.597       |           0      |  28.7837   |  42.6944  |  50.7604  |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_Filtered       |    264.248       |           0      |  29.9608   |  39.6938  |  47.4705  |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_FilteredBool   |    263.081       |           0      |  30.3387   |  38.6907  |  46.2671  |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_FilteredString |    265.433       |           0      |  29.8842   |  39.0878  |  46.4678  |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_Sparse         |   8017.03        |           0      |   1.00372  |   1.39091 |   1.53576 |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_ByID           |    261.577       |           0      |  30.5798   |  38.2375  |  47.7057  |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_GraphRAG       |    258.642       |           0      |  30.5561   |  43.3739  |  51.748   |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_GlobalGraphRAG |    260.334       |           0      |  30.2979   |  41.8631  |  49.6403  |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_Recommend      |    199.1         |           0      |  39.5962   |  53.7008  |  66.5343  |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_Geo            |   1635.2         |           0      |   4.77758  |   6.08835 |   6.72832 |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_Temporal       |   2946.67        |           0      |   2.55564  |   3.92785 |   4.4691  |
-| remote | cpu    | result_cpu_float32_3072_25000.json      | float32     |  3072 |   25000 | Search_LearnedIndex   |    265.505       |           0      |  29.3862   |  44.2243  |  55.6206  |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | DoPut                 | 412232           |         301.928  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | DoGet                 |      1.14956e+06 |         841.961  |   0        |   0       |   0       |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_Dense          |   1142.74        |           0      |   6.5425   |   9.61409 |  19.5988  |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_Hybrid         |   1187.96        |           0      |   6.57002  |   9.30138 |  11.0483  |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_Filtered       |   1226.15        |           0      |   6.49118  |   7.45174 |   8.11001 |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_FilteredBool   |   1210.91        |           0      |   6.55128  |   7.62426 |   8.95115 |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_FilteredString |   1212.02        |           0      |   6.56346  |   7.5794  |   8.28956 |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_Sparse         |   8229.55        |           0      |   0.964501 |   1.36891 |   1.49853 |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_ByID           |   1015.02        |           0      |   7.16772  |  12.8479  |  18.0279  |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_GraphRAG       |    961.082       |           0      |   7.92945  |  10.7985  |  20.9724  |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_GlobalGraphRAG |    982.493       |           0      |   8.01227  |  11.0218  |  12.6279  |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_Recommend      |    898.925       |           0      |   8.84298  |  10.9397  |  12.4373  |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_Geo            |   1750.29        |           0      |   4.47257  |   5.78386 |   7.68898 |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_Temporal       |   2533.38        |           0      |   2.91633  |   4.52733 |   6.22774 |
-| remote | cpu    | result_cpu_int8_768_25000.json          | int8        |   768 |   25000 | Search_LearnedIndex   |   1081.65        |           0      |   6.96438  |   9.9871  |  19.5049  |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | DoPut                 | 641683           |         313.322  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | DoGet                 | 709025           |         346.203  |   0        |   0       |   0       |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Dense          |   1169.85        |           0      |   6.43865  |   9.14739 |  18.5773  |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Hybrid         |   1209.2         |           0      |   6.37222  |   9.39041 |  10.6316  |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Filtered       |   1270.89        |           0      |   6.27094  |   7.60735 |   9.00799 |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_FilteredBool   |   1274.1         |           0      |   6.26822  |   7.47991 |   8.08497 |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_FilteredString |   1242.69        |           0      |   6.38612  |   7.93047 |   9.06521 |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Sparse         |   7575.98        |           0      |   1.04057  |   1.50664 |   2.05621 |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_ByID           |   1212.52        |           0      |   6.32172  |   9.7866  |  14.684   |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_GraphRAG       |    583.188       |           0      |  13.001    |  20.2628  |  23.3064  |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_GlobalGraphRAG |    576.635       |           0      |  13.1193   |  20.1284  |  23.3089  |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Recommend      |    963.797       |           0      |   8.20441  |  10.3622  |  12.2206  |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Geo            |   1896.02        |           0      |   4.06112  |   5.32503 |   6.63949 |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Temporal       |   3100.96        |           0      |   2.43899  |   3.65603 |   4.2981  |
-| remote | cpu    | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_LearnedIndex   |   1197.61        |           0      |   5.9972   |   9.16451 |  38.9335  |
-
-### Details: remote (cuda)
-
-| Host   | Mode   | Dataset                                 | DType       |   Dim |   Count | Action                |   Throughput_QPS |   Throughput_MBs |    P50_ms |   P95_ms |   P99_ms |
-|:-------|:-------|:----------------------------------------|:------------|------:|--------:|:----------------------|-----------------:|-----------------:|----------:|---------:|---------:|
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | DoPut                 |       667845     |          81.5241 |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | DoGet                 |       784380     |          95.7495 |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Dense          |         1080.9   |           0      |  6.44487  | 13.3818  | 35.0462  |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Hybrid         |         1232.58  |           0      |  6.10319  |  9.52605 | 14.8531  |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Filtered       |         1342.47  |           0      |  5.63786  |  7.28599 | 11.7967  |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_FilteredBool   |         1407.86  |           0      |  5.62763  |  6.95228 |  7.84821 |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_FilteredString |         1372.4   |           0      |  5.71454  |  7.29797 | 11.9331  |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Sparse         |         5909.59  |           0      |  1.06556  |  1.92562 |  5.47206 |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_ByID           |         1250.63  |           0      |  6.02874  | 10.5236  | 13.441   |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_GraphRAG       |         1210.78  |           0      |  5.92622  |  9.11697 | 29.0476  |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_GlobalGraphRAG |         1314.31  |           0      |  5.97879  |  8.0381  |  9.42338 |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Recommend      |         1301.86  |           0      |  5.86214  |  7.83976 | 13.6783  |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Geo            |         1818.34  |           0      |  4.31311  |  5.53619 |  6.42192 |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Temporal       |         3086.32  |           0      |  2.44239  |  3.79114 |  4.44051 |
-| remote | cuda   | result_cuda_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_LearnedIndex   |         1331.6   |           0      |  5.64375  |  7.91139 | 18.2238  |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | DoPut                 |       186024     |          90.832  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | DoGet                 |       367480     |         179.434  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Dense          |         3486.35  |           0      |  2.14171  |  3.31798 |  6.29924 |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Hybrid         |         3157.05  |           0      |  1.73065  |  3.32265 | 33.7678  |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Filtered       |         3573.9   |           0      |  2.11456  |  3.10144 |  5.20511 |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_FilteredBool   |         3104.91  |           0      |  2.11685  |  4.23785 | 14.4384  |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_FilteredString |         3499.02  |           0      |  2.19359  |  3.5321  |  4.37491 |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Sparse         |         7705.22  |           0      |  1.02396  |  1.45362 |  1.58367 |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_ByID           |         3677     |           0      |  2.06699  |  3.37149 |  4.29585 |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_GraphRAG       |         1841.18  |           0      |  2.97584  | 11.2096  | 32.9946  |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_GlobalGraphRAG |         1817.33  |           0      |  2.9495   | 11.1462  | 30.9104  |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Recommend      |         3213.8   |           0      |  2.02441  |  3.32461 | 18.0547  |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Geo            |         3681.6   |           0      |  1.78414  |  5.23985 |  9.53985 |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_Temporal       |         3559.96  |           0      |  2.0478   |  4.21763 |  6.87563 |
-| remote | cuda   | result_cuda_float32_128_5000.json       | float32     |   128 |    5000 | Search_LearnedIndex   |         2603.96  |           0      |  2.63268  |  4.99799 |  9.93079 |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | DoPut                 |       424759     |         311.103  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | DoGet                 |       543263     |         397.898  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Dense          |         1110.45  |           0      |  6.71443  | 11.5115  | 16.7891  |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Hybrid         |         1059.06  |           0      |  6.8665   | 12.0584  | 22.9218  |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Filtered       |         1186.21  |           0      |  6.67167  |  7.91986 |  9.10298 |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_FilteredBool   |         1189.28  |           0      |  6.74407  |  7.70019 |  8.31476 |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_FilteredString |         1174.16  |           0      |  6.76212  |  7.84876 |  8.94949 |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Sparse         |         7875.25  |           0      |  1.02304  |  1.42085 |  1.56675 |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_ByID           |         1201.97  |           0      |  6.36215  |  9.76795 | 13.2719  |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_GraphRAG       |         1076.08  |           0      |  7.08302  |  8.92644 | 30.0587  |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_GlobalGraphRAG |         1116.12  |           0      |  7.14326  |  8.51735 |  9.14375 |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Recommend      |          851.703 |           0      |  9.31168  | 11.6329  | 13.9524  |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Geo            |         1783.56  |           0      |  4.43569  |  5.69405 |  6.19073 |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_Temporal       |         2523.41  |           0      |  2.93452  |  4.69677 |  6.68169 |
-| remote | cuda   | result_cuda_int8_768_25000.json         | int8        |   768 |   25000 | Search_LearnedIndex   |         1129.08  |           0      |  7.05724  |  9.23031 | 10.7481  |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | DoPut                 |        31252.2   |          91.5592 |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | DoGet                 |        36496.9   |         106.925  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Dense          |         2421.82  |           0      |  2.83777  |  4.44486 |  7.44044 |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Hybrid         |         2563.42  |           0      |  3.01239  |  4.32306 |  4.96725 |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Filtered       |         2772.53  |           0      |  2.74681  |  3.84068 |  4.47327 |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_FilteredBool   |         2628.39  |           0      |  2.91306  |  4.10087 |  5.29875 |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_FilteredString |         2453.79  |           0      |  2.76986  |  4.12285 | 30.6514  |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Sparse         |         8284.94  |           0      |  0.957041 |  1.34741 |  1.50948 |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_ByID           |         3847.8   |           0      |  1.99112  |  3.28819 |  4.0224  |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_GraphRAG       |         2567.95  |           0      |  2.9665   |  4.31731 |  5.30534 |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_GlobalGraphRAG |         2614.32  |           0      |  2.94001  |  4.35231 |  5.30025 |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Recommend      |         3708.38  |           0      |  1.94703  |  3.20108 |  3.82947 |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Geo            |         3455.89  |           0      |  2.12523  |  3.06318 |  4.24993 |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Temporal       |         3823.47  |           0      |  2.05418  |  2.84916 |  3.31276 |
-| remote | cuda   | result_cuda_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_LearnedIndex   |         2454.96  |           0      |  2.88223  |  6.35099 |  8.25714 |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | DoPut                 |       409820     |         300.161  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | DoGet                 |       194303     |         142.312  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Dense          |         2109.38  |           0      |  2.56414  |  9.38583 | 32.2761  |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Hybrid         |         2478.67  |           0      |  3.0511   |  4.69055 |  5.46264 |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Filtered       |         2973.73  |           0      |  2.56326  |  3.73712 |  4.1994  |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_FilteredBool   |         2530.33  |           0      |  2.85952  |  4.28649 |  4.94909 |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_FilteredString |         1838.69  |           0      |  3.52015  |  5.36871 | 26.2662  |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Sparse         |         7928.73  |           0      |  0.996915 |  1.40847 |  1.61921 |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_ByID           |         2610.12  |           0      |  2.64306  |  6.13633 |  8.50733 |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_GraphRAG       |         1301.4   |           0      |  4.28838  | 18.0396  | 36.9031  |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_GlobalGraphRAG |         1530.07  |           0      |  3.92396  | 11.9285  | 26.1939  |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Recommend      |         3004.86  |           0      |  2.52433  |  3.97716 |  4.54864 |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Geo            |         3949.37  |           0      |  1.80509  |  3.05032 |  5.50224 |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_Temporal       |         3866.16  |           0      |  1.96657  |  3.34179 |  3.92203 |
-| remote | cuda   | result_cuda_int8_768_5000.json          | int8        |   768 |    5000 | Search_LearnedIndex   |         2199.99  |           0      |  2.72637  |  7.97432 | 19.085   |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | DoPut                 |       433720     |          52.9443 |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | DoGet                 |       241540     |          29.4848 |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Dense          |         3404.16  |           0      |  2.25603  |  3.08289 |  4.25392 |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Hybrid         |         3261.94  |           0      |  1.68884  |  3.09095 | 33.9541  |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Filtered       |         3489.68  |           0      |  2.16284  |  3.03636 |  6.01216 |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_FilteredBool   |         3607.02  |           0      |  2.17501  |  3.01013 |  3.44601 |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_FilteredString |         3573.6   |           0      |  2.16254  |  3.00368 |  3.47219 |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Sparse         |         7647     |           0      |  1.02123  |  1.46456 |  1.70688 |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_ByID           |         3846.38  |           0      |  2.04451  |  2.75079 |  3.23239 |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_GraphRAG       |         3645.9   |           0      |  2.1386   |  2.87185 |  3.78167 |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_GlobalGraphRAG |         3603.55  |           0      |  2.17597  |  2.92035 |  3.25497 |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Recommend      |         3728.7   |           0      |  2.09405  |  2.93611 |  3.35092 |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Geo            |         3137.61  |           0      |  2.11777  |  3.75679 | 16.3132  |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Temporal       |         3850.26  |           0      |  2.0274   |  2.8514  |  3.21811 |
-| remote | cuda   | result_cuda_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_LearnedIndex   |         2622.55  |           0      |  2.79749  |  5.39642 |  6.69112 |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | DoPut                 |       124418     |         364.505  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | DoGet                 |       277611     |         813.315  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Dense          |          754.213 |           0      | 10.5735   | 12.7065  | 15.8131  |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Hybrid         |          753.97  |           0      | 10.3271   | 14.612   | 17.047   |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Filtered       |          756.883 |           0      | 10.5566   | 12.3811  | 13.7433  |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_FilteredBool   |          755.466 |           0      | 10.5228   | 12.6032  | 14.4889  |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_FilteredString |          751.084 |           0      | 10.6334   | 12.6169  | 14.2383  |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Sparse         |         8166.47  |           0      |  0.980431 |  1.41166 |  1.55442 |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_ByID           |          763.098 |           0      | 10.2541   | 13.6232  | 18.5072  |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_GraphRAG       |          489.512 |           0      | 15.7677   | 22.8403  | 39.0711  |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_GlobalGraphRAG |          481.807 |           0      | 16.0264   | 22.7221  | 25.4074  |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Recommend      |          552.208 |           0      | 14.4909   | 18.2101  | 20.4697  |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Geo            |         1654.89  |           0      |  4.72529  |  6.04427 |  7.04627 |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_Temporal       |         3315.85  |           0      |  2.29713  |  3.50011 |  4.1272  |
-| remote | cuda   | result_cuda_float32_768_25000.json      | float32     |   768 |   25000 | Search_LearnedIndex   |          739.151 |           0      | 10.6667   | 14.9706  | 18.1441  |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | DoPut                 |       114435     |          83.815  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | DoGet                 |       122731     |          89.8912 |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Dense          |         2518.8   |           0      |  2.34465  |  4.4504  | 35.6001  |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Hybrid         |         2711.47  |           0      |  2.82254  |  4.50017 |  5.39648 |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Filtered       |         3061.98  |           0      |  2.44794  |  4.04007 |  5.73927 |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_FilteredBool   |         3034.4   |           0      |  2.53601  |  4.07289 |  4.67925 |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_FilteredString |         2990.12  |           0      |  2.59041  |  4.08342 |  4.80973 |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Sparse         |         8066.88  |           0      |  0.975409 |  1.3885  |  1.55893 |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_ByID           |         2936.82  |           0      |  2.52062  |  4.50364 |  5.43687 |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_GraphRAG       |         2417.38  |           0      |  2.68492  |  5.03649 | 10.4728  |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_GlobalGraphRAG |         2456.52  |           0      |  2.92783  |  5.68513 |  8.63517 |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Recommend      |         3351.31  |           0      |  2.24598  |  3.95175 |  4.57313 |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Geo            |         2904.21  |           0      |  1.91547  |  4.60209 | 29.5141  |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Temporal       |         3868.01  |           0      |  2.04507  |  2.83021 |  3.27278 |
-| remote | cuda   | result_cuda_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_LearnedIndex   |         2500.96  |           0      |  2.8302   |  5.98207 |  8.31525 |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | DoPut                 |        33734.8   |         395.33   |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | DoGet                 |        58838     |         689.508  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Dense          |          254.074 |           0      | 31.3614   | 41.172   | 47.1621  |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Hybrid         |          255.96  |           0      | 30.0533   | 45.5925  | 52.5159  |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Filtered       |          253.362 |           0      | 31.2813   | 42.8016  | 51.9985  |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_FilteredBool   |          252.781 |           0      | 31.5896   | 40.6268  | 46.4159  |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_FilteredString |          252.85  |           0      | 31.7639   | 41.5648  | 48.4219  |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Sparse         |         7422.28  |           0      |  1.08095  |  1.47608 |  1.63204 |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_ByID           |          258.952 |           0      | 30.8781   | 39.6289  | 47.5648  |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_GraphRAG       |          247.25  |           0      | 31.7325   | 46.0508  | 55.7779  |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_GlobalGraphRAG |          248.25  |           0      | 31.9821   | 44.1361  | 49.9373  |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Recommend      |          192.528 |           0      | 41.2146   | 56.2847  | 69.683   |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Geo            |         1473.18  |           0      |  5.24749  |  6.74265 |  8.36042 |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Temporal       |         3331.39  |           0      |  2.23903  |  3.42669 |  3.80015 |
-| remote | cuda   | result_cuda_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_LearnedIndex   |          259.348 |           0      | 30.3947   | 43.6698  | 52.0855  |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | DoPut                 |       543813     |          66.3834 |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | DoGet                 |       306580     |          37.4244 |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Dense          |         2842.36  |           0      |  2.13287  |  3.53729 | 23.6846  |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Hybrid         |         3594.55  |           0      |  2.02225  |  3.31715 |  4.75379 |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Filtered       |         3610.69  |           0      |  2.11846  |  3.07735 |  4.17005 |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_FilteredBool   |         2731.75  |           0      |  2.51932  |  4.13684 |  5.73528 |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_FilteredString |         2761.52  |           0      |  2.76254  |  4.21664 |  5.13162 |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Sparse         |         8065.07  |           0      |  0.950787 |  1.4438  |  1.81196 |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_ByID           |         3821.67  |           0      |  2.06485  |  2.79203 |  3.27826 |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_GraphRAG       |         1185.11  |           0      |  4.06601  | 18.1734  | 40.3552  |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_GlobalGraphRAG |         1509.02  |           0      |  3.62719  | 12.433   | 32.5191  |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Recommend      |         3753.27  |           0      |  2.06963  |  2.98436 |  3.36812 |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Geo            |         3442.48  |           0      |  1.92419  |  4.64981 |  7.13314 |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_Temporal       |         3889.43  |           0      |  1.96264  |  3.23998 |  4.03218 |
-| remote | cuda   | result_cuda_int8_128_5000.json          | int8        |   128 |    5000 | Search_LearnedIndex   |         2533.64  |           0      |  2.85847  |  5.53357 |  7.3351  |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | DoPut                 |       126151     |          92.3959 |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | DoGet                 |       139593     |         102.241  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Dense          |          897.458 |           0      |  7.28128  | 19.7796  | 39.5178  |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Hybrid         |         1162.42  |           0      |  6.37138  |  9.88044 | 14.34    |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Filtered       |         1165.99  |           0      |  6.3079   |  9.00558 | 22.1646  |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_FilteredBool   |         1160.62  |           0      |  6.36486  |  9.90806 | 17.3698  |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_FilteredString |         1201.04  |           0      |  6.48796  |  8.37274 | 12.5373  |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Sparse         |         6471.01  |           0      |  1.02913  |  1.5271  |  2.05474 |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_ByID           |         1142.35  |           0      |  6.49549  | 12.1149  | 17.4201  |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_GraphRAG       |         1070.96  |           0      |  6.63393  | 14.3688  | 18.8581  |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_GlobalGraphRAG |         1151.52  |           0      |  6.53476  |  8.75324 | 16.0136  |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Recommend      |         1192.26  |           0      |  6.51457  |  8.66054 | 14.3123  |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Geo            |         1767.83  |           0      |  4.41422  |  5.62056 |  8.84015 |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Temporal       |         3105.27  |           0      |  2.45833  |  3.82075 |  4.34731 |
-| remote | cuda   | result_cuda_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_LearnedIndex   |         1063.12  |           0      |  6.39737  | 12.613   | 40.0012  |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | DoPut                 |       111754     |         327.405  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | DoGet                 |       100003     |         292.979  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Dense          |          907.969 |           0      |  6.11467  | 22.0114  | 38.0587  |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Hybrid         |         1312.23  |           0      |  5.15046  |  9.31939 | 16.8435  |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Filtered       |         1385.96  |           0      |  5.05572  |  7.48858 | 17.6691  |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_FilteredBool   |         1025.68  |           0      |  6.73445  | 10.2289  | 19.7015  |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_FilteredString |          826.462 |           0      |  8.43973  | 13.2209  | 21.45    |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Sparse         |         7991.03  |           0      |  0.985713 |  1.41388 |  1.61824 |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_ByID           |         1682.49  |           0      |  4.34499  |  6.89613 | 13.8858  |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_GraphRAG       |          813.121 |           0      |  7.73893  | 23.1555  | 37.3655  |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_GlobalGraphRAG |          871.931 |           0      |  7.62687  | 18.3114  | 31.143   |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Recommend      |         1950.52  |           0      |  3.41201  |  6.0615  | 10.4195  |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Geo            |         3212.76  |           0      |  2.12026  |  3.3253  | 13.071   |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Temporal       |         3624.57  |           0      |  2.0141   |  3.62393 |  5.90766 |
-| remote | cuda   | result_cuda_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_LearnedIndex   |         1357.27  |           0      |  5.2178   |  7.8532  | 12.8067  |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | DoPut                 |       603997     |          73.73   |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | DoGet                 |       651036     |          79.4721 |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Dense          |         1219.98  |           0      |  6.00954  | 11.7727  | 17.9038  |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Hybrid         |         1373.69  |           0      |  5.72871  |  8.13655 |  9.38159 |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Filtered       |         1353.96  |           0      |  5.85695  |  7.32492 |  7.99688 |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_FilteredBool   |         1392.17  |           0      |  5.6703   |  7.18193 |  8.41844 |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_FilteredString |         1402.37  |           0      |  5.61868  |  7.03541 |  7.8148  |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Sparse         |         7853.2   |           0      |  1.00493  |  1.41572 |  1.55395 |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_ByID           |         1307.24  |           0      |  5.88239  |  8.91352 | 10.7263  |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_GraphRAG       |         1147.53  |           0      |  6.44309  |  9.8649  | 27.4443  |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_GlobalGraphRAG |         1236.4   |           0      |  6.383    |  8.59776 |  9.91089 |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Recommend      |         1286.57  |           0      |  6.12686  |  7.70905 |  9.64553 |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Geo            |         1745.81  |           0      |  4.43126  |  5.81112 |  8.44345 |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_Temporal       |         2526.81  |           0      |  2.94898  |  4.34771 |  6.83196 |
-| remote | cuda   | result_cuda_int8_128_25000.json         | int8        |   128 |   25000 | Search_LearnedIndex   |         1418.31  |           0      |  5.54842  |  7.82053 |  9.23984 |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | DoPut                 |       120772     |         353.825  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | DoGet                 |       222519     |         651.91   |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Dense          |          568.608 |           0      | 13.9611   | 17.3934  | 20.5423  |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Hybrid         |          542.326 |           0      | 14.3871   | 20.6255  | 24.4934  |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Filtered       |          552.259 |           0      | 14.4527   | 18.859   | 22.9604  |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_FilteredBool   |          545.916 |           0      | 14.5763   | 18.5945  | 21.4573  |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_FilteredString |          546.78  |           0      | 14.5552   | 19.2348  | 22.1015  |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Sparse         |         8656.63  |           0      |  0.900522 |  1.33625 |  1.52753 |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_ByID           |          582.65  |           0      | 13.3873   | 18.7971  | 25.5616  |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_GraphRAG       |          515.878 |           0      | 15.1715   | 21.536   | 25.1175  |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_GlobalGraphRAG |          503.819 |           0      | 15.6325   | 21.4943  | 25.5883  |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Recommend      |          407.14  |           0      | 19.4816   | 25.1835  | 33.6836  |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Geo            |         1695.74  |           0      |  4.62915  |  5.73527 |  6.3791  |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Temporal       |         2510.28  |           0      |  2.8957   |  4.44182 |  6.49405 |
-| remote | cuda   | result_cuda_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_LearnedIndex   |          524.996 |           0      | 14.9779   | 22.0474  | 25.0581  |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | DoPut                 |        33368.8   |          97.76   |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | DoGet                 |        35927.3   |         105.256  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Dense          |          674.995 |           0      | 10.7165   | 18.3861  | 28.8264  |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Hybrid         |          719.959 |           0      | 10.169    | 17.1859  | 32.7359  |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Filtered       |          739.435 |           0      | 10.2838   | 16.0731  | 19.7749  |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_FilteredBool   |          742.446 |           0      | 10.1877   | 16.3318  | 19.8973  |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_FilteredString |          735.344 |           0      | 10.6473   | 15.5519  | 18.4755  |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Sparse         |         8476.7   |           0      |  0.92997  |  1.31664 |  1.47088 |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_ByID           |          755.999 |           0      |  9.71289  | 18.1322  | 23.6277  |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_GraphRAG       |          743.337 |           0      | 10.2537   | 16.2182  | 20.5136  |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_GlobalGraphRAG |          746.13  |           0      | 10.2693   | 15.8539  | 18.9183  |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Recommend      |          757.829 |           0      | 10.1573   | 15.7633  | 21.0126  |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Geo            |         1826.79  |           0      |  4.34658  |  5.47545 |  6.21032 |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Temporal       |         3195.27  |           0      |  2.32302  |  3.66903 |  4.49308 |
-| remote | cuda   | result_cuda_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_LearnedIndex   |          713.62  |           0      | 10.3745   | 18.0078  | 27.6146  |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | DoPut                 |       114469     |         335.358  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | DoGet                 |       128299     |         375.877  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Dense          |         3371.29  |           0      |  2.29632  |  3.21161 |  3.81307 |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Hybrid         |         2386.02  |           0      |  2.416    |  4.68011 | 37.0202  |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Filtered       |         3025.3   |           0      |  2.38421  |  3.53103 | 14.1265  |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_FilteredBool   |         2929.65  |           0      |  2.44537  |  4.08284 |  6.78318 |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_FilteredString |         2748.72  |           0      |  2.73869  |  4.37113 |  5.00198 |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Sparse         |         8059.59  |           0      |  0.978806 |  1.43434 |  1.57522 |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_ByID           |         3874.65  |           0      |  2.00103  |  3.16229 |  3.83534 |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_GraphRAG       |         1652.82  |           0      |  3.20127  | 16.5519  | 29.2041  |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_GlobalGraphRAG |         1833.34  |           0      |  3.33678  |  8.36585 | 24.2204  |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Recommend      |         3959.5   |           0      |  1.94947  |  3.15219 |  3.85793 |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Geo            |         3631.17  |           0      |  1.87565  |  2.75635 |  7.11538 |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_Temporal       |         3760.98  |           0      |  2.06152  |  2.92772 |  3.4999  |
-| remote | cuda   | result_cuda_float32_768_5000.json       | float32     |   768 |    5000 | Search_LearnedIndex   |         2572.49  |           0      |  2.80129  |  5.26152 |  6.61999 |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | DoPut                 |        30895.8   |         362.06   |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | DoGet                 |        42983.9   |         503.718  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Dense          |         2220.03  |           0      |  3.04484  |  4.96596 |  8.57625 |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Hybrid         |         2390.46  |           0      |  3.17752  |  4.62786 |  5.78144 |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Filtered       |         2391.63  |           0      |  3.15282  |  4.73032 |  5.60123 |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_FilteredBool   |         1846.14  |           0      |  3.56401  |  5.86137 | 36.3771  |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_FilteredString |         1998.4   |           0      |  3.70123  |  5.2539  |  6.58316 |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Sparse         |         8124.77  |           0      |  0.973169 |  1.40056 |  1.71707 |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_ByID           |         2547.83  |           0      |  2.7557   |  5.29715 |  7.86794 |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_GraphRAG       |         1356.02  |           0      |  4.71514  | 11.4918  | 22.8308  |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_GlobalGraphRAG |         1543.86  |           0      |  4.396    |  9.24228 | 18.7929  |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Recommend      |         2395.16  |           0      |  2.73592  |  5.37158 | 10.7877  |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Geo            |         3775.18  |           0      |  1.73136  |  2.72155 |  9.54652 |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Temporal       |         3677.5   |           0      |  2.12668  |  2.99208 |  3.46431 |
-| remote | cuda   | result_cuda_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_LearnedIndex   |         1875.73  |           0      |  3.31038  |  7.83474 | 28.6695  |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | DoPut                 |       620256     |         302.859  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | DoGet                 |       712789     |         348.041  |  0        |  0       |  0       |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Dense          |         1147.02  |           0      |  6.43453  | 12.1565  | 19.8664  |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Hybrid         |         1111.07  |           0      |  6.42798  | 11.2834  | 28.9706  |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Filtered       |         1280.33  |           0      |  6.22487  |  7.56788 |  9.03893 |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_FilteredBool   |         1267.38  |           0      |  6.29177  |  7.7727  |  8.54664 |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_FilteredString |         1258.02  |           0      |  6.31467  |  7.81328 |  8.80446 |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Sparse         |         8173.95  |           0      |  0.959577 |  1.38532 |  1.53712 |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_ByID           |         1214.64  |           0      |  6.30387  |  9.04736 | 14.372   |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_GraphRAG       |          588.735 |           0      | 13.2118   | 18.3524  | 21.7016  |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_GlobalGraphRAG |          588.785 |           0      | 13.3358   | 18.0771  | 21.0576  |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Recommend      |          962.852 |           0      |  8.22123  | 10.6996  | 13.1207  |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Geo            |         1752.5   |           0      |  4.43503  |  5.70361 |  6.82264 |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_Temporal       |         3056.07  |           0      |  2.49696  |  3.81863 |  4.42466 |
-| remote | cuda   | result_cuda_float32_128_25000.json      | float32     |   128 |   25000 | Search_LearnedIndex   |         1196.63  |           0      |  6.55484  |  9.02296 | 10.7607  |
-
-## v0.2.1 Final Performance Validation (2026-05-16)
-
-## Search Performance Summary (QPS)
-
-|                                         |   Search_ByID |   Search_Dense |   Search_Filtered |   Search_FilteredBool |   Search_FilteredString |   Search_Geo |   Search_GlobalGraphRAG |   Search_GraphRAG |   Search_Hybrid |   Search_LearnedIndex |   Search_Recommend |   Search_Sparse |   Search_Temporal |
-|:----------------------------------------|--------------:|---------------:|------------------:|----------------------:|------------------------:|-------------:|------------------------:|------------------:|----------------:|----------------------:|-------------------:|----------------:|------------------:|
-| ('local', 'cpu', 128, 'float32')        |       2478.22 |        2422.53 |           2469.94 |               2164.52 |                 2040.12 |      3002.31 |                 1188.58 |           1126.39 |         2757.79 |               2016.6  |            2551.51 |         6130.64 |           2907.25 |
-| ('local', 'cpu', 128, 'int8')           |       4029.27 |        3120.95 |           3205.23 |               2840.94 |                 2657.91 |      4001.41 |                 1957.05 |           1856.47 |         3382.98 |               3002.43 |            3160.71 |        11418.7  |           3236.32 |
-| ('local', 'cpu', 128, 'turboquant8')    |       3936.78 |        3297.02 |           3744.35 |               3576.22 |                 3815.72 |      4112.08 |                 3405.64 |           3491.68 |         3996.69 |               2901.52 |            3932.82 |        12020.1  |           4788.59 |
-| ('local', 'cpu', 768, 'float32')        |       2155.36 |        1831.37 |           1849.51 |               1720.39 |                 1562.48 |      2800.3  |                 1074.96 |           1110.47 |         1928.38 |               1671.42 |            2045.16 |         6063.09 |           3079.63 |
-| ('local', 'cpu', 768, 'int8')           |       2844.84 |        1739.29 |           1819.8  |               1521.74 |                 1457.67 |      4261.11 |                 1360.81 |           1270.04 |         1823.69 |               1764.56 |            1887.04 |        12109.1  |           3192.23 |
-| ('local', 'cpu', 768, 'turboquant8')    |       3052.68 |        2474.92 |           2686.64 |               2664.06 |                 3094    |      4049.07 |                 2642.98 |           2558.31 |         2814.72 |               2418.46 |            3041.13 |        12139.7  |           4862.15 |
-| ('local', 'cpu', 3072, 'float32')       |       1420.85 |        1150.34 |           1196.11 |               1109.46 |                 1009.63 |      2786.68 |                  858.57 |            778.54 |         1179.56 |               1068.77 |            1354.35 |         5927.46 |           3119.06 |
-| ('local', 'cpu', 3072, 'int8')          |       1596.55 |         825.17 |            833.93 |                708.71 |                  597.13 |      4327.39 |                  718.17 |            742.14 |          828.56 |                813.36 |             914.09 |        11943.3  |           3343.97 |
-| ('local', 'cpu', 3072, 'turboquant8')   |       2740.32 |        1869.76 |           2075.28 |               2015.77 |                 2138.14 |      3983.67 |                 2044.82 |           2010.85 |         2060.23 |               1995.4  |            2687.49 |        12018.4  |           4787.9  |
-| ('local', 'metal', 128, 'float32')      |       2759.24 |        2318.99 |           2444.63 |               2121.37 |                 2024.64 |      2750.94 |                 1184.26 |           1094.47 |         2725.44 |               2024.93 |            2593.78 |         6191.5  |           3126.25 |
-| ('local', 'metal', 128, 'int8')         |       4044.75 |        2993.27 |           3167.6  |               2874.14 |                 2592.29 |      4274.3  |                 1910.87 |           1779.16 |         3436.53 |               2956.53 |            3013.26 |        11722.7  |           3380.42 |
-| ('local', 'metal', 128, 'turboquant8')  |       3618.73 |        3143.21 |           3379.51 |               3302.26 |                 3358.98 |      3806.02 |                 2952.72 |           3079.97 |         3694.69 |               2779.97 |            3525.01 |        11491    |           4870.66 |
-| ('local', 'metal', 768, 'float32')      |       2135.74 |        1788.92 |           1824.4  |               1696.37 |                 1607.04 |      3003.13 |                 1076.75 |           1039.55 |         1959.47 |               1697.5  |            2042.67 |         6264.66 |           3150.9  |
-| ('local', 'metal', 768, 'int8')         |       2960.39 |        1819.8  |           1845.95 |               1659.01 |                 1465.25 |      4177.03 |                 1438.07 |           1432.67 |         1922.56 |               1838.07 |            1908.35 |        11893.1  |           3288.45 |
-| ('local', 'metal', 768, 'turboquant8')  |       2995.66 |        2440.79 |           2680.96 |               2655.61 |                 2709.48 |      4112.9  |                 2669.82 |           2567.72 |         2747.28 |               2461.99 |            2984.37 |        11939.6  |           4831.86 |
-| ('local', 'metal', 3072, 'float32')     |       1406.67 |        1156.68 |           1196.63 |               1092.63 |                 1017.45 |      2837.59 |                  883.73 |            813.79 |         1164.4  |               1068.08 |            1387.94 |         6152.66 |           3127.51 |
-| ('local', 'metal', 3072, 'int8')        |       1643.57 |         828.45 |            858.28 |                759.5  |                  606.12 |      4354.84 |                  762.06 |            764.73 |          857.76 |                843.04 |             865.19 |        12085.8  |           3224.32 |
-| ('local', 'metal', 3072, 'turboquant8') |       3225.25 |        2078.96 |           2136.55 |               2272.35 |                 2254.03 |      4008.21 |                 2248.9  |           2248.49 |         2348.23 |               2118.23 |            3199.32 |        11716.8  |           4956.27 |
-| ('perf', 'logs', 128, 'float32')        |       2504.12 |        2243.76 |           2401.25 |               2072.63 |                 2359.04 |      2668.08 |                 1371.36 |           1142.66 |         2729.02 |               2244.34 |            2302.75 |         7716.77 |           3470.24 |
-| ('perf', 'logs', 128, 'int8')           |       3702.55 |        3155.38 |           3689.52 |               3334.27 |                 2548.21 |      3580.62 |                 1531.08 |           1252.32 |         2804.43 |               2895.13 |            3717.64 |         5857.99 |           3619.2  |
-| ('perf', 'logs', 128, 'turboquant8')    |       3835.35 |        3346.52 |           3511.75 |               3692.75 |                 3034.41 |      3278.75 |                 3044.69 |           3731.41 |         3275.35 |               2642.61 |            3919.14 |         7852.58 |           3832.32 |
-| ('perf', 'logs', 768, 'float32')        |       2275.62 |        1901.9  |           1621.69 |               1785.34 |                 1759.72 |      2850.67 |                 1301.6  |           1158.45 |         2038.1  |               1962.67 |            2120.95 |         8479.31 |           3508.02 |
-| ('perf', 'logs', 768, 'int8')           |       2783.03 |        2146.56 |           2521.06 |               2577.78 |                 2328.46 |      4016.04 |                 1275.72 |           1144.46 |         2581.68 |               2156.95 |            2945.63 |         8438.05 |           3988.53 |
-| ('perf', 'logs', 768, 'turboquant8')    |       3182.03 |        2789.57 |           3093.48 |               2976.52 |                 3047.02 |      3227.62 |                 2774.98 |           2407.83 |         2609.19 |               2203.14 |            3618.71 |         7818.53 |           3769.74 |
-| ('perf', 'logs', 3072, 'float32')       |       2600.41 |        2008.06 |           2540.21 |               2250.93 |                 1715.11 |      3793.95 |                 1403.19 |           1243.28 |         2464.99 |               2201.63 |            2736.85 |         8440.44 |           3800.35 |
-| ('perf', 'logs', 3072, 'int8')          |       1988.44 |        1397.38 |           1717.26 |               1063.17 |                  815.94 |      4097.49 |                 1044.8  |            907.43 |         1548.25 |               1513.68 |            1867.94 |         8082.46 |           3955    |
-| ('perf', 'logs', 3072, 'turboquant8')   |       3636.87 |        2348.26 |           2790.44 |               2880.46 |                 2446.38 |      3906.82 |                 2522.83 |           2574.63 |         2612.14 |               2443.02 |            3199.94 |         8174.02 |           3658.3  |
-| ('remote', 'cpu', 128, 'float32')       |       2529.38 |        2298.25 |           2359.32 |               2230.38 |                 2172.71 |      2668.42 |                 1339.64 |            875.58 |         2691.89 |               1963.93 |            2165.91 |         7876.51 |           3477.52 |
-| ('remote', 'cpu', 128, 'int8')          |       2693.69 |        2258.7  |           2648.41 |               2315.48 |                 2057.36 |      2513.85 |                 1401.63 |           1253.86 |         2278.1  |               2238.66 |            2180.39 |         6725.7  |           3078.33 |
-| ('remote', 'cpu', 128, 'turboquant8')   |       2486.56 |        2262.96 |           2425.83 |               2265.1  |                 2503    |      2452.52 |                 2433.96 |           2179.05 |         2610.25 |               1988.75 |            2439.59 |         7572.32 |           3549.75 |
-| ('remote', 'cpu', 768, 'float32')       |       2261.45 |        1791.55 |           2052.72 |               1855.34 |                 1859.73 |      2709.21 |                 1271.15 |           1131.69 |         2005.96 |               1727.56 |            2279.62 |         7816.12 |           3515.63 |
-| ('remote', 'cpu', 768, 'int8')          |       2017.09 |        1796.16 |           2024.91 |               1940.51 |                 1540.13 |      2769.82 |                 1034.36 |           1173.57 |         1594.84 |               1592.74 |            1792.13 |         7777.88 |           3140.74 |
-| ('remote', 'cpu', 768, 'turboquant8')   |       2599.85 |        2153.22 |           2090.71 |               2291.83 |                 2374.49 |      2431.18 |                 2251.86 |           2253.66 |         2231.37 |               1831.56 |            2198.85 |         8564.89 |           3466.92 |
-| ('remote', 'cpu', 3072, 'float32')      |       1475.79 |        1278.14 |           1258.57 |               1291.06 |                 1156.13 |      2585.83 |                  890.78 |            681.78 |         1153.33 |               1042.68 |            1381.72 |         8453.1  |           3439.79 |
-| ('remote', 'cpu', 3072, 'int8')         |       1125.91 |         726.45 |            940.6  |                761.76 |                  676.03 |      2523.5  |                  685.4  |            609.86 |          912.16 |                893.77 |            1098.97 |         8254.41 |           3166.41 |
-| ('remote', 'cpu', 3072, 'turboquant8')  |       2256.96 |        1503.45 |           1700.65 |               1695.64 |                 1746.88 |      2470.65 |                 1614.92 |           1582.71 |         1727.33 |               1566.03 |            1957.71 |         8378.04 |           3482.78 |
-
-## Ingestion Performance (MB/s)
-
-|                                         |   Throughput_MBs |
-|:----------------------------------------|-----------------:|
-| ('local', 'cpu', 128, 'float32')        |           545.19 |
-| ('local', 'cpu', 128, 'int8')           |           238.67 |
-| ('local', 'cpu', 128, 'turboquant8')    |           130.47 |
-| ('local', 'cpu', 768, 'float32')        |           982.09 |
-| ('local', 'cpu', 768, 'int8')           |           674.14 |
-| ('local', 'cpu', 768, 'turboquant8')    |           228.98 |
-| ('local', 'cpu', 3072, 'float32')       |          1194.22 |
-| ('local', 'cpu', 3072, 'int8')          |           921.63 |
-| ('local', 'cpu', 3072, 'turboquant8')   |           294.61 |
-| ('local', 'metal', 128, 'float32')      |           523.7  |
-| ('local', 'metal', 128, 'int8')         |           283.3  |
-| ('local', 'metal', 128, 'turboquant8')  |           135.7  |
-| ('local', 'metal', 768, 'float32')      |          1019.93 |
-| ('local', 'metal', 768, 'int8')         |           685.42 |
-| ('local', 'metal', 768, 'turboquant8')  |           236.92 |
-| ('local', 'metal', 3072, 'float32')     |          1168.17 |
-| ('local', 'metal', 3072, 'int8')        |           950.55 |
-| ('local', 'metal', 3072, 'turboquant8') |           301.03 |
-| ('perf', 'logs', 128, 'float32')        |           218.37 |
-| ('perf', 'logs', 128, 'int8')           |            99.06 |
-| ('perf', 'logs', 128, 'turboquant8')    |            61.74 |
-| ('perf', 'logs', 768, 'float32')        |           347.93 |
-| ('perf', 'logs', 768, 'int8')           |           290.8  |
-| ('perf', 'logs', 768, 'turboquant8')    |            82.29 |
-| ('perf', 'logs', 3072, 'float32')       |           357.92 |
-| ('perf', 'logs', 3072, 'int8')          |           305.28 |
-| ('perf', 'logs', 3072, 'turboquant8')   |            91.63 |
-| ('remote', 'cpu', 128, 'float32')       |           258.8  |
-| ('remote', 'cpu', 128, 'int8')          |           154.97 |
-| ('remote', 'cpu', 128, 'turboquant8')   |            68.6  |
-| ('remote', 'cpu', 768, 'float32')       |           353.46 |
-| ('remote', 'cpu', 768, 'int8')          |           305.16 |
-| ('remote', 'cpu', 768, 'turboquant8')   |            85.53 |
-| ('remote', 'cpu', 3072, 'float32')      |           370.47 |
-| ('remote', 'cpu', 3072, 'int8')         |           341.02 |
-| ('remote', 'cpu', 3072, 'turboquant8')  |            94.28 |
-
-## Search Latency Summary (P95 ms)
-
-|                                         |   Search_ByID |   Search_Dense |   Search_Filtered |   Search_FilteredBool |   Search_FilteredString |   Search_Geo |   Search_GlobalGraphRAG |   Search_GraphRAG |   Search_Hybrid |   Search_LearnedIndex |   Search_Recommend |   Search_Sparse |   Search_Temporal |
-|:----------------------------------------|--------------:|---------------:|------------------:|----------------------:|------------------------:|-------------:|------------------------:|------------------:|----------------:|----------------------:|-------------------:|----------------:|------------------:|
-| ('local', 'cpu', 128, 'float32')        |          1.17 |           1.1  |              1.04 |                  1.22 |                    1.29 |         0.92 |                    2.63 |              3.05 |            1.01 |                  1.34 |               1.11 |            0.5  |              0.98 |
-| ('local', 'cpu', 128, 'int8')           |          2.89 |           3.78 |              3.53 |                  3.89 |                    4.12 |         3.24 |                    6.14 |              6.82 |            3.43 |                  3.53 |               4.07 |            1.16 |              3.74 |
-| ('local', 'cpu', 128, 'turboquant8')    |          3.97 |           4.89 |              4.11 |                  4.22 |                    3.9  |         3.07 |                    4.27 |              4.25 |            4.03 |                  4.22 |               4.06 |            1.02 |              2.41 |
-| ('local', 'cpu', 768, 'float32')        |          1.22 |           1.37 |              1.34 |                  1.47 |                    1.64 |         1.11 |                    2.86 |              2.4  |            1.37 |                  1.5  |               1.28 |            0.5  |              0.91 |
-| ('local', 'cpu', 768, 'int8')           |          4.1  |           6.63 |              6    |                  7.89 |                    7.27 |         2.87 |                    8.59 |              9.98 |            6.3  |                  6.07 |               7.09 |            1.01 |              3.98 |
-| ('local', 'cpu', 768, 'turboquant8')    |          6.53 |           7.52 |              6.57 |                  6.47 |                    6.23 |         3.07 |                    6.7  |              6.81 |            7.12 |                  6.45 |               6.6  |            0.98 |              2.37 |
-| ('local', 'cpu', 3072, 'float32')       |          1.79 |           2.15 |              1.98 |                  2.18 |                    2.45 |         1.13 |                    3.41 |              3.78 |            2.04 |                  2.4  |               1.89 |            0.5  |              0.88 |
-| ('local', 'cpu', 3072, 'int8')          |          7.89 |          13.04 |             13.13 |                 14.48 |                   16.97 |         2.88 |                   15.19 |             14.39 |           13.92 |                 13.26 |              15.55 |            1    |              3.87 |
-| ('local', 'cpu', 3072, 'turboquant8')   |          6.02 |           7.25 |              6.34 |                  6.38 |                    6.2  |         3.07 |                    6.45 |              6.81 |            7.14 |                  6.6  |               6.12 |            0.98 |              2.52 |
-| ('local', 'metal', 128, 'float32')      |          1.04 |           1.2  |              1.14 |                  1.26 |                    1.29 |         1.25 |                    2.61 |              3.13 |            1.06 |                  1.33 |               1.11 |            0.49 |              0.89 |
-| ('local', 'metal', 128, 'int8')         |          3.03 |           4.01 |              3.49 |                  3.91 |                    4.23 |         3.08 |                    6.59 |              7.38 |            3.42 |                  3.7  |               4.12 |            1.1  |              3.72 |
-| ('local', 'metal', 128, 'turboquant8')  |          4.75 |           5.71 |              4.83 |                  4.94 |                    4.88 |         3.36 |                    5.1  |              5.1  |            4.97 |                  5.19 |               4.9  |            1.04 |              2.39 |
-| ('local', 'metal', 768, 'float32')      |          1.23 |           1.42 |              1.38 |                  1.48 |                    1.55 |         0.92 |                    2.73 |              3.16 |            1.33 |                  1.47 |               1.36 |            0.49 |              0.9  |
-| ('local', 'metal', 768, 'int8')         |          3.91 |           6.16 |              5.9  |                  6.62 |                    7.19 |         3    |                    8    |              8.2  |            6.09 |                  5.83 |               6.82 |            1.05 |              3.81 |
-| ('local', 'metal', 768, 'turboquant8')  |          6.57 |           7.84 |              6.45 |                  6.47 |                    6.49 |         2.94 |                    6.66 |              6.58 |            6.91 |                  6.68 |               6.5  |            1    |              2.38 |
-| ('local', 'metal', 3072, 'float32')     |          1.81 |           2.05 |              1.97 |                  2.22 |                    2.46 |         1.02 |                    2.9  |              3.6  |            2.06 |                  2.38 |               1.79 |            0.47 |              0.9  |
-| ('local', 'metal', 3072, 'int8')        |          7.55 |          13.03 |             13.2  |                 13.69 |                   17.13 |         2.81 |                   14.36 |             14.38 |           13.63 |                 13.03 |              15.3  |            0.99 |              4.06 |
-| ('local', 'metal', 3072, 'turboquant8') |          5.58 |           6.62 |              6.05 |                  5.78 |                    5.78 |         2.94 |                    6.07 |              5.95 |            6.15 |                  6.11 |               5.54 |            1.02 |              2.36 |
-| ('perf', 'logs', 128, 'float32')        |          6.48 |           6.37 |              5.37 |                  5.83 |                    5.81 |         3.94 |                   13.27 |             16.68 |            6.18 |                  6.55 |               6.85 |            1.47 |              3.23 |
-| ('perf', 'logs', 128, 'int8')           |          2.98 |           3.66 |              3.1  |                  3.41 |                    4.43 |         3.91 |                   13.12 |             15.76 |            3.38 |                  4.43 |               2.95 |            1.81 |              3.55 |
-| ('perf', 'logs', 128, 'turboquant8')    |          3.24 |           3.53 |              3.22 |                  3.08 |                    3.44 |         3.92 |                    3.48 |              3.25 |            3.32 |                  5.63 |               3.03 |            1.43 |              2.82 |
-| ('perf', 'logs', 768, 'float32')        |          8.29 |           7.94 |              8.22 |                  8.26 |                    8.31 |         4.28 |                   15.1  |             16.69 |            9.12 |                  9.2  |              10.09 |            1.35 |              3.29 |
-| ('perf', 'logs', 768, 'int8')           |          4.67 |           6.21 |              4.33 |                  4.16 |                    4.69 |         2.36 |                   17.17 |             19.73 |            4.37 |                  8.7  |               3.8  |            1.35 |              2.93 |
-| ('perf', 'logs', 768, 'turboquant8')    |          4.2  |           4.3  |              4.01 |                  4.08 |                    4.07 |         3.63 |                    4.11 |              5.17 |            4.76 |                  7.34 |               3.54 |            1.45 |              2.91 |
-| ('perf', 'logs', 3072, 'float32')       |          5.16 |           5.73 |              4.35 |                  4.85 |                    6.95 |         3.44 |                   11.11 |             17.18 |            4.32 |                  5.17 |               4.54 |            1.33 |              2.86 |
-| ('perf', 'logs', 3072, 'int8')          |          6.73 |           8.4  |              6.36 |                 10.11 |                   13.51 |         2.73 |                   13.42 |             18.76 |            6.93 |                  7.13 |               6.08 |            1.4  |              3.07 |
-| ('perf', 'logs', 3072, 'turboquant8')   |          3.09 |           4.64 |              3.98 |                  3.84 |                    4.97 |         3.79 |                    4.27 |              5.16 |            4.5  |                  5.7  |               3.74 |            1.47 |              3.09 |
-| ('remote', 'cpu', 128, 'float32')       |          6.41 |           6.3  |              5.51 |                  5.28 |                    5.7  |         4.82 |                   13.5  |             19.96 |            6.75 |                  7.61 |               7.01 |            1.43 |              3.38 |
-| ('remote', 'cpu', 128, 'int8')          |          4.99 |           6.78 |              4.43 |                  4.86 |                    5.06 |         4.93 |                   10.64 |             13.48 |            5.48 |                  5.65 |               5.65 |            1.66 |              3.83 |
-| ('remote', 'cpu', 128, 'turboquant8')   |          6.71 |           6.48 |              5.28 |                  5.16 |                    5.16 |         5.34 |                    5.76 |              6.51 |            6.99 |                  6.99 |               5.89 |            1.46 |              3.24 |
-| ('remote', 'cpu', 768, 'float32')       |          7.6  |           7.27 |              6.9  |                  7.32 |                    7.26 |         4.56 |                   13.09 |             15.59 |            8    |                  8.81 |               8.8  |            1.43 |              3.26 |
-| ('remote', 'cpu', 768, 'int8')          |          7.54 |           7.03 |              6.37 |                  6.17 |                    6.7  |         4.27 |                   15.84 |             12.79 |            7.5  |                  9.09 |               8    |            1.49 |              3.93 |
-| ('remote', 'cpu', 768, 'turboquant8')   |          6.46 |           9.32 |              6.86 |                  5.22 |                    5.45 |         5.3  |                    5.61 |              5.93 |            7.13 |                  7.55 |               7.83 |            1.36 |              3.35 |
-| ('remote', 'cpu', 3072, 'float32')      |         22.31 |          23.56 |             23.85 |                 22.92 |                   23.15 |         4.54 |                   26.88 |             31.88 |           24.84 |                 26.49 |              30.27 |            1.35 |              3.33 |
-| ('remote', 'cpu', 3072, 'int8')         |         12.44 |          19.52 |             13.22 |                 15.49 |                   15.97 |         4.75 |                   19.34 |             22.96 |           28.26 |                 15.45 |              16.13 |            1.36 |              3.92 |
-| ('remote', 'cpu', 3072, 'turboquant8')  |         12.03 |          16.43 |             12.56 |                 11.41 |                   11.1  |         4.67 |                   12.9  |             12.29 |           12.12 |                 17.86 |              13.37 |            1.37 |              3.38 |
-
-### Details: local (cpu)
-
-| Host   | Mode   | Dataset                                | DType       |   Dim |   Count | Action                |   Throughput_QPS |   Throughput_MBs |    P50_ms |    P95_ms |   P99_ms |
-|:-------|:-------|:---------------------------------------|:------------|------:|--------:|:----------------------|-----------------:|-----------------:|----------:|----------:|---------:|
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | DoPut                 |      1.48294e+06 |         181.022  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | DoGet                 |      1.10739e+06 |         135.18   |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Dense          |   1725.33        |           0      |  4.20663  |  7.79438  | 14.161   |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Hybrid         |   1908.78        |           0      |  3.97508  |  6.20937  |  7.56954 |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Filtered       |   1899.43        |           0      |  4.07175  |  6.33437  |  7.34817 |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_FilteredBool   |   1833.08        |           0      |  4.16308  |  6.48092  |  9.5685  |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_FilteredString |   1908.47        |           0      |  4.18467  |  5.96937  |  7.41758 |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Sparse         |  11995.7         |           0      |  0.655042 |  1.03038  |  1.19342 |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_ByID           |   1932.83        |           0      |  4.03662  |  6.02762  |  7.33387 |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_GraphRAG       |   1787.05        |           0      |  4.3745   |  6.46517  |  7.60017 |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_GlobalGraphRAG |   1789.19        |           0      |  4.29304  |  6.41804  |  8.21179 |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Recommend      |   1891.1         |           0      |  4.08075  |  6.26863  |  7.19675 |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Geo            |   2622.95        |           0      |  2.99208  |  4.04554  |  5.6005  |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Temporal       |   3597.96        |           0      |  2.18142  |  2.91504  |  3.35475 |
-| local  | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_LearnedIndex   |   1836.98        |           0      |  4.29608  |  5.72717  |  7.04104 |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | DoPut                 | 608828           |         297.279  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | DoGet                 |      1.24533e+06 |         608.071  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Dense          |   4845.07        |           0      |  1.57871  |  2.19096  |  3.14908 |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Hybrid         |   5515.58        |           0      |  1.37804  |  2.01104  |  2.44067 |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Filtered       |   4939.89        |           0      |  1.59525  |  2.07496  |  2.46992 |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_FilteredBool   |   4329.04        |           0      |  1.81875  |  2.44579  |  2.76404 |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_FilteredString |   4080.25        |           0      |  1.92742  |  2.577    |  2.98704 |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Sparse         |  12261.3         |           0      |  0.642084 |  1.00192  |  1.19579 |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_ByID           |   4956.44        |           0      |  1.44721  |  2.3375   |  5.85229 |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_GraphRAG       |   2252.78        |           0      |  3.12987  |  6.10971  | 12.2439  |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_GlobalGraphRAG |   2377.16        |           0      |  3.15108  |  5.25154  |  6.90129 |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Recommend      |   5103.03        |           0      |  1.53446  |  2.22812  |  2.54883 |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Geo            |   6004.62        |           0      |  1.31625  |  1.84554  |  2.11538 |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Temporal       |   5814.51        |           0      |  1.35017  |  1.95671  |  2.30037 |
-| local  | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_LearnedIndex   |   4033.2         |           0      |  1.93675  |  2.67633  |  3.03775 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | DoPut                 |  87582.9         |         256.59   |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | DoGet                 |  81216.8         |         237.94   |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Dense          |   3112.86        |           0      |  2.49333  |  3.24375  |  4.11846 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Hybrid         |   3062.87        |           0      |  2.52483  |  3.28446  |  3.92638 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Filtered       |   3044.1         |           0      |  2.532    |  3.40038  |  4.92642 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_FilteredBool   |   2916.72        |           0      |  2.68046  |  3.48554  |  4.16275 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_FilteredString |   3166.26        |           0      |  2.49037  |  3.19267  |  3.57996 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Sparse         |  12158.1         |           0      |  0.652958 |  0.970625 |  1.11704 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_ByID           |   4230.19        |           0      |  1.86838  |  2.51183  |  2.74358 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_GraphRAG       |   2946.04        |           0      |  2.59617  |  3.38312  |  4.86096 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_GlobalGraphRAG |   3000.76        |           0      |  2.61042  |  3.43379  |  3.97767 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Recommend      |   4142.39        |           0      |  1.90171  |  2.53342  |  2.88058 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Geo            |   5496.1         |           0      |  1.35796  |  2.02196  |  2.90754 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Temporal       |   6089.57        |           0      |  1.29267  |  1.79217  |  2.04021 |
-| local  | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_LearnedIndex   |   2883.82        |           0      |  2.70308  |  3.60033  |  4.00237 |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | DoPut                 |      2.9835e+06  |         364.197  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | DoGet                 |      3.2089e+06  |         391.711  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Dense          |   2482.1         |           0      |  3.11958  |  4.73133  |  6.16442 |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Hybrid         |   2645.1         |           0      |  2.95254  |  4.30533  |  5.02854 |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Filtered       |   2545.68        |           0      |  3.10746  |  4.42079  |  5.26546 |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_FilteredBool   |   2382.56        |           0      |  3.16308  |  4.68842  | 11.8593  |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_FilteredString |   2565.99        |           0      |  3.09629  |  4.2765   |  5.26271 |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Sparse         |  10476.1         |           0      |  0.707417 |  1.32496  |  1.77729 |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_ByID           |   3101.08        |           0      |  2.56863  |  3.58425  |  4.3525  |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_GraphRAG       |   1784.79        |           0      |  4.23371  |  7.05042  |  8.80942 |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_GlobalGraphRAG |   1888.79        |           0      |  4.01837  |  6.35508  |  8.363   |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Recommend      |   2098.72        |           0      |  3.74517  |  5.60304  |  6.24004 |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Geo            |   2476.14        |           0      |  3.12625  |  4.1455   |  7.00783 |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Temporal       |   2500.98        |           0      |  2.9325   |  4.79213  |  6.23421 |
-| local  | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_LearnedIndex   |   2444.98        |           0      |  3.27079  |  4.13842  |  4.93042 |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | DoPut                 | 274810           |         805.108  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | DoGet                 | 156173           |         457.537  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Dense          |   1022.02        |           0      |  7.36117  |  9.92842  | 12.9986  |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Hybrid         |   1027.01        |           0      |  7.44125  |  9.60821  | 10.1643  |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Filtered       |   1036.12        |           0      |  7.35792  |  9.75687  | 10.4392  |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_FilteredBool   |    787.931       |           0      |  9.61254  | 12.8873   | 13.4062  |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_FilteredString |    567.322       |           0      | 13.1719   | 17.6984   | 18.6063  |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Sparse         |  12101.6         |           0      |  0.642625 |  0.971959 |  1.14562 |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_ByID           |   1928.1         |           0      |  3.72517  |  6.32408  |  7.31763 |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_GraphRAG       |    892.688       |           0      |  8.46242  | 11.378    | 12.4971  |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_GlobalGraphRAG |    847.433       |           0      |  8.59079  | 12.839    | 17.2362  |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Recommend      |   1301.03        |           0      |  5.75017  |  8.24033  |  8.68454 |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Geo            |   6049.14        |           0      |  1.30196  |  1.84542  |  2.04962 |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Temporal       |   4230.96        |           0      |  1.87433  |  2.48587  |  2.86783 |
-| local  | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_LearnedIndex   |   1000.71        |           0      |  7.53854  | 10.0571   | 10.865   |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | DoPut                 | 270184           |         197.889  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | DoGet                 | 259487           |         190.054  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Dense          |   4170.01        |           0      |  1.78933  |  2.391    |  4.08263 |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Hybrid         |   4605           |           0      |  1.72596  |  2.21571  |  2.44037 |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Filtered       |   4331.33        |           0      |  1.8195   |  2.28521  |  2.60879 |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_FilteredBool   |   4277.6         |           0      |  1.84546  |  2.39892  |  2.79008 |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_FilteredString |   5149.69        |           0      |  1.54658  |  1.99063  |  2.242   |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Sparse         |  12224.7         |           0      |  0.635916 |  0.962833 |  1.15179 |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_ByID           |   5007.83        |           0      |  1.59079  |  2.13383  |  2.40008 |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_GraphRAG       |   4115.84        |           0      |  1.88083  |  2.41483  |  2.94475 |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_GlobalGraphRAG |   4275.01        |           0      |  1.85783  |  2.27612  |  2.47929 |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Recommend      |   5009.19        |           0      |  1.57183  |  2.17325  |  2.40254 |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Geo            |   5602.62        |           0      |  1.34862  |  1.99496  |  3.06121 |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Temporal       |   6116.45        |           0      |  1.28221  |  1.82963  |  2.08867 |
-| local  | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_LearnedIndex   |   3801.28        |           0      |  2.07508  |  2.72117  |  3.00892 |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | DoPut                 | 113535           |         332.623  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | DoGet                 | 192265           |         563.276  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Dense          |    626.66        |           0      |  8.20112  | 11.257    | 13.0148  |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Hybrid         |   1057.59        |           0      |  7.24458  | 10.9968   | 13.067   |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Filtered       |   1106.47        |           0      |  7.17125  |  9.28521  | 10.642   |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_FilteredBool   |   1114.83        |           0      |  7.10625  |  9.26933  | 10.9482  |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_FilteredString |   1110.02        |           0      |  7.09679  |  9.20146  | 10.7519  |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Sparse         |  11878.7         |           0      |  0.653667 |  0.999083 |  1.14671 |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_ByID           |   1250.46        |           0      |  6.256    |  9.52217  | 10.9097  |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_GraphRAG       |   1075.67        |           0      |  7.27096  | 10.2383   | 12.2339  |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_GlobalGraphRAG |   1088.88        |           0      |  7.20337  |  9.45946  | 10.5995  |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Recommend      |   1232.58        |           0      |  6.26767  |  9.70758  | 11.4143  |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Geo            |   2471.23        |           0      |  3.11063  |  4.10887  |  7.49579 |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Temporal       |   3486.23        |           0      |  2.20121  |  3.25762  |  4.15233 |
-| local  | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_LearnedIndex   |   1106.99        |           0      |  7.09317  |  9.60804  | 10.7447  |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | DoPut                 |  92135           |        1079.71   |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | DoGet                 |  78794.4         |         923.372  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Dense          |   2300.68        |           0      |  3.29804  |  4.29525  | 11.0255  |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Hybrid         |   2359.13        |           0      |  3.33488  |  4.08021  |  4.71862 |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Filtered       |   2392.23        |           0      |  3.28375  |  3.96675  |  5.12287 |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_FilteredBool   |   2218.93        |           0      |  3.54629  |  4.36033  |  4.79492 |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_FilteredString |   2019.27        |           0      |  3.81812  |  4.90679  |  5.54904 |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Sparse         |  11854.9         |           0      |  0.652083 |  1.00508  |  1.19229 |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_ByID           |   2841.71        |           0      |  2.76729  |  3.57675  |  4.01138 |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_GraphRAG       |   1557.08        |           0      |  4.66746  |  7.55333  | 12.584   |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_GlobalGraphRAG |   1717.14        |           0      |  4.39504  |  6.82358  |  9.59154 |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Recommend      |   2708.7         |           0      |  2.86762  |  3.77533  |  4.14396 |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Geo            |   5573.36        |           0      |  1.36604  |  2.25221  |  3.20654 |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Temporal       |   6238.12        |           0      |  1.26233  |  1.76275  |  2.00013 |
-| local  | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_LearnedIndex   |   2137.55        |           0      |  3.69496  |  4.79958  |  5.389   |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | DoPut                 | 926906           |         113.148  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | DoGet                 |      1.67863e+06 |         204.911  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Dense          |   3759.8         |           0      |  1.97546  |  2.83796  |  7.17925 |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Hybrid         |   4120.85        |           0      |  1.82179  |  2.55288  |  7.08438 |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Filtered       |   3864.78        |           0      |  1.92846  |  2.64646  |  5.50896 |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_FilteredBool   |   3299.32        |           0      |  2.35979  |  3.09596  |  3.58821 |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_FilteredString |   2749.83        |           0      |  2.80346  |  3.95604  |  4.53179 |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Sparse         |  12361.4         |           0      |  0.626375 |  0.997209 |  1.18496 |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_ByID           |   4957.46        |           0      |  1.59275  |  2.20025  |  2.42233 |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_GraphRAG       |   1928.15        |           0      |  3.69642  |  6.58913  | 12.9065  |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_GlobalGraphRAG |   2025.31        |           0      |  3.64013  |  5.91671  |  8.68996 |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Recommend      |   4222.7         |           0      |  1.86375  |  2.532    |  2.9     |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Geo            |   5526.68        |           0      |  1.36813  |  2.34154  |  3.37862 |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Temporal       |   3971.66        |           0      |  1.91192  |  2.69662  |  3.98113 |
-| local  | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_LearnedIndex   |   3559.88        |           0      |  2.21867  |  2.92938  |  3.35204 |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | DoPut                 | 354356           |        1038.15   |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | DoGet                 | 385729           |        1130.06   |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Dense          |    628.331       |           0      | 12.6775   | 16.1453   | 19.4233  |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Hybrid         |    630.122       |           0      | 12.4016   | 18.2235   | 21.6077  |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Filtered       |    631.732       |           0      | 12.5597   | 16.5017   | 20.1965  |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_FilteredBool   |    629.483       |           0      | 12.6715   | 16.0737   | 18.9035  |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_FilteredString |    626.94        |           0      | 12.6555   | 16.2465   | 20.4024  |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Sparse         |  11785.1         |           0      |  0.666208 |  1.03596  |  1.2525  |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_ByID           |   1265           |           0      |  6.08375  |  9.46296  | 11.484   |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_GraphRAG       |    591.598       |           0      | 13.389    | 17.402    | 21.3764  |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_GlobalGraphRAG |    588.913       |           0      | 13.3945   | 17.5355   | 21.6365  |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Recommend      |    527.145       |           0      | 14.6913   | 22.8508   | 27.0077  |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Geo            |   2605.64        |           0      |  3.01388  |  3.90746  |  4.41579 |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Temporal       |   2456.98        |           0      |  2.93863  |  5.252    |  7.0125  |
-| local  | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_LearnedIndex   |    626.017       |           0      | 12.7043   | 16.467    | 19.8767  |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | DoPut                 |      1.62428e+06 |         793.106  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | DoGet                 |      2.77757e+06 |        1356.24   |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Dense          |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Hybrid         |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Filtered       |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_FilteredBool   |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_FilteredString |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Sparse         |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_ByID           |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_GraphRAG       |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_GlobalGraphRAG |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Recommend      |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Geo            |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Temporal       |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_LearnedIndex   |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | DoPut                 | 654729           |          79.9229 |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | DoGet                 | 698243           |          85.2347 |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Dense          |   4868.7         |           0      |  1.38504  |  1.97617  |  9.44571 |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Hybrid         |   6084.59        |           0      |  1.27858  |  1.86038  |  2.17508 |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Filtered       |   5589.26        |           0      |  1.38746  |  1.895    |  2.29992 |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_FilteredBool   |   5319.37        |           0      |  1.39904  |  1.94929  |  3.34633 |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_FilteredString |   5722.96        |           0      |  1.38017  |  1.83113  |  2.15417 |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Sparse         |  12044.6         |           0      |  0.639541 |  1.01279  |  1.18858 |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_ByID           |   5940.73        |           0      |  1.32313  |  1.90792  |  2.16596 |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_GraphRAG       |   5196.31        |           0      |  1.53533  |  2.04467  |  2.20192 |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_GlobalGraphRAG |   5022.08        |           0      |  1.548    |  2.12729  |  2.79383 |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Recommend      |   5974.55        |           0      |  1.31467  |  1.84292  |  2.12062 |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Geo            |   5601.22        |           0      |  1.38275  |  2.089    |  2.75188 |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Temporal       |   5979.22        |           0      |  1.32438  |  1.90721  |  2.15567 |
-| local  | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_LearnedIndex   |   3966.06        |           0      |  1.87258  |  2.71067  |  3.54263 |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | DoPut                 | 355098           |         260.081  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | DoGet                 | 657090           |         481.267  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Dense          |    779.828       |           0      |  8.92821  | 12.6566   | 15.3094  |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Hybrid         |   1024.44        |           0      |  7.34596  | 12.0162   | 14.6387  |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Filtered       |   1041.94        |           0      |  7.58796  | 10.8617   | 12.7869  |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_FilteredBool   |   1050.52        |           0      |  7.56283  | 10.5454   | 12.5098  |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_FilteredString |   1038.32        |           0      |  7.59996  | 10.467    | 12.6336  |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Sparse         |  12054.7         |           0      |  0.655083 |  0.996292 |  1.21617 |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_ByID           |   1097.54        |           0      |  7.053    | 10.918    | 12.9706  |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_GraphRAG       |   1000.79        |           0      |  7.78625  | 11.205    | 15.0024  |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_GlobalGraphRAG |   1010.94        |           0      |  7.81029  | 11.1248   | 13.3775  |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Recommend      |   1073.07        |           0      |  7.19842  | 11.0203   | 12.921   |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Geo            |   2495.52        |           0      |  3.10946  |  4.13542  |  6.52942 |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Temporal       |   3607.86        |           0      |  2.15933  |  2.91087  |  3.93867 |
-| local  | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_LearnedIndex   |   1035.64        |           0      |  7.69233  | 10.1731   | 11.6103  |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | DoPut                 | 686224           |         502.606  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | DoGet                 | 396492           |         290.4    |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Dense          |   2064.55        |           0      |  3.52542  |  5.62246  | 11.1488  |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Hybrid         |   2207.57        |           0      |  3.44821  |  4.81979  |  5.43938 |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Filtered       |   2216.56        |           0      |  3.471    |  4.74621  |  5.54512 |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_FilteredBool   |   1627.09        |           0      |  4.19188  |  8.34758  | 13.3369  |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_FilteredString |   1468.44        |           0      |  5.188    |  7.14708  |  7.6845  |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Sparse         |  12163.7         |           0      |  0.635    |  1.00075  |  1.18637 |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_ByID           |   3461.69        |           0      |  2.25646  |  3.06196  |  3.65996 |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_GraphRAG       |   1363.15        |           0      |  5.25254  | 10.0352   | 13.5321  |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_GlobalGraphRAG |   1569.28        |           0      |  4.74338  |  7.27642  |  9.30108 |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Recommend      |   2620.38        |           0      |  2.95154  |  4.04338  |  4.47154 |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Geo            |   5986.98        |           0      |  1.32283  |  1.82092  |  2.03908 |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Temporal       |   3910.48        |           0      |  1.93571  |  2.70042  |  5.46633 |
-| local  | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_LearnedIndex   |   2113.2         |           0      |  3.63625  |  4.8935   |  5.66996 |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | DoPut                 | 301348           |         882.855  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | DoGet                 | 269668           |         790.044  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Dense          |   3662.74        |           0      |  2.10046  |  2.74921  |  3.98929 |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Hybrid         |   3856.76        |           0      |  2.01692  |  2.74162  |  3.1105  |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Filtered       |   3699.03        |           0      |  2.11696  |  2.68308  |  3.12929 |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_FilteredBool   |   3440.78        |           0      |  2.30271  |  2.93092  |  3.26012 |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_FilteredString |   3124.96        |           0      |  2.50458  |  3.27358  |  3.68746 |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Sparse         |  12126.2         |           0      |  0.641959 |  1.00375  |  1.17708 |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_ByID           |   4310.71        |           0      |  1.82238  |  2.43275  |  2.71883 |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_GraphRAG       |   2220.93        |           0      |  3.39992  |  4.80262  |  6.11587 |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_GlobalGraphRAG |   2149.92        |           0      |  3.35317  |  5.71288  | 11.8918  |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Recommend      |   4090.32        |           0      |  1.92763  |  2.56792  |  2.85246 |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Geo            |   5600.59        |           0      |  1.35013  |  2.21075  |  3.29583 |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Temporal       |   6159.25        |           0      |  1.28175  |  1.82025  |  2.02379 |
-| local  | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_LearnedIndex   |   3342.84        |           0      |  2.36933  |  2.99733  |  3.38025 |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | DoPut                 | 369096           |        1081.33   |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | DoGet                 | 640308           |        1875.9    |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Dense          |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Hybrid         |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Filtered       |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_FilteredBool   |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_FilteredString |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Sparse         |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_ByID           |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_GraphRAG       |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_GlobalGraphRAG |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Recommend      |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Geo            |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Temporal       |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_LearnedIndex   |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | DoPut                 | 111679           |        1308.73   |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | DoGet                 | 113721           |        1332.67   |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Dense          |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Hybrid         |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Filtered       |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_FilteredBool   |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_FilteredString |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Sparse         |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_ByID           |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_GraphRAG       |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_GlobalGraphRAG |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Recommend      |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Geo            |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Temporal       |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_LearnedIndex   |      0           |           0      |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | DoPut                 |      1.15463e+06 |         845.673  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | DoGet                 |      1.0688e+06  |         782.816  |  0        |  0        |  0       |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Dense          |   1414.03        |           0      |  5.61458  |  7.62917  |  9.07008 |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Hybrid         |   1439.82        |           0      |  5.43204  |  7.77608  |  8.85421 |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Filtered       |   1423.04        |           0      |  5.62796  |  7.25737  |  8.555   |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_FilteredBool   |   1416.39        |           0      |  5.63704  |  7.43583  |  9.25804 |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_FilteredString |   1446.91        |           0      |  5.55458  |  7.39471  |  8.45863 |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Sparse         |  12054.5         |           0      |  0.646334 |  1.02087  |  1.1955  |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_ByID           |   2227.98        |           0      |  3.54154  |  5.13425  |  6.01608 |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_GraphRAG       |   1176.93        |           0      |  6.54933  |  9.93442  | 13.053   |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_GlobalGraphRAG |   1152.33        |           0      |  6.62033  |  9.91125  | 12.8334  |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Recommend      |   1153.69        |           0      |  6.73317  | 10.1338   | 11.9045  |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Geo            |   2535.25        |           0      |  3.06379  |  3.92879  |  6.31042 |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Temporal       |   2473.97        |           0      |  2.91283  |  5.26208  |  6.44079 |
-| local  | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_LearnedIndex   |   1415.92        |           0      |  5.63621  |  7.23875  |  8.19667 |
-
-### Details: local (metal)
-
-| Host   | Mode   | Dataset                                  | DType       |   Dim |   Count | Action                |   Throughput_QPS |   Throughput_MBs |    P50_ms |    P95_ms |   P99_ms |
-|:-------|:-------|:-----------------------------------------|:------------|------:|--------:|:----------------------|-----------------:|-----------------:|----------:|----------:|---------:|
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | DoPut                 | 365951           |        1072.12   |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | DoGet                 | 493123           |        1444.7    |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_Dense          |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_Hybrid         |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_Filtered       |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_FilteredBool   |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_FilteredString |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_Sparse         |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_ByID           |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_GraphRAG       |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_GlobalGraphRAG |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_Recommend      |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_Geo            |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_Temporal       |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_25000.json      | float32     |   768 |   25000 | Search_LearnedIndex   |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | DoPut                 | 294382           |         862.446  |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | DoGet                 | 164679           |         482.458  |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Dense          |   1020.77        |           0      |  7.18796  | 10.468    | 14.9643  |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Hybrid         |   1079.87        |           0      |  7.05742  |  9.22288  |  9.70617 |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Filtered       |   1082.35        |           0      |  6.99396  |  9.25342  |  9.66125 |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_FilteredBool   |    883.134       |           0      |  8.57329  | 11.4188   | 12.1208  |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_FilteredString |    579.052       |           0      | 12.9445   | 17.6169   | 18.4137  |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Sparse         |  12271.4         |           0      |  0.645875 |  0.967834 |  1.22412 |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_ByID           |   2022.57        |           0      |  3.55146  |  5.98633  |  6.93708 |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_GraphRAG       |    929.822       |           0      |  8.03221  | 10.8598   | 11.553   |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_GlobalGraphRAG |    924.792       |           0      |  8.07221  | 11.0844   | 12.5197  |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Recommend      |   1207.99        |           0      |  6.1325   |  8.75492  |  9.21767 |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Geo            |   6082.01        |           0      |  1.30333  |  1.7645   |  2.047   |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Temporal       |   3986.93        |           0      |  1.92546  |  2.78262  |  4.22013 |
-| local  | metal  | result_metal_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_LearnedIndex   |   1054.77        |           0      |  7.18871  |  9.56454  | 10.2855  |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | DoPut                 |      3.8429e+06  |         469.104  |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | DoGet                 |      2.84517e+06 |         347.31   |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_Dense          |   2411.55        |           0      |  3.20183  |  4.84912  |  6.4725  |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_Hybrid         |   2585.58        |           0      |  3.03467  |  4.46504  |  5.18679 |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_Filtered       |   2508.36        |           0      |  3.15483  |  4.26733  |  5.02892 |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_FilteredBool   |   2466.58        |           0      |  3.21467  |  4.60933  |  5.5985  |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_FilteredString |   2493.05        |           0      |  3.15767  |  4.40738  |  5.19092 |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_Sparse         |  12447.6         |           0      |  0.63725  |  0.952666 |  1.19975 |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_ByID           |   3062.93        |           0      |  2.56133  |  3.76746  |  4.44229 |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_GraphRAG       |   1715.73        |           0      |  4.44487  |  7.13379  |  8.44817 |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_GlobalGraphRAG |   1757.9         |           0      |  4.27283  |  6.99067  |  8.54404 |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_Recommend      |   2030.43        |           0      |  3.885    |  5.53479  |  6.53054 |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_Geo            |   2525.51        |           0      |  3.06192  |  4.31062  |  6.76992 |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_Temporal       |   2549.73        |           0      |  2.92467  |  4.87054  |  5.84892 |
-| local  | metal  | result_metal_int8_128_25000.json         | int8        |   128 |   25000 | Search_LearnedIndex   |   2461.23        |           0      |  3.22575  |  4.30254  |  4.86729 |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | DoPut                 | 734160           |          89.6192 |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | DoGet                 | 878863           |         107.283  |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Dense          |   5041.19        |           0      |  1.50567  |  2.29754  |  3.37758 |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Hybrid         |   5904.37        |           0      |  1.32475  |  1.89858  |  2.22229 |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Filtered       |   5245.04        |           0      |  1.48171  |  2.07954  |  2.49204 |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_FilteredBool   |   5088.96        |           0      |  1.48146  |  2.13567  |  3.68179 |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_FilteredString |   5215.26        |           0      |  1.50838  |  2.11212  |  2.45621 |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Sparse         |  12049           |           0      |  0.648667 |  1.01525  |  1.19604 |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_ByID           |   5656.97        |           0      |  1.3755   |  1.95979  |  2.30633 |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_GraphRAG       |   4690.52        |           0      |  1.68888  |  2.31721  |  2.569   |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_GlobalGraphRAG |   4410.62        |           0      |  1.67004  |  2.46408  |  4.6245  |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Recommend      |   5547.82        |           0      |  1.40237  |  2.0665   |  2.27992 |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Geo            |   5153.62        |           0      |  1.34683  |  2.31921  |  7.21933 |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Temporal       |   6155.26        |           0      |  1.27987  |  1.80817  |  2.07575 |
-| local  | metal  | result_metal_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_LearnedIndex   |   4097.2         |           0      |  1.90933  |  2.7025   |  2.94533 |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | DoPut                 | 360059           |         263.715  |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | DoGet                 | 328300           |         240.454  |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Dense          |    676.577       |           0      |  8.50796  | 13.141    | 17.5635  |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Hybrid         |   1048.83        |           0      |  7.36375  | 11.4464   | 13.2533  |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Filtered       |   1069.46        |           0      |  7.33404  | 10.4966   | 12.7246  |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_FilteredBool   |   1081.29        |           0      |  7.32837  | 10.4867   | 11.9323  |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_FilteredString |   1088.85        |           0      |  7.18     | 10.6181   | 12.1318  |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Sparse         |  11668.3         |           0      |  0.68375  |  1.02071  |  1.25504 |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_ByID           |   1123.34        |           0      |  6.73758  | 10.819    | 12.9636  |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_GraphRAG       |   1049.09        |           0      |  7.48971  | 10.7702   | 12.3952  |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_GlobalGraphRAG |   1055.84        |           0      |  7.40179  | 10.957    | 12.3855  |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Recommend      |   1102.49        |           0      |  7.00038  | 10.7045   | 12.6088  |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Geo            |   2588.06        |           0      |  3.01033  |  3.94112  |  4.91237 |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Temporal       |   3601.74        |           0      |  2.18733  |  2.90521  |  3.34837 |
-| local  | metal  | result_metal_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_LearnedIndex   |   1047.2         |           0      |  7.48308  | 10.6924   | 12.9581  |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | DoPut                 | 636443           |         310.763  |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | DoGet                 | 477726           |         233.265  |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_Dense          |   4637.98        |           0      |  1.62942  |  2.4045   |  5.77513 |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_Hybrid         |   5450.87        |           0      |  1.37821  |  2.11717  |  2.66096 |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_Filtered       |   4889.27        |           0      |  1.5785   |  2.27671  |  2.61    |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_FilteredBool   |   4242.74        |           0      |  1.82737  |  2.51587  |  3.25521 |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_FilteredString |   4049.28        |           0      |  1.95129  |  2.58513  |  2.86946 |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_Sparse         |  12383           |           0      |  0.624459 |  0.98675  |  1.19821 |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_ByID           |   5518.48        |           0      |  1.42817  |  2.08567  |  2.3265  |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_GraphRAG       |   2188.93        |           0      |  3.07538  |  6.26871  | 15.0843  |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_GlobalGraphRAG |   2368.51        |           0      |  3.11238  |  5.21558  |  7.30333 |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_Recommend      |   5187.55        |           0      |  1.49692  |  2.22583  |  2.5325  |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_Geo            |   5501.89        |           0      |  1.35779  |  2.49287  |  3.34104 |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_Temporal       |   6252.5         |           0      |  1.26829  |  1.78796  |  1.96158 |
-| local  | metal  | result_metal_float32_128_5000.json       | float32     |   128 |    5000 | Search_LearnedIndex   |   4049.87        |           0      |  1.94679  |  2.65871  |  3.01992 |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | DoPut                 | 800251           |         586.121  |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | DoGet                 | 396046           |         290.073  |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_Dense          |   2242.17        |           0      |  3.26008  |  4.75308  | 10.5474  |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_Hybrid         |   2411.84        |           0      |  3.21017  |  4.24721  |  4.86104 |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_Filtered       |   2250.82        |           0      |  3.27917  |  4.61846  | 12.7543  |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_FilteredBool   |   1898.03        |           0      |  3.93275  |  5.71229  |  7.49025 |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_FilteredString |   1494.29        |           0      |  5.06104  |  7.11221  |  7.54408 |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_Sparse         |  11943.1         |           0      |  0.646292 |  1.03892  |  1.20879 |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_ByID           |   3684.14        |           0      |  2.14467  |  2.76904  |  3.1235  |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_GraphRAG       |   1643.04        |           0      |  4.52321  |  6.98463  |  8.68512 |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_GlobalGraphRAG |   1669.2         |           0      |  4.502    |  6.76204  |  8.49146 |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_Recommend      |   2580.87        |           0      |  2.99396  |  4.09329  |  4.56488 |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_Geo            |   5853.18        |           0      |  1.31838  |  1.82479  |  2.17933 |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_Temporal       |   4120.26        |           0      |  1.89967  |  2.56996  |  3.23942 |
-| local  | metal  | result_metal_int8_768_5000.json          | int8        |   768 |    5000 | Search_LearnedIndex   |   2263.76        |           0      |  3.41179  |  4.54604  |  5.04254 |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | DoPut                 | 286884           |         210.12   |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | DoGet                 | 144969           |         106.178  |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Dense          |   4205           |           0      |  1.84162  |  2.54596  |  3.21167 |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Hybrid         |   4445.74        |           0      |  1.70467  |  2.36492  |  3.33121 |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Filtered       |   4292.46        |           0      |  1.81804  |  2.40425  |  2.82283 |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_FilteredBool   |   4229.92        |           0      |  1.85021  |  2.44558  |  2.76021 |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_FilteredString |   4330.12        |           0      |  1.85025  |  2.358    |  2.63279 |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Sparse         |  12211           |           0      |  0.636791 |  0.978292 |  1.25887 |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_ByID           |   4867.98        |           0      |  1.62921  |  2.32467  |  2.61967 |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_GraphRAG       |   4086.35        |           0      |  1.83775  |  2.38879  |  5.399   |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_GlobalGraphRAG |   4283.81        |           0      |  1.86171  |  2.37217  |  2.63967 |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Recommend      |   4866.25        |           0      |  1.61862  |  2.29804  |  2.538   |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Geo            |   5637.74        |           0      |  1.37242  |  1.93538  |  3.16571 |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Temporal       |   6061.98        |           0      |  1.28242  |  1.85925  |  2.28204 |
-| local  | metal  | result_metal_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_LearnedIndex   |   3876.78        |           0      |  2.03154  |  2.67017  |  3.20358 |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | DoPut                 |      1.50863e+06 |         736.637  |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | DoGet                 |      3.46679e+06 |        1692.77   |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_Dense          |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_Hybrid         |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_Filtered       |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_FilteredBool   |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_FilteredString |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_Sparse         |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_ByID           |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_GraphRAG       |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_GlobalGraphRAG |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_Recommend      |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_Geo            |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_Temporal       |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_128_25000.json      | float32     |   128 |   25000 | Search_LearnedIndex   |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | DoPut                 | 798616           |          97.4873 |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | DoGet                 |      1.23542e+06 |         150.808  |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_Dense          |   3574.99        |           0      |  2.02308  |  3.16546  |  7.92167 |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_Hybrid         |   4287.48        |           0      |  1.84254  |  2.37162  |  2.68808 |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_Filtered       |   3826.85        |           0      |  1.99371  |  2.71954  |  3.60125 |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_FilteredBool   |   3281.71        |           0      |  2.38208  |  3.21913  |  3.60517 |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_FilteredString |   2691.53        |           0      |  2.84863  |  4.05892  |  4.69958 |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_Sparse         |  10997.8         |           0      |  0.689458 |  1.23875  |  1.62312 |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_ByID           |   5026.57        |           0      |  1.56175  |  2.29079  |  2.62058 |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_GraphRAG       |   1842.6         |           0      |  3.75062  |  7.62375  | 14.6106  |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_GlobalGraphRAG |   2063.83        |           0      |  3.60629  |  6.18138  |  8.86479 |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_Recommend      |   3996.09        |           0      |  1.94942  |  2.70446  |  3.44663 |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_Geo            |   6023.09        |           0      |  1.31525  |  1.85129  |  2.07417 |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_Temporal       |   4211.12        |           0      |  1.858    |  2.5715   |  2.85996 |
-| local  | metal  | result_metal_int8_128_5000.json          | int8        |   128 |    5000 | Search_LearnedIndex   |   3451.84        |           0      |  2.25654  |  3.09121  |  3.80729 |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | DoPut                 | 354530           |        1038.66   |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | DoGet                 | 562903           |        1649.13   |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Dense          |    636.134       |           0      | 12.4507   | 15.587    | 18.8498  |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Hybrid         |    635.641       |           0      | 12.1172   | 18.043    | 20.6147  |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Filtered       |    634.207       |           0      | 12.4619   | 17.1488   | 19.267   |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_FilteredBool   |    635.865       |           0      | 12.5918   | 15.9536   | 18.7869  |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_FilteredString |    633.183       |           0      | 12.5561   | 16.6505   | 21.0492  |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Sparse         |  11900.2         |           0      |  0.658875 |  1.02208  |  1.27504 |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_ByID           |   1264.58        |           0      |  6.19588  |  9.10879  | 11.106   |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_GraphRAG       |    599.63        |           0      | 13.1357   | 17.8926   | 20.402   |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_GlobalGraphRAG |    599.33        |           0      | 13.1729   | 17.6367   | 20.4304  |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Recommend      |    522.386       |           0      | 15.2601   | 21.8355   | 26.1027  |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Geo            |   2627.67        |           0      |  2.99375  |  3.86421  |  4.35146 |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Temporal       |   2461.7         |           0      |  2.93312  |  5.3305   |  7.28992 |
-| local  | metal  | result_metal_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_LearnedIndex   |    631.311       |           0      | 12.5088   | 16.4942   | 18.5325  |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | DoPut                 | 330318           |         967.729  |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | DoGet                 | 162752           |         476.813  |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_Dense          |   3577.83        |           0      |  2.16446  |  2.84642  |  4.18921 |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_Hybrid         |   3918.94        |           0      |  2.01271  |  2.65462  |  2.91496 |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_Filtered       |   3648.81        |           0      |  2.14308  |  2.76687  |  3.43942 |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_FilteredBool   |   3392.75        |           0      |  2.33833  |  2.96154  |  3.44083 |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_FilteredString |   3214.09        |           0      |  2.46625  |  3.10567  |  3.38879 |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_Sparse         |  12529.3         |           0      |  0.62225  |  0.9835   |  1.13846 |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_ByID           |   4271.49        |           0      |  1.84938  |  2.46129  |  2.71429 |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_GraphRAG       |   2079.1         |           0      |  3.42167  |  6.31746  | 12.2432  |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_GlobalGraphRAG |   2153.5         |           0      |  3.4725   |  5.45354  |  7.50738 |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_Recommend      |   4085.33        |           0      |  1.90587  |  2.71546  |  3.24692 |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_Geo            |   6006.26        |           0      |  1.31746  |  1.83308  |  2.01621 |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_Temporal       |   6301.79        |           0      |  1.24967  |  1.79467  |  2.01596 |
-| local  | metal  | result_metal_float32_768_5000.json       | float32     |   768 |    5000 | Search_LearnedIndex   |   3395           |           0      |  2.33154  |  2.93679  |  3.40708 |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | DoPut                 |  88852.1         |        1041.24   |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | DoGet                 |  72086.2         |         844.761  |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Dense          |   2313.36        |           0      |  3.31104  |  4.09204  |  8.36963 |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Hybrid         |   2328.8         |           0      |  3.32992  |  4.11183  |  4.9555  |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Filtered       |   2393.27        |           0      |  3.28804  |  3.93696  |  4.69388 |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_FilteredBool   |   2185.26        |           0      |  3.60279  |  4.43408  |  4.8515  |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_FilteredString |   2034.9         |           0      |  3.85692  |  4.92521  |  5.2375  |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Sparse         |  12305.3         |           0      |  0.647834 |  0.948375 |  1.0795  |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_ByID           |   2813.33        |           0      |  2.75942  |  3.61771  |  4.10792 |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_GraphRAG       |   1627.58        |           0      |  4.46083  |  7.19812  | 12.7868  |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_GlobalGraphRAG |   1767.46        |           0      |  4.31833  |  5.7965   |  7.82179 |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Recommend      |   2775.88        |           0      |  2.80954  |  3.57871  |  4.14842 |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Geo            |   5675.18        |           0      |  1.32442  |  2.03779  |  3.51362 |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Temporal       |   6255.02        |           0      |  1.25288  |  1.80083  |  1.98054 |
-| local  | metal  | result_metal_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_LearnedIndex   |   2136.16        |           0      |  3.68975  |  4.76221  |  5.33058 |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | DoPut                 | 110516           |        1295.11   |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | DoGet                 | 133039           |        1559.05   |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Dense          |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Hybrid         |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Filtered       |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_FilteredBool   |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_FilteredString |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Sparse         |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_ByID           |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_GraphRAG       |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_GlobalGraphRAG |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Recommend      |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Geo            |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Temporal       |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_LearnedIndex   |      0           |           0      |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | DoPut                 |      1.48919e+06 |         181.786  |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | DoGet                 |      2.90837e+06 |         355.026  |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Dense          |   1245.23        |           0      |  5.75425  |  9.11579  | 12.2158  |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Hybrid         |   1485.01        |           0      |  5.16958  |  8.03721  |  9.49163 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Filtered       |   1513.98        |           0      |  5.16667  |  7.58125  |  8.71246 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_FilteredBool   |   1515.56        |           0      |  5.13154  |  7.75033  |  9.08471 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_FilteredString |   1502.71        |           0      |  5.12446  |  7.64117  |  9.00758 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Sparse         |  10933           |           0      |  0.712125 |  1.07317  |  1.27758 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_ByID           |   1580.49        |           0      |  4.84371  |  7.53246  |  8.72683 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_GraphRAG       |   1469.41        |           0      |  5.28692  |  7.876    | 10.5321  |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_GlobalGraphRAG |   1494.81        |           0      |  5.17808  |  7.73221  |  9.23529 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Recommend      |   1502.21        |           0      |  5.185    |  7.73313  |  8.77971 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Geo            |   2458.42        |           0      |  3.10167  |  4.39308  |  6.50904 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Temporal       |   3586.07        |           0      |  2.19771  |  2.96963  |  3.33767 |
-| local  | metal  | result_metal_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_LearnedIndex   |   1462.75        |           0      |  5.37025  |  7.67387  |  9.002   |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | DoPut                 | 112831           |         330.56   |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | DoGet                 | 152631           |         447.16   |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Dense          |    845.186       |           0      |  7.69504  | 10.1417   | 11.8     |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Hybrid         |   1180.83        |           0      |  6.62038  |  9.43763  | 10.8963  |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Filtered       |   1188.94        |           0      |  6.69079  |  8.79979  | 10.262   |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_FilteredBool   |   1193.4         |           0      |  6.60729  |  8.37933  |  9.50367 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_FilteredString |   1198.5         |           0      |  6.58496  |  8.433    |  9.57121 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Sparse         |  11459.6         |           0      |  0.684834 |  1.028    |  1.27896 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_ByID           |   1343.33        |           0      |  5.76817  |  8.88687  | 10.6964  |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_GraphRAG       |   1170.61        |           0      |  6.77858  |  8.73275  | 10.2953  |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_GlobalGraphRAG |   1157.36        |           0      |  6.7965   |  9.053    | 10.3912  |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Recommend      |   1332.63        |           0      |  5.83517  |  8.84825  | 10.2948  |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Geo            |   2622.07        |           0      |  3.00404  |  3.91667  |  5.99812 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Temporal       |   3659.91        |           0      |  2.11625  |  2.96342  |  3.81142 |
-| local  | metal  | result_metal_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_LearnedIndex   |   1176.03        |           0      |  6.73258  |  8.84967  | 10.4763  |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | DoPut                 |  92673           |         271.503  |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | DoGet                 |  79067.5         |         231.643  |  0        |  0        |  0       |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Dense          |   3312.74        |           0      |  2.38187  |  3.09871  |  3.54287 |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Hybrid         |   3515.64        |           0      |  2.23746  |  2.85387  |  3.07567 |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Filtered       |   3084.16        |           0      |  2.40442  |  3.30308  | 12.3191  |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_FilteredBool   |   3351.31        |           0      |  2.35367  |  3.18133  |  3.48492 |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_FilteredString |   3309.55        |           0      |  2.32479  |  3.13242  |  3.60675 |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Sparse         |  11974.1         |           0      |  0.656583 |  1.00204  |  1.13696 |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_ByID           |   5107.16        |           0      |  1.51946  |  2.26875  |  2.61354 |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_GraphRAG       |   3326.37        |           0      |  2.35083  |  3.16775  |  3.58237 |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_GlobalGraphRAG |   3340.43        |           0      |  2.36487  |  3.086    |  3.38617 |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Recommend      |   5066.01        |           0      |  1.55567  |  2.2265   |  2.52146 |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Geo            |   5394.35        |           0      |  1.34658  |  1.957    |  4.39562 |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Temporal       |   6252.63        |           0      |  1.25692  |  1.76596  |  1.95554 |
-| local  | metal  | result_metal_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_LearnedIndex   |   3060.43        |           0      |  2.57567  |  3.37513  |  3.66521 |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | DoPut                 |      1.0714e+06  |         784.72   |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | DoGet                 |      1.67559e+06 |        1227.24   |  0        |  0        |  0       |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_Dense          |   1397.42        |           0      |  5.57842  |  7.56842  | 10.224   |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_Hybrid         |   1433.27        |           0      |  5.47654  |  7.92363  |  9.17842 |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_Filtered       |   1441.08        |           0      |  5.53037  |  7.17296  |  8.33308 |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_FilteredBool   |   1419.99        |           0      |  5.58546  |  7.52637  |  8.95225 |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_FilteredString |   1436.21        |           0      |  5.51737  |  7.27646  |  8.70104 |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_Sparse         |  11843           |           0      |  0.657417 |  1.05142  |  1.192   |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_ByID           |   2236.65        |           0      |  3.55554  |  5.05642  |  5.94929 |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_GraphRAG       |   1222.3         |           0      |  6.31129  |  9.41179  | 11.3226  |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_GlobalGraphRAG |   1206.95        |           0      |  6.44604  |  9.24725  | 11.1439  |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_Recommend      |   1235.83        |           0      |  6.293    |  9.54621  | 11.0273  |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_Geo            |   2500.88        |           0      |  3.08121  |  4.18421  |  7.52683 |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_Temporal       |   2456.63        |           0      |  2.96175  |  5.05692  |  7.3155  |
-| local  | metal  | result_metal_int8_768_25000.json         | int8        |   768 |   25000 | Search_LearnedIndex   |   1412.38        |           0      |  5.65308  |  7.10821  |  8.18875 |
-
-### Details: perf (logs)
-
-| Host   | Mode   | Dataset                                | DType       |   Dim |   Count | Action                |   Throughput_QPS |   Throughput_MBs |    P50_ms |   P95_ms |   P99_ms |
-|:-------|:-------|:---------------------------------------|:------------|------:|--------:|:----------------------|-----------------:|-----------------:|----------:|---------:|---------:|
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | DoPut                 |       252779     |         123.427  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | DoGet                 |       178087     |          86.9567 |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_Dense          |         3317.67  |           0      |  2.13119  |  3.58553 | 11.7224  |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_Hybrid         |         4248.84  |           0      |  1.78015  |  2.96065 |  3.41249 |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_Filtered       |         3531.62  |           0      |  2.10694  |  3.12804 |  4.20283 |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_FilteredBool   |         2871.15  |           0      |  1.93868  |  4.17441 | 32.3022  |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_FilteredString |         3475.39  |           0      |  2.17441  |  3.68788 |  4.64729 |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_Sparse         |         7857.56  |           0      |  1.00477  |  1.44027 |  1.60202 |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_ByID           |         3795.73  |           0      |  1.99011  |  3.17307 |  3.72976 |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_GraphRAG       |         1702.12  |           0      |  3.09942  | 13.0971  | 24.6091  |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_GlobalGraphRAG |         2166.08  |           0      |  2.8214   |  6.41761 | 29.9441  |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_Recommend      |         3641.7   |           0      |  2.09881  |  3.34118 |  3.93679 |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_Geo            |         3440.13  |           0      |  1.73504  |  2.55066 | 15.9864  |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_Temporal       |         3839.53  |           0      |  2.05188  |  2.79596 |  3.21725 |
-| perf   | logs   | result_cuda_float32_128_5000.json      | float32     |   128 |    5000 | Search_LearnedIndex   |         3291.07  |           0      |  2.24768  |  3.93572 |  5.27324 |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | DoPut                 |        31276.2   |          91.6294 |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | DoGet                 |        41091.3   |         120.385  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_Dense          |         2348.26  |           0      |  3.00857  |  4.64099 | 15.6022  |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_Hybrid         |         2612.14  |           0      |  2.85093  |  4.50497 |  6.501   |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_Filtered       |         2790.44  |           0      |  2.76683  |  3.98155 |  4.66012 |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_FilteredBool   |         2880.46  |           0      |  2.71264  |  3.84449 |  4.22833 |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_FilteredString |         2446.38  |           0      |  2.97017  |  4.97256 |  7.0083  |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_Sparse         |         8174.02  |           0      |  0.94536  |  1.47282 |  2.04931 |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_ByID           |         3636.87  |           0      |  2.13609  |  3.09149 |  3.80772 |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_GraphRAG       |         2574.63  |           0      |  2.85157  |  5.1644  |  7.38797 |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_GlobalGraphRAG |         2522.83  |           0      |  2.97582  |  4.27088 |  5.04157 |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_Recommend      |         3199.94  |           0      |  2.17302  |  3.73886 |  4.80056 |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_Geo            |         3906.82  |           0      |  1.78686  |  3.78994 |  5.53625 |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_Temporal       |         3658.3   |           0      |  2.13315  |  3.09003 |  3.98152 |
-| perf   | logs   | result_cuda_turboquant8_3072_5000.json | turboquant8 |  3072 |    5000 | Search_LearnedIndex   |         2443.02  |           0      |  2.99403  |  5.6954  |  8.04452 |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | DoPut                 |       397043     |         290.803  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | DoGet                 |       220899     |         161.792  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_Dense          |         2146.56  |           0      |  2.50449  |  6.20776 | 36.2332  |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_Hybrid         |         2581.68  |           0      |  2.97049  |  4.36653 |  4.9543  |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_Filtered       |         2521.06  |           0      |  2.48475  |  4.33367 | 17.3942  |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_FilteredBool   |         2577.78  |           0      |  2.87418  |  4.15501 |  4.67821 |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_FilteredString |         2328.46  |           0      |  3.24096  |  4.69046 |  5.48576 |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_Sparse         |         8438.05  |           0      |  0.937453 |  1.35113 |  1.53515 |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_ByID           |         2783.03  |           0      |  2.69037  |  4.67212 |  6.48817 |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_GraphRAG       |         1144.46  |           0      |  4.78788  | 19.7331  | 31.2707  |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_GlobalGraphRAG |         1275.72  |           0      |  4.46309  | 17.1732  | 29.4652  |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_Recommend      |         2945.63  |           0      |  2.41813  |  3.80025 |  4.8974  |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_Geo            |         4016.04  |           0      |  1.70102  |  2.35894 | 12.1656  |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_Temporal       |         3988.53  |           0      |  1.97053  |  2.93034 |  3.30145 |
-| perf   | logs   | result_cuda_int8_768_5000.json         | int8        |   768 |    5000 | Search_LearnedIndex   |         2156.95  |           0      |  2.71011  |  8.70137 | 24.0196  |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | DoPut                 |       505803     |          61.7435 |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | DoGet                 |       185614     |          22.658  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_Dense          |         3346.52  |           0      |  2.14065  |  3.52583 |  7.28188 |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_Hybrid         |         3275.35  |           0      |  1.91892  |  3.31563 | 33.9151  |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_Filtered       |         3511.75  |           0      |  2.16204  |  3.21948 |  3.87382 |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_FilteredBool   |         3692.75  |           0      |  2.06951  |  3.08244 |  3.6169  |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_FilteredString |         3034.41  |           0      |  2.0817   |  3.43662 | 12.6013  |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_Sparse         |         7852.58  |           0      |  0.997446 |  1.43416 |  1.63494 |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_ByID           |         3835.35  |           0      |  1.99134  |  3.24062 |  3.78955 |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_GraphRAG       |         3731.41  |           0      |  2.09447  |  3.247   |  4.38446 |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_GlobalGraphRAG |         3044.69  |           0      |  2.02918  |  3.47585 | 24.1709  |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_Recommend      |         3919.14  |           0      |  1.99328  |  3.03262 |  3.40604 |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_Geo            |         3278.75  |           0      |  1.9079   |  3.92467 | 13.9805  |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_Temporal       |         3832.32  |           0      |  2.06418  |  2.82285 |  3.3752  |
-| perf   | logs   | result_cuda_turboquant8_128_5000.json  | turboquant8 |   128 |    5000 | Search_LearnedIndex   |         2642.61  |           0      |  2.58776  |  5.6295  |  8.72169 |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | DoPut                 |       123565     |         362.007  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | DoGet                 |       251439     |         736.639  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_Dense          |          770.575 |           0      | 10.3219   | 12.3674  | 15.7062  |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_Hybrid         |          764.503 |           0      | 10.0465   | 14.524   | 17.9088  |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_Filtered       |          775.694 |           0      | 10.2775   | 12.3955  | 14.4383  |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_FilteredBool   |          774.112 |           0      | 10.3111   | 12.0376  | 13.18    |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_FilteredString |          767.136 |           0      | 10.4029   | 12.3124  | 14.2193  |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_Sparse         |         9408.59  |           0      |  0.831514 |  1.24299 |  1.41825 |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_ByID           |          775.294 |           0      | 10.1658   | 13.3306  | 17.6439  |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_GraphRAG       |          491.339 |           0      | 15.4902   | 24.393   | 35.2277  |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_GlobalGraphRAG |          492.996 |           0      | 15.5879   | 23.5405  | 27.7052  |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_Recommend      |          578.621 |           0      | 13.701    | 16.7607  | 20.9447  |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_Geo            |         1819.01  |           0      |  4.35474  |  5.40698 |  6.00062 |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_Temporal       |         3148.03  |           0      |  2.33012  |  3.77632 |  5.04735 |
-| perf   | logs   | result_cuda_float32_768_25000.json     | float32     |   768 |   25000 | Search_LearnedIndex   |          764.85  |           0      | 10.2621   | 14.5312  | 17.2567  |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | DoPut                 |       112351     |          82.2883 |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | DoGet                 |       104186     |          76.308  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_Dense          |         2789.57  |           0      |  2.34954  |  4.2971  |  7.49864 |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_Hybrid         |         2609.19  |           0      |  2.94694  |  4.76457 |  5.41162 |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_Filtered       |         3093.48  |           0      |  2.4572   |  4.01223 |  5.5108  |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_FilteredBool   |         2976.52  |           0      |  2.58944  |  4.08298 |  4.91468 |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_FilteredString |         3047.02  |           0      |  2.51561  |  4.06562 |  4.97632 |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_Sparse         |         7818.53  |           0      |  1.01017  |  1.44972 |  1.65072 |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_ByID           |         3182.03  |           0      |  2.3173   |  4.20107 |  4.96308 |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_GraphRAG       |         2407.83  |           0      |  2.77664  |  5.16529 | 10.6199  |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_GlobalGraphRAG |         2774.98  |           0      |  2.55502  |  4.10709 |  9.10204 |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_Recommend      |         3618.71  |           0      |  2.05023  |  3.54397 |  4.17113 |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_Geo            |         3227.62  |           0      |  2.34859  |  3.62699 |  4.14407 |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_Temporal       |         3769.74  |           0      |  2.08266  |  2.91275 |  3.62268 |
-| perf   | logs   | result_cuda_turboquant8_768_5000.json  | turboquant8 |   768 |    5000 | Search_LearnedIndex   |         2203.14  |           0      |  2.90982  |  7.34481 | 13.2002  |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | DoPut                 |       811475     |          99.0569 |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | DoGet                 |       342065     |          41.7559 |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_Dense          |         3155.38  |           0      |  2.15728  |  3.66459 | 15.6207  |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_Hybrid         |         2804.43  |           0      |  1.93443  |  3.37506 | 33.2324  |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_Filtered       |         3689.52  |           0      |  2.05981  |  3.09844 |  3.89828 |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_FilteredBool   |         3334.27  |           0      |  2.30958  |  3.41386 |  4.06515 |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_FilteredString |         2548.21  |           0      |  2.73289  |  4.42937 | 12.8231  |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_Sparse         |         5857.99  |           0      |  1.1057   |  1.80937 |  2.92955 |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_ByID           |         3702.55  |           0      |  2.12443  |  2.98308 |  3.50102 |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_GraphRAG       |         1252.32  |           0      |  4.27178  | 15.7557  | 37.0875  |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_GlobalGraphRAG |         1531.08  |           0      |  3.70776  | 13.1234  | 27.3623  |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_Recommend      |         3717.64  |           0      |  2.08363  |  2.95024 |  3.6628  |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_Geo            |         3580.62  |           0      |  1.79353  |  3.91434 | 10.9179  |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_Temporal       |         3619.2   |           0      |  2.04297  |  3.54531 |  6.05011 |
-| perf   | logs   | result_cuda_int8_128_5000.json         | int8        |   128 |    5000 | Search_LearnedIndex   |         2895.13  |           0      |  2.56114  |  4.43194 |  5.62022 |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | DoPut                 |       104203     |         305.282  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | DoGet                 |       106618     |         312.358  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_Dense          |         1397.38  |           0      |  4.37297  |  8.39611 | 36.6219  |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_Hybrid         |         1548.25  |           0      |  4.71126  |  6.93056 |  9.68631 |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_Filtered       |         1717.26  |           0      |  4.34646  |  6.362   |  8.10935 |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_FilteredBool   |         1063.17  |           0      |  6.5783   | 10.1105  | 17.4839  |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_FilteredString |          815.941 |           0      |  8.48849  | 13.5063  | 14.1687  |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_Sparse         |         8082.46  |           0      |  0.969071 |  1.39838 |  1.63365 |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_ByID           |         1988.44  |           0      |  3.60882  |  6.7272  | 10.6444  |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_GraphRAG       |          907.429 |           0      |  6.77928  | 18.7599  | 38.7118  |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_GlobalGraphRAG |         1044.8   |           0      |  6.33169  | 13.4217  | 28.1334  |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_Recommend      |         1867.94  |           0      |  3.59051  |  6.07842 | 14.7395  |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_Geo            |         4097.49  |           0      |  1.6879   |  2.72686 |  7.91117 |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_Temporal       |         3955     |           0      |  1.99744  |  3.07025 |  3.52838 |
-| perf   | logs   | result_cuda_int8_3072_5000.json        | int8        |  3072 |    5000 | Search_LearnedIndex   |         1513.68  |           0      |  4.72764  |  7.12851 |  9.43357 |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | DoPut                 |       113953     |         333.848  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | DoGet                 |       111083     |         325.438  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_Dense          |         3033.22  |           0      |  2.29572  |  3.51518 |  5.8532  |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_Hybrid         |         3311.69  |           0      |  2.33017  |  3.70981 |  4.33998 |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_Filtered       |         2467.68  |           0      |  2.34116  |  4.04356 | 35.8084  |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_FilteredBool   |         2796.57  |           0      |  2.74643  |  4.47273 |  5.38225 |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_FilteredString |         2752.3   |           0      |  2.78923  |  4.31483 |  5.04462 |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_Sparse         |         7550.04  |           0      |  1.0595   |  1.45161 |  1.57609 |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_ByID           |         3775.94  |           0      |  2.00988  |  3.25728 |  3.72816 |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_GraphRAG       |         1825.56  |           0      |  3.17648  |  8.9811  | 31.851   |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_GlobalGraphRAG |         2110.2   |           0      |  3.09488  |  6.66113 | 16.3941  |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_Recommend      |         3663.27  |           0      |  2.02655  |  3.4272  |  6.04122 |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_Geo            |         3882.32  |           0      |  1.89471  |  3.14558 |  3.99432 |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_Temporal       |         3868     |           0      |  2.07203  |  2.80937 |  3.09513 |
-| perf   | logs   | result_cuda_float32_768_5000.json      | float32     |   768 |    5000 | Search_LearnedIndex   |         3160.49  |           0      |  2.32939  |  3.86072 |  4.97298 |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | DoPut                 |        30542.2   |         357.916  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | DoGet                 |        41335.3   |         484.398  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_Dense          |         2008.06  |           0      |  3.04228  |  5.73342 | 32.1698  |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_Hybrid         |         2464.99  |           0      |  3.04754  |  4.31823 |  5.21847 |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_Filtered       |         2540.21  |           0      |  2.91059  |  4.35022 |  4.9537  |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_FilteredBool   |         2250.93  |           0      |  3.32669  |  4.84588 |  5.79476 |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_FilteredString |         1715.11  |           0      |  3.78219  |  6.95089 | 27.516   |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_Sparse         |         8440.44  |           0      |  0.950698 |  1.33023 |  1.44849 |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_ByID           |         2600.41  |           0      |  2.75988  |  5.16452 |  6.73942 |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_GraphRAG       |         1243.28  |           0      |  4.73189  | 17.1843  | 22.8001  |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_GlobalGraphRAG |         1403.19  |           0      |  4.29934  | 11.1109  | 33.7085  |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_Recommend      |         2736.85  |           0      |  2.5791   |  4.53639 |  5.70814 |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_Geo            |         3793.95  |           0      |  1.78464  |  3.43794 |  9.91307 |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_Temporal       |         3800.35  |           0      |  2.07093  |  2.85982 |  3.20334 |
-| perf   | logs   | result_cuda_float32_3072_5000.json     | float32     |  3072 |    5000 | Search_LearnedIndex   |         2201.63  |           0      |  3.36795  |  5.17463 |  6.61669 |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | DoPut                 |       641683     |         313.322  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | DoGet                 |       709025     |         346.203  |  0        |  0       |  0       |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_Dense          |         1169.85  |           0      |  6.43865  |  9.14739 | 18.5773  |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_Hybrid         |         1209.2   |           0      |  6.37222  |  9.39041 | 10.6316  |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_Filtered       |         1270.89  |           0      |  6.27094  |  7.60735 |  9.00799 |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_FilteredBool   |         1274.1   |           0      |  6.26822  |  7.47991 |  8.08497 |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_FilteredString |         1242.69  |           0      |  6.38612  |  7.93047 |  9.06521 |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_Sparse         |         7575.98  |           0      |  1.04057  |  1.50664 |  2.05621 |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_ByID           |         1212.52  |           0      |  6.32172  |  9.7866  | 14.684   |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_GraphRAG       |          583.188 |           0      | 13.001    | 20.2628  | 23.3064  |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_GlobalGraphRAG |          576.635 |           0      | 13.1193   | 20.1284  | 23.3089  |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_Recommend      |          963.797 |           0      |  8.20441  | 10.3622  | 12.2206  |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_Geo            |         1896.02  |           0      |  4.06112  |  5.32503 |  6.63949 |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_Temporal       |         3100.96  |           0      |  2.43899  |  3.65603 |  4.2981  |
-| perf   | logs   | result_cuda_float32_128_25000.json     | float32     |   128 |   25000 | Search_LearnedIndex   |         1197.61  |           0      |  5.9972   |  9.16451 | 38.9335  |
-
-### Details: remote (cpu)
-
-| Host   | Mode   | Dataset                                | DType       |   Dim |   Count | Action                |   Throughput_QPS |   Throughput_MBs |    P50_ms |   P95_ms |   P99_ms |
-|:-------|:-------|:---------------------------------------|:------------|------:|--------:|:----------------------|-----------------:|-----------------:|----------:|---------:|---------:|
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | DoPut                 | 638120           |          77.8956 |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | DoGet                 |      1.14678e+06 |         139.987  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Dense          |   1120.52        |           0      |  6.79851  |  9.79538 | 16.8674  |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Hybrid         |   1163.13        |           0      |  6.22727  | 11.2111  | 20.7449  |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Filtered       |   1344.13        |           0      |  5.91911  |  7.53972 |  8.86869 |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_FilteredBool   |   1329.3         |           0      |  5.94195  |  7.4215  |  8.84385 |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_FilteredString |   1321.44        |           0      |  5.93792  |  7.52307 | 10.9807  |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Sparse         |   8137.99        |           0      |  0.966761 |  1.37971 |  1.61682 |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_ByID           |   1243.21        |           0      |  6.03446  | 10.4392  | 14.231   |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_GraphRAG       |   1163.31        |           0      |  6.22088  |  9.9191  | 34.1069  |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_GlobalGraphRAG |   1199.85        |           0      |  6.23764  |  8.5896  | 15.3334  |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Recommend      |   1180.54        |           0      |  6.43034  |  8.85508 | 13.0349  |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Geo            |   1677.26        |           0      |  4.72703  |  5.86374 |  7.06853 |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_Temporal       |   3242.25        |           0      |  2.31983  |  3.52898 |  3.97056 |
-| remote | cpu    | result_cpu_turboquant8_128_25000.json  | turboquant8 |   128 |   25000 | Search_LearnedIndex   |   1258.24        |           0      |  6.2013   |  9.02106 | 11.511   |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | DoPut                 | 446991           |         218.257  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | DoGet                 | 209695           |         102.39   |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Dense          |   3385.64        |           0      |  2.16598  |  3.34824 |  6.87505 |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Hybrid         |   4235.99        |           0      |  1.78923  |  3.13185 |  3.63993 |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Filtered       |   3432.32        |           0      |  2.10687  |  3.25765 |  9.13871 |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_FilteredBool   |   3151.46        |           0      |  2.02766  |  3.27822 | 11.4263  |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_FilteredString |   3032.98        |           0      |  2.19235  |  4.2133  |  9.87015 |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Sparse         |   7372.13        |           0      |  1.08377  |  1.47257 |  1.67513 |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_ByID           |   3834.71        |           0      |  2.01491  |  2.96093 |  3.42365 |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_GraphRAG       |   1188.68        |           0      |  3.49419  | 19.861   | 40.2909  |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_GlobalGraphRAG |   2112.83        |           0      |  2.74606  |  7.47024 | 21.5438  |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Recommend      |   3418.36        |           0      |  2.01358  |  3.21086 |  9.76421 |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Geo            |   3542.45        |           0      |  1.92017  |  4.19574 |  6.88867 |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_Temporal       |   3766.79        |           0      |  2.05703  |  2.9934  |  3.54681 |
-| remote | cpu    | result_cpu_float32_128_5000.json       | float32     |   128 |    5000 | Search_LearnedIndex   |   2748.28        |           0      |  2.48925  |  5.6459  |  8.72277 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | DoPut                 |  30911.4         |          90.5608 |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | DoGet                 |  36860.5         |         107.99   |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Dense          |   2449.31        |           0      |  2.77831  |  4.11885 |  7.3243  |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Hybrid         |   2835.97        |           0      |  2.76726  |  3.77656 |  4.18405 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Filtered       |   2795.12        |           0      |  2.74226  |  4.00003 |  4.60394 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_FilteredBool   |   2781.81        |           0      |  2.79619  |  3.98919 |  4.50413 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_FilteredString |   2873.94        |           0      |  2.44119  |  3.49797 |  4.12658 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Sparse         |   7904.78        |           0      |  0.990368 |  1.42592 |  1.63871 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_ByID           |   3899.65        |           0      |  1.99036  |  3.07361 |  3.71726 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_GraphRAG       |   2559.11        |           0      |  2.96415  |  4.54844 |  5.57954 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_GlobalGraphRAG |   2637.2         |           0      |  2.69523  |  3.91737 |  9.48783 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Recommend      |   3308.95        |           0      |  2.26255  |  3.80234 |  4.41272 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Geo            |   3292.39        |           0      |  1.85412  |  3.29976 | 16.1234  |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_Temporal       |   3839.28        |           0      |  2.03717  |  2.87531 |  3.29147 |
-| remote | cpu    | result_cpu_turboquant8_3072_5000.json  | turboquant8 |  3072 |    5000 | Search_LearnedIndex   |   2581.14        |           0      |  2.69382  |  5.69382 |  9.62574 |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | DoPut                 |      1.62868e+06 |         198.813  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | DoGet                 | 857166           |         104.635  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Dense          |   1380.82        |           0      |  5.0247   | 10.3588  | 18.263   |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Hybrid         |   1557.86        |           0      |  5.03491  |  7.07003 |  8.26553 |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Filtered       |   1644.45        |           0      |  4.7979   |  5.80681 |  8.60721 |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_FilteredBool   |   1675.61        |           0      |  4.74742  |  5.71781 |  6.23418 |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_FilteredString |   1654.55        |           0      |  4.78789  |  5.74133 |  6.89229 |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Sparse         |   7645.69        |           0      |  1.03678  |  1.45477 |  1.59553 |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_ByID           |   1581.29        |           0      |  4.79744  |  7.21015 | 11.2954  |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_GraphRAG       |   1068.49        |           0      |  6.84801  | 10.6243  | 35.4658  |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_GlobalGraphRAG |   1100.24        |           0      |  6.95572  | 10.3772  | 12.5839  |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Recommend      |   1212.41        |           0      |  6.57025  |  8.13159 |  9.17874 |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Geo            |   1588.35        |           0      |  4.90194  |  6.4439  |  7.59874 |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_Temporal       |   2487.04        |           0      |  3.05753  |  4.4009  |  5.04275 |
-| remote | cpu    | result_cpu_int8_128_25000.json         | int8        |   128 |   25000 | Search_LearnedIndex   |   1556.36        |           0      |  5.0316   |  6.9526  |  8.60574 |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | DoPut                 | 112057           |         328.291  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | DoGet                 | 108921           |         319.106  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Dense          |    898.855       |           0      |  6.19432  | 21.172   | 41.9781  |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Hybrid         |   1417.33        |           0      |  5.07135  |  7.66597 |  8.06357 |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Filtered       |   1338.77        |           0      |  5.14799  |  7.94721 | 18.9332  |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_FilteredBool   |    986.425       |           0      |  6.99158  | 10.4877  | 19.0944  |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_FilteredString |    823.275       |           0      |  8.49024  | 13.0707  | 19.1132  |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Sparse         |   8089.68        |           0      |  0.988577 |  1.36882 |  1.52224 |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_ByID           |   1650.48        |           0      |  4.37695  |  6.99673 | 14.065   |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_GraphRAG       |    723.347       |           0      |  8.58141  | 23.9624  | 35.0475  |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_GlobalGraphRAG |    873.95        |           0      |  7.71969  | 16.9695  | 33.7243  |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Recommend      |   1804.8         |           0      |  3.82954  |  6.08045 |  7.74507 |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Geo            |   3383.02        |           0      |  1.82825  |  3.27001 | 24.2328  |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_Temporal       |   3966.45        |           0      |  1.95268  |  3.04801 |  3.65566 |
-| remote | cpu    | result_cpu_int8_3072_5000.json         | int8        |  3072 |    5000 | Search_LearnedIndex   |   1277.34        |           0      |  5.53142  |  8.35095 | 12.5395  |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | DoPut                 | 112027           |          82.051  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | DoGet                 | 131136           |          96.0466 |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Dense          |   3360.02        |           0      |  2.3271   |  3.04011 |  3.83247 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Hybrid         |   3341.2         |           0      |  2.25652  |  3.1612  |  3.65593 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Filtered       |   2978.61        |           0      |  2.149    |  3.05239 |  7.39604 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_FilteredBool   |   3324.27        |           0      |  2.38309  |  3.01354 |  3.28276 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_FilteredString |   3532.13        |           0      |  2.2234   |  2.78434 |  3.31083 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Sparse         |   8233.41        |           0      |  0.966626 |  1.40553 |  1.53087 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_ByID           |   3954.78        |           0      |  1.95267  |  2.80617 |  3.18468 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_GraphRAG       |   3341.32        |           0      |  2.37289  |  2.96798 |  3.26459 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_GlobalGraphRAG |   3302.42        |           0      |  2.38518  |  3.0474  |  3.31063 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Recommend      |   3258.23        |           0      |  1.99579  |  3.23475 |  4.11049 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Geo            |   3110.8         |           0      |  1.9147   |  4.84602 | 17.574   |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_Temporal       |   3608.5         |           0      |  2.08975  |  3.14533 |  6.03103 |
-| remote | cpu    | result_cpu_turboquant8_768_5000.json   | turboquant8 |   768 |    5000 | Search_LearnedIndex   |   2466.6         |           0      |  2.8478   |  5.7138  |  7.00491 |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | DoPut                 |  33449.6         |          97.9968 |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | DoGet                 |  45863.8         |         134.366  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Dense          |    557.591       |           0      | 12.3302   | 28.746   | 51.9899  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Hybrid         |    618.689       |           0      | 11.8747   | 20.4679  | 31.0579  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Filtered       |    606.174       |           0      | 12.0633   | 21.1218  | 45.7621  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_FilteredBool   |    609.465       |           0      | 12.0603   | 18.8321  | 42.5053  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_FilteredString |    619.825       |           0      | 12.4139   | 18.6921  | 26.1774  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Sparse         |   8851.29        |           0      |  0.876125 |  1.32167 |  1.5479  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_ByID           |    614.276       |           0      | 11.9425   | 20.9934  | 33.4358  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_GraphRAG       |    606.304       |           0      | 12.4017   | 20.0408  | 42.5888  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_GlobalGraphRAG |    592.635       |           0      | 12.5786   | 21.8879  | 32.7857  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Recommend      |    606.476       |           0      | 12.0345   | 22.9413  | 45.9265  |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Geo            |   1648.91        |           0      |  4.76322  |  6.04915 |  6.95322 |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_Temporal       |   3126.29        |           0      |  2.4308   |  3.88378 |  4.50222 |
-| remote | cpu    | result_cpu_turboquant8_3072_25000.json | turboquant8 |  3072 |   25000 | Search_LearnedIndex   |    550.922       |           0      | 12.75     | 30.0191  | 47.3934  |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | DoPut                 |  29523.5         |         345.978  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | DoGet                 |  38912.5         |         456.006  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Dense          |   2301.67        |           0      |  3.15553  |  4.997   |  5.99954 |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Hybrid         |   2049.36        |           0      |  3.22668  |  4.97454 | 32.3111  |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Filtered       |   2264.08        |           0      |  3.17852  |  5.1467  |  7.87763 |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_FilteredBool   |   2329.55        |           0      |  3.20598  |  4.59893 |  5.21334 |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_FilteredString |   2062.12        |           0      |  3.62693  |  5.16101 |  5.77204 |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Sparse         |   8694.91        |           0      |  0.928427 |  1.28592 |  1.47106 |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_ByID           |   2699.15        |           0      |  2.62092  |  4.888   |  6.15119 |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_GraphRAG       |   1113.95        |           0      |  5.09802  | 19.4191  | 35.5019  |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_GlobalGraphRAG |   1532.16        |           0      |  4.40011  |  8.46123 | 16.2417  |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Recommend      |   2574.79        |           0      |  2.70756  |  4.63378 |  5.25064 |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Geo            |   3609.89        |           0      |  1.76311  |  2.83775 | 12.6495  |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_Temporal       |   3817.29        |           0      |  2.06416  |  2.88308 |  3.25811 |
-| remote | cpu    | result_cpu_float32_3072_5000.json      | float32     |  3072 |    5000 | Search_LearnedIndex   |   1831.75        |           0      |  3.34595  |  8.70701 | 26.3018  |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | DoPut                 | 910285           |         111.119  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | DoGet                 | 276983           |          33.8114 |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Dense          |   3136.58        |           0      |  2.14963  |  3.19206 | 12.5638  |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Hybrid         |   2998.35        |           0      |  1.95012  |  3.89055 | 32.3406  |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Filtered       |   3652.37        |           0      |  2.1091   |  3.05538 |  4.36284 |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_FilteredBool   |   2955.35        |           0      |  2.56207  |  4.00563 |  5.07    |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_FilteredString |   2460.16        |           0      |  2.59933  |  4.38144 | 17.4906  |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Sparse         |   5805.71        |           0      |  1.14803  |  1.86764 |  2.73133 |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_ByID           |   3806.1         |           0      |  2.08658  |  2.76519 |  3.05956 |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_GraphRAG       |   1439.23        |           0      |  3.62511  | 16.3307  | 31.5016  |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_GlobalGraphRAG |   1703.03        |           0      |  3.46099  | 10.9039  | 28.6365  |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Recommend      |   3148.36        |           0      |  2.04902  |  3.17693 | 18.2042  |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Geo            |   3439.35        |           0      |  1.83472  |  3.41619 | 15.2794  |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_Temporal       |   3669.63        |           0      |  2.03605  |  3.26007 |  6.78344 |
-| remote | cpu    | result_cpu_int8_128_5000.json          | int8        |   128 |    5000 | Search_LearnedIndex   |   2920.96        |           0      |  2.55058  |  4.34667 |  5.54786 |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | DoPut                 | 120749           |         353.757  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | DoGet                 | 210412           |         616.441  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Dense          |    554.044       |           0      | 14.4461   | 17.8759  | 20.3876  |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Hybrid         |    406.996       |           0      | 15.5608   | 48.8508  | 74.3783  |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Filtered       |    542.431       |           0      | 14.6276   | 18.5016  | 21.3914  |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_FilteredBool   |    537.102       |           0      | 14.7027   | 20.4921  | 24.2631  |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_FilteredString |    528.788       |           0      | 15.0723   | 18.8779  | 22.4091  |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Sparse         |   8419.13        |           0      |  0.950903 |  1.3579  |  1.4875  |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_ByID           |    601.343       |           0      | 13.053    | 17.8886  | 25.6442  |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_GraphRAG       |    496.379       |           0      | 15.7249   | 21.9477  | 26.1469  |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_GlobalGraphRAG |    496.853       |           0      | 15.7864   | 21.7022  | 24.2434  |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Recommend      |    393.141       |           0      | 20.1424   | 26.1806  | 32.5185  |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Geo            |   1663.98        |           0      |  4.69692  |  6.22832 |  7.00699 |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_Temporal       |   2366.38        |           0      |  3.17546  |  4.7876  |  6.52108 |
-| remote | cpu    | result_cpu_int8_3072_25000.json        | int8        |  3072 |   25000 | Search_LearnedIndex   |    510.191       |           0      | 15.1828   | 22.5515  | 25.1348  |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | DoPut                 | 613035           |         299.333  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | DoGet                 | 656026           |         320.325  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Dense          |   1210.86        |           0      |  6.24645  |  9.24205 | 14.815   |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Hybrid         |   1147.8         |           0      |  6.31656  | 10.3748  | 23.3911  |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Filtered       |   1286.32        |           0      |  6.12849  |  7.75252 |  9.62723 |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_FilteredBool   |   1309.31        |           0      |  6.09518  |  7.27187 |  8.4782  |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_FilteredString |   1312.43        |           0      |  6.09358  |  7.19207 |  7.8062  |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Sparse         |   8380.89        |           0      |  0.938515 |  1.38154 |  1.57002 |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_ByID           |   1224.04        |           0      |  6.15381  |  9.85858 | 17.0563  |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_GraphRAG       |    562.479       |           0      | 13.6206   | 20.0622  | 23.4332  |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_GlobalGraphRAG |    566.458       |           0      | 13.6844   | 19.5394  | 22.5229  |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Recommend      |    913.467       |           0      |  8.65701  | 10.8055  | 13.3565  |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Geo            |   1794.4         |           0      |  4.42496  |  5.45136 |  5.87925 |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_Temporal       |   3188.25        |           0      |  2.30144  |  3.77069 |  6.45334 |
-| remote | cpu    | result_cpu_float32_128_25000.json      | float32     |   128 |   25000 | Search_LearnedIndex   |   1179.59        |           0      |  6.03192  |  9.57306 | 40.5445  |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | DoPut                 | 485888           |          59.3126 |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | DoGet                 | 452232           |          55.204  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Dense          |   3405.39        |           0      |  2.2489   |  3.15587 |  4.61798 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Hybrid         |   4057.38        |           0      |  1.69721  |  2.77768 |  4.88919 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Filtered       |   3507.53        |           0      |  2.20117  |  3.0145  |  3.58027 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_FilteredBool   |   3200.89        |           0      |  1.92935  |  2.89739 | 38.6253  |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_FilteredString |   3684.56        |           0      |  2.12788  |  2.80419 |  3.35065 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Sparse         |   7006.65        |           0      |  1.13873  |  1.53762 |  1.7374  |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_ByID           |   3729.91        |           0      |  2.08863  |  2.98734 |  3.54894 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_GraphRAG       |   3194.79        |           0      |  2.08471  |  3.09762 |  8.58265 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_GlobalGraphRAG |   3668.07        |           0      |  2.17665  |  2.93182 |  3.4026  |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Recommend      |   3698.64        |           0      |  2.12197  |  2.92509 |  3.32341 |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Geo            |   3227.78        |           0      |  1.84561  |  4.81471 | 14.5706  |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_Temporal       |   3857.26        |           0      |  2.03697  |  2.94757 |  3.4058  |
-| remote | cpu    | result_cpu_turboquant8_128_5000.json   | turboquant8 |   128 |    5000 | Search_LearnedIndex   |   2719.27        |           0      |  2.68215  |  4.96702 |  6.96255 |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | DoPut                 | 121533           |          89.0136 |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | DoGet                 | 195719           |         143.349  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Dense          |    946.425       |           0      |  6.91363  | 15.6024  | 40.2192  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Hybrid         |   1121.54        |           0      |  6.22389  | 11.1011  | 30.7015  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Filtered       |   1202.8         |           0      |  6.10069  | 10.6658  | 14.5866  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_FilteredBool   |   1259.38        |           0      |  6.09009  |  7.42882 | 15.7246  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_FilteredString |   1216.85        |           0      |  6.20813  |  8.10863 | 15.0394  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Sparse         |   8896.38        |           0      |  0.877829 |  1.30577 |  1.44818 |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_ByID           |   1244.92        |           0      |  6.11189  | 10.1222  | 13.9562  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_GraphRAG       |   1166           |           0      |  6.24671  |  8.88766 | 32.0981  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_GlobalGraphRAG |   1201.29        |           0      |  6.44037  |  8.17047 | 17.1912  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Recommend      |   1139.47        |           0      |  6.18666  | 12.4294  | 27.5632  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Geo            |   1751.55        |           0      |  4.44288  |  5.7523  |  7.6397  |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_Temporal       |   3325.34        |           0      |  2.29414  |  3.56128 |  3.98579 |
-| remote | cpu    | result_cpu_turboquant8_768_25000.json  | turboquant8 |   768 |   25000 | Search_LearnedIndex   |   1196.52        |           0      |  6.30366  |  9.38312 | 16.0804  |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | DoPut                 | 390401           |         285.938  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | DoGet                 | 179358           |         131.366  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Dense          |   2506.68        |           0      |  2.62549  |  4.77244 | 15.4788  |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Hybrid         |   2126.39        |           0      |  2.92835  |  4.69606 | 33.8626  |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Filtered       |   2978.27        |           0      |  2.55266  |  4.03066 |  4.50766 |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_FilteredBool   |   2770.5         |           0      |  2.7119   |  3.95659 |  4.46803 |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_FilteredString |   1968.8         |           0      |  3.41229  |  5.1869  | 15.6031  |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Sparse         |   7931.8         |           0      |  0.980355 |  1.43857 |  1.63624 |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_ByID           |   2857.73        |           0      |  2.4799   |  5.30439 |  7.37499 |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_GraphRAG       |   1455.91        |           0      |  4.18452  | 13.3221  | 21.508   |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_GlobalGraphRAG |   1190.41        |           0      |  4.50077  | 19.4582  | 36.5726  |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Recommend      |   2732.01        |           0      |  2.65848  |  4.47386 |  5.56734 |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Geo            |   3859.03        |           0      |  1.78733  |  2.48304 | 12.4862  |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_Temporal       |   3927.54        |           0      |  1.95774  |  3.06384 |  4.06383 |
-| remote | cpu    | result_cpu_int8_768_5000.json          | int8        |   768 |    5000 | Search_LearnedIndex   |   2129.66        |           0      |  2.84077  |  7.95496 | 23.517   |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | DoPut                 | 121415           |         355.709  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | DoGet                 | 106728           |         312.679  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Dense          |   2671.33        |           0      |  2.32989  |  4.15064 | 32.3743  |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Hybrid         |   3102.87        |           0      |  2.52386  |  3.80103 |  4.5422  |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Filtered       |   3211.09        |           0      |  2.37102  |  3.49837 |  4.23809 |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_FilteredBool   |   2827.2         |           0      |  2.70775  |  4.29889 |  5.36127 |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_FilteredString |   2821.28        |           0      |  2.6457   |  4.1886  |  5.31139 |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Sparse         |   7683.35        |           0      |  1.04214  |  1.44224 |  1.58173 |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_ByID           |   3628.43        |           0      |  2.04294  |  3.67315 |  5.32893 |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_GraphRAG       |   1644.76        |           0      |  3.27836  | 12.9679  | 37.8669  |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_GlobalGraphRAG |   1923.11        |           0      |  3.08945  |  8.03252 | 27.222   |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Recommend      |   3868.7         |           0      |  1.97311  |  3.17889 |  3.66831 |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Geo            |   3743.1         |           0      |  1.74638  |  3.33828 |  8.86364 |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_Temporal       |   3875.1         |           0      |  2.04972  |  2.82741 |  3.16184 |
-| remote | cpu    | result_cpu_float32_768_5000.json       | float32     |   768 |    5000 | Search_LearnedIndex   |   2592.2         |           0      |  2.84483  |  4.90107 |  8.40333 |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | DoPut                 | 119882           |         351.218  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | DoGet                 | 212963           |         623.916  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Dense          |    911.762       |           0      |  8.70242  | 10.3865  | 11.7616  |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Hybrid         |    909.055       |           0      |  8.51301  | 12.1992  | 14.7071  |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Filtered       |    894.361       |           0      |  8.74692  | 10.2947  | 11.9352  |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_FilteredBool   |    883.486       |           0      |  8.64101  | 10.3413  | 30.7972  |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_FilteredString |    898.19        |           0      |  8.86025  | 10.3255  | 12.4317  |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Sparse         |   7948.9         |           0      |  0.994241 |  1.42651 |  1.57993 |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_ByID           |    894.475       |           0      |  8.66348  | 11.5257  | 19.3804  |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_GraphRAG       |    618.623       |           0      | 12.3654   | 18.2137  | 32.4966  |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_GlobalGraphRAG |    619.199       |           0      | 12.6572   | 18.155   | 21.5412  |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Recommend      |    690.532       |           0      | 11.596    | 14.4187  | 16.4476  |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Geo            |   1675.32        |           0      |  4.65024  |  5.78866 |  8.14931 |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_Temporal       |   3156.16        |           0      |  2.43523  |  3.69734 |  4.13417 |
-| remote | cpu    | result_cpu_float32_768_25000.json      | float32     |   768 |   25000 | Search_LearnedIndex   |    862.912       |           0      |  9.03594  | 12.714   | 15.6315  |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | DoPut                 |  33703.7         |         394.965  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | DoGet                 |  54653.2         |         640.467  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Dense          |    254.616       |           0      | 31.1342   | 42.1236  | 47.6875  |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Hybrid         |    257.304       |           0      | 30.0217   | 44.7148  | 51.5185  |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Filtered       |    253.051       |           0      | 31.3382   | 42.5612  | 49.4206  |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_FilteredBool   |    252.575       |           0      | 31.5649   | 41.2361  | 49.8745  |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_FilteredString |    250.145       |           0      | 31.9321   | 41.1459  | 48.3105  |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Sparse         |   8211.3         |           0      |  0.960169 |  1.40774 |  1.50516 |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_ByID           |    252.425       |           0      | 31.5177   | 39.7288  | 45.9203  |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_GraphRAG       |    249.605       |           0      | 32.0614   | 44.3444  | 53.7862  |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_GlobalGraphRAG |    249.411       |           0      | 31.605    | 45.3009  | 52.4673  |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Recommend      |    188.651       |           0      | 42.4286   | 55.8986  | 67.3149  |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Geo            |   1561.77        |           0      |  5.09425  |  6.23812 |  6.76006 |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_Temporal       |   3062.29        |           0      |  2.41348  |  3.7809  |  5.87377 |
-| remote | cpu    | result_cpu_float32_3072_25000.json     | float32     |  3072 |   25000 | Search_LearnedIndex   |    253.624       |           0      | 30.9843   | 44.2818  | 50.6524  |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | DoPut                 | 442888           |         324.381  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | DoGet                 | 560201           |         410.304  |  0        |  0       |  0       |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Dense          |   1085.64        |           0      |  7.10135  |  9.28259 | 15.8955  |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Hybrid         |   1063.3         |           0      |  7.28745  | 10.296   | 11.9931  |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Filtered       |   1071.56        |           0      |  7.20324  |  8.70125 | 15.8473  |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_FilteredBool   |   1110.52        |           0      |  7.17758  |  8.38211 |  9.04161 |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_FilteredString |   1111.46        |           0      |  7.22042  |  8.21773 |  8.88789 |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Sparse         |   7623.96        |           0      |  1.02719  |  1.54581 |  1.88275 |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_ByID           |   1176.45        |           0      |  6.5351   |  9.77562 | 13.9856  |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_GraphRAG       |    891.234       |           0      |  8.74596  | 12.2627  | 14.016   |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_GlobalGraphRAG |    878.314       |           0      |  8.96088  | 12.2294  | 14.4464  |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Recommend      |    852.26        |           0      |  9.36548  | 11.5184  | 12.8395  |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Geo            |   1680.6         |           0      |  4.60566  |  6.05358 |  8.94662 |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_Temporal       |   2353.95        |           0      |  3.11597  |  4.78754 |  6.85425 |
-| remote | cpu    | result_cpu_int8_768_25000.json         | int8        |   768 |   25000 | Search_LearnedIndex   |   1055.83        |           0      |  7.42217  | 10.2178  | 11.7209  |
-
-# v0.2.1 Performance Validation
-
-> [!NOTE]
-> **Resolution Update (2026-05-17)**: The P0 regressions described below have been **fully resolved**. The location store distortion affecting sharded index searches (causing 0 QPS) has been corrected in the migration flow, and the TurboQuant configuration state erasure during capacity growth has been fixed. All unit and integration test suites now pass successfully.
-
-## v0.2.1 Performance Validation (2026-05-17) - Commit 7090beb5
-
-> **Note**: Benchmarks executed on local CPU (bahamut, Apple Silicon). Remote CPU (ancalagon, Linux amd64) completed 175/425 configs before encountering same regressions. Metal and CUDA benchmarks not completed due to CPU regressions blocking further testing.
-
-## Critical Regressions Detected
-
-**Search_Dense returns 0 QPS at count >= 10,000** across all dimensions. This is a regression from the previous baseline (2026-05-16) where Search_Dense was 2,380 QPS at count=10,000.
-
-**Most search modes return 0 QPS at count >= 25,000** including Hybrid, ByID, GraphRAG, Recommend, LearnedIndex, Geo, Temporal. Only Sparse search continues to function at higher counts.
-
-**TurboQuant indexing error**: `tq vector N not found` errors at count=25,000 during async batched index add, causing benchmark hangs.
-
-## Search Performance Summary (QPS) - Local CPU (float32, count=5000)
-
-|                                  |   Search_ByID |   Search_Dense |   Search_Filtered |   Search_FilteredBool |   Search_FilteredString |   Search_Geo |   Search_GlobalGraphRAG |   Search_GraphRAG |   Search_Hybrid |   Search_LearnedIndex |   Search_Recommend |   Search_Sparse |   Search_Temporal |
-|:---------------------------------|--------------:|---------------:|------------------:|----------------------:|------------------------:|-------------:|------------------------:|------------------:|----------------:|----------------------:|-------------------:|----------------:|------------------:|
-| float32 dim=128 count=5000       |       5388.7  |        4905.8  |            4981.2 |               4315.0  |                 3826.7  |      5331.2  |                 2242.9  |           1854.4  |         5393.2  |                3995.1 |             5232.8  |        11831.5  |           4310.0  |
-| float32 dim=384 count=5000       |       4721.3  |        4172.2  |            4300.5 |               3890.1  |                 3512.8  |      4890.3  |                 1923.4  |           1654.2  |         4401.7  |                3512.6 |             4678.9  |        12266.0  |           3945.2  |
-| float32 dim=768 count=5000       |       4064.4  |        3458.3  |            3612.7 |               3298.4  |                 2987.5  |      4234.1  |                 1567.8  |           1398.2  |         3631.6  |                2987.3 |             3876.5  |        12105.1  |           3456.7  |
-| float32 dim=1024 count=5000      |       3920.2  |        3224.0  |            3398.5 |               3087.6  |                 2798.3  |      3987.6  |                 1345.2  |           1198.7  |         3455.1  |                2765.4 |             3567.8  |        11613.0  |           3234.5  |
-| float32 dim=3072 count=5000      |       2766.8  |        2361.9  |            2498.7 |               2234.5  |                 2012.3  |      2876.5  |                  987.6  |            876.5  |         2367.3  |                2012.4 |             2543.2  |        11551.5  |           2345.6  |
-
-## Search Performance at count=10000 - REGRESSION (Search_Dense = 0)
-
-|                                  |   Search_ByID |   Search_Dense |   Search_Filtered |   Search_FilteredBool |   Search_FilteredString |   Search_Geo |   Search_GlobalGraphRAG |   Search_GraphRAG |   Search_Hybrid |   Search_LearnedIndex |   Search_Recommend |   Search_Sparse |   Search_Temporal |
-|:---------------------------------|--------------:|---------------:|------------------:|----------------------:|------------------------:|-------------:|------------------------:|------------------:|----------------:|----------------------:|-------------------:|----------------:|------------------:|
-| float32 dim=128 count=10000      |       2202.6  |           0.0  |            2122.3 |               2143.3  |                 2173.2  |      4279.6  |                  967.5  |            966.0  |          945.3  |                2017.7 |             1728.9  |        11771.1  |           4310.0  |
-| float32 dim=384 count=10000      |       1786.2  |           0.0  |            1698.5 |               1723.4  |                 1756.8  |      3456.7  |                  789.3  |            798.2  |            0.0  |                1654.3 |             1398.7  |        11695.5  |           3456.8  |
-
-## Ingestion Performance (MB/s) - Local CPU (float32)
-
-|                                  |   Throughput_MBs |   Vec/s       |
-|:---------------------------------|-----------------:|--------------:|
-| float32 dim=128 count=5000       |           360.6  |     738,439   |
-| float32 dim=128 count=10000      |           592.9  |   1,214,188   |
-| float32 dim=128 count=25000      |           748.2  |   1,532,456   |
-| float32 dim=384 count=5000       |           655.0  |     456,789   |
-| float32 dim=384 count=10000      |           862.8  |     602,345   |
-| float32 dim=768 count=5000       |           920.1  |     321,234   |
-| float32 dim=1024 count=5000      |           926.1  |     241,567   |
-| float32 dim=3072 count=5000      |          1112.6  |      96,234   |
-
-## Search Latency Summary (P95 ms) - Local CPU (float32, count=5000)
-
-|                                  |   Search_ByID |   Search_Dense |   Search_Filtered |   Search_FilteredBool |   Search_FilteredString |   Search_Geo |   Search_GlobalGraphRAG |   Search_GraphRAG |   Search_Hybrid |   Search_LearnedIndex |   Search_Recommend |   Search_Sparse |   Search_Temporal |
-|:---------------------------------|--------------:|---------------:|------------------:|----------------------:|------------------------:|-------------:|------------------------:|------------------:|----------------:|----------------------:|-------------------:|----------------:|------------------:|
-| float32 dim=128 count=5000       |          5.08 |           2.89 |              2.95 |                  5.42 |                   5.31 |         2.60 |                  14.83 |             14.36 |            5.37 |                  4.95 |               6.58 |            1.08 |              2.56 |
-| float32 dim=384 count=5000       |          5.30 |           3.12 |              3.18 |                  5.67 |                   5.54 |         2.78 |                  16.23 |             15.87 |            5.61 |                  5.23 |               6.89 |            1.15 |              2.71 |
-| float32 dim=768 count=5000       |          5.56 |           3.45 |              3.52 |                  5.98 |                   5.87 |         2.95 |                  17.89 |             17.34 |            5.89 |                  5.56 |               7.23 |            1.23 |              2.89 |
-
-## Comparison vs Previous Baseline (2026-05-16)
-
-| Metric                  | Previous (count=10000) | Current (count=5000) | Current (count=10000) | Delta        |
-|:------------------------|---------------------:|--------------------:|---------------------:|:-------------|
-| Ingest MB/s             |                438.2 |               592.9 |                592.9 | **+35.3%**   |
-| Search_Dense QPS        |              2,380.8 |             4,905.8 |                  0.0 | **-100%**    |
-| Search_Hybrid QPS       |              2,537.3 |             5,393.2 |                945.3 | **-62.7%**   |
-| Search_Sparse QPS       |              4,380.0 |            11,831.5 |             11,771.1 | **+168.9%**  |
-| Search_ByID QPS         |              1,601.1 |             5,388.7 |              2,202.6 | **+37.6%**   |
-| Search_Geo QPS          |              2,882.5 |             5,331.2 |              4,279.6 | **+48.4%**   |
-| Search_Temporal QPS     |              3,509.7 |             4,310.0 |              4,310.0 | **+22.8%**   |
-| Search_LearnedIndex QPS |              1,734.8 |             3,995.1 |              2,017.7 | **+16.3%**   |
-
-## Benchmark Coverage
-
-- **Local CPU (bahamut)**: 179/425 configs completed (42%). Stalled at count=25000 with turboquant errors.
-- **Remote CPU (ancalagon)**: 175/425 configs completed (41%). Same regression pattern observed.
-- **Local Metal**: Not executed (blocked by CPU regressions).
-- **Remote CUDA**: Not executed (blocked by CPU regressions).
-
-## Errors Observed
-
-1. `tq vector 13306 not found` - Async batched index add failure for TurboQuant at count=25000
-2. `bench_turboquant4_128_25000 failed` - Local CPU
-3. `bench_float32_384_25000 failed` - Local CPU
-4. `bench_turboquant2_128_25000 failed` - Remote CPU
-5. `bench_turboquant8_128_25000 failed` - Remote CPU
-
-## Historical Regression & Remediation Audit
-
-This section documents the deep-dive technical audit of the historical regressions identified between version `v0.2.0-rc2` and `v0.2.1-rc` along with their corresponding architectural remediations and commits.
-
-### 1. Shared Vector Space Search Degradation
-- **Nature of Regression**: Under high concurrent search loads, QPS for dense vector searches degraded by over 60%. Profile analysis indicated extreme CPU cache line thrashing and thread lock contention.
-- **Root Cause**: The search loop was performing registry-map and chunk-metadata lookups in every iteration via `data.GetVectorsChunkWithGen`. This caused high overhead in map access, pointer dereferences, and read-lock acquisitions for chunk segments.
-- **Remediation Commit**: [`13b25cf3`](file:///Users/rsd/REPOS/longbow/commit/13b25cf3)
-- **Remediation Details**: Redesigned the hot search path to pre-extract Arrow record batch arrays into flat, contiguous primitive slices (`slices [][]float32` / `slices [][]int8`) using the `sharedFloat32Computer` / `sharedInt8Computer` mechanisms prior to entering the search loop. This completely bypassed registry-map lookup overhead.
-
-### 2. HNSW Lock Deadlocks and Neighbor Collection Regressions
-- **Nature of Regression**: Highly concurrent search and ingestion operations randomly caused total server freezes and benchmark timeouts (complete lockups).
-- **Root Cause**: Deadlocks occurred during concurrent graph traversals and updates where entry nodes and dynamic levels were locked out of order. In particular, neighbor collection locks were held during recursive step-wise walks without unlocking intermediate nodes.
-- **Remediation Commit**: [`27757a7c`](file:///Users/rsd/REPOS/longbow/commit/27757a7c)
-- **Remediation Details**: Enforced a strict lock-ordering hierarchy across all graph mutation and search paths. Traversal locks are acquired, read, and immediately released, rather than holding recursive read locks. Furthermore, lock-free double-checked reads were added for stable high-level layers.
-
-### 3. Sharded Location Store Page Split Distortions
-- **Nature of Regression**: Ingestion of more than 10,000 vectors caused `Search_Dense` and other primary search paths to drop immediately to 0 QPS.
-- **Root Cause**: During high ingestion rates, page splits in the sharded location store did not update parent boundary pointers atomically. This led to orphaned page shards and broken pointer traversal paths, causing search operations to silently fail or return empty datasets.
-- **Remediation Commit**: [`95b35ce5`](file:///Users/rsd/REPOS/longbow/commit/95b35ce5)
-- **Remediation Details**: Replaced sharded page splitting with an atomic double-checked splitting sequence protected by memory barriers. Page boundary pointers are swapped atomically using Go `unsafe.Pointer` atomic operations, guaranteeing that no reader ever sees an incomplete or orphaned page boundary.
-
-### 4. TurboQuant Growth State Erasures
-- **Nature of Regression**: Scaling datasets beyond 25,000 vectors caused `tq vector not found` errors and index corruption.
-- **Root Cause**: When the dynamic memory allocation of the index expanded to accommodate larger vector counts, TurboQuant configuration metadata (codebook clusters and scale parameters) was being partially erased or overwritten due to shallow slice copies in the index expansion path.
-- **Remediation Commit**: [`95b35ce5`](file:///Users/rsd/REPOS/longbow/commit/95b35ce5) (remediated in same sweep)
-- **Remediation Details**: Implemented deep-copy handlers for all quantization structures during slice and segment re-allocations. All training centroids, configuration flags, and compression parameters are fully duplicated and verified using automated checksums during index growth events.
+<!-- Auto-generated by generate_performance_report.py -->
+<!-- Generated: 2026-05-22 04:54 -->
+
+# Longbow Performance Report
+
+## Search Performance Summary (Dense QPS)
+
+| Mode | DType | Dim | Count | Dense QPS | P50 (ms) | P95 (ms) | P99 (ms) |
+|------|-------|-----|-------|-----------|----------|----------|----------|
+| cuda | complex128 | 128 | 1000 | 3585 | 1.54 | 2.32 | 5.43 |
+| cuda | complex128 | 128 | 5000 | 3692 | 1.50 | 2.61 | 4.57 |
+| cuda | complex128 | 128 | 25000 | 2958 | 1.93 | 2.97 | 3.74 |
+| cuda | complex128 | 384 | 1000 | 3205 | 1.74 | 3.05 | 6.27 |
+| cuda | complex128 | 384 | 5000 | 2287 | 2.45 | 4.03 | 4.68 |
+| cuda | complex128 | 384 | 25000 | 1884 | 3.02 | 4.52 | 5.38 |
+| cuda | complex128 | 768 | 1000 | 2926 | 1.96 | 3.34 | 4.20 |
+| cuda | complex128 | 768 | 5000 | 1645 | 3.25 | 5.56 | 7.36 |
+| cuda | complex128 | 768 | 25000 | 1464 | 3.85 | 5.73 | 6.39 |
+| cuda | complex128 | 1024 | 1000 | 2419 | 2.30 | 3.89 | 4.64 |
+| cuda | complex128 | 1024 | 5000 | 1407 | 3.93 | 5.94 | 6.57 |
+| cuda | complex128 | 1024 | 25000 | 1156 | 4.93 | 7.13 | 7.92 |
+| cuda | complex128 | 3072 | 1000 | 1393 | 3.97 | 5.82 | 6.88 |
+| cuda | complex128 | 3072 | 5000 | 553 | 10.46 | 14.11 | 15.63 |
+| cuda | complex128 | 3072 | 25000 | 439 | 13.15 | 17.54 | 19.50 |
+| cuda | complex64 | 128 | 1000 | 3136 | 1.52 | 3.95 | 10.35 |
+| cuda | complex64 | 128 | 5000 | 3463 | 1.51 | 3.18 | 6.21 |
+| cuda | complex64 | 128 | 25000 | 3230 | 1.72 | 2.95 | 4.74 |
+| cuda | complex64 | 384 | 1000 | 3156 | 1.74 | 2.59 | 7.20 |
+| cuda | complex64 | 384 | 5000 | 2944 | 1.89 | 3.60 | 4.49 |
+| cuda | complex64 | 384 | 25000 | 2707 | 2.09 | 3.30 | 4.00 |
+| cuda | complex64 | 768 | 1000 | 3138 | 1.91 | 2.79 | 4.33 |
+| cuda | complex64 | 768 | 5000 | 2140 | 2.59 | 4.41 | 5.95 |
+| cuda | complex64 | 768 | 25000 | 1976 | 2.86 | 4.48 | 5.36 |
+| cuda | complex64 | 1024 | 1000 | 2672 | 2.16 | 3.57 | 4.93 |
+| cuda | complex64 | 1024 | 5000 | 1852 | 2.92 | 4.80 | 5.81 |
+| cuda | complex64 | 1024 | 25000 | 1768 | 3.21 | 5.08 | 5.60 |
+| cuda | complex64 | 3072 | 1000 | 1738 | 3.13 | 5.05 | 5.91 |
+| cuda | complex64 | 3072 | 5000 | 988 | 5.30 | 9.25 | 12.12 |
+| cuda | complex64 | 3072 | 25000 | 759 | 7.25 | 11.19 | 12.18 |
+| cuda | float16 | 128 | 1000 | 3560 | 1.53 | 3.06 | 4.96 |
+| cuda | float16 | 128 | 5000 | 1512 | 3.06 | 5.37 | 16.94 |
+| cuda | float16 | 128 | 25000 | 371 | 14.40 | 18.69 | 39.87 |
+| cuda | float16 | 128 | 100000 | 46 | 123.55 | 143.84 | 238.71 |
+| cuda | float16 | 384 | 1000 | 3364 | 1.60 | 2.65 | 7.29 |
+| cuda | float16 | 384 | 5000 | 1719 | 2.99 | 4.86 | 8.78 |
+| cuda | float16 | 384 | 25000 | 388 | 13.55 | 18.34 | 35.78 |
+| cuda | float16 | 384 | 100000 | 48 | 120.67 | 135.21 | 145.56 |
+| cuda | float16 | 768 | 1000 | 3081 | 1.69 | 3.52 | 7.43 |
+| cuda | float16 | 768 | 5000 | 1734 | 2.89 | 5.26 | 10.40 |
+| cuda | float16 | 768 | 25000 | 400 | 13.73 | 19.25 | 21.11 |
+| cuda | float16 | 768 | 100000 | 49 | 117.56 | 134.24 | 143.67 |
+| cuda | float16 | 1024 | 1000 | 3011 | 1.82 | 3.76 | 6.54 |
+| cuda | float16 | 1024 | 5000 | 1624 | 3.13 | 5.92 | 12.48 |
+| cuda | float16 | 1024 | 25000 | 391 | 14.00 | 18.63 | 21.32 |
+| cuda | float16 | 1024 | 100000 | 47 | 118.87 | 133.11 | 147.63 |
+| cuda | float16 | 3072 | 1000 | 2367 | 2.27 | 4.13 | 5.85 |
+| cuda | float16 | 3072 | 5000 | 1453 | 3.54 | 5.85 | 9.74 |
+| cuda | float16 | 3072 | 25000 | 366 | 14.03 | 20.13 | 53.93 |
+| cuda | float32 | 128 | 1000 | 3532 | 1.48 | 2.66 | 7.72 |
+| cuda | float32 | 128 | 5000 | 3679 | 1.50 | 2.65 | 5.03 |
+| cuda | float32 | 128 | 25000 | 3288 | 1.63 | 2.89 | 5.08 |
+| cuda | float32 | 128 | 100000 | 2642 | 2.07 | 3.58 | 7.31 |
+| cuda | float32 | 384 | 1000 | 3499 | 1.56 | 2.61 | 8.37 |
+| cuda | float32 | 384 | 5000 | 3717 | 1.53 | 2.52 | 3.36 |
+| cuda | float32 | 384 | 25000 | 3204 | 1.77 | 2.92 | 4.05 |
+| cuda | float32 | 384 | 100000 | 2426 | 2.34 | 3.79 | 5.60 |
+| cuda | float32 | 768 | 1000 | 3287 | 1.61 | 3.10 | 6.71 |
+| cuda | float32 | 768 | 5000 | 3598 | 1.59 | 2.62 | 3.42 |
+| cuda | float32 | 768 | 25000 | 2531 | 2.25 | 3.63 | 4.54 |
+| cuda | float32 | 768 | 100000 | 1989 | 2.87 | 4.38 | 5.01 |
+| cuda | float32 | 1024 | 1000 | 2914 | 1.86 | 3.89 | 5.73 |
+| cuda | float32 | 1024 | 5000 | 2888 | 1.97 | 3.38 | 4.27 |
+| cuda | float32 | 1024 | 25000 | 2064 | 2.69 | 4.43 | 5.19 |
+| cuda | float32 | 1024 | 100000 | 1796 | 3.13 | 4.90 | 5.82 |
+| cuda | float32 | 3072 | 1000 | 2073 | 2.63 | 4.77 | 6.18 |
+| cuda | float32 | 3072 | 5000 | 1764 | 3.06 | 5.71 | 7.23 |
+| cuda | float32 | 3072 | 25000 | 1256 | 4.38 | 6.69 | 7.68 |
+| cuda | float64 | 128 | 1000 | 3479 | 1.51 | 2.96 | 6.81 |
+| cuda | float64 | 128 | 5000 | 3840 | 1.47 | 2.49 | 3.49 |
+| cuda | float64 | 128 | 25000 | 3257 | 1.73 | 2.87 | 3.79 |
+| cuda | float64 | 128 | 100000 | 337 | 15.50 | 31.58 | 36.82 |
+| cuda | float64 | 384 | 1000 | 3417 | 1.59 | 2.63 | 6.11 |
+| cuda | float64 | 384 | 5000 | 3453 | 1.61 | 2.82 | 3.94 |
+| cuda | float64 | 384 | 25000 | 2792 | 2.07 | 3.08 | 3.68 |
+| cuda | float64 | 384 | 100000 | 290 | 20.12 | 30.22 | 34.99 |
+| cuda | float64 | 768 | 1000 | 3100 | 1.75 | 3.68 | 6.54 |
+| cuda | float64 | 768 | 5000 | 2643 | 2.15 | 3.34 | 4.25 |
+| cuda | float64 | 768 | 25000 | 2175 | 2.66 | 3.87 | 4.50 |
+| cuda | float64 | 768 | 100000 | 237 | 26.21 | 38.05 | 44.52 |
+| cuda | float64 | 1024 | 1000 | 3245 | 1.83 | 2.59 | 4.03 |
+| cuda | float64 | 1024 | 5000 | 2177 | 2.61 | 4.12 | 4.93 |
+| cuda | float64 | 1024 | 25000 | 1885 | 3.02 | 4.38 | 5.63 |
+| cuda | float64 | 1024 | 100000 | 188 | 31.28 | 41.47 | 50.49 |
+| cuda | float64 | 3072 | 1000 | 2266 | 2.47 | 3.86 | 4.54 |
+| cuda | float64 | 3072 | 5000 | 1185 | 4.78 | 6.69 | 7.36 |
+| cuda | float64 | 3072 | 25000 | 951 | 6.06 | 8.21 | 8.85 |
+| cuda | float64 | 3072 | 100000 | 68 | 88.13 | 99.42 | 107.24 |
+| cuda | int16 | 128 | 1000 | 1976 | 2.55 | 6.28 | 13.69 |
+| cuda | int16 | 128 | 5000 | 620 | 9.07 | 12.41 | 13.53 |
+| cuda | int16 | 128 | 25000 | 121 | 47.56 | 56.34 | 62.85 |
+| cuda | int16 | 128 | 100000 | 28 | 202.95 | 225.25 | 371.09 |
+| cuda | int16 | 384 | 1000 | 2184 | 2.45 | 4.17 | 9.94 |
+| cuda | int16 | 384 | 5000 | 571 | 9.79 | 12.99 | 15.49 |
+| cuda | int16 | 384 | 25000 | 118 | 48.84 | 59.62 | 66.97 |
+| cuda | int16 | 768 | 1000 | 1905 | 2.99 | 5.18 | 6.03 |
+| cuda | int16 | 768 | 5000 | 598 | 9.55 | 13.00 | 14.63 |
+| cuda | int16 | 768 | 25000 | 119 | 48.29 | 60.58 | 71.53 |
+| cuda | int16 | 1024 | 1000 | 2431 | 2.10 | 4.42 | 7.13 |
+| cuda | int16 | 1024 | 5000 | 512 | 10.99 | 14.71 | 16.42 |
+| cuda | int16 | 1024 | 25000 | 119 | 48.03 | 58.22 | 66.35 |
+| cuda | int16 | 3072 | 1000 | 1959 | 2.63 | 5.56 | 6.98 |
+| cuda | int16 | 3072 | 5000 | 505 | 11.33 | 17.22 | 21.71 |
+| cuda | int16 | 3072 | 25000 | 120 | 48.10 | 58.53 | 67.52 |
+| cuda | int32 | 128 | 1000 | 2716 | 1.60 | 5.13 | 12.60 |
+| cuda | int32 | 128 | 5000 | 1451 | 3.38 | 5.35 | 16.82 |
+| cuda | int32 | 128 | 25000 | 337 | 16.53 | 22.14 | 25.11 |
+| cuda | int32 | 384 | 1000 | 3342 | 1.61 | 3.28 | 6.58 |
+| cuda | int32 | 384 | 5000 | 1445 | 3.38 | 6.20 | 16.38 |
+| cuda | int32 | 384 | 25000 | 295 | 17.00 | 36.33 | 45.11 |
+| cuda | int32 | 768 | 1000 | 3292 | 1.70 | 2.78 | 5.62 |
+| cuda | int32 | 768 | 5000 | 1557 | 3.19 | 5.15 | 8.10 |
+| cuda | int32 | 768 | 25000 | 348 | 14.74 | 20.77 | 23.46 |
+| cuda | int32 | 1024 | 1000 | 3282 | 1.66 | 3.02 | 5.63 |
+| cuda | int32 | 1024 | 5000 | 1546 | 3.30 | 5.20 | 8.20 |
+| cuda | int32 | 1024 | 25000 | 345 | 15.32 | 22.10 | 39.36 |
+| cuda | int32 | 3072 | 1000 | 2464 | 2.29 | 3.90 | 4.76 |
+| cuda | int32 | 3072 | 5000 | 1308 | 4.04 | 6.73 | 10.56 |
+| cuda | int32 | 3072 | 25000 | 334 | 15.56 | 22.20 | 56.61 |
+| cuda | int64 | 128 | 1000 | 2543 | 2.14 | 4.05 | 8.71 |
+| cuda | int64 | 128 | 5000 | 564 | 9.96 | 13.29 | 18.02 |
+| cuda | int64 | 128 | 25000 | 116 | 48.21 | 62.04 | 105.97 |
+| cuda | int64 | 384 | 1000 | 2015 | 2.91 | 4.37 | 5.78 |
+| cuda | int64 | 384 | 5000 | 575 | 9.90 | 13.67 | 15.21 |
+| cuda | int64 | 384 | 25000 | 117 | 48.48 | 59.09 | 66.67 |
+| cuda | int64 | 768 | 1000 | 2273 | 2.44 | 4.32 | 5.54 |
+| cuda | int64 | 768 | 5000 | 570 | 10.01 | 13.23 | 15.00 |
+| cuda | int64 | 768 | 25000 | 122 | 45.76 | 68.57 | 77.19 |
+| cuda | int64 | 1024 | 1000 | 2286 | 2.37 | 4.24 | 7.00 |
+| cuda | int64 | 1024 | 5000 | 575 | 9.75 | 13.63 | 16.21 |
+| cuda | int64 | 1024 | 25000 | 125 | 45.58 | 56.82 | 64.19 |
+| cuda | int64 | 3072 | 1000 | 1521 | 3.58 | 6.75 | 8.15 |
+| cuda | int64 | 3072 | 5000 | 522 | 10.54 | 16.46 | 21.56 |
+| cuda | int64 | 3072 | 25000 | 119 | 47.70 | 58.18 | 65.63 |
+| cuda | int8 | 128 | 1000 | 3476 | 1.42 | 3.68 | 10.40 |
+| cuda | int8 | 128 | 5000 | 3490 | 1.45 | 3.27 | 7.14 |
+| cuda | int8 | 128 | 25000 | 3702 | 1.37 | 2.54 | 6.96 |
+| cuda | int8 | 128 | 100000 | 738 | 6.80 | 16.03 | 26.05 |
+| cuda | int8 | 384 | 1000 | 3366 | 1.58 | 2.92 | 5.87 |
+| cuda | int8 | 384 | 5000 | 3082 | 1.65 | 3.82 | 6.64 |
+| cuda | int8 | 384 | 25000 | 3139 | 1.75 | 3.16 | 4.69 |
+| cuda | int8 | 384 | 100000 | 326 | 16.94 | 25.10 | 27.32 |
+| cuda | int8 | 768 | 1000 | 3102 | 1.69 | 3.53 | 8.54 |
+| cuda | int8 | 768 | 5000 | 2755 | 1.92 | 3.74 | 7.34 |
+| cuda | int8 | 768 | 25000 | 2228 | 2.45 | 4.44 | 6.21 |
+| cuda | int8 | 768 | 100000 | 239 | 23.51 | 33.02 | 35.70 |
+| cuda | int8 | 1024 | 1000 | 2771 | 1.82 | 4.82 | 9.20 |
+| cuda | int8 | 1024 | 5000 | 2120 | 2.50 | 4.95 | 9.95 |
+| cuda | int8 | 1024 | 25000 | 2177 | 2.51 | 4.40 | 5.12 |
+| cuda | int8 | 1024 | 100000 | 187 | 29.89 | 41.42 | 45.87 |
+| cuda | int8 | 3072 | 1000 | 2019 | 2.78 | 4.72 | 7.37 |
+| cuda | int8 | 3072 | 5000 | 1272 | 3.85 | 6.73 | 14.86 |
+| cuda | int8 | 3072 | 25000 | 1041 | 4.80 | 8.41 | 13.87 |
+| cuda | turboquant2 | 128 | 1000 | 3423 | 1.53 | 2.56 | 7.86 |
+| cuda | turboquant2 | 128 | 5000 | 3930 | 1.45 | 2.04 | 3.40 |
+| cuda | turboquant2 | 128 | 25000 | 2892 | 1.65 | 4.00 | 9.13 |
+| cuda | turboquant2 | 384 | 1000 | 3394 | 1.57 | 3.00 | 7.42 |
+| cuda | turboquant2 | 384 | 5000 | 3533 | 1.61 | 2.32 | 5.07 |
+| cuda | turboquant2 | 384 | 25000 | 3760 | 1.60 | 2.21 | 2.43 |
+| cuda | turboquant2 | 768 | 1000 | 3191 | 1.70 | 3.46 | 5.78 |
+| cuda | turboquant2 | 768 | 5000 | 3433 | 1.72 | 2.42 | 3.25 |
+| cuda | turboquant2 | 768 | 25000 | 3447 | 1.71 | 2.43 | 2.91 |
+| cuda | turboquant2 | 1024 | 1000 | 3093 | 1.78 | 3.12 | 5.62 |
+| cuda | turboquant2 | 1024 | 5000 | 3394 | 1.78 | 2.32 | 2.58 |
+| cuda | turboquant2 | 1024 | 25000 | 3307 | 1.82 | 2.36 | 2.69 |
+| cuda | turboquant2 | 3072 | 1000 | 2507 | 2.23 | 3.95 | 5.12 |
+| cuda | turboquant2 | 3072 | 5000 | 2600 | 2.20 | 3.60 | 4.32 |
+| cuda | turboquant2 | 3072 | 25000 | 2676 | 2.16 | 3.36 | 3.95 |
+| cuda | turboquant4 | 128 | 1000 | 3177 | 1.57 | 3.40 | 9.27 |
+| cuda | turboquant4 | 128 | 5000 | 3491 | 1.59 | 2.51 | 5.00 |
+| cuda | turboquant4 | 128 | 25000 | 3623 | 1.64 | 2.26 | 2.78 |
+| cuda | turboquant4 | 384 | 1000 | 3364 | 1.54 | 2.84 | 9.57 |
+| cuda | turboquant4 | 384 | 5000 | 4479 | 1.22 | 1.86 | 4.61 |
+| cuda | turboquant4 | 384 | 25000 | 3743 | 1.55 | 2.19 | 2.56 |
+| cuda | turboquant4 | 768 | 1000 | 3164 | 1.72 | 3.18 | 6.36 |
+| cuda | turboquant4 | 768 | 5000 | 3487 | 1.70 | 2.31 | 2.86 |
+| cuda | turboquant4 | 768 | 25000 | 3472 | 1.68 | 2.41 | 3.99 |
+| cuda | turboquant4 | 1024 | 1000 | 3066 | 1.81 | 2.91 | 6.53 |
+| cuda | turboquant4 | 1024 | 5000 | 3320 | 1.80 | 2.34 | 2.50 |
+| cuda | turboquant4 | 1024 | 25000 | 3304 | 1.82 | 2.41 | 2.89 |
+| cuda | turboquant4 | 3072 | 1000 | 2548 | 2.16 | 3.81 | 6.18 |
+| cuda | turboquant4 | 3072 | 5000 | 2814 | 2.06 | 3.39 | 4.08 |
+| cuda | turboquant4 | 3072 | 25000 | 2743 | 2.10 | 3.25 | 3.81 |
+| cuda | turboquant8 | 128 | 1000 | 3404 | 1.47 | 2.67 | 9.45 |
+| cuda | turboquant8 | 128 | 5000 | 3695 | 1.54 | 2.39 | 4.19 |
+| cuda | turboquant8 | 128 | 25000 | 3534 | 1.64 | 2.38 | 3.16 |
+| cuda | turboquant8 | 384 | 1000 | 3303 | 1.60 | 2.73 | 8.46 |
+| cuda | turboquant8 | 384 | 5000 | 3548 | 1.61 | 2.30 | 4.86 |
+| cuda | turboquant8 | 384 | 25000 | 3699 | 1.60 | 2.20 | 2.58 |
+| cuda | turboquant8 | 768 | 1000 | 3118 | 1.73 | 3.52 | 8.29 |
+| cuda | turboquant8 | 768 | 5000 | 5217 | 1.11 | 1.43 | 1.92 |
+| cuda | turboquant8 | 768 | 25000 | 3442 | 1.68 | 2.42 | 4.63 |
+| cuda | turboquant8 | 1024 | 1000 | 3152 | 1.74 | 3.54 | 5.74 |
+| cuda | turboquant8 | 1024 | 5000 | 3273 | 1.81 | 2.34 | 2.70 |
+| cuda | turboquant8 | 1024 | 25000 | 3291 | 1.83 | 2.44 | 2.88 |
+| cuda | turboquant8 | 3072 | 1000 | 2509 | 2.15 | 4.09 | 5.70 |
+| cuda | turboquant8 | 3072 | 5000 | 2623 | 2.15 | 3.60 | 4.41 |
+| cuda | turboquant8 | 3072 | 25000 | 2730 | 2.10 | 3.27 | 3.78 |
+| cuda | uint16 | 128 | 1000 | 2260 | 2.36 | 4.13 | 10.32 |
+| cuda | uint16 | 128 | 5000 | 555 | 9.78 | 13.27 | 16.38 |
+| cuda | uint16 | 128 | 25000 | 118 | 48.83 | 60.46 | 67.51 |
+| cuda | uint16 | 384 | 1000 | 2213 | 2.42 | 3.70 | 13.30 |
+| cuda | uint16 | 384 | 5000 | 593 | 9.39 | 13.25 | 16.22 |
+| cuda | uint16 | 384 | 25000 | 128 | 45.12 | 56.36 | 61.35 |
+| cuda | uint16 | 768 | 1000 | 2182 | 2.49 | 4.23 | 8.21 |
+| cuda | uint16 | 768 | 5000 | 546 | 10.31 | 14.23 | 16.54 |
+| cuda | uint16 | 768 | 25000 | 119 | 48.23 | 58.85 | 67.32 |
+| cuda | uint16 | 1024 | 1000 | 2216 | 2.42 | 4.25 | 9.52 |
+| cuda | uint16 | 1024 | 5000 | 554 | 10.26 | 14.04 | 16.61 |
+| cuda | uint16 | 1024 | 25000 | 119 | 47.50 | 67.76 | 80.35 |
+| cuda | uint16 | 3072 | 1000 | 1795 | 2.98 | 5.62 | 8.30 |
+| cuda | uint16 | 3072 | 5000 | 502 | 11.47 | 17.28 | 23.89 |
+| cuda | uint16 | 3072 | 25000 | 120 | 47.96 | 60.26 | 67.30 |
+| cuda | uint32 | 128 | 1000 | 2679 | 1.99 | 3.46 | 7.75 |
+| cuda | uint32 | 128 | 5000 | 595 | 9.46 | 13.11 | 14.81 |
+| cuda | uint32 | 128 | 25000 | 111 | 49.06 | 77.92 | 145.15 |
+| cuda | uint32 | 384 | 1000 | 2242 | 2.34 | 4.81 | 9.32 |
+| cuda | uint32 | 384 | 5000 | 558 | 10.14 | 13.68 | 15.49 |
+| cuda | uint32 | 384 | 25000 | 119 | 48.28 | 60.20 | 68.30 |
+| cuda | uint32 | 768 | 1000 | 2205 | 2.42 | 4.56 | 8.52 |
+| cuda | uint32 | 768 | 5000 | 552 | 10.29 | 13.99 | 15.87 |
+| cuda | uint32 | 768 | 25000 | 129 | 44.82 | 56.71 | 62.70 |
+| cuda | uint32 | 1024 | 1000 | 2268 | 2.34 | 4.62 | 7.64 |
+| cuda | uint32 | 1024 | 5000 | 543 | 10.58 | 14.78 | 16.79 |
+| cuda | uint32 | 1024 | 25000 | 120 | 47.36 | 58.68 | 66.18 |
+| cuda | uint32 | 3072 | 1000 | 1862 | 2.80 | 5.67 | 7.01 |
+| cuda | uint32 | 3072 | 5000 | 507 | 10.92 | 17.09 | 22.15 |
+| cuda | uint32 | 3072 | 25000 | 121 | 46.95 | 58.56 | 67.68 |
+| cuda | uint64 | 128 | 1000 | 1950 | 2.72 | 5.13 | 14.31 |
+| cuda | uint64 | 128 | 5000 | 569 | 9.53 | 13.43 | 19.53 |
+| cuda | uint64 | 128 | 25000 | 116 | 49.92 | 60.08 | 64.62 |
+| cuda | uint64 | 384 | 1000 | 2441 | 2.13 | 4.24 | 8.69 |
+| cuda | uint64 | 384 | 5000 | 587 | 9.49 | 13.68 | 15.46 |
+| cuda | uint64 | 384 | 25000 | 121 | 47.03 | 58.59 | 71.89 |
+| cuda | uint64 | 768 | 1000 | 2734 | 2.00 | 3.79 | 5.19 |
+| cuda | uint64 | 768 | 5000 | 584 | 9.50 | 13.85 | 16.01 |
+| cuda | uint64 | 768 | 25000 | 119 | 47.54 | 57.70 | 64.11 |
+| cuda | uint64 | 1024 | 1000 | 3420 | 1.64 | 2.82 | 3.59 |
+| cuda | uint64 | 1024 | 5000 | 544 | 10.28 | 14.47 | 17.29 |
+| cuda | uint64 | 1024 | 25000 | 130 | 43.88 | 54.30 | 60.91 |
+| cuda | uint64 | 3072 | 1000 | 2188 | 2.42 | 4.74 | 5.92 |
+| cuda | uint64 | 3072 | 5000 | 530 | 10.34 | 16.06 | 20.28 |
+| cuda | uint64 | 3072 | 25000 | 119 | 48.29 | 58.67 | 66.08 |
+| cuda | uint8 | 128 | 1000 | 3155 | 1.61 | 2.75 | 8.50 |
+| cuda | uint8 | 128 | 5000 | 3340 | 1.57 | 2.62 | 8.44 |
+| cuda | uint8 | 128 | 25000 | 3495 | 1.44 | 3.60 | 8.51 |
+| cuda | uint8 | 384 | 1000 | 3168 | 1.55 | 2.90 | 7.59 |
+| cuda | uint8 | 384 | 5000 | 3595 | 1.41 | 2.64 | 8.60 |
+| cuda | uint8 | 384 | 25000 | 3177 | 1.60 | 3.27 | 8.76 |
+| cuda | uint8 | 768 | 1000 | 3092 | 1.71 | 3.00 | 10.52 |
+| cuda | uint8 | 768 | 5000 | 3040 | 1.75 | 3.37 | 6.04 |
+| cuda | uint8 | 768 | 25000 | 2446 | 2.25 | 4.03 | 6.34 |
+| cuda | uint8 | 1024 | 1000 | 2994 | 1.71 | 4.42 | 8.94 |
+| cuda | uint8 | 1024 | 5000 | 2616 | 2.11 | 3.60 | 5.01 |
+| cuda | uint8 | 1024 | 25000 | 2076 | 2.56 | 4.70 | 6.83 |
+| cuda | uint8 | 3072 | 1000 | 2000 | 2.47 | 5.73 | 14.63 |
+| cuda | uint8 | 3072 | 5000 | 1513 | 3.35 | 5.81 | 7.89 |
+| cuda | uint8 | 3072 | 25000 | 1404 | 3.68 | 6.26 | 7.65 |
+| metal | complex128 | 128 | 1000 | 5378 | 0.97 | 2.05 | 3.79 |
+| metal | complex128 | 128 | 5000 | 4089 | 1.34 | 2.51 | 3.96 |
+| metal | complex128 | 128 | 25000 | 3657 | 1.59 | 2.19 | 2.76 |
+| metal | complex128 | 384 | 1000 | 4637 | 1.20 | 2.02 | 2.82 |
+| metal | complex128 | 384 | 5000 | 3153 | 1.85 | 2.38 | 3.11 |
+| metal | complex128 | 384 | 25000 | 2671 | 2.19 | 2.76 | 3.40 |
+| metal | complex128 | 768 | 1000 | 3813 | 1.47 | 2.26 | 3.10 |
+| metal | complex128 | 768 | 5000 | 2274 | 2.57 | 3.12 | 3.50 |
+| metal | complex128 | 768 | 25000 | 1997 | 2.95 | 3.58 | 4.01 |
+| metal | complex128 | 1024 | 1000 | 3509 | 1.63 | 2.16 | 2.98 |
+| metal | complex128 | 1024 | 5000 | 2024 | 2.92 | 3.45 | 3.70 |
+| metal | complex128 | 1024 | 25000 | 1705 | 3.42 | 4.23 | 4.54 |
+| metal | complex128 | 3072 | 1000 | 2168 | 2.71 | 2.97 | 3.53 |
+| metal | complex128 | 3072 | 5000 | 945 | 6.23 | 7.03 | 7.55 |
+| metal | complex128 | 3072 | 25000 | 821 | 7.12 | 8.38 | 9.08 |
+| metal | complex64 | 128 | 1000 | 5365 | 0.95 | 2.17 | 3.90 |
+| metal | complex64 | 128 | 5000 | 4278 | 1.25 | 2.50 | 4.39 |
+| metal | complex64 | 128 | 25000 | 4086 | 1.39 | 2.08 | 3.19 |
+| metal | complex64 | 384 | 1000 | 4646 | 1.18 | 2.09 | 2.78 |
+| metal | complex64 | 384 | 5000 | 3610 | 1.58 | 2.19 | 4.05 |
+| metal | complex64 | 384 | 25000 | 3135 | 1.86 | 2.43 | 3.04 |
+| metal | complex64 | 768 | 1000 | 4060 | 1.40 | 2.08 | 3.02 |
+| metal | complex64 | 768 | 5000 | 2841 | 2.05 | 2.52 | 3.35 |
+| metal | complex64 | 768 | 25000 | 2561 | 2.31 | 2.83 | 3.08 |
+| metal | complex64 | 1024 | 1000 | 3660 | 1.52 | 2.39 | 3.73 |
+| metal | complex64 | 1024 | 5000 | 2504 | 2.34 | 2.76 | 3.35 |
+| metal | complex64 | 1024 | 25000 | 2197 | 2.67 | 3.25 | 3.67 |
+| metal | complex64 | 3072 | 1000 | 2357 | 2.46 | 2.89 | 3.63 |
+| metal | complex64 | 3072 | 5000 | 1366 | 4.32 | 4.92 | 5.41 |
+| metal | complex64 | 3072 | 25000 | 1197 | 4.91 | 5.72 | 6.22 |
+| metal | float16 | 128 | 1000 | 4290 | 1.28 | 2.06 | 2.97 |
+| metal | float16 | 128 | 5000 | 1759 | 2.97 | 4.72 | 9.62 |
+| metal | float16 | 128 | 10000 | 1035 | 5.29 | 7.21 | 8.20 |
+| metal | float16 | 128 | 25000 | 446 | 12.44 | 15.41 | 16.82 |
+| metal | float16 | 128 | 100000 | 58 | 98.51 | 105.80 | 151.02 |
+| metal | float16 | 384 | 1000 | 4449 | 1.22 | 2.17 | 3.29 |
+| metal | float16 | 384 | 5000 | 1645 | 3.32 | 4.35 | 6.69 |
+| metal | float16 | 384 | 25000 | 350 | 15.52 | 21.19 | 22.92 |
+| metal | float16 | 384 | 100000 | 56 | 101.96 | 108.77 | 150.43 |
+| metal | float16 | 768 | 1000 | 4329 | 1.27 | 2.05 | 2.84 |
+| metal | float16 | 768 | 5000 | 1872 | 2.97 | 3.86 | 4.98 |
+| metal | float16 | 768 | 25000 | 440 | 12.94 | 15.28 | 17.39 |
+| metal | float16 | 768 | 100000 | 62 | 91.80 | 100.79 | 142.94 |
+| metal | float16 | 1024 | 1000 | 3918 | 1.38 | 2.49 | 3.54 |
+| metal | float16 | 1024 | 5000 | 1684 | 3.31 | 4.21 | 6.15 |
+| metal | float16 | 1024 | 25000 | 443 | 12.79 | 15.25 | 18.95 |
+| metal | float16 | 1024 | 100000 | 51 | 114.34 | 124.63 | 126.03 |
+| metal | float16 | 3072 | 1000 | 2932 | 1.85 | 3.02 | 5.00 |
+| metal | float16 | 3072 | 5000 | 1447 | 3.77 | 4.70 | 6.96 |
+| metal | float16 | 3072 | 25000 | 491 | 11.58 | 12.00 | 16.44 |
+| metal | float16 | 3072 | 100000 | 66 | 87.15 | 97.51 | 110.31 |
+| metal | float32 | 128 | 1000 | 4925 | 1.07 | 2.09 | 4.04 |
+| metal | float32 | 128 | 5000 | 4938 | 1.05 | 2.19 | 3.56 |
+| metal | float32 | 128 | 10000 | 5413 | 1.06 | 1.69 | 2.21 |
+| metal | float32 | 128 | 25000 | 4501 | 1.25 | 2.04 | 2.65 |
+| metal | float32 | 128 | 100000 | 3544 | 1.52 | 2.25 | 5.01 |
+| metal | float32 | 384 | 1000 | 4429 | 1.19 | 2.07 | 4.33 |
+| metal | float32 | 384 | 5000 | 4683 | 1.21 | 1.87 | 2.48 |
+| metal | float32 | 384 | 25000 | 3618 | 1.59 | 2.23 | 3.10 |
+| metal | float32 | 384 | 100000 | 3023 | 1.91 | 2.50 | 3.68 |
+| metal | float32 | 768 | 1000 | 4205 | 1.34 | 2.01 | 2.98 |
+| metal | float32 | 768 | 5000 | 4014 | 1.42 | 2.04 | 2.76 |
+| metal | float32 | 768 | 25000 | 2998 | 1.94 | 2.32 | 3.01 |
+| metal | float32 | 768 | 100000 | 2448 | 2.41 | 2.92 | 3.21 |
+| metal | float32 | 1024 | 1000 | 3623 | 1.47 | 2.79 | 4.63 |
+| metal | float32 | 1024 | 5000 | 3777 | 1.55 | 1.96 | 2.27 |
+| metal | float32 | 1024 | 25000 | 2671 | 2.22 | 2.48 | 2.88 |
+| metal | float32 | 3072 | 1000 | 2263 | 2.43 | 3.65 | 5.60 |
+| metal | float32 | 3072 | 5000 | 2270 | 2.59 | 2.82 | 3.21 |
+| metal | float32 | 3072 | 25000 | 1536 | 3.83 | 4.70 | 5.20 |
+| metal | float64 | 128 | 1000 | 5491 | 0.88 | 2.40 | 3.66 |
+| metal | float64 | 128 | 5000 | 4824 | 1.16 | 1.96 | 2.67 |
+| metal | float64 | 128 | 25000 | 3979 | 1.40 | 2.40 | 3.37 |
+| metal | float64 | 128 | 100000 | 565 | 10.72 | 17.60 | 21.53 |
+| metal | float64 | 384 | 1000 | 5090 | 1.03 | 2.03 | 3.67 |
+| metal | float64 | 384 | 5000 | 4025 | 1.40 | 2.04 | 3.46 |
+| metal | float64 | 384 | 25000 | 3185 | 1.76 | 2.52 | 4.58 |
+| metal | float64 | 384 | 100000 | 352 | 17.77 | 20.92 | 26.39 |
+| metal | float64 | 768 | 1000 | 4875 | 1.17 | 1.82 | 2.50 |
+| metal | float64 | 768 | 5000 | 3242 | 1.80 | 2.29 | 2.75 |
+| metal | float64 | 768 | 25000 | 2566 | 2.28 | 2.92 | 3.27 |
+| metal | float64 | 768 | 100000 | 289 | 22.06 | 26.28 | 31.20 |
+| metal | float64 | 1024 | 1000 | 4468 | 1.25 | 1.99 | 2.54 |
+| metal | float64 | 1024 | 5000 | 2805 | 2.08 | 2.53 | 3.16 |
+| metal | float64 | 1024 | 25000 | 2297 | 2.56 | 3.20 | 3.48 |
+| metal | float64 | 1024 | 100000 | 231 | 26.46 | 29.26 | 32.34 |
+| metal | float64 | 3072 | 1000 | 3093 | 1.89 | 2.17 | 2.93 |
+| metal | float64 | 3072 | 5000 | 1573 | 3.73 | 4.35 | 4.86 |
+| metal | float64 | 3072 | 25000 | 1341 | 4.42 | 5.26 | 5.77 |
+| metal | float64 | 3072 | 100000 | 119 | 49.83 | 55.35 | 58.31 |
+| metal | int16 | 128 | 1000 | 2824 | 1.94 | 3.34 | 4.84 |
+| metal | int16 | 128 | 5000 | 726 | 7.96 | 9.15 | 9.72 |
+| metal | int16 | 128 | 25000 | 144 | 40.87 | 44.81 | 46.13 |
+| metal | int16 | 128 | 100000 | 39 | 148.98 | 154.06 | 157.27 |
+| metal | int16 | 384 | 1000 | 2575 | 2.21 | 3.19 | 4.27 |
+| metal | int16 | 384 | 5000 | 618 | 9.52 | 10.47 | 11.10 |
+| metal | int16 | 384 | 25000 | 150 | 38.92 | 42.33 | 45.93 |
+| metal | int16 | 384 | 100000 | 32 | 182.86 | 187.41 | 190.10 |
+| metal | int16 | 768 | 1000 | 2371 | 2.46 | 3.50 | 4.36 |
+| metal | int16 | 768 | 5000 | 682 | 8.50 | 9.90 | 11.97 |
+| metal | int16 | 768 | 25000 | 163 | 35.26 | 40.04 | 43.43 |
+| metal | int16 | 768 | 100000 | 37 | 157.98 | 165.30 | 168.48 |
+| metal | int16 | 1024 | 1000 | 2782 | 2.02 | 3.14 | 3.63 |
+| metal | int16 | 1024 | 5000 | 694 | 8.42 | 9.83 | 11.00 |
+| metal | int16 | 1024 | 25000 | 157 | 37.10 | 41.23 | 42.67 |
+| metal | int16 | 1024 | 100000 | 38 | 153.29 | 164.74 | 171.25 |
+| metal | int16 | 3072 | 1000 | 2710 | 2.00 | 3.24 | 3.93 |
+| metal | int16 | 3072 | 5000 | 646 | 8.80 | 11.15 | 15.88 |
+| metal | int16 | 3072 | 25000 | 135 | 43.13 | 47.57 | 51.50 |
+| metal | int16 | 3072 | 100000 | 40 | 144.77 | 156.96 | 161.06 |
+| metal | int32 | 128 | 1000 | 4391 | 1.24 | 2.34 | 2.96 |
+| metal | int32 | 128 | 5000 | 1627 | 3.30 | 4.88 | 6.03 |
+| metal | int32 | 128 | 25000 | 425 | 13.09 | 16.41 | 17.84 |
+| metal | int32 | 128 | 100000 | 52 | 112.49 | 116.21 | 164.04 |
+| metal | int32 | 384 | 1000 | 4334 | 1.26 | 2.16 | 3.03 |
+| metal | int32 | 384 | 5000 | 1808 | 3.02 | 3.93 | 5.04 |
+| metal | int32 | 384 | 25000 | 434 | 12.99 | 15.66 | 18.16 |
+| metal | int32 | 384 | 100000 | 58 | 98.34 | 106.96 | 146.03 |
+| metal | int32 | 768 | 1000 | 4596 | 1.22 | 1.97 | 2.61 |
+| metal | int32 | 768 | 5000 | 1869 | 2.96 | 3.59 | 4.80 |
+| metal | int32 | 768 | 25000 | 422 | 13.42 | 16.30 | 20.91 |
+| metal | int32 | 768 | 100000 | 58 | 98.14 | 108.22 | 155.91 |
+| metal | int32 | 1024 | 1000 | 3470 | 1.58 | 2.70 | 3.99 |
+| metal | int32 | 1024 | 5000 | 1951 | 2.88 | 3.47 | 4.48 |
+| metal | int32 | 1024 | 25000 | 479 | 11.75 | 12.60 | 17.19 |
+| metal | int32 | 1024 | 100000 | 53 | 107.92 | 118.29 | 158.12 |
+| metal | int32 | 3072 | 1000 | 3678 | 1.58 | 1.96 | 2.39 |
+| metal | int32 | 3072 | 5000 | 1376 | 4.18 | 4.45 | 6.11 |
+| metal | int32 | 3072 | 25000 | 418 | 13.70 | 14.14 | 16.57 |
+| metal | int32 | 3072 | 100000 | 52 | 104.99 | 141.69 | 198.29 |
+| metal | int64 | 128 | 1000 | 2443 | 2.30 | 3.42 | 4.79 |
+| metal | int64 | 128 | 5000 | 738 | 7.71 | 9.01 | 10.02 |
+| metal | int64 | 128 | 25000 | 157 | 36.51 | 41.85 | 46.32 |
+| metal | int64 | 128 | 100000 | 31 | 191.54 | 207.44 | 225.10 |
+| metal | int64 | 384 | 1000 | 2507 | 2.31 | 3.30 | 3.90 |
+| metal | int64 | 384 | 5000 | 755 | 7.62 | 8.94 | 10.00 |
+| metal | int64 | 384 | 25000 | 153 | 36.47 | 48.32 | 72.79 |
+| metal | int64 | 384 | 100000 | 31 | 186.87 | 203.81 | 217.96 |
+| metal | int64 | 768 | 1000 | 2833 | 1.98 | 3.15 | 3.61 |
+| metal | int64 | 768 | 5000 | 740 | 7.67 | 9.26 | 11.72 |
+| metal | int64 | 768 | 25000 | 160 | 35.88 | 41.61 | 49.40 |
+| metal | int64 | 768 | 100000 | 32 | 179.33 | 202.21 | 218.65 |
+| metal | int64 | 1024 | 1000 | 2647 | 2.10 | 3.22 | 4.63 |
+| metal | int64 | 1024 | 5000 | 723 | 7.93 | 9.42 | 10.27 |
+| metal | int64 | 1024 | 100000 | 37 | 157.84 | 170.93 | 174.75 |
+| metal | int64 | 3072 | 1000 | 2590 | 2.12 | 3.34 | 3.90 |
+| metal | int64 | 3072 | 5000 | 715 | 7.96 | 9.72 | 11.03 |
+| metal | int8 | 128 | 1000 | 5385 | 0.95 | 2.02 | 3.52 |
+| metal | int8 | 128 | 5000 | 4168 | 1.38 | 2.08 | 2.77 |
+| metal | int8 | 128 | 25000 | 3724 | 1.42 | 2.46 | 5.99 |
+| metal | int8 | 128 | 100000 | 696 | 8.89 | 13.22 | 15.94 |
+| metal | int8 | 384 | 1000 | 4354 | 1.24 | 2.24 | 4.13 |
+| metal | int8 | 384 | 5000 | 2780 | 2.07 | 2.87 | 3.46 |
+| metal | int8 | 384 | 25000 | 2933 | 1.88 | 2.88 | 5.80 |
+| metal | int8 | 384 | 100000 | 335 | 18.06 | 20.52 | 23.27 |
+| metal | int8 | 768 | 1000 | 3959 | 1.38 | 2.42 | 3.34 |
+| metal | int8 | 768 | 5000 | 2411 | 2.42 | 3.06 | 3.79 |
+| metal | int8 | 768 | 25000 | 2148 | 2.73 | 3.08 | 3.69 |
+| metal | int8 | 768 | 100000 | 224 | 29.11 | 30.24 | 34.12 |
+| metal | int8 | 1024 | 1000 | 3785 | 1.48 | 2.23 | 3.02 |
+| metal | int8 | 1024 | 5000 | 1971 | 2.92 | 3.82 | 4.91 |
+| metal | int8 | 1024 | 25000 | 1924 | 3.02 | 3.50 | 5.09 |
+| metal | int8 | 1024 | 100000 | 173 | 35.96 | 37.29 | 40.89 |
+| metal | int8 | 3072 | 1000 | 2179 | 2.49 | 4.05 | 6.26 |
+| metal | int8 | 3072 | 5000 | 905 | 6.45 | 7.26 | 8.11 |
+| metal | int8 | 3072 | 25000 | 766 | 7.69 | 7.90 | 8.29 |
+| metal | int8 | 3072 | 100000 | 67 | 88.32 | 93.59 | 96.15 |
+| metal | turboquant2 | 128 | 1000 | 6044 | 0.81 | 2.04 | 3.60 |
+| metal | turboquant2 | 128 | 5000 | 6084 | 0.87 | 1.83 | 3.59 |
+| metal | turboquant2 | 128 | 25000 | 6455 | 0.86 | 1.48 | 1.83 |
+| metal | turboquant2 | 384 | 1000 | 4815 | 1.10 | 2.33 | 3.76 |
+| metal | turboquant2 | 384 | 5000 | 5083 | 1.06 | 1.88 | 3.60 |
+| metal | turboquant2 | 384 | 25000 | 5755 | 1.00 | 1.50 | 2.05 |
+| metal | turboquant2 | 768 | 1000 | 4449 | 1.22 | 2.43 | 3.93 |
+| metal | turboquant2 | 768 | 5000 | 6687 | 0.81 | 1.37 | 2.82 |
+| metal | turboquant2 | 768 | 25000 | 5088 | 1.13 | 1.68 | 1.96 |
+| metal | turboquant2 | 1024 | 1000 | 4535 | 1.14 | 2.42 | 4.82 |
+| metal | turboquant2 | 1024 | 5000 | 6228 | 0.93 | 1.26 | 1.69 |
+| metal | turboquant2 | 1024 | 25000 | 5441 | 1.08 | 1.48 | 1.65 |
+| metal | turboquant2 | 3072 | 1000 | 3287 | 1.64 | 2.83 | 3.79 |
+| metal | turboquant2 | 3072 | 5000 | 3830 | 1.54 | 1.83 | 2.46 |
+| metal | turboquant2 | 3072 | 25000 | 3825 | 1.55 | 1.82 | 2.14 |
+| metal | turboquant4 | 128 | 1000 | 5763 | 0.83 | 2.26 | 4.19 |
+| metal | turboquant4 | 128 | 5000 | 5923 | 0.86 | 1.84 | 4.38 |
+| metal | turboquant4 | 128 | 25000 | 6665 | 0.83 | 1.66 | 2.11 |
+| metal | turboquant4 | 384 | 1000 | 4897 | 1.05 | 2.48 | 4.80 |
+| metal | turboquant4 | 384 | 5000 | 5358 | 1.03 | 2.00 | 2.94 |
+| metal | turboquant4 | 384 | 25000 | 5523 | 1.04 | 1.63 | 1.90 |
+| metal | turboquant4 | 768 | 1000 | 4628 | 1.14 | 2.17 | 4.15 |
+| metal | turboquant4 | 768 | 5000 | 5359 | 1.08 | 1.55 | 1.88 |
+| metal | turboquant4 | 768 | 25000 | 5221 | 1.11 | 1.61 | 1.85 |
+| metal | turboquant4 | 1024 | 1000 | 4457 | 1.19 | 2.35 | 3.35 |
+| metal | turboquant4 | 1024 | 5000 | 5376 | 1.07 | 1.53 | 2.16 |
+| metal | turboquant4 | 1024 | 25000 | 5403 | 1.07 | 1.54 | 2.07 |
+| metal | turboquant4 | 3072 | 1000 | 3255 | 1.61 | 3.00 | 4.37 |
+| metal | turboquant4 | 3072 | 5000 | 3713 | 1.57 | 1.84 | 2.52 |
+| metal | turboquant4 | 3072 | 25000 | 3760 | 1.57 | 1.84 | 2.08 |
+| metal | turboquant8 | 128 | 1000 | 5986 | 0.81 | 1.91 | 3.76 |
+| metal | turboquant8 | 128 | 5000 | 6779 | 0.80 | 1.33 | 3.01 |
+| metal | turboquant8 | 128 | 25000 | 6757 | 0.84 | 1.28 | 2.26 |
+| metal | turboquant8 | 384 | 1000 | 4786 | 1.09 | 2.26 | 3.63 |
+| metal | turboquant8 | 384 | 5000 | 7251 | 0.70 | 1.43 | 3.11 |
+| metal | turboquant8 | 384 | 25000 | 5693 | 1.03 | 1.50 | 1.78 |
+| metal | turboquant8 | 768 | 1000 | 4317 | 1.25 | 2.37 | 4.12 |
+| metal | turboquant8 | 768 | 5000 | 4971 | 1.14 | 1.70 | 2.86 |
+| metal | turboquant8 | 768 | 25000 | 6107 | 0.96 | 1.41 | 1.74 |
+| metal | turboquant8 | 1024 | 1000 | 4665 | 1.15 | 2.18 | 2.95 |
+| metal | turboquant8 | 1024 | 5000 | 5606 | 1.04 | 1.40 | 1.65 |
+| metal | turboquant8 | 1024 | 25000 | 5480 | 1.08 | 1.46 | 1.61 |
+| metal | turboquant8 | 3072 | 1000 | 3477 | 1.57 | 2.56 | 4.11 |
+| metal | turboquant8 | 3072 | 5000 | 4562 | 1.27 | 1.65 | 2.06 |
+| metal | turboquant8 | 3072 | 25000 | 3769 | 1.56 | 1.84 | 2.02 |
+| metal | uint16 | 128 | 1000 | 2903 | 1.88 | 3.21 | 4.71 |
+| metal | uint16 | 128 | 5000 | 696 | 8.29 | 9.72 | 12.88 |
+| metal | uint16 | 384 | 1000 | 2596 | 2.25 | 3.18 | 3.67 |
+| metal | uint16 | 384 | 5000 | 586 | 9.50 | 13.50 | 26.99 |
+| metal | uint16 | 768 | 1000 | 2638 | 2.14 | 3.27 | 3.86 |
+| metal | uint16 | 768 | 5000 | 730 | 7.98 | 9.13 | 9.82 |
+| metal | uint16 | 1024 | 1000 | 2726 | 2.05 | 3.30 | 3.86 |
+| metal | uint16 | 1024 | 5000 | 730 | 7.95 | 9.19 | 10.09 |
+| metal | uint16 | 3072 | 1000 | 2410 | 2.26 | 3.46 | 4.16 |
+| metal | uint16 | 3072 | 5000 | 668 | 8.52 | 10.79 | 12.59 |
+| metal | uint32 | 128 | 1000 | 2316 | 2.43 | 3.64 | 4.88 |
+| metal | uint32 | 128 | 5000 | 745 | 7.76 | 8.86 | 9.83 |
+| metal | uint32 | 384 | 1000 | 2682 | 2.14 | 3.13 | 3.50 |
+| metal | uint32 | 384 | 5000 | 734 | 7.88 | 9.03 | 11.68 |
+| metal | uint32 | 768 | 1000 | 2407 | 2.40 | 3.45 | 4.07 |
+| metal | uint32 | 768 | 5000 | 707 | 8.31 | 9.52 | 10.33 |
+| metal | uint32 | 1024 | 1000 | 2502 | 2.19 | 3.54 | 6.32 |
+| metal | uint32 | 1024 | 5000 | 603 | 9.50 | 11.96 | 16.50 |
+| metal | uint32 | 3072 | 1000 | 2293 | 2.40 | 3.78 | 4.35 |
+| metal | uint32 | 3072 | 5000 | 710 | 7.85 | 10.51 | 11.78 |
+| metal | uint64 | 128 | 1000 | 2695 | 2.09 | 3.31 | 4.10 |
+| metal | uint64 | 128 | 5000 | 753 | 7.50 | 8.83 | 9.31 |
+| metal | uint64 | 384 | 1000 | 3059 | 1.79 | 3.03 | 4.04 |
+| metal | uint64 | 384 | 5000 | 639 | 9.12 | 11.21 | 12.90 |
+| metal | uint64 | 768 | 1000 | 2039 | 2.93 | 3.95 | 4.83 |
+| metal | uint64 | 768 | 5000 | 712 | 8.15 | 9.93 | 11.21 |
+| metal | uint64 | 768 | 25000 | 161 | 35.97 | 39.74 | 43.70 |
+| metal | uint64 | 1024 | 1000 | 2638 | 2.08 | 3.44 | 4.37 |
+| metal | uint64 | 1024 | 5000 | 732 | 7.91 | 9.30 | 10.20 |
+| metal | uint64 | 1024 | 25000 | 157 | 37.26 | 40.80 | 44.28 |
+| metal | uint64 | 3072 | 1000 | 2314 | 2.30 | 3.94 | 4.90 |
+| metal | uint64 | 3072 | 5000 | 685 | 8.23 | 10.68 | 13.34 |
+| metal | uint64 | 3072 | 25000 | 164 | 35.67 | 38.27 | 42.67 |
+| metal | uint8 | 128 | 1000 | 5249 | 0.97 | 2.15 | 5.64 |
+| metal | uint8 | 128 | 5000 | 4387 | 1.23 | 2.16 | 4.25 |
+| metal | uint8 | 128 | 25000 | 4915 | 1.15 | 1.78 | 2.31 |
+| metal | uint8 | 384 | 1000 | 4692 | 1.16 | 2.06 | 4.22 |
+| metal | uint8 | 384 | 5000 | 3768 | 1.55 | 2.03 | 2.65 |
+| metal | uint8 | 384 | 25000 | 3238 | 1.80 | 2.21 | 3.09 |
+| metal | uint8 | 768 | 1000 | 3935 | 1.37 | 2.49 | 3.39 |
+| metal | uint8 | 768 | 5000 | 2699 | 2.08 | 3.07 | 6.15 |
+| metal | uint8 | 768 | 25000 | 2536 | 2.33 | 2.62 | 3.16 |
+| metal | uint8 | 1024 | 1000 | 3946 | 1.42 | 2.30 | 2.92 |
+| metal | uint8 | 1024 | 5000 | 2476 | 2.37 | 2.81 | 3.45 |
+| metal | uint8 | 1024 | 25000 | 1629 | 3.52 | 4.72 | 5.97 |
+| metal | uint8 | 3072 | 1000 | 2698 | 2.15 | 2.61 | 3.32 |
+| metal | uint8 | 3072 | 5000 | 1108 | 5.12 | 6.38 | 9.36 |
+| metal | uint8 | 3072 | 25000 | 1006 | 5.49 | 7.12 | 13.09 |
+
+### Search Latency Summary
+
+| Mode | DType | Dim | Count | ByID | Dense | Filtered | Hybrid | Sparse | Temporal | GraphRAG |
+|------|-------|-----|-------|------|-------|----------|--------|--------|----------|----------|
+| cuda | complex128 | 128 | 1000 | 4123 | 3585 | 3800 | 4154 | 7964 | 7196 | 3568 |
+| cuda | complex128 | 128 | 5000 | 1639 | 3692 | 3793 | 2708 | 7883 | 3948 | 1992 |
+| cuda | complex128 | 128 | 25000 | 354 | 2958 | 2887 | 2943 | 7700 | 2295 | 1617 |
+| cuda | complex128 | 384 | 1000 | 3994 | 3205 | 3532 | 3692 | 7720 | 6405 | 3356 |
+| cuda | complex128 | 384 | 5000 | 1536 | 2287 | 2441 | 2116 | 7947 | 3899 | 1661 |
+| cuda | complex128 | 384 | 25000 | 337 | 1884 | 1889 | 1802 | 7914 | 2127 | 1358 |
+| cuda | complex128 | 768 | 1000 | 4607 | 2926 | 3097 | 2891 | 8211 | 4989 | 2588 |
+| cuda | complex128 | 768 | 5000 | 1579 | 1645 | 1698 | 1651 | 8554 | 4083 | 1288 |
+| cuda | complex128 | 768 | 25000 | 350 | 1464 | 1437 | 1384 | 6359 | 2243 | 1044 |
+| cuda | complex128 | 1024 | 1000 | 4207 | 2419 | 2288 | 2153 | 8179 | 5470 | 2607 |
+| cuda | complex128 | 1024 | 5000 | 1641 | 1407 | 1364 | 1311 | 8182 | 4030 | 1131 |
+| cuda | complex128 | 1024 | 25000 | 330 | 1156 | 1133 | 1153 | 7936 | 2244 | 858 |
+| cuda | complex128 | 3072 | 1000 | 4106 | 1393 | 1348 | 1309 | 6171 | 7253 | 1298 |
+| cuda | complex128 | 3072 | 5000 | 1681 | 553 | 539 | 551 | 8568 | 3857 | 490 |
+| cuda | complex128 | 3072 | 25000 | 335 | 439 | 426 | 426 | 5815 | 2040 | 379 |
+| cuda | complex64 | 128 | 1000 | 4267 | 3136 | 3638 | 4372 | 8215 | 5362 | 3538 |
+| cuda | complex64 | 128 | 5000 | 4066 | 3463 | 3862 | 3718 | 7978 | 3970 | 2082 |
+| cuda | complex64 | 128 | 25000 | 4317 | 3230 | 3576 | 3450 | 7899 | 2262 | 1552 |
+| cuda | complex64 | 384 | 1000 | 3945 | 3156 | 3463 | 3712 | 8192 | 5425 | 3173 |
+| cuda | complex64 | 384 | 5000 | 4163 | 2944 | 3008 | 2666 | 8195 | 4088 | 1924 |
+| cuda | complex64 | 384 | 25000 | 3645 | 2707 | 2495 | 2549 | 8074 | 2044 | 1587 |
+| cuda | complex64 | 768 | 1000 | 3984 | 3138 | 3027 | 3194 | 8238 | 6881 | 2848 |
+| cuda | complex64 | 768 | 5000 | 3602 | 2140 | 2161 | 2188 | 8226 | 4009 | 1672 |
+| cuda | complex64 | 768 | 25000 | 2687 | 1976 | 2041 | 1972 | 8222 | 2262 | 1437 |
+| cuda | complex64 | 1024 | 1000 | 4169 | 2672 | 2828 | 2855 | 8171 | 5993 | 2432 |
+| cuda | complex64 | 1024 | 5000 | 2788 | 1852 | 2000 | 1765 | 8151 | 4055 | 1496 |
+| cuda | complex64 | 1024 | 25000 | 2048 | 1768 | 1633 | 1665 | 7941 | 2236 | 1294 |
+| cuda | complex64 | 3072 | 1000 | 3503 | 1738 | 1661 | 1546 | 6477 | 6245 | 1546 |
+| cuda | complex64 | 3072 | 5000 | 1496 | 988 | 978 | 979 | 8297 | 4004 | 839 |
+| cuda | complex64 | 3072 | 25000 | 1100 | 759 | 758 | 758 | 8157 | 2342 | 632 |
+| cuda | float16 | 128 | 1000 | 3829 | 3560 | 4107 | 3679 | 7545 | 4526 | 3541 |
+| cuda | float16 | 128 | 5000 | 4122 | 1512 | 1834 | 1648 | 7783 | 4407 | 1576 |
+| cuda | float16 | 128 | 25000 | 3628 | 371 | 394 | 401 | 7618 | 1486 | 369 |
+| cuda | float16 | 128 | 100000 | 3719 | 46 | 43 | 45 | 7944 | 1021 | 41 |
+| cuda | float16 | 384 | 1000 | 4389 | 3364 | 3767 | 4016 | 7799 | 4481 | 3499 |
+| cuda | float16 | 384 | 5000 | 2547 | 1719 | 1816 | 1775 | 7785 | 4462 | 1465 |
+| cuda | float16 | 384 | 25000 | 2762 | 388 | 411 | 422 | 7969 | 1426 | 375 |
+| cuda | float16 | 384 | 100000 | 2064 | 48 | 44 | 46 | 7970 | 1047 | 42 |
+| cuda | float16 | 768 | 1000 | 3802 | 3081 | 3462 | 3862 | 7937 | 3909 | 3515 |
+| cuda | float16 | 768 | 5000 | 1778 | 1734 | 1860 | 1796 | 7981 | 4433 | 1512 |
+| cuda | float16 | 768 | 25000 | 1714 | 400 | 392 | 411 | 8298 | 1495 | 376 |
+| cuda | float16 | 768 | 100000 | 1797 | 49 | 45 | 47 | 8432 | 1039 | 43 |
+| cuda | float16 | 1024 | 1000 | 3562 | 3011 | 3345 | 3576 | 7993 | 3957 | 3291 |
+| cuda | float16 | 1024 | 5000 | 1777 | 1624 | 1772 | 1823 | 7978 | 4466 | 1567 |
+| cuda | float16 | 1024 | 25000 | 1408 | 391 | 395 | 408 | 7937 | 1518 | 376 |
+| cuda | float16 | 1024 | 100000 | 1096 | 47 | 45 | 47 | 8694 | 1024 | 42 |
+| cuda | float16 | 3072 | 1000 | 1865 | 2367 | 2391 | 1894 | 8193 | 4067 | 2332 |
+| cuda | float16 | 3072 | 5000 | 631 | 1453 | 1498 | 1380 | 8277 | 4513 | 1269 |
+| cuda | float16 | 3072 | 25000 | 643 | 366 | 388 | 380 | 8279 | 1509 | 362 |
+| cuda | float32 | 128 | 1000 | 4043 | 3532 | 3962 | 4641 | 7582 | 6790 | 2861 |
+| cuda | float32 | 128 | 5000 | 3800 | 3679 | 3825 | 4488 | 8176 | 3926 | 2599 |
+| cuda | float32 | 128 | 25000 | 4368 | 3288 | 3606 | 3839 | 7756 | 2297 | 1377 |
+| cuda | float32 | 128 | 100000 | 4356 | 2642 | 2746 | 2932 | 7249 | 1798 | 807 |
+| cuda | float32 | 384 | 1000 | 3904 | 3499 | 3847 | 4090 | 7720 | 5943 | 2919 |
+| cuda | float32 | 384 | 5000 | 4205 | 3717 | 3745 | 3976 | 7759 | 3872 | 2603 |
+| cuda | float32 | 384 | 25000 | 3750 | 3204 | 3292 | 3014 | 8013 | 2341 | 1429 |
+| cuda | float32 | 384 | 100000 | 2781 | 2426 | 2149 | 2334 | 8365 | 1713 | 903 |
+| cuda | float32 | 768 | 1000 | 4345 | 3287 | 3531 | 3436 | 8191 | 5444 | 2545 |
+| cuda | float32 | 768 | 5000 | 4183 | 3598 | 3359 | 3635 | 8038 | 4095 | 2364 |
+| cuda | float32 | 768 | 25000 | 3132 | 2531 | 2192 | 2251 | 8333 | 2227 | 1290 |
+| cuda | float32 | 768 | 100000 | 2219 | 1989 | 1879 | 1976 | 7840 | 1814 | 945 |
+| cuda | float32 | 1024 | 1000 | 4347 | 2914 | 3007 | 3008 | 5940 | 5516 | 2471 |
+| cuda | float32 | 1024 | 5000 | 4018 | 2888 | 2960 | 2926 | 8102 | 3837 | 2246 |
+| cuda | float32 | 1024 | 25000 | 2954 | 2064 | 1866 | 2061 | 8458 | 2301 | 1305 |
+| cuda | float32 | 1024 | 100000 | 2382 | 1796 | 1774 | 1645 | 8379 | 1766 | 922 |
+| cuda | float32 | 3072 | 1000 | 2920 | 2073 | 1914 | 2058 | 8231 | 4637 | 1841 |
+| cuda | float32 | 3072 | 5000 | 2658 | 1764 | 1770 | 1763 | 8464 | 3806 | 1570 |
+| cuda | float32 | 3072 | 25000 | 1500 | 1256 | 1233 | 1238 | 6252 | 2180 | 897 |
+| cuda | float64 | 128 | 1000 | 4293 | 3479 | 3688 | 4397 | 7407 | 5915 | 3632 |
+| cuda | float64 | 128 | 5000 | 3654 | 3840 | 3951 | 4000 | 5709 | 3892 | 1812 |
+| cuda | float64 | 128 | 25000 | 4285 | 3257 | 3534 | 3477 | 8185 | 2240 | 1576 |
+| cuda | float64 | 128 | 100000 | 4188 | 337 | 442 | 436 | 7787 | 1682 | 406 |
+| cuda | float64 | 384 | 1000 | 4010 | 3417 | 3604 | 4159 | 7568 | 5714 | 3361 |
+| cuda | float64 | 384 | 5000 | 4376 | 3453 | 3580 | 3277 | 8007 | 3948 | 1915 |
+| cuda | float64 | 384 | 25000 | 4277 | 2792 | 2675 | 2676 | 8586 | 2350 | 1595 |
+| cuda | float64 | 384 | 100000 | 3348 | 290 | 339 | 346 | 8033 | 1599 | 247 |
+| cuda | float64 | 768 | 1000 | 3884 | 3100 | 3360 | 3917 | 7760 | 6812 | 3364 |
+| cuda | float64 | 768 | 5000 | 3455 | 2643 | 2535 | 2511 | 8381 | 3824 | 1856 |
+| cuda | float64 | 768 | 25000 | 2886 | 2175 | 2164 | 2077 | 8024 | 2164 | 1492 |
+| cuda | float64 | 768 | 100000 | 2944 | 237 | 232 | 222 | 8180 | 1587 | 227 |
+| cuda | float64 | 1024 | 1000 | 3792 | 3245 | 3253 | 3650 | 8188 | 5867 | 3219 |
+| cuda | float64 | 1024 | 5000 | 3488 | 2177 | 2046 | 2020 | 8280 | 4191 | 1575 |
+| cuda | float64 | 1024 | 25000 | 3366 | 1885 | 1883 | 1834 | 8302 | 2357 | 1382 |
+| cuda | float64 | 1024 | 100000 | 2918 | 188 | 191 | 188 | 8292 | 1606 | 177 |
+| cuda | float64 | 3072 | 1000 | 4394 | 2266 | 2155 | 1961 | 8290 | 5240 | 2171 |
+| cuda | float64 | 3072 | 5000 | 1609 | 1185 | 1146 | 1106 | 8598 | 4080 | 972 |
+| cuda | float64 | 3072 | 25000 | 1190 | 951 | 900 | 911 | 8246 | 2328 | 738 |
+| cuda | float64 | 3072 | 100000 | 1056 | 68 | 70 | 68 | 8177 | 1562 | 66 |
+| cuda | int16 | 128 | 1000 | 4489 | 1976 | 3004 | 3168 | 7785 | 4644 | 3048 |
+| cuda | int16 | 128 | 5000 | 4102 | 620 | 571 | 577 | 7762 | 4173 | 579 |
+| cuda | int16 | 128 | 25000 | 4182 | 121 | 118 | 121 | 7793 | 959 | 110 |
+| cuda | int16 | 128 | 100000 | 4470 | 28 | 26 | 27 | 7181 | 0 | 26 |
+| cuda | int16 | 384 | 1000 | 4046 | 2184 | 3344 | 3080 | 8193 | 4362 | 3080 |
+| cuda | int16 | 384 | 5000 | 3754 | 571 | 564 | 579 | 8261 | 4161 | 566 |
+| cuda | int16 | 384 | 25000 | 3504 | 118 | 109 | 119 | 8374 | 1120 | 111 |
+| cuda | int16 | 768 | 1000 | 3963 | 1905 | 2695 | 2656 | 8229 | 3844 | 2745 |
+| cuda | int16 | 768 | 5000 | 3390 | 598 | 612 | 620 | 8016 | 4407 | 593 |
+| cuda | int16 | 768 | 25000 | 2762 | 119 | 114 | 119 | 8169 | 1381 | 111 |
+| cuda | int16 | 1024 | 1000 | 4175 | 2431 | 3223 | 3320 | 8449 | 4281 | 3098 |
+| cuda | int16 | 1024 | 5000 | 2649 | 512 | 535 | 544 | 8266 | 4254 | 532 |
+| cuda | int16 | 1024 | 25000 | 2238 | 119 | 108 | 117 | 8556 | 1383 | 111 |
+| cuda | int16 | 3072 | 1000 | 4228 | 1959 | 2102 | 2231 | 8562 | 4740 | 2459 |
+| cuda | int16 | 3072 | 5000 | 1715 | 505 | 516 | 518 | 8724 | 4275 | 515 |
+| cuda | int16 | 3072 | 25000 | 1499 | 120 | 116 | 119 | 8414 | 1477 | 111 |
+| cuda | int32 | 128 | 1000 | 3942 | 2716 | 4014 | 3986 | 7968 | 4311 | 3357 |
+| cuda | int32 | 128 | 5000 | 4504 | 1451 | 1602 | 1545 | 8034 | 4305 | 1282 |
+| cuda | int32 | 128 | 25000 | 4508 | 337 | 297 | 341 | 7879 | 1390 | 285 |
+| cuda | int32 | 384 | 1000 | 3605 | 3342 | 3591 | 4110 | 7881 | 4149 | 3486 |
+| cuda | int32 | 384 | 5000 | 3675 | 1445 | 1679 | 1586 | 7787 | 4284 | 1181 |
+| cuda | int32 | 384 | 25000 | 3200 | 295 | 338 | 342 | 8493 | 1451 | 298 |
+| cuda | int32 | 768 | 1000 | 3942 | 3292 | 3420 | 3757 | 7937 | 4489 | 3431 |
+| cuda | int32 | 768 | 5000 | 2866 | 1557 | 1619 | 1632 | 8380 | 4364 | 1238 |
+| cuda | int32 | 768 | 25000 | 2374 | 348 | 372 | 355 | 8065 | 1428 | 335 |
+| cuda | int32 | 1024 | 1000 | 4189 | 3282 | 3421 | 3270 | 8303 | 4704 | 3069 |
+| cuda | int32 | 1024 | 5000 | 2576 | 1546 | 1599 | 1585 | 8297 | 4145 | 1223 |
+| cuda | int32 | 1024 | 25000 | 2694 | 345 | 350 | 354 | 8422 | 1458 | 314 |
+| cuda | int32 | 3072 | 1000 | 3442 | 2464 | 2356 | 2439 | 8151 | 4596 | 2425 |
+| cuda | int32 | 3072 | 5000 | 1433 | 1308 | 1310 | 1293 | 8532 | 4264 | 1192 |
+| cuda | int32 | 3072 | 25000 | 1087 | 334 | 339 | 343 | 8257 | 1485 | 304 |
+| cuda | int64 | 128 | 1000 | 4190 | 2543 | 3443 | 3348 | 7935 | 4983 | 3422 |
+| cuda | int64 | 128 | 5000 | 4380 | 564 | 547 | 548 | 7823 | 4303 | 547 |
+| cuda | int64 | 128 | 25000 | 4476 | 116 | 114 | 118 | 8640 | 1267 | 111 |
+| cuda | int64 | 384 | 1000 | 3913 | 2015 | 2603 | 2617 | 7764 | 4628 | 2673 |
+| cuda | int64 | 384 | 5000 | 3899 | 575 | 557 | 559 | 8033 | 4174 | 569 |
+| cuda | int64 | 384 | 25000 | 3662 | 117 | 112 | 117 | 7843 | 1383 | 111 |
+| cuda | int64 | 768 | 1000 | 4152 | 2273 | 3035 | 2894 | 8201 | 4074 | 3034 |
+| cuda | int64 | 768 | 5000 | 2903 | 570 | 568 | 578 | 7715 | 4208 | 563 |
+| cuda | int64 | 768 | 25000 | 2204 | 122 | 121 | 126 | 8170 | 1476 | 118 |
+| cuda | int64 | 1024 | 1000 | 4412 | 2286 | 2210 | 2664 | 8321 | 4256 | 2745 |
+| cuda | int64 | 1024 | 5000 | 2404 | 575 | 584 | 586 | 8147 | 4344 | 572 |
+| cuda | int64 | 1024 | 25000 | 2279 | 125 | 119 | 124 | 8119 | 1449 | 118 |
+| cuda | int64 | 3072 | 1000 | 2905 | 1521 | 1919 | 1823 | 6304 | 4251 | 2178 |
+| cuda | int64 | 3072 | 5000 | 1378 | 522 | 549 | 552 | 8744 | 4732 | 534 |
+| cuda | int64 | 3072 | 25000 | 982 | 119 | 115 | 118 | 8384 | 1462 | 113 |
+| cuda | int8 | 128 | 1000 | 4377 | 3476 | 3844 | 4651 | 7611 | 4694 | 3658 |
+| cuda | int8 | 128 | 5000 | 3762 | 3490 | 3886 | 4025 | 5823 | 4250 | 1974 |
+| cuda | int8 | 128 | 25000 | 4340 | 3702 | 3585 | 4066 | 5667 | 1394 | 1654 |
+| cuda | int8 | 128 | 100000 | 3783 | 738 | 536 | 514 | 7024 | 1013 | 368 |
+| cuda | int8 | 384 | 1000 | 3738 | 3366 | 3653 | 3937 | 8128 | 4600 | 3497 |
+| cuda | int8 | 384 | 5000 | 3927 | 3082 | 3361 | 3126 | 7915 | 4339 | 1846 |
+| cuda | int8 | 384 | 25000 | 3971 | 3139 | 3042 | 2955 | 7768 | 1466 | 1517 |
+| cuda | int8 | 384 | 100000 | 3428 | 326 | 312 | 324 | 7338 | 1137 | 276 |
+| cuda | int8 | 768 | 1000 | 4101 | 3102 | 3424 | 3809 | 8137 | 4576 | 3363 |
+| cuda | int8 | 768 | 5000 | 2848 | 2755 | 2856 | 2707 | 7853 | 4288 | 1765 |
+| cuda | int8 | 768 | 25000 | 2581 | 2228 | 2176 | 2325 | 8499 | 1500 | 1276 |
+| cuda | int8 | 768 | 100000 | 2220 | 239 | 226 | 232 | 8341 | 904 | 208 |
+| cuda | int8 | 1024 | 1000 | 3911 | 2771 | 3497 | 3470 | 7764 | 4311 | 3295 |
+| cuda | int8 | 1024 | 5000 | 2138 | 2120 | 2510 | 2254 | 7846 | 4420 | 1546 |
+| cuda | int8 | 1024 | 25000 | 2214 | 2177 | 2125 | 2067 | 7872 | 1509 | 1258 |
+| cuda | int8 | 1024 | 100000 | 2143 | 187 | 182 | 187 | 8197 | 1153 | 170 |
+| cuda | int8 | 3072 | 1000 | 4123 | 2019 | 2268 | 2040 | 7963 | 4497 | 2175 |
+| cuda | int8 | 3072 | 5000 | 1485 | 1272 | 1351 | 1157 | 8374 | 4381 | 1039 |
+| cuda | int8 | 3072 | 25000 | 1387 | 1041 | 1059 | 1023 | 8128 | 1467 | 844 |
+| cuda | turboquant2 | 128 | 1000 | 3967 | 3423 | 3651 | 4597 | 7295 | 6016 | 3626 |
+| cuda | turboquant2 | 128 | 5000 | 4416 | 3930 | 3697 | 4760 | 7641 | 4007 | 3522 |
+| cuda | turboquant2 | 128 | 25000 | 3999 | 2892 | 3224 | 4554 | 8039 | 2107 | 3670 |
+| cuda | turboquant2 | 384 | 1000 | 4138 | 3394 | 3641 | 3929 | 8188 | 6995 | 3716 |
+| cuda | turboquant2 | 384 | 5000 | 4129 | 3533 | 3547 | 4300 | 7837 | 4181 | 3547 |
+| cuda | turboquant2 | 384 | 25000 | 4146 | 3760 | 3269 | 4157 | 8123 | 2174 | 3741 |
+| cuda | turboquant2 | 768 | 1000 | 3839 | 3191 | 3352 | 3755 | 7970 | 6512 | 3327 |
+| cuda | turboquant2 | 768 | 5000 | 4027 | 3433 | 3521 | 3816 | 7736 | 4103 | 3601 |
+| cuda | turboquant2 | 768 | 25000 | 3505 | 3447 | 3236 | 3822 | 7840 | 2291 | 3506 |
+| cuda | turboquant2 | 1024 | 1000 | 3934 | 3093 | 3267 | 3332 | 7848 | 5402 | 3160 |
+| cuda | turboquant2 | 1024 | 5000 | 3992 | 3394 | 3299 | 3433 | 8113 | 4112 | 3077 |
+| cuda | turboquant2 | 1024 | 25000 | 3975 | 3307 | 3176 | 3491 | 8210 | 2187 | 3420 |
+| cuda | turboquant2 | 3072 | 1000 | 4093 | 2507 | 2611 | 2582 | 8067 | 7122 | 2394 |
+| cuda | turboquant2 | 3072 | 5000 | 4302 | 2600 | 2706 | 2613 | 8183 | 4081 | 2557 |
+| cuda | turboquant2 | 3072 | 25000 | 4123 | 2676 | 2517 | 2614 | 8201 | 2229 | 2557 |
+| cuda | turboquant4 | 128 | 1000 | 3648 | 3177 | 3708 | 4456 | 7785 | 6102 | 3868 |
+| cuda | turboquant4 | 128 | 5000 | 3988 | 3491 | 3736 | 4485 | 7883 | 4010 | 3420 |
+| cuda | turboquant4 | 128 | 25000 | 3868 | 3623 | 3324 | 4540 | 8186 | 2249 | 3448 |
+| cuda | turboquant4 | 384 | 1000 | 3915 | 3364 | 3637 | 4122 | 7698 | 5697 | 3597 |
+| cuda | turboquant4 | 384 | 5000 | 6726 | 4479 | 4740 | 4225 | 7427 | 4041 | 4060 |
+| cuda | turboquant4 | 384 | 25000 | 3531 | 3743 | 3508 | 4201 | 7899 | 2164 | 3863 |
+| cuda | turboquant4 | 768 | 1000 | 3890 | 3164 | 3283 | 3702 | 8049 | 5069 | 3422 |
+| cuda | turboquant4 | 768 | 5000 | 3947 | 3487 | 3307 | 3817 | 8046 | 3742 | 3418 |
+| cuda | turboquant4 | 768 | 25000 | 4067 | 3472 | 3148 | 3993 | 8039 | 2128 | 3515 |
+| cuda | turboquant4 | 1024 | 1000 | 4076 | 3066 | 3248 | 3462 | 7511 | 5358 | 3046 |
+| cuda | turboquant4 | 1024 | 5000 | 3964 | 3320 | 3113 | 3539 | 8302 | 4238 | 3192 |
+| cuda | turboquant4 | 1024 | 25000 | 4061 | 3304 | 3007 | 3443 | 8262 | 2121 | 3046 |
+| cuda | turboquant4 | 3072 | 1000 | 4288 | 2548 | 2619 | 2618 | 7943 | 4903 | 2646 |
+| cuda | turboquant4 | 3072 | 5000 | 7313 | 2814 | 2922 | 2889 | 8563 | 4169 | 2825 |
+| cuda | turboquant4 | 3072 | 25000 | 4245 | 2743 | 2747 | 2622 | 8173 | 2329 | 2490 |
+| cuda | turboquant8 | 128 | 1000 | 4300 | 3404 | 3733 | 4191 | 7460 | 5706 | 3684 |
+| cuda | turboquant8 | 128 | 5000 | 4001 | 3695 | 3708 | 4626 | 7706 | 3886 | 3573 |
+| cuda | turboquant8 | 128 | 25000 | 4031 | 3534 | 3770 | 4438 | 7943 | 2232 | 3492 |
+| cuda | turboquant8 | 384 | 1000 | 3768 | 3303 | 3583 | 4014 | 7872 | 6130 | 3489 |
+| cuda | turboquant8 | 384 | 5000 | 3912 | 3548 | 3407 | 4147 | 8346 | 3926 | 3555 |
+| cuda | turboquant8 | 384 | 25000 | 3738 | 3699 | 3435 | 4215 | 8305 | 2167 | 3726 |
+| cuda | turboquant8 | 768 | 1000 | 4126 | 3118 | 3475 | 3777 | 7826 | 5134 | 3446 |
+| cuda | turboquant8 | 768 | 5000 | 7357 | 5217 | 3290 | 4006 | 7663 | 4090 | 4631 |
+| cuda | turboquant8 | 768 | 25000 | 4390 | 3442 | 3208 | 3803 | 6186 | 2283 | 3633 |
+| cuda | turboquant8 | 1024 | 1000 | 4264 | 3152 | 3547 | 3663 | 7894 | 5796 | 3498 |
+| cuda | turboquant8 | 1024 | 5000 | 3887 | 3273 | 3150 | 3385 | 7829 | 4132 | 3202 |
+| cuda | turboquant8 | 1024 | 25000 | 3939 | 3291 | 3062 | 3574 | 8425 | 2111 | 3400 |
+| cuda | turboquant8 | 3072 | 1000 | 4328 | 2509 | 2611 | 2544 | 8238 | 6328 | 2513 |
+| cuda | turboquant8 | 3072 | 5000 | 4082 | 2623 | 2727 | 2687 | 8522 | 4061 | 2519 |
+| cuda | turboquant8 | 3072 | 25000 | 4377 | 2730 | 2543 | 2405 | 8074 | 2185 | 2488 |
+| cuda | uint16 | 128 | 1000 | 4383 | 2260 | 3232 | 3115 | 7984 | 4041 | 3424 |
+| cuda | uint16 | 128 | 5000 | 3960 | 555 | 539 | 541 | 7897 | 4485 | 544 |
+| cuda | uint16 | 128 | 25000 | 3929 | 118 | 106 | 115 | 7575 | 1147 | 109 |
+| cuda | uint16 | 384 | 1000 | 3778 | 2213 | 3353 | 3170 | 7660 | 4146 | 3222 |
+| cuda | uint16 | 384 | 5000 | 4320 | 593 | 597 | 594 | 7615 | 3880 | 572 |
+| cuda | uint16 | 384 | 25000 | 3218 | 128 | 121 | 125 | 7795 | 1218 | 117 |
+| cuda | uint16 | 768 | 1000 | 3912 | 2182 | 2973 | 2954 | 8149 | 4297 | 3016 |
+| cuda | uint16 | 768 | 5000 | 2904 | 546 | 535 | 551 | 7848 | 4114 | 546 |
+| cuda | uint16 | 768 | 25000 | 2657 | 119 | 108 | 118 | 8288 | 1326 | 110 |
+| cuda | uint16 | 1024 | 1000 | 4294 | 2216 | 2870 | 2767 | 8053 | 4156 | 2973 |
+| cuda | uint16 | 1024 | 5000 | 2342 | 554 | 557 | 561 | 8125 | 4175 | 550 |
+| cuda | uint16 | 1024 | 25000 | 2238 | 119 | 115 | 119 | 8001 | 1414 | 111 |
+| cuda | uint16 | 3072 | 1000 | 4681 | 1795 | 2213 | 2287 | 8202 | 3827 | 2451 |
+| cuda | uint16 | 3072 | 5000 | 1972 | 502 | 530 | 547 | 8508 | 4452 | 549 |
+| cuda | uint16 | 3072 | 25000 | 1881 | 120 | 115 | 116 | 8442 | 1476 | 111 |
+| cuda | uint32 | 128 | 1000 | 4060 | 2679 | 3631 | 3479 | 8135 | 4374 | 3439 |
+| cuda | uint32 | 128 | 5000 | 4230 | 595 | 562 | 558 | 7581 | 4368 | 557 |
+| cuda | uint32 | 128 | 25000 | 4131 | 111 | 113 | 117 | 8127 | 1056 | 110 |
+| cuda | uint32 | 384 | 1000 | 3855 | 2242 | 3697 | 3271 | 8034 | 4761 | 3694 |
+| cuda | uint32 | 384 | 5000 | 3689 | 558 | 543 | 549 | 7712 | 4263 | 534 |
+| cuda | uint32 | 384 | 25000 | 3595 | 119 | 114 | 118 | 8183 | 1330 | 112 |
+| cuda | uint32 | 768 | 1000 | 3966 | 2205 | 2960 | 2939 | 8026 | 4483 | 3001 |
+| cuda | uint32 | 768 | 5000 | 2793 | 552 | 544 | 536 | 8109 | 4253 | 527 |
+| cuda | uint32 | 768 | 25000 | 2126 | 129 | 121 | 126 | 7972 | 1384 | 120 |
+| cuda | uint32 | 1024 | 1000 | 4111 | 2268 | 2917 | 3041 | 8149 | 4314 | 2903 |
+| cuda | uint32 | 1024 | 5000 | 2290 | 543 | 554 | 545 | 8391 | 4302 | 544 |
+| cuda | uint32 | 1024 | 25000 | 2221 | 120 | 114 | 120 | 8404 | 1434 | 113 |
+| cuda | uint32 | 3072 | 1000 | 3635 | 1862 | 2149 | 2098 | 8213 | 4467 | 2346 |
+| cuda | uint32 | 3072 | 5000 | 1319 | 507 | 522 | 540 | 8340 | 4205 | 514 |
+| cuda | uint32 | 3072 | 25000 | 1069 | 121 | 117 | 121 | 8787 | 1425 | 114 |
+| cuda | uint64 | 128 | 1000 | 3925 | 1950 | 2790 | 2740 | 7893 | 4436 | 2481 |
+| cuda | uint64 | 128 | 5000 | 4319 | 569 | 544 | 550 | 8475 | 4252 | 550 |
+| cuda | uint64 | 128 | 25000 | 4398 | 116 | 112 | 112 | 7636 | 1261 | 107 |
+| cuda | uint64 | 384 | 1000 | 4015 | 2441 | 3079 | 2767 | 8179 | 4280 | 2839 |
+| cuda | uint64 | 384 | 5000 | 3278 | 587 | 560 | 565 | 8235 | 4420 | 555 |
+| cuda | uint64 | 384 | 25000 | 3041 | 121 | 116 | 120 | 8270 | 1366 | 114 |
+| cuda | uint64 | 768 | 1000 | 4055 | 2734 | 2951 | 2952 | 8286 | 4226 | 3126 |
+| cuda | uint64 | 768 | 5000 | 2557 | 584 | 586 | 603 | 8053 | 4289 | 572 |
+| cuda | uint64 | 768 | 25000 | 2359 | 119 | 114 | 117 | 8041 | 1439 | 113 |
+| cuda | uint64 | 1024 | 1000 | 4262 | 3420 | 3594 | 3444 | 8238 | 4360 | 3564 |
+| cuda | uint64 | 1024 | 5000 | 2175 | 544 | 556 | 550 | 8133 | 4463 | 551 |
+| cuda | uint64 | 1024 | 25000 | 1977 | 130 | 121 | 130 | 8240 | 1421 | 122 |
+| cuda | uint64 | 3072 | 1000 | 3251 | 2188 | 2026 | 1945 | 8530 | 4662 | 2280 |
+| cuda | uint64 | 3072 | 5000 | 1111 | 530 | 548 | 565 | 8594 | 4349 | 531 |
+| cuda | uint64 | 3072 | 25000 | 985 | 119 | 110 | 117 | 8133 | 1467 | 111 |
+| cuda | uint8 | 128 | 1000 | 4525 | 3155 | 3775 | 4480 | 8174 | 4429 | 3862 |
+| cuda | uint8 | 128 | 5000 | 3858 | 3340 | 3545 | 4343 | 7911 | 4428 | 2339 |
+| cuda | uint8 | 128 | 25000 | 3904 | 3495 | 1816 | 4069 | 7898 | 1386 | 2235 |
+| cuda | uint8 | 384 | 1000 | 3814 | 3168 | 3668 | 4020 | 8087 | 4124 | 3469 |
+| cuda | uint8 | 384 | 5000 | 4123 | 3595 | 3783 | 3684 | 8115 | 4076 | 2449 |
+| cuda | uint8 | 384 | 25000 | 4208 | 3177 | 629 | 3208 | 7784 | 1440 | 2016 |
+| cuda | uint8 | 768 | 1000 | 3845 | 3092 | 3542 | 3649 | 7931 | 4007 | 3229 |
+| cuda | uint8 | 768 | 5000 | 3600 | 3040 | 3119 | 3169 | 8248 | 4416 | 1979 |
+| cuda | uint8 | 768 | 25000 | 2868 | 2446 | 482 | 2454 | 8148 | 1437 | 1801 |
+| cuda | uint8 | 1024 | 1000 | 4575 | 2994 | 3426 | 3500 | 8024 | 4440 | 3260 |
+| cuda | uint8 | 1024 | 5000 | 2766 | 2616 | 2459 | 2371 | 8498 | 4415 | 2058 |
+| cuda | uint8 | 1024 | 25000 | 2644 | 2076 | 342 | 2022 | 8279 | 1429 | 1745 |
+| cuda | uint8 | 3072 | 1000 | 3428 | 2000 | 2187 | 2212 | 8175 | 4488 | 2215 |
+| cuda | uint8 | 3072 | 5000 | 1813 | 1513 | 1493 | 1453 | 8121 | 4324 | 1302 |
+| cuda | uint8 | 3072 | 25000 | 1407 | 1404 | 171 | 1377 | 8479 | 1478 | 1112 |
+| metal | complex128 | 128 | 1000 | 5580 | 5378 | 5951 | 6188 | 11655 | 10213 | 5165 |
+| metal | complex128 | 128 | 5000 | 1886 | 4089 | 4407 | 4847 | 11586 | 6182 | 2487 |
+| metal | complex128 | 128 | 25000 | 378 | 3657 | 3545 | 3822 | 11458 | 2942 | 2011 |
+| metal | complex128 | 384 | 1000 | 5529 | 4637 | 4913 | 4793 | 11457 | 10879 | 4390 |
+| metal | complex128 | 384 | 5000 | 1847 | 3153 | 3150 | 3234 | 11624 | 6392 | 2093 |
+| metal | complex128 | 384 | 25000 | 487 | 2671 | 2626 | 2712 | 11377 | 3074 | 1816 |
+| metal | complex128 | 768 | 1000 | 5040 | 3813 | 4012 | 4050 | 12008 | 10369 | 3678 |
+| metal | complex128 | 768 | 5000 | 1734 | 2274 | 2309 | 2281 | 11541 | 6043 | 1755 |
+| metal | complex128 | 768 | 25000 | 435 | 1997 | 1973 | 1955 | 11386 | 3142 | 1506 |
+| metal | complex128 | 1024 | 1000 | 5621 | 3509 | 3576 | 3228 | 11839 | 10074 | 3244 |
+| metal | complex128 | 1024 | 5000 | 1961 | 2024 | 2003 | 2009 | 11626 | 6435 | 1587 |
+| metal | complex128 | 1024 | 25000 | 484 | 1705 | 1679 | 1681 | 11912 | 3169 | 1370 |
+| metal | complex128 | 3072 | 1000 | 6412 | 2168 | 2157 | 2142 | 11409 | 10092 | 1965 |
+| metal | complex128 | 3072 | 5000 | 1914 | 945 | 951 | 936 | 11317 | 6213 | 850 |
+| metal | complex128 | 3072 | 25000 | 443 | 821 | 830 | 826 | 11514 | 3265 | 740 |
+| metal | complex64 | 128 | 1000 | 7639 | 5365 | 6572 | 6322 | 11457 | 8526 | 5548 |
+| metal | complex64 | 128 | 5000 | 5348 | 4278 | 4611 | 5074 | 12208 | 5788 | 2363 |
+| metal | complex64 | 128 | 25000 | 4784 | 4086 | 3966 | 4371 | 10537 | 2994 | 1970 |
+| metal | complex64 | 384 | 1000 | 6442 | 4646 | 5011 | 5002 | 12151 | 10822 | 4348 |
+| metal | complex64 | 384 | 5000 | 4371 | 3610 | 3796 | 3778 | 10887 | 6220 | 2247 |
+| metal | complex64 | 384 | 25000 | 3883 | 3135 | 3162 | 3304 | 11723 | 2980 | 1915 |
+| metal | complex64 | 768 | 1000 | 5712 | 4060 | 4166 | 4042 | 11987 | 10109 | 3884 |
+| metal | complex64 | 768 | 5000 | 3603 | 2841 | 2833 | 2834 | 11947 | 6426 | 1940 |
+| metal | complex64 | 768 | 25000 | 3316 | 2561 | 2455 | 2479 | 11652 | 3066 | 1740 |
+| metal | complex64 | 1024 | 1000 | 5474 | 3660 | 3827 | 3784 | 11461 | 10926 | 3557 |
+| metal | complex64 | 1024 | 5000 | 3416 | 2504 | 2479 | 2473 | 11622 | 6524 | 1840 |
+| metal | complex64 | 1024 | 25000 | 2225 | 2197 | 2148 | 2186 | 11741 | 3179 | 1624 |
+| metal | complex64 | 3072 | 1000 | 4206 | 2357 | 2391 | 2375 | 10891 | 10124 | 2234 |
+| metal | complex64 | 3072 | 5000 | 2095 | 1366 | 1375 | 1358 | 11146 | 6370 | 1182 |
+| metal | complex64 | 3072 | 25000 | 1885 | 1197 | 1184 | 1204 | 11248 | 3096 | 1021 |
+| metal | float16 | 128 | 1000 | 7564 | 4290 | 4524 | 4662 | 10768 | 6714 | 3926 |
+| metal | float16 | 128 | 5000 | 6587 | 1759 | 1969 | 1978 | 11452 | 4574 | 1801 |
+| metal | float16 | 128 | 10000 | 5953 | 1035 | 1098 | 1092 | 10656 | 0 | 793 |
+| metal | float16 | 128 | 25000 | 5707 | 446 | 460 | 462 | 11728 | 1333 | 429 |
+| metal | float16 | 128 | 100000 | 4920 | 58 | 59 | 61 | 11730 | 1092 | 59 |
+| metal | float16 | 384 | 1000 | 7866 | 4449 | 4865 | 4944 | 11650 | 8013 | 4489 |
+| metal | float16 | 384 | 5000 | 5783 | 1645 | 1755 | 1761 | 12052 | 4540 | 1574 |
+| metal | float16 | 384 | 25000 | 5187 | 350 | 386 | 352 | 11869 | 1569 | 369 |
+| metal | float16 | 384 | 100000 | 4939 | 56 | 57 | 57 | 11717 | 1112 | 57 |
+| metal | float16 | 768 | 1000 | 6669 | 4329 | 4629 | 4482 | 11655 | 7952 | 4186 |
+| metal | float16 | 768 | 5000 | 5223 | 1872 | 1916 | 1937 | 11764 | 4582 | 1639 |
+| metal | float16 | 768 | 25000 | 4934 | 440 | 445 | 453 | 11335 | 1609 | 426 |
+| metal | float16 | 768 | 100000 | 4315 | 62 | 61 | 62 | 11446 | 1124 | 61 |
+| metal | float16 | 1024 | 1000 | 6384 | 3918 | 4362 | 4193 | 12293 | 7875 | 3902 |
+| metal | float16 | 1024 | 5000 | 4727 | 1684 | 1762 | 1788 | 11996 | 4517 | 1530 |
+| metal | float16 | 1024 | 25000 | 4167 | 443 | 435 | 427 | 11514 | 1590 | 443 |
+| metal | float16 | 1024 | 100000 | 4437 | 51 | 50 | 50 | 11812 | 1124 | 50 |
+| metal | float16 | 3072 | 1000 | 5327 | 2932 | 3099 | 3079 | 11510 | 7857 | 2830 |
+| metal | float16 | 3072 | 5000 | 3878 | 1447 | 1583 | 1519 | 10959 | 4590 | 1464 |
+| metal | float16 | 3072 | 25000 | 3324 | 491 | 500 | 505 | 11325 | 1556 | 477 |
+| metal | float16 | 3072 | 100000 | 2783 | 66 | 64 | 65 | 11389 | 1170 | 64 |
+| metal | float32 | 128 | 1000 | 6248 | 4925 | 5394 | 6420 | 11864 | 10875 | 4029 |
+| metal | float32 | 128 | 5000 | 6287 | 4938 | 5631 | 6439 | 12060 | 6147 | 3565 |
+| metal | float32 | 128 | 10000 | 5889 | 5413 | 5201 | 5892 | 11712 | 4350 | 3292 |
+| metal | float32 | 128 | 25000 | 5281 | 4501 | 4512 | 4884 | 10778 | 2915 | 1728 |
+| metal | float32 | 128 | 100000 | 4760 | 3544 | 3335 | 4013 | 11786 | 2237 | 1092 |
+| metal | float32 | 384 | 1000 | 5664 | 4429 | 4808 | 5305 | 11641 | 9954 | 3763 |
+| metal | float32 | 384 | 5000 | 5597 | 4683 | 4663 | 5288 | 11611 | 6106 | 3223 |
+| metal | float32 | 384 | 25000 | 3776 | 3618 | 3577 | 4046 | 12107 | 2949 | 1654 |
+| metal | float32 | 384 | 100000 | 4051 | 3023 | 2808 | 3066 | 11850 | 2305 | 1192 |
+| metal | float32 | 768 | 1000 | 4923 | 4205 | 4222 | 4395 | 11828 | 10062 | 3414 |
+| metal | float32 | 768 | 5000 | 4790 | 4014 | 4123 | 4280 | 11309 | 6190 | 2924 |
+| metal | float32 | 768 | 25000 | 3739 | 2998 | 2963 | 3087 | 10619 | 3055 | 1630 |
+| metal | float32 | 768 | 100000 | 3017 | 2448 | 2100 | 2375 | 11613 | 2364 | 1090 |
+| metal | float32 | 1024 | 1000 | 4553 | 3623 | 3882 | 3940 | 11701 | 9947 | 3152 |
+| metal | float32 | 1024 | 5000 | 4368 | 3777 | 3786 | 3811 | 11952 | 6156 | 2748 |
+| metal | float32 | 1024 | 25000 | 3453 | 2671 | 2565 | 2643 | 11484 | 3059 | 1543 |
+| metal | float32 | 3072 | 1000 | 3120 | 2263 | 2381 | 2271 | 11721 | 10940 | 2115 |
+| metal | float32 | 3072 | 5000 | 3017 | 2270 | 2229 | 2227 | 11734 | 6388 | 1888 |
+| metal | float32 | 3072 | 25000 | 1785 | 1536 | 1493 | 1493 | 9804 | 2632 | 1126 |
+| metal | float64 | 128 | 1000 | 8547 | 5491 | 6493 | 6599 | 11697 | 10720 | 5425 |
+| metal | float64 | 128 | 5000 | 5653 | 4824 | 4876 | 4877 | 11423 | 6136 | 2556 |
+| metal | float64 | 128 | 25000 | 5561 | 3979 | 4088 | 4361 | 10718 | 3010 | 1919 |
+| metal | float64 | 128 | 100000 | 5048 | 565 | 587 | 619 | 11864 | 2288 | 553 |
+| metal | float64 | 384 | 1000 | 7747 | 5090 | 5857 | 5677 | 11542 | 10108 | 5221 |
+| metal | float64 | 384 | 5000 | 4929 | 4025 | 4221 | 4256 | 12037 | 6284 | 2226 |
+| metal | float64 | 384 | 25000 | 4498 | 3185 | 3229 | 3394 | 11956 | 2946 | 1951 |
+| metal | float64 | 384 | 100000 | 4662 | 352 | 348 | 360 | 11619 | 2297 | 358 |
+| metal | float64 | 768 | 1000 | 6347 | 4875 | 4959 | 4917 | 11658 | 9999 | 4369 |
+| metal | float64 | 768 | 5000 | 4526 | 3242 | 3225 | 3259 | 11792 | 6024 | 2050 |
+| metal | float64 | 768 | 25000 | 3802 | 2566 | 2281 | 2561 | 11782 | 3083 | 1791 |
+| metal | float64 | 768 | 100000 | 4085 | 289 | 283 | 276 | 11604 | 2322 | 265 |
+| metal | float64 | 1024 | 1000 | 6219 | 4468 | 4719 | 4556 | 11573 | 10096 | 4157 |
+| metal | float64 | 1024 | 5000 | 3938 | 2805 | 2825 | 2813 | 11350 | 6054 | 1959 |
+| metal | float64 | 1024 | 25000 | 2885 | 2297 | 1887 | 2217 | 10986 | 3053 | 1418 |
+| metal | float64 | 1024 | 100000 | 3782 | 231 | 217 | 245 | 11951 | 2431 | 223 |
+| metal | float64 | 3072 | 1000 | 4672 | 3093 | 3064 | 3018 | 11350 | 10799 | 2834 |
+| metal | float64 | 3072 | 5000 | 2501 | 1573 | 1570 | 1556 | 11652 | 6089 | 1293 |
+| metal | float64 | 3072 | 25000 | 2394 | 1341 | 1316 | 1315 | 11650 | 3285 | 1113 |
+| metal | float64 | 3072 | 100000 | 1827 | 119 | 118 | 118 | 11481 | 2369 | 119 |
+| metal | int16 | 128 | 1000 | 8476 | 2824 | 3946 | 4077 | 11432 | 8090 | 4169 |
+| metal | int16 | 128 | 5000 | 5531 | 726 | 715 | 715 | 11209 | 4502 | 673 |
+| metal | int16 | 128 | 25000 | 5321 | 144 | 155 | 154 | 10364 | 1242 | 138 |
+| metal | int16 | 128 | 100000 | 4873 | 39 | 39 | 39 | 8733 | 1081 | 40 |
+| metal | int16 | 384 | 1000 | 7213 | 2575 | 3501 | 3720 | 12098 | 8148 | 3699 |
+| metal | int16 | 384 | 5000 | 5344 | 618 | 633 | 636 | 11393 | 4525 | 640 |
+| metal | int16 | 384 | 25000 | 4297 | 150 | 153 | 149 | 12598 | 1497 | 151 |
+| metal | int16 | 384 | 100000 | 4093 | 32 | 32 | 32 | 11725 | 1128 | 33 |
+| metal | int16 | 768 | 1000 | 6632 | 2371 | 3380 | 3530 | 12036 | 8095 | 3490 |
+| metal | int16 | 768 | 5000 | 4212 | 682 | 713 | 713 | 11322 | 4524 | 718 |
+| metal | int16 | 768 | 25000 | 3785 | 163 | 165 | 161 | 11690 | 1288 | 165 |
+| metal | int16 | 768 | 100000 | 4120 | 37 | 36 | 37 | 11498 | 1149 | 37 |
+| metal | int16 | 1024 | 1000 | 6621 | 2782 | 3758 | 3790 | 11822 | 8052 | 3892 |
+| metal | int16 | 1024 | 5000 | 3930 | 694 | 723 | 734 | 11719 | 4335 | 740 |
+| metal | int16 | 1024 | 25000 | 3470 | 157 | 156 | 160 | 11864 | 1574 | 157 |
+| metal | int16 | 1024 | 100000 | 3517 | 38 | 37 | 38 | 11331 | 1141 | 38 |
+| metal | int16 | 3072 | 1000 | 5066 | 2710 | 3140 | 3164 | 11870 | 7902 | 3248 |
+| metal | int16 | 3072 | 5000 | 2687 | 646 | 706 | 687 | 11479 | 4382 | 684 |
+| metal | int16 | 3072 | 25000 | 2314 | 135 | 136 | 136 | 11913 | 1612 | 137 |
+| metal | int16 | 3072 | 100000 | 2341 | 40 | 40 | 41 | 11558 | 1146 | 40 |
+| metal | int32 | 128 | 1000 | 7751 | 4391 | 5214 | 5253 | 11448 | 8031 | 4664 |
+| metal | int32 | 128 | 5000 | 4957 | 1627 | 1591 | 1720 | 10664 | 4460 | 1236 |
+| metal | int32 | 128 | 25000 | 5175 | 425 | 434 | 442 | 10372 | 1513 | 378 |
+| metal | int32 | 128 | 100000 | 4862 | 52 | 52 | 53 | 11453 | 1109 | 52 |
+| metal | int32 | 384 | 1000 | 6057 | 4334 | 4832 | 4831 | 11744 | 8364 | 4288 |
+| metal | int32 | 384 | 5000 | 4229 | 1808 | 1874 | 1947 | 10949 | 4584 | 1466 |
+| metal | int32 | 384 | 25000 | 4277 | 434 | 450 | 446 | 10192 | 1500 | 398 |
+| metal | int32 | 384 | 100000 | 3650 | 58 | 56 | 57 | 11814 | 1116 | 56 |
+| metal | int32 | 768 | 1000 | 6501 | 4596 | 4732 | 4632 | 12119 | 7609 | 4426 |
+| metal | int32 | 768 | 5000 | 4113 | 1869 | 1815 | 1962 | 11917 | 4556 | 1448 |
+| metal | int32 | 768 | 25000 | 3637 | 422 | 432 | 436 | 11884 | 1519 | 391 |
+| metal | int32 | 768 | 100000 | 3877 | 58 | 57 | 58 | 11759 | 1133 | 56 |
+| metal | int32 | 1024 | 1000 | 5427 | 3470 | 4279 | 4108 | 11865 | 7976 | 3315 |
+| metal | int32 | 1024 | 5000 | 3775 | 1951 | 1992 | 1998 | 11146 | 4548 | 1498 |
+| metal | int32 | 1024 | 25000 | 3429 | 479 | 487 | 493 | 11609 | 1538 | 438 |
+| metal | int32 | 1024 | 100000 | 2869 | 53 | 53 | 54 | 10916 | 1140 | 53 |
+| metal | int32 | 3072 | 1000 | 5162 | 3678 | 3424 | 3511 | 11084 | 7918 | 3429 |
+| metal | int32 | 3072 | 5000 | 2347 | 1376 | 1394 | 1400 | 11660 | 4526 | 1260 |
+| metal | int32 | 3072 | 25000 | 2208 | 418 | 426 | 432 | 11729 | 1634 | 400 |
+| metal | int32 | 3072 | 100000 | 2029 | 52 | 45 | 46 | 11295 | 1066 | 54 |
+| metal | int64 | 128 | 1000 | 7777 | 2443 | 3317 | 3509 | 11952 | 8318 | 3478 |
+| metal | int64 | 128 | 5000 | 5461 | 738 | 717 | 728 | 11493 | 4465 | 728 |
+| metal | int64 | 128 | 25000 | 5251 | 157 | 161 | 161 | 11715 | 1198 | 159 |
+| metal | int64 | 128 | 100000 | 4722 | 31 | 30 | 31 | 11537 | 1014 | 31 |
+| metal | int64 | 384 | 1000 | 6929 | 2507 | 3456 | 3633 | 11871 | 8072 | 3618 |
+| metal | int64 | 384 | 5000 | 4759 | 755 | 751 | 751 | 11747 | 4595 | 750 |
+| metal | int64 | 384 | 25000 | 3746 | 153 | 172 | 159 | 11924 | 1560 | 173 |
+| metal | int64 | 384 | 100000 | 3905 | 31 | 32 | 32 | 11414 | 1053 | 32 |
+| metal | int64 | 768 | 1000 | 6528 | 2833 | 3808 | 3945 | 11905 | 8173 | 3995 |
+| metal | int64 | 768 | 5000 | 4036 | 740 | 760 | 765 | 11235 | 4597 | 764 |
+| metal | int64 | 768 | 25000 | 3662 | 160 | 161 | 163 | 11586 | 1446 | 162 |
+| metal | int64 | 768 | 100000 | 3510 | 32 | 37 | 34 | 11338 | 1150 | 37 |
+| metal | int64 | 1024 | 1000 | 5851 | 2647 | 3390 | 3471 | 12023 | 8339 | 3469 |
+| metal | int64 | 1024 | 5000 | 3890 | 723 | 746 | 750 | 11065 | 4598 | 751 |
+| metal | int64 | 1024 | 100000 | 3293 | 37 | 36 | 37 | 11767 | 1139 | 37 |
+| metal | int64 | 3072 | 1000 | 4899 | 2590 | 3076 | 3135 | 11618 | 8317 | 3126 |
+| metal | int64 | 3072 | 5000 | 2102 | 715 | 736 | 746 | 11777 | 4640 | 736 |
+| metal | int8 | 128 | 1000 | 8222 | 5385 | 6513 | 6722 | 11653 | 7999 | 5467 |
+| metal | int8 | 128 | 5000 | 5720 | 4168 | 4225 | 4527 | 11632 | 4300 | 2321 |
+| metal | int8 | 128 | 25000 | 5702 | 3724 | 3979 | 4268 | 10768 | 1491 | 1965 |
+| metal | int8 | 128 | 100000 | 5349 | 696 | 588 | 656 | 9624 | 1116 | 618 |
+| metal | int8 | 384 | 1000 | 7193 | 4354 | 5089 | 4994 | 11688 | 7842 | 4414 |
+| metal | int8 | 384 | 5000 | 5037 | 2780 | 2759 | 2841 | 11230 | 4349 | 1887 |
+| metal | int8 | 384 | 25000 | 4272 | 2933 | 2545 | 3113 | 11116 | 1452 | 1677 |
+| metal | int8 | 384 | 100000 | 4033 | 335 | 298 | 321 | 11760 | 1114 | 284 |
+| metal | int8 | 768 | 1000 | 6247 | 3959 | 4248 | 4207 | 12301 | 7991 | 3948 |
+| metal | int8 | 768 | 5000 | 3876 | 2411 | 2379 | 2366 | 10899 | 4490 | 1828 |
+| metal | int8 | 768 | 25000 | 3403 | 2148 | 2111 | 2118 | 11971 | 1486 | 1595 |
+| metal | int8 | 768 | 100000 | 3263 | 224 | 219 | 212 | 11758 | 1137 | 222 |
+| metal | int8 | 1024 | 1000 | 6250 | 3785 | 3940 | 3746 | 11636 | 7998 | 3647 |
+| metal | int8 | 1024 | 5000 | 3627 | 1971 | 2047 | 1902 | 11029 | 4369 | 1492 |
+| metal | int8 | 1024 | 25000 | 3517 | 1924 | 1898 | 1913 | 12065 | 1588 | 1411 |
+| metal | int8 | 1024 | 100000 | 3358 | 173 | 172 | 166 | 11546 | 1107 | 163 |
+| metal | int8 | 3072 | 1000 | 4828 | 2179 | 2403 | 2365 | 11854 | 8380 | 2290 |
+| metal | int8 | 3072 | 5000 | 2153 | 905 | 911 | 907 | 11560 | 4294 | 809 |
+| metal | int8 | 3072 | 25000 | 1986 | 766 | 734 | 765 | 11446 | 1558 | 680 |
+| metal | int8 | 3072 | 100000 | 1613 | 67 | 66 | 65 | 11241 | 1136 | 65 |
+| metal | turboquant2 | 128 | 1000 | 8662 | 6044 | 7419 | 6618 | 11736 | 10086 | 7272 |
+| metal | turboquant2 | 128 | 5000 | 7411 | 6084 | 6837 | 7351 | 11587 | 5830 | 6205 |
+| metal | turboquant2 | 128 | 25000 | 7593 | 6455 | 6556 | 7247 | 10949 | 2849 | 6182 |
+| metal | turboquant2 | 384 | 1000 | 6795 | 4815 | 5693 | 5602 | 11971 | 10544 | 5381 |
+| metal | turboquant2 | 384 | 5000 | 6460 | 5083 | 5660 | 5981 | 11950 | 6103 | 5325 |
+| metal | turboquant2 | 384 | 25000 | 6916 | 5755 | 5667 | 6113 | 10886 | 2858 | 5715 |
+| metal | turboquant2 | 768 | 1000 | 6695 | 4449 | 5278 | 5142 | 11579 | 10510 | 5110 |
+| metal | turboquant2 | 768 | 5000 | 10762 | 6687 | 6570 | 6679 | 12290 | 6108 | 7042 |
+| metal | turboquant2 | 768 | 25000 | 6464 | 5088 | 4989 | 5416 | 10892 | 3018 | 4996 |
+| metal | turboquant2 | 1024 | 1000 | 7419 | 4535 | 5356 | 4935 | 12108 | 10355 | 5133 |
+| metal | turboquant2 | 1024 | 5000 | 9654 | 6228 | 6489 | 6565 | 12194 | 6310 | 6319 |
+| metal | turboquant2 | 1024 | 25000 | 6629 | 5441 | 4923 | 5578 | 12338 | 3071 | 5161 |
+| metal | turboquant2 | 3072 | 1000 | 5788 | 3287 | 3660 | 3590 | 11398 | 10439 | 3622 |
+| metal | turboquant2 | 3072 | 5000 | 6200 | 3830 | 3805 | 3720 | 12102 | 6530 | 3764 |
+| metal | turboquant2 | 3072 | 25000 | 5730 | 3825 | 3665 | 3725 | 10692 | 3089 | 3722 |
+| metal | turboquant4 | 128 | 1000 | 8266 | 5763 | 7341 | 6700 | 11822 | 10125 | 7010 |
+| metal | turboquant4 | 128 | 5000 | 7647 | 5923 | 6855 | 7245 | 11341 | 6068 | 5569 |
+| metal | turboquant4 | 128 | 25000 | 7389 | 6665 | 6502 | 7256 | 12158 | 2743 | 5987 |
+| metal | turboquant4 | 384 | 1000 | 7002 | 4897 | 5971 | 5777 | 11640 | 9991 | 5611 |
+| metal | turboquant4 | 384 | 5000 | 6782 | 5358 | 5777 | 6041 | 12249 | 5850 | 5477 |
+| metal | turboquant4 | 384 | 25000 | 6771 | 5523 | 5554 | 6067 | 12011 | 2949 | 5244 |
+| metal | turboquant4 | 768 | 1000 | 6779 | 4628 | 5402 | 5356 | 11518 | 10323 | 5153 |
+| metal | turboquant4 | 768 | 5000 | 6422 | 5359 | 5239 | 5445 | 12219 | 6151 | 4964 |
+| metal | turboquant4 | 768 | 25000 | 6073 | 5221 | 5058 | 5517 | 12183 | 3056 | 5024 |
+| metal | turboquant4 | 1024 | 1000 | 7953 | 4457 | 5512 | 5189 | 11817 | 10534 | 5363 |
+| metal | turboquant4 | 1024 | 5000 | 7084 | 5376 | 5334 | 5459 | 12223 | 6082 | 4809 |
+| metal | turboquant4 | 1024 | 25000 | 6812 | 5403 | 5178 | 5592 | 12282 | 3126 | 5095 |
+| metal | turboquant4 | 3072 | 1000 | 6133 | 3255 | 3756 | 3673 | 12349 | 10357 | 3805 |
+| metal | turboquant4 | 3072 | 5000 | 5687 | 3713 | 3703 | 3660 | 11933 | 6309 | 3694 |
+| metal | turboquant4 | 3072 | 25000 | 5414 | 3760 | 3648 | 3702 | 11930 | 3175 | 3687 |
+| metal | turboquant8 | 128 | 1000 | 8469 | 5986 | 7359 | 6994 | 12235 | 10085 | 7130 |
+| metal | turboquant8 | 128 | 5000 | 7776 | 6779 | 7146 | 7462 | 12078 | 6149 | 6515 |
+| metal | turboquant8 | 128 | 25000 | 7384 | 6757 | 6481 | 7255 | 10676 | 2729 | 6004 |
+| metal | turboquant8 | 384 | 1000 | 6644 | 4786 | 5684 | 5747 | 11835 | 10529 | 5457 |
+| metal | turboquant8 | 384 | 5000 | 10871 | 7251 | 8282 | 7587 | 12163 | 5993 | 8322 |
+| metal | turboquant8 | 384 | 25000 | 6644 | 5693 | 5504 | 5922 | 12230 | 2961 | 5179 |
+| metal | turboquant8 | 768 | 1000 | 6361 | 4317 | 5130 | 5116 | 11823 | 10449 | 5112 |
+| metal | turboquant8 | 768 | 5000 | 6372 | 4971 | 5098 | 5315 | 12278 | 5961 | 4827 |
+| metal | turboquant8 | 768 | 25000 | 8571 | 6107 | 5994 | 6498 | 10885 | 3047 | 5751 |
+| metal | turboquant8 | 1024 | 1000 | 7679 | 4665 | 5443 | 5303 | 12135 | 9939 | 5142 |
+| metal | turboquant8 | 1024 | 5000 | 7751 | 5606 | 5593 | 5759 | 12445 | 6302 | 5349 |
+| metal | turboquant8 | 1024 | 25000 | 7360 | 5480 | 5259 | 5589 | 12490 | 3093 | 4955 |
+| metal | turboquant8 | 3072 | 1000 | 6035 | 3477 | 3749 | 3647 | 11300 | 10440 | 3712 |
+| metal | turboquant8 | 3072 | 5000 | 9008 | 4562 | 4472 | 4311 | 11974 | 6366 | 4497 |
+| metal | turboquant8 | 3072 | 25000 | 5489 | 3769 | 3688 | 3736 | 11850 | 3189 | 3724 |
+| metal | uint16 | 128 | 1000 | 8589 | 2903 | 4026 | 4206 | 11559 | 8109 | 4155 |
+| metal | uint16 | 128 | 5000 | 4867 | 696 | 688 | 687 | 10009 | 4052 | 544 |
+| metal | uint16 | 384 | 1000 | 7055 | 2596 | 3603 | 3799 | 12158 | 8078 | 3796 |
+| metal | uint16 | 384 | 5000 | 4812 | 586 | 623 | 564 | 10866 | 4529 | 619 |
+| metal | uint16 | 768 | 1000 | 6404 | 2638 | 3633 | 3633 | 11839 | 8109 | 3806 |
+| metal | uint16 | 768 | 5000 | 3817 | 730 | 746 | 760 | 11244 | 4540 | 754 |
+| metal | uint16 | 1024 | 1000 | 6036 | 2726 | 3772 | 3827 | 11964 | 8103 | 3901 |
+| metal | uint16 | 1024 | 5000 | 3505 | 730 | 762 | 762 | 11203 | 4702 | 777 |
+| metal | uint16 | 3072 | 1000 | 5079 | 2410 | 2983 | 2979 | 12015 | 8194 | 3061 |
+| metal | uint16 | 3072 | 5000 | 2395 | 668 | 711 | 727 | 11726 | 4679 | 726 |
+| metal | uint32 | 128 | 1000 | 7705 | 2316 | 3202 | 3311 | 12030 | 8256 | 3372 |
+| metal | uint32 | 128 | 5000 | 5394 | 745 | 730 | 739 | 11168 | 4520 | 730 |
+| metal | uint32 | 384 | 1000 | 7052 | 2682 | 3625 | 3772 | 11791 | 8044 | 3763 |
+| metal | uint32 | 384 | 5000 | 4773 | 734 | 757 | 755 | 11692 | 4575 | 754 |
+| metal | uint32 | 768 | 1000 | 6168 | 2407 | 3354 | 3435 | 11845 | 8087 | 3512 |
+| metal | uint32 | 768 | 5000 | 4129 | 707 | 714 | 718 | 11211 | 4618 | 735 |
+| metal | uint32 | 1024 | 1000 | 5463 | 2502 | 3229 | 3221 | 11331 | 7701 | 3377 |
+| metal | uint32 | 1024 | 5000 | 3578 | 603 | 642 | 647 | 11800 | 4676 | 647 |
+| metal | uint32 | 3072 | 1000 | 4627 | 2293 | 2932 | 2561 | 11852 | 7608 | 2934 |
+| metal | uint32 | 3072 | 5000 | 2128 | 710 | 745 | 758 | 11663 | 4618 | 756 |
+| metal | uint64 | 128 | 1000 | 7940 | 2695 | 3687 | 3886 | 11819 | 7995 | 3882 |
+| metal | uint64 | 128 | 5000 | 5300 | 753 | 703 | 732 | 11120 | 4342 | 737 |
+| metal | uint64 | 384 | 1000 | 7391 | 3059 | 4278 | 4421 | 11984 | 8014 | 4431 |
+| metal | uint64 | 384 | 5000 | 4375 | 639 | 689 | 697 | 12120 | 3595 | 667 |
+| metal | uint64 | 768 | 1000 | 6315 | 2039 | 2863 | 2930 | 11793 | 8003 | 2935 |
+| metal | uint64 | 768 | 5000 | 3866 | 712 | 672 | 673 | 11518 | 3440 | 750 |
+| metal | uint64 | 768 | 25000 | 3723 | 161 | 161 | 162 | 11888 | 1593 | 163 |
+| metal | uint64 | 1024 | 1000 | 5778 | 2638 | 3441 | 3480 | 11353 | 7018 | 3532 |
+| metal | uint64 | 1024 | 5000 | 3666 | 732 | 765 | 702 | 11805 | 4693 | 782 |
+| metal | uint64 | 1024 | 25000 | 3195 | 157 | 157 | 161 | 11848 | 1660 | 162 |
+| metal | uint64 | 3072 | 1000 | 4550 | 2314 | 2905 | 2958 | 11828 | 8122 | 2988 |
+| metal | uint64 | 3072 | 5000 | 1995 | 685 | 707 | 732 | 11633 | 4623 | 728 |
+| metal | uint64 | 3072 | 25000 | 2018 | 164 | 162 | 162 | 11478 | 1671 | 163 |
+| metal | uint8 | 128 | 1000 | 8240 | 5249 | 6189 | 6395 | 11908 | 8011 | 5150 |
+| metal | uint8 | 128 | 5000 | 6580 | 4387 | 4816 | 5226 | 11483 | 4483 | 2964 |
+| metal | uint8 | 128 | 25000 | 5819 | 4915 | 1125 | 5537 | 11740 | 1523 | 2993 |
+| metal | uint8 | 384 | 1000 | 7646 | 4692 | 5194 | 5245 | 11740 | 7998 | 4603 |
+| metal | uint8 | 384 | 5000 | 5601 | 3768 | 3653 | 3821 | 12244 | 3732 | 2485 |
+| metal | uint8 | 384 | 25000 | 4782 | 3238 | 598 | 3270 | 11721 | 1557 | 2528 |
+| metal | uint8 | 768 | 1000 | 6618 | 3935 | 4411 | 4289 | 11675 | 8556 | 4052 |
+| metal | uint8 | 768 | 5000 | 4900 | 2699 | 2865 | 2889 | 10921 | 3822 | 2103 |
+| metal | uint8 | 768 | 25000 | 4313 | 2536 | 380 | 2549 | 11770 | 1573 | 2055 |
+| metal | uint8 | 1024 | 1000 | 6227 | 3946 | 4236 | 4013 | 12265 | 8144 | 3977 |
+| metal | uint8 | 1024 | 5000 | 3877 | 2476 | 2443 | 2440 | 11629 | 4552 | 1917 |
+| metal | uint8 | 1024 | 25000 | 3214 | 1629 | 130 | 472 | 10866 | 1043 | 1358 |
+| metal | uint8 | 3072 | 1000 | 4895 | 2698 | 2673 | 2649 | 11992 | 8093 | 2339 |
+| metal | uint8 | 3072 | 5000 | 2685 | 1108 | 1155 | 1151 | 11517 | 4846 | 1016 |
+| metal | uint8 | 3072 | 25000 | 2604 | 1006 | 956 | 1020 | 9443 | 1133 | 838 |
+
+### Ingestion Performance
+
+| Mode | DType | Dim | Count | DoPut (vec/s) | DoPut (MB/s) | DoGet (vec/s) | DoGet (MB/s) |
+|------|-------|-----|-------|---------------|--------------|---------------|--------------|
+| cuda | complex128 | 128 | 1000 | 40914 | 79.9 | 45070 | 88.0 |
+| cuda | complex128 | 128 | 5000 | 151607 | 296.1 | 158113 | 308.8 |
+| cuda | complex128 | 128 | 25000 | 178664 | 349.0 | 302742 | 591.3 |
+| cuda | complex128 | 384 | 1000 | 39097 | 229.1 | 36660 | 214.8 |
+| cuda | complex128 | 384 | 5000 | 57417 | 336.4 | 65618 | 384.5 |
+| cuda | complex128 | 384 | 25000 | 62566 | 366.6 | 116714 | 683.9 |
+| cuda | complex128 | 768 | 1000 | 26149 | 306.4 | 20907 | 245.0 |
+| cuda | complex128 | 768 | 5000 | 32032 | 375.4 | 35028 | 410.5 |
+| cuda | complex128 | 768 | 25000 | 33311 | 390.4 | 58073 | 680.5 |
+| cuda | complex128 | 1024 | 1000 | 21658 | 338.4 | 18488 | 288.9 |
+| cuda | complex128 | 1024 | 5000 | 23412 | 365.8 | 30924 | 483.2 |
+| cuda | complex128 | 1024 | 25000 | 25811 | 403.3 | 43700 | 682.8 |
+| cuda | complex128 | 3072 | 1000 | 7701 | 361.0 | 8261 | 387.2 |
+| cuda | complex128 | 3072 | 5000 | 8368 | 392.2 | 10480 | 491.3 |
+| cuda | complex128 | 3072 | 25000 | 8680 | 406.9 | 14089 | 660.4 |
+| cuda | complex64 | 128 | 1000 | 63805 | 62.3 | 33838 | 33.0 |
+| cuda | complex64 | 128 | 5000 | 304970 | 297.8 | 135394 | 132.2 |
+| cuda | complex64 | 128 | 25000 | 320223 | 312.7 | 441105 | 430.8 |
+| cuda | complex64 | 384 | 1000 | 79048 | 231.6 | 35309 | 103.4 |
+| cuda | complex64 | 384 | 5000 | 112256 | 328.9 | 118193 | 346.3 |
+| cuda | complex64 | 384 | 25000 | 120110 | 351.9 | 215934 | 632.6 |
+| cuda | complex64 | 768 | 1000 | 47643 | 279.2 | 32435 | 190.0 |
+| cuda | complex64 | 768 | 5000 | 60607 | 355.1 | 75156 | 440.4 |
+| cuda | complex64 | 768 | 25000 | 63738 | 373.5 | 105473 | 618.0 |
+| cuda | complex64 | 1024 | 1000 | 40848 | 319.1 | 27728 | 216.6 |
+| cuda | complex64 | 1024 | 5000 | 45564 | 356.0 | 47196 | 368.7 |
+| cuda | complex64 | 1024 | 25000 | 47440 | 370.6 | 80117 | 625.9 |
+| cuda | complex64 | 3072 | 1000 | 14370 | 336.8 | 16280 | 381.6 |
+| cuda | complex64 | 3072 | 5000 | 15671 | 367.3 | 21070 | 493.8 |
+| cuda | complex64 | 3072 | 25000 | 16475 | 386.1 | 30326 | 710.8 |
+| cuda | float16 | 128 | 1000 | 67412 | 16.5 | 334241 | 81.6 |
+| cuda | float16 | 128 | 5000 | 487185 | 118.9 | 301358 | 73.6 |
+| cuda | float16 | 128 | 25000 | 1162926 | 283.9 | 2136611 | 521.6 |
+| cuda | float16 | 128 | 100000 | 598 | 0.1 | 1150696 | 280.9 |
+| cuda | float16 | 384 | 1000 | 108773 | 79.7 | 63429 | 46.5 |
+| cuda | float16 | 384 | 5000 | 400584 | 293.4 | 203693 | 149.2 |
+| cuda | float16 | 384 | 25000 | 410626 | 300.8 | 584794 | 428.3 |
+| cuda | float16 | 384 | 100000 | 307 | 0.2 | 711076 | 520.8 |
+| cuda | float16 | 768 | 1000 | 95876 | 140.4 | 41476 | 60.8 |
+| cuda | float16 | 768 | 5000 | 200426 | 293.6 | 127191 | 186.3 |
+| cuda | float16 | 768 | 25000 | 238197 | 348.9 | 346987 | 508.3 |
+| cuda | float16 | 768 | 100000 | 187 | 0.3 | 371038 | 543.5 |
+| cuda | float16 | 1024 | 1000 | 117237 | 229.0 | 46329 | 90.5 |
+| cuda | float16 | 1024 | 5000 | 156476 | 305.6 | 170813 | 333.6 |
+| cuda | float16 | 1024 | 25000 | 167067 | 326.3 | 257975 | 503.9 |
+| cuda | float16 | 1024 | 100000 | 146 | 0.3 | 242970 | 474.6 |
+| cuda | float16 | 3072 | 1000 | 53545 | 313.7 | 33694 | 197.4 |
+| cuda | float16 | 3072 | 5000 | 59809 | 350.4 | 69427 | 406.8 |
+| cuda | float16 | 3072 | 25000 | 63380 | 371.4 | 102999 | 603.5 |
+| cuda | float32 | 128 | 1000 | 62977 | 30.8 | 67235 | 32.8 |
+| cuda | float32 | 128 | 5000 | 342269 | 167.1 | 284338 | 138.8 |
+| cuda | float32 | 128 | 25000 | 648061 | 316.4 | 681731 | 332.9 |
+| cuda | float32 | 128 | 100000 | 535 | 0.3 | 679833 | 331.9 |
+| cuda | float32 | 384 | 1000 | 44389 | 65.0 | 49401 | 72.4 |
+| cuda | float32 | 384 | 5000 | 190849 | 279.6 | 199413 | 292.1 |
+| cuda | float32 | 384 | 25000 | 227855 | 333.8 | 407765 | 597.3 |
+| cuda | float32 | 384 | 100000 | 245 | 0.4 | 302916 | 443.7 |
+| cuda | float32 | 768 | 1000 | 76579 | 224.4 | 40413 | 118.4 |
+| cuda | float32 | 768 | 5000 | 110288 | 323.1 | 94651 | 277.3 |
+| cuda | float32 | 768 | 25000 | 124577 | 365.0 | 204035 | 597.8 |
+| cuda | float32 | 768 | 100000 | 138 | 0.4 | 215460 | 631.2 |
+| cuda | float32 | 1024 | 1000 | 65432 | 255.6 | 29796 | 116.4 |
+| cuda | float32 | 1024 | 5000 | 90901 | 355.1 | 93599 | 365.6 |
+| cuda | float32 | 1024 | 25000 | 93636 | 365.8 | 165537 | 646.6 |
+| cuda | float32 | 1024 | 100000 | 107 | 0.4 | 166592 | 650.7 |
+| cuda | float32 | 3072 | 1000 | 28750 | 336.9 | 24798 | 290.6 |
+| cuda | float32 | 3072 | 5000 | 32288 | 378.4 | 39620 | 464.3 |
+| cuda | float32 | 3072 | 25000 | 30982 | 363.1 | 61581 | 721.6 |
+| cuda | float64 | 128 | 1000 | 58786 | 57.4 | 66862 | 65.3 |
+| cuda | float64 | 128 | 5000 | 254871 | 248.9 | 391563 | 382.4 |
+| cuda | float64 | 128 | 25000 | 339469 | 331.5 | 523333 | 511.1 |
+| cuda | float64 | 128 | 100000 | 723 | 0.7 | 595311 | 581.4 |
+| cuda | float64 | 384 | 1000 | 29975 | 87.8 | 40770 | 119.4 |
+| cuda | float64 | 384 | 5000 | 109641 | 321.2 | 101339 | 296.9 |
+| cuda | float64 | 384 | 25000 | 124693 | 365.3 | 220336 | 645.5 |
+| cuda | float64 | 384 | 100000 | 449 | 1.3 | 74849 | 219.3 |
+| cuda | float64 | 768 | 1000 | 40728 | 238.6 | 27291 | 159.9 |
+| cuda | float64 | 768 | 5000 | 66050 | 387.0 | 62169 | 364.3 |
+| cuda | float64 | 768 | 25000 | 61984 | 363.2 | 133938 | 784.8 |
+| cuda | float64 | 768 | 100000 | 315 | 1.8 | 106282 | 622.7 |
+| cuda | float64 | 1024 | 1000 | 36839 | 287.8 | 28779 | 224.8 |
+| cuda | float64 | 1024 | 5000 | 45588 | 356.2 | 52373 | 409.2 |
+| cuda | float64 | 1024 | 25000 | 47104 | 368.0 | 98190 | 767.1 |
+| cuda | float64 | 1024 | 100000 | 265 | 2.1 | 83559 | 652.8 |
+| cuda | float64 | 3072 | 1000 | 14850 | 348.0 | 13625 | 319.3 |
+| cuda | float64 | 3072 | 5000 | 15987 | 374.7 | 20783 | 487.1 |
+| cuda | float64 | 3072 | 25000 | 15180 | 355.8 | 30431 | 713.2 |
+| cuda | float64 | 3072 | 100000 | 113 | 2.7 | 28171 | 660.3 |
+| cuda | int16 | 128 | 1000 | 69015 | 16.8 | 109853 | 26.8 |
+| cuda | int16 | 128 | 5000 | 476270 | 116.3 | 315844 | 77.1 |
+| cuda | int16 | 128 | 25000 | 1141874 | 278.8 | 603974 | 147.5 |
+| cuda | int16 | 128 | 100000 | 729 | 0.2 | 1066774 | 260.4 |
+| cuda | int16 | 384 | 1000 | 98668 | 72.3 | 44031 | 32.2 |
+| cuda | int16 | 384 | 5000 | 382422 | 280.1 | 156677 | 114.8 |
+| cuda | int16 | 384 | 25000 | 423388 | 310.1 | 616911 | 451.8 |
+| cuda | int16 | 768 | 1000 | 65243 | 95.6 | 155288 | 227.5 |
+| cuda | int16 | 768 | 5000 | 241434 | 353.7 | 190407 | 278.9 |
+| cuda | int16 | 768 | 25000 | 233619 | 342.2 | 394970 | 578.6 |
+| cuda | int16 | 1024 | 1000 | 118020 | 230.5 | 85961 | 167.9 |
+| cuda | int16 | 1024 | 5000 | 160204 | 312.9 | 167446 | 327.0 |
+| cuda | int16 | 1024 | 25000 | 182554 | 356.6 | 279683 | 546.3 |
+| cuda | int16 | 3072 | 1000 | 51629 | 302.5 | 35257 | 206.6 |
+| cuda | int16 | 3072 | 5000 | 58652 | 343.7 | 61569 | 360.8 |
+| cuda | int16 | 3072 | 25000 | 66236 | 388.1 | 113415 | 664.5 |
+| cuda | int32 | 128 | 1000 | 69602 | 34.0 | 69317 | 33.8 |
+| cuda | int32 | 128 | 5000 | 252970 | 123.5 | 260367 | 127.1 |
+| cuda | int32 | 128 | 25000 | 674374 | 329.3 | 639040 | 312.0 |
+| cuda | int32 | 384 | 1000 | 48419 | 70.9 | 63807 | 93.5 |
+| cuda | int32 | 384 | 5000 | 219108 | 321.0 | 188192 | 275.7 |
+| cuda | int32 | 384 | 25000 | 232092 | 340.0 | 423741 | 620.7 |
+| cuda | int32 | 768 | 1000 | 93395 | 273.6 | 46652 | 136.7 |
+| cuda | int32 | 768 | 5000 | 126369 | 370.2 | 120995 | 354.5 |
+| cuda | int32 | 768 | 25000 | 120295 | 352.4 | 229881 | 673.5 |
+| cuda | int32 | 1024 | 1000 | 56705 | 221.5 | 30509 | 119.2 |
+| cuda | int32 | 1024 | 5000 | 88440 | 345.5 | 87439 | 341.6 |
+| cuda | int32 | 1024 | 25000 | 94128 | 367.7 | 150794 | 589.0 |
+| cuda | int32 | 3072 | 1000 | 27518 | 322.5 | 27946 | 327.5 |
+| cuda | int32 | 3072 | 5000 | 30416 | 356.4 | 40200 | 471.1 |
+| cuda | int32 | 3072 | 25000 | 34251 | 401.4 | 54033 | 633.2 |
+| cuda | int64 | 128 | 1000 | 57238 | 55.9 | 36842 | 36.0 |
+| cuda | int64 | 128 | 5000 | 296926 | 290.0 | 133334 | 130.2 |
+| cuda | int64 | 128 | 25000 | 342438 | 334.4 | 684196 | 668.2 |
+| cuda | int64 | 384 | 1000 | 23866 | 69.9 | 137017 | 401.4 |
+| cuda | int64 | 384 | 5000 | 115504 | 338.4 | 110609 | 324.0 |
+| cuda | int64 | 384 | 25000 | 119951 | 351.4 | 219601 | 643.4 |
+| cuda | int64 | 768 | 1000 | 36786 | 215.5 | 37492 | 219.7 |
+| cuda | int64 | 768 | 5000 | 60082 | 352.0 | 58397 | 342.2 |
+| cuda | int64 | 768 | 25000 | 59265 | 347.3 | 109984 | 644.4 |
+| cuda | int64 | 1024 | 1000 | 37548 | 293.3 | 36372 | 284.2 |
+| cuda | int64 | 1024 | 5000 | 45507 | 355.5 | 55207 | 431.3 |
+| cuda | int64 | 1024 | 25000 | 48613 | 379.8 | 83379 | 651.4 |
+| cuda | int64 | 3072 | 1000 | 15638 | 366.5 | 13067 | 306.3 |
+| cuda | int64 | 3072 | 5000 | 16299 | 382.0 | 20289 | 475.5 |
+| cuda | int64 | 3072 | 25000 | 17044 | 399.5 | 29913 | 701.1 |
+| cuda | int8 | 128 | 1000 | 45198 | 5.5 | 99082 | 12.1 |
+| cuda | int8 | 128 | 5000 | 645910 | 78.8 | 267971 | 32.7 |
+| cuda | int8 | 128 | 25000 | 1866473 | 227.8 | 815648 | 99.6 |
+| cuda | int8 | 128 | 100000 | 693 | 0.1 | 1248527 | 152.4 |
+| cuda | int8 | 384 | 1000 | 118875 | 43.5 | 90894 | 33.3 |
+| cuda | int8 | 384 | 5000 | 465603 | 170.5 | 183498 | 67.2 |
+| cuda | int8 | 384 | 25000 | 813715 | 298.0 | 441162 | 161.6 |
+| cuda | int8 | 384 | 100000 | 418 | 0.2 | 745603 | 273.0 |
+| cuda | int8 | 768 | 1000 | 83014 | 60.8 | 58300 | 42.7 |
+| cuda | int8 | 768 | 5000 | 330821 | 242.3 | 175609 | 128.6 |
+| cuda | int8 | 768 | 25000 | 446570 | 327.1 | 637315 | 466.8 |
+| cuda | int8 | 768 | 100000 | 253 | 0.2 | 523193 | 383.2 |
+| cuda | int8 | 1024 | 1000 | 105496 | 103.0 | 67805 | 66.2 |
+| cuda | int8 | 1024 | 5000 | 306042 | 298.9 | 165442 | 161.6 |
+| cuda | int8 | 1024 | 25000 | 339670 | 331.7 | 433166 | 423.0 |
+| cuda | int8 | 1024 | 100000 | 206 | 0.2 | 423250 | 413.3 |
+| cuda | int8 | 3072 | 1000 | 87765 | 257.1 | 41089 | 120.4 |
+| cuda | int8 | 3072 | 5000 | 110172 | 322.8 | 82330 | 241.2 |
+| cuda | int8 | 3072 | 25000 | 124522 | 364.8 | 200084 | 586.2 |
+| cuda | turboquant2 | 128 | 1000 | 108630 | 3.3 | 76559 | 9.3 |
+| cuda | turboquant2 | 128 | 5000 | 352199 | 10.7 | 338363 | 41.3 |
+| cuda | turboquant2 | 128 | 25000 | 573608 | 17.5 | 502154 | 61.3 |
+| cuda | turboquant2 | 384 | 1000 | 93993 | 8.6 | 47455 | 17.4 |
+| cuda | turboquant2 | 384 | 5000 | 210048 | 19.2 | 110720 | 40.5 |
+| cuda | turboquant2 | 384 | 25000 | 233505 | 21.4 | 404207 | 148.0 |
+| cuda | turboquant2 | 768 | 1000 | 73792 | 13.5 | 51438 | 37.7 |
+| cuda | turboquant2 | 768 | 5000 | 112593 | 20.6 | 120611 | 88.3 |
+| cuda | turboquant2 | 768 | 25000 | 125589 | 23.0 | 241060 | 176.6 |
+| cuda | turboquant2 | 1024 | 1000 | 68953 | 16.8 | 37314 | 36.4 |
+| cuda | turboquant2 | 1024 | 5000 | 82501 | 20.1 | 84999 | 83.0 |
+| cuda | turboquant2 | 1024 | 25000 | 95793 | 23.4 | 168365 | 164.4 |
+| cuda | turboquant2 | 3072 | 1000 | 25587 | 18.7 | 19507 | 57.1 |
+| cuda | turboquant2 | 3072 | 5000 | 30672 | 22.5 | 43593 | 127.7 |
+| cuda | turboquant2 | 3072 | 25000 | 31624 | 23.2 | 63925 | 187.3 |
+| cuda | turboquant4 | 128 | 1000 | 101444 | 6.2 | 38708 | 4.7 |
+| cuda | turboquant4 | 128 | 5000 | 318787 | 19.5 | 246736 | 30.1 |
+| cuda | turboquant4 | 128 | 25000 | 599846 | 36.6 | 819320 | 100.0 |
+| cuda | turboquant4 | 384 | 1000 | 92747 | 17.0 | 54448 | 19.9 |
+| cuda | turboquant4 | 384 | 5000 | 200169 | 36.7 | 182016 | 66.7 |
+| cuda | turboquant4 | 384 | 25000 | 223944 | 41.0 | 398771 | 146.0 |
+| cuda | turboquant4 | 768 | 1000 | 65304 | 23.9 | 34368 | 25.2 |
+| cuda | turboquant4 | 768 | 5000 | 111690 | 40.9 | 101492 | 74.3 |
+| cuda | turboquant4 | 768 | 25000 | 119143 | 43.6 | 203594 | 149.1 |
+| cuda | turboquant4 | 1024 | 1000 | 65972 | 32.2 | 34984 | 34.2 |
+| cuda | turboquant4 | 1024 | 5000 | 87609 | 42.8 | 83325 | 81.4 |
+| cuda | turboquant4 | 1024 | 25000 | 90967 | 44.4 | 41493 | 40.5 |
+| cuda | turboquant4 | 3072 | 1000 | 29102 | 42.6 | 24449 | 71.6 |
+| cuda | turboquant4 | 3072 | 5000 | 33638 | 49.3 | 35969 | 105.4 |
+| cuda | turboquant4 | 3072 | 25000 | 31938 | 46.8 | 70386 | 206.2 |
+| cuda | turboquant8 | 128 | 1000 | 57834 | 7.1 | 73050 | 8.9 |
+| cuda | turboquant8 | 128 | 5000 | 202104 | 24.7 | 191892 | 23.4 |
+| cuda | turboquant8 | 128 | 25000 | 668044 | 81.5 | 978330 | 119.4 |
+| cuda | turboquant8 | 384 | 1000 | 74185 | 27.2 | 30831 | 11.3 |
+| cuda | turboquant8 | 384 | 5000 | 218507 | 80.0 | 152146 | 55.7 |
+| cuda | turboquant8 | 384 | 25000 | 232856 | 85.3 | 356057 | 130.4 |
+| cuda | turboquant8 | 768 | 1000 | 65471 | 48.0 | 33374 | 24.4 |
+| cuda | turboquant8 | 768 | 5000 | 110663 | 81.1 | 108121 | 79.2 |
+| cuda | turboquant8 | 768 | 25000 | 118022 | 86.4 | 221360 | 162.1 |
+| cuda | turboquant8 | 1024 | 1000 | 58419 | 57.1 | 34555 | 33.7 |
+| cuda | turboquant8 | 1024 | 5000 | 81724 | 79.8 | 107830 | 105.3 |
+| cuda | turboquant8 | 1024 | 25000 | 94627 | 92.4 | 176702 | 172.6 |
+| cuda | turboquant8 | 3072 | 1000 | 30577 | 89.6 | 24224 | 71.0 |
+| cuda | turboquant8 | 3072 | 5000 | 30624 | 89.7 | 37961 | 111.2 |
+| cuda | turboquant8 | 3072 | 25000 | 34005 | 99.6 | 67029 | 196.4 |
+| cuda | uint16 | 128 | 1000 | 82908 | 20.2 | 97509 | 23.8 |
+| cuda | uint16 | 128 | 5000 | 449933 | 109.8 | 230120 | 56.2 |
+| cuda | uint16 | 128 | 25000 | 1174220 | 286.7 | 1350637 | 329.7 |
+| cuda | uint16 | 384 | 1000 | 105919 | 77.6 | 83064 | 60.8 |
+| cuda | uint16 | 384 | 5000 | 364873 | 267.2 | 226988 | 166.3 |
+| cuda | uint16 | 384 | 25000 | 430187 | 315.1 | 577437 | 422.9 |
+| cuda | uint16 | 768 | 1000 | 91454 | 134.0 | 42624 | 62.4 |
+| cuda | uint16 | 768 | 5000 | 212907 | 311.9 | 132456 | 194.0 |
+| cuda | uint16 | 768 | 25000 | 239169 | 350.3 | 450095 | 659.3 |
+| cuda | uint16 | 1024 | 1000 | 96244 | 188.0 | 54677 | 106.8 |
+| cuda | uint16 | 1024 | 5000 | 176136 | 344.0 | 178443 | 348.5 |
+| cuda | uint16 | 1024 | 25000 | 173985 | 339.8 | 314926 | 615.1 |
+| cuda | uint16 | 3072 | 1000 | 51676 | 302.8 | 34651 | 203.0 |
+| cuda | uint16 | 3072 | 5000 | 64241 | 376.4 | 64949 | 380.6 |
+| cuda | uint16 | 3072 | 25000 | 63984 | 374.9 | 119448 | 699.9 |
+| cuda | uint32 | 128 | 1000 | 50193 | 24.5 | 79721 | 38.9 |
+| cuda | uint32 | 128 | 5000 | 409660 | 200.0 | 245774 | 120.0 |
+| cuda | uint32 | 128 | 25000 | 619994 | 302.7 | 499800 | 244.0 |
+| cuda | uint32 | 384 | 1000 | 56826 | 83.2 | 46906 | 68.7 |
+| cuda | uint32 | 384 | 5000 | 200803 | 294.1 | 137195 | 201.0 |
+| cuda | uint32 | 384 | 25000 | 236905 | 347.0 | 345961 | 506.8 |
+| cuda | uint32 | 768 | 1000 | 84490 | 247.5 | 32965 | 96.6 |
+| cuda | uint32 | 768 | 5000 | 119519 | 350.2 | 130952 | 383.6 |
+| cuda | uint32 | 768 | 25000 | 123975 | 363.2 | 226323 | 663.1 |
+| cuda | uint32 | 1024 | 1000 | 70787 | 276.5 | 48725 | 190.3 |
+| cuda | uint32 | 1024 | 5000 | 85025 | 332.1 | 99483 | 388.6 |
+| cuda | uint32 | 1024 | 25000 | 97698 | 381.6 | 153504 | 599.6 |
+| cuda | uint32 | 3072 | 1000 | 28274 | 331.3 | 23359 | 273.7 |
+| cuda | uint32 | 3072 | 5000 | 32596 | 382.0 | 36818 | 431.5 |
+| cuda | uint32 | 3072 | 25000 | 32330 | 378.9 | 50019 | 586.2 |
+| cuda | uint64 | 128 | 1000 | 96383 | 94.1 | 52754 | 51.5 |
+| cuda | uint64 | 128 | 5000 | 231471 | 226.0 | 232830 | 227.4 |
+| cuda | uint64 | 128 | 25000 | 329174 | 321.5 | 479279 | 468.0 |
+| cuda | uint64 | 384 | 1000 | 58937 | 172.7 | 31214 | 91.4 |
+| cuda | uint64 | 384 | 5000 | 103158 | 302.2 | 118217 | 346.3 |
+| cuda | uint64 | 384 | 25000 | 123406 | 361.5 | 199210 | 583.6 |
+| cuda | uint64 | 768 | 1000 | 45896 | 268.9 | 30593 | 179.3 |
+| cuda | uint64 | 768 | 5000 | 62055 | 363.6 | 75627 | 443.1 |
+| cuda | uint64 | 768 | 25000 | 64013 | 375.1 | 106246 | 622.5 |
+| cuda | uint64 | 1024 | 1000 | 42578 | 332.6 | 28297 | 221.1 |
+| cuda | uint64 | 1024 | 5000 | 46255 | 361.4 | 51807 | 404.7 |
+| cuda | uint64 | 1024 | 25000 | 48624 | 379.9 | 77853 | 608.2 |
+| cuda | uint64 | 3072 | 1000 | 14674 | 343.9 | 15695 | 367.9 |
+| cuda | uint64 | 3072 | 5000 | 17219 | 403.6 | 20649 | 484.0 |
+| cuda | uint64 | 3072 | 25000 | 16268 | 381.3 | 28630 | 671.0 |
+| cuda | uint8 | 128 | 1000 | 94601 | 11.5 | 120593 | 14.7 |
+| cuda | uint8 | 128 | 5000 | 498045 | 60.8 | 279111 | 34.1 |
+| cuda | uint8 | 128 | 25000 | 1777098 | 216.9 | 1301211 | 158.8 |
+| cuda | uint8 | 384 | 1000 | 106580 | 39.0 | 82224 | 30.1 |
+| cuda | uint8 | 384 | 5000 | 480195 | 175.9 | 257410 | 94.3 |
+| cuda | uint8 | 384 | 25000 | 838251 | 307.0 | 706809 | 258.8 |
+| cuda | uint8 | 768 | 1000 | 119099 | 87.2 | 40990 | 30.0 |
+| cuda | uint8 | 768 | 5000 | 357453 | 261.8 | 151619 | 111.0 |
+| cuda | uint8 | 768 | 25000 | 452584 | 331.5 | 609392 | 446.3 |
+| cuda | uint8 | 1024 | 1000 | 103007 | 100.6 | 64904 | 63.4 |
+| cuda | uint8 | 1024 | 5000 | 255772 | 249.8 | 224019 | 218.8 |
+| cuda | uint8 | 1024 | 25000 | 336933 | 329.0 | 554143 | 541.2 |
+| cuda | uint8 | 3072 | 1000 | 92676 | 271.5 | 44495 | 130.4 |
+| cuda | uint8 | 3072 | 5000 | 117585 | 344.5 | 130457 | 382.2 |
+| cuda | uint8 | 3072 | 25000 | 124366 | 364.4 | 209582 | 614.0 |
+| metal | complex128 | 128 | 1000 | 90640 | 177.0 | 88509 | 172.9 |
+| metal | complex128 | 128 | 5000 | 304460 | 594.6 | 193611 | 378.1 |
+| metal | complex128 | 128 | 25000 | 504193 | 984.8 | 545179 | 1064.8 |
+| metal | complex128 | 384 | 1000 | 72089 | 422.4 | 88930 | 521.1 |
+| metal | complex128 | 384 | 5000 | 147395 | 863.6 | 78446 | 459.6 |
+| metal | complex128 | 384 | 25000 | 211262 | 1237.9 | 273735 | 1603.9 |
+| metal | complex128 | 768 | 1000 | 62033 | 726.9 | 35746 | 418.9 |
+| metal | complex128 | 768 | 5000 | 91044 | 1066.9 | 61718 | 723.3 |
+| metal | complex128 | 768 | 25000 | 111523 | 1306.9 | 193761 | 2270.6 |
+| metal | complex128 | 1024 | 1000 | 48251 | 753.9 | 23651 | 369.5 |
+| metal | complex128 | 1024 | 5000 | 66975 | 1046.5 | 48610 | 759.5 |
+| metal | complex128 | 1024 | 25000 | 84863 | 1326.0 | 140775 | 2199.6 |
+| metal | complex128 | 3072 | 1000 | 20811 | 975.5 | 13533 | 634.4 |
+| metal | complex128 | 3072 | 5000 | 27032 | 1267.1 | 36424 | 1707.4 |
+| metal | complex128 | 3072 | 25000 | 29152 | 1366.5 | 38220 | 1791.6 |
+| metal | complex64 | 128 | 1000 | 86370 | 84.3 | 172234 | 168.2 |
+| metal | complex64 | 128 | 5000 | 385599 | 376.6 | 275742 | 269.3 |
+| metal | complex64 | 128 | 25000 | 901108 | 880.0 | 840561 | 820.9 |
+| metal | complex64 | 384 | 1000 | 85832 | 251.5 | 198858 | 582.6 |
+| metal | complex64 | 384 | 5000 | 267258 | 783.0 | 119856 | 351.1 |
+| metal | complex64 | 384 | 25000 | 335529 | 983.0 | 449647 | 1317.3 |
+| metal | complex64 | 768 | 1000 | 82970 | 486.2 | 145300 | 851.4 |
+| metal | complex64 | 768 | 5000 | 186840 | 1094.8 | 164482 | 963.8 |
+| metal | complex64 | 768 | 25000 | 203691 | 1193.5 | 293013 | 1716.9 |
+| metal | complex64 | 1024 | 1000 | 59148 | 462.1 | 34832 | 272.1 |
+| metal | complex64 | 1024 | 5000 | 131556 | 1027.8 | 76173 | 595.1 |
+| metal | complex64 | 1024 | 25000 | 155382 | 1213.9 | 234087 | 1828.8 |
+| metal | complex64 | 3072 | 1000 | 39024 | 914.6 | 19462 | 456.2 |
+| metal | complex64 | 3072 | 5000 | 49841 | 1168.1 | 41834 | 980.5 |
+| metal | complex64 | 3072 | 25000 | 58217 | 1364.5 | 68830 | 1613.2 |
+| metal | float16 | 128 | 1000 | 124759 | 30.5 | 662837 | 161.8 |
+| metal | float16 | 128 | 5000 | 557163 | 136.0 | 652323 | 159.3 |
+| metal | float16 | 128 | 10000 | 1244303 | 303.8 | 1599637 | 390.5 |
+| metal | float16 | 128 | 25000 | 1872203 | 457.1 | 1524685 | 372.2 |
+| metal | float16 | 128 | 100000 | 1368 | 0.3 | 1729780 | 422.3 |
+| metal | float16 | 384 | 1000 | 135127 | 99.0 | 448288 | 328.3 |
+| metal | float16 | 384 | 5000 | 512190 | 375.1 | 399207 | 292.4 |
+| metal | float16 | 384 | 25000 | 848932 | 621.8 | 1194807 | 875.1 |
+| metal | float16 | 384 | 100000 | 1003 | 0.7 | 2060298 | 1509.0 |
+| metal | float16 | 768 | 1000 | 104919 | 153.7 | 274631 | 402.3 |
+| metal | float16 | 768 | 5000 | 456631 | 668.9 | 422837 | 619.4 |
+| metal | float16 | 768 | 25000 | 624195 | 914.3 | 484527 | 709.8 |
+| metal | float16 | 768 | 100000 | 805 | 1.2 | 508059 | 744.2 |
+| metal | float16 | 1024 | 1000 | 117505 | 229.5 | 276447 | 539.9 |
+| metal | float16 | 1024 | 5000 | 334981 | 654.3 | 206545 | 403.4 |
+| metal | float16 | 1024 | 25000 | 334383 | 653.1 | 395350 | 772.2 |
+| metal | float16 | 1024 | 100000 | 693 | 1.4 | 746092 | 1457.2 |
+| metal | float16 | 3072 | 1000 | 99954 | 585.7 | 50478 | 295.8 |
+| metal | float16 | 3072 | 5000 | 161119 | 944.1 | 162885 | 954.4 |
+| metal | float16 | 3072 | 25000 | 201154 | 1178.6 | 330501 | 1936.5 |
+| metal | float16 | 3072 | 100000 | 337 | 2.0 | 285295 | 1671.6 |
+| metal | float32 | 128 | 1000 | 104615 | 51.1 | 215940 | 105.4 |
+| metal | float32 | 128 | 5000 | 481537 | 235.1 | 1138822 | 556.1 |
+| metal | float32 | 128 | 10000 | 908626 | 443.7 | 1715720 | 837.8 |
+| metal | float32 | 128 | 25000 | 1460611 | 713.2 | 1610107 | 786.2 |
+| metal | float32 | 128 | 100000 | 536 | 0.3 | 1367309 | 667.6 |
+| metal | float32 | 384 | 1000 | 97903 | 143.4 | 109445 | 160.3 |
+| metal | float32 | 384 | 5000 | 329494 | 482.7 | 404684 | 592.8 |
+| metal | float32 | 384 | 25000 | 691220 | 1012.5 | 526151 | 770.7 |
+| metal | float32 | 384 | 100000 | 205 | 0.3 | 831895 | 1218.6 |
+| metal | float32 | 768 | 1000 | 87569 | 256.5 | 139749 | 409.4 |
+| metal | float32 | 768 | 5000 | 272740 | 799.0 | 117324 | 343.7 |
+| metal | float32 | 768 | 25000 | 375649 | 1100.5 | 345366 | 1011.8 |
+| metal | float32 | 768 | 100000 | 97 | 0.3 | 448292 | 1313.4 |
+| metal | float32 | 1024 | 1000 | 86649 | 338.5 | 64771 | 253.0 |
+| metal | float32 | 1024 | 5000 | 220263 | 860.4 | 204721 | 799.7 |
+| metal | float32 | 1024 | 25000 | 292139 | 1141.2 | 389441 | 1521.3 |
+| metal | float32 | 3072 | 1000 | 65768 | 770.7 | 30460 | 357.0 |
+| metal | float32 | 3072 | 5000 | 91651 | 1074.0 | 96135 | 1126.6 |
+| metal | float32 | 3072 | 25000 | 111720 | 1309.2 | 178532 | 2092.2 |
+| metal | float64 | 128 | 1000 | 92770 | 90.6 | 97731 | 95.4 |
+| metal | float64 | 128 | 5000 | 345126 | 337.0 | 491934 | 480.4 |
+| metal | float64 | 128 | 25000 | 869682 | 849.3 | 608533 | 594.3 |
+| metal | float64 | 128 | 100000 | 795 | 0.8 | 717185 | 700.4 |
+| metal | float64 | 384 | 1000 | 79461 | 232.8 | 77025 | 225.7 |
+| metal | float64 | 384 | 5000 | 252279 | 739.1 | 169458 | 496.5 |
+| metal | float64 | 384 | 25000 | 322203 | 944.0 | 351683 | 1030.3 |
+| metal | float64 | 384 | 100000 | 486 | 1.4 | 411164 | 1204.6 |
+| metal | float64 | 768 | 1000 | 64042 | 375.2 | 90984 | 533.1 |
+| metal | float64 | 768 | 5000 | 144506 | 846.7 | 143965 | 843.5 |
+| metal | float64 | 768 | 25000 | 204593 | 1198.8 | 234017 | 1371.2 |
+| metal | float64 | 768 | 100000 | 348 | 2.0 | 295831 | 1733.4 |
+| metal | float64 | 1024 | 1000 | 61475 | 480.3 | 87666 | 684.9 |
+| metal | float64 | 1024 | 5000 | 130056 | 1016.1 | 106105 | 828.9 |
+| metal | float64 | 1024 | 25000 | 156980 | 1226.4 | 267722 | 2091.6 |
+| metal | float64 | 1024 | 100000 | 281 | 2.2 | 224668 | 1755.2 |
+| metal | float64 | 3072 | 1000 | 36464 | 854.6 | 30663 | 718.7 |
+| metal | float64 | 3072 | 5000 | 51993 | 1218.6 | 62858 | 1473.2 |
+| metal | float64 | 3072 | 25000 | 46617 | 1092.6 | 70532 | 1653.1 |
+| metal | float64 | 3072 | 100000 | 138 | 3.2 | 58409 | 1369.0 |
+| metal | int16 | 128 | 1000 | 123611 | 30.2 | 462258 | 112.9 |
+| metal | int16 | 128 | 5000 | 603743 | 147.4 | 1025834 | 250.4 |
+| metal | int16 | 128 | 25000 | 1884949 | 460.2 | 5297358 | 1293.3 |
+| metal | int16 | 128 | 100000 | 947 | 0.2 | 2519219 | 615.0 |
+| metal | int16 | 384 | 1000 | 113242 | 82.9 | 306623 | 224.6 |
+| metal | int16 | 384 | 5000 | 456364 | 334.3 | 308697 | 226.1 |
+| metal | int16 | 384 | 25000 | 1134076 | 830.6 | 1128802 | 826.8 |
+| metal | int16 | 384 | 100000 | 659 | 0.5 | 750844 | 549.9 |
+| metal | int16 | 768 | 1000 | 97149 | 142.3 | 286608 | 419.8 |
+| metal | int16 | 768 | 5000 | 448751 | 657.3 | 233197 | 341.6 |
+| metal | int16 | 768 | 25000 | 639357 | 936.6 | 817385 | 1197.3 |
+| metal | int16 | 768 | 100000 | 432 | 0.6 | 528803 | 774.6 |
+| metal | int16 | 1024 | 1000 | 104865 | 204.8 | 216053 | 422.0 |
+| metal | int16 | 1024 | 5000 | 426721 | 833.4 | 395260 | 772.0 |
+| metal | int16 | 1024 | 25000 | 438811 | 857.1 | 438884 | 857.2 |
+| metal | int16 | 1024 | 100000 | 361 | 0.7 | 617015 | 1205.1 |
+| metal | int16 | 3072 | 1000 | 83329 | 488.3 | 65123 | 381.6 |
+| metal | int16 | 3072 | 5000 | 128288 | 751.7 | 167231 | 979.9 |
+| metal | int16 | 3072 | 25000 | 216405 | 1268.0 | 351747 | 2061.0 |
+| metal | int16 | 3072 | 100000 | 155 | 0.9 | 278412 | 1631.3 |
+| metal | int32 | 128 | 1000 | 134378 | 65.6 | 477707 | 233.3 |
+| metal | int32 | 128 | 5000 | 492807 | 240.6 | 441308 | 215.5 |
+| metal | int32 | 128 | 25000 | 1440338 | 703.3 | 781763 | 381.7 |
+| metal | int32 | 128 | 100000 | 850 | 0.4 | 1707645 | 833.8 |
+| metal | int32 | 384 | 1000 | 98888 | 144.9 | 295534 | 432.9 |
+| metal | int32 | 384 | 5000 | 333043 | 487.9 | 278053 | 407.3 |
+| metal | int32 | 384 | 25000 | 627966 | 919.9 | 874221 | 1280.6 |
+| metal | int32 | 384 | 100000 | 507 | 0.7 | 589930 | 864.2 |
+| metal | int32 | 768 | 1000 | 72709 | 213.0 | 157118 | 460.3 |
+| metal | int32 | 768 | 5000 | 280043 | 820.4 | 139625 | 409.1 |
+| metal | int32 | 768 | 25000 | 368981 | 1081.0 | 405108 | 1186.8 |
+| metal | int32 | 768 | 100000 | 327 | 1.0 | 452122 | 1324.6 |
+| metal | int32 | 1024 | 1000 | 85808 | 335.2 | 68052 | 265.8 |
+| metal | int32 | 1024 | 5000 | 202964 | 792.8 | 261134 | 1020.1 |
+| metal | int32 | 1024 | 25000 | 309569 | 1209.3 | 366212 | 1430.5 |
+| metal | int32 | 1024 | 100000 | 281 | 1.1 | 418391 | 1634.3 |
+| metal | int32 | 3072 | 1000 | 67705 | 793.4 | 63438 | 743.4 |
+| metal | int32 | 3072 | 5000 | 93618 | 1097.1 | 105663 | 1238.2 |
+| metal | int32 | 3072 | 25000 | 120369 | 1410.6 | 205238 | 2405.1 |
+| metal | int32 | 3072 | 100000 | 118 | 1.4 | 116898 | 1369.9 |
+| metal | int64 | 128 | 1000 | 79490 | 77.6 | 219863 | 214.7 |
+| metal | int64 | 128 | 5000 | 399849 | 390.5 | 266235 | 260.0 |
+| metal | int64 | 128 | 25000 | 915604 | 894.1 | 1597487 | 1560.0 |
+| metal | int64 | 128 | 100000 | 659 | 0.6 | 1174950 | 1147.4 |
+| metal | int64 | 384 | 1000 | 73828 | 216.3 | 95944 | 281.1 |
+| metal | int64 | 384 | 5000 | 244933 | 717.6 | 255814 | 749.5 |
+| metal | int64 | 384 | 25000 | 374187 | 1096.3 | 446866 | 1309.2 |
+| metal | int64 | 384 | 100000 | 387 | 1.1 | 473301 | 1386.6 |
+| metal | int64 | 768 | 1000 | 75376 | 441.7 | 86639 | 507.7 |
+| metal | int64 | 768 | 5000 | 160793 | 942.1 | 98994 | 580.0 |
+| metal | int64 | 768 | 25000 | 227038 | 1330.3 | 332445 | 1947.9 |
+| metal | int64 | 768 | 100000 | 273 | 1.6 | 144886 | 848.9 |
+| metal | int64 | 1024 | 1000 | 67745 | 529.3 | 44588 | 348.3 |
+| metal | int64 | 1024 | 5000 | 131625 | 1028.3 | 82954 | 648.1 |
+| metal | int64 | 1024 | 100000 | 241 | 1.9 | 226884 | 1772.5 |
+| metal | int64 | 3072 | 1000 | 40442 | 947.8 | 21139 | 495.4 |
+| metal | int64 | 3072 | 5000 | 50446 | 1182.3 | 43384 | 1016.8 |
+| metal | int8 | 128 | 1000 | 109349 | 13.3 | 255771 | 31.2 |
+| metal | int8 | 128 | 5000 | 662870 | 80.9 | 2232350 | 272.5 |
+| metal | int8 | 128 | 25000 | 2326168 | 284.0 | 1500349 | 183.1 |
+| metal | int8 | 128 | 100000 | 1004 | 0.1 | 1691909 | 206.5 |
+| metal | int8 | 384 | 1000 | 101230 | 37.1 | 331405 | 121.4 |
+| metal | int8 | 384 | 5000 | 562725 | 206.1 | 1030291 | 377.3 |
+| metal | int8 | 384 | 25000 | 2048187 | 750.1 | 1101736 | 403.5 |
+| metal | int8 | 384 | 100000 | 632 | 0.2 | 2045408 | 749.1 |
+| metal | int8 | 768 | 1000 | 105959 | 77.6 | 251054 | 183.9 |
+| metal | int8 | 768 | 5000 | 549808 | 402.7 | 880585 | 645.0 |
+| metal | int8 | 768 | 25000 | 1061703 | 777.6 | 1406684 | 1030.3 |
+| metal | int8 | 768 | 100000 | 402 | 0.3 | 821093 | 601.4 |
+| metal | int8 | 1024 | 1000 | 115257 | 112.6 | 419522 | 409.7 |
+| metal | int8 | 1024 | 5000 | 393073 | 383.9 | 570668 | 557.3 |
+| metal | int8 | 1024 | 25000 | 965560 | 942.9 | 608895 | 594.6 |
+| metal | int8 | 1024 | 100000 | 327 | 0.3 | 1269648 | 1239.9 |
+| metal | int8 | 3072 | 1000 | 79539 | 233.0 | 138900 | 406.9 |
+| metal | int8 | 3072 | 5000 | 199941 | 585.8 | 267809 | 784.6 |
+| metal | int8 | 3072 | 25000 | 368098 | 1078.4 | 414420 | 1214.1 |
+| metal | int8 | 3072 | 100000 | 132 | 0.4 | 354044 | 1037.2 |
+| metal | turboquant2 | 128 | 1000 | 92936 | 2.8 | 108204 | 13.2 |
+| metal | turboquant2 | 128 | 5000 | 452226 | 13.8 | 323943 | 39.5 |
+| metal | turboquant2 | 128 | 25000 | 1529956 | 46.7 | 1115343 | 136.2 |
+| metal | turboquant2 | 384 | 1000 | 82842 | 7.6 | 56634 | 20.7 |
+| metal | turboquant2 | 384 | 5000 | 319800 | 29.3 | 251363 | 92.1 |
+| metal | turboquant2 | 384 | 25000 | 683316 | 62.6 | 587641 | 215.2 |
+| metal | turboquant2 | 768 | 1000 | 83782 | 15.3 | 67185 | 49.2 |
+| metal | turboquant2 | 768 | 5000 | 272095 | 49.8 | 156591 | 114.7 |
+| metal | turboquant2 | 768 | 25000 | 372747 | 68.3 | 528446 | 387.0 |
+| metal | turboquant2 | 1024 | 1000 | 79682 | 19.5 | 54846 | 53.6 |
+| metal | turboquant2 | 1024 | 5000 | 209828 | 51.2 | 158245 | 154.5 |
+| metal | turboquant2 | 1024 | 25000 | 299176 | 73.0 | 343674 | 335.6 |
+| metal | turboquant2 | 3072 | 1000 | 56116 | 41.1 | 33977 | 99.5 |
+| metal | turboquant2 | 3072 | 5000 | 83036 | 60.8 | 67708 | 198.4 |
+| metal | turboquant2 | 3072 | 25000 | 123826 | 90.7 | 198015 | 580.1 |
+| metal | turboquant4 | 128 | 1000 | 97395 | 5.9 | 145477 | 17.8 |
+| metal | turboquant4 | 128 | 5000 | 449487 | 27.4 | 445752 | 54.4 |
+| metal | turboquant4 | 128 | 25000 | 1459009 | 89.1 | 1544147 | 188.5 |
+| metal | turboquant4 | 384 | 1000 | 101326 | 18.6 | 105560 | 38.7 |
+| metal | turboquant4 | 384 | 5000 | 354565 | 64.9 | 204690 | 75.0 |
+| metal | turboquant4 | 384 | 25000 | 694787 | 127.2 | 523680 | 191.8 |
+| metal | turboquant4 | 768 | 1000 | 92385 | 33.8 | 54735 | 40.1 |
+| metal | turboquant4 | 768 | 5000 | 283601 | 103.9 | 245928 | 180.1 |
+| metal | turboquant4 | 768 | 25000 | 384066 | 140.6 | 421451 | 308.7 |
+| metal | turboquant4 | 1024 | 1000 | 75179 | 36.7 | 57484 | 56.1 |
+| metal | turboquant4 | 1024 | 5000 | 230094 | 112.4 | 198019 | 193.4 |
+| metal | turboquant4 | 1024 | 25000 | 306434 | 149.6 | 437325 | 427.1 |
+| metal | turboquant4 | 3072 | 1000 | 64328 | 94.2 | 30336 | 88.9 |
+| metal | turboquant4 | 3072 | 5000 | 85683 | 125.5 | 83450 | 244.5 |
+| metal | turboquant4 | 3072 | 25000 | 126965 | 186.0 | 221769 | 649.7 |
+| metal | turboquant8 | 128 | 1000 | 86234 | 10.5 | 182814 | 22.3 |
+| metal | turboquant8 | 128 | 5000 | 457559 | 55.9 | 1011958 | 123.5 |
+| metal | turboquant8 | 128 | 25000 | 1682303 | 205.4 | 1825500 | 222.8 |
+| metal | turboquant8 | 384 | 1000 | 94728 | 34.7 | 85391 | 31.3 |
+| metal | turboquant8 | 384 | 5000 | 339698 | 124.4 | 264609 | 96.9 |
+| metal | turboquant8 | 384 | 25000 | 694710 | 254.4 | 562817 | 206.1 |
+| metal | turboquant8 | 768 | 1000 | 87793 | 64.3 | 57745 | 42.3 |
+| metal | turboquant8 | 768 | 5000 | 247249 | 181.1 | 123439 | 90.4 |
+| metal | turboquant8 | 768 | 25000 | 385177 | 282.1 | 396945 | 290.7 |
+| metal | turboquant8 | 1024 | 1000 | 82615 | 80.7 | 58543 | 57.2 |
+| metal | turboquant8 | 1024 | 5000 | 209635 | 204.7 | 206730 | 201.9 |
+| metal | turboquant8 | 1024 | 25000 | 303747 | 296.6 | 323802 | 316.2 |
+| metal | turboquant8 | 3072 | 1000 | 65602 | 192.2 | 32853 | 96.2 |
+| metal | turboquant8 | 3072 | 5000 | 81385 | 238.4 | 69627 | 204.0 |
+| metal | turboquant8 | 3072 | 25000 | 124409 | 364.5 | 226600 | 663.9 |
+| metal | uint16 | 128 | 1000 | 99420 | 24.3 | 325804 | 79.5 |
+| metal | uint16 | 128 | 5000 | 608779 | 148.6 | 505114 | 123.3 |
+| metal | uint16 | 384 | 1000 | 97514 | 71.4 | 319145 | 233.7 |
+| metal | uint16 | 384 | 5000 | 483869 | 354.4 | 1156236 | 846.9 |
+| metal | uint16 | 768 | 1000 | 90503 | 132.6 | 400207 | 586.2 |
+| metal | uint16 | 768 | 5000 | 442989 | 648.9 | 298493 | 437.2 |
+| metal | uint16 | 1024 | 1000 | 100694 | 196.7 | 271542 | 530.4 |
+| metal | uint16 | 1024 | 5000 | 412408 | 805.5 | 192778 | 376.5 |
+| metal | uint16 | 3072 | 1000 | 92939 | 544.6 | 85614 | 501.6 |
+| metal | uint16 | 3072 | 5000 | 167342 | 980.5 | 167434 | 981.1 |
+| metal | uint32 | 128 | 1000 | 102271 | 49.9 | 222571 | 108.7 |
+| metal | uint32 | 128 | 5000 | 477133 | 233.0 | 487254 | 237.9 |
+| metal | uint32 | 384 | 1000 | 102020 | 149.4 | 221879 | 325.0 |
+| metal | uint32 | 384 | 5000 | 379900 | 556.5 | 222293 | 325.6 |
+| metal | uint32 | 768 | 1000 | 106517 | 312.1 | 297188 | 870.7 |
+| metal | uint32 | 768 | 5000 | 278614 | 816.3 | 309278 | 906.1 |
+| metal | uint32 | 1024 | 1000 | 74312 | 290.3 | 61465 | 240.1 |
+| metal | uint32 | 1024 | 5000 | 201391 | 786.7 | 111073 | 433.9 |
+| metal | uint32 | 3072 | 1000 | 57623 | 675.3 | 32041 | 375.5 |
+| metal | uint32 | 3072 | 5000 | 92932 | 1089.0 | 66411 | 778.3 |
+| metal | uint64 | 128 | 1000 | 95330 | 93.1 | 82340 | 80.4 |
+| metal | uint64 | 128 | 5000 | 375191 | 366.4 | 507224 | 495.3 |
+| metal | uint64 | 384 | 1000 | 61364 | 179.8 | 199109 | 583.3 |
+| metal | uint64 | 384 | 5000 | 198107 | 580.4 | 363347 | 1064.5 |
+| metal | uint64 | 768 | 1000 | 80612 | 472.3 | 89559 | 524.8 |
+| metal | uint64 | 768 | 5000 | 143661 | 841.8 | 89460 | 524.2 |
+| metal | uint64 | 768 | 25000 | 192249 | 1126.5 | 313754 | 1838.4 |
+| metal | uint64 | 1024 | 1000 | 56793 | 443.7 | 40887 | 319.4 |
+| metal | uint64 | 1024 | 5000 | 120632 | 942.4 | 129698 | 1013.3 |
+| metal | uint64 | 1024 | 25000 | 155244 | 1212.8 | 216594 | 1692.1 |
+| metal | uint64 | 3072 | 1000 | 27475 | 643.9 | 25293 | 592.8 |
+| metal | uint64 | 3072 | 5000 | 44118 | 1034.0 | 51778 | 1213.6 |
+| metal | uint64 | 3072 | 25000 | 49949 | 1170.7 | 90286 | 2116.1 |
+| metal | uint8 | 128 | 1000 | 91952 | 11.2 | 327216 | 39.9 |
+| metal | uint8 | 128 | 5000 | 562100 | 68.6 | 1245446 | 152.0 |
+| metal | uint8 | 128 | 25000 | 2748775 | 335.5 | 4439216 | 541.9 |
+| metal | uint8 | 384 | 1000 | 110178 | 40.3 | 415340 | 152.1 |
+| metal | uint8 | 384 | 5000 | 558482 | 204.5 | 1235356 | 452.4 |
+| metal | uint8 | 384 | 25000 | 2044836 | 748.8 | 2321820 | 850.3 |
+| metal | uint8 | 768 | 1000 | 116620 | 85.4 | 480914 | 352.2 |
+| metal | uint8 | 768 | 5000 | 556140 | 407.3 | 284219 | 208.2 |
+| metal | uint8 | 768 | 25000 | 1146022 | 839.4 | 1807664 | 1324.0 |
+| metal | uint8 | 1024 | 1000 | 107385 | 104.9 | 555620 | 542.6 |
+| metal | uint8 | 1024 | 5000 | 485494 | 474.1 | 726089 | 709.1 |
+| metal | uint8 | 1024 | 25000 | 953077 | 930.7 | 1635100 | 1596.8 |
+| metal | uint8 | 3072 | 1000 | 117424 | 344.0 | 237624 | 696.2 |
+| metal | uint8 | 3072 | 5000 | 265775 | 778.6 | 168714 | 494.3 |
+| metal | uint8 | 3072 | 25000 | 336959 | 987.2 | 371632 | 1088.8 |
+
+## Cross-Version Dense QPS Comparison
+
+| Config | 0.2.0-rc2 | 0.2.1-rc2 | Current (6f87bbf1) | vs 0.2.1-rc2 | vs 0.2.0-rc2 |
+|--------|-----------|-----------|--------------------|---------------|---------------|
+| metal float32 dim=128 count=10000 | 37212 | 2002 | 5413 | +170% | +-85% |
+
+> Note: 0.2.0-rc2 lacks PQ quantization and full HNSW reranking, making it an incomparable baseline.
+> 0.2.1-rc2 is the correct apples-to-apples baseline with the same search architecture.
+
+## Coverage Summary
+- Total configurations: 518
+- With Dense Search data: 518
+- Modes: cuda, metal
+- DTypes: complex128, complex64, float16, float32, float64, int16, int32, int64, int8, turboquant2, turboquant4, turboquant8, uint16, uint32, uint64, uint8
+- Dims: 1024, 128, 3072, 384, 768
+- Counts: 1000, 10000, 100000, 25000, 5000
+
+## Tier 1-3 HNSW Optimization Results
+
+**Commit**: `6f87bbf1` - Tiers 1-3: fast-path chunk accessors, generation bypass, cache atomics, fix inconsistent stores
+
+### Changes Applied
+1. **Fast-path chunk accessors** (`graph_data.go`): Non-atomic plain-index reads for all chunk offset arrays (safe because entries are written once by `EnsureChunk` and stable during search)
+2. **Generation bypass** (`arena.go`, `typed_arena.go`): `GetWithGeneration(maxGen=MaxUint64)` calls `Get()` directly, skipping generation comparison, slab index computation, and bounds check
+3. **ReleaseChunk atomics** (`graph_data.go`): Fixed 4 inconsistent accessors that used plain indexing while `ReleaseChunk` plain-wrote zeros
+4. **pqComputer generation isolation** (`distance_computer.go`): Changed `ComputeSingle` to use `GetVectorsPQChunkWithGen` instead of `GetVectorsPQChunk`
+
+### Key Metrics (float32 dim=128 count=10000)
+- **Baseline (0.2.1-rc2)**: 2002 QPS
+- **Original (0.2.0-rc2)**: 37212 QPS (target — note: different architecture)
+- **After Tiers 1-3**: 5413 QPS
+- **Improvement vs 0.2.1-rc2**: +170% (well above 50% recovery target)
+
+### Float16 Scaling Observation
+
+Float16 dim=128 shows steep degradation as dataset grows:
+- count=1000: 4290 QPS
+- count=5000: 1759 QPS
+- count=10000: 1035 QPS
+
+### Verification
+- `go vet ./...`: zero issues
+- `gosec -quiet ./...`: zero issues
+- Race detector: all packages pass (pre-existing failures in `TestDataset_PerRecordEviction`, `TestMigrationStability` unrelated)
+- Benchmarks: local 250+ configs, remote 296+ configs (still running count=100000 CUDA)

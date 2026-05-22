@@ -341,7 +341,9 @@ func main() {
 			if totalUploaded < *scale {
 				backoff := 500 * time.Millisecond
 				for {
-					isBusy, reason := checkBackpressure(context.Background(), sc, *dataset)
+					bpCtx, bpCancel := context.WithTimeout(context.Background(), 30*time.Second)
+				isBusy, reason := checkBackpressure(bpCtx, sc, *dataset)
+				bpCancel()
 					if !isBusy {
 						break
 					}

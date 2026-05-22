@@ -137,12 +137,9 @@ func main() {
 	
 	// func(a, b uintptr, n int) float32
 	stubsDist := []string{
-		"euclideanFloat64AVX512Kernel", "dotFloat64AVX512Kernel",
-		"euclideanF16AVX512Kernel", "dotF16AVX512Kernel",
-		"euclideanF16AVX2Kernel", "dotF16AVX2Kernel",
 		"dotInt4AVX512Kernel", "dotInt4AVX2Kernel",
-		"euclideanFloat64AVX2Kernel", "euclideanInt8AVX2Kernel", 
-		"euclideanInt8Unrolled4xAVX2Kernel", "dotFloat64AVX2Kernel",
+		"euclideanInt8AVX2Kernel", 
+		"euclideanInt8Unrolled4xAVX2Kernel",
 		"brayCurtisAVX2Kernel", "manhattanAVX2Kernel", "chebyshevAVX2Kernel",
 	}
 	for _, s := range stubsDist {
@@ -289,6 +286,15 @@ func main() {
 	ImplementArgMinAVX512()
 	ImplementSoftmaxAVX2()
 	ImplementSigmoidAVX2()
+
+	ImplementEuclideanFloat64AVX2()
+	ImplementDotFloat64AVX2()
+	ImplementEuclideanFloat64AVX512()
+	ImplementDotFloat64AVX512()
+	ImplementEuclideanF16AVX2()
+	ImplementDotF16AVX2()
+	ImplementEuclideanF16AVX512()
+	ImplementDotF16AVX512()
 
 	Generate()
 }
@@ -1084,3 +1090,464 @@ func ImplementSpecializedAVX512(dim int) {
 	VZEROUPPER()
 	RET()
 }
+
+func ImplementEuclideanFloat64AVX2() {
+	TEXT("euclideanFloat64AVX2Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	n := Load(Param("n"), GP64())
+
+	ySum := YMM()
+	VXORPD(ySum, ySum, ySum)
+
+	Label("loop")
+	CMPQ(n, Imm(4))
+	JL(LabelRef("tail"))
+
+	y0 := YMM(); VMOVUPD(Mem{Base: a}, y0)
+	y1 := YMM(); VMOVUPD(Mem{Base: b}, y1)
+	VSUBPD(y1, y0, y0)
+	VFMADD231PD(y0, y0, ySum)
+
+	ADDQ(Imm(32), a)
+	ADDQ(Imm(32), b)
+	SUBQ(Imm(4), n)
+	JMP(LabelRef("loop"))
+
+	Label("tail")
+	xLow := XMM(); VEXTRACTF128(Imm(0), ySum, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), ySum, xHigh)
+	VADDPD(xLow, xHigh, xHigh)
+	
+	xSwap := XMM(); VUNPCKHPD(xHigh, xHigh, xSwap)
+	VADDSD(xSwap, xHigh, xHigh)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0))
+	JE(LabelRef("done"))
+
+	x0 := XMM(); VMOVSD(Mem{Base: a}, x0)
+	x1 := XMM(); VMOVSD(Mem{Base: b}, x1)
+	VSUBSD(x1, x0, x0)
+	VFMADD231SD(x0, x0, xHigh)
+
+	ADDQ(Imm(8), a)
+	ADDQ(Imm(8), b)
+	DECQ(n)
+	JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	VSQRTSD(xHigh, xHigh, xHigh)
+	xResult := XMM()
+	VCVTSD2SS(xHigh, xHigh, xResult)
+	Store(xResult, ReturnIndex(0))
+	VZEROUPPER(); RET()
+}
+
+func ImplementDotFloat64AVX2() {
+	TEXT("dotFloat64AVX2Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	n := Load(Param("n"), GP64())
+
+	ySum := YMM()
+	VXORPD(ySum, ySum, ySum)
+
+	Label("loop")
+	CMPQ(n, Imm(4))
+	JL(LabelRef("tail"))
+
+	y0 := YMM(); VMOVUPD(Mem{Base: a}, y0)
+	y1 := YMM(); VMOVUPD(Mem{Base: b}, y1)
+	VFMADD231PD(y0, y1, ySum)
+
+	ADDQ(Imm(32), a)
+	ADDQ(Imm(32), b)
+	SUBQ(Imm(4), n)
+	JMP(LabelRef("loop"))
+
+	Label("tail")
+	xLow := XMM(); VEXTRACTF128(Imm(0), ySum, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), ySum, xHigh)
+	VADDPD(xLow, xHigh, xHigh)
+	
+	xSwap := XMM(); VUNPCKHPD(xHigh, xHigh, xSwap)
+	VADDSD(xSwap, xHigh, xHigh)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0))
+	JE(LabelRef("done"))
+
+	x0 := XMM(); VMOVSD(Mem{Base: a}, x0)
+	x1 := XMM(); VMOVSD(Mem{Base: b}, x1)
+	VFMADD231SD(x0, x1, xHigh)
+
+	ADDQ(Imm(8), a)
+	ADDQ(Imm(8), b)
+	DECQ(n)
+	JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	xResult := XMM()
+	VCVTSD2SS(xHigh, xHigh, xResult)
+	Store(xResult, ReturnIndex(0))
+	VZEROUPPER(); RET()
+}
+
+func ImplementEuclideanFloat64AVX512() {
+	TEXT("euclideanFloat64AVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	n := Load(Param("n"), GP64())
+
+	zSum := ZMM()
+	VXORPD(zSum, zSum, zSum)
+
+	Label("loop")
+	CMPQ(n, Imm(8))
+	JL(LabelRef("tail"))
+
+	z0 := ZMM(); VMOVUPD(Mem{Base: a}, z0)
+	z1 := ZMM(); VMOVUPD(Mem{Base: b}, z1)
+	VSUBPD(z1, z0, z0)
+	VFMADD231PD(z0, z0, zSum)
+
+	ADDQ(Imm(64), a)
+	ADDQ(Imm(64), b)
+	SUBQ(Imm(8), n)
+	JMP(LabelRef("loop"))
+
+	Label("tail")
+	yLow := YMM(); VEXTRACTF64X4(Imm(0), zSum, yLow)
+	yHigh := YMM(); VEXTRACTF64X4(Imm(1), zSum, yHigh)
+	VADDPD(yLow, yHigh, yHigh)
+	
+	xLow := XMM(); VEXTRACTF128(Imm(0), yHigh, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), yHigh, xHigh)
+	VADDPD(xLow, xHigh, xHigh)
+	
+	xSwap := XMM(); VUNPCKHPD(xHigh, xHigh, xSwap)
+	VADDSD(xSwap, xHigh, xHigh)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0))
+	JE(LabelRef("done"))
+
+	x0 := XMM(); VMOVSD(Mem{Base: a}, x0)
+	x1 := XMM(); VMOVSD(Mem{Base: b}, x1)
+	VSUBSD(x1, x0, x0)
+	VFMADD231SD(x0, x0, xHigh)
+
+	ADDQ(Imm(8), a)
+	ADDQ(Imm(8), b)
+	DECQ(n)
+	JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	VSQRTSD(xHigh, xHigh, xHigh)
+	xResult := XMM()
+	VCVTSD2SS(xHigh, xHigh, xResult)
+	Store(xResult, ReturnIndex(0))
+	VZEROUPPER(); RET()
+}
+
+func ImplementDotFloat64AVX512() {
+	TEXT("dotFloat64AVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	n := Load(Param("n"), GP64())
+
+	zSum := ZMM()
+	VXORPD(zSum, zSum, zSum)
+
+	Label("loop")
+	CMPQ(n, Imm(8))
+	JL(LabelRef("tail"))
+
+	z0 := ZMM(); VMOVUPD(Mem{Base: a}, z0)
+	z1 := ZMM(); VMOVUPD(Mem{Base: b}, z1)
+	VFMADD231PD(z0, z1, zSum)
+
+	ADDQ(Imm(64), a)
+	ADDQ(Imm(64), b)
+	SUBQ(Imm(8), n)
+	JMP(LabelRef("loop"))
+
+	Label("tail")
+	yLow := YMM(); VEXTRACTF64X4(Imm(0), zSum, yLow)
+	yHigh := YMM(); VEXTRACTF64X4(Imm(1), zSum, yHigh)
+	VADDPD(yLow, yHigh, yHigh)
+	
+	xLow := XMM(); VEXTRACTF128(Imm(0), yHigh, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), yHigh, xHigh)
+	VADDPD(xLow, xHigh, xHigh)
+	
+	xSwap := XMM(); VUNPCKHPD(xHigh, xHigh, xSwap)
+	VADDSD(xSwap, xHigh, xHigh)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0))
+	JE(LabelRef("done"))
+
+	x0 := XMM(); VMOVSD(Mem{Base: a}, x0)
+	x1 := XMM(); VMOVSD(Mem{Base: b}, x1)
+	VFMADD231SD(x0, x1, xHigh)
+
+	ADDQ(Imm(8), a)
+	ADDQ(Imm(8), b)
+	DECQ(n)
+	JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	xResult := XMM()
+	VCVTSD2SS(xHigh, xHigh, xResult)
+	Store(xResult, ReturnIndex(0))
+	VZEROUPPER(); RET()
+}
+
+func ImplementEuclideanF16AVX2() {
+	TEXT("euclideanF16AVX2Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	n := Load(Param("n"), GP64())
+
+	ySum := YMM()
+	VXORPS(ySum, ySum, ySum)
+
+	Label("loop")
+	CMPQ(n, Imm(8))
+	JL(LabelRef("tail"))
+
+	y0 := YMM(); VCVTPH2PS(Mem{Base: a}, y0)
+	y1 := YMM(); VCVTPH2PS(Mem{Base: b}, y1)
+	VSUBPS(y1, y0, y0)
+	VFMADD231PS(y0, y0, ySum)
+
+	ADDQ(Imm(16), a)
+	ADDQ(Imm(16), b)
+	SUBQ(Imm(8), n)
+	JMP(LabelRef("loop"))
+
+	Label("tail")
+	xLow := XMM(); VEXTRACTF128(Imm(0), ySum, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), ySum, xHigh)
+	VADDPS(xLow, xHigh, xHigh)
+	xNext := XMM(); VMOVSHDUP(xHigh, xNext)
+	VADDPS(xNext, xHigh, xHigh)
+	xSum := XMM(); VMOVHLPS(xHigh, xHigh, xSum)
+	VADDSS(xSum, xHigh, xHigh)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0))
+	JE(LabelRef("done"))
+
+	tempX := XMM(); VXORPS(tempX, tempX, tempX)
+	tempY := XMM(); VXORPS(tempY, tempY, tempY)
+	
+	regA := GP32(); MOVWLZX(Mem{Base: a}, regA)
+	PINSRW(Imm(0), regA, tempX)
+	regB := GP32(); MOVWLZX(Mem{Base: b}, regB)
+	PINSRW(Imm(0), regB, tempY)
+
+	fA := XMM(); VCVTPH2PS(tempX, fA)
+	fB := XMM(); VCVTPH2PS(tempY, fB)
+
+	diff := XMM(); VSUBSS(fB, fA, diff)
+	VFMADD231SS(diff, diff, xHigh)
+
+	ADDQ(Imm(2), a)
+	ADDQ(Imm(2), b)
+	DECQ(n)
+	JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	VSQRTSS(xHigh, xHigh, xHigh)
+	Store(xHigh, ReturnIndex(0))
+	VZEROUPPER(); RET()
+}
+
+func ImplementDotF16AVX2() {
+	TEXT("dotF16AVX2Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	n := Load(Param("n"), GP64())
+
+	ySum := YMM()
+	VXORPS(ySum, ySum, ySum)
+
+	Label("loop")
+	CMPQ(n, Imm(8))
+	JL(LabelRef("tail"))
+
+	y0 := YMM(); VCVTPH2PS(Mem{Base: a}, y0)
+	y1 := YMM(); VCVTPH2PS(Mem{Base: b}, y1)
+	VFMADD231PS(y0, y1, ySum)
+
+	ADDQ(Imm(16), a)
+	ADDQ(Imm(16), b)
+	SUBQ(Imm(8), n)
+	JMP(LabelRef("loop"))
+
+	Label("tail")
+	xLow := XMM(); VEXTRACTF128(Imm(0), ySum, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), ySum, xHigh)
+	VADDPS(xLow, xHigh, xHigh)
+	xNext := XMM(); VMOVSHDUP(xHigh, xNext)
+	VADDPS(xNext, xHigh, xHigh)
+	xSum := XMM(); VMOVHLPS(xHigh, xHigh, xSum)
+	VADDSS(xSum, xHigh, xHigh)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0))
+	JE(LabelRef("done"))
+
+	tempX := XMM(); VXORPS(tempX, tempX, tempX)
+	tempY := XMM(); VXORPS(tempY, tempY, tempY)
+	
+	regA := GP32(); MOVWLZX(Mem{Base: a}, regA)
+	PINSRW(Imm(0), regA, tempX)
+	regB := GP32(); MOVWLZX(Mem{Base: b}, regB)
+	PINSRW(Imm(0), regB, tempY)
+
+	fA := XMM(); VCVTPH2PS(tempX, fA)
+	fB := XMM(); VCVTPH2PS(tempY, fB)
+
+	VFMADD231SS(fA, fB, xHigh)
+
+	ADDQ(Imm(2), a)
+	ADDQ(Imm(2), b)
+	DECQ(n)
+	JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	Store(xHigh, ReturnIndex(0))
+	VZEROUPPER(); RET()
+}
+
+func ImplementEuclideanF16AVX512() {
+	TEXT("euclideanF16AVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	n := Load(Param("n"), GP64())
+
+	zSum := ZMM()
+	VXORPS(zSum, zSum, zSum)
+
+	Label("loop")
+	CMPQ(n, Imm(16))
+	JL(LabelRef("tail"))
+
+	z0 := ZMM(); VCVTPH2PS(Mem{Base: a}, z0)
+	z1 := ZMM(); VCVTPH2PS(Mem{Base: b}, z1)
+	VSUBPS(z1, z0, z0)
+	VFMADD231PS(z0, z0, zSum)
+
+	ADDQ(Imm(32), a)
+	ADDQ(Imm(32), b)
+	SUBQ(Imm(16), n)
+	JMP(LabelRef("loop"))
+
+	Label("tail")
+	yLow := YMM(); VEXTRACTF64X4(Imm(0), zSum, yLow)
+	yHigh := YMM(); VEXTRACTF64X4(Imm(1), zSum, yHigh)
+	VADDPS(yLow, yHigh, yHigh)
+	
+	xLow := XMM(); VEXTRACTF128(Imm(0), yHigh, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), yHigh, xHigh)
+	VADDPS(xLow, xHigh, xHigh)
+	xFinal := XMM(); VMOVHLPS(xHigh, xFinal, xFinal)
+	VADDPS(xFinal, xHigh, xHigh)
+	xNext := XMM(); VMOVSHDUP(xHigh, xNext)
+	VADDSS(xNext, xHigh, xHigh)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0))
+	JE(LabelRef("done"))
+
+	tempX := XMM(); VXORPS(tempX, tempX, tempX)
+	tempY := XMM(); VXORPS(tempY, tempY, tempY)
+	
+	regA := GP32(); MOVWLZX(Mem{Base: a}, regA)
+	PINSRW(Imm(0), regA, tempX)
+	regB := GP32(); MOVWLZX(Mem{Base: b}, regB)
+	PINSRW(Imm(0), regB, tempY)
+
+	fA := XMM(); VCVTPH2PS(tempX, fA)
+	fB := XMM(); VCVTPH2PS(tempY, fB)
+
+	diff := XMM(); VSUBSS(fB, fA, diff)
+	VFMADD231SS(diff, diff, xHigh)
+
+	ADDQ(Imm(2), a)
+	ADDQ(Imm(2), b)
+	DECQ(n)
+	JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	VSQRTSS(xHigh, xHigh, xHigh)
+	Store(xHigh, ReturnIndex(0))
+	VZEROUPPER(); RET()
+}
+
+func ImplementDotF16AVX512() {
+	TEXT("dotF16AVX512Kernel", NOSPLIT, "func(a, b uintptr, n int) float32")
+	a := Load(Param("a"), GP64())
+	b := Load(Param("b"), GP64())
+	n := Load(Param("n"), GP64())
+
+	zSum := ZMM()
+	VXORPS(zSum, zSum, zSum)
+
+	Label("loop")
+	CMPQ(n, Imm(16))
+	JL(LabelRef("tail"))
+
+	z0 := ZMM(); VCVTPH2PS(Mem{Base: a}, z0)
+	z1 := ZMM(); VCVTPH2PS(Mem{Base: b}, z1)
+	VFMADD231PS(z0, z1, zSum)
+
+	ADDQ(Imm(32), a)
+	ADDQ(Imm(32), b)
+	SUBQ(Imm(16), n)
+	JMP(LabelRef("loop"))
+
+	Label("tail")
+	yLow := YMM(); VEXTRACTF64X4(Imm(0), zSum, yLow)
+	yHigh := YMM(); VEXTRACTF64X4(Imm(1), zSum, yHigh)
+	VADDPS(yLow, yHigh, yHigh)
+	
+	xLow := XMM(); VEXTRACTF128(Imm(0), yHigh, xLow)
+	xHigh := XMM(); VEXTRACTF128(Imm(1), yHigh, xHigh)
+	VADDPS(xLow, xHigh, xHigh)
+	xFinal := XMM(); VMOVHLPS(xHigh, xFinal, xFinal)
+	VADDPS(xFinal, xHigh, xHigh)
+	xNext := XMM(); VMOVSHDUP(xHigh, xNext)
+	VADDSS(xNext, xHigh, xHigh)
+
+	Label("scalar_loop")
+	CMPQ(n, Imm(0))
+	JE(LabelRef("done"))
+
+	tempX := XMM(); VXORPS(tempX, tempX, tempX)
+	tempY := XMM(); VXORPS(tempY, tempY, tempY)
+	
+	regA := GP32(); MOVWLZX(Mem{Base: a}, regA)
+	PINSRW(Imm(0), regA, tempX)
+	regB := GP32(); MOVWLZX(Mem{Base: b}, regB)
+	PINSRW(Imm(0), regB, tempY)
+
+	fA := XMM(); VCVTPH2PS(tempX, fA)
+	fB := XMM(); VCVTPH2PS(tempY, fB)
+
+	VFMADD231SS(fA, fB, xHigh)
+
+	ADDQ(Imm(2), a)
+	ADDQ(Imm(2), b)
+	DECQ(n)
+	JMP(LabelRef("scalar_loop"))
+
+	Label("done")
+	Store(xHigh, ReturnIndex(0))
+	VZEROUPPER(); RET()
+}
+

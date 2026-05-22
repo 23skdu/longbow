@@ -523,14 +523,26 @@ func euclideanF16AVX2(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	return euclideanF16Unrolled4x(a, b)
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanF16AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
 }
 
 func dotF16AVX2(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	return dotF16Unrolled4x(a, b)
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotF16AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
 }
 
 func cosineF16AVX2(a, b []float16.Num) (float32, error) {
@@ -559,15 +571,37 @@ func cosineF16AVX2(a, b []float16.Num) (float32, error) {
 // =============================================================================
 
 func euclideanFloat64AVX2(a, b []float64) (float32, error) {
-	return euclideanFloat64Unrolled4x(a, b)
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanFloat64AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
 }
 
 func dotFloat64AVX2(a, b []float64) (float32, error) {
-	return dotFloat64Unrolled4x(a, b)
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotFloat64AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
 }
 
 func l2SquaredFloat64AVX2(a, b []float64) (float32, error) {
-	return l2SquaredFloat64Unrolled4x(a, b)
+	val, err := euclideanFloat64AVX2(a, b)
+	if err != nil {
+		return 0, err
+	}
+	return val * val, nil
 }
 
 // =============================================================================

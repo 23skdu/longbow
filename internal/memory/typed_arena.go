@@ -67,16 +67,7 @@ func (ta *TypedArena[T]) TotalAllocated() int64 {
 	if a == nil {
 		return 0
 	}
-	slabsPtr := a.slabs.Load()
-	if slabsPtr == nil {
-		return 0
-	}
-	slabs := *slabsPtr
-	var total int64
-	for _, s := range slabs {
-		total += int64(s.offset)
-	}
-	return total
+	return a.TotalAllocated()
 }
 
 // Compact consolidates fragmented slabs in the arena.

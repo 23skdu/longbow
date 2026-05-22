@@ -117,6 +117,21 @@ type float32Computer struct {
 }
 
 func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsChunkFastWithGen(int(cID), c.maxGen)
+	if chunk != nil {
+		cOff := int(id) % types.ChunkSize
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat32)
+		start := cOff * pd
+		if start+c.dims <= len(chunk) {
+			v := chunk[start : start+c.dims]
+			if c.squared {
+				return c.h.distFuncSquared(c.q, v)
+			}
+			return c.h.distFunc(c.q, v)
+		}
+	}
+
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err != nil {
 		return 0, err

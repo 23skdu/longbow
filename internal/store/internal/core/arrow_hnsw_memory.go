@@ -51,13 +51,11 @@ func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *typ
 		return data, true, nil
 	}
 
-	// Just allocate the chunk within existing capacity (COW)
-	newData = data.Clone()
-	if err := newData.EnsureChunk(cID, cOff, dims); err != nil {
+	// Just allocate the chunk within existing capacity IN-PLACE (Lock-Free atomic publishing)
+	if err := data.EnsureChunk(cID, cOff, dims); err != nil {
 		return nil, false, err
 	}
-	h.compareAndSwapData(data, newData)
-	return newData, true, nil
+	return data, false, nil
 }
 
 // Grow expands the index capacity to the specified size.
@@ -129,6 +127,11 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 	newData.TurboQuantEnabled = h.config.TurboQuantEnabled
 	newData.TurboQuantBits = h.config.TurboQuantBits
 
+	// Ensure metadata slices are appropriately sized
+	numChunks := (capacity + types.ChunkSize - 1) / types.ChunkSize
+	if numChunks <= 0 { numChunks = 1 }
+	newData.GrowMetadataSlices(numChunks)
+
 	// Ensure structural allocation
 	if err := newData.PreAllocate(capacity); err != nil {
 		return err
@@ -168,22 +171,15 @@ func (h *ArrowHNSW) ensureChunksLocked(startCID, endCID int, dims int) (*types.G
 		data = h.data.Load()
 	}
 
-	// Ensure all chunks are allocated (COW)
-	newData := data.Clone()
-	dirty := false
+	// Ensure all chunks are allocated IN-PLACE
 	for cID := startCID; cID <= endCID; cID++ {
-		if newData.NeedsChunk(cID) {
-			if err := newData.EnsureChunk(cID, 0, dims); err != nil {
+		if data.NeedsChunk(cID) {
+			if err := data.EnsureChunk(cID, 0, dims); err != nil {
 				return nil, err
 			}
-			dirty = true
 		}
 	}
 
-	if dirty {
-		h.compareAndSwapData(data, newData)
-		return newData, nil
-	}
 	return data, nil
 }
 

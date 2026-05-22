@@ -252,7 +252,13 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		}
 
 		for l := maxL; l > level; l-- {
-			neighbors, err := h.searchLayer(context.Background(), computer, ep, 1, l, ctx, data, vec)
+			var neighbors []types.Candidate
+			var err error
+			if compF32, ok := computer.(*float32ToFloat32Computer); ok {
+				neighbors, err = h.searchLayerFloat32(context.Background(), compF32, ep, 1, l, ctx, data)
+			} else {
+				neighbors, err = h.searchLayer(context.Background(), computer, ep, 1, l, ctx, data, vec)
+			}
 			if err != nil {
 				h.epMu.Unlock()
 				return nil, err

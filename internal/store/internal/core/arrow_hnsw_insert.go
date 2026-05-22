@@ -9,7 +9,13 @@ import (
 // Returns candidates sorted by distance.
 func (h *ArrowHNSW) searchLayerForInsert(goCtx context.Context, ctx *ArrowSearchContext, query any, entryPoint uint32, ef, layer int, data *types.GraphData) ([]types.Candidate, error) {
 	computer := h.resolveHNSWComputer(data, ctx, query, true)
-	res, err := h.searchLayer(goCtx, computer, entryPoint, ef, layer, ctx, data, query)
+	var res []types.Candidate
+	var err error
+	if compF32, ok := computer.(*float32ToFloat32Computer); ok {
+		res, err = h.searchLayerFloat32(goCtx, compF32, entryPoint, ef, layer, ctx, data)
+	} else {
+		res, err = h.searchLayer(goCtx, computer, entryPoint, ef, layer, ctx, data, query)
+	}
 	if err != nil {
 		return nil, err
 	}

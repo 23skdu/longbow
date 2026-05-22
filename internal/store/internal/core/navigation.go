@@ -2465,6 +2465,17 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 		return v, err
 	}
 
+	// Shared Vector Space Path for memory locality
+	if h.sharedVectorSpace.Load() {
+		loc, ok := h.locationStore.Get(types.VectorID(id))
+		if ok {
+			vec := h.extractFromDataset(loc.BatchIdx, loc.RowIdx)
+			if vec != nil {
+				return vec, nil
+			}
+		}
+	}
+
 	// 2. Fallback to DiskGraph in hybrid mode
 	dg := h.diskGraph.Load()
 	if dg != nil {

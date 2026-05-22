@@ -12577,42 +12577,6 @@ min_tail:
 	VZEROUPPER
 	RET
 
-// func euclideanFloat64AVX512Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·euclideanFloat64AVX512Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
-
-// func dotFloat64AVX512Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·dotFloat64AVX512Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
-
-// func euclideanF16AVX512Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·euclideanF16AVX512Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
-
-// func dotF16AVX512Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·dotF16AVX512Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
-
-// func euclideanF16AVX2Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·euclideanF16AVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
-
-// func dotF16AVX2Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·dotF16AVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
-
 // func dotInt4AVX512Kernel(a uintptr, b uintptr, n int) float32
 // Requires: SSE
 TEXT ·dotInt4AVX512Kernel(SB), NOSPLIT, $0-28
@@ -12625,12 +12589,6 @@ TEXT ·dotInt4AVX2Kernel(SB), NOSPLIT, $0-28
 	MOVSS X0, ret+24(FP)
 	RET
 
-// func euclideanFloat64AVX2Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·euclideanFloat64AVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
-
 // func euclideanInt8AVX2Kernel(a uintptr, b uintptr, n int) float32
 // Requires: SSE
 TEXT ·euclideanInt8AVX2Kernel(SB), NOSPLIT, $0-28
@@ -12640,12 +12598,6 @@ TEXT ·euclideanInt8AVX2Kernel(SB), NOSPLIT, $0-28
 // func euclideanInt8Unrolled4xAVX2Kernel(a uintptr, b uintptr, n int) float32
 // Requires: SSE
 TEXT ·euclideanInt8Unrolled4xAVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
-
-// func dotFloat64AVX2Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·dotFloat64AVX2Kernel(SB), NOSPLIT, $0-28
 	MOVSS X0, ret+24(FP)
 	RET
 
@@ -12952,4 +12904,400 @@ TEXT ·softmaxAVX2Kernel(SB), NOSPLIT, $0-24
 
 // func sigmoidAVX2Kernel(src uintptr, dst uintptr, n int)
 TEXT ·sigmoidAVX2Kernel(SB), NOSPLIT, $0-24
+	RET
+
+// func euclideanFloat64AVX2Kernel(a uintptr, b uintptr, n int) float32
+// Requires: AVX, FMA3, SSE
+TEXT ·euclideanFloat64AVX2Kernel(SB), NOSPLIT, $0-28
+	MOVQ   a+0(FP), AX
+	MOVQ   b+8(FP), CX
+	MOVQ   n+16(FP), DX
+	VXORPD Y0, Y0, Y0
+
+loop:
+	CMPQ        DX, $0x04
+	JL          tail
+	VMOVUPD     (AX), Y1
+	VMOVUPD     (CX), Y2
+	VSUBPD      Y2, Y1, Y1
+	VFMADD231PD Y1, Y1, Y0
+	ADDQ        $0x20, AX
+	ADDQ        $0x20, CX
+	SUBQ        $0x04, DX
+	JMP         loop
+
+tail:
+	VEXTRACTF128 $0x00, Y0, X1
+	VEXTRACTF128 $0x01, Y0, X0
+	VADDPD       X1, X0, X0
+	VUNPCKHPD    X0, X0, X1
+	VADDSD       X1, X0, X0
+
+scalar_loop:
+	CMPQ        DX, $0x00
+	JE          done
+	VMOVSD      (AX), X1
+	VMOVSD      (CX), X2
+	VSUBSD      X2, X1, X1
+	VFMADD231SD X1, X1, X0
+	ADDQ        $0x08, AX
+	ADDQ        $0x08, CX
+	DECQ        DX
+	JMP         scalar_loop
+
+done:
+	VSQRTSD   X0, X0, X0
+	VCVTSD2SS X0, X0, X0
+	MOVSS     X0, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// func dotFloat64AVX2Kernel(a uintptr, b uintptr, n int) float32
+// Requires: AVX, FMA3, SSE
+TEXT ·dotFloat64AVX2Kernel(SB), NOSPLIT, $0-28
+	MOVQ   a+0(FP), AX
+	MOVQ   b+8(FP), CX
+	MOVQ   n+16(FP), DX
+	VXORPD Y0, Y0, Y0
+
+loop:
+	CMPQ        DX, $0x04
+	JL          tail
+	VMOVUPD     (AX), Y1
+	VMOVUPD     (CX), Y2
+	VFMADD231PD Y1, Y2, Y0
+	ADDQ        $0x20, AX
+	ADDQ        $0x20, CX
+	SUBQ        $0x04, DX
+	JMP         loop
+
+tail:
+	VEXTRACTF128 $0x00, Y0, X1
+	VEXTRACTF128 $0x01, Y0, X0
+	VADDPD       X1, X0, X0
+	VUNPCKHPD    X0, X0, X1
+	VADDSD       X1, X0, X0
+
+scalar_loop:
+	CMPQ        DX, $0x00
+	JE          done
+	VMOVSD      (AX), X1
+	VMOVSD      (CX), X2
+	VFMADD231SD X1, X2, X0
+	ADDQ        $0x08, AX
+	ADDQ        $0x08, CX
+	DECQ        DX
+	JMP         scalar_loop
+
+done:
+	VCVTSD2SS X0, X0, X0
+	MOVSS     X0, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// func euclideanFloat64AVX512Kernel(a uintptr, b uintptr, n int) float32
+// Requires: AVX, AVX512DQ, AVX512F, FMA3, SSE
+TEXT ·euclideanFloat64AVX512Kernel(SB), NOSPLIT, $0-28
+	MOVQ   a+0(FP), AX
+	MOVQ   b+8(FP), CX
+	MOVQ   n+16(FP), DX
+	VXORPD Z0, Z0, Z0
+
+loop:
+	CMPQ        DX, $0x08
+	JL          tail
+	VMOVUPD     (AX), Z1
+	VMOVUPD     (CX), Z2
+	VSUBPD      Z2, Z1, Z1
+	VFMADD231PD Z1, Z1, Z0
+	ADDQ        $0x40, AX
+	ADDQ        $0x40, CX
+	SUBQ        $0x08, DX
+	JMP         loop
+
+tail:
+	VEXTRACTF64X4 $0x00, Z0, Y1
+	VEXTRACTF64X4 $0x01, Z0, Y0
+	VADDPD        Y1, Y0, Y0
+	VEXTRACTF128  $0x00, Y0, X1
+	VEXTRACTF128  $0x01, Y0, X0
+	VADDPD        X1, X0, X0
+	VUNPCKHPD     X0, X0, X1
+	VADDSD        X1, X0, X0
+
+scalar_loop:
+	CMPQ        DX, $0x00
+	JE          done
+	VMOVSD      (AX), X1
+	VMOVSD      (CX), X2
+	VSUBSD      X2, X1, X1
+	VFMADD231SD X1, X1, X0
+	ADDQ        $0x08, AX
+	ADDQ        $0x08, CX
+	DECQ        DX
+	JMP         scalar_loop
+
+done:
+	VSQRTSD   X0, X0, X0
+	VCVTSD2SS X0, X0, X0
+	MOVSS     X0, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// func dotFloat64AVX512Kernel(a uintptr, b uintptr, n int) float32
+// Requires: AVX, AVX512DQ, AVX512F, FMA3, SSE
+TEXT ·dotFloat64AVX512Kernel(SB), NOSPLIT, $0-28
+	MOVQ   a+0(FP), AX
+	MOVQ   b+8(FP), CX
+	MOVQ   n+16(FP), DX
+	VXORPD Z0, Z0, Z0
+
+loop:
+	CMPQ        DX, $0x08
+	JL          tail
+	VMOVUPD     (AX), Z1
+	VMOVUPD     (CX), Z2
+	VFMADD231PD Z1, Z2, Z0
+	ADDQ        $0x40, AX
+	ADDQ        $0x40, CX
+	SUBQ        $0x08, DX
+	JMP         loop
+
+tail:
+	VEXTRACTF64X4 $0x00, Z0, Y1
+	VEXTRACTF64X4 $0x01, Z0, Y0
+	VADDPD        Y1, Y0, Y0
+	VEXTRACTF128  $0x00, Y0, X1
+	VEXTRACTF128  $0x01, Y0, X0
+	VADDPD        X1, X0, X0
+	VUNPCKHPD     X0, X0, X1
+	VADDSD        X1, X0, X0
+
+scalar_loop:
+	CMPQ        DX, $0x00
+	JE          done
+	VMOVSD      (AX), X1
+	VMOVSD      (CX), X2
+	VFMADD231SD X1, X2, X0
+	ADDQ        $0x08, AX
+	ADDQ        $0x08, CX
+	DECQ        DX
+	JMP         scalar_loop
+
+done:
+	VCVTSD2SS X0, X0, X0
+	MOVSS     X0, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// func euclideanF16AVX2Kernel(a uintptr, b uintptr, n int) float32
+// Requires: AVX, F16C, FMA3, SSE, SSE2
+TEXT ·euclideanF16AVX2Kernel(SB), NOSPLIT, $0-28
+	MOVQ   a+0(FP), AX
+	MOVQ   b+8(FP), CX
+	MOVQ   n+16(FP), DX
+	VXORPS Y0, Y0, Y0
+
+loop:
+	CMPQ        DX, $0x08
+	JL          tail
+	VCVTPH2PS   (AX), Y1
+	VCVTPH2PS   (CX), Y2
+	VSUBPS      Y2, Y1, Y1
+	VFMADD231PS Y1, Y1, Y0
+	ADDQ        $0x10, AX
+	ADDQ        $0x10, CX
+	SUBQ        $0x08, DX
+	JMP         loop
+
+tail:
+	VEXTRACTF128 $0x00, Y0, X1
+	VEXTRACTF128 $0x01, Y0, X0
+	VADDPS       X1, X0, X0
+	VMOVSHDUP    X0, X1
+	VADDPS       X1, X0, X0
+	VMOVHLPS     X0, X0, X1
+	VADDSS       X1, X0, X0
+
+scalar_loop:
+	CMPQ        DX, $0x00
+	JE          done
+	VXORPS      X1, X1, X1
+	VXORPS      X2, X2, X2
+	MOVWLZX     (AX), BX
+	PINSRW      $0x00, BX, X1
+	MOVWLZX     (CX), BX
+	PINSRW      $0x00, BX, X2
+	VCVTPH2PS   X1, X1
+	VCVTPH2PS   X2, X2
+	VSUBSS      X2, X1, X1
+	VFMADD231SS X1, X1, X0
+	ADDQ        $0x02, AX
+	ADDQ        $0x02, CX
+	DECQ        DX
+	JMP         scalar_loop
+
+done:
+	VSQRTSS X0, X0, X0
+	MOVSS   X0, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// func dotF16AVX2Kernel(a uintptr, b uintptr, n int) float32
+// Requires: AVX, F16C, FMA3, SSE, SSE2
+TEXT ·dotF16AVX2Kernel(SB), NOSPLIT, $0-28
+	MOVQ   a+0(FP), AX
+	MOVQ   b+8(FP), CX
+	MOVQ   n+16(FP), DX
+	VXORPS Y0, Y0, Y0
+
+loop:
+	CMPQ        DX, $0x08
+	JL          tail
+	VCVTPH2PS   (AX), Y1
+	VCVTPH2PS   (CX), Y2
+	VFMADD231PS Y1, Y2, Y0
+	ADDQ        $0x10, AX
+	ADDQ        $0x10, CX
+	SUBQ        $0x08, DX
+	JMP         loop
+
+tail:
+	VEXTRACTF128 $0x00, Y0, X1
+	VEXTRACTF128 $0x01, Y0, X0
+	VADDPS       X1, X0, X0
+	VMOVSHDUP    X0, X1
+	VADDPS       X1, X0, X0
+	VMOVHLPS     X0, X0, X1
+	VADDSS       X1, X0, X0
+
+scalar_loop:
+	CMPQ        DX, $0x00
+	JE          done
+	VXORPS      X1, X1, X1
+	VXORPS      X2, X2, X2
+	MOVWLZX     (AX), BX
+	PINSRW      $0x00, BX, X1
+	MOVWLZX     (CX), BX
+	PINSRW      $0x00, BX, X2
+	VCVTPH2PS   X1, X1
+	VCVTPH2PS   X2, X2
+	VFMADD231SS X1, X2, X0
+	ADDQ        $0x02, AX
+	ADDQ        $0x02, CX
+	DECQ        DX
+	JMP         scalar_loop
+
+done:
+	MOVSS X0, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// func euclideanF16AVX512Kernel(a uintptr, b uintptr, n int) float32
+// Requires: AVX, AVX512DQ, AVX512F, F16C, FMA3, SSE, SSE2
+TEXT ·euclideanF16AVX512Kernel(SB), NOSPLIT, $0-28
+	MOVQ   a+0(FP), AX
+	MOVQ   b+8(FP), CX
+	MOVQ   n+16(FP), DX
+	VXORPS Z0, Z0, Z0
+
+loop:
+	CMPQ        DX, $0x10
+	JL          tail
+	VCVTPH2PS   (AX), Z1
+	VCVTPH2PS   (CX), Z2
+	VSUBPS      Z2, Z1, Z1
+	VFMADD231PS Z1, Z1, Z0
+	ADDQ        $0x20, AX
+	ADDQ        $0x20, CX
+	SUBQ        $0x10, DX
+	JMP         loop
+
+tail:
+	VEXTRACTF64X4 $0x00, Z0, Y1
+	VEXTRACTF64X4 $0x01, Z0, Y0
+	VADDPS        Y1, Y0, Y0
+	VEXTRACTF128  $0x00, Y0, X1
+	VEXTRACTF128  $0x01, Y0, X0
+	VADDPS        X1, X0, X0
+	VMOVHLPS      X0, X3, X3
+	VADDPS        X3, X0, X0
+	VMOVSHDUP     X0, X1
+	VADDSS        X1, X0, X0
+
+scalar_loop:
+	CMPQ        DX, $0x00
+	JE          done
+	VXORPS      X1, X1, X1
+	VXORPS      X2, X2, X2
+	MOVWLZX     (AX), BX
+	PINSRW      $0x00, BX, X1
+	MOVWLZX     (CX), BX
+	PINSRW      $0x00, BX, X2
+	VCVTPH2PS   X1, X1
+	VCVTPH2PS   X2, X2
+	VSUBSS      X2, X1, X1
+	VFMADD231SS X1, X1, X0
+	ADDQ        $0x02, AX
+	ADDQ        $0x02, CX
+	DECQ        DX
+	JMP         scalar_loop
+
+done:
+	VSQRTSS X0, X0, X0
+	MOVSS   X0, ret+24(FP)
+	VZEROUPPER
+	RET
+
+// func dotF16AVX512Kernel(a uintptr, b uintptr, n int) float32
+// Requires: AVX, AVX512DQ, AVX512F, F16C, FMA3, SSE, SSE2
+TEXT ·dotF16AVX512Kernel(SB), NOSPLIT, $0-28
+	MOVQ   a+0(FP), AX
+	MOVQ   b+8(FP), CX
+	MOVQ   n+16(FP), DX
+	VXORPS Z0, Z0, Z0
+
+loop:
+	CMPQ        DX, $0x10
+	JL          tail
+	VCVTPH2PS   (AX), Z1
+	VCVTPH2PS   (CX), Z2
+	VFMADD231PS Z1, Z2, Z0
+	ADDQ        $0x20, AX
+	ADDQ        $0x20, CX
+	SUBQ        $0x10, DX
+	JMP         loop
+
+tail:
+	VEXTRACTF64X4 $0x00, Z0, Y1
+	VEXTRACTF64X4 $0x01, Z0, Y0
+	VADDPS        Y1, Y0, Y0
+	VEXTRACTF128  $0x00, Y0, X1
+	VEXTRACTF128  $0x01, Y0, X0
+	VADDPS        X1, X0, X0
+	VMOVHLPS      X0, X3, X3
+	VADDPS        X3, X0, X0
+	VMOVSHDUP     X0, X1
+	VADDSS        X1, X0, X0
+
+scalar_loop:
+	CMPQ        DX, $0x00
+	JE          done
+	VXORPS      X1, X1, X1
+	VXORPS      X2, X2, X2
+	MOVWLZX     (AX), BX
+	PINSRW      $0x00, BX, X1
+	MOVWLZX     (CX), BX
+	PINSRW      $0x00, BX, X2
+	VCVTPH2PS   X1, X1
+	VCVTPH2PS   X2, X2
+	VFMADD231SS X1, X2, X0
+	ADDQ        $0x02, AX
+	ADDQ        $0x02, CX
+	DECQ        DX
+	JMP         scalar_loop
+
+done:
+	MOVSS X0, ret+24(FP)
+	VZEROUPPER
 	RET

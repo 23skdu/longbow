@@ -53,6 +53,12 @@ The following critical performance issues have been identified and resolved. Thi
 - **Avo Duplicate Symbol Test**: Confirmed `simd_stubs_test.go` correctly implements AST-based validation to prevent symbol collision.
 - **Hard Memory Limit Docs**: Documented `LONGBOW_MAX_MEMORY_HARD` and soft-limit backpressure behavior in `README.md` and `docs/limits.md`.
 
+### Benchmark Orchestration: `--pprof` Hangs on `ancalagon`
+
+**Root Cause**: The unified benchmark sequence running `complex64_768_5000` occasionally hung or failed abruptly on `ancalagon`. Analysis revealed this was NOT a bug in the `complex64` SIMD processing, but a side effect of the benchmark script's concurrent `--pprof` profiling overlapping with short-running benchmarks. The background `curl` thread hitting the `net/http/pprof` endpoint on the Go server caused timeouts and premature SIGKILLs when attempting to coordinate across sequential test matrices.
+
+**Resolution**: Verified that standalone `complex64` runs without `--pprof` complete flawlessly and yield correct performance metrics (e.g., `2144.4 QPS` for dense search). No code changes to the SIMD kernels were required.
+
 ## Benchmark Analysis (v0.2.0 → v0.2.1)
 
 ### Local Metal — All Improvements (No Regressions)

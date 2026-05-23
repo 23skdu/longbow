@@ -338,6 +338,9 @@ func run() error {
 			Msg("Hybrid search enabled")
 	}
 
+	// GPU Binary Diagnostic check
+	gpu.CheckBinaryDiagnostic(&logger)
+
 	// Configure GPU acceleration
 	if cfg.GPUEnabled {
 		detectedBackend := gpu.DetectGPUBackend()

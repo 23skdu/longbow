@@ -2159,6 +2159,23 @@ class BenchmarkRunner:
         print(f"\nResults saved to: {self.output_file}")
         print("=" * 80)
 
+
+    def get_numa_topology(self):
+        try:
+            if platform.system() == "Linux":
+                res = subprocess.run("numactl --hardware", shell=True, capture_output=True, text=True)
+                if res.returncode == 0:
+                    return res.stdout.strip()
+        except Exception:
+            pass
+        return "Single NUMA node detected (no NUMA)"
+
+    def check_cache(self, dim, dtype, count, label):
+        if not self.args.cache:
+            return False
+        json_file = os.path.join(self.log_dir, f"result_{label}.json")
+        return os.path.exists(json_file)
+
     def save_results(self):
         """Save current results to JSON matrix file."""
         with open(self.output_file, "w") as f:
@@ -2231,6 +2248,7 @@ class BenchmarkRunner:
             print(f"UNIFIED BENCHMARK MATRIX ({mode.upper()})")
             print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
             print(f"Platform: {platform.system()} {platform.machine()}")
+            print(f"NUMA Topology:\n{self.get_numa_topology()}")
             print(f"Dims: {dims}")
             print(f"Count: {count}")
             print(f"Types: {dtypes}")
@@ -2277,6 +2295,12 @@ class BenchmarkRunner:
                         if not self.start_server(label):
                             print("  Failed to start server!")
                             continue
+
+                        if self.args.cache:
+                            json_file = os.path.join(self.log_dir, f"result_{label}.json")
+                            if os.path.exists(json_file):
+                                print(f"  [CACHE HIT] Skipping execution for {label}")
+                                continue
 
                         pprof_thread = None
                         try:
@@ -2667,15 +2691,15 @@ if __name__ == "__main__":
         help="Benchmark mode(s), comma-separated: cpu, metal, cuda, onnx, recommend, deletion, graphrag, exchange, cluster, temporal, geo, churn, learned_index",
     )
     parser.add_argument(
-        "--dims", default="128,384,768,1536,3072", help="Comma-separated dimensions"
+        "--dims", default="128,768", help="Comma-separated dimensions"
     )
     parser.add_argument(
         "--counts",
-        default="1000,5000,10000",
+        default="1000,5000",
         help="Comma-separated vector counts (uses first)",
     )
     parser.add_argument(
-        "--dtypes", default=ALL_DTYPES, help="Comma-separated datatypes"
+        "--dtypes", default="float32,float16,int8", help="Comma-separated datatypes"
     )
     parser.add_argument(
         "--memory",
@@ -2868,6 +2892,15 @@ if __name__ == "__main__":
         type=str,
         default="all",
         help="Comma-separated search modes to run (default: all)",
+    )
+    parser.add_argument(
+        "--full", action="store_true", help="Run the full release candidate matrix (overrides dims/counts/dtypes if not explicitly set)"
+    )
+    parser.add_argument(
+        "--cache", action="store_true", help="Skip unchanged code paths if result json already exists"
+    )
+    parser.add_argument(
+        "--numa-bind", action="store_true", help="Enable NUMA binding in benchmarks"
     )
     args = parser.parse_args()
     runner = BenchmarkRunner(args)

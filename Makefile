@@ -75,9 +75,16 @@ build-cuda:
 build-metal:
 	@echo "Building longbow $(VERSION) with Metal support..."
 	@echo "Note: Requires macOS with Apple Silicon (M1/M2/M3)"
-	CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -tags "gpu onnx" -v -o bin/longbow-metal ./cmd/longbow
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -tags "gpu onnx" -v -o bin/longbow-metal ./cmd/longbow
 	ln -sf longbow-metal bin/longbow
 
+# Build fat binaries for macOS (universal2 + Metal) via lipo
+build-darwin-universal:
+	@echo "Building universal macOS binary (CPU x86_64 + Metal arm64)..."
+	CGO_ENABLED=1 GOOS=darwin GOARCH=amd64 go build -ldflags "$(LDFLAGS)" -v -o bin/longbow-darwin-amd64 ./cmd/longbow
+	CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 go build -ldflags "$(LDFLAGS)" -tags "gpu onnx" -v -o bin/longbow-darwin-arm64 ./cmd/longbow
+	lipo -create -output bin/longbow-universal bin/longbow-darwin-amd64 bin/longbow-darwin-arm64
+	@echo "Universal binary created at bin/longbow-universal"
 
 # Build with GPU support (auto-detect backend based on platform)
 build-gpu:

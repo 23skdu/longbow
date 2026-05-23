@@ -29,7 +29,7 @@ type BufferedWAL struct {
 	onError func(error)
 
 	// Synchronization
-	currentSeq uint64
+	currentSeq atomic.Uint64
 	flushedSeq atomic.Uint64
 	syncCond   *sync.Cond
 
@@ -166,8 +166,8 @@ func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.Reco
 		return fmt.Errorf("failed to patch header: %w", err)
 	}
 
-	if seq > w.currentSeq {
-		w.currentSeq = seq
+	if seq > w.currentSeq.Load() {
+		w.currentSeq.Store(seq)
 	}
 
 	if w.buf.Len() >= w.maxBatchSize {
@@ -185,12 +185,12 @@ func (w *BufferedWAL) Write(name string, seq uint64, ts int64, record arrow.Reco
 // a single flush drains all pending work at once, reducing total IOPS.
 func (w *BufferedWAL) Sync() error {
 	// Fast path: already flushed
-	if w.flushedSeq.Load() >= w.currentSeq {
+	if w.flushedSeq.Load() >= w.currentSeq.Load() {
 		return nil
 	}
 
 	w.mu.Lock()
-	targetSeq := w.currentSeq
+	targetSeq := w.currentSeq.Load()
 
 	if w.flushedSeq.Load() >= targetSeq {
 		w.mu.Unlock()
@@ -362,7 +362,7 @@ func (w *BufferedWAL) swapBufferLocked() *writeBatch {
 	}
 
 	oldBuf := w.buf
-	currentMax := w.currentSeq
+	currentMax := w.currentSeq.Load()
 
 	// Acquire a fresh buffer from the lock-free pool
 	w.buf = w.acquireBuffer()

@@ -331,9 +331,14 @@ class BenchmarkRunner:
         env["AUTO_SHARDING_THRESHOLD"] = str(shard_threshold)
 
         log_file = os.path.join(self.log_dir, f"longbow_{current_mode}_{label}.log")
+        cmd = [server_bin]
+        if getattr(self.args, "numa_bind", False) and platform.system() == "Linux":
+            cmd = ["numactl", "--cpunodebind=0", "--membind=0", server_bin]
+            env["LONGBOW_NUMA_NODE"] = "0"
+
         with open(log_file, "w") as f:
             process = subprocess.Popen(
-                [server_bin],
+                cmd,
                 env=env,
                 stdout=f,
                 stderr=subprocess.STDOUT,

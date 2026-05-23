@@ -6,7 +6,9 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 )
 
@@ -250,7 +252,13 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 					}
 
 					incomingSum := float32(0.0)
-					for _, source := range reverseAdj[i] {
+					for j, source := range reverseAdj[i] {
+						if j+4 < len(reverseAdj[i]) {
+							nextSource := reverseAdj[i][j+4]
+							// Prefetch the arrays for future iterations to mask memory latency
+							simd.Prefetch(unsafe.Pointer(&outDegrees[nextSource]))
+							simd.Prefetch(unsafe.Pointer(&scores[nextSource]))
+						}
 						degree := outDegrees[source]
 						if degree > 0 {
 							incomingSum += scores[source] / float32(degree)

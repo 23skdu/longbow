@@ -15,15 +15,32 @@ import (
 type SearchArena struct {
 	buf    []byte
 	offset int
+	node   int
 }
 
 // NewSearchArena creates a new arena with the specified capacity in bytes.
 // The entire buffer is pre-allocated to avoid runtime allocations.
 func NewSearchArena(capacity int) *SearchArena {
+	return NewSearchArenaForNode(capacity, 0)
+}
+
+// NewSearchArenaForNode creates a new arena mapped to a specific NUMA node.
+func NewSearchArenaForNode(capacity int, node int) *SearchArena {
 	return &SearchArena{
-		buf:    make([]byte, capacity),
+		buf:    allocateNUMAArena(capacity, node),
 		offset: 0,
+		node:   node,
 	}
+}
+
+// Free releases the NUMA-allocated buffer.
+func (a *SearchArena) Free() {
+	freeNUMAArena(a.buf, len(a.buf))
+}
+
+// NUMANode returns the NUMA node this arena is pinned to.
+func (a *SearchArena) NUMANode() int {
+	return a.node
 }
 
 // Alloc allocates size bytes from the arena and returns a slice.
@@ -121,20 +138,33 @@ func (a *SearchArena) AllocVectorIDSlice(count int) []types.VectorID {
 // DefaultArenaSize is the default capacity for pooled arenas (64KB)
 const DefaultArenaSize = 64 * 1024
 
-// arenaPool is a global pool of SearchArena objects for reuse
-// This eliminates per-search allocations and reduces GC pressure
-var arenaPool = sync.Pool{
-	New: func() any {
-		return NewSearchArena(DefaultArenaSize)
-	},
+var arenaPools [8]*sync.Pool
+
+func init() {
+	for i := 0; i < 8; i++ {
+		node := i // Capture loop variable
+		arenaPools[i] = &sync.Pool{
+			New: func() any {
+				return NewSearchArenaForNode(DefaultArenaSize, node)
+			},
+		}
+	}
 }
 
-// GetArena retrieves a SearchArena from the global pool.
+// GetArena retrieves a SearchArena from the global pool for node 0.
 // The arena is reset and ready for use.
 // Caller must call PutArena when done to return it to the pool.
 func GetArena() *SearchArena {
+	return GetArenaForNode(0)
+}
+
+// GetArenaForNode retrieves a SearchArena allocated on the specified NUMA node.
+func GetArenaForNode(node int) *SearchArena {
 	metrics.ArenaPoolGets.Inc()
-	return arenaPool.Get().(*SearchArena)
+	if node < 0 || node >= len(arenaPools) {
+		node = 0
+	}
+	return arenaPools[node].Get().(*SearchArena)
 }
 
 // PutArena returns a SearchArena to the global pool for reuse.
@@ -145,5 +175,8 @@ func PutArena(arena *SearchArena) {
 		return
 	}
 	arena.Reset()
-	arenaPool.Put(arena)
+	node := arena.NUMANode()
+	if node >= 0 && node < len(arenaPools) {
+		arenaPools[node].Put(arena)
+	}
 }

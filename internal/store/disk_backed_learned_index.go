@@ -3,6 +3,7 @@
 package store
 
 import (
+	"container/list"
 	"context"
 	"encoding/binary"
 	"fmt"
@@ -41,6 +42,62 @@ type DiskBackedLearnedIndex struct {
 	// Metadata
 	path  string
 	built bool
+	
+	vectorCache *LRUCache
+}
+
+type lruVectorCacheEntry struct {
+	nodeID uint32
+	vector []float32
+}
+
+// LRUCache provides a simple least-recently-used cache for vector lookups
+type LRUCache struct {
+	capacity  int
+	items     map[uint32]*list.Element
+	evictList *list.List
+	mu        sync.Mutex
+}
+
+func newLRUCache(capacity int) *LRUCache {
+	return &LRUCache{
+		capacity:  capacity,
+		items:     make(map[uint32]*list.Element),
+		evictList: list.New(),
+	}
+}
+
+func (c *LRUCache) Get(nodeID uint32) ([]float32, bool) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if ent, ok := c.items[nodeID]; ok {
+		c.evictList.MoveToFront(ent)
+		return ent.Value.(*lruVectorCacheEntry).vector, true
+	}
+	return nil, false
+}
+
+func (c *LRUCache) Add(nodeID uint32, vector []float32) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if ent, ok := c.items[nodeID]; ok {
+		c.evictList.MoveToFront(ent)
+		ent.Value.(*lruVectorCacheEntry).vector = vector
+		return
+	}
+
+	ent := &lruVectorCacheEntry{nodeID, vector}
+	entry := c.evictList.PushFront(ent)
+	c.items[nodeID] = entry
+
+	if c.evictList.Len() > c.capacity {
+		evict := c.evictList.Back()
+		if evict != nil {
+			c.evictList.Remove(evict)
+			delete(c.items, evict.Value.(*lruVectorCacheEntry).nodeID)
+		}
+	}
 }
 
 // NewDiskBackedLearnedIndex creates a new disk-backed learned index.
@@ -58,9 +115,10 @@ func NewDiskBackedLearnedIndex(cfg IndexConfig, path string) (*DiskBackedLearned
 	}
 
 	idx := &DiskBackedLearnedIndex{
-		dimension: cfg.Dimension,
-		config:    cfg.DiskANNConfig,
-		path:      path,
+		dimension:   cfg.Dimension,
+		config:      cfg.DiskANNConfig,
+		path:        path,
+		vectorCache: newLRUCache(100000), // Cache 100k vectors
 	}
 
 	return idx, nil
@@ -234,11 +292,20 @@ func (idx *DiskBackedLearnedIndex) Search(query []float32, k int) ([]IndexSearch
 }
 
 func (idx *DiskBackedLearnedIndex) getDistance(query []float32, nodeID uint32) (float32, error) {
+	if cachedVec, ok := idx.vectorCache.Get(nodeID); ok {
+		return simd.EuclideanDistance(query, cachedVec)
+	}
+
 	offset := idx.vectorOffset + uint64(nodeID)*uint64(idx.dimension)*4 // #nosec G115
 	vecData := idx.data[offset : offset+uint64(idx.dimension)*4]        // #nosec G115
 
 	// Zero-copy direct memory cast using unsafe.Slice for sub-nanosecond access
 	nodeVec := unsafe.Slice((*float32)(unsafe.Pointer(&vecData[0])), idx.dimension) // #nosec G103
+
+	// Copy to cache to avoid pinning mmap memory, which can defeat OS page cache eviction
+	vecCopy := make([]float32, idx.dimension)
+	copy(vecCopy, nodeVec)
+	idx.vectorCache.Add(nodeID, vecCopy)
 
 	return simd.EuclideanDistance(query, nodeVec)
 }

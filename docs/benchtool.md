@@ -82,7 +82,7 @@ For every dataset, `bench-tool` executes the following operations in sequence:
 
 For large-scale matrix testing, use the provided scripts:
 
-- `scripts/benchmark_tool_incremental.sh`: Runs fully isolated incremental cycles through type lists.
+- `scripts/cli_benchmark.py`: Runs fully isolated blackbox CLI testing to comprehensively exercise the tool's bounds.
 - `scripts/unified_benchmark.py`: Python orchestrator for multi-host, multi-architecture (CPU/Metal/CUDA) validation.
 
 ## Output and Monitoring

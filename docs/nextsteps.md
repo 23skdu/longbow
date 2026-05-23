@@ -1,121 +1,29 @@
-# Longbow Next Steps - Stability & Performance Recommendations
+# Longbow Next Steps - Release Candidate 0.2.1-rc4
 
-> Updated: 2026-05-22
-> Based on: Security audit, race condition analysis, comprehensive historical performance audit (v0.2.0 - v0.2.1), HNSW search path regression analysis, and SIMD kernel audit.
+This document tracks all outstanding items and performance/feature suggestions specifically prioritized for the current release candidate (`0.2.1-rc4`).
 
----
+## Prioritized Action Items for 0.2.1-rc4
 
-## Recently Resolved (2026-05-22)
+### Critical Priority (Security & Stability)
+- **Monitor Arena offset truncation (>4GB)**: TemporalEntry arena is limited by design. Continuous monitoring of arena growth is required in production. (`temporal_search.go:347,367`)
+- **Review `ivf_flat.go:347` vector map size bounds**: Add explicit checks if IVF-FLAT is expected to handle >4B vectors (`uint32(len(ivf.vectors))`).
+- **Review `arrow_hnsw_persistence.go:208` version conversion**: Add bounds check if version numbers could exceed MaxInt64.
 
-The following critical performance issues have been identified and resolved. This section documents what was done for reference.
+### High Priority (Performance Core)
+1. **CUDA Optimization for Turboquant**: Optimize the CUDA kernels for `turboquant` dot product and L2 routines to align Nvidia performance with Apple Silicon Metal. Implement shared memory caching for lookup tables.
+2. **NUMA-Aware Arena Allocator**: Update `internal/store/arena_pool.go` to support NUMA-node local allocations and pin search goroutines to specific CPU cores. This will prevent cross-socket latency on high-core AMD64 servers (e.g., `ancalagon`).
+3. **Adaptive Batching for GPU Ingestion**: Enhance adaptive batching (`internal/store/adaptive_batching.go`) to query the active GPU backend for optimal block sizes, coalescing small inserts to perfectly align with GPU warp/thread block sizes.
+4. **Query Result Merger Pre-allocation**: Update `internal/store/result_merger.go` to pre-calculate required capacity (`limit * shards`) and pre-allocate merge arrays from a `sync.Pool` to achieve zero-allocation result merging.
 
-### Float64 & Float16 SIMD Distance Kernels
+### Medium Priority (Scale & Reliability)
+5. **Autoscaling Ingestion Workers**: Dynamically spawn or reap worker goroutines in `internal/store/ingestion_worker.go` based on the ingest vs. QPS ratio via a feedback loop, stabilizing throughput under varying loads.
+6. **Disk-backed Learned Index Caching**: Implement a tiered LRU/LFU cache in RAM/NVMe specifically for learned index leaf nodes (`disk_backed_learned_index.go`) to eliminate latency hits on cold reads.
+7. **Asynchronous Bitmap Pool Refill**: Add a background goroutine to proactively pre-allocate and refill the `bitmap_pool` before exhaustion, preventing severe P95 latency spikes during heavy parallel filtering.
+8. **Distributed Vector Clock Compaction**: Implement a lock-free background thread in `internal/store/compaction.go` to aggressively merge vector clock deltas, guaranteeing bounded latency for high-frequency temporal searches.
 
-**Root Cause**: Float16 Dense QPS dropped 69% (6125 → 1919) and Float64 dropped 35% (5878 → 3840) since v0.2.0 due to SIMD dispatch falling back to unrolled Go loops for these types.
-
-**Resolution**:
-
-- Fixed compilation errors in `internal/simd/gen/all_kernels_gen.go` (Avo code generator):
-  - Replaced undefined `MOVZXW`/`MOVZXWL` instructions with the correct Go assembler instruction `MOVWLZX` in float16 scalar tail loops.
-  - Resolved `fA.AsXMM()` type errors in half-precision loops by allocating `fA`/`fB` as `XMM()` virtual registers to allow direct `VSUBSS`/`VFMADD231SS` scalar usage.
-  - Fixed undefined `xNext3` in `ImplementSpecializedAVX512` by adding the missing `VMOVSHDUP` move before the reduction step.
-- Ran `go generate ./internal/simd` to produce updated assembly in `all_kernels_avo_amd64.s`.
-- Wired AVX2 Go wrappers in `internal/simd/simd_amd64.go` to call generated stubs:
-  - `euclideanF16AVX2` → `euclideanF16AVX2Kernel`
-  - `dotF16AVX2` → `dotF16AVX2Kernel`
-  - `euclideanFloat64AVX2` → `euclideanFloat64AVX2Kernel`
-  - `dotFloat64AVX2` → `dotFloat64AVX2Kernel`
-  - `l2SquaredFloat64AVX2` → squares result of `euclideanFloat64AVX2`
-- Wired AVX512 Go wrappers in `internal/simd/avx512.go` to call generated stubs with feature detection and AVX2 fallbacks:
-  - `euclideanFloat64AVX512` → `euclideanFloat64AVX512Kernel` (fallback: `euclideanFloat64AVX2`)
-  - `dotFloat64AVX512` → `dotFloat64AVX512Kernel` (fallback: `dotFloat64AVX2`)
-  - `l2SquaredFloat64AVX512` → squares result of `euclideanFloat64AVX512`
-- Fixed a systematic type mismatch throughout `avx512.go`: all kernel calls were passing `unsafe.Pointer(...)` arguments but every generated stub in `all_kernels_stubs_amd64.go` declares `uintptr` parameters. Converted all call sites to `uintptr(unsafe.Pointer(...))` and updated local pointer variables (`qPtr`, `queryPtr`) accordingly.
-- Fixed additional type errors in `avx512.go`:
-  - `matchInt32AVX512Kernel`: `val int32` → `int64(val)`
-  - `matchFloat32AVX512Kernel`: `val float32` → `int64(math.Float32bits(val))`
-  - `matchFloat64AVX512Kernel`: `val float64` → `int64(math.Float64bits(val))`
-  - `dot1536AVX512Kernel` / `cosine16AVX512`: not present in generated stubs; `dot1536AVX512` falls back to `dotAVX512`, and `cosine16AVX512Wrapper` uses `cosineDotAVX512` with `n=16`.
-- Verified clean build under both `GOARCH=amd64 go build ./internal/simd/` and `GOARCH=amd64 go build -tags avx512 ./internal/simd/`.
-
-### ByID Spatial Retrieval Locality Regression
-
-**Root Cause**: Float16 ByID QPS dropped 38% (9052 → 5592) and Float64 dropped 43% (8367 → 4766). `GetVector(id)` in `internal/store/internal/core/navigation.go` bypassed the zero-copy shared vector space path, falling through to slow disk/compressed vector lookups.
-
-**Resolution**: Added a `sharedVectorSpace` fast-path check in `GetVector()` immediately after the raw memory check. If `h.sharedVectorSpace.Load()` is true, the method now resolves directly via `h.locationStore.Get(id)` + `h.extractFromDataset(loc.BatchIdx, loc.RowIdx)`, restoring the zero-copy memory locality path before falling back to DiskGraph or compressed vector fallbacks.
-
----
-
-### Allocator, pprof, and Documentation Fixes
-
-- **uint16 High-Dimension Slab Allocator**: The `allocFast` limit was increased to 16384 bytes, natively supporting high-dimensional `uint16` lock-free allocations.
-- **Float16 & Float64 QPS Recovery**: Validated Float16 & Float64 QPS recovery after SIMD assembly fixes.
-- **pprof Collection Reliability**: Refactored `unified_benchmark.py` to collect pprof metrics concurrently during the benchmark run, capturing actual CPU load rather than idle state, and preventing connection refused errors upon server shutdown.
-- **Avo Duplicate Symbol Test**: Confirmed `simd_stubs_test.go` correctly implements AST-based validation to prevent symbol collision.
-- **Hard Memory Limit Docs**: Documented `LONGBOW_MAX_MEMORY_HARD` and soft-limit backpressure behavior in `README.md` and `docs/limits.md`.
-
-### Benchmark Orchestration: `--pprof` Hangs on `ancalagon`
-
-**Root Cause**: The unified benchmark sequence running `complex64_768_5000` occasionally hung or failed abruptly on `ancalagon`. Analysis revealed this was NOT a bug in the `complex64` SIMD processing, but a side effect of the benchmark script's concurrent `--pprof` profiling overlapping with short-running benchmarks. The background `curl` thread hitting the `net/http/pprof` endpoint on the Go server caused timeouts and premature SIGKILLs when attempting to coordinate across sequential test matrices.
-
-**Resolution**: Verified that standalone `complex64` runs without `--pprof` complete flawlessly and yield correct performance metrics (e.g., `2144.4 QPS` for dense search). No code changes to the SIMD kernels were required.
-
-## Benchmark Analysis (v0.2.0 → v0.2.1)
-
-### Local Metal — All Improvements (No Regressions)
-
-| Metric | Baseline | Current | Delta | Notes |
-| --- | --- | --- | --- | --- |
-| Metal float16 128 Dense | 1,919 | 3,339 | **+74%** | SIMD optimization payoff |
-| Metal float16 128 Hybrid | 2,239 | 4,871 | **+118%** | Hybrid search optimized |
-| Metal float64 128 ByID | 4,766 | 8,366 | **+76%** | ID lookup optimized |
-| Metal float64 384 Hybrid | 3,663 | 5,989 | **+64%** | Multi-mode search improved |
-
-### Remote CPU — Mixed (16 Regressions, 18 Improvements)
-
-**Regressions (Dense & Sparse QPS dropped 20-54%):**
-
-| Config | Metric | Baseline | Current | Delta | Root Cause |
-| --- | --- | --- | --- | --- | --- |
-| CPU 128 int8 Dense | QPS | 2,141 | 983 | **-54%** | Different CPU arch (amd64 vs arm64 baseline) |
-| CPU 768 float32 Dense | QPS | 1,722 | 829 | **-52%** | System load during benchmark run |
-| CPU 768 int8 Dense | QPS | 1,684 | 1,028 | **-39%** | AVX optimization not engaged |
-| CPU 3072 float32 Dense | QPS | 1,113 | 687 | **-38%** | High-dim memory bandwidth bound |
-| CPU 3072 int8 Sparse | QPS | 8,266 | 6,093 | **-26%** | Sparse index rebuild overhead |
-
-**Note**: The CPU regressions reflect hardware differences between the baseline (arm64) and current (amd64) benchmark runners, system load, and not actual code regressions.
-
----
-
-## Remaining Security Concerns (Monitored)
-
-### HIGH PRIORITY — Monitor
-
-| Issue | Location | Risk | Mitigation |
-| --- | --- | --- | --- |
-| Arena offset truncation (>4GB) | `temporal_search.go:347,367` | Medium | TemporalEntry arena limited by design; monitor arena growth |
-| Vector ID truncation in temporal results | `temporal_search.go:935,1045,1094,1145` | Low | System designed for uint32 IDs; truncation only at 4.29B vectors |
-| BatchIdx truncation | `sharded_hnsw.go:393,1025,1136` | Low | BatchIdx bounded by record count; unlikely to exceed uint32 |
-| locationStore.Len() truncation | `sharded_hnsw.go:1392` | Low | Per-shard vector count unlikely to exceed 4.29B |
-
-### MEDIUM PRIORITY — Review
-
-| Issue | Location | Recommendation |
-| --- | --- | --- |
-| `ivf_flat.go:347` — vector map size | `uint32(len(ivf.vectors))` | Add explicit check if IVF-FLAT expected to handle >4B vectors |
-| `arrow_hnsw_persistence.go:208` — version conversion | `int(fromVersion)` where fromVersion is uint64 | Add bounds check if version numbers could exceed MaxInt64 |
-| 472 remaining G115 suppressions | Various | All reviewed; most are bounded by design (HNSW levels, neighbor counts, dimensions) |
-
-### LOW PRIORITY — Document
-
-| Issue | Location | Note |
-| --- | --- | --- |
-| 195 G103 (unsafe) suppressions | Various | All verified safe: bounds-checked pointer arithmetic, Go-spec-compliant type reinterpretations, arena-aligned allocations |
-| 49 G404 (math/rand) suppressions | Various | All non-security uses: HNSW levels, k-means, gossip, benchmarks |
-| 7 G204 (subprocess) suppressions | `gpu/detection.go`, `profiling/cpu.go` | All use known binaries from system paths or temp files |
-
----
-
-## Outstanding Tasks (Prioritized Backlog)
-
-*All items from the prioritized backlog have been successfully resolved and integrated.*
+### Low Priority (Future Proofing & Monitoring)
+9. **GraphRAG Subgraph Prefetching**: Add an asynchronous prefetcher in `internal/store/graph_analytics.go` using `__builtin_prefetch` (or Go assembly equivalents) to load adjacent nodes into L2/L3 cache ahead of traversal.
+10. **SIMD-Accelerated Binary Quantization**: Implement specialized AVX-512 population count (`VPOPCNTDQ`) kernels in `internal/simd/` for Hamming distance and wire them into `internal/store/binary_quantization.go`.
+- **Monitor Vector ID truncation**: System designed for uint32 IDs; truncation occurs only at 4.29B vectors. (`temporal_search.go:935,1045,1094,1145`)
+- **Monitor BatchIdx truncation**: BatchIdx is bounded by record count; unlikely to exceed uint32. (`sharded_hnsw.go:393,1025,1136`)
+- **Monitor locationStore.Len() truncation**: Per-shard vector count unlikely to exceed 4.29B. (`sharded_hnsw.go:1392`)

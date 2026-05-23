@@ -117,3 +117,67 @@ func TestGraphAnalytics_Properties(t *testing.T) {
 	assert.Equal(t, float32(2.0), props.AvgDegree)
 	assert.InDelta(t, 1.0, props.Density, 0.001) // Expect density 1.0 for complete graph
 }
+
+func FuzzGraphAnalytics_PageRank(f *testing.F) {
+	f.Add(10, 5, float32(0.85))
+	f.Fuzz(func(t *testing.T, numNodes int, maxNeighbors int, damping float32) {
+		if numNodes < 2 || numNodes > 1000 || maxNeighbors < 1 || maxNeighbors > 50 {
+			t.Skip()
+		}
+		if damping <= 0.0 || damping >= 1.0 {
+			t.Skip()
+		}
+
+		gd := types.NewGraphData(numNodes+10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
+		
+		for i := 1; i <= numNodes; i++ {
+			neighbors := make([]uint32, 0, maxNeighbors)
+			for j := 0; j < maxNeighbors; j++ {
+				nbr := uint32((i + j) % numNodes + 1)
+				if nbr != uint32(i) {
+					neighbors = append(neighbors, nbr)
+				}
+			}
+			_ = gd.SetNeighbors(uint32(i), neighbors)
+		}
+
+		ga := NewGraphAnalytics(func() *types.GraphData { return gd })
+		config := DefaultPageRankConfig()
+		config.DampingFactor = damping
+		
+		res, err := ga.CalculatePageRank(context.Background(), config)
+		require.NoError(t, err)
+		assert.NotNil(t, res)
+		assert.NotEmpty(t, res.Scores)
+	})
+}
+
+func BenchmarkGraphAnalytics_PageRank_Prefetch(b *testing.B) {
+	numNodes := 10000
+	maxNeighbors := 20
+	gd := types.NewGraphData(numNodes+100, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
+	
+	for i := 1; i <= numNodes; i++ {
+		neighbors := make([]uint32, 0, maxNeighbors)
+		for j := 0; j < maxNeighbors; j++ {
+			// Pseudo-random but deterministic links to cause cache misses
+			nbr := uint32((i * j * 17) % numNodes + 1)
+			if nbr != uint32(i) {
+				neighbors = append(neighbors, nbr)
+			}
+		}
+		_ = gd.SetNeighbors(uint32(i), neighbors)
+	}
+
+	ga := NewGraphAnalytics(func() *types.GraphData { return gd })
+	config := DefaultPageRankConfig()
+	config.MaxIterations = 5 // Fast enough for bench
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, err := ga.CalculatePageRank(context.Background(), config)
+		if err != nil {
+			b.Fatal(err)
+		}
+	}
+}

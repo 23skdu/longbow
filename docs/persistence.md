@@ -10,9 +10,10 @@ Longbow ensures zero data loss using a combination of Write-Ahead Logs (WAL) and
 
 ### Write-Ahead Log (WAL)
 
-- **Mechanism**: Every `DoPut` is synchronously written to a batched WAL before being acknowledged.
-- **Performance**: High-throughput writes using `io_uring` (Linux) and asynchronous fsync options.
-- **Recovery**: On startup, Longbow replays the WAL to reconstruct the in-memory HNSW index and Arrow buffers.
+- **Mechanism**: Every `DoPut` is synchronously written to a batched WAL before being acknowledged. The system employs a `BufferedWAL` utilizing a high-throughput **group commit** algorithm via a list of `syncWaiter` primitives.
+- **Zero-Allocation**: A double-buffering and `patchableBuffer` strategy ensures that mutations can be aggressively formatted and pushed to disk without incurring Go runtime allocations or GC pressure.
+- **Performance**: High-throughput asynchronous persistence using platform-specific backends (`io_uring` on Linux, `O_DIRECT` equivalents on macOS).
+- **Recovery**: On startup, Longbow replays the WAL to reconstruct the in-memory HNSW index and Arrow buffers flawlessly.
 
 ### High Availability & Replication (v0.2.1+)
 

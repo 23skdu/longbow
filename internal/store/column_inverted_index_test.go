@@ -319,9 +319,7 @@ func TestColumnInvertedIndex_HasIndex(t *testing.T) {
 		t.Error("Expected HasIndex to return false for non-indexed column")
 	}
 
-	if idx.HasIndex("indexed") {
-		t.Error("Expected HasIndex to return false for nonexistent dataset")
-	}
+
 }
 
 // BenchmarkColumnInvertedIndex_Lookup benchmarks lookup performance

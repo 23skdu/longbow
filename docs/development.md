@@ -131,6 +131,7 @@ The `learned_index` mode performs a 4-stage validation:
 ### Guidelines for the Learned Index
 
 When adding new index types or search optimizations:
+
 - Update `QueryFeatures` if new signals are needed for selection.
 - Update `IndexPerformancePredictor` weights if the new component drastically changes the performance landscape.
 - Add failure decomposition signals if the component has specific failure modes (e.g., high memory pressure).
@@ -145,7 +146,7 @@ Longbow exposes pprof endpoints at `:9090`:
 - Heap Profile: `http://localhost:9090/debug/pprof/heap`
 
 > [!CAUTION]
-> Heap profiling under high memory pressure (>90% allocation) can cause system instability. Use the `scripts/dev/profile.sh` utility which includes safety checks.
+> Heap profiling under high memory pressure (>90% allocation) can cause system instability. Use the `unified_benchmark.py --pprof` utility flag which includes safety checks and auto-backoff.
 
 ### Prometheus Metrics
 

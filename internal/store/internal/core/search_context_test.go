@@ -15,14 +15,14 @@ func TestArrowSearchContext_LifeCycle(t *testing.T) {
 	t.Run("GetAndPut", func(t *testing.T) {
 		ctx := pool.Get()
 		require.NotNil(t, ctx)
-		
+
 		ctx.MarkDirty()
 		assert.True(t, ctx.IsDirty())
-		
+
 		ctx.RecordEarlyExit("timeout")
-		
+
 		pool.Put(ctx)
-		
+
 		gets, puts := pool.Stats()
 		assert.Equal(t, int64(1), gets)
 		assert.Equal(t, int64(1), puts)
@@ -31,13 +31,13 @@ func TestArrowSearchContext_LifeCycle(t *testing.T) {
 	t.Run("ResetVerification", func(t *testing.T) {
 		ctx := pool.Get()
 		ctx.MarkDirty()
-		
+
 		// Fill some buffers
 		// Note: We can't access private fields easily since we are in core_test,
 		// but we can call Reset and verify it works via public methods if available.
 		ctx.Reset()
 		assert.False(t, ctx.IsDirty())
-		
+
 		pool.Put(ctx)
 	})
 

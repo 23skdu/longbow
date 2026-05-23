@@ -123,7 +123,7 @@ func TestZeroAllocTicketParser_Parse(t *testing.T) {
 		query, err := parser.Parse(data)
 		require.NoError(t, err)
 		assert.Equal(t, 2, len(query.WindowFunctions))
-		
+
 		wf1 := query.WindowFunctions[0]
 		assert.Equal(t, "row_number", wf1.Name)
 		assert.Equal(t, "rn", wf1.As)

@@ -10,16 +10,16 @@ import (
 
 // Tokenizer implements a basic WordPiece tokenizer
 type Tokenizer struct {
-	vocab   map[string]int
+	vocab    map[string]int
 	invVocab map[int]string
-	maxLen  int
+	maxLen   int
 }
 
 // NewTokenizer creates a new tokenizer from a vocab file
 func NewTokenizer(vocabPath string, maxLen int) (*Tokenizer, error) {
 	vocab := make(map[string]int)
 	invVocab := make(map[int]string)
- // #nosec G304
+	// #nosec G304
 	file, err := os.Open(filepath.Clean(vocabPath)) // #nosec G304
 	if err != nil {
 		return nil, fmt.Errorf("failed to open vocab file %s: %w", vocabPath, err)
@@ -47,13 +47,13 @@ func NewTokenizer(vocabPath string, maxLen int) (*Tokenizer, error) {
 // Encode converts text to token IDs and attention mask
 func (t *Tokenizer) Encode(text string) ([]int64, []int64) {
 	tokens := []int64{int64(t.vocab["[CLS]"])}
-	
+
 	words := strings.Fields(strings.ToLower(text))
 	for _, word := range words {
 		if len(tokens) >= t.maxLen-1 {
 			break
 		}
-		
+
 		subtokens := t.wordpiece(word)
 		for _, sub := range subtokens {
 			if len(tokens) >= t.maxLen-1 {
@@ -66,16 +66,16 @@ func (t *Tokenizer) Encode(text string) ([]int64, []int64) {
 			}
 		}
 	}
-	
+
 	tokens = append(tokens, int64(t.vocab["[SEP]"]))
-	
+
 	mask := make([]int64, t.maxLen)
 	paddedTokens := make([]int64, t.maxLen)
 	for i := 0; i < len(tokens) && i < t.maxLen; i++ {
 		paddedTokens[i] = tokens[i]
 		mask[i] = 1
 	}
-	
+
 	return paddedTokens, mask
 }
 

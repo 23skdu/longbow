@@ -30,7 +30,7 @@ func TestMegaCoverage(t *testing.T) {
 	config.SQ8Enabled = true
 	config.TurboQuantEnabled = true
 	config.TurboQuantBits = 8
-	config.SelectionHeuristicLimit = 10 
+	config.SelectionHeuristicLimit = 10
 	config.SearchLayerSampleRate = 0.5
 
 	idx := core.NewArrowHNSW(nil, &config, nil)
@@ -88,14 +88,14 @@ func TestMegaCoverage(t *testing.T) {
 			// Or by setting ParallelSearch context if exposed
 		})
 	})
-	
+
 	// 4. Mutation & Maintenance
 	t.Run("Maintenance", func(t *testing.T) {
 		// Test maintenance logic if exposed via methods
 		// Repair
 		_ = idx.RepairTombstones(context.Background(), 100)
 	})
-	
+
 	// 5. Quantization Trigger
 	t.Run("Quantization", func(t *testing.T) {
 		// Exercise some logic that might trigger kernels

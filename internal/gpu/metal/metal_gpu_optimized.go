@@ -118,7 +118,7 @@ int metal_greedy_search_optimized(MetalIndexOptimized* handle, float* query, uin
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
         id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
         id<MTLComputePipelineState> greedyPipeline = (__bridge id<MTLComputePipelineState>)handle->greedySearchPipeline;
-        
+
         if (!greedyPipeline || !handle->graphOffsetsBuffer || !handle->graphNeighborsBuffer) {
             return -1;
         }
@@ -157,7 +157,7 @@ int metal_greedy_search_tq_optimized(MetalIndexOptimized* handle, float* query, 
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
         id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
         id<MTLComputePipelineState> greedyPipeline = (__bridge id<MTLComputePipelineState>)handle->greedyTQSearchPipeline;
-        
+
         if (!greedyPipeline || !handle->graphOffsetsBuffer || !handle->graphNeighborsBuffer) {
             return -1;
         }
@@ -197,7 +197,7 @@ int metal_greedy_search_tq_optimized(MetalIndexOptimized* handle, float* query, 
 int metal_update_graph_optimized(MetalIndexOptimized* handle, uint32_t* offsets, int numOffsets, uint32_t* neighbors, int numNeighbors, float* weights, int numWeights) {
     @autoreleasepool {
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
-        
+
         if (handle->graphOffsetsBuffer) {
             handle->graphOffsetsBuffer = nil;
         }
@@ -800,7 +800,7 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
             id<MTLBuffer> candDistBuf = [device newBufferWithBytes:candidateDists length:numCandidates * sizeof(float) options:MTLResourceStorageModeShared];
             id<MTLBuffer> selIdBuf = [device newBufferWithLength:maxNeighbors * sizeof(uint32_t) options:MTLResourceStorageModeShared];
             id<MTLBuffer> selCountBuf = [device newBufferWithLength:sizeof(uint32_t) options:MTLResourceStorageModeShared];
-            
+
             id<MTLBuffer> allVecBuf;
             if (allVectors != NULL) {
                 uint32_t maxID = 0;
@@ -888,39 +888,73 @@ func NewMetalIndexOptimized(cfg types.GPUConfig) (types.Index, error) {
 
 	// Resolve all required pipelines
 	l2, err := ctx.GetPipelineState("compute_l2_distances")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	cosine, err := ctx.GetPipelineState("compute_cosine_similarity")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	dot, err := ctx.GetPipelineState("compute_dot_product")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	topK, err := ctx.GetPipelineState("find_top_k_heap")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	l2Fp16, err := ctx.GetPipelineState("compute_l2_distances_fp16")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	cosineFp16, err := ctx.GetPipelineState("compute_cosine_similarity_fp16")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	dotFp16, err := ctx.GetPipelineState("compute_dot_product_fp16")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	l2C128, err := ctx.GetPipelineState("compute_l2_distances_complex128")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	cosineC128, err := ctx.GetPipelineState("compute_cosine_similarity_complex128")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	l2C64, err := ctx.GetPipelineState("compute_l2_distances_complex64")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	cosineC64, err := ctx.GetPipelineState("compute_cosine_similarity_complex64")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	tq, err := ctx.GetPipelineState("compute_tq_distances")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	haversine, err := ctx.GetPipelineState("haversine_batch")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	norm, err := ctx.GetPipelineState("norm_batch_f32")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	prune, err := ctx.GetPipelineState("hnsw_prune_neighbors")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	greedy, err := ctx.GetPipelineState("hnsw_greedy_search")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 	greedyTQ, err := ctx.GetPipelineState("hnsw_greedy_search_tq")
-	if err != nil { return nil, err }
+	if err != nil {
+		return nil, err
+	}
 
 	C.metal_set_pipelines_optimized(
 		handle,
@@ -1420,7 +1454,7 @@ func (idx *MetalIndexOptimized) GraphExpand(seeds []uint32, depth int, alpha flo
 			}
 			start := idx.graphOffsets[nodeID]
 			end := idx.graphOffsets[nodeID+1]
-			
+
 			for neighborIdx := start; neighborIdx < end; neighborIdx++ {
 				neighbor := idx.graphNeighbors[neighborIdx]
 				if _, seen := visited[neighbor]; !seen {
@@ -1718,7 +1752,7 @@ func (idx *MetalIndexOptimized) Clear() error {
 
 	// Reset vector count in handle
 	idx.handle.vectorCount = 0
-	
+
 	// Reset graph metadata
 	idx.graphOffsets = nil
 	idx.graphNeighbors = nil

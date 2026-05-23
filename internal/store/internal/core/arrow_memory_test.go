@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"fmt"
+	"github.com/23skdu/longbow/internal/store/types"
 	"math/rand"
 	"runtime"
 	"testing"

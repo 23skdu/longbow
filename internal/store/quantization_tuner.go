@@ -19,9 +19,9 @@ const (
 	// QuantizationFloat16 uses 16-bit floating point numbers.
 	QuantizationFloat16 QuantizationType = "float16"
 	// QuantizationInt8 uses 8-bit integers.
-	QuantizationInt8        QuantizationType = "int8"
+	QuantizationInt8 QuantizationType = "int8"
 	// QuantizationPQ uses Product Quantization.
-	QuantizationPQ          QuantizationType = "pq"
+	QuantizationPQ QuantizationType = "pq"
 	// QuantizationTurboQuant uses the high-performance TurboQuant compression.
 	QuantizationTurboQuant QuantizationType = "turboquant"
 )
@@ -34,7 +34,7 @@ type QuantizationTuner struct {
 	mu              sync.RWMutex
 	recallThreshold float64
 	checkInterval   time.Duration
-	
+
 	// datasetState tracks the current tuning state for each dataset.
 	datasetState map[string]*tuningState
 }
@@ -198,7 +198,7 @@ func (t *QuantizationTuner) applyTransition(name string, ds *Dataset, state *tun
 		ds.dataMu.Unlock()
 		return
 	}
-	
+
 	// This requires the index to support live re-quantization or we'll trigger it on next maintenance
 	// For now, we update the preferred type which signals the background workers.
 	var dataType types.VectorDataType

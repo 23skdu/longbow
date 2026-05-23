@@ -4,7 +4,6 @@ import (
 	"errors"
 	"math"
 	"unsafe"
-
 )
 
 const (

@@ -3,18 +3,18 @@ package query
 import (
 	"testing"
 
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/23skdu/longbow/internal/store/types"
 )
 
 func TestQuery_EvaluatorBranches(t *testing.T) {
 	pool := memory.NewGoAllocator()
-	
+
 	// Complex schema with overlapping field names and nesting
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -28,7 +28,7 @@ func TestQuery_EvaluatorBranches(t *testing.T) {
 	defer bld.Release()
 
 	bld.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3}, nil)
-	
+
 	metaBld := bld.Field(1).(*array.StructBuilder)
 	userBld := metaBld.FieldBuilder(0).(*array.StringBuilder)
 	tagsBld := metaBld.FieldBuilder(1).(*array.ListBuilder)
@@ -80,11 +80,11 @@ func TestQuery_EvaluatorBranches(t *testing.T) {
 
 func TestQuery_ZeroAllocParsers(t *testing.T) {
 	logger := zerolog.Nop()
-	
+
 	t.Run("VectorSearchParser", func(t *testing.T) {
 		parser := NewZeroAllocVectorSearchParser(128, &logger)
 		data := []byte(`{"dataset":"test","k":10,"vector":[0.1,0.2],"alpha":0.5}`)
-		
+
 		req, err := parser.Parse(data)
 		assert.NoError(t, err)
 		assert.Equal(t, "test", req.Dataset)
@@ -100,7 +100,7 @@ func TestQuery_ZeroAllocParsers(t *testing.T) {
 	t.Run("TicketParser", func(t *testing.T) {
 		parser := NewZeroAllocTicketParser(&logger)
 		data := []byte(`{"name":"t1","limit":100}`)
-		
+
 		req, err := parser.Parse(data)
 		assert.NoError(t, err)
 		assert.Equal(t, "t1", req.Name)
@@ -115,7 +115,7 @@ func TestQuery_FilterOperators(t *testing.T) {
 		assert.NoError(t, err, "Failed for op: %s", op)
 		assert.GreaterOrEqual(t, int(res), 0)
 	}
-	
+
 	_, err := ParseFilterOperator("INVALID")
 	assert.Error(t, err)
 }
@@ -125,12 +125,12 @@ func TestQuery_BitmapLarge(t *testing.T) {
 	for i := 0; i < 1000; i += 2 {
 		b.Set(i)
 	}
-	
+
 	assert.Equal(t, uint64(500), b.Count())
-	
+
 	clone := b.Clone()
 	assert.Equal(t, uint64(500), clone.Count())
-	
+
 	b.Clear(0)
 	assert.Equal(t, uint64(499), b.Count())
 }
@@ -208,8 +208,8 @@ func TestQuery_ProjectionApply(t *testing.T) {
 		innerProfile := arrow.StructOf(arrow.Field{Name: "age", Type: arrow.PrimitiveTypes.Int64})
 		userType := arrow.StructOf(arrow.Field{Name: "profile", Type: innerProfile})
 		schema := arrow.NewSchema([]arrow.Field{{Name: "user", Type: userType}}, nil)
-		
-		// This is complex to build properly with builders for coverage, 
+
+		// This is complex to build properly with builders for coverage,
 		// but we can at least attempt to call resolveNestedField.
 		_, _, err := resolveNestedField(*schema, "user.profile.age")
 		assert.NoError(t, err)

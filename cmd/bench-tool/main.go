@@ -86,7 +86,6 @@ func main() {
 		}()
 	}
 
-
 	if *dim > 3072 {
 		log.Printf("WARNING: Dimension %d exceeds recommended 3072 limit. Proceeding anyway.\n", *dim)
 	}
@@ -123,7 +122,7 @@ func main() {
 		// Peek first 6 bytes to check for ARROW1
 		magic := make([]byte, 6)
 		_, _ = f.ReadAt(magic, 0)
-		
+
 		if string(magic) == "ARROW1" {
 			log.Printf("[PUT] Ingesting from Arrow IPC file: %s\n", *fbin)
 			reader, err := ipc.NewFileReader(f)
@@ -142,7 +141,7 @@ func main() {
 				}
 				record.Retain()
 
-			putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
+				putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
 				if err := uploadBatch(putCtx, sc, *dataset, record, record.Schema()); err != nil {
 					putCancel()
 					log.Fatalf("DoPut failed at record %d: %v", i, err)
@@ -166,11 +165,11 @@ func main() {
 			if err := binary.Read(f, binary.LittleEndian, &dimVal); err != nil {
 				log.Fatalf("Failed to read fbin dim: %v", err)
 			}
-			
+
 			log.Printf("  fbin: count=%d, dim=%d\n", countVal, dimVal)
 			*scale = int(countVal)
 			*dim = int(dimVal)
-			
+
 			// Build schema for fbin (minimal schema)
 			fbinSchema := arrow.NewSchema(
 				[]arrow.Field{
@@ -179,52 +178,52 @@ func main() {
 				},
 				nil,
 			)
-			
+
 			totalUploaded = 0
 			start = time.Now()
-			
+
 			chunkSize := 10000
 			for totalUploaded < int(countVal) {
 				currentChunk := chunkSize
 				if totalUploaded+currentChunk > int(countVal) {
 					currentChunk = int(countVal) - totalUploaded
 				}
-				
+
 				// Generate IDs
 				pool := memory.NewGoAllocator()
 				idBldr := array.NewStringBuilder(pool)
 				vecBldr := array.NewFixedSizeListBuilder(pool, int32(dimVal), arrow.PrimitiveTypes.Float32)
 				valBldr := vecBldr.ValueBuilder().(*array.Float32Builder)
-				
+
 				for i := 0; i < currentChunk; i++ {
 					idBldr.Append(fmt.Sprintf("%d", totalUploaded+i))
 					vecBldr.Append(true)
-					
+
 					row := make([]float32, dimVal)
 					if err := binary.Read(f, binary.LittleEndian, &row); err != nil {
 						log.Fatalf("Failed to read fbin data at %d: %v", totalUploaded+i, err)
 					}
 					valBldr.AppendValues(row, nil)
 				}
-				
+
 				idArr := idBldr.NewArray()
 				vecArr := vecBldr.NewArray()
 				record := array.NewRecordBatch(fbinSchema, []arrow.Array{idArr, vecArr}, int64(currentChunk))
-				
-			putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
+
+				putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
 				if err := uploadBatch(putCtx, sc, *dataset, record, fbinSchema); err != nil {
 					putCancel()
 					log.Fatalf("DoPut failed at chunk starting %d: %v", totalUploaded, err)
 				}
 				putCancel()
-				
+
 				totalUploaded += currentChunk
 				record.Release()
 				idArr.Release()
 				vecArr.Release()
 				idBldr.Release()
 				vecBldr.Release()
-				
+
 				if totalUploaded%50000 == 0 || totalUploaded == int(countVal) {
 					log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, countVal)
 				}
@@ -290,7 +289,7 @@ func main() {
 			if err != nil {
 				log.Fatalf("Failed to create output file: %v", err)
 			}
-			
+
 			// Header: count, dim
 			if err := binary.Write(f, binary.LittleEndian, uint32(*scale)); err != nil { // #nosec G115
 				log.Fatalf("Failed to write .fbin header (count): %v", err)
@@ -298,12 +297,12 @@ func main() {
 			if err := binary.Write(f, binary.LittleEndian, uint32(*dim)); err != nil { // #nosec G115
 				log.Fatalf("Failed to write .fbin header (dim): %v", err)
 			}
-			
+
 			for _, rec := range preGenerated {
 				// Assuming vectors is the second column (index 1)
 				vecArr := rec.Column(1).(*array.FixedSizeList)
 				floatArr := vecArr.ListValues().(*array.Float32)
-				
+
 				// Standard .fbin only supports float32
 				if err := binary.Write(f, binary.LittleEndian, floatArr.Float32Values()); err != nil {
 					log.Fatalf("Failed to write .fbin vector data: %v", err)
@@ -342,8 +341,8 @@ func main() {
 				backoff := 500 * time.Millisecond
 				for {
 					bpCtx, bpCancel := context.WithTimeout(context.Background(), 30*time.Second)
-				isBusy, reason := checkBackpressure(bpCtx, sc, *dataset)
-				bpCancel()
+					isBusy, reason := checkBackpressure(bpCtx, sc, *dataset)
+					bpCancel()
 					if !isBusy {
 						break
 					}
@@ -400,7 +399,6 @@ func main() {
 		BytesProcessed:  totalBytes,
 	})
 	log.Printf("[PUT] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(*scale)/duration, (float64(totalBytes)/(1024*1024))/duration)
-
 
 	log.Println("Waiting for background indexing to complete...")
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), 660*time.Second)
@@ -461,11 +459,11 @@ func main() {
 
 		log.Printf("[SEARCH][%s] Running %d queries with %d workers...\n", mode, *queries, *workers)
 		start = time.Now()
-		
+
 		var latencies []float64
 		var mu sync.Mutex
 		var wg sync.WaitGroup
-		
+
 		queriesPerWorker := *queries / *workers
 		if queriesPerWorker == 0 {
 			queriesPerWorker = 1
@@ -478,7 +476,7 @@ func main() {
 				defer wg.Done()
 				state := NewReusableSearchState(*dim)
 				localLatencies := make([]float64, 0, queriesPerWorker)
-				
+
 				numToRun := queriesPerWorker
 				if workerID == *workers-1 {
 					numToRun = *queries - (queriesPerWorker * (*workers - 1))
@@ -492,14 +490,14 @@ func main() {
 					}
 					localLatencies = append(localLatencies, time.Since(qStart).Seconds()*1000)
 				}
-				
+
 				mu.Lock()
 				latencies = append(latencies, localLatencies...)
 				mu.Unlock()
 			}(w)
 		}
 		wg.Wait()
-		
+
 		duration = time.Since(start).Seconds()
 
 		p50, p95, p99 := 0.0, 0.0, 0.0
@@ -613,7 +611,7 @@ type ReusableSearchState struct {
 func NewReusableSearchState(maxDim int) *ReusableSearchState {
 	return &ReusableSearchState{
 		vector: make([]float32, maxDim*2), // 2*dim for complex types
-		buf:    make([]byte, 0, 1024*64),   // 64KB should fit most vectors
+		buf:    make([]byte, 0, 1024*64),  // 64KB should fit most vectors
 	}
 }
 
@@ -749,7 +747,7 @@ func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) er
 	if err != nil {
 		return err
 	}
-		// reader does not have Release
+	// reader does not have Release
 	for reader.Next() {
 		_ = reader.Record()
 	}
@@ -1074,7 +1072,7 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 	geoValBldr.Reserve(count * 2)
 	for i := 0; i < count; i++ {
 		geoBldr.Append(true)
-		geoValBldr.Append(40.7128 + rand.Float64()*0.1) // #nosec G404 -- non-cryptographic use for benchmark data
+		geoValBldr.Append(40.7128 + rand.Float64()*0.1)  // #nosec G404 -- non-cryptographic use for benchmark data
 		geoValBldr.Append(-74.0060 + rand.Float64()*0.1) // #nosec G404 -- non-cryptographic use for benchmark data
 	}
 	geoArr := geoBldr.NewArray()
@@ -1153,7 +1151,7 @@ func logLoadHints(sc *client.SmartClient) {
 	// We use a short timeout for this background refresh
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
-	
+
 	_, err := sc.GetFlightInfo(ctx, desc)
 	if err != nil {
 		// Log error but don't fail, hints might still be available from previous calls
@@ -1162,7 +1160,7 @@ func logLoadHints(sc *client.SmartClient) {
 
 	hints := sc.GetLastLoadHints()
 	if hints != nil {
-		log.Printf("[LOAD] CPU: %d%%, Mem: %d%%, Queue: %d, Health: %d%%\n", 
+		log.Printf("[LOAD] CPU: %d%%, Mem: %d%%, Queue: %d, Health: %d%%\n",
 			hints.CPULoad, hints.MemLoad, hints.QueueDepth, hints.Health)
 	}
 }
@@ -1171,7 +1169,7 @@ func logDetailedError(cmd string, err error, sc *client.SmartClient) {
 	log.Printf("[ERROR] %s failed: %v\n", cmd, err)
 	hints := sc.GetLastLoadHints()
 	if hints != nil {
-		log.Printf("[LOAD-AT-FAILURE] CPU: %d%%, Mem: %d%%, Queue: %d, Health: %d%%\n", 
+		log.Printf("[LOAD-AT-FAILURE] CPU: %d%%, Mem: %d%%, Queue: %d, Health: %d%%\n",
 			hints.CPULoad, hints.MemLoad, hints.QueueDepth, hints.Health)
 	}
 }

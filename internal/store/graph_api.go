@@ -27,11 +27,17 @@ func (s *VectorStore) handleAddEdge(body []byte, stream flight.FlightService_DoA
 			i++
 			for i < len(body) {
 				i = query.SkipWhitespace(body, i)
-				if i >= len(body) || body[i] == '}' { break }
+				if i >= len(body) || body[i] == '}' {
+					break
+				}
 				key, newPos, err := query.ParseString(body, i)
-				if err != nil { break }
+				if err != nil {
+					break
+				}
 				i = query.SkipWhitespace(body, newPos)
-				if i < len(body) && body[i] == ':' { i++ }
+				if i < len(body) && body[i] == ':' {
+					i++
+				}
 				i = query.SkipWhitespace(body, i)
 				switch key {
 				case "dataset":
@@ -58,7 +64,9 @@ func (s *VectorStore) handleAddEdge(body []byte, stream flight.FlightService_DoA
 					i, _ = query.SkipValue(body, i)
 				}
 				i = query.SkipWhitespace(body, i)
-				if i < len(body) && body[i] == ',' { i++ }
+				if i < len(body) && body[i] == ',' {
+					i++
+				}
 			}
 		}
 	}
@@ -115,11 +123,17 @@ func (s *VectorStore) handleTraverseGraph(body []byte, stream flight.FlightServi
 			i++
 			for i < len(body) {
 				i = query.SkipWhitespace(body, i)
-				if i >= len(body) || body[i] == '}' { break }
+				if i >= len(body) || body[i] == '}' {
+					break
+				}
 				key, newPos, err := query.ParseString(body, i)
-				if err != nil { break }
+				if err != nil {
+					break
+				}
 				i = query.SkipWhitespace(body, newPos)
-				if i < len(body) && body[i] == ':' { i++ }
+				if i < len(body) && body[i] == ':' {
+					i++
+				}
 				i = query.SkipWhitespace(body, i)
 				switch key {
 				case "dataset":
@@ -150,7 +164,9 @@ func (s *VectorStore) handleTraverseGraph(body []byte, stream flight.FlightServi
 					i, _ = query.SkipValue(body, i)
 				}
 				i = query.SkipWhitespace(body, i)
-				if i < len(body) && body[i] == ',' { i++ }
+				if i < len(body) && body[i] == ',' {
+					i++
+				}
 			}
 		}
 	}
@@ -281,11 +297,17 @@ func (s *VectorStore) handleCalculatePageRank(body []byte, stream flight.FlightS
 			i++
 			for i < len(body) {
 				i = query.SkipWhitespace(body, i)
-				if i >= len(body) || body[i] == '}' { break }
+				if i >= len(body) || body[i] == '}' {
+					break
+				}
 				key, newPos, err := query.ParseString(body, i)
-				if err != nil { break }
+				if err != nil {
+					break
+				}
 				i = query.SkipWhitespace(body, newPos)
-				if i < len(body) && body[i] == ':' { i++ }
+				if i < len(body) && body[i] == ':' {
+					i++
+				}
 				i = query.SkipWhitespace(body, i)
 				switch key {
 				case "dataset":
@@ -308,7 +330,9 @@ func (s *VectorStore) handleCalculatePageRank(body []byte, stream flight.FlightS
 					i, _ = query.SkipValue(body, i)
 				}
 				i = query.SkipWhitespace(body, i)
-				if i < len(body) && body[i] == ',' { i++ }
+				if i < len(body) && body[i] == ',' {
+					i++
+				}
 			}
 		}
 	}
@@ -390,11 +414,17 @@ func (s *VectorStore) handleDetectCommunities(body []byte, stream flight.FlightS
 			i++
 			for i < len(body) {
 				i = query.SkipWhitespace(body, i)
-				if i >= len(body) || body[i] == '}' { break }
+				if i >= len(body) || body[i] == '}' {
+					break
+				}
 				key, newPos, err := query.ParseString(body, i)
-				if err != nil { break }
+				if err != nil {
+					break
+				}
 				i = query.SkipWhitespace(body, newPos)
-				if i < len(body) && body[i] == ':' { i++ }
+				if i < len(body) && body[i] == ':' {
+					i++
+				}
 				i = query.SkipWhitespace(body, i)
 				switch key {
 				case "dataset":
@@ -409,7 +439,9 @@ func (s *VectorStore) handleDetectCommunities(body []byte, stream flight.FlightS
 					i, _ = query.SkipValue(body, i)
 				}
 				i = query.SkipWhitespace(body, i)
-				if i < len(body) && body[i] == ',' { i++ }
+				if i < len(body) && body[i] == ',' {
+					i++
+				}
 			}
 		}
 	}

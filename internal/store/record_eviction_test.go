@@ -266,7 +266,7 @@ func TestDataset_PerRecordEviction(t *testing.T) {
 
 	// Create dataset with eviction manager
 	ds := &Dataset{
-		Records: NewLockFreeSlice[arrow.RecordBatch](),
+		Records:        NewLockFreeSlice[arrow.RecordBatch](),
 		Name:           "test",
 		recordEviction: NewRecordEvictionManager(),
 	}

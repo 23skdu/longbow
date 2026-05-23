@@ -200,7 +200,7 @@ func (idx *AutoShardingIndex) checkShardThreshold() {
 
 	currentLen := curr.Len()
 	threshold := idx.config.ShardThreshold
-	
+
 	if currentLen >= threshold {
 		if idx.config.Enabled && idx.migrating.CompareAndSwap(false, true) {
 			idx.dataset.Logger.Info().
@@ -217,7 +217,7 @@ func (idx *AutoShardingIndex) checkShardThreshold() {
 func (idx *AutoShardingIndex) checkMigrationPressure() {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
-	
+
 	var maxMem int64
 	if idx.dataset.Admission != nil {
 		maxMem = idx.dataset.Admission.maxMemory.Load()
@@ -228,7 +228,7 @@ func (idx *AutoShardingIndex) checkMigrationPressure() {
 
 	// Calculate physical memory (Heap + Off-Heap Arenas)
 	offHeapMem := lbmem.GetGlobalOffHeapAllocated()
-	
+
 	usage := float64(int64(m.HeapAlloc)+offHeapMem) / float64(maxMem) // #nosec G115
 	if usage > 0.85 {
 		// Migration is happening and we are above 85% total memory limit.
@@ -243,7 +243,7 @@ func (idx *AutoShardingIndex) checkMigrationPressure() {
 // migrateToSharded performs the migration from HNSWIndex to ShardedHNSW.
 func (idx *AutoShardingIndex) migrateToSharded() {
 	start := time.Now()
-	
+
 	// Robust recovery to prevent background migration failures from crashing the server
 	defer func() {
 		if r := recover(); r != nil {
@@ -277,7 +277,7 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		idx.dataset.dataMu.RUnlock()
 		return
 	}
-	
+
 	nTotal = idx.current.Len()
 	if nTotal < idx.config.ShardThreshold {
 		idx.mu.Unlock()
@@ -308,7 +308,7 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	idx.dataset.dataMu.RUnlock()
 
 	newIndex := NewShardedHNSW(shardedConfig, idx.dataset)
-	
+
 	// Pre-warm the new index to the total expected size to reduce allocation churn
 	newIndex.PreWarm(nTotal)
 
@@ -338,9 +338,9 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		// 1. Memory Check (Heap + Off-Heap)
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
-		
+
 		offHeapMem := lbmem.GetGlobalOffHeapAllocated()
-		
+
 		maxMem := int64(0)
 		if idx.dataset.Admission != nil {
 			maxMem = idx.dataset.Admission.maxMemory.Load()
@@ -354,7 +354,7 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 
 		// Adaptive Batch Sizing & Pressure Management
 		currentBatchSize := baseBatchSize
-		
+
 		// Dynamic Slab-Capacity Aware Migration Batch Size Calculator
 		getBytesPerElement := func(dt types.VectorDataType) int {
 			switch dt {
@@ -405,13 +405,13 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		}
 		if usageRatio > 0.85 {
 			currentBatchSize = min(currentBatchSize, 250)
-			
+
 			idx.dataset.Logger.Warn().
 				Int64("usage_bytes", physicalMem).
 				Int64("max_bytes", maxMem).
 				Float64("ratio", usageRatio).
 				Msg("Migration throttled: critical memory pressure")
-			
+
 			runtime.GC()
 			if usageRatio > 0.97 {
 				debug.FreeOSMemory()
@@ -479,7 +479,7 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 
 			// Add batch to new index (Parallelized inside ShardedHNSW)
 			gIDs, err := newIndex.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
-			
+
 			// Release records
 			for _, r := range recs {
 				r.Release()
@@ -567,7 +567,7 @@ func (idx *AutoShardingIndex) ReleaseMonolithicChunk(cID int) error {
 	idx.mu.RLock()
 	curr := idx.current
 	idx.mu.RUnlock()
-	
+
 	if curr != nil {
 		return curr.ReleaseMonolithicChunk(cID)
 	}

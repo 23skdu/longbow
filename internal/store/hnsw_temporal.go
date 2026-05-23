@@ -4,8 +4,8 @@ import (
 	"context"
 	"sync"
 
-	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/23skdu/longbow/internal/memory"
+	"github.com/apache/arrow-go/v18/arrow"
 )
 
 // TemporalHNSWConfig defines configuration for time-aware HNSW indices, specifying connectivity and search parameters.

@@ -94,7 +94,6 @@ func (tp *TTLPolicy) cleanup() {
 	})
 }
 
-
 // SetEnabled enables or disables the TTL policy.
 func (tp *TTLPolicy) SetEnabled(enabled bool) {
 	tp.mu.Lock()

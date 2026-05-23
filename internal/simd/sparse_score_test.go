@@ -1,8 +1,8 @@
 package simd
 
 import (
-	"testing"
 	"math"
+	"testing"
 )
 
 func TestBM25ScoreBatchCorrectness(t *testing.T) {

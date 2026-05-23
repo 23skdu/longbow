@@ -531,6 +531,7 @@ func GetGPUByID(deviceID int32) (*GPUInfo, error) {
 
 	return nil, fmt.Errorf("GPU device %d not found", deviceID)
 }
+
 var accelSysfsRoot = "/sys/class/accel"
 
 // detectTPUs detects Google Cloud TPU devices (v2-v7x)

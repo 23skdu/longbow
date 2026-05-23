@@ -32,7 +32,7 @@ func (p *BitWidthPredictor) Predict(vectors [][]float32) int {
 	}
 
 	rng := rand.New(rand.NewSource(p.seed)) // #nosec G404 -- non-cryptographic use for sampling
-	
+
 	// Sample variance
 	var totalVar float64
 	for d := 0; d < dim; d++ {
@@ -47,7 +47,7 @@ func (p *BitWidthPredictor) Predict(vectors [][]float32) int {
 		variance := (sumSq / float64(sampleCount)) - (mean * mean)
 		totalVar += variance
 	}
-	
+
 	avgVar := totalVar / float64(dim)
 
 	// Bit-depth threshold heuristic

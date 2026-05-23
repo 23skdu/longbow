@@ -47,8 +47,8 @@ type PackedAdjacency struct {
 	// chunks stores pointers to "Pages".
 	// Index = NodeID / types.ChunkSize.
 	// Value = Offset to Page (in pageArena).
-	chunks atomic.Pointer[[]uint64]
-	mu     sync.RWMutex // Protects chunks growth
+	chunks   atomic.Pointer[[]uint64]
+	mu       sync.RWMutex // Protects chunks growth
 	refCount atomic.Int64
 }
 
@@ -131,7 +131,7 @@ func (pa *PackedAdjacency) EnsureCapacity(nodeID uint32) {
 			pa.offHeapAlloc.Free(oldBytes)
 		}
 	}
-	
+
 	// Atomic replace
 	pa.chunks.Store(&newChunks)
 }
@@ -313,7 +313,7 @@ func (pa *PackedAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint3
 	var newPacked uint64
 	if len(new) > 0 {
 		newLen := uint32(len(new)) // #nosec G115
-		
+
 		var oldCap uint32
 		var oldOffset uint64
 		if oldPacked != 0 {
@@ -335,7 +335,7 @@ func (pa *PackedAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint3
 			if newCap > 255 {
 				newCap = 255
 			}
-			
+
 			ref, err := pa.neighborArena.AllocSliceAligned(int(newCap), 64)
 			if err != nil {
 				return false
@@ -359,7 +359,7 @@ func (pa *PackedAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint3
 		return false
 	}
 	page := pa.pageArena.Get(memory.SliceRef{Offset: pageOffset, Len: adjacencyChunkSize, Cap: adjacencyChunkSize})
-	
+
 	return atomic.CompareAndSwapUint64(&page[offsetInPage], oldPacked, newPacked)
 }
 
@@ -460,7 +460,7 @@ func (pa *PackedAdjacency) GetNeighborsF16WithGen(id uint32, maxGen uint64) ([]u
 		return nil, nil, false
 	}
 
-	neighbors := unsafe.Slice((*uint32)(unsafe.Pointer(&dest[0])), length) // #nosec G103
+	neighbors := unsafe.Slice((*uint32)(unsafe.Pointer(&dest[0])), length)               // #nosec G103
 	distances := unsafe.Slice((*float16.Num)(unsafe.Pointer(&dest[capacity*4])), length) // #nosec G103
 
 	return neighbors, distances, true
@@ -501,17 +501,17 @@ func (pa *PackedAdjacency) RelocateToOffHeap(alloc *memory.OffHeapAllocator) {
 		return
 	}
 	oldChunks := *curPtr
-	
+
 	// Allocate off-heap slice
 	size := len(oldChunks) * 8
 	newData := alloc.Allocate(size)
 	if newData == nil {
 		return
 	}
-	
+
 	// Zero-copy view as []uint64
 	newChunksTyped := unsafe.Slice((*uint64)(unsafe.Pointer(&newData[0])), len(oldChunks)) // #nosec G103
-	
+
 	copy(newChunksTyped, oldChunks)
 	pa.chunks.Store(&newChunksTyped)
 	pa.offHeapAlloc = alloc
@@ -525,6 +525,7 @@ func (pa *PackedAdjacency) RelocateToOffHeap(alloc *memory.OffHeapAllocator) {
 func (pa *PackedAdjacency) GetArena() *memory.SlabArena {
 	return pa.baseArena
 }
+
 // IsOffHeap returns true if the backing arena is off-heap.
 func (pa *PackedAdjacency) IsOffHeap() bool {
 	if pa.baseArena == nil {

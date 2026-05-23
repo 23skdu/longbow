@@ -25,34 +25,34 @@ func TestFeatureNormalizer(t *testing.T) {
 
 	norm2 := n.Normalize(v2)
 	assert.Equal(t, 1.0, norm2[0]) // max value
-	
+
 	normMid := n.Normalize([numFeatures]float64{150, 15, 7.5, 1500, 1.5, 0.75, 0.95, 0.5, 0.5, 18, 4, 3.5, 2.5})
 	assert.InDelta(t, 0.5, normMid[0], 0.01)
 }
 
 func TestExtractFeatureVector_Extended(t *testing.T) {
 	f := QueryFeatures{
-		VectorDimension: 1536,
-		NumQueryVectors: 1,
-		SearchK:         10,
-		DatasetSize:     100000,
-		NumCollections:  5,
-		QueryComplexity: "complex",
-		AvgVectorNorm:   1.0,
-		IsFiltered:      true,
-		IsHybrid:        false,
-		TimeOfDay:       14,
-		DayOfWeek:       3,
+		VectorDimension:   1536,
+		NumQueryVectors:   1,
+		SearchK:           10,
+		DatasetSize:       100000,
+		NumCollections:    5,
+		QueryComplexity:   "complex",
+		AvgVectorNorm:     1.0,
+		IsFiltered:        true,
+		IsHybrid:          false,
+		TimeOfDay:         14,
+		DayOfWeek:         3,
 		EmbeddingProvider: "openai",
-		EmbeddingModel: "text-embedding-3-large",
+		EmbeddingModel:    "text-embedding-3-large",
 	}
 
 	vec := extractFeatureVector(f)
 	assert.Equal(t, 1536.0, vec[0])
-	assert.Equal(t, 1.0, vec[5]) // complex -> 1.0
-	assert.Equal(t, 1.0, vec[7]) // filtered -> 1.0
-	assert.Equal(t, 0.0, vec[8]) // not hybrid -> 0.0
-	assert.Equal(t, 1.0, vec[11]) // openai ordinal
+	assert.Equal(t, 1.0, vec[5])          // complex -> 1.0
+	assert.Equal(t, 1.0, vec[7])          // filtered -> 1.0
+	assert.Equal(t, 0.0, vec[8])          // not hybrid -> 0.0
+	assert.Equal(t, 1.0, vec[11])         // openai ordinal
 	assert.InDelta(t, 4.0, vec[12], 0.01) // 1536 / 384 = 4.0
 }
 

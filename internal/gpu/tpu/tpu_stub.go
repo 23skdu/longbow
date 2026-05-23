@@ -1,4 +1,5 @@
 //go:build cgo
+
 package tpu
 
 /*
@@ -86,10 +87,10 @@ func tpuEnqueueBatch(deviceID int32, data []float32) error {
 	if size > math.MaxInt32 {
 		return fmt.Errorf("batch size too large: %d", size)
 	}
-	
+
 	// #nosec G115
 	sizei32 := int32(size)
-	
+
 	// #nosec G115
 	status := C.tpu_enqueue_batch(C.int(deviceID), (*C.float)(unsafe.Pointer(&data[0])), C.int(sizei32))
 	if status != C.TPU_SUCCESS {
@@ -103,7 +104,7 @@ func tpuMalloc(deviceID int32, size int64) (unsafe.Pointer, error) {
 		return nil, fmt.Errorf("invalid tpuMalloc size: %d", size)
 	}
 	var ptr unsafe.Pointer
-	cDeviceID := C.int(deviceID) // #nosec G115
+	cDeviceID := C.int(deviceID)    // #nosec G115
 	cSize := C.size_t(uint64(size)) // #nosec G115
 	status := C.tpu_malloc(cDeviceID, cSize, &ptr)
 	if status != C.TPU_SUCCESS {
@@ -153,7 +154,7 @@ func tpuMemcpyD2H(dst []float32, src unsafe.Pointer) error {
 func tpuLaunchXLA(deviceID int32, name string, args []unsafe.Pointer) error {
 	cName := C.CString(name)
 	defer C.free(unsafe.Pointer(cName))
-	
+
 	cDeviceID := C.int(deviceID) // #nosec G115
 	if len(args) == 0 {
 		status := C.tpu_launch_xla(cDeviceID, cName, nil, 0)

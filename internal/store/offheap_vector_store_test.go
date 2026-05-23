@@ -5,9 +5,9 @@ import (
 	"math/rand"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus/testutil"
+	"github.com/stretchr/testify/assert"
 )
 
 func TestMemVectorStore_OffHeap(t *testing.T) {

@@ -8,7 +8,6 @@ import (
 	"golang.org/x/sys/unix"
 )
 
-
 // GetCurrentCPU returns the current CPU number or -1 if unavailable.
 // This is Linux-specific using getcpu syscall.
 func GetCurrentCPU() int {

@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"github.com/23skdu/longbow/internal/store/types"
 )
 
 func TestStructuredErrors(t *testing.T) {

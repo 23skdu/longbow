@@ -19,9 +19,9 @@ func (h *LoadHints) Serialize(buf []byte) {
 	if len(buf) < LoadHintsSize {
 		return
 	}
-	
+
 	buf[0] = 0x01 // Version
-	
+
 	binary.LittleEndian.PutUint32(buf[1:5], h.CPULoad)
 	binary.LittleEndian.PutUint32(buf[5:9], h.MemLoad)
 	binary.LittleEndian.PutUint64(buf[9:17], uint64(h.QueueDepth)) // #nosec G115
@@ -33,7 +33,7 @@ func DeserializeLoadHints(buf []byte) (LoadHints, bool) {
 	if len(buf) < LoadHintsSize || buf[0] != 0x01 {
 		return LoadHints{}, false
 	}
-	
+
 	return LoadHints{
 		CPULoad:    binary.LittleEndian.Uint32(buf[1:5]),
 		MemLoad:    binary.LittleEndian.Uint32(buf[5:9]),

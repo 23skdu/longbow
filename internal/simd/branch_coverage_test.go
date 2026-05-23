@@ -1,9 +1,9 @@
 package simd
 
 import (
-	"testing"
-	"github.com/stretchr/testify/assert"
 	lbcore "github.com/23skdu/longbow/internal/core"
+	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func TestBranchCoverage(t *testing.T) {
@@ -35,7 +35,7 @@ func TestBranchCoverage(t *testing.T) {
 			_, _ = euclideanComplex128Unrolled(a, b)
 			_, _ = dotComplex128Unrolled(a, b)
 			_, _ = cosineComplex128Unrolled(a, b)
-			
+
 			a64 := make([]complex64, n)
 			b64 := make([]complex64, n)
 			_, _ = euclideanComplex64Unrolled(a64, b64)
@@ -61,7 +61,7 @@ func TestBranchCoverage(t *testing.T) {
 		b := []float32{1, 1}
 		d, _ := cosineGeneric(a, b)
 		assert.Equal(t, float32(1.0), d)
-		
+
 		d, _ = cosineGeneric(b, a)
 		assert.Equal(t, float32(1.0), d)
 	})
@@ -72,7 +72,7 @@ func TestBranchCoverage(t *testing.T) {
 		d, _ := BrayCurtisDistanceFloat32(a, b)
 		assert.Equal(t, float32(0), d)
 	})
-	
+
 	t.Run("MatchGenericRemainders", func(t *testing.T) {
 		for _, n := range []int{1, 7, 8, 15} {
 			dst := make([]byte, n)

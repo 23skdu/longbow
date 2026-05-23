@@ -168,13 +168,13 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 				switch v := vecAny.(type) {
 				case []float32:
 					for j := 0; j < tt.dims; j++ {
-						if math.Abs(float64(v[j]) - expected[j]) > 1e-4 {
+						if math.Abs(float64(v[j])-expected[j]) > 1e-4 {
 							t.Errorf("CORRUPTION at index %d: expected %f, got %f", j, expected[j], v[j])
 						}
 					}
 				case []float64:
 					for j := 0; j < tt.dims; j++ {
-						if math.Abs(v[j] - expected[j]) > 1e-9 {
+						if math.Abs(v[j]-expected[j]) > 1e-9 {
 							t.Errorf("CORRUPTION at index %d: expected %f, got %f", j, expected[j], v[j])
 						}
 					}
@@ -216,13 +216,13 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 					}
 				case []complex64:
 					for j := 0; j < tt.dims; j++ {
-						if math.Abs(float64(real(v[j])) - expected[j]) > 1e-4 {
+						if math.Abs(float64(real(v[j]))-expected[j]) > 1e-4 {
 							t.Errorf("CORRUPTION (Real) at index %d: expected %f, got %f", j, expected[j], real(v[j]))
 						}
 					}
 				case []complex128:
 					for j := 0; j < tt.dims; j++ {
-						if math.Abs(real(v[j]) - expected[j]) > 1e-9 {
+						if math.Abs(real(v[j])-expected[j]) > 1e-9 {
 							t.Errorf("CORRUPTION (Real) at index %d: expected %f, got %f", j, expected[j], real(v[j]))
 						}
 					}
@@ -266,7 +266,7 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			if tt.dataType != types.VectorTypeInt8 {
 				require.Equal(t, uint32(500), uint32(res[0].ID))
 			}
-			
+
 			// For Int8, multiple vectors might be identical in distance (0).
 			// We check if our target ID is at least in the results.
 			found := false

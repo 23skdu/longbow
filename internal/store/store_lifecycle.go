@@ -6,8 +6,8 @@ import (
 	"runtime/debug"
 	"time"
 
-	"github.com/23skdu/longbow/internal/metrics"
 	lbmem "github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -40,7 +40,7 @@ func (s *VectorStore) evictDataset(name string) {
 
 	// Robust cleanup
 	ds.Close()
-	
+
 	s.logger.Info().Str("dataset", name).Int64("freed_bytes", totalMemory).Msg("Dataset evicted safely")
 }
 
@@ -76,11 +76,11 @@ func calculateMinWorkers(divisor int) int {
 // StartLifecycleManager starts the lifecycle manager background task.
 func (s *VectorStore) StartLifecycleManager(ctx context.Context) {
 	s.logger.Info().Msg("Starting formalized background task scheduler")
-	
+
 	// Start sub-tickers
 	s.StartWALCheckTicker(5 * time.Second)
 	s.StartMetricsTicker(15 * time.Second)
-	
+
 	go func() {
 		ticker := time.NewTicker(time.Minute)
 		defer ticker.Stop()
@@ -310,7 +310,6 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 	jobs := make([]IndexJob, 0, maxBatch)
 	var lastLogTime time.Time
 
-
 	// Dynamic ticker: start standard
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()
@@ -386,11 +385,11 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 					} else if j.Record != nil {
 						s.logger.Warn().Int("batch_idx", j.BatchIdx).Int("recs_len", len(recs)).Msg("Skipping record in indexing batch due to index mismatch")
 					}
-					
+
 					if j.Record == nil {
 						continue
 					}
-					
+
 					n := int(j.Record.NumRows())
 					for r := 0; r < n; r++ {
 						rowIdxs = append(rowIdxs, r)
@@ -420,7 +419,7 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 						adaptive.SetEfConstruction(targetEf)
 					}
 
-					// Granular Backpressure: if memory pressure is extreme, we rely on the 
+					// Granular Backpressure: if memory pressure is extreme, we rely on the
 					// AdmissionController at the ingestion gate to throttle new input.
 					// Throttling workers here only delays queue drainage and keeps RSS high.
 
@@ -594,7 +593,6 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 		default:
 			currentBatch = 100
 		}
-
 
 		select {
 		case <-s.stopChan:

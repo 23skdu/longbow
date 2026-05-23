@@ -7,11 +7,11 @@ import (
 
 // CPUFeatures contains detected CPU SIMD capabilities
 type CPUFeatures struct {
-	Vendor    string
-	HasAVX2   bool
-	HasAVX512 bool
-	HasVNNI      bool // AVX512-VNNI
-	HasAVXVNNI   bool // AVX-VNNI (Alder Lake+)
+	Vendor        string
+	HasAVX2       bool
+	HasAVX512     bool
+	HasVNNI       bool // AVX512-VNNI
+	HasAVXVNNI    bool // AVX-VNNI (Alder Lake+)
 	HasAVX512FP16 bool // AVX512-FP16 (Sapphire Rapids+)
 	HasVBMI       bool // AVX512-VBMI (Ice Lake+)
 	HasNEON       bool

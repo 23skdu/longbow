@@ -26,7 +26,7 @@ func TestMockRemoteStorage(t *testing.T) {
 	rc, err := mock.Get(ctx, "test.txt")
 	require.NoError(t, err)
 	defer rc.Close()
-	
+
 	downloaded, _ := bytes.NewBuffer(nil).ReadFrom(rc)
 	require.Equal(t, int64(len(data)), downloaded)
 

@@ -16,11 +16,11 @@ const (
 	// AggregationTypeMovingAverage calculates the simple moving average.
 	AggregationTypeMovingAverage AggregationType = "moving_average"
 	// AggregationTypeExponential calculates the exponential moving average.
-	AggregationTypeExponential   AggregationType = "exponential"
+	AggregationTypeExponential AggregationType = "exponential"
 	// AggregationTypeCumulative calculates the cumulative sum.
-	AggregationTypeCumulative    AggregationType = "cumulative"
+	AggregationTypeCumulative AggregationType = "cumulative"
 	// AggregationTypeWeighted calculates a weighted average.
-	AggregationTypeWeighted      AggregationType = "weighted"
+	AggregationTypeWeighted AggregationType = "weighted"
 )
 
 // StreamAggregate represents a single data point in a stream.

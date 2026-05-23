@@ -5,11 +5,11 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"os"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"time"
-	"os"
-	"strconv"
 
 	"github.com/rs/zerolog"
 
@@ -20,7 +20,7 @@ const (
 	// LearnedIndexTypeAuto allows the system to automatically select the best index type.
 	LearnedIndexTypeAuto IndexType = "auto"
 	// LearnedIVFPQ specifies a learned IVF-PQ index.
-	LearnedIVFPQ         IndexType = "ivf_pq"
+	LearnedIVFPQ IndexType = "ivf_pq"
 )
 
 // numFeatures is the number of dimensions in the feature vector derived from QueryFeatures.
@@ -40,8 +40,8 @@ var featureKeys = [numFeatures]string{
 	"time_of_day",
 	"day_of_week",
 	// Embedding-generator features (added 2026-04-21)
-	"embedding_provider",   // ordinal: none=0, openai=1, cohere=2, huggingface=3, onnx=4, wasm=5, local=6
-	"embedding_model_dim",  // ratio: VectorDimension / 384.0 (reference dim for sentence-transformers)
+	"embedding_provider",  // ordinal: none=0, openai=1, cohere=2, huggingface=3, onnx=4, wasm=5, local=6
+	"embedding_model_dim", // ratio: VectorDimension / 384.0 (reference dim for sentence-transformers)
 }
 
 // FeatureNormalizer maintains online per-feature min/max statistics and produces
@@ -191,17 +191,17 @@ func embeddingModelDimRatio(provider, model string, actualDim int) float64 {
 
 // QueryFeatures encapsulates signals used to predict the optimal index type for a search query.
 type QueryFeatures struct {
-	VectorDimension    int     `json:"vector_dimension"`
-	NumQueryVectors    int     `json:"num_query_vectors"`
-	SearchK            int     `json:"search_k"`
-	DatasetSize        int     `json:"dataset_size"`
-	NumCollections     int     `json:"num_collections"`
-	QueryComplexity    string  `json:"query_complexity"`
-	AvgVectorNorm      float64 `json:"avg_vector_norm"`
-	IsFiltered         bool    `json:"is_filtered"`
-	IsHybrid           bool    `json:"is_hybrid"`
-	TimeOfDay          int     `json:"time_of_day"`
-	DayOfWeek          int     `json:"day_of_week"`
+	VectorDimension int     `json:"vector_dimension"`
+	NumQueryVectors int     `json:"num_query_vectors"`
+	SearchK         int     `json:"search_k"`
+	DatasetSize     int     `json:"dataset_size"`
+	NumCollections  int     `json:"num_collections"`
+	QueryComplexity string  `json:"query_complexity"`
+	AvgVectorNorm   float64 `json:"avg_vector_norm"`
+	IsFiltered      bool    `json:"is_filtered"`
+	IsHybrid        bool    `json:"is_hybrid"`
+	TimeOfDay       int     `json:"time_of_day"`
+	DayOfWeek       int     `json:"day_of_week"`
 	// EmbeddingProvider identifies the backend that generated the query vectors.
 	// Valid values: "", "openai", "cohere", "huggingface", "onnx", "wasm", "local".
 	EmbeddingProvider string `json:"embedding_provider,omitempty"`
@@ -362,13 +362,13 @@ func (p *IndexPerformancePredictor) initializeWeights() {
 		"num_collections":   0.05,
 		"query_complexity":  0.1,
 		"avg_vector_norm":   0.05,
-		"is_filtered":           0.05,
-		"is_hybrid":             0.10,
-		"time_of_day":           0.05,
-		"day_of_week":           0.05,
+		"is_filtered":       0.05,
+		"is_hybrid":         0.10,
+		"time_of_day":       0.05,
+		"day_of_week":       0.05,
 		// Embedding-generator features: initially low weight, LDA will raise them as data accumulates.
-		"embedding_provider":   0.05,
-		"embedding_model_dim":  0.05,
+		"embedding_provider":  0.05,
+		"embedding_model_dim": 0.05,
 	}
 }
 
@@ -496,7 +496,7 @@ func (p *IndexPerformancePredictor) kNNPredict(features QueryFeatures, k int) ma
 		return map[IndexType]float64{IndexTypeHNSW: 1.0}
 	}
 	weights := p.featureWeights
-	
+
 	// Build a weight vector aligned to featureKeys.
 	var wVec [numFeatures]float64
 	total := 0.0
@@ -524,7 +524,7 @@ func (p *IndexPerformancePredictor) kNNPredict(features QueryFeatures, k int) ma
 		sVec := extractFeatureVector(s.Features)
 		normS := p.normalizer.Normalize(sVec)
 		dist := weightedEuclidean(normalisedQuery, normS, wVec)
-		
+
 		if h.Len() < k {
 			h.push(distEntry{dist: dist, index: s.Index})
 		} else if dist < h.peek().dist {
@@ -999,13 +999,13 @@ type AdaptationStatus string
 
 const (
 	// AdaptationStatusPending indicates that an adaptation has been triggered but not yet started.
-	AdaptationStatusPending   AdaptationStatus = "pending"
+	AdaptationStatusPending AdaptationStatus = "pending"
 	// AdaptationStatusRunning indicates that an adaptation is currently running.
-	AdaptationStatusRunning   AdaptationStatus = "running"
+	AdaptationStatusRunning AdaptationStatus = "running"
 	// AdaptationStatusComplete indicates that an adaptation has completed successfully.
-	AdaptationStatusComplete  AdaptationStatus = "complete"
+	AdaptationStatusComplete AdaptationStatus = "complete"
 	// AdaptationStatusFailed indicates that an adaptation has failed.
-	AdaptationStatusFailed    AdaptationStatus = "failed"
+	AdaptationStatusFailed AdaptationStatus = "failed"
 	// AdaptationStatusCancelled indicates that an adaptation has been cancelled.
 	AdaptationStatusCancelled AdaptationStatus = "cancelled"
 )
@@ -1329,7 +1329,7 @@ func (a *RuntimeIndexAdapter) CompleteAdaptation(collection string, success bool
 		a.predictor.AddTrainingSample(TrainingSample{
 			Features: adaptation.Features,
 			Latency:  10 * time.Second, // Penalty latency
-			Recall:   0.0,             // Zero recall
+			Recall:   0.0,              // Zero recall
 			Index:    adaptation.ProposedIndex,
 		})
 	}
@@ -1369,7 +1369,7 @@ func (a *RuntimeIndexAdapter) Rollback(collection string) error {
 
 	if err := a.switcher.SwitchIndex(collection, target); err != nil {
 		a.stats.AdaptationsFailed.Add(1)
-				metrics.LearnedIndexAdaptationsTotal.WithLabelValues(string(adaptation.ProposedIndex), string(adaptation.CurrentIndex), "rollback_failed").Inc()
+		metrics.LearnedIndexAdaptationsTotal.WithLabelValues(string(adaptation.ProposedIndex), string(adaptation.CurrentIndex), "rollback_failed").Inc()
 		a.logger.Error().Err(err).Str("collection", collection).Msg("Rollback: index switch failed")
 		return fmt.Errorf("rollback switch failed for %q: %w", collection, err)
 	}
@@ -1379,12 +1379,12 @@ func (a *RuntimeIndexAdapter) Rollback(collection string) error {
 	a.predictor.AddTrainingSample(TrainingSample{
 		Features: QueryFeatures{DatasetSize: int(adaptation.Metrics.IndexSizeMB * 1000)},
 		Latency:  time.Duration(adaptation.Metrics.AvgLatencyMs * 2.0 * float64(time.Millisecond)), // Penalty: mark as 2x slow
-		Recall:   adaptation.Metrics.RecallAchieved * 0.8,                                       // Penalty: mark as low recall
+		Recall:   adaptation.Metrics.RecallAchieved * 0.8,                                          // Penalty: mark as low recall
 		Index:    adaptation.ProposedIndex,
 	})
 
 	a.stats.RollbacksPerformed.Add(1)
-		metrics.LearnedIndexAdaptationsTotal.WithLabelValues(string(adaptation.ProposedIndex), string(adaptation.CurrentIndex), "rolled_back").Inc()
+	metrics.LearnedIndexAdaptationsTotal.WithLabelValues(string(adaptation.ProposedIndex), string(adaptation.CurrentIndex), "rolled_back").Inc()
 	a.logger.Info().
 		Str("collection", collection).
 		Str("reverted_to", string(target)).

@@ -1,9 +1,9 @@
 package core_test
 
 import (
+	"context"
 	"github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
-	"context"
 	"runtime"
 	"testing"
 
@@ -13,8 +13,8 @@ import (
 func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
 	t.Run("Concurrent_EnsureChunk_NoRace", func(t *testing.T) {
 		cfg := types.DefaultArrowHNSWConfig()
-		cfg.InitialCapacity = 1          // Force small initial capacity
-		cfg.Dims = 4                     // Small dimensions
+		cfg.InitialCapacity = 1                // Force small initial capacity
+		cfg.Dims = 4                           // Small dimensions
 		cfg.DataType = types.VectorTypeFloat32 // Explicitly set data type
 
 		// Create a dummy dataset

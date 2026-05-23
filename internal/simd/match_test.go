@@ -9,7 +9,7 @@ func TestMatchInt32NEON(t *testing.T) {
 	src := []int32{1, 2, 3, 4, 5, 6, 7, 8, 1, 1, 1, 1}
 	val := int32(1)
 	dst := make([]byte, len(src))
-	
+
 	ops := []struct {
 		op   CompareOp
 		name string
@@ -25,7 +25,9 @@ func TestMatchInt32NEON(t *testing.T) {
 
 	for _, tc := range ops {
 		t.Run(tc.name, func(t *testing.T) {
-			for i := range dst { dst[i] = 0 }
+			for i := range dst {
+				dst[i] = 0
+			}
 			err := MatchInt32(src, val, tc.op, dst)
 			if err != nil {
 				t.Fatalf("MatchInt32 failed: %v", err)

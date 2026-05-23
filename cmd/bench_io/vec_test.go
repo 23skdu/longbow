@@ -6,14 +6,14 @@ import (
 
 func TestVectorSearchModes(t *testing.T) {
 	validModes := map[string]bool{
-		"dense":     true,
-		"hybrid":    true,
-		"sparse":    true,
-		"filtered":  true,
-		"byid":      true,
-		"ingest":    true,
-		"":          false,
-		"unknown":   false,
+		"dense":    true,
+		"hybrid":   true,
+		"sparse":   true,
+		"filtered": true,
+		"byid":     true,
+		"ingest":   true,
+		"":         false,
+		"unknown":  false,
 		"INVALID":  false,
 	}
 

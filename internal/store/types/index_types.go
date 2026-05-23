@@ -4,10 +4,10 @@ import (
 	"os"
 	"time"
 
+	"context"
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/prometheus/client_golang/prometheus"
-	"context"
 )
 
 type priorityKey struct{}
@@ -134,8 +134,8 @@ type ArrowHNSWConfig struct {
 	Registerer        prometheus.Registerer
 	TurboQuantEnabled bool
 	TurboQuantBits    int
-	LockFreeThreshold int // Layer threshold for CAS-based lock-free updates (e.g. 2)
-	NUMANode          int // Target NUMA node for memory pinning (-1 for default)
+	LockFreeThreshold int  // Layer threshold for CAS-based lock-free updates (e.g. 2)
+	NUMANode          int  // Target NUMA node for memory pinning (-1 for default)
 	SharedVectorSpace bool // If true, perform zero-copy lookups from primary Dataset records
 }
 

@@ -80,7 +80,7 @@ func TestAdmissionController(t *testing.T) {
 		// Acquire 2 slots (the limit querySem buffer is 2)
 		err1 := ac.Admit(context.Background(), "search")
 		assert.NoError(t, err1)
-		
+
 		err2 := ac.Admit(context.Background(), "search")
 		assert.NoError(t, err2)
 
@@ -118,20 +118,20 @@ func TestAdmissionController_Expanded(t *testing.T) {
 		}
 		maxMem.Store(currPhys * 10)
 		currMem.Store(currPhys) // 10% of maxMem
-		
+
 		logger := zerolog.Nop()
 		tuner := lbmem.NewGCTuner(maxMem.Load(), 100, 10, &logger)
 		tuner.EnableGPUTuning = false
 		tuner.GetPhysicalStats = func() (int64, int64) {
 			return maxMem.Load() * 85 / 100, 0
 		}
-		
+
 		// Set lastUtilization using direct unsafe cast
 		setPrivateAtomicUint64(tuner, "lastUtilization", uint64(920)) // 92% (above 90% soft limit)
-		
+
 		ac.SetTuner(tuner)
 		defer ac.SetTuner(nil)
-		
+
 		err := ac.Admit(context.Background(), "ingest")
 		assert.Error(t, err)
 		assert.Equal(t, codes.ResourceExhausted, status.Code(err))
@@ -146,25 +146,25 @@ func TestAdmissionController_Expanded(t *testing.T) {
 		}
 		hardLimit := currPhys * 5
 		t.Setenv("LONGBOW_MAX_MEMORY_HARD", strconv.FormatInt(hardLimit, 10))
-		
+
 		maxMem2 := atomic.Int64{}
 		maxMem2.Store(currPhys * 10)
 		currMem2 := atomic.Int64{}
-		
+
 		ac2 := NewAdmissionController(&maxMem2, &currMem2, nil, zerolog.Nop())
 		require.Equal(t, hardLimit, ac2.hardMemory)
-		
+
 		// normal (currPhys * 4 <= currPhys * 5) -> allowed
 		currMem2.Store(currPhys * 4)
 		err := ac2.Admit(context.Background(), "search")
 		assert.NoError(t, err)
-		
+
 		// breached (currPhys * 6 > currPhys * 5) -> rejected
 		currMem2.Store(currPhys * 6)
 		errIn := ac2.Admit(context.Background(), "ingest")
 		assert.Error(t, errIn)
 		assert.Equal(t, codes.ResourceExhausted, status.Code(errIn))
-		
+
 		// maintenance/delete/drop -> allowed
 		errM := ac2.Admit(context.Background(), "maintenance")
 		assert.NoError(t, errM)
@@ -205,13 +205,13 @@ func TestAdmissionController_Expanded(t *testing.T) {
 		maxMem.Store(currPhys * 10)
 		ac.MigrationStarted()
 		defer ac.MigrationFinished()
-		
+
 		// 86% is above 85% ingestLimit during migration -> should be throttled
 		currMem.Store(maxMem.Load() * 86 / 100)
 		err := ac.Admit(context.Background(), "ingest")
 		assert.Error(t, err)
 		assert.Equal(t, codes.ResourceExhausted, status.Code(err))
-		
+
 		// 89% is above 88% hardLimit during migration -> search should be rejected
 		currMem.Store(maxMem.Load() * 89 / 100)
 		errSearch := ac.Admit(context.Background(), "search")
@@ -227,8 +227,8 @@ func TestAdmissionController_Expanded(t *testing.T) {
 			currPhys = 10 * 1024 * 1024
 		}
 		maxMem.Store(currPhys * 10)
-		currMem.Store(maxMem.Load() * 85 / 100)  // 85% (between 80% and 94% hardLimit)
-		
+		currMem.Store(maxMem.Load() * 85 / 100) // 85% (between 80% and 94% hardLimit)
+
 		start := time.Now()
 		err := ac.Admit(context.Background(), "ingest")
 		assert.NoError(t, err)
@@ -260,7 +260,7 @@ func TestAdmissionController_Expanded(t *testing.T) {
 			}
 			maxMem.Store(currPhys * 10)
 			currMem.Store(currPhys)
-			
+
 			scaler.RecordSearch(450 * time.Millisecond)
 			time.Sleep(5 * time.Millisecond) // Let it sample
 
@@ -286,7 +286,7 @@ func TestAdmissionController_Expanded(t *testing.T) {
 			}
 			maxMem.Store(currPhys * 10)
 			currMem.Store(currPhys)
-			
+
 			scaler.RecordIngest(130000 * 60) // Multiply by 60 because throughput is calculated as sum / 60.0
 			time.Sleep(5 * time.Millisecond) // Let it sample
 
@@ -301,7 +301,7 @@ func TestAdmissionController_Expanded(t *testing.T) {
 			acLocal := NewAdmissionController(&maxMem, &currMem, scaler, zerolog.Nop())
 
 			maxMem.Store(1) // Set maxMem to 1 byte, so physical memory is millions of percent usage!
-			
+
 			errMem := acLocal.AdmitMigration(context.Background())
 			if assert.Error(t, errMem) {
 				assert.Contains(t, errMem.Error(), "memory usage")
@@ -322,7 +322,7 @@ func TestAdmissionController_Expanded(t *testing.T) {
 		scaler := autoscale.NewAutoScaler(zerolog.Nop())
 		setPrivateDuration(scaler, "monitorInterval", 1*time.Millisecond)
 		setPrivateDuration(scaler, "cooldown", 1*time.Millisecond)
-		
+
 		ctx, cancel := context.WithCancel(context.Background())
 		defer cancel()
 		go scaler.Start(ctx)

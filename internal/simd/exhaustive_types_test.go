@@ -65,7 +65,7 @@ func TestSIMD_ExhaustiveTypes(t *testing.T) {
 	_, _ = DotProductComplex64(c64, c64)
 	_, _ = EuclideanDistanceComplex128(c128, c128)
 	_, _ = DotProductComplex128(c128, c128)
-	
+
 	_, _ = EuclideanDistanceInt8(i8, i8)
 	_, _ = DotProductInt8(i8, i8)
 	_, _ = EuclideanDistanceInt16(i16, i16)
@@ -74,13 +74,13 @@ func TestSIMD_ExhaustiveTypes(t *testing.T) {
 	_, _ = DotProductInt32(i32, i32)
 	_, _ = EuclideanDistanceInt64(i64, i64)
 	_, _ = DotProductInt64(i64, i64)
-	
+
 	_, _ = EuclideanDistanceUint16(u16, u16)
 	_, _ = DotProductUint16(u16, u16)
 	_, _ = EuclideanDistanceUint32(u32, u32)
 	_, _ = DotProductUint32(u32, u32)
 	_, _ = EuclideanDistanceUint64(u64, u64)
 	_, _ = DotProductUint64(u64, u64)
-	
+
 	_, _ = L2Squared([]float32{1.0}, []float32{1.0})
 }

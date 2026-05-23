@@ -21,8 +21,8 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
-	arrowmemory "github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/apache/arrow-go/v18/arrow/float16"
+	arrowmemory "github.com/apache/arrow-go/v18/arrow/memory"
 )
 
 // HNSWMetadata contains core index state that must be updated atomically
@@ -34,7 +34,6 @@ type HNSWMetadata struct {
 	Version    uint64
 	Generation uint64
 }
-
 
 // ArrowHNSW implements a Hierarchical Navigable Small World (HNSW) index
 // optimized for Apache Arrow data structures with zero-copy operations.
@@ -69,11 +68,11 @@ type ArrowHNSW struct {
 	// DiskGraph backing
 	diskGraph atomic.Pointer[DiskGraph]
 
-	quantizer  *ScalarQuantizer
-	sq8Ready   atomic.Bool
-	bqEncoder  *types.BQEncoder
-	oopqEncoder any // Accepts *pq.PQEncoder or *pq.OPQEncoder (Issue 4: Use new OPQ)
-	tqEncoder  *TurboQuantEncoder
+	quantizer     *ScalarQuantizer
+	sq8Ready      atomic.Bool
+	bqEncoder     *types.BQEncoder
+	oopqEncoder   any // Accepts *pq.PQEncoder or *pq.OPQEncoder (Issue 4: Use new OPQ)
+	tqEncoder     *TurboQuantEncoder
 	searchPool    *ArrowSearchContextPool
 	candidatePool sync.Pool
 
@@ -83,29 +82,29 @@ type ArrowHNSW struct {
 	topLayerManager        *TopLayerManager
 	neighborCache          [types.ArrowMaxLayers]*LockFreeNeighborCache
 
-	distFunc     func([]float32, []float32) (float32, error)
-	distFuncSquared  func([]float32, []float32) (float32, error)
-	distFuncF64  func([]float64, []float64) (float32, error)
-	distFuncF16  func([]float16.Num, []float16.Num) (float32, error)
-	distFuncC64  func([]complex64, []complex64) (float32, error)
-	distFuncC128 func([]complex128, []complex128) (float32, error)
-	distFuncInt8 func([]int8, []int8) (float32, error)
-	distFuncInt8Squared func([]int8, []int8) (float32, error)
-	distFuncUint8 func([]uint8, []uint8) (float32, error)
+	distFunc             func([]float32, []float32) (float32, error)
+	distFuncSquared      func([]float32, []float32) (float32, error)
+	distFuncF64          func([]float64, []float64) (float32, error)
+	distFuncF16          func([]float16.Num, []float16.Num) (float32, error)
+	distFuncC64          func([]complex64, []complex64) (float32, error)
+	distFuncC128         func([]complex128, []complex128) (float32, error)
+	distFuncInt8         func([]int8, []int8) (float32, error)
+	distFuncInt8Squared  func([]int8, []int8) (float32, error)
+	distFuncUint8        func([]uint8, []uint8) (float32, error)
 	distFuncUint8Squared func([]uint8, []uint8) (float32, error)
-	distFuncInt16 func([]int16, []int16) (float32, error)
-	distFuncUint16 func([]uint16, []uint16) (float32, error)
-	distFuncInt32 func([]int32, []int32) (float32, error)
-	distFuncUint32 func([]uint32, []uint32) (float32, error)
-	distFuncInt64 func([]int64, []int64) (float32, error)
-	distFuncUint64 func([]uint64, []uint64) (float32, error)
+	distFuncInt16        func([]int16, []int16) (float32, error)
+	distFuncUint16       func([]uint16, []uint16) (float32, error)
+	distFuncInt32        func([]int32, []int32) (float32, error)
+	distFuncUint32       func([]uint32, []uint32) (float32, error)
+	distFuncInt64        func([]int64, []int64) (float32, error)
+	distFuncUint64       func([]uint64, []uint64) (float32, error)
 
-	sharedVectorSpace atomic.Bool
+	sharedVectorSpace  atomic.Bool
 	adaptiveMTriggered atomic.Bool
 
-	initMu sync.Mutex
-	growMu sync.RWMutex
-	bulkMu sync.Mutex
+	initMu     sync.Mutex
+	growMu     sync.RWMutex
+	bulkMu     sync.Mutex
 	epMu       sync.Mutex
 	commitMu   sync.Mutex
 	commitCond *sync.Cond
@@ -141,11 +140,11 @@ type ArrowHNSW struct {
 	levelMultiplier   float64
 
 	// Graph Navigation
-	navigator *GraphNavigator
-	tqCompute *TurboQuantCompute
+	navigator  *GraphNavigator
+	tqCompute  *TurboQuantCompute
 	gpuTrained atomic.Bool
 	topo       *memory.NUMATopology
-	efTuner     *PIDTuner
+	efTuner    *PIDTuner
 
 	// MetadataRegistry for pre-cached field lookups
 	metadata struct {
@@ -159,9 +158,6 @@ type ArrowHNSW struct {
 	}
 }
 
-
-
-
 // GetRecords is a helper to get records from the dataset.
 func (h *ArrowHNSW) GetRecords() []arrow.RecordBatch {
 	if h.dataset == nil {
@@ -174,6 +170,7 @@ func (h *ArrowHNSW) GetRecords() []arrow.RecordBatch {
 func (h *ArrowHNSW) GetDataset() types.IndexDataProvider {
 	return h.dataset
 }
+
 // NewArrowHNSW creates a new ArrowHNSW index.
 func NewArrowHNSW(dataset types.IndexDataProvider, config *types.ArrowHNSWConfig, topo *memory.NUMATopology) *ArrowHNSW {
 	return NewArrowHNSWWithConfig(dataset, *config, topo)
@@ -182,13 +179,13 @@ func NewArrowHNSW(dataset types.IndexDataProvider, config *types.ArrowHNSWConfig
 // NewArrowHNSWWithConfig creates a new ArrowHNSW index with the given configuration.
 func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowHNSWConfig, topo *memory.NUMATopology) *ArrowHNSW {
 	h := &ArrowHNSW{
-		config:          config,
-		dataset:         dataset,
-		m:               atomic.Int32{},
-		mMax:            atomic.Int32{},
-		mMax0:           atomic.Int32{},
-		searchPool:      NewArrowSearchContextPool(),
-		insertPool:     NewInsertContextPool(), // Issue 2: Pool metrics
+		config:     config,
+		dataset:    dataset,
+		m:          atomic.Int32{},
+		mMax:       atomic.Int32{},
+		mMax0:      atomic.Int32{},
+		searchPool: NewArrowSearchContextPool(),
+		insertPool: NewInsertContextPool(), // Issue 2: Pool metrics
 		candidatePool: sync.Pool{
 			New: func() any {
 				s := make([]types.Candidate, 0, config.EfConstruction)
@@ -212,7 +209,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		Generation: 0,
 	})
 
-	h.m.Store(int32(config.M))     // #nosec G115
+	h.m.Store(int32(config.M))         // #nosec G115
 	h.mMax.Store(int32(config.MMax))   // #nosec G115
 	h.mMax0.Store(int32(config.MMax0)) // #nosec G115
 	// Initialize metadata cache to -1 to avoid defaulting to column 0
@@ -339,7 +336,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 
 	// Initialize Lock-Free Adjacency for all layers ([#11] Lock-Free Adjacency)
 	gd.PackedNeighbors = make([]types.PackedNeighbors, types.ArrowMaxLayers)
-	
+
 	for l := 0; l < types.ArrowMaxLayers; l++ {
 		var adjArena *memory.SlabArena
 		// We use a dedicated SlabArena for each layer to minimize contention
@@ -418,7 +415,6 @@ func (h *ArrowHNSW) getCandidateSlice(capacity int) []types.Candidate {
 	return s
 }
 
-
 // SetDisableNodeCountMetric prevents this ArrowHNSW from reporting HNSWNodeCount.
 func (h *ArrowHNSW) SetDisableNodeCountMetric(disable bool) {
 	h.disableNodeCountMetric.Store(disable)
@@ -439,12 +435,10 @@ func (h *ArrowHNSW) IsSharded() bool {
 	return false
 }
 
-
 // GetConfig returns the current configuration
 func (h *ArrowHNSW) GetConfig() types.ArrowHNSWConfig {
 	return h.config
 }
-
 
 // GetShardedLocks returns the sharded mutex for concurrent access
 
@@ -457,12 +451,6 @@ func (h *ArrowHNSW) GetDiskGraph() *DiskGraph {
 func (h *ArrowHNSW) SetDiskGraph(disk *DiskGraph) {
 	h.diskGraph.Store(disk)
 }
-
-
-
-
-
-
 
 // SetOPQEncoder sets the OPQ encoder (accepts both OPQ and legacy PQ for backward compatibility)
 
@@ -538,10 +526,6 @@ func (h *ArrowHNSW) Delete(id uint32) error {
 	return nil
 }
 
-
-
-
-
 // DeleteBatch invokes Delete for each id.
 func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 	for _, id := range ids {
@@ -555,7 +539,7 @@ func (h *ArrowHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 func (h *ArrowHNSW) commitID(id uint32) {
 	h.commitMu.Lock()
 	defer h.commitMu.Unlock()
-	
+
 	for h.GetMetadataSnapshot().NodeCount < int64(id) {
 		h.commitCond.Wait()
 	}
@@ -598,7 +582,7 @@ func (h *ArrowHNSW) commitID(id uint32) {
 	})
 
 	h.commitCond.Broadcast()
-	
+
 	// Sync atomics with the newly committed metadata
 	meta := h.GetMetadataSnapshot()
 	h.nodeCount.Store(meta.NodeCount)
@@ -691,13 +675,8 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 	return id, nil
 }
 
-
 // MinCandidateHeap for exploration (closest first)
 // Uses store.Candidate (ID, Dist) to match ArrowSearchContext
-
-
-
-
 
 // PreWarm proactively loads chunks of data into memory based on target size.
 func (h *ArrowHNSW) PreWarm(targetSize int) {
@@ -774,7 +753,7 @@ func (h *ArrowHNSW) ReleaseMonolithicChunk(cID int) error {
 // CleanupTombstones removes deleted nodes that exceed the specified threshold.
 func (h *ArrowHNSW) CleanupTombstones(threshold int) int {
 	h.dataset.RLockData()
-	
+
 	shouldReset := false
 	totalPruned := 0
 	for _, ts := range h.dataset.GetTombstones() {
@@ -896,27 +875,40 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			} else if batchIdxs[0] >= 0 && batchIdxs[0] < len(recs) {
 				recFirst = recs[batchIdxs[0]]
 			}
-			
+
 			if recFirst != nil {
 				v := h.extractVector(recFirst, vecColIdx, rowIdxs[0])
 				if v != nil {
 					dims := 0
 					switch vt := v.(type) {
-					case []float32: dims = len(vt)
-					case []float16.Num: dims = len(vt)
-					case []float64: dims = len(vt)
-					case []int32: dims = len(vt)
-					case []uint32: dims = len(vt)
-					case []int16: dims = len(vt)
-					case []uint16: dims = len(vt)
-					case []int8: dims = len(vt)
-					case []uint8: dims = len(vt)
-					case []int64: dims = len(vt)
-					case []uint64: dims = len(vt)
-					case []complex64: dims = len(vt)
-					case []complex128: dims = len(vt)
+					case []float32:
+						dims = len(vt)
+					case []float16.Num:
+						dims = len(vt)
+					case []float64:
+						dims = len(vt)
+					case []int32:
+						dims = len(vt)
+					case []uint32:
+						dims = len(vt)
+					case []int16:
+						dims = len(vt)
+					case []uint16:
+						dims = len(vt)
+					case []int8:
+						dims = len(vt)
+					case []uint8:
+						dims = len(vt)
+					case []int64:
+						dims = len(vt)
+					case []uint64:
+						dims = len(vt)
+					case []complex64:
+						dims = len(vt)
+					case []complex128:
+						dims = len(vt)
 					}
-					
+
 					if dims > 0 {
 						newCap := int(startID) + n
 						if data != nil && data.Capacity > 0 {
@@ -965,26 +957,26 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 					}
 				}
 				physicalDims := int(h.dims.Load())
-				
+
 				// Parallel extraction
 				pool := GetSharedPool()
 				var supportedAtomic atomic.Bool
 				supportedAtomic.Store(true)
-				
+
 				pool.ParallelFor(n, max(256, (n+runtime.NumCPU()-1)/runtime.NumCPU()), func(start, end int) {
 					if !supportedAtomic.Load() {
 						return
 					}
-					
+
 					for i := start; i < end; i++ {
-					// Robust record resolution
-					var rec arrow.RecordBatch
-					bIdx := batchIdxs[i]
-					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
-						rec = recs[bIdx]
-					} else if len(recs) == 1 {
-						rec = recs[0]
-					}
+						// Robust record resolution
+						var rec arrow.RecordBatch
+						bIdx := batchIdxs[i]
+						if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+							rec = recs[bIdx]
+						} else if len(recs) == 1 {
+							rec = recs[0]
+						}
 
 						if rec == nil {
 							supportedAtomic.Store(false)
@@ -992,7 +984,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 						}
 
 						values := valuesCache[rec]
-						
+
 						if values != nil {
 							off := rowIdxs[i] * physicalDims
 							if off+physicalDims <= len(values) {
@@ -1040,7 +1032,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 							for c := 0; c < numFullChunks; c++ {
 								cID := int(startID)/types.ChunkSize + c
 								rowOffset := rowIdxs[0] + (c * types.ChunkSize)
-								
+
 								offset := rowOffset * physicalDims
 								dataSize := types.ChunkSize * physicalDims
 								if offset+dataSize <= len(values) {
@@ -1221,7 +1213,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		}
 		return ids, nil
 	}
-	
+
 	// Fallback to sequential insertion if bulk fails (rare)
 	ids := make([]uint32, len(rowIdxs))
 	maxID := startID + uint32(len(rowIdxs)) - 1 // #nosec G115
@@ -1238,7 +1230,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	// Ensures all vectors are persistent in arenas before we start linking nodes.
 	for i := 0; i < len(rowIdxs); i++ {
 		id := startID + uint32(i) // #nosec G115
-		
+
 		// Resolve record batch
 		var rec arrow.RecordBatch
 		bIdx := batchIdxs[i]
@@ -1247,7 +1239,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		} else if len(recs) == 1 {
 			rec = recs[0]
 		}
-		
+
 		if rec == nil {
 			continue
 		}
@@ -1282,7 +1274,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 
 	for i := 0; i < len(rowIdxs); i++ {
 		id := startID + uint32(i) // #nosec G115
-		
+
 		var rec arrow.RecordBatch
 		bIdx := batchIdxs[i]
 		if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
@@ -1290,7 +1282,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		} else if len(recs) == 1 {
 			rec = recs[0]
 		}
-		
+
 		if rec == nil {
 			return nil, fmt.Errorf("could not resolve record batch for index %d", i)
 		}
@@ -1316,7 +1308,7 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 	if h == nil {
 		return 0
 	}
-	
+
 	var total int64
 	gd := h.data.Load()
 	if gd != nil {
@@ -1331,9 +1323,6 @@ func (h *ArrowHNSW) EstimateMemory() int64 {
 
 	return total + locMemory
 }
-
-
-
 
 // GetParallelSearchConfig implements VectorIndex.
 func (h *ArrowHNSW) GetParallelSearchConfig() types.ParallelSearchConfig {
@@ -1427,7 +1416,6 @@ func (h *ArrowHNSW) ExtractVectorForParallel(rec arrow.RecordBatch, rowIdx int) 
 	return nil, fmt.Errorf("unsupported vector type %T for parallel search refinement", vec)
 }
 
-
 // ExtractVectorByIDForParallel extracts a vector by ID as a float32 slice.
 func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
 	vecAny, err := h.GetVector(id)
@@ -1500,8 +1488,6 @@ func (h *ArrowHNSW) ExtractVectorByIDForParallel(id uint32) ([]float32, error) {
 
 	return nil, fmt.Errorf("unsupported vector type %T for parallel search", vecAny)
 }
-
-
 
 // RemapLocations updates the vector ID to location mapping.
 func (h *ArrowHNSW) RemapLocations(ctx context.Context, mapping map[uint32]any) error {

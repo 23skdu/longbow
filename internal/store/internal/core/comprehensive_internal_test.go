@@ -2,9 +2,9 @@ package core
 
 import (
 	"container/heap"
-	"testing"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func TestSearchContextPooling(t *testing.T) {
@@ -20,7 +20,7 @@ func TestSearchContextPooling(t *testing.T) {
 
 	ctx2 := h.searchPool.Get()
 	assert.NotNil(t, ctx2)
-	
+
 	gets, puts := h.searchPool.Stats()
 	assert.Equal(t, int64(2), gets)
 	assert.Equal(t, int64(1), puts)

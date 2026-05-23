@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"context"
+	"github.com/23skdu/longbow/internal/store/types"
 	"math"
 	"math/rand"
 	"testing"
@@ -55,10 +55,12 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 	defer idx.searchPool.Put(ctx)
 
 	for i := 0; i < count; i++ {
-		if i >= deletedStart && i < deletedEnd { continue } // Skip deleted
-		
+		if i >= deletedStart && i < deletedEnd {
+			continue
+		} // Skip deleted
+
 		// Use fixed rng
-		dist := rng.Float32() 
+		dist := rng.Float32()
 		target := uint32(deletedStart + (i % (deletedEnd - deletedStart)))
 		data = idx.AddConnection(ctx, data, uint32(i), target, 0, 10, dist)
 	}
@@ -68,10 +70,12 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 	data = idx.GetData()
 
 	for i := 0; i < count; i++ {
-		if i >= deletedStart && i < deletedEnd { continue }
+		if i >= deletedStart && i < deletedEnd {
+			continue
+		}
 		nid := uint32(i)
 		neighbors := idx.GetNeighborsCombined(0, nid, math.MaxUint64)
-		
+
 		for _, neighbor := range neighbors {
 			if int(neighbor) >= deletedStart && int(neighbor) < deletedEnd {
 				hasTombstoneLinks = true
@@ -96,7 +100,9 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 	// 5. Verify Tombstones Gone
 	hasTombstoneLinksAfter := false
 	for i := 0; i < count; i++ {
-		if i >= deletedStart && i < deletedEnd { continue }
+		if i >= deletedStart && i < deletedEnd {
+			continue
+		}
 		nid := uint32(i)
 		neighbors := idx.GetNeighborsCombined(0, nid, math.MaxUint64)
 		for _, neighbor := range neighbors {
@@ -110,11 +116,13 @@ func TestHNSW_TombstoneRepair_WiresAround(t *testing.T) {
 
 	// 6. Verify Reachability
 	for i := 0; i < count; i++ {
-		if i >= deletedStart && i < deletedEnd { continue }
-		
+		if i >= deletedStart && i < deletedEnd {
+			continue
+		}
+
 		res, err := idx.SearchVectors(context.Background(), vecs[i], 10, nil, types.SearchOptions{})
 		require.NoError(t, err)
-		
+
 		found := false
 		for _, r := range res {
 			if uint32(r.ID) == uint32(i) {

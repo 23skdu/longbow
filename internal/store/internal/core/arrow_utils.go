@@ -93,8 +93,6 @@ func ExtractVectorF16FromArrow(rec arrow.RecordBatch, rowIdx, colIdx int) ([]flo
 	return nil, fmt.Errorf("cannot convert %T to []float16.Num", anyVec)
 }
 
-
-
 // ExtractVectorGeneric extracts a vector of the requested type from an Arrow record batch.
 func ExtractVectorGeneric[T any](rec arrow.RecordBatch, rowIdx, colIdx int) ([]T, error) {
 	if rec == nil {
@@ -126,23 +124,28 @@ func ExtractVectorGeneric[T any](rec arrow.RecordBatch, rowIdx, colIdx int) ([]T
 	}
 
 	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-	
+
 	// SCALE WIDTH: If the requested type T is larger than the underlying Arrow element type,
 	// we must adjust the width to avoid out-of-bounds access.
 	// For Complex64 (8 bytes) on Float32 (4 bytes), width should be halved.
 	elemType := listArr.DataType().(*arrow.FixedSizeListType).Elem()
 	var arrowElemSize int
 	switch elemType.ID() {
-	case arrow.INT8, arrow.UINT8: arrowElemSize = 1
-	case arrow.INT16, arrow.UINT16, arrow.FLOAT16: arrowElemSize = 2
-	case arrow.INT32, arrow.UINT32, arrow.FLOAT32: arrowElemSize = 4
-	case arrow.INT64, arrow.UINT64, arrow.FLOAT64: arrowElemSize = 8
-	default: arrowElemSize = 1 // Fallback
+	case arrow.INT8, arrow.UINT8:
+		arrowElemSize = 1
+	case arrow.INT16, arrow.UINT16, arrow.FLOAT16:
+		arrowElemSize = 2
+	case arrow.INT32, arrow.UINT32, arrow.FLOAT32:
+		arrowElemSize = 4
+	case arrow.INT64, arrow.UINT64, arrow.FLOAT64:
+		arrowElemSize = 8
+	default:
+		arrowElemSize = 1 // Fallback
 	}
 
 	var zero T
 	requestedElemSize := int(unsafe.Sizeof(zero))
-	
+
 	if requestedElemSize > arrowElemSize && arrowElemSize > 0 {
 		ratio := requestedElemSize / arrowElemSize
 		width /= ratio
@@ -199,7 +202,7 @@ func unsafeVectorSliceGeneric[T any](data arrow.ArrayData, offset, length int) [
 		return nil
 	}
 	ptr := unsafe.Pointer(&bytes[offset*elementSize]) // #nosec G103
-	return unsafe.Slice((*T)(ptr), length)           // #nosec G103
+	return unsafe.Slice((*T)(ptr), length)            // #nosec G103
 }
 
 // ExtractVectorF32 extracts a vector as []float32 (Zero-Copy).
@@ -478,4 +481,3 @@ func InferVectorDataType(schema *arrow.Schema, fieldName string) types.VectorDat
 
 	return finalType
 }
-

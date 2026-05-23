@@ -26,21 +26,27 @@ func getSimdMetric(m basecore.DistanceMetric) simd.MetricType {
 func (h *ArrowHNSW) resolveDistanceFuncSquared() func([]float32, []float32) (float32, error) {
 	dims := int(h.dims.Load())
 	k := simd.GetKernel[float32](simd.MetricL2Squared, dims)
-	if k == nil { return simd.L2SquaredFloat32 }
+	if k == nil {
+		return simd.L2SquaredFloat32
+	}
 	return k
 }
 
 func (h *ArrowHNSW) resolveDistanceFuncInt8Squared() func([]int8, []int8) (float32, error) {
 	dims := int(h.dims.Load())
 	k := simd.GetKernel[int8](simd.MetricL2Squared, dims)
-	if k == nil { return nil }
+	if k == nil {
+		return nil
+	}
 	return k
 }
 
 func (h *ArrowHNSW) resolveDistanceFuncUint8Squared() func([]uint8, []uint8) (float32, error) {
 	dims := int(h.dims.Load())
 	k := simd.GetKernel[uint8](simd.MetricL2Squared, dims)
-	if k == nil { return nil }
+	if k == nil {
+		return nil
+	}
 	return k
 }
 
@@ -61,7 +67,7 @@ func (h *ArrowHNSW) resolveAllDistanceFuncs() {
 	h.distFuncUint32 = h.resolveDistanceFuncUint32()
 	h.distFuncInt64 = h.resolveDistanceFuncInt64()
 	h.distFuncUint64 = h.resolveDistanceFuncUint64()
-	
+
 	// Sync with navigator
 	if h.navigator != nil {
 		h.navigator.SetDistanceKernel(h.distFunc)
@@ -73,7 +79,7 @@ func (h *ArrowHNSW) resolveDistanceFunc() func(a, b []float32) (float32, error) 
 	sm := getSimdMetric(h.config.Metric)
 	dims := int(h.dims.Load())
 	k := simd.GetKernel[float32](sm, dims)
-	
+
 	if k == nil {
 		switch sm {
 		case simd.MetricCosine:
@@ -448,4 +454,3 @@ func (h *ArrowHNSW) resolveDistanceFuncUint64() func(a, b []uint64) (float32, er
 	}
 	return k
 }
-

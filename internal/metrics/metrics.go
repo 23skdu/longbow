@@ -1,9 +1,9 @@
 package metrics
 
 import (
-	"sync"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	"sync"
 )
 
 // =============================================================================
@@ -200,7 +200,7 @@ var (
 		},
 		[]string{"reason"}, // "timeout", "threshold", "no_candidates"
 	)
- 
+
 	HNSWEarlyTerminationTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_hnsw_early_termination_total",
@@ -314,7 +314,7 @@ var (
 		},
 		[]string{"namespace"},
 	)
-	
+
 	NamespaceCreationTotal = promauto.NewCounter(
 		prometheus.CounterOpts{
 			Name: "longbow_namespace_creation_total",
@@ -905,7 +905,6 @@ var (
 		},
 		[]string{"allocator"},
 	)
-
 
 	// SimdDispatchTotal counts SIMD dispatch calls by implementation type
 	SimdDispatchTotal = promauto.NewCounterVec(

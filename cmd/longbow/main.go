@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"encoding/json"
+	_ "expvar" // Register expvar handlers
 	"fmt"
 	"net"
 	"net/http"
 	"net/http/pprof" // Register pprof handlers manually
-	_ "expvar"       // Register expvar handlers
 	"os"
 	"os/signal"
 	"strconv" // Added for hostname fallback
@@ -57,7 +57,7 @@ type Config struct {
 
 	ListenAddr       string        `envconfig:"LISTEN_ADDR" default:"0.0.0.0:3000"`
 	ListenUDS        string        `envconfig:"LISTEN_UDS" default:""` // Path to Unix Domain Socket
-	NodeID           string        `envconfig:"NODE_ID" default:""` // Optional override
+	NodeID           string        `envconfig:"NODE_ID" default:""`    // Optional override
 	MetaAddr         string        `envconfig:"META_ADDR" default:"0.0.0.0:3001"`
 	MetricsAddr      string        `envconfig:"METRICS_ADDR" default:"0.0.0.0:9090"`
 	MaxMemory        int64         `envconfig:"MAX_MEMORY" default:"1073741824"`
@@ -173,7 +173,7 @@ type Config struct {
 	TemporalCleanupInterval    time.Duration `envconfig:"TEMPORAL_CLEANUP_INTERVAL" default:"1h"`
 	TemporalAggregationEnabled bool          `envconfig:"TEMPORAL_AGGREGATION_ENABLED" default:"false"`
 	TemporalMaxBuckets         int           `envconfig:"TEMPORAL_MAX_BUCKETS" default:"1000"`
-	
+
 	// RDMA Configuration
 	RDMAEnabled   bool   `envconfig:"RDMA_ENABLED" default:"false"`
 	RDMAInterface string `envconfig:"RDMA_INTERFACE" default:"eth0"`

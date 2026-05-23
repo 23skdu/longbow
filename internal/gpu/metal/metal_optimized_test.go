@@ -3,9 +3,9 @@
 package metal
 
 import (
-	"testing"
 	"github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/stretchr/testify/require"
+	"testing"
 )
 
 func TestMetalIndexOptimized_Lifecycle(t *testing.T) {
@@ -101,7 +101,7 @@ func TestMetalIndexOptimized_Prune(t *testing.T) {
 	candIds := []uint32{1, 2, 3}
 	candDists := []float32{0.1, 0.5, 0.2}
 	allVectors := make([]float32, 128*4) // 4 vectors
-	
+
 	pruned, err := idx.PruneNeighbors(candIds, candDists, 2, allVectors)
 	require.NoError(t, err)
 	require.Len(t, pruned, 2)

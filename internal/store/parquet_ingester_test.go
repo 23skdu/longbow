@@ -33,14 +33,14 @@ func TestParquetIngester(t *testing.T) {
 	require.NoError(t, err)
 
 	pw := parquet.NewGenericWriter[DatasetParquetRecord](f)
-	
+
 	// Create some dummy records
 	// Vector is []byte (4*4 bytes for 4 floats)
 	records := []DatasetParquetRecord{
 		{ID: 1, Vector: []byte{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}},
 		{ID: 2, Vector: []byte{0, 0, 128, 63, 0, 0, 128, 63, 0, 0, 128, 63, 0, 0, 128, 63}}, // [1.0, 1.0, 1.0, 1.0]
 	}
-	
+
 	_, err = pw.Write(records)
 	require.NoError(t, err)
 	err = pw.Close()
@@ -50,7 +50,7 @@ func TestParquetIngester(t *testing.T) {
 	// 3. Ingest using ParquetIngester
 	ingester := NewParquetIngester(ds, 10)
 	total, err := ingester.Ingest(context.Background(), tmpPath)
-	
+
 	require.NoError(t, err)
 	assert.Equal(t, int64(2), total)
 	assert.Equal(t, 1, len(ds.Records.Read()))

@@ -15,17 +15,17 @@ import (
 func TestCUDAIndex_FilteredSearch(t *testing.T) {
 	dim := 128
 	count := 1000
-	
+
 	config := types.GPUConfig{
 		DeviceID:  0,
 		MaxMemory: 1024 * 1024 * 1024,
 		Dimension: dim,
 	}
-	
+
 	idx, err := NewCUDAIndex(config)
 	require.NoError(t, err)
 	defer idx.Close()
-	
+
 	// Add vectors
 	ids := make([]int64, count)
 	vecs := make([]float32, count*dim)
@@ -35,12 +35,12 @@ func TestCUDAIndex_FilteredSearch(t *testing.T) {
 			vecs[i*dim+j] = rand.Float32()
 		}
 	}
-	
+
 	err = idx.Add(ids, vecs)
 	require.NoError(t, err)
 	err = idx.Flush()
 	require.NoError(t, err)
-	
+
 	// Create bitset: only even IDs allowed
 	bitset := make([]uint64, (count+63)/64)
 	for i := 0; i < count; i++ {
@@ -48,15 +48,15 @@ func TestCUDAIndex_FilteredSearch(t *testing.T) {
 			bitset[i/64] |= (1 << uint(i%64))
 		}
 	}
-	
+
 	query := make([]float32, dim)
 	for i := 0; i < dim; i++ {
 		query[i] = rand.Float32()
 	}
-	
+
 	results, _, err := idx.SearchWithFilter(query, 10, bitset)
 	require.NoError(t, err)
-	
+
 	assert.NotEmpty(t, results)
 	for _, res := range results {
 		assert.Equal(t, 0, int(res)%2, "Filtered ID should be even")

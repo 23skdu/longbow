@@ -4,8 +4,8 @@ package simd
 
 import (
 	"errors"
-	"unsafe"
 	"github.com/apache/arrow-go/v18/arrow/float16"
+	"unsafe"
 )
 
 func euclideanNEON(a, b []float32) (float32, error)     { return euclideanUnrolled4x(a, b) }
@@ -40,17 +40,20 @@ func euclideanF16NEON(a, b []float16.Num) (float32, error) { return euclideanF16
 func cosineF16NEON(a, b []float16.Num) (float32, error)    { return cosineF16Unrolled4x(a, b) }
 func dotF16NEON(a, b []float16.Num) (float32, error)       { return dotF16Unrolled4x(a, b) }
 
-func l2SquaredNEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
-func l2Squared128NEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
-func l2Squared384NEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
-func l2Squared768NEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
+func l2SquaredNEON(a, b []float32) (float32, error)     { return L2SquaredFloat32(a, b) }
+func l2Squared128NEON(a, b []float32) (float32, error)  { return L2SquaredFloat32(a, b) }
+func l2Squared384NEON(a, b []float32) (float32, error)  { return L2SquaredFloat32(a, b) }
+func l2Squared768NEON(a, b []float32) (float32, error)  { return L2SquaredFloat32(a, b) }
 func l2Squared1024NEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
 func l2Squared3072NEON(a, b []float32) (float32, error) { return L2SquaredFloat32(a, b) }
 
 // FastWalshHadamardTransform32NEON is a stub for non-ARM64 platforms.
-func FastWalshHadamardTransform32NEON(a []float32) error { return fastWalshHadamardTransform32Generic(a) }
+func FastWalshHadamardTransform32NEON(a []float32) error {
+	return fastWalshHadamardTransform32Generic(a)
+}
+
 // RandomRotationNEON is a stub for non-ARM64 platforms.
-func RandomRotationNEON(a []float32, seed int64) error  { return randomRotationGeneric(a, seed) }
+func RandomRotationNEON(a []float32, seed int64) error { return randomRotationGeneric(a, seed) }
 
 func dotInt4Neon(a, b []byte) (float32, error) { return dotInt4Generic(a, b) }
 func dotInt2Neon(a, b []byte) (float32, error) { return dotInt2Generic(a, b) }
@@ -68,24 +71,24 @@ func matchFloat64Neon(src []float64, val float64, op CompareOp, dst []byte) erro
 	return matchFloat64Generic(src, val, op, dst)
 }
 
-func euclidean1024NEON(a, b []float32) (float32, error) { return euclideanUnrolled4x(a, b) }
-func euclidean3072NEON(a, b []float32) (float32, error) { return euclideanUnrolled4x(a, b) }
-func dot1024NEON(a, b []float32) (float32, error)       { return dotUnrolled4x(a, b) }
-func dot3072NEON(a, b []float32) (float32, error)       { return dotUnrolled4x(a, b) }
+func euclidean1024NEON(a, b []float32) (float32, error)    { return euclideanUnrolled4x(a, b) }
+func euclidean3072NEON(a, b []float32) (float32, error)    { return euclideanUnrolled4x(a, b) }
+func dot1024NEON(a, b []float32) (float32, error)          { return dotUnrolled4x(a, b) }
+func dot3072NEON(a, b []float32) (float32, error)          { return dotUnrolled4x(a, b) }
 func euclideanFloat64NEON(a, b []float64) (float32, error) { return euclideanFloat64Unrolled4x(a, b) }
 
-func int8ToFloat32NEON(src []int8, dst []float32) { int8ToFloat32Generic(src, dst) }
-func uint8ToFloat32NEON(src []uint8, dst []float32) { uint8ToFloat32Generic(src, dst) }
-func int16ToFloat32NEON(src []int16, dst []float32) { int16ToFloat32Generic(src, dst) }
-func uint16ToFloat32NEON(src []uint16, dst []float32) { uint16ToFloat32Generic(src, dst) }
-func int32ToFloat32NEON(src []int32, dst []float32) { int32ToFloat32Generic(src, dst) }
-func uint32ToFloat32NEON(src []uint32, dst []float32) { uint32ToFloat32Generic(src, dst) }
+func int8ToFloat32NEON(src []int8, dst []float32)           { int8ToFloat32Generic(src, dst) }
+func uint8ToFloat32NEON(src []uint8, dst []float32)         { uint8ToFloat32Generic(src, dst) }
+func int16ToFloat32NEON(src []int16, dst []float32)         { int16ToFloat32Generic(src, dst) }
+func uint16ToFloat32NEON(src []uint16, dst []float32)       { uint16ToFloat32Generic(src, dst) }
+func int32ToFloat32NEON(src []int32, dst []float32)         { int32ToFloat32Generic(src, dst) }
+func uint32ToFloat32NEON(src []uint32, dst []float32)       { uint32ToFloat32Generic(src, dst) }
 func float16ToFloat32NEON(src []float16.Num, dst []float32) { float16ToFloat32Generic(src, dst) }
 
 func sigmoidNEON(src, dst []float32) { sigmoidGeneric(src, dst) }
 func softmaxNEON(src, dst []float32) { softmaxGeneric(src, dst) }
-func expNEON(src, dst []float32) { expGeneric(src, dst) }
-func logNEON(src, dst []float32) { logGeneric(src, dst) }
+func expNEON(src, dst []float32)     { expGeneric(src, dst) }
+func logNEON(src, dst []float32)     { logGeneric(src, dst) }
 
 func sumNEON(src []float32) float32 { return sumGeneric(src) }
 func maxNEON(src []float32) float32 { return maxGeneric(src) }
@@ -113,8 +116,8 @@ func accumulateWeightedScatterNEON(dst []float32, targets []uint32, weights []fl
 }
 
 func matMulNEON(a, b []float32, m, n, k int, dst []float32) { matMulGeneric(a, b, m, n, k, dst) }
-func argMaxNEON(src []float32) int { return argMaxGeneric(src) }
-func argMinNEON(src []float32) int { return argMinGeneric(src) }
+func argMaxNEON(src []float32) int                          { return argMaxGeneric(src) }
+func argMinNEON(src []float32) int                          { return argMinGeneric(src) }
 
 func andBitVectorsNEON(a, b []uint64) { AndBitVectorsGeneric(a, b) }
 func countBitVectorNEON(src []uint64) int {
@@ -147,11 +150,15 @@ var _ = func() {
 	}
 }
 
-func UnpackTQ2NEON(src []byte, dst []float32, scale, bias float32) { UnpackTQ2Generic(src, dst, scale, bias) }
-func UnpackTQ4NEON(src []byte, dst []float32, scale, bias float32) { UnpackTQ4Generic(src, dst, scale, bias) }
-func UnpackTQ8NEON(src []byte, dst []float32, scale, bias float32) { UnpackTQ8Generic(src, dst, scale, bias) }
+func UnpackTQ2NEON(src []byte, dst []float32, scale, bias float32) {
+	UnpackTQ2Generic(src, dst, scale, bias)
+}
+func UnpackTQ4NEON(src []byte, dst []float32, scale, bias float32) {
+	UnpackTQ4Generic(src, dst, scale, bias)
+}
+func UnpackTQ8NEON(src []byte, dst []float32, scale, bias float32) {
+	UnpackTQ8Generic(src, dst, scale, bias)
+}
 func PackTQ2NEON(src []float32, dst []byte) { PackTQ2Generic(src, dst) }
 func PackTQ4NEON(src []float32, dst []byte) { PackTQ4Generic(src, dst) }
 func PackTQ8NEON(src []float32, dst []byte) { PackTQ8Generic(src, dst) }
-
-

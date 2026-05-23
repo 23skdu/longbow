@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/require"
 	"github.com/23skdu/longbow/internal/store/internal/core"
+	"github.com/stretchr/testify/require"
 )
 
 // TestSQ8_HighDim_Loss validates the quantization error of SQ8 on high-dimensional vectors.

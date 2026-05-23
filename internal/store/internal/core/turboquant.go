@@ -168,7 +168,11 @@ func (e *TurboQuantEncoder) packAngles(angles []float32, dst []byte) {
 	var currentBit int
 	for _, angle := range angles {
 		norm := (angle + math.Pi) / (2 * math.Pi)
-		if norm < 0 { norm = 0 } else if norm > 1 { norm = 1 }
+		if norm < 0 {
+			norm = 0
+		} else if norm > 1 {
+			norm = 1
+		}
 		q := uint32(norm*maxVal + 0.5)
 		for k := 0; k < bits; k++ {
 			if (q & (uint32(1) << k)) != 0 {
@@ -258,6 +262,7 @@ func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 		dst[i] = norm*2*math.Pi - math.Pi
 	}
 }
+
 // PackedSize calculates the total byte size required to store a TurboQuant-encoded vector
 // for the given logical dimension, including power-of-2 padding and bit-packing overhead.
 func PackedSize(dims int, bitsPerAngle int) int {

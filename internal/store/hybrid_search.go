@@ -253,7 +253,7 @@ func (s *VectorStore) HybridSearch(ctx context.Context, name string, queryVec []
 // ReciprocalRankFusion performs Reciprocal Rank Fusion.
 func ReciprocalRankFusion(dataset string, list1, list2 []SearchResult, rrfK, k int, pool *SearchResultPool) []SearchResult {
 	scores := make(map[uint32]float32) // Use VectorID (uint32)
- 
+
 	// Helper to add scores
 	add := func(list []SearchResult) {
 		for rank, item := range list {
@@ -262,40 +262,40 @@ func ReciprocalRankFusion(dataset string, list1, list2 []SearchResult, rrfK, k i
 			scores[uint32(item.ID)] += score
 		}
 	}
- 
+
 	add(list1)
 	add(list2)
- 
+
 	// Get result slice from pool
 	var final []SearchResult
 	if pool != nil {
 		final = pool.Get(len(scores))
 	} else {
 		final = make([]SearchResult, 0, len(scores))
-	} 
+	}
 	for id, score := range scores {
 		final = append(final, SearchResult{ID: types.VectorID(id), Score: score})
 	}
- 
+
 	sort.Slice(final, func(i, j int) bool {
 		return final[i].Score > final[j].Score
 	})
- 
+
 	if len(final) > k {
 		final = final[:k]
 	}
- 
+
 	// Note: The caller is responsible for returning the slice to the pool
 	// but since SearchHybrid is the main caller and it returns the results to the user,
-	// we have a lifetime issue. 
+	// we have a lifetime issue.
 	// For now, we'll return a copy and Put the pooled slice back.
-	
+
 	results := make([]SearchResult, len(final))
 	copy(results, final)
 	if pool != nil {
 		pool.Put(final)
 	}
-	
+
 	return results
 }
 

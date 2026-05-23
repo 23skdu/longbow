@@ -125,7 +125,7 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 			expectedDim := ds.Index.GetDimension()
 			actualDim := uint32(len(queryVec)) // #nosec G115
 			dsType := InferVectorDataType(ds.Schema, "vector")
-			
+
 			// Check if dataset is logically complex (interleaved floats)
 			isComplex := dsType == VectorTypeComplex64 || dsType == VectorTypeComplex128
 			if !isComplex && ds.Schema != nil {
@@ -269,18 +269,25 @@ func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream fli
 					case "row_number", "rank", "dense_rank":
 						var intVal int64
 						switch v := val.(type) {
-						case int: intVal = int64(v)
-						case int64: intVal = v
-						case float64: intVal = int64(v)
+						case int:
+							intVal = int64(v)
+						case int64:
+							intVal = v
+						case float64:
+							intVal = int64(v)
 						}
 						builder.Field(colOffset + wfIdx).(*array.Int64Builder).Append(intVal)
 					case "sum", "avg", "min", "max":
 						var floatVal float64
 						switch v := val.(type) {
-						case float64: floatVal = v
-						case float32: floatVal = float64(v)
-						case int: floatVal = float64(v)
-						case int64: floatVal = float64(v)
+						case float64:
+							floatVal = v
+						case float32:
+							floatVal = float64(v)
+						case int:
+							floatVal = float64(v)
+						case int64:
+							floatVal = float64(v)
 						}
 						builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(floatVal)
 					default:

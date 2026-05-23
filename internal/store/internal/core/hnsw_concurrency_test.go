@@ -1,10 +1,10 @@
 package core_test
 
 import (
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"context"
 	"fmt"
+	"github.com/23skdu/longbow/internal/store/internal/core"
+	"github.com/23skdu/longbow/internal/store/types"
 	"math/rand"
 	"runtime"
 	"sync"

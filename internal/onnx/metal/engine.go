@@ -172,7 +172,7 @@ func (e *Engine) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	}
 
 	results := make([][]float32, len(texts))
-	
+
 	// Convert to C strings
 	cTexts := make([]*C.char, len(texts))
 	for i, text := range texts {
@@ -192,7 +192,7 @@ func (e *Engine) Embed(ctx context.Context, texts []string) ([][]float32, error)
 	dim := int(outDim)
 	totalFloats := len(texts) * dim
 	_embs := (*[1 << 30]C.float)(unsafe.Pointer(embPtr))[:totalFloats:totalFloats]
-	
+
 	for i := 0; i < len(texts); i++ {
 		emb := make([]float32, dim)
 		for j := 0; j < dim; j++ {

@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"errors"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // GPUHybridSearchConfig configures GPU/CPU hybrid search behavior

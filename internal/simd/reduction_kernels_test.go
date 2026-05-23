@@ -13,11 +13,11 @@ func TestArgMaxCorrectness(t *testing.T) {
 			for i := range src {
 				src[i] = rand.Float32()
 			}
-			
+
 			// Set a known max
 			expectedIdx := rand.Intn(n)
 			src[expectedIdx] = 100.0
-			
+
 			actualIdx := ArgMax(src)
 			if actualIdx != expectedIdx {
 				t.Errorf("expected %d, got %d", expectedIdx, actualIdx)
@@ -33,10 +33,10 @@ func TestArgMinCorrectness(t *testing.T) {
 			for i := range src {
 				src[i] = rand.Float32() + 10.0
 			}
-			
+
 			expectedIdx := rand.Intn(n)
 			src[expectedIdx] = -1.0
-			
+
 			actualIdx := ArgMin(src)
 			if actualIdx != expectedIdx {
 				t.Errorf("expected %d, got %d", expectedIdx, actualIdx)
@@ -51,13 +51,17 @@ func TestMatMulCorrectness(t *testing.T) {
 	b := make([]float32, k*n)
 	dstActual := make([]float32, m*n)
 	dstExpected := make([]float32, m*n)
-	
-	for i := range a { a[i] = rand.Float32() }
-	for i := range b { b[i] = rand.Float32() }
-	
+
+	for i := range a {
+		a[i] = rand.Float32()
+	}
+	for i := range b {
+		b[i] = rand.Float32()
+	}
+
 	MatMul(a, b, m, n, k, dstActual)
 	matMulGeneric(a, b, m, n, k, dstExpected)
-	
+
 	for i := range dstActual {
 		if !almostEqualReduction(dstActual[i], dstExpected[i]) {
 			t.Errorf("at index %d: expected %f, got %f", i, dstExpected[i], dstActual[i])
@@ -67,6 +71,8 @@ func TestMatMulCorrectness(t *testing.T) {
 
 func almostEqualReduction(a, b float32) bool {
 	diff := a - b
-	if diff < 0 { diff = -diff }
+	if diff < 0 {
+		diff = -diff
+	}
 	return diff < 1e-5
 }

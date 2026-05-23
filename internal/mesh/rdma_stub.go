@@ -35,10 +35,10 @@ type RDMAConnection struct {
 
 // MemoryRegion represents a registered memory area for RDMA.
 type MemoryRegion struct {
-	Addr       uintptr
-	Length     uint64
-	RKey       uint32
-	Handle     uint64 // internal handle
+	Addr   uintptr
+	Length uint64
+	RKey   uint32
+	Handle uint64 // internal handle
 }
 
 func NewRDMAContext(enabled bool) *RDMAContext {
@@ -53,7 +53,7 @@ func (c *RDMAContext) RegisterMemoryRegion(data []byte) (*MemoryRegion, error) {
 	if !c.enabled {
 		return nil, fmt.Errorf("rdma not enabled")
 	}
-	
+
 	// Simulation of ibv_reg_mr
 	mr := &MemoryRegion{
 		Addr:   uintptr(cap(data)), // simplified representation

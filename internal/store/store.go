@@ -11,9 +11,9 @@ import (
 
 	"errors"
 
+	"github.com/23skdu/longbow/pkg/loadbalancing"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/23skdu/longbow/pkg/loadbalancing"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/rs/zerolog"
@@ -34,10 +34,10 @@ import (
 // VectorStore implements flight.FlightServer and provides vector storage and search with support for HNSW, IVF, and learned indexing.
 type VectorStore struct {
 	flight.BaseFlightServer
-	mem           memory.Allocator
-	replicator    *PeerReplicator
-	pooledMem     memory.Allocator // Pooled allocator for transient ingestion buffers
-	logger        zerolog.Logger
+	mem                   memory.Allocator
+	replicator            *PeerReplicator
+	pooledMem             memory.Allocator // Pooled allocator for transient ingestion buffers
+	logger                zerolog.Logger
 	maxMemory             atomic.Int64
 	currentMemory         atomic.Int64
 	lastThrottlingLogTime atomic.Int64 // Unix timestamp in seconds of last throttling log
@@ -180,7 +180,7 @@ type VectorStore struct {
 	cdcSubscribers map[string][]chan arrow.RecordBatch
 
 	// Learned Index Predictor (Part 16)
-	indexPredictor          *IndexPerformancePredictor
+	indexPredictor *IndexPerformancePredictor
 	// activeEmbeddingProvider and activeEmbeddingModel track the currently active
 	// EmbeddingGenerator backend (set via SetActiveEmbedding). These are propagated
 	// into QueryFeatures by RecordQueryPerformance for learned index training.
@@ -214,7 +214,7 @@ type persistenceJob struct {
 func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes int64, _ int64, _ time.Duration) *VectorStore {
 	memCfg := DefaultMemoryConfig()
 	memCfg.MaxMemory = maxMemoryBytes
- 
+
 	vs := &VectorStore{
 		mem:          mem,
 		pooledMem:    NewPooledAllocator(),
@@ -224,30 +224,30 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 		resultPool:   NewSearchResultPool(),
 	}
 	vs.ctx, vs.cancel = context.WithCancel(context.Background()) // #nosec G118
- 
+
 	// Initialize NUMA topology if on Linux
 	vs.initNUMA(logger)
- 
+
 	// Initialize empty datasets map
 	emptyMap := make(map[string]*Dataset)
 	vs.datasets.Store(&emptyMap)
- 
+
 	vs.maxMemory.Store(maxMemoryBytes)
 	vs.indexQueue = NewIndexJobQueueLockFree(DefaultIndexJobQueueConfig())
 	vs.ingestionQueue = NewIngestionRingBuffer(4096)    // Absorbs burst traffic without blocking DoPut
 	vs.persistenceQueue = make(chan persistenceJob, 64) // Reduced from 10000 to prevent OOM
- 
+
 	vs.nsManager = newNamespaceManager()
 	vs.versionManager = NewVersionManager()
- 
+
 	// Default Cache: 1024 entries, 60s TTL
- 
+
 	// In future, make this configurable per dataset or global
 	vs.queryCache = cache.NewQueryCache[[]SearchResult](1024, 60*time.Second, "global")
- 
+
 	// Initialize Adaptive GC Controller (disabled by default)
 	vs.gcController = gc.NewAdaptiveGCController(gc.DefaultAdaptiveGCConfig())
- 
+
 	// Initialize Compaction
 	vs.compactionConfig = *DefaultCompactionConfig()
 	vs.compactionWorker = NewCompactionWorker(vs, &vs.compactionConfig)
@@ -259,7 +259,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 
 	vs.workerWg.Add(1)
 	go vs.runPersistenceWorker()
- 
+
 	// Initialize parser pools
 	vs.vectorSearchParserPool = sync.Pool{
 		New: func() any {
@@ -271,10 +271,10 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 			return query.NewZeroAllocTemporalParser()
 		},
 	}
- 
+
 	vs.replicator = NewPeerReplicator(DefaultReplicatorConfig())
 	_ = vs.replicator.Start()
- 
+
 	// Initialize Learned Index Predictor (Part 16/v0.1.9)
 	predictorCfg := LearnedIndexConfig{
 		EnableAutoSelection: true,
@@ -296,12 +296,12 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 	vs.indexAdapter = NewRuntimeIndexAdapter(vs.logger, vs.indexPredictor, adaptConfig, vs)
 	vs.indexAdapter.WithIndexSwitcher(vs)
 	vs.indexAdapter.Start()
- 
+
 	// Initialize Flight client pool for distributed coordination
 	vs.pool = NewFlightClientPool(DefaultFlightClientPoolConfig())
- 
+
 	vs.admission = NewAdmissionController(&vs.maxMemory, &vs.currentMemory, nil, vs.logger)
- 
+
 	// Initialize Quantization Auto-Tuner (v0.1.9)
 	vs.quantTuner = NewQuantizationTuner(vs.logger, vs)
 	vs.workerWg.Add(1)
@@ -342,10 +342,10 @@ func (vs *VectorStore) initNUMA(logger zerolog.Logger) {
 		metrics.NUMANodeCount.Set(0)
 		return
 	}
- 
+
 	vs.numaTopology = topo
 	metrics.NUMANodeCount.Set(float64(topo.NumNodes))
- 
+
 	if topo.NumNodes > 1 {
 		vs.numaEnabled = true
 		metrics.NUMAEnabled.Set(1)
@@ -857,7 +857,7 @@ func (vs *VectorStore) getGPUIndex(dim int) (gputypes.Index, error) {
 // SetTemporalIndex configures the temporal index for Part 22
 func (vs *VectorStore) SetTemporalIndex(cfg TemporalConfig) {
 	vs.temporalConfig = cfg
- 
+
 	// Apply to existing datasets
 	vs.IterateDatasets(func(name string, ds *Dataset) {
 		if ds.TemporalIndex == nil && cfg.Enabled {
@@ -1058,8 +1058,6 @@ func (vs *VectorStore) WaitForIndexing(name string) {
 	}
 }
 
-
-
 // ClosePersistence closes the persistence engine.
 func (vs *VectorStore) ClosePersistence() error {
 	engine := vs.engine.Load()
@@ -1127,6 +1125,7 @@ func (vs *VectorStore) broadcastCDC(dataset string, batches []arrow.RecordBatch)
 		}
 	}
 }
+
 // GetNeighborsBulk retrieves the adjacency lists for multiple nodes in the vector index.
 func (vs *VectorStore) GetNeighborsBulk(ctx context.Context, datasetName string, nodeIDs []uint32) (map[uint32][]uint32, error) {
 	ds, ok := vs.getDataset(datasetName)

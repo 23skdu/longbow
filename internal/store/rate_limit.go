@@ -13,9 +13,9 @@ type RateLimitConfig struct {
 	// RequestsPerSecond is the maximum number of requests allowed per second.
 	RequestsPerSecond float64
 	// Burst is the maximum number of requests that can be handled at once.
-	Burst             int
+	Burst int
 	// Enabled indicates whether rate limiting is active.
-	Enabled           bool
+	Enabled bool
 }
 
 // NamespaceRateLimiter implements rate limiting for a specific namespace.
@@ -191,4 +191,3 @@ func (vs *VectorStore) GetNamespaceRateLimit(namespace string) (RateLimitConfig,
 	}
 	return vs.rateLimiterManager.GetLimiter(namespace).GetConfig(), nil
 }
-

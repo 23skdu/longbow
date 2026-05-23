@@ -103,7 +103,7 @@ func TestVectorStore_MapInternalToUserIDs(t *testing.T) {
 	)
 
 	ds := NewDataset("test-id-map", schema)
-	
+
 	// Create mock index
 	mockIdx := &mockVectorIndex{
 		locations: map[uint32]Location{
@@ -210,4 +210,3 @@ func TestDoGetSchemaAllocations(t *testing.T) {
 	// This confirms the schema field allocation overhead is completely eliminated!
 	assert.LessOrEqual(t, allocs, float64(205), "MapInternalToUserIDs is allocating too much memory")
 }
-

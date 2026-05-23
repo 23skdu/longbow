@@ -34,7 +34,7 @@ func (h *ArrowHNSW) InsertWithVector(id uint32, vec any, level int) error {
 		}
 		if data == nil || h.compareAndSwapData(current, data) {
 			h.commitID(id)
-			
+
 			// Update HNSWNodeCount gauge on successful commit
 			if !h.disableNodeCountMetric.Load() {
 				shouldUpdateAll := metrics.GlobalHotpathSampler.AlwaysSample
@@ -74,10 +74,10 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	defer func() {
 		duration := time.Since(start).Seconds()
 		typeStr := h.config.DataType.String()
-		
+
 		shouldUpdateAll := metrics.GlobalHotpathSampler.AlwaysSample
 		var increment float64 = 1.0
-		
+
 		if !skipSet && (shouldUpdateAll || int(id)%100 == 0) {
 			if !shouldUpdateAll {
 				increment = 100.0
@@ -117,17 +117,28 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		if dims == 0 {
 			inputDims := 0
 			switch v := vec.(type) {
-			case []float16.Num: inputDims = len(v)
-			case []float32: inputDims = len(v)
-			case []float64: inputDims = len(v)
-			case []int8: inputDims = len(v)
-			case []uint8: inputDims = len(v)
-			case []int16: inputDims = len(v)
-			case []uint16: inputDims = len(v)
-			case []int32: inputDims = len(v)
-			case []uint32: inputDims = len(v)
-			case []int64: inputDims = len(v)
-			case []uint64: inputDims = len(v)
+			case []float16.Num:
+				inputDims = len(v)
+			case []float32:
+				inputDims = len(v)
+			case []float64:
+				inputDims = len(v)
+			case []int8:
+				inputDims = len(v)
+			case []uint8:
+				inputDims = len(v)
+			case []int16:
+				inputDims = len(v)
+			case []uint16:
+				inputDims = len(v)
+			case []int32:
+				inputDims = len(v)
+			case []uint32:
+				inputDims = len(v)
+			case []int64:
+				inputDims = len(v)
+			case []uint64:
+				inputDims = len(v)
 			}
 			if inputDims > 0 {
 				h.dims.Store(int32(inputDims))
@@ -170,7 +181,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 
 	if !skipSet {
 		ensurePrivate()
-		
+
 		if !h.sharedVectorSpace.Load() {
 			oldVer := data.LockNode(0, id)
 			err := data.SetVector(id, vec)
@@ -179,7 +190,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 				return nil, err
 			}
 		}
-		
+
 		// PERSIST LEVEL: Ensure the node's hierarchical level is stored in metadata
 		cID := int(id) / types.ChunkSize
 		cOff := int(id) % types.ChunkSize
@@ -210,7 +221,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 					newMMax0 = math.MaxInt32
 				}
 
-				h.m.Store(int32(newM))       // #nosec G115
+				h.m.Store(int32(newM))         // #nosec G115
 				h.mMax.Store(int32(newMMax))   // #nosec G115
 				h.mMax0.Store(int32(newMMax0)) // #nosec G115
 				h.config.M, h.config.MMax, h.config.MMax0 = int(newM), int(newMMax), int(newMMax0)
@@ -224,10 +235,14 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			switch enc := h.oopqEncoder.(type) {
 			case *pq.PQEncoder:
 				code, err := enc.Encode(v32)
-				if err == nil { _ = data.SetVectorPQ(id, code) }
+				if err == nil {
+					_ = data.SetVectorPQ(id, code)
+				}
 			case *pq.OPQEncoder:
 				code, err := enc.Encode(v32)
-				if err == nil { _ = data.SetVectorPQ(id, code) }
+				if err == nil {
+					_ = data.SetVectorPQ(id, code)
+				}
 			}
 		}
 	}
@@ -265,7 +280,9 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 				h.epMu.Unlock()
 				return nil, err
 			}
-			if len(neighbors) > 0 { ep = neighbors[0].ID }
+			if len(neighbors) > 0 {
+				ep = neighbors[0].ID
+			}
 		}
 	}
 	h.epMu.Unlock()
@@ -286,15 +303,23 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	for l := min(level, maxL+1); l >= 0 && ep != math.MaxUint32; l-- {
 		ef := cachedEf
 		neighbors, err := h.searchLayerForInsert(context.Background(), ctx, vec, ep, ef, l, data)
-		if err != nil { return nil, err }
-		
+		if err != nil {
+			return nil, err
+		}
+
 		var filtered []types.Candidate
-		for _, nb := range neighbors { if nb.ID != id { filtered = append(filtered, nb) } }
+		for _, nb := range neighbors {
+			if nb.ID != id {
+				filtered = append(filtered, nb)
+			}
+		}
 		neighbors = filtered
 
 		maxConn := cachedMMax
-		if l == 0 { maxConn = cachedMMax0 }
-		
+		if l == 0 {
+			maxConn = cachedMMax0
+		}
+
 		if len(neighbors) > 0 {
 			ensurePrivate()
 			for _, nb := range neighbors {

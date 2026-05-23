@@ -14,9 +14,9 @@ import (
 	"github.com/23skdu/longbow/internal/query"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/tracing"
+	"github.com/23skdu/longbow/pkg/retry"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
-	"github.com/23skdu/longbow/pkg/retry"
 	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -94,7 +94,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 	groupChs := make([]chan []SearchResult, len(peerGroups))
 
 	isHybrid := req.TextQuery != "" || (req.Alpha > 0 && req.Alpha < 1.0)
-	
+
 	// Request Body
 	remoteReq := *req // Copy struct
 	remoteReq.LocalOnly = true
@@ -183,7 +183,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 
 							ids := col0.(*array.Uint64).Uint64Values()
 							scores := col1.(*array.Float32).Float32Values()
-							
+
 							var sourceValues []uint8
 							if sourceColIdx != -1 {
 								sourceValues = rec.Column(sourceColIdx).(*array.Uint8).Uint8Values()
@@ -291,12 +291,12 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 				}
 			}
 		}
-		
+
 		metrics.GlobalSearchFanoutSize.Observe(float64(len(allDense) + len(allSparse)))
 
 		// Sort each list globally
 		// Dense scores (e.g., Cosine/DotProduct) are descending. Distance (L2) is ascending.
-		// RRF assumes sorted lists where index 0 is best. 
+		// RRF assumes sorted lists where index 0 is best.
 		// We use a simple descending sort, assuming scores are higher-is-better for hybrid.
 		sort.Slice(allDense, func(i, j int) bool { return allDense[i].Score > allDense[j].Score })
 		sort.Slice(allSparse, func(i, j int) bool { return allSparse[i].Score > allSparse[j].Score })

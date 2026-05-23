@@ -1,8 +1,8 @@
 package store
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"context"
+	"github.com/23skdu/longbow/internal/store/types"
 	"sort"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -74,7 +74,7 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 	newRecords := make([]arrow.RecordBatch, 0, len(oldRecords))
 	newTombstones := make(map[int]*types.Bitset)
 	indexMapping := make(map[uint32]any)
-	
+
 	oldToNewBatchIdx := make(map[int]int)
 	for i, info := range infos {
 		oldToNewBatchIdx[info.idx] = i
@@ -132,12 +132,12 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 	// Handle records added during compaction
 	currentRecords := d.Records.Read()
 	addedDuring := currentRecords[len(oldRecords):]
-	
+
 	// Release old records that were part of compaction
 	for _, r := range currentRecords[:len(oldRecords)] {
 		r.Release()
 	}
-	
+
 	finalRecords := append(newRecords, addedDuring...)
 	d.Records.UpdateInPlace(finalRecords)
 	d.Tombstones = newTombstones
@@ -191,7 +191,6 @@ func (d *Dataset) Compact(fragmentedIdxs, hotIdxs []int) error {
 	metrics.CompactionRunsTotal.WithLabelValues(d.Name).Inc()
 	return nil
 }
-
 
 // squashBatch creates a new RecordBatch by removing rows marked in the bitset.
 // It returns the new batch and a mapping of oldRowIdx -> newRowIdx.

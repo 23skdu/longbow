@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"cloud.google.com/go/storage"
 	"github.com/23skdu/longbow/client"
 	"github.com/23skdu/longbow/internal/onnx"
 	"github.com/23skdu/longbow/pkg/version"
@@ -27,7 +28,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"cloud.google.com/go/storage"
 )
 
 func main() {
@@ -651,7 +651,6 @@ func runDeleteNamespace(ctx context.Context, args []string) {
 	actionBody, _ := json.Marshal(map[string]string{"name": *name})
 	action := &flight.Action{Type: "DeleteNamespace", Body: actionBody}
 
-
 	stream, err := sc.DoAction(ctx, action)
 	if err != nil {
 		log.Fatalf("Failed to delete namespace: %v", err)
@@ -757,7 +756,6 @@ func runStats(ctx context.Context, args []string) {
 
 	actionBody, _ := json.Marshal(map[string]string{"dataset": *name})
 	action := &flight.Action{Type: "DiscoveryStatus", Body: actionBody}
-
 
 	stream, err := sc.DoAction(ctx, action)
 	if err != nil {
@@ -1030,7 +1028,6 @@ func runDelete(ctx context.Context, args []string) {
 	actionBody, _ := json.Marshal(req)
 	action := &flight.Action{Type: "Delete", Body: actionBody}
 
-
 	_, err := sc.DoAction(ctx, action)
 	if err != nil {
 		log.Fatalf("Delete failed: %v", err)
@@ -1280,7 +1277,6 @@ func runDrop(ctx context.Context, args []string) {
 	actionBody, _ := json.Marshal(map[string]string{"dataset": *dataset})
 	action := &flight.Action{Type: "DropDataset", Body: actionBody}
 
-
 	stream, err := sc.DoAction(ctx, action)
 	if err != nil {
 		log.Fatalf("Failed to drop dataset: %v", err)
@@ -1395,7 +1391,6 @@ func runExport(ctx context.Context, args []string) {
 		f = tmp
 	}
 
-
 	var opts []ipc.Option
 	opts = append(opts, ipc.WithSchema(reader.Schema()))
 
@@ -1439,7 +1434,6 @@ func runExport(ctx context.Context, args []string) {
 		_ = f.Close() // #nosec G104
 		runExportGCS(ctx, *fileFlag, f.Name())
 	}
-
 
 	fmt.Printf("Successfully exported %d rows to %s in %v\n", totalRows, *fileFlag, time.Since(start))
 }

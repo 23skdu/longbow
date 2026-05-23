@@ -9,7 +9,7 @@ import (
 
 func TestQuery_ComprehensiveParsing(t *testing.T) {
 	logger := zerolog.Nop()
-	
+
 	t.Run("TicketQuery_AllFields", func(t *testing.T) {
 		parser := NewZeroAllocTicketParser(&logger)
 		// A massive JSON that hits all fields in TicketQuery struct
@@ -39,7 +39,7 @@ func TestQuery_ComprehensiveParsing(t *testing.T) {
 				"k": 20
 			}
 		}`)
-		
+
 		req, err := parser.Parse(data)
 		assert.NoError(t, err)
 		assert.Equal(t, "full_query", req.Name)
@@ -49,14 +49,14 @@ func TestQuery_ComprehensiveParsing(t *testing.T) {
 		assert.NotNil(t, req.Recommend)
 		assert.Len(t, req.Filters, 2)
 	})
-	
+
 	t.Run("ParserErrorPaths", func(t *testing.T) {
 		parser := NewZeroAllocTicketParser(&logger)
-		
+
 		// Invalid JSON
 		_, err := parser.Parse([]byte(`{invalid`))
 		assert.Error(t, err)
-		
+
 		// Valid JSON but wrong types for structured fields
 		_, err = parser.Parse([]byte(`{"filters": "not_an_array"}`))
 		assert.Error(t, err)

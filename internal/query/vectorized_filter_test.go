@@ -42,7 +42,7 @@ func TestVectorizedFilter_Comprehensive(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), res.NumRows())
 		res.Release()
-		
+
 		filters = []Filter{
 			{Field: "f64", Operator: ">", Value: "3.0"},
 		}
@@ -76,7 +76,7 @@ func TestVectorizedFilter_Comprehensive(t *testing.T) {
 		require.NoError(t, err)
 		assert.Equal(t, int64(2), res.NumRows())
 		res.Release()
-		
+
 		filters = []Filter{
 			{
 				Logic: "OR",
@@ -91,7 +91,7 @@ func TestVectorizedFilter_Comprehensive(t *testing.T) {
 		assert.Equal(t, int64(4), res.NumRows())
 		res.Release()
 	})
-	
+
 	t.Run("ContainsOperator", func(t *testing.T) {
 		filters := []Filter{
 			{Field: "str", Operator: "CONTAINS", Value: "a"},

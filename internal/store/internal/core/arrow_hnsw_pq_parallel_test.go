@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"context"
+	"github.com/23skdu/longbow/internal/store/types"
 	"math/rand"
 	"testing"
 

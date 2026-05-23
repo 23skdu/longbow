@@ -35,14 +35,14 @@ func TestReproGraphRAGSearchRace(t *testing.T) {
 		}, nil,
 	)
 	ds := NewDataset("test", schema)
-	
+
 	config := DefaultShardedHNSWConfig()
 	config.Dimension = uint32(dims)
 	config.NumShards = 4
-	
+
 	idx := NewShardedHNSW(config, ds)
 	ds.Index = idx
-	
+
 	// Insert data
 	ctx := context.Background()
 	rowIdxs := make([]int, numVectors)
@@ -51,12 +51,12 @@ func TestReproGraphRAGSearchRace(t *testing.T) {
 		rowIdxs[i] = i
 		batchIdxs[i] = 0
 	}
-	
+
 	_, err := idx.AddBatch(ctx, []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
 	if err != nil {
 		t.Fatalf("AddBatch failed: %v", err)
 	}
-	
+
 	// Setup some graph edges (GraphRAG requires a graph)
 	for i := 0; i < 1000; i++ {
 		src := uint32(rand.Intn(numVectors))
@@ -67,12 +67,12 @@ func TestReproGraphRAGSearchRace(t *testing.T) {
 			Weight:  rand.Float32(),
 		})
 	}
-	
+
 	// Concurrent GraphRAG search
 	numConcurrent := 20
 	var wg sync.WaitGroup
 	wg.Add(numConcurrent)
-	
+
 	for i := 0; i < numConcurrent; i++ {
 		go func() {
 			defer wg.Done()
@@ -81,15 +81,15 @@ func TestReproGraphRAGSearchRace(t *testing.T) {
 				for k := range query {
 					query[k] = rand.Float32()
 				}
-				
+
 				// Get initial results as seeds
 				results, _ := ds.SearchDataset(ctx, query, 10)
-				
+
 				// RankWithGraphDistributed
 				_ = ds.Graph.RankWithGraphDistributed(ctx, "test", query, results, 0.5, 2, ds)
 			}
 		}()
 	}
-	
+
 	wg.Wait()
 }

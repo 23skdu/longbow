@@ -22,7 +22,6 @@ func EuclideanDistance(a, b []float32) (float32, error) {
 	}
 
 	dimension := len(a)
-	
 
 	// Use blocked SIMD for very high dimensions (> 3072) or fallback to generic SIMD
 	if dimension > 3072 {
@@ -227,7 +226,6 @@ func L2SquaredFloat64(a, b []float64) (float32, error) {
 	}
 	return l2SquaredFloat64Unrolled4x(a, b)
 }
-
 
 // DotProductComplex64 calculates the real part of the dot product of two Complex64 vectors.
 func DotProductComplex64(a, b []complex64) (float32, error) {

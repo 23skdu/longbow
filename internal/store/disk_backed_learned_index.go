@@ -28,16 +28,16 @@ type DiskBackedLearnedIndex struct {
 	mu        sync.RWMutex
 	dimension int
 	config    *DiskANNConfig
-	
+
 	// File and mmap state
 	f    *os.File
 	data []byte
-	
+
 	// In-memory offsets for fast access into mmap
 	vectorOffset uint64
 	graphOffset  uint64
 	numNodes     uint32
-	
+
 	// Metadata
 	path  string
 	built bool
@@ -123,14 +123,14 @@ func (idx *DiskBackedLearnedIndex) Save(path string) error {
 	binary.LittleEndian.PutUint32(header[4:8], diskBackedLearnedVersion)
 	binary.LittleEndian.PutUint32(header[8:12], idx.numNodes)
 	binary.LittleEndian.PutUint32(header[12:16], uint32(idx.dimension)) // #nosec G115
-	
+
 	// SSD page-aligned offsets (4096 bytes)
 	const pageSize = 4096
 	idx.vectorOffset = pageSize
 	vecSize := uint64(idx.numNodes) * uint64(idx.dimension) * 4 // #nosec G115
 	vecSizeAligned := ((vecSize + pageSize - 1) / pageSize) * pageSize
 	idx.graphOffset = idx.vectorOffset + vecSizeAligned
-	
+
 	binary.LittleEndian.PutUint64(header[16:24], idx.vectorOffset)
 	binary.LittleEndian.PutUint64(header[24:32], idx.graphOffset)
 	binary.LittleEndian.PutUint32(header[32:36], uint32(idx.config.MaxDegree)) // #nosec G115
@@ -163,7 +163,7 @@ func (idx *DiskBackedLearnedIndex) Save(path string) error {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -183,31 +183,39 @@ func (idx *DiskBackedLearnedIndex) Search(query []float32, k int) ([]IndexSearch
 	// Vamana greedy search on mmap
 	curr := uint32(0) // Start at node 0 (entry point)
 	visited := make(map[uint32]bool)
-	
+
 	bestDist, _ := idx.getDistance(query, curr)
-	
+
 	for {
 		visited[curr] = true
 		neighbors := idx.getNeighbors(curr)
-		
+
 		// Asynchronously prefetch neighbor vectors into memory cache using unix.Madvise
 		// to optimize low-level SSD page read-ahead sizing for sub-millisecond fetches
 		for _, neighbor := range neighbors {
-			if neighbor == 0 && curr != 0 { continue }
-			if visited[neighbor] { continue }
-			
+			if neighbor == 0 && curr != 0 {
+				continue
+			}
+			if visited[neighbor] {
+				continue
+			}
+
 			neighborOffset := idx.vectorOffset + uint64(neighbor)*uint64(idx.dimension)*4 // #nosec G115
-			prefSize := uint64(idx.dimension) * 4 // #nosec G115
-			_ = unix.Madvise(idx.data[neighborOffset : neighborOffset+prefSize], unix.MADV_WILLNEED)
+			prefSize := uint64(idx.dimension) * 4                                         // #nosec G115
+			_ = unix.Madvise(idx.data[neighborOffset:neighborOffset+prefSize], unix.MADV_WILLNEED)
 		}
-		
+
 		var nextNode uint32
 		found := false
-		
+
 		for _, neighbor := range neighbors {
-			if neighbor == 0 && curr != 0 { continue } // End of neighbors
-			if visited[neighbor] { continue }
-			
+			if neighbor == 0 && curr != 0 {
+				continue
+			} // End of neighbors
+			if visited[neighbor] {
+				continue
+			}
+
 			dist, _ := idx.getDistance(query, neighbor)
 			if dist < bestDist {
 				bestDist = dist
@@ -215,7 +223,7 @@ func (idx *DiskBackedLearnedIndex) Search(query []float32, k int) ([]IndexSearch
 				found = true
 			}
 		}
-		
+
 		if !found {
 			break
 		}
@@ -227,24 +235,26 @@ func (idx *DiskBackedLearnedIndex) Search(query []float32, k int) ([]IndexSearch
 
 func (idx *DiskBackedLearnedIndex) getDistance(query []float32, nodeID uint32) (float32, error) {
 	offset := idx.vectorOffset + uint64(nodeID)*uint64(idx.dimension)*4 // #nosec G115
-	vecData := idx.data[offset : offset+uint64(idx.dimension)*4]       // #nosec G115
-	
+	vecData := idx.data[offset : offset+uint64(idx.dimension)*4]        // #nosec G115
+
 	// Zero-copy direct memory cast using unsafe.Slice for sub-nanosecond access
 	nodeVec := unsafe.Slice((*float32)(unsafe.Pointer(&vecData[0])), idx.dimension) // #nosec G103
-	
+
 	return simd.EuclideanDistance(query, nodeVec)
 }
 
 func (idx *DiskBackedLearnedIndex) getNeighbors(nodeID uint32) []uint32 {
 	maxDegree := uint32(idx.config.MaxDegree) // #nosec G115
 	offset := idx.graphOffset + uint64(nodeID)*uint64(maxDegree+1)*4
-	
+
 	count := binary.LittleEndian.Uint32(idx.data[offset : offset+4])
-	if count > maxDegree { count = maxDegree }
+	if count > maxDegree {
+		count = maxDegree
+	}
 	if count == 0 {
 		return nil
 	}
-	
+
 	// Zero-copy direct memory cast using unsafe.Slice for sub-nanosecond access
 	neighborsData := idx.data[offset+4 : offset+4+uint64(count)*4]
 	neighbors := unsafe.Slice((*uint32)(unsafe.Pointer(&neighborsData[0])), count) // #nosec G103
@@ -261,7 +271,7 @@ func (idx *DiskBackedLearnedIndex) Load(path string) error {
 	if err != nil {
 		return err
 	}
-	
+
 	fi, err := f.Stat()
 	if err != nil {
 		_ = f.Close()

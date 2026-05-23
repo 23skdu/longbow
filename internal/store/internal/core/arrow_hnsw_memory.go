@@ -13,11 +13,10 @@ import (
 func (h *ArrowHNSW) ensureChunk(cID, cOff, dims int) (*types.GraphData, error) {
 	h.growMu.Lock()
 	defer h.growMu.Unlock()
-	
+
 	newData, _, err := h.ensureChunkInternalLocked(cID, cOff, dims)
 	return newData, err
 }
-
 
 func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *types.GraphData, cloned bool, err error) {
 	data := h.data.Load()
@@ -129,7 +128,9 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 
 	// Ensure metadata slices are appropriately sized
 	numChunks := (capacity + types.ChunkSize - 1) / types.ChunkSize
-	if numChunks <= 0 { numChunks = 1 }
+	if numChunks <= 0 {
+		numChunks = 1
+	}
 	newData.GrowMetadataSlices(numChunks)
 
 	// Ensure structural allocation

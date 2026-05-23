@@ -1,11 +1,11 @@
 package core
 
 import (
-	"sync"
-	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/pq"
-	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow"
+	"sync"
 )
 
 // MockDataset implements types.IndexDataProvider for testing
@@ -41,23 +41,23 @@ func (m *MockDataset) GetRecords() []arrow.RecordBatch {
 	copy(recs, m.Records)
 	return recs
 }
-func (m *MockDataset) GetSchema() *arrow.Schema { return m.Schema }
+func (m *MockDataset) GetSchema() *arrow.Schema             { return m.Schema }
 func (m *MockDataset) GetTombstones() map[int]*types.Bitset { return nil }
-func (m *MockDataset) GetPQEncoder() *pq.PQEncoder { return m.PQEncoder }
-func (m *MockDataset) RLockData() { m.mu.RLock() }
-func (m *MockDataset) RUnlockData() { m.mu.RUnlock() }
-func (m *MockDataset) Lock() { m.mu.Lock() }
-func (m *MockDataset) Unlock() { m.mu.Unlock() }
+func (m *MockDataset) GetPQEncoder() *pq.PQEncoder          { return m.PQEncoder }
+func (m *MockDataset) RLockData()                           { m.mu.RLock() }
+func (m *MockDataset) RUnlockData()                         { m.mu.RUnlock() }
+func (m *MockDataset) Lock()                                { m.mu.Lock() }
+func (m *MockDataset) Unlock()                              { m.mu.Unlock() }
 func (m *MockDataset) GenerateFilterBitset(filters []query.Filter, expr types.FilterExpr) (*types.Bitset, error) {
 	return nil, nil
 }
 func (m *MockDataset) ResetTombstones() {}
-func (m *MockDataset) GetIndex() any { return nil }
+func (m *MockDataset) GetIndex() any    { return nil }
 
 func NewMockDataset(name string, schema *arrow.Schema) *MockDataset {
 	return &MockDataset{
-		Name: name,
+		Name:    name,
 		Records: make([]arrow.RecordBatch, 0),
-		Schema: schema,
+		Schema:  schema,
 	}
 }

@@ -20,7 +20,7 @@ import (
 func TestTQGPUParity(t *testing.T) {
 	dims := 128
 	bits := 4
-	
+
 	// Setup HNSW with GPU
 	config := types.ArrowHNSWConfig{
 		M:              16,
@@ -29,9 +29,9 @@ func TestTQGPUParity(t *testing.T) {
 		Dims:           dims,
 		TurboQuantBits: bits,
 	}
-	
+
 	h := NewArrowHNSWWithConfig(nil, config, nil)
-	
+
 	err := h.InitGPU(0, zerolog.Nop())
 	if err != nil {
 		t.Skip("GPU not available for TQ parity test:", err)
@@ -48,7 +48,7 @@ func TestTQGPUParity(t *testing.T) {
 			vectors[i*dims+j] = rand.Float32()
 		}
 	}
-	
+
 	// Encode vectors to TQ
 	encoder := NewTurboQuantEncoder(dims, bits, 42)
 	tqStride := encoder.PackedSize()
@@ -79,27 +79,29 @@ func TestTQGPUParity(t *testing.T) {
 		// 2. CPU verification for each GPU result
 		for j := 0; j < len(gpuIds); j++ {
 			id := gpuIds[j]
-			if id == -1 { continue }
-			
+			if id == -1 {
+				continue
+			}
+
 			// Get original TQ code
 			code := tqData[id*int64(tqStride) : (id+1)*int64(tqStride)]
-			
+
 			// Decode on CPU
 			decoded, err := encoder.Decode(code)
 			assert.NoError(t, err)
-			
+
 			// Compute distance on CPU (rotated space)
 			rotatedQuery := make([]float32, encoder.pow2)
 			copy(rotatedQuery, query)
 			_ = simd.RandomRotation(rotatedQuery, 42)
-			
+
 			var cpuDistSq float32
 			for k := 0; k < len(rotatedQuery); k++ {
 				d := rotatedQuery[k] - decoded[k]
 				cpuDistSq += d * d
 			}
 			cpuDist := float32(math.Sqrt(float64(cpuDistSq)))
-			
+
 			// Compare
 			// Allowing small delta due to float precision differences in GPU sin/cos
 			// and different summation order. 1e-3 is reasonable for TQ distances.
@@ -111,7 +113,7 @@ func TestTQGPUParity(t *testing.T) {
 func TestTQGreedyGPUParity(t *testing.T) {
 	dims := 128
 	bits := 4
-	
+
 	config := types.ArrowHNSWConfig{
 		M:              16,
 		EfConstruction: 100,
@@ -119,7 +121,7 @@ func TestTQGreedyGPUParity(t *testing.T) {
 		Dims:           dims,
 		TurboQuantBits: bits,
 	}
-	
+
 	h := NewArrowHNSWWithConfig(nil, config, nil)
 	err := h.InitGPU(0, zerolog.Nop())
 	if err != nil {
@@ -134,7 +136,7 @@ func TestTQGreedyGPUParity(t *testing.T) {
 	encoder := NewTurboQuantEncoder(dims, bits, 42)
 	tqStride := encoder.PackedSize()
 	tqData := make([]byte, numVectors*tqStride)
-	
+
 	for i := 0; i < numVectors; i++ {
 		ids[i] = int64(i)
 		for j := 0; j < dims; j++ {
@@ -161,15 +163,17 @@ func TestTQGreedyGPUParity(t *testing.T) {
 
 	// Test Greedy Search
 	query := make([]float32, dims)
-	for i := range query { query[i] = 0.5 }
+	for i := range query {
+		query[i] = 0.5
+	}
 
 	entryPoint := uint32(0)
-	
+
 	// Pre-rotate query for CPU distance calculation
 	rotatedQuery := make([]float32, encoder.pow2)
 	copy(rotatedQuery, query)
 	_ = simd.RandomRotation(rotatedQuery, 42)
-	
+
 	// Get entry point distance on CPU
 	entryCode := tqData[entryPoint*uint32(tqStride) : (entryPoint+1)*uint32(tqStride)]
 	entryDecoded, _ := encoder.Decode(entryCode)

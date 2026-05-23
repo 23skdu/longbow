@@ -13,7 +13,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
-
 // EnsureTimestampZeroCopy ensures the record has a timestamp column, adding one if missing (zero-copy optimized)
 func EnsureTimestampZeroCopy(mem memory.Allocator, rec arrow.RecordBatch) (arrow.RecordBatch, error) {
 	schema := rec.Schema()

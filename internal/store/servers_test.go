@@ -16,13 +16,13 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/status"
 	"google.golang.org/grpc/test/bufconn"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 const testBufSize = 1024 * 1024
@@ -567,4 +567,3 @@ func TestResetDatasetAction(t *testing.T) {
 	require.NotNil(t, datasetsPtr)
 	assert.NotContains(t, *datasetsPtr, "reset_test_ds")
 }
-

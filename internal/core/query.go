@@ -84,37 +84,37 @@ type GeoBoundingBox struct {
 
 // GeoSearchRequest defines the request format for Geospatial search
 type GeoSearchRequest struct {
-	Dataset    string                 `json:"dataset"`
-	Center     GeoPoint               `json:"center"`
-	RadiusKm   float64                `json:"radius_km"`
-	Box        *GeoBoundingBox        `json:"box,omitempty"`
-	K          int                    `json:"k"`
-	Filters    []Filter               `json:"filters,omitempty"`
-	SearchType string                 `json:"search_type"` // "radius", "box", "hybrid"
+	Dataset    string          `json:"dataset"`
+	Center     GeoPoint        `json:"center"`
+	RadiusKm   float64         `json:"radius_km"`
+	Box        *GeoBoundingBox `json:"box,omitempty"`
+	K          int             `json:"k"`
+	Filters    []Filter        `json:"filters,omitempty"`
+	SearchType string          `json:"search_type"` // "radius", "box", "hybrid"
 }
 
 // VectorSearchRequest defines the request format for VectorSearch action
 type VectorSearchRequest struct {
-	Dataset         string                 `json:"dataset"`
-	Vector          []float32              `json:"vector,omitempty"`
-	Vectors         [][]float32            `json:"vectors,omitempty"`
-	K               int                    `json:"k"`
-	Filters         []Filter               `json:"filters,omitempty"`
-	FilterExpr      map[string]interface{} `json:"filter_expr,omitempty"`
-	LocalOnly       bool                   `json:"local_only,omitempty"`
-	TextQuery       string                 `json:"text_query,omitempty"`
-	Alpha           float32                `json:"alpha,omitempty"`
-	GraphAlpha      float32                `json:"graph_alpha,omitempty"`
-	GraphDepth      int                    `json:"graph_depth,omitempty"`
-	IncludeVectors  bool                   `json:"include_vectors,omitempty"`
-	VectorFormat    string                 `json:"vector_format,omitempty"`
-	VectorType      string                 `json:"vector_type,omitempty"`     // "float32", "turboquant", etc.
-	TurboQuantBits  int                    `json:"turboquant_bits,omitempty"` // 4, 8 bits
+	Dataset            string                 `json:"dataset"`
+	Vector             []float32              `json:"vector,omitempty"`
+	Vectors            [][]float32            `json:"vectors,omitempty"`
+	K                  int                    `json:"k"`
+	Filters            []Filter               `json:"filters,omitempty"`
+	FilterExpr         map[string]interface{} `json:"filter_expr,omitempty"`
+	LocalOnly          bool                   `json:"local_only,omitempty"`
+	TextQuery          string                 `json:"text_query,omitempty"`
+	Alpha              float32                `json:"alpha,omitempty"`
+	GraphAlpha         float32                `json:"graph_alpha,omitempty"`
+	GraphDepth         int                    `json:"graph_depth,omitempty"`
+	IncludeVectors     bool                   `json:"include_vectors,omitempty"`
+	VectorFormat       string                 `json:"vector_format,omitempty"`
+	VectorType         string                 `json:"vector_type,omitempty"`     // "float32", "turboquant", etc.
+	TurboQuantBits     int                    `json:"turboquant_bits,omitempty"` // 4, 8 bits
 	Consistency        string                 `json:"consistency,omitempty"`     // "ONE", "QUORUM", "ALL"
 	EfSearch           int                    `json:"ef_search,omitempty"`
 	EnableLearnedIndex bool                   `json:"enable_learned_index,omitempty"`
 	WindowFunctions    []WindowFunction       `json:"window_functions,omitempty"`
-	RawHybrid          bool                   `json:"raw_hybrid,omitempty"`      // If true, returns un-fused dense and sparse results
+	RawHybrid          bool                   `json:"raw_hybrid,omitempty"` // If true, returns un-fused dense and sparse results
 }
 
 // VectorSearchByIDRequest defines the request format for searching by User ID

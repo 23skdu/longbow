@@ -13,14 +13,14 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
-	"github.com/rs/zerolog"
-	"github.com/23skdu/longbow/internal/memory"
 	amemory "github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 
-	"github.com/23skdu/longbow/internal/pq"
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -104,11 +104,11 @@ type Dataset struct {
 	isRequantizing atomic.Bool // Marks dataset as being re-quantized
 
 	// In-flight Indexing Tracking (Compaction Safety)
-	PendingIndexJobs atomic.Int64
-	PendingIngestion atomic.Int64
+	PendingIndexJobs    atomic.Int64
+	PendingIngestion    atomic.Int64
 	ActiveIngestStreams atomic.Int64 // Number of active DoPut streams for this dataset
-	IsReady          atomic.Bool // Set to true after first successful ingestion (v0.2.0)
-	RegistryPublished atomic.Bool // Set to true when advertised to the cluster
+	IsReady             atomic.Bool  // Set to true after first successful ingestion (v0.2.0)
+	RegistryPublished   atomic.Bool  // Set to true when advertised to the cluster
 
 	// LWW State
 	LWW *TimestampMap
@@ -227,10 +227,10 @@ func (s *QueryStats) GetMetrics() (p50, p99, avg float64, recall float64, qps fl
 	copy(recs, s.recalls)
 
 	sort.Slice(lats, func(i, j int) bool { return lats[i] < lats[j] })
-	
+
 	p50 = lats[len(lats)/2].Seconds() * 1000.0
 	p99 = lats[len(lats)*99/100].Seconds() * 1000.0
-	
+
 	sum := 0.0
 	for _, l := range lats {
 		sum += l.Seconds() * 1000.0
@@ -369,15 +369,15 @@ func (d *Dataset) SetAdmission(admission *AdmissionController) {
 func NewDataset(name string, schema *arrow.Schema) *Dataset {
 
 	ds := &Dataset{
-		Name:            name,
-		Records:         NewLockFreeSlice[arrow.RecordBatch](),
-		BatchNodes:      NewLockFreeSlice[int](),
-		Schema:          schema,
+		Name:                name,
+		Records:             NewLockFreeSlice[arrow.RecordBatch](),
+		BatchNodes:          NewLockFreeSlice[int](),
+		Schema:              schema,
 		Tombstones:          make(map[int]*types.Bitset),
 		PrimaryIndex:        make(map[string]RowLocation),
 		NumericPrimaryIndex: make(map[int64]RowLocation),
-		LWW:             NewTimestampMap(),
-		Merkle:          NewMerkleTree(),
+		LWW:                 NewTimestampMap(),
+		Merkle:              NewMerkleTree(),
 		queryStats: &QueryStats{
 			lastReset: time.Now(),
 		},
@@ -385,7 +385,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		Graph:           NewGraphStore(),
 		filterCache:     make(map[string]*types.Bitset),
 		ColumnIndex:     NewColumnInvertedIndex(),
-		Metric:          MetricEuclidean, // Default
+		Metric:          MetricEuclidean,     // Default
 		TemporalIndex:   NewTemporalIndex(0), // Dimension will be updated on first Add
 		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
 		BM25ArenaIndex:  NewBM25ArenaIndex(memory.NewSlabArena(4*1024*1024), 10000),
@@ -797,6 +797,7 @@ func (d *Dataset) WaitForIndexing() {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
+
 // IngestBatch appends a batch of Parquet records to the dataset
 func (d *Dataset) IngestBatch(batch []DatasetParquetRecord) error {
 	if len(batch) == 0 {
@@ -885,19 +886,19 @@ func (d *Dataset) IngestBatch(batch []DatasetParquetRecord) error {
 	}
 
 	rec := b.NewRecord()
-	
+
 	records := d.Records.Read()
 	newRecords := make([]arrow.RecordBatch, len(records)+1)
 	copy(newRecords, records)
 	newRecords[len(records)] = rec
 	d.Records.UpdateInPlace(newRecords)
- 
+
 	batchNodes := d.BatchNodes.Read()
 	newNodes := make([]int, len(batchNodes)+1)
 	copy(newNodes, batchNodes)
 	newNodes[len(batchNodes)] = -1
 	d.BatchNodes.UpdateInPlace(newNodes)
- 
+
 	batchIdx := len(records)
 
 	// Update primary index and handle tombstones
@@ -909,7 +910,7 @@ func (d *Dataset) IngestBatch(batch []DatasetParquetRecord) error {
 
 	// Trigger async indexing if needed (usually handled by indexer worker)
 	// We'll leave it to the worker to pick up NewRecords or send explicitly
-	
+
 	return nil
 }
 
@@ -972,7 +973,7 @@ func (d *Dataset) requantizeTask(targetType types.VectorDataType) {
 
 	// Implementation of actual quantization logic would go here.
 	// For now, we update the PreferredVectorType and signal the index.
-	
+
 	d.dataMu.Lock()
 	d.PreferredVectorType = targetType
 	d.dataMu.Unlock()
@@ -980,7 +981,7 @@ func (d *Dataset) requantizeTask(targetType types.VectorDataType) {
 	// Record Metrics
 	duration := time.Since(startTime)
 	metrics.RequantizationDurationSeconds.WithLabelValues(d.Name, "current", targetType.String()).Observe(duration.Seconds())
-	
+
 	typeStr := targetType.String()
 	metrics.QuantizationActiveType.WithLabelValues(d.Name, typeStr).Set(1)
 

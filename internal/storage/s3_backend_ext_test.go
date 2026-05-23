@@ -276,6 +276,7 @@ func TestS3Backend_ImplementsSnapshotBackend(t *testing.T) {
 	var _ SnapshotBackend = (*S3Backend)(nil)
 	_ = backend // Keep compiler happy about unused variable
 }
+
 // ========== S3Backend Operation Tests with Mock ==========
 
 func TestS3Backend_Operations(t *testing.T) {
@@ -297,7 +298,7 @@ func TestS3Backend_Operations(t *testing.T) {
 	t.Run("ReadSnapshot", func(t *testing.T) {
 		data := []byte("read-data")
 		mockClient.objects["tenant1/snapshots/coll2.parquet"] = data
-		
+
 		reader, err := backend.ReadSnapshot(ctx, "coll2")
 		assert.NoError(t, err)
 		readData, _ := io.ReadAll(reader)

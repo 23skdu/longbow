@@ -18,7 +18,7 @@ func TestEmbeddingProviderOrdinal(t *testing.T) {
 		provider string
 		want     float64
 	}{
-		{"", 0.0},               // no generator
+		{"", 0.0}, // no generator
 		{"openai", 1.0},
 		{"cohere", 2.0},
 		{"huggingface", 3.0},

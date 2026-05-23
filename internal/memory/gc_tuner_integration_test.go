@@ -39,7 +39,7 @@ func TestGCTuner_ArenaAwareTuning(t *testing.T) {
 	// Total Physical = 45MB (heap) + 1.25MB (arena) = 46.25MB
 	// Ratio = 46.25 / 50 = 0.925 (> 0.85)
 	tuner.tune(&runtime.MemStats{HeapAlloc: uint64(heapSize)}, true)
-	
+
 	// Should set GOGC to lowGOGC (10) due to high total physical pressure
 	assert.Equal(t, 10, tuner.currentGOGC, "Should set aggressive GOGC=10 when total physical ratio >0.85")
 }

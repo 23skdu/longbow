@@ -31,13 +31,13 @@ func TestAutoScalerQPS(t *testing.T) {
 	as := NewAutoScaler(zerolog.Nop())
 	// Overwrite interval for faster testing
 	as.monitorInterval = 50 * time.Millisecond
-	as.searchWindow = NewRollingWindow(10 * time.Millisecond, 100) // 1s window
+	as.searchWindow = NewRollingWindow(10*time.Millisecond, 100) // 1s window
 
 	as.RecordSearch(10 * time.Millisecond)
 	as.RecordSearch(20 * time.Millisecond)
-	
+
 	as.sample()
-	
+
 	load := as.GetLoadSnapshot()
 	// 2 searches in 1s window = 0.033 QPS if we use 60s denominator in sample()
 	// Wait, scaler.go uses 60.0 hardcoded for QPS calculation.

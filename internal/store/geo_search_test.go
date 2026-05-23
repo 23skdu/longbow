@@ -241,13 +241,13 @@ func TestGeoIndex_Concurrency(t *testing.T) {
 	}
 	gi := NewGeoIndex("test", 128, config)
 	gi.pointIndex.Store(NewQuadtree(bounds, 64, "test"))
-	
+
 	// Start concurrent inserters
 	numInserters := 4
 	vectorsPerInserter := 1000
 	var wg sync.WaitGroup
 	wg.Add(numInserters)
-	
+
 	for i := 0; i < numInserters; i++ {
 		go func(idx int) {
 			defer wg.Done()
@@ -259,7 +259,7 @@ func TestGeoIndex_Concurrency(t *testing.T) {
 			}
 		}(i)
 	}
-	
+
 	// Start concurrent searchers
 	numSearchers := 4
 	wg.Add(numSearchers)
@@ -271,9 +271,9 @@ func TestGeoIndex_Concurrency(t *testing.T) {
 			}
 		}()
 	}
-	
+
 	wg.Wait()
-	
+
 	expectedCount := int64(numInserters * vectorsPerInserter)
 	assert.Equal(t, expectedCount, gi.pointCount.Load())
 }
@@ -289,7 +289,7 @@ func BenchmarkGeoIndex_SearchRadius(b *testing.B) {
 	}
 	gi := NewGeoIndex("bench", 128, config)
 	gi.pointIndex.Store(NewQuadtree(bounds, 64, "bench"))
-	
+
 	// Pre-fill with 10k points
 	for i := 0; i < 10000; i++ {
 		id := uint64(i)
@@ -297,7 +297,7 @@ func BenchmarkGeoIndex_SearchRadius(b *testing.B) {
 		point := GeoPoint{Lat: 40.0 + float64(i)*0.0001, Lon: -74.0 + float64(i)*0.0001}
 		_ = gi.Add(id, vec, point, nil)
 	}
-	
+
 	center := GeoPoint{Lat: 40.5, Lon: -73.5}
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

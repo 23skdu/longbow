@@ -13,8 +13,8 @@ type RingManager struct {
 	ring        *ConsistentHash
 	localNodeID string
 	logger      zerolog.Logger
-	nodeAddrs   map[string]string // ID -> Data Addr
-	metaAddrs   map[string]string // ID -> Meta Addr
+	nodeAddrs   map[string]string  // ID -> Data Addr
+	metaAddrs   map[string]string  // ID -> Meta Addr
 	nodeLoads   map[string]float64 // ID -> load ratio (0.0-1.0)
 	baseVNodes  int
 }

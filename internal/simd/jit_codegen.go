@@ -417,7 +417,7 @@ func GenerateBatchBodySIMD() []byte {
 		// Reduction of acc (v128) to sum (f32)
 		OpF32Const, 0, 0, 0, 0,
 		OpLocalSet, 7, // sum = 0
-		
+
 		// Lane 0
 		OpLocalGet, 8,
 		OpSIMDPrefix, OpF32x4ExtractLane, 0x00,

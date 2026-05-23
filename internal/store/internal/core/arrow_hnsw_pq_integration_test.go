@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"context"
+	"github.com/23skdu/longbow/internal/store/types"
 	"math/rand"
 	"testing"
 
@@ -52,10 +52,10 @@ func TestArrowHNSW_PQ_Integration(t *testing.T) {
 		trainingData[i] = vec
 	}
 
-rec := builder.NewRecordBatch()
+	rec := builder.NewRecordBatch()
 	defer rec.Release()
 	dataset := &MockDataset{Name: "test_pq", Schema: schema, Records: []arrow.RecordBatch{rec}}
- 
+
 	// 2. Setup OPQ Encoder (Issue 4: Use new OPQ instead of deprecated PQ)
 	// 128 dims -> 16 sub-vectors of 8 dims each. 256 centroids per sub-vector.
 	encoder, err := pq.NewOPQEncoder(dim, 16, 256)

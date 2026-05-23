@@ -7,16 +7,16 @@ import (
 )
 
 type QueryCache[T any] struct {
-	mu       sync.RWMutex
-	data     map[string]T
-	ttl      time.Duration
+	mu      sync.RWMutex
+	data    map[string]T
+	ttl     time.Duration
 	expires map[string]time.Time
 }
 
 func NewQueryCache[T any](capacity int, ttl time.Duration, namespace string) *QueryCache[T] {
 	return &QueryCache[T]{
-		data:     make(map[string]T, capacity),
-		ttl:      ttl,
+		data:    make(map[string]T, capacity),
+		ttl:     ttl,
 		expires: make(map[string]time.Time, capacity),
 	}
 }

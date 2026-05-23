@@ -30,7 +30,7 @@ func TestDatasetIO_ExportImportParquet(t *testing.T) {
 	defer b.Release()
 
 	b.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3}, nil)
-	
+
 	vb := b.Field(1).(*array.FixedSizeListBuilder)
 	veb := vb.ValueBuilder().(*array.Float32Builder)
 	for i := 0; i < 3; i++ {
@@ -39,7 +39,7 @@ func TestDatasetIO_ExportImportParquet(t *testing.T) {
 			veb.Append(rand.Float32())
 		}
 	}
-	
+
 	b.Field(2).(*array.BinaryBuilder).AppendValues([][]byte{[]byte("m1"), []byte("m2"), []byte("m3")}, nil)
 
 	rec := b.NewRecord()

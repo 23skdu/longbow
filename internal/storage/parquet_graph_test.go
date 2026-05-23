@@ -15,7 +15,7 @@ import (
 
 func TestGraphParquetRoundTrip(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	
+
 	// Define Graph Schema
 	md := arrow.NewMetadata([]string{"longbow.entry_type"}, []string{"graph"})
 	schema := arrow.NewSchema([]arrow.Field{
@@ -48,7 +48,7 @@ func TestGraphParquetRoundTrip(t *testing.T) {
 
 	dictionaryArr := array.NewDictionaryArray(schema.Field(1).Type.(*arrow.DictionaryType), indicesArr, dictArr)
 	defer dictionaryArr.Release()
-	
+
 	// Manual assembly for dictionary column since RecordBuilder with Dictionary is tricky
 	objBuilder := b.Field(2).(*array.Uint32Builder)
 	objBuilder.AppendValues([]uint32{2, 3, 1}, nil)
@@ -80,7 +80,7 @@ func TestGraphParquetRoundTrip(t *testing.T) {
 	tmpFile, err := os.CreateTemp("", "graph_test_*.parquet")
 	require.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
-	
+
 	_, err = tmpFile.Write(buf.Bytes())
 	require.NoError(t, err)
 	err = tmpFile.Sync()
@@ -94,7 +94,7 @@ func TestGraphParquetRoundTrip(t *testing.T) {
 	// Verify
 	assert.Equal(t, rec.NumRows(), readRec.NumRows())
 	assert.Equal(t, rec.Schema().String(), readRec.Schema().String())
-	
+
 	// Check values
 	for i := 0; i < int(rec.NumRows()); i++ {
 		assert.Equal(t, subjArr.Value(i), readRec.Column(0).(*array.Uint32).Value(i))
@@ -105,7 +105,7 @@ func TestGraphParquetRoundTrip(t *testing.T) {
 
 func TestReadGraphParquet_Empty(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	
+
 	// Create an empty parquet file for GraphEdgeRecord
 	tmpFile, err := os.CreateTemp("", "empty_graph_*.parquet")
 	require.NoError(t, err)

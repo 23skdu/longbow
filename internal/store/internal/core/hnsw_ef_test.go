@@ -1,10 +1,10 @@
 package core_test
 
 import (
+	"context"
 	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
-	"context"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"

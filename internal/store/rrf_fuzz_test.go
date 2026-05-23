@@ -31,8 +31,8 @@ func FuzzReciprocalRankFusion(f *testing.F) {
 		dense := make([]SearchResult, numDense)
 		for i := 0; i < numDense; i++ {
 			dense[i] = SearchResult{
-				ID:    VectorID(r.Uint32()),
-				Score: r.Float32(),
+				ID:     VectorID(r.Uint32()),
+				Score:  r.Float32(),
 				Source: 0,
 			}
 		}
@@ -40,8 +40,8 @@ func FuzzReciprocalRankFusion(f *testing.F) {
 		sparse := make([]SearchResult, numSparse)
 		for i := 0; i < numSparse; i++ {
 			sparse[i] = SearchResult{
-				ID:    VectorID(r.Uint32()),
-				Score: r.Float32(),
+				ID:     VectorID(r.Uint32()),
+				Score:  r.Float32(),
 				Source: 1,
 			}
 		}

@@ -44,7 +44,7 @@ func TestStorageEngine_Extended(t *testing.T) {
 		}
 		err := engine.CreateSnapshot(item)
 		assert.NoError(t, err)
-		
+
 		// Verify file exists
 		snapshotPath := filepath.Join(tempDir, "snapshots_tmp", "test-ds.parquet")
 		_, err = os.Stat(snapshotPath)
@@ -68,7 +68,7 @@ func TestStorageEngine_Extended(t *testing.T) {
 		engine.SetSnapshotBackend(backend)
 		assert.Equal(t, backend, engine.GetSnapshotBackend())
 	})
-	
+
 	t.Run("ErrCh", func(t *testing.T) {
 		ch := engine.ErrCh()
 		assert.NotNil(t, ch)
@@ -96,32 +96,32 @@ func TestStorageEngine_writeSnapshotItem_Graph(t *testing.T) {
 	subBuilder := array.NewUint32Builder(mem)
 	objBuilder := array.NewUint32Builder(mem)
 	weightBuilder := array.NewFloat32Builder(mem)
-	
+
 	subBuilder.Append(1)
 	objBuilder.Append(2)
 	weightBuilder.Append(1.0)
-	
+
 	// Manual dictionary construction
 	dictBuilder := array.NewStringBuilder(mem)
 	dictBuilder.Append("neighbor")
 	dict := dictBuilder.NewArray()
 	defer dict.Release()
-	
+
 	indicesBuilder := array.NewUint16Builder(mem)
 	indicesBuilder.Append(0)
 	indices := indicesBuilder.NewArray()
 	defer indices.Release()
-	
+
 	predArr := array.NewDictionaryArray(predDictType, indices, dict)
 	defer predArr.Release()
-	
+
 	subArr := subBuilder.NewArray()
 	defer subArr.Release()
 	objArr := objBuilder.NewArray()
 	defer objArr.Release()
 	weightArr := weightBuilder.NewArray()
 	defer weightArr.Release()
-	
+
 	rec := array.NewRecordBatch(schema, []arrow.Array{subArr, predArr, objArr, weightArr}, 1)
 	defer rec.Release()
 
@@ -129,7 +129,7 @@ func TestStorageEngine_writeSnapshotItem_Graph(t *testing.T) {
 		Name:         "test-graph",
 		GraphRecords: []arrow.RecordBatch{rec},
 	}
-	
+
 	err = engine.CreateSnapshot(item)
 	assert.NoError(t, err)
 }
@@ -138,30 +138,30 @@ func TestStorageEngine_Snapshot_Error(t *testing.T) {
 	tempDir, err := os.MkdirTemp("", "engine-err-test")
 	require.NoError(t, err)
 	defer os.RemoveAll(tempDir)
-	
+
 	mem := memory.NewGoAllocator()
 	engine, _ := NewStorageEngine(StorageConfig{DataPath: tempDir}, mem)
-	
+
 	// Create records
 	schema := arrow.NewSchema([]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Uint32}}, nil)
 	builder := array.NewRecordBuilder(mem, schema)
 	builder.Field(0).(*array.Uint32Builder).AppendValues([]uint32{1}, nil)
 	rec := builder.NewRecordBatch()
 	defer rec.Release()
-	
+
 	item := &SnapshotItem{
 		Name:    "test-err",
 		Records: []arrow.RecordBatch{rec},
 	}
-	
+
 	// Make snapshots_tmp a file so directory creation fails
 	tmpPath := filepath.Join(tempDir, "snapshots_tmp")
 	err = os.WriteFile(tmpPath, []byte("not-a-dir"), 0644)
 	require.NoError(t, err)
-	
+
 	err = engine.CreateSnapshot(item)
 	assert.Error(t, err)
-	
+
 	engine.Close()
 }
 
@@ -188,7 +188,7 @@ func TestStorageEngine_LoadSnapshots(t *testing.T) {
 		Name:    "coll1",
 		Records: []arrow.RecordBatch{rec},
 	}
-	
+
 	// CreateSnapshot writes to snapshots_tmp
 	err = engine.CreateSnapshot(item)
 	require.NoError(t, err)
@@ -221,7 +221,7 @@ func TestStorageEngine_NoBatcher(t *testing.T) {
 	// Write without InitWAL (wal and walBatcher are nil)
 	err = engine.WriteToWAL("test", nil, 1, 1)
 	assert.NoError(t, err) // Should be no-op or handled gracefully
-	
+
 	err = engine.SyncWAL()
 	assert.NoError(t, err)
 }

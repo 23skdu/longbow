@@ -41,14 +41,14 @@ type LoadSnapshot struct {
 
 // ScalingConfig defines the parameters for dynamic resource adjustment.
 type ScalingConfig struct {
-	MinIndexingWorkers int
-	MaxIndexingWorkers int
+	MinIndexingWorkers  int
+	MaxIndexingWorkers  int
 	MinIngestionWorkers int
 	MaxIngestionWorkers int
 
 	TargetQPSPerWorker float64
-	ScaleUpThreshold     float64 // e.g. 0.8 (80% load)
-	ScaleDownThreshold   float64 // e.g. 0.3 (30% load)
+	ScaleUpThreshold   float64 // e.g. 0.8 (80% load)
+	ScaleDownThreshold float64 // e.g. 0.3 (30% load)
 }
 
 // Reconciler is an interface for components that can resize their worker pools.
@@ -58,22 +58,22 @@ type Reconciler interface {
 
 // AutoScaler monitors system metrics and provides load signals.
 type AutoScaler struct {
-	logger zerolog.Logger
+	logger     zerolog.Logger
 	reconciler Reconciler
 
 	// Scaling state
-	config ScalingConfig
+	config        ScalingConfig
 	lastReconcile time.Time
 	cooldown      time.Duration
 
 	// Atomic counters for raw events
-	searchCount     atomic.Int64
-	ingestCount     atomic.Int64
+	searchCount    atomic.Int64
+	ingestCount    atomic.Int64
 	totalLatencyNs atomic.Int64
 
 	// Sliding windows for derived metrics
-	searchWindow *RollingWindow
-	ingestWindow *RollingWindow
+	searchWindow      *RollingWindow
+	ingestWindow      *RollingWindow
 	lastSearchLatency atomic.Int64 // nanoseconds
 
 	// Configuration
@@ -146,7 +146,7 @@ func (as *AutoScaler) sample() {
 
 	as.searchWindow.Add(sCount)
 	as.ingestWindow.Add(iCount)
-	
+
 	latNs := as.totalLatencyNs.Swap(0)
 	if sCount > 0 {
 		as.lastSearchLatency.Store(latNs / sCount)
@@ -177,7 +177,7 @@ func (as *AutoScaler) reconcile() {
 	}
 
 	snapshot := as.GetLoadSnapshot()
-	
+
 	// Indexing logic: Scale based on ingest throughput
 	// Simple heuristic: 1 worker per 10,000 vectors/sec?
 	// For now, let's just use a basic stair-step logic.

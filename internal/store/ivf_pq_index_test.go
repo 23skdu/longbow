@@ -364,14 +364,14 @@ func TestIVFPQIndex_SearchWithFilter(t *testing.T) {
 
 		results, err := idx.SearchInternal(context.Background(), query, 10, filter, SearchOptions{})
 		require.NoError(t, err)
-		
+
 		// Should return all 5 allowed IDs since k=10
 		assert.Len(t, results, 5)
-		
+
 		for _, r := range results {
 			assert.True(t, filter.Contains(uint32(r.ID)), "Result ID %d should be in filter", r.ID)
 		}
-		
+
 		// Verify top result is closest (ID 50)
 		assert.Equal(t, uint32(50), uint32(results[0].ID))
 	})

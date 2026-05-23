@@ -2,23 +2,23 @@ package core
 
 import (
 	"fmt"
+	"github.com/23skdu/longbow/internal/store/types"
 	"math"
 	"sync"
 	"testing"
-	"github.com/23skdu/longbow/internal/store/types"
 )
 
 func BenchmarkLayer0Contention(b *testing.B) {
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 128
 	config.InitialCapacity = 1000
-	
+
 	idx := NewArrowHNSW(nil, &config, nil)
 	data := idx.data.Load()
-	
+
 	// Pre-allocate node 0
 	_ = data.EnsureChunk(0, 0, 128)
-	
+
 	ctx := idx.searchPool.Get()
 	defer idx.searchPool.Put(ctx)
 
@@ -43,7 +43,7 @@ func TestConcurrentLayer0Adds(t *testing.T) {
 	idx := NewArrowHNSW(nil, &config, nil)
 	data := idx.data.Load()
 	_ = data.EnsureChunk(0, 0, 128)
-	
+
 	ctxs := make([]*ArrowSearchContext, 10)
 	for i := range ctxs {
 		ctxs[i] = idx.searchPool.Get()
@@ -53,7 +53,7 @@ func TestConcurrentLayer0Adds(t *testing.T) {
 	var wg sync.WaitGroup
 	numThreads := 10
 	addsPerThread := 100
-	
+
 	for i := 0; i < numThreads; i++ {
 		wg.Add(1)
 		go func(id int) {
@@ -68,9 +68,9 @@ func TestConcurrentLayer0Adds(t *testing.T) {
 			}
 		}(i)
 	}
-	
+
 	wg.Wait()
-	
+
 	neighbors := idx.GetNeighborsCombined(0, target, math.MaxUint64)
 	fmt.Printf("Final neighbor count for node 0: %d (Max: %d)\n", len(neighbors), config.MMax0)
 	if len(neighbors) > config.MMax0 {

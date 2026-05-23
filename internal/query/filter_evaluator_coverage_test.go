@@ -159,7 +159,7 @@ func TestFilterEvaluator_Nested(t *testing.T) {
 	builder := array.NewRecordBuilder(mem, schema)
 	sb := builder.Field(0).(*array.StructBuilder)
 	subB := sb.FieldBuilder(0).(*array.Int32Builder)
-	
+
 	sb.Append(true)
 	subB.Append(10)
 	sb.Append(true)

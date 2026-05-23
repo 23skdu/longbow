@@ -255,7 +255,7 @@ func (d *Dataset) EvictExpiredRecords() []arrow.RecordBatch {
 	currentRecords := d.Records.Read()
 	newRecords := make([]arrow.RecordBatch, 0, len(currentRecords))
 	var evicted []arrow.RecordBatch
-	
+
 	for _, rec := range currentRecords {
 		if rec == nil {
 			continue
@@ -267,7 +267,7 @@ func (d *Dataset) EvictExpiredRecords() []arrow.RecordBatch {
 			newRecords = append(newRecords, rec)
 		}
 	}
-	
+
 	d.Records.UpdateInPlace(newRecords)
 
 	return evicted

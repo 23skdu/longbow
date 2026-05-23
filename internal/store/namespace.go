@@ -225,9 +225,9 @@ func (vs *VectorStore) DeleteNamespace(name string) error {
 		for dsName := range ns.datasets {
 			dsNames = append(dsNames, dsName)
 		}
-		
+
 		vs.logger.Info().Str("namespace", name).Int("datasets", len(dsNames)).Msg("Deleting namespace recursively")
-		
+
 		ns.mu.Unlock()
 		vs.nsManager.mu.Unlock()
 
@@ -253,7 +253,7 @@ func (vs *VectorStore) DeleteNamespace(name string) error {
 		delete(vs.nsManager.namespaces, name)
 		metrics.NamespacesTotal.Dec()
 	}
-	
+
 	ns.mu.Unlock()
 	vs.nsManager.mu.Unlock()
 	return nil

@@ -31,7 +31,7 @@ func TestReductions(t *testing.T) {
 			gotMin := Min(src)
 
 			if math.Abs(float64(gotSum-wantSum)) > 1e-2 || gotMax != wantMax || gotMin != wantMin {
-				t.Errorf("n=%d: Sum(got=%f, want=%f), Max(got=%f, want=%f), Min(got=%f, want=%f)", 
+				t.Errorf("n=%d: Sum(got=%f, want=%f), Max(got=%f, want=%f), Min(got=%f, want=%f)",
 					n, gotSum, wantSum, gotMax, wantMax, gotMin, wantMin)
 			}
 		})

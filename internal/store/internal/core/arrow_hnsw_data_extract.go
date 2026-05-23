@@ -61,7 +61,9 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 	case *arrowarray.Float32:
 		floats := arr.Float32Values()[start:end]
 		if h.config.DataType == types.VectorTypeComplex64 {
-			if len(floats) < 2 { return nil }
+			if len(floats) < 2 {
+				return nil
+			}
 			complexes := make([]complex64, len(floats)/2)
 			for i := 0; i < len(complexes); i++ {
 				complexes[i] = complex(floats[2*i], floats[2*i+1])
@@ -74,7 +76,9 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 	case *arrowarray.Float64:
 		floats := arr.Float64Values()[start:end]
 		if h.config.DataType == types.VectorTypeComplex128 {
-			if len(floats) < 2 { return nil }
+			if len(floats) < 2 {
+				return nil
+			}
 			complexes := make([]complex128, len(floats)/2)
 			for i := 0; i < len(complexes); i++ {
 				complexes[i] = complex(floats[2*i], floats[2*i+1])
@@ -92,44 +96,64 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 
 func (h *ArrowHNSW) extractValuesGeneric(values arrow.Array, start, end int) any {
 	size := end - start
-	if size <= 0 { return nil }
+	if size <= 0 {
+		return nil
+	}
 
 	switch arr := values.(type) {
 	case *arrowarray.Int8:
 		res := make([]int8, size)
-		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		for i := 0; i < size; i++ {
+			res[i] = arr.Value(start + i)
+		}
 		return res
 	case *arrowarray.Uint8:
 		res := make([]uint8, size)
-		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		for i := 0; i < size; i++ {
+			res[i] = arr.Value(start + i)
+		}
 		return res
 	case *arrowarray.Uint32:
 		res := make([]uint32, size)
-		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		for i := 0; i < size; i++ {
+			res[i] = arr.Value(start + i)
+		}
 		return res
 	case *arrowarray.Int32:
 		res := make([]int32, size)
-		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		for i := 0; i < size; i++ {
+			res[i] = arr.Value(start + i)
+		}
 		return res
 	case *arrowarray.Int64:
 		res := make([]int64, size)
-		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		for i := 0; i < size; i++ {
+			res[i] = arr.Value(start + i)
+		}
 		return res
 	case *arrowarray.Uint64:
 		res := make([]uint64, size)
-		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		for i := 0; i < size; i++ {
+			res[i] = arr.Value(start + i)
+		}
 		return res
 	case *arrowarray.Int16:
 		res := make([]int16, size)
-		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		for i := 0; i < size; i++ {
+			res[i] = arr.Value(start + i)
+		}
 		return res
 	case *arrowarray.Uint16:
 		res := make([]uint16, size)
-		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		for i := 0; i < size; i++ {
+			res[i] = arr.Value(start + i)
+		}
 		return res
 	case *arrowarray.Float16:
 		res := make([]float16.Num, size)
-		for i := 0; i < size; i++ { res[i] = arr.Value(start + i) }
+		for i := 0; i < size; i++ {
+			res[i] = arr.Value(start + i)
+		}
 		return res
 	}
 	return nil
@@ -139,7 +163,7 @@ func (h *ArrowHNSW) getColumnIdx(rec arrow.RecordBatch, name string) int {
 	if rec == nil {
 		return -1
 	}
-	
+
 	// 1. Try cache first
 	if val, ok := h.metadata.fieldMap.Load(name); ok {
 		return val.(int)
@@ -182,10 +206,10 @@ func (h *ArrowHNSW) getVectorColumnIndex(rec arrow.RecordBatch) int {
 	if vecColIdx != -1 && vecColIdx <= 2147483647 {
 		h.metadata.vecColIdx.Store(int32(vecColIdx)) // #nosec G115
 	}
-	
+
 	// Pre-cache other metadata while we have the schema
 	h.precacheMetadata(rec.Schema())
-	
+
 	return vecColIdx
 }
 
@@ -195,7 +219,7 @@ func (h *ArrowHNSW) precacheMetadata(schema *arrow.Schema) {
 	}
 
 	md := schema.Metadata()
-	
+
 	// Pre-cache TurboQuant bits
 	if val, ok := md.GetValue("longbow.turboquant_bits"); ok {
 		if bits, err := strconv.ParseInt(val, 10, 32); err == nil {

@@ -38,7 +38,7 @@ func TestStreamAggregator_MergeAndSort(t *testing.T) {
 	defer rec2.Release()
 
 	agg := NewStreamAggregator(pool, zerolog.Nop())
-	
+
 	inputs := []arrow.RecordBatch{rec1, rec2}
 	// mergeAndSort takes ownership of inputs and releases them, so we retain if we want to use them later
 	// but here we just pass them.
@@ -49,9 +49,9 @@ func TestStreamAggregator_MergeAndSort(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, final, 1)
 	defer final[0].Release()
-	
+
 	assert.Equal(t, int64(4), final[0].NumRows())
-	
+
 	// Verify sorting (Ascending distance: 0.05, 0.1, 0.2, 0.5)
 	distances := final[0].Column(1).(*array.Float32).Float32Values()
 	assert.Equal(t, []float32{0.05, 0.1, 0.2, 0.5}, distances)

@@ -146,7 +146,7 @@ func (d *DatasetIO) ExportToParquet(ctx context.Context, name string, backend st
 
 	headerBuf := getDatasetBuffer()
 	defer putDatasetBuffer(headerBuf)
-	_, _ = headerBuf.Write(headerJSON)      // #nosec G104
+	_, _ = headerBuf.Write(headerJSON)   // #nosec G104
 	_, _ = headerBuf.Write([]byte{'\n'}) // #nosec G104
 
 	if err := backend.WriteSnapshotFile(ctx, name+".header", ".header", bytes.NewReader(headerBuf.Bytes())); err != nil {
@@ -507,7 +507,7 @@ func (d *DatasetIO) ImportFromArrowIPC(ctx context.Context, name string, backend
 		copy(newRecords, currentRecords)
 		newRecords[len(currentRecords)] = rec
 		ds.Records.UpdateInPlace(newRecords)
- 
+
 		currentNodes := ds.BatchNodes.Read()
 		newNodes := make([]int, len(currentNodes)+1)
 		copy(newNodes, currentNodes)

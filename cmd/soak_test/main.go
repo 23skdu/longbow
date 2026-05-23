@@ -269,11 +269,11 @@ func performIngest(ctx context.Context, c *client.SmartClient) error {
 		for j := 0; j < *dim; j++ {
 			valB.Append(rand.Float32()) // #nosec G404
 		}
-		catB.Append(int64(rand.Intn(10))) // #nosec G404
-		scoreB.Append(rand.Float32() * 100) // #nosec G404
+		catB.Append(int64(rand.Intn(10)))                    // #nosec G404
+		scoreB.Append(rand.Float32() * 100)                  // #nosec G404
 		prioB.Append(categories[rand.Intn(len(categories))]) // #nosec G404
-		statusB.Append(statuses[rand.Intn(len(statuses))]) // #nosec G404
-		deletedB.Append(rand.Float32() < 0.1) // #nosec G404
+		statusB.Append(statuses[rand.Intn(len(statuses))])   // #nosec G404
+		deletedB.Append(rand.Float32() < 0.1)                // #nosec G404
 		tsB.Append(time.Now().UnixNano())
 		now := time.Now().UnixNano()
 		createdB.Append(now)
@@ -331,7 +331,7 @@ func performSearchAndDelete(ctx context.Context, c *client.SmartClient, stats *S
 		req["vector"] = queryVec
 		textQueries := []string{"search query", "information retrieval", "vector database"}
 		req["text_query"] = textQueries[rand.Intn(len(textQueries))] // #nosec G404
-		req["alpha"] = rand.Float64() // #nosec G404
+		req["alpha"] = rand.Float64()                                // #nosec G404
 	case GlobalSearch:
 		req["vector"] = queryVec
 		req["global"] = true
@@ -406,7 +406,7 @@ func generateCompoundFilter() any {
 			"logic": "AND",
 			"filters": []any{
 				map[string]any{"field": "category", "operator": "=", "value": fmt.Sprintf("%d", rand.Intn(10))}, // #nosec G404
-				map[string]any{"field": "score", "operator": ">", "value": fmt.Sprintf("%d", rand.Intn(50))}, // #nosec G404
+				map[string]any{"field": "score", "operator": ">", "value": fmt.Sprintf("%d", rand.Intn(50))},    // #nosec G404
 			},
 		}
 	case "OR":

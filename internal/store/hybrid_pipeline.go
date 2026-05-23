@@ -37,7 +37,7 @@ type FusionMode int
 
 const (
 	// FusionModeRRF uses Reciprocal Rank Fusion to combine results.
-	FusionModeRRF     FusionMode = iota
+	FusionModeRRF FusionMode = iota
 	// FusionModeLinear uses a linear weighted combination of scores.
 	FusionModeLinear
 	// FusionModeCascade uses cascade-style filtering (exact -> keyword -> vector).

@@ -52,7 +52,7 @@ func (r *FlightWALReplicator) Replicate(ctx context.Context, data []byte) error 
 	// That means we need (TotalNodes / 2) successful remote acks.
 	totalNodes := len(members) + 1
 	requiredAcks := (totalNodes / 2) // Remote acks needed
-	
+
 	if requiredAcks == 0 {
 		return nil
 	}
@@ -94,7 +94,7 @@ func (r *FlightWALReplicator) Replicate(ctx context.Context, data []byte) error 
 		case <-successCh:
 			successes++
 			if successes >= requiredAcks {
-				// Quorum met! We don't need to wait for the rest to finish, 
+				// Quorum met! We don't need to wait for the rest to finish,
 				// but they will continue in background.
 				return nil
 			}

@@ -116,7 +116,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		if len(action.Body) == 0 {
 			return status.Error(codes.InvalidArgument, "empty WAL payload")
 		}
-		
+
 		// Decode and apply in memory
 		engine := s.engine.Load()
 		if engine != nil {
@@ -124,7 +124,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			if err != nil {
 				return status.Errorf(codes.Internal, "failed to append replicated WAL: %v", err)
 			}
-			
+
 			entries, err := storage.DecodeWALBlock(action.Body, engine.GetAllocator())
 			if err != nil {
 				return status.Errorf(codes.Internal, "failed to decode replicated WAL: %v", err)
@@ -574,13 +574,13 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 				req.TextQuery,
 				req.K,
 				req.Alpha,
-				60,  // Default RRF k
-				0.0, // Default Graph Alpha
-				0,   // Default Graph Depth
+				60,    // Default RRF k
+				0.0,   // Default Graph Alpha
+				0,     // Default Graph Depth
 				false, // RawHybrid
 			)
 		})
-		
+
 		var results []types.SearchResult
 		if err == nil {
 			results = resultsAny.([]types.SearchResult)
@@ -752,7 +752,6 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		}
 		return stream.Send(&flight.Result{Body: []byte("namespace created")})
 
-
 	case "ListNamespaces":
 		names := s.ListNamespaces()
 		body, _ := json.Marshal(map[string]any{"namespaces": names})
@@ -801,7 +800,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 				return nil, status.Error(codes.InvalidArgument, "invalid search type")
 			}
 		})
-		
+
 		var results []types.SearchResult
 		if err == nil {
 			results = resultsAny.([]types.SearchResult)
@@ -843,7 +842,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	s.logger.Info().Str("dataset", name).Msg("DoPut started (Batched)")
-	
+
 	// 0. Admission Control (Backpressure)
 	if s.admission != nil {
 		if err := s.admission.Admit(stream.Context(), "ingest"); err != nil {
@@ -853,7 +852,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 				runtime.GC()
 				debug.FreeOSMemory()
 				time.Sleep(100 * time.Millisecond)
-				
+
 				if err2 := s.admission.Admit(stream.Context(), "ingest"); err2 != nil {
 					return err2
 				}
@@ -1033,7 +1032,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 					end = rec.NumRows()
 				}
 				subRec := rec.NewSlice(i, end)
-				
+
 				// Process sub-record
 				subRecSize := estimateBatchSize(subRec)
 				if len(batch) == 0 && subRecSize >= maxBatchBytes {
@@ -1240,8 +1239,6 @@ func (s *VectorStore) StoreRecordBatch(ctx context.Context, name string, rec arr
 
 	return nil
 }
-
-
 
 // concatenateBatches merges multiple record batches into one
 func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.RecordBatch, error) {
@@ -1459,7 +1456,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		ds.IsReady.Store(true)
 		s.logger.Info().Str("dataset", name).Msg("Dataset metadata registration complete (Ready for queries)")
 	}
- 
+
 	currCPU := lmem.GetCurrentCPU()
 	currNode := -1
 	if s.numaTopology != nil {
@@ -1512,10 +1509,10 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			ids := make([]uint64, numRows)
 			vectors := make([][]float32, numRows)
 			timestamps := make([]int64, numRows)
-			
+
 			idArr := rec.Column(idColIdx).(*array.String)
 			vecCol := rec.Column(vecColIdx)
-			
+
 			var tsArr arrow.Array
 			if tsColIdx != -1 {
 				tsArr = rec.Column(tsColIdx)
@@ -1526,7 +1523,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			if fs, ok := vecCol.DataType().(*arrow.FixedSizeListType); ok {
 				listLen = int(fs.Len())
 			}
-			
+
 			// Parallel Extraction
 			pool := internalcore.GetSharedPool()
 			pool.ParallelFor(numRows, 1024, func(start, end int) {
@@ -1656,7 +1653,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 						vStart := i * listLen
 						vEnd := (i + 1) * listLen
 						listValues := vecArr.ListValues()
-						
+
 						switch values := listValues.(type) {
 						case *array.Float32:
 							src := values.Float32Values()[vStart:vEnd]
@@ -1673,47 +1670,65 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 						case *array.Int8:
 							src := values.Int8Values()[vStart:vEnd]
 							sub := make([]float32, len(src))
-							for j, v := range src { sub[j] = float32(v) }
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
 							vectors[i] = sub
 						case *array.Int16:
 							src := values.Int16Values()[vStart:vEnd]
 							sub := make([]float32, len(src))
-							for j, v := range src { sub[j] = float32(v) }
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
 							vectors[i] = sub
 						case *array.Int32:
 							src := values.Int32Values()[vStart:vEnd]
 							sub := make([]float32, len(src))
-							for j, v := range src { sub[j] = float32(v) }
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
 							vectors[i] = sub
 						case *array.Int64:
 							src := values.Int64Values()[vStart:vEnd]
 							sub := make([]float32, len(src))
-							for j, v := range src { sub[j] = float32(v) }
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
 							vectors[i] = sub
 						case *array.Uint8:
 							src := values.Uint8Values()[vStart:vEnd]
 							sub := make([]float32, len(src))
-							for j, v := range src { sub[j] = float32(v) }
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
 							vectors[i] = sub
 						case *array.Uint16:
 							src := values.Uint16Values()[vStart:vEnd]
 							sub := make([]float32, len(src))
-							for j, v := range src { sub[j] = float32(v) }
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
 							vectors[i] = sub
 						case *array.Uint32:
 							src := values.Uint32Values()[vStart:vEnd]
 							sub := make([]float32, len(src))
-							for j, v := range src { sub[j] = float32(v) }
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
 							vectors[i] = sub
 						case *array.Uint64:
 							src := values.Uint64Values()[vStart:vEnd]
 							sub := make([]float32, len(src))
-							for j, v := range src { sub[j] = float32(v) }
+							for j, v := range src {
+								sub[j] = float32(v)
+							}
 							vectors[i] = sub
 						case *array.Float16:
 							src := values.Values()[vStart:vEnd]
 							sub := make([]float32, len(src))
-							for j, v := range src { sub[j] = v.Float32() }
+							for j, v := range src {
+								sub[j] = v.Float32()
+							}
 							vectors[i] = sub
 						}
 

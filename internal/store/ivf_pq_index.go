@@ -7,15 +7,15 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/23skdu/longbow/internal/pq"
-	"github.com/23skdu/longbow/internal/query"
-	"github.com/23skdu/longbow/internal/store/types"
-	"github.com/RoaringBitmap/roaring/v2"
-	"github.com/23skdu/longbow/internal/simd"
-	"github.com/apache/arrow-go/v18/arrow"
-	"io"
 	"bytes"
 	"encoding/gob"
+	"github.com/23skdu/longbow/internal/pq"
+	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/simd"
+	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/RoaringBitmap/roaring/v2"
+	"github.com/apache/arrow-go/v18/arrow"
+	"io"
 )
 
 // IVFPQConfig holds configuration for the IVF-PQ index.
@@ -228,7 +228,6 @@ func (idx *IVFPQIndex) getDistFunc() simd.DistanceKernel[float32] {
 	return idx.distFunc
 }
 
-
 // IVFPQSearchResult holds a single search result with its ID and distance.
 type IVFPQSearchResult struct {
 	ID       uint32
@@ -360,10 +359,10 @@ func (idx *IVFPQIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, r
 	if err := idx.Add(ctx, [][]float32{vec}); err != nil {
 		return 0, err
 	}
-	
+
 	id := idx.nextID - 1
 	idx.SetLocation(id, types.Location{BatchIdx: batchIdx, RowIdx: rowIdx})
-	
+
 	return id, nil
 }
 
@@ -676,12 +675,15 @@ func (idx *IVFPQIndex) ExportDelta(fromV uint64) (*types.DeltaSync, error) { ret
 
 // ApplyDelta is a no-op for this index type.
 func (idx *IVFPQIndex) ApplyDelta(delta *types.DeltaSync) error { return nil }
+
 // SetParallelSearchConfig is a no-op for this index type.
 func (idx *IVFPQIndex) SetParallelSearchConfig(cfg types.ParallelSearchConfig) {}
+
 // GetParallelSearchConfig returns an empty config.
 func (idx *IVFPQIndex) GetParallelSearchConfig() types.ParallelSearchConfig {
 	return types.ParallelSearchConfig{}
 }
+
 // RemapLocations is a no-op for this index type.
 func (idx *IVFPQIndex) RemapLocations(ctx context.Context, m map[uint32]any) error { return nil }
 
@@ -700,6 +702,7 @@ func (idx *IVFPQIndex) GetMemoryUsage() int64 {
 }
 
 // IsSharded returns false for this index type.
-func (idx *IVFPQIndex) IsSharded() bool               { return false }
+func (idx *IVFPQIndex) IsSharded() bool { return false }
+
 // GetShardedIndex returns nil as it is not a sharded index.
 func (idx *IVFPQIndex) GetShardedIndex() *ShardedHNSW { return nil }

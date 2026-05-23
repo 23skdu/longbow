@@ -69,7 +69,7 @@ func TestFilterEvaluator_VariousTypes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			eval, err := NewFilterEvaluator(rec, tt.filters)
 			require.NoError(t, err)
-			
+
 			matches, err := eval.MatchesAll(int(rec.NumRows()))
 			require.NoError(t, err)
 			assert.Equal(t, tt.expected, matches)

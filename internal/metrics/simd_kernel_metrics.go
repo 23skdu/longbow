@@ -26,7 +26,7 @@ func init() {
 
 // MetricsCache holds pre-resolved Prometheus metrics to avoid label lookup contention.
 type MetricsCache struct {
-	OpsCounter      prometheus.Counter
+	OpsCounter       prometheus.Counter
 	DurationObserver prometheus.Observer
 }
 

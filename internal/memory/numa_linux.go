@@ -73,7 +73,7 @@ func DetectNUMATopology() (*NUMATopology, error) {
 				physicalCpus = append(physicalCpus, cpu)
 				continue
 			}
-			
+
 			siblings := strings.TrimSpace(string(siblingsBytes))
 			siblingList, _ := parseCPUList(siblings)
 			if len(siblingList) > 0 {

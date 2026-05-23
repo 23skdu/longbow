@@ -216,4 +216,3 @@ func TestSlabPool_ReslicingProtection(t *testing.T) {
 	// Length should be restored to its full capacity!
 	require.Equal(t, 4*1024*1024, len(reclaimed))
 }
-

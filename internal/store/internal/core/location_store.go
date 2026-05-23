@@ -40,10 +40,10 @@ type reverseShard struct {
 // ChunkedLocationStore manages vector locations using chunks to avoid
 // global locking during reads and massive reallocations during growth.
 type ChunkedLocationStore struct {
-	mu     sync.Mutex                   // Protects growth (appending chunks)
+	mu     sync.Mutex     // Protects growth (appending chunks)
 	chunks unsafe.Pointer // Stores *[]*locationChunk
-	size   atomic.Uint32                // Total number of locations (simulates len)
-	
+	size   atomic.Uint32  // Total number of locations (simulates len)
+
 	// reverseMap is sharded to reduce contention during parallel ingestion.
 	reverseShards [ReverseShards]reverseShard
 }
@@ -63,7 +63,7 @@ func NewChunkedLocationStore() *ChunkedLocationStore {
 func (s *ChunkedLocationStore) Close() {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// Clear forward mapping chunks
 	emptyChunks := make([]*locationChunk, 0)
 	atomic.StorePointer(&s.chunks, unsafe.Pointer(&emptyChunks)) // #nosec G103
@@ -108,7 +108,7 @@ func (s *ChunkedLocationStore) Get(id types.VectorID) (types.Location, bool) {
 	if chunkIdx >= len(chunks) {
 		return types.Location{}, false
 	}
-	
+
 	packed := chunks[chunkIdx].data[offset].Load()
 	if packed == 0 {
 		return types.Location{}, false
@@ -178,7 +178,7 @@ func (s *ChunkedLocationStore) Set(id types.VectorID, loc types.Location) {
 		// Update data
 		oldPacked := chunks[chunkIdx].data[offset].Swap(packed)
 		_ = oldPacked // Performance trade-off: We don't remove old keys from reverse map
-		
+
 		newShard := s.getShard(packed)
 		newShard.mu.Lock()
 		newShard.data[packed] = id
@@ -211,24 +211,24 @@ func (s *ChunkedLocationStore) Delete(id types.VectorID) {
 func (s *ChunkedLocationStore) Append(loc types.Location) types.VectorID {
 	// 1. Reserve ID
 	id := types.VectorID(s.size.Add(1) - 1)
-	
+
 	// 2. Ensure capacity (thread-safe growth)
 	s.EnsureCapacity(id)
-	
+
 	// 3. Update data
 	chunks := s.loadChunks()
 	chunkIdx := int(id) / LocationChunkSize
 	offset := int(id) % LocationChunkSize
-	
+
 	packed := packLocation(loc)
 	chunks[chunkIdx].data[offset].Store(packed)
-	
+
 	// 4. Update reverse map
 	shard := s.getShard(packed)
 	shard.mu.Lock()
 	shard.data[packed] = id
 	shard.mu.Unlock()
-	
+
 	return id
 }
 
@@ -242,13 +242,13 @@ func (s *ChunkedLocationStore) BatchAppend(locs []types.Location) (startID types
 	count := uint32(len(locs)) // #nosec G115
 	startIDVal := s.size.Add(count) - count
 	startID = types.VectorID(startIDVal)
-	
+
 	// 2. Ensure capacity for the whole batch
 	s.EnsureCapacity(types.VectorID(startIDVal + count - 1))
-	
+
 	// 3. Update data and reverse maps
 	chunks := s.loadChunks()
-	
+
 	// Map to group IDs and packed locations by shard
 	type shardUpdate struct {
 		id     types.VectorID
@@ -261,10 +261,10 @@ func (s *ChunkedLocationStore) BatchAppend(locs []types.Location) (startID types
 		idx := int(currID)
 		chunkIdx := idx / LocationChunkSize
 		offset := idx % LocationChunkSize
-		
+
 		packed := packLocation(loc)
 		chunks[chunkIdx].data[offset].Store(packed)
-		
+
 		shardIdx := packed % uint64(ReverseShards)
 		shardGroups[shardIdx] = append(shardGroups[shardIdx], shardUpdate{currID, packed})
 	}
@@ -281,7 +281,7 @@ func (s *ChunkedLocationStore) BatchAppend(locs []types.Location) (startID types
 		}
 		shard.mu.Unlock()
 	}
-	
+
 	return startID
 }
 
@@ -309,13 +309,13 @@ func (s *ChunkedLocationStore) EnsureCapacity(id types.VectorID) {
 	// Slow path: growth with lock
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	
+
 	// Re-check under lock
 	oldChunks := s.loadChunks()
 	if chunkIdx < len(oldChunks) {
 		return
 	}
-	
+
 	neededChunks := chunkIdx + 1
 	newChunks := make([]*locationChunk, neededChunks)
 	copy(newChunks, oldChunks)
@@ -377,4 +377,3 @@ func (s *ChunkedLocationStore) IterateMutable(fn func(id types.VectorID, val *at
 		}
 	}
 }
-

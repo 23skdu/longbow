@@ -26,18 +26,18 @@ func TestAdaptiveIndex(t *testing.T) {
 	// Add a record batch to the dataset
 	b := array.NewRecordBuilder(pool, schema)
 	defer b.Release()
-	
+
 	listBuilder := b.Field(0).(*array.FixedSizeListBuilder)
 	valBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
-	
+
 	// Row 0: [1,0,0,0]
 	valBuilder.AppendValues([]float32{1, 0, 0, 0}, nil)
 	listBuilder.Append(true)
-	
+
 	// Row 1: [0,1,0,0]
 	valBuilder.AppendValues([]float32{0, 1, 0, 0}, nil)
 	listBuilder.Append(true)
-	
+
 	rec := b.NewRecord()
 	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 
@@ -47,7 +47,7 @@ func TestAdaptiveIndex(t *testing.T) {
 		Enabled:   true,
 	}
 	idx := NewAdaptiveIndex(ds, cfg)
-	
+
 	assert.Equal(t, "brute_force", idx.GetIndexType())
 	assert.False(t, idx.IsSharded())
 
@@ -66,14 +66,14 @@ func TestAdaptiveIndex(t *testing.T) {
 	// 5. Add second vector (cross threshold -> trigger migration)
 	_, err = idx.AddByLocation(context.Background(), 0, 1)
 	require.NoError(t, err)
-	
+
 	// Wait for async migration
 	maxWait := 5 * time.Second
 	start := time.Now()
 	for idx.GetIndexType() != "hnsw" && time.Since(start) < maxWait {
 		time.Sleep(10 * time.Millisecond)
 	}
-	
+
 	assert.Equal(t, "hnsw", idx.GetIndexType())
 	assert.Equal(t, int64(1), idx.(*AdaptiveIndex).GetMigrationCount())
 	assert.Equal(t, 2, idx.Len())
@@ -82,7 +82,7 @@ func TestAdaptiveIndex(t *testing.T) {
 	results, err = idx.SearchVectors(context.Background(), []float32{1, 0, 0, 0}, 1, nil, SearchOptions{})
 	require.NoError(t, err)
 	assert.Len(t, results, 1)
-	
+
 	// Clean up
 	err = idx.Close()
 	assert.NoError(t, err)
@@ -95,9 +95,9 @@ func TestAdaptiveIndexDisabled(t *testing.T) {
 		Enabled:   false,
 	}
 	idx := NewAdaptiveIndex(ds, cfg)
-	
+
 	_, _ = idx.AddByLocation(context.Background(), 0, 0)
 	time.Sleep(100 * time.Millisecond)
-	
+
 	assert.Equal(t, "brute_force", idx.GetIndexType())
 }

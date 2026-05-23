@@ -1374,7 +1374,7 @@ func buildFilterOp(schema arrow.Schema, rec arrow.RecordBatch, f *Filter) (filte
 
 	opStr := strings.ToLower(f.Operator)
 	colIdx := colIndices[0]
-	
+
 	switch nestedType.ID() {
 
 	case arrow.INT64:

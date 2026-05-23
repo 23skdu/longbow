@@ -5,15 +5,14 @@ import (
 	"testing"
 	"time"
 
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/require"
 )
-
 
 // TDD Red Phase: Tests for batch distance search integration
 

@@ -3,7 +3,7 @@ package core
 import (
 	"math/rand"
 	"testing"
-	
+
 	"github.com/23skdu/longbow/internal/store/types"
 )
 

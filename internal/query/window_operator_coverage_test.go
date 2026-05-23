@@ -32,9 +32,9 @@ func TestWindowOperator_Aggregates_Extended(t *testing.T) {
 	t.Run("PartitionedAggregates", func(t *testing.T) {
 		functions := []WindowFunction{
 			{
-				Name: "sum",
+				Name:  "sum",
 				Field: "val",
-				As: "sum_val",
+				As:    "sum_val",
 				Over: WindowSpec{
 					PartitionBy: []string{"tag"},
 				},
@@ -47,7 +47,7 @@ func TestWindowOperator_Aggregates_Extended(t *testing.T) {
 		}
 		assert.Equal(t, 30.0, resMap[1]) // 10 + 20
 		assert.Equal(t, 30.0, resMap[2])
-		assert.Equal(t, 5.0, resMap[3])  // Just 5
+		assert.Equal(t, 5.0, resMap[3]) // Just 5
 	})
 }
 
@@ -121,7 +121,7 @@ func TestWindowOperator_InternalMethods(t *testing.T) {
 		b := core.SearchResult{Distance: 0.1, Score: 0.8}
 		orders := []WindowOrder{{Field: "distance", Descending: false}}
 		assert.True(t, op.isEqualInternal(a, nil, b, nil, orders))
-		
+
 		orders = []WindowOrder{{Field: "score", Descending: false}}
 		assert.False(t, op.isEqualInternal(a, nil, b, nil, orders))
 	})

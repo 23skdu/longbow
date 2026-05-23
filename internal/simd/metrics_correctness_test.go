@@ -20,51 +20,81 @@ func TestMetricsCorrectness(t *testing.T) {
 	t.Run("Float32", func(t *testing.T) {
 		a, b := []float32{1, 2}, []float32{2, 1}
 		d, _ := EuclideanDistance(a, b)
-		if math.Abs(float64(d-expectedEuclidean)) > 1e-6 { t.Errorf("Euclidean mismatch: %v", d) }
+		if math.Abs(float64(d-expectedEuclidean)) > 1e-6 {
+			t.Errorf("Euclidean mismatch: %v", d)
+		}
 		d, _ = DotProduct(a, b)
-		if d != expectedDot { t.Errorf("Dot mismatch: %v", d) }
+		if d != expectedDot {
+			t.Errorf("Dot mismatch: %v", d)
+		}
 		d, _ = CosineDistance(a, b)
-		if math.Abs(float64(d-expectedCosine)) > 1e-6 { t.Errorf("Cosine mismatch: %v", d) }
+		if math.Abs(float64(d-expectedCosine)) > 1e-6 {
+			t.Errorf("Cosine mismatch: %v", d)
+		}
 	})
 
 	t.Run("Int8", func(t *testing.T) {
 		a, b := []int8{1, 2}, []int8{2, 1}
 		d, _ := EuclideanDistanceInt8(a, b)
-		if math.Abs(float64(d-expectedEuclidean)) > 1e-6 { t.Errorf("Euclidean mismatch: %v", d) }
+		if math.Abs(float64(d-expectedEuclidean)) > 1e-6 {
+			t.Errorf("Euclidean mismatch: %v", d)
+		}
 		d, _ = DotProductInt8(a, b)
-		if d != expectedDot { t.Errorf("Dot mismatch: %v", d) }
+		if d != expectedDot {
+			t.Errorf("Dot mismatch: %v", d)
+		}
 		d, _ = CosineDistanceInt8(a, b)
-		if math.Abs(float64(d-expectedCosine)) > 1e-6 { t.Errorf("Cosine mismatch: %v", d) }
+		if math.Abs(float64(d-expectedCosine)) > 1e-6 {
+			t.Errorf("Cosine mismatch: %v", d)
+		}
 	})
 
 	t.Run("Uint8", func(t *testing.T) {
 		a, b := []uint8{1, 2}, []uint8{2, 1}
 		d, _ := EuclideanDistanceUint8(a, b)
-		if math.Abs(float64(d-expectedEuclidean)) > 1e-6 { t.Errorf("Euclidean mismatch: %v", d) }
+		if math.Abs(float64(d-expectedEuclidean)) > 1e-6 {
+			t.Errorf("Euclidean mismatch: %v", d)
+		}
 		d, _ = DotProductUint8(a, b)
-		if d != expectedDot { t.Errorf("Dot mismatch: %v", d) }
+		if d != expectedDot {
+			t.Errorf("Dot mismatch: %v", d)
+		}
 		d, _ = CosineDistanceUint8(a, b)
-		if math.Abs(float64(d-expectedCosine)) > 1e-6 { t.Errorf("Cosine mismatch: %v", d) }
+		if math.Abs(float64(d-expectedCosine)) > 1e-6 {
+			t.Errorf("Cosine mismatch: %v", d)
+		}
 	})
 
 	t.Run("Int16", func(t *testing.T) {
 		a, b := []int16{1, 2}, []int16{2, 1}
 		d, _ := EuclideanDistanceInt16(a, b)
-		if math.Abs(float64(d-expectedEuclidean)) > 1e-6 { t.Errorf("Euclidean mismatch: %v", d) }
+		if math.Abs(float64(d-expectedEuclidean)) > 1e-6 {
+			t.Errorf("Euclidean mismatch: %v", d)
+		}
 		d, _ = DotProductInt16(a, b)
-		if d != expectedDot { t.Errorf("Dot mismatch: %v", d) }
+		if d != expectedDot {
+			t.Errorf("Dot mismatch: %v", d)
+		}
 		d, _ = CosineDistanceInt16(a, b)
-		if math.Abs(float64(d-expectedCosine)) > 1e-6 { t.Errorf("Cosine mismatch: %v", d) }
+		if math.Abs(float64(d-expectedCosine)) > 1e-6 {
+			t.Errorf("Cosine mismatch: %v", d)
+		}
 	})
 
 	t.Run("Float64", func(t *testing.T) {
 		a, b := []float64{1, 2}, []float64{2, 1}
 		d, _ := EuclideanDistanceFloat64(a, b)
-		if math.Abs(float64(d-expectedEuclidean)) > 1e-6 { t.Errorf("Euclidean mismatch: %v", d) }
+		if math.Abs(float64(d-expectedEuclidean)) > 1e-6 {
+			t.Errorf("Euclidean mismatch: %v", d)
+		}
 		d, _ = DotProductF64(a, b)
-		if d != expectedDot { t.Errorf("Dot mismatch: %v", d) }
+		if d != expectedDot {
+			t.Errorf("Dot mismatch: %v", d)
+		}
 		d, _ = CosineDistanceFloat64(a, b)
-		if math.Abs(float64(d-expectedCosine)) > 1e-6 { t.Errorf("Cosine mismatch: %v", d) }
+		if math.Abs(float64(d-expectedCosine)) > 1e-6 {
+			t.Errorf("Cosine mismatch: %v", d)
+		}
 	})
 
 	t.Run("Complex64", func(t *testing.T) {
@@ -72,10 +102,16 @@ func TestMetricsCorrectness(t *testing.T) {
 		// Should match float test for real only
 		a, b := []complex64{1, 2}, []complex64{2, 1}
 		d, _ := EuclideanDistanceComplex64(a, b)
-		if math.Abs(float64(d-expectedEuclidean)) > 1e-6 { t.Errorf("Euclidean mismatch: %v", d) }
+		if math.Abs(float64(d-expectedEuclidean)) > 1e-6 {
+			t.Errorf("Euclidean mismatch: %v", d)
+		}
 		d, _ = DotProductComplex64(a, b)
-		if d != expectedDot { t.Errorf("Dot mismatch: %v", d) }
+		if d != expectedDot {
+			t.Errorf("Dot mismatch: %v", d)
+		}
 		d, _ = CosineDistanceComplex64(a, b)
-		if math.Abs(float64(d-expectedCosine)) > 1e-6 { t.Errorf("Cosine mismatch: %v", d) }
+		if math.Abs(float64(d-expectedCosine)) > 1e-6 {
+			t.Errorf("Cosine mismatch: %v", d)
+		}
 	})
 }

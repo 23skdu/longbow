@@ -33,7 +33,7 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 	if len(vectors) == 0 {
 		return nil
 	}
-	
+
 	metrics.SimdDispatchTotal.WithLabelValues(implementation, "euclidean_batch").Inc()
 
 	// Special handling for common dimensions to bypass generic batch overhead if possible
@@ -180,6 +180,6 @@ func float32SliceToBytes(vec []float32) []byte {
 		return nil
 	}
 	size := len(vec) * 4
-	ptr := unsafe.Pointer(&vec[0])           // #nosec G103
+	ptr := unsafe.Pointer(&vec[0])          // #nosec G103
 	return unsafe.Slice((*byte)(ptr), size) // #nosec G103
 }

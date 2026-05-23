@@ -54,7 +54,7 @@ func (q *IndexJobQueueLockFree) Send(job types.IndexJob) bool {
 	if q.buffer.Push(job) {
 		atomic.AddUint64(&q.acceptedCount, 1)
 		atomic.AddInt64(&q.estimatedBytes, size)
-		
+
 		// Non-blocking signal
 		select {
 		case q.notify <- struct{}{}:

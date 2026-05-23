@@ -45,7 +45,7 @@ func TestIVFOPQIndex_Basic(t *testing.T) {
 	results, err := idx.SearchVectorsWithBitmap(context.Background(), query, 5, nil, nil)
 	require.NoError(t, err)
 	assert.NotEmpty(t, results)
-	
+
 	// The first result should be the query vector itself (ID 0)
 	assert.Equal(t, uint32(0), uint32(results[0].ID))
 }

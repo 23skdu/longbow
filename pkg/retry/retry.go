@@ -36,7 +36,7 @@ func (b *ExponentialBackoff) Backoff(attempt int) time.Duration {
 	if attempt < 0 {
 		return 0
 	}
-	
+
 	// delay = BaseDelay * 2^attempt
 	delay := b.BaseDelay * (1 << uint(attempt))
 	if delay > b.MaxDelay {
@@ -45,7 +45,7 @@ func (b *ExponentialBackoff) Backoff(attempt int) time.Duration {
 
 	if b.Jitter > 0 {
 		jitter := time.Duration(rand.Float64() * b.Jitter * float64(delay)) // #nosec G404
-		if rand.Intn(2) == 0 { // #nosec G404
+		if rand.Intn(2) == 0 {                                              // #nosec G404
 			delay -= jitter
 		} else {
 			delay += jitter
@@ -67,7 +67,7 @@ func (b *ExponentialBackoff) IsRetryable(err error) bool {
 	if err == nil {
 		return false
 	}
-	
+
 	s, ok := status.FromError(err)
 	if !ok {
 		// Non-gRPC error, treat as retryable by default (e.g. errors.New)
@@ -85,7 +85,7 @@ func (b *ExponentialBackoff) IsRetryable(err error) bool {
 // Do executes a function with retries according to the policy.
 func Do(ctx context.Context, policy RetryPolicy, fn func(context.Context) error) error {
 	var lastErr error
-	
+
 	for attempt := 0; attempt <= policy.MaxRetries(); attempt++ {
 		// Check global context
 		if err := ctx.Err(); err != nil {

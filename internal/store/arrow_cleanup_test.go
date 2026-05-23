@@ -14,20 +14,13 @@ func TestArrowHNSW_Cleanup(t *testing.T) {
 	h := NewArrowHNSW(ds, &config, nil)
 
 	// Verify initialization
-	
-	
-	
 
 	// Close
 	err := h.Close()
 	assert.NoError(t, err)
 
 	// Verify cleanup
-	
-	
-	
-	
-	
+
 }
 
 func TestDataset_Close_Cascades(t *testing.T) {
@@ -45,5 +38,5 @@ func TestDataset_Close_Cascades(t *testing.T) {
 	assert.Nil(t, ds.BM25Index)
 	assert.Nil(t, ds.Graph)
 	// Underlying HNSW should be cleaned (internal check)
-	
+
 }

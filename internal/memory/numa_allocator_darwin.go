@@ -17,7 +17,7 @@ int get_current_cpu_darwin() {
         return -1;
     }
     // This is the closest analog to "current CPU" on Darwin without private SPIs
-    return -1; 
+    return -1;
 }
 */
 import "C"
@@ -30,7 +30,7 @@ import (
 // Since Apple Silicon doesn't expose a direct getcpu(2), we use sysctl to identify core types
 // and Mach thread info for cluster affinity.
 func GetCurrentCPU() int {
-    // Placeholder: Return -1 if direct mapping is unavailable, but logic is now structured for Mach integration
+	// Placeholder: Return -1 if direct mapping is unavailable, but logic is now structured for Mach integration
 	return -1
 }
 

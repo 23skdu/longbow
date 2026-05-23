@@ -80,7 +80,7 @@ func TestRBACManager_Lifecycle(t *testing.T) {
 func TestRBACManager_Expiration(t *testing.T) {
 	manager := NewRBACManager()
 	apiKey, _ := manager.CreateAPIKey("expiring-key", RoleReadOnly, "ns", nil)
-	
+
 	var rawKey string
 	for k, ak := range manager.apiKeys {
 		if ak.KeyID == apiKey.KeyID {

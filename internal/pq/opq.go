@@ -4,10 +4,10 @@ import (
 	"errors"
 	"time"
 
-	"github.com/23skdu/longbow/internal/metrics"
-	"gonum.org/v1/gonum/mat"
 	"bytes"
 	"encoding/gob"
+	"github.com/23skdu/longbow/internal/metrics"
+	"gonum.org/v1/gonum/mat"
 )
 
 // OPQEncoder implements Optimized Product Quantization (OPQ).

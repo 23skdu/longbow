@@ -9,7 +9,7 @@ import (
 
 func TestEuclideanDistanceTiledBatch_Remainder(t *testing.T) {
 	// Dimensions not multiple of 8 or 1024
-	dims := 1030 
+	dims := 1030
 	query := make([]float32, dims)
 	for i := range query {
 		query[i] = float32(i)

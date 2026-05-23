@@ -7,10 +7,10 @@ import (
 	"sort"
 	"sync"
 
-	"github.com/23skdu/longbow/internal/onnx"
-	"github.com/23skdu/longbow/internal/wasm"
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/ml"
+	"github.com/23skdu/longbow/internal/onnx"
+	"github.com/23skdu/longbow/internal/wasm"
 	"github.com/rs/zerolog"
 )
 
@@ -106,12 +106,12 @@ func (w *wasmModelWrapper) Score(query string, documents []string) ([]float32, e
 	for i, doc := range documents {
 		combined := query + " " + doc
 		ids, mask := w.tokenizer.Encode(combined)
-		
+
 		output, err := w.runner.InferenceWithTokens(context.Background(), ids, mask)
 		if err != nil {
 			return nil, err
 		}
-		
+
 		if len(output) > 0 {
 			scores[i] = output[0]
 		} else {
@@ -200,8 +200,6 @@ func (r *ONNXReranker) Close() error {
 	}
 	return nil
 }
-
-
 
 // Reranker defines the interface for the second-stage re-ranking
 type Reranker interface {
@@ -318,7 +316,6 @@ func findSubstring(s, sub string) int {
 	return -1
 }
 
-
 func splitWords(s string) []string {
 	words := []string{}
 	word := []byte{}
@@ -336,7 +333,6 @@ func splitWords(s string) []string {
 	}
 	return words
 }
-
 
 // RerankerFactory creates reranker instances based on configuration.
 type RerankerFactory struct{}

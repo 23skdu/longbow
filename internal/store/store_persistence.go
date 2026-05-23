@@ -132,7 +132,7 @@ func (s *VectorStore) applyReplayBatch(name string, rec arrow.RecordBatch, seq u
 	copy(newRecords, currentRecords)
 	newRecords[len(currentRecords)] = rec
 	ds.Records.UpdateInPlace(newRecords)
- 
+
 	// Update Primary Index and natively process RowLocation tombstones for Upserts
 	ds.UpdatePrimaryIndex(batchIdx, ds.ExtractIDs(rec))
 

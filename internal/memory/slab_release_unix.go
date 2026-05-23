@@ -51,7 +51,7 @@ func AdviseHugePage(b []byte) error {
 	// Call madvise with MADV_HUGEPAGE (Linux only, no-op on Darwin)
 	// We use the literal value for MADV_HUGEPAGE (14) if not defined in syscall
 	const MADV_HUGEPAGE = 14
-	
+
 	_, _, errno := syscall.Syscall(
 		syscall.SYS_MADVISE,
 		uintptr(ptr),

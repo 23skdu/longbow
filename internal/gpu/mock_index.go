@@ -166,7 +166,7 @@ func (m *MockIndex) GetDeviceInfo() (*GPUInfo, error) {
 func (m *MockIndex) GetMemoryInfo() (total, free, used int64, err error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	
+
 	usedMem := int64(len(m.vectors) * m.dimension * 4)
 	return 16384 * 1024 * 1024, 16384*1024*1024 - usedMem, usedMem, nil
 }

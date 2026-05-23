@@ -46,7 +46,7 @@ func init() {
 // TurboQuantDistanceNEON is the NEON-optimized version of TQ distance.
 func TurboQuantDistanceNEON(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
 	radius := math.Float32frombits(uint32(tqData[0]) | uint32(tqData[1])<<8 | uint32(tqData[2])<<16 | uint32(tqData[3])<<24)
-	
+
 	angleCount := pow2 - 1
 	angleBytes := (angleCount*bitsPerAngle + 7) / 8
 	packedAngles := tqData[4 : 4+angleBytes]
@@ -84,12 +84,15 @@ func TurboQuantDistanceNEON(query []float32, tqData []byte, dim int, pow2 int, b
 	// 2. Reconstruction (Recursive Polar) with Lookup Tables
 	recon := make([]float32, pow2)
 	recon[0] = radius
-	
+
 	var lookup []float32
 	switch bitsPerAngle {
-	case 2: lookup = tqLookup2
-	case 4: lookup = tqLookup4
-	case 8: lookup = tqLookup8
+	case 2:
+		lookup = tqLookup2
+	case 4:
+		lookup = tqLookup4
+	case 8:
+		lookup = tqLookup8
 	}
 
 	currentLevelSize := 1

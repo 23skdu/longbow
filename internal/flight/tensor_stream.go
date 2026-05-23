@@ -56,9 +56,9 @@ func (h *TensorStreamHandler) StreamTensorRDMA(ctx context.Context, stream fligh
 	}
 
 	// 5. Wait for client to finish or timeout
-	// In a real implementation, we might wait for an RDMA completion event 
+	// In a real implementation, we might wait for an RDMA completion event
 	// or a final gRPC signal.
-	
+
 	return nil
 }
 

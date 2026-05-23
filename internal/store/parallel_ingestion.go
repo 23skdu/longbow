@@ -18,21 +18,21 @@ import (
 
 // ParallelRecordReader handles gRPC-to-Arrow decoding in parallel
 type ParallelRecordReader struct {
-	stream     flight.FlightService_DoPutServer
-	schema     *arrow.Schema
-	alloc      memory.Allocator
-	
+	stream flight.FlightService_DoPutServer
+	schema *arrow.Schema
+	alloc  memory.Allocator
+
 	schemaBytes []byte
 	dataChan    chan sequencedData
 	resultChan  chan recordResult
-	
-	nextSeq     int
-	reorderBuf  map[int]recordResult
-	
-	ctx        context.Context
-	cancel     context.CancelFunc
-	wg         sync.WaitGroup
-	
+
+	nextSeq    int
+	reorderBuf map[int]recordResult
+
+	ctx    context.Context
+	cancel context.CancelFunc
+	wg     sync.WaitGroup
+
 	err        error
 	latestRec  arrow.RecordBatch
 	descriptor *flight.FlightDescriptor
@@ -81,7 +81,7 @@ func NewParallelRecordReader(stream flight.FlightService_DoPutServer, alloc memo
 		// IPC reader expects an EOS marker if we want it to be happy
 		_ = binary.Write(&buf, binary.LittleEndian, uint32(0xFFFFFFFF))
 		_ = binary.Write(&buf, binary.LittleEndian, uint32(0))
-		
+
 		rdr, rerr := ipc.NewReader(&buf, ipc.WithAllocator(alloc))
 		if rerr == nil {
 			schema = rdr.Schema()
@@ -96,7 +96,6 @@ func NewParallelRecordReader(stream flight.FlightService_DoPutServer, alloc memo
 
 	// Store the "raw" schema metadata (without prefix) for reconstruction
 
-
 	// Pre-render schema message for per-batch decoding
 	// We use ipc.NewWriter to ensure proper alignment and prefixing.
 	var buf bytes.Buffer
@@ -110,9 +109,8 @@ func NewParallelRecordReader(stream flight.FlightService_DoPutServer, alloc memo
 		schemaBytes = schemaBytes[:len(schemaBytes)-8]
 	}
 
-
 	ctx, cancel := context.WithCancel(stream.Context())
-	
+
 	pr := &ParallelRecordReader{
 		stream:      stream,
 		schema:      schema,
@@ -132,11 +130,11 @@ func NewParallelRecordReader(stream flight.FlightService_DoPutServer, alloc memo
 	if numWorkers > 8 {
 		numWorkers = 8
 	}
-	
+
 	logger.Info().Int("workers", numWorkers).Msg("ParallelIngest: Starting workers")
 
 	pr.wg.Add(numWorkers + 1)
-	
+
 	// Producer: Reads from gRPC stream
 	go pr.produce()
 
@@ -151,7 +149,7 @@ func NewParallelRecordReader(stream flight.FlightService_DoPutServer, alloc memo
 	// IMPORTANT: The first message might already contain a record batch!
 	if len(data.DataBody) > 0 || len(data.DataHeader) > 0 {
 		// Re-decode the first message too if it has data
-		// Wait, DeserializeSchema already used DataHeader. 
+		// Wait, DeserializeSchema already used DataHeader.
 		// If it also had data, we'd need to be careful.
 		// For now, assume first message is just schema for bench-tool.
 	}
@@ -172,7 +170,7 @@ func (pr *ParallelRecordReader) produce() {
 			}
 			return
 		}
-		
+
 		select {
 		case pr.dataChan <- sequencedData{data: data, seq: seq}:
 			seq++
@@ -190,13 +188,13 @@ func (pr *ParallelRecordReader) consume(id int) {
 		func() {
 			var batch arrow.RecordBatch
 			var err error
-			
+
 			defer func() {
 				if r := recover(); r != nil {
 					err = fmt.Errorf("panic in worker %d: %v", id, r)
 					pr.logger.Error().Int("worker", id).Interface("recover", r).Msg("ParallelIngest: worker panic")
 				}
-				
+
 				// Send result (success or error) to resultChan
 				select {
 				case pr.resultChan <- recordResult{
@@ -234,14 +232,14 @@ func (pr *ParallelRecordReader) decodePayload(data *flight.FlightData) (arrow.Re
 
 	// Check if DataHeader already has the 8-byte IPC prefix
 	hasPrefix := len(data.DataHeader) >= 8 && binary.LittleEndian.Uint32(data.DataHeader[0:4]) == 0xFFFFFFFF
-	
+
 	if !hasPrefix {
 		_ = binary.Write(&streamBuf, binary.LittleEndian, uint32(0xFFFFFFFF))
 		_ = binary.Write(&streamBuf, binary.LittleEndian, uint32(len(data.DataHeader))) // #nosec G115 -- intentional conversion for binary write
 	}
 	streamBuf.Write(data.DataHeader)
 	streamBuf.Write(data.DataBody)
-	
+
 	// Add proper EOS (8 bytes: ffffffff 00000000)
 	_ = binary.Write(&streamBuf, binary.LittleEndian, uint32(0xFFFFFFFF))
 	_ = binary.Write(&streamBuf, binary.LittleEndian, uint32(0))
@@ -257,7 +255,7 @@ func (pr *ParallelRecordReader) decodePayload(data *flight.FlightData) (arrow.Re
 		rec.Retain()
 		return rec, nil
 	}
-	
+
 	return nil, reader.Err()
 }
 
@@ -266,7 +264,7 @@ func (pr *ParallelRecordReader) Next() bool {
 	if pr.err != nil {
 		return false
 	}
-	
+
 	if pr.latestRec != nil {
 		pr.latestRec.Release()
 		pr.latestRec = nil
@@ -277,7 +275,7 @@ func (pr *ParallelRecordReader) Next() bool {
 		if res, ok := pr.reorderBuf[pr.nextSeq]; ok {
 			delete(pr.reorderBuf, pr.nextSeq)
 			pr.nextSeq++
-			
+
 			if res.err != nil {
 				pr.err = res.err
 				return false

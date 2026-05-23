@@ -220,7 +220,7 @@ func (ta *TypedArena[T]) GetWithGeneration(ref SliceRef, maxGeneration uint64) [
 		if len(byteSlice) == 0 {
 			return nil
 		}
-		ptr := unsafe.Pointer(&byteSlice[0])     // #nosec G103
+		ptr := unsafe.Pointer(&byteSlice[0])    // #nosec G103
 		return unsafe.Slice((*T)(ptr), ref.Len) // #nosec G103
 	}
 
@@ -229,6 +229,6 @@ func (ta *TypedArena[T]) GetWithGeneration(ref SliceRef, maxGeneration uint64) [
 		return nil
 	}
 
-	ptr := unsafe.Pointer(&byteSlice[0])     // #nosec G103
+	ptr := unsafe.Pointer(&byteSlice[0])    // #nosec G103
 	return unsafe.Slice((*T)(ptr), ref.Len) // #nosec G103
 }

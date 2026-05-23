@@ -50,7 +50,9 @@ func (h *ArrowHNSW) ExportGraph(w io.Writer) error {
 		snapshot = data.CloneForSnapshot()
 		// Capture PackedNeighbors state into legacy slices for serialization
 		for l, pn := range snapshot.PackedNeighbors {
-			if pn == nil { continue }
+			if pn == nil {
+				continue
+			}
 			for i := uint32(0); i < uint32(snapshot.Capacity); i++ { // #nosec G115
 				if neighbors, ok := pn.GetNeighbors(i); ok {
 					_ = snapshot.SetNeighborsAtLayer(l, i, neighbors)
@@ -364,9 +366,9 @@ func (h *ArrowHNSW) Close() error {
 	if data != nil {
 		data.Release()
 	}
-	// We do NOT nil locationStore, searchPool, etc. here because concurrent 
-	// background tasks (like indexing workers or migration) might still 
-	// be accessing them. The memory will be reclaimed when the ArrowHNSW 
+	// We do NOT nil locationStore, searchPool, etc. here because concurrent
+	// background tasks (like indexing workers or migration) might still
+	// be accessing them. The memory will be reclaimed when the ArrowHNSW
 	// object itself is no longer referenced.
 	return nil
 }
@@ -397,7 +399,9 @@ func (h *ArrowHNSW) SnapshotGraph() (*types.GraphData, *types.SyncState, error) 
 
 	// Capture PackedNeighbors state
 	for l, pn := range data.PackedNeighbors {
-		if pn == nil { continue }
+		if pn == nil {
+			continue
+		}
 		// Ensure legacy slices are in sync for this snapshot
 		// This is a trade-off: snapshots become slightly more expensive,
 		// but we maintain compatibility with the existing serialization format.

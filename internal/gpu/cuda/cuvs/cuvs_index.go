@@ -95,7 +95,7 @@ func (idx *CUVSIndex) AddBatch(ctx context.Context, ids []int64, vectors []float
 	if n < 0 || n > math.MaxInt32 || idx.dim < 0 || idx.dim > math.MaxInt32 {
 		return fmt.Errorf("n or dim too large or invalid")
 	}
-	ni32 := int32(n)      // #nosec G115
+	ni32 := int32(n)       // #nosec G115
 	di32 := int32(idx.dim) // #nosec G115
 	ret := C.cuvs_index_build(&idx.res, (*C.float)(&vectors[0]), C.int(ni32), C.int(di32))
 	if ret != 0 {

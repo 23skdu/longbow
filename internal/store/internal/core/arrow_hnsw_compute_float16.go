@@ -20,9 +20,9 @@ type float16Computer struct {
 
 func (c *float16Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
-	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsF16ChunkFast(int(cID))
-	if chunk != nil {
+		cID := types.ChunkID(id)
+		chunk := c.data.GetVectorsF16ChunkFast(int(cID))
+		if chunk != nil {
 			cOff := int(id) % types.ChunkSize
 			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)
 			start := cOff * pd

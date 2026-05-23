@@ -3,9 +3,9 @@
 package amx
 
 func DotAMX(a, b []float32) (float32, error) {
-    return 0, nil
+	return 0, nil
 }
 
 func L2AMX(a, b []float32) (float32, error) {
-    return 0, nil
+	return 0, nil
 }

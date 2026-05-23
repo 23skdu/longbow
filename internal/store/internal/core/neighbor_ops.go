@@ -16,20 +16,24 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 		if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
 			h.neighborCache[layer].Remove(source)
 		}
-		if data != nil { return data }
+		if data != nil {
+			return data
+		}
 		return h.data.Load()
 	}
 
 	// 1. Try Lock-Free path with PackedNeighbors (High Throughput)
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
-		
+
 		// Pre-compute targets to avoid doing it inside the CAS loop
 		_ = pn.UpdateNeighbors(source, func(old []uint32) []uint32 {
 			for _, n := range old {
-				if n == target { return nil } // No change
+				if n == target {
+					return nil
+				} // No change
 			}
-			
+
 			if len(old) < maxConn {
 				next := make([]uint32, len(old)+1)
 				copy(next, old)
@@ -91,7 +95,9 @@ func (h *ArrowHNSW) AddConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 // AddConnectionsBatch adds multiple directed edges to a single target node at the given layer.
 func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.GraphData, target uint32, sources []uint32, dists []float32, layer, maxConn int) *types.GraphData {
 	if len(sources) == 0 {
-		if data != nil { return data }
+		if data != nil {
+			return data
+		}
 		return h.data.Load()
 	}
 
@@ -147,6 +153,7 @@ func (h *ArrowHNSW) AddConnectionsBatch(ctx *ArrowSearchContext, data *types.Gra
 	atomic.AddUint64(&data.GlobalVersion, 1)
 	return data
 }
+
 // AddConnectionsBatchLocked adds multiple connections while holding a lock on the target node.
 func (h *ArrowHNSW) AddConnectionsBatchLocked(ctx *ArrowSearchContext, data *types.GraphData, target uint32, sources []uint32, dists []float32, layer, maxConn int) *types.GraphData {
 	if len(sources) == 0 {
@@ -175,7 +182,9 @@ func (h *ArrowHNSW) PruneConnections(ctx *ArrowSearchContext, data *types.GraphD
 	if layer < len(data.PackedNeighbors) && data.PackedNeighbors[layer] != nil {
 		pn := data.PackedNeighbors[layer]
 		_ = pn.UpdateNeighbors(id, func(old []uint32) []uint32 {
-			if len(old) <= maxConn { return nil }
+			if len(old) <= maxConn {
+				return nil
+			}
 
 			next := h.computePrunedNeighbors(ctx, data, id, old, nil, maxConn)
 			atomic.AddUint64(&data.GlobalVersion, 1)
@@ -205,12 +214,14 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 	cOff := types.ChunkOffset(source)
 	countsChunk := data.GetCountsChunk(layer, cID)
 	neighborsChunk := data.GetNeighborsChunk(layer, cID)
-	
+
 	var currentNeighbors []uint32
 	currentNeighbors = h.GetNeighborsCombinedManualLocked(data, layer, source, ctx.neighborBatch, math.MaxUint64)
 
 	for _, n := range currentNeighbors {
-		if n == target { return }
+		if n == target {
+			return
+		}
 	}
 
 	if len(currentNeighbors) >= maxConn {
@@ -218,8 +229,10 @@ func (h *ArrowHNSW) addConnectionLocked(ctx *ArrowSearchContext, data *types.Gra
 		return
 	}
 
-	if len(currentNeighbors) >= types.MaxNeighbors { return }
-	
+	if len(currentNeighbors) >= types.MaxNeighbors {
+		return
+	}
+
 	if countsChunk != nil && neighborsChunk != nil {
 		slot := int(atomic.LoadInt32(&countsChunk[cOff]))
 		if slot >= maxConn {
@@ -249,7 +262,9 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 	cOff := types.ChunkOffset(target)
 	countsChunk := data.GetCountsChunk(layer, cID)
 	neighborsChunk := data.GetNeighborsChunk(layer, cID)
-	if countsChunk == nil || neighborsChunk == nil { return }
+	if countsChunk == nil || neighborsChunk == nil {
+		return
+	}
 
 	countAddr := &countsChunk[cOff]
 	currentCount := atomic.LoadInt32(countAddr)
@@ -257,12 +272,14 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 
 	if int(currentCount)+len(sources) > maxConn {
 		h.pruneConnectionsLocked(ctx, data, target, maxConn, layer, sources)
-		return 
+		return
 	}
 
 	added := 0
 	for _, src := range sources {
-		if int(currentCount) >= types.MaxNeighbors { break }
+		if int(currentCount) >= types.MaxNeighbors {
+			break
+		}
 		found := false
 		for i := 0; i < int(currentCount); i++ {
 			if atomic.LoadUint32(&neighborsChunk[baseIdx+i]) == src {
@@ -301,7 +318,9 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 	copy(pool, current)
 	if len(extra) > 0 {
 		seen := make(map[uint32]struct{}, len(current)+len(extra))
-		for _, n := range current { seen[n] = struct{}{} }
+		for _, n := range current {
+			seen[n] = struct{}{}
+		}
 		for _, n := range extra {
 			if _, exists := seen[n]; !exists && n != nodeID {
 				pool = append(pool, n)
@@ -310,11 +329,13 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 		}
 	}
 
-	if len(pool) <= maxConn { return pool }
+	if len(pool) <= maxConn {
+		return pool
+	}
 
 	dists := make([]float32, len(pool))
 	h.computeDistances(ctx, data, nodeID, pool, dists)
-	
+
 	// Try GPU pruning if enabled
 	if h.gpuEnabled && h.gpuIndex != nil {
 		selected, err := h.pruneNeighborsGPU(pool, dists, maxConn)
@@ -329,7 +350,7 @@ func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.
 	}
 
 	selected := h.selectNeighborsFloat32(ctx, candidates, maxConn, data)
-	
+
 	result := make([]uint32, len(selected))
 	for i, cand := range selected {
 		result[i] = cand.ID
@@ -348,7 +369,7 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 
 	cID := types.ChunkID(nodeID)
 	cOff := types.ChunkOffset(nodeID)
-	
+
 	countsChunk := data.GetCountsChunk(layer, cID)
 	neighborsChunk := data.GetNeighborsChunk(layer, cID)
 	if countsChunk == nil || neighborsChunk == nil {
@@ -376,10 +397,14 @@ func (h *ArrowHNSW) pruneConnectionsLocked(ctx *ArrowSearchContext, data *types.
 // computeDistances calculates distance from nodeID to multiple targets using type-aware helper.
 func (h *ArrowHNSW) computeDistances(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, neighbors []uint32, dists []float32) {
 	vQuery, err := data.GetVector(nodeID)
-	if err != nil || vQuery == nil { return }
+	if err != nil || vQuery == nil {
+		return
+	}
 
 	computer := h.resolveHNSWComputer(data, ctx, vQuery, false)
-	if computer == nil { return }
+	if computer == nil {
+		return
+	}
 
 	// Use specialized computer if available
 	if comp, ok := computer.(interface {
@@ -398,7 +423,9 @@ func (h *ArrowHNSW) computeDistances(ctx *ArrowSearchContext, data *types.GraphD
 
 	// Fallback to manual computation
 	v1, err := data.GetVector(nodeID)
-	if err != nil || v1 == nil { return }
+	if err != nil || v1 == nil {
+		return
+	}
 
 	for i, nbID := range neighbors {
 		v2, err := data.GetVector(nbID)
@@ -406,7 +433,7 @@ func (h *ArrowHNSW) computeDistances(ctx *ArrowSearchContext, data *types.GraphD
 			dists[i] = math.MaxFloat32
 			continue
 		}
-		
+
 		d, err := h.DispatchDistance(data.Type, v1, v2)
 		if err == nil {
 			dists[i] = d

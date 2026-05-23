@@ -9,10 +9,10 @@ import (
 )
 
 type TPUBackend struct {
-	deviceID int32
-	mu       sync.Mutex
-	hbm      *HBMManager
-	vmem     *VMEMManager
+	deviceID    int32
+	mu          sync.Mutex
+	hbm         *HBMManager
+	vmem        *VMEMManager
 	initialized bool
 }
 
@@ -20,7 +20,7 @@ func NewTPUBackend(deviceID int32) (*TPUBackend, error) {
 	return &TPUBackend{
 		deviceID: deviceID,
 		hbm:      NewHBMManager(192 * 1024 * 1024 * 1024), // 192GB for v7x
-		vmem:     &VMEMManager{total: 16 * 1024 * 1024},      // 16MB SRAM scratchpad
+		vmem:     &VMEMManager{total: 16 * 1024 * 1024},   // 16MB SRAM scratchpad
 	}, nil
 }
 
@@ -43,7 +43,7 @@ type HBMManager struct {
 	total int64
 	used  int64
 	mu    sync.Mutex
-	
+
 	// Allocation map to track blocks for deallocation
 	allocations map[unsafe.Pointer]int64
 }
@@ -58,35 +58,35 @@ func NewHBMManager(total int64) *HBMManager {
 func (m *HBMManager) Allocate(deviceID int32, size int64) (unsafe.Pointer, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	if m.used+size > m.total {
 		return nil, fmt.Errorf("out of HBM: total %d, used %d, requested %d", m.total, m.used, size)
 	}
-	
+
 	ptr, err := tpuMalloc(deviceID, size)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	m.allocations[ptr] = size
 	m.used += size
-	
+
 	return ptr, nil
 }
 
 func (m *HBMManager) Free(ptr unsafe.Pointer) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	
+
 	size, ok := m.allocations[ptr]
 	if !ok {
 		return fmt.Errorf("invalid HBM pointer: %v", ptr)
 	}
-	
+
 	if err := tpuFree(ptr); err != nil {
 		return err
 	}
-	
+
 	delete(m.allocations, ptr)
 	m.used -= size
 	return nil

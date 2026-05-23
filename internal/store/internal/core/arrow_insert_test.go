@@ -243,7 +243,7 @@ func TestPruneConnections(t *testing.T) {
 		data = index.AddConnection(ctx, data, 0, i, 0, 10, 1.0)
 	}
 	index.data.Store(data)
-	
+
 	// Reload from index
 	data = index.data.Load()
 
@@ -265,7 +265,7 @@ func TestPruneConnections(t *testing.T) {
 	// Prune to 5
 	data = index.PruneConnections(ctx, data, 0, 5, 0)
 	index.data.Store(data)
-	
+
 	// Reload data from index as PruneConnections may have performed COW
 	data = index.data.Load()
 	counts := data.GetCountsChunk(0, 0)
@@ -281,7 +281,7 @@ func TestPruneConnections(t *testing.T) {
 	// Check idempotency - count should still be 5 after pruning again
 	data = index.PruneConnections(ctx, data, 0, 5, 0)
 	index.data.Store(data)
-	
+
 	// Reload data from index again
 	data = index.data.Load()
 	counts = data.GetCountsChunk(0, 0)

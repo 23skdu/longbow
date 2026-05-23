@@ -20,13 +20,13 @@ const (
 	// TemporalAggCount counts the number of occurrences in each time bucket.
 	TemporalAggCount TemporalAggType = "count"
 	// TemporalAggMin calculates the minimum value in each time bucket.
-	TemporalAggMin   TemporalAggType = "min"
+	TemporalAggMin TemporalAggType = "min"
 	// TemporalAggMax calculates the maximum value in each time bucket.
-	TemporalAggMax   TemporalAggType = "max"
+	TemporalAggMax TemporalAggType = "max"
 	// TemporalAggMean calculates the mean value in each time bucket.
-	TemporalAggMean  TemporalAggType = "mean"
+	TemporalAggMean TemporalAggType = "mean"
 	// TemporalAggSum calculates the sum of values in each time bucket.
-	TemporalAggSum   TemporalAggType = "sum"
+	TemporalAggSum TemporalAggType = "sum"
 )
 
 // AggregationBucket represents a single time-based bucket in an aggregation result.
@@ -117,7 +117,7 @@ func (ta *TemporalAggregator) extractValues(req TemporalAggRequest, vectors []Ve
 
 	for _, v := range vectors {
 		bucketTs := (v.Timestamp.UnixNano() / req.Interval) * req.Interval
-		
+
 		var values []float32
 		if req.MetricField != "" && len(v.Metadata) > 0 {
 			metaMap, _ := core.DecodeMetadata(v.Metadata)
@@ -136,7 +136,7 @@ func (ta *TemporalAggregator) extractValues(req TemporalAggRequest, vectors []Ve
 		} else {
 			values = v.Vector
 		}
-		
+
 		if len(values) > 0 {
 			if _, exists := bucketMap[bucketTs]; !exists {
 				bucketMap[bucketTs] = &extractedBucket{}
@@ -152,10 +152,14 @@ func (ta *TemporalAggregator) minBuckets(req TemporalAggRequest, vectors []Vecto
 	bucketMap := ta.extractValues(req, vectors)
 	buckets := make([]AggregationBucket, 0, len(bucketMap))
 	for ts, bucket := range bucketMap {
-		if len(bucket.Values) == 0 { continue }
+		if len(bucket.Values) == 0 {
+			continue
+		}
 		minVal := bucket.Values[0]
 		for _, v := range bucket.Values[1:] {
-			if v < minVal { minVal = v }
+			if v < minVal {
+				minVal = v
+			}
 		}
 		buckets = append(buckets, AggregationBucket{Timestamp: ts, Count: bucket.Count, Min: &minVal})
 	}
@@ -167,10 +171,14 @@ func (ta *TemporalAggregator) maxBuckets(req TemporalAggRequest, vectors []Vecto
 	bucketMap := ta.extractValues(req, vectors)
 	buckets := make([]AggregationBucket, 0, len(bucketMap))
 	for ts, bucket := range bucketMap {
-		if len(bucket.Values) == 0 { continue }
+		if len(bucket.Values) == 0 {
+			continue
+		}
 		maxVal := bucket.Values[0]
 		for _, v := range bucket.Values[1:] {
-			if v > maxVal { maxVal = v }
+			if v > maxVal {
+				maxVal = v
+			}
 		}
 		buckets = append(buckets, AggregationBucket{Timestamp: ts, Count: bucket.Count, Max: &maxVal})
 	}
@@ -182,9 +190,13 @@ func (ta *TemporalAggregator) meanBuckets(req TemporalAggRequest, vectors []Vect
 	bucketMap := ta.extractValues(req, vectors)
 	buckets := make([]AggregationBucket, 0, len(bucketMap))
 	for ts, bucket := range bucketMap {
-		if len(bucket.Values) == 0 { continue }
+		if len(bucket.Values) == 0 {
+			continue
+		}
 		var sum float32
-		for _, v := range bucket.Values { sum += v }
+		for _, v := range bucket.Values {
+			sum += v
+		}
 		meanVal := sum / float32(len(bucket.Values))
 		buckets = append(buckets, AggregationBucket{Timestamp: ts, Count: bucket.Count, Mean: &meanVal})
 	}
@@ -196,9 +208,13 @@ func (ta *TemporalAggregator) sumBuckets(req TemporalAggRequest, vectors []Vecto
 	bucketMap := ta.extractValues(req, vectors)
 	buckets := make([]AggregationBucket, 0, len(bucketMap))
 	for ts, bucket := range bucketMap {
-		if len(bucket.Values) == 0 { continue }
+		if len(bucket.Values) == 0 {
+			continue
+		}
 		var sum float32
-		for _, v := range bucket.Values { sum += v }
+		for _, v := range bucket.Values {
+			sum += v
+		}
 		buckets = append(buckets, AggregationBucket{Timestamp: ts, Count: bucket.Count, Sum: &sum})
 	}
 	sort.Slice(buckets, func(i, j int) bool { return buckets[i].Timestamp < buckets[j].Timestamp })

@@ -107,7 +107,6 @@ func TestTHP_HugePageCount(t *testing.T) {
 		runtime.GOOS)
 }
 
-
 // TestTHP_HugePageAlignment verifies that slabs retrieved from the global pool
 // have the correct capacity (a prerequisite for hugepage alignment).
 func TestTHP_HugePageAlignment(t *testing.T) {

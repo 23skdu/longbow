@@ -171,7 +171,7 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 		h := fnv.New32a()
 		_, _ = h.Write([]byte(entry.Name))
 		workerIdx := h.Sum32() % uint32(numAppliers)
-		
+
 		applierChans[workerIdx] <- entry
 		count++
 	}
@@ -209,7 +209,7 @@ func (e *StorageEngine) walReaderRoutine(f *os.File, out chan<- rawWALBlock, fir
 
 		// Parse Header (lightweight)
 		seq := binary.LittleEndian.Uint64(header[4:12])
-		
+
 		if first {
 			firstSeqChan <- seq
 			first = false
@@ -370,7 +370,7 @@ func (e *StorageEngine) reorderBufferRoutine(in chan DecodedWALEntry, out chan D
 
 	// Map to hold out-of-order entries
 	buffer := make(map[uint64]DecodedWALEntry)
-	
+
 	// Wait for the first sequence number
 	nextSeq, ok := <-firstSeqChan
 	if !ok {

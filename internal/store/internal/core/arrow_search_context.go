@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"container/heap"
+	"github.com/23skdu/longbow/internal/store/types"
 	"sync"
 	"time"
 
@@ -189,8 +189,8 @@ type ArrowSearchContext struct {
 	distsTemp []float32
 
 	// Neighbor tracking
-	neighborBuf []uint32
-	neighborBatch []uint32
+	neighborBuf    []uint32
+	neighborBatch  []uint32
 	matchResultBuf []byte
 
 	// Vectorized predicate buffers
@@ -210,7 +210,7 @@ type ArrowSearchContext struct {
 
 	scratchDists []float32
 
-	vectorBuf   []float32
+	vectorBuf []float32
 
 	pruneDepth int
 
@@ -229,20 +229,20 @@ type ArrowSearchContext struct {
 
 	// Reset tracking
 	dirty bool
-	
+
 	// inUse tracks if the context is currently being used by a search operation.
 	// This is used to detect concurrent access or double-puts to the pool.
 	inUse atomic.Bool
 
 	// Thread-local metrics
-	operations        int
-	distComputeTime   time.Duration
-	distComputeCount  int
+	operations       int
+	distComputeTime  time.Duration
+	distComputeCount int
 
 	// HNSW predicate for early-exit filtering
 	predicate types.HNSWPredicate
 
-	queryRadius      float32
+	queryRadius float32
 	// AllowUncommitted allows search to see nodes beyond global nodeCount
 	// (used during internal bootstrap/linkage operations)
 	AllowUncommitted bool
@@ -297,11 +297,11 @@ func NewArrowSearchContextPool() *ArrowSearchContextPool {
 func (p *ArrowSearchContextPool) Get() *ArrowSearchContext {
 	p.gets.Add(1)
 	ctx := p.pool.Get().(*ArrowSearchContext)
-	
+
 	if !ctx.inUse.CompareAndSwap(false, true) {
 		panic("ArrowSearchContextPool.Get: retrieved context is already in use! (possible internal pool corruption)")
 	}
-	
+
 	ctx.Reset()
 	return ctx
 }
@@ -310,11 +310,11 @@ func (p *ArrowSearchContextPool) Put(ctx *ArrowSearchContext) {
 	if ctx == nil {
 		return
 	}
-	
+
 	if !ctx.inUse.CompareAndSwap(true, false) {
 		panic("ArrowSearchContextPool.Put: context is not in use! (possible double-put)")
 	}
-	
+
 	p.puts.Add(1)
 	p.pool.Put(ctx)
 }
@@ -323,7 +323,7 @@ func (p *ArrowSearchContextPool) PutWithMetrics(ctx *ArrowSearchContext, dataTyp
 	if ctx == nil {
 		return
 	}
-	
+
 	if !ctx.inUse.CompareAndSwap(true, false) {
 		panic("ArrowSearchContextPool.PutWithMetrics: context is not in use! (possible double-put)")
 	}

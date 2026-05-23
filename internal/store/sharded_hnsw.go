@@ -14,12 +14,12 @@ import (
 	"time"
 
 	"github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
-	"github.com/23skdu/longbow/internal/memory"
 	"github.com/apache/arrow-go/v18/arrow"
 	"golang.org/x/sync/errgroup"
 )
@@ -97,7 +97,7 @@ func (s *hnswShard) registerID(localID uint32, globalID VectorID, globalToLocal 
 }
 
 // getGlobalID is now managed at the ShardedHNSW level using the index directly
-// or via a reverse lookup if needed. For now, we rely on the fact that 
+// or via a reverse lookup if needed. For now, we rely on the fact that
 // ShardedHNSW knows which GlobalID belongs to which LocalID during search.
 
 // Warmup accesses all nodes in the shard.
@@ -175,7 +175,7 @@ func (idx *ShardedHNSW) newShard(shardIdx int) *hnswShard {
 			return newHnswShard(id)
 		}
 	}
- 
+
 	// Map ShardedHNSWConfig to ArrowHNSWConfig
 	arrowConfig := DefaultArrowHNSWConfig()
 	arrowConfig.M = idx.config.M
@@ -183,10 +183,10 @@ func (idx *ShardedHNSW) newShard(shardIdx int) *hnswShard {
 	arrowConfig.MMax0 = idx.config.M * 2
 	// ArrowHNSW uses int32 for performance and atomic safety
 	arrowConfig.EfConstruction = int32(idx.config.EfConstruction) // #nosec G115
-	arrowConfig.InitialCapacity = 1024                          // Start small, grow dynamically
+	arrowConfig.InitialCapacity = 1024                            // Start small, grow dynamically
 	arrowConfig.Metric = idx.config.Metric
 	arrowConfig.PackedAdjacencyEnabled = idx.config.PackedAdjacencyEnabled
- 
+
 	// Preserve DataType from config (critical for complex64/complex128)
 	if idx.config.DataType != types.VectorTypeUnknown {
 		arrowConfig.DataType = idx.config.DataType
@@ -200,28 +200,28 @@ func (idx *ShardedHNSW) newShard(shardIdx int) *hnswShard {
 			arrowConfig.TurboQuantBits = 8
 		}
 	}
- 
+
 	// We pass nil for ChunkedLocationStore because shards use local IDs and don't manage global locations
 	// The ShardedHNSW manages the global location store.
 	var topo *memory.NUMATopology
 	if idx.dataset != nil {
 		topo = idx.dataset.Topo
 	}
- 
+
 	// Assign shard to NUMA node if topology is available
 	if topo != nil && topo.NumNodes > 0 {
 		arrowConfig.NUMANode = shardIdx % topo.NumNodes
 	}
- 
+
 	id := NewArrowHNSW(idx.dataset, &arrowConfig, topo)
 	if id == nil {
 		return nil
 	}
 	id.SetDisableNodeCountMetric(true)
- 
+
 	// Correct dimension initialization
 	_ = id.SetDimension(int(idx.dimension))
- 
+
 	return newHnswShard(id)
 }
 
@@ -237,16 +237,16 @@ func (idx *ShardedHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int)
 	}
 	idx.dataset.dataMu.RLock()
 	defer idx.dataset.dataMu.RUnlock()
- 
+
 	return idx.AddByLocationUnsafe(ctx, batchIdx, rowIdx)
 }
 
 // AddByLocationUnsafe adds a vector without taking dataset locks.
 func (idx *ShardedHNSW) AddByLocationUnsafe(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
-	if batchIdx >= len(idx .dataset.Records.Read()) {
+	if batchIdx >= len(idx.dataset.Records.Read()) {
 		return 0, fmt.Errorf("invalid batch idx")
 	}
-	rec := idx .dataset.Records.Read()[batchIdx]
+	rec := idx.dataset.Records.Read()[batchIdx]
 	return idx.AddByRecord(ctx, rec, rowIdx, batchIdx)
 }
 
@@ -267,7 +267,7 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 
 	n := len(rowIdxs)
 	globalIDs := make([]uint32, n)
-	
+
 	// 1. Group indices by shard
 	type shardJob struct {
 		indices []int // Original indices in the batch
@@ -361,7 +361,7 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 			return nil
 		})
 	}
-	
+
 	idx.shardsMu.RUnlock()
 
 	if err := g.Wait(); err != nil {
@@ -381,10 +381,10 @@ func (idx *ShardedHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 		shardIdx := idx.sharder.GetShard(vid)
 		shardIds[shardIdx] = append(shardIds[shardIdx], id)
 	}
- 
+
 	idx.shardsMu.RLock()
 	defer idx.shardsMu.RUnlock()
- 
+
 	for shardIdx, distinctIDs := range shardIds {
 		if shardIdx >= len(idx.shards) || idx.shards[shardIdx] == nil {
 			continue
@@ -429,15 +429,15 @@ func (idx *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, 
 		return 0, fmt.Errorf("vector ID overflow: %d exceeds max uint32", rawID)
 	}
 	id := VectorID(rawID) // #nosec G115 - bounds checked above
- 
+
 	// Update global locations (Lock-Free)
 	idx.locationStore.EnsureCapacity(id)
 	idx.locationStore.Set(id, Location{BatchIdx: batchIdx, RowIdx: rowIdx})
 	idx.locationStore.UpdateSize(id)
- 
+
 	// Route to Shard
 	shardIdx := idx.sharder.GetShard(id)
- 
+
 	idx.shardsMu.RLock()
 	if shardIdx < len(idx.shards) {
 		shard := idx.shards[shardIdx]
@@ -454,13 +454,13 @@ func (idx *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, 
 		return uint32(id), nil
 	}
 	idx.shardsMu.RUnlock()
- 
+
 	// If we are here, we might need to grow.
 	// Only linear sharding supports growth.
 	if idx.config.UseRingSharding {
 		return 0, fmt.Errorf("shard index out of bounds (dynamic growth not supported in ring mode)")
 	}
- 
+
 	// Dynamic Growth (Double-checked locking)
 	idx.shardsMu.Lock()
 	if shardIdx < len(idx.shards) {
@@ -478,7 +478,7 @@ func (idx *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, 
 		}
 		return uint32(id), nil
 	}
- 
+
 	// Grow
 	// We fill potential gaps if shardIdx skips
 	for i := len(idx.shards); i <= shardIdx; i++ {
@@ -486,14 +486,14 @@ func (idx *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, 
 	}
 	shard := idx.shards[shardIdx]
 	idx.shardsMu.Unlock()
- 
+
 	// Insert
 	localID, err := shard.index.AddByRecord(ctx, rec, rowIdx, batchIdx)
 	if err != nil {
 		return 0, fmt.Errorf("shard insert failed: %w", err)
 	}
 	shard.registerID(localID, id, idx.globalToLocal)
- 
+
 	metrics.ShardedHnswShardSize.WithLabelValues(idx.dataset.Name, fmt.Sprintf("%d", shardIdx)).Inc()
 	if id%1000 == 0 {
 		idx.updateShardBalanceMetrics()
@@ -506,13 +506,13 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 	if k <= 0 {
 		return nil, nil
 	}
- 
+
 	searchOptions := SearchOptions{}
 	if opt, ok := options.(SearchOptions); ok {
 		searchOptions = opt
 	}
 	_ = searchOptions // Mark as used
- 
+
 	// 1. Optimization: Try bitmap-based filtering
 	if len(filters) > 0 && idx.dataset != nil {
 		var filterExpr FilterExpr
@@ -528,20 +528,20 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 			return res, nil
 		}
 	}
- 
+
 	// 2. Parallel Search across all shards (Fallback path)
 	type shardResult struct {
 		results  []SearchResult
 		shardIdx int
 	}
- 
+
 	ch := make(chan shardResult, len(idx.shards))
 	g, ctx := errgroup.WithContext(ctx)
- 
+
 	idx.shardsMu.RLock()
 	currentShards := idx.shards
 	idx.shardsMu.RUnlock()
- 
+
 	for i, shard := range currentShards {
 		if shard == nil || shard.index == nil {
 			continue
@@ -558,7 +558,7 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 					_ = memory.PinToNUMANode(topo, nodeID)
 				}
 			}
- 
+
 			res, err := shard.index.SearchVectors(ctx, queryVec, k*2, nil, options) // Oversample, evaluate filters on merge
 			if err != nil {
 				return err
@@ -567,16 +567,16 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 			return nil
 		})
 	}
- 
+
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
- 
+
 	close(ch)
- 
+
 	// 2. Merge Results
 	merged := make([]SearchResult, 0, k*len(currentShards))
- 
+
 	for sr := range ch {
 		for _, r := range sr.results {
 			// Convert LocalID to GlobalID
@@ -585,7 +585,7 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 				continue
 			}
 			r.ID = globalID
- 
+
 			// Re-check global filters if needed
 			if len(filters) > 0 {
 				_, ok := idx.locationStore.Get(globalID)
@@ -594,15 +594,15 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 				}
 				// Evaluate filters here if needed.
 			}
- 
+
 			merged = append(merged, r)
 		}
 	}
- 
+
 	// Filter Block (Redundant if shards filtered, but kept for safety/fallback)
 	if len(filters) > 0 && idx.dataset != nil {
 		idx.dataset.dataMu.RLock()
-		if len(idx .dataset.Records.Read()) > 0 {
+		if len(idx.dataset.Records.Read()) > 0 {
 			// 1. Group row indices by BatchIdx
 			type batchJob struct {
 				rowIndices []int
@@ -612,7 +612,7 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 
 			for i, r := range merged {
 				loc, ok := idx.locationStore.Get(r.ID)
-				if !ok || loc.BatchIdx >= len(idx .dataset.Records.Read()) {
+				if !ok || loc.BatchIdx >= len(idx.dataset.Records.Read()) {
 					continue
 				}
 				job, ok := batchJobs[loc.BatchIdx]
@@ -627,18 +627,18 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 			// 2. Evaluate each batch
 			filteredMask := make([]bool, len(merged))
 			for bIdx, job := range batchJobs {
-				ev, err := query.NewFilterEvaluator(idx .dataset.Records.Read()[bIdx], filters)
+				ev, err := query.NewFilterEvaluator(idx.dataset.Records.Read()[bIdx], filters)
 				if err != nil {
 					continue
 				}
 				matches := ev.MatchesBatch(job.rowIndices)
-				
+
 				// Create a quick lookup for matched row indices in this batch
 				matchMap := make(map[int]struct{}, len(matches))
 				for _, m := range matches {
 					matchMap[m] = struct{}{}
 				}
-				
+
 				// Mark results in the filteredMask
 				for k, rowIdx := range job.rowIndices {
 					if _, matched := matchMap[rowIdx]; matched {
@@ -659,16 +659,16 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 		}
 		idx.dataset.dataMu.RUnlock()
 	}
- 
+
 	// Sort and limit (ascending - lower distance/score is better)
 	sort.Slice(merged, func(i, j int) bool {
 		return merged[i].Score < merged[j].Score
 	})
- 
+
 	if len(merged) > k {
 		merged = merged[:k]
 	}
- 
+
 	return merged, nil
 }
 
@@ -681,11 +681,11 @@ func (idx *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec an
 	}
 	ch := make(chan shardResult, len(idx.shards))
 	g, ctx := errgroup.WithContext(ctx)
- 
+
 	idx.shardsMu.RLock()
 	currentShards := idx.shards
 	idx.shardsMu.RUnlock()
- 
+
 	for i, shard := range currentShards {
 		if shard == nil || shard.index == nil {
 			continue
@@ -702,7 +702,7 @@ func (idx *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec an
 					_ = memory.PinToNUMANode(topo, nodeID)
 				}
 			}
- 
+
 			// Pass nil filter to shard, filter globally
 			res, err := shard.index.SearchVectorsWithBitmap(ctx, queryVec, k*2, nil, options)
 			if err != nil {
@@ -712,12 +712,12 @@ func (idx *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec an
 			return nil
 		})
 	}
- 
+
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 	close(ch)
- 
+
 	// Check for errors first
 	merged := make([]SearchResult, 0, k*2)
 	for sr := range ch {
@@ -726,25 +726,25 @@ func (idx *ShardedHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec an
 			if !ok {
 				continue
 			}
- 
+
 			// Global Bitset Filter
 			if filter != nil && !filter.Contains(uint32(globalID)) {
 				continue
 			}
- 
+
 			r.ID = globalID
 			merged = append(merged, r)
 		}
 	}
- 
+
 	sort.Slice(merged, func(i, j int) bool {
 		return merged[i].Score < merged[j].Score
 	})
- 
+
 	if len(merged) > k {
 		merged = merged[:k]
 	}
- 
+
 	return merged, nil
 }
 
@@ -757,11 +757,11 @@ func (idx *ShardedHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, 
 	}
 	ch := make(chan shardResult, len(idx.shards))
 	g, ctx := errgroup.WithContext(ctx)
- 
+
 	idx.shardsMu.RLock()
 	currentShards := idx.shards
 	idx.shardsMu.RUnlock()
- 
+
 	for i, shard := range currentShards {
 		if shard == nil || shard.index == nil {
 			continue
@@ -778,7 +778,7 @@ func (idx *ShardedHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, 
 					_ = memory.PinToNUMANode(topo, nodeID)
 				}
 			}
- 
+
 			res, err := shard.index.SearchVectorsInRange(ctx, queryVec, threshold, nil, options)
 			if err != nil {
 				return err
@@ -787,12 +787,12 @@ func (idx *ShardedHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, 
 			return nil
 		})
 	}
- 
+
 	if err := g.Wait(); err != nil {
 		return nil, err
 	}
 	close(ch)
- 
+
 	var merged []SearchResult
 	for sr := range ch {
 		if sr.err != nil {
@@ -804,7 +804,7 @@ func (idx *ShardedHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, 
 				continue
 			}
 			r.ID = globalID
- 
+
 			if len(filters) > 0 {
 				_, ok := idx.locationStore.Get(globalID)
 				if !ok {
@@ -814,14 +814,14 @@ func (idx *ShardedHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, 
 			merged = append(merged, r)
 		}
 	}
- 
+
 	if len(filters) > 0 && idx.dataset != nil {
 		idx.dataset.dataMu.RLock()
-		if len(idx .dataset.Records.Read()) > 0 {
+		if len(idx.dataset.Records.Read()) > 0 {
 			filtered := merged[:0]
 			for _, r := range merged {
 				loc, ok := idx.locationStore.Get(r.ID)
-				if !ok || loc.BatchIdx >= len(idx .dataset.Records.Read()) {
+				if !ok || loc.BatchIdx >= len(idx.dataset.Records.Read()) {
 					continue
 				}
 				filtered = append(filtered, r)
@@ -830,11 +830,11 @@ func (idx *ShardedHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, 
 		}
 		idx.dataset.dataMu.RUnlock()
 	}
- 
+
 	sort.Slice(merged, func(i, j int) bool {
 		return merged[i].Score < merged[j].Score
 	})
- 
+
 	return merged, nil
 }
 
@@ -863,21 +863,21 @@ func (idx *ShardedHNSW) SearchByID(ctx context.Context, id VectorID, k int) []Ve
 	if k <= 0 {
 		return nil
 	}
- 
+
 	loc, ok := idx.locationStore.Get(id)
 	if !ok {
 		return nil
 	}
- 
+
 	// Retrieve vector from dataset
 	idx.dataset.dataMu.RLock()
-	if loc.BatchIdx >= len(idx .dataset.Records.Read()) {
+	if loc.BatchIdx >= len(idx.dataset.Records.Read()) {
 		idx.dataset.dataMu.RUnlock()
 		return nil
 	}
-	rec := idx .dataset.Records.Read()[loc.BatchIdx]
+	rec := idx.dataset.Records.Read()[loc.BatchIdx]
 	idx.dataset.dataMu.RUnlock()
- 
+
 	// Find vector column
 	colIdx := -1
 	for i, field := range rec.Schema().Fields() {
@@ -889,18 +889,18 @@ func (idx *ShardedHNSW) SearchByID(ctx context.Context, id VectorID, k int) []Ve
 	if colIdx == -1 {
 		colIdx = 0
 	}
- 
+
 	vec, err := ExtractVectorFromArrow(rec, loc.RowIdx, colIdx)
 	if err != nil {
 		return nil
 	}
- 
+
 	// Perform global search
 	results, err := idx.SearchVectors(ctx, vec, k, nil, SearchOptions{})
 	if err != nil {
 		return nil
 	}
- 
+
 	ids := make([]VectorID, len(results))
 	for i, r := range results {
 		ids[i] = VectorID(r.ID)
@@ -1017,7 +1017,7 @@ func (idx *ShardedHNSW) PreWarm(targetSize int) {
 // GetRawNeighbors returns the internal IDs of nearest neighbors.
 func (idx *ShardedHNSW) GetRawNeighbors(id uint32) ([]uint32, error) {
 	shardIdx := idx.GetShardForID(VectorID(id))
- 
+
 	idx.shardsMu.RLock()
 	if shardIdx >= len(idx.shards) || idx.shards[shardIdx] == nil {
 		idx.shardsMu.RUnlock()
@@ -1025,19 +1025,19 @@ func (idx *ShardedHNSW) GetRawNeighbors(id uint32) ([]uint32, error) {
 	}
 	shard := idx.shards[shardIdx]
 	idx.shardsMu.RUnlock()
- 
+
 	loc, ok := idx.globalToLocal.Get(VectorID(id))
 	if !ok {
 		return nil, fmt.Errorf("vector id not found in mapping")
 	}
 	localID := uint32(loc.BatchIdx) // #nosec G115
- 
+
 	// Get local neighbors
 	localNeighbors, err := shard.index.GetRawNeighbors(localID)
 	if err != nil {
 		return nil, err
 	}
- 
+
 	// Map to Global IDs
 	globalNeighbors := make([]uint32, 0, len(localNeighbors))
 	for _, ln := range localNeighbors {
@@ -1056,14 +1056,14 @@ func (idx *ShardedHNSW) GetNeighbors(ctx context.Context, id uint32, k int) ([]t
 	if err != nil {
 		return nil, err
 	}
- 
+
 	results := make([]types.SearchResult, 0, min(k, len(neighbors)))
 	for i := 0; i < len(neighbors) && i < k; i++ {
 		results = append(results, types.SearchResult{
 			ID: types.VectorID(neighbors[i]),
 		})
 	}
- 
+
 	return results, nil
 }
 
@@ -1093,7 +1093,7 @@ type ShardStat struct {
 func (idx *ShardedHNSW) EstimateMemory() int64 {
 	size := int64(64)
 	size += int64(idx.locationStore.Len() * 8)
- 
+
 	idx.shardsMu.RLock()
 	defer idx.shardsMu.RUnlock()
 	for _, shard := range idx.shards {
@@ -1101,7 +1101,7 @@ func (idx *ShardedHNSW) EstimateMemory() int64 {
 			size += shard.index.EstimateMemory()
 		}
 	}
- 
+
 	return size
 }
 
@@ -1110,10 +1110,10 @@ func (idx *ShardedHNSW) RemapFromBatchInfo(remapping map[int]BatchRemapInfo) err
 	// ShardedHNSW locationStore (ChunkedLocationStore) holds global locations.
 	// We need to iterate all locations and update them.
 	// This is potentially expensive but necessary for compaction.
- 
+
 	idx.shardsMu.RLock()
 	defer idx.shardsMu.RUnlock()
- 
+
 	maxID := int(idx.nextID.Load())
 	for id := 0; id < maxID; id++ {
 		vid := VectorID(id)
@@ -1121,7 +1121,7 @@ func (idx *ShardedHNSW) RemapFromBatchInfo(remapping map[int]BatchRemapInfo) err
 		if !ok {
 			continue
 		}
- 
+
 		info, ok := remapping[loc.BatchIdx]
 		if ok {
 			// This batch was compacted
@@ -1134,14 +1134,14 @@ func (idx *ShardedHNSW) RemapFromBatchInfo(remapping map[int]BatchRemapInfo) err
 					}
 					// Update global location
 					idx.locationStore.Set(vid, newLoc)
- 
+
 					// Update inside the shard if it's an ArrowHNSW to maintain internal consistency
 					for _, shard := range idx.shards {
 						if shard == nil {
 							continue
 						}
 						if loc, found := idx.globalToLocal.Get(vid); found {
-						lid := uint32(loc.BatchIdx) // #nosec G115
+							lid := uint32(loc.BatchIdx) // #nosec G115
 							if ah, ok := shard.index.(*ArrowHNSW); ok {
 								ah.SetLocation(VectorID(lid), newLoc)
 							}
@@ -1166,10 +1166,10 @@ func (idx *ShardedHNSW) CleanupTombstones(threshold int) int {
 	idx.shardsMu.RLock()
 	currentShards := idx.shards
 	idx.shardsMu.RUnlock()
- 
+
 	var wg sync.WaitGroup
 	var mu sync.Mutex
- 
+
 	for _, shard := range currentShards {
 		if shard == nil || shard.index == nil {
 			continue
@@ -1208,7 +1208,7 @@ func (idx *ShardedHNSW) ImportState(data []byte) error {
 func (idx *ShardedHNSW) ExportGraph(w io.Writer) error {
 	idx.shardsMu.RLock()
 	defer idx.shardsMu.RUnlock()
- 
+
 	header := struct {
 		Version   uint32
 		NumShards int32
@@ -1218,11 +1218,11 @@ func (idx *ShardedHNSW) ExportGraph(w io.Writer) error {
 		NumShards: int32(len(idx.shards)), // #nosec G115
 		Dimension: idx.dimension,
 	}
- 
+
 	if err := binary.Write(w, binary.LittleEndian, header); err != nil {
 		return fmt.Errorf("failed to write header: %w", err)
 	}
- 
+
 	for i, shard := range idx.shards {
 		if shard == nil || shard.index == nil {
 			var zero uint32
@@ -1231,7 +1231,7 @@ func (idx *ShardedHNSW) ExportGraph(w io.Writer) error {
 			}
 			continue
 		}
- 
+
 		if shard.locationStore == nil {
 			var zero uint32
 			if err := binary.Write(w, binary.LittleEndian, zero); err != nil {
@@ -1243,7 +1243,7 @@ func (idx *ShardedHNSW) ExportGraph(w io.Writer) error {
 		if err := binary.Write(w, binary.LittleEndian, uint32(mappingsCount)); err != nil { // #nosec G115
 			return fmt.Errorf("failed to write shard %d mappings count: %w", i, err)
 		}
- 
+
 		for j := 0; j < mappingsCount; j++ {
 			loc, _ := shard.locationStore.Get(VectorID(j))
 			// #nosec G115
@@ -1252,12 +1252,12 @@ func (idx *ShardedHNSW) ExportGraph(w io.Writer) error {
 				return fmt.Errorf("failed to write shard %d mapping: %w", i, err)
 			}
 		}
- 
+
 		if err := shard.index.ExportGraph(w); err != nil {
 			return fmt.Errorf("failed to export shard %d graph: %w", i, err)
 		}
 	}
- 
+
 	return nil
 }
 
@@ -1268,22 +1268,22 @@ func (idx *ShardedHNSW) ImportGraph(r io.Reader) error {
 		NumShards int32
 		Dimension uint32
 	}
- 
+
 	if err := binary.Read(r, binary.LittleEndian, &header); err != nil {
 		return fmt.Errorf("failed to read header: %w", err)
 	}
- 
+
 	if header.Version != 1 {
 		return fmt.Errorf("unsupported export version: %d", header.Version)
 	}
- 
+
 	if header.Dimension != idx.dimension {
 		return fmt.Errorf("dimension mismatch: expected %d, got %d", idx.dimension, header.Dimension)
 	}
- 
+
 	idx.shardsMu.Lock()
 	defer idx.shardsMu.Unlock()
- 
+
 	if int(header.NumShards) > len(idx.shards) {
 		newShards := make([]*hnswShard, header.NumShards)
 		copy(newShards, idx.shards)
@@ -1292,24 +1292,24 @@ func (idx *ShardedHNSW) ImportGraph(r io.Reader) error {
 		}
 		idx.shards = newShards
 	}
- 
+
 	var maxGlobalID int64 = -1
 	for i := 0; i < int(header.NumShards); i++ {
 		shard := idx.shards[i]
- 
+
 		if shard == nil {
 			continue
 		}
- 
+
 		var mappingCount uint32
 		if err := binary.Read(r, binary.LittleEndian, &mappingCount); err != nil {
 			return fmt.Errorf("failed to read shard %d mappings count: %w", i, err)
 		}
- 
+
 		if mappingCount == 0 {
 			continue
 		}
- 
+
 		globalIDs := make([]VectorID, mappingCount)
 		for j := uint32(0); j < mappingCount; j++ {
 			var globalID uint64
@@ -1321,7 +1321,7 @@ func (idx *ShardedHNSW) ImportGraph(r io.Reader) error {
 				maxGlobalID = int64(globalID)
 			}
 		}
- 
+
 		if shard.locationStore == nil {
 			shard.locationStore = NewChunkedLocationStore()
 		}
@@ -1330,14 +1330,14 @@ func (idx *ShardedHNSW) ImportGraph(r io.Reader) error {
 		for j, globalID := range globalIDs {
 			shard.registerID(uint32(j), globalID, idx.globalToLocal)
 		}
- 
+
 		if shard.index != nil {
 			if err := shard.index.ImportGraph(r); err != nil {
 				return fmt.Errorf("failed to import shard %d graph: %w", i, err)
 			}
 		}
 	}
- 
+
 	if maxGlobalID >= 0 {
 		idx.nextID.Store(maxGlobalID + 1)
 	}
@@ -1349,10 +1349,10 @@ func (idx *ShardedHNSW) ImportGraph(r io.Reader) error {
 func (idx *ShardedHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error) {
 	idx.shardsMu.RLock()
 	defer idx.shardsMu.RUnlock()
- 
+
 	allLocs := make([]core.Location, 0)
 	startIndex := 0
- 
+
 	for _, shard := range idx.shards {
 		if shard == nil {
 			continue
@@ -1368,7 +1368,7 @@ func (idx *ShardedHNSW) ExportDelta(fromVersion uint64) (*types.DeltaSync, error
 			}
 		}
 	}
- 
+
 	return &types.DeltaSync{
 		FromVersion:  fromVersion,
 		ToVersion:    uint64(len(allLocs)),
@@ -1382,28 +1382,28 @@ func (idx *ShardedHNSW) ApplyDelta(delta *types.DeltaSync) error {
 	if delta == nil || len(delta.NewLocations) == 0 {
 		return nil
 	}
- 
+
 	idx.shardsMu.RLock()
 	defer idx.shardsMu.RUnlock()
- 
+
 	for i, loc := range delta.NewLocations {
 		globalID := VectorID(int(delta.StartIndex) + i) // #nosec G115
 		shardIdx := idx.sharder.GetShard(globalID)
- 
+
 		if shardIdx >= len(idx.shards) || idx.shards[shardIdx] == nil {
 			continue
 		}
- 
+
 		shard := idx.shards[shardIdx]
 		localID := uint32(0)
 		if shard.locationStore != nil {
 			localID = uint32(shard.locationStore.Len()) // #nosec G115
 		}
 		shard.registerID(localID, globalID, idx.globalToLocal)
- 
+
 		idx.locationStore.Set(VectorID(globalID), loc)
 	}
- 
+
 	return nil
 }
 
@@ -1435,10 +1435,11 @@ func (idx *ShardedHNSW) RemapLocations(ctx context.Context, mapping map[uint32]a
 			idx.locationStore.Set(vid, loc)
 		}
 	}
- 
+
 	// Propagate to shards if needed (though usually global location store is enough if shards use local IDs)
 	return nil
 }
+
 // GetShardedIndex returns this index as a ShardedHNSW pointer.
 func (idx *ShardedHNSW) GetShardedIndex() *ShardedHNSW {
 	return idx
@@ -1483,7 +1484,7 @@ func (idx *ShardedHNSW) updateShardBalanceMetrics() {
 			cnt := float64(s.index.Len())
 			counts[i] = cnt
 			sum += cnt
-			
+
 			datasetName := ""
 			if idx.dataset != nil {
 				datasetName = idx.dataset.Name

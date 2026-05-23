@@ -1,4 +1,5 @@
 //go:build amd64 && avx512
+
 package simd
 
 import "unsafe"
@@ -6,9 +7,15 @@ import "unsafe"
 // AVX-512 specialized implementations
 
 // AVX-512 stubs
-func UnpackTQ2AVX512(src []byte, dst []float32, scale, bias float32) { UnpackTQ2AVX2(src, dst, scale, bias) }
-func UnpackTQ4AVX512(src []byte, dst []float32, scale, bias float32) { UnpackTQ4AVX2(src, dst, scale, bias) }
-func UnpackTQ8AVX512(src []byte, dst []float32, scale, bias float32) { UnpackTQ8AVX2(src, dst, scale, bias) }
+func UnpackTQ2AVX512(src []byte, dst []float32, scale, bias float32) {
+	UnpackTQ2AVX2(src, dst, scale, bias)
+}
+func UnpackTQ4AVX512(src []byte, dst []float32, scale, bias float32) {
+	UnpackTQ4AVX2(src, dst, scale, bias)
+}
+func UnpackTQ8AVX512(src []byte, dst []float32, scale, bias float32) {
+	UnpackTQ8AVX2(src, dst, scale, bias)
+}
 func PackTQ2AVX512(src []float32, dst []byte) {
 	if len(src) == 0 {
 		return

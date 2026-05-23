@@ -29,7 +29,7 @@ func NewRDMAServer(enabled bool) *RDMAServer {
 // DoPut implements the RDMA-accelerated path for data ingestion.
 func (s *RDMAServer) DoPut(stream flight.FlightService_DoPutServer) error {
 	// 1. Detect if client supports RDMA via metadata
-	
+
 	// 2. Perform RDMA Handshake
 	// Register a buffer for this specific ingestion stream
 	bufSize := 1024 * 1024 * 64 // 64MB buffer for Arrow batches
@@ -56,14 +56,14 @@ func (s *RDMAServer) DoPut(stream flight.FlightService_DoPutServer) error {
 		if err != nil {
 			break
 		}
-		
+
 		if batch != nil {
 			// In zero-copy mode, the client writes directly to the MR.
 			// The Recv() call might only contain metadata about the write.
 			s.ctx.ProcessBytes(int64(len(batch.DataBody)))
 		}
 	}
-	
+
 	return nil
 }
 
@@ -83,7 +83,7 @@ func (s *RDMAServer) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGet
 
 // StartRDMAListener starts the RDMA listener on the specified port.
 func (s *RDMAServer) StartRDMAListener(addr string) error {
-	// In RoCEv2, this is often a standard TCP listener for the handshake, 
+	// In RoCEv2, this is often a standard TCP listener for the handshake,
 	// followed by RDMA for the data path.
 	l, err := net.Listen("tcp", addr)
 	if err != nil {

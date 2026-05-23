@@ -20,14 +20,14 @@ type ReadRequest struct {
 
 // UringReader utilizes io_uring for high-performance, concurrent non-blocking reads.
 type UringReader struct {
-	f      *os.File
-	ring   *iouring.Ring
-	
-	mu          sync.RWMutex
-	active      bool
-	nextID      uint64
-	pending     map[uint64]*ReadRequest
-	
+	f    *os.File
+	ring *iouring.Ring
+
+	mu      sync.RWMutex
+	active  bool
+	nextID  uint64
+	pending map[uint64]*ReadRequest
+
 	stopChan chan struct{}
 }
 
@@ -153,7 +153,7 @@ func (r *UringReader) Close() error {
 	r.mu.Unlock()
 
 	close(r.stopChan)
-	
+
 	if r.ring != nil {
 		_ = r.ring.Close()
 	}

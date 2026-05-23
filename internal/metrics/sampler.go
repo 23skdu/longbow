@@ -27,7 +27,7 @@ func (s *AdaptiveSampler) ShouldSample() (bool, float64) {
 	}
 	now := time.Now().UnixNano()
 	last := s.lastSampleNs.Load()
-	
+
 	// 1 millisecond interval = 1,000,000 nanoseconds
 	if now-last > 1_000_000 {
 		if s.lastSampleNs.CompareAndSwap(last, now) {
@@ -37,7 +37,7 @@ func (s *AdaptiveSampler) ShouldSample() (bool, float64) {
 			return true, float64(skipped + 1)
 		}
 	}
-	
+
 	// We didn't sample, just increment the skip count
 	s.skippedCount.Add(1)
 	return false, 0

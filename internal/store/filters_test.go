@@ -1,10 +1,10 @@
 package store
 
 import (
-	"testing"
 	"github.com/23skdu/longbow/internal/core"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 func helperLazyMeta(m map[string]interface{}) *lbtypes.LazyMetadata {
@@ -61,7 +61,7 @@ func TestParseFilterAndEvaluate_AST(t *testing.T) {
 		"role":   "guest",
 	}
 	assert.False(t, filter.Evaluate(helperLazyMeta(metadataNoMatch2)))
-	
+
 	// Test NotExpr
 	notNode := map[string]interface{}{
 		"$not": map[string]interface{}{

@@ -71,17 +71,17 @@ func TestRandomRotationNEON(t *testing.T) {
 }
 
 func TestL2SquaredNEON(t *testing.T) {
-    if !features.HasNEON {
-        t.Skip("NEON not available")
-    }
-    
-    a := []float32{1, 2, 3, 4}
-    b := []float32{5, 6, 7, 8}
-    // (1-5)^2 + (2-6)^2 + (3-7)^2 + (4-8)^2 = 16 + 16 + 16 + 16 = 64
-    
-    res, err := l2SquaredNEON(a, b)
-    assert.NoError(t, err)
-    assert.Equal(t, float32(64.0), res)
+	if !features.HasNEON {
+		t.Skip("NEON not available")
+	}
+
+	a := []float32{1, 2, 3, 4}
+	b := []float32{5, 6, 7, 8}
+	// (1-5)^2 + (2-6)^2 + (3-7)^2 + (4-8)^2 = 16 + 16 + 16 + 16 = 64
+
+	res, err := l2SquaredNEON(a, b)
+	assert.NoError(t, err)
+	assert.Equal(t, float32(64.0), res)
 }
 
 func BenchmarkFWHT_NEON_512(b *testing.B) {

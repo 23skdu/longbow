@@ -389,7 +389,7 @@ func (gn *GraphNavigator) calculateDistance(node1, node2 uint32) float32 {
 	if df == nil {
 		df = simd.DistanceKernel[float32](simd.DistFunc)
 	}
-	
+
 	dist, err := df(v1, v2)
 	if err != nil {
 		return math.MaxFloat32

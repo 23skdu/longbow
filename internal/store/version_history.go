@@ -28,7 +28,7 @@ type VersionHistory struct {
 // VersionHistoryConfig defines the retention settings for version history.
 type VersionHistoryConfig struct {
 	// MaxVersions is the maximum number of versions to keep per vector ID.
-	MaxVersions     int
+	MaxVersions int
 	// RetentionPeriod is the duration for which older versions are kept.
 	RetentionPeriod time.Duration
 }

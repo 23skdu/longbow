@@ -10,9 +10,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/rs/zerolog"
 	"github.com/23skdu/longbow/internal/autoscale"
 	lbmem "github.com/23skdu/longbow/internal/memory"
+	"github.com/rs/zerolog"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 )
@@ -26,13 +26,13 @@ type AdmissionController struct {
 	migratingCount atomic.Int32
 	logger         zerolog.Logger
 	tuner          *lbmem.GCTuner
-	
-	activeQueries  atomic.Int32
-	walReplaying   atomic.Bool
-	querySem       chan struct{}
+
+	activeQueries atomic.Int32
+	walReplaying  atomic.Bool
+	querySem      chan struct{}
 
 	// Migration thresholds
-	maxSearchLatency  time.Duration
+	maxSearchLatency    time.Duration
 	maxIngestThroughput float64
 }
 
@@ -51,7 +51,7 @@ func NewAdmissionController(maxMemory, currentMemory *atomic.Int64, scaler *auto
 		scaler:              scaler,
 		logger:              logger,
 		maxSearchLatency:    500 * time.Millisecond,
-		maxIngestThroughput: 150000, // Updated for 1M scale target
+		maxIngestThroughput: 150000,                 // Updated for 1M scale target
 		querySem:            make(chan struct{}, 2), // Cap query concurrency to 2 during sharding/WAL
 	}
 }
@@ -97,14 +97,14 @@ func (ac *AdmissionController) AdmitMigration(ctx context.Context) error {
 	if ac.scaler == nil {
 		return nil
 	}
-	
+
 	snapshot := ac.scaler.GetLoadSnapshot()
-	
+
 	// 80% Rule for Search Latency
 	if snapshot.SearchLatency > time.Duration(float64(ac.maxSearchLatency)*0.8) {
 		return status.Errorf(codes.ResourceExhausted, "migration throttled: search latency (%.1fms) exceeds 80%% capacity", float64(snapshot.SearchLatency.Milliseconds()))
 	}
-	
+
 	// 80% Rule for Ingestion Pressure
 	if snapshot.IngestThroughput > ac.maxIngestThroughput*0.8 {
 		return status.Errorf(codes.ResourceExhausted, "migration throttled: ingestion throughput (%.1f vectors/s) exceeds 80%% capacity", snapshot.IngestThroughput)
@@ -164,7 +164,7 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 
 	// 1. Get Manual Estimate
 	currMem := ac.currentMemory.Load()
-	
+
 	// 2. Get Actual Heap Usage
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
@@ -172,7 +172,7 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 	if flag.Lookup("test.v") != nil && maxMem > 1 {
 		heapMem = 0
 	}
-	
+
 	// 3. Get Off-Heap Arena Usage (using TotalCapacity for actual footprint)
 	offHeapMem := lbmem.GetGlobalOffHeapAllocated()
 

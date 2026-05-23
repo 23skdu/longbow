@@ -130,14 +130,14 @@ func TestGetDataType_Extended(t *testing.T) {
 	assert.Equal(t, DataTypeFloat64, GetDataType[float64]())
 	assert.Equal(t, DataTypeComplex64, GetDataType[complex64]())
 	assert.Equal(t, DataTypeComplex128, GetDataType[complex128]())
-	
+
 	type custom struct{}
 	assert.Equal(t, DataTypeFloat32, GetDataType[custom](), "Should fallback to float32")
 }
 
 func TestRegistry_Specialized(t *testing.T) {
 	initializeDispatch()
-	
+
 	// Test specialized dimensions (128, 384, 768, 1536)
 	dims := []int{128, 384, 768, 1536}
 	for _, d := range dims {

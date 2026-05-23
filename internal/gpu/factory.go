@@ -7,9 +7,9 @@ import (
 	"sort"
 	"unsafe"
 
-	"sync"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
+	"sync"
 )
 
 // NewIndexWithBackend creates a GPU index with specified backend (delegates to implementation)
@@ -34,15 +34,15 @@ func NewIndex(cfg GPUConfig) (Index, error) {
 
 // CPUIndex implements a CPU-only fallback index using linear scan
 type CPUIndex struct {
-	mu          sync.RWMutex
-	vectors     map[int64][]float32
-	pqCodes     map[int64][]byte
-	tqCodes     map[int64][]byte
-	dimension   int
-	deviceID    int32
-	pqEncoder   *pq.PQEncoder
-	pqEnabled   bool // Enable PQ compression during ingest
-	
+	mu        sync.RWMutex
+	vectors   map[int64][]float32
+	pqCodes   map[int64][]byte
+	tqCodes   map[int64][]byte
+	dimension int
+	deviceID  int32
+	pqEncoder *pq.PQEncoder
+	pqEnabled bool // Enable PQ compression during ingest
+
 	// Graph data
 	graphOffsets   []uint32
 	graphNeighbors []uint32
@@ -105,7 +105,6 @@ func (i *CPUIndex) Add(ids []int64, vectors []float32) error {
 
 	return nil
 }
-
 
 func (i *CPUIndex) Search(vector []float32, k int) (ids []int64, distances []float32, err error) {
 	i.mu.RLock()
@@ -209,7 +208,6 @@ func (i *CPUIndex) SearchBatch(vectors [][]float32, k int) ([][]int64, [][]float
 
 	return results, distances, nil
 }
-
 
 func (i *CPUIndex) AddPQ(ids []int64, codes []byte, m int) error {
 	if len(ids) == 0 {
@@ -361,7 +359,7 @@ func (i *CPUIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) (
 	results := make([]result, 0, len(i.tqCodes))
 
 	tqFunc := simd.GetTurboQuantDistanceFunc()
-	
+
 	// pow2 is determined by bitsPerAngle and length of tqData
 	// For standard Longbow TQ, we assume 128-dim -> pow2=128
 	pow2 := i.dimension // In most cases dimension is the pow2
@@ -426,15 +424,15 @@ func (i *CPUIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []f
 
 	i.graphOffsets = make([]uint32, len(offsets))
 	copy(i.graphOffsets, offsets)
-	
+
 	i.graphNeighbors = make([]uint32, len(neighbors))
 	copy(i.graphNeighbors, neighbors)
-	
+
 	if len(weights) > 0 {
 		i.graphWeights = make([]float32, len(weights))
 		copy(i.graphWeights, weights)
 	}
-	
+
 	return nil
 }
 
@@ -461,7 +459,7 @@ func (i *CPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint
 			}
 			start := i.graphOffsets[nodeID]
 			end := i.graphOffsets[nodeID+1]
-			
+
 			for neighborIdx := start; neighborIdx < end; neighborIdx++ {
 				neighbor := i.graphNeighbors[neighborIdx]
 				if _, seen := visited[neighbor]; !seen {
@@ -491,32 +489,32 @@ func (i *CPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint
 func (i *CPUIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	count := len(points) / 2
 	results := make([]float32, count)
-	
+
 	// Scalar fallback for CPU
 	for j := 0; j < count; j++ {
 		lat2 := points[j*2]
 		lon2 := points[j*2+1]
-		
+
 		dLat := (lat2 - centerLat) * math.Pi / 180.0
 		dLon := (lon2 - centerLon) * math.Pi / 180.0
-		
+
 		lat1Rad := float64(centerLat) * math.Pi / 180.0
 		lat2Rad := float64(lat2) * math.Pi / 180.0
-		
+
 		a := math.Sin(float64(dLat/2))*math.Sin(float64(dLat/2)) +
 			math.Cos(lat1Rad)*math.Cos(lat2Rad)*
 				math.Sin(float64(dLon/2))*math.Sin(float64(dLon/2))
 		c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
 		results[j] = float32(float64(earthRadius) * c)
 	}
-	
+
 	return results, nil
 }
 
 func (i *CPUIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 	count := len(vectors) / dims
 	results := make([]float32, count)
-	
+
 	for j := 0; j < count; j++ {
 		vec := vectors[j*dims : (j+1)*dims]
 		var sum float32
@@ -525,7 +523,7 @@ func (i *CPUIndex) NormBatch(vectors []float32, dims int) ([]float32, error) {
 		}
 		results[j] = sum
 	}
-	
+
 	return results, nil
 }
 
@@ -562,7 +560,7 @@ func (i *CPUIndex) PruneNeighbors(candidateIds []uint32, candidateDists []float3
 			// Compute distance between currId and selId
 			v1 := allVectors[int(currId)*i.dimension : int(currId+1)*i.dimension]
 			v2 := allVectors[int(selId)*i.dimension : int(selId+1)*i.dimension]
-			
+
 			distBetween := math.Sqrt(float64(euclideanDistance(v1, v2)))
 			if float32(distBetween) < currDist {
 				good = false

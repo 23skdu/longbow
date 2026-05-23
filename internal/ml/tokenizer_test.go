@@ -14,7 +14,7 @@ func TestTokenizer(t *testing.T) {
 	tmpVocab, err := os.CreateTemp("", "vocab.txt")
 	require.NoError(t, err)
 	defer os.Remove(tmpVocab.Name())
-	
+
 	_, err = tmpVocab.WriteString(vocabContent)
 	require.NoError(t, err)
 	tmpVocab.Close()
@@ -29,7 +29,7 @@ func TestTokenizer(t *testing.T) {
 	assert.NotEmpty(t, ids)
 	assert.NotEmpty(t, mask)
 	assert.Equal(t, len(ids), len(mask))
-	
+
 	// CLS + hello + world + SEP = 4 tokens
 	assert.GreaterOrEqual(t, len(ids), 4)
 	assert.Equal(t, int64(1), mask[0]) // CLS mask should be 1

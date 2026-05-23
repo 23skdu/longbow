@@ -11,8 +11,8 @@ func TestLowBitKernels(t *testing.T) {
 	// Low nibble (0x0F) and High nibble (>>4)
 	// byte 0x12 -> low=2, high=1
 	// byte 0x34 -> low=4, high=3
-	a4 := []byte{0x12, 0x34} 
-	b4 := []byte{0x56, 0x78} 
+	a4 := []byte{0x12, 0x34}
+	b4 := []byte{0x56, 0x78}
 	// a_lows: [2, 4], a_highs: [1, 3]
 	// b_lows: [6, 8], b_highs: [5, 7]
 	// Sum = (2*6) + (4*8) + (1*5) + (3*7) = 12 + 32 + 5 + 21 = 70
@@ -32,8 +32,8 @@ func TestLowBitKernels(t *testing.T) {
 	// Element 1: 2
 	// Element 2: 1
 	// Element 3: 0
-	a2 := []byte{0xE4} 
-	b2 := []byte{0x1B} 
+	a2 := []byte{0xE4}
+	b2 := []byte{0x1B}
 	// Sum = (0*3) + (1*2) + (2*1) + (3*0) = 0 + 2 + 2 + 0 = 4
 	res2 := dotInt2NeonKernel(unsafe.Pointer(&a2[0]), unsafe.Pointer(&b2[0]), 1)
 	if res2 != 4 {

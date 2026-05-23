@@ -11,7 +11,7 @@ import (
 )
 
 func TestTemporalTree_Insert(t *testing.T) {
-	arena := memory.NewSlabArena(1024*1024)
+	arena := memory.NewSlabArena(1024 * 1024)
 	tt := NewTemporalTree(arena)
 
 	now := time.Now().UnixNano()
@@ -22,7 +22,7 @@ func TestTemporalTree_Insert(t *testing.T) {
 }
 
 func TestTemporalTree_GetRange(t *testing.T) {
-	arena := memory.NewSlabArena(1024*1024)
+	arena := memory.NewSlabArena(1024 * 1024)
 	tt := NewTemporalTree(arena)
 
 	now := time.Now().UnixNano()
@@ -36,7 +36,7 @@ func TestTemporalTree_GetRange(t *testing.T) {
 }
 
 func TestTemporalTree_GetRangeReversed(t *testing.T) {
-	arena := memory.NewSlabArena(1024*1024)
+	arena := memory.NewSlabArena(1024 * 1024)
 	tt := NewTemporalTree(arena)
 
 	now := time.Now().UnixNano()

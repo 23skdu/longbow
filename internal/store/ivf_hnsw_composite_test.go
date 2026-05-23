@@ -13,18 +13,18 @@ func TestIVFHNSWCompositeIndex_Basic(t *testing.T) {
 	dim := 64
 	numCentroids := 10
 	numVectors := 1000
-	
+
 	config := IVFHNSWConfig{
 		Nlist:  numCentroids,
 		M:      8,
 		K:      256,
 		Nprobe: 2,
 	}
-	
+
 	idx, err := NewIVFHNSWCompositeIndex(dim, config)
 	require.NoError(t, err)
 	defer idx.Close()
-	
+
 	// 1. Generate training data
 	trainData := make([][]float32, 500)
 	for i := 0; i < 500; i++ {
@@ -34,11 +34,11 @@ func TestIVFHNSWCompositeIndex_Basic(t *testing.T) {
 		}
 		trainData[i] = vec
 	}
-	
+
 	// 2. Train
 	err = idx.Train(trainData)
 	require.NoError(t, err)
-	
+
 	// 3. Add vectors
 	randomVector := func(dim int) []float32 {
 		v := make([]float32, dim)
@@ -53,13 +53,13 @@ func TestIVFHNSWCompositeIndex_Basic(t *testing.T) {
 		require.NoError(t, err)
 	}
 	assert.Equal(t, numVectors, idx.Size())
-	
+
 	// 4. Search
 	query := make([]float32, dim)
 	for i := 0; i < dim; i++ {
 		query[i] = rand.Float32()
 	}
-	
+
 	results := idx.SearchVectors(query, 10, SearchOptions{})
 	assert.Len(t, results, 10)
 	for i := 0; i < len(results)-1; i++ {
@@ -72,20 +72,20 @@ func TestIVFHNSWCompositeIndex_BillionScaleSimulation(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping billion-scale simulation in short mode")
 	}
-	
+
 	dim := 128
 	numCentroids := 1000
 	numVectors := 5000
-	
+
 	config := IVFHNSWConfig{
 		Nlist:  numCentroids,
 		M:      16,
 		Nprobe: 10,
 	}
-	
+
 	idx, err := NewIVFHNSWCompositeIndex(dim, config)
 	require.NoError(t, err)
-	
+
 	trainData := make([][]float32, 1000)
 	for i := 0; i < 1000; i++ {
 		vec := make([]float32, dim)
@@ -94,10 +94,10 @@ func TestIVFHNSWCompositeIndex_BillionScaleSimulation(t *testing.T) {
 		}
 		trainData[i] = vec
 	}
-	
+
 	err = idx.Train(trainData)
 	require.NoError(t, err)
-	
+
 	// Batch add
 	batchSize := 1000
 	for i := 0; i < numVectors/batchSize; i++ {
@@ -117,11 +117,9 @@ func TestIVFHNSWCompositeIndex_BillionScaleSimulation(t *testing.T) {
 		}
 	}
 
-	
 	// Search and verify assignment speed
 	query := make([]float32, dim)
 	results := idx.SearchVectors(query, 10, SearchOptions{})
 	assert.NotEmpty(t, results)
 	fmt.Printf("Billion-scale sim: Found %d results\n", len(results))
 }
-

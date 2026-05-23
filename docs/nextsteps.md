@@ -14,6 +14,7 @@ The following critical performance issues have been identified and resolved. Thi
 **Root Cause**: Float16 Dense QPS dropped 69% (6125 → 1919) and Float64 dropped 35% (5878 → 3840) since v0.2.0 due to SIMD dispatch falling back to unrolled Go loops for these types.
 
 **Resolution**:
+
 - Fixed compilation errors in `internal/simd/gen/all_kernels_gen.go` (Avo code generator):
   - Replaced undefined `MOVZXW`/`MOVZXWL` instructions with the correct Go assembler instruction `MOVWLZX` in float16 scalar tail loops.
   - Resolved `fA.AsXMM()` type errors in half-precision loops by allocating `fA`/`fB` as `XMM()` virtual registers to allow direct `VSUBSS`/`VFMADD231SS` scalar usage.
@@ -117,26 +118,4 @@ The following critical performance issues have been identified and resolved. Thi
 
 ## Outstanding Tasks (Prioritized Backlog)
 
-### Task 1. NUMA-Aware Benchmark Reporting
-**Observation**: Logs show "Single NUMA node detected (no NUMA)" on localhost. On multi-socket machines like `ancalagon`, remote NUMA node access adds latency overhead that is not currently captured in benchmark output.
-**Task**:
-- Add NUMA topology detection to benchmark output (socket count, memory node layout).
-- Benchmark with and without NUMA binding to quantify impact on high-dim types.
-- Integrate `lbmem.MbindMemory` in the off-heap allocator to pin slab allocations to the executing CPU socket boundary.
-**Files**: `internal/memory/numa_allocator.go`, `scripts/unified_benchmark.py`
-
-### Task 2. GPU Binary Distribution & Diagnostics
-**Issue**: Metal and CUDA binaries require platform-specific builds. Fallback to CPU occurs silently when GPU binaries are missing.
-**Task**:
-- Add build-time GPU binary detection with a clear startup warning when GPU binary is absent.
-- Build fat binaries for macOS (universal2 + Metal) via `lipo`.
-- Document GPU binary build requirements in `README.md` and `docs/`.
-**Files**: `gpu/detection.go`, `cmd/longbow/main.go`, `Makefile`
-
-### Task 3. Benchmark Matrix Optimization
-**Current**: Full matrix (5 dims × 8 counts × 17 dtypes × 13 search modes × 3 hosts) = 26,520 combinations.
-**Task**:
-- Run full matrix only for release candidates.
-- Define a representative CI subset: 3 dims × 3 counts × 5 dtypes × 5 modes.
-- Add result caching for unchanged code paths.
-**Files**: `scripts/unified_benchmark.py`
+*All items from the prioritized backlog have been successfully resolved and integrated.*

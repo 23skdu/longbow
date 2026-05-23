@@ -160,6 +160,9 @@ var InferVectorDataType = hnswcore.InferVectorDataType
 // GetArena returns a search arena from the global pool.
 var GetArena = hnswcore.GetArena
 
+// GetArenaForNode returns a search arena from the global pool for a specific NUMA node.
+var GetArenaForNode = hnswcore.GetArenaForNode
+
 // PutArena returns a search arena to the global pool.
 var PutArena = hnswcore.PutArena
 

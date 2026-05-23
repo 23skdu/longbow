@@ -396,7 +396,7 @@ func (g *GraphData) GetVectorsChunkWithGen(chunkID int, maxGen uint64) []float32
 	// Try arena first (off-heap, GC-free)
 	if g.Float32Arena != nil && chunkID < len(g.VectorsF32) {
 		pd := g.GetPaddedDimsForType(VectorTypeFloat32)
-		offset := g.VectorsF32[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsF32[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -416,7 +416,7 @@ func (g *GraphData) GetVectorsChunkWithGen(chunkID int, maxGen uint64) []float32
 func (g *GraphData) GetVectorsChunkFast(chunkID int) []float32 {
 	if g.Float32Arena != nil && chunkID < len(g.VectorsF32) {
 		pd := g.GetPaddedDimsForType(VectorTypeFloat32)
-		offset := g.VectorsF32[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsF32[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -449,7 +449,7 @@ func (g *GraphData) GetVectorsChunkFastWithGen(chunkID int, maxGen uint64) []flo
 func (g *GraphData) GetVectorsTQChunkFast(chunkID int) []byte {
 	if chunkID < len(g.VectorsTQ) && g.Uint8Arena != nil {
 		stride := g.PackedSize()
-		offset := g.VectorsTQ[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsTQ[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -461,7 +461,7 @@ func (g *GraphData) GetVectorsTQChunkFast(chunkID int) []byte {
 // GetVectorsFloat64ChunkFast returns a float64 chunk using a non-atomic offset read.
 func (g *GraphData) GetVectorsFloat64ChunkFast(chunkID int) []float64 {
 	if chunkID < len(g.VectorsFloat64Offsets) && g.Float64Arena != nil {
-		offset := g.VectorsFloat64Offsets[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsFloat64Offsets[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -476,7 +476,7 @@ func (g *GraphData) GetVectorsFloat64ChunkFast(chunkID int) []float64 {
 // GetVectorsComplex64ChunkFast returns a complex64 chunk using a non-atomic offset read.
 func (g *GraphData) GetVectorsComplex64ChunkFast(chunkID int) []complex64 {
 	if chunkID < len(g.VectorsComplex64Offsets) && g.Complex64Arena != nil {
-		offset := g.VectorsComplex64Offsets[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsComplex64Offsets[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -491,7 +491,7 @@ func (g *GraphData) GetVectorsComplex64ChunkFast(chunkID int) []complex64 {
 // GetVectorsComplex128ChunkFast returns a complex128 chunk using a non-atomic offset read.
 func (g *GraphData) GetVectorsComplex128ChunkFast(chunkID int) []complex128 {
 	if chunkID < len(g.VectorsComplex128Offsets) && g.Complex128Arena != nil {
-		offset := g.VectorsComplex128Offsets[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsComplex128Offsets[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -507,7 +507,7 @@ func (g *GraphData) GetVectorsComplex128ChunkFast(chunkID int) []complex128 {
 func (g *GraphData) GetVectorsInt64ChunkFast(chunkID int) []int64 {
 	if chunkID < len(g.VectorsInt64) && g.Int64Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeInt64)
-		offset := g.VectorsInt64[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsInt64[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -520,7 +520,7 @@ func (g *GraphData) GetVectorsInt64ChunkFast(chunkID int) []int64 {
 func (g *GraphData) GetVectorsUint64ChunkFast(chunkID int) []uint64 {
 	if chunkID < len(g.VectorsUint64) && g.Uint64Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeUint64)
-		offset := g.VectorsUint64[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsUint64[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -533,7 +533,7 @@ func (g *GraphData) GetVectorsUint64ChunkFast(chunkID int) []uint64 {
 func (g *GraphData) GetVectorsInt32ChunkFast(chunkID int) []int32 {
 	if chunkID < len(g.VectorsInt32) && g.Int32Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeInt32)
-		offset := g.VectorsInt32[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsInt32[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -546,7 +546,7 @@ func (g *GraphData) GetVectorsInt32ChunkFast(chunkID int) []int32 {
 func (g *GraphData) GetVectorsUint32ChunkFast(chunkID int) []uint32 {
 	if chunkID < len(g.VectorsUint32) && g.Uint32Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeUint32)
-		offset := g.VectorsUint32[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsUint32[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -559,7 +559,7 @@ func (g *GraphData) GetVectorsUint32ChunkFast(chunkID int) []uint32 {
 func (g *GraphData) GetVectorsInt8ChunkFast(chunkID int) []int8 {
 	if chunkID < len(g.VectorsInt8) && g.Int8Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeInt8)
-		offset := g.VectorsInt8[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsInt8[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -572,7 +572,7 @@ func (g *GraphData) GetVectorsInt8ChunkFast(chunkID int) []int8 {
 func (g *GraphData) GetVectorsInt16ChunkFast(chunkID int) []int16 {
 	if chunkID < len(g.VectorsInt16) && g.Int16Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeInt16)
-		offset := g.VectorsInt16[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsInt16[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -585,7 +585,7 @@ func (g *GraphData) GetVectorsInt16ChunkFast(chunkID int) []int16 {
 func (g *GraphData) GetVectorsUint16ChunkFast(chunkID int) []uint16 {
 	if chunkID < len(g.VectorsUint16) && g.Uint16Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeUint16)
-		offset := g.VectorsUint16[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsUint16[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -598,7 +598,7 @@ func (g *GraphData) GetVectorsUint16ChunkFast(chunkID int) []uint16 {
 func (g *GraphData) GetVectorsF16ChunkFast(chunkID int) []float16.Num {
 	if chunkID < len(g.VectorsF16) && g.Float16Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeFloat16)
-		offset := g.VectorsF16[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsF16[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -611,7 +611,7 @@ func (g *GraphData) GetVectorsF16ChunkFast(chunkID int) []float16.Num {
 func (g *GraphData) GetVectorsSQ8ChunkFast(chunkID int) []byte {
 	if chunkID < len(g.VectorsSQ8) && g.Uint8Arena != nil {
 		paddedDims := (g.Dims + 63) & ^63
-		offset := g.VectorsSQ8[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsSQ8[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -629,7 +629,7 @@ func (g *GraphData) GetVectorsBQChunkFast(chunkID int) []uint64 {
 		if chunkLen == 0 {
 			return nil
 		}
-		offset := g.VectorsBQ[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsBQ[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -647,7 +647,7 @@ func (g *GraphData) GetVectorsPQChunkFast(chunkID int) []byte {
 	if g.Uint64Arena != nil && chunkID < len(g.VectorsPQ) && g.PQM > 0 {
 		numWordsPerNode := (g.PQM + 7) / 8
 		numWords := ChunkSize * numWordsPerNode
-		offset := g.VectorsPQ[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsPQ[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -668,7 +668,7 @@ func (g *GraphData) GetVectorsPQChunkFast(chunkID int) []byte {
 // GetCountsChunkFast returns a counts chunk using a non-atomic offset read.
 func (g *GraphData) GetCountsChunkFast(layer, chunkID int) []int32 {
 	if layer < len(g.Counts) && chunkID < len(g.Counts[layer]) && g.Int32Arena != nil {
-		offset := g.Counts[layer][chunkID]
+		offset := atomic.LoadUint64(&g.Counts[layer][chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -680,7 +680,7 @@ func (g *GraphData) GetCountsChunkFast(layer, chunkID int) []int32 {
 // GetNeighborsChunkFast returns a neighbors chunk using a non-atomic offset read.
 func (g *GraphData) GetNeighborsChunkFast(layer, chunkID int) []uint32 {
 	if layer < len(g.Neighbors) && chunkID < len(g.Neighbors[layer]) && g.Uint32Arena != nil {
-		offset := g.Neighbors[layer][chunkID]
+		offset := atomic.LoadUint64(&g.Neighbors[layer][chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -692,7 +692,7 @@ func (g *GraphData) GetNeighborsChunkFast(layer, chunkID int) []uint32 {
 // GetVersionsChunkFast returns a versions chunk using a non-atomic offset read.
 func (g *GraphData) GetVersionsChunkFast(layer, chunkID int) []uint32 {
 	if layer < len(g.Versions) && chunkID < len(g.Versions[layer]) && g.Uint32Arena != nil {
-		offset := g.Versions[layer][chunkID]
+		offset := atomic.LoadUint64(&g.Versions[layer][chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -721,7 +721,7 @@ func (g *GraphData) GetVectorsTQChunk(chunkID int) []byte {
 func (g *GraphData) GetVectorsTQChunkWithGen(chunkID int, maxGen uint64) []byte {
 	if chunkID < len(g.VectorsTQ) && g.Uint8Arena != nil {
 		stride := g.PackedSize()
-		offset := g.VectorsTQ[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsTQ[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -737,7 +737,7 @@ func (g *GraphData) GetVectorsFloat64Chunk(chunkID int) []float64 {
 
 func (g *GraphData) GetVectorsFloat64ChunkWithGen(chunkID int, maxGen uint64) []float64 {
 	if chunkID < len(g.VectorsFloat64Offsets) && g.Float64Arena != nil {
-		offset := g.VectorsFloat64Offsets[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsFloat64Offsets[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -756,7 +756,7 @@ func (g *GraphData) GetVectorsComplex64Chunk(chunkID int) []complex64 {
 
 func (g *GraphData) GetVectorsComplex64ChunkWithGen(chunkID int, maxGen uint64) []complex64 {
 	if chunkID < len(g.VectorsComplex64Offsets) && g.Complex64Arena != nil {
-		offset := g.VectorsComplex64Offsets[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsComplex64Offsets[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -775,7 +775,7 @@ func (g *GraphData) GetVectorsComplex128Chunk(chunkID int) []complex128 {
 
 func (g *GraphData) GetVectorsComplex128ChunkWithGen(chunkID int, maxGen uint64) []complex128 {
 	if chunkID < len(g.VectorsComplex128Offsets) && g.Complex128Arena != nil {
-		offset := g.VectorsComplex128Offsets[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsComplex128Offsets[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -795,7 +795,7 @@ func (g *GraphData) GetVectorsInt64Chunk(chunkID int) []int64 {
 func (g *GraphData) GetVectorsInt64ChunkWithGen(chunkID int, maxGen uint64) []int64 {
 	if chunkID < len(g.VectorsInt64) && g.Int64Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeInt64)
-		offset := g.VectorsInt64[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsInt64[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -812,7 +812,7 @@ func (g *GraphData) GetVectorsUint64Chunk(chunkID int) []uint64 {
 func (g *GraphData) GetVectorsUint64ChunkWithGen(chunkID int, maxGen uint64) []uint64 {
 	if chunkID < len(g.VectorsUint64) && g.Uint64Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeUint64)
-		offset := g.VectorsUint64[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsUint64[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -829,7 +829,7 @@ func (g *GraphData) GetVectorsInt32Chunk(chunkID int) []int32 {
 func (g *GraphData) GetVectorsInt32ChunkWithGen(chunkID int, maxGen uint64) []int32 {
 	if chunkID < len(g.VectorsInt32) && g.Int32Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeInt32)
-		offset := g.VectorsInt32[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsInt32[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -846,7 +846,7 @@ func (g *GraphData) GetVectorsUint32Chunk(chunkID int) []uint32 {
 func (g *GraphData) GetVectorsUint32ChunkWithGen(chunkID int, maxGen uint64) []uint32 {
 	if chunkID < len(g.VectorsUint32) && g.Uint32Arena != nil {
 		pd := g.GetPaddedDimsForType(VectorTypeUint32)
-		offset := g.VectorsUint32[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsUint32[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -893,7 +893,7 @@ func (g *GraphData) GetVectorsSQ8Chunk(chunkID int) []byte {
 func (g *GraphData) GetVectorsSQ8ChunkWithGen(chunkID int, maxGen uint64) []byte {
 	if chunkID < len(g.VectorsSQ8) && g.Uint8Arena != nil {
 		paddedDims := (g.Dims + 63) & ^63
-		offset := g.VectorsSQ8[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsSQ8[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -915,7 +915,7 @@ func (g *GraphData) GetVectorsBQChunkWithGen(chunkID int, maxGen uint64) []uint6
 			return nil
 		}
 
-		offset := g.VectorsBQ[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsBQ[chunkID])
 		if offset == 0 {
 			return nil
 		}
@@ -938,7 +938,7 @@ func (g *GraphData) GetVectorsPQChunkWithGen(chunkID int, maxGen uint64) []byte 
 		numWordsPerNode := (g.PQM + 7) / 8
 		numWords := ChunkSize * numWordsPerNode
 
-		offset := g.VectorsPQ[chunkID]
+		offset := atomic.LoadUint64(&g.VectorsPQ[chunkID])
 		if offset == 0 {
 			return nil
 		}

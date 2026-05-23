@@ -224,6 +224,14 @@ void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* co
 
 // TurboQuant Distance Kernel
 __global__ void turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count) {
+    extern __shared__ float s_query[];
+    
+    // Load query into shared memory (cooperative)
+    for (int i = threadIdx.x; i < dim; i += blockDim.x) {
+        s_query[i] = query[i];
+    }
+    __syncthreads();
+
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx < count) {
         int angleCount = pow2 - 1;
@@ -269,7 +277,7 @@ __global__ void turboquant_distance_kernel(const float* query, const unsigned ch
             if ((qjlBits[i / 8] >> (i % 8)) & 1) val += correctionFactor;
             else val -= 0.1f;
             
-            float diff = query[i] - val;
+            float diff = s_query[i] - val;
             sum += diff * diff;
         }
         distances[idx] = sqrtf(sum);
@@ -305,7 +313,8 @@ void launch_l2_distance_filtered_kernel(const float* vectors, const float* query
 void launch_turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count, cudaStream_t stream) {
     int threadsPerBlock = 256;
     int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
-    turboquant_distance_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(query, tqData, distances, dim, pow2, bitsPerAngle, count);
+    size_t sharedMemSize = dim * sizeof(float);
+    turboquant_distance_kernel<<<blocksPerGrid, threadsPerBlock, sharedMemSize, stream>>>(query, tqData, distances, dim, pow2, bitsPerAngle, count);
 }
 
 void launch_topk_kernel(const float* distances, const int64_t* ids, int n, int k, float* outDistances, int64_t* outIDs, cudaStream_t stream) {

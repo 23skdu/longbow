@@ -99,7 +99,7 @@ sequenceDiagram
 
 - **ParallelRecordReader**: Distributes Arrow IPC decoding across multiple CPU cores.
 - **Reorder Buffer**: Ensures that batches are committed to the WAL and storage in the exact order they were sent by the client, even if decoding happens out of order.
-- **Double-Buffering WAL**: Uses a swap-buffer strategy for zero-allocation logging, minimizing I/O stalls.
+- **BufferedWAL & Group Commit**: The `BufferedWAL` utilizes a highly efficient double-buffering architecture coupled with `patchableBuffer` and `syncWaiter` primitives. This swap-buffer strategy enables zero-allocation, high-throughput logging with strict sequential persistence before acknowledgment.
 - **GPU-Accelerated Ingestion**: Offloads HNSW upper-layer greedy searches and neighbor pruning to the GPU (Metal/CUDA) to eliminate CPU-GPU 'ping-pong' overhead.
 
 ---
@@ -174,7 +174,7 @@ Vector distance calculations are optimized for modern hardware using hand-writte
 
 ### 4.1 SIMD Acceleration
 
-- **AVX2/AVX-512**: Featuring optimized `brayCurtisAVX2Kernel` and activation kernels (`exp`, `softmax`).
+- **AVX2/AVX-512**: Featuring optimized `brayCurtisAVX2Kernel` and activation kernels (`exp`, `softmax`). Note that AVX-512 explicitly typed kernels (e.g., `Float16`, `Float64`) are meticulously cast during generator stages (via Avo) using `uintptr(unsafe.Pointer(...))` to guarantee type safety and compilation stability across OS bounds.
 - **NEON**: For ARM64 systems (Apple Silicon, AWS Graviton).
 - **TPU Kernels**: Specialized F16/Complex kernels for Google TPU.
 - **TurboQuant**: SIMD-accelerated bit-packing for 3-8x throughput in quantized search.
@@ -191,7 +191,7 @@ Starting in v0.2.3, Longbow supports full GPU residency for the HNSW graph topol
 
 GraphRAG re-scoring and temporal search modes apply `softmax` and `exp` to score vectors, accelerated by a 5-term minimax polynomial approximation in AVX-512.
 
-```
+```math
 exp(x) ≈ 2^f * 2^n
   where z = x * log2(e)
         n = floor(z + 0.5)         -- via VRNDSCALEPS

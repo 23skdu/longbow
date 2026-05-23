@@ -71,3 +71,32 @@ func TestDiskBackedLearnedIndex_SaveAndLoad(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, neighbors, "should return zero neighbors for empty graph template")
 }
+
+func TestLRUCache(t *testing.T) {
+	cache := newLRUCache(3)
+
+	// Add 3 items
+	cache.Add(1, []float32{1.0})
+	cache.Add(2, []float32{2.0})
+	cache.Add(3, []float32{3.0})
+
+	// Get 1 to move it to front
+	v, ok := cache.Get(1)
+	assert.True(t, ok)
+	assert.Equal(t, float32(1.0), v[0])
+
+	// Add 4th item, should evict 2 (least recently used)
+	cache.Add(4, []float32{4.0})
+
+	_, ok = cache.Get(2)
+	assert.False(t, ok, "item 2 should be evicted")
+
+	_, ok = cache.Get(1)
+	assert.True(t, ok, "item 1 should still be in cache")
+
+	_, ok = cache.Get(3)
+	assert.True(t, ok, "item 3 should still be in cache")
+
+	_, ok = cache.Get(4)
+	assert.True(t, ok, "item 4 should be in cache")
+}

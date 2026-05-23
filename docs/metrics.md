@@ -6,7 +6,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 > This list is automatically synchronized with the Go source code to ensure 100% coverage of all system signals.
 
 | Metric Name | Description |
-|-------------|-------------|
+| ------------- | ------------- |
 | `longbow_active_search_contexts` | Number of currently active search contexts |
 | `longbow_adaptive_gc_adjustments_total` | Total number of GOGC adjustments made by adaptive controller |
 | `longbow_adaptive_gc_allocation_rate_bytes_per_sec` | Current memory allocation rate in bytes per second |
@@ -645,6 +645,7 @@ This document provides a comprehensive reference for all Prometheus metrics expo
 | `longbow_slab_hugepage_count` | Number of hugepages allocated by the slab allocator |
 | `longbow_slab_leak_probability` | Estimated leak probability of memory slabs |
 | `longbow_slab_pool_allocations_total` | Total number of slab allocations (both pooled and new) |
+| `longbow_slab_pool_boundary_violations_total` | Total number of memory bounds violations in the slab pool allocator |
 | `longbow_slab_pool_buffer_hit_ratio` | Buffer hit ratio in slab pool allocations |
 | `longbow_slab_pool_growth_total` | Total growth events of slab pools |
 | `longbow_slab_pool_max_pooled` | Maximum size of pooled slabs in slab pools |

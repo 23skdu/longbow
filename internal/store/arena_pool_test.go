@@ -48,3 +48,38 @@ func TestArenaPool_ConcurrentAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
+
+// TestArenaPool_NUMAAwareAllocation tests that GetArenaForNode works correctly
+func TestArenaPool_NUMAAwareAllocation(t *testing.T) {
+	arena := GetArenaForNode(1)
+	require.NotNil(t, arena, "GetArenaForNode should return non-nil arena")
+	assert.Greater(t, arena.Cap(), 0, "Arena should have capacity")
+	assert.Equal(t, 1, arena.NUMANode(), "Arena should have correct NUMA node")
+	PutArena(arena)
+}
+
+// FuzzNUMAAllocation fuzzes NUMA node requests to ensure thread safety and no panics
+func FuzzNUMAAllocation(f *testing.F) {
+	f.Add(0, 1024)
+	f.Add(1, 4096)
+	f.Add(2, 65536)
+	
+	f.Fuzz(func(t *testing.T, node int, allocSize int) {
+		if node < 0 || node > 8 { // Bound reasonable node limits
+			t.Skip()
+		}
+		if allocSize <= 0 || allocSize > 64*1024 {
+			t.Skip()
+		}
+		
+		arena := GetArenaForNode(node)
+		require.NotNil(t, arena)
+		assert.Equal(t, node, arena.NUMANode())
+		
+		buf := arena.Alloc(allocSize)
+		if buf != nil {
+			assert.Equal(t, allocSize, len(buf))
+		}
+		PutArena(arena)
+	})
+}

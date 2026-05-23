@@ -111,13 +111,13 @@ func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
 		if loc.RowIdx != i {
 			t.Errorf("Vector %d has wrong RowIdx: expected %d, got %d", i, i, loc.RowIdx)
 		}
-		
+
 		// Check if vector exists in GraphData
 		vec, err := idx.GetVector(uint32(i))
 		if err != nil || vec == nil {
 			t.Errorf("Vector %d missing from GraphData", i)
 		}
-		
+
 		// For all but the first few nodes, they should have neighbors if graph is connected
 		if i > 20 {
 			neighbors, _ := idx.GetLayerNeighbors(uint32(i), 0)
@@ -126,7 +126,7 @@ func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
 			}
 		}
 	}
-	
+
 	t.Logf("Verified reachability for %d vectors", numRows)
 }
 

@@ -113,6 +113,7 @@ func (c *TurboQuantCompute) getVectorWithDisk(id uint32, dg *DiskGraph, maxGen u
 
 	return c.encoder.Decode(tqCode)
 }
+
 // GetRadius extracts the radius information for a TurboQuant encoded vector.
 func (c *TurboQuantCompute) GetRadius(id uint32, dg *DiskGraph, maxGen uint64) (float32, error) {
 	cID := types.ChunkID(id)

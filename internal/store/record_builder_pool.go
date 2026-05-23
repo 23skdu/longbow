@@ -11,7 +11,7 @@ import (
 // RecordBuilderPool manages reusable array.RecordBuilder instances for specific schemas.
 // This significantly reduces GC pressure on search hot paths by recycling builder buffers.
 type RecordBuilderPool struct {
-	pool sync.Pool
+	pool   sync.Pool
 	schema *arrow.Schema
 }
 
@@ -40,9 +40,9 @@ func (p *RecordBuilderPool) Put(b *array.RecordBuilder) {
 	// Reset the builder to clear internal state and reuse buffers
 	// Note: b.Release() would destroy it. We want to keep it but empty.
 	// Unfortunately, arrow-go's RecordBuilder doesn't have a simple Reset() that keeps buffers.
-	// However, we can release the builder and let the pool create new ones if needed, 
+	// However, we can release the builder and let the pool create new ones if needed,
 	// but that defeats the purpose of buffer reuse.
-	
+
 	// Better approach: RecordBuilder fields (builders) often have Reserve() and Reset().
 	// For now, we'll just use the pool to avoid RecordBuilder object allocation,
 	// even if the underlying buffers are re-allocated.
@@ -56,7 +56,7 @@ var (
 		{Name: "id", Type: arrow.BinaryTypes.String},
 		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
 	}, nil)
-	
+
 	// SearchWithVectorResponseSchema: [id (string), score (float32), vector (binary)]
 	SearchWithVectorResponseSchema = arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.BinaryTypes.String},

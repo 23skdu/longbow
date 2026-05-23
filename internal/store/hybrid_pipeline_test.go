@@ -367,7 +367,7 @@ func createHybridTestRecordBatch() arrow.RecordBatch {
 	catBldr := bldr.Field(0).(*array.StringBuilder)
 	vecBldr := bldr.Field(1).(*array.FixedSizeListBuilder)
 	floatBldr := vecBldr.ValueBuilder().(*array.Float32Builder)
-	
+
 	for i := 0; i < 10; i++ {
 		if i == 5 {
 			catBldr.Append("electronics")

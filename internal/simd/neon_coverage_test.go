@@ -7,8 +7,8 @@ import (
 	"math"
 	"testing"
 
-	"github.com/apache/arrow-go/v18/arrow/float16"
 	lbcore "github.com/23skdu/longbow/internal/core"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -48,7 +48,7 @@ func TestNEONComprehensive(t *testing.T) {
 
 	t.Run("MatchNeon_NonEmpty", func(t *testing.T) {
 		ops := []CompareOp{CompareEq, CompareNeq, CompareGt, CompareGe, CompareLt, CompareLe}
-		
+
 		t.Run("Int64", func(t *testing.T) {
 			src := []int64{1, 2, 3, 4, 1, 2, 3, 4}
 			dst := make([]byte, len(src))
@@ -88,7 +88,7 @@ func TestNEONComprehensive(t *testing.T) {
 
 	t.Run("GenericMatchers_Extended", func(t *testing.T) {
 		ops := []CompareOp{CompareEq, CompareNeq, CompareGt, CompareGe, CompareLt, CompareLe, CompareOp(999)}
-		
+
 		t.Run("Int64", func(t *testing.T) {
 			src := []int64{1, 2}
 			dst := make([]byte, 2)
@@ -127,7 +127,7 @@ func TestNEONComprehensive(t *testing.T) {
 		b := []float32{1, 1}
 		d, _ := cosineGeneric(a, b)
 		assert.Equal(t, float32(1.0), d)
-		
+
 		d2, _ := CosineDistance(a, b)
 		assert.Equal(t, float32(1.0), d2)
 	})
@@ -147,7 +147,7 @@ func TestNEONComprehensive(t *testing.T) {
 	t.Run("Activations_NonEmpty", func(t *testing.T) {
 		src := []float32{0, 1, 2, 3, 4, 5, 6, 7}
 		dst := make([]float32, len(src))
-		
+
 		sigmoidNEON(src, dst)
 		expNEON(src, dst)
 		logNEON(src, dst)
@@ -172,15 +172,15 @@ func TestNEONComprehensive(t *testing.T) {
 		b := make([]float32, 128)
 		_, _ = euclidean128Unrolled4x(a, b)
 		_, _ = dot128Unrolled4x(a, b)
-		
+
 		a384 := make([]float32, 384)
 		b384 := make([]float32, 384)
 		_, _ = euclidean384Unrolled4x(a384, b384)
-		
+
 		a768 := make([]float32, 768)
 		b768 := make([]float32, 768)
 		_, _ = euclidean768Unrolled4x(a768, b768)
-		
+
 		a1536 := make([]float32, 1536)
 		b1536 := make([]float32, 1536)
 		_, _ = euclidean1536Unrolled4x(a1536, b1536)
@@ -219,7 +219,7 @@ func TestNEONComprehensive(t *testing.T) {
 		assert.Equal(t, float32(1.0), dst[1])
 		assert.Equal(t, float32(1.0), dst[2])
 		assert.Equal(t, float32(0.0), dst[3])
-		
+
 		accumulateWeightedScatterNEON(nil, nil, nil, 0)
 	})
 
@@ -238,23 +238,23 @@ func TestNEONComprehensive(t *testing.T) {
 		_, _ = euclideanF16Unrolled4x(a, b)
 		_, _ = dotF16Unrolled4x(a, b)
 		_, _ = cosineF16Unrolled4x(a, b)
-		
+
 		_, _ = euclideanF16Unrolled4x(nil, nil)
 		_, _ = dotF16Unrolled4x(nil, nil)
 		_, _ = cosineF16Unrolled4x(nil, nil)
 	})
-	
+
 	t.Run("PublicMatchErrors", func(t *testing.T) {
 		src := []int64{1}
 		dst := make([]byte, 2) // Mismatch
 		assert.Error(t, MatchInt64(src, 1, CompareEq, dst))
-		
+
 		src32 := []int32{1}
 		assert.Error(t, MatchInt32(src32, 1, CompareEq, dst))
-		
+
 		srcf32 := []float32{1.0}
 		assert.Error(t, MatchFloat32(srcf32, 1.0, CompareEq, dst))
-		
+
 		srcf64 := []float64{1.0}
 		assert.Error(t, MatchFloat64(srcf64, 1.0, CompareEq, dst))
 	})

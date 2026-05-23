@@ -227,7 +227,7 @@ func TestDo_RetryExhausted_ContextCancelled(t *testing.T) {
 
 func TestIsRetryable(t *testing.T) {
 	policy := &ExponentialBackoff{}
-	
+
 	cases := []struct {
 		err      error
 		expected bool

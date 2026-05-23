@@ -11,12 +11,12 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/query"
-	"github.com/23skdu/longbow/internal/memory"
-	"github.com/23skdu/longbow/internal/pq"
-	"github.com/23skdu/longbow/internal/store/types"
 	basecore "github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/pq"
+	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
@@ -62,7 +62,6 @@ func (h *ArrowHNSW) Search(ctx context.Context, queryVal any, k int, filter any)
 func (h *ArrowHNSW) Size() int {
 	return h.GetNodeCount()
 }
-
 
 // Navigate performs a graph navigation query
 func (h *ArrowHNSW) Navigate(ctx context.Context, navQuery NavigatorQuery) (*NavigatorPath, error) {
@@ -156,7 +155,6 @@ func (h *ArrowHNSW) Len() int {
 	return h.Size()
 }
 
-
 func (h *ArrowHNSW) ensureReady() {
 	if h.searchPool == nil {
 		h.initMu.Lock()
@@ -173,7 +171,6 @@ func (h *ArrowHNSW) ensureReady() {
 		h.initMu.Unlock()
 	}
 }
-
 
 // SearchVectorsWithBitmap performs k-NN search with a roaring bitmap filter.
 func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k int, filter *roaring.Bitmap, options any) ([]types.SearchResult, error) {
@@ -312,8 +309,8 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 
 	ep := meta.EntryPoint
 	maxLevel := meta.MaxLevel
-	
-	if ep % 10 == 0 {
+
+	if ep%10 == 0 {
 	}
 
 	if ep >= uint32(data.Capacity) { // #nosec G115 -- intentional comparison
@@ -536,8 +533,10 @@ search_layer0:
 		// Use PID-based autonomous efSearch tuning
 		// Proxy recall = len(results) / k
 		recallProxy := float64(len(results)) / float64(k)
-		if recallProxy > 1.0 { recallProxy = 1.0 }
-		
+		if recallProxy > 1.0 {
+			recallProxy = 1.0
+		}
+
 		efSearch = h.efTuner.Update(recallProxy)
 	}
 
@@ -628,11 +627,15 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 							ctx.queryF64 = make([]float64, len(q))
 						}
 						ctx.queryF64 = ctx.queryF64[:len(q)]
-						for i, val := range q { ctx.queryF64[i] = float64(val) }
+						for i, val := range q {
+							ctx.queryF64[i] = float64(val)
+						}
 						q64 = ctx.queryF64
 					} else {
 						q64 = make([]float64, len(q))
-						for i, val := range q { q64[i] = float64(val) }
+						for i, val := range q {
+							q64[i] = float64(val)
+						}
 					}
 					return h.distFuncF64(q64, v)
 				case []float16.Num:
@@ -645,11 +648,15 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 							ctx.queryF16 = make([]float16.Num, len(q))
 						}
 						ctx.queryF16 = ctx.queryF16[:len(q)]
-						for i, val := range q { ctx.queryF16[i] = float16.New(val) }
+						for i, val := range q {
+							ctx.queryF16[i] = float16.New(val)
+						}
 						q16 = ctx.queryF16
 					} else {
 						q16 = make([]float16.Num, len(q))
-						for i, val := range q { q16[i] = float16.New(val) }
+						for i, val := range q {
+							q16[i] = float16.New(val)
+						}
 					}
 					return h.distFuncF16(q16, v)
 				case []int8, []uint8:
@@ -686,11 +693,15 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 							ctx.queryC64 = make([]complex64, qLen/2)
 						}
 						ctx.queryC64 = ctx.queryC64[:qLen/2]
-						for i := 0; i < qLen/2; i++ { ctx.queryC64[i] = complex(q[2*i], q[2*i+1]) }
+						for i := 0; i < qLen/2; i++ {
+							ctx.queryC64[i] = complex(q[2*i], q[2*i+1])
+						}
 						qComplex = ctx.queryC64
 					} else {
 						qComplex = make([]complex64, qLen/2)
-						for i := 0; i < qLen/2; i++ { qComplex[i] = complex(q[2*i], q[2*i+1]) }
+						for i := 0; i < qLen/2; i++ {
+							qComplex[i] = complex(q[2*i], q[2*i+1])
+						}
 					}
 					var sum float32
 					for i, val := range qComplex {
@@ -709,11 +720,15 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 							ctx.queryC128 = make([]complex128, qLen/2)
 						}
 						ctx.queryC128 = ctx.queryC128[:qLen/2]
-						for i := 0; i < qLen/2; i++ { ctx.queryC128[i] = complex(float64(q[2*i]), float64(q[2*i+1])) }
+						for i := 0; i < qLen/2; i++ {
+							ctx.queryC128[i] = complex(float64(q[2*i]), float64(q[2*i+1]))
+						}
 						qComplex = ctx.queryC128
 					} else {
 						qComplex = make([]complex128, qLen/2)
-						for i := 0; i < qLen/2; i++ { qComplex[i] = complex(float64(q[2*i]), float64(q[2*i+1])) }
+						for i := 0; i < qLen/2; i++ {
+							qComplex[i] = complex(float64(q[2*i]), float64(q[2*i+1]))
+						}
 					}
 					var sum float64
 					for i, val := range qComplex {
@@ -998,7 +1013,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 	epCand := types.Candidate{ID: entryPoint, Dist: epDist}
 	heap.Push(minHeap, epCand)
-	
+
 	// Only add to result set if it passes filters and isn't deleted
 	passes := true
 	if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(entryPoint) {
@@ -1019,7 +1034,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		if err := goCtx.Err(); err != nil {
 			return nil, err
 		}
-		
+
 		// 0. Early termination: Visited nodes budget check
 		if ctx.visitedNodesBudget > 0 && ctx.nodesVisitedCount >= ctx.visitedNodesBudget {
 			metrics.HNSWEarlyTerminationTotal.WithLabelValues(h.name, "budget_exceeded").Inc()
@@ -1063,7 +1078,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			if !ctx.AllowUncommitted && int64(nID) >= maxCommitted {
 				continue
 			}
-			cID := int(nID) / types.ChunkSize // #nosec G115
+			cID := int(nID) / types.ChunkSize  // #nosec G115
 			cOff := int(nID) % types.ChunkSize // #nosec G115
 			chunk := data.GetVectorsChunkWithGen(cID, maxGen)
 			if chunk != nil {
@@ -1507,15 +1522,19 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		}
 		if data.Type == types.VectorTypeFloat32 {
 			maxGen := uint64(math.MaxUint64)
-			if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
-			
+			if searchCtx != nil {
+				maxGen = searchCtx.MaxGeneration
+			}
+
 			// Detect Shared Vector Space and use specialized computer
 			if h.sharedVectorSpace.Load() && h.dataset != nil {
 				recs := h.dataset.GetRecords()
 				slices := make([][]float32, len(recs))
 				vecColIdx := -1
 				for i, rec := range recs {
-					if rec == nil { continue }
+					if rec == nil {
+						continue
+					}
 					if vecColIdx == -1 {
 						vecColIdx = h.getVectorColumnIndex(rec)
 					}
@@ -1534,13 +1553,17 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen}
 		}
 		maxGen := uint64(math.MaxUint64)
-		if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+		if searchCtx != nil {
+			maxGen = searchCtx.MaxGeneration
+		}
 		comp := &float32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen}
 		if searchCtx != nil {
 			// Populate conversion buffers once
 			if data.Type == types.VectorTypeFloat64 {
 				searchCtx.queryF64 = searchCtx.queryF64[:0]
-				for _, val := range q { searchCtx.queryF64 = append(searchCtx.queryF64, float64(val)) }
+				for _, val := range q {
+					searchCtx.queryF64 = append(searchCtx.queryF64, float64(val))
+				}
 				comp.qF64 = searchCtx.queryF64
 			}
 		}
@@ -1562,7 +1585,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			dg = h.diskGraph.Load()
 		}
 		maxGen := uint64(math.MaxUint64)
-		if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+		if searchCtx != nil {
+			maxGen = searchCtx.MaxGeneration
+		}
 
 		// Detect Shared Vector Space for Int8
 		if h.sharedVectorSpace.Load() && h.dataset != nil && (data.Type == types.VectorTypeInt8 || data.Type == types.VectorTypeUint8) {
@@ -1570,7 +1595,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			slices := make([][]int8, len(recs))
 			vecColIdx := -1
 			for i, rec := range recs {
-				if rec == nil { continue }
+				if rec == nil {
+					continue
+				}
 				if vecColIdx == -1 {
 					vecColIdx = h.getVectorColumnIndex(rec)
 				}
@@ -1598,7 +1625,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			dg = h.diskGraph.Load()
 		}
 		maxGen := uint64(math.MaxUint64)
-		if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+		if searchCtx != nil {
+			maxGen = searchCtx.MaxGeneration
+		}
 		return &float64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []float16.Num:
 		var dg *DiskGraph
@@ -1608,7 +1637,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			dg = h.diskGraph.Load()
 		}
 		maxGen := uint64(math.MaxUint64)
-		if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+		if searchCtx != nil {
+			maxGen = searchCtx.MaxGeneration
+		}
 		return &float16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []complex64:
 		var dg *DiskGraph
@@ -1644,7 +1675,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			dg = h.diskGraph.Load()
 		}
 		maxGen := uint64(math.MaxUint64)
-		if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+		if searchCtx != nil {
+			maxGen = searchCtx.MaxGeneration
+		}
 		return &int16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []uint16:
 		var dg *DiskGraph
@@ -1654,7 +1687,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			dg = h.diskGraph.Load()
 		}
 		maxGen := uint64(math.MaxUint64)
-		if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+		if searchCtx != nil {
+			maxGen = searchCtx.MaxGeneration
+		}
 		return &uint16Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []int32:
 		var dg *DiskGraph
@@ -1664,7 +1699,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			dg = h.diskGraph.Load()
 		}
 		maxGen := uint64(math.MaxUint64)
-		if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+		if searchCtx != nil {
+			maxGen = searchCtx.MaxGeneration
+		}
 		return &int32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []uint32:
 		var dg *DiskGraph
@@ -1674,7 +1711,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			dg = h.diskGraph.Load()
 		}
 		maxGen := uint64(math.MaxUint64)
-		if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+		if searchCtx != nil {
+			maxGen = searchCtx.MaxGeneration
+		}
 		return &uint32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []int64:
 		var dg *DiskGraph
@@ -1684,7 +1723,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			dg = h.diskGraph.Load()
 		}
 		maxGen := uint64(math.MaxUint64)
-		if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+		if searchCtx != nil {
+			maxGen = searchCtx.MaxGeneration
+		}
 		return &int64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []uint64:
 		var dg *DiskGraph
@@ -1694,7 +1735,9 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			dg = h.diskGraph.Load()
 		}
 		maxGen := uint64(math.MaxUint64)
-		if searchCtx != nil { maxGen = searchCtx.MaxGeneration }
+		if searchCtx != nil {
+			maxGen = searchCtx.MaxGeneration
+		}
 		return &uint64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	}
 	return nil
@@ -2251,8 +2294,9 @@ type MinCandidateHeap []types.Candidate
 func (h MinCandidateHeap) Len() int           { return len(h) }
 func (h MinCandidateHeap) Less(i, j int) bool { return h[i].Dist < h[j].Dist }
 func (h MinCandidateHeap) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
 // Push adds a candidate to the heap.
-func (h *MinCandidateHeap) Push(x any)        { *h = append(*h, x.(types.Candidate)) }
+func (h *MinCandidateHeap) Push(x any) { *h = append(*h, x.(types.Candidate)) }
 
 // Pop removes the closest candidate from the heap.
 func (h *MinCandidateHeap) Pop() any {
@@ -2269,8 +2313,9 @@ type MinCandidateHeapAdapter []types.Candidate
 func (h MinCandidateHeapAdapter) Len() int           { return len(h) }
 func (h MinCandidateHeapAdapter) Less(i, j int) bool { return h[i].Dist < h[j].Dist }
 func (h MinCandidateHeapAdapter) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
 // Push adds a types.Candidate to the heap.
-func (h *MinCandidateHeapAdapter) Push(x any)        { *h = append(*h, x.(types.Candidate)) }
+func (h *MinCandidateHeapAdapter) Push(x any) { *h = append(*h, x.(types.Candidate)) }
 
 // Pop removes and returns the smallest types.Candidate from the heap.
 func (h *MinCandidateHeapAdapter) Pop() any {
@@ -2287,8 +2332,9 @@ type MaxCandidateHeapAdapter []types.Candidate
 func (h MaxCandidateHeapAdapter) Len() int           { return len(h) }
 func (h MaxCandidateHeapAdapter) Less(i, j int) bool { return h[i].Dist > h[j].Dist }
 func (h MaxCandidateHeapAdapter) Swap(i, j int)      { h[i], h[j] = h[j], h[i] }
+
 // Push adds a types.Candidate to the heap.
-func (h *MaxCandidateHeapAdapter) Push(x any)        { *h = append(*h, x.(types.Candidate)) }
+func (h *MaxCandidateHeapAdapter) Push(x any) { *h = append(*h, x.(types.Candidate)) }
 
 // Pop removes and returns the largest types.Candidate from the heap.
 func (h *MaxCandidateHeapAdapter) Pop() any {
@@ -2342,7 +2388,7 @@ func (h *ArrowHNSW) GetLayerNeighbors(id uint32, layer int) ([]uint32, error) {
 	}
 
 	neighbors := make([]uint32, count)
-	startIdx := int(cOff) * types.MaxNeighbors // #nosec G115
+	startIdx := int(cOff) * types.MaxNeighbors                  // #nosec G115
 	copy(neighbors, neighborhood[startIdx:startIdx+int(count)]) // #nosec G115
 
 	return neighbors, nil
@@ -2450,8 +2496,6 @@ func (h *ArrowHNSW) SearchWithArena(queryVec []float32, k int, arena any) []type
 	}
 	return ids
 }
-
-
 
 // GetVector retrieves the vector for the given ID, checking memory and disk caches.
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {

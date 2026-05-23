@@ -177,4 +177,3 @@ func TestProtoRCU_CompareAndSwap_Spin(t *testing.T) {
 		t.Errorf("Race increments failed: got %d, want 100", v)
 	}
 }
-

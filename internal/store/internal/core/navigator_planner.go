@@ -1,6 +1,5 @@
 package core
 
-
 // QueryPlanner determines the best navigation strategy for a given query.
 type QueryPlanner struct {
 	bfs         NavigationStrategy

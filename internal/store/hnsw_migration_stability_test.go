@@ -17,7 +17,7 @@ func TestMigrationStability(t *testing.T) {
 	// Create a dataset with AutoShardingIndex
 	config := DefaultAutoShardingConfig()
 	config.ShardThreshold = 10
-	
+
 	// Define schema
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -38,7 +38,7 @@ func TestMigrationStability(t *testing.T) {
 	pool := memory.NewGoAllocator()
 	builder := array.NewFixedSizeListBuilder(pool, 128, arrow.PrimitiveTypes.Float32)
 	defer builder.Release()
-	
+
 	valBuilder := builder.ValueBuilder().(*array.Float32Builder)
 	for i := 0; i < 50; i++ {
 		builder.Append(true)
@@ -48,11 +48,11 @@ func TestMigrationStability(t *testing.T) {
 	}
 	vecArr := builder.NewArray()
 	defer vecArr.Release()
-	
+
 	// Correct order: NewRecordBatch(schema, columns, numRows)
 	rec := array.NewRecordBatch(schema, []arrow.Array{vecArr}, 50)
 	defer rec.Release()
-	
+
 	// Add record to dataset safely
 	oldRecords := ds.Records.Read()
 	newRecords := append(oldRecords, rec)
@@ -66,7 +66,7 @@ func TestMigrationStability(t *testing.T) {
 
 	var wg sync.WaitGroup
 	stop := make(chan struct{})
-	
+
 	// Start concurrent searches
 	wg.Add(1)
 	go func() {

@@ -1,6 +1,5 @@
 package core
 
-
 // getAdaptiveEf returns the efConstruction value to use for the current insertion
 // based on the number of nodes already in the graph.
 // When AdaptiveEf is enabled, this implements a linear ramp from AdaptiveEfMin

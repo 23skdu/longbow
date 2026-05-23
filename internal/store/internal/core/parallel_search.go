@@ -8,8 +8,8 @@ import (
 	"unsafe"
 
 	basecore "github.com/23skdu/longbow/internal/core"
-	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
@@ -99,8 +99,6 @@ var attemptBuffersPool = sync.Pool{
 	},
 }
 
-
-
 // processResultsParallelInternal is the generalized parallel result processing routine.
 func processResultsParallelInternal[T float32 | float64](ctx context.Context, h ParallelSearchHost[T], query []T, candidates []types.Candidate, k int, filters []qry.Filter, bitmap *roaring.Bitmap) []types.SearchResult {
 	cfg := h.GetParallelSearchConfig()
@@ -169,7 +167,7 @@ func processResultsParallelInternal[T float32 | float64](ctx context.Context, h 
 		workerID := i
 		chunk := candidates[start:end]
 		wg.Add(1)
-		
+
 		topo, node := h.GetNUMAConfig()
 		task := func() {
 			defer wg.Done()
@@ -452,4 +450,3 @@ func processChunkInternal[T float32 | float64](ctx context.Context, h ParallelSe
 
 	return results
 }
-

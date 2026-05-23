@@ -18,8 +18,8 @@ func (e *PQEncoder) Serialize() []byte {
 	data := make([]byte, size)
 
 	binary.LittleEndian.PutUint32(data[0:], uint32(e.Dims)) // #nosec G115
-	binary.LittleEndian.PutUint32(data[4:], uint32(e.M)) // #nosec G115
-	binary.LittleEndian.PutUint32(data[8:], uint32(e.K)) // #nosec G115
+	binary.LittleEndian.PutUint32(data[4:], uint32(e.M))    // #nosec G115
+	binary.LittleEndian.PutUint32(data[8:], uint32(e.K))    // #nosec G115
 
 	offset := 12
 	for i := 0; i < e.M; i++ {

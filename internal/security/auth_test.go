@@ -107,20 +107,20 @@ func TestTokenGenerator(t *testing.T) {
 	expiredClaims := Claims{
 		Exp: time.Now().Add(-1 * time.Hour).Unix(),
 	}
-	
+
 	tokenBytes, _ := json.Marshal(expiredClaims)
 	expiredToken := base64.RawURLEncoding.EncodeToString(tokenBytes)
-	
+
 	_, err = gen.ValidateToken(expiredToken)
 	require.Error(t, err)
 }
 
 func TestAuthMiddleware(t *testing.T) {
 	config := SSOConfig{
-		Enabled:      true,
-		Providers:    []OAuthProvider{ProviderGitHub},
-		ClientID:     "id",
-		ClientSecret: "secret",
+		Enabled:         true,
+		Providers:       []OAuthProvider{ProviderGitHub},
+		ClientID:        "id",
+		ClientSecret:    "secret",
 		SessionLifetime: 1 * time.Hour,
 	}
 	mgr, _ := NewOAuthManager(config)

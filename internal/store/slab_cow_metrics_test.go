@@ -11,8 +11,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/stretchr/testify/assert"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/stretchr/testify/assert"
 )
 
 // TestCowMetrics_CounterVecDeclaration verifies that HnswCowCopyCount is

@@ -11,9 +11,9 @@ type SearchResult struct {
 	ID       VectorID
 	Distance float32
 	Score    float32
-	Metadata []byte                 // Binary metadata payload (zero-copy optimized)
-	Vector   []byte                 // Binary payload for the vector if requested
-	Source   uint8                  // 0=Dense, 1=Sparse, 2=Fused (see constants)
+	Metadata []byte // Binary metadata payload (zero-copy optimized)
+	Vector   []byte // Binary payload for the vector if requested
+	Source   uint8  // 0=Dense, 1=Sparse, 2=Fused (see constants)
 }
 
 // Candidate represents a search result candidate with ID and distance

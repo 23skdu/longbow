@@ -20,12 +20,12 @@ func TestMigrationHelper(t *testing.T) {
 	// Test FlightInfo validation
 	err = mh.ValidateFlightInfo(nil)
 	assert.Error(t, err)
-	
+
 	// Missing endpoints
 	info := &flight.FlightInfo{}
 	err = mh.ValidateFlightInfo(info)
 	assert.Error(t, err)
-	
+
 	// Valid info
 	info.Endpoint = []*flight.FlightEndpoint{{Ticket: &flight.Ticket{Ticket: []byte("test")}}}
 	err = mh.ValidateFlightInfo(info)
@@ -34,11 +34,11 @@ func TestMigrationHelper(t *testing.T) {
 	// Test Action validation
 	err = mh.ValidateAction(nil)
 	assert.Error(t, err)
-	
+
 	action := &genflight.Action{}
 	err = mh.ValidateAction(action)
 	assert.Error(t, err)
-	
+
 	action.Type = "test"
 	err = mh.ValidateAction(action)
 	assert.NoError(t, err)
@@ -47,10 +47,10 @@ func TestMigrationHelper(t *testing.T) {
 func TestFlightCompatibilityLayerBasics(t *testing.T) {
 	fcl := NewFlightCompatibilityLayer()
 	assert.NotNil(t, fcl)
-	
+
 	assert.Equal(t, "v18.5.1 (v23-ready)", fcl.GetAPIVersion())
 	assert.False(t, fcl.IsV23Compatible())
-	
+
 	err := fcl.PrepareForV23()
 	assert.Error(t, err)
 }

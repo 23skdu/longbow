@@ -614,8 +614,6 @@ var (
 		[]string{"dataset"},
 	)
 
-
-
 	ShardedHnswShardSize = promauto.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "longbow_sharded_hnsw_shard_size",
@@ -1056,7 +1054,7 @@ var (
 		},
 		[]string{"dataset"},
 	)
- 
+
 	// TurboQuantSearchTotal counts TurboQuant-accelerated search operations.
 	TurboQuantSearchTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
@@ -1065,7 +1063,7 @@ var (
 		},
 		[]string{"dataset", "bit_width"}, // bit_width: "4", "2"
 	)
- 
+
 	// TurboQuantSearchLatencySeconds tracks latency of TurboQuant-accelerated searches.
 	TurboQuantSearchLatencySeconds = promauto.NewHistogramVec(
 		prometheus.HistogramOpts{

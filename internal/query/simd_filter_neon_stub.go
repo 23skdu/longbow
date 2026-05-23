@@ -1,4 +1,4 @@
-//go:build (!arm64) || noasm
+//go:build !arm64 || noasm
 
 package query
 

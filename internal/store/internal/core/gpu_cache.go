@@ -1,11 +1,11 @@
 package core
 
 import (
+	"container/list"
 	"encoding/binary"
 	"hash/fnv"
 	"math"
 	"sync"
-	"container/list"
 
 	"github.com/23skdu/longbow/internal/store/types"
 )

@@ -32,4 +32,3 @@ func TestMemoryObservabilityMetrics(t *testing.T) {
 	SlabRefCountDistribution.WithLabelValues("test").Observe(10)
 	// Observations completed without panic – metric is correctly wired.
 }
-

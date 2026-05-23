@@ -36,7 +36,6 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 	poolCtx.MaxGeneration = meta.Generation
 	poolCtx.Reset()
 	defer h.searchPool.PutWithMetrics(poolCtx, h.config.DataType.String(), strconv.Itoa(int(h.dims.Load())))
-	
 
 	// Iterate valid nodes to check THEIR outgoing connections
 	for i := 0; i < maxID; i++ {
@@ -79,14 +78,14 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 			cOff := types.ChunkOffset(nid)
 			neighborsChunk := data.GetNeighborsChunk(lvl, cID)
 			countsChunk := data.GetCountsChunk(lvl, cID)
-			
+
 			if neighborsChunk == nil || countsChunk == nil {
 				data.UnlockNode(lvl, nid, oldVer)
 				continue
 			}
 
 			countAddr := &countsChunk[cOff]
-			
+
 			allNeighbors := neighbors
 
 			if len(allNeighbors) == 0 {
@@ -109,7 +108,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 			}
 
 			if !hasTombstone {
-				if nid % 10 == 0 {
+				if nid%10 == 0 {
 				}
 				data.UnlockNode(lvl, nid, oldVer)
 				continue
@@ -131,7 +130,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 						poolCtx.visited.Set(int(neighborID))
 					}
 				}
-				
+
 				baseIdx := int(cOff) * types.MaxNeighbors
 
 				// Add Tombstones' neighbors
@@ -187,8 +186,8 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				}
 
 				selected := h.selectNeighbors(poolCtx, candList, limitM, data)
-				
-				if nid % 10 == 0 {
+
+				if nid%10 == 0 {
 				}
 
 				// Write back
@@ -220,7 +219,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 					}
 					_ = data.PackedNeighbors[lvl].SetNeighbors(nid, newIDs)
 				}
-				
+
 				// CRITICAL: Clear shadow neighbors in TopLayerManager so they don't hide the repair
 				if h.topLayerManager != nil {
 					h.topLayerManager.ClearNeighbors(lvl, nid)
@@ -232,7 +231,7 @@ func (h *ArrowHNSW) RepairTombstones(ctx context.Context, batchSize int) int {
 				}
 
 				repaired++
-				
+
 				// CAS the updated data pointer back to h.data to ensure visibility
 				latest := h.data.Load()
 				swapped := h.data.CompareAndSwap(latest, data)

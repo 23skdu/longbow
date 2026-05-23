@@ -1,8 +1,8 @@
 package store
 
 import (
-	"testing"
 	"github.com/stretchr/testify/assert"
+	"testing"
 )
 
 type mockAdaptiveIndex struct {

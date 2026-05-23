@@ -96,8 +96,8 @@ func (pr *PartitionedRecords) PartitionBatches(partitionIdx int) int {
 func (pr *PartitionedRecords) hashKey(key uint64) int {
 	h := fnv.New64a()
 	b := make([]byte, 8)
-	b[0] = byte(key) // #nosec G115
-	b[1] = byte(key >> 8) // #nosec G115
+	b[0] = byte(key)       // #nosec G115
+	b[1] = byte(key >> 8)  // #nosec G115
 	b[2] = byte(key >> 16) // #nosec G115
 	b[3] = byte(key >> 24) // #nosec G115
 	b[4] = byte(key >> 32) // #nosec G115

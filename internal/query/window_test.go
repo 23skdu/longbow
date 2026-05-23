@@ -61,7 +61,7 @@ func TestWindowOperator_PartitionBy(t *testing.T) {
 			As:   "rk",
 			Over: WindowSpec{
 				PartitionBy: []string{"group"},
-				OrderBy:      []WindowOrder{{Field: "distance", Descending: false}},
+				OrderBy:     []WindowOrder{{Field: "distance", Descending: false}},
 			},
 		},
 	}

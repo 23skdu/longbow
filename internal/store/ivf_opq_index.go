@@ -9,6 +9,8 @@ import (
 	"sync"
 	"time"
 
+	"bytes"
+	"encoding/gob"
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
@@ -17,8 +19,6 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
-	"bytes"
-	"encoding/gob"
 	"io"
 )
 
@@ -109,7 +109,7 @@ func (idx *IVFOPQIndex) Train(vectors [][]float32) error {
 		if backend == gputypes.BackendCPU {
 			backend = gputypes.DetectGPUBackend()
 		}
-		
+
 		// In a real scenario, we'd use a factory to get the backend
 		// For now, we'll assume Metal implementation is available if on Mac
 		// (Normally this would be handled by VectorStore.InitGPUBackend)
@@ -143,7 +143,7 @@ func (idx *IVFOPQIndex) Train(vectors [][]float32) error {
 		if hnswCfg == nil {
 			hnswCfg = &ArrowHNSWConfig{M: 16, EfConstruction: 200}
 		}
-		
+
 		h, err := createHNSWIndex(IndexConfig{
 			Type:       IndexTypeHNSW,
 			Dimension:  idx.dim,
@@ -152,14 +152,14 @@ func (idx *IVFOPQIndex) Train(vectors [][]float32) error {
 		if err != nil {
 			return fmt.Errorf("failed to create HNSW coarse index: %w", err)
 		}
-		
+
 		ids := make([]uint64, idx.config.Nlist)
 		vecs := make([][]float32, idx.config.Nlist)
 		for i := 0; i < idx.config.Nlist; i++ {
 			ids[i] = uint64(i)
 			vecs[i] = centroids[i*idx.dim : (i+1)*idx.dim]
 		}
-		
+
 		if err := h.AddBatchRaw(ids, vecs); err != nil {
 			return fmt.Errorf("failed to build HNSW coarse index: %w", err)
 		}
@@ -262,7 +262,7 @@ func (idx *IVFOPQIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k in
 		dist float32
 	}
 	var dists []clusterDist
-	
+
 	if idx.coarseHNSW != nil {
 		results, err := idx.coarseHNSW.Search(queryVec, idx.config.Nprobe)
 		if err == nil {
@@ -271,8 +271,8 @@ func (idx *IVFOPQIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k in
 				dists[i] = clusterDist{id: int(res.ID), dist: res.Distance} // #nosec G115
 			}
 		}
-	} 
-	
+	}
+
 	if dists == nil {
 		dists = make([]clusterDist, idx.config.Nlist)
 		for c := 0; c < idx.config.Nlist; c++ {
@@ -287,9 +287,9 @@ func (idx *IVFOPQIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k in
 	if nprobe > len(dists) {
 		nprobe = len(dists)
 	}
-	
+
 	// 2. Build ADC table for OPQ (note: query must be rotated by OPQ first)
-	// (Actually, the OPQ rotation is part of the Encode process, 
+	// (Actually, the OPQ rotation is part of the Encode process,
 	// but for ADC we need the query in the rotated space)
 	rotatedQuery := idx.opqEncoder.RotateVector(queryVec)
 	adt, err := idx.opqEncoder.PQEncoder.BuildADCTable(rotatedQuery)
@@ -488,10 +488,10 @@ func (idx *IVFOPQIndex) SearchVectors(ctx context.Context, q any, k int, f []que
 }
 
 // Size returns the number of nodes in the index.
-func (idx *IVFOPQIndex) Size() int { 
+func (idx *IVFOPQIndex) Size() int {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	return int(idx.nextID) 
+	return int(idx.nextID)
 }
 
 // Len returns the number of vectors in the index.
@@ -513,14 +513,21 @@ func (idx *IVFOPQIndex) GetDimension() uint32 { return uint32(idx.dim) } // #nos
 func (idx *IVFOPQIndex) GetIndexType() string {
 	return "ivf_opq"
 }
+
 // SetIndexedColumns is a no-op for this index type.
 func (idx *IVFOPQIndex) SetIndexedColumns(cols []string) {}
+
 // GetRawNeighbors is not supported for IVF-OPQ.
 func (idx *IVFOPQIndex) GetRawNeighbors(id uint32) ([]uint32, error) { return nil, nil }
+
 // GetNeighbors is not supported for IVF-OPQ.
-func (idx *IVFOPQIndex) GetNeighbors(ctx context.Context, id uint32, k int) ([]types.SearchResult, error) { return nil, nil }
+func (idx *IVFOPQIndex) GetNeighbors(ctx context.Context, id uint32, k int) ([]types.SearchResult, error) {
+	return nil, nil
+}
+
 // PreWarm is a no-op for this index type.
 func (idx *IVFOPQIndex) PreWarm(s int) {}
+
 // Warmup returns the current size of the index.
 func (idx *IVFOPQIndex) Warmup() int { return idx.Size() }
 
@@ -537,12 +544,13 @@ func (idx *IVFOPQIndex) EstimateMemory() int64 {
 
 // GetPQEncoder returns the underlying PQ encoder.
 func (idx *IVFOPQIndex) GetPQEncoder() *pq.PQEncoder { return idx.opqEncoder.PQEncoder }
+
 // Close releases all resources held by the index.
-func (idx *IVFOPQIndex) Close() error { 
+func (idx *IVFOPQIndex) Close() error {
 	if idx.coarseHNSW != nil {
 		return idx.coarseHNSW.Close()
 	}
-	return nil 
+	return nil
 }
 
 // AddBatch inserts a batch of vectors.
@@ -658,31 +666,43 @@ func (idx *IVFOPQIndex) ImportState(data []byte) error {
 
 // ExportGraph is a no-op for this index type.
 func (idx *IVFOPQIndex) ExportGraph(w io.Writer) error { return nil }
+
 // ImportGraph is a no-op for this index type.
 func (idx *IVFOPQIndex) ImportGraph(r io.Reader) error { return nil }
+
 // ExportDelta is a no-op for this index type.
 func (idx *IVFOPQIndex) ExportDelta(v uint64) (*types.DeltaSync, error) { return nil, nil }
 
 // ApplyDelta updates metrics for synchronizing data.
-func (idx *IVFOPQIndex) ApplyDelta(d *types.DeltaSync) error { 
+func (idx *IVFOPQIndex) ApplyDelta(d *types.DeltaSync) error {
 	metrics.IndexSyncDeltaTotal.WithLabelValues("ivf-opq", "default").Add(float64(len(d.NewLocations)))
-	return nil 
+	return nil
 }
 
 // SetParallelSearchConfig is a no-op for this index type.
 func (idx *IVFOPQIndex) SetParallelSearchConfig(c types.ParallelSearchConfig) {}
+
 // GetParallelSearchConfig returns an empty config.
-func (idx *IVFOPQIndex) GetParallelSearchConfig() types.ParallelSearchConfig { return types.ParallelSearchConfig{} }
+func (idx *IVFOPQIndex) GetParallelSearchConfig() types.ParallelSearchConfig {
+	return types.ParallelSearchConfig{}
+}
+
 // RemapLocations is a no-op for this index type.
 func (idx *IVFOPQIndex) RemapLocations(ctx context.Context, m map[uint32]any) error { return nil }
+
 // SearchVectorsInRange is not supported for IVF-OPQ.
-func (idx *IVFOPQIndex) SearchVectorsInRange(ctx context.Context, q any, t float32, f []query.Filter, o any) ([]types.SearchResult, error) { return nil, nil }
+func (idx *IVFOPQIndex) SearchVectorsInRange(ctx context.Context, q any, t float32, f []query.Filter, o any) ([]types.SearchResult, error) {
+	return nil, nil
+}
+
 // IsSharded returns false for this index type.
 func (idx *IVFOPQIndex) IsSharded() bool { return false }
+
 // TrainPQ delegates to the Train method.
 func (idx *IVFOPQIndex) TrainPQ(v [][]float32) error { return idx.Train(v) }
+
 // GetGPUIndex returns nil as it is handled internally.
-func (idx *IVFOPQIndex) GetGPUIndex() any            { return nil }
+func (idx *IVFOPQIndex) GetGPUIndex() any { return nil }
 
 // Helper functions for SearchBatch
 
@@ -729,7 +749,7 @@ func (idx *IVFOPQIndex) decodeVector(id int) ([]float32, error) {
 	var (
 		clusterID int
 		entryIdx  int
-		found    bool
+		found     bool
 	)
 
 	for c := 0; c < len(idx.clusters); c++ {
@@ -785,7 +805,7 @@ func (idx *IVFOPQIndex) computeResidualScore(queryIdx int, vec []float32) float3
 
 	var (
 		clusterID int
-		found    bool
+		found     bool
 	)
 	for c := 0; c < len(idx.clusters); c++ {
 		entries := idx.clusters[c].Entries

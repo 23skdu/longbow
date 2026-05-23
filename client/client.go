@@ -3,10 +3,10 @@ package client
 import (
 	"context"
 	"fmt"
-	"sync"
-	"time"
 	"strings"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/23skdu/longbow/pkg/loadbalancing"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -237,8 +237,8 @@ func (c *SmartClient) DoPut(ctx context.Context, desc *flight.FlightDescriptor) 
 
 		return &smartDoPutStream{
 			FlightService_DoPutClient: stream,
-			desc:                     desc,
-			firstSend:                true,
+			desc:                      desc,
+			firstSend:                 true,
 		}, nil
 	}
 

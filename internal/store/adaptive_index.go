@@ -521,11 +521,11 @@ func (b *BruteForceIndex) Len() int {
 
 // getVector retrieves a vector from the dataset.
 func (b *BruteForceIndex) getVector(loc Location) []float32 {
-	if b.dataset == nil || loc.BatchIdx >= len(b .dataset.Records.Read()) {
+	if b.dataset == nil || loc.BatchIdx >= len(b.dataset.Records.Read()) {
 		return nil
 	}
 
-	record := b .dataset.Records.Read()[loc.BatchIdx]
+	record := b.dataset.Records.Read()[loc.BatchIdx]
 	fieldIndices := record.Schema().FieldIndices("vector")
 	if len(fieldIndices) == 0 {
 		return nil
@@ -559,12 +559,12 @@ func (b *BruteForceIndex) getVector(loc Location) []float32 {
 func (b *BruteForceIndex) getVectorUnsafe(loc Location) (vec []float32, release func()) {
 	b.enterEpoch()
 
-	if b.dataset == nil || loc.BatchIdx >= len(b .dataset.Records.Read()) {
+	if b.dataset == nil || loc.BatchIdx >= len(b.dataset.Records.Read()) {
 		b.exitEpoch()
 		return nil, nil
 	}
 
-	record := b .dataset.Records.Read()[loc.BatchIdx]
+	record := b.dataset.Records.Read()[loc.BatchIdx]
 	fieldIndices := record.Schema().FieldIndices("vector")
 	if len(fieldIndices) == 0 {
 		b.exitEpoch()
@@ -679,7 +679,7 @@ func (idx *AdaptiveIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch
 		if err != nil {
 			return nil, err
 		}
-		
+
 		// If we are still migrating, also add to bruteForce to maintain searchability
 		if !usingHNSW {
 			idx.mu.Lock()
@@ -715,7 +715,7 @@ func (idx *AdaptiveIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch
 		}
 		ids[i] = id
 	}
-	
+
 	newCount := idx.vectorCount.Add(int64(len(rowIdxs)))
 	if idx.config.Enabled && newCount >= int64(idx.config.Threshold) && idx.hnsw == nil && !idx.usingHNSW.Load() {
 		idx.migrateToHNSW()

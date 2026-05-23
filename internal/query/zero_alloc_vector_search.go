@@ -262,7 +262,6 @@ func (p *ZeroAllocVectorSearchParser) ParseVectorField(data []byte, pos int, out
 	return pos, errors.New("unexpected end in vector array")
 }
 
-
 func (p *ZeroAllocVectorSearchParser) parseFilters(data []byte, pos int) (int, error) {
 	return ParseFilterArray(data, pos, &p.filters)
 }

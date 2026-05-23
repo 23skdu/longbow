@@ -1,4 +1,5 @@
 //go:build arm64
+
 package simd
 
 import (
@@ -55,13 +56,18 @@ func UnpackTQ8NEON(src []byte, dst []float32, scale, bias float32) {
 
 //go:noescape
 func packTQ2NEONKernel(src, dst unsafe.Pointer, n int)
+
 //go:noescape
 func packTQ4NEONKernel(src, dst unsafe.Pointer, n int)
+
 //go:noescape
 func packTQ8NEONKernel(src, dst unsafe.Pointer, n int)
+
 //go:noescape
 func unpackTQ2NEONKernel(src, dst unsafe.Pointer, n int, scale, bias float32)
+
 //go:noescape
 func unpackTQ4NEONKernel(src, dst unsafe.Pointer, n int, scale, bias float32)
+
 //go:noescape
 func unpackTQ8NEONKernel(src, dst unsafe.Pointer, n int, scale, bias float32)

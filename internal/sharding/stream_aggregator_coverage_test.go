@@ -74,13 +74,13 @@ func TestStreamAggregator_Internal_Coverage(t *testing.T) {
 		fwdCfg := DefaultForwarderConfig()
 		fwd := NewRequestForwarder(&fwdCfg, rm)
 		sg := NewScatterGather(rm, fwd, logger)
-		
+
 		_, err := sa.Aggregate(context.Background(), sg, 10, func(ctx context.Context, nodeID string) (any, error) {
 			return nil, nil
 		})
 		assert.NoError(t, err) // No members in ring yet, so scatter returns nil, nil
 	})
-	
+
 	t.Run("AppendValue_Null", func(t *testing.T) {
 		bldr := array.NewInt32Builder(mem)
 		defer bldr.Release()
@@ -88,7 +88,7 @@ func TestStreamAggregator_Internal_Coverage(t *testing.T) {
 		arrB.AppendNull()
 		a := arrB.NewArray()
 		defer a.Release()
-		
+
 		err := appendValue(bldr, a, 0)
 		assert.NoError(t, err)
 		assert.Equal(t, 1, bldr.Len())

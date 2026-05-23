@@ -20,7 +20,7 @@ type TPUIndex struct {
 	vectors map[int64][]float32
 	tqCodes map[int64][]byte
 	closed  bool
-	
+
 	// Graph data
 	graphOffsets   []uint32
 	graphNeighbors []uint32
@@ -380,10 +380,10 @@ func (i *TPUIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []f
 
 	i.graphOffsets = make([]uint32, len(offsets))
 	copy(i.graphOffsets, offsets)
-	
+
 	i.graphNeighbors = make([]uint32, len(neighbors))
 	copy(i.graphNeighbors, neighbors)
-	
+
 	if len(weights) > 0 {
 		i.graphWeights = make([]float32, len(weights))
 		copy(i.graphWeights, weights)
@@ -419,7 +419,7 @@ func (i *TPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint
 			}
 			start := i.graphOffsets[nodeID]
 			end := i.graphOffsets[nodeID+1]
-			
+
 			for neighborIdx := start; neighborIdx < end; neighborIdx++ {
 				neighbor := i.graphNeighbors[neighborIdx]
 				if _, seen := visited[neighbor]; !seen {
@@ -472,7 +472,7 @@ func (i *TPUIndex) HaversineSearch(centerLat, centerLon float32, points []float3
 		a := math.Sin(dLat/2)*math.Sin(dLat/2) +
 			math.Cos(lat1)*math.Cos(lat2)*
 				math.Sin(dLon/2)*math.Sin(dLon/2)
-		
+
 		c := 2 * math.Asin(math.Sqrt(a))
 		distances[idx] = float32(float64(earthRadius) * c)
 	}

@@ -14,7 +14,7 @@ import (
 // DualIndexHarness will run the same operations on both coder/hnsw and hnsw2
 // to validate correctness and measure recall.
 type DualIndexHarness struct {
-	candidate *ArrowHNSW           // Our implementation
+	candidate *ArrowHNSW // Our implementation
 	dataset   *Dataset
 	vectors   map[uint32][]float32 // Test vectors
 }
@@ -57,8 +57,8 @@ func (h *DualIndexHarness) AddVector(id uint32, vec []float32) {
 	rec := b.NewRecordBatch()
 	// Do not release rec immediately, it belongs to dataset now
 
-	h .dataset.Records.UpdateInPlace(append(h .dataset.Records.Read(), rec))
-	batchIdx := len(h .dataset.Records.Read()) - 1
+	h.dataset.Records.UpdateInPlace(append(h.dataset.Records.Read(), rec))
+	batchIdx := len(h.dataset.Records.Read()) - 1
 
 	// Insert into candidate
 	if _, err := h.candidate.AddByLocation(context.Background(), batchIdx, 0); err != nil {

@@ -92,8 +92,8 @@ func (rs *RingSharder) hashID(id VectorID) uint32 {
 	// Simple int64 to byte conversion for speed
 	var b [8]byte
 	v := uint64(id)
-	b[0] = byte(v) // #nosec G115
-	b[1] = byte(v >> 8) // #nosec G115
+	b[0] = byte(v)       // #nosec G115
+	b[1] = byte(v >> 8)  // #nosec G115
 	b[2] = byte(v >> 16) // #nosec G115
 	b[3] = byte(v >> 24) // #nosec G115
 	b[4] = byte(v >> 32) // #nosec G115

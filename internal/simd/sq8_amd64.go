@@ -24,10 +24,10 @@ func euclideanSQ8AVX2(a, b []byte) (int32, error) {
 }
 
 /*
-func euclideanSQ8AVX512(a, b []byte) (int32, error) {
-	// Use AVX2 kernel as fallback (AVX512 assembly is in separate file)
-	return euclideanSQ8AVX2(a, b)
-}
+	func euclideanSQ8AVX512(a, b []byte) (int32, error) {
+		// Use AVX2 kernel as fallback (AVX512 assembly is in separate file)
+		return euclideanSQ8AVX2(a, b)
+	}
 */
 var _ = func() {
 	if false {

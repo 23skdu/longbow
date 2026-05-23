@@ -12,7 +12,7 @@ import (
 
 func TestCoverage_NestedFieldResolution(t *testing.T) {
 	pool := memory.NewGoAllocator()
-	
+
 	// Create a Struct array: { "a": int32, "b": { "c": string } }
 	innerStructType := arrow.StructOf(arrow.Field{Name: "c", Type: arrow.BinaryTypes.String})
 	outerStructType := arrow.StructOf(
@@ -23,7 +23,7 @@ func TestCoverage_NestedFieldResolution(t *testing.T) {
 	// Build the data
 	bld := array.NewStructBuilder(pool, outerStructType)
 	defer bld.Release()
-	
+
 	aBld := bld.FieldBuilder(0).(*array.Int32Builder)
 	bBld := bld.FieldBuilder(1).(*array.StructBuilder)
 	cBld := bBld.FieldBuilder(0).(*array.StringBuilder)

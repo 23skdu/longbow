@@ -23,10 +23,10 @@ type SharedWorkerPool struct {
 	tuner      atomic.Value // Stores Tuner interface
 
 	// NUMA-aware pooling
-	topo      *memory.NUMATopology
-	nodePools [][]chan func()
+	topo                  *memory.NUMATopology
+	nodePools             [][]chan func()
 	highPriorityNodePools [][]chan func() // New: High-priority channels
-	nodeRobin []uint32
+	nodeRobin             []uint32
 }
 
 var (
@@ -44,12 +44,12 @@ func GetSharedPool() *SharedWorkerPool {
 		}
 
 		p := &SharedWorkerPool{
-			numWorkers: numWorkers,
-			shards:     make([]chan func(), numWorkers),
-			topo:       topo,
-			nodePools:  make([][]chan func(), topo.NumNodes),
+			numWorkers:            numWorkers,
+			shards:                make([]chan func(), numWorkers),
+			topo:                  topo,
+			nodePools:             make([][]chan func(), topo.NumNodes),
 			highPriorityNodePools: make([][]chan func(), topo.NumNodes),
-			nodeRobin:  make([]uint32, topo.NumNodes),
+			nodeRobin:             make([]uint32, topo.NumNodes),
 		}
 
 		// Initialize per-node pools
@@ -67,7 +67,7 @@ func GetSharedPool() *SharedWorkerPool {
 				hpCh := make(chan func(), 512) // Smaller buffer for high priority
 				p.nodePools[n][w] = ch
 				p.highPriorityNodePools[n][w] = hpCh
-				
+
 				coreID := -1
 				cpus := topo.PhysicalCPUs[n]
 				if len(cpus) == 0 {
@@ -92,7 +92,7 @@ func GetSharedPool() *SharedWorkerPool {
 			p.shards[workerIdx] = ch
 			p.nodePools[0] = append(p.nodePools[0], ch)
 			p.highPriorityNodePools[0] = append(p.highPriorityNodePools[0], hpCh)
-			
+
 			coreID := -1
 			cpus := topo.PhysicalCPUs[0]
 			if len(cpus) == 0 {
@@ -101,7 +101,7 @@ func GetSharedPool() *SharedWorkerPool {
 			if len(cpus) > 0 {
 				coreID = cpus[workerIdx%len(cpus)]
 			}
-			
+
 			go p.numaWorker(ch, hpCh, 0, coreID)
 			workerIdx++
 		}
@@ -122,15 +122,21 @@ func (p *SharedWorkerPool) numaWorker(tasks chan func(), hpTasks chan func(), no
 	for {
 		select {
 		case task, ok := <-hpTasks:
-			if !ok { return }
+			if !ok {
+				return
+			}
 			executeTask(task)
 		default:
 			select {
 			case task, ok := <-hpTasks:
-				if !ok { return }
+				if !ok {
+					return
+				}
 				executeTask(task)
 			case task, ok := <-tasks:
-				if !ok { return }
+				if !ok {
+					return
+				}
 				executeTask(task)
 			}
 		}
@@ -183,7 +189,7 @@ func (p *SharedWorkerPool) submitToNodeInternal(nodeID int, task func(), highPri
 		p.Submit(task) // Fallback to global
 		return
 	}
-	
+
 	var pools []chan func()
 	if highPriority {
 		pools = p.highPriorityNodePools[nodeID]

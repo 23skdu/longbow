@@ -17,7 +17,7 @@ type MQType string
 
 const (
 	// MQTypeKafka represents a Kafka message queue.
-	MQTypeKafka  MQType = "kafka"
+	MQTypeKafka MQType = "kafka"
 	// MQTypePulsar represents a Pulsar message queue.
 	MQTypePulsar MQType = "pulsar"
 )

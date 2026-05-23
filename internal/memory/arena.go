@@ -8,10 +8,10 @@ import (
 	"sync/atomic"
 	"unsafe"
 
-	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/23skdu/longbow/internal/metrics"
-	"io"
 	"encoding/binary"
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"io"
 	"os"
 	"runtime"
 )
@@ -30,7 +30,6 @@ func nextPowerOf2(n int) int {
 	n |= n >> 32
 	return n + 1
 }
-
 
 // Verify nextPowerOf2 works correctly at compile time
 var _ = nextPowerOf2(1024)      // Should be 1024
@@ -83,7 +82,7 @@ type SlabArena struct {
 	generation atomic.Uint64           // Current generation for new slabs
 	alloc      memory.Allocator        // Optional custom allocator (e.g. NUMA)
 	stats      *ArenaStatsRecord
-	refs       atomic.Int32            // Reference count for safe shared use
+	refs       atomic.Int32 // Reference count for safe shared use
 }
 
 // Stats returns the current memory usage statistics for the arena.
@@ -461,7 +460,6 @@ func (a *SlabArena) Free() {
 		}
 	}
 
-
 	UnregisterArena(a.stats)
 	a.stats.Active.Store(false)
 	a.stats.TotalCapacity.Store(0)
@@ -601,12 +599,13 @@ func (a *SlabArena) GetPointer(offset uint64) unsafe.Pointer {
 		}
 		if realSlab != nil {
 			adjusted := localOffset + uint32(int(slabIdx)-realIdx)*a.slabCap // #nosec G115 -- intentional conversion
-			return unsafe.Pointer(&realSlab.data[adjusted]) // #nosec G103
+			return unsafe.Pointer(&realSlab.data[adjusted])                  // #nosec G103
 		}
 		return nil
 	}
 	return unsafe.Pointer(&s.data[localOffset]) // #nosec G103
 }
+
 // Save serializes the arena's contents to the given writer.
 func (a *SlabArena) Save(w io.Writer) error {
 	slabsPtr := a.slabs.Load()
@@ -632,7 +631,7 @@ func (a *SlabArena) Save(w io.Writer) error {
 		if err := binary.Write(w, binary.LittleEndian, s.offset); err != nil {
 			return err
 		}
-		
+
 		// Align to page boundary for mmap
 		if seeker, ok := w.(io.Seeker); ok {
 			pageSize := os.Getpagesize()
@@ -737,13 +736,13 @@ func (a *SlabArena) LoadMmap(f *os.File) error {
 		if padding > 0 {
 			currOff, _ = f.Seek(int64(padding), io.SeekCurrent)
 		}
-		
+
 		// Mmap the slab data
 		data, err := Mmap(int(f.Fd()), currOff, int(a.slabCap), true)
 		if err != nil {
 			return fmt.Errorf("mmap slab %d failed: %v", i, err)
 		}
-		
+
 		// Advance file pointer
 		if _, err := f.Seek(int64(a.slabCap), io.SeekCurrent); err != nil {
 			return err
@@ -758,6 +757,7 @@ func (a *SlabArena) LoadMmap(f *os.File) error {
 	a.slabs.Store(&slabs)
 	return nil
 }
+
 // IsOffHeap returns true if the arena is backed by off-heap memory.
 func (a *SlabArena) IsOffHeap() bool {
 	if a.alloc == nil {

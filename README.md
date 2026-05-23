@@ -55,6 +55,15 @@ python3 scripts/unified_benchmark.py --modes cpu,metal --dtypes float32,turboqua
 # Results are generated as a Markdown matrix in docs/performance.md
 ```
 
+### GPU Binary Distribution
+
+Longbow is compiled natively for CPU architectures by default. To enable GPU acceleration, you must compile or run the specific platform binaries:
+
+- **macOS (Metal)**: Build the universal binary via `make build-darwin-universal` which utilizes `lipo` to create a fat binary containing both `x86_64` (CPU) and `arm64` (Metal) targets.
+- **Linux (CUDA)**: Build the CUDA-enabled binary via `make build-cuda` (requires NVIDIA toolkit).
+
+**Note:** If Longbow is launched on GPU-capable hardware without the GPU-enabled binary, it will silently fall back to CPU execution and print a 3-second startup warning.
+
 ## Configuration
 
 Longbow is configured via environment variables. Key limits include:

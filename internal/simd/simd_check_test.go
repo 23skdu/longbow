@@ -1,8 +1,8 @@
 package simd_test
 
 import (
-	"testing"
 	"github.com/23skdu/longbow/internal/simd"
+	"testing"
 )
 
 func TestSIMD_Detection(t *testing.T) {

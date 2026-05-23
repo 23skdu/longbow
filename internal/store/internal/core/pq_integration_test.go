@@ -144,7 +144,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 	// ADC Distance using type assertion
 	enc := hnsw.GetOPQEncoder()
 	require.NotNil(t, enc, "PQ encoder should be set")
-	
+
 	switch e := enc.(type) {
 	case *pq.PQEncoder:
 		table, err := e.BuildADCTable(queryVec)

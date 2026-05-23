@@ -12,7 +12,7 @@ func TestTemporalAggregator_Aggregate(t *testing.T) {
 	aggregator := NewTemporalAggregator(100)
 
 	now := time.Now().Truncate(time.Hour)
-	
+
 	m1, _ := core.EncodeMetadata(map[string]interface{}{"price": float64(10.0)})
 	m2, _ := core.EncodeMetadata(map[string]interface{}{"price": float64(20.0)})
 	m3, _ := core.EncodeMetadata(map[string]interface{}{"price": float64(30.0)})

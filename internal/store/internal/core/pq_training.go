@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"fmt"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/pq"
 )
@@ -106,7 +106,7 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 		}
 		// Refresh pointer after growth
 		data = h.data.Load()
-		
+
 		if err := data.PreAllocate(targetCap); err != nil {
 			return err
 		}

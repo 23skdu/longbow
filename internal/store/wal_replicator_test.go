@@ -42,13 +42,13 @@ func TestFlightWALReplicator_Replicate_QuorumSuccess(t *testing.T) {
 
 	// Total nodes = 3 (self + 2 remote). Required remote acks = floor(3/2) = 1.
 	// We only need 1 remote ack to succeed.
-	
+
 	data := []byte("test-wal-data")
-	
+
 	pool.On("DoAction", mock.Anything, "127.0.0.1:3001", mock.MatchedBy(func(a *flight.Action) bool {
 		return a.Type == "ReplicateWAL"
 	})).Return(nil)
-	
+
 	// Node 3 fails, but we already have 1 ack from node 2.
 	pool.On("DoAction", mock.Anything, "127.0.0.1:3002", mock.Anything).Return(fmt.Errorf("failed")).Maybe()
 
@@ -71,15 +71,15 @@ func TestFlightWALReplicator_Replicate_QuorumFailure(t *testing.T) {
 
 	// Total nodes = 3. Required remote acks = 1.
 	// Both fail.
-	
+
 	data := []byte("test-wal-data")
-	
+
 	pool.On("DoAction", mock.Anything, "127.0.0.1:3001", mock.Anything).Return(fmt.Errorf("error1"))
 	pool.On("DoAction", mock.Anything, "127.0.0.1:3002", mock.Anything).Return(fmt.Errorf("error2"))
 
 	replicator := NewFlightWALReplicator(pool, msh)
 	replicator.timeout = 100 * time.Millisecond
-	
+
 	err := replicator.Replicate(context.Background(), data)
 
 	assert.Error(t, err)

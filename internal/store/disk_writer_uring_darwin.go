@@ -18,7 +18,7 @@ type DiskWriterUring struct {
 	f      *os.File
 	mu     sync.RWMutex
 	active bool
-	
+
 	// Worker pool for async I/O
 	writeQueue chan *darwinWriteReq
 	wg         sync.WaitGroup
@@ -55,7 +55,7 @@ func NewDiskWriterUring(path string, bufferSize int, maxBuffers int) (*DiskWrite
 	}
 
 	// Start a pool of workers (matching hardware parallelism or fixed count)
-	numWorkers := 4 
+	numWorkers := 4
 	for i := 0; i < numWorkers; i++ {
 		d.wg.Add(1)
 		go d.ioWorker()
@@ -125,6 +125,6 @@ func (d *DiskWriterUring) Close() error {
 
 	close(d.stopChan)
 	d.wg.Wait()
-	
+
 	return d.f.Close()
 }

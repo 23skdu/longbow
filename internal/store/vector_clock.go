@@ -14,7 +14,7 @@ type ClockComparison int
 
 const (
 	// ClockEqual indicates that the two vector clocks are identical.
-	ClockEqual      ClockComparison = iota
+	ClockEqual ClockComparison = iota
 	// ClockBefore indicates that the first clock happened before the second.
 	ClockBefore
 	// ClockAfter indicates that the first clock happened after the second.

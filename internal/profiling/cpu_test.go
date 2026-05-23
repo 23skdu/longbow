@@ -92,7 +92,7 @@ func TestFlameGraphGenerator(t *testing.T) {
 	f := NewFlameGraphGenerator()
 	require.NotNil(t, f)
 
-	// This is hard to test fully without valid profile data, 
+	// This is hard to test fully without valid profile data,
 	// but we can test the error path or a very minimal mock if possible.
 	// For now, just ensure it doesn't panic on empty/invalid data.
 	_, err := f.GenerateFlamegraph([]byte("invalid"))

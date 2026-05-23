@@ -1,8 +1,8 @@
 package simd
 
 import (
-	"testing"
 	"github.com/apache/arrow-go/v18/arrow/float16"
+	"testing"
 )
 
 func FuzzDistances(f *testing.F) {
@@ -11,26 +11,34 @@ func FuzzDistances(f *testing.F) {
 		if len(a) != len(b) || len(a) == 0 {
 			return
 		}
-		
+
 		// Test Float32 with varying dimensions including specialized ones
 		dims := []int{len(a) / 4, 128, 384, 768, 1024, 1536, 3072}
 		for _, d := range dims {
-			if d <= 0 { continue }
+			if d <= 0 {
+				continue
+			}
 			fa := make([]float32, d)
 			fb := make([]float32, d)
 			for i := 0; i < d; i++ {
-				fa[i] = float32(i % 127) / 127.0
-				fb[i] = float32((i + 1) % 127) / 127.0
+				fa[i] = float32(i%127) / 127.0
+				fb[i] = float32((i+1)%127) / 127.0
 			}
-			
+
 			_, err := EuclideanDistance(fa, fb)
-			if err != nil && d == len(a)/4 { t.Errorf("EuclideanDistance failed: %v", err) }
-			
+			if err != nil && d == len(a)/4 {
+				t.Errorf("EuclideanDistance failed: %v", err)
+			}
+
 			_, err = DotProduct(fa, fb)
-			if err != nil && d == len(a)/4 { t.Errorf("DotProduct failed: %v", err) }
-			
+			if err != nil && d == len(a)/4 {
+				t.Errorf("DotProduct failed: %v", err)
+			}
+
 			_, err = CosineDistance(fa, fb)
-			if err != nil && d == len(a)/4 { t.Errorf("CosineDistance failed: %v", err) }
+			if err != nil && d == len(a)/4 {
+				t.Errorf("CosineDistance failed: %v", err)
+			}
 
 			// Test Batch
 			results := make([]float32, 2)

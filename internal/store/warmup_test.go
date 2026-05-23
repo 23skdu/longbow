@@ -25,7 +25,7 @@ func TestHNSWIndex_Warmup(t *testing.T) {
 		}
 	})
 
-t.Run("warmup touches all nodes", func(t *testing.T) {
+	t.Run("warmup touches all nodes", func(t *testing.T) {
 		t.Skip("requires internal access to nodeCount.Add")
 	})
 

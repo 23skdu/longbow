@@ -206,10 +206,10 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 	}
 
 	totalPhysicalUsed := int64(heapAlloc) + globalOffHeap + unusedSlabPool // #nosec G115
-	
+
 	// headroom is what's left for the Go heap and metadata
 	ratio := float64(totalPhysicalUsed) / float64(t.limitBytes)
-	
+
 	// Burst mode detection: if alloc rate > 512MB/s and we are using > 60% of heap,
 	// or if rate > 1GB/s, we are likely in a heavy ingestion phase.
 	allocRate := t.allocRate.Load()
@@ -263,7 +263,7 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 		// CPU is doing more work, so be less aggressive with GC
 		targetGOGC = t.highGOGC
 	} else {
-	// Standard logic based on heap utilization
+		// Standard logic based on heap utilization
 		switch {
 		case ratio < 0.5:
 			targetGOGC = t.highGOGC
@@ -304,7 +304,7 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 			fn()
 		}
 		t.mu.RUnlock()
-		
+
 		// Also force a GC if very high
 		if ratio > 0.92 {
 			runtime.GC()

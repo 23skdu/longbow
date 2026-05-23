@@ -25,13 +25,13 @@ type DiskWriterUring struct {
 	f          *os.File
 	ring       *iouring.Ring
 	bufferPool *iouring.BufferPool
-	
+
 	mu          sync.RWMutex
 	active      bool
 	nextID      uint64
 	pending     map[uint64]*WriteRequest
 	pendingWait sync.WaitGroup
-	
+
 	closeOnce sync.Once
 	stopChan  chan struct{}
 }
@@ -124,7 +124,7 @@ func (d *DiskWriterUring) SubmitWrite(data []byte, offset int64) (chan error, er
 	// 5. Trigger submission to kernel
 	_, err = d.ring.Flush()
 	if err != nil {
-		// Even if flush fails, the SQE is in the ring. 
+		// Even if flush fails, the SQE is in the ring.
 		// But we should probably report it.
 		return nil, fmt.Errorf("iouring flush error: %w", err)
 	}
@@ -170,10 +170,10 @@ func (d *DiskWriterUring) completionLoop() {
 				} else if int(res) < len(req.Buffer) {
 					finalErr = fmt.Errorf("short write: %d < %d", res, len(req.Buffer))
 				}
-				
+
 				req.Done <- finalErr
 				close(req.Done)
-				
+
 				d.bufferPool.Put(req.Buffer)
 				d.pendingWait.Done()
 			}
@@ -192,14 +192,14 @@ func (d *DiskWriterUring) Close() error {
 		d.mu.Unlock()
 
 		close(d.stopChan)
-		
+
 		// Wait for pending writes
 		d.Flush()
 
 		if d.ring != nil {
 			err = d.ring.Close()
 		}
-		
+
 		if d.bufferPool != nil {
 			_ = d.bufferPool.Close()
 		}

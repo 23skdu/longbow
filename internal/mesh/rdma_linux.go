@@ -46,11 +46,11 @@ type RDMAConnection struct {
 
 // MemoryRegion represents a registered memory area mapped via ibverbs.
 type MemoryRegion struct {
-	Addr       uintptr
-	Length     uint64
-	RKey       uint32
-	Handle     uint64 // Maps to MR handle
-	ibvMR      *C.struct_ibv_mr
+	Addr   uintptr
+	Length uint64
+	RKey   uint32
+	Handle uint64 // Maps to MR handle
+	ibvMR  *C.struct_ibv_mr
 }
 
 func NewRDMAContext(enabled bool) *RDMAContext {
@@ -101,7 +101,7 @@ func (c *RDMAContext) RegisterMemoryRegion(data []byte) (*MemoryRegion, error) {
 
 	ptr := unsafe.Pointer(&data[0])
 	length := C.size_t(len(data))
-	
+
 	// IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_READ
 	accessFlags := C.int(C.IBV_ACCESS_LOCAL_WRITE | C.IBV_ACCESS_REMOTE_WRITE | C.IBV_ACCESS_REMOTE_READ)
 

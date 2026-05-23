@@ -10,7 +10,7 @@ const (
 	// MerkleFanout is the number of children per node in the Merkle Tree.
 	MerkleFanout = 16
 	// MerkleDepth is the depth of the Merkle Tree.
-	MerkleDepth  = 4
+	MerkleDepth = 4
 )
 
 // MerkleNode represents a node in the Merkle Tree

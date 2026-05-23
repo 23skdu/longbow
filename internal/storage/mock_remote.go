@@ -65,7 +65,7 @@ func (m *MockRemoteStorage) Get(ctx context.Context, key string) (io.ReadCloser,
 		status = "error"
 		return nil, fmt.Errorf("key not found: %s", key)
 	}
-	
+
 	metrics.RemoteStorageDownloadBytes.WithLabelValues(m.provider).Add(float64(len(data)))
 	return io.NopCloser(bytes.NewReader(data)), nil
 }

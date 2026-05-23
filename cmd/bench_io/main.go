@@ -38,7 +38,7 @@ func main() {
 		concurrency = flag.Int("workers", 1, "Number of concurrent workers")
 		duration    = flag.Duration("duration", 10*time.Second, "Duration to run the test")
 		doSync      = flag.Bool("sync", false, "Perform fsync after every write (write mode only)")
-		
+
 		// Vector benchmark mode flags
 		uri         = flag.String("uri", "grpc://127.0.0.1:3000", "Longbow server URI")
 		dim         = flag.Int("dim", 128, "Vector dimension")
@@ -337,7 +337,7 @@ func prepFile(dir string, sizeMB int, _ int) int64 {
 
 	// Fill with random-ish data
 	chunk := make([]byte, 1024*1024) // 1MB chunk
-	rand.Read(chunk) // #nosec G404
+	rand.Read(chunk)                 // #nosec G404
 
 	written := int64(0)
 	for written < targetSize {
@@ -364,39 +364,39 @@ func printStats(op string, elapsed time.Duration, ops, bytes uint64) {
 }
 
 type BenchmarkResult struct {
-	Dim             int     `json:"dim"`
-	Dtype           string  `json:"dtype"`
-	Count           int     `json:"count"`
-	IngestVecPerSec float64 `json:"ingest_vec_per_sec"`
-	IngestP50Ms     float64 `json:"ingest_p50_ms"`
-	DenseQPS        float64 `json:"dense_qps"`
-	DenseP50Ms      float64 `json:"dense_p50_ms"`
-	DenseP95Ms      float64 `json:"dense_p95_ms"`
-	DenseP99Ms      float64 `json:"dense_p99_ms"`
-	HybridQPS       float64 `json:"hybrid_qps"`
-	HybridP50Ms     float64 `json:"hybrid_p50_ms"`
-	HybridP95Ms     float64 `json:"hybrid_p95_ms"`
-	HybridP99Ms     float64 `json:"hybrid_p99_ms"`
-	SparseQPS       float64 `json:"sparse_qps"`
-	SparseP50Ms     float64 `json:"sparse_p50_ms"`
-	SparseP95Ms     float64 `json:"sparse_p95_ms"`
-	SparseP99Ms     float64 `json:"sparse_p99_ms"`
-	FilteredQPS     float64 `json:"filtered_qps"`
-	FilteredP50Ms   float64 `json:"filtered_p50_ms"`
-	FilteredP95Ms  float64 `json:"filtered_p95_ms"`
-	FilteredP99Ms  float64 `json:"filtered_p99_ms"`
-	ByIDQPS         float64 `json:"byid_qps"`
-	ByIDP50Ms       float64 `json:"byid_p50_ms"`
-	ByIDP95Ms       float64 `json:"byid_p95_ms"`
-	ByIDP99Ms       float64 `json:"byid_p99_ms"`
-	TemporalAsOfQPS   float64 `json:"temporal_as_of_qps"`
-	TemporalAsOfP50Ms float64 `json:"temporal_as_of_p50_ms"`
-	TemporalAsOfP95Ms float64 `json:"temporal_as_of_p95_ms"`
-	TemporalAsOfP99Ms float64 `json:"temporal_as_of_p99_ms"`
-	TemporalRangeQPS   float64 `json:"temporal_range_qps"`
-	TemporalRangeP50Ms float64 `json:"temporal_range_p50_ms"`
-	TemporalRangeP95Ms float64 `json:"temporal_range_p95_ms"`
-	TemporalRangeP99Ms float64 `json:"temporal_range_p99_ms"`
+	Dim                 int     `json:"dim"`
+	Dtype               string  `json:"dtype"`
+	Count               int     `json:"count"`
+	IngestVecPerSec     float64 `json:"ingest_vec_per_sec"`
+	IngestP50Ms         float64 `json:"ingest_p50_ms"`
+	DenseQPS            float64 `json:"dense_qps"`
+	DenseP50Ms          float64 `json:"dense_p50_ms"`
+	DenseP95Ms          float64 `json:"dense_p95_ms"`
+	DenseP99Ms          float64 `json:"dense_p99_ms"`
+	HybridQPS           float64 `json:"hybrid_qps"`
+	HybridP50Ms         float64 `json:"hybrid_p50_ms"`
+	HybridP95Ms         float64 `json:"hybrid_p95_ms"`
+	HybridP99Ms         float64 `json:"hybrid_p99_ms"`
+	SparseQPS           float64 `json:"sparse_qps"`
+	SparseP50Ms         float64 `json:"sparse_p50_ms"`
+	SparseP95Ms         float64 `json:"sparse_p95_ms"`
+	SparseP99Ms         float64 `json:"sparse_p99_ms"`
+	FilteredQPS         float64 `json:"filtered_qps"`
+	FilteredP50Ms       float64 `json:"filtered_p50_ms"`
+	FilteredP95Ms       float64 `json:"filtered_p95_ms"`
+	FilteredP99Ms       float64 `json:"filtered_p99_ms"`
+	ByIDQPS             float64 `json:"byid_qps"`
+	ByIDP50Ms           float64 `json:"byid_p50_ms"`
+	ByIDP95Ms           float64 `json:"byid_p95_ms"`
+	ByIDP99Ms           float64 `json:"byid_p99_ms"`
+	TemporalAsOfQPS     float64 `json:"temporal_as_of_qps"`
+	TemporalAsOfP50Ms   float64 `json:"temporal_as_of_p50_ms"`
+	TemporalAsOfP95Ms   float64 `json:"temporal_as_of_p95_ms"`
+	TemporalAsOfP99Ms   float64 `json:"temporal_as_of_p99_ms"`
+	TemporalRangeQPS    float64 `json:"temporal_range_qps"`
+	TemporalRangeP50Ms  float64 `json:"temporal_range_p50_ms"`
+	TemporalRangeP95Ms  float64 `json:"temporal_range_p95_ms"`
+	TemporalRangeP99Ms  float64 `json:"temporal_range_p99_ms"`
 	TemporalWindowQPS   float64 `json:"temporal_window_qps"`
 	TemporalWindowP50Ms float64 `json:"temporal_window_p50_ms"`
 	TemporalWindowP95Ms float64 `json:"temporal_window_p95_ms"`
@@ -513,27 +513,27 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 						ts := time.Now().UnixNano()
 						if m == "temporal_as_of" {
 							req := map[string]interface{}{
-								"dataset":  dataset,
+								"dataset":     dataset,
 								"search_type": "as_of",
-								"timestamp": ts,
-								"k":         10,
+								"timestamp":   ts,
+								"k":           10,
 							}
 							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
 						} else if m == "temporal_range" {
 							req := map[string]interface{}{
-								"dataset":   dataset,
+								"dataset":     dataset,
 								"search_type": "range",
-								"start_time": ts - 1000000000,
-								"end_time":   ts,
-								"k":        10,
+								"start_time":  ts - 1000000000,
+								"end_time":    ts,
+								"k":           10,
 							}
 							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
 						} else if m == "temporal_window" {
 							req := map[string]interface{}{
-								"dataset":    dataset,
+								"dataset":     dataset,
 								"search_type": "sliding_window",
 								"window_size": 10,
-								"k":          10,
+								"k":           10,
 							}
 							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
 						}
@@ -626,12 +626,12 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 	}
 
 	if jsonFile != "" {
-data, _ := json.MarshalIndent(result, "", "  ")
-	if err := os.WriteFile(jsonFile, data, 0600); err != nil { // #nosec G306
-		fmt.Printf("Warning: failed to write JSON: %v\n", err)
-	} else {
-		fmt.Printf("Results written to %s\n", jsonFile)
-	}
+		data, _ := json.MarshalIndent(result, "", "  ")
+		if err := os.WriteFile(jsonFile, data, 0600); err != nil { // #nosec G306
+			fmt.Printf("Warning: failed to write JSON: %v\n", err)
+		} else {
+			fmt.Printf("Results written to %s\n", jsonFile)
+		}
 	}
 }
 

@@ -196,8 +196,8 @@ func (hs *HybridSearcher) Add(id VectorID, vector []float32, text string) {
 
 	// 2. Add to dataset records
 	hs.dataset.dataMu.Lock()
-	batchIdx := len(hs .dataset.Records.Read())
-	hs .dataset.Records.UpdateInPlace(append(hs .dataset.Records.Read(), rec))
+	batchIdx := len(hs.dataset.Records.Read())
+	hs.dataset.Records.UpdateInPlace(append(hs.dataset.Records.Read(), rec))
 	hs.dataset.dataMu.Unlock()
 
 	// 3. Add to HNSW index

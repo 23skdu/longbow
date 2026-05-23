@@ -27,7 +27,7 @@ func NewGPUMemPool(backend types.GPUBackend, deviceID int32) (*GPUMemPool, error
 
 	// Note: Generic memory pool initialization.
 	// In subpackages (cuda, metal), this can be specialized.
-	pool.totalBytes = 0 
+	pool.totalBytes = 0
 
 	return pool, nil
 }

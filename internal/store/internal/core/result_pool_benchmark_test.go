@@ -1,8 +1,8 @@
 package core
 
 import (
-	"testing"
 	"github.com/23skdu/longbow/internal/store/types"
+	"testing"
 )
 
 // BenchmarkResultPool_Get benchmarks getting slices from expanded pools

@@ -379,4 +379,3 @@ func TestArenaFastPathDimensions(t *testing.T) {
 	}
 	assert.Equal(t, initialSlowPath, finalSlowPath, "metrics.ArenaSlowPathTotal should not have incremented (slow path should be bypassed)")
 }
-

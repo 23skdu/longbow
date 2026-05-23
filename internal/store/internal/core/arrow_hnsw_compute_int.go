@@ -1,10 +1,10 @@
 package core
 
 import (
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"math"
 	"unsafe"
-	"github.com/23skdu/longbow/internal/simd"
 )
 
 // int16Computer handles Int16 vectors
@@ -44,7 +44,7 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeInt16)
 		start := cOff * pd
 		if start+c.dims <= len(chunk) {
-			v := chunk[start:start+c.dims]
+			v := chunk[start : start+c.dims]
 			return c.h.distFuncInt16(c.q, v)
 		}
 	}

@@ -4,7 +4,9 @@
 package memory
 
 import (
+	"os"
 	"reflect"
+	"strconv"
 	"sync/atomic"
 	"unsafe"
 
@@ -15,11 +17,18 @@ import (
 // This is used for large buffers to reduce runtime.scanObject overhead.
 type OffHeapAllocator struct {
 	allocated atomic.Int64
+	numaNode  int
 }
 
 // NewOffHeapAllocator creates a new mmap-based allocator.
 func NewOffHeapAllocator() *OffHeapAllocator {
-	return &OffHeapAllocator{}
+	node := -1
+	if nodeStr := os.Getenv("LONGBOW_NUMA_NODE"); nodeStr != "" {
+		if n, err := strconv.Atoi(nodeStr); err == nil {
+			node = n
+		}
+	}
+	return &OffHeapAllocator{numaNode: node}
 }
 
 // Allocate allocates a byte slice of the given size from the OS.
@@ -41,6 +50,10 @@ func (a *OffHeapAllocator) Allocate(size int) []byte {
 	if err != nil {
 		// Fallback to heap if mmap fails (though we should probably panic in production)
 		return make([]byte, size)
+	}
+
+	if a.numaNode >= 0 && len(data) > 0 {
+		_ = MbindMemory(unsafe.Pointer(&data[0]), len(data), a.numaNode) // #nosec G103
 	}
 
 	a.allocated.Add(int64(size))
@@ -87,6 +100,7 @@ func CastToSlice(ptr unsafe.Pointer, length int) []byte {
 	header.Cap = length
 	return sl
 }
+
 // Mmap maps a file into memory.
 func Mmap(fd int, offset int64, length int, writable bool) ([]byte, error) {
 	flags := unix.MAP_SHARED

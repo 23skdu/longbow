@@ -337,8 +337,8 @@ func (f *RequestForwarder) ForwardStream(ctx context.Context, targetNodeID strin
 				if err == io.EOF {
 					errChan <- nil
 				} else {
-					// For server-streaming RPCs where the request is already consumed, 
-					// RecvMsg will fail. We treat this as "nothing more to receive" 
+					// For server-streaming RPCs where the request is already consumed,
+					// RecvMsg will fail. We treat this as "nothing more to receive"
 					// if we already sent the initial request.
 					if initialRequest != nil {
 						errChan <- nil

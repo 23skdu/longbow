@@ -1,8 +1,8 @@
 package core
 
 import (
-	"sync/atomic"
 	"math/rand/v2"
+	"sync/atomic"
 )
 
 const (

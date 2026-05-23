@@ -2206,42 +2206,53 @@ class BenchmarkRunner:
         modes = self.args.mode.split(",")
         print(f"Executing benchmarks for modes: {modes}")
         
-        for mode in modes:
-            mode = mode.strip()
-            self.current_mode = mode
-            print(f"\n{'#' * 80}")
-            print(f"SWITCHING TO MODE: {mode}")
-            print(f"{'#' * 80}")
+        runs = [(False, "")]
+        if getattr(self.args, "numa_compare", False) and platform.system() == "Linux":
+            runs.append((True, "_numa"))
             
-            if mode == "learned_index":
-                self.execute_learned_index()
-                continue
-            if mode == "recommend":
-                self.execute_recommend()
-                continue
-            if mode == "deletion":
-                self.execute_deletion()
-                continue
-            if mode == "graphrag":
-                self.execute_graphrag()
-                continue
-            if mode == "geo":
-                self.execute_geo()
-                continue
-            if mode == "exchange":
-                self.execute_exchange()
-                continue
-            if mode == "cluster":
-                self.execute_cluster()
-                continue
-            if mode == "onnx":
-                self.execute_onnx()
-                continue
-            if mode == "churn":
-                self.execute_churn()
-                continue
+        for numa_bind, numa_suffix in runs:
+            self.args.numa_bind = numa_bind
+            if numa_bind:
+                print("\n" + "*" * 80)
+                print("RUNNING WITH NUMA BINDING (--cpunodebind=0 --membind=0)")
+                print("*" * 80 + "\n")
+            
+            for mode in modes:
+                mode = mode.strip()
+                self.current_mode = mode
+                print(f"\n{'#' * 80}")
+                print(f"SWITCHING TO MODE: {mode}{numa_suffix}")
+                print(f"{'#' * 80}")
+                
+                if mode == "learned_index":
+                    self.execute_learned_index()
+                    continue
+                if mode == "recommend":
+                    self.execute_recommend()
+                    continue
+                if mode == "deletion":
+                    self.execute_deletion()
+                    continue
+                if mode == "graphrag":
+                    self.execute_graphrag()
+                    continue
+                if mode == "geo":
+                    self.execute_geo()
+                    continue
+                if mode == "exchange":
+                    self.execute_exchange()
+                    continue
+                if mode == "cluster":
+                    self.execute_cluster()
+                    continue
+                if mode == "onnx":
+                    self.execute_onnx()
+                    continue
+                if mode == "churn":
+                    self.execute_churn()
+                    continue
 
-            # Default logic for cpu/metal/cuda
+                # Default logic for cpu/metal/cuda
             dims = [int(d) for d in self.args.dims.split(",")]
             counts = [int(c) for c in self.args.counts.split(",")]
             dtypes = self.args.dtypes.split(",")
@@ -2284,7 +2295,7 @@ class BenchmarkRunner:
                         current_port = self.args.port
                         self.server_addr = f"127.0.0.1:{current_port}"
                         
-                        label = f"{mode}_{dtype}_{dim}_{count}"
+                        label = f"{mode}_{dtype}_{dim}_{count}{numa_suffix}"
                         print(
                             f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count} port={current_port}"
                         )
@@ -2908,6 +2919,20 @@ if __name__ == "__main__":
     parser.add_argument(
         "--numa-bind", action="store_true", help="Enable NUMA binding in benchmarks"
     )
+    parser.add_argument(
+        "--numa-compare", action="store_true", help="Run benchmarks with and without NUMA binding to compare"
+    )
+    parser.add_argument(
+        "--ci", action="store_true", help="Run a reduced 'fast' matrix for CI environments"
+    )
     args = parser.parse_args()
+    
+    if args.ci:
+        args.dims = "128,768"
+        args.counts = "10000,100000"
+        args.dtypes = "float32,float16,int8"
+        if args.search_modes == "all":
+            args.search_modes = "dense,hybrid,byid"
+            
     runner = BenchmarkRunner(args)
     runner.execute()

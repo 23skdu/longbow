@@ -6,14 +6,12 @@ import (
 	"strconv"
 	"unsafe"
 
-
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/simd"
 )
-
 
 // IsFastPathSupported returns true if the data type and operator can use
 // the fast path that bypasses Arrow Compute overhead.
@@ -732,11 +730,10 @@ func fastPathBool(arr *array.Boolean, val, equal bool, builder *array.BooleanBui
 		// SIMD Fast Path for bit-packed data
 		data := arr.Data().Buffers()[1].Bytes()
 
-
 		nBytes := (n + 7) / 8
 		results := make([]byte, nBytes)
 		fastPathBoolAVX2Kernel(unsafe.Pointer(&data[0]), nBytes, negate, unsafe.Pointer(&results[0])) // #nosec G103
-		
+
 		// Fill the builder from the transformed bitmap
 		for i := 0; i < n; i++ {
 			if arr.IsNull(i) {
@@ -783,10 +780,10 @@ func fastPathString(arr *array.String, val string, equal bool, builder *array.Bo
 	if useAVX2 {
 		metrics.HNSWFilterVectorizedOpsTotal.WithLabelValues("avx2").Inc()
 		results := make([]int32, n)
-		
+
 		offsets := arr.ValueOffsets()
 		data := arr.ValueBytes()
-		
+
 		var targetPtr unsafe.Pointer
 		if len(val) > 0 {
 			targetPtr = unsafe.Pointer(unsafe.StringData(val)) // #nosec G103

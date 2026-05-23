@@ -206,13 +206,13 @@ func TestLockFreeNeighbors_NoMemoryLeaks(t *testing.T) {
 	// This is a basic check - measuring delta reduces concurrent test pollution
 	var mEnd runtime.MemStats
 	runtime.ReadMemStats(&mEnd)
-	
+
 	// Consider uint64 underflow
 	var diff uint64
 	if mEnd.Alloc > mStart.Alloc {
 		diff = mEnd.Alloc - mStart.Alloc
 	}
-	
+
 	t.Logf("Alloc delta after 10k updates: %d MB", diff/1024/1024)
 
 	// Should be less than 10MB for this test delta

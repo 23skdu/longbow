@@ -13,9 +13,9 @@ import (
 	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 
+	"github.com/23skdu/longbow/pkg/loadbalancing"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/23skdu/longbow/pkg/loadbalancing"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -151,6 +151,7 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 		AppMetadata:      metadata,
 	}, nil
 }
+
 // GetSchema returns the Arrow schema for a specific dataset.
 func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescriptor) (*flight.SchemaResult, error) {
 	return nil, nil
@@ -171,7 +172,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			return status.Error(codes.InvalidArgument, "invalid ticket format")
 		}
 	}
-		// 0. Admission Control (Backpressure)
+	// 0. Admission Control (Backpressure)
 	if s.admission != nil {
 		if err := s.admission.Admit(stream.Context(), "search"); err != nil {
 			return err
@@ -214,7 +215,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		if isGlobal {
 			query.Search.LocalOnly = false
 		}
-		
+
 		// Wrap with Circuit Breaker
 		cb := s.Breakers.GetOrCreate(query.Search.Dataset)
 		_, err := cb.Execute(func() (any, error) {
@@ -557,7 +558,6 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	return nil
 }
 
-
 // MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
 // MapInternalToUserIDs maps internal HNSW IDs to user-provided IDs
 // This is the public wrapper that acquires a read lock.
@@ -725,8 +725,6 @@ func (s *VectorStore) GetDataset(name string) (*Dataset, error) {
 	}
 	return ds, nil
 }
-
-
 
 func findVectorColumn(rec arrow.RecordBatch) arrow.Array {
 	if rec == nil || rec.Schema() == nil {
@@ -969,7 +967,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 	if req.IncludeVectors {
 		vectorBuilder = builder.Field(2).(*array.BinaryBuilder)
 	}
-	
+
 	var sourceBuilder *array.Uint8Builder
 	var sourceColIdx = -1
 	for i, f := range fields {
@@ -1000,7 +998,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 		for j := i; j < end; j++ {
 			idBuilder.Append(uint64(searchResults[j].ID))
 			scoreBuilder.Append(searchResults[j].Score)
-			
+
 			colOffset := 2
 			if req.IncludeVectors && vectorBuilder != nil {
 				if searchResults[j].Vector != nil {
@@ -1029,18 +1027,25 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 					case "row_number", "rank", "dense_rank":
 						var intVal int64
 						switch v := val.(type) {
-						case int: intVal = int64(v)
-						case int64: intVal = v
-						case float64: intVal = int64(v)
+						case int:
+							intVal = int64(v)
+						case int64:
+							intVal = v
+						case float64:
+							intVal = int64(v)
 						}
 						builder.Field(colOffset + wfIdx).(*array.Int64Builder).Append(intVal)
 					case "sum", "avg", "min", "max":
 						var floatVal float64
 						switch v := val.(type) {
-						case float64: floatVal = v
-						case float32: floatVal = float64(v)
-						case int: floatVal = float64(v)
-						case int64: floatVal = float64(v)
+						case float64:
+							floatVal = v
+						case float32:
+							floatVal = float64(v)
+						case int:
+							floatVal = float64(v)
+						case int64:
+							floatVal = float64(v)
 						}
 						builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(floatVal)
 					default:
@@ -1195,7 +1200,7 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 			SearchResponsePool.Put(builder)
 		}
 	}()
- 
+
 	w := flight.NewRecordWriter(stream, ipc.WithSchema(builder.Schema()))
 	defer func() { _ = w.Close() }()
 
@@ -1228,7 +1233,6 @@ func (s *VectorStore) handleDoGetSearchByID(req *qry.VectorSearchByIDRequest, st
 
 	return nil
 }
-
 
 func (s *VectorStore) handleDoGetRecommend(req *qry.RecommendRequest, stream flight.FlightService_DoGetServer, mem memory.Allocator) error {
 	results, err := s.Recommend(stream.Context(), req)
@@ -1358,7 +1362,7 @@ func (s *VectorStore) executeInternalTicket(ctx context.Context, query *qry.Tick
 		return s.executeInternalSearch(ctx, query.Search)
 	}
 
-	// If search is present but has NO vector (metadata only), 
+	// If search is present but has NO vector (metadata only),
 	// copy its parameters to the main query for table scan.
 	if query.Search != nil {
 		if query.Name == "" {
@@ -1522,17 +1526,23 @@ func (s *VectorStore) streamSearchResults(results []types.SearchResult, windowFu
 					// Try to cast to various numeric types
 					var intVal int64
 					switch v := val.(type) {
-					case int64: intVal = v
-					case int: intVal = int64(v)
-					case float64: intVal = int64(v)
+					case int64:
+						intVal = v
+					case int:
+						intVal = int64(v)
+					case float64:
+						intVal = int64(v)
 					}
 					builder.Field(colOffset + wfIdx).(*array.Int64Builder).Append(intVal)
 				default:
 					var floatVal float64
 					switch v := val.(type) {
-					case float64: floatVal = v
-					case int64: floatVal = float64(v)
-					case int: floatVal = float64(v)
+					case float64:
+						floatVal = v
+					case int64:
+						floatVal = float64(v)
+					case int:
+						floatVal = float64(v)
 					}
 					builder.Field(colOffset + wfIdx).(*array.Float64Builder).Append(floatVal)
 				}

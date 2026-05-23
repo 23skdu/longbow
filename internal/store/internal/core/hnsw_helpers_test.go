@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	basecore "github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // NewHNSWIndexWithMetric creates a new index with a specific distance metric (for testing)

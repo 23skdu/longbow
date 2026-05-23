@@ -5,9 +5,9 @@ import (
 	"math"
 	"unsafe"
 
-	"github.com/23skdu/longbow/internal/simd"
 	"bytes"
 	"encoding/gob"
+	"github.com/23skdu/longbow/internal/simd"
 )
 
 // PQEncoder implements Product Quantization.

@@ -1,9 +1,9 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/types"
 	"math/rand"
 	"testing"
-	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/stretchr/testify/assert"
 )

@@ -5,17 +5,17 @@ import (
 	"sort"
 	"sync"
 
+	"context"
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/simd"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"context"
 	"sync/atomic"
 	"time"
 	"unsafe"
-	"github.com/23skdu/longbow/internal/simd"
-	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // GraphStore manages an in-memory graph representation for GraphRAG operations.
@@ -354,7 +354,7 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 
 		for i := 0; i < len(currentNodes); i++ {
 			id := currentNodes[i]
-			
+
 			// SIMD prefetching for local edges
 			if i+2 < len(currentNodes) {
 				nextNextID := currentNodes[i+2]
@@ -365,7 +365,7 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 
 			if edges, ok := gs.forwardEdges.Get(id); ok {
 				s := gCtx.GetScore(id) * alpha
-				
+
 				for _, edge := range edges {
 					target := uint32(edge.Object)
 					gCtx.AddScore(target, s*edge.Weight)
@@ -388,7 +388,7 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 
 	// 3. Rebuild results (SPARSE rebuild - only iterate over influenced nodes)
 	newResults := gCtx.results[:0]
-	
+
 	for _, id := range allInfluenced {
 		score := gCtx.GetScore(id)
 		if score > 0 {
@@ -405,11 +405,11 @@ func (gs *GraphStore) RankWithGraph(dataset string, queryVec []float32, results 
 		newResults = newResults[:2000]
 	}
 
-	// Important: We need to return a COPY of the pooled results slice 
+	// Important: We need to return a COPY of the pooled results slice
 	// because the pool will overwrite the buffer.
 	finalResults := make([]SearchResult, len(newResults))
 	copy(finalResults, newResults)
-	
+
 	return finalResults
 }
 
@@ -459,10 +459,10 @@ func (gs *GraphStore) RankWithGraphDistributed(ctx context.Context, dataset stri
 		// First, check local edges with prioritized prefetching
 		for i := 0; i < len(currentNodes); i++ {
 			id := currentNodes[i]
-			
+
 			if edges, ok := gs.forwardEdges.Get(id); ok {
 				s := gCtx.GetScore(id) * alpha
-				
+
 				for _, edge := range edges {
 					target := uint32(edge.Object)
 					gCtx.AddScore(target, s*edge.Weight)
@@ -579,7 +579,7 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 
 		for i := 0; i < len(edges); i++ {
 			e := edges[i]
-			
+
 			var nextNode VectorID
 			switch opts.Direction {
 			case DirectionOutgoing:
@@ -624,7 +624,6 @@ func (gs *GraphStore) Traverse(start VectorID, opts TraverseOptions) []Path {
 	return results
 }
 
-
 // Close releases all resources associated with the graph store.
 func (gs *GraphStore) Close() error {
 	gs.forwardEdges = nil
@@ -650,16 +649,16 @@ func (gs *GraphStore) ToArrowBatch() (arrow.Record, error) {
 	// Use BinaryDictionaryBuilder for self-contained vocabulary
 	dictType := &arrow.DictionaryType{IndexType: arrow.PrimitiveTypes.Int32, ValueType: arrow.BinaryTypes.Binary}
 	mem := memory.NewGoAllocator()
-	
+
 	subjectsArr := array.NewUint32Builder(mem)
 	defer subjectsArr.Release()
-	
+
 	objectsArr := array.NewUint32Builder(mem)
 	defer objectsArr.Release()
-	
+
 	weightsArr := array.NewFloat32Builder(mem)
 	defer weightsArr.Release()
-	
+
 	predicatesArr := array.NewDictionaryBuilder(mem, dictType).(*array.BinaryDictionaryBuilder)
 	defer predicatesArr.Release()
 

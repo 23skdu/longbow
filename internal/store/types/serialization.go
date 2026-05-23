@@ -729,7 +729,7 @@ func (g *GraphData) readF16Vectors(r io.Reader) error {
 		}
 		chunk := g.GetVectorsF16Chunk(cID)
 		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat16)
-		
+
 		// Use unsafe to treat float16.Num as uint16 for binary.Read to avoid reflection panics
 		// because float16.Num may have unexported fields.
 		u16Chunk := unsafe.Slice((*uint16)(unsafe.Pointer(&chunk[0])), len(chunk)) // #nosec G103

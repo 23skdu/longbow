@@ -18,13 +18,13 @@ type UringStorageBackend struct {
 	ring       *iouring.Ring
 	bufferPool *iouring.BufferPool
 	path       string
-	
-	mu          sync.RWMutex
-	active      bool
-	nextID      uint64
+
+	mu           sync.RWMutex
+	active       bool
+	nextID       uint64
 	pendingRead  map[uint64]*storageRequest
 	pendingWrite map[uint64]*storageRequest
-	
+
 	stopChan chan struct{}
 }
 
@@ -34,7 +34,7 @@ type storageRequest struct {
 }
 
 func NewUringStorageBackend(path string) (StorageBackend, error) {
-	// 1. Open file with standard flags. 
+	// 1. Open file with standard flags.
 	// Note: We don't use O_DIRECT here yet, but we will if requested via BufferPool alignment.
 	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0644)
 	if err != nil {

@@ -1,10 +1,10 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/23skdu/longbow/internal/store/types"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"

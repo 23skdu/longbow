@@ -35,28 +35,28 @@ func (m ArrowMetadata) GetField(key string) (interface{}, bool) {
 
 	// Traditional approach: Decode keys one by one
 	reader := bytes.NewReader(m.data[2:])
-	
+
 	for i := uint16(0); i < numFields; i++ {
 		var keyLen uint16
 		if err := binary.Read(reader, binary.LittleEndian, &keyLen); err != nil {
 			return nil, false
 		}
-		
+
 		k := make([]byte, keyLen)
 		if _, err := reader.Read(k); err != nil {
 			return nil, false
 		}
-		
+
 		var typeID uint8
 		if err := binary.Read(reader, binary.LittleEndian, &typeID); err != nil {
 			return nil, false
 		}
-		
+
 		var valLen uint32
 		if err := binary.Read(reader, binary.LittleEndian, &valLen); err != nil {
 			return nil, false
 		}
-		
+
 		if string(k) == key {
 			// Found it!
 			return decodeValue(reader, typeID, valLen)
@@ -67,7 +67,7 @@ func (m ArrowMetadata) GetField(key string) (interface{}, bool) {
 			}
 		}
 	}
-	
+
 	return nil, false
 }
 

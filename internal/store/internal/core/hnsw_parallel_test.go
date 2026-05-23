@@ -1,9 +1,9 @@
 package core_test
 
 import (
+	"context"
 	"github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
-	"context"
 	"testing"
 	"time"
 
@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
 
 // TestAddBatchParallel_Basic tests basic parallel batch addition
 func TestAddBatchParallel_Basic(t *testing.T) {

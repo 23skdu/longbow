@@ -459,7 +459,7 @@ func TestRequestForwarder_TransparentIntegration(t *testing.T) {
 	})
 
 	// Note: ForwardStream (Streaming) is used by the PartitionProxyStreamInterceptor.
-	// Accurate end-to-end testing of ForwardStream requires both client and server 
+	// Accurate end-to-end testing of ForwardStream requires both client and server
 	// to operate at the byte level, which is handled at the interceptor layer.
 	// The binary-level proxying of Forward (Unary) above confirms the byteCodec logic.
 }

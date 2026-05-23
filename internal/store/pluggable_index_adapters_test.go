@@ -43,7 +43,7 @@ func TestHNSWPluggableAdapter_Functional(t *testing.T) {
 	err = adapter2.Load(path)
 	require.NoError(t, err)
 	assert.Equal(t, 2, adapter2.Size())
-	
+
 	results2, _ := adapter2.Search([]float32{1.0, 0.0, 0.0, 0.0}, 1)
 	assert.Equal(t, uint64(1), results2[0].ID)
 }

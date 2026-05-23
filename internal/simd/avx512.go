@@ -1,6 +1,5 @@
 //go:build amd64 && avx512
-// +build amd64
-// +build avx512
+// +build amd64,avx512
 
 package simd
 
@@ -196,11 +195,11 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 	if !features.HasAVX512 {
 		return euclideanVerticalBatchAVX2(query, vectors, results)
 	}
-	
+
 	n := len(vectors)
 	qLen := len(query)
 	queryPtr := uintptr(unsafe.Pointer(&query[0]))
-	
+
 	i := 0
 	for ; i <= n-4; i += 4 {
 		euclideanVertical4AVX512(
@@ -213,7 +212,7 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 			uintptr(unsafe.Pointer(&results[i])),
 		)
 	}
-	
+
 	for ; i < n; i++ {
 		d, err := euclideanAVX512(query, vectors[i])
 		if err != nil {
@@ -228,10 +227,10 @@ func euclideanSQ8BatchAVX512(query []byte, vectors [][]byte, results []float32) 
 	if !features.HasAVX512 {
 		return euclideanSQ8BatchAVX2(query, vectors, results)
 	}
-	
+
 	qLen := len(query)
 	qPtr := uintptr(unsafe.Pointer(&query[0]))
-	
+
 	for i, v := range vectors {
 		if len(v) != qLen {
 			return errors.New("simd: batch dimension mismatch")
@@ -245,10 +244,10 @@ func euclideanF16BatchAVX512(query []float16.Num, vectors [][]float16.Num, resul
 	if !features.HasAVX512 {
 		return euclideanF16BatchAVX2(query, vectors, results)
 	}
-	
+
 	qLen := len(query)
 	qPtr := uintptr(unsafe.Pointer(&query[0]))
-	
+
 	for i, v := range vectors {
 		if len(v) != qLen {
 			return errors.New("simd: batch dimension mismatch")
@@ -349,7 +348,6 @@ func l2SquaredFloat64AVX512(a, b []float64) (float32, error) {
 	}
 	return val * val, nil
 }
-
 
 func euclideanF16AVX512(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
@@ -494,7 +492,6 @@ func euclidean384AVX512(a, b []float32) (float32, error) {
 	return euclidean384AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
-
 func euclidean768AVX512(a, b []float32) (float32, error) {
 	if len(a) != 768 || len(b) != 768 {
 		return 0, errors.New("simd: length must be 768")
@@ -504,7 +501,6 @@ func euclidean768AVX512(a, b []float32) (float32, error) {
 	}
 	return euclidean768AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
-
 
 func euclidean1536AVX512(a, b []float32) (float32, error) {
 	if len(a) != 1536 || len(b) != 1536 {
@@ -516,7 +512,6 @@ func euclidean1536AVX512(a, b []float32) (float32, error) {
 	// No specialized 1536 kernel yet, use general AVX512
 	return euclideanAVX512(a, b)
 }
-
 
 func dot384AVX512(a, b []float32) (float32, error) {
 	if len(a) != 384 || len(b) != 384 {
@@ -559,7 +554,6 @@ func euclidean128AVX512(a, b []float32) (float32, error) {
 	return euclidean128AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
-
 func euclidean1024AVX512(a, b []float32) (float32, error) {
 	if len(a) != 1024 || len(b) != 1024 {
 		return euclideanAVX512(a, b)
@@ -570,7 +564,6 @@ func euclidean1024AVX512(a, b []float32) (float32, error) {
 	return euclidean1024AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
 
-
 func euclidean3072AVX512(a, b []float32) (float32, error) {
 	if len(a) != 3072 || len(b) != 3072 {
 		return euclideanAVX512(a, b)
@@ -580,7 +573,6 @@ func euclidean3072AVX512(a, b []float32) (float32, error) {
 	}
 	return euclidean3072AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
 }
-
 
 func euclidean16AVX512Wrapper(a, b []float32) (float32, error) {
 	if len(a) != 16 || len(b) != 16 {
@@ -705,4 +697,3 @@ func isAllZerosAVX512(data []byte) bool {
 	}
 	return isAllZerosAVX2(data)
 }
-

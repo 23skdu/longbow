@@ -8,8 +8,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/stretchr/testify/require"
 	"github.com/rs/zerolog"
+	"github.com/stretchr/testify/require"
 )
 
 func createUpsertTestRecord(allocator memory.Allocator, startID int, count int) arrow.RecordBatch {
@@ -48,7 +48,7 @@ func TestStore_Upsert(t *testing.T) {
 	ctx := context.Background()
 
 	datasetName := "test_upserts"
-	
+
 	// Create original batch with ID 1
 	rec1 := createUpsertTestRecord(alloc, 1, 1)
 	defer rec1.Release()
@@ -63,7 +63,7 @@ func TestStore_Upsert(t *testing.T) {
 	require.True(t, ok)
 
 	ds.WaitForIndexing()
-	
+
 	// Ensure the vector exists
 	res1, err := ds.SearchDataset(ctx, make([]float32, 128), 10)
 	require.NoError(t, err)
@@ -91,7 +91,7 @@ func TestStore_Upsert(t *testing.T) {
 	// Perform a query. The search should skip the tombstoned result and return ONLY the latest.
 	res2, err := ds.SearchDataset(ctx, make([]float32, 128), 10)
 	require.NoError(t, err)
-	
+
 	var filtered []SearchResult
 	ds.dataMu.RLock()
 	for _, r := range res2 {

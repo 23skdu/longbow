@@ -719,7 +719,7 @@ int metal_prune_neighbors(MetalIndexHandle* handle, uint32_t* candidateIds, floa
             candDistBuf = (__bridge id<MTLBuffer>)handle->pruneCandDistBuffer;
             selIdBuf = (__bridge id<MTLBuffer>)handle->pruneSelIdBuffer;
             selCountBuf = (__bridge id<MTLBuffer>)handle->pruneSelCountBuffer;
-            
+
             memcpy([candIdBuf contents], candidateIds, numCandidates * sizeof(uint32_t));
             memcpy([candDistBuf contents], candidateDists, numCandidates * sizeof(float));
         } else {
@@ -729,7 +729,7 @@ int metal_prune_neighbors(MetalIndexHandle* handle, uint32_t* candidateIds, floa
             selIdBuf = [device newBufferWithLength:maxNeighbors * sizeof(uint32_t) options:MTLResourceStorageModeShared];
             selCountBuf = [device newBufferWithLength:sizeof(uint32_t) options:MTLResourceStorageModeShared];
         }
-        
+
         id<MTLBuffer> allVecBuf;
         if (allVectors != NULL) {
             // NOTE: Copying all vectors is very expensive. In production, this should always be the GPU buffer.
@@ -749,7 +749,7 @@ int metal_prune_neighbors(MetalIndexHandle* handle, uint32_t* candidateIds, floa
         [encoder setBuffer:selIdBuf offset:0 atIndex:2];
         [encoder setBuffer:selCountBuf offset:0 atIndex:3];
         [encoder setBuffer:allVecBuf offset:0 atIndex:4];
-        
+
         [encoder setBytes:&maxNeighbors length:sizeof(int) atIndex:5];
         [encoder setBytes:&numCandidates length:sizeof(int) atIndex:6];
         [encoder setBytes:&dim length:sizeof(int) atIndex:7];
@@ -837,10 +837,10 @@ func (m *MetalIndex) Init(dimensions, initialCapacity int) error {
 	handle.graphEdgeCount = 0
 
 	// Initialize pruning scratch buffers
-	handle.pruneScratchCapacity = 1024; // Sufficient for most HNSW pruning tasks
-	handle.pruneCandIdBuffer = C.create_shared_buffer(handle.device, C.size_t(handle.pruneScratchCapacity) * C.sizeof_uint32_t)
-	handle.pruneCandDistBuffer = C.create_shared_buffer(handle.device, C.size_t(handle.pruneScratchCapacity) * C.sizeof_float)
-	handle.pruneSelIdBuffer = C.create_shared_buffer(handle.device, C.size_t(handle.pruneScratchCapacity) * C.sizeof_uint32_t)
+	handle.pruneScratchCapacity = 1024 // Sufficient for most HNSW pruning tasks
+	handle.pruneCandIdBuffer = C.create_shared_buffer(handle.device, C.size_t(handle.pruneScratchCapacity)*C.sizeof_uint32_t)
+	handle.pruneCandDistBuffer = C.create_shared_buffer(handle.device, C.size_t(handle.pruneScratchCapacity)*C.sizeof_float)
+	handle.pruneSelIdBuffer = C.create_shared_buffer(handle.device, C.size_t(handle.pruneScratchCapacity)*C.sizeof_uint32_t)
 	handle.pruneSelCountBuffer = C.create_shared_buffer(handle.device, C.sizeof_uint32_t)
 
 	bufferSize := C.size_t(handle.capacity) * C.size_t(dimensions) * C.sizeof_float
@@ -1105,7 +1105,7 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
 		(*C.float)(unsafe.Pointer(&resultDistances[0])),
 	)
-	
+
 	if ret != 0 {
 		// Watchdog: attempt self-healing recovery and retry
 		if healErr := idx.Heal(); healErr == nil {
@@ -1118,7 +1118,7 @@ func (idx *MetalIndex) Search(vector []float32, k int) ([]int64, []float32, erro
 			)
 		}
 	}
-	
+
 	duration := time.Since(start)
 
 	if ret != 0 {
@@ -1530,8 +1530,6 @@ func (idx *MetalIndex) SearchGreedy(query []float32, entryPoint uint32, entryDis
 	// Standard MetalIndex doesn't support GPU-side greedy search yet, fallback to CPU handled by caller
 	return entryPoint, entryDist, fmt.Errorf("SearchGreedy not implemented for standard MetalIndex")
 }
-
-
 
 func (idx *MetalIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
 	idx.mu.RLock()

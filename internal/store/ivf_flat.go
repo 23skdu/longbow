@@ -13,11 +13,11 @@ import (
 	"sort"
 	"sync"
 
+	"bytes"
+	"encoding/gob"
 	"github.com/23skdu/longbow/internal/simd"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
-	"bytes"
-	"encoding/gob"
 )
 
 const (
@@ -33,18 +33,18 @@ const (
 // IVF-Flat (Inverted File with Flat quantization) partitions vectors into clusters
 // using k-means and searches only the nearest clusters (n_probe).
 type IVFFlatIndex struct {
-	mu          sync.RWMutex
-	dimension   int
-	vectors     map[uint64][]float32
-	centroids   [][]float32    // K cluster centroids
-	assignments map[uint64]int // Vector ID -> Cluster ID
-	config      *IVFFlatConfig
-	built       bool
-	distFunc    simd.DistanceKernel[float32]
-	locationToID map[uint64]uint64 // Packed Location -> Vector ID
-	idToLocation map[uint64]uint64 // Vector ID -> Packed Location
-	clusterVectors [][]uint64    // cluster ID -> list of vector IDs in this cluster
-	clusterData    [][]float32   // cluster ID -> flat slice of concatenated vector coordinates
+	mu             sync.RWMutex
+	dimension      int
+	vectors        map[uint64][]float32
+	centroids      [][]float32    // K cluster centroids
+	assignments    map[uint64]int // Vector ID -> Cluster ID
+	config         *IVFFlatConfig
+	built          bool
+	distFunc       simd.DistanceKernel[float32]
+	locationToID   map[uint64]uint64 // Packed Location -> Vector ID
+	idToLocation   map[uint64]uint64 // Vector ID -> Packed Location
+	clusterVectors [][]uint64        // cluster ID -> list of vector IDs in this cluster
+	clusterData    [][]float32       // cluster ID -> flat slice of concatenated vector coordinates
 }
 
 // NewIVFFlatIndex creates a new IVF-Flat index with the specified configuration.
@@ -61,14 +61,14 @@ func NewIVFFlatIndex(cfg IndexConfig) (*IVFFlatIndex, error) {
 	}
 
 	ivf := &IVFFlatIndex{
-		dimension:   cfg.Dimension,
-		vectors:     make(map[uint64][]float32),
-		centroids:   make([][]float32, 0),
-		assignments: make(map[uint64]int),
+		dimension:    cfg.Dimension,
+		vectors:      make(map[uint64][]float32),
+		centroids:    make([][]float32, 0),
+		assignments:  make(map[uint64]int),
 		locationToID: make(map[uint64]uint64),
 		idToLocation: make(map[uint64]uint64),
-		config:      cfg.IVFFlatConfig,
-		built:       false,
+		config:       cfg.IVFFlatConfig,
+		built:        false,
 	}
 	ivf.ensureKernel()
 	return ivf, nil
@@ -106,7 +106,7 @@ func (ivf *IVFFlatIndex) Add(id uint64, vector []float32) error {
 	}
 
 	ivf.vectors[id] = vector
-	
+
 	// If already built, assign to nearest cluster
 	if ivf.built {
 		clusterID := ivf.findNearestCluster(vector)
@@ -128,7 +128,7 @@ func (ivf *IVFFlatIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch,
 	}
 
 	// Use sequential ID or something unique.
-	// For IVFFlatIndex, we'll use a simple counter if nextID is added, 
+	// For IVFFlatIndex, we'll use a simple counter if nextID is added,
 	// or just use the current size as ID.
 	ivf.mu.Lock()
 	n := len(ivf.vectors)
@@ -587,7 +587,7 @@ func (ivf *IVFFlatIndex) AddByLocation(batchIdx, rowIdx int) error {
 func (ivf *IVFFlatIndex) GetVectorID(loc Location) (uint64, bool) {
 	ivf.mu.RLock()
 	defer ivf.mu.RUnlock()
-	
+
 	if ivf.locationToID == nil {
 		return 0, false
 	}
@@ -605,7 +605,7 @@ func (ivf *IVFFlatIndex) SetLocation(id uint32, loc any) {
 
 	ivf.mu.Lock()
 	defer ivf.mu.Unlock()
-	
+
 	if ivf.locationToID == nil {
 		ivf.locationToID = make(map[uint64]uint64)
 	}
@@ -631,7 +631,7 @@ func (ivf *IVFFlatIndex) GetLocation(id uint32) (any, bool) {
 	if !ok {
 		return nil, false
 	}
-	
+
 	return lbtypes.UnpackLocation(packed), true
 }
 

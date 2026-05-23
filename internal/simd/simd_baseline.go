@@ -105,7 +105,6 @@ func l2SquaredUint8Unrolled4x(a, b []uint8) (float32, error) {
 	return float32(sum0 + sum1 + sum2 + sum3), nil
 }
 
-
 // ... Repeat for Int16, Int32, Int64 and Uint equivalents ...
 // Note: Int64 might need float64 for better precision if values are huge.
 
@@ -712,16 +711,26 @@ func cosineDistanceInt16Unrolled4x(a, b []int16) (float32, error) {
 		va1, vb1 := int64(a[i+1]), int64(b[i+1])
 		va2, vb2 := int64(a[i+2]), int64(b[i+2])
 		va3, vb3 := int64(a[i+3]), int64(b[i+3])
-		dot0 += va0 * vb0; normA0 += va0 * va0; normB0 += vb0 * vb0
-		dot1 += va1 * vb1; normA1 += va1 * va1; normB1 += vb1 * vb1
-		dot2 += va2 * vb2; normA2 += va2 * va2; normB2 += vb2 * vb2
-		dot3 += va3 * vb3; normA3 += va3 * va3; normB3 += vb3 * vb3
+		dot0 += va0 * vb0
+		normA0 += va0 * va0
+		normB0 += vb0 * vb0
+		dot1 += va1 * vb1
+		normA1 += va1 * va1
+		normB1 += vb1 * vb1
+		dot2 += va2 * vb2
+		normA2 += va2 * va2
+		normB2 += vb2 * vb2
+		dot3 += va3 * vb3
+		normA3 += va3 * va3
+		normB3 += vb3 * vb3
 	}
 	for ; i < n; i++ {
 		va, vb := int64(a[i]), int64(b[i])
-		dot0 += va * vb; normA0 += va * va; normB0 += vb * vb
+		dot0 += va * vb
+		normA0 += va * va
+		normB0 += vb * vb
 	}
-	totalDot := float64(dot0+dot1+dot2+dot3)
+	totalDot := float64(dot0 + dot1 + dot2 + dot3)
 	totalNormA := float64(normA0 + normA1 + normA2 + normA3)
 	totalNormB := float64(normB0 + normB1 + normB2 + normB3)
 	if totalNormA <= 0 || totalNormB <= 0 {
@@ -748,16 +757,26 @@ func cosineDistanceUint16Unrolled4x(a, b []uint16) (float32, error) {
 		va1, vb1 := uint64(a[i+1]), uint64(b[i+1])
 		va2, vb2 := uint64(a[i+2]), uint64(b[i+2])
 		va3, vb3 := uint64(a[i+3]), uint64(b[i+3])
-		dot0 += va0 * vb0; normA0 += va0 * va0; normB0 += vb0 * vb0
-		dot1 += va1 * vb1; normA1 += va1 * va1; normB1 += vb1 * vb1
-		dot2 += va2 * vb2; normA2 += va2 * va2; normB2 += vb2 * vb2
-		dot3 += va3 * vb3; normA3 += va3 * va3; normB3 += vb3 * vb3
+		dot0 += va0 * vb0
+		normA0 += va0 * va0
+		normB0 += vb0 * vb0
+		dot1 += va1 * vb1
+		normA1 += va1 * va1
+		normB1 += vb1 * vb1
+		dot2 += va2 * vb2
+		normA2 += va2 * va2
+		normB2 += vb2 * vb2
+		dot3 += va3 * vb3
+		normA3 += va3 * va3
+		normB3 += vb3 * vb3
 	}
 	for ; i < n; i++ {
 		va, vb := uint64(a[i]), uint64(b[i])
-		dot0 += va * vb; normA0 += va * va; normB0 += vb * vb
+		dot0 += va * vb
+		normA0 += va * va
+		normB0 += vb * vb
 	}
-	totalDot := float64(dot0+dot1+dot2+dot3)
+	totalDot := float64(dot0 + dot1 + dot2 + dot3)
 	totalNormA := float64(normA0 + normA1 + normA2 + normA3)
 	totalNormB := float64(normB0 + normB1 + normB2 + normB3)
 	if totalNormA <= 0 || totalNormB <= 0 {
@@ -785,14 +804,24 @@ func cosineDistanceInt32Unrolled4x(a, b []int32) (float32, error) {
 		va1, vb1 := float64(a[i+1]), float64(b[i+1])
 		va2, vb2 := float64(a[i+2]), float64(b[i+2])
 		va3, vb3 := float64(a[i+3]), float64(b[i+3])
-		dot0 += va0 * vb0; normA0 += va0 * va0; normB0 += vb0 * vb0
-		dot1 += va1 * vb1; normA1 += va1 * va1; normB1 += vb1 * vb1
-		dot2 += va2 * vb2; normA2 += va2 * va2; normB2 += vb2 * vb2
-		dot3 += va3 * vb3; normA3 += va3 * va3; normB3 += vb3 * vb3
+		dot0 += va0 * vb0
+		normA0 += va0 * va0
+		normB0 += vb0 * vb0
+		dot1 += va1 * vb1
+		normA1 += va1 * va1
+		normB1 += vb1 * vb1
+		dot2 += va2 * vb2
+		normA2 += va2 * va2
+		normB2 += vb2 * vb2
+		dot3 += va3 * vb3
+		normA3 += va3 * va3
+		normB3 += vb3 * vb3
 	}
 	for ; i < n; i++ {
 		va, vb := float64(a[i]), float64(b[i])
-		dot0 += va * vb; normA0 += va * va; normB0 += vb * vb
+		dot0 += va * vb
+		normA0 += va * va
+		normB0 += vb * vb
 	}
 	totalDot := dot0 + dot1 + dot2 + dot3
 	totalNormA := normA0 + normA1 + normA2 + normA3
@@ -821,14 +850,24 @@ func cosineDistanceUint32Unrolled4x(a, b []uint32) (float32, error) {
 		va1, vb1 := float64(a[i+1]), float64(b[i+1])
 		va2, vb2 := float64(a[i+2]), float64(b[i+2])
 		va3, vb3 := float64(a[i+3]), float64(b[i+3])
-		dot0 += va0 * vb0; normA0 += va0 * va0; normB0 += vb0 * vb0
-		dot1 += va1 * vb1; normA1 += va1 * va1; normB1 += vb1 * vb1
-		dot2 += va2 * vb2; normA2 += va2 * va2; normB2 += vb2 * vb2
-		dot3 += va3 * vb3; normA3 += va3 * va3; normB3 += vb3 * vb3
+		dot0 += va0 * vb0
+		normA0 += va0 * va0
+		normB0 += vb0 * vb0
+		dot1 += va1 * vb1
+		normA1 += va1 * va1
+		normB1 += vb1 * vb1
+		dot2 += va2 * vb2
+		normA2 += va2 * va2
+		normB2 += vb2 * vb2
+		dot3 += va3 * vb3
+		normA3 += va3 * va3
+		normB3 += vb3 * vb3
 	}
 	for ; i < n; i++ {
 		va, vb := float64(a[i]), float64(b[i])
-		dot0 += va * vb; normA0 += va * va; normB0 += vb * vb
+		dot0 += va * vb
+		normA0 += va * va
+		normB0 += vb * vb
 	}
 	totalDot := dot0 + dot1 + dot2 + dot3
 	totalNormA := normA0 + normA1 + normA2 + normA3
@@ -893,12 +932,12 @@ func cosineComplex64Unrolled(a, b []complex64) (float32, error) {
 	for i := range a {
 		vaR, vaI := float64(real(a[i])), float64(imag(a[i]))
 		vbR, vbI := float64(real(b[i])), float64(imag(b[i]))
-		
+
 		// dot(a, b) = sum(a[i] * conj(b[i]))
 		// (ar + i*ai) * (br - i*bi) = (ar*br + ai*bi) + i*(ai*br - ar*bi)
 		dotR += vaR*vbR + vaI*vbI
 		dotI += vaI*vbR - vaR*vbI
-		
+
 		normA += vaR*vaR + vaI*vaI
 		normB += vbR*vbR + vbI*vbI
 	}
@@ -921,10 +960,10 @@ func cosineComplex128Unrolled(a, b []complex128) (float32, error) {
 	for i := range a {
 		vaR, vaI := real(a[i]), imag(a[i])
 		vbR, vbI := real(b[i]), imag(b[i])
-		
+
 		dotR += vaR*vbR + vaI*vbI
 		dotI += vaI*vbR - vaR*vbI
-		
+
 		normA += vaR*vaR + vaI*vaI
 		normB += vbR*vbR + vbI*vbI
 	}
@@ -1071,19 +1110,19 @@ func AccumulateWeightedScatterFloat32(dst []float32, targets []uint32, weights [
 	if len(weights) < n {
 		n = len(weights)
 	}
-	
+
 	// Unrolled 4x for better performance
 	i := 0
 	for ; i <= n-4; i += 4 {
 		t0, t1, t2, t3 := targets[i], targets[i+1], targets[i+2], targets[i+3]
 		w0, w1, w2, w3 := weights[i], weights[i+1], weights[i+2], weights[i+3]
-		
+
 		dst[t0] += w0 * factor
 		dst[t1] += w1 * factor
 		dst[t2] += w2 * factor
 		dst[t3] += w3 * factor
 	}
-	
+
 	for ; i < n; i++ {
 		dst[targets[i]] += weights[i] * factor
 	}
@@ -1111,7 +1150,7 @@ func haversineBatchGeneric(centerLat, centerLon float64, points []lbcore.GeoPoin
 	lat1 := centerLat * math.Pi / 180.0
 	lon1 := centerLon * math.Pi / 180.0
 	cosLat1 := math.Cos(lat1)
-	
+
 	// Parallelize for large batches
 	if len(points) < 1024 {
 		for i, p := range points {
@@ -1127,15 +1166,19 @@ func haversineBatchGeneric(centerLat, centerLon float64, points []lbcore.GeoPoin
 	}
 
 	numCPUs := runtime.NumCPU()
-	if numCPUs < 1 { numCPUs = 1 }
+	if numCPUs < 1 {
+		numCPUs = 1
+	}
 	chunkSize := (len(points) + numCPUs - 1) / numCPUs
-	
+
 	var wg sync.WaitGroup
 	for i := 0; i < len(points); i += chunkSize {
 		start := i
 		end := i + chunkSize
-		if end > len(points) { end = len(points) }
-		
+		if end > len(points) {
+			end = len(points)
+		}
+
 		wg.Add(1)
 		go func(s, e int) {
 			defer wg.Done()

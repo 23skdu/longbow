@@ -15,7 +15,7 @@ type NodeMonitor struct {
 	memLoad     atomic.Uint32 // Percentage 0-100
 	queueDepth  atomic.Int64
 	activeTasks atomic.Int64
-	
+
 	stopChan chan struct{}
 }
 

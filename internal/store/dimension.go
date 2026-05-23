@@ -26,8 +26,8 @@ var ErrDimensionLocked = errors.New("dimension locked")
 // When created with dim>0 the dimension is locked immediately and
 // CheckOrSet acts as a pure validator.
 type DimensionGuard struct {
-	mu       sync.Mutex
-	dim      atomic.Int64 // 0 = not locked yet; -1 = explicit lock; >0 = dim value
+	mu           sync.Mutex
+	dim          atomic.Int64 // 0 = not locked yet; -1 = explicit lock; >0 = dim value
 	autoDetected bool
 	datasetName  string
 }
@@ -75,9 +75,9 @@ func (g *DimensionGuard) CheckOrSet(vec []float32) error {
 		}
 		metrics.DatasetDimensionMismatchTotal.WithLabelValues(g.datasetName).Inc()
 		return &DimensionError{
-			DatasetName: g.datasetName,
-			Expected:    int(existing),
-			Got:         incoming,
+			DatasetName:  g.datasetName,
+			Expected:     int(existing),
+			Got:          incoming,
 			AutoDetected: g.autoDetected,
 		}
 	}
@@ -101,9 +101,9 @@ func (g *DimensionGuard) CheckOrSet(vec []float32) error {
 		}
 		metrics.DatasetDimensionMismatchTotal.WithLabelValues(g.datasetName).Inc()
 		return &DimensionError{
-			DatasetName: g.datasetName,
-			Expected:    int(existing),
-			Got:         incoming,
+			DatasetName:  g.datasetName,
+			Expected:     int(existing),
+			Got:          incoming,
 			AutoDetected: g.autoDetected,
 		}
 	}
@@ -136,9 +136,9 @@ func (g *DimensionGuard) IsAutoDetected() bool {
 // on a dimension mismatch. It wraps ErrDimensionLocked so callers can use
 // errors.Is.
 type DimensionError struct {
-	DatasetName string
-	Expected    int
-	Got         int
+	DatasetName  string
+	Expected     int
+	Got          int
 	AutoDetected bool
 }
 

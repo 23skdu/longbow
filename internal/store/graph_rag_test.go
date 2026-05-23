@@ -165,7 +165,7 @@ func TestGraphRAG_Stability_Large(t *testing.T) {
 		ds.Graph = NewGraphStore()
 	}
 	for i := 0; i < count-1; i++ {
-		_ = ds.Graph.AddEdge(Edge{Subject: VectorID(i), Predicate: "related", Object: VectorID(i+1), Weight: 1.0})
+		_ = ds.Graph.AddEdge(Edge{Subject: VectorID(i), Predicate: "related", Object: VectorID(i + 1), Weight: 1.0})
 	}
 	ds.dataMu.Unlock()
 
@@ -213,10 +213,10 @@ func TestHNSW_SearchLayer_NilContext_Regression(t *testing.T) {
 		DataType:       types.VectorTypeFloat32,
 		Metric:         basecore.MetricEuclidean,
 	}, nil)
-	
+
 	// Create some data
 	vec := make([]float32, 128)
-	
+
 	// This should not panic
 	err := h.InsertWithVector(0, vec, 0)
 	assert.NoError(t, err, "InsertWithVector should handle nil search context internally")

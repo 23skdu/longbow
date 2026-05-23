@@ -151,17 +151,21 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 	capacity := graph.Capacity
 	validNodes := make([]bool, capacity)
 	outDegrees := make([]int32, capacity)
-	
+
 	var wg sync.WaitGroup
 	numWorkers := runtime.NumCPU()
 	chunkSize := (capacity + numWorkers - 1) / numWorkers
-	
+
 	for w := 0; w < numWorkers; w++ {
 		start := w * chunkSize
 		end := start + chunkSize
-		if end > capacity { end = capacity }
-		if start >= end { break }
-		
+		if end > capacity {
+			end = capacity
+		}
+		if start >= end {
+			break
+		}
+
 		wg.Add(1)
 		go func(s, e int) {
 			defer wg.Done()
@@ -175,7 +179,7 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 		}(start, end)
 	}
 	wg.Wait()
-	
+
 	realMaxID := uint32(0)
 	realNodeCount := 0
 	for i, valid := range validNodes {
@@ -184,7 +188,7 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 			realMaxID = uint32(i)
 		}
 	}
-	
+
 	if realNodeCount == 0 {
 		return &CentralityResult{Scores: map[uint32]float32{}}, nil
 	}
@@ -221,7 +225,7 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 				danglingSum += scores[i]
 			}
 		}
-		
+
 		danglingFactor := (config.DampingFactor * danglingSum) / float32(realNodeCount)
 		baseScore := (1.0-config.DampingFactor)/float32(realNodeCount) + danglingFactor
 
@@ -230,15 +234,21 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 		for w := 0; w < numWorkers; w++ {
 			start := w * chunkSize
 			end := start + chunkSize
-			if end > int(realMaxID)+1 { end = int(realMaxID) + 1 }
-			if start >= end { break }
-			
+			if end > int(realMaxID)+1 {
+				end = int(realMaxID) + 1
+			}
+			if start >= end {
+				break
+			}
+
 			iterWG.Add(1)
 			go func(s, e int) {
 				defer iterWG.Done()
 				for i := s; i < e; i++ {
-					if !validNodes[i] { continue }
-					
+					if !validNodes[i] {
+						continue
+					}
+
 					incomingSum := float32(0.0)
 					for _, source := range reverseAdj[i] {
 						degree := outDegrees[source]
@@ -257,8 +267,12 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 		for i, valid := range validNodes {
 			if valid {
 				d := newScores[i] - scores[i]
-				if d < 0 { d = -d }
-				if d > maxDiff { maxDiff = d }
+				if d < 0 {
+					d = -d
+				}
+				if d > maxDiff {
+					maxDiff = d
+				}
 				scores[i] = newScores[i]
 			}
 		}
@@ -266,7 +280,7 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 		if maxDiff < config.Tolerance {
 			break
 		}
-		
+
 		select {
 		case <-ctx.Done():
 			return nil, ctx.Err()

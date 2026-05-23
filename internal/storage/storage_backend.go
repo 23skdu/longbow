@@ -3,9 +3,9 @@ package storage
 import (
 	"io"
 	"os"
+	"path/filepath"
 	"sync"
 	"time"
-	"path/filepath"
 
 	"github.com/23skdu/longbow/internal/metrics"
 )

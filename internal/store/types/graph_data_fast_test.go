@@ -3,8 +3,8 @@ package types
 import (
 	"math"
 	"sync"
-	"testing"
 	"sync/atomic"
+	"testing"
 )
 
 func TestFastPathChunkAccessors(t *testing.T) {
@@ -55,7 +55,7 @@ func TestGenerationBypass(t *testing.T) {
 
 	// Bump generation to 5
 	g.SetGeneration(5)
-	
+
 	// Create chunk 1 at generation 5
 	g.EnsureChunk(1, 0, 128)
 
@@ -70,7 +70,7 @@ func TestGenerationBypass(t *testing.T) {
 	if chunkOld != nil {
 		t.Fatalf("expected nil chunk due to generation isolation (chunk gen=5, maxGen=4), got data")
 	}
-	
+
 	// Try to read chunk 0 (gen 0) with maxGen 4. Should succeed!
 	chunk0 := g.GetVectorsChunkFastWithGen(0, 4)
 	if chunk0 == nil {
@@ -81,23 +81,23 @@ func TestGenerationBypass(t *testing.T) {
 func FuzzConcurrentChunkIO(f *testing.F) {
 	f.Add(uint32(0))
 	f.Add(uint32(5))
-	
+
 	f.Fuzz(func(t *testing.T, delay uint32) {
 		g := &GraphData{
 			Type: VectorTypeFloat32,
 			Dims: 8,
 		}
 		g.GrowMetadataSlices(2)
-		
+
 		g.EnsureChunk(0, 0, 8)
 		vec := []float32{1, 2, 3, 4, 5, 6, 7, 8}
 		g.SetVector(0, vec)
-		
+
 		var wg sync.WaitGroup
 		wg.Add(2)
-		
+
 		var readCount int32
-		
+
 		go func() {
 			defer wg.Done()
 			for i := 0; i < 1000; i++ {
@@ -109,7 +109,7 @@ func FuzzConcurrentChunkIO(f *testing.F) {
 				}
 			}
 		}()
-		
+
 		go func() {
 			defer wg.Done()
 			for i := 0; i < 100; i++ {
@@ -117,7 +117,7 @@ func FuzzConcurrentChunkIO(f *testing.F) {
 				g.EnsureChunk(0, 0, 8)
 			}
 		}()
-		
+
 		wg.Wait()
 	})
 }

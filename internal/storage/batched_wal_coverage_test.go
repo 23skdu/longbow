@@ -47,7 +47,7 @@ func TestWALBatcher_CompressionTypes(t *testing.T) {
 
 			err = w.Stop()
 			require.NoError(t, err)
-			
+
 			// Clean up for next run
 			os.RemoveAll(tmpDir)
 			os.MkdirAll(tmpDir, 0750)
@@ -74,7 +74,7 @@ func TestWALBatcher_Adaptive(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, w.IsAdaptiveEnabled())
-	
+
 	// Initial interval
 	interval := w.GetCurrentInterval()
 	assert.Greater(t, interval, time.Duration(0))
@@ -96,7 +96,7 @@ func TestWALBatcher_AsyncFsync(t *testing.T) {
 	require.NoError(t, err)
 
 	assert.True(t, w.IsAsyncFsyncEnabled())
-	
+
 	stats := w.AsyncFsyncStats()
 	assert.NotNil(t, stats)
 
@@ -111,14 +111,14 @@ func TestWALBatcher_QueueFull(t *testing.T) {
 
 	cfg := DefaultWALBatcherConfig()
 	cfg.MaxBatchSize = 1
-	// Manually set a very small entries channel if we could, 
+	// Manually set a very small entries channel if we could,
 	// but it's hardcoded to MaxBatchSize * 100.
 	// We'll just test that we can write.
-	
+
 	w := NewWALBatcher(tmpDir, &cfg)
 	// We don't start it, so writes might fail once queue is full?
 	// Actually Write() checks w.stopCh.
-	
+
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Int32}}, nil)
 	builder := array.NewRecordBuilder(mem, schema)
@@ -131,7 +131,7 @@ func TestWALBatcher_QueueFull(t *testing.T) {
 	for i := 0; i < 100; i++ {
 		_ = w.Write(rec, "test", uint64(i), 0)
 	}
-	
+
 	pending, capacity := w.QueueStatus()
 	assert.Equal(t, 100, pending)
 	assert.Equal(t, 100, capacity)

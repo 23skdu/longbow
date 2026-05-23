@@ -114,7 +114,7 @@ func (a *SearchArena) AllocVectorIDSlice(count int) []types.VectorID {
 	a.offset = alignedOffset + bytesNeeded
 
 	// Convert byte slice to types.VectorID slice using unsafe
-	ptr := unsafe.Pointer(&a.buf[alignedOffset]) // #nosec G103
+	ptr := unsafe.Pointer(&a.buf[alignedOffset])       // #nosec G103
 	return unsafe.Slice((*types.VectorID)(ptr), count) // #nosec G103
 }
 

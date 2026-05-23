@@ -3,16 +3,16 @@ package store
 import (
 	"context"
 	"fmt"
-	"testing"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
-    "github.com/apache/arrow-go/v18/arrow/ipc"
-    "github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
+	"testing"
 )
 
 func TestAdvancedSQL_E2E(t *testing.T) {
@@ -100,7 +100,7 @@ func TestAdvancedSQL_E2E(t *testing.T) {
 				ids = append(ids, idCol.Value(i))
 			}
 		}
-		
+
 		// Expected IDs: 101, 103 (the active ones)
 		assert.ElementsMatch(t, []uint64{101, 103}, ids)
 	})
@@ -136,7 +136,7 @@ func TestAdvancedSQL_E2E(t *testing.T) {
 				ids = append(ids, idCol.Value(i))
 			}
 		}
-		
+
 		assert.ElementsMatch(t, []uint64{101, 103}, ids)
 	})
 }

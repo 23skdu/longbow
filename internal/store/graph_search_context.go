@@ -7,18 +7,18 @@ import (
 // GraphSearchContext provides pooled buffers for GraphRAG search operations
 // to eliminate GC pressure during high-frequency graph expansions.
 type GraphSearchContext struct {
-	scores       []float32
-	visited      []uint64
-	currentNodes []uint32
-	nextNodes    []uint32
+	scores        []float32
+	visited       []uint64
+	currentNodes  []uint32
+	nextNodes     []uint32
 	allInfluenced []uint32
-	
+
 	// results stores the intermediate SearchResult slice to avoid re-allocation
-	results      []SearchResult
+	results []SearchResult
 
 	// distCache provides a thread-local cache for distance calculations
 	// during expansion to avoid redundant work for hub nodes.
-	distCache    map[uint32]float32
+	distCache map[uint32]float32
 }
 
 // EnsureCapacity ensures the scores and visited buffers can accommodate the given ID.
@@ -156,13 +156,13 @@ func (ctx *GraphSearchContext) Reset(maxID int, initialCount int) {
 var graphSearchPool = sync.Pool{
 	New: func() any {
 		return &GraphSearchContext{
-			scores:       make([]float32, 0, 10000),
-			visited:      make([]uint64, 0, 10000/64),
-			currentNodes: make([]uint32, 0, 1000),
-			nextNodes:    make([]uint32, 0, 2000),
+			scores:        make([]float32, 0, 10000),
+			visited:       make([]uint64, 0, 10000/64),
+			currentNodes:  make([]uint32, 0, 1000),
+			nextNodes:     make([]uint32, 0, 2000),
 			allInfluenced: make([]uint32, 0, 4000),
-			results:      make([]SearchResult, 0, 2000),
-			distCache:    make(map[uint32]float32, 1024),
+			results:       make([]SearchResult, 0, 2000),
+			distCache:     make(map[uint32]float32, 1024),
 		}
 	},
 }

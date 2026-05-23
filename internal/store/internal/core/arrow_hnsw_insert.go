@@ -58,7 +58,7 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 		vecAny, _ := data.GetVector(cand.ID)
 		extracted[i] = vecAny
 	}
-	
+
 	selectedVecs := make([]any, 0, m)
 
 	// For non-float32, we use a cached diversity check
@@ -71,7 +71,9 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 			}
 			isDiverse := true
 			v1, _ := extracted[i].([]int8)
-			if v1 == nil { continue }
+			if v1 == nil {
+				continue
+			}
 			for j := range selected {
 				v2 := selectedVecs[j].([]int8)
 				d, _ := h.distFuncInt8(v1, v2)
@@ -80,162 +82,229 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 					break
 				}
 			}
-			if isDiverse { 
+			if isDiverse {
 				selected = append(selected, cand)
 				selectedVecs = append(selectedVecs, v1)
 			}
 		}
 	case types.VectorTypeInt16:
 		for i, cand := range candidates {
-			if len(selected) >= m { break }
+			if len(selected) >= m {
+				break
+			}
 			isDiverse := true
 			v1, _ := extracted[i].([]int16)
-			if v1 == nil { continue }
+			if v1 == nil {
+				continue
+			}
 			for j := range selected {
 				v2 := selectedVecs[j].([]int16)
 				d, _ := h.distFuncInt16(v1, v2)
-				if d < cand.Dist { isDiverse = false; break }
+				if d < cand.Dist {
+					isDiverse = false
+					break
+				}
 			}
-			if isDiverse { 
-				selected = append(selected, cand) 
+			if isDiverse {
+				selected = append(selected, cand)
 				selectedVecs = append(selectedVecs, v1)
 			}
 		}
 	case types.VectorTypeUint16:
 		for i, cand := range candidates {
-			if len(selected) >= m { break }
+			if len(selected) >= m {
+				break
+			}
 			isDiverse := true
 			v1, _ := extracted[i].([]uint16)
-			if v1 == nil { continue }
+			if v1 == nil {
+				continue
+			}
 			for j := range selected {
 				v2 := selectedVecs[j].([]uint16)
 				d, _ := h.distFuncUint16(v1, v2)
-				if d < cand.Dist { isDiverse = false; break }
+				if d < cand.Dist {
+					isDiverse = false
+					break
+				}
 			}
-			if isDiverse { 
-				selected = append(selected, cand) 
+			if isDiverse {
+				selected = append(selected, cand)
 				selectedVecs = append(selectedVecs, v1)
 			}
 		}
 	case types.VectorTypeInt32:
 		for i, cand := range candidates {
-			if len(selected) >= m { break }
+			if len(selected) >= m {
+				break
+			}
 			isDiverse := true
 			v1, _ := extracted[i].([]int32)
-			if v1 == nil { continue }
+			if v1 == nil {
+				continue
+			}
 			for j := range selected {
 				v2 := selectedVecs[j].([]int32)
 				d, _ := h.distFuncInt32(v1, v2)
-				if d < cand.Dist { isDiverse = false; break }
+				if d < cand.Dist {
+					isDiverse = false
+					break
+				}
 			}
-			if isDiverse { 
+			if isDiverse {
 				selected = append(selected, cand)
-				selectedVecs = append(selectedVecs, v1) 
+				selectedVecs = append(selectedVecs, v1)
 			}
 		}
 	case types.VectorTypeUint32:
 		for i, cand := range candidates {
-			if len(selected) >= m { break }
+			if len(selected) >= m {
+				break
+			}
 			isDiverse := true
 			v1, _ := extracted[i].([]uint32)
-			if v1 == nil { continue }
+			if v1 == nil {
+				continue
+			}
 			for j := range selected {
 				v2 := selectedVecs[j].([]uint32)
 				d, _ := h.distFuncUint32(v1, v2)
-				if d < cand.Dist { isDiverse = false; break }
+				if d < cand.Dist {
+					isDiverse = false
+					break
+				}
 			}
-			if isDiverse { 
+			if isDiverse {
 				selected = append(selected, cand)
 				selectedVecs = append(selectedVecs, v1)
 			}
 		}
 	case types.VectorTypeInt64:
 		for i, cand := range candidates {
-			if len(selected) >= m { break }
+			if len(selected) >= m {
+				break
+			}
 			isDiverse := true
 			v1, _ := extracted[i].([]int64)
-			if v1 == nil { continue }
+			if v1 == nil {
+				continue
+			}
 			for j := range selected {
 				v2 := selectedVecs[j].([]int64)
 				d, _ := h.distFuncInt64(v1, v2)
-				if d < cand.Dist { isDiverse = false; break }
+				if d < cand.Dist {
+					isDiverse = false
+					break
+				}
 			}
-			if isDiverse { 
-				selected = append(selected, cand) 
+			if isDiverse {
+				selected = append(selected, cand)
 				selectedVecs = append(selectedVecs, v1)
 			}
 		}
 	case types.VectorTypeUint64:
 		for i, cand := range candidates {
-			if len(selected) >= m { break }
+			if len(selected) >= m {
+				break
+			}
 			isDiverse := true
 			v1, _ := extracted[i].([]uint64)
-			if v1 == nil { continue }
+			if v1 == nil {
+				continue
+			}
 			for j := range selected {
 				v2 := selectedVecs[j].([]uint64)
 				d, _ := h.distFuncUint64(v1, v2)
-				if d < cand.Dist { isDiverse = false; break }
+				if d < cand.Dist {
+					isDiverse = false
+					break
+				}
 			}
-			if isDiverse { 
-				selected = append(selected, cand) 
+			if isDiverse {
+				selected = append(selected, cand)
 				selectedVecs = append(selectedVecs, v1)
 			}
 		}
 	case types.VectorTypeFloat64:
 		for i, cand := range candidates {
-			if len(selected) >= m { break }
+			if len(selected) >= m {
+				break
+			}
 			isDiverse := true
 			v1, _ := extracted[i].([]float64)
-			if v1 == nil { continue }
+			if v1 == nil {
+				continue
+			}
 			for j := range selected {
 				v2 := selectedVecs[j].([]float64)
 				d, _ := h.distFuncF64(v1, v2)
-				if d < cand.Dist { isDiverse = false; break }
+				if d < cand.Dist {
+					isDiverse = false
+					break
+				}
 			}
-			if isDiverse { 
-				selected = append(selected, cand) 
+			if isDiverse {
+				selected = append(selected, cand)
 				selectedVecs = append(selectedVecs, v1)
 			}
 		}
 	case types.VectorTypeComplex64:
 		for i, cand := range candidates {
-			if len(selected) >= m { break }
+			if len(selected) >= m {
+				break
+			}
 			isDiverse := true
 			v1, _ := extracted[i].([]complex64)
-			if v1 == nil { continue }
+			if v1 == nil {
+				continue
+			}
 			for j := range selected {
 				v2 := selectedVecs[j].([]complex64)
 				d, _ := h.distFuncC64(v1, v2)
-				if d < cand.Dist { isDiverse = false; break }
+				if d < cand.Dist {
+					isDiverse = false
+					break
+				}
 			}
-			if isDiverse { 
+			if isDiverse {
 				selected = append(selected, cand)
 				selectedVecs = append(selectedVecs, v1)
 			}
 		}
 	case types.VectorTypeComplex128:
 		for i, cand := range candidates {
-			if len(selected) >= m { break }
+			if len(selected) >= m {
+				break
+			}
 			isDiverse := true
 			v1, _ := extracted[i].([]complex128)
-			if v1 == nil { continue }
+			if v1 == nil {
+				continue
+			}
 			for j := range selected {
 				v2 := selectedVecs[j].([]complex128)
 				d, _ := h.distFuncC128(v1, v2)
-				if d < cand.Dist { isDiverse = false; break }
+				if d < cand.Dist {
+					isDiverse = false
+					break
+				}
 			}
-			if isDiverse { 
-				selected = append(selected, cand) 
+			if isDiverse {
+				selected = append(selected, cand)
 				selectedVecs = append(selectedVecs, v1)
 			}
 		}
 	default:
 		// Fallback for unknown types (slow path)
 		for i, cand := range candidates {
-			if len(selected) >= m { break }
+			if len(selected) >= m {
+				break
+			}
 			isDiverse := true
 			v1 := extracted[i]
-			if v1 == nil { continue }
+			if v1 == nil {
+				continue
+			}
 			for j := range selected {
 				_ = selectedVecs[j]
 				// CORRECT RobustPrune: only reject if an existing neighbor is CLOSER to the candidate than the query is
@@ -243,9 +312,9 @@ func (h *ArrowHNSW) selectNeighbors(ctx *ArrowSearchContext, candidates []types.
 				// (in practice this shouldn't happen as all types are registered)
 				// For now, just allow all up to M
 			}
-			if isDiverse { 
+			if isDiverse {
 				selected = append(selected, cand)
-				selectedVecs = append(selectedVecs, v1) 
+				selectedVecs = append(selectedVecs, v1)
 			}
 		}
 	}
@@ -285,31 +354,31 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 			candIds[i] = uint32(c.ID)
 			candDists[i] = c.Dist
 		}
-		
+
 		selectedIds, err := h.pruneNeighborsGPU(candIds, candDists, m)
 		if err == nil {
 			// Convert back to types.Candidate
 			res := make([]types.Candidate, 0, len(selectedIds))
 			// We need distances to keep the Candidate structure consistent
 			// But for pruning results, we only care about IDs usually.
-			// However, HNSW might need them. 
+			// However, HNSW might need them.
 			// For simplicity, we find the original candidate for each ID.
 			candMap := make(map[uint32]float32)
 			for i := range candidates {
 				candMap[uint32(candidates[i].ID)] = candidates[i].Dist
 			}
-			
+
 			for _, id := range selectedIds {
 				res = append(res, types.Candidate{ID: id, Dist: candMap[id]})
 			}
-			
+
 			if ctx != nil {
 				ctx.scratchSelected = res
 			}
 			return res
 		}
 	}
-	
+
 	selectedVecs := make([][]float32, 0, m)
 
 	for i, cand := range candidates {

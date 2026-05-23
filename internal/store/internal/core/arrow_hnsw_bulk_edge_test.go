@@ -1,10 +1,10 @@
 package core_test
 
 import (
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"context"
 	"errors"
+	"github.com/23skdu/longbow/internal/store/internal/core"
+	"github.com/23skdu/longbow/internal/store/types"
 	"strings"
 	"testing"
 

@@ -187,14 +187,19 @@ const LocationChunkSize = 1024
 
 // GeoPoint alias for basecore.GeoPoint.
 type GeoPoint = basecore.GeoPoint
+
 // GeoBoundingBox alias for basecore.GeoBoundingBox.
 type GeoBoundingBox = basecore.GeoBoundingBox
+
 // GeoSearchRequest alias for basecore.GeoSearchRequest.
 type GeoSearchRequest = basecore.GeoSearchRequest
+
 // VectorSearchRequest alias for basecore.VectorSearchRequest.
 type VectorSearchRequest = basecore.VectorSearchRequest
+
 // TemporalSearchRequest alias for basecore.TemporalSearchRequest.
 type TemporalSearchRequest = basecore.TemporalSearchRequest
+
 // TemporalAggregationRequest alias for basecore.TemporalAggregationRequest.
 type TemporalAggregationRequest = basecore.TemporalAggregationRequest
 

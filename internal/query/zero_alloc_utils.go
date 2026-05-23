@@ -565,7 +565,6 @@ func ParseTemporalSearchRequest(data []byte, req *core.TemporalSearchRequest) er
 	return nil
 }
 
-
 func SkipWhitespace(data []byte, pos int) int {
 	for pos < len(data) && (data[pos] == ' ' || data[pos] == '\t' || data[pos] == '\n' || data[pos] == '\r') {
 		pos++
@@ -855,8 +854,6 @@ func SkipArray(data []byte, pos int) (int, error) {
 func safeString(b []byte) string {
 	return string(b)
 }
-
-
 
 func ParseFilterRecursive(data []byte, pos int, parser *ZeroAllocTicketParser) (core.Filter, int, error) {
 	var f core.Filter

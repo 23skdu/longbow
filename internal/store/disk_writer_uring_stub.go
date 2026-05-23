@@ -51,7 +51,7 @@ func (d *DiskWriterUring) SubmitWrite(data []byte, offset int64) (chan error, er
 		done <- err
 		close(done)
 	}()
-	
+
 	return done, nil
 }
 

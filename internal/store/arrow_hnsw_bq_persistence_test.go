@@ -1,8 +1,8 @@
 package store
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"context"
+	"github.com/23skdu/longbow/internal/store/types"
 	"os"
 	"testing"
 	"time"

@@ -17,7 +17,7 @@ func TestComponentHealth_JSON(t *testing.T) {
 		LastChecked: time.Now(),
 		Metadata:    map[string]interface{}{"key": "value"},
 	}
-	
+
 	if h.Name != "test" {
 		t.Errorf("expected name test, got %s", h.Name)
 	}
@@ -35,7 +35,7 @@ func TestHealthStatus_String(t *testing.T) {
 		{StatusDegraded, "degraded"},
 		{StatusUnhealthy, "unhealthy"},
 	}
-	
+
 	for _, tc := range tests {
 		if string(tc.status) != tc.expected {
 			t.Errorf("expected %s, got %s", tc.expected, tc.status)
@@ -46,7 +46,7 @@ func TestHealthStatus_String(t *testing.T) {
 func TestNewDatabaseChecker(t *testing.T) {
 	logger := zerolog.New(nil)
 	tracer := trace.NewNoopTracerProvider().Tracer("test")
-	
+
 	checker := NewDatabaseChecker(&logger, tracer)
 	if checker == nil {
 		t.Error("expected non-nil checker")
@@ -54,7 +54,7 @@ func TestNewDatabaseChecker(t *testing.T) {
 	if checker.Name() != "database" {
 		t.Errorf("expected database, got %s", checker.Name())
 	}
-	
+
 	ctx := context.Background()
 	health := checker.Check(ctx)
 	if health == nil {
@@ -68,7 +68,7 @@ func TestNewDatabaseChecker(t *testing.T) {
 func TestNewStorageChecker(t *testing.T) {
 	logger := zerolog.New(nil)
 	tracer := trace.NewNoopTracerProvider().Tracer("test")
-	
+
 	checker := NewStorageChecker(logger, tracer)
 	if checker == nil {
 		t.Error("expected non-nil checker")
@@ -76,7 +76,7 @@ func TestNewStorageChecker(t *testing.T) {
 	if checker.Name() != "storage" {
 		t.Errorf("expected storage, got %s", checker.Name())
 	}
-	
+
 	ctx := context.Background()
 	health := checker.Check(ctx)
 	if health == nil {
@@ -87,7 +87,7 @@ func TestNewStorageChecker(t *testing.T) {
 func TestNewMetricsChecker(t *testing.T) {
 	logger := zerolog.New(nil)
 	tracer := trace.NewNoopTracerProvider().Tracer("test")
-	
+
 	checker := NewMetricsChecker(logger, tracer)
 	if checker == nil {
 		t.Error("expected non-nil checker")
@@ -95,7 +95,7 @@ func TestNewMetricsChecker(t *testing.T) {
 	if checker.Name() != "metrics" {
 		t.Errorf("expected metrics, got %s", checker.Name())
 	}
-	
+
 	ctx := context.Background()
 	health := checker.Check(ctx)
 	if health == nil {
@@ -106,7 +106,7 @@ func TestNewMetricsChecker(t *testing.T) {
 func TestNewLoggingChecker(t *testing.T) {
 	logger := zerolog.New(nil)
 	tracer := trace.NewNoopTracerProvider().Tracer("test")
-	
+
 	checker := NewLoggingChecker(logger, tracer)
 	if checker == nil {
 		t.Error("expected non-nil checker")
@@ -114,7 +114,7 @@ func TestNewLoggingChecker(t *testing.T) {
 	if checker.Name() != "logging" {
 		t.Errorf("expected logging, got %s", checker.Name())
 	}
-	
+
 	ctx := context.Background()
 	health := checker.Check(ctx)
 	if health == nil {

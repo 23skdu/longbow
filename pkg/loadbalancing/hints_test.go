@@ -54,7 +54,7 @@ func TestLoadHints_ZeroValue(t *testing.T) {
 	h := LoadHints{}
 	buf := make([]byte, LoadHintsSize)
 	h.Serialize(buf)
-	
+
 	h2, ok := DeserializeLoadHints(buf)
 	if !ok {
 		t.Fatal("Failed to deserialize zero hints")

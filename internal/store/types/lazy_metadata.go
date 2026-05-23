@@ -1,8 +1,8 @@
 package types
 
 import (
-	"sync"
 	"github.com/23skdu/longbow/internal/core"
+	"sync"
 )
 
 // LazyMetadata decodes binary metadata on first access and caches the result.

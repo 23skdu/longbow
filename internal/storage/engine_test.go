@@ -137,7 +137,7 @@ func TestStorageEngine_Snapshot(t *testing.T) {
 func TestStorageEngine_BackendSetters(t *testing.T) {
 	engine := &StorageEngine{}
 	backend := &FileSnapshotBackend{}
-	
+
 	engine.SetSnapshotBackend(backend)
 	assert.Equal(t, backend, engine.GetSnapshotBackend())
 }

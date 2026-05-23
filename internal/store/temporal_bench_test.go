@@ -1,13 +1,13 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/memory"
 	"testing"
 	"time"
-	"github.com/23skdu/longbow/internal/memory"
 )
 
 func BenchmarkTemporalTree_GetRange(b *testing.B) {
-	arena := memory.NewSlabArena(1024*1024)
+	arena := memory.NewSlabArena(1024 * 1024)
 	tt := NewTemporalTree(arena)
 	n := 100000
 	startTs := time.Now().UnixNano()
@@ -22,7 +22,7 @@ func BenchmarkTemporalTree_GetRange(b *testing.B) {
 }
 
 func BenchmarkTemporalTree_GetLatest(b *testing.B) {
-	arena := memory.NewSlabArena(1024*1024)
+	arena := memory.NewSlabArena(1024 * 1024)
 	tt := NewTemporalTree(arena)
 	n := 100000
 	startTs := time.Now().UnixNano()

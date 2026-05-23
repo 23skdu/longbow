@@ -6,14 +6,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/ml"
+	"github.com/23skdu/longbow/internal/onnx"
+	"github.com/23skdu/longbow/internal/wasm"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
-	"github.com/23skdu/longbow/internal/onnx"
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/wasm"
-	"github.com/23skdu/longbow/internal/ml"
 )
 
 // EmbeddingGenerator defines the interface for generating vector embeddings from text.
@@ -725,8 +725,6 @@ func (le *localEmbeddingGenerator) Close() error {
 	}
 	return nil
 }
-
-
 
 type onnxEmbeddingModel struct {
 	path    string

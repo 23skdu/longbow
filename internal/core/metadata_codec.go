@@ -9,12 +9,12 @@ import (
 
 // Metadata Type IDs
 const (
-	TypeNil    uint8 = 0
-	TypeString uint8 = 1
-	TypeInt64  uint8 = 2
+	TypeNil     uint8 = 0
+	TypeString  uint8 = 1
+	TypeInt64   uint8 = 2
 	TypeFloat64 uint8 = 3
-	TypeBool   uint8 = 4
-	TypeBinary uint8 = 5
+	TypeBool    uint8 = 4
+	TypeBinary  uint8 = 5
 )
 
 var bufferPool = sync.Pool{

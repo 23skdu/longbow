@@ -495,7 +495,7 @@ func (e *StorageEngine) AppendReplicatedWAL(data []byte) error {
 		// Synchronous replication implies sync to disk locally too
 		return e.walBatcher.backend.Sync()
 	}
-	
+
 	if e.wal != nil {
 		return fmt.Errorf("AppendReplicatedWAL not supported for non-batched WAL")
 	}

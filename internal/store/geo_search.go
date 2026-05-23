@@ -1,20 +1,20 @@
 package store
 
 import (
+	"container/heap"
 	"context"
 	"fmt"
 	"math"
 	"sync"
 	"sync/atomic"
-	"container/heap"
 
 	"time"
 
+	lbcore "github.com/23skdu/longbow/internal/core"
+	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
-	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	internalcore "github.com/23skdu/longbow/internal/store/internal/core"
-	lbcore "github.com/23skdu/longbow/internal/core"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 
@@ -70,9 +70,9 @@ type GeoDistanceType string
 
 const (
 	// GeoDistanceHaversine uses the spherical law of cosines for great-circle distance.
-	GeoDistanceHaversine   GeoDistanceType = "haversine"
+	GeoDistanceHaversine GeoDistanceType = "haversine"
 	// GeoDistanceEuclidean uses planar distance (suitable for small areas).
-	GeoDistanceEuclidean   GeoDistanceType = "euclidean"
+	GeoDistanceEuclidean GeoDistanceType = "euclidean"
 	// GeoDistanceApproximate uses a faster, less accurate distance calculation.
 	GeoDistanceApproximate GeoDistanceType = "approximate"
 )
@@ -152,9 +152,15 @@ func (q *Quadtree) Insert(vec *GeoIndexedVector) bool {
 	q.mu.Unlock()
 
 	// Try children - no lock needed here as children are immutable once published
-	if q.northwest.Insert(vec) { return true }
-	if q.northeast.Insert(vec) { return true }
-	if q.southwest.Insert(vec) { return true }
+	if q.northwest.Insert(vec) {
+		return true
+	}
+	if q.northeast.Insert(vec) {
+		return true
+	}
+	if q.southwest.Insert(vec) {
+		return true
+	}
 	return q.southeast.Insert(vec)
 }
 
@@ -198,9 +204,17 @@ func (q *Quadtree) subdivide() {
 	// Direct quadrant assignment for existing vectors
 	for _, v := range q.vectors {
 		if v.GeoPoint.Lat >= midLat {
-			if v.GeoPoint.Lon < midLon { nw.vectors = append(nw.vectors, v) } else { ne.vectors = append(ne.vectors, v) }
+			if v.GeoPoint.Lon < midLon {
+				nw.vectors = append(nw.vectors, v)
+			} else {
+				ne.vectors = append(ne.vectors, v)
+			}
 		} else {
-			if v.GeoPoint.Lon < midLon { sw.vectors = append(sw.vectors, v) } else { se.vectors = append(se.vectors, v) }
+			if v.GeoPoint.Lon < midLon {
+				sw.vectors = append(sw.vectors, v)
+			} else {
+				se.vectors = append(se.vectors, v)
+			}
 		}
 	}
 
@@ -209,10 +223,10 @@ func (q *Quadtree) subdivide() {
 	q.northeast = ne
 	q.southwest = sw
 	q.southeast = se
-	
+
 	// Finalize subdivision flag
 	q.divided.Store(true)
-	
+
 	// Clear local vectors only after children are visible
 	q.vectors = nil
 }
@@ -391,7 +405,6 @@ func (gi *GeoIndex) SearchRadius(ctx context.Context, center GeoPoint, radiusKm 
 	if len(candidates) == 0 {
 		return []lbtypes.SearchResult{}, nil
 	}
-	
 
 	results := geoScoredResultPool.Get().([]scoredResult)
 	if cap(results) < len(candidates) {
@@ -721,7 +734,7 @@ func (gi *GeoIndex) Get(id uint64) (*GeoIndexedVector, bool) {
 
 // Delete removes a vector from the geo index by its ID.
 func (gi *GeoIndex) Delete(id uint64) {
-	
+
 	if _, ok := gi.vectors.Load(id); ok {
 		gi.vectors.Delete(id)
 		gi.pointCount.Add(-1)
@@ -729,7 +742,7 @@ func (gi *GeoIndex) Delete(id uint64) {
 	// Note: We don't remove from pointIndex (Quadtree) for performance.
 	// It will be filtered out during Search if not in gi.vectors or marked.
 	// But current Quadtree doesn't support easy deletion.
-	
+
 	gi.nearestCache.Store(&sync.Map{})
 }
 
@@ -782,7 +795,6 @@ func ValidateGeoSearchRequest(req *GeoSearchRequest) error {
 
 	return nil
 }
-
 
 // VectorDistance calculates the Euclidean distance between two vectors.
 func VectorDistance(v1, v2 []float32) float64 {

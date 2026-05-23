@@ -1,4 +1,5 @@
 //go:build amd64
+
 package simd
 
 import "unsafe"
@@ -54,15 +55,21 @@ func PackTQ8AVX2(src []float32, dst []byte) {
 // AVX-512 VBMI specialized (handled in turboquant_avx512_amd64.go)
 
 // Assembly kernel stubs
+//
 //go:noescape
 func unpackTQ2AVX2Kernel(src, dst unsafe.Pointer, n int, scale, bias float32)
+
 //go:noescape
 func unpackTQ4AVX2Kernel(src, dst unsafe.Pointer, n int, scale, bias float32)
+
 //go:noescape
 func unpackTQ8AVX2Kernel(src, dst unsafe.Pointer, n int, scale, bias float32)
+
 //go:noescape
 func packTQ2AVX2Kernel(src, dst unsafe.Pointer, n int)
+
 //go:noescape
 func packTQ4AVX2Kernel(src, dst unsafe.Pointer, n int)
+
 //go:noescape
 func packTQ8AVX2Kernel(src, dst unsafe.Pointer, n int)

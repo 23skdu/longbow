@@ -23,10 +23,8 @@ import (
 // BulkInsertThreshold defines the minimum batch size to trigger parallel bulk insert
 const BulkInsertThreshold = 1000
 
-
 // ShardedLockCount is the number of shards for node locking.
 const ShardedLockCount = 1024
-
 
 // AddBatchBulk attempts to insert a batch of vectors in parallel using a bulk strategy.
 // It assumes IDs, locations, and capacity have already been prepared/reserved.
@@ -236,7 +234,9 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 	parallelFor(n, chunkSize, func(start, end int) {
 		errMu.Lock()
 		if errPrep != nil || ctx.Err() != nil {
-			if errPrep == nil { errPrep = ctx.Err() }
+			if errPrep == nil {
+				errPrep = ctx.Err()
+			}
 			errMu.Unlock()
 			return
 		}
@@ -473,7 +473,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 	if errPrep != nil {
 		return errPrep
 	}
- 
+
 	// Create a stable, read-only version for other workers to clone from
 	stableData := data.Clone()
 	h.compareAndSwapData(h.data.Load(), stableData)
@@ -554,7 +554,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 
 	// Refresh data snapshot after bootstrap loop as InsertWithVector updated the global state
 	data = h.data.Load()
-	
+
 	// Shift to remaining nodes for parallel linkage
 	remainingNodes := activeNodes[seedCount:]
 	numRemaining := len(remainingNodes)
@@ -587,7 +587,6 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 	// Deferred Connection Pipeline (Phase 15 Implementation)
 	// ----------------------------------------------------
 
-
 	// 2.5 Pre-Promote all nodes in the batch and SET VECTORS (Parallel)
 	// This ensures chunks are allocated and vectors are persistent before linkage.
 	pool.ParallelFor(numRemaining, (numRemaining+runtime.NumCPU()-1)/runtime.NumCPU(), func(start, end int) {
@@ -608,7 +607,6 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		if len(activeIndices) == 0 {
 			continue // Should not happen if topL is correct
 		}
-
 
 		// 3. Layer-by-Layer Insertion with Organic Growth
 		// Divide nodes into sub-batches to ensure the graph grows organically,
@@ -741,8 +739,12 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 					}
 
 					slices.SortFunc(candidates, func(a, b types.Candidate) int {
-						if a.Dist < b.Dist { return -1 }
-						if a.Dist > b.Dist { return 1 }
+						if a.Dist < b.Dist {
+							return -1
+						}
+						if a.Dist > b.Dist {
+							return 1
+						}
 						return 0
 					})
 
@@ -765,7 +767,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 						fSources = append(fSources, n.ID)
 						fDists = append(fDists, n.Dist)
 					}
-					
+
 					_ = h.AddConnectionsBatch(ctxPrune, data, node.id, fSources, fDists, lc, int(maxConn))
 
 					for _, neighbor := range neighbors {
@@ -788,7 +790,6 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		data = data.Clone()
 		h.compareAndSwapData(h.data.Load(), data)
 	}
-
 
 	// 4. Update Global Stats
 	// Update Max Level / Entry Point atomically

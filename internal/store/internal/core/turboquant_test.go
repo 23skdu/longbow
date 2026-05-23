@@ -50,7 +50,7 @@ func TestTurboQuant_EncoderDecoder(t *testing.T) {
 	norm1, _ := simd.DotProduct(rotatedOrig, rotatedOrig)
 	norm2, _ := simd.DotProduct(rotatedRecon, rotatedRecon)
 	cosine := dot / (float32(math.Sqrt(float64(norm1))) * float32(math.Sqrt(float64(norm2))))
-	
+
 	t.Logf("Cosine Similarity (Rotated Space): %f", cosine)
 	// TurboQuant is lossy compression - expect lower similarity at high dims
 	// For dims=128 with 4-bit, expect >=0.6 cosine
@@ -63,18 +63,18 @@ func TestTurboQuant_CompressionRatio(t *testing.T) {
 	dims := 768
 	bits := 3
 	encoder := NewTurboQuantEncoder(dims, bits, 42)
-	
+
 	vec := make([]float32, dims)
 	encoded, _ := encoder.Encode(vec)
-	
+
 	origSize := dims * 4
 	compSize := len(encoded)
 	ratio := float64(origSize) / float64(compSize)
-	
+
 	fmt.Printf("Original Size: %d bytes\n", origSize)
 	fmt.Printf("TurboQuant Size (%d-bit): %d bytes\n", bits, compSize)
 	fmt.Printf("Compression Ratio: %.2fx\n", ratio)
-	
+
 	// Expect ~6x
 	if ratio < 5.0 { // 5.0 is acceptable for 768 due to padding 1024
 		t.Errorf("Compression ratio too low: %.2fx", ratio)

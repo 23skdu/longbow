@@ -39,4 +39,3 @@ func (h *ArrowHNSW) SetLocation(id types.VectorID, loc types.Location) {
 	h.locationStore.Set(id, loc)
 	h.locationStore.UpdateSize(id)
 }
-

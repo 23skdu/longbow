@@ -84,7 +84,7 @@ func (r *Runner) Inference(ctx context.Context, input []float32) ([]float32, err
 	// 2. Copy input to WASM memory
 	inputBytes := make([]byte, inputSize)
 	for i, f := range input {
-		bits := math.Float32bits(f) // #nosec G115
+		bits := math.Float32bits(f)          // #nosec G115
 		inputBytes[i*4] = byte(bits)         // #nosec G115
 		inputBytes[i*4+1] = byte(bits >> 8)  // #nosec G115
 		inputBytes[i*4+2] = byte(bits >> 16) // #nosec G115
@@ -141,12 +141,12 @@ func (r *Runner) InferenceWithTokens(ctx context.Context, inputIds []int64, mask
 	// Allocate and copy data
 	idSize := uint64(len(inputIds) * 8)
 	maskSize := uint64(len(mask) * 8)
-	
-	idResults, _ := malloc.Call(ctx, idSize) // #nosec G115
-	idPtr := uint32(idResults[0])     // #nosec G115
+
+	idResults, _ := malloc.Call(ctx, idSize)     // #nosec G115
+	idPtr := uint32(idResults[0])                // #nosec G115
 	maskResults, _ := malloc.Call(ctx, maskSize) // #nosec G115
-	maskPtr := uint32(maskResults[0]) // #nosec G115
-	
+	maskPtr := uint32(maskResults[0])            // #nosec G115
+
 	if free != nil {
 		defer free.Call(ctx, uint64(idPtr))
 		defer free.Call(ctx, uint64(maskPtr))
@@ -174,7 +174,7 @@ func (r *Runner) InferenceWithTokens(ctx context.Context, inputIds []int64, mask
 	if err != nil {
 		return nil, err
 	}
- // #nosec G115
+	// #nosec G115
 	outputPtr := uint32(results[0]) // #nosec G115
 	outputLen := uint32(results[1]) // #nosec G115
 	outputBytes, _ := mem.Read(outputPtr, outputLen*4)

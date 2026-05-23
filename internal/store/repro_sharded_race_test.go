@@ -6,10 +6,10 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/23skdu/longbow/internal/store/internal/core"
 )
 
 func TestReproShardedSearchRace(t *testing.T) {
@@ -26,13 +26,13 @@ func TestReproShardedSearchRace(t *testing.T) {
 		}, nil,
 	)
 	ds := NewDataset("test", schema)
-	
+
 	config := DefaultShardedHNSWConfig()
 	config.Dimension = uint32(dims)
 	config.NumShards = 4
-	
+
 	idx := NewShardedHNSW(config, ds)
-	
+
 	// Insert data
 	ctx := context.Background()
 	rowIdxs := make([]int, numVectors)
@@ -41,17 +41,17 @@ func TestReproShardedSearchRace(t *testing.T) {
 		rowIdxs[i] = i
 		batchIdxs[i] = 0
 	}
-	
+
 	_, err := idx.AddBatch(ctx, []arrow.RecordBatch{rec}, rowIdxs, batchIdxs)
 	if err != nil {
 		t.Fatalf("AddBatch failed: %v", err)
 	}
-	
+
 	// Concurrent search
 	numConcurrent := 50
 	var wg sync.WaitGroup
 	wg.Add(numConcurrent)
-	
+
 	for i := 0; i < numConcurrent; i++ {
 		go func() {
 			defer wg.Done()
@@ -64,6 +64,6 @@ func TestReproShardedSearchRace(t *testing.T) {
 			}
 		}()
 	}
-	
+
 	wg.Wait()
 }

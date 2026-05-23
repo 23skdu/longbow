@@ -163,12 +163,18 @@ func (p *HNSWSIMDPredicate) MatchBatch(ids []uint32, dst []byte) {
 
 func (p *HNSWSIMDPredicate) compareInt64(val int64) bool {
 	switch p.op {
-	case simd.CompareEq: return val == p.valInt
-	case simd.CompareNeq: return val != p.valInt
-	case simd.CompareGt: return val > p.valInt
-	case simd.CompareGe: return val >= p.valInt
-	case simd.CompareLt: return val < p.valInt
-	case simd.CompareLe: return val <= p.valInt
+	case simd.CompareEq:
+		return val == p.valInt
+	case simd.CompareNeq:
+		return val != p.valInt
+	case simd.CompareGt:
+		return val > p.valInt
+	case simd.CompareGe:
+		return val >= p.valInt
+	case simd.CompareLt:
+		return val < p.valInt
+	case simd.CompareLe:
+		return val <= p.valInt
 	}
 	return true
 }
@@ -176,12 +182,18 @@ func (p *HNSWSIMDPredicate) compareInt64(val int64) bool {
 func (p *HNSWSIMDPredicate) compareInt32(val int32) bool {
 	v := int64(val)
 	switch p.op {
-	case simd.CompareEq: return v == p.valInt
-	case simd.CompareNeq: return v != p.valInt
-	case simd.CompareGt: return v > p.valInt
-	case simd.CompareGe: return v >= p.valInt
-	case simd.CompareLt: return v < p.valInt
-	case simd.CompareLe: return v <= p.valInt
+	case simd.CompareEq:
+		return v == p.valInt
+	case simd.CompareNeq:
+		return v != p.valInt
+	case simd.CompareGt:
+		return v > p.valInt
+	case simd.CompareGe:
+		return v >= p.valInt
+	case simd.CompareLt:
+		return v < p.valInt
+	case simd.CompareLe:
+		return v <= p.valInt
 	}
 	return true
 }
@@ -189,24 +201,36 @@ func (p *HNSWSIMDPredicate) compareInt32(val int32) bool {
 func (p *HNSWSIMDPredicate) compareFloat32(val float32) bool {
 	v := float64(val)
 	switch p.op {
-	case simd.CompareEq: return v == p.valF64
-	case simd.CompareNeq: return v != p.valF64
-	case simd.CompareGt: return v > p.valF64
-	case simd.CompareGe: return v >= p.valF64
-	case simd.CompareLt: return v < p.valF64
-	case simd.CompareLe: return v <= p.valF64
+	case simd.CompareEq:
+		return v == p.valF64
+	case simd.CompareNeq:
+		return v != p.valF64
+	case simd.CompareGt:
+		return v > p.valF64
+	case simd.CompareGe:
+		return v >= p.valF64
+	case simd.CompareLt:
+		return v < p.valF64
+	case simd.CompareLe:
+		return v <= p.valF64
 	}
 	return true
 }
 
 func (p *HNSWSIMDPredicate) compareFloat64(val float64) bool {
 	switch p.op {
-	case simd.CompareEq: return val == p.valF64
-	case simd.CompareNeq: return val != p.valF64
-	case simd.CompareGt: return val > p.valF64
-	case simd.CompareGe: return val >= p.valF64
-	case simd.CompareLt: return val < p.valF64
-	case simd.CompareLe: return val <= p.valF64
+	case simd.CompareEq:
+		return val == p.valF64
+	case simd.CompareNeq:
+		return val != p.valF64
+	case simd.CompareGt:
+		return val > p.valF64
+	case simd.CompareGe:
+		return val >= p.valF64
+	case simd.CompareLt:
+		return val < p.valF64
+	case simd.CompareLe:
+		return val <= p.valF64
 	}
 	return true
 }

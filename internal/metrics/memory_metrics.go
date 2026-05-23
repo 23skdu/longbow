@@ -227,4 +227,3 @@ var (
 		[]string{"size", "operation"}, // operation: "get", "put"
 	)
 )
-

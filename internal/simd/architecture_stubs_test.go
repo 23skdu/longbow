@@ -10,7 +10,7 @@ import (
 func TestArchitectureStubs_Coverage(t *testing.T) {
 	// Surface-level calls to reach >90% coverage by hitting the stubs
 	// that are otherwise unused on non-AMD64 systems but still reported by the tool.
-	
+
 	f32 := make([]float32, 16)
 	f64 := make([]float64, 16)
 	i64 := make([]int64, 16)
@@ -24,7 +24,7 @@ func TestArchitectureStubs_Coverage(t *testing.T) {
 	results := make([]float32, 1)
 	batch := [][]float32{f32}
 	f16Batch := [][]float16.Num{f16Arr}
-	
+
 	dst := make([]byte, 16)
 	p := unsafe.Pointer(&f32[0])
 
@@ -40,7 +40,7 @@ func TestArchitectureStubs_Coverage(t *testing.T) {
 	_ = adcBatchAVX2(f32, []byte{0}, 1, results)
 	_ = adcBatchAVX512(f32, []byte{0}, 1, results)
 	_ = adcBatchVNNI(f32, []byte{0}, 1, results)
-	
+
 	_ = euclideanBatchAVX2(f32, batch, results)
 	_ = euclideanBatchAVX512(f32, batch, results)
 	_ = dotBatchAVX2(f32, batch, results)
@@ -57,7 +57,7 @@ func TestArchitectureStubs_Coverage(t *testing.T) {
 	_, _ = cosineAVX512(f32, f32)
 	_, _ = dotAVX2(f32, f32)
 	_, _ = dotAVX512(f32, f32)
-	
+
 	_, _ = euclidean384AVX512(f32, f32)
 	_, _ = euclidean768AVX512(f32, f32)
 	_, _ = euclidean1536AVX512(f32, f32)
@@ -76,13 +76,13 @@ func TestArchitectureStubs_Coverage(t *testing.T) {
 	_, _ = euclideanInt16AVX2(i16, i16)
 	_, _ = l2SquaredAVX2(f32, f32)
 	_, _ = l2SquaredAVX512(f32, f32)
-	
+
 	bytesArr := []byte{0}
 	_ = euclideanSQ8BatchAVX2(bytesArr, [][]byte{bytesArr}, results)
 	_ = euclideanSQ8BatchAVX512(bytesArr, [][]byte{bytesArr}, results)
 	_, _ = dotFloat64AVX2(f64, f64)
 	_, _ = dotFloat64AVX512(f64, f64)
-	
+
 	_, _ = euclidean16AVX512Wrapper(f32, f32)
 	_, _ = cosine16AVX512Wrapper(f32, f32)
 
@@ -93,7 +93,7 @@ func TestArchitectureStubs_Coverage(t *testing.T) {
 	_, _ = dotF16AVX512(f16Arr, f16Arr)
 	_, _ = cosineF16AVX2(f16Arr, f16Arr)
 	_, _ = cosineF16AVX512(f16Arr, f16Arr)
-	
+
 	// Use unused variables to satisfy compiler
 	_ = i32
 	_ = u16
@@ -104,7 +104,7 @@ func TestArchitectureStubs_Coverage(t *testing.T) {
 	andBytesAVX2([]byte{0}, []byte{0})
 	orBytesAVX2([]byte{0}, []byte{0})
 	_ = isAllZerosAVX2([]byte{0})
-	
+
 	_ = euclideanF16BatchAVX2(f16Arr, f16Batch, results)
 	_ = euclideanF16BatchAVX512(f16Arr, f16Batch, results)
 }

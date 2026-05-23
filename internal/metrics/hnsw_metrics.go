@@ -321,7 +321,6 @@ var (
 		[]string{"dataset"},
 	)
 
-
 	// HNSWSearchEarlyTerminationsTotal counts number of searches that terminated early
 	HNSWSearchEarlyTerminationsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{

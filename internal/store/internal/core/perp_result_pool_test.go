@@ -1,10 +1,10 @@
 package core
 
 import (
+	"github.com/23skdu/longbow/internal/store/types"
 	"runtime"
 	"sync"
 	"testing"
-	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // =============================================================================

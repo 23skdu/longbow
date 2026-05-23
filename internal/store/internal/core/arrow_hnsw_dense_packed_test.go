@@ -1,9 +1,9 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"context"
 	"fmt"
+	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"

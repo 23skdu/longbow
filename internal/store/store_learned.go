@@ -77,7 +77,6 @@ func (s *VectorStore) GetActiveEmbedding() (provider, model string) {
 	return s.activeEmbeddingProvider, s.activeEmbeddingModel
 }
 
-
 // SetCDC sets the Change Data Capture instance.
 func (s *VectorStore) SetCDC(cdc *ChangeDataCapture) {
 	s.configMu.Lock()
@@ -94,7 +93,7 @@ func (s *VectorStore) GetCDC() *ChangeDataCapture {
 
 // SwitchIndex performs a live migration of a collection's vector index to a new type.
 // It implements the IndexSwitcher interface used by the adaptive learned index loop.
-// The migration is performed in the background by building a new index from source 
+// The migration is performed in the background by building a new index from source
 // records and then atomically swapping the index pointer in the dataset.
 func (s *VectorStore) SwitchIndex(collection string, to IndexType) error {
 	ds, ok := s.getDataset(collection)

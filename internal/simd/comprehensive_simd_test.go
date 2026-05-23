@@ -285,7 +285,7 @@ func TestSIMDBitops(t *testing.T) {
 	t.Run("Or", func(t *testing.T) {
 		OrBytes(a, b)
 	})
-	
+
 	t.Run("Not", func(t *testing.T) {
 		NotBytes(a)
 	})
@@ -293,7 +293,7 @@ func TestSIMDBitops(t *testing.T) {
 	t.Run("IsAllZeros", func(t *testing.T) {
 		res := IsAllZeros(a)
 		assert.False(t, res)
-		
+
 		zeros := make([]byte, 64)
 		res = IsAllZeros(zeros)
 		assert.True(t, res)
@@ -303,7 +303,7 @@ func TestSIMDBitops(t *testing.T) {
 func TestSIMDCentroidAndMatch(t *testing.T) {
 	rand.Seed(42)
 	dims := 128
-	
+
 	t.Run("FindNearestCentroid", func(t *testing.T) {
 		subDim := dims
 		k := 10
@@ -314,12 +314,12 @@ func TestSIMDCentroidAndMatch(t *testing.T) {
 				flatCentroids[i*subDim+j] = rand.Float32()
 			}
 		}
-		
+
 		idx, dist := FindNearestCentroid(query, flatCentroids, subDim, k) // Only 2 returns
 		assert.GreaterOrEqual(t, idx, 0)
 		assert.GreaterOrEqual(t, dist, float32(0))
 	})
-	
+
 	t.Run("MatchFloat64", func(t *testing.T) {
 		src := []float64{1.1, 2.2, 3.3, 4.4}
 		dst := make([]byte, 4)
@@ -335,7 +335,7 @@ func TestSIMDBatchFlat(t *testing.T) {
 	query := make([]float32, dims)
 	flatVectors := make([]float32, dims*numVecs)
 	results := make([]float32, numVecs)
-	
+
 	t.Run("EuclideanBatchFlat", func(t *testing.T) {
 		// Public API via dispatch or internal generic
 		err := euclideanBatchFlatGeneric(query, flatVectors, numVecs, dims, results)
@@ -349,12 +349,12 @@ func TestComprehensiveEdgeCases(t *testing.T) {
 		b := []float32{1, 2}
 		_, err := EuclideanDistance(a, b)
 		assert.Error(t, err)
-		
+
 		a64 := []float64{1, 2, 3}
 		b64 := []float64{1, 2}
 		_, err = EuclideanDistanceFloat64(a64, b64)
 		assert.Error(t, err)
-		
+
 		a16 := []float16.Num{float16.New(1)}
 		b16 := []float16.Num{float16.New(1), float16.New(2)}
 		_, err = EuclideanDistanceF16(a16, b16)
@@ -367,7 +367,7 @@ func TestComprehensiveEdgeCases(t *testing.T) {
 		res, err := EuclideanDistance(a, b)
 		assert.NoError(t, err)
 		assert.Equal(t, float32(0), res)
-		
+
 		res, err = CosineDistance(a, b)
 		assert.NoError(t, err)
 		assert.Equal(t, float32(1.0), res)
@@ -378,7 +378,7 @@ func TestSIMDArchitectureDispatch(t *testing.T) {
 	// Test the DispatchDistance function directly to exercise all branches
 	a := make([]float32, 128)
 	b := make([]float32, 128)
-	
+
 	metrics := []MetricType{MetricEuclidean, MetricCosine, MetricDotProduct}
 	for _, m := range metrics {
 		t.Run(m.String(), func(t *testing.T) {
@@ -387,7 +387,7 @@ func TestSIMDArchitectureDispatch(t *testing.T) {
 			assert.NotNil(t, res)
 		})
 	}
-	
+
 	t.Run("InvalidMetric", func(t *testing.T) {
 		_, err := DispatchDistance(MetricType(-1), a, b)
 		assert.Error(t, err)
@@ -411,13 +411,13 @@ func TestHighDimensionDispatch(t *testing.T) {
 	dims := 1024
 	a := make([]float32, dims)
 	b := make([]float32, dims)
-	
+
 	t.Run("Euclidean", func(t *testing.T) {
 		res, err := EuclideanDistance(a, b)
 		assert.NoError(t, err)
 		assert.NotNil(t, res)
 	})
-	
+
 	t.Run("Dot", func(t *testing.T) {
 		res, err := DotProduct(a, b)
 		assert.NoError(t, err)

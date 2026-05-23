@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"bytes"
+	"encoding/gob"
 	"github.com/23skdu/longbow/internal/core"
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -15,25 +17,23 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
-	"bytes"
-	"encoding/gob"
 	"os"
 )
 
 // IVFHNSWConfig holds configuration for the IVF-HNSW composite index.
 type IVFHNSWConfig struct {
-	Nlist         int // Number of clusters
-	M             int // Number of PQ subvectors (quantization)
-	K             int // PQ centroids per subspace (default 256)
-	Nprobe        int // Clusters to search
-	
+	Nlist  int // Number of clusters
+	M      int // Number of PQ subvectors (quantization)
+	K      int // PQ centroids per subspace (default 256)
+	Nprobe int // Clusters to search
+
 	// HNSW coarse quantizer settings
-	HNSWM             int
+	HNSWM              int
 	HNSWEfConstruction int
 	HNSWEfSearch       int
-	
-	GPUEnabled    bool
-	GPUConfig     *gputypes.GPUConfig
+
+	GPUEnabled bool
+	GPUConfig  *gputypes.GPUConfig
 }
 
 // IVFHNSWCompositeIndex implements a high-density billion-scale composite index.
@@ -43,10 +43,10 @@ type IVFHNSWCompositeIndex struct {
 	config IVFHNSWConfig
 	dim    int
 
-	coarseHNSW      PluggableVectorIndex // Coarse quantizer
-	opqEncoder      *pq.OPQEncoder
-	clusters        []IVFCluster
-	
+	coarseHNSW PluggableVectorIndex // Coarse quantizer
+	opqEncoder *pq.OPQEncoder
+	clusters   []IVFCluster
+
 	nextID uint32
 	mu     sync.RWMutex
 }
@@ -201,7 +201,7 @@ func (idx *IVFHNSWCompositeIndex) Add(id uint64, vector []float32) error {
 		PQCode:   code,
 	})
 	idx.clusters[clusterID].mu.Unlock()
-	
+
 	if uint32(id) >= idx.nextID { // #nosec G115 -- id is within uint32 range
 		idx.nextID = uint32(id) + 1 // #nosec G115 -- id is within uint32 range
 	}
@@ -296,7 +296,7 @@ func (idx *IVFHNSWCompositeIndex) SearchVectorsWithBitmap(ctx context.Context, q
 	if nprobe <= 0 {
 		nprobe = 1
 	}
-	
+
 	clusterResults, err := idx.coarseHNSW.Search(queryVec, nprobe)
 	if err != nil {
 		return nil, fmt.Errorf("coarse search failed: %w", err)
@@ -312,7 +312,7 @@ func (idx *IVFHNSWCompositeIndex) SearchVectorsWithBitmap(ctx context.Context, q
 	// 3. Scan clusters in parallel if many nprobe
 	var candidates []types.SearchResult
 	var candMu sync.Mutex
-	
+
 	var wg sync.WaitGroup
 	for _, res := range clusterResults {
 		wg.Add(1)
@@ -321,13 +321,13 @@ func (idx *IVFHNSWCompositeIndex) SearchVectorsWithBitmap(ctx context.Context, q
 			cluster := &idx.clusters[cid]
 			cluster.mu.RLock()
 			defer cluster.mu.RUnlock()
-			
+
 			localCands := make([]types.SearchResult, 0, len(cluster.Entries))
 			for _, entry := range cluster.Entries {
 				if filter != nil && !filter.Contains(entry.VectorID) {
 					continue
 				}
-				
+
 				var dist float32
 				for m := 0; m < idx.config.M; m++ {
 					dist += adt[m*idx.config.K+int(entry.PQCode[m])]
@@ -337,7 +337,7 @@ func (idx *IVFHNSWCompositeIndex) SearchVectorsWithBitmap(ctx context.Context, q
 					Distance: dist,
 				})
 			}
-			
+
 			if len(localCands) > 0 {
 				candMu.Lock()
 				candidates = append(candidates, localCands...)
@@ -371,6 +371,7 @@ func (idx *IVFHNSWCompositeIndex) SearchVectors(query []float32, k int, options 
 	results, _ := idx.SearchVectorsWithBitmap(context.Background(), query, k, nil, nil)
 	return results
 }
+
 // Size returns the total number of vectors in the index.
 func (idx *IVFHNSWCompositeIndex) Size() int { return int(idx.nextID) }
 
@@ -397,10 +398,13 @@ func (idx *IVFHNSWCompositeIndex) GetDimension() uint32 { return uint32(idx.dim)
 func (idx *IVFHNSWCompositeIndex) SetParallelSearchConfig(c types.ParallelSearchConfig) {}
 
 // GetParallelSearchConfig returns an empty parallel search configuration.
-func (idx *IVFHNSWCompositeIndex) GetParallelSearchConfig() types.ParallelSearchConfig { return types.ParallelSearchConfig{} }
+func (idx *IVFHNSWCompositeIndex) GetParallelSearchConfig() types.ParallelSearchConfig {
+	return types.ParallelSearchConfig{}
+}
 
 // IsSharded returns false as the composite index is a local-only implementation.
 func (idx *IVFHNSWCompositeIndex) IsSharded() bool { return false }
+
 // ivfHNSWCompositeState is used for serialization
 type ivfHNSWCompositeState struct {
 	Config     IVFHNSWConfig
@@ -527,14 +531,14 @@ func (idx *IVFHNSWCompositeIndex) ApplyDelta(d *types.DeltaSync) error {
 		// DeltaSync locations are core.Location which usually contain batchIdx/rowIdx
 		// But in our IVFHNSW implementation, we use uint64 IDs.
 		// If the delta doesn't provide vectors directly, we must fetch them.
-		
+
 		// This is a simplified version assuming the dataset provides GetVectorByLocation
 		vec, err := idx.fetchVector(loc)
 		if err != nil {
 			continue // Skip or log
 		}
 
-		// Use the StartIndex or similar to assign IDs if needed, 
+		// Use the StartIndex or similar to assign IDs if needed,
 		// but typically IDs are derived from locations or provided in delta.
 		// For now, we'll use nextID and increment.
 		if err := idx.Add(uint64(idx.nextID), vec); err != nil {

@@ -25,7 +25,7 @@ func PackLocation(loc Location) uint64 {
 func UnpackLocation(val uint64) Location {
 	return Location{
 		BatchIdx: int(int32(val>>32)) - 1, // #nosec G115
-		RowIdx:   int(int32(val)), // #nosec G115
+		RowIdx:   int(int32(val)),         // #nosec G115
 	}
 }
 

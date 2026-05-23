@@ -1,8 +1,8 @@
 package store
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"encoding/gob"
 	"fmt"
 	"io"
@@ -25,8 +25,8 @@ import (
 
 // HNSWPluggableAdapter wraps HNSWIndex to implement PluggableVectorIndex
 type HNSWPluggableAdapter struct {
-	mu        sync.RWMutex
-	dimension int
+	mu           sync.RWMutex
+	dimension    int
 	vectors      map[uint64][]float32
 	locationToID map[uint64]uint64
 	hnsw         VectorIndex // actual HNSW index, nil until dataset provided
@@ -153,7 +153,7 @@ func (h *HNSWPluggableAdapter) Build() error {
 func (h *HNSWPluggableAdapter) Save(path string) error {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	
+
 	f, err := os.Create(path) // #nosec G304 -- path is internal, not user-controlled
 	if err != nil {
 		return err
@@ -244,7 +244,7 @@ func (h *HNSWPluggableAdapter) AddByRecord(ctx context.Context, rec arrow.Record
 	// Use packed location as a temporary ID if no ID column is available,
 	// or use a sequence if needed. In this adapter, we just need a unique ID.
 	id := uint64(lbtypes.PackLocation(lbtypes.Location{BatchIdx: batchIdx, RowIdx: rowIdx}))
-	
+
 	h.mu.Lock()
 	h.vectors[id] = vec
 	if h.locationToID == nil {
@@ -273,7 +273,7 @@ func (h *HNSWPluggableAdapter) EstimateMemory() int64 {
 	// map[uint64][]float32: ~48 bytes overhead per entry (bucket + pointer)
 	// []float32: 24 bytes header + dimension * 4 bytes
 	vecMem := int64(numVectors) * (48 + 24 + int64(h.dimension)*4)
-	
+
 	// locationToID map[uint64]uint64: ~32 bytes overhead per entry
 	locMem := int64(len(h.locationToID)) * (32 + 8 + 8)
 
@@ -287,7 +287,7 @@ func (h *HNSWPluggableAdapter) GetVectorID(loc Location) (uint64, bool) {
 	if h.locationToID == nil {
 		return 0, false
 	}
-	
+
 	packed := lbtypes.PackLocation(loc)
 	id, ok := h.locationToID[packed]
 	return id, ok
@@ -336,6 +336,7 @@ func (h *HNSWPluggableAdapter) Len() int {
 func (h *HNSWPluggableAdapter) GetIndexType() string {
 	return string(h.Type())
 }
+
 // PluggableInternalAdapter wraps a PluggableVectorIndex to implement the internal VectorIndexer interface.
 // This allows the adaptive learned index to perform live swaps into the dataset search path.
 // PluggableInternalAdapter wraps a PluggableVectorIndex to implement the internal VectorIndexer interface.
@@ -353,12 +354,15 @@ func NewPluggableInternalAdapter(inner PluggableVectorIndex, provider lbtypes.In
 
 // Type returns the index type.
 func (a *PluggableInternalAdapter) Type() IndexType { return a.inner.Type() }
+
 // Size returns the number of vectors in the index.
-func (a *PluggableInternalAdapter) Size() int       { return a.inner.Size() }
+func (a *PluggableInternalAdapter) Size() int { return a.inner.Size() }
+
 // Len returns the number of vectors in the index.
-func (a *PluggableInternalAdapter) Len() int        { return a.inner.Size() }
+func (a *PluggableInternalAdapter) Len() int { return a.inner.Size() }
+
 // Close releases resources associated with the index.
-func (a *PluggableInternalAdapter) Close() error    { return a.inner.Close() }
+func (a *PluggableInternalAdapter) Close() error { return a.inner.Close() }
 
 // GetIndexType returns the index type as a string.
 func (a *PluggableInternalAdapter) GetIndexType() string {
@@ -513,12 +517,16 @@ func (a *PluggableInternalAdapter) SearchVectorsWithBitmap(ctx context.Context, 
 func (a *PluggableInternalAdapter) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []core.Filter, options any) ([]lbtypes.SearchResult, error) {
 	return nil, nil
 }
+
 // IsSharded returns whether the index is sharded.
-func (a *PluggableInternalAdapter) IsSharded() bool                       { return false }
+func (a *PluggableInternalAdapter) IsSharded() bool { return false }
+
 // GetEntryPoint returns the entry point for the index.
-func (a *PluggableInternalAdapter) GetEntryPoint() uint32                  { return 0 }
+func (a *PluggableInternalAdapter) GetEntryPoint() uint32 { return 0 }
+
 // GetLocation retrieves the location of a vector.
-func (a *PluggableInternalAdapter) GetLocation(id uint32) (any, bool)      { return nil, false }
+func (a *PluggableInternalAdapter) GetLocation(id uint32) (any, bool) { return nil, false }
+
 // GetVectorID retrieves the vector ID for a given location.
 func (a *PluggableInternalAdapter) GetVectorID(loc any) (uint32, bool) {
 	l, ok := loc.(Location)
@@ -531,20 +539,26 @@ func (a *PluggableInternalAdapter) GetVectorID(loc any) (uint32, bool) {
 	}
 	return uint32(id), ok
 }
+
 // GetDimension returns the vector dimension.
-func (a *PluggableInternalAdapter) GetDimension() uint32                  { return uint32(a.inner.Dimension()) } // #nosec G115
+func (a *PluggableInternalAdapter) GetDimension() uint32 { return uint32(a.inner.Dimension()) } // #nosec G115
 // SetIndexedColumns sets the columns to be indexed.
-func (a *PluggableInternalAdapter) SetIndexedColumns(cols []string)        {}
+func (a *PluggableInternalAdapter) SetIndexedColumns(cols []string) {}
+
 // GetRawNeighbors retrieves the raw neighbor IDs for a vector.
 func (a *PluggableInternalAdapter) GetRawNeighbors(id uint32) ([]uint32, error) { return nil, nil }
+
 // GetNeighbors retrieves the nearest neighbors for a vector.
 func (a *PluggableInternalAdapter) GetNeighbors(ctx context.Context, id uint32, k int) ([]lbtypes.SearchResult, error) {
 	return a.inner.GetNeighbors(ctx, lbtypes.VectorID(id), k)
 }
+
 // PreWarm prepares the index for search.
-func (a *PluggableInternalAdapter) PreWarm(targetSize int)              {}
+func (a *PluggableInternalAdapter) PreWarm(targetSize int) {}
+
 // Warmup warms up the index.
-func (a *PluggableInternalAdapter) Warmup() int                         { return 0 }
+func (a *PluggableInternalAdapter) Warmup() int { return 0 }
+
 // EstimateMemory estimates the memory usage of the index.
 func (a *PluggableInternalAdapter) EstimateMemory() int64 {
 	if em, ok := a.inner.(interface{ EstimateMemory() int64 }); ok {
@@ -552,34 +566,46 @@ func (a *PluggableInternalAdapter) EstimateMemory() int64 {
 	}
 	return 0
 }
+
 // TrainPQ trains the product quantizer for the index.
-func (a *PluggableInternalAdapter) TrainPQ(vectors [][]float32) error   { return nil }
+func (a *PluggableInternalAdapter) TrainPQ(vectors [][]float32) error { return nil }
+
 // GetPQEncoder returns the product quantizer encoder.
-func (a *PluggableInternalAdapter) GetPQEncoder() *pq.PQEncoder         { return nil }
+func (a *PluggableInternalAdapter) GetPQEncoder() *pq.PQEncoder { return nil }
+
 // DeleteBatch deletes multiple vectors from the index.
 func (a *PluggableInternalAdapter) DeleteBatch(ctx context.Context, ids []uint32) error {
 	return nil
 }
+
 // ExportState exports the internal state of the index.
-func (a *PluggableInternalAdapter) ExportState() ([]byte, error)          { return nil, nil }
+func (a *PluggableInternalAdapter) ExportState() ([]byte, error) { return nil, nil }
+
 // ImportState imports the internal state of the index.
-func (a *PluggableInternalAdapter) ImportState(data []byte) error         { return nil }
+func (a *PluggableInternalAdapter) ImportState(data []byte) error { return nil }
+
 // ExportGraph exports the graph structure of the index.
-func (a *PluggableInternalAdapter) ExportGraph(w io.Writer) error         { return nil }
+func (a *PluggableInternalAdapter) ExportGraph(w io.Writer) error { return nil }
+
 // ImportGraph imports the graph structure of the index.
-func (a *PluggableInternalAdapter) ImportGraph(r io.Reader) error         { return nil }
+func (a *PluggableInternalAdapter) ImportGraph(r io.Reader) error { return nil }
+
 // ExportDelta exports the delta since the given version.
 func (a *PluggableInternalAdapter) ExportDelta(v uint64) (*lbtypes.DeltaSync, error) {
 	return nil, nil
 }
+
 // ApplyDelta applies the given delta sync to the index.
 func (a *PluggableInternalAdapter) ApplyDelta(d *lbtypes.DeltaSync) error { return nil }
+
 // SetParallelSearchConfig sets the configuration for parallel search.
 func (a *PluggableInternalAdapter) SetParallelSearchConfig(c lbtypes.ParallelSearchConfig) {}
+
 // GetParallelSearchConfig returns the configuration for parallel search.
 func (a *PluggableInternalAdapter) GetParallelSearchConfig() lbtypes.ParallelSearchConfig {
 	return lbtypes.ParallelSearchConfig{}
 }
+
 // RemapLocations remaps vector locations.
 func (a *PluggableInternalAdapter) RemapLocations(ctx context.Context, m map[uint32]any) error {
 	return nil

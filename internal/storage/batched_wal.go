@@ -388,7 +388,7 @@ func (w *WALBatcher) flush() {
 	var repErr error
 	var wg sync.WaitGroup
 	startRep := time.Now()
-	
+
 	if w.replicator != nil {
 		wg.Add(1)
 		go func() {

@@ -1,8 +1,8 @@
 package core_test
 
 import (
-	"github.com/23skdu/longbow/internal/store/internal/core"
 	"context"
+	"github.com/23skdu/longbow/internal/store/internal/core"
 	"testing"
 
 	"github.com/apache/arrow-go/v18/arrow"

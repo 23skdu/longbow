@@ -289,74 +289,109 @@ func matMulNEON(a, b []float32, m, n, k int, dst []float32) {
 }
 
 // Internal assembly kernels (must have Go declarations to satisfy go vet)
+//
 //go:noescape
 func expNEONKernel(src, dst unsafe.Pointer, n int)
+
 //go:noescape
 func logNEONKernel(src, dst unsafe.Pointer, n int)
+
 //go:noescape
 func softmaxNEONKernel(src, dst unsafe.Pointer, n int)
+
 //go:noescape
 func sigmoidNEONKernel(src, dst unsafe.Pointer, n int)
+
 //go:noescape
 func sumNEONKernel(src unsafe.Pointer, n int) float32
+
 //go:noescape
 func maxNEONKernel(src unsafe.Pointer, n int) float32
+
 //go:noescape
 func minNEONKernel(src unsafe.Pointer, n int) float32
+
 //go:noescape
 func euclideanNEONKernel(a, b []float32) float32
+
 //go:noescape
 func euclideanHighDimNEONKernel(a, b []float32) float32
+
 //go:noescape
 func dotNEONKernel(a, b []float32) float32
+
 //go:noescape
 func dotHighDimNEONKernel(a, b []float32) float32
+
 //go:noescape
 func cosineNEONKernel(a, b []float32) float32
+
 //go:noescape
 func cosineHighDimNEONKernel(a, b []float32) float32
+
 //go:noescape
 func l2SquaredNEONKernel(a, b []float32) float32
+
 //go:noescape
 func dotF16NEONKernel(a, b []float16.Num) float32
+
 //go:noescape
 func randomSignFlipNEONKernel(a []float32, seed int64)
+
 //go:noescape
 func fastWalshHadamardTransform32NEONKernel(a []float32)
+
 //go:noescape
 func dot128NEONKernel(a, b []float32) float32
+
 //go:noescape
 func dot384NEONKernel(a, b []float32) float32
+
 //go:noescape
 func dot768NEONKernel(a, b []float32) float32
+
 //go:noescape
 func dot1024NEONKernel(a, b []float32) float32
+
 //go:noescape
 func dot1536NEONKernel(a, b []float32) float32
+
 //go:noescape
 func dot3072NEONKernel(a, b []float32) float32
+
 //go:noescape
 func l2Squared128NEONKernel(a, b []float32) float32
+
 //go:noescape
 func l2Squared384NEONKernel(a, b []float32) float32
+
 //go:noescape
 func l2Squared768NEONKernel(a, b []float32) float32
+
 //go:noescape
 func l2Squared1024NEONKernel(a, b []float32) float32
+
 //go:noescape
 func l2Squared1536NEONKernel(a, b []float32) float32
+
 //go:noescape
 func l2Squared3072NEONKernel(a, b []float32) float32
+
 //go:noescape
 func euclideanF16NEONKernel(a, b []float16.Num) float32
+
 //go:noescape
 func cosineF16NEONKernel(a, b []float16.Num) float32
+
 //go:noescape
 func vectorButterflyNEONKernel(a, b []float32)
+
 //go:noescape
 func vectorButterfly16NEONKernel(a, b []float32)
+
 //go:noescape
 func dotInt4NeonKernel(a, b unsafe.Pointer, n int) int32
+
 //go:noescape
 func dotInt2NeonKernel(a, b unsafe.Pointer, n int) int32
 

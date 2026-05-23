@@ -29,7 +29,6 @@ const (
 	DefaultIdleConnTimeout = 90 * time.Second
 )
 
-
 // S3BackendConfig holds configuration for the S3 backend
 type S3BackendConfig struct {
 	Endpoint        string // S3-compatible endpoint URL (e.g., "http://localhost:9000" for MinIO)

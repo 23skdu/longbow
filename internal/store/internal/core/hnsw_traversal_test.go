@@ -1,9 +1,9 @@
 package core_test
 
 import (
+	"context"
 	"github.com/23skdu/longbow/internal/store/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
-	"context"
 	"testing"
 
 	basecore "github.com/23skdu/longbow/internal/core"

@@ -103,15 +103,15 @@ func (c *tqComputer) Prefetch(id uint32) {
 }
 
 type float32Computer struct {
-	squared bool
-	data *types.GraphData
-	q    []float32
-	dims int
-	h    *ArrowHNSW
-	qF64  []float64
-	qF16  []float16.Num
-	qC64  []complex64
-	qC128 []complex128
+	squared   bool
+	data      *types.GraphData
+	q         []float32
+	dims      int
+	h         *ArrowHNSW
+	qF64      []float64
+	qF16      []float16.Num
+	qC64      []complex64
+	qC128     []complex128
 	diskGraph *DiskGraph
 	maxGen    uint64
 }
@@ -200,7 +200,9 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 			q64 = c.qF64
 		} else {
 			q64 = make([]float64, len(c.q))
-			for i, val := range c.q { q64[i] = float64(val) }
+			for i, val := range c.q {
+				q64[i] = float64(val)
+			}
 		}
 		return c.h.distFuncF64(q64, v)
 	}
@@ -251,7 +253,7 @@ func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 		return math.MaxFloat32, nil
 	}
-	
+
 	cOff := int(id) % types.ChunkSize
 	pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat32)
 	start := cOff * pd
@@ -293,7 +295,7 @@ func (c *float32ToFloat32Computer) Prefetch(id uint32) {
 }
 
 type int8Computer struct {
-	squared bool
+	squared   bool
 	data      *types.GraphData
 	q         []uint8
 	qInt8     []int8
@@ -433,8 +435,6 @@ func euclideanDistanceInt32(a, b []int32) float32 {
 	return float32(math.Sqrt(sum))
 }
 
-
-
 func euclideanDistanceInt64(a, b []int64) float32 {
 	if len(a) != len(b) || len(a) == 0 {
 		return math.MaxFloat32
@@ -521,11 +521,13 @@ func (c *sharedFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 func (c *sharedFloat32Computer) Prefetch(id uint32) {
 	// Optimized hot-path: bypass Get() abstraction
 	chunks := c.h.locationStore.loadChunks()
-	if chunks == nil { return }
+	if chunks == nil {
+		return
+	}
 	idx := int(id)
 	cIdx := idx / 1024
 	if cIdx < len(chunks) {
-		packed := chunks[cIdx].data[idx % 1024].Load()
+		packed := chunks[cIdx].data[idx%1024].Load()
 		if packed != 0 {
 			// Fast unpack (batchIdx is high 32 bits, rowIdx is low 32 bits)
 			bIdx := int(packed >> 32)
@@ -582,11 +584,13 @@ func (c *sharedInt8Computer) ComputeSingle(id uint32) (float32, error) {
 func (c *sharedInt8Computer) Prefetch(id uint32) {
 	// Optimized hot-path: bypass Get() abstraction
 	chunks := c.h.locationStore.loadChunks()
-	if chunks == nil { return }
+	if chunks == nil {
+		return
+	}
 	idx := int(id)
 	cIdx := idx / 1024
 	if cIdx < len(chunks) {
-		packed := chunks[cIdx].data[idx % 1024].Load()
+		packed := chunks[cIdx].data[idx%1024].Load()
 		if packed != 0 {
 			// Fast unpack
 			bIdx := int(packed >> 32)

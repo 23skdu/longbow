@@ -262,28 +262,28 @@ func (fqr *FederatedQueryRouter) mergeResultsRRF(partials []partialResult, k int
 	if len(partials) == 0 {
 		return nil
 	}
- 
+
 	type scoredResult struct {
 		id         lbtypes.VectorID
 		score      float32
 		collection string
 		distance   float32
 	}
- 
+
 	// Estimate unique results to minimize reallocations
 	totalPotential := 0
 	for _, p := range partials {
 		totalPotential += len(p.results)
 	}
- 
+
 	scoreMap := make(map[lbtypes.VectorID]*scoredResult, totalPotential/2)
 	rrfConstant := float32(fqr.defaultRRF)
- 
+
 	for _, p := range partials {
 		for i, r := range p.results {
 			rank := i + 1
 			rrfScore := 1.0 / (rrfConstant * float32(rank))
-			
+
 			if existing, ok := scoreMap[r.ID]; ok {
 				existing.score += rrfScore
 			} else {
@@ -296,21 +296,21 @@ func (fqr *FederatedQueryRouter) mergeResultsRRF(partials []partialResult, k int
 			}
 		}
 	}
- 
+
 	uniqueScored := make([]*scoredResult, 0, len(scoreMap))
 	for _, s := range scoreMap {
 		uniqueScored = append(uniqueScored, s)
 	}
- 
+
 	sort.Slice(uniqueScored, func(i, j int) bool {
 		return uniqueScored[i].score > uniqueScored[j].score
 	})
- 
+
 	limit := k
 	if limit > len(uniqueScored) {
 		limit = len(uniqueScored)
 	}
- 
+
 	results := make([]lbtypes.SearchResult, limit)
 	for i := 0; i < limit; i++ {
 		s := uniqueScored[i]
@@ -324,7 +324,7 @@ func (fqr *FederatedQueryRouter) mergeResultsRRF(partials []partialResult, k int
 			Metadata: metaBytes,
 		}
 	}
- 
+
 	return results
 }
 

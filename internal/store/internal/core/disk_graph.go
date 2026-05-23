@@ -13,7 +13,7 @@ import (
 )
 
 // DiskGraphMagic is the magic number identifying a DiskGraph file.
-const DiskGraphMagic   = 0x484E5357 // "HNSW"
+const DiskGraphMagic = 0x484E5357 // "HNSW"
 // DiskGraphVersion is the current version of the DiskGraph file format.
 const DiskGraphVersion = 5
 
@@ -284,7 +284,7 @@ func (dg *DiskGraph) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint
 		if n <= 0 {
 			return nil
 		}
-		count = uint32(c) // #nosec G115
+		count = uint32(c)           // #nosec G115
 		start = int(dataOffset) + n // #nosec G115
 
 		// Decode Deltas
@@ -411,7 +411,7 @@ func (dg *DiskGraph) GetVectorTQ(nodeID uint32) []byte {
 	stride := 4 + angleBytes + bitBytes
 
 	start := dg.header.TQOffset + uint64(nodeID)*uint64(stride) // #nosec G115
-	end := start + uint64(stride) // #nosec G115
+	end := start + uint64(stride)                               // #nosec G115
 	if end > uint64(len(dg.data)) {
 		return nil
 	}
@@ -436,7 +436,7 @@ func (dg *DiskGraph) GetVectorBQ(nodeID uint32) []uint64 {
 		return nil
 	}
 
-	ptr := unsafe.Pointer(&dg.data[start]) // #nosec G103
+	ptr := unsafe.Pointer(&dg.data[start])        // #nosec G103
 	return unsafe.Slice((*uint64)(ptr), numWords) // #nosec G103
 }
 

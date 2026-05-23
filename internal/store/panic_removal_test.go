@@ -172,4 +172,3 @@ func TestBatchDistanceCompute_MixedDimensions(t *testing.T) {
 		assert.InDelta(t, 0.0, d, 0.001, "distance %d should be near zero for identical vectors", i)
 	}
 }
-

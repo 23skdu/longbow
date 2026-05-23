@@ -548,11 +548,17 @@ func (s *MetaServer) handleGetIndexRecommendation(action *flight.Action, stream 
 			i++
 			for i < len(action.Body) {
 				i = query.SkipWhitespace(action.Body, i)
-				if i >= len(action.Body) || action.Body[i] == '}' { break }
+				if i >= len(action.Body) || action.Body[i] == '}' {
+					break
+				}
 				key, newPos, err := query.ParseString(action.Body, i)
-				if err != nil { break }
+				if err != nil {
+					break
+				}
 				i = query.SkipWhitespace(action.Body, newPos)
-				if i < len(action.Body) && action.Body[i] == ':' { i++ }
+				if i < len(action.Body) && action.Body[i] == ':' {
+					i++
+				}
 				i = query.SkipWhitespace(action.Body, i)
 				switch key {
 				case "vector_dimension":
@@ -595,7 +601,9 @@ func (s *MetaServer) handleGetIndexRecommendation(action *flight.Action, stream 
 					i, _ = query.SkipValue(action.Body, i)
 				}
 				i = query.SkipWhitespace(action.Body, i)
-				if i < len(action.Body) && action.Body[i] == ',' { i++ }
+				if i < len(action.Body) && action.Body[i] == ',' {
+					i++
+				}
 			}
 		}
 	}
@@ -652,7 +660,7 @@ func (s *MetaServer) handleTemporalSearch(action *flight.Action, stream flight.F
 	if ds.TemporalIndex == nil {
 		return status.Error(codes.FailedPrecondition, "temporal index not initialized for dataset")
 	}
- 
+
 	var results []SearchResult
 	var err error
 
@@ -714,11 +722,17 @@ func (s *MetaServer) handleTemporalRangeSearch(action *flight.Action, stream fli
 			i++
 			for i < len(action.Body) {
 				i = query.SkipWhitespace(action.Body, i)
-				if i >= len(action.Body) || action.Body[i] == '}' { break }
+				if i >= len(action.Body) || action.Body[i] == '}' {
+					break
+				}
 				key, newPos, err := query.ParseString(action.Body, i)
-				if err != nil { break }
+				if err != nil {
+					break
+				}
 				i = query.SkipWhitespace(action.Body, newPos)
-				if i < len(action.Body) && action.Body[i] == ':' { i++ }
+				if i < len(action.Body) && action.Body[i] == ':' {
+					i++
+				}
 				i = query.SkipWhitespace(action.Body, i)
 				switch key {
 				case "dataset":
@@ -737,11 +751,13 @@ func (s *MetaServer) handleTemporalRangeSearch(action *flight.Action, stream fli
 					i, _ = query.SkipValue(action.Body, i)
 				}
 				i = query.SkipWhitespace(action.Body, i)
-				if i < len(action.Body) && action.Body[i] == ',' { i++ }
+				if i < len(action.Body) && action.Body[i] == ',' {
+					i++
+				}
 			}
 		}
 	}
- 
+
 	ds, ok := s.getDataset(req.Dataset)
 	if !ok {
 		return status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
@@ -749,7 +765,7 @@ func (s *MetaServer) handleTemporalRangeSearch(action *flight.Action, stream fli
 	if ds.TemporalIndex == nil {
 		return status.Error(codes.FailedPrecondition, "temporal index not initialized for dataset")
 	}
- 
+
 	vectors := ds.TemporalIndex.GetVectorsInRange(req.StartTime, req.EndTime)
 
 	data, err := json.Marshal(map[string]interface{}{
@@ -775,11 +791,17 @@ func (s *MetaServer) handleTemporalVersionHistory(action *flight.Action, stream 
 			i++
 			for i < len(action.Body) {
 				i = query.SkipWhitespace(action.Body, i)
-				if i >= len(action.Body) || action.Body[i] == '}' { break }
+				if i >= len(action.Body) || action.Body[i] == '}' {
+					break
+				}
 				key, newPos, err := query.ParseString(action.Body, i)
-				if err != nil { break }
+				if err != nil {
+					break
+				}
 				i = query.SkipWhitespace(action.Body, newPos)
-				if i < len(action.Body) && action.Body[i] == ':' { i++ }
+				if i < len(action.Body) && action.Body[i] == ':' {
+					i++
+				}
 				i = query.SkipWhitespace(action.Body, i)
 				switch key {
 				case "dataset":
@@ -794,7 +816,9 @@ func (s *MetaServer) handleTemporalVersionHistory(action *flight.Action, stream 
 					i, _ = query.SkipValue(action.Body, i)
 				}
 				i = query.SkipWhitespace(action.Body, i)
-				if i < len(action.Body) && action.Body[i] == ',' { i++ }
+				if i < len(action.Body) && action.Body[i] == ',' {
+					i++
+				}
 			}
 		}
 	}
@@ -806,7 +830,7 @@ func (s *MetaServer) handleTemporalVersionHistory(action *flight.Action, stream 
 	if ds.TemporalIndex == nil {
 		return status.Error(codes.FailedPrecondition, "temporal index not initialized for dataset")
 	}
- 
+
 	history := ds.TemporalIndex.GetHistory(req.VectorID)
 
 	data, err := json.Marshal(map[string]interface{}{
@@ -847,7 +871,6 @@ func (s *MetaServer) handleTemporalAggregation(action *flight.Action, stream fli
 	if ds.TemporalIndex == nil {
 		return status.Error(codes.FailedPrecondition, "temporal index not initialized for dataset")
 	}
-
 
 	aggReq := TemporalAggRequest{
 		AggType:     TemporalAggType(req.AggregationType),

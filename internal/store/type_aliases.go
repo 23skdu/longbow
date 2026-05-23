@@ -39,9 +39,9 @@ type Candidate = types.Candidate
 
 const (
 	// MaxNeighbors is the maximum number of neighbors allowed for a node in the HNSW graph.
-	MaxNeighbors   = types.MaxNeighbors
+	MaxNeighbors = types.MaxNeighbors
 	// ChunkSize is the number of elements processed in a single chunk.
-	ChunkSize      = types.ChunkSize
+	ChunkSize = types.ChunkSize
 	// ArrowMaxLayers is the maximum number of layers in the Arrow HNSW index.
 	ArrowMaxLayers = types.ArrowMaxLayers
 )
@@ -60,14 +60,19 @@ type ArrowHNSWConfig = types.ArrowHNSWConfig
 
 // ArrowBitset provides a fast bitset implementation for visited nodes.
 type ArrowBitset = types.ArrowBitset
+
 // LockFreeRingBuffer is a high-performance concurrent ring buffer.
 type LockFreeRingBuffer[T any] = hnswcore.LockFreeRingBuffer[T]
+
 // PackedAdjacency stores graph neighbors in a compact, cache-friendly format.
 type PackedAdjacency = hnswcore.PackedAdjacency
+
 // SearchArena provides pre-allocated memory for search operations to reduce heap churn.
 type SearchArena = hnswcore.SearchArena
+
 // ChunkedLocationStore manages vector location mappings in memory-efficient chunks.
 type ChunkedLocationStore = hnswcore.ChunkedLocationStore
+
 // BQEncoder implements Binary Quantization.
 type BQEncoder = types.BQEncoder
 
@@ -103,7 +108,7 @@ type ArrowSearchContextPool = hnswcore.ArrowSearchContextPool
 
 const (
 	// DiskGraphMagic is a magic number used to identify DiskGraph files.
-	DiskGraphMagic   = hnswcore.DiskGraphMagic
+	DiskGraphMagic = hnswcore.DiskGraphMagic
 	// DiskGraphVersion is the current version of the DiskGraph file format.
 	DiskGraphVersion = hnswcore.DiskGraphVersion
 )
@@ -121,59 +126,84 @@ var NewNotFoundError = core.NewNotFoundError
 
 // NewArrowHNSW creates a new instance of the ArrowHNSW index.
 var NewArrowHNSW = hnswcore.NewArrowHNSW
+
 // NewArrowHNSWWithConfig creates a new HNSW index instance with a custom configuration.
 var NewArrowHNSWWithConfig = hnswcore.NewArrowHNSWWithConfig
+
 // DefaultArrowHNSWConfig returns the default configuration for HNSW indices.
 var DefaultArrowHNSWConfig = types.DefaultArrowHNSWConfig
+
 // NewPackedAdjacency creates a new packed adjacency list for graph storage.
 var NewPackedAdjacency = hnswcore.NewPackedAdjacency
+
 // NewArrowBitset creates a new bitset for tracking visited nodes during search.
 var NewArrowBitset = types.NewArrowBitset
+
 // NewChunkedLocationStore creates a new store for tracking vector locations.
 var NewChunkedLocationStore = hnswcore.NewChunkedLocationStore
+
 // DefaultIndexJobQueueConfig returns the default configuration for the background indexing queue.
 var DefaultIndexJobQueueConfig = types.DefaultIndexJobQueueConfig
+
 // NewIndexJobQueueLockFree creates a new lock-free queue for background indexing jobs.
 var NewIndexJobQueueLockFree = hnswcore.NewIndexJobQueueLockFree
+
 // NewLevelGenerator creates a new generator for HNSW node levels.
 var NewLevelGenerator = hnswcore.NewLevelGenerator
+
 // ExtractVectorFromArrow extracts a vector from an Arrow record batch.
 var ExtractVectorFromArrow = hnswcore.ExtractVectorFromArrow
+
 // InferVectorDataType infers the vector data type from an Arrow field.
 var InferVectorDataType = hnswcore.InferVectorDataType
+
 // GetArena returns a search arena from the global pool.
 var GetArena = hnswcore.GetArena
+
 // PutArena returns a search arena to the global pool.
 var PutArena = hnswcore.PutArena
+
 // GenerateTestVectors generates a set of random vectors for testing.
 var GenerateTestVectors = hnswcore.GenerateTestVectors
+
 // MakeBatchTestRecord creates an Arrow record batch for testing.
 var MakeBatchTestRecord = hnswcore.MakeBatchTestRecord
+
 // NewTestHNSWIndex creates a small HNSW index for unit testing.
 var NewTestHNSWIndex = hnswcore.NewTestHNSWIndex
+
 // NewArrowSearchContext creates a new search context.
 var NewArrowSearchContext = hnswcore.NewArrowSearchContext
+
 // NewArrowSearchContextPool creates a new pool for search contexts.
 var NewArrowSearchContextPool = hnswcore.NewArrowSearchContextPool
+
 // ExtractVectorAny extracts a vector as an interface{} from an Arrow record batch.
 var ExtractVectorAny = hnswcore.ExtractVectorAny
+
 // ExtractVectorF16FromArrow extracts a float16 vector from an Arrow record batch.
 var ExtractVectorF16FromArrow = hnswcore.ExtractVectorF16FromArrow
+
 // ExtractVectorGeneric extracts a vector of a generic type from an Arrow record batch.
 func ExtractVectorGeneric[T any](rec arrow.RecordBatch, rowIdx, colIdx int) ([]T, error) {
 	return hnswcore.ExtractVectorGeneric[T](rec, rowIdx, colIdx)
 }
+
 // LookupNeighbors retrieves the neighbors of a node from the graph.
 var LookupNeighbors = hnswcore.LookupNeighbors
+
 // ErrVectorNotFound is returned when a requested vector is not found in the index.
 var ErrVectorNotFound = hnswcore.ErrVectorNotFound
+
 // ErrGetNeighborsNotSupported is returned when the index doesn't support neighbor retrieval.
 var ErrGetNeighborsNotSupported = hnswcore.ErrGetNeighborsNotSupported
 
 // TemporalSearchRequest defines the parameters for a temporal search operation.
 type TemporalSearchRequest = core.TemporalSearchRequest
+
 // TemporalAggregationRequest defines a request for aggregating data over a time window.
 type TemporalAggregationRequest = core.TemporalAggregationRequest
+
 // TemporalVersionHistoryRequest defines a request for retrieving the version history of a vector.
 type TemporalVersionHistoryRequest = core.TemporalVersionHistoryRequest
 
@@ -188,4 +218,3 @@ type LockFreeNeighborCache = hnswcore.LockFreeNeighborCache
 
 // NewLockFreeNeighborCache creates a new neighbor cache.
 var NewLockFreeNeighborCache = hnswcore.NewLockFreeNeighborCache
-

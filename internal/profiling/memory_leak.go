@@ -152,7 +152,7 @@ func (mld *MemoryLeakDetector) checkForLeaks() {
 		return
 	}
 
-	growthBytes := int64(snapshot.HeapAlloc) - int64(baseline.HeapAlloc) // #nosec G115
+	growthBytes := int64(snapshot.HeapAlloc) - int64(baseline.HeapAlloc)       // #nosec G115
 	growthObjects := int64(snapshot.HeapObjects) - int64(baseline.HeapObjects) // #nosec G115
 
 	mld.logger.Debug().

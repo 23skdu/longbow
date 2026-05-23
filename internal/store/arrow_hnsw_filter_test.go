@@ -1,8 +1,8 @@
 package store
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"context"
+	"github.com/23skdu/longbow/internal/store/types"
 	"os"
 	"testing"
 	"time"
@@ -174,7 +174,7 @@ func TestArrowHNSW_SIMDPredicate(t *testing.T) {
 
 	// Test with explicit Predicate in SearchOptions
 	qVec := make([]float32, dim)
-	
+
 	// Create a SIMD predicate manually for testing the low-level path
 	// (Normally this is extracted from FilterExpr by store_query.go)
 	filterExpr := &types.GtExpr{Field: "timestamp", Value: int64(150)}

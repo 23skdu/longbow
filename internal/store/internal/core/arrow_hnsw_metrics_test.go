@@ -1,8 +1,8 @@
 package core
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"context"
+	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
 
 	basecore "github.com/23skdu/longbow/internal/core"
@@ -118,7 +118,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		config := types.DefaultArrowHNSWConfig()
 		config.SearchLayerSampleRate = 1.0 // 100% sampling
 		idx := NewArrowHNSW(ds, &config, nil)
-		
+
 		// Add vector to ensure search has work to do
 		_, err := idx.AddByLocation(context.Background(), 0, 0)
 		require.NoError(t, err)
@@ -143,7 +143,7 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 		// Note: HnswNodesVisited is a global, so we can't easily reset it.
 		// We'll track the count before and after.
 		initialObsCount := testutil.CollectAndCount(metrics.HnswNodesVisited)
-		
+
 		configNoSample := types.DefaultArrowHNSWConfig()
 		configNoSample.SearchLayerSampleRate = 0.0000001 // Practically 0
 		idxNoSample := NewArrowHNSW(ds, &configNoSample, nil)

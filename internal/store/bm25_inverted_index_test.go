@@ -303,7 +303,7 @@ func TestBlockMaxWANDCorrectness(t *testing.T) {
 		if len(results) == 0 {
 			t.Errorf("expected results for query %q, got 0", q)
 		}
-		
+
 		// Ensure scores are in descending order
 		for i := 1; i < len(results); i++ {
 			if results[i].Score > results[i-1].Score {

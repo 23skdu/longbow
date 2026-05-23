@@ -138,7 +138,6 @@ func TestIndexPerformancePredictor_Predict_MediumDataset(t *testing.T) {
 	assert.Equal(t, LearnedIVFPQ, prediction.RecommendedIndex)
 }
 
-
 func TestIndexPerformancePredictor_calculateConfidence(t *testing.T) {
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -215,7 +214,6 @@ func TestIndexPerformancePredictor_GetStats(t *testing.T) {
 	assert.Equal(t, int64(1), predictions)
 	assert.Equal(t, int64(0), correct)
 }
-
 
 func TestIndexPerformancePredictor_GetConfig(t *testing.T) {
 	logger := zerolog.New(nil).With().Logger()
@@ -1067,12 +1065,12 @@ func TestRuntimeIndexAdapter_FeedbackLoop(t *testing.T) {
 	config := IndexAdaptationConfig{
 		EnableAutoAdaptation: true,
 	}
-	
+
 	adapter := NewRuntimeIndexAdapter(logger, predictor, config, nil)
-	
+
 	collection := "test-feedback"
 	features := QueryFeatures{DatasetSize: 50000}
-	
+
 	// 1. Manually trigger an adaptation entry
 	adapter.adaptationMu.Lock()
 	adapter.adaptations[collection] = &IndexAdaptation{
@@ -1085,12 +1083,12 @@ func TestRuntimeIndexAdapter_FeedbackLoop(t *testing.T) {
 		},
 	}
 	adapter.adaptationMu.Unlock()
-	
+
 	// 2. Complete with success
 	err := adapter.CompleteAdaptation(collection, true)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(1), predictor.stats.TrainingSamplesCollected.Load())
-	
+
 	// 3. Trigger another one
 	adapter.adaptationMu.Lock()
 	adapter.adaptations[collection] = &IndexAdaptation{
@@ -1100,17 +1098,17 @@ func TestRuntimeIndexAdapter_FeedbackLoop(t *testing.T) {
 		Features:       features,
 	}
 	adapter.adaptationMu.Unlock()
-	
+
 	// 4. Complete with failure (should record negative signal)
 	err = adapter.CompleteAdaptation(collection, false)
 	assert.NoError(t, err)
 	assert.Equal(t, int64(2), predictor.stats.TrainingSamplesCollected.Load())
-	
+
 	// Verify that the second sample has the failure penalty
 	predictor.samplesMu.RLock()
 	lastSample := predictor.samples[len(predictor.samples)-1]
 	predictor.samplesMu.RUnlock()
-	
+
 	assert.Equal(t, LearnedIVFPQ, lastSample.Index)
 	assert.Equal(t, 10*time.Second, lastSample.Latency) // Failure penalty
 	assert.Equal(t, 0.0, lastSample.Recall)

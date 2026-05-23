@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/23skdu/longbow/internal/storage"
+	"github.com/apache/arrow-go/v18/arrow"
 )
 
 // NamespaceMigrationConfig defines the parameters for migrating a namespace.

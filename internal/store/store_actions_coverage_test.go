@@ -40,17 +40,17 @@ func TestVectorStore_DoAction_Extended(t *testing.T) {
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "val", Type: arrow.PrimitiveTypes.Float64},
 	}, nil)
-	
+
 	s.getOrCreateDataset("test-ds", func() *Dataset {
 		ds := NewDataset("test-ds", schema)
-		
+
 		// Add some data
 		b := array.NewRecordBuilder(mem, schema)
 		b.Field(0).(*array.Int64Builder).AppendValues([]int64{101, 102}, nil)
 		b.Field(1).(*array.Float64Builder).AppendValues([]float64{1.1, 2.2}, nil)
 		rec := b.NewRecordBatch()
 		ds.Records = NewLockFreeSliceFrom([]arrow.RecordBatch{rec})
-		
+
 		return ds
 	})
 
@@ -60,7 +60,7 @@ func TestVectorStore_DoAction_Extended(t *testing.T) {
 		err := s.DoAction(&flight.Action{Type: "check_readiness", Body: body}, stream)
 		require.NoError(t, err)
 		assert.Len(t, stream.results, 1)
-		
+
 		var resp map[string]any
 		json.Unmarshal(stream.results[0].Body, &resp)
 		assert.Equal(t, "READY", resp["status"])
@@ -73,7 +73,7 @@ func TestVectorStore_DoAction_Extended(t *testing.T) {
 		err := s.DoAction(&flight.Action{Type: "delete", Body: body}, stream)
 		require.NoError(t, err)
 		assert.Equal(t, "deleted", string(stream.results[0].Body))
-		
+
 		ds, _ := s.getDataset("test-ds")
 		assert.True(t, ds.Tombstones[0].Contains(0))
 	})
@@ -88,7 +88,7 @@ func TestVectorStore_DoAction_Extended(t *testing.T) {
 		})
 		err := s.DoAction(&flight.Action{Type: "alter_schema", Body: body}, stream)
 		require.NoError(t, err)
-		
+
 		ds, _ := s.getDataset("test-ds")
 		indices := ds.Schema.FieldIndices("new_col")
 		assert.NotEmpty(t, indices)
@@ -99,7 +99,7 @@ func TestVectorStore_DoAction_Extended(t *testing.T) {
 		body, _ := json.Marshal(map[string]string{"dataset": "test-ds"})
 		err := s.DoAction(&flight.Action{Type: "delete-dataset", Body: body}, stream)
 		require.NoError(t, err)
-		
+
 		_, found := s.getDataset("test-ds")
 		assert.False(t, found)
 	})

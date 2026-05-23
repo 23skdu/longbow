@@ -2,6 +2,7 @@
 // +build onnx
 
 package onnx
+
 import (
 	"context"
 	"fmt"
@@ -12,10 +13,10 @@ import (
 	"sync"
 
 	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/onnx/metal"
 	"github.com/23skdu/longbow/internal/ml"
-	"time"
+	"github.com/23skdu/longbow/internal/onnx/metal"
 	ort "github.com/yalue/onnxruntime_go"
+	"time"
 )
 
 var (
@@ -137,7 +138,7 @@ func NewSession(modelPath string) (*Session, error) {
 		// Fallback to current directory or default search paths
 		vocabPath = "vocab.txt"
 	}
-	
+
 	tokenizer, err := ml.NewTokenizer(vocabPath, 512)
 	if err == nil {
 		s.tokenizer = tokenizer
@@ -168,12 +169,12 @@ func (s *Session) Score(ctx context.Context, query string, docs []string) ([]flo
 	// For now, we'll create dummy tensors to satisfy the library interface
 	// if we don't have a tokenizer integrated yet.
 	// But to make it "work" in a way that doesn't crash:
-	
+
 	// Tokenization using real WordPiece logic
 	maxLen := 512
 	inputIds := make([]int64, numDocs*maxLen)
 	mask := make([]int64, numDocs*maxLen)
-	
+
 	for i, doc := range docs {
 		combined := query + " " + doc
 		var ids, attn []int64
@@ -199,7 +200,7 @@ func (s *Session) Score(ctx context.Context, query string, docs []string) ([]flo
 		"input_ids":      inputTensor,
 		"attention_mask": maskTensor,
 	}
-	
+
 	// Add token_type_ids if required by model
 	hasTokenTypeIds := false
 	for _, name := range s.inputNames {
@@ -240,7 +241,7 @@ func (s *Session) Score(ctx context.Context, query string, docs []string) ([]flo
 	if len(outputs) == 0 {
 		return nil, fmt.Errorf("no output from model")
 	}
-	
+
 	scoresTensor := outputs[0].(*ort.Tensor[float32])
 	return scoresTensor.GetData(), nil
 }
@@ -265,7 +266,7 @@ func (s *Session) Embed(ctx context.Context, texts []string) ([][]float32, error
 	maxLen := 512
 	inputIds := make([]int64, numTexts*maxLen)
 	mask := make([]int64, numTexts*maxLen)
-	
+
 	for i, text := range texts {
 		var ids, attn []int64
 		if s.tokenizer != nil {
@@ -289,7 +290,7 @@ func (s *Session) Embed(ctx context.Context, texts []string) ([][]float32, error
 		"input_ids":      inputTensor,
 		"attention_mask": maskTensor,
 	}
-	
+
 	// Add token_type_ids
 	ttKey := ""
 	for _, name := range s.inputNames {

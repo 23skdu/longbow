@@ -160,12 +160,8 @@ class BenchmarkRunner:
             path = os.path.join(self.bin_dir, name)
             if os.path.exists(path):
                 return path
-        # Fall back to longbow-cli
-        cli_path = self.get_cli_tool()
-        if cli_path and os.path.exists(cli_path):
-            return cli_path
-        # Return CLI path even if doesn't exist yet (will be built)
-        return os.path.join(self.bin_dir, "longbow-cli")
+        # Return bench-tool path even if doesn't exist yet (will be built)
+        return os.path.join(self.bin_dir, "bench-tool")
 
     def get_cli_tool(self):
         """Get the longbow-cli binary path"""
@@ -424,13 +420,13 @@ class BenchmarkRunner:
                         if pid_reaped == self.server_pid:
                             self.server_pid = None
                             print("  Waiting 5 seconds for port cooling...")
-                            time.sleep(5)
+                            time.sleep(0.1)
                             return
                         os.kill(self.server_pid, 0)
                     except (ProcessLookupError, ChildProcessError):
                         self.server_pid = None
                         print("  Waiting 5 seconds for port cooling...")
-                        time.sleep(5)
+                        time.sleep(0.1)
                         return
                 
                 # Fallback to kill -9
@@ -445,7 +441,7 @@ class BenchmarkRunner:
                 pass
             self.server_pid = None
             print("  Waiting 5 seconds for port cooling...")
-            time.sleep(5)
+            time.sleep(0.1)
 
     def collect_pprof(self, label):
         """Collect pprof profiles from the running server concurrently."""
@@ -2060,7 +2056,7 @@ class BenchmarkRunner:
 
             # Wait for async weight update goroutine.
             print("  Waiting 5s for weight update goroutine...", end="", flush=True)
-            time.sleep(5)
+            time.sleep(0.1)
             print(" done")
 
             # ------------------------------------------------------------------
@@ -2217,6 +2213,16 @@ class BenchmarkRunner:
                 print("RUNNING WITH NUMA BINDING (--cpunodebind=0 --membind=0)")
                 print("*" * 80 + "\n")
             
+            dims = [int(d) for d in self.args.dims.split(",")]
+            counts = [int(c) for c in self.args.counts.split(",")]
+            dtypes = self.args.dtypes.split(",")
+            count = counts[0] if counts else 1000
+            self.check_cuda()
+            self.results = [] # Clear results once for all modes
+            total = len(dims) * len(dtypes)
+            current = 0
+            print(f"Duration per test: {self.args.duration}s")
+            print("=" * 80)
             for mode in modes:
                 mode = mode.strip()
                 self.current_mode = mode
@@ -2253,105 +2259,96 @@ class BenchmarkRunner:
                     continue
 
                 # Default logic for cpu/metal/cuda
-            dims = [int(d) for d in self.args.dims.split(",")]
-            counts = [int(c) for c in self.args.counts.split(",")]
-            dtypes = self.args.dtypes.split(",")
 
-            count = counts[0] if counts else 1000
 
-            self.check_cuda()
 
-            print("=" * 80)
-            print(f"UNIFIED BENCHMARK MATRIX ({mode.upper()})")
-            print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"Platform: {platform.system()} {platform.machine()}")
-            print(f"NUMA Topology:\n{self.get_numa_topology()}")
-            print(f"Dims: {dims}")
-            print(f"Count: {count}")
-            print(f"Types: {dtypes}")
-            print("=" * 80)
-            
-            print("=" * 80)
-            
-            self.results = [] # Clear results for each mode
-            total = len(dims) * len(dtypes)
-            current = 0
-            
-            print(f"Duration per test: {self.args.duration}s")
-            print("=" * 80)
+                print("=" * 80)
+                print(f"UNIFIED BENCHMARK MATRIX ({mode.upper()})")
+                print(f"Started: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+                print(f"Platform: {platform.system()} {platform.machine()}")
+                print(f"NUMA Topology:\n{self.get_numa_topology()}")
+                print(f"Dims: {dims}")
+                print(f"Count: {count}")
+                print(f"Types: {dtypes}")
+                print("=" * 80)
 
-            for count in counts:
-                print(f"\n{'=' * 70}")
-                print(f"Vector Count: {count}")
-                print(f"{'=' * 70}")
+                print("=" * 80)
 
-                for dtype in dtypes:
-                    print(f"\n{'━' * 70}")
-                    print(f"Data Type: {dtype} (Count: {count})")
-                    print(f"{'━' * 70}")
 
-                    for dim in dims:
-                        current += 1
-                        current_port = self.args.port
-                        self.server_addr = f"127.0.0.1:{current_port}"
-                        
-                        label = f"{mode}_{dtype}_{dim}_{count}{numa_suffix}"
-                        print(
-                            f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count} port={current_port}"
-                        )
+                print("=" * 80)
 
-                        # Skip server startup if only generating data
-                        if self.args.generate_only:
-                            try:
-                                self.run_benchmark(dim, dtype, count, label)
-                            except Exception as e:
-                                print(f"  Generation failed: {e}")
-                            continue
+                for count in counts:
+                    print(f"\n{'=' * 70}")
+                    print(f"Vector Count: {count}")
+                    print(f"{'=' * 70}")
 
-                        # Start fresh server for this config
-                        if not self.start_server(label):
-                            print("  Failed to start server!")
-                            continue
+                    for dtype in dtypes:
+                        print(f"\n{'━' * 70}")
+                        print(f"Data Type: {dtype} (Count: {count})")
+                        print(f"{'━' * 70}")
 
-                        if self.args.cache:
-                            json_file = os.path.join(self.log_dir, f"result_{label}.json")
-                            if os.path.exists(json_file):
-                                print(f"  [CACHE HIT] Skipping execution for {label}")
+                        for dim in dims:
+                            current += 1
+                            current_port = self.args.port
+                            self.server_addr = f"127.0.0.1:{current_port}"
+
+                            label = f"{mode}_{dtype}_{dim}_{count}{numa_suffix}"
+                            print(
+                                f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count} port={current_port}"
+                            )
+
+                            # Skip server startup if only generating data
+                            if self.args.generate_only:
+                                try:
+                                    self.run_benchmark(dim, dtype, count, label)
+                                except Exception as e:
+                                    print(f"  Generation failed: {e}")
                                 continue
 
-                        pprof_thread = None
-                        try:
-                            if self.args.pprof:
-                                pprof_thread = self.collect_pprof(label)
-                            
-                            self.run_benchmark(dim, dtype, count, label)
-                            
-                            # Partial save for real-time monitoring
-                            with open(self.output_file, "w") as f:
-                                json.dump(
-                                    {
-                                        "mode": mode,
-                                        "timestamp": self.timestamp,
-                                        "platform": f"{platform.system()} {platform.machine()}",
-                                        "config": {
-                                            "dims": dims,
-                                            "counts": counts,
-                                            "dtypes": dtypes,
-                                            "duration": self.args.duration,
+                            # Start fresh server for this config
+                            if not self.start_server(label):
+                                print("  Failed to start server!")
+                                continue
+
+                            if self.args.cache:
+                                json_file = os.path.join(self.log_dir, f"result_{label}.json")
+                                if os.path.exists(json_file):
+                                    print(f"  [CACHE HIT] Skipping execution for {label}")
+                                    continue
+
+                            pprof_thread = None
+                            try:
+                                if self.args.pprof:
+                                    pprof_thread = self.collect_pprof(label)
+
+                                self.run_benchmark(dim, dtype, count, label)
+
+                                # Partial save for real-time monitoring
+                                with open(self.output_file, "w") as f:
+                                    json.dump(
+                                        {
+                                            "mode": mode,
+                                            "timestamp": self.timestamp,
+                                            "platform": f"{platform.system()} {platform.machine()}",
+                                            "config": {
+                                                "dims": dims,
+                                                "counts": counts,
+                                                "dtypes": dtypes,
+                                                "duration": self.args.duration,
+                                            },
+                                            "results": self.results,
                                         },
-                                        "results": self.results,
-                                    },
-                                    f,
-                                    indent=2,
-                                )
-                        finally:
-                            if pprof_thread:
-                                pprof_thread.join()
-                            self.stop_server()
-                            # Clean up data directory
-                            data_root = os.path.join(self.data_dir, label)
-                            subprocess.run(f"rm -rf {data_root}", shell=True)
-        
+                                        f,
+                                        indent=2,
+                                    )
+                            finally:
+                                if pprof_thread:
+                                    pprof_thread.join()
+                                self.stop_server()
+                                # Clean up data directory
+                                data_root = os.path.join(self.data_dir, label)
+                                subprocess.run(f"rm -rf {data_root}", shell=True)
+
         self.print_summary()
 
         # Save results

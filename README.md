@@ -1,11 +1,10 @@
+# Longbow
+
 ![CI](https://github.com/23skdu/longbow/actions/workflows/ci.yml/badge.svg)
 ![Helm Validation](https://github.com/23skdu/longbow/actions/workflows/helm-validation.yml/badge.svg)
 ![Markdown Lint](https://github.com/23skdu/longbow/actions/workflows/markdown-lint.yml/badge.svg)
 
-# Longbow
-
-<img width="1024" height="559" alt="image" src="https://github.com/user-attachments/assets/775eb0b4-7e55-4524-abda-c9489de0194e" />
-
+![image](https://github.com/user-attachments/assets/775eb0b4-7e55-4524-abda-c9489de0194e)
 
 Longbow is a distributed, high-performance vector engine built for modern AI/Agentic workloads. It leverages zero-copy data paths, SIMD optimizations, and advanced storage backends to deliver sub-millisecond latency.
 
@@ -67,6 +66,7 @@ Longbow is compiled natively for CPU architectures by default. To enable GPU acc
 ## Configuration
 
 Longbow is configured via environment variables. Key limits include:
+
 - `LONGBOW_MAX_MEMORY` (Soft limit with exponential backpressure)
 - `LONGBOW_MAX_MEMORY_HARD` (Absolute hard ceiling that triggers `ResourceExhausted` rejection)
 
@@ -92,7 +92,7 @@ Notable flags:
 Longbow supports the following vector data types with optimized SIMD kernels:
 
 | Data Type | Dimensions Supported | Notes |
-|-----------|---------------------|-------|
+| --------- | -------------------- | ----- |
 | **float32** | 128 - 3072 | Full SIMD optimization (AVX2/AVX-512/Neon) |
 | **float16** | 128 - 3072 | Metal/CUDA GPU kernels + CPU fallback |
 | **float64** | 128 - 3072 | Full SIMD optimization |
@@ -100,7 +100,7 @@ Longbow supports the following vector data types with optimized SIMD kernels:
 | **int16/uint16** | 128 - 3072 | AVX2/Neon optimized |
 | **int32/uint32** | 128 - 3072 | AVX2/Neon optimized |
 | **int64/uint64** | 128 - 3072 | Generic SIMD & Metadata Filter support |
-| **complex64/128**| 128 - 3072 | Full SIMD optimization |
+| **complex64/128** | 128 - 3072 | Full SIMD optimization |
 | **turboquant** | 128 - 3072 | NEON/AVX2 FWHT optimized |
 
 ### SIMD-Accelerated Metadata Filtering
@@ -116,7 +116,7 @@ As of 0.1.9, Longbow supports **SIMD-accelerated predicate filtering** within th
 The following dimensions have dimension-specific optimized kernels:
 
 | Dimension | Block Size | Optimization |
-|----------|------------|--------------|
+| --------- | ---------- | ------------ |
 | 128 | N/A | Direct SIMD unroll |
 | 256 | N/A | Direct SIMD unroll |
 | 384 | N/A | AVX2/NEON specific kernels |

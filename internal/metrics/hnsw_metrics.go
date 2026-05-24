@@ -507,4 +507,15 @@ var (
 		},
 		[]string{"dataset"},
 	)
+
+	// HNSWAdaptiveMFiredTotal tracks the number of times the AdaptiveM heuristic
+	// triggered a graph parameter increase. A rising count at low node counts is
+	// a warning that the adaptive threshold is too aggressive.
+	HNSWAdaptiveMFiredTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_hnsw_adaptive_m_fired_total",
+			Help: "Total number of times AdaptiveM doubling was triggered per dataset",
+		},
+		[]string{"dataset"},
+	)
 )

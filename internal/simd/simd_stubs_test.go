@@ -145,6 +145,9 @@ func readBuildTags(t *testing.T) map[string][]string {
 				break
 			}
 		}
+		if err := scanner.Err(); err != nil {
+			t.Logf("error reading file %s: %v", fname, err)
+		}
 		f.Close()
 	}
 	return result

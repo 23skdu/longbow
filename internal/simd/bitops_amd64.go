@@ -14,6 +14,9 @@ func init() {
 		andBitVectorsImpl = andBitVectorsAVX2
 		countBitVectorImpl = countBitVectorAVX2
 	}
+	if cpu.X86.HasAVX512VPOPCNTDQ {
+		hammingImpl = hammingAVX512
+	}
 }
 
 //go:noescape
@@ -24,6 +27,16 @@ func hammingAVX2(a, b []uint64) int {
 		return 0
 	}
 	return hammingAVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+}
+
+//go:noescape
+func hammingAVX512Kernel(a, b unsafe.Pointer, n int) int
+
+func hammingAVX512(a, b []uint64) int {
+	if len(a) == 0 {
+		return 0
+	}
+	return hammingAVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
 }
 
 //go:noescape

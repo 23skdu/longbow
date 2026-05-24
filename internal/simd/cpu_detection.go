@@ -1,8 +1,11 @@
 package simd
 
 import (
-	"github.com/klauspost/cpuid/v2"
+	"fmt"
+	"math"
 	"runtime"
+
+	"github.com/klauspost/cpuid/v2"
 )
 
 // CPUFeatures contains detected CPU SIMD capabilities
@@ -80,3 +83,59 @@ func GetCPUFeatures() CPUFeatures {
 func GetImplementation() string {
 	return implementation
 }
+
+// GetImplementationDetails returns a structured map describing the selected
+// SIMD implementation and detected CPU flags. Used by the /diagnostics endpoint
+// to enable remote debugging of SIMD fallback issues (e.g., on ancalagon).
+func GetImplementationDetails() map[string]any {
+	return map[string]any{
+		"simd_impl":       implementation,
+		"arch":            runtime.GOARCH,
+		"vendor":          features.Vendor,
+		"has_avx512":      features.HasAVX512,
+		"has_avx2":        features.HasAVX2,
+		"has_vnni":        features.HasVNNI,
+		"has_avx_vnni":    features.HasAVXVNNI,
+		"has_avx512_fp16": features.HasAVX512FP16,
+		"has_vbmi":        features.HasVBMI,
+		"has_neon":        features.HasNEON,
+		"has_dotprod":     features.HasDotProd,
+	}
+}
+
+// ValidateSIMDKernels runs a known-answer test for the active distance kernels.
+// If the result is incorrect (which can happen when AVX-512 instructions trap
+// in virtualised environments), this function returns an error so callers can
+// fall back to a safer implementation.
+//
+// The reference case is a 128-dim L2 distance between a zero vector and a
+// vector of all-ones, which should equal sqrt(128) ≈ 11.3137.
+func ValidateSIMDKernels() error {
+	const dim = 128
+	a := make([]float32, dim)
+	b := make([]float32, dim)
+	for i := range b {
+		b[i] = 1.0
+	}
+
+	// Expected: euclidean(zeros, ones) for dim=128 is sqrt(128) ≈ 11.3137
+	const expected = float32(11.313708) // math.Sqrt(128)
+
+	dist, err := EuclideanDistance(a, b)
+	if err != nil {
+		return fmt.Errorf("SIMD kernel self-test failed (%s): %w", implementation, err)
+	}
+	if math.IsNaN(float64(dist)) || math.IsInf(float64(dist), 0) {
+		return fmt.Errorf("SIMD kernel self-test returned non-finite result (%.6f) for %s", dist, implementation)
+	}
+	// Allow 0.1% tolerance for FP rounding across implementations
+	diff := math.Abs(float64(dist-expected)) / float64(expected)
+	if diff > 0.001 {
+		return fmt.Errorf(
+			"SIMD kernel self-test failed for %s: got %.6f, expected %.6f (%.3f%% error)",
+			implementation, dist, expected, diff*100,
+		)
+	}
+	return nil
+}
+

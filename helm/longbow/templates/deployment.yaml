@@ -153,6 +153,10 @@ spec:
               value: {{ .Values.env.LONGBOW_PQ_INGEST | default "0" | quote }}
             - name: LONGBOW_LOW_MEM
               value: {{ .Values.env.LONGBOW_LOW_MEM | default "0" | quote }}
+            - name: LONGBOW_ADAPTIVE_M_MAX_FACTOR
+              value: {{ .Values.env.LONGBOW_ADAPTIVE_M_MAX_FACTOR | default "1.5" | quote }}
+            - name: LONGBOW_MAX_M0
+              value: {{ .Values.env.LONGBOW_MAX_M0 | default "32" | quote }}
             # GPU Configuration
             - name: LONGBOW_GPU_ENABLED
               value: {{ .Values.gpu.enabled | quote }}

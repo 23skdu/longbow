@@ -64,6 +64,64 @@ done:
     MOVQ    AX, ret+24(FP)
     RET
 
+// func hammingAVX512Kernel(a, b unsafe.Pointer, n int) int
+TEXT ·hammingAVX512Kernel(SB), NOSPLIT, $0-32
+    MOVQ    a+0(FP), SI
+    MOVQ    b+8(FP), DI
+    MOVQ    n+16(FP), CX
+
+    XORQ    AX, AX        // Accumulator
+
+    CMPQ    CX, $8
+    JB      tail_check_avx512
+
+    VPXORQ  Z2, Z2, Z2    // Accumulator for VPOPCNTQ
+
+loop_avx512:
+    VMOVDQU64 (SI), Z0
+    VMOVDQU64 (DI), Z1
+    VPXORQ  Z1, Z0, Z0
+    VPOPCNTQ Z0, Z0
+    VPADDQ  Z0, Z2, Z2
+
+    ADDQ    $64, SI
+    ADDQ    $64, DI
+    SUBQ    $8, CX
+    CMPQ    CX, $8
+    JAE     loop_avx512
+
+    // Horizontal sum
+    VEXTRACTI64X4 $1, Z2, Y1
+    VPADDQ Y1, Y2, Y0
+    VEXTRACTI128 $1, Y0, X1
+    VPADDQ X1, X0, X0
+    VPUNPCKHQDQ X0, X0, X1
+    VPADDQ X1, X0, X0
+    MOVQ X0, BX
+    ADDQ BX, AX
+    
+    VZEROUPPER
+
+tail_check_avx512:
+    CMPQ    CX, $0
+    JE      done_avx512
+
+tail_loop_avx512:
+    MOVQ    (SI), BX
+    MOVQ    (DI), DX
+    XORQ    DX, BX
+    POPCNTQ BX, BX
+    ADDQ    BX, AX
+
+    ADDQ    $8, SI
+    ADDQ    $8, DI
+    DECQ    CX
+    JNZ     tail_loop_avx512
+
+done_avx512:
+    MOVQ    AX, ret+24(FP)
+    RET
+
 // func andBytesAVX2Kernel(dst, src unsafe.Pointer, n int)
 TEXT ·andBytesAVX2Kernel(SB), NOSPLIT, $0-24
     MOVQ    dst+0(FP), DI

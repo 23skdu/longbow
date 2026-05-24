@@ -1,29 +1,39 @@
-# Longbow Next Steps - Release Candidate 0.2.1-rc4
+# Actionable Stability and Performance Recommendations
 
-This document tracks all outstanding items and performance/feature suggestions specifically prioritized for the current release candidate (`0.2.1-rc4`).
+Based on the audit of the v0.2.1-rc4 benchmark matrix (see `docs/performance.md`), the following immediate actions are recommended:
 
-## Prioritized Action Items for 0.2.1-rc4
+## P0 BLOCKER: Test Suite & Codebase Context Window Optimization
 
-### Critical Priority (Security & Stability)
-- **Monitor Arena offset truncation (>4GB)**: TemporalEntry arena is limited by design. Continuous monitoring of arena growth is required in production. (`temporal_search.go:347,367`)
-- **Review `ivf_flat.go:347` vector map size bounds**: Add explicit checks if IVF-FLAT is expected to handle >4B vectors (`uint32(len(ivf.vectors))`).
-- **Review `arrow_hnsw_persistence.go:208` version conversion**: Add bounds check if version numbers could exceed MaxInt64.
+**Problem Context:** 
+1. The monolithic `internal/store` package contains over 280 test files. When run with `-race`, it exceeds standard 15-minute execution limits due to sequential execution and heavy stress tests.
+2. Key files like `navigation.go` (>2600 lines) and `arrow_hnsw.go` (>1500 lines) exceed standard LLM context windows, degrading the efficiency of agentic code modifications.
+3. The test suite contains overlapping, frivolous tests that increase runtime without significantly improving coverage or catching bugs.
 
-### High Priority (Performance Core)
-1. **CUDA Optimization for Turboquant**: Optimize the CUDA kernels for `turboquant` dot product and L2 routines to align Nvidia performance with Apple Silicon Metal. Implement shared memory caching for lookup tables.
-2. **NUMA-Aware Arena Allocator**: Update `internal/store/arena_pool.go` to support NUMA-node local allocations and pin search goroutines to specific CPU cores. This will prevent cross-socket latency on high-core AMD64 servers (e.g., `ancalagon`).
-3. **Adaptive Batching for GPU Ingestion**: Enhance adaptive batching (`internal/store/adaptive_batching.go`) to query the active GPU backend for optimal block sizes, coalescing small inserts to perfectly align with GPU warp/thread block sizes.
-4. **Query Result Merger Pre-allocation**: Update `internal/store/result_merger.go` to pre-calculate required capacity (`limit * shards`) and pre-allocate merge arrays from a `sync.Pool` to achieve zero-allocation result merging.
+**Action Plan:**
+- **Phase 1 (Test Consolidation & Pruning):** Audit `internal/store` to combine repetitive single-case tests into shared table-driven tests. Delete frivolous or redundant tests.
+- **Phase 2 (Race Optimization):** Wrap heavy dataset generation and extreme stress tests in `if testing.Short() { t.Skip("skipping heavy ingestion in short mode") }` so `go test -short -race` can run rapidly.
+- **Phase 3 (Mega-Package Mitigation):** Break the monolithic `internal/store` package into sub-packages (e.g., `internal/store/index`, `internal/store/wal`, `internal/store/cluster`) to parallelize test execution at the package level.
+- **Phase 4 (Context-Window Optimization):** Refactor massive files like `navigation.go` into <=800 line chunks based on behavior (e.g., extract polymorphic dispatch into `distance_dispatch.go`).
 
-### Medium Priority (Scale & Reliability)
-5. **Autoscaling Ingestion Workers**: Dynamically spawn or reap worker goroutines in `internal/store/ingestion_worker.go` based on the ingest vs. QPS ratio via a feedback loop, stabilizing throughput under varying loads.
-6. **Disk-backed Learned Index Caching**: Implement a tiered LRU/LFU cache in RAM/NVMe specifically for learned index leaf nodes (`disk_backed_learned_index.go`) to eliminate latency hits on cold reads.
-7. **Asynchronous Bitmap Pool Refill**: Add a background goroutine to proactively pre-allocate and refill the `bitmap_pool` before exhaustion, preventing severe P95 latency spikes during heavy parallel filtering.
-8. **Distributed Vector Clock Compaction**: Implement a lock-free background thread in `internal/store/compaction.go` to aggressively merge vector clock deltas, guaranteeing bounded latency for high-frequency temporal searches.
+## 1. Address Ingestion Memory Scaling Limits (< 20GB Configurations)
+**Finding**: The memory-based ingestion limit restricts capacity to 300k-400k float32 vectors on nodes with less than 20GB of memory. It hits a hard `ResourceExhausted` ceiling at ~375k vectors for 18GB limits and ~275k for 14GB limits.
+**Action**: 
+- Investigate indexing memory overhead. The raw vector size for 375k `float32` 128d vectors is only ~192MB. An 18GB footprint indicates a ~90x overhead per vector in the current indexing structure (likely the GraphRAG or HNSW edges).
+- Implement chunked disk spilling or on-disk indices for datasets exceeding 100k vectors to respect the 18GB/14GB boundaries.
 
-### Low Priority (Future Proofing & Monitoring)
-9. **GraphRAG Subgraph Prefetching**: Add an asynchronous prefetcher in `internal/store/graph_analytics.go` using `__builtin_prefetch` (or Go assembly equivalents) to load adjacent nodes into L2/L3 cache ahead of traversal.
-10. **SIMD-Accelerated Binary Quantization**: Implement specialized AVX-512 population count (`VPOPCNTDQ`) kernels in `internal/simd/` for Hamming distance and wire them into `internal/store/binary_quantization.go`.
-- **Monitor Vector ID truncation**: System designed for uint32 IDs; truncation occurs only at 4.29B vectors. (`temporal_search.go:935,1045,1094,1145`)
-- **Monitor BatchIdx truncation**: BatchIdx is bounded by record count; unlikely to exceed uint32. (`sharded_hnsw.go:393,1025,1136`)
-- **Monitor locationStore.Len() truncation**: Per-shard vector count unlikely to exceed 4.29B. (`sharded_hnsw.go:1392`)
+## 2. Resolve `O(N)` or `O(N^2)` Ingestion Degradation
+**Finding**: Ingestion rates dropped from 459k vec/s down to <1k vec/s as the dataset grew from 5k to 100k vectors.
+**Action**:
+- Profile the `DoPut` hot path to identify locking contention or index re-balancing that scales poorly with dataset size.
+- Ensure the `LockFreeSlice` integration from Phase 7 is actually bypassing `epMu` spinlocks during bulk ingestion.
+
+## 3. Fix High-Dimensional Search Contention
+**Finding**: Dense search QPS at 384 dimensions fell below 500 QPS on the remote Ancalagon server.
+**Action**:
+- Re-verify AVX2/AVX-512 distance kernels on Ancalagon. The 288 QPS implies fallback to naive scalar loops.
+- Check SIMD register saturation or cache line misses for 384d `float32` arrays.
+
+## 4. Benchmark Server Process Management
+**Finding**: `unified_benchmark.py` correctly reports `ResourceExhausted` failures but leaves the server binaries running as zombie processes.
+**Action**:
+- Add explicit cleanup logic (`killall longbow` or equivalent `os.kill`) in the benchmark orchestrator's exception handlers to prevent stale processes from interfering with subsequent runs.

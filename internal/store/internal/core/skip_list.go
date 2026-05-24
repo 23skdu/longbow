@@ -137,3 +137,17 @@ func (sl *ConcurrentSkipList) GetRandom() (uint32, bool) {
 	}
 	return curr.key, true
 }
+
+// Len returns the approximate number of elements in the list by traversing
+// level 0. This is O(N) but used only during maturity checks at startup,
+// not on every insert.
+func (sl *ConcurrentSkipList) Len() int {
+	count := 0
+	curr := sl.head.next[0].Load()
+	for curr != nil {
+		count++
+		curr = curr.next[0].Load()
+	}
+	return count
+}
+

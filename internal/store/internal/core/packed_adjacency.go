@@ -50,6 +50,7 @@ type PackedAdjacency struct {
 	chunks   atomic.Pointer[[]uint64]
 	mu       sync.RWMutex // Protects chunks growth
 	refCount atomic.Int64
+	locks    [256]sync.Mutex // Striped locks to prevent retry storms
 }
 
 // NewPackedAdjacency creates a new PackedAdjacency structure with the given arena.
@@ -271,40 +272,36 @@ func (pa *PackedAdjacency) updatePage(id uint32, packed uint64) error {
 	offsetInPage := int(id) % adjacencyChunkSize
 
 	pa.EnsureCapacity(id)
-	chunks := *pa.chunks.Load()
+	chunksPtr := pa.chunks.Load()
+	if chunksPtr == nil {
+		return errors.New("chunks array is nil")
+	}
+	chunks := *chunksPtr
 
 	for {
-		oldPageRef := atomic.LoadUint64(&chunks[chunkIdx])
-
-		// Allocate new page
-		newRef, err := pa.pageArena.AllocSlice(adjacencyChunkSize)
-		if err != nil {
-			return err
-		}
-		newDest := pa.pageArena.Get(newRef)
-
-		if oldPageRef != 0 {
-			oldPage := pa.pageArena.Get(memory.SliceRef{Offset: oldPageRef, Len: adjacencyChunkSize, Cap: adjacencyChunkSize})
-			// Atomic copy of all entries to ensure consistency
-			for i := 0; i < adjacencyChunkSize; i++ {
-				newDest[i] = atomic.LoadUint64(&oldPage[i])
+		pageRef := atomic.LoadUint64(&chunks[chunkIdx])
+		if pageRef == 0 {
+			// Allocate new page
+			newRef, err := pa.pageArena.AllocSlice(adjacencyChunkSize)
+			if err != nil {
+				return err
 			}
-		} else {
-			// New page, zero it
+			newDest := pa.pageArena.Get(newRef)
 			for i := 0; i < adjacencyChunkSize; i++ {
 				newDest[i] = 0
 			}
+			// CAS update chunk pointer to the new page
+			if !atomic.CompareAndSwapUint64(&chunks[chunkIdx], 0, newRef.Offset) {
+				// CAS failed, someone else allocated it. We can just loop and use theirs.
+				continue
+			}
+			pageRef = newRef.Offset
 		}
 
-		// Apply change to new page
-		newDest[offsetInPage] = packed
-
-		// CAS update chunk pointer to the new page
-		if atomic.CompareAndSwapUint64(&chunks[chunkIdx], oldPageRef, newRef.Offset) {
-			metrics.PackedAdjacencyCoWTotal.Inc()
-			return nil
-		}
-		// Retry on CAS failure (concurrency)
+		page := pa.pageArena.Get(memory.SliceRef{Offset: pageRef, Len: adjacencyChunkSize, Cap: adjacencyChunkSize})
+		// In-place modification prevents lost updates that happen with CoW pages
+		atomic.StoreUint64(&page[offsetInPage], packed)
+		return nil
 	}
 }
 
@@ -368,18 +365,22 @@ func (pa *PackedAdjacency) GetPackedNeighbors(id uint32) (uint64, bool) {
 	return pa.getPackedRef(id)
 }
 
-// Lock is a no-op for the lock-free implementation.
+// Lock acquires a striped lock for the given node ID.
 func (pa *PackedAdjacency) Lock(id uint32) {
-	// No-op in lock-free version
+	pa.locks[id%256].Lock()
 }
 
-// Unlock is a no-op for the lock-free implementation.
+// Unlock releases the striped lock for the given node ID.
 func (pa *PackedAdjacency) Unlock(id uint32) {
-	// No-op in lock-free version
+	pa.locks[id%256].Unlock()
 }
 
 // UpdateNeighbors modifies a node's neighbor list using a transformation function.
 func (pa *PackedAdjacency) UpdateNeighbors(id uint32, fn func(old []uint32) []uint32) error {
+	// Use striped lock to prevent O(N^2) lock-free retry storms when fn() is expensive
+	pa.Lock(id)
+	defer pa.Unlock(id)
+
 	for {
 		packed, ok := pa.getPackedRef(id)
 		if !ok {

@@ -5,6 +5,7 @@ import (
 	"sort"
 	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
 )
@@ -72,11 +73,13 @@ type BitmapPoolStats struct {
 type BitmapPool struct {
 	config   BitmapPoolConfig
 	buckets  []*sync.Pool
-	gets     uint64
-	puts     uint64
-	hits     uint64
-	misses   uint64
-	discards uint64
+	gets         uint64
+	puts         uint64
+	hits         uint64
+	misses       uint64
+	discards     uint64
+	bucketMisses []uint64
+	stopChan     chan struct{}
 }
 
 // NewBitmapPool creates a new bitmap pool
@@ -86,8 +89,10 @@ func NewBitmapPool(cfg BitmapPoolConfig) *BitmapPool {
 	}
 
 	bp := &BitmapPool{
-		config:  cfg,
-		buckets: make([]*sync.Pool, len(cfg.SizeBuckets)),
+		config:       cfg,
+		buckets:      make([]*sync.Pool, len(cfg.SizeBuckets)),
+		bucketMisses: make([]uint64, len(cfg.SizeBuckets)),
+		stopChan:     make(chan struct{}),
 	}
 
 	// Create sync.Pool for each bucket WITHOUT New func
@@ -95,6 +100,8 @@ func NewBitmapPool(cfg BitmapPoolConfig) *BitmapPool {
 	for i := range cfg.SizeBuckets {
 		bp.buckets[i] = &sync.Pool{}
 	}
+
+	go bp.refillWorker()
 
 	return bp
 }
@@ -133,6 +140,7 @@ func (bp *BitmapPool) Get(numBits int) *PooledBitmap {
 		} else {
 			// MISS - pool empty, allocate new
 			atomic.AddUint64(&bp.misses, 1)
+			atomic.AddUint64(&bp.bucketMisses[bucketIdx], 1)
 			if bp.config.MetricsEnabled {
 				metrics.BitmapPoolMissesTotal.Inc()
 			}
@@ -202,7 +210,51 @@ func (bp *BitmapPool) Stats() BitmapPoolStats {
 
 // Close clears the pool
 func (bp *BitmapPool) Close() {
-	// sync.Pool doesn't have Close, just let GC reclaim
+	select {
+	case <-bp.stopChan: // Already closed
+	default:
+		close(bp.stopChan)
+	}
+}
+
+// refillWorker pre-allocates chunks for buckets that are experiencing misses
+func (bp *BitmapPool) refillWorker() {
+	ticker := time.NewTicker(200 * time.Millisecond) // #nosec G104
+	defer ticker.Stop()
+	
+	lastMisses := make([]uint64, len(bp.config.SizeBuckets))
+	
+	for {
+		select {
+		case <-bp.stopChan:
+			return
+		case <-ticker.C:
+			for i, size := range bp.config.SizeBuckets {
+				currentMiss := atomic.LoadUint64(&bp.bucketMisses[i])
+				diff := currentMiss - lastMisses[i]
+				lastMisses[i] = currentMiss
+				
+				if diff > 0 {
+					allocCount := diff
+					// Cap to avoid memory explosion
+					if allocCount > 200 {
+						allocCount = 200
+					}
+					
+					for j := uint64(0); j < allocCount; j++ {
+						byteSize := (size + 7) / 8
+						buf := &PooledBitmap{
+							Data:      make([]byte, byteSize),
+							Capacity:  size,
+							pool:      bp,
+							bucketIdx: i,
+						}
+						bp.buckets[i].Put(buf)
+					}
+				}
+			}
+		}
+	}
 }
 
 // =============================================================================

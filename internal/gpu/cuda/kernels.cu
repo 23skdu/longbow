@@ -224,11 +224,11 @@ void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* co
 
 // TurboQuant Distance Kernel
 __global__ void turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count) {
-    extern __shared__ float s_query[];
+    extern __shared__ float s_query_float[];
     
     // Load query into shared memory (cooperative)
     for (int i = threadIdx.x; i < dim; i += blockDim.x) {
-        s_query[i] = query[i];
+        s_query_float[i] = query[i];
     }
     __syncthreads();
 
@@ -277,7 +277,7 @@ __global__ void turboquant_distance_kernel(const float* query, const unsigned ch
             if ((qjlBits[i / 8] >> (i % 8)) & 1) val += correctionFactor;
             else val -= 0.1f;
             
-            float diff = s_query[i] - val;
+            float diff = s_query_float[i] - val;
             sum += diff * diff;
         }
         distances[idx] = sqrtf(sum);

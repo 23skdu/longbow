@@ -30,12 +30,7 @@ func TestMergeSortedStreams(t *testing.T) {
 		close(ch3)
 	}()
 
-	merged := MergeSortedStreams([]<-chan []SearchResult{ch1, ch2, ch3}, 10)
-
-	results := make([]SearchResult, 0, 6)
-	for r := range merged {
-		results = append(results, r)
-	}
+	results := MergeSortedStreams([]<-chan []SearchResult{ch1, ch2, ch3}, 10)
 
 	assert.Equal(t, 8, len(results))
 	// Check strict ordering
@@ -52,12 +47,7 @@ func TestMergeSortedStreams_EmptyChannels(t *testing.T) {
 	ch2 <- []SearchResult{{ID: 1, Score: 0.5}}
 	close(ch2)
 
-	merged := MergeSortedStreams([]<-chan []SearchResult{ch1, ch2}, 5)
-
-	results := make([]SearchResult, 0, 4)
-	for r := range merged {
-		results = append(results, r)
-	}
+	results := MergeSortedStreams([]<-chan []SearchResult{ch1, ch2}, 5)
 
 	assert.Equal(t, 1, len(results))
 	assert.Equal(t, float32(0.5), results[0].Score)
@@ -72,13 +62,8 @@ func TestMergeSortedStreams_LimitK(t *testing.T) {
 	}()
 
 	// Request only top 2
-	merged := MergeSortedStreams([]<-chan []SearchResult{ch1}, 2)
-
-	count := 0
-	for range merged {
-		count++
-	}
-	assert.Equal(t, 2, count)
+	results := MergeSortedStreams([]<-chan []SearchResult{ch1}, 2)
+	assert.Equal(t, 2, len(results))
 }
 
 func TestMergeSortedStreams_InterleavedDelays(t *testing.T) {
@@ -99,12 +84,7 @@ func TestMergeSortedStreams_InterleavedDelays(t *testing.T) {
 		close(ch2)
 	}()
 
-	merged := MergeSortedStreams([]<-chan []SearchResult{ch1, ch2}, 10)
-
-	results := make([]SearchResult, 0, 4)
-	for r := range merged {
-		results = append(results, r)
-	}
+	results := MergeSortedStreams([]<-chan []SearchResult{ch1, ch2}, 10)
 
 	// 0.1, 0.2, 0.5, 0.9
 	expectedScores := []float32{0.1, 0.2, 0.5, 0.9}

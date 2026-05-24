@@ -117,6 +117,8 @@ env:
   LONGBOW_LOW_MEM: "0"         # Enable low memory mode for 512MB devices
   LONGBOW_GOGC: "100"         # Go GC percentage
   LONGBOW_MAX_MEMORY: ""         # Max memory (e.g., 18GB) - leave empty for auto
+  LONGBOW_ADAPTIVE_M_MAX_FACTOR: "1.5" # Limit Adaptive-M growth to 1.5x
+  LONGBOW_MAX_M0: "32"                 # Hard cap on max M for base layer
 
 # RDMA (RoCEv2) Configuration
 # Requires RDMA-capable NICs and libibverbs on the host.
@@ -241,18 +243,6 @@ indexing:
   workerPool:
     size: 0          # 0 = auto-detect CPU count
 
-# Compaction Configuration
-compaction:
-  enabled: true
-  interval: "30s"
-  targetBatchSize: 10000
-  minBatches: 10
-
-# Auto-Sharding Configuration
-autoSharding:
-  enabled: true
-  threshold: 10000
-  splitThreshold: 65536
 
 # ONNX Runtime Configuration (Legacy/Native)
 onnx:

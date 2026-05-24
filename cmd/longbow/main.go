@@ -31,6 +31,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/middleware"
 	"github.com/23skdu/longbow/internal/sharding"
+	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/23skdu/longbow/pkg/version"
 
@@ -341,6 +342,25 @@ func run() error {
 	// GPU Binary Diagnostic check
 	gpu.CheckBinaryDiagnostic(&logger)
 
+	// SIMD Kernel Validation: run a known-answer test for the selected implementation.
+	// Logs the detected SIMD implementation at INFO for remote diagnosis.
+	// If the KAT fails (e.g., AVX-512 trapping in a VM), logs a warning and continues
+	// on the generic path rather than crashing — the server is still functional.
+	simdDetails := simd.GetImplementationDetails()
+	logger.Info().
+		Str("simd_impl", simd.GetImplementation()).
+		Str("arch", simdDetails["arch"].(string)).
+		Str("vendor", simdDetails["vendor"].(string)).
+		Bool("has_avx512", simdDetails["has_avx512"].(bool)).
+		Bool("has_avx2", simdDetails["has_avx2"].(bool)).
+		Bool("has_neon", simdDetails["has_neon"].(bool)).
+		Msg("SIMD dispatch initialized")
+	if err := simd.ValidateSIMDKernels(); err != nil {
+		logger.Warn().Err(err).Msg("SIMD kernel self-test failed; distance computations may be incorrect")
+	} else {
+		logger.Info().Str("impl", simd.GetImplementation()).Msg("SIMD kernel self-test passed")
+	}
+
 	// Configure GPU acceleration
 	if cfg.GPUEnabled {
 		detectedBackend := gpu.DetectGPUBackend()
@@ -602,6 +622,19 @@ func run() error {
 		mux.HandleFunc("/debug/pprof/profile", pprof.Profile)
 		mux.HandleFunc("/debug/pprof/symbol", pprof.Symbol)
 		mux.HandleFunc("/debug/pprof/trace", pprof.Trace)
+
+		// /diagnostics: returns SIMD impl details and key memory config.
+		// Use: curl http://ancalagon:<port>/diagnostics | jq .
+		mux.HandleFunc("/diagnostics", func(w http.ResponseWriter, r *http.Request) {
+			w.Header().Set("Content-Type", "application/json")
+			resp := simd.GetImplementationDetails()
+			resp["max_memory_bytes"] = cfg.MaxMemory
+			resp["adaptive_m_max_factor"] = os.Getenv("LONGBOW_ADAPTIVE_M_MAX_FACTOR")
+			resp["max_m0"] = os.Getenv("LONGBOW_MAX_M0")
+			if err := json.NewEncoder(w).Encode(resp); err != nil {
+				w.WriteHeader(http.StatusInternalServerError)
+			}
+		})
 
 		srv := &http.Server{
 			Addr:         metricsAddr,

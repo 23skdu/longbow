@@ -1,28 +1,3 @@
-# Longbow Performance Benchmarks (0.2.1-rc4)
-
-This document contains the latest performance benchmarking results collated from the local macOS machine (M3) and the high-end multi-socket AMD64 server `ancalagon`.
-
-The tests cover CPU, Metal, and CUDA backends across various datatypes and vector counts for 128 and 384 dimensions. Note that due to resource exhaustion limits, maximum vector count achieved was 100,000 before hitting the safety thresholds.
-
-## Regression Analysis vs v0.2.0 Baseline
-
-A comprehensive audit of the latest 0.2.1-rc4 benchmark logs against the v0.2.0 baseline reveals significant regressions, primarily stemming from scaling issues:
-
-1. **Massive Throughput Regression at Scale**:
-   - **Dense Search**: Dropped from ~30,576 QPS (baseline, count=5,000) to **1,259 QPS** (local M3 float32, dim=128, count=50,000) and **951 QPS** at count=100,000. This is a 96% regression.
-   - **Temporal Search**: Dropped from ~29,389 QPS (baseline, count=5,000) to **2,082 QPS** (local M3 float32, dim=128, count=100,000).
-
-2. **Ingestion Bottlenecks**:
-   - Ingestion rate for float32/128d on Apple Silicon M3 plummeted from **~459,000 vec/s** (baseline) to **838 vec/s** at the 100,000 vector scale. This indicates severe memory fragmentation or an `O(N^2)` indexing complexity bug introduced in recent commits.
-
-3. **High-Dimensional Degradation**:
-   - At 384 dimensions, `float32` ingestion drops to just **288 vec/s** locally and **355 vec/s** on the remote server, while Dense QPS barely breaks 600.
-
-4. **Resource Exhaustion Thresholds**:
-   - The benchmarks successfully ran up to 100k vectors. However, attempts to scale to 500k vectors hit hard memory limits. Specifically, memory pressure caused the system to halt via `ResourceExhausted` backpressure at ~375k vectors for the 18GB local cap and ~275k vectors for the 14GB remote cap.
-
----
-
 ## Performance (dim=128, count=50000)
 | Platform | Dtype | Search Mode | Ingest (vec/s) | QPS | p50 (ms) | p95 (ms) | p99 (ms) |
 |---|---|---|---|---|---|---|---|
@@ -139,11 +114,3 @@ A comprehensive audit of the latest 0.2.1-rc4 benchmark logs against the v0.2.0 
 | Remote (Ancalagon) | turboquant | Temporal | 5906 | 1826 | 4.02 | 6.37 | 7.55 |
 
 
-
-
-## Stability Findings
-
-The system safely handles memory exhaustion by throwing `rpc error: code = ResourceExhausted desc = critical memory pressure` instead of hard crashing (OOM kill). However, the active benchmark server does not correctly terminate zombie processes, requiring manual intervention.
-
-## Previous Baselines
-For historical comparison, see [v0.2.0 Baseline Docs](performance_0.2.0_baseline.md).

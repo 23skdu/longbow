@@ -2,7 +2,28 @@ package store
 
 import (
 	"container/heap"
+	"sync"
 )
+
+var searchResultPool = sync.Pool{
+	New: func() any {
+		return make([]SearchResult, 0, 1000)
+	},
+}
+
+// GetSearchResultSlice retrieves a pre-allocated slice from the pool
+func GetSearchResultSlice(capacity int) []SearchResult {
+	slice := searchResultPool.Get().([]SearchResult)
+	if cap(slice) < capacity {
+		return make([]SearchResult, 0, capacity)
+	}
+	return slice[:0]
+}
+
+// PutSearchResultSlice returns a slice to the pool
+func PutSearchResultSlice(slice []SearchResult) {
+	searchResultPool.Put(slice[:0])
+}
 
 // ResultHeap implements heap.Interface for a stream of SearchResults
 type ResultHeap []StreamItem
@@ -33,72 +54,59 @@ func (h *ResultHeap) Pop() any {
 
 // MergeSortedStreams merges multiple sortedResult channels into a single sorted stream.
 // It assumes input channels produce results sorted by Score (ascending).
-// The output channel will also produce results sorted by Score.
-func MergeSortedStreams(channels []<-chan []SearchResult, k int) <-chan SearchResult {
-	out := make(chan SearchResult, k) // Buffer up to k
+func MergeSortedStreams(channels []<-chan []SearchResult, k int) []SearchResult {
+	if k <= 0 {
+		return nil
+	}
+	
+	out := GetSearchResultSlice(k)
 
-	go func() {
-		defer close(out)
+	h := &ResultHeap{}
+	heap.Init(h)
 
-		h := &ResultHeap{}
-		heap.Init(h)
+	type SourceState struct {
+		batch []SearchResult
+		idx   int
+		ch    <-chan []SearchResult
+	}
 
-		// 1. Initialize heap with the first available batch from each channel
-		// Note: The input is []SearchResult (batches), not single items.
-		// We need to buffer the current batch from each source.
+	sources := make([]*SourceState, len(channels))
 
-		type SourceState struct {
-			batch []SearchResult
-			idx   int
-			ch    <-chan []SearchResult
+	for i, ch := range channels {
+		sources[i] = &SourceState{ch: ch}
+		if batch, ok := <-ch; ok && len(batch) > 0 {
+			sources[i].batch = batch
+			sources[i].idx = 0
+			heap.Push(h, StreamItem{
+				Result:    batch[0],
+				SourceIdx: i,
+			})
 		}
+	}
 
-		sources := make([]*SourceState, len(channels))
+	for h.Len() > 0 && len(out) < k {
+		item := heap.Pop(h).(StreamItem)
+		out = append(out, item.Result)
 
-		for i, ch := range channels {
-			sources[i] = &SourceState{ch: ch}
-			// Fetch first batch
-			if batch, ok := <-ch; ok && len(batch) > 0 {
-				sources[i].batch = batch
-				sources[i].idx = 0
+		src := sources[item.SourceIdx]
+		src.idx++
+
+		if src.idx < len(src.batch) {
+			heap.Push(h, StreamItem{
+				Result:    src.batch[src.idx],
+				SourceIdx: item.SourceIdx,
+			})
+		} else {
+			if batch, ok := <-src.ch; ok && len(batch) > 0 {
+				src.batch = batch
+				src.idx = 0
 				heap.Push(h, StreamItem{
 					Result:    batch[0],
-					SourceIdx: i,
-				})
-			}
-		}
-
-		count := 0
-		for h.Len() > 0 && (k <= 0 || count < k) {
-			// Pop smallest
-			item := heap.Pop(h).(StreamItem)
-			out <- item.Result
-			count++
-
-			// Push next from same source
-			src := sources[item.SourceIdx]
-			src.idx++
-
-			if src.idx < len(src.batch) {
-				// Next item in current batch
-				heap.Push(h, StreamItem{
-					Result:    src.batch[src.idx],
 					SourceIdx: item.SourceIdx,
 				})
-			} else {
-				// Fetch next batch from channel
-				if batch, ok := <-src.ch; ok && len(batch) > 0 {
-					src.batch = batch
-					src.idx = 0
-					heap.Push(h, StreamItem{
-						Result:    batch[0],
-						SourceIdx: item.SourceIdx,
-					})
-				}
-				// Else channel closed or empty, source exhausted
 			}
 		}
-	}()
+	}
 
 	return out
 }

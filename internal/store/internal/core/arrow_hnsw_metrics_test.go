@@ -64,6 +64,8 @@ func TestArrowHNSW_Metrics(t *testing.T) {
 
 	t.Run("PolymorphicMetrics", func(t *testing.T) {
 		// Reset metrics
+		metrics.GlobalHotpathSampler.AlwaysSample = true
+		defer func() { metrics.GlobalHotpathSampler.AlwaysSample = false }()
 		metrics.HNSWPolymorphicSearchCount.Reset()
 		metrics.HNSWPolymorphicLatency.Reset()
 		metrics.HNSWPolymorphicThroughput.Reset()

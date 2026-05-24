@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"runtime/pprof"
 	"sort"
 	"strconv"
 	"strings"
@@ -1000,14 +1001,19 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 			}
 		}
 
-		// Flush single combined batch with Circuit Breaker
+		// Flush single combined batch with Circuit Breaker.
+		// pprof labels allow "go tool pprof" to filter by dataset/op so profiles
+		// show per-dataset ingestion cost rather than a flat flushPutBatch stack.
 		cb := s.Breakers.GetOrCreate(ds.Name)
-		_, err := cb.Execute(func() (any, error) {
-			return nil, s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{combined})
+		var flushErr error
+		pprof.Do(stream.Context(), pprof.Labels("dataset", ds.Name, "op", "flush"), func(ctx context.Context) {
+			_, flushErr = cb.Execute(func() (any, error) {
+				return nil, s.flushPutBatch(ctx, ds, []arrow.RecordBatch{combined})
+			})
 		})
 		combined.Release()
-		if err != nil {
-			return err
+		if flushErr != nil {
+			return flushErr
 		}
 
 		metrics.DoPutBatchLatencySeconds.Observe(time.Since(startFlush).Seconds())

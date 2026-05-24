@@ -50,10 +50,10 @@ type PackedAdjacency struct {
 	chunks   atomic.Pointer[[]uint64]
 	mu       sync.RWMutex // Protects chunks growth
 	refCount atomic.Int64
-	locks    [256]sync.Mutex // Striped locks to prevent retry storms
+	locks    []sync.Mutex // Striped locks to prevent retry storms
 }
 
-// NewPackedAdjacency creates a new PackedAdjacency structure with the given arena.
+// NewPackedAdjacency creates a PackedAdjacency with internal arenas
 func NewPackedAdjacency(arena *memory.SlabArena, initialCapacity int) *PackedAdjacency {
 	return NewPackedAdjacencyWithArenas(arena,
 		memory.NewTypedArena[uint32](arena),
@@ -82,6 +82,7 @@ func NewPackedAdjacencyWithArenas(arena *memory.SlabArena,
 		distanceArena: distanceArena,
 		pageArena:     pageArena,
 		offHeapAlloc:  nil, // Chunks initially on-heap to prevent concurrent off-heap resize races
+		locks:         make([]sync.Mutex, 65536),
 	}
 	pa.chunks.Store(&chunks)
 	pa.refCount.Store(1)
@@ -367,12 +368,12 @@ func (pa *PackedAdjacency) GetPackedNeighbors(id uint32) (uint64, bool) {
 
 // Lock acquires a striped lock for the given node ID.
 func (pa *PackedAdjacency) Lock(id uint32) {
-	pa.locks[id%256].Lock()
+	pa.locks[id%65536].Lock()
 }
 
-// Unlock releases the striped lock for the given node ID.
+// Unlock unlocks the striped lock for the given node ID.
 func (pa *PackedAdjacency) Unlock(id uint32) {
-	pa.locks[id%256].Unlock()
+	pa.locks[id%65536].Unlock()
 }
 
 // UpdateNeighbors modifies a node's neighbor list using a transformation function.

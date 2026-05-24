@@ -21,11 +21,11 @@ Based on the audit of the v0.2.1-rc4 benchmark matrix (see `docs/performance.md`
 - Investigate indexing memory overhead. The raw vector size for 375k `float32` 128d vectors is only ~192MB. An 18GB footprint indicates a ~90x overhead per vector in the current indexing structure (likely the GraphRAG or HNSW edges).
 - Implement chunked disk spilling or on-disk indices for datasets exceeding 100k vectors to respect the 18GB/14GB boundaries.
 
-## 2. Resolve `O(N)` or `O(N^2)` Ingestion Degradation
+## 2. [RESOLVED] Resolve `O(N)` or `O(N^2)` Ingestion Degradation
 **Finding**: Ingestion rates dropped from 459k vec/s down to <1k vec/s as the dataset grew from 5k to 100k vectors.
 **Action**:
-- Profile the `DoPut` hot path to identify locking contention or index re-balancing that scales poorly with dataset size.
-- Ensure the `LockFreeSlice` integration from Phase 7 is actually bypassing `epMu` spinlocks during bulk ingestion.
+- [x] Profile the `DoPut` hot path to identify locking contention. (Fixed `epMu` spinlock hold during search, increased `ShardedLockCount` to 131072, expanded `PackedAdjacency` internal lock stripes from 256 to 65536).
+- [x] Ensure the `LockFreeSlice` integration from Phase 7 is actually bypassing `epMu` spinlocks during bulk ingestion. (Released `epMu` immediately after getting `entryPoint`).
 
 ## 3. Fix High-Dimensional Search Contention
 **Finding**: Dense search QPS at 384 dimensions fell below 500 QPS on the remote Ancalagon server.

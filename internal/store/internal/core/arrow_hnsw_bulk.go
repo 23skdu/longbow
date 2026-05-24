@@ -24,7 +24,7 @@ import (
 const BulkInsertThreshold = 1000
 
 // ShardedLockCount is the number of shards for node locking.
-const ShardedLockCount = 1024
+const ShardedLockCount = 131072
 
 // AddBatchBulk attempts to insert a batch of vectors in parallel using a bulk strategy.
 // It assumes IDs, locations, and capacity have already been prepared/reserved.

@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"testing"
+	"github.com/23skdu/longbow/internal/store/cluster"
+
 	"time"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -16,7 +18,7 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)
-	meta := NewMetaServer(s)
+	meta := cluster.NewMetaServer(s)
 	defer func() { _ = s.Close() }()
 	defer func() { _ = meta.Close() }()
 
@@ -27,7 +29,7 @@ func TestGraphAPI_GetGraphStats(t *testing.T) {
 		Name:  dsName,
 		Graph: NewGraphStore(),
 	}
-	s.updateDatasets(func(m map[string]*Dataset) {
+	s.UpdateDatasets(func(m map[string]*Dataset) {
 		m[dsName] = ds
 	})
 
@@ -64,7 +66,7 @@ func TestGraphAPI_GetGraphStats_NotFound(t *testing.T) {
 	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 1<<30, 0, time.Hour)
 	defer func() { _ = s.Close() }()
-	meta := NewMetaServer(s)
+	meta := cluster.NewMetaServer(s)
 	defer func() { _ = meta.Close() }()
 
 	req := map[string]string{"dataset": "non_existent"}

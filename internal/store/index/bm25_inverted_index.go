@@ -111,7 +111,7 @@ func (idx *BM25InvertedIndex) GetDocLengthsBatch(ids []VectorID, dst map[VectorI
 
 // Add indexes a document with the given text
 func (idx *BM25InvertedIndex) Add(id VectorID, text string) {
-	terms := tokenize(text)
+	terms := Tokenize(text)
 	if len(terms) == 0 {
 		return
 	}
@@ -289,7 +289,7 @@ func (idx *BM25InvertedIndex) Delete(id VectorID) {
 
 // SearchBM25 returns documents matching the query, scored by BM25
 func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roaring.Bitmap, pool *SearchResultPool) []SearchResult {
-	queryTerms := tokenize(query)
+	queryTerms := Tokenize(query)
 	if len(queryTerms) == 0 {
 		return nil
 	}
@@ -559,7 +559,7 @@ func (idx *BM25InvertedIndex) SearchBM25(query string, limit int, filter *roarin
 }
 
 // tokenize is a simple whitespace tokenizer with basic cleaning
-func tokenize(text string) []string {
+func Tokenize(text string) []string {
 	fields := strings.Fields(strings.ToLower(text))
 	tokens := make([]string, 0, len(fields))
 	for _, f := range fields {

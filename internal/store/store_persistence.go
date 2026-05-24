@@ -1,6 +1,8 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/wal"
+
 	"bytes"
 	"fmt"
 	"time"
@@ -34,7 +36,7 @@ func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 
 	// 2.5 Initialize WAL Replicator for HA if Mesh is active
 	if s.Mesh != nil {
-		replicator := NewFlightWALReplicator(s.pool, s.Mesh)
+		replicator := wal.NewFlightWALReplicator(s.pool, s.Mesh)
 		engine.SetReplicator(replicator)
 	}
 

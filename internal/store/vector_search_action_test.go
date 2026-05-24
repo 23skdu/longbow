@@ -48,7 +48,7 @@ func TestVectorSearchAction_Basic(t *testing.T) {
 	}
 
 	stream := &mockVectorSearchDoActionServer{}
-	err = vs.handleVectorSearchAction(action, stream)
+	err = vs.HandleVectorSearchAction(action, stream)
 
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "not found")
@@ -126,7 +126,7 @@ func TestVectorSearchAction_EfSearchValidation(t *testing.T) {
 			}
 
 			stream := &mockVectorSearchDoActionServer{}
-			err = vs.handleVectorSearchAction(action, stream)
+			err = vs.HandleVectorSearchAction(action, stream)
 
 			if tt.expectError {
 				assert.Error(t, err)

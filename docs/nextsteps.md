@@ -1,39 +1,24 @@
-# Actionable Stability and Performance Recommendations
+# Next Steps & Priorities
 
-Based on the audit of the v0.2.1-rc4 benchmark matrix (see `docs/performance.md`), the following immediate actions are recommended:
+> [!IMPORTANT]
+> **P0 Blockers: Test Suite Optimization & Context Window Refactoring**
+> We must address the test execution time (especially race detection timeouts) and file sizes to ensure maintainability and agent context limits.
 
-## P0 BLOCKER: Test Suite & Codebase Context Window Optimization
+## 1. Test Suite Optimization
+- **Parallelization vs. Serial Tests**: Identify CPU-bound index tests and prevent them from running in parallel with `t.Parallel()` during race detection, which causes excessive context switching and timeouts.
+- **Test Consolidation**: Combine frivolous or overly granular tests (e.g., small individual getter/setter tests) into single table-driven tests to reduce overhead.
+- **Mocking & Isolation**: Mock `mesh.Gossip` and heavy network/RPC components in `store` tests instead of spinning up full simulated clusters for basic unit tests.
+- **Timeout Adjustments**: Increase timeout flags for `go test -race` specifically on heavy packages (e.g. `internal/store/index`), but prioritize optimizing the code first.
 
-**Problem Context:** 
-1. The monolithic `internal/store` package contains over 280 test files. When run with `-race`, it exceeds standard 15-minute execution limits due to sequential execution and heavy stress tests.
-2. Key files like `navigation.go` (>2600 lines) and `arrow_hnsw.go` (>1500 lines) exceed standard LLM context windows, degrading the efficiency of agentic code modifications.
-3. The test suite contains overlapping, frivolous tests that increase runtime without significantly improving coverage or catching bugs.
+## 2. Refactoring for Context Windows
+- **`navigation.go`**: Split into `navigation_search.go` (vector searching logic), `navigation_parallel.go` (parallel search host logic), and `navigation_properties.go` (getters/warmup).
+- **`arrow_hnsw.go`**: Extract insertion and graph mutation logic into `arrow_hnsw_insert.go` and `arrow_hnsw_delete.go`.
+- **`store.go`**: Move lifecycle methods (`Start`, `Stop`) to `store_lifecycle.go` and configuration to `store_config.go`.
 
-**Action Plan:**
-- **Phase 1 (Test Consolidation & Pruning):** Audit `internal/store` to combine repetitive single-case tests into shared table-driven tests. Delete frivolous or redundant tests.
-- **Phase 2 (Race Optimization):** Wrap heavy dataset generation and extreme stress tests in `if testing.Short() { t.Skip("skipping heavy ingestion in short mode") }` so `go test -short -race` can run rapidly.
-- **Phase 3 (Mega-Package Mitigation):** Break the monolithic `internal/store` package into sub-packages (e.g., `internal/store/index`, `internal/store/wal`, `internal/store/cluster`) to parallelize test execution at the package level.
-- **Phase 4 (Context-Window Optimization):** Refactor massive files like `navigation.go` into <=800 line chunks based on behavior (e.g., extract polymorphic dispatch into `distance_dispatch.go`).
+---
 
-## 1. Address Ingestion Memory Scaling Limits (< 20GB Configurations)
-**Finding**: The memory-based ingestion limit restricts capacity to 300k-400k float32 vectors on nodes with less than 20GB of memory. It hits a hard `ResourceExhausted` ceiling at ~375k vectors for 18GB limits and ~275k for 14GB limits.
-**Action**: 
-- Investigate indexing memory overhead. The raw vector size for 375k `float32` 128d vectors is only ~192MB. An 18GB footprint indicates a ~90x overhead per vector in the current indexing structure (likely the GraphRAG or HNSW edges).
-- Implement chunked disk spilling or on-disk indices for datasets exceeding 100k vectors to respect the 18GB/14GB boundaries.
+## Other Ongoing Tasks
+- Implement/integrate GPU index types for advanced hardware acceleration.
+- Update `Makefile` and `Dockerfile` for `GOAMD64=v3`.
+- Benchmark Execution on `ancalagon` hardware profile.
 
-## 2. [RESOLVED] Resolve `O(N)` or `O(N^2)` Ingestion Degradation
-**Finding**: Ingestion rates dropped from 459k vec/s down to <1k vec/s as the dataset grew from 5k to 100k vectors.
-**Action**:
-- [x] Profile the `DoPut` hot path to identify locking contention. (Fixed `epMu` spinlock hold during search, increased `ShardedLockCount` to 131072, expanded `PackedAdjacency` internal lock stripes from 256 to 65536).
-- [x] Ensure the `LockFreeSlice` integration from Phase 7 is actually bypassing `epMu` spinlocks during bulk ingestion. (Released `epMu` immediately after getting `entryPoint`).
-
-## 3. Fix High-Dimensional Search Contention
-**Finding**: Dense search QPS at 384 dimensions fell below 500 QPS on the remote Ancalagon server.
-**Action**:
-- Re-verify AVX2/AVX-512 distance kernels on Ancalagon. The 288 QPS implies fallback to naive scalar loops.
-- Check SIMD register saturation or cache line misses for 384d `float32` arrays.
-
-## 4. Benchmark Server Process Management
-**Finding**: `unified_benchmark.py` correctly reports `ResourceExhausted` failures but leaves the server binaries running as zombie processes.
-**Action**:
-- Add explicit cleanup logic (`killall longbow` or equivalent `os.kill`) in the benchmark orchestrator's exception handlers to prevent stale processes from interfering with subsequent runs.

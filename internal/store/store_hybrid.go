@@ -1,6 +1,8 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/index"
+
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/rs/zerolog"
@@ -108,7 +110,7 @@ func (s *VectorStore) indexTextColumnsForHybridSearch(ds *Dataset, batch arrow.R
 
 			if ds.BM25ArenaIndex != nil {
 				// Arena path: tokenize and index via arena-based storage
-				tokens := tokenize(text)
+				tokens := index.Tokenize(text)
 				if err := ds.BM25ArenaIndex.IndexDocument(docID, tokens); err != nil {
 					s.logger.Error().Err(err).Uint32("doc_id", docID).Msg("hybrid search: arena index failed")
 				}

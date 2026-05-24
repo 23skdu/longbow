@@ -22,8 +22,8 @@ import (
 
 // No longer using global pool here, moved to VectorStore
 
-// handleVectorSearchAction handles the VectorSearch DoAction request
-func (s *VectorStore) handleVectorSearchAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+// HandleVectorSearchAction handles the VectorSearch DoAction request
+func (s *VectorStore) HandleVectorSearchAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
 	start := time.Now()
 
 	// Use ArenaAllocator for Arrow records

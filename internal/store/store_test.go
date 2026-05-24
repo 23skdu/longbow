@@ -379,7 +379,7 @@ func TestEviction(t *testing.T) {
 		ds1.SizeBytes.Store(calculateRecordSize(rec))
 		rec.Retain()
 		ds1.SizeBytes.Store(calculateRecordSize(rec))
-		store.updateDatasets(func(m map[string]*Dataset) {
+		store.UpdateDatasets(func(m map[string]*Dataset) {
 			m["ds1"] = ds1
 		})
 		store.currentMemory.Add(calculateRecordSize(rec))
@@ -389,7 +389,7 @@ func TestEviction(t *testing.T) {
 		ds2.SetLastAccess(time.Now())
 		rec.Retain()
 		ds2.SizeBytes.Store(calculateRecordSize(rec))
-		store.updateDatasets(func(m map[string]*Dataset) {
+		store.UpdateDatasets(func(m map[string]*Dataset) {
 			m["ds2"] = ds2
 		})
 		store.currentMemory.Add(calculateRecordSize(rec))
@@ -399,7 +399,7 @@ func TestEviction(t *testing.T) {
 		ds3.SetLastAccess(time.Now())
 		rec.Retain()
 		ds3.SizeBytes.Store(calculateRecordSize(rec))
-		store.updateDatasets(func(m map[string]*Dataset) {
+		store.UpdateDatasets(func(m map[string]*Dataset) {
 			m["ds3"] = ds3
 		})
 		store.currentMemory.Add(calculateRecordSize(rec))

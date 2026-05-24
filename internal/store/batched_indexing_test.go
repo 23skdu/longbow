@@ -39,7 +39,7 @@ func TestBatchedIndexing(t *testing.T) {
 	t.Cleanup(func() {
 		_ = store.Close()
 	})
-	store.datasets.Store(&map[string]types.IndexDataProvider{ds.GetName(): ds})
+	store.datasets.Store(&map[string]*Dataset{ds.GetName(): ds})
 
 	// Start worker
 	store.StartIndexingWorkers(1)

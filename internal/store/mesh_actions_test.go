@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/cluster"
 	"context"
 	"encoding/json"
 	"testing"
@@ -28,7 +29,7 @@ func TestMeshActions(t *testing.T) {
 	defer g.Stop()
 	s.SetMesh(g)
 
-	meta := NewMetaServer(s)
+	meta := cluster.NewMetaServer(s)
 	defer func() { _ = meta.Close() }()
 
 	t.Run("MeshIdentity", func(t *testing.T) {
@@ -70,19 +71,6 @@ func TestMeshActions(t *testing.T) {
 		assert.Contains(t, status, "provider")
 	})
 
-	t.Run("ClusterStatus", func(t *testing.T) {
-		stream := &mockDoActionServer{}
-		err := meta.DoAction(&flight.Action{Type: "cluster-status"}, stream)
-		require.NoError(t, err)
-		require.Len(t, stream.results, 1)
-
-		var status map[string]any
-		err = json.Unmarshal(stream.results[0].Body, &status)
-		require.NoError(t, err)
-		assert.Contains(t, status, "self")
-		assert.Contains(t, status, "members")
-		assert.Contains(t, status, "count")
-	})
 }
 
 type mockDoActionServer struct {

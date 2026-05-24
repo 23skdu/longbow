@@ -77,6 +77,6 @@ func TestNewDataset_MetadataParsing(t *testing.T) {
 
 	ds := NewDataset("test_tq", schema)
 	assert.Equal(t, types.VectorTypeTQ, ds.PreferredVectorType)
-	assert.Equal(t, 4, ds.TurboQuantBits)
+	assert.Equal(t, 4, ds.TurboQuantBits())
 	assert.Equal(t, MetricCosine, ds.Metric)
 }

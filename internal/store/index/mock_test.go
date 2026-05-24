@@ -17,14 +17,14 @@ import (
 
 // MockDataset implements types.IndexDataProvider for testing
 type MockDataset struct {
-	mu        sync.RWMutex
-	Records   []arrow.RecordBatch
-	Name      string
-	Schema    *arrow.Schema
-	PQEncoder *pq.PQEncoder
-	Index     any
-	BM25Index any
-	Graph     any
+	mu         sync.RWMutex
+	Records    []arrow.RecordBatch
+	Name       string
+	Schema     *arrow.Schema
+	PQEncoder  *pq.PQEncoder
+	Index      any
+	BM25Index  any
+	Graph      any
 	Tombstones map[int]*types.Bitset
 }
 

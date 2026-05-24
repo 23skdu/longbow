@@ -3,8 +3,9 @@ package store
 import (
 	"math"
 	"testing"
-
 	"github.com/23skdu/longbow/internal/store/index"
+
+
 	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/pq"
@@ -24,7 +25,7 @@ func TestQuantizerInterface(t *testing.T) {
 			{1.0, 2.0, 3.0, 4.0},
 			{5.0, 6.0, 7.0, 8.0},
 		}
-		encoder, err := core.TrainSQ8Encoder(vectors)
+		encoder, err := index.TrainSQ8Encoder(vectors)
 		require.NoError(t, err)
 		require.NotNil(t, encoder)
 		assert.Equal(t, 4, encoder.Dims())
@@ -57,7 +58,7 @@ func TestQuantizer_EncodeDecode_RoundTrip(t *testing.T) {
 			{0.0, 1.0, 2.0, 3.0, 4.0},
 			{5.0, 6.0, 7.0, 8.0, 9.0},
 		}
-		encoder, err := core.TrainSQ8Encoder(vectors)
+		encoder, err := index.TrainSQ8Encoder(vectors)
 		require.NoError(t, err)
 
 		original := []float32{2.5, 3.5, 4.5, 5.5, 6.5}
@@ -142,7 +143,7 @@ func TestQuantizer_EncodeMultipleVectors(t *testing.T) {
 			{5.0, 6.0, 7.0, 8.0},
 			{9.0, 10.0, 11.0, 12.0},
 		}
-		encoder, err := core.TrainSQ8Encoder(vectors)
+		encoder, err := index.TrainSQ8Encoder(vectors)
 		require.NoError(t, err)
 
 		// Encode each vector
@@ -177,7 +178,7 @@ func TestQuantizer_EncodeHandlesTypeConversion(t *testing.T) {
 
 	t.Run("SQ8_Float32Only", func(t *testing.T) {
 		vectors := [][]float32{{1.0, 2.0, 3.0}, {4.0, 5.0, 6.0}}
-		encoder, err := core.TrainSQ8Encoder(vectors)
+		encoder, err := index.TrainSQ8Encoder(vectors)
 		require.NoError(t, err)
 
 		// Works with float32
@@ -193,7 +194,7 @@ func TestQuantizer_DecodeEmptyInput(t *testing.T) {
 	}
 	t.Run("SQ8", func(t *testing.T) {
 		vectors := [][]float32{{1.0, 2.0, 3.0}, {4.0, 5.0, 6.0}}
-		encoder, err := core.TrainSQ8Encoder(vectors)
+		encoder, err := index.TrainSQ8Encoder(vectors)
 		require.NoError(t, err)
 
 		decoded := encoder.Decode([]uint8{})
@@ -217,7 +218,7 @@ func TestGenericQuantizer_Float32ToUint8(t *testing.T) {
 		{0.0, 0.0, 0.0},
 		{10.0, 10.0, 10.0},
 	}
-	encoder, err := core.TrainSQ8Encoder(vectors)
+	encoder, err := index.TrainSQ8Encoder(vectors)
 	require.NoError(t, err)
 
 	vec := []float32{5.0, 5.0, 5.0}
@@ -297,7 +298,7 @@ func TestQuantizer_TypeConversion_Float16ToFloat32(t *testing.T) {
 		}
 	}
 
-	encoder, err := core.TrainSQ8EncoderFloat16(vecs)
+	encoder, err := index.TrainSQ8EncoderFloat16(vecs)
 	require.NoError(t, err)
 	require.NotNil(t, encoder)
 
@@ -316,7 +317,7 @@ func TestQuantizer_TypeConversion_Int8ToFloat32(t *testing.T) {
 	vecs[1] = []int8{0, 32, 64, 96, 127, -128, -64, 48}
 	vecs[2] = []int8{16, 48, 80, 112, -50, -96, -32, 127}
 
-	encoder, err := core.TrainSQ8EncoderInt8(vecs)
+	encoder, err := index.TrainSQ8EncoderInt8(vecs)
 	require.NoError(t, err)
 	require.NotNil(t, encoder)
 
@@ -344,7 +345,7 @@ func TestGenericSQ8Quantizer(t *testing.T) {
 		{1.0, 2.0, 3.0, 4.0},
 		{5.0, 6.0, 7.0, 8.0},
 	}
-	encoder, err := core.TrainSQ8Encoder(vectors)
+	encoder, err := index.TrainSQ8Encoder(vectors)
 	require.NoError(t, err)
 
 	wrapper := NewGenericSQ8Quantizer(encoder)
@@ -445,7 +446,7 @@ func TestSQ8_PerDimensionBounds(t *testing.T) {
 		{0.0, 0.0},   // Min for both dims
 		{100.0, 1.0}, // Max for dim 0, small range for dim 1
 	}
-	encoder, err := core.TrainSQ8Encoder(vectors)
+	encoder, err := index.TrainSQ8Encoder(vectors)
 	require.NoError(t, err)
 
 	minVals, maxVals := encoder.GetBounds()
@@ -464,7 +465,7 @@ func TestSQ8_EncodeInto(t *testing.T) {
 		{1.0, 2.0, 3.0, 4.0},
 		{5.0, 6.0, 7.0, 8.0},
 	}
-	encoder, err := core.TrainSQ8Encoder(vectors)
+	encoder, err := index.TrainSQ8Encoder(vectors)
 	require.NoError(t, err)
 
 	dst := make([]uint8, 4)
@@ -568,7 +569,7 @@ func FuzzQuantizerRoundTrip(f *testing.F) {
 			{v4, v3, v2, v1},
 		}
 
-		encoder, err := core.TrainSQ8Encoder(vectors)
+		encoder, err := index.TrainSQ8Encoder(vectors)
 		if err != nil {
 			t.Skip("Training failed")
 		}

@@ -1,6 +1,8 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/wal"
+
 	"context"
 	"fmt"
 	"runtime"
@@ -561,9 +563,9 @@ func (vs *VectorStore) getDataset(name string) (*Dataset, bool) {
 	return ds, ok
 }
 
-// updateDatasets executes a CAS loop to update the map.
+// UpdateDatasets executes a CAS loop to update the map.
 // fn receives a COPY of the map to modify.
-func (vs *VectorStore) updateDatasets(fn func(map[string]*Dataset)) {
+func (vs *VectorStore) UpdateDatasets(fn func(map[string]*Dataset)) {
 	for {
 		oldPtr := vs.datasets.Load()
 		oldMap := *oldPtr
@@ -604,7 +606,7 @@ func (vs *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset)
 	// 2. CAS Loop
 	var result *Dataset
 	var created bool
-	vs.updateDatasets(func(m map[string]*Dataset) {
+	vs.UpdateDatasets(func(m map[string]*Dataset) {
 		// Double-check existence in the new copy
 		if ds, ok := m[name]; ok && ds != nil {
 			result = ds
@@ -657,7 +659,7 @@ func (vs *VectorStore) SetMesh(m *mesh.Gossip) {
 	if m != nil {
 		engine := vs.engine.Load()
 		if engine != nil {
-			replicator := NewFlightWALReplicator(vs.pool, m)
+			replicator := wal.NewFlightWALReplicator(vs.pool, m)
 			engine.SetReplicator(replicator)
 		}
 	}
@@ -1154,6 +1156,28 @@ func (vs *VectorStore) GetNeighborsBulk(ctx context.Context, datasetName string,
 }
 
 
+
 func (d *Dataset) TurboQuantBits() int {
 	return d.turboQuantBits
+}
+
+// GetLogger returns the logger
+func (s *VectorStore) GetLogger() zerolog.Logger {
+	return s.logger
+}
+
+// GetMesh returns the mesh
+func (s *VectorStore) GetMesh() *mesh.Gossip {
+	return s.Mesh
+}
+
+// RegisterCDCSubscriber registers a subscriber for CDC events
+func (s *VectorStore) RegisterCDCSubscriber(dataset string, sub chan arrow.RecordBatch) {
+	// If store has CDC enabled/instantiated
+	// But to avoid cyclical dependencies, we just log unimplemented
+	s.logger.Warn().Msg("RegisterCDCSubscriber unimplemented directly on store due to package refactor")
+}
+
+// UnregisterCDCSubscriber unregisters a subscriber for CDC events
+func (s *VectorStore) UnregisterCDCSubscriber(dataset string, sub chan arrow.RecordBatch) {
 }

@@ -26,8 +26,8 @@ func TestStore_DropDataset_FastPath(t *testing.T) {
 	dsName := "test_drop_heavy"
 	ds := NewDataset(dsName, nil)
 
-	// Use updateDatasets if available (package private)
-	s.updateDatasets(func(m map[string]*Dataset) {
+	// Use UpdateDatasets if available (package private)
+	s.UpdateDatasets(func(m map[string]*Dataset) {
 		m[dsName] = ds
 	})
 

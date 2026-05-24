@@ -124,7 +124,7 @@ func TestDoExchange_VectorSearch(t *testing.T) {
 
 	// DataServer wraps VectorStore
 	// We need to call handleVectorSearchExchange on VectorStore
-	err = store.handleVectorSearchExchange(mockStream, firstMsg)
+	err = store.HandleVectorSearchExchange(mockStream, firstMsg)
 	require.NoError(t, err)
 
 	// 5. Verify Response (MockStream.sentData)
@@ -170,7 +170,7 @@ func setupTestDataset(t *testing.T, s *VectorStore, name string) {
 	ds.Index = idx
 
 	// Pre-populate hack
-	s.updateDatasets(func(m map[string]*Dataset) {
+	s.UpdateDatasets(func(m map[string]*Dataset) {
 		m[name] = ds
 	})
 

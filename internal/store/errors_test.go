@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/types"
 	"errors"
 	"fmt"
 	"testing"
@@ -59,7 +60,7 @@ func TestErrInternal(t *testing.T) {
 
 func TestToGRPCStatus_NotFound(t *testing.T) {
 	err := NewNotFoundError("vector", "missing_id")
-	grpcErr := ToGRPCStatus(err)
+	grpcErr := types.ToGRPCStatus(err)
 
 	st, ok := status.FromError(grpcErr)
 	assert.True(t, ok)
@@ -69,24 +70,24 @@ func TestToGRPCStatus_NotFound(t *testing.T) {
 
 func TestToGRPCStatus_InvalidArgument(t *testing.T) {
 	err := fmt.Errorf("invalid argument")
-	grpcErr := ToGRPCStatus(err)
+	grpcErr := types.ToGRPCStatus(err)
 
 	// Generic errors map to Internal unless recognized
-	// If you want to test mapping, you need real error types if ToGRPCStatus relies on type switches.
-	// Assuming ToGRPCStatus handles generic errors as Internal for now.
+	// If you want to test mapping, you need real error types if types.ToGRPCStatus relies on type switches.
+	// Assuming types.ToGRPCStatus handles generic errors as Internal for now.
 	st, ok := status.FromError(grpcErr)
 	assert.True(t, ok)
 	assert.Equal(t, codes.Internal, st.Code())
 }
 
 func TestToGRPCStatus_NilError(t *testing.T) {
-	result := ToGRPCStatus(nil)
+	result := types.ToGRPCStatus(nil)
 	assert.Nil(t, result)
 }
 
 func TestToGRPCStatus_AlreadyGRPCError(t *testing.T) {
 	original := status.Error(codes.AlreadyExists, "duplicate key")
-	result := ToGRPCStatus(original)
+	result := types.ToGRPCStatus(original)
 
 	// Should return the same error unchanged
 	st, ok := status.FromError(result)
@@ -97,7 +98,7 @@ func TestToGRPCStatus_AlreadyGRPCError(t *testing.T) {
 func TestToGRPCStatus_UnknownError(t *testing.T) {
 	// Plain error should map to Internal
 	err := errors.New("something went wrong")
-	grpcErr := ToGRPCStatus(err)
+	grpcErr := types.ToGRPCStatus(err)
 
 	st, ok := status.FromError(grpcErr)
 	assert.True(t, ok)

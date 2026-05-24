@@ -9,6 +9,8 @@ import (
 	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/23skdu/longbow/internal/store/index"
+
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 )
@@ -19,7 +21,7 @@ import (
 // evictDataset removes a dataset from memory and releases its resources safely.
 func (s *VectorStore) evictDataset(name string) {
 	var ds *Dataset
-	s.updateDatasets(func(m map[string]*Dataset) {
+	s.UpdateDatasets(func(m map[string]*Dataset) {
 		if d, ok := m[name]; ok {
 			ds = d
 			delete(m, name)
@@ -556,7 +558,7 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 											if s.hybridSearchConfig.Enabled {
 												bm25Arena := ds.BM25ArenaIndex
 												if bm25Arena != nil {
-													tokens := tokenize(text)
+													tokens := index.Tokenize(text)
 													_ = bm25Arena.IndexDocument(docID, tokens)
 												}
 												if bm25 != nil {

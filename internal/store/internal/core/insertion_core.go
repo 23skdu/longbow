@@ -332,6 +332,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 				ep = randomizedEP
 			}
 		}
+		h.epMu.Unlock()
 
 		for l := maxL; l > level; l-- {
 			var neighbors []types.Candidate
@@ -342,14 +343,12 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 				neighbors, err = h.searchLayer(context.Background(), computer, ep, 1, l, ctx, data, vec)
 			}
 			if err != nil {
-				h.epMu.Unlock()
 				return nil, err
 			}
 			if len(neighbors) > 0 {
 				ep = neighbors[0].ID
 			}
 		}
-		h.epMu.Unlock()
 	}
 
 

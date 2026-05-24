@@ -991,3 +991,15 @@ func (d *Dataset) requantizeTask(targetType types.VectorDataType) {
 		Dur("duration", duration).
 		Msg("Background re-quantization complete")
 }
+
+func (d *Dataset) GetMetric() DistanceMetric {
+	return d.Metric
+}
+
+func (d *Dataset) GetLogger() zerolog.Logger {
+	return d.Logger
+}
+
+func (d *Dataset) GetTopo() *memory.NUMATopology {
+	return d.Topo
+}

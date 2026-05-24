@@ -1,4 +1,4 @@
-package core
+package index
 
 import (
 	"context"
@@ -8,13 +8,13 @@ import (
 	"strconv"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
-	"sync/atomic"
 )
-
 
 // Insert adds a new vector to the HNSW graph.
 func (h *ArrowHNSW) Insert(id uint32, level int) error {
@@ -350,7 +350,6 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			}
 		}
 	}
-
 
 	shard := id % ShardedLockCount
 	lockStart := time.Now()

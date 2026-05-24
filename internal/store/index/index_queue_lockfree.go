@@ -1,10 +1,11 @@
-package core
+package index
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // IndexJobQueueLockFree is a lock-free queue for managing asynchronous index jobs.

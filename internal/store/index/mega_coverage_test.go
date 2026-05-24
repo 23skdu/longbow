@@ -1,11 +1,11 @@
-package core_test
+package index_test
 
 import (
 	"context"
 	"math/rand"
 	"testing"
 
-	"github.com/23skdu/longbow/internal/store/internal/core"
+	"github.com/23skdu/longbow/internal/store/index"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -33,7 +33,7 @@ func TestMegaCoverage(t *testing.T) {
 	config.SelectionHeuristicLimit = 10
 	config.SearchLayerSampleRate = 0.5
 
-	idx := core.NewArrowHNSW(nil, &config, nil)
+	idx := index.NewArrowHNSW(nil, &config, nil)
 	defer func() { _ = idx.Close() }()
 
 	// 1. Build Data
@@ -105,7 +105,7 @@ func TestMegaCoverage(t *testing.T) {
 func TestCore_EdgeCases(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	config.Dims = 16
-	idx := core.NewArrowHNSW(nil, &config, nil)
+	idx := index.NewArrowHNSW(nil, &config, nil)
 	defer func() { _ = idx.Close() }()
 
 	t.Run("GetNonExistent", func(t *testing.T) {

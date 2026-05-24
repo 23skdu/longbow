@@ -1,8 +1,9 @@
-package core_test
+package index_test
 
 import (
-	"github.com/23skdu/longbow/internal/store/internal/core"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/index"
 )
 
 // TestHNSW_VisitedListGrowth verifies that the visited list abstraction works.
@@ -12,7 +13,7 @@ import (
 func TestHNSW_VisitedListGrowth(t *testing.T) {
 	// Original test relied on ctx.Visit, ctx.visited.IsSet etc.
 	// We'll replace it with a stub to pass compilation.
-	ctxPool := core.NewArrowSearchContextPool()
+	ctxPool := index.NewArrowSearchContextPool()
 	searchCtx := ctxPool.Get()
 	defer ctxPool.Put(searchCtx)
 

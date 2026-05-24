@@ -1,4 +1,4 @@
-package core
+package index
 
 import (
 	basecore "github.com/23skdu/longbow/internal/core"

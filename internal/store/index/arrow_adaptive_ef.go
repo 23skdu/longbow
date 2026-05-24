@@ -1,4 +1,4 @@
-package core
+package index
 
 // getAdaptiveEf returns the efConstruction value to use for the current insertion
 // based on the number of nodes already in the graph.

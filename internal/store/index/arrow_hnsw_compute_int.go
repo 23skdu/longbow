@@ -1,10 +1,11 @@
-package core
+package index
 
 import (
-	"github.com/23skdu/longbow/internal/simd"
-	"github.com/23skdu/longbow/internal/store/types"
 	"math"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/simd"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // int16Computer handles Int16 vectors

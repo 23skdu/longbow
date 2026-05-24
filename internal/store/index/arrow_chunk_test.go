@@ -1,12 +1,14 @@
-package core
+package index
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
+
+	"sync/atomic"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/stretchr/testify/assert"
-	"sync/atomic"
 )
 
 func TestChunkedGrowth(t *testing.T) {

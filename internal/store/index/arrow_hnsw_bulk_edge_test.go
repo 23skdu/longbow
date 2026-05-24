@@ -1,12 +1,13 @@
-package core_test
+package index_test
 
 import (
 	"context"
 	"errors"
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"strings"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -16,7 +17,7 @@ import (
 
 // TestArrowHNSW_AddBatchBulk_EdgeCases tests edge cases for the bulk insertion path.
 // Note: We access AddBatchBulk directly or via AddBatch with preconditions if possible,
-// but AddBatchBulk is an internal method of core.ArrowHNSW (exported but assumes internal state).
+// but AddBatchBulk is an internal method of index.ArrowHNSW (exported but assumes internal state).
 // To test it safely, we should use AddBatch but force the bulk path or mock internal state.
 // However, AddBatchBulk is exported, so we can call it if we setup the index correctly.
 func TestArrowHNSW_AddBatchBulk_EdgeCases(t *testing.T) {
@@ -28,11 +29,11 @@ func TestArrowHNSW_AddBatchBulk_EdgeCases(t *testing.T) {
 		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
 	}, nil)
 
-	ds := core.NewMockDataset("test_edge", schema)
+	ds := index.NewMockDataset("test_edge", schema)
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.Dims = dims
 
-	idx := core.NewArrowHNSW(ds, &cfg, nil)
+	idx := index.NewArrowHNSW(ds, &cfg, nil)
 	defer func() { _ = idx.Close() }()
 
 	t.Run("EmptyBatch", func(t *testing.T) {

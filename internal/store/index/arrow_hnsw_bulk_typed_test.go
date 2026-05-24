@@ -1,4 +1,4 @@
-package core_test
+package index_test
 
 import (
 	"context"
@@ -6,7 +6,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/23skdu/longbow/internal/store/internal/core"
+	"github.com/23skdu/longbow/internal/store/index"
 	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -49,7 +49,7 @@ func TestAddBatch_Bulk_Typed(t *testing.T) {
 			config.DataType = tt.dataType
 			config.Dims = tt.dims
 
-			idx := core.NewArrowHNSW(nil, &config, nil)
+			idx := index.NewArrowHNSW(nil, &config, nil)
 			defer func() { _ = idx.Close() }()
 
 			// Generate 1100 vectors to ensure Bulk Path (> 1000)
@@ -290,14 +290,14 @@ func TestAddBatchBulk_DimensionMismatch(t *testing.T) {
 		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
 	}, nil)
 
-	ds := core.NewMockDataset("test_dimension_mismatch", schema)
+	ds := index.NewMockDataset("test_dimension_mismatch", schema)
 	config := types.DefaultArrowHNSWConfig()
 	config.M = 16
 	config.EfConstruction = 100
 	config.DataType = types.VectorTypeFloat32
 	config.Dims = dims
 
-	idx := core.NewArrowHNSW(ds, &config, nil)
+	idx := index.NewArrowHNSW(ds, &config, nil)
 	defer func() { _ = idx.Close() }()
 
 	// Create vectors with wrong dimension (16 instead of 8)

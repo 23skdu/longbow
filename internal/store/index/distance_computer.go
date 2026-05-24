@@ -1,13 +1,14 @@
-package core
+package index
 
 import (
+	"math"
+	"unsafe"
+
 	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
-	"math"
-	"unsafe"
 )
 
 // DistanceComputer defines the interface for specialized distance computation.

@@ -1,7 +1,8 @@
-package core
+package index
 
 import (
 	"errors"
+
 	"github.com/23skdu/longbow/internal/store/types"
 )
 

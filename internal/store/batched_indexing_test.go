@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -38,7 +39,7 @@ func TestBatchedIndexing(t *testing.T) {
 	t.Cleanup(func() {
 		_ = store.Close()
 	})
-	store.datasets.Store(&map[string]*Dataset{ds.GetName(): ds})
+	store.datasets.Store(&map[string]types.IndexDataProvider{ds.GetName(): ds})
 
 	// Start worker
 	store.StartIndexingWorkers(1)
@@ -86,7 +87,7 @@ func TestBatchedIndexing(t *testing.T) {
 	// Check search
 	query := make([]float32, 128)
 	query[0] = 50.0
-	results, err := ds.Index.SearchVectors(context.Background(), query, 5, nil, SearchOptions{})
+	results, err := ds.Index.SearchVectors(context.Background(), query, 5, nil, types.SearchOptions{})
 	require.NoError(t, err)
 	assert.NotEmpty(t, results)
 	assert.Equal(t, VectorID(50), results[0].ID)

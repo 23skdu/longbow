@@ -1,4 +1,4 @@
-package core
+package index
 
 // Neighbor operations extracted from arrow_hnsw_insert.go
 

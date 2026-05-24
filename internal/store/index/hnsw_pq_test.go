@@ -1,12 +1,12 @@
-package core_test
+package index_test
 
 import (
-	"github.com/23skdu/longbow/internal/store/internal/core"
 	"math/rand"
 	"testing"
 	"time"
 
 	"github.com/23skdu/longbow/internal/pq"
+	"github.com/23skdu/longbow/internal/store/index"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -14,8 +14,8 @@ func TestHNSWPQ_Integration(t *testing.T) {
 	// Setup
 	dim := 128
 	numVecs := 2000
-	ds := &core.MockDataset{Name: "test_pq"}
-	h := core.NewTestHNSWIndex(ds)
+	ds := &index.MockDataset{Name: "test_pq"}
+	h := index.NewTestHNSWIndex(ds)
 	// Initialize dims
 	h.SetDimension(dim)
 

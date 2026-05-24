@@ -1,4 +1,4 @@
-package core
+package index
 
 // nosec G404 - math/rand is used for HNSW level generation, not security-sensitive
 import (

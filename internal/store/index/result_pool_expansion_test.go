@@ -1,9 +1,10 @@
-package core
+package index
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"sync"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // TestResultPoolExpanded_NewSizes tests that expanded pool sizes are available

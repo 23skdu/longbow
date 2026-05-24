@@ -1,12 +1,13 @@
-package core
+package index
 
 import (
-	topcore "github.com/23skdu/longbow/internal/core"
 	"context"
 	"runtime"
 	"sync"
 	"testing"
 	"time"
+
+	topcore "github.com/23skdu/longbow/internal/core"
 
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/memory"
@@ -302,4 +303,8 @@ func (m *MockProvider) GetLogger() zerolog.Logger {
 
 func (m *MockProvider) GetTopo() *memory.NUMATopology {
 	return nil
+}
+
+func (m *MockProvider) TurboQuantBits() int {
+	return 8
 }

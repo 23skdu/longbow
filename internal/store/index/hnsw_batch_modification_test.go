@@ -1,11 +1,12 @@
-package core_test
+package index_test
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"sync"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -19,12 +20,12 @@ func TestArrowHNSW_AddBatch_Sequential(t *testing.T) {
 	numBatches := 5
 	batchSize := 100
 
-	// 1. Create core.MockDataset and Index
-	ds := &core.MockDataset{Name: "batch_mod_seq"}
+	// 1. Create index.MockDataset and Index
+	ds := &index.MockDataset{Name: "batch_mod_seq"}
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.M = 16
 	cfg.EfConstruction = 100
-	idx := core.NewArrowHNSW(ds, &cfg, nil)
+	idx := index.NewArrowHNSW(ds, &cfg, nil)
 	// Manually set dims since we bypass full initialization
 
 	// 2. Generate and Insert Batches
@@ -33,11 +34,11 @@ func TestArrowHNSW_AddBatch_Sequential(t *testing.T) {
 		for i := range vecs {
 			vecs[i] = makeTestVector(dims, b*batchSize+i)
 		}
-		rec := core.MakeBatchTestRecord(mem, dims, vecs)
+		rec := index.MakeBatchTestRecord(mem, dims, vecs)
 
-		// Append to core.MockDataset
-		// Note: core.MockDataset owns the record, so we should Retain if we plan to keep using `rec` locally or if core.MockDataset closes it.
-		// For simplicity in test, assume core.MockDataset takes ownership (or shares).
+		// Append to index.MockDataset
+		// Note: index.MockDataset owns the record, so we should Retain if we plan to keep using `rec` locally or if index.MockDataset closes it.
+		// For simplicity in test, assume index.MockDataset takes ownership (or shares).
 		rec.Retain()
 		ds.Records = append(ds.Records, rec)
 
@@ -84,12 +85,12 @@ func TestArrowHNSW_AddBatch_Concurrent(t *testing.T) {
 	batchSize := 50
 	batchesPerWorker := 5
 
-	ds := &core.MockDataset{Name: "batch_mod_conc"}
+	ds := &index.MockDataset{Name: "batch_mod_conc"}
 
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.M = 16
 	cfg.EfConstruction = 100
-	idx := core.NewArrowHNSW(ds, &cfg, nil)
+	idx := index.NewArrowHNSW(ds, &cfg, nil)
 
 	var wg sync.WaitGroup
 	wg.Add(numWorkers)
@@ -102,7 +103,7 @@ func TestArrowHNSW_AddBatch_Concurrent(t *testing.T) {
 				for i := range vecs {
 					vecs[i] = makeTestVector(dims, baseSeed+i)
 				}
-				rec := core.MakeBatchTestRecord(mem, dims, vecs)
+				rec := index.MakeBatchTestRecord(mem, dims, vecs)
 
 				// Safely append to dataset
 				rec.Retain()

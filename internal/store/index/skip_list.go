@@ -1,4 +1,4 @@
-package core
+package index
 
 import (
 	"math/rand/v2"
@@ -150,4 +150,3 @@ func (sl *ConcurrentSkipList) Len() int {
 	}
 	return count
 }
-

@@ -1,8 +1,9 @@
-package core
+package index
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // FuzzRepairAgent_GraphSize fuzzes the graph size to ensure the agent

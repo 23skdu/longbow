@@ -1,15 +1,15 @@
-package core_test
+package index_test
 
 import (
-	"github.com/23skdu/longbow/internal/store/internal/core"
 	"testing"
 
+	"github.com/23skdu/longbow/internal/store/index"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestArrowSearchContext_LifeCycle(t *testing.T) {
-	pool := core.NewArrowSearchContextPool()
+	pool := index.NewArrowSearchContextPool()
 	require.NotNil(t, pool)
 
 	t.Run("GetAndPut", func(t *testing.T) {

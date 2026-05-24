@@ -1,12 +1,13 @@
-package core
+package index
 
 import (
-	"github.com/23skdu/longbow/internal/memory"
-	"github.com/23skdu/longbow/internal/metrics"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // Tuner interface for observing system load

@@ -1,11 +1,12 @@
-package core
+package index
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/23skdu/longbow/internal/store/types"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	arrowarray "github.com/apache/arrow-go/v18/arrow/array"

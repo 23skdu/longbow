@@ -1,4 +1,4 @@
-package core
+package index
 
 import (
 	"context"
@@ -542,7 +542,6 @@ search_layer0:
 	h.flushSearchMetrics(searchCtx)
 	return results, nil
 }
-
 
 // searchLayerFloat32 is a monomorphic specialization of searchLayer for the
 // float32-query/float32-data case. It avoids DistanceComputer interface dispatch
@@ -1418,7 +1417,5 @@ func (h *ArrowHNSW) SearchWithArena(queryVec []float32, k int, arena any) []type
 // GetVector retrieves the vector for the given ID, checking memory and disk caches.
 
 // GetVectorAny returns the vector with the given ID as an interface{}.
-
-
 
 // mustGetVectorFromData retrieves a vector from the given data snapshot.

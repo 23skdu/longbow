@@ -1,11 +1,12 @@
-package core
+package index
 
 import (
 	"fmt"
-	"github.com/23skdu/longbow/internal/store/types"
 	"math"
 	"sync"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 func BenchmarkLayer0Contention(b *testing.B) {

@@ -1,12 +1,13 @@
-package core
+package index
 
 import (
 	"fmt"
-	"github.com/23skdu/longbow/internal/store/types"
 	"math/rand"
 	"runtime"
 	"testing"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"

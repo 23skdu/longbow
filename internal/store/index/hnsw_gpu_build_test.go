@@ -1,6 +1,6 @@
 //go:build gpu
 
-package core
+package index
 
 import (
 	"context"

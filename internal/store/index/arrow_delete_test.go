@@ -1,12 +1,14 @@
-package core
+package index
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
 
-	"github.com/stretchr/testify/assert"
+	"github.com/23skdu/longbow/internal/store/types"
+
 	"sync/atomic"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestDelete(t *testing.T) {

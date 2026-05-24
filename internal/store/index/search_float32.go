@@ -1,10 +1,11 @@
-package core
+package index
 
 import (
 	"container/heap"
 	"context"
 	"math"
 	"time"
+
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
 )

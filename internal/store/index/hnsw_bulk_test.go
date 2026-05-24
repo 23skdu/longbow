@@ -1,12 +1,13 @@
-package core_test
+package index_test
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -65,7 +66,7 @@ func TestHNSW_BulkInsert(t *testing.T) {
 	defer batch.Release()
 
 	// Initialize Index
-	ds := core.NewMockDataset("test_bulk", schema)
+	ds := index.NewMockDataset("test_bulk", schema)
 	// IMPORTANT: Add batch to dataset so Index can resolve vectors
 	batch.Retain()
 	ds.Records = append(ds.Records, batch)
@@ -82,7 +83,7 @@ func TestHNSW_BulkInsert(t *testing.T) {
 	cfg.EfConstruction = 100
 	// Ensure auto-sharding doesn't mess with us (though we use raw HNSW here)
 
-	idx := core.NewArrowHNSW(ds, &cfg, nil)
+	idx := index.NewArrowHNSW(ds, &cfg, nil)
 	defer func() { _ = idx.Close() }()
 
 	// Insert Batch

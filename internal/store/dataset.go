@@ -78,7 +78,7 @@ type Dataset struct {
 
 	// Vector Configuration
 	PreferredVectorType types.VectorDataType
-	TurboQuantBits      int // Bits per dimension for TurboQuant encoding (4, 8)
+	turboQuantBits      int // Bits per dimension for TurboQuant encoding (4, 8)
 
 	// Schema Evolution
 	SchemaManager *SchemaEvolutionManager
@@ -418,7 +418,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		}
 		if val, ok := md.GetValue("longbow.turboquant_bits"); ok {
 			if bits, err := strconv.Atoi(val); err == nil {
-				ds.TurboQuantBits = bits
+				ds.turboQuantBits = bits
 			}
 		}
 	}

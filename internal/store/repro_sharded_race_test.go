@@ -19,8 +19,8 @@ func TestReproShardedSearchRace(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	numVectors := 1000
 	dims := 128
-	vectors := core.GenerateTestVectors(numVectors, dims)
-	rec := core.MakeBatchTestRecord(mem, dims, vectors)
+	vectors := index.GenerateTestVectors(numVectors, dims)
+	rec := index.MakeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
 	schema := arrow.NewSchema(

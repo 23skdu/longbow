@@ -365,9 +365,9 @@ func (s *VectorStore) handleCalculatePageRank(body []byte, stream flight.FlightS
 		// For sharded, we might need a composite view or run per shard?
 		// PageRank is global. For now, we'll support single-node un-sharded HNSW.
 		sharded := h.GetShardedIndex()
-		if sharded != nil && len(sharded.shards) > 0 {
+		if sharded != nil && sharded.NumShards() > 0 {
 			// Fallback: use first shard for now or return error
-			gd = sharded.shards[0].index.(interface{ GetData() *lbtypes.GraphData }).GetData()
+			gd = sharded.GetShardIndex(0).(interface{ GetData() *lbtypes.GraphData }).GetData()
 		}
 	}
 

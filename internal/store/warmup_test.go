@@ -87,7 +87,7 @@ func TestVectorStore_Warmup(t *testing.T) {
 				vec := []float32{float32(j), float32(j + 1), float32(j + 2), float32(j + 3)}
 				_ = ds.Index.(*ArrowHNSW).InsertWithVector(uint32(j), vec, 0)
 			}
-			store.updateDatasets(func(m map[string]*Dataset) {
+			store.UpdateDatasets(func(m map[string]*Dataset) {
 				m[ds.Name] = ds
 			})
 		}
@@ -111,13 +111,13 @@ func TestVectorStore_Warmup(t *testing.T) {
 		ds1 := &Dataset{Name: "with_index"}
 		ds1.Index = NewTestHNSWIndex(ds1)
 		_ = ds1.Index.(*ArrowHNSW).InsertWithVector(uint32(0), []float32{1, 2, 3, 4}, 0)
-		store.updateDatasets(func(m map[string]*Dataset) {
+		store.UpdateDatasets(func(m map[string]*Dataset) {
 			m[ds1.Name] = ds1
 		})
 
 		// Dataset without index
 		ds2 := &Dataset{Name: "without_index"}
-		store.updateDatasets(func(m map[string]*Dataset) {
+		store.UpdateDatasets(func(m map[string]*Dataset) {
 			m[ds2.Name] = ds2
 		})
 
@@ -142,7 +142,7 @@ func TestVectorStore_Warmup(t *testing.T) {
 			vec := []float32{float32(i), float32(i + 1), float32(i + 2), float32(i + 3)}
 			_ = ds.Index.(*ArrowHNSW).InsertWithVector(uint32(i), vec, 0)
 		}
-		store.updateDatasets(func(m map[string]*Dataset) {
+		store.UpdateDatasets(func(m map[string]*Dataset) {
 			m[ds.Name] = ds
 		})
 

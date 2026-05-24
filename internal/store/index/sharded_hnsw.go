@@ -161,8 +161,6 @@ func NewShardedHNSW(config ShardedHNSWConfig, dataset types.IndexDataProvider) V
 		s.shards[i] = s.newShard(i)
 	}
 
-	
-
 	return s
 }
 
@@ -1510,4 +1508,32 @@ func (idx *ShardedHNSW) updateShardBalanceMetrics() {
 		datasetName = idx.dataset.GetName()
 	}
 	metrics.ShardBalanceImbalanceRatio.WithLabelValues(datasetName).Set(coefficientOfVariation)
+}
+
+// GetShardIndex returns the underlying index of a specific shard, mainly for graph API access
+func (s *ShardedHNSW) GetShardIndex(shardIdx int) VectorIndex {
+	if shardIdx >= 0 && shardIdx < len(s.shards) {
+		return s.shards[shardIdx].index
+	}
+	return nil
+}
+
+// NumShards returns the number of shards
+func (s *ShardedHNSW) NumShards() int {
+	return len(s.shards)
+}
+
+// LocationStore returns the location store
+func (s *ShardedHNSW) LocationStore() *ChunkedLocationStore {
+	return s.locationStore
+}
+
+// Dataset returns the underlying index data provider
+func (s *ShardedHNSW) Dataset() types.IndexDataProvider {
+	return s.dataset
+}
+
+// SetDataset sets the dataset for testing
+func (s *ShardedHNSW) SetDataset(dp types.IndexDataProvider) {
+	s.dataset = dp
 }

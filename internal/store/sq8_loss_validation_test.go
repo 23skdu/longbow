@@ -45,7 +45,7 @@ func TestSQ8_HighDim_Loss(t *testing.T) {
 
 	// 2. Train SQ8 Encoder
 	t.Log("Training SQ8 Encoder...")
-	encoder, err := core.TrainSQ8Encoder(vectors)
+	encoder, err := index.TrainSQ8Encoder(vectors)
 	require.NoError(t, err)
 
 	minVal, maxVal := encoder.GetBounds()
@@ -77,7 +77,7 @@ func TestSQ8_HighDim_Loss(t *testing.T) {
 		// Quantized Distance
 		q1 := encoder.Encode(v1)
 		q2 := encoder.Encode(v2)
-		sq8Dist := core.SQ8EuclideanDistance(q1, q2, encoder)
+		sq8Dist := index.SQ8EuclideanDistance(q1, q2, encoder)
 
 		// Metrics
 		errDiff := float64(sq8Dist - exactDist)

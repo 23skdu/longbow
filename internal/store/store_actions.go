@@ -85,7 +85,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		if req.Name != "" && req.Name != "all" {
 			s.logger.Info().Str("dataset", req.Name).Msg("In-place ResetDataset called for specific dataset")
 			if err := s.DropDataset(stream.Context(), req.Name); err != nil {
-				return ToGRPCStatus(err)
+				return types.ToGRPCStatus(err)
 			}
 			debug.FreeOSMemory()
 			if err := stream.Send(&flight.Result{Body: []byte(`{"status": "reset_success"}`)}); err != nil {
@@ -508,7 +508,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		return s.handleAddEdge(action.Body, stream)
 
 	case "VectorSearch":
-		return s.handleVectorSearchAction(action, stream)
+		return s.HandleVectorSearchAction(action, stream)
 
 	case "VectorSearchByID":
 		return s.handleVectorSearchByIDAction(action, stream)
@@ -517,7 +517,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		// Handle generic search action types - map to VectorSearch handler
 		// Client sends: search, dense, sparse, filtered, hybrid
 		// Server expects: VectorSearch
-		return s.handleVectorSearchAction(action, stream)
+		return s.HandleVectorSearchAction(action, stream)
 
 	case "traverse-graph":
 		return s.handleTraverseGraph(action.Body, stream)
@@ -1381,8 +1381,8 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 			if dataType == VectorTypeTQ {
 				hnswCfg.TurboQuantEnabled = true
-				if ds.TurboQuantBits > 0 {
-					hnswCfg.TurboQuantBits = ds.TurboQuantBits
+				if ds.TurboQuantBits() > 0 {
+					hnswCfg.TurboQuantBits = ds.TurboQuantBits()
 				} else if hnswCfg.TurboQuantBits == 0 {
 					hnswCfg.TurboQuantBits = 8
 				}
@@ -1400,8 +1400,8 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 			if dataType == VectorTypeTQ {
 				clonedCfg.TurboQuantEnabled = true
-				if ds.TurboQuantBits > 0 {
-					clonedCfg.TurboQuantBits = ds.TurboQuantBits
+				if ds.TurboQuantBits() > 0 {
+					clonedCfg.TurboQuantBits = ds.TurboQuantBits()
 				} else if clonedCfg.TurboQuantBits == 0 {
 					clonedCfg.TurboQuantBits = 8
 				}

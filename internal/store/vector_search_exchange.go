@@ -29,8 +29,8 @@ func (p *PeekedStream) Recv() (*flight.FlightData, error) {
 	return p.FlightService_DoExchangeServer.Recv()
 }
 
-// handleVectorSearchExchange handles binary protocol vector search
-func (s *VectorStore) handleVectorSearchExchange(stream flight.FlightService_DoExchangeServer, firstMsg *flight.FlightData) error {
+// HandleVectorSearchExchange handles binary protocol vector search
+func (s *VectorStore) HandleVectorSearchExchange(stream flight.FlightService_DoExchangeServer, firstMsg *flight.FlightData) error {
 	timer := prometheus.NewTimer(metrics.DoExchangeSearchDuration)
 	defer timer.ObserveDuration()
 	metrics.DoExchangeSearchTotal.Inc()

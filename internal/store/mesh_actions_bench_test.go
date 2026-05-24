@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/cluster"
 	"fmt"
 	"testing"
 
@@ -24,7 +25,7 @@ func BenchmarkMeshStatus(b *testing.B) {
 	defer g.Stop()
 	s.SetMesh(g)
 
-	meta := NewMetaServer(s)
+	meta := cluster.NewMetaServer(s)
 
 	// Pre-fill members
 	for i := 0; i < 1000; i++ {

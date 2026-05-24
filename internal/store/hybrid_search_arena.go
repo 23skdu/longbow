@@ -1,4 +1,5 @@
 package store
+import "github.com/23skdu/longbow/internal/store/index"
 
 import (
 	"sort"
@@ -9,7 +10,7 @@ import (
 // searchBM25Arena performs BM25 search using the arena-based index
 func searchBM25Arena(idx *BM25ArenaIndex, queryText string, k int, filter *roaring.Bitmap) []SearchResult {
 	// Tokenize query using existing tokenize function from bm25_inverted_index.go
-	tokens := tokenize(queryText)
+	tokens := index.Tokenize(queryText)
 	if len(tokens) == 0 {
 		return nil
 	}

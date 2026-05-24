@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/cluster"
 	"context"
 	"fmt"
 	"net"
@@ -78,7 +79,7 @@ func TestDoGetSearch_Integration(t *testing.T) {
 
 	// Start Flight Server (gRPC)
 	// We use DataServer which wraps VectorStore and provides Flight service methods
-	dataServer := NewDataServer(store)
+	dataServer := cluster.NewDataServer(store)
 	grpcServer := grpc.NewServer()
 
 	// Register directly

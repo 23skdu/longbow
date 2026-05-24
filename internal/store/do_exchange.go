@@ -70,7 +70,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 	if firstMsg.FlightDescriptor != nil {
 		// 1. Vector Search
 		if string(firstMsg.FlightDescriptor.Cmd) == "VectorSearch" {
-			return s.handleVectorSearchExchange(stream, firstMsg)
+			return s.HandleVectorSearchExchange(stream, firstMsg)
 		}
 
 		// 2. Ingest (Zero-Copy)
@@ -249,7 +249,7 @@ func (s *VectorStore) DoExchange(stream flight.FlightService_DoExchangeServer) e
 				continue
 			case "VectorSearch":
 				// Fallback if checked late
-				return s.handleVectorSearchExchange(stream, data)
+				return s.HandleVectorSearchExchange(stream, data)
 			}
 		}
 

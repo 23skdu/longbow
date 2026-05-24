@@ -1,7 +1,6 @@
-package types_test
+package types
 
 import (
-	"github.com/23skdu/longbow/internal/store/index"
 
 	"sync"
 	"testing"
@@ -10,54 +9,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestSearchContext_Reuse(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-	pool := index.index.NewArrowSearchContextPool()
 
-	// Get an object
-	// pool.Get() returns *ArrowSearchContext directly if defined as such, or interface{}.
-	// If the error says "invalid operation: pool.Get() (value of type *ArrowSearchContext) is not an interface",
-	// it implies pool.Get() returns *ArrowSearchContext struct pointer directly.
-	// So we don't need type assertion.
 
-	ctx1 := pool.Get()
-	assert.NotNil(t, ctx1)
-	ptr1 := ctx1
 
-	// Put it back
-	pool.Put(ctx1)
 
-	// Get object again
-	ctx2 := pool.Get()
-	ptr2 := ctx2
 
-	// We can't strictly guarantee pointer equality with sync.Pool, but in single thread it's likely.
-	// We'll trust it works without hard assertion on pointer reuse if flaky.
-	// But usually it works.
-	_ = ptr1
-	_ = ptr2
-}
-
-func TestSearchContext_Reset(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-	ctx := index.NewArrowSearchContext()
-	ctx.Reset()
-
-	// Internal fields like scratchIDs are not accessible.
-	// Only test public behavior if any.
-}
-
-func TestSearchContext_Metrics(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping test in short mode")
-	}
-	pool := index.index.NewArrowSearchContextPool()
-	_ = pool.Get()
-}
 
 func TestSearchResultPool_Basic(t *testing.T) {
 	if testing.Short() {

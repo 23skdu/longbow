@@ -5,6 +5,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"testing"
+	"github.com/23skdu/longbow/internal/store/index"
+
 )
 
 func addToShardedIndex(idx *ShardedInvertedIndex, id VectorID, text string) {
@@ -16,7 +18,7 @@ func TestShardedInvertedIndex_BasicAddSearch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	idx := NewShardedInvertedIndex()
+	idx := index.NewShardedInvertedIndex()
 
 	addToShardedIndex(idx, VectorID(0), "error code 500 internal server error")
 	addToShardedIndex(idx, VectorID(1), "warning timeout exceeded")
@@ -45,7 +47,7 @@ func TestShardedInvertedIndex_Delete(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	idx := NewShardedInvertedIndex()
+	idx := index.NewShardedInvertedIndex()
 
 	addToShardedIndex(idx, VectorID(0), "error code 500")
 	addToShardedIndex(idx, VectorID(1), "error code 404")
@@ -71,7 +73,7 @@ func TestShardedInvertedIndex_ConcurrentSearch(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	idx := NewShardedInvertedIndex()
+	idx := index.NewShardedInvertedIndex()
 
 	terms := []string{"error", "warning", "info", "debug", "trace"}
 	for i := 0; i < 1000; i++ {
@@ -109,7 +111,7 @@ func TestShardedInvertedIndex_ConcurrentAdd(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	idx := NewShardedInvertedIndex()
+	idx := index.NewShardedInvertedIndex()
 
 	var wg sync.WaitGroup
 	for i := 0; i < 20; i++ {
@@ -137,7 +139,7 @@ func TestShardedInvertedIndex_ConcurrentMixed(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	idx := NewShardedInvertedIndex()
+	idx := index.NewShardedInvertedIndex()
 
 	for i := 0; i < 500; i++ {
 		addToShardedIndex(idx, VectorID(i), fmt.Sprintf("initial doc %d", i))
@@ -194,7 +196,7 @@ func TestShardedInvertedIndex_ConcurrentMixed(t *testing.T) {
 
 // BenchmarkShardedInvertedIndex_Search benchmarks sharded search performance
 func BenchmarkShardedInvertedIndex_Search(b *testing.B) {
-	idx := NewShardedInvertedIndex()
+	idx := index.NewShardedInvertedIndex()
 
 	terms := []string{"error", "warning", "info", "debug", "trace"}
 	for i := 0; i < 10000; i++ {
@@ -214,7 +216,7 @@ func BenchmarkShardedInvertedIndex_Search(b *testing.B) {
 
 // BenchmarkShardedInvertedIndex_Add benchmarks sharded add performance
 func BenchmarkShardedInvertedIndex_Add(b *testing.B) {
-	idx := NewShardedInvertedIndex()
+	idx := index.NewShardedInvertedIndex()
 
 	b.ResetTimer()
 	b.RunParallel(func(pb *testing.PB) {

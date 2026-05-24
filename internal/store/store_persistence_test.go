@@ -24,7 +24,7 @@ func TestVectorStore_RCU_Integration(t *testing.T) {
 	m := make(map[string]*Dataset)
 	vs.datasets.Store(&m)
 
-	vs.updateDatasets(func(m map[string]*Dataset) {
+	vs.UpdateDatasets(func(m map[string]*Dataset) {
 		m["test"] = &Dataset{Name: "test"}
 	})
 
@@ -51,7 +51,7 @@ func TestVectorStore_RCU_Integration(t *testing.T) {
 			defer wg.Done()
 			key := fmt.Sprintf("test-%d", id)
 			for j := 0; j < 100; j++ {
-				vs.updateDatasets(func(m map[string]*Dataset) {
+				vs.UpdateDatasets(func(m map[string]*Dataset) {
 					m[key] = &Dataset{Name: key}
 				})
 				time.Sleep(time.Microsecond)

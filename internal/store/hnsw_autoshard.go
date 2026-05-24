@@ -495,7 +495,7 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 			if sh, ok := newIndex.(*ShardedHNSW); ok {
 				for i, gid := range gIDs {
 					vid := VectorID(gid)
-					sh.locationStore.Set(vid, Location{BatchIdx: items[i].batchIdx, RowIdx: items[i].rowIdx})
+					sh.LocationStore().Set(vid, Location{BatchIdx: items[i].batchIdx, RowIdx: items[i].rowIdx})
 				}
 			}
 		}

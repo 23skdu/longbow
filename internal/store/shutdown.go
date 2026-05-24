@@ -20,6 +20,9 @@ func (s *VectorStore) stopWorkers() {
 		if s.compactionWorker != nil {
 			s.compactionWorker.Stop()
 		}
+		if s.nodeMonitor != nil {
+			s.nodeMonitor.Stop()
+		}
 		if s.stopChan != nil {
 			close(s.stopChan)
 		}

@@ -36,7 +36,7 @@ func FuzzEfSearchParameter(f *testing.F) {
 		}
 
 		stream := &mockVectorSearchDoActionServer{}
-		_ = vs.handleVectorSearchAction(action, stream)
+		_ = vs.HandleVectorSearchAction(action, stream)
 	})
 }
 

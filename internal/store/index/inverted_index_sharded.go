@@ -52,7 +52,7 @@ func (idx *ShardedInvertedIndex) docShardIndex(id VectorID) int {
 
 // Add indexes a document with the given text
 func (idx *ShardedInvertedIndex) Add(id VectorID, text string) {
-	terms := tokenize(text)
+	terms := Tokenize(text)
 	if len(terms) == 0 {
 		return
 	}
@@ -139,7 +139,7 @@ func (idx *ShardedInvertedIndex) Delete(id VectorID) {
 
 // Search returns documents matching any of the query terms, scored by BM25-like TF
 func (idx *ShardedInvertedIndex) Search(query string, limit int) []SearchResult {
-	queryTerms := tokenize(query)
+	queryTerms := Tokenize(query)
 	if len(queryTerms) == 0 {
 		return nil
 	}

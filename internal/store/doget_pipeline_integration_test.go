@@ -24,7 +24,7 @@ func (s *VectorStore) StoreRecords(name string, records []arrow.RecordBatch) err
 		rec.Retain()
 		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	}
-	s.updateDatasets(func(m map[string]*Dataset) {
+	s.UpdateDatasets(func(m map[string]*Dataset) {
 		m[name] = ds
 	})
 	return nil

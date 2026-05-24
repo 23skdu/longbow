@@ -1,10 +1,11 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/types"
+
 	"errors"
 	"testing"
 
-	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )

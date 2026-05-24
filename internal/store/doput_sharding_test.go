@@ -1,6 +1,7 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/index"
 	"sync"
 	"testing"
 	"time"
@@ -171,7 +172,7 @@ func TestVectorStoreGetDataset(t *testing.T) {
 
 	// Create dataset
 	ds := &Dataset{Name: "test"}
-	vs.updateDatasets(func(m map[string]*Dataset) {
+	vs.UpdateDatasets(func(m map[string]*Dataset) {
 		m["test"] = ds
 	})
 
@@ -237,7 +238,7 @@ func TestDoPutAutoShardingIntegration(t *testing.T) {
 		Index: NewTestHNSWIndex(nil),
 	}
 	// Dataset already set by NewTestHNSWIndex
-	vs.updateDatasets(func(m map[string]*Dataset) {
+	vs.UpdateDatasets(func(m map[string]*Dataset) {
 		m["test"] = ds
 	})
 
@@ -273,7 +274,7 @@ func TestDoPutConcurrentMigration(t *testing.T) {
 		Index: NewTestHNSWIndex(nil),
 	}
 	// Dataset already set by NewTestHNSWIndex
-	vs.updateDatasets(func(m map[string]*Dataset) {
+	vs.UpdateDatasets(func(m map[string]*Dataset) {
 		m["concurrent"] = ds
 	})
 
@@ -329,7 +330,7 @@ func BenchmarkAddToIndexSharded(b *testing.B) {
 
 	ds := createDatasetWithShardedIndex()
 	// Break the back-reference
-	ds.Index.(*ShardedHNSW).dataset = ds
+	ds.Index.(*index.ShardedHNSW).SetDataset(ds)
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {

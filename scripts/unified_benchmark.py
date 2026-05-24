@@ -654,7 +654,13 @@ class BenchmarkRunner:
         cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype}{tq_arg} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
         print(f"DEBUG: cmd={cmd}", flush=True)
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
-        timeout = getattr(self.args, "timeout", duration * 3 + 60)
+        base_timeout = getattr(self.args, "timeout", 1800)
+        # Scale up timeout significantly for heavy float types at high counts
+        if dtype in ("float32", "float64"):
+            scaled_timeout = int(batch_size / 50)  # assume at least 50 vec/s
+            if scaled_timeout > base_timeout:
+                base_timeout = scaled_timeout
+        timeout = base_timeout
         
         bench_log = os.path.join(self.log_dir, f"bench_{label}.log")
         with open(bench_log, "w") as f:

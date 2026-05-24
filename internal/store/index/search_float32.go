@@ -161,42 +161,48 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 			if len(batch) > 0 {
 				results := ctx.EvaluatePredicateBatch(batch)
 
+				var validBatch []uint32
 				for i, n := range batch {
-					if results[i] == 0 {
+					if results[i] == 1 {
+						validBatch = append(validBatch, n)
+					} else {
 						metrics.HNSWNodesSkippedTotal.WithLabelValues(h.name).Inc()
-						continue
 					}
+				}
 
-					ctx.distComputeCount++
-					d, err := computer.ComputeSingle(n)
-					if err != nil {
-						continue
-					}
+				if len(validBatch) > 0 {
+					ctx.distComputeCount += len(validBatch)
+					dists, err := computer.ComputeBatch(validBatch)
+					if err == nil {
+						for i, n := range validBatch {
+							d := dists[i]
+							cand := types.Candidate{ID: n, Dist: d}
+							heap.Push(minHeap, cand)
 
-					cand := types.Candidate{ID: n, Dist: d}
-					heap.Push(minHeap, cand)
+							if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+								continue
+							}
+							if h.IsDeleted(n) {
+								continue
+							}
 
-					if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
-						continue
-					}
-					if h.IsDeleted(n) {
-						continue
-					}
-
-					if len(ctx.resultSet) > 0 {
-						furthest := ctx.resultSet[0]
-						if ctx.resultSet.Len() < ef || d < furthest.Dist {
-							heap.Push(resultSetAdapter, cand)
-							if ctx.resultSet.Len() > ef {
-								heap.Pop(resultSetAdapter)
+							if len(ctx.resultSet) > 0 {
+								furthest := ctx.resultSet[0]
+								if ctx.resultSet.Len() < ef || d < furthest.Dist {
+									heap.Push(resultSetAdapter, cand)
+									if ctx.resultSet.Len() > ef {
+										heap.Pop(resultSetAdapter)
+									}
+								}
+							} else {
+								heap.Push(resultSetAdapter, cand)
 							}
 						}
-					} else {
-						heap.Push(resultSetAdapter, cand)
 					}
 				}
 			}
 		} else {
+			batch := ctx.neighborBatch[:0]
 			for _, n := range neighbors {
 				if !ctx.AllowUncommitted && int64(n) >= maxCommitted {
 					continue
@@ -205,35 +211,39 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 					continue
 				}
 				ctx.visited.Set(int(n))
+				batch = append(batch, n)
+			}
+			
+			if len(batch) > 0 {
+				ctx.distComputeCount += len(batch)
+				dists, err := computer.ComputeBatch(batch)
+				if err == nil {
+					for i, n := range batch {
+						d := dists[i]
+						cand := types.Candidate{ID: n, Dist: d}
 
-				ctx.distComputeCount++
-				d, err := computer.ComputeSingle(n)
-				if err != nil {
-					continue
-				}
+						heap.Push(minHeap, cand)
 
-				cand := types.Candidate{ID: n, Dist: d}
+						if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+							continue
+						}
+						if h.deleted != nil && h.deleted.Contains(n) {
+							continue
+						}
 
-				heap.Push(minHeap, cand)
+						if len(ctx.resultSet) > 0 {
+							furthest := ctx.resultSet[0]
 
-				if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
-					continue
-				}
-				if h.deleted != nil && h.deleted.Contains(n) {
-					continue
-				}
-
-				if len(ctx.resultSet) > 0 {
-					furthest := ctx.resultSet[0]
-
-					if ctx.resultSet.Len() < ef || d < furthest.Dist {
-						heap.Push(resultSetAdapter, cand)
-						if ctx.resultSet.Len() > ef {
-							heap.Pop(resultSetAdapter)
+							if ctx.resultSet.Len() < ef || d < furthest.Dist {
+								heap.Push(resultSetAdapter, cand)
+								if ctx.resultSet.Len() > ef {
+									heap.Pop(resultSetAdapter)
+								}
+							}
+						} else {
+							heap.Push(resultSetAdapter, cand)
 						}
 					}
-				} else {
-					heap.Push(resultSetAdapter, cand)
 				}
 			}
 		}

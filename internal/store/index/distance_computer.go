@@ -14,6 +14,7 @@ import (
 // DistanceComputer defines the interface for specialized distance computation.
 type DistanceComputer interface {
 	ComputeSingle(id uint32) (float32, error)
+	ComputeBatch(ids []uint32) ([]float32, error)
 	Prefetch(id uint32)
 }
 
@@ -66,6 +67,18 @@ func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
 	return distSq, nil
 }
 
+func (c *pqComputer) ComputeBatch(ids []uint32) ([]float32, error) {
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
+}
+
 func (c *pqComputer) Prefetch(id uint32) {
 	cID := int(id) / types.ChunkSize
 	chunk := c.data.GetVectorsPQChunkFast(cID)
@@ -89,6 +102,18 @@ type tqComputer struct {
 
 func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 	return c.h.tqCompute.DistanceWithRotatedQueryAndDisk(id, c.rotatedQuery, c.diskGraph, c.maxGen)
+}
+
+func (c *tqComputer) ComputeBatch(ids []uint32) ([]float32, error) {
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
 }
 
 func (c *tqComputer) Prefetch(id uint32) {
@@ -210,6 +235,18 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+func (c *float32Computer) ComputeBatch(ids []uint32) ([]float32, error) {
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
+}
+
 func (c *float32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsChunkFast(int(cID))
@@ -275,6 +312,19 @@ func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 	}
 	return math.MaxFloat32, nil
+}
+
+func (c *float32ToFloat32Computer) ComputeBatch(ids []uint32) ([]float32, error) {
+	// By default, fallback to sequential. We will optimize this in GPU integrations if possible.
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
 }
 
 func (c *float32ToFloat32Computer) Prefetch(id uint32) {
@@ -385,6 +435,18 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 		return c.h.distFuncInt8(c.qInt8, vI8)
 	}
 	return math.MaxFloat32, nil
+}
+
+func (c *int8Computer) ComputeBatch(ids []uint32) ([]float32, error) {
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
 }
 
 func (c *int8Computer) Prefetch(id uint32) {
@@ -519,6 +581,18 @@ func (c *sharedFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 	return c.h.distFunc(c.q, vec)
 }
 
+func (c *sharedFloat32Computer) ComputeBatch(ids []uint32) ([]float32, error) {
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
+}
+
 func (c *sharedFloat32Computer) Prefetch(id uint32) {
 	// Optimized hot-path: bypass Get() abstraction
 	chunks := c.h.locationStore.loadChunks()
@@ -580,6 +654,18 @@ func (c *sharedInt8Computer) ComputeSingle(id uint32) (float32, error) {
 		return c.h.distFuncInt8Squared(c.qInt8, vec)
 	}
 	return c.h.distFuncInt8(c.qInt8, vec)
+}
+
+func (c *sharedInt8Computer) ComputeBatch(ids []uint32) ([]float32, error) {
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
 }
 
 func (c *sharedInt8Computer) Prefetch(id uint32) {

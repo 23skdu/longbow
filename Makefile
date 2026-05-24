@@ -37,14 +37,14 @@ help:
 # Build the longbow binary
 build:
 	@echo "Building all binaries $(VERSION)..."
-	go build -ldflags "$(LDFLAGS)" -v -o bin/longbow ./cmd/longbow
-	go build -ldflags "$(LDFLAGS)" -v -o bin/longbow-cli ./cmd/cli
-	go build -ldflags "$(LDFLAGS)" -v -o bin/bench-tool ./cmd/bench-tool
+	GOAMD64=v3 go build -ldflags "$(LDFLAGS)" -v -o bin/longbow ./cmd/longbow
+	GOAMD64=v3 go build -ldflags "$(LDFLAGS)" -v -o bin/longbow-cli ./cmd/cli
+	GOAMD64=v3 go build -ldflags "$(LDFLAGS)" -v -o bin/bench-tool ./cmd/bench-tool
 
 # Build just the CLI
 build-cli:
 	@echo "Building longbow-cli $(VERSION)..."
-	go build -ldflags "$(LDFLAGS)" -v -o bin/longbow-cli ./cmd/cli
+	GOAMD64=v3 go build -ldflags "$(LDFLAGS)" -v -o bin/longbow-cli ./cmd/cli
 
 # Build for AVX2-only systems (e.g., ancalagon, older AMD64 without AVX512)
 build-avx2:
@@ -56,7 +56,7 @@ build-avx2:
 # Build the bench-tool binary
 build-bench:
 	@echo "Building bench-tool $(VERSION)..."
-	go build -ldflags "$(LDFLAGS)" -v -o bin/bench-tool ./cmd/bench-tool
+	GOAMD64=v3 go build -ldflags "$(LDFLAGS)" -v -o bin/bench-tool ./cmd/bench-tool
 
 # Build with CUDA GPU support (Linux AMD64)
 build-cuda:

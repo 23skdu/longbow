@@ -1,12 +1,13 @@
-package core
+package index
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/types"
 	"math"
 	"math/rand"
 	"testing"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/stretchr/testify/assert"

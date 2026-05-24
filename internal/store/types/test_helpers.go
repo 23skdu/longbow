@@ -1,8 +1,9 @@
 package types
 
 import (
-	"github.com/23skdu/longbow/internal/memory"
 	"sync/atomic"
+
+	"github.com/23skdu/longbow/internal/memory"
 )
 
 // StoreNeighborsChunk stores a chunk of neighbors for testing.

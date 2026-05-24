@@ -1,8 +1,9 @@
-package core
+package index
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"sync/atomic"
+
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // ensureTrained checks if SQ8 training is needed and performs it if sufficient data is accumulated.

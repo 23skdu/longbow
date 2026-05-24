@@ -1,10 +1,11 @@
-package core_test
+package index_test
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -25,11 +26,11 @@ func TestArrowHNSW_SearchEarlyTermination(t *testing.T) {
 		}
 	}
 
-	// Use core.MakeBatchTestRecord
-	rec := core.MakeBatchTestRecord(mem, dim, vectors)
+	// Use index.MakeBatchTestRecord
+	rec := index.MakeBatchTestRecord(mem, dim, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Name:    "test_search_early",
 		Records: []arrow.RecordBatch{rec},
 		Schema:  rec.Schema(),
@@ -39,7 +40,7 @@ func TestArrowHNSW_SearchEarlyTermination(t *testing.T) {
 	config.M = 16
 	config.EfConstruction = 40
 
-	idx := core.NewArrowHNSW(ds, &config, nil) // Signature match
+	idx := index.NewArrowHNSW(ds, &config, nil) // Signature match
 
 	for i := 0; i < 100; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -72,10 +73,10 @@ func TestArrowHNSW_SearchWithEfGreaterThanResults(t *testing.T) {
 		}
 	}
 
-	rec := core.MakeBatchTestRecord(mem, dim, vectors)
+	rec := index.MakeBatchTestRecord(mem, dim, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Name:    "test_ef_large",
 		Records: []arrow.RecordBatch{rec},
 		Schema:  rec.Schema(),
@@ -85,7 +86,7 @@ func TestArrowHNSW_SearchWithEfGreaterThanResults(t *testing.T) {
 	config.M = 8
 	config.EfConstruction = 40
 
-	idx := core.NewArrowHNSW(ds, &config, nil)
+	idx := index.NewArrowHNSW(ds, &config, nil)
 
 	for i := 0; i < 50; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -105,7 +106,7 @@ func TestArrowHNSW_SearchWithEfGreaterThanResults(t *testing.T) {
 	// But Search signature here (query, 5, nil) matches.
 	// The original test called Search(..., 5, 100, nil) or similar?
 	// Original: Search(ctx, query, 10, 100, nil). Arguments: (k, efSearch, filter)?
-	// core.ArrowHNSW.Search signature: (ctx, query, k, filter).
+	// index.ArrowHNSW.Search signature: (ctx, query, k, filter).
 	// It relies on configured EfSearch.
 	// So we omit efSearch arg.
 
@@ -118,17 +119,17 @@ func TestArrowHNSW_NeedsCompaction_Empty(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
 	vectors := [][]float32{{1.0, 2.0}}
-	rec := core.MakeBatchTestRecord(mem, 2, vectors)
+	rec := index.MakeBatchTestRecord(mem, 2, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Name:    "test_empty",
 		Records: []arrow.RecordBatch{rec},
 		Schema:  rec.Schema(),
 	}
 
 	config := types.DefaultArrowHNSWConfig()
-	idx := core.NewArrowHNSW(ds, &config, nil)
+	idx := index.NewArrowHNSW(ds, &config, nil)
 	_ = idx
 
 	// NeedsCompaction method check
@@ -147,17 +148,17 @@ func TestArrowHNSW_NeedsCompaction_NoDeleted(t *testing.T) {
 		}
 	}
 
-	rec := core.MakeBatchTestRecord(mem, dim, vectors)
+	rec := index.MakeBatchTestRecord(mem, dim, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Name:    "test_no_deleted",
 		Records: []arrow.RecordBatch{rec},
 		Schema:  rec.Schema(),
 	}
 
 	config := types.DefaultArrowHNSWConfig()
-	idx := core.NewArrowHNSW(ds, &config, nil)
+	idx := index.NewArrowHNSW(ds, &config, nil)
 
 	for i := 0; i < 10; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -179,10 +180,10 @@ func TestArrowHNSW_VisitedListGrowth(t *testing.T) {
 		}
 	}
 
-	rec := core.MakeBatchTestRecord(mem, dim, vectors)
+	rec := index.MakeBatchTestRecord(mem, dim, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Name:    "test_visited",
 		Records: []arrow.RecordBatch{rec},
 		Schema:  rec.Schema(),
@@ -192,7 +193,7 @@ func TestArrowHNSW_VisitedListGrowth(t *testing.T) {
 	config.M = 8
 	config.EfConstruction = 40
 
-	idx := core.NewArrowHNSW(ds, &config, nil)
+	idx := index.NewArrowHNSW(ds, &config, nil)
 
 	for i := 0; i < 1000; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -214,17 +215,17 @@ func TestArrowHNSW_SearchEmptyIndex(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
 	vectors := [][]float32{{1.0, 2.0}}
-	rec := core.MakeBatchTestRecord(mem, 2, vectors)
+	rec := index.MakeBatchTestRecord(mem, 2, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Name:    "test_empty_index",
 		Records: []arrow.RecordBatch{rec},
 		Schema:  rec.Schema(),
 	}
 
 	config := types.DefaultArrowHNSWConfig()
-	idx := core.NewArrowHNSW(ds, &config, nil)
+	idx := index.NewArrowHNSW(ds, &config, nil)
 
 	query := []float32{1.0, 2.0}
 
@@ -241,17 +242,17 @@ func TestArrowHNSW_SearchSingleVector(t *testing.T) {
 		{1.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0},
 	}
 
-	rec := core.MakeBatchTestRecord(mem, dim, vectors)
+	rec := index.MakeBatchTestRecord(mem, dim, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Name:    "test_single",
 		Records: []arrow.RecordBatch{rec},
 		Schema:  rec.Schema(),
 	}
 
 	config := types.DefaultArrowHNSWConfig()
-	idx := core.NewArrowHNSW(ds, &config, nil)
+	idx := index.NewArrowHNSW(ds, &config, nil)
 
 	_, err := idx.AddByLocation(context.Background(), 0, 0)
 	require.NoError(t, err)
@@ -270,17 +271,17 @@ func TestArrowHNSW_EstimateMemory(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
 	vectors := [][]float32{{1.0, 2.0}}
-	rec := core.MakeBatchTestRecord(mem, 2, vectors)
+	rec := index.MakeBatchTestRecord(mem, 2, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Name:    "test_mem",
 		Records: []arrow.RecordBatch{rec},
 		Schema:  rec.Schema(),
 	}
 
 	config := types.DefaultArrowHNSWConfig()
-	idx := core.NewArrowHNSW(ds, &config, nil)
+	idx := index.NewArrowHNSW(ds, &config, nil)
 
 	memBefore := idx.EstimateMemory()
 
@@ -293,16 +294,16 @@ func TestArrowHNSW_EstimateMemory(t *testing.T) {
 		}
 	}
 
-	rec = core.MakeBatchTestRecord(mem, dim, vectors)
+	rec = index.MakeBatchTestRecord(mem, dim, vectors)
 	defer rec.Release()
 
-	ds2 := &core.MockDataset{
+	ds2 := &index.MockDataset{
 		Name:    "test_mem2",
 		Records: []arrow.RecordBatch{rec},
 		Schema:  rec.Schema(),
 	}
 
-	idx2 := core.NewArrowHNSW(ds2, &config, nil)
+	idx2 := index.NewArrowHNSW(ds2, &config, nil)
 
 	for i := 0; i < 10; i++ {
 		_, err := idx2.AddByLocation(context.Background(), 0, i)
@@ -317,17 +318,17 @@ func TestArrowHNSW_SearchVectors_Empty(t *testing.T) {
 	mem := memory.NewGoAllocator()
 
 	vectors := [][]float32{{1.0, 2.0}}
-	rec := core.MakeBatchTestRecord(mem, 2, vectors)
+	rec := index.MakeBatchTestRecord(mem, 2, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Name:    "test_hnsw_empty",
 		Records: []arrow.RecordBatch{rec},
 		Schema:  rec.Schema(),
 	}
 
 	config := types.DefaultArrowHNSWConfig()
-	hnswIdx := core.NewArrowHNSW(ds, &config, nil)
+	hnswIdx := index.NewArrowHNSW(ds, &config, nil)
 
 	query := []float32{1.0, 2.0}
 

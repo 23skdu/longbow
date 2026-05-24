@@ -1,10 +1,10 @@
-package core_test
+package index_test
 
 import (
 	"context"
 	"testing"
 
-	"github.com/23skdu/longbow/internal/store/internal/core"
+	"github.com/23skdu/longbow/internal/store/index"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -15,15 +15,15 @@ import (
 func TestHNSW_UnsafeAccess(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	vectors := [][]float32{{1.0, 2.0}, {3.0, 4.0}}
-	rec := core.MakeBatchTestRecord(mem, 2, vectors)
+	rec := index.MakeBatchTestRecord(mem, 2, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Name:    "test_unsafe",
 		Records: []arrow.RecordBatch{rec},
 		Schema:  rec.Schema(),
 	}
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	_, err := idx.AddByLocation(context.Background(), 0, 0)
 	require.NoError(t, err)

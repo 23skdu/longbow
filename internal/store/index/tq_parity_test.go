@@ -1,7 +1,7 @@
 //go:build gpu
 // +build gpu
 
-package core
+package index
 
 import (
 	"fmt"

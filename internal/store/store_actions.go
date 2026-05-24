@@ -28,7 +28,7 @@ import (
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/storage"
-	internalcore "github.com/23skdu/longbow/internal/store/internal/core"
+	internalcore "github.com/23skdu/longbow/internal/store/index"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/tracing"
 )

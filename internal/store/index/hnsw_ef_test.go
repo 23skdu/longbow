@@ -1,11 +1,12 @@
-package core_test
+package index_test
 
 import (
 	"context"
-	basecore "github.com/23skdu/longbow/internal/core"
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
+
+	basecore "github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -30,10 +31,10 @@ func TestHNSW_EfParameter(t *testing.T) {
 		{0.1, 0.9, 0.0},
 	}
 	dims := 3
-	rec := core.MakeBatchTestRecord(mem, dims, vectors)
+	rec := index.MakeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Name:    "ef_test",
 		Records: []arrow.RecordBatch{rec},
 		Schema:  rec.Schema(),
@@ -41,7 +42,7 @@ func TestHNSW_EfParameter(t *testing.T) {
 
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.Metric = basecore.MetricEuclidean
-	idx := core.NewArrowHNSW(ds, &cfg, nil)
+	idx := index.NewArrowHNSW(ds, &cfg, nil)
 
 	// Add all vectors
 	for i := 0; i < len(vectors); i++ {

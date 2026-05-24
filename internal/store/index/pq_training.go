@@ -1,7 +1,8 @@
-package core
+package index
 
 import (
 	"fmt"
+
 	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/pq"

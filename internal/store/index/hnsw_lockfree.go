@@ -1,12 +1,13 @@
-package core
+package index
 
 // nosec G404 - math/rand/v2 is used for HNSW layer generation, not security-sensitive
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"math"
 	"math/rand/v2"
 	"sync"
 	"sync/atomic"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/simd"
 )

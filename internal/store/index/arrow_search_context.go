@@ -1,15 +1,17 @@
-package core
+package index
 
 import (
 	"container/heap"
-	"github.com/23skdu/longbow/internal/store/types"
 	"sync"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/types"
+
+	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow/float16"
-	"sync/atomic"
 )
 
 // CandidateHeap implements a max-heap of Candidates for search results

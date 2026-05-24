@@ -1,4 +1,4 @@
-package core
+package index
 
 import (
 	"math"
@@ -115,12 +115,12 @@ func TestArrowHNSW_Float16_Integration(t *testing.T) {
 	// But InsertWithVector is internal.
 	// AddByLocation calls Insert(id, level) which calls InsertWithVector(id, vector, level).
 	// But AddByLocation doesn't provide vector?
-	// Ah, AddByLocation READS vector from Dataset.
+	// Ah, AddByLocation READS vector from types.IndexDataProvider.
 	// We didn't provide dataset.
 
 	// We can use internal Insert method directly if we mock vector retrieval?
-	// Or we create a Dataset.
-	// Creating Dataset is heavy.
+	// Or we create a types.IndexDataProvider.
+	// Creating types.IndexDataProvider is heavy.
 	// What did other tests do?
 	// TestArrowHNSW_AddBatch uses AddBatch.
 

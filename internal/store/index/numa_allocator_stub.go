@@ -1,6 +1,6 @@
 //go:build !linux || !cgo || !numa
 
-package core
+package index
 
 func allocateNUMAArena(size int, node int) []byte {
 	_ = node

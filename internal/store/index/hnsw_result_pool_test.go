@@ -1,9 +1,10 @@
-package core
+package index
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"sync"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/stretchr/testify/assert"
 )

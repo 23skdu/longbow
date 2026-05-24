@@ -1,4 +1,4 @@
-package core
+package index
 
 // EnableRepairAgent starts the connectivity repair agent with the given configuration.
 // This is optional and disabled by default. Call this after index initialization if you want

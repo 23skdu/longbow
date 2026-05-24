@@ -1,16 +1,17 @@
-package core_test
+package index_test
 
 import (
 	"context"
 	"fmt"
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"math/rand"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -48,12 +49,12 @@ func TestHNSW_Concurrency_HighContention(t *testing.T) {
 	rec := makeConcurrencyTestRecord(mem, 128, 500)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Records: []arrow.RecordBatch{rec},
 		Name:    "stress_test",
 	}
 
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 	// Create stripe locks created by NewHNSWIndex, but let's ensure they are initialized
 	// NewHNSWIndex initializes them based on NumCPU.
 
@@ -97,11 +98,11 @@ func TestHNSW_Concurrency_Mixed(t *testing.T) {
 	rec := makeConcurrencyTestRecord(mem, 128, 500)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Name:    "mixed_test",
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	// Pre-populate
 	for i := 0; i < 100; i++ {

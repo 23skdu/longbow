@@ -1,9 +1,10 @@
-package core
+package index
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/apache/arrow-go/v18/arrow"

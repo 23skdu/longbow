@@ -1,11 +1,12 @@
-package core
+package index
 
 import (
 	"sync"
 
+	"unsafe"
+
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
-	"unsafe"
 )
 
 // SearchArena is a per-request arena allocator that provides O(1) allocations

@@ -1,13 +1,14 @@
-package core
+package index
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"math/rand"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/stretchr/testify/require"
 )

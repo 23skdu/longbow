@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"context"
+
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/prometheus/client_golang/prometheus"

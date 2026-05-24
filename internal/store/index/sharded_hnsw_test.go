@@ -1,0 +1,546 @@
+package index
+
+import (
+	types "github.com/23skdu/longbow/internal/store/types"
+
+	"context"
+	"runtime"
+	"sync"
+	"sync/atomic"
+	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
+)
+
+func makeShardedTestRecord(mem memory.Allocator, dims, numVectors int) arrow.RecordBatch {
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dims), arrow.PrimitiveTypes.Float32)},
+	}, nil)
+
+	idBuilder := array.NewInt64Builder(mem)
+	listBuilder := array.NewFixedSizeListBuilder(mem, int32(dims), arrow.PrimitiveTypes.Float32)
+	vecBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
+
+	for i := 0; i < numVectors; i++ {
+		idBuilder.Append(int64(i))
+		listBuilder.Append(true)
+		for j := 0; j < dims; j++ {
+			vecBuilder.Append(float32(i + j))
+		}
+	}
+
+	return array.NewRecordBatch(schema, []arrow.Array{idBuilder.NewArray(), listBuilder.NewArray()}, int64(numVectors))
+}
+
+// TestShardedHNSWConfig_Defaults verifies default configuration
+func TestShardedHNSWConfig_Defaults(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultShardedHNSWConfig()
+
+	if cfg.NumShards <= 0 {
+		t.Errorf("expected positive NumShards, got %d", cfg.NumShards)
+	}
+	if cfg.NumShards != runtime.NumCPU() {
+		t.Errorf("expected NumShards=%d (NumCPU), got %d", runtime.NumCPU(), cfg.NumShards)
+	}
+	if cfg.M <= 0 {
+		t.Errorf("expected positive M, got %d", cfg.M)
+	}
+	if cfg.EfConstruction <= 0 {
+		t.Errorf("expected positive EfConstruction, got %d", cfg.EfConstruction)
+	}
+}
+
+// TestShardedHNSWConfig_Validation verifies configuration validation
+func TestShardedHNSWConfig_Validation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	tests := []struct {
+		name    string
+		cfg     ShardedHNSWConfig
+		wantErr bool
+	}{
+		{"valid default", DefaultShardedHNSWConfig(), false},
+		{"zero shards", ShardedHNSWConfig{NumShards: 0, M: 16, EfConstruction: 200}, true},
+		{"negative shards", ShardedHNSWConfig{NumShards: -1, M: 16, EfConstruction: 200}, true},
+		{"zero M", ShardedHNSWConfig{NumShards: 4, M: 0, EfConstruction: 200}, true},
+		{"zero EfConstruction", ShardedHNSWConfig{NumShards: 4, M: 16, EfConstruction: 0}, true},
+		{"single shard", ShardedHNSWConfig{NumShards: 1, M: 16, EfConstruction: 200}, false},
+		{"many shards", ShardedHNSWConfig{NumShards: 64, M: 16, EfConstruction: 200}, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.cfg.Validate()
+			if (err != nil) != tc.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tc.wantErr)
+			}
+		})
+	}
+}
+
+// TestShardedHNSW_ShardRouting verifies consistent hash-based routing
+func TestShardedHNSW_ShardRouting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultShardedHNSWConfig()
+	// Test legacy linear sharding
+	cfg.UseRingSharding = false
+	cfg.ShardSplitThreshold = 100 // Set threshold to force splits
+	cfg.NumShards = 1             // Initial shards
+
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+
+	// Range-based routing: shard = id / threshold
+	for id := VectorID(0); id < 400; id++ {
+		expectedShard := int(id) / cfg.ShardSplitThreshold
+		shard := sharded.GetShardForID(id)
+		if shard != expectedShard {
+			t.Errorf("ID %d: expected shard %d, got %d", id, expectedShard, shard)
+		}
+	}
+
+	// Verify distribution
+	counts := make(map[int]int)
+	for id := VectorID(0); id < 400; id++ {
+		counts[sharded.GetShardForID(id)]++
+	}
+
+	if len(counts) != 4 {
+		t.Errorf("expected 4 shards populated, got %d", len(counts))
+	}
+	for i := 0; i < 4; i++ {
+		if counts[i] != 100 {
+			t.Errorf("shard %d: expected 100 vectors, got %d", i, counts[i])
+		}
+	}
+}
+
+func TestShardedHNSW_RingRouting(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = 4
+	cfg.UseRingSharding = true
+
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+
+	// In Ring sharding, distribution is probabilistic but consistent
+	counts := make(map[int]int)
+	for id := VectorID(0); id < 1000; id++ {
+		shard := sharded.GetShardForID(id)
+		counts[shard]++
+
+		// Consistency check
+		if sharded.GetShardForID(id) != shard {
+			t.Errorf("ID %d: inconsistent shard mapping", id)
+		}
+	}
+
+	// Verify all shards got *some* data (at 1000 items, empty shard is statistically impossible with good hash)
+	for i := 0; i < 4; i++ {
+		if counts[i] == 0 {
+			t.Errorf("shard %d empty in ring sharding", i)
+		}
+	}
+}
+
+// TestShardedHNSW_AddToShard verifies adding vectors routes to correct shard
+func TestShardedHNSW_AddToShard(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = 4
+
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+
+	mem := memory.NewGoAllocator()
+	rec := makeShardedTestRecord(mem, 3, 100)
+	defer rec.Release()
+	ds.Lock()
+	ds.Records = append(ds.Records, rec)
+	ds.Unlock()
+
+	// Add vectors
+	for i := 0; i < 100; i++ {
+		id, err := sharded.AddSafe(context.Background(), rec, i, 0)
+		if err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+		if id != VectorID(i) {
+			t.Errorf("expected ID %d, got %d", i, id)
+		}
+	}
+
+	// Verify total count
+	if sharded.Len() != 100 {
+		t.Errorf("expected 100 vectors, got %d", sharded.Len())
+	}
+
+	// Verify vectors distributed across shards
+	stats := sharded.ShardStats()
+	totalInShards := 0
+	for _, s := range stats {
+		totalInShards += s.Count
+		if s.Count == 0 {
+			t.Logf("Warning: shard %d is empty", s.ShardID)
+		}
+	}
+	if totalInShards != 100 {
+		t.Errorf("expected 100 vectors in shards, got %d", totalInShards)
+	}
+}
+
+// TestShardedHNSW_ParallelAdds verifies concurrent additions don't corrupt state
+func TestShardedHNSW_ParallelAdds(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = 8
+
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+
+	numGoroutines := 16
+	vectorsPerGoroutine := 100
+
+	var wg sync.WaitGroup
+	var errCount atomic.Int32
+
+	for g := 0; g < numGoroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mem := memory.NewGoAllocator()
+			rec := makeShardedTestRecord(mem, 3, vectorsPerGoroutine)
+			defer rec.Release()
+
+			for i := 0; i < vectorsPerGoroutine; i++ {
+				_, err := sharded.AddSafe(context.Background(), rec, i, 0)
+				if err != nil {
+					errCount.Add(1)
+				}
+			}
+		}()
+	}
+
+	wg.Wait()
+
+	if errCount.Load() > 0 {
+		t.Errorf("%d errors during parallel adds", errCount.Load())
+	}
+
+	expected := numGoroutines * vectorsPerGoroutine
+	if sharded.Len() != expected {
+		t.Errorf("expected %d vectors, got %d", expected, sharded.Len())
+	}
+}
+
+// TestShardedHNSW_Search verifies search across all shards
+func TestShardedHNSW_Search(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = 4
+	cfg.M = 8
+	cfg.EfConstruction = 50
+
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+
+	mem := memory.NewGoAllocator()
+	rec := makeShardedTestRecord(mem, 3, 100)
+	defer rec.Release()
+	ds.Lock()
+	ds.Records = append(ds.Records, rec)
+	ds.Unlock()
+
+	// Add 100 vectors
+	for i := 0; i < 100; i++ {
+		_, err := sharded.AddSafe(context.Background(), rec, i, 0)
+		if err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+	}
+
+	// Search
+	query := []float32{50.0, 50.0, 50.0}
+	results, _ := sharded.SearchVectors(context.Background(), query, 10, nil, types.SearchOptions{})
+
+	if len(results) == 0 {
+		t.Fatal("expected search results, got none")
+	}
+}
+
+// TestShardedHNSW_SearchEmpty verifies search on empty index
+func TestShardedHNSW_SearchEmpty(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = 4
+
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+
+	query := []float32{1.0, 2.0, 3.0}
+	results, _ := sharded.SearchVectors(context.Background(), query, 10, nil, types.SearchOptions{})
+
+	if len(results) != 0 {
+		t.Errorf("expected 0 results on empty index, got %d", len(results))
+	}
+}
+
+// TestShardedHNSW_GetLocation verifies location retrieval
+func TestShardedHNSW_GetLocation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = 4
+
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+
+	mem := memory.NewGoAllocator()
+	rec := makeShardedTestRecord(mem, 3, 20)
+	defer rec.Release()
+	ds.Lock()
+	ds.Records = append(ds.Records, rec)
+	ds.Unlock()
+
+	// Add vectors
+	for i := 0; i < 20; i++ {
+		_, err := sharded.AddSafe(context.Background(), rec, i, 0)
+		if err != nil {
+			t.Fatalf("Add failed: %v", err)
+		}
+	}
+
+	// Verify retrieval
+	locAny, ok := sharded.GetLocation(uint32(5))
+	if !ok {
+		t.Error("expected location for ID 5")
+	}
+	loc := locAny.(Location)
+	if loc.RowIdx != 5 {
+		t.Errorf("expected row idx 5, got %d", loc.RowIdx)
+	}
+
+	// Non-existent ID
+	_, ok = sharded.GetLocation(uint32(999))
+	if ok {
+		t.Error("expected not found for ID 999")
+	}
+}
+
+// TestShardedHNSW_ShardStats verifies per-shard statistics
+func TestShardedHNSW_ShardStats(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = 4
+
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+
+	mem := memory.NewGoAllocator()
+	rec := makeShardedTestRecord(mem, 3, 100)
+	defer rec.Release()
+	ds.Lock()
+	ds.Records = append(ds.Records, rec)
+	ds.Unlock()
+
+	// Add 100 vectors
+	for i := 0; i < 100; i++ {
+		_, _ = sharded.AddSafe(context.Background(), rec, i, 0)
+	}
+
+	stats := sharded.ShardStats()
+
+	if len(stats) != 4 {
+		t.Errorf("expected 4 shard stats, got %d", len(stats))
+	}
+
+	total := 0
+	for _, s := range stats {
+		total += s.Count
+	}
+
+	if total != 100 {
+		t.Errorf("expected total 100 across shards, got %d", total)
+	}
+}
+
+// TestShardedHNSW_ConcurrentAddAndSearch verifies thread safety
+func TestShardedHNSW_ConcurrentAddAndSearch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = 4
+	cfg.M = 8
+	cfg.EfConstruction = 50
+
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+
+	mem := memory.NewGoAllocator()
+	rec := makeShardedTestRecord(mem, 3, 200)
+	defer rec.Release()
+
+	// Pre-populate
+	for i := 0; i < 50; i++ {
+		_, _ = sharded.AddSafe(context.Background(), rec, i, 0)
+	}
+
+	var wg sync.WaitGroup
+	done := make(chan struct{})
+
+	// Concurrent adders
+	for g := 0; g < 4; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 50; i < 100; i++ {
+				_, _ = sharded.AddSafe(context.Background(), rec, i, 0)
+			}
+		}()
+	}
+
+	// Concurrent searchers
+	for g := 0; g < 4; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 50; i++ {
+				query := []float32{float32(i), float32(i), float32(i)}
+				_, _ = sharded.SearchVectors(context.Background(), query, 5, nil, types.SearchOptions{})
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(done)
+}
+
+func BenchmarkHNSW_SingleAdd(b *testing.B) {
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = 1
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+	mem := memory.NewGoAllocator()
+	rec := makeShardedTestRecord(mem, 128, b.N)
+	defer rec.Release()
+
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = sharded.AddSafe(context.Background(), rec, i, 0)
+	}
+}
+
+func BenchmarkHNSW_ShardedParallelAdd(b *testing.B) {
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = runtime.NumCPU()
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+	mem := memory.NewGoAllocator()
+	rec := makeShardedTestRecord(mem, 128, b.N)
+	defer rec.Release()
+
+	b.ResetTimer()
+	b.RunParallel(func(pb *testing.PB) {
+		for pb.Next() {
+			// In realistic scenario we'd use atomics for rowIdx
+			_, _ = sharded.AddSafe(context.Background(), rec, 0, 0)
+		}
+	})
+}
+
+func BenchmarkHNSW_ShardedSearch(b *testing.B) {
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = runtime.NumCPU()
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+	mem := memory.NewGoAllocator()
+	rec := makeShardedTestRecord(mem, 128, 1000)
+	defer rec.Release()
+
+	for i := 0; i < 1000; i++ {
+		_, _ = sharded.AddSafe(context.Background(), rec, i, 0)
+	}
+
+	query := make([]float32, 128)
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		_, _ = sharded.SearchVectors(context.Background(), query, 10, nil, types.SearchOptions{})
+	}
+}
+
+func TestShardedHNSW_SearchByID(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultShardedHNSWConfig()
+	cfg.NumShards = 1
+	cfg.UseRingSharding = false
+	ds := NewMockDataset("search_by_id_test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+	mem := memory.NewGoAllocator()
+	rec := makeShardedTestRecord(mem, 3, 10)
+	defer rec.Release()
+
+	ds.Lock()
+	ds.Records = append(ds.Records, rec)
+	ds.Unlock()
+
+	ids, err := sharded.AddBatch(context.Background(), []arrow.RecordBatch{rec}, []int{0, 1, 2}, []int{0, 0, 0})
+	if err != nil {
+		t.Fatalf("AddBatch failed: %v", err)
+	}
+	if len(ids) != 3 {
+		t.Fatalf("expected 3 IDs, got %d", len(ids))
+	}
+
+	for _, id := range ids {
+		results := sharded.SearchByID(context.Background(), VectorID(id), 5)
+		if len(results) == 0 {
+			t.Errorf("SearchByID(%d) returned no results", id)
+		}
+	}
+
+	searchResults, err := sharded.SearchVectors(context.Background(), []float32{1, 2, 3}, 3, nil, types.SearchOptions{})
+	if err != nil {
+		t.Fatalf("SearchVectors failed: %v", err)
+	}
+	if len(searchResults) == 0 {
+		t.Fatal("SearchVectors returned no results")
+	}
+}
+
+func TestShardedHNSW_GetDimension(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	cfg := DefaultShardedHNSWConfig()
+	ds := NewMockDataset("test", nil)
+	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
+	if sharded.GetDimension() != 0 {
+		t.Error("expected 0")
+	}
+}

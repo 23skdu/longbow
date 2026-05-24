@@ -1,10 +1,13 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/index"
+
 	"context"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/rs/zerolog"
 
 	"github.com/apache/arrow-go/v18/arrow"
@@ -38,8 +41,8 @@ func TestVectorStore_IndexRecordColumns(t *testing.T) {
 	defer rec.Release()
 
 	// Create dataset first so IndexRecordColumns works
-	ds, _ := store.getOrCreateDataset("test-dataset", func() *Dataset {
-		return &Dataset{Name: "test-dataset", ColumnIndex: NewColumnInvertedIndex()}
+	ds, _ := store.getOrCreateDataset("test-dataset", func() types.IndexDataProvider {
+		return &index.MockDataset{Name: "test-dataset", ColumnIndex: NewColumnInvertedIndex()}
 	})
 
 	// Index the record
@@ -78,8 +81,8 @@ func TestVectorStore_IndexRecordColumns_NoIndexedColumns(t *testing.T) {
 	defer rec.Release()
 
 	// Create dataset
-	ds, _ := store.getOrCreateDataset("test-dataset", func() *Dataset {
-		return &Dataset{Name: "test-dataset", ColumnIndex: NewColumnInvertedIndex()}
+	ds, _ := store.getOrCreateDataset("test-dataset", func() types.IndexDataProvider {
+		return &index.MockDataset{Name: "test-dataset", ColumnIndex: NewColumnInvertedIndex()}
 	})
 
 	// Should not panic when no indexed columns configured
@@ -132,8 +135,8 @@ func TestVectorStore_FilterRecordOptimized_NoFilters(t *testing.T) {
 	defer rec.Release()
 
 	// Create dataset
-	_, _ = store.getOrCreateDataset("test", func() *Dataset {
-		return &Dataset{Name: "test", ColumnIndex: NewColumnInvertedIndex()}
+	_, _ = store.getOrCreateDataset("test", func() types.IndexDataProvider {
+		return &index.MockDataset{Name: "test", ColumnIndex: NewColumnInvertedIndex()}
 	})
 
 	// No filters should return record as-is
@@ -167,8 +170,8 @@ func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
 	defer builder.Release()
 
 	// Create dataset
-	_, _ = store.getOrCreateDataset("test-dataset", func() *Dataset {
-		return &Dataset{Name: "test-dataset", ColumnIndex: NewColumnInvertedIndex()}
+	_, _ = store.getOrCreateDataset("test-dataset", func() types.IndexDataProvider {
+		return &index.MockDataset{Name: "test-dataset", ColumnIndex: NewColumnInvertedIndex()}
 	})
 
 	builder.Field(0).(*array.Int64Builder).AppendValues([]int64{1, 2, 3, 4, 5}, nil)
@@ -216,8 +219,8 @@ func TestVectorStore_FilterRecordOptimized_FallbackToCompute(t *testing.T) {
 	defer rec.Release()
 
 	// Create dataset
-	_, _ = store.getOrCreateDataset("test", func() *Dataset {
-		return &Dataset{Name: "test", ColumnIndex: NewColumnInvertedIndex()}
+	_, _ = store.getOrCreateDataset("test", func() types.IndexDataProvider {
+		return &index.MockDataset{Name: "test", ColumnIndex: NewColumnInvertedIndex()}
 	})
 
 	// Filter on non-indexed column using non-equality operator
@@ -259,8 +262,8 @@ func BenchmarkFilterRecordOptimized_WithIndex(b *testing.B) {
 		}
 	}
 	// Create dataset
-	_, _ = store.getOrCreateDataset("benchmark", func() *Dataset {
-		return &Dataset{Name: "benchmark", ColumnIndex: NewColumnInvertedIndex()}
+	_, _ = store.getOrCreateDataset("benchmark", func() types.IndexDataProvider {
+		return &index.MockDataset{Name: "benchmark", ColumnIndex: NewColumnInvertedIndex()}
 	})
 
 	builder.Field(0).(*array.Int64Builder).AppendValues(ids, nil)

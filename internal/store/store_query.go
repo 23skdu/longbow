@@ -27,7 +27,7 @@ import (
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	qry "github.com/23skdu/longbow/internal/query"
-	internalcore "github.com/23skdu/longbow/internal/store/internal/core"
+	internalcore "github.com/23skdu/longbow/internal/store/index"
 	types "github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/tracing"
 )

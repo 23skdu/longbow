@@ -1,10 +1,11 @@
-package core_test
+package index_test
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -15,8 +16,8 @@ import (
 // Test Helpers
 // =============================================================================
 
-// createTestMockDataset creates a test core.MockDataset with random vectors
-func createTestMockDataset(t *testing.T, name string, dims, numVectors int) *core.MockDataset {
+// createTestMockDataset creates a test index.MockDataset with random vectors
+func createTestMockDataset(t *testing.T, name string, dims, numVectors int) *index.MockDataset {
 	t.Helper()
 	mem := memory.NewGoAllocator()
 
@@ -29,9 +30,9 @@ func createTestMockDataset(t *testing.T, name string, dims, numVectors int) *cor
 		}
 	}
 
-	rec := core.MakeBatchTestRecord(mem, dims, vectors)
+	rec := index.MakeBatchTestRecord(mem, dims, vectors)
 
-	return &core.MockDataset{
+	return &index.MockDataset{
 		Name:    name,
 		Records: []arrow.RecordBatch{rec},
 	}
@@ -47,7 +48,7 @@ func TestHNSWIndex_SearchBatch(t *testing.T) {
 		t.Skip("Could not create test dataset")
 	}
 
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 	for i := 0; i < 100; i++ {
 		_, _ = idx.AddByLocation(context.Background(), 0, i)
 	}
@@ -80,7 +81,7 @@ func TestHNSWIndex_RerankBatch(t *testing.T) {
 		t.Skip("Could not create test dataset")
 	}
 
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 	for i := 0; i < 50; i++ {
 		_, _ = idx.AddByLocation(context.Background(), 0, i)
 	}
@@ -109,12 +110,12 @@ func TestHNSWIndex_SearchBatchWithArena(t *testing.T) {
 		t.Skip("Could not create test dataset")
 	}
 
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 	for i := 0; i < 100; i++ {
 		_, _ = idx.AddByLocation(context.Background(), 0, i)
 	}
 
-	arena := core.NewSearchArena(64 * 1024)
+	arena := index.NewSearchArena(64 * 1024)
 
 	queries := [][]float32{
 		makeTestVector(16, 0),
@@ -134,7 +135,7 @@ func TestHNSWIndex_SearchBatchWithArena(t *testing.T) {
 
 func TestHNSWIndex_SearchBatch_Empty(t *testing.T) {
 	ds := createTestMockDataset(t, "empty-batch-test", 16, 10)
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	// Empty queries
 	results := idx.SearchBatch([][]float32{}, 5)
@@ -151,7 +152,7 @@ func TestHNSWIndex_SearchBatch_Empty(t *testing.T) {
 
 func TestHNSWIndex_RerankBatch_Empty(t *testing.T) {
 	ds := createTestMockDataset(t, "rerank-empty-test", 16, 10)
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	// Empty candidates
 	results := idx.RerankBatch([]float32{1.0}, []types.VectorID{}, 5)
@@ -167,11 +168,11 @@ func TestHNSWIndex_RerankBatch_Empty(t *testing.T) {
 }
 
 // =============================================================================
-// core.RankedResult type tests
+// index.RankedResult type tests
 // =============================================================================
 
 func TestRankedResult_Fields(t *testing.T) {
-	r := core.RankedResult{
+	r := index.RankedResult{
 		ID:       types.VectorID(42),
 		Distance: 1.5,
 	}

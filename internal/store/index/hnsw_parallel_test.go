@@ -1,11 +1,12 @@
-package core_test
+package index_test
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -16,15 +17,15 @@ import (
 // TestAddBatchParallel_Basic tests basic parallel batch addition
 func TestAddBatchParallel_Basic(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	vectors := core.GenerateTestVectors(100, 4)
-	// Use core.MakeBatchTestRecord which we know exists in the package now
-	rec := core.MakeBatchTestRecord(mem, 4, vectors)
+	vectors := index.GenerateTestVectors(100, 4)
+	// Use index.MakeBatchTestRecord which we know exists in the package now
+	rec := index.MakeBatchTestRecord(mem, 4, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	rowIdxs := make([]int, 100)
 	batchIdxs := make([]int, 100)
@@ -45,14 +46,14 @@ func TestAddBatchParallel_SingleWorker(t *testing.T) {
 	// AddBatch doesn't easily allow forcing worker count without config.
 	// We'll just verify AddBatch works on smaller set.
 	mem := memory.NewGoAllocator()
-	vectors := core.GenerateTestVectors(50, 4)
-	rec := core.MakeBatchTestRecord(mem, 4, vectors)
+	vectors := index.GenerateTestVectors(50, 4)
+	rec := index.MakeBatchTestRecord(mem, 4, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	rowIdxs := make([]int, 50)
 	batchIdxs := make([]int, 50)
@@ -69,14 +70,14 @@ func TestAddBatchParallel_SingleWorker(t *testing.T) {
 // TestAddBatchParallel_EmptyBatch tests with empty batch
 func TestAddBatchParallel_EmptyBatch(t *testing.T) {
 	mem := memory.NewGoAllocator()
-	vectors := core.GenerateTestVectors(10, 4)
-	rec := core.MakeBatchTestRecord(mem, 4, vectors)
+	vectors := index.GenerateTestVectors(10, 4)
+	rec := index.MakeBatchTestRecord(mem, 4, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	_, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, []int{}, []int{})
 	require.NoError(t, err)
@@ -91,13 +92,13 @@ func TestAddBatchParallel_SearchQuality(t *testing.T) {
 	for i := 0; i < 50; i++ {
 		vectors[i] = []float32{float32(i), float32(i), float32(i), float32(i)}
 	}
-	rec := core.MakeBatchTestRecord(mem, 4, vectors)
+	rec := index.MakeBatchTestRecord(mem, 4, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	rowIdxs := make([]int, 50)
 	batchIdxs := make([]int, 50)
@@ -141,14 +142,14 @@ func TestAddBatchParallel_LargeScale(t *testing.T) {
 
 	mem := memory.NewGoAllocator()
 	numVectors := 10000
-	vectors := core.GenerateTestVectors(numVectors, 128)
-	rec := core.MakeBatchTestRecord(mem, 128, vectors)
+	vectors := index.GenerateTestVectors(numVectors, 128)
+	rec := index.MakeBatchTestRecord(mem, 128, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	rowIdxs := make([]int, numVectors)
 	batchIdxs := make([]int, numVectors)
@@ -171,8 +172,8 @@ func TestAddBatchParallel_LargeScale(t *testing.T) {
 func BenchmarkAddBatchParallel(b *testing.B) {
 	mem := memory.NewGoAllocator()
 	numVectors := 1000
-	vectors := core.GenerateTestVectors(numVectors, 64)
-	rec := core.MakeBatchTestRecord(mem, 64, vectors)
+	vectors := index.GenerateTestVectors(numVectors, 64)
+	rec := index.MakeBatchTestRecord(mem, 64, vectors)
 	defer rec.Release()
 
 	rowIdxs := make([]int, numVectors)
@@ -189,10 +190,10 @@ func BenchmarkAddBatchParallel(b *testing.B) {
 		b.SetBytes(int64(numVectors * 64 * 4))
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			ds := &core.MockDataset{
+			ds := &index.MockDataset{
 				Records: []arrow.RecordBatch{rec},
 			}
-			idx := core.NewTestHNSWIndex(ds)
+			idx := index.NewTestHNSWIndex(ds)
 			// Loop adds
 			for j := 0; j < numVectors; j++ {
 				_, _ = idx.AddByLocation(context.Background(), 0, j)
@@ -205,10 +206,10 @@ func BenchmarkAddBatchParallel(b *testing.B) {
 		b.SetBytes(int64(numVectors * 64 * 4))
 		b.ResetTimer()
 		for i := 0; i < b.N; i++ {
-			ds := &core.MockDataset{
+			ds := &index.MockDataset{
 				Records: []arrow.RecordBatch{rec},
 			}
-			idx := core.NewTestHNSWIndex(ds)
+			idx := index.NewTestHNSWIndex(ds)
 			_, _ = idx.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
 		}
 		b.ReportMetric(float64(numVectors*b.N)/b.Elapsed().Seconds(), "vectors/sec")

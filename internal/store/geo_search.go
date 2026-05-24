@@ -14,7 +14,7 @@ import (
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
-	internalcore "github.com/23skdu/longbow/internal/store/internal/core"
+	internalcore "github.com/23skdu/longbow/internal/store/index"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 )
 

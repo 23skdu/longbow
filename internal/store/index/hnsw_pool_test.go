@@ -1,11 +1,12 @@
-package core_test
+package index_test
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"sync"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/memory"
@@ -21,13 +22,13 @@ func TestHNSW_ScratchPoolBasic(t *testing.T) {
 		{5.0, 6.0, 7.0, 8.0},
 		{9.0, 10.0, 11.0, 12.0},
 	}
-	rec := core.MakeBatchTestRecord(mem, 4, vectors)
+	rec := index.MakeBatchTestRecord(mem, 4, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	// Add vectors
 	for i := 0; i < 3; i++ {
@@ -64,13 +65,13 @@ func TestHNSW_ScratchPoolConcurrent(t *testing.T) {
 			vectors[i][j] = float32(i*dims + j)
 		}
 	}
-	rec := core.MakeBatchTestRecord(mem, dims, vectors)
+	rec := index.MakeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	for i := 0; i < numVectors; i++ {
 		_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -122,13 +123,13 @@ func TestHNSW_ScratchPoolDifferentDimensions(t *testing.T) {
 					vectors[i][j] = float32(i) + float32(j)*0.001
 				}
 			}
-			rec := core.MakeBatchTestRecord(mem, tc.dims, vectors)
+			rec := index.MakeBatchTestRecord(mem, tc.dims, vectors)
 			defer rec.Release()
 
-			ds := &core.MockDataset{
+			ds := &index.MockDataset{
 				Records: []arrow.RecordBatch{rec},
 			}
-			idx := core.NewTestHNSWIndex(ds)
+			idx := index.NewTestHNSWIndex(ds)
 
 			for i := 0; i < 5; i++ {
 				_, err := idx.AddByLocation(context.Background(), 0, i)
@@ -157,13 +158,13 @@ func BenchmarkHNSW_ScratchPoolAllocs(b *testing.B) {
 			vectors[i][j] = float32(i*dims + j)
 		}
 	}
-	rec := core.MakeBatchTestRecord(mem, dims, vectors)
+	rec := index.MakeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	for i := 0; i < numVectors; i++ {
 		_, _ = idx.AddByLocation(context.Background(), 0, i)
@@ -193,13 +194,13 @@ func BenchmarkHNSW_ScratchPoolAllocsParallel(b *testing.B) {
 			vectors[i][j] = float32(i*dims + j)
 		}
 	}
-	rec := core.MakeBatchTestRecord(mem, dims, vectors)
+	rec := index.MakeBatchTestRecord(mem, dims, vectors)
 	defer rec.Release()
 
-	ds := &core.MockDataset{
+	ds := &index.MockDataset{
 		Records: []arrow.RecordBatch{rec},
 	}
-	idx := core.NewTestHNSWIndex(ds)
+	idx := index.NewTestHNSWIndex(ds)
 
 	for i := 0; i < numVectors; i++ {
 		_, _ = idx.AddByLocation(context.Background(), 0, i)

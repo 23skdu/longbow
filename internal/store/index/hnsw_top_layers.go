@@ -1,4 +1,4 @@
-package core
+package index
 
 import (
 	"sync"
@@ -42,7 +42,6 @@ func (tlm *TopLayerManager) IsMatured(maxLayer int) bool {
 	}
 	return tlm.entryPoints[maxLayer].Len() >= tlm.threshold
 }
-
 
 // GetNeighborsLockFree returns the neighbor list for a node in the upper layers
 // without taking any locks.

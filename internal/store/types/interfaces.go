@@ -2,9 +2,10 @@ package types
 
 import (
 	"context"
+	"io"
+
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/rs/zerolog"
-	"io"
 
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/pq"
@@ -145,6 +146,7 @@ type IndexDataProvider interface {
 	GetName() string
 	GetRecords() []arrow.RecordBatch
 	GetSchema() *arrow.Schema
+	TurboQuantBits() int
 	GetTombstones() map[int]*Bitset
 	GetPQEncoder() *pq.PQEncoder
 	RLockData()

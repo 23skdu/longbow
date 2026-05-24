@@ -1,9 +1,10 @@
-package core
+package index
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/metrics"

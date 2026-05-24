@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/23skdu/longbow/internal/store/internal/core"
+	"github.com/23skdu/longbow/internal/store/index"
 	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/pq"

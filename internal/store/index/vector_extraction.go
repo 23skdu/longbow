@@ -1,9 +1,10 @@
-package core
+package index
 
 import (
 	"fmt"
 	"math"
 	"unsafe"
+
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -229,4 +230,3 @@ func (h *ArrowHNSW) mustGetVectorFromData(data *types.GraphData, id uint32) any 
 	}
 	return vec
 }
-

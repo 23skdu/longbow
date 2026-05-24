@@ -3,7 +3,7 @@ package store
 import (
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/storage"
-	hnswcore "github.com/23skdu/longbow/internal/store/internal/core"
+	hnswcore "github.com/23skdu/longbow/internal/store/index"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 )

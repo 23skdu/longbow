@@ -28,7 +28,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/storage"
-	lbcore "github.com/23skdu/longbow/internal/store/internal/core"
+	lbcore "github.com/23skdu/longbow/internal/store/index"
 )
 
 // VectorStore implements flight.FlightServer and provides vector storage and search with support for HNSW, IVF, and learned indexing.
@@ -1151,4 +1151,9 @@ func (vs *VectorStore) GetNeighborsBulk(ctx context.Context, datasetName string,
 	}
 
 	return results, nil
+}
+
+
+func (d *Dataset) TurboQuantBits() int {
+	return d.turboQuantBits
 }

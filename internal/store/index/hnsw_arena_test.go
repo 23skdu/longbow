@@ -1,10 +1,11 @@
-package core_test
+package index_test
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -13,7 +14,7 @@ import (
 
 // TestSearchArenaAllocVectorIDSlice tests arena allocation for types.VectorID slices
 func TestSearchArenaAllocVectorIDSlice(t *testing.T) {
-	arena := core.NewSearchArena(1024)
+	arena := index.NewSearchArena(1024)
 
 	// Allocate slice of 10 types.VectorIDs (4 bytes each = 40 bytes)
 	ids := arena.AllocVectorIDSlice(10)
@@ -37,7 +38,7 @@ func TestSearchArenaAllocVectorIDSlice(t *testing.T) {
 
 // TestSearchArenaAllocVectorIDSliceZero tests zero-length allocation
 func TestSearchArenaAllocVectorIDSliceZero(t *testing.T) {
-	arena := core.NewSearchArena(1024)
+	arena := index.NewSearchArena(1024)
 	ids := arena.AllocVectorIDSlice(0)
 	if ids == nil {
 		t.Fatal("AllocVectorIDSlice(0) returned nil, want empty slice")
@@ -50,7 +51,7 @@ func TestSearchArenaAllocVectorIDSliceZero(t *testing.T) {
 // TestSearchArenaAllocVectorIDSliceExhaustion tests arena exhaustion
 func TestSearchArenaAllocVectorIDSliceExhaustion(t *testing.T) {
 	// Small arena: 32 bytes can fit 8 types.VectorIDs max
-	arena := core.NewSearchArena(32)
+	arena := index.NewSearchArena(32)
 
 	// First allocation should succeed
 	ids := arena.AllocVectorIDSlice(5)
@@ -68,8 +69,8 @@ func TestSearchArenaAllocVectorIDSliceExhaustion(t *testing.T) {
 // TestHNSWSearchWithArena tests basic SearchWithArena functionality
 func TestHNSWSearchWithArena(t *testing.T) {
 	// Create dataset with test vectors
-	ds := &core.MockDataset{Name: "test-arena"}
-	index := core.NewTestHNSWIndex(ds)
+	ds := &index.MockDataset{Name: "test-arena"}
+	hnswIdx := index.NewTestHNSWIndex(ds)
 
 	// Build test record with vectors
 	alloc := memory.NewGoAllocator()
@@ -109,16 +110,16 @@ func TestHNSWSearchWithArena(t *testing.T) {
 
 	// Add vectors to index
 	for i := range vectors {
-		if _, err := index.AddByLocation(context.Background(), 0, i); err != nil {
+		if _, err := hnswIdx.AddByLocation(context.Background(), 0, i); err != nil {
 			t.Fatalf("Add failed: %v", err)
 		}
 	}
 
 	// Create arena and search
-	arena := core.NewSearchArena(4096)
+	arena := index.NewSearchArena(4096)
 	query := []float32{1.0, 0.0, 0.0, 0.0}
 
-	results := index.SearchWithArena(query, 3, arena)
+	results := hnswIdx.SearchWithArena(query, 3, arena)
 	if results == nil {
 		t.Fatal("SearchWithArena returned nil")
 	}
@@ -134,8 +135,8 @@ func TestHNSWSearchWithArena(t *testing.T) {
 
 // TestHNSWSearchWithArenaUsesArena verifies arena offset advances
 func TestHNSWSearchWithArenaUsesArena(t *testing.T) {
-	ds := &core.MockDataset{Name: "test-arena-usage"}
-	index := core.NewTestHNSWIndex(ds)
+	ds := &index.MockDataset{Name: "test-arena-usage"}
+	hnswIdx := index.NewTestHNSWIndex(ds)
 
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -165,14 +166,14 @@ func TestHNSWSearchWithArenaUsesArena(t *testing.T) {
 	ds.Records = []arrow.RecordBatch{rec}
 
 	for i := 0; i < 3; i++ {
-		_, _ = index.AddByLocation(context.Background(), 0, i)
+		_, _ = hnswIdx.AddByLocation(context.Background(), 0, i)
 	}
 
-	arena := core.NewSearchArena(4096)
+	arena := index.NewSearchArena(4096)
 	initialOffset := arena.Offset()
 
 	query := []float32{0.5, 0.0, 0.0, 0.0}
-	_ = index.SearchWithArena(query, 2, arena)
+	_ = hnswIdx.SearchWithArena(query, 2, arena)
 
 	// Arena offset should have advanced (results allocated from arena)
 	if arena.Offset() <= initialOffset {
@@ -182,8 +183,8 @@ func TestHNSWSearchWithArenaUsesArena(t *testing.T) {
 
 // TestHNSWSearchWithArenaReset verifies arena can be reset and reused
 func TestHNSWSearchWithArenaReset(t *testing.T) {
-	ds := &core.MockDataset{Name: "test-arena-reset"}
-	index := core.NewTestHNSWIndex(ds)
+	ds := &index.MockDataset{Name: "test-arena-reset"}
+	hnswIdx := index.NewTestHNSWIndex(ds)
 
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -212,14 +213,14 @@ func TestHNSWSearchWithArenaReset(t *testing.T) {
 	ds.Records = []arrow.RecordBatch{rec}
 
 	for i := 0; i < 5; i++ {
-		_, _ = index.AddByLocation(context.Background(), 0, i)
+		_, _ = hnswIdx.AddByLocation(context.Background(), 0, i)
 	}
 
-	arena := core.NewSearchArena(4096)
+	arena := index.NewSearchArena(4096)
 	query := []float32{1.0, 2.0, 3.0, 4.0}
 
 	// First search
-	_ = index.SearchWithArena(query, 3, arena)
+	_ = hnswIdx.SearchWithArena(query, 3, arena)
 	offsetAfterFirst := arena.Offset()
 
 	// Reset arena
@@ -229,7 +230,7 @@ func TestHNSWSearchWithArenaReset(t *testing.T) {
 	}
 
 	// Second search reuses memory
-	_ = index.SearchWithArena(query, 3, arena)
+	_ = hnswIdx.SearchWithArena(query, 3, arena)
 	offsetAfterSecond := arena.Offset()
 
 	// Should use same amount of arena space
@@ -240,8 +241,8 @@ func TestHNSWSearchWithArenaReset(t *testing.T) {
 
 // TestHNSWSearchWithArenaNilArena tests fallback when arena is nil
 func TestHNSWSearchWithArenaNilArena(t *testing.T) {
-	ds := &core.MockDataset{Name: "test-nil-arena"}
-	index := core.NewTestHNSWIndex(ds)
+	ds := &index.MockDataset{Name: "test-nil-arena"}
+	hnswIdx := index.NewTestHNSWIndex(ds)
 
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -268,12 +269,12 @@ func TestHNSWSearchWithArenaNilArena(t *testing.T) {
 
 	ds.Records = []arrow.RecordBatch{rec}
 
-	_, _ = index.AddByLocation(context.Background(), 0, 0)
+	_, _ = hnswIdx.AddByLocation(context.Background(), 0, 0)
 
 	query := []float32{1.0, 0.0, 0.0, 0.0}
 
 	// Should not panic with nil arena, falls back to heap allocation
-	results := index.SearchWithArena(query, 1, nil)
+	results := hnswIdx.SearchWithArena(query, 1, nil)
 	if results == nil {
 		t.Fatal("SearchWithArena with nil arena returned nil")
 	}
@@ -284,8 +285,8 @@ func TestHNSWSearchWithArenaNilArena(t *testing.T) {
 
 // TestHNSWSearchWithArenaExhaustion tests behavior when arena is exhausted
 func TestHNSWSearchWithArenaExhaustion(t *testing.T) {
-	ds := &core.MockDataset{Name: "test-arena-exhaustion"}
-	index := core.NewTestHNSWIndex(ds)
+	ds := &index.MockDataset{Name: "test-arena-exhaustion"}
+	hnswIdx := index.NewTestHNSWIndex(ds)
 
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -315,15 +316,15 @@ func TestHNSWSearchWithArenaExhaustion(t *testing.T) {
 	ds.Records = []arrow.RecordBatch{rec}
 
 	for i := 0; i < 10; i++ {
-		_, _ = index.AddByLocation(context.Background(), 0, i)
+		_, _ = hnswIdx.AddByLocation(context.Background(), 0, i)
 	}
 
 	// Very small arena that will exhaust
-	arena := core.NewSearchArena(8) // Only 8 bytes
+	arena := index.NewSearchArena(8) // Only 8 bytes
 	query := []float32{5.0, 5.0, 5.0, 5.0}
 
 	// Should fall back to heap allocation when arena exhausted
-	results := index.SearchWithArena(query, 5, arena)
+	results := hnswIdx.SearchWithArena(query, 5, arena)
 	if results == nil {
 		t.Fatal("SearchWithArena should fall back when arena exhausted")
 	}
@@ -332,7 +333,7 @@ func TestHNSWSearchWithArenaExhaustion(t *testing.T) {
 // TestSearchArenaPoolIntegration tests arena with existing pool mechanism
 func TestSearchArenaPoolIntegration(t *testing.T) {
 	// Verify SearchArena can coexist with resultPool
-	arena := core.NewSearchArena(4096)
+	arena := index.NewSearchArena(4096)
 
 	// Allocate various types
 	floats := arena.AllocFloat32Slice(100)
@@ -357,8 +358,8 @@ func TestSearchArenaPoolIntegration(t *testing.T) {
 
 // BenchmarkSearchWithArenaVsSearchByID compares allocation strategies
 func BenchmarkSearchWithArenaVsSearchByID(b *testing.B) {
-	ds := &core.MockDataset{Name: "bench-arena"}
-	index := core.NewTestHNSWIndex(ds)
+	ds := &index.MockDataset{Name: "bench-arena"}
+	hnswIdx := index.NewTestHNSWIndex(ds)
 
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -388,7 +389,7 @@ func BenchmarkSearchWithArenaVsSearchByID(b *testing.B) {
 	ds.Records = []arrow.RecordBatch{rec}
 
 	for i := 0; i < 1000; i++ {
-		_, _ = index.AddByLocation(context.Background(), 0, i)
+		_, _ = hnswIdx.AddByLocation(context.Background(), 0, i)
 	}
 
 	query := make([]float32, 128)
@@ -403,7 +404,7 @@ func BenchmarkSearchWithArenaVsSearchByID(b *testing.B) {
 			// Wait, SearchByID signature might be different
 			// internal/store/index.go: SearchByID(id types.VectorID, k int) ([]types.Candidate, error)
 			// But here we need to discard results to be fair?
-			// results, _ := index.SearchByID(context.Background(), types.VectorID(i%1000), 10, nil, types.SearchOptions{})
+			// results, _ := hnswIdx.SearchByID(context.Background(), types.VectorID(i%1000), 10, nil, types.SearchOptions{})
 			// _ = results
 			// index.PutResults(results) // If pool is exposed?
 			// The benchmark assumes we can return to pool. If not, just ignore.
@@ -411,11 +412,11 @@ func BenchmarkSearchWithArenaVsSearchByID(b *testing.B) {
 	})
 
 	b.Run("SearchWithArena", func(b *testing.B) {
-		arena := core.NewSearchArena(4096)
+		arena := index.NewSearchArena(4096)
 		b.ReportAllocs()
 		for i := 0; i < b.N; i++ {
 			arena.Reset()
-			_ = index.SearchWithArena(query, 10, arena)
+			_ = hnswIdx.SearchWithArena(query, 10, arena)
 		}
 	})
 }

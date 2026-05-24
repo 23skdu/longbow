@@ -1,4 +1,4 @@
-package core
+package index
 
 import (
 	"github.com/23skdu/longbow/internal/store/types"
@@ -59,4 +59,3 @@ func (h *MaxCandidateHeapAdapter) Pop() any {
 	*h = old[:n-1]
 	return x
 }
-

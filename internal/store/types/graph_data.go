@@ -7,14 +7,15 @@ import (
 	"sync/atomic"
 	"unsafe"
 
+	"runtime"
+	"sync"
+
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	arrowmemory "github.com/apache/arrow-go/v18/arrow/memory"
-	"runtime"
-	"sync"
 )
 
 // PaddedMutex is a sync.Mutex padded to a full 64-byte cache line to prevent false sharing.

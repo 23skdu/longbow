@@ -1,4 +1,4 @@
-package core
+package index
 
 import (
 	"context"
@@ -9,15 +9,17 @@ import (
 
 	"time"
 
-	"github.com/23skdu/longbow/internal/pq"
 	"sync"
+
+	"github.com/23skdu/longbow/internal/pq"
+
+	"math"
+	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	types "github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/float16"
-	"math"
-	"sync/atomic"
 )
 
 // BulkInsertThreshold defines the minimum batch size to trigger parallel bulk insert

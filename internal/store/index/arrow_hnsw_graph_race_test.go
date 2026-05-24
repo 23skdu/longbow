@@ -1,11 +1,12 @@
-package core_test
+package index_test
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"runtime"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"golang.org/x/sync/errgroup"
 )
@@ -18,14 +19,14 @@ func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
 		cfg.DataType = types.VectorTypeFloat32 // Explicitly set data type
 
 		// Create a dummy dataset
-		ds := &core.MockDataset{
+		ds := &index.MockDataset{
 			Name: "test-dataset",
 		}
 
-		h := core.NewArrowHNSW(ds, &cfg, nil)
+		h := index.NewArrowHNSW(ds, &cfg, nil)
 
-		// Helper function to get vector from core.ArrowHNSW
-		getVectorFloat32 := func(hnsw *core.ArrowHNSW, id uint32) []float32 {
+		// Helper function to get vector from index.ArrowHNSW
+		getVectorFloat32 := func(hnsw *index.ArrowHNSW, id uint32) []float32 {
 			data := hnsw.GetData()
 			if data == nil {
 				return nil
@@ -52,7 +53,7 @@ func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
 
 		defer func() {
 			if err := h.Close(); err != nil {
-				t.Logf("failed to close core.ArrowHNSW: %v", err)
+				t.Logf("failed to close index.ArrowHNSW: %v", err)
 			}
 		}()
 

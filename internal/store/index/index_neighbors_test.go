@@ -1,0 +1,56 @@
+package index
+
+import (
+	"context"
+	"testing"
+
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+)
+
+func TestIndexGetNeighborsStandardized(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping broken integration test in short mode")
+	}
+	ctx := context.Background()
+	dim := 128
+
+	// Create a minimal dataset for tests
+	schema := arrow.NewSchema([]arrow.Field{
+		{Name: "vector", Type: arrow.FixedSizeListOf(int32(dim), arrow.PrimitiveTypes.Float32)},
+	}, nil)
+	ds := &MockDataset{Name: "test", Schema: schema}
+
+	// Test case: ArrowHNSW
+	t.Run("ArrowHNSW", func(t *testing.T) {
+		cfg := DefaultArrowHNSWConfig()
+		cfg.Dims = dim
+		idx := NewArrowHNSW(ds, &cfg, nil)
+
+		// Get neighbors for ID 0 (empty index)
+		neighbors, err := idx.GetNeighbors(ctx, 0, 5)
+		require.Error(t, err)
+		assert.Empty(t, neighbors)
+	})
+
+	// Test case: AdaptiveIndex (BruteForce initially)
+	t.Run("AdaptiveIndex_BruteForce", func(t *testing.T) {
+		idx := NewAdaptiveIndex(ds, DefaultAdaptiveIndexConfig())
+
+		// BruteForce doesn't support GetNeighbors
+		neighbors, err := idx.GetNeighbors(ctx, 0, 5)
+		assert.Error(t, err)
+		assert.Nil(t, neighbors)
+	})
+
+	// Test case: IVFPQIndex
+	t.Run("IVFPQIndex", func(t *testing.T) {
+		idx, _ := NewIVFPQIndex(dim, DefaultIVFPQConfig())
+
+		// IVFPQ doesn't support GetNeighbors
+		neighbors, err := idx.GetNeighbors(ctx, 0, 5)
+		assert.Error(t, err)
+		assert.Nil(t, neighbors)
+	})
+}

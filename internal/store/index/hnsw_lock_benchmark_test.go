@@ -1,12 +1,13 @@
-package core_test
+package index_test
 
 import (
-	"github.com/23skdu/longbow/internal/store/internal/core"
-	"github.com/23skdu/longbow/internal/store/types"
 	"math/rand"
 	"sync"
 	"sync/atomic"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/index"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // BenchmarkHNSW_LockContention simulates high-concurrency insertions to trigger lock contention.
@@ -15,7 +16,7 @@ func BenchmarkHNSW_LockContention(b *testing.B) {
 	dims := 32
 	capacity := 100000
 	cfg := types.DefaultArrowHNSWConfig()
-	h := core.NewArrowHNSW(nil, &cfg, nil)
+	h := index.NewArrowHNSW(nil, &cfg, nil)
 	_ = h.Grow(capacity, 0)
 
 	// Pre-fill some data to ensure graph connectivity and non-trivial traversals

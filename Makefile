@@ -49,7 +49,7 @@ build-cli:
 # Build for AVX2-only systems (e.g., ancalagon, older AMD64 without AVX512)
 build-avx2:
 	@echo "Building longbow $(VERSION) for AVX2-only systems..."
-	go build -ldflags "$(LDFLAGS)" -v -tags '!avx512' -o bin/longbow-avx2 ./cmd/longbow
+	GOAMD64=v3 go build -ldflags "$(LDFLAGS)" -v -tags '!avx512' -o bin/longbow-avx2 ./cmd/longbow
 	@echo "Binary: bin/longbow-avx2"
 	@echo "Use this for systems without AVX512 support (e.g., ancalagon)"
 
@@ -68,7 +68,7 @@ build-cuda:
 		fi; \
 	fi; \
 	nvcc -O3 --ptxas-options=-v --compiler-options '-fPIC' -c internal/gpu/cuda/kernels.cu -o internal/gpu/cuda/kernels.o
-	CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -tags "gpu onnx" -v -o bin/longbow-cuda ./cmd/longbow
+	GOAMD64=v3 CGO_ENABLED=1 go build -ldflags "$(LDFLAGS)" -tags "gpu onnx" -v -o bin/longbow-cuda ./cmd/longbow
 	ln -sf longbow-cuda bin/longbow
 
 # Build with Metal GPU support (macOS ARM64)

@@ -310,13 +310,7 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 		metrics.GlobalRRFLatencySeconds.Observe(time.Since(rrfStart).Seconds())
 	} else {
 		// 3. Launch Merger for standard sorted streams
-		mergedCh := MergeSortedStreams(channels, req.K)
-
-		// 4. Collect Final Results
-		finalResults = make([]SearchResult, 0, req.K)
-		for r := range mergedCh {
-			finalResults = append(finalResults, r)
-		}
+		finalResults = MergeSortedStreams(channels, req.K)
 	}
 
 	metrics.GlobalSearchDuration.Observe(time.Since(start).Seconds())

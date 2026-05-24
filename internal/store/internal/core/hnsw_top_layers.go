@@ -31,6 +31,19 @@ func NewTopLayerManager(threshold int) *TopLayerManager {
 	return tlm
 }
 
+// IsMatured returns true when the top-layer entry-point pool at the given
+// maxLayer has accumulated at least `threshold` distinct entry points.
+// Once matured, callers can read entry points lock-free via GetRandom()
+// without holding epMu, since the pool provides sufficient diversity to
+// avoid hot-path serialisation at the global entry point.
+func (tlm *TopLayerManager) IsMatured(maxLayer int) bool {
+	if maxLayer < 0 || maxLayer >= types.ArrowMaxLayers {
+		return false
+	}
+	return tlm.entryPoints[maxLayer].Len() >= tlm.threshold
+}
+
+
 // GetNeighborsLockFree returns the neighbor list for a node in the upper layers
 // without taking any locks.
 func (tlm *TopLayerManager) GetNeighborsLockFree(layer int, id uint32) []uint32 {

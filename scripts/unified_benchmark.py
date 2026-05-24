@@ -14,6 +14,7 @@ Usage:
 """
 
 import argparse
+import atexit
 import json
 import os
 import platform
@@ -135,6 +136,48 @@ class BenchmarkRunner:
         self.results = []
         self.server_pid = None
         self.test_counter = 0
+
+        # Register cleanup to prevent zombie longbow processes on any exit path.
+        # _force_cleanup uses port-scoped lsof so it is safe for parallel benchmark runs.
+        atexit.register(self._force_cleanup)
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
+
+    def _signal_handler(self, signum, frame):
+        """Handle SIGINT/SIGTERM by cleaning up and exiting."""
+        print(f"  [cleanup] Signal {signum} received, forcing cleanup...")
+        self._force_cleanup()
+        sys.exit(1)
+
+    def _force_cleanup(self):
+        """Kill the tracked server PID and any stray processes on our ports.
+
+        This method is intentionally port-scoped (not a global pkill) so it does
+        not interfere with other benchmark runs on different ports."""
+        # First, send SIGKILL to the tracked PID if still alive
+        if self.server_pid:
+            try:
+                os.kill(self.server_pid, signal.SIGKILL)
+                os.waitpid(self.server_pid, 0)
+            except (ProcessLookupError, ChildProcessError, OSError):
+                pass
+            self.server_pid = None
+
+        # Then sweep the specific ports this runner owns
+        if ":" in self.server_addr:
+            try:
+                port = int(self.server_addr.split(":")[-1])
+                # Sweep: data port, meta port (+1), metrics port (+6000),
+                # admin port (+7000), and HTTP port (+80)
+                ports_to_kill = [port, port + 1, port + 6000, port + 7000, port + 80]
+                for p in ports_to_kill:
+                    subprocess.run(
+                        f"lsof -ti:{p} 2>/dev/null | xargs -r kill -9 2>/dev/null || true",
+                        shell=True,
+                        timeout=5,
+                    )
+            except Exception:
+                pass
 
     def get_server_binary(self):
         mode_binaries = {
@@ -258,6 +301,8 @@ class BenchmarkRunner:
         env["LONGBOW_INGESTION_WORKER_COUNT"] = "6"
         env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"
         env["LONGBOW_AUTOSCALE_ENABLED"] = "false"
+        env["LONGBOW_ADAPTIVE_M_MAX_FACTOR"] = "1.5"
+        env["LONGBOW_MAX_M0"] = "32"
 
         # ── Network addresses ─────────────────────────────────────────────
         env["LONGBOW_LISTEN_ADDR"] = f"0.0.0.0:{port}"
@@ -766,6 +811,7 @@ class BenchmarkRunner:
         except Exception as e:
             print(f"Error: {e}")
         finally:
+            self._force_cleanup()  # Kill stray processes on our ports before graceful stop
             self.stop_server()
             data_root = os.path.join(self.data_dir, label)
             subprocess.run(f"rm -rf {data_root}", shell=True)
@@ -877,6 +923,7 @@ class BenchmarkRunner:
         except Exception as e:
             print(f"Error: {e}")
         finally:
+            self._force_cleanup()  # Kill stray processes on our ports before graceful stop
             self.stop_server()
             data_root = os.path.join(self.data_dir, label)
             subprocess.run(f"rm -rf {data_root}", shell=True)
@@ -1145,6 +1192,7 @@ class BenchmarkRunner:
         except Exception as e:
             print(f"Error: {e}")
         finally:
+            self._force_cleanup()  # Kill stray processes on our ports before graceful stop
             self.stop_server()
             data_root = os.path.join(self.data_dir, label)
             subprocess.run(f"rm -rf {data_root}", shell=True)
@@ -2132,6 +2180,7 @@ class BenchmarkRunner:
         except Exception as e:
             print(f"Error during learned index benchmark: {e}")
         finally:
+            self._force_cleanup()  # Kill stray processes on our ports before graceful stop
             self.stop_server()
             data_root = os.path.join(self.data_dir, label)
             subprocess.run(f"rm -rf {data_root}", shell=True)

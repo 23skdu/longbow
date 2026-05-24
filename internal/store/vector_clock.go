@@ -25,9 +25,12 @@ const (
 
 // VectorClock implements a vector clock for causal ordering in distributed systems
 type VectorClock struct {
-	mu     sync.RWMutex
-	nodeID string
-	clocks map[string]uint64
+	mu        sync.RWMutex
+	nodeID    string
+	clocks    map[string]uint64
+	deltaCh   chan map[string]uint64
+	stopCh    chan struct{}
+	compactor sync.Once
 }
 
 // NewVectorClock creates a new vector clock for the given node
@@ -78,6 +81,58 @@ func (vc *VectorClock) Merge(other *VectorClock) {
 	}
 
 	metrics.VectorClockMergesTotal.Inc()
+}
+
+// StartCompactor initializes a lock-free background thread to merge delta timestamps.
+func (vc *VectorClock) StartCompactor(bufferSize int) {
+	vc.compactor.Do(func() {
+		vc.deltaCh = make(chan map[string]uint64, bufferSize)
+		vc.stopCh = make(chan struct{})
+		go func() {
+			for {
+				select {
+				case <-vc.stopCh:
+					return
+				case delta := <-vc.deltaCh:
+					vc.mu.Lock()
+					for nodeID, otherVal := range delta {
+						if otherVal > vc.clocks[nodeID] {
+							vc.clocks[nodeID] = otherVal
+						}
+					}
+					vc.mu.Unlock()
+				}
+			}
+		}()
+	})
+}
+
+// StopCompactor stops the background clock compaction thread.
+func (vc *VectorClock) StopCompactor() {
+	if vc.stopCh != nil {
+		close(vc.stopCh)
+	}
+}
+
+// MergeAsync enqueues another vector clock into this one asynchronously for bounded P95 latency.
+func (vc *VectorClock) MergeAsync(other *VectorClock) {
+	other.mu.RLock()
+	delta := make(map[string]uint64, len(other.clocks))
+	for k, v := range other.clocks {
+		delta[k] = v
+	}
+	other.mu.RUnlock()
+
+	if vc.deltaCh != nil {
+		select {
+		case vc.deltaCh <- delta:
+			metrics.VectorClockMergesTotal.Inc()
+			return
+		default:
+			// Queue full, fallback to synchronous
+		}
+	}
+	vc.Merge(other)
 }
 
 // Compare compares this vector clock with another

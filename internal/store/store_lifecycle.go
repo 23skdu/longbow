@@ -80,6 +80,7 @@ func (s *VectorStore) StartLifecycleManager(ctx context.Context) {
 	// Start sub-tickers
 	s.StartWALCheckTicker(5 * time.Second)
 	s.StartMetricsTicker(15 * time.Second)
+	s.StartIngestionAutoscaler(ctx)
 
 	go func() {
 		ticker := time.NewTicker(time.Minute)
@@ -301,6 +302,48 @@ func (s *VectorStore) AdjustWorkerCounts(indexing, ingestion int) {
 	} else if ingestion < currIngestion {
 		s.StopIngestionWorkers(currIngestion - ingestion)
 	}
+}
+
+// StartIngestionAutoscaler monitors queue depth and dynamically adjusts worker counts
+func (s *VectorStore) StartIngestionAutoscaler(ctx context.Context) {
+	s.workerWg.Add(1)
+	go func() {
+		defer s.workerWg.Done()
+		// Check every 500ms
+		ticker := time.NewTicker(500 * time.Millisecond)
+		defer ticker.Stop()
+		
+		maxWorkers := runtime.NumCPU() * 2
+		if maxWorkers > 16 {
+			maxWorkers = 16
+		}
+		
+		for {
+			select {
+			case <-s.stopChan:
+				return
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+				depth := s.ingestionQueue.Len()
+				s.workerMu.Lock()
+				current := len(s.ingestionWorkerCancels)
+				currentIdx := len(s.indexingWorkerCancels)
+				s.workerMu.Unlock()
+				
+				target := MinIngestionWorkers
+				if depth > 1000 {
+					target = maxWorkers
+				} else if depth > 200 {
+					target = MinIngestionWorkers + (maxWorkers-MinIngestionWorkers)/2
+				}
+				
+				if target != current {
+					s.AdjustWorkerCounts(currentIdx, target)
+				}
+			}
+		}
+	}()
 }
 
 func (s *VectorStore) runIndexWorker(ctx context.Context) {

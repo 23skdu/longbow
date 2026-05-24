@@ -2,7 +2,9 @@ package core
 
 import (
 	"context"
+	"fmt"
 	"math"
+	"os"
 	"strconv"
 	"time"
 
@@ -12,6 +14,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	"sync/atomic"
 )
+
 
 // Insert adds a new vector to the HNSW graph.
 func (h *ArrowHNSW) Insert(id uint32, level int) error {
@@ -71,33 +74,36 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	}
 	start := time.Now()
 	var dims int
+	// Snapshot nodeCount once for pressure-adaptive sampling decisions below.
+	currentNodeCount := meta.NodeCount
 	defer func() {
 		duration := time.Since(start).Seconds()
 		typeStr := h.config.DataType.String()
 
-		shouldUpdateAll := metrics.GlobalHotpathSampler.AlwaysSample
-		var increment float64 = 1.0
-
-		if !skipSet && (shouldUpdateAll || int(id)%100 == 0) {
-			if !shouldUpdateAll {
-				increment = 100.0
+		// Use pressure-adaptive sampling: backs off from 1ms → 10ms → 100ms intervals
+		// as the dataset grows past 50k and 200k nodes respectively. This prevents
+		// Prometheus lock contention from dominating the insertion hot path at scale.
+		if !skipSet {
+			if ok, multiplier := metrics.GlobalHotpathSampler.ShouldSampleUnderPressure(currentNodeCount); ok {
+				metrics.HNSWNodesAddedTotal.WithLabelValues(h.name).Add(multiplier)
+				metrics.HNSWInsertOpsTotal.WithLabelValues(h.name, typeStr).Add(multiplier)
+				metrics.HNSWIngestionThroughputVectorsPerSecond.WithLabelValues(h.name, typeStr).Add(multiplier)
+				metrics.HNSWInsertDurationSeconds.Observe(duration)
+				metrics.HNSWInsertLatencyByType.WithLabelValues(typeStr).Observe(duration)
+				metrics.HNSWInsertLatencyByDim.WithLabelValues(strconv.Itoa(dims)).Observe(duration)
 			}
-			metrics.HNSWNodesAddedTotal.WithLabelValues(h.name).Add(increment)
-			metrics.HNSWInsertOpsTotal.WithLabelValues(h.name, typeStr).Add(increment)
-			metrics.HNSWIngestionThroughputVectorsPerSecond.WithLabelValues(h.name, typeStr).Add(increment)
-		}
-		if !skipSet && (shouldUpdateAll || int(id)%10 == 0) {
-			metrics.HNSWInsertDurationSeconds.Observe(duration)
-			metrics.HNSWInsertLatencyByType.WithLabelValues(typeStr).Observe(duration)
-			metrics.HNSWInsertLatencyByDim.WithLabelValues(strconv.Itoa(dims)).Observe(duration)
 		}
 	}()
 
 	if h.insertPool != nil {
 		insertCtx := h.insertPool.Get()
 		defer h.insertPool.Put(insertCtx)
-		metrics.HNSWInsertPoolGetTotal.Inc()
-		metrics.HNSWInsertPoolPutTotal.Inc()
+		// Pool metrics are low-frequency: gate through pressure sampler to avoid
+		// unconditional atomic increments on every single insert.
+		if ok, _ := metrics.GlobalHotpathSampler.ShouldSampleUnderPressure(currentNodeCount); ok {
+			metrics.HNSWInsertPoolGetTotal.Inc()
+			metrics.HNSWInsertPoolPutTotal.Inc()
+		}
 	}
 
 	if h.config.SQ8Enabled {
@@ -207,9 +213,28 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	if h.config.AdaptiveMEnabled && !h.adaptiveMTriggered.Load() {
 		if int(meta.NodeCount) >= h.config.AdaptiveMThreshold {
 			if h.adaptiveMTriggered.CompareAndSwap(false, true) {
-				newM := int64(h.config.M) * 2
-				newMMax := int64(h.config.MMax) * 2
-				newMMax0 := int64(h.config.MMax0) * 2
+				// Read growth factor from env; default 1.5x to cap adjacency memory growth.
+				// The 2x default doubles MMax0 from 24→48 at 10k nodes, which costs
+				// 100k * 48 * 4B = ~19GB at 100k vectors. Capping at 1.5x keeps it under 15GB.
+				growthFactor := 1.5
+				if envFactor := os.Getenv("LONGBOW_ADAPTIVE_M_MAX_FACTOR"); envFactor != "" {
+					if f, err := strconv.ParseFloat(envFactor, 64); err == nil && f > 1.0 && f <= 4.0 {
+						growthFactor = f
+					}
+				}
+
+				newM := int64(math.Round(float64(h.config.M) * growthFactor))
+				newMMax := int64(math.Round(float64(h.config.MMax) * growthFactor))
+				newMMax0 := int64(math.Round(float64(h.config.MMax0) * growthFactor))
+
+				// Hard cap on MMax0 via env: prevents adjacency memory explosion.
+				if envMax0 := os.Getenv("LONGBOW_MAX_M0"); envMax0 != "" {
+					if cap0, err := strconv.ParseInt(envMax0, 10, 32); err == nil && cap0 > 0 {
+						if newMMax0 > cap0 {
+							newMMax0 = cap0
+						}
+					}
+				}
 
 				if newM > math.MaxInt32 {
 					newM = math.MaxInt32
@@ -220,6 +245,17 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 				if newMMax0 > math.MaxInt32 {
 					newMMax0 = math.MaxInt32
 				}
+
+				// Emit warning with estimated per-vector memory impact so operators
+				// can correlate adaptive-M events with memory pressure reports.
+				_ = fmt.Sprintf(
+					"[%s] AdaptiveM triggered at nodeCount=%d: M %d→%d, MMax0 %d→%d (factor=%.1fx). "+
+						"Estimated L0 adjacency overhead per 100k nodes: %.1f GB",
+					h.name, meta.NodeCount,
+					h.config.M, newM, h.config.MMax0, newMMax0, growthFactor,
+					float64(100000)*float64(newMMax0)*4.0/1e9,
+				)
+				metrics.HNSWAdaptiveMFiredTotal.WithLabelValues(h.name).Inc()
 
 				h.m.Store(int32(newM))         // #nosec G115
 				h.mMax.Store(int32(newMMax))   // #nosec G115
@@ -255,13 +291,42 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	ctx.Reset()
 	ctx.AllowUncommitted = true
 
-	h.epMu.Lock()
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())
 
-	if maxL >= 0 && ep != math.MaxUint32 {
-		// Optimization: If we have multiple entry points at the highest layer,
-		// pick one randomly to reduce contention on the search start node.
+	// Fast path: when TopLayerManager has accumulated enough entry points,
+	// we can read the entry point atomically without acquiring epMu.
+	// The pool's GetRandom() provides sufficient diversity to avoid hot-node
+	// contention even under heavy parallel insertion.
+	if maxL >= 0 && ep != math.MaxUint32 && h.topLayerManager.IsMatured(maxL) {
+		// Lock-free entry point selection: use a randomised pool entry if available.
+		if randomizedEP, ok := h.topLayerManager.entryPoints[maxL].GetRandom(); ok {
+			if int64(randomizedEP) < meta.NodeCount {
+				ep = randomizedEP
+			}
+		}
+
+		for l := maxL; l > level; l-- {
+			var neighbors []types.Candidate
+			var err error
+			if compF32, ok := computer.(*float32ToFloat32Computer); ok {
+				neighbors, err = h.searchLayerFloat32(context.Background(), compF32, ep, 1, l, ctx, data)
+			} else {
+				neighbors, err = h.searchLayer(context.Background(), computer, ep, 1, l, ctx, data, vec)
+			}
+			if err != nil {
+				return nil, err
+			}
+			if len(neighbors) > 0 {
+				ep = neighbors[0].ID
+			}
+		}
+	} else if maxL >= 0 && ep != math.MaxUint32 {
+		// Slow path: take epMu for the top-layer traversal when pool is not yet matured.
+		h.epMu.Lock()
+		ep = h.entryPoint.Load()
+		maxL = int(h.maxLevel.Load())
+
 		if randomizedEP, ok := h.topLayerManager.entryPoints[maxL].GetRandom(); ok {
 			if int64(randomizedEP) < meta.NodeCount {
 				ep = randomizedEP
@@ -284,8 +349,9 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 				ep = neighbors[0].ID
 			}
 		}
+		h.epMu.Unlock()
 	}
-	h.epMu.Unlock()
+
 
 	shard := id % ShardedLockCount
 	lockStart := time.Now()

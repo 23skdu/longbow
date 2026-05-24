@@ -45,7 +45,7 @@ func createDurabilityTestBatch(mem memory.Allocator, startID, count int) arrow.R
 // TestDurability_EndToEnd verifies that data persists across store restarts via WAL replay.
 func TestDurability_EndToEnd(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tmpDir := t.TempDir()
 	logger := zerolog.Nop()
@@ -96,7 +96,7 @@ func TestDurability_EndToEnd(t *testing.T) {
 // TestDurability_SnapshotAndWAL verifies recovery from a Snapshot + Subsequent WAL entries.
 func TestDurability_SnapshotAndWAL(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tmpDir := t.TempDir()
 	logger := zerolog.New(os.Stderr).Level(zerolog.DebugLevel)
@@ -157,7 +157,7 @@ func TestDurability_SnapshotAndWAL(t *testing.T) {
 // TestDurability_IndexRebuild verifies that the vector index is searchable after recovery.
 func TestDurability_IndexRebuild(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Re-uses logic from above but specifically runs a search
 	tmpDir := t.TempDir()
@@ -244,7 +244,7 @@ func TestDurability_IndexRebuild(t *testing.T) {
 // Verify cleaning up of WAL files after snapshot? (Optional advanced)
 func TestDurability_WALTruncation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// If we snapshot, the WAL *should* be technically truncatable or archived.
 	// StorageEngine handles this.

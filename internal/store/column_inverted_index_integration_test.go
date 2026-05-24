@@ -13,7 +13,7 @@ import (
 // TestColumnInvertedIndex_FilterWithIndex tests filterRecord using index
 func TestColumnInvertedIndex_FilterWithIndex(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	idx := NewColumnInvertedIndex()
@@ -56,7 +56,7 @@ func TestColumnInvertedIndex_FilterWithIndex(t *testing.T) {
 // TestColumnInvertedIndex_BuildFilterMask tests building a filter mask from index
 func TestColumnInvertedIndex_BuildFilterMask(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	idx := NewColumnInvertedIndex()
@@ -96,7 +96,7 @@ func TestColumnInvertedIndex_BuildFilterMask(t *testing.T) {
 // TestColumnInvertedIndex_FilterRecordWithIndex tests full filter integration
 func TestColumnInvertedIndex_FilterRecordWithIndex(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	idx := NewColumnInvertedIndex()

@@ -2,6 +2,8 @@ package types
 
 import (
 	"context"
+	"github.com/23skdu/longbow/internal/memory"
+	"github.com/rs/zerolog"
 	"io"
 
 	"github.com/23skdu/longbow/internal/core"
@@ -150,4 +152,7 @@ type IndexDataProvider interface {
 	GenerateFilterBitset(filters []core.Filter, expr FilterExpr) (*Bitset, error)
 	ResetTombstones()
 	GetIndex() any
+	GetMetric() core.DistanceMetric
+	GetLogger() zerolog.Logger
+	GetTopo() *memory.NUMATopology
 }

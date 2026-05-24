@@ -1,10 +1,11 @@
 package store
 
 import (
+	"testing"
+
 	"github.com/23skdu/longbow/internal/core"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/stretchr/testify/assert"
-	"testing"
 )
 
 func helperLazyMeta(m map[string]interface{}) *lbtypes.LazyMetadata {

@@ -12,7 +12,7 @@ import (
 // TestBM25Arena_TokenStorage verifies token storage in SlabArena
 func TestBM25Arena_TokenStorage(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	idx := NewBM25ArenaIndex(arena, 100)
@@ -34,7 +34,7 @@ func TestBM25Arena_TokenStorage(t *testing.T) {
 // TestBM25Arena_PostingLists verifies inverted index uses PackedAdjacency
 func TestBM25Arena_PostingLists(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	idx := NewBM25ArenaIndex(arena, 100)
@@ -59,7 +59,7 @@ func TestBM25Arena_PostingLists(t *testing.T) {
 // TestBM25Arena_TermFrequency verifies TF calculation with arena data
 func TestBM25Arena_TermFrequency(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	idx := NewBM25ArenaIndex(arena, 100)
@@ -81,7 +81,7 @@ func TestBM25Arena_TermFrequency(t *testing.T) {
 // TestBM25Arena_DocumentFrequency verifies DF calculation
 func TestBM25Arena_DocumentFrequency(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	idx := NewBM25ArenaIndex(arena, 100)
@@ -104,7 +104,7 @@ func TestBM25Arena_DocumentFrequency(t *testing.T) {
 // TestBM25Arena_Scoring verifies BM25 score computation
 func TestBM25Arena_Scoring(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	idx := NewBM25ArenaIndex(arena, 100)
@@ -131,7 +131,7 @@ func TestBM25Arena_Scoring(t *testing.T) {
 // TestBM25Arena_ConcurrentAccess verifies thread safety
 func TestBM25Arena_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	idx := NewBM25ArenaIndex(arena, 1000)
@@ -161,7 +161,7 @@ func TestBM25Arena_ConcurrentAccess(t *testing.T) {
 // TestBM25Arena_Memory verifies memory efficiency
 func TestBM25Arena_Memory(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	idx := NewBM25ArenaIndex(arena, 100)

@@ -39,7 +39,7 @@ func createUpsertTestRecord(allocator memory.Allocator, startID int, count int) 
 
 func TestStore_Upsert(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	alloc := memory.NewGoAllocator()
 	s := NewVectorStore(alloc, zerolog.Nop(), 10*1024*1024, 0, 0)

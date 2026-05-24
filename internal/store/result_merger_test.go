@@ -9,7 +9,7 @@ import (
 
 func TestMergeSortedStreams(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Scenario 1: Basic merge of 3 sorted streams
 	ch1 := make(chan []SearchResult, 3)
@@ -44,7 +44,7 @@ func TestMergeSortedStreams(t *testing.T) {
 
 func TestMergeSortedStreams_EmptyChannels(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ch1 := make(chan []SearchResult)
 	close(ch1)
@@ -61,7 +61,7 @@ func TestMergeSortedStreams_EmptyChannels(t *testing.T) {
 
 func TestMergeSortedStreams_LimitK(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ch1 := make(chan []SearchResult, 1)
 
@@ -77,7 +77,7 @@ func TestMergeSortedStreams_LimitK(t *testing.T) {
 
 func TestMergeSortedStreams_InterleavedDelays(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ch1 := make(chan []SearchResult)
 	ch2 := make(chan []SearchResult)

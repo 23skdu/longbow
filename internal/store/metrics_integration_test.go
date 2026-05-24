@@ -17,7 +17,7 @@ import (
 
 func TestMetricsIntegration_HNSWSearch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Enable 100% metrics collection for this test
 	metrics.GlobalHotpathSampler.AlwaysSample = true
@@ -60,7 +60,7 @@ func TestMetricsIntegration_HNSWSearch(t *testing.T) {
 
 func TestMetricsIntegration_HNSWInsert(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Enable 100% metrics collection for this test
 	metrics.GlobalHotpathSampler.AlwaysSample = true

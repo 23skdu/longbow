@@ -11,7 +11,7 @@ import (
 
 func TestIVFOPQIndex_Basic(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dim := 16
 	n := 500
@@ -55,7 +55,7 @@ func TestIVFOPQIndex_Basic(t *testing.T) {
 
 func TestIVFOPQIndex_Empty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx, _ := NewIVFOPQIndex(8, IVFOPQConfig{Nlist: 5})
 	results, err := idx.SearchVectorsWithBitmap(context.Background(), make([]float32, 8), 5, nil, nil)
@@ -119,7 +119,7 @@ func FuzzIVFOPQIndexBuild(f *testing.F) {
 
 func TestIVFOPQIndex_RecallK(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dim := 128
 	n := 1000
@@ -213,7 +213,7 @@ func BenchmarkIVFOPQIndex_1M_3072dim(b *testing.B) {
 
 func TestIVFOPQ_makeClusterDists(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dim := 8
 	nlist := 4
@@ -239,7 +239,7 @@ func TestIVFOPQ_makeClusterDists(t *testing.T) {
 
 func TestIVFOPQ_decodeVector(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dim := 128
 	n := 1000
@@ -279,7 +279,7 @@ func TestIVFOPQ_decodeVector(t *testing.T) {
 
 func TestIVFOPQ_computeResidualScore(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dim := 128
 	n := 1000

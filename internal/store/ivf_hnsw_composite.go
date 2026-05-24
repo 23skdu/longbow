@@ -10,6 +10,8 @@ import (
 
 	"bytes"
 	"encoding/gob"
+	"os"
+
 	"github.com/23skdu/longbow/internal/core"
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -17,7 +19,6 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
-	"os"
 )
 
 // IVFHNSWConfig holds configuration for the IVF-HNSW composite index.

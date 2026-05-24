@@ -14,7 +14,7 @@ import (
 // TestRecallDebug helps debug why recall is so low
 func TestRecallDebug(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 

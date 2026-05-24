@@ -14,7 +14,7 @@ import (
 // It simulates OpenAI embeddings (1536d) which are typically normalized unit vectors.
 func TestSQ8_HighDim_Loss(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	const (
 		dims      = 1536

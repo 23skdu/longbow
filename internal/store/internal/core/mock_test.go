@@ -1,11 +1,15 @@
 package core
 
 import (
+	topcore "github.com/23skdu/longbow/internal/core"
+	"sync"
+
+	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
-	"sync"
+	"github.com/rs/zerolog"
 )
 
 // MockDataset implements types.IndexDataProvider for testing
@@ -60,4 +64,16 @@ func NewMockDataset(name string, schema *arrow.Schema) *MockDataset {
 		Records: make([]arrow.RecordBatch, 0),
 		Schema:  schema,
 	}
+}
+
+func (m *MockDataset) GetMetric() topcore.DistanceMetric {
+	return topcore.MetricEuclidean
+}
+
+func (m *MockDataset) GetLogger() zerolog.Logger {
+	return zerolog.Nop()
+}
+
+func (m *MockDataset) GetTopo() *memory.NUMATopology {
+	return nil
 }

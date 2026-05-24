@@ -11,7 +11,7 @@ import (
 
 func TestGraphAnalytics_PageRank_Simple(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// A simple 2-node cycle: 1 <-> 2
 	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
@@ -39,7 +39,7 @@ func TestGraphAnalytics_PageRank_Simple(t *testing.T) {
 
 func TestGraphAnalytics_Communities_Disjoint(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Two disjoint triangles: {1,2,3} and {4,5,6}
 	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
@@ -78,7 +78,7 @@ func TestGraphAnalytics_Communities_Disjoint(t *testing.T) {
 
 func TestGraphAnalytics_StarGraph(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Center 1, leaves 2,3,4.
 	// 1 -> 2,3,4
@@ -112,7 +112,7 @@ func TestGraphAnalytics_StarGraph(t *testing.T) {
 
 func TestGraphAnalytics_Properties(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 	// Complete graph of 3 nodes: 1->2,3; 2->1,3; 3->1,2
@@ -144,11 +144,11 @@ func FuzzGraphAnalytics_PageRank(f *testing.F) {
 		}
 
 		gd := types.NewGraphData(numNodes+10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
-		
+
 		for i := 1; i <= numNodes; i++ {
 			neighbors := make([]uint32, 0, maxNeighbors)
 			for j := 0; j < maxNeighbors; j++ {
-				nbr := uint32((i + j) % numNodes + 1)
+				nbr := uint32((i+j)%numNodes + 1)
 				if nbr != uint32(i) {
 					neighbors = append(neighbors, nbr)
 				}
@@ -159,7 +159,7 @@ func FuzzGraphAnalytics_PageRank(f *testing.F) {
 		ga := NewGraphAnalytics(func() *types.GraphData { return gd })
 		config := DefaultPageRankConfig()
 		config.DampingFactor = damping
-		
+
 		res, err := ga.CalculatePageRank(context.Background(), config)
 		require.NoError(t, err)
 		assert.NotNil(t, res)
@@ -171,12 +171,12 @@ func BenchmarkGraphAnalytics_PageRank_Prefetch(b *testing.B) {
 	numNodes := 10000
 	maxNeighbors := 20
 	gd := types.NewGraphData(numNodes+100, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
-	
+
 	for i := 1; i <= numNodes; i++ {
 		neighbors := make([]uint32, 0, maxNeighbors)
 		for j := 0; j < maxNeighbors; j++ {
 			// Pseudo-random but deterministic links to cause cache misses
-			nbr := uint32((i * j * 17) % numNodes + 1)
+			nbr := uint32((i*j*17)%numNodes + 1)
 			if nbr != uint32(i) {
 				neighbors = append(neighbors, nbr)
 			}

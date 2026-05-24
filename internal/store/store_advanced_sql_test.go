@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"fmt"
+	"testing"
+
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -12,12 +14,11 @@ import (
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
-	"testing"
 )
 
 func TestAdvancedSQL_E2E(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	vs, _, dialer := setupServer(t)
 	ctx := context.Background()

@@ -23,7 +23,7 @@ func (d *Dataset) GetNeighborsBulk(ctx context.Context, dataset string, nodeIDs 
 
 func TestReproGraphRAGSearchRace(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	numVectors := 1000

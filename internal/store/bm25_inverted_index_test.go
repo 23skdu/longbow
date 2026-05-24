@@ -11,7 +11,7 @@ import (
 
 func TestNewBM25InvertedIndex(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 	if idx == nil {
@@ -24,7 +24,7 @@ func TestNewBM25InvertedIndex(t *testing.T) {
 
 func TestBM25InvertedIndexAdd(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
@@ -49,7 +49,7 @@ func TestBM25InvertedIndexAdd(t *testing.T) {
 
 func TestBM25InvertedIndexDelete(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
@@ -79,7 +79,7 @@ func TestBM25InvertedIndexDelete(t *testing.T) {
 
 func TestBM25InvertedIndexSearchBM25(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
@@ -115,7 +115,7 @@ func TestBM25InvertedIndexSearchBM25(t *testing.T) {
 
 func TestBM25InvertedIndexMultiTermQuery(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
@@ -136,7 +136,7 @@ func TestBM25InvertedIndexMultiTermQuery(t *testing.T) {
 
 func TestBM25InvertedIndexIDFWeighting(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
@@ -177,7 +177,7 @@ func TestBM25InvertedIndexIDFWeighting(t *testing.T) {
 
 func TestBM25InvertedIndexLengthNormalization(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
@@ -199,7 +199,7 @@ func TestBM25InvertedIndexLengthNormalization(t *testing.T) {
 
 func TestBM25InvertedIndexGetTermDocFreq(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
@@ -228,7 +228,7 @@ func TestBM25InvertedIndexGetTermDocFreq(t *testing.T) {
 
 func TestBM25InvertedIndexEmptyQuery(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 	idx.Add(VectorID(1), "hello world")
@@ -248,7 +248,7 @@ func TestBM25InvertedIndexEmptyQuery(t *testing.T) {
 
 func TestBM25InvertedIndexConcurrency(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
@@ -284,7 +284,7 @@ func TestBM25InvertedIndexConcurrency(t *testing.T) {
 
 func TestBM25InvertedIndexLimit(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
@@ -308,7 +308,7 @@ func TestBM25InvertedIndexLimit(t *testing.T) {
 
 func TestBlockMaxWANDCorrectness(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 

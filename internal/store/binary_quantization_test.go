@@ -1,16 +1,17 @@
 package store
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"math/rand"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/stretchr/testify/assert"
 )
 
 func TestBQEncoder_Encode(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dims := 128
 	enc := types.NewBQEncoder(dims)
@@ -49,7 +50,7 @@ func TestBQEncoder_Encode(t *testing.T) {
 
 func TestBQEncoder_HammingDistance(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	enc := types.NewBQEncoder(64)
 
@@ -65,7 +66,7 @@ func TestBQEncoder_HammingDistance(t *testing.T) {
 
 func TestBQEncoder_Integration(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dims := 1024
 	enc := types.NewBQEncoder(dims)

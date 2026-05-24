@@ -8,7 +8,7 @@ import (
 
 func TestBatchDistanceCompute_EmptyInputs(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := [][]float32{}
 	candidates := [][]float32{}
@@ -19,7 +19,7 @@ func TestBatchDistanceCompute_EmptyInputs(t *testing.T) {
 
 func TestBatchDistanceCompute_ValidInputs(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := [][]float32{
 		{1.0, 0.0, 0.0},
@@ -39,7 +39,7 @@ func TestBatchDistanceCompute_ValidInputs(t *testing.T) {
 
 func TestBatchDistanceCompute_MismatchedQueryCandidateLengths_ReturnsError(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := [][]float32{
 		{1.0, 0.0, 0.0},
@@ -57,7 +57,7 @@ func TestBatchDistanceCompute_MismatchedQueryCandidateLengths_ReturnsError(t *te
 
 func TestBatchDistanceCompute_MismatchedResultsLength_ReturnsError(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := [][]float32{
 		{1.0, 0.0, 0.0},
@@ -75,7 +75,7 @@ func TestBatchDistanceCompute_MismatchedResultsLength_ReturnsError(t *testing.T)
 
 func TestBatchDistanceCompute_SingleQuery(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := [][]float32{
 		{1.0, 0.0, 0.0},
@@ -92,7 +92,7 @@ func TestBatchDistanceCompute_SingleQuery(t *testing.T) {
 
 func TestBatchDistanceCompute_128Dimensions(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := make([][]float32, 4)
 	candidates := make([][]float32, 4)
@@ -116,7 +116,7 @@ func TestBatchDistanceCompute_128Dimensions(t *testing.T) {
 
 func TestBatchDistanceCompute_384Dimensions(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := make([][]float32, 2)
 	candidates := make([][]float32, 2)
@@ -140,7 +140,7 @@ func TestBatchDistanceCompute_384Dimensions(t *testing.T) {
 
 func TestBatchDistanceCompute_VariableDimensions(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := [][]float32{
 		{1.0, 2.0},
@@ -160,7 +160,7 @@ func TestBatchDistanceCompute_VariableDimensions(t *testing.T) {
 
 func TestBatchDistanceCompute_ZeroVectors(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := [][]float32{
 		{0.0, 0.0, 0.0},
@@ -177,7 +177,7 @@ func TestBatchDistanceCompute_ZeroVectors(t *testing.T) {
 
 func TestBatchDistanceCompute_MixedDimensions(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := make([][]float32, 3)
 	candidates := make([][]float32, 3)

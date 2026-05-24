@@ -11,7 +11,7 @@ import (
 
 func TestExtractVectorFromArrow(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Create a simple Arrow record with vector column
 	pool := memory.NewGoAllocator()
@@ -79,7 +79,7 @@ func TestExtractVectorFromArrow(t *testing.T) {
 
 func TestExtractVectorCopy(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pool := memory.NewGoAllocator()
 
@@ -193,7 +193,7 @@ func BenchmarkExtractVectorCopy(b *testing.B) {
 
 func TestExtractVectorF16FromArrow(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pool := memory.NewGoAllocator()
 
@@ -255,7 +255,7 @@ func TestExtractVectorF16FromArrow(t *testing.T) {
 
 func TestInferVectorDataType_Float64(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Create float64 vector schema without metadata
 	fieldType := arrow.FixedSizeListOf(128, arrow.PrimitiveTypes.Float64)
@@ -273,7 +273,7 @@ func TestInferVectorDataType_Float64(t *testing.T) {
 
 func TestExtractVectorFromArrow_Float64(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pool := memory.NewGoAllocator()
 	b := array.NewRecordBuilder(pool, arrow.NewSchema(

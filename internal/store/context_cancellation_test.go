@@ -14,7 +14,7 @@ import (
 
 func TestSearchContextCancellation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -98,7 +98,7 @@ func TestSearchContextCancellation(t *testing.T) {
 
 func TestCompactionContextCancellation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

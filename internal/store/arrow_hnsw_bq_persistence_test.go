@@ -2,10 +2,11 @@ package store
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/types"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/storage"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -18,7 +19,7 @@ import (
 
 func TestArrowHNSW_BQ_Persistence(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// 1. Setup Storage
 	tmpDir, err := os.MkdirTemp("", "bq_persistence_test")

@@ -12,7 +12,7 @@ import (
 
 func TestDataset_FragmentationTracking(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -59,7 +59,7 @@ func TestDataset_FragmentationTracking(t *testing.T) {
 
 func TestDataset_FragmentationMultipleBatches(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -111,7 +111,7 @@ func TestDataset_FragmentationMultipleBatches(t *testing.T) {
 
 func TestDataset_FragmentationNilTracker(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},

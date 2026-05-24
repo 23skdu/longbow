@@ -51,7 +51,7 @@ func makeRoutingTestRecord(mem memory.Allocator, dims, numVectors int) arrow.Rec
 
 func TestShardedHNSW_Routing(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	cfg := DefaultShardedHNSWConfig()
@@ -86,7 +86,7 @@ func TestShardedHNSW_Routing(t *testing.T) {
 
 func TestShardedHNSW_MergedSearch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	cfg := DefaultShardedHNSWConfig()
@@ -134,7 +134,7 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 
 func TestShardedHNSW_Filtering(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	cfg := DefaultShardedHNSWConfig()

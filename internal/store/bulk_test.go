@@ -15,7 +15,7 @@ import (
 
 func TestBulkDeferredConnections(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// 1. Setup
 	dims := 128

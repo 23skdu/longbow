@@ -13,7 +13,7 @@ import (
 
 func TestWebSocketServer_New(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	store := &VectorStore{}
@@ -29,7 +29,7 @@ func TestWebSocketServer_New(t *testing.T) {
 
 func TestWSConnection_Close(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	store := &VectorStore{}
@@ -51,7 +51,7 @@ func TestWSConnection_Close(t *testing.T) {
 
 func TestWebSocketServer_Start(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	store := &VectorStore{}
@@ -69,7 +69,7 @@ func TestWebSocketServer_Start(t *testing.T) {
 
 func TestWSMessage_JSON(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	msg := WSMessage{
 		Type:    WSTypeSubscribe,
@@ -83,7 +83,7 @@ func TestWSMessage_JSON(t *testing.T) {
 
 func TestWSSubscribePayload_JSON(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	payload := WSSubscribePayload{
 		Dataset:    "test-dataset",
@@ -103,7 +103,7 @@ func TestWSSubscribePayload_JSON(t *testing.T) {
 
 func TestWSDataPayload_JSON(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	payload := WSDataPayload{
 		Dataset: "test-dataset",
@@ -123,7 +123,7 @@ func TestWSDataPayload_JSON(t *testing.T) {
 
 func TestWSType_String(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	assert.Equal(t, "subscribe", string(WSTypeSubscribe))
 	assert.Equal(t, "unsubscribe", string(WSTypeUnsubscribe))
@@ -135,7 +135,7 @@ func TestWSType_String(t *testing.T) {
 
 func TestWebSocketServer_Stop_Empty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	store := &VectorStore{}
@@ -148,7 +148,7 @@ func TestWebSocketServer_Stop_Empty(t *testing.T) {
 
 func TestWebSocketServer_HandleWS_UpgradeError(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	store := &VectorStore{}

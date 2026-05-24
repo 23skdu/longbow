@@ -10,7 +10,7 @@ import (
 
 func TestAdaptiveRequantization_Trigger(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// 1. Setup Dataset
 	ds := NewDataset("test_requant", nil)

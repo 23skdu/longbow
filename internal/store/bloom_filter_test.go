@@ -9,7 +9,7 @@ import (
 // TestBloomFilter_BasicAddContains tests basic bloom filter operations
 func TestBloomFilter_BasicAddContains(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	bf := NewBloomFilter(1000, 0.01) // 1000 items, 1% false positive rate
 
@@ -30,7 +30,7 @@ func TestBloomFilter_BasicAddContains(t *testing.T) {
 // TestBloomFilter_NoFalseNegatives verifies bloom filters never have false negatives
 func TestBloomFilter_NoFalseNegatives(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	bf := NewBloomFilter(10000, 0.01)
 
@@ -51,7 +51,7 @@ func TestBloomFilter_NoFalseNegatives(t *testing.T) {
 // TestBloomFilter_FalsePositiveRate verifies false positive rate is within bounds
 func TestBloomFilter_FalsePositiveRate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	numItems := 10000
 	targetFPR := 0.01 // 1%
@@ -83,7 +83,7 @@ func TestBloomFilter_FalsePositiveRate(t *testing.T) {
 // TestBloomFilter_ConcurrentSafety tests thread-safe operations
 func TestBloomFilter_ConcurrentSafety(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	bf := NewBloomFilter(100000, 0.01)
 	var wg sync.WaitGroup
@@ -116,7 +116,7 @@ func TestBloomFilter_ConcurrentSafety(t *testing.T) {
 // TestBloomFilter_ConcurrentAddAndContains tests mixed operations
 func TestBloomFilter_ConcurrentAddAndContains(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	bf := NewBloomFilter(50000, 0.01)
 	var wg sync.WaitGroup
@@ -153,7 +153,7 @@ func TestBloomFilter_ConcurrentAddAndContains(t *testing.T) {
 // TestShardedInvertedIndex_BloomFilterIntegration tests bloom filter with sharded index
 func TestShardedInvertedIndex_BloomFilterIntegration(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewShardedInvertedIndex()
 
@@ -178,7 +178,7 @@ func TestShardedInvertedIndex_BloomFilterIntegration(t *testing.T) {
 // TestShardedInvertedIndex_BloomFilterNegativeLookup tests bloom filter optimization
 func TestShardedInvertedIndex_BloomFilterNegativeLookup(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewShardedInvertedIndex()
 

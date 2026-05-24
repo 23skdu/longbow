@@ -13,7 +13,7 @@ import (
 
 func TestVectorStore_GoroutineLeak(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.Nop()
 	mem := memory.DefaultAllocator

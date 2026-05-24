@@ -37,7 +37,7 @@ func (m *mockQueryCacheActionServer) Context() context.Context {
 
 func TestVectorStore_QueryCache_Integration(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 1024*1024*1024, 1024*1024*100, 1*time.Hour)

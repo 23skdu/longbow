@@ -10,7 +10,7 @@ import (
 
 func TestArrowHNSW_RangeSearch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dims := 128
 	count := 100
@@ -63,7 +63,7 @@ func TestArrowHNSW_RangeSearch(t *testing.T) {
 
 func TestArrowHNSW_RangeSearch_Empty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dims := 128
 

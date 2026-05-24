@@ -2,8 +2,9 @@ package store
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/types"
 	"sort"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/apache/arrow-go/v18/arrow"

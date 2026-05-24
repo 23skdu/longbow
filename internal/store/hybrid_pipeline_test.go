@@ -14,7 +14,7 @@ import (
 // Config tests
 func TestHybridPipelineConfigDefaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultHybridPipelineConfig()
 	if cfg.Alpha != 0.5 {
@@ -33,7 +33,7 @@ func TestHybridPipelineConfigDefaults(t *testing.T) {
 
 func TestHybridPipelineConfigValidation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tests := []struct {
 		name    string
@@ -62,7 +62,7 @@ func TestHybridPipelineConfigValidation(t *testing.T) {
 
 func TestFusionModeConstants(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	if FusionModeRRF != 0 {
 		t.Error("FusionModeRRF should be 0")
@@ -77,7 +77,7 @@ func TestFusionModeConstants(t *testing.T) {
 
 func TestHybridSearchQueryDefaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	q := DefaultHybridSearchQuery()
 	if q.K != 10 {
@@ -87,7 +87,7 @@ func TestHybridSearchQueryDefaults(t *testing.T) {
 
 func TestHybridSearchQueryValidation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tests := []struct {
 		name    string
@@ -113,7 +113,7 @@ func TestHybridSearchQueryValidation(t *testing.T) {
 
 func TestNewHybridSearchPipeline(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultHybridPipelineConfig()
 	p := NewHybridSearchPipeline(cfg)
@@ -127,7 +127,7 @@ func TestNewHybridSearchPipeline(t *testing.T) {
 
 func TestPipelineSetters(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
 
@@ -153,7 +153,7 @@ func TestPipelineSetters(t *testing.T) {
 
 func TestFuseRRF(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dense := []SearchResult{
 		{ID: 1, Score: 0.9},
@@ -189,7 +189,7 @@ func TestFuseRRF(t *testing.T) {
 
 func TestFuseRRFEmpty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	results := FuseRRF("test_dataset", nil, nil, 60, 10)
 	if len(results) != 0 {
@@ -199,7 +199,7 @@ func TestFuseRRFEmpty(t *testing.T) {
 
 func TestFuseLinear(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dense := []SearchResult{
 		{ID: 1, Score: 1.0},
@@ -229,7 +229,7 @@ func TestFuseLinear(t *testing.T) {
 
 func TestFuseCascade(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	exactIDs := roaring.New()
 	exactIDs.Add(1)
@@ -249,7 +249,7 @@ func TestFuseCascade(t *testing.T) {
 
 func TestFuseCascadeNoFilters(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	keyword := []SearchResult{{ID: 1, Score: 5.0}}
 	vector := []SearchResult{{ID: 2, Score: 0.9}}
@@ -306,7 +306,7 @@ func (r *TestRerankMock) Rerank(ctx context.Context, text string, results []Sear
 
 func TestHybridSearchPipeline_Reranking(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
 
@@ -340,7 +340,7 @@ func TestHybridSearchPipeline_Reranking(t *testing.T) {
 
 func TestHybridSearchPipeline_ExactFilters(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
 

@@ -14,7 +14,7 @@ import (
 
 func TestVectorStore_IndexRecordColumns(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
@@ -59,7 +59,7 @@ func TestVectorStore_IndexRecordColumns(t *testing.T) {
 
 func TestVectorStore_IndexRecordColumns_NoIndexedColumns(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
@@ -93,7 +93,7 @@ func TestVectorStore_IndexRecordColumns_NoIndexedColumns(t *testing.T) {
 
 func TestVectorStore_GetSetIndexedColumns(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
@@ -114,7 +114,7 @@ func TestVectorStore_GetSetIndexedColumns(t *testing.T) {
 
 func TestVectorStore_FilterRecordOptimized_NoFilters(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
@@ -150,7 +150,7 @@ func TestVectorStore_FilterRecordOptimized_NoFilters(t *testing.T) {
 
 func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
@@ -195,7 +195,7 @@ func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
 
 func TestVectorStore_FilterRecordOptimized_FallbackToCompute(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)

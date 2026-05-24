@@ -16,7 +16,7 @@ import (
 
 func TestBatchedIndexing(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	t.Skip("Skipping due to async indexing timing issues - needs refactor")
 
@@ -38,7 +38,7 @@ func TestBatchedIndexing(t *testing.T) {
 	t.Cleanup(func() {
 		_ = store.Close()
 	})
-	store.datasets.Store(&map[string]*Dataset{ds.Name: ds})
+	store.datasets.Store(&map[string]*Dataset{ds.GetName(): ds})
 
 	// Start worker
 	store.StartIndexingWorkers(1)
@@ -63,12 +63,12 @@ func TestBatchedIndexing(t *testing.T) {
 
 		rec := b.NewRecordBatch()
 		ds.dataMu.Lock()
-		ds.Records.Read()[i] = rec
+		ds.GetRecords()[i] = rec
 		ds.dataMu.Unlock()
 
 		rec.Retain() // One for dataset, one for job
 		store.indexQueue.Send(IndexJob{
-			DatasetName: ds.Name,
+			DatasetName: ds.GetName(),
 			Record:      rec,
 			BatchIdx:    i,
 			CreatedAt:   time.Now(),

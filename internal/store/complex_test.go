@@ -12,7 +12,7 @@ import (
 
 func TestComplex64_Support(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// 128 dimensions, 64-byte alignment implies padding to 16-element multiple for Complex64 (8 bytes/elem).
 	// 128 * 8 = 1024 bytes (aligned).
@@ -69,7 +69,7 @@ func TestComplex64_Support(t *testing.T) {
 
 func TestComplex128_Support(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dims := 8 // Small dim for ease
 	count := 50

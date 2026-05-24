@@ -6,6 +6,10 @@ import (
 	"sync"
 
 	"context"
+	"sync/atomic"
+	"time"
+	"unsafe"
+
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
@@ -13,9 +17,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"sync/atomic"
-	"time"
-	"unsafe"
 )
 
 // GraphStore manages an in-memory graph representation for GraphRAG operations.

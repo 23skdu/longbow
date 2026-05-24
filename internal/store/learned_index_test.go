@@ -10,7 +10,7 @@ import (
 
 func TestLearnedIndexConfig_Defaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	config := LearnedIndexConfig{}
 
@@ -31,7 +31,7 @@ func TestLearnedIndexConfig_Defaults(t *testing.T) {
 
 func TestNewIndexPerformancePredictor(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	config := LearnedIndexConfig{
@@ -49,7 +49,7 @@ func TestNewIndexPerformancePredictor(t *testing.T) {
 
 func TestIndexPerformancePredictor_AddTrainingSample(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -72,7 +72,7 @@ func TestIndexPerformancePredictor_AddTrainingSample(t *testing.T) {
 
 func TestIndexPerformancePredictor_Predict_InsufficientSamples(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	config := LearnedIndexConfig{
@@ -95,7 +95,7 @@ func TestIndexPerformancePredictor_Predict_InsufficientSamples(t *testing.T) {
 
 func TestIndexPerformancePredictor_Predict_SmallDataset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -125,7 +125,7 @@ func TestIndexPerformancePredictor_Predict_SmallDataset(t *testing.T) {
 
 func TestIndexPerformancePredictor_Predict_LargeDataset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -143,7 +143,7 @@ func TestIndexPerformancePredictor_Predict_LargeDataset(t *testing.T) {
 
 func TestIndexPerformancePredictor_Predict_MediumDataset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -161,7 +161,7 @@ func TestIndexPerformancePredictor_Predict_MediumDataset(t *testing.T) {
 
 func TestIndexPerformancePredictor_calculateConfidence(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -179,7 +179,7 @@ func TestIndexPerformancePredictor_calculateConfidence(t *testing.T) {
 
 func TestIndexPerformancePredictor_estimateLatency(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -196,7 +196,7 @@ func TestIndexPerformancePredictor_estimateLatency(t *testing.T) {
 
 func TestIndexPerformancePredictor_estimateRecall(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -214,7 +214,7 @@ func TestIndexPerformancePredictor_estimateRecall(t *testing.T) {
 
 func TestIndexPerformancePredictor_getAlternatives(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -233,7 +233,7 @@ func TestIndexPerformancePredictor_getAlternatives(t *testing.T) {
 
 func TestIndexPerformancePredictor_GetStats(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -253,7 +253,7 @@ func TestIndexPerformancePredictor_GetStats(t *testing.T) {
 
 func TestIndexPerformancePredictor_GetConfig(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	config := LearnedIndexConfig{
@@ -272,7 +272,7 @@ func TestIndexPerformancePredictor_GetConfig(t *testing.T) {
 
 func TestIndexPerformancePredictor_SetConfig(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -288,7 +288,7 @@ func TestIndexPerformancePredictor_SetConfig(t *testing.T) {
 
 func TestIndexPerformancePredictor_GetTrainingSampleCount(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -307,7 +307,7 @@ func TestIndexPerformancePredictor_GetTrainingSampleCount(t *testing.T) {
 
 func TestIndexPerformancePredictor_ClearTrainingData(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -328,7 +328,7 @@ func TestIndexPerformancePredictor_ClearTrainingData(t *testing.T) {
 
 func TestIndexPerformancePredictor_FeatureWeights(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -341,7 +341,7 @@ func TestIndexPerformancePredictor_FeatureWeights(t *testing.T) {
 
 func TestIndexMapperConfig_Defaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	config := IndexMapperConfig{}
 
@@ -358,7 +358,7 @@ func TestIndexMapperConfig_Defaults(t *testing.T) {
 
 func TestNewQueryIndexMapper(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -377,7 +377,7 @@ func TestNewQueryIndexMapper(t *testing.T) {
 
 func TestQueryIndexMapper_GetIndexForQuery(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -399,7 +399,7 @@ func TestQueryIndexMapper_GetIndexForQuery(t *testing.T) {
 
 func TestQueryIndexMapper_GetIndexForQuery_WithCache(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -423,7 +423,7 @@ func TestQueryIndexMapper_GetIndexForQuery_WithCache(t *testing.T) {
 
 func TestQueryIndexMapper_GetIndexForQuery_LargeDataset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -444,7 +444,7 @@ func TestQueryIndexMapper_GetIndexForQuery_LargeDataset(t *testing.T) {
 
 func TestQueryIndexMapper_InvalidateCache(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -462,7 +462,7 @@ func TestQueryIndexMapper_InvalidateCache(t *testing.T) {
 
 func TestQueryIndexMapper_ClearCache(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -480,7 +480,7 @@ func TestQueryIndexMapper_ClearCache(t *testing.T) {
 
 func TestQueryIndexMapper_GetStats(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -496,7 +496,7 @@ func TestQueryIndexMapper_GetStats(t *testing.T) {
 
 func TestQueryIndexMapper_GetConfig(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -514,7 +514,7 @@ func TestQueryIndexMapper_GetConfig(t *testing.T) {
 
 func TestQueryIndexMapper_SetConfig(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -531,7 +531,7 @@ func TestQueryIndexMapper_SetConfig(t *testing.T) {
 
 func TestQueryIndexMapper_GetCachedMappings(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -550,7 +550,7 @@ func TestQueryIndexMapper_GetCachedMappings(t *testing.T) {
 
 func TestIndexAdaptationConfig_Defaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	config := IndexAdaptationConfig{}
 
@@ -571,7 +571,7 @@ func TestIndexAdaptationConfig_Defaults(t *testing.T) {
 
 func TestNewRuntimeIndexAdapter(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -587,7 +587,7 @@ func TestNewRuntimeIndexAdapter(t *testing.T) {
 
 func TestRuntimeIndexAdapter_ShouldAdapt_Latency(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -606,7 +606,7 @@ func TestRuntimeIndexAdapter_ShouldAdapt_Latency(t *testing.T) {
 
 func TestRuntimeIndexAdapter_ShouldAdapt_Recall(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -626,7 +626,7 @@ func TestRuntimeIndexAdapter_ShouldAdapt_Recall(t *testing.T) {
 
 func TestRuntimeIndexAdapter_ShouldAdapt_NoAdapt(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -647,7 +647,7 @@ func TestRuntimeIndexAdapter_ShouldAdapt_NoAdapt(t *testing.T) {
 
 func TestRuntimeIndexAdapter_DetermineTriggerReason(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -671,7 +671,7 @@ func TestRuntimeIndexAdapter_DetermineTriggerReason(t *testing.T) {
 
 func TestRuntimeIndexAdapter_GetStats(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -688,7 +688,7 @@ func TestRuntimeIndexAdapter_GetStats(t *testing.T) {
 
 func TestRuntimeIndexAdapter_GetConfig(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -706,7 +706,7 @@ func TestRuntimeIndexAdapter_GetConfig(t *testing.T) {
 
 func TestRuntimeIndexAdapter_SetConfig(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -724,7 +724,7 @@ func TestRuntimeIndexAdapter_SetConfig(t *testing.T) {
 
 func TestRuntimeIndexAdapter_GetAdaptation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -748,7 +748,7 @@ func TestRuntimeIndexAdapter_GetAdaptation(t *testing.T) {
 
 func TestRuntimeIndexAdapter_ListAdaptations(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -772,7 +772,7 @@ func TestRuntimeIndexAdapter_ListAdaptations(t *testing.T) {
 // behaviour that was previously broken.
 func TestKNNPredict_LearnFromSamples(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{
@@ -831,7 +831,7 @@ func TestKNNPredict_LearnFromSamples(t *testing.T) {
 // static heuristic when training data contradicts it.
 func TestKNNPredict_OverridesHeuristic(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{
@@ -867,7 +867,7 @@ func TestKNNPredict_OverridesHeuristic(t *testing.T) {
 // reads and writes. Any race will be detected by the -race flag.
 func TestKNNPredict_ConcurrentAddAndPredict(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{
@@ -920,7 +920,7 @@ func TestKNNPredict_ConcurrentAddAndPredict(t *testing.T) {
 
 func TestFeatureNormalizer_MinMax(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	n := newFeatureNormalizer()
 	assert.False(t, n.Ready())
@@ -943,7 +943,7 @@ func TestFeatureNormalizer_MinMax(t *testing.T) {
 
 func TestFeatureNormalizer_NormalizeOutput(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	n := newFeatureNormalizer()
 	lo := [numFeatures]float64{0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0}
@@ -961,7 +961,7 @@ func TestFeatureNormalizer_NormalizeOutput(t *testing.T) {
 
 func TestFeatureNormalizer_ZeroSpanReturns05(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	n := newFeatureNormalizer()
 	// Both updates identical → zero span for all features.
@@ -983,7 +983,7 @@ func TestFeatureNormalizer_ZeroSpanReturns05(t *testing.T) {
 // a higher weight to dataset_size when it is the dominant discriminating feature.
 func TestOnlineWeightUpdate_ConvergesDirection(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{
@@ -1027,7 +1027,7 @@ func TestOnlineWeightUpdate_ConvergesDirection(t *testing.T) {
 
 func TestPredictionCorrect_IncrementOnFeedback(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{
@@ -1078,7 +1078,7 @@ func (m *mockSwitcher) SwitchIndex(_ string, to IndexType) error {
 
 func TestRollback_IsNotNoOp(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -1107,7 +1107,7 @@ func TestRollback_IsNotNoOp(t *testing.T) {
 
 func TestRollback_NoSwitcher_ReturnsError(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -1130,7 +1130,7 @@ func TestRollback_NoSwitcher_ReturnsError(t *testing.T) {
 
 func TestRollback_UnknownCollection_ReturnsError(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{})
@@ -1152,7 +1152,7 @@ func TestRollback_UnknownCollection_ReturnsError(t *testing.T) {
 
 func TestExtractFeatureVector_ComplexityMapping(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cases := []struct {
 		complexity string
@@ -1172,7 +1172,7 @@ func TestExtractFeatureVector_ComplexityMapping(t *testing.T) {
 
 func TestExtractFeatureVector_BoolFields(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	fvFiltered := extractFeatureVector(QueryFeatures{IsFiltered: true})
 	assert.InDelta(t, 1.0, fvFiltered[7], 1e-9)
@@ -1191,7 +1191,7 @@ func TestExtractFeatureVector_BoolFields(t *testing.T) {
 
 func TestWeightedEuclidean_ZeroDistance(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	var v [numFeatures]float64
 	for i := range v {
@@ -1207,7 +1207,7 @@ func TestWeightedEuclidean_ZeroDistance(t *testing.T) {
 
 func TestWeightedEuclidean_Symmetry(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	var a, b, w [numFeatures]float64
 	for i := range a {
@@ -1221,7 +1221,7 @@ func TestWeightedEuclidean_Symmetry(t *testing.T) {
 
 func TestRuntimeIndexAdapter_FeedbackLoop(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	predictor := NewIndexPerformancePredictor(logger, LearnedIndexConfig{

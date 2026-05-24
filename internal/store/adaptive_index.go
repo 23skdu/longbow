@@ -14,6 +14,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
+	"github.com/23skdu/longbow/internal/store/types"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -59,7 +60,7 @@ func (c AdaptiveIndexConfig) Validate() error {
 // AdaptiveIndex automatically switches between BruteForce and HNSW based on size.
 type AdaptiveIndex struct {
 	mu             sync.RWMutex
-	dataset        *Dataset
+	dataset types.IndexDataProvider
 	config         AdaptiveIndexConfig
 	bruteForce     VectorIndex
 	hnsw           VectorIndex
@@ -70,7 +71,7 @@ type AdaptiveIndex struct {
 }
 
 // NewAdaptiveIndex creates an adaptive index starting with BruteForce.
-func NewAdaptiveIndex(ds *Dataset, cfg AdaptiveIndexConfig) VectorIndex {
+func NewAdaptiveIndex(ds types.IndexDataProvider, cfg AdaptiveIndexConfig) VectorIndex {
 	bf := NewBruteForceIndex(ds)
 	a := &AdaptiveIndex{
 		dataset:    ds,
@@ -105,14 +106,14 @@ func (idx *AdaptiveIndex) ReleaseMonolithicChunk(cID int) error {
 type BruteForceIndex struct {
 	mu            sync.RWMutex
 	locations     []Location
-	dataset       *Dataset
+	dataset types.IndexDataProvider
 	activeReaders atomic.Int64 // Track active zero-copy readers
 	distFunc      simd.DistanceKernel[float32]
 	dims          int
 }
 
 // NewBruteForceIndex creates a new brute force index for the given dataset.
-func NewBruteForceIndex(ds *Dataset) VectorIndex {
+func NewBruteForceIndex(ds types.IndexDataProvider) VectorIndex {
 	return &BruteForceIndex{
 		dataset:   ds,
 		locations: make([]Location, 0, 64),
@@ -132,7 +133,7 @@ func (b *BruteForceIndex) ReleaseMonolithicChunk(cID int) error {
 func (b *BruteForceIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	start := time.Now()
 	b.mu.Lock()
-	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.Name, "write").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.GetName(), "write").Observe(time.Since(start).Seconds())
 	defer b.mu.Unlock()
 
 	id := uint32(len(b.locations)) // #nosec G115
@@ -166,7 +167,7 @@ func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k 
 	}
 	start := time.Now()
 	b.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer b.mu.RUnlock()
 
 	if len(b.locations) == 0 {
@@ -240,7 +241,7 @@ func (b *BruteForceIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k 
 func (b *BruteForceIndex) GetLocation(id uint32) (any, bool) {
 	start := time.Now()
 	b.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer b.mu.RUnlock()
 	if int(id) >= len(b.locations) {
 		return Location{}, false
@@ -253,8 +254,8 @@ func (b *BruteForceIndex) GetLocation(id uint32) (any, bool) {
 func (b *BruteForceIndex) GetDimension() uint32 {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
-	if b.dataset.Schema != nil {
-		for _, f := range b.dataset.Schema.Fields() {
+	if b.dataset.GetSchema() != nil {
+		for _, f := range b.dataset.GetSchema().Fields() {
 			if f.Name == "vector" || f.Name == "embedding" {
 				if fslType, ok := f.Type.(*arrow.FixedSizeListType); ok {
 					return uint32(fslType.Len()) // #nosec G115
@@ -388,7 +389,7 @@ func (b *BruteForceIndex) SearchVectors(ctx context.Context, q any, k int, filte
 	}
 	start := time.Now()
 	b.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer b.mu.RUnlock()
 
 	if len(b.locations) == 0 {
@@ -514,18 +515,18 @@ func (b *BruteForceIndex) GetIndexType() string {
 func (b *BruteForceIndex) Len() int {
 	start := time.Now()
 	b.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(b.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer b.mu.RUnlock()
 	return len(b.locations)
 }
 
 // getVector retrieves a vector from the dataset.
 func (b *BruteForceIndex) getVector(loc Location) []float32 {
-	if b.dataset == nil || loc.BatchIdx >= len(b.dataset.Records.Read()) {
+	if b.dataset == nil || loc.BatchIdx >= len(b.dataset.GetRecords()) {
 		return nil
 	}
 
-	record := b.dataset.Records.Read()[loc.BatchIdx]
+	record := b.dataset.GetRecords()[loc.BatchIdx]
 	fieldIndices := record.Schema().FieldIndices("vector")
 	if len(fieldIndices) == 0 {
 		return nil
@@ -550,8 +551,8 @@ func (b *BruteForceIndex) getVector(loc Location) []float32 {
 	copy(result, values[start:start+listSize])
 
 	// Track metrics
-	metrics.VectorAccessCopyTotal.WithLabelValues(b.dataset.Name, "brute_force").Inc()
-	metrics.VectorAccessBytesAllocated.WithLabelValues(b.dataset.Name, "brute_force").Add(float64(listSize * 4))
+	metrics.VectorAccessCopyTotal.WithLabelValues(b.dataset.GetName(), "brute_force").Inc()
+	metrics.VectorAccessBytesAllocated.WithLabelValues(b.dataset.GetName(), "brute_force").Add(float64(listSize * 4))
 
 	return result
 }
@@ -559,12 +560,12 @@ func (b *BruteForceIndex) getVector(loc Location) []float32 {
 func (b *BruteForceIndex) getVectorUnsafe(loc Location) (vec []float32, release func()) {
 	b.enterEpoch()
 
-	if b.dataset == nil || loc.BatchIdx >= len(b.dataset.Records.Read()) {
+	if b.dataset == nil || loc.BatchIdx >= len(b.dataset.GetRecords()) {
 		b.exitEpoch()
 		return nil, nil
 	}
 
-	record := b.dataset.Records.Read()[loc.BatchIdx]
+	record := b.dataset.GetRecords()[loc.BatchIdx]
 	fieldIndices := record.Schema().FieldIndices("vector")
 	if len(fieldIndices) == 0 {
 		b.exitEpoch()
@@ -590,7 +591,7 @@ func (b *BruteForceIndex) getVectorUnsafe(loc Location) (vec []float32, release 
 	vec = values[start : start+listSize]
 	release = b.exitEpoch
 
-	metrics.VectorAccessZeroCopyTotal.WithLabelValues(b.dataset.Name, "brute_force").Inc()
+	metrics.VectorAccessZeroCopyTotal.WithLabelValues(b.dataset.GetName(), "brute_force").Inc()
 
 	return vec, release
 }
@@ -640,7 +641,7 @@ func (idx *AdaptiveIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx in
 
 	start := time.Now()
 	idx.mu.Lock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "write").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "write").Observe(time.Since(start).Seconds())
 	defer idx.mu.Unlock()
 
 	// Double-check hnsw under the lock to avoid race during migration
@@ -695,7 +696,7 @@ func (idx *AdaptiveIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch
 
 	start := time.Now()
 	idx.mu.Lock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "write").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "write").Observe(time.Since(start).Seconds())
 	defer idx.mu.Unlock()
 
 	// Double-check hnsw under the lock to avoid race during migration
@@ -728,7 +729,7 @@ func (idx *AdaptiveIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch
 func (idx *AdaptiveIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
 	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.SearchVectorsWithBitmap(ctx, q, k, filter, options)
@@ -743,7 +744,7 @@ func (idx *AdaptiveIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k 
 func (idx *AdaptiveIndex) GetLocation(id uint32) (any, bool) {
 	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.GetLocation(id)
@@ -755,7 +756,7 @@ func (idx *AdaptiveIndex) GetLocation(id uint32) (any, bool) {
 func (idx *AdaptiveIndex) GetDimension() uint32 {
 	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.GetDimension()
@@ -767,7 +768,7 @@ func (idx *AdaptiveIndex) GetDimension() uint32 {
 func (idx *AdaptiveIndex) Warmup() int {
 	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.Warmup()
@@ -779,7 +780,7 @@ func (idx *AdaptiveIndex) Warmup() int {
 func (idx *AdaptiveIndex) SetIndexedColumns(cols []string) {
 	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 	if idx.usingHNSW.Load() {
 		idx.hnsw.SetIndexedColumns(cols)
@@ -790,7 +791,7 @@ func (idx *AdaptiveIndex) SetIndexedColumns(cols []string) {
 func (idx *AdaptiveIndex) Close() error {
 	start := time.Now()
 	idx.mu.Lock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "write").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "write").Observe(time.Since(start).Seconds())
 	defer idx.mu.Unlock()
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.Close()
@@ -805,7 +806,7 @@ func (idx *AdaptiveIndex) Close() error {
 func (idx *AdaptiveIndex) TrainPQ(vectors [][]float32) error {
 	start := time.Now()
 	idx.mu.Lock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "write").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "write").Observe(time.Since(start).Seconds())
 	defer idx.mu.Unlock()
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.TrainPQ(vectors)
@@ -817,7 +818,7 @@ func (idx *AdaptiveIndex) TrainPQ(vectors [][]float32) error {
 func (idx *AdaptiveIndex) GetPQEncoder() *pq.PQEncoder {
 	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.GetPQEncoder()
@@ -829,7 +830,7 @@ func (idx *AdaptiveIndex) GetPQEncoder() *pq.PQEncoder {
 func (idx *AdaptiveIndex) EstimateMemory() int64 {
 	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.EstimateMemory()
@@ -999,9 +1000,9 @@ func (idx *AdaptiveIndex) migrateToHNSW() {
 		defer idx.migrating.Store(false)
 
 		config := DefaultArrowHNSWConfig()
-		config.Metric = idx.dataset.Metric
-		config.Logger = idx.dataset.Logger
-		newHNSW := NewArrowHNSW(idx.dataset, &config, idx.dataset.Topo)
+		config.Metric = idx.dataset.GetMetric()
+		config.Logger = idx.dataset.GetLogger()
+		newHNSW := NewArrowHNSW(idx.dataset, &config, idx.dataset.GetTopo())
 
 		// Snapshot current brute force state
 		idx.mu.Lock()
@@ -1012,7 +1013,7 @@ func (idx *AdaptiveIndex) migrateToHNSW() {
 
 		// Build HNSW from snapshot. Group by batch to use AddBatch efficiency.
 		if len(snapshotLocations) > 0 {
-			recs := idx.dataset.Records.Read()
+			recs := idx.dataset.GetRecords()
 			// Simple grouping by batch
 			byBatch := make(map[int][]int) // batchIdx -> []rowIdx
 			for _, loc := range snapshotLocations {
@@ -1034,7 +1035,7 @@ func (idx *AdaptiveIndex) migrateToHNSW() {
 		// Final swap and delta handling
 		swapStart := time.Now()
 		idx.mu.Lock()
-		metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "write").Observe(time.Since(swapStart).Seconds())
+		metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "write").Observe(time.Since(swapStart).Seconds())
 		defer idx.mu.Unlock()
 
 		// Re-snapshot to find any vectors added to bruteForce while we were building HNSW
@@ -1060,7 +1061,7 @@ func (idx *AdaptiveIndex) migrateToHNSW() {
 func (idx *AdaptiveIndex) SearchVectors(ctx context.Context, q any, k int, filters []core.Filter, options any) ([]SearchResult, error) {
 	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 
 	if idx.usingHNSW.Load() {
@@ -1078,7 +1079,7 @@ func (idx *AdaptiveIndex) SearchVectors(ctx context.Context, q any, k int, filte
 func (idx *AdaptiveIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []core.Filter, options any) ([]SearchResult, error) {
 	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 
 	if idx.usingHNSW.Load() {
@@ -1107,7 +1108,7 @@ func (idx *AdaptiveIndex) GetMigrationCount() int64 {
 func (idx *AdaptiveIndex) Len() int {
 	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.Name, "read").Observe(time.Since(start).Seconds())
+	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 
 	if idx.usingHNSW.Load() {

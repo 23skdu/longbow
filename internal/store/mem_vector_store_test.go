@@ -78,7 +78,7 @@ func FuzzArenaVectorConcurrentAlloc(f *testing.F) {
 
 func TestArenaVectorConcurrentAlloc(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	arena := memory.NewTypedArena[float32](memory.NewSlabArena(1024 * 1024))
 	dim := 128

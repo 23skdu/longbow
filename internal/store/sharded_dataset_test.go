@@ -18,7 +18,7 @@ import (
 
 func TestShardedDatasetConfigDefaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultShardedDatasetConfig()
 
@@ -32,7 +32,7 @@ func TestShardedDatasetConfigDefaults(t *testing.T) {
 
 func TestShardedDatasetConfigValidation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tests := []struct {
 		name    string
@@ -59,7 +59,7 @@ func TestShardedDatasetConfigValidation(t *testing.T) {
 
 func TestNewShardedDataset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := ShardedDatasetConfig{NumShards: 4}
 	sd := NewShardedDataset("test_dataset", cfg)
@@ -80,7 +80,7 @@ func TestNewShardedDataset(t *testing.T) {
 
 func TestNewShardedDatasetDefault(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sd := NewShardedDatasetDefault("default_test")
 
@@ -110,7 +110,7 @@ func createTestBatch(t *testing.T, id int64) arrow.RecordBatch {
 
 func TestShardedDatasetAppend(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sd := NewShardedDataset("append_test", ShardedDatasetConfig{NumShards: 4})
 
@@ -127,7 +127,7 @@ func TestShardedDatasetAppend(t *testing.T) {
 
 func TestShardedDatasetAppendToShard(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sd := NewShardedDataset("shard_test", ShardedDatasetConfig{NumShards: 4})
 
@@ -147,7 +147,7 @@ func TestShardedDatasetAppendToShard(t *testing.T) {
 
 func TestShardedDatasetGetAllRecords(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sd := NewShardedDataset("getall_test", ShardedDatasetConfig{NumShards: 4})
 
@@ -166,7 +166,7 @@ func TestShardedDatasetGetAllRecords(t *testing.T) {
 
 func TestShardedDatasetGetShardRecords(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sd := NewShardedDataset("getshard_test", ShardedDatasetConfig{NumShards: 4})
 
@@ -187,7 +187,7 @@ func TestShardedDatasetGetShardRecords(t *testing.T) {
 
 func TestShardedDatasetConcurrentAppends(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sd := NewShardedDataset("concurrent_test", ShardedDatasetConfig{NumShards: 8})
 
@@ -217,7 +217,7 @@ func TestShardedDatasetConcurrentAppends(t *testing.T) {
 
 func TestShardedDatasetConcurrentReadsWrites(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sd := NewShardedDataset("rw_test", ShardedDatasetConfig{NumShards: 4})
 
@@ -262,7 +262,7 @@ func TestShardedDatasetConcurrentReadsWrites(t *testing.T) {
 
 func TestShardedDatasetForEach(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sd := NewShardedDataset("foreach_test", ShardedDatasetConfig{NumShards: 4})
 
@@ -287,7 +287,7 @@ func TestShardedDatasetForEach(t *testing.T) {
 
 func TestShardedDatasetToLegacyRecords(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sd := NewShardedDataset("legacy_test", ShardedDatasetConfig{NumShards: 4})
 
@@ -308,7 +308,7 @@ func TestShardedDatasetToLegacyRecords(t *testing.T) {
 
 func TestShardedDatasetStats(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sd := NewShardedDataset("stats_test", ShardedDatasetConfig{NumShards: 4})
 

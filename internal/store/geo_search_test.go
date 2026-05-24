@@ -10,7 +10,7 @@ import (
 
 func TestHaversineDistance(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p1 := GeoPoint{Lat: 40.7128, Lon: -74.0060}
 	p2 := GeoPoint{Lat: 34.0522, Lon: -118.2437}
@@ -23,7 +23,7 @@ func TestHaversineDistance(t *testing.T) {
 
 func TestEuclideanDistanceGeo(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p1 := GeoPoint{Lat: 40.7128, Lon: -74.0060}
 	p2 := GeoPoint{Lat: 34.0522, Lon: -118.2437}
@@ -35,7 +35,7 @@ func TestEuclideanDistanceGeo(t *testing.T) {
 
 func TestQuadtree_Insert(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	bounds := GeoBoundingBox{
 		MinLat: -90,
@@ -57,7 +57,7 @@ func TestQuadtree_Insert(t *testing.T) {
 
 func TestQuadtree_Contains(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	bounds := GeoBoundingBox{
 		MinLat: 40.0,
@@ -76,7 +76,7 @@ func TestQuadtree_Contains(t *testing.T) {
 
 func TestGeoIndex_New(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	config := &GeoSearchConfig{
 		DistanceType: GeoDistanceHaversine,
@@ -92,7 +92,7 @@ func TestGeoIndex_New(t *testing.T) {
 
 func TestGeoIndex_AddAndSearchRadius(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	config := &GeoSearchConfig{
 		DistanceType: GeoDistanceHaversine,
@@ -124,7 +124,7 @@ func TestGeoIndex_AddAndSearchRadius(t *testing.T) {
 
 func TestGeoIndex_SearchBox(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	config := &GeoSearchConfig{
 		DistanceType: GeoDistanceHaversine,
@@ -151,7 +151,7 @@ func TestGeoIndex_SearchBox(t *testing.T) {
 
 func TestGeoSearchRequest_Validate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	req := &GeoSearchRequest{
 		Center:     GeoPoint{Lat: 40.7128, Lon: -74.0060},
@@ -166,7 +166,7 @@ func TestGeoSearchRequest_Validate(t *testing.T) {
 
 func TestGeoSearchRequest_ValidateDefault(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	req := &GeoSearchRequest{
 		SearchType: "unknown",
@@ -179,7 +179,7 @@ func TestGeoSearchRequest_ValidateDefault(t *testing.T) {
 
 func TestGeoSearchRequest_ValidateErrors(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	req := &GeoSearchRequest{
 		SearchType: "radius",
@@ -192,7 +192,7 @@ func TestGeoSearchRequest_ValidateErrors(t *testing.T) {
 
 func TestGeoPoint_JSON(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p := GeoPoint{
 		Lat:  40.7128,
@@ -211,7 +211,7 @@ func TestGeoPoint_JSON(t *testing.T) {
 
 func TestGeoBoundingBox_Validation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	box := GeoBoundingBox{
 		MinLat: 40.0,
@@ -226,7 +226,7 @@ func TestGeoBoundingBox_Validation(t *testing.T) {
 
 func TestQuadtree_QueryRadius(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	bounds := GeoBoundingBox{
 		MinLat: -90,
@@ -247,7 +247,7 @@ func TestQuadtree_QueryRadius(t *testing.T) {
 
 func TestQuadtree_QueryBox(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	bounds := GeoBoundingBox{
 		MinLat: -90,
@@ -274,7 +274,7 @@ func TestQuadtree_QueryBox(t *testing.T) {
 
 func TestGeoIndex_Concurrency(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	config := &GeoSearchConfig{
 		DistanceType: GeoDistanceHaversine,

@@ -10,7 +10,7 @@ import (
 
 func TestIVFOPQIndex_HNSWCoarse(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dim := 16
 	nlist := 10

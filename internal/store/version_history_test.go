@@ -10,7 +10,7 @@ import (
 
 func TestVersionHistory_New(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultVersionHistoryConfig()
 	vh := NewVersionHistory(cfg)
@@ -21,7 +21,7 @@ func TestVersionHistory_New(t *testing.T) {
 
 func TestVersionHistory_Add(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	vh := NewVersionHistory(DefaultVersionHistoryConfig())
 
@@ -36,7 +36,7 @@ func TestVersionHistory_Add(t *testing.T) {
 
 func TestVersionHistory_GetLatestVersion(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	vh := NewVersionHistory(DefaultVersionHistoryConfig())
 
@@ -51,7 +51,7 @@ func TestVersionHistory_GetLatestVersion(t *testing.T) {
 
 func TestVersionHistory_GetVersionAt(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	vh := NewVersionHistory(DefaultVersionHistoryConfig())
 
@@ -67,7 +67,7 @@ func TestVersionHistory_GetVersionAt(t *testing.T) {
 
 func TestVersionHistory_Prune(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	vh := NewVersionHistory(DefaultVersionHistoryConfig())
 
@@ -85,7 +85,7 @@ func TestVersionHistory_Prune(t *testing.T) {
 
 func TestVersionHistory_MaxVersions(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := VersionHistoryConfig{
 		MaxVersions:     3,

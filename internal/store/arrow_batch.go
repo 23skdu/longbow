@@ -2,6 +2,7 @@ package store
 
 import (
 	"fmt"
+
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
 )

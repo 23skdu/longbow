@@ -14,7 +14,7 @@ import (
 
 func TestZeroCopyBufferArrowHNSWConfig_Defaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultZeroCopyBufferArrowHNSWConfig()
 
@@ -31,7 +31,7 @@ func TestZeroCopyBufferArrowHNSWConfig_Defaults(t *testing.T) {
 
 func TestZeroCopyBufferArrowHNSWConfig_Validate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tests := []struct {
 		name    string
@@ -60,7 +60,7 @@ func TestZeroCopyBufferArrowHNSWConfig_Validate(t *testing.T) {
 
 func TestDirectBufferReader_Create(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	alloc := memory.NewGoAllocator()
 	reader := NewDirectBufferReader(alloc)
@@ -75,7 +75,7 @@ func TestDirectBufferReader_Create(t *testing.T) {
 
 func TestDirectBufferReader_GetBufferReference(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	alloc := memory.NewGoAllocator()
 	reader := NewDirectBufferReader(alloc)
@@ -98,7 +98,7 @@ func TestDirectBufferReader_GetBufferReference(t *testing.T) {
 
 func TestDirectBufferReader_CreateArrayDataZeroCopy(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	alloc := memory.NewGoAllocator()
 	reader := NewDirectBufferReader(alloc)
@@ -135,7 +135,7 @@ func TestDirectBufferReader_CreateArrayDataZeroCopy(t *testing.T) {
 
 func TestAllocatorAwareCache_Create(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	alloc := memory.NewGoAllocator()
 	cache := NewAllocatorAwareCache(alloc, 1000)
@@ -147,7 +147,7 @@ func TestAllocatorAwareCache_Create(t *testing.T) {
 
 func TestAllocatorAwareCache_PutGet_ZeroCopy(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	alloc := memory.NewGoAllocator()
 	cache := NewAllocatorAwareCache(alloc, 1000)
@@ -190,7 +190,7 @@ func TestAllocatorAwareCache_PutGet_ZeroCopy(t *testing.T) {
 
 func TestAllocatorAwareCache_GetBufferDirect(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	alloc := memory.NewGoAllocator()
 	cache := NewAllocatorAwareCache(alloc, 1000)
@@ -228,7 +228,7 @@ func TestAllocatorAwareCache_GetBufferDirect(t *testing.T) {
 
 func TestFlightReaderBufferRetainer_Create(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	retainer := NewFlightReaderBufferRetainer(1024)
 
@@ -242,7 +242,7 @@ func TestFlightReaderBufferRetainer_Create(t *testing.T) {
 
 func TestFlightReaderBufferRetainer_RetainBuffer(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	retainer := NewFlightReaderBufferRetainer(100)
 
@@ -262,7 +262,7 @@ func TestFlightReaderBufferRetainer_RetainBuffer(t *testing.T) {
 
 func TestFlightReaderBufferRetainer_ReleaseBuffer(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	retainer := NewFlightReaderBufferRetainer(100)
 
@@ -284,7 +284,7 @@ func TestFlightReaderBufferRetainer_ReleaseBuffer(t *testing.T) {
 
 func TestFlightReaderBufferRetainer_Stats(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	retainer := NewFlightReaderBufferRetainer(100)
 
@@ -316,7 +316,7 @@ func TestFlightReaderBufferRetainer_Stats(t *testing.T) {
 
 func TestPooledAllocator_AsDefault(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pAlloc := NewPooledAllocator()
 
@@ -336,7 +336,7 @@ func TestPooledAllocator_AsDefault(t *testing.T) {
 
 func TestPooledAllocator_BufferReuse(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pAlloc := NewPooledAllocator()
 

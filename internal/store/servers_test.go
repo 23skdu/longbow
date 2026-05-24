@@ -106,7 +106,7 @@ func makeVectorRecord(mem memory.Allocator, dims, count int) arrow.RecordBatch {
 // TestDataServerDoPut tests successful data ingestion
 func TestDataServerDoPut(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client := setupDataServerTest(t)
 	ctx := context.Background()
@@ -143,7 +143,7 @@ func TestDataServerDoPut(t *testing.T) {
 // TestDataServerDoGet tests successful data retrieval
 func TestDataServerDoGet(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client := setupDataServerTest(t)
 	ctx := context.Background()
@@ -189,7 +189,7 @@ func TestDataServerDoGet(t *testing.T) {
 // TestDataServerDoGetNotFound tests NotFound error conversion
 func TestDataServerDoGetNotFound(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client := setupDataServerTest(t)
 	ctx := context.Background()
@@ -228,7 +228,7 @@ func TestDataServerDoGetNotFound(t *testing.T) {
 // TestDataServerListFlightsUnimplemented tests Unimplemented response
 func TestDataServerListFlightsUnimplemented(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client := setupDataServerTest(t)
 	ctx := context.Background()
@@ -252,7 +252,7 @@ func TestDataServerListFlightsUnimplemented(t *testing.T) {
 // TestDataServerGetFlightInfoUnimplemented tests Unimplemented response
 func TestDataServerGetFlightInfoUnimplemented(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client := setupDataServerTest(t)
 	ctx := context.Background()
@@ -276,7 +276,7 @@ func TestDataServerGetFlightInfoUnimplemented(t *testing.T) {
 // TestDataServerDoActionUnimplemented tests Unimplemented response
 func TestDataServerDoActionUnimplemented(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client := setupDataServerTest(t)
 	ctx := context.Background()
@@ -375,7 +375,7 @@ func putDataViaVectorStore(vs *VectorStore, name string) {
 // TestMetaServerListFlights tests listing available datasets
 func TestMetaServerListFlights(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client, vs := setupMetaServerTest(t)
 	ctx := context.Background()
@@ -409,7 +409,7 @@ func TestMetaServerListFlights(t *testing.T) {
 // TestMetaServerGetFlightInfo tests getting dataset metadata
 func TestMetaServerGetFlightInfo(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client, vs := setupMetaServerTest(t)
 	ctx := context.Background()
@@ -439,7 +439,7 @@ func TestMetaServerGetFlightInfo(t *testing.T) {
 // TestMetaServerGetFlightInfoNotFound tests NotFound error
 func TestMetaServerGetFlightInfoNotFound(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client, _ := setupMetaServerTest(t)
 	ctx := context.Background()
@@ -467,7 +467,7 @@ func TestMetaServerGetFlightInfoNotFound(t *testing.T) {
 // TestMetaServerDoGetUnimplemented tests Unimplemented response
 func TestMetaServerDoGetUnimplemented(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client, _ := setupMetaServerTest(t)
 	ctx := context.Background()
@@ -502,7 +502,7 @@ func TestMetaServerDoGetUnimplemented(t *testing.T) {
 // TestMetaServerDoPutUnimplemented tests Unimplemented response
 func TestMetaServerDoPutUnimplemented(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client, _ := setupMetaServerTest(t)
 	ctx := context.Background()
@@ -529,7 +529,7 @@ func TestMetaServerDoPutUnimplemented(t *testing.T) {
 // TestMetaServerDoActionUnknown tests unknown action returns Unimplemented
 func TestMetaServerDoActionUnknown(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client, _ := setupMetaServerTest(t)
 	ctx := context.Background()
@@ -554,7 +554,7 @@ func TestMetaServerDoActionUnknown(t *testing.T) {
 // TestMetaServerDoActionNil tests nil action returns InvalidArgument
 func TestMetaServerDoActionNil(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client, _ := setupMetaServerTest(t)
 	ctx := context.Background()
@@ -577,7 +577,7 @@ func TestMetaServerDoActionNil(t *testing.T) {
 // TestResetDatasetAction tests the in-place ResetDataset action on MetaServer/DataServer
 func TestResetDatasetAction(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	client, vs := setupMetaServerTest(t)
 	ctx := context.Background()

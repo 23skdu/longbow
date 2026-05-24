@@ -9,7 +9,7 @@ import (
 
 func TestFragmentationTracker_RecordDeletion(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tracker := NewFragmentationTracker()
 
@@ -28,7 +28,7 @@ func TestFragmentationTracker_RecordDeletion(t *testing.T) {
 
 func TestFragmentationTracker_GetFragmentedBatches(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tracker := NewFragmentationTracker()
 
@@ -63,7 +63,7 @@ func TestFragmentationTracker_GetFragmentedBatches(t *testing.T) {
 
 func TestFragmentationTracker_Reset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tracker := NewFragmentationTracker()
 
@@ -84,7 +84,7 @@ func TestFragmentationTracker_Reset(t *testing.T) {
 
 func TestFragmentationTracker_Concurrent(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tracker := NewFragmentationTracker()
 
@@ -117,7 +117,7 @@ func TestFragmentationTracker_Concurrent(t *testing.T) {
 
 func TestFragmentationTracker_MultipleBatches(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tracker := NewFragmentationTracker()
 
@@ -145,7 +145,7 @@ func TestFragmentationTracker_MultipleBatches(t *testing.T) {
 
 func TestFragmentationTracker_ZeroSizeBatch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tracker := NewFragmentationTracker()
 
@@ -159,7 +159,7 @@ func TestFragmentationTracker_ZeroSizeBatch(t *testing.T) {
 
 func TestFragmentationTracker_ThresholdEdgeCases(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tracker := NewFragmentationTracker()
 
@@ -185,7 +185,7 @@ func TestFragmentationTracker_ThresholdEdgeCases(t *testing.T) {
 
 func TestFragmentationTracker_UpdateBatchSize(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tracker := NewFragmentationTracker()
 

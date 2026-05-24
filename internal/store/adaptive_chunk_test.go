@@ -14,7 +14,7 @@ import (
 
 func TestAdaptiveChunkSize_Calculation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	testCases := []struct {
 		name           string
@@ -78,7 +78,7 @@ func TestAdaptiveChunkSize_Calculation(t *testing.T) {
 
 func TestAdaptiveChunkSize_WorkerEfficiency(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	testCases := []struct {
 		name           string
@@ -132,7 +132,7 @@ func TestAdaptiveChunkSize_WorkerEfficiency(t *testing.T) {
 
 func TestAdaptiveChunkSize_ConfigThresholds(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	testCases := []struct {
 		name             string
@@ -189,7 +189,7 @@ func TestAdaptiveChunkSize_ConfigThresholds(t *testing.T) {
 
 func TestAdaptiveChunkSize_ConcurrentSafety(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	vectors := GenerateTestVectors(100, 4)

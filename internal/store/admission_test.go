@@ -34,7 +34,7 @@ func setPrivateAtomicUint64(obj interface{}, name string, val uint64) {
 
 func TestAdmissionController(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
@@ -109,7 +109,7 @@ func TestAdmissionController(t *testing.T) {
 
 func TestAdmissionController_Expanded(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	maxMem := atomic.Int64{}
 	currMem := atomic.Int64{}

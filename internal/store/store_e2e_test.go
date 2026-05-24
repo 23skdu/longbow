@@ -24,7 +24,7 @@ import (
 // TestStore_EndToEnd_TDD verifies the full lifecycle of data in the VectorStore using real Flight gRPC.
 func TestStore_EndToEnd_TDD(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tmpDir := t.TempDir()
 	mem := memory.NewGoAllocator()

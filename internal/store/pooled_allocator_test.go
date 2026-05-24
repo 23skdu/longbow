@@ -9,7 +9,7 @@ import (
 
 func TestPooledAllocator_Allocate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p := NewPooledAllocator()
 
@@ -25,7 +25,7 @@ func TestPooledAllocator_Allocate(t *testing.T) {
 
 func TestPooledAllocator_Reallocate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p := NewPooledAllocator()
 
@@ -54,7 +54,7 @@ func TestPooledAllocator_Reallocate(t *testing.T) {
 
 func TestPooledAllocator_Free(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p := NewPooledAllocator()
 
@@ -74,7 +74,7 @@ func TestPooledAllocator_Free(t *testing.T) {
 
 func TestPooledAllocator_BucketIndex(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tests := []struct {
 		size     int
@@ -100,7 +100,7 @@ func TestPooledAllocator_BucketIndex(t *testing.T) {
 
 func TestPooledAllocator_LargeAllocation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p := NewPooledAllocator()
 
@@ -117,7 +117,7 @@ func TestPooledAllocator_LargeAllocation(t *testing.T) {
 
 func TestPooledAllocator_Concurrent(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p := NewPooledAllocator()
 	var wg sync.WaitGroup

@@ -26,7 +26,7 @@ func createTestRecord(t *testing.T) arrow.Record { //nolint:staticcheck
 
 func TestPeerReplicator_NewPeerReplicator(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultReplicatorConfig()
 	r := NewPeerReplicator(cfg)
@@ -45,7 +45,7 @@ func TestPeerReplicator_NewPeerReplicator(t *testing.T) {
 
 func TestPeerReplicator_AddPeer(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	r := NewPeerReplicator(DefaultReplicatorConfig())
 	defer r.Stop()
@@ -66,7 +66,7 @@ func TestPeerReplicator_AddPeer(t *testing.T) {
 
 func TestPeerReplicator_RemovePeer(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	r := NewPeerReplicator(DefaultReplicatorConfig())
 	defer r.Stop()
@@ -82,7 +82,7 @@ func TestPeerReplicator_RemovePeer(t *testing.T) {
 
 func TestPeerReplicator_ReplicateRecord(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := ReplicatorConfig{
 		Timeout:      100 * time.Millisecond,
@@ -117,7 +117,7 @@ func TestPeerReplicator_ReplicateRecord(t *testing.T) {
 
 func TestPeerReplicator_ReplicateWithCircuitBreaker(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := ReplicatorConfig{
 		Timeout:      100 * time.Millisecond,
@@ -157,7 +157,7 @@ func TestPeerReplicator_ReplicateWithCircuitBreaker(t *testing.T) {
 
 func TestPeerReplicator_AsyncReplication(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := ReplicatorConfig{
 		Timeout:          100 * time.Millisecond,
@@ -201,7 +201,7 @@ func TestPeerReplicator_AsyncReplication(t *testing.T) {
 
 func TestPeerReplicator_QuorumReplication(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := ReplicatorConfig{
 		Timeout:      50 * time.Millisecond,
@@ -233,7 +233,7 @@ func TestPeerReplicator_QuorumReplication(t *testing.T) {
 
 func TestPeerReplicator_Stats(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	r := NewPeerReplicator(DefaultReplicatorConfig())
 	defer r.Stop()
@@ -249,7 +249,7 @@ func TestPeerReplicator_Stats(t *testing.T) {
 
 func TestPeerReplicator_GetCircuitBreaker(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	r := NewPeerReplicator(DefaultReplicatorConfig())
 	defer r.Stop()

@@ -11,7 +11,7 @@ import (
 
 func TestHybridSearchPipeline_SearchInvalidQuery(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
 
@@ -25,7 +25,7 @@ func TestHybridSearchPipeline_SearchInvalidQuery(t *testing.T) {
 
 func TestHybridSearchPipeline_SearchEmptyIndexes(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
 
@@ -47,7 +47,7 @@ func TestHybridSearchPipeline_SearchEmptyIndexes(t *testing.T) {
 
 func TestHybridSearchPipeline_AlphaOverride(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultHybridPipelineConfig()
 	cfg.Alpha = 0.5
@@ -70,7 +70,7 @@ func TestHybridSearchPipeline_AlphaOverride(t *testing.T) {
 
 func TestHybridSearchPipeline_SearchVectorOnly(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultHybridPipelineConfig()
 	cfg.Alpha = 1.0 // Pure vector
@@ -89,7 +89,7 @@ func TestHybridSearchPipeline_SearchVectorOnly(t *testing.T) {
 
 func TestHybridSearchPipeline_SearchKeywordOnly(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultHybridPipelineConfig()
 	cfg.Alpha = 0.0 // Pure keyword
@@ -108,7 +108,7 @@ func TestHybridSearchPipeline_SearchKeywordOnly(t *testing.T) {
 
 func TestHybridSearchPipeline_FusionModes(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	modes := []FusionMode{FusionModeRRF, FusionModeLinear, FusionModeCascade}
 
@@ -150,7 +150,7 @@ func (m FusionMode) String() string {
 
 func TestFuseRRF_LimitTruncation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dense := make([]SearchResult, 20)
 	for i := 0; i < 20; i++ {
@@ -165,7 +165,7 @@ func TestFuseRRF_LimitTruncation(t *testing.T) {
 
 func TestFuseRRF_SingleSource(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dense := []SearchResult{
 		{ID: 1, Score: 0.9},
@@ -187,7 +187,7 @@ func TestFuseRRF_SingleSource(t *testing.T) {
 
 func TestFuseLinear_Empty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	results := FuseLinear(nil, nil, 0.5, 10)
 	if len(results) != 0 {
@@ -197,7 +197,7 @@ func TestFuseLinear_Empty(t *testing.T) {
 
 func TestFuseLinear_PureKeyword(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dense := []SearchResult{{ID: 1, Score: 1.0}}
 	sparse := []SearchResult{{ID: 2, Score: 1.0}}
@@ -224,7 +224,7 @@ func TestFuseLinear_PureKeyword(t *testing.T) {
 
 func TestFuseLinear_LimitTruncation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dense := make([]SearchResult, 10)
 	sparse := make([]SearchResult, 10)
@@ -241,7 +241,7 @@ func TestFuseLinear_LimitTruncation(t *testing.T) {
 
 func TestFuseCascade_EmptyExact(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	keyword := []SearchResult{{ID: 1, Score: 5.0}}
 	vector := []SearchResult{{ID: 2, Score: 0.9}}
@@ -255,7 +255,7 @@ func TestFuseCascade_EmptyExact(t *testing.T) {
 
 func TestFuseCascade_NoMatches(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	exactIDs := roaring.New()
 	exactIDs.Add(99)
@@ -271,7 +271,7 @@ func TestFuseCascade_NoMatches(t *testing.T) {
 
 func TestFuseCascade_Duplicates(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	exactIDs := roaring.New()
 	exactIDs.Add(1)
@@ -295,7 +295,7 @@ func TestFuseCascade_Duplicates(t *testing.T) {
 
 func TestDedupeAndSort_Empty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	results := dedupeAndSort(nil, 10)
 	if len(results) != 0 {
@@ -305,7 +305,7 @@ func TestDedupeAndSort_Empty(t *testing.T) {
 
 func TestDedupeAndSort_NoDuplicates(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	input := []SearchResult{
 		{ID: 3, Score: 1.0},
@@ -327,7 +327,7 @@ func TestDedupeAndSort_NoDuplicates(t *testing.T) {
 
 func TestDedupeAndSort_WithDuplicates(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	input := []SearchResult{
 		{ID: 1, Score: 1.0},
@@ -351,7 +351,7 @@ func TestDedupeAndSort_WithDuplicates(t *testing.T) {
 
 func TestDedupeAndSort_LimitTruncation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	input := make([]SearchResult, 20)
 	for i := 0; i < 20; i++ {
@@ -368,7 +368,7 @@ func TestDedupeAndSort_LimitTruncation(t *testing.T) {
 
 func TestApplyExactFilters_Empty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	p := NewHybridSearchPipeline(DefaultHybridPipelineConfig())
 

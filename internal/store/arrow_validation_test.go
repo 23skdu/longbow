@@ -117,7 +117,7 @@ func (h *DualIndexHarness) MeasureRecall(query []float32, k int) float64 {
 // TestDualIndexHarness_Basic validates the harness setup.
 func TestDualIndexHarness_Basic(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Create a simple dataset
 	dataset := NewDataset("test", nil)

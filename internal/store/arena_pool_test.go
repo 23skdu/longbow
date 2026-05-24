@@ -11,7 +11,7 @@ import (
 // TestArenaPool_GetReturnsArena tests that GetArena returns a valid arena
 func TestArenaPool_GetReturnsArena(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	arena := GetArena()
 	require.NotNil(t, arena, "GetArena should return non-nil arena")
@@ -22,7 +22,7 @@ func TestArenaPool_GetReturnsArena(t *testing.T) {
 // TestArenaPool_PutAndReuseArena tests that arenas are reused from pool
 func TestArenaPool_PutAndReuseArena(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	arena1 := GetArena()
 	require.NotNil(t, arena1)
@@ -38,7 +38,7 @@ func TestArenaPool_PutAndReuseArena(t *testing.T) {
 // TestArenaPool_ConcurrentAccess tests thread-safe pool access
 func TestArenaPool_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	const goroutines = 100
 	const iterations = 50
@@ -61,7 +61,7 @@ func TestArenaPool_ConcurrentAccess(t *testing.T) {
 // TestArenaPool_NUMAAwareAllocation tests that GetArenaForNode works correctly
 func TestArenaPool_NUMAAwareAllocation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	arena := GetArenaForNode(1)
 	require.NotNil(t, arena, "GetArenaForNode should return non-nil arena")
@@ -78,7 +78,7 @@ func FuzzNUMAAllocation(f *testing.F) {
 	f.Add(0, 1024)
 	f.Add(1, 4096)
 	f.Add(2, 65536)
-	
+
 	f.Fuzz(func(t *testing.T, node int, allocSize int) {
 		if node < 0 || node > 8 { // Bound reasonable node limits
 			t.Skip()
@@ -86,11 +86,11 @@ func FuzzNUMAAllocation(f *testing.F) {
 		if allocSize <= 0 || allocSize > 64*1024 {
 			t.Skip()
 		}
-		
+
 		arena := GetArenaForNode(node)
 		require.NotNil(t, arena)
 		assert.Equal(t, node, arena.NUMANode())
-		
+
 		buf := arena.Alloc(allocSize)
 		if buf != nil {
 			assert.Equal(t, allocSize, len(buf))

@@ -14,6 +14,9 @@ import (
 // TestAlignedShardedMutex_CacheLineAlignment verifies that each shard is
 // properly aligned to prevent false sharing.
 func TestAlignedShardedMutex_CacheLineAlignment(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewAlignedShardedMutex(AlignedShardedMutexConfig{
 		NumShards: 16,
 	})
@@ -32,6 +35,9 @@ func TestAlignedShardedMutex_CacheLineAlignment(t *testing.T) {
 
 // TestAlignedShardedMutex_BasicLocking verifies basic lock/unlock functionality.
 func TestAlignedShardedMutex_BasicLocking(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewAlignedShardedMutex(AlignedShardedMutexConfig{
 		NumShards: 8,
 	})
@@ -54,6 +60,9 @@ func TestAlignedShardedMutex_BasicLocking(t *testing.T) {
 
 // TestAlignedShardedMutex_ConcurrentAccess tests concurrent lock acquisitions.
 func TestAlignedShardedMutex_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewAlignedShardedMutex(AlignedShardedMutexConfig{
 		NumShards: 64,
 	})
@@ -81,6 +90,9 @@ func TestAlignedShardedMutex_ConcurrentAccess(t *testing.T) {
 
 // TestAlignedShardedMutex_FastPath verifies the lock-free fast path works.
 func TestAlignedShardedMutex_FastPath(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewAlignedShardedMutex(AlignedShardedMutexConfig{
 		NumShards: 8,
 	})
@@ -110,6 +122,9 @@ func TestAlignedShardedMutex_FastPath(t *testing.T) {
 
 // TestAlignedShardedMutex_ContentionMetrics verifies contention tracking.
 func TestAlignedShardedMutex_ContentionMetrics(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewAlignedShardedMutex(AlignedShardedMutexConfig{
 		NumShards: 4,
 	})
@@ -140,6 +155,9 @@ func TestAlignedShardedMutex_ContentionMetrics(t *testing.T) {
 
 // TestAlignedShardedMutex_AdaptiveScaling tests adaptive shard count adjustment.
 func TestAlignedShardedMutex_AdaptiveScaling(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewAlignedShardedMutex(AlignedShardedMutexConfig{
 		NumShards:        8,
 		TargetContention: 10.0, // Low threshold for testing
@@ -179,6 +197,9 @@ func TestAlignedShardedMutex_AdaptiveScaling(t *testing.T) {
 
 // TestAlignedShardedMutex_ShardDistribution verifies even distribution across shards.
 func TestAlignedShardedMutex_ShardDistribution(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewAlignedShardedMutex(AlignedShardedMutexConfig{
 		NumShards: 16,
 	})
@@ -205,6 +226,9 @@ func TestAlignedShardedMutex_ShardDistribution(t *testing.T) {
 
 // TestAlignedShardedMutex_RWLockCorrectness tests read/write lock semantics.
 func TestAlignedShardedMutex_RWLockCorrectness(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewAlignedShardedMutex(AlignedShardedMutexConfig{
 		NumShards: 8,
 	})
@@ -314,6 +338,9 @@ func BenchmarkStandardShardedMutex_Contention(b *testing.B) {
 
 // TestAlignedShardedMutex_MemoryFootprint verifies memory usage is reasonable.
 func TestAlignedShardedMutex_MemoryFootprint(b *testing.T) {
+	if testing.Short() {
+			b.Skip("skipping test in short mode")
+	}
 	configs := []int{8, 64, 256, 1024}
 
 	for _, numShards := range configs {
@@ -337,6 +364,9 @@ func TestAlignedShardedMutex_MemoryFootprint(b *testing.T) {
 
 // TestAlignedShardedMutex_NoDeadlock verifies no deadlocks occur.
 func TestAlignedShardedMutex_NoDeadlock(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewAlignedShardedMutex(AlignedShardedMutexConfig{
 		NumShards: 16,
 	})

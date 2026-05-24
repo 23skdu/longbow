@@ -16,6 +16,9 @@ import (
 )
 
 func TestAdvancedSQL_E2E(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vs, _, dialer := setupServer(t)
 	ctx := context.Background()
 	client, err := flight.NewClientWithMiddleware(

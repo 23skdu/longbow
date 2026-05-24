@@ -8,6 +8,9 @@ import (
 )
 
 func TestCheckpointCoordinator_New(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CheckpointConfig{
 		Interval:       1 * time.Minute,
 		Timeout:        30 * time.Second,
@@ -24,6 +27,9 @@ func TestCheckpointCoordinator_New(t *testing.T) {
 }
 
 func TestCheckpointCoordinator_InitiateCheckpoint(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CheckpointConfig{
 		Interval:       1 * time.Minute,
 		Timeout:        100 * time.Millisecond,
@@ -41,6 +47,9 @@ func TestCheckpointCoordinator_InitiateCheckpoint(t *testing.T) {
 }
 
 func TestCheckpointCoordinator_BarrierSync(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CheckpointConfig{
 		Interval:       1 * time.Minute,
 		Timeout:        100 * time.Millisecond,
@@ -73,6 +82,9 @@ func TestCheckpointCoordinator_BarrierSync(t *testing.T) {
 }
 
 func TestCheckpointCoordinator_Timeout(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CheckpointConfig{
 		Interval:       1 * time.Minute,
 		Timeout:        50 * time.Millisecond,
@@ -92,6 +104,9 @@ func TestCheckpointCoordinator_Timeout(t *testing.T) {
 }
 
 func TestCheckpointCoordinator_Metrics(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CheckpointConfig{
 		Interval:       1 * time.Minute,
 		Timeout:        100 * time.Millisecond,
@@ -106,6 +121,9 @@ func TestCheckpointCoordinator_Metrics(t *testing.T) {
 }
 
 func TestCheckpointCoordinator_ConcurrentCheckpoints(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CheckpointConfig{
 		Interval:       1 * time.Minute,
 		Timeout:        100 * time.Millisecond,
@@ -135,6 +153,9 @@ func TestCheckpointCoordinator_ConcurrentCheckpoints(t *testing.T) {
 }
 
 func TestCheckpointCoordinator_WALTruncation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CheckpointConfig{
 		Interval:       1 * time.Minute,
 		Timeout:        100 * time.Millisecond,
@@ -151,6 +172,9 @@ func TestCheckpointCoordinator_WALTruncation(t *testing.T) {
 }
 
 func TestCheckpointCoordinator_Recovery(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CheckpointConfig{
 		Interval:       1 * time.Minute,
 		Timeout:        100 * time.Millisecond,

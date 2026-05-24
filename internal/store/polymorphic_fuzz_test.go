@@ -16,6 +16,9 @@ import (
 )
 
 func FuzzPolymorphicIngestion(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Seed corpus
 	f.Add(int64(12345), uint8(FuzzTypeFloat32), int(128))
 	f.Add(int64(time.Now().UnixNano()), uint8(FuzzTypeFloat16), int(128))

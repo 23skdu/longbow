@@ -35,6 +35,9 @@ func makeShardedTestRecord(mem memory.Allocator, dims, numVectors int) arrow.Rec
 
 // TestShardedHNSWConfig_Defaults verifies default configuration
 func TestShardedHNSWConfig_Defaults(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedHNSWConfig()
 
 	if cfg.NumShards <= 0 {
@@ -53,6 +56,9 @@ func TestShardedHNSWConfig_Defaults(t *testing.T) {
 
 // TestShardedHNSWConfig_Validation verifies configuration validation
 func TestShardedHNSWConfig_Validation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name    string
 		cfg     ShardedHNSWConfig
@@ -79,6 +85,9 @@ func TestShardedHNSWConfig_Validation(t *testing.T) {
 
 // TestShardedHNSW_ShardRouting verifies consistent hash-based routing
 func TestShardedHNSW_ShardRouting(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedHNSWConfig()
 	// Test legacy linear sharding
 	cfg.UseRingSharding = false
@@ -114,6 +123,9 @@ func TestShardedHNSW_ShardRouting(t *testing.T) {
 }
 
 func TestShardedHNSW_RingRouting(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 4
 	cfg.UseRingSharding = true
@@ -143,6 +155,9 @@ func TestShardedHNSW_RingRouting(t *testing.T) {
 
 // TestShardedHNSW_AddToShard verifies adding vectors routes to correct shard
 func TestShardedHNSW_AddToShard(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 4
 
@@ -188,6 +203,9 @@ func TestShardedHNSW_AddToShard(t *testing.T) {
 
 // TestShardedHNSW_ParallelAdds verifies concurrent additions don't corrupt state
 func TestShardedHNSW_ParallelAdds(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 8
 
@@ -231,6 +249,9 @@ func TestShardedHNSW_ParallelAdds(t *testing.T) {
 
 // TestShardedHNSW_Search verifies search across all shards
 func TestShardedHNSW_Search(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 4
 	cfg.M = 8
@@ -265,6 +286,9 @@ func TestShardedHNSW_Search(t *testing.T) {
 
 // TestShardedHNSW_SearchEmpty verifies search on empty index
 func TestShardedHNSW_SearchEmpty(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 4
 
@@ -281,6 +305,9 @@ func TestShardedHNSW_SearchEmpty(t *testing.T) {
 
 // TestShardedHNSW_GetLocation verifies location retrieval
 func TestShardedHNSW_GetLocation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 4
 
@@ -321,6 +348,9 @@ func TestShardedHNSW_GetLocation(t *testing.T) {
 
 // TestShardedHNSW_ShardStats verifies per-shard statistics
 func TestShardedHNSW_ShardStats(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 4
 
@@ -357,6 +387,9 @@ func TestShardedHNSW_ShardStats(t *testing.T) {
 
 // TestShardedHNSW_ConcurrentAddAndSearch verifies thread safety
 func TestShardedHNSW_ConcurrentAddAndSearch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 4
 	cfg.M = 8
@@ -458,6 +491,9 @@ func BenchmarkHNSW_ShardedSearch(b *testing.B) {
 }
 
 func TestShardedHNSW_SearchByID(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedHNSWConfig()
 	cfg.NumShards = 1
 	cfg.UseRingSharding = false
@@ -496,6 +532,9 @@ func TestShardedHNSW_SearchByID(t *testing.T) {
 }
 
 func TestShardedHNSW_GetDimension(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedHNSWConfig()
 	ds := NewDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)

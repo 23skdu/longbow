@@ -11,6 +11,9 @@ import (
 
 // TestEnsureTimestampZeroCopy_ExistingTimestamp verifies no work is done when timestamp exists
 func TestEnsureTimestampZeroCopy_ExistingTimestamp(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 
 	// Create schema with timestamp already present
@@ -55,6 +58,9 @@ func TestEnsureTimestampZeroCopy_ExistingTimestamp(t *testing.T) {
 
 // TestEnsureTimestampZeroCopy_MissingTimestamp verifies timestamp is added without copying data
 func TestEnsureTimestampZeroCopy_MissingTimestamp(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 
 	// Create schema without timestamp
@@ -125,6 +131,9 @@ func TestEnsureTimestampZeroCopy_MissingTimestamp(t *testing.T) {
 
 // TestEnsureTimestampZeroCopy_EmptyRecord verifies handling of empty records
 func TestEnsureTimestampZeroCopy_EmptyRecord(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 
 	// Create schema without timestamp
@@ -160,6 +169,9 @@ func TestEnsureTimestampZeroCopy_EmptyRecord(t *testing.T) {
 
 // TestEnsureTimestampZeroCopy_LargeRecord verifies performance with large records
 func TestEnsureTimestampZeroCopy_LargeRecord(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 
 	// Create schema without timestamp
@@ -226,6 +238,9 @@ func TestEnsureTimestampZeroCopy_LargeRecord(t *testing.T) {
 
 // TestEnsureTimestampZeroCopy_RefCounting verifies proper reference counting
 func TestEnsureTimestampZeroCopy_RefCounting(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 
 	// Create schema without timestamp
@@ -266,6 +281,9 @@ func TestEnsureTimestampZeroCopy_RefCounting(t *testing.T) {
 
 // TestEnsureTimestampZeroCopy_PreserveMetadata verifies schema metadata is preserved
 func TestEnsureTimestampZeroCopy_PreserveMetadata(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 
 	// Create schema with metadata but no timestamp
@@ -302,6 +320,9 @@ func TestEnsureTimestampZeroCopy_PreserveMetadata(t *testing.T) {
 
 // TestEnsureTimestampZeroCopy_ConsistentTimestamp verifies all rows get same timestamp
 func TestEnsureTimestampZeroCopy_ConsistentTimestamp(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 
 	schema := arrow.NewSchema([]arrow.Field{

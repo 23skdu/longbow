@@ -31,6 +31,9 @@ func makeAdaptiveTestRecord(mem memory.Allocator, size int64) arrow.RecordBatch 
 }
 
 func TestAdaptivelySliceBatches(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	strategy := flight.NewAdaptiveChunkStrategy(10, 100, 2.0) // Start 10, double up to 100
 
@@ -98,6 +101,9 @@ func TestAdaptivelySliceBatches(t *testing.T) {
 }
 
 func TestAdaptivelySliceBatches_SplittingTombstones(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	strategy := flight.NewAdaptiveChunkStrategy(10, 100, 2.0)
 

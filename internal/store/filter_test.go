@@ -17,6 +17,9 @@ import (
 )
 
 func TestFiltering(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	_, _, dialer := setupServer(t)
 	ctx := context.Background()
 	client, err := flight.NewClientWithMiddleware(
@@ -143,6 +146,9 @@ func TestFiltering(t *testing.T) {
 }
 
 func TestListFlightsFiltering(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	_, _, dialer := setupServer(t)
 	ctx := context.Background()
 	client, err := flight.NewClientWithMiddleware(

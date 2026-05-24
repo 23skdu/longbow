@@ -9,6 +9,9 @@ import (
 )
 
 func TestDiskVectorStore_Compression(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "vectors.bin")
 	dim := 128
@@ -50,6 +53,9 @@ func TestDiskVectorStore_Compression(t *testing.T) {
 }
 
 func TestDiskVectorStore_Read(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "read_v.bin")
 	dim := 4

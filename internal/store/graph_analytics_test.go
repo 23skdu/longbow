@@ -10,6 +10,9 @@ import (
 )
 
 func TestGraphAnalytics_PageRank_Simple(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// A simple 2-node cycle: 1 <-> 2
 	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 
@@ -35,6 +38,9 @@ func TestGraphAnalytics_PageRank_Simple(t *testing.T) {
 }
 
 func TestGraphAnalytics_Communities_Disjoint(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Two disjoint triangles: {1,2,3} and {4,5,6}
 	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 
@@ -71,6 +77,9 @@ func TestGraphAnalytics_Communities_Disjoint(t *testing.T) {
 }
 
 func TestGraphAnalytics_StarGraph(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Center 1, leaves 2,3,4.
 	// 1 -> 2,3,4
 	// 2,3,4 -> 1 (bidirectional star)
@@ -102,6 +111,9 @@ func TestGraphAnalytics_StarGraph(t *testing.T) {
 }
 
 func TestGraphAnalytics_Properties(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	gd := types.NewGraphData(10, 2, false, false, -1, false, false, false, types.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 	// Complete graph of 3 nodes: 1->2,3; 2->1,3; 3->1,2
 	_ = gd.SetNeighbors(1, []uint32{2, 3})
@@ -119,6 +131,9 @@ func TestGraphAnalytics_Properties(t *testing.T) {
 }
 
 func FuzzGraphAnalytics_PageRank(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(10, 5, float32(0.85))
 	f.Fuzz(func(t *testing.T, numNodes int, maxNeighbors int, damping float32) {
 		if numNodes < 2 || numNodes > 1000 || maxNeighbors < 1 || maxNeighbors > 50 {

@@ -10,6 +10,9 @@ import (
 )
 
 func TestShardedMap_BasicOperations(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedMap()
 
 	// Test Set and Get
@@ -31,6 +34,9 @@ func TestShardedMap_BasicOperations(t *testing.T) {
 }
 
 func TestShardedMap_GetOrCreate(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedMap()
 	createCount := 0
 
@@ -51,6 +57,9 @@ func TestShardedMap_GetOrCreate(t *testing.T) {
 }
 
 func TestShardedMap_Len(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedMap()
 	assert.Equal(t, 0, sm.Len())
 
@@ -61,6 +70,9 @@ func TestShardedMap_Len(t *testing.T) {
 }
 
 func TestShardedMap_Keys(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedMap()
 	expected := map[string]bool{}
 
@@ -79,6 +91,9 @@ func TestShardedMap_Keys(t *testing.T) {
 }
 
 func TestShardedMap_Range(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedMap()
 	for i := 0; i < 10; i++ {
 		sm.Set(fmt.Sprintf("key%d", i), &Dataset{})
@@ -101,6 +116,9 @@ func TestShardedMap_Range(t *testing.T) {
 }
 
 func TestShardedMap_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedMap()
 	var wg sync.WaitGroup
 	numGoroutines := 100
@@ -124,6 +142,9 @@ func TestShardedMap_ConcurrentAccess(t *testing.T) {
 }
 
 func TestShardedMap_ConcurrentReadWrite(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedMap()
 	var wg sync.WaitGroup
 
@@ -159,6 +180,9 @@ func TestShardedMap_ConcurrentReadWrite(t *testing.T) {
 }
 
 func TestShardedMap_Distribution(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedMap()
 
 	// Add many keys to check distribution across shards

@@ -10,6 +10,9 @@ import (
 
 // FuzzExtractVectorGeneric fuzzes the ExtractVectorGeneric function
 func FuzzExtractVectorGeneric(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Seed corpus with valid inputs
 	// We can't easily seed complex Arrow structures in go-fuzz directly without serialization
 	// So we'll fuzz the builder interactions or raw bytes if possible.

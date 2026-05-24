@@ -13,6 +13,9 @@ import (
 // TestSQ8_HighDim_Loss validates the quantization error of SQ8 on high-dimensional vectors.
 // It simulates OpenAI embeddings (1536d) which are typically normalized unit vectors.
 func TestSQ8_HighDim_Loss(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	const (
 		dims      = 1536
 		numVecs   = 1000

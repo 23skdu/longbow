@@ -11,6 +11,9 @@ import (
 )
 
 func TestZeroAllocVectorSearchParser_Parse(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	nopLogger := zerolog.Nop()
 	parser := qry.NewZeroAllocVectorSearchParser(128, &nopLogger)
 

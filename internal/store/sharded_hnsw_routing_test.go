@@ -50,6 +50,9 @@ func makeRoutingTestRecord(mem memory.Allocator, dims, numVectors int) arrow.Rec
 }
 
 func TestShardedHNSW_Routing(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	cfg := DefaultShardedHNSWConfig()
 	cfg.ShardSplitThreshold = 25 // 4 shards for 100 vectors
@@ -82,6 +85,9 @@ func TestShardedHNSW_Routing(t *testing.T) {
 }
 
 func TestShardedHNSW_MergedSearch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	cfg := DefaultShardedHNSWConfig()
 	cfg.ShardSplitThreshold = 50 // 2 shards for 100 vectors
@@ -127,6 +133,9 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 }
 
 func TestShardedHNSW_Filtering(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	cfg := DefaultShardedHNSWConfig()
 	cfg.ShardSplitThreshold = 50 // IDs 0-49 in Shard 0, 50-99 in Shard 1

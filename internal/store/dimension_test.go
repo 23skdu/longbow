@@ -20,6 +20,9 @@ func makeVec(n int) []float32 {
 // TestAutoDimension_FirstVectorSets verifies that a dim=0 guard locks its
 // dimension to the size of the first inserted vector.
 func TestAutoDimension_FirstVectorSets(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	g := NewDimensionGuard("embeddings", 0)
 	require.Equal(t, 0, g.Dim(), "pre-condition: guard must start unlocked")
 
@@ -31,6 +34,9 @@ func TestAutoDimension_FirstVectorSets(t *testing.T) {
 // TestAutoDimension_SecondVectorMatchesDim verifies that a second vector with
 // the same dimension is accepted without error.
 func TestAutoDimension_SecondVectorMatchesDim(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	g := NewDimensionGuard("embeddings", 0)
 	require.NoError(t, g.CheckOrSet(makeVec(128)))
 	assert.NoError(t, g.CheckOrSet(makeVec(128)), "same-dimension second vector must be accepted")
@@ -39,6 +45,9 @@ func TestAutoDimension_SecondVectorMatchesDim(t *testing.T) {
 // TestAutoDimension_MismatchError verifies that a second vector with a
 // different dimension returns ErrDimensionLocked.
 func TestAutoDimension_MismatchError(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	g := NewDimensionGuard("embeddings", 0)
 	require.NoError(t, g.CheckOrSet(makeVec(128)))
 
@@ -50,6 +59,9 @@ func TestAutoDimension_MismatchError(t *testing.T) {
 // TestDimensionMismatchErrorMessage verifies the error message contains both
 // the expected and received dimensions.
 func TestDimensionMismatchErrorMessage(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	g := NewDimensionGuard("embeddings", 768)
 	err := g.CheckOrSet(makeVec(4))
 	require.Error(t, err)
@@ -60,6 +72,9 @@ func TestDimensionMismatchErrorMessage(t *testing.T) {
 // TestDimensionMismatchErrorMessage_WithDatasetName verifies the error message
 // includes the dataset name for easy triage.
 func TestDimensionMismatchErrorMessage_WithDatasetName(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	const ds = "production_embeddings"
 	g := NewDimensionGuard(ds, 512)
 	err := g.CheckOrSet(makeVec(2))
@@ -70,6 +85,9 @@ func TestDimensionMismatchErrorMessage_WithDatasetName(t *testing.T) {
 // TestCreateDataset_ExplicitDimension verifies that a guard created with an
 // explicit dimension does NOT auto-detect (IsAutoDetected must be false).
 func TestCreateDataset_ExplicitDimension(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	g := NewDimensionGuard("embeddings", 384)
 	require.NoError(t, g.CheckOrSet(makeVec(384)))
 	assert.Equal(t, 384, g.Dim())

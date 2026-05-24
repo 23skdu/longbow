@@ -42,6 +42,9 @@ func BenchmarkHNSW_InitializationOverhead(b *testing.B) {
 
 // TestHNSW_DimensionTransition verifies correctness when dims change 0 -> N
 func TestHNSW_DimensionTransition(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultArrowHNSWConfig()
 	cfg.InitialCapacity = 10
 	h := NewArrowHNSW(nil, &cfg, nil)

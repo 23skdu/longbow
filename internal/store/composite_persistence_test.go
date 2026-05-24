@@ -10,6 +10,9 @@ import (
 )
 
 func TestCompositeIndexPersistence(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dim := 64
 	numVectors := 500
 

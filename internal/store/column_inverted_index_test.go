@@ -12,6 +12,9 @@ import (
 
 // TestNewColumnInvertedIndex verifies basic creation
 func TestNewColumnInvertedIndex(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewColumnInvertedIndex()
 	if idx == nil {
 		t.Fatal("NewColumnInvertedIndex returned nil")
@@ -20,6 +23,9 @@ func TestNewColumnInvertedIndex(t *testing.T) {
 
 // TestColumnInvertedIndex_IndexColumn verifies indexing a string column
 func TestColumnInvertedIndex_IndexColumn(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewColumnInvertedIndex()
 	mem := memory.NewGoAllocator()
 
@@ -55,6 +61,9 @@ func TestColumnInvertedIndex_IndexColumn(t *testing.T) {
 
 // TestColumnInvertedIndex_LookupNotFound verifies empty result for missing values
 func TestColumnInvertedIndex_LookupNotFound(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewColumnInvertedIndex()
 	mem := memory.NewGoAllocator()
 
@@ -93,6 +102,9 @@ func TestColumnInvertedIndex_LookupNotFound(t *testing.T) {
 
 // TestColumnInvertedIndex_MultipleRecords verifies indexing multiple records
 func TestColumnInvertedIndex_MultipleRecords(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewColumnInvertedIndex()
 	mem := memory.NewGoAllocator()
 
@@ -140,6 +152,9 @@ func TestColumnInvertedIndex_MultipleRecords(t *testing.T) {
 
 // TestColumnInvertedIndex_Int64Column verifies indexing int64 columns
 func TestColumnInvertedIndex_Int64Column(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewColumnInvertedIndex()
 	mem := memory.NewGoAllocator()
 
@@ -165,6 +180,9 @@ func TestColumnInvertedIndex_Int64Column(t *testing.T) {
 
 // TestColumnInvertedIndex_RemoveRecord verifies removing a record from index
 func TestColumnInvertedIndex_RemoveRecord(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewColumnInvertedIndex()
 	mem := memory.NewGoAllocator()
 
@@ -197,6 +215,9 @@ func TestColumnInvertedIndex_RemoveRecord(t *testing.T) {
 
 // TestColumnInvertedIndex_RemoveDataset verifies removing entire dataset
 func TestColumnInvertedIndex_RemoveDataset(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewColumnInvertedIndex()
 	mem := memory.NewGoAllocator()
 
@@ -221,6 +242,9 @@ func TestColumnInvertedIndex_RemoveDataset(t *testing.T) {
 
 // TestColumnInvertedIndex_ConcurrentAccess verifies thread safety
 func TestColumnInvertedIndex_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewColumnInvertedIndex()
 	mem := memory.NewGoAllocator()
 
@@ -264,6 +288,9 @@ func TestColumnInvertedIndex_ConcurrentAccess(t *testing.T) {
 
 // TestColumnInvertedIndex_GetMatchingRowIndices verifies batch lookup
 func TestColumnInvertedIndex_GetMatchingRowIndices(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewColumnInvertedIndex()
 	mem := memory.NewGoAllocator()
 
@@ -295,6 +322,9 @@ func TestColumnInvertedIndex_GetMatchingRowIndices(t *testing.T) {
 
 // TestColumnInvertedIndex_HasIndex verifies index existence check
 func TestColumnInvertedIndex_HasIndex(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewColumnInvertedIndex()
 	mem := memory.NewGoAllocator()
 

@@ -11,6 +11,9 @@ import (
 )
 
 func TestHNSW_SearchPadding(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 
 	// Create vectors (dim 128)

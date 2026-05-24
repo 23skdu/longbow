@@ -7,6 +7,9 @@ import (
 )
 
 func FuzzVectorDataType(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Add seed corpus for established types
 	for i := 0; i < 20; i++ {
 		f.Add(i)

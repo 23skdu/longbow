@@ -13,6 +13,9 @@ import (
 
 // TestConcurrentSearch validates thread-safe concurrent search operations.
 func TestConcurrentSearch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dataset := &Dataset{Name: "test"}
 	defaultConfig := DefaultArrowHNSWConfig()
 	index := NewArrowHNSW(dataset, &defaultConfig, nil)
@@ -45,6 +48,9 @@ func TestConcurrentSearch(t *testing.T) {
 }
 
 func TestConcurrentSearchAndInsert(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Setup dataset with 1000 vectors
 	mem := memory.NewGoAllocator()
 	dim := 32

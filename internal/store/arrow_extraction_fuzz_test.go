@@ -11,6 +11,9 @@ import (
 )
 
 func FuzzArrowExtraction(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	mem := memory.DefaultAllocator
 
 	f.Add(int(arrow.FLOAT32), 128, true)

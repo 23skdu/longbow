@@ -5,6 +5,9 @@ import (
 )
 
 func TestBatchDistanceCompute(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	queries := [][]float32{
 		{1.0, 2.0, 3.0},
 		{4.0, 5.0, 6.0},

@@ -14,6 +14,9 @@ import (
 )
 
 func TestShardedHNSW_Compaction(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	t.Skip("Flaky - sorting issue with sharded index results")
 	mem := memory.NewGoAllocator()
 	dataset := &Dataset{Name: "test-compaction"}
@@ -96,6 +99,9 @@ func TestShardedHNSW_Compaction(t *testing.T) {
 }
 
 func TestShardedHNSW_Vacuum(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	dataset := &Dataset{Name: "test-vacuum"}
 	config := DefaultShardedHNSWConfig()
@@ -151,6 +157,9 @@ func TestShardedHNSW_Vacuum(t *testing.T) {
 }
 
 func TestShardedHNSW_DynamicGrowth(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	dataset := &Dataset{Name: "test-growth"}
 	config := DefaultShardedHNSWConfig()

@@ -10,6 +10,9 @@ import (
 // =============================================================================
 
 func TestNewBM25InvertedIndex(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 	if idx == nil {
 		t.Fatal("NewBM25InvertedIndex returned nil")
@@ -20,6 +23,9 @@ func TestNewBM25InvertedIndex(t *testing.T) {
 }
 
 func TestBM25InvertedIndexAdd(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
 	// Add first document
@@ -42,6 +48,9 @@ func TestBM25InvertedIndexAdd(t *testing.T) {
 }
 
 func TestBM25InvertedIndexDelete(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
 	idx.Add(VectorID(1), "hello world")
@@ -69,6 +78,9 @@ func TestBM25InvertedIndexDelete(t *testing.T) {
 }
 
 func TestBM25InvertedIndexSearchBM25(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
 	// Add documents with varying term frequencies
@@ -102,6 +114,9 @@ func TestBM25InvertedIndexSearchBM25(t *testing.T) {
 }
 
 func TestBM25InvertedIndexMultiTermQuery(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
 	idx.Add(VectorID(1), "quick brown fox")
@@ -120,6 +135,9 @@ func TestBM25InvertedIndexMultiTermQuery(t *testing.T) {
 }
 
 func TestBM25InvertedIndexIDFWeighting(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
 	// Add 10 documents, all containing "common"
@@ -158,6 +176,9 @@ func TestBM25InvertedIndexIDFWeighting(t *testing.T) {
 }
 
 func TestBM25InvertedIndexLengthNormalization(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
 	// Short document with term
@@ -177,6 +198,9 @@ func TestBM25InvertedIndexLengthNormalization(t *testing.T) {
 }
 
 func TestBM25InvertedIndexGetTermDocFreq(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
 	idx.Add(VectorID(1), "apple banana")
@@ -203,6 +227,9 @@ func TestBM25InvertedIndexGetTermDocFreq(t *testing.T) {
 }
 
 func TestBM25InvertedIndexEmptyQuery(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 	idx.Add(VectorID(1), "hello world")
 
@@ -220,6 +247,9 @@ func TestBM25InvertedIndexEmptyQuery(t *testing.T) {
 }
 
 func TestBM25InvertedIndexConcurrency(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
 	// Concurrent adds
@@ -253,6 +283,9 @@ func TestBM25InvertedIndexConcurrency(t *testing.T) {
 }
 
 func TestBM25InvertedIndexLimit(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
 	// Add 20 documents all matching "common"
@@ -274,6 +307,9 @@ func TestBM25InvertedIndexLimit(t *testing.T) {
 }
 
 func TestBlockMaxWANDCorrectness(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
 	// Add enough documents to span across blocks (blockSize is 64)

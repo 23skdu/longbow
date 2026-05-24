@@ -18,6 +18,9 @@ import (
 
 // TestBM25AutoIndexingDuringDoPut verifies text columns are auto-indexed when hybrid is enabled
 func TestBM25AutoIndexingDuringDoPut(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 
@@ -55,6 +58,9 @@ func TestBM25AutoIndexingDuringDoPut(t *testing.T) {
 
 // TestBM25AutoIndexingMultipleBatches verifies incremental indexing across batches
 func TestBM25AutoIndexingMultipleBatches(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 
@@ -95,6 +101,9 @@ func TestBM25AutoIndexingMultipleBatches(t *testing.T) {
 
 // TestBM25NoIndexingWhenDisabled verifies no indexing when hybrid is disabled
 func TestBM25NoIndexingWhenDisabled(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 
@@ -116,6 +125,9 @@ func TestBM25NoIndexingWhenDisabled(t *testing.T) {
 
 // TestBM25MultipleTextColumns verifies multiple text columns are indexed
 func TestBM25MultipleTextColumns(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 
@@ -157,6 +169,9 @@ func TestBM25MultipleTextColumns(t *testing.T) {
 
 // TestBM25IndexingMetrics verifies Prometheus metrics are emitted
 func TestBM25IndexingMetrics(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 

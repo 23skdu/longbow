@@ -16,6 +16,9 @@ import (
 )
 
 func TestDatasetIO_ExportImportParquet(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
 		[]arrow.Field{

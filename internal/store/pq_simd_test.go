@@ -9,6 +9,9 @@ import (
 )
 
 func TestADCBatchSIMD(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	m := 8
 	ksub := 256
 	n := 32

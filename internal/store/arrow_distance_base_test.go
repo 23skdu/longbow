@@ -8,6 +8,9 @@ import (
 
 // TestDistanceSIMD validates SIMD distance calculation.
 func TestDistanceSIMD(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Test basic distance calculation
 	a := []float32{1.0, 2.0, 3.0}
 	b := []float32{4.0, 5.0, 6.0}
@@ -23,6 +26,9 @@ func TestDistanceSIMD(t *testing.T) {
 
 // TestDistanceSIMD_ZeroVector validates zero vector handling.
 func TestDistanceSIMD_ZeroVector(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	a := []float32{0.0, 0.0, 0.0}
 	b := []float32{0.0, 0.0, 0.0}
 
@@ -35,6 +41,9 @@ func TestDistanceSIMD_ZeroVector(t *testing.T) {
 
 // TestDistanceSIMD_IdenticalVectors validates identical vector handling.
 func TestDistanceSIMD_IdenticalVectors(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	a := []float32{1.5, 2.5, 3.5}
 	b := []float32{1.5, 2.5, 3.5}
 
@@ -47,6 +56,9 @@ func TestDistanceSIMD_IdenticalVectors(t *testing.T) {
 
 // TestDistanceSIMD_LargeVectors validates performance with realistic vector sizes.
 func TestDistanceSIMD_LargeVectors(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// 384-dimensional vectors (common embedding size)
 	a := make([]float32, 384)
 	b := make([]float32, 384)

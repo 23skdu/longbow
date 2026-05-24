@@ -17,6 +17,9 @@ import (
 // Mocks are now in mock_flight_streams_test.go
 
 func TestFlight_ZeroCopyAllocator(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// 1. Setup Allocator
 	baseAlloc := memory.NewGoAllocator()
 	mockAlloc := &MockAllocator{Allocator: baseAlloc}

@@ -38,6 +38,9 @@ func makeVectorRecordWithInt64IDs(mem memory.Allocator, dims, count int) arrow.R
 }
 
 func TestDeleteAction_Int64ID(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	client := setupDataServerTest(t)
 	ctx := context.Background()
 	mem := memory.NewGoAllocator()
@@ -86,6 +89,9 @@ func TestDeleteAction_Int64ID(t *testing.T) {
 }
 
 func TestDeleteAction_StringID(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	client := setupDataServerTest(t)
 	ctx := context.Background()
 	mem := memory.NewGoAllocator()

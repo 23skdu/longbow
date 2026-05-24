@@ -8,6 +8,9 @@ import (
 )
 
 func FuzzArenaVectorConcurrentAlloc(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	fuzzDims := []int{64, 128, 256, 512, 1024}
 	fuzzConcurrency := []int{1, 2, 4, 8, 16}
 
@@ -74,6 +77,9 @@ func FuzzArenaVectorConcurrentAlloc(f *testing.F) {
 }
 
 func TestArenaVectorConcurrentAlloc(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := memory.NewTypedArena[float32](memory.NewSlabArena(1024 * 1024))
 	dim := 128
 	conc := 8

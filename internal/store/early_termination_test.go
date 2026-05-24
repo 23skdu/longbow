@@ -10,6 +10,9 @@ import (
 )
 
 func TestHNSW_SearchEarlyTermination(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Setup a small HNSW with some data
 	_ = memory.NewGoAllocator()
 	cfg := DefaultArrowHNSWConfig()
@@ -36,6 +39,9 @@ func TestHNSW_SearchEarlyTermination(t *testing.T) {
 }
 
 func FuzzHNSWSearchEarlyTermination(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(float32(1.0), 100)
 	f.Fuzz(func(t *testing.T, val float32, ef int) {
 		if ef <= 0 || ef > 1000 {

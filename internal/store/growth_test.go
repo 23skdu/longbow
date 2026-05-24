@@ -14,6 +14,9 @@ import (
 )
 
 func TestHighDimGrowth(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Test High-Dimensional Vector Growth (3072 dims)
 	// This exercises the optimized Clone / copy() logic and memory stability.
 

@@ -14,6 +14,9 @@ import (
 )
 
 func TestBulkDeferredConnections(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// 1. Setup
 	dims := 128
 	numVecs := 2000 // > 1000 to trigger AddBatchBulk

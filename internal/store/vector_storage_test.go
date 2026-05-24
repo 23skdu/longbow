@@ -17,6 +17,9 @@ func getMetricValue(g prometheus.Gauge) float64 {
 }
 
 func TestMemVectorStore_WithArena(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// 1. Initial State
 	initialManaged := getMetricValue(metrics.StoreVectorsManagedCount)
 

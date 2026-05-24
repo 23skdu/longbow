@@ -12,6 +12,9 @@ import (
 )
 
 func TestConcatenateBatches(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
 	defer mem.AssertSize(t, 0)
 
@@ -86,6 +89,9 @@ func TestConcatenateBatches(t *testing.T) {
 }
 
 func TestDoPut_AdaptiveBatching(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
 	defer mem.AssertSize(t, 0)
 

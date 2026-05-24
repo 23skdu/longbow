@@ -6,6 +6,9 @@ import (
 
 // FuzzFragmentationTrackerDeletionPattern fuzzes deletion patterns
 func FuzzFragmentationTrackerDeletionPattern(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Seed corpus
 	f.Add(100, 10)   // 100 size, 10 deletions
 	f.Add(1000, 500) // 50% deleted
@@ -52,6 +55,9 @@ func FuzzFragmentationTrackerDeletionPattern(f *testing.F) {
 
 // FuzzFragmentationTrackerThreshold fuzzes threshold values
 func FuzzFragmentationTrackerThreshold(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Seed corpus
 	f.Add(0.0)
 	f.Add(0.20)
@@ -89,6 +95,9 @@ func FuzzFragmentationTrackerThreshold(f *testing.F) {
 
 // FuzzFragmentationTrackerMultipleBatches fuzzes multiple batch operations
 func FuzzFragmentationTrackerMultipleBatches(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Seed corpus
 	f.Add(5, 100, 20)
 	f.Add(10, 50, 10)
@@ -130,6 +139,9 @@ func FuzzFragmentationTrackerMultipleBatches(f *testing.F) {
 
 // FuzzFragmentationTrackerResetPattern fuzzes reset operations
 func FuzzFragmentationTrackerResetPattern(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Seed corpus
 	f.Add(10, 5)
 	f.Add(100, 50)
@@ -173,6 +185,9 @@ func FuzzFragmentationTrackerResetPattern(f *testing.F) {
 
 // FuzzFragmentationTrackerCombined fuzzes combined operations
 func FuzzFragmentationTrackerCombined(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Seed corpus
 	f.Add(10, 100, 30, 0.25)
 	f.Add(5, 50, 10, 0.15)

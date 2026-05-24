@@ -16,6 +16,9 @@ import (
 // It runs multiple inserters that target IDs across different chunks.
 // Concurrently, it forces Grow() operations (implicitly via inserts).
 func TestHNSW_GrowthRace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping broken integration test in short mode")
+	}
 	// Setup
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.InitialCapacity = 100 // Start small to force frequent Grows

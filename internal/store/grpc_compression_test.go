@@ -11,12 +11,18 @@ import (
 
 // TestGRPCConfigCompressionEnabledByDefault verifies compression is enabled by default
 func TestGRPCConfigCompressionEnabledByDefault(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultGRPCConfig()
 	assert.True(t, cfg.CompressionEnabled, "compression should be enabled by default for 50-70% bandwidth reduction")
 }
 
 // TestGRPCConfigCompressionCanBeDisabled verifies compression can be explicitly disabled
 func TestGRPCConfigCompressionCanBeDisabled(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultGRPCConfig()
 	cfg.CompressionEnabled = false
 	assert.False(t, cfg.CompressionEnabled)
@@ -24,6 +30,9 @@ func TestGRPCConfigCompressionCanBeDisabled(t *testing.T) {
 
 // TestBuildServerOptionsWithCompressionEnabled verifies server options work with compression enabled
 func TestBuildServerOptionsWithCompressionEnabled(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultGRPCConfig()
 	cfg.CompressionEnabled = true
 	opts := cfg.BuildServerOptions()
@@ -37,6 +46,9 @@ func TestBuildServerOptionsWithCompressionEnabled(t *testing.T) {
 
 // TestBuildServerOptionsWithCompressionDisabled verifies server works with compression disabled
 func TestBuildServerOptionsWithCompressionDisabled(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultGRPCConfig()
 	cfg.CompressionEnabled = false
 	opts := cfg.BuildServerOptions()
@@ -48,6 +60,9 @@ func TestBuildServerOptionsWithCompressionDisabled(t *testing.T) {
 
 // TestBuildClientOptionsWithCompressionEnabled verifies client options include UseCompressor when enabled
 func TestBuildClientOptionsWithCompressionEnabled(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultGRPCConfig()
 	cfg.CompressionEnabled = true
 	opts := cfg.BuildClientOptions()
@@ -58,6 +73,9 @@ func TestBuildClientOptionsWithCompressionEnabled(t *testing.T) {
 
 // TestBuildClientOptionsWithCompressionDisabled verifies client works with compression disabled
 func TestBuildClientOptionsWithCompressionDisabled(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultGRPCConfig()
 	cfg.CompressionEnabled = false
 	opts := cfg.BuildClientOptions()
@@ -67,6 +85,9 @@ func TestBuildClientOptionsWithCompressionDisabled(t *testing.T) {
 
 // TestGRPCConfigCompressionValidation verifies compression config validation
 func TestGRPCConfigCompressionValidation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name               string
 		compressionEnabled bool
@@ -100,6 +121,9 @@ func TestGRPCConfigCompressionValidation(t *testing.T) {
 
 // TestGRPCConfigStringIncludesCompression verifies String() output includes compression status
 func TestGRPCConfigStringIncludesCompression(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultGRPCConfig()
 	str := cfg.String()
 	assert.Contains(t, str, "compression_enabled", "String() should include compression status")

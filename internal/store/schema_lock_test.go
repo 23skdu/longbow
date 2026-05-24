@@ -14,6 +14,9 @@ import (
 // TestSchemaCheckUsesRLock verifies that schema checking uses RLock
 // allowing concurrent reads without blocking
 func TestSchemaCheckUsesRLock(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ds := &Dataset{
 		Records: NewLockFreeSlice[arrow.RecordBatch](),
 	}
@@ -54,6 +57,9 @@ func TestSchemaCheckUsesRLock(t *testing.T) {
 
 // TestSchemaEvolutionUpgradesToWriteLock verifies lock upgrade on schema change
 func TestSchemaEvolutionUpgradesToWriteLock(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ds := &Dataset{
 		Records: NewLockFreeSlice[arrow.RecordBatch](),
 		Version: 1,
@@ -77,6 +83,9 @@ func TestSchemaEvolutionUpgradesToWriteLock(t *testing.T) {
 
 // TestConcurrentSchemaChecksAndWrites verifies no data races
 func TestConcurrentSchemaChecksAndWrites(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -129,6 +138,9 @@ func TestConcurrentSchemaChecksAndWrites(t *testing.T) {
 
 // TestSchemaCheckWithRLockReturnsCorrectSchema verifies RLock schema reads
 func TestSchemaCheckWithRLockReturnsCorrectSchema(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -160,6 +172,9 @@ func TestSchemaCheckWithRLockReturnsCorrectSchema(t *testing.T) {
 
 // TestSchemaEvolutionOnlyLocksWhenNeeded verifies minimal lock time
 func TestSchemaEvolutionOnlyLocksWhenNeeded(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ds := &Dataset{
 		Records: NewLockFreeSlice[arrow.RecordBatch](),
 		Version: 1,
@@ -189,6 +204,9 @@ func TestSchemaEvolutionOnlyLocksWhenNeeded(t *testing.T) {
 
 // TestGetExistingSchemaWithRLock tests the helper function
 func TestGetExistingSchemaWithRLock(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	alloc := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "test", Type: arrow.PrimitiveTypes.Int32},
@@ -215,6 +233,9 @@ func TestGetExistingSchemaWithRLock(t *testing.T) {
 
 // TestGetExistingSchemaEmptyDataset verifies nil return for empty dataset
 func TestGetExistingSchemaEmptyDataset(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ds := &Dataset{
 		Records: NewLockFreeSlice[arrow.RecordBatch](),
 	}
@@ -227,6 +248,9 @@ func TestGetExistingSchemaEmptyDataset(t *testing.T) {
 
 // TestCheckSchemaCompatibility tests schema comparison helper
 func TestCheckSchemaCompatibility(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	alloc := memory.NewGoAllocator()
 
 	// Original schema
@@ -270,6 +294,9 @@ func TestCheckSchemaCompatibility(t *testing.T) {
 
 // TestUpgradeSchemaVersionSafe tests safe version upgrade
 func TestUpgradeSchemaVersionSafe(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ds := &Dataset{
 		Records: NewLockFreeSlice[arrow.RecordBatch](),
 		Version: 5,

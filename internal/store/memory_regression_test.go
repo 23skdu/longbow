@@ -14,6 +14,9 @@ import (
 // TestHNSWIndex_EstimateMemory verifies that the HNSW index correctly reports
 // its estimated memory usage and that it grows as items are added.
 func TestHNSWIndex_EstimateMemory(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
 		[]arrow.Field{

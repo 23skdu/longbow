@@ -18,6 +18,9 @@ import (
 // --- Config Tests ---
 
 func TestPartitionedRecordsConfigDefaults(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultPartitionedRecordsConfig()
 
 	if cfg.NumPartitions <= 0 {
@@ -29,6 +32,9 @@ func TestPartitionedRecordsConfigDefaults(t *testing.T) {
 }
 
 func TestPartitionedRecordsConfigValidation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name    string
 		cfg     PartitionedRecordsConfig
@@ -54,6 +60,9 @@ func TestPartitionedRecordsConfigValidation(t *testing.T) {
 // --- Creation Tests ---
 
 func TestNewPartitionedRecords(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := PartitionedRecordsConfig{NumPartitions: 4}
 	pr := NewPartitionedRecords(cfg)
 
@@ -69,6 +78,9 @@ func TestNewPartitionedRecords(t *testing.T) {
 }
 
 func TestNewPartitionedRecordsDefault(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pr := NewPartitionedRecordsDefault()
 
 	if pr == nil {
@@ -101,6 +113,9 @@ func createTestRecordBatch(t *testing.T, id int64) arrow.RecordBatch {
 // --- Append Tests ---
 
 func TestPartitionedRecordsAppend(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pr := NewPartitionedRecords(PartitionedRecordsConfig{NumPartitions: 4})
 
 	batch := createTestRecordBatch(t, 1)
@@ -118,6 +133,9 @@ func TestPartitionedRecordsAppend(t *testing.T) {
 }
 
 func TestPartitionedRecordsAppendMultiplePartitions(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pr := NewPartitionedRecords(PartitionedRecordsConfig{NumPartitions: 4})
 
 	// Append to different partitions
@@ -133,6 +151,9 @@ func TestPartitionedRecordsAppendMultiplePartitions(t *testing.T) {
 }
 
 func TestPartitionedRecordsAppendWithKey(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pr := NewPartitionedRecords(PartitionedRecordsConfig{NumPartitions: 4})
 
 	batch := createTestRecordBatch(t, 100)
@@ -152,6 +173,9 @@ func TestPartitionedRecordsAppendWithKey(t *testing.T) {
 // --- GetAll Tests ---
 
 func TestPartitionedRecordsGetAll(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pr := NewPartitionedRecords(PartitionedRecordsConfig{NumPartitions: 4})
 
 	// Append batches to various partitions
@@ -170,6 +194,9 @@ func TestPartitionedRecordsGetAll(t *testing.T) {
 }
 
 func TestPartitionedRecordsGetPartition(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pr := NewPartitionedRecords(PartitionedRecordsConfig{NumPartitions: 4})
 
 	// Append 3 batches to partition 1
@@ -190,6 +217,9 @@ func TestPartitionedRecordsGetPartition(t *testing.T) {
 // --- Concurrent Access Tests ---
 
 func TestPartitionedRecordsConcurrentAppends(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pr := NewPartitionedRecords(PartitionedRecordsConfig{NumPartitions: 8})
 
 	var wg sync.WaitGroup
@@ -217,6 +247,9 @@ func TestPartitionedRecordsConcurrentAppends(t *testing.T) {
 }
 
 func TestPartitionedRecordsConcurrentReadsWrites(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pr := NewPartitionedRecords(PartitionedRecordsConfig{NumPartitions: 4})
 
 	// Pre-populate with some data
@@ -259,6 +292,9 @@ func TestPartitionedRecordsConcurrentReadsWrites(t *testing.T) {
 // --- Iteration Tests ---
 
 func TestPartitionedRecordsForEach(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pr := NewPartitionedRecords(PartitionedRecordsConfig{NumPartitions: 4})
 
 	// Add some batches
@@ -280,6 +316,9 @@ func TestPartitionedRecordsForEach(t *testing.T) {
 }
 
 func TestPartitionedRecordsForEachEarlyExit(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pr := NewPartitionedRecords(PartitionedRecordsConfig{NumPartitions: 4})
 
 	// Add batches
@@ -303,6 +342,9 @@ func TestPartitionedRecordsForEachEarlyExit(t *testing.T) {
 // --- Statistics Tests ---
 
 func TestPartitionedRecordsStats(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pr := NewPartitionedRecords(PartitionedRecordsConfig{NumPartitions: 4})
 
 	// Operations

@@ -15,6 +15,9 @@ import (
 
 // TestQuantizerInterface verifies a generic quantizer works correctly
 func TestQuantizerInterface(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Test SQ8 quantizer interface
 	t.Run("SQ8", func(t *testing.T) {
 		vectors := [][]float32{
@@ -45,6 +48,9 @@ func TestQuantizerInterface(t *testing.T) {
 
 // TestQuantizer_EncodeDecode_RoundTrip tests that encode/decode preserves data
 func TestQuantizer_EncodeDecode_RoundTrip(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	t.Run("SQ8", func(t *testing.T) {
 		// Use different min/max values for proper training
 		vectors := [][]float32{
@@ -127,6 +133,9 @@ func TestQuantizer_EncodeDecode_RoundTrip(t *testing.T) {
 
 // TestQuantizer_EncodeMultipleVectors tests batch encoding
 func TestQuantizer_EncodeMultipleVectors(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	t.Run("SQ8", func(t *testing.T) {
 		vectors := [][]float32{
 			{1.0, 2.0, 3.0, 4.0},
@@ -160,6 +169,9 @@ func TestQuantizer_EncodeMultipleVectors(t *testing.T) {
 
 // TestQuantizer_EncodeHandlesTypeConversion tests conversion between vector types
 func TestQuantizer_EncodeHandlesTypeConversion(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// For now, our encoders only support float32
 	// This test documents the expected behavior
 
@@ -176,6 +188,9 @@ func TestQuantizer_EncodeHandlesTypeConversion(t *testing.T) {
 
 // TestQuantizer_DecodeEmptyInput handles empty code arrays
 func TestQuantizer_DecodeEmptyInput(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	t.Run("SQ8", func(t *testing.T) {
 		vectors := [][]float32{{1.0, 2.0, 3.0}, {4.0, 5.0, 6.0}}
 		encoder, err := core.TrainSQ8Encoder(vectors)
@@ -195,6 +210,9 @@ func TestQuantizer_DecodeEmptyInput(t *testing.T) {
 
 // TestGenericQuantizer_Float32ToUint8 tests float32 -> uint8 quantization (SQ8 style)
 func TestGenericQuantizer_Float32ToUint8(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vectors := [][]float32{
 		{0.0, 0.0, 0.0},
 		{10.0, 10.0, 10.0},
@@ -216,6 +234,9 @@ func TestGenericQuantizer_Float32ToUint8(t *testing.T) {
 
 // TestGenericQuantizer_Float32ToUint64 tests float32 -> uint64 binary quantization (BQ style)
 func TestGenericQuantizer_Float32ToUint64(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	encoder := types.NewBQEncoder(64)
 
 	// Use 64 dimensions to match encoder
@@ -238,6 +259,9 @@ func TestGenericQuantizer_Float32ToUint64(t *testing.T) {
 
 // TestGenericQuantizer_Float32ToByte tests float32 -> byte quantization (PQ style)
 func TestGenericQuantizer_Float32ToByte(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	encoder, err := pq.NewPQEncoder(64, 8, 4) // 64 dims, 8 subspaces, 4 centroids
 	require.NoError(t, err)
 
@@ -262,6 +286,9 @@ func TestGenericQuantizer_Float32ToByte(t *testing.T) {
 }
 
 func TestQuantizer_TypeConversion_Float16ToFloat32(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vecs := make([][]float16.Num, 3)
 	for i := range vecs {
 		vecs[i] = make([]float16.Num, 8)
@@ -281,6 +308,9 @@ func TestQuantizer_TypeConversion_Float16ToFloat32(t *testing.T) {
 }
 
 func TestQuantizer_TypeConversion_Int8ToFloat32(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vecs := make([][]int8, 3)
 	vecs[0] = []int8{-128, -64, 32, 64, 100, -32, 96, 16}
 	vecs[1] = []int8{0, 32, 64, 96, 127, -128, -64, 48}
@@ -307,6 +337,9 @@ func TestQuantizer_TypeConversion_Int8ToFloat32(t *testing.T) {
 
 // TestGenericSQ8Quantizer tests the generic quantizer wrapper
 func TestGenericSQ8Quantizer(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vectors := [][]float32{
 		{1.0, 2.0, 3.0, 4.0},
 		{5.0, 6.0, 7.0, 8.0},
@@ -334,6 +367,9 @@ func TestGenericSQ8Quantizer(t *testing.T) {
 
 // TestGenericBQQuantizer tests the generic BQ quantizer wrapper
 func TestGenericBQQuantizer(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	encoder := types.NewBQEncoder(64)
 	wrapper := NewGenericBQQuantizer(encoder)
 	require.NotNil(t, wrapper)
@@ -362,6 +398,9 @@ func TestGenericBQQuantizer(t *testing.T) {
 
 // TestGenericPQQuantizer tests the generic PQ quantizer wrapper
 func TestGenericPQQuantizer(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	encoder, err := pq.NewPQEncoder(64, 8, 4)
 	require.NoError(t, err)
 
@@ -399,6 +438,9 @@ func TestGenericPQQuantizer(t *testing.T) {
 
 // TestSQ8_PerDimensionBounds tests per-dimension min/max scaling
 func TestSQ8_PerDimensionBounds(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vectors := [][]float32{
 		{0.0, 0.0},   // Min for both dims
 		{100.0, 1.0}, // Max for dim 0, small range for dim 1
@@ -415,6 +457,9 @@ func TestSQ8_PerDimensionBounds(t *testing.T) {
 
 // TestSQ8_EncodeInto tests zero-allocation encoding
 func TestSQ8_EncodeInto(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vectors := [][]float32{
 		{1.0, 2.0, 3.0, 4.0},
 		{5.0, 6.0, 7.0, 8.0},
@@ -429,6 +474,9 @@ func TestSQ8_EncodeInto(t *testing.T) {
 
 // TestBQ_HammingDistanceBatch tests batch distance computation
 func TestBQ_HammingDistanceBatch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	encoder := types.NewBQEncoder(64)
 
 	query := make([]float32, 64)
@@ -464,6 +512,9 @@ func TestBQ_HammingDistanceBatch(t *testing.T) {
 
 // TestBQ_CodeSize tests code size calculation for various dimensions
 func TestBQ_CodeSize(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	testCases := []struct {
 		dims     int
 		expected int
@@ -484,6 +535,9 @@ func TestBQ_CodeSize(t *testing.T) {
 
 // TestBQ_Float32ToHamming tests threshold conversion
 func TestBQ_Float32ToHamming(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	encoder := types.NewBQEncoder(100)
 
 	// Similarity 0.9 should allow 10 bits different
@@ -501,6 +555,9 @@ func TestBQ_Float32ToHamming(t *testing.T) {
 
 // FuzzQuantizer_RoundTrip tests full encode/decode cycle with random data
 func FuzzQuantizerRoundTrip(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Seed corpus
 	f.Add(float32(1.0), float32(2.0), float32(3.0), float32(4.0))
 	f.Add(float32(-5.0), float32(5.0), float32(0.0), float32(2.5))
@@ -543,6 +600,9 @@ func FuzzQuantizerRoundTrip(f *testing.F) {
 
 // TestConvertFloat32ToUint8 tests the bounds-checked conversion function
 func TestConvertFloat32ToUint8(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	t.Run("Normal range", func(t *testing.T) {
 		vec := []float32{0.0, 63.75, 127.5, 191.25, 255.0}
 		result, err := ConvertFloat32ToUint8(vec)

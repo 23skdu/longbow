@@ -18,6 +18,9 @@ import (
 // ============================================================================
 
 func TestFlightDataQueueConfig_Defaults(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightDataQueueConfig()
 
 	if cfg.QueueSize != 1024 {
@@ -32,6 +35,9 @@ func TestFlightDataQueueConfig_Defaults(t *testing.T) {
 }
 
 func TestFlightDataQueueConfig_Validate(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name    string
 		cfg     FlightDataQueueConfig
@@ -55,6 +61,9 @@ func TestFlightDataQueueConfig_Validate(t *testing.T) {
 }
 
 func TestFlightDataQueue_NewAndClose(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightDataQueueConfig()
 	q := NewFlightDataQueue(cfg)
 
@@ -78,6 +87,9 @@ func TestFlightDataQueue_NewAndClose(t *testing.T) {
 }
 
 func TestFlightDataQueue_EnqueueDequeue(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightDataQueueConfig()
 	q := NewFlightDataQueue(cfg)
 	defer q.Close()
@@ -112,6 +124,9 @@ func TestFlightDataQueue_EnqueueDequeue(t *testing.T) {
 }
 
 func TestFlightDataQueue_TryEnqueue_NonBlocking(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Create queue with size 2
 	cfg := FlightDataQueueConfig{
 		QueueSize:      2,
@@ -149,6 +164,9 @@ func TestFlightDataQueue_TryEnqueue_NonBlocking(t *testing.T) {
 }
 
 func TestFlightDataQueue_Dequeue_ContextCancel(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightDataQueueConfig()
 	q := NewFlightDataQueue(cfg)
 	defer q.Close()
@@ -170,6 +188,9 @@ func TestFlightDataQueue_Dequeue_ContextCancel(t *testing.T) {
 }
 
 func TestFlightDataQueue_Dequeue_AfterClose(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightDataQueueConfig()
 	q := NewFlightDataQueue(cfg)
 
@@ -195,6 +216,9 @@ func TestFlightDataQueue_Dequeue_AfterClose(t *testing.T) {
 }
 
 func TestFlightDataQueue_Stats(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightDataQueueConfig()
 	q := NewFlightDataQueue(cfg)
 	defer q.Close()
@@ -217,6 +241,9 @@ func TestFlightDataQueue_Stats(t *testing.T) {
 }
 
 func TestFlightDataQueue_Concurrent(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := FlightDataQueueConfig{
 		QueueSize:      100,
 		EnqueueTimeout: 100 * time.Millisecond,
@@ -271,6 +298,9 @@ func TestFlightDataQueue_Concurrent(t *testing.T) {
 // ============================================================================
 
 func TestChunkWorkerPoolConfig_Defaults(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultChunkWorkerPoolConfig()
 
 	if cfg.NumWorkers <= 0 {
@@ -282,6 +312,9 @@ func TestChunkWorkerPoolConfig_Defaults(t *testing.T) {
 }
 
 func TestChunkWorkerPoolConfig_Validate(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name    string
 		cfg     ChunkWorkerPoolConfig
@@ -304,6 +337,9 @@ func TestChunkWorkerPoolConfig_Validate(t *testing.T) {
 }
 
 func TestChunkWorkerPool_StartStop(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := ChunkWorkerPoolConfig{
 		NumWorkers:     2,
 		ProcessTimeout: time.Second,
@@ -346,6 +382,9 @@ func TestChunkWorkerPool_StartStop(t *testing.T) {
 }
 
 func TestChunkWorkerPool_Stats(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := ChunkWorkerPoolConfig{
 		NumWorkers:     2,
 		ProcessTimeout: time.Second,
@@ -382,6 +421,9 @@ func TestChunkWorkerPool_Stats(t *testing.T) {
 }
 
 func TestChunkWorkerPool_ErrorHandling(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := ChunkWorkerPoolConfig{
 		NumWorkers:     1,
 		ProcessTimeout: time.Second,

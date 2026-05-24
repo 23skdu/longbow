@@ -13,6 +13,9 @@ import (
 // =============================================================================
 
 func TestCircuitBreaker_InitialStateClosed(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cb := NewCircuitBreaker(DefaultCircuitBreakerConfig())
 	if cb.State() != CircuitClosed {
 		t.Errorf("expected initial state Closed, got %v", cb.State())
@@ -20,6 +23,9 @@ func TestCircuitBreaker_InitialStateClosed(t *testing.T) {
 }
 
 func TestCircuitBreaker_OpensAfterFailureThreshold(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CircuitBreakerConfig{
 		FailureThreshold: 3,
 		SuccessThreshold: 2,
@@ -38,6 +44,9 @@ func TestCircuitBreaker_OpensAfterFailureThreshold(t *testing.T) {
 }
 
 func TestCircuitBreaker_RejectsWhenOpen(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CircuitBreakerConfig{
 		FailureThreshold: 1,
 		SuccessThreshold: 1,
@@ -53,6 +62,9 @@ func TestCircuitBreaker_RejectsWhenOpen(t *testing.T) {
 }
 
 func TestCircuitBreaker_TransitionsToHalfOpenAfterTimeout(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CircuitBreakerConfig{
 		FailureThreshold: 1,
 		SuccessThreshold: 1,
@@ -70,6 +82,9 @@ func TestCircuitBreaker_TransitionsToHalfOpenAfterTimeout(t *testing.T) {
 }
 
 func TestCircuitBreaker_ClosesAfterSuccessThreshold(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CircuitBreakerConfig{
 		FailureThreshold: 1,
 		SuccessThreshold: 2,
@@ -91,6 +106,9 @@ func TestCircuitBreaker_ClosesAfterSuccessThreshold(t *testing.T) {
 }
 
 func TestCircuitBreaker_ReOpensOnFailureInHalfOpen(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CircuitBreakerConfig{
 		FailureThreshold: 1,
 		SuccessThreshold: 2,
@@ -111,6 +129,9 @@ func TestCircuitBreaker_ReOpensOnFailureInHalfOpen(t *testing.T) {
 }
 
 func TestCircuitBreaker_Execute_Success(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cb := NewCircuitBreaker(DefaultCircuitBreakerConfig())
 
 	result, err := cb.Execute(func() (any, error) {
@@ -126,6 +147,9 @@ func TestCircuitBreaker_Execute_Success(t *testing.T) {
 }
 
 func TestCircuitBreaker_Execute_RejectsWhenOpen(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CircuitBreakerConfig{
 		FailureThreshold: 1,
 		SuccessThreshold: 1,
@@ -144,6 +168,9 @@ func TestCircuitBreaker_Execute_RejectsWhenOpen(t *testing.T) {
 }
 
 func TestCircuitBreaker_Metrics(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CircuitBreakerConfig{
 		FailureThreshold: 5,
 		SuccessThreshold: 2,
@@ -166,6 +193,9 @@ func TestCircuitBreaker_Metrics(t *testing.T) {
 }
 
 func TestCircuitBreaker_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := CircuitBreakerConfig{
 		FailureThreshold: 100,
 		SuccessThreshold: 10,
@@ -203,6 +233,9 @@ func TestCircuitBreaker_ConcurrentAccess(t *testing.T) {
 }
 
 func TestCircuitBreakerRegistry_GetOrCreate(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	reg := NewCircuitBreakerRegistry(DefaultCircuitBreakerConfig())
 
 	cb1 := reg.GetOrCreate("peer1")
@@ -218,6 +251,9 @@ func TestCircuitBreakerRegistry_GetOrCreate(t *testing.T) {
 }
 
 func TestCircuitBreakerRegistry_Reset(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	reg := NewCircuitBreakerRegistry(DefaultCircuitBreakerConfig())
 
 	cb := reg.GetOrCreate("peer1")

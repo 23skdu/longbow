@@ -11,6 +11,9 @@ import (
 )
 
 func TestTemporalTree_Insert(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	tt := NewTemporalTree(arena)
 
@@ -22,6 +25,9 @@ func TestTemporalTree_Insert(t *testing.T) {
 }
 
 func TestTemporalTree_GetRange(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	tt := NewTemporalTree(arena)
 
@@ -36,6 +42,9 @@ func TestTemporalTree_GetRange(t *testing.T) {
 }
 
 func TestTemporalTree_GetRangeReversed(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	tt := NewTemporalTree(arena)
 
@@ -50,6 +59,9 @@ func TestTemporalTree_GetRangeReversed(t *testing.T) {
 }
 
 func TestTemporalTree_GetBefore(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	tt := NewTemporalTree(arena)
 
@@ -64,6 +76,9 @@ func TestTemporalTree_GetBefore(t *testing.T) {
 }
 
 func TestTemporalTree_GetLatest(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	tt := NewTemporalTree(arena)
 
@@ -78,6 +93,9 @@ func TestTemporalTree_GetLatest(t *testing.T) {
 }
 
 func TestTemporalIndex_New(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ti := NewTemporalIndex(128)
 
 	assert.NotNil(t, ti)
@@ -86,6 +104,9 @@ func TestTemporalIndex_New(t *testing.T) {
 }
 
 func TestTemporalIndex_Add(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ti := NewTemporalIndex(128)
 
 	err := ti.Add(1, make([]float32, 128), time.Now().UnixNano(), nil)
@@ -93,6 +114,9 @@ func TestTemporalIndex_Add(t *testing.T) {
 }
 
 func TestTemporalIndex_AddDimensionMismatch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ti := NewTemporalIndex(128)
 
 	err := ti.Add(1, make([]float32, 64), time.Now().UnixNano(), nil)
@@ -101,6 +125,9 @@ func TestTemporalIndex_AddDimensionMismatch(t *testing.T) {
 }
 
 func TestTemporalIndex_Delete(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ti := NewTemporalIndex(128)
 
 	now := time.Now().UnixNano()
@@ -111,6 +138,9 @@ func TestTemporalIndex_Delete(t *testing.T) {
 }
 
 func TestTemporalIndex_Update(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ti := NewTemporalIndex(128)
 
 	now := time.Now().UnixNano()
@@ -125,6 +155,9 @@ func TestTemporalIndex_Update(t *testing.T) {
 }
 
 func TestTemporalIndex_SearchAsOf(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ti := NewTemporalIndex(128)
 
 	now := time.Now().UnixNano()
@@ -137,6 +170,9 @@ func TestTemporalIndex_SearchAsOf(t *testing.T) {
 }
 
 func TestTemporalIndex_SearchRange(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ti := NewTemporalIndex(128)
 
 	now := time.Now().UnixNano()
@@ -150,6 +186,9 @@ func TestTemporalIndex_SearchRange(t *testing.T) {
 }
 
 func TestTemporalIndex_SearchSlidingWindow(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ti := NewTemporalIndex(128)
 
 	now := time.Now().UnixNano()
@@ -163,6 +202,9 @@ func TestTemporalIndex_SearchSlidingWindow(t *testing.T) {
 }
 
 func TestTemporalVector_Structure(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	m, _ := core.EncodeMetadata(map[string]interface{}{"key": "value"})
 	vec := &TemporalVector{
 		ID:        1,
@@ -178,6 +220,9 @@ func TestTemporalVector_Structure(t *testing.T) {
 }
 
 func TestTemporalIndex_DeleteNotFound(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ti := NewTemporalIndex(128)
 
 	err := ti.Delete(999)
@@ -185,6 +230,9 @@ func TestTemporalIndex_DeleteNotFound(t *testing.T) {
 }
 
 func TestTemporalIndex_UpdateNotFound(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ti := NewTemporalIndex(128)
 
 	err := ti.Update(999, make([]float32, 128), time.Now().UnixNano(), nil)

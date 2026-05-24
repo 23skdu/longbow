@@ -17,6 +17,9 @@ import (
 // =============================================================================
 
 func TestFlightClientPoolConfig_Defaults(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightClientPoolConfig()
 
 	if cfg.MaxConnsPerHost <= 0 {
@@ -40,6 +43,9 @@ func TestFlightClientPoolConfig_Defaults(t *testing.T) {
 }
 
 func TestFlightClientPoolConfig_Validation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name    string
 		modify  func(*FlightClientPoolConfig)
@@ -97,6 +103,9 @@ func TestFlightClientPoolConfig_Validation(t *testing.T) {
 // =============================================================================
 
 func TestFlightClientPool_Creation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightClientPoolConfig()
 	pool := NewFlightClientPool(cfg)
 
@@ -114,6 +123,9 @@ func TestFlightClientPool_Creation(t *testing.T) {
 }
 
 func TestFlightClientPool_AddRemoveHost(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightClientPoolConfig()
 	pool := NewFlightClientPool(cfg)
 
@@ -153,6 +165,9 @@ func TestFlightClientPool_AddRemoveHost(t *testing.T) {
 }
 
 func TestFlightClientPool_GetConnection(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightClientPoolConfig()
 	cfg.ConnTimeout = 100 * time.Millisecond // Fast timeout for test
 	pool := NewFlightClientPool(cfg)
@@ -176,6 +191,9 @@ func TestFlightClientPool_GetConnection(t *testing.T) {
 }
 
 func TestFlightClientPool_ReturnConnection(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightClientPoolConfig()
 	pool := NewFlightClientPool(cfg)
 
@@ -190,6 +208,9 @@ func TestFlightClientPool_ReturnConnection(t *testing.T) {
 }
 
 func TestFlightClientPool_Statistics(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightClientPoolConfig()
 	pool := NewFlightClientPool(cfg)
 
@@ -204,6 +225,9 @@ func TestFlightClientPool_Statistics(t *testing.T) {
 }
 
 func TestFlightClientPool_Close(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightClientPoolConfig()
 	pool := NewFlightClientPool(cfg)
 
@@ -223,6 +247,9 @@ func TestFlightClientPool_Close(t *testing.T) {
 }
 
 func TestFlightClientPool_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightClientPoolConfig()
 	pool := NewFlightClientPool(cfg)
 
@@ -256,6 +283,9 @@ func TestFlightClientPool_ConcurrentAccess(t *testing.T) {
 // =============================================================================
 
 func TestPooledFlightClient_Metadata(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	client := &PooledFlightClient{
 		host:      "test:8815",
 		createdAt: time.Now(),
@@ -290,6 +320,9 @@ func TestPooledFlightClient_Metadata(t *testing.T) {
 // =============================================================================
 
 func TestHostPool_ConnectionLimit(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	hp := newHostPool("test:8815", 2, 0) // max 2 connections
 
 	// Track created connections
@@ -325,6 +358,9 @@ func TestHostPool_ConnectionLimit(t *testing.T) {
 // =============================================================================
 
 func TestFlightClientPool_DoGetFromPeer_NoServer(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightClientPoolConfig()
 	cfg.ConnTimeout = 100 * time.Millisecond
 	pool := NewFlightClientPool(cfg)
@@ -341,6 +377,9 @@ func TestFlightClientPool_DoGetFromPeer_NoServer(t *testing.T) {
 }
 
 func TestFlightClientPool_DoPutToPeer_NoServer(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightClientPoolConfig()
 	cfg.ConnTimeout = 100 * time.Millisecond
 	pool := NewFlightClientPool(cfg)
@@ -368,6 +407,9 @@ func TestFlightClientPool_DoPutToPeer_NoServer(t *testing.T) {
 }
 
 func TestFlightClientPool_ReplicateToPeers_NoServers(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultFlightClientPoolConfig()
 	cfg.ConnTimeout = 100 * time.Millisecond
 	pool := NewFlightClientPool(cfg)

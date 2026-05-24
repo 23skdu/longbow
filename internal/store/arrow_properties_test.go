@@ -10,6 +10,9 @@ import (
 
 // TestBitsetProperties validates Bitset behavior using property-based testing.
 func TestBitsetProperties(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
 
@@ -64,6 +67,9 @@ func TestBitsetProperties(t *testing.T) {
 
 // TestFixedHeapProperties validates FixedHeap behavior using property-based testing.
 func TestFixedHeapProperties(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	parameters := gopter.DefaultTestParameters()
 	parameters.MinSuccessfulTests = 100
 

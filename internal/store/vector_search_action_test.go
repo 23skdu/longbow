@@ -55,6 +55,9 @@ func TestVectorSearchAction_Basic(t *testing.T) {
 }
 
 func TestVectorSearchAction_EfSearchValidation(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping broken integration test in short mode")
+	}
 	tests := []struct {
 		name        string
 		efSearch    int

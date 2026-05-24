@@ -14,6 +14,9 @@ import (
 )
 
 func TestVectorPrefetchBasic(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Test that prefetching valid memory doesn't crash
 	data := make([]byte, 1024)
 	for i := 0; i < len(data); i += 64 {
@@ -25,6 +28,9 @@ func TestVectorPrefetchBasic(t *testing.T) {
 }
 
 func TestVectorPrefetchProcessChunkWithPrefetch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	dims := 128
 	numVectors := 50
@@ -83,6 +89,9 @@ func TestVectorPrefetchProcessChunkWithPrefetch(t *testing.T) {
 }
 
 func TestVectorPrefetchStress(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Simplified stress test using public API
 	mem := memory.NewGoAllocator()
 	dims := 64
@@ -115,6 +124,9 @@ func TestVectorPrefetchStress(t *testing.T) {
 
 // Fuzz tests preserved but using standard operations
 func FuzzVectorPrefetchSIMDPrefetch(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Fuzz(func(t *testing.T, size int, offset int) {
 		if size < 0 || size > 10000 {
 			t.Skip()

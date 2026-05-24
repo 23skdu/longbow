@@ -11,6 +11,9 @@ import (
 // kNNPredict to panic, infinite-loop, or return an invalid IndexType.
 // Run with: go test -fuzz=FuzzKNNPredict ./internal/store/ -fuzztime=60s
 func FuzzKNNPredict(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Seed corpus: representative workloads.
 	f.Add(128, 1, 10, 10000, 1, "simple", 1.0, false, false, 9, 1)
 	f.Add(768, 32, 100, 1000000, 3, "complex", 0.5, true, false, 14, 3)
@@ -88,6 +91,9 @@ func FuzzKNNPredict(f *testing.F) {
 // any input, including extreme values, NaN, and Inf.
 // Run with: go test -fuzz=FuzzFeatureNormalizer ./internal/store/ -fuzztime=60s
 func FuzzFeatureNormalizer(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Seed corpus.
 	f.Add(float64(0), float64(1000), float64(5000000), float64(1.5))
 	f.Add(float64(-1e18), float64(1e18), float64(0), float64(-0.5))

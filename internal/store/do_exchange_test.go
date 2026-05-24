@@ -22,6 +22,9 @@ import (
 )
 
 func TestDoExchange_Ingest(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Setup Server
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

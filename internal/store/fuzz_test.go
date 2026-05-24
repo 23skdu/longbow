@@ -12,6 +12,9 @@ import (
 )
 
 func FuzzIngestion(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Seed corpus
 	f.Add(int64(12345))
 	f.Add(int64(time.Now().UnixNano()))
@@ -46,7 +49,9 @@ func FuzzIngestion(f *testing.F) {
 		if !ok {
 			// Create it
 			ds, _ = store.getOrCreateDataset(dsName, func() *Dataset {
-				return &Dataset{Name: dsName}
+				d := &Dataset{Name: dsName}
+				d.Records = NewLockFreeSlice[arrow.RecordBatch]()
+				return d
 			})
 		}
 
@@ -64,6 +69,9 @@ func FuzzIngestion(f *testing.F) {
 }
 
 func FuzzCompaction(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(int64(98765))
 
 	f.Fuzz(func(t *testing.T, seed int64) {
@@ -82,7 +90,9 @@ func FuzzCompaction(f *testing.F) {
 		// Create dataset
 		dsName := "fuzz_compaction"
 		ds, _ := store.getOrCreateDataset(dsName, func() *Dataset {
-			return &Dataset{Name: dsName}
+			d := &Dataset{Name: dsName}
+			d.Records = NewLockFreeSlice[arrow.RecordBatch]()
+			return d
 		})
 
 		// Add multiple small batches

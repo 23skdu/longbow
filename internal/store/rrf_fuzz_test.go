@@ -6,6 +6,9 @@ import (
 )
 
 func FuzzReciprocalRankFusion(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Add some seed corpus
 	f.Add(int64(12345), 10, 60, 20, 20)
 	f.Add(int64(9999), 5, 60, 50, 10)

@@ -15,6 +15,9 @@ import (
 )
 
 func FuzzRecommendEdgeCases(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(float32(0.5), 2, float32(0.5), 10)
 	f.Add(float32(0.0), 1, float32(0.0), 5)
 	f.Add(float32(1.0), 3, float32(1.0), 20)
@@ -114,6 +117,9 @@ func FuzzRecommendEdgeCases(f *testing.F) {
 }
 
 func FuzzRecommendAlphaRange(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(float32(0.0))
 	f.Add(float32(0.25))
 	f.Add(float32(0.5))
@@ -196,6 +202,9 @@ func FuzzRecommendAlphaRange(f *testing.F) {
 }
 
 func FuzzRecommendDecayRange(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(float32(0.0))
 	f.Add(float32(0.1))
 	f.Add(float32(0.5))
@@ -277,6 +286,9 @@ func FuzzRecommendDecayRange(f *testing.F) {
 }
 
 func FuzzRecommendMaxHopsRange(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(0)
 	f.Add(1)
 	f.Add(2)
@@ -359,6 +371,9 @@ func FuzzRecommendMaxHopsRange(f *testing.F) {
 }
 
 func TestRecommend(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1024*1024, 0, 0)

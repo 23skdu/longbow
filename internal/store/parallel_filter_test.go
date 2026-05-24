@@ -40,6 +40,9 @@ func makeTestRecordWithID(mem memory.Allocator, id int64, category string, value
 }
 
 func TestFilterRecordsParallel_Basic(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	store := createTestStore(t)
 	defer func() { _ = store.Close() }()
@@ -81,6 +84,9 @@ func TestFilterRecordsParallel_Basic(t *testing.T) {
 }
 
 func TestFilterRecordsParallel_OrderPreserved(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	store := createTestStore(t)
 	defer func() { _ = store.Close() }()
@@ -120,6 +126,9 @@ func TestFilterRecordsParallel_OrderPreserved(t *testing.T) {
 }
 
 func TestFilterRecordsParallel_EmptyInput(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	store := createTestStore(t)
 	defer func() { _ = store.Close() }()
 
@@ -137,6 +146,9 @@ func TestFilterRecordsParallel_EmptyInput(t *testing.T) {
 }
 
 func TestFilterRecordsParallel_AllFiltered(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	store := createTestStore(t)
 	defer func() { _ = store.Close() }()
@@ -168,6 +180,9 @@ func TestFilterRecordsParallel_AllFiltered(t *testing.T) {
 }
 
 func TestFilterRecordsParallel_ContextCancellation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	store := createTestStore(t)
 	defer func() { _ = store.Close() }()
@@ -205,6 +220,9 @@ func TestFilterRecordsParallel_ContextCancellation(t *testing.T) {
 }
 
 func TestFilterRecordsParallel_ConcurrentSafety(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	store := createTestStore(t)
 	defer func() { _ = store.Close() }()
@@ -236,6 +254,9 @@ func TestFilterRecordsParallel_ConcurrentSafety(t *testing.T) {
 }
 
 func TestFilterRecordsParallel_MultipleFilters(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	store := createTestStore(t)
 	defer func() { _ = store.Close() }()

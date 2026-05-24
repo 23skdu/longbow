@@ -10,6 +10,9 @@ import (
 // =============================================================================
 
 func TestDefaultBM25Config(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultBM25Config()
 
 	// Standard BM25 defaults
@@ -22,6 +25,9 @@ func TestDefaultBM25Config(t *testing.T) {
 }
 
 func TestBM25ConfigValidation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name    string
 		k1      float64
@@ -55,6 +61,9 @@ func TestBM25ConfigValidation(t *testing.T) {
 // =============================================================================
 
 func TestNewBM25Scorer(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultBM25Config()
 	scorer := NewBM25Scorer(cfg)
 
@@ -73,6 +82,9 @@ func TestNewBM25Scorer(t *testing.T) {
 }
 
 func TestBM25ScorerAddDocument(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	scorer := NewBM25Scorer(DefaultBM25Config())
 
 	// Add first document with length 100
@@ -95,6 +107,9 @@ func TestBM25ScorerAddDocument(t *testing.T) {
 }
 
 func TestBM25ScorerRemoveDocument(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	scorer := NewBM25Scorer(DefaultBM25Config())
 
 	scorer.AddDocument(100)
@@ -110,6 +125,9 @@ func TestBM25ScorerRemoveDocument(t *testing.T) {
 }
 
 func TestBM25ScorerIDF(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	scorer := NewBM25Scorer(DefaultBM25Config())
 
 	// Add 10 documents
@@ -134,6 +152,9 @@ func TestBM25ScorerIDF(t *testing.T) {
 }
 
 func TestBM25ScorerScore(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	scorer := NewBM25Scorer(DefaultBM25Config())
 
 	// Setup: 10 docs, avg length 100
@@ -170,6 +191,9 @@ func TestBM25ScorerScore(t *testing.T) {
 }
 
 func TestBM25ScorerScoreEdgeCases(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	scorer := NewBM25Scorer(DefaultBM25Config())
 
 	// Empty corpus - should return 0
@@ -197,6 +221,9 @@ func TestBM25ScorerScoreEdgeCases(t *testing.T) {
 }
 
 func TestBM25ScorerConcurrency(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	scorer := NewBM25Scorer(DefaultBM25Config())
 
 	// Concurrent document additions

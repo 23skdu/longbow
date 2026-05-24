@@ -18,6 +18,9 @@ import (
 
 // Test 1: RecordMetadata tracks creation time and TTL
 func TestRecordMetadata_TTL(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	meta := NewRecordMetadata(100 * time.Millisecond)
 	require.NotNil(t, meta)
 
@@ -31,6 +34,9 @@ func TestRecordMetadata_TTL(t *testing.T) {
 
 // Test 2: Zero TTL means no expiration
 func TestRecordMetadata_ZeroTTL_NoExpiration(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	meta := NewRecordMetadata(0) // No TTL
 	require.NotNil(t, meta)
 
@@ -42,6 +48,9 @@ func TestRecordMetadata_ZeroTTL_NoExpiration(t *testing.T) {
 
 // Test 3: RecordEvictionManager tracks records by pointer identity
 func TestRecordEvictionManager_PointerIdentity(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mgr := NewRecordEvictionManager()
 	require.NotNil(t, mgr)
 
@@ -67,6 +76,9 @@ func TestRecordEvictionManager_PointerIdentity(t *testing.T) {
 
 // Test 4: Evict expired records from manager
 func TestRecordEvictionManager_EvictExpired(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mgr := NewRecordEvictionManager()
 
 	mem := memory.NewGoAllocator()
@@ -102,6 +114,9 @@ func TestRecordEvictionManager_EvictExpired(t *testing.T) {
 
 // Test 5: RecordMetadata tracks last access atomically
 func TestRecordMetadata_LRU_LastAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	meta := NewRecordMetadata(0)
 	initialAccess := meta.GetLastAccess()
 
@@ -114,6 +129,9 @@ func TestRecordMetadata_LRU_LastAccess(t *testing.T) {
 
 // Test 6: LRU eviction selects oldest accessed records
 func TestRecordEvictionManager_LRU_SelectVictims(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mgr := NewRecordEvictionManager()
 
 	mem := memory.NewGoAllocator()
@@ -159,6 +177,9 @@ func TestRecordEvictionManager_LRU_SelectVictims(t *testing.T) {
 
 // Test 7: RecordMetadata tracks access frequency atomically
 func TestRecordMetadata_LFU_AccessCount(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	meta := NewRecordMetadata(0)
 	assert.Equal(t, int64(0), meta.GetAccessCount())
 
@@ -172,6 +193,9 @@ func TestRecordMetadata_LFU_AccessCount(t *testing.T) {
 
 // Test 8: LFU eviction selects least frequently accessed records
 func TestRecordEvictionManager_LFU_SelectVictims(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mgr := NewRecordEvictionManager()
 
 	mem := memory.NewGoAllocator()
@@ -209,6 +233,9 @@ func TestRecordEvictionManager_LFU_SelectVictims(t *testing.T) {
 
 // Test 9: Concurrent access is safe (zero-lock via atomics)
 func TestRecordMetadata_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	meta := NewRecordMetadata(0)
 
 	var wg sync.WaitGroup
@@ -237,6 +264,9 @@ func TestRecordMetadata_ConcurrentAccess(t *testing.T) {
 
 // Test 10: Prometheus metrics for evictions
 func TestRecordEvictionManager_Metrics(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mgr := NewRecordEvictionManager()
 
 	mem := memory.NewGoAllocator()
@@ -262,6 +292,9 @@ func TestRecordEvictionManager_Metrics(t *testing.T) {
 
 // Test 11: Integration - per-record eviction within Dataset
 func TestDataset_PerRecordEviction(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 
 	// Create dataset with eviction manager

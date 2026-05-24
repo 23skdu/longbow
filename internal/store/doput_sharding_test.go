@@ -18,6 +18,9 @@ import (
 
 // TestVectorIndexInterfaceHNSW verifies HNSWIndex implements VectorIndex.
 func TestVectorIndexInterfaceHNSW(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ds := &Dataset{Name: "test"}
 	hnsw := NewTestHNSWIndex(ds)
 
@@ -31,6 +34,9 @@ func TestVectorIndexInterfaceHNSW(t *testing.T) {
 
 // TestVectorIndexInterfaceSharded verifies ShardedHNSW implements VectorIndex.
 func TestVectorIndexInterfaceSharded(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ds := &Dataset{Name: "test"}
 	cfg := DefaultShardedHNSWConfig()
 	sharded := NewShardedHNSW(cfg, ds)
@@ -49,6 +55,9 @@ func TestVectorIndexInterfaceSharded(t *testing.T) {
 
 // TestDatasetIsSharded verifies IsSharded detection.
 func TestDatasetIsSharded(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ds := &Dataset{
 		Name: "test",
 	}
@@ -73,6 +82,9 @@ func TestDatasetIsSharded(t *testing.T) {
 
 // TestDatasetIndexLen verifies IndexLen returns correct count.
 func TestDatasetIndexLen(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ds := &Dataset{
 		Name:  "test",
 		Index: NewTestHNSWIndex(nil),
@@ -90,6 +102,9 @@ func TestDatasetIndexLen(t *testing.T) {
 
 // TestDatasetGetVectorIndex verifies GetVectorIndex returns correct index.
 func TestDatasetGetVectorIndex(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ds := &Dataset{
 		Name:  "test",
 		Index: NewTestHNSWIndex(nil),
@@ -121,6 +136,9 @@ func createShardingTestVectorStore(t *testing.T) *VectorStore {
 
 // TestVectorStoreSetAutoShardingConfig verifies config can be set.
 func TestVectorStoreSetAutoShardingConfig(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vs := createShardingTestVectorStore(t)
 	defer func() { _ = vs.Close() }()
 
@@ -139,6 +157,9 @@ func TestVectorStoreSetAutoShardingConfig(t *testing.T) {
 
 // TestVectorStoreGetDataset verifies getDataset retrieval.
 func TestVectorStoreGetDataset(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vs := createShardingTestVectorStore(t)
 	defer func() { _ = vs.Close() }()
 
@@ -197,6 +218,9 @@ func createShardingTestRecordBatch(t *testing.T, mem memory.Allocator, numRows, 
 
 // TestDoPutAutoShardingIntegration tests the full integration.
 func TestDoPutAutoShardingIntegration(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vs := createShardingTestVectorStore(t)
 	defer func() { _ = vs.Close() }()
 
@@ -237,6 +261,9 @@ func TestDoPutAutoShardingIntegration(t *testing.T) {
 
 // TestDoPutConcurrentMigration tests thread safety during migration.
 func TestDoPutConcurrentMigration(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vs := createShardingTestVectorStore(t)
 	defer func() { _ = vs.Close() }()
 

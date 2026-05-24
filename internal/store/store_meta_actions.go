@@ -691,6 +691,21 @@ func (s *VectorStore) handleGraphRAGExpand(action *flight.Action, stream flight.
 	return stream.Send(&flight.Result{Body: body})
 }
 
+func (s *VectorStore) handleResetDataset(action *flight.Action, stream flight.FlightService_DoActionServer) error {
+	var req struct {
+		Name string `json:"name"`
+	}
+	if err := json.Unmarshal(action.Body, &req); err != nil {
+		return status.Errorf(codes.InvalidArgument, "invalid json body: %v", err)
+	}
+
+	if err := s.DropDataset(stream.Context(), req.Name); err != nil {
+		return types.ToGRPCStatus(err)
+	}
+
+	return stream.Send(&flight.Result{Body: []byte(`{"status": "reset_success"}`)})
+}
+
 // doMetaAction handles management commands on VectorStore
 // DoMetaAction handles meta-specific actions for the cluster MetaServer.
 func (s *VectorStore) DoMetaAction(action *flight.Action, stream flight.FlightService_DoActionServer) error {
@@ -748,6 +763,8 @@ func (s *VectorStore) DoMetaAction(action *flight.Action, stream flight.FlightSe
 		return s.handleTemporalAggregation(action, stream)
 	case "GraphRAGExpand":
 		return s.handleGraphRAGExpand(action, stream)
+	case "ResetDataset":
+		return s.handleResetDataset(action, stream)
 	default:
 		return status.Errorf(codes.Unimplemented, "unimplemented action: %s", action.Type)
 	}

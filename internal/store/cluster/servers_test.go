@@ -41,7 +41,7 @@ func setupDataServerTest(t *testing.T) (flight.Client, *store.VectorStore) {
 
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
-	vs := store.NewVectorStore(mem, logger, 1024*1024*500, 0, 0)
+	vs := store.NewVectorStore(mem, logger, 1024*1024*5000, 0, 0)
 
 	if err := vs.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: 0}); err != nil {
 		t.Fatalf("Failed to init persistence: %v", err)
@@ -291,7 +291,7 @@ func setupMetaServerTest(t *testing.T) (flight.Client, *store.VectorStore) {
 
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
-	vs := store.NewVectorStore(mem, logger, 1024*1024*500, 0, 0)
+	vs := store.NewVectorStore(mem, logger, 1024*1024*5000, 0, 0)
 
 	if err := vs.InitPersistence(storage.StorageConfig{DataPath: tmpDir, SnapshotInterval: 0}); err != nil {
 		t.Fatalf("Failed to init persistence: %v", err)

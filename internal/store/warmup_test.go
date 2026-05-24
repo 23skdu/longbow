@@ -13,6 +13,9 @@ import (
 
 // TestHNSWIndex_Warmup tests the warmup method on HNSWIndex
 func TestHNSWIndex_Warmup(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	t.Run("warmup on empty index does not panic", func(t *testing.T) {
 		ds := &Dataset{Name: "test_empty"}
 		idx := NewTestHNSWIndex(ds)
@@ -55,6 +58,9 @@ func TestHNSWIndex_Warmup(t *testing.T) {
 
 // TestVectorStore_Warmup tests warmup on VectorStore level
 func TestVectorStore_Warmup(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	t.Run("warmup on empty store", func(t *testing.T) {
 		logger := zerolog.Nop()
 		store := NewVectorStore(memory.DefaultAllocator, logger, 1<<30, 0, time.Hour)
@@ -150,6 +156,9 @@ func TestVectorStore_Warmup(t *testing.T) {
 
 // TestWarmupStats tests the WarmupStats struct
 func TestWarmupStats(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	t.Run("stats string representation", func(t *testing.T) {
 		stats := WarmupStats{
 			DatasetsWarmed:   5,
@@ -167,6 +176,9 @@ func TestWarmupStats(t *testing.T) {
 
 // TestShardedHNSW_Warmup tests warmup on ShardedHNSW
 func TestShardedHNSW_Warmup(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	t.Run("warmup sharded index", func(t *testing.T) {
 		t.Skip("requires internal access to nodeCount")
 	})

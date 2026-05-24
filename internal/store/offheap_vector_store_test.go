@@ -11,6 +11,9 @@ import (
 )
 
 func TestMemVectorStore_OffHeap(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	opts := MemStoreOptions{
 		UseOffHeap: true,
 		Dim:        128,
@@ -68,6 +71,9 @@ func TestMemVectorStore_OffHeap(t *testing.T) {
 }
 
 func TestMemVectorStore_DeleteBatch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	opts := MemStoreOptions{
 		UseOffHeap: true,
 		Dim:        4,
@@ -100,6 +106,9 @@ func TestMemVectorStore_DeleteBatch(t *testing.T) {
 }
 
 func TestMemVectorStore_OffHeapMismatch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	opts := MemStoreOptions{
 		UseOffHeap: true,
 		Dim:        128,
@@ -116,6 +125,9 @@ func TestMemVectorStore_OffHeapMismatch(t *testing.T) {
 }
 
 func FuzzOffHeapVectorStore(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(128, 10, int64(42))
 	f.Fuzz(func(t *testing.T, dim int, count int, seed int64) {
 		if dim <= 0 || dim > 2048 || count <= 0 || count > 100 {

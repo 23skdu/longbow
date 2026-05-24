@@ -14,6 +14,9 @@ import (
 // =============================================================================
 
 func TestDefaultRequestSemaphoreConfig(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultRequestSemaphoreConfig()
 
 	// Default limit should be GOMAXPROCS
@@ -33,6 +36,9 @@ func TestDefaultRequestSemaphoreConfig(t *testing.T) {
 }
 
 func TestRequestSemaphoreConfig_Validate(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name    string
 		cfg     RequestSemaphoreConfig
@@ -80,6 +86,9 @@ func TestRequestSemaphoreConfig_Validate(t *testing.T) {
 // =============================================================================
 
 func TestNewRequestSemaphore(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := RequestSemaphoreConfig{
 		MaxConcurrent:  8,
 		AcquireTimeout: 5 * time.Second,
@@ -101,6 +110,9 @@ func TestNewRequestSemaphore(t *testing.T) {
 }
 
 func TestRequestSemaphore_AcquireRelease(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := RequestSemaphoreConfig{
 		MaxConcurrent:  2,
 		AcquireTimeout: time.Second,
@@ -140,6 +152,9 @@ func TestRequestSemaphore_AcquireRelease(t *testing.T) {
 }
 
 func TestRequestSemaphore_TryAcquire(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := RequestSemaphoreConfig{
 		MaxConcurrent:  1,
 		AcquireTimeout: time.Second,
@@ -165,6 +180,9 @@ func TestRequestSemaphore_TryAcquire(t *testing.T) {
 }
 
 func TestRequestSemaphore_Timeout(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := RequestSemaphoreConfig{
 		MaxConcurrent:  1,
 		AcquireTimeout: 50 * time.Millisecond,
@@ -195,6 +213,9 @@ func TestRequestSemaphore_Timeout(t *testing.T) {
 }
 
 func TestRequestSemaphore_ContextCancellation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := RequestSemaphoreConfig{
 		MaxConcurrent:  1,
 		AcquireTimeout: 10 * time.Second,
@@ -233,6 +254,9 @@ func TestRequestSemaphore_ContextCancellation(t *testing.T) {
 }
 
 func TestRequestSemaphore_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := RequestSemaphoreConfig{
 		MaxConcurrent:  4,
 		AcquireTimeout: 5 * time.Second,
@@ -284,6 +308,9 @@ func TestRequestSemaphore_ConcurrentAccess(t *testing.T) {
 }
 
 func TestRequestSemaphore_Statistics(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := RequestSemaphoreConfig{
 		MaxConcurrent:  2,
 		AcquireTimeout: time.Second,
@@ -317,6 +344,9 @@ func TestRequestSemaphore_Statistics(t *testing.T) {
 }
 
 func TestRequestSemaphore_DisabledBypassesLimiting(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := RequestSemaphoreConfig{
 		MaxConcurrent:  1,
 		AcquireTimeout: time.Second,

@@ -84,6 +84,9 @@ func buildSmallDataset(t *testing.T, n, dim int) (*Dataset, *ArrowHNSW) {
 // graph has recorded neighbors for the queried node. All returned IDs must be
 // valid node indices.
 func TestLookupNeighbors_HNSW_ReturnsTrueNeighbors(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	const n, dim = 50, 4
 	ds, _ := buildSmallDataset(t, n, dim)
 
@@ -96,6 +99,9 @@ func TestLookupNeighbors_HNSW_ReturnsTrueNeighbors(t *testing.T) {
 
 // TestLookupNeighbors_HNSW_KLimitRespected verifies that k=2 returns at most 2 results.
 func TestLookupNeighbors_HNSW_KLimitRespected(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	const n, dim = 50, 4
 	ds, _ := buildSmallDataset(t, n, dim)
 
@@ -107,6 +113,9 @@ func TestLookupNeighbors_HNSW_KLimitRespected(t *testing.T) {
 // TestLookupNeighbors_UnknownID verifies that an ID not in the index returns
 // ErrVectorNotFound.
 func TestLookupNeighbors_UnknownID(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	const n, dim = 10, 4
 	ds, _ := buildSmallDataset(t, n, dim)
 
@@ -121,6 +130,9 @@ func TestLookupNeighbors_UnknownID(t *testing.T) {
 // ShardedHNSW is a full VectorIndex implementation, but is not *ArrowHNSW,
 // so LookupNeighbors should reject it with the appropriate sentinel.
 func TestLookupNeighbors_NonHNSW_ReturnsNotSupported(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "vector", Type: arrow.FixedSizeListOf(4, arrow.PrimitiveTypes.Float32)},
@@ -141,6 +153,9 @@ func TestLookupNeighbors_NonHNSW_ReturnsNotSupported(t *testing.T) {
 
 // TestLookupNeighbors_NilDataset ensures the function does not panic on nil input.
 func TestLookupNeighbors_NilDataset(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	_, err := LookupNeighbors(context.Background(), nil, 0, 0)
 	require.Error(t, err)
 }

@@ -7,6 +7,9 @@ import (
 )
 
 func TestFixedHeap_PushPop(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	h := NewFixedHeap(10)
 
 	// Push some candidates
@@ -48,6 +51,9 @@ func TestFixedHeap_PushPop(t *testing.T) {
 }
 
 func TestFixedHeap_Peek(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	h := NewFixedHeap(10)
 
 	h.Push(Candidate{ID: 1, Dist: 5.0})
@@ -65,6 +71,9 @@ func TestFixedHeap_Peek(t *testing.T) {
 }
 
 func TestFixedHeap_Clear(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	h := NewFixedHeap(10)
 
 	h.Push(Candidate{ID: 1, Dist: 1.0})
@@ -83,6 +92,9 @@ func TestFixedHeap_Clear(t *testing.T) {
 }
 
 func TestFixedHeap_Capacity(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	h := NewFixedHeap(3)
 
 	// Fill to capacity
@@ -102,6 +114,9 @@ func TestFixedHeap_Capacity(t *testing.T) {
 }
 
 func TestFixedHeap_RandomOrder(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	h := NewFixedHeap(100)
 
 	// Push random distances

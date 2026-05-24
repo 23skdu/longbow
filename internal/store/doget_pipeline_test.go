@@ -15,6 +15,9 @@ import (
 
 // TestDoGetPipelineCreation tests pipeline initialization
 func TestDoGetPipelineCreation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name        string
 		workers     int
@@ -47,6 +50,9 @@ func TestDoGetPipelineCreation(t *testing.T) {
 
 // TestDoGetPipelineInOrderProcessing verifies batches are returned in order
 func TestDoGetPipelineInOrderProcessing(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pipeline := NewDoGetPipeline(4, 16)
 	defer pipeline.Stop()
 
@@ -111,6 +117,9 @@ func TestDoGetPipelineInOrderProcessing(t *testing.T) {
 
 // TestDoGetPipelineErrorPropagation tests error handling
 func TestDoGetPipelineErrorPropagation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pipeline := NewDoGetPipeline(4, 16)
 	defer pipeline.Stop()
 
@@ -163,6 +172,9 @@ func TestDoGetPipelineErrorPropagation(t *testing.T) {
 
 // TestDoGetPipelineContextCancellation tests graceful shutdown on cancel
 func TestDoGetPipelineContextCancellation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pipeline := NewDoGetPipeline(4, 16)
 	defer pipeline.Stop()
 
@@ -215,6 +227,9 @@ func TestDoGetPipelineContextCancellation(t *testing.T) {
 
 // TestDoGetPipelineEmptyInput tests handling of empty batch slice
 func TestDoGetPipelineEmptyInput(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pipeline := NewDoGetPipeline(4, 16)
 	defer pipeline.Stop()
 
@@ -241,6 +256,9 @@ func TestDoGetPipelineEmptyInput(t *testing.T) {
 
 // TestDoGetPipelineStats tests statistics tracking
 func TestDoGetPipelineStats(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pipeline := NewDoGetPipeline(4, 16)
 	defer pipeline.Stop()
 
@@ -284,6 +302,9 @@ func TestDoGetPipelineStats(t *testing.T) {
 
 // TestDoGetPipelineConcurrentProcesses tests multiple concurrent Process calls
 func TestDoGetPipelineConcurrentProcesses(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pipeline := NewDoGetPipeline(4, 16)
 	defer pipeline.Stop()
 

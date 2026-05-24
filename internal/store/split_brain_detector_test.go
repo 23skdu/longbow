@@ -7,6 +7,9 @@ import (
 )
 
 func TestSplitBrainDetector_New(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := SplitBrainConfig{
 		HeartbeatInterval: 100 * time.Millisecond,
 		HeartbeatTimeout:  300 * time.Millisecond,
@@ -23,6 +26,9 @@ func TestSplitBrainDetector_New(t *testing.T) {
 }
 
 func TestSplitBrainDetector_RegisterPeer(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := SplitBrainConfig{
 		HeartbeatInterval: 100 * time.Millisecond,
 		HeartbeatTimeout:  300 * time.Millisecond,
@@ -38,6 +44,9 @@ func TestSplitBrainDetector_RegisterPeer(t *testing.T) {
 }
 
 func TestSplitBrainDetector_Heartbeat(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := SplitBrainConfig{
 		HeartbeatInterval: 50 * time.Millisecond,
 		HeartbeatTimeout:  150 * time.Millisecond,
@@ -52,6 +61,9 @@ func TestSplitBrainDetector_Heartbeat(t *testing.T) {
 }
 
 func TestSplitBrainDetector_HeartbeatTimeout(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := SplitBrainConfig{
 		HeartbeatInterval: 10 * time.Millisecond,
 		HeartbeatTimeout:  30 * time.Millisecond,
@@ -67,6 +79,9 @@ func TestSplitBrainDetector_HeartbeatTimeout(t *testing.T) {
 }
 
 func TestSplitBrainDetector_QuorumLoss(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := SplitBrainConfig{
 		HeartbeatInterval: 10 * time.Millisecond,
 		HeartbeatTimeout:  30 * time.Millisecond,
@@ -86,6 +101,9 @@ func TestSplitBrainDetector_QuorumLoss(t *testing.T) {
 }
 
 func TestSplitBrainDetector_QuorumRecovery(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := SplitBrainConfig{
 		HeartbeatInterval: 10 * time.Millisecond,
 		HeartbeatTimeout:  50 * time.Millisecond,
@@ -110,6 +128,9 @@ func TestSplitBrainDetector_QuorumRecovery(t *testing.T) {
 }
 
 func TestSplitBrainDetector_Metrics(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := SplitBrainConfig{
 		HeartbeatInterval: 10 * time.Millisecond,
 		HeartbeatTimeout:  30 * time.Millisecond,
@@ -124,6 +145,9 @@ func TestSplitBrainDetector_Metrics(t *testing.T) {
 }
 
 func TestSplitBrainDetector_ConcurrentHeartbeats(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := SplitBrainConfig{
 		HeartbeatInterval: 10 * time.Millisecond,
 		HeartbeatTimeout:  100 * time.Millisecond,
@@ -152,6 +176,9 @@ func TestSplitBrainDetector_ConcurrentHeartbeats(t *testing.T) {
 }
 
 func TestSplitBrainDetector_PartitionCount(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := SplitBrainConfig{
 		HeartbeatInterval: 10 * time.Millisecond,
 		HeartbeatTimeout:  30 * time.Millisecond,

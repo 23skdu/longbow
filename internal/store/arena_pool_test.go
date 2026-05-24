@@ -10,6 +10,9 @@ import (
 
 // TestArenaPool_GetReturnsArena tests that GetArena returns a valid arena
 func TestArenaPool_GetReturnsArena(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := GetArena()
 	require.NotNil(t, arena, "GetArena should return non-nil arena")
 	assert.Greater(t, arena.Cap(), 0, "Arena should have capacity")
@@ -18,6 +21,9 @@ func TestArenaPool_GetReturnsArena(t *testing.T) {
 
 // TestArenaPool_PutAndReuseArena tests that arenas are reused from pool
 func TestArenaPool_PutAndReuseArena(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena1 := GetArena()
 	require.NotNil(t, arena1)
 	arena1.Alloc(100)
@@ -31,6 +37,9 @@ func TestArenaPool_PutAndReuseArena(t *testing.T) {
 
 // TestArenaPool_ConcurrentAccess tests thread-safe pool access
 func TestArenaPool_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	const goroutines = 100
 	const iterations = 50
 	var wg sync.WaitGroup
@@ -51,6 +60,9 @@ func TestArenaPool_ConcurrentAccess(t *testing.T) {
 
 // TestArenaPool_NUMAAwareAllocation tests that GetArenaForNode works correctly
 func TestArenaPool_NUMAAwareAllocation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := GetArenaForNode(1)
 	require.NotNil(t, arena, "GetArenaForNode should return non-nil arena")
 	assert.Greater(t, arena.Cap(), 0, "Arena should have capacity")
@@ -60,6 +72,9 @@ func TestArenaPool_NUMAAwareAllocation(t *testing.T) {
 
 // FuzzNUMAAllocation fuzzes NUMA node requests to ensure thread safety and no panics
 func FuzzNUMAAllocation(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(0, 1024)
 	f.Add(1, 4096)
 	f.Add(2, 65536)

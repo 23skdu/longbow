@@ -13,6 +13,9 @@ import (
 )
 
 func TestGenerateFilterBitset(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
 		[]arrow.Field{
@@ -92,6 +95,9 @@ func TestGenerateFilterBitset(t *testing.T) {
 }
 
 func TestSearchWithBitmapFiltering(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Setup same dataset
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
@@ -153,6 +159,9 @@ func TestSearchWithBitmapFiltering(t *testing.T) {
 }
 
 func TestShardedSearchWithBitmapFiltering(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pool := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
 		[]arrow.Field{

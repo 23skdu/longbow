@@ -15,6 +15,9 @@ import (
 // --- Config Tests ---
 
 func TestShardedRWMutexConfigDefaults(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultShardedRWMutexConfig()
 
 	if cfg.NumShards <= 0 {
@@ -26,6 +29,9 @@ func TestShardedRWMutexConfigDefaults(t *testing.T) {
 }
 
 func TestShardedRWMutexConfigValidation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name    string
 		cfg     ShardedRWMutexConfig
@@ -51,6 +57,9 @@ func TestShardedRWMutexConfigValidation(t *testing.T) {
 // --- Creation Tests ---
 
 func TestNewShardedRWMutex(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := ShardedRWMutexConfig{NumShards: 8}
 	sm := NewShardedRWMutex(cfg)
 
@@ -63,6 +72,9 @@ func TestNewShardedRWMutex(t *testing.T) {
 }
 
 func TestNewShardedRWMutexDefault(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedRWMutexDefault()
 
 	if sm == nil {
@@ -76,6 +88,9 @@ func TestNewShardedRWMutexDefault(t *testing.T) {
 // --- Shard Routing Tests ---
 
 func TestShardedRWMutexShardSelection(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedRWMutex(ShardedRWMutexConfig{NumShards: 4})
 
 	// Same key should always route to same shard
@@ -95,6 +110,9 @@ func TestShardedRWMutexShardSelection(t *testing.T) {
 }
 
 func TestShardedRWMutexDistribution(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedRWMutex(ShardedRWMutexConfig{NumShards: 8})
 
 	// Count distribution across shards
@@ -115,6 +133,9 @@ func TestShardedRWMutexDistribution(t *testing.T) {
 // --- Lock/Unlock Tests ---
 
 func TestShardedRWMutexLockUnlock(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedRWMutex(ShardedRWMutexConfig{NumShards: 4})
 
 	// Basic lock/unlock should not deadlock
@@ -127,6 +148,9 @@ func TestShardedRWMutexLockUnlock(t *testing.T) {
 }
 
 func TestShardedRWMutexRLockRUnlock(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedRWMutex(ShardedRWMutexConfig{NumShards: 4})
 
 	// Basic RLock/RUnlock should not deadlock
@@ -141,6 +165,9 @@ func TestShardedRWMutexRLockRUnlock(t *testing.T) {
 }
 
 func TestShardedRWMutexDifferentShardsConcurrent(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedRWMutex(ShardedRWMutexConfig{NumShards: 4})
 
 	// Two different keys in different shards should lock concurrently
@@ -174,6 +201,9 @@ func TestShardedRWMutexDifferentShardsConcurrent(t *testing.T) {
 // --- Concurrent Safety Tests ---
 
 func TestShardedRWMutexConcurrentWrites(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedRWMutex(ShardedRWMutexConfig{NumShards: 8})
 
 	var counter int64
@@ -200,6 +230,9 @@ func TestShardedRWMutexConcurrentWrites(t *testing.T) {
 }
 
 func TestShardedRWMutexConcurrentReadsWrites(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedRWMutex(ShardedRWMutexConfig{NumShards: 4})
 
 	var data int64
@@ -238,6 +271,9 @@ func TestShardedRWMutexConcurrentReadsWrites(t *testing.T) {
 // --- Statistics Tests ---
 
 func TestShardedRWMutexStats(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sm := NewShardedRWMutex(ShardedRWMutexConfig{NumShards: 4})
 
 	// Perform some operations

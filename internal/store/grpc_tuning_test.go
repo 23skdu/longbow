@@ -69,6 +69,9 @@ func TestGRPCConfig_ValidationWithPolicy(t *testing.T) {
 }
 
 func FuzzGRPCConfigPolicySelection(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(int(PolicyDefault))
 	f.Add(int(PolicyHighBandwidth))
 	f.Add(int(PolicyAuto))

@@ -19,6 +19,9 @@ import (
 // FuzzIngestionIntegrityConcurrent verifies that concurrent ingestion
 // results in a consistent index state where all vectors are retrievable.
 func FuzzIngestionIntegrityConcurrent(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	// Seed corpus: (writers, batches, rowsPerBatch)
 	f.Add(4, 5, 20)
 	f.Add(2, 10, 50)

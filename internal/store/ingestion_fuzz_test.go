@@ -15,6 +15,9 @@ import (
 // FuzzIngestionPipelineConcurrentWrites simulates multiple concurrent writers
 // to verify data integrity with the async pipeline.
 func FuzzIngestionPipelineConcurrentWrites(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(10, 5) // 10 writers, 5 batches each
 
 	f.Fuzz(func(t *testing.T, numWriters int, batchesPerWriter int) {

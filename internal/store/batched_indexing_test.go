@@ -15,6 +15,9 @@ import (
 )
 
 func TestBatchedIndexing(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	t.Skip("Skipping due to async indexing timing issues - needs refactor")
 
 	pool := memory.NewGoAllocator()

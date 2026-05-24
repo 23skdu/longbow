@@ -10,6 +10,9 @@ import (
 )
 
 func TestOptimisticConcurrentConfig_Defaults(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	config := OptimisticConcurrentConfig{}
 
 	if config.MaxRetries <= 0 {
@@ -28,6 +31,9 @@ func TestOptimisticConcurrentConfig_Defaults(t *testing.T) {
 }
 
 func TestNewOptimisticConcurrentUpdates(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	config := OptimisticConcurrentConfig{
 		MaxRetries:       5,
@@ -44,6 +50,9 @@ func TestNewOptimisticConcurrentUpdates(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_GetVersion_NotFound(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{})
 
@@ -53,6 +62,9 @@ func TestOptimisticConcurrentUpdates_GetVersion_NotFound(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_SetVersion(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{})
 
@@ -65,6 +77,9 @@ func TestOptimisticConcurrentUpdates_SetVersion(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_GetVersion_Found(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{})
 
@@ -77,6 +92,9 @@ func TestOptimisticConcurrentUpdates_GetVersion_Found(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_UpdateVector_NewVector(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{})
 
@@ -90,6 +108,9 @@ func TestOptimisticConcurrentUpdates_UpdateVector_NewVector(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_UpdateVector_VersionMatch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{})
 
@@ -104,6 +125,9 @@ func TestOptimisticConcurrentUpdates_UpdateVector_VersionMatch(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Abort(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{
 		ConflictStrategy: "abort",
@@ -122,6 +146,9 @@ func TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Abort(t *testi
 }
 
 func TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Overwrite(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{
 		ConflictStrategy: "overwrite",
@@ -138,6 +165,9 @@ func TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Overwrite(t *t
 }
 
 func TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Merge(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{
 		ConflictStrategy: "merge",
@@ -154,6 +184,9 @@ func TestOptimisticConcurrentUpdates_UpdateVector_VersionMismatch_Merge(t *testi
 }
 
 func TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_Success(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{
 		MaxRetries:   3,
@@ -168,6 +201,9 @@ func TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_Success(t *testing.T)
 }
 
 func TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_Retries(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{
 		MaxRetries:       1,
@@ -184,6 +220,9 @@ func TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_Retries(t *testing.T)
 }
 
 func TestOptimisticConcurrentUpdates_DeleteVector(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{})
 
@@ -201,6 +240,9 @@ func TestOptimisticConcurrentUpdates_DeleteVector(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_BatchUpdate(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{
 		MaxRetries:   3,
@@ -222,6 +264,9 @@ func TestOptimisticConcurrentUpdates_BatchUpdate(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_GetStats(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{})
 
@@ -235,6 +280,9 @@ func TestOptimisticConcurrentUpdates_GetStats(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_GetStats_Conflicted(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{
 		ConflictStrategy: "abort",
@@ -252,6 +300,9 @@ func TestOptimisticConcurrentUpdates_GetStats_Conflicted(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_SetConfig(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{})
 
@@ -270,6 +321,9 @@ func TestOptimisticConcurrentUpdates_SetConfig(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_GetConfig(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	config := OptimisticConcurrentConfig{
 		MaxRetries:       7,
@@ -285,6 +339,9 @@ func TestOptimisticConcurrentUpdates_GetConfig(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_ClearCache(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{})
 
@@ -300,6 +357,9 @@ func TestOptimisticConcurrentUpdates_ClearCache(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_GetCacheSize(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{})
 
@@ -313,6 +373,9 @@ func TestOptimisticConcurrentUpdates_GetCacheSize(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_GetVectorInfo(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{})
 
@@ -326,6 +389,9 @@ func TestOptimisticConcurrentUpdates_GetVectorInfo(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_GetVectorInfo_NotFound(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{})
 
@@ -334,6 +400,9 @@ func TestOptimisticConcurrentUpdates_GetVectorInfo_NotFound(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_Concurrent(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{
 		MaxRetries:       3,
@@ -360,6 +429,9 @@ func TestOptimisticConcurrentUpdates_Concurrent(t *testing.T) {
 }
 
 func TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_MaxRetries(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{
 		MaxRetries:       1,
@@ -375,6 +447,9 @@ func TestOptimisticConcurrentUpdates_UpdateVectorWithRetry_MaxRetries(t *testing
 }
 
 func TestOptimisticConcurrentUpdates_MergeUpdate(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	ocu := NewOptimisticConcurrentUpdates(logger, OptimisticConcurrentConfig{
 		ConflictStrategy: "merge",

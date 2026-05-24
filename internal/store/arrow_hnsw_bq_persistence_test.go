@@ -17,6 +17,9 @@ import (
 )
 
 func TestArrowHNSW_BQ_Persistence(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// 1. Setup Storage
 	tmpDir, err := os.MkdirTemp("", "bq_persistence_test")
 	require.NoError(t, err)

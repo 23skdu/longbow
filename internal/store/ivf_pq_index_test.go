@@ -10,6 +10,9 @@ import (
 )
 
 func TestIVFPQIndex_NewAndConfig(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name        string
 		dim         int
@@ -59,6 +62,9 @@ func TestIVFPQIndex_NewAndConfig(t *testing.T) {
 }
 
 func TestIVFPQIndex_TrainAndAdd(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dim := 128
 	numVectors := 1000
 	config := IVFPQConfig{
@@ -102,6 +108,9 @@ func TestIVFPQIndex_TrainAndAdd(t *testing.T) {
 }
 
 func TestIVFPQIndex_Search(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dim := 32
 	numVectors := 500
 	config := IVFPQConfig{
@@ -156,6 +165,9 @@ func TestIVFPQIndex_Search(t *testing.T) {
 }
 
 func TestIVFPQIndex_SearchWithK(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dim := 16
 	numVectors := 300
 	config := IVFPQConfig{
@@ -195,6 +207,9 @@ func TestIVFPQIndex_SearchWithK(t *testing.T) {
 }
 
 func TestIVFPQIndex_MemoryUsage(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dim := 128
 	numVectors := 1000
 	config := DefaultIVFPQConfig()
@@ -228,6 +243,9 @@ func TestIVFPQIndex_MemoryUsage(t *testing.T) {
 }
 
 func TestIVFPQIndex_EmptyIndexSearch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dim := 64
 	config := IVFPQConfig{
 		Nlist:  16,
@@ -249,6 +267,9 @@ func TestIVFPQIndex_EmptyIndexSearch(t *testing.T) {
 }
 
 func TestIVFPQIndex_DimensionMismatch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dim := 32
 	config := IVFPQConfig{
 		Nlist: 4,
@@ -277,6 +298,9 @@ func TestIVFPQIndex_DimensionMismatch(t *testing.T) {
 }
 
 func TestIVFPQIndex_SearchQueryInCluster(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dim := 64
 	config := IVFPQConfig{
 		Nlist:  3,
@@ -321,6 +345,9 @@ func TestIVFPQIndex_SearchQueryInCluster(t *testing.T) {
 }
 
 func TestIVFPQIndex_SearchWithFilter(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dim := 64
 	numVectors := 300
 	config := IVFPQConfig{

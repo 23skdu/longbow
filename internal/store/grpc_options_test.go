@@ -11,6 +11,9 @@ import (
 
 // TestGRPCConfigDefaults verifies default values for gRPC tuning configuration
 func TestGRPCConfigDefaults(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultGRPCConfig()
 
 	// Keepalive defaults (optimized for vector DB workloads with heavy GC)
@@ -33,6 +36,9 @@ func TestGRPCConfigDefaults(t *testing.T) {
 
 // TestGRPCConfigCustomValues verifies custom configuration values are respected
 func TestGRPCConfigCustomValues(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := GRPCConfig{
 		KeepAliveTime:                30 * time.Second,
 		KeepAliveTimeout:             10 * time.Second,
@@ -58,6 +64,9 @@ func TestGRPCConfigCustomValues(t *testing.T) {
 
 // TestBuildServerOptions verifies gRPC server options are correctly built
 func TestBuildServerOptions(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultGRPCConfig()
 	opts := cfg.BuildServerOptions()
 
@@ -74,6 +83,9 @@ func TestBuildServerOptions(t *testing.T) {
 
 // TestBuildServerOptionsCreatesValidServer verifies options create a valid gRPC server
 func TestBuildServerOptionsCreatesValidServer(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultGRPCConfig()
 	opts := cfg.BuildServerOptions()
 
@@ -85,6 +97,9 @@ func TestBuildServerOptionsCreatesValidServer(t *testing.T) {
 
 // TestBuildServerOptionsWithAggressiveKeepalive tests high-frequency keepalive settings
 func TestBuildServerOptionsWithAggressiveKeepalive(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := GRPCConfig{
 		KeepAliveTime:                10 * time.Second,
 		KeepAliveTimeout:             5 * time.Second,
@@ -105,6 +120,9 @@ func TestBuildServerOptionsWithAggressiveKeepalive(t *testing.T) {
 
 // TestBuildClientOptions verifies gRPC client options are correctly built
 func TestBuildClientOptions(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultGRPCConfig()
 	opts := cfg.BuildClientOptions()
 
@@ -114,6 +132,9 @@ func TestBuildClientOptions(t *testing.T) {
 
 // TestKeepaliveServerParams verifies keepalive.ServerParameters are built correctly
 func TestKeepaliveServerParams(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := GRPCConfig{
 		KeepAliveTime:    1 * time.Minute,
 		KeepAliveTimeout: 30 * time.Second,
@@ -127,6 +148,9 @@ func TestKeepaliveServerParams(t *testing.T) {
 
 // TestKeepaliveEnforcementPolicy verifies keepalive.EnforcementPolicy is built correctly
 func TestKeepaliveEnforcementPolicy(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := GRPCConfig{
 		KeepAliveMinTime:             2 * time.Minute,
 		KeepAlivePermitWithoutStream: true,
@@ -140,6 +164,9 @@ func TestKeepaliveEnforcementPolicy(t *testing.T) {
 
 // TestClientKeepaliveParams verifies client keepalive parameters
 func TestClientKeepaliveParams(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := GRPCConfig{
 		KeepAliveTime:                60 * time.Second,
 		KeepAliveTimeout:             20 * time.Second,
@@ -155,6 +182,9 @@ func TestClientKeepaliveParams(t *testing.T) {
 
 // TestGRPCConfigValidation verifies configuration validation
 func TestGRPCConfigValidation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name    string
 		cfg     GRPCConfig
@@ -220,6 +250,9 @@ func TestGRPCConfigValidation(t *testing.T) {
 
 // TestGRPCConfigString verifies string representation for logging
 func TestGRPCConfigString(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultGRPCConfig()
 	str := cfg.String()
 

@@ -12,6 +12,9 @@ import (
 )
 
 func TestTieredStorage_OffloadAndFetch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	path := "test_tiered.dvs"
 	defer os.Remove(path)
 
@@ -56,6 +59,9 @@ func TestTieredStorage_OffloadAndFetch(t *testing.T) {
 }
 
 func TestTieredStorage_EnforcePolicy(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	path := "test_policy.dvs"
 	defer os.Remove(path)
 

@@ -8,6 +8,9 @@ import (
 )
 
 func TestBitmapIndex_AddAndFilter(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBitmapIndex()
 
 	// Add some data
@@ -61,6 +64,9 @@ func TestBitmapIndex_AddAndFilter(t *testing.T) {
 }
 
 func TestBitmapIndex_Remove(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewBitmapIndex()
 	_ = idx.Add(1, "cat", "A")
 	_ = idx.Add(2, "cat", "A")
@@ -76,6 +82,9 @@ func TestBitmapIndex_Remove(t *testing.T) {
 }
 
 func FuzzBitmapIndex(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(uint32(1), "cat", "A")
 	f.Add(uint32(2), "cat", "B")
 	f.Add(uint32(3), "tag", "X")

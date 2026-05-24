@@ -13,6 +13,9 @@ func addToShardedIndex(idx *ShardedInvertedIndex, id VectorID, text string) {
 
 // TestShardedInvertedIndex_BasicAddSearch verifies basic functionality
 func TestShardedInvertedIndex_BasicAddSearch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewShardedInvertedIndex()
 
 	addToShardedIndex(idx, VectorID(0), "error code 500 internal server error")
@@ -39,6 +42,9 @@ func TestShardedInvertedIndex_BasicAddSearch(t *testing.T) {
 
 // TestShardedInvertedIndex_Delete verifies delete functionality
 func TestShardedInvertedIndex_Delete(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewShardedInvertedIndex()
 
 	addToShardedIndex(idx, VectorID(0), "error code 500")
@@ -62,6 +68,9 @@ func TestShardedInvertedIndex_Delete(t *testing.T) {
 
 // TestShardedInvertedIndex_ConcurrentSearch verifies concurrent searches
 func TestShardedInvertedIndex_ConcurrentSearch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewShardedInvertedIndex()
 
 	terms := []string{"error", "warning", "info", "debug", "trace"}
@@ -97,6 +106,9 @@ func TestShardedInvertedIndex_ConcurrentSearch(t *testing.T) {
 
 // TestShardedInvertedIndex_ConcurrentAdd verifies concurrent adds
 func TestShardedInvertedIndex_ConcurrentAdd(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewShardedInvertedIndex()
 
 	var wg sync.WaitGroup
@@ -122,6 +134,9 @@ func TestShardedInvertedIndex_ConcurrentAdd(t *testing.T) {
 
 // TestShardedInvertedIndex_ConcurrentMixed tests mixed operations
 func TestShardedInvertedIndex_ConcurrentMixed(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	idx := NewShardedInvertedIndex()
 
 	for i := 0; i < 500; i++ {

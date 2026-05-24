@@ -13,6 +13,9 @@ import (
 )
 
 func TestVectorStore_IndexRecordColumns(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
@@ -55,6 +58,9 @@ func TestVectorStore_IndexRecordColumns(t *testing.T) {
 }
 
 func TestVectorStore_IndexRecordColumns_NoIndexedColumns(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
@@ -86,6 +92,9 @@ func TestVectorStore_IndexRecordColumns_NoIndexedColumns(t *testing.T) {
 }
 
 func TestVectorStore_GetSetIndexedColumns(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
@@ -104,6 +113,9 @@ func TestVectorStore_GetSetIndexedColumns(t *testing.T) {
 }
 
 func TestVectorStore_FilterRecordOptimized_NoFilters(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
@@ -137,6 +149,9 @@ func TestVectorStore_FilterRecordOptimized_NoFilters(t *testing.T) {
 }
 
 func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()
@@ -179,6 +194,9 @@ func TestVectorStore_FilterRecordOptimized_WithIndex(t *testing.T) {
 }
 
 func TestVectorStore_FilterRecordOptimized_FallbackToCompute(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 0, 0, 0)
 	defer func() { _ = store.Close() }()

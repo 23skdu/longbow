@@ -17,6 +17,9 @@ import (
 )
 
 func TestPQPersistence(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Setup
 	tmpDir, err := os.MkdirTemp("", "pq_persistence_test")
 	require.NoError(t, err)

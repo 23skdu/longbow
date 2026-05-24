@@ -11,6 +11,9 @@ import (
 )
 
 func TestDataset_FragmentationTracking(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "vector", Type: arrow.FixedSizeListOf(2, arrow.PrimitiveTypes.Float32)},
@@ -55,6 +58,9 @@ func TestDataset_FragmentationTracking(t *testing.T) {
 }
 
 func TestDataset_FragmentationMultipleBatches(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 	}, nil)
@@ -104,6 +110,9 @@ func TestDataset_FragmentationMultipleBatches(t *testing.T) {
 }
 
 func TestDataset_FragmentationNilTracker(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 	}, nil)

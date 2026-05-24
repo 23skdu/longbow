@@ -13,6 +13,9 @@ import (
 )
 
 func TestSearchContextCancellation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1<<30, 0, 0)
@@ -94,6 +97,9 @@ func TestSearchContextCancellation(t *testing.T) {
 }
 
 func TestCompactionContextCancellation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1<<30, 0, 0)

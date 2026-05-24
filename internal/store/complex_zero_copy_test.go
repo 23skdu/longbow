@@ -14,6 +14,9 @@ import (
 // TestArrowHNSW_Complex64_ZeroCopy validates that we can insert and search
 // using native []complex64 slices without intermediate float32 conversion.
 func TestArrowHNSW_Complex64_ZeroCopy(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dims := 128
 	count := 50
 
@@ -68,6 +71,9 @@ func TestArrowHNSW_Complex64_ZeroCopy(t *testing.T) {
 
 // TestArrowHNSW_Complex128_ZeroCopy validates native complex128 support.
 func TestArrowHNSW_Complex128_ZeroCopy(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dims := 64
 	count := 30
 
@@ -110,6 +116,9 @@ func TestArrowHNSW_Complex128_ZeroCopy(t *testing.T) {
 }
 
 func TestArrowHNSW_Complex_FlattenedQuery(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	dims := 4 // 4 complex numbers
 	config := DefaultArrowHNSWConfig()
 	config.Dims = dims

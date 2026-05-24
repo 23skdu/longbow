@@ -13,6 +13,9 @@ import (
 
 // TestRecallDebug helps debug why recall is so low
 func TestRecallDebug(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 
 	// Small test: 100 vectors, dim 32

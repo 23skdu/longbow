@@ -10,6 +10,9 @@ import (
 // =============================================================================
 
 func TestVectorClock_NewVectorClock(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc := NewVectorClock("node1")
 	if vc == nil {
 		t.Fatal("expected non-nil VectorClock")
@@ -23,6 +26,9 @@ func TestVectorClock_NewVectorClock(t *testing.T) {
 }
 
 func TestVectorClock_Increment(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc := NewVectorClock("node1")
 	vc.Increment()
 	if vc.Get("node1") != 1 {
@@ -36,6 +42,9 @@ func TestVectorClock_Increment(t *testing.T) {
 }
 
 func TestVectorClock_Merge(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc1 := NewVectorClock("node1")
 	vc1.Increment() // node1: 1
 	vc1.Increment() // node1: 2
@@ -56,6 +65,9 @@ func TestVectorClock_Merge(t *testing.T) {
 }
 
 func TestVectorClock_Compare_Equal(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc1 := NewVectorClock("node1")
 	vc1.Set("node1", 2)
 	vc1.Set("node2", 3)
@@ -70,6 +82,9 @@ func TestVectorClock_Compare_Equal(t *testing.T) {
 }
 
 func TestVectorClock_Compare_Before(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc1 := NewVectorClock("node1")
 	vc1.Set("node1", 1)
 	vc1.Set("node2", 2)
@@ -85,6 +100,9 @@ func TestVectorClock_Compare_Before(t *testing.T) {
 }
 
 func TestVectorClock_Compare_After(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc1 := NewVectorClock("node1")
 	vc1.Set("node1", 3)
 	vc1.Set("node2", 4)
@@ -100,6 +118,9 @@ func TestVectorClock_Compare_After(t *testing.T) {
 }
 
 func TestVectorClock_Compare_Concurrent(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc1 := NewVectorClock("node1")
 	vc1.Set("node1", 2)
 	vc1.Set("node2", 1)
@@ -115,6 +136,9 @@ func TestVectorClock_Compare_Concurrent(t *testing.T) {
 }
 
 func TestVectorClock_Copy(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc1 := NewVectorClock("node1")
 	vc1.Set("node1", 5)
 	vc1.Set("node2", 3)
@@ -131,6 +155,9 @@ func TestVectorClock_Copy(t *testing.T) {
 }
 
 func TestVectorClock_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc := NewVectorClock("node1")
 	var wg sync.WaitGroup
 
@@ -151,6 +178,9 @@ func TestVectorClock_ConcurrentAccess(t *testing.T) {
 }
 
 func TestVectorClock_Serialize(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc := NewVectorClock("node1")
 	vc.Set("node1", 5)
 	vc.Set("node2", 3)
@@ -174,6 +204,9 @@ func TestVectorClock_Serialize(t *testing.T) {
 // =============================================================================
 
 func TestVersionedData_New(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc := NewVectorClock("node1")
 	vc.Increment()
 
@@ -191,6 +224,9 @@ func TestVersionedData_New(t *testing.T) {
 }
 
 func TestVersionedData_Supersedes(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc1 := NewVectorClock("node1")
 	vc1.Set("node1", 1)
 	vd1 := NewVersionedData("ds", []byte("v1"), vc1)
@@ -209,6 +245,9 @@ func TestVersionedData_Supersedes(t *testing.T) {
 }
 
 func TestVersionedData_Conflicts(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vc1 := NewVectorClock("node1")
 	vc1.Set("node1", 2)
 	vc1.Set("node2", 1)
@@ -233,6 +272,9 @@ func TestVersionedData_Conflicts(t *testing.T) {
 // =============================================================================
 
 func TestVectorClock_Metrics(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Verify metrics are registered and increment correctly
 	vc1 := NewVectorClock("node1")
 	vc1.Increment()

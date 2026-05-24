@@ -13,6 +13,9 @@ import (
 )
 
 func FuzzDatasetHeaderValidate(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Fuzz(func(t *testing.T, magic string, version int) {
 		header := DatasetHeader{
 			Magic:   magic,
@@ -23,6 +26,9 @@ func FuzzDatasetHeaderValidate(f *testing.F) {
 }
 
 func FuzzDatasetIOExportImport(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Fuzz(func(t *testing.T, numVectors int, vectorDim int) {
 		if numVectors <= 0 || numVectors > 10000 {
 			t.Skip()
@@ -81,6 +87,9 @@ func FuzzDatasetIOExportImport(f *testing.F) {
 }
 
 func FuzzDatasetParquetRecord(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Fuzz(func(t *testing.T, id int64, vecData []byte, metaData []byte, createdAt int64) {
 		record := DatasetParquetRecord{
 			ID:        id,

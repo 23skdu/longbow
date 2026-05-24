@@ -47,6 +47,9 @@ func applyAlphaDecay(initialScore, alpha float64, hop int) float64 {
 // TestGraphAlpha_ZeroCollapsesToSingleHop verifies that alpha=0.0 eliminates
 // all spread: the score at hop ≥ 1 drops to zero.
 func TestGraphAlpha_ZeroCollapsesToSingleHop(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	params := spreadingActivationParams{Alpha: 0.0, Depth: 3}
 	require.NoError(t, validateSpreadingActivationParams(params))
 
@@ -57,6 +60,9 @@ func TestGraphAlpha_ZeroCollapsesToSingleHop(t *testing.T) {
 // TestGraphAlpha_OneFullSpread verifies that alpha=1.0 applies no decay —
 // scores remain equal at all depths.
 func TestGraphAlpha_OneFullSpread(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	params := spreadingActivationParams{Alpha: 1.0, Depth: 5}
 	require.NoError(t, validateSpreadingActivationParams(params))
 
@@ -68,6 +74,9 @@ func TestGraphAlpha_OneFullSpread(t *testing.T) {
 
 // TestGraphDepth_Zero verifies that depth=0 means no expansion.
 func TestGraphDepth_Zero(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	params := spreadingActivationParams{Alpha: 0.85, Depth: 0}
 	require.NoError(t, validateSpreadingActivationParams(params))
 	// No assertion needed beyond param validation: depth=0 is valid and
@@ -76,6 +85,9 @@ func TestGraphDepth_Zero(t *testing.T) {
 
 // TestGraphDepth_Negative verifies that depth<0 returns an error.
 func TestGraphDepth_Negative(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	params := spreadingActivationParams{Alpha: 0.85, Depth: -1}
 	err := validateSpreadingActivationParams(params)
 	require.Error(t, err)
@@ -85,6 +97,9 @@ func TestGraphDepth_Negative(t *testing.T) {
 // TestGraphAlpha_OutOfRange verifies that alpha > 1.0 returns an error with
 // the exact message "alpha must be in [0.0, 1.0]".
 func TestGraphAlpha_OutOfRange(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	params := spreadingActivationParams{Alpha: 1.5, Depth: 2}
 	err := validateSpreadingActivationParams(params)
 	require.Error(t, err)
@@ -94,6 +109,9 @@ func TestGraphAlpha_OutOfRange(t *testing.T) {
 // TestSpreadingActivation_ScoreDecay verifies that scores decrease
 // monotonically with hop distance when alpha < 1.0.
 func TestSpreadingActivation_ScoreDecay(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	alpha := 0.85
 	initialScore := 1.0
 	prevScore := initialScore
@@ -110,6 +128,9 @@ func TestSpreadingActivation_ScoreDecay(t *testing.T) {
 // stronger graph influence: at alpha=1.0 the score at depth 2 equals the
 // initial score, whereas at alpha=0.5 it is significantly lower.
 func TestGraphRAG_ReRankingResultOrder(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	initialScore := 1.0
 	depth := 2
 

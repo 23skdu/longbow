@@ -13,6 +13,9 @@ import (
 )
 
 func FuzzGoroutineLeakRapidCycles(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(uint8(1), uint8(10))
 	f.Add(uint8(5), uint8(50))
 	f.Add(uint8(10), uint8(25))

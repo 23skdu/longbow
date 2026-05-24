@@ -9,6 +9,9 @@ import (
 )
 
 func TestVersionHistory_New(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultVersionHistoryConfig()
 	vh := NewVersionHistory(cfg)
 
@@ -17,6 +20,9 @@ func TestVersionHistory_New(t *testing.T) {
 }
 
 func TestVersionHistory_Add(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vh := NewVersionHistory(DefaultVersionHistoryConfig())
 
 	vector := []float32{1.0, 2.0, 3.0}
@@ -29,6 +35,9 @@ func TestVersionHistory_Add(t *testing.T) {
 }
 
 func TestVersionHistory_GetLatestVersion(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vh := NewVersionHistory(DefaultVersionHistoryConfig())
 
 	now := time.Now().UnixNano()
@@ -41,6 +50,9 @@ func TestVersionHistory_GetLatestVersion(t *testing.T) {
 }
 
 func TestVersionHistory_GetVersionAt(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vh := NewVersionHistory(DefaultVersionHistoryConfig())
 
 	now := time.Now().UnixNano()
@@ -54,6 +66,9 @@ func TestVersionHistory_GetVersionAt(t *testing.T) {
 }
 
 func TestVersionHistory_Prune(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vh := NewVersionHistory(DefaultVersionHistoryConfig())
 
 	now := time.Now().UnixNano()
@@ -69,6 +84,9 @@ func TestVersionHistory_Prune(t *testing.T) {
 }
 
 func TestVersionHistory_MaxVersions(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := VersionHistoryConfig{
 		MaxVersions:     3,
 		RetentionPeriod: 7 * 24 * time.Hour,

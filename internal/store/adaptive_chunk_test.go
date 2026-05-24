@@ -13,6 +13,9 @@ import (
 )
 
 func TestAdaptiveChunkSize_Calculation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	testCases := []struct {
 		name           string
 		numWorkers     int
@@ -74,6 +77,9 @@ func TestAdaptiveChunkSize_Calculation(t *testing.T) {
 }
 
 func TestAdaptiveChunkSize_WorkerEfficiency(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	testCases := []struct {
 		name           string
 		numWorkers     int
@@ -125,6 +131,9 @@ func TestAdaptiveChunkSize_WorkerEfficiency(t *testing.T) {
 }
 
 func TestAdaptiveChunkSize_ConfigThresholds(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	testCases := []struct {
 		name             string
 		config           types.ParallelSearchConfig
@@ -179,6 +188,9 @@ func TestAdaptiveChunkSize_ConfigThresholds(t *testing.T) {
 }
 
 func TestAdaptiveChunkSize_ConcurrentSafety(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	vectors := GenerateTestVectors(100, 4)
 	rec := MakeBatchTestRecord(mem, 4, vectors)
@@ -285,6 +297,9 @@ func BenchmarkAdaptiveChunkSize_ParallelVsSerial(b *testing.B) {
 }
 
 func FuzzAdaptiveChunkSizeCalculation(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Add(4, 100, 32, 500)
 	f.Add(8, 1000, 32, 500)
 	f.Add(16, 10000, 32, 500)

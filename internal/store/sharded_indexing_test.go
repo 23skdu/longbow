@@ -10,6 +10,9 @@ import (
 
 // TestNewShardedIndexChannel verifies sharded channel creation
 func TestNewShardedIndexChannel(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	numShards := 4
 	bufferSize := 100
 
@@ -35,6 +38,9 @@ func TestNewShardedIndexChannel(t *testing.T) {
 
 // TestShardedIndexChannelRouting verifies consistent hash-based routing
 func TestShardedIndexChannelRouting(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sic := NewShardedIndexChannel(8, 100)
 
 	// Same dataset should always route to same shard
@@ -60,6 +66,9 @@ func TestShardedIndexChannelRouting(t *testing.T) {
 
 // TestShardedIndexChannelSend verifies job submission
 func TestShardedIndexChannelSend(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sic := NewShardedIndexChannel(4, 10)
 
 	job := IndexJob{
@@ -90,6 +99,9 @@ func TestShardedIndexChannelSend(t *testing.T) {
 
 // TestShardedIndexChannelTrySend verifies non-blocking send
 func TestShardedIndexChannelTrySend(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sic := NewShardedIndexChannel(2, 1)
 
 	job := IndexJob{DatasetName: "test", BatchIdx: 0}
@@ -105,6 +117,9 @@ func TestShardedIndexChannelTrySend(t *testing.T) {
 
 // TestShardedIndexChannelClose verifies graceful shutdown
 func TestShardedIndexChannelClose(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sic := NewShardedIndexChannel(4, 100)
 
 	sic.Close()
@@ -124,6 +139,9 @@ func TestShardedIndexChannelClose(t *testing.T) {
 
 // TestShardedIndexChannelStats verifies per-shard statistics
 func TestShardedIndexChannelStats(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sic := NewShardedIndexChannel(4, 100)
 
 	for i := 0; i < 20; i++ {
@@ -147,6 +165,9 @@ func TestShardedIndexChannelStats(t *testing.T) {
 
 // TestShardedIndexChannelWithWorkers verifies end-to-end with workers
 func TestShardedIndexChannelWithWorkers(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sic := NewShardedIndexChannel(4, 100)
 
 	var processed atomic.Int64
@@ -176,6 +197,9 @@ func TestShardedIndexChannelWithWorkers(t *testing.T) {
 
 // TestDefaultShardCount verifies sensible default
 func TestDefaultShardCount(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sic := NewShardedIndexChannelDefault(1000)
 
 	expected := runtime.NumCPU()
@@ -186,6 +210,9 @@ func TestDefaultShardCount(t *testing.T) {
 
 // TestNoNoisyNeighbor verifies isolation between datasets on different shards
 func TestNoNoisyNeighbor(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	sic := NewShardedIndexChannel(4, 5)
 
 	// Find two datasets that hash to different shards

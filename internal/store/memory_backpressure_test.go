@@ -10,6 +10,9 @@ import (
 )
 
 func TestMemoryBackpressure_NewController(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := BackpressureConfig{
 		SoftLimitBytes: 1 << 30, // 1GB
 		HardLimitBytes: 2 << 30, // 2GB
@@ -25,6 +28,9 @@ func TestMemoryBackpressure_NewController(t *testing.T) {
 }
 
 func TestMemoryBackpressure_CheckPressure(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := BackpressureConfig{
 		SoftLimitBytes: 100, // Very low for testing
 		HardLimitBytes: 200,
@@ -39,6 +45,9 @@ func TestMemoryBackpressure_CheckPressure(t *testing.T) {
 }
 
 func TestMemoryBackpressure_Acquire(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := BackpressureConfig{
 		SoftLimitBytes: 100 << 30, // 100GB - won't trigger
 		HardLimitBytes: 200 << 30,
@@ -55,6 +64,9 @@ func TestMemoryBackpressure_Acquire(t *testing.T) {
 }
 
 func TestMemoryBackpressure_AcquireTimeout(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := BackpressureConfig{
 		SoftLimitBytes: 1, // 1 byte - always under pressure
 		HardLimitBytes: 2,
@@ -71,6 +83,9 @@ func TestMemoryBackpressure_AcquireTimeout(t *testing.T) {
 }
 
 func TestMemoryBackpressure_Metrics(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := BackpressureConfig{
 		SoftLimitBytes: 100 << 30,
 		HardLimitBytes: 200 << 30,
@@ -86,6 +101,9 @@ func TestMemoryBackpressure_Metrics(t *testing.T) {
 }
 
 func TestMemoryBackpressure_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := BackpressureConfig{
 		SoftLimitBytes: 100 << 30,
 		HardLimitBytes: 200 << 30,
@@ -114,6 +132,9 @@ func TestMemoryBackpressure_ConcurrentAccess(t *testing.T) {
 }
 
 func TestMemoryBackpressure_PressureLevels(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := BackpressureConfig{
 		SoftLimitBytes: 100 << 30,
 		HardLimitBytes: 200 << 30,
@@ -138,6 +159,9 @@ func TestMemoryBackpressure_PressureLevels(t *testing.T) {
 }
 
 func TestMemoryBackpressure_SoftPressureSlowdown(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := BackpressureConfig{
 		SoftLimitBytes:    100 << 30,
 		HardLimitBytes:    200 << 30,
@@ -159,6 +183,9 @@ func TestMemoryBackpressure_SoftPressureSlowdown(t *testing.T) {
 }
 
 func TestMemoryBackpressure_BackgroundUpdate(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := BackpressureConfig{
 		SoftLimitBytes: 10 << 30, // 10GB
 		HardLimitBytes: 20 << 30, // 20GB

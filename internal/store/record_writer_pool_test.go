@@ -18,6 +18,9 @@ import (
 // =============================================================================
 
 func TestRecordWriterPoolConfig_Defaults(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := DefaultRecordWriterPoolConfig()
 
 	assert.Equal(t, 64*1024, cfg.InitialBufferSize, "default initial buffer should be 64KB")
@@ -26,6 +29,9 @@ func TestRecordWriterPoolConfig_Defaults(t *testing.T) {
 }
 
 func TestRecordWriterPoolConfig_Validation(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		name    string
 		config  RecordWriterPoolConfig
@@ -61,6 +67,9 @@ func TestRecordWriterPoolConfig_Validation(t *testing.T) {
 }
 
 func TestIPCBufferPool_GetAndPut(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pool := NewIPCBufferPool(DefaultRecordWriterPoolConfig())
 	require.NotNil(t, pool)
 
@@ -83,6 +92,9 @@ func TestIPCBufferPool_GetAndPut(t *testing.T) {
 }
 
 func TestIPCBufferPool_OversizedBufferDiscarded(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cfg := RecordWriterPoolConfig{
 		InitialBufferSize: 1024,
 		MaxBufferSize:     4096,
@@ -104,6 +116,9 @@ func TestIPCBufferPool_OversizedBufferDiscarded(t *testing.T) {
 }
 
 func TestIPCBufferPool_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pool := NewIPCBufferPool(DefaultRecordWriterPoolConfig())
 
 	var wg sync.WaitGroup
@@ -129,6 +144,9 @@ func TestIPCBufferPool_ConcurrentAccess(t *testing.T) {
 }
 
 func TestIPCBufferPool_Stats(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	pool := NewIPCBufferPool(DefaultRecordWriterPoolConfig())
 
 	// Initial stats
@@ -165,6 +183,9 @@ func TestIPCBufferPool_Stats(t *testing.T) {
 }
 
 func TestPooledRecordWriter_WriteRecordBatch(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	alloc := memory.NewGoAllocator()
 	pool := NewIPCBufferPool(DefaultRecordWriterPoolConfig())
 
@@ -196,6 +217,9 @@ func TestPooledRecordWriter_WriteRecordBatch(t *testing.T) {
 }
 
 func TestPooledRecordWriter_BufferReuse(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	alloc := memory.NewGoAllocator()
 	cfg := RecordWriterPoolConfig{
 		InitialBufferSize: 4096,

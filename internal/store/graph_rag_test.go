@@ -18,6 +18,9 @@ import (
 )
 
 func TestGraphRAG_SearchHybrid(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Setup store
 	mem := memory.NewGoAllocator()
 	logger := zerolog.New(os.Stderr)
@@ -102,6 +105,9 @@ func TestGraphRAG_SearchHybrid(t *testing.T) {
 }
 
 func TestGraphRAG_Stability_Large(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Stability test for Part 23: Ensure no deadlocks or OOM with 25k nodes
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -205,6 +211,9 @@ func TestGraphRAG_Stability_Large(t *testing.T) {
 }
 
 func TestHNSW_SearchLayer_NilContext_Regression(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Regression test for Part 23 fix: searchLayer panicking with nil context
 	h := storecore.NewArrowHNSW(nil, &types.ArrowHNSWConfig{
 		M:              16,

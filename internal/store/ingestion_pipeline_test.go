@@ -14,6 +14,9 @@ import (
 // TestIngestionPipeline_AsyncDecoupling verifies that DoPut returns quickly
 // and data becomes visible eventually (Async Ingestion).
 func TestIngestionPipeline_AsyncDecoupling(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// Setup Store with Ingestion Pipelining Enabled
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 1024*1024*1024, 1024*1024*100, 1*time.Hour)
@@ -50,6 +53,9 @@ func TestIngestionPipeline_AsyncDecoupling(t *testing.T) {
 
 // TestIngestionPipeline_Backpressure verifies that we block when queue is full.
 func TestIngestionPipeline_Backpressure(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	t.Skip("Skipping due to timing-dependent backpressure test - needs refactor")
 
 	mem := memory.NewGoAllocator()

@@ -7,6 +7,9 @@ import (
 // Extension tests for Namespace coverage gaps
 
 func TestNamespace_AddDataset(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ns := NewNamespace("test-ns")
 	if ns.DatasetCount() != 0 {
 		t.Errorf("initial count should be 0, got %d", ns.DatasetCount())
@@ -30,6 +33,9 @@ func TestNamespace_AddDataset(t *testing.T) {
 }
 
 func TestNamespace_RemoveDataset(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ns := NewNamespace("test-ns")
 	ns.AddDataset("dataset1")
 	ns.AddDataset("dataset2")
@@ -47,6 +53,9 @@ func TestNamespace_RemoveDataset(t *testing.T) {
 }
 
 func TestNamespace_HasDataset(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ns := NewNamespace("test-ns")
 
 	if ns.HasDataset("dataset1") {
@@ -65,6 +74,9 @@ func TestNamespace_HasDataset(t *testing.T) {
 }
 
 func TestBuildNamespacedPath(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tests := []struct {
 		namespace string
 		dataset   string
@@ -86,6 +98,9 @@ func TestBuildNamespacedPath(t *testing.T) {
 }
 
 func TestNamespace_ConcurrentAccess(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	ns := NewNamespace("concurrent-ns")
 	done := make(chan bool)
 

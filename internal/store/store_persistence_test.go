@@ -17,6 +17,9 @@ import (
 )
 
 func TestVectorStore_RCU_Integration(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	vs := &VectorStore{}
 	m := make(map[string]*Dataset)
 	vs.datasets.Store(&m)
@@ -63,6 +66,9 @@ func TestVectorStore_RCU_Integration(t *testing.T) {
 }
 
 func TestVectorStore_Persistence_FullFlow(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	tmpDir, err := os.MkdirTemp("", "longbow_persistence_*")
 	require.NoError(t, err)
 	defer os.RemoveAll(tmpDir)

@@ -14,6 +14,9 @@ import (
 // TestEmbeddingProviderOrdinal verifies that the ordinal mapping is stable and
 // covers all five provider backends plus the no-embedding case.
 func TestEmbeddingProviderOrdinal(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	cases := []struct {
 		provider string
 		want     float64
@@ -36,6 +39,9 @@ func TestEmbeddingProviderOrdinal(t *testing.T) {
 // TestEmbeddingModelDimRatio verifies known provider/model pairs map to their
 // published embedding dimensions as a ratio relative to 384.
 func TestEmbeddingModelDimRatio(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	const ref = 384.0
 	cases := []struct {
 		provider  string
@@ -66,6 +72,9 @@ func TestEmbeddingModelDimRatio(t *testing.T) {
 // EmbeddingModel correctly populate positions 11 and 12 in the feature vector,
 // and that the total vector length matches numFeatures (now 13).
 func TestExtractFeatureVector_EmbeddingFields(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	fv := extractFeatureVector(QueryFeatures{
 		VectorDimension:   1536,
 		EmbeddingProvider: "openai",
@@ -79,6 +88,9 @@ func TestExtractFeatureVector_EmbeddingFields(t *testing.T) {
 }
 
 func TestExtractFeatureVector_NoEmbedding(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	fv := extractFeatureVector(QueryFeatures{VectorDimension: 128})
 	assert.Equal(t, numFeatures, len(fv))
 	assert.InDelta(t, 0.0, fv[11], 1e-9, "no provider → ordinal 0")
@@ -90,6 +102,9 @@ func TestExtractFeatureVector_NoEmbedding(t *testing.T) {
 // mixed provider samples, the k-NN scorer correctly recommends DiskANN for
 // high-dimension OpenAI embeddings vs HNSW for low-dimension local embeddings.
 func TestKNNPredict_EmbeddingProviderDiscriminates(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.New(nil).With().Logger()
 	p := NewIndexPerformancePredictor(logger, LearnedIndexConfig{
 		MinTrainingSamples: 50,
@@ -151,6 +166,9 @@ func TestKNNPredict_EmbeddingProviderDiscriminates(t *testing.T) {
 // TestSetActiveEmbedding_RoundTrip verifies SetActiveEmbedding/GetActiveEmbedding
 // round-trips correctly on a VectorStore and that unset fields return empty strings.
 func TestSetActiveEmbedding_RoundTrip(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	s := &VectorStore{}
 	s.SetActiveEmbedding("cohere", "embed-english-v3.0")
 	prov, model := s.GetActiveEmbedding()

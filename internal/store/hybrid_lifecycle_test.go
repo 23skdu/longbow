@@ -11,6 +11,9 @@ import (
 
 // TestHybridSearch_Lifecycle tests full lifecycle: create, index, search, close
 func TestHybridSearch_Lifecycle(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	bm25 := NewBM25ArenaIndex(arena, 100)
 
@@ -46,6 +49,9 @@ func TestHybridSearch_Lifecycle(t *testing.T) {
 
 // TestHybridSearch_ArenaGrowth verifies arena grows correctly
 func TestHybridSearch_ArenaGrowth(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := memory.NewSlabArena(1024) // Small arena to force growth
 	bm25 := NewBM25ArenaIndex(arena, 10)
 
@@ -69,6 +75,9 @@ func TestHybridSearch_ArenaGrowth(t *testing.T) {
 
 // TestHybridSearch_ConcurrentLifecycle tests concurrent create/destroy
 func TestHybridSearch_ConcurrentLifecycle(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	done := make(chan bool)
 
 	// Create multiple BM25 indexes concurrently
@@ -105,6 +114,9 @@ func TestHybridSearch_ConcurrentLifecycle(t *testing.T) {
 
 // TestHybridSearch_UpdateDocument tests updating an existing document
 func TestHybridSearch_UpdateDocument(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	bm25 := NewBM25ArenaIndex(arena, 100)
 
@@ -127,6 +139,9 @@ func TestHybridSearch_UpdateDocument(t *testing.T) {
 
 // TestHybridSearch_EmptyQuery tests handling of empty queries
 func TestHybridSearch_EmptyQuery(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	bm25 := NewBM25ArenaIndex(arena, 100)
 
@@ -139,6 +154,9 @@ func TestHybridSearch_EmptyQuery(t *testing.T) {
 
 // TestHybridSearch_NonExistentTokens tests queries with tokens not in index
 func TestHybridSearch_NonExistentTokens(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	bm25 := NewBM25ArenaIndex(arena, 100)
 

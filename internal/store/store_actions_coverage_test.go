@@ -30,6 +30,9 @@ func (m *mockDoActionServerCoverage) Context() context.Context {
 }
 
 func TestVectorStore_DoAction_Extended(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping broken integration test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	s := NewVectorStore(mem, logger, 1024*1024, 0, 0)

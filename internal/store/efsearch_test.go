@@ -12,6 +12,9 @@ import (
 )
 
 func FuzzEfSearchParameter(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Fuzz(func(t *testing.T, efSearch int) {
 		mem := memory.NewGoAllocator()
 		logger := zerolog.Nop()
@@ -38,6 +41,9 @@ func FuzzEfSearchParameter(f *testing.F) {
 }
 
 func FuzzVectorSearchRequestParsing(f *testing.F) {
+	if testing.Short() {
+		f.Skip("skipping fuzz test in short mode")
+	}
 	f.Fuzz(func(t *testing.T, data []byte) {
 		var req query.VectorSearchRequest
 		_ = json.Unmarshal(data, &req)

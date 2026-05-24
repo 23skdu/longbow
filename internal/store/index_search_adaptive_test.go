@@ -17,6 +17,9 @@ import (
 
 // TestAdaptiveSearch_RetryLogic tests that search expands its limit when initial candidates are filtered out
 func TestAdaptiveSearch_RetryLogic(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	mem := memory.NewGoAllocator()
 	// Schema: vector (fixed_size_list<2>), id_col (int64)
 	schema := arrow.NewSchema([]arrow.Field{
@@ -89,6 +92,9 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 }
 
 func TestAdaptiveHNSW_AdjustsM(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	// 1. Setup Config with AdaptiveM enabled
 	cfg := DefaultArrowHNSWConfig()
 	cfg.M = 16

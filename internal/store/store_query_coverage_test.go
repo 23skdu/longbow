@@ -30,6 +30,9 @@ func (m *mockListFlightsStream) Context() context.Context {
 }
 
 func TestVectorStore_ListFlights(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 	s := NewVectorStore(mem, logger, 1024*1024, 0, 0)
@@ -63,6 +66,9 @@ func TestVectorStore_ListFlights(t *testing.T) {
 }
 
 func TestVectorStore_GetFlightInfo(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 	s := NewVectorStore(mem, logger, 1024*1024, 0, 0)
@@ -89,6 +95,9 @@ func TestVectorStore_GetFlightInfo(t *testing.T) {
 }
 
 func TestVectorStore_MapInternalToUserIDs(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 	s := NewVectorStore(mem, logger, 1024*1024, 0, 0)
@@ -154,6 +163,9 @@ func (m *mockVectorIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx in
 func (m *mockVectorIndex) Warmup() int { return 0 }
 
 func TestDoGetSchemaAllocations(t *testing.T) {
+	if testing.Short() {
+			t.Skip("skipping test in short mode")
+	}
 	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
 	s := NewVectorStore(mem, logger, 1024*1024, 0, 0)

@@ -473,18 +473,16 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			return nil, fmt.Errorf("searchLayer: unsupported query vector type %T", queryVec)
 		}
 
-		if distBatchComputer == nil {
-			distBatchComputer = func(ids []uint32) ([]float32, error) {
-				dists := make([]float32, len(ids))
-				for i, id := range ids {
-					d, err := distComputer(id)
-					if err != nil {
-						return nil, err
-					}
-					dists[i] = d
+		distBatchComputer = func(ids []uint32) ([]float32, error) {
+			dists := make([]float32, len(ids))
+			for i, id := range ids {
+				d, err := distComputer(id)
+				if err != nil {
+					return nil, err
 				}
-				return dists, nil
+				dists[i] = d
 			}
+			return dists, nil
 		}
 	}
 

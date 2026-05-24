@@ -259,7 +259,16 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 		// Do not set sq8Ready to true until trained
 	}
 
-	h.efTuner = NewPIDTuner(0.95, int(config.EfSearch)) // Target 0.95 recall
+	// Autonomous efSearch Tuning based on DataType
+	baseEfSearch := int(config.EfSearch)
+	if config.DataType == types.VectorTypeInt8 || config.DataType == types.VectorTypeTQ || config.TurboQuantEnabled {
+		// Low-precision data types are heavily memory-bound optimized, so they can handle
+		// a massively expanded search buffer with very little latency penalty.
+		if baseEfSearch < 400 {
+			baseEfSearch = 400
+		}
+	}
+	h.efTuner = NewPIDTuner(0.95, baseEfSearch) // Target 0.95 recall
 
 	// Ensure initial capacity
 	capacity := config.InitialCapacity

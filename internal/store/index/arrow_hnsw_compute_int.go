@@ -52,6 +52,18 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+func (c *int16Computer) ComputeBatch(ids []uint32) ([]float32, error) {
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
+}
+
 func (c *int16Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsInt16ChunkFast(int(cID))
@@ -106,6 +118,18 @@ func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 	}
 	return math.MaxFloat32, nil
+}
+
+func (c *uint16Computer) ComputeBatch(ids []uint32) ([]float32, error) {
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
 }
 
 func (c *uint16Computer) Prefetch(id uint32) {
@@ -164,6 +188,18 @@ func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+func (c *int32Computer) ComputeBatch(ids []uint32) ([]float32, error) {
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
+}
+
 func (c *int32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsInt32ChunkFast(int(cID))
@@ -218,6 +254,18 @@ func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 	}
 	return math.MaxFloat32, nil
+}
+
+func (c *uint32Computer) ComputeBatch(ids []uint32) ([]float32, error) {
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
 }
 
 func (c *uint32Computer) Prefetch(id uint32) {
@@ -276,6 +324,18 @@ func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
+func (c *int64Computer) ComputeBatch(ids []uint32) ([]float32, error) {
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
+}
+
 func (c *int64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsInt64ChunkFast(int(cID))
@@ -330,6 +390,18 @@ func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 	}
 	return math.MaxFloat32, nil
+}
+
+func (c *uint64Computer) ComputeBatch(ids []uint32) ([]float32, error) {
+	dists := make([]float32, len(ids))
+	for i, id := range ids {
+		dist, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dists[i] = dist
+	}
+	return dists, nil
 }
 
 func (c *uint64Computer) Prefetch(id uint32) {

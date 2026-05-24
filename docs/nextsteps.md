@@ -1,5 +1,10 @@
 # Next Steps & Priorities
 
+## Actionable Recommendations (Derived from Benchmarks)
+- **Implement Batched GPU Distance Computations**: The `float32` ingestion scale is fundamentally bottlenecked by L1/L2 cache latency (fetching 1,536 scattered bytes per neighbor). Shifting distance compute arrays to the GPU can alleviate memory-bandwidth ceilings for high-density indexing.
+- **Tune `efSearch` Autonomously based on Data Type**: Increase the `efSearch` buffer heavily for lower-precision types (`int8`, `turboquant8`) to maintain recall, since they perform significantly faster with less memory-bound limitations compared to `float32` and `complex128`.
+- **Mitigate Benchmark Timeout Cliffs**: Ensure benchmark scripts (`unified_benchmark.py`) gracefully checkpoint or dynamically adjust timeouts rather than hard-killing `bench-tool` (SIGKILL -9) after 30 minutes, which causes zombie process buildup and requires manual intervention.
+
 > [!IMPORTANT]
 > **P0 Blockers: Test Suite Optimization & Context Window Refactoring**
 > We must address the test execution time (especially race detection timeouts) and file sizes to ensure maintainability and agent context limits.

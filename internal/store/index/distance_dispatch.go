@@ -37,6 +37,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 
 	// Define polymorphic distance computer
 	var distComputer func(uint32) (float32, error)
+	var distBatchComputer func([]uint32) ([]float32, error)
 	var epDist float32
 
 	var disk *DiskGraph
@@ -47,6 +48,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 	// Optimization: Use unified DistanceComputer interface
 	if comp, ok := computer.(DistanceComputer); ok {
 		distComputer = comp.ComputeSingle
+		distBatchComputer = comp.ComputeBatch
 		var err error
 		if ctx != nil {
 			ctx.distComputeCount++
@@ -470,6 +472,20 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		default:
 			return nil, fmt.Errorf("searchLayer: unsupported query vector type %T", queryVec)
 		}
+
+		if distBatchComputer == nil {
+			distBatchComputer = func(ids []uint32) ([]float32, error) {
+				dists := make([]float32, len(ids))
+				for i, id := range ids {
+					d, err := distComputer(id)
+					if err != nil {
+						return nil, err
+					}
+					dists[i] = d
+				}
+				return dists, nil
+			}
+		}
 	}
 
 	// 1. Reset Frontier for this layer
@@ -606,43 +622,49 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			if len(batch) > 0 {
 				results := ctx.EvaluatePredicateBatch(batch)
 
+				var validBatch []uint32
 				for i, n := range batch {
-					if results[i] == 0 {
+					if results[i] == 1 {
+						validBatch = append(validBatch, n)
+					} else {
 						metrics.HNSWNodesSkippedTotal.WithLabelValues(h.name).Inc()
-						continue
 					}
+				}
 
-					ctx.distComputeCount++
-					d, err := distComputer(n)
-					if err != nil {
-						continue
-					}
+				if len(validBatch) > 0 {
+					ctx.distComputeCount += len(validBatch)
+					dists, err := distBatchComputer(validBatch)
+					if err == nil {
+						for i, n := range validBatch {
+							d := dists[i]
+							cand := types.Candidate{ID: n, Dist: d}
+							heap.Push(minHeap, cand)
 
-					cand := types.Candidate{ID: n, Dist: d}
-					heap.Push(minHeap, cand)
+							if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+								continue
+							}
+							if h.IsDeleted(n) {
+								continue
+							}
 
-					if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
-						continue
-					}
-					if h.IsDeleted(n) {
-						continue
-					}
-
-					if len(ctx.resultSet) > 0 {
-						furthest := ctx.resultSet[0]
-						if ctx.resultSet.Len() < ef || d < furthest.Dist {
-							heap.Push(resultSetAdapter, cand)
-							if ctx.resultSet.Len() > ef {
-								heap.Pop(resultSetAdapter)
+							if len(ctx.resultSet) > 0 {
+								furthest := ctx.resultSet[0]
+								if ctx.resultSet.Len() < ef || d < furthest.Dist {
+									heap.Push(resultSetAdapter, cand)
+									if ctx.resultSet.Len() > ef {
+										heap.Pop(resultSetAdapter)
+									}
+								}
+							} else {
+								heap.Push(resultSetAdapter, cand)
 							}
 						}
-					} else {
-						heap.Push(resultSetAdapter, cand)
 					}
 				}
 			}
 		} else {
 			// Standard Path (No Predicate)
+			batch := ctx.neighborBatch[:0]
 			for _, n := range neighbors {
 				if !ctx.AllowUncommitted && int64(n) >= maxCommitted {
 					continue
@@ -651,38 +673,42 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					continue
 				}
 				ctx.visited.Set(int(n)) // #nosec G115
+				batch = append(batch, n)
+			}
 
-				ctx.distComputeCount++
-				d, err := distComputer(n)
-				if err != nil {
-					continue
-				}
+			if len(batch) > 0 {
+				ctx.distComputeCount += len(batch)
+				dists, err := distBatchComputer(batch)
+				if err == nil {
+					for i, n := range batch {
+						d := dists[i]
+						cand := types.Candidate{ID: n, Dist: d}
 
-				cand := types.Candidate{ID: n, Dist: d}
+						// Add to candidates for traversal regardless of filter
+						heap.Push(minHeap, cand)
 
-				// Add to candidates for traversal regardless of filter
-				heap.Push(minHeap, cand)
+						// Only add to resultSet if it passes filters
+						if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+							continue
+						}
+						if h.deleted != nil && h.deleted.Contains(n) {
+							continue
+						}
 
-				// Only add to resultSet if it passes filters
-				if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
-					continue
-				}
-				if h.deleted != nil && h.deleted.Contains(n) {
-					continue
-				}
+						if len(ctx.resultSet) > 0 {
+							furthest := ctx.resultSet[0]
 
-				if len(ctx.resultSet) > 0 {
-					furthest := ctx.resultSet[0]
-
-					if ctx.resultSet.Len() < ef || d < furthest.Dist {
-						heap.Push(resultSetAdapter, cand)
-						if ctx.resultSet.Len() > ef {
-							heap.Pop(resultSetAdapter) // Remove furthest
+							if ctx.resultSet.Len() < ef || d < furthest.Dist {
+								heap.Push(resultSetAdapter, cand)
+								if ctx.resultSet.Len() > ef {
+									heap.Pop(resultSetAdapter) // Remove furthest
+								}
+							}
+						} else {
+							// Empty resultSet
+							heap.Push(resultSetAdapter, cand)
 						}
 					}
-				} else {
-					// Empty resultSet
-					heap.Push(resultSetAdapter, cand)
 				}
 			}
 		}

@@ -616,6 +616,19 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		subBatchSize := 4
 		if lc > 0 {
 			subBatchSize = len(activeIndices) // Higher layers are small, process in one go
+		} else {
+			// Adaptive subBatchSize for layer 0 to prevent O(N^2) COW clones
+			existingNodes := int(h.nodeCount.Load())
+			if existingNodes < 10000 {
+				subBatchSize = 64
+			} else if existingNodes < 100000 {
+				subBatchSize = 1024
+			} else {
+				subBatchSize = 4096
+			}
+			if subBatchSize > len(activeIndices) {
+				subBatchSize = len(activeIndices)
+			}
 		}
 
 		for i := 0; i < len(activeIndices); i += subBatchSize {

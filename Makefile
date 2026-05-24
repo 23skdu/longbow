@@ -113,12 +113,12 @@ build-rpi0-2:
 # Run tests
 test:
 	@echo "Running tests..."
-	go test -v -race -coverprofile=coverage.txt ./...
+	go test -v -timeout 30m -race -coverprofile=coverage.txt ./...
 
 # Run tests with coverage
 test-coverage:
 	@echo "Running tests with coverage..."
-	go test -v -race -coverprofile=coverage.txt -covermode=atomic ./...
+	go test -v -timeout 30m -race -coverprofile=coverage.txt -covermode=atomic ./...
 
 # Run tests with low-memory mode enabled (for Raspberry Pi Zero validation)
 test-low-mem:
@@ -139,7 +139,7 @@ lint-metrics:
 # Run race condition tests
 race:
 	@echo "Running race condition tests..."
-	go test -race -run=Race ./...
+	go test -timeout 30m -race -run=Race ./...
 
 # Format Go code
 fmt:

@@ -104,77 +104,48 @@ func TestShouldUsePipelineExt_ZeroThreshold(t *testing.T) {
 	}
 }
 
-// --- GetPipelineThreshold tests ---
+// --- Pipeline Properties Tests ---
 
-func TestGetPipelineThreshold(t *testing.T) {
+func TestDoGetPipelineProperties(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 
-	store := NewVectorStoreWithPipelineThreshold(mem, logger, 2, 10, 5)
-	if store == nil {
-		t.Fatal("Failed to create VectorStore")
-	}
-	defer func() {
-		if err := store.Close(); err != nil {
-			t.Logf("failed to close VectorStore: %v", err)
+	t.Run("Threshold", func(t *testing.T) {
+		store := NewVectorStoreWithPipelineThreshold(mem, logger, 2, 10, 5)
+		if store == nil {
+			t.Fatal("Failed to create VectorStore")
 		}
-	}()
+		defer func() { _ = store.Close() }()
+		if store.GetPipelineThreshold() != 5 {
+			t.Errorf("Expected threshold 5, got %d", store.GetPipelineThreshold())
+		}
+	})
 
-	if store.GetPipelineThreshold() != 5 {
-		t.Errorf("Expected threshold 5, got %d", store.GetPipelineThreshold())
-	}
-}
+	t.Run("Pool_Nil", func(t *testing.T) {
+		vs := NewVectorStore(mem, logger, 1<<30, 100<<20, 24*time.Hour)
+		if vs == nil {
+			t.Fatal("Failed to create VectorStore")
+		}
+		defer func() { _ = vs.Close() }()
+		if vs.GetDoGetPipelinePool() != nil {
+			t.Error("Pool should be nil for basic VectorStore")
+		}
+	})
 
-// --- GetDoGetPipelinePool tests ---
-
-func TestGetDoGetPipelinePool_Nil(t *testing.T) {
-	mem := memory.NewGoAllocator()
-	logger := zerolog.Nop()
-
-	vs := NewVectorStore(mem, logger, 1<<30, 100<<20, 24*time.Hour)
-	if vs == nil {
-		t.Fatal("Failed to create VectorStore")
-	}
-	defer func() { _ = vs.Close() }()
-
-	if vs.GetDoGetPipelinePool() != nil {
-		t.Error("Pool should be nil for basic VectorStore")
-	}
-}
-
-func TestGetDoGetPipelinePool_NotNil(t *testing.T) {
-	mem := memory.NewGoAllocator()
-	logger := zerolog.Nop()
-
-	vs := NewVectorStoreWithPipeline(mem, logger, 4, 10)
-	if vs == nil {
-		t.Fatal("Failed to create VectorStore with pipeline")
-	}
-	defer func() { _ = vs.Close() }()
-
-	if vs.GetDoGetPipelinePool() == nil {
-		t.Error("Pool should not be nil for pipeline-enabled VectorStore")
-	}
-}
-
-// --- GetPipelineStats tests ---
-
-func TestGetPipelineStats(t *testing.T) {
-	mem := memory.NewGoAllocator()
-	logger := zerolog.Nop()
-
-	vs := NewVectorStoreWithPipeline(mem, logger, 4, 10)
-	if vs == nil {
-		t.Fatal("Failed to create VectorStore")
-	}
-	defer func() { _ = vs.Close() }()
-
-	stats := vs.GetPipelineStats()
-
-	// Just verify we can access the fields without panic
-	_ = stats.BatchesProcessed
-	_ = stats.ErrorCount
-	_ = stats.BatchesFiltered
+	t.Run("Pool_NotNil_And_Stats", func(t *testing.T) {
+		vs := NewVectorStoreWithPipeline(mem, logger, 4, 10)
+		if vs == nil {
+			t.Fatal("Failed to create VectorStore")
+		}
+		defer func() { _ = vs.Close() }()
+		if vs.GetDoGetPipelinePool() == nil {
+			t.Error("Pool should not be nil for pipeline-enabled VectorStore")
+		}
+		stats := vs.GetPipelineStats()
+		_ = stats.BatchesProcessed
+		_ = stats.ErrorCount
+		_ = stats.BatchesFiltered
+	})
 }
 
 // --- NewDoGetPipelinePool tests ---

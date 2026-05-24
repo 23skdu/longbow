@@ -11,6 +11,8 @@ import (
 
 	"bytes"
 	"encoding/gob"
+	"io"
+
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
@@ -19,7 +21,6 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
-	"io"
 )
 
 // IVFOPQConfig holds configuration for the IVF-OPQ index.

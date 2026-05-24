@@ -85,7 +85,7 @@ func (p *ProtoRCU) Delete(key string) {
 
 func TestProtoRCU_Correctness(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	rcu := NewProtoRCU()
 
@@ -110,7 +110,7 @@ func TestProtoRCU_Correctness(t *testing.T) {
 
 func TestProtoRCU_Concurrency(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	rcu := NewProtoRCU()
 	var wg sync.WaitGroup
@@ -151,7 +151,7 @@ func TestProtoRCU_Concurrency(t *testing.T) {
 
 func TestProtoRCU_CompareAndSwap_Spin(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	rcu := NewProtoRCU()
 	rcu.Set("race", 0)

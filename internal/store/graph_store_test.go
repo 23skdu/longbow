@@ -11,7 +11,7 @@ import (
 // TestGraphStore_AddEdge tests adding edges to the graph store
 func TestGraphStore_AddEdge(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -30,7 +30,7 @@ func TestGraphStore_AddEdge(t *testing.T) {
 // TestGraphStore_GetEdgesBySubject tests querying edges by subject
 func TestGraphStore_GetEdgesBySubject(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -59,7 +59,7 @@ func TestGraphStore_GetEdgesBySubject(t *testing.T) {
 // TestGraphStore_GetEdgesByObject tests querying edges by object (incoming)
 func TestGraphStore_GetEdgesByObject(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -83,7 +83,7 @@ func TestGraphStore_GetEdgesByObject(t *testing.T) {
 // TestGraphStore_GetEdgesByPredicate tests filtering by relationship type
 func TestGraphStore_GetEdgesByPredicate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -105,7 +105,7 @@ func TestGraphStore_GetEdgesByPredicate(t *testing.T) {
 // TestGraphStore_PredicateVocabulary tests tracking unique predicates
 func TestGraphStore_PredicateVocabulary(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -123,7 +123,7 @@ func TestGraphStore_PredicateVocabulary(t *testing.T) {
 // TestGraphStore_ToArrowBatch tests converting edges to Arrow RecordBatch
 func TestGraphStore_ToArrowBatch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -151,7 +151,7 @@ func TestGraphStore_ToArrowBatch(t *testing.T) {
 // TestGraphStore_DictionaryMemorySavings verifies Dictionary encoding saves memory
 func TestGraphStore_DictionaryMemorySavings(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -176,7 +176,7 @@ func TestGraphStore_DictionaryMemorySavings(t *testing.T) {
 // TestGraphStore_FromArrowBatch tests loading edges from Arrow RecordBatch
 func TestGraphStore_FromArrowBatch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -239,7 +239,7 @@ func TestGraphStore_FromArrowBatch(t *testing.T) {
 // TestGraphStore_ToArrowBatch_Empty tests exporting empty graph
 func TestGraphStore_ToArrowBatch_Empty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -255,7 +255,7 @@ func TestGraphStore_ToArrowBatch_Empty(t *testing.T) {
 // TestGraphStore_RoundTrip tests full export/import cycle
 func TestGraphStore_RoundTrip(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Create complex graph
 	gs1 := NewGraphStore()
@@ -315,7 +315,7 @@ func TestGraphStore_RoundTrip(t *testing.T) {
 // TestGraphStore_TraverseSingleHop tests finding direct neighbors
 func TestGraphStore_TraverseSingleHop(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -348,7 +348,7 @@ func TestGraphStore_TraverseSingleHop(t *testing.T) {
 // TestGraphStore_TraverseMultiHop tests multi-hop graph traversal
 func TestGraphStore_TraverseMultiHop(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -380,7 +380,7 @@ func TestGraphStore_TraverseMultiHop(t *testing.T) {
 // TestGraphStore_TraverseNoCycles tests that traversal avoids cycles
 func TestGraphStore_TraverseNoCycles(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -404,7 +404,7 @@ func TestGraphStore_TraverseNoCycles(t *testing.T) {
 // TestGraphStore_TraverseParallel tests concurrent traversal from multiple starting points
 func TestGraphStore_TraverseParallel(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -439,7 +439,7 @@ func TestGraphStore_TraverseParallel(t *testing.T) {
 // TestLouvainClustering_BasicCommunities tests detecting obvious clusters
 func TestLouvainClustering_BasicCommunities(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -472,7 +472,7 @@ func TestLouvainClustering_BasicCommunities(t *testing.T) {
 // TestLouvainClustering_GetCommunityForNode tests looking up node community
 func TestLouvainClustering_GetCommunityForNode(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -485,7 +485,7 @@ func TestLouvainClustering_GetCommunityForNode(t *testing.T) {
 // TestLouvainClustering_CommunityCount tests community count metric
 func TestLouvainClustering_CommunityCount(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -498,7 +498,7 @@ func TestLouvainClustering_CommunityCount(t *testing.T) {
 // TestGraphStore_TraverseWeighted tests that weighted traversal prioritizes higher edge weights
 func TestGraphStore_TraverseWeighted(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs := NewGraphStore()
 
@@ -560,7 +560,7 @@ func TestGraphStore_TraverseWeighted(t *testing.T) {
 // TestGraphStore_IPCRoundTrip verifies that Arrow IPC correctly preserves the dictionary
 func TestGraphStore_IPCRoundTrip(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gs1 := NewGraphStore()
 	err := gs1.AddEdge(Edge{Subject: 1, Predicate: "owns", Object: 10, Weight: 1.0})

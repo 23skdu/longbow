@@ -16,7 +16,7 @@ import (
 // without unnecessary copies, reducing memory allocations during search.
 func TestBruteForceIndex_ZeroCopyVectorAccess(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	dims := 128
@@ -140,7 +140,7 @@ func TestBruteForceIndex_ZeroCopyVectorAccess(t *testing.T) {
 // TestBruteForceIndex_SearchWithZeroCopy tests that search operations can use zero-copy access
 func TestBruteForceIndex_SearchWithZeroCopy(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	dims := 768 // Common embedding dimension

@@ -12,7 +12,7 @@ import (
 
 func TestSelectTopKNeighbors(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	comp := NewBatchDistanceComputer(mem, 16) // dim doesn't matter for selection
@@ -53,7 +53,7 @@ func TestSelectTopKNeighbors(t *testing.T) {
 
 func TestComputeL2DistancesKernel(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	dim := 4

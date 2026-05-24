@@ -372,7 +372,7 @@ func FuzzRecommendMaxHopsRange(f *testing.F) {
 
 func TestRecommend(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

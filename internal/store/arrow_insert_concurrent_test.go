@@ -7,7 +7,7 @@ import (
 // TestConcurrentInsert validates thread-safe concurrent insert operations.
 func TestConcurrentInsert(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dataset := &Dataset{Name: "test"}
 	cfg := DefaultArrowHNSWConfig()

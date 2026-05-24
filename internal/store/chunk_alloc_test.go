@@ -14,7 +14,7 @@ import (
 
 func TestChunkAllocator(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	chunkSize := 1024
 	itemSize := 12288                 // 3072 dims * 4 bytes

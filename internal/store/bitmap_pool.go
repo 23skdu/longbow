@@ -71,8 +71,8 @@ type BitmapPoolStats struct {
 
 // BitmapPool manages pooled bitmap buffers to reduce GC pressure
 type BitmapPool struct {
-	config   BitmapPoolConfig
-	buckets  []*sync.Pool
+	config       BitmapPoolConfig
+	buckets      []*sync.Pool
 	gets         uint64
 	puts         uint64
 	hits         uint64
@@ -221,9 +221,9 @@ func (bp *BitmapPool) Close() {
 func (bp *BitmapPool) refillWorker() {
 	ticker := time.NewTicker(200 * time.Millisecond) // #nosec G104
 	defer ticker.Stop()
-	
+
 	lastMisses := make([]uint64, len(bp.config.SizeBuckets))
-	
+
 	for {
 		select {
 		case <-bp.stopChan:
@@ -233,14 +233,14 @@ func (bp *BitmapPool) refillWorker() {
 				currentMiss := atomic.LoadUint64(&bp.bucketMisses[i])
 				diff := currentMiss - lastMisses[i]
 				lastMisses[i] = currentMiss
-				
+
 				if diff > 0 {
 					allocCount := diff
 					// Cap to avoid memory explosion
 					if allocCount > 200 {
 						allocCount = 200
 					}
-					
+
 					for j := uint64(0); j < allocCount; j++ {
 						byteSize := (size + 7) / 8
 						buf := &PooledBitmap{

@@ -15,7 +15,7 @@ import (
 
 func TestCDCEventType_String(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tests := []struct {
 		eventType CDCEventType
@@ -34,7 +34,7 @@ func TestCDCEventType_String(t *testing.T) {
 
 func TestCDCFilter(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	filter := CDCFilter{
 		EventTypes: []CDCEventType{CDCEventInsert, CDCEventUpdate},
@@ -48,7 +48,7 @@ func TestCDCFilter(t *testing.T) {
 
 func TestCDCSubscription_PauseResume(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sub := &CDCSubscription{
 		ID:     "test-sub",
@@ -65,7 +65,7 @@ func TestCDCSubscription_PauseResume(t *testing.T) {
 
 func TestCDCSubscription_Close(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sub := &CDCSubscription{
 		ID:     "test-sub",
@@ -86,7 +86,7 @@ func TestCDCSubscription_Close(t *testing.T) {
 
 func TestCDCSubscription_Close_Idempotent(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	sub := &CDCSubscription{
 		ID:     "test-sub",
@@ -103,7 +103,7 @@ func TestCDCSubscription_Close_Idempotent(t *testing.T) {
 
 func TestCDCConfig_Defaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -125,7 +125,7 @@ func TestCDCConfig_Defaults(t *testing.T) {
 
 func TestNewChangeDataCapture(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -142,7 +142,7 @@ func TestNewChangeDataCapture(t *testing.T) {
 
 func TestChangeDataCapture_Subscribe(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{
 		cdcSubscribers: make(map[string][]chan arrow.RecordBatch),
@@ -170,7 +170,7 @@ func TestChangeDataCapture_Subscribe(t *testing.T) {
 
 func TestChangeDataCapture_Subscribe_EmptyDataset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -183,7 +183,7 @@ func TestChangeDataCapture_Subscribe_EmptyDataset(t *testing.T) {
 
 func TestChangeDataCapture_Subscribe_Disabled(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -197,7 +197,7 @@ func TestChangeDataCapture_Subscribe_Disabled(t *testing.T) {
 
 func TestChangeDataCapture_Unsubscribe(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{
 		cdcSubscribers: make(map[string][]chan arrow.RecordBatch),
@@ -217,7 +217,7 @@ func TestChangeDataCapture_Unsubscribe(t *testing.T) {
 
 func TestChangeDataCapture_Unsubscribe_NotFound(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -230,7 +230,7 @@ func TestChangeDataCapture_Unsubscribe_NotFound(t *testing.T) {
 
 func TestChangeDataCapture_GetSubscription(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -249,7 +249,7 @@ func TestChangeDataCapture_GetSubscription(t *testing.T) {
 
 func TestChangeDataCapture_GetSubscriptionByDataset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -268,7 +268,7 @@ func TestChangeDataCapture_GetSubscriptionByDataset(t *testing.T) {
 
 func TestChangeDataCapture_ListSubscriptions(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -285,7 +285,7 @@ func TestChangeDataCapture_ListSubscriptions(t *testing.T) {
 
 func TestChangeDataCapture_HandleCDCBatch_Disabled(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{
 		cdcSubscribers: make(map[string][]chan arrow.RecordBatch),
@@ -309,7 +309,7 @@ func TestChangeDataCapture_HandleCDCBatch_Disabled(t *testing.T) {
 
 func TestChangeDataCapture_HandleCDCBatch_NoSubscribers(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{
 		cdcSubscribers: make(map[string][]chan arrow.RecordBatch),
@@ -332,7 +332,7 @@ func TestChangeDataCapture_HandleCDCBatch_NoSubscribers(t *testing.T) {
 
 func TestChangeDataCapture_HandleCDCBatch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{
 		cdcSubscribers: make(map[string][]chan arrow.RecordBatch),
@@ -370,7 +370,7 @@ func TestChangeDataCapture_HandleCDCBatch(t *testing.T) {
 
 func TestChangeDataCapture_HandleCDCBatch_PausedSubscription(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{
 		cdcSubscribers: make(map[string][]chan arrow.RecordBatch),
@@ -404,7 +404,7 @@ func TestChangeDataCapture_HandleCDCBatch_PausedSubscription(t *testing.T) {
 
 func TestChangeDataCapture_HandleCDCBatch_ColumnFilter(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{
 		cdcSubscribers: make(map[string][]chan arrow.RecordBatch),
@@ -439,7 +439,7 @@ func TestChangeDataCapture_HandleCDCBatch_ColumnFilter(t *testing.T) {
 
 func TestChangeDataCapture_HandleCDCBatch_ColumnFilter_Disabled(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{
 		cdcSubscribers: make(map[string][]chan arrow.RecordBatch),
@@ -475,7 +475,7 @@ func TestChangeDataCapture_HandleCDCBatch_ColumnFilter_Disabled(t *testing.T) {
 
 func TestChangeDataCapture_matchesFilter(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -529,7 +529,7 @@ func TestChangeDataCapture_matchesFilter(t *testing.T) {
 
 func TestChangeDataCapture_matchesColumnsFilter(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -548,7 +548,7 @@ func TestChangeDataCapture_matchesColumnsFilter(t *testing.T) {
 
 func TestChangeDataCapture_matchesEventTypeFilter(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -562,7 +562,7 @@ func TestChangeDataCapture_matchesEventTypeFilter(t *testing.T) {
 
 func TestChangeDataCapture_extractPrimaryKeys(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -586,7 +586,7 @@ func TestChangeDataCapture_extractPrimaryKeys(t *testing.T) {
 
 func TestChangeDataCapture_EventToJSON(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -626,7 +626,7 @@ func TestChangeDataCapture_EventToJSON(t *testing.T) {
 
 func TestChangeDataCapture_EventToJSON_Disabled(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -655,7 +655,7 @@ func TestChangeDataCapture_EventToJSON_Disabled(t *testing.T) {
 
 func TestChangeDataCapture_SetConfig(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -681,7 +681,7 @@ func TestChangeDataCapture_SetConfig(t *testing.T) {
 
 func TestChangeDataCapture_GetMetrics(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -698,7 +698,7 @@ func TestChangeDataCapture_GetMetrics(t *testing.T) {
 
 func TestChangeDataCapture_IsEnabled(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -715,7 +715,7 @@ func TestChangeDataCapture_IsEnabled(t *testing.T) {
 
 func TestChangeDataCapture_EnableDisable(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()
@@ -730,7 +730,7 @@ func TestChangeDataCapture_EnableDisable(t *testing.T) {
 
 func TestGetValueAt(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 
@@ -781,7 +781,7 @@ func TestGetValueAt(t *testing.T) {
 
 func TestChangeDataCapture_HandleCDCBatch_DropOnFull(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{
 		cdcSubscribers: make(map[string][]chan arrow.RecordBatch),
@@ -819,7 +819,7 @@ func TestChangeDataCapture_HandleCDCBatch_DropOnFull(t *testing.T) {
 
 func TestChangeDataCapture_HandleCDCBatch_AsyncDispatch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{
 		cdcSubscribers: make(map[string][]chan arrow.RecordBatch),
@@ -852,7 +852,7 @@ func TestChangeDataCapture_HandleCDCBatch_AsyncDispatch(t *testing.T) {
 
 func TestChangeDataCapture_MultipleBatches(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{
 		cdcSubscribers: make(map[string][]chan arrow.RecordBatch),
@@ -888,7 +888,7 @@ func TestChangeDataCapture_MultipleBatches(t *testing.T) {
 
 func TestChangeDataCapture_CloseSubscription_UpdatesMetrics(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{
 		cdcSubscribers: make(map[string][]chan arrow.RecordBatch),
@@ -910,7 +910,7 @@ func TestChangeDataCapture_CloseSubscription_UpdatesMetrics(t *testing.T) {
 
 func TestCDCMetrics_Reset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := &VectorStore{}
 	logger := zerolog.New(nil).With().Logger()

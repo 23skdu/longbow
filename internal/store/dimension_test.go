@@ -21,7 +21,7 @@ func makeVec(n int) []float32 {
 // dimension to the size of the first inserted vector.
 func TestAutoDimension_FirstVectorSets(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	g := NewDimensionGuard("embeddings", 0)
 	require.Equal(t, 0, g.Dim(), "pre-condition: guard must start unlocked")
@@ -35,7 +35,7 @@ func TestAutoDimension_FirstVectorSets(t *testing.T) {
 // the same dimension is accepted without error.
 func TestAutoDimension_SecondVectorMatchesDim(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	g := NewDimensionGuard("embeddings", 0)
 	require.NoError(t, g.CheckOrSet(makeVec(128)))
@@ -46,7 +46,7 @@ func TestAutoDimension_SecondVectorMatchesDim(t *testing.T) {
 // different dimension returns ErrDimensionLocked.
 func TestAutoDimension_MismatchError(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	g := NewDimensionGuard("embeddings", 0)
 	require.NoError(t, g.CheckOrSet(makeVec(128)))
@@ -60,7 +60,7 @@ func TestAutoDimension_MismatchError(t *testing.T) {
 // the expected and received dimensions.
 func TestDimensionMismatchErrorMessage(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	g := NewDimensionGuard("embeddings", 768)
 	err := g.CheckOrSet(makeVec(4))
@@ -73,7 +73,7 @@ func TestDimensionMismatchErrorMessage(t *testing.T) {
 // includes the dataset name for easy triage.
 func TestDimensionMismatchErrorMessage_WithDatasetName(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	const ds = "production_embeddings"
 	g := NewDimensionGuard(ds, 512)
@@ -86,7 +86,7 @@ func TestDimensionMismatchErrorMessage_WithDatasetName(t *testing.T) {
 // explicit dimension does NOT auto-detect (IsAutoDetected must be false).
 func TestCreateDataset_ExplicitDimension(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	g := NewDimensionGuard("embeddings", 384)
 	require.NoError(t, g.CheckOrSet(makeVec(384)))

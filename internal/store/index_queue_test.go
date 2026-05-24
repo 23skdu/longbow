@@ -16,7 +16,7 @@ import (
 // TestIndexJobQueueConfig_Defaults tests default configuration values
 func TestIndexJobQueueConfig_Defaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultIndexJobQueueConfig()
 
@@ -28,7 +28,7 @@ func TestIndexJobQueueConfig_Defaults(t *testing.T) {
 // TestIndexJobQueue_NonBlockingSend tests that Send never blocks
 func TestIndexJobQueue_NonBlockingSend(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := IndexJobQueueConfig{
 		MainChannelSize:    10,
@@ -59,7 +59,7 @@ func TestIndexJobQueue_NonBlockingSend(t *testing.T) {
 // TestIndexJobQueue_OverflowBuffer tests overflow to secondary buffer
 func TestIndexJobQueue_OverflowBuffer(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := IndexJobQueueConfig{
 		MainChannelSize:    5,
@@ -87,7 +87,7 @@ func TestIndexJobQueue_OverflowBuffer(t *testing.T) {
 // TestIndexJobQueue_DropOnOverflow tests drop strategy when both buffers full
 func TestIndexJobQueue_DropOnOverflow(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := IndexJobQueueConfig{
 		MainChannelSize:    5,
@@ -112,7 +112,7 @@ func TestIndexJobQueue_DropOnOverflow(t *testing.T) {
 // TestIndexJobQueue_DrainToConsumer tests that overflow drains to main channel
 func TestIndexJobQueue_DrainToConsumer(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := IndexJobQueueConfig{
 		MainChannelSize:    5,
@@ -152,7 +152,7 @@ Consume:
 // TestIndexJobQueue_Stats tests statistics tracking
 func TestIndexJobQueue_Stats(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := IndexJobQueueConfig{
 		MainChannelSize:    10,
@@ -180,7 +180,7 @@ func TestIndexJobQueue_Stats(t *testing.T) {
 // TestIndexJobQueue_ConcurrentSend tests concurrent send safety
 func TestIndexJobQueue_ConcurrentSend(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := IndexJobQueueConfig{
 		MainChannelSize:    100,
@@ -218,7 +218,7 @@ func TestIndexJobQueue_ConcurrentSend(t *testing.T) {
 // TestIndexJobQueue_GracefulStop tests that Stop drains remaining jobs
 func TestIndexJobQueue_GracefulStop(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := IndexJobQueueConfig{
 		MainChannelSize:    10,
@@ -262,7 +262,7 @@ func TestIndexJobQueue_GracefulStop(t *testing.T) {
 // TestIndexJobQueue_BatchSend tests batch send for efficiency
 func TestIndexJobQueue_BatchSend(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := IndexJobQueueConfig{
 		MainChannelSize:    100,

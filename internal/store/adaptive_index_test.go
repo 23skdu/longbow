@@ -14,7 +14,7 @@ import (
 
 func TestAdaptiveIndex(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// 1. Setup Dataset with Schema
 	pool := memory.NewGoAllocator()
@@ -42,7 +42,7 @@ func TestAdaptiveIndex(t *testing.T) {
 	listBuilder.Append(true)
 
 	rec := b.NewRecord()
-	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
+	ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.GetRecords()...), rec))
 
 	// 2. Initialize AdaptiveIndex with low threshold
 	cfg := AdaptiveIndexConfig{
@@ -93,7 +93,7 @@ func TestAdaptiveIndex(t *testing.T) {
 
 func TestAdaptiveIndexDisabled(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := NewDataset("test_disabled", nil)
 	cfg := AdaptiveIndexConfig{

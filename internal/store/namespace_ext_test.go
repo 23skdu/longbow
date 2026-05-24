@@ -8,7 +8,7 @@ import (
 
 func TestNamespace_AddDataset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ns := NewNamespace("test-ns")
 	if ns.DatasetCount() != 0 {
@@ -34,7 +34,7 @@ func TestNamespace_AddDataset(t *testing.T) {
 
 func TestNamespace_RemoveDataset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ns := NewNamespace("test-ns")
 	ns.AddDataset("dataset1")
@@ -54,7 +54,7 @@ func TestNamespace_RemoveDataset(t *testing.T) {
 
 func TestNamespace_HasDataset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ns := NewNamespace("test-ns")
 
@@ -75,7 +75,7 @@ func TestNamespace_HasDataset(t *testing.T) {
 
 func TestBuildNamespacedPath(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tests := []struct {
 		namespace string
@@ -99,7 +99,7 @@ func TestBuildNamespacedPath(t *testing.T) {
 
 func TestNamespace_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ns := NewNamespace("concurrent-ns")
 	done := make(chan bool)

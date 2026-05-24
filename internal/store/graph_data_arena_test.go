@@ -8,7 +8,7 @@ import (
 
 func TestGraphData_ArenaNeighbors(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Initialize GraphData with Arena enabled
 	// Since we are refactoring, we might need a flag or just defaults.
@@ -54,7 +54,7 @@ func TestGraphData_ArenaNeighbors(t *testing.T) {
 
 func TestGraphData_ArenaGrowth(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Verify that we can store widespread IDs (triggering multiple chunks/slabs)
 	gd := lbtypes.NewGraphData(10000, 16, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
@@ -74,7 +74,7 @@ func TestGraphData_ArenaGrowth(t *testing.T) {
 
 func TestGraphData_PreAllocate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Test PreAllocate method for different data types
 	testCases := []struct {
@@ -200,7 +200,7 @@ func TestGraphData_PreAllocate(t *testing.T) {
 
 func TestGraphData_PreAllocate_SQ8(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gd := lbtypes.NewGraphData(0, 128, false, false, 0, false, true, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 	gd.SQ8Enabled = true
@@ -218,7 +218,7 @@ func TestGraphData_PreAllocate_SQ8(t *testing.T) {
 
 func TestGraphData_PreAllocate_PQ(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gd := lbtypes.NewGraphData(0, 128, false, false, 0, true, false, false, lbtypes.VectorTypeFloat32, false, true, false, 8, "test", nil, false)
 	gd.PQM = 64
@@ -236,7 +236,7 @@ func TestGraphData_PreAllocate_PQ(t *testing.T) {
 
 func TestGraphData_PreAllocate_BQ(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gd := lbtypes.NewGraphData(0, 128, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, true, false, false, 8, "test", nil, false)
 
@@ -253,7 +253,7 @@ func TestGraphData_PreAllocate_BQ(t *testing.T) {
 
 func TestGraphData_PreAllocate_ZeroCapacity(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	gd := lbtypes.NewGraphData(0, 128, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)
 
@@ -270,7 +270,7 @@ func TestGraphData_PreAllocate_ZeroCapacity(t *testing.T) {
 
 func TestGraphData_NewGraphData_AutoPreAllocate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Verify NewGraphData automatically pre-allocates when capacity > 0
 	gd := lbtypes.NewGraphData(5000, 64, false, false, 0, false, false, false, lbtypes.VectorTypeFloat32, false, false, false, 8, "test", nil, false)

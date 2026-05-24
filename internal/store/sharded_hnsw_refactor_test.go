@@ -4,13 +4,14 @@ import (
 	"context"
 	"testing"
 
+	"io"
+
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/stretchr/testify/mock"
-	"io"
 )
 
 // MockVectorIndex is a mock implementation of VectorIndex interface

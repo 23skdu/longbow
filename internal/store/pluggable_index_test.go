@@ -19,7 +19,7 @@ import (
 // TestIndexType_Constants verifies index type constants exist
 func TestIndexType_Constants(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tests := []struct {
 		name     string
@@ -43,7 +43,7 @@ func TestIndexType_Constants(t *testing.T) {
 // TestPluggableVectorIndex_Interface verifies extended interface methods
 func TestPluggableVectorIndex_Interface(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Create a mock index to test interface compliance
 	var idx PluggableVectorIndex = &mockPluggableIndex{
@@ -75,7 +75,7 @@ func TestPluggableVectorIndex_Interface(t *testing.T) {
 // TestPluggableVectorIndex_AddAndSearch tests core operations
 func TestPluggableVectorIndex_AddAndSearch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := &mockPluggableIndex{
 		idxType:   IndexTypeHNSW,
@@ -119,7 +119,7 @@ func TestPluggableVectorIndex_AddAndSearch(t *testing.T) {
 // TestPluggableVectorIndex_SaveLoad tests persistence
 func TestPluggableVectorIndex_SaveLoad(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tmpDir := t.TempDir()
 	path := filepath.Join(tmpDir, "test_index")
@@ -158,7 +158,7 @@ func TestPluggableVectorIndex_SaveLoad(t *testing.T) {
 // TestIndexFactory_Create tests factory pattern
 func TestIndexFactory_Create(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	factory := NewIndexFactory()
 
@@ -221,7 +221,7 @@ func TestIndexFactory_Create(t *testing.T) {
 // TestIndexFactory_Register tests custom type registration
 func TestIndexFactory_Register(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	factory := NewIndexFactory()
 
@@ -248,7 +248,7 @@ func TestIndexFactory_Register(t *testing.T) {
 // TestIndexFactory_ListTypes tests type enumeration
 func TestIndexFactory_ListTypes(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	factory := NewIndexFactory()
 	types := factory.ListTypes()
@@ -274,7 +274,7 @@ func TestIndexFactory_ListTypes(t *testing.T) {
 // TestPluggableIndex_ConcurrentAccess tests thread safety
 func TestPluggableIndex_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := &mockPluggableIndex{
 		idxType:   IndexTypeHNSW,
@@ -300,7 +300,7 @@ func TestPluggableIndex_ConcurrentAccess(t *testing.T) {
 // TestPluggableIndex_Metrics tests Prometheus metrics
 func TestPluggableIndex_Metrics(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	factory := NewIndexFactory()
 	_, err := factory.Create(IndexConfig{Type: IndexTypeHNSW, Dimension: 128})
@@ -474,7 +474,7 @@ func (m *mockPluggableIndex) Len() int {
 
 func TestIVFFlatIndex_AddAndSearch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dim := 128
 	cfg := IndexConfig{
@@ -533,7 +533,7 @@ func TestIVFFlatIndex_AddAndSearch(t *testing.T) {
 
 func TestIVFFlatIndex_Empty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := IndexConfig{
 		Type:      IndexTypeIVFFlat,
@@ -563,7 +563,7 @@ func TestIVFFlatIndex_Empty(t *testing.T) {
 
 func TestDiskANNIndex_AddAndSearch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dim := 128
 	cfg := IndexConfig{
@@ -623,7 +623,7 @@ func TestDiskANNIndex_AddAndSearch(t *testing.T) {
 
 func TestDiskANNIndex_Empty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := IndexConfig{
 		Type:      IndexTypeDiskANN,
@@ -653,7 +653,7 @@ func TestDiskANNIndex_Empty(t *testing.T) {
 
 func TestIndexFactory_IVFFlat(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	factory := NewIndexFactory()
 
@@ -686,7 +686,7 @@ func TestIndexFactory_IVFFlat(t *testing.T) {
 
 func TestIndexFactory_DiskANN(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	factory := NewIndexFactory()
 

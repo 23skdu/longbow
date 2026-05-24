@@ -13,7 +13,7 @@ import (
 
 func TestGlobalSearchCoordinator_Merge(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pool := NewFlightClientPool(DefaultFlightClientPoolConfig())
 	coord := NewGlobalSearchCoordinator(zerolog.Nop(), pool)
@@ -40,7 +40,7 @@ func TestGlobalSearchCoordinator_Merge(t *testing.T) {
 
 func TestGlobalSearchCoordinator_NoPeers(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pool := NewFlightClientPool(DefaultFlightClientPoolConfig())
 	coord := NewGlobalSearchCoordinator(zerolog.Nop(), pool)
@@ -54,7 +54,7 @@ func TestGlobalSearchCoordinator_NoPeers(t *testing.T) {
 
 func TestGlobalSearch_HybridMerge(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Simulate single-node mega index results
 	megaDense := []SearchResult{

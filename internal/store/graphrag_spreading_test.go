@@ -48,7 +48,7 @@ func applyAlphaDecay(initialScore, alpha float64, hop int) float64 {
 // all spread: the score at hop ≥ 1 drops to zero.
 func TestGraphAlpha_ZeroCollapsesToSingleHop(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	params := spreadingActivationParams{Alpha: 0.0, Depth: 3}
 	require.NoError(t, validateSpreadingActivationParams(params))
@@ -61,7 +61,7 @@ func TestGraphAlpha_ZeroCollapsesToSingleHop(t *testing.T) {
 // scores remain equal at all depths.
 func TestGraphAlpha_OneFullSpread(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	params := spreadingActivationParams{Alpha: 1.0, Depth: 5}
 	require.NoError(t, validateSpreadingActivationParams(params))
@@ -75,7 +75,7 @@ func TestGraphAlpha_OneFullSpread(t *testing.T) {
 // TestGraphDepth_Zero verifies that depth=0 means no expansion.
 func TestGraphDepth_Zero(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	params := spreadingActivationParams{Alpha: 0.85, Depth: 0}
 	require.NoError(t, validateSpreadingActivationParams(params))
@@ -86,7 +86,7 @@ func TestGraphDepth_Zero(t *testing.T) {
 // TestGraphDepth_Negative verifies that depth<0 returns an error.
 func TestGraphDepth_Negative(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	params := spreadingActivationParams{Alpha: 0.85, Depth: -1}
 	err := validateSpreadingActivationParams(params)
@@ -98,7 +98,7 @@ func TestGraphDepth_Negative(t *testing.T) {
 // the exact message "alpha must be in [0.0, 1.0]".
 func TestGraphAlpha_OutOfRange(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	params := spreadingActivationParams{Alpha: 1.5, Depth: 2}
 	err := validateSpreadingActivationParams(params)
@@ -110,7 +110,7 @@ func TestGraphAlpha_OutOfRange(t *testing.T) {
 // monotonically with hop distance when alpha < 1.0.
 func TestSpreadingActivation_ScoreDecay(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	alpha := 0.85
 	initialScore := 1.0
@@ -129,7 +129,7 @@ func TestSpreadingActivation_ScoreDecay(t *testing.T) {
 // initial score, whereas at alpha=0.5 it is significantly lower.
 func TestGraphRAG_ReRankingResultOrder(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	initialScore := 1.0
 	depth := 2

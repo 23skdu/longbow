@@ -13,7 +13,7 @@ import (
 // TestDatasetMetadata tests the metadata struct
 func TestDatasetMetadata_Fields(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -44,7 +44,7 @@ func TestDatasetMetadata_Fields(t *testing.T) {
 // TestCOWMetadataMap_NewDefault tests default configuration
 func TestCOWMetadataMap_NewDefault(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cow := NewCOWMetadataMap()
 	if cow == nil {
@@ -61,7 +61,7 @@ func TestCOWMetadataMap_NewDefault(t *testing.T) {
 // TestCOWMetadataMap_SetAndGet tests basic operations
 func TestCOWMetadataMap_SetAndGet(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cow := NewCOWMetadataMap()
 
@@ -100,7 +100,7 @@ func TestCOWMetadataMap_SetAndGet(t *testing.T) {
 // TestCOWMetadataMap_Update tests updating existing entry
 func TestCOWMetadataMap_Update(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cow := NewCOWMetadataMap()
 
@@ -131,7 +131,7 @@ func TestCOWMetadataMap_Update(t *testing.T) {
 // TestCOWMetadataMap_Delete tests deletion
 func TestCOWMetadataMap_Delete(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cow := NewCOWMetadataMap()
 
@@ -158,7 +158,7 @@ func TestCOWMetadataMap_Delete(t *testing.T) {
 // TestCOWMetadataMap_Snapshot tests snapshot is isolated
 func TestCOWMetadataMap_Snapshot(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cow := NewCOWMetadataMap()
 
@@ -195,7 +195,7 @@ func TestCOWMetadataMap_Snapshot(t *testing.T) {
 // TestCOWMetadataMap_SnapshotNoLockContention tests concurrent read access
 func TestCOWMetadataMap_SnapshotNoLockContention(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cow := NewCOWMetadataMap()
 
@@ -254,7 +254,7 @@ func TestCOWMetadataMap_SnapshotNoLockContention(t *testing.T) {
 // TestCOWMetadataMap_UpdateMetadataFromRecords tests helper function
 func TestCOWMetadataMap_UpdateMetadataFromRecords(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cow := NewCOWMetadataMap()
 	mem := memory.NewGoAllocator()
@@ -296,7 +296,7 @@ func TestCOWMetadataMap_UpdateMetadataFromRecords(t *testing.T) {
 // TestCOWMetadataMap_IncrementRows tests atomic row increment
 func TestCOWMetadataMap_IncrementRows(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cow := NewCOWMetadataMap()
 

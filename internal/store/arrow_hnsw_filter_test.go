@@ -2,10 +2,11 @@ package store
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/types"
 	"os"
 	"testing"
 	"time"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/storage"
@@ -19,7 +20,7 @@ import (
 
 func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tmpDir, err := os.MkdirTemp("", "filter_test")
 	require.NoError(t, err)
@@ -125,7 +126,7 @@ func TestArrowHNSW_VectorizedFilter(t *testing.T) {
 
 func TestArrowHNSW_SIMDPredicate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tmpDir, err := os.MkdirTemp("", "simd_filter_test")
 	require.NoError(t, err)

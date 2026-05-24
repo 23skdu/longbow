@@ -42,7 +42,7 @@ type DiskBackedLearnedIndex struct {
 	// Metadata
 	path  string
 	built bool
-	
+
 	vectorCache *LRUCache
 }
 

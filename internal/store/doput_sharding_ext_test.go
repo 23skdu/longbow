@@ -31,7 +31,7 @@ func wrapInBatch(arr arrow.Array) arrow.RecordBatch {
 
 func TestExtractVectorFromCol_Nil(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Cannot pass nil record to extractVectorFromCol safely if it dereferences
 	// Implementation should check for nil?
@@ -47,7 +47,7 @@ func TestExtractVectorFromCol_Nil(t *testing.T) {
 
 func TestExtractVectorFromCol_OutOfBounds(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 
@@ -74,7 +74,7 @@ func TestExtractVectorFromCol_OutOfBounds(t *testing.T) {
 
 func TestExtractVectorFromCol_WrongType(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 
@@ -98,7 +98,7 @@ func TestExtractVectorFromCol_WrongType(t *testing.T) {
 
 func TestExtractVectorFromCol_Success(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 
@@ -136,7 +136,7 @@ func TestExtractVectorFromCol_Success(t *testing.T) {
 
 func TestDatasetSearchDataset_NoIndex(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := &Dataset{Name: "test"}
 
@@ -148,7 +148,7 @@ func TestDatasetSearchDataset_NoIndex(t *testing.T) {
 
 func TestDatasetSearchDataset_WithHNSW(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := &Dataset{Name: "test"}
 	idx := NewTestHNSWIndex(ds)
@@ -164,7 +164,7 @@ func TestDatasetSearchDataset_WithHNSW(t *testing.T) {
 
 func TestDatasetSearchDataset_WithSharded(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := &Dataset{Name: "test"}
 	ds.Index = NewShardedHNSW(DefaultShardedHNSWConfig(), ds)
@@ -182,7 +182,7 @@ func TestDatasetSearchDataset_WithSharded(t *testing.T) {
 
 func TestDatasetAddToIndex_NoIndex(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := &Dataset{Name: "test"}
 
@@ -198,7 +198,7 @@ func TestDatasetAddToIndex_NoIndex(t *testing.T) {
 
 func TestDatasetMigrateToShardedIndex_AlreadySharded(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := &Dataset{Name: "test"}
 	ds.Index = NewShardedHNSW(DefaultShardedHNSWConfig(), ds)
@@ -212,7 +212,7 @@ func TestDatasetMigrateToShardedIndex_AlreadySharded(t *testing.T) {
 
 func TestDatasetMigrateToShardedIndex_NoIndex(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := &Dataset{Name: "test"}
 
@@ -230,7 +230,7 @@ func TestDatasetMigrateToShardedIndex_NoIndex(t *testing.T) {
 
 func TestCheckAndMigrateToSharded_Disabled(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -249,7 +249,7 @@ func TestCheckAndMigrateToSharded_Disabled(t *testing.T) {
 
 func TestCheckAndMigrateToSharded_AlreadySharded(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -266,7 +266,7 @@ func TestCheckAndMigrateToSharded_AlreadySharded(t *testing.T) {
 
 func TestCheckAndMigrateToSharded_BelowThreshold(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -290,7 +290,7 @@ func TestCheckAndMigrateToSharded_BelowThreshold(t *testing.T) {
 
 func TestHNSWIndex_SearchVectors_Empty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := &Dataset{Name: "test"}
 	hnsw := NewTestHNSWIndex(ds)
@@ -310,7 +310,7 @@ func TestHNSWIndex_SearchVectors_Empty(t *testing.T) {
 
 func TestShardedHNSW_SearchVectors_Empty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultShardedHNSWConfig()
 	ds := &Dataset{Name: "test"}
@@ -331,7 +331,7 @@ func TestShardedHNSW_SearchVectors_Empty(t *testing.T) {
 
 func TestDatasetGetVectorIndex_NilBoth(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := &Dataset{Name: "test"}
 
@@ -344,7 +344,7 @@ func TestDatasetGetVectorIndex_NilBoth(t *testing.T) {
 // TestDatasetGetVectorIndex_ShardedPriority is obsolete.
 func TestDatasetGetVectorIndex_ShardedPriority(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Obsolete
 }

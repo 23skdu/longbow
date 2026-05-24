@@ -18,7 +18,7 @@ import (
 // to verify memory pressure handling and growth patterns for large dimensions.
 func TestHNSW_HighDimensionGrowth(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	dims := 3072
@@ -141,7 +141,7 @@ func TestHNSW_HighDimensionGrowth(t *testing.T) {
 // TestHNSW_HighDimensionGrowth_MemoryPressure tests growth under memory constraints
 func TestHNSW_HighDimensionGrowth_MemoryPressure(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	dims := 3072

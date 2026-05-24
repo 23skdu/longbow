@@ -73,7 +73,7 @@ func setupServer(t *testing.T) (store *VectorStore, dir string, dialer func(cont
 
 func TestDoPutAndDoGet(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	vs, _, dialer := setupServer(t)
 
@@ -171,7 +171,7 @@ func TestDoPutAndDoGet(t *testing.T) {
 
 func TestSchemaValidation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	_, _, dialer := setupServer(t)
 	ctx := context.Background()
@@ -256,7 +256,7 @@ func TestSchemaValidation(t *testing.T) {
 
 func TestPersistence(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	vs, tmpDir, dialer := setupServer(t)
 	ctx := context.Background()
@@ -344,7 +344,7 @@ func TestPersistence(t *testing.T) {
 
 func TestEviction(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

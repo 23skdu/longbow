@@ -15,7 +15,7 @@ import (
 
 func TestMigrationStability(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Create a dataset with AutoShardingIndex
 	config := DefaultAutoShardingConfig()

@@ -9,13 +9,14 @@ import (
 
 	"bytes"
 	"encoding/gob"
+	"io"
+
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
-	"io"
 )
 
 // IVFPQConfig holds configuration for the IVF-PQ index.

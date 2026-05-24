@@ -12,7 +12,7 @@ import (
 
 func TestHNSW_SearchPadding(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 

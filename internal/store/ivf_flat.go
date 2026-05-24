@@ -15,6 +15,7 @@ import (
 
 	"bytes"
 	"encoding/gob"
+
 	"github.com/23skdu/longbow/internal/simd"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"

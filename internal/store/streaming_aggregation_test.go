@@ -11,7 +11,7 @@ import (
 
 func TestStreamingAggregationConfig_Defaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	config := StreamingAggregationConfig{}
 
@@ -32,7 +32,7 @@ func TestStreamingAggregationConfig_Defaults(t *testing.T) {
 
 func TestAggregationType_Constants(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	assert.Equal(t, AggregationType("moving_average"), AggregationTypeMovingAverage)
 	assert.Equal(t, AggregationType("exponential"), AggregationTypeExponential)
@@ -42,7 +42,7 @@ func TestAggregationType_Constants(t *testing.T) {
 
 func TestNewStreamingAggregation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	config := StreamingAggregationConfig{
@@ -61,7 +61,7 @@ func TestNewStreamingAggregation(t *testing.T) {
 
 func TestStreamingAggregation_CreateAggregate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -77,7 +77,7 @@ func TestStreamingAggregation_CreateAggregate(t *testing.T) {
 
 func TestStreamingAggregation_CreateAggregate_AlreadyExists(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -92,7 +92,7 @@ func TestStreamingAggregation_CreateAggregate_AlreadyExists(t *testing.T) {
 
 func TestStreamingAggregation_AddVector(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -109,7 +109,7 @@ func TestStreamingAggregation_AddVector(t *testing.T) {
 
 func TestStreamingAggregation_AddVector_NewAggregate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -125,7 +125,7 @@ func TestStreamingAggregation_AddVector_NewAggregate(t *testing.T) {
 
 func TestStreamingAggregation_GetMovingAverage_NotFound(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -137,7 +137,7 @@ func TestStreamingAggregation_GetMovingAverage_NotFound(t *testing.T) {
 
 func TestStreamingAggregation_GetExponentialMovingAverage(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{
@@ -157,7 +157,7 @@ func TestStreamingAggregation_GetExponentialMovingAverage(t *testing.T) {
 
 func TestStreamingAggregation_GetCumulative(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -175,7 +175,7 @@ func TestStreamingAggregation_GetCumulative(t *testing.T) {
 
 func TestStreamingAggregation_GetAggregate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -190,7 +190,7 @@ func TestStreamingAggregation_GetAggregate(t *testing.T) {
 
 func TestStreamingAggregation_RemoveAggregate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -204,7 +204,7 @@ func TestStreamingAggregation_RemoveAggregate(t *testing.T) {
 
 func TestStreamingAggregation_ListAggregates(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -220,7 +220,7 @@ func TestStreamingAggregation_ListAggregates(t *testing.T) {
 
 func TestStreamingAggregation_Clear(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -235,7 +235,7 @@ func TestStreamingAggregation_Clear(t *testing.T) {
 
 func TestStreamingAggregation_GetStats(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -248,7 +248,7 @@ func TestStreamingAggregation_GetStats(t *testing.T) {
 
 func TestStreamingAggregation_GetConfig(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	config := StreamingAggregationConfig{
@@ -265,7 +265,7 @@ func TestStreamingAggregation_GetConfig(t *testing.T) {
 
 func TestStreamingAggregation_SetConfig(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -284,7 +284,7 @@ func TestStreamingAggregation_SetConfig(t *testing.T) {
 
 func TestStreamingAggregation_MaxAggregates_AutoEvict(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{
@@ -304,7 +304,7 @@ func TestStreamingAggregation_MaxAggregates_AutoEvict(t *testing.T) {
 
 func TestStreamingAggregation_MultipleVectors(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
@@ -329,7 +329,7 @@ func TestStreamingAggregation_MultipleVectors(t *testing.T) {
 
 func TestStreamingAggregation_WindowSize_Limit(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{
@@ -348,7 +348,7 @@ func TestStreamingAggregation_WindowSize_Limit(t *testing.T) {
 
 func TestStreamingAggregation_DifferentAggregateTypes(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})

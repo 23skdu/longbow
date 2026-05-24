@@ -33,7 +33,7 @@ func (s *VectorStore) StoreRecords(name string, records []arrow.RecordBatch) err
 // TestDoGetUsesPipelineForMultiBatch verifies DoGet uses pipeline for datasets with multiple batches
 func TestDoGetUsesPipelineForMultiBatch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
@@ -92,7 +92,7 @@ func TestDoGetUsesPipelineForMultiBatch(t *testing.T) {
 // TestDoGetSerialPathForSingleBatch verifies single-batch datasets use fast serial path
 func TestDoGetSerialPathForSingleBatch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
@@ -137,7 +137,7 @@ func TestDoGetSerialPathForSingleBatch(t *testing.T) {
 // TestDoGetPipelinePreservesOrder verifies batch ordering is maintained
 func TestDoGetPipelinePreservesOrder(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()
@@ -187,7 +187,7 @@ func TestDoGetPipelinePreservesOrder(t *testing.T) {
 // TestDoGetPipelineConcurrentRequests verifies pipeline handles concurrent DoGet calls
 func TestDoGetPipelineConcurrentRequests(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	logger := zerolog.Nop()
 	mem := memory.NewGoAllocator()

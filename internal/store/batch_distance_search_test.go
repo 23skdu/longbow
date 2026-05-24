@@ -19,7 +19,7 @@ import (
 // TestSearchWithBatchDistance_UsesBatchCalculation verifies batch distance is used
 func TestSearchWithBatchDistance_UsesBatchCalculation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := createTestDataset(t, "batch-distance-test", 128, 100)
 	if ds == nil {
@@ -56,7 +56,7 @@ func TestSearchWithBatchDistance_UsesBatchCalculation(t *testing.T) {
 // TestSearchWithBatchDistance_CorrectResults verifies results match expectations
 func TestSearchWithBatchDistance_CorrectResults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := createTestDataset(t, "batch-correct-test", 64, 50)
 	if ds == nil {
@@ -85,7 +85,7 @@ func TestSearchWithBatchDistance_CorrectResults(t *testing.T) {
 // TestSearchBatchOptimized_UsesBatchDistance verifies multi-query batch uses batching
 func TestSearchBatchOptimized_UsesBatchDistance(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := createTestDataset(t, "batch-optimized-test", 64, 100)
 	if ds == nil {
@@ -125,7 +125,7 @@ func TestSearchBatchOptimized_UsesBatchDistance(t *testing.T) {
 // and makes metric verification non-deterministic.
 func TestBatchDistanceSearch_Metrics(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	t.Skip("Skipped: GlobalHotpathSampler timing makes this test non-deterministic")
 
@@ -159,7 +159,7 @@ func TestBatchDistanceSearch_Metrics(t *testing.T) {
 // TestBatchDistanceSearch_BatchSizeMetric verifies batch size histogram
 func TestBatchDistanceSearch_BatchSizeMetric(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	desc := make(chan *prometheus.Desc, 10)
 	metrics.BatchDistanceBatchSize.Describe(desc)
@@ -173,7 +173,7 @@ func TestBatchDistanceSearch_BatchSizeMetric(t *testing.T) {
 // TestSearchWithBatchDistance_EmptyIndex handles edge case
 func TestSearchWithBatchDistance_EmptyIndex(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := createTestDataset(t, "batch-empty-test", 64, 0)
 	if ds == nil {
@@ -193,7 +193,7 @@ func TestSearchWithBatchDistance_EmptyIndex(t *testing.T) {
 // TestSearchWithBatchDistance_KGreaterThanSize handles k > index size
 func TestSearchWithBatchDistance_KGreaterThanSize(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ds := createTestDataset(t, "batch-k-test", 32, 3)
 	if ds == nil {

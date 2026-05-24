@@ -11,7 +11,7 @@ import (
 
 func TestHNSW_SearchEarlyTermination(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Setup a small HNSW with some data
 	_ = memory.NewGoAllocator()

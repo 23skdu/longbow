@@ -14,7 +14,7 @@ func addToShardedIndex(idx *ShardedInvertedIndex, id VectorID, text string) {
 // TestShardedInvertedIndex_BasicAddSearch verifies basic functionality
 func TestShardedInvertedIndex_BasicAddSearch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewShardedInvertedIndex()
 
@@ -43,7 +43,7 @@ func TestShardedInvertedIndex_BasicAddSearch(t *testing.T) {
 // TestShardedInvertedIndex_Delete verifies delete functionality
 func TestShardedInvertedIndex_Delete(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewShardedInvertedIndex()
 
@@ -69,7 +69,7 @@ func TestShardedInvertedIndex_Delete(t *testing.T) {
 // TestShardedInvertedIndex_ConcurrentSearch verifies concurrent searches
 func TestShardedInvertedIndex_ConcurrentSearch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewShardedInvertedIndex()
 
@@ -107,7 +107,7 @@ func TestShardedInvertedIndex_ConcurrentSearch(t *testing.T) {
 // TestShardedInvertedIndex_ConcurrentAdd verifies concurrent adds
 func TestShardedInvertedIndex_ConcurrentAdd(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewShardedInvertedIndex()
 
@@ -135,7 +135,7 @@ func TestShardedInvertedIndex_ConcurrentAdd(t *testing.T) {
 // TestShardedInvertedIndex_ConcurrentMixed tests mixed operations
 func TestShardedInvertedIndex_ConcurrentMixed(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewShardedInvertedIndex()
 

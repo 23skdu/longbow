@@ -10,7 +10,7 @@ import (
 
 func TestSearchContext_Reuse(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pool := NewArrowSearchContextPool()
 
@@ -40,7 +40,7 @@ func TestSearchContext_Reuse(t *testing.T) {
 
 func TestSearchContext_Reset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	ctx := NewArrowSearchContext()
 	ctx.Reset()
@@ -51,7 +51,7 @@ func TestSearchContext_Reset(t *testing.T) {
 
 func TestSearchContext_Metrics(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pool := NewArrowSearchContextPool()
 	_ = pool.Get()
@@ -59,7 +59,7 @@ func TestSearchContext_Metrics(t *testing.T) {
 
 func TestSearchResultPool_Basic(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pool := NewSearchResultPool()
 
@@ -84,7 +84,7 @@ func TestSearchResultPool_Basic(t *testing.T) {
 
 func TestSearchResultPool_CapacityBuckets(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pool := NewSearchResultPool()
 
@@ -109,7 +109,7 @@ func TestSearchResultPool_CapacityBuckets(t *testing.T) {
 
 func TestSearchResultPool_PutNil(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pool := NewSearchResultPool()
 	pool.Put(nil)
@@ -117,7 +117,7 @@ func TestSearchResultPool_PutNil(t *testing.T) {
 
 func TestSearchResultPool_Concurrent(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	pool := NewSearchResultPool()
 

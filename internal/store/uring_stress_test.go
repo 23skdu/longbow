@@ -10,7 +10,7 @@ import (
 
 func TestUringReaderStress(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Only run on Linux if iouring is available, or use stub on other platforms
 	// But we want to test the hardened implementation.

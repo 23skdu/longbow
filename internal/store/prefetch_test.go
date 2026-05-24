@@ -15,7 +15,7 @@ import (
 
 func TestVectorPrefetchBasic(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Test that prefetching valid memory doesn't crash
 	data := make([]byte, 1024)
@@ -29,7 +29,7 @@ func TestVectorPrefetchBasic(t *testing.T) {
 
 func TestVectorPrefetchProcessChunkWithPrefetch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	dims := 128
@@ -90,7 +90,7 @@ func TestVectorPrefetchProcessChunkWithPrefetch(t *testing.T) {
 
 func TestVectorPrefetchStress(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Simplified stress test using public API
 	mem := memory.NewGoAllocator()

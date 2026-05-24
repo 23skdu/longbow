@@ -312,12 +312,12 @@ func (s *VectorStore) StartIngestionAutoscaler(ctx context.Context) {
 		// Check every 500ms
 		ticker := time.NewTicker(500 * time.Millisecond)
 		defer ticker.Stop()
-		
+
 		maxWorkers := runtime.NumCPU() * 2
 		if maxWorkers > 16 {
 			maxWorkers = 16
 		}
-		
+
 		for {
 			select {
 			case <-s.stopChan:
@@ -330,14 +330,14 @@ func (s *VectorStore) StartIngestionAutoscaler(ctx context.Context) {
 				current := len(s.ingestionWorkerCancels)
 				currentIdx := len(s.indexingWorkerCancels)
 				s.workerMu.Unlock()
-				
+
 				target := MinIngestionWorkers
 				if depth > 1000 {
 					target = maxWorkers
 				} else if depth > 200 {
 					target = MinIngestionWorkers + (maxWorkers-MinIngestionWorkers)/2
 				}
-				
+
 				if target != current {
 					s.AdjustWorkerCounts(currentIdx, target)
 				}

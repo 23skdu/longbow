@@ -12,7 +12,7 @@ import (
 
 func TestMemVectorStore_OffHeap(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	opts := MemStoreOptions{
 		UseOffHeap: true,
@@ -72,7 +72,7 @@ func TestMemVectorStore_OffHeap(t *testing.T) {
 
 func TestMemVectorStore_DeleteBatch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	opts := MemStoreOptions{
 		UseOffHeap: true,
@@ -107,7 +107,7 @@ func TestMemVectorStore_DeleteBatch(t *testing.T) {
 
 func TestMemVectorStore_OffHeapMismatch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	opts := MemStoreOptions{
 		UseOffHeap: true,

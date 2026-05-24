@@ -10,7 +10,7 @@ import (
 
 func TestSchemaEvolution_Additive(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Initial Schema: id (int64), vector (fixed_size_list<float32>[4])
 	initialFields := []arrow.Field{
@@ -49,7 +49,7 @@ func TestSchemaEvolution_Additive(t *testing.T) {
 
 func TestSchemaEvolution_TypeMismatch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	initialFields := []arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -71,7 +71,7 @@ func TestSchemaEvolution_TypeMismatch(t *testing.T) {
 
 func TestSchemaEvolution_DroppedColumnReused(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	initialFields := []arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -103,7 +103,7 @@ func TestSchemaEvolution_DroppedColumnReused(t *testing.T) {
 
 func TestSchemaEvolution_Concurrent(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	initialFields := []arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},

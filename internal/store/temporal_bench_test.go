@@ -1,9 +1,10 @@
 package store
 
 import (
-	"github.com/23skdu/longbow/internal/memory"
 	"testing"
 	"time"
+
+	"github.com/23skdu/longbow/internal/memory"
 )
 
 func BenchmarkTemporalTree_GetRange(b *testing.B) {

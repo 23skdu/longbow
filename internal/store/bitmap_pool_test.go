@@ -10,7 +10,7 @@ import (
 
 func TestBitmapPoolConfigDefaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultBitmapPoolConfig()
 
@@ -30,7 +30,7 @@ func TestBitmapPoolConfigDefaults(t *testing.T) {
 
 func TestBitmapPoolConfigValidation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tests := []struct {
 		name    string
@@ -101,7 +101,7 @@ func TestBitmapPoolConfigValidation(t *testing.T) {
 
 func TestBitmapPoolCreation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultBitmapPoolConfig()
 	pool := NewBitmapPool(cfg)
@@ -113,7 +113,7 @@ func TestBitmapPoolCreation(t *testing.T) {
 
 func TestBitmapPoolGetPut(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultBitmapPoolConfig()
 	pool := NewBitmapPool(cfg)
@@ -134,7 +134,7 @@ func TestBitmapPoolGetPut(t *testing.T) {
 
 func TestBitmapPoolSizeBuckets(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := BitmapPoolConfig{
 		SizeBuckets:    []int{1024, 4096, 16384, 65536},
@@ -170,7 +170,7 @@ func TestBitmapPoolSizeBuckets(t *testing.T) {
 
 func TestBitmapPoolOversizedBuffer(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := BitmapPoolConfig{
 		SizeBuckets:    []int{1024, 4096},
@@ -201,7 +201,7 @@ func TestBitmapPoolOversizedBuffer(t *testing.T) {
 
 func TestBitmapPoolConcurrent(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultBitmapPoolConfig()
 	pool := NewBitmapPool(cfg)
@@ -242,7 +242,7 @@ func TestBitmapPoolConcurrent(t *testing.T) {
 
 func TestBitmapPoolStats(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultBitmapPoolConfig()
 	pool := NewBitmapPool(cfg)
@@ -299,7 +299,7 @@ func TestBitmapPoolStats(t *testing.T) {
 
 func TestPooledBitmapReset(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultBitmapPoolConfig()
 	pool := NewBitmapPool(cfg)
@@ -324,7 +324,7 @@ func TestPooledBitmapReset(t *testing.T) {
 
 func TestPooledBitmapSetBit(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultBitmapPoolConfig()
 	pool := NewBitmapPool(cfg)
@@ -363,7 +363,7 @@ func TestPooledBitmapSetBit(t *testing.T) {
 
 func TestBitmapPoolMetricsExist(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Just verify the metrics can be incremented without panic
 	cfg := DefaultBitmapPoolConfig()

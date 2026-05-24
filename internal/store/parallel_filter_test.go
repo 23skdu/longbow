@@ -41,7 +41,7 @@ func makeTestRecordWithID(mem memory.Allocator, id int64, category string, value
 
 func TestFilterRecordsParallel_Basic(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := createTestStore(t)
@@ -85,7 +85,7 @@ func TestFilterRecordsParallel_Basic(t *testing.T) {
 
 func TestFilterRecordsParallel_OrderPreserved(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := createTestStore(t)
@@ -127,7 +127,7 @@ func TestFilterRecordsParallel_OrderPreserved(t *testing.T) {
 
 func TestFilterRecordsParallel_EmptyInput(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	store := createTestStore(t)
 	defer func() { _ = store.Close() }()
@@ -147,7 +147,7 @@ func TestFilterRecordsParallel_EmptyInput(t *testing.T) {
 
 func TestFilterRecordsParallel_AllFiltered(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := createTestStore(t)
@@ -181,7 +181,7 @@ func TestFilterRecordsParallel_AllFiltered(t *testing.T) {
 
 func TestFilterRecordsParallel_ContextCancellation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := createTestStore(t)
@@ -221,7 +221,7 @@ func TestFilterRecordsParallel_ContextCancellation(t *testing.T) {
 
 func TestFilterRecordsParallel_ConcurrentSafety(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := createTestStore(t)
@@ -255,7 +255,7 @@ func TestFilterRecordsParallel_ConcurrentSafety(t *testing.T) {
 
 func TestFilterRecordsParallel_MultipleFilters(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	store := createTestStore(t)

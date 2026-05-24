@@ -9,7 +9,7 @@ import (
 
 func TestBatchDistanceCompute_Basic(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := [][]float32{
 		{1.0, 0.0, 0.0},
@@ -35,7 +35,7 @@ func TestBatchDistanceCompute_Basic(t *testing.T) {
 
 func TestBatchDistanceCompute_Empty(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := [][]float32{}
 	candidates := [][]float32{}
@@ -48,7 +48,7 @@ func TestBatchDistanceCompute_Empty(t *testing.T) {
 
 func TestBatchDistanceCompute_SinglePair(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := [][]float32{{1.0, 2.0, 3.0}}
 	candidates := [][]float32{{4.0, 5.0, 6.0}}
@@ -62,7 +62,7 @@ func TestBatchDistanceCompute_SinglePair(t *testing.T) {
 
 func TestBatchDistanceCompute_LargeBatch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	batchSize := 1000
 	dim := 128
@@ -91,7 +91,7 @@ func TestBatchDistanceCompute_LargeBatch(t *testing.T) {
 
 func TestBatchDistanceCompute_IdenticalVectors(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dim := 64
 	numPairs := 50
@@ -118,7 +118,7 @@ func TestBatchDistanceCompute_IdenticalVectors(t *testing.T) {
 
 func TestBatchDistanceCompute_OrthogonalVectors(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dim := 32
 	numPairs := 20
@@ -147,7 +147,7 @@ func TestBatchDistanceCompute_OrthogonalVectors(t *testing.T) {
 
 func TestBatchDistanceCompute_MismatchedDimensions(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := [][]float32{{1.0, 2.0, 3.0}}
 	candidates := [][]float32{{1.0, 2.0}} // Different dimension
@@ -160,7 +160,7 @@ func TestBatchDistanceCompute_MismatchedDimensions(t *testing.T) {
 
 func TestBatchDistanceCompute_MismatchedLengths(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	queries := [][]float32{{1.0}, {2.0}}
 	candidates := [][]float32{{3.0}}

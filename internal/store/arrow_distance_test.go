@@ -13,7 +13,7 @@ import (
 
 func TestBatchDistanceComputer_ComputeL2Distances(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	dim := 128
@@ -49,7 +49,7 @@ func TestBatchDistanceComputer_ComputeL2Distances(t *testing.T) {
 
 func TestBatchDistanceComputer_EmptyCandidates(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	computer := NewBatchDistanceComputer(mem, 128)
@@ -63,7 +63,7 @@ func TestBatchDistanceComputer_EmptyCandidates(t *testing.T) {
 
 func TestBatchDistanceComputer_DimensionMismatch(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	computer := NewBatchDistanceComputer(mem, 128)
@@ -78,7 +78,7 @@ func TestBatchDistanceComputer_DimensionMismatch(t *testing.T) {
 
 func TestBatchDistanceComputer_ShouldUseBatchCompute(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	computer := NewBatchDistanceComputer(mem, 128)

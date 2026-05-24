@@ -11,7 +11,7 @@ import (
 
 func TestBatchNeighborUpdater_Basic(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	flushCount := atomic.Int32{}
 	updateCount := atomic.Int32{}
@@ -54,7 +54,7 @@ func TestBatchNeighborUpdater_Basic(t *testing.T) {
 
 func TestBatchNeighborUpdater_Interval(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	flushCount := atomic.Int32{}
 
@@ -86,7 +86,7 @@ func TestBatchNeighborUpdater_Interval(t *testing.T) {
 
 func TestBatchNeighborUpdater_Stop(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	flushCount := atomic.Int32{}
 

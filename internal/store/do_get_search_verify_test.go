@@ -23,7 +23,7 @@ import (
 // TestDoGetSearch_Integration verifies the end-to-end flow of searching via DoGet
 func TestDoGetSearch_Integration(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// 1. Start Server
 	lis, err := net.Listen("tcp", "localhost:0")

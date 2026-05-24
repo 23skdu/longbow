@@ -58,7 +58,7 @@ func MergeSortedStreams(channels []<-chan []SearchResult, k int) []SearchResult 
 	if k <= 0 {
 		return nil
 	}
-	
+
 	out := GetSearchResultSlice(k)
 
 	h := &ResultHeap{}

@@ -21,7 +21,7 @@ func discardLogger() zerolog.Logger {
 
 func TestShutdownCompletesWithinTimeout(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tmpDir, err := os.MkdirTemp("", "shutdown-test-*")
 	if err != nil {
@@ -50,7 +50,7 @@ func TestShutdownCompletesWithinTimeout(t *testing.T) {
 
 func TestShutdownFlushesWAL(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tmpDir, err := os.MkdirTemp("", "shutdown-wal-*")
 	if err != nil {
@@ -86,7 +86,7 @@ func TestShutdownFlushesWAL(t *testing.T) {
 
 func TestWALTruncationAfterSnapshot(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tmpDir, err := os.MkdirTemp("", "wal-truncate-*")
 	if err != nil {
@@ -127,7 +127,7 @@ func TestWALTruncationAfterSnapshot(t *testing.T) {
 
 func TestShutdownIdempotent(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tmpDir, err := os.MkdirTemp("", "shutdown-idempotent-*")
 	if err != nil {
@@ -153,7 +153,7 @@ func TestShutdownIdempotent(t *testing.T) {
 
 func TestConcurrentShutdown(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tmpDir, err := os.MkdirTemp("", "shutdown-concurrent-*")
 	if err != nil {

@@ -14,7 +14,7 @@ import (
 
 func TestLoadBalancerStrategy_RoundRobin(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	replicas := []string{"replica-1", "replica-2", "replica-3"}
 	strategy := NewRoundRobinStrategy()
@@ -31,7 +31,7 @@ func TestLoadBalancerStrategy_RoundRobin(t *testing.T) {
 
 func TestLoadBalancerStrategy_LeastConnections(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	strategy := NewLeastConnectionsStrategy()
 
@@ -51,7 +51,7 @@ func TestLoadBalancerStrategy_LeastConnections(t *testing.T) {
 
 func TestLoadBalancerStrategy_LeastConnections_Release(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	strategy := NewLeastConnectionsStrategy()
 
@@ -67,7 +67,7 @@ func TestLoadBalancerStrategy_LeastConnections_Release(t *testing.T) {
 
 func TestReplicaLoadBalancer_New(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	config := LoadBalancerConfig{
 		Strategy:            StrategyRoundRobin,
@@ -82,7 +82,7 @@ func TestReplicaLoadBalancer_New(t *testing.T) {
 
 func TestReplicaLoadBalancer_AddRemoveReplica(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	lb := NewReplicaLoadBalancer(LoadBalancerConfig{
 		Strategy: StrategyRoundRobin,
@@ -105,7 +105,7 @@ func TestReplicaLoadBalancer_AddRemoveReplica(t *testing.T) {
 
 func TestReplicaLoadBalancer_SelectHealthy(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	lb := NewReplicaLoadBalancer(LoadBalancerConfig{
 		Strategy: StrategyRoundRobin,
@@ -133,7 +133,7 @@ func TestReplicaLoadBalancer_SelectHealthy(t *testing.T) {
 
 func TestReplicaLoadBalancer_MarkHealthy(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	lb := NewReplicaLoadBalancer(LoadBalancerConfig{
 		Strategy: StrategyRoundRobin,
@@ -156,7 +156,7 @@ func TestReplicaLoadBalancer_MarkHealthy(t *testing.T) {
 
 func TestReplicaLoadBalancer_NoHealthyReplicas(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	lb := NewReplicaLoadBalancer(LoadBalancerConfig{
 		Strategy: StrategyRoundRobin,
@@ -175,7 +175,7 @@ func TestReplicaLoadBalancer_NoHealthyReplicas(t *testing.T) {
 
 func TestReplicaLoadBalancer_ConcurrentAccess(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	lb := NewReplicaLoadBalancer(LoadBalancerConfig{
 		Strategy: StrategyRoundRobin,
@@ -211,7 +211,7 @@ func TestReplicaLoadBalancer_ConcurrentAccess(t *testing.T) {
 
 func TestReplicaLoadBalancer_Metrics(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	lb := NewReplicaLoadBalancer(LoadBalancerConfig{
 		Strategy: StrategyRoundRobin,
@@ -232,7 +232,7 @@ func TestReplicaLoadBalancer_Metrics(t *testing.T) {
 
 func TestLoadBalancerStrategy_Weighted(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	strategy := NewWeightedStrategy()
 

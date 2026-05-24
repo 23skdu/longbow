@@ -11,7 +11,7 @@ import (
 // TestRecordSizeCache tests the size caching mechanism
 func TestRecordSizeCache(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cache := NewRecordSizeCache()
 	if cache == nil {
@@ -58,7 +58,7 @@ func TestRecordSizeCache(t *testing.T) {
 // TestRecordSizeCacheInvalidate tests cache invalidation
 func TestRecordSizeCacheInvalidate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cache := NewRecordSizeCache()
 
@@ -91,7 +91,7 @@ func TestRecordSizeCacheInvalidate(t *testing.T) {
 // TestRecordSizeCacheClear tests clearing entire cache
 func TestRecordSizeCacheClear(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cache := NewRecordSizeCache()
 
@@ -121,7 +121,7 @@ func TestRecordSizeCacheClear(t *testing.T) {
 // TestEstimateRecordSize tests the fast heuristic estimator
 func TestEstimateRecordSize(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	alloc := memory.NewGoAllocator()
 
@@ -161,7 +161,7 @@ func TestEstimateRecordSize(t *testing.T) {
 // TestEstimateRecordSizeNil tests nil handling
 func TestEstimateRecordSizeNil(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	if EstimateRecordSize(nil) != 0 {
 		t.Error("Expected 0 for nil record")
@@ -171,7 +171,7 @@ func TestEstimateRecordSizeNil(t *testing.T) {
 // TestCachedRecordSize tests the main API function
 func TestCachedRecordSize(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Reset global cache for test isolation
 	ResetGlobalSizeCache()

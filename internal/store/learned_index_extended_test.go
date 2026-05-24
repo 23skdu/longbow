@@ -8,7 +8,7 @@ import (
 
 func TestFeatureNormalizer(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	n := newFeatureNormalizer()
 	assert.False(t, n.Ready())
@@ -35,7 +35,7 @@ func TestFeatureNormalizer(t *testing.T) {
 
 func TestExtractFeatureVector_Extended(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	f := QueryFeatures{
 		VectorDimension:   1536,
@@ -64,7 +64,7 @@ func TestExtractFeatureVector_Extended(t *testing.T) {
 
 func TestEmbeddingModelDimRatio_Extended(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	assert.InDelta(t, 4.0, embeddingModelDimRatio("openai", "text-embedding-3-large", 1536), 0.01)
 	assert.InDelta(t, 2.666, embeddingModelDimRatio("cohere", "embed-english-v3.0", 1024), 0.01)

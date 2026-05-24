@@ -23,7 +23,7 @@ func addToIndex(idx *InvertedIndex, id VectorID, text string) {
 
 func TestInvertedIndex_AddAndGet(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewInvertedIndex()
 
@@ -56,7 +56,7 @@ func TestInvertedIndex_AddAndGet(t *testing.T) {
 
 func TestInvertedIndex_Delete(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// InvertedIndex doesn't implement Delete in the current version shown in view_file.
 	// It only has Add, AddBatch, Get.
@@ -66,7 +66,7 @@ func TestInvertedIndex_Delete(t *testing.T) {
 
 func TestInvertedIndex_EmptyGet(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewInvertedIndex()
 	addToIndex(idx, VectorID(0), "hello")
@@ -83,7 +83,7 @@ func TestInvertedIndex_EmptyGet(t *testing.T) {
 
 func TestRRF_BasicFusion(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Dense results: [A, B, C, D] (A is rank 1, B is rank 2, etc.)
 	denseResults := []SearchResult{
@@ -122,7 +122,7 @@ func TestRRF_BasicFusion(t *testing.T) {
 
 func TestRRF_EmptyInputs(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Both empty
 	result := ReciprocalRankFusion("test_dataset", nil, nil, 60, 10, nil)
@@ -140,7 +140,7 @@ func TestRRF_EmptyInputs(t *testing.T) {
 
 func TestRRF_KParameter(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	dense := []SearchResult{
 		{ID: VectorID(0), Score: 0.9},
@@ -296,7 +296,7 @@ func (hs *HybridSearcher) Delete(id VectorID) {
 
 func TestHybridSearch_Integration(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Create a hybrid searcher
 	hs := NewHybridSearcher()
@@ -347,7 +347,7 @@ func TestHybridSearch_Integration(t *testing.T) {
 
 func TestHybridSearch_WeightedFusion(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	hs := NewHybridSearcher()
 
@@ -375,7 +375,7 @@ func TestHybridSearch_WeightedFusion(t *testing.T) {
 
 func TestHybridSearch_Delete(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	hs := NewHybridSearcher()
 

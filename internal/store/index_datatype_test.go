@@ -18,7 +18,7 @@ import (
 // TestArrowHNSW_DataTypes runs a comprehensive verify for all supported vector data types
 func TestArrowHNSW_DataTypes(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	dims := 128

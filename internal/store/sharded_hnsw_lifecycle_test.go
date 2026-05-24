@@ -2,8 +2,9 @@ package store
 
 import (
 	"context"
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/core"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -15,7 +16,7 @@ import (
 
 func TestShardedHNSW_Compaction(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	t.Skip("Flaky - sorting issue with sharded index results")
 	mem := memory.NewGoAllocator()
@@ -100,7 +101,7 @@ func TestShardedHNSW_Compaction(t *testing.T) {
 
 func TestShardedHNSW_Vacuum(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	dataset := &Dataset{Name: "test-vacuum"}
@@ -158,7 +159,7 @@ func TestShardedHNSW_Vacuum(t *testing.T) {
 
 func TestShardedHNSW_DynamicGrowth(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	dataset := &Dataset{Name: "test-growth"}

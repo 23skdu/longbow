@@ -9,7 +9,7 @@ import (
 
 func TestBitmapIndex_AddAndFilter(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBitmapIndex()
 
@@ -65,7 +65,7 @@ func TestBitmapIndex_AddAndFilter(t *testing.T) {
 
 func TestBitmapIndex_Remove(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	idx := NewBitmapIndex()
 	_ = idx.Add(1, "cat", "A")

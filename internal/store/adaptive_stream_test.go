@@ -1,8 +1,9 @@
 package store
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
+
+	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/flight"
 	"github.com/apache/arrow-go/v18/arrow"
@@ -32,7 +33,7 @@ func makeAdaptiveTestRecord(mem memory.Allocator, size int64) arrow.RecordBatch 
 
 func TestAdaptivelySliceBatches(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	strategy := flight.NewAdaptiveChunkStrategy(10, 100, 2.0) // Start 10, double up to 100
@@ -102,7 +103,7 @@ func TestAdaptivelySliceBatches(t *testing.T) {
 
 func TestAdaptivelySliceBatches_SplittingTombstones(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	strategy := flight.NewAdaptiveChunkStrategy(10, 100, 2.0)

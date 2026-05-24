@@ -11,7 +11,7 @@ import (
 
 func TestDefaultBM25Config(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultBM25Config()
 
@@ -26,7 +26,7 @@ func TestDefaultBM25Config(t *testing.T) {
 
 func TestBM25ConfigValidation(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tests := []struct {
 		name    string
@@ -62,7 +62,7 @@ func TestBM25ConfigValidation(t *testing.T) {
 
 func TestNewBM25Scorer(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultBM25Config()
 	scorer := NewBM25Scorer(cfg)
@@ -83,7 +83,7 @@ func TestNewBM25Scorer(t *testing.T) {
 
 func TestBM25ScorerAddDocument(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	scorer := NewBM25Scorer(DefaultBM25Config())
 
@@ -108,7 +108,7 @@ func TestBM25ScorerAddDocument(t *testing.T) {
 
 func TestBM25ScorerRemoveDocument(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	scorer := NewBM25Scorer(DefaultBM25Config())
 
@@ -126,7 +126,7 @@ func TestBM25ScorerRemoveDocument(t *testing.T) {
 
 func TestBM25ScorerIDF(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	scorer := NewBM25Scorer(DefaultBM25Config())
 
@@ -153,7 +153,7 @@ func TestBM25ScorerIDF(t *testing.T) {
 
 func TestBM25ScorerScore(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	scorer := NewBM25Scorer(DefaultBM25Config())
 
@@ -192,7 +192,7 @@ func TestBM25ScorerScore(t *testing.T) {
 
 func TestBM25ScorerScoreEdgeCases(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	scorer := NewBM25Scorer(DefaultBM25Config())
 
@@ -222,7 +222,7 @@ func TestBM25ScorerScoreEdgeCases(t *testing.T) {
 
 func TestBM25ScorerConcurrency(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	scorer := NewBM25Scorer(DefaultBM25Config())
 

@@ -16,7 +16,7 @@ import (
 // the physical vs logical dimension mismatch for complex numbers (N vs 2N floats).
 func TestComplex128_DimensionCheck(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 
 	// Create a dataset with complex128 vectors (logical dim=4, physical dim=8 floats)
@@ -64,7 +64,7 @@ func TestComplex128_DimensionCheck(t *testing.T) {
 // for complex numbers.
 func TestComplex_SearchCorrectness(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	ds := NewDataset("test_complex_correctness", nil)

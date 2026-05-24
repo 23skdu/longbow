@@ -13,7 +13,7 @@ import (
 
 func TestVectorStore_ShutdownTimeoutEnforcement(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -51,7 +51,7 @@ func TestVectorStore_ShutdownTimeoutEnforcement(t *testing.T) {
 
 func TestVectorStore_CloseTimeoutEnforcement(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
@@ -81,7 +81,7 @@ func TestVectorStore_CloseTimeoutEnforcement(t *testing.T) {
 
 func TestVectorStore_ShutdownWithHungWorkers(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()

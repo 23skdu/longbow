@@ -1,6 +1,7 @@
 package core
 
 import (
+	topcore "github.com/23skdu/longbow/internal/core"
 	"context"
 	"runtime"
 	"sync"
@@ -14,6 +15,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	amemory "github.com/apache/arrow-go/v18/arrow/memory"
+	"github.com/rs/zerolog"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -288,4 +290,16 @@ func TestGraphData_NeedsChunk_SharedVectorSpace(t *testing.T) {
 
 	// Still needs chunk 1
 	assert.True(t, gd.NeedsChunk(1))
+}
+
+func (m *MockProvider) GetMetric() topcore.DistanceMetric {
+	return topcore.MetricEuclidean
+}
+
+func (m *MockProvider) GetLogger() zerolog.Logger {
+	return zerolog.Nop()
+}
+
+func (m *MockProvider) GetTopo() *memory.NUMATopology {
+	return nil
 }

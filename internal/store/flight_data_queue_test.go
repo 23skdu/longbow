@@ -19,7 +19,7 @@ import (
 
 func TestFlightDataQueueConfig_Defaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultFlightDataQueueConfig()
 
@@ -36,7 +36,7 @@ func TestFlightDataQueueConfig_Defaults(t *testing.T) {
 
 func TestFlightDataQueueConfig_Validate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tests := []struct {
 		name    string
@@ -62,7 +62,7 @@ func TestFlightDataQueueConfig_Validate(t *testing.T) {
 
 func TestFlightDataQueue_NewAndClose(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultFlightDataQueueConfig()
 	q := NewFlightDataQueue(cfg)
@@ -88,7 +88,7 @@ func TestFlightDataQueue_NewAndClose(t *testing.T) {
 
 func TestFlightDataQueue_EnqueueDequeue(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultFlightDataQueueConfig()
 	q := NewFlightDataQueue(cfg)
@@ -125,7 +125,7 @@ func TestFlightDataQueue_EnqueueDequeue(t *testing.T) {
 
 func TestFlightDataQueue_TryEnqueue_NonBlocking(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	// Create queue with size 2
 	cfg := FlightDataQueueConfig{
@@ -165,7 +165,7 @@ func TestFlightDataQueue_TryEnqueue_NonBlocking(t *testing.T) {
 
 func TestFlightDataQueue_Dequeue_ContextCancel(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultFlightDataQueueConfig()
 	q := NewFlightDataQueue(cfg)
@@ -189,7 +189,7 @@ func TestFlightDataQueue_Dequeue_ContextCancel(t *testing.T) {
 
 func TestFlightDataQueue_Dequeue_AfterClose(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultFlightDataQueueConfig()
 	q := NewFlightDataQueue(cfg)
@@ -217,7 +217,7 @@ func TestFlightDataQueue_Dequeue_AfterClose(t *testing.T) {
 
 func TestFlightDataQueue_Stats(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultFlightDataQueueConfig()
 	q := NewFlightDataQueue(cfg)
@@ -242,7 +242,7 @@ func TestFlightDataQueue_Stats(t *testing.T) {
 
 func TestFlightDataQueue_Concurrent(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := FlightDataQueueConfig{
 		QueueSize:      100,
@@ -299,7 +299,7 @@ func TestFlightDataQueue_Concurrent(t *testing.T) {
 
 func TestChunkWorkerPoolConfig_Defaults(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultChunkWorkerPoolConfig()
 
@@ -313,7 +313,7 @@ func TestChunkWorkerPoolConfig_Defaults(t *testing.T) {
 
 func TestChunkWorkerPoolConfig_Validate(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	tests := []struct {
 		name    string
@@ -338,7 +338,7 @@ func TestChunkWorkerPoolConfig_Validate(t *testing.T) {
 
 func TestChunkWorkerPool_StartStop(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := ChunkWorkerPoolConfig{
 		NumWorkers:     2,
@@ -383,7 +383,7 @@ func TestChunkWorkerPool_StartStop(t *testing.T) {
 
 func TestChunkWorkerPool_Stats(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := ChunkWorkerPoolConfig{
 		NumWorkers:     2,
@@ -422,7 +422,7 @@ func TestChunkWorkerPool_Stats(t *testing.T) {
 
 func TestChunkWorkerPool_ErrorHandling(t *testing.T) {
 	if testing.Short() {
-			t.Skip("skipping test in short mode")
+		t.Skip("skipping test in short mode")
 	}
 	cfg := ChunkWorkerPoolConfig{
 		NumWorkers:     1,

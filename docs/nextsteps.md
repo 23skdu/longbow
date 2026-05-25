@@ -48,10 +48,15 @@ The upsert path doesn't initialize the Tombstones bitset map entry for a batch t
 The system currently hits `ResourceExhausted` at ~425K vectors under the 18 GB memory cap, and HNSW graph construction shows high O(N²) single-threaded contention.
 
 - **Parallelize HNSW index construction**: The single-threaded indexer creates a 25K-job backlog at ≥75K vectors. Spawn 2–4 indexer workers and partition the HNSW graph by shard to avoid O(N²) contention.
-  - [ ] Design a thread-safe partitioning or sharding scheme for the HNSW graph to minimize node insertion locks.
-  - [ ] Implement a concurrent worker pool (2–4 goroutines) to consume indexing tasks from the global queue.
-  - [ ] Introduce a striped or fine-grained locking mechanism for graph node updates instead of a global index lock.
+  - [x] Design a thread-safe partitioning or sharding scheme for the HNSW graph to minimize node insertion locks.
+  - [x] Implement a concurrent worker pool (2–4 goroutines) to consume indexing tasks from the global queue.
+  - [x] Introduce a striped or fine-grained locking mechanism for graph node updates instead of a global index lock.
   - [ ] Profile indexing throughput and lock wait-time using `pprof` block/mutex profiles under heavy ingest load.
+
+> **What was implemented** (`internal/store/index/sharded_hnsw.go`):
+> - Per-shard `sync.Mutex` (`shardLocks`) in `ShardedHNSW` — each shard processes one batch at a time, while N different shards run in parallel across M index workers. This eliminates the single `bulkMu` contention point that caused the 25K backlog.
+> - Auto-sharding threshold lowered from 10K → **256** vectors (`DefaultAutoShardingConfig`) so the sharded index activates much earlier, minimizing the single-ArrowHNSW phase.
+> - Two-level striped locking: (1) per-shard mutex at the ShardedHNSW level + (2) existing `insertMus [131072]` per-vector spinlocks inside each ArrowHNSW shard.
 - **Increase memory cap or add disk-backed index**: With 18 GB the system hits `ResourceExhausted` at ~425K. Bumping `LONGBOW_MAX_MEMORY` to 32 GB (if available) or enabling `LONGBOW_USE_DISK=1` would allow 500K–1M vectors.
   - [ ] Profile memory allocations using `pprof` heap snapshots at 350K+ vectors to pinpoint largest overhead contributors.
   - [ ] Implement or stabilize `LONGBOW_USE_DISK=1` to dump cold HNSW vectors/nodes to disk (using memory-mapped files or a key-value store for block storage).
@@ -100,6 +105,11 @@ The system currently hits `ResourceExhausted` at ~425K vectors under the 18 GB m
   - [ ] Profile and decouple distance computation logic from the CPU graph-traversal loop.
   - [ ] Design a batched distance interface to execute distance kernels on the GPU in batches of queries/neighbors rather than single vectors.
   - [ ] Build fallback heuristics to run distance computation on the CPU when the batch size is too small to justify kernel launch overhead.
+- **Implement Batched GPU Distance Computations (all datatypes, Metal arm64 + CUDA amd64)**: Ingestion scale is fundamentally bottlenecked by L1/L2 cache latency (fetching 1,536 scattered bytes per neighbor). Shifting distance compute arrays to the GPU can alleviate memory-bandwidth ceilings for high-density indexing.
+  - [ ] Design a GPU memory layout optimized for coalesced or batched scattered byte fetching.
+  - [ ] Implement custom CUDA/Metal kernels for batched distance computations (L2, Cosine).
+  - [ ] Integrate GPU compute queue with the current ingestion pipeline to batch distance queries.
+  - [ ] Benchmark memory bandwidth utilization against CPU L1/L2 cache under multi-threaded search loads.
 
 ---
 
@@ -124,11 +134,7 @@ The system currently hits `ResourceExhausted` at ~425K vectors under the 18 GB m
   - [ ] Compare trace metrics of atomic chunk pooling under `float32` vs `complex128`.
   - [ ] Audit memory alignment of `complex128` pooled chunks to ensure they don't cross cache lines.
   - [ ] Prototype alternative atomic pooling structures to minimize thrashing.
-- **Implement Batched GPU Distance Computations**: The `float32` ingestion scale is fundamentally bottlenecked by L1/L2 cache latency (fetching 1,536 scattered bytes per neighbor). Shifting distance compute arrays to the GPU can alleviate memory-bandwidth ceilings for high-density indexing.
-  - [ ] Design a GPU memory layout optimized for coalesced or batched scattered byte fetching.
-  - [ ] Implement CUDA/Metal kernels for batched distance computations (L2, Cosine).
-  - [ ] Integrate GPU compute queue with the current ingestion pipeline to batch distance queries.
-  - [ ] Benchmark memory bandwidth utilization against CPU L1/L2 cache under multi-threaded search loads.
+
 - **Tune `efSearch` Autonomously based on Data Type**: Increase the `efSearch` buffer heavily for lower-precision types (`int8`, `turboquant8`) to maintain recall, since they perform significantly faster with less memory-bound limitations compared to `float32` and `complex128`.
   - [x] Benchmark `efSearch` configurations across `int8` and `turboquant8`.
   - [x] Implement logic to adjust `efSearch` automatically at index creation based on type.

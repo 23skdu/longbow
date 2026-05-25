@@ -126,6 +126,10 @@ type ShardedHNSW struct {
 	sharder  ShardingStrategy
 	shardsMu sync.RWMutex
 
+	// Per-shard insertion locks — each shard processes one batch at a time.
+	// Multiple shards can proceed concurrently, enabling N-callers × M-shards parallelism.
+	shardLocks []sync.Mutex
+
 	parallelConfig types.ParallelSearchConfig
 }
 
@@ -157,6 +161,7 @@ func NewShardedHNSW(config ShardedHNSWConfig, dataset types.IndexDataProvider) V
 	}
 
 	s.shards = make([]*hnswShard, config.NumShards)
+	s.shardLocks = make([]sync.Mutex, config.NumShards)
 	for i := 0; i < config.NumShards; i++ {
 		s.shards[i] = s.newShard(i)
 	}
@@ -313,6 +318,11 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 		for i := len(idx.shards); i <= maxShardIdx; i++ {
 			idx.shards = append(idx.shards, idx.newShard(i))
 		}
+		if maxShardIdx >= len(idx.shardLocks) {
+			newLocks := make([]sync.Mutex, maxShardIdx+1)
+			copy(newLocks, idx.shardLocks)
+			idx.shardLocks = newLocks
+		}
 		idx.shardsMu.Unlock()
 		idx.shardsMu.RLock()
 	}
@@ -328,6 +338,8 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 		shard := idx.shards[sIdx]
 
 		g.Go(func() error {
+			idx.shardLocks[sIdx].Lock()
+
 			shardRowIdxs := make([]int, len(j.indices))
 			shardBatchIdxs := make([]int, len(j.indices))
 			for k, idxInBatch := range j.indices {
@@ -336,6 +348,9 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 			}
 
 			localIDs, err := shard.index.AddBatch(ctx, recs, shardRowIdxs, shardBatchIdxs)
+
+			idx.shardLocks[sIdx].Unlock()
+
 			if err != nil {
 				return err
 			}
@@ -394,7 +409,10 @@ func (idx *ShardedHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 			}
 		}
 		if len(localIDs) > 0 {
-			if err := shard.index.DeleteBatch(ctx, localIDs); err != nil {
+			idx.shardLocks[shardIdx].Lock()
+			err := shard.index.DeleteBatch(ctx, localIDs)
+			idx.shardLocks[shardIdx].Unlock()
+			if err != nil {
 				return err
 			}
 		}
@@ -438,7 +456,9 @@ func (idx *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, 
 	if shardIdx < len(idx.shards) {
 		shard := idx.shards[shardIdx]
 		idx.shardsMu.RUnlock()
+		idx.shardLocks[shardIdx].Lock()
 		localID, err := shard.index.AddByRecord(ctx, rec, rowIdx, batchIdx)
+		idx.shardLocks[shardIdx].Unlock()
 		if err != nil {
 			return 0, fmt.Errorf("shard insert failed: %w", err)
 		}
@@ -463,7 +483,9 @@ func (idx *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, 
 		// Someone else created it
 		shard := idx.shards[shardIdx]
 		idx.shardsMu.Unlock()
+		idx.shardLocks[shardIdx].Lock()
 		localID, err := shard.index.AddByRecord(ctx, rec, rowIdx, batchIdx)
+		idx.shardLocks[shardIdx].Unlock()
 		if err != nil {
 			return 0, fmt.Errorf("shard insert failed: %w", err)
 		}
@@ -480,11 +502,18 @@ func (idx *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, 
 	for i := len(idx.shards); i <= shardIdx; i++ {
 		idx.shards = append(idx.shards, idx.newShard(i))
 	}
+	if shardIdx >= len(idx.shardLocks) {
+		newLocks := make([]sync.Mutex, shardIdx+1)
+		copy(newLocks, idx.shardLocks)
+		idx.shardLocks = newLocks
+	}
 	shard := idx.shards[shardIdx]
 	idx.shardsMu.Unlock()
 
 	// Insert
+	idx.shardLocks[shardIdx].Lock()
 	localID, err := shard.index.AddByRecord(ctx, rec, rowIdx, batchIdx)
+	idx.shardLocks[shardIdx].Unlock()
 	if err != nil {
 		return 0, fmt.Errorf("shard insert failed: %w", err)
 	}

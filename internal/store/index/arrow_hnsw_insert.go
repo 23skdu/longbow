@@ -347,11 +347,36 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 		selected = make([]types.Candidate, 0, m)
 	}
 
-	extracted := make([][]float32, len(candidates))
+	var extracted [][]float32
+	if ctx != nil {
+		if cap(ctx.scratchExtractedF32) >= len(candidates) {
+			extracted = ctx.scratchExtractedF32[:len(candidates)]
+			for i := range extracted {
+				extracted[i] = nil
+			}
+		} else {
+			extracted = make([][]float32, len(candidates))
+			ctx.scratchExtractedF32 = extracted
+		}
+	} else {
+		extracted = make([][]float32, len(candidates))
+	}
+
+	maxGen := uint64(math.MaxUint64)
+	if ctx != nil {
+		maxGen = ctx.MaxGeneration
+	}
+
+	pd := data.GetPaddedDimsForType(types.VectorTypeFloat32)
 	for i, cand := range candidates {
-		vecAny, _ := data.GetVector(cand.ID)
-		if v, ok := vecAny.([]float32); ok {
-			extracted[i] = v
+		cID := int(cand.ID) / types.ChunkSize
+		cOff := int(cand.ID) % types.ChunkSize
+		chunk := data.GetVectorsChunkWithGen(cID, maxGen)
+		if chunk != nil {
+			start := cOff * pd
+			if start+data.Dims <= len(chunk) {
+				extracted[i] = chunk[start : start+data.Dims]
+			}
 		}
 	}
 
@@ -388,7 +413,12 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 		}
 	}
 
-	selectedVecs := make([][]float32, 0, m)
+	var selectedVecs [][]float32
+	if ctx != nil {
+		selectedVecs = ctx.scratchSelectedVecsF32[:0]
+	} else {
+		selectedVecs = make([][]float32, 0, m)
+	}
 
 	for i, cand := range candidates {
 		if len(selected) >= m {
@@ -429,6 +459,7 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 
 	if ctx != nil {
 		ctx.scratchSelected = selected
+		ctx.scratchSelectedVecsF32 = selectedVecs
 	}
 	return selected
 }

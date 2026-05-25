@@ -247,14 +247,33 @@ func (p *SharedWorkerPool) parallelForInternal(n int, chunkSize int, task func(s
 		return
 	}
 
+	var nextChunk atomic.Int32
 	var wg sync.WaitGroup
-	wg.Add(numChunks)
 
-	for i := 0; i < n; i += chunkSize {
-		start := i
-		end := i + chunkSize
-		if end > n {
-			end = n
+	numHelpers := p.numWorkers - 1
+	if numHelpers > numChunks-1 {
+		numHelpers = numChunks - 1
+	}
+	if numHelpers < 0 {
+		numHelpers = 0
+	}
+
+	if numHelpers > 0 {
+		wg.Add(numHelpers)
+		helperFunc := func() {
+			defer wg.Done()
+			for {
+				chunkIdx := nextChunk.Add(1) - 1
+				start := int(chunkIdx) * chunkSize
+				if start >= n {
+					break
+				}
+				end := start + chunkSize
+				if end > n {
+					end = n
+				}
+				task(start, end)
+			}
 		}
 
 		submitFunc := p.Submit
@@ -262,10 +281,25 @@ func (p *SharedWorkerPool) parallelForInternal(n int, chunkSize int, task func(s
 			submitFunc = p.SubmitHighPriority
 		}
 
-		submitFunc(func() {
-			defer wg.Done()
-			task(start, end)
-		})
+		for i := 0; i < numHelpers; i++ {
+			submitFunc(helperFunc)
+		}
 	}
+
+	// Caller thread also helps!
+	for {
+		chunkIdx := nextChunk.Add(1) - 1
+		start := int(chunkIdx) * chunkSize
+		if start >= n {
+			break
+		}
+		end := start + chunkSize
+		if end > n {
+			end = n
+		}
+		task(start, end)
+	}
+
 	wg.Wait()
 }
+

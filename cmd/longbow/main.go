@@ -284,7 +284,7 @@ func run() error {
 		logger.Warn().Err(err).Msg("Failed to set GODEBUG")
 	}
 	gcConfig := gc.DefaultAdaptiveGCConfig()
-	gcConfig.Enabled = true
+	gcConfig.Enabled = (cfg.MaxMemory <= 0)
 	gcConfig.MinGOGC = 20
 	gcConfig.MaxGOGC = 100
 	vectorStore.EnableAdaptiveGC(gcConfig)

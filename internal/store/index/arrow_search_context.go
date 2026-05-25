@@ -212,6 +212,11 @@ type ArrowSearchContext struct {
 
 	scratchDists []float32
 
+	scratchExtractedF32    [][]float32
+	scratchSelectedVecsF32 [][]float32
+	scratchPool            []uint32
+	scratchPruned          []uint32
+
 	vectorBuf []float32
 
 	pruneDepth int
@@ -272,6 +277,11 @@ func NewArrowSearchContext() *ArrowSearchContext {
 		resultSet:        make(CandidateHeap, 0, 100),
 		scratchSelected:  make([]types.Candidate, 0, 100),
 		scratchRemaining: make([]types.Candidate, 0, 100),
+		scratchDists:     make([]float32, 0, 128),
+		scratchExtractedF32:    make([][]float32, 0, 100),
+		scratchSelectedVecsF32: make([][]float32, 0, 100),
+		scratchPool:            make([]uint32, 0, 128),
+		scratchPruned:          make([]uint32, 0, 128),
 		queryBQ:          make([]uint64, 0, 256),
 		querySQ8:         make([]uint8, 0, 1536),
 		queryTQ:          make([]byte, 0, 512),
@@ -350,6 +360,11 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.resultSet = ctx.resultSet[:0]
 	ctx.scratchSelected = ctx.scratchSelected[:0]
 	ctx.scratchRemaining = ctx.scratchRemaining[:0]
+	ctx.scratchDists = ctx.scratchDists[:0]
+	ctx.scratchExtractedF32 = ctx.scratchExtractedF32[:0]
+	ctx.scratchSelectedVecsF32 = ctx.scratchSelectedVecsF32[:0]
+	ctx.scratchPool = ctx.scratchPool[:0]
+	ctx.scratchPruned = ctx.scratchPruned[:0]
 	ctx.queryBQ = ctx.queryBQ[:0]
 	ctx.querySQ8 = ctx.querySQ8[:0]
 	ctx.queryTQ = ctx.queryTQ[:0]

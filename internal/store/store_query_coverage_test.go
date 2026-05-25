@@ -77,6 +77,7 @@ func TestVectorStore_GetFlightInfo(t *testing.T) {
 	s.getOrCreateDataset("test-1", func() *Dataset {
 		ds := NewDataset("test-1", arrow.NewSchema([]arrow.Field{{Name: "id", Type: arrow.PrimitiveTypes.Uint32}}, nil))
 		ds.SizeBytes.Store(100)
+		ds.IsReady.Store(true)
 		return ds
 	})
 
@@ -160,6 +161,9 @@ func (m *mockVectorIndex) SearchVectors(ctx context.Context, query any, k int, f
 func (m *mockVectorIndex) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (uint32, error) {
 	return 0, nil
 }
+func (m *mockVectorIndex) Len() int { return 0 }
+func (m *mockVectorIndex) Size() int { return 0 }
+func (m *mockVectorIndex) Close() error { return nil }
 func (m *mockVectorIndex) Warmup() int { return 0 }
 
 func TestDoGetSchemaAllocations(t *testing.T) {

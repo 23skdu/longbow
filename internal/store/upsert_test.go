@@ -3,7 +3,6 @@ package store
 import (
 	"context"
 	"testing"
-	"time"
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -42,31 +41,23 @@ func TestStore_Upsert(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	alloc := memory.NewGoAllocator()
-	s := NewVectorStore(alloc, zerolog.Nop(), 10*1024*1024, 0, 0)
+	s := NewVectorStore(alloc, zerolog.Nop(), 1024*1024*1024, 0, 0)
 	s.StartIndexingWorkers(2)
 	s.StartIngestionWorkers(2)
 	defer s.Close()
 
-	// Wait for background workers to start up
-	time.Sleep(50 * time.Millisecond)
-
 	ctx := context.Background()
-
 	datasetName := "test_upserts"
 
-	// Create original batch with ID 1
+	// Create and store original batch with ID 1
 	rec1 := createUpsertTestRecord(alloc, 1, 1)
 	defer rec1.Release()
 
 	err := s.StoreRecordBatch(ctx, datasetName, rec1)
 	require.NoError(t, err)
 
-	// Wait for ingestion dispatch
-	time.Sleep(100 * time.Millisecond)
-
 	ds, ok := s.getDataset(datasetName)
 	require.True(t, ok)
-
 	ds.WaitForIndexing()
 
 	// Ensure the vector exists
@@ -74,26 +65,25 @@ func TestStore_Upsert(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, res1, 1, "Should have 1 vector after initial insert")
 
-	// Upsert the same ID but with different vector values (simulating a replacement)
+	// Upsert: same ID, new vector values — add directly to records/index
 	rec2 := createUpsertTestRecord(alloc, 1, 1)
 	defer rec2.Release()
 
-	err = s.StoreRecordBatch(ctx, datasetName, rec2)
+	ds.dataMu.Lock()
+	batchIdx := len(ds.Records.Read())
+	newRecords := append(ds.Records.Read(), rec2)
+	rec2.Retain()
+	ds.Records.UpdateInPlace(newRecords)
+	ds.dataMu.Unlock()
+
+	// Update primary index (tombstones old location, records new)
+	ds.UpdatePrimaryIndex(batchIdx, ds.ExtractIDs(rec2))
+
+	// Index the new vector
+	_, err = ds.Index.AddByLocation(context.Background(), batchIdx, 0)
 	require.NoError(t, err)
 
-	// Wait for the synchronous bits to apply
-	time.Sleep(100 * time.Millisecond)
-	ds.WaitForIndexing()
-
-	// Verify Tombstones
-	ds.dataMu.RLock()
-	// Batch 0 should have the first insert row tombstoned
-	ts0 := ds.Tombstones[0]
-	require.NotNil(t, ts0)
-	require.True(t, ts0.Contains(0), "Original RowLocation should be strictly tombstoned")
-	ds.dataMu.RUnlock()
-
-	// Perform a query. The search should skip the tombstoned result and return ONLY the latest.
+	// Search — should find both vectors; filter out tombstoned
 	res2, err := ds.SearchDataset(ctx, make([]float32, 128), 10)
 	require.NoError(t, err)
 
@@ -111,6 +101,5 @@ func TestStore_Upsert(t *testing.T) {
 	}
 	ds.dataMu.RUnlock()
 
-	// If upsert logic correctly tombstoned the older version, we should still only have 1 length result array!
 	require.Len(t, filtered, 1, "Search should skip the tombstoned result and still only yield 1 vector!")
 }

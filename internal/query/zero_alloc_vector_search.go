@@ -194,6 +194,13 @@ func (p *ZeroAllocVectorSearchParser) Parse(data []byte) (VectorSearchRequest, e
 				p.result.VectorFormat = val
 				i = newPos
 			}
+		case "ef_search":
+			val, newPos, err := ParseInt64(data, i)
+			if err != nil {
+				return p.result, err
+			}
+			p.result.EfSearch = int(val)
+			i = newPos
 		case "window_functions":
 			wfs, newPos, err := ParseWindowFunctionsShared(data, i)
 			if err != nil {

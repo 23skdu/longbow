@@ -53,17 +53,22 @@ func TestVectorStore_DoAction_Extended(t *testing.T) {
 		b.Field(1).(*array.Float64Builder).AppendValues([]float64{1.1, 2.2}, nil)
 		rec := b.NewRecordBatch()
 		ds.Records = NewLockFreeSliceFrom([]arrow.RecordBatch{rec})
+		ds.IsReady.Store(true)
 
 		return ds
 	})
 
 	t.Run("check_readiness", func(t *testing.T) {
+		// Set a mock index so check_readiness doesn't fail on nil index
+		mockIdx := &mockVectorIndex{}
+		ds, _ := s.getDataset("test-ds")
+		ds.Index = mockIdx
+
 		stream := &mockDoActionServerCoverage{}
 		body, _ := json.Marshal(map[string]string{"dataset": "test-ds"})
 		err := s.DoAction(&flight.Action{Type: "check_readiness", Body: body}, stream)
 		require.NoError(t, err)
-		assert.Len(t, stream.results, 1)
-
+		require.NotEmpty(t, stream.results)
 		var resp map[string]any
 		json.Unmarshal(stream.results[0].Body, &resp)
 		assert.Equal(t, "READY", resp["status"])

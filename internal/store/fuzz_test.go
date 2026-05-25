@@ -81,7 +81,8 @@ func FuzzCompaction(f *testing.F) {
 		store := NewVectorStore(mem, zerolog.Nop(), 50*1024*1024, 0, 0)
 		defer func() { assert.NoError(t, store.Close()) }()
 
-		// Ensure compaction worker is set up
+		// Disable the default compaction worker and create a fresh one
+		store.compactionWorker.Stop()
 		store.compactionConfig = *DefaultCompactionConfig()
 		store.compactionConfig.Enabled = true
 		store.compactionWorker = NewCompactionWorker(store, &store.compactionConfig)

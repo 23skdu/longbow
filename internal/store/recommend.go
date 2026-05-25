@@ -5,6 +5,7 @@ import (
 	"errors"
 	"math"
 	"sort"
+	"strconv"
 	"time"
 
 	"github.com/23skdu/longbow/internal/metrics"
@@ -33,7 +34,15 @@ func (s *VectorStore) Recommend(ctx context.Context, req *qry.RecommendRequest) 
 
 	ds.dataMu.RLock()
 	for _, uid := range req.SeedIDs {
-		if loc, ok := ds.PrimaryIndex[uid]; ok {
+		var loc RowLocation
+		var ok bool
+		if loc, ok = ds.PrimaryIndex[uid]; !ok {
+			// Try numeric primary index (IDs stored as int64)
+			if nid, err := strconv.ParseInt(uid, 10, 64); err == nil {
+				loc, ok = ds.NumericPrimaryIndex[nid]
+			}
+		}
+		if ok {
 			// Resolve internal ID (Batch*ChunkSize + Row)
 			internalID := lbtypes.VectorID(loc.BatchIdx*lbtypes.ChunkSize + loc.RowIdx) // #nosec G115
 			if loc.BatchIdx < len(ds.Records.Read()) {

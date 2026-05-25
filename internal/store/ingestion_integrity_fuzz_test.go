@@ -46,6 +46,8 @@ func FuzzIngestionIntegrityConcurrent(f *testing.F) {
 		logger := zerolog.New(zerolog.NewConsoleWriter()).With().Timestamp().Logger()
 		store := NewVectorStore(mem, logger, 1024*1024*100, 1024*1024*100, 1*time.Hour)
 		defer func() { _ = store.Close() }()
+		store.StartIngestionWorkers(4)
+		store.StartIndexingWorkers(4)
 
 		// Initialize persistence to avoid "persistence not initialized" errors in workers
 		tmpDir, err := os.MkdirTemp("", "longbow-fuzz-*")

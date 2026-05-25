@@ -191,6 +191,7 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 		NumVectors: numRows,
 		StartIdx:   dvs.totalCount,
 		CompType:   compType,
+		Tier:       storage.TierHot,
 		CreatedAt:  time.Now(),
 	})
 	dvs.totalCount += numRows
@@ -264,6 +265,7 @@ func (dvs *DiskVectorStore) BatchAppend(vectors [][]float32) (int, error) {
 		NumVectors: len(vectors),
 		StartIdx:   dvs.totalCount,
 		CompType:   compType,
+		Tier:       storage.TierHot,
 		CreatedAt:  time.Now(),
 	})
 	dvs.totalCount += len(vectors)

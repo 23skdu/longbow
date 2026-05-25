@@ -17,19 +17,26 @@ type complex64Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
-	batchVecs [][]float32
+	batchVecs [][]complex64
 }
 
 func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
+	var lastCID int = -1
+	var lastChunk []complex64
+
 	for i, id := range ids {
-		cID := types.ChunkID(id)
-		chunk := c.data.GetVectorsComplex64ChunkWithGen(int(cID), c.maxGen)
-		if chunk != nil {
+		cID := int(types.ChunkID(id))
+		if cID != lastCID {
+			lastChunk = c.data.GetVectorsComplex64ChunkWithGen(cID, c.maxGen)
+			lastCID = cID
+		}
+		
+		if lastChunk != nil {
 			cOff := int(id) % types.ChunkSize
 			pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex64)
 			start := cOff * pd
-			if start+c.dims <= len(chunk) {
-				v := chunk[start : start+c.dims]
+			if start+c.dims <= len(lastChunk) {
+				v := lastChunk[start : start+c.dims]
 				d, err := c.h.distFuncC64(c.q, v)
 				if err != nil {
 					return err
@@ -72,8 +79,32 @@ func (c *complex64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32
 	} else {
 		dst = dst[:len(ids)]
 	}
-	err := c.Compute(ids, dst)
-	return dst, err
+
+	if cap(c.batchVecs) < len(ids) {
+		c.batchVecs = make([][]complex64, len(ids))
+	}
+	c.batchVecs = c.batchVecs[:len(ids)]
+
+	var lastCID int = -1
+	var lastChunk []complex64
+	for i, id := range ids {
+		cID := int(types.ChunkID(id))
+		if cID != lastCID {
+			lastChunk = c.data.GetVectorsComplex64ChunkWithGen(cID, c.maxGen)
+			lastCID = cID
+		}
+		if lastChunk != nil {
+			cOff := int(id) % types.ChunkSize
+			pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex64)
+			start := cOff * pd
+			if start+c.dims <= len(lastChunk) {
+				c.batchVecs[i] = lastChunk[start : start+c.dims]
+				continue
+			}
+		}
+		dst[i] = math.MaxFloat32
+	}
+	return dst, c.Compute(ids, dst)
 }
 
 func (c *complex64Computer) Prefetch(id uint32) {
@@ -97,19 +128,26 @@ type complex128Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
-	batchVecs [][]float32
+	batchVecs [][]complex128
 }
 
 func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
+	var lastCID int = -1
+	var lastChunk []complex128
+
 	for i, id := range ids {
-		cID := types.ChunkID(id)
-		chunk := c.data.GetVectorsComplex128ChunkWithGen(int(cID), c.maxGen)
-		if chunk != nil {
+		cID := int(types.ChunkID(id))
+		if cID != lastCID {
+			lastChunk = c.data.GetVectorsComplex128ChunkWithGen(cID, c.maxGen)
+			lastCID = cID
+		}
+		
+		if lastChunk != nil {
 			cOff := int(id) % types.ChunkSize
 			pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex128)
 			start := cOff * pd
-			if start+c.dims <= len(chunk) {
-				v := chunk[start : start+c.dims]
+			if start+c.dims <= len(lastChunk) {
+				v := lastChunk[start : start+c.dims]
 				d, err := c.h.distFuncC128(c.q, v)
 				if err != nil {
 					return err
@@ -152,8 +190,32 @@ func (c *complex128Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 	} else {
 		dst = dst[:len(ids)]
 	}
-	err := c.Compute(ids, dst)
-	return dst, err
+
+	if cap(c.batchVecs) < len(ids) {
+		c.batchVecs = make([][]complex128, len(ids))
+	}
+	c.batchVecs = c.batchVecs[:len(ids)]
+
+	var lastCID int = -1
+	var lastChunk []complex128
+	for i, id := range ids {
+		cID := int(types.ChunkID(id))
+		if cID != lastCID {
+			lastChunk = c.data.GetVectorsComplex128ChunkWithGen(cID, c.maxGen)
+			lastCID = cID
+		}
+		if lastChunk != nil {
+			cOff := int(id) % types.ChunkSize
+			pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex128)
+			start := cOff * pd
+			if start+c.dims <= len(lastChunk) {
+				c.batchVecs[i] = lastChunk[start : start+c.dims]
+				continue
+			}
+		}
+		dst[i] = math.MaxFloat32
+	}
+	return dst, c.Compute(ids, dst)
 }
 
 func (c *complex128Computer) Prefetch(id uint32) {

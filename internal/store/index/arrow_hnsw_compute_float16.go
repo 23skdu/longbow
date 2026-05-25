@@ -16,7 +16,7 @@ type float16Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
-	batchVecs [][]float32
+	batchVecs [][]float16.Num
 }
 
 func (c *float16Computer) Compute(ids []uint32, dists []float32) error {
@@ -70,7 +70,44 @@ func (c *float16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 	} else {
 		dst = dst[:len(ids)]
 	}
-	err := c.Compute(ids, dst)
+
+	// Try optimized batched SIMD path: gather all vectors first
+	if cap(c.batchVecs) < len(ids) {
+		c.batchVecs = make([][]float16.Num, len(ids))
+	}
+	c.batchVecs = c.batchVecs[:len(ids)]
+
+	var lastCID int = -1
+	var lastChunk []float16.Num
+	for i, id := range ids {
+		cID := int(types.ChunkID(id))
+		if cID != lastCID {
+			lastChunk = c.data.GetVectorsF16ChunkFast(cID)
+			lastCID = cID
+		}
+		if lastChunk != nil {
+			cOff := int(id) % types.ChunkSize
+			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)
+			start := cOff * pd
+			if start+c.dims <= len(lastChunk) {
+				c.batchVecs[i] = lastChunk[start : start+c.dims]
+				continue
+			}
+		}
+		// Fallback to disk for this vector
+		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+		if err != nil {
+			return nil, err
+		}
+		if v, ok := vecAny.([]float16.Num); ok {
+			c.batchVecs[i] = v
+		} else {
+			dst[i] = math.MaxFloat32
+			continue
+		}
+	}
+
+	err := simd.EuclideanDistanceF16Batch(c.q, c.batchVecs, dst)
 	return dst, err
 }
 

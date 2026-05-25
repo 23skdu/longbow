@@ -65,23 +65,48 @@ DTYPE_BYTES = {
 
 def run_command(cmd, env=None, capture_output=True, timeout=None, shell=False):
     import shlex
+    import time
     try:
         if shell:
             args = cmd
         else:
             args = shlex.split(cmd)
-        
-        result = subprocess.run(
-            args,
-            env=env,
-            capture_output=capture_output,
-            text=True,
-            timeout=timeout,
-            shell=shell,
-        )
-        return result
-    except subprocess.TimeoutExpired:
-        print(f"  Command timed out after {timeout}s")
+            
+        kwargs = {
+            "env": env,
+            "text": True,
+            "shell": shell,
+            "preexec_fn": os.setsid,  # Start in new session so child processes are tracked
+        }
+        if capture_output:
+            kwargs["stdout"] = subprocess.PIPE
+            kwargs["stderr"] = subprocess.PIPE
+            
+        process = subprocess.Popen(args, **kwargs)
+        try:
+            stdout, stderr = process.communicate(timeout=timeout)
+            return subprocess.CompletedProcess(process.args, process.returncode, stdout, stderr)
+        except subprocess.TimeoutExpired:
+            print(f"  Command timed out after {timeout}s. Terminating gracefully...")
+            # Send SIGTERM to the entire process group
+            try:
+                pgid = os.getpgid(process.pid)
+                os.killpg(pgid, signal.SIGTERM)
+            except (ProcessLookupError, OSError):
+                process.terminate()
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                print("  Graceful termination failed. Killing process group...")
+                try:
+                    pgid = os.getpgid(process.pid)
+                    os.killpg(pgid, signal.SIGKILL)
+                except (ProcessLookupError, OSError):
+                    process.kill()
+                process.wait()
+            return None
+    except Exception as e:
+        print(f"  Error running command: {e}")
         return None
 
 
@@ -143,10 +168,36 @@ class BenchmarkRunner:
         signal.signal(signal.SIGINT, self._signal_handler)
         signal.signal(signal.SIGTERM, self._signal_handler)
 
+    def _save_checkpoint(self):
+        """Save partial results checkpoint to disk."""
+        if hasattr(self, 'results') and self.results and hasattr(self, 'output_file'):
+            try:
+                dims = [int(d) for d in self.args.dims.split(",")]
+                counts = [int(c) for c in self.args.counts.split(",")]
+                dtypes = self.args.dtypes.split(",")
+                with open(self.output_file, "w") as f:
+                    json.dump({
+                        "mode": getattr(self, 'current_mode', self.args.mode),
+                        "timestamp": self.timestamp,
+                        "platform": f"{platform.system()} {platform.machine()}",
+                        "config": {
+                            "dims": dims,
+                            "counts": counts,
+                            "dtypes": dtypes,
+                            "duration": self.args.duration,
+                        },
+                        "results": self.results,
+                    }, f, indent=2)
+                print(f"\n  [checkpoint] Partial results saved to {self.output_file}")
+            except Exception as e:
+                print(f"\n  [checkpoint] Failed to save partial results: {e}")
+
     def _signal_handler(self, signum, frame):
-        """Handle SIGINT/SIGTERM by cleaning up and exiting."""
-        print(f"  [cleanup] Signal {signum} received, forcing cleanup...")
+        """Handle SIGINT/SIGTERM by saving partial results and cleaning up."""
+        print(f"\n  [cleanup] Signal {signum} received, saving checkpoint and cleaning up...")
+        self._save_checkpoint()
         self._force_cleanup()
+        print("  [cleanup] Done. Partial results may be available.")
         sys.exit(1)
 
     def _force_cleanup(self):
@@ -154,12 +205,25 @@ class BenchmarkRunner:
 
         This method is intentionally port-scoped (not a global pkill) so it does
         not interfere with other benchmark runs on different ports."""
-        # First, send SIGKILL to the tracked PID if still alive
+        # First, send SIGTERM then SIGKILL to the tracked PID if still alive
         if self.server_pid:
             try:
-                os.kill(self.server_pid, signal.SIGKILL)
-                os.waitpid(self.server_pid, 0)
+                os.kill(self.server_pid, signal.SIGTERM)
+                # Give it a moment for graceful shutdown
+                _, status = os.waitpid(self.server_pid, os.WNOHANG)
+                if status is None:
+                    time.sleep(2)
+                    os.kill(self.server_pid, signal.SIGKILL)
+                    os.waitpid(self.server_pid, 0)
             except (ProcessLookupError, ChildProcessError, OSError):
+                pass
+            # Also reap any zombie children
+            try:
+                while True:
+                    wpid, _ = os.waitpid(-1, os.WNOHANG)
+                    if wpid <= 0:
+                        break
+            except (ChildProcessError, OSError):
                 pass
             self.server_pid = None
 
@@ -655,12 +719,31 @@ class BenchmarkRunner:
         print(f"DEBUG: cmd={cmd}", flush=True)
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         base_timeout = getattr(self.args, "timeout", 1800)
-        # Scale up timeout significantly for heavy float types at high counts
-        if dtype in ("float32", "float64"):
-            scaled_timeout = int(batch_size / 50)  # assume at least 50 vec/s
-            if scaled_timeout > base_timeout:
-                base_timeout = scaled_timeout
-        timeout = base_timeout
+        dim_factor = max(1.0, dim / 128.0)
+
+        # Use actual measured speed if available, otherwise conservative estimate
+        measured_speed = getattr(self, f'_speed_{dtype}', None)
+        if measured_speed and measured_speed > 0:
+            base_speed = measured_speed
+        else:
+            if dtype in ("float64", "complex64", "complex128"):
+                base_speed = 30.0
+            elif dtype.startswith("turboquant"):
+                base_speed = 50.0
+            elif dtype in ("int8", "uint8", "int16", "uint16"):
+                base_speed = 80.0
+            elif dtype in ("float32",):
+                base_speed = 60.0
+            else:
+                base_speed = 40.0
+
+        scaled_timeout = int((batch_size / base_speed) * dim_factor)
+        search_overhead = int(self.args.queries / 100.0 * dim_factor)
+        scaled_timeout += max(search_overhead, 60)
+
+        # Scaled timeout is primary; clamp between base_timeout and 4x base_timeout
+        timeout = max(base_timeout, scaled_timeout)
+        timeout = min(timeout, base_timeout * 4)
         
         bench_log = os.path.join(self.log_dir, f"bench_{label}.log")
         with open(bench_log, "w") as f:
@@ -713,7 +796,17 @@ class BenchmarkRunner:
         }
         self.results.append(result_entry)
 
-        print(f" {metrics.get('ingest_vec_per_sec', 0):.0f} vec/s")
+        # Adaptive timeout re-calibration: track actual throughput and adjust
+        # base speed estimate for the next run of the same dtype
+        vec_per_sec = metrics.get("ingest_vec_per_sec", 0)
+        if vec_per_sec > 0 and not hasattr(self, 'actual_speed'):
+            self.actual_speed = {}
+        if vec_per_sec > 0:
+            self.actual_speed[dtype] = vec_per_sec
+            # Persist for dynamic re-calibration
+            setattr(self, f'_speed_{dtype}', vec_per_sec)
+
+        print(f" {vec_per_sec:.0f} vec/s")
         return True
 
     def execute_recommend(self):

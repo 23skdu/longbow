@@ -261,12 +261,24 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 
 	// Autonomous efSearch Tuning based on DataType
 	baseEfSearch := int(config.EfSearch)
-	if config.DataType == types.VectorTypeInt8 || config.DataType == types.VectorTypeTQ || config.TurboQuantEnabled {
-		// Low-precision data types are heavily memory-bound optimized, so they can handle
-		// a massively expanded search buffer with very little latency penalty.
-		if baseEfSearch < 400 {
-			baseEfSearch = 400
+	// Low-precision and quantized data types are heavily memory-bound optimized, so they
+	// can handle a massively expanded search buffer with very little latency penalty.
+	// Higher efSearch improves recall for these types without significant throughput loss.
+	switch config.DataType {
+	case types.VectorTypeInt8, types.VectorTypeUint8,
+		types.VectorTypeInt16, types.VectorTypeUint16,
+		types.VectorTypeTQ:
+		if baseEfSearch < 600 {
+			baseEfSearch = 600
 		}
+	case types.VectorTypeInt32, types.VectorTypeUint32,
+		types.VectorTypeFloat16:
+		if baseEfSearch < 300 {
+			baseEfSearch = 300
+		}
+	}
+	if config.TurboQuantEnabled && baseEfSearch < 600 {
+		baseEfSearch = 600
 	}
 	h.efTuner = NewPIDTuner(0.95, baseEfSearch) // Target 0.95 recall
 

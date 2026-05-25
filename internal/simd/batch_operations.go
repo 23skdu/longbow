@@ -59,6 +59,36 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 			results[i] = d
 		}
 		return nil
+	case 768:
+		for i, v := range vectors {
+			if v == nil || len(v) != 768 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.EuclideanDistance768(query, v)
+			results[i] = d
+		}
+		return nil
+	case 1024:
+		for i, v := range vectors {
+			if v == nil || len(v) != 1024 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.EuclideanDistance1024(query, v)
+			results[i] = d
+		}
+		return nil
+	case 3072:
+		for i, v := range vectors {
+			if v == nil || len(v) != 3072 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.EuclideanDistance3072(query, v)
+			results[i] = d
+		}
+		return nil
 	}
 
 	return currentDispatch.EuclideanDistanceBatch(query, vectors, results)
@@ -73,7 +103,16 @@ func EuclideanDistanceBatchFlat(query, flatVectors []float32, numVectors, dims i
 	if currentDispatch == nil || currentDispatch.EuclideanDistanceBatchFlat == nil {
 		return errors.New("simd: dispatch not initialized")
 	}
-	if dims == 384 {
+	switch dims {
+	case 128:
+		for i := 0; i < numVectors; i++ {
+			offset := i * 128
+			v := flatVectors[offset : offset+128]
+			d, _ := currentDispatch.EuclideanDistance128(query, v)
+			results[i] = d
+		}
+		return nil
+	case 384:
 		for i := 0; i < numVectors; i++ {
 			offset := i * 384
 			v := flatVectors[offset : offset+384]
@@ -81,12 +120,27 @@ func EuclideanDistanceBatchFlat(query, flatVectors []float32, numVectors, dims i
 			results[i] = d
 		}
 		return nil
-	}
-	if dims == 128 {
+	case 768:
 		for i := 0; i < numVectors; i++ {
-			offset := i * 128
-			v := flatVectors[offset : offset+128]
-			d, _ := currentDispatch.EuclideanDistance128(query, v)
+			offset := i * 768
+			v := flatVectors[offset : offset+768]
+			d, _ := currentDispatch.EuclideanDistance768(query, v)
+			results[i] = d
+		}
+		return nil
+	case 1024:
+		for i := 0; i < numVectors; i++ {
+			offset := i * 1024
+			v := flatVectors[offset : offset+1024]
+			d, _ := currentDispatch.EuclideanDistance1024(query, v)
+			results[i] = d
+		}
+		return nil
+	case 3072:
+		for i := 0; i < numVectors; i++ {
+			offset := i * 3072
+			v := flatVectors[offset : offset+3072]
+			d, _ := currentDispatch.EuclideanDistance3072(query, v)
 			results[i] = d
 		}
 		return nil
@@ -194,6 +248,59 @@ func L2SquaredDistanceBatch(query []float32, vectors [][]float32, results []floa
 		return nil
 	}
 	metrics.SimdDispatchTotal.WithLabelValues(implementation, "l2squared_batch").Inc()
+	dims := len(query)
+	switch dims {
+	case 128:
+		for i, v := range vectors {
+			if v == nil || len(v) != 128 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.L2SquaredDistance128(query, v)
+			results[i] = d
+		}
+		return nil
+	case 384:
+		for i, v := range vectors {
+			if v == nil || len(v) != 384 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.L2SquaredDistance384(query, v)
+			results[i] = d
+		}
+		return nil
+	case 768:
+		for i, v := range vectors {
+			if v == nil || len(v) != 768 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.L2SquaredDistance768(query, v)
+			results[i] = d
+		}
+		return nil
+	case 1024:
+		for i, v := range vectors {
+			if v == nil || len(v) != 1024 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.L2SquaredDistance1024(query, v)
+			results[i] = d
+		}
+		return nil
+	case 3072:
+		for i, v := range vectors {
+			if v == nil || len(v) != 3072 {
+				results[i] = math.MaxFloat32
+				continue
+			}
+			d, _ := currentDispatch.L2SquaredDistance3072(query, v)
+			results[i] = d
+		}
+		return nil
+	}
 	return currentDispatch.L2SquaredDistanceBatch(query, vectors, results)
 }
 

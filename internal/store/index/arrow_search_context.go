@@ -186,6 +186,22 @@ type ArrowSearchContext struct {
 	queryC64  []complex64
 	queryC128 []complex128
 
+	// Zero-allocation pre-sized batch buffers for SIMD batching
+	// These avoid per-search allocation by reusing pre-sized slices
+	batchVecsFloat32    [][]float32
+	batchVecsFloat64    [][]float64
+	batchVecsFloat16    [][]float16.Num
+	batchVecsComplex64  [][]complex64
+	batchVecsComplex128 [][]complex128
+	batchVecsInt8       [][]int8
+	batchVecsInt16      [][]int16
+	batchVecsInt32      [][]int32
+	batchVecsInt64      [][]int64
+	batchVecsUint8      [][]uint8
+	batchVecsUint16     [][]uint16
+	batchVecsUint32     [][]uint32
+	batchVecsUint64     [][]uint64
+
 	// Distance calculation buffers
 	dists     []float32
 	distsTemp []float32
@@ -379,6 +395,19 @@ func (ctx *ArrowSearchContext) Reset() {
 	ctx.bufF32_2 = ctx.bufF32_2[:0]
 	ctx.bufF64 = ctx.bufF64[:0]
 	ctx.vectorBuf = ctx.vectorBuf[:0]
+	ctx.batchVecsFloat32 = ctx.batchVecsFloat32[:0]
+	ctx.batchVecsFloat64 = ctx.batchVecsFloat64[:0]
+	ctx.batchVecsFloat16 = ctx.batchVecsFloat16[:0]
+	ctx.batchVecsComplex64 = ctx.batchVecsComplex64[:0]
+	ctx.batchVecsComplex128 = ctx.batchVecsComplex128[:0]
+	ctx.batchVecsInt8 = ctx.batchVecsInt8[:0]
+	ctx.batchVecsInt16 = ctx.batchVecsInt16[:0]
+	ctx.batchVecsInt32 = ctx.batchVecsInt32[:0]
+	ctx.batchVecsInt64 = ctx.batchVecsInt64[:0]
+	ctx.batchVecsUint8 = ctx.batchVecsUint8[:0]
+	ctx.batchVecsUint16 = ctx.batchVecsUint16[:0]
+	ctx.batchVecsUint32 = ctx.batchVecsUint32[:0]
+	ctx.batchVecsUint64 = ctx.batchVecsUint64[:0]
 	ctx.dirty = false
 	ctx.operations = 0
 	ctx.distComputeTime = 0

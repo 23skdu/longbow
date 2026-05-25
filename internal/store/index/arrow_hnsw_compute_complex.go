@@ -17,6 +17,7 @@ type complex64Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
+	batchVecs [][]float32
 }
 
 func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
@@ -65,16 +66,14 @@ func (c *complex64Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-func (c *complex64Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
-		dist, err := c.ComputeSingle(id)
-		if err != nil {
-			return nil, err
-		}
-		dists[i] = dist
+func (c *complex64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	if cap(dst) < len(ids) {
+		dst = make([]float32, len(ids))
+	} else {
+		dst = dst[:len(ids)]
 	}
-	return dists, nil
+	err := c.Compute(ids, dst)
+	return dst, err
 }
 
 func (c *complex64Computer) Prefetch(id uint32) {
@@ -98,6 +97,7 @@ type complex128Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
+	batchVecs [][]float32
 }
 
 func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
@@ -146,16 +146,14 @@ func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-func (c *complex128Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
-		dist, err := c.ComputeSingle(id)
-		if err != nil {
-			return nil, err
-		}
-		dists[i] = dist
+func (c *complex128Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	if cap(dst) < len(ids) {
+		dst = make([]float32, len(ids))
+	} else {
+		dst = dst[:len(ids)]
 	}
-	return dists, nil
+	err := c.Compute(ids, dst)
+	return dst, err
 }
 
 func (c *complex128Computer) Prefetch(id uint32) {

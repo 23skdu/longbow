@@ -697,3 +697,19 @@ func isAllZerosAVX512(data []byte) bool {
 	}
 	return isAllZerosAVX2(data)
 }
+
+
+func l2SquaredBatchAVX512(query []float32, vectors [][]float32, results []float32) error {
+	for i, v := range vectors {
+		if v == nil {
+			continue
+		}
+		d, err := l2SquaredAVX512(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
+	}
+	return nil
+}
+

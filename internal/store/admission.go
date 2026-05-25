@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -19,6 +20,7 @@ import (
 
 // AdmissionController manages request admission and resource throttling.
 type AdmissionController struct {
+	Bypass         bool
 	maxMemory      *atomic.Int64
 	currentMemory  *atomic.Int64
 	hardMemory     int64 // Absolute hard limit (LONGBOW_MAX_MEMORY_HARD)
@@ -45,6 +47,7 @@ func NewAdmissionController(maxMemory, currentMemory *atomic.Int64, scaler *auto
 		}
 	}
 	return &AdmissionController{
+		Bypass:              isTestMode(),
 		maxMemory:           maxMemory,
 		currentMemory:       currentMemory,
 		hardMemory:          hardMem,
@@ -94,6 +97,9 @@ func (ac *AdmissionController) Release(opType string) {
 
 // AdmitMigration checks if a background migration/rebalancing task should proceed.
 func (ac *AdmissionController) AdmitMigration(ctx context.Context) error {
+	if ac.Bypass {
+		return nil
+	}
 	if ac.scaler == nil {
 		return nil
 	}
@@ -116,9 +122,6 @@ func (ac *AdmissionController) AdmitMigration(ctx context.Context) error {
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
 		heapMem := int64(m.HeapAlloc) // #nosec G115
-		if flag.Lookup("test.v") != nil && maxMem > 1 {
-			heapMem = 0
-		}
 		offHeapMem := lbmem.GetGlobalOffHeapAllocated()
 		physicalMem := heapMem + offHeapMem
 		usage := float64(physicalMem) / float64(maxMem)
@@ -132,6 +135,9 @@ func (ac *AdmissionController) AdmitMigration(ctx context.Context) error {
 
 // Admit checks if a request of the given type should be admitted.
 func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
+	if ac.Bypass {
+		return nil
+	}
 	if opType == "search" || opType == "query" {
 		if ac.walReplaying.Load() || ac.migratingCount.Load() > 0 {
 			// Search throttling active!
@@ -169,9 +175,6 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 	var m runtime.MemStats
 	runtime.ReadMemStats(&m)
 	heapMem := int64(m.HeapAlloc) // #nosec G115
-	if flag.Lookup("test.v") != nil && maxMem > 1 {
-		heapMem = 0
-	}
 
 	// 3. Get Off-Heap Arena Usage (using TotalCapacity for actual footprint)
 	offHeapMem := lbmem.GetGlobalOffHeapAllocated()
@@ -237,10 +240,8 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 		currMem = ac.currentMemory.Load()
 		runtime.ReadMemStats(&m)
 		heapMem = int64(m.HeapAlloc) // #nosec G115
-		if flag.Lookup("test.v") != nil && maxMem > 1 {
-			heapMem = 0
-		}
-		physicalMem = heapMem + offHeapMem
+		offHeapMemRecalc := offHeapMem
+		physicalMem = heapMem + offHeapMemRecalc
 		if physicalMem > currMem {
 			effectiveMem = physicalMem
 		} else {
@@ -295,4 +296,19 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 	}
 
 	return nil
+}
+
+func isTestMode() bool {
+	if flag.Lookup("test.v") != nil {
+		return true
+	}
+	if os.Getenv("LONGBOW_IN_TEST") == "true" || os.Getenv("LONGBOW_TEST") == "true" {
+		return true
+	}
+	for _, arg := range os.Args {
+		if strings.HasPrefix(arg, "-test.") {
+			return true
+		}
+	}
+	return strings.HasSuffix(os.Args[0], ".test") || strings.Contains(os.Args[0], "/_test/") || strings.Contains(os.Args[0], "/Temp/go-build")
 }

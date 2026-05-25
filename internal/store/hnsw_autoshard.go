@@ -323,9 +323,11 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	idx.mu.Unlock()
 
 	// Transition monolithic index to off-heap shadow mode to free up heap for the new index
+	idx.mu.Lock()
 	if err := oldIndex.RelocateToOffHeap(); err != nil {
 		idx.dataset.Logger.Error().Err(err).Msg("Failed to relocate monolithic index to off-heap")
 	}
+	idx.mu.Unlock()
 	// Reclaim memory immediately
 	runtime.GC()
 	debug.FreeOSMemory()
@@ -577,10 +579,10 @@ func (idx *AutoShardingIndex) ReleaseMonolithicChunk(cID int) error {
 // SearchVectors returns the k nearest neighbors for a query vector.
 func (idx *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, filters []query.Filter, options any) ([]SearchResult, error) {
 	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 	sharded := idx.sharded
 	interim := idx.interimIndex
 	curr := idx.current
-	idx.mu.RUnlock()
 
 	if sharded {
 		return curr.SearchVectors(ctx, q, k, filters, options)
@@ -619,10 +621,10 @@ func (idx *AutoShardingIndex) SearchVectors(ctx context.Context, q any, k int, f
 // SearchVectorsWithBitmap returns k nearest neighbors filtered by a bitset.
 func (idx *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k int, filter *roaring.Bitmap, options any) ([]SearchResult, error) {
 	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 	sharded := idx.sharded
 	interim := idx.interimIndex
 	curr := idx.current
-	idx.mu.RUnlock()
 
 	if sharded {
 		return curr.SearchVectorsWithBitmap(ctx, q, k, filter, options)
@@ -660,10 +662,10 @@ func (idx *AutoShardingIndex) SearchVectorsWithBitmap(ctx context.Context, q any
 // SearchVectorsInRange returns nearest neighbors within a distance threshold.
 func (idx *AutoShardingIndex) SearchVectorsInRange(ctx context.Context, q any, threshold float32, filters []query.Filter, options any) ([]SearchResult, error) {
 	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 	sharded := idx.sharded
 	interim := idx.interimIndex
 	curr := idx.current
-	idx.mu.RUnlock()
 
 	if sharded {
 		return curr.SearchVectorsInRange(ctx, q, threshold, filters, options)

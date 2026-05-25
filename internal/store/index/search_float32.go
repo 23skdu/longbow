@@ -1,7 +1,6 @@
 package index
 
 import (
-	"container/heap"
 	"context"
 	"math"
 	"time"
@@ -67,7 +66,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 	resultSetAdapter := (*MaxCandidateHeapAdapter)(&ctx.resultSet)
 
 	epCand := types.Candidate{ID: entryPoint, Dist: epDist}
-	heap.Push(minHeap, epCand)
+	minHeap.PushCandidate(epCand)
 
 	passes := true
 	if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(entryPoint) {
@@ -80,7 +79,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 		passes = false
 	}
 	if passes {
-		heap.Push(resultSetAdapter, epCand)
+		resultSetAdapter.PushCandidate(epCand)
 	}
 	ctx.visited.Set(int(entryPoint))
 
@@ -94,7 +93,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 			break
 		}
 
-		curr := heap.Pop(minHeap).(types.Candidate)
+		curr := minHeap.PopCandidate()
 		ctx.nodesVisitedCount++
 
 		if len(ctx.resultSet) > 0 {
@@ -172,12 +171,15 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 
 				if len(validBatch) > 0 {
 					ctx.distComputeCount += len(validBatch)
-					dists, err := computer.ComputeBatch(validBatch)
+					if cap(ctx.distsTemp) < len(validBatch) {
+						ctx.distsTemp = make([]float32, len(validBatch))
+					}
+					dists, err := computer.ComputeBatch(validBatch, ctx.distsTemp)
 					if err == nil {
 						for i, n := range validBatch {
 							d := dists[i]
 							cand := types.Candidate{ID: n, Dist: d}
-							heap.Push(minHeap, cand)
+							minHeap.PushCandidate(cand)
 
 							if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
 								continue
@@ -189,13 +191,13 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 							if len(ctx.resultSet) > 0 {
 								furthest := ctx.resultSet[0]
 								if ctx.resultSet.Len() < ef || d < furthest.Dist {
-									heap.Push(resultSetAdapter, cand)
+									resultSetAdapter.PushCandidate(cand)
 									if ctx.resultSet.Len() > ef {
-										heap.Pop(resultSetAdapter)
+										resultSetAdapter.PopCandidate()
 									}
 								}
 							} else {
-								heap.Push(resultSetAdapter, cand)
+								resultSetAdapter.PushCandidate(cand)
 							}
 						}
 					}
@@ -216,13 +218,16 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 			
 			if len(batch) > 0 {
 				ctx.distComputeCount += len(batch)
-				dists, err := computer.ComputeBatch(batch)
+				if cap(ctx.distsTemp) < len(batch) {
+					ctx.distsTemp = make([]float32, len(batch))
+				}
+				dists, err := computer.ComputeBatch(batch, ctx.distsTemp)
 				if err == nil {
 					for i, n := range batch {
 						d := dists[i]
 						cand := types.Candidate{ID: n, Dist: d}
 
-						heap.Push(minHeap, cand)
+						minHeap.PushCandidate(cand)
 
 						if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
 							continue
@@ -235,13 +240,13 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 							furthest := ctx.resultSet[0]
 
 							if ctx.resultSet.Len() < ef || d < furthest.Dist {
-								heap.Push(resultSetAdapter, cand)
+								resultSetAdapter.PushCandidate(cand)
 								if ctx.resultSet.Len() > ef {
-									heap.Pop(resultSetAdapter)
+									resultSetAdapter.PopCandidate()
 								}
 							}
 						} else {
-							heap.Push(resultSetAdapter, cand)
+							resultSetAdapter.PushCandidate(cand)
 						}
 					}
 				}
@@ -263,7 +268,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 	}
 
 	for i := count - 1; i >= 0; i-- {
-		res[i] = heap.Pop(resultSetAdapter).(types.Candidate)
+		res[i] = resultSetAdapter.PopCandidate()
 	}
 	return res, nil
 }

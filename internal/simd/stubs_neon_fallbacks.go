@@ -162,3 +162,9 @@ func UnpackTQ8NEON(src []byte, dst []float32, scale, bias float32) {
 func PackTQ2NEON(src []float32, dst []byte) { PackTQ2Generic(src, dst) }
 func PackTQ4NEON(src []float32, dst []byte) { PackTQ4Generic(src, dst) }
 func PackTQ8NEON(src []float32, dst []byte) { PackTQ8Generic(src, dst) }
+
+
+func l2SquaredBatchNEON(query []float32, vectors [][]float32, results []float32) error {
+	return l2SquaredBatchGeneric(query, vectors, results)
+}
+

@@ -6,6 +6,7 @@ import (
 
 	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/pq"
+	lbcore "github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
@@ -14,7 +15,7 @@ import (
 // DistanceComputer defines the interface for specialized distance computation.
 type DistanceComputer interface {
 	ComputeSingle(id uint32) (float32, error)
-	ComputeBatch(ids []uint32) ([]float32, error)
+	ComputeBatch(ids []uint32, dst []float32) ([]float32, error)
 	Prefetch(id uint32)
 }
 
@@ -67,16 +68,16 @@ func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
 	return distSq, nil
 }
 
-func (c *pqComputer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
+func (c *pqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
 		dist, err := c.ComputeSingle(id)
 		if err != nil {
 			return nil, err
 		}
-		dists[i] = dist
+		dst = append(dst, dist)
 	}
-	return dists, nil
+	return dst, nil
 }
 
 func (c *pqComputer) Prefetch(id uint32) {
@@ -104,16 +105,16 @@ func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
 	return c.h.tqCompute.DistanceWithRotatedQueryAndDisk(id, c.rotatedQuery, c.diskGraph, c.maxGen)
 }
 
-func (c *tqComputer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
+func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
 		dist, err := c.ComputeSingle(id)
 		if err != nil {
 			return nil, err
 		}
-		dists[i] = dist
+		dst = append(dst, dist)
 	}
-	return dists, nil
+	return dst, nil
 }
 
 func (c *tqComputer) Prefetch(id uint32) {
@@ -235,16 +236,16 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-func (c *float32Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
+func (c *float32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
 		dist, err := c.ComputeSingle(id)
 		if err != nil {
 			return nil, err
 		}
-		dists[i] = dist
+		dst = append(dst, dist)
 	}
-	return dists, nil
+	return dst, nil
 }
 
 func (c *float32Computer) Prefetch(id uint32) {
@@ -268,6 +269,7 @@ type float32ToFloat32Computer struct {
 	h         *ArrowHNSW
 	diskGraph *DiskGraph
 	maxGen    uint64
+	batchVecs [][]float32
 }
 
 func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
@@ -314,17 +316,52 @@ func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-func (c *float32ToFloat32Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	// By default, fallback to sequential. We will optimize this in GPU integrations if possible.
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
-		dist, err := c.ComputeSingle(id)
-		if err != nil {
-			return nil, err
-		}
-		dists[i] = dist
+func (c *float32ToFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	if cap(c.batchVecs) < len(ids) {
+		c.batchVecs = make([][]float32, len(ids))
 	}
-	return dists, nil
+	c.batchVecs = c.batchVecs[:len(ids)]
+
+	for i, id := range ids {
+		cID := types.ChunkID(id)
+		var chunk []float32
+		if c.maxGen == 18446744073709551615 {
+			chunk = c.data.GetVectorsChunkFast(int(cID))
+		} else {
+			chunk = c.data.GetVectorsChunkWithGen(int(cID), c.maxGen)
+		}
+
+		if chunk != nil {
+			cOff := int(id) % types.ChunkSize
+			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat32)
+			start := cOff * pd
+			c.batchVecs[i] = chunk[start : start+len(c.q)]
+		} else {
+			vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+			if err == nil {
+				c.batchVecs[i] = vecAny.([]float32)
+			} else {
+				c.batchVecs[i] = nil
+			}
+		}
+	}
+
+	if cap(dst) < len(ids) {
+		dst = make([]float32, len(ids))
+	} else {
+		dst = dst[:len(ids)]
+	}
+	var err error
+	if c.squared {
+		err = simd.L2SquaredDistanceBatch(c.q, c.batchVecs, dst)
+	} else if c.h.config.Metric == lbcore.MetricCosine {
+		err = simd.CosineDistanceBatch(c.q, c.batchVecs, dst)
+	} else if c.h.config.Metric == lbcore.MetricDotProduct {
+		err = simd.DotProductBatch(c.q, c.batchVecs, dst)
+	} else {
+		err = simd.EuclideanDistanceBatch(c.q, c.batchVecs, dst)
+	}
+	return dst, err
 }
 
 func (c *float32ToFloat32Computer) Prefetch(id uint32) {
@@ -437,16 +474,16 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-func (c *int8Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
+func (c *int8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
 		dist, err := c.ComputeSingle(id)
 		if err != nil {
 			return nil, err
 		}
-		dists[i] = dist
+		dst = append(dst, dist)
 	}
-	return dists, nil
+	return dst, nil
 }
 
 func (c *int8Computer) Prefetch(id uint32) {
@@ -581,16 +618,16 @@ func (c *sharedFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 	return c.h.distFunc(c.q, vec)
 }
 
-func (c *sharedFloat32Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
+func (c *sharedFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
 		dist, err := c.ComputeSingle(id)
 		if err != nil {
 			return nil, err
 		}
-		dists[i] = dist
+		dst = append(dst, dist)
 	}
-	return dists, nil
+	return dst, nil
 }
 
 func (c *sharedFloat32Computer) Prefetch(id uint32) {
@@ -656,16 +693,16 @@ func (c *sharedInt8Computer) ComputeSingle(id uint32) (float32, error) {
 	return c.h.distFuncInt8(c.qInt8, vec)
 }
 
-func (c *sharedInt8Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
+func (c *sharedInt8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
 		dist, err := c.ComputeSingle(id)
 		if err != nil {
 			return nil, err
 		}
-		dists[i] = dist
+		dst = append(dst, dist)
 	}
-	return dists, nil
+	return dst, nil
 }
 
 func (c *sharedInt8Computer) Prefetch(id uint32) {

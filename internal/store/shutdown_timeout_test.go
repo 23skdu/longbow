@@ -66,12 +66,12 @@ func TestVectorStore_CloseTimeoutEnforcement(t *testing.T) {
 	}()
 
 	start := time.Now()
-	err := vs.Close() // Uses 30s timeout internally
+	err := vs.Close() // Uses 2s timeout internally in test mode
 	elapsed := time.Since(start)
 
-	// Should complete precisely at roughly the 30s timeout configured internally within Close()
-	assert.GreaterOrEqual(t, elapsed, 29*time.Second, "Close should wait up to external timeouts even with hung workers")
-	assert.Less(t, elapsed, 31*time.Second, "Close should abort and return quickly after timeouts even with hung workers")
+	// Should complete precisely at roughly the 2s timeout configured internally within Close()
+	assert.GreaterOrEqual(t, elapsed, 1900*time.Millisecond, "Close should wait up to external timeouts even with hung workers")
+	assert.Less(t, elapsed, 5*time.Second, "Close should abort and return quickly after timeouts even with hung workers")
 	// The Close method will propagate the shutdown timeout context deadline natively
 	require.ErrorIs(t, err, context.DeadlineExceeded)
 

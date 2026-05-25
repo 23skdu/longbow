@@ -52,17 +52,6 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-func (c *int16Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
-		dist, err := c.ComputeSingle(id)
-		if err != nil {
-			return nil, err
-		}
-		dists[i] = dist
-	}
-	return dists, nil
-}
 
 func (c *int16Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
@@ -77,6 +66,19 @@ func (c *int16Computer) Prefetch(id uint32) {
 	}
 }
 
+func (c *int16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
+		d, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dst = append(dst, d)
+	}
+	return dst, nil
+}
+
+
 // uint16Computer handles Uint16 vectors
 type uint16Computer struct {
 	data      *types.GraphData
@@ -87,17 +89,6 @@ type uint16Computer struct {
 	maxGen    uint64
 }
 
-func (c *uint16Computer) Compute(ids []uint32, dists []float32) error {
-	for i, id := range ids {
-		d, err := c.ComputeSingle(id)
-		if err != nil {
-			return err
-		}
-		dists[i] = d
-	}
-	return nil
-}
-
 func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
@@ -106,7 +97,6 @@ func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 	}
 
-	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsUint16ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
@@ -120,16 +110,16 @@ func (c *uint16Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-func (c *uint16Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
-		dist, err := c.ComputeSingle(id)
+func (c *uint16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
+		d, err := c.ComputeSingle(id)
 		if err != nil {
 			return nil, err
 		}
-		dists[i] = dist
+		dst = append(dst, d)
 	}
-	return dists, nil
+	return dst, nil
 }
 
 func (c *uint16Computer) Prefetch(id uint32) {
@@ -188,17 +178,6 @@ func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-func (c *int32Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
-		dist, err := c.ComputeSingle(id)
-		if err != nil {
-			return nil, err
-		}
-		dists[i] = dist
-	}
-	return dists, nil
-}
 
 func (c *int32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
@@ -213,6 +192,19 @@ func (c *int32Computer) Prefetch(id uint32) {
 	}
 }
 
+func (c *int32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
+		d, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dst = append(dst, d)
+	}
+	return dst, nil
+}
+
+
 // uint32Computer handles Uint32 vectors
 type uint32Computer struct {
 	data      *types.GraphData
@@ -223,17 +215,6 @@ type uint32Computer struct {
 	maxGen    uint64
 }
 
-func (c *uint32Computer) Compute(ids []uint32, dists []float32) error {
-	for i, id := range ids {
-		d, err := c.ComputeSingle(id)
-		if err != nil {
-			return err
-		}
-		dists[i] = d
-	}
-	return nil
-}
-
 func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
@@ -242,7 +223,6 @@ func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 	}
 
-	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsUint32ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
@@ -256,16 +236,16 @@ func (c *uint32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-func (c *uint32Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
-		dist, err := c.ComputeSingle(id)
+func (c *uint32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
+		d, err := c.ComputeSingle(id)
 		if err != nil {
 			return nil, err
 		}
-		dists[i] = dist
+		dst = append(dst, d)
 	}
-	return dists, nil
+	return dst, nil
 }
 
 func (c *uint32Computer) Prefetch(id uint32) {
@@ -324,17 +304,6 @@ func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-func (c *int64Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
-		dist, err := c.ComputeSingle(id)
-		if err != nil {
-			return nil, err
-		}
-		dists[i] = dist
-	}
-	return dists, nil
-}
 
 func (c *int64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
@@ -349,6 +318,19 @@ func (c *int64Computer) Prefetch(id uint32) {
 	}
 }
 
+func (c *int64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
+		d, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dst = append(dst, d)
+	}
+	return dst, nil
+}
+
+
 // uint64Computer handles Uint64 vectors
 type uint64Computer struct {
 	data      *types.GraphData
@@ -359,17 +341,6 @@ type uint64Computer struct {
 	maxGen    uint64
 }
 
-func (c *uint64Computer) Compute(ids []uint32, dists []float32) error {
-	for i, id := range ids {
-		d, err := c.ComputeSingle(id)
-		if err != nil {
-			return err
-		}
-		dists[i] = d
-	}
-	return nil
-}
-
 func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
@@ -378,7 +349,6 @@ func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 	}
 
-	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsUint64ChunkWithGen(int(cID), c.maxGen)
 	if chunk != nil {
@@ -392,16 +362,16 @@ func (c *uint64Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-func (c *uint64Computer) ComputeBatch(ids []uint32) ([]float32, error) {
-	dists := make([]float32, len(ids))
-	for i, id := range ids {
-		dist, err := c.ComputeSingle(id)
+func (c *uint64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
+		d, err := c.ComputeSingle(id)
 		if err != nil {
 			return nil, err
 		}
-		dists[i] = dist
+		dst = append(dst, d)
 	}
-	return dists, nil
+	return dst, nil
 }
 
 func (c *uint64Computer) Prefetch(id uint32) {
@@ -410,6 +380,63 @@ func (c *uint64Computer) Prefetch(id uint32) {
 	if chunk != nil {
 		cOff := types.ChunkOffset(id)
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint64)
+		start := cOff * pd
+		if start < len(chunk) {
+			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
+		}
+	}
+}
+
+
+// uint8Computer handles Uint8 vectors
+type uint8Computer struct {
+	data      *types.GraphData
+	q         []uint8
+	dims      int
+	h         *ArrowHNSW
+	diskGraph *DiskGraph
+	maxGen    uint64
+}
+
+func (c *uint8Computer) ComputeSingle(id uint32) (float32, error) {
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err == nil {
+		if v, ok := vecAny.([]uint8); ok {
+			return c.h.distFuncUint8(c.q, v)
+		}
+	}
+
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsUint8ChunkWithGen(int(cID), c.maxGen)
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint8)
+		start := cOff * pd
+		if start+c.dims <= len(chunk) {
+			return c.h.distFuncUint8(c.q, chunk[start:start+c.dims])
+		}
+	}
+	return math.MaxFloat32, nil
+}
+
+func (c *uint8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	dst = dst[:0]
+	for _, id := range ids {
+		d, err := c.ComputeSingle(id)
+		if err != nil {
+			return nil, err
+		}
+		dst = append(dst, d)
+	}
+	return dst, nil
+}
+
+func (c *uint8Computer) Prefetch(id uint32) {
+	cID := types.ChunkID(id)
+	chunk := c.data.GetVectorsUint8ChunkFast(int(cID))
+	if chunk != nil {
+		cOff := types.ChunkOffset(id)
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeUint8)
 		start := cOff * pd
 		if start < len(chunk) {
 			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103

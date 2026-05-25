@@ -811,3 +811,19 @@ var _ = func() {
 		atan2AVX2(nil, nil, nil)
 	}
 }
+
+
+func l2SquaredBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
+	for i, v := range vectors {
+		if v == nil {
+			continue
+		}
+		d, err := l2SquaredAVX2(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
+	}
+	return nil
+}
+

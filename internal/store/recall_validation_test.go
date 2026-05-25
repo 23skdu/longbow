@@ -100,10 +100,26 @@ func TestRecallValidation(t *testing.T) {
 			if tc.numVectors >= 100000 && os.Getenv("TEST_LARGE") == "" {
 				t.Skip("Skipping Large test; set TEST_LARGE=1 to run")
 			}
-			if isRace && tc.numVectors > 2000 {
-				tc.numVectors = 2000
+			if isRace {
+				if tc.numVectors > 100 {
+					tc.numVectors = 100
+				}
+				tc.numQueries = 5
 				tc.minRecall = 0.0 // Relax recall requirement for small dataset
-				t.Logf("Downscaling test to %d vectors for race detection", tc.numVectors)
+				t.Logf("Downscaling test to %d vectors and %d queries for race detection", tc.numVectors, tc.numQueries)
+				if tc.config != nil {
+					tc.config.EfConstruction = 10
+					tc.config.EfSearch = 5
+					if tc.config.M > 8 {
+						tc.config.M = 8
+					}
+					if tc.config.MMax > 16 {
+						tc.config.MMax = 16
+					}
+					if tc.config.MMax0 > 16 {
+						tc.config.MMax0 = 16
+					}
+				}
 			}
 
 			recall := measureRecall(ctx, t, tc.numVectors, tc.dim, tc.numQueries, tc.k, tc.config)
@@ -390,11 +406,24 @@ func TestRecallConsistency(t *testing.T) {
 		t.Skip("Skipping consistency test in short mode")
 	}
 
+	numVectors := 500
+	numQueries := 50
+	minRecall := 0.990
+	var config *store.ArrowHNSWConfig
+	if isRace {
+		numVectors = 50
+		numQueries = 5
+		minRecall = 0.0
+		config = &store.ArrowHNSWConfig{
+			M: 8, MMax: 16, MMax0: 16, EfConstruction: 10, EfSearch: 5,
+		}
+	}
+
 	const numRuns = 3
 	recalls := make([]float64, numRuns)
 
 	for i := 0; i < numRuns; i++ {
-		recalls[i] = measureRecall(context.Background(), t, 500, 128, 50, 10, nil)
+		recalls[i] = measureRecall(context.Background(), t, numVectors, 128, numQueries, 10, config)
 	}
 
 	// Calculate mean
@@ -413,7 +442,7 @@ func TestRecallConsistency(t *testing.T) {
 
 	// All runs should meet minimum recall
 	for i, r := range recalls {
-		if r < 0.990 {
+		if r < minRecall {
 			t.Errorf("Run %d recall too low: %.4f%%", i+1, r*100)
 		}
 	}

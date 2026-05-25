@@ -184,14 +184,20 @@ func TestGraphData_PreAllocate(t *testing.T) {
 			}
 			// Verify higher layers are NOT pre-allocated (lazy allocation)
 			for layer := 1; layer < lbtypes.ArrowMaxLayers; layer++ {
-				if len(gd.Neighbors[layer]) != 0 {
-					t.Errorf("Layer %d: expected 0 neighbor chunks (lazy), got %d", layer, len(gd.Neighbors[layer]))
+				for i, offset := range gd.Neighbors[layer] {
+					if offset != 0 {
+						t.Errorf("Layer %d chunk %d: expected 0 neighbor offset (lazy), got %d", layer, i, offset)
+					}
 				}
-				if len(gd.Counts[layer]) != 0 {
-					t.Errorf("Layer %d: expected 0 count chunks (lazy), got %d", layer, len(gd.Counts[layer]))
+				for i, offset := range gd.Counts[layer] {
+					if offset != 0 {
+						t.Errorf("Layer %d chunk %d: expected 0 count offset (lazy), got %d", layer, i, offset)
+					}
 				}
-				if len(gd.Versions[layer]) != 0 {
-					t.Errorf("Layer %d: expected 0 version chunks (lazy), got %d", layer, len(gd.Versions[layer]))
+				for i, offset := range gd.Versions[layer] {
+					if offset != 0 {
+						t.Errorf("Layer %d chunk %d: expected 0 version offset (lazy), got %d", layer, i, offset)
+					}
 				}
 			}
 		})

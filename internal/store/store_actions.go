@@ -24,6 +24,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	lmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -1274,7 +1275,14 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 		}
 
 		// Use Arrow's array.Concatenate with pooled allocator for transient ingestion buffers
-		concatenated, err := array.Concatenate(colArrays, s.pooledMem)
+		alloc := s.pooledMem
+		if alloc == nil {
+			alloc = s.mem
+		}
+		if alloc == nil {
+			alloc = memory.DefaultAllocator
+		}
+		concatenated, err := array.Concatenate(colArrays, alloc)
 		if err != nil {
 			return nil, fmt.Errorf("failed to concatenate column %d: %w", i, err)
 		}

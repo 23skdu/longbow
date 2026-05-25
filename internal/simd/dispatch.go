@@ -28,6 +28,7 @@ type ImplementationDispatch struct {
 	CosineDistanceBatch        distanceBatchFunc
 	DotProductBatch            distanceBatchFunc
 	EuclideanDistanceBatchFlat distanceBatchFlatFunc
+	L2SquaredDistanceBatch     distanceBatchFunc
 
 	// Specialized functions for fixed dimensions
 	EuclideanDistance128  distanceFunc
@@ -122,7 +123,8 @@ func initDispatchTable() {
 			EuclideanDistance:          euclideanAVX512,
 			CosineDistance:             cosineAVX512,
 			DotProduct:                 dotAVX512,
-			EuclideanDistanceBatch:     euclideanBatchGeneric, // Fallback for now
+			EuclideanDistanceBatch:     euclideanBatchAVX512,
+			L2SquaredDistanceBatch:     l2SquaredBatchAVX512,
 			CosineDistanceBatch:        cosineBatchGeneric,
 			DotProductBatch:            dotBatchGeneric,
 			EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
@@ -191,6 +193,7 @@ func initDispatchTable() {
 			CosineDistance:             cosineAVX2,
 			DotProduct:                 dotAVX2,
 			EuclideanDistanceBatch:     euclideanBatchAVX2,
+			L2SquaredDistanceBatch:     l2SquaredBatchAVX2,
 			CosineDistanceBatch:        cosineBatchAVX2,
 			DotProductBatch:            dotBatchAVX2,
 			L2SquaredDistance:          l2SquaredAVX2,
@@ -264,6 +267,7 @@ func initDispatchTable() {
 				return dotNEON(a, b)
 			},
 			EuclideanDistanceBatch:     euclideanBatchNEON,
+			L2SquaredDistanceBatch:     l2SquaredBatchNEON,
 			CosineDistanceBatch:        cosineBatchNEON,
 			DotProductBatch:            dotBatchNEON,
 			EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
@@ -337,6 +341,7 @@ func initDispatchTable() {
 			CosineDistance:             cosineGeneric,
 			DotProduct:                 dotGeneric,
 			EuclideanDistanceBatch:     euclideanBatchGeneric,
+			L2SquaredDistanceBatch:     l2SquaredBatchGeneric,
 			CosineDistanceBatch:        cosineBatchGeneric,
 			DotProductBatch:            dotBatchGeneric,
 			EuclideanDistanceBatchFlat: euclideanBatchFlatGeneric,
@@ -520,10 +525,10 @@ func initializeDispatch() {
 		dotProduct1536Impl = dispatch.DotProduct1536
 		dotProduct3072Impl = dispatch.DotProduct3072
 		dotProduct128Impl = dispatch.DotProduct128
-		euclideanDistanceBatchImpl = euclideanBatchGeneric // AVX2 vertical batch kernel is a stub; use verified generic
+		euclideanDistanceBatchImpl = dispatch.EuclideanDistanceBatch
 
-		cosineDistanceBatchImpl = cosineBatchGeneric // AVX2 batch kernel is a stub; use verified generic
-		dotProductBatchImpl = dotBatchGeneric        // AVX2 batch kernel is a stub; use verified generic
+		cosineDistanceBatchImpl = dispatch.CosineDistanceBatch
+		dotProductBatchImpl = dispatch.DotProductBatch
 		l2SquaredImpl = l2SquaredAVX2                // uses AVX2 kernel (no sqrt)
 		l2Squared128Impl = dispatch.L2SquaredDistance128
 		l2Squared384Impl = dispatch.L2SquaredDistance384
@@ -628,8 +633,8 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32Generic
 		matchFloat64Impl = matchFloat64Generic
 		adcDistanceBatchImpl = adcBatchGeneric
-		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric // Fallback - vertical batch has separate issues
-		cosineDistanceBatchImpl = cosineBatchNEON                  // Temp fallback
+		euclideanDistanceVerticalBatchImpl = dispatch.EuclideanDistanceBatch
+		cosineDistanceBatchImpl = dispatch.CosineDistanceBatch
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric
 		euclideanDistanceF16BatchImpl = euclideanF16BatchGeneric
 		andBytesImpl = andBytesGeneric

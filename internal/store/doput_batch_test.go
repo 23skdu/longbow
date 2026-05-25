@@ -20,8 +20,9 @@ func TestConcatenateBatches(t *testing.T) {
 
 	logger := zerolog.Nop()
 	store := &VectorStore{
-		mem:    mem,
-		logger: logger,
+		mem:       mem,
+		pooledMem: mem,
+		logger:    logger,
 	}
 
 	// Create 3 small batches
@@ -97,8 +98,9 @@ func TestDoPut_AdaptiveBatching(t *testing.T) {
 
 	logger := zerolog.Nop()
 	store := &VectorStore{
-		mem:    mem,
-		logger: logger,
+		mem:       mem,
+		pooledMem: mem,
+		logger:    logger,
 	}
 
 	// Create 1 large batch (>100 rows)

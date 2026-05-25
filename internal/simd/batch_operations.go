@@ -183,3 +183,17 @@ func float32SliceToBytes(vec []float32) []byte {
 	ptr := unsafe.Pointer(&vec[0])          // #nosec G103
 	return unsafe.Slice((*byte)(ptr), size) // #nosec G103
 }
+
+
+// L2SquaredDistanceBatch computes L2 squared distances between one query and multiple vectors.
+func L2SquaredDistanceBatch(query []float32, vectors [][]float32, results []float32) error {
+	if len(vectors) != len(results) {
+		return errors.New("simd: vectors and results length mismatch")
+	}
+	if len(vectors) == 0 {
+		return nil
+	}
+	metrics.SimdDispatchTotal.WithLabelValues(implementation, "l2squared_batch").Inc()
+	return currentDispatch.L2SquaredDistanceBatch(query, vectors, results)
+}
+

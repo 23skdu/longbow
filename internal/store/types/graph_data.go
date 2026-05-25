@@ -569,6 +569,17 @@ func (g *GraphData) GetVectorsInt8ChunkFast(chunkID int) []int8 {
 	return nil
 }
 
+// GetVectorsUint8ChunkFast returns a uint8 chunk using a non-atomic offset read.
+func (g *GraphData) GetVectorsUint8ChunkFast(chunkID int) []uint8 {
+	chunk := g.GetVectorsInt8ChunkFast(chunkID)
+	if chunk == nil {
+		return nil
+	}
+	ptr := unsafe.Pointer(&chunk[0])               // #nosec G103
+	return unsafe.Slice((*uint8)(ptr), len(chunk)) // #nosec G103
+}
+
+
 // GetVectorsInt16ChunkFast returns an int16 chunk using a non-atomic offset read.
 func (g *GraphData) GetVectorsInt16ChunkFast(chunkID int) []int16 {
 	if chunkID < len(g.VectorsInt16) && g.Int16Arena != nil {
@@ -1052,6 +1063,20 @@ func (g *GraphData) GetVectorsInt8ChunkWithGen(chunkID int, maxGen uint64) []int
 	}
 	return nil
 }
+
+func (g *GraphData) GetVectorsUint8Chunk(chunkID int) []uint8 {
+	return g.GetVectorsUint8ChunkWithGen(chunkID, math.MaxUint64)
+}
+
+func (g *GraphData) GetVectorsUint8ChunkWithGen(chunkID int, maxGen uint64) []uint8 {
+	chunk := g.GetVectorsInt8ChunkWithGen(chunkID, maxGen)
+	if chunk == nil {
+		return nil
+	}
+	ptr := unsafe.Pointer(&chunk[0])               // #nosec G103
+	return unsafe.Slice((*uint8)(ptr), len(chunk)) // #nosec G103
+}
+
 
 func (g *GraphData) GetVectorsInt16Chunk(chunkID int) []int16 {
 	return g.GetVectorsInt16ChunkWithGen(chunkID, math.MaxUint64)

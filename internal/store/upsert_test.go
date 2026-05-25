@@ -43,6 +43,8 @@ func TestStore_Upsert(t *testing.T) {
 	}
 	alloc := memory.NewGoAllocator()
 	s := NewVectorStore(alloc, zerolog.Nop(), 10*1024*1024, 0, 0)
+	s.StartIndexingWorkers(2)
+	s.StartIngestionWorkers(2)
 	defer s.Close()
 
 	// Wait for background workers to start up

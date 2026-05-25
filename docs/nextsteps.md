@@ -1,90 +1,147 @@
 # Next Steps & Priorities
 
 > [!IMPORTANT]
-> **P0 Blockers: Fix All Pre-Existing Test Failures**
-> Before any new feature work, all pre-existing test failures must be resolved to establish a reliable regression baseline. These failures span `internal/store` (12+ failures) and `cmd/longbow` (1 failure). Each has been root-caused with a clear fix path.
+> **Post-Benchmark Commit d1cc8e38 — Actionable Performance Recommendations**
+> The following items are organized and prioritized based on findings in [performance.md](file:///Users/rsd/REPOS/longbow/docs/performance.md). 
+> Key findings show that **Quantized Types** (turboquant8/int8) offer massive 30–40× throughput advantages and 10× memory savings over float32, while **GPU Mode** currently causes a 5–10× wall-clock slowdown due to data-transfer overhead.
+
+---
 
 ## P0 — Fix Existing Test Failures
 
+Fixing existing unit and integration failures is the absolute top priority to establish a stable and reliable baseline for all performance and scale optimizations.
+
 ### Group A: Store Workers Not Started (3 failures)
 These tests create data via `StoreRecordBatch` but never call `StartIngestionWorkers` / `StartIndexingWorkers`, so data sits in queues forever.
-- [ ] **A1 — `TestStore_EndToEnd_TDD`** (`store_e2e_test.go:109`): EOF from empty DoGet stream.
-  - *Root cause:* No ingestion/indexing workers started; data never applied to dataset Records.
-  - *Fix:* Add `store.StartIngestionWorkers(2)` and `store.StartIndexingWorkers(2)` after store creation.
-- [ ] **A2 — `FuzzIngestionPipelineConcurrentWrites`** (`ingestion_fuzz_test.go:82`): expected 50 records, actual 0 ("Data loss detected").
-  - *Root cause:* Same missing worker startup — data enqueued but never consumed.
-  - *Fix:* Add `store.StartIngestionWorkers(4)` and `store.StartIndexingWorkers(4)` after store creation.
-- [ ] **A3 — `FuzzIngestionIntegrityConcurrent`** (`ingestion_integrity_fuzz_test.go:100`): "Condition never satisfied" + WAL truncation errors.
-  - *Root cause:* Missing ingestion workers + WAL file existence race in snapshot truncation.
-  - *Fix:* Add worker startup; in `storage/engine.go` create WAL file before truncate if missing.
+- [x] **A1 — `TestStore_EndToEnd_TDD`** (`store_e2e_test.go:109`): Workers already started. PASSES.
+- [x] **A2 — `FuzzIngestionPipelineConcurrentWrites`** (`ingestion_fuzz_test.go:82`): Workers already started. PASSES.
+- [x] **A3 — `FuzzIngestionIntegrityConcurrent`** (`ingestion_integrity_fuzz_test.go:100`): Workers already started. PASSES.
 
 ### Group B: Zero-Alloc Parser Missing `ef_search` Key (1 failure, 3 subtests)
 The zero-alloc vector search parser silently ignores the `"ef_search"` JSON key, so validation never fires.
-- [ ] **B1 — `TestVectorSearchAction_EfSearchValidation`** (`vector_search_action_test.go:133`): error says "dataset not found" instead of "ef_search must be between 16 and 4096".
-  - *Root cause:* `ZeroAllocVectorSearchParser` has no `case "ef_search":` handler; field is zero, validation short-circuits.
-  - *Fix:* Add `case "ef_search":` to `internal/query/zero_alloc_vector_search.go` to parse int64 and set `p.result.EfSearch`.
+- [x] **B1 — `TestVectorSearchAction_EfSearchValidation`** (`vector_search_action_test.go:133`): `ef_search` case already present in zero-alloc parser. PASSES.
 
 ### Group C: Upsert Tombstoning Lazy Initialization (1 failure)
 The upsert path doesn't initialize the Tombstones bitset map entry for a batch that previously had no tombstones.
-- [ ] **C1 — `TestStore_Upsert`** (`upsert_test.go:92`): "Expected value not to be nil" — `ds.Tombstones[0]` is nil after upsert.
-  - *Root cause:* Tombstone application code does not lazily create `Tombstones[batchIdx]` if it doesn't exist.
-  - *Fix:* In the upsert tombstone logic, initialize `ds.Tombstones[batchIdx] = types.NewBitset()` before setting bits.
+- [x] **C1 — `TestStore_Upsert`** (`upsert_test.go:92`): Lazy Tombstone init already present in `UpdatePrimaryIndex`. PASSES.
 
 ### Group D: Tiered Storage Key & Tier Comparison Bugs (2 failures)
-- [ ] **D1 — `TestTieredStorage_OffloadAndFetch`** (`tiered_storage_test.go:48`): `remote.Exists` returns false.
-  - *Root cause:* `OffloadBlock` remote key format (`"blocks/%s/%d"`) uses `dvs.path` which may differ from raw `path` argument (normalization or extension).
-  - *Fix:* Export key format or add `RemoteKey()` method to `DiskVectorStore`; align test expectation.
-- [ ] **D2 — `TestTieredStorage_EnforcePolicy`** (`tiered_storage_test.go:85`): expected 1 offload, actual 0.
-  - *Root cause:* `time.Since(b.CreatedAt) > maxAge` with `maxAge=0` may be false at nanosecond granularity, or tier string constants mismatch between packages.
-  - *Fix:* Ensure `CreatedAt` is set to a past timestamp; verify `StorageTier` string constants match across packages.
+- [x] **D1 — `TestTieredStorage_OffloadAndFetch`** (`tiered_storage_test.go:48`): PASSES.
+- [x] **D2 — `TestTieredStorage_EnforcePolicy`** (`tiered_storage_test.go:85`): PASSES.
 
 ### Group E: Dataset Readiness & Seed Connectivity (3 failures)
-- [ ] **E1 — `TestVectorStore_GetFlightInfo/Success`** (`store_query_coverage_test.go:86`): "dataset test-1 is being initialized".
-  - *Root cause:* Dataset created manually bypasses ingestion pipeline; `IsReady` never set to true.
-  - *Fix:* Add `ds.IsReady.Store(true)` after manual dataset creation.
-- [ ] **E2 — `TestRecommend` (3 subtests)** (`recommend_test.go:433,447,462`): "no valid seeds found in dataset".
-  - *Root cause:* Graph edges reference literal internal IDs (0-4) that don't match the computed VectorIDs from batch/row positions.
-  - *Fix:* Align graph edge subject IDs with internal VectorIDs computed from `(BatchIdx, RowIdx)` positions.
-- [ ] **E3 — `TestDataset_PerRecordEviction`** (`record_eviction_test.go:327,335`): `"could not be applied builtin len()"`.
-  - *Root cause:* `assert.Len(t, ds.Records, N)` passes a `*LockFreeSlice` struct pointer, not a slice.
-  - *Fix:* Use `assert.Len(t, ds.Records.Read(), N)` to access the underlying slice.
+- [x] **E1 — `TestVectorStore_GetFlightInfo/Success`** (`store_query_coverage_test.go:86`): `IsReady.Store(true)` already in test. PASSES.
+- [x] **E2 — `TestRecommend` (3 subtests)** (`recommend_test.go:433,447,462`): Graph edges use correct VectorIDs via `applyReplayBatch`. PASSES.
+- [x] **E3 — `TestDataset_PerRecordEviction`** (`record_eviction_test.go:327,335`): `ds.Records.Read()` already used in assertion. PASSES.
 
 ### Group F: Flaky / Race Tests (2 failures)
-- [ ] **F1 — `TestVectorStore_DoAction_Extended/check_readiness`** (`store_actions_coverage_test.go:69`): Expected "READY" got "BUSY".
-  - *Root cause:* Background goroutines (compaction worker, index adapter) enqueue jobs before test checks. Index queue has pending items.
-  - *Fix:* Add polling loop to wait for index queue to drain before check_readiness, or disable background workers in test config.
-- [ ] **F2 — `FuzzCompaction/seed#0`** (`fuzz_test.go`): "race detected during execution of test".
-  - *Root cause:* Test overwrites `store.compactionWorker` without stopping original, creating two concurrent workers on shared state.
-  - *Fix:* Stop original worker before replacing, or create store with compaction disabled from start.
+- [x] **F1 — `TestVectorStore_DoAction_Extended/check_readiness`** (`store_actions_coverage_test.go:69`): PASSES.
+- [x] **F2 — `FuzzCompaction/seed#0`** (`fuzz_test.go`): PASSES.
 
 ### Group G: Memory Pressure in Integration Test (1 failure)
-- [ ] **G1 — `TestDataServerDoPutDoGet`** (`cmd/longbow/main_test.go:326`): ListFlights rejected — "critical memory pressure (106.0% usage)".
-  - *Root cause:* Test sets `LONGBOW_MAX_MEMORY=104857600` (100MB); process overhead pushes usage past hard limit.
-  - *Fix:* Increase to `536870912` (512MB) or disable admission controller in test config.
+- [x] **G1 — `TestDataServerDoPutDoGet`** (`cmd/longbow/main_test.go:326`): `LONGBOW_MAX_MEMORY` already set to 1GB in test. PASSES.
+
+---
+
+## P0 — Fix Indexing Bottleneck to Reach 500K+ Vectors
+
+The system currently hits `ResourceExhausted` at ~425K vectors under the 18 GB memory cap, and HNSW graph construction shows high O(N²) single-threaded contention.
+
+- **Parallelize HNSW index construction**: The single-threaded indexer creates a 25K-job backlog at ≥75K vectors. Spawn 2–4 indexer workers and partition the HNSW graph by shard to avoid O(N²) contention.
+  - [ ] Design a thread-safe partitioning or sharding scheme for the HNSW graph to minimize node insertion locks.
+  - [ ] Implement a concurrent worker pool (2–4 goroutines) to consume indexing tasks from the global queue.
+  - [ ] Introduce a striped or fine-grained locking mechanism for graph node updates instead of a global index lock.
+  - [ ] Profile indexing throughput and lock wait-time using `pprof` block/mutex profiles under heavy ingest load.
+- **Increase memory cap or add disk-backed index**: With 18 GB the system hits `ResourceExhausted` at ~425K. Bumping `LONGBOW_MAX_MEMORY` to 32 GB (if available) or enabling `LONGBOW_USE_DISK=1` would allow 500K–1M vectors.
+  - [ ] Profile memory allocations using `pprof` heap snapshots at 350K+ vectors to pinpoint largest overhead contributors.
+  - [ ] Implement or stabilize `LONGBOW_USE_DISK=1` to dump cold HNSW vectors/nodes to disk (using memory-mapped files or a key-value store for block storage).
+  - [ ] Validate system stability and error handling when the maximum memory cap is reached.
+- **Adopt PQ compression during ingest**: `LONGBOW_PQ_INGEST=1` stores vectors as product-quantized codes, reducing per-vector memory ~10×. This should extend the ceiling to ~4M vectors at the same memory cost.
+  - [ ] Design and implement the Product Quantization (PQ) training phase during initial ingest or using a pre-trained codebook.
+  - [ ] Integrate PQ encoding/decoding directly into the ingestion pipeline, ensuring direct streaming of quantized codes.
+  - [ ] Update the distance computers to support symmetric/asymmetric distance computations on PQ codes.
+  - [ ] Evaluate recall metrics under PQ vs. raw float32 on dimensions 128 and 384.
+
+---
+
+## P1 — Quantized Types for Production (Elevated Priority)
+
+> [!TIP]
+> **Performance Rationale:**
+> Benchmarks show that `turboquant8` achieves **9,491 vec/s** (384-dim) vs **226 vec/s** for float32 — a **42× speedup**. It also uses **10× less memory**, making it the primary path to surpass the 500K vector limit under low memory footprints. `int8` is also highly competitive.
+
+- **Promote turboquant8 to recommended default**: turboquant8 delivers 42× higher ingest throughput and 3× lower search latency than float32 at 384-dim/150K. Set the production default to turboquant8 with float32 fallback for exact-search workloads.
+  - [ ] Modify default configuration to initialize datasets with `turboquant8` precision when unspecified.
+  - [ ] Implement a fallback search coordinator path that dynamically routes exact-search queries to a `float32` fallback index.
+- **Int8 is competitive**: int8 matches turboquant8 for ingest (4,879 vs 9,491 vec/s at 384/150K) and provides higher dense-search QPS than float32 at all scales.
+  - [ ] Ensure full API and engine parity for `int8` across all ingestion and search paths.
+  - [ ] Benchmark recall of `int8` vs `turboquant8` vs `float32` on standard datasets (SIFT/GIST) to document quality trade-offs.
+- **Add auto-quantization path**: Automatically quantize float32 vectors to turboquant8 at ingest time when memory pressure exceeds 70%.
+  - [ ] Implement a real-time memory monitor within the ingestion coordinator.
+  - [ ] Implement a runtime vector conversion handler to convert incoming `float32` batches to `turboquant8` representation when memory utilization surpasses 70%.
+  - [ ] Gracefully transition active index building to the quantized format without dropping or corrupting in-flight vectors.
+
+---
+
+## P2 — GPU Acceleration Strategy (Demoted Priority)
+
+> [!WARNING]
+> **Performance Rationale:**
+> GPU mode (Metal/CUDA) is currently **5–10× slower** wall-clock than CPU mode at ≤150K scale (45 min vs 5 min) due to intense data-transfer overhead and blocking kernel launch latency. It should be disabled by default and restricted to heavy distance-only workloads.
+
+- **Disable GPU by default**: `LONGBOW_GPU_ENABLED=true` adds data-transfer overhead with no throughput benefit at ≤150K vectors. The flag should default to `false` and only be toggled for workloads exceeding ~500K vectors.
+  - [ ] Change the default value of `LONGBOW_GPU_ENABLED` to `false` in configuration loading logic.
+  - [ ] Update CLI, documentation, and error/log outputs to recommend enabling GPU acceleration only for datasets >500K.
+- **Investigate async GPU transfer**: Current GPU integration blocks on every kernel launch. Using a CUDA stream pool and double-buffered host→device transfers would hide latency.
+  - [ ] Refactor the GPU backend to utilize asynchronous execution streams (CUDA streams / Metal command buffers).
+  - [ ] Implement double-buffered host-to-device (H2D) and device-to-host (D2H) queues to overlap memory copy operations with computation.
+  - [ ] Verify latency reduction by running micro-benchmarks with a profiler (e.g., nvprof, Metal System Profiler).
+- **Offload HNSW distance computation only, not graph construction**: HNSW neighbor selection dominates CPU time; the graph traversal itself is not GPU-accelerated. Focus GPU effort on the distance kernel alone.
+  - [ ] Profile and decouple distance computation logic from the CPU graph-traversal loop.
+  - [ ] Design a batched distance interface to execute distance kernels on the GPU in batches of queries/neighbors rather than single vectors.
+  - [ ] Build fallback heuristics to run distance computation on the CPU when the batch size is too small to justify kernel launch overhead.
+
+---
+
+## P3 — Benchmark Infrastructure Improvements
+
+- **Add early-abort for resource-exhausted tests**: The script retries indefinitely when `ResourceExhausted` is hit, wasting hours. Add a `--max-retries` flag (default 1) and skip to the next test.
+  - [ ] Add a `--max-retries` command line argument to `scripts/unified_benchmark.py`.
+  - [ ] Implement logic in the test execution loop to detect `ResourceExhausted` status codes and skip subsequent steps for the current test configuration.
+- **Reduce test matrix for CI**: The full 72-test matrix takes ≥4 hours. Add `--ci` mode (already partially implemented) to run only float32/int8 at two key counts.
+  - [ ] Finalize the `--ci` argument parsing and define the minimal test matrix (e.g., only `float32` and `int8` at 10K and 50K vector counts).
+  - [ ] Integrate the `--ci` benchmark run into the GitHub Actions/CI configuration.
+- **Save pprof profiles before cleanup**: `pprof` URL collection happens asynchronously and profiles are deleted when the server shuts down. Snapshot profiles at the completion of each test, not during the run.
+  - [ ] Update benchmark runner scripts to explicitly fetch and snapshot `/debug/pprof` endpoints upon test completion prior to invoking server shutdown commands.
+  - [ ] Save output profiles with timestamped and structured filenames matching the test metadata.
 
 ---
 
 ## Actionable Recommendations (Derived from Benchmarks)
+
 - **Investigate QPS Regressions in `complex128`**: While the new atomic chunk pooling vastly improved ingestion throughput (+176%), it caused a slight 22% regression in `complex128` Dense QPS. This implies that the aggressive ingestion hotpath optimizations may be causing cache thrashing or branch misprediction during complex scalar vector search.
-  - [ ] Profile CPU cache misses during `complex128` dense ingestion.
-  - [ ] Analyze branch prediction metrics for the new atomic chunk pooling.
-  - [ ] Isolate and benchmark the complex scalar vector search path.
+  - [ ] Profile CPU cache misses during `complex128` dense vector search using `pprof` / `perf`.
+  - [ ] Compare trace metrics of atomic chunk pooling under `float32` vs `complex128`.
+  - [ ] Audit memory alignment of `complex128` pooled chunks to ensure they don't cross cache lines.
   - [ ] Prototype alternative atomic pooling structures to minimize thrashing.
 - **Implement Batched GPU Distance Computations**: The `float32` ingestion scale is fundamentally bottlenecked by L1/L2 cache latency (fetching 1,536 scattered bytes per neighbor). Shifting distance compute arrays to the GPU can alleviate memory-bandwidth ceilings for high-density indexing.
-  - [ ] Design GPU memory layout for scattered byte fetching.
-  - [ ] Implement CUDA/Metal kernels for distance computations.
-  - [ ] Integrate GPU compute queue with the current ingestion pipeline.
-  - [ ] Benchmark memory bandwidth utilization against CPU L1/L2 cache.
+  - [ ] Design a GPU memory layout optimized for coalesced or batched scattered byte fetching.
+  - [ ] Implement CUDA/Metal kernels for batched distance computations (L2, Cosine).
+  - [ ] Integrate GPU compute queue with the current ingestion pipeline to batch distance queries.
+  - [ ] Benchmark memory bandwidth utilization against CPU L1/L2 cache under multi-threaded search loads.
 - **Tune `efSearch` Autonomously based on Data Type**: Increase the `efSearch` buffer heavily for lower-precision types (`int8`, `turboquant8`) to maintain recall, since they perform significantly faster with less memory-bound limitations compared to `float32` and `complex128`.
   - [x] Benchmark `efSearch` configurations across `int8` and `turboquant8`.
   - [x] Implement logic to adjust `efSearch` automatically at index creation based on type.
-  - [ ] Validate recall retention with the adjusted `efSearch` parameters.
+  - [ ] Validate recall retention with the adjusted `efSearch` parameters under high-load search scenarios.
 - **Mitigate Benchmark Timeout Cliffs**: Ensure benchmark scripts (`unified_benchmark.py`) gracefully checkpoint or dynamically adjust timeouts rather than hard-killing `bench-tool` (SIGKILL -9) after 30 minutes, which causes zombie process buildup and requires manual intervention.
   - [x] Implement graceful checkpointing in `unified_benchmark.py`.
   - [x] Add dynamic timeout adjustment logic based on dataset size and dimensionality.
   - [x] Ensure proper cleanup of `bench-tool` child processes to prevent zombie build-up.
 
+---
+
 ## Other Ongoing Tasks
+
 - **Exhaustive SIMD Batching Support**:
   - [x] Implement and wire `DistanceComputer` interfaces (`ComputeBatch` and `Prefetch`) for all remaining types: `float[16,32,64]`, `int[8,16,32,64]`, `uint[8,16,32,64]`, `complex[64,128]`, `turboquant[2,4,8]`.
   - [x] Provide Generic Loop-Unrolled (4x) fallbacks for true SIMD batching across all dimensions (`128, 384, 768, 1024, 3072`).
@@ -94,6 +151,7 @@ The upsert path doesn't initialize the Tombstones bitset map entry for a batch t
   - [ ] Research and select target GPU index implementations (e.g., cuVS, Faiss GPU).
   - [ ] Define the abstraction layer for CPU-GPU index type switching.
   - [ ] Implement a basic working prototype with a subset of hardware.
+  - [ ] Verify correctness and recall against the baseline CPU HNSW implementation.
 - **Update `Makefile` and `Dockerfile` for `GOAMD64=v3`**:
   - [x] Modify `GOAMD64` environment variable settings in `Makefile`.
   - [x] Update Go build commands in `Dockerfile` to target `v3`.
@@ -103,4 +161,3 @@ The upsert path doesn't initialize the Tombstones bitset map entry for a batch t
   - [ ] Deploy the Longbow benchmark suite.
   - [ ] Execute the full matrix of data types and dimensionalities.
   - [ ] Gather, analyze, and publish the results compared to standard profiles.
-

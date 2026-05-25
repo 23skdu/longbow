@@ -654,6 +654,13 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				}
 				comp.qF64 = searchCtx.queryF64
 			}
+			if data.Type == types.VectorTypeFloat16 {
+				searchCtx.queryF16 = searchCtx.queryF16[:0]
+				for _, val := range q {
+					searchCtx.queryF16 = append(searchCtx.queryF16, float16.New(val))
+				}
+				comp.qF16 = searchCtx.queryF16
+			}
 		}
 		return comp
 	case []int8, []uint8:

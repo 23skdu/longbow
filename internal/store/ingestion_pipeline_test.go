@@ -21,6 +21,8 @@ func TestIngestionPipeline_AsyncDecoupling(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 1024*1024*1024, 1024*1024*100, 1*time.Hour)
 	defer func() { _ = store.Close() }()
+	store.StartIngestionWorkers(2)
+	store.StartIndexingWorkers(2)
 
 	// Create a dummy record batch
 	rec := createTestRecordBatch(t, 100) // 100 rows

@@ -1005,15 +1005,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		}
 	}
 
-	// Use optimized bulk ingestion path
-	err := h.addBatchBulkInternal(ctx, startID, len(rowIdxs), recs)
-	if err == nil {
-		ids := make([]uint32, len(rowIdxs))
-		for i := range rowIdxs {
-			ids[i] = startID + uint32(i)
-		}
-		return ids, nil
-	}
+
 
 	// Fallback to sequential insertion if bulk fails (rare)
 	ids := make([]uint32, len(rowIdxs))

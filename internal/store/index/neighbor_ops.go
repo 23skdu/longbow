@@ -314,44 +314,126 @@ func (h *ArrowHNSW) addConnectionsBatchLocked(ctx *ArrowSearchContext, data *typ
 
 // computePrunedNeighbors is the core diversity-aware pruning logic, reusable by CAS loops.
 func (h *ArrowHNSW) computePrunedNeighbors(ctx *ArrowSearchContext, data *types.GraphData, nodeID uint32, current []uint32, extra []uint32, maxConn int) []uint32 {
-	pool := make([]uint32, len(current), len(current)+len(extra))
-	copy(pool, current)
-	if len(extra) > 0 {
-		seen := make(map[uint32]struct{}, len(current)+len(extra))
-		for _, n := range current {
-			seen[n] = struct{}{}
+	var pool []uint32
+	totalCap := len(current) + len(extra)
+	if ctx != nil {
+		if cap(ctx.scratchPool) >= totalCap {
+			pool = ctx.scratchPool[:len(current)]
+		} else {
+			pool = make([]uint32, len(current), totalCap)
+			ctx.scratchPool = pool
 		}
+	} else {
+		pool = make([]uint32, len(current), totalCap)
+	}
+	copy(pool, current)
+
+	if len(extra) > 0 {
 		for _, n := range extra {
-			if _, exists := seen[n]; !exists && n != nodeID {
-				pool = append(pool, n)
-				seen[n] = struct{}{}
+			if n == nodeID {
+				continue
+			}
+			found := false
+			for _, c := range current {
+				if c == n {
+					found = true
+					break
+				}
+			}
+			if !found {
+				for _, p := range pool[len(current):] {
+					if p == n {
+						found = true
+						break
+					}
+				}
+				if !found {
+					pool = append(pool, n)
+				}
 			}
 		}
 	}
 
 	if len(pool) <= maxConn {
-		return pool
+		var result []uint32
+		if ctx != nil {
+			if cap(ctx.scratchPruned) >= len(pool) {
+				result = ctx.scratchPruned[:len(pool)]
+			} else {
+				result = make([]uint32, len(pool))
+				ctx.scratchPruned = result
+			}
+		} else {
+			result = make([]uint32, len(pool))
+		}
+		copy(result, pool)
+		return result
 	}
 
-	dists := make([]float32, len(pool))
+	var dists []float32
+	if ctx != nil {
+		if cap(ctx.scratchDists) >= len(pool) {
+			dists = ctx.scratchDists[:len(pool)]
+		} else {
+			dists = make([]float32, len(pool))
+			ctx.scratchDists = dists
+		}
+	} else {
+		dists = make([]float32, len(pool))
+	}
+
 	h.computeDistances(ctx, data, nodeID, pool, dists)
 
 	// Try GPU pruning if enabled
 	if h.gpuEnabled && h.gpuIndex != nil {
 		selected, err := h.pruneNeighborsGPU(pool, dists, maxConn)
 		if err == nil {
-			return selected
+			var result []uint32
+			if ctx != nil {
+				if cap(ctx.scratchPruned) >= len(selected) {
+					result = ctx.scratchPruned[:len(selected)]
+				} else {
+					result = make([]uint32, len(selected))
+					ctx.scratchPruned = result
+				}
+			} else {
+				result = make([]uint32, len(selected))
+			}
+			copy(result, selected)
+			return result
 		}
 	}
 
-	candidates := make([]types.Candidate, len(pool))
+	var candidates []types.Candidate
+	if ctx != nil {
+		if cap(ctx.scratchRemaining) >= len(pool) {
+			candidates = ctx.scratchRemaining[:len(pool)]
+		} else {
+			candidates = make([]types.Candidate, len(pool))
+			ctx.scratchRemaining = candidates
+		}
+	} else {
+		candidates = make([]types.Candidate, len(pool))
+	}
+
 	for i := 0; i < len(pool); i++ {
 		candidates[i] = types.Candidate{ID: pool[i], Dist: dists[i]}
 	}
 
 	selected := h.selectNeighborsFloat32(ctx, candidates, maxConn, data)
 
-	result := make([]uint32, len(selected))
+	var result []uint32
+	if ctx != nil {
+		if cap(ctx.scratchPruned) >= len(selected) {
+			result = ctx.scratchPruned[:len(selected)]
+		} else {
+			result = make([]uint32, len(selected))
+			ctx.scratchPruned = result
+		}
+	} else {
+		result = make([]uint32, len(selected))
+	}
+
 	for i, cand := range selected {
 		result[i] = cand.ID
 	}

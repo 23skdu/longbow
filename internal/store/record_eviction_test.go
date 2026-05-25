@@ -324,7 +324,7 @@ func TestDataset_PerRecordEviction(t *testing.T) {
 		ds.Records.UpdateInPlace(append(append([]arrow.RecordBatch{}, ds.Records.Read()...), rec))
 	}
 
-	assert.Len(t, ds.Records, 3)
+	assert.Len(t, ds.Records.Read(), 3)
 
 	// Wait for first record to expire
 	time.Sleep(100 * time.Millisecond)
@@ -332,5 +332,5 @@ func TestDataset_PerRecordEviction(t *testing.T) {
 	// Evict expired records from dataset
 	expired := ds.EvictExpiredRecords()
 	assert.Len(t, expired, 1, "should evict 1 expired record")
-	assert.Len(t, ds.Records, 2, "should have 2 remaining records")
+	assert.Len(t, ds.Records.Read(), 2, "should have 2 remaining records")
 }

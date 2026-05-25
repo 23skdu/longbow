@@ -1,5 +1,69 @@
 # Next Steps & Priorities
 
+> [!IMPORTANT]
+> **P0 Blockers: Fix All Pre-Existing Test Failures**
+> Before any new feature work, all pre-existing test failures must be resolved to establish a reliable regression baseline. These failures span `internal/store` (12+ failures) and `cmd/longbow` (1 failure). Each has been root-caused with a clear fix path.
+
+## P0 — Fix Existing Test Failures
+
+### Group A: Store Workers Not Started (3 failures)
+These tests create data via `StoreRecordBatch` but never call `StartIngestionWorkers` / `StartIndexingWorkers`, so data sits in queues forever.
+- [ ] **A1 — `TestStore_EndToEnd_TDD`** (`store_e2e_test.go:109`): EOF from empty DoGet stream.
+  - *Root cause:* No ingestion/indexing workers started; data never applied to dataset Records.
+  - *Fix:* Add `store.StartIngestionWorkers(2)` and `store.StartIndexingWorkers(2)` after store creation.
+- [ ] **A2 — `FuzzIngestionPipelineConcurrentWrites`** (`ingestion_fuzz_test.go:82`): expected 50 records, actual 0 ("Data loss detected").
+  - *Root cause:* Same missing worker startup — data enqueued but never consumed.
+  - *Fix:* Add `store.StartIngestionWorkers(4)` and `store.StartIndexingWorkers(4)` after store creation.
+- [ ] **A3 — `FuzzIngestionIntegrityConcurrent`** (`ingestion_integrity_fuzz_test.go:100`): "Condition never satisfied" + WAL truncation errors.
+  - *Root cause:* Missing ingestion workers + WAL file existence race in snapshot truncation.
+  - *Fix:* Add worker startup; in `storage/engine.go` create WAL file before truncate if missing.
+
+### Group B: Zero-Alloc Parser Missing `ef_search` Key (1 failure, 3 subtests)
+The zero-alloc vector search parser silently ignores the `"ef_search"` JSON key, so validation never fires.
+- [ ] **B1 — `TestVectorSearchAction_EfSearchValidation`** (`vector_search_action_test.go:133`): error says "dataset not found" instead of "ef_search must be between 16 and 4096".
+  - *Root cause:* `ZeroAllocVectorSearchParser` has no `case "ef_search":` handler; field is zero, validation short-circuits.
+  - *Fix:* Add `case "ef_search":` to `internal/query/zero_alloc_vector_search.go` to parse int64 and set `p.result.EfSearch`.
+
+### Group C: Upsert Tombstoning Lazy Initialization (1 failure)
+The upsert path doesn't initialize the Tombstones bitset map entry for a batch that previously had no tombstones.
+- [ ] **C1 — `TestStore_Upsert`** (`upsert_test.go:92`): "Expected value not to be nil" — `ds.Tombstones[0]` is nil after upsert.
+  - *Root cause:* Tombstone application code does not lazily create `Tombstones[batchIdx]` if it doesn't exist.
+  - *Fix:* In the upsert tombstone logic, initialize `ds.Tombstones[batchIdx] = types.NewBitset()` before setting bits.
+
+### Group D: Tiered Storage Key & Tier Comparison Bugs (2 failures)
+- [ ] **D1 — `TestTieredStorage_OffloadAndFetch`** (`tiered_storage_test.go:48`): `remote.Exists` returns false.
+  - *Root cause:* `OffloadBlock` remote key format (`"blocks/%s/%d"`) uses `dvs.path` which may differ from raw `path` argument (normalization or extension).
+  - *Fix:* Export key format or add `RemoteKey()` method to `DiskVectorStore`; align test expectation.
+- [ ] **D2 — `TestTieredStorage_EnforcePolicy`** (`tiered_storage_test.go:85`): expected 1 offload, actual 0.
+  - *Root cause:* `time.Since(b.CreatedAt) > maxAge` with `maxAge=0` may be false at nanosecond granularity, or tier string constants mismatch between packages.
+  - *Fix:* Ensure `CreatedAt` is set to a past timestamp; verify `StorageTier` string constants match across packages.
+
+### Group E: Dataset Readiness & Seed Connectivity (3 failures)
+- [ ] **E1 — `TestVectorStore_GetFlightInfo/Success`** (`store_query_coverage_test.go:86`): "dataset test-1 is being initialized".
+  - *Root cause:* Dataset created manually bypasses ingestion pipeline; `IsReady` never set to true.
+  - *Fix:* Add `ds.IsReady.Store(true)` after manual dataset creation.
+- [ ] **E2 — `TestRecommend` (3 subtests)** (`recommend_test.go:433,447,462`): "no valid seeds found in dataset".
+  - *Root cause:* Graph edges reference literal internal IDs (0-4) that don't match the computed VectorIDs from batch/row positions.
+  - *Fix:* Align graph edge subject IDs with internal VectorIDs computed from `(BatchIdx, RowIdx)` positions.
+- [ ] **E3 — `TestDataset_PerRecordEviction`** (`record_eviction_test.go:327,335`): `"could not be applied builtin len()"`.
+  - *Root cause:* `assert.Len(t, ds.Records, N)` passes a `*LockFreeSlice` struct pointer, not a slice.
+  - *Fix:* Use `assert.Len(t, ds.Records.Read(), N)` to access the underlying slice.
+
+### Group F: Flaky / Race Tests (2 failures)
+- [ ] **F1 — `TestVectorStore_DoAction_Extended/check_readiness`** (`store_actions_coverage_test.go:69`): Expected "READY" got "BUSY".
+  - *Root cause:* Background goroutines (compaction worker, index adapter) enqueue jobs before test checks. Index queue has pending items.
+  - *Fix:* Add polling loop to wait for index queue to drain before check_readiness, or disable background workers in test config.
+- [ ] **F2 — `FuzzCompaction/seed#0`** (`fuzz_test.go`): "race detected during execution of test".
+  - *Root cause:* Test overwrites `store.compactionWorker` without stopping original, creating two concurrent workers on shared state.
+  - *Fix:* Stop original worker before replacing, or create store with compaction disabled from start.
+
+### Group G: Memory Pressure in Integration Test (1 failure)
+- [ ] **G1 — `TestDataServerDoPutDoGet`** (`cmd/longbow/main_test.go:326`): ListFlights rejected — "critical memory pressure (106.0% usage)".
+  - *Root cause:* Test sets `LONGBOW_MAX_MEMORY=104857600` (100MB); process overhead pushes usage past hard limit.
+  - *Fix:* Increase to `536870912` (512MB) or disable admission controller in test config.
+
+---
+
 ## Actionable Recommendations (Derived from Benchmarks)
 - **Investigate QPS Regressions in `complex128`**: While the new atomic chunk pooling vastly improved ingestion throughput (+176%), it caused a slight 22% regression in `complex128` Dense QPS. This implies that the aggressive ingestion hotpath optimizations may be causing cache thrashing or branch misprediction during complex scalar vector search.
   - [ ] Profile CPU cache misses during `complex128` dense ingestion.
@@ -19,23 +83,6 @@
   - [x] Implement graceful checkpointing in `unified_benchmark.py`.
   - [x] Add dynamic timeout adjustment logic based on dataset size and dimensionality.
   - [x] Ensure proper cleanup of `bench-tool` child processes to prevent zombie build-up.
-
-> [!IMPORTANT]
-> **P0 Blockers: Test Suite Optimization & Context Window Refactoring**
-> We must address the test execution time (especially race detection timeouts) and file sizes to ensure maintainability and agent context limits.
-
-## 1. Test Suite Optimization
-- ~~**Parallelization vs. Serial Tests**: Identify CPU-bound index tests and prevent them from running in parallel with `t.Parallel()` during race detection, which causes excessive context switching and timeouts.~~ (Completed)
-- ~~**Test Consolidation**: Combine frivolous or overly granular tests (e.g., small individual getter/setter tests) into single table-driven tests to reduce overhead.~~ (Completed)
-- ~~**Mocking & Isolation**: Mock `mesh.Gossip` and heavy network/RPC components in `store` tests instead of spinning up full simulated clusters for basic unit tests.~~ (Completed)
-- ~~**Timeout Adjustments**: Increase timeout flags for `go test -race` specifically on heavy packages (e.g. `internal/store/index`), but prioritize optimizing the code first.~~ (Completed)
-
-## 2. Refactoring for Context Windows
-- ~~**`navigation.go`**: Split into `navigation_search.go` (vector searching logic), `navigation_parallel.go` (parallel search host logic), and `navigation_properties.go` (getters/warmup).~~ (Completed)
-- ~~**`arrow_hnsw.go`**: Extract insertion and graph mutation logic into `arrow_hnsw_insert.go` and `arrow_hnsw_delete.go`.~~ (Completed)
-- ~~**`store.go`**: Move lifecycle methods (`Start`, `Stop`) to `store_lifecycle.go` and configuration to `store_config.go`.~~ (Completed)
-
----
 
 ## Other Ongoing Tasks
 - **Exhaustive SIMD Batching Support**:

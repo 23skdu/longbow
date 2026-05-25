@@ -103,7 +103,7 @@ func startServer(t *testing.T) *serverInstance {
 		"LONGBOW_META_ADDR="+si.metaAddr,
 		"LONGBOW_METRICS_ADDR="+si.metricsAddr,
 		"LONGBOW_DATA_PATH="+dataDir,
-		"LONGBOW_MAX_MEMORY=104857600", // 100MB
+		"LONGBOW_MAX_MEMORY=1073741824", // 1GB
 	)
 	si.cmd.Stdout = os.Stdout
 	si.cmd.Stderr = os.Stderr

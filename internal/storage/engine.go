@@ -236,7 +236,17 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 		_ = e.wal.Close()
 		walPath := filepath.Join(e.dataPath, walFileName)
 		if err := os.Truncate(walPath, 0); err != nil {
-			log.Error().Err(err).Msg("Snapshot: failed to truncate WAL")
+			if os.IsNotExist(err) {
+				// File doesn't exist - create empty WAL file
+				f, createErr := os.Create(walPath)
+				if createErr != nil {
+					log.Error().Err(createErr).Msg("Snapshot: failed to create WAL file")
+				} else {
+					_ = f.Close()
+				}
+			} else {
+				log.Error().Err(err).Msg("Snapshot: failed to truncate WAL")
+			}
 		}
 		e.wal = NewWAL(e.dataPath)
 	}

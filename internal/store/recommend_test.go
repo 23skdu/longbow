@@ -407,18 +407,23 @@ func TestRecommend(t *testing.T) {
 	err := vs.applyReplayBatch(datasetName, rec, 1, time.Now().UnixNano())
 	require.NoError(t, err)
 
-	time.Sleep(100 * time.Millisecond)
-
 	ds, err := vs.GetDataset(datasetName)
 	require.NoError(t, err)
 
-	ds.dataMu.Lock()
-	if ds.Graph == nil {
-		ds.Graph = NewGraphStore()
+	for i := 0; i < int(rec.NumRows()); i++ {
+		_, err = ds.Index.AddByLocation(context.Background(), 0, i)
+		require.NoError(t, err)
 	}
-	_ = ds.Graph.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 1, Weight: 1.0})
-	_ = ds.Graph.AddEdge(Edge{Subject: 1, Predicate: "related", Object: 2, Weight: 1.0})
-	ds.dataMu.Unlock()
+
+	time.Sleep(100 * time.Millisecond)
+
+	ds.dataMu.Lock()
+		if ds.Graph == nil {
+			ds.Graph = NewGraphStore()
+		}
+		_ = ds.Graph.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 1, Weight: 1.0})
+		_ = ds.Graph.AddEdge(Edge{Subject: 1, Predicate: "related", Object: 2, Weight: 1.0})
+		ds.dataMu.Unlock()
 
 	t.Run("SingleSeed_Hybrid", func(t *testing.T) {
 		req := &query.RecommendRequest{

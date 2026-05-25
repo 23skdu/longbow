@@ -57,7 +57,6 @@ func (it *WALIterator) Seek(seq uint64) error {
 	if _, err := it.f.Seek(0, 0); err != nil {
 		return err
 	}
-	it.br.Reset(it.f)
 	it.inner = nil
 
 	header := make([]byte, 32)
@@ -67,8 +66,9 @@ func (it *WALIterator) Seek(seq uint64) error {
 			return err
 		}
 
-		if _, err := io.ReadFull(it.br, header); err != nil {
+		if _, err := io.ReadFull(it.f, header); err != nil {
 			if err == io.EOF {
+				it.br.Reset(it.f)
 				return nil
 			}
 			return err
@@ -115,7 +115,6 @@ func (it *WALIterator) Seek(seq uint64) error {
 		if _, err := it.f.Seek(int64(nameLen)+int64(recLen), 1); err != nil { // #nosec G115
 			return err
 		}
-		it.br.Reset(it.f)
 	}
 }
 

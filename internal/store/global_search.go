@@ -264,12 +264,9 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 	// Wait, the previous code didn't wait *here*. It launched a goroutine to wait.
 	// But here I'm setting up channels. It's fine.
 
-	// Wait for all peer requests to complete
+	// Wait for all peer requests to complete to ensure clean lifecycle
 	go func() {
 		wg.Wait()
-		for _, ch := range groupChs {
-			close(ch)
-		}
 	}()
 
 	var finalResults []SearchResult

@@ -475,3 +475,19 @@ func accumulateWeightedScatterNEON(dst []float32, targets []uint32, weights []fl
 
 //go:noescape
 func accumulateWeightedScatterNEONKernel(dst, targets, weights unsafe.Pointer, factor float32, n int)
+
+
+func l2SquaredBatchNEON(query []float32, vectors [][]float32, results []float32) error {
+	for i, v := range vectors {
+		if v == nil {
+			continue
+		}
+		d, err := l2SquaredNEON(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
+	}
+	return nil
+}
+

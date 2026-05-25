@@ -96,6 +96,9 @@ func (t *QuantizationTuner) TuneDataset(name string, ds *Dataset) {
 	t.mu.Unlock()
 
 	// 1. Gather Recall Metrics
+	if ds.queryStats == nil {
+		return // Safe guard for manually created datasets in tests
+	}
 	_, _, _, recall, _ := ds.queryStats.GetMetrics()
 	if recall == 0 {
 		return // Not enough search activity to tune
@@ -112,6 +115,9 @@ func (t *QuantizationTuner) TuneDataset(name string, ds *Dataset) {
 
 	// 3. Decision Logic
 	newType := state.currentType
+	if ds.queryStats == nil {
+		return
+	}
 	p50, p99, avg, recall, qps := ds.queryStats.GetMetrics()
 	_, _, _, _, _ = p50, p99, avg, recall, qps
 

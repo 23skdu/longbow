@@ -41,6 +41,8 @@ func TestVectorStore_QueryCache_Integration(t *testing.T) {
 	}
 	mem := memory.NewGoAllocator()
 	store := NewVectorStore(mem, zerolog.Nop(), 1024*1024*1024, 1024*1024*100, 1*time.Hour)
+	store.StartIndexingWorkers(2)
+	store.StartIngestionWorkers(2)
 	defer func() { _ = store.Close() }()
 
 	// 1. Create a dataset with some data

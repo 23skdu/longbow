@@ -23,6 +23,11 @@
 ---
 
 ## Other Ongoing Tasks
+- **Exhaustive SIMD Batching Support**:
+  - Implement and wire `DistanceComputer` interfaces (`ComputeBatch` and `Prefetch`) for all remaining types: `float[16,32,64]`, `int[8,16,32,64]`, `uint[8,16,32,64]`, `complex[64,128]`, `turboquant[2,4,8]`.
+  - Provide Generic Loop-Unrolled (4x) fallbacks for true SIMD batching across all dimensions (`128, 384, 768, 1024, 3072`).
+  - Wire dispatch tables strictly so that AVX2, AVX512, and NEON architectures natively accelerate batch queries when assembly implementations are fully mapped.
+  - Mitigate memory fragmentation by using zero-allocation pre-sized buffers (e.g., `ArrowSearchContext.batchVecsFloat32`).
 - Implement/integrate GPU index types for advanced hardware acceleration.
 - Update `Makefile` and `Dockerfile` for `GOAMD64=v3`.
 - Benchmark Execution on `ancalagon` hardware profile.

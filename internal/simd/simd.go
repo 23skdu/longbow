@@ -1679,3 +1679,19 @@ func l2SquaredTQCorrectionGeneric(query, recon []float32, qjlBits []byte, correc
 	}
 	return sum
 }
+
+
+func l2SquaredBatchGeneric(query []float32, vectors [][]float32, results []float32) error {
+	for i, v := range vectors {
+		if v == nil {
+			continue
+		}
+		d, err := L2SquaredFloat32(query, v)
+		if err != nil {
+			return err
+		}
+		results[i] = d
+	}
+	return nil
+}
+

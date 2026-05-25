@@ -48,6 +48,7 @@ func TestAdmissionController(t *testing.T) {
 	currMem := atomic.Int64{}
 
 	ac := NewAdmissionController(&maxMem, &currMem, nil, zerolog.Nop())
+	ac.Bypass = false
 
 	t.Run("Normal Load", func(t *testing.T) {
 		currMem.Store(basePhys) // 10%
@@ -114,6 +115,7 @@ func TestAdmissionController_Expanded(t *testing.T) {
 	maxMem := atomic.Int64{}
 	currMem := atomic.Int64{}
 	ac := NewAdmissionController(&maxMem, &currMem, nil, zerolog.Nop())
+	ac.Bypass = false
 
 	t.Run("Tuner utilization overrides memoryUsage", func(t *testing.T) {
 		var m2 runtime.MemStats
@@ -158,6 +160,7 @@ func TestAdmissionController_Expanded(t *testing.T) {
 		currMem2 := atomic.Int64{}
 
 		ac2 := NewAdmissionController(&maxMem2, &currMem2, nil, zerolog.Nop())
+		ac2.Bypass = false
 		require.Equal(t, hardLimit, ac2.hardMemory)
 
 		// normal (currPhys * 4 <= currPhys * 5) -> allowed
@@ -183,12 +186,14 @@ func TestAdmissionController_Expanded(t *testing.T) {
 	t.Run("NewAdmissionController invalid environment variable", func(t *testing.T) {
 		t.Setenv("LONGBOW_MAX_MEMORY_HARD", "invalid_value")
 		acInvalid := NewAdmissionController(&maxMem, &currMem, nil, zerolog.Nop())
+		acInvalid.Bypass = false
 		assert.Equal(t, int64(0), acInvalid.hardMemory)
 	})
 
 	t.Run("maxMem <= 0 bypass", func(t *testing.T) {
 		maxMemZero := atomic.Int64{}
 		acZero := NewAdmissionController(&maxMemZero, &currMem, nil, zerolog.Nop())
+		acZero.Bypass = false
 		err := acZero.Admit(context.Background(), "ingest")
 		assert.NoError(t, err)
 	})
@@ -246,6 +251,7 @@ func TestAdmissionController_Expanded(t *testing.T) {
 	t.Run("AdmitMigration checks", func(t *testing.T) {
 		// When ac.scaler is nil -> returns nil
 		acNil := NewAdmissionController(&maxMem, &currMem, nil, zerolog.Nop())
+		acNil.Bypass = false
 		err := acNil.AdmitMigration(context.Background())
 		assert.NoError(t, err)
 
@@ -258,6 +264,7 @@ func TestAdmissionController_Expanded(t *testing.T) {
 			go scaler.Start(ctx)
 
 			acLocal := NewAdmissionController(&maxMem, &currMem, scaler, zerolog.Nop())
+			acLocal.Bypass = false
 			var m2 runtime.MemStats
 			runtime.ReadMemStats(&m2)
 			currPhys := int64(m2.HeapAlloc) + lbmem.GetGlobalOffHeapAllocated()
@@ -284,6 +291,7 @@ func TestAdmissionController_Expanded(t *testing.T) {
 			go scaler.Start(ctx)
 
 			acLocal := NewAdmissionController(&maxMem, &currMem, scaler, zerolog.Nop())
+			acLocal.Bypass = false
 			var m2 runtime.MemStats
 			runtime.ReadMemStats(&m2)
 			currPhys := int64(m2.HeapAlloc) + lbmem.GetGlobalOffHeapAllocated()
@@ -305,6 +313,7 @@ func TestAdmissionController_Expanded(t *testing.T) {
 		t.Run("Memory usage > 95%", func(t *testing.T) {
 			scaler := autoscale.NewAutoScaler(zerolog.Nop())
 			acLocal := NewAdmissionController(&maxMem, &currMem, scaler, zerolog.Nop())
+			acLocal.Bypass = false
 
 			maxMem.Store(1) // Set maxMem to 1 byte, so physical memory is millions of percent usage!
 

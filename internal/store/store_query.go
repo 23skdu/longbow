@@ -167,6 +167,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		sStr := string(tkt.Ticket)
 		if sStr != "" && sStr[0] != '{' {
 			query.Name = sStr
+			err = nil // Reset error since fallback succeeded
 		} else {
 			s.logger.Error().Err(err).Str("ticket_preview", string(tkt.Ticket)).Msg("Failed to parse ticket")
 			return status.Error(codes.InvalidArgument, "invalid ticket format")

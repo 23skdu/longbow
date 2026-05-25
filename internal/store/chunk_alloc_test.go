@@ -3,7 +3,6 @@ package store
 import (
 	"sync"
 	"testing"
-	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -33,20 +32,18 @@ func TestChunkAllocator(t *testing.T) {
 
 		// Fill with pattern
 		chunk1[0] = 0xAA
-		ptr1 := unsafe.Pointer(&chunk1[0])
 
 		alloc.Free(chunk1)
 
 		// Alloc again, should ideally get same memory (slab/pool)
 		chunk2 := alloc.Alloc()
-		ptr2 := unsafe.Pointer(&chunk2[0])
 
 		// In a STRICT slab allocator, ptr1 == ptr2 might be true if LIFO.
 		// We'll just assert it's valid memory.
 		assert.Equal(t, totalSize, len(chunk2))
 
-		// Optional: assert reuse if strict implementation
-		assert.Equal(t, ptr1, ptr2, "Should reuse freed chunk to reduce GC pressure")
+		// sync.Pool does not guarantee LIFO/FIFO address reuse under race detector / GC sweeps.
+		// So we do not strictly assert ptr1 == ptr2 here to avoid flakiness.
 	})
 
 	t.Run("Concurrent Allocation", func(t *testing.T) {

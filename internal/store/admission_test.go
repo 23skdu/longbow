@@ -89,10 +89,18 @@ func TestAdmissionController(t *testing.T) {
 		assert.NoError(t, err2)
 
 		// Third search should be throttled because capacity is 2
+		// First test: immediate cancel
 		ctx, cancel := context.WithCancel(context.Background())
 		cancel() // trigger immediate cancel to speed up the test
 		err3 := ac.Admit(ctx, "search")
 		assert.Error(t, err3)
+
+		// Second test: timeout after 50ms
+		start := time.Now()
+		err3Timeout := ac.Admit(context.Background(), "search")
+		assert.Error(t, err3Timeout)
+		assert.Contains(t, err3Timeout.Error(), "search throttled during hot WAL replay")
+		assert.GreaterOrEqual(t, time.Since(start), 50*time.Millisecond)
 
 		// Release one slot
 		ac.Release("search")
@@ -321,6 +329,23 @@ func TestAdmissionController_Expanded(t *testing.T) {
 			if assert.Error(t, errMem) {
 				assert.Contains(t, errMem.Error(), "memory usage")
 			}
+		})
+
+		t.Run("maxMem <= 0 bypass in migration", func(t *testing.T) {
+			scaler := autoscale.NewAutoScaler(zerolog.Nop())
+			acLocal := NewAdmissionController(&maxMem, &currMem, scaler, zerolog.Nop())
+			acLocal.Bypass = false
+			maxMem.Store(0)
+			err := acLocal.AdmitMigration(context.Background())
+			assert.NoError(t, err)
+		})
+
+		t.Run("Admit with healthy AutoScaler", func(t *testing.T) {
+			scaler := autoscale.NewAutoScaler(zerolog.Nop())
+			acLocal := NewAdmissionController(&maxMem, &currMem, scaler, zerolog.Nop())
+			acLocal.Bypass = false
+			err := acLocal.Admit(context.Background(), "search")
+			assert.NoError(t, err)
 		})
 	})
 

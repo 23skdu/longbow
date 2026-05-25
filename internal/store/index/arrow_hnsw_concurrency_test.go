@@ -66,6 +66,7 @@ func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
 
 	var wg sync.WaitGroup
 	var errCount atomic.Int32
+	assignedIDs := make([]uint32, numRows)
 
 	start := time.Now()
 
@@ -77,10 +78,12 @@ func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
 			endIdx := startIdx + rowsPerWorker
 
 			for rowIdx := startIdx; rowIdx < endIdx; rowIdx++ {
-				_, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, []int{rowIdx}, []int{0})
+				ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, []int{rowIdx}, []int{0})
 				if err != nil {
 					errCount.Add(1)
 					fmt.Printf("Worker %d failed at row %d: %v\n", workerID, rowIdx, err)
+				} else if len(ids) > 0 {
+					assignedIDs[rowIdx] = ids[0]
 				}
 			}
 		}(i)
@@ -99,30 +102,28 @@ func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
 
 	// Verify all vectors are searchable
 	for i := 0; i < numRows; i++ {
-		// Use a dummy query that should find the vector itself if it exists
-		// In this test, we don't have the original vectors easily accessible here without more work,
-		// but we can at least check if GetLocation returns correctly.
-		lAny, ok := idx.GetLocation(uint32(i))
+		id := assignedIDs[i]
+		lAny, ok := idx.GetLocation(id)
 		if !ok {
-			t.Errorf("Vector %d missing from LocationStore", i)
+			t.Errorf("Vector %d (ID %d) missing from LocationStore", i, id)
 			continue
 		}
 		loc := lAny.(types.Location)
 		if loc.RowIdx != i {
-			t.Errorf("Vector %d has wrong RowIdx: expected %d, got %d", i, i, loc.RowIdx)
+			t.Errorf("Vector %d (ID %d) has wrong RowIdx: expected %d, got %d", i, id, i, loc.RowIdx)
 		}
 
 		// Check if vector exists in GraphData
-		vec, err := idx.GetVector(uint32(i))
+		vec, err := idx.GetVector(id)
 		if err != nil || vec == nil {
-			t.Errorf("Vector %d missing from GraphData", i)
+			t.Errorf("Vector %d (ID %d) missing from GraphData", i, id)
 		}
 
 		// For all but the first few nodes, they should have neighbors if graph is connected
-		if i > 20 {
-			neighbors, _ := idx.GetLayerNeighbors(uint32(i), 0)
+		if id > 20 {
+			neighbors, _ := idx.GetLayerNeighbors(id, 0)
 			if len(neighbors) == 0 {
-				t.Errorf("Vector %d has no neighbors (isolated node)", i)
+				t.Errorf("Vector %d (ID %d) has no neighbors (isolated node)", i, id)
 			}
 		}
 	}

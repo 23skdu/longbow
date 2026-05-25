@@ -112,3 +112,10 @@ func adcBatchVNNI(table []float32, flatCodes []byte, m int, results []float32) e
 
 func euclidean16AVX512Wrapper(a, b []float32) (float32, error) { return euclideanGeneric(a, b) }
 func cosine16AVX512Wrapper(a, b []float32) (float32, error)    { return cosineGeneric(a, b) }
+
+func l2SquaredBatchAVX512(query []float32, vectors [][]float32, results []float32) error {
+	return l2SquaredBatchAVX2(query, vectors, results)
+}
+func dotInt4AVX512(a, b []byte) (float32, error) { return dotInt4Generic(a, b) }
+func dotInt2AVX512(a, b []byte) (float32, error) { return dotInt2Generic(a, b) }
+

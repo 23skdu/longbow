@@ -19,6 +19,10 @@ import (
 // TestAddBatch_Bulk_Typed verifies that AddBatch correctly handles bulk insertion
 // for various data types, triggering the bulk path (n >= 1000).
 func TestAddBatch_Bulk_Typed(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping bulk typed integration test in short mode")
+	}
+
 	pool := memory.NewGoAllocator()
 
 	tests := []struct {

@@ -112,6 +112,12 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		}
 	}
 
+	if h.config.PQEnabled {
+		if vecF32, ok := vec.([]float32); ok {
+			h.ensurePQTrained([][]float32{vecF32})
+		}
+	}
+
 	dims = int(h.dims.Load())
 	if dims == 0 || data == nil || int(id) >= data.Capacity {
 		h.growMu.Lock()
@@ -317,6 +323,17 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 
 	ep := h.entryPoint.Load()
 	maxL := int(h.maxLevel.Load())
+
+	// Spin-wait for the first node (id=0) to commit its entry point
+	// to prevent concurrent inserts from becoming disconnected islands.
+	if ep == math.MaxUint32 && id > 0 {
+		for ep == math.MaxUint32 {
+			// Backoff slightly to allow commitID(0) to proceed
+			time.Sleep(1 * time.Millisecond)
+			ep = h.entryPoint.Load()
+		}
+		maxL = int(h.maxLevel.Load())
+	}
 
 	// Fast path: when TopLayerManager has accumulated enough entry points,
 	// we can read the entry point atomically without acquiring epMu.

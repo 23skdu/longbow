@@ -164,6 +164,31 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 		}
 	}
 
+	var chunkF16 []float16.Num
+	if c.maxGen == 18446744073709551615 {
+		chunkF16 = c.data.GetVectorsF16ChunkFast(int(cID))
+	} else {
+		chunkF16 = c.data.GetVectorsF16ChunkWithGen(int(cID), c.maxGen)
+	}
+	if chunkF16 != nil {
+		cOff := int(id) % types.ChunkSize
+		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat16)
+		start := cOff * pd
+		if start+c.dims <= len(chunkF16) {
+			v := chunkF16[start : start+c.dims]
+			var q16 []float16.Num
+			if len(c.qF16) == len(c.q) {
+				q16 = c.qF16
+			} else {
+				q16 = make([]float16.Num, len(c.q))
+				for i, val := range c.q {
+					q16[i] = float16.New(val)
+				}
+			}
+			return c.h.distFuncF16(q16, v)
+		}
+	}
+
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err != nil {
 		return 0, err
@@ -232,6 +257,20 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 			}
 		}
 		return c.h.distFuncF64(q64, v)
+	case []float16.Num:
+		if len(c.q) != len(v) {
+			return math.MaxFloat32, nil
+		}
+		var q16 []float16.Num
+		if len(c.qF16) == len(c.q) {
+			q16 = c.qF16
+		} else {
+			q16 = make([]float16.Num, len(c.q))
+			for i, val := range c.q {
+				q16[i] = float16.New(val)
+			}
+		}
+		return c.h.distFuncF16(q16, v)
 	}
 	return math.MaxFloat32, nil
 }

@@ -20,7 +20,7 @@ func TestFiltering(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	_, _, dialer := setupServer(t)
+	vs, _, dialer := setupServer(t)
 	ctx := context.Background()
 	client, err := flight.NewClientWithMiddleware(
 		"passthrough:///bufnet",
@@ -78,6 +78,7 @@ func TestFiltering(t *testing.T) {
 	if _, err := stream.Recv(); err != io.EOF {
 		t.Fatalf("Recv expected EOF, got: %v", err)
 	}
+	vs.WaitForIndexing("filter_test")
 
 	// 3. Test Cases
 	tests := []struct {
@@ -149,7 +150,7 @@ func TestListFlightsFiltering(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	_, _, dialer := setupServer(t)
+	vs, _, dialer := setupServer(t)
 	ctx := context.Background()
 	client, err := flight.NewClientWithMiddleware(
 		"passthrough:///bufnet",
@@ -201,6 +202,10 @@ func TestListFlightsFiltering(t *testing.T) {
 			t.Fatalf("Recv expected EOF, got: %v", err)
 		}
 		rec.Release()
+	}
+
+	for _, ds := range datasets {
+		vs.WaitForIndexing(ds.name)
 	}
 
 	// 2. Test Cases

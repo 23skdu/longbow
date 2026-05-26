@@ -22,6 +22,9 @@ func l2SquaredAVX2(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
+	if len(a) == 0 {
+		return 0, nil
+	}
 	if !features.HasAVX2 {
 		return L2SquaredFloat32(a, b)
 	}
@@ -200,6 +203,9 @@ func dotAVX2(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
+	if len(a) == 0 {
+		return 0, nil
+	}
 	if !features.HasAVX2 {
 		return dotGeneric(a, b)
 	}
@@ -258,13 +264,13 @@ func euclideanVerticalBatchAVX2(query []float32, vectors [][]float32, results []
 	if qLen == 0 {
 		return nil
 	}
-	if len(query) == 0 {
-		return nil
-	}
 	qPtr := uintptr(unsafe.Pointer(&query[0]))
 	i := 0
 
 	for ; i <= n-4; i += 4 {
+		if len(vectors[i]) == 0 || len(vectors[i+1]) == 0 || len(vectors[i+2]) == 0 || len(vectors[i+3]) == 0 {
+			break
+		}
 		euclideanVertical4AVX2(
 			uintptr(qPtr),
 			uintptr(unsafe.Pointer(&vectors[i][0])),
@@ -278,6 +284,9 @@ func euclideanVerticalBatchAVX2(query []float32, vectors [][]float32, results []
 
 	// Remainder
 	for ; i < n; i++ {
+		if len(vectors[i]) == 0 {
+			continue
+		}
 		d, err := euclideanAVX2(query, vectors[i])
 		if err != nil {
 			return err
@@ -309,13 +318,14 @@ func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) er
 	if qLen == 0 {
 		return nil
 	}
-	if len(query) == 0 {
-		return nil
-	}
 	qPtr := uintptr(unsafe.Pointer(&query[0]))
 	i := 0
 
 	for ; i <= n-4; i += 4 {
+		if len(vectors[i]) == 0 || len(vectors[i+1]) == 0 || len(vectors[i+2]) == 0 || len(vectors[i+3]) == 0 {
+			// Fallback to individual calls with error handling for zero-length vectors
+			break
+		}
 		cosineVertical4AVX2(
 			uintptr(qPtr),
 			uintptr(unsafe.Pointer(&vectors[i][0])),
@@ -328,6 +338,10 @@ func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) er
 	}
 
 	for ; i < n; i++ {
+		if len(vectors[i]) == 0 {
+			results[i] = 1.0
+			continue
+		}
 		d, err := cosineAVX2(query, vectors[i])
 		if err != nil {
 			return err
@@ -815,7 +829,7 @@ var _ = func() {
 
 func l2SquaredBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
-		if v == nil {
+		if v == nil || len(v) == 0 {
 			continue
 		}
 		d, err := l2SquaredAVX2(query, v)

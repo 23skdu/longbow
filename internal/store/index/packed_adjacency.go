@@ -352,6 +352,7 @@ func (pa *PackedAdjacency) CASNeighbors(id uint32, oldPacked uint64, new []uint3
 		return false
 	}
 	chunks := *chunksPtr
+	// DEBUG: log chunks pointer before potentially crashing load
 	pageOffset := atomic.LoadUint64(&chunks[chunkIdx])
 	if pageOffset == 0 {
 		return false

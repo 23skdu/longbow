@@ -197,6 +197,30 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			}
 		}
 
+		if h.config.SQ8Enabled && h.quantizer != nil && h.sq8Ready.Load() {
+			sq8Chunk := data.GetVectorsSQ8Chunk(cID)
+			if sq8Chunk != nil {
+				if vf32, ok := vec.([]float32); ok {
+					sq8Stride := (dims + 63) & ^63
+					startOff := int(types.ChunkOffset(id)) * sq8Stride
+					dest := sq8Chunk[startOff : startOff+dims]
+					h.quantizer.Encode(vf32, dest)
+				}
+			}
+		}
+
+		if h.config.BQEnabled && h.bqEncoder != nil {
+			bqChunk := data.GetVectorsBQChunk(cID)
+			if bqChunk != nil {
+				if vf32, ok := vec.([]float32); ok {
+					code := h.bqEncoder.Encode(vf32)
+					numWords := h.bqEncoder.CodeSize()
+					dest := bqChunk[int(types.ChunkOffset(id))*numWords : (int(types.ChunkOffset(id))+1)*numWords]
+					copy(dest, code)
+				}
+			}
+		}
+
 		// PERSIST LEVEL: Ensure the node's hierarchical level is stored in metadata
 		cID := int(id) / types.ChunkSize
 		cOff := int(id) % types.ChunkSize

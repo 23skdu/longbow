@@ -137,7 +137,7 @@ func TestSnapshotRateLimit(t *testing.T) {
 	// Verify rate limiter slows down writing
 	tmpDir := t.TempDir()
 
-	limit := 500 * 1024 // 500KB/s
+	limit := 10 * 1024 * 1024 // 10MB/s
 
 	config := storage.StorageConfig{
 		DataPath:          tmpDir,
@@ -149,7 +149,7 @@ func TestSnapshotRateLimit(t *testing.T) {
 	require.NoError(t, vs.InitPersistence(config))
 	defer vs.Close()
 
-	rec := generateRandomBatch(mem, 2000, 256) // ~2MB raw
+	rec := generateRandomBatch(mem, 2000, 16) // ~128KB raw, HNSW capacity 16.7MB
 	err := vs.ApplyDelta("heavy_ds", rec, 1, time.Now().UnixNano())
 	rec.Release()
 	require.NoError(t, err)

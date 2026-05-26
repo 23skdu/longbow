@@ -793,6 +793,8 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 				}
 			})
 
+			runtime.KeepAlive(data) // Keep GraphData alive during blocking parallel linkage
+
 			// Update the global snapshot for organic growth so next sub-batch sees these nodes
 			// Only clone if there are more sub-batches to process to avoid final redundant clone
 			if i+subBatchSize < len(activeIndices) {
@@ -805,6 +807,8 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		data = data.Clone()
 		h.compareAndSwapData(h.data.Load(), data)
 	}
+
+	runtime.KeepAlive(data) // Prevent premature GC of GraphData while parallel workers may still use it
 
 	// 4. Update Global Stats
 	// Update Max Level / Entry Point atomically
@@ -837,5 +841,12 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		}
 	}
 
+	if h.config.PQEnabled && h.oopqEncoder == nil && !h.pqTrained.Load() {
+		if vecsF32, ok := vecs.([][]float32); ok {
+			h.ensurePQTrained(vecsF32)
+		}
+	}
+
+	runtime.KeepAlive(data)
 	return nil
 }

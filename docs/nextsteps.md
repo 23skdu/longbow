@@ -51,7 +51,7 @@ The system currently hits `ResourceExhausted` at ~425K vectors under the 18 GB m
   - [x] Design a thread-safe partitioning or sharding scheme for the HNSW graph to minimize node insertion locks.
   - [x] Implement a concurrent worker pool (2–4 goroutines) to consume indexing tasks from the global queue.
   - [x] Introduce a striped or fine-grained locking mechanism for graph node updates instead of a global index lock.
-  - [ ] Profile indexing throughput and lock wait-time using `pprof` block/mutex profiles under heavy ingest load.
+  - [x] Profile indexing throughput and lock wait-time using `pprof` block/mutex profiles under heavy ingest load.
 
 > **What was implemented** (`internal/store/index/sharded_hnsw.go`):
 > - Per-shard `sync.Mutex` (`shardLocks`) in `ShardedHNSW` — each shard processes one batch at a time, while N different shards run in parallel across M index workers. This eliminates the single `bulkMu` contention point that caused the 25K backlog.

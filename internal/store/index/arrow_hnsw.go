@@ -67,6 +67,8 @@ type ArrowHNSW struct {
 
 	quantizer     *ScalarQuantizer
 	sq8Ready      atomic.Bool
+	pqTrained     atomic.Bool
+	pqTrainingBuffer [][]float32
 	bqEncoder     *types.BQEncoder
 	oopqEncoder   any // Accepts *pq.PQEncoder or *pq.OPQEncoder (Issue 4: Use new OPQ)
 	tqEncoder     *TurboQuantEncoder

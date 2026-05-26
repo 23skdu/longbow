@@ -23,7 +23,7 @@ import (
 )
 
 // BulkInsertThreshold defines the minimum batch size to trigger parallel bulk insert
-const BulkInsertThreshold = 1000
+const BulkInsertThreshold = 256
 
 // ShardedLockCount is the number of shards for node locking.
 const ShardedLockCount = 131072
@@ -482,7 +482,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 
 	// 3. Sequential Bootstrap Phase
 	// Establish a stable hierarchy by inserting a portion sequentially.
-	seedCount := 1024
+	seedCount := BulkInsertThreshold
 	if n < seedCount {
 		seedCount = n
 	}

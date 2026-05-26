@@ -71,6 +71,16 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 	h.config.PQM = m
 	h.config.PQK = k
 
+	if h.name != "unnamed" && h.dataset != nil {
+		logger := h.dataset.GetLogger()
+		logger.Info().
+			Int("dims", dims).
+			Int("M", m).
+			Int("K", k).
+			Int("vectors", len(vectors)).
+			Msg("PQ training complete")
+	}
+
 	// Atomic COW update for feature enablement
 	for {
 		oldData := h.data.Load()
@@ -111,7 +121,6 @@ func (h *ArrowHNSW) TrainPQ(vectors [][]float32) error {
 		if err := data.PreAllocate(targetCap); err != nil {
 			return err
 		}
-
 		if data.VectorsPQ != nil {
 			nodeCount := int(h.nodeCount.Load())
 			m := h.config.PQM

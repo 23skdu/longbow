@@ -2072,7 +2072,7 @@ func (g *GraphData) GetVectorPQWithGen(id uint32, maxGen uint64) []byte {
 			return nil
 		}
 
-		ptr := unsafe.Pointer(&chunk[0])                    // #nosec G103
+		ptr := unsafe.Pointer(&chunk[0])
 		byteChunk := unsafe.Slice((*byte)(ptr), numWords*8) // #nosec G103
 
 		start := cOff * m

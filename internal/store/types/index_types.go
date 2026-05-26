@@ -129,6 +129,7 @@ type ArrowHNSWConfig struct {
 
 	Float16Enabled         bool
 	SQ8TrainingThreshold   int
+	PQTrainingThreshold    int
 	PackedAdjacencyEnabled bool
 	SearchLayerSampleRate  float64
 
@@ -159,6 +160,7 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		DiskPath:                "./data",
 		DataType:                VectorTypeFloat32,
 		SQ8TrainingThreshold:    5000,
+		PQTrainingThreshold:     5000,
 		SearchLayerSampleRate:   0.24,
 		TurboQuantEnabled:       false,
 		TurboQuantBits:          8,
@@ -178,6 +180,10 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 
 	if os.Getenv("LONGBOW_BQ_ENABLED") == "1" || os.Getenv("LONGBOW_BQ_ENABLED") == "true" {
 		config.BQEnabled = true
+	}
+
+	if os.Getenv("LONGBOW_PQ_INGEST") == "1" {
+		config.PQEnabled = true
 	}
 
 	return config

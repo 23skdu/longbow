@@ -106,6 +106,11 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 		newData = oldData.Clone()
 		newData.Capacity = capacity
 		newData.Dims = dims
+		// DEBUG: log PackedAdjacency sharing
+		for l := 0; l < types.ArrowMaxLayers && l < len(oldData.PackedNeighbors) && l < len(newData.PackedNeighbors); l++ {
+			if oldData.PackedNeighbors[l] != newData.PackedNeighbors[l] {
+			}
+		}
 	}
 
 	newData.PQEnabled = h.config.PQEnabled

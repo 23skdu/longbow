@@ -16,6 +16,10 @@ import (
 )
 
 func TestArrowHNSW_PQ_Integration(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping PQ integration test in short mode")
+	}
+
 	// Setup
 	dim := 128
 	count := 1000

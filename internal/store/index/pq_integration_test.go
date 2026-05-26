@@ -18,6 +18,10 @@ import (
 // 3. New ingestion (compressed on the fly)
 // 4. Search accuracy (Recall vs Exact)
 func TestPQ_EndToEnd(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping PQ end-to-end integration test in short mode")
+	}
+
 	// 1. Setup
 	dims := 128
 	pqM := 16 // 16 subspaces -> 8 dim per subspace

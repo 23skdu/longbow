@@ -50,6 +50,10 @@ func makeScaleTestRecord(mem memory.Allocator, dims, numVectors int) arrow.Recor
 }
 
 func TestArrowHNSW_LargeBatchIngestion_30k(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping large batch ingestion test in short mode")
+	}
+
 	mem := memory.NewGoAllocator()
 	ds := NewMockDataset("scale_test_30k", nil)
 

@@ -15,6 +15,10 @@ import (
 )
 
 func TestArrowHNSW_PQ_ParallelSearch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping PQ parallel search test in short mode")
+	}
+
 	// Setup
 	dim := 128
 	count := 1000

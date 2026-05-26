@@ -16,6 +16,10 @@ import (
 )
 
 func TestHNSW_BulkInsert(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping bulk insert test in short mode")
+	}
+
 	// Setup
 	mem := memory.NewCheckedAllocator(memory.NewGoAllocator())
 	defer mem.AssertSize(t, 0)

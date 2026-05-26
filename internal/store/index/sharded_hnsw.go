@@ -348,18 +348,18 @@ func (idx *ShardedHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, 
 			}
 
 			localIDs, err := shard.index.AddBatch(ctx, recs, shardRowIdxs, shardBatchIdxs)
-
+			if err == nil {
+				// Register Global->Local mappings
+				for k, lid := range localIDs {
+					idxInBatch := j.indices[k]
+					gid := VectorID(globalIDs[idxInBatch])
+					shard.registerID(lid, gid, idx.globalToLocal)
+				}
+			}
 			idx.shardLocks[sIdx].Unlock()
 
 			if err != nil {
 				return err
-			}
-
-			// Register Global->Local mappings
-			for k, lid := range localIDs {
-				idxInBatch := j.indices[k]
-				gid := VectorID(globalIDs[idxInBatch])
-				shard.registerID(lid, gid, idx.globalToLocal)
 			}
 
 			// Each successful batch insert into a shard implies a CoW adjacency
@@ -513,11 +513,13 @@ func (idx *ShardedHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, 
 	// Insert
 	idx.shardLocks[shardIdx].Lock()
 	localID, err := shard.index.AddByRecord(ctx, rec, rowIdx, batchIdx)
+	if err == nil {
+		shard.registerID(localID, id, idx.globalToLocal)
+	}
 	idx.shardLocks[shardIdx].Unlock()
 	if err != nil {
 		return 0, fmt.Errorf("shard insert failed: %w", err)
 	}
-	shard.registerID(localID, id, idx.globalToLocal)
 
 	metrics.ShardedHnswShardSize.WithLabelValues(idx.dataset.GetName(), fmt.Sprintf("%d", shardIdx)).Inc()
 	if id%1000 == 0 {

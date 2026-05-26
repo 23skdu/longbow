@@ -367,7 +367,7 @@ func euclideanSQ8BatchGeneric(query []byte, vectors [][]byte, results []float32)
 // euclideanBatchGeneric is the fallback implementation
 func euclideanBatchGeneric(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
-		if v == nil {
+		if v == nil || len(v) == 0 {
 			continue
 		}
 		d, err := euclideanGeneric(query, v)
@@ -423,7 +423,7 @@ func euclideanBatchFlatAVX512(query, flatVectors []float32, numVectors, dims int
 
 func dotBatchGeneric(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
-		if v == nil {
+		if v == nil || len(v) == 0 {
 			continue
 		}
 		d, err := DotProduct(query, v)

@@ -1,6 +1,7 @@
 package storage
 
 import (
+	"bufio"
 	"context"
 	"fmt"
 	"io"
@@ -238,7 +239,7 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 		if err := os.Truncate(walPath, 0); err != nil {
 			if os.IsNotExist(err) {
 				// File doesn't exist - create empty WAL file
-				f, createErr := os.Create(walPath)
+				f, createErr := os.Create(walPath) // #nosec G304 -- walPath is filepath.Join(configuredDataPath, constant)
 				if createErr != nil {
 					log.Error().Err(createErr).Msg("Snapshot: failed to create WAL file")
 				} else {
@@ -289,6 +290,11 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 		}
 
 		w := getWriter(f)
+		var bw *bufio.Writer
+		if limit > 0 {
+			bw = bufio.NewWriterSize(w, 256*1024)
+			w = bw
+		}
 
 		// Use configured compression
 		compression := e.config.SnapshotCompression
@@ -301,6 +307,12 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 				log.Error().Err(closeErr).Msg("failed to close parquet file on write error")
 			}
 			return fmt.Errorf("failed to write record parquet: %w", err)
+		}
+		if bw != nil {
+			if err := bw.Flush(); err != nil {
+				_ = f.Close()
+				return fmt.Errorf("failed to flush record parquet buffer: %w", err)
+			}
 		}
 		if err := f.Close(); err != nil {
 			log.Error().Err(err).Msg("failed to close parquet file after write")
@@ -317,6 +329,12 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 		}
 
 		w := getWriter(f)
+		var bw *bufio.Writer
+		if limit > 0 {
+			bw = bufio.NewWriterSize(w, 256*1024)
+			w = bw
+		}
+
 		compression := e.config.SnapshotCompression
 		if compression == "" {
 			compression = "zstd"
@@ -328,6 +346,12 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 					log.Error().Err(closeErr).Msg("failed to close graph parquet file on write error")
 				}
 				return fmt.Errorf("failed to write graph parquet: %w", err)
+			}
+		}
+		if bw != nil {
+			if err := bw.Flush(); err != nil {
+				_ = f.Close()
+				return fmt.Errorf("failed to flush graph parquet buffer: %w", err)
 			}
 		}
 		if err := f.Close(); err != nil {
@@ -352,6 +376,11 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 		}
 
 		w := getWriter(f)
+		var bw *bufio.Writer
+		if limit > 0 {
+			bw = bufio.NewWriterSize(w, 256*1024)
+			w = bw
+		}
 
 		// Priority: Writer > Bytes
 		if item.IndexConfigWriter != nil {
@@ -363,6 +392,13 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 			if _, err := w.Write(item.IndexConfig); err != nil {
 				_ = f.Close()
 				return fmt.Errorf("failed to write index config: %w", err)
+			}
+		}
+
+		if bw != nil {
+			if err := bw.Flush(); err != nil {
+				_ = f.Close()
+				return fmt.Errorf("failed to flush index config buffer: %w", err)
 			}
 		}
 
@@ -550,7 +586,15 @@ func (e *StorageEngine) TruncateWAL(seq uint64) error {
 
 	walPath := filepath.Join(e.dataPath, walFileName)
 	if err := os.Truncate(walPath, 0); err != nil {
-		return fmt.Errorf("failed to truncate WAL file: %w", err)
+		if os.IsNotExist(err) {
+			f, createErr := os.Create(walPath) // #nosec G304 -- walPath is filepath.Join(configuredDataPath, constant)
+			if createErr != nil {
+				return fmt.Errorf("failed to create WAL file on truncation: %w", createErr)
+			}
+			_ = f.Close()
+		} else {
+			return fmt.Errorf("failed to truncate WAL file: %w", err)
+		}
 	}
 
 	// Re-initialize WAL and restart batcher if needed

@@ -111,6 +111,10 @@ func TestSQ8AutoTuning(t *testing.T) {
 	// Verify Trained
 	assert.True(t, idx.quantizer.IsTrained(), "Quantizer should be trained now")
 
+	// Reload the data and chunk pointers as the graph data was swapped via COW during AddBatch
+	data = idx.data.Load()
+	sq8Chunk = data.GetVectorsSQ8Chunk(types.ChunkID(ids1[0]))
+
 	// Verify Backfill (First vector should now be encoded)
 	firstVecSQ8 = sq8Chunk[off : off+dims]
 	allZero = true
@@ -126,7 +130,8 @@ func TestSQ8AutoTuning(t *testing.T) {
 	cOff2 := types.ChunkOffset(ids2[0])
 	off2 := int(cOff2) * paddedDims
 	// ids2[0] might be in same chunk or next. 50+0 = 50. Same chunk.
-	secondVecSQ8 := sq8Chunk[off2 : off2+dims]
+	sq8Chunk2 := data.GetVectorsSQ8Chunk(types.ChunkID(ids2[0]))
+	secondVecSQ8 := sq8Chunk2[off2 : off2+dims]
 	allZero2 := true
 	for _, b := range secondVecSQ8 {
 		if b != 0 {

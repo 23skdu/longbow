@@ -724,9 +724,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		h.growMu.Unlock()
 	}
 
-	// Bulk optimization path - only use for large batches.
-	// AddBatchBulk handles its own bootstrap sequentially if the index is empty.
-	if n >= 1000 && !h.IsSharded() {
+	// Bulk optimization path with parallel linkage.
+	// AddBatchBulk handles its own bootstrap sequentially then links remaining in parallel.
+	if n >= BulkInsertThreshold {
 
 		if vecColIdx != -1 {
 			// Extract all vectors into a typed slice for bulk processing

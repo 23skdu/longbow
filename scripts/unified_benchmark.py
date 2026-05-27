@@ -3131,8 +3131,31 @@ if __name__ == "__main__":
     parser.add_argument(
         "--cache", action="store_true", help="Skip unchanged code paths if result json already exists"
     )
+    numa_default = False
+    try:
+        import socket
+        hostname = socket.gethostname().lower()
+        if "ancalagon" in hostname:
+            numa_default = True
+        elif platform.system() == "Linux":
+            res = subprocess.run("numactl --show", shell=True, capture_output=True, text=True)
+            if res.returncode == 0:
+                numa_default = True
+    except Exception:
+        pass
+
     parser.add_argument(
-        "--numa-bind", action="store_true", help="Enable NUMA binding in benchmarks"
+        "--numa-bind",
+        dest="numa_bind",
+        action="store_true",
+        default=numa_default,
+        help=f"Enable NUMA binding in benchmarks (default: {numa_default})"
+    )
+    parser.add_argument(
+        "--no-numa-bind",
+        dest="numa_bind",
+        action="store_false",
+        help="Disable NUMA binding in benchmarks"
     )
     parser.add_argument(
         "--numa-compare", action="store_true", help="Run benchmarks with and without NUMA binding to compare"

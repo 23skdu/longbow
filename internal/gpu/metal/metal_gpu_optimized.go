@@ -1521,6 +1521,10 @@ func (idx *MetalIndexOptimized) GraphExpand(seeds []uint32, depth int, alpha flo
 	return outIDs, outScores, nil
 }
 
+func (idx *MetalIndexOptimized) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
+	return nil, fmt.Errorf("SearchBatchDistances not implemented for optimized MetalIndex")
+}
+
 func (idx *MetalIndexOptimized) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -1752,31 +1756,6 @@ func (idx *MetalIndexOptimized) PruneNeighbors(candidateIds []uint32, candidateD
 	}
 
 	return pruned, nil
-}
-
-func (idx *MetalIndexOptimized) searchGreedyGPU(query []float32, entryPoint uint32, entryDist float32) (uint32, float32, error) {
-	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-
-	if idx.closed {
-		return 0, 0, fmt.Errorf("index closed")
-	}
-
-	ep := entryPoint
-	ed := entryDist
-
-	ret := C.metal_greedy_search_optimized(
-		idx.handle,
-		(*C.float)(unsafe.Pointer(&query[0])),
-		(*C.uint32_t)(unsafe.Pointer(&ep)),
-		(*C.float)(unsafe.Pointer(&ed)),
-	)
-
-	if ret != 0 {
-		return 0, 0, fmt.Errorf("GPU greedy search failed")
-	}
-
-	return ep, ed, nil
 }
 
 func (idx *MetalIndexOptimized) Sync() error {

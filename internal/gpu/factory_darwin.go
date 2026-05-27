@@ -19,6 +19,9 @@ func newGPUIndexImpl(cfg GPUConfig, backend GPUBackend) (Index, error) {
 
 // NewIndexWithConfig is maintained for backward compatibility
 func NewIndexWithConfig(cfg GPUConfig) (Index, error) {
+	if cfg.Dimension <= 0 {
+		return nil, fmt.Errorf("invalid dimension %d", cfg.Dimension)
+	}
 	backend := DetectGPUBackend()
 	return newGPUIndexImpl(cfg, backend)
 }

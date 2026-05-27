@@ -122,18 +122,23 @@ func (m *MultiGPUManager) startMetricsCollector() {
 }
 
 func (m *MultiGPUManager) initializeDevice(deviceID int32) (*GPUDevice, error) {
-	gpuConfig := types.GPUConfig{
-		Backend:  types.BackendCUDA,
-		DeviceID: deviceID,
-		Enabled:  true,
+	deviceCount := GetDeviceCount()
+	if deviceID < 0 || int(deviceID) >= deviceCount {
+		return nil, fmt.Errorf("invalid device ID %d (total available devices: %d)", deviceID, deviceCount)
 	}
 
-	idx, err := NewIndexWithBackend(gpuConfig, types.BackendCUDA)
+	backend := DetectGPUBackend()
+	gpuConfig := types.DefaultGPUConfig()
+	gpuConfig.Backend = backend
+	gpuConfig.DeviceID = deviceID
+	gpuConfig.Enabled = true
+
+	idx, err := NewIndexWithBackend(gpuConfig, backend)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GPU index for device %d: %w", deviceID, err)
 	}
 
-	memPool, err := memory.NewGPUMemPool(types.BackendCUDA, deviceID)
+	memPool, err := memory.NewGPUMemPool(backend, deviceID)
 	if err != nil {
 		_ = idx.Close()
 		return nil, fmt.Errorf("failed to create memory pool for device %d: %w", deviceID, err)

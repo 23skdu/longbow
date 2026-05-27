@@ -1370,6 +1370,10 @@ func (idx *CUDAIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]u
 
 	return resIDs, resScores, nil
 }
+func (idx *CUDAIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
+	return nil, fmt.Errorf("SearchBatchDistances not implemented for CUDAIndex")
+}
+
 func (idx *CUDAIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	idx.mu.RLock()
 	closed := idx.closed

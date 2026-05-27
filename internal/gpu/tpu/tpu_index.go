@@ -445,6 +445,31 @@ func (i *TPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint
 	return outIDs, outScores, nil
 }
 
+func (i *TPUIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	if i.closed {
+		return nil, fmt.Errorf("index closed")
+	}
+
+	distances := make([]float32, len(candidateIDs))
+	for idx, id := range candidateIDs {
+		vec, ok := i.vectors[int64(id)]
+		if ok {
+			var dist float32
+			for j := 0; j < len(query) && j < len(vec); j++ {
+				diff := query[j] - vec[j]
+				dist += diff * diff
+			}
+			distances[idx] = float32(math.Sqrt(float64(dist)))
+		} else {
+			distances[idx] = 1.0 // Mock fallback
+		}
+	}
+	return distances, nil
+}
+
 func (i *TPUIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	start := time.Now()
 	var err error

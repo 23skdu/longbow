@@ -356,6 +356,19 @@ func (c *float32ToFloat32Computer) ComputeSingle(id uint32) (float32, error) {
 }
 
 func (c *float32ToFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	if c.h.gpuEnabled && c.h.gpuIndex != nil && len(ids) >= 256 {
+		gpuDists, err := c.h.ComputeDistancesBatch(c.q, ids)
+		if err == nil {
+			if cap(dst) < len(ids) {
+				dst = make([]float32, len(ids))
+			} else {
+				dst = dst[:len(ids)]
+			}
+			copy(dst, gpuDists)
+			return dst, nil
+		}
+	}
+
 	if cap(c.batchVecs) < len(ids) {
 		c.batchVecs = make([][]float32, len(ids))
 	}

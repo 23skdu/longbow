@@ -384,6 +384,10 @@ func selectNeighborsSimple(candidates []types.Candidate, m int) []types.Candidat
 
 // BuildIndexWithGPU builds the entire HNSW index from a set of vectors using GPU acceleration.
 func (h *ArrowHNSW) BuildIndexWithGPU(ctx context.Context, vectors [][]float32, ids []uint32, config GPUBatchBuildConfig, logger zerolog.Logger) error {
+	if !h.gpuEnabled || h.gpuIndex == nil {
+		return h.batchInsertCPU(ids, vectors, -1)
+	}
+
 	start := time.Now()
 
 	builder, err := NewGPUBatchBuilder(h, config, logger)

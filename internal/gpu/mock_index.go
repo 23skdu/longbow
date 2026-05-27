@@ -281,6 +281,26 @@ func (m *MockIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uin
 	return seeds, make([]float32, len(seeds)), nil
 }
 
+func (m *MockIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+
+	if m.closed {
+		return nil, fmt.Errorf("index closed")
+	}
+
+	distances := make([]float32, len(candidateIDs))
+	for idx, id := range candidateIDs {
+		vec, ok := m.vectors[int64(id)]
+		if ok {
+			distances[idx] = m.euclideanDistance(query, vec)
+		} else {
+			distances[idx] = 1.0 // Mock fallback
+		}
+	}
+	return distances, nil
+}
+
 func (m *MockIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	// Simple mock: return zeros for now or implement if needed for tests
 	return make([]float32, len(points)/2), nil

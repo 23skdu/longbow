@@ -367,6 +367,10 @@ func (w *pooledIndexWrapper) GraphExpand(seeds []uint32, depth int, alpha float3
 	return w.pooled.index.GraphExpand(seeds, depth, alpha)
 }
 
+func (w *pooledIndexWrapper) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
+	return w.pooled.index.SearchBatchDistances(query, candidateIDs)
+}
+
 func (w *pooledIndexWrapper) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	return w.pooled.index.HaversineSearch(centerLat, centerLon, points, earthRadius)
 }

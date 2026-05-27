@@ -186,5 +186,9 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		config.PQEnabled = true
 	}
 
+	if os.Getenv("LONGBOW_INDEXING_ADAPTIVE_ENABLED") == "1" || os.Getenv("LONGBOW_INDEXING_ADAPTIVE_ENABLED") == "true" {
+		config.AdaptiveEf = true
+	}
+
 	return config
 }

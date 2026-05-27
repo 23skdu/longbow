@@ -62,7 +62,8 @@ func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 
 var (
 	// MinIndexingWorkers is the minimum number of indexing workers to keep running.
-	MinIndexingWorkers = calculateMinWorkers(8) // 1/8th of CPU
+	// ArrowHNSW internally parallelizes bulk inserts, so 1 worker is sufficient and avoids lock contention.
+	MinIndexingWorkers = 1
 	// MinIngestionWorkers is the minimum number of ingestion workers to keep running.
 	MinIngestionWorkers = calculateMinWorkers(4) // 1/4th of CPU
 )
@@ -352,8 +353,8 @@ func (s *VectorStore) StartIngestionAutoscaler(ctx context.Context) {
 }
 
 func (s *VectorStore) runIndexWorker(ctx context.Context) {
-	maxBatch := 1000
-	currentBatch := 100
+	maxBatch := 32768
+	currentBatch := 1024
 
 	jobs := make([]IndexJob, 0, maxBatch)
 	var lastLogTime time.Time
@@ -626,20 +627,20 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 		queueDepth := s.indexQueue.Len()
 
 		switch {
-		case queueDepth > 100:
+		case queueDepth > 10000:
 			if time.Since(lastLogTime) > 2*time.Second {
 				s.logger.Warn().Int("depth", queueDepth).Msg("Ingestion queue is BACKPRESSURED")
 				lastLogTime = time.Now()
 			}
-			currentBatch = maxBatch // 1000
-		case queueDepth > 50:
+			currentBatch = maxBatch // 32768
+		case queueDepth > 1000:
 			if time.Since(lastLogTime) > 5*time.Second {
 				s.logger.Info().Int("depth", queueDepth).Msg("Ingestion queue is filling up")
 				lastLogTime = time.Now()
 			}
-			currentBatch = 500
+			currentBatch = 8192
 		default:
-			currentBatch = 100
+			currentBatch = 1024
 		}
 
 		select {

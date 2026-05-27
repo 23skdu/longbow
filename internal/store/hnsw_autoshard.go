@@ -506,22 +506,15 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 
 		lastMigrated = endIdx
 
-		// Incremental Handover: Release monolithic storage segments as they are replicated.
-		// We track the highest chunk migrated to handle cases where batch boundaries don't align with ChunkSize.
+		// Incremental Handover: To prevent "vector missing for row X" failures under high-load memory pressure,
+		// we delay releasing monolithic storage chunks until the migration is fully completed.
+		// Reclaim GC memory periodically based on migrated progress.
 		currentChunk := (lastMigrated / types.ChunkSize) - 1
 		if currentChunk >= 0 {
-			if ah, ok := oldIndex.(interface{ ReleaseMonolithicChunk(int) error }); ok {
-				// Release all chunks up to currentChunk that haven't been released yet
-				// (The index's implementation handles atomic/idempotent release)
-				for c := 0; c <= currentChunk; c++ {
-					_ = ah.ReleaseMonolithicChunk(c)
-				}
-				// Reclaim memory immediately after chunk release
-				if usageRatio > 0.85 {
-					runtime.GC()
-				} else if currentChunk%4 == 0 { // Don't GC on every chunk to avoid too much jitter
-					runtime.GC()
-				}
+			if usageRatio > 0.85 {
+				runtime.GC()
+			} else if currentChunk%4 == 0 { // Don't GC on every chunk to avoid too much jitter
+				runtime.GC()
 			}
 		}
 
@@ -557,6 +550,33 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 
 	idx.dataset.dataMu.RUnlock()
 	idx.mu.Unlock()
+
+	// Relocate the new ShardedHNSW index to off-heap memory.
+	// The old monolithic index was already relocated during migration (line ~329), but the
+	// new sharded index allocates slab chunks on the Go heap. Moving it off-heap here
+	// breaks the O(N) heap growth curve and allows the GC to reclaim the freed pages.
+	var rssBefore, rssAfter uint64
+	var memStats runtime.MemStats
+	runtime.ReadMemStats(&memStats)
+	rssBefore = memStats.HeapInuse
+
+	if err := newIndex.RelocateToOffHeap(); err != nil {
+		idx.dataset.Logger.Warn().Err(err).Msg("Failed to relocate ShardedHNSW to off-heap; index will remain on Go heap")
+	} else {
+		runtime.GC()
+		debug.FreeOSMemory()
+		runtime.ReadMemStats(&memStats)
+		rssAfter = memStats.HeapInuse
+		var freedMB int64
+		if rssBefore > rssAfter {
+			freedMB = int64(rssBefore-rssAfter) / (1024 * 1024)
+		}
+		idx.dataset.Logger.Info().
+			Uint64("heap_before_mb", rssBefore/(1024*1024)).
+			Uint64("heap_after_mb", rssAfter/(1024*1024)).
+			Int64("freed_mb", freedMB).
+			Msg("ShardedHNSW relocated to off-heap after migration")
+	}
 
 	duration := time.Since(start)
 	metrics.IndexMigrationDuration.Observe(duration.Seconds())

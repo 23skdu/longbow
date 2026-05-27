@@ -145,6 +145,8 @@ type ArrowHNSW struct {
 	topo       *memory.NUMATopology
 	efTuner    *PIDTuner
 
+	inBulkInsert atomic.Bool
+
 	// MetadataRegistry for pre-cached field lookups
 	metadata struct {
 		vecColIdx atomic.Int32
@@ -458,6 +460,22 @@ func (h *ArrowHNSW) IsSharded() bool {
 // GetConfig returns the current configuration
 func (h *ArrowHNSW) GetConfig() types.ArrowHNSWConfig {
 	return h.config
+}
+
+// EnableTurboQuant dynamically promotes the index to use TurboQuant encoding.
+func (h *ArrowHNSW) EnableTurboQuant(bits int) {
+	h.growMu.Lock()
+	defer h.growMu.Unlock()
+	h.config.TurboQuantEnabled = true
+	h.config.TurboQuantBits = bits
+	h.config.DataType = types.VectorTypeTQ
+	gd := h.data.Load()
+	if gd != nil {
+		gd.TurboQuantEnabled = true
+		gd.TurboQuantBits = bits
+	}
+	h.tqEncoder = NewTurboQuantEncoder(int(h.dims.Load()), bits, 42)
+	h.tqCompute = NewTurboQuantCompute(h)
 }
 
 // GetShardedLocks returns the sharded mutex for concurrent access

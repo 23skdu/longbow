@@ -105,7 +105,7 @@ type Config struct {
 	HybridSearchAlpha       float32 `envconfig:"HYBRID_ALPHA" default:"0.5"`
 
 	// GPU Configuration
-	GPUEnabled  bool `envconfig:"GPU_ENABLED" default:"true"`
+	GPUEnabled  bool `envconfig:"GPU_ENABLED" default:"false"`
 	GPUDeviceID int  `envconfig:"GPU_DEVICE_ID" default:"0"`
 
 	// Rate Limiting Configuration

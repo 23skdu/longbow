@@ -101,6 +101,10 @@ func TestMetalIndexOptimized_Prune(t *testing.T) {
 	candIds := []uint32{1, 2, 3}
 	candDists := []float32{0.1, 0.5, 0.2}
 	allVectors := make([]float32, 128*4) // 4 vectors
+	// Make vectors distinct and orthogonal so they aren't pruned as redundant
+	allVectors[1*128+0] = 1.0
+	allVectors[2*128+1] = 1.0
+	allVectors[3*128+2] = 1.0
 
 	pruned, err := idx.PruneNeighbors(candIds, candDists, 2, allVectors)
 	require.NoError(t, err)

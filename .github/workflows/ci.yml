@@ -39,3 +39,17 @@ jobs:
 
       - name: Test
         run: go test -v -race -coverprofile=coverage.txt ./...
+
+      - name: Build benchmark binaries
+        run: |
+          make build
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r scripts/requirements.txt || true
+
+      - name: Run fast Unified Benchmark in CI
+        run: |
+          python3 scripts/unified_benchmark.py --ci
+

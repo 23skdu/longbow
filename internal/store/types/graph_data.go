@@ -1380,7 +1380,7 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 				}
 				initArenaSafe(&g.Complex128Arena, slabSize, g.Allocator)
 
-				ref, err := g.Complex128Arena.AllocSlice(ChunkSize * paddedDims)
+				ref, err := g.Complex128Arena.AllocSliceAligned(ChunkSize * paddedDims, 64)
 				if err != nil {
 					return err
 				}
@@ -2742,7 +2742,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 		for i := 0; i < numChunks; i++ {
 			if atomic.LoadUint64(&g.VectorsComplex128Offsets[i]) == 0 {
-				ref, err := g.Complex128Arena.AllocSlice(ChunkSize * paddedDims)
+				ref, err := g.Complex128Arena.AllocSliceAligned(ChunkSize * paddedDims, 64)
 				if err != nil {
 					return err
 				}

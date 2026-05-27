@@ -1314,6 +1314,32 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		return err
 	}
 
+	// Auto-quantization under memory pressure (>60% capacity).
+	// Threshold intentionally lowered from 70% to 60% to give the compression path
+	// a wider window before the heap is exhausted — preventing ResourceExhausted at ~425K vectors.
+	maxMem := s.maxMemory.Load()
+	if maxMem > 0 && s.currentMemory.Load() > int64(float64(maxMem)*0.60) {
+		if ds.PreferredVectorType == types.VectorTypeFloat32 || ds.PreferredVectorType == types.VectorTypeUnknown {
+			s.logger.Warn().Str("dataset", ds.Name).Msg("Memory pressure >60%. Dynamically promoting dataset to TurboQuant8.")
+			ds.PreferredVectorType = types.VectorTypeTQ
+
+			var hnsw *ArrowHNSW
+			if h, ok := ds.Index.(*ArrowHNSW); ok {
+				hnsw = h
+			} else if asi, ok := ds.Index.(*AutoShardingIndex); ok {
+				asi.mu.Lock()
+				if h, ok := asi.current.(*ArrowHNSW); ok {
+					hnsw = h
+				}
+				asi.mu.Unlock()
+			}
+
+			if hnsw != nil {
+				hnsw.EnableTurboQuant(8)
+			}
+		}
+	}
+
 	metrics.DoPutPayloadSizeBytes.Observe(float64(batchSize))
 
 	if batchSize > 100*1024*1024 {
@@ -1375,16 +1401,36 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			}
 		}
 		dataType := InferVectorDataType(rec.Schema(), vecColName)
+
+		// Unspecified default logic: promote to turboquant8
+		hasMetadataType := false
+		if rec.Schema() != nil {
+			md := rec.Schema().Metadata()
+			if _, ok := md.GetValue("longbow.vector_type"); ok {
+				hasMetadataType = true
+			} else {
+				idx := rec.Schema().FieldIndices(vecColName)
+				if len(idx) > 0 {
+					f := rec.Schema().Field(idx[0])
+					if _, ok := f.Metadata.GetValue("longbow.vector_type"); ok {
+						hasMetadataType = true
+					}
+				}
+			}
+		}
+
+		if ds.PreferredVectorType != types.VectorTypeUnknown {
+			dataType = ds.PreferredVectorType
+		} else if !hasMetadataType && dataType == types.VectorTypeFloat32 {
+			dataType = types.VectorTypeTQ
+			ds.PreferredVectorType = types.VectorTypeTQ
+		}
+
 		s.logger.Info().Str("dataset", name).Str("dataType", dataType.String()).Str("column", vecColName).Msg("Inferred vector data type for new index")
 
 		if config.IndexConfig == nil {
 			hnswCfg := DefaultArrowHNSWConfig()
 			hnswCfg.Metric = ds.Metric
-
-			// Use preferred type if specified via create_dataset or metadata
-			if ds.PreferredVectorType != types.VectorTypeUnknown {
-				dataType = ds.PreferredVectorType
-			}
 			hnswCfg.DataType = dataType
 
 			if dataType == VectorTypeTQ {

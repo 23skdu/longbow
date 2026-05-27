@@ -641,33 +641,33 @@ type sharedFloat32Computer struct {
 	diskGraph *DiskGraph
 	maxGen    uint64
 	slices    [][]float32
+	startID   uint32
+	n         int
 }
 
 func (c *sharedFloat32Computer) ComputeSingle(id uint32) (float32, error) {
-	loc, ok := c.h.locationStore.Get(types.VectorID(id))
-	if !ok || loc.BatchIdx < 0 || loc.BatchIdx >= len(c.slices) {
-		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-		if err != nil {
-			return 0, err
-		}
-		if v, ok := vecAny.([]float32); ok {
+	if id >= c.startID && id < c.startID+uint32(c.n) {
+		idx := int(id - c.startID)
+		if idx < len(c.slices) {
+			vec := c.slices[idx]
 			if c.squared {
-				return c.h.distFuncSquared(c.q, v)
+				return c.h.distFuncSquared(c.q, vec)
 			}
-			return c.h.distFunc(c.q, v)
+			return c.h.distFunc(c.q, vec)
 		}
-		return math.MaxFloat32, nil
 	}
 
-	start := loc.RowIdx * c.dims
-	if start+c.dims > len(c.slices[loc.BatchIdx]) {
-		return math.MaxFloat32, nil
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err != nil {
+		return 0, err
 	}
-	vec := c.slices[loc.BatchIdx][start : start+c.dims]
-	if c.squared {
-		return c.h.distFuncSquared(c.q, vec)
+	if v, ok := vecAny.([]float32); ok {
+		if c.squared {
+			return c.h.distFuncSquared(c.q, v)
+		}
+		return c.h.distFunc(c.q, v)
 	}
-	return c.h.distFunc(c.q, vec)
+	return math.MaxFloat32, nil
 }
 
 func (c *sharedFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
@@ -683,25 +683,10 @@ func (c *sharedFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]flo
 }
 
 func (c *sharedFloat32Computer) Prefetch(id uint32) {
-	// Optimized hot-path: bypass Get() abstraction
-	chunks := c.h.locationStore.loadChunks()
-	if chunks == nil {
-		return
-	}
-	idx := int(id)
-	cIdx := idx / 1024
-	if cIdx < len(chunks) {
-		packed := chunks[cIdx].data[idx%1024].Load()
-		if packed != 0 {
-			// Fast unpack (batchIdx is high 32 bits, rowIdx is low 32 bits)
-			bIdx := int(packed >> 32)
-			rIdx := int(packed & 0xFFFFFFFF)
-			if bIdx < len(c.slices) {
-				start := rIdx * c.dims
-				if start < len(c.slices[bIdx]) {
-					simd.Prefetch(unsafe.Pointer(&c.slices[bIdx][start])) // #nosec G103
-				}
-			}
+	if id >= c.startID && id < c.startID+uint32(c.n) {
+		idx := int(id - c.startID)
+		if idx < len(c.slices) && len(c.slices[idx]) > 0 {
+			simd.Prefetch(unsafe.Pointer(&c.slices[idx][0])) // #nosec G103
 		}
 	}
 }
@@ -716,33 +701,33 @@ type sharedInt8Computer struct {
 	diskGraph *DiskGraph
 	maxGen    uint64
 	slices    [][]int8
+	startID   uint32
+	n         int
 }
 
 func (c *sharedInt8Computer) ComputeSingle(id uint32) (float32, error) {
-	loc, ok := c.h.locationStore.Get(types.VectorID(id))
-	if !ok || loc.BatchIdx < 0 || loc.BatchIdx >= len(c.slices) {
-		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-		if err != nil {
-			return 0, err
-		}
-		if v, ok := vecAny.([]int8); ok {
+	if id >= c.startID && id < c.startID+uint32(c.n) {
+		idx := int(id - c.startID)
+		if idx < len(c.slices) {
+			vec := c.slices[idx]
 			if c.squared {
-				return c.h.distFuncInt8Squared(c.qInt8, v)
+				return c.h.distFuncInt8Squared(c.qInt8, vec)
 			}
-			return c.h.distFuncInt8(c.qInt8, v)
+			return c.h.distFuncInt8(c.qInt8, vec)
 		}
-		return math.MaxFloat32, nil
 	}
 
-	start := loc.RowIdx * c.dims
-	if start+c.dims > len(c.slices[loc.BatchIdx]) {
-		return math.MaxFloat32, nil
+	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+	if err != nil {
+		return 0, err
 	}
-	vec := c.slices[loc.BatchIdx][start : start+c.dims]
-	if c.squared {
-		return c.h.distFuncInt8Squared(c.qInt8, vec)
+	if v, ok := vecAny.([]int8); ok {
+		if c.squared {
+			return c.h.distFuncInt8Squared(c.qInt8, v)
+		}
+		return c.h.distFuncInt8(c.qInt8, v)
 	}
-	return c.h.distFuncInt8(c.qInt8, vec)
+	return math.MaxFloat32, nil
 }
 
 func (c *sharedInt8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
@@ -758,25 +743,10 @@ func (c *sharedInt8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 }
 
 func (c *sharedInt8Computer) Prefetch(id uint32) {
-	// Optimized hot-path: bypass Get() abstraction
-	chunks := c.h.locationStore.loadChunks()
-	if chunks == nil {
-		return
-	}
-	idx := int(id)
-	cIdx := idx / 1024
-	if cIdx < len(chunks) {
-		packed := chunks[cIdx].data[idx%1024].Load()
-		if packed != 0 {
-			// Fast unpack
-			bIdx := int(packed >> 32)
-			rIdx := int(packed & 0xFFFFFFFF)
-			if bIdx < len(c.slices) {
-				start := rIdx * c.dims
-				if start < len(c.slices[bIdx]) {
-					simd.Prefetch(unsafe.Pointer(&c.slices[bIdx][start])) // #nosec G103
-				}
-			}
+	if id >= c.startID && id < c.startID+uint32(c.n) {
+		idx := int(id - c.startID)
+		if idx < len(c.slices) && len(c.slices[idx]) > 0 {
+			simd.Prefetch(unsafe.Pointer(&c.slices[idx][0])) // #nosec G103
 		}
 	}
 }

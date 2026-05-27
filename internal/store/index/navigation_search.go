@@ -179,7 +179,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	}
 
 	// Use specialized computer if possible
-	computer := h.resolveHNSWComputer(data, searchCtx, queryVec, false)
+	computer := h.resolveHNSWComputer(data, searchCtx, queryVec, false, options)
 	if comp, ok := computer.(interface {
 		ComputeSingle(id uint32) (float32, error)
 	}); ok {
@@ -469,7 +469,7 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 		return nil, nil
 	}
 
-	computer := h.resolveHNSWComputer(data, nil, queryVec, false)
+	computer := h.resolveHNSWComputer(data, nil, queryVec, false, options)
 	if computer == nil {
 		return nil, fmt.Errorf("failed to resolve search computer")
 	}
@@ -494,7 +494,7 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 		metrics.HNSWPreFilteredSearchesTotal.WithLabelValues(h.name).Inc()
 	}
 
-	computer = h.resolveHNSWComputer(data, searchCtx, queryVec, false)
+	computer = h.resolveHNSWComputer(data, searchCtx, queryVec, false, options)
 
 	currObj := types.Candidate{ID: ep, Dist: math.MaxFloat32}
 	for level := int(maxLevel); level > 0; level-- {
@@ -581,27 +581,36 @@ func (h *ArrowHNSW) ProcessResultsParallel(ctx context.Context, qv any, original
 	return nil
 }
 
-func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowSearchContext, queryVal any, squared bool) DistanceComputer {
+func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowSearchContext, queryVal any, squared bool, options any) DistanceComputer {
+	searchOptions := types.SearchOptions{}
+	if opt, ok := options.(types.SearchOptions); ok {
+		searchOptions = opt
+	}
+
 	switch q := queryVal.(type) {
 	case []float32:
-		if h.tqCompute != nil && data.TurboQuantEnabled && searchCtx != nil {
-			if len(searchCtx.rotatedQueryTQ) < h.tqCompute.encoder.pow2 {
-				searchCtx.rotatedQueryTQ = make([]float32, h.tqCompute.encoder.pow2)
+		if searchOptions.VectorType == types.VectorTypeFloat32 {
+			// Bypass TurboQuant and Product Quantization to force exact matching fallback
+		} else {
+			if h.tqCompute != nil && data.TurboQuantEnabled && searchCtx != nil {
+				if len(searchCtx.rotatedQueryTQ) < h.tqCompute.encoder.pow2 {
+					searchCtx.rotatedQueryTQ = make([]float32, h.tqCompute.encoder.pow2)
+				}
+				_ = h.tqCompute.PrecomputeRotatedQuery(q, searchCtx.rotatedQueryTQ)
+				return &tqComputer{data: data, h: h, rotatedQuery: searchCtx.rotatedQueryTQ, diskGraph: searchCtx.diskGraph, maxGen: searchCtx.MaxGeneration}
 			}
-			_ = h.tqCompute.PrecomputeRotatedQuery(q, searchCtx.rotatedQueryTQ)
-			return &tqComputer{data: data, h: h, rotatedQuery: searchCtx.rotatedQueryTQ, diskGraph: searchCtx.diskGraph, maxGen: searchCtx.MaxGeneration}
-		}
-		if h.config.PQEnabled && h.oopqEncoder != nil {
-			var table any
-			var err error
-			switch enc := h.oopqEncoder.(type) {
-			case *pq.PQEncoder:
-				table, err = enc.BuildADCTable(q)
-			case *pq.OPQEncoder:
-				table, err = enc.BuildADCTable(q)
-			}
-			if err == nil && table != nil {
-				return &pqComputer{data: data, q: q, table: table, h: h, diskGraph: searchCtx.GetDiskGraph(), maxGen: searchCtx.MaxGeneration}
+			if h.config.PQEnabled && h.oopqEncoder != nil {
+				var table any
+				var err error
+				switch enc := h.oopqEncoder.(type) {
+				case *pq.PQEncoder:
+					table, err = enc.BuildADCTable(q)
+				case *pq.OPQEncoder:
+					table, err = enc.BuildADCTable(q)
+				}
+				if err == nil && table != nil {
+					return &pqComputer{data: data, q: q, table: table, h: h, diskGraph: searchCtx.GetDiskGraph(), maxGen: searchCtx.MaxGeneration}
+				}
 			}
 		}
 		var dg *DiskGraph

@@ -340,9 +340,9 @@ func (h *ArrowHNSW) SearchHybridWithConfig(ctx context.Context, query []float32,
 		return h.searchCPUOnly(ctx, query, k)
 	}
 
-	// Fallback to CPU search when query size / count is too small (e.g. less than 64 dimensions/elements)
+	// Fallback to CPU search when query size / count is too small (e.g. less than 256 dimensions/elements)
 	// to bypass launch and double-buffering latency overheads.
-	if len(query) < 64 {
+	if len(query) < 256 {
 		metrics.GPUFallbackTotal.WithLabelValues("small_query_bypass").Inc()
 		return h.searchCPUOnly(ctx, query, k)
 	}

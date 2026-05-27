@@ -1323,19 +1323,26 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			s.logger.Warn().Str("dataset", ds.Name).Msg("Memory pressure >60%. Dynamically promoting dataset to TurboQuant8.")
 			ds.PreferredVectorType = types.VectorTypeTQ
 
-			var hnsw *ArrowHNSW
 			if h, ok := ds.Index.(*ArrowHNSW); ok {
-				hnsw = h
+				h.EnableTurboQuant(8)
 			} else if asi, ok := ds.Index.(*AutoShardingIndex); ok {
 				asi.mu.Lock()
 				if h, ok := asi.current.(*ArrowHNSW); ok {
-					hnsw = h
+					h.EnableTurboQuant(8)
+				} else if sh, ok := asi.current.(*ShardedHNSW); ok {
+					for _, shardIdx := range sh.Shards() {
+						if ah, ok := shardIdx.(*ArrowHNSW); ok {
+							ah.EnableTurboQuant(8)
+						}
+					}
 				}
 				asi.mu.Unlock()
-			}
-
-			if hnsw != nil {
-				hnsw.EnableTurboQuant(8)
+			} else if sh, ok := ds.Index.(*ShardedHNSW); ok {
+				for _, shardIdx := range sh.Shards() {
+					if ah, ok := shardIdx.(*ArrowHNSW); ok {
+						ah.EnableTurboQuant(8)
+					}
+				}
 			}
 		}
 	}

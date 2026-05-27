@@ -27,7 +27,11 @@ func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
 		cID := int(types.ChunkID(id))
 		if cID != lastCID {
-			lastChunk = c.data.GetVectorsComplex64ChunkWithGen(cID, c.maxGen)
+			if c.maxGen == 18446744073709551615 {
+				lastChunk = c.data.GetVectorsComplex64ChunkFast(cID)
+			} else {
+				lastChunk = c.data.GetVectorsComplex64ChunkWithGen(cID, c.maxGen)
+			}
 			lastCID = cID
 		}
 		
@@ -60,7 +64,12 @@ func (c *complex64Computer) ComputeSingle(id uint32) (float32, error) {
 
 	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsComplex64ChunkWithGen(int(cID), c.maxGen)
+	var chunk []complex64
+	if c.maxGen == 18446744073709551615 {
+		chunk = c.data.GetVectorsComplex64ChunkFast(int(cID))
+	} else {
+		chunk = c.data.GetVectorsComplex64ChunkWithGen(int(cID), c.maxGen)
+	}
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex64)
@@ -90,7 +99,11 @@ func (c *complex64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32
 	for i, id := range ids {
 		cID := int(types.ChunkID(id))
 		if cID != lastCID {
-			lastChunk = c.data.GetVectorsComplex64ChunkWithGen(cID, c.maxGen)
+			if c.maxGen == 18446744073709551615 {
+				lastChunk = c.data.GetVectorsComplex64ChunkFast(cID)
+			} else {
+				lastChunk = c.data.GetVectorsComplex64ChunkWithGen(cID, c.maxGen)
+			}
 			lastCID = cID
 		}
 		if lastChunk != nil {
@@ -138,7 +151,11 @@ func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
 		cID := int(types.ChunkID(id))
 		if cID != lastCID {
-			lastChunk = c.data.GetVectorsComplex128ChunkWithGen(cID, c.maxGen)
+			if c.maxGen == 18446744073709551615 {
+				lastChunk = c.data.GetVectorsComplex128ChunkFast(cID)
+			} else {
+				lastChunk = c.data.GetVectorsComplex128ChunkWithGen(cID, c.maxGen)
+			}
 			lastCID = cID
 		}
 		
@@ -171,7 +188,12 @@ func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
 
 	// Fallback to direct chunk access
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsComplex128ChunkWithGen(int(cID), c.maxGen)
+	var chunk []complex128
+	if c.maxGen == 18446744073709551615 {
+		chunk = c.data.GetVectorsComplex128ChunkFast(int(cID))
+	} else {
+		chunk = c.data.GetVectorsComplex128ChunkWithGen(int(cID), c.maxGen)
+	}
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex128)
@@ -201,7 +223,11 @@ func (c *complex128Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 	for i, id := range ids {
 		cID := int(types.ChunkID(id))
 		if cID != lastCID {
-			lastChunk = c.data.GetVectorsComplex128ChunkWithGen(cID, c.maxGen)
+			if c.maxGen == 18446744073709551615 {
+				lastChunk = c.data.GetVectorsComplex128ChunkFast(cID)
+			} else {
+				lastChunk = c.data.GetVectorsComplex128ChunkWithGen(cID, c.maxGen)
+			}
 			lastCID = cID
 		}
 		if lastChunk != nil {

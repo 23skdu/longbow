@@ -33,6 +33,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/rs/zerolog"
 )
@@ -75,12 +76,70 @@ func NewGraphLayerEvictionManager(threshold float64, logger zerolog.Logger) *Gra
 
 // Register adds a GraphData to the set of candidates for upper-layer eviction.
 func (m *GraphLayerEvictionManager) Register(gd *types.GraphData) {
+	if gd == nil {
+		return
+	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	m.targets = append(m.targets, &evictionTarget{
+
+	// Avoid duplicate registration
+	for _, t := range m.targets {
+		if t.gd == gd {
+			return
+		}
+	}
+
+	target := &evictionTarget{
 		gd:            gd,
 		evictedLayers: make(map[int]*layerDiskRecord),
-	})
+	}
+	m.targets = append(m.targets, target)
+
+	// Set the callback on GraphData to transparently restore when needed!
+	gd.OnNeighborsMiss = func(layer int) error {
+		return m.RestoreLayer(target, layer)
+	}
+}
+
+// SwapTarget updates the registered GraphData reference when HNSW grows/swaps its internal data structure,
+// preserving the eviction state and binding the cache-miss restore callback.
+func (m *GraphLayerEvictionManager) SwapTarget(oldGD, newGD *types.GraphData) {
+	if oldGD == newGD {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	// If oldGD is nil but newGD is not, we might be doing lazy initialization, so we can treat it as Register!
+	if oldGD == nil && newGD != nil {
+		// Check if already registered first to avoid duplicates
+		for _, t := range m.targets {
+			if t.gd == newGD {
+				return
+			}
+		}
+		target := &evictionTarget{
+			gd:            newGD,
+			evictedLayers: make(map[int]*layerDiskRecord),
+		}
+		m.targets = append(m.targets, target)
+		newGD.OnNeighborsMiss = func(layer int) error {
+			return m.RestoreLayer(target, layer)
+		}
+		return
+	}
+
+	for _, t := range m.targets {
+		if t.gd == oldGD {
+			t.gd = newGD
+			if newGD != nil {
+				newGD.OnNeighborsMiss = func(layer int) error {
+					return m.RestoreLayer(t, layer)
+				}
+			}
+			break
+		}
+	}
 }
 
 // Start launches the background pressure monitor.
@@ -204,11 +263,16 @@ func evictLayer(gd *types.GraphData, layer int) (rec *layerDiskRecord, freedByte
 	}
 
 	for cID := range chunks {
-		chunk := gd.GetNeighborsChunkFast(layer, cID)
-		if chunk == nil {
+		offset := atomic.LoadUint64(&gd.Neighbors[layer][cID])
+		if offset == 0 {
 			rec.chunkSizes[cID] = 0
 			continue
 		}
+		chunk := gd.Uint32Arena.Get(memory.SliceRef{
+			Offset: offset,
+			Len:    uint32(types.ChunkSize * types.MaxNeighbors),
+			Cap:    uint32(types.ChunkSize * types.MaxNeighbors),
+		})
 		rec.chunkSizes[cID] = len(chunk)
 
 		// Write as raw little-endian uint32 array
@@ -220,6 +284,11 @@ func evictLayer(gd *types.GraphData, layer int) (rec *layerDiskRecord, freedByte
 
 		// Zero the offset so the arena slab can be reclaimed by GC
 		atomic.StoreUint64(&chunks[cID], 0)
+	}
+
+	// Call OnEvict if registered to clear any high-level caches (like HNSW neighborCache)
+	if gd.OnEvict != nil {
+		gd.OnEvict(layer)
 	}
 
 	return rec, freedBytes, nil
@@ -279,4 +348,16 @@ func (m *GraphLayerEvictionManager) RestoreLayer(t *evictionTarget, layer int) e
 		Str("dataset", gd.Name).
 		Msg("HNSW layer restored from disk")
 	return nil
+}
+
+// ForceEvictAll triggers eviction for all targets immediately, regardless of memory pressure.
+func (m *GraphLayerEvictionManager) ForceEvictAll() {
+	m.mu.Lock()
+	targets := make([]*evictionTarget, len(m.targets))
+	copy(targets, m.targets)
+	m.mu.Unlock()
+
+	for _, t := range targets {
+		_ = m.evictTarget(t)
+	}
 }

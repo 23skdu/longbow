@@ -470,12 +470,57 @@ func (h *ArrowHNSW) EnableTurboQuant(bits int) {
 	h.config.TurboQuantBits = bits
 	h.config.DataType = types.VectorTypeTQ
 	gd := h.data.Load()
-	if gd != nil {
-		gd.TurboQuantEnabled = true
-		gd.TurboQuantBits = bits
+	if gd == nil {
+		return
 	}
+	gd.TurboQuantEnabled = true
+	gd.TurboQuantBits = bits
 	h.tqEncoder = NewTurboQuantEncoder(int(h.dims.Load()), bits, 42)
 	h.tqCompute = NewTurboQuantCompute(h)
+
+	// Allocate and compress existing in-memory float32 vectors!
+	stride := gd.PackedSize()
+	paddedDims := gd.GetPaddedDimsForType(types.VectorTypeFloat32)
+
+	for cID := 0; cID < len(gd.VectorsF32); cID++ {
+		offsetF32 := atomic.LoadUint64(&gd.VectorsF32[cID])
+		if offsetF32 == 0 {
+			continue
+		}
+
+		// Ensure the TQ slice is allocated for this chunk
+		_ = gd.EnsureChunk(cID, 0, gd.Dims)
+
+		// Get the float32 chunk data
+		f32Chunk := gd.Float32Arena.Get(memory.SliceRef{
+			Offset: offsetF32,
+			Len:    uint32(types.ChunkSize * paddedDims), // #nosec G115
+			Cap:    uint32(types.ChunkSize * paddedDims), // #nosec G115
+		})
+
+		// Get the TQ chunk slice ref/offset
+		offsetTQ := atomic.LoadUint64(&gd.VectorsTQ[cID])
+		tqChunk := gd.Uint8Arena.Get(memory.SliceRef{
+			Offset: offsetTQ,
+			Len:    uint32(types.ChunkSize * stride), // #nosec G115
+			Cap:    uint32(types.ChunkSize * stride), // #nosec G115
+		})
+
+		// Compress each vector in the chunk
+		for i := 0; i < types.ChunkSize; i++ {
+			vF32 := f32Chunk[i*paddedDims : i*paddedDims+gd.Dims]
+			code, err := h.tqEncoder.Encode(vF32)
+			if err == nil {
+				dest := tqChunk[i*stride : (i+1)*stride]
+				copy(dest, code)
+			}
+		}
+	}
+
+	// Release original Float32Arena slabs to reclaim memory immediately!
+	for cID := 0; cID < len(gd.VectorsF32); cID++ {
+		gd.ReleaseFloat32Chunk(cID)
+	}
 }
 
 // GetShardedLocks returns the sharded mutex for concurrent access

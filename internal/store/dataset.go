@@ -21,6 +21,7 @@ import (
 
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/pq"
+	"github.com/23skdu/longbow/internal/store/index"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -154,6 +155,8 @@ type Dataset struct {
 	TemporalIndex *TemporalIndex
 
 	Admission *AdmissionController
+
+	EvictionManager *index.GraphLayerEvictionManager
 
 	Logger zerolog.Logger
 }
@@ -1002,4 +1005,8 @@ func (d *Dataset) GetLogger() zerolog.Logger {
 
 func (d *Dataset) GetTopo() *memory.NUMATopology {
 	return d.Topo
+}
+
+func (d *Dataset) GetEvictionManager() any {
+	return d.EvictionManager
 }

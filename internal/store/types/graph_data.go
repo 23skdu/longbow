@@ -142,6 +142,12 @@ type GraphData struct {
 	ShardedMus [1024]PaddedMutex
 
 	SharedVectorSpace bool // If true, skip primary vector storage allocation
+
+	// OnNeighborsMiss is a callback hook triggered when neighbor data for a layer is accessed but evicted (offset == 0).
+	OnNeighborsMiss func(layer int) error
+
+	// OnEvict is a callback hook triggered when a layer is evicted.
+	OnEvict func(layer int)
 }
 
 // graphFallback provides a secondary mechanism for neighbor and vector retrieval.
@@ -462,11 +468,12 @@ func (g *GraphData) GetVectorsTQChunkFast(chunkID int) []byte {
 // GetVectorsFloat64ChunkFast returns a float64 chunk using a non-atomic offset read.
 func (g *GraphData) GetVectorsFloat64ChunkFast(chunkID int) []float64 {
 	if chunkID < len(g.VectorsFloat64Offsets) && g.Float64Arena != nil {
+		pd := g.GetPaddedDimsForType(VectorTypeFloat64)
 		offset := atomic.LoadUint64(&g.VectorsFloat64Offsets[chunkID])
 		if offset == 0 {
 			return nil
 		}
-		return g.Float64Arena.Get(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
+		return g.Float64Arena.Get(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * pd), Cap: uint32(ChunkSize * pd)}) // #nosec G115
 	}
 	if chunkID < len(g.VectorsFloat64) {
 		return g.VectorsFloat64[chunkID]
@@ -477,11 +484,12 @@ func (g *GraphData) GetVectorsFloat64ChunkFast(chunkID int) []float64 {
 // GetVectorsComplex64ChunkFast returns a complex64 chunk using a non-atomic offset read.
 func (g *GraphData) GetVectorsComplex64ChunkFast(chunkID int) []complex64 {
 	if chunkID < len(g.VectorsComplex64Offsets) && g.Complex64Arena != nil {
+		pd := g.GetPaddedDimsForType(VectorTypeComplex64)
 		offset := atomic.LoadUint64(&g.VectorsComplex64Offsets[chunkID])
 		if offset == 0 {
 			return nil
 		}
-		return g.Complex64Arena.Get(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
+		return g.Complex64Arena.Get(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * pd), Cap: uint32(ChunkSize * pd)}) // #nosec G115
 	}
 	if chunkID < len(g.VectorsComplex64) {
 		return g.VectorsComplex64[chunkID]
@@ -492,11 +500,12 @@ func (g *GraphData) GetVectorsComplex64ChunkFast(chunkID int) []complex64 {
 // GetVectorsComplex128ChunkFast returns a complex128 chunk using a non-atomic offset read.
 func (g *GraphData) GetVectorsComplex128ChunkFast(chunkID int) []complex128 {
 	if chunkID < len(g.VectorsComplex128Offsets) && g.Complex128Arena != nil {
+		pd := g.GetPaddedDimsForType(VectorTypeComplex128)
 		offset := atomic.LoadUint64(&g.VectorsComplex128Offsets[chunkID])
 		if offset == 0 {
 			return nil
 		}
-		return g.Complex128Arena.Get(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}) // #nosec G115
+		return g.Complex128Arena.Get(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * pd), Cap: uint32(ChunkSize * pd)}) // #nosec G115
 	}
 	if chunkID < len(g.VectorsComplex128) {
 		return g.VectorsComplex128[chunkID]
@@ -693,6 +702,10 @@ func (g *GraphData) GetCountsChunkFast(layer, chunkID int) []int32 {
 func (g *GraphData) GetNeighborsChunkFast(layer, chunkID int) []uint32 {
 	if layer < len(g.Neighbors) && chunkID < len(g.Neighbors[layer]) && g.Uint32Arena != nil {
 		offset := atomic.LoadUint64(&g.Neighbors[layer][chunkID])
+		if offset == 0 && g.OnNeighborsMiss != nil {
+			_ = g.OnNeighborsMiss(layer)
+			offset = atomic.LoadUint64(&g.Neighbors[layer][chunkID])
+		}
 		if offset == 0 {
 			return nil
 		}
@@ -749,11 +762,12 @@ func (g *GraphData) GetVectorsFloat64Chunk(chunkID int) []float64 {
 
 func (g *GraphData) GetVectorsFloat64ChunkWithGen(chunkID int, maxGen uint64) []float64 {
 	if chunkID < len(g.VectorsFloat64Offsets) && g.Float64Arena != nil {
+		pd := g.GetPaddedDimsForType(VectorTypeFloat64)
 		offset := atomic.LoadUint64(&g.VectorsFloat64Offsets[chunkID])
 		if offset == 0 {
 			return nil
 		}
-		return g.Float64Arena.GetWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}, maxGen) // #nosec G115
+		return g.Float64Arena.GetWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * pd), Cap: uint32(ChunkSize * pd)}, maxGen) // #nosec G115
 	}
 	if chunkID < len(g.VectorsFloat64) {
 		return g.VectorsFloat64[chunkID]
@@ -768,11 +782,12 @@ func (g *GraphData) GetVectorsComplex64Chunk(chunkID int) []complex64 {
 
 func (g *GraphData) GetVectorsComplex64ChunkWithGen(chunkID int, maxGen uint64) []complex64 {
 	if chunkID < len(g.VectorsComplex64Offsets) && g.Complex64Arena != nil {
+		pd := g.GetPaddedDimsForType(VectorTypeComplex64)
 		offset := atomic.LoadUint64(&g.VectorsComplex64Offsets[chunkID])
 		if offset == 0 {
 			return nil
 		}
-		return g.Complex64Arena.GetWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}, maxGen) // #nosec G115
+		return g.Complex64Arena.GetWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * pd), Cap: uint32(ChunkSize * pd)}, maxGen) // #nosec G115
 	}
 	if chunkID < len(g.VectorsComplex64) {
 		return g.VectorsComplex64[chunkID]
@@ -787,11 +802,12 @@ func (g *GraphData) GetVectorsComplex128Chunk(chunkID int) []complex128 {
 
 func (g *GraphData) GetVectorsComplex128ChunkWithGen(chunkID int, maxGen uint64) []complex128 {
 	if chunkID < len(g.VectorsComplex128Offsets) && g.Complex128Arena != nil {
+		pd := g.GetPaddedDimsForType(VectorTypeComplex128)
 		offset := atomic.LoadUint64(&g.VectorsComplex128Offsets[chunkID])
 		if offset == 0 {
 			return nil
 		}
-		return g.Complex128Arena.GetWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * g.Dims), Cap: uint32(ChunkSize * g.Dims)}, maxGen) // #nosec G115
+		return g.Complex128Arena.GetWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(ChunkSize * pd), Cap: uint32(ChunkSize * pd)}, maxGen) // #nosec G115
 	}
 	if chunkID < len(g.VectorsComplex128) {
 		return g.VectorsComplex128[chunkID]
@@ -1029,6 +1045,10 @@ func (g *GraphData) GetNeighborsChunk(layer, chunkID int) []uint32 {
 func (g *GraphData) GetNeighborsChunkWithGen(layer, chunkID int, maxGen uint64) []uint32 {
 	if layer < len(g.Neighbors) && chunkID < len(g.Neighbors[layer]) && g.Uint32Arena != nil {
 		offset := atomic.LoadUint64(&g.Neighbors[layer][chunkID])
+		if offset == 0 && g.OnNeighborsMiss != nil {
+			_ = g.OnNeighborsMiss(layer)
+			offset = atomic.LoadUint64(&g.Neighbors[layer][chunkID])
+		}
 		if offset == 0 {
 			return nil
 		}
@@ -1208,6 +1228,17 @@ func (g *GraphData) ReleaseNeighborsChunk(layer, cID int) {
 		offset := atomic.SwapUint64(&g.Neighbors[layer][cID], 0)
 		if offset != 0 {
 			g.releaseArenaMemory(g.Uint32Arena.Slab(), offset, uint32(ChunkSize*MaxNeighbors)*4) // #nosec G115
+		}
+	}
+}
+
+// ReleaseFloat32Chunk releases monolithic Float32Arena vector storage for a specific chunk.
+func (g *GraphData) ReleaseFloat32Chunk(cID int) {
+	if cID < len(g.VectorsF32) && g.Float32Arena != nil {
+		offset := atomic.SwapUint64(&g.VectorsF32[cID], 0)
+		if offset != 0 {
+			paddedDims := g.GetPaddedDimsForType(VectorTypeFloat32)
+			g.releaseArenaMemory(g.Float32Arena.Slab(), offset, uint32(ChunkSize*paddedDims)*4) // #nosec G115
 		}
 	}
 }

@@ -223,6 +223,15 @@ func (idx *ShardedHNSW) newShard(shardIdx int) *hnswShard {
 	// Correct dimension initialization
 	_ = id.SetDimension(int(idx.dimension))
 
+	// Register shard with EvictionManager if present
+	if idx.dataset != nil {
+		if evMgrAny := idx.dataset.GetEvictionManager(); evMgrAny != nil {
+			if evMgr, ok := evMgrAny.(*GraphLayerEvictionManager); ok && evMgr != nil {
+				evMgr.Register(id.GetData())
+			}
+		}
+	}
+
 	return newHnswShard(id)
 }
 
@@ -423,6 +432,18 @@ func (idx *ShardedHNSW) DeleteBatch(ctx context.Context, ids []uint32) error {
 // IsSharded returns true as this is a sharded index implementation.
 func (idx *ShardedHNSW) IsSharded() bool {
 	return true
+}
+
+func (idx *ShardedHNSW) Shards() []VectorIndex {
+	idx.shardsMu.RLock()
+	defer idx.shardsMu.RUnlock()
+	res := make([]VectorIndex, len(idx.shards))
+	for i, s := range idx.shards {
+		if s != nil {
+			res[i] = s.index
+		}
+	}
+	return res
 }
 
 // GetGPUIndex returns the GPU-accelerated index if available.

@@ -157,4 +157,5 @@ type IndexDataProvider interface {
 	GetMetric() core.DistanceMetric
 	GetLogger() zerolog.Logger
 	GetTopo() *memory.NUMATopology
+	GetEvictionManager() any
 }

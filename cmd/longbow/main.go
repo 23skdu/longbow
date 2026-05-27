@@ -372,6 +372,7 @@ func run() error {
 				Bool("enabled", cfg.GPUEnabled).
 				Int("device", cfg.GPUDeviceID).
 				Msg("GPU acceleration configured")
+			logger.Warn().Msg("GPU acceleration is explicitly enabled. It is highly recommended to enable GPU acceleration only for datasets exceeding 500K vectors to avoid kernel launch overhead on smaller collections.")
 		} else {
 			logger.Warn().
 				Str("detected_backend", detectedBackend.String()).

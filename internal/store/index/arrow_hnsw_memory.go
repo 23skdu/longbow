@@ -196,6 +196,25 @@ func (h *ArrowHNSW) compareAndSwapData(current, newData *types.GraphData) bool {
 	if current != nil && newData != nil && newData.Capacity < current.Capacity {
 		return false
 	}
+	if newData != nil {
+		newData.OnEvict = func(layer int) {
+			if layer >= 0 && layer < len(h.neighborCache) && h.neighborCache[layer] != nil {
+				h.neighborCache[layer].Clear()
+			}
+		}
+		// Automatically register or swap newData with the eviction manager if present in the dataset
+		if h.dataset != nil {
+			if provider, ok := h.dataset.(interface {
+				GetEvictionManager() any
+			}); ok {
+				if evMgrAny := provider.GetEvictionManager(); evMgrAny != nil {
+					if evMgr, ok := evMgrAny.(*GraphLayerEvictionManager); ok && evMgr != nil {
+						evMgr.SwapTarget(current, newData)
+					}
+				}
+			}
+		}
+	}
 	swapped := h.data.CompareAndSwap(current, newData)
 	if swapped {
 		for i := 0; i < len(h.neighborCache); i++ {

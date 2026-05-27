@@ -25,7 +25,12 @@ type float64Computer struct {
 func (c *float64Computer) Compute(ids []uint32, dists []float32) error {
 	for i, id := range ids {
 		cID := types.ChunkID(id)
-		chunk := c.data.GetVectorsFloat64ChunkFast(int(cID))
+		var chunk []float64
+		if c.maxGen == 18446744073709551615 {
+			chunk = c.data.GetVectorsFloat64ChunkFast(int(cID))
+		} else {
+			chunk = c.data.GetVectorsFloat64ChunkWithGen(int(cID), c.maxGen)
+		}
 		if chunk != nil {
 			cOff := int(id) % types.ChunkSize
 			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
@@ -87,7 +92,12 @@ func (c *float64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 	var needsFallback bool
 	for i, id := range ids {
 		cID := types.ChunkID(id)
-		chunk := c.data.GetVectorsFloat64ChunkFast(int(cID))
+		var chunk []float64
+		if c.maxGen == 18446744073709551615 {
+			chunk = c.data.GetVectorsFloat64ChunkFast(int(cID))
+		} else {
+			chunk = c.data.GetVectorsFloat64ChunkWithGen(int(cID), c.maxGen)
+		}
 		if chunk != nil {
 			cOff := int(id) % types.ChunkSize
 			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)

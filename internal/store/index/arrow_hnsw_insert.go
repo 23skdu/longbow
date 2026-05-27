@@ -17,7 +17,7 @@ import (
 // searchLayerForInsert performs search during insertion.
 // Returns candidates sorted by distance.
 func (h *ArrowHNSW) searchLayerForInsert(goCtx context.Context, ctx *ArrowSearchContext, query any, entryPoint uint32, ef, layer int, data *types.GraphData) ([]types.Candidate, error) {
-	computer := h.resolveHNSWComputer(data, ctx, query, true)
+	computer := h.resolveHNSWComputer(data, ctx, query, true, nil)
 	var res []types.Candidate
 	var err error
 	if compF32, ok := computer.(*float32ToFloat32Computer); ok {

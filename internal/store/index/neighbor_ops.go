@@ -483,7 +483,7 @@ func (h *ArrowHNSW) computeDistances(ctx *ArrowSearchContext, data *types.GraphD
 		return
 	}
 
-	computer := h.resolveHNSWComputer(data, ctx, vQuery, false)
+	computer := h.resolveHNSWComputer(data, ctx, vQuery, false, nil)
 	if computer == nil {
 		return
 	}

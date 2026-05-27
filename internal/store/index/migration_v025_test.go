@@ -308,3 +308,7 @@ func (m *MockProvider) GetTopo() *memory.NUMATopology {
 func (m *MockProvider) TurboQuantBits() int {
 	return 8
 }
+
+func (m *MockProvider) GetEvictionManager() any {
+	return nil
+}

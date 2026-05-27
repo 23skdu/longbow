@@ -17,6 +17,9 @@ const (
 // stopWorkers cancels the store context and stops background workers.
 func (s *VectorStore) stopWorkers() {
 	s.stopOnce.Do(func() {
+		if s.evictionManager != nil {
+			s.evictionManager.Stop()
+		}
 		if s.compactionWorker != nil {
 			s.compactionWorker.Stop()
 		}

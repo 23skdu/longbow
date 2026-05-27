@@ -78,6 +78,12 @@ func NewAutoShardingIndex(ds *Dataset, config AutoShardingConfig) VectorIndex {
 		idx = NewArrowHNSW(ds, &hnswConfig, ds.Topo)
 	}
 
+	if ds.EvictionManager != nil {
+		if ah, ok := idx.(*ArrowHNSW); ok {
+			ds.EvictionManager.Register(ah.GetData())
+		}
+	}
+
 	return &AutoShardingIndex{
 		current: idx,
 		config:  config,
@@ -569,7 +575,7 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		rssAfter = memStats.HeapInuse
 		var freedMB int64
 		if rssBefore > rssAfter {
-			freedMB = int64(rssBefore-rssAfter) / (1024 * 1024)
+			freedMB = int64(rssBefore-rssAfter) / (1024 * 1024) // #nosec G115
 		}
 		idx.dataset.Logger.Info().
 			Uint64("heap_before_mb", rssBefore/(1024*1024)).

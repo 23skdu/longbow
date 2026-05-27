@@ -84,7 +84,12 @@ func (c *TurboQuantCompute) getVectorWithDisk(id uint32, dg *DiskGraph, maxGen u
 	cID := types.ChunkID(id)
 	cOff := types.ChunkOffset(id)
 	data := c.h.data.Load()
-	chunk := data.GetVectorsTQChunkWithGen(int(cID), maxGen)
+	var chunk []byte
+	if maxGen == 18446744073709551615 {
+		chunk = data.GetVectorsTQChunkFast(int(cID))
+	} else {
+		chunk = data.GetVectorsTQChunkWithGen(int(cID), maxGen)
+	}
 
 	var tqCode []byte
 	var stride int
@@ -119,7 +124,12 @@ func (c *TurboQuantCompute) GetRadius(id uint32, dg *DiskGraph, maxGen uint64) (
 	cID := types.ChunkID(id)
 	cOff := types.ChunkOffset(id)
 	data := c.h.data.Load()
-	chunk := data.GetVectorsTQChunkWithGen(int(cID), maxGen)
+	var chunk []byte
+	if maxGen == 18446744073709551615 {
+		chunk = data.GetVectorsTQChunkFast(int(cID))
+	} else {
+		chunk = data.GetVectorsTQChunkWithGen(int(cID), maxGen)
+	}
 
 	var tqCode []byte
 	var stride int

@@ -118,14 +118,14 @@ To reach 1M+ vectors under tight memory constraints and fully unlock high-throug
 Set quantized types as the default path for production scale to exploit their 30-40× throughput and 10× memory advantages over float32.
 
 1. **Promote `turboquant8` to the Default Workload Precision**
-   - [ ] Modify config processing in `cmd/longbow/main.go` and `internal/store` to initialize new datasets/namespaces using `turboquant8` precision when unspecified, falling back to `float32` only when exact matching is explicitly requested.
-   - [ ] Implement a fallback search coordinator path that dynamically routes exact-search queries to a `float32` index.
+   - [x] Modify config processing in `cmd/longbow/main.go` and `internal/store` to initialize new datasets/namespaces using `turboquant8` precision when unspecified, falling back to `float32` only when exact matching is explicitly requested.
+   - [x] Implement a fallback search coordinator path that dynamically routes exact-search queries to a `float32` index.
 2. **Implement Auto-Quantization Path**
-   - [ ] Implement a runtime vector conversion handler to convert incoming `float32` batches to `turboquant8` representation when memory utilization exceeds 70%.
-   - [ ] Ensure that transition of active index building to the quantized format happens gracefully without dropping or corrupting in-flight vectors.
+   - [x] Implement a runtime vector conversion handler to convert incoming `float32` batches to `turboquant8` representation when memory utilization exceeds 70%.
+   - [x] Ensure that transition of active index building to the quantized format happens gracefully without dropping or corrupting in-flight vectors.
 3. **Change the Default value of `LONGBOW_GPU_ENABLED` to `false`**
-   - [ ] Change the default of `GPUEnabled` from `true` to `false` in `cmd/longbow/main.go` configuration loading logic.
-   - [ ] Update CLI help text, error output, and logs to recommend enabling GPU acceleration only for datasets exceeding 500K vectors.
+   - [x] Change the default of `GPUEnabled` from `true` to `false` in `cmd/longbow/main.go` configuration loading logic.
+   - [x] Update CLI help text, error output, and logs to recommend enabling GPU acceleration only for datasets exceeding 500K vectors.
 
 ### P1 — GPU Acceleration Strategy (Refinement & Optimization)
 Address the data-transfer and kernel-launch overhead currently bottlenecking GPU mode.

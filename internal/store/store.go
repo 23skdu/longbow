@@ -179,6 +179,8 @@ type VectorStore struct {
 	cdcMu          sync.RWMutex
 	cdcSubscribers map[string][]chan arrow.RecordBatch
 
+	evictionManager *lbcore.GraphLayerEvictionManager
+
 	// Learned Index Predictor (Part 16)
 	indexPredictor *IndexPerformancePredictor
 	// activeEmbeddingProvider and activeEmbeddingModel track the currently active
@@ -224,6 +226,7 @@ func NewVectorStore(mem memory.Allocator, logger zerolog.Logger, maxMemoryBytes 
 		resultPool:   NewSearchResultPool(),
 	}
 	vs.ctx, vs.cancel = context.WithCancel(context.Background()) // #nosec G118
+	vs.evictionManager = lbcore.NewGraphLayerEvictionManager(0.60, logger)
 
 	// Initialize NUMA topology if on Linux
 	vs.initNUMA(logger)
@@ -569,6 +572,7 @@ func (vs *VectorStore) getOrCreateDataset(name string, createFn func() *Dataset)
 		// Create
 		newDs := createFn()
 		if newDs != nil {
+			newDs.EvictionManager = vs.evictionManager
 			newDs.SetAdmission(vs.admission)
 			if vs.hybridSearchConfig.Enabled {
 				newDs.BM25Index = NewBM25InvertedIndex(vs.hybridSearchConfig.BM25)

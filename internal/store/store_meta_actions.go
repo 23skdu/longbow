@@ -2,13 +2,13 @@ package store
 
 import (
 	"encoding/json"
+	"github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/query"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"github.com/23skdu/longbow/internal/query"
-	"github.com/23skdu/longbow/internal/core"
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/23skdu/longbow/internal/store/types"
 )
 
 func (s *VectorStore) handleMeshIdentity(_ *flight.Action, stream flight.FlightService_DoActionServer) error {

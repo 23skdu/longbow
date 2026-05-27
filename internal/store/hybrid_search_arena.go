@@ -1,4 +1,5 @@
 package store
+
 import "github.com/23skdu/longbow/internal/store/index"
 
 import (

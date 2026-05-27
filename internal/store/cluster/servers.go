@@ -10,7 +10,6 @@ import (
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
-
 )
 
 // DataServer handles data plane operations (DoGet, DoPut)

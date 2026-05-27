@@ -13,11 +13,11 @@ const (
 
 // AdaptiveBatchBuffer coalesces vector ingestion to perfectly align with CUDA thread blocks.
 type AdaptiveBatchBuffer struct {
-	mu       sync.Mutex
-	ids      []int64
-	vectors  []float32
-	dim      int
-	flushFn  func([]int64, []float32) error
+	mu      sync.Mutex
+	ids     []int64
+	vectors []float32
+	dim     int
+	flushFn func([]int64, []float32) error
 }
 
 // NewAdaptiveBatchBuffer creates a new buffer that flushes to flushFn.

@@ -1,10 +1,9 @@
 package store
 
 import (
+	"github.com/23skdu/longbow/internal/store/index"
 	"math"
 	"testing"
-	"github.com/23skdu/longbow/internal/store/index"
-
 
 	"github.com/23skdu/longbow/internal/store/types"
 

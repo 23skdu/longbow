@@ -40,9 +40,9 @@ type AutoShardingConfig struct {
 // DefaultAutoShardingConfig returns a standard configuration.
 func DefaultAutoShardingConfig() AutoShardingConfig {
 	return AutoShardingConfig{
-		ShardThreshold:    256,
-		ShardCount:        runtime.NumCPU(),
-		UseRingSharding:   true,
+		ShardThreshold:      256,
+		ShardCount:          runtime.NumCPU(),
+		UseRingSharding:     true,
 		ShardSplitThreshold: 65536,
 	}
 }

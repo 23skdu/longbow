@@ -53,7 +53,6 @@ func (c *int16Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-
 func (c *int16Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsInt16ChunkFast(int(cID))
@@ -123,7 +122,6 @@ func (c *int16Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, er
 	}
 	return dst, nil
 }
-
 
 // uint16Computer handles Uint16 vectors
 type uint16Computer struct {
@@ -271,7 +269,6 @@ func (c *int32Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-
 func (c *int32Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsInt32ChunkFast(int(cID))
@@ -341,7 +338,6 @@ func (c *int32Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, er
 	}
 	return dst, nil
 }
-
 
 // uint32Computer handles Uint32 vectors
 type uint32Computer struct {
@@ -489,7 +485,6 @@ func (c *int64Computer) ComputeSingle(id uint32) (float32, error) {
 	return math.MaxFloat32, nil
 }
 
-
 func (c *int64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
 	chunk := c.data.GetVectorsInt64ChunkFast(int(cID))
@@ -559,7 +554,6 @@ func (c *int64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, er
 	}
 	return dst, nil
 }
-
 
 // uint64Computer handles Uint64 vectors
 type uint64Computer struct {
@@ -662,7 +656,6 @@ func (c *uint64Computer) Prefetch(id uint32) {
 		}
 	}
 }
-
 
 // uint8Computer handles Uint8 vectors
 type uint8Computer struct {

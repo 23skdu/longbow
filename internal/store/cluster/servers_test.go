@@ -12,13 +12,13 @@ import (
 	"github.com/rs/zerolog"
 
 	"github.com/23skdu/longbow/internal/storage"
+	"github.com/23skdu/longbow/internal/store"
+	"github.com/23skdu/longbow/internal/store/cluster"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
-	"github.com/23skdu/longbow/internal/store"
-	"github.com/23skdu/longbow/internal/store/cluster"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
@@ -248,10 +248,6 @@ func TestDataServerDoGetNotFound(t *testing.T) {
 		t.Errorf("Expected NotFound, got %v", st.Code())
 	}
 }
-
-
-
-
 
 // TestDataServerDoActionUnimplemented tests Unimplemented response
 func TestDataServerDoActionUnimplemented(t *testing.T) {

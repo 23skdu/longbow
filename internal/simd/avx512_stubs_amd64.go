@@ -116,4 +116,3 @@ func cosine16AVX512Wrapper(a, b []float32) (float32, error)    { return cosineGe
 func l2SquaredBatchAVX512(query []float32, vectors [][]float32, results []float32) error {
 	return l2SquaredBatchAVX2(query, vectors, results)
 }
-

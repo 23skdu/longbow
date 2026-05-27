@@ -1,9 +1,9 @@
 package store
 
 import (
-	"github.com/23skdu/longbow/internal/store/cluster"
 	"context"
 	"fmt"
+	"github.com/23skdu/longbow/internal/store/cluster"
 	"net"
 	"testing"
 	"time"

@@ -418,12 +418,12 @@ func TestRecommend(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	ds.dataMu.Lock()
-		if ds.Graph == nil {
-			ds.Graph = NewGraphStore()
-		}
-		_ = ds.Graph.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 1, Weight: 1.0})
-		_ = ds.Graph.AddEdge(Edge{Subject: 1, Predicate: "related", Object: 2, Weight: 1.0})
-		ds.dataMu.Unlock()
+	if ds.Graph == nil {
+		ds.Graph = NewGraphStore()
+	}
+	_ = ds.Graph.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 1, Weight: 1.0})
+	_ = ds.Graph.AddEdge(Edge{Subject: 1, Predicate: "related", Object: 2, Weight: 1.0})
+	ds.dataMu.Unlock()
 
 	t.Run("SingleSeed_Hybrid", func(t *testing.T) {
 		req := &query.RecommendRequest{

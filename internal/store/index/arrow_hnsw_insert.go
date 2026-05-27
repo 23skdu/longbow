@@ -1005,8 +1005,6 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		}
 	}
 
-
-
 	// Fallback to sequential insertion if bulk fails (rare)
 	ids := make([]uint32, len(rowIdxs))
 	maxID := startID + uint32(len(rowIdxs)) - 1 // #nosec G115

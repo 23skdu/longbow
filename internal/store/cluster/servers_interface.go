@@ -9,7 +9,7 @@ import (
 // FlightBackend defines the store methods required by the flight servers.
 type FlightBackend interface {
 	flight.FlightServer
-	
+
 	// Accessors for logging and mesh
 	GetLogger() zerolog.Logger
 	GetMesh() *mesh.Gossip

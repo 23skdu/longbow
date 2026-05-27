@@ -52,15 +52,15 @@ type GraphLayerEvictionManager struct {
 
 // evictionTarget tracks the eviction state for one GraphData (one ArrowHNSW shard).
 type evictionTarget struct {
-	mu          sync.RWMutex
-	gd          *types.GraphData
+	mu            sync.RWMutex
+	gd            *types.GraphData
 	evictedLayers map[int]*layerDiskRecord // layer → disk record
 }
 
 // layerDiskRecord holds the path and sizes of an evicted layer's neighbor chunks on disk.
 type layerDiskRecord struct {
-	path       string   // path to the temp file
-	chunkSizes []int    // number of uint32 elements per chunk (for restore sizing)
+	path       string // path to the temp file
+	chunkSizes []int  // number of uint32 elements per chunk (for restore sizing)
 	numChunks  int
 }
 

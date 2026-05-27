@@ -42,7 +42,6 @@ func TestCDCFilter(t *testing.T) {
 	filter := CDCFilter{
 		EventTypes: []CDCEventType{CDCEventInsert, CDCEventUpdate},
 		Columns:    []string{"vector", "value"},
-
 	}
 
 	assert.Len(t, filter.EventTypes, 2)

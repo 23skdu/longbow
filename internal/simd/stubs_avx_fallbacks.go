@@ -284,11 +284,9 @@ var _ = []interface{}{
 	matMulAVX2Go,
 }
 
-
 func l2SquaredBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
 	return l2SquaredBatchGeneric(query, vectors, results)
 }
 func l2SquaredBatchAVX512(query []float32, vectors [][]float32, results []float32) error {
 	return l2SquaredBatchGeneric(query, vectors, results)
 }
-

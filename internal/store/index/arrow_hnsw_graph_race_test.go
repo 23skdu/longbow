@@ -12,6 +12,9 @@ import (
 )
 
 func TestArrowHNSW_AddBatchBulk_EnsureChunkRace(t *testing.T) {
+	if testing.Short() {
+		t.Skip("Skipping heavy concurrency HNSW bulk insert test in short mode")
+	}
 	t.Run("Concurrent_EnsureChunk_NoRace", func(t *testing.T) {
 		cfg := types.DefaultArrowHNSWConfig()
 		cfg.InitialCapacity = 1                // Force small initial capacity

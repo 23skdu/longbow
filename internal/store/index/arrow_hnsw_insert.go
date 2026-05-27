@@ -380,38 +380,7 @@ func (h *ArrowHNSW) selectNeighborsFloat32(ctx *ArrowSearchContext, candidates [
 		}
 	}
 
-	// Try GPU pruning first if enabled
-	if h.gpuEnabled && h.gpuIndex != nil && len(candidates) > 16 {
-		candIds := make([]uint32, len(candidates))
-		candDists := make([]float32, len(candidates))
-		for i, c := range candidates {
-			candIds[i] = uint32(c.ID)
-			candDists[i] = c.Dist
-		}
 
-		selectedIds, err := h.pruneNeighborsGPU(candIds, candDists, m)
-		if err == nil {
-			// Convert back to types.Candidate
-			res := make([]types.Candidate, 0, len(selectedIds))
-			// We need distances to keep the Candidate structure consistent
-			// But for pruning results, we only care about IDs usually.
-			// However, HNSW might need them.
-			// For simplicity, we find the original candidate for each ID.
-			candMap := make(map[uint32]float32)
-			for i := range candidates {
-				candMap[uint32(candidates[i].ID)] = candidates[i].Dist
-			}
-
-			for _, id := range selectedIds {
-				res = append(res, types.Candidate{ID: id, Dist: candMap[id]})
-			}
-
-			if ctx != nil {
-				ctx.scratchSelected = res
-			}
-			return res
-		}
-	}
 
 	var selectedVecs [][]float32
 	if ctx != nil {
@@ -845,6 +814,19 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 						}
 					}
 				}
+			case types.VectorTypeTQ, types.VectorTypeUint8:
+				u8s := make([][]uint8, n)
+				for i := range rowIdxs {
+					rec := recs[batchIdxs[i]]
+					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint8); ok {
+						u8s[i] = v
+						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
+					} else {
+						supported = false
+						break
+					}
+				}
+				vecs = u8s
 			case types.VectorTypeFloat16:
 				f16s := make([][]float16.Num, n)
 				for i := range rowIdxs {

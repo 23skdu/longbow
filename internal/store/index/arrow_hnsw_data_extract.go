@@ -7,7 +7,6 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
-	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 func (h *ArrowHNSW) extractFromDataset(batchIdx, rowIdx int) any {
@@ -88,75 +87,27 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 		// Zero-copy: return the underlying slice directly
 		return floats
 
+	case *arrowarray.Int8:
+		return arr.Int8Values()[start:end]
+	case *arrowarray.Uint8:
+		return arr.Uint8Values()[start:end]
+	case *arrowarray.Int16:
+		return arr.Int16Values()[start:end]
+	case *arrowarray.Uint16:
+		return arr.Uint16Values()[start:end]
+	case *arrowarray.Int32:
+		return arr.Int32Values()[start:end]
+	case *arrowarray.Uint32:
+		return arr.Uint32Values()[start:end]
+	case *arrowarray.Int64:
+		return arr.Int64Values()[start:end]
+	case *arrowarray.Uint64:
+		return arr.Uint64Values()[start:end]
+	case *arrowarray.Float16:
+		return arr.Values()[start:end]
 	default:
-		// Generic fallback using Value(i)
-		return h.extractValuesGeneric(values, start, end)
-	}
-}
-
-func (h *ArrowHNSW) extractValuesGeneric(values arrow.Array, start, end int) any {
-	size := end - start
-	if size <= 0 {
 		return nil
 	}
-
-	switch arr := values.(type) {
-	case *arrowarray.Int8:
-		res := make([]int8, size)
-		for i := 0; i < size; i++ {
-			res[i] = arr.Value(start + i)
-		}
-		return res
-	case *arrowarray.Uint8:
-		res := make([]uint8, size)
-		for i := 0; i < size; i++ {
-			res[i] = arr.Value(start + i)
-		}
-		return res
-	case *arrowarray.Uint32:
-		res := make([]uint32, size)
-		for i := 0; i < size; i++ {
-			res[i] = arr.Value(start + i)
-		}
-		return res
-	case *arrowarray.Int32:
-		res := make([]int32, size)
-		for i := 0; i < size; i++ {
-			res[i] = arr.Value(start + i)
-		}
-		return res
-	case *arrowarray.Int64:
-		res := make([]int64, size)
-		for i := 0; i < size; i++ {
-			res[i] = arr.Value(start + i)
-		}
-		return res
-	case *arrowarray.Uint64:
-		res := make([]uint64, size)
-		for i := 0; i < size; i++ {
-			res[i] = arr.Value(start + i)
-		}
-		return res
-	case *arrowarray.Int16:
-		res := make([]int16, size)
-		for i := 0; i < size; i++ {
-			res[i] = arr.Value(start + i)
-		}
-		return res
-	case *arrowarray.Uint16:
-		res := make([]uint16, size)
-		for i := 0; i < size; i++ {
-			res[i] = arr.Value(start + i)
-		}
-		return res
-	case *arrowarray.Float16:
-		res := make([]float16.Num, size)
-		for i := 0; i < size; i++ {
-			res[i] = arr.Value(start + i)
-		}
-		return res
-	}
-	return nil
 }
 
 func (h *ArrowHNSW) getColumnIdx(rec arrow.RecordBatch, name string) int {

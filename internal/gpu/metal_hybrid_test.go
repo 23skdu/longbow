@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"math"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/gpu/metal"
@@ -36,6 +37,49 @@ func TestMetalHybridIndex_Basic(t *testing.T) {
 	assert.Len(t, resultIDs, 5)
 	assert.Len(t, distances, 5)
 	assert.Less(t, distances[0], float32(0.01))
+}
+
+func TestMetalHybridIndex_SearchBatchDistances(t *testing.T) {
+	idx, err := metal.NewMetalHybridIndex(GPUConfig{
+		DeviceID:  0,
+		Dimension: 128,
+	})
+	require.NoError(t, err, "Hybrid Metal should be available")
+	defer idx.Close()
+
+	vectors := make([]float32, 128*10)
+	for i := range vectors {
+		vectors[i] = float32(i) * 0.01
+	}
+	ids := make([]int64, 10)
+	for i := range ids {
+		ids[i] = int64(i)
+	}
+
+	err = idx.Add(ids, vectors)
+	require.NoError(t, err)
+
+	query := vectors[:128] // vector 0
+	candidateIDs := []uint32{0, 2, 4, 6}
+
+	// Compute batch distances asynchronously on GPU
+	gpuDists, err := idx.SearchBatchDistances(query, candidateIDs)
+	require.NoError(t, err)
+	assert.Len(t, gpuDists, len(candidateIDs))
+
+	// Verify exact parity of distance values
+	for idx2, id := range candidateIDs {
+		// Manual distance calculation
+		var expectedDist float32
+		vec := vectors[int(id)*128 : (int(id)+1)*128]
+		for j := 0; j < 128; j++ {
+			diff := query[j] - vec[j]
+			expectedDist += diff * diff
+		}
+		expectedDist = float32(math.Sqrt(float64(expectedDist)))
+
+		assert.InDelta(t, expectedDist, gpuDists[idx2], 1e-4)
+	}
 }
 
 func BenchmarkMetalHybridSearch(b *testing.B) {

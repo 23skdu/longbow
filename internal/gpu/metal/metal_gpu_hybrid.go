@@ -12,7 +12,7 @@ package metal
 #import <Accelerate/Accelerate.h>
 
 // Metal shader for distance calculation only
-const char* hybridShaderSource =
+static const char* const hybridShaderSource =
 "#include <metal_stdlib>\n"
 "using namespace metal;\n"
 "\n"
@@ -28,6 +28,29 @@ const char* hybridShaderSource =
 "    \n"
 "    float sum = 0.0f;\n"
 "    uint offset = gid * dim;\n"
+"    \n"
+"    for (uint i = 0; i < dim; i++) {\n"
+"        float diff = query[i] - vectors[offset + i];\n"
+"        sum += diff * diff;\n"
+"    }\n"
+"    \n"
+"    distances[gid] = sqrt(sum);\n"
+"}\n"
+"\n"
+"kernel void compute_batch_distances(\n"
+"    device const float* query [[buffer(0)]],\n"
+"    device const float* vectors [[buffer(1)]],\n"
+"    device const uint* candidateIDs [[buffer(2)]],\n"
+"    device float* distances [[buffer(3)]],\n"
+"    constant uint& dim [[buffer(4)]],\n"
+"    constant uint& numCandidates [[buffer(5)]],\n"
+"    uint gid [[thread_position_in_grid]])\n"
+"{\n"
+"    if (gid >= numCandidates) return;\n"
+"    \n"
+"    uint vectorID = candidateIDs[gid];\n"
+"    float sum = 0.0f;\n"
+"    uint offset = vectorID * dim;\n"
 "    \n"
 "    for (uint i = 0; i < dim; i++) {\n"
 "        float diff = query[i] - vectors[offset + i];\n"
@@ -64,11 +87,12 @@ typedef struct {
     void* vectorBuffer;
     void* distancePipeline;
     void* pqPipeline;
+    void* batchPipeline;
     int vectorCount;
     int dimensions;
 } MetalHybridIndex;
 
-MetalHybridIndex* metal_hybrid_init(int dimensions) {
+static inline MetalHybridIndex* metal_hybrid_init(int dimensions) {
     @autoreleasepool {
         id<MTLDevice> device = MTLCreateSystemDefaultDevice();
         if (!device) return NULL;
@@ -94,12 +118,16 @@ MetalHybridIndex* metal_hybrid_init(int dimensions) {
         id<MTLFunction> pqFunc = [library newFunctionWithName:@"compute_pq_distances"];
         id<MTLComputePipelineState> pqPipeline = [device newComputePipelineStateWithFunction:pqFunc error:&error];
 
+        id<MTLFunction> batchFunc = [library newFunctionWithName:@"compute_batch_distances"];
+        id<MTLComputePipelineState> batchPipeline = batchFunc ? [device newComputePipelineStateWithFunction:batchFunc error:&error] : nil;
+
         MetalHybridIndex* handle = (MetalHybridIndex*)malloc(sizeof(MetalHybridIndex));
         handle->device = (__bridge_retained void*)device;
         handle->commandQueue = (__bridge_retained void*)queue;
         handle->vectorBuffer = NULL;
         handle->distancePipeline = (__bridge_retained void*)pipeline;
         handle->pqPipeline = pqPipeline ? (__bridge_retained void*)pqPipeline : NULL;
+        handle->batchPipeline = batchPipeline ? (__bridge_retained void*)batchPipeline : NULL;
         handle->vectorCount = 0;
         handle->dimensions = dimensions;
 
@@ -107,7 +135,7 @@ MetalHybridIndex* metal_hybrid_init(int dimensions) {
     }
 }
 
-int metal_hybrid_add(MetalHybridIndex* handle, float* vectors, int count) {
+static inline int metal_hybrid_add(MetalHybridIndex* handle, float* vectors, int count) {
     @autoreleasepool {
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
 
@@ -128,7 +156,7 @@ int metal_hybrid_add(MetalHybridIndex* handle, float* vectors, int count) {
 }
 
 // GPU computes distances, returns them for CPU processing
-int metal_hybrid_compute_distances(MetalHybridIndex* handle, float* query, float* distances) {
+static inline int metal_hybrid_compute_distances(MetalHybridIndex* handle, float* query, float* distances) {
     @autoreleasepool {
         if (!handle->vectorBuffer || handle->vectorCount == 0) return -1;
 
@@ -171,7 +199,7 @@ int metal_hybrid_compute_distances(MetalHybridIndex* handle, float* query, float
     }
 }
 
-int metal_hybrid_compute_pq_distances(MetalHybridIndex* handle, float* lookupTable, int m, float* distances) {
+static inline int metal_hybrid_compute_pq_distances(MetalHybridIndex* handle, float* lookupTable, int m, float* distances) {
     @autoreleasepool {
         if (!handle->vectorBuffer || handle->vectorCount == 0 || !handle->pqPipeline) return -1;
 
@@ -214,18 +242,119 @@ int metal_hybrid_compute_pq_distances(MetalHybridIndex* handle, float* lookupTab
     }
 }
 
-void metal_hybrid_cleanup(MetalHybridIndex* handle) {
+#import <stdint.h>
+extern void goMetalBatchCallback(uintptr_t handleVal);
+
+static inline int metal_hybrid_compute_batch_distances(MetalHybridIndex* handle, float* query, uint32_t* candidateIDs, int numCandidates, float* distances) {
+    @autoreleasepool {
+        if (!handle->vectorBuffer || handle->vectorCount == 0 || !handle->batchPipeline || numCandidates == 0) return -1;
+
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLBuffer> vectorBuffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
+        id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->batchPipeline;
+
+        id<MTLBuffer> queryBuffer = [device newBufferWithBytes:query
+                                                        length:handle->dimensions * sizeof(float)
+                                                       options:MTLResourceStorageModeShared];
+
+        id<MTLBuffer> candidateBuffer = [device newBufferWithBytes:candidateIDs
+                                                            length:numCandidates * sizeof(uint32_t)
+                                                           options:MTLResourceStorageModeShared];
+
+        id<MTLBuffer> distanceBuffer = [device newBufferWithLength:numCandidates * sizeof(float)
+                                                            options:MTLResourceStorageModeShared];
+
+        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+        [encoder setComputePipelineState:pipeline];
+        [encoder setBuffer:queryBuffer offset:0 atIndex:0];
+        [encoder setBuffer:vectorBuffer offset:0 atIndex:1];
+        [encoder setBuffer:candidateBuffer offset:0 atIndex:2];
+        [encoder setBuffer:distanceBuffer offset:0 atIndex:3];
+        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:4];
+        [encoder setBytes:&numCandidates length:sizeof(uint32_t) atIndex:5];
+
+        MTLSize gridSize = MTLSizeMake(numCandidates, 1, 1);
+        NSUInteger threadGroupSize = pipeline.maxTotalThreadsPerThreadgroup;
+        if (threadGroupSize > numCandidates) threadGroupSize = numCandidates;
+        MTLSize threadgroupSize = MTLSizeMake(threadGroupSize, 1, 1);
+
+        [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+        [encoder endEncoding];
+        [commandBuffer commit];
+        [commandBuffer waitUntilCompleted];
+
+        memcpy(distances, [distanceBuffer contents], numCandidates * sizeof(float));
+
+        return 0;
+    }
+}
+
+static inline int metal_hybrid_compute_batch_distances_async(MetalHybridIndex* handle, float* query, uint32_t* candidateIDs, int numCandidates, float* distances, uintptr_t callbackHandle) {
+    @autoreleasepool {
+        if (!handle->vectorBuffer || handle->vectorCount == 0 || !handle->batchPipeline || numCandidates == 0) return -1;
+
+        id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
+        id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
+        id<MTLBuffer> vectorBuffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
+        id<MTLComputePipelineState> pipeline = (__bridge id<MTLComputePipelineState>)handle->batchPipeline;
+
+        id<MTLBuffer> queryBuffer = [device newBufferWithBytes:query
+                                                        length:handle->dimensions * sizeof(float)
+                                                       options:MTLResourceStorageModeShared];
+
+        id<MTLBuffer> candidateBuffer = [device newBufferWithBytes:candidateIDs
+                                                            length:numCandidates * sizeof(uint32_t)
+                                                           options:MTLResourceStorageModeShared];
+
+        id<MTLBuffer> distanceBuffer = [device newBufferWithLength:numCandidates * sizeof(float)
+                                                            options:MTLResourceStorageModeShared];
+
+        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
+        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+
+        [encoder setComputePipelineState:pipeline];
+        [encoder setBuffer:queryBuffer offset:0 atIndex:0];
+        [encoder setBuffer:vectorBuffer offset:0 atIndex:1];
+        [encoder setBuffer:candidateBuffer offset:0 atIndex:2];
+        [encoder setBuffer:distanceBuffer offset:0 atIndex:3];
+        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:4];
+        [encoder setBytes:&numCandidates length:sizeof(uint32_t) atIndex:5];
+
+        MTLSize gridSize = MTLSizeMake(numCandidates, 1, 1);
+        NSUInteger threadGroupSize = pipeline.maxTotalThreadsPerThreadgroup;
+        if (threadGroupSize > numCandidates) threadGroupSize = numCandidates;
+        MTLSize threadgroupSize = MTLSizeMake(threadGroupSize, 1, 1);
+
+        [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+        [encoder endEncoding];
+
+        [commandBuffer addCompletedHandler:^(id<MTLCommandBuffer> cb) {
+            memcpy(distances, [distanceBuffer contents], numCandidates * sizeof(float));
+            goMetalBatchCallback(callbackHandle);
+        }];
+
+        [commandBuffer commit];
+
+        return 0;
+    }
+}
+
+static inline void metal_hybrid_cleanup(MetalHybridIndex* handle) {
     @autoreleasepool {
         if (handle->vectorBuffer) CFRelease(handle->vectorBuffer);
         if (handle->distancePipeline) CFRelease(handle->distancePipeline);
         if (handle->pqPipeline) CFRelease(handle->pqPipeline);
+        if (handle->batchPipeline) CFRelease(handle->batchPipeline);
         if (handle->commandQueue) CFRelease(handle->commandQueue);
         if (handle->device) CFRelease(handle->device);
         free(handle);
     }
 }
 
-void* metal_hybrid_get_vector_buffer(MetalHybridIndex* handle) {
+static inline void* metal_hybrid_get_vector_buffer(MetalHybridIndex* handle) {
     id<MTLBuffer> buffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
     return [buffer contents];
 }
@@ -235,6 +364,7 @@ import (
 	"fmt"
 	"math"
 	"runtime"
+	"runtime/cgo"
 	"sort"
 	"sync"
 	"time"
@@ -245,6 +375,13 @@ import (
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
+
+//export goMetalBatchCallback
+func goMetalBatchCallback(handleVal C.uintptr_t) {
+	h := cgo.Handle(handleVal)
+	ch := h.Value().(chan struct{})
+	close(ch)
+}
 
 // MetalHybridIndex uses GPU for distances, CPU for selection
 type MetalHybridIndex struct {
@@ -541,11 +678,6 @@ func (idx *MetalHybridIndex) SearchFloat16(vector []uint16, k int) ([]int64, []f
 	return idx.searchFloat32(f32Vec, k)
 }
 
-func float16FromUInt16(b uint16) float32 {
-	f16 := float16.New(float32(math.Float32frombits(uint32(b))))
-	return f16.Float32()
-}
-
 func (idx *MetalHybridIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
@@ -707,4 +839,41 @@ func (idx *MetalHybridIndex) Clear() error {
 
 func (idx *MetalHybridIndex) Reset() error {
 	return idx.Clear()
+}
+
+func (idx *MetalHybridIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, fmt.Errorf("index is closed")
+	}
+
+	numCandidates := len(candidateIDs)
+	if numCandidates == 0 {
+		return []float32{}, nil
+	}
+
+	distances := make([]float32, numCandidates)
+	ch := make(chan struct{})
+	h := cgo.NewHandle(ch)
+
+	ret := C.metal_hybrid_compute_batch_distances_async(
+		idx.handle,
+		(*C.float)(unsafe.Pointer(&query[0])),
+		(*C.uint32_t)(unsafe.Pointer(&candidateIDs[0])),
+		C.int(numCandidates),
+		(*C.float)(unsafe.Pointer(&distances[0])),
+		C.uintptr_t(h),
+	)
+
+	if ret != 0 {
+		h.Delete()
+		return nil, fmt.Errorf("asynchronous Metal batch distance computation failed")
+	}
+
+	<-ch
+	h.Delete()
+
+	return distances, nil
 }

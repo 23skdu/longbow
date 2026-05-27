@@ -1599,6 +1599,10 @@ func (idx *MetalIndex) Sigmoid(src []float32, dst []float32) error {
 	// I'll leave this as a stub that calls a C function we'll add.
 	return nil
 }
+func (idx *MetalIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
+	return nil, fmt.Errorf("SearchBatchDistances not implemented for standard MetalIndex")
+}
+
 func (idx *MetalIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {
 	idx.mu.RLock()
 	closed := idx.closed

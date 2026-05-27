@@ -14,6 +14,9 @@ import (
 
 // NewIndexWithBackend creates a GPU index with specified backend (delegates to implementation)
 func NewIndexWithBackend(cfg GPUConfig, backend GPUBackend) (Index, error) {
+	if cfg.Dimension <= 0 {
+		return nil, fmt.Errorf("invalid dimension %d", cfg.Dimension)
+	}
 	switch backend {
 	case BackendCPU, BackendOpenCL:
 		return NewCPUIndex(cfg)
@@ -24,6 +27,9 @@ func NewIndexWithBackend(cfg GPUConfig, backend GPUBackend) (Index, error) {
 
 // NewIndex creates a GPU index with auto-detected backend (delegates to implementation)
 func NewIndex(cfg GPUConfig) (Index, error) {
+	if cfg.Dimension <= 0 {
+		return nil, fmt.Errorf("invalid dimension %d", cfg.Dimension)
+	}
 	if cfg.Backend == BackendCPU || !cfg.Enabled {
 		return NewCPUIndex(cfg)
 	}
@@ -484,6 +490,22 @@ func (i *CPUIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint
 	}
 
 	return outIDs, outScores, nil
+}
+
+func (i *CPUIndex) SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error) {
+	i.mu.RLock()
+	defer i.mu.RUnlock()
+
+	distances := make([]float32, len(candidateIDs))
+	for idx, id := range candidateIDs {
+		vec, ok := i.vectors[int64(id)]
+		if ok {
+			distances[idx] = euclideanDistance(query, vec)
+		} else {
+			distances[idx] = math.MaxFloat32
+		}
+	}
+	return distances, nil
 }
 
 func (i *CPUIndex) HaversineSearch(centerLat, centerLon float32, points []float32, earthRadius float32) ([]float32, error) {

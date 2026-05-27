@@ -94,6 +94,7 @@ type Index interface {
 	Add(ids []int64, vectors []float32) error
 	Search(vector []float32, k int) (ids []int64, distances []float32, err error)
 	SearchBatch(vectors [][]float32, k int) (ids [][]int64, distances [][]float32, err error)
+	SearchBatchDistances(query []float32, candidateIDs []uint32) ([]float32, error)
 
 	// PQ methods
 	AddPQ(ids []int64, codes []byte, m int) error

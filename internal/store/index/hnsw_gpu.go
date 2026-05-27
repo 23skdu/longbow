@@ -620,3 +620,14 @@ func (h *ArrowHNSW) pruneNeighborsGPU(candidateIds []uint32, candidateDists []fl
 	metrics.GPUNeighborPruneOpsTotal.Inc()
 	return selected, nil
 }
+
+func (h *ArrowHNSW) ComputeDistancesBatch(query []float32, candidateIDs []uint32) ([]float32, error) {
+	h.gpuMu.RLock()
+	defer h.gpuMu.RUnlock()
+
+	if !h.gpuEnabled || h.gpuIndex == nil {
+		return nil, fmt.Errorf("GPU not enabled")
+	}
+
+	return h.gpuIndex.SearchBatchDistances(query, candidateIDs)
+}

@@ -42,8 +42,7 @@ func TestConcurrentLayer0Adds(t *testing.T) {
 	config.LockFreeThreshold = 2
 	config.Dims = 128
 	idx := NewArrowHNSW(nil, &config, nil)
-	data := idx.data.Load()
-	_ = data.EnsureChunk(0, 0, 128)
+	_, _ = idx.EnsureChunks(0, 1, 128)
 
 	ctxs := make([]*ArrowSearchContext, 10)
 	for i := range ctxs {

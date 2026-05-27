@@ -46,49 +46,50 @@ __device__ void heap_push(ResultPair* heap, int* size, float dist, int64_t id, i
 }
 
 __global__ void select_topk_kernel(const float* distances, const int64_t* ids, int n, int k, float* outDistances, int64_t* outIDs) {
-    // Each thread maintains its own small heap if K is very small, 
-    // but here we'll use a block-level approach with shared memory.
-    // For simplicity and correctness in this phase, each thread will process a portion
-    // and we'll use a single-threaded merge at the end of the block, or better, 
-    // use atomic operations if we had a global heap.
-    
-    // Improved: Each thread maintains a local heap in registers (if K is small)
-    // or we use a shared memory heap with a lock (slow).
-    // Let's use a simpler approach: Each thread block produces one Top-K list.
-    
+    // Thread 0 of the single block processes all elements sequentially to avoid warp-divergence deadlocks
     extern __shared__ char s_mem[];
     ResultPair* blockHeap = (ResultPair*)s_mem; // Shared by block
     __shared__ int blockHeapSize;
-    __shared__ int lock;
 
     if (threadIdx.x == 0) {
         blockHeapSize = 0;
-        lock = 0;
-    }
-    __syncthreads();
-
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    int stride = blockDim.x * gridDim.x;
-
-    for (int i = idx; i < n; i += stride) {
-        float d = distances[i];
-        int64_t id = ids[i];
         
-        // Critical section for block-level heap
-        bool done = false;
-        while (!done) {
-            if (atomicCAS(&lock, 0, 1) == 0) {
-                heap_push(blockHeap, &blockHeapSize, d, id, k);
-                atomicExch(&lock, 0);
-                done = true;
+        // Single thread sequentially builds the heap to bypass expensive warp lock serialization
+        for (int i = 0; i < n; i++) {
+            heap_push(blockHeap, &blockHeapSize, distances[i], ids[i], k);
+        }
+        
+        // Heapsort: repeatedly extract the max element and place it at the end of the heap range
+        int originalSize = blockHeapSize;
+        while (blockHeapSize > 1) {
+            // Swap the root (largest) with the last element
+            ResultPair maxVal = blockHeap[0];
+            blockHeap[0] = blockHeap[blockHeapSize - 1];
+            blockHeap[blockHeapSize - 1] = maxVal;
+            
+            // Decrease heap size
+            blockHeapSize--;
+            
+            // Re-heapify from root
+            int curr = 0;
+            while (true) {
+                int left = 2 * curr + 1;
+                int right = 2 * curr + 2;
+                int largest = curr;
+                if (left < blockHeapSize && blockHeap[left].dist > blockHeap[largest].dist) largest = left;
+                if (right < blockHeapSize && blockHeap[right].dist > blockHeap[largest].dist) largest = right;
+                if (largest != curr) {
+                    ResultPair tmp = blockHeap[curr];
+                    blockHeap[curr] = blockHeap[largest];
+                    blockHeap[largest] = tmp;
+                    curr = largest;
+                } else break;
             }
         }
-    }
-
-    __syncthreads();
-
-    if (threadIdx.x == 0) {
-        for (int i = 0; i < blockHeapSize; i++) {
+        
+        // Now the blockHeap elements are sorted in ascending order (smallest first) from index 0 to originalSize - 1!
+        // Write out final sorted results
+        for (int i = 0; i < originalSize; i++) {
             outDistances[blockIdx.x * k + i] = blockHeap[i].dist;
             outIDs[blockIdx.x * k + i] = blockHeap[i].id;
         }

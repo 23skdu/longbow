@@ -89,6 +89,9 @@ func (p *GPUIndexPool) GetGPUIndex(config types.GPUConfig) (types.Index, error) 
 			pi.lastUsedAt = time.Now()
 			pi.useCount++
 			p.totalReused++
+			if metrics.GPUIndexPoolTotalReused != nil {
+				metrics.GPUIndexPoolTotalReused.Inc()
+			}
 			return &pooledIndexWrapper{pool: p, pooled: pi}, nil
 		}
 	}
@@ -109,6 +112,9 @@ func (p *GPUIndexPool) GetGPUIndex(config types.GPUConfig) (types.Index, error) 
 
 	p.active++
 	p.totalCreated++
+	if metrics.GPUIndexPoolTotalCreated != nil {
+		metrics.GPUIndexPoolTotalCreated.Inc()
+	}
 
 	pi := &pooledIndex{
 		index:      idx,
@@ -216,13 +222,6 @@ func (p *GPUIndexPool) UpdateMetrics() {
 	}
 	if metrics.GPUIndexPoolActive != nil {
 		metrics.GPUIndexPoolActive.Set(float64(stats.Active))
-	}
-	if metrics.GPUIndexPoolTotalCreated != nil {
-		// Counters are cumulative, so we set the total
-		metrics.GPUIndexPoolTotalCreated.Add(float64(stats.TotalCreated))
-	}
-	if metrics.GPUIndexPoolTotalReused != nil {
-		metrics.GPUIndexPoolTotalReused.Add(float64(stats.TotalReused))
 	}
 }
 

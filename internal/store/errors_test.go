@@ -1,9 +1,9 @@
 package store
 
 import (
-	"github.com/23skdu/longbow/internal/store/types"
 	"errors"
 	"fmt"
+	"github.com/23skdu/longbow/internal/store/types"
 	"testing"
 
 	"github.com/stretchr/testify/assert"

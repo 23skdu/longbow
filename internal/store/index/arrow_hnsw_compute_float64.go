@@ -19,7 +19,7 @@ type float64Computer struct {
 	maxGen    uint64
 	batchVecs [][]float64
 	// Reusable float32 conversion buffer for SIMD batch
-	batchF32  [][]float32
+	batchF32 [][]float32
 }
 
 func (c *float64Computer) Compute(ids []uint32, dists []float32) error {

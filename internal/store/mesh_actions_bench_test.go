@@ -1,8 +1,8 @@
 package store
 
 import (
-	"github.com/23skdu/longbow/internal/store/cluster"
 	"fmt"
+	"github.com/23skdu/longbow/internal/store/cluster"
 	"testing"
 
 	"github.com/23skdu/longbow/internal/mesh"

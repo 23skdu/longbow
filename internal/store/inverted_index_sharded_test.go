@@ -2,11 +2,10 @@ package store
 
 import (
 	"fmt"
+	"github.com/23skdu/longbow/internal/store/index"
 	"sync"
 	"sync/atomic"
 	"testing"
-	"github.com/23skdu/longbow/internal/store/index"
-
 )
 
 func addToShardedIndex(idx *ShardedInvertedIndex, id VectorID, text string) {

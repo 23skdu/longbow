@@ -588,7 +588,6 @@ func (g *GraphData) GetVectorsUint8ChunkFast(chunkID int) []uint8 {
 	return unsafe.Slice((*uint8)(ptr), len(chunk)) // #nosec G103
 }
 
-
 // GetVectorsInt16ChunkFast returns an int16 chunk using a non-atomic offset read.
 func (g *GraphData) GetVectorsInt16ChunkFast(chunkID int) []int16 {
 	if chunkID < len(g.VectorsInt16) && g.Int16Arena != nil {
@@ -1097,7 +1096,6 @@ func (g *GraphData) GetVectorsUint8ChunkWithGen(chunkID int, maxGen uint64) []ui
 	return unsafe.Slice((*uint8)(ptr), len(chunk)) // #nosec G103
 }
 
-
 func (g *GraphData) GetVectorsInt16Chunk(chunkID int) []int16 {
 	return g.GetVectorsInt16ChunkWithGen(chunkID, math.MaxUint64)
 }
@@ -1411,7 +1409,7 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 				}
 				initArenaSafe(&g.Complex128Arena, slabSize, g.Allocator)
 
-				ref, err := g.Complex128Arena.AllocSliceAligned(ChunkSize * paddedDims, 64)
+				ref, err := g.Complex128Arena.AllocSliceAligned(ChunkSize*paddedDims, 64)
 				if err != nil {
 					return err
 				}
@@ -2773,7 +2771,7 @@ func (g *GraphData) PreAllocate(capacity int) error {
 
 		for i := 0; i < numChunks; i++ {
 			if atomic.LoadUint64(&g.VectorsComplex128Offsets[i]) == 0 {
-				ref, err := g.Complex128Arena.AllocSliceAligned(ChunkSize * paddedDims, 64)
+				ref, err := g.Complex128Arena.AllocSliceAligned(ChunkSize*paddedDims, 64)
 				if err != nil {
 					return err
 				}

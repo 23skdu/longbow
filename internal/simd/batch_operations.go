@@ -238,7 +238,6 @@ func float32SliceToBytes(vec []float32) []byte {
 	return unsafe.Slice((*byte)(ptr), size) // #nosec G103
 }
 
-
 // L2SquaredDistanceBatch computes L2 squared distances between one query and multiple vectors.
 func L2SquaredDistanceBatch(query []float32, vectors [][]float32, results []float32) error {
 	if len(vectors) != len(results) {
@@ -303,4 +302,3 @@ func L2SquaredDistanceBatch(query []float32, vectors [][]float32, results []floa
 	}
 	return currentDispatch.L2SquaredDistanceBatch(query, vectors, results)
 }
-

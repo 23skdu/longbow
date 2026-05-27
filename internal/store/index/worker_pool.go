@@ -302,4 +302,3 @@ func (p *SharedWorkerPool) parallelForInternal(n int, chunkSize int, task func(s
 
 	wg.Wait()
 }
-

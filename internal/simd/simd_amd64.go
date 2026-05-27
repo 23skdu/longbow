@@ -826,7 +826,6 @@ var _ = func() {
 	}
 }
 
-
 func l2SquaredBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
 		if v == nil || len(v) == 0 {
@@ -840,4 +839,3 @@ func l2SquaredBatchAVX2(query []float32, vectors [][]float32, results []float32)
 	}
 	return nil
 }
-

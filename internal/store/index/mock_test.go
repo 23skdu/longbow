@@ -99,5 +99,5 @@ func (m *MockDataset) GetLogger() zerolog.Logger {
 func (m *MockDataset) GetTopo() *memory.NUMATopology {
 	return nil
 }
-func (m *MockDataset) TurboQuantBits() int { return 8 }
+func (m *MockDataset) TurboQuantBits() int     { return 8 }
 func (m *MockDataset) GetEvictionManager() any { return nil }

@@ -16,10 +16,12 @@
 //     cache locality and prefetching efficiency.
 //
 // 3. Assembly Kernels: Critical hot-paths are implemented in native assembly:
+//
 //   - x86_64: Avo-generated AVX2 and AVX-512 kernels.
+//
 //   - ARM64: Hand-written or Avo-generated NEON kernels.
 //
-//  4. Fallbacks: Standard Go (scalar) unrolled loops are provided in
+//     4. Fallbacks: Standard Go (scalar) unrolled loops are provided in
 //     simd_baseline.go to ensure correctness across all platforms and
 //     during early bootstrap phases.
 package simd

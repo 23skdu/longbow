@@ -529,7 +529,7 @@ func initializeDispatch() {
 
 		cosineDistanceBatchImpl = dispatch.CosineDistanceBatch
 		dotProductBatchImpl = dispatch.DotProductBatch
-		l2SquaredImpl = l2SquaredAVX2                // uses AVX2 kernel (no sqrt)
+		l2SquaredImpl = l2SquaredAVX2 // uses AVX2 kernel (no sqrt)
 		l2Squared128Impl = dispatch.L2SquaredDistance128
 		l2Squared384Impl = dispatch.L2SquaredDistance384
 		l2Squared768Impl = dispatch.L2SquaredDistance768

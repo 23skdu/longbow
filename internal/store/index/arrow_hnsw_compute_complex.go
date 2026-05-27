@@ -34,7 +34,7 @@ func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
 			}
 			lastCID = cID
 		}
-		
+
 		if lastChunk != nil {
 			cOff := int(id) % types.ChunkSize
 			pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex64)
@@ -158,7 +158,7 @@ func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 			}
 			lastCID = cID
 		}
-		
+
 		if lastChunk != nil {
 			cOff := int(id) % types.ChunkSize
 			pd := c.data.GetPaddedDimsForType(types.VectorTypeComplex128)

@@ -65,15 +65,15 @@ type ArrowHNSW struct {
 	// DiskGraph backing
 	diskGraph atomic.Pointer[DiskGraph]
 
-	quantizer     *ScalarQuantizer
-	sq8Ready      atomic.Bool
-	pqTrained     atomic.Bool
+	quantizer        *ScalarQuantizer
+	sq8Ready         atomic.Bool
+	pqTrained        atomic.Bool
 	pqTrainingBuffer [][]float32
-	bqEncoder     *types.BQEncoder
-	oopqEncoder   any // Accepts *pq.PQEncoder or *pq.OPQEncoder (Issue 4: Use new OPQ)
-	tqEncoder     *TurboQuantEncoder
-	searchPool    *ArrowSearchContextPool
-	candidatePool sync.Pool
+	bqEncoder        *types.BQEncoder
+	oopqEncoder      any // Accepts *pq.PQEncoder or *pq.OPQEncoder (Issue 4: Use new OPQ)
+	tqEncoder        *TurboQuantEncoder
+	searchPool       *ArrowSearchContextPool
+	candidatePool    sync.Pool
 
 	name                   string
 	disableNodeCountMetric atomic.Bool

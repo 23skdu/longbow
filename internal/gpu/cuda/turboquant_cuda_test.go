@@ -36,9 +36,9 @@ func TestCUDAIndex_TurboQuantSearch(t *testing.T) {
 	angleBytes := (angleCount*bitsPerAngle + 7) / 8
 	bitBytes := (pow2 + 7) / 8
 	stride := 4 + angleBytes + bitBytes
-	
+
 	tqData := make([]byte, count*stride)
-	
+
 	for i := 0; i < count; i++ {
 		ids[i] = int64(i)
 		for j := 0; j < stride; j++ {
@@ -62,7 +62,7 @@ func TestCUDAIndex_TurboQuantSearch(t *testing.T) {
 	assert.NotEmpty(t, results)
 	assert.Equal(t, 10, len(results))
 	assert.Equal(t, 10, len(distances))
-	
+
 	fmt.Printf("TurboQuant search found %d results\n", len(results))
 }
 
@@ -94,7 +94,7 @@ func FuzzCUDAIndex_TurboQuantSearch(f *testing.F) {
 		bitBytes := (pow2 + 7) / 8
 		stride := 4 + angleBytes + bitBytes
 		tqData := make([]byte, count*stride)
-		
+
 		for i := 0; i < count; i++ {
 			ids[i] = int64(i)
 		}

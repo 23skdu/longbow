@@ -1,19 +1,12 @@
 package types
 
 import (
-
 	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
-
-
-
-
-
-
 
 func TestSearchResultPool_Basic(t *testing.T) {
 	if testing.Short() {

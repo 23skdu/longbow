@@ -59,7 +59,7 @@ func TestP0_DefaultPrecisionPromotion(t *testing.T) {
 	// Underlying index dataType must be VectorTypeTQ
 	idx := ds.GetVectorIndex()
 	require.NotNil(t, idx)
-	
+
 	var datatype types.VectorDataType
 	if hnsw, ok := idx.(*ArrowHNSW); ok {
 		datatype = hnsw.GetConfig().DataType
@@ -98,7 +98,7 @@ func TestP0_ExplicitFloat32Preserved(t *testing.T) {
 
 	// Create test record
 	rec := MakeBatchTestRecord(mem, 128, vectors)
-	
+
 	// Register the dataset using getOrCreateDataset so it's globally tracked
 	ds, _ := vs.getOrCreateDataset("test_explicit_float32", func() *Dataset {
 		d := NewDataset("test_explicit_float32", schema)
@@ -119,7 +119,7 @@ func TestP0_ExplicitFloat32Preserved(t *testing.T) {
 func TestP0_AutoQuantization(t *testing.T) {
 	logger, _ := logging.NewLogger(logging.Config{Format: "text", Level: "warn"})
 	mem := NewPooledAllocator()
-	
+
 	// Set MaxMemory limit (e.g. 10000 bytes)
 	vs := NewVectorStore(mem, logger, 10000, 100, 0)
 	defer vs.Close()

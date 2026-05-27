@@ -102,7 +102,7 @@ func TestPIDTuner_RecallRetention(t *testing.T) {
 	results, err := idx.Search(context.Background(), query, 5, nil)
 	require.NoError(t, err)
 	require.NotEmpty(t, results)
-	
+
 	found := false
 	for _, res := range results {
 		if uint32(res.ID) == 0 {

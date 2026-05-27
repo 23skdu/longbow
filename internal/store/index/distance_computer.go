@@ -5,8 +5,8 @@ import (
 	"unsafe"
 
 	basecore "github.com/23skdu/longbow/internal/core"
-	"github.com/23skdu/longbow/internal/pq"
 	lbcore "github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"

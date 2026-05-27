@@ -215,7 +215,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 				ctx.visited.Set(int(n))
 				batch = append(batch, n)
 			}
-			
+
 			if len(batch) > 0 {
 				ctx.distComputeCount += len(batch)
 				if cap(ctx.distsTemp) < len(batch) {

@@ -2,6 +2,25 @@
 
 This document outlines the critical production blockers, active optimizations, and validation roadmap for the Longbow vector search engine. It has been updated following a deep architectural code analysis.
 
+## 🚨 P0: Production Code Audit & NUMA Defaults (Verified Clean & Correct)
+
+> [!IMPORTANT]
+>
+> ### P0.7: Codebase Completeness Audit — COMPLETE
+> * **Status**: Verified 100% complete and safe.
+> * **Audit Scope**: Audited the entire production codebase for outstanding `TODO` comments, mocked stubs, and dead/stubbed code paths.
+> * **Audit Findings**:
+>   - **0 TODOs**: There are zero pending `TODO` comments in the active production codebase.
+>   - **Architecture & OS Stubs**: All stubbed paths are standard, correct, and intentional fallbacks for cross-platform support. Specifically:
+>     - `DiskWriterUring` and `UringReader` fallback gracefully to standard Go `os.File` operations on non-Linux/non-macOS platforms via clean conditional compilation `!linux && !darwin`.
+>     - Pluggable Adapters implement the standard Go interface adapter pattern, intentionally returning `nil` for features (like delta replication) not supported by simpler pluggable index types.
+>     - GPU interfaces (`store_gpu_stub.go`) cleanly fall back to no-ops when GPU support is disabled (`!gpu` build tag).
+>   - **Test Mock Separation**: All mock implementations (e.g. `MockMeshClient`, `mockSearchStream`) reside strictly in `*_test.go` files or build-gated scripts, completely separated from production paths.
+>
+> ### P0.8: Automatic NUMA-Binding Default on Supporting Systems — RESOLVED
+> * **Status**: Completed and verified.
+> * **Fix**: Updated `scripts/unified_benchmark.py` to automatically detect platform capabilities and hostname attributes. The `--numa-bind` option now defaults to `True` when running on `ancalagon` or any Linux system that supports `numactl`, ensuring bare-metal numa-aware hardware performance by default. Added `--no-numa-bind` flag for opt-out overrides.
+
 ---
 
 ## ✅ Resolved P0 Blockers (Verified Correct & Safe)

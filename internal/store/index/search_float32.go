@@ -93,8 +93,21 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 			break
 		}
 
+		maxCommitted := meta.NodeCount
+		if ctx != nil && ctx.MaxNodeCount > 0 {
+			maxCommitted = ctx.MaxNodeCount
+		}
+
 		curr := minHeap.PopCandidate()
 		ctx.nodesVisitedCount++
+
+		// Active prefetch of the next best candidate on the heap to hide traversal latency
+		if minHeap.Len() > 0 {
+			nextBest := (*minHeap)[0]
+			if int64(nextBest.ID) < maxCommitted {
+				computer.Prefetch(nextBest.ID)
+			}
+		}
 
 		if len(ctx.resultSet) > 0 {
 			furthest := ctx.resultSet[0]
@@ -116,10 +129,6 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 		if prefetchLimit < 16 {
 			prefetchLimit = 16
 		}
-		maxCommitted := meta.NodeCount
-		if ctx != nil && ctx.MaxNodeCount > 0 {
-			maxCommitted = ctx.MaxNodeCount
-		}
 
 		for i := 0; i < len(neighbors) && i < int(prefetchLimit); i++ {
 			nID := neighbors[i]
@@ -134,12 +143,18 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 			}
 		}
 
-		// Prefetch neighbor vectors to hide memory latency
+		// Prefetch neighbor vectors aggressively to hide memory latency (prefetching 2 and 4 steps ahead)
 		for i := range neighbors {
 			if i+2 < len(neighbors) {
 				nextN := neighbors[i+2]
 				if int64(nextN) < maxCommitted {
 					computer.Prefetch(nextN)
+				}
+			}
+			if i+4 < len(neighbors) {
+				nextN4 := neighbors[i+4]
+				if int64(nextN4) < maxCommitted {
+					computer.Prefetch(nextN4)
 				}
 			}
 		}

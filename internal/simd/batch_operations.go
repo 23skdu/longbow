@@ -39,35 +39,8 @@ func EuclideanDistanceBatch(query []float32, vectors [][]float32, results []floa
 	// Special handling for common dimensions to bypass generic batch overhead if possible
 	dims := len(query)
 	switch dims {
-	case 128:
-		for i, v := range vectors {
-			if v == nil || len(v) != 128 {
-				results[i] = math.MaxFloat32
-				continue
-			}
-			d, _ := currentDispatch.EuclideanDistance128(query, v)
-			results[i] = d
-		}
-		return nil
-	case 384:
-		for i, v := range vectors {
-			if v == nil || len(v) != 384 {
-				results[i] = math.MaxFloat32
-				continue
-			}
-			d, _ := currentDispatch.EuclideanDistance384(query, v)
-			results[i] = d
-		}
-		return nil
-	case 768:
-		for i, v := range vectors {
-			if v == nil || len(v) != 768 {
-				results[i] = math.MaxFloat32
-				continue
-			}
-			d, _ := currentDispatch.EuclideanDistance768(query, v)
-			results[i] = d
-		}
+	case 128, 384, 768:
+		euclideanDistanceBatch4Way(query, vectors, results, dims, false)
 		return nil
 	case 1024:
 		for i, v := range vectors {
@@ -216,6 +189,14 @@ func DotProductBatch(query []float32, vectors [][]float32, results []float32) er
 	metrics.DotProductBatchCallsTotal.Inc()
 	metrics.ParallelReductionVectorsProcessed.Add(float64(len(vectors)))
 	metrics.SimdDispatchTotal.WithLabelValues(implementation, "dot_batch").Inc()
+
+	dims := len(query)
+	switch dims {
+	case 128, 384, 768:
+		dotProductBatch4Way(query, vectors, results, dims)
+		return nil
+	}
+
 	_ = dotProductBatchImpl(query, vectors, results)
 	return nil
 }
@@ -249,35 +230,8 @@ func L2SquaredDistanceBatch(query []float32, vectors [][]float32, results []floa
 	metrics.SimdDispatchTotal.WithLabelValues(implementation, "l2squared_batch").Inc()
 	dims := len(query)
 	switch dims {
-	case 128:
-		for i, v := range vectors {
-			if v == nil || len(v) != 128 {
-				results[i] = math.MaxFloat32
-				continue
-			}
-			d, _ := currentDispatch.L2SquaredDistance128(query, v)
-			results[i] = d
-		}
-		return nil
-	case 384:
-		for i, v := range vectors {
-			if v == nil || len(v) != 384 {
-				results[i] = math.MaxFloat32
-				continue
-			}
-			d, _ := currentDispatch.L2SquaredDistance384(query, v)
-			results[i] = d
-		}
-		return nil
-	case 768:
-		for i, v := range vectors {
-			if v == nil || len(v) != 768 {
-				results[i] = math.MaxFloat32
-				continue
-			}
-			d, _ := currentDispatch.L2SquaredDistance768(query, v)
-			results[i] = d
-		}
+	case 128, 384, 768:
+		euclideanDistanceBatch4Way(query, vectors, results, dims, true)
 		return nil
 	case 1024:
 		for i, v := range vectors {
@@ -285,7 +239,7 @@ func L2SquaredDistanceBatch(query []float32, vectors [][]float32, results []floa
 				results[i] = math.MaxFloat32
 				continue
 			}
-			d, _ := currentDispatch.L2SquaredDistance1024(query, v)
+			d, _ := currentDispatch.L2SquaredDistance128(query, v)
 			results[i] = d
 		}
 		return nil
@@ -301,4 +255,106 @@ func L2SquaredDistanceBatch(query []float32, vectors [][]float32, results []floa
 		return nil
 	}
 	return currentDispatch.L2SquaredDistanceBatch(query, vectors, results)
+}
+
+func euclideanDistanceBatch4Way(query []float32, vectors [][]float32, results []float32, dims int, squared bool) {
+	n := len(vectors)
+	for i := 0; i < n; i += 4 {
+		rem := n - i
+		if rem >= 4 {
+			v0 := vectors[i]
+			v1 := vectors[i+1]
+			v2 := vectors[i+2]
+			v3 := vectors[i+3]
+			if v0 != nil && v1 != nil && v2 != nil && v3 != nil &&
+				len(v0) == dims && len(v1) == dims && len(v2) == dims && len(v3) == dims {
+				
+				var d0, d1, d2, d3 float32
+				for k := 0; k < dims; k++ {
+					qk := query[k]
+					diff0 := qk - v0[k]
+					diff1 := qk - v1[k]
+					diff2 := qk - v2[k]
+					diff3 := qk - v3[k]
+					d0 += diff0 * diff0
+					d1 += diff1 * diff1
+					d2 += diff2 * diff2
+					d3 += diff3 * diff3
+				}
+				if squared {
+					results[i] = d0
+					results[i+1] = d1
+					results[i+2] = d2
+					results[i+3] = d3
+				} else {
+					results[i] = float32(math.Sqrt(float64(d0)))
+					results[i+1] = float32(math.Sqrt(float64(d1)))
+					results[i+2] = float32(math.Sqrt(float64(d2)))
+					results[i+3] = float32(math.Sqrt(float64(d3)))
+				}
+				continue
+			}
+		}
+		for k := 0; k < rem; k++ {
+			idx := i + k
+			v := vectors[idx]
+			if v == nil || len(v) != dims {
+				results[idx] = math.MaxFloat32
+				continue
+			}
+			var d float32
+			for k := 0; k < dims; k++ {
+				diff := query[k] - v[k]
+				d += diff * diff
+			}
+			if squared {
+				results[idx] = d
+			} else {
+				results[idx] = float32(math.Sqrt(float64(d)))
+			}
+		}
+	}
+}
+
+func dotProductBatch4Way(query []float32, vectors [][]float32, results []float32, dims int) {
+	n := len(vectors)
+	for i := 0; i < n; i += 4 {
+		rem := n - i
+		if rem >= 4 {
+			v0 := vectors[i]
+			v1 := vectors[i+1]
+			v2 := vectors[i+2]
+			v3 := vectors[i+3]
+			if v0 != nil && v1 != nil && v2 != nil && v3 != nil &&
+				len(v0) == dims && len(v1) == dims && len(v2) == dims && len(v3) == dims {
+				
+				var d0, d1, d2, d3 float32
+				for k := 0; k < dims; k++ {
+					qk := query[k]
+					d0 += qk * v0[k]
+					d1 += qk * v1[k]
+					d2 += qk * v2[k]
+					d3 += qk * v3[k]
+				}
+				results[i] = d0
+				results[i+1] = d1
+				results[i+2] = d2
+				results[i+3] = d3
+				continue
+			}
+		}
+		for k := 0; k < rem; k++ {
+			idx := i + k
+			v := vectors[idx]
+			if v == nil || len(v) != dims {
+				results[idx] = 0
+				continue
+			}
+			var d float32
+			for k := 0; k < dims; k++ {
+				d += query[k] * v[k]
+			}
+			results[idx] = d
+		}
+	}
 }

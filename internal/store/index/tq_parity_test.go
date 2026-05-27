@@ -1,5 +1,5 @@
-//go:build gpu
-// +build gpu
+//go:build gpu && darwin
+// +build gpu,darwin
 
 package index
 

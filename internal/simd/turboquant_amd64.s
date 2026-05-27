@@ -257,14 +257,9 @@ TEXT ·unpackTQ4AVX2Kernel(SB), NOSPLIT, $0-40
     MOVQ    $0x0F, AX
     VMOVQ   AX, X3
     VPBROADCASTD X3, Y3 // 0x0F mask
-    
-loop_tq4:
-    CMPQ    CX, $16
+   loop_tq4:
+    CMPQ    CX, $32
     JL      tail_tq4
-    
-    VMOVDQU (SI), X4    // 16 bytes
-    VPMOVZXBD X4, Y5    // Bytes 0-7 as int32s
-    VEXTRACTI128 $1, Y4, X4 // This is wrong, Y4 is not loaded.
     
     // Correct way to load 16 bytes and expand to 2 YMMs
     VMOVDQU (SI), X4    // Load 16 bytes
@@ -323,8 +318,8 @@ tail_tq4:
     JZ      done_tq4
     
     // e1
-    MOVBQZX AL, AX
     SHRB    $4, AL
+    MOVBQZX AL, AX
     VMOVQ   AX, X4
     VCVTDQ2PS X4, X4
     VFMADD213SS X1, X0, X4

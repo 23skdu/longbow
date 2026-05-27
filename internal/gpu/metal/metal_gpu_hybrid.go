@@ -460,6 +460,11 @@ func (idx *MetalHybridIndex) Search(vector []float32, k int) ([]int64, []float32
 	}
 
 	// Step 2: CPU finds top-k using simple selection (could use vDSP for further optimization)
+	ids := make([]int64, vectorCount)
+	for i := 0; i < vectorCount; i++ {
+		ids[i] = int64(i)
+	}
+
 	resultIDs := make([]int64, k)
 	resultDistances := make([]float32, k)
 
@@ -474,12 +479,13 @@ func (idx *MetalHybridIndex) Search(vector []float32, k int) ([]int64, []float32
 			}
 		}
 
-		// Swap
+		// Swap both distance and original ID
 		if minIdx != i {
 			distances[i], distances[minIdx] = distances[minIdx], distances[i]
+			ids[i], ids[minIdx] = ids[minIdx], ids[i]
 		}
 
-		resultIDs[i] = int64(i)
+		resultIDs[i] = ids[i]
 		resultDistances[i] = distances[i]
 	}
 
@@ -769,6 +775,11 @@ func (idx *MetalHybridIndex) searchFloat32(vector []float32, k int) ([]int64, []
 	metrics.RecordGPUSearch(duration, "metal_hybrid", k)
 
 	// Step 2: CPU finds top-k using simple selection
+	ids := make([]int64, vectorCount)
+	for i := 0; i < vectorCount; i++ {
+		ids[i] = int64(i)
+	}
+
 	resultIDs := make([]int64, k)
 	resultDistances := make([]float32, k)
 
@@ -783,11 +794,13 @@ func (idx *MetalHybridIndex) searchFloat32(vector []float32, k int) ([]int64, []
 			}
 		}
 
+		// Swap both distance and original ID
 		if minIdx != i {
 			distances[i], distances[minIdx] = distances[minIdx], distances[i]
+			ids[i], ids[minIdx] = ids[minIdx], ids[i]
 		}
 
-		resultIDs[i] = int64(i)
+		resultIDs[i] = ids[i]
 		resultDistances[i] = distances[i]
 	}
 
@@ -855,25 +868,18 @@ func (idx *MetalHybridIndex) SearchBatchDistances(query []float32, candidateIDs 
 	}
 
 	distances := make([]float32, numCandidates)
-	ch := make(chan struct{})
-	h := cgo.NewHandle(ch)
 
-	ret := C.metal_hybrid_compute_batch_distances_async(
+	ret := C.metal_hybrid_compute_batch_distances(
 		idx.handle,
 		(*C.float)(unsafe.Pointer(&query[0])),
 		(*C.uint32_t)(unsafe.Pointer(&candidateIDs[0])),
 		C.int(numCandidates),
 		(*C.float)(unsafe.Pointer(&distances[0])),
-		C.uintptr_t(h),
 	)
 
 	if ret != 0 {
-		h.Delete()
-		return nil, fmt.Errorf("asynchronous Metal batch distance computation failed")
+		return nil, fmt.Errorf("synchronous Metal batch distance computation failed")
 	}
-
-	<-ch
-	h.Delete()
 
 	return distances, nil
 }

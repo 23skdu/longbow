@@ -61,7 +61,13 @@ func (w *GPUIndexWrapper) Add(ids []int64, vectors []float32) error {
 	}
 
 	if w.gpuIndex != nil {
-		return w.gpuIndex.Add(ids, vectors)
+		if err := w.gpuIndex.Add(ids, vectors); err != nil {
+			// Record the sync error metric but don't fail the primary committed write.
+			// This ensures the engine degrades gracefully to CPU fallback instead of raising write faults.
+			if metrics.GPUFallbackTotal != nil {
+				metrics.GPUFallbackTotal.WithLabelValues("sync_error").Inc()
+			}
+		}
 	}
 
 	return nil
@@ -77,10 +83,15 @@ func (w *GPUIndexWrapper) Search(vector []float32, k int) ([]int64, []float32, e
 	}
 
 	// Dynamic Routing Decision
-	// High query batch or larger dimensional searches are offloaded to cuVS/Faiss GPU.
-	if w.gpuIndex != nil && len(vector) >= w.config.Dimension {
+	// Offload to GPU if:
+	// 1. GPU index is initialized and healthy.
+	// 2. We are under high CPU QPS load (> 500 QPS) or doing high-scale candidate search (k >= 100).
+	cpuLoad := w.qpsCPU.Load()
+	if w.gpuIndex != nil && (cpuLoad > 500 || k >= 100) {
 		w.qpsGPU.Add(1)
-		metrics.GPUUsed.WithLabelValues(w.config.Backend.String(), "f32").Inc()
+		if metrics.GPUUsed != nil {
+			metrics.GPUUsed.WithLabelValues(w.config.Backend.String(), "f32").Inc()
+		}
 		return w.gpuIndex.Search(vector, k)
 	}
 

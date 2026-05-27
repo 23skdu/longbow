@@ -2444,6 +2444,9 @@ class BenchmarkRunner:
                 if mode == "churn":
                     self.execute_churn()
                     continue
+                if mode == "temporal":
+                    self.execute_temporal()
+                    continue
 
                 # Default logic for cpu/metal/cuda
 

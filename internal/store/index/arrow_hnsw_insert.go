@@ -702,7 +702,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			var vecs any
 			supported := true
 			switch h.config.DataType {
-			case types.VectorTypeFloat32:
+			case types.VectorTypeFloat32, types.VectorTypeTQ:
 				f32s := make([][]float32, n)
 				// Cache raw slices per record batch to avoid expensive column calls
 				valuesCache := make(map[arrow.RecordBatch][]float32)
@@ -814,7 +814,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 						}
 					}
 				}
-			case types.VectorTypeTQ, types.VectorTypeUint8:
+			case types.VectorTypeUint8:
 				u8s := make([][]uint8, n)
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]

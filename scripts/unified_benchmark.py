@@ -3133,14 +3133,8 @@ if __name__ == "__main__":
     )
     numa_default = False
     try:
-        import socket
-        hostname = socket.gethostname().lower()
-        if "ancalagon" in hostname:
+        if platform.system() == "Linux":
             numa_default = True
-        elif platform.system() == "Linux":
-            res = subprocess.run("numactl --show", shell=True, capture_output=True, text=True)
-            if res.returncode == 0:
-                numa_default = True
     except Exception:
         pass
 

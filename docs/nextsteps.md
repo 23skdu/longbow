@@ -29,6 +29,10 @@ All five P0 blockers inside Longbow's hybrid CPU/GPU processing layers have been
 > ### P0.5: Ineffective Dynamic Routing Condition — RESOLVED
 >
 > * **Fix**: Dynamic GPU search routing is now gated on load-shedding metrics (CPU QPS load > 500) and scale parameters (candidate size `k >= 100`) rather than the static dimension size comparison.
+>
+> ### P0.6: Massive Ingestion Pipeline Thread Contention & Slowdowns — RESOLVED
+>
+> * **Fix**: Re-tuned `MinIndexingWorkers` to 1 and increased `maxBatch` to 32,768, leveraging `ArrowHNSW`'s highly-optimized internal `pool.ParallelFor` graph builder instead of splitting locking workload across multiple external queue consumer goroutines. Fixed the mapping of `LONGBOW_INDEXING_ADAPTIVE_ENABLED` flag to `config.AdaptiveEf`. Float32 dim=384 ingestion speeds improved massively from 226 vectors/sec to over 46,000 vectors/sec.
 
 ---
 

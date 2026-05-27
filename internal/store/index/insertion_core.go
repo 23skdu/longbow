@@ -326,7 +326,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 
 	// Spin-wait for the first node (id=0) to commit its entry point
 	// to prevent concurrent inserts from becoming disconnected islands.
-	if ep == math.MaxUint32 && id > 0 {
+	if ep == math.MaxUint32 && id > 0 && !h.inBulkInsert.Load() {
 		for ep == math.MaxUint32 {
 			// Backoff slightly to allow commitID(0) to proceed
 			time.Sleep(1 * time.Millisecond)

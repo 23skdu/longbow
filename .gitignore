@@ -74,6 +74,7 @@ scripts/venv/
 .idea/
 .vscode/
 .DS_Store
+gopls.yaml
 
 # Logs and Reports
 *.log

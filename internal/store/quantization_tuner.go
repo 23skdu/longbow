@@ -137,8 +137,17 @@ func (t *QuantizationTuner) TuneDataset(name string, ds *Dataset) {
 		return
 	}
 
+	// Direct fast-path: if pressure is already above 60% and dataset is still float32,
+	// skip intermediate quantization steps and jump straight to TurboQuant.
+	// This is the crash-avoidance path — intermediates (float16, int8) still consume
+	// 2× and 4× more memory than turboquant8.
+	if memoryPressure > 0.60 && state.currentType == QuantizationFloat32 {
+		t.applyTransition(name, ds, state, QuantizationTurboQuant, "early_pressure_float32")
+		return
+	}
+
 	// High Load + High Memory Pressure -> Max Compression
-	if qps > 5000 && memoryPressure > 0.70 {
+	if qps > 5000 && memoryPressure > 0.60 {
 		if state.currentType != QuantizationTurboQuant {
 			newType = QuantizationTurboQuant
 			t.applyTransition(name, ds, state, newType, "high_load_pressure")
@@ -147,7 +156,9 @@ func (t *QuantizationTuner) TuneDataset(name string, ds *Dataset) {
 	}
 
 	// Standard Memory Pressure Check
-	if memoryPressure > 0.85 {
+	// Threshold lowered from 0.85 to 0.70 to trigger compression earlier and
+	// prevent ResourceExhausted at 425K vectors under an 18 GB cap.
+	if memoryPressure > 0.70 {
 		switch state.currentType {
 		case QuantizationFloat32:
 			newType = QuantizationFloat16

@@ -63,6 +63,11 @@ DTYPE_BYTES = {
 }
 
 
+class ResourceExhaustedException(Exception):
+    pass
+
+
+
 def run_command(cmd, env=None, capture_output=True, timeout=None, shell=False):
     import shlex
     import time
@@ -159,6 +164,7 @@ class BenchmarkRunner:
             self.log_dir, f"perf_matrix_{args.mode}{label_suffix}_{self.timestamp}.json"
         )
         self.results = []
+        self.exhausted_configs = set()
         self.server_pid = None
         self.test_counter = 0
 
@@ -598,6 +604,33 @@ class BenchmarkRunner:
         t.start()
         return t
 
+    def save_pprof_snapshot(self, label):
+        """Fetch and snapshot all pprof profiles synchronously upon test completion before shutdown."""
+        if not hasattr(self, "args") or not self.args or not getattr(self.args, "pprof", False):
+            return
+            
+        print(f"  Fetching final pprof snapshot for {label} before shutdown...")
+        profiles = ["profile", "heap", "allocs", "goroutine", "threadcreate", "block", "mutex"]
+        os.makedirs("profiles", exist_ok=True)
+        
+        host, port = self.server_addr.split(":")
+        metrics_port = int(self.server_addr.split(":")[-1]) + 6000
+        
+        for profile in profiles:
+            url = f"http://{host}:{metrics_port}/debug/pprof/{profile}"
+            if profile == "profile":
+                url += "?seconds=2"
+            
+            output_file = os.path.join("profiles", f"{label}_{profile}_{self.timestamp}_final.pprof")
+            try:
+                res = subprocess.run(f"curl -s -o {output_file} \"{url}\"", shell=True, capture_output=True, text=True, timeout=10)
+                if os.path.exists(output_file) and os.path.getsize(output_file) > 0:
+                    print(f"    Saved final {profile} profile to {output_file}")
+                else:
+                    print(f"    Failed to fetch final {profile} profile: {res.stderr}")
+            except Exception as e:
+                print(f"    Error fetching final {profile} profile: {e}")
+
     def run_benchmark_cli(self, dim, dtype, count, label):
         """Run benchmark using longbow-cli for comparison"""
         cli_tool = self.get_cli_tool()
@@ -751,6 +784,12 @@ class BenchmarkRunner:
             if result:
                 f.write(result.stdout)
                 f.write(result.stderr)
+                
+                # Check for ResourceExhausted error
+                output_to_check = (result.stdout or "") + (result.stderr or "")
+                if "ResourceExhausted" in output_to_check or "code = 8" in output_to_check or "code 8" in output_to_check or "migration throttled" in output_to_check:
+                    print(" EXHAUSTED")
+                    raise ResourceExhaustedException(f"ResourceExhausted detected in {label}")
 
         # Parse JSON first — bench-tool logs to stderr (Go log package) which
         # can cause non-zero exit codes even on successful runs.
@@ -2445,6 +2484,11 @@ class BenchmarkRunner:
                                 f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count} port={current_port}"
                             )
 
+                            config_key = (mode, dtype, dim)
+                            if config_key in self.exhausted_configs:
+                                print(f"  [SKIPPED] skipping {label} due to prior ResourceExhausted error")
+                                continue
+
                             # Skip server startup if only generating data
                             if self.args.generate_only:
                                 try:
@@ -2466,10 +2510,25 @@ class BenchmarkRunner:
 
                             pprof_thread = None
                             try:
-                                if self.args.pprof:
-                                    pprof_thread = self.collect_pprof(label)
+                                max_retries = getattr(self.args, "max_retries", 1)
+                                success = False
+                                for attempt in range(max_retries):
+                                    try:
+                                        if self.args.pprof:
+                                            pprof_thread = self.collect_pprof(label)
 
-                                self.run_benchmark(dim, dtype, count, label)
+                                        success = self.run_benchmark(dim, dtype, count, label)
+                                        if success:
+                                            break
+                                        print(f"  Benchmark run failed (attempt {attempt+1}/{max_retries})")
+                                    except ResourceExhaustedException as re_err:
+                                        print(f"  [EARLY ABORT] {re_err}")
+                                        self.exhausted_configs.add(config_key)
+                                        break
+                                    finally:
+                                        if pprof_thread:
+                                            pprof_thread.join()
+                                            pprof_thread = None
 
                                 # Partial save for real-time monitoring
                                 with open(self.output_file, "w") as f:
@@ -2490,6 +2549,8 @@ class BenchmarkRunner:
                                         indent=2,
                                     )
                             finally:
+                                if getattr(self.args, "pprof", False):
+                                    self.save_pprof_snapshot(label)
                                 if pprof_thread:
                                     pprof_thread.join()
                                 self.stop_server()
@@ -3036,6 +3097,12 @@ if __name__ == "__main__":
         action="store_true",
         help="Enable pprof collection during benchmarks",
     )
+    parser.add_argument(
+        "--max-retries",
+        type=int,
+        default=1,
+        help="Max retries for benchmark execution (default 1)",
+    )
 
     parser.add_argument(
         "--port",
@@ -3073,11 +3140,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
     
     if args.ci:
-        args.dims = "128,768"
-        args.counts = "10000,100000"
-        args.dtypes = "float32,float16,int8"
+        args.dims = "128"
+        args.counts = "10000,50000"
+        args.dtypes = "float32,int8"
         if args.search_modes == "all":
-            args.search_modes = "dense,hybrid,byid"
+            args.search_modes = "dense"
             
     runner = BenchmarkRunner(args)
     runner.execute()

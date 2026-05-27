@@ -50,6 +50,8 @@ struct MetalIndexOptimized {
     void* graphNeighborsBuffer;
     void* graphWeightsBuffer;
     void* trigBuffer; // [256 * 2] float table for sin/cos
+    void* queryBuffers[2]; // Double-buffered query buffers for zero-allocation hot search path
+    int currentBufferIdx;
     int vectorCount;
     int dimensions;
     int capacity;
@@ -110,6 +112,17 @@ void metal_set_pipelines_optimized(MetalIndexOptimized* handle, void* device, vo
     id<MTLBuffer> trigBuffer = [mtlDevice newBufferWithBytes:trigData length:256 * 2 * sizeof(float) options:MTLResourceStorageModeShared];
     handle->trigBuffer = (__bridge_retained void*)trigBuffer;
     free(trigData);
+
+    // Pre-allocate double-buffered query buffers
+    size_t queryBufSize = 1024 * sizeof(float);
+    if (handle->dimensions > 1024) {
+        queryBufSize = handle->dimensions * sizeof(float);
+    }
+    id<MTLBuffer> qBuf0 = [mtlDevice newBufferWithLength:queryBufSize options:MTLResourceStorageModeShared];
+    id<MTLBuffer> qBuf1 = [mtlDevice newBufferWithLength:queryBufSize options:MTLResourceStorageModeShared];
+    handle->queryBuffers[0] = (__bridge_retained void*)qBuf0;
+    handle->queryBuffers[1] = (__bridge_retained void*)qBuf1;
+    handle->currentBufferIdx = 0;
 }
 
 // Perform HNSW greedy search on GPU
@@ -123,7 +136,14 @@ int metal_greedy_search_optimized(MetalIndexOptimized* handle, float* query, uin
             return -1;
         }
 
-        id<MTLBuffer> queryBuf = [device newBufferWithBytes:query length:handle->dimensions * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> queryBuf = (__bridge id<MTLBuffer>)handle->queryBuffers[handle->currentBufferIdx];
+        if (queryBuf) {
+            memcpy(queryBuf.contents, query, handle->dimensions * sizeof(float));
+        } else {
+            queryBuf = [device newBufferWithBytes:query length:handle->dimensions * sizeof(float) options:MTLResourceStorageModeShared];
+        }
+        handle->currentBufferIdx = (handle->currentBufferIdx + 1) % 2;
+
         id<MTLBuffer> epBuf = [device newBufferWithBytes:entryPoint length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
         id<MTLBuffer> distBuf = [device newBufferWithBytes:entryDist length:sizeof(float) options:MTLResourceStorageModeShared];
 
@@ -162,7 +182,14 @@ int metal_greedy_search_tq_optimized(MetalIndexOptimized* handle, float* query, 
             return -1;
         }
 
-        id<MTLBuffer> queryBuf = [device newBufferWithBytes:query length:pow2 * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> queryBuf = (__bridge id<MTLBuffer>)handle->queryBuffers[handle->currentBufferIdx];
+        if (queryBuf) {
+            memcpy(queryBuf.contents, query, pow2 * sizeof(float));
+        } else {
+            queryBuf = [device newBufferWithBytes:query length:pow2 * sizeof(float) options:MTLResourceStorageModeShared];
+        }
+        handle->currentBufferIdx = (handle->currentBufferIdx + 1) % 2;
+
         id<MTLBuffer> epBuf = [device newBufferWithBytes:entryPoint length:sizeof(uint32_t) options:MTLResourceStorageModeShared];
         id<MTLBuffer> distBuf = [device newBufferWithBytes:entryDist length:sizeof(float) options:MTLResourceStorageModeShared];
 
@@ -334,9 +361,15 @@ int metal_search_optimized(MetalIndexOptimized* handle, float* query, int k, int
         id<MTLComputePipelineState> topKPipeline = (__bridge id<MTLComputePipelineState>)handle->topKPipeline;
 
         // Create buffers
-        id<MTLBuffer> queryBuffer = [device newBufferWithBytes:query
-                                                        length:handle->dimensions * sizeof(float)
-                                                       options:MTLResourceStorageModeShared];
+        id<MTLBuffer> queryBuffer = (__bridge id<MTLBuffer>)handle->queryBuffers[handle->currentBufferIdx];
+        if (queryBuffer) {
+            memcpy(queryBuffer.contents, query, handle->dimensions * sizeof(float));
+        } else {
+            queryBuffer = [device newBufferWithBytes:query
+                                            length:handle->dimensions * sizeof(float)
+                                           options:MTLResourceStorageModeShared];
+        }
+        handle->currentBufferIdx = (handle->currentBufferIdx + 1) % 2;
 
         id<MTLBuffer> distanceBuffer = [device newBufferWithLength:handle->vectorCount * sizeof(float)
                                                             options:MTLResourceStorageModeShared];
@@ -421,6 +454,8 @@ void metal_cleanup_optimized(MetalIndexOptimized* handle) {
             if (handle->vectorBuffer) CFRelease(handle->vectorBuffer);
             if (handle->pqBuffer) CFRelease(handle->pqBuffer);
             if (handle->trigBuffer) CFRelease(handle->trigBuffer);
+            if (handle->queryBuffers[0]) CFRelease(handle->queryBuffers[0]);
+            if (handle->queryBuffers[1]) CFRelease(handle->queryBuffers[1]);
             free(handle);
         }
     }
@@ -466,17 +501,15 @@ int metal_search_typed(MetalIndexOptimized* handle, void* query, int k, int64_t*
 
         id<MTLComputePipelineState> topKPipeline = (__bridge id<MTLComputePipelineState>)handle->topKPipeline;
 
-        // Create query buffer
-        id<MTLBuffer> queryBuffer;
-        if (vtype == VECTOR_F16 || vtype == VECTOR_C64) {
-            queryBuffer = [device newBufferWithBytes:query
-                                              length:handle->dimensions * sizeof(uint16_t)
-                                             options:MTLResourceStorageModeShared];
+        // Create query buffer using pre-allocated double-buffered pool
+        id<MTLBuffer> queryBuffer = (__bridge id<MTLBuffer>)handle->queryBuffers[handle->currentBufferIdx];
+        size_t queryLen = handle->dimensions * ((vtype == VECTOR_F16 || vtype == VECTOR_C64) ? sizeof(uint16_t) : sizeof(float));
+        if (queryBuffer && queryBuffer.length >= queryLen) {
+            memcpy(queryBuffer.contents, query, queryLen);
         } else {
-            queryBuffer = [device newBufferWithBytes:query
-                                              length:handle->dimensions * sizeof(float)
-                                             options:MTLResourceStorageModeShared];
+            queryBuffer = [device newBufferWithBytes:query length:queryLen options:MTLResourceStorageModeShared];
         }
+        handle->currentBufferIdx = (handle->currentBufferIdx + 1) % 2;
 
         id<MTLBuffer> distanceBuffer = [device newBufferWithLength:handle->vectorCount * sizeof(float)
                                                             options:MTLResourceStorageModeShared];
@@ -593,7 +626,15 @@ int metal_search_tq_optimized(MetalIndexOptimized* handle, float* query, int k, 
         id<MTLComputePipelineState> tqPipeline = (__bridge id<MTLComputePipelineState>)handle->tqPipeline;
         id<MTLComputePipelineState> topKPipeline = (__bridge id<MTLComputePipelineState>)handle->topKPipeline;
 
-        id<MTLBuffer> queryBuffer = [device newBufferWithBytes:query length:pow2 * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> queryBuffer = (__bridge id<MTLBuffer>)handle->queryBuffers[handle->currentBufferIdx];
+        size_t queryLen = pow2 * sizeof(float);
+        if (queryBuffer && queryBuffer.length >= queryLen) {
+            memcpy(queryBuffer.contents, query, queryLen);
+        } else {
+            queryBuffer = [device newBufferWithBytes:query length:queryLen options:MTLResourceStorageModeShared];
+        }
+        handle->currentBufferIdx = (handle->currentBufferIdx + 1) % 2;
+
         id<MTLBuffer> distBuffer = [device newBufferWithLength:handle->vectorCount * sizeof(float) options:MTLResourceStorageModeShared];
         id<MTLBuffer> indicesBuffer = [device newBufferWithLength:k * sizeof(int) options:MTLResourceStorageModeShared];
         id<MTLBuffer> topDistancesBuffer = [device newBufferWithLength:k * sizeof(float) options:MTLResourceStorageModeShared];

@@ -32,7 +32,9 @@ const ShardedLockCount = 131072
 // It assumes IDs, locations, and capacity have already been prepared/reserved.
 func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vecs any) error {
 	h.bulkMu.Lock()
+	h.inBulkInsert.Store(true)
 	err := h.addBatchBulkInternal(ctx, startID, n, vecs)
+	h.inBulkInsert.Store(false)
 	h.bulkMu.Unlock()
 
 	if n > 0 {

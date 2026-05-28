@@ -252,10 +252,10 @@ func TestExecuteWithResilienceSearch(t *testing.T) {
 func TestGetGlobalResilienceAutoInit(t *testing.T) {
 	oldMgr := GlobalResilienceManager
 	oldInt := GlobalResilienceInterceptor
-	oldOnce := once
+	// oldOnce := once
 	GlobalResilienceManager = nil
 	GlobalResilienceInterceptor = nil
-	once = sync.Once{}
+	once = *new(sync.Once)
 
 	mgr := GetGlobalResilience()
 	assert.NotNil(t, mgr)
@@ -265,7 +265,7 @@ func TestGetGlobalResilienceAutoInit(t *testing.T) {
 
 	GlobalResilienceManager = oldMgr
 	GlobalResilienceInterceptor = oldInt
-	once = oldOnce
+	once = *new(sync.Once)
 }
 
 func TestGlobalResilience(t *testing.T) {

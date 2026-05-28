@@ -34,6 +34,7 @@ typedef struct {
 // Function declarations from kernels.cu
 void launch_l2_distance_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, cudaStream_t stream);
 void launch_l2_distance_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
+void launch_l2_distance_large_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
 void launch_l2_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, cudaStream_t stream);
 void launch_dot_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, cudaStream_t stream);
 void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* codes, float* distances, int m, int count, cudaStream_t stream);
@@ -922,14 +923,25 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 			vecsInChunk = vectorsPerPage
 		}
 
-		C.launch_l2_distance_kernel_v2(
-			(*C.float)(gpuPtr),
-			(*C.float)(dQuery),
-			(*C.float)(dPageDists),
-			C.int(idx.dim),
-			C.int(vecsInChunk),
-			nil,
-		)
+		if idx.dim > 1024 {
+			C.launch_l2_distance_large_kernel_v2(
+				(*C.float)(gpuPtr),
+				(*C.float)(dQuery),
+				(*C.float)(dPageDists),
+				C.int(idx.dim),
+				C.int(vecsInChunk),
+				nil,
+			)
+		} else {
+			C.launch_l2_distance_kernel_v2(
+				(*C.float)(gpuPtr),
+				(*C.float)(dQuery),
+				(*C.float)(dPageDists),
+				C.int(idx.dim),
+				C.int(vecsInChunk),
+				nil,
+			)
+		}
 
 		hPageDists = hPageDists[:vecsInChunk]
 		C.cudaMemcpy(
@@ -1581,14 +1593,25 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 			vecsInChunk = vectorsPerPage
 		}
 
-		C.launch_l2_distance_kernel_v2(
-			(*C.float)(gpuPtr),
-			(*C.float)(dQuery),
-			(*C.float)(dPageDists),
-			C.int(idx.dim),
-			C.int(vecsInChunk),
-			nil,
-		)
+		if idx.dim > 1024 {
+			C.launch_l2_distance_large_kernel_v2(
+				(*C.float)(gpuPtr),
+				(*C.float)(dQuery),
+				(*C.float)(dPageDists),
+				C.int(idx.dim),
+				C.int(vecsInChunk),
+				nil,
+			)
+		} else {
+			C.launch_l2_distance_kernel_v2(
+				(*C.float)(gpuPtr),
+				(*C.float)(dQuery),
+				(*C.float)(dPageDists),
+				C.int(idx.dim),
+				C.int(vecsInChunk),
+				nil,
+			)
+		}
 
 		hPageDists = hPageDists[:vecsInChunk]
 		C.cudaMemcpy(

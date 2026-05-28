@@ -190,21 +190,103 @@ func TestDo_ContextCancelledDuringWait(t *testing.T) {
 	started := make(chan struct{})
 	go func() {
 		<-started
+		time.Sleep(5 * time.Millisecond)
 		cancel()
-		time.Sleep(20 * time.Millisecond) // Give time for context propagation
 	}()
 
 	err := Do(ctx, policy, func(ctx context.Context) error {
-		select {
-		case started <- struct{}{}:
-		default:
-		}
-		time.Sleep(50 * time.Millisecond) // Wait for cancel to propagate
+		started <- struct{}{}
+		time.Sleep(50 * time.Millisecond)
 		return status.Error(codes.Unavailable, "retry me")
 	})
 
 	if err != context.Canceled {
 		t.Errorf("expected context.Canceled, got %v", err)
+	}
+}
+
+func TestDo_LoopExhaustedWithoutCancel(t *testing.T) {
+	policy := &ExponentialBackoff{
+		BaseDelay: 1 * time.Millisecond,
+		Retries:   2,
+	}
+	attempts := 0
+	err := Do(context.Background(), policy, func(ctx context.Context) error {
+		attempts++
+		return status.Error(codes.Unavailable, "still failing")
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if attempts != 3 {
+		t.Errorf("expected 3 attempts, got %d", attempts)
+	}
+}
+
+func TestDo_ZeroRetries(t *testing.T) {
+	policy := &ExponentialBackoff{
+		Retries: 0,
+	}
+	err := Do(context.Background(), policy, func(ctx context.Context) error {
+		return errors.New("single attempt")
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+}
+
+func TestDo_NoTimeoutAndCancelNotCalled(t *testing.T) {
+	policy := &ExponentialBackoff{
+		BaseDelay: 1 * time.Millisecond,
+		Retries:   1,
+	}
+	// No AttemptTimeout set, so cancel should be nil
+	attempts := 0
+	err := Do(context.Background(), policy, func(ctx context.Context) error {
+		attempts++
+		if attempts < 2 {
+			return errors.New("retryable")
+		}
+		return nil
+	})
+	if err != nil {
+		t.Errorf("expected success, got %v", err)
+	}
+	if attempts != 2 {
+		t.Errorf("expected 2 attempts, got %d", attempts)
+	}
+}
+
+func TestDo_RetryExhausted_ReturnsLastError(t *testing.T) {
+	policy := &ExponentialBackoff{
+		BaseDelay: 1 * time.Millisecond,
+		Retries:   1,
+	}
+	lastErr := errors.New("last error")
+	err := Do(context.Background(), policy, func(ctx context.Context) error {
+		return lastErr
+	})
+	if err != lastErr {
+		t.Errorf("expected last error, got %v", err)
+	}
+}
+
+func TestDo_WithTimeoutAndCancel(t *testing.T) {
+	policy := &ExponentialBackoff{
+		BaseDelay:      1 * time.Millisecond,
+		Retries:        1,
+		AttemptTimeout: 100 * time.Millisecond,
+	}
+	attempts := 0
+	err := Do(context.Background(), policy, func(ctx context.Context) error {
+		attempts++
+		return errors.New("server error")
+	})
+	if err == nil {
+		t.Fatal("expected error")
+	}
+	if attempts != 2 {
+		t.Errorf("expected 2 attempts, got %d", attempts)
 	}
 }
 

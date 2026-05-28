@@ -6,6 +6,8 @@ import (
 	"sync/atomic"
 	"testing"
 	"time"
+
+	"github.com/stretchr/testify/assert"
 )
 
 func TestWorkQueue_NewWorkQueue(t *testing.T) {
@@ -142,6 +144,43 @@ func TestWorkQueue_CloseCancelsContext(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Error("context should be cancelled after close")
 	}
+}
+
+func TestWorkQueue_SubmitWhenFull(t *testing.T) {
+	wq := NewWorkQueue(1, 1)
+	wq.SubmitBlocking(1)
+	assert.False(t, wq.Submit(2), "Submit should return false when queue is full")
+	wq.Close()
+}
+
+func TestPriorityWorkQueue_Defaults(t *testing.T) {
+	pwq := NewPriorityWorkQueue(0, 0)
+	if pwq.workers == 0 {
+		t.Error("expected default workers to be set")
+	}
+	if cap(pwq.queues[0]) == 0 {
+		t.Error("expected default buffer size to be set")
+	}
+	pwq.Close()
+}
+
+func TestPriorityWorkQueue_SubmitAllPriorities(t *testing.T) {
+	pwq := NewPriorityWorkQueue(10, 1)
+	processed := atomic.Int32{}
+	handler := func(ctx context.Context, item WorkItem) {
+		processed.Add(1)
+	}
+	pwq.Start(handler)
+
+	assert.True(t, pwq.Submit("a", PriorityLow+1))
+	assert.True(t, pwq.Submit("b", PriorityHigh-1))
+	assert.True(t, pwq.Submit("c", PriorityLow))
+	assert.True(t, pwq.Submit("d", PriorityNormal))
+	assert.True(t, pwq.Submit("e", PriorityHigh))
+
+	time.Sleep(100 * time.Millisecond)
+	pwq.Close()
+	assert.Equal(t, int32(5), processed.Load())
 }
 
 func TestWorkQueue_ConcurrentSubmit(t *testing.T) {

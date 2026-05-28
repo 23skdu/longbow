@@ -272,37 +272,33 @@ void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* co
     pq_distance_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(lookupTable, codes, distances, m, count);
 }
 
-// TurboQuant Distance Kernel
-__global__ void turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count) {
-    extern __shared__ float s_query_float[];
-    
-    // Load query into shared memory (cooperative)
-    for (int i = threadIdx.x; i < dim; i += blockDim.x) {
-        s_query_float[i] = query[i];
-    }
-    __syncthreads();
+// TurboQuant Distance Kernel (per-block reconstruction, no per-thread stack allocation)
+// Each block processes one vector; reconstruction buffer lives in __shared__ memory.
+__global__ void turboquant_distance_kernel_v2(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count) {
+    extern __shared__ float s_recon[];
 
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < count) {
-        int angleCount = pow2 - 1;
-        int angleBytes = (angleCount * bitsPerAngle + 7) / 8;
-        int bitBytes = (pow2 + 7) / 8;
-        int stride = 4 + angleBytes + bitBytes;
-        
-        const unsigned char* data = tqData + (idx * stride);
-        float radius = *(const float*)data;
-        const unsigned char* packedAngles = data + 4;
-        const unsigned char* qjlBits = data + 4 + angleBytes;
-        
-        float recon[1024]; // Max supported for now
-        recon[0] = radius;
+    int vec_idx = blockIdx.x;
+    if (vec_idx >= count) return;
+
+    int angleCount = pow2 - 1;
+    int angleBytes = (angleCount * bitsPerAngle + 7) / 8;
+    int stride = 4 + angleBytes + ((pow2 + 7) / 8);
+
+    const unsigned char* data = tqData + (vec_idx * stride);
+    float radius = *(const float*)data;
+    const unsigned char* packedAngles = data + 4;
+    const unsigned char* qjlBits = data + 4 + angleBytes;
+
+    // Single thread handles the hierarchical reconstruction (sequential dependency chain)
+    if (threadIdx.x == 0) {
+        s_recon[0] = radius;
         int currentLevelSize = 1;
         int angleOffset = angleCount;
-        
+
         while (currentLevelSize < pow2) {
             angleOffset -= currentLevelSize;
             for (int i = currentLevelSize - 1; i >= 0; i--) {
-                float r = recon[i];
+                float r = s_recon[i];
                 int bitStart = (angleOffset + i) * bitsPerAngle;
                 unsigned int q = 0;
                 for (int k = 0; k < bitsPerAngle; k++) {
@@ -314,23 +310,49 @@ __global__ void turboquant_distance_kernel(const float* query, const unsigned ch
                 float theta = (float(q) / ((1 << bitsPerAngle) - 1)) * 2.0f * 3.14159265f - 3.14159265f;
                 float s, c;
                 sincosf(theta, &s, &c);
-                recon[2*i] = r * c;
-                recon[2*i+1] = r * s;
+                s_recon[2 * i] = r * c;
+                s_recon[2 * i + 1] = r * s;
             }
             currentLevelSize *= 2;
         }
-        
-        float sum = 0.0f;
-        float correctionFactor = radius / sqrtf((float)pow2) * 0.1f;
-        for (int i = 0; i < dim; i++) {
-            float val = recon[i];
-            if ((qjlBits[i / 8] >> (i % 8)) & 1) val += correctionFactor;
-            else val -= 0.1f;
-            
-            float diff = s_query_float[i] - val;
-            sum += diff * diff;
+    }
+    __syncthreads();
+
+    // Coalesced distance computation: warp-per-vector, lane-stride access to s_recon
+    int warp_id = threadIdx.x / WARP_SZ;
+    int lane_id = threadIdx.x % WARP_SZ;
+    int warps_per_block = blockDim.x / WARP_SZ;
+
+    float sum = 0.0f;
+    float correctionFactor = radius / sqrtf((float)pow2) * 0.1f;
+
+    for (int d = lane_id; d < dim; d += WARP_SZ) {
+        float val = s_recon[d];
+        if ((qjlBits[d / 8] >> (d % 8)) & 1) {
+            val += correctionFactor;
+        } else {
+            val -= 0.1f;
         }
-        distances[idx] = sqrtf(sum);
+        float diff = query[d] - val;
+        sum += diff * diff;
+    }
+
+    for (int offset = WARP_SZ / 2; offset > 0; offset >>= 1) {
+        sum += __shfl_xor_sync(0xffffffff, sum, offset);
+    }
+
+    __shared__ float warp_sums[8];
+    if (lane_id == 0) {
+        warp_sums[warp_id] = sum;
+    }
+    __syncthreads();
+
+    if (threadIdx.x == 0) {
+        float total = 0.0f;
+        for (int w = 0; w < warps_per_block; w++) {
+            total += warp_sums[w];
+        }
+        distances[vec_idx] = sqrtf(total);
     }
 }
 
@@ -365,6 +387,14 @@ void launch_turboquant_distance_kernel(const float* query, const unsigned char* 
     int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
     size_t sharedMemSize = dim * sizeof(float);
     turboquant_distance_kernel<<<blocksPerGrid, threadsPerBlock, sharedMemSize, stream>>>(query, tqData, distances, dim, pow2, bitsPerAngle, count);
+}
+
+void launch_turboquant_distance_kernel_v2(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count, cudaStream_t stream) {
+    // One block per vector; shared memory sized to pow2 floats for reconstruction buffer
+    int blocks = count;
+    int threads = 256;
+    size_t shared_mem = pow2 * sizeof(float);
+    turboquant_distance_kernel_v2<<<blocks, threads, shared_mem, stream>>>(query, tqData, distances, dim, pow2, bitsPerAngle, count);
 }
 
 void launch_topk_kernel(const float* distances, const int64_t* ids, int n, int k, float* outDistances, int64_t* outIDs, cudaStream_t stream) {

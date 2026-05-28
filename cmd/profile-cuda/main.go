@@ -8,7 +8,7 @@ package main
 #include <stdint.h>
 
 extern void launch_l2_distance_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
-extern void launch_topk_kernel(const float* distances, const int64_t* ids, int k, int count, float* outDistances, int64_t* outIds);
+extern void launch_topk_kernel(const float* distances, const int64_t* ids, int n, int k, float* outDistances, int64_t* outIds, cudaStream_t stream);
 extern void launch_l2_distance_large_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
 extern void launch_l2_distance_filtered_kernel(const float* vectors, const float* query, unsigned int* results, int* resultCount, const unsigned long long* bitset, int dim, int count, int k, cudaStream_t stream);
 extern void launch_l2_distance_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
@@ -175,7 +175,7 @@ func runTopK(count, k int) {
 	C.cudaDeviceSynchronize()
 	C.launch_topk_kernel(
 		(*C.float)(d_dists), (*C.int64_t)(d_ids),
-		C.int(k), C.int(count),
+		C.int(count), C.int(k),
 		(*C.float)(d_outDists), (*C.int64_t)(d_outIds), nil,
 	)
 	C.cudaDeviceSynchronize()

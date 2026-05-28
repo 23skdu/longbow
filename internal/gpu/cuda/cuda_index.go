@@ -524,11 +524,12 @@ import "C"
 import (
 	"fmt"
 	"math"
-	"math/rand"
-	"runtime"
+	"sort"
 	"sync"
 	"time"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/metrics"
 
 	"github.com/23skdu/longbow/internal/gpu/memory"
 	"github.com/23skdu/longbow/internal/gpu/types"
@@ -537,12 +538,20 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
+const vectorsPerPage = 1024
+
+type chunkTracker struct {
+	startChunk int
+	numChunks  int
+}
+
 type CUDAIndex struct {
 	handle     *C.CUDAIndexHandle
 	dim        int
 	mu         sync.RWMutex
 	closed     bool
 	memPool    *memory.GPUMemPool
+	pager      *memory.GPUPager
 	deviceInfo *types.GPUInfo
 	pqEncoder  *pq.PQEncoder // CPU fallback for PQ operations
 
@@ -555,6 +564,31 @@ type CUDAIndex struct {
 
 	maxMemory  int64
 	usedMemory int64
+
+	vectorCount int
+	idList      []int64
+	pqM         int          // PQ subquantizer count
+	tqStride    int          // TQ bytes per vector
+	tqBitsAngle int          // TQ bits per angle
+
+	// chunk tracking per dtype
+	fp32Chunks chunkTracker
+	fp16Chunks chunkTracker
+	pqChunks   chunkTracker
+	tqChunks   chunkTracker
+
+	// PageID base for each dtype to avoid collisions
+	nextPageID memory.PageID
+}
+
+// pageIDFor returns a unique PageID for a given dtype and chunk index.
+func (idx *CUDAIndex) pageIDFor(dtype int, chunk int) memory.PageID {
+	return memory.PageID(dtype)*1_000_000_000 + memory.PageID(chunk)
+}
+
+// NewCUDAIndex creates a new CUDA index for the given configuration.
+func NewCUDAIndex(cfg types.GPUConfig) (types.Index, error) {
+	return NewCUDAIndexImpl(cfg)
 }
 
 func NewCUDAIndexImpl(cfg types.GPUConfig) (types.Index, error) {
@@ -591,6 +625,13 @@ func NewCUDAIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 	var totalMem C.uint64_t
 	C.cuda_get_device_info(handle, &nameBuf[0], C.int(len(nameBuf)), &totalMem) // #nosec G115
 
+	maxVRAM := cfg.MaxMemory
+	if maxVRAM <= 0 {
+		maxVRAM = int64(totalMem) // use all available GPU memory
+	}
+
+	pageSize := int64(vectorsPerPage) * int64(cfg.Dimension) * 4
+
 	idx := &CUDAIndex{
 		handle: handle,
 		dim:    cfg.Dimension,
@@ -602,12 +643,13 @@ func NewCUDAIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 		},
 		lastSyncTime: time.Now(),
 		stopSync:     make(chan struct{}),
-		maxMemory:    cfg.MaxMemory,
+		maxMemory:    maxVRAM,
 	}
 
 	pool, err := memory.NewGPUMemPool(types.BackendCUDA, cfg.DeviceID)
 	if err == nil {
 		idx.memPool = pool
+		idx.pager = memory.NewGPUPager(pool, maxVRAM, pageSize)
 	}
 
 	idx.startSyncTicker(cfg)
@@ -657,54 +699,83 @@ func (idx *CUDAIndex) Flush() error {
 	start := time.Now()
 	batchCount := len(idx.batchIDs)
 
-	idx.mu.RLock()
-	currentCount := int(C.cuda_get_count(idx.handle))
-	currentCapacity := int(idx.handle.capacity)
-	idx.mu.RUnlock()
+	if batchCount > 2147483647 {
+		return fmt.Errorf("batch too large")
+	}
 
-	requiredCapacity := currentCount + batchCount
-	if requiredCapacity > currentCapacity {
-		newCapacity := currentCapacity
-		if newCapacity == 0 {
-			newCapacity = 10000
+	if idx.pager == nil {
+		return fmt.Errorf("GPU pager not initialized")
+	}
+
+	dim := idx.dim
+	maxMem := idx.maxMemory
+	prevCount := idx.vectorCount
+	newCount := prevCount + batchCount
+
+	// Estimate total memory needed with paging
+	totalPages := (newCount + vectorsPerPage - 1) / vectorsPerPage
+	estimatedMem := int64(totalPages) * int64(vectorsPerPage) * int64(dim) * 4
+	if maxMem > 0 && estimatedMem > maxMem {
+		return &types.GPUSyncError{
+			BatchSize: batchCount,
+			DeviceID:  idx.deviceInfo.DeviceID,
+			Cause:     fmt.Errorf("GPU memory limit exceeded: estimated %d bytes, limit %d", estimatedMem, maxMem),
 		}
-		for newCapacity < requiredCapacity {
-			newCapacity *= 2
+	}
+
+	vecSize := dim * 4 // float32 bytes per vector
+	pageVecs := vectorsPerPage
+
+	for i := 0; i < batchCount; {
+		globalPos := prevCount + i
+		chunk := globalPos / pageVecs
+		offset := globalPos % pageVecs
+		space := pageVecs - offset
+		toCopy := batchCount - i
+		if toCopy > space {
+			toCopy = space
 		}
 
-		estimatedMem := int64(newCapacity) * int64(idx.dim) * 4
-		estimatedMem += int64(newCapacity) * 8
+		pid := idx.pageIDFor(0, chunk)
 
-		if idx.maxMemory > 0 && estimatedMem > idx.maxMemory {
+		// Get or create page in pager
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			var err error
+			pi, err = idx.pager.Alloc(pid)
+			if err != nil {
+				return &types.GPUSyncError{
+					BatchSize: batchCount,
+					DeviceID:  idx.deviceInfo.DeviceID,
+					Cause:     fmt.Errorf("failed to allocate pager page %d: %w", pid, err),
+				}
+			}
+		}
+
+		// Copy vector data to page's CPU buffer
+		cpuBuf := idx.pager.GetCPUBuf(pi)
+		srcVec := idx.batchVectors[i*int(dim) : (i+toCopy)*int(dim)]
+		dstOffset := offset * vecSize
+		copy(cpuBuf[dstOffset:dstOffset+toCopy*vecSize], unsafe.Slice((*byte)(unsafe.Pointer(&srcVec[0])), toCopy*vecSize))
+
+		// Promote page to GPU (copies CPU->GPU, evicts LRU if needed)
+		if err := idx.pager.Promote(pi); err != nil {
 			return &types.GPUSyncError{
 				BatchSize: batchCount,
 				DeviceID:  idx.deviceInfo.DeviceID,
-				Cause:     fmt.Errorf("GPU memory limit exceeded: estimated %d bytes, limit %d", estimatedMem, idx.maxMemory),
+				Cause:     fmt.Errorf("failed to promote page %d to GPU: %w", pid, err),
 			}
 		}
+
+		i += toCopy
 	}
 
-	if len(idx.batchIDs) > 2147483647 {
-		return fmt.Errorf("batch too large")
-	}
-	ret := C.cuda_add_vectors(
-		idx.handle,
-		(*C.float)(unsafe.Pointer(&idx.batchVectors[0])),
-		(*C.int64_t)(unsafe.Pointer(&idx.batchIDs[0])),
-		C.int(len(idx.batchIDs)), // #nosec G115
-	)
+	// Update tracking
+	idx.vectorCount = newCount
+	idx.idList = append(idx.idList, idx.batchIDs...)
 
 	duration := time.Since(start)
-
-	if ret != 0 {
-		return &types.GPUSyncError{
-			BatchSize: len(idx.batchIDs),
-			DeviceID:  idx.deviceInfo.DeviceID,
-			Cause:     fmt.Errorf("failed to add vectors to CUDA buffer"),
-		}
-	}
-
-	metrics.RecordGPUSync(duration, len(idx.batchIDs))
+	metrics.RecordGPUSync(duration, batchCount)
 
 	idx.batchIDs = idx.batchIDs[:0]
 	idx.batchVectors = idx.batchVectors[:0]
@@ -720,22 +791,56 @@ func (idx *CUDAIndex) AddPQ(ids []int64, codes []byte, m int) error {
 	if idx.closed {
 		return fmt.Errorf("index is closed")
 	}
-
 	if len(ids) > 2147483647 || m > 2147483647 {
 		return fmt.Errorf("ids or M too large")
 	}
-	ret := C.cuda_add_vectors_pq(
-		idx.handle,
-		(*C.uchar)(unsafe.Pointer(&codes[0])),
-		(*C.int64_t)(unsafe.Pointer(&ids[0])),
-		C.int(len(ids)), // #nosec G115
-		C.int(m),        // #nosec G115
-	)
-
-	if ret != 0 {
-		return fmt.Errorf("failed to add PQ vectors to CUDA buffer: error %d", int(ret))
+	if idx.pager == nil {
+		return fmt.Errorf("GPU pager not initialized")
 	}
 
+	prevCount := idx.vectorCount
+	newCount := prevCount + len(ids)
+	codeBytesPerVec := m
+
+	pageVecs := vectorsPerPage
+
+	idx.idList = append(idx.idList, ids...)
+
+	for i := 0; i < len(ids); {
+		globalPos := prevCount + i
+		chunk := globalPos / pageVecs
+		offset := globalPos % pageVecs
+		space := pageVecs - offset
+		toCopy := len(ids) - i
+		if toCopy > space {
+			toCopy = space
+		}
+
+		pid := idx.pageIDFor(2, chunk)
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			var err error
+			pi, err = idx.pager.Alloc(pid)
+			if err != nil {
+				return fmt.Errorf("failed to allocate pager page for PQ chunk %d: %w", chunk, err)
+			}
+		}
+
+		cpuBuf := idx.pager.GetCPUBuf(pi)
+		srcStart := i * codeBytesPerVec
+		srcEnd := (i + toCopy) * codeBytesPerVec
+		dstStart := offset * codeBytesPerVec
+		copy(cpuBuf[dstStart:dstStart+toCopy*codeBytesPerVec], codes[srcStart:srcEnd])
+
+		if err := idx.pager.Promote(pi); err != nil {
+			return fmt.Errorf("failed to promote PQ page %d: %w", pid, err)
+		}
+
+		i += toCopy
+	}
+
+	idx.vectorCount = newCount
+	idx.pqM = m
 	return nil
 }
 
@@ -755,34 +860,112 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 		return nil, nil, err
 	}
 
-	resultIDs := make([]int64, k)
-	resultDistances := make([]float32, k)
+	if idx.pager == nil {
+		return nil, nil, fmt.Errorf("GPU pager not initialized")
+	}
 
-	for i := range resultDistances {
-		resultDistances[i] = math.MaxFloat32
+	n := idx.vectorCount
+	if n == 0 {
+		return nil, nil, nil
 	}
 
 	if k > 2147483647 {
 		return nil, nil, fmt.Errorf("k too large")
 	}
-	start := time.Now()
-	ret := C.cuda_search(
-		idx.handle,
-		(*C.float)(unsafe.Pointer(&vector[0])),
-		C.int(k), // #nosec G115
-		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
-		(*C.float)(unsafe.Pointer(&resultDistances[0])),
-	)
-	duration := time.Since(start)
+	if k > n {
+		k = n
+	}
 
-	if ret != 0 {
-		return nil, nil, &types.GPUComputeError{
-			Operation: "search",
-			DeviceID:  idx.deviceInfo.DeviceID,
-			Cause:     fmt.Errorf("CUDA search failed"),
+	start := time.Now()
+
+	// Upload query to GPU
+	var dQuery unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dQuery)), C.size_t(idx.dim*4)); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("failed to allocate query GPU memory")
+	}
+	defer C.cudaFree(dQuery)
+	C.cudaMemcpy(dQuery, unsafe.Pointer(&vector[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
+
+	// Allocate reusable per-page distance buffer
+	pageDistSize := C.size_t(vectorsPerPage * 4)
+	var dPageDists unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPageDists)), pageDistSize); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("failed to allocate per-page distance buffer")
+	}
+	defer C.cudaFree(dPageDists)
+
+	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
+	type scored struct {
+		dist float32
+		pos  int
+	}
+	all := make([]scored, 0, n)
+	hPageDists := make([]float32, vectorsPerPage)
+
+	for chunk := 0; chunk < numChunks; chunk++ {
+		pid := idx.pageIDFor(0, chunk)
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			continue
+		}
+		if err := idx.pager.Promote(pi); err != nil {
+			continue
+		}
+		gpuPtr := idx.pager.GetGPUAddr(pi)
+		if gpuPtr == nil {
+			continue
+		}
+
+		vecsInChunk := n - chunk*vectorsPerPage
+		if vecsInChunk > vectorsPerPage {
+			vecsInChunk = vectorsPerPage
+		}
+
+		C.launch_l2_distance_kernel(
+			(*C.float)(gpuPtr),
+			(*C.float)(dQuery),
+			(*C.float)(dPageDists),
+			C.int(idx.dim),
+			C.int(vecsInChunk),
+			nil,
+		)
+
+		hPageDists = hPageDists[:vecsInChunk]
+		C.cudaMemcpy(
+			unsafe.Pointer(&hPageDists[0]),
+			dPageDists,
+			C.size_t(vecsInChunk*4),
+			C.cudaMemcpyDeviceToHost,
+		)
+
+		base := chunk * vectorsPerPage
+		for i, d := range hPageDists {
+			all = append(all, scored{dist: d, pos: base + i})
 		}
 	}
 
+	if len(all) == 0 {
+		return nil, nil, fmt.Errorf("no resident pages available for search")
+	}
+
+	// Sort all distances to find top-K
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].dist < all[j].dist
+	})
+	if k > len(all) {
+		k = len(all)
+	}
+
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+	for i := 0; i < k; i++ {
+		resultDistances[i] = all[i].dist
+		if all[i].pos < len(idx.idList) {
+			resultIDs[i] = idx.idList[all[i].pos]
+		}
+	}
+
+	duration := time.Since(start)
 	metrics.RecordGPUSearch(duration, "cuda", k)
 
 	return resultIDs, resultDistances, nil
@@ -795,29 +978,110 @@ func (idx *CUDAIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []
 	if idx.closed {
 		return nil, nil, fmt.Errorf("index is closed")
 	}
-
-	resultIDs := make([]int64, k)
-	resultDistances := make([]float32, k)
-
 	if m > 2147483647 || k > 2147483647 {
 		return nil, nil, fmt.Errorf("m or k too large")
 	}
-	start := time.Now()
-	ret := C.cuda_search_pq(
-		idx.handle,
-		(*C.float)(unsafe.Pointer(&lookupTable[0])),
-		C.int(m), // #nosec G115
-		C.int(k), // #nosec G115
-		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
-		(*C.float)(unsafe.Pointer(&resultDistances[0])),
-	)
-	duration := time.Since(start)
-
-	if ret != 0 {
-		return nil, nil, fmt.Errorf("CUDA PQ search failed")
+	if idx.pager == nil {
+		return nil, nil, fmt.Errorf("GPU pager not initialized")
 	}
 
-	metrics.RecordGPUSearch(duration, "cuda_pq", k)
+	n := idx.vectorCount
+	if n == 0 {
+		return nil, nil, nil
+	}
+	if k > n {
+		k = n
+	}
+
+	start := time.Now()
+
+	// Upload lookup table to GPU
+	tableSize := C.size_t(m * 256 * 4) // m * 256 floats
+	var dTable unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dTable)), tableSize); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("failed to allocate lookup table GPU memory")
+	}
+	defer C.cudaFree(dTable)
+	C.cudaMemcpy(dTable, unsafe.Pointer(&lookupTable[0]), tableSize, C.cudaMemcpyHostToDevice)
+
+	// Per-page distance buffer
+	var dPageDists unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPageDists)), C.size_t(vectorsPerPage*4)); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("failed to allocate per-page distance buffer")
+	}
+	defer C.cudaFree(dPageDists)
+
+	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
+	type scored struct {
+		dist float32
+		pos  int
+	}
+	all := make([]scored, 0, n)
+	hPageDists := make([]float32, vectorsPerPage)
+
+	for chunk := 0; chunk < numChunks; chunk++ {
+		pid := idx.pageIDFor(2, chunk)
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			continue
+		}
+		if err := idx.pager.Promote(pi); err != nil {
+			continue
+		}
+		gpuPtr := idx.pager.GetGPUAddr(pi)
+		if gpuPtr == nil {
+			continue
+		}
+
+		vecsInChunk := n - chunk*vectorsPerPage
+		if vecsInChunk > vectorsPerPage {
+			vecsInChunk = vectorsPerPage
+		}
+
+		C.launch_pq_distance_kernel(
+			(*C.float)(dTable),
+			(*C.uchar)(gpuPtr),
+			(*C.float)(dPageDists),
+			C.int(m),
+			C.int(vecsInChunk),
+			nil,
+		)
+
+		hPageDists = hPageDists[:vecsInChunk]
+		C.cudaMemcpy(
+			unsafe.Pointer(&hPageDists[0]),
+			dPageDists,
+			C.size_t(vecsInChunk*4),
+			C.cudaMemcpyDeviceToHost,
+		)
+
+		base := chunk * vectorsPerPage
+		for i, d := range hPageDists {
+			all = append(all, scored{dist: d, pos: base + i})
+		}
+	}
+
+	if len(all) == 0 {
+		return nil, nil, fmt.Errorf("no resident PQ pages available")
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].dist < all[j].dist
+	})
+	if k > len(all) {
+		k = len(all)
+	}
+
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+	for i := 0; i < k; i++ {
+		resultDistances[i] = all[i].dist
+		if all[i].pos < len(idx.idList) {
+			resultIDs[i] = idx.idList[all[i].pos]
+		}
+	}
+
+	metrics.RecordGPUSearch(time.Since(start), "cuda_pq", k)
 	return resultIDs, resultDistances, nil
 }
 
@@ -930,6 +1194,10 @@ func (idx *CUDAIndex) Close() error {
 
 	idx.Flush()
 
+	if idx.pager != nil {
+		idx.pager.Close()
+	}
+
 	if idx.memPool != nil {
 		idx.memPool.Close()
 	}
@@ -980,26 +1248,57 @@ func (idx *CUDAIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int
 	if idx.closed {
 		return fmt.Errorf("index is closed")
 	}
-
 	count := len(ids)
 	if count == 0 {
 		return nil
 	}
-
-	stride := len(tqData) / count
-
-	ret := C.cuda_add_tq_vectors(
-		idx.handle,
-		(*C.uchar)(unsafe.Pointer(&tqData[0])),
-		C.int(stride),
-		(*C.int64_t)(unsafe.Pointer(&ids[0])),
-		C.int(count),
-	)
-
-	if ret != 0 {
-		return fmt.Errorf("failed to add TQ vectors to CUDA buffer")
+	if idx.pager == nil {
+		return fmt.Errorf("GPU pager not initialized")
 	}
 
+	stride := len(tqData) / count
+	prevCount := idx.vectorCount
+	newCount := prevCount + count
+
+	idx.idList = append(idx.idList, ids...)
+	pageVecs := vectorsPerPage
+
+	for i := 0; i < count; {
+		globalPos := prevCount + i
+		chunk := globalPos / pageVecs
+		offset := globalPos % pageVecs
+		space := pageVecs - offset
+		toCopy := count - i
+		if toCopy > space {
+			toCopy = space
+		}
+
+		pid := idx.pageIDFor(3, chunk)
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			var err error
+			pi, err = idx.pager.Alloc(pid)
+			if err != nil {
+				return fmt.Errorf("failed to allocate pager page for TQ chunk %d: %w", chunk, err)
+			}
+		}
+
+		cpuBuf := idx.pager.GetCPUBuf(pi)
+		srcStart := i * stride
+		srcEnd := (i + toCopy) * stride
+		dstStart := offset * stride
+		copy(cpuBuf[dstStart:dstStart+toCopy*stride], tqData[srcStart:srcEnd])
+
+		if err := idx.pager.Promote(pi); err != nil {
+			return fmt.Errorf("failed to promote TQ page %d: %w", pid, err)
+		}
+
+		i += toCopy
+	}
+
+	idx.vectorCount = newCount
+	idx.tqStride = stride
+	idx.tqBitsAngle = bitsPerAngle
 	return nil
 }
 
@@ -1010,9 +1309,19 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 	if idx.closed {
 		return nil, nil, fmt.Errorf("index is closed")
 	}
-
 	if len(vector) != idx.dim {
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
+	}
+	if idx.pager == nil {
+		return nil, nil, fmt.Errorf("GPU pager not initialized")
+	}
+
+	n := idx.vectorCount
+	if n == 0 {
+		return nil, nil, nil
+	}
+	if k > n {
+		k = n
 	}
 
 	pow2 := 1
@@ -1020,23 +1329,96 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 		pow2 <<= 1
 	}
 
-	resultIDs := make([]int64, k)
-	resultDistances := make([]float32, k)
+	start := time.Now()
 
-	ret := C.cuda_search_tq(
-		idx.handle,
-		(*C.float)(unsafe.Pointer(&vector[0])),
-		C.int(k),
-		C.int(pow2),
-		C.int(bitsPerAngle),
-		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
-		(*C.float)(unsafe.Pointer(&resultDistances[0])),
-	)
+	// Upload query to GPU
+	var dQuery unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dQuery)), C.size_t(idx.dim*4)); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("failed to allocate query GPU memory")
+	}
+	defer C.cudaFree(dQuery)
+	C.cudaMemcpy(dQuery, unsafe.Pointer(&vector[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
 
-	if ret != 0 {
-		return nil, nil, fmt.Errorf("CUDA TQ search failed")
+	// Per-page distance buffer
+	var dPageDists unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPageDists)), C.size_t(vectorsPerPage*4)); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("failed to allocate per-page distance buffer")
+	}
+	defer C.cudaFree(dPageDists)
+
+	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
+	type scored struct {
+		dist float32
+		pos  int
+	}
+	all := make([]scored, 0, n)
+	hPageDists := make([]float32, vectorsPerPage)
+
+	for chunk := 0; chunk < numChunks; chunk++ {
+		pid := idx.pageIDFor(3, chunk)
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			continue
+		}
+		if err := idx.pager.Promote(pi); err != nil {
+			continue
+		}
+		gpuPtr := idx.pager.GetGPUAddr(pi)
+		if gpuPtr == nil {
+			continue
+		}
+
+		vecsInChunk := n - chunk*vectorsPerPage
+		if vecsInChunk > vectorsPerPage {
+			vecsInChunk = vectorsPerPage
+		}
+
+		C.launch_turboquant_distance_kernel(
+			(*C.float)(dQuery),
+			(*C.uchar)(gpuPtr),
+			(*C.float)(dPageDists),
+			C.int(idx.dim),
+			C.int(pow2),
+			C.int(bitsPerAngle),
+			C.int(vecsInChunk),
+			nil,
+		)
+
+		hPageDists = hPageDists[:vecsInChunk]
+		C.cudaMemcpy(
+			unsafe.Pointer(&hPageDists[0]),
+			dPageDists,
+			C.size_t(vecsInChunk*4),
+			C.cudaMemcpyDeviceToHost,
+		)
+
+		base := chunk * vectorsPerPage
+		for i, d := range hPageDists {
+			all = append(all, scored{dist: d, pos: base + i})
+		}
 	}
 
+	if len(all) == 0 {
+		return nil, nil, fmt.Errorf("no resident TQ pages available")
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].dist < all[j].dist
+	})
+	if k > len(all) {
+		k = len(all)
+	}
+
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+	for i := 0; i < k; i++ {
+		resultDistances[i] = all[i].dist
+		if all[i].pos < len(idx.idList) {
+			resultIDs[i] = idx.idList[all[i].pos]
+		}
+	}
+
+	metrics.RecordGPUSearch(time.Since(start), "cuda_tq", k)
 	return resultIDs, resultDistances, nil
 }
 
@@ -1067,46 +1449,15 @@ func (idx *CUDAIndex) startSyncTicker(cfg types.GPUConfig) {
 }
 
 func (idx *CUDAIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
-	idx.mu.RLock()
-	defer idx.mu.RUnlock()
-
-	if idx.closed {
-		return nil, nil, fmt.Errorf("index is closed")
-	}
-
 	if len(vector) != idx.dim {
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
 	}
-
-	if err := idx.Flush(); err != nil {
-		return nil, nil, err
+	// Convert float16 query to float32 and use pager-based search
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float16.New(float32(math.Float32frombits(uint32(v)))).Float32()
 	}
-
-	resultIDs := make([]int64, k)
-	resultDistances := make([]float32, k)
-
-	for i := range resultDistances {
-		resultDistances[i] = math.MaxFloat32
-	}
-
-	start := time.Now()
-	ret := C.cuda_search_fp16(
-		idx.handle,
-		(*C.uint16_t)(unsafe.Pointer(&vector[0])),
-		C.int(k),
-		C.int(0),
-		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
-		(*C.float)(unsafe.Pointer(&resultDistances[0])),
-	)
-	duration := time.Since(start)
-
-	if ret != 0 {
-		return nil, nil, fmt.Errorf("CUDA float16 search failed")
-	}
-
-	metrics.RecordGPUSearch(duration, "cuda_fp16", k)
-
-	return resultIDs, resultDistances, nil
+	return idx.Search(f32Vec, k)
 }
 
 func (idx *CUDAIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
@@ -1168,73 +1519,127 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
-	vectorCount := int(C.cuda_get_count(idx.handle))
-	if vectorCount == 0 {
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+
+	if idx.pager == nil {
+		return nil, nil, fmt.Errorf("GPU pager not initialized")
+	}
+
+	n := idx.vectorCount
+	if n == 0 {
 		return nil, nil, nil
 	}
 
-	// 1. Upload query
-	var d_query unsafe.Pointer
-	cudaErr := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_query)), C.size_t(idx.dim*4))
-	if cudaErr != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("cudaMalloc query failed: %v", cudaErr)
+	if k > n {
+		k = n
 	}
-	defer C.cudaFree(d_query)
-	C.cudaMemcpy(d_query, unsafe.Pointer(&query[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
 
-	// 2. Upload bitset if provided
-	var d_bitset unsafe.Pointer
-	if len(bitset) > 0 {
-		bitsetSize := C.size_t(len(bitset) * 8)
-		cudaErr = C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_bitset)), bitsetSize)
-		if cudaErr != C.cudaSuccess {
-			return nil, nil, fmt.Errorf("cudaMalloc bitset failed: %v", cudaErr)
+	start := time.Now()
+
+	// Upload query to GPU
+	var dQuery unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dQuery)), C.size_t(idx.dim*4)); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("cudaMalloc query failed")
+	}
+	defer C.cudaFree(dQuery)
+	C.cudaMemcpy(dQuery, unsafe.Pointer(&query[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
+
+	// Per-page distance buffer
+	var dPageDists unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPageDists)), C.size_t(vectorsPerPage*4)); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("cudaMalloc page distances failed")
+	}
+	defer C.cudaFree(dPageDists)
+
+	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
+	type scored struct {
+		dist float32
+		pos  int
+	}
+	all := make([]scored, 0, n)
+	hPageDists := make([]float32, vectorsPerPage)
+
+	for chunk := 0; chunk < numChunks; chunk++ {
+		pid := idx.pageIDFor(0, chunk)
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			continue
 		}
-		defer C.cudaFree(d_bitset)
-		C.cudaMemcpy(d_bitset, unsafe.Pointer(&bitset[0]), bitsetSize, C.cudaMemcpyHostToDevice)
+		if err := idx.pager.Promote(pi); err != nil {
+			continue
+		}
+		gpuPtr := idx.pager.GetGPUAddr(pi)
+		if gpuPtr == nil {
+			continue
+		}
+
+		vecsInChunk := n - chunk*vectorsPerPage
+		if vecsInChunk > vectorsPerPage {
+			vecsInChunk = vectorsPerPage
+		}
+
+		C.launch_l2_distance_kernel(
+			(*C.float)(gpuPtr),
+			(*C.float)(dQuery),
+			(*C.float)(dPageDists),
+			C.int(idx.dim),
+			C.int(vecsInChunk),
+			nil,
+		)
+
+		hPageDists = hPageDists[:vecsInChunk]
+		C.cudaMemcpy(
+			unsafe.Pointer(&hPageDists[0]),
+			dPageDists,
+			C.size_t(vecsInChunk*4),
+			C.cudaMemcpyDeviceToHost,
+		)
+
+		base := chunk * vectorsPerPage
+		for i, d := range hPageDists {
+			all = append(all, scored{dist: d, pos: base + i})
+		}
 	}
 
-	// 3. Prepare distances buffer
-	var d_distances unsafe.Pointer
-	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_distances)), C.size_t(vectorCount*4))
-	defer C.cudaFree(d_distances)
+	// Filter by bitset on CPU and find top-K
+	var filtered []scored
+	if len(bitset) > 0 {
+		filtered = make([]scored, 0, len(all))
+		for _, s := range all {
+			word := s.pos / 64
+			bit := uint(s.pos % 64)
+			if word < len(bitset) && (bitset[word]&(1<<bit)) != 0 {
+				filtered = append(filtered, s)
+			}
+		}
+	} else {
+		filtered = all
+	}
 
-	// 4. Launch fused kernel
-	C.launch_l2_distance_filtered_kernel(
-		(*C.float)(idx.handle.buffers[0]),
-		(*C.float)(d_query),
-		(*C.float)(d_distances),
-		(*C.ulonglong)(d_bitset),
-		C.int(idx.dim),
-		C.int(vectorCount),
-		nil,
-	)
+	if len(filtered) == 0 {
+		return nil, nil, nil
+	}
 
-	// 5. top-k using existing kernel
-	var d_outDist unsafe.Pointer
-	var d_outIDs unsafe.Pointer
-	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_outDist)), C.size_t(k*4))
-	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_outIDs)), C.size_t(k*8))
-	defer C.cudaFree(d_outDist)
-	defer C.cudaFree(d_outIDs)
+	sort.Slice(filtered, func(i, j int) bool {
+		return filtered[i].dist < filtered[j].dist
+	})
+	if k > len(filtered) {
+		k = len(filtered)
+	}
 
-	C.launch_topk_kernel(
-		(*C.float)(d_distances),
-		(*C.int64_t)(idx.handle.idBuffer),
-		C.int(vectorCount),
-		C.int(k),
-		(*C.float)(d_outDist),
-		(*C.int64_t)(d_outIDs),
-		nil,
-	)
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+	for i := 0; i < k; i++ {
+		resultDistances[i] = filtered[i].dist
+		if filtered[i].pos < len(idx.idList) {
+			resultIDs[i] = idx.idList[filtered[i].pos]
+		}
+	}
 
-	h_distances := make([]float32, k)
-	h_ids := make([]int64, k)
-
-	C.cudaMemcpy(unsafe.Pointer(&h_distances[0]), d_outDist, C.size_t(k*4), C.cudaMemcpyDeviceToHost)
-	C.cudaMemcpy(unsafe.Pointer(&h_ids[0]), d_outIDs, C.size_t(k*8), C.cudaMemcpyDeviceToHost)
-
-	return h_ids, h_distances, nil
+	metrics.RecordGPUSearch(time.Since(start), "cuda_filtered", k)
+	return resultIDs, resultDistances, nil
 }
 
 func (idx *CUDAIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights []float32) error {
@@ -1525,6 +1930,8 @@ func (idx *CUDAIndex) Clear() error {
 	idx.batchVectors = idx.batchVectors[:0]
 	idx.batchMu.Unlock()
 
+	idx.vectorCount = 0
+	idx.idList = idx.idList[:0]
 	idx.handle.vectorCount = 0
 	return nil
 }

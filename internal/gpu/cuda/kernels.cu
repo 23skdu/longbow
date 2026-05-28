@@ -583,15 +583,15 @@ __global__ void l2_distance_kernel_large_v2(const float* vectors, const float* q
     const float* vec = vectors + (int64_t)vec_idx * dim;
     float sum = 0.0f;
 
-    // float4 vectorized: each lane processes one float4 per iteration (4 elements)
-    // All 32 lanes together consume 128 elements per iteration -> fully coalesced
+    // float4 vectorized: each lane processes one float4 per iteration
+    // Consecutive lanes read consecutive float4s -> fully coalesced (128B per warp iteration)
     const float4* vec4 = (const float4*)vec;
     const float4* query4 = (const float4*)s_query_large;
     int n4 = dim / 4;
 
-    for (int i = lane_id; i < n4; i += WARP_SZ) {
-        float4 v = vec4[i];
-        float4 q = query4[i];
+    for (int i = 0; i < n4; i += WARP_SZ) {
+        float4 v = vec4[i + lane_id];
+        float4 q = query4[i + lane_id];
         float dx = v.x - q.x;
         float dy = v.y - q.y;
         float dz = v.z - q.z;

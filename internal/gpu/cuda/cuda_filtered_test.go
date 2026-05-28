@@ -26,6 +26,8 @@ func TestCUDAIndex_FilteredSearch(t *testing.T) {
 	require.NoError(t, err)
 	defer idx.Close()
 
+	cudaIdx := idx.(*CUDAIndex)
+
 	// Add vectors
 	ids := make([]int64, count)
 	vecs := make([]float32, count*dim)
@@ -36,9 +38,9 @@ func TestCUDAIndex_FilteredSearch(t *testing.T) {
 		}
 	}
 
-	err = idx.Add(ids, vecs)
+	err = cudaIdx.Add(ids, vecs)
 	require.NoError(t, err)
-	err = idx.Flush()
+	err = cudaIdx.Flush()
 	require.NoError(t, err)
 
 	// Create bitset: only even IDs allowed
@@ -54,7 +56,7 @@ func TestCUDAIndex_FilteredSearch(t *testing.T) {
 		query[i] = rand.Float32()
 	}
 
-	results, _, err := idx.SearchWithFilter(query, 10, bitset)
+	results, _, err := cudaIdx.SearchWithFilter(query, 10, bitset)
 	require.NoError(t, err)
 
 	assert.NotEmpty(t, results)

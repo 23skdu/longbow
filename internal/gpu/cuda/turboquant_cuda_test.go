@@ -28,6 +28,8 @@ func TestCUDAIndex_TurboQuantSearch(t *testing.T) {
 	require.NoError(t, err)
 	defer idx.Close()
 
+	cudaIdx := idx.(*CUDAIndex)
+
 	// Add vectors
 	ids := make([]int64, count)
 	// Calculate size of turboquant compressed representation
@@ -46,9 +48,9 @@ func TestCUDAIndex_TurboQuantSearch(t *testing.T) {
 		}
 	}
 
-	err = idx.AddTurboQuant(ids, tqData, bitsPerAngle)
+	err = cudaIdx.AddTurboQuant(ids, tqData, bitsPerAngle)
 	require.NoError(t, err)
-	err = idx.Flush()
+	err = cudaIdx.Flush()
 	require.NoError(t, err)
 
 	query := make([]float32, dim)
@@ -88,6 +90,8 @@ func FuzzCUDAIndex_TurboQuantSearch(f *testing.F) {
 		}
 		defer idx.Close()
 
+		cudaIdx := idx.(*CUDAIndex)
+
 		ids := make([]int64, count)
 		angleCount := pow2 - 1
 		angleBytes := (angleCount*bitsPerAngle + 7) / 8
@@ -99,9 +103,9 @@ func FuzzCUDAIndex_TurboQuantSearch(f *testing.F) {
 			ids[i] = int64(i)
 		}
 
-		err = idx.AddTurboQuant(ids, tqData, bitsPerAngle)
+		err = cudaIdx.AddTurboQuant(ids, tqData, bitsPerAngle)
 		require.NoError(t, err)
-		err = idx.Flush()
+		err = cudaIdx.Flush()
 		require.NoError(t, err)
 
 		query := make([]float32, dim)

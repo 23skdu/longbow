@@ -31,9 +31,9 @@ func main() {
 	count := flag.Int("count", 2048, "number of vectors")
 	flag.Parse()
 
-	pow2 := 128
-	if *dim < pow2 {
-		pow2 = 64
+	pow2 := 1
+	for pow2 < *dim {
+		pow2 <<= 1
 	}
 	bitsPerAngle := 8
 

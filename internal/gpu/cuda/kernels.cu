@@ -283,7 +283,8 @@ __global__ void turboquant_distance_kernel(const float* query, const unsigned ch
     if (idx >= count) return;
     int angleCount = pow2 - 1;
     int angleBytes = (angleCount * bitsPerAngle + 7) / 8;
-    int stride = 4 + angleBytes + ((pow2 + 7) / 8);
+    int rawStride = 4 + angleBytes + ((pow2 + 7) / 8);
+    int stride = (rawStride + 3) & ~3; // align to 4 bytes for safe float access
     const unsigned char* data = tqData + (idx * stride);
     float radius = *(const float*)data;
     const unsigned char* packedAngles = data + 4;
@@ -332,12 +333,11 @@ __global__ void turboquant_distance_kernel_v2(const float* query, const unsigned
 
     int angleCount = pow2 - 1;
     int angleBytes = (angleCount * bitsPerAngle + 7) / 8;
-    int stride = 4 + angleBytes + ((pow2 + 7) / 8);
+    int rawStride = 4 + angleBytes + ((pow2 + 7) / 8);
+    int stride = (rawStride + 3) & ~3;
 
     const unsigned char* data = tqData + (vec_idx * stride);
     float radius = *(const float*)data;
-    const unsigned char* packedAngles = data + 4;
-    const unsigned char* qjlBits = data + 4 + angleBytes;
 
     // Single thread handles the hierarchical reconstruction (sequential dependency chain)
     if (threadIdx.x == 0) {

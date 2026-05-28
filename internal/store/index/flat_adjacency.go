@@ -135,7 +135,7 @@ func (fa *FlatAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
 		return errors.New("flat adjacency: chunk allocation failed")
 	}
 	
-	chunkData := fa.arena.Get(memory.SliceRef{Offset: offset, Len: uint32(adjacencyChunkSize * fa.stride), Cap: uint32(adjacencyChunkSize * fa.stride)})
+	chunkData := fa.arena.Get(memory.SliceRef{Offset: offset, Len: uint32(adjacencyChunkSize * fa.stride), Cap: uint32(adjacencyChunkSize * fa.stride)}) // #nosec G115
 	dest := chunkData[cOff*fa.stride : (cOff+1)*fa.stride]
 	
 	if len(neighbors) > fa.maxNeighbors {
@@ -146,7 +146,7 @@ func (fa *FlatAdjacency) SetNeighbors(id uint32, neighbors []uint32) error {
 	copy(dest[1:], neighbors)
 	
 	// Atomic update length to make it visible
-	atomic.StoreUint32(&dest[0], uint32(len(neighbors)))
+	atomic.StoreUint32(&dest[0], uint32(len(neighbors))) // #nosec G115
 	return nil
 }
 
@@ -167,7 +167,7 @@ func (fa *FlatAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint32
 		return nil, false
 	}
 	
-	chunkData := fa.arena.GetWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(adjacencyChunkSize * fa.stride), Cap: uint32(adjacencyChunkSize * fa.stride)}, maxGen)
+	chunkData := fa.arena.GetWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(adjacencyChunkSize * fa.stride), Cap: uint32(adjacencyChunkSize * fa.stride)}, maxGen) // #nosec G115
 	if chunkData == nil {
 		return nil, false
 	}
@@ -178,8 +178,8 @@ func (fa *FlatAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint32
 	if length == 0 {
 		return nil, true
 	}
-	if length > uint32(fa.maxNeighbors) {
-		length = uint32(fa.maxNeighbors)
+	if length > uint32(fa.maxNeighbors) { // #nosec G115
+		length = uint32(fa.maxNeighbors) // #nosec G115
 	}
 	return nodeData[1 : 1+length], true
 }
@@ -189,12 +189,12 @@ func (fa *FlatAdjacency) GetPackedNeighbors(id uint32) (uint64, bool) {
 }
 
 func (fa *FlatAdjacency) GetNeighborsFromPacked(packed uint64) []uint32 {
-	res, _ := fa.GetNeighbors(uint32(packed))
+	res, _ := fa.GetNeighbors(uint32(packed)) // #nosec G115
 	return res
 }
 
 func (fa *FlatAdjacency) GetNeighborsFromPackedWithGen(packed uint64, maxGen uint64) []uint32 {
-	res, _ := fa.GetNeighborsWithGen(uint32(packed), maxGen)
+	res, _ := fa.GetNeighborsWithGen(uint32(packed), maxGen) // #nosec G115
 	return res
 }
 

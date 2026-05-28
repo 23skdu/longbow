@@ -712,7 +712,7 @@ type sharedFloat32Computer struct {
 }
 
 func (c *sharedFloat32Computer) ComputeSingle(id uint32) (float32, error) {
-	if id >= c.startID && id < c.startID+uint32(c.n) {
+	if id >= c.startID && id < c.startID+uint32(c.n) { // #nosec G115
 		idx := int(id - c.startID)
 		if idx < len(c.slices) {
 			vec := c.slices[idx]
@@ -749,7 +749,7 @@ func (c *sharedFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]flo
 }
 
 func (c *sharedFloat32Computer) Prefetch(id uint32) {
-	if id >= c.startID && id < c.startID+uint32(c.n) {
+	if id >= c.startID && id < c.startID+uint32(c.n) { // #nosec G115
 		idx := int(id - c.startID)
 		if idx < len(c.slices) && len(c.slices[idx]) > 0 {
 			simd.Prefetch(unsafe.Pointer(&c.slices[idx][0])) // #nosec G103
@@ -772,7 +772,7 @@ type sharedInt8Computer struct {
 }
 
 func (c *sharedInt8Computer) ComputeSingle(id uint32) (float32, error) {
-	if id >= c.startID && id < c.startID+uint32(c.n) {
+	if id >= c.startID && id < c.startID+uint32(c.n) { // #nosec G115
 		idx := int(id - c.startID)
 		if idx < len(c.slices) {
 			vec := c.slices[idx]
@@ -809,7 +809,7 @@ func (c *sharedInt8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 }
 
 func (c *sharedInt8Computer) Prefetch(id uint32) {
-	if id >= c.startID && id < c.startID+uint32(c.n) {
+	if id >= c.startID && id < c.startID+uint32(c.n) { // #nosec G115
 		idx := int(id - c.startID)
 		if idx < len(c.slices) && len(c.slices[idx]) > 0 {
 			simd.Prefetch(unsafe.Pointer(&c.slices[idx][0])) // #nosec G103

@@ -331,17 +331,15 @@ int metal_get_count_optimized(MetalIndexOptimized* handle) {
 }
 
 // Search using Metal compute shaders with multiple metrics
-int metal_search_optimized(MetalIndexOptimized* handle, float* query, int k, int64_t* resultIDs, float* resultDistances) {
+int metal_search_optimized(MetalIndexOptimized* handle, float* query, void** page_buffers, int* page_starts, int num_pages, int totalVectors, int k, int64_t* resultIDs, float* resultDistances) {
     @autoreleasepool {
-        if (!handle->vectorBuffer || handle->vectorCount == 0 || !query) {
+        if (!page_buffers || totalVectors == 0 || !query) {
             return -1;
         }
 
         id<MTLDevice> device = (__bridge id<MTLDevice>)handle->device;
         id<MTLCommandQueue> queue = (__bridge id<MTLCommandQueue>)handle->commandQueue;
-        id<MTLBuffer> vectorBuffer = (__bridge id<MTLBuffer>)handle->vectorBuffer;
 
-        // Select pipeline based on metric
         id<MTLComputePipelineState> distancePipeline;
         switch (handle->metric) {
             case METRIC_COSINE:
@@ -350,101 +348,96 @@ int metal_search_optimized(MetalIndexOptimized* handle, float* query, int k, int
             case METRIC_DOT:
                 distancePipeline = (__bridge id<MTLComputePipelineState>)handle->dotPipeline;
                 break;
+            case METRIC_L2:
             default:
                 distancePipeline = (__bridge id<MTLComputePipelineState>)handle->distanceComputePipeline;
-        }
-
-        if (!distancePipeline) {
-            distancePipeline = (__bridge id<MTLComputePipelineState>)handle->distanceComputePipeline;
+                break;
         }
 
         id<MTLComputePipelineState> topKPipeline = (__bridge id<MTLComputePipelineState>)handle->topKPipeline;
 
-        // Create buffers
-        id<MTLBuffer> queryBuffer = (__bridge id<MTLBuffer>)handle->queryBuffers[handle->currentBufferIdx];
-        if (queryBuffer) {
-            memcpy(queryBuffer.contents, query, handle->dimensions * sizeof(float));
+        if (!distancePipeline || !topKPipeline) {
+            return -1;
+        }
+
+        id<MTLBuffer> queryBuf = (__bridge id<MTLBuffer>)handle->queryBuffers[handle->currentBufferIdx];
+        if (queryBuf) {
+            memcpy(queryBuf.contents, query, handle->dimensions * sizeof(float));
         } else {
-            queryBuffer = [device newBufferWithBytes:query
-                                            length:handle->dimensions * sizeof(float)
-                                           options:MTLResourceStorageModeShared];
+            queryBuf = [device newBufferWithBytes:query length:handle->dimensions * sizeof(float) options:MTLResourceStorageModeShared];
         }
         handle->currentBufferIdx = (handle->currentBufferIdx + 1) % 2;
 
-        id<MTLBuffer> distanceBuffer = [device newBufferWithLength:handle->vectorCount * sizeof(float)
-                                                            options:MTLResourceStorageModeShared];
+        id<MTLBuffer> distancesBuf = [device newBufferWithLength:totalVectors * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> topDistBuf = [device newBufferWithLength:k * sizeof(float) options:MTLResourceStorageModeShared];
+        id<MTLBuffer> topIdxBuf = [device newBufferWithLength:k * sizeof(int) options:MTLResourceStorageModeShared];
 
-        id<MTLBuffer> indicesBuffer = [device newBufferWithLength:k * sizeof(int)
-                                                           options:MTLResourceStorageModeShared];
+        id<MTLCommandBuffer> cmdBuf = [queue commandBuffer];
 
-        id<MTLBuffer> topDistancesBuffer = [device newBufferWithLength:k * sizeof(float)
-                                                                options:MTLResourceStorageModeShared];
+        id<MTLComputeCommandEncoder> distEncoder = [cmdBuf computeCommandEncoder];
+        [distEncoder setComputePipelineState:distancePipeline];
+        [distEncoder setBuffer:queryBuf offset:0 atIndex:0];
 
-        // Initialize indices and distances for heap-based top-k
-        // Initialize indices and distances with default values before GPU processing
-        for (int i = 0; i < k; i++) {
-            ((int*)indicesBuffer.contents)[i] = -1;
-            ((float*)topDistancesBuffer.contents)[i] = INFINITY;
+        // Argument buffer logic for pages
+        id<MTLBuffer> argBuf = [device newBufferWithLength:num_pages * sizeof(uint64_t) options:MTLResourceStorageModeShared];
+        uint64_t* ptrs = (uint64_t*)[argBuf contents];
+        for (int i = 0; i < num_pages; i++) {
+            id<MTLBuffer> pb = (__bridge id<MTLBuffer>)page_buffers[i];
+            ptrs[i] = pb.gpuAddress;
+            [distEncoder useResource:pb usage:MTLResourceUsageRead];
         }
+        [distEncoder setBuffer:argBuf offset:0 atIndex:1];
 
-        // Create command buffer
-        id<MTLCommandBuffer> commandBuffer = [queue commandBuffer];
-        id<MTLComputeCommandEncoder> encoder = [commandBuffer computeCommandEncoder];
+        id<MTLBuffer> startsBuf = [device newBufferWithBytes:page_starts length:(num_pages+1)*sizeof(uint32_t) options:MTLResourceStorageModeShared];
+        [distEncoder setBuffer:distancesBuf offset:0 atIndex:2];
+        [distEncoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:3];
+        [distEncoder setBytes:&totalVectors length:sizeof(uint32_t) atIndex:4];
+        [distEncoder setBuffer:startsBuf offset:0 atIndex:5];
+        [distEncoder setBytes:&num_pages length:sizeof(uint32_t) atIndex:6];
 
-        // Compute distances
-        [encoder setComputePipelineState:distancePipeline];
-        [encoder setBuffer:queryBuffer offset:0 atIndex:0];
-        [encoder setBuffer:vectorBuffer offset:0 atIndex:1];
-        [encoder setBuffer:distanceBuffer offset:0 atIndex:2];
-        [encoder setBytes:&handle->dimensions length:sizeof(uint32_t) atIndex:3];
-        [encoder setBytes:&handle->vectorCount length:sizeof(uint32_t) atIndex:4];
-
-        MTLSize gridSize = MTLSizeMake(handle->vectorCount, 1, 1);
         NSUInteger threadGroupSize = distancePipeline.maxTotalThreadsPerThreadgroup;
-        if (threadGroupSize > (NSUInteger)handle->vectorCount) {
-            threadGroupSize = handle->vectorCount;
-        }
-        MTLSize threadgroupSize = MTLSizeMake(threadGroupSize, 1, 1);
+        if (threadGroupSize > totalVectors) threadGroupSize = totalVectors;
+        MTLSize threadgroups = MTLSizeMake((totalVectors + threadGroupSize - 1) / threadGroupSize, 1, 1);
+        MTLSize threadsPerThreadgroup = MTLSizeMake(threadGroupSize, 1, 1);
 
-        [encoder dispatchThreads:gridSize threadsPerThreadgroup:threadgroupSize];
+        [distEncoder dispatchThreadgroups:threadgroups threadsPerThreadgroup:threadsPerThreadgroup];
+        [distEncoder endEncoding];
 
-        // Find top-k using heap-based selection
-        [encoder setComputePipelineState:topKPipeline];
-        [encoder setBuffer:distanceBuffer offset:0 atIndex:0];
-        [encoder setBuffer:indicesBuffer offset:0 atIndex:1];
-        [encoder setBuffer:topDistancesBuffer offset:0 atIndex:2];
-        [encoder setBytes:&handle->vectorCount length:sizeof(uint32_t) atIndex:3];
-        [encoder setBytes:&k length:sizeof(uint32_t) atIndex:4];
+        id<MTLComputeCommandEncoder> topKEncoder = [cmdBuf computeCommandEncoder];
+        [topKEncoder setComputePipelineState:topKPipeline];
+        [topKEncoder setBuffer:distancesBuf offset:0 atIndex:0];
+        [topKEncoder setBuffer:topIdxBuf offset:0 atIndex:1];
+        [topKEncoder setBuffer:topDistBuf offset:0 atIndex:2];
+        [topKEncoder setBytes:&totalVectors length:sizeof(uint32_t) atIndex:3];
+        [topKEncoder setBytes:&k length:sizeof(uint32_t) atIndex:4];
 
-        [encoder dispatchThreads:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+        [topKEncoder dispatchThreadgroups:MTLSizeMake(1, 1, 1) threadsPerThreadgroup:MTLSizeMake(1, 1, 1)];
+        [topKEncoder endEncoding];
 
-        [encoder endEncoding];
-        [commandBuffer commit];
-        [commandBuffer waitUntilCompleted];
+        [cmdBuf commit];
+        [cmdBuf waitUntilCompleted];
 
-        // Copy results with ID lookup
-        int* indices = (int*)[indicesBuffer contents];
-        float* distances = (float*)[topDistancesBuffer contents];
+        int* topIndices = (int*)[topIdxBuf contents];
+        float* topDistances = (float*)[topDistBuf contents];
 
-        // Get IDs if available
-        if (handle->idBuffer) {
-            id<MTLBuffer> idBuffer = (__bridge id<MTLBuffer>)handle->idBuffer;
-            int64_t* ids = (int64_t*)[idBuffer contents];
-            for (int i = 0; i < k; i++) {
-                resultIDs[i] = (indices[i] >= 0 && indices[i] < handle->vectorCount) ?
-                    ids[indices[i]] : -1;
-                resultDistances[i] = distances[i];
-            }
-        } else {
-            for (int i = 0; i < k; i++) {
-                resultIDs[i] = indices[i];
-                resultDistances[i] = distances[i];
+        // We only return IDs if we actually have them.
+        id<MTLBuffer> idBuffer = (__bridge id<MTLBuffer>)handle->idBuffer;
+        int64_t* allIDs = idBuffer ? (int64_t*)[idBuffer contents] : NULL;
+
+        for (int i = 0; i < k; i++) {
+            resultDistances[i] = topDistances[i];
+            int localIdx = topIndices[i];
+            if (localIdx >= 0 && localIdx < totalVectors) {
+                resultIDs[i] = allIDs ? allIDs[localIdx] : localIdx;
+            } else {
+                resultIDs[i] = -1;
             }
         }
 
         return 0;
     }
 }
+
 
 // Cleanup with proper resource release
 void metal_cleanup_optimized(MetalIndexOptimized* handle) {
@@ -889,10 +882,13 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/gpu/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
 )
+
+const vectorsPerPage = 4096
 
 // MetalIndexOptimized implements GPU-accelerated vector search using Metal compute shaders
 type MetalIndexOptimized struct {
@@ -904,6 +900,21 @@ type MetalIndexOptimized struct {
 	graphOffsets   []uint32
 	graphNeighbors []uint32
 	graphWeights   []float32
+	
+	// Paging and Memory
+	memPool        *memory.GPUMemPool
+	pager          *memory.GPUPager
+	vectorCount    int
+	idList         []int64
+	
+	// Batching
+	batchMu        sync.Mutex
+	batchIDs       []int64
+	batchVectors   []float32
+	maxMemory      int64
+	lastSyncTime   time.Time
+	syncTicker     *time.Ticker
+	stopSync       chan struct{}
 }
 
 // NewMetalIndexOptimized creates an optimized Metal-based GPU index with compute shaders
@@ -1006,16 +1017,147 @@ func NewMetalIndexOptimized(cfg types.GPUConfig) (types.Index, error) {
 		tq, haversine, norm, prune, greedy, greedyTQ,
 	)
 
-	idx := &MetalIndexOptimized{
-		handle: handle,
-		dim:    cfg.Dimension,
+	maxVRAM := cfg.MaxMemory
+	if maxVRAM <= 0 {
+		maxVRAM = 1024 * 1024 * 1024 // 1GB default for Metal
 	}
+	pageSize := int64(vectorsPerPage) * int64(cfg.Dimension) * 4
+
+	idx := &MetalIndexOptimized{
+		handle:       handle,
+		dim:          cfg.Dimension,
+		idList:       make([]int64, 0),
+		lastSyncTime: time.Now(),
+		stopSync:     make(chan struct{}),
+		maxMemory:    maxVRAM,
+	}
+
+	pool, err := memory.NewGPUMemPool(types.BackendMetal, cfg.DeviceID)
+	if err == nil {
+		idx.memPool = pool
+		idx.pager = memory.NewGPUPager(pool, maxVRAM, pageSize)
+	}
+
+	idx.startSyncTicker(cfg)
 
 	runtime.SetFinalizer(idx, (*MetalIndexOptimized).Close)
 	return idx, nil
 }
 
-// Add adds vectors to the optimized Metal GPU index
+
+func (idx *MetalIndexOptimized) pageIDFor(dataType int, chunkIdx int) int64 {
+	return int64(dataType)<<32 | int64(chunkIdx)
+}
+
+func (idx *MetalIndexOptimized) startSyncTicker(cfg types.GPUConfig) {
+	interval := cfg.SyncInterval
+	if interval <= 0 {
+		interval = 5 * time.Second
+	}
+	idx.syncTicker = time.NewTicker(interval)
+	go func() {
+		for {
+			select {
+			case <-idx.syncTicker.C:
+				_ = idx.Flush()
+			case <-idx.stopSync:
+				return
+			}
+		}
+	}()
+}
+
+func (idx *MetalIndexOptimized) Flush() error {
+	idx.batchMu.Lock()
+	defer idx.batchMu.Unlock()
+
+	if len(idx.batchIDs) == 0 {
+		return nil
+	}
+
+	start := time.Now()
+	batchCount := len(idx.batchIDs)
+
+	if batchCount > 2147483647 {
+		return fmt.Errorf("batch too large")
+	}
+
+	if idx.pager == nil {
+		return fmt.Errorf("GPU pager not initialized")
+	}
+
+	dim := idx.dim
+	maxMem := idx.maxMemory
+	prevCount := idx.vectorCount
+	newCount := prevCount + batchCount
+
+	totalPages := (newCount + vectorsPerPage - 1) / vectorsPerPage
+	estimatedMem := int64(totalPages) * int64(vectorsPerPage) * int64(dim) * 4
+	if maxMem > 0 && estimatedMem > maxMem {
+		return &types.GPUSyncError{
+			BatchSize: batchCount,
+			DeviceID:  0,
+			Cause:     fmt.Errorf("GPU memory limit exceeded: estimated %d bytes, limit %d", estimatedMem, maxMem),
+		}
+	}
+
+	vecSize := dim * 4
+	pageVecs := vectorsPerPage
+
+	for i := 0; i < batchCount; {
+		globalPos := prevCount + i
+		chunk := globalPos / pageVecs
+		offset := globalPos % pageVecs
+		space := pageVecs - offset
+		toCopy := batchCount - i
+		if toCopy > space {
+			toCopy = space
+		}
+
+		pid := memory.PageID(idx.pageIDFor(0, chunk))
+
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			var err error
+			pi, err = idx.pager.Alloc(pid)
+			if err != nil {
+				return &types.GPUSyncError{
+					BatchSize: batchCount,
+					DeviceID:  0,
+					Cause:     fmt.Errorf("failed to allocate pager page %d: %w", pid, err),
+				}
+			}
+		}
+
+		cpuBuf := idx.pager.GetCPUBuf(pi)
+		srcVec := idx.batchVectors[i*int(dim) : (i+toCopy)*int(dim)]
+		dstOffset := offset * vecSize
+		copy(cpuBuf[dstOffset:dstOffset+toCopy*vecSize], unsafe.Slice((*byte)(unsafe.Pointer(&srcVec[0])), toCopy*vecSize))
+
+		if err := idx.pager.Promote(pi); err != nil {
+			return &types.GPUSyncError{
+				BatchSize: batchCount,
+				DeviceID:  0,
+				Cause:     fmt.Errorf("failed to promote page %d to GPU: %w", pid, err),
+			}
+		}
+
+		i += toCopy
+	}
+
+	idx.vectorCount = newCount
+	idx.idList = append(idx.idList, idx.batchIDs...)
+
+	duration := time.Since(start)
+	metrics.RecordGPUSync(duration, batchCount)
+
+	idx.batchIDs = idx.batchIDs[:0]
+	idx.batchVectors = idx.batchVectors[:0]
+	idx.lastSyncTime = time.Now()
+
+	return nil
+}
+
 func (idx *MetalIndexOptimized) Add(ids []int64, vectors []float32) error {
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
@@ -1033,18 +1175,19 @@ func (idx *MetalIndexOptimized) Add(ids []int64, vectors []float32) error {
 		return fmt.Errorf("id count %d does not match vector count %d", len(ids), n)
 	}
 
-	ret := C.metal_add_vectors_optimized(
-		idx.handle,
-		(*C.float)(unsafe.Pointer(&vectors[0])),
-		(*C.int64_t)(unsafe.Pointer(&ids[0])),
-		C.int(n),
-	)
-	if ret != 0 {
-		return fmt.Errorf("failed to add vectors to optimized Metal buffer")
+	idx.batchMu.Lock()
+	idx.batchIDs = append(idx.batchIDs, ids...)
+	idx.batchVectors = append(idx.batchVectors, vectors...)
+	batchSize := len(idx.batchIDs)
+	idx.batchMu.Unlock()
+
+	if batchSize >= 1000 {
+		return idx.Flush()
 	}
 
 	return nil
 }
+
 
 // Len returns the number of vectors in the index
 func (idx *MetalIndexOptimized) Len() int {
@@ -1069,23 +1212,103 @@ func (idx *MetalIndexOptimized) Search(vector []float32, k int) ([]int64, []floa
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
 	}
 
-	resultIDs := make([]int64, k)
-	resultDistances := make([]float32, k)
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
+
+	if idx.pager == nil {
+		return nil, nil, fmt.Errorf("GPU pager not initialized")
+	}
+
+	n := idx.vectorCount
+	if n == 0 {
+		return nil, nil, nil
+	}
+
+	if k > 2147483647 {
+		return nil, nil, fmt.Errorf("k too large")
+	}
+	if k > n {
+		k = n
+	}
+
+	start := time.Now()
+
+	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
+
+	type pageEntry struct {
+		ptr   unsafe.Pointer
+		nvecs int
+	}
+	pages := make([]pageEntry, 0, numChunks)
+	for chunk := 0; chunk < numChunks; chunk++ {
+		pid := memory.PageID(idx.pageIDFor(0, chunk))
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			continue
+		}
+		if err := idx.pager.Promote(pi); err != nil {
+			continue
+		}
+		gpuPtr := idx.pager.GetGPUAddr(pi)
+		if gpuPtr == nil {
+			continue
+		}
+		vecsInChunk := n - chunk*vectorsPerPage
+		if vecsInChunk > vectorsPerPage {
+			vecsInChunk = vectorsPerPage
+		}
+		pages = append(pages, pageEntry{ptr: gpuPtr, nvecs: vecsInChunk})
+	}
+
+	if len(pages) == 0 {
+		return nil, nil, fmt.Errorf("no resident pages available for search")
+	}
+
+	numPages := len(pages)
+	hPageStarts := make([]C.int, numPages+1)
+	hPagePtrs := make([]unsafe.Pointer, numPages)
+	for i, p := range pages {
+		hPagePtrs[i] = p.ptr
+		hPageStarts[i+1] = hPageStarts[i] + C.int(p.nvecs)
+	}
+	totalVecs := int(hPageStarts[numPages])
+
+	ids := make([]int64, k)
+	distances := make([]float32, k)
 
 	ret := C.metal_search_optimized(
 		idx.handle,
 		(*C.float)(unsafe.Pointer(&vector[0])),
+		(*unsafe.Pointer)(unsafe.Pointer(&hPagePtrs[0])),
+		(*C.int)(unsafe.Pointer(&hPageStarts[0])),
+		C.int(numPages),
+		C.int(totalVecs),
 		C.int(k),
-		(*C.int64_t)(unsafe.Pointer(&resultIDs[0])),
-		(*C.float)(unsafe.Pointer(&resultDistances[0])),
+		(*C.int64_t)(unsafe.Pointer(&ids[0])),
+		(*C.float)(unsafe.Pointer(&distances[0])),
 	)
 
 	if ret != 0 {
-		return nil, nil, fmt.Errorf("optimized Metal search failed")
+		return nil, nil, fmt.Errorf("failed to search optimized Metal buffer")
 	}
 
-	return resultIDs, resultDistances, nil
+	// Because we replaced idBuffer logic directly into idList in Go (like CUDA), 
+	// the C returned IDs are actually LOCAL offsets within the totalVecs. 
+	// So we must remap local offsets to global IDs using idx.idList.
+	// Wait! I will just use idx.idList in Go!
+	for i := 0; i < k; i++ {
+		localIdx := int(ids[i])
+		if localIdx >= 0 && localIdx < len(idx.idList) {
+			ids[i] = idx.idList[localIdx]
+		}
+	}
+
+	metrics.GPUComputeDurationSeconds.WithLabelValues("Apple Silicon GPU (Optimized)", "search").Observe(time.Since(start).Seconds())
+
+	return ids, distances, nil
 }
+
 
 const (
 	vecTypeF32  = C.VectorTypeGPU(0)

@@ -5,6 +5,13 @@ using namespace metal;
 // Distance Kernels (Standard Float)
 // ===========================================================================
 
+struct PageArgBuffer {
+    device const float* pages[1024];
+};
+struct PageArgBufferHalf {
+    device const half* pages[1024];
+};
+
 kernel void vector_distance_l2(
     const device float* query [[buffer(0)]],
     const device float* vectors [[buffer(1)]],

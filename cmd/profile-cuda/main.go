@@ -114,7 +114,8 @@ func runTQV2(dim, count, pow2, bitsPerAngle int) {
 	angleCount := pow2 - 1
 	angleBytes := (angleCount * bitsPerAngle + 7) / 8
 	qjlBytes := (pow2 + 7) / 8
-	stride := 4 + angleBytes + qjlBytes
+	rawStride := 4 + angleBytes + qjlBytes
+	stride := (rawStride + 3) & ^3
 
 	h_tq := make([]byte, count*stride)
 	rng := rand.New(rand.NewSource(42))

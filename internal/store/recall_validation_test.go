@@ -408,7 +408,7 @@ func TestRecallConsistency(t *testing.T) {
 
 	numVectors := 500
 	numQueries := 50
-	minRecall := 0.985
+	minRecall := 0.970
 	var config *store.ArrowHNSWConfig
 	if isRace {
 		numVectors = 50

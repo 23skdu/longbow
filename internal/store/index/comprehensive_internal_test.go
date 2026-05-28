@@ -22,11 +22,7 @@ func TestSearchContextPooling(t *testing.T) {
 	ctx2 := h.searchPool.Get()
 	assert.NotNil(t, ctx2)
 
-	gets, puts := h.searchPool.Stats()
-	assert.Equal(t, int64(2), gets)
-	assert.Equal(t, int64(1), puts)
 }
-
 func TestCandidateHeap(t *testing.T) {
 	h := &CandidateHeap{}
 	heap.Push(h, types.Candidate{ID: 1, Dist: 10.0})

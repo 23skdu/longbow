@@ -272,6 +272,10 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		searchCtx.queryRadius = float32(math.Sqrt(float64(sum)))
 	}
 
+	upperOptions := searchOptions
+	upperOptions.ForceQuantized = true
+	upperComputer := h.resolveHNSWComputer(data, searchCtx, queryVec, false, upperOptions)
+
 	// 1. Initial Greedy Search to find entry point at level 0
 	if h.gpuEnabled && h.gpuIndex != nil && maxLevel > 0 {
 		var qf32 []float32
@@ -289,10 +293,12 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		// Greedy search: keep 1 best candidate
 		var res []types.Candidate
 		var err error
-		if compF32, ok := computer.(*float32ToFloat32Computer); ok {
+		if compF32, ok := upperComputer.(*float32ToFloat32Computer); ok {
 			res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, 1, level, searchCtx, data)
+		} else if compSQ8, ok := upperComputer.(*float32ToSQ8Computer); ok {
+			res, err = h.searchLayer(ctx, compSQ8, currObj.ID, 1, level, searchCtx, data, queryVec)
 		} else {
-			res, err = h.searchLayer(ctx, computer, currObj.ID, 1, level, searchCtx, data, queryVec)
+			res, err = h.searchLayer(ctx, upperComputer, currObj.ID, 1, level, searchCtx, data, queryVec)
 		}
 		if err != nil {
 			h.flushSearchMetrics(searchCtx)
@@ -496,14 +502,25 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 
 	computer = h.resolveHNSWComputer(data, searchCtx, queryVec, false, options)
 
+	searchOptions := types.SearchOptions{}
+	if opt, ok := options.(types.SearchOptions); ok {
+		searchOptions = opt
+	}
+
 	currObj := types.Candidate{ID: ep, Dist: math.MaxFloat32}
-	for level := int(maxLevel); level > 0; level-- {
+	upperOptions := searchOptions
+	upperOptions.ForceQuantized = true
+	upperComputer := h.resolveHNSWComputer(data, searchCtx, queryVec, false, upperOptions)
+
+	for level := int(maxLevel); level > 0; level-- { // #nosec G115
 		var res []types.Candidate
 		var err error
-		if compF32, ok := computer.(*float32ToFloat32Computer); ok {
+		if compF32, ok := upperComputer.(*float32ToFloat32Computer); ok {
 			res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, 1, level, searchCtx, data)
+		} else if compSQ8, ok := upperComputer.(*float32ToSQ8Computer); ok {
+			res, err = h.searchLayer(ctx, compSQ8, currObj.ID, 1, level, searchCtx, data, queryVec)
 		} else {
-			res, err = h.searchLayer(ctx, computer, currObj.ID, 1, level, searchCtx, data, queryVec)
+			res, err = h.searchLayer(ctx, upperComputer, currObj.ID, 1, level, searchCtx, data, queryVec)
 		}
 		if err != nil {
 			return nil, err
@@ -645,6 +662,13 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 					}
 				}
 				return &sharedFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen, slices: slices}
+			}
+
+			// Force SQ8 Quantized Navigation on upper layers
+			if searchOptions.ForceQuantized && h.config.SQ8Enabled && data.SQ8Enabled && h.quantizer != nil && h.sq8Ready.Load() {
+				minV, maxV := h.quantizer.Params()
+				scale := (maxV - minV) / 255.0
+				return &float32ToSQ8Computer{data: data, q: q, dims: len(q), h: h, squared: squared, maxGen: maxGen, minV: minV, scale: scale}
 			}
 
 			return &float32ToFloat32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen}

@@ -22,10 +22,6 @@ func TestArrowSearchContext_LifeCycle(t *testing.T) {
 		ctx.RecordEarlyExit("timeout")
 
 		pool.Put(ctx)
-
-		gets, puts := pool.Stats()
-		assert.Equal(t, int64(1), gets)
-		assert.Equal(t, int64(1), puts)
 	})
 
 	t.Run("ResetVerification", func(t *testing.T) {

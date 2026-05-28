@@ -57,7 +57,8 @@ type AutoShardingIndex struct {
 	sharded      bool
 	interimIndex VectorIndex // NEW: Used during migration to handle new writes
 
-	migrating atomic.Bool // Added migrating field
+	migrating atomic.Bool    // Added migrating field
+	waitGroup sync.WaitGroup // Track active AddBatch ops on old index
 }
 
 // NewAutoShardingIndex creates a new auto-sharding index.
@@ -173,6 +174,9 @@ func (idx *AutoShardingIndex) AddBatch(ctx context.Context, recs []arrow.RecordB
 	sharded := idx.sharded
 	interim := idx.interimIndex
 	curr := idx.current
+	if !sharded && interim == nil {
+		idx.waitGroup.Add(1)
+	}
 	idx.mu.RUnlock()
 
 	if sharded {
@@ -184,6 +188,7 @@ func (idx *AutoShardingIndex) AddBatch(ctx context.Context, recs []arrow.RecordB
 		return interim.AddBatch(ctx, recs, rowIdxs, batchIdxs)
 	}
 
+	defer idx.waitGroup.Done()
 	ids, err := curr.AddBatch(ctx, recs, rowIdxs, batchIdxs)
 	if err == nil {
 		idx.checkShardThreshold()
@@ -542,6 +547,11 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	idx.current = newIndex
 	idx.sharded = true
 	idx.interimIndex = nil
+	idx.dataset.dataMu.RUnlock()
+	idx.mu.Unlock()
+
+	// Wait for any remaining AddBatch operations on oldIndex to finish before closing
+	idx.waitGroup.Wait()
 
 	// Close old index to release all remaining resources
 	_ = oldIndex.Close()
@@ -553,9 +563,6 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	}
 	runtime.GC()
 	debug.FreeOSMemory()
-
-	idx.dataset.dataMu.RUnlock()
-	idx.mu.Unlock()
 
 	// Relocate the new ShardedHNSW index to off-heap memory.
 	// The old monolithic index was already relocated during migration (line ~329), but the

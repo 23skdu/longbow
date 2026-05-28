@@ -378,7 +378,16 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 			offHeapAlloc := memory.NewOffHeapAllocator()
 			adjArena = memory.NewSlabArenaWithAllocator(slabSize, offHeapAlloc)
 		}
-		gd.PackedNeighbors[l] = NewPackedAdjacency(adjArena, capacity)
+		
+		maxNeighbors := config.MMax
+		if l == 0 {
+			maxNeighbors = config.MMax0
+			if maxNeighbors == 0 {
+				maxNeighbors = config.MMax * 2
+			}
+		}
+		
+		gd.PackedNeighbors[l] = NewFlatAdjacency(adjArena, maxNeighbors, capacity)
 	}
 
 	for i := range h.entryPointPools {

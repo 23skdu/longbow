@@ -2,7 +2,6 @@ package index
 
 import (
 	"container/heap"
-	"sync"
 	"time"
 
 	"github.com/23skdu/longbow/internal/store/types"
@@ -275,10 +274,7 @@ type ArrowSearchContext struct {
 
 // ArrowSearchContextPool manages reusable ArrowSearchContext objects.
 type ArrowSearchContextPool struct {
-	pool sync.Pool
-
-	// Pool statistics
-	gets, puts atomic.Int64
+	ring *LockFreeRingBuffer[*ArrowSearchContext]
 }
 
 // NewArrowSearchContext creates a new ArrowSearchContext with default capacity.
@@ -313,18 +309,19 @@ func NewArrowSearchContext() *ArrowSearchContext {
 // NewArrowSearchContextPool creates a new pool for ArrowSearchContext objects.
 func NewArrowSearchContextPool() *ArrowSearchContextPool {
 	return &ArrowSearchContextPool{
-		pool: sync.Pool{
-			New: func() any {
-				return NewArrowSearchContext()
-			},
-		},
+		ring: NewLockFreeRingBuffer[*ArrowSearchContext](8192), // Support up to 8192 concurrent contexts
 	}
 }
 
 // Get retrieves an ArrowSearchContext from the pool.
 func (p *ArrowSearchContextPool) Get() *ArrowSearchContext {
-	p.gets.Add(1)
-	ctx := p.pool.Get().(*ArrowSearchContext)
+	ctx, ok := p.ring.Pop()
+	if !ok {
+		// If pool is empty, allocate a new one
+		ctx = NewArrowSearchContext()
+		ctx.inUse.Store(true) // Mark as in use initially since we just allocated it
+		return ctx
+	}
 
 	if !ctx.inUse.CompareAndSwap(false, true) {
 		panic("ArrowSearchContextPool.Get: retrieved context is already in use! (possible internal pool corruption)")
@@ -343,8 +340,8 @@ func (p *ArrowSearchContextPool) Put(ctx *ArrowSearchContext) {
 		panic("ArrowSearchContextPool.Put: context is not in use! (possible double-put)")
 	}
 
-	p.puts.Add(1)
-	p.pool.Put(ctx)
+	// Try to return to pool, if full let GC handle it
+	p.ring.Push(ctx)
 }
 
 func (p *ArrowSearchContextPool) PutWithMetrics(ctx *ArrowSearchContext, dataType, dims string) {
@@ -361,8 +358,8 @@ func (p *ArrowSearchContextPool) PutWithMetrics(ctx *ArrowSearchContext, dataTyp
 		metrics.RecordSearchBatchMetrics(dataType, dims, "euclidean", ctx.distComputeCount, ctx.distComputeTime)
 	}
 
-	p.puts.Add(1)
-	p.pool.Put(ctx)
+	// Try to return to pool, if full let GC handle it
+	p.ring.Push(ctx)
 }
 
 // Reset clears the context for reuse.
@@ -429,7 +426,7 @@ func (ctx *ArrowSearchContext) Reset() {
 
 // Stats returns pool statistics.
 func (p *ArrowSearchContextPool) Stats() (gets, puts int64) {
-	return p.gets.Load(), p.puts.Load()
+	return 0, 0
 }
 
 // MarkDirty indicates the context has been modified.

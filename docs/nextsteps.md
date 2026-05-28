@@ -23,6 +23,13 @@ These represent critical engineering improvements to completely eliminate graph 
   * [ ] Restructure neighbor lists in `GraphData` to be packed sequentially rather than being stored in disjoint slices.
   * [ ] Align packed list bounds to 64-byte boundaries (CPU cache line size) to optimize burst reads from memory.
 
+### 3. Lock-Free Search Contexts
+* **Status**: In Progress `[/]`
+* **Goal**: Ensure that the `SearchContext` fetched from the worker pool is acquired and released lock-free, avoiding hardware contention on search workers.
+* **Subtasks**:
+  * [ ] Remove cache-line bouncing `atomic.Int64` metrics from `ArrowSearchContextPool.Get()` and `Put()`.
+  * [ ] Ensure `sync.Pool` remains lock-free under extreme parallel insertion load.
+
 ---
 
 ## 🎯 Active Priorities & Future Roadmap

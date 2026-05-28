@@ -19,9 +19,8 @@ type TurboQuantEncoder struct {
 	dims   int
 	pow2   int
 	had    *simd.HadamardTransformer
-
-	// Workspace for recursive transforms to avoid allocations
-	workspace []float32
+	// Lock-free ring buffer for workspaces to avoid allocations while being thread-safe
+	pool *LockFreeRingBuffer[*[]float32]
 }
 
 // NewTurboQuantEncoder creates a new encoder.
@@ -30,19 +29,39 @@ func NewTurboQuantEncoder(dims int, bitsPerAngle int, seed int64) *TurboQuantEnc
 	for pow2 < dims {
 		pow2 <<= 1
 	}
+	// Create a ring buffer for workspaces. Size 1024 is plenty for concurrent bulk inserts.
+	rb := NewLockFreeRingBuffer[*[]float32](1024)
+
 	return &TurboQuantEncoder{
 		params:    TurboQuantParams{BitsPerAngle: bitsPerAngle, Seed: seed},
 		dims:      dims,
 		pow2:      pow2,
 		had:       simd.NewHadamardTransformer(pow2),
-		workspace: make([]float32, pow2*2), // Workspace for recursion
+		pool:      rb,
 	}
+}
+
+func (e *TurboQuantEncoder) getWorkspace() *[]float32 {
+	wsPtr, ok := e.pool.Pop()
+	if !ok {
+		ws := make([]float32, e.pow2*2)
+		return &ws
+	}
+	return wsPtr
+}
+
+func (e *TurboQuantEncoder) putWorkspace(wsPtr *[]float32) {
+	e.pool.Push(wsPtr) // Ignore if full, let GC handle it
 }
 
 // Encode compresses a float32 vector into a TurboQuant byte stream.
 func (e *TurboQuantEncoder) Encode(vec []float32) ([]byte, error) {
+	wsPtr := e.getWorkspace()
+	workspace := *wsPtr
+	defer e.putWorkspace(wsPtr)
+
 	// 1. Padding to power of 2 for Hadamard
-	work := e.workspace[:e.pow2]
+	work := workspace[:e.pow2]
 	copy(work, vec)
 	if len(vec) < e.pow2 {
 		for i := len(vec); i < e.pow2; i++ {
@@ -60,15 +79,15 @@ func (e *TurboQuantEncoder) Encode(vec []float32) ([]byte, error) {
 	// - 1 float32 (radius)
 	// - (pow2-1) angles (packed bits)
 	angles := make([]float32, e.pow2-1)
-	radius, err := e.polarTransformRecursive(work, angles)
+	radius, err := e.polarTransformRecursive(work, angles, workspace)
 	if err != nil {
 		return nil, err
 	}
 
 	// 4. Reconstruction (to calculate residuals)
 	// Use the second half of the workspace for recon
-	recon := e.workspace[e.pow2 : e.pow2*2]
-	e.polarReconstructRecursive(radius, angles, recon)
+	recon := workspace[e.pow2 : e.pow2*2]
+	e.polarReconstructRecursive(radius, angles, recon, workspace)
 
 	// 5. Stage 2: QJL (Sign bit of residual)
 	// residual = work - recon
@@ -96,8 +115,7 @@ func (e *TurboQuantEncoder) Encode(vec []float32) ([]byte, error) {
 	return result, nil
 }
 
-// polarTransformRecursive converts Cartesian to [1 Radius, N-1 Angles].
-func (e *TurboQuantEncoder) polarTransformRecursive(vec []float32, angles []float32) (float32, error) {
+func (e *TurboQuantEncoder) polarTransformRecursive(vec []float32, angles []float32, workspace []float32) (float32, error) {
 	n := len(vec)
 	if n == 1 {
 		return vec[0], nil
@@ -106,16 +124,15 @@ func (e *TurboQuantEncoder) polarTransformRecursive(vec []float32, angles []floa
 	// Use part of the workspace for nextRadii
 	// Workspace layout: [p2] nextRadii, [p2] ...
 	// We need n/2 for nextRadii
-	nextRadii := e.workspace[:n/2]
+	nextRadii := workspace[:n/2]
 
 	simd.GetTurboQuantPolarTransformFunc()(vec, nextRadii, angles[:n/2])
 
 	// Recursive call on the radii
-	return e.polarTransformRecursive(nextRadii, angles[n/2:])
+	return e.polarTransformRecursive(nextRadii, angles[n/2:], workspace)
 }
 
-// polarReconstructRecursive converts [1 Radius, N-1 Angles] back to Cartesian.
-func (e *TurboQuantEncoder) polarReconstructRecursive(radius float32, angles []float32, dst []float32) {
+func (e *TurboQuantEncoder) polarReconstructRecursive(radius float32, angles []float32, dst []float32, workspace []float32) {
 	n := len(dst)
 	if n == 1 {
 		dst[0] = radius
@@ -132,9 +149,9 @@ func (e *TurboQuantEncoder) polarReconstructRecursive(radius float32, angles []f
 		depth++
 	}
 	// Simplified: use a separate workspace area or just the second half of the main workspace
-	nextRadii := e.workspace[e.pow2 : e.pow2+n/2]
+	nextRadii := workspace[e.pow2 : e.pow2+n/2]
 
-	e.polarReconstructRecursive(radius, angles[n/2:], nextRadii)
+	e.polarReconstructRecursive(radius, angles[n/2:], nextRadii, workspace)
 
 	// Now expand each radius to a pair (x, y) using the first n/2 angles
 	for i := 0; i < n/2; i++ {
@@ -197,8 +214,11 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 	e.unpackAngles(data[4:qjlOffset], angles)
 
 	// Reconstruct Cartesian
-	recon := make([]float32, e.pow2) // We can't use e.workspace here if Decode is called concurrently, but e is usually owned by a dataset
-	e.polarReconstructRecursive(radius, angles, recon)
+	wsPtr := e.getWorkspace()
+	workspace := *wsPtr
+	defer e.putWorkspace(wsPtr)
+	recon := make([]float32, e.pow2) 
+	e.polarReconstructRecursive(radius, angles, recon, workspace)
 
 	// Apply QJL Correction
 	qjlBits := data[qjlOffset:]

@@ -215,6 +215,7 @@ type SearchOptions struct {
 	VectorType     VectorDataType // Explicit index type selection for search (float32, turboquant)
 	TurboQuantBits int            // Bit depth for TurboQuant search (2, 4, 8)
 	Predicate      HNSWPredicate  // Predicate for early-exit filtering
+	ForceQuantized bool           // Internal flag to force quantized navigation on upper HNSW layers
 }
 
 // DefaultSearchOptions returns SearchOptions with production defaults.

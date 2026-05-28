@@ -35,6 +35,8 @@ typedef struct {
 void launch_l2_distance_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, cudaStream_t stream);
 void launch_l2_distance_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
 void launch_l2_distance_large_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
+void launch_l2_distance_kernel_v2_batched(const float** page_ptrs, const int* page_starts, const float* query, float* distances, int dim, int total_count, int num_pages, cudaStream_t stream);
+void launch_l2_distance_kernel_large_v2_batched(const float** page_ptrs, const int* page_starts, const float* query, float* distances, int dim, int total_count, int num_pages, cudaStream_t stream);
 void launch_l2_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, cudaStream_t stream);
 void launch_dot_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, cudaStream_t stream);
 void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* codes, float* distances, int m, int count, cudaStream_t stream);
@@ -889,22 +891,13 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 	defer C.cudaFree(dQuery)
 	C.cudaMemcpy(dQuery, unsafe.Pointer(&vector[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
 
-	// Allocate reusable per-page distance buffer
-	pageDistSize := C.size_t(vectorsPerPage * 4)
-	var dPageDists unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPageDists)), pageDistSize); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("failed to allocate per-page distance buffer")
-	}
-	defer C.cudaFree(dPageDists)
-
 	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
-	type scored struct {
-		dist float32
-		pos  int
-	}
-	all := make([]scored, 0, n)
-	hPageDists := make([]float32, vectorsPerPage)
 
+	type pageEntry struct {
+		ptr   unsafe.Pointer
+		nvecs int
+	}
+	pages := make([]pageEntry, 0, numChunks)
 	for chunk := 0; chunk < numChunks; chunk++ {
 		pid := idx.pageIDFor(0, chunk)
 		pi := idx.pager.PageInfo(pid)
@@ -918,48 +911,87 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 		if gpuPtr == nil {
 			continue
 		}
-
 		vecsInChunk := n - chunk*vectorsPerPage
 		if vecsInChunk > vectorsPerPage {
 			vecsInChunk = vectorsPerPage
 		}
-
-		if idx.dim > 1024 {
-			C.launch_l2_distance_large_kernel_v2(
-				(*C.float)(gpuPtr),
-				(*C.float)(dQuery),
-				(*C.float)(dPageDists),
-				C.int(idx.dim),
-				C.int(vecsInChunk),
-				nil,
-			)
-		} else {
-			C.launch_l2_distance_kernel_v2(
-				(*C.float)(gpuPtr),
-				(*C.float)(dQuery),
-				(*C.float)(dPageDists),
-				C.int(idx.dim),
-				C.int(vecsInChunk),
-				nil,
-			)
-		}
-
-		hPageDists = hPageDists[:vecsInChunk]
-		C.cudaMemcpy(
-			unsafe.Pointer(&hPageDists[0]),
-			dPageDists,
-			C.size_t(vecsInChunk*4),
-			C.cudaMemcpyDeviceToHost,
-		)
-
-		base := chunk * vectorsPerPage
-		for i, d := range hPageDists {
-			all = append(all, scored{dist: d, pos: base + i})
-		}
+		pages = append(pages, pageEntry{ptr: gpuPtr, nvecs: vecsInChunk})
 	}
 
-	if len(all) == 0 {
+	if len(pages) == 0 {
 		return nil, nil, fmt.Errorf("no resident pages available for search")
+	}
+
+	numPages := len(pages)
+	hPageStarts := make([]C.int, numPages+1)
+	hPagePtrs := make([]unsafe.Pointer, numPages)
+	for i, p := range pages {
+		hPagePtrs[i] = p.ptr
+		hPageStarts[i+1] = hPageStarts[i] + C.int(p.nvecs)
+	}
+	totalVecs := int(hPageStarts[numPages])
+
+	// Allocate single output buffer for all vectors
+	var dAllDists unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dAllDists)), C.size_t(totalVecs*4)); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("failed to allocate distance buffer")
+	}
+	defer C.cudaFree(dAllDists)
+
+	// Allocate device-side arrays for batched launch
+	var dPagePtrs unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPagePtrs)), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0]))); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("failed to allocate page pointers buffer")
+	}
+	defer C.cudaFree(dPagePtrs)
+	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
+
+	var dPageStarts unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPageStarts)), C.size_t((numPages+1)*4)); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("failed to allocate page starts buffer")
+	}
+	defer C.cudaFree(dPageStarts)
+	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
+
+	if idx.dim > 1024 {
+		C.launch_l2_distance_kernel_large_v2_batched(
+			(**C.float)(dPagePtrs),
+			(*C.int)(dPageStarts),
+			(*C.float)(dQuery),
+			(*C.float)(dAllDists),
+			C.int(idx.dim),
+			C.int(totalVecs),
+			C.int(numPages),
+			nil,
+		)
+	} else {
+		C.launch_l2_distance_kernel_v2_batched(
+			(**C.float)(dPagePtrs),
+			(*C.int)(dPageStarts),
+			(*C.float)(dQuery),
+			(*C.float)(dAllDists),
+			C.int(idx.dim),
+			C.int(totalVecs),
+			C.int(numPages),
+			nil,
+		)
+	}
+
+	hAllDists := make([]float32, totalVecs)
+	C.cudaMemcpy(
+		unsafe.Pointer(&hAllDists[0]),
+		dAllDists,
+		C.size_t(totalVecs*4),
+		C.cudaMemcpyDeviceToHost,
+	)
+
+	type scored struct {
+		dist float32
+		pos  int
+	}
+	all := make([]scored, 0, totalVecs)
+	for i, d := range hAllDists {
+		all = append(all, scored{dist: d, pos: i})
 	}
 
 	// Sort all distances to find top-K
@@ -1560,21 +1592,13 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 	defer C.cudaFree(dQuery)
 	C.cudaMemcpy(dQuery, unsafe.Pointer(&query[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
 
-	// Per-page distance buffer
-	var dPageDists unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPageDists)), C.size_t(vectorsPerPage*4)); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("cudaMalloc page distances failed")
-	}
-	defer C.cudaFree(dPageDists)
-
 	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
-	type scored struct {
-		dist float32
-		pos  int
-	}
-	all := make([]scored, 0, n)
-	hPageDists := make([]float32, vectorsPerPage)
 
+	type pageEntry struct {
+		ptr   unsafe.Pointer
+		nvecs int
+	}
+	pages := make([]pageEntry, 0, numChunks)
 	for chunk := 0; chunk < numChunks; chunk++ {
 		pid := idx.pageIDFor(0, chunk)
 		pi := idx.pager.PageInfo(pid)
@@ -1588,87 +1612,112 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 		if gpuPtr == nil {
 			continue
 		}
-
 		vecsInChunk := n - chunk*vectorsPerPage
 		if vecsInChunk > vectorsPerPage {
 			vecsInChunk = vectorsPerPage
 		}
-
-		if idx.dim > 1024 {
-			C.launch_l2_distance_large_kernel_v2(
-				(*C.float)(gpuPtr),
-				(*C.float)(dQuery),
-				(*C.float)(dPageDists),
-				C.int(idx.dim),
-				C.int(vecsInChunk),
-				nil,
-			)
-		} else {
-			C.launch_l2_distance_kernel_v2(
-				(*C.float)(gpuPtr),
-				(*C.float)(dQuery),
-				(*C.float)(dPageDists),
-				C.int(idx.dim),
-				C.int(vecsInChunk),
-				nil,
-			)
-		}
-
-		hPageDists = hPageDists[:vecsInChunk]
-		C.cudaMemcpy(
-			unsafe.Pointer(&hPageDists[0]),
-			dPageDists,
-			C.size_t(vecsInChunk*4),
-			C.cudaMemcpyDeviceToHost,
-		)
-
-		base := chunk * vectorsPerPage
-		for i, d := range hPageDists {
-			if bitset != nil {
-				globalPos := base + i
-				if globalPos < len(idx.idList) {
-					id := idx.idList[globalPos]
-					if id >= 0 && int(id/64) < len(bitset) && (bitset[id/64]>>uint(id%64))&1 == 0 {
-						continue
-					}
-				}
-			}
-			all = append(all, scored{dist: d, pos: base + i})
-		}
+		pages = append(pages, pageEntry{ptr: gpuPtr, nvecs: vecsInChunk})
 	}
 
-	// Filter by bitset on CPU and find top-K
-	var filtered []scored
-	if len(bitset) > 0 {
-		filtered = make([]scored, 0, len(all))
-		for _, s := range all {
-			word := s.pos / 64
-			bit := uint(s.pos % 64)
-			if word < len(bitset) && (bitset[word]&(1<<bit)) != 0 {
-				filtered = append(filtered, s)
-			}
-		}
-	} else {
-		filtered = all
-	}
-
-	if len(filtered) == 0 {
+	if len(pages) == 0 {
 		return nil, nil, nil
 	}
 
-	sort.Slice(filtered, func(i, j int) bool {
-		return filtered[i].dist < filtered[j].dist
+	numPages := len(pages)
+	hPageStarts := make([]C.int, numPages+1)
+	hPagePtrs := make([]unsafe.Pointer, numPages)
+	for i, p := range pages {
+		hPagePtrs[i] = p.ptr
+		hPageStarts[i+1] = hPageStarts[i] + C.int(p.nvecs)
+	}
+	totalVecs := int(hPageStarts[numPages])
+
+	var dAllDists unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dAllDists)), C.size_t(totalVecs*4)); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("cudaMalloc distances failed")
+	}
+	defer C.cudaFree(dAllDists)
+
+	var dPagePtrs unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPagePtrs)), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0]))); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("cudaMalloc page ptrs failed")
+	}
+	defer C.cudaFree(dPagePtrs)
+	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
+
+	var dPageStarts unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPageStarts)), C.size_t((numPages+1)*4)); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("cudaMalloc page starts failed")
+	}
+	defer C.cudaFree(dPageStarts)
+	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
+
+	if idx.dim > 1024 {
+		C.launch_l2_distance_kernel_large_v2_batched(
+			(**C.float)(dPagePtrs),
+			(*C.int)(dPageStarts),
+			(*C.float)(dQuery),
+			(*C.float)(dAllDists),
+			C.int(idx.dim),
+			C.int(totalVecs),
+			C.int(numPages),
+			nil,
+		)
+	} else {
+		C.launch_l2_distance_kernel_v2_batched(
+			(**C.float)(dPagePtrs),
+			(*C.int)(dPageStarts),
+			(*C.float)(dQuery),
+			(*C.float)(dAllDists),
+			C.int(idx.dim),
+			C.int(totalVecs),
+			C.int(numPages),
+			nil,
+		)
+	}
+
+	hAllDists := make([]float32, totalVecs)
+	C.cudaMemcpy(
+		unsafe.Pointer(&hAllDists[0]),
+		dAllDists,
+		C.size_t(totalVecs*4),
+		C.cudaMemcpyDeviceToHost,
+	)
+
+	type scored struct {
+		dist float32
+		pos  int
+	}
+	all := make([]scored, 0, totalVecs)
+	for i, d := range hAllDists {
+		if bitset != nil {
+			if i < len(idx.idList) {
+				id := idx.idList[i]
+				if id >= 0 && int(id/64) < len(bitset) && (bitset[id/64]>>uint(id%64))&1 == 0 {
+					continue
+				}
+			}
+		}
+		all = append(all, scored{dist: d, pos: i})
+	}
+
+	if len(all) == 0 {
+		return nil, nil, nil
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].dist < all[j].dist
 	})
-	if k > len(filtered) {
-		k = len(filtered)
+	if k > len(all) {
+		k = len(all)
 	}
 
 	resultIDs := make([]int64, k)
 	resultDistances := make([]float32, k)
 	for i := 0; i < k; i++ {
-		resultDistances[i] = filtered[i].dist
-		if filtered[i].pos < len(idx.idList) {
-			resultIDs[i] = idx.idList[filtered[i].pos]
+		resultDistances[i] = all[i].dist
+		if all[i].pos < len(idx.idList) {
+			resultIDs[i] = idx.idList[all[i].pos]
 		}
 	}
 

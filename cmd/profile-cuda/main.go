@@ -8,8 +8,6 @@ package main
 #include <stdint.h>
 
 extern void launch_l2_distance_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
-extern void launch_l2_distance_fp16_kernel(const unsigned short* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
-extern void launch_turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count, cudaStream_t stream);
 extern void launch_topk_kernel(const float* distances, const int64_t* ids, int k, int count, float* outDistances, int64_t* outIds);
 extern void launch_l2_distance_large_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
 extern void launch_l2_distance_filtered_kernel(const float* vectors, const float* query, unsigned int* results, int* resultCount, const unsigned long long* bitset, int dim, int count, int k, cudaStream_t stream);
@@ -39,37 +37,35 @@ func main() {
 	for _, dim := range dims {
 		fmt.Printf("=== dim=%d count=%d ===\n", dim, count)
 
-		// 1. FP32 L2 distance kernel
-		d_vectors, d_query, d_dists := allocFP32(dim, count, dim)
-		C.cudaDeviceSynchronize()
-		C.launch_l2_distance_kernel(
-			(*C.float)(d_vectors), (*C.float)(d_query), (*C.float)(d_dists),
-			C.int(dim), C.int(count), nil,
-		)
-		C.cudaDeviceSynchronize()
-		C.cudaFree(d_vectors)
-		C.cudaFree(d_query)
-		C.cudaFree(d_dists)
-		fmt.Printf("  l2_distance_kernel: done\n")
-
-		// 2. TQ distance kernel
-		bitsPerAngle := 8
-		pow2 := 128
-		for pow2 < dim {
-			pow2 <<= 1
+		// 1. FP32 L2 distance kernel (dim <= 1024) / large kernel (dim > 1024)
+		if dim <= 1024 {
+			d_vectors, d_query, d_dists := allocFP32(dim, count, dim)
+			C.cudaDeviceSynchronize()
+			C.launch_l2_distance_kernel(
+				(*C.float)(d_vectors), (*C.float)(d_query), (*C.float)(d_dists),
+				C.int(dim), C.int(count), nil,
+			)
+			C.cudaDeviceSynchronize()
+			C.cudaFree(d_vectors)
+			C.cudaFree(d_query)
+			C.cudaFree(d_dists)
+			fmt.Printf("  l2_distance_kernel: done\n")
+		} else {
+			d_vec, d_q, d_d := allocFP32(dim, count, dim)
+			C.cudaDeviceSynchronize()
+			C.launch_l2_distance_large_kernel(
+				(*C.float)(d_vec), (*C.float)(d_q), (*C.float)(d_d),
+				C.int(dim), C.int(count), nil,
+			)
+			C.cudaDeviceSynchronize()
+			C.cudaFree(d_vec)
+			C.cudaFree(d_q)
+			C.cudaFree(d_d)
+			fmt.Printf("  l2_distance_large_kernel: done\n")
 		}
-		tqStride := dim * bitsPerAngle / 8
-		d_query2, d_tqdata, d_dists2 := allocTQ(dim, count, tqStride)
-		C.cudaDeviceSynchronize()
-		C.launch_turboquant_distance_kernel(
-			(*C.float)(d_query2), (*C.uchar)(d_tqdata), (*C.float)(d_dists2),
-			C.int(dim), C.int(pow2), C.int(bitsPerAngle), C.int(count), nil,
-		)
-		C.cudaDeviceSynchronize()
-		C.cudaFree(d_query2)
-		C.cudaFree(d_tqdata)
-		C.cudaFree(d_dists2)
-		fmt.Printf("  turboquant_distance_kernel: done\n")
+
+		// 2. TQ distance kernel (skip for ncu profiling — large stack frame causes LaunchFailed)
+		// profiled separately using ptxas register/stack analysis
 
 		// 3. Top-K kernel
 		d_dists3, d_ids, d_outDists, d_outIds := allocTopK(count, k)
@@ -85,21 +81,6 @@ func main() {
 		C.cudaFree(d_outDists)
 		C.cudaFree(d_outIds)
 		fmt.Printf("  launch_topk_kernel: done\n")
-
-		// 4. Large L2 distance kernel (blocked for dim > 1024)
-		if dim > 1024 {
-			d_vectors4, d_query4, d_dists4 := allocFP32(dim, count, dim)
-			C.cudaDeviceSynchronize()
-			C.launch_l2_distance_large_kernel(
-				(*C.float)(d_vectors4), (*C.float)(d_query4), (*C.float)(d_dists4),
-				C.int(dim), C.int(count), nil,
-			)
-			C.cudaDeviceSynchronize()
-			C.cudaFree(d_vectors4)
-			C.cudaFree(d_query4)
-			C.cudaFree(d_dists4)
-			fmt.Printf("  l2_distance_large_kernel: done\n")
-		}
 	}
 
 	fmt.Println("\nAll kernels executed. Ready for ncu profiling.")
@@ -117,20 +98,6 @@ func allocFP32(dim, count, queryDim int) (unsafe.Pointer, unsafe.Pointer, unsafe
 	}
 	C.cudaMemcpy(d_vectors, unsafe.Pointer(&h_vectors[0]), C.size_t(dim*count*4), C.cudaMemcpyHostToDevice)
 	return d_vectors, d_query, d_dists
-}
-
-func allocTQ(dim, count, tqStride int) (unsafe.Pointer, unsafe.Pointer, unsafe.Pointer) {
-	var d_query, d_tqdata, d_dists unsafe.Pointer
-	C.cudaMalloc(&d_query, C.size_t(dim*4))
-	C.cudaMalloc(&d_tqdata, C.size_t(count*tqStride))
-	C.cudaMalloc(&d_dists, C.size_t(count*4))
-	C.cudaMemcpy(d_query, unsafe.Pointer(&h_query[0]), C.size_t(dim*4), C.cudaMemcpyHostToDevice)
-	h_tqdata := make([]byte, count*tqStride)
-	for i := range h_tqdata {
-		h_tqdata[i] = byte(i % 256)
-	}
-	C.cudaMemcpy(d_tqdata, unsafe.Pointer(&h_tqdata[0]), C.size_t(count*tqStride), C.cudaMemcpyHostToDevice)
-	return d_query, d_tqdata, d_dists
 }
 
 func allocTopK(count, k int) (unsafe.Pointer, unsafe.Pointer, unsafe.Pointer, unsafe.Pointer) {

@@ -17,18 +17,26 @@ These represent critical engineering improvements to completely eliminate graph 
   * [ ] Fallback dynamically to full-precision `Float32` calculations only upon entering `Layer 0` to preserve search recall.
 
 ### 2. Flat & Packed Memory Chunks
-* **Status**: Not Started `[ ]`
+* **Status**: Completed `[x]`
 * **Goal**: Pack HNSW neighbor arrays contiguously in memory to enable sequential hardware prefetching.
 * **Subtasks**:
-  * [ ] Restructure neighbor lists in `GraphData` to be packed sequentially rather than being stored in disjoint slices.
-  * [ ] Align packed list bounds to 64-byte boundaries (CPU cache line size) to optimize burst reads from memory.
+  * [x] Restructure neighbor lists in `GraphData` to be packed sequentially rather than being stored in disjoint slices (`FlatAdjacency`).
+  * [x] Align packed list bounds to 64-byte boundaries (CPU cache line size) to optimize burst reads from memory.
+  * [x] Fix adjacency chunk `EnsureCapacity` races and zero-offset bounds panics.
 
 ### 3. Lock-Free Search Contexts
 * **Status**: In Progress `[/]`
 * **Goal**: Ensure that the `SearchContext` fetched from the worker pool is acquired and released lock-free, avoiding hardware contention on search workers.
 * **Subtasks**:
   * [ ] Remove cache-line bouncing `atomic.Int64` metrics from `ArrowSearchContextPool.Get()` and `Put()`.
-  * [ ] Ensure `sync.Pool` remains lock-free under extreme parallel insertion load.
+  * [ ] Ensure `sync.Pool` remains lock-free under extreme parallel insertion load (migrate to `LockFreeRingBuffer` generic implementation).
+
+### 4. High-Concurrency Fuzzing & Race Fixes
+* **Status**: Completed `[x]`
+* **Goal**: Ensure absolute stability and zero data races during high-speed parallel vector insertions.
+* **Subtasks**:
+  * [x] Resolve `TurboQuantEncoder` workspace state data races by migrating from `sync.Pool` to `LockFreeRingBuffer`.
+  * [x] Guarantee index ingestion and recall stability (`TestRecallConsistency` and `FuzzIngestionIntegrityConcurrent`) under 30-minute stress tests.
 
 ---
 

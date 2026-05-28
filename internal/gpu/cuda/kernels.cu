@@ -272,8 +272,58 @@ void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* co
     pq_distance_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(lookupTable, codes, distances, m, count);
 }
 
-// TurboQuant Distance Kernel (per-block reconstruction, no per-thread stack allocation)
-// Each block processes one vector; reconstruction buffer lives in __shared__ memory.
+// Original TurboQuant Distance Kernel (per-thread stack allocation — kept for backward compat)
+__global__ void turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count) {
+    extern __shared__ float s_query_orig[];
+    for (int i = threadIdx.x; i < dim; i += blockDim.x) {
+        s_query_orig[i] = query[i];
+    }
+    __syncthreads();
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    int angleCount = pow2 - 1;
+    int angleBytes = (angleCount * bitsPerAngle + 7) / 8;
+    int stride = 4 + angleBytes + ((pow2 + 7) / 8);
+    const unsigned char* data = tqData + (idx * stride);
+    float radius = *(const float*)data;
+    const unsigned char* packedAngles = data + 4;
+    const unsigned char* qjlBits = data + 4 + angleBytes;
+    float recon[1024];
+    recon[0] = radius;
+    int currentLevelSize = 1;
+    int angleOffset = angleCount;
+    while (currentLevelSize < pow2) {
+        angleOffset -= currentLevelSize;
+        for (int i = currentLevelSize - 1; i >= 0; i--) {
+            float r = recon[i];
+            int bitStart = (angleOffset + i) * bitsPerAngle;
+            unsigned int q = 0;
+            for (int k = 0; k < bitsPerAngle; k++) {
+                int bitIdx = bitStart + k;
+                if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1) q |= (1 << k);
+            }
+            float theta = (float(q) / ((1 << bitsPerAngle) - 1)) * 2.0f * 3.14159265f - 3.14159265f;
+            float s, c;
+            sincosf(theta, &s, &c);
+            recon[2*i] = r * c;
+            recon[2*i+1] = r * s;
+        }
+        currentLevelSize *= 2;
+    }
+    float sum = 0.0f;
+    float correctionFactor = radius / sqrtf((float)pow2) * 0.1f;
+    for (int i = 0; i < dim; i++) {
+        float val = recon[i];
+        if ((qjlBits[i / 8] >> (i % 8)) & 1) val += correctionFactor;
+        else val -= 0.1f;
+        float diff = s_query_orig[i] - val;
+        sum += diff * diff;
+    }
+    distances[idx] = sqrtf(sum);
+}
+
+// TurboQuant Distance Kernel v2 (per-block reconstruction with __shared__ buffer, no per-thread stack overflow)
+// Each block processes one vector; reconstruction buffer lives in shared memory.
 __global__ void turboquant_distance_kernel_v2(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count) {
     extern __shared__ float s_recon[];
 

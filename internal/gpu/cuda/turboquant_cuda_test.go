@@ -37,7 +37,8 @@ func TestCUDAIndex_TurboQuantSearch(t *testing.T) {
 	angleCount := pow2 - 1
 	angleBytes := (angleCount*bitsPerAngle + 7) / 8
 	bitBytes := (pow2 + 7) / 8
-	stride := 4 + angleBytes + bitBytes
+	rawStride := 4 + angleBytes + bitBytes
+	stride := (rawStride + 3) & ^3
 
 	tqData := make([]byte, count*stride)
 
@@ -96,7 +97,8 @@ func FuzzCUDAIndex_TurboQuantSearch(f *testing.F) {
 		angleCount := pow2 - 1
 		angleBytes := (angleCount*bitsPerAngle + 7) / 8
 		bitBytes := (pow2 + 7) / 8
-		stride := 4 + angleBytes + bitBytes
+		rawStride := 4 + angleBytes + bitBytes
+		stride := (rawStride + 3) & ^3
 		tqData := make([]byte, count*stride)
 
 		for i := 0; i < count; i++ {

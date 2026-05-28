@@ -284,7 +284,7 @@ __global__ void turboquant_distance_kernel(const float* query, const unsigned ch
     int angleCount = pow2 - 1;
     int angleBytes = (angleCount * bitsPerAngle + 7) / 8;
     int rawStride = 4 + angleBytes + ((pow2 + 7) / 8);
-    int stride = (rawStride + 3) & ~3; // align to 4 bytes for safe float access
+    int stride = (rawStride + 3) & ~3;
     const unsigned char* data = tqData + (idx * stride);
     float radius = *(const float*)data;
     const unsigned char* packedAngles = data + 4;

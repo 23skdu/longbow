@@ -10,8 +10,8 @@ package main
 extern void launch_l2_distance_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
 extern void launch_pq_distance_kernel(const float* query, const float* pq_codebook, const unsigned char* pq_codes, float* distances, int dim, int numSubQuantizers, int numSubVectors, int count, cudaStream_t stream);
 extern void launch_turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count, cudaStream_t stream);
-extern void launch_l2_distance_fp16_kernel_optimized(const unsigned short* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
-extern void select_topk_kernel(const float* distances, const int64_t* ids, int k, int count, float* outDistances, int64_t* outIds);
+extern void launch_l2_distance_fp16_kernel(const unsigned short* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
+extern void launch_topk_kernel(const float* distances, const int64_t* ids, int k, int count, float* outDistances, int64_t* outIds);
 */
 import "C"
 
@@ -129,8 +129,8 @@ func main() {
 	C.cudaFree(d_tqdata)
 	C.cudaFree(d_dists3)
 
-	// 4. l2_distance_fp16_kernel_optimized
-	fmt.Printf("\n--- l2_distance_fp16_kernel_optimized (dim=%d, count=%d) ---\n", dim, count)
+	// 4. l2_distance_fp16_kernel
+	fmt.Printf("\n--- l2_distance_fp16_kernel (dim=%d, count=%d) ---\n", dim, count)
 	var d_fp16, d_query4, d_dists4 unsafe.Pointer
 	C.cudaMalloc(&d_fp16, C.size_t(dim*count*2))
 	C.cudaMalloc(&d_query4, C.size_t(dim*4))
@@ -144,7 +144,7 @@ func main() {
 	}
 	C.cudaMemcpy(d_fp16, unsafe.Pointer(&h_fp16[0]), C.size_t(dim*count*2), C.cudaMemcpyHostToDevice)
 	C.cudaDeviceSynchronize()
-	C.launch_l2_distance_fp16_kernel_optimized(
+	C.launch_l2_distance_fp16_kernel(
 		(*C.ushort)(d_fp16), (*C.float)(d_query4), (*C.float)(d_dists4),
 		C.int(dim), C.int(count), nil,
 	)
@@ -156,8 +156,8 @@ func main() {
 	C.cudaFree(d_query4)
 	C.cudaFree(d_dists4)
 
-	// 5. select_topk_kernel
-	fmt.Printf("\n--- select_topk_kernel (count=%d, k=%d) ---\n", count, k)
+	// 5. launch_topk_kernel
+	fmt.Printf("\n--- launch_topk_kernel (count=%d, k=%d) ---\n", count, k)
 	var d_dists5, d_ids, d_outDists, d_outIds unsafe.Pointer
 	C.cudaMalloc(&d_dists5, C.size_t(count*4))
 	C.cudaMalloc(&d_ids, C.size_t(count*8))
@@ -173,7 +173,7 @@ func main() {
 	C.cudaMemcpy(d_dists5, unsafe.Pointer(&h_scores[0]), C.size_t(count*4), C.cudaMemcpyHostToDevice)
 	C.cudaMemcpy(d_ids, unsafe.Pointer(&h_ids[0]), C.size_t(count*8), C.cudaMemcpyHostToDevice)
 	C.cudaDeviceSynchronize()
-	C.select_topk_kernel(
+	C.launch_topk_kernel(
 		(*C.float)(d_dists5), (*C.int64_t)(d_ids),
 		C.int(k), C.int(count),
 		(*C.float)(d_outDists), (*C.int64_t)(d_outIds),

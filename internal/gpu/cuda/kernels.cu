@@ -201,11 +201,11 @@ __global__ void dot_distance_fp16_kernel_optimized(const __half* vectors, const 
 // Uses extern shared memory sized to dim*sizeof(float).
 #define WARP_SZ 32
 __global__ void l2_distance_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count) {
-    extern __shared__ float s_query[];
+    extern __shared__ float s_query_f32[];
 
     // Cooperative query load into shared memory
     if (threadIdx.x < dim) {
-        s_query[threadIdx.x] = query[threadIdx.x];
+        s_query_f32[threadIdx.x] = query[threadIdx.x];
     }
     __syncthreads();
 
@@ -220,9 +220,9 @@ __global__ void l2_distance_kernel_v2(const float* vectors, const float* query, 
     float sum = 0.0f;
 
     // Each lane processes elements spaced WARP_SZ apart.
-    // Together, all lanes in the warp access consecutive elements in each iteration → fully coalesced.
+    // Together, all lanes in the warp access consecutive elements in each iteration -> fully coalesced.
     for (int d = lane_id; d < dim; d += WARP_SZ) {
-        float diff = vec[d] - s_query[d];
+        float diff = vec[d] - s_query_f32[d];
         sum += diff * diff;
     }
 

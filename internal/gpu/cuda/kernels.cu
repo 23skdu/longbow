@@ -338,6 +338,8 @@ __global__ void turboquant_distance_kernel_v2(const float* query, const unsigned
 
     const unsigned char* data = tqData + (vec_idx * stride);
     float radius = *(const float*)data;
+    const unsigned char* packedAngles = data + 4;
+    const unsigned char* qjlBits = data + 4 + angleBytes;
 
     // Single thread handles the hierarchical reconstruction (sequential dependency chain)
     if (threadIdx.x == 0) {

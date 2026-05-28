@@ -524,12 +524,12 @@ import "C"
 import (
 	"fmt"
 	"math"
+	"math/rand"
+	"runtime"
 	"sort"
 	"sync"
 	"time"
 	"unsafe"
-
-	"github.com/23skdu/longbow/internal/metrics"
 
 	"github.com/23skdu/longbow/internal/gpu/memory"
 	"github.com/23skdu/longbow/internal/gpu/types"

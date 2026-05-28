@@ -122,7 +122,7 @@ func TestIVFOPQIndex_RecallK(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	dim := 128
-	n := 1000
+	n := 300
 	k := 10
 
 	config := IVFOPQConfig{

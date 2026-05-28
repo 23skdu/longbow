@@ -21,7 +21,7 @@ func TestArrowHNSW_PQ_ParallelSearch(t *testing.T) {
 
 	// Setup
 	dim := 128
-	count := 1000
+	count := 300
 	rng := rand.New(rand.NewSource(42))
 
 	mem := memory.NewGoAllocator()

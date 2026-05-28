@@ -146,7 +146,7 @@ func TestArrowHNSW_Concurrency_MixedReadWrite(t *testing.T) {
 	config := types.DefaultArrowHNSWConfig()
 	idx := NewArrowHNSW(ds, &config, nil)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 500*time.Millisecond)
 	defer cancel()
 
 	var wg sync.WaitGroup

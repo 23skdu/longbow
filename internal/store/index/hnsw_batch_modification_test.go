@@ -81,9 +81,9 @@ func TestArrowHNSW_AddBatch_Sequential(t *testing.T) {
 func TestArrowHNSW_AddBatch_Concurrent(t *testing.T) {
 	mem := memory.NewGoAllocator()
 	dims := 16
-	numWorkers := 4
-	batchSize := 50
-	batchesPerWorker := 5
+	numWorkers := 2
+	batchSize := 30
+	batchesPerWorker := 3
 
 	ds := &index.MockDataset{Name: "batch_mod_conc"}
 

@@ -169,13 +169,102 @@ func TestAdaptiveGC_StatsCollection(t *testing.T) {
 
 	controller := NewAdaptiveGCController(config)
 
-	// Collect stats
-	stats := controller.collectStats()
+	// Collect stats - first call captures baseline
+	stats1 := controller.collectStats()
+	require.NotNil(t, stats1)
+	assert.GreaterOrEqual(t, stats1.allocationRate, int64(0))
+	assert.GreaterOrEqual(t, stats1.memoryPressure, 0.0)
+	assert.LessOrEqual(t, stats1.memoryPressure, 1.0)
 
-	require.NotNil(t, stats)
-	assert.GreaterOrEqual(t, stats.allocationRate, int64(0))
-	assert.GreaterOrEqual(t, stats.memoryPressure, 0.0)
-	assert.LessOrEqual(t, stats.memoryPressure, 1.0)
+	// Allocate to ensure TotalAlloc increases
+	for i := 0; i < 100000; i++ {
+		_ = make([]byte, 1024)
+	}
+
+	// Collect stats again - should see allocation rate > 0
+	stats2 := controller.collectStats()
+	require.NotNil(t, stats2)
+	assert.GreaterOrEqual(t, stats2.allocationRate, int64(0))
+}
+
+func TestDefaultAdaptiveGCConfig(t *testing.T) {
+	cfg := DefaultAdaptiveGCConfig()
+	assert.False(t, cfg.Enabled)
+	assert.Equal(t, 50, cfg.MinGOGC)
+	assert.Equal(t, 200, cfg.MaxGOGC)
+	assert.Equal(t, 1*time.Second, cfg.AdjustInterval)
+}
+
+func TestAdaptiveGC_ConfigValidation(t *testing.T) {
+	c := NewAdaptiveGCController(AdaptiveGCConfig{MinGOGC: -10, MaxGOGC: -5, AdjustInterval: -1})
+	assert.Equal(t, 50, c.config.MinGOGC)
+	assert.Equal(t, 200, c.config.MaxGOGC)
+	assert.Equal(t, 1*time.Second, c.config.AdjustInterval)
+
+	c2 := NewAdaptiveGCController(AdaptiveGCConfig{MinGOGC: 100, MaxGOGC: 50, AdjustInterval: -1})
+	assert.Equal(t, 50, c2.config.MinGOGC)
+	assert.Equal(t, 100, c2.config.MaxGOGC)
+}
+
+func TestAdaptiveGC_StartAlreadyRunning(t *testing.T) {
+	config := AdaptiveGCConfig{
+		Enabled:        true,
+		MinGOGC:        50,
+		MaxGOGC:        200,
+		AdjustInterval: 100 * time.Millisecond,
+	}
+	controller := NewAdaptiveGCController(config)
+	controller.Start()
+	controller.Start() // should be no-op
+	controller.Stop()
+}
+
+func TestAdaptiveGC_CalculateGOGC_EdgeCases(t *testing.T) {
+	config := AdaptiveGCConfig{MinGOGC: 50, MaxGOGC: 200}
+	controller := NewAdaptiveGCController(config)
+
+	tests := []struct {
+		name     string
+		stats    *gcStats
+		validate func(t *testing.T, gogc int)
+	}{
+		{
+			name: "negative allocation rate",
+			stats: &gcStats{allocationRate: -100, memoryPressure: 0.5},
+			validate: func(t *testing.T, gogc int) {
+				assert.GreaterOrEqual(t, gogc, 50)
+			},
+		},
+		{
+			name: "negative memory pressure",
+			stats: &gcStats{allocationRate: 0, memoryPressure: -0.5},
+			validate: func(t *testing.T, gogc int) {
+				assert.GreaterOrEqual(t, gogc, 50)
+			},
+		},
+		{
+			name: "extreme memory pressure",
+			stats: &gcStats{allocationRate: 0, memoryPressure: 2.0},
+			validate: func(t *testing.T, gogc int) {
+				assert.GreaterOrEqual(t, gogc, 50)
+				assert.Equal(t, config.MinGOGC, gogc)
+			},
+		},
+		{
+			name: "high allocation clamped",
+			stats: &gcStats{allocationRate: 500 * 1024 * 1024, memoryPressure: 0},
+			validate: func(t *testing.T, gogc int) {
+				assert.LessOrEqual(t, gogc, 200)
+				assert.Equal(t, config.MaxGOGC, gogc)
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			gogc := controller.calculateGOGC(tt.stats)
+			tt.validate(t, gogc)
+		})
+	}
 }
 
 func TestAdaptiveGC_MetricsUpdated(t *testing.T) {

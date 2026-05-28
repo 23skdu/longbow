@@ -25,11 +25,11 @@ These represent critical engineering improvements to completely eliminate graph 
   * [x] Fix adjacency chunk `EnsureCapacity` races and zero-offset bounds panics.
 
 ### 3. Lock-Free Search Contexts
-* **Status**: In Progress `[/]`
+* **Status**: Completed `[x]`
 * **Goal**: Ensure that the `SearchContext` fetched from the worker pool is acquired and released lock-free, avoiding hardware contention on search workers.
 * **Subtasks**:
-  * [ ] Remove cache-line bouncing `atomic.Int64` metrics from `ArrowSearchContextPool.Get()` and `Put()`.
-  * [ ] Ensure `sync.Pool` remains lock-free under extreme parallel insertion load (migrate to `LockFreeRingBuffer` generic implementation).
+  * [x] Remove cache-line bouncing `atomic.Int64` metrics from `ArrowSearchContextPool.Get()` and `Put()`.
+  * [x] Ensure `sync.Pool` remains lock-free under extreme parallel insertion load (migrate to `LockFreeRingBuffer` generic implementation).
 
 ### 4. High-Concurrency Fuzzing & Race Fixes
 * **Status**: Completed `[x]`

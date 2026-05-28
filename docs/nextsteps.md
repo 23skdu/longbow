@@ -9,12 +9,12 @@ This document outlines the critical active optimizations, validation roadmap, an
 These represent critical engineering improvements to completely eliminate graph traversal latencies, reduce CPU memory bus thrashing under high-concurrency ingestion, and maximize SIMD hardware compute density.
 
 ### 1. Quantized Navigation on Upper Layers
-* **Status**: Not Started `[ ]`
+* **Status**: Completed `[x]`
 * **Goal**: Reduce DRAM-to-L3 memory bus bandwidth usage by 4x to 8x during graph descent.
 * **Subtasks**:
-  * [ ] Adapt the upper layer graph traversal search (`searchLayerForInsert` for layers > 0) to use quantized representations (such as `SQ8` or `TQ`).
-  * [ ] Ensure the HNSW search descent loads 1-byte quantized vectors on layers $> 0$.
-  * [ ] Fallback dynamically to full-precision `Float32` calculations only upon entering `Layer 0` to preserve search recall.
+  * [x] Adapt the upper layer graph traversal search (`searchLayerForInsert` for layers > 0) to use quantized representations (such as `SQ8` or `TQ`).
+  * [x] Ensure the HNSW search descent loads 1-byte quantized vectors on layers $> 0$.
+  * [x] Fallback dynamically to full-precision `Float32` calculations only upon entering `Layer 0` to preserve search recall.
 
 ### 2. Flat & Packed Memory Chunks
 * **Status**: Completed `[x]`

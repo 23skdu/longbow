@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"sync"
 	"sync/atomic"
-	"time"
 	"unsafe"
 )
 
@@ -139,6 +138,9 @@ func (p *GPUPager) Promote(pi *PageInfo) error {
 		p.lruList.MoveToFront(pi.lruElement)
 		return nil
 	}
+
+	// Move this page to front so it is not selected as an eviction victim
+	p.lruList.MoveToFront(pi.lruElement)
 
 	// Ensure we have room, evicting if necessary
 	for p.maxPages > 0 && p.usedVRAM+p.pageSize > p.maxVRAM {
@@ -308,6 +310,13 @@ func (p *GPUPager) evictOne() bool {
 // GetGPUAddr returns the GPU pointer for a resident page, or nil if evicted.
 func (p *GPUPager) GetGPUAddr(pi *PageInfo) unsafe.Pointer {
 	return pi.gpuPtr
+}
+
+// PageInfo returns the PageInfo for a given page ID, or nil if not found.
+func (p *GPUPager) PageInfo(id PageID) *PageInfo {
+	p.evictMu.Lock()
+	defer p.evictMu.Unlock()
+	return p.pages[id]
 }
 
 // GetCPUBuf returns the CPU backing buffer for a page.

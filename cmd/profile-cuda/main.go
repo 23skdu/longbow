@@ -62,7 +62,6 @@ func main() {
 	// 2. pq_distance_kernel
 	m := 8
 	subDim := dim / m
-	totalSubVec := subDim // each sub-vector is subDim floats
 	pqCodebookSize := 256 * m * subDim
 	pqCodesSize := count * m
 

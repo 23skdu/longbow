@@ -564,12 +564,6 @@ __global__ void dot_product_kernel_large(const float* vectors, const float* quer
     }
 }
 
-void launch_l2_distance_large_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, cudaStream_t stream) {
-    int threadsPerBlock = 256;
-    int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
-    l2_distance_kernel_large<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, query, distances, dimensions, count);
-}
-
 void launch_l2_distance_large_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream) {
     int warps_per_block = 8;
     int vectors_per_block = warps_per_block;

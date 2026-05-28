@@ -81,6 +81,7 @@ sequenceDiagram
     participant WAL as Write-Ahead Log
     participant Arena as SlabArena (Off-Heap)
     participant Store as Vector Store
+    participant Queue as Index Queue (Lock-Free Ring)
     participant Index as Vector Index (COW)
 
     Client->>Flight: Stream Arrow RecordBatches
@@ -93,7 +94,9 @@ sequenceDiagram
     Buffer->>WAL: Log Mutation (Ordered)
     Buffer->>Arena: Allocate Row Slabs
     Arena->>Store: Append to RecordBatches
-    Store->>Index: Update Graph/Index (COW Publication)
+    Store->>Queue: Enqueue Job (Lock-Free)
+    Queue->>Index: Parallel Ingest & TurboQuant (Lock-Free Workspace Ring)
+    Index->>Index: Update Graph/Index (COW Publication)
     Index-->>Client: Acknowledge (ID Range)
 ```
 
@@ -315,6 +318,10 @@ The search pipeline coordinates between multiple indices, filters, and rerankers
 
 ```mermaid
 graph TD
+    subgraph Context["Thread-Safe State"]
+        Ctx["ArrowSearchContextPool<br/>(Lock-Free Ring)"]
+    end
+
     subgraph Query["Query Input"]
         V[Query Vector]
         F[Metadata Filter]
@@ -325,6 +332,8 @@ graph TD
         GPU[GPU Brute-Force/PQ]
         HNSW & GPU --> Merge[Initial Result Merge]
     end
+
+    Ctx -.->|Borrow Context| HNSW
 
     subgraph Filtering["Post-Filtering"]
         Merge --> Bitset[Bitmap/Bloom Filter]

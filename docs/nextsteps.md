@@ -4,41 +4,7 @@ This document outlines the critical active optimizations, validation roadmap, an
 
 ---
 
-## 🚨 P0 Blockers: High-Scale Ingestion & Graph Latency Optimizations
 
-These represent critical engineering improvements to completely eliminate graph traversal latencies, reduce CPU memory bus thrashing under high-concurrency ingestion, and maximize SIMD hardware compute density.
-
-### 1. Quantized Navigation on Upper Layers
-* **Status**: Completed `[x]`
-* **Goal**: Reduce DRAM-to-L3 memory bus bandwidth usage by 4x to 8x during graph descent.
-* **Subtasks**:
-  * [x] Adapt the upper layer graph traversal search (`searchLayerForInsert` for layers > 0) to use quantized representations (such as `SQ8` or `TQ`).
-  * [x] Ensure the HNSW search descent loads 1-byte quantized vectors on layers $> 0$.
-  * [x] Fallback dynamically to full-precision `Float32` calculations only upon entering `Layer 0` to preserve search recall.
-
-### 2. Flat & Packed Memory Chunks
-* **Status**: Completed `[x]`
-* **Goal**: Pack HNSW neighbor arrays contiguously in memory to enable sequential hardware prefetching.
-* **Subtasks**:
-  * [x] Restructure neighbor lists in `GraphData` to be packed sequentially rather than being stored in disjoint slices (`FlatAdjacency`).
-  * [x] Align packed list bounds to 64-byte boundaries (CPU cache line size) to optimize burst reads from memory.
-  * [x] Fix adjacency chunk `EnsureCapacity` races and zero-offset bounds panics.
-
-### 3. Lock-Free Search Contexts
-* **Status**: Completed `[x]`
-* **Goal**: Ensure that the `SearchContext` fetched from the worker pool is acquired and released lock-free, avoiding hardware contention on search workers.
-* **Subtasks**:
-  * [x] Remove cache-line bouncing `atomic.Int64` metrics from `ArrowSearchContextPool.Get()` and `Put()`.
-  * [x] Ensure `sync.Pool` remains lock-free under extreme parallel insertion load (migrate to `LockFreeRingBuffer` generic implementation).
-
-### 4. High-Concurrency Fuzzing & Race Fixes
-* **Status**: Completed `[x]`
-* **Goal**: Ensure absolute stability and zero data races during high-speed parallel vector insertions.
-* **Subtasks**:
-  * [x] Resolve `TurboQuantEncoder` workspace state data races by migrating from `sync.Pool` to `LockFreeRingBuffer`.
-  * [x] Guarantee index ingestion and recall stability (`TestRecallConsistency` and `FuzzIngestionIntegrityConcurrent`) under 30-minute stress tests.
-
----
 
 ## 🎯 Active Priorities & Future Roadmap
 

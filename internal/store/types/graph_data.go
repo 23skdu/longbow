@@ -1121,7 +1121,7 @@ func (g *GraphData) GetVectorsUint16ChunkWithGen(chunkID int, maxGen uint64) []u
 }
 
 func initArenaSafe[T any](arenaPtr **memory.TypedArena[T], slabSize int, alloc arrowmemory.Allocator) {
-	if atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(arenaPtr))) == nil {
+	if atomic.LoadPointer((*unsafe.Pointer)(unsafe.Pointer(arenaPtr))) == nil { // #nosec G103
 		var sa *memory.SlabArena
 		if alloc != nil {
 			sa = memory.NewSlabArenaWithAllocator(slabSize, alloc)
@@ -1129,7 +1129,7 @@ func initArenaSafe[T any](arenaPtr **memory.TypedArena[T], slabSize int, alloc a
 			sa = memory.NewSlabArena(slabSize)
 		}
 		newArena := memory.NewTypedArena[T](sa)
-		if !atomic.CompareAndSwapPointer((*unsafe.Pointer)(unsafe.Pointer(arenaPtr)), nil, unsafe.Pointer(newArena)) {
+		if !atomic.CompareAndSwapPointer((*unsafe.Pointer)(unsafe.Pointer(arenaPtr)), nil, unsafe.Pointer(newArena)) { // #nosec G103
 			// Lost race, another goroutine already initialized it.
 			// Safe to discard our newArena
 		}
@@ -2101,7 +2101,7 @@ func (g *GraphData) GetVectorPQWithGen(id uint32, maxGen uint64) []byte {
 			return nil
 		}
 
-		ptr := unsafe.Pointer(&chunk[0])
+		ptr := unsafe.Pointer(&chunk[0]) // #nosec G103
 		byteChunk := unsafe.Slice((*byte)(ptr), numWords*8) // #nosec G103
 
 		start := cOff * m

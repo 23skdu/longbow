@@ -1033,10 +1033,13 @@ __global__ void hnsw_prune_neighbors_kernel(
     const float* candidateDists,
     uint32_t* selectedIds,
     uint32_t* selectedCount,
-    const float* allVectors,
+    const float** page_ptrs,
+    const int* page_starts,
     int maxNeighbors,
     int numCandidates,
     int dim,
+    int total_count,
+    int num_pages,
     bool extendedHeuristic
 ) {
     if (blockIdx.x > 0 || threadIdx.x > 0) return;
@@ -1047,13 +1050,35 @@ __global__ void hnsw_prune_neighbors_kernel(
         float currDist = candidateDists[i];
         bool good = true;
 
+        if (currId >= total_count) continue;
+
+        int currPage = 0;
+        int currLocal = 0;
+        for (int p = 0; p < num_pages; p++) {
+            if (currId < page_starts[p+1]) {
+                currPage = p;
+                currLocal = currId - page_starts[p];
+                break;
+            }
+        }
+        const float* v1 = page_ptrs[currPage] + (size_t)currLocal * dim;
+
         for (int j = 0; j < count; j++) {
             uint32_t selId = selectedIds[j];
+            if (selId >= total_count) continue;
+            
+            int selPage = 0;
+            int selLocal = 0;
+            for (int p = 0; p < num_pages; p++) {
+                if (selId < page_starts[p+1]) {
+                    selPage = p;
+                    selLocal = selId - page_starts[p];
+                    break;
+                }
+            }
+            const float* v2 = page_ptrs[selPage] + (size_t)selLocal * dim;
             
             float distBetween = 0.0f;
-            const float* v1 = allVectors + (size_t)currId * dim;
-            const float* v2 = allVectors + (size_t)selId * dim;
-            
             for (int k = 0; k < dim; k++) {
                 float d = v1[k] - v2[k];
                 distBetween += d * d;

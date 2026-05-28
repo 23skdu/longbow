@@ -777,14 +777,21 @@ func (a *SlabArena) ConvertToOffHeap(alloc memory.Allocator) error {
 		return nil
 	}
 	slabs := *ptr
+	newSlabs := make([]*slab, len(slabs))
 	for i := range slabs {
 		newData := alloc.Allocate(len(slabs[i].data))
 		if newData == nil {
 			return fmt.Errorf("off-heap allocation failed")
 		}
 		copy(newData, slabs[i].data)
-		slabs[i].data = newData
+		newSlabs[i] = &slab{
+			id:         slabs[i].id,
+			generation: slabs[i].generation,
+			data:       newData,
+			offset:     slabs[i].offset,
+		}
 	}
+	a.slabs.Store(&newSlabs)
 	a.alloc = alloc
 	return nil
 }

@@ -195,12 +195,61 @@ __global__ void dot_distance_fp16_kernel_optimized(const __half* vectors, const 
     }
 }
 
+// Optimized L2 Distance Kernel (FP32) with coalesced global memory access.
+// Each warp processes one vector; lanes within a warp read consecutive dimension
+// elements from global memory (fully coalesced). Query is cached in shared memory.
+// Uses extern shared memory sized to dim*sizeof(float).
+#define WARP_SZ 32
+__global__ void l2_distance_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count) {
+    extern __shared__ float s_query[];
+
+    // Cooperative query load into shared memory
+    if (threadIdx.x < dim) {
+        s_query[threadIdx.x] = query[threadIdx.x];
+    }
+    __syncthreads();
+
+    int warp_id = threadIdx.x / WARP_SZ;
+    int lane_id = threadIdx.x % WARP_SZ;
+    int warps_per_block = blockDim.x / WARP_SZ;
+    int vec_idx = blockIdx.x * warps_per_block + warp_id;
+
+    if (vec_idx >= count) return;
+
+    const float* vec = vectors + (int64_t)vec_idx * dim;
+    float sum = 0.0f;
+
+    // Each lane processes elements spaced WARP_SZ apart.
+    // Together, all lanes in the warp access consecutive elements in each iteration → fully coalesced.
+    for (int d = lane_id; d < dim; d += WARP_SZ) {
+        float diff = vec[d] - s_query[d];
+        sum += diff * diff;
+    }
+
+    // Warp-level reduction
+    for (int offset = WARP_SZ / 2; offset > 0; offset >>= 1) {
+        sum += __shfl_xor_sync(0xffffffff, sum, offset);
+    }
+
+    if (lane_id == 0) {
+        distances[vec_idx] = sqrtf(sum);
+    }
+}
+
 // Dispatchers
 
 void launch_l2_distance_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, cudaStream_t stream) {
     int threadsPerBlock = 256;
     int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
     l2_distance_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, query, distances, dimensions, count);
+}
+
+void launch_l2_distance_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream) {
+    int warps_per_block = 8; // 256 threads total
+    int vectors_per_block = warps_per_block; // one vector per warp
+    int blocks = (count + vectors_per_block - 1) / vectors_per_block;
+    size_t shared_mem = dim * sizeof(float);
+    l2_distance_kernel_v2<<<blocks, warps_per_block * WARP_SZ, shared_mem, stream>>>(vectors, query, distances, dim, count);
 }
 
 void launch_l2_distance_fp16_kernel(const __half* vectors, const __half* query, float* distances, int dimensions, int count, cudaStream_t stream) {

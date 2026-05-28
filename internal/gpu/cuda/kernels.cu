@@ -483,38 +483,55 @@ void launch_graph_activation_propagate_kernel(
 }
 
 
-// Euclidean Distance Kernel for Large Dimensions (Vectorized with float4)
-__global__ void l2_distance_kernel_large(const float* vectors, const float* query, float* distances, int dimensions, int count) {
-    int idx = blockIdx.x * blockDim.x + threadIdx.x;
-    if (idx < count) {
-        float sum = 0.0f;
-        const float* vec = vectors + idx * dimensions;
-        
-        int i = 0;
-        // Ensure alignment for float4 loads
-        if (((uintptr_t)vec & 0xF) == 0 && ((uintptr_t)query & 0xF) == 0) {
-            const float4* vec4 = (const float4*)vec;
-            const float4* query4 = (const float4*)query;
-            int n4 = dimensions / 4;
-            
-            #pragma unroll 4
-            for (; i < n4; i++) {
-                float4 v = vec4[i];
-                float4 q = query4[i];
-                float dx = v.x - q.x;
-                float dy = v.y - q.y;
-                float dz = v.z - q.z;
-                float dw = v.w - q.w;
-                sum += dx*dx + dy*dy + dz*dz + dw*dw;
-            }
-            i *= 4;
-        }
-        
-        for (; i < dimensions; i++) {
-            float diff = vec[i] - query[i];
-            sum += diff * diff;
-        }
-        distances[idx] = sqrtf(sum);
+// Coalesced Euclidean Distance Kernel for Large Dimensions (dim > 1024).
+// Uses the same warp-per-vector pattern as l2_distance_kernel_v2 with float4 vectorized loads.
+__global__ void l2_distance_kernel_large_v2(const float* vectors, const float* query, float* distances, int dim, int count) {
+    extern __shared__ float s_query_large[];
+
+    if (threadIdx.x < dim) {
+        s_query_large[threadIdx.x] = query[threadIdx.x];
+    }
+    __syncthreads();
+
+    int warp_id = threadIdx.x / WARP_SZ;
+    int lane_id = threadIdx.x % WARP_SZ;
+    int warps_per_block = blockDim.x / WARP_SZ;
+    int vec_idx = blockIdx.x * warps_per_block + warp_id;
+
+    if (vec_idx >= count) return;
+
+    const float* vec = vectors + (int64_t)vec_idx * dim;
+    float sum = 0.0f;
+
+    // float4 vectorized: each lane processes one float4 per iteration (4 elements)
+    // All 32 lanes together consume 128 elements per iteration -> fully coalesced
+    const float4* vec4 = (const float4*)vec;
+    const float4* query4 = (const float4*)s_query_large;
+    int n4 = dim / 4;
+
+    for (int i = lane_id; i < n4; i += WARP_SZ) {
+        float4 v = vec4[i];
+        float4 q = query4[i];
+        float dx = v.x - q.x;
+        float dy = v.y - q.y;
+        float dz = v.z - q.z;
+        float dw = v.w - q.w;
+        sum += dx*dx + dy*dy + dz*dz + dw*dw;
+    }
+
+    // Remainder elements (dim % 4)
+    int rem = dim & 3;
+    if (rem > 0 && lane_id < rem) {
+        float diff = vec[dim - rem + lane_id] - s_query_large[dim - rem + lane_id];
+        sum += diff * diff;
+    }
+
+    for (int offset = WARP_SZ / 2; offset > 0; offset >>= 1) {
+        sum += __shfl_xor_sync(0xffffffff, sum, offset);
+    }
+
+    if (lane_id == 0) {
+        distances[vec_idx] = sqrtf(sum);
     }
 }
 
@@ -551,6 +568,14 @@ void launch_l2_distance_large_kernel(const float* vectors, const float* query, f
     int threadsPerBlock = 256;
     int blocksPerGrid = (count + threadsPerBlock - 1) / threadsPerBlock;
     l2_distance_kernel_large<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(vectors, query, distances, dimensions, count);
+}
+
+void launch_l2_distance_large_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream) {
+    int warps_per_block = 8;
+    int vectors_per_block = warps_per_block;
+    int blocks = (count + vectors_per_block - 1) / vectors_per_block;
+    size_t shared_mem = dim * sizeof(float);
+    l2_distance_kernel_large_v2<<<blocks, warps_per_block * WARP_SZ, shared_mem, stream>>>(vectors, query, distances, dim, count);
 }
 
 void launch_dot_product_large_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, cudaStream_t stream) {

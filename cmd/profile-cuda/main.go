@@ -9,7 +9,6 @@ package main
 
 extern void launch_l2_distance_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
 extern void launch_topk_kernel(const float* distances, const int64_t* ids, int n, int k, float* outDistances, int64_t* outIds, cudaStream_t stream);
-extern void launch_l2_distance_large_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
 extern void launch_l2_distance_filtered_kernel(const float* vectors, const float* query, unsigned int* results, int* resultCount, const unsigned long long* bitset, int dim, int count, int k, cudaStream_t stream);
 extern void launch_l2_distance_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
 extern void launch_l2_distance_large_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
@@ -27,7 +26,7 @@ import (
 var h_query []float32
 
 func main() {
-	kernel := flag.String("kernel", "v2", "kernel to profile: v1, v2, large_v2, tq_v2, topk, v1_large")
+	kernel := flag.String("kernel", "v2", "kernel to profile: v1, v2, large_v2, tq_v2, topk")
 	dim := flag.Int("dim", 768, "vector dimension")
 	count := flag.Int("count", 2048, "number of vectors")
 	flag.Parse()
@@ -49,8 +48,6 @@ func main() {
 	switch *kernel {
 	case "v1":
 		runV1(*dim, *count)
-	case "v1_large":
-		runV1Large(*dim, *count)
 	case "v2":
 		runV2(*dim, *count)
 	case "large_v2":
@@ -71,21 +68,6 @@ func runV1(dim, count int) {
 	d_vectors, d_query, d_dists := allocFP32(dim, count, dim)
 	C.cudaDeviceSynchronize()
 	C.launch_l2_distance_kernel(
-		(*C.float)(d_vectors), (*C.float)(d_query), (*C.float)(d_dists),
-		C.int(dim), C.int(count), nil,
-	)
-	C.cudaDeviceSynchronize()
-	C.cudaFree(d_vectors)
-	C.cudaFree(d_query)
-	C.cudaFree(d_dists)
-	fmt.Println("  done")
-}
-
-func runV1Large(dim, count int) {
-	fmt.Printf("--- l2_distance_large_kernel (v1) dim=%d count=%d ---\n", dim, count)
-	d_vectors, d_query, d_dists := allocFP32(dim, count, dim)
-	C.cudaDeviceSynchronize()
-	C.launch_l2_distance_large_kernel(
 		(*C.float)(d_vectors), (*C.float)(d_query), (*C.float)(d_dists),
 		C.int(dim), C.int(count), nil,
 	)

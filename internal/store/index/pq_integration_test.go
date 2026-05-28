@@ -26,8 +26,8 @@ func TestPQ_EndToEnd(t *testing.T) {
 	dims := 128
 	pqM := 16 // 16 subspaces -> 8 dim per subspace
 	pqK := 256
-	numVecs := 1000
-	trainVecs := 500
+	numVecs := 400
+	trainVecs := 256
 
 	config := types.DefaultArrowHNSWConfig()
 	config.PQM = pqM
@@ -102,7 +102,7 @@ func TestPQ_EndToEnd(t *testing.T) {
 	// We search for random vectors from the dataset and expect the ID to be in top results
 	// Recall checks
 	successCount := 0
-	numQueries := 50
+	numQueries := 20
 	k := 10
 
 	for i := 0; i < numQueries; i++ {

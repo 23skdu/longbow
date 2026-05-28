@@ -99,6 +99,7 @@ node_modules/
 .npm-cache/
 
 # Git and Config
+opencode.json
 !.docker/config.json
 !.gitlab-ci.yml
 !bin/.gitkeep

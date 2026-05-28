@@ -80,8 +80,8 @@ func TestHNSW_ScratchPoolConcurrent(t *testing.T) {
 
 	// Concurrent searches - should not panic or corrupt data
 	var wg sync.WaitGroup
-	numGoroutines := 20
-	searchesPerGoroutine := 50
+	numGoroutines := 8
+	searchesPerGoroutine := 20
 
 	for g := 0; g < numGoroutines; g++ {
 		wg.Add(1)

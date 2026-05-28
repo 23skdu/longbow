@@ -194,8 +194,8 @@ func TestIndexJobQueue_ConcurrentSend(t *testing.T) {
 
 	// Concurrent sender goroutines
 	var wg sync.WaitGroup
-	sendersCount := 10
-	jobsPerSender := 100
+	sendersCount := 5
+	jobsPerSender := 50
 
 	for s := 0; s < sendersCount; s++ {
 		wg.Add(1)

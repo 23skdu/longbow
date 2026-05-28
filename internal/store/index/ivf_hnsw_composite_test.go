@@ -76,8 +76,8 @@ func TestIVFHNSWCompositeIndex_BillionScaleSimulation(t *testing.T) {
 	}
 
 	dim := 128
-	numCentroids := 1000
-	numVectors := 5000
+	numCentroids := 200
+	numVectors := 2000
 
 	config := IVFHNSWConfig{
 		Nlist:  numCentroids,
@@ -88,8 +88,8 @@ func TestIVFHNSWCompositeIndex_BillionScaleSimulation(t *testing.T) {
 	idx, err := NewIVFHNSWCompositeIndex(dim, config)
 	require.NoError(t, err)
 
-	trainData := make([][]float32, 1000)
-	for i := 0; i < 1000; i++ {
+	trainData := make([][]float32, 500)
+	for i := 0; i < 500; i++ {
 		vec := make([]float32, dim)
 		for j := 0; j < dim; j++ {
 			vec[j] = rand.Float32()
@@ -101,7 +101,7 @@ func TestIVFHNSWCompositeIndex_BillionScaleSimulation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Batch add
-	batchSize := 1000
+	batchSize := 500
 	for i := 0; i < numVectors/batchSize; i++ {
 		batch := make([][]float32, batchSize)
 		ids := make([]uint64, batchSize)

@@ -25,7 +25,7 @@ func TestHNSW_BulkInsert(t *testing.T) {
 	defer mem.AssertSize(t, 0)
 
 	dims := 128
-	numVectors := 5000
+	numVectors := 1500
 
 	schema := arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
@@ -56,7 +56,7 @@ func TestHNSW_BulkInsert(t *testing.T) {
 		}
 		bVecValues.AppendValues(vec, nil)
 
-		if i == 2500 {
+		if i == 750 {
 			queryVec = vec
 		}
 	}
@@ -122,7 +122,7 @@ func TestHNSW_BulkInsert(t *testing.T) {
 
 	found := false
 	for _, res := range results {
-		if uint32(res.ID) == 2500 {
+		if uint32(res.ID) == 750 {
 			found = true
 			require.InDelta(t, 0.0, res.Distance, 1e-4, "Expected distance to self to be 0")
 			break

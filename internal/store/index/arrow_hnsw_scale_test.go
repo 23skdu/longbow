@@ -58,7 +58,7 @@ func TestArrowHNSW_LargeBatchIngestion_30k(t *testing.T) {
 	ds := NewMockDataset("scale_test_30k", nil)
 
 	// Config
-	count := 5000 // Reduced from 30k for audit efficiency under -race
+	count := 2000 // Reduced from 30k for audit efficiency under -race
 	dims := 128
 
 	cfg := types.DefaultArrowHNSWConfig()

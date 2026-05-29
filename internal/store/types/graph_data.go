@@ -1703,6 +1703,10 @@ func (g *GraphData) GetVector(id uint32) (any, error) {
 }
 
 func (g *GraphData) GetVectorWithGen(id uint32, maxGen uint64) (any, error) {
+	if g.Dims <= 0 {
+		return nil, fmt.Errorf("vector type mismatch or uninitialized for ID %d (dims is 0)", id)
+	}
+
 	cID := int(id) / ChunkSize
 	cOff := int(id) % ChunkSize
 

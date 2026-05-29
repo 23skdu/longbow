@@ -549,6 +549,7 @@ func (h *ArrowHNSW) SetDiskGraph(disk *DiskGraph) {
 // setDims sets the vector dimensions
 func (h *ArrowHNSW) setDims(dims int32) {
 	h.dims.Store(dims)
+	h.config.Dims = int(dims)
 	h.updateMetadata(func(meta *HNSWMetadata) {
 		// Dims are not in HNSWMetadata currently, should we add them?
 		// The plan mentions entryPoint, maxLevel, and nodeCount.

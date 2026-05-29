@@ -52,9 +52,10 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 	if end > values.Len() {
 		end = values.Len()
 	}
-	if start > end {
-		start = end
+	if start >= end {
+		return nil
 	}
+
 
 	switch arr := values.(type) {
 	case *arrowarray.Float32:

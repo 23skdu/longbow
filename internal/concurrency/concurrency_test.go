@@ -3,6 +3,7 @@ package concurrency
 import (
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -126,19 +127,19 @@ func TestLockFreeStack_BasicOperations(t *testing.T) {
 func TestWorkStealingScheduler_Basic(t *testing.T) {
 	s := NewWorkStealingScheduler[func()](4)
 
-	executed := make([]int, 0)
+	var executedCount atomic.Int32
 
-	s.Submit(func() { executed = append(executed, 1) })
-	s.Submit(func() { executed = append(executed, 2) })
-	s.Submit(func() { executed = append(executed, 3) })
-	s.Submit(func() { executed = append(executed, 4) })
+	s.Submit(func() { executedCount.Add(1) })
+	s.Submit(func() { executedCount.Add(1) })
+	s.Submit(func() { executedCount.Add(1) })
+	s.Submit(func() { executedCount.Add(1) })
 
 	s.Start()
 	time.Sleep(100 * time.Millisecond)
 	s.Stop()
 
-	if len(executed) != 4 {
-		t.Errorf("Expected 4 executed tasks, got %d", len(executed))
+	if executedCount.Load() != 4 {
+		t.Errorf("Expected 4 executed tasks, got %d", executedCount.Load())
 	}
 }
 

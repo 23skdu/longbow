@@ -1065,7 +1065,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 
 		vec := h.extractVector(rec, vecColIdx, rowIdxs[i])
 		if vec == nil {
-			return nil, fmt.Errorf("vector missing for row %d", rowIdxs[i])
+			// Debug: capture details about why extraction failed
+			col := rec.Column(vecColIdx)
+			return nil, fmt.Errorf("vector missing for row %d (rec.NumRows=%d, batchIdx=%d, colType=%T)", rowIdxs[i], rec.NumRows(), batchIdxs[i], col)
 		}
 
 		// Insert node-by-node. InsertWithVector uses in-place arena updates (lock-free)

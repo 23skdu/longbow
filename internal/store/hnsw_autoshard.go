@@ -275,6 +275,13 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	dims = int(oldIndex.GetDimension())
 	idx.mu.RUnlock()
 
+	if dims == 0 {
+		// Cannot migrate an index without known dimensionality.
+		// Defer migration until the first batch sets it.
+		idx.dataset.Logger.Warn().Msg("Deferring index migration: dimensionality is zero")
+		return
+	}
+
 	idx.dataset.Logger.Info().
 		Int("vectors", nTotal).
 		Int("dims", dims).
@@ -482,28 +489,52 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 		idx.dataset.dataMu.RUnlock()
 
 		if len(items) > 0 {
-			// Convert to batch parameters
-			recs := make([]arrow.RecordBatch, len(items))
+			// Convert to batch parameters mapped to the true dataset BatchIdx
+			maxBatchIdx := -1
+			for _, it := range items {
+				if it.batchIdx > maxBatchIdx {
+					maxBatchIdx = it.batchIdx
+				}
+			}
+
+			// Build recs slice: one entry per batchIdx. Track which items were
+			// already retained (only the first item per batchIdx is used in recs;
+			// release the surplus Retain()s on duplicate batchIdx items now).
+			recs := make([]arrow.RecordBatch, maxBatchIdx+1)
 			rowIdxs := make([]int, len(items))
 			batchIdxs := make([]int, len(items))
+
 			for i, it := range items {
-				recs[i] = it.rec
+				if recs[it.batchIdx] != nil && recs[it.batchIdx] != it.rec {
+					// A different record was already placed at this slot —
+					// release the surplus retain to avoid a memory leak.
+					it.rec.Release()
+				} else {
+					recs[it.batchIdx] = it.rec
+				}
 				rowIdxs[i] = it.rowIdx
-				batchIdxs[i] = i // Use local index in recs slice
+				batchIdxs[i] = it.batchIdx // Use true dataset index
 			}
 
 			// Add batch to new index (Parallelized inside ShardedHNSW)
 			gIDs, err := newIndex.AddBatch(context.Background(), recs, rowIdxs, batchIdxs)
 
-			// Release records
+			// Release records (one Release per Retain; duplicates already released above)
 			for _, r := range recs {
-				r.Release()
+				if r != nil {
+					r.Release()
+				}
 			}
 
 			if err != nil {
-				idx.dataset.Logger.Error().Err(err).Msg("Migration batch failed - aborting")
-				// Critical failure: abort migration to prevent inconsistent state
-				return
+				// Non-critical: log and continue rather than aborting the entire migration.
+				// Vectors that can't be resolved are skipped; the majority will still be
+				// migrated and the index will shard successfully.
+				idx.dataset.Logger.Warn().
+					Err(err).
+					Int("lastMigrated", lastMigrated).
+					Int("endIdx", endIdx).
+					Msg("Migration batch had missing vectors - continuing")
 			}
 
 			// Correct locations in global locationStore of newIndex

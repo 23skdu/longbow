@@ -559,8 +559,8 @@ class BenchmarkRunner:
         if self.server_pid:
             try:
                 os.kill(self.server_pid, signal.SIGTERM)
-                # Wait up to 15 seconds for graceful stop (server's own timeout)
-                for _ in range(30):
+                # Wait up to 25 seconds for graceful stop
+                for _ in range(50):
                     time.sleep(0.5)
                     try:
                         pid_reaped, status = os.waitpid(self.server_pid, os.WNOHANG)

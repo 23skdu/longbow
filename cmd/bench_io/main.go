@@ -476,138 +476,116 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 	fmt.Printf("Ingested %d vectors in %.2fs (%.0f vec/s)\n", scale, ingestDur.Seconds(), result.IngestVecPerSec)
 
 	modes := strings.Split(searchModes, ",")
-	var wg sync.WaitGroup
-	var mu sync.Mutex
-	concurrency := 10
-	queriesPerWorker := queries / concurrency
+	rnd = rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404
 
 	for _, mode := range modes {
 		mode = strings.TrimSpace(mode)
-		wg.Add(1)
-		go func(m string) {
-			defer wg.Done()
-			rnd := rand.New(rand.NewSource(time.Now().UnixNano())) // #nosec G404
-			latencies := make([]float64, 0, queriesPerWorker*concurrency)
+		latencies := make([]float64, 0, queries)
+		totalStart := time.Now()
 
-			for w := 0; w < concurrency; w++ {
-				for i := 0; i < queriesPerWorker; i++ {
-					query := make([]float32, dim)
-					sum := 0.0
-					for j := 0; j < dim; j++ {
-						v := rnd.Float32()
-						query[j] = v
-						sum += float64(v * v)
-					}
-					norm := math.Sqrt(sum)
-					if norm > 0 {
-						for j := 0; j < dim; j++ {
-							query[j] /= float32(norm)
-						}
-					}
-
-					start := time.Now()
-					var runErr error
-
-					var ticketBytes []byte
-					if strings.HasPrefix(m, "temporal_") {
-						ts := time.Now().UnixNano()
-						if m == "temporal_as_of" {
-							req := map[string]interface{}{
-								"dataset":     dataset,
-								"search_type": "as_of",
-								"timestamp":   ts,
-								"k":           10,
-							}
-							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
-						} else if m == "temporal_range" {
-							req := map[string]interface{}{
-								"dataset":     dataset,
-								"search_type": "range",
-								"start_time":  ts - 1000000000,
-								"end_time":    ts,
-								"k":           10,
-							}
-							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
-						} else if m == "temporal_window" {
-							req := map[string]interface{}{
-								"dataset":     dataset,
-								"search_type": "sliding_window",
-								"window_size": 10,
-								"k":           10,
-							}
-							ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
-						}
-					} else {
-						req := map[string]interface{}{
-							"dataset": dataset,
-							"vector":  query,
-							"k":       10,
-							"mode":    m,
-						}
-						ticketBytes, _ = json.Marshal(map[string]interface{}{"search": req})
-					}
-
-					stream, runErr := sc.DoGet(ctx, ticketBytes)
-					if runErr == nil {
-						reader, err := flight.NewRecordReader(stream)
-						if err == nil {
-							for reader.Next() {
-								reader.Record()
-							}
-							reader.Release()
-						}
-					}
-
-					latencyMs := time.Since(start).Seconds() * 1000
-					if runErr == nil {
-						mu.Lock()
-						latencies = append(latencies, latencyMs)
-						mu.Unlock()
-					}
+		for i := 0; i < queries; i++ {
+			query := make([]float32, dim)
+			sum := 0.0
+			for j := 0; j < dim; j++ {
+				v := rnd.Float32()
+				query[j] = v
+				sum += float64(v * v)
+			}
+			norm := math.Sqrt(sum)
+			if norm > 0 {
+				for j := 0; j < dim; j++ {
+					query[j] /= float32(norm)
 				}
 			}
 
-			if len(latencies) == 0 {
-				return
-			}
-			sorted := make([]float64, len(latencies))
-			copy(sorted, latencies)
-			sort.Float64s(sorted)
+			start := time.Now()
+			var runErr error
 
-			p50 := sorted[int(0.5*float64(len(sorted)))]
-			p95 := sorted[int(0.95*float64(len(sorted)))]
-			p99 := sorted[int(0.99*float64(len(sorted)))]
-
-			avgLatency := 0.0
-			for _, l := range latencies {
-				avgLatency += l
+			var ticketBytes []byte
+			if strings.HasPrefix(mode, "temporal_") {
+				ts := time.Now().UnixNano()
+				if mode == "temporal_as_of" {
+					req := map[string]interface{}{
+						"dataset":     dataset,
+						"search_type": "as_of",
+						"timestamp":   ts,
+						"k":           10,
+					}
+					ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
+				} else if mode == "temporal_range" {
+					req := map[string]interface{}{
+						"dataset":     dataset,
+						"search_type": "range",
+						"start_time":  ts - 1000000000,
+						"end_time":    ts,
+						"k":           10,
+					}
+					ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
+				} else if mode == "temporal_window" {
+					req := map[string]interface{}{
+						"dataset":     dataset,
+						"search_type": "sliding_window",
+						"window_size": 10,
+						"k":           10,
+					}
+					ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
+				}
+			} else {
+				req := map[string]interface{}{
+					"dataset": dataset,
+					"vector":  query,
+					"k":       10,
+					"mode":    mode,
+				}
+				ticketBytes, _ = json.Marshal(map[string]interface{}{"search": req})
 			}
-			avgLatency /= float64(len(latencies))
-			qps := 1000.0 / avgLatency
 
-			mu.Lock()
-			switch m {
-			case "dense":
-				result.DenseQPS, result.DenseP50Ms, result.DenseP95Ms, result.DenseP99Ms = qps, p50, p95, p99
-			case "hybrid":
-				result.HybridQPS, result.HybridP50Ms, result.HybridP95Ms, result.HybridP99Ms = qps, p50, p95, p99
-			case "sparse":
-				result.SparseQPS, result.SparseP50Ms, result.SparseP95Ms, result.SparseP99Ms = qps, p50, p95, p99
-			case "filtered":
-				result.FilteredQPS, result.FilteredP50Ms, result.FilteredP95Ms, result.FilteredP99Ms = qps, p50, p95, p99
-			case "byid":
-				result.ByIDQPS, result.ByIDP50Ms, result.ByIDP95Ms, result.ByIDP99Ms = qps, p50, p95, p99
-			case "temporal_as_of":
-				result.TemporalAsOfQPS, result.TemporalAsOfP50Ms, result.TemporalAsOfP95Ms, result.TemporalAsOfP99Ms = qps, p50, p95, p99
-			case "temporal_range":
-				result.TemporalRangeQPS, result.TemporalRangeP50Ms, result.TemporalRangeP95Ms, result.TemporalRangeP99Ms = qps, p50, p95, p99
-			case "temporal_window":
-				result.TemporalWindowQPS, result.TemporalWindowP50Ms, result.TemporalWindowP95Ms, result.TemporalWindowP99Ms = qps, p50, p95, p99
+			stream, runErr := sc.DoGet(ctx, ticketBytes)
+			if runErr == nil {
+				reader, err := flight.NewRecordReader(stream)
+				if err == nil {
+					for reader.Next() {
+						reader.Record()
+					}
+					reader.Release()
+				}
+				latencies = append(latencies, time.Since(start).Seconds()*1000)
 			}
-			mu.Unlock()
-		}(mode)
+		}
+
+		if len(latencies) == 0 {
+			continue
+		}
+		sorted := make([]float64, len(latencies))
+		copy(sorted, latencies)
+		sort.Float64s(sorted)
+
+		p50 := sorted[int(0.5*float64(len(sorted)))]
+		p95 := sorted[int(0.95*float64(len(sorted)))]
+		p99 := sorted[int(0.99*float64(len(sorted)))]
+
+		elapsed := time.Since(totalStart).Seconds()
+		qps := float64(len(latencies)) / elapsed
+
+		switch mode {
+		case "dense":
+			result.DenseQPS, result.DenseP50Ms, result.DenseP95Ms, result.DenseP99Ms = qps, p50, p95, p99
+		case "hybrid":
+			result.HybridQPS, result.HybridP50Ms, result.HybridP95Ms, result.HybridP99Ms = qps, p50, p95, p99
+		case "sparse":
+			result.SparseQPS, result.SparseP50Ms, result.SparseP95Ms, result.SparseP99Ms = qps, p50, p95, p99
+		case "filtered":
+			result.FilteredQPS, result.FilteredP50Ms, result.FilteredP95Ms, result.FilteredP99Ms = qps, p50, p95, p99
+		case "byid":
+			result.ByIDQPS, result.ByIDP50Ms, result.ByIDP95Ms, result.ByIDP99Ms = qps, p50, p95, p99
+		case "temporal_as_of":
+			result.TemporalAsOfQPS, result.TemporalAsOfP50Ms, result.TemporalAsOfP95Ms, result.TemporalAsOfP99Ms = qps, p50, p95, p99
+		case "temporal_range":
+			result.TemporalRangeQPS, result.TemporalRangeP50Ms, result.TemporalRangeP95Ms, result.TemporalRangeP99Ms = qps, p50, p95, p99
+		case "temporal_window":
+			result.TemporalWindowQPS, result.TemporalWindowP50Ms, result.TemporalWindowP95Ms, result.TemporalWindowP99Ms = qps, p50, p95, p99
+		}
 	}
-	wg.Wait()
 
 	fmt.Printf("\nResults:\n")
 	fmt.Printf("  Dense:    %8.0f QPS (p50=%.2fms, p95=%.2fms, p99=%.2fms)\n", result.DenseQPS, result.DenseP50Ms, result.DenseP95Ms, result.DenseP99Ms)

@@ -2,6 +2,7 @@ package simd
 
 import (
 	"errors"
+	"fmt"
 	"unsafe"
 
 	"github.com/apache/arrow-go/v18/arrow/float16"
@@ -15,7 +16,7 @@ import (
 // Uses unified dispatch table for optimal cache locality and reduced dispatch overhead.
 func EuclideanDistance(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -34,7 +35,7 @@ func EuclideanDistance(a, b []float32) (float32, error) {
 // Optimized for PQ training and ADC table construction.
 func L2Squared(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -46,7 +47,7 @@ func L2Squared(a, b []float32) (float32, error) {
 // Uses unified dispatch table for optimal cache locality and reduced dispatch overhead.
 func CosineDistance(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -58,7 +59,7 @@ func CosineDistance(a, b []float32) (float32, error) {
 // Uses unified dispatch table for optimal cache locality and reduced dispatch overhead.
 func DotProduct(a, b []float32) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -92,7 +93,7 @@ func DotProduct(a, b []float32) (float32, error) {
 // EuclideanDistanceF16 calculates the Euclidean distance between two FP16 vectors.
 func EuclideanDistanceF16(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -107,7 +108,7 @@ func EuclideanDistanceF16(a, b []float16.Num) (float32, error) {
 // CosineDistanceF16 calculates the cosine distance between two FP16 vectors.
 func CosineDistanceF16(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -121,7 +122,7 @@ func CosineDistanceF16(a, b []float16.Num) (float32, error) {
 // DotProductF16 calculates the dot product between two FP16 vectors.
 func DotProductF16(a, b []float16.Num) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -136,7 +137,7 @@ func DotProductF16(a, b []float16.Num) (float32, error) {
 // Returns float32 distance for consistency with other metrics.
 func EuclideanDistanceFloat64(a, b []float64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -152,7 +153,7 @@ func EuclideanDistanceFloat64(a, b []float64) (float32, error) {
 // Returns float32 distance for consistency with other metrics.
 func CosineDistanceFloat64(a, b []float64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -163,7 +164,7 @@ func CosineDistanceFloat64(a, b []float64) (float32, error) {
 // EuclideanDistanceComplex64 calculates Euclidean distance for Complex64 vectors.
 func EuclideanDistanceComplex64(a, b []complex64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -178,7 +179,7 @@ func EuclideanDistanceComplex64(a, b []complex64) (float32, error) {
 // EuclideanDistanceComplex128 calculates Euclidean distance for Complex128 vectors.
 func EuclideanDistanceComplex128(a, b []complex128) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -200,7 +201,7 @@ func EuclideanDistanceComplex128(a, b []complex128) (float32, error) {
 // DotProductF64 calculates the dot product of two Float64 vectors.
 func DotProductF64(a, b []float64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -215,7 +216,7 @@ func DotProductF64(a, b []float64) (float32, error) {
 // L2SquaredFloat64 calculates the squared Euclidean distance between two Float64 vectors.
 func L2SquaredFloat64(a, b []float64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -230,7 +231,7 @@ func L2SquaredFloat64(a, b []float64) (float32, error) {
 // DotProductComplex64 calculates the real part of the dot product of two Complex64 vectors.
 func DotProductComplex64(a, b []complex64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -247,7 +248,7 @@ func DotProductComplex64(a, b []complex64) (float32, error) {
 // DotProductComplex128 calculates the real part of the dot product of two Complex128 vectors.
 func DotProductComplex128(a, b []complex128) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -264,7 +265,7 @@ func DotProductComplex128(a, b []complex128) (float32, error) {
 // CosineDistanceComplex64 calculates the cosine distance for Complex64 vectors.
 func CosineDistanceComplex64(a, b []complex64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -275,7 +276,7 @@ func CosineDistanceComplex64(a, b []complex64) (float32, error) {
 // CosineDistanceComplex128 calculates the cosine distance for Complex128 vectors.
 func CosineDistanceComplex128(a, b []complex128) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -322,7 +323,7 @@ func L2SquaredFloat32(a, b []float32) (float32, error) {
 // EuclideanDistanceUint8 calculates Euclidean distance for Uint8 vectors.
 func EuclideanDistanceUint8(a, b []uint8) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -336,7 +337,7 @@ func EuclideanDistanceUint8(a, b []uint8) (float32, error) {
 // CosineDistanceUint8 calculates the cosine distance for Uint8 vectors.
 func CosineDistanceUint8(a, b []uint8) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -347,7 +348,7 @@ func CosineDistanceUint8(a, b []uint8) (float32, error) {
 // DotProductUint8 calculates the dot product of two Uint8 vectors.
 func DotProductUint8(a, b []uint8) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -361,7 +362,7 @@ func DotProductUint8(a, b []uint8) (float32, error) {
 // EuclideanDistanceInt8 calculates Euclidean distance for Int8 vectors.
 func EuclideanDistanceInt8(a, b []int8) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -375,7 +376,7 @@ func EuclideanDistanceInt8(a, b []int8) (float32, error) {
 // CosineDistanceInt8 calculates the cosine distance for Int8 vectors.
 func CosineDistanceInt8(a, b []int8) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -386,7 +387,7 @@ func CosineDistanceInt8(a, b []int8) (float32, error) {
 // DotProductInt8 calculates the dot product of two Int8 vectors.
 func DotProductInt8(a, b []int8) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -400,7 +401,7 @@ func DotProductInt8(a, b []int8) (float32, error) {
 // EuclideanDistanceInt16 calculates Euclidean distance for Int16 vectors.
 func EuclideanDistanceInt16(a, b []int16) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -414,7 +415,7 @@ func EuclideanDistanceInt16(a, b []int16) (float32, error) {
 // CosineDistanceInt16 calculates the cosine distance for Int16 vectors.
 func CosineDistanceInt16(a, b []int16) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -425,7 +426,7 @@ func CosineDistanceInt16(a, b []int16) (float32, error) {
 // DotProductInt16 calculates the dot product of two Int16 vectors.
 func DotProductInt16(a, b []int16) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -439,7 +440,7 @@ func DotProductInt16(a, b []int16) (float32, error) {
 // EuclideanDistanceInt32 calculates Euclidean distance for Int32 vectors.
 func EuclideanDistanceInt32(a, b []int32) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -454,7 +455,7 @@ func EuclideanDistanceInt32(a, b []int32) (float32, error) {
 // CosineDistanceInt32 calculates the cosine distance for Int32 vectors.
 func CosineDistanceInt32(a, b []int32) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -465,7 +466,7 @@ func CosineDistanceInt32(a, b []int32) (float32, error) {
 // DotProductInt32 calculates the dot product of two Int32 vectors.
 func DotProductInt32(a, b []int32) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -480,7 +481,7 @@ func DotProductInt32(a, b []int32) (float32, error) {
 // EuclideanDistanceUint16 calculates Euclidean distance for Uint16 vectors.
 func EuclideanDistanceUint16(a, b []uint16) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -494,7 +495,7 @@ func EuclideanDistanceUint16(a, b []uint16) (float32, error) {
 // CosineDistanceUint16 calculates the cosine distance for Uint16 vectors.
 func CosineDistanceUint16(a, b []uint16) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -505,7 +506,7 @@ func CosineDistanceUint16(a, b []uint16) (float32, error) {
 // DotProductUint16 calculates the dot product of two Uint16 vectors.
 func DotProductUint16(a, b []uint16) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -519,7 +520,7 @@ func DotProductUint16(a, b []uint16) (float32, error) {
 // EuclideanDistanceUint32 calculates Euclidean distance for Uint32 vectors.
 func EuclideanDistanceUint32(a, b []uint32) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -533,7 +534,7 @@ func EuclideanDistanceUint32(a, b []uint32) (float32, error) {
 // CosineDistanceUint32 calculates the cosine distance for Uint32 vectors.
 func CosineDistanceUint32(a, b []uint32) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -544,7 +545,7 @@ func CosineDistanceUint32(a, b []uint32) (float32, error) {
 // DotProductUint32 calculates the dot product of two Uint32 vectors.
 func DotProductUint32(a, b []uint32) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -558,7 +559,7 @@ func DotProductUint32(a, b []uint32) (float32, error) {
 // EuclideanDistanceInt64 calculates Euclidean distance for Int64 vectors.
 func EuclideanDistanceInt64(a, b []int64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -572,7 +573,7 @@ func EuclideanDistanceInt64(a, b []int64) (float32, error) {
 // CosineDistanceInt64 calculates the cosine distance for Int64 vectors.
 func CosineDistanceInt64(a, b []int64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -583,7 +584,7 @@ func CosineDistanceInt64(a, b []int64) (float32, error) {
 // DotProductInt64 calculates the dot product of two Int64 vectors.
 func DotProductInt64(a, b []int64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -597,7 +598,7 @@ func DotProductInt64(a, b []int64) (float32, error) {
 // EuclideanDistanceUint64 calculates Euclidean distance for Uint64 vectors.
 func EuclideanDistanceUint64(a, b []uint64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil
@@ -611,7 +612,7 @@ func EuclideanDistanceUint64(a, b []uint64) (float32, error) {
 // CosineDistanceUint64 calculates the cosine distance for Uint64 vectors.
 func CosineDistanceUint64(a, b []uint64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 1.0, nil
@@ -622,7 +623,7 @@ func CosineDistanceUint64(a, b []uint64) (float32, error) {
 // DotProductUint64 calculates the dot product of two Uint64 vectors.
 func DotProductUint64(a, b []uint64) (float32, error) {
 	if len(a) != len(b) {
-		return 0, errors.New("simd: vector length mismatch")
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
 	}
 	if len(a) == 0 {
 		return 0, nil

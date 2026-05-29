@@ -261,13 +261,17 @@ func TestP0_Eviction_And_FallbackSearch(t *testing.T) {
 	require.NotNil(t, vs.evictionManager)
 	vs.evictionManager.Register(gd)
 
-	// Trigger manual eviction of layers >= 1
+	// Trigger manual eviction of layer 0
 	vs.evictionManager.ForceEvictAll()
 
+	t.Logf("DEBUG: After ForceEvictAll, Layer 0 chunk 0 offset: %d", gd.Neighbors[0][0])
 	t.Logf("DEBUG: After ForceEvictAll, Layer 1 chunk 0 offset: %d", gd.Neighbors[1][0])
 
-	// Verify layer 1 is marked as evicted (offset is 0)
-	assert.Equal(t, uint64(0), gd.Neighbors[1][0], "Layer 1 must be evicted to 0 offset")
+	// Verify layer 0 is marked as evicted (offset is 0)
+	assert.Equal(t, uint64(0), gd.Neighbors[0][0], "Layer 0 must be evicted to 0 offset")
+	
+	// Verify layer 1 is NOT evicted (pinned in memory)
+	assert.NotEqual(t, uint64(0), gd.Neighbors[1][0], "Layer 1 must be pinned and not evicted")
 
 	// Query with Exact Float32 Option to verify fallback search and transparent restore
 	queryOptions := types.SearchOptions{
@@ -284,8 +288,8 @@ func TestP0_Eviction_And_FallbackSearch(t *testing.T) {
 	require.NoError(t, err)
 	assert.NotEmpty(t, res)
 
-	t.Logf("DEBUG: After search, Layer 1 chunk 0 offset: %d", gd.Neighbors[1][0])
+	t.Logf("DEBUG: After search, Layer 0 chunk 0 offset: %d", gd.Neighbors[0][0])
 
-	// Verify transparent restore has successfully re-populated neighbors offset
-	assert.NotEqual(t, uint64(0), gd.Neighbors[1][0], "Evicted layer must be transparently restored upon cache miss")
+	// Verify transparent restore has successfully re-populated neighbors offset for layer 0
+	assert.NotEqual(t, uint64(0), gd.Neighbors[0][0], "Evicted layer 0 must be transparently restored upon cache miss")
 }

@@ -68,6 +68,31 @@ class ResourceExhaustedException(Exception):
 
 
 
+def _kill_port(port):
+    """Kill any process listening on the given port.
+
+    Uses lsof on macOS, ss+fuser on Linux, and handles missing tools gracefully."""
+    system = platform.system()
+    if system == "Linux":
+        # ss is universally available on modern Linux
+        ss_res = subprocess.run(
+            f"ss -tlnp 'sport = :{port}' 2>/dev/null",
+            shell=True, capture_output=True, text=True, timeout=5
+        )
+        # Extract PIDs from ss output (format: users:(("foo",pid,fd),...))
+        if ss_res.stdout:
+            for match in re.finditer(r'pid=(\d+)', ss_res.stdout):
+                pid = match.group(1)
+                subprocess.run(f"kill -9 {pid} 2>/dev/null", shell=True, timeout=5)
+        # fuser -k as backup
+        subprocess.run(f"fuser -k {port}/tcp 2>/dev/null", shell=True, timeout=5)
+    else:
+        subprocess.run(
+            f"lsof -ti:{port} 2>/dev/null | xargs -r kill -9 2>/dev/null || true",
+            shell=True, timeout=5
+        )
+
+
 def run_command(cmd, env=None, capture_output=True, timeout=None, shell=False):
     import shlex
     import time
@@ -241,11 +266,7 @@ class BenchmarkRunner:
                 # admin port (+7000), and HTTP port (+80)
                 ports_to_kill = [port, port + 1, port + 6000, port + 7000, port + 80]
                 for p in ports_to_kill:
-                    subprocess.run(
-                        f"lsof -ti:{p} 2>/dev/null | xargs -r kill -9 2>/dev/null || true",
-                        shell=True,
-                        timeout=5,
-                    )
+                    _kill_port(p)
             except Exception:
                 pass
 
@@ -319,17 +340,15 @@ class BenchmarkRunner:
         """Start a fresh Longbow server for a specific configuration."""
         self.stop_server()
         
-        # Calculate dynamic port to avoid TIME_WAIT issues
-        base_port = self.args.port + (self.test_counter % 50) * 10
+        # Calculate dynamic port to avoid TIME_WAIT issues; never reuses a port
+        base_port = self.args.port + self.test_counter * 10
         self.server_addr = f"127.0.0.1:{base_port}"
         port = base_port
         self.test_counter += 1
 
         print(f"  Cleaning up ports starting from {port}...")
         for p in [port, port + 1, port + 80, port + 6000]:
-            subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
-            if platform.system() == "Linux":
-                subprocess.run(f"fuser -k {p}/tcp 2>/dev/null || true", shell=True)
+            _kill_port(p)
         
         # Wait for ports to be actually free
         import socket
@@ -473,9 +492,21 @@ class BenchmarkRunner:
             metrics_port = port + 6000
             ready_url = f"http://127.0.0.1:{metrics_port}/ready"
 
-            # 1. First check if port is at least listening
-            lsof_res = run_command(f"lsof -i :{port} 2>/dev/null | grep LISTEN", shell=True)
-            if lsof_res and lsof_res.returncode == 0:
+            # 1. First check if port is at least listening (cross-platform)
+            port_listening = False
+            if platform.system() == "Linux":
+                ss_res = subprocess.run(
+                    f"ss -tlnp 'sport = :{port}' 2>/dev/null",
+                    shell=True, capture_output=True, text=True, timeout=5
+                )
+                port_listening = bool(ss_res.stdout.strip())
+            else:
+                lsof_res = subprocess.run(
+                    f"lsof -i :{port} 2>/dev/null | grep LISTEN",
+                    shell=True, capture_output=True, text=True, timeout=5
+                )
+                port_listening = lsof_res.returncode == 0
+            if port_listening:
                 # 2. Then check the /ready endpoint
                 try:
                     # Use curl for cross-platform compatibility without extra python deps
@@ -691,9 +722,8 @@ class BenchmarkRunner:
         if ":" in self.server_addr:
             try:
                 port = int(self.server_addr.split(":")[-1])
-                # Only kill processes on our specific ports
                 for p in [port, port + 1, port + 6000, port + 7000, port + 80]:
-                    subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
+                    _kill_port(p)
             except:
                 pass
         

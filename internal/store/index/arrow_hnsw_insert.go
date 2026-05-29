@@ -680,6 +680,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 					}
 
 					if dims > 0 {
+						h.dims.Store(int32(dims)) // #nosec G115
+						h.config.Dims = dims
+						
 						newCap := int(startID) + n
 						if data != nil && data.Capacity > 0 {
 							newCap = int(math.Max(float64(newCap), float64(data.Capacity*2)))

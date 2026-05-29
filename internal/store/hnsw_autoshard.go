@@ -272,9 +272,7 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	oldIndex := idx.current
 	nTotal := oldIndex.Len()
 	dims := 0
-	if ah, ok := oldIndex.(interface{ GetConfig() types.ArrowHNSWConfig }); ok {
-		dims = int(ah.GetConfig().Dims)
-	}
+	dims = int(oldIndex.GetDimension())
 	idx.mu.RUnlock()
 
 	idx.dataset.Logger.Info().
@@ -303,6 +301,8 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	var oldDataType types.VectorDataType
 	if ah, ok := oldIndex.(*ArrowHNSW); ok {
 		oldDataType = ah.GetConfig().DataType
+	} else if sh, ok := oldIndex.(*ShardedHNSW); ok {
+		oldDataType = sh.GetConfig().DataType
 	}
 
 	shardedConfig := DefaultShardedHNSWConfig()

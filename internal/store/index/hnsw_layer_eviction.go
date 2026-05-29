@@ -7,11 +7,11 @@ package index
 // # Background
 //
 // An HNSW graph has a layered structure:
-//   - Layer 0: O(N·M) neighbor entries. Accessed on every search. Always hot.
-//   - Layers ≥ 1: O(N·log(N)) entries. Only used for entry-point traversal. Often cold.
+//   - Layer 0: O(N·M) neighbor entries. Usually too large for RAM at scale. Eligible for eviction.
+//   - Layers ≥ 1: O(N·log(N)) entries. Small footprint, critical for entry-point traversal. Pinned in memory.
 //
-// At 150K float32 dim=128 vectors, upper layers can hold ~50–200 MB of neighbor
-// data that is rarely touched. Evicting them to a temp file frees this memory without
+// At 500K float32 dim=384 vectors, Layer 0 holds ~1GB of neighbor
+// data. Evicting it to a temp file frees this memory without
 // any correctness impact — they are transparently restored on cache miss.
 //
 // # Integration
@@ -184,7 +184,7 @@ func (m *GraphLayerEvictionManager) maybeEvictAll() {
 	m.logger.Warn().
 		Float64("heap_utilization", util).
 		Float64("threshold", m.threshold).
-		Msg("Heap above eviction threshold; evicting cold HNSW upper layers")
+		Msg("Heap above eviction threshold; evicting Layer 0 neighbors")
 
 	m.mu.Lock()
 	targets := make([]*evictionTarget, len(m.targets))
@@ -198,7 +198,7 @@ func (m *GraphLayerEvictionManager) maybeEvictAll() {
 	}
 }
 
-// evictTarget evicts all layers ≥ 1 that have not yet been evicted from a target.
+// evictTarget evicts Layer 0 from a target, pinning layers ≥ 1.
 func (m *GraphLayerEvictionManager) evictTarget(t *evictionTarget) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -215,21 +215,17 @@ func (m *GraphLayerEvictionManager) evictTarget(t *evictionTarget) error {
 
 	var totalFreedBytes int64
 
-	for layer := 1; layer < numLayers; layer++ {
-		if _, alreadyEvicted := t.evictedLayers[layer]; alreadyEvicted {
-			continue
-		}
-		if layer >= len(gd.Neighbors) {
-			continue
-		}
+	// Only evict Layer 0 to preserve pinned upper layers for entry-point search
+	layer := 0
+	if _, alreadyEvicted := t.evictedLayers[layer]; !alreadyEvicted {
 
 		rec, freedBytes, err := evictLayer(gd, layer)
 		if err != nil {
 			m.logger.Warn().Err(err).Int("layer", layer).Msg("Failed to evict HNSW layer")
-			continue
+		} else {
+			t.evictedLayers[layer] = rec
+			totalFreedBytes += freedBytes
 		}
-		t.evictedLayers[layer] = rec
-		totalFreedBytes += freedBytes
 	}
 
 	if totalFreedBytes > 0 {
@@ -237,7 +233,7 @@ func (m *GraphLayerEvictionManager) evictTarget(t *evictionTarget) error {
 			Int64("freed_bytes", totalFreedBytes).
 			Int64("freed_mb", totalFreedBytes/(1024*1024)).
 			Str("dataset", gd.Name).
-			Msg("HNSW upper layers evicted to disk")
+			Msg("HNSW Layer 0 evicted to disk")
 	}
 	return nil
 }

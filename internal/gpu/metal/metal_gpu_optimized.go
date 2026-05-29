@@ -28,6 +28,7 @@ struct MetalIndexOptimized {
     void* vectorBuffer;
     void* idBuffer;
     void* distanceComputePipeline;
+    void* distancePagedPipeline;
     void* cosinePipeline;
     void* dotPipeline;
     void* topKPipeline;
@@ -76,13 +77,14 @@ MetalIndexOptimized* metal_init_optimized(int dimensions) {
 }
 
 void metal_set_pipelines_optimized(MetalIndexOptimized* handle, void* device, void* queue,
-                                 void* l2, void* cosine, void* dot, void* topK,
+                                 void* l2, void* l2Paged, void* cosine, void* dot, void* topK,
                                  void* l2Fp16, void* cosineFp16, void* dotFp16,
                                  void* l2C128, void* cosineC128, void* l2C64, void* cosineC64,
                                  void* tq, void* haversine, void* norm, void* prune, void* greedy, void* greedyTQ) {
     handle->device = device;
     handle->commandQueue = queue;
     handle->distanceComputePipeline = l2;
+    handle->distancePagedPipeline = l2Paged;
     handle->cosinePipeline = cosine;
     handle->dotPipeline = dot;
     handle->topKPipeline = topK;
@@ -343,14 +345,14 @@ int metal_search_optimized(MetalIndexOptimized* handle, float* query, void** pag
         id<MTLComputePipelineState> distancePipeline;
         switch (handle->metric) {
             case METRIC_COSINE:
-                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->cosinePipeline;
+                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->cosinePipeline; // Fallback for now if no paged
                 break;
             case METRIC_DOT:
-                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->dotPipeline;
+                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->dotPipeline; // Fallback
                 break;
             case METRIC_L2:
             default:
-                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->distanceComputePipeline;
+                distancePipeline = (__bridge id<MTLComputePipelineState>)handle->distancePagedPipeline;
                 break;
         }
 
@@ -378,9 +380,9 @@ int metal_search_optimized(MetalIndexOptimized* handle, float* query, void** pag
         [distEncoder setComputePipelineState:distancePipeline];
         [distEncoder setBuffer:queryBuf offset:0 atIndex:0];
 
-        // Argument buffer logic for pages
         id<MTLBuffer> argBuf = [device newBufferWithLength:num_pages * sizeof(uint64_t) options:MTLResourceStorageModeShared];
         uint64_t* ptrs = (uint64_t*)[argBuf contents];
+
         for (int i = 0; i < num_pages; i++) {
             id<MTLBuffer> pb = (__bridge id<MTLBuffer>)page_buffers[i];
             ptrs[i] = pb.gpuAddress;
@@ -943,6 +945,10 @@ func NewMetalIndexOptimized(cfg types.GPUConfig) (types.Index, error) {
 	if err != nil {
 		return nil, err
 	}
+	l2Paged, err := ctx.GetPipelineState("compute_l2_distances_paged")
+	if err != nil {
+		return nil, err
+	}
 	cosine, err := ctx.GetPipelineState("compute_cosine_similarity")
 	if err != nil {
 		return nil, err
@@ -1011,7 +1017,7 @@ func NewMetalIndexOptimized(cfg types.GPUConfig) (types.Index, error) {
 	C.metal_set_pipelines_optimized(
 		handle,
 		ctx.GetDevice(), ctx.GetCommandQueue(),
-		l2, cosine, dot, topK,
+		l2, l2Paged, cosine, dot, topK,
 		l2Fp16, cosineFp16, dotFp16,
 		l2C128, cosineC128, l2C64, cosineC64,
 		tq, haversine, norm, prune, greedy, greedyTQ,

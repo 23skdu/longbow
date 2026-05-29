@@ -1589,3 +1589,8 @@ func (s *ShardedHNSW) Dataset() types.IndexDataProvider {
 func (s *ShardedHNSW) SetDataset(dp types.IndexDataProvider) {
 	s.dataset = dp
 }
+
+// GetConfig returns the sharded index configuration.
+func (s *ShardedHNSW) GetConfig() ShardedHNSWConfig {
+	return s.config
+}

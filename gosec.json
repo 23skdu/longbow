@@ -1,0 +1,24 @@
+{
+	"Golang errors": {
+		"": [
+			{
+				"line": 0,
+				"column": 0,
+				"error": "# command-line-arguments\ninternal/simd/sparse_score_arm64.go:9:6: missing function body\ninternal/simd/simd_arm64.go:342:6: missing function body\ninternal/simd/simd_arm64.go:477:6: missing function body\ninternal/simd/turboquant_arm64.go:58:6: missing function body\ninternal/simd/turboquant_arm64.go:61:6: missing function body\ninternal/simd/turboquant_arm64.go:64:6: missing function body\ninternal/simd/turboquant_arm64.go:67:6: missing function body\ninternal/simd/turboquant_arm64.go:70:6: missing function body\ninternal/simd/turboquant_arm64.go:73:6: missing function body\ninternal/simd/bitops_arm64.go:20:6: missing function body\ninternal/simd/bitops_arm64.go:20:6: too many errors"
+			},
+			{
+				"line": 0,
+				"column": 0,
+				"error": "# command-line-arguments\ninternal/query/simd_filter_neon_arm64.go:11:6: missing function body\ninternal/query/simd_filter_neon_arm64.go:17:6: missing function body\ninternal/query/simd_filter_neon_arm64.go:22:6: missing function body\ninternal/query/simd_filter_neon_arm64.go:27:6: missing function body"
+			}
+		]
+	},
+	"Issues": [],
+	"Stats": {
+		"files": 534,
+		"lines": 136784,
+		"nosec": 814,
+		"found": 0
+	},
+	"GosecVersion": "2.26.1"
+}

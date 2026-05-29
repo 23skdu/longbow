@@ -2,6 +2,7 @@ package index
 
 import (
 	"math"
+	"sync"
 	"unsafe"
 
 	basecore "github.com/23skdu/longbow/internal/core"
@@ -374,6 +375,8 @@ func (c *float32ToFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]
 	}
 	c.batchVecs = c.batchVecs[:len(ids)]
 
+	// Collect indices of vectors that need to be loaded from disk
+	var diskLoads []int
 	for i, id := range ids {
 		cID := types.ChunkID(id)
 		var chunk []float32
@@ -389,13 +392,26 @@ func (c *float32ToFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]
 			start := cOff * pd
 			c.batchVecs[i] = chunk[start : start+len(c.q)]
 		} else {
-			vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-			if err == nil {
-				c.batchVecs[i] = vecAny.([]float32)
-			} else {
-				c.batchVecs[i] = nil
-			}
+			diskLoads = append(diskLoads, i)
 		}
+	}
+
+	// Concurrently fetch paged out vectors
+	if len(diskLoads) > 0 {
+		var wg sync.WaitGroup
+		for _, i := range diskLoads {
+			wg.Add(1)
+			go func(idx int) {
+				defer wg.Done()
+				vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, ids[idx], c.maxGen)
+				if err == nil {
+					c.batchVecs[idx] = vecAny.([]float32)
+				} else {
+					c.batchVecs[idx] = nil
+				}
+			}(i)
+		}
+		wg.Wait()
 	}
 
 	if cap(dst) < len(ids) {

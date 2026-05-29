@@ -1010,3 +1010,45 @@ kernel void hnsw_greedy_search_tq(
         *entryDist = currDist;
     }
 }
+
+kernel void compute_l2_distances_paged(
+    device const float* query [[buffer(0)]],
+    device const PageArgBuffer* pageArgs [[buffer(1)]],
+    device float* distances [[buffer(2)]],
+    constant uint& dim [[buffer(3)]],
+    constant uint& numVectors [[buffer(4)]],
+    device const uint* pageStarts [[buffer(5)]],
+    constant uint& numPages [[buffer(6)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numVectors) return;
+    
+    uint pageIdx = 0;
+    for (uint i = 0; i < numPages; i++) {
+        if (gid >= pageStarts[i] && gid < pageStarts[i+1]) {
+            pageIdx = i;
+            break;
+        }
+    }
+    
+    uint localOffset = (gid - pageStarts[pageIdx]) * dim;
+    device const float* page_data = pageArgs->pages[pageIdx];
+    
+    float sum = 0.0f;
+    uint vectorWidth = dim / 4;
+    uint remainder = dim % 4;
+    
+    for (uint i = 0; i < vectorWidth; i++) {
+        float4 q = *(device const float4*)(query + i * 4);
+        float4 v = *(device const float4*)(page_data + localOffset + i * 4);
+        float4 diff = q - v;
+        sum += dot(diff, diff);
+    }
+    
+    for (uint i = 0; i < remainder; i++) {
+        float diff = query[vectorWidth * 4 + i] - page_data[localOffset + vectorWidth * 4 + i];
+        sum += diff * diff;
+    }
+    
+    distances[gid] = sqrt(sum);
+}

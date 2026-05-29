@@ -732,8 +732,11 @@ class BenchmarkRunner:
         # Build search-modes string based on mode
         search_modes = self.args.search_modes
         current_mode = getattr(self, "current_mode", self.args.mode)
-        if current_mode == "temporal" and search_modes == "all":
-            search_modes = "temporal_as_of,temporal_range,temporal_window"
+        if search_modes == "all":
+            if current_mode == "temporal":
+                search_modes = "temporal_as_of,temporal_range,temporal_window"
+            else:
+                search_modes = "dense,hybrid,sparse,filtered,byid"
 
         extra_args = ""
         if self.args.fbin:

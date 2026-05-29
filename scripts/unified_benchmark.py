@@ -836,7 +836,12 @@ class BenchmarkRunner:
 
         # Extract all search types
         search_metrics = {}
-        expected_modes = ["dense", "hybrid", "sparse", "filtered", "byid", "temporal_as_of", "temporal_range", "temporal_window"]
+        # Only validate modes relevant to the current benchmark mode
+        current_mode = getattr(self, "current_mode", self.args.mode)
+        if current_mode == "temporal":
+            expected_modes = ["temporal_as_of", "temporal_range", "temporal_window"]
+        else:
+            expected_modes = ["dense", "hybrid", "sparse", "filtered", "byid"]
         for key, value in metrics.items():
             if "_qps" in key:
                 prefix = key.replace("_qps", "")

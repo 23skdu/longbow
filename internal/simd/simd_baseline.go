@@ -112,46 +112,41 @@ func euclideanInt16Unrolled4x(a, b []int16) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	// Use int32 partials accumulated into int64 to avoid FPU overhead.
-	// Max squared diff per element: (32767-(-32768))^2 = 65535^2 ≈ 4.3e9, fits int64.
-	// With 4x unrolling, max per-partial before accumulation is well within int64.
-	var sum0, sum1, sum2, sum3 int64
+	var sum0, sum1, sum2, sum3 float64
 	n := len(a)
 	i := 0
 	for ; i <= n-4; i += 4 {
-		d0 := int32(a[i]) - int32(b[i])
-		d1 := int32(a[i+1]) - int32(b[i+1])
-		d2 := int32(a[i+2]) - int32(b[i+2])
-		d3 := int32(a[i+3]) - int32(b[i+3])
-		sum0 += int64(d0) * int64(d0)
-		sum1 += int64(d1) * int64(d1)
-		sum2 += int64(d2) * int64(d2)
-		sum3 += int64(d3) * int64(d3)
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
 	}
 	for ; i < n; i++ {
-		d := int32(a[i]) - int32(b[i])
-		sum0 += int64(d) * int64(d)
+		d := float64(a[i]) - float64(b[i])
+		sum0 += d * d
 	}
-	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
+	return float32(math.Sqrt(sum0 + sum1 + sum2 + sum3)), nil
 }
 
 func dotInt16Unrolled4x(a, b []int16) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	// Use int64 accumulators: max product per element = 32767*32767 ≈ 1.07e9,
-	// summed over 3072 elements ≈ 3.3e12, safely within int64 range.
-	var sum0, sum1, sum2, sum3 int64
+	var sum0, sum1, sum2, sum3 float64
 	n := len(a)
 	i := 0
 	for ; i <= n-4; i += 4 {
-		sum0 += int64(a[i]) * int64(b[i])
-		sum1 += int64(a[i+1]) * int64(b[i+1])
-		sum2 += int64(a[i+2]) * int64(b[i+2])
-		sum3 += int64(a[i+3]) * int64(b[i+3])
+		sum0 += float64(a[i]) * float64(b[i])
+		sum1 += float64(a[i+1]) * float64(b[i+1])
+		sum2 += float64(a[i+2]) * float64(b[i+2])
+		sum3 += float64(a[i+3]) * float64(b[i+3])
 	}
 	for ; i < n; i++ {
-		sum0 += int64(a[i]) * int64(b[i])
+		sum0 += float64(a[i]) * float64(b[i])
 	}
 	return float32(sum0 + sum1 + sum2 + sum3), nil
 }
@@ -295,26 +290,24 @@ func euclideanUint16Unrolled4x(a, b []uint16) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	// Use int32 diffs → int64 accumulators. Max squared diff: 65535^2 ≈ 4.3e9,
-	// summed over 3072 elements ≈ 1.3e13, safely within int64 range.
-	var sum0, sum1, sum2, sum3 int64
+	var sum0, sum1, sum2, sum3 float64
 	n := len(a)
 	i := 0
 	for ; i <= n-4; i += 4 {
-		d0 := int32(a[i]) - int32(b[i])
-		d1 := int32(a[i+1]) - int32(b[i+1])
-		d2 := int32(a[i+2]) - int32(b[i+2])
-		d3 := int32(a[i+3]) - int32(b[i+3])
-		sum0 += int64(d0) * int64(d0)
-		sum1 += int64(d1) * int64(d1)
-		sum2 += int64(d2) * int64(d2)
-		sum3 += int64(d3) * int64(d3)
+		d0 := float64(a[i]) - float64(b[i])
+		d1 := float64(a[i+1]) - float64(b[i+1])
+		d2 := float64(a[i+2]) - float64(b[i+2])
+		d3 := float64(a[i+3]) - float64(b[i+3])
+		sum0 += d0 * d0
+		sum1 += d1 * d1
+		sum2 += d2 * d2
+		sum3 += d3 * d3
 	}
 	for ; i < n; i++ {
-		d := int32(a[i]) - int32(b[i])
-		sum0 += int64(d) * int64(d)
+		d := float64(a[i]) - float64(b[i])
+		sum0 += d * d
 	}
-	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
+	return float32(math.Sqrt(sum0 + sum1 + sum2 + sum3)), nil
 }
 
 func euclideanUint32Unrolled4x(a, b []uint32) (float32, error) {
@@ -463,19 +456,17 @@ func dotUint16Unrolled4x(a, b []uint16) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	// Use uint64 accumulators: max product per element = 65535^2 ≈ 4.3e9,
-	// summed over 3072 elements ≈ 1.3e13, safely within uint64 range.
-	var sum0, sum1, sum2, sum3 uint64
+	var sum0, sum1, sum2, sum3 float64
 	n := len(a)
 	i := 0
 	for ; i <= n-4; i += 4 {
-		sum0 += uint64(a[i]) * uint64(b[i])
-		sum1 += uint64(a[i+1]) * uint64(b[i+1])
-		sum2 += uint64(a[i+2]) * uint64(b[i+2])
-		sum3 += uint64(a[i+3]) * uint64(b[i+3])
+		sum0 += float64(a[i]) * float64(b[i])
+		sum1 += float64(a[i+1]) * float64(b[i+1])
+		sum2 += float64(a[i+2]) * float64(b[i+2])
+		sum3 += float64(a[i+3]) * float64(b[i+3])
 	}
 	for ; i < n; i++ {
-		sum0 += uint64(a[i]) * uint64(b[i])
+		sum0 += float64(a[i]) * float64(b[i])
 	}
 	return float32(sum0 + sum1 + sum2 + sum3), nil
 }
@@ -701,16 +692,16 @@ func cosineDistanceInt16Unrolled4x(a, b []int16) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	var dot0, dot1, dot2, dot3 int64
-	var normA0, normA1, normA2, normA3 int64
-	var normB0, normB1, normB2, normB3 int64
+	var dot0, dot1, dot2, dot3 float64
+	var normA0, normA1, normA2, normA3 float64
+	var normB0, normB1, normB2, normB3 float64
 	n := len(a)
 	i := 0
 	for ; i <= n-4; i += 4 {
-		va0, vb0 := int64(a[i]), int64(b[i])
-		va1, vb1 := int64(a[i+1]), int64(b[i+1])
-		va2, vb2 := int64(a[i+2]), int64(b[i+2])
-		va3, vb3 := int64(a[i+3]), int64(b[i+3])
+		va0, vb0 := float64(a[i]), float64(b[i])
+		va1, vb1 := float64(a[i+1]), float64(b[i+1])
+		va2, vb2 := float64(a[i+2]), float64(b[i+2])
+		va3, vb3 := float64(a[i+3]), float64(b[i+3])
 		dot0 += va0 * vb0
 		normA0 += va0 * va0
 		normB0 += vb0 * vb0
@@ -725,14 +716,14 @@ func cosineDistanceInt16Unrolled4x(a, b []int16) (float32, error) {
 		normB3 += vb3 * vb3
 	}
 	for ; i < n; i++ {
-		va, vb := int64(a[i]), int64(b[i])
+		va, vb := float64(a[i]), float64(b[i])
 		dot0 += va * vb
 		normA0 += va * va
 		normB0 += vb * vb
 	}
-	totalDot := float64(dot0 + dot1 + dot2 + dot3)
-	totalNormA := float64(normA0 + normA1 + normA2 + normA3)
-	totalNormB := float64(normB0 + normB1 + normB2 + normB3)
+	totalDot := dot0 + dot1 + dot2 + dot3
+	totalNormA := normA0 + normA1 + normA2 + normA3
+	totalNormB := normB0 + normB1 + normB2 + normB3
 	if totalNormA <= 0 || totalNormB <= 0 {
 		return 1.0, nil
 	}
@@ -747,16 +738,16 @@ func cosineDistanceUint16Unrolled4x(a, b []uint16) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	var dot0, dot1, dot2, dot3 uint64
-	var normA0, normA1, normA2, normA3 uint64
-	var normB0, normB1, normB2, normB3 uint64
+	var dot0, dot1, dot2, dot3 float64
+	var normA0, normA1, normA2, normA3 float64
+	var normB0, normB1, normB2, normB3 float64
 	n := len(a)
 	i := 0
 	for ; i <= n-4; i += 4 {
-		va0, vb0 := uint64(a[i]), uint64(b[i])
-		va1, vb1 := uint64(a[i+1]), uint64(b[i+1])
-		va2, vb2 := uint64(a[i+2]), uint64(b[i+2])
-		va3, vb3 := uint64(a[i+3]), uint64(b[i+3])
+		va0, vb0 := float64(a[i]), float64(b[i])
+		va1, vb1 := float64(a[i+1]), float64(b[i+1])
+		va2, vb2 := float64(a[i+2]), float64(b[i+2])
+		va3, vb3 := float64(a[i+3]), float64(b[i+3])
 		dot0 += va0 * vb0
 		normA0 += va0 * va0
 		normB0 += vb0 * vb0
@@ -771,14 +762,14 @@ func cosineDistanceUint16Unrolled4x(a, b []uint16) (float32, error) {
 		normB3 += vb3 * vb3
 	}
 	for ; i < n; i++ {
-		va, vb := uint64(a[i]), uint64(b[i])
+		va, vb := float64(a[i]), float64(b[i])
 		dot0 += va * vb
 		normA0 += va * va
 		normB0 += vb * vb
 	}
-	totalDot := float64(dot0 + dot1 + dot2 + dot3)
-	totalNormA := float64(normA0 + normA1 + normA2 + normA3)
-	totalNormB := float64(normB0 + normB1 + normB2 + normB3)
+	totalDot := dot0 + dot1 + dot2 + dot3
+	totalNormA := normA0 + normA1 + normA2 + normA3
+	totalNormB := normB0 + normB1 + normB2 + normB3
 	if totalNormA <= 0 || totalNormB <= 0 {
 		return 1.0, nil
 	}

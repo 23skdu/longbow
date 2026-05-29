@@ -544,7 +544,7 @@ class BenchmarkRunner:
         if self.server_pid:
             try:
                 os.kill(self.server_pid, signal.SIGKILL)
-                os.waitpid(self.server_pid, 0)
+                time.sleep(2)
             except Exception:
                 pass
             self.server_pid = None
@@ -578,11 +578,7 @@ class BenchmarkRunner:
                 # Fallback to kill -9
                 print(f"  Server PID {self.server_pid} didn't stop gracefully, killing -9")
                 os.kill(self.server_pid, signal.SIGKILL)
-                try:
-                    os.waitpid(self.server_pid, 0)
-                except (ProcessLookupError, ChildProcessError):
-                    pass
-                time.sleep(1)
+                time.sleep(2)
             except (ProcessLookupError, ChildProcessError):
                 pass
             self.server_pid = None

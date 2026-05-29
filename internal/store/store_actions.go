@@ -1500,6 +1500,18 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			s.logger.Error().Str("dataset", name).Msg("findVectorColumn returned nil")
 		}
 		ds.Index = aIdx
+
+		// Pre-warm the index metadata cache with the current schema so the first
+		// AddBatch call doesn't pay lazy-cache population latency.
+		if hnsw, ok := aIdx.(*ArrowHNSW); ok {
+			hnsw.PreWarmMetadata(rec.Schema())
+		} else if asi, ok := aIdx.(*AutoShardingIndex); ok {
+			asi.mu.RLock()
+			if current, ok := asi.current.(*ArrowHNSW); ok {
+				current.PreWarmMetadata(rec.Schema())
+			}
+			asi.mu.RUnlock()
+		}
 	}
 
 	currentRecords := ds.Records.Read()

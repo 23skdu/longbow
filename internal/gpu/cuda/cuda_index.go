@@ -250,6 +250,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/apache/arrow-go/v18/arrow/float16"
+	"golang.org/x/sync/semaphore"
 )
 
 const vectorsPerPage = 1024
@@ -278,6 +279,9 @@ type CUDAIndex struct {
 
 	maxMemory  int64
 	usedMemory int64
+
+	// opSem limits concurrent GPU operations to prevent VRAM oversubscription.
+	opSem *semaphore.Weighted
 
 	vectorCount int
 	idList      []int64
@@ -346,6 +350,10 @@ func NewCUDAIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 
 	pageSize := int64(vectorsPerPage) * int64(cfg.Dimension) * 4
 
+	maxGPUOps := runtime.GOMAXPROCS(0)
+	if maxGPUOps < 4 {
+		maxGPUOps = 4
+	}
 	idx := &CUDAIndex{
 		handle: handle,
 		dim:    cfg.Dimension,
@@ -358,10 +366,12 @@ func NewCUDAIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 		lastSyncTime: time.Now(),
 		stopSync:     make(chan struct{}),
 		maxMemory:    maxVRAM,
+		opSem:        semaphore.NewWeighted(int64(maxGPUOps)),
 	}
 
 	pool, err := memory.NewGPUMemPool(types.BackendCUDA, cfg.DeviceID)
 	if err == nil {
+		pool.SetTotalMemory(maxVRAM)
 		idx.memPool = pool
 		idx.pager = memory.NewGPUPager(pool, maxVRAM, pageSize)
 	}
@@ -403,6 +413,11 @@ func (idx *CUDAIndex) Add(ids []int64, vectors []float32) error {
 }
 
 func (idx *CUDAIndex) Flush() error {
+	if err := idx.acquireGPUOp(); err != nil {
+		return fmt.Errorf("failed to acquire GPU op slot: %w", err)
+	}
+	defer idx.releaseGPUOp()
+
 	idx.batchMu.Lock()
 	defer idx.batchMu.Unlock()
 
@@ -558,7 +573,29 @@ func (idx *CUDAIndex) AddPQ(ids []int64, codes []byte, m int) error {
 	return nil
 }
 
+// acquireGPUOp blocks until a GPU operation slot is available or context is cancelled.
+// Callers MUST defer releaseGPUOp.
+func (idx *CUDAIndex) acquireGPUOp() error {
+	if idx.opSem == nil {
+		return nil
+	}
+	return idx.opSem.Acquire(nil, 1)
+}
+
+// releaseGPUOp releases a GPU operation slot.
+func (idx *CUDAIndex) releaseGPUOp() {
+	if idx.opSem == nil {
+		return
+	}
+	idx.opSem.Release(1)
+}
+
 func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error) {
+	if err := idx.acquireGPUOp(); err != nil {
+		return nil, nil, fmt.Errorf("failed to acquire GPU op slot: %w", err)
+	}
+	defer idx.releaseGPUOp()
+
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -727,6 +764,11 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 }
 
 func (idx *CUDAIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []float32, error) {
+	if err := idx.acquireGPUOp(); err != nil {
+		return nil, nil, fmt.Errorf("failed to acquire GPU op slot: %w", err)
+	}
+	defer idx.releaseGPUOp()
+
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -841,6 +883,11 @@ func (idx *CUDAIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []
 }
 
 func (idx *CUDAIndex) TrainPQ(vectors []float32, m int, k int) error {
+	if err := idx.acquireGPUOp(); err != nil {
+		return fmt.Errorf("failed to acquire GPU op slot: %w", err)
+	}
+	defer idx.releaseGPUOp()
+
 	idx.mu.Lock()
 	defer idx.mu.Unlock()
 
@@ -1058,6 +1105,11 @@ func (idx *CUDAIndex) AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int
 }
 
 func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int) ([]int64, []float32, error) {
+	if err := idx.acquireGPUOp(); err != nil {
+		return nil, nil, fmt.Errorf("failed to acquire GPU op slot: %w", err)
+	}
+	defer idx.releaseGPUOp()
+
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -1267,6 +1319,11 @@ func (idx *CUDAIndex) AssignToClusters(vectors []float32, centroids []float32) (
 }
 
 func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) ([]int64, []float32, error) {
+	if err := idx.acquireGPUOp(); err != nil {
+		return nil, nil, fmt.Errorf("failed to acquire GPU op slot: %w", err)
+	}
+	defer idx.releaseGPUOp()
+
 	if len(query) != idx.dim {
 		return nil, nil, fmt.Errorf("query dimension mismatch: expected %d, got %d", idx.dim, len(query))
 	}
@@ -1464,6 +1521,11 @@ func (idx *CUDAIndex) UpdateGraph(offsets []uint32, neighbors []uint32, weights 
 }
 
 func (idx *CUDAIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]uint32, []float32, error) {
+	if err := idx.acquireGPUOp(); err != nil {
+		return nil, nil, fmt.Errorf("failed to acquire GPU op slot: %w", err)
+	}
+	defer idx.releaseGPUOp()
+
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
@@ -1477,18 +1539,45 @@ func (idx *CUDAIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]u
 
 	nodeCount := int(idx.handle.graphNodeCount)
 
-	// Allocate GPU buffers for BFS
+	// Allocate GPU buffers for BFS with error checking
 	var d_frontier, d_nextFrontier *C.uint32_t
 	var d_visited *C.ulonglong
 	var d_activations, d_newActivations *C.float
 	var d_nextSize *C.int
 
-	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_frontier)), C.size_t(nodeCount*4))
-	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_nextFrontier)), C.size_t(nodeCount*4))
-	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_visited)), C.size_t((nodeCount/64+1)*8))
-	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_activations)), C.size_t(nodeCount*4))
-	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_newActivations)), C.size_t(nodeCount*4))
-	C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_nextSize)), 4)
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_frontier)), C.size_t(nodeCount*4)); ret != C.cudaSuccess {
+		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc frontier failed: %v", ret)
+	}
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_nextFrontier)), C.size_t(nodeCount*4)); ret != C.cudaSuccess {
+		C.cudaFree(unsafe.Pointer(d_frontier))
+		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc nextFrontier failed: %v", ret)
+	}
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_visited)), C.size_t((nodeCount/64+1)*8)); ret != C.cudaSuccess {
+		C.cudaFree(unsafe.Pointer(d_frontier))
+		C.cudaFree(unsafe.Pointer(d_nextFrontier))
+		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc visited failed: %v", ret)
+	}
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_activations)), C.size_t(nodeCount*4)); ret != C.cudaSuccess {
+		C.cudaFree(unsafe.Pointer(d_frontier))
+		C.cudaFree(unsafe.Pointer(d_nextFrontier))
+		C.cudaFree(unsafe.Pointer(d_visited))
+		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc activations failed: %v", ret)
+	}
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_newActivations)), C.size_t(nodeCount*4)); ret != C.cudaSuccess {
+		C.cudaFree(unsafe.Pointer(d_frontier))
+		C.cudaFree(unsafe.Pointer(d_nextFrontier))
+		C.cudaFree(unsafe.Pointer(d_visited))
+		C.cudaFree(unsafe.Pointer(d_activations))
+		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc newActivations failed: %v", ret)
+	}
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_nextSize)), 4); ret != C.cudaSuccess {
+		C.cudaFree(unsafe.Pointer(d_frontier))
+		C.cudaFree(unsafe.Pointer(d_nextFrontier))
+		C.cudaFree(unsafe.Pointer(d_visited))
+		C.cudaFree(unsafe.Pointer(d_activations))
+		C.cudaFree(unsafe.Pointer(d_newActivations))
+		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc nextSize failed: %v", ret)
+	}
 
 	defer func() {
 		C.cudaFree(unsafe.Pointer(d_frontier))

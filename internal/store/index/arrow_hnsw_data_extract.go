@@ -137,6 +137,36 @@ func (h *ArrowHNSW) getColumnIdx(rec arrow.RecordBatch, name string) int {
 	return idx
 }
 
+// PreWarmMetadata explicitly warms the metadata cache with a known schema.
+// This avoids lazy cache-population latency on the first AddBatch call.
+// Safe to call multiple times; only the first invocation performs work.
+func (h *ArrowHNSW) PreWarmMetadata(schema *arrow.Schema) {
+	if schema == nil || h.metadata.cached.Load() {
+		return
+	}
+
+	// Pre-populate field map for common column names
+	fieldNames := []string{"vector", "embedding", "vec", "id"}
+	for _, name := range fieldNames {
+		for i := 0; i < schema.NumFields(); i++ {
+			if strings.EqualFold(schema.Field(i).Name, name) {
+				h.metadata.fieldMap.Store(name, i)
+				break
+			}
+		}
+	}
+
+	// Cache vector column index
+	for _, name := range []string{"vector", "embedding", "vec"} {
+		if val, ok := h.metadata.fieldMap.Load(name); ok {
+			h.metadata.vecColIdx.Store(int32(val.(int))) // #nosec G115
+			break
+		}
+	}
+
+	h.precacheMetadata(schema)
+}
+
 func (h *ArrowHNSW) getVectorColumnIndex(rec arrow.RecordBatch) int {
 	if rec == nil {
 		return -1

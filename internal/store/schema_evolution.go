@@ -33,6 +33,9 @@ type SchemaEvolutionManager struct {
 	columns     map[string]*ColumnMetadata
 	columnOrder []string // maintain column order
 	datasetName string   // for metrics
+
+	// cachedSchema is the last reconstructed schema, invalidated on any schema mutation.
+	cachedSchema atomic.Pointer[arrow.Schema]
 }
 
 // NewSchemaEvolutionManager creates a new manager with initial schema
@@ -74,10 +77,20 @@ func (m *SchemaEvolutionManager) GetCurrentVersion() uint64 {
 	return m.currentVer.Load()
 }
 
-// GetCurrentSchema returns the current schema (excluding dropped columns)
+// GetCurrentSchema returns the current schema (excluding dropped columns).
+// The result is cached and invalidated on any schema mutation.
 func (m *SchemaEvolutionManager) GetCurrentSchema() *arrow.Schema {
+	if s := m.cachedSchema.Load(); s != nil {
+		return s
+	}
+
 	m.mu.RLock()
 	defer m.mu.RUnlock()
+
+	// Double-check after acquiring read lock
+	if s := m.cachedSchema.Load(); s != nil {
+		return s
+	}
 
 	var fields []arrow.Field
 	for _, name := range m.columnOrder {
@@ -90,7 +103,9 @@ func (m *SchemaEvolutionManager) GetCurrentSchema() *arrow.Schema {
 		}
 	}
 
-	return arrow.NewSchema(fields, nil)
+	schema := arrow.NewSchema(fields, nil)
+	m.cachedSchema.Store(schema)
+	return schema
 }
 
 // AddColumn adds a new column without requiring dataset lock or rewrite
@@ -148,6 +163,9 @@ func (m *SchemaEvolutionManager) AddColumn(name string, dtype arrow.DataType) er
 		CreatedAt: time.Now(),
 	}
 
+	// Invalidate cached schema
+	m.cachedSchema.Store(nil)
+
 	// Update metrics
 	metrics.SchemaVersionCurrent.WithLabelValues(m.datasetName).Set(float64(newVer))
 	metrics.SchemaColumnsAddedTotal.Inc()
@@ -199,6 +217,9 @@ func (m *SchemaEvolutionManager) DropColumn(name string) error {
 		Fields:    fields,
 		CreatedAt: time.Now(),
 	}
+
+	// Invalidate cached schema
+	m.cachedSchema.Store(nil)
 
 	// Update metrics
 	metrics.SchemaVersionCurrent.WithLabelValues(m.datasetName).Set(float64(newVer))

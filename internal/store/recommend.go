@@ -41,6 +41,12 @@ func (s *VectorStore) Recommend(ctx context.Context, req *qry.RecommendRequest) 
 			if nid, err := strconv.ParseInt(uid, 10, 64); err == nil {
 				loc, ok = ds.NumericPrimaryIndex[nid]
 			}
+			// Try uint64 primary index
+			if !ok {
+				if unid, err := strconv.ParseUint(uid, 10, 64); err == nil {
+					loc, ok = ds.Uint64PrimaryIndex[unid]
+				}
+			}
 		}
 		if ok {
 			// Resolve internal ID (Batch*ChunkSize + Row)

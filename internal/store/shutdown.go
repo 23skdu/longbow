@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"os"
 	"sync/atomic"
 	"time"
 
@@ -119,16 +120,19 @@ waitLoop:
 
 	// Step 4: Create final snapshot
 	// Safe now as workers are stopped.
-	select {
-	case <-ctx.Done():
-		s.logger.Warn().Msg("Shutdown timeout, skipping final snapshot")
-	default:
-		s.logger.Info().Msg("Creating final snapshot...")
-		if err := s.Snapshot(ctx); err != nil {
-			s.logger.Error().Err(err).Msg("Failed to create final snapshot")
-			// Don't fail shutdown for snapshot errors
-		} else {
-			s.logger.Info().Msg("Final snapshot created successfully")
+	if os.Getenv("LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT") == "true" {
+		s.logger.Info().Msg("Skipping final snapshot (LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT=true)")
+	} else {
+		select {
+		case <-ctx.Done():
+			s.logger.Warn().Msg("Shutdown timeout, skipping final snapshot")
+		default:
+			s.logger.Info().Msg("Creating final snapshot...")
+			if err := s.Snapshot(ctx); err != nil {
+				s.logger.Error().Err(err).Msg("Failed to create final snapshot")
+			} else {
+				s.logger.Info().Msg("Final snapshot created successfully")
+			}
 		}
 	}
 

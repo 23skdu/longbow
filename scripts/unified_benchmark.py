@@ -385,6 +385,7 @@ class BenchmarkRunner:
         # ── Core resource limits ──────────────────────────────────────────
         limit_gb = os.environ.get("LONGBOW_MAX_MEMORY", 18 * 1024 * 1024 * 1024)
         env["LONGBOW_MAX_MEMORY"] = str(limit_gb)
+        env["LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT"] = "true"
         env["ARROW_DISABLE_LOCKING"] = "1"
         env["LONGBOW_GOGC"] = "200"
         env["LONGBOW_INGESTION_WORKER_COUNT"] = "6"

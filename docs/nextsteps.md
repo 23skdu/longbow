@@ -19,19 +19,21 @@ To handle 500k scale vectors without thrashing physical memory limits (VRAM/RAM)
 - `[x]` **Subtask 2: Fix Auto-Sharding Migration Aborts & Memory Leaks**: Resolved an issue where `AddBatch` errors due to missing vectors would abort the entire auto-sharding migration. It now logs a warning and skips missing vectors to ensure the migration completes. Also fixed a memory leak where `Retain()` on duplicate dataset records was not properly paired with `Release()`.
 - `[ ]` **Subtask 3: Rebase & Dependabot resolution**: Cleanly handle incoming PRs to minimize downstream pipeline issues.
 
-## P0: Bench-tool QPS Aggregation Bug
-
-The bench-tool's concurrent search worker mode (10 goroutines × N queries each) has a QPS calculation bug: each goroutine independently computes `QPS = 1000 / avgLatency`, and the last goroutine to write to `result` wins. This under-reports system QPS by ~10x when using 10 concurrent workers.
-
-**Fix**: Aggregate latencies across all workers before computing QPS, or compute QPS as `total_queries / total_elapsed_time`.
-
 ## P0: Remote CUDA/Metal Benchmarks
 
-GPU benchmarks (Metal on local, CUDA on ancalagon) have not been run for this release. Historical baselines (v0.2.0-rc2) showed:
-- Metal: 29,268 QPS (dim=128, count=5000, dense search)
-- CUDA: 30,013 QPS (dim=128, count=5000, dense search)
+GPU benchmarks (Metal on local, CUDA on ancalagon) have not been run for this release. Historical baselines (v0.2.0-rc2) are invalid due to the QPS aggregation bug. Corrected QPS must be established from the current benchmark run.
 
-These should be validated against the current build to ensure GPU parity is maintained.
+## P1: Full Benchmark Matrix
+
+The complete benchmark matrix (16 types × 5 dims × 7 counts × 4 platforms × 5+ search modes) is currently running for CPU on both hosts. Metal and CUDA runs are scheduled after CPU completes.
+
+## P1: Review All Integer Distance Kernels
+
+The `int64` accumulator pattern was only present in int16/uint16 kernels but other integer types (int32, uint32, int64, uint64) should be benchmarked at count=5000+ to verify they don't exhibit similar regression patterns. All integer distance kernels should use `float64` accumulators as the standard pattern on ARM64.
+
+## P1: Correct Performance Baselines in docs/performance.md
+
+All QPS targets were inflated ~5x by the bug. The `performance.md` header now flags this, and targets have been reset to estimated corrected values. Once the benchmark run completes, update with actual numbers from result JSON files.
 
 ## P1: Full Benchmark Matrix
 

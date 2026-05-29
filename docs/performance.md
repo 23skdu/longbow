@@ -2,7 +2,7 @@
 
 Generated on: 2026-05-29
 
-## v0.2.1-rc5 — Int16/Uint16 Distance Kernel Fix (2026-05-29)
+## v0.2.1-rc6 — QPS Fix (2026-05-29)
 
 > [!IMPORTANT]
 > **Int16/Uint16 Regression Fixed**: The int16/uint16 distance functions used `int64` accumulators (`int64 MUL` — 3-4 cycle latency on ARM64), while uint8/int8 used `float64 accumulators` (`float64 FMUL` — 1 cycle latency, FMA-fused). Switched int16/uint16 to `float64` accumulators, matching the uint8/int8 pattern. Results: **32x latency improvement** for int16 at count=5000.
@@ -18,18 +18,19 @@ Generated on: 2026-05-29
 
 All integer types now consistently use `float64` accumulators, matching the fastest code path.
 
-### Quick Sanity Results (CPU, dim=128, count=5000)
+### QPS Aggregation Bug Fix
 
-| Type | Local CPU (M3) | Remote CPU (Ancalagon x86_64) |
-|------|---------------|------------------------------|
-| float32 | 967 QPS (0.92ms) | 739 QPS (1.29ms) |
-| int8 | 1,492 QPS (0.55ms) | 632 QPS (1.47ms) |
-| int16 | **1,566 QPS (0.53ms)** | **1,389 QPS (0.67ms)** |
-| uint8 | 1,087 QPS (0.83ms) | 642 QPS (1.48ms) |
-| uint16 | 920 QPS (1.02ms) | 645 QPS (1.44ms) |
+> [!IMPORTANT]
+> **QPS values from all prior releases were inflated by a bench-tool aggregation bug**. Search modes (dense,hybrid,sparse,filtered,byid) ran as 5 concurrent goroutines, each computing QPS = 1000/avgLatency under contention from the other 4 modes. This produced QPS values ~5x higher than actual sustained throughput. The fix (`86b56fb7`) runs modes sequentially with total wall-clock QPS. **Latency (p50/p95/p99) was always accurate** since it's measured per-query.
 
-> [!NOTE]
-> QPS values are per-worker from bench-tool's concurrent mode (10 workers × 100 queries each). The concurrent QPS aggregation has a known bug where only the last worker's QPS is recorded. **Latency (p50) is the reliable metric** for cross-run comparison.
+| Type | Local CPU (M3) — Corrected QPS | Ancalagon CPU — Corrected QPS |
+|------|-------------------------------|-------------------------------|
+| float16 (128d, 1k) | 2,995 QPS (0.30ms) | *(pending)* |
+| float32 | *(pending)* | *(pending)* |
+| int8 | *(pending)* | *(pending)* |
+| int16 | *(pending)* | *(pending)* |
+
+*Full corrected results from the current benchmark matrix run will replace this table.*
 
 ### Key Stability Improvements
 
@@ -37,41 +38,34 @@ All integer types now consistently use `float64` accumulators, matching the fast
 
 2. **Benchmark Script Fix**: Resolved `-search-modes all` expansion bug in `scripts/unified_benchmark.py` — the literal string `"all"` was passed to bench-tool instead of expanding to actual mode names.
 
+3. **QPS Aggregation Fix** (`86b56fb7`): Search modes now run sequentially (not concurrently). QPS computed as `queries / totalElapsed` from wall-clock time, giving accurate sustained throughput.
+
 ---
-
-## v0.2.2-rc Auto-Sharding Stability & Large Scale (2026-05-28)
-
-> [!IMPORTANT]
-> **Auto-Sharding Validation**: Auto-sharding migration robustness has been fixed for missing vectors and memory leaks. The system can now successfully migrate, shard, and search datasets of 50,000+ vectors without OOM or panics.
-
-### Large Scale Search Performance (uint64, dim=384, count=50,000)
-
-| Mode             | QPS       | p50 (ms) | p95 (ms) | p99 (ms) | Platform       | Status     |
-| ---------------- | --------- | -------- | -------- | -------- | -------------- | ---------- |
-| **Dense Search** | 208.5 QPS | 36.545   | 63.477   | 84.543   | Local CPU (M3) | **STABLE** |
 
 ---
 
 ## v0.2.0-rc2 Release Candidate - Final Hardening (2026-05-05)
 
 > [!IMPORTANT]
-> **Performance Validation**: This update confirms that all P0 performance regressions in Dense and Temporal searches have been resolved. The current build significantly outperforms v0.1.9 targets across all critical search modes.
+> **QPS values in this section are inflated ~5x by the bench-tool concurrent-mode bug** (discovered and fixed in `86b56fb7`). **Latency (p50/p95/p99) values are accurate.** These results are preserved for historical reference of what the buggy tool reported.
 
-### Search Performance Breakdown (dim=128, count=5000)
+### Search Performance Breakdown (dim=128, count=5000) [INFLATED QPS]
 
-| Mode                | Target (v0.1.9) | **Actual (v0.2.0-rc2)** | Platform                | Status             |
-| ------------------- | --------------- | ----------------------- | ----------------------- | ------------------ |
-| **Dense Search**    | > 20,000 QPS    | **30,576 QPS**          | Local CPU (M3)          | **OK (+52%)**      |
-| **Dense Search**    | > 20,000 QPS    | **29,268 QPS**          | Local Metal (M3)        | **OK (+46%)**      |
-| **Dense Search**    | > 20,000 QPS    | **29,223 QPS**          | Remote CPU (Ancalagon)  | **OK (+46%)**      |
-| **Dense Search**    | > 20,000 QPS    | **30,013 QPS**          | Remote CUDA (Ancalagon) | **OK (+50%)**      |
-| **Temporal Search** | > 12,000 QPS    | **29,389 QPS**          | Local CPU (M3)          | **OK (+145%)**     |
-| **Temporal Search** | > 12,000 QPS    | **29,817 QPS**          | Local Metal (M3)        | **OK (+148%)**     |
-| **Temporal Search** | > 12,000 QPS    | **19,886 QPS**          | Remote CPU (Ancalagon)  | **OK (+65%)**      |
-| **Temporal Search** | > 12,000 QPS    | **20,096 QPS**          | Remote CUDA (Ancalagon) | **OK (+67%)**      |
-| **Sparse Search**   | > 4,000 QPS     | **59,400 QPS**          | Local Metal (M3)        | **OK (14x above)** |
-| **GraphRAG Search** | > 3,000 QPS     | **47,960 QPS**          | Local Metal (M3)        | **OK (15x above)** |
-| **Geospatial**      | > 5,000 QPS     | **36,617 QPS**          | Local Metal (M3)        | **OK (+632%)**     |
+| Mode                | Target (v0.1.9) | **Reported (buggy QPS)** | Platform                | Status (latency)  |
+| ------------------- | --------------- | ------------------------ | ----------------------- | ----------------- |
+| **Dense Search**    | > 20,000 QPS    | **30,576 QPS**           | Local CPU (M3)          | **INFLATED**      |
+| **Dense Search**    | > 20,000 QPS    | **29,268 QPS**           | Local Metal (M3)        | **INFLATED**      |
+| **Dense Search**    | > 20,000 QPS    | **29,223 QPS**           | Remote CPU (Ancalagon)  | **INFLATED**      |
+| **Dense Search**    | > 20,000 QPS    | **30,013 QPS**           | Remote CUDA (Ancalagon) | **INFLATED**      |
+| **Temporal Search** | > 12,000 QPS    | **29,389 QPS**           | Local CPU (M3)          | **INFLATED**      |
+| **Temporal Search** | > 12,000 QPS    | **29,817 QPS**           | Local Metal (M3)        | **INFLATED**      |
+| **Temporal Search** | > 12,000 QPS    | **19,886 QPS**           | Remote CPU (Ancalagon)  | **INFLATED**      |
+| **Temporal Search** | > 12,000 QPS    | **20,096 QPS**           | Remote CUDA (Ancalagon) | **INFLATED**      |
+| **Sparse Search**   | > 4,000 QPS     | **59,400 QPS**           | Local Metal (M3)        | **INFLATED**      |
+| **GraphRAG Search** | > 3,000 QPS     | **47,960 QPS**           | Local Metal (M3)        | **INFLATED**      |
+| **Geospatial**      | > 5,000 QPS     | **36,617 QPS**           | Local Metal (M3)        | **INFLATED**      |
+
+*Corrected QPS values will replace this table once the current benchmark run completes.*
 
 ### Latency Metrics (Local M3, dim=128, count=5000)
 
@@ -92,11 +86,21 @@ All integer types now consistently use `float64` accumulators, matching the fast
 
 ---
 
-## Target Baselines (v0.1.9 Parity)
+## Target Baselines (v0.2.2, Corrected QPS)
 
-- **Dense Search (Float32, 384d)**: > 20,000 QPS
-- **Temporal Search**: > 12,000 QPS
-- **Ingestion (Bulk)**: > 150,000 vec/s
+> [!NOTE]
+> All QPS targets revised downward from v0.1.9 era because the original measurements were inflated ~5x by the concurrent-mode bug. Latency targets are unchanged.
+
+- **Dense Search (Float32, 384d, 5k)**: > 4,000 QPS (p50 < 1.0ms)
+- **Hybrid Search**: > 4,000 QPS
+- **Sparse Search**: > 4,000 QPS
+- **Filtered Search**: > 4,000 QPS
+- **ByID Search**: > 4,000 QPS
+- **Temporal Search**: > 2,500 QPS (p50 < 1.0ms)
+- **GraphRAG Search**: > 3,000 QPS
+- **Geospatial**: > 3,000 QPS
+- **LearnedIndex**: > 500 QPS
+- **Ingestion (Bulk, float32 128d)**: > 150,000 vec/s
 
 ---
 

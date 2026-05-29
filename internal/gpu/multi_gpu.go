@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"hash/fnv"
+	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -12,6 +13,7 @@ import (
 	"github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/rs/zerolog"
+	"golang.org/x/sync/semaphore"
 )
 
 type MultiGPUConfig struct {
@@ -20,6 +22,7 @@ type MultiGPUConfig struct {
 	MaxMemoryPerGPU int64
 	EnableMigration bool
 	BalanceInterval time.Duration
+	MaxConcurrentGPU int // max concurrent GPU operations across all devices (0 = GOMAXPROCS)
 }
 
 type MultiGPUStrategy int
@@ -63,6 +66,7 @@ type MultiGPUManager struct {
 	rrIndex  atomic.Int32
 	logger   zerolog.Logger
 	closed   atomic.Bool
+	gpuSem   *semaphore.Weighted // bounds concurrent GPU operations
 }
 
 func NewMultiGPUManager(config MultiGPUConfig, logger zerolog.Logger) (*MultiGPUManager, error) {
@@ -70,10 +74,15 @@ func NewMultiGPUManager(config MultiGPUConfig, logger zerolog.Logger) (*MultiGPU
 		return nil, fmt.Errorf("no GPU devices specified")
 	}
 
+	maxConcurrent := config.MaxConcurrentGPU
+	if maxConcurrent <= 0 {
+		maxConcurrent = runtime.GOMAXPROCS(0)
+	}
 	mgr := &MultiGPUManager{
 		config:  config,
 		devices: make([]*GPUDevice, 0, len(config.DeviceIDs)),
 		logger:  logger,
+		gpuSem:  semaphore.NewWeighted(int64(maxConcurrent)),
 	}
 
 	for _, id := range config.DeviceIDs {
@@ -359,6 +368,11 @@ func (m *MultiGPUManager) SearchMergedPQ(lookupTable []float32, mSub int, k int)
 		wg.Add(1)
 		go func(idx int, d *GPUDevice) {
 			defer wg.Done()
+			if err := m.gpuSem.Acquire(nil, 1); err != nil {
+				allErrors[idx] = fmt.Errorf("device %d: %w", d.ID, err)
+				return
+			}
+			defer m.gpuSem.Release(1)
 			d.QueryCount.Add(1)
 			d.LastUsed.Store(time.Now().UnixNano())
 			ids, distances, err := d.Index.SearchPQ(lookupTable, mSub, k)
@@ -395,6 +409,11 @@ func (m *MultiGPUManager) SearchAllDevices(query []float32, k int) ([][]int64, [
 		wg.Add(1)
 		go func(idx int, d *GPUDevice) {
 			defer wg.Done()
+			if err := m.gpuSem.Acquire(nil, 1); err != nil {
+				allErrors[idx] = fmt.Errorf("device %d: %w", d.ID, err)
+				return
+			}
+			defer m.gpuSem.Release(1)
 			d.QueryCount.Add(1)
 			d.LastUsed.Store(time.Now().UnixNano())
 			ids, distances, err := d.Index.Search(query, k)
@@ -550,6 +569,11 @@ func (m *MultiGPUManager) ReplicateToAll(ids []int64, vectors []float32) error {
 		wg.Add(1)
 		go func(d *GPUDevice) {
 			defer wg.Done()
+			if err := m.gpuSem.Acquire(nil, 1); err != nil {
+				errCh <- fmt.Errorf("device %d: semaphore: %w", d.ID, err)
+				return
+			}
+			defer m.gpuSem.Release(1)
 			if err := d.Index.Add(ids, vectors); err != nil {
 				errCh <- fmt.Errorf("device %d: %w", d.ID, err)
 			}
@@ -573,11 +597,12 @@ func (m *MultiGPUManager) ReplicateToAll(ids []int64, vectors []float32) error {
 
 func DefaultMultiGPUConfig() MultiGPUConfig {
 	return MultiGPUConfig{
-		DeviceIDs:       []int32{0},
-		Strategy:        StrategyRoundRobin,
-		MaxMemoryPerGPU: 0,
-		EnableMigration: false,
-		BalanceInterval: 30 * time.Second,
+		DeviceIDs:        []int32{0},
+		Strategy:         StrategyRoundRobin,
+		MaxMemoryPerGPU:  0,
+		EnableMigration:  false,
+		BalanceInterval:  30 * time.Second,
+		MaxConcurrentGPU: 0, // 0 = GOMAXPROCS
 	}
 }
 
@@ -645,6 +670,11 @@ func (m *MultiGPUManager) AddVectorsSharded(ids []int64, vectors []float32) erro
 		wg.Add(1)
 		go func(idx int, batchIDs []int64) {
 			defer wg.Done()
+			if err := m.gpuSem.Acquire(nil, 1); err != nil {
+				errCh <- fmt.Errorf("device %d: semaphore: %w", idx, err)
+				return
+			}
+			defer m.gpuSem.Release(1)
 			device := m.devices[idx]
 			vecBatch := make([]float32, len(batchIDs)*dimension)
 			for i, id := range batchIDs {

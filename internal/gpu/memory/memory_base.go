@@ -16,6 +16,15 @@ type GPUMemPool struct {
 	mu          sync.RWMutex
 }
 
+// SetTotalMemory sets the total memory limit for this pool (from GPUConfig.MaxMemory or device query).
+func (p *GPUMemPool) SetTotalMemory(total int64) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.totalBytes = total
+}
+
+// NewGPUMemPool creates a new GPU memory pool.
+// totalBytes should be set after creation via SetTotalMemory once the device limit is known.
 func NewGPUMemPool(backend types.GPUBackend, deviceID int32) (*GPUMemPool, error) {
 	pool := &GPUMemPool{
 		backend:     backend,
@@ -24,10 +33,6 @@ func NewGPUMemPool(backend types.GPUBackend, deviceID int32) (*GPUMemPool, error
 		usedBytes:   0,
 		allocations: make(map[unsafe.Pointer]int64),
 	}
-
-	// Note: Generic memory pool initialization.
-	// In subpackages (cuda, metal), this can be specialized.
-	pool.totalBytes = 0
 
 	return pool, nil
 }

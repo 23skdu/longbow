@@ -36,10 +36,11 @@ type HNSWSettings struct {
 }
 
 // IDMap is a pooled container for ID to row index mappings.
-// Supports both string and int64 IDs to avoid allocation/conversion.
+// Supports string, int64, and uint64 IDs to avoid allocation/conversion.
 type IDMap struct {
 	StringMap map[string]int
 	IntMap    map[int64]int
+	UintMap   map[uint64]int
 	IsNumeric bool
 }
 
@@ -54,6 +55,9 @@ func (m *IDMap) Release() {
 	if m.IntMap != nil {
 		clear(m.IntMap)
 	}
+	if m.UintMap != nil {
+		clear(m.UintMap)
+	}
 	idMapPool.Put(m)
 }
 
@@ -62,6 +66,7 @@ var idMapPool = sync.Pool{
 		return &IDMap{
 			StringMap: make(map[string]int, 1024),
 			IntMap:    make(map[int64]int, 1024),
+			UintMap:   make(map[uint64]int, 1024),
 		}
 	},
 }
@@ -91,8 +96,9 @@ type Dataset struct {
 	BatchNodes *LockFreeSlice[int]
 
 	// PrimaryIndex maps ID -> Physical Location (O(1) lookup)
-	PrimaryIndex        map[string]RowLocation
-	NumericPrimaryIndex map[int64]RowLocation
+	PrimaryIndex          map[string]RowLocation
+	NumericPrimaryIndex   map[int64]RowLocation
+	Uint64PrimaryIndex    map[uint64]RowLocation
 	// metadataMu protects PrimaryIndex, LWW, and Merkle updates
 	metadataMu sync.Mutex
 
@@ -378,7 +384,8 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		Schema:              schema,
 		Tombstones:          make(map[int]*types.Bitset),
 		PrimaryIndex:        make(map[string]RowLocation),
-		NumericPrimaryIndex: make(map[int64]RowLocation),
+		NumericPrimaryIndex:   make(map[int64]RowLocation),
+		Uint64PrimaryIndex:    make(map[uint64]RowLocation),
 		LWW:                 NewTimestampMap(),
 		Merkle:              NewMerkleTree(),
 		queryStats: &QueryStats{
@@ -661,6 +668,7 @@ func (d *Dataset) Close() {
 
 	d.PrimaryIndex = nil
 	d.NumericPrimaryIndex = nil
+	d.Uint64PrimaryIndex = nil
 	d.recordEviction = nil
 }
 
@@ -668,14 +676,22 @@ func (d *Dataset) Close() {
 // This can be called outside of dataMu lock to prepare for a bulk update.
 func (d *Dataset) ExtractIDs(rec arrow.RecordBatch) *IDMap {
 	idColIdx := -1
-	for i, f := range rec.Schema().Fields() {
-		if f.Name == "id" {
-			idColIdx = i
+	// Search for common ID column names
+	idNames := []string{"id", "doc_id", "record_id", "pk", "_id"}
+	for _, name := range idNames {
+		for i, f := range rec.Schema().Fields() {
+			if f.Name == name {
+				idColIdx = i
+				break
+			}
+		}
+		if idColIdx != -1 {
 			break
 		}
 	}
 
 	if idColIdx == -1 {
+		d.Logger.Warn().Str("dataset", d.Name).Msg("No known ID column found in batch (searched: id, doc_id, record_id, pk, _id)")
 		return nil
 	}
 
@@ -702,10 +718,28 @@ func (d *Dataset) ExtractIDs(rec arrow.RecordBatch) *IDMap {
 		m.IsNumeric = true
 		for i := 0; i < numRows; i++ {
 			if arr.IsValid(i) {
-				// Potential overflow if Uint64 is used as key, but we treat it as int64 bits
-				m.IntMap[int64(arr.Value(i))] = i // #nosec G115
+				m.UintMap[arr.Value(i)] = i
 			}
 		}
+	case *array.Int32:
+		m.IsNumeric = true
+		for i := 0; i < numRows; i++ {
+			if arr.IsValid(i) {
+				m.IntMap[int64(arr.Value(i))] = i
+			}
+		}
+	case *array.Uint32:
+		m.IsNumeric = true
+		for i := 0; i < numRows; i++ {
+			if arr.IsValid(i) {
+				m.UintMap[uint64(arr.Value(i))] = i
+			}
+		}
+	default:
+		d.Logger.Warn().
+			Str("dataset", d.Name).
+			Str("idColType", fmt.Sprintf("%T", col)).
+			Msg("Unhandled ID column type, PrimaryIndex will be empty for this batch")
 	}
 	return m
 }
@@ -724,6 +758,9 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap *IDMap) {
 	if d.NumericPrimaryIndex == nil {
 		d.NumericPrimaryIndex = make(map[int64]RowLocation)
 	}
+	if d.Uint64PrimaryIndex == nil {
+		d.Uint64PrimaryIndex = make(map[uint64]RowLocation)
+	}
 
 	if idMap.IsNumeric {
 		for id, rowIdx := range idMap.IntMap {
@@ -736,6 +773,17 @@ func (d *Dataset) UpdatePrimaryIndex(batchIdx int, idMap *IDMap) {
 				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
 			}
 			d.NumericPrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
+		}
+		for id, rowIdx := range idMap.UintMap {
+			if oldLoc, exists := d.Uint64PrimaryIndex[id]; exists {
+				if d.Tombstones[oldLoc.BatchIdx] == nil {
+					d.Tombstones[oldLoc.BatchIdx] = types.NewBitset()
+				}
+				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+				d.RecordBatchDeletion(oldLoc.BatchIdx)
+				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
+			}
+			d.Uint64PrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
 		}
 	} else {
 		for id, rowIdx := range idMap.StringMap {
@@ -766,6 +814,9 @@ func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap *IDMap) {
 	if d.NumericPrimaryIndex == nil {
 		d.NumericPrimaryIndex = make(map[int64]RowLocation)
 	}
+	if d.Uint64PrimaryIndex == nil {
+		d.Uint64PrimaryIndex = make(map[uint64]RowLocation)
+	}
 
 	if idMap.IsNumeric {
 		for id, rowIdx := range idMap.IntMap {
@@ -778,6 +829,17 @@ func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap *IDMap) {
 				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
 			}
 			d.NumericPrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
+		}
+		for id, rowIdx := range idMap.UintMap {
+			if oldLoc, exists := d.Uint64PrimaryIndex[id]; exists {
+				if d.Tombstones[oldLoc.BatchIdx] == nil {
+					d.Tombstones[oldLoc.BatchIdx] = types.NewBitset()
+				}
+				d.Tombstones[oldLoc.BatchIdx].Set(oldLoc.RowIdx)
+				d.RecordBatchDeletion(oldLoc.BatchIdx)
+				metrics.TombstonesTotal.WithLabelValues(d.Name).Inc()
+			}
+			d.Uint64PrimaryIndex[id] = RowLocation{BatchIdx: batchIdx, RowIdx: rowIdx}
 		}
 	} else {
 		for id, rowIdx := range idMap.StringMap {

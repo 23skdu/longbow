@@ -861,8 +861,11 @@ func run() error {
 	logger.Info().Msg("Shutdown signal received")
 
 	// Allow a grace period for pending pprof profile collections to finish
-	// Benchmark tool often collects profile just before sending SIGTERM
-	time.Sleep(2 * time.Second)
+	// Benchmark tool often collects profile just before sending SIGTERM.
+	// Skip in benchmark mode where data is ephemeral.
+	if os.Getenv("LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT") != "true" {
+		time.Sleep(2 * time.Second)
+	}
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

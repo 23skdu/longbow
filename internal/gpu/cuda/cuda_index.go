@@ -329,7 +329,7 @@ func NewCUDAIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 	if cfg.Dimension > 2147483647 || initialCapacity > 2147483647 {
 		return nil, fmt.Errorf("dimension or capacity too large")
 	}
-	handle := C.cuda_init(C.int(cfg.Dimension), C.int(initialCapacity)) // #nosec G115
+	handle := C.cuda_init(C.int(cfg.Dimension)) // #nosec G115
 	if handle == nil {
 		return nil, &types.GPUInitializationError{
 			DeviceID: cfg.DeviceID,
@@ -1857,7 +1857,6 @@ func (idx *CUDAIndex) Clear() error {
 
 	idx.vectorCount = 0
 	idx.idList = idx.idList[:0]
-	idx.handle.vectorCount = 0
 	return nil
 }
 

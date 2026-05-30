@@ -117,6 +117,46 @@ func cosineF16NEON(a, b []float16.Num) (float32, error) {
 	return cosineF16NEONKernel(a, b), nil
 }
 
+func euclideanInt16NEON(a, b []int16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanInt16NEONKernel(a, b), nil
+}
+
+func dotInt16NEON(a, b []int16) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotInt16NEONKernel(a, b), nil
+}
+
+func euclideanInt8NEON(a, b []int8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanInt8NEONKernel(a, b), nil
+}
+
+func dotInt8NEON(a, b []int8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotInt8NEONKernel(a, b), nil
+}
+
 func dotInt4Neon(a, b []byte) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
@@ -395,6 +435,18 @@ func dotInt4NeonKernel(a, b unsafe.Pointer, n int) int32
 //go:noescape
 func dotInt2NeonKernel(a, b unsafe.Pointer, n int) int32
 
+//go:noescape
+func euclideanInt16NEONKernel(a, b []int16) float32
+
+//go:noescape
+func dotInt16NEONKernel(a, b []int16) float32
+
+//go:noescape
+func euclideanInt8NEONKernel(a, b []int8) float32
+
+//go:noescape
+func dotInt8NEONKernel(a, b []int8) float32
+
 func manhattanNEON(a, b []float32) (float32, error) {
 	return ManhattanDistanceFloat32(a, b)
 }
@@ -450,6 +502,10 @@ var _ = func() {
 		// Already-guarded kernels
 		_ = dotInt4NeonKernel(nil, nil, 0)
 		_ = dotInt2NeonKernel(nil, nil, 0)
+		_ = euclideanInt16NEONKernel(nil, nil)
+		_ = dotInt16NEONKernel(nil, nil)
+		_ = euclideanInt8NEONKernel(nil, nil)
+		_ = dotInt8NEONKernel(nil, nil)
 		_ = euclideanF16NEONKernel(nil, nil)
 		_ = cosineF16NEONKernel(nil, nil)
 		vectorButterflyNEONKernel(nil, nil)

@@ -272,6 +272,66 @@ func (c *float32Computer) ComputeSingle(id uint32) (float32, error) {
 			}
 		}
 		return c.h.distFuncF16(q16, v)
+	case []int16:
+		if len(c.q) != len(v) {
+			return math.MaxFloat32, nil
+		}
+		var sum float32
+		for i, val := range c.q {
+			diff := val - float32(v[i])
+			sum += diff * diff
+		}
+		return float32(math.Sqrt(float64(sum))), nil
+	case []uint16:
+		if len(c.q) != len(v) {
+			return math.MaxFloat32, nil
+		}
+		var sum float32
+		for i, val := range c.q {
+			diff := val - float32(v[i])
+			sum += diff * diff
+		}
+		return float32(math.Sqrt(float64(sum))), nil
+	case []int32:
+		if len(c.q) != len(v) {
+			return math.MaxFloat32, nil
+		}
+		var sum float32
+		for i, val := range c.q {
+			diff := val - float32(v[i])
+			sum += diff * diff
+		}
+		return float32(math.Sqrt(float64(sum))), nil
+	case []uint32:
+		if len(c.q) != len(v) {
+			return math.MaxFloat32, nil
+		}
+		var sum float32
+		for i, val := range c.q {
+			diff := val - float32(v[i])
+			sum += diff * diff
+		}
+		return float32(math.Sqrt(float64(sum))), nil
+	case []int64:
+		if len(c.q) != len(v) {
+			return math.MaxFloat32, nil
+		}
+		var sum float64
+		for i, val := range c.q {
+			diff := float64(val) - float64(v[i])
+			sum += diff * diff
+		}
+		return float32(math.Sqrt(sum)), nil
+	case []uint64:
+		if len(c.q) != len(v) {
+			return math.MaxFloat32, nil
+		}
+		var sum float64
+		for i, val := range c.q {
+			diff := float64(val) - float64(v[i])
+			sum += diff * diff
+		}
+		return float32(math.Sqrt(sum)), nil
 	}
 	return math.MaxFloat32, nil
 }

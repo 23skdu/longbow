@@ -134,11 +134,14 @@ func main() {
 			totalUploaded = 0
 			start = time.Now()
 
+			var uploader *StreamUploader
 			for i := 0; i < numRecords; i++ {
 				record, err := reader.Record(i)
 				if err != nil {
 					log.Fatalf("Failed to read record %d: %v", i, err)
-				var uploader *StreamUploader
+				}
+				record.Retain()
+				
 				if uploader == nil {
 					uploader, err = newStreamUploader(sc, *dataset, record.Schema())
 					if err != nil {
@@ -157,10 +160,9 @@ func main() {
 					log.Printf("  Progress: %d vectors uploaded\n", totalUploaded)
 				}
 			}
-			// uploader.Close() wouldn't work easily here since it's inside the if/else, so let's do it outside or init before loop!
-
-				if totalUploaded%50000 == 0 || i == numRecords-1 {
-					log.Printf("  Progress: %d vectors uploaded\n", totalUploaded)
+			if uploader != nil {
+				if err := uploader.Close(); err != nil {
+					log.Fatalf("Failed to close uploader: %v", err)
 				}
 			}
 		} else {
@@ -191,6 +193,7 @@ func main() {
 			start = time.Now()
 
 			chunkSize := 10000
+			var uploader *StreamUploader
 			for totalUploaded < int(countVal) {
 				currentChunk := chunkSize
 				if totalUploaded+currentChunk > int(countVal) {
@@ -218,7 +221,6 @@ func main() {
 				vecArr := vecBldr.NewArray()
 				record := array.NewRecordBatch(fbinSchema, []arrow.Array{idArr, vecArr}, int64(currentChunk))
 
-				var uploader *StreamUploader
 				if uploader == nil {
 					uploader, err = newStreamUploader(sc, *dataset, fbinSchema)
 					if err != nil {
@@ -241,9 +243,11 @@ func main() {
 					log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, countVal)
 				}
 			}
-			// Let it close below, but we don't have it tracked, so let's close uploader.
-			// Wait, the uploader goes out of scope? No, it's inside the loop but we can define it outside.
-			// The original loop ends here.
+			if uploader != nil {
+				if err := uploader.Close(); err != nil {
+					log.Fatalf("Failed to close uploader: %v", err)
+				}
+			}
 		}
 		*scale = totalUploaded
 	} else {
@@ -333,6 +337,7 @@ func main() {
 		totalUploaded = 0
 		start = time.Now()
 		var genSchema *arrow.Schema
+		var uploader *StreamUploader
 
 		for i := 0; i < *scale; {
 			currentChunk := chunkSize
@@ -348,7 +353,6 @@ func main() {
 				genSchema = schema
 			}
 
-			var uploader *StreamUploader
 			if uploader == nil {
 				uploader, err = newStreamUploader(sc, *dataset, genSchema)
 				if err != nil {
@@ -385,6 +389,11 @@ func main() {
 						backoff = 10 * time.Second
 					}
 				}
+			}
+		}
+		if uploader != nil {
+			if err := uploader.Close(); err != nil {
+				log.Fatalf("Failed to close uploader: %v", err)
 			}
 		}
 	}

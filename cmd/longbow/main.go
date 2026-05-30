@@ -860,12 +860,18 @@ func run() error {
 	<-ctx.Done()
 	logger.Info().Msg("Shutdown signal received")
 
+	// In benchmark mode (LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT=true) the data
+	// directory is immediately deleted after shutdown, making persistence and
+	// graceful gRPC drain unnecessary. Exit immediately to minimize per-config
+	// overhead and avoid port-TIME_WAIT delays from the next startup.
+	if os.Getenv("LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT") == "true" {
+		logger.Info().Msg("Benchmark mode – skipping shutdown sequence, exiting")
+		return nil
+	}
+
 	// Allow a grace period for pending pprof profile collections to finish
 	// Benchmark tool often collects profile just before sending SIGTERM.
-	// Skip in benchmark mode where data is ephemeral.
-	if os.Getenv("LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT") != "true" {
-		time.Sleep(2 * time.Second)
-	}
+	time.Sleep(2 * time.Second)
 
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()

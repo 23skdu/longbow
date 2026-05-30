@@ -393,6 +393,7 @@ class BenchmarkRunner:
         env["LONGBOW_AUTOSCALE_ENABLED"] = "false"
         env["LONGBOW_ADAPTIVE_M_MAX_FACTOR"] = "1.5"
         env["LONGBOW_MAX_M0"] = "32"
+        env["LONGBOW_AUTO_SHARDING_ENABLED"] = "false"
 
         # ── Network addresses ─────────────────────────────────────────────
         env["LONGBOW_LISTEN_ADDR"] = f"0.0.0.0:{port}"
@@ -452,8 +453,8 @@ class BenchmarkRunner:
         # ── Scale gRPC message size for large workloads ───────────────────
         max_count = max(int(c) for c in self.args.counts.split(","))
         if max_count >= 100000:
-            env["LONGBOW_GRPC_MAX_RECV_MSG_SIZE"] = "2147483647"
-            env["LONGBOW_GRPC_MAX_SEND_MSG_SIZE"] = "2147483647"
+            env["LONGBOW_GRPC_MAX_RECV_MSG_SIZE"] = "21474836470"
+            env["LONGBOW_GRPC_MAX_SEND_MSG_SIZE"] = "21474836470"
             print(f"  Scaling gRPC message size for {max_count} vectors")
 
         # ── Autoshard threshold: test sharded migrations ───────────────────

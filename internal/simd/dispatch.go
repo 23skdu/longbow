@@ -651,13 +651,13 @@ func initializeDispatch() {
 		dotProductFloat64Impl = dotFloat64Unrolled4x
 		l2SquaredFloat64Impl = l2SquaredFloat64Unrolled4x
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
-		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
+		euclideanDistanceInt8Impl = euclideanInt8NEON
 		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
-		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x
+		euclideanDistanceInt16Impl = euclideanInt16NEON
 		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x
-		dotProductInt8Impl = dotInt8Unrolled4x
+		dotProductInt8Impl = dotInt8NEON
 		dotProductUint8Impl = dotUint8Unrolled4x
-		dotProductInt16Impl = dotInt16Unrolled4x
+		dotProductInt16Impl = dotInt16NEON
 		dotProductUint16Impl = dotUint16Unrolled4x
 		dotProductInt4Impl = dotInt4Neon
 		dotProductInt2Impl = dotInt2Neon

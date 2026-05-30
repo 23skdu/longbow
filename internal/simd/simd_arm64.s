@@ -13,6 +13,18 @@
 #define VFRECPE_V(n, d)  WORD $(0x4e21d000 | ((n) << 5) | (d))
 #define VFRECPS_V(m, n, d) WORD $(0x4e20fc00 | ((m) << 16) | ((n) << 5) | (d))
 
+// Integer NEON macros for int16/int8 SIMD kernels
+#define VSSHLL_4S(n, d)   WORD $(0x0F10A400 | ((n) << 5) | (d))
+#define VSSHLL2_4S(n, d)  WORD $(0x4F10A400 | ((n) << 5) | (d))
+#define VSUB_4S(m, n, d)  WORD $(0x6EA08400 | ((m) << 16) | ((n) << 5) | (d))
+#define VMUL_4S(m, n, d)  WORD $(0x4EA09C00 | ((m) << 16) | ((n) << 5) | (d))
+#define VSADDLP_2D(n, d)  WORD $(0x4EA02800 | ((n) << 5) | (d))
+#define VSSHLL_8H(n, d)   WORD $(0x0F08A400 | ((n) << 5) | (d))
+#define VSSHLL2_8H(n, d)  WORD $(0x4F08A400 | ((n) << 5) | (d))
+#define VSUB_8H(m, n, d)  WORD $(0x6E608400 | ((m) << 16) | ((n) << 5) | (d))
+#define VMUL_8H(m, n, d)  WORD $(0x4E609C00 | ((m) << 16) | ((n) << 5) | (d))
+#define VADD_2D(m, n, d)  WORD $(0x4EE08400 | ((m) << 16) | ((n) << 5) | (d))
+
 // func euclideanNEONKernel(a, b []float32) float32
 TEXT ·euclideanNEONKernel(SB), NOSPLIT, $0-52
     MOVD    a_base+0(FP), R0
@@ -2675,4 +2687,326 @@ dot2_scalar_inner:
 
 dot2_done:
     MOVW    R3, ret+24(FP)
+    RET
+
+// func euclideanInt16NEONKernel(a, b []int16) float32
+TEXT ·euclideanInt16NEONKernel(SB), NOSPLIT, $0-52
+    MOVD    a_base+0(FP), R0
+    MOVD    a_len+8(FP), R1
+    MOVD    b_base+24(FP), R2
+
+    VEOR    V0.B16, V0.B16, V0.B16   // acc0_2D
+    VEOR    V1.B16, V1.B16, V1.B16   // acc1_2D
+
+    CMP     $8, R1
+    BLT     ei16_tail
+
+ei16_loop:
+    VLD1.P  16(R0), [V2.H8]           // 8 int16 from a
+    VLD1.P  16(R2), [V3.H8]           // 8 int16 from b
+
+    // Lower 4: sign-extend int16 → int32
+    VMOV    V2.D[1], V10.D[0]
+    VMOV    V3.D[1], V11.D[0]
+    VSSHLL_4S(2, 4)                   // a lower 4 → 4S
+    VSSHLL_4S(3, 6)                   // b lower 4 → 4S
+    VSSHLL_4S(10, 5)                  // a upper 4 → 4S
+    VSSHLL_4S(11, 7)                  // b upper 4 → 4S
+
+    VSUB_4S(6, 4, 4)                  // diff_l = a_l - b_l
+    VSUB_4S(7, 5, 5)                  // diff_u = a_u - b_u
+
+    VMUL_4S(4, 4, 4)                  // sq_l = diff_l * diff_l
+    VMUL_4S(5, 5, 5)                  // sq_u = diff_u * diff_u
+
+    VSADDLP_2D(4, 8)                  // acc partial lower → 2D
+    VSADDLP_2D(5, 9)                  // acc partial upper → 2D
+
+    VADD_2D(8, 0, 0)                  // accumulate
+    VADD_2D(9, 1, 1)
+
+    SUB     $8, R1
+    CMP     $8, R1
+    BGE     ei16_loop
+
+ei16_tail:
+    CMP     $4, R1
+    BLT     ei16_scalar
+
+    VLD1.P  8(R0), [V2.H4]            // 4 int16 from a
+    VLD1.P  8(R2), [V3.H4]            // 4 int16 from b
+
+    VSSHLL_4S(2, 4)
+    VSSHLL_4S(3, 6)
+    VSUB_4S(6, 4, 4)
+    VMUL_4S(4, 4, 4)
+    VSADDLP_2D(4, 8)
+    VADD_2D(8, 0, 0)
+
+    SUB     $4, R1
+
+ei16_scalar:
+    CBZ     R1, ei16_reduce
+
+    MOVD    $0, R3                     // scalar accumulator (int64)
+
+ei16_scalar_loop:
+    MOVH.P  2(R0), R4
+    MOVH.P  2(R2), R5
+    SXTH    R4, R4
+    SXTH    R5, R5
+    SUB     R5, R4, R6
+    MUL     R6, R6, R6
+    ADD     R6, R3
+    SUB     $1, R1
+    CBNZ    R1, ei16_scalar_loop
+
+    VEOR    V10.B16, V10.B16, V10.B16
+    VMOV    R3, V10.D[0]
+    VADD_2D(10, 0, 0)
+
+ei16_reduce:
+    VADD_2D(0, 1, 2)       // sum both accumulators
+
+    VMOV    V2.D[0], R3
+    VMOV    V2.D[1], R4
+    ADD     R4, R3, R3
+
+    SCVTFD  R3, F0
+    FSQRTD  F0, F0
+    FCVTDS  F0, F0
+
+    FMOVS   F0, ret+48(FP)
+    RET
+
+// func dotInt16NEONKernel(a, b []int16) float32
+TEXT ·dotInt16NEONKernel(SB), NOSPLIT, $0-52
+    MOVD    a_base+0(FP), R0
+    MOVD    a_len+8(FP), R1
+    MOVD    b_base+24(FP), R2
+
+    VEOR    V0.B16, V0.B16, V0.B16   // acc0_2D
+    VEOR    V1.B16, V1.B16, V1.B16   // acc1_2D
+
+    CMP     $8, R1
+    BLT     di16_tail
+
+di16_loop:
+    VLD1.P  16(R0), [V2.H8]
+    VLD1.P  16(R2), [V3.H8]
+
+    VMOV    V2.D[1], V10.D[0]
+    VMOV    V3.D[1], V11.D[0]
+    VSSHLL_4S(2, 4)
+    VSSHLL_4S(3, 6)
+    VSSHLL_4S(10, 5)
+    VSSHLL_4S(11, 7)
+
+    VMUL_4S(6, 4, 4)                  // prod_l = a_l * b_l
+    VMUL_4S(7, 5, 5)                  // prod_u = a_u * b_u
+
+    VSADDLP_2D(4, 8)
+    VSADDLP_2D(5, 9)
+
+    VADD_2D(8, 0, 0)
+    VADD_2D(9, 1, 1)
+
+    SUB     $8, R1
+    CMP     $8, R1
+    BGE     di16_loop
+
+di16_tail:
+    CMP     $4, R1
+    BLT     di16_scalar
+
+    VLD1.P  8(R0), [V2.H4]
+    VLD1.P  8(R2), [V3.H4]
+
+    VSSHLL_4S(2, 4)
+    VSSHLL_4S(3, 6)
+    VMUL_4S(6, 4, 4)
+    VSADDLP_2D(4, 8)
+    VADD_2D(8, 0, 0)
+
+    SUB     $4, R1
+
+di16_scalar:
+    CBZ     R1, di16_reduce
+
+    MOVD    $0, R3
+
+di16_scalar_loop:
+    MOVH.P  2(R0), R4
+    MOVH.P  2(R2), R5
+    SXTH    R4, R4
+    SXTH    R5, R5
+    MUL     R4, R5, R6
+    ADD     R6, R3
+    SUB     $1, R1
+    CBNZ    R1, di16_scalar_loop
+
+    VEOR    V10.B16, V10.B16, V10.B16
+    VMOV    R3, V10.D[0]
+    VADD_2D(10, 0, 0)
+
+di16_reduce:
+    VADD_2D(0, 1, 2)
+
+    VMOV    V2.D[0], R3
+    VMOV    V2.D[1], R4
+    ADD     R4, R3, R3
+
+    SCVTFD  R3, F0
+    FCVTDS  F0, F0
+
+    FMOVS   F0, ret+48(FP)
+    RET
+
+// func euclideanInt8NEONKernel(a, b []int8) float32
+TEXT ·euclideanInt8NEONKernel(SB), NOSPLIT, $0-52
+    MOVD    a_base+0(FP), R0
+    MOVD    a_len+8(FP), R1
+    MOVD    b_base+24(FP), R2
+
+    VEOR    V0.B16, V0.B16, V0.B16   // acc0_2D
+    VEOR    V1.B16, V1.B16, V1.B16   // acc1_2D
+
+    CMP     $8, R1
+    BLT     ei8_scalar
+
+ei8_loop:
+    VLD1.P  8(R0), [V2.B8]            // 8 int8 from a
+    VLD1.P  8(R2), [V3.B8]            // 8 int8 from b
+
+    // Sign-extend int8 → int16
+    VSSHLL_8H(2, 4)                   // 8 int16 from a
+    VSSHLL_8H(3, 5)                   // 8 int16 from b
+
+    // Lower 4 int16 → int32
+    VMOV    V4.D[1], V10.D[0]
+    VMOV    V5.D[1], V11.D[0]
+    VSSHLL_4S(4, 6)                   // a lower 4 → 4S
+    VSSHLL_4S(5, 7)                   // b lower 4 → 4S
+    VSSHLL_4S(10, 8)                  // a upper 4 → 4S
+    VSSHLL_4S(11, 9)                  // b upper 4 → 4S
+
+    VSUB_4S(7, 6, 6)                  // diff_l
+    VSUB_4S(9, 8, 8)                  // diff_u
+
+    VMUL_4S(6, 6, 6)                  // sq_l
+    VMUL_4S(8, 8, 8)                  // sq_u
+
+    VSADDLP_2D(6, 12)                 // acc partial
+    VSADDLP_2D(8, 13)
+
+    VADD_2D(12, 0, 0)                 // accumulate
+    VADD_2D(13, 1, 1)
+
+    SUB     $8, R1
+    CMP     $8, R1
+    BGE     ei8_loop
+
+ei8_scalar:
+    CBZ     R1, ei8_reduce
+
+    MOVD    $0, R3                     // scalar accumulator (int64)
+
+ei8_scalar_loop:
+    MOVBU.P 1(R0), R4
+    MOVBU.P 1(R2), R5
+    SXTB    R4, R4
+    SXTB    R5, R5
+    SUB     R5, R4, R6
+    MUL     R6, R6, R6
+    ADD     R6, R3
+    SUB     $1, R1
+    CBNZ    R1, ei8_scalar_loop
+
+    VEOR    V10.B16, V10.B16, V10.B16
+    VMOV    R3, V10.D[0]
+    VADD_2D(10, 0, 0)
+
+ei8_reduce:
+    VADD_2D(0, 1, 2)
+
+    VMOV    V2.D[0], R3
+    VMOV    V2.D[1], R4
+    ADD     R4, R3, R3
+
+    SCVTFD  R3, F0
+    FSQRTD  F0, F0
+    FCVTDS  F0, F0
+
+    FMOVS   F0, ret+48(FP)
+    RET
+
+// func dotInt8NEONKernel(a, b []int8) float32
+TEXT ·dotInt8NEONKernel(SB), NOSPLIT, $0-52
+    MOVD    a_base+0(FP), R0
+    MOVD    a_len+8(FP), R1
+    MOVD    b_base+24(FP), R2
+
+    VEOR    V0.B16, V0.B16, V0.B16   // acc0_2D
+    VEOR    V1.B16, V1.B16, V1.B16   // acc1_2D
+
+    CMP     $8, R1
+    BLT     di8_scalar
+
+di8_loop:
+    VLD1.P  8(R0), [V2.B8]
+    VLD1.P  8(R2), [V3.B8]
+
+    VSSHLL_8H(2, 4)
+    VSSHLL_8H(3, 5)
+
+    VMOV    V4.D[1], V10.D[0]
+    VMOV    V5.D[1], V11.D[0]
+    VSSHLL_4S(4, 6)
+    VSSHLL_4S(5, 7)
+    VSSHLL_4S(10, 8)
+    VSSHLL_4S(11, 9)
+
+    VMUL_4S(7, 6, 6)                  // prod_l
+    VMUL_4S(9, 8, 8)                  // prod_u
+
+    VSADDLP_2D(6, 12)
+    VSADDLP_2D(8, 13)
+
+    VADD_2D(12, 0, 0)
+    VADD_2D(13, 1, 1)
+
+    SUB     $8, R1
+    CMP     $8, R1
+    BGE     di8_loop
+
+di8_scalar:
+    CBZ     R1, di8_reduce
+
+    MOVD    $0, R3
+
+di8_scalar_loop:
+    MOVBU.P 1(R0), R4
+    MOVBU.P 1(R2), R5
+    SXTB    R4, R4
+    SXTB    R5, R5
+    MUL     R4, R5, R6
+    ADD     R6, R3
+    SUB     $1, R1
+    CBNZ    R1, di8_scalar_loop
+
+    VEOR    V10.B16, V10.B16, V10.B16
+    VMOV    R3, V10.D[0]
+    VADD_2D(10, 0, 0)
+
+di8_reduce:
+    VADD_2D(0, 1, 2)
+
+    VMOV    V2.D[0], R3
+    VMOV    V2.D[1], R4
+    ADD     R4, R3, R3
+
+    SCVTFD  R3, F0
+    FCVTDS  F0, F0
+
+    FMOVS   F0, ret+48(FP)
     RET

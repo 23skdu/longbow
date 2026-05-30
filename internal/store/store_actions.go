@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"math"
-	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -871,32 +870,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		ds := NewDataset(name, r.Schema())
 		ds.Logger = s.logger
 		ds.Topo = s.numaTopology
-
-		// Disk Store Initialization (Phase 6)
-		if strings.HasPrefix(name, "test_disk") || os.Getenv("LONGBOW_USE_DISK") == "1" {
-			path := filepath.Join(s.dataPath, name+"_vectors.bin")
-			dim := 0
-			// Manual find vector column from schema
-			for _, f := range r.Schema().Fields() {
-				if f.Name == "vector" || f.Name == "embedding" {
-					if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
-						dim = int(fst.Len())
-						break
-					}
-				}
-			}
-
-			if dim > 0 {
-				dvs, err := NewDiskVectorStore(path, dim)
-				if err != nil {
-					s.logger.Error().Err(err).Msg("Failed to create DiskVectorStore")
-				} else {
-					ds.DiskStore = dvs
-					s.logger.Info().Str("path", path).Int("dim", dim).Msg("DiskVectorStore initialized (DoPut)")
-				}
-			}
-		}
-
+		s.initDiskStore(ds, name, r.Schema())
 		return ds
 	})
 

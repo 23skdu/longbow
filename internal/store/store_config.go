@@ -95,7 +95,6 @@ func (vs *VectorStore) EnableAdaptiveGC(config gc.AdaptiveGCConfig) {
 		vs.gcController.Stop() // Stop existing controller if any
 	}
 
-	config.Enabled = true // Force enabled
 	vs.gcController = gc.NewAdaptiveGCController(config)
 	vs.gcController.Start()
 

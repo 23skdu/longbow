@@ -46,8 +46,8 @@ func NewSmartClient(addr string) (*SmartClient, error) {
 		dialOpts: []grpc.DialOption{
 			grpc.WithTransportCredentials(insecure.NewCredentials()),
 			grpc.WithDefaultCallOptions(
-				grpc.MaxCallRecvMsgSize(2147483647), // 2GB max
-				grpc.MaxCallSendMsgSize(2147483647),
+				grpc.MaxCallRecvMsgSize(21474836470), // 20GB max (for 500k×3072×4 = 6GB payloads)
+				grpc.MaxCallSendMsgSize(21474836470),
 			),
 		},
 		timeout: 30 * time.Second,

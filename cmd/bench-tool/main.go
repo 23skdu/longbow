@@ -332,12 +332,9 @@ func main() {
 			os.Exit(0)
 		}
 
-		log.Printf("[PUT] Generating and uploading %d chunks (streaming, back-pressure aware)...\n", numChunks)
-
-		totalUploaded = 0
-		start = time.Now()
+		log.Printf("[PUT] Pre-generating %d chunks...\n", numChunks)
+		preGenerated := make([]arrow.Record, 0, numChunks)
 		var genSchema *arrow.Schema
-		var uploader *StreamUploader
 
 		for i := 0; i < *scale; {
 			currentChunk := chunkSize
@@ -349,44 +346,51 @@ func main() {
 			if err != nil {
 				log.Fatalf("Record generation failed at %d: %v", i, err)
 			}
+			preGenerated = append(preGenerated, rec)
 			if genSchema == nil {
 				genSchema = schema
 			}
-
-			if uploader == nil {
-				uploader, err = newStreamUploader(sc, *dataset, genSchema)
-				if err != nil {
-					log.Fatalf("Failed to init uploader for generated records: %v", err)
-				}
-			}
-
-			if err := uploader.Write(rec); err != nil {
-				rec.Release()
-				log.Fatalf("DoPut write failed at %d: %v", i, err)
-			}
-			rec.Release()
-
 			i += currentChunk
-			totalUploaded = i
+		}
+
+		log.Printf("[PUT] Uploading %d chunks (streaming, back-pressure aware)...\n", numChunks)
+		totalUploaded = 0
+		start = time.Now()
+		var uploader *StreamUploader
+
+		if len(preGenerated) > 0 {
+			uploader, err = newStreamUploader(sc, *dataset, genSchema)
+			if err != nil {
+				log.Fatalf("Failed to init uploader for generated records: %v", err)
+			}
+		}
+
+		for _, rec := range preGenerated {
+			if err := uploader.Write(rec); err != nil {
+				log.Fatalf("DoPut write failed: %v", err)
+			}
+			
+			totalUploaded += int(rec.NumRows())
+			
 			if totalUploaded%50000 == 0 || totalUploaded == *scale {
 				log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, *scale)
-			}
-
-			// Back-pressure awareness
-			if totalUploaded < *scale {
-				backoff := 500 * time.Millisecond
-				for {
-					bpCtx, bpCancel := context.WithTimeout(context.Background(), 30*time.Second)
-					isBusy, reason := checkBackpressure(bpCtx, sc, *dataset)
-					bpCancel()
-					if !isBusy {
-						break
-					}
-					log.Printf("  Server is BUSY: %s. Waiting %v...\n", reason, backoff)
-					time.Sleep(backoff)
-					backoff += 500 * time.Millisecond
-					if backoff > 10*time.Second {
-						backoff = 10 * time.Second
+				
+				// Back-pressure awareness only every 50k to reduce overhead
+				if totalUploaded < *scale {
+					backoff := 500 * time.Millisecond
+					for {
+						bpCtx, bpCancel := context.WithTimeout(context.Background(), 30*time.Second)
+						isBusy, reason := checkBackpressure(bpCtx, sc, *dataset)
+						bpCancel()
+						if !isBusy {
+							break
+						}
+						log.Printf("  Server is BUSY: %s. Waiting %v...\n", reason, backoff)
+						time.Sleep(backoff)
+						backoff += 500 * time.Millisecond
+						if backoff > 10*time.Second {
+							backoff = 10 * time.Second
+						}
 					}
 				}
 			}
@@ -395,6 +399,9 @@ func main() {
 			if err := uploader.Close(); err != nil {
 				log.Fatalf("Failed to close uploader: %v", err)
 			}
+		}
+		for _, rec := range preGenerated {
+			rec.Release()
 		}
 	}
 	duration := time.Since(start).Seconds()

@@ -1,5 +1,13 @@
 //go:build !windows
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// WARNING: This is NOT the benchmark tool used by scripts/unified_benchmark.py.
+// The benchmark suite uses cmd/bench-tool (→ bin/bench-tool).
+// This tool (cmd/io-bench) is a standalone disk I/O benchmark utility.
+// Building it as "bench-tool" will break benchmarks due to different
+// streaming/chunking behavior — always build as: go build ./cmd/io-bench
+// ═══════════════════════════════════════════════════════════════════════════════
+
 package main
 
 // nosec G404 - math/rand is used for benchmark test data, not security-sensitive
@@ -53,6 +61,9 @@ func main() {
 	flag.Parse()
 
 	if *mode == "vec" {
+		fmt.Println("WARNING: This is cmd/io-bench, NOT cmd/bench-tool.")
+		fmt.Println("  Use bin/bench-tool (from cmd/bench-tool) for benchmark suite compatibility.")
+		fmt.Println("  This tool pre-generates ALL vectors in RAM and lacks streaming/back-pressure.")
 		runVectorBenchmark(*uri, *dim, *dtype, *tqBits, *scale, *queries, *dataset, *jsonFile, *searchModes)
 		return
 	}
@@ -425,7 +436,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 		vecs[i] = rnd.Float32()
 	}
 
-	fmt.Printf("Ingesting %d vectors...\n", scale)
+	fmt.Printf("Ingesting %d vectors (dim=%d)...\n", scale, dim)
 	ingestStart := time.Now()
 
 	mem := memory.NewGoAllocator()
@@ -435,39 +446,57 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 		{Name: "timestamp", Type: arrow.PrimitiveTypes.Int64},
 	}, nil)
 
-	idBuilder := array.NewStringBuilder(mem)
-	defer idBuilder.Release()
-	listBuilder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32) // #nosec G115
-	defer listBuilder.Release()
-	vecBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
-	tsBuilder := array.NewInt64Builder(mem)
-	defer tsBuilder.Release()
-
-	idBuilder.Reserve(scale)
-	listBuilder.Reserve(scale)
-	vecBuilder.Reserve(scale * dim)
-	tsBuilder.Reserve(scale)
+	// gRPC wire protocol uses a 4-byte length prefix, capping individual
+	// messages at ~4 GB. Chunk large payloads to stay well under that limit.
+	maxBatchBytes := 1_500_000_000 // 1.5 GB target per batch
+	batchSize := scale
+	if dim > 0 {
+		if n := maxBatchBytes / (dim * 4); n > 0 && n < batchSize {
+			batchSize = n
+		}
+	}
 
 	now := time.Now().UnixNano()
-	for i := 0; i < scale; i++ {
-		idBuilder.Append(fmt.Sprintf("%d", i))
-		listBuilder.Append(true)
-		tsBuilder.Append(now + int64(i)*1000000000)
-	}
-	vecBuilder.AppendValues(vecs, nil)
+	for offset := 0; offset < scale; offset += batchSize {
+		end := offset + batchSize
+		if end > scale {
+			end = scale
+		}
+		n := end - offset
 
-	idArr := idBuilder.NewArray()
-	defer idArr.Release()
-	vecArr := listBuilder.NewArray()
-	defer vecArr.Release()
-	tsArr := tsBuilder.NewArray()
-	defer tsArr.Release()
+		idBuilder := array.NewStringBuilder(mem)
+		listBuilder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Float32) // #nosec G115
+		vecBuilder := listBuilder.ValueBuilder().(*array.Float32Builder)
+		tsBuilder := array.NewInt64Builder(mem)
 
-	rec := array.NewRecordBatch(sch, []arrow.Array{idArr, vecArr, tsArr}, int64(scale))
-	defer rec.Release()
+		idBuilder.Reserve(n)
+		listBuilder.Reserve(n)
+		vecBuilder.Reserve(n * dim)
+		tsBuilder.Reserve(n)
 
-	if err := uploadData(ctx, sc, dataset, rec, sch); err != nil {
-		log.Fatalf("Ingest failed: %v", err)
+		for i := 0; i < n; i++ {
+			idBuilder.Append(fmt.Sprintf("%d", offset+i))
+			listBuilder.Append(true)
+			tsBuilder.Append(now + int64(offset+i)*1000000000)
+		}
+		vecBuilder.AppendValues(vecs[offset*dim:(offset+n)*dim], nil)
+
+		idArr := idBuilder.NewArray()
+		vecArr := listBuilder.NewArray()
+		tsArr := tsBuilder.NewArray()
+
+		rec := array.NewRecordBatch(sch, []arrow.Array{idArr, vecArr, tsArr}, int64(n))
+		if err := uploadData(ctx, sc, dataset, rec, sch); err != nil {
+			log.Fatalf("Ingest failed at offset %d: %v", offset, err)
+		}
+
+		idArr.Release()
+		vecArr.Release()
+		tsArr.Release()
+		rec.Release()
+		idBuilder.Release()
+		listBuilder.Release()
+		tsBuilder.Release()
 	}
 
 	ingestDur := time.Since(ingestStart)

@@ -32,8 +32,8 @@ securityContext:
 
 # gRPC Configuration
 grpc:
-  maxRecvMsgSize: "536870912" # 512MB (increased from 64MB for large dimension vectors)
-  maxSendMsgSize: "536870912" # 512MB
+  maxRecvMsgSize: "21474836470" # 20GB (supports large payloads like 500k×3072×4)
+  maxSendMsgSize: "21474836470" # 20GB
   initialWindowSize: "1048576" # 1MB
   initialConnWindowSize: "1048576" # 1MB
   maxConcurrentStreams: 250
@@ -73,8 +73,10 @@ compaction:
   minBatches: 10
 
 # Auto-Sharding Configuration
+# CAUTION: When enabled, shard migration temporarily doubles memory (old + new index).
+# Disable for single-node deployments or memory-constrained environments.
 autoSharding:
-  enabled: true
+  enabled: false
   threshold: 10000
   splitThreshold: 65536
 
@@ -116,7 +118,9 @@ env:
   LONGBOW_PQ_INGEST: "0"       # Enable PQ compression during ingest (1=enabled)
   LONGBOW_LOW_MEM: "0"         # Enable low memory mode for 512MB devices
   LONGBOW_GOGC: "100"         # Go GC percentage
-  LONGBOW_MAX_MEMORY: ""         # Max memory (e.g., 18GB) - leave empty for auto
+  LONGBOW_MAX_MEMORY: ""         # Max memory (e.g., 18GB) - leave empty for auto (GCTuner handles dynamic tuning)
+  LONGBOW_GRPC_MAX_RECV_MSG_SIZE: "21474836470" # 20GB gRPC max receive message size
+  LONGBOW_GRPC_MAX_SEND_MSG_SIZE: "21474836470" # 20GB gRPC max send message size
   LONGBOW_ADAPTIVE_M_MAX_FACTOR: "1.5" # Limit Adaptive-M growth to 1.5x
   LONGBOW_MAX_M0: "32"                 # Hard cap on max M for base layer
 

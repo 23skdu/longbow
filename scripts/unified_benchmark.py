@@ -457,11 +457,9 @@ class BenchmarkRunner:
             env["LONGBOW_GRPC_MAX_SEND_MSG_SIZE"] = "21474836470"
             print(f"  Scaling gRPC message size for {max_count} vectors")
 
-        # ── Autoshard threshold: test sharded migrations ───────────────────
-        shard_threshold = 10000
-        env["AUTO_SHARDING_THRESHOLD"] = str(shard_threshold)
-        env["AUTO_SHARDING_ENABLED"] = "true"
-        env["RING_SHARDING_ENABLED"] = "true"
+        # ── Autoshard and sharding (disabled for single-node benchmarks) ──
+        env["LONGBOW_AUTO_SHARDING_ENABLED"] = "false"
+        env["LONGBOW_RING_SHARDING_ENABLED"] = "true"
 
         log_file = os.path.join(self.log_dir, f"longbow_{current_mode}_{label}.log")
         cmd = [server_bin]

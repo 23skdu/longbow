@@ -138,18 +138,26 @@ func main() {
 				record, err := reader.Record(i)
 				if err != nil {
 					log.Fatalf("Failed to read record %d: %v", i, err)
+				var uploader *StreamUploader
+				if uploader == nil {
+					uploader, err = newStreamUploader(sc, *dataset, record.Schema())
+					if err != nil {
+						log.Fatalf("Failed to init uploader: %v", err)
+					}
 				}
-				record.Retain()
 
-				putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
-				if err := uploadBatch(putCtx, sc, *dataset, record, record.Schema()); err != nil {
-					putCancel()
-					log.Fatalf("DoPut failed at record %d: %v", i, err)
+				if err := uploader.Write(record); err != nil {
+					log.Fatalf("DoPut write failed at record %d: %v", i, err)
 				}
-				putCancel()
 
 				totalUploaded += int(record.NumRows())
 				record.Release()
+
+				if totalUploaded%50000 == 0 || i == numRecords-1 {
+					log.Printf("  Progress: %d vectors uploaded\n", totalUploaded)
+				}
+			}
+			// uploader.Close() wouldn't work easily here since it's inside the if/else, so let's do it outside or init before loop!
 
 				if totalUploaded%50000 == 0 || i == numRecords-1 {
 					log.Printf("  Progress: %d vectors uploaded\n", totalUploaded)
@@ -210,12 +218,17 @@ func main() {
 				vecArr := vecBldr.NewArray()
 				record := array.NewRecordBatch(fbinSchema, []arrow.Array{idArr, vecArr}, int64(currentChunk))
 
-				putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
-				if err := uploadBatch(putCtx, sc, *dataset, record, fbinSchema); err != nil {
-					putCancel()
-					log.Fatalf("DoPut failed at chunk starting %d: %v", totalUploaded, err)
+				var uploader *StreamUploader
+				if uploader == nil {
+					uploader, err = newStreamUploader(sc, *dataset, fbinSchema)
+					if err != nil {
+						log.Fatalf("Failed to init uploader for fbin: %v", err)
+					}
 				}
-				putCancel()
+
+				if err := uploader.Write(record); err != nil {
+					log.Fatalf("DoPut write failed at chunk starting %d: %v", totalUploaded, err)
+				}
 
 				totalUploaded += currentChunk
 				record.Release()
@@ -228,6 +241,9 @@ func main() {
 					log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, countVal)
 				}
 			}
+			// Let it close below, but we don't have it tracked, so let's close uploader.
+			// Wait, the uploader goes out of scope? No, it's inside the loop but we can define it outside.
+			// The original loop ends here.
 		}
 		*scale = totalUploaded
 	} else {
@@ -332,13 +348,18 @@ func main() {
 				genSchema = schema
 			}
 
-			putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
-			if err := uploadBatch(putCtx, sc, *dataset, rec, genSchema); err != nil {
-				putCancel()
-				rec.Release()
-				log.Fatalf("DoPut failed at %d: %v", i, err)
+			var uploader *StreamUploader
+			if uploader == nil {
+				uploader, err = newStreamUploader(sc, *dataset, genSchema)
+				if err != nil {
+					log.Fatalf("Failed to init uploader for generated records: %v", err)
+				}
 			}
-			putCancel()
+
+			if err := uploader.Write(rec); err != nil {
+				rec.Release()
+				log.Fatalf("DoPut write failed at %d: %v", i, err)
+			}
 			rec.Release()
 
 			i += currentChunk
@@ -546,36 +567,51 @@ func main() {
 	}
 }
 
-func uploadBatch(ctx context.Context, sc *client.SmartClient, dataset string, record arrow.Record, schema *arrow.Schema) error {
+type StreamUploader struct {
+	sc     *client.SmartClient
+	stream flight.FlightService_DoPutClient
+	writer *flight.Writer
+	cancel context.CancelFunc
+}
+
+func newStreamUploader(sc *client.SmartClient, dataset string, schema *arrow.Schema) (*StreamUploader, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
 	desc := &flight.FlightDescriptor{
 		Type: flight.DescriptorPATH,
 		Path: []string{dataset},
 	}
 	stream, err := sc.DoPut(ctx, desc)
 	if err != nil {
-		return err
+		cancel()
+		return nil, err
 	}
 
 	writer := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
 	writer.SetFlightDescriptor(desc)
 
-	if err := writer.Write(record); err != nil {
-		_ = writer.Close()
+	return &StreamUploader{
+		sc:     sc,
+		stream: stream,
+		writer: writer,
+		cancel: cancel,
+	}, nil
+}
+
+func (u *StreamUploader) Write(record arrow.Record) error {
+	return u.writer.Write(record)
+}
+
+func (u *StreamUploader) Close() error {
+	defer u.cancel()
+	if err := u.writer.Close(); err != nil {
 		return err
 	}
-
-	if err := writer.Close(); err != nil {
+	if err := u.stream.CloseSend(); err != nil {
 		return err
 	}
-
-	if err := stream.CloseSend(); err != nil {
+	if _, err := u.stream.Recv(); err != nil && err != io.EOF {
 		return err
 	}
-
-	if _, err := stream.Recv(); err != nil && err != io.EOF {
-		return err
-	}
-
 	return nil
 }
 

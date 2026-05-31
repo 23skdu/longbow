@@ -136,6 +136,217 @@ kernel void compute_dot_product(
 }
 
 // ===========================================================================
+// Integer Type Kernels (int8, uint8, int16, uint16)
+// ===========================================================================
+// int8 L2
+kernel void compute_l2_distances_int8(
+    device const char* query [[buffer(0)]],
+    device const char* vectors [[buffer(1)]],
+    device float* distances [[buffer(2)]],
+    constant uint& dim [[buffer(3)]],
+    constant uint& numVectors [[buffer(4)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numVectors) return;
+    uint offset = gid * dim;
+    float sum = 0.0f;
+    uint vectorWidth = dim / 4;
+    uint remainder = dim % 4;
+    for (uint i = 0; i < vectorWidth; i++) {
+        int4 q4 = *(device const int4*)(query + i * 4);
+        int4 v4 = *(device const int4*)(vectors + offset + i * 4);
+        float4 diff = float4(q4) - float4(v4);
+        sum += dot(diff, diff);
+    }
+    for (uint i = 0; i < remainder; i++) {
+        float diff = float(query[vectorWidth * 4 + i]) - float(vectors[offset + vectorWidth * 4 + i]);
+        sum += diff * diff;
+    }
+    distances[gid] = sqrt(sum);
+}
+
+// int8 dot
+kernel void compute_dot_product_int8(
+    device const char* query [[buffer(0)]],
+    device const char* vectors [[buffer(1)]],
+    device float* products [[buffer(2)]],
+    constant uint& dim [[buffer(3)]],
+    constant uint& numVectors [[buffer(4)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numVectors) return;
+    float sum = 0.0f;
+    uint offset = gid * dim;
+    uint vectorWidth = dim / 4;
+    uint remainder = dim % 4;
+    for (uint i = 0; i < vectorWidth; i++) {
+        int4 q4 = *(device const int4*)(query + i * 4);
+        int4 v4 = *(device const int4*)(vectors + offset + i * 4);
+        sum += dot(float4(q4), float4(v4));
+    }
+    for (uint i = 0; i < remainder; i++) {
+        sum += float(query[vectorWidth * 4 + i]) * float(vectors[offset + vectorWidth * 4 + i]);
+    }
+    products[gid] = sum;
+}
+
+// uint8 L2
+kernel void compute_l2_distances_uint8(
+    device const uchar* query [[buffer(0)]],
+    device const uchar* vectors [[buffer(1)]],
+    device float* distances [[buffer(2)]],
+    constant uint& dim [[buffer(3)]],
+    constant uint& numVectors [[buffer(4)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numVectors) return;
+    uint offset = gid * dim;
+    float sum = 0.0f;
+    uint vectorWidth = dim / 4;
+    uint remainder = dim % 4;
+    for (uint i = 0; i < vectorWidth; i++) {
+        uint4 q4 = *(device const uint4*)(query + i * 4);
+        uint4 v4 = *(device const uint4*)(vectors + offset + i * 4);
+        float4 diff = float4(q4) - float4(v4);
+        sum += dot(diff, diff);
+    }
+    for (uint i = 0; i < remainder; i++) {
+        float diff = float(query[vectorWidth * 4 + i]) - float(vectors[offset + vectorWidth * 4 + i]);
+        sum += diff * diff;
+    }
+    distances[gid] = sqrt(sum);
+}
+
+// uint8 dot
+kernel void compute_dot_product_uint8(
+    device const uchar* query [[buffer(0)]],
+    device const uchar* vectors [[buffer(1)]],
+    device float* products [[buffer(2)]],
+    constant uint& dim [[buffer(3)]],
+    constant uint& numVectors [[buffer(4)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numVectors) return;
+    float sum = 0.0f;
+    uint offset = gid * dim;
+    uint vectorWidth = dim / 4;
+    uint remainder = dim % 4;
+    for (uint i = 0; i < vectorWidth; i++) {
+        uint4 q4 = *(device const uint4*)(query + i * 4);
+        uint4 v4 = *(device const uint4*)(vectors + offset + i * 4);
+        sum += dot(float4(q4), float4(v4));
+    }
+    for (uint i = 0; i < remainder; i++) {
+        sum += float(query[vectorWidth * 4 + i]) * float(vectors[offset + vectorWidth * 4 + i]);
+    }
+    products[gid] = sum;
+}
+
+// int16 L2
+kernel void compute_l2_distances_int16(
+    device const short* query [[buffer(0)]],
+    device const short* vectors [[buffer(1)]],
+    device float* distances [[buffer(2)]],
+    constant uint& dim [[buffer(3)]],
+    constant uint& numVectors [[buffer(4)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numVectors) return;
+    uint offset = gid * dim;
+    float sum = 0.0f;
+    uint vectorWidth = dim / 4;
+    uint remainder = dim % 4;
+    for (uint i = 0; i < vectorWidth; i++) {
+        short4 q4 = *(device const short4*)(query + i * 4);
+        short4 v4 = *(device const short4*)(vectors + offset + i * 4);
+        float4 diff = float4(q4) - float4(v4);
+        sum += dot(diff, diff);
+    }
+    for (uint i = 0; i < remainder; i++) {
+        float diff = float(query[vectorWidth * 4 + i]) - float(vectors[offset + vectorWidth * 4 + i]);
+        sum += diff * diff;
+    }
+    distances[gid] = sqrt(sum);
+}
+
+// int16 dot
+kernel void compute_dot_product_int16(
+    device const short* query [[buffer(0)]],
+    device const short* vectors [[buffer(1)]],
+    device float* products [[buffer(2)]],
+    constant uint& dim [[buffer(3)]],
+    constant uint& numVectors [[buffer(4)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numVectors) return;
+    float sum = 0.0f;
+    uint offset = gid * dim;
+    uint vectorWidth = dim / 4;
+    uint remainder = dim % 4;
+    for (uint i = 0; i < vectorWidth; i++) {
+        short4 q4 = *(device const short4*)(query + i * 4);
+        short4 v4 = *(device const short4*)(vectors + offset + i * 4);
+        sum += dot(float4(q4), float4(v4));
+    }
+    for (uint i = 0; i < remainder; i++) {
+        sum += float(query[vectorWidth * 4 + i]) * float(vectors[offset + vectorWidth * 4 + i]);
+    }
+    products[gid] = sum;
+}
+
+// uint16 L2
+kernel void compute_l2_distances_uint16(
+    device const ushort* query [[buffer(0)]],
+    device const ushort* vectors [[buffer(1)]],
+    device float* distances [[buffer(2)]],
+    constant uint& dim [[buffer(3)]],
+    constant uint& numVectors [[buffer(4)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numVectors) return;
+    uint offset = gid * dim;
+    float sum = 0.0f;
+    uint vectorWidth = dim / 4;
+    uint remainder = dim % 4;
+    for (uint i = 0; i < vectorWidth; i++) {
+        ushort4 q4 = *(device const ushort4*)(query + i * 4);
+        ushort4 v4 = *(device const ushort4*)(vectors + offset + i * 4);
+        float4 diff = float4(q4) - float4(v4);
+        sum += dot(diff, diff);
+    }
+    for (uint i = 0; i < remainder; i++) {
+        float diff = float(query[vectorWidth * 4 + i]) - float(vectors[offset + vectorWidth * 4 + i]);
+        sum += diff * diff;
+    }
+    distances[gid] = sqrt(sum);
+}
+
+// uint16 dot
+kernel void compute_dot_product_uint16(
+    device const ushort* query [[buffer(0)]],
+    device const ushort* vectors [[buffer(1)]],
+    device float* products [[buffer(2)]],
+    constant uint& dim [[buffer(3)]],
+    constant uint& numVectors [[buffer(4)]],
+    uint gid [[thread_position_in_grid]])
+{
+    if (gid >= numVectors) return;
+    float sum = 0.0f;
+    uint offset = gid * dim;
+    uint vectorWidth = dim / 4;
+    uint remainder = dim % 4;
+    for (uint i = 0; i < vectorWidth; i++) {
+        ushort4 q4 = *(device const ushort4*)(query + i * 4);
+        ushort4 v4 = *(device const ushort4*)(vectors + offset + i * 4);
+        sum += dot(float4(q4), float4(v4));
+    }
+    for (uint i = 0; i < remainder; i++) {
+        sum += float(query[vectorWidth * 4 + i]) * float(vectors[offset + vectorWidth * 4 + i]);
+    }
+    products[gid] = sum;
+}
+
+// ===========================================================================
 // FP16 (half-precision) Kernels
 // ===========================================================================
 

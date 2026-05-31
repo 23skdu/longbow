@@ -667,6 +667,59 @@ func (idx *MetalHybridIndex) GetUtilization() (float32, error) {
 	return 50.0, nil
 }
 
+func (idx *MetalHybridIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+	// Convert int8 to float32 for search
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float32(v)
+	}
+	return idx.searchFloat32(f32Vec, k)
+}
+
+func (idx *MetalHybridIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float32(v)
+	}
+	return idx.searchFloat32(f32Vec, k)
+}
+
+func (idx *MetalHybridIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float32(v)
+	}
+	return idx.searchFloat32(f32Vec, k)
+}
+
+func (idx *MetalHybridIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float32(v)
+	}
+	return idx.searchFloat32(f32Vec, k)
+}
+
 func (idx *MetalHybridIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()

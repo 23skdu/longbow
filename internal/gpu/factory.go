@@ -282,6 +282,38 @@ func (i *CPUIndex) SearchPQ(lookupTable []float32, m int, k int) (ids []int64, d
 	return ids, distances, nil
 }
 
+func (i *CPUIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
+	f32 := make([]float32, len(vector))
+	for idx, v := range vector {
+		f32[idx] = float32(v)
+	}
+	return i.Search(f32, k)
+}
+
+func (i *CPUIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
+	f32 := make([]float32, len(vector))
+	for idx, v := range vector {
+		f32[idx] = float32(v)
+	}
+	return i.Search(f32, k)
+}
+
+func (i *CPUIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
+	f32 := make([]float32, len(vector))
+	for idx, v := range vector {
+		f32[idx] = float32(v)
+	}
+	return i.Search(f32, k)
+}
+
+func (i *CPUIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
+	f32 := make([]float32, len(vector))
+	for idx, v := range vector {
+		f32[idx] = float32(v)
+	}
+	return i.Search(f32, k)
+}
+
 func (i *CPUIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
 	// Convert float16 (uint16) to float32
 	f32 := make([]float32, len(vector))

@@ -1403,6 +1403,60 @@ func (idx *MetalIndex) startSyncTicker(cfg gputypes.GPUConfig) {
 	}()
 }
 
+func (idx *MetalIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float32(v)
+	}
+	return idx.searchFloat32(f32Vec, k)
+}
+
+func (idx *MetalIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float32(v)
+	}
+	return idx.searchFloat32(f32Vec, k)
+}
+
+func (idx *MetalIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float32(v)
+	}
+	return idx.searchFloat32(f32Vec, k)
+}
+
+func (idx *MetalIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+	// Note: uint16 here is treated as an integer type, not float16.
+	// For float16, use SearchFloat16.
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float32(v)
+	}
+	return idx.searchFloat32(f32Vec, k)
+}
+
 func (idx *MetalIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()

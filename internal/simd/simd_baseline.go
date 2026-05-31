@@ -19,41 +19,41 @@ func euclideanInt8Unrolled4x(a, b []int8) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	var sum0, sum1, sum2, sum3 float64
+	var sum0, sum1, sum2, sum3 int32
 	n := len(a)
 	i := 0
 	for ; i <= n-4; i += 4 {
-		d0 := float64(a[i]) - float64(b[i])
-		d1 := float64(a[i+1]) - float64(b[i+1])
-		d2 := float64(a[i+2]) - float64(b[i+2])
-		d3 := float64(a[i+3]) - float64(b[i+3])
+		d0 := int32(a[i]) - int32(b[i])
+		d1 := int32(a[i+1]) - int32(b[i+1])
+		d2 := int32(a[i+2]) - int32(b[i+2])
+		d3 := int32(a[i+3]) - int32(b[i+3])
 		sum0 += d0 * d0
 		sum1 += d1 * d1
 		sum2 += d2 * d2
 		sum3 += d3 * d3
 	}
 	for ; i < n; i++ {
-		d := float64(a[i]) - float64(b[i])
+		d := int32(a[i]) - int32(b[i])
 		sum0 += d * d
 	}
-	return float32(math.Sqrt(sum0 + sum1 + sum2 + sum3)), nil
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
 }
 
 func dotInt8Unrolled4x(a, b []int8) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	var sum0, sum1, sum2, sum3 float64
+	var sum0, sum1, sum2, sum3 int32
 	n := len(a)
 	i := 0
 	for ; i <= n-4; i += 4 {
-		sum0 += float64(a[i]) * float64(b[i])
-		sum1 += float64(a[i+1]) * float64(b[i+1])
-		sum2 += float64(a[i+2]) * float64(b[i+2])
-		sum3 += float64(a[i+3]) * float64(b[i+3])
+		sum0 += int32(a[i]) * int32(b[i])
+		sum1 += int32(a[i+1]) * int32(b[i+1])
+		sum2 += int32(a[i+2]) * int32(b[i+2])
+		sum3 += int32(a[i+3]) * int32(b[i+3])
 	}
 	for ; i < n; i++ {
-		sum0 += float64(a[i]) * float64(b[i])
+		sum0 += int32(a[i]) * int32(b[i])
 	}
 	return float32(sum0 + sum1 + sum2 + sum3), nil
 }
@@ -261,29 +261,29 @@ func dotComplex64Unrolled(a, b []complex64) (float32, error) {
 	return real(dot0 + dot1 + dot2 + dot3), nil
 }
 
-// Uint Baseline (Mapping to float32 to prevent overflow)
+// Uint Baseline (integer accumulators — int32 is sufficient: max diff²×128d = 65025×128 < 2³¹)
 func euclideanUint8Unrolled4x(a, b []uint8) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	var sum0, sum1, sum2, sum3 float64
+	var sum0, sum1, sum2, sum3 int32
 	n := len(a)
 	i := 0
 	for ; i <= n-4; i += 4 {
-		d0 := float64(a[i]) - float64(b[i])
-		d1 := float64(a[i+1]) - float64(b[i+1])
-		d2 := float64(a[i+2]) - float64(b[i+2])
-		d3 := float64(a[i+3]) - float64(b[i+3])
+		d0 := int32(a[i]) - int32(b[i])
+		d1 := int32(a[i+1]) - int32(b[i+1])
+		d2 := int32(a[i+2]) - int32(b[i+2])
+		d3 := int32(a[i+3]) - int32(b[i+3])
 		sum0 += d0 * d0
 		sum1 += d1 * d1
 		sum2 += d2 * d2
 		sum3 += d3 * d3
 	}
 	for ; i < n; i++ {
-		d := float64(a[i]) - float64(b[i])
+		d := int32(a[i]) - int32(b[i])
 		sum0 += d * d
 	}
-	return float32(math.Sqrt(sum0 + sum1 + sum2 + sum3)), nil
+	return float32(math.Sqrt(float64(sum0 + sum1 + sum2 + sum3))), nil
 }
 
 func euclideanUint16Unrolled4x(a, b []uint16) (float32, error) {
@@ -602,17 +602,17 @@ func dotUint8Unrolled4x(a, b []uint8) (float32, error) {
 	if len(a) != len(b) {
 		return 0, errors.New("simd: length mismatch")
 	}
-	var sum0, sum1, sum2, sum3 float64
+	var sum0, sum1, sum2, sum3 int32
 	n := len(a)
 	i := 0
 	for ; i <= n-4; i += 4 {
-		sum0 += float64(a[i]) * float64(b[i])
-		sum1 += float64(a[i+1]) * float64(b[i+1])
-		sum2 += float64(a[i+2]) * float64(b[i+2])
-		sum3 += float64(a[i+3]) * float64(b[i+3])
+		sum0 += int32(a[i]) * int32(b[i])
+		sum1 += int32(a[i+1]) * int32(b[i+1])
+		sum2 += int32(a[i+2]) * int32(b[i+2])
+		sum3 += int32(a[i+3]) * int32(b[i+3])
 	}
 	for ; i < n; i++ {
-		sum0 += float64(a[i]) * float64(b[i])
+		sum0 += int32(a[i]) * int32(b[i])
 	}
 	return float32(sum0 + sum1 + sum2 + sum3), nil
 }

@@ -137,6 +137,26 @@ func dotInt16NEON(a, b []int16) (float32, error) {
 	return dotInt16NEONKernel(a, b), nil
 }
 
+func euclideanUint8NEON(a, b []uint8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanUint8NEONKernel(a, b), nil
+}
+
+func dotUint8NEON(a, b []uint8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotUint8NEONKernel(a, b), nil
+}
+
 func euclideanInt8NEON(a, b []int8) (float32, error) {
 	if len(a) != len(b) {
 		return 0, ErrDimensionMismatch
@@ -442,6 +462,12 @@ func euclideanInt16NEONKernel(a, b []int16) float32
 func dotInt16NEONKernel(a, b []int16) float32
 
 //go:noescape
+func euclideanUint8NEONKernel(a, b []uint8) float32
+
+//go:noescape
+func dotUint8NEONKernel(a, b []uint8) float32
+
+//go:noescape
 func euclideanInt8NEONKernel(a, b []int8) float32
 
 //go:noescape
@@ -506,6 +532,8 @@ var _ = func() {
 		_ = dotInt16NEONKernel(nil, nil)
 		_ = euclideanInt8NEONKernel(nil, nil)
 		_ = dotInt8NEONKernel(nil, nil)
+		_ = euclideanUint8NEONKernel(nil, nil)
+		_ = dotUint8NEONKernel(nil, nil)
 		_ = euclideanF16NEONKernel(nil, nil)
 		_ = cosineF16NEONKernel(nil, nil)
 		vectorButterflyNEONKernel(nil, nil)

@@ -40,8 +40,10 @@ func euclideanF16NEON(a, b []float16.Num) (float32, error) { return euclideanF16
 func cosineF16NEON(a, b []float16.Num) (float32, error)    { return cosineF16Unrolled4x(a, b) }
 func dotF16NEON(a, b []float16.Num) (float32, error)       { return dotF16Unrolled4x(a, b) }
 
-func euclideanInt8NEON(a, b []int8) (float32, error) { return euclideanInt8Unrolled4x(a, b) }
-func dotInt8NEON(a, b []int8) (float32, error)       { return dotInt8Unrolled4x(a, b) }
+func euclideanUint8NEON(a, b []uint8) (float32, error) { return euclideanUint8Unrolled4x(a, b) }
+func dotUint8NEON(a, b []uint8) (float32, error)       { return dotUint8Unrolled4x(a, b) }
+func euclideanInt8NEON(a, b []int8) (float32, error)   { return euclideanInt8Unrolled4x(a, b) }
+func dotInt8NEON(a, b []int8) (float32, error)         { return dotInt8Unrolled4x(a, b) }
 func euclideanInt16NEON(a, b []int16) (float32, error) { return euclideanInt16Unrolled4x(a, b) }
 func dotInt16NEON(a, b []int16) (float32, error)       { return dotInt16Unrolled4x(a, b) }
 

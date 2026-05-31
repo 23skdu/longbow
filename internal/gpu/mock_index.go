@@ -184,6 +184,58 @@ func (m *MockIndex) euclideanDistance(a, b []float32) float32 {
 	return sum
 }
 
+func (m *MockIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed {
+		return nil, nil, fmt.Errorf("index closed")
+	}
+	f32 := make([]float32, len(vector))
+	for idx, v := range vector {
+		f32[idx] = float32(v)
+	}
+	return m.Search(f32, k)
+}
+
+func (m *MockIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed {
+		return nil, nil, fmt.Errorf("index closed")
+	}
+	f32 := make([]float32, len(vector))
+	for idx, v := range vector {
+		f32[idx] = float32(v)
+	}
+	return m.Search(f32, k)
+}
+
+func (m *MockIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed {
+		return nil, nil, fmt.Errorf("index closed")
+	}
+	f32 := make([]float32, len(vector))
+	for idx, v := range vector {
+		f32[idx] = float32(v)
+	}
+	return m.Search(f32, k)
+}
+
+func (m *MockIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if m.closed {
+		return nil, nil, fmt.Errorf("index closed")
+	}
+	f32 := make([]float32, len(vector))
+	for idx, v := range vector {
+		f32[idx] = float32(v)
+	}
+	return m.Search(f32, k)
+}
+
 func (m *MockIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()

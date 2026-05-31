@@ -1,24 +1,6 @@
-# Longbow Next Steps — v0.2.1-rc5 Benchmark Run
+# Longbow Next Steps — v0.2.1-rc7 Findings & Recommendations (2026-05-31)
 
-Run the complete benchmark matrix on localhost (CPU + Metal) and ancalagon (CPU + CUDA) in parallel, collect results, and update `docs/performance.md`.
-
-## Baseline Expectations (from docs/performance.md)
-
-| Metric | Target |
-|---|---|
-| Dense QPS (float32, 128d, 50k) | > 3,000 |
-| Dense QPS (float32, 384d, 50k) | > 2,400 |
-| Ingest (float32, 128d, 500k) | > 2,000,000 vec/s |
-| Ingest (float32, 3072d, 50k) | > 100,000 vec/s |
-| p50 latency (128d, 50k dense) | < 0.3ms |
-
-New additions this run: graphrag, temporal, geo-spatial, learned_index, sparse modes at scale — first baseline after the GraphRAG O(N³)→O(B²·depth) optimization.
-
-> [!IMPORTANT]
-> **750k vectors @ dim=384**: At 384×4B = 1.5KB/vector, 750k vectors = ~1.1GB raw float32 + HNSW overhead (~3-5× raw) = ~4-6GB total. This fits within 18GB (local) and 14GB (ancalagon). Proceeding with 750k.
-
-> [!NOTE]
-> **complex128 at 384d**: complex128 is 16 bytes/element → 384d × 16B = 6KB/vector. 750k × 6KB = 4.5GB raw — borderline at 14GB on ancalagon. Will run up to 250k for complex128.
+## Actionable Stability & Performance Recommendations
 
 ---
 
@@ -40,71 +22,81 @@ New additions this run: graphrag, temporal, geo-spatial, learned_index, sparse m
 
 ---
 
-## Phase 1 — Localhost: CPU Run
+## Phase 1 — Localhost: CPU Run ✅ (Completed)
 
 ```
 python3 scripts/unified_benchmark.py \
   --mode cpu \
   --dims 128 \
-  --counts 5000,15000,50000,250000,500000,600000 \
-  --dtypes float16,float32,int8,uint8,uint16,uint32,uint64,complex128,turboquant2,turboquant8 \
+  --counts 250000,500000,750000 \
+  --dtypes float16,float32,int8,uint8,complex128,turboquant8 \
   --memory 19327352832 \
-  --search-modes hybrid,dense,sparse,filtered,byid,learned_index,geo,graphrag,temporal \
+  --search-modes dense,sparse \
   --queries 500 \
-  --workers 6 \
-  --timeout 7200 \
-  --label rc5_localhost_cpu
+  --workers 8 \
+  --pprof \
+  --timeout 18000 \
+  --label localhost_cpu
 ```
 
-## Phase 2 — Localhost: Metal Run
+Results: 9/18 configs collected. 750k all ResourceExhausted. float32 500k, complex128 500k, turboquant8 500k missing from aggregate.
 
-_(starts after CPU finishes — sequential on localhost)_
+## Phase 2 — Localhost: Metal Run ✅ (Completed)
 
 ```
 python3 scripts/unified_benchmark.py \
   --mode metal \
   --dims 128 \
-  --counts 5000,15000,50000,250000,500000,600000 \
+  --counts 250000,500000 \
   --dtypes float32,int8,uint8 \
   --memory 19327352832 \
-  --search-modes hybrid,dense,sparse,filtered,byid \
+  --search-modes dense,sparse \
   --queries 500 \
-  --timeout 7200 \
-  --label rc5_localhost_metal
+  --workers 8 \
+  --pprof \
+  --timeout 14400 \
+  --label localhost_metal
 ```
 
-## Phase 3 — Ancalagon: CPU Run _(parallel with localhost CPU)_
+Results: 5/6 configs collected. float32 500k ResourceExhausted.
+
+## Phase 3 — Ancalagon: CPU Run ✅ (Completed)
 
 ```
-ssh ancalagon 'cd ~/REPOS/longbow && python3 scripts/unified_benchmark.py \
+ssh ancalagon 'cd ~/longbow && python3 scripts/unified_benchmark.py \
   --mode cpu \
   --dims 128 \
-  --counts 5000,15000,50000,250000,500000,600000 \
-  --dtypes float16,float32,int8,uint8,uint16,uint32,uint64,complex128,turboquant2,turboquant8 \
+  --counts 250000,500000,750000 \
+  --dtypes float16,float32,int8,uint8,complex128,turboquant8 \
   --memory 15032385536 \
-  --search-modes hybrid,dense,sparse,filtered,byid,learned_index,geo,graphrag,temporal \
+  --search-modes dense,sparse \
   --queries 500 \
-  --workers 6 \
-  --timeout 7200 \
-  --label rc5_ancalagon_cpu'
+  --workers 8 \
+  --pprof \
+  --timeout 18000 \
+  --label ancalagon_cpu'
 ```
 
-## Phase 4 — Ancalagon: CUDA Run
+Results: 8/18 configs collected. Many 500k/750k configs missing due to ResourceExhausted cascade.
 
-_(starts after ancalagon CPU finishes — sequential on ancalagon)_
+## Phase 4 — Ancalagon: CUDA Run ✅ (Completed)
 
 ```
-ssh ancalagon 'cd ~/REPOS/longbow && python3 scripts/unified_benchmark.py \
+ssh ancalagon 'cd ~/longbow && python3 scripts/unified_benchmark.py \
   --mode cuda \
   --dims 128 \
-  --counts 5000,15000,50000,250000,500000,600000 \
+  --counts 250000,500000 \
   --dtypes float32,int8,uint8 \
   --memory 15032385536 \
-  --search-modes hybrid,dense,sparse,filtered,byid \
+  --search-modes dense,sparse \
   --queries 500 \
-  --timeout 7200 \
-  --label rc5_ancalagon_cuda'
+  --workers 8 \
+  --pprof \
+  --timeout 14400 \
+  --label ancalagon_cuda'
 ```
+
+Results: 5/6 configs collected. float32 500k ResourceExhausted.
 
 ---
 
@@ -143,6 +135,7 @@ ssh ancalagon 'cd ~/REPOS/longbow && python3 scripts/unified_benchmark.py \
 
 ## Previously Completed P0 Blockers
 
+- `[x]` **Multi-Platform Benchmark Run (v0.2.1-rc7)**: Completed CPU + GPU benchmarks on localhost (M3 Pro) and ancalagon (i7-12650H + RTX 4060) at dim=128, counts 250k–750k, dtypes float16/float32/int8/uint8/complex128/turboquant8.
 - `[x]` **HNSW Index Passthrough**: `temporal`, `geo_spatial`, and `graphrag` modes natively query the HNSW index via `TemporalPredicate`, `SlidingWindowPredicate`, and `GeoPredicate`. Per-hop lookup now O(log N) instead of O(N).
 - `[x]` **GraphRAG Beam Search**: BFS frontier in `RankWithGraph` / `RankWithGraphDistributed` pruned to top `BeamWidth=100` nodes after each hop. Worst-case O(N³) → O(B²·depth) ≈ 30,000 ops.
 - `[x]` **Explicit Edge Materialization**: `adjList`/`bwdAdjList` in `GraphStore` provide O(1) pointer dereferences under a single `adjMu.RLock()`, replacing per-edge `LockFreeMap.Get()` calls.
@@ -152,8 +145,11 @@ ssh ancalagon 'cd ~/REPOS/longbow && python3 scripts/unified_benchmark.py \
 
 ## P1 Backlog
 
-- `[ ]` **Rebase & Dependabot resolution**: Cleanly handle incoming PRs.
-- `[ ]` **Full Benchmark Matrix**: Validate 14 types × 5 dims × 7 counts × 4 platforms once Phase 1–4 above complete.
-- `[ ]` **Correct Performance Baselines in docs/performance.md**: Update with actual v0.2.1-rc5 numbers after run completes.
-- `[ ]` **Review All Integer Distance Kernels**: Verify int32/uint32/int64/uint64 accumulators at count=5000+.
-- `[ ]` **Remote CUDA/Metal Benchmarks**: Complete after Phase 2 and Phase 4 above.
+- `[ ]` **float16 SIMD Distance Kernel**: Add ARM NEON `FMLAL` and AVX512 `VFMADD132PH` float16 distance kernels. Currently 12x slower than float32.
+- `[ ]` **int8/uint8 Distance Kernel Optimization**: Profile and fix int8/uint8 distance kernels to match float32 performance. Currently 5-6x slower on CPU.
+- `[ ]` **GPU Integer Kernel Fix**: Metal and CUDA int8/uint8 dense search is slower than CPU fallback. Implement proper GPU integer dot product.
+- `[ ]` **750k OOM Resolution**: Implement disk-based adjacency or tiered storage spill for datasets >500k vectors. HNSW overhead exceeds 18GB budget.
+- `[ ]` **ResourceExhausted Cascade Fix**: Benchmark script should restart server process between configs to prevent single OOM from aborting remaining configs.
+- `[ ]` **Benchmark Result Persistence Fix**: Ensure individual `result_*.json` files are saved before pprof shutdown snapshot. Currently successful configs can lose their output.
+- `[ ]` **generate_performance_report.py robustness**: Add None-guard for missing baseline files. Currently crashes with TypeError.
+- `[ ]` **Remote CUDA/Metal Benchmarks**: Complete higher dims (384, 768, 1536, 3072) and larger counts on GPU platforms.

@@ -551,38 +551,42 @@ class BenchmarkRunner:
             
         return False
 
-    def stop_server(self):
-        if hasattr(self, "args") and self.args and getattr(self.args, "pprof", False):
+    def stop_server(self, force=False):
+        if not force and hasattr(self, "args") and self.args and getattr(self.args, "pprof", False):
             print("  Waiting 2 seconds for active pprof collections to complete...")
             time.sleep(2)
         if self.server_pid:
             try:
-                os.kill(self.server_pid, signal.SIGTERM)
-                # Wait up to 25 seconds for graceful stop
-                for _ in range(50):
-                    time.sleep(0.5)
-                    try:
-                        pid_reaped, status = os.waitpid(self.server_pid, os.WNOHANG)
-                        if pid_reaped == self.server_pid:
+                if force:
+                    os.kill(self.server_pid, signal.SIGKILL)
+                    os.waitpid(self.server_pid, 0)
+                else:
+                    os.kill(self.server_pid, signal.SIGTERM)
+                    # Wait up to 25 seconds for graceful stop
+                    for _ in range(50):
+                        time.sleep(0.5)
+                        try:
+                            pid_reaped, status = os.waitpid(self.server_pid, os.WNOHANG)
+                            if pid_reaped == self.server_pid:
+                                self.server_pid = None
+                                print("  Waiting 1 seconds for port cooling...")
+                                time.sleep(0.1)
+                                return
+                            os.kill(self.server_pid, 0)
+                        except (ProcessLookupError, ChildProcessError):
                             self.server_pid = None
-                            print("  Waiting 5 seconds for port cooling...")
+                            print("  Waiting 1 seconds for port cooling...")
                             time.sleep(0.1)
                             return
-                        os.kill(self.server_pid, 0)
-                    except (ProcessLookupError, ChildProcessError):
-                        self.server_pid = None
-                        print("  Waiting 5 seconds for port cooling...")
-                        time.sleep(0.1)
-                        return
-                
-                # Fallback to kill -9
-                print(f"  Server PID {self.server_pid} didn't stop gracefully, killing -9")
-                os.kill(self.server_pid, signal.SIGKILL)
-                time.sleep(2)
+                    
+                    # Fallback to kill -9
+                    print(f"  Server PID {self.server_pid} didn't stop gracefully, killing -9")
+                    os.kill(self.server_pid, signal.SIGKILL)
+                    time.sleep(1)
             except (ProcessLookupError, ChildProcessError):
                 pass
             self.server_pid = None
-            print("  Waiting 5 seconds for port cooling...")
+            print("  Waiting 1 seconds for port cooling...")
             time.sleep(0.1)
 
     def collect_pprof(self, label):
@@ -2546,6 +2550,7 @@ class BenchmarkRunner:
                                     continue
 
                             pprof_thread = None
+                            exhausted = False
                             try:
                                 max_retries = getattr(self.args, "max_retries", 1)
                                 success = False
@@ -2561,36 +2566,29 @@ class BenchmarkRunner:
                                     except ResourceExhaustedException as re_err:
                                         print(f"  [EARLY ABORT] {re_err}")
                                         self.exhausted_configs.add(config_key)
+                                        exhausted = True
                                         break
                                     finally:
                                         if pprof_thread:
                                             pprof_thread.join()
                                             pprof_thread = None
 
-                                # Partial save for real-time monitoring
-                                with open(self.output_file, "w") as f:
-                                    json.dump(
-                                        {
-                                            "mode": mode,
-                                            "timestamp": self.timestamp,
-                                            "platform": f"{platform.system()} {platform.machine()}",
-                                            "config": {
-                                                "dims": dims,
-                                                "counts": counts,
-                                                "dtypes": dtypes,
-                                                "duration": self.args.duration,
-                                            },
-                                            "results": self.results,
-                                        },
-                                        f,
-                                        indent=2,
-                                    )
                             finally:
-                                if getattr(self.args, "pprof", False):
-                                    self.save_pprof_snapshot(label)
-                                if pprof_thread:
-                                    pprof_thread.join()
-                                self.stop_server()
+                                # Save results BEFORE pprof snapshot — don't let pprof
+                                # hang or fail lose the benchmark results.
+                                self._save_checkpoint()
+
+                                if exhausted:
+                                    # OOM'd server is unrecoverable, force-kill immediately.
+                                    print("  [OOM] Force-killing server immediately...")
+                                    self.stop_server(force=True)
+                                else:
+                                    if getattr(self.args, "pprof", False):
+                                        self.save_pprof_snapshot(label)
+                                    if pprof_thread:
+                                        pprof_thread.join()
+                                    self.stop_server()
+
                                 # Clean up data directory
                                 data_root = os.path.join(self.data_dir, label)
                                 subprocess.run(f"rm -rf {data_root}", shell=True)

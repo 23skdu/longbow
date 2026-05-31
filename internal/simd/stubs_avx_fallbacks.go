@@ -197,6 +197,9 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 }
 
 func euclideanInt8AVX2(a, b []int8) (float32, error)     { return euclideanInt8Unrolled4x(a, b) }
+func dotInt8AVX2(a, b []int8) (float32, error)           { return dotInt8Unrolled4x(a, b) }
+func euclideanUint8AVX2(a, b []uint8) (float32, error)   { return euclideanUint8Unrolled4x(a, b) }
+func dotUint8AVX2(a, b []uint8) (float32, error)         { return dotUint8Unrolled4x(a, b) }
 func euclideanInt16AVX2(a, b []int16) (float32, error)   { return euclideanInt16Unrolled4x(a, b) }
 func euclideanUint16AVX2(a, b []uint16) (float32, error) { return euclideanUint16Unrolled4x(a, b) }
 func dotInt16AVX2(a, b []int16) (float32, error)         { return dotInt16Unrolled4x(a, b) }

@@ -235,6 +235,66 @@ func (i *TPUIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, er
 	return i.Search(f32Vector, k)
 }
 
+func (i *TPUIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
+	start := time.Now()
+	var err error
+	defer func() { i.recordOperation("search_i8", start, err) }()
+	if i.closed {
+		err = fmt.Errorf("index closed")
+		return nil, nil, err
+	}
+	f32Vector := make([]float32, len(vector))
+	for idx, val := range vector {
+		f32Vector[idx] = float32(val)
+	}
+	return i.Search(f32Vector, k)
+}
+
+func (i *TPUIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
+	start := time.Now()
+	var err error
+	defer func() { i.recordOperation("search_u8", start, err) }()
+	if i.closed {
+		err = fmt.Errorf("index closed")
+		return nil, nil, err
+	}
+	f32Vector := make([]float32, len(vector))
+	for idx, val := range vector {
+		f32Vector[idx] = float32(val)
+	}
+	return i.Search(f32Vector, k)
+}
+
+func (i *TPUIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
+	start := time.Now()
+	var err error
+	defer func() { i.recordOperation("search_i16", start, err) }()
+	if i.closed {
+		err = fmt.Errorf("index closed")
+		return nil, nil, err
+	}
+	f32Vector := make([]float32, len(vector))
+	for idx, val := range vector {
+		f32Vector[idx] = float32(val)
+	}
+	return i.Search(f32Vector, k)
+}
+
+func (i *TPUIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
+	start := time.Now()
+	var err error
+	defer func() { i.recordOperation("search_u16", start, err) }()
+	if i.closed {
+		err = fmt.Errorf("index closed")
+		return nil, nil, err
+	}
+	f32Vector := make([]float32, len(vector))
+	for idx, val := range vector {
+		f32Vector[idx] = float32(val)
+	}
+	return i.Search(f32Vector, k)
+}
+
 func (i *TPUIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float32, error) {
 	start := time.Now()
 	var err error

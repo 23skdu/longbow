@@ -339,6 +339,26 @@ func (w *pooledIndexWrapper) SearchBatch(vectors [][]float32, k int) ([][]int64,
 	return w.pooled.index.SearchBatch(vectors, k)
 }
 
+// SearchInt8 delegates to the wrapped index
+func (w *pooledIndexWrapper) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
+	return w.pooled.index.SearchInt8(vector, k)
+}
+
+// SearchUint8 delegates to the wrapped index
+func (w *pooledIndexWrapper) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
+	return w.pooled.index.SearchUint8(vector, k)
+}
+
+// SearchInt16 delegates to the wrapped index
+func (w *pooledIndexWrapper) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
+	return w.pooled.index.SearchInt16(vector, k)
+}
+
+// SearchUint16 delegates to the wrapped index
+func (w *pooledIndexWrapper) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
+	return w.pooled.index.SearchUint16(vector, k)
+}
+
 // SearchFloat16 delegates to the wrapped index
 func (w *pooledIndexWrapper) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
 	return w.pooled.index.SearchFloat16(vector, k)

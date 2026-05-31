@@ -725,6 +725,36 @@ func dotUint16AVX2(a, b []uint16) (float32, error) {
 		len(a)), nil
 }
 
+func dotInt8AVX2(a, b []int8) (float32, error) {
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotInt8AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
+}
+
+func euclideanUint8AVX2(a, b []uint8) (float32, error) {
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanUint8AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
+}
+
+func dotUint8AVX2(a, b []uint8) (float32, error) {
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotUint8AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
+}
+
 func dotInt4AVX512(a, b []byte) (float32, error) {
 	n := len(a)
 	if n == 0 {

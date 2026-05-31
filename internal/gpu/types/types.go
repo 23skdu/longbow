@@ -107,6 +107,12 @@ type Index interface {
 	SearchFloat16(vector []uint16, k int) (ids []int64, distances []float32, err error)
 	SearchComplex64(vector []uint16, k int) (ids []int64, distances []float32, err error)
 	SearchComplex128(vector []float32, k int) (ids []int64, distances []float32, err error)
+
+	// Integer vector search types
+	SearchInt8(vector []int8, k int) (ids []int64, distances []float32, err error)
+	SearchUint8(vector []uint8, k int) (ids []int64, distances []float32, err error)
+	SearchInt16(vector []int16, k int) (ids []int64, distances []float32, err error)
+	SearchUint16(vector []uint16, k int) (ids []int64, distances []float32, err error)
 	AddTurboQuant(ids []int64, tqData []byte, bitsPerAngle int) error
 	SearchTurboQuant(vector []float32, k int, bitsPerAngle int) (ids []int64, distances []float32, err error)
 

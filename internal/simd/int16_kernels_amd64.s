@@ -329,3 +329,204 @@ scalar_loop_dot_u16:
 done_dot_uint16:
     MOVSS X0, ret+24(FP)
     RET
+
+// ============================================================================
+// dotInt8AVX2Kernel(a, b uintptr, n int) float32
+//
+// Computes sum(a[i]*b[i]) for n int8 elements.
+// Uses VPMOVSXBW + VPMADDWD for 16 elements per main loop.
+// ============================================================================
+TEXT ·dotInt8AVX2Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VXORPS Y0, Y0, Y0       // float32 accumulator x8
+
+loop16_dot_i8:
+    CMPQ CX, $16
+    JL   tail8_dot_i8
+
+    VPMOVSXBW 0(SI), Y1     // 16 int8 → 16 int16
+    VPMOVSXBW 0(DI), Y2
+    VPMADDWD Y2, Y1, Y1     // 16x int16 multiply-adjacent-sum → 8x int32
+    VCVTDQ2PS Y1, Y1
+    VADDPS Y1, Y0, Y0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $16, CX
+    JMP  loop16_dot_i8
+
+tail8_dot_i8:
+    CMPQ CX, $8
+    JL   tail_scalar_dot_i8
+
+    VPMOVSXBW 0(SI), X1     // 8 int8 → 8 int16 (XMM)
+    VPMOVSXBW 0(DI), X2
+    VPMOVSXWD X1, Y1        // 8 int16 → 8 int32
+    VPMOVSXWD X2, Y2
+    VPMULLD Y2, Y1, Y1      // element-wise 8x int32 product
+    VCVTDQ2PS Y1, Y1
+    VADDPS Y1, Y0, Y0
+
+    ADDQ $8, SI
+    ADDQ $8, DI
+    SUBQ $8, CX
+
+tail_scalar_dot_i8:
+    REDUCE_YMM(Y0, X0, X1, X2)
+    VZEROUPPER
+
+    TESTQ CX, CX
+    JZ    done_dot_int8
+
+scalar_loop_dot_i8:
+    MOVBLSX 0(SI), AX
+    MOVBLSX 0(DI), BX
+    IMULL BX, AX
+    CVTSL2SS AX, X1
+    VADDSS X1, X0, X0
+
+    INCQ SI
+    INCQ DI
+    DECQ CX
+    JNZ  scalar_loop_dot_i8
+
+done_dot_int8:
+    MOVSS X0, ret+24(FP)
+    RET
+
+// ============================================================================
+// euclideanUint8AVX2Kernel(a, b uintptr, n int) float32
+//
+// Computes sqrt(sum((a[i]-b[i])^2)) for n uint8 elements.
+// Uses VPMOVZXBW + VPSUBW + VPMADDWD (self-multiply for diff²).
+// ============================================================================
+TEXT ·euclideanUint8AVX2Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VXORPS Y0, Y0, Y0       // float32 accumulator x8
+
+loop16_eucl_u8:
+    CMPQ CX, $16
+    JL   tail8_eucl_u8
+
+    VPMOVZXBW 0(SI), Y1     // 16 uint8 → 16 int16
+    VPMOVZXBW 0(DI), Y2
+    VPSUBW Y2, Y1, Y1       // diff (signed int16)
+    VPMADDWD Y1, Y1, Y1     // diff², adjacent pair sum → int32 x8
+    VCVTDQ2PS Y1, Y1
+    VADDPS Y1, Y0, Y0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $16, CX
+    JMP  loop16_eucl_u8
+
+tail8_eucl_u8:
+    CMPQ CX, $8
+    JL   tail_scalar_eucl_u8
+
+    VPMOVZXBW 0(SI), Y1
+    VPMOVZXBW 0(DI), Y2
+    VPSUBW Y2, Y1, Y1
+    VPMADDWD Y1, Y1, Y1
+    VCVTDQ2PS Y1, Y1
+    VADDPS Y1, Y0, Y0
+
+    ADDQ $8, SI
+    ADDQ $8, DI
+    SUBQ $8, CX
+
+tail_scalar_eucl_u8:
+    REDUCE_YMM(Y0, X0, X1, X2)
+    VZEROUPPER
+
+    TESTQ CX, CX
+    JZ    done_eucl_uint8
+
+scalar_loop_eucl_u8:
+    MOVBLZX 0(SI), AX
+    MOVBLZX 0(DI), BX
+    SUBL BX, AX
+    IMULL AX, AX
+    CVTSL2SS AX, X1
+    VADDSS X1, X0, X0
+
+    INCQ SI
+    INCQ DI
+    DECQ CX
+    JNZ  scalar_loop_eucl_u8
+
+done_eucl_uint8:
+    VSQRTSS X0, X0, X0
+    MOVSS X0, ret+24(FP)
+    RET
+
+// ============================================================================
+// dotUint8AVX2Kernel(a, b uintptr, n int) float32
+//
+// Computes sum(a[i]*b[i]) for n uint8 elements.
+// Uses VPMOVZXBW + VPMADDWD for 16 elements per main loop.
+// ============================================================================
+TEXT ·dotUint8AVX2Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VXORPS Y0, Y0, Y0       // float32 accumulator x8
+
+loop16_dot_u8:
+    CMPQ CX, $16
+    JL   tail8_dot_u8
+
+    VPMOVZXBW 0(SI), Y1     // 16 uint8 → 16 int16
+    VPMOVZXBW 0(DI), Y2
+    VPMADDWD Y2, Y1, Y1     // 16x int16 multiply-adjacent-sum → 8x int32
+    VCVTDQ2PS Y1, Y1
+    VADDPS Y1, Y0, Y0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $16, CX
+    JMP  loop16_dot_u8
+
+tail8_dot_u8:
+    CMPQ CX, $8
+    JL   tail_scalar_dot_u8
+
+    VPMOVZXBW 0(SI), Y1
+    VPMOVZXBW 0(DI), Y2
+    VPMULLD Y2, Y1, Y1      // element-wise 8x int32 product
+    VCVTDQ2PS Y1, Y1
+    VADDPS Y1, Y0, Y0
+
+    ADDQ $8, SI
+    ADDQ $8, DI
+    SUBQ $8, CX
+
+tail_scalar_dot_u8:
+    REDUCE_YMM(Y0, X0, X1, X2)
+    VZEROUPPER
+
+    TESTQ CX, CX
+    JZ    done_dot_uint8
+
+scalar_loop_dot_u8:
+    MOVBLZX 0(SI), AX
+    MOVBLZX 0(DI), BX
+    MULL BX
+    CVTSL2SS AX, X1
+    VADDSS X1, X0, X0
+
+    INCQ SI
+    INCQ DI
+    DECQ CX
+    JNZ  scalar_loop_dot_u8
+
+done_dot_uint8:
+    MOVSS X0, ret+24(FP)
+    RET

@@ -1254,6 +1254,54 @@ func (idx *CUDAIndex) startSyncTicker(cfg types.GPUConfig) {
 	}()
 }
 
+func (idx *CUDAIndex) SearchInt8(vector []int8, k int) ([]int64, []float32, error) {
+	if len(vector) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
+	}
+	// Convert int8 to float32 and use pager-based search
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float32(v)
+	}
+	return idx.Search(f32Vec, k)
+}
+
+func (idx *CUDAIndex) SearchUint8(vector []uint8, k int) ([]int64, []float32, error) {
+	if len(vector) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
+	}
+	// Convert uint8 to float32 and use pager-based search
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float32(v)
+	}
+	return idx.Search(f32Vec, k)
+}
+
+func (idx *CUDAIndex) SearchInt16(vector []int16, k int) ([]int64, []float32, error) {
+	if len(vector) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
+	}
+	// Convert int16 to float32 and use pager-based search
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float32(v)
+	}
+	return idx.Search(f32Vec, k)
+}
+
+func (idx *CUDAIndex) SearchUint16(vector []uint16, k int) ([]int64, []float32, error) {
+	if len(vector) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
+	}
+	// Convert uint16 to float32 and use pager-based search
+	f32Vec := make([]float32, len(vector))
+	for i, v := range vector {
+		f32Vec[i] = float32(v)
+	}
+	return idx.Search(f32Vec, k)
+}
+
 func (idx *CUDAIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32, error) {
 	if len(vector) != idx.dim {
 		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)

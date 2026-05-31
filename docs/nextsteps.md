@@ -42,11 +42,3 @@ The `int64` accumulator pattern was only present in int16/uint16 kernels but oth
 ## P1: Correct Performance Baselines in docs/performance.md
 
 All QPS targets were inflated ~5x by the bug. The `performance.md` header now flags this, and targets have been reset to estimated corrected values. Once the benchmark run completes, update with actual numbers from result JSON files.
-
-## P1: Full Benchmark Matrix
-
-The complete benchmark matrix (14 types × 5 dims × 7 counts × 4 platforms) should be run to validate across all configurations. The int16/uint16 fix demonstrated that kernel-level changes can produce 32x latency improvements; the full matrix will reveal if other types have similar optimization opportunities.
-
-## P1: Review All Integer Distance Kernels
-
-The `int64` accumulator pattern was only present in int16/uint16 kernels but other integer types (int32, uint32, int64, uint64) should be benchmarked at count=5000+ to verify they don't exhibit similar regression patterns. All integer distance kernels should use `float64` accumulators as the standard pattern on ARM64.

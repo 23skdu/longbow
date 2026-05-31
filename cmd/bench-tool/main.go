@@ -807,29 +807,6 @@ func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) er
 	return reader.Err()
 }
 
-func checkBackpressure(ctx context.Context, sc *client.SmartClient, dataset string) (bool, string) {
-	checkBody := []byte(`{"dataset":"` + dataset + `"}`)
-	checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
-	checkStream, err := sc.DoAction(ctx, checkAction)
-	if err != nil {
-		return true, fmt.Sprintf("connection error: %v", err)
-	}
-
-	result, err := checkStream.Recv()
-	if err != nil {
-		return true, fmt.Sprintf("recv error: %v", err)
-	}
-
-	var status map[string]interface{}
-	if err := json.Unmarshal(result.Body, &status); err == nil {
-		if s, ok := status["status"].(string); ok && s == "BUSY" {
-			reason, _ := status["reason"].(string)
-			return true, reason
-		}
-	}
-	return false, ""
-}
-
 // waitForIndexingComplete polls until the dataset is indexed.
 // Uses polling approach with check_readiness for reliability.
 func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, dataset string, timeout time.Duration) string {

@@ -222,6 +222,9 @@ func (h *ArrowHNSW) compareAndSwapData(current, newData *types.GraphData) bool {
 				h.neighborCache[i].Clear()
 			}
 		}
+		if current != nil {
+			current.Release()
+		}
 	}
 	return swapped
 }

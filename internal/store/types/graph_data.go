@@ -143,6 +143,8 @@ type GraphData struct {
 
 	SharedVectorSpace bool // If true, skip primary vector storage allocation
 
+	released uint32 // Atomic flag to prevent double-release/idempotency
+
 	// OnNeighborsMiss is a callback hook triggered when neighbor data for a layer is accessed but evicted (offset == 0).
 	OnNeighborsMiss func(layer int) error
 
@@ -1311,6 +1313,9 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	// 4. Levels are pre-allocated in GrowMetadataSlices
 
 	// Optimization: Ensure Neighbors, Counts, Versions for the requested chunk index.
+	// Only pre-allocates layer 0 neighbors with zero-init (always needed).
+	// Higher-layer neighbors use AllocSliceDirty to avoid committing physical pages
+	// for layers that will never contain nodes (the vast majority of layers).
 	for l := 0; l < ArrowMaxLayers; l++ {
 		if len(g.Neighbors) <= l {
 			panic(fmt.Sprintf("Neighbors slice too small: %d <= %d", len(g.Neighbors), l))
@@ -1326,11 +1331,19 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 			}
 			initArenaSafe(&g.Uint32Arena, slabSize, g.Allocator)
 
-			ref, err := g.Uint32Arena.AllocSlice(ChunkSize * MaxNeighbors)
-			if err != nil {
-				return err
+			if l == 0 {
+				ref, err := g.Uint32Arena.AllocSlice(ChunkSize * MaxNeighbors)
+				if err != nil {
+					return err
+				}
+				atomic.StoreUint64(&g.Neighbors[l][cID], ref.Offset)
+			} else {
+				ref, err := g.Uint32Arena.AllocSliceDirty(ChunkSize * MaxNeighbors)
+				if err != nil {
+					return err
+				}
+				atomic.StoreUint64(&g.Neighbors[l][cID], ref.Offset)
 			}
-			atomic.StoreUint64(&g.Neighbors[l][cID], ref.Offset)
 		}
 
 		if atomic.LoadUint64(&g.Counts[l][cID]) == 0 {
@@ -2605,6 +2618,9 @@ func (g *GraphData) Clone() *GraphData {
 	newG.VectorsComplex64Offsets = copyOffsetSlice(g.VectorsComplex64Offsets, g.Type == VectorTypeComplex64)
 	newG.VectorsComplex128Offsets = copyOffsetSlice(g.VectorsComplex128Offsets, g.Type == VectorTypeComplex128)
 
+	// Set finalizer to ensure automatic Release when snapshot is orphaned
+	runtime.SetFinalizer(newG, func(g *GraphData) { g.Release() })
+
 	return newG
 }
 
@@ -3446,12 +3462,19 @@ func (g *GraphData) GrowMetadataSlices(numChunks int) {
 }
 
 func (g *GraphData) Release() {
+	if !atomic.CompareAndSwapUint32(&g.released, 0, 1) {
+		return
+	}
+
 	// Release Arrow references
-	for _, ref := range g.ArrowRefs {
+	for i, ref := range g.ArrowRefs {
 		if ref != nil {
 			ref.Release()
+			g.ArrowRefs[i] = nil
 		}
 	}
+	g.ArrowRefs = nil
+
 	// We don't set slices to nil here to avoid panics in concurrent search threads.
 	// The search threads hold a reference to this GraphData object and will finish safely.
 

@@ -22,6 +22,7 @@ type FlatAdjacency struct {
 	chunks atomic.Pointer[[]uint64]
 	mu sync.Mutex
 	locks []sync.Mutex
+	refs atomic.Int32
 }
 
 func NewFlatAdjacency(arena *memory.SlabArena, maxNeighbors int, initialCapacity int) *FlatAdjacency {
@@ -37,6 +38,8 @@ func NewFlatAdjacency(arena *memory.SlabArena, maxNeighbors int, initialCapacity
 		stride: stride,
 		locks: make([]sync.Mutex, 65536),
 	}
+	fa.arena.Retain()
+	fa.refs.Store(1)
 	
 	numChunks := (initialCapacity + adjacencyChunkSize - 1) / adjacencyChunkSize
 	if numChunks < 1 {
@@ -232,8 +235,18 @@ func (fa *FlatAdjacency) IsOffHeap() bool {
 	return fa.baseArena.IsOffHeap()
 }
 
-func (fa *FlatAdjacency) Release() {}
-func (fa *FlatAdjacency) Retain() {}
+func (fa *FlatAdjacency) Release() {
+	if fa.refs.Add(-1) == 0 {
+		if fa.arena != nil {
+			fa.arena.Release()
+		}
+		fa.chunks.Store(nil)
+	}
+}
+
+func (fa *FlatAdjacency) Retain() {
+	fa.refs.Add(1)
+}
 
 func (fa *FlatAdjacency) GetNeighborsF16(id uint32) ([]uint32, []float16.Num, bool) { return nil, nil, false }
 func (fa *FlatAdjacency) GetNeighborsF16WithGen(id uint32, maxGen uint64) ([]uint32, []float16.Num, bool) { return nil, nil, false }

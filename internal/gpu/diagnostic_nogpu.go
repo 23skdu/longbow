@@ -3,6 +3,7 @@
 package gpu
 
 import (
+	"os"
 	"runtime"
 	"time"
 
@@ -26,7 +27,9 @@ func CheckBinaryDiagnostic(logger *zerolog.Logger) {
 
 	if hasGPU {
 		logger.Warn().Msg("WARNING: Running CPU-only binary on GPU-capable hardware. The binary was not compiled with the 'gpu' build tag. Rebuild with 'make build-gpu' or 'make build-darwin-universal' for hardware acceleration. Sleeping for 3 seconds to ensure this is noticed.")
-		time.Sleep(3 * time.Second)
+		if os.Getenv("LONGBOW_TESTING") != "true" {
+			time.Sleep(3 * time.Second)
+		}
 	} else {
 		logger.Debug().Msg("Binary is built without GPU support, and no GPU hardware was detected. This is optimal for CPU-only nodes.")
 	}

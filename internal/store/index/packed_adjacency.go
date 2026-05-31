@@ -84,6 +84,15 @@ func NewPackedAdjacencyWithArenas(arena *memory.SlabArena,
 		offHeapAlloc:  nil, // Chunks initially on-heap to prevent concurrent off-heap resize races
 		locks:         make([]sync.Mutex, 65536),
 	}
+	if neighborArena != nil {
+		neighborArena.Retain()
+	}
+	if distanceArena != nil {
+		distanceArena.Retain()
+	}
+	if pageArena != nil {
+		pageArena.Retain()
+	}
 	pa.chunks.Store(&chunks)
 	pa.refCount.Store(1)
 	metrics.SlabRefCountDistribution.WithLabelValues("adjacency").Observe(1)

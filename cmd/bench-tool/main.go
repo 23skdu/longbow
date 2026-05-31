@@ -375,23 +375,9 @@ func main() {
 			if totalUploaded%50000 == 0 || totalUploaded == *scale {
 				log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, *scale)
 				
-				// Back-pressure awareness only every 50k to reduce overhead
+				// Server has 18GB memory, safe to burst 400k vectors without deep backpressure polling
 				if totalUploaded < *scale {
-					backoff := 500 * time.Millisecond
-					for {
-						bpCtx, bpCancel := context.WithTimeout(context.Background(), 30*time.Second)
-						isBusy, reason := checkBackpressure(bpCtx, sc, *dataset)
-						bpCancel()
-						if !isBusy {
-							break
-						}
-						log.Printf("  Server is BUSY: %s. Waiting %v...\n", reason, backoff)
-						time.Sleep(backoff)
-						backoff += 500 * time.Millisecond
-						if backoff > 10*time.Second {
-							backoff = 10 * time.Second
-						}
-					}
+					time.Sleep(1 * time.Second) // Small breather for server
 				}
 			}
 		}
@@ -591,7 +577,7 @@ type StreamUploader struct {
 }
 
 func newStreamUploader(sc *client.SmartClient, dataset string, schema *arrow.Schema) (*StreamUploader, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
 	desc := &flight.FlightDescriptor{
 		Type: flight.DescriptorPATH,
 		Path: []string{dataset},

@@ -68,6 +68,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	// Helper to ensure we are working on a private clone before any modification
 	ensurePrivate := func() {
 		if !isPrivate {
+			data = h.data.Load()
 			data = data.Clone()
 			isPrivate = true
 		}
@@ -184,6 +185,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		}
 		// If we were supposed to have a private copy, clone it
 		if !skipSet || existingData != nil {
+			data = h.data.Load()
 			data = data.Clone()
 		}
 	}

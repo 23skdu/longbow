@@ -2,6 +2,8 @@ package memory
 
 import (
 	"context"
+	"fmt"
+	"os"
 	"runtime"
 	"runtime/debug"
 	"sync"
@@ -295,21 +297,36 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 		targetGOGC += 50
 	}
 
-	if aggressive && ratio > 0.88 {
-		if t.logger != nil {
-			t.logger.Warn().Float64("ratio", ratio).Int64("total_physical", totalPhysicalUsed).Int64("limit_bytes", t.limitBytes).Msg("CRITICAL total memory utilization - triggering emergency cleanup")
-		}
-		t.mu.RLock()
-		for _, fn := range t.cleanupFuncs {
-			fn()
-		}
-		t.mu.RUnlock()
-
-		// Also force a GC if very high
-		if ratio > 0.92 {
+	if aggressive && ratio > 0.75 {
+		// Moderate pressure: release pooled slabs and force GC
+		if ratio <= 0.88 {
+			released := ReleaseGlobalSlabPoolsUnused()
+			if released > 0 {
+				fmt.Fprintf(os.Stderr, "[DIAG] Released %d slabs at ratio=%.3f\n", released, ratio)
+			}
 			runtime.GC()
-			if ratio > 0.97 {
-				debug.FreeOSMemory()
+		} else if ratio > 0.88 {
+			if t.logger != nil {
+				t.logger.Warn().Float64("ratio", ratio).Int64("total_physical", totalPhysicalUsed).Int64("limit_bytes", t.limitBytes).Msg("CRITICAL total memory utilization - triggering emergency cleanup")
+			}
+			// Dump SlabPool stats to stderr for diagnostic purposes
+			fmt.Fprintf(os.Stderr, "[DIAG] %s\n", DebugSlabPoolsSnapshot())
+			var ms runtime.MemStats
+			runtime.ReadMemStats(&ms)
+			fmt.Fprintf(os.Stderr, "[DIAG] Go heap: Alloc=%.1f MB Sys=%.1f MB Stack=%.1f MB\n",
+				mb(int64(ms.Alloc)), mb(int64(ms.Sys)), mb(int64(ms.StackInuse)))
+			t.mu.RLock()
+			for _, fn := range t.cleanupFuncs {
+				fn()
+			}
+			t.mu.RUnlock()
+
+			// Also force a GC if very high
+			if ratio > 0.92 {
+				runtime.GC()
+				if ratio > 0.97 {
+					debug.FreeOSMemory()
+				}
 			}
 		}
 	}

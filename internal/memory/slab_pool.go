@@ -1,7 +1,9 @@
 package memory
 
 import (
+	"fmt"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"unsafe"
@@ -135,6 +137,8 @@ func PutSlab(b []byte) {
 		// via offHeapAlloc.Allocate in GetSlab. We must free it to avoid leaks.
 		if c >= 1024*1024 {
 			sizeStr := strconv.Itoa(c)
+			// DEBUG: log non-standard PutSlab with capacity info
+			fmt.Printf("[DIAG] PutSlab non-standard size=%d (%.1f MB) - freeing directly\n", c, mb(int64(c)))
 			offHeapAlloc.Free(b)
 			metrics.SlabPoolShrinkTotal.WithLabelValues(sizeStr, "non_standard_free").Inc()
 		} else {
@@ -342,6 +346,54 @@ func (p *SlabPool) updateMetrics() {
 
 	// Update the dynamically configured maxPooled capacity
 	metrics.SlabPoolMaxPooled.WithLabelValues(sizeLabel).Set(float64(atomic.LoadInt64(&p.maxPooled)))
+}
+
+// DebugSnapshot returns a multi-line string with the current state of this slab pool.
+func (p *SlabPool) DebugSnapshot() string {
+	active := atomic.LoadInt64(&p.activeCount)
+	pooled := atomic.LoadInt64(&p.pooledCount)
+	peak := atomic.LoadInt64(&p.peakCount)
+	maxP := atomic.LoadInt64(&p.maxPooled)
+	hits := atomic.LoadInt64(&p.hits)
+	misses := atomic.LoadInt64(&p.misses)
+	activeBytes := active * int64(p.size)
+	pooledBytes := pooled * int64(p.size)
+	peakBytes := peak * int64(p.size)
+	return fmt.Sprintf(
+		"slabPool size=%d: active=%d(%.1fMB) pooled=%d(%.1fMB) peak=%d(%.1fMB) maxPooled=%d hitRate=%.1f%%",
+		p.size, active, mb(activeBytes), pooled, mb(pooledBytes), peak, mb(peakBytes), maxP, pct(hits, hits+misses),
+	)
+}
+
+func mb(b int64) float64 { return float64(b) / (1024 * 1024) }
+func pct(a, b int64) float64 {
+	if b == 0 {
+		return 100
+	}
+	return float64(a) / float64(b) * 100
+}
+
+// DebugSlabPoolsSnapshot returns a multi-line string with the state of all global slab pools
+// plus the global off-heap allocator total.
+func DebugSlabPoolsSnapshot() string {
+	var b strings.Builder
+	b.WriteString("--- SlabPool Debug Snapshot ---\n")
+	b.WriteString(fmt.Sprintf("globalOffHeap: %.1f MB\n", mb(offHeapAlloc.Allocated())))
+	b.WriteString(global4MBPool.DebugSnapshot() + "\n")
+	b.WriteString(global8MBPool.DebugSnapshot() + "\n")
+	b.WriteString(global16MBPool.DebugSnapshot() + "\n")
+	b.WriteString(global32MBPool.DebugSnapshot() + "\n")
+	unused := GetGlobalSlabPoolUnusedMemory()
+	b.WriteString(fmt.Sprintf("pooled unused total: %.1f MB\n", mb(unused)))
+	return b.String()
+}
+
+// GetGlobalOffHeapAllocator returns the global off-heap allocator used internally by slab pools.
+// This allocator's Allocated() count is reflected in GetGlobalOffHeapAllocated() and the GC tuner.
+// External subsystems (e.g., FlatAdjacency for PackedNeighbors) should use this allocator instead
+// of creating private OffHeapAllocator instances, so their memory is visible to memory pressure accounting.
+func GetGlobalOffHeapAllocator() *OffHeapAllocator {
+	return offHeapAlloc
 }
 
 // GetGlobalSlabPoolUnusedMemory returns the total memory sitting idle in all global slab pools.

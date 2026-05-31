@@ -375,8 +375,9 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 			if l > 0 {
 				slabSize = 1024 * 1024 * 4
 			}
-			offHeapAlloc := memory.NewOffHeapAllocator()
-			adjArena = memory.NewSlabArenaWithAllocator(slabSize, offHeapAlloc)
+			// Use the global off-heap allocator so PackedNeighbors memory is visible
+			// to GetGlobalOffHeapAllocated() and the GC tuner's memory pressure accounting.
+			adjArena = memory.NewSlabArenaWithAllocator(slabSize, memory.GetGlobalOffHeapAllocator())
 		}
 		
 		maxNeighbors := config.MMax

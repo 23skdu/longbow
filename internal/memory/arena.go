@@ -16,6 +16,8 @@ import (
 	"runtime"
 )
 
+var debugSlabFree = os.Getenv("LONGBOW_DEBUG_SLAB_FREE") != ""
+
 // nextPowerOf2 returns the smallest power of 2 >= n
 func nextPowerOf2(n int) int {
 	if n <= 0 {
@@ -450,14 +452,23 @@ func (a *SlabArena) Free() {
 	empty := make([]*slab, 0)
 	a.slabs.Store(&empty)
 
+	slabCount := 0
+	slabBytes := int64(0)
 	for _, s := range currentSlabs {
 		if s.data != nil {
+			slabCount++
+			slabBytes += int64(cap(s.data))
 			if a.alloc != nil {
 				a.alloc.Free(s.data)
 			} else {
 				PutSlab(s.data)
 			}
 		}
+	}
+
+	if debugSlabFree || slabCount > 0 {
+		fmt.Printf("[DIAG] SlabArena.Free: slabCap=%d, slabs=%d, bytes=%.1f MB (alloc=%v)\n",
+			a.slabCap, slabCount, mb(slabBytes), a.alloc != nil)
 	}
 
 	UnregisterArena(a.stats)

@@ -3,12 +3,13 @@ package types
 import (
 	"fmt"
 	"math"
+	"os"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"unsafe"
 
 	"runtime"
-	"sync"
 
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
@@ -17,6 +18,8 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 	arrowmemory "github.com/apache/arrow-go/v18/arrow/memory"
 )
+
+var debugRelease = os.Getenv("LONGBOW_DEBUG_RELEASE") != ""
 
 // PaddedMutex is a sync.Mutex padded to a full 64-byte cache line to prevent false sharing.
 type PaddedMutex struct {
@@ -143,7 +146,8 @@ type GraphData struct {
 
 	SharedVectorSpace bool // If true, skip primary vector storage allocation
 
-	released uint32 // Atomic flag to prevent double-release/idempotency
+	cloneCount int32  // Atomic: incremented during Clone, checked by Release before freeing
+	released    uint32 // Atomic flag to prevent double-release/idempotency
 
 	// OnNeighborsMiss is a callback hook triggered when neighbor data for a layer is accessed but evicted (offset == 0).
 	OnNeighborsMiss func(layer int) error
@@ -1133,7 +1137,8 @@ func initArenaSafe[T any](arenaPtr **memory.TypedArena[T], slabSize int, alloc a
 		newArena := memory.NewTypedArena[T](sa)
 		if !atomic.CompareAndSwapPointer((*unsafe.Pointer)(unsafe.Pointer(arenaPtr)), nil, unsafe.Pointer(newArena)) { // #nosec G103
 			// Lost race, another goroutine already initialized it.
-			// Safe to discard our newArena
+			// Release the arena we allocated to avoid an mmap leak.
+			newArena.Release()
 		}
 	}
 }
@@ -2385,6 +2390,11 @@ func (g *GraphData) GetLevelsChunk(chunkID int) []uint32 {
 // Clone creates a shallow copy of the GraphData with deep copies of the structure slices.
 // This allows concurrent readers to safely access the old structure while a new one is being built (COW).
 func (g *GraphData) Clone() *GraphData {
+	// Signal to any concurrent Release() that a Clone is in progress.
+	// Release() will spin-wait until all outstanding Clones finish
+	// before freeing the underlying arenas.
+	atomic.AddInt32(&g.cloneCount, 1)
+	defer atomic.AddInt32(&g.cloneCount, -1)
 	newG := &GraphData{}
 
 	// Metadata - use atomic loads for fields that might be modified concurrently
@@ -3032,30 +3042,15 @@ func (g *GraphData) PreAllocate(capacity int) error {
 		g.Counts = make([][]uint64, ArrowMaxLayers)
 		g.Versions = make([][]uint64, ArrowMaxLayers)
 	}
-	// Optimized: Only pre-allocate layer 0. Higher layers remain lazy.
-	layer := 0
-	if len(g.Neighbors[layer]) < numChunks {
-		delta := numChunks - len(g.Neighbors[layer])
-		g.Neighbors[layer] = append(g.Neighbors[layer], make([]uint64, delta)...)
-		g.Counts[layer] = append(g.Counts[layer], make([]uint64, delta)...)
-		g.Versions[layer] = append(g.Versions[layer], make([]uint64, delta)...)
-
-		for i := numChunks - delta; i < numChunks; i++ {
-			// Ensure arenas exist
-			initArenaSafe(&g.Uint32Arena, 16*1024*1024, g.Allocator)
-			initArenaSafe(&g.Int32Arena, 1024*1024, g.Allocator)
-
-			// Neighbors
-			refN, _ := g.Uint32Arena.AllocSlice(ChunkSize * MaxNeighbors)
-			g.Neighbors[layer][i] = refN.Offset
-
-			// Counts
-			refC, _ := g.Int32Arena.AllocSlice(ChunkSize)
-			g.Counts[layer][i] = refC.Offset
-
-			// Versions
-			refV, _ := g.Uint32Arena.AllocSlice(ChunkSize)
-			g.Versions[layer][i] = refV.Offset
+	// Expand offset slices for all layers (needed for indexing) but defer actual
+	// arena allocation to EnsureChunk. This avoids pre-allocating ~978 MB of old-style
+	// neighbor storage at layer 0 when PackedNeighbors handles the hot path.
+	for l := 0; l < ArrowMaxLayers; l++ {
+		if len(g.Neighbors[l]) < numChunks {
+			delta := numChunks - len(g.Neighbors[l])
+			g.Neighbors[l] = append(g.Neighbors[l], make([]uint64, delta)...)
+			g.Counts[l] = append(g.Counts[l], make([]uint64, delta)...)
+			g.Versions[l] = append(g.Versions[l], make([]uint64, delta)...)
 		}
 	}
 
@@ -3466,6 +3461,24 @@ func (g *GraphData) Release() {
 		return
 	}
 
+	// Wait for all concurrent Clone() operations to finish.
+	// Clone() increments cloneCount while reading this GraphData's fields
+	// and takes a Retain() on shared arenas. We must not free until done.
+	for atomic.LoadInt32(&g.cloneCount) > 0 {
+		runtime.Gosched()
+	}
+
+	if debugRelease {
+		// Compute approximate memory being released
+		var totalArenaBytes int64
+		for _, ta := range []*memory.TypedArena[float32]{g.Float32Arena} {
+			if ta != nil {
+				totalArenaBytes += ta.TotalAllocated()
+			}
+		}
+		fmt.Printf("[DIAG] GraphData.Release: capacity=%d dims=%d name=%s\n", g.Capacity, g.Dims, g.Name)
+	}
+
 	// Release Arrow references
 	for i, ref := range g.ArrowRefs {
 		if ref != nil {
@@ -3524,6 +3537,10 @@ func (g *GraphData) Release() {
 			g.PackedNeighbors[i].Release()
 			g.PackedNeighbors[i] = nil
 		}
+	}
+
+	if debugRelease {
+		fmt.Printf("[DIAG] GraphData.Release: done. %s\n", memory.DebugSlabPoolsSnapshot())
 	}
 }
 

@@ -2,8 +2,11 @@ package store
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strings"
 	"time"
 
 	lbmem "github.com/23skdu/longbow/internal/memory"
@@ -52,12 +55,43 @@ func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 		ds := NewDataset(name, schema)
 		ds.Logger = s.logger
 		ds.Topo = s.numaTopology
+		s.initDiskStore(ds, name, schema)
 		return ds
 	})
 
 	if created {
 		s.logger.Info().Str("dataset", name).Msg("Pre-warmed dataset")
 	}
+}
+
+// initDiskStore initializes the DiskVectorStore for a dataset if conditions are met.
+func (s *VectorStore) initDiskStore(ds *Dataset, name string, schema *arrow.Schema) {
+	if !strings.HasPrefix(name, "test_disk") && os.Getenv("LONGBOW_USE_DISK") != "1" {
+		return
+	}
+
+	path := filepath.Join(s.dataPath, name+"_vectors.bin")
+	dim := 0
+	for _, f := range schema.Fields() {
+		if f.Name == "vector" || f.Name == "embedding" {
+			if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
+				dim = int(fst.Len())
+				break
+			}
+		}
+	}
+
+	if dim == 0 {
+		return
+	}
+
+	dvs, err := NewDiskVectorStore(path, dim)
+	if err != nil {
+		s.logger.Error().Err(err).Msg("Failed to create DiskVectorStore")
+		return
+	}
+	ds.DiskStore = dvs
+	s.logger.Info().Str("path", path).Int("dim", dim).Msg("DiskVectorStore initialized")
 }
 
 var (

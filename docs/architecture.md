@@ -375,3 +375,63 @@ Implements **Exponential Backoff with Jitter** for transient failure recovery. I
 
 - **Gossip Protocol**: Rapidly detects node failures and updates the hash ring.
 - **WAL Replication**: (Optional) Logs can be streamed to replicas for high availability.
+
+## 9. Lifecycle & Shutdown
+
+### 9.1 Graceful Shutdown
+
+On SIGINT/SIGTERM, Longbow performs a 5-phase graceful shutdown:
+
+1. **Drain gRPC servers** — stop accepting new requests, wait for in-flight calls
+2. **Flush WAL** — write pending WAL entries to disk
+3. **Final snapshot** — take a final persistence snapshot (up to 120s timeout)
+4. **Close storage** — release slab arenas, close WAL files
+5. **Exit**
+
+### 9.2 Benchmark Mode Fast-Exit
+
+When `LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT=true`, the server skips the entire shutdown sequence and exits immediately from `main()`. This is used by the benchmark orchestrator where data is ephemeral:
+
+- No gRPC `GracefulStop()` — the process simply exits, letting the OS close sockets
+- No `vectorStore.Close()` — benchmark data is deleted immediately after
+- Cuts per-config shutdown overhead from 25–30s to <50ms
+- Prevents port `TIME_WAIT` delays on rapid restart
+
+## 10. Memory Management & GC
+
+### 10.1 GCTuner (`internal/memory/gc_tuner.go`)
+
+Longbow uses an aggressive GC tuner that adjusts `debug.SetGCPercent()` on a 500ms interval:
+
+- **Arena-aware**: Monitors Go heap vs. off-heap (slab) allocations
+- **GOGC range**: 10–100 (floor prevents OOM during ingest bursts; ceiling limits CPU waste)
+- **Disabled when**: `MaxMemory <= 0` (no memory limit configured)
+
+### 10.2 AdaptiveGCController (`internal/store/store_config.go`)
+
+A secondary controller that adjusts GOGC based on ingestion pressure. When `MaxMemory > 0`, the AdaptiveGCController is disabled to prevent thrash between two competing tuners — only the GCTuner manages `debug.SetGCPercent()`.
+
+### 10.3 Slab Eviction
+
+When the heap exceeds 60% of `MaxMemory`, the `GraphLayerEvictionManager` evicts HNSW Layer 0 to disk (hot/cold graph separation), keeping higher layers in memory for search performance.
+
+## 11. gRPC Configuration
+
+### 11.1 Message Size Limits
+
+The gRPC wire protocol uses a 4-byte length prefix, capping individual messages at ~4 GB. Longbow configures:
+
+| Setting | Default (server) | Benchmark value |
+|---------|-----------------|-----------------|
+| `MaxRecvMsgSize` | 2 GB | 20 GB |
+| `MaxSendMsgSize` | 2 GB | 20 GB |
+| `InitialWindowSize` | 1 MB | 1 MB |
+| `MaxConcurrentStreams` | 250 | 250 |
+
+The 20 GB config accommodates large payloads (e.g., 500k×3072×4 = 5.7 GB for Arrow Flight DoPut). However, the wire-protocol 4 GB limit means individual messages must be chunked — the bench-tool uses 25k-row batches to stay under this limit.
+
+### 11.2 Keepalive & Flow Control
+
+- **Keepalive**: 2h interval, 20s timeout (configurable via env vars)
+- **Initial window**: 1 MB per-stream, 1 MB per-connection
+- **Compression**: gzip (configurable, disabled in benchmarks for latency)

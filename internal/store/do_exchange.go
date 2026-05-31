@@ -5,9 +5,6 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"io"
-	"os"
-	"path/filepath"
-	"strings"
 	"time"
 
 	lmem "github.com/23skdu/longbow/internal/memory"
@@ -304,28 +301,7 @@ func (s *VectorStore) handleDoExchangeIngest(
 	ds, created := s.getOrCreateDataset(name, func() *Dataset {
 		ds := NewDataset(name, r.Schema())
 		ds.Topo = s.numaTopology
-
-		// Disk vector store support
-		if strings.HasPrefix(name, "test_disk") || os.Getenv("LONGBOW_USE_DISK") == "1" {
-			path := filepath.Join(s.dataPath, name+"_vectors.bin")
-			dim := 0
-			for _, f := range r.Schema().Fields() {
-				if f.Name == "vector" {
-					if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
-						dim = int(fst.Len())
-						break
-					}
-				}
-			}
-			if dim > 0 {
-				dvs, err := NewDiskVectorStore(path, dim)
-				if err != nil {
-					s.logger.Error().Err(err).Msg("Failed to create DiskVectorStore")
-				} else {
-					ds.DiskStore = dvs
-				}
-			}
-		}
+		s.initDiskStore(ds, name, r.Schema())
 
 		if ds.Index != nil {
 			ds.IndexMemoryBytes.Store(ds.Index.EstimateMemory())

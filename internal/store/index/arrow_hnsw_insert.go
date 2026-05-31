@@ -6,6 +6,7 @@ import (
 	"math"
 	"math/rand/v2"
 	"runtime"
+	"slices"
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/store/types"
@@ -822,7 +823,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint8); ok {
-						u8s[i] = v
+						u8s[i] = slices.Clone(v)
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false
@@ -835,7 +836,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float16.Num); ok {
-						f16s[i] = v
+						f16s[i] = slices.Clone(v)
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false
@@ -848,7 +849,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int8); ok {
-						i8s[i] = v
+						i8s[i] = slices.Clone(v)
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false
@@ -861,7 +862,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float64); ok {
-						f64s[i] = v
+						f64s[i] = slices.Clone(v)
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false
@@ -874,7 +875,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]complex64); ok {
-						c64s[i] = v
+						c64s[i] = slices.Clone(v)
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false
@@ -887,7 +888,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]complex128); ok {
-						c128s[i] = v
+						c128s[i] = slices.Clone(v)
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false
@@ -900,7 +901,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint32); ok {
-						u32s[i] = v
+						u32s[i] = slices.Clone(v)
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false
@@ -913,7 +914,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int32); ok {
-						i32s[i] = v
+						i32s[i] = slices.Clone(v)
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false
@@ -926,7 +927,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int16); ok {
-						i16s[i] = v
+						i16s[i] = slices.Clone(v)
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false
@@ -939,7 +940,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint16); ok {
-						u16s[i] = v
+						u16s[i] = slices.Clone(v)
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false
@@ -952,7 +953,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int64); ok {
-						i64s[i] = v
+						i64s[i] = slices.Clone(v)
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false
@@ -965,7 +966,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]uint64); ok {
-						u64s[i] = v
+						u64s[i] = slices.Clone(v)
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false

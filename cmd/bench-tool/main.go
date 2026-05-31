@@ -134,25 +134,35 @@ func main() {
 			totalUploaded = 0
 			start = time.Now()
 
+			var uploader *StreamUploader
 			for i := 0; i < numRecords; i++ {
 				record, err := reader.Record(i)
 				if err != nil {
 					log.Fatalf("Failed to read record %d: %v", i, err)
 				}
 				record.Retain()
-
-				putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
-				if err := uploadBatch(putCtx, sc, *dataset, record, record.Schema()); err != nil {
-					putCancel()
-					log.Fatalf("DoPut failed at record %d: %v", i, err)
+				
+				if uploader == nil {
+					uploader, err = newStreamUploader(sc, *dataset, record.Schema())
+					if err != nil {
+						log.Fatalf("Failed to init uploader: %v", err)
+					}
 				}
-				putCancel()
+
+				if err := uploader.Write(record); err != nil {
+					log.Fatalf("DoPut write failed at record %d: %v", i, err)
+				}
 
 				totalUploaded += int(record.NumRows())
 				record.Release()
 
 				if totalUploaded%50000 == 0 || i == numRecords-1 {
 					log.Printf("  Progress: %d vectors uploaded\n", totalUploaded)
+				}
+			}
+			if uploader != nil {
+				if err := uploader.Close(); err != nil {
+					log.Fatalf("Failed to close uploader: %v", err)
 				}
 			}
 		} else {
@@ -183,6 +193,7 @@ func main() {
 			start = time.Now()
 
 			chunkSize := 10000
+			var uploader *StreamUploader
 			for totalUploaded < int(countVal) {
 				currentChunk := chunkSize
 				if totalUploaded+currentChunk > int(countVal) {
@@ -210,12 +221,16 @@ func main() {
 				vecArr := vecBldr.NewArray()
 				record := array.NewRecordBatch(fbinSchema, []arrow.Array{idArr, vecArr}, int64(currentChunk))
 
-				putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
-				if err := uploadBatch(putCtx, sc, *dataset, record, fbinSchema); err != nil {
-					putCancel()
-					log.Fatalf("DoPut failed at chunk starting %d: %v", totalUploaded, err)
+				if uploader == nil {
+					uploader, err = newStreamUploader(sc, *dataset, fbinSchema)
+					if err != nil {
+						log.Fatalf("Failed to init uploader for fbin: %v", err)
+					}
 				}
-				putCancel()
+
+				if err := uploader.Write(record); err != nil {
+					log.Fatalf("DoPut write failed at chunk starting %d: %v", totalUploaded, err)
+				}
 
 				totalUploaded += currentChunk
 				record.Release()
@@ -228,18 +243,105 @@ func main() {
 					log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, countVal)
 				}
 			}
+			if uploader != nil {
+				if err := uploader.Close(); err != nil {
+					log.Fatalf("Failed to close uploader: %v", err)
+				}
+			}
 		}
 		*scale = totalUploaded
 	} else {
-		log.Printf("[PUT] Pre-generating vectors...\n")
+		log.Printf("[PUT] Generating vectors...\n")
 
-		chunkSize := 25000
+		chunkSize := 10000
 		if *scale < chunkSize {
 			chunkSize = *scale
 		}
-
-		// First pass: generate all records
 		numChunks := (*scale + chunkSize - 1) / chunkSize
+
+		// Check for generation-only mode (saving to file) — must pre-generate
+		if *outputArrow != "" || *outputFbin != "" {
+			var genSchema *arrow.Schema
+			preGenerated := make([]arrow.Record, 0, numChunks)
+
+			for i := 0; i < *scale; {
+				currentChunk := chunkSize
+				if i+currentChunk > *scale {
+					currentChunk = *scale - i
+				}
+				rec, schema, err := generateRecord(currentChunk, *dim, *dtype, *tqBits)
+				if err != nil {
+					log.Fatalf("Pre-generation failed: %v", err)
+				}
+				preGenerated = append(preGenerated, rec)
+				if genSchema == nil {
+					genSchema = schema
+				}
+				i += currentChunk
+			}
+
+			if *outputArrow != "" {
+				log.Printf("[GEN] Saving %d vectors to Arrow IPC: %s\n", *scale, *outputArrow)
+				f, err := os.Create(*outputArrow)
+				if err != nil {
+					log.Fatalf("Failed to create output file: %v", err)
+				}
+				writer, err := ipc.NewFileWriter(f, ipc.WithSchema(genSchema))
+				if err != nil {
+					log.Fatalf("Failed to create IPC writer: %v", err)
+				}
+				for _, rec := range preGenerated {
+					if err := writer.Write(rec); err != nil {
+						log.Fatalf("Failed to write record: %v", err)
+					}
+				}
+				if err := writer.Close(); err != nil {
+					log.Printf("Warning: failed to close IPC writer: %v", err)
+				}
+				if err := f.Close(); err != nil {
+					log.Printf("Warning: failed to close output file: %v", err)
+				}
+			} else {
+				log.Printf("[GEN] Saving %d vectors to .fbin: %s\n", *scale, *outputFbin)
+				f, err := os.Create(*outputFbin)
+				if err != nil {
+					log.Fatalf("Failed to create output file: %v", err)
+				}
+				// *scale and *dim are CLI flags bounded to [1, 10_000_000] and [1, 65536].
+				// Both fit safely in uint32; the guards below make that explicit for
+				// static analysis (gosec G115).
+				if *scale < 0 || *scale > int(^uint32(0)) {
+					log.Fatalf("scale %d out of uint32 range", *scale)
+				}
+				if *dim < 0 || *dim > int(^uint32(0)) {
+					log.Fatalf("dim %d out of uint32 range", *dim)
+				}
+				if err := binary.Write(f, binary.LittleEndian, uint32(*scale)); err != nil { // #nosec G115 -- bounds checked above
+					log.Fatalf("Failed to write .fbin header (count): %v", err)
+				}
+				if err := binary.Write(f, binary.LittleEndian, uint32(*dim)); err != nil { // #nosec G115 -- bounds checked above
+					log.Fatalf("Failed to write .fbin header (dim): %v", err)
+				}
+				for _, rec := range preGenerated {
+					vecArr := rec.Column(1).(*array.FixedSizeList)
+					floatArr := vecArr.ListValues().(*array.Float32)
+					if err := binary.Write(f, binary.LittleEndian, floatArr.Float32Values()); err != nil {
+						log.Fatalf("Failed to write .fbin vector data: %v", err)
+					}
+				}
+				if err := f.Close(); err != nil {
+					log.Printf("Warning: failed to close output file: %v", err)
+				}
+			}
+
+			for _, rec := range preGenerated {
+				rec.Release()
+			}
+			log.Printf("[GEN] Saved %d vectors. Exiting.\n", *scale)
+			os.Exit(0)
+		}
+
+		log.Printf("[PUT] Pre-generating %d chunks...\n", numChunks)
 		preGenerated := make([]arrow.Record, 0, numChunks)
 		var genSchema *arrow.Schema
 
@@ -248,115 +350,51 @@ func main() {
 			if i+currentChunk > *scale {
 				currentChunk = *scale - i
 			}
+
 			rec, schema, err := generateRecord(currentChunk, *dim, *dtype, *tqBits)
 			if err != nil {
-				log.Fatalf("Pre-generation failed: %v", err)
+				log.Fatalf("Record generation failed at %d: %v", i, err)
 			}
 			preGenerated = append(preGenerated, rec)
-			genSchema = schema
+			if genSchema == nil {
+				genSchema = schema
+			}
 			i += currentChunk
 		}
 
-		// Check for generation-only mode (saving to file)
-		if *outputArrow != "" {
-			log.Printf("[GEN] Saving generated vectors to Arrow IPC: %s\n", *outputArrow)
-			f, err := os.Create(*outputArrow)
-			if err != nil {
-				log.Fatalf("Failed to create output file: %v", err)
-			}
-			writer, err := ipc.NewFileWriter(f, ipc.WithSchema(genSchema))
-			if err != nil {
-				log.Fatalf("Failed to create IPC writer: %v", err)
-			}
-			for _, rec := range preGenerated {
-				if err := writer.Write(rec); err != nil {
-					log.Fatalf("Failed to write record: %v", err)
-				}
-			}
-			if err := writer.Close(); err != nil {
-				log.Printf("Warning: failed to close IPC writer: %v", err)
-			}
-			if err := f.Close(); err != nil {
-				log.Printf("Warning: failed to close output file: %v", err)
-			}
-			log.Printf("[GEN] Saved %d vectors. Exiting.\n", *scale)
-			os.Exit(0)
-		}
-
-		if *outputFbin != "" {
-			log.Printf("[GEN] Saving generated vectors to .fbin: %s\n", *outputFbin)
-			f, err := os.Create(*outputFbin)
-			if err != nil {
-				log.Fatalf("Failed to create output file: %v", err)
-			}
-
-			// Header: count, dim
-			if err := binary.Write(f, binary.LittleEndian, uint32(*scale)); err != nil { // #nosec G115
-				log.Fatalf("Failed to write .fbin header (count): %v", err)
-			}
-			if err := binary.Write(f, binary.LittleEndian, uint32(*dim)); err != nil { // #nosec G115
-				log.Fatalf("Failed to write .fbin header (dim): %v", err)
-			}
-
-			for _, rec := range preGenerated {
-				// Assuming vectors is the second column (index 1)
-				vecArr := rec.Column(1).(*array.FixedSizeList)
-				floatArr := vecArr.ListValues().(*array.Float32)
-
-				// Standard .fbin only supports float32
-				if err := binary.Write(f, binary.LittleEndian, floatArr.Float32Values()); err != nil {
-					log.Fatalf("Failed to write .fbin vector data: %v", err)
-				}
-			}
-			if err := f.Close(); err != nil {
-				log.Printf("Warning: failed to close output file: %v", err)
-			}
-			log.Printf("[GEN] Saved %d vectors. Exiting.\n", *scale)
-			os.Exit(0)
-		}
-
-		log.Printf("[PUT] Uploading %d pre-generated chunks (back-pressure aware)...\n", numChunks)
-
+		log.Printf("[PUT] Uploading %d chunks (streaming, back-pressure aware)...\n", numChunks)
 		totalUploaded = 0
 		start = time.Now()
+		var uploader *StreamUploader
 
-		for _, record := range preGenerated {
-			currentChunk := int(record.NumRows())
-
-			// Upload chunk
-			putCtx, putCancel := context.WithTimeout(context.Background(), 30*time.Minute)
-			if err := uploadBatch(putCtx, sc, *dataset, record, genSchema); err != nil {
-				putCancel()
-				log.Fatalf("DoPut failed at %d: %v", totalUploaded, err)
+		if len(preGenerated) > 0 {
+			uploader, err = newStreamUploader(sc, *dataset, genSchema)
+			if err != nil {
+				log.Fatalf("Failed to init uploader for generated records: %v", err)
 			}
-			putCancel()
+		}
 
-			totalUploaded += currentChunk
+		for _, rec := range preGenerated {
+			if err := uploader.Write(rec); err != nil {
+				log.Fatalf("DoPut write failed: %v", err)
+			}
+			
+			totalUploaded += int(rec.NumRows())
+			
 			if totalUploaded%50000 == 0 || totalUploaded == *scale {
 				log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, *scale)
-			}
-
-			// Back-pressure awareness: check server status before sending more
-			if totalUploaded < *scale {
-				backoff := 500 * time.Millisecond
-				for {
-					bpCtx, bpCancel := context.WithTimeout(context.Background(), 30*time.Second)
-					isBusy, reason := checkBackpressure(bpCtx, sc, *dataset)
-					bpCancel()
-					if !isBusy {
-						break
-					}
-					log.Printf("  Server is BUSY: %s. Waiting %v...\n", reason, backoff)
-					time.Sleep(backoff)
-
-					backoff += 500 * time.Millisecond
-					if backoff > 10*time.Second {
-						backoff = 10 * time.Second
-					}
+				
+				// Server has 18GB memory, safe to burst 400k vectors without deep backpressure polling
+				if totalUploaded < *scale {
+					time.Sleep(1 * time.Second) // Small breather for server
 				}
 			}
 		}
-		// Release pre-generated records
+		if uploader != nil {
+			if err := uploader.Close(); err != nil {
+				log.Fatalf("Failed to close uploader: %v", err)
+			}
+		}
 		for _, rec := range preGenerated {
 			rec.Release()
 		}
@@ -540,36 +578,51 @@ func main() {
 	}
 }
 
-func uploadBatch(ctx context.Context, sc *client.SmartClient, dataset string, record arrow.Record, schema *arrow.Schema) error {
+type StreamUploader struct {
+	sc     *client.SmartClient
+	stream flight.FlightService_DoPutClient
+	writer *flight.Writer
+	cancel context.CancelFunc
+}
+
+func newStreamUploader(sc *client.SmartClient, dataset string, schema *arrow.Schema) (*StreamUploader, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Hour)
 	desc := &flight.FlightDescriptor{
 		Type: flight.DescriptorPATH,
 		Path: []string{dataset},
 	}
 	stream, err := sc.DoPut(ctx, desc)
 	if err != nil {
-		return err
+		cancel()
+		return nil, err
 	}
 
 	writer := flight.NewRecordWriter(stream, ipc.WithSchema(schema))
 	writer.SetFlightDescriptor(desc)
 
-	if err := writer.Write(record); err != nil {
-		_ = writer.Close()
+	return &StreamUploader{
+		sc:     sc,
+		stream: stream,
+		writer: writer,
+		cancel: cancel,
+	}, nil
+}
+
+func (u *StreamUploader) Write(record arrow.Record) error {
+	return u.writer.Write(record)
+}
+
+func (u *StreamUploader) Close() error {
+	defer u.cancel()
+	if err := u.writer.Close(); err != nil {
 		return err
 	}
-
-	if err := writer.Close(); err != nil {
+	if err := u.stream.CloseSend(); err != nil {
 		return err
 	}
-
-	if err := stream.CloseSend(); err != nil {
+	if _, err := u.stream.Recv(); err != nil && err != io.EOF {
 		return err
 	}
-
-	if _, err := stream.Recv(); err != nil && err != io.EOF {
-		return err
-	}
-
 	return nil
 }
 
@@ -752,29 +805,6 @@ func executeDoGet(ctx context.Context, sc *client.SmartClient, ticket []byte) er
 		_ = reader.Record()
 	}
 	return reader.Err()
-}
-
-func checkBackpressure(ctx context.Context, sc *client.SmartClient, dataset string) (bool, string) {
-	checkBody := []byte(`{"dataset":"` + dataset + `"}`)
-	checkAction := &flight.Action{Type: "check_readiness", Body: checkBody}
-	checkStream, err := sc.DoAction(ctx, checkAction)
-	if err != nil {
-		return true, fmt.Sprintf("connection error: %v", err)
-	}
-
-	result, err := checkStream.Recv()
-	if err != nil {
-		return true, fmt.Sprintf("recv error: %v", err)
-	}
-
-	var status map[string]interface{}
-	if err := json.Unmarshal(result.Body, &status); err == nil {
-		if s, ok := status["status"].(string); ok && s == "BUSY" {
-			reason, _ := status["reason"].(string)
-			return true, reason
-		}
-	}
-	return false, ""
 }
 
 // waitForIndexingComplete polls until the dataset is indexed.

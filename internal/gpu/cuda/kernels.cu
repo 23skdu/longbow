@@ -1104,16 +1104,19 @@ void launch_hnsw_prune_neighbors_kernel(
     const float* candidateDists,
     uint32_t* selectedIds,
     uint32_t* selectedCount,
-    const float* allVectors,
+    const float** page_ptrs,
+    const int* page_starts,
     int maxNeighbors,
     int numCandidates,
     int dim,
+    int total_count,
+    int num_pages,
     bool extendedHeuristic,
     cudaStream_t stream
 ) {
     hnsw_prune_neighbors_kernel<<<1, 1, 0, stream>>>(
-        candidateIds, candidateDists, selectedIds, selectedCount, allVectors,
-        maxNeighbors, numCandidates, dim, extendedHeuristic
+        candidateIds, candidateDists, selectedIds, selectedCount, page_ptrs, page_starts,
+        maxNeighbors, numCandidates, dim, total_count, num_pages, extendedHeuristic
     );
 }
 }

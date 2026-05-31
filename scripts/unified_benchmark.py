@@ -68,6 +68,31 @@ class ResourceExhaustedException(Exception):
 
 
 
+def _kill_port(port):
+    """Kill any process listening on the given port.
+
+    Uses lsof on macOS, ss+fuser on Linux, and handles missing tools gracefully."""
+    system = platform.system()
+    if system == "Linux":
+        # ss is universally available on modern Linux
+        ss_res = subprocess.run(
+            f"ss -tlnp 'sport = :{port}' 2>/dev/null",
+            shell=True, capture_output=True, text=True, timeout=5
+        )
+        # Extract PIDs from ss output (format: users:(("foo",pid,fd),...))
+        if ss_res.stdout:
+            for match in re.finditer(r'pid=(\d+)', ss_res.stdout):
+                pid = match.group(1)
+                subprocess.run(f"kill -9 {pid} 2>/dev/null", shell=True, timeout=5)
+        # fuser -k as backup
+        subprocess.run(f"fuser -k {port}/tcp 2>/dev/null", shell=True, timeout=5)
+    else:
+        subprocess.run(
+            f"lsof -ti:{port} 2>/dev/null | xargs -r kill -9 2>/dev/null || true",
+            shell=True, timeout=5
+        )
+
+
 def run_command(cmd, env=None, capture_output=True, timeout=None, shell=False):
     import shlex
     import time
@@ -241,11 +266,7 @@ class BenchmarkRunner:
                 # admin port (+7000), and HTTP port (+80)
                 ports_to_kill = [port, port + 1, port + 6000, port + 7000, port + 80]
                 for p in ports_to_kill:
-                    subprocess.run(
-                        f"lsof -ti:{p} 2>/dev/null | xargs -r kill -9 2>/dev/null || true",
-                        shell=True,
-                        timeout=5,
-                    )
+                    _kill_port(p)
             except Exception:
                 pass
 
@@ -319,17 +340,15 @@ class BenchmarkRunner:
         """Start a fresh Longbow server for a specific configuration."""
         self.stop_server()
         
-        # Calculate dynamic port to avoid TIME_WAIT issues
-        base_port = self.args.port + (self.test_counter % 50) * 10
+        # Calculate dynamic port to avoid TIME_WAIT issues; never reuses a port
+        base_port = self.args.port + self.test_counter * 10
         self.server_addr = f"127.0.0.1:{base_port}"
         port = base_port
         self.test_counter += 1
 
         print(f"  Cleaning up ports starting from {port}...")
         for p in [port, port + 1, port + 80, port + 6000]:
-            subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
-            if platform.system() == "Linux":
-                subprocess.run(f"fuser -k {p}/tcp 2>/dev/null || true", shell=True)
+            _kill_port(p)
         
         # Wait for ports to be actually free
         import socket
@@ -366,6 +385,7 @@ class BenchmarkRunner:
         # ── Core resource limits ──────────────────────────────────────────
         limit_gb = os.environ.get("LONGBOW_MAX_MEMORY", 18 * 1024 * 1024 * 1024)
         env["LONGBOW_MAX_MEMORY"] = str(limit_gb)
+        env["LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT"] = "true"
         env["ARROW_DISABLE_LOCKING"] = "1"
         env["LONGBOW_GOGC"] = "200"
         env["LONGBOW_INGESTION_WORKER_COUNT"] = "6"
@@ -373,6 +393,7 @@ class BenchmarkRunner:
         env["LONGBOW_AUTOSCALE_ENABLED"] = "false"
         env["LONGBOW_ADAPTIVE_M_MAX_FACTOR"] = "1.5"
         env["LONGBOW_MAX_M0"] = "32"
+        env["LONGBOW_AUTO_SHARDING_ENABLED"] = "false"
 
         # ── Network addresses ─────────────────────────────────────────────
         env["LONGBOW_LISTEN_ADDR"] = f"0.0.0.0:{port}"
@@ -432,15 +453,13 @@ class BenchmarkRunner:
         # ── Scale gRPC message size for large workloads ───────────────────
         max_count = max(int(c) for c in self.args.counts.split(","))
         if max_count >= 100000:
-            env["LONGBOW_GRPC_MAX_RECV_MSG_SIZE"] = "2147483647"
-            env["LONGBOW_GRPC_MAX_SEND_MSG_SIZE"] = "2147483647"
+            env["LONGBOW_GRPC_MAX_RECV_MSG_SIZE"] = "21474836470"
+            env["LONGBOW_GRPC_MAX_SEND_MSG_SIZE"] = "21474836470"
             print(f"  Scaling gRPC message size for {max_count} vectors")
 
-        # ── Autoshard threshold: test sharded migrations ───────────────────
-        shard_threshold = 10000
-        env["AUTO_SHARDING_THRESHOLD"] = str(shard_threshold)
-        env["AUTO_SHARDING_ENABLED"] = "true"
-        env["RING_SHARDING_ENABLED"] = "true"
+        # ── Autoshard and sharding (disabled for single-node benchmarks) ──
+        env["LONGBOW_AUTO_SHARDING_ENABLED"] = "false"
+        env["LONGBOW_RING_SHARDING_ENABLED"] = "true"
 
         log_file = os.path.join(self.log_dir, f"longbow_{current_mode}_{label}.log")
         cmd = [server_bin]
@@ -473,9 +492,21 @@ class BenchmarkRunner:
             metrics_port = port + 6000
             ready_url = f"http://127.0.0.1:{metrics_port}/ready"
 
-            # 1. First check if port is at least listening
-            lsof_res = run_command(f"lsof -i :{port} 2>/dev/null | grep LISTEN", shell=True)
-            if lsof_res and lsof_res.returncode == 0:
+            # 1. First check if port is at least listening (cross-platform)
+            port_listening = False
+            if platform.system() == "Linux":
+                ss_res = subprocess.run(
+                    f"ss -tlnp 'sport = :{port}' 2>/dev/null",
+                    shell=True, capture_output=True, text=True, timeout=5
+                )
+                port_listening = bool(ss_res.stdout.strip())
+            else:
+                lsof_res = subprocess.run(
+                    f"lsof -i :{port} 2>/dev/null | grep LISTEN",
+                    shell=True, capture_output=True, text=True, timeout=5
+                )
+                port_listening = lsof_res.returncode == 0
+            if port_listening:
                 # 2. Then check the /ready endpoint
                 try:
                     # Use curl for cross-platform compatibility without extra python deps
@@ -513,7 +544,7 @@ class BenchmarkRunner:
         if self.server_pid:
             try:
                 os.kill(self.server_pid, signal.SIGKILL)
-                os.waitpid(self.server_pid, 0)
+                time.sleep(2)
             except Exception:
                 pass
             self.server_pid = None
@@ -527,8 +558,8 @@ class BenchmarkRunner:
         if self.server_pid:
             try:
                 os.kill(self.server_pid, signal.SIGTERM)
-                # Wait up to 45 seconds for graceful stop
-                for _ in range(90):
+                # Wait up to 25 seconds for graceful stop
+                for _ in range(50):
                     time.sleep(0.5)
                     try:
                         pid_reaped, status = os.waitpid(self.server_pid, os.WNOHANG)
@@ -547,11 +578,7 @@ class BenchmarkRunner:
                 # Fallback to kill -9
                 print(f"  Server PID {self.server_pid} didn't stop gracefully, killing -9")
                 os.kill(self.server_pid, signal.SIGKILL)
-                try:
-                    os.waitpid(self.server_pid, 0)
-                except (ProcessLookupError, ChildProcessError):
-                    pass
-                time.sleep(1)
+                time.sleep(2)
             except (ProcessLookupError, ChildProcessError):
                 pass
             self.server_pid = None
@@ -691,9 +718,8 @@ class BenchmarkRunner:
         if ":" in self.server_addr:
             try:
                 port = int(self.server_addr.split(":")[-1])
-                # Only kill processes on our specific ports
                 for p in [port, port + 1, port + 6000, port + 7000, port + 80]:
-                    subprocess.run(f"lsof -ti:{p} | xargs kill -9 2>/dev/null || true", shell=True)
+                    _kill_port(p)
             except:
                 pass
         
@@ -732,8 +758,11 @@ class BenchmarkRunner:
         # Build search-modes string based on mode
         search_modes = self.args.search_modes
         current_mode = getattr(self, "current_mode", self.args.mode)
-        if current_mode == "temporal" and search_modes == "all":
-            search_modes = "temporal_as_of,temporal_range,temporal_window"
+        if search_modes == "all":
+            if current_mode == "temporal":
+                search_modes = "temporal_as_of,temporal_range,temporal_window"
+            else:
+                search_modes = "dense,hybrid,sparse,filtered,byid"
 
         extra_args = ""
         if self.args.fbin:
@@ -803,7 +832,12 @@ class BenchmarkRunner:
 
         # Extract all search types
         search_metrics = {}
-        expected_modes = ["dense", "hybrid", "sparse", "filtered", "byid", "temporal_as_of", "temporal_range", "temporal_window"]
+        # Only validate modes relevant to the current benchmark mode
+        current_mode = getattr(self, "current_mode", self.args.mode)
+        if current_mode == "temporal":
+            expected_modes = ["temporal_as_of", "temporal_range", "temporal_window"]
+        else:
+            expected_modes = ["dense", "hybrid", "sparse", "filtered", "byid"]
         for key, value in metrics.items():
             if "_qps" in key:
                 prefix = key.replace("_qps", "")

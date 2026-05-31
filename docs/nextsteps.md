@@ -1,5 +1,13 @@
 # Longbow Next Steps
 
+## P0: Unindexed Search Mode Complexity & GraphRAG Optimization
+
+The current `graphrag`, `temporal`, and `geo_spatial` search implementations suffer from exponential $O(N^3)$ computational scaling at massive vector bounds (> 400k) due to falling back on brute-force multi-hop traversals rather than utilizing the core indexing engine. To prevent multi-hour timeouts and OOM crashes, the following plan must be executed to collapse query latency:
+
+- `[x]` **Subtask 1: HNSW Index Passthrough**: Refactored `temporal`, `geo_spatial`, and `graphrag` search execution to natively query the HNSW index via `TemporalPredicate`, `SlidingWindowPredicate`, and `GeoPredicate`. Per-hop neighbor lookup now runs at $O(\log N)$ instead of $O(N)$ linear scan. Back-pointer `ds *Dataset` wired into both `TemporalIndex` and `GeoIndex`.
+- `[x]` **Subtask 2: GraphRAG Beam Search**: Replaced unconditional BFS in `RankWithGraph` and `RankWithGraphDistributed` with a Beam Search that prunes the BFS frontier to the top `BeamWidth=100` nodes (by decayed similarity score) after each hop. Worst-case complexity collapses from $O(N^3)$ to $O(B^2 \cdot \text{depth})$ where $B=100$. `Traverse` also migrated.
+- `[x]` **Subtask 3: Explicit Edge Materialization (Adjacency Lists)**: Added `adjList [][]Edge` and `bwdAdjList [][]Edge` to `GraphStore`, populated atomically in `AddEdge` and `FromArrowBatch` under `adjMu` write lock. `RankWithGraph`, `RankWithGraphDistributed`, and `Traverse` now index directly into these slices under a single `adjMu.RLock()`, replacing per-edge `LockFreeMap.Get()` calls with $O(1)$ pointer dereferences.
+
 ## P0: Buffer Eviction & VRAM Management
 
 To handle 500k scale vectors without thrashing physical memory limits (VRAM/RAM), the following explicit memory paging architecture must be implemented:

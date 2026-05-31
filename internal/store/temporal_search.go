@@ -105,7 +105,65 @@ type TemporalIndex struct {
 	cache        *TemporalResultCache
 	pointCount   atomic.Int64
 	gpuIndex     atomic.Value // holds gputypes.Index
+	ds           *Dataset     // parent dataset back-pointer
 }
+
+// TemporalPredicate implements types.HNSWPredicate for temporal filtering.
+type TemporalPredicate struct {
+	minTs  int64
+	maxTs  int64
+	shards *[TemporalShards]temporalShard
+}
+
+func (tp *TemporalPredicate) IsMatch(id uint32) bool {
+	shard := &tp.shards[uint64(id)%uint64(TemporalShards)]
+	shard.mu.RLock()
+	vec, ok := shard.data[uint64(id)]
+	shard.mu.RUnlock()
+	if !ok || vec.Tombstone {
+		return false
+	}
+	return vec.Timestamp >= tp.minTs && vec.Timestamp <= tp.maxTs
+}
+
+func (tp *TemporalPredicate) MatchBatch(ids []uint32, dst []byte) {
+	for i, id := range ids {
+		if tp.IsMatch(id) {
+			dst[i] = 1
+		} else {
+			dst[i] = 0
+		}
+	}
+}
+
+// SlidingWindowPredicate implements types.HNSWPredicate for sliding window filtering.
+type SlidingWindowPredicate struct {
+	validIDs map[uint64]struct{}
+}
+
+func (sp *SlidingWindowPredicate) IsMatch(id uint32) bool {
+	_, ok := sp.validIDs[uint64(id)]
+	return ok
+}
+
+func (sp *SlidingWindowPredicate) MatchBatch(ids []uint32, dst []byte) {
+	for i, id := range ids {
+		if sp.IsMatch(id) {
+			dst[i] = 1
+		} else {
+			dst[i] = 0
+		}
+	}
+}
+
+
+func (ti *TemporalIndex) GetVectorIndex() VectorIndex {
+	if ti.ds == nil {
+		return nil
+	}
+	return ti.ds.Index
+}
+
 
 // TemporalResultCache provides LRU caching for temporal search results.
 type TemporalResultCache struct {
@@ -912,6 +970,30 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 		return results, nil
 	}
 
+	vIdx := ti.GetVectorIndex()
+	if vIdx != nil {
+		dim := ti.dimension
+		if dim == 0 {
+			dim = int(vIdx.GetDimension())
+		}
+		if dim > 0 {
+			pred := &TemporalPredicate{
+				minTs:  0,
+				maxTs:  timestamp,
+				shards: &ti.shards,
+			}
+			queryVec := make([]float32, dim)
+			options := lbtypes.SearchOptions{
+				Predicate: pred,
+			}
+			results, err := vIdx.SearchVectors(ctx, queryVec, k, nil, options)
+			if err == nil {
+				ti.cache.Set(cacheKey, results, 5*time.Minute)
+				return results, nil
+			}
+		}
+	}
+
 	tree := ti.temporalTree.Load()
 	if tree == nil {
 		return []lbtypes.SearchResult{}, nil
@@ -1022,6 +1104,29 @@ func (ti *TemporalIndex) Prewarm(ctx context.Context) error {
 
 // SearchRange performs a vector search over data within a specific timestamp range.
 func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int64, k int) ([]lbtypes.SearchResult, error) {
+	vIdx := ti.GetVectorIndex()
+	if vIdx != nil {
+		dim := ti.dimension
+		if dim == 0 {
+			dim = int(vIdx.GetDimension())
+		}
+		if dim > 0 {
+			pred := &TemporalPredicate{
+				minTs:  startTime,
+				maxTs:  endTime,
+				shards: &ti.shards,
+			}
+			queryVec := make([]float32, dim)
+			options := lbtypes.SearchOptions{
+				Predicate: pred,
+			}
+			results, err := vIdx.SearchVectors(ctx, queryVec, k, nil, options)
+			if err == nil {
+				return results, nil
+			}
+		}
+	}
+
 	tree := ti.temporalTree.Load()
 	if tree == nil {
 		return []lbtypes.SearchResult{}, nil
@@ -1102,6 +1207,36 @@ func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int
 		return []lbtypes.SearchResult{}, nil
 	}
 
+	vIdx := ti.GetVectorIndex()
+	if vIdx != nil {
+		dim := ti.dimension
+		if dim == 0 {
+			dim = int(vIdx.GetDimension())
+		}
+		if dim > 0 {
+			validIDs := tree.GetUniqueLatest(windowSize)
+			if len(validIDs) == 0 {
+				return []lbtypes.SearchResult{}, nil
+			}
+			idMap := make(map[uint64]struct{})
+			for _, id := range validIDs {
+				idMap[id] = struct{}{}
+			}
+			pred := &SlidingWindowPredicate{
+				validIDs: idMap,
+			}
+			queryVec := make([]float32, dim)
+			options := lbtypes.SearchOptions{
+				Predicate: pred,
+			}
+			results, err := vIdx.SearchVectors(ctx, queryVec, k, nil, options)
+			if err == nil {
+				return results, nil
+			}
+		}
+	}
+
+	// Fallback: brute-force heap scan over latest windowSize unique IDs.
 	// Use optimized unique latest retrieval
 	validIDs := tree.GetUniqueLatest(windowSize)
 	if len(validIDs) == 0 {
@@ -1146,13 +1281,36 @@ func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int
 
 // SearchSlidingWindowByTime performs a search over vector updates from the last duration.
 func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration time.Duration, k int) ([]lbtypes.SearchResult, error) {
+	vIdx := ti.GetVectorIndex()
+	now := time.Now().UnixNano()
+	start := now - duration.Nanoseconds()
+
+	if vIdx != nil {
+		dim := ti.dimension
+		if dim == 0 {
+			dim = int(vIdx.GetDimension())
+		}
+		if dim > 0 {
+			pred := &TemporalPredicate{
+				minTs:  start,
+				maxTs:  now,
+				shards: &ti.shards,
+			}
+			queryVec := make([]float32, dim)
+			options := lbtypes.SearchOptions{
+				Predicate: pred,
+			}
+			results, err := vIdx.SearchVectors(ctx, queryVec, k, nil, options)
+			if err == nil {
+				return results, nil
+			}
+		}
+	}
+
 	tree := ti.temporalTree.Load()
 	if tree == nil {
 		return []lbtypes.SearchResult{}, nil
 	}
-
-	now := time.Now().UnixNano()
-	start := now - duration.Nanoseconds()
 
 	validIDs := tree.GetRange(start, now)
 	if len(validIDs) == 0 {

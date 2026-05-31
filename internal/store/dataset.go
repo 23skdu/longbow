@@ -400,6 +400,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
 		BM25ArenaIndex:  NewBM25ArenaIndex(memory.NewSlabArena(4*1024*1024), 10000),
 	}
+	ds.TemporalIndex.ds = ds
 
 	// Initialize Schema Manager
 	ds.SchemaManager = NewSchemaEvolutionManager(schema, name)

@@ -674,7 +674,7 @@ func orBytesAVX512(dst, src []byte) {
 }
 
 func euclideanInt8AVX512(a, b []int8) (float32, error) {
-	return euclideanInt8Unrolled4x(a, b)
+	return euclideanInt8AVX2(a, b)
 }
 
 func euclideanInt16AVX512(a, b []int16) (float32, error) {

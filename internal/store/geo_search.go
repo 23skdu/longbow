@@ -7,6 +7,7 @@ import (
 	"math"
 	"sync"
 	"sync/atomic"
+	"sort"
 
 	"time"
 
@@ -104,7 +105,44 @@ type GeoIndex struct {
 	datasetName  string // For metrics
 	pointCount   atomic.Int64
 	gpuIndex     atomic.Value // holds gputypes.Index
+	ds           *Dataset     // parent dataset back-pointer
 }
+
+// GeoPredicate implements types.HNSWPredicate for geospatial filtering.
+type GeoPredicate struct {
+	center   GeoPoint
+	radiusKm float64
+	vectors  *sync.Map
+}
+
+func (gp *GeoPredicate) IsMatch(id uint32) bool {
+	val, ok := gp.vectors.Load(uint64(id))
+	if !ok {
+		return false
+	}
+	geoVec := val.(*GeoIndexedVector)
+	dist := HaversineDistance(gp.center, geoVec.GeoPoint, 6371.0)
+	return dist <= gp.radiusKm
+}
+
+func (gp *GeoPredicate) MatchBatch(ids []uint32, dst []byte) {
+	for i, id := range ids {
+		if gp.IsMatch(id) {
+			dst[i] = 1
+		} else {
+			dst[i] = 0
+		}
+	}
+}
+
+func (gi *GeoIndex) GetVectorIndex() VectorIndex {
+	if gi.ds == nil {
+		return nil
+	}
+	return gi.ds.Index
+}
+
+
 
 // Quadtree implements a recursive spatial partitioning structure.
 type Quadtree struct {
@@ -566,6 +604,36 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 		metrics.GeoSearchOpsTotal.WithLabelValues(gi.datasetName, "hybrid").Inc()
 		metrics.GeoSearchDurationSeconds.WithLabelValues(gi.datasetName, "hybrid").Observe(time.Since(start).Seconds())
 	}()
+
+	vIdx := gi.GetVectorIndex()
+	if vIdx != nil {
+		pred := &GeoPredicate{
+			center:   center,
+			radiusKm: radiusKm,
+			vectors:  &gi.vectors,
+		}
+		// Query HNSW with predicate!
+		options := lbtypes.SearchOptions{
+			Predicate: pred,
+		}
+		results, err := vIdx.SearchVectors(ctx, queryVector, k, nil, options)
+		if err == nil {
+			// Compute hybrid score: 0.5 * geoScore + 0.5 * vectorScore
+			for i, r := range results {
+				val, ok := gi.vectors.Load(uint64(r.ID))
+				if ok {
+					geoVec := val.(*GeoIndexedVector)
+					geoDist := HaversineDistance(center, geoVec.GeoPoint, gi.config.EarthRadius)
+					geoScore := 1.0 / (1.0 + geoDist)
+					results[i].Score = float32(0.5*geoScore + 0.5*float64(r.Score))
+				}
+			}
+			sort.Slice(results, func(i, j int) bool {
+				return results[i].Score > results[j].Score
+			})
+			return results, nil
+		}
+	}
 
 	index := gi.pointIndex.Load()
 	if index == nil {

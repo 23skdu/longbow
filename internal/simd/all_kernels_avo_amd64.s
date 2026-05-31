@@ -12590,16 +12590,116 @@ TEXT ·dotInt4AVX2Kernel(SB), NOSPLIT, $0-28
 	RET
 
 // func euclideanInt8AVX2Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
+// Requires: AVX2
+// Hand-replaced: real AVX2 kernel for int8 Euclidean distance.
+// Processes 16 int8 per loop via VPMOVSXBW→VPSUBW→VPMADDWD→VCVTDQ2PS→VADDPS.
 TEXT ·euclideanInt8AVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
+	MOVQ a+0(FP), SI
+	MOVQ b+8(FP), DI
+	MOVQ n+16(FP), CX
+
+	VXORPS Y0, Y0, Y0                // float32 accumulator x8
+
+loop:
+	CMPQ CX, $16
+	JL   tail
+
+	VPMOVSXBW 0(SI), Y1              // 16 int8 → 16 int16
+	VPMOVSXBW 0(DI), Y2
+	VPSUBW Y2, Y1, Y1                // diff (int16 x16)
+	VPMADDWD Y1, Y1, Y1              // sq+pair-sum: int16²→int32 x8
+	VCVTDQ2PS Y1, Y1                 // int32 → float32
+	VADDPS Y1, Y0, Y0                // accumulate
+
+	ADDQ $16, SI
+	ADDQ $16, DI
+	SUBQ $16, CX
+	JMP  loop
+
+tail:
+	CMPQ CX, $8
+	JL   tail4
+
+	// Process 8 int8
+	VPMOVSXBW 0(SI), X1              // 8 int8 → 8 int16 (XMM)
+	VPMOVSXBW 0(DI), X2
+	VPSUBW X2, X1, X1
+	VPMADDWD X1, X1, X1              // → 4 int32
+	VCVTDQ2PS X1, X1                 // → 4 float32
+	VINSERTF128 $0, X1, Y0, Y0       // merge into accumulator
+
+	ADDQ $8, SI
+	ADDQ $8, DI
+	SUBQ $8, CX
+
+tail4:
+	CMPQ CX, $4
+	JL   tail_scalar
+
+	// Process 4 int8 via MOVBLSX + scalar accumulation
+	XORL AX, AX
+	MOVBLSX 0(SI), AX
+	MOVBLSX 0(DI), BX
+	SUBL BX, AX
+	IMULL AX, AX
+	CVTSL2SS AX, X1
+
+	MOVBLSX 1(SI), AX
+	MOVBLSX 1(DI), BX
+	SUBL BX, AX
+	IMULL AX, AX
+	CVTSL2SS AX, X2
+	ADDSS X2, X1
+
+	MOVBLSX 2(SI), AX
+	MOVBLSX 2(DI), BX
+	SUBL BX, AX
+	IMULL AX, AX
+	CVTSL2SS AX, X2
+	ADDSS X2, X1
+
+	MOVBLSX 3(SI), AX
+	MOVBLSX 3(DI), BX
+	SUBL BX, AX
+	IMULL AX, AX
+	CVTSL2SS AX, X2
+	ADDSS X2, X1
+
+	ADDSS X1, X0
+	ADDQ $4, SI
+	ADDQ $4, DI
+	SUBQ $4, CX
+
+tail_scalar:
+	TESTQ CX, CX
+	JZ    done
+	XORL AX, AX
+	XORL BX, BX
+scalar_loop:
+	MOVBLSX 0(SI), AX
+	MOVBLSX 0(DI), BX
+	SUBL BX, AX
+	IMULL AX, AX
+	CVTSL2SS AX, X1
+	ADDSS X1, X0
+	INCQ SI
+	INCQ DI
+	DECQ CX
+	JNZ  scalar_loop
+
+done:
+	// Horizontal reduction: sum 8 float32 in Y0 → X0[0]
+	VEXTRACTF128 $1, Y0, X1
+	VADDPS X0, X1, X0
+	VHADDPS X0, X0, X0
+	VHADDPS X0, X0, X0
+	VZEROUPPER
 	RET
 
 // func euclideanInt8Unrolled4xAVX2Kernel(a uintptr, b uintptr, n int) float32
 // Requires: SSE
 TEXT ·euclideanInt8Unrolled4xAVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
+	JMP ·euclideanInt8AVX2Kernel(SB)
 
 // func brayCurtisAVX2Kernel(a uintptr, b uintptr, n int) float32
 // Requires: SSE

@@ -131,3 +131,14 @@ run_*.sh
 crash_repro.sh
 test_*.sh
 bench-tool
+
+# Root-level dev/scratch artifacts
+/fix_*.py
+/rewrite_*.py
+/test_*.go
+/test_*.metal
+/test_*.air
+/kernels.air
+/gosec.json
+/*.patch
+/*.air

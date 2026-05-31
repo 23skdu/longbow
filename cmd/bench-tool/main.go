@@ -479,9 +479,10 @@ func main() {
 		selected := strings.Split(*searchModes, ",")
 		for _, m := range selected {
 			m = strings.TrimSpace(m)
-			// Match case-insensitive for convenience
+			// Normalize: strip underscores and lowercase for fuzzy matching
+			norm := strings.ReplaceAll(strings.ToLower(m), "_", "")
 			for _, am := range allModes {
-				if strings.EqualFold(m, am) {
+				if norm == strings.ToLower(am) {
 					modes = append(modes, am)
 					break
 				}

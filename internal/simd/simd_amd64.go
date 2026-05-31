@@ -660,7 +660,13 @@ func l2SquaredFloat64AVX2(a, b []float64) (float32, error) {
 // =============================================================================
 
 func euclideanInt8AVX2(a, b []int8) (float32, error) {
-	return euclideanInt8Unrolled4x(a, b)
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanInt8AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
 }
 
 // =============================================================================

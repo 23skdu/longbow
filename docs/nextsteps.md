@@ -1,44 +1,159 @@
-# Longbow Next Steps
+# Longbow Next Steps — v0.2.1-rc5 Benchmark Run
 
-## P0: Unindexed Search Mode Complexity & GraphRAG Optimization
+Run the complete benchmark matrix on localhost (CPU + Metal) and ancalagon (CPU + CUDA) in parallel, collect results, and update `docs/performance.md`.
 
-The current `graphrag`, `temporal`, and `geo_spatial` search implementations suffer from exponential $O(N^3)$ computational scaling at massive vector bounds (> 400k) due to falling back on brute-force multi-hop traversals rather than utilizing the core indexing engine. To prevent multi-hour timeouts and OOM crashes, the following plan must be executed to collapse query latency:
+## Baseline Expectations (from docs/performance.md)
 
-- `[x]` **Subtask 1: HNSW Index Passthrough**: Refactored `temporal`, `geo_spatial`, and `graphrag` search execution to natively query the HNSW index via `TemporalPredicate`, `SlidingWindowPredicate`, and `GeoPredicate`. Per-hop neighbor lookup now runs at $O(\log N)$ instead of $O(N)$ linear scan. Back-pointer `ds *Dataset` wired into both `TemporalIndex` and `GeoIndex`.
-- `[x]` **Subtask 2: GraphRAG Beam Search**: Replaced unconditional BFS in `RankWithGraph` and `RankWithGraphDistributed` with a Beam Search that prunes the BFS frontier to the top `BeamWidth=100` nodes (by decayed similarity score) after each hop. Worst-case complexity collapses from $O(N^3)$ to $O(B^2 \cdot \text{depth})$ where $B=100$. `Traverse` also migrated.
-- `[x]` **Subtask 3: Explicit Edge Materialization (Adjacency Lists)**: Added `adjList [][]Edge` and `bwdAdjList [][]Edge` to `GraphStore`, populated atomically in `AddEdge` and `FromArrowBatch` under `adjMu` write lock. `RankWithGraph`, `RankWithGraphDistributed`, and `Traverse` now index directly into these slices under a single `adjMu.RLock()`, replacing per-edge `LockFreeMap.Get()` calls with $O(1)$ pointer dereferences.
+| Metric | Target |
+|---|---|
+| Dense QPS (float32, 128d, 50k) | > 3,000 |
+| Dense QPS (float32, 384d, 50k) | > 2,400 |
+| Ingest (float32, 128d, 500k) | > 2,000,000 vec/s |
+| Ingest (float32, 3072d, 50k) | > 100,000 vec/s |
+| p50 latency (128d, 50k dense) | < 0.3ms |
 
-## P0: Buffer Eviction & VRAM Management
+New additions this run: graphrag, temporal, geo-spatial, learned_index, sparse modes at scale — first baseline after the GraphRAG O(N³)→O(B²·depth) optimization.
 
-To handle 500k scale vectors without thrashing physical memory limits (VRAM/RAM), the following explicit memory paging architecture must be implemented:
+> [!IMPORTANT]
+> **750k vectors @ dim=384**: At 384×4B = 1.5KB/vector, 750k vectors = ~1.1GB raw float32 + HNSW overhead (~3-5× raw) = ~4-6GB total. This fits within 18GB (local) and 14GB (ancalagon). Proceeding with 750k.
 
-- `[x]` **Subtask 1: Segmented Vector Arenas with Explicit LRU Paging**: Break monolithic vector buffers into fixed-size pages (e.g., 4MB/16MB). Wire these into the `GPUPager` (or equivalent CPU memory pager) so that the application—not the OS—controls what stays in RAM and what spills to disk using an explicit Least Recently Used (LRU) policy.
-- `[x]` **Subtask 2: HNSW Graph Residency & Hot-Node Pinning**: The upper layers of the HNSW hierarchical graph are traversed on _every_ query. These top layers must be explicitly pinned in memory (never evicted). Only the massive bottom layer (Layer 0) graph connections and vector payloads should be eligible for eviction.
-- `[x]` **Subtask 3: IO-Aware Batched Distance Computations**: Modify the search traversal to batch candidate neighbor distance evaluations. Fetching vectors from disk in bulk allows distance evaluations to happen concurrently, minimizing context switches.
+> [!NOTE]
+> **complex128 at 384d**: complex128 is 16 bytes/element → 384d × 16B = 6KB/vector. 750k × 6KB = 4.5GB raw — borderline at 14GB on ancalagon. Will run up to 250k for complex128.
 
-## P1: Query Routing and Sub-Graph Expansion
+---
 
-- `[x]` Refine Metal argument buffers for GPU index dispatching.
-- `[x]` Expand test coverage on integration with existing VectorStore implementations.
+## Phase 0 — Cleanup & Prep (both hosts)
 
-## P0: Regression Analysis & Stability Recommendations
+**Localhost:**
+- Kill any lingering longbow server processes
+- Delete `data/bench/` (stale snapshots)
+- Delete `data/perf_logs/*.log` older than today
+- Delete `bin/bench-tool`, `bin/longbow`, `bin/longbow-metal` (stale binaries)
+- Rebuild: `longbow-metal` (Metal-enabled) + `bench-tool` natively
 
-- `[x]` **Subtask 1: Fix Zero-Length Slice Panics During Auto-Sharding Migration**: Resolved an issue where `ShardedHNSW` was instantiating underlying `ArrowHNSW` shards using uninitialized configurations (`Dims = 0`). This misconfiguration caused zero-length slices to be passed to the distance computation logic, resulting in rapid index out-of-bounds panics at scale (15k+ vectors). The `setDims` function now correctly mirrors dynamic vector dimensionality directly back into the core index configuration, ensuring that `Clone()` propagates safe array bounds to all migrated shards.
-- `[x]` **Subtask 2: Fix Auto-Sharding Migration Aborts & Memory Leaks**: Resolved an issue where `AddBatch` errors due to missing vectors would abort the entire auto-sharding migration. It now logs a warning and skips missing vectors to ensure the migration completes. Also fixed a memory leak where `Retain()` on duplicate dataset records was not properly paired with `Release()`.
-- `[ ]` **Subtask 3: Rebase & Dependabot resolution**: Cleanly handle incoming PRs to minimize downstream pipeline issues.
+**Ancalagon (via SSH):**
+- Pull latest `main` (`git pull`)
+- Kill any lingering longbow processes
+- Delete `data/bench/`, old perf_logs
+- Delete stale `bin/` binaries
+- Rebuild: `longbow-cuda` + `bench-tool` natively (amd64 Linux)
 
-## P0: Remote CUDA/Metal Benchmarks
+---
 
-GPU benchmarks (Metal on local, CUDA on ancalagon) have not been run for this release. Historical baselines (v0.2.0-rc2) are invalid due to the QPS aggregation bug. Corrected QPS must be established from the current benchmark run.
+## Phase 1 — Localhost: CPU Run
 
-## P1: Full Benchmark Matrix
+```
+python3 scripts/unified_benchmark.py \
+  --mode cpu \
+  --dims 128 \
+  --counts 5000,15000,50000,250000,500000,600000 \
+  --dtypes float16,float32,int8,uint8,uint16,uint32,uint64,complex128,turboquant2,turboquant8 \
+  --memory 19327352832 \
+  --search-modes hybrid,dense,sparse,filtered,byid,learned_index,geo,graphrag,temporal \
+  --queries 500 \
+  --workers 6 \
+  --timeout 7200 \
+  --label rc5_localhost_cpu
+```
 
-The complete benchmark matrix (16 types × 5 dims × 7 counts × 4 platforms × 5+ search modes) is currently running for CPU on both hosts. Metal and CUDA runs are scheduled after CPU completes.
+## Phase 2 — Localhost: Metal Run
 
-## P1: Review All Integer Distance Kernels
+_(starts after CPU finishes — sequential on localhost)_
 
-The `int64` accumulator pattern was only present in int16/uint16 kernels but other integer types (int32, uint32, int64, uint64) should be benchmarked at count=5000+ to verify they don't exhibit similar regression patterns. All integer distance kernels should use `float64` accumulators as the standard pattern on ARM64.
+```
+python3 scripts/unified_benchmark.py \
+  --mode metal \
+  --dims 128 \
+  --counts 5000,15000,50000,250000,500000,600000 \
+  --dtypes float32,int8,uint8 \
+  --memory 19327352832 \
+  --search-modes hybrid,dense,sparse,filtered,byid \
+  --queries 500 \
+  --timeout 7200 \
+  --label rc5_localhost_metal
+```
 
-## P1: Correct Performance Baselines in docs/performance.md
+## Phase 3 — Ancalagon: CPU Run _(parallel with localhost CPU)_
 
-All QPS targets were inflated ~5x by the bug. The `performance.md` header now flags this, and targets have been reset to estimated corrected values. Once the benchmark run completes, update with actual numbers from result JSON files.
+```
+ssh ancalagon 'cd ~/REPOS/longbow && python3 scripts/unified_benchmark.py \
+  --mode cpu \
+  --dims 128 \
+  --counts 5000,15000,50000,250000,500000,600000 \
+  --dtypes float16,float32,int8,uint8,uint16,uint32,uint64,complex128,turboquant2,turboquant8 \
+  --memory 15032385536 \
+  --search-modes hybrid,dense,sparse,filtered,byid,learned_index,geo,graphrag,temporal \
+  --queries 500 \
+  --workers 6 \
+  --timeout 7200 \
+  --label rc5_ancalagon_cpu'
+```
+
+## Phase 4 — Ancalagon: CUDA Run
+
+_(starts after ancalagon CPU finishes — sequential on ancalagon)_
+
+```
+ssh ancalagon 'cd ~/REPOS/longbow && python3 scripts/unified_benchmark.py \
+  --mode cuda \
+  --dims 128 \
+  --counts 5000,15000,50000,250000,500000,600000 \
+  --dtypes float32,int8,uint8 \
+  --memory 15032385536 \
+  --search-modes hybrid,dense,sparse,filtered,byid \
+  --queries 500 \
+  --timeout 7200 \
+  --label rc5_ancalagon_cuda'
+```
+
+---
+
+## Phase 5 — Collect & Analyze
+
+- Pull result JSON logs from ancalagon: `scp ancalagon:~/REPOS/longbow/data/perf_logs/*.json data/perf_logs/`
+- Run `scripts/generate_performance_report.py` to produce markdown tables
+- Update `docs/performance.md` with new section for v0.2.1-rc5
+- Prepend actionable stability/performance recs to top of this file
+- Commit all results + doc updates
+
+---
+
+## Verification Criteria
+
+### Automated
+- Monitor server logs for OOM kills, panics, or crash loops throughout each run
+- Check each result JSON for `"error"` keys or missing QPS fields
+- Flag any mode that regressed >20% vs v0.2.0 baselines
+
+### Manual
+- Confirm graphrag at 250k/750k completes in < 30s (new Beam Search optimization)
+- Confirm temporal/geo modes return results (not empty — HNSW passthrough working)
+- Confirm Metal binary uses GPU (look for `LONGBOW_GPU_ENABLED=true` in Metal server log)
+
+---
+
+## Memory Budget
+
+| Host | Total RAM | Process Limit | Headroom |
+|---|---|---|---|
+| localhost (M3 Pro) | 18GB | 18GB (`--memory 19327352832`) | OS + Metal GPU share unified RAM |
+| ancalagon | 22GB RAM + 8GB VRAM | 14GB (`--memory 15032385536`) | ~8GB OS + CUDA buffers |
+
+---
+
+## Previously Completed P0 Blockers
+
+- `[x]` **HNSW Index Passthrough**: `temporal`, `geo_spatial`, and `graphrag` modes natively query the HNSW index via `TemporalPredicate`, `SlidingWindowPredicate`, and `GeoPredicate`. Per-hop lookup now O(log N) instead of O(N).
+- `[x]` **GraphRAG Beam Search**: BFS frontier in `RankWithGraph` / `RankWithGraphDistributed` pruned to top `BeamWidth=100` nodes after each hop. Worst-case O(N³) → O(B²·depth) ≈ 30,000 ops.
+- `[x]` **Explicit Edge Materialization**: `adjList`/`bwdAdjList` in `GraphStore` provide O(1) pointer dereferences under a single `adjMu.RLock()`, replacing per-edge `LockFreeMap.Get()` calls.
+- `[x]` **Buffer Eviction & VRAM Management**: Segmented arenas, LRU paging, HNSW hot-node pinning, IO-aware batched distance computations.
+- `[x]` **QPS Aggregation Fix** (`86b56fb7`): Sequential search modes, wall-clock QPS.
+- `[x]` **Int16/Uint16 Kernel Fix**: 32x latency improvement via float64 accumulators.
+
+## P1 Backlog
+
+- `[ ]` **Rebase & Dependabot resolution**: Cleanly handle incoming PRs.
+- `[ ]` **Full Benchmark Matrix**: Validate 14 types × 5 dims × 7 counts × 4 platforms once Phase 1–4 above complete.
+- `[ ]` **Correct Performance Baselines in docs/performance.md**: Update with actual v0.2.1-rc5 numbers after run completes.
+- `[ ]` **Review All Integer Distance Kernels**: Verify int32/uint32/int64/uint64 accumulators at count=5000+.
+- `[ ]` **Remote CUDA/Metal Benchmarks**: Complete after Phase 2 and Phase 4 above.

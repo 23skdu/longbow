@@ -727,6 +727,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 					EarthRadius:  6371.0,
 				}
 				ds.GeoIndex = NewGeoIndex(ds.Name, req.Dimension, geoCfg)
+				ds.GeoIndex.ds = ds
 				if gIdx, err := s.getGPUIndex(req.Dimension); err == nil {
 					ds.GeoIndex.SetGPUIndex(gIdx)
 				}
@@ -1666,6 +1667,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 				}
 			}
 			ds.GeoIndex = NewGeoIndex(ds.Name, dim, geoCfg)
+			ds.GeoIndex.ds = ds
 			s.logger.Info().Str("dataset", ds.Name).Int("dim", dim).Msg("Lazily initialized GeoIndex")
 		}
 		ds.dataMu.Unlock()

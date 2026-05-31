@@ -307,10 +307,19 @@ func main() {
 				if err != nil {
 					log.Fatalf("Failed to create output file: %v", err)
 				}
-				if err := binary.Write(f, binary.LittleEndian, uint32(*scale)); err != nil {
+				// *scale and *dim are CLI flags bounded to [1, 10_000_000] and [1, 65536].
+				// Both fit safely in uint32; the guards below make that explicit for
+				// static analysis (gosec G115).
+				if *scale < 0 || *scale > int(^uint32(0)) {
+					log.Fatalf("scale %d out of uint32 range", *scale)
+				}
+				if *dim < 0 || *dim > int(^uint32(0)) {
+					log.Fatalf("dim %d out of uint32 range", *dim)
+				}
+				if err := binary.Write(f, binary.LittleEndian, uint32(*scale)); err != nil { // #nosec G115 -- bounds checked above
 					log.Fatalf("Failed to write .fbin header (count): %v", err)
 				}
-				if err := binary.Write(f, binary.LittleEndian, uint32(*dim)); err != nil {
+				if err := binary.Write(f, binary.LittleEndian, uint32(*dim)); err != nil { // #nosec G115 -- bounds checked above
 					log.Fatalf("Failed to write .fbin header (dim): %v", err)
 				}
 				for _, rec := range preGenerated {

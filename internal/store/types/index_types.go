@@ -178,6 +178,10 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		config.MMax0 = 32
 	}
 
+	if os.Getenv("LONGBOW_USE_DISK") == "1" {
+		config.UseDisk = true
+	}
+
 	if os.Getenv("LONGBOW_BQ_ENABLED") == "1" || os.Getenv("LONGBOW_BQ_ENABLED") == "true" {
 		config.BQEnabled = true
 	}

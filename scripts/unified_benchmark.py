@@ -183,6 +183,34 @@ class BenchmarkRunner:
         os.makedirs(self.data_dir, exist_ok=True)
 
         self.bin_dir = os.environ.get("LONGBOW_BIN_PATH", os.path.join(os.getcwd(), "bin"))
+
+    def _measure_disk_usage(self, label):
+        """Measure disk usage (MB) of vector store files for a benchmark run.
+
+        When --use-disk is active, the server writes vectors to:
+          <data_dir>/<label>/<dataset>_vectors.bin
+
+        Returns total MB used, or 0 if no disk files found.
+        """
+        data_root = os.path.join(self.data_dir, label)
+        if not os.path.isdir(data_root):
+            return 0.0
+
+        total_bytes = 0
+        for root, dirs, files in os.walk(data_root):
+            for f in files:
+                if f.endswith("_vectors.bin") or f.endswith(".bin"):
+                    fp = os.path.join(root, f)
+                    try:
+                        total_bytes += os.path.getsize(fp)
+                    except OSError:
+                        pass
+        if total_bytes == 0:
+            return 0.0
+
+        mb = total_bytes / (1024.0 * 1024.0)
+        print(f"  Disk usage: {mb:.1f} MB ({total_bytes} bytes)")
+        return round(mb, 1)
         self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         label_suffix = f"_{args.label}" if args.label else ""
         self.output_file = os.path.join(
@@ -860,6 +888,11 @@ class BenchmarkRunner:
         if mode_failures:
             print(f"    WARNING: Mode field validation failed for: {mode_failures}")
 
+        # Measure on-disk vector store usage if --use-disk is active
+        disk_mb = 0.0
+        if getattr(self.args, "use_disk", False):
+            disk_mb = self._measure_disk_usage(label)
+
         result_entry = {
             "dim": dim,
             "dtype": dtype,
@@ -869,6 +902,7 @@ class BenchmarkRunner:
                 "vec_per_sec": metrics.get("ingest_vec_per_sec", 0),
             },
             "search": search_metrics,
+            "disk_usage_mb": disk_mb,
             "timestamp": datetime.now().isoformat(),
         }
         self.results.append(result_entry)

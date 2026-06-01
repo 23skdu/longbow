@@ -9,6 +9,7 @@ import (
 
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -576,4 +577,12 @@ func (pa *PackedAdjacency) Release() {
 func (pa *PackedAdjacency) Retain() {
 	newRef := pa.refCount.Add(1)
 	metrics.SlabRefCountDistribution.WithLabelValues("adjacency").Observe(float64(newRef))
+}
+
+func (pa *PackedAdjacency) EvictToDisk(gd *types.GraphData, layer int, chunkSizes []int, w interface{ Write([]byte) (int, error) }) (int, []int, int64, error) {
+	return 0, chunkSizes, 0, nil
+}
+
+func (pa *PackedAdjacency) RestoreFromDisk(gd *types.GraphData, layer int, chunkSizes []int, r interface{ Read([]byte) (int, error) }) error {
+	return nil
 }

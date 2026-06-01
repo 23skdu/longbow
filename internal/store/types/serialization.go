@@ -535,6 +535,11 @@ func DeserializeGraphData(r io.Reader) (*GraphData, error) {
 			countsChunk := g.GetCountsChunk(l, cID)
 			neighborsChunk := g.GetNeighborsChunk(l, cID)
 
+			// For upper layers, neighbor data is stored in PackedNeighbors, not
+			// gd.Neighbors arena chunks. If neighborsChunk is nil, fall back to
+			// reading directly into PackedNeighbors.
+			neighborsFallback := neighborsChunk == nil
+
 			for i := 0; i < count; i++ {
 				var nCnt uint32
 				if err := binary.Read(r, binary.LittleEndian, &nCnt); err != nil {
@@ -546,19 +551,26 @@ func DeserializeGraphData(r io.Reader) (*GraphData, error) {
 						return nil, fmt.Errorf("corrupt neighbor count %d at node %d layer %d", nCnt, nodesProcessed+i, l)
 					}
 
-					// Read neighbors
-					base := i * MaxNeighbors
-					slice := neighborsChunk[base : base+int(nCnt)]
-					if err := binary.Read(r, binary.LittleEndian, slice); err != nil {
-						return nil, err
+					if neighborsFallback {
+						// Allocate a temporary buffer for this node's neighbors
+						buf := make([]uint32, nCnt)
+						if err := binary.Read(r, binary.LittleEndian, buf); err != nil {
+							return nil, err
+						}
+						if l < len(g.PackedNeighbors) && g.PackedNeighbors[l] != nil {
+							_ = g.PackedNeighbors[l].SetNeighbors(uint32(nodesProcessed+i), buf)
+						}
+					} else {
+						base := i * MaxNeighbors
+						slice := neighborsChunk[base : base+int(nCnt)]
+						if err := binary.Read(r, binary.LittleEndian, slice); err != nil {
+							return nil, err
+						}
+						if l < len(g.PackedNeighbors) && g.PackedNeighbors[l] != nil {
+							_ = g.PackedNeighbors[l].SetNeighbors(uint32(nodesProcessed+i), slice)
+						}
 					}
-
 					countsChunk[i] = int32(nCnt)
-
-					// Also populate PackedNeighbors for lock-free management
-					if l < len(g.PackedNeighbors) && g.PackedNeighbors[l] != nil {
-						_ = g.PackedNeighbors[l].SetNeighbors(uint32(nodesProcessed+i), slice)
-					}
 				}
 			}
 			nodesProcessed += count

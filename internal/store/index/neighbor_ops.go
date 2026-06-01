@@ -35,9 +35,8 @@ func (h *ArrowHNSW) AddConnection(ctx *ArrowSearchContext, data *types.GraphData
 			}
 
 			if len(old) < maxConn {
-				next := make([]uint32, len(old)+1)
-				copy(next, old)
-				next[len(old)] = target
+				next := append(ctx.scratchPool[:0], old...)
+				next = append(next, target)
 				return next
 			}
 

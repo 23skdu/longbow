@@ -99,6 +99,13 @@ func (m *GraphLayerEvictionManager) Register(gd *types.GraphData) {
 	gd.OnNeighborsMiss = func(layer int) error {
 		return m.RestoreLayer(target, layer)
 	}
+
+	// Wire PackedNeighbors FlatAdjacency instances with the same restore callback.
+	for l := range gd.PackedNeighbors {
+		if fa, ok := gd.PackedNeighbors[l].(*FlatAdjacency); ok && fa != nil {
+			fa.MissCallback = gd.OnNeighborsMiss
+		}
+	}
 }
 
 // SwapTarget updates the registered GraphData reference when HNSW grows/swaps its internal data structure,
@@ -126,6 +133,11 @@ func (m *GraphLayerEvictionManager) SwapTarget(oldGD, newGD *types.GraphData) {
 		newGD.OnNeighborsMiss = func(layer int) error {
 			return m.RestoreLayer(target, layer)
 		}
+		for l := range newGD.PackedNeighbors {
+			if fa, ok := newGD.PackedNeighbors[l].(*FlatAdjacency); ok && fa != nil {
+				fa.MissCallback = newGD.OnNeighborsMiss
+			}
+		}
 		return
 	}
 
@@ -135,6 +147,11 @@ func (m *GraphLayerEvictionManager) SwapTarget(oldGD, newGD *types.GraphData) {
 			if newGD != nil {
 				newGD.OnNeighborsMiss = func(layer int) error {
 					return m.RestoreLayer(t, layer)
+				}
+				for l := range newGD.PackedNeighbors {
+					if fa, ok := newGD.PackedNeighbors[l].(*FlatAdjacency); ok && fa != nil {
+						fa.MissCallback = newGD.OnNeighborsMiss
+					}
 				}
 			}
 			break
@@ -198,7 +215,8 @@ func (m *GraphLayerEvictionManager) maybeEvictAll() {
 	}
 }
 
-// evictTarget evicts Layer 0 from a target, pinning layers ≥ 1.
+// evictTarget evicts neighbor data from a target, starting with upper
+// layers (via PackedNeighbors) then falling back to layer 0 (via gd.Neighbors).
 func (m *GraphLayerEvictionManager) evictTarget(t *evictionTarget) error {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -208,23 +226,69 @@ func (m *GraphLayerEvictionManager) evictTarget(t *evictionTarget) error {
 		return nil
 	}
 
-	numLayers := len(gd.Neighbors)
-	if numLayers <= 1 {
-		return nil // Only layer 0 — nothing to evict
-	}
-
 	var totalFreedBytes int64
 
-	// Only evict Layer 0 to preserve pinned upper layers for entry-point search
-	layer := 0
-	if _, alreadyEvicted := t.evictedLayers[layer]; !alreadyEvicted {
+	// Evict layers from highest to lowest — upper layers first.
+	// Upper layers use PackedNeighbors; layer 0 uses gd.Neighbors chunks.
+	maxLayer := len(gd.PackedNeighbors)
+	if maxLayer == 0 {
+		maxLayer = len(gd.Neighbors)
+	}
 
-		rec, freedBytes, err := evictLayer(gd, layer)
-		if err != nil {
-			m.logger.Warn().Err(err).Int("layer", layer).Msg("Failed to evict HNSW layer")
-		} else {
-			t.evictedLayers[layer] = rec
-			totalFreedBytes += freedBytes
+	for layer := maxLayer - 1; layer >= 0; layer-- {
+		if _, alreadyEvicted := t.evictedLayers[layer]; alreadyEvicted {
+			continue
+		}
+
+		// Try PackedNeighbors path first (upper layers use FlatAdjacency/PackedAdjacency)
+		if layer < len(gd.PackedNeighbors) && gd.PackedNeighbors[layer] != nil {
+			pn := gd.PackedNeighbors[layer]
+
+			f, err := os.CreateTemp("", fmt.Sprintf("longbow_hnsw_packed_layer%d_*.bin", layer))
+			if err != nil {
+				m.logger.Warn().Err(err).Int("layer", layer).Msg("Failed to create temp file for packed layer eviction")
+				continue
+			}
+
+			// Determine the number of chunks from the FlatAdjacency/PackedAdjacency.
+			// We need to read chunks from the interface, but EvictToDisk needs chunkSizes.
+			// Build the chunkSizes array lazily — start with a reasonable cap and let
+			// EvictToDisk grow it as needed.
+			chunkSizes := make([]int, 64)
+
+			nChunks, chunkSizes, bytesWritten, evictErr := pn.EvictToDisk(gd, layer, chunkSizes, f)
+			if evictErr != nil {
+				_ = f.Close()
+				_ = os.Remove(f.Name())
+				m.logger.Warn().Err(evictErr).Int("layer", layer).Msg("Failed to evict packed layer")
+				continue
+			}
+			_ = f.Close()
+
+			if nChunks > 0 {
+				rec := &layerDiskRecord{
+					path:       f.Name(),
+					chunkSizes: chunkSizes,
+					numChunks:  nChunks,
+				}
+				t.evictedLayers[layer] = rec
+				totalFreedBytes += bytesWritten
+			} else {
+				_ = os.Remove(f.Name())
+			}
+
+			continue
+		}
+
+		// Legacy path: evict from gd.Neighbors[layer] arena chunks
+		if layer < len(gd.Neighbors) && len(gd.Neighbors[layer]) > 0 {
+			rec, freedBytes, err := evictLayer(gd, layer)
+			if err != nil {
+				m.logger.Warn().Err(err).Int("layer", layer).Msg("Failed to evict HNSW layer")
+			} else if rec != nil {
+				t.evictedLayers[layer] = rec
+				totalFreedBytes += freedBytes
+			}
 		}
 	}
 
@@ -233,7 +297,7 @@ func (m *GraphLayerEvictionManager) evictTarget(t *evictionTarget) error {
 			Int64("freed_bytes", totalFreedBytes).
 			Int64("freed_mb", totalFreedBytes/(1024*1024)).
 			Str("dataset", gd.Name).
-			Msg("HNSW Layer 0 evicted to disk")
+			Msg("HNSW layers evicted to disk")
 	}
 	return nil
 }
@@ -302,8 +366,8 @@ func (m *GraphLayerEvictionManager) RestoreLayer(t *evictionTarget, layer int) e
 	}
 
 	gd := t.gd
-	if gd == nil || gd.Uint32Arena == nil {
-		return fmt.Errorf("cannot restore layer %d: nil GraphData or arena", layer)
+	if gd == nil {
+		return fmt.Errorf("cannot restore layer %d: nil GraphData", layer)
 	}
 
 	f, err := os.Open(rec.path)
@@ -312,27 +376,35 @@ func (m *GraphLayerEvictionManager) RestoreLayer(t *evictionTarget, layer int) e
 	}
 	defer f.Close()
 
-	for cID := 0; cID < rec.numChunks; cID++ {
-		sz := rec.chunkSizes[cID]
-		if sz == 0 {
-			continue
+	// Restore into PackedNeighbors first (upper layers use FlatAdjacency)
+	if layer < len(gd.PackedNeighbors) && gd.PackedNeighbors[layer] != nil {
+		if fa, ok := gd.PackedNeighbors[layer].(*FlatAdjacency); ok {
+			if err := fa.RestoreFromDisk(gd, layer, rec.chunkSizes, f); err != nil {
+				return fmt.Errorf("restore packed layer %d: %w", layer, err)
+			}
 		}
+	} else if layer < len(gd.Neighbors) && len(gd.Neighbors[layer]) > 0 && gd.Uint32Arena != nil {
+		// Legacy path: restore into gd.Neighbors arena chunks
+		for cID := 0; cID < rec.numChunks; cID++ {
+			sz := rec.chunkSizes[cID]
+			if sz == 0 {
+				continue
+			}
 
-		buf := make([]uint32, sz)
-		if err := binary.Read(f, binary.LittleEndian, buf); err != nil {
-			return fmt.Errorf("read chunk layer=%d chunk=%d: %w", layer, cID, err)
+			buf := make([]uint32, sz)
+			if err := binary.Read(f, binary.LittleEndian, buf); err != nil {
+				return fmt.Errorf("read chunk layer=%d chunk=%d: %w", layer, cID, err)
+			}
+
+			ref, allocErr := gd.Uint32Arena.AllocSlice(sz)
+			if allocErr != nil {
+				return fmt.Errorf("alloc chunk layer=%d chunk=%d: %w", layer, cID, allocErr)
+			}
+
+			chunk := gd.Uint32Arena.Get(ref)
+			copy(chunk, buf)
+			atomic.StoreUint64(&gd.Neighbors[layer][cID], ref.Offset)
 		}
-
-		// Allocate a new slab for this chunk
-		ref, allocErr := gd.Uint32Arena.AllocSlice(sz)
-		if allocErr != nil {
-			return fmt.Errorf("alloc chunk layer=%d chunk=%d: %w", layer, cID, allocErr)
-		}
-
-		// Copy restored data into arena
-		chunk := gd.Uint32Arena.Get(ref)
-		copy(chunk, buf)
-		atomic.StoreUint64(&gd.Neighbors[layer][cID], ref.Offset)
 	}
 
 	// Remove disk file and clear eviction record

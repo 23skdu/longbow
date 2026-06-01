@@ -75,13 +75,13 @@ func TestGraphLayerEvictionManager(t *testing.T) {
 		require.Equal(t, uint64(0), off, "Layer 0 offset should be 0 after eviction")
 	}
 
-	// Verify Layer 1 is pinned (offsets non-zero)
+	// Verify Layer 1 was also evicted (new disk-swap behavior evicts all layers)
 	for j := 0; j < 10; j++ {
 		off := atomic.LoadUint64(&gd2.Neighbors[1][j])
-		require.NotEqual(t, uint64(0), off, "Layer 1 should not be evicted")
+		require.Equal(t, uint64(0), off, "Layer 1 should be evicted like all other layers")
 	}
 
-	// Test Restore
+	// Test Restore for Layer 0
 	err := gd2.OnNeighborsMiss(0)
 	require.NoError(t, err)
 

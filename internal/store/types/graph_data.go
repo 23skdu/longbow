@@ -198,6 +198,13 @@ type PackedNeighbors interface {
 	GetNeighborsFromPackedWithGen(packed uint64, maxGen uint64) []uint32
 	// IsOffHeap returns true if the backing storage is off-heap.
 	IsOffHeap() bool
+	// EvictToDisk writes all neighbor chunks for the given layer to w
+	// and clears in-memory storage. Returns (numChunks, chunkSizes, bytesWritten, error).
+	// chunkSizes is pre-allocated; the implementation writes into it and may grow
+	// it as needed. The caller uses the returned slice.
+	EvictToDisk(gd *GraphData, layer int, chunkSizes []int, w interface{ Write([]byte) (int, error) }) (nChunks int, outChunkSizes []int, bytesWritten int64, err error)
+	// RestoreFromDisk reads neighbor chunks back from r, repopulating storage.
+	RestoreFromDisk(gd *GraphData, layer int, chunkSizes []int, r interface{ Read([]byte) (int, error) }) error
 }
 
 // GetNodeCount returns the current capacity of the graph (number of addressable nodes).
@@ -262,8 +269,12 @@ func (g *GraphData) NeedsChunk(cID int) bool {
 		return true
 	}
 	for l := range g.Neighbors {
-		if cID >= len(g.Neighbors[l]) || atomic.LoadUint64(&g.Neighbors[l][cID]) == 0 {
-			return true
+		// Only layer 0 still uses gd.Neighbors pre-allocation; upper layers use
+		// PackedNeighbors/FlatAdjacency and are allocated on demand.
+		if l == 0 {
+			if cID >= len(g.Neighbors[l]) || atomic.LoadUint64(&g.Neighbors[l][cID]) == 0 {
+				return true
+			}
 		}
 		if cID >= len(g.Counts[l]) || atomic.LoadUint64(&g.Counts[l][cID]) == 0 {
 			return true
@@ -1318,9 +1329,9 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 	// 4. Levels are pre-allocated in GrowMetadataSlices
 
 	// Optimization: Ensure Neighbors, Counts, Versions for the requested chunk index.
-	// Only pre-allocates layer 0 neighbors with zero-init (always needed).
-	// Higher-layer neighbors use AllocSliceDirty to avoid committing physical pages
-	// for layers that will never contain nodes (the vast majority of layers).
+	// Only layer 0 gets neighbor pre-allocation (always needed).
+	// Upper layers use PackedNeighbors/TopLayerManager — skipping their neighbor
+	// pre-allocation saves ~14 GB of off-heap tracked memory at 500k nodes.
 	for l := 0; l < ArrowMaxLayers; l++ {
 		if len(g.Neighbors) <= l {
 			panic(fmt.Sprintf("Neighbors slice too small: %d <= %d", len(g.Neighbors), l))
@@ -1328,22 +1339,11 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 		if len(g.Neighbors[l]) <= cID {
 			panic(fmt.Sprintf("Neighbors[%d] slice too small: %d <= %d (capacity: %d)", l, len(g.Neighbors[l]), cID, g.Capacity))
 		}
-		if atomic.LoadUint64(&g.Neighbors[l][cID]) == 0 {
 
-			slabSize := 1024 * 1024 * 64
-			if l > 0 {
-				slabSize = 1024 * 1024 * 8
-			}
-			initArenaSafe(&g.Uint32Arena, slabSize, g.Allocator)
-
-			if l == 0 {
+		if l == 0 {
+			if atomic.LoadUint64(&g.Neighbors[l][cID]) == 0 {
+				initArenaSafe(&g.Uint32Arena, 1024*1024*64, g.Allocator)
 				ref, err := g.Uint32Arena.AllocSlice(ChunkSize * MaxNeighbors)
-				if err != nil {
-					return err
-				}
-				atomic.StoreUint64(&g.Neighbors[l][cID], ref.Offset)
-			} else {
-				ref, err := g.Uint32Arena.AllocSliceDirty(ChunkSize * MaxNeighbors)
 				if err != nil {
 					return err
 				}
@@ -1361,10 +1361,7 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 		}
 
 		if atomic.LoadUint64(&g.Versions[l][cID]) == 0 {
-
-			slabSize := 16 * 1024 * 1024
-			initArenaSafe(&g.Uint32Arena, slabSize, g.Allocator)
-
+			initArenaSafe(&g.Uint32Arena, 16*1024*1024, g.Allocator)
 			ref, err := g.Uint32Arena.AllocSlice(ChunkSize)
 			if err != nil {
 				return err

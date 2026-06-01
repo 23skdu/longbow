@@ -388,7 +388,9 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 			}
 		}
 		
-		gd.PackedNeighbors[l] = NewFlatAdjacency(adjArena, maxNeighbors, capacity)
+		fa := NewFlatAdjacency(adjArena, maxNeighbors, capacity)
+		fa.missLayer = l
+		gd.PackedNeighbors[l] = fa
 	}
 
 	for i := range h.entryPointPools {

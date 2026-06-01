@@ -95,11 +95,9 @@ func (tlm *TopLayerManager) AddConnectionCAS(layer int, source, target uint32) b
 
 		newAdj := &LockFreeAdjacency{Neighbors: newNeighbors}
 		if ptr.CompareAndSwap(oldAdj, newAdj) {
-			// Record as entry point for this layer
 			tlm.entryPoints[layer].Insert(source)
 			return true
 		}
-		// Lose race, retry
 	}
 }
 

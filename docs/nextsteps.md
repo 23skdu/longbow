@@ -6,17 +6,18 @@
 
 ### P0: Memory Budget & OOM at Scale
 
-1. **800k vectors OOM at 384d for float32/complex128** — Raw data is ~1.2GB but HNSW graph overhead (PackedNeighbors adjacency lists, neighbor arrays, chunk metadata) balloons to >18GB. Options:
-   - Implement tiered adjacency storage: hot adjacencies in memory, cold ones on disk via the existing DiskGraph interface
-   - Reduce `MMax`/`MMax0` adaptively after the top-k layers to cap per-node neighbor count at scale
-   - Enable `LONGBOW_LOW_MEM=1` automatically when memory pressure exceeds 85% of `LONGBOW_MAX_MEMORY`
+1. **[FIXED] 500k vectors ResourceExhausted via admission controller** — Root cause: `EnsureChunk` pre-allocated neighbor arrays (`ChunkSize * MaxNeighbors` = 2MB) for all 16 HNSW layers per chunk, but upper layers (>0) use `PackedNeighbors`/`TopLayerManager` instead. This wasted ~15GB of off-heap tracked memory at 500k nodes (489 chunks × 15 layers × 2MB = 14.7GB), hitting the admission controller's 95% memory threshold. Fix:
+   - `EnsureChunk` now pre-allocates only layer 0 neighbors (always needed); upper layers skip pre-allocation
+   - `MaxNeighbors` reduced from 512 to 256 (actual fan-out is MMax0=64, so 256 provides 4x headroom)
+   - `neighbor_ops.go` callback now reuses `ctx.scratchPool` instead of `make([]uint32)` on every edge addition
+   - Verified: 500k int8 dim=128 completes successfully with 53k vec/s ingest, 218 QPS search, no ResourceExhausted
 
 2. **DiskVectorStore integration is incomplete** — `LONGBOW_USE_DISK=1` creates a DiskVectorStore on the Dataset but the HNSW index (`config.UseDisk`) never reads it. The `persistent` parameter in `NewGraphData` is accepted but never stored or acted upon. The disk store is write-only during `BatchAppendArrow`; search still reads from memory. To close the gap:
    - Wire `config.UseDisk` → `BackingGraph` in `NewGraphData`
    - Add `getVectorWithDiskFallback` path that first checks in-memory chunks, then falls back to DiskVectorStore.GetBatch
    - Ensure Clone/Release both reference-count the BackingGraph properly
 
-3. **Pre-Allocate neighbor arena skipped** — Commit `2b3e4f3e` disabled old-style neighbor arena allocation in PreAllocate (deferring to EnsureChunk) to save ~978MB. This fixes the 500k float32 crash but adds lazy-allocation latency during the first insert batch. Profile the EnsureChunk path for high-latency stalls.
+3. **800k vectors likely still OOM** — While the EnsureChunk fix eliminates ~15GB of off-heap accounting, the admission controller's `physicalMem = heapMem + offHeapMem` formula still counts all slab allocations. At 800k (782 chunks × 1MB = 782MB for layer 0 neighbors + vectors + metadata), total may approach the 18GB limit. Profile and add disk-based neighbor swap if needed.
 
 ### P1: Performance Regressions
 

@@ -1,6 +1,7 @@
 package index
 
 import (
+	"encoding/binary"
 	"errors"
 	"math"
 	"sync"
@@ -23,6 +24,11 @@ type FlatAdjacency struct {
 	mu sync.Mutex
 	locks []sync.Mutex
 	refs atomic.Int32
+	// MissCallback is called when a chunk offset is MaxUint64 (evicted).
+	// If it returns nil, the caller retries the lookup.
+	MissCallback func(layer int) error
+	// missLayer is the HNSW layer this adjacency represents, for MissCallback.
+	missLayer int
 }
 
 func NewFlatAdjacency(arena *memory.SlabArena, maxNeighbors int, initialCapacity int) *FlatAdjacency {
@@ -167,7 +173,15 @@ func (fa *FlatAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint32
 	}
 	offset := atomic.LoadUint64(&(*chunksPtr)[chunkIdx])
 	if offset == math.MaxUint64 {
-		return nil, false
+		if fa.MissCallback != nil {
+			if err := fa.MissCallback(fa.missLayer); err == nil {
+				// Retry after restore
+				offset = atomic.LoadUint64(&(*chunksPtr)[chunkIdx])
+			}
+		}
+		if offset == math.MaxUint64 {
+			return nil, false
+		}
 	}
 	
 	chunkData := fa.arena.GetWithGeneration(memory.SliceRef{Offset: offset, Len: uint32(adjacencyChunkSize * fa.stride), Cap: uint32(adjacencyChunkSize * fa.stride)}, maxGen) // #nosec G115
@@ -251,5 +265,77 @@ func (fa *FlatAdjacency) Retain() {
 func (fa *FlatAdjacency) GetNeighborsF16(id uint32) ([]uint32, []float16.Num, bool) { return nil, nil, false }
 func (fa *FlatAdjacency) GetNeighborsF16WithGen(id uint32, maxGen uint64) ([]uint32, []float16.Num, bool) { return nil, nil, false }
 func (fa *FlatAdjacency) SetNeighborsF16(id uint32, neighbors []uint32, dists []float16.Num) error { return errors.New("unsupported") }
+
+// EvictToDisk writes all populated neighbor chunks to w and clears in-memory storage.
+func (fa *FlatAdjacency) EvictToDisk(gd *types.GraphData, layer int, chunkSizes []int, w interface{ Write([]byte) (int, error) }) (int, []int, int64, error) {
+	chunksPtr := fa.chunks.Load()
+	if chunksPtr == nil {
+		return 0, chunkSizes, 0, nil
+	}
+	chunks := *chunksPtr
+	numChunks := len(chunks)
+	nWritten := 0
+	var totalBytes int64
+
+	// Grow chunkSizes if needed
+	if len(chunkSizes) < numChunks {
+		newSizes := make([]int, numChunks)
+		copy(newSizes, chunkSizes)
+		chunkSizes = newSizes
+	}
+
+	for cID := 0; cID < numChunks; cID++ {
+		offset := atomic.LoadUint64(&chunks[cID])
+		if offset == math.MaxUint64 {
+			chunkSizes[cID] = 0
+			continue
+		}
+
+		chunk := fa.arena.Get(memory.SliceRef{
+			Offset: offset,
+			Len:    uint32(adjacencyChunkSize * fa.stride),
+			Cap:    uint32(adjacencyChunkSize * fa.stride),
+		})
+
+		chunkSizes[cID] = len(chunk)
+		if err := binary.Write(w, binary.LittleEndian, chunk); err != nil {
+			return nWritten, chunkSizes, totalBytes, err
+		}
+		nWritten++
+		totalBytes += int64(len(chunk)) * 4
+
+		atomic.StoreUint64(&chunks[cID], math.MaxUint64)
+	}
+
+	return nWritten, chunkSizes, totalBytes, nil
+}
+
+// RestoreFromDisk reads neighbor chunks from r and repopulates in-memory storage.
+func (fa *FlatAdjacency) RestoreFromDisk(gd *types.GraphData, layer int, chunkSizes []int, r interface{ Read([]byte) (int, error) }) error {
+	chunksPtr := fa.chunks.Load()
+	if chunksPtr == nil {
+		return nil
+	}
+	chunks := *chunksPtr
+
+	for cID := 0; cID < len(chunkSizes) && cID < len(chunks); cID++ {
+		sz := chunkSizes[cID]
+		if sz == 0 {
+			continue
+		}
+
+		buf, err := fa.arena.AllocSliceAligned(sz, 64)
+		if err != nil {
+			return err
+		}
+		chunk := fa.arena.Get(buf)
+		if err := binary.Read(r, binary.LittleEndian, chunk); err != nil {
+			return err
+		}
+		atomic.StoreUint64(&chunks[cID], buf.Offset)
+	}
+
+	return nil
+}
 
 var _ types.PackedNeighbors = (*FlatAdjacency)(nil)

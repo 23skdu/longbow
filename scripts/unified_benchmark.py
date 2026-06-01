@@ -183,6 +183,21 @@ class BenchmarkRunner:
         os.makedirs(self.data_dir, exist_ok=True)
 
         self.bin_dir = os.environ.get("LONGBOW_BIN_PATH", os.path.join(os.getcwd(), "bin"))
+        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        label_suffix = f"_{args.label}" if args.label else ""
+        self.output_file = os.path.join(
+            self.log_dir, f"perf_matrix_{args.mode}{label_suffix}_{self.timestamp}.json"
+        )
+        self.results = []
+        self.exhausted_configs = set()
+        self.server_pid = None
+        self.test_counter = 0
+
+        # Register cleanup to prevent zombie longbow processes on any exit path.
+        # _force_cleanup uses port-scoped lsof so it is safe for parallel benchmark runs.
+        atexit.register(self._force_cleanup)
+        signal.signal(signal.SIGINT, self._signal_handler)
+        signal.signal(signal.SIGTERM, self._signal_handler)
 
     def _measure_disk_usage(self, label):
         """Measure disk usage (MB) of vector store files for a benchmark run.
@@ -211,21 +226,6 @@ class BenchmarkRunner:
         mb = total_bytes / (1024.0 * 1024.0)
         print(f"  Disk usage: {mb:.1f} MB ({total_bytes} bytes)")
         return round(mb, 1)
-        self.timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        label_suffix = f"_{args.label}" if args.label else ""
-        self.output_file = os.path.join(
-            self.log_dir, f"perf_matrix_{args.mode}{label_suffix}_{self.timestamp}.json"
-        )
-        self.results = []
-        self.exhausted_configs = set()
-        self.server_pid = None
-        self.test_counter = 0
-
-        # Register cleanup to prevent zombie longbow processes on any exit path.
-        # _force_cleanup uses port-scoped lsof so it is safe for parallel benchmark runs.
-        atexit.register(self._force_cleanup)
-        signal.signal(signal.SIGINT, self._signal_handler)
-        signal.signal(signal.SIGTERM, self._signal_handler)
 
     def _save_checkpoint(self):
         """Save partial results checkpoint to disk."""

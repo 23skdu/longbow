@@ -5,6 +5,8 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -64,6 +66,7 @@ type ArrowHNSW struct {
 
 	// DiskGraph backing
 	diskGraph atomic.Pointer[DiskGraph]
+	diskFlushed atomic.Bool
 
 	quantizer        *ScalarQuantizer
 	sq8Ready         atomic.Bool
@@ -545,6 +548,52 @@ func (h *ArrowHNSW) GetDiskGraph() *DiskGraph {
 // SetDiskGraph sets the disk graph
 func (h *ArrowHNSW) SetDiskGraph(disk *DiskGraph) {
 	h.diskGraph.Store(disk)
+}
+
+// FlushToDisk writes the current in-memory graph to disk and opens it as a
+// read-only backing store. Subsequent neighbor lookups can fall through to
+// the disk file when in-memory data is evicted. Only effective when
+// config.UseDisk is true and config.DiskPath is set.
+func (h *ArrowHNSW) FlushToDisk() error {
+	if !h.config.UseDisk || h.config.DiskPath == "" {
+		return nil
+	}
+
+	gd := h.data.Load()
+	if gd == nil {
+		return nil
+	}
+
+	meta := h.metadataRegistry.Load()
+	if meta == nil {
+		return nil
+	}
+
+	path := filepath.Join(h.config.DiskPath, h.name+"_graph.bin")
+	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+		return fmt.Errorf("create disk graph directory: %w", err)
+	}
+
+	maxNodeID := int(meta.NodeCount)
+	if maxNodeID <= 0 {
+		return nil // No data to write
+	}
+
+	// The WriteDiskGraph function expects maxNodeID as the highest node ID + 1
+	if err := WriteDiskGraph(gd, path, maxNodeID, 0, 0, meta.EntryPoint, int(meta.MaxLevel)); err != nil {
+		return fmt.Errorf("write disk graph: %w", err)
+	}
+
+	// Open the written file as a read-only DiskGraph
+	dg, err := NewDiskGraph(path)
+	if err != nil {
+		return fmt.Errorf("open disk graph: %w", err)
+	}
+
+	h.SetDiskGraph(dg)
+	gd.BackingGraph = dg
+	h.diskFlushed.Store(true)
+	return nil
 }
 
 // SetOPQEncoder sets the OPQ encoder (accepts both OPQ and legacy PQ for backward compatibility)

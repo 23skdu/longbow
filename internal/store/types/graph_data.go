@@ -2191,6 +2191,26 @@ func (g *GraphData) GetNeighborsWithGen(layer int, id uint32, buf []uint32, maxG
 	neighbors := g.GetNeighborsChunkWithGen(layer, cID, maxGen)
 	versions := g.GetVersionsChunkWithGen(layer, cID, maxGen)
 
+	// If both counts and neighbors are nil, try BackingGraph then PackedNeighbors
+	// before giving up. Upper layers skip neighbor pre-allocation (Fix #1) so
+	// neighbors will be nil but PackedNeighbors may have the data.
+	if counts == nil && neighbors == nil {
+		if g.BackingGraph != nil {
+			if bg, ok := g.BackingGraph.(graphFallback); ok {
+				return bg.GetNeighbors(layer, id, buf)
+			}
+		}
+		return nil
+	}
+
+	// 1. Try Lock-Free PackedNeighbors first (truly lock-free)
+	if layer < len(g.PackedNeighbors) && g.PackedNeighbors[layer] != nil {
+		if res, ok := g.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
+			return res
+		}
+	}
+
+	// If counts exists but neighbors are nil (upper layers after Fix #1), we're done
 	if counts == nil || neighbors == nil {
 		if g.BackingGraph != nil {
 			if bg, ok := g.BackingGraph.(graphFallback); ok {
@@ -2201,13 +2221,6 @@ func (g *GraphData) GetNeighborsWithGen(layer int, id uint32, buf []uint32, maxG
 	}
 
 	countAddr := &counts[cOff]
-
-	// 1. Try Lock-Free PackedNeighbors first (truly lock-free)
-	if layer < len(g.PackedNeighbors) && g.PackedNeighbors[layer] != nil {
-		if res, ok := g.PackedNeighbors[layer].GetNeighborsWithGen(id, maxGen); ok {
-			return res
-		}
-	}
 
 	base := cOff * MaxNeighbors
 

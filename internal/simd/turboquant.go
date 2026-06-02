@@ -130,7 +130,84 @@ func TurboQuantDistanceAVX512(query []float32, tqData []byte, dim int, pow2 int,
 }
 
 func TurboQuantDistanceAVX2(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
-	return TurboQuantDistanceNEON(query, tqData, dim, pow2, bitsPerAngle)
+	radius := math.Float32frombits(uint32(tqData[0]) | uint32(tqData[1])<<8 | uint32(tqData[2])<<16 | uint32(tqData[3])<<24)
+
+	angleCount := pow2 - 1
+	angleBytes := (angleCount*bitsPerAngle + 7) / 8
+	packedAngles := tqData[4 : 4+angleBytes]
+	qjlBits := tqData[4+angleBytes:]
+
+	// Unpack angles into byte indices
+	qIndices := make([]byte, angleCount)
+	switch bitsPerAngle {
+	case 8:
+		copy(qIndices, packedAngles)
+	case 4:
+		for i := 0; i < angleCount/2; i++ {
+			b := packedAngles[i]
+			qIndices[2*i] = b & 0x0F
+			qIndices[2*i+1] = b >> 4
+		}
+		if angleCount%2 != 0 {
+			qIndices[angleCount-1] = packedAngles[angleCount/2] & 0x0F
+		}
+	case 2:
+		for i := 0; i < angleCount/4; i++ {
+			b := packedAngles[i]
+			qIndices[4*i] = b & 0x03
+			qIndices[4*i+1] = (b >> 2) & 0x03
+			qIndices[4*i+2] = (b >> 4) & 0x03
+			qIndices[4*i+3] = (b >> 6) & 0x03
+		}
+	default:
+		return TurboQuantDistanceGeneric(query, tqData, dim, pow2, bitsPerAngle)
+	}
+
+	// Reconstruct vector via recursive polar transform
+	var lookup []float32
+	switch bitsPerAngle {
+	case 2:
+		lookup = tqLookup2
+	case 4:
+		lookup = tqLookup4
+	case 8:
+		lookup = tqLookup8
+	}
+
+	recon := make([]float32, pow2)
+	recon[0] = radius
+
+	currentLevelSize := 1
+	angleOffset := angleCount
+	for currentLevelSize < pow2 {
+		angleOffset -= currentLevelSize
+		for i := currentLevelSize - 1; i >= 0; i-- {
+			r := recon[i]
+			q := qIndices[angleOffset+i]
+			c := lookup[2*int(q)]
+			s := lookup[2*int(q)+1]
+			recon[2*i] = r * c
+			recon[2*i+1] = r * s
+		}
+		currentLevelSize *= 2
+	}
+
+	// Apply QJL correction and compute L2 using AVX2 float32 kernel
+	correction := radius / float32(math.Sqrt(float64(pow2))) * 0.1
+	for i := range recon {
+		if (qjlBits[i/8]>>uint(i%8))&1 != 0 {
+			recon[i] += correction
+		} else {
+			recon[i] -= 0.1
+		}
+	}
+
+	// Use AVX2 float32 L2 kernel on the corrected reconstruction
+	sum, err := l2SquaredAVX2(query, recon[:dim])
+	if err != nil {
+		return 0, err
+	}
+	return float32(math.Sqrt(float64(sum))), nil
 }
 
 // TurboQuantPolarTransformNEON is the NEON-optimized version of the polar transform stage.
@@ -152,10 +229,19 @@ func TurboQuantPolarTransformAVX2(src []float32, dstRadii []float32, dstAngles [
 
 // GetTurboQuantPolarTransformFunc returns the optimal TQ polar transform function for the current CPU.
 func GetTurboQuantPolarTransformFunc() TurboQuantPolarTransformFunc {
+	if features.HasAVX2 {
+		return TurboQuantPolarTransformAVX2
+	}
 	return TurboQuantPolarTransformNEON
 }
 
 // GetTurboQuantDistanceFunc returns the optimal TQ distance function for the current CPU.
 func GetTurboQuantDistanceFunc() TurboQuantDistanceFunc {
+	if features.HasAVX2 {
+		return TurboQuantDistanceAVX2
+	}
+	if features.HasAVX512 {
+		return TurboQuantDistanceAVX512
+	}
 	return TurboQuantDistanceNEON
 }

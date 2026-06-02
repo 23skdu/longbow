@@ -19,3 +19,19 @@ func euclideanComplex64Optimized(a, b []complex64) (float32, error) {
 	// Call the function pointer directly to avoid wrapper overhead
 	return euclideanDistanceImpl(vfA, vfB)
 }
+
+// euclideanComplex128Optimized uses unsafe casting to reuse float64 SIMD kernels
+func euclideanComplex128Optimized(a, b []complex128) (float32, error) {
+	if len(a) != len(b) {
+		return 0, ErrDimensionMismatch
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	// Cast to float64 slice (len*2)
+	vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2) // #nosec G103
+	vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2) // #nosec G103
+
+	// Call the function pointer directly to avoid wrapper overhead
+	return euclideanDistanceFloat64Impl(vfA, vfB)
+}

@@ -4,6 +4,7 @@ import (
 	"runtime"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 type WorkStealingScheduler[T any] struct {
@@ -97,15 +98,14 @@ func (ws *WorkStealingScheduler[T]) worker(workerID int) {
 		default:
 			task, ok := ws.GetTask(workerID)
 			if !ok {
-				runtime.Gosched()
+				time.Sleep(time.Microsecond)
 				continue
 			}
 
 			if fn, ok := any(task).(func()); ok {
 				fn()
-			} else {
-				runtime.Gosched()
 			}
+
 		}
 	}
 }

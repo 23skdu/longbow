@@ -178,14 +178,17 @@ func (a *AsyncFsyncer) RequestFsyncIfNeeded() bool {
 // WaitForPendingFsyncs waits for all pending fsyncs to complete
 func (a *AsyncFsyncer) WaitForPendingFsyncs() {
 	// Drain the request channel and wait for completion
+	timer := time.NewTimer(100 * time.Millisecond)
+	defer timer.Stop()
 	for {
+		timer.Reset(100 * time.Millisecond)
 		select {
 		case <-a.waitCh:
 			// Check if more pending
 			if len(a.requestCh) == 0 && a.dirtyBytes.Load() == 0 {
 				return
 			}
-		case <-time.After(100 * time.Millisecond):
+		case <-timer.C:
 			// Timeout check
 			if len(a.requestCh) == 0 && a.dirtyBytes.Load() == 0 {
 				return

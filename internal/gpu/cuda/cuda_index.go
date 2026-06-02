@@ -32,6 +32,16 @@ void launch_l2_distance_kernel_v2(const float* vectors, const float* query, floa
 void launch_l2_distance_large_kernel_v2(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
 void launch_l2_distance_kernel_v2_batched(const float** page_ptrs, const int* page_starts, const float* query, float* distances, int dim, int total_count, int num_pages, cudaStream_t stream);
 void launch_l2_distance_kernel_large_v2_batched(const float** page_ptrs, const int* page_starts, const float* query, float* distances, int dim, int total_count, int num_pages, cudaStream_t stream);
+void launch_l2_distance_float64_kernel(const double* vectors, const double* query, double* distances, int dim, int count, cudaStream_t stream);
+void launch_dot_product_float64_kernel(const double* vectors, const double* query, double* distances, int dim, int count, cudaStream_t stream);
+void launch_l2_distance_int32_kernel(const int32_t* vectors, const int32_t* query, float* distances, int dim, int count, cudaStream_t stream);
+void launch_dot_product_int32_kernel(const int32_t* vectors, const int32_t* query, float* distances, int dim, int count, cudaStream_t stream);
+void launch_l2_distance_uint32_kernel(const uint32_t* vectors, const uint32_t* query, float* distances, int dim, int count, cudaStream_t stream);
+void launch_dot_product_uint32_kernel(const uint32_t* vectors, const uint32_t* query, float* distances, int dim, int count, cudaStream_t stream);
+void launch_l2_distance_int64_kernel(const int64_t* vectors, const int64_t* query, double* distances, int dim, int count, cudaStream_t stream);
+void launch_dot_product_int64_kernel(const int64_t* vectors, const int64_t* query, double* distances, int dim, int count, cudaStream_t stream);
+void launch_l2_distance_uint64_kernel(const uint64_t* vectors, const uint64_t* query, double* distances, int dim, int count, cudaStream_t stream);
+void launch_dot_product_uint64_kernel(const uint64_t* vectors, const uint64_t* query, double* distances, int dim, int count, cudaStream_t stream);
 void launch_l2_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, cudaStream_t stream);
 void launch_dot_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* query, float* distances, int dimensions, int count, cudaStream_t stream);
 void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* codes, float* distances, int m, int count, cudaStream_t stream);

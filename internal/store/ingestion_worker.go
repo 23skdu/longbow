@@ -38,14 +38,15 @@ func (s *VectorStore) runIngestionWorkerWithCtx(ctx context.Context) {
 						s.logger.Warn().Msg("High memory pressure detected, throttling ingestion worker")
 					}
 				}
-				select {
-				case <-s.stopChan:
-					return
-				case <-ctx.Done():
-					return
-				case <-time.After(200 * time.Millisecond):
-					// Wait and continue
-				}
+			timer.Reset(200 * time.Millisecond)
+			select {
+			case <-s.stopChan:
+				return
+			case <-ctx.Done():
+				return
+			case <-timer.C:
+				// Wait and continue
+			}
 			}
 		}
 

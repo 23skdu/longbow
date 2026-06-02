@@ -83,6 +83,8 @@ func euclidean3072NEON(a, b []float32) (float32, error)    { return euclideanUnr
 func dot1024NEON(a, b []float32) (float32, error)          { return dotUnrolled4x(a, b) }
 func dot3072NEON(a, b []float32) (float32, error)          { return dotUnrolled4x(a, b) }
 func euclideanFloat64NEON(a, b []float64) (float32, error) { return euclideanFloat64Unrolled4x(a, b) }
+func cosineFloat64NEON(a, b []float64) (float32, error)    { return cosineFloat64Unrolled4x(a, b) }
+func cosineInt8NEON(a, b []int8) (float32, error)          { return cosineDistanceInt8Unrolled4x(a, b) }
 
 func int8ToFloat32NEON(src []int8, dst []float32)           { int8ToFloat32Generic(src, dst) }
 func uint8ToFloat32NEON(src []uint8, dst []float32)         { uint8ToFloat32Generic(src, dst) }
@@ -148,6 +150,8 @@ var _ = func() {
 		_ = countBitVectorNEON(nil)
 		_, _ = hammingNEON(nil, nil)
 		_, _ = dotFloat64NEON(nil, nil)
+		_, _ = cosineFloat64NEON(nil, nil)
+		_, _ = cosineInt8NEON(nil, nil)
 		_ = dotInt4NeonKernel(nil, nil, 0)
 		_ = dotInt2NeonKernel(nil, nil, 0)
 		_ = matchInt64Neon(nil, 0, 0, nil)

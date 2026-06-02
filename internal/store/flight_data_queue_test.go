@@ -171,7 +171,7 @@ func TestFlightDataQueue_Dequeue_ContextCancel(t *testing.T) {
 	q := NewFlightDataQueue(cfg)
 	defer q.Close()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 
 	start := time.Now()

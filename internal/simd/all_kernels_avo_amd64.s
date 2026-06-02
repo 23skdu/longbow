@@ -12620,13 +12620,15 @@ tail:
 	CMPQ CX, $8
 	JL   tail4
 
-	// Process 8 int8
+	// Process 8 int8 — ADD to low accumulator (don't overwrite!)
 	VPMOVSXBW 0(SI), X1              // 8 int8 → 8 int16 (XMM)
 	VPMOVSXBW 0(DI), X2
 	VPSUBW X2, X1, X1
 	VPMADDWD X1, X1, X1              // → 4 int32
 	VCVTDQ2PS X1, X1                 // → 4 float32
-	VINSERTF128 $0, X1, Y0, Y0       // merge into accumulator
+	VEXTRACTF128 $0, Y0, X2          // save current low accumulator
+	VADDPS X1, X2, X2                // add tail result to low accumulator
+	VINSERTF128 $0, X2, Y0, Y0       // merge updated low back
 
 	ADDQ $8, SI
 	ADDQ $8, DI
@@ -12693,7 +12695,9 @@ done:
 	VADDPS X0, X1, X0
 	VHADDPS X0, X0, X0
 	VHADDPS X0, X0, X0
+	VSQRTSS X0, X0, X0          // Euclidean distance = sqrt(sum)
 	VZEROUPPER
+	MOVSS X0, ret+24(FP)
 	RET
 
 // func euclideanInt8Unrolled4xAVX2Kernel(a uintptr, b uintptr, n int) float32

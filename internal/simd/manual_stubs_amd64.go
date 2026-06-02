@@ -48,3 +48,9 @@ var _ = func() {
 		matMulAVX2Go(nil, nil, 0, 0, 0, nil)
 	}
 }
+
+//go:noescape
+func expAVX2Kernel(src uintptr, dst uintptr, n int)
+
+//go:noescape
+func logAVX2Kernel(src uintptr, dst uintptr, n int)

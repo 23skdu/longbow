@@ -430,12 +430,14 @@ tail8_eucl_u8:
     CMPQ CX, $8
     JL   tail_scalar_eucl_u8
 
-    VPMOVZXBW 0(SI), Y1
-    VPMOVZXBW 0(DI), Y2
-    VPSUBW Y2, Y1, Y1
-    VPMADDWD Y1, Y1, Y1
-    VCVTDQ2PS Y1, Y1
-    VADDPS Y1, Y0, Y0
+    VPMOVZXBW 0(SI), X1     // 8 uint8 → 8 int16 (XMM: reads 8 bytes)
+    VPMOVZXBW 0(DI), X2
+    VPSUBW X2, X1, X1        // diff (signed int16 x8)
+    VPMADDWD X1, X1, X1      // diff², adjacent pair sum → int32 x4 (XMM)
+    VCVTDQ2PS X1, X1         // → 4 float32
+    VEXTRACTF128 $0, Y0, X2  // save current low accumulator
+    VADDPS X1, X2, X2        // add tail result to low accumulator
+    VINSERTF128 $0, X2, Y0, Y0 // merge updated low back
 
     ADDQ $8, SI
     ADDQ $8, DI
@@ -498,8 +500,10 @@ tail8_dot_u8:
     CMPQ CX, $8
     JL   tail_scalar_dot_u8
 
-    VPMOVZXBW 0(SI), Y1
-    VPMOVZXBW 0(DI), Y2
+    VPMOVZXBW 0(SI), X1     // 8 uint8 → 8 int16 (XMM: reads 8 bytes)
+    VPMOVZXBW 0(DI), X2
+    VPMOVSXWD X1, Y1        // 8 int16 → 8 int32
+    VPMOVSXWD X2, Y2
     VPMULLD Y2, Y1, Y1      // element-wise 8x int32 product
     VCVTDQ2PS Y1, Y1
     VADDPS Y1, Y0, Y0

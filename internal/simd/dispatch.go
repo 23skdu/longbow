@@ -473,8 +473,11 @@ func initializeDispatch() {
 		dotProductUint16Impl = dotUint16AVX512
 		dotProductInt4Impl = dotInt4AVX512
 		dotProductInt2Impl = dotInt2AVX512
+		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
+		euclideanDistanceComplex128Impl = euclideanComplex128Optimized
 
 		int8ToFloat32Impl = dispatch.Int8ToFloat32
+
 		uint8ToFloat32Impl = dispatch.Uint8ToFloat32
 		int16ToFloat32Impl = dispatch.Int16ToFloat32
 		uint16ToFloat32Impl = dispatch.Uint16ToFloat32
@@ -560,12 +563,14 @@ func initializeDispatch() {
 		dotProductInt8Impl = dotInt8AVX2
 		dotProductUint8Impl = dotUint8AVX2
 		euclideanDistanceUint8Impl = euclideanUint8AVX2
-		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x
-		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x
-		dotProductInt16Impl = dotInt16Unrolled4x
-		dotProductUint16Impl = dotUint16Unrolled4x
+		euclideanDistanceInt16Impl = euclideanInt16AVX2
+		euclideanDistanceUint16Impl = euclideanUint16AVX2
+		dotProductInt16Impl = dotInt16AVX2
+		dotProductUint16Impl = dotUint16AVX2
 		dotProductInt4Impl = dotInt4Generic
 		dotProductInt2Impl = dotInt2Generic
+		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
+		euclideanDistanceComplex128Impl = euclideanComplex128Optimized
 
 		int8ToFloat32Impl = dispatch.Int8ToFloat32
 		uint8ToFloat32Impl = dispatch.Uint8ToFloat32

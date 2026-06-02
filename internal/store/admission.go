@@ -148,12 +148,14 @@ func (ac *AdmissionController) Admit(ctx context.Context, opType string) error {
 				ac.activeQueries.Add(1)
 			default:
 				// No slot available immediately. Let's wait up to 50ms
+				timer := time.NewTimer(50 * time.Millisecond)
+				defer timer.Stop()
 				select {
 				case ac.querySem <- struct{}{}:
 					ac.activeQueries.Add(1)
 				case <-ctx.Done():
 					return ctx.Err()
-				case <-time.After(50 * time.Millisecond):
+				case <-timer.C:
 					return status.Errorf(codes.ResourceExhausted, "search throttled during hot WAL replay / sharding phase to prioritize ingestion")
 				}
 			}

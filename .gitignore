@@ -142,3 +142,4 @@ bench-tool
 /gosec.json
 /*.patch
 /*.air
+internal/gpu/cuda/kernels.o

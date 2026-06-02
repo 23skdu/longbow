@@ -128,6 +128,7 @@ func NewS3Backend(cfg *S3BackendConfig) (SnapshotBackend, error) {
 	// Create HTTP client with pooled transport
 	httpClient := &http.Client{
 		Transport: transport,
+		Timeout:   30 * time.Second,
 	}
 
 	// Build AWS config with custom HTTP client

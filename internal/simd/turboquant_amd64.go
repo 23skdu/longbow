@@ -73,3 +73,18 @@ func packTQ4AVX2Kernel(src, dst unsafe.Pointer, n int)
 
 //go:noescape
 func packTQ8AVX2Kernel(src, dst unsafe.Pointer, n int)
+
+//go:noescape
+func unpackTQ2AVX512VBMIKernel(src, dst unsafe.Pointer, n int, scale, bias float32)
+
+//go:noescape
+func packTQ2AVX512VBMIKernel(src, dst unsafe.Pointer, n int)
+
+//go:noescape
+func packTQ2AVX512Kernel(src, dst unsafe.Pointer, n int)
+
+//go:noescape
+func packTQ4AVX512Kernel(src, dst unsafe.Pointer, n int)
+
+//go:noescape
+func packTQ8AVX512Kernel(src, dst unsafe.Pointer, n int)

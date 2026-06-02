@@ -188,10 +188,12 @@ func (c *MemoryBackpressureController) Acquire(ctx context.Context) error {
 	} else if level == PressureSoft { // Existing soft limit logic
 		// Add delay to slow down ingestion
 		if c.config.SoftPressureDelay > 0 {
+			timer := time.NewTimer(c.config.SoftPressureDelay)
+			defer timer.Stop()
 			select {
 			case <-ctx.Done():
 				return ctx.Err()
-			case <-time.After(c.config.SoftPressureDelay):
+			case <-timer.C:
 			}
 		}
 	}

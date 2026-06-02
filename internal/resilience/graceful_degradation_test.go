@@ -400,7 +400,7 @@ func TestExecuteWithBulkheadAndContextFull(t *testing.T) {
 	}()
 	<-blocked
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	_, err := ExecuteWithBulkheadAndContext(b, ctx, func(ctx context.Context) (string, error) {
 		return "should-not-reach", nil

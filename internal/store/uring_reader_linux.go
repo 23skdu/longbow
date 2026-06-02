@@ -80,6 +80,12 @@ func (r *UringReader) ReadAt(buf []byte, offset int64) (int, error) {
 	r.mu.Unlock()
 
 	// Submit read operation
+	if offset < 0 {
+		r.mu.Lock()
+		delete(r.pending, id)
+		r.mu.Unlock()
+		return 0, fmt.Errorf("negative offset: %d", offset)
+	}
 	err := r.ring.SubmitRead(int(r.f.Fd()), buf, uint64(offset), id)
 	if err != nil {
 		r.mu.Lock()

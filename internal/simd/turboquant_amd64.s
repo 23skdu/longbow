@@ -153,7 +153,7 @@ DATA pack2_weights_1<>+0x08(SB)/8, $0x0010000100100001
 GLOBL pack2_weights_1<>(SB), RODATA, $16
 
 // func unpackTQ2AVX2Kernel(src, dst unsafe.Pointer, n int, scale, bias float32)
-TEXT ·unpackTQ2AVX2Kernel(SB), NOSPLIT, $0-40
+TEXT ·unpackTQ2AVX2Kernel(SB), NOSPLIT, $0-32
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
@@ -244,7 +244,7 @@ done_tq2:
 // Load 16 bytes (32 elements) -> Expand to 16 int32s (2 YMMs)
 // Wait! 16 bytes -> 16 int32s (2 YMMs).
 // Byte [e1:e0]
-TEXT ·unpackTQ4AVX2Kernel(SB), NOSPLIT, $0-40
+TEXT ·unpackTQ4AVX2Kernel(SB), NOSPLIT, $0-32
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
@@ -336,7 +336,7 @@ done_tq4:
 
 // func unpackTQ8AVX2Kernel(src, dst unsafe.Pointer, n int, scale, bias float32)
 // 1 element per byte. Load 32 bytes -> 4 YMMs.
-TEXT ·unpackTQ8AVX2Kernel(SB), NOSPLIT, $0-40
+TEXT ·unpackTQ8AVX2Kernel(SB), NOSPLIT, $0-32
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX
@@ -521,7 +521,7 @@ done_pack8:
     RET
 
 // func unpackTQ2AVX512VBMIKernel(src, dst unsafe.Pointer, n int, scale, bias float32)
-TEXT ·unpackTQ2AVX512VBMIKernel(SB), NOSPLIT, $0-40
+TEXT ·unpackTQ2AVX512VBMIKernel(SB), NOSPLIT, $0-32
     MOVQ    src+0(FP), SI
     MOVQ    dst+8(FP), DI
     MOVQ    n+16(FP), CX

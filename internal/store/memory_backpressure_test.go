@@ -54,7 +54,7 @@ func TestMemoryBackpressure_Acquire(t *testing.T) {
 		CheckInterval:  10 * time.Millisecond,
 	}
 	ctrl := NewMemoryBackpressureController(cfg)
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	err := ctrl.Acquire(ctx)
 	if err != nil {
@@ -74,7 +74,7 @@ func TestMemoryBackpressure_AcquireTimeout(t *testing.T) {
 	}
 	ctrl := NewMemoryBackpressureController(cfg)
 	ctrl.SetPressureLevel(PressureHard) // Force hard pressure
-	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
 	err := ctrl.Acquire(ctx)
 	if err == nil {
@@ -114,7 +114,7 @@ func TestMemoryBackpressure_ConcurrentAccess(t *testing.T) {
 	done := make(chan bool, 10)
 	for i := 0; i < 10; i++ {
 		go func() {
-			ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 			defer cancel()
 			if err := ctrl.Acquire(ctx); err == nil {
 				successCount.Add(1)

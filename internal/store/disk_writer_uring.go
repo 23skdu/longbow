@@ -111,6 +111,14 @@ func (d *DiskWriterUring) SubmitWrite(data []byte, offset int64) (chan error, er
 	d.mu.Unlock()
 
 	// 4. Submit write operation (non-blocking)
+	if offset < 0 {
+		d.mu.Lock()
+		delete(d.pending, id)
+		d.pendingWait.Done()
+		d.mu.Unlock()
+		d.bufferPool.Put(buf)
+		return nil, fmt.Errorf("negative offset: %d", offset)
+	}
 	err := d.ring.SubmitWrite(int(d.f.Fd()), req.Buffer, uint64(offset), id)
 	if err != nil {
 		d.mu.Lock()

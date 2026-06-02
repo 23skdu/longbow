@@ -630,6 +630,8 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 		}
 	}
 
+	timer := time.NewTimer(100 * time.Millisecond)
+	defer timer.Stop()
 	for {
 		job, ok := s.indexQueue.Pop()
 		if ok {
@@ -638,6 +640,7 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 
 		if len(jobs) == 0 {
 			// Check for shutdown or context cancellation
+			timer.Reset(100 * time.Millisecond)
 			select {
 			case <-s.stopChan:
 				return
@@ -646,7 +649,7 @@ func (s *VectorStore) runIndexWorker(ctx context.Context) {
 			case <-s.indexQueue.Notify():
 				// Wake up and check for jobs
 				continue
-			case <-time.After(100 * time.Millisecond):
+			case <-timer.C:
 				// Periodic safety check
 				continue
 			}

@@ -283,6 +283,9 @@ func (b *ArrowIOUringBackend) WriteSync(p []byte) (int, error) {
 	start := time.Now()
 
 	// Submit write operation
+	if b.offset < 0 {
+		return 0, fmt.Errorf("negative write offset: %d", b.offset)
+	}
 	err := b.ring.SubmitWrite(int(b.file.Fd()), p, uint64(b.offset), 0)
 	if err != nil {
 		iouring.IoUringSubmitLatency.WithLabelValues("write").Observe(time.Since(start).Seconds())

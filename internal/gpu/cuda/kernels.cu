@@ -347,6 +347,196 @@ void launch_dot_product_uint16_kernel(const uint16_t* vectors, const uint16_t* q
 }
 
 // ===========================================================================
+// Float64 Kernels
+// ===========================================================================
+__global__ void l2_distance_float64_kernel(const double* vectors, const double* query, double* distances, int dim, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    double sum = 0.0;
+    const double* vec = vectors + (int64_t)idx * dim;
+    for (int i = 0; i < dim; i++) {
+        double diff = vec[i] - query[i];
+        sum += diff * diff;
+    }
+    distances[idx] = sqrt(sum);
+}
+
+void launch_l2_distance_float64_kernel(const double* vectors, const double* query, double* distances, int dim, int count, cudaStream_t stream) {
+    int threads = 256;
+    int blocks = (count + threads - 1) / threads;
+    l2_distance_float64_kernel<<<blocks, threads, 0, stream>>>(vectors, query, distances, dim, count);
+}
+
+__global__ void dot_product_float64_kernel(const double* vectors, const double* query, double* distances, int dim, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    double sum = 0.0;
+    const double* vec = vectors + (int64_t)idx * dim;
+    for (int i = 0; i < dim; i++) {
+        sum += vec[i] * query[i];
+    }
+    distances[idx] = sum;
+}
+
+void launch_dot_product_float64_kernel(const double* vectors, const double* query, double* distances, int dim, int count, cudaStream_t stream) {
+    int threads = 256;
+    int blocks = (count + threads - 1) / threads;
+    dot_product_float64_kernel<<<blocks, threads, 0, stream>>>(vectors, query, distances, dim, count);
+}
+
+// ===========================================================================
+// Int32 Kernels
+// ===========================================================================
+__global__ void l2_distance_int32_kernel(const int32_t* vectors, const int32_t* query, float* distances, int dim, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    double sum = 0.0;
+    const int32_t* vec = vectors + (int64_t)idx * dim;
+    for (int i = 0; i < dim; i++) {
+        double diff = double(vec[i]) - double(query[i]);
+        sum += diff * diff;
+    }
+    distances[idx] = sqrtf((float)sum);
+}
+
+void launch_l2_distance_int32_kernel(const int32_t* vectors, const int32_t* query, float* distances, int dim, int count, cudaStream_t stream) {
+    int threads = 256;
+    int blocks = (count + threads - 1) / threads;
+    l2_distance_int32_kernel<<<blocks, threads, 0, stream>>>(vectors, query, distances, dim, count);
+}
+
+__global__ void dot_product_int32_kernel(const int32_t* vectors, const int32_t* query, float* distances, int dim, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    double sum = 0.0;
+    const int32_t* vec = vectors + (int64_t)idx * dim;
+    for (int i = 0; i < dim; i++) {
+        sum += double(vec[i]) * double(query[i]);
+    }
+    distances[idx] = (float)sum;
+}
+
+void launch_dot_product_int32_kernel(const int32_t* vectors, const int32_t* query, float* distances, int dim, int count, cudaStream_t stream) {
+    int threads = 256;
+    int blocks = (count + threads - 1) / threads;
+    dot_product_int32_kernel<<<blocks, threads, 0, stream>>>(vectors, query, distances, dim, count);
+}
+
+// ===========================================================================
+// Uint32 Kernels
+// ===========================================================================
+__global__ void l2_distance_uint32_kernel(const uint32_t* vectors, const uint32_t* query, float* distances, int dim, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    double sum = 0.0;
+    const uint32_t* vec = vectors + (int64_t)idx * dim;
+    for (int i = 0; i < dim; i++) {
+        double diff = double(vec[i]) - double(query[i]);
+        sum += diff * diff;
+    }
+    distances[idx] = sqrtf((float)sum);
+}
+
+void launch_l2_distance_uint32_kernel(const uint32_t* vectors, const uint32_t* query, float* distances, int dim, int count, cudaStream_t stream) {
+    int threads = 256;
+    int blocks = (count + threads - 1) / threads;
+    l2_distance_uint32_kernel<<<blocks, threads, 0, stream>>>(vectors, query, distances, dim, count);
+}
+
+__global__ void dot_product_uint32_kernel(const uint32_t* vectors, const uint32_t* query, float* distances, int dim, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    double sum = 0.0;
+    const uint32_t* vec = vectors + (int64_t)idx * dim;
+    for (int i = 0; i < dim; i++) {
+        sum += double(vec[i]) * double(query[i]);
+    }
+    distances[idx] = (float)sum;
+}
+
+void launch_dot_product_uint32_kernel(const uint32_t* vectors, const uint32_t* query, float* distances, int dim, int count, cudaStream_t stream) {
+    int threads = 256;
+    int blocks = (count + threads - 1) / threads;
+    dot_product_uint32_kernel<<<blocks, threads, 0, stream>>>(vectors, query, distances, dim, count);
+}
+
+// ===========================================================================
+// Int64 Kernels
+// ===========================================================================
+__global__ void l2_distance_int64_kernel(const int64_t* vectors, const int64_t* query, double* distances, int dim, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    double sum = 0.0;
+    const int64_t* vec = vectors + (int64_t)idx * dim;
+    for (int i = 0; i < dim; i++) {
+        double diff = (double)vec[i] - (double)query[i];
+        sum += diff * diff;
+    }
+    distances[idx] = sqrt(sum);
+}
+
+void launch_l2_distance_int64_kernel(const int64_t* vectors, const int64_t* query, double* distances, int dim, int count, cudaStream_t stream) {
+    int threads = 256;
+    int blocks = (count + threads - 1) / threads;
+    l2_distance_int64_kernel<<<blocks, threads, 0, stream>>>(vectors, query, distances, dim, count);
+}
+
+__global__ void dot_product_int64_kernel(const int64_t* vectors, const int64_t* query, double* distances, int dim, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    double sum = 0.0;
+    const int64_t* vec = vectors + (int64_t)idx * dim;
+    for (int i = 0; i < dim; i++) {
+        sum += (double)vec[i] * (double)query[i];
+    }
+    distances[idx] = sum;
+}
+
+void launch_dot_product_int64_kernel(const int64_t* vectors, const int64_t* query, double* distances, int dim, int count, cudaStream_t stream) {
+    int threads = 256;
+    int blocks = (count + threads - 1) / threads;
+    dot_product_int64_kernel<<<blocks, threads, 0, stream>>>(vectors, query, distances, dim, count);
+}
+
+// ===========================================================================
+// Uint64 Kernels
+// ===========================================================================
+__global__ void l2_distance_uint64_kernel(const uint64_t* vectors, const uint64_t* query, double* distances, int dim, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    double sum = 0.0;
+    const uint64_t* vec = vectors + (int64_t)idx * dim;
+    for (int i = 0; i < dim; i++) {
+        double diff = (double)vec[i] - (double)query[i];
+        sum += diff * diff;
+    }
+    distances[idx] = sqrt(sum);
+}
+
+void launch_l2_distance_uint64_kernel(const uint64_t* vectors, const uint64_t* query, double* distances, int dim, int count, cudaStream_t stream) {
+    int threads = 256;
+    int blocks = (count + threads - 1) / threads;
+    l2_distance_uint64_kernel<<<blocks, threads, 0, stream>>>(vectors, query, distances, dim, count);
+}
+
+__global__ void dot_product_uint64_kernel(const uint64_t* vectors, const uint64_t* query, double* distances, int dim, int count) {
+    int idx = blockIdx.x * blockDim.x + threadIdx.x;
+    if (idx >= count) return;
+    double sum = 0.0;
+    const uint64_t* vec = vectors + (int64_t)idx * dim;
+    for (int i = 0; i < dim; i++) {
+        sum += (double)vec[i] * (double)query[i];
+    }
+    distances[idx] = sum;
+}
+
+void launch_dot_product_uint64_kernel(const uint64_t* vectors, const uint64_t* query, double* distances, int dim, int count, cudaStream_t stream) {
+    int threads = 256;
+    int blocks = (count + threads - 1) / threads;
+    dot_product_uint64_kernel<<<blocks, threads, 0, stream>>>(vectors, query, distances, dim, count);
+}
+
+// ===========================================================================
 // Optimized L2 Distance Kernel (FP32) with coalesced global memory access.
 // Each warp processes one vector; lanes within a warp read consecutive dimension
 // elements from global memory (fully coalesced). Query is cached in shared memory.

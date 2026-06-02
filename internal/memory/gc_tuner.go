@@ -313,8 +313,8 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 			fmt.Fprintf(os.Stderr, "[DIAG] %s\n", DebugSlabPoolsSnapshot())
 			var ms runtime.MemStats
 			runtime.ReadMemStats(&ms)
-			fmt.Fprintf(os.Stderr, "[DIAG] Go heap: Alloc=%.1f MB Sys=%.1f MB Stack=%.1f MB\n",
-				mb(int64(ms.Alloc)), mb(int64(ms.Sys)), mb(int64(ms.StackInuse)))
+		fmt.Fprintf(os.Stderr, "[DIAG] Go heap: Alloc=%.1f MB Sys=%.1f MB Stack=%.1f MB\n",
+			float64(ms.Alloc)/1048576, float64(ms.Sys)/1048576, float64(ms.StackInuse)/1048576)
 			t.mu.RLock()
 			for _, fn := range t.cleanupFuncs {
 				fn()

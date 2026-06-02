@@ -881,9 +881,15 @@ func initializeDispatch() {
 	Registry.Register(MetricDotProduct, DataTypeUint64, 1024, Dot1024Uint64)
 
 	Registry.Register(MetricEuclidean, DataTypeFloat64, 0, EuclideanDistanceFloat64)
+	Registry.Register(MetricEuclidean, DataTypeFloat64, 384, Euclidean384Float64)
+	Registry.Register(MetricEuclidean, DataTypeFloat64, 768, Euclidean768Float64)
 	Registry.Register(MetricCosine, DataTypeFloat64, 0, CosineDistanceFloat64)
 	Registry.Register(MetricDotProduct, DataTypeFloat64, 0, DotProductF64)
+	Registry.Register(MetricDotProduct, DataTypeFloat64, 384, Dot384Float64)
+	Registry.Register(MetricDotProduct, DataTypeFloat64, 768, Dot768Float64)
 	Registry.Register(MetricL2Squared, DataTypeFloat64, 0, L2SquaredFloat64)
+	Registry.Register(MetricL2Squared, DataTypeFloat64, 384, L2Squared384Float64)
+	Registry.Register(MetricL2Squared, DataTypeFloat64, 768, L2Squared768Float64)
 
 	Registry.Register(MetricEuclidean, DataTypeComplex64, 0, euclideanComplex64Unrolled)
 	Registry.Register(MetricCosine, DataTypeComplex64, 0, CosineDistanceComplex64)

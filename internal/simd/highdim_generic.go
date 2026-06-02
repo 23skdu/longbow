@@ -104,6 +104,16 @@ func Euclidean768Float64(a, b []float64) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared768Float64(a, b)))), nil
 }
 
+// L2Squared384Float64 calculates squared Euclidean distance for 384-dim float64 vectors.
+func L2Squared384Float64(a, b []float64) (float32, error) {
+	return l2Squared384Float64(a, b), nil
+}
+
+// L2Squared768Float64 calculates squared Euclidean distance for 768-dim float64 vectors.
+func L2Squared768Float64(a, b []float64) (float32, error) {
+	return l2Squared768Float64(a, b), nil
+}
+
 // Euclidean384Int8 calculates Euclidean distance for 384-dim int8 vectors.
 func Euclidean384Int8(a, b []int8) (float32, error) {
 	return float32(math.Sqrt(float64(l2Squared384Int8(a, b)))), nil

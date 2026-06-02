@@ -787,14 +787,9 @@ class BenchmarkRunner:
         if not uri.startswith("grpc://"):
             uri = f"grpc://{self.server_addr}"
 
-        # Build search-modes string based on mode
         search_modes = self.args.search_modes
-        current_mode = getattr(self, "current_mode", self.args.mode)
         if search_modes == "all":
-            if current_mode == "temporal":
-                search_modes = "temporal_as_of,temporal_range,temporal_window"
-            else:
-                search_modes = "dense,hybrid,sparse,filtered,byid"
+            search_modes = "all"
 
         extra_args = ""
         if self.args.fbin:

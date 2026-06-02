@@ -173,7 +173,7 @@ func (p *BufferPool) Close() error {
 
 	// Free all buffers
 	for buf := range p.available {
-		if buf != nil && len(buf) > 0 {
+		if len(buf) > 0 {
 			// Find the original mmap start
 			// We allocated bufferSize + alignment, so the mmap starts before our slice
 			// Use unsafe.Add for pointer arithmetic (Go 1.20+)

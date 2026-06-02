@@ -207,12 +207,6 @@ func (r *Ring) Fd() int {
 	return r.fd
 }
 
-// roundUpToPage rounds size up to page boundary
-func roundUpToPage(size int) int {
-	pageSize := unix.Getpagesize()
-	return (size + pageSize - 1) &^ (pageSize - 1)
-}
-
 // nextPowerOf2 rounds up to next power of 2
 func nextPowerOf2(n uint32) uint32 {
 	if n == 0 {

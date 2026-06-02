@@ -114,36 +114,3 @@ func ioUringEnter(fd int, toSubmit uint32, minComplete uint32, flags uint32, sig
 	}
 	return int(n), nil
 }
-
-func ioUringRegister(fd int, opcode uint32, arg unsafe.Pointer, nrArgs uint32) (int, error) {
-	n, _, errno := unix.Syscall6(
-		SYS_IO_URING_REGISTER,
-		uintptr(fd),
-		uintptr(opcode),
-		uintptr(arg),
-		uintptr(nrArgs),
-		0,
-		0,
-	)
-	if errno != 0 {
-		return -1, errno
-	}
-	return int(n), nil
-}
-
-func mmapSize(params *Params, sqRing bool) (int, error) {
-	var size int
-
-	if sqRing {
-		sqRingSize := params.SqOffsets.Array + params.SqEntries*uint32(unsafe.Sizeof(uint32(0)))
-		sqeSize := params.SqEntries * uint32(unsafe.Sizeof(SQE{}))
-		size = int(sqRingSize + sqeSize)
-	} else {
-		size = int(params.CqOffsets.Cqes + params.CqEntries*uint32(unsafe.Sizeof(uint32(0))))
-	}
-
-	pageSize := unix.Getpagesize()
-	size = (size + pageSize - 1) &^ (pageSize - 1)
-
-	return size, nil
-}

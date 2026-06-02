@@ -26,9 +26,58 @@ extern const char *_GoStringPtr(_GoString_ s);
 #include <stdint.h>
 #include <stdlib.h>
 
-// Forward declarations for ADBC C-API structs
-struct ADBC_Driver;
-struct ADBC_Error;
+// Arrow C Data Interface structs
+struct ArrowSchema {
+    const char* format;
+    const char* name;
+    const char* metadata;
+    int64_t flags;
+    int64_t n_children;
+    struct ArrowSchema** children;
+    struct ArrowSchema* dictionary;
+    void (*release)(struct ArrowSchema*);
+    void* private_data;
+};
+
+struct ArrowArray {
+    int64_t length;
+    int64_t null_count;
+    int64_t offset;
+    int64_t n_buffers;
+    int64_t n_children;
+    const void** buffers;
+    struct ArrowArray** children;
+    struct ArrowArray* dictionary;
+    void (*release)(struct ArrowArray*);
+    void* private_data;
+};
+
+struct ArrowArrayStream {
+    int (*get_schema)(struct ArrowArrayStream*, struct ArrowSchema*);
+    int (*get_next)(struct ArrowArrayStream*, struct ArrowArray*);
+    const char* (*get_last_error)(struct ArrowArrayStream*);
+    void (*release)(struct ArrowArrayStream*);
+    void* private_data;
+};
+
+// ADBC C-API structs (simplified for binding)
+struct ADBC_Error {
+    char* message;
+    int32_t vendor_code;
+    char* sqlstate;
+    void (*release)(struct ADBC_Error* error);
+};
+
+struct ADBC_Driver {
+    void* private_data;
+    void* private_manager;
+    void (*release)(struct ADBC_Driver* driver, struct ADBC_Error* error);
+    
+    // Core functions
+    int (*DatabaseNew)(struct ADBC_Driver*, void*, struct ADBC_Error*);
+    int (*StatementExecuteQuery)(void*, struct ArrowArrayStream*, int64_t*, struct ADBC_Error*);
+    // ... other methods would be mapped here
+};
 
 
 #line 1 "cgo-generated-wrapper"
@@ -94,6 +143,7 @@ extern "C" {
 #endif
 
 extern int AdbcDriverInit(int version, void* driver, struct ADBC_Error* err);
+extern int StatementExecuteQuery_cgo(void* stmt, struct ArrowArrayStream* outStream, int64_t* rowsAffected, struct ADBC_Error* err);
 
 #ifdef __cplusplus
 }

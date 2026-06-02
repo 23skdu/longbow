@@ -16,7 +16,7 @@ test-adbc:
 	go test -v ./internal/adbc/...
 
 test-adbc-python: build-adbc
-	python3 tests/adbc/verify_driver.py
+	python3 scripts/verify_driver.py
 
 clean:
 	rm -f liblongbow_adbc.so liblongbow_adbc.h

@@ -443,8 +443,13 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 
 		// 1b. Migration Lane Throttling
 		if idx.dataset.Admission != nil {
+			migrationDeadline := time.Now().Add(30 * time.Second)
 			for {
 				if err := idx.dataset.Admission.AdmitMigration(context.Background()); err == nil {
+					break
+				}
+				if time.Now().After(migrationDeadline) {
+					idx.dataset.Logger.Warn().Msg("Migration lane throttling timeout exceeded, continuing migration despite backpressure")
 					break
 				}
 				time.Sleep(100 * time.Millisecond)

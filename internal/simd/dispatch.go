@@ -203,9 +203,9 @@ func initDispatchTable() {
 			L2SquaredDistance1024:      l2Squared1024AVX2,
 			L2SquaredDistance3072:      l2Squared3072AVX2,
 			EuclideanDistanceBatchFlat: euclideanBatchFlatAVX2,
-			EuclideanDistanceF16:       euclideanF16Unrolled4x,
-			CosineDistanceF16:          cosineF16Unrolled4x,
-			DotProductF16:              dotF16Unrolled4x,
+			EuclideanDistanceF16:       euclideanF16AVX2,
+			CosineDistanceF16:          cosineF16AVX2,
+			DotProductF16:              dotF16AVX2,
 
 			EuclideanDistance128:  euclidean128AVX2,
 			EuclideanDistance384:  euclidean384AVX2,
@@ -552,9 +552,9 @@ func initializeDispatch() {
 		orBytesImpl = orBytesAVX2
 		notBytesImpl = notBytesGeneric
 		isAllZerosImpl = isAllZerosAVX2
-		euclideanDistanceF16Impl = euclideanF16Unrolled4x
-		cosineDistanceF16Impl = cosineF16Unrolled4x
-		dotProductF16Impl = dotF16Unrolled4x
+		euclideanDistanceF16Impl = euclideanF16AVX2
+		cosineDistanceF16Impl = cosineF16AVX2
+		dotProductF16Impl = dotF16AVX2
 		euclideanDistanceFloat64Impl = euclideanFloat64AVX2
 		dotProductFloat64Impl = dotFloat64AVX2
 		l2SquaredFloat64Impl = l2SquaredFloat64AVX2
@@ -891,22 +891,12 @@ func initializeDispatch() {
 	Registry.Register(MetricL2Squared, DataTypeFloat64, 384, L2Squared384Float64)
 	Registry.Register(MetricL2Squared, DataTypeFloat64, 768, L2Squared768Float64)
 
-	Registry.Register(MetricEuclidean, DataTypeComplex64, 0, euclideanComplex64Unrolled)
+	// complex64: Euclidean uses the optimized dispatch-set version (cast to float32 SIMD)
 	Registry.Register(MetricCosine, DataTypeComplex64, 0, CosineDistanceComplex64)
-	Registry.Register(MetricDotProduct, DataTypeComplex64, 0, dotComplex64Unrolled)
-	// L2Squared (Polymorphic — generic + dimension-specialized)
-	Registry.Register(MetricL2Squared, DataTypeFloat32, 0, l2SquaredImpl)
-	Registry.Register(MetricL2Squared, DataTypeFloat32, 128, l2Squared128Impl)
-	Registry.Register(MetricL2Squared, DataTypeFloat32, 384, l2Squared384Impl)
-	Registry.Register(MetricL2Squared, DataTypeFloat32, 768, l2Squared768Impl)
-	Registry.Register(MetricL2Squared, DataTypeFloat32, 1024, l2Squared1024Impl)
-	Registry.Register(MetricL2Squared, DataTypeFloat32, 3072, l2Squared3072Impl)
-	Registry.Register(MetricL2Squared, DataTypeInt8, 0, l2SquaredInt8Unrolled4x)
-	Registry.Register(MetricL2Squared, DataTypeUint8, 0, l2SquaredUint8Unrolled4x)
-
-	Registry.Register(MetricEuclidean, DataTypeComplex128, 0, euclideanComplex128Unrolled)
+	Registry.Register(MetricDotProduct, DataTypeComplex64, 0, DotProductComplex64)
+	// complex128: Euclidean uses the optimized dispatch-set version (cast to float64 SIMD)
 	Registry.Register(MetricCosine, DataTypeComplex128, 0, CosineDistanceComplex128)
-	Registry.Register(MetricDotProduct, DataTypeComplex128, 0, dotComplex128Unrolled)
+	Registry.Register(MetricDotProduct, DataTypeComplex128, 0, DotProductComplex128)
 }
 
 // DispatchDistance computes the distance between two vectors using the best available kernel.

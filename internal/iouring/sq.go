@@ -53,10 +53,10 @@ func (r *Ring) SubmitVectored(fd int, iovs []IOVec, offset uint64, userData uint
 
 	sqe := &SQE{
 		Opcode:   IORING_OP_WRITEV,
-		Fd:       int32(fd),
+		Fd:       int32(fd), // #nosec G115
 		Off:      offset,
 		Addr:     uint64(uintptr(unsafe.Pointer(&iovs[0]))),
-		Len:      uint32(len(iovs)),
+		Len:      uint32(len(iovs)), // #nosec G115
 		UserData: userData,
 	}
 
@@ -71,10 +71,10 @@ func (r *Ring) SubmitWrite(fd int, buf []byte, offset uint64, userData uint64) e
 
 	sqe := &SQE{
 		Opcode:   IORING_OP_WRITE,
-		Fd:       int32(fd),
+		Fd:       int32(fd), // #nosec G115
 		Off:      offset,
 		Addr:     uint64(uintptr(unsafe.Pointer(&buf[0]))),
-		Len:      uint32(len(buf)),
+		Len:      uint32(len(buf)), // #nosec G115
 		UserData: userData,
 	}
 
@@ -89,10 +89,10 @@ func (r *Ring) SubmitRead(fd int, buf []byte, offset uint64, userData uint64) er
 
 	sqe := &SQE{
 		Opcode:   IORING_OP_READ,
-		Fd:       int32(fd),
+		Fd:       int32(fd), // #nosec G115
 		Off:      offset,
 		Addr:     uint64(uintptr(unsafe.Pointer(&buf[0]))),
-		Len:      uint32(len(buf)),
+		Len:      uint32(len(buf)), // #nosec G115
 		UserData: userData,
 	}
 
@@ -108,7 +108,7 @@ func (r *Ring) SubmitFsync(fd int, datasync bool, userData uint64) error {
 
 	sqe := &SQE{
 		Opcode:      IORING_OP_FSYNC,
-		Fd:          int32(fd),
+		Fd:          int32(fd), // #nosec G115
 		OpcodeFlags: flags,
 		UserData:    userData,
 	}
@@ -154,9 +154,9 @@ func (r *Ring) FlushAndWait(minComplete uint32, timeout time.Duration) (int, err
 			return int(submitted), err
 		}
 
-		submitted += uint32(n)
+		submitted += uint32(n) // #nosec G115
 
-		if uint32(n) == toSubmit {
+		if uint32(n) == toSubmit { // #nosec G115
 			break
 		}
 

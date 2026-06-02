@@ -312,3 +312,7 @@ func (m *MockProvider) TurboQuantBits() int {
 func (m *MockProvider) GetEvictionManager() any {
 	return nil
 }
+
+func (m *MockProvider) GetDiskStore() any {
+	return nil
+}

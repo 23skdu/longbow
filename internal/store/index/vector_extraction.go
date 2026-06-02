@@ -96,6 +96,10 @@ func (h *ArrowHNSW) ExtractVectorF64ByIDToBufferForParallel(id uint32, dst []flo
 	return fmt.Errorf("unsupported vector type %T for F64 extraction", vecAny)
 }
 
+type diskVectorStoreIntf interface {
+	GetBatchAny(indices []int) (any, error)
+}
+
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 	data := h.data.Load()
 	if data == nil {
@@ -103,8 +107,8 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 	}
 
 	// 1. Try raw vector from memory first (most accurate)
-	if v, err := data.GetVector(id); v != nil || err != nil {
-		return v, err
+	if v, _ := data.GetVector(id); v != nil {
+		return v, nil
 	}
 
 	// Shared Vector Space Path for memory locality
@@ -114,6 +118,27 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 			vec := h.extractFromDataset(loc.BatchIdx, loc.RowIdx)
 			if vec != nil {
 				return vec, nil
+			}
+		}
+	}
+
+	// Try DiskVectorStore fallback before compressed lossy options
+	if h.dataset != nil {
+		if dsAny := h.dataset.GetDiskStore(); dsAny != nil {
+			if dvs, ok := dsAny.(diskVectorStoreIntf); ok && dvs != nil {
+				res, err := dvs.GetBatchAny([]int{int(id)})
+				if err == nil && res != nil {
+					switch v := res.(type) {
+					case [][]float32:
+						if len(v) > 0 {
+							return v[0], nil
+						}
+					case [][]float64:
+						if len(v) > 0 {
+							return v[0], nil
+						}
+					}
+				}
 			}
 		}
 	}
@@ -188,6 +213,27 @@ func (h *ArrowHNSW) getVectorWithCachedDisk(data *types.GraphData, dg *DiskGraph
 			vec := h.extractFromDataset(loc.BatchIdx, loc.RowIdx)
 			if vec != nil {
 				return vec, nil
+			}
+		}
+	}
+
+	// Fallback to DiskVectorStore
+	if h.dataset != nil {
+		if dsAny := h.dataset.GetDiskStore(); dsAny != nil {
+			if dvs, ok := dsAny.(diskVectorStoreIntf); ok && dvs != nil {
+				res, err := dvs.GetBatchAny([]int{int(id)})
+				if err == nil && res != nil {
+					switch v := res.(type) {
+					case [][]float32:
+						if len(v) > 0 {
+							return v[0], nil
+						}
+					case [][]float64:
+						if len(v) > 0 {
+							return v[0], nil
+						}
+					}
+				}
 			}
 		}
 	}

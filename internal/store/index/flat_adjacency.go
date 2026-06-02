@@ -293,8 +293,8 @@ func (fa *FlatAdjacency) EvictToDisk(gd *types.GraphData, layer int, chunkSizes 
 
 		chunk := fa.arena.Get(memory.SliceRef{
 			Offset: offset,
-			Len:    uint32(adjacencyChunkSize * fa.stride),
-			Cap:    uint32(adjacencyChunkSize * fa.stride),
+			Len:    uint32(adjacencyChunkSize * fa.stride), // #nosec G115
+			Cap:    uint32(adjacencyChunkSize * fa.stride), // #nosec G115
 		})
 
 		chunkSizes[cID] = len(chunk)

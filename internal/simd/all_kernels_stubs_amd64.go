@@ -50,6 +50,32 @@ func dot3072AVX2Kernel(a uintptr, b uintptr) float32
 
 func euclidean3072AVX2Kernel(a uintptr, b uintptr) float32
 
+func l2SquaredFloat64AVX2Kernel(a uintptr, b uintptr, n int) float32
+
+func cosineFloat64AVX2Kernel(a uintptr, b uintptr, n int) (dot float32, normA float32, normB float32)
+
+func l2Squared128Float64AVX2Kernel(a uintptr, b uintptr) float32
+
+func dot128Float64AVX2Kernel(a uintptr, b uintptr) float32
+
+func euclidean128Float64AVX2Kernel(a uintptr, b uintptr) float32
+
+func l2Squared384Float64AVX2Kernel(a uintptr, b uintptr) float32
+
+func dot384Float64AVX2Kernel(a uintptr, b uintptr) float32
+
+func euclidean384Float64AVX2Kernel(a uintptr, b uintptr) float32
+
+func l2Squared768Float64AVX2Kernel(a uintptr, b uintptr) float32
+
+func dot768Float64AVX2Kernel(a uintptr, b uintptr) float32
+
+func euclidean768Float64AVX2Kernel(a uintptr, b uintptr) float32
+
+func l2SquaredFloat64AVX512Kernel(a uintptr, b uintptr, n int) float32
+
+func cosineFloat64AVX512Kernel(a uintptr, b uintptr, n int) (dot float32, normA float32, normB float32)
+
 func l2Squared128AVX512Kernel(a uintptr, b uintptr) float32
 
 func dot128AVX512Kernel(a uintptr, b uintptr) float32

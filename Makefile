@@ -61,7 +61,7 @@ build-bench:
 # Build with CUDA GPU support (Linux AMD64)
 build-cuda:
 	@echo "Building longbow $(VERSION) with CUDA support..."
-	@echo "Note: Requires CUDA toolkit and FAISS library"
+	@echo "Note: Requires CUDA toolkit (FAISS optional, longbow uses native CUDA kernels)"
 	@if [ -z "$(CUDA_HOME)" ]; then \
 		if [ -d "/usr/local/cuda" ]; then \
 			export CUDA_HOME=/usr/local/cuda; \

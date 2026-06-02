@@ -188,6 +188,14 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			}
 		}
 
+		// 3. Check admission controller (memory pressure, WAL replay, migration)
+		if resp["status"] == "READY" && s.admission != nil {
+			if err := s.admission.CanAdmitSearch(); err != nil {
+				resp["status"] = "BUSY"
+				resp["reason"] = fmt.Sprintf("admission blocked: %v", err)
+			}
+		}
+
 		body, err := json.Marshal(resp)
 		if err != nil {
 			return status.Errorf(codes.Internal, "failed to serialize status: %v", err)
@@ -1538,7 +1546,11 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		if _, err := ds.DiskStore.BatchAppendArrow(rec, diskVecColIdx); err != nil {
 			s.logger.Error().Err(err).Msg("Failed to batch append to DiskStore (Zero-Copy)")
 		} else {
-			metrics.DiskStoreWriteBytesTotal.WithLabelValues(name).Add(float64(rec.NumRows() * int64(ds.DiskStore.dim) * 4))
+			elemSize := 4
+			if ds.PreferredVectorType == types.VectorTypeFloat64 {
+				elemSize = 8
+			}
+			metrics.DiskStoreWriteBytesTotal.WithLabelValues(name).Add(float64(rec.NumRows() * int64(ds.DiskStore.dim) * int64(elemSize)))
 		}
 	}
 

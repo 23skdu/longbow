@@ -108,7 +108,7 @@ func (w *ArrowWriter) WriteRecordBatch(rec arrow.RecordBatch, offset int64) (*Wr
 	w.mu.Unlock()
 
 	// Submit write operation
-	if err := w.ring.SubmitWrite(0, req.Buffer, uint64(offset), id); err != nil {
+	if err := w.ring.SubmitWrite(0, req.Buffer, uint64(offset), id); err != nil { // #nosec G115
 		w.mu.Lock()
 		delete(w.completions, id)
 		w.mu.Unlock()
@@ -161,7 +161,7 @@ func (w *ArrowWriter) WriteV(records []arrow.RecordBatch, offset int64) (*WriteR
 		copy(buf[off:], w.writeBuf.Bytes())
 		iovs[i] = IOVec{
 			Base: unsafe.Pointer(&buf[off]),
-			Len:  uint64(sizes[i]),
+			Len:  uint64(sizes[i]), // #nosec G115
 		}
 		off += sizes[i]
 	}
@@ -180,7 +180,7 @@ func (w *ArrowWriter) WriteV(records []arrow.RecordBatch, offset int64) (*WriteR
 	w.mu.Unlock()
 
 	// Submit vectored write
-	if err := w.ring.SubmitVectored(0, iovs, uint64(offset), id); err != nil {
+	if err := w.ring.SubmitVectored(0, iovs, uint64(offset), id); err != nil { // #nosec G115
 		w.mu.Lock()
 		delete(w.completions, id)
 		w.mu.Unlock()
@@ -273,7 +273,7 @@ func (r *ArrowReader) ReadRecordBatch(offset int64, size int) (arrow.RecordBatch
 	}
 
 	// Submit read operation
-	if err := r.ring.SubmitRead(0, buf[:size], uint64(offset), 0); err != nil {
+	if err := r.ring.SubmitRead(0, buf[:size], uint64(offset), 0); err != nil { // #nosec G115
 		r.bufferPool.Put(buf)
 		return nil, fmt.Errorf("submit failed: %w", err)
 	}

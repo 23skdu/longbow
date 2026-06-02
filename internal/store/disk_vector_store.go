@@ -10,8 +10,10 @@ import (
 	"sort"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/storage"
+	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/klauspost/compress/zstd"
@@ -42,6 +44,7 @@ type DiskVectorStore struct {
 	zstdDec     *zstd.Decoder
 	blocks      []BlockEntry
 	totalCount  int
+	dataType    types.VectorDataType
 
 	// Tombstone deletion - tracks deleted indices (consistent with ArrowHNSW)
 	deleted map[int]bool
@@ -124,28 +127,51 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 		return 0, fmt.Errorf("column %d is not a FixedSizeList", colIdx)
 	}
 
-	// Get the underlying values array (e.g. Float32Array)
-	values := listArr.Data().Children()[0]
-	if len(values.Buffers()) < 2 || values.Buffers()[1] == nil {
-		return 0, fmt.Errorf("invalid arrow data: missing value buffer")
-	}
-
-	// Get the specific range for this batch
 	width := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
 	offset := listArr.Data().Offset()
-	elemSize := 4 // float32
-	startBytes := offset * width * elemSize
-	lenBytes := numRows * width * elemSize
 
-	raw := values.Buffers()[1].Bytes()
-	if startBytes+lenBytes > len(raw) {
-		return 0, fmt.Errorf("arrow buffer out of bounds")
+	var dataSlice []byte
+	var elemSize int
+
+	switch valuesArr := listArr.ListValues().(type) {
+	case *array.Float32:
+		elemSize = 4
+		vals := valuesArr.Float32Values()
+		start := offset * width
+		end := start + numRows*width
+		if start < 0 || end > len(vals) {
+			return 0, fmt.Errorf("index out of bounds")
+		}
+		slice := vals[start:end]
+		if len(slice) > 0 {
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*4)
+		}
+	case *array.Float64:
+		elemSize = 8
+		vals := valuesArr.Float64Values()
+		start := offset * width
+		end := start + numRows*width
+		if start < 0 || end > len(vals) {
+			return 0, fmt.Errorf("index out of bounds")
+		}
+		slice := vals[start:end]
+		if len(slice) > 0 {
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*8)
+		}
+	default:
+		return 0, fmt.Errorf("unsupported list element type: %T", valuesArr)
 	}
 
-	dataSlice := raw[startBytes : startBytes+lenBytes]
+	lenBytes := numRows * width * elemSize
 
 	dvs.mu.Lock()
 	defer dvs.mu.Unlock()
+
+	if elemSize == 8 {
+		dvs.dataType = types.VectorTypeFloat64
+	} else {
+		dvs.dataType = types.VectorTypeFloat32
+	}
 
 	var dataToWrite []byte
 	var compType byte // 0: none, 1: zstd, 2: lz4
@@ -354,6 +380,91 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 	}
 
 	return results, nil
+}
+
+// GetBatchAny retrieves multiple vectors of any supported type by their absolute indices.
+func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
+	if len(indices) == 0 {
+		return nil, nil
+	}
+
+	dvs.mu.RLock()
+	dataType := dvs.dataType
+	dvs.mu.RUnlock()
+
+	// Re-use standard GetBatch logic but specialize element sizes and conversion
+	dvs.mu.RLock()
+	defer dvs.mu.RUnlock()
+
+	filtered := make([]int, 0, len(indices))
+	for _, idx := range indices {
+		if !dvs.deleted[idx] {
+			filtered = append(filtered, idx)
+		}
+	}
+
+	if len(filtered) == 0 {
+		return nil, nil
+	}
+
+	blockRequestMap := make(map[int][]int)
+	for _, idx := range filtered {
+		bIdx := dvs.findBlock(idx)
+		if bIdx == -1 {
+			return nil, fmt.Errorf("vector index %d out of bounds", idx)
+		}
+		blockRequestMap[bIdx] = append(blockRequestMap[bIdx], idx)
+	}
+
+	blockData := make(map[int][]byte)
+	for bIdx := range blockRequestMap {
+		raw, err := dvs.fetchBlockData(bIdx)
+		if err != nil {
+			return nil, err
+		}
+		blockData[bIdx] = raw
+	}
+
+	elemSize := 4
+	if dataType == types.VectorTypeFloat64 {
+		elemSize = 8
+	}
+
+	if dataType == types.VectorTypeFloat64 {
+		results := make([][]float64, len(filtered))
+		for i, idx := range filtered {
+			bIdx := dvs.findBlock(idx)
+			raw := blockData[bIdx]
+			block := dvs.blocks[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]float64, dvs.dim)
+			offset := localIdx * dvs.dim * elemSize
+			for j := 0; j < dvs.dim; j++ {
+				bits := binary.LittleEndian.Uint64(raw[offset+j*8 : offset+(j+1)*8])
+				vec[j] = math.Float64frombits(bits)
+			}
+			results[i] = vec
+		}
+		return results, nil
+	} else {
+		results := make([][]float32, len(filtered))
+		for i, idx := range filtered {
+			bIdx := dvs.findBlock(idx)
+			raw := blockData[bIdx]
+			block := dvs.blocks[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]float32, dvs.dim)
+			offset := localIdx * dvs.dim * elemSize
+			for j := 0; j < dvs.dim; j++ {
+				bits := binary.LittleEndian.Uint32(raw[offset+j*4 : offset+(j+1)*4])
+				vec[j] = math.Float32frombits(bits)
+			}
+			results[i] = vec
+		}
+		return results, nil
+	}
 }
 
 func (dvs *DiskVectorStore) fetchBlockData(bIdx int) ([]byte, error) {

@@ -606,7 +606,7 @@ func cosineF16AVX2(a, b []float16.Num) (float32, error) {
 	if normA <= 0 || normB <= 0 {
 		return 1.0, nil
 	}
-	return 1.0 - (dot/float32(math.Sqrt(float64(normA))))*float32(math.Sqrt(float64(normB))), nil
+	return 1.0 - dot/(float32(math.Sqrt(float64(normA)))*float32(math.Sqrt(float64(normB)))), nil
 }
 
 // F16 kernels are in stubs
@@ -642,11 +642,40 @@ func dotFloat64AVX2(a, b []float64) (float32, error) {
 }
 
 func l2SquaredFloat64AVX2(a, b []float64) (float32, error) {
-	val, err := euclideanFloat64AVX2(a, b)
-	if err != nil {
-		return 0, err
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
 	}
-	return val * val, nil
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if !features.HasAVX2 {
+		return l2SquaredFloat64Unrolled4x(a, b)
+	}
+	return l2SquaredFloat64AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a)), nil
+}
+
+func cosineFloat64AVX2(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	if !features.HasAVX2 {
+		return cosineFloat64Unrolled4x(a, b)
+	}
+	dot, normA, normB := cosineFloat64AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a),
+	)
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	return 1.0 - (dot / (float32(math.Sqrt(float64(normA))) * float32(math.Sqrt(float64(normB))))), nil
 }
 
 // =============================================================================

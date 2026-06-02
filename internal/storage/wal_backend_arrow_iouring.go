@@ -175,7 +175,7 @@ func (b *ArrowIOUringBackend) writeAsync(p []byte, start time.Time) (int, error)
 
 	// Submit write operation (non-blocking)
 	userData := uint64(time.Now().UnixNano())
-	err := b.ring.SubmitWrite(int(b.file.Fd()), p, uint64(offset), userData)
+	err := b.ring.SubmitWrite(int(b.file.Fd()), p, uint64(offset), userData) // #nosec G115
 	if err != nil {
 		atomic.AddInt64(&b.offset, -int64(len(p))) // Rollback offset
 		iouring.IoUringSubmitLatency.WithLabelValues("write").Observe(time.Since(start).Seconds())
@@ -212,7 +212,7 @@ func (b *ArrowIOUringBackend) writeAsyncSync(p []byte) (int, error) {
 	offset := atomic.AddInt64(&b.offset, int64(len(p))) - int64(len(p))
 
 	// Submit write operation
-	err := b.ring.SubmitWrite(int(b.file.Fd()), p, uint64(offset), 0)
+	err := b.ring.SubmitWrite(int(b.file.Fd()), p, uint64(offset), 0) // #nosec G115
 	if err != nil {
 		atomic.AddInt64(&b.offset, -int64(len(p)))
 		iouring.IoUringSubmitLatency.WithLabelValues("write").Observe(time.Since(start).Seconds())

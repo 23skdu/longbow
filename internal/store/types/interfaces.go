@@ -158,4 +158,5 @@ type IndexDataProvider interface {
 	GetLogger() zerolog.Logger
 	GetTopo() *memory.NUMATopology
 	GetEvictionManager() any
+	GetDiskStore() any
 }

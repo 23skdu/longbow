@@ -84,6 +84,54 @@ func (ac *AdmissionController) IsWALReplay() bool {
 	return ac.walReplaying.Load()
 }
 
+// CanAdmitSearch checks if a search request would be admitted without acquiring state.
+// Returns nil if search can proceed, or an error describing why it would be rejected.
+func (ac *AdmissionController) CanAdmitSearch() error {
+	if ac.Bypass {
+		return nil
+	}
+
+	// Check WAL replay / migration
+	if ac.walReplaying.Load() || ac.migratingCount.Load() > 0 {
+		return status.Errorf(codes.ResourceExhausted, "WAL replay or sharding in progress")
+	}
+
+	// Check memory pressure
+	maxMem := ac.maxMemory.Load()
+	if maxMem > 0 {
+		currMem := ac.currentMemory.Load()
+		var m runtime.MemStats
+		runtime.ReadMemStats(&m)
+		heapMem := int64(m.HeapAlloc) // #nosec G115
+		offHeapMem := lbmem.GetGlobalOffHeapAllocated()
+		effectiveMem := currMem
+		physicalMem := heapMem + offHeapMem
+		if physicalMem > effectiveMem {
+			effectiveMem = physicalMem
+		}
+
+		memoryUsage := float64(effectiveMem) / float64(maxMem)
+		if ac.tuner != nil {
+			if ratio := ac.tuner.GetUtilizationRatio(); ratio > memoryUsage {
+				memoryUsage = ratio
+			}
+		}
+
+		hardLimit := 0.88
+		if ac.migratingCount.Load() == 0 {
+			hardLimit = 0.90
+		}
+
+		if memoryUsage > hardLimit {
+			return status.Errorf(codes.ResourceExhausted,
+				"memory usage %.1f%% exceeds limit %.0f%%",
+				memoryUsage*100, hardLimit*100)
+		}
+	}
+
+	return nil
+}
+
 // Release releases slots and updates request counters when operations finish.
 func (ac *AdmissionController) Release(opType string) {
 	if opType == "search" || opType == "query" {

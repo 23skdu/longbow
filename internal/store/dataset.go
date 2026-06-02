@@ -859,7 +859,7 @@ func (d *Dataset) UpdatePrimaryIndexAsync(batchIdx int, idMap *IDMap) {
 
 // WaitForIndexing blocks until all pending indexing jobs for this dataset are complete.
 func (d *Dataset) WaitForIndexing() {
-	for d.PendingIndexJobs.Load() > 0 || d.PendingIngestion.Load() > 0 || (d.Admission != nil && d.Admission.migratingCount.Load() > 0) {
+	for d.PendingIndexJobs.Load() > 0 || d.PendingIngestion.Load() > 0 {
 		time.Sleep(10 * time.Millisecond)
 	}
 }
@@ -1072,4 +1072,11 @@ func (d *Dataset) GetTopo() *memory.NUMATopology {
 
 func (d *Dataset) GetEvictionManager() any {
 	return d.EvictionManager
+}
+
+func (d *Dataset) GetDiskStore() any {
+	if d.DiskStore == nil {
+		return nil
+	}
+	return d.DiskStore
 }

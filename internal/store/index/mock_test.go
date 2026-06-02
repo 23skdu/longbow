@@ -101,3 +101,4 @@ func (m *MockDataset) GetTopo() *memory.NUMATopology {
 }
 func (m *MockDataset) TurboQuantBits() int     { return 8 }
 func (m *MockDataset) GetEvictionManager() any { return nil }
+func (m *MockDataset) GetDiskStore() any       { return nil }

@@ -166,9 +166,12 @@ def to_arrow_table(
         value_arr = pa.array(flat_vecs, type=value_type)
         arrow_vecs = pa.FixedSizeListArray.from_arrays(value_arr, current_dim)
         
-        # arrow_ids = pa.array(data['id'].values, type=pa.int64())
-        # Allow string IDs for test compatibility
-        arrow_ids = pa.array(data['id'].values, type=pa.string())
+        id_values = data['id'].values
+        id_dtype = id_values.dtype
+        if pd.api.types.is_integer_dtype(id_dtype):
+            arrow_ids = pa.array(id_values, type=pa.int64())
+        else:
+            arrow_ids = pa.array(id_values, type=pa.string())
         arrow_ts = pa.array(data['timestamp'].values, type=pa.timestamp("ns"))
         
         arrays = [arrow_ids, arrow_vecs, arrow_ts]

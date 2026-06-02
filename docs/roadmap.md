@@ -21,26 +21,9 @@ graph TD
 
 ### Implementation Subtasks
 
-#### Phase 1: Go ADBC Interface Implementation
-- [ ] **Task 1.1: Dependency Integration**
-  - Add `github.com/apache/arrow-adbc/go/adbc` to `go.mod`.
-- [ ] **Task 1.2: Implement `adbc.Driver` and `adbc.Database`**
-  - Implement a `Driver` registry pattern.
-  - Implement `Database` struct supporting options like WAL paths, index locations, and memory constraints.
-- [ ] **Task 1.3: Implement `adbc.Connection`**
-  - Support connection-level configurations.
-  - Implement metadata endpoints (`GetObjects`, `GetTableSchema`, `GetTableTypes`) to query Longbow collection catalogs.
-- [ ] **Task 1.4: Implement `adbc.Statement` & Bindings**
-  - Implement `SetSqlQuery(query string)` mapping SQL queries (and vector syntax like `vector <-> ?`) to Longbow query plans.
-  - Implement `Bind(ctx, stream array.RecordReader)` to accept vector embeddings dynamically.
-  - Implement `ExecuteQuery(ctx)` wrapping Longbow's native `ArrowSearchContext` results in an `array.RecordReader`.
+### Implementation Subtasks
 
-#### Phase 2: C-API & Cross-Language Export
-- [ ] **Task 2.1: Cgo ABI Bindings**
-  - Develop `cgo` bindings mapping Go ADBC structs to the C ADBC API standards.
-  - Integrate Arrow C Data Interface (`github.com/apache/arrow/go/v16/arrow/cdata`) to export Arrow records to other runtimes without copying.
-- [ ] **Task 2.2: Shared Library Compilation**
-  - Configure build scripts (`Makefile`/`Go`) to compile the package as a C-shared library (`liblongbow_adbc.so`).
+All ADBC implementation phases (Go ADBC Interface Implementation & C-API Export) have been successfully completed and verified.
 
 ### Testing Strategy
 

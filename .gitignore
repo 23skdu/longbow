@@ -11,12 +11,16 @@ longbow_metal
 longbow_bin
 longbow_local
 server
+/cli
+cli_*
 bin/
 bin_linux/
 build/
 dist/
 longbow_server
 benchtool
+bench_tool_bin
+bench_io
 longbow-cli
 cmd/longbow/longbow
 cmd/soak_test/soak_test

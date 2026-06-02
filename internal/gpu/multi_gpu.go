@@ -17,11 +17,11 @@ import (
 )
 
 type MultiGPUConfig struct {
-	DeviceIDs       []int32
-	Strategy        MultiGPUStrategy
-	MaxMemoryPerGPU int64
-	EnableMigration bool
-	BalanceInterval time.Duration
+	DeviceIDs        []int32
+	Strategy         MultiGPUStrategy
+	MaxMemoryPerGPU  int64
+	EnableMigration  bool
+	BalanceInterval  time.Duration
 	MaxConcurrentGPU int // max concurrent GPU operations across all devices (0 = GOMAXPROCS)
 }
 

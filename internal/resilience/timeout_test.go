@@ -76,7 +76,7 @@ func TestWithCustomTimeout(t *testing.T) {
 func TestWithTimeoutGraceful(t *testing.T) {
 	tm := NewTimeoutManager(&TimeoutConfig{
 		SearchTimeout: 20 * time.Millisecond,
-		GracePeriod:  10 * time.Millisecond,
+		GracePeriod:   10 * time.Millisecond,
 	})
 
 	err := tm.WithTimeoutGraceful(context.Background(), "search", func(ctx context.Context) error {

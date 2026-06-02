@@ -56,7 +56,6 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 		return nil
 	}
 
-
 	switch arr := values.(type) {
 	case *arrowarray.Float32:
 		floats := arr.Float32Values()[start:end]

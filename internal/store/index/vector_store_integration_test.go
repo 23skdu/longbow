@@ -30,7 +30,7 @@ func TestVectorStoreIntegration_PagingEviction(t *testing.T) {
 
 	numVectors := 5000
 	rng := rand.New(rand.NewSource(42))
-	
+
 	listB := b.Field(0).(*array.FixedSizeListBuilder)
 	valB := listB.ValueBuilder().(*array.Float32Builder)
 

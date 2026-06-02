@@ -268,7 +268,7 @@ func euclideanDistanceBatch4Way(query []float32, vectors [][]float32, results []
 			v3 := vectors[i+3]
 			if v0 != nil && v1 != nil && v2 != nil && v3 != nil &&
 				len(v0) == dims && len(v1) == dims && len(v2) == dims && len(v3) == dims {
-				
+
 				var d0, d1, d2, d3 float32
 				for k := 0; k < dims; k++ {
 					qk := query[k]
@@ -327,7 +327,7 @@ func dotProductBatch4Way(query []float32, vectors [][]float32, results []float32
 			v3 := vectors[i+3]
 			if v0 != nil && v1 != nil && v2 != nil && v3 != nil &&
 				len(v0) == dims && len(v1) == dims && len(v2) == dims && len(v3) == dims {
-				
+
 				var d0, d1, d2, d3 float32
 				for k := 0; k < dims; k++ {
 					qk := query[k]

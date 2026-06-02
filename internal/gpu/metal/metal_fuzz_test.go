@@ -3,9 +3,9 @@
 package metal
 
 import (
+	"github.com/23skdu/longbow/internal/gpu/types"
 	"math/rand"
 	"testing"
-	"github.com/23skdu/longbow/internal/gpu/types"
 )
 
 func FuzzMetalPagerEviction(f *testing.F) {

@@ -883,8 +883,8 @@ import (
 	"time"
 	"unsafe"
 
-	"github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/gpu/memory"
+	"github.com/23skdu/longbow/internal/gpu/types"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/simd"
@@ -902,21 +902,21 @@ type MetalIndexOptimized struct {
 	graphOffsets   []uint32
 	graphNeighbors []uint32
 	graphWeights   []float32
-	
+
 	// Paging and Memory
-	memPool        *memory.GPUMemPool
-	pager          *memory.GPUPager
-	vectorCount    int
-	idList         []int64
-	
+	memPool     *memory.GPUMemPool
+	pager       *memory.GPUPager
+	vectorCount int
+	idList      []int64
+
 	// Batching
-	batchMu        sync.Mutex
-	batchIDs       []int64
-	batchVectors   []float32
-	maxMemory      int64
-	lastSyncTime   time.Time
-	syncTicker     *time.Ticker
-	stopSync       chan struct{}
+	batchMu      sync.Mutex
+	batchIDs     []int64
+	batchVectors []float32
+	maxMemory    int64
+	lastSyncTime time.Time
+	syncTicker   *time.Ticker
+	stopSync     chan struct{}
 }
 
 // NewMetalIndexOptimized creates an optimized Metal-based GPU index with compute shaders
@@ -1049,7 +1049,6 @@ func NewMetalIndexOptimized(cfg types.GPUConfig) (types.Index, error) {
 	runtime.SetFinalizer(idx, (*MetalIndexOptimized).Close)
 	return idx, nil
 }
-
 
 func (idx *MetalIndexOptimized) pageIDFor(dataType int, chunkIdx int) int64 {
 	return int64(dataType)<<32 | int64(chunkIdx)
@@ -1194,7 +1193,6 @@ func (idx *MetalIndexOptimized) Add(ids []int64, vectors []float32) error {
 	return nil
 }
 
-
 // Len returns the number of vectors in the index
 func (idx *MetalIndexOptimized) Len() int {
 	idx.mu.RLock()
@@ -1299,8 +1297,8 @@ func (idx *MetalIndexOptimized) Search(vector []float32, k int) ([]int64, []floa
 		return nil, nil, fmt.Errorf("failed to search optimized Metal buffer")
 	}
 
-	// Because we replaced idBuffer logic directly into idList in Go (like CUDA), 
-	// the C returned IDs are actually LOCAL offsets within the totalVecs. 
+	// Because we replaced idBuffer logic directly into idList in Go (like CUDA),
+	// the C returned IDs are actually LOCAL offsets within the totalVecs.
 	// So we must remap local offsets to global IDs using idx.idList.
 	// Wait! I will just use idx.idList in Go!
 	for i := 0; i < k; i++ {
@@ -1314,7 +1312,6 @@ func (idx *MetalIndexOptimized) Search(vector []float32, k int) ([]int64, []floa
 
 	return ids, distances, nil
 }
-
 
 const (
 	vecTypeF32  = C.VectorTypeGPU(0)

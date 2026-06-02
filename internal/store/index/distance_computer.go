@@ -758,7 +758,7 @@ func (c *float32ToSQ8Computer) ComputeSingle(id uint32) (float32, error) {
 			return float32(math.Sqrt(float64(sum))), nil
 		}
 	}
-	
+
 	// Fallback to explicit retrieval
 	return c.h.distFuncSquared(c.q, c.q) // Mock fallback error, shouldn't hit
 }

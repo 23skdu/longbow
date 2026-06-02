@@ -180,16 +180,16 @@ type ArrowSearchContext struct {
 	rotatedQueryTQ []float32
 
 	// Pre-converted query buffers for cross-type search
-	queryF64   []float64
-	queryF16   []float16.Num
-	queryC64   []complex64
-	queryC128  []complex128
-	queryInt8  []int8
-	queryInt16 []int16
+	queryF64    []float64
+	queryF16    []float16.Num
+	queryC64    []complex64
+	queryC128   []complex128
+	queryInt8   []int8
+	queryInt16  []int16
 	queryUint16 []uint16
-	queryInt32 []int32
+	queryInt32  []int32
 	queryUint32 []uint32
-	queryInt64 []int64
+	queryInt64  []int64
 	queryUint64 []uint64
 
 	// Zero-allocation pre-sized batch buffers for SIMD batching

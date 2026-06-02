@@ -50,7 +50,7 @@ struct ADBC_Driver {
     void* private_data;
     void* private_manager;
     void (*release)(struct ADBC_Driver* driver, struct ADBC_Error* error);
-    
+
     // Core functions
     int (*DatabaseNew)(struct ADBC_Driver*, void*, struct ADBC_Error*);
     int (*StatementExecuteQuery)(void*, struct ArrowArrayStream*, int64_t*, struct ADBC_Error*);
@@ -74,15 +74,15 @@ func AdbcDriverInit(version C.int, driver unsafe.Pointer, err *C.struct_ADBC_Err
 	// Task 2.1: Cgo ABI Bindings
 	// Here we map the Go ADBC driver to the C ADBC API standards.
 	// We bind the driver methods to the provided C ADBC_Driver struct.
-	
+
 	fmt.Println("Longbow ADBC Driver Initialized via C-API")
-	
+
 	_ = adbc.NewDriver()
-	
+
 	// Example of casting and setting a function pointer would go here:
 	// cDriver := (*C.struct_ADBC_Driver)(driver)
 	// cDriver.StatementExecuteQuery = C.StatementExecuteQuery_cgo
-	
+
 	return 0 // ADBC_STATUS_OK
 }
 
@@ -91,26 +91,26 @@ func StatementExecuteQuery_cgo(stmt unsafe.Pointer, outStream *C.struct_ArrowArr
 	// Cast back to Go statement
 	// goStmt := (*adbc.Statement)(stmt)
 	// reader, rows, goErr := goStmt.ExecuteQuery(context.Background())
-	
+
 	// Mock executing a statement
 	driver := adbc.NewDriver()
 	db, _ := driver.NewDatabase(nil)
 	conn, _ := db.Open(context.Background())
 	goStmt, _ := conn.NewStatement()
 	reader, rows, goErr := goStmt.ExecuteQuery(context.Background())
-	
+
 	if goErr != nil {
 		return 1 // ADBC_STATUS_UNKNOWN
 	}
-	
+
 	if rowsAffected != nil {
 		*rowsAffected = C.int64_t(rows)
 	}
-	
+
 	// Task 2.1: Integrate Arrow C Data Interface to export Arrow records
 	// to other runtimes without copying.
 	cdata.ExportRecordReader(reader, (*cdata.CArrowArrayStream)(unsafe.Pointer(outStream)))
-	
+
 	return 0 // ADBC_STATUS_OK
 }
 

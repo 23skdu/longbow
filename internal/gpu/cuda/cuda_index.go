@@ -294,9 +294,9 @@ type CUDAIndex struct {
 
 	vectorCount int
 	idList      []int64
-	pqM         int          // PQ subquantizer count
-	tqStride    int          // TQ bytes per vector
-	tqBitsAngle int          // TQ bits per angle
+	pqM         int // PQ subquantizer count
+	tqStride    int // TQ bytes per vector
+	tqBitsAngle int // TQ bits per angle
 
 	// chunk tracking per dtype
 	fp32Chunks chunkTracker

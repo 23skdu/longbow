@@ -147,7 +147,7 @@ type GraphData struct {
 	SharedVectorSpace bool // If true, skip primary vector storage allocation
 
 	cloneCount int32  // Atomic: incremented during Clone, checked by Release before freeing
-	released    uint32 // Atomic flag to prevent double-release/idempotency
+	released   uint32 // Atomic flag to prevent double-release/idempotency
 
 	// OnNeighborsMiss is a callback hook triggered when neighbor data for a layer is accessed but evicted (offset == 0).
 	OnNeighborsMiss func(layer int) error
@@ -2120,7 +2120,7 @@ func (g *GraphData) GetVectorPQWithGen(id uint32, maxGen uint64) []byte {
 			return nil
 		}
 
-		ptr := unsafe.Pointer(&chunk[0]) // #nosec G103
+		ptr := unsafe.Pointer(&chunk[0])                    // #nosec G103
 		byteChunk := unsafe.Slice((*byte)(ptr), numWords*8) // #nosec G103
 
 		start := cOff * m

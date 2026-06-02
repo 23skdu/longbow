@@ -5,9 +5,9 @@ import (
 	"context"
 	"fmt"
 	"math"
+	"sort"
 	"sync"
 	"sync/atomic"
-	"sort"
 
 	"time"
 
@@ -141,8 +141,6 @@ func (gi *GeoIndex) GetVectorIndex() VectorIndex {
 	}
 	return gi.ds.Index
 }
-
-
 
 // Quadtree implements a recursive spatial partitioning structure.
 type Quadtree struct {

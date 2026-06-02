@@ -2,7 +2,6 @@ package tpu
 
 import (
 	"golang.org/x/sys/unix"
-	"reflect"
 	"unsafe"
 )
 
@@ -18,12 +17,12 @@ func AllocatePinned(size int) (*PinnedBuffer, error) {
 	if err != nil {
 		return nil, err
 	}
-	
+
 	if err := unix.Mlock(data); err != nil {
 		_ = unix.Munmap(data)
 		return nil, err
 	}
-	
+
 	return &PinnedBuffer{Data: data}, nil
 }
 
@@ -35,8 +34,9 @@ func (p *PinnedBuffer) Free() error {
 
 // Float32Slice returns the pinned memory as a float32 slice for vector embedding ingestion.
 func (p *PinnedBuffer) Float32Slice() []float32 {
-	header := *(*reflect.SliceHeader)(unsafe.Pointer(&p.Data))
-	header.Len /= 4
-	header.Cap /= 4
-	return *(*[]float32)(unsafe.Pointer(&header))
+	if len(p.Data) == 0 {
+		return nil
+	}
+	ptr := (*float32)(unsafe.Pointer(&p.Data[0]))
+	return unsafe.Slice(ptr, len(p.Data)/4)
 }

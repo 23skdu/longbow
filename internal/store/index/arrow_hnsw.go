@@ -65,7 +65,7 @@ type ArrowHNSW struct {
 	insertPool *InsertContextPool
 
 	// DiskGraph backing
-	diskGraph atomic.Pointer[DiskGraph]
+	diskGraph   atomic.Pointer[DiskGraph]
 	diskFlushed atomic.Bool
 	lastFlushNC atomic.Int64
 
@@ -383,7 +383,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 			// to GetGlobalOffHeapAllocated() and the GC tuner's memory pressure accounting.
 			adjArena = memory.NewSlabArenaWithAllocator(slabSize, memory.GetGlobalOffHeapAllocator())
 		}
-		
+
 		maxNeighbors := config.MMax
 		if l == 0 {
 			maxNeighbors = config.MMax0
@@ -391,7 +391,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 				maxNeighbors = config.MMax * 2
 			}
 		}
-		
+
 		fa := NewFlatAdjacency(adjArena, maxNeighbors, capacity)
 		fa.missLayer = l
 		gd.PackedNeighbors[l] = fa

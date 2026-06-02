@@ -50,7 +50,7 @@ func TestGraphLayerEvictionManager(t *testing.T) {
 	}
 
 	mgr.Register(gd)
-	
+
 	// Test SwapTarget
 	gd2 := &types.GraphData{
 		Name:        "test-dataset-swapped",
@@ -92,7 +92,7 @@ func TestGraphLayerEvictionManager(t *testing.T) {
 			continue // skip assertion if it was not restored
 		}
 		require.NotEqual(t, uint64(0), off, "Layer 0 offset should be restored")
-		
+
 		sz := uint32(types.ChunkSize * types.MaxNeighbors)
 		chunk := gd2.Uint32Arena.Get(memory.SliceRef{
 			Offset: off,
@@ -103,12 +103,12 @@ func TestGraphLayerEvictionManager(t *testing.T) {
 			require.Equal(t, uint32(0*1000+j*100+k), chunk[k], "Restored data should match")
 		}
 	}
-	
+
 	// Coverage for currentHeapUtilization and maybeEvictAll
 	util := currentHeapUtilization()
 	require.GreaterOrEqual(t, util, 0.0)
-	
+
 	// Overwrite threshold to guarantee eviction branch runs if util > 0
-	mgr.threshold = -1.0 
+	mgr.threshold = -1.0
 	mgr.maybeEvictAll()
 }

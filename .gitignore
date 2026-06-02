@@ -147,3 +147,5 @@ bench-tool
 /*.patch
 /*.air
 internal/gpu/cuda/kernels.o
+liblongbow_adbc.so
+liblongbow_adbc.h

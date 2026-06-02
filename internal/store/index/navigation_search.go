@@ -607,7 +607,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 	switch q := queryVal.(type) {
 	case []float32:
 		bypassQuantization := searchOptions.VectorType == types.VectorTypeFloat32
-		
+
 		// Fallback dynamically to full-precision Float32 on Layer 0 if primary type is Float32
 		// ForceQuantized is true for upper layers (layer > 0)
 		if !bypassQuantization && !searchOptions.ForceQuantized && data.Type == types.VectorTypeFloat32 {

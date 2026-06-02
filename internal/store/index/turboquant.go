@@ -33,11 +33,11 @@ func NewTurboQuantEncoder(dims int, bitsPerAngle int, seed int64) *TurboQuantEnc
 	rb := NewLockFreeRingBuffer[*[]float32](1024)
 
 	return &TurboQuantEncoder{
-		params:    TurboQuantParams{BitsPerAngle: bitsPerAngle, Seed: seed},
-		dims:      dims,
-		pow2:      pow2,
-		had:       simd.NewHadamardTransformer(pow2),
-		pool:      rb,
+		params: TurboQuantParams{BitsPerAngle: bitsPerAngle, Seed: seed},
+		dims:   dims,
+		pow2:   pow2,
+		had:    simd.NewHadamardTransformer(pow2),
+		pool:   rb,
 	}
 }
 
@@ -217,7 +217,7 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 	wsPtr := e.getWorkspace()
 	workspace := *wsPtr
 	defer e.putWorkspace(wsPtr)
-	recon := make([]float32, e.pow2) 
+	recon := make([]float32, e.pow2)
 	e.polarReconstructRecursive(radius, angles, recon, workspace)
 
 	// Apply QJL Correction

@@ -141,7 +141,7 @@ func main() {
 					log.Fatalf("Failed to read record %d: %v", i, err)
 				}
 				record.Retain()
-				
+
 				if uploader == nil {
 					uploader, err = newStreamUploader(sc, *dataset, record.Schema())
 					if err != nil {
@@ -378,12 +378,12 @@ func main() {
 			if err := uploader.Write(rec); err != nil {
 				log.Fatalf("DoPut write failed: %v", err)
 			}
-			
+
 			totalUploaded += int(rec.NumRows())
-			
+
 			if totalUploaded%50000 == 0 || totalUploaded == *scale {
 				log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, *scale)
-				
+
 				// Server has 18GB memory, safe to burst 400k vectors without deep backpressure polling
 				if totalUploaded < *scale {
 					time.Sleep(1 * time.Second) // Small breather for server

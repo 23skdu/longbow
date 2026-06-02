@@ -12,12 +12,12 @@ func (c *Client) LoadKernel(filename string) (Executable, error) {
 	if filename == "" {
 		return nil, fmt.Errorf("kernel filename cannot be empty")
 	}
-	
+
 	payload, err := os.ReadFile(filename)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read HLO kernel %s: %w", filename, err)
 	}
-	
+
 	// Pass the payload to the PJRT C-API to compile an executable for the active TPU.
 	return c.CompileHLO(payload)
 }

@@ -279,5 +279,3 @@ func TestGlobalResilience(t *testing.T) {
 	ri := GetGlobalResilienceInterceptor()
 	assert.Same(t, GlobalResilienceInterceptor, ri)
 }
-
-

@@ -269,7 +269,7 @@ func TestP0_Eviction_And_FallbackSearch(t *testing.T) {
 
 	// Verify layer 0 is marked as evicted (offset is 0)
 	assert.Equal(t, uint64(0), gd.Neighbors[0][0], "Layer 0 must be evicted to 0 offset")
-	
+
 	// Verify layer 1 is NOT evicted (pinned in memory)
 	assert.NotEqual(t, uint64(0), gd.Neighbors[1][0], "Layer 1 must be pinned and not evicted")
 

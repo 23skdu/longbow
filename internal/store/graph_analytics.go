@@ -257,7 +257,7 @@ func (ga *GraphAnalytics) CalculatePageRank(ctx context.Context, config PageRank
 							nextSource := reverseAdj[i][j+4]
 							// Prefetch the arrays for future iterations to mask memory latency
 							simd.Prefetch(unsafe.Pointer(&outDegrees[nextSource])) // #nosec G103
-							simd.Prefetch(unsafe.Pointer(&scores[nextSource])) // #nosec G103
+							simd.Prefetch(unsafe.Pointer(&scores[nextSource]))     // #nosec G103
 						}
 						degree := outDegrees[source]
 						if degree > 0 {

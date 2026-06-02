@@ -156,14 +156,12 @@ func (sp *SlidingWindowPredicate) MatchBatch(ids []uint32, dst []byte) {
 	}
 }
 
-
 func (ti *TemporalIndex) GetVectorIndex() VectorIndex {
 	if ti.ds == nil {
 		return nil
 	}
 	return ti.ds.Index
 }
-
 
 // TemporalResultCache provides LRU caching for temporal search results.
 type TemporalResultCache struct {

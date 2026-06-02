@@ -14,9 +14,9 @@ import (
 type PageState int32
 
 const (
-	PageEvicted   PageState = 0
-	PageReserved  PageState = 1 // CPU buffer allocated, not yet on GPU
-	PageResident  PageState = 2 // On GPU, clean
+	PageEvicted       PageState = 0
+	PageReserved      PageState = 1 // CPU buffer allocated, not yet on GPU
+	PageResident      PageState = 2 // On GPU, clean
 	PageResidentDirty PageState = 3 // On GPU, modified since last load
 )
 
@@ -38,15 +38,15 @@ type PageInfo struct {
 // Pages are evicted to CPU pinned memory when GPU memory is exhausted.
 // The pager is concurrency-safe: all public methods are goroutine-safe.
 type GPUPager struct {
-	pool        *GPUMemPool
-	maxVRAM     int64
-	usedVRAM    int64
-	pageSize    int64 // bytes per page
-	maxPages    int   // max pages that fit in VRAM
+	pool     *GPUMemPool
+	maxVRAM  int64
+	usedVRAM int64
+	pageSize int64 // bytes per page
+	maxPages int   // max pages that fit in VRAM
 
-	pages    map[PageID]*PageInfo
-	lruList  *list.List
-	evictMu  sync.Mutex
+	pages   map[PageID]*PageInfo
+	lruList *list.List
+	evictMu sync.Mutex
 
 	statsMu      sync.Mutex
 	totalEvicts  int64

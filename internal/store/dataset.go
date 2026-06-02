@@ -96,9 +96,9 @@ type Dataset struct {
 	BatchNodes *LockFreeSlice[int]
 
 	// PrimaryIndex maps ID -> Physical Location (O(1) lookup)
-	PrimaryIndex          map[string]RowLocation
-	NumericPrimaryIndex   map[int64]RowLocation
-	Uint64PrimaryIndex    map[uint64]RowLocation
+	PrimaryIndex        map[string]RowLocation
+	NumericPrimaryIndex map[int64]RowLocation
+	Uint64PrimaryIndex  map[uint64]RowLocation
 	// metadataMu protects PrimaryIndex, LWW, and Merkle updates
 	metadataMu sync.Mutex
 
@@ -384,8 +384,8 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		Schema:              schema,
 		Tombstones:          make(map[int]*types.Bitset),
 		PrimaryIndex:        make(map[string]RowLocation),
-		NumericPrimaryIndex:   make(map[int64]RowLocation),
-		Uint64PrimaryIndex:    make(map[uint64]RowLocation),
+		NumericPrimaryIndex: make(map[int64]RowLocation),
+		Uint64PrimaryIndex:  make(map[uint64]RowLocation),
 		LWW:                 NewTimestampMap(),
 		Merkle:              NewMerkleTree(),
 		queryStats: &QueryStats{

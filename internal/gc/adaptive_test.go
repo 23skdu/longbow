@@ -229,21 +229,21 @@ func TestAdaptiveGC_CalculateGOGC_EdgeCases(t *testing.T) {
 		validate func(t *testing.T, gogc int)
 	}{
 		{
-			name: "negative allocation rate",
+			name:  "negative allocation rate",
 			stats: &gcStats{allocationRate: -100, memoryPressure: 0.5},
 			validate: func(t *testing.T, gogc int) {
 				assert.GreaterOrEqual(t, gogc, 50)
 			},
 		},
 		{
-			name: "negative memory pressure",
+			name:  "negative memory pressure",
 			stats: &gcStats{allocationRate: 0, memoryPressure: -0.5},
 			validate: func(t *testing.T, gogc int) {
 				assert.GreaterOrEqual(t, gogc, 50)
 			},
 		},
 		{
-			name: "extreme memory pressure",
+			name:  "extreme memory pressure",
 			stats: &gcStats{allocationRate: 0, memoryPressure: 2.0},
 			validate: func(t *testing.T, gogc int) {
 				assert.GreaterOrEqual(t, gogc, 50)
@@ -251,7 +251,7 @@ func TestAdaptiveGC_CalculateGOGC_EdgeCases(t *testing.T) {
 			},
 		},
 		{
-			name: "high allocation clamped",
+			name:  "high allocation clamped",
 			stats: &gcStats{allocationRate: 500 * 1024 * 1024, memoryPressure: 0},
 			validate: func(t *testing.T, gogc int) {
 				assert.LessOrEqual(t, gogc, 200)

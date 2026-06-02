@@ -24,7 +24,7 @@ func NewHybridEngine(kernelPath string) SearchEngine {
 		log.Printf("TPU initialization failed (%v). Falling back to local CPU SIMD engine.", err)
 		return &CPUFallbackEngine{}
 	}
-	
+
 	// Try to load our custom MXU/VPU optimized kernel
 	kernel, err := client.LoadKernel(kernelPath)
 	if err != nil {
@@ -32,7 +32,7 @@ func NewHybridEngine(kernelPath string) SearchEngine {
 		_ = client.Close()
 		return &CPUFallbackEngine{}
 	}
-	
+
 	return &TPUEngine{client: client, kernel: kernel}
 }
 

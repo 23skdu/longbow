@@ -48,6 +48,9 @@ func (h *ArrowHNSW) AddBatchBulk(ctx context.Context, startID uint32, n int, vec
 		}
 		h.commitCond.Broadcast()
 		h.commitMu.Unlock()
+
+		// Flush to disk after bulk insert if UseDisk is enabled
+		h.maybeFlushToDisk()
 	}
 
 	return err

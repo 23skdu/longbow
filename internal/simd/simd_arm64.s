@@ -36,6 +36,11 @@
 #define VMUL_8H(m, n, d)  WORD $(0x4E609C00 | ((m) << 16) | ((n) << 5) | (d))
 #define VADD_2D(m, n, d)  WORD $(0x4EE08400 | ((m) << 16) | ((n) << 5) | (d))
 
+// Float64 (D2) variants for FADD and FSUB — the existing VFADD_V/VFSUB_V encode .4S
+// FADD .2D: bit 22=1 (vs bit 22=0 for .4S); FSUB .2D: bit 22=1 AND bit 23=1
+#define VFADD_D(m, n, d) WORD $(0x4e60d400 | ((m) << 16) | ((n) << 5) | (d))
+#define VFSUB_D(m, n, d) WORD $(0x4ee0d400 | ((m) << 16) | ((n) << 5) | (d))
+
 // Bitmask and zero-extend for uint8 ops
 #define VBIC_8B(m, n, d) WORD $(0x0E401C00 | ((m) << 16) | ((n) << 5) | (d))
 #define VMOVI_8B(n, d)   WORD $(0x0F00E400 | ((n) << 5) | (d))
@@ -3150,5 +3155,289 @@ dot_u8_reduce_vadd:
     VMOV    V10.D[0], R3
     SCVTFD  R3, F0                   // int64 → float64
     FCVTDS  F0, F0                   // float64 → float32
+    FMOVS   F0, ret+48(FP)
+    RET
+
+// func euclideanFloat64NEONKernel(a, b []float64) float32
+// Computes sqrt(sum (a-b)²) using float64 NEON (2×float64 per instruction).
+TEXT ·euclideanFloat64NEONKernel(SB), NOSPLIT, $0-52
+    MOVD    a_base+0(FP), R0
+    MOVD    a_len+8(FP), R1
+    MOVD    b_base+24(FP), R2
+
+    VEOR    V0.B16, V0.B16, V0.B16   // acc = {0, 0}
+
+    CMP     $2, R1
+    BLT     ef64_tail
+
+ef64_loop_2x:
+    VLD1.P  16(R0), [V1.D2]           // load 2 float64s from a
+    VLD1.P  16(R2), [V2.D2]           // load 2 float64s from b
+
+    VFSUB_D(2, 1, 3)                  // V3 = V1 - V2 (a - b)
+    VFMLA   V3.D2, V3.D2, V0.D2       // V0 += V3 * V3 (Go asm: Vm, Vn, Vd)
+
+    SUB     $2, R1
+    CMP     $2, R1
+    BGE     ef64_loop_2x
+
+ef64_tail:
+    // Reduce 2-lane accumulator
+    VMOV    V0.D[1], V1.D[0]
+    FADDD   F1, F0, F0                 // F0 = V0.D[0] + V0.D[1]
+
+    CBZ     R1, ef64_done
+
+ef64_scalar_loop:
+    FMOVD.P 8(R0), F1
+    FMOVD.P 8(R2), F2
+    FSUBD   F2, F1, F3
+    FMULD   F3, F3, F3
+    FADDD   F3, F0, F0
+
+    SUB     $1, R1
+    CBNZ    R1, ef64_scalar_loop
+
+ef64_done:
+    FSQRTD  F0, F0
+    FCVTDS  F0, F0                     // float64 → float32
+    FMOVS   F0, ret+48(FP)
+    RET
+
+// func dotFloat64NEONKernel(a, b []float64) float32
+// Computes sum(a[i] * b[i]) using float64 NEON (2×float64 per instruction).
+TEXT ·dotFloat64NEONKernel(SB), NOSPLIT, $0-52
+    MOVD    a_base+0(FP), R0
+    MOVD    a_len+8(FP), R1
+    MOVD    b_base+24(FP), R2
+
+    VEOR    V0.B16, V0.B16, V0.B16   // acc = {0, 0}
+
+    CMP     $2, R1
+    BLT     df64_tail
+
+df64_loop_2x:
+    VLD1.P  16(R0), [V1.D2]           // load 2 float64s from a
+    VLD1.P  16(R2), [V2.D2]           // load 2 float64s from b
+
+    VFMLA   V2.D2, V1.D2, V0.D2       // V0 += V1 * V2 (Go asm: Vm, Vn, Vd)
+
+    SUB     $2, R1
+    CMP     $2, R1
+    BGE     df64_loop_2x
+
+df64_tail:
+    VMOV    V0.D[1], V1.D[0]
+    FADDD   F1, F0, F0                 // F0 = V0.D[0] + V0.D[1]
+
+    CBZ     R1, df64_done
+
+df64_scalar_loop:
+    FMOVD.P 8(R0), F1
+    FMOVD.P 8(R2), F2
+    FMULD   F2, F1, F1
+    FADDD   F1, F0, F0
+
+    SUB     $1, R1
+    CBNZ    R1, df64_scalar_loop
+
+df64_done:
+    FCVTDS  F0, F0                     // float64 → float32
+    FMOVS   F0, ret+48(FP)
+    RET
+
+// func cosineFloat64NEONKernel(a, b []float64) float32
+// Computes 1 - dot(a,b) / sqrt(dot(a,a) * dot(b,b)).
+// Uses three float64 NEON accumulators: dot_ab, dot_aa, dot_bb.
+TEXT ·cosineFloat64NEONKernel(SB), NOSPLIT, $0-52
+    MOVD    a_base+0(FP), R0
+    MOVD    a_len+8(FP), R1
+    MOVD    b_base+24(FP), R2
+
+    VEOR    V0.B16, V0.B16, V0.B16   // dot_ab = {0, 0}
+    VEOR    V1.B16, V1.B16, V1.B16   // dot_aa = {0, 0}
+    VEOR    V2.B16, V2.B16, V2.B16   // dot_bb = {0, 0}
+
+    CMP     $2, R1
+    BLT     cf64_tail
+
+cf64_loop_2x:
+    VLD1.P  16(R0), [V3.D2]           // load 2 float64s from a
+    VLD1.P  16(R2), [V4.D2]           // load 2 float64s from b
+
+    VFMLA   V4.D2, V3.D2, V0.D2       // V0: dot_ab += a * b
+    VFMLA   V3.D2, V3.D2, V1.D2       // V1: dot_aa += a * a
+    VFMLA   V4.D2, V4.D2, V2.D2       // V2: dot_bb += b * b
+
+    SUB     $2, R1
+    CMP     $2, R1
+    BGE     cf64_loop_2x
+
+cf64_tail:
+    // Reduce 2-lane accumulators to scalar
+    VMOV    V0.D[1], V5.D[0]
+    FADDD   F5, F0, F0                 // F0 = dot_ab
+    VMOV    V1.D[1], V5.D[0]
+    FADDD   F5, F1, F1                 // F1 = dot_aa
+    VMOV    V2.D[1], V5.D[0]
+    FADDD   F5, F2, F2                 // F2 = dot_bb
+
+    CBZ     R1, cf64_combine
+
+cf64_scalar_loop:
+    FMOVD.P 8(R0), F3
+    FMOVD.P 8(R2), F4
+    FMULD   F4, F3, F5                 // F5 = a * b
+    FADDD   F5, F0, F0                 // dot_ab += a * b
+    FMULD   F3, F3, F5                 // F5 = a * a
+    FADDD   F5, F1, F1                 // dot_aa += a * a
+    FMULD   F4, F4, F5                 // F5 = b * b
+    FADDD   F5, F2, F2                 // dot_bb += b * b
+
+    SUB     $1, R1
+    CBNZ    R1, cf64_scalar_loop
+
+cf64_combine:
+    FMULD   F2, F1, F1                 // F1 = dot_aa * dot_bb
+    FSQRTD  F1, F1                    // F1 = sqrt(dot_aa * dot_bb)
+    FDIVD   F1, F0, F0                 // F0 = dot_ab / sqrt(dot_aa * dot_bb)
+    FMOVD   $1.0, F1
+    FSUBD   F0, F1, F0                 // F0 = 1 - cosine_similarity
+    FCVTDS  F0, F0                     // float64 → float32
+    FMOVS   F0, ret+48(FP)
+    RET
+
+// func cosineInt8NEONKernel(a, b []int8) float32
+// Computes 1 - dot(a,b) / sqrt(dot(a,a) * dot(b,b)).
+// Uses sign-extension (int8→int16→int32) and computes all three products.
+TEXT ·cosineInt8NEONKernel(SB), NOSPLIT, $0-52
+    MOVD    a_base+0(FP), R0
+    MOVD    a_len+8(FP), R1
+    MOVD    b_base+24(FP), R2
+
+    VEOR    V0.B16, V0.B16, V0.B16   // dot_ab_lo (2× int64)
+    VEOR    V1.B16, V1.B16, V1.B16   // dot_ab_hi
+    VEOR    V2.B16, V2.B16, V2.B16   // dot_aa_lo (2× int64)
+    VEOR    V3.B16, V3.B16, V3.B16   // dot_aa_hi
+    VEOR    V4.B16, V4.B16, V4.B16   // dot_bb_lo (2× int64)
+    VEOR    V5.B16, V5.B16, V5.B16   // dot_bb_hi
+
+    CMP     $8, R1
+    BLT     ci8_scalar
+
+ci8_loop:
+    VLD1.P  8(R0), [V6.B8]            // 8 int8 from a
+    VLD1.P  8(R2), [V7.B8]            // 8 int8 from b
+
+    // Sign-extend int8 → int16
+    VSSHLL_8H(6, 8)                   // V8: 8 int16 from a
+    VSSHLL_8H(7, 9)                   // V9: 8 int16 from b
+
+    // Extract upper halves for widening to int32
+    VMOV    V8.D[1], V10.D[0]
+    VMOV    V9.D[1], V11.D[0]
+
+    // Widen lower 4 of each to int32
+    VSSHLL_4S(8, 12)                  // V12: a_lower 4 → 4× int32
+    VSSHLL_4S(9, 13)                  // V13: b_lower 4 → 4× int32
+
+    // Widen upper 4 of each to int32
+    VSSHLL_4S(10, 14)                 // V14: a_upper 4 → 4× int32
+    VSSHLL_4S(11, 15)                 // V15: b_upper 4 → 4× int32
+
+    // dot_ab: a × b
+    VMUL_4S(13, 12, 16)               // V16 = a_lower * b_lower (4× int32)
+    VMUL_4S(15, 14, 17)               // V17 = a_upper * b_upper (4× int32)
+
+    // dot_aa: a × a
+    VMUL_4S(12, 12, 18)               // V18 = a_lower * a_lower (4× int32)
+    VMUL_4S(14, 14, 19)               // V19 = a_upper * a_upper (4× int32)
+
+    // dot_bb: b × b
+    VMUL_4S(13, 13, 20)               // V20 = b_lower * b_lower (4× int32)
+    VMUL_4S(15, 15, 21)               // V21 = b_upper * b_upper (4× int32)
+
+    // Pairwise add each 4× int32 → 2× int64
+    VSADDLP_2D(16, 22)                // V22: pair-add V16 → 2× int64
+    VSADDLP_2D(17, 23)                // V23: pair-add V17 → 2× int64
+    VSADDLP_2D(18, 24)                // V24: pair-add V18 → 2× int64
+    VSADDLP_2D(19, 25)                // V25: pair-add V19 → 2× int64
+    VSADDLP_2D(20, 26)                // V26: pair-add V20 → 2× int64
+    VSADDLP_2D(21, 27)                // V27: pair-add V21 → 2× int64
+
+    // Accumulate into dot_ab / dot_aa / dot_bb
+    VADD_2D(22, 0, 0)                 // V0 += V22
+    VADD_2D(23, 1, 1)                 // V1 += V23
+    VADD_2D(24, 2, 2)                 // V2 += V24
+    VADD_2D(25, 3, 3)                 // V3 += V25
+    VADD_2D(26, 4, 4)                 // V4 += V26
+    VADD_2D(27, 5, 5)                 // V5 += V27
+
+    SUB     $8, R1
+    CMP     $8, R1
+    BGE     ci8_loop
+
+ci8_scalar:
+    CBZ     R1, ci8_combine
+
+    MOVD    $0, R3                     // scalar dot_ab
+    MOVD    $0, R4                     // scalar dot_aa
+    MOVD    $0, R5                     // scalar dot_bb
+
+ci8_scalar_loop:
+    MOVBU.P 1(R0), R6
+    MOVBU.P 1(R2), R7
+    SXTB    R6, R6
+    SXTB    R7, R7
+    MUL     R6, R7, R8
+    ADD     R8, R3
+    MUL     R6, R6, R8
+    ADD     R8, R4
+    MUL     R7, R7, R8
+    ADD     R8, R5
+
+    SUB     $1, R1
+    CBNZ    R1, ci8_scalar_loop
+
+    // Merge scalar into vector accumulators
+    VEOR    V10.B16, V10.B16, V10.B16
+    VEOR    V11.B16, V11.B16, V11.B16
+    VEOR    V12.B16, V12.B16, V12.B16
+    VMOV    R3, V10.D[0]
+    VMOV    R4, V11.D[0]
+    VMOV    R5, V12.D[0]
+    VADD_2D(10, 0, 0)
+    VADD_2D(11, 2, 2)
+    VADD_2D(12, 4, 4)
+
+ci8_combine:
+    // Reduce 2-lane int64 accumulators to scalar int64
+    VADD_2D(1, 0, 0)                  // V0 = V0 + V1  (dot_ab)
+    VADD_2D(3, 2, 2)                  // V2 = V2 + V3  (dot_aa)
+    VADD_2D(5, 4, 4)                  // V4 = V4 + V5  (dot_bb)
+
+    VMOV    V0.D[0], R3
+    VMOV    V0.D[1], R4
+    ADD     R4, R3, R3                // R3 = dot_ab (int64)
+
+    VMOV    V2.D[0], R4
+    VMOV    V2.D[1], R5
+    ADD     R5, R4, R4                // R4 = dot_aa (int64)
+
+    VMOV    V4.D[0], R5
+    VMOV    V4.D[1], R6
+    ADD     R6, R5, R5                // R5 = dot_bb (int64)
+
+    // Convert to float64 and compute cosine distance
+    SCVTFD  R3, F0                    // F0 = float64(dot_ab)
+    SCVTFD  R4, F1                    // F1 = float64(dot_aa)
+    SCVTFD  R5, F2                    // F2 = float64(dot_bb)
+
+    FMULD   F2, F1, F1                // F1 = dot_aa * dot_bb
+    FSQRTD  F1, F1                    // F1 = sqrt(dot_aa * dot_bb)
+    FDIVD   F1, F0, F0                // F0 = dot_ab / norm_product
+    FMOVD   $1.0, F1
+    FSUBD   F0, F1, F0                // F0 = 1 - cosine_similarity
+    FCVTDS  F0, F0                    // float64 → float32
     FMOVS   F0, ret+48(FP)
     RET

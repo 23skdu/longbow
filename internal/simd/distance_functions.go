@@ -229,6 +229,9 @@ func L2SquaredFloat64(a, b []float64) (float32, error) {
 }
 
 // DotProductComplex64 calculates the real part of the dot product of two Complex64 vectors.
+// Uses unsafe cast to float32 to reuse SIMD-accelerated float32 dot product.
+// Complex dot product Re(sum(a[i] * conj(b[i]))) = sum(ar*br + ai*bi), which is
+// exactly the float32 dot product on the interleaved [real, imag] float32 array.
 func DotProductComplex64(a, b []complex64) (float32, error) {
 	if len(a) != len(b) {
 		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
@@ -236,16 +239,13 @@ func DotProductComplex64(a, b []complex64) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Complex64 at 384 dims = float32 at 768, use blocked
-	if len(a) >= 384 {
-		vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2) // #nosec G103
-		vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2) // #nosec G103
-		return DotProductFloat32Blocked(vfA, vfB)
-	}
-	return dotComplex64Unrolled(a, b)
+	vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2)
+	vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2)
+	return DotProduct(vfA, vfB)
 }
 
 // DotProductComplex128 calculates the real part of the dot product of two Complex128 vectors.
+// Uses unsafe cast to float64 to reuse SIMD-accelerated float64 dot product.
 func DotProductComplex128(a, b []complex128) (float32, error) {
 	if len(a) != len(b) {
 		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
@@ -253,16 +253,16 @@ func DotProductComplex128(a, b []complex128) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	// Complex128 at 384 dims = float64 at 768, use blocked
-	if len(a) >= 384 {
-		vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2) // #nosec G103
-		vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2) // #nosec G103
-		return DotProductFloat64Blocked(vfA, vfB)
-	}
-	return dotComplex128Unrolled(a, b)
+	vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2)
+	vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2)
+	return DotProductF64(vfA, vfB)
 }
 
 // CosineDistanceComplex64 calculates the cosine distance for Complex64 vectors.
+// Uses unsafe cast to float32 to reuse SIMD-accelerated float32 cosine.
+// Cosine for complex is: 1 - Re(sum(a[i]*conj(b[i]))) / (|a| * |b|)
+// When treating complex64[] as float32[] (interleaved real/imag), this is
+// exactly the float32 cosine distance on the 2N-length float32 array.
 func CosineDistanceComplex64(a, b []complex64) (float32, error) {
 	if len(a) != len(b) {
 		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
@@ -270,10 +270,13 @@ func CosineDistanceComplex64(a, b []complex64) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	return cosineComplex64Unrolled(a, b)
+	vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2)
+	vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2)
+	return CosineDistance(vfA, vfB)
 }
 
 // CosineDistanceComplex128 calculates the cosine distance for Complex128 vectors.
+// Uses unsafe cast to float64 to reuse SIMD-accelerated float64 cosine.
 func CosineDistanceComplex128(a, b []complex128) (float32, error) {
 	if len(a) != len(b) {
 		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
@@ -281,7 +284,9 @@ func CosineDistanceComplex128(a, b []complex128) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	return cosineComplex128Unrolled(a, b)
+	vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2)
+	vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2)
+	return CosineDistanceFloat64(vfA, vfB)
 }
 
 // L2SquaredFloat32 calculates the squared Euclidean distance using a generic implementation.
@@ -380,6 +385,9 @@ func CosineDistanceInt8(a, b []int8) (float32, error) {
 	}
 	if len(a) == 0 {
 		return 1.0, nil
+	}
+	if cosineDistanceInt8Impl != nil {
+		return cosineDistanceInt8Impl(a, b)
 	}
 	return cosineDistanceInt8Unrolled4x(a, b)
 }

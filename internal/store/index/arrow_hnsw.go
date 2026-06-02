@@ -67,6 +67,7 @@ type ArrowHNSW struct {
 	// DiskGraph backing
 	diskGraph atomic.Pointer[DiskGraph]
 	diskFlushed atomic.Bool
+	lastFlushNC atomic.Int64
 
 	quantizer        *ScalarQuantizer
 	sq8Ready         atomic.Bool
@@ -550,6 +551,30 @@ func (h *ArrowHNSW) SetDiskGraph(disk *DiskGraph) {
 	h.diskGraph.Store(disk)
 }
 
+// maybeFlushToDisk flushes the in-memory graph to disk if UseDisk is enabled
+// and the node count has grown significantly since the last flush.
+func (h *ArrowHNSW) maybeFlushToDisk() {
+	if !h.config.UseDisk {
+		return
+	}
+	nc := h.nodeCount.Load()
+	if nc < 5000 {
+		return
+	}
+	doFlush := !h.diskFlushed.Load()
+	if !doFlush {
+		lastFlushNC := h.lastFlushNC.Load()
+		doFlush = lastFlushNC == 0 || (nc-lastFlushNC)*5 > lastFlushNC // 20% growth
+	}
+	if doFlush {
+		if err := h.FlushToDisk(); err != nil {
+			fmt.Printf("FlushToDisk error for %s: %v\n", h.name, err)
+		} else {
+			h.lastFlushNC.Store(nc)
+		}
+	}
+}
+
 // FlushToDisk writes the current in-memory graph to disk and opens it as a
 // read-only backing store. Subsequent neighbor lookups can fall through to
 // the disk file when in-memory data is evicted. Only effective when
@@ -574,13 +599,13 @@ func (h *ArrowHNSW) FlushToDisk() error {
 		return fmt.Errorf("create disk graph directory: %w", err)
 	}
 
-	maxNodeID := int(meta.NodeCount)
-	if maxNodeID <= 0 {
+	nc := h.nodeCount.Load()
+	if nc <= 0 {
 		return nil // No data to write
 	}
 
 	// The WriteDiskGraph function expects maxNodeID as the highest node ID + 1
-	if err := WriteDiskGraph(gd, path, maxNodeID, 0, 0, meta.EntryPoint, int(meta.MaxLevel)); err != nil {
+	if err := WriteDiskGraph(gd, path, int(nc), 0, 0, meta.EntryPoint, int(meta.MaxLevel)); err != nil {
 		return fmt.Errorf("write disk graph: %w", err)
 	}
 

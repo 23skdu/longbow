@@ -145,13 +145,8 @@ func (h *ArrowHNSW) growInternal(capacity, dims int) error {
 
 	h.compareAndSwapData(oldData, newData)
 
-	// If UseDisk and disk hasn't been flushed yet, flush after growth
-	if h.config.UseDisk && !h.diskFlushed.Load() {
-		meta := h.metadataRegistry.Load()
-		if meta != nil && meta.NodeCount > 1000 {
-			_ = h.FlushToDisk()
-		}
-	}
+	// Flush to disk after growth if UseDisk enabled
+	h.maybeFlushToDisk()
 
 	return nil
 }

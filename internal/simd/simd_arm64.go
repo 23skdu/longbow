@@ -317,11 +317,19 @@ func memcpyNEON(dst, src unsafe.Pointer, n int) {
 }
 
 func euclideanFloat64NEON(a, b []float64) (float32, error) {
-	return euclideanFloat64Unrolled4x(a, b)
+	return euclideanFloat64NEONKernel(a, b), nil
 }
 
 func dotFloat64NEON(a, b []float64) (float32, error) {
-	return dotFloat64Unrolled4x(a, b)
+	return dotFloat64NEONKernel(a, b), nil
+}
+
+func cosineFloat64NEON(a, b []float64) (float32, error) {
+	return cosineFloat64NEONKernel(a, b), nil
+}
+
+func cosineInt8NEON(a, b []int8) (float32, error) {
+	return cosineInt8NEONKernel(a, b), nil
 }
 
 func sumNEON(src []float32) float32 {
@@ -473,6 +481,18 @@ func euclideanInt8NEONKernel(a, b []int8) float32
 //go:noescape
 func dotInt8NEONKernel(a, b []int8) float32
 
+//go:noescape
+func euclideanFloat64NEONKernel(a, b []float64) float32
+
+//go:noescape
+func dotFloat64NEONKernel(a, b []float64) float32
+
+//go:noescape
+func cosineFloat64NEONKernel(a, b []float64) float32
+
+//go:noescape
+func cosineInt8NEONKernel(a, b []int8) float32
+
 func manhattanNEON(a, b []float32) (float32, error) {
 	return ManhattanDistanceFloat32(a, b)
 }
@@ -525,6 +545,14 @@ var _ = func() {
 		_ = l2Squared1024NEONKernel(nil, nil)
 		_ = l2Squared1536NEONKernel(nil, nil)
 		_ = l2Squared3072NEONKernel(nil, nil)
+		// Float64 NEON kernels
+		_ = euclideanFloat64NEONKernel(nil, nil)
+		_ = dotFloat64NEONKernel(nil, nil)
+		_ = cosineFloat64NEONKernel(nil, nil)
+		_, _ = cosineFloat64NEON(nil, nil)
+		// Int8 NEON kernels
+		_ = cosineInt8NEONKernel(nil, nil)
+		_, _ = cosineInt8NEON(nil, nil)
 		// Already-guarded kernels
 		_ = dotInt4NeonKernel(nil, nil, 0)
 		_ = dotInt2NeonKernel(nil, nil, 0)

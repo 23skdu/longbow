@@ -648,10 +648,11 @@ func initializeDispatch() {
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Unrolled
 		euclideanDistanceFloat64Impl = euclideanFloat64NEON
-		dotProductFloat64Impl = dotFloat64Unrolled4x
+		dotProductFloat64Impl = dotFloat64NEON
 		l2SquaredFloat64Impl = l2SquaredFloat64Unrolled4x
-		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
+		cosineDistanceFloat64Impl = cosineFloat64NEON
 		euclideanDistanceInt8Impl = euclideanInt8NEON
+		cosineDistanceInt8Impl = cosineInt8NEON
 		euclideanDistanceUint8Impl = euclideanUint8NEON
 		euclideanDistanceInt16Impl = euclideanInt16NEON
 		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x

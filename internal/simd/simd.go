@@ -133,6 +133,7 @@ var (
 	euclideanDistanceUint16Impl func(a, b []uint16) (float32, error)
 
 	dotProductInt8Impl   func(a, b []int8) (float32, error)
+	cosineDistanceInt8Impl func(a, b []int8) (float32, error)
 	dotProductUint8Impl  func(a, b []uint8) (float32, error)
 	dotProductInt16Impl  func(a, b []int16) (float32, error)
 	dotProductUint16Impl func(a, b []uint16) (float32, error)

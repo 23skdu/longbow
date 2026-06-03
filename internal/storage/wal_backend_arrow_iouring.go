@@ -220,8 +220,8 @@ func (b *ArrowIOUringBackend) writeAsyncSync(p []byte) (int, error) {
 		return 0, err
 	}
 
-	// Flush and wait for completion
-	_, err = b.ring.FlushAndWait(1, 0)
+	// Flush and let poller handle completion
+	_, err = b.ring.Flush()
 	if err != nil {
 		atomic.AddInt64(&b.pendingOps, -1)
 		atomic.AddInt64(&b.offset, -int64(len(p)))
@@ -229,28 +229,13 @@ func (b *ArrowIOUringBackend) writeAsyncSync(p []byte) (int, error) {
 		return 0, err
 	}
 
-	// Get completion with validation (handles spurious completions)
-	cqe := b.ring.Peek()
-	if cqe == nil {
-		return 0, fmt.Errorf("no completion available")
-	}
-
-	n := int(cqe.Res)
-	if n < 0 {
-		b.ring.Advance(1)
-		atomic.AddInt64(&b.pendingOps, -1)
-		iouring.IoUringOpsCompleted.WithLabelValues("write", "error").Inc()
-		return 0, fmt.Errorf("write failed: %d", n)
-	}
-
-	// Update offset and advance
-	b.ring.Advance(1)
+	b.drainPendingOps()
 
 	duration := time.Since(start).Seconds()
 	iouring.IoUringSubmitLatency.WithLabelValues("write").Observe(duration)
 	iouring.IoUringOpsCompleted.WithLabelValues("write", "success").Inc()
 
-	return n, nil
+	return len(p), nil
 }
 
 // WriteSync performs a synchronous write (waits for completion)
@@ -261,8 +246,8 @@ func (b *ArrowIOUringBackend) WriteSync(p []byte) (int, error) {
 	// Flush buffer first
 	b.bufMu.Lock()
 	if len(b.writeBuf[b.bufIndex]) > 0 {
-		b.bufIndex = 1 - b.bufIndex
 		buf := b.writeBuf[b.bufIndex]
+		b.bufIndex = 1 - b.bufIndex
 		b.bufMu.Unlock()
 
 		if len(buf) > 0 {
@@ -293,35 +278,24 @@ func (b *ArrowIOUringBackend) WriteSync(p []byte) (int, error) {
 		return 0, err
 	}
 
-	// Flush and wait for completion
-	_, err = b.ring.FlushAndWait(1, 0)
+	atomic.AddInt64(&b.pendingOps, 1)
+
+	// Flush and let poller handle completion
+	_, err = b.ring.Flush()
 	if err != nil {
+		atomic.AddInt64(&b.pendingOps, -1)
 		iouring.IoUringSubmitLatency.WithLabelValues("write").Observe(time.Since(start).Seconds())
 		return 0, err
 	}
 
-	// Get completion with validation
-	cqe := b.ring.Peek()
-	if cqe == nil {
-		return 0, fmt.Errorf("no completion available")
-	}
-
-	n := int(cqe.Res)
-	if n < 0 {
-		b.ring.Advance(1)
-		iouring.IoUringOpsCompleted.WithLabelValues("write", "error").Inc()
-		return 0, fmt.Errorf("write failed: %d", n)
-	}
-
-	// Update offset and metrics
-	b.offset += int64(n)
-	b.ring.Advance(1)
+	b.drainPendingOps()
+	b.offset += int64(len(p))
 
 	duration := time.Since(start).Seconds()
 	iouring.IoUringSubmitLatency.WithLabelValues("write").Observe(duration)
 	iouring.IoUringOpsCompleted.WithLabelValues("write", "success").Inc()
 
-	return n, nil
+	return len(p), nil
 }
 
 // Sync implements WALBackend.Sync
@@ -332,8 +306,8 @@ func (b *ArrowIOUringBackend) Sync() error {
 	// Flush buffered writes first
 	b.bufMu.Lock()
 	if len(b.writeBuf[b.bufIndex]) > 0 {
-		b.bufIndex = 1 - b.bufIndex
 		buf := b.writeBuf[b.bufIndex]
+		b.bufIndex = 1 - b.bufIndex
 		b.bufMu.Unlock()
 
 		if len(buf) > 0 {
@@ -363,26 +337,16 @@ func (b *ArrowIOUringBackend) Sync() error {
 		return err
 	}
 
-	// Wait for completion
-	_, err = b.ring.FlushAndWait(1, 0)
+	atomic.AddInt64(&b.pendingOps, 1)
+
+	_, err = b.ring.Flush()
 	if err != nil {
+		atomic.AddInt64(&b.pendingOps, -1)
 		iouring.IoUringSubmitLatency.WithLabelValues("fsync").Observe(time.Since(start).Seconds())
 		return err
 	}
 
-	// Get completion with validation
-	cqe := b.ring.Peek()
-	if cqe == nil {
-		return fmt.Errorf("no completion for fsync")
-	}
-
-	if cqe.Res < 0 {
-		b.ring.Advance(1)
-		iouring.IoUringOpsCompleted.WithLabelValues("fsync", "error").Inc()
-		return fmt.Errorf("fsync failed: %d", cqe.Res)
-	}
-
-	b.ring.Advance(1)
+	b.drainPendingOps()
 
 	duration := time.Since(start).Seconds()
 	iouring.IoUringSubmitLatency.WithLabelValues("fsync").Observe(duration)
@@ -457,9 +421,7 @@ func (b *ArrowIOUringBackend) drainCompletions() {
 
 // drainPendingOps waits for all pending operations to complete
 func (b *ArrowIOUringBackend) drainPendingOps() {
-	// Poll until all pending operations complete
 	for atomic.LoadInt64(&b.pendingOps) > 0 {
-		b.processCompletions()
 		time.Sleep(time.Microsecond)
 	}
 }

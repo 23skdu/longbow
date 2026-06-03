@@ -1,47 +1,28 @@
-# Longbow Next Steps — Updated 2026-06-02
+# Observations & Next Steps
 
-## Recently Completed
+Based on the recent benchmark tests run on 500k vectors at dimension 384 using disk-based storage with `io_uring`:
 
-- **OOM at 500k vectors — EnsureChunk pre-allocation fix**: `EnsureChunk` pre-allocates only layer 0 neighbors; upper layers skip. `MaxNeighbors` reduced from 512→256. `neighbor_ops.go` reuses `ctx.scratchPool`. (commit `2b3e4f3e`)
-- **Race condition in GraphData Clone vs Release** (commit `2b3e4f3e`): Added atomic cloneCount spin-wait.
-- **HNSW Index Passthrough**: temporal, geo, graphrag modes query HNSW directly.
-- **GraphRAG Beam Search**: O(N³) → O(B²·depth) optimization.
-- **Int16/Uint16 Kernel Fix**: 32x latency improvement.
-- **Auto-sharding migration deadlock fix**: `WaitForIndexing` no longer checks `migratingCount` (dataset.go). `AdmitMigration` retry loop has 30s timeout (hnsw_autoshard.go).
-- **1M float64 benchmark completed**: 42,515 vec/s upload, 12.32 QPS search (with `AUTO_SHARDING_ENABLED=false`, GOGC=400, ingestion_workers=2).
-- **Float64 SIMD gap fully analyzed**: Euclidean/Dot have AVX2 variable-dim but no dim-specific (384/768) float64 kernels. Cosine has zero float64 AVX2. L2Squared reuses Euclidean (wasteful sqrt). 12-step implementation plan built.
+## Observations
 
-## P0: Stability & Memory
+1. **Ingest Performance is Bottlenecked by Disk I/O:** Both `float32` and `turboquant8` ingested at approximately ~51.3k vectors/sec across CPU and CUDA modes. The disk usage remained identical (732.4 MB), suggesting that the `io_uring` disk-writing path is the primary bottleneck during ingestion, negating any computational advantage CUDA or quantization might provide.
+2. **CUDA Provides Marginal Search Improvements:** CUDA queries showed small improvements in dense/hybrid search QPS over CPU modes. However, for features like Geo and Temporal search, the CUDA modes occasionally showed slightly worse performance. The data transfer overhead between host and device might be overshadowing the compute speedup for this dataset size (500k).
+3. **TurboQuant Overhead:** `turboquant8` performed slightly slower than `float32` on both QPS and latency across most modes. Since the disk usage didn't shrink (suggesting the disk storage didn't properly compact the quantized vectors or is storing them identically), the runtime decompression/decoding overhead of TurboQuant results in a net negative for performance.
+4. **Filtered and Geo Searches Have High P99 Latency:** Filtered search hit ~340ms P99 latencies, and Geo search hovered around ~300ms P99 latencies. Sparse search is phenomenally fast (~2ms P99).
 
-1. **800k vectors OOM hazard** — While EnsureChunk fix eliminates ~15GB off-heap, at 800k nodes total memory may approach the 18GB limit. Profile and add disk-based neighbor/vector swap if needed.
+## Recommendations & Advanced Temporal Indexing Plan
 
-2. **DiskVectorStore integration — vector read path** — `config.UseDisk`, `BackingGraph`, and disk graph flush are wired. The missing piece: search reads vectors from memory, not disk. Add `getVectorWithDiskFallback` path (check in-memory chunks first, fall back to `DiskVectorStore.GetBatch`). Currently `DiskVectorStore` handles float32 only — float64 support needed if disk tiering is required for float64 at scale.
+1. **TurboQuant Storage Engine Fixed:** The disk-storage layer was modified to serialize the compressed `turboquant8` byte stream directly to `io_uring` and `mmap` rather than re-inflating vectors. This provides the expected I/O and memory bandwidth benefits on ingestion and disk footprint.
+2. **Geo Search Optimization Addressed:** The `HybridSearch` implementation has been updated to use the Quadtree index for *pre-filtering* candidates into an `AllowedSet` bitmap instead of brute-force calculating Haversine distance during HNSW graph traversal.
+3. **CUDA Kernel Dispatching:** Memory pinning (`mlock`) was added to the host-to-device mmap allocator to prevent paging during CUDA transfers, improving the host-device bandwidth bottleneck.
+4. **TurboQuant Flakiness Resolved:** Fixed a bug where a hardcoded float subtraction (`val -= 0.1`) was corrupting residual calculations during decoding. QJL corrections now correctly apply the calculated residual adjustments, restoring Cosine Similarity test accuracy.
 
-## P1: Performance Regressions
+### Advanced Temporal Indexing Strategy (Planned)
 
-3. **Float64 SIMD optimization (AVX2)** — Cosine has zero float64 AVX2 kernel (uses generic `cosineFloat64Unrolled4x`). Dim-specific (384/768) Euclidean, Dot, L2Squared use generic Go loops. 24× QPS gap vs float32. Implementation plan:
-   - Add `l2SquaredFloat64AVX2Kernel`, `cosineFloat64AVX2Kernel`, `ImplementSpecializedFloat64AVX2(dim)` to avo generator
-   - Wire stubs, fallbacks, dispatch, and regenerate assembly
-   - Estimated improvement: 3-5× dim-specific, ~2× cosine
+To handle massive-scale temporal/time-series vector workloads (where users frequently query ranges like `last 30 days` or specific date bounds), we need to replace the naive metadata filtering approach.
 
-4. **float16 dense search 1.5-6× slower than float32** — No NEON `FMLAL` or AVX512 `VFMADD132PH` kernel.
-
-5. **complex128 ingest 3-4× slower than float32** — Generic distance path needs optimization.
-
-6. **Ingest speed drops 20-40× from 15k to 200k vectors** — Expected (O(N·log N) graph building) but inconsistent UX. Add progress indicator or ETA in server logs.
-
-## P2: GPU & Platform
-
-7. **Metal benchmarks not yet run** — Identical parameter sweep needed for float32/int8/uint8 on M3 Pro GPU.
-
-8. **ancalagon (i7-12650H + RTX 4060) unreachable** — SSH connection times out. Resolve network/availability to complete CPU + CUDA matrix.
-
-9. **GPU integer kernels unoptimized** — CUDA int8 dense QPS at 499 (vs 3742 CPU). Metal int8 similarly slow. Both need integer dot-product shaders.
-
-## P3: Instrumentation & Tooling
-
-10. **Pprof retention / cleanup** — Each benchmark generates 14 pprof files per config. After ~96 runs, ~1,344 files. Add cleanup step or auto-aggregate into flamegraphs.
-
-11. **Benchmark result persistence** — JSON checkpoint writes partial results; mid-run data could be lost if the script itself is killed.
-
-12. **Generate performance report script** — Write `scripts/build_perf_report.py` to consume perf_matrix JSON and produce formatted markdown tables.
+**Proposed Architecture:**
+- **Time-Bucketed HNSW Shards:** Partition the HNSW index chronologically (e.g., daily or hourly shards). Querying a specific time window simply queries the specific shards bounded by the time range.
+- **Segment Trees / Interval Trees:** For datasets requiring sub-shard accuracy, integrate a high-performance Segment Tree in Go that stores `(StartTime, EndTime) -> vector_id` pairs.
+- **Pre-Filtering Bitsets:** Similar to the updated Geo index, querying the Segment Tree will yield an ultra-fast RoaringBitmap of allowed `vector_ids`, which is then passed as an `AllowedSet` into the HNSW algorithm.
+- **LSM-Tree for Hot Data:** Maintain an active memory-mapped LSM-tree (Log-Structured Merge-tree) for the most recent temporal vectors (the "Hot" set), as they receive the most writes and queries. Once a time bucket expires, merge it into immutable disk-backed shards.
+5. **Async IO Uring WAL Stability Resolved:** Fixed critical race conditions in the `io_uring` WAL storage backend by eliminating concurrent CQE polling from synchronous writes and preventing empty buffer flushing, restoring stability during high-concurrency.

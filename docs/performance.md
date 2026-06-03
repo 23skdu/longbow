@@ -43,3 +43,9 @@
 | GraphRAG | 35.9 | 39.3 | 36.7 | 48.6 |
 | Geo | 301.2 | 295.1 | 300.7 | 379.4 |
 | Temporal | 11.7 | 12.7 | 13.0 | 13.2 |
+
+## 5M & 10M Scale Benchmarks (128-dim, CUDA)
+Benchmarks were attempted at 5-million and 10-million vector scales under a strict 16GB memory limit using `float32` and `turboquant8`.
+- **float32 (5M & 10M)**: Encountered `ResourceExhausted` (OOM) during the search phase. This is expected as 5M `float32` vectors of 128 dimensions consume ~2.5GB (and 10M consumes ~5.1GB), plus the HNSW graph overhead (~1.2-2.4GB). When search caches and result buffers are allocated during peak query loads, the system exceeds the safe 95% threshold of the 16GB limit, triggering the admission controller to reject queries.
+- **turboquant8 (5M & 10M)**: Memory footprint was highly optimized (~640MB for 5M vectors). However, `turboquant8` still hit `ResourceExhausted` during the final query phases (e.g., Learned Index) because the `SlabArena` pre-allocations and query result buffering collectively pushed the heap past the strict 15.2GB admission ceiling.
+- **Status**: The active memory footprint of the index itself is small enough, but the peak memory during active parallel querying exceeds 16GB. Future high-scale benchmarks (>5M) should be conducted on machines with 32GB+ RAM or with graph eviction heavily tuned. The background `SIGBUS` bug during snapshotting (`os.Create` truncation) was successfully diagnosed and fixed using atomic `.tmp` renames.

@@ -105,8 +105,9 @@ func (b *ArrowIOUringBackend) Write(p []byte) (int, error) {
 			}
 		}
 
-		// Use async write directly for large writes
-		return b.writeAsync(p, start)
+		// Use async write directly for large writes, but MUST wait for completion 
+		// because the caller (e.g. WALBatcher) will reuse the buffer 'p' immediately.
+		return b.writeAsyncSync(p)
 	}
 
 	// Small write - add to buffer
@@ -154,11 +155,8 @@ func (b *ArrowIOUringBackend) flushBuffer() error {
 	b.bufIndex = 1 - b.bufIndex
 	b.bufMu.Unlock()
 
-	// Write the buffer contents
-	data := make([]byte, len(buf))
-	copy(data, buf)
-
-	_, err := b.writeAsyncSync(data)
+	// Write the buffer contents synchronously to ensure safe reuse
+	_, err := b.writeAsyncSync(buf)
 
 	// Clear the buffer we just wrote
 	b.bufMu.Lock()
@@ -168,41 +166,7 @@ func (b *ArrowIOUringBackend) flushBuffer() error {
 	return err
 }
 
-// writeAsync submits an async write operation
-func (b *ArrowIOUringBackend) writeAsync(p []byte, start time.Time) (int, error) {
-	// Get current offset atomically
-	offset := atomic.AddInt64(&b.offset, int64(len(p))) - int64(len(p))
 
-	// Submit write operation (non-blocking)
-	userData := uint64(time.Now().UnixNano())
-	err := b.ring.SubmitWrite(int(b.file.Fd()), p, uint64(offset), userData) // #nosec G115
-	if err != nil {
-		atomic.AddInt64(&b.offset, -int64(len(p))) // Rollback offset
-		iouring.IoUringSubmitLatency.WithLabelValues("write").Observe(time.Since(start).Seconds())
-		iouring.IoUringErrors.WithLabelValues("submit_failed").Inc()
-		return 0, err
-	}
-
-	// Increment pending operations
-	atomic.AddInt64(&b.pendingOps, 1)
-
-	// Flush to kernel (non-blocking)
-	_, err = b.ring.Flush()
-	if err != nil {
-		atomic.AddInt64(&b.pendingOps, -1)
-		atomic.AddInt64(&b.offset, -int64(len(p)))
-		iouring.IoUringSubmitLatency.WithLabelValues("write").Observe(time.Since(start).Seconds())
-		return 0, err
-	}
-
-	duration := time.Since(start).Seconds()
-	iouring.IoUringSubmitLatency.WithLabelValues("write").Observe(duration)
-	iouring.IoUringOpsSubmitted.WithLabelValues("write").Inc()
-	iouring.IoUringBytesWritten.Add(float64(len(p)))
-
-	// Return bytes that will be written (async)
-	return len(p), nil
-}
 
 // writeAsyncSync submits an async write and waits for completion
 func (b *ArrowIOUringBackend) writeAsyncSync(p []byte) (int, error) {

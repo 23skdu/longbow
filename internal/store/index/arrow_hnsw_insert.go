@@ -580,8 +580,11 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 	h.bulkMu.Lock()
 	var startID uint32
 	var startIDAssigned bool
+	var bulkMuReleased bool
 	defer func() {
-		h.bulkMu.Unlock()
+		if !bulkMuReleased {
+			h.bulkMu.Unlock()
+		}
 		if startIDAssigned {
 			n := len(rowIdxs)
 			finalID := int64(startID + uint32(n)) // #nosec G115
@@ -694,6 +697,11 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 		}
 		h.growMu.Unlock()
 	}
+
+	// Unlock bulkMu to allow concurrent streams to process their batches in parallel.
+	// nextID has already been reserved and growInternal has already secured the capacity.
+	h.bulkMu.Unlock()
+	bulkMuReleased = true
 
 	// Bulk optimization path with parallel linkage.
 	// AddBatchBulk handles its own bootstrap sequentially then links remaining in parallel.

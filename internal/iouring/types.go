@@ -55,15 +55,12 @@ type SQE struct {
 	Off         uint64
 	Addr        uint64
 	Len         uint32
-	OpcodeFlags uint32 // Union: rw_flags, fsync_flags, etc.
+	OpcodeFlags uint32 // Union: rw_flags, fsync_flags, splice_flags, etc.
 	UserData    uint64
 	BufIndex    uint16
 	Personality uint16
 	SpliceFdIn  int32
-	SpliceOffIn uint64
-	SpliceLen   uint32
-	SpliceFlags uint32
-	_padding    [4]byte
+	_padding    [16]byte // addr3 and __pad1 in C struct
 }
 
 // CQE represents a completion queue entry (16 bytes)

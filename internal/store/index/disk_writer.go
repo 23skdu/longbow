@@ -16,11 +16,15 @@ import (
 // Includes Adjacency and SQ8 Compressed vectors.
 func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMax float32, entryPoint uint32, maxLevel int) error {
 	path = filepath.Clean(path)
-	f, err := os.Create(path)
+	tmpPath := path + ".tmp"
+	f, err := os.Create(tmpPath)
 	if err != nil {
 		return err
 	}
-	defer func() { _ = f.Close() }()
+	defer func() {
+		_ = f.Close()
+		_ = os.Remove(tmpPath) // Cleanup on error
+	}()
 
 	w := bufio.NewWriter(f)
 
@@ -357,5 +361,9 @@ func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMa
 		return err
 	}
 
-	return f.Close()
+	if err := f.Close(); err != nil {
+		return err
+	}
+	
+	return os.Rename(tmpPath, path)
 }

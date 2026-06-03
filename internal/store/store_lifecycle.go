@@ -90,6 +90,9 @@ func (s *VectorStore) initDiskStore(ds *Dataset, name string, schema *arrow.Sche
 		s.logger.Error().Err(err).Msg("Failed to create DiskVectorStore")
 		return
 	}
+	if ds.TurboQuantBits() > 0 {
+		dvs.SetTurboQuant(ds.TurboQuantBits())
+	}
 	ds.DiskStore = dvs
 	s.logger.Info().Str("path", path).Int("dim", dim).Msg("DiskVectorStore initialized")
 }

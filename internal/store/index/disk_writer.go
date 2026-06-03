@@ -191,7 +191,7 @@ func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMa
 
 	// 5. Write SQ8 Vectors
 	sq8Offset := uint64(0)
-	if gd.Dims > 0 {
+	if gd.Dims > 0 && !gd.TurboQuantEnabled {
 		sq8Offset = uint64(currentOffset)
 		dims := gd.Dims
 		zeros := make([]byte, dims)

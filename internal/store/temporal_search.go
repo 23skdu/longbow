@@ -101,6 +101,7 @@ type TemporalIndex struct {
 	dimension    int
 	shards       [TemporalShards]temporalShard
 	temporalTree atomic.Pointer[TemporalTree]
+	segmentTree atomic.Pointer[SegmentTree]
 	history      *VersionHistory
 	cache        *TemporalResultCache
 	pointCount   atomic.Int64
@@ -841,6 +842,10 @@ func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metad
 	if tree != nil {
 		tree.Insert(timestamp, id, norm)
 	}
+	segmentTree := ti.segmentTree.Load()
+	if segmentTree != nil {
+		segmentTree.Insert(timestamp, timestamp, uint32(id))
+	}
 	ti.pointCount.Add(1)
 
 	if ti.history != nil {
@@ -890,6 +895,12 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 	if tree != nil {
 		tree.InsertBatch(timestamps, ids, norms)
 	}
+	segmentTree := ti.segmentTree.Load()
+	if segmentTree != nil {
+		for i, id := range ids {
+			segmentTree.Insert(timestamps[i], timestamps[i], uint32(id))
+		}
+	}
 	ti.pointCount.Add(int64(len(ids)))
 
 	return nil
@@ -913,6 +924,11 @@ func (ti *TemporalIndex) Delete(id uint64) error {
 	shard.mu.Lock()
 	shard.data[id] = &newVec
 	shard.mu.Unlock()
+
+	segmentTree := ti.segmentTree.Load()
+	if segmentTree != nil {
+		segmentTree.Remove(vec.Timestamp, vec.Timestamp, uint32(id))
+	}
 	// We don't decrement pointCount here because it's a tombstone
 	return nil
 }
@@ -975,16 +991,25 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 			dim = int(vIdx.GetDimension())
 		}
 		if dim > 0 {
-			pred := &TemporalPredicate{
-				minTs:  0,
-				maxTs:  timestamp,
-				shards: &ti.shards,
-			}
 			queryVec := make([]float32, dim)
-			options := lbtypes.SearchOptions{
-				Predicate: pred,
+			options := lbtypes.SearchOptions{}
+			
+			var results []lbtypes.SearchResult
+			var err error
+			
+			segmentTree := ti.segmentTree.Load()
+			if segmentTree != nil {
+				bm := segmentTree.QueryRange(0, timestamp)
+				results, err = vIdx.SearchVectorsWithBitmap(ctx, queryVec, k, bm, options)
+			} else {
+				pred := &TemporalPredicate{
+					minTs:  0,
+					maxTs:  timestamp,
+					shards: &ti.shards,
+				}
+				options.Predicate = pred
+				results, err = vIdx.SearchVectors(ctx, queryVec, k, nil, options)
 			}
-			results, err := vIdx.SearchVectors(ctx, queryVec, k, nil, options)
 			if err == nil {
 				ti.cache.Set(cacheKey, results, 5*time.Minute)
 				return results, nil
@@ -1109,16 +1134,25 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 			dim = int(vIdx.GetDimension())
 		}
 		if dim > 0 {
-			pred := &TemporalPredicate{
-				minTs:  startTime,
-				maxTs:  endTime,
-				shards: &ti.shards,
-			}
 			queryVec := make([]float32, dim)
-			options := lbtypes.SearchOptions{
-				Predicate: pred,
+			options := lbtypes.SearchOptions{}
+			
+			var results []lbtypes.SearchResult
+			var err error
+			
+			segmentTree := ti.segmentTree.Load()
+			if segmentTree != nil {
+				bm := segmentTree.QueryRange(startTime, endTime)
+				results, err = vIdx.SearchVectorsWithBitmap(ctx, queryVec, k, bm, options)
+			} else {
+				pred := &TemporalPredicate{
+					minTs:  startTime,
+					maxTs:  endTime,
+					shards: &ti.shards,
+				}
+				options.Predicate = pred
+				results, err = vIdx.SearchVectors(ctx, queryVec, k, nil, options)
 			}
-			results, err := vIdx.SearchVectors(ctx, queryVec, k, nil, options)
 			if err == nil {
 				return results, nil
 			}

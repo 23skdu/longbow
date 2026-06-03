@@ -18,6 +18,7 @@ require (
 	cloud.google.com/go/storage v1.62.2
 	github.com/IBM/sarama v1.50.1
 	github.com/RoaringBitmap/roaring/v2 v2.18.2
+	github.com/apache/arrow-adbc/go/adbc v1.11.0
 	github.com/apache/pulsar-client-go v0.19.0
 	github.com/aws/aws-sdk-go-v2 v1.41.9
 	github.com/aws/aws-sdk-go-v2/config v1.32.18
@@ -67,7 +68,6 @@ require (
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.56.0 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.56.0 // indirect
 	github.com/andybalholm/brotli v1.2.1 // indirect
-	github.com/apache/arrow-adbc/go/adbc v1.11.0 // indirect
 	github.com/apache/thrift v0.23.0 // indirect
 	github.com/ardielle/ardielle-go v1.5.2 // indirect
 	github.com/aws/aws-sdk-go-v2/aws/protocol/eventstream v1.7.11 // indirect

@@ -13,6 +13,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/storage"
+	"github.com/23skdu/longbow/internal/store/index"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
@@ -45,6 +46,8 @@ type DiskVectorStore struct {
 	blocks      []BlockEntry
 	totalCount  int
 	dataType    types.VectorDataType
+	tqBits      int
+	tqEnc       *index.TurboQuantEncoder
 
 	// Tombstone deletion - tracks deleted indices (consistent with ArrowHNSW)
 	deleted map[int]bool
@@ -97,6 +100,14 @@ func (dvs *DiskVectorStore) SetCompression(c string) {
 	dvs.mu.Lock()
 	defer dvs.mu.Unlock()
 	dvs.compression = c
+}
+
+// SetTurboQuant configures the store to use TurboQuant encoding.
+func (dvs *DiskVectorStore) SetTurboQuant(bits int) {
+	dvs.mu.Lock()
+	defer dvs.mu.Unlock()
+	dvs.tqBits = bits
+	dvs.tqEnc = index.NewTurboQuantEncoder(dvs.dim, bits, 42)
 }
 
 // Close releases resources and closes the underlying storage backend.
@@ -177,22 +188,39 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 	var compType byte // 0: none, 1: zstd, 2: lz4
 
 	// 2. Compress
-	switch dvs.compression {
-	case "zstd":
-		dataToWrite = dvs.zstdEnc.EncodeAll(dataSlice, nil)
-		compType = 1
-	case "lz4":
-		maxLen := lz4.CompressBlockBound(len(dataSlice))
-		compressed := make([]byte, maxLen)
-		n, err := lz4.CompressBlock(dataSlice, compressed, nil)
-		if err != nil {
-			return 0, fmt.Errorf("lz4 compression failed: %w", err)
+	if dvs.tqBits > 0 && dvs.tqEnc != nil && elemSize == 4 {
+		compType = 3 // TurboQuant
+		stride := dvs.tqEnc.PackedSize()
+		dataToWrite = make([]byte, 0, numRows*stride)
+		for i := 0; i < numRows; i++ {
+			start := i * width * 4
+			end := start + width*4
+			vecSlice := dataSlice[start:end]
+			vecFloat := unsafe.Slice((*float32)(unsafe.Pointer(&vecSlice[0])), width)
+			encoded, err := dvs.tqEnc.Encode(vecFloat)
+			if err != nil {
+				return 0, err
+			}
+			dataToWrite = append(dataToWrite, encoded...)
 		}
-		dataToWrite = compressed[:n]
-		compType = 2
-	default:
-		dataToWrite = dataSlice
-		compType = 0
+	} else {
+		switch dvs.compression {
+		case "zstd":
+			dataToWrite = dvs.zstdEnc.EncodeAll(dataSlice, nil)
+			compType = 1
+		case "lz4":
+			maxLen := lz4.CompressBlockBound(len(dataSlice))
+			compressed := make([]byte, maxLen)
+			n, err := lz4.CompressBlock(dataSlice, compressed, nil)
+			if err != nil {
+				return 0, fmt.Errorf("lz4 compression failed: %w", err)
+			}
+			dataToWrite = compressed[:n]
+			compType = 2
+		default:
+			dataToWrite = dataSlice
+			compType = 0
+		}
 	}
 
 	// 3. Write Block
@@ -371,10 +399,20 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 		localIdx := idx - block.StartIdx
 
 		vec := make([]float32, dvs.dim)
-		offset := localIdx * dvs.dim * 4
-		for j := 0; j < dvs.dim; j++ {
-			bits := binary.LittleEndian.Uint32(raw[offset+j*4 : offset+(j+1)*4])
-			vec[j] = math.Float32frombits(bits)
+		if block.CompType == 3 && dvs.tqEnc != nil {
+			stride := dvs.tqEnc.PackedSize()
+			offset := localIdx * stride
+			encoded := raw[offset : offset+stride]
+			recon, err := dvs.tqEnc.Decode(encoded)
+			if err == nil {
+				copy(vec, recon)
+			}
+		} else {
+			offset := localIdx * dvs.dim * 4
+			for j := 0; j < dvs.dim; j++ {
+				bits := binary.LittleEndian.Uint32(raw[offset+j*4 : offset+(j+1)*4])
+				vec[j] = math.Float32frombits(bits)
+			}
 		}
 		results[i] = vec
 	}
@@ -456,10 +494,20 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 			localIdx := idx - block.StartIdx
 
 			vec := make([]float32, dvs.dim)
-			offset := localIdx * dvs.dim * elemSize
-			for j := 0; j < dvs.dim; j++ {
-				bits := binary.LittleEndian.Uint32(raw[offset+j*4 : offset+(j+1)*4])
-				vec[j] = math.Float32frombits(bits)
+			if block.CompType == 3 && dvs.tqEnc != nil {
+				stride := dvs.tqEnc.PackedSize()
+				offset := localIdx * stride
+				encoded := raw[offset : offset+stride]
+				recon, err := dvs.tqEnc.Decode(encoded)
+				if err == nil {
+					copy(vec, recon)
+				}
+			} else {
+				offset := localIdx * dvs.dim * elemSize
+				for j := 0; j < dvs.dim; j++ {
+					bits := binary.LittleEndian.Uint32(raw[offset+j*4 : offset+(j+1)*4])
+					vec[j] = math.Float32frombits(bits)
+				}
 			}
 			results[i] = vec
 		}
@@ -593,6 +641,8 @@ func (dvs *DiskVectorStore) decompressBlock(buf []byte) ([]byte, error) {
 	case 2: // LZ4
 		raw = make([]byte, rawSize)
 		_, err = lz4.UncompressBlock(data, raw)
+	case 3: // TurboQuant
+		raw = data
 	default: // None
 		raw = data
 	}

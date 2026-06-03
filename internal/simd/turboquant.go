@@ -198,7 +198,7 @@ func TurboQuantDistanceAVX2(query []float32, tqData []byte, dim int, pow2 int, b
 		if (qjlBits[i/8]>>uint(i%8))&1 != 0 {
 			recon[i] += correction
 		} else {
-			recon[i] -= 0.1
+			recon[i] -= correction
 		}
 	}
 

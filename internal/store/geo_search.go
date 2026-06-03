@@ -113,9 +113,14 @@ type GeoPredicate struct {
 	center   GeoPoint
 	radiusKm float64
 	vectors  *sync.Map
+	allowed  map[uint64]bool
+	useAllowed bool
 }
 
 func (gp *GeoPredicate) IsMatch(id uint32) bool {
+	if gp.useAllowed {
+		return gp.allowed[uint64(id)]
+	}
 	val, ok := gp.vectors.Load(uint64(id))
 	if !ok {
 		return false
@@ -605,10 +610,24 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 
 	vIdx := gi.GetVectorIndex()
 	if vIdx != nil {
+		index := gi.pointIndex.Load()
+		var allowed map[uint64]bool
+		var useAllowed bool
+		if index != nil {
+			candidates := index.QueryRadius(center, radiusKm)
+			allowed = make(map[uint64]bool, len(candidates))
+			for _, c := range candidates {
+				allowed[c.ID] = true
+			}
+			useAllowed = true
+		}
+
 		pred := &GeoPredicate{
-			center:   center,
-			radiusKm: radiusKm,
-			vectors:  &gi.vectors,
+			center:     center,
+			radiusKm:   radiusKm,
+			vectors:    &gi.vectors,
+			allowed:    allowed,
+			useAllowed: useAllowed,
 		}
 		// Query HNSW with predicate!
 		options := lbtypes.SearchOptions{

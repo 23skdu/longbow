@@ -1664,7 +1664,7 @@ func l2SquaredTQCorrectionGeneric(query, recon []float32, qjlBits []byte, correc
 			if (bits>>uint(j))&1 != 0 {
 				val += correction
 			} else {
-				val -= 0.1
+				val -= correction
 			}
 			diff := query[idx] - val
 			sum += diff * diff
@@ -1676,7 +1676,7 @@ func l2SquaredTQCorrectionGeneric(query, recon []float32, qjlBits []byte, correc
 		if (qjlBits[i/8]>>(i%8))&1 != 0 {
 			val += correction
 		} else {
-			val -= 0.1
+			val -= correction
 		}
 		diff := query[i] - val
 		sum += diff * diff

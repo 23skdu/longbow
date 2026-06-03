@@ -843,18 +843,44 @@ func atan2AVX2(y, x, dst []float32) {
 }
 
 func argMaxAVX2(src []float32) int {
-	if len(src) < 8 {
+	n := len(src)
+	if n == 0 {
+		return -1
+	}
+	if n < 8 {
 		return argMaxGeneric(src)
 	}
-	_, idx := argMaxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), len(src)) // #nosec G103
+	simdLen := (n / 8) * 8
+	val, idx := argMaxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), simdLen) // #nosec G103
+	if n > simdLen {
+		for i := simdLen; i < n; i++ {
+			if src[i] > val {
+				val = src[i]
+				idx = i
+			}
+		}
+	}
 	return idx
 }
 
 func argMinAVX2(src []float32) int {
-	if len(src) < 8 {
+	n := len(src)
+	if n == 0 {
+		return -1
+	}
+	if n < 8 {
 		return argMinGeneric(src)
 	}
-	_, idx := argMinAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), len(src)) // #nosec G103
+	simdLen := (n / 8) * 8
+	val, idx := argMinAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), simdLen) // #nosec G103
+	if n > simdLen {
+		for i := simdLen; i < n; i++ {
+			if src[i] < val {
+				val = src[i]
+				idx = i
+			}
+		}
+	}
 	return idx
 }
 

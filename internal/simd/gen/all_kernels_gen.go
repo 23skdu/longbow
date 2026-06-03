@@ -833,7 +833,7 @@ func ImplementArgMaxAVX2(negInf Op) {
 
 	Label("final")
 	Store(xValLow, ReturnIndex(0))
-	idx_reg := GP64(); VMOVQ(xIdxLow, idx_reg); Store(idx_reg, ReturnIndex(1))
+	idx_reg := GP64(); VMOVD(xIdxLow, idx_reg); Store(idx_reg, ReturnIndex(1))
 	VZEROUPPER(); RET()
 }
 
@@ -892,7 +892,7 @@ func ImplementArgMinAVX2(posInf Op) {
 
 	Label("final")
 	Store(xValLow, ReturnIndex(0))
-	idx_reg := GP64(); VMOVQ(xIdxLow, idx_reg); Store(idx_reg, ReturnIndex(1))
+	idx_reg := GP64(); VMOVD(xIdxLow, idx_reg); Store(idx_reg, ReturnIndex(1))
 	VZEROUPPER(); RET()
 }
 

@@ -12402,7 +12402,7 @@ done:
 	VBLENDVPS    X4, X2, X0, X0
 	VBLENDVPS    X4, X3, X1, X1
 	MOVSS        X0, val+16(FP)
-	VMOVQ        X1, AX
+	VMOVD        X1, AX
 	MOVQ         AX, idx+24(FP)
 	VZEROUPPER
 	RET
@@ -12468,7 +12468,7 @@ done:
 	VBLENDVPS    X4, X2, X0, X0
 	VBLENDVPS    X4, X3, X1, X1
 	MOVSS        X0, val+16(FP)
-	VMOVQ        X1, AX
+	VMOVD        X1, AX
 	MOVQ         AX, idx+24(FP)
 	VZEROUPPER
 	RET

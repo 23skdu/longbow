@@ -19,6 +19,13 @@ func (s *VectorStore) ApplyDelta(name string, rec arrow.RecordBatch, seq uint64,
 		return fmt.Errorf("persistence not initialized")
 	}
 
+	// Hold snapshot read lock to prevent concurrent snapshot from capturing
+	// data while we're writing to WAL + memory. This ensures that a snapshot
+	// that completes its data capture will see all WAL entries that correspond
+	// to the captured in-memory state.
+	engine.RLockSnapshot()
+	defer engine.RUnlockSnapshot()
+
 	// 1. Write to WAL
 	if err := engine.WriteWAL(name, rec, seq, ts); err != nil {
 		return fmt.Errorf("failed to write to WAL: %w", err)

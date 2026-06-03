@@ -361,11 +361,14 @@ func (h *ArrowHNSW) Close() error {
 			return err
 		}
 	}
-	// Atomically swap in nil to stop new operations
+	// Acquire growMu to synchronize with all concurrent readers and writers
+	// that hold growMu (search, insert, grow, snapshot, etc.).
+	h.growMu.Lock()
 	data := h.data.Swap(nil)
 	if data != nil {
 		data.Release()
 	}
+	h.growMu.Unlock()
 	// We do NOT nil locationStore, searchPool, etc. here because concurrent
 	// background tasks (like indexing workers or migration) might still
 	// be accessing them. The memory will be reclaimed when the ArrowHNSW

@@ -39,6 +39,22 @@ loop:
     JMP     loop
 
 tail:
+    CMPQ    CX, $0
+    JE      done_i32
+tail_loop_i32:
+    MOVL    (SI), R8
+    CMPL    R8, DX
+    JNE     no_match_i32
+    MOVL    $0xFFFFFFFF, (DI)
+    JMP     next_i32
+no_match_i32:
+    MOVL    $0, (DI)
+next_i32:
+    ADDQ    $4, SI
+    ADDQ    $4, DI
+    DECQ    CX
+    JNZ     tail_loop_i32
+done_i32:
     VZEROUPPER
     RET
 
@@ -67,6 +83,22 @@ loop_f32:
     JMP     loop_f32
 
 tail_f32:
+    CMPQ    CX, $0
+    JE      done_f32
+tail_loop_f32:
+    VMOVSS  (SI), X1
+    UCOMISS X1, X0
+    JNE     no_match_f32
+    MOVL    $0xFFFFFFFF, (DI)
+    JMP     next_f32
+no_match_f32:
+    MOVL    $0, (DI)
+next_f32:
+    ADDQ    $4, SI
+    ADDQ    $4, DI
+    DECQ    CX
+    JNZ     tail_loop_f32
+done_f32:
     VZEROUPPER
     RET
 
@@ -273,6 +305,22 @@ loop_i64:
     JMP     loop_i64
 
 tail_i64:
+    CMPQ    CX, $0
+    JE      done_i64
+tail_loop_i64:
+    MOVQ    (SI), R8
+    CMPQ    R8, DX
+    JNE     no_match_i64
+    MOVQ    $-1, (DI)
+    JMP     next_i64
+no_match_i64:
+    MOVQ    $0, (DI)
+next_i64:
+    ADDQ    $8, SI
+    ADDQ    $8, DI
+    DECQ    CX
+    JNZ     tail_loop_i64
+done_i64:
     VZEROUPPER
     RET
 
@@ -301,5 +349,21 @@ loop_f64:
     JMP     loop_f64
 
 tail_f64:
+    CMPQ    CX, $0
+    JE      done_f64
+tail_loop_f64:
+    VMOVSD  (SI), X1
+    UCOMISD X1, X0
+    JNE     no_match_f64
+    MOVQ    $-1, (DI)
+    JMP     next_f64
+no_match_f64:
+    MOVQ    $0, (DI)
+next_f64:
+    ADDQ    $8, SI
+    ADDQ    $8, DI
+    DECQ    CX
+    JNZ     tail_loop_f64
+done_f64:
     VZEROUPPER
     RET

@@ -530,7 +530,7 @@ func initializeDispatch() {
 		dotProduct128Impl = dispatch.DotProduct128
 		euclideanDistanceBatchImpl = dispatch.EuclideanDistanceBatch
 
-		cosineDistanceBatchImpl = dispatch.CosineDistanceBatch
+		cosineDistanceBatchImpl = cosineBatchGeneric
 		dotProductBatchImpl = dispatch.DotProductBatch
 		l2SquaredImpl = l2SquaredAVX2 // uses AVX2 kernel (no sqrt)
 		l2Squared128Impl = dispatch.L2SquaredDistance128
@@ -559,26 +559,26 @@ func initializeDispatch() {
 		dotProductFloat64Impl = dotFloat64AVX2
 		l2SquaredFloat64Impl = l2SquaredFloat64AVX2
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
-		euclideanDistanceInt8Impl = euclideanInt8AVX2
-		dotProductInt8Impl = dotInt8AVX2
-		dotProductUint8Impl = dotUint8AVX2
-		euclideanDistanceUint8Impl = euclideanUint8AVX2
-		euclideanDistanceInt16Impl = euclideanInt16AVX2
-		euclideanDistanceUint16Impl = euclideanUint16AVX2
-		dotProductInt16Impl = dotInt16AVX2
-		dotProductUint16Impl = dotUint16AVX2
+		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
+		dotProductInt8Impl = dotInt8Unrolled4x
+		dotProductUint8Impl = dotUint8Unrolled4x
+		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
+		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x
+		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x
+		dotProductInt16Impl = dotInt16Unrolled4x
+		dotProductUint16Impl = dotUint16Unrolled4x
 		dotProductInt4Impl = dotInt4Generic
 		dotProductInt2Impl = dotInt2Generic
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
 		euclideanDistanceComplex128Impl = euclideanComplex128Optimized
 
-		int8ToFloat32Impl = dispatch.Int8ToFloat32
-		uint8ToFloat32Impl = dispatch.Uint8ToFloat32
-		int16ToFloat32Impl = dispatch.Int16ToFloat32
-		uint16ToFloat32Impl = dispatch.Uint16ToFloat32
-		int32ToFloat32Impl = dispatch.Int32ToFloat32
-		uint32ToFloat32Impl = dispatch.Uint32ToFloat32
-		float16ToFloat32Impl = dispatch.Float16ToFloat32
+		int8ToFloat32Impl = int8ToFloat32Generic
+		uint8ToFloat32Impl = uint8ToFloat32Generic
+		int16ToFloat32Impl = int16ToFloat32Generic
+		uint16ToFloat32Impl = uint16ToFloat32Generic
+		int32ToFloat32Impl = int32ToFloat32Generic
+		uint32ToFloat32Impl = uint32ToFloat32Generic
+		float16ToFloat32Impl = float16ToFloat32Generic
 
 		sigmoidFloat32Impl = dispatch.Sigmoid
 		softmaxFloat32Impl = dispatch.Softmax
@@ -596,7 +596,7 @@ func initializeDispatch() {
 		argMinFloat32Impl = dispatch.ArgMin
 		manhattanDistanceImpl = dispatch.ManhattanDistance
 		chebyshevDistanceImpl = dispatch.ChebyshevDistance
-		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
+		brayCurtisDistanceImpl = BrayCurtisDistanceFloat32
 		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
 		haversineBatchImpl = dispatch.HaversineBatch
 		unpackTQ2Impl = dispatch.UnpackTQ2
@@ -941,6 +941,22 @@ func DispatchDistance[T any](metric MetricType, a, b []T) (float32, error) {
 		}
 		if va, ok := any(a).([]float16.Num); ok {
 			vb := any(b).([]float16.Num)
+			return k(va, vb)
+		}
+	case distanceComplex64Func:
+		if k == nil {
+			return 0, fmt.Errorf("simd: distanceComplex64Func kernel is nil for metric %s", metric)
+		}
+		if va, ok := any(a).([]complex64); ok {
+			vb := any(b).([]complex64)
+			return k(va, vb)
+		}
+	case distanceComplex128Func:
+		if k == nil {
+			return 0, fmt.Errorf("simd: distanceComplex128Func kernel is nil for metric %s", metric)
+		}
+		if va, ok := any(a).([]complex128); ok {
+			vb := any(b).([]complex128)
 			return k(va, vb)
 		}
 	default:

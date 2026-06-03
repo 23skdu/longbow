@@ -19,7 +19,7 @@ func (g *GraphData) CloneForSnapshot() *GraphData {
 		BackingGraph:      g.BackingGraph,
 		Name:              g.Name,
 		Allocator:         g.Allocator,
-		PackedNeighbors:   g.PackedNeighbors,
+		PackedNeighbors:   deepCopyPackedNeighbors(g.PackedNeighbors),
 		TurboQuantEnabled: g.TurboQuantEnabled,
 		TurboQuantBits:    g.TurboQuantBits,
 	}
@@ -175,6 +175,20 @@ func (g *GraphData) CloneForSnapshot() *GraphData {
 	// Longbow arenas seem to support concurrent use.
 
 	return &clone
+}
+
+func deepCopyPackedNeighbors(src []PackedNeighbors) []PackedNeighbors {
+	if src == nil {
+		return nil
+	}
+	dst := make([]PackedNeighbors, len(src))
+	for i, pn := range src {
+		if pn != nil {
+			pn.Retain()
+		}
+		dst[i] = pn
+	}
+	return dst
 }
 
 // CopyArenaReferences copies arena pointers to the clone.

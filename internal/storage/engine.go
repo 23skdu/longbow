@@ -47,6 +47,18 @@ type StorageEngine struct {
 	snapshotBackend SnapshotBackend
 }
 
+// RLockSnapshot acquires a read lock that prevents concurrent snapshots.
+// All write operations that modify both memory and WAL must hold this lock
+// to ensure consistency between snapshots and WAL replay.
+func (e *StorageEngine) RLockSnapshot() {
+	e.mu.RLock()
+}
+
+// RUnlockSnapshot releases the snapshot read lock.
+func (e *StorageEngine) RUnlockSnapshot() {
+	e.mu.RUnlock()
+}
+
 // NewStorageEngine creates and initializes a new storage engine.
 func NewStorageEngine(cfg StorageConfig, mem memory.Allocator) (*StorageEngine, error) {
 	if cfg.DataPath == "" {
@@ -176,7 +188,13 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	}
 
 	var wg sync.WaitGroup
-	errCh := make(chan error, 1024) // Buffer to avoid blocking workers
+	errCh := make(chan error, 1024)
+
+	// Hold the write lock for the entire snapshot to prevent concurrent writes
+	// from creating inconsistency between the captured data and the WAL.
+	// ApplyDelta holds RLockSnapshot, so it will block until the snapshot
+	// completes, ensuring no writes arrive between data capture and WAL truncation.
+	e.mu.Lock()
 
 	err := source.Iterate(func(item SnapshotItem) error {
 		if e.snapshotBackend != nil && item.OnSnapshot != nil {
@@ -202,13 +220,15 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	close(errCh)
 
 	if err != nil {
+		e.mu.Unlock()
 		return err
 	}
 
 	// Check for errors from parallel workers
-	for e := range errCh {
-		if e != nil {
-			return e
+	for e2 := range errCh {
+		if e2 != nil {
+			e.mu.Unlock()
+			return e2
 		}
 	}
 
@@ -217,17 +237,16 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	}
 
 	if err := os.Rename(tempDir, snapshotDir); err != nil {
+		e.mu.Unlock()
 		return fmt.Errorf("failed to rename snapshot dir: %w", err)
 	}
 
 	// Truncate WAL and Restart Batcher
-	e.mu.Lock()
-	defer e.mu.Unlock()
-
 	hadBatcher := e.walBatcher != nil
 
 	if hadBatcher {
 		if err := e.walBatcher.Stop(); err != nil {
+			e.mu.Unlock()
 			return fmt.Errorf("failed to stop wal batcher for snapshot: %w", err)
 		}
 		e.walBatcher = nil
@@ -238,8 +257,7 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 		walPath := filepath.Join(e.dataPath, walFileName)
 		if err := os.Truncate(walPath, 0); err != nil {
 			if os.IsNotExist(err) {
-				// File doesn't exist - create empty WAL file
-				f, createErr := os.Create(walPath) // #nosec G304 -- walPath is filepath.Join(configuredDataPath, constant)
+				f, createErr := os.Create(walPath) // #nosec G304
 				if createErr != nil {
 					log.Error().Err(createErr).Msg("Snapshot: failed to create WAL file")
 				} else {
@@ -265,9 +283,12 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 
 		e.walBatcher = NewWALBatcher(e.dataPath, &batcherCfg)
 		if err := e.walBatcher.Start(); err != nil {
+			e.mu.Unlock()
 			return fmt.Errorf("failed to restart wal batcher: %w", err)
 		}
 	}
+
+	e.mu.Unlock()
 
 	metrics.SnapshotDurationSeconds.Observe(time.Since(start).Seconds())
 	return nil

@@ -886,7 +886,10 @@ func (vs *VectorStore) processPersistenceJob(job persistenceJob) {
 	engine := vs.engine.Load()
 
 	if engine != nil {
-		if err := engine.WriteWAL(job.datasetName, job.batch, seq, job.ts); err != nil {
+		engine.RLockSnapshot()
+		err := engine.WriteWAL(job.datasetName, job.batch, seq, job.ts)
+		engine.RUnlockSnapshot()
+		if err != nil {
 			vs.logger.Error().
 				Str("dataset", job.datasetName).
 				Uint64("seq", seq).

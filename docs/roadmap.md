@@ -1,6 +1,6 @@
-# Longbow Roadmap: ADBC & Google TPU Integration
+# Longbow Roadmap: ADBC & Tensor Engine Support
 
-This roadmap details the architectural design, implementation subtasks, and testing strategies for two major upcoming features in Longbow: **ADBC Driver Support** and **Google TPU Acceleration**.
+This roadmap details the architectural design, implementation subtasks, and testing strategies for two major upcoming features in Longbow: **ADBC Driver Support** and **Native Tensor Engine**.
 
 ---
 
@@ -37,50 +37,101 @@ All ADBC implementation phases (Go ADBC Interface Implementation & C-API Export)
 
 ---
 
-## 2. Google TPU Support with SIMD Optimizations & Custom Kernels
+## 2. Native Tensor Engine
 
 ### Objective
-Leverage Google TPUs (Tensor Processing Units) for extremely high-throughput, low-latency batch vector similarity searches (L2, Cosine, Inner Product). This includes compiling custom XLA/HLO kernels and utilizing TPU Matrix Multiply Units (MXUs).
+Extend Longbow from a vector engine into a general-purpose tensor calculus engine capable of performing operations used in theoretical physics and scientific computing. This includes Einstein-notation tensor contractions, matrix multiplication, index rewriting, and JIT-compiled kernels for CPU (AVX2) and GPU (CUDA).
 
 ### Architectural Design
+
 ```mermaid
-graph LR
-    GoStore[Go Store / Wal] -->|Batch Vectors| PJRT[PJRT Pluggable Device API]
-    PJRT -->|XLA / HLO Compiler| LibTPU[libtpu.so]
-    LibTPU -->|MXU / VPU Exec| TPU[TPU Hardware]
+graph TD
+    UserAPI[User: Tensor Expressions] -->|Einstein Notation| Parser[Einstein Notation Parser]
+    Parser -->|TensorIR| Optimizer[Index Rewriting Optimizer]
+    Optimizer -->|Optimized IR| Scheduler[Contraction Scheduler]
+    Scheduler -->|Scheduled Ops| JIT[JIT Compiler]
+    JIT -->|AVX2 Kernel| CPU[CPU Execution]
+    JIT -->|CUDA Kernel| GPU[CUDA Execution]
+    JIT -->|Generic| Go[Go Fallback]
+    CPU --> Result[Result Tensors]
+    GPU --> Result
+    Go --> Result
 ```
 
 ### Implementation Subtasks
 
-#### Phase 1: TPU Runtime Integration via PJRT
-- [ ] **Task 1.1: PJRT C-API Bindings**
-  - Implement a Go-to-C wrapper for the **PJRT** (Pluggable Device) API, which is the standard compiler/runtime interface for Google TPUs.
-  - Dynamically load Google's `libtpu.so` at runtime.
-- [ ] **Task 1.2: Memory Management & Zero-Copy Transmit**
-  - Implement pinned-host memory buffers to stream batch vectors directly from Go memory space to TPU Device Memory.
-  - Create a ring-buffer strategy for overlapping TPU computation with next-batch Host-to-Device transfer.
+#### Phase 1: Tensor IR & Einstein Notation
 
-#### Phase 2: Custom TPU Kernels & SIMD
-- [ ] **Task 2.1: XLA HLO Compilation**
-  - Write high-throughput similarity search kernels (Euclidean, Inner Product, Cosine) using JAX/XLA, and export them as compiled HLO (High-Level Optimizer) payloads.
-  - Load these HLO payloads dynamically in the Go driver using PJRT executable execution.
-- [ ] **Task 2.2: MXU/VPU Optimizations**
-  - Structure the kernels to utilize the Matrix Multiply Unit (MXU) for large matrix-vector multiplications (representing batch query searches against index centroids).
-  - Use the Vector Processing Unit (VPU) for SIMD element-wise operations (quantization steps, bias addition, activations).
+- [ ] **Task 1.1: Core Tensor Type**
+  - Define a `Tensor` type in Go with support for arbitrary ranks and strides, backing storage (contiguous Arrow buffers), and metadata (labels, dimension names).
+  - Support all numeric dtypes already in Longbow: float32, float64, int8–int64, uint8–uint64, float16, complex64, complex128.
 
-#### Phase 3: CPU Fallback & Hybrid Execution
-- [ ] **Task 3.1: CPU/TPU Auto-Switching**
-  - Build a fallback path using local AVX-512/AMX SIMD instructions if TPU hardware is unavailable or if the batch size is too small to justify host-to-device overhead.
+- [ ] **Task 1.2: Einstein Notation Parser**
+  - Implement a parser for Einstein summation notation (e.g. `"ij,jk->ik"`, `"ab,cb->ac"`) that maps index names to tensor dimensions.
+  - Support broadcasting rules, contraction, and diagonal operations.
+
+- [ ] **Task 1.3: Tensor IR**
+  - Build an IR that represents sequences of tensor operations as a DAG of nodes: `Contract`, `Transpose`, `Reshape`, `Elementwise`, `Reduce`.
+  - Each node carries its index mapping, dtype, and shape constraints for downstream optimization.
+
+#### Phase 2: Index Rewriting Optimizer
+
+- [ ] **Task 2.1: Contraction Ordering**
+  - Implement an optimizer that finds optimal pairwise contraction order using dynamic programming or greedy heuristics (analogous to `opt_einsum` in Python).
+  - Model intermediate tensor sizes and choose the sequence minimizing FLOPs or peak memory.
+
+- [ ] **Task 2.2: Shared-Subexpression Elimination**
+  - Walk the DAG and detect common sub-tensors (identical subgraphs), memoize their results, and reuse them across the expression.
+  - Handle cases where the same contraction appears with different index permutations.
+
+- [ ] **Task 2.3: Algebraic Simplification**
+  - Rewrite rules: transpose-of-transpose elimination, identity contraction removal, zero-tensor propagation, and constant folding.
+  - Detect and lower diagonal operations (`ii->i`) and trace computations.
+
+#### Phase 3: JIT-Compiled Kernels
+
+- [ ] **Task 3.1: Generic Go Fallback**
+  - Naive nested-loop implementations for every IR node type to serve as correctness baseline and fallback when no JIT is available.
+
+- [ ] **Task 3.2: AVX2 Tensor Kernels**
+  - Implement JIT-compiled AVX2 kernels for:
+    - Matrix multiply (GEMM) via inline AVX2 FMA.
+    - Element-wise operations (add, mul, exp, sin, cos, tan, log, sqrt, pow) using AVX2 math intrinsics.
+    - Reduction operations (sum, max, min) along arbitrary axes.
+    - Transposition and permutation on small-to-medium tensors.
+  - Use the existing `internal/simd` package infrastructure for dispatch.
+
+- [ ] **Task 3.3: CUDA Tensor Kernels**
+  - Implement CUDA kernels for all operations above using cuBLAS for GEMM and custom CUDA C kernels for element-wise, reduction, and transposition.
+  - Integrate with Longbow's existing CUDA path (`internal/gpu/cuda`).
+
+- [ ] **Task 3.4: Custom Math Intrinsics for Trig & Tensor Calculus**
+  - Implement low-level AVX2/CUDA intrinsics for:
+    - Trigonometric: sin, cos, tan, arcsin, arccos, arctan, sinh, cosh, tanh.
+    - Tensor calculus: contractions, covariant/contravariant index raising/lowering, Levi-Civita symbol applications, wedge products, and Christoffel symbol computations.
+    - Exponential and logarithmic families: exp, log, log2, log10, erf, erfc, gamma, lgamma.
+
+#### Phase 4: Hybrid Execution & Memory Management
+
+- [ ] **Task 4.1: Auto-Scheduling**
+  - Build a cost model that selects CPU or GPU execution per subgraph based on tensor size, available hardware, and transfer costs.
+  - Support split execution (e.g., large contraction on GPU, small element-wise on CPU).
+
+- [ ] **Task 4.2: Zero-Copy Tensor Slices**
+  - Leverage Longbow's Arrow memory model for zero-copy tensor views: slicing, dicing, and broadcasting without data movement.
+  - Integrate with Longbow's existing memory arena infrastructure for allocation.
 
 ### Testing Strategy
 
 #### Unit Tests
-- **Fallback Verification**: Verify that the PJRT subsystem falls back to CPU execution when `libtpu.so` is absent or fails to initialize.
-- **Kernel Accuracy**: Compare similarity search outputs (indices and distances) from the TPU engine with a double-precision CPU baseline.
+- **Tensor Arithmetic**: Validate element-wise add, mul, sub, div against numpy reference across all supported dtypes.
+- **Contraction Correctness**: Compare `einsum("ij,jk->ik", A, B)` against numpy for random float32/float64 matrices up to 1024×1024.
+- **Optimizer Verification**: Verify that the contraction rewriter produces expressions numerically identical to the naive order.
 
 #### Fuzz & Performance Tests
-- **Dimension Fuzzing**: Run search iterations with randomized vector dimensions, batch sizes, and data distributions to catch edge cases in XLA pad/slice bounds.
-- **Device-to-Host Stress Tests**: Continuously pipe millions of vectors to check for device memory leaks, synchronization deadlocks, or out-of-memory crashes on the TPU.
+- **Index Fuzzing**: Randomly generate valid Einstein strings and verify that all execution paths (Go, AVX2, CUDA) produce bit-identical results.
+- **Microbenchmarks**: Benchmark GEMM, element-wise trig, and reduction throughput on AVX2 vs CUDA across a matrix of tensor sizes (16×16 to 4096×4096).
+- **Expression-Level Benchmarks**: Benchmark full physics-style expressions (e.g. Riemann curvature tensor from Christoffel symbols) against reference implementations.
 
 ---
 

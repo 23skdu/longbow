@@ -22,6 +22,8 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	h.growMu.RLock()
+	defer h.growMu.RUnlock()
 	meta := h.GetMetadataSnapshot()
 	data := h.data.Load()
 	if data == nil {
@@ -435,6 +437,9 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+
+	h.growMu.RLock()
+	defer h.growMu.RUnlock()
 
 	h.ensureReady()
 

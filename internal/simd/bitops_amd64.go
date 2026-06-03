@@ -26,7 +26,7 @@ func hammingAVX2(a, b []uint64) int {
 	if len(a) == 0 {
 		return 0
 	}
-	return hammingAVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+	return hammingAVX2Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)) // #nosec G103
 }
 
 //go:noescape
@@ -36,7 +36,7 @@ func hammingAVX512(a, b []uint64) int {
 	if len(a) == 0 {
 		return 0
 	}
-	return hammingAVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a))
+	return hammingAVX512Kernel(unsafe.Pointer(&a[0]), unsafe.Pointer(&b[0]), len(a)) // #nosec G103
 }
 
 //go:noescape
@@ -51,7 +51,7 @@ func andBitVectorsAVX2(dst, src []uint64) {
 		n = len(src)
 	}
 	// cast to byte slice for existing kernel
-	andBytesAVX2Kernel(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), n*8)
+	andBytesAVX2Kernel(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), n*8) // #nosec G103
 }
 
 //go:noescape
@@ -61,7 +61,7 @@ func countBitVectorAVX2(src []uint64) int {
 	if len(src) == 0 {
 		return 0
 	}
-	return countBitVectorAVX2Kernel(unsafe.Pointer(&src[0]), len(src))
+	return countBitVectorAVX2Kernel(unsafe.Pointer(&src[0]), len(src)) // #nosec G103
 }
 
 //go:noescape
@@ -71,14 +71,14 @@ func andBytesAVX2(dst, src []byte) {
 	if len(dst) == 0 {
 		return
 	}
-	andBytesAVX2Kernel(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), len(dst))
+	andBytesAVX2Kernel(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), len(dst)) // #nosec G103
 }
 
 func orBytesAVX2(dst, src []byte) {
 	if len(dst) == 0 {
 		return
 	}
-	orBytesAVX2Kernel(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), len(dst))
+	orBytesAVX2Kernel(unsafe.Pointer(&dst[0]), unsafe.Pointer(&src[0]), len(dst)) // #nosec G103
 }
 
 //go:noescape
@@ -88,5 +88,5 @@ func isAllZerosAVX2(src []byte) bool {
 	if len(src) == 0 {
 		return true
 	}
-	return isAllZerosAVX2Kernel(unsafe.Pointer(&src[0]), len(src))
+	return isAllZerosAVX2Kernel(unsafe.Pointer(&src[0]), len(src)) // #nosec G103
 }

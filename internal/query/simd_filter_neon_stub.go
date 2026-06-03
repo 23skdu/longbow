@@ -5,8 +5,8 @@ package query
 import "unsafe"
 
 func fastPathInt64EqualNEONKernel(src unsafe.Pointer, n int, val int64, result unsafe.Pointer) {
-	srcSlice := unsafe.Slice((*int64)(src), n)
-	resultSlice := unsafe.Slice((*int64)(result), n)
+	srcSlice := unsafe.Slice((*int64)(src), n) // #nosec G103
+	resultSlice := unsafe.Slice((*int64)(result), n) // #nosec G103
 	for i := 0; i < n; i++ {
 		if srcSlice[i] == val {
 			resultSlice[i] = -1
@@ -17,8 +17,8 @@ func fastPathInt64EqualNEONKernel(src unsafe.Pointer, n int, val int64, result u
 }
 
 func fastPathInt32EqualNEONKernel(src unsafe.Pointer, n int, val int32, result unsafe.Pointer) {
-	srcSlice := unsafe.Slice((*int32)(src), n)
-	resultSlice := unsafe.Slice((*int32)(result), n)
+	srcSlice := unsafe.Slice((*int32)(src), n) // #nosec G103
+	resultSlice := unsafe.Slice((*int32)(result), n) // #nosec G103
 	for i := 0; i < n; i++ {
 		if srcSlice[i] == val {
 			resultSlice[i] = -1
@@ -29,8 +29,8 @@ func fastPathInt32EqualNEONKernel(src unsafe.Pointer, n int, val int32, result u
 }
 
 func fastPathFloat64EqualNEONKernel(src unsafe.Pointer, n int, val float64, result unsafe.Pointer) {
-	srcSlice := unsafe.Slice((*float64)(src), n)
-	resultSlice := unsafe.Slice((*float64)(result), n)
+	srcSlice := unsafe.Slice((*float64)(src), n) // #nosec G103
+	resultSlice := unsafe.Slice((*float64)(result), n) // #nosec G103
 	for i := 0; i < n; i++ {
 		if srcSlice[i] == val {
 			resultSlice[i] = 1
@@ -41,8 +41,8 @@ func fastPathFloat64EqualNEONKernel(src unsafe.Pointer, n int, val float64, resu
 }
 
 func fastPathFloat32EqualNEONKernel(src unsafe.Pointer, n int, val float32, result unsafe.Pointer) {
-	srcSlice := unsafe.Slice((*float32)(src), n)
-	resultSlice := unsafe.Slice((*float32)(result), n)
+	srcSlice := unsafe.Slice((*float32)(src), n) // #nosec G103
+	resultSlice := unsafe.Slice((*float32)(result), n) // #nosec G103
 	for i := 0; i < n; i++ {
 		if srcSlice[i] == val {
 			resultSlice[i] = 1

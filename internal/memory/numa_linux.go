@@ -50,7 +50,7 @@ func DetectNUMATopology() (*NUMATopology, error) {
 	// Parse CPU list for each node
 	for i, nodePath := range nodes {
 		cpuListPath := filepath.Join(nodePath, "cpulist")
-		cpuListBytes, err := os.ReadFile(cpuListPath)
+		cpuListBytes, err := os.ReadFile(cpuListPath) // #nosec G304 - trusted sysfs path
 		if err != nil {
 			continue
 		}
@@ -67,7 +67,7 @@ func DetectNUMATopology() (*NUMATopology, error) {
 		var physicalCpus []int
 		for _, cpu := range cpus {
 			siblingsPath := fmt.Sprintf("/sys/devices/system/cpu/cpu%d/topology/thread_siblings_list", cpu)
-			siblingsBytes, err := os.ReadFile(siblingsPath)
+			siblingsBytes, err := os.ReadFile(siblingsPath) // #nosec G304 - trusted sysfs path
 			if err != nil {
 				// Fallback: assume every CPU is physical if we can't read siblings
 				physicalCpus = append(physicalCpus, cpu)

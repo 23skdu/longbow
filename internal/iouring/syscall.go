@@ -90,7 +90,7 @@ func ioUringSetup(entries uint32, params *Params) (int, error) {
 	fd, _, errno := unix.Syscall(
 		SYS_IO_URING_SETUP,
 		uintptr(entries),
-		uintptr(unsafe.Pointer(params)),
+		uintptr(unsafe.Pointer(params)), // #nosec G103
 		0,
 	)
 	if errno != 0 {

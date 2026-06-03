@@ -844,7 +844,7 @@ func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metad
 	}
 	segmentTree := ti.segmentTree.Load()
 	if segmentTree != nil {
-		segmentTree.Insert(timestamp, timestamp, uint32(id))
+		segmentTree.Insert(timestamp, timestamp, uint32(id)) // #nosec G115
 	}
 	ti.pointCount.Add(1)
 
@@ -898,7 +898,7 @@ func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps 
 	segmentTree := ti.segmentTree.Load()
 	if segmentTree != nil {
 		for i, id := range ids {
-			segmentTree.Insert(timestamps[i], timestamps[i], uint32(id))
+			segmentTree.Insert(timestamps[i], timestamps[i], uint32(id)) // #nosec G115
 		}
 	}
 	ti.pointCount.Add(int64(len(ids)))
@@ -927,7 +927,7 @@ func (ti *TemporalIndex) Delete(id uint64) error {
 
 	segmentTree := ti.segmentTree.Load()
 	if segmentTree != nil {
-		segmentTree.Remove(vec.Timestamp, vec.Timestamp, uint32(id))
+		segmentTree.Remove(vec.Timestamp, vec.Timestamp, uint32(id)) // #nosec G115
 	}
 	// We don't decrement pointCount here because it's a tombstone
 	return nil

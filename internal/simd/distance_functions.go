@@ -239,8 +239,8 @@ func DotProductComplex64(a, b []complex64) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2)
-	vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2)
+	vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2) // #nosec G103
+	vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2) // #nosec G103
 	return DotProduct(vfA, vfB)
 }
 
@@ -253,8 +253,8 @@ func DotProductComplex128(a, b []complex128) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
-	vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2)
-	vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2)
+	vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2) // #nosec G103
+	vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2) // #nosec G103
 	return DotProductF64(vfA, vfB)
 }
 
@@ -270,8 +270,8 @@ func CosineDistanceComplex64(a, b []complex64) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2)
-	vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2)
+	vfA := unsafe.Slice((*float32)(unsafe.Pointer(&a[0])), len(a)*2) // #nosec G103
+	vfB := unsafe.Slice((*float32)(unsafe.Pointer(&b[0])), len(b)*2) // #nosec G103
 	return CosineDistance(vfA, vfB)
 }
 
@@ -284,8 +284,8 @@ func CosineDistanceComplex128(a, b []complex128) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2)
-	vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2)
+	vfA := unsafe.Slice((*float64)(unsafe.Pointer(&a[0])), len(a)*2) // #nosec G103
+	vfB := unsafe.Slice((*float64)(unsafe.Pointer(&b[0])), len(b)*2) // #nosec G103
 	return CosineDistanceFloat64(vfA, vfB)
 }
 
@@ -644,6 +644,6 @@ func DotProductUint64(a, b []uint64) (float32, error) {
 
 // Prefetch hints to the CPU to fetch data into cache for future use.
 // It uses the PREFETCHNTA instruction on x86 for non-temporal access.
-func Prefetch(p unsafe.Pointer) {
+func Prefetch(p unsafe.Pointer) { // #nosec G103
 	prefetchImpl(p)
 }

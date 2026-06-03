@@ -40,7 +40,7 @@ type DiskWriterUring struct {
 func NewDiskWriterUring(path string, bufferSize int, maxBuffers int) (*DiskWriterUring, error) {
 	// 1. Open file with Direct I/O for bypass kernel page cache
 	// Note: O_DIRECT is handled via iouring if possible, or we can use it here.
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0666)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0600) // #nosec G304 - path from direct caller
 	if err != nil {
 		return nil, err
 	}
@@ -48,15 +48,15 @@ func NewDiskWriterUring(path string, bufferSize int, maxBuffers int) (*DiskWrite
 	// 2. Initialize io_uring with 1024 depth
 	ring, err := iouring.NewRing(1024, 0)
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("failed to init io_uring: %w", err)
 	}
 
 	// 3. Initialize BufferPool for O_DIRECT alignment
 	pool, err := iouring.NewBufferPool(bufferSize, maxBuffers)
 	if err != nil {
-		ring.Close()
-		f.Close()
+		_ = ring.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("failed to init buffer pool: %w", err)
 	}
 

@@ -21,7 +21,7 @@ func (r *Ring) Peek() *CQE {
 	index := head & r.cqRingMaskCached
 
 	// Get pointer to CQE
-	cqes := unsafe.Slice(r.cqes, r.cqEntriesCached)
+	cqes := unsafe.Slice(r.cqes, r.cqEntriesCached) // #nosec G103
 	cqe := &cqes[index]
 
 	// Validate CQE - ignore spurious/invalid completions
@@ -51,7 +51,7 @@ func (r *Ring) PeekBatch(cqes []*CQE, maxCount int) int {
 	}
 
 	// Get pointer to CQ array
-	cqArray := unsafe.Slice(r.cqes, r.cqEntriesCached)
+	cqArray := unsafe.Slice(r.cqes, r.cqEntriesCached) // #nosec G103
 
 	for i := 0; i < available; i++ {
 		index := (head + uint32(i)) & r.cqRingMaskCached

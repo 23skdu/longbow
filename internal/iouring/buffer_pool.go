@@ -84,7 +84,7 @@ func (p *BufferPool) allocAligned() ([]byte, error) {
 	}
 
 	// Calculate aligned offset
-	ptr := uintptr(unsafe.Pointer(&data[0]))
+	ptr := uintptr(unsafe.Pointer(&data[0])) // #nosec G103
 	alignedPtr := (ptr + uintptr(p.alignment-1)) & ^uintptr(p.alignment-1)
 	offset := int(alignedPtr - ptr)
 
@@ -101,7 +101,7 @@ func (p *BufferPool) Get() []byte {
 	case buf := <-p.available:
 		if buf != nil {
 			p.mu.Lock()
-			ptr := uintptr(unsafe.Pointer(&buf[0]))
+			ptr := uintptr(unsafe.Pointer(&buf[0])) // #nosec G103
 			p.allocated[ptr] = struct{}{}
 			p.mu.Unlock()
 		}
@@ -116,7 +116,7 @@ func (p *BufferPool) GetWait() []byte {
 	buf := <-p.available
 	if buf != nil {
 		p.mu.Lock()
-		ptr := uintptr(unsafe.Pointer(&buf[0]))
+		ptr := uintptr(unsafe.Pointer(&buf[0])) // #nosec G103
 		p.allocated[ptr] = struct{}{}
 		p.mu.Unlock()
 	}
@@ -130,7 +130,7 @@ func (p *BufferPool) Put(buf []byte) {
 		return
 	}
 
-	ptr := uintptr(unsafe.Pointer(&buf[0]))
+	ptr := uintptr(unsafe.Pointer(&buf[0])) // #nosec G103
 
 	p.mu.Lock()
 	if _, ok := p.allocated[ptr]; !ok {
@@ -154,7 +154,7 @@ func (p *BufferPool) IsAligned(buf []byte) bool {
 	if len(buf) == 0 {
 		return false
 	}
-	ptr := uintptr(unsafe.Pointer(&buf[0]))
+	ptr := uintptr(unsafe.Pointer(&buf[0])) // #nosec G103
 	return ptr%uintptr(p.alignment) == 0
 }
 
@@ -177,11 +177,11 @@ func (p *BufferPool) Close() error {
 			// Find the original mmap start
 			// We allocated bufferSize + alignment, so the mmap starts before our slice
 			// Use unsafe.Add for pointer arithmetic (Go 1.20+)
-			start := (*byte)(unsafe.Add(unsafe.Pointer(&buf[0]), -p.alignment))
+			start := (*byte)(unsafe.Add(unsafe.Pointer(&buf[0]), -p.alignment)) // #nosec G103
 
 			// Create slice to unmap
-			slice := unsafe.Slice(start, p.bufferSize+p.alignment)
-			unix.Munmap(slice)
+			slice := unsafe.Slice(start, p.bufferSize+p.alignment) // #nosec G103
+			_ = unix.Munmap(slice)
 		}
 	}
 

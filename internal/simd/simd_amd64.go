@@ -31,10 +31,10 @@ func l2SquaredAVX2(a, b []float32) (float32, error) {
 
 	var sum float32
 	l2SquaredAVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a),
-		uintptr(unsafe.Pointer(&sum)),
+		uintptr(unsafe.Pointer(&sum)), // #nosec G103
 	)
 
 	return sum, nil
@@ -45,7 +45,7 @@ func euclidean128AVX2(a, b []float32) (float32, error) {
 	if len(a) != 128 || len(b) != 128 {
 		return euclideanAVX2(a, b)
 	}
-	return euclidean128AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return euclidean128AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 // AVX2 optimized Euclidean distance for 384 dims
@@ -53,7 +53,7 @@ func euclidean384AVX2(a, b []float32) (float32, error) {
 	if len(a) != 384 || len(b) != 384 {
 		return euclideanAVX2(a, b)
 	}
-	return euclidean384AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return euclidean384AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 // AVX2 optimized Euclidean distance for 768 dims.
@@ -61,7 +61,7 @@ func euclidean768AVX2(a, b []float32) (float32, error) {
 	if len(a) != 768 || len(b) != 768 {
 		return euclideanAVX2(a, b)
 	}
-	return euclidean768AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return euclidean768AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 // AVX2 optimized Euclidean distance for 1024 dims.
@@ -69,7 +69,7 @@ func euclidean1024AVX2(a, b []float32) (float32, error) {
 	if len(a) != 1024 || len(b) != 1024 {
 		return euclideanAVX2(a, b)
 	}
-	return euclidean1024AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return euclidean1024AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 // AVX2 optimized Euclidean distance for 1536 dims.
@@ -82,7 +82,7 @@ func euclidean3072AVX2(a, b []float32) (float32, error) {
 	if len(a) != 3072 || len(b) != 3072 {
 		return euclideanAVX2(a, b)
 	}
-	return euclidean3072AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return euclidean3072AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 // AVX2 optimized dot product for specific dimensions
@@ -90,28 +90,28 @@ func dot128AVX2(a, b []float32) (float32, error) {
 	if len(a) != 128 || len(b) != 128 {
 		return dotAVX2(a, b)
 	}
-	return dot128AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return dot128AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 func dot384AVX2(a, b []float32) (float32, error) {
 	if len(a) != 384 || len(b) != 384 {
 		return dotAVX2(a, b)
 	}
-	return dot384AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return dot384AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 func dot768AVX2(a, b []float32) (float32, error) {
 	if len(a) != 768 || len(b) != 768 {
 		return dotAVX2(a, b)
 	}
-	return dot768AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return dot768AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 func dot1024AVX2(a, b []float32) (float32, error) {
 	if len(a) != 1024 || len(b) != 1024 {
 		return dotAVX2(a, b)
 	}
-	return dot1024AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return dot1024AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 func dot1536AVX2(a, b []float32) (float32, error) {
@@ -122,7 +122,7 @@ func dot3072AVX2(a, b []float32) (float32, error) {
 	if len(a) != 3072 || len(b) != 3072 {
 		return dotAVX2(a, b)
 	}
-	return dot3072AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return dot3072AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 // L2Squared AVX2 dimension-specialized wrappers (no sqrt)
@@ -130,35 +130,35 @@ func l2Squared128AVX2(a, b []float32) (float32, error) {
 	if len(a) != 128 || len(b) != 128 {
 		return l2SquaredAVX2(a, b)
 	}
-	return l2Squared128AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return l2Squared128AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 func l2Squared384AVX2(a, b []float32) (float32, error) {
 	if len(a) != 384 || len(b) != 384 {
 		return l2SquaredAVX2(a, b)
 	}
-	return l2Squared384AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return l2Squared384AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 func l2Squared768AVX2(a, b []float32) (float32, error) {
 	if len(a) != 768 || len(b) != 768 {
 		return l2SquaredAVX2(a, b)
 	}
-	return l2Squared768AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return l2Squared768AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 func l2Squared1024AVX2(a, b []float32) (float32, error) {
 	if len(a) != 1024 || len(b) != 1024 {
 		return l2SquaredAVX2(a, b)
 	}
-	return l2Squared1024AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return l2Squared1024AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 func l2Squared3072AVX2(a, b []float32) (float32, error) {
 	if len(a) != 3072 || len(b) != 3072 {
 		return l2SquaredAVX2(a, b)
 	}
-	return l2Squared3072AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil
+	return l2Squared3072AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0]))), nil // #nosec G103
 }
 
 // AVX2 optimized Cosine distance
@@ -177,8 +177,8 @@ func cosineAVX2(a, b []float32) (float32, error) {
 	// Process 8 elements at a time
 	for ; i <= n-8; i += 8 {
 		d, na, nb := cosine8AVX2(
-			uintptr(unsafe.Pointer(&a[i])),
-			uintptr(unsafe.Pointer(&b[i])),
+			uintptr(unsafe.Pointer(&a[i])), // #nosec G103
+			uintptr(unsafe.Pointer(&b[i])), // #nosec G103
 		)
 		dot += d
 		normA += na
@@ -212,10 +212,10 @@ func dotAVX2(a, b []float32) (float32, error) {
 
 	var sum float32
 	dotAVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a),
-		uintptr(unsafe.Pointer(&sum)),
+		uintptr(unsafe.Pointer(&sum)), // #nosec G103
 	)
 
 	return sum, nil
@@ -234,8 +234,8 @@ func brayCurtisAVX2(a, b []float32) (float32, error) {
 	}
 
 	return brayCurtisAVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a),
 	), nil
 }
@@ -264,7 +264,7 @@ func euclideanVerticalBatchAVX2(query []float32, vectors [][]float32, results []
 	if qLen == 0 {
 		return nil
 	}
-	qPtr := uintptr(unsafe.Pointer(&query[0]))
+	qPtr := uintptr(unsafe.Pointer(&query[0])) // #nosec G103
 	i := 0
 
 	for ; i <= n-4; i += 4 {
@@ -273,12 +273,12 @@ func euclideanVerticalBatchAVX2(query []float32, vectors [][]float32, results []
 		}
 		euclideanVertical4AVX2(
 			uintptr(qPtr),
-			uintptr(unsafe.Pointer(&vectors[i][0])),
-			uintptr(unsafe.Pointer(&vectors[i+1][0])),
-			uintptr(unsafe.Pointer(&vectors[i+2][0])),
-			uintptr(unsafe.Pointer(&vectors[i+3][0])),
+			uintptr(unsafe.Pointer(&vectors[i][0])), // #nosec G103
+			uintptr(unsafe.Pointer(&vectors[i+1][0])), // #nosec G103
+			uintptr(unsafe.Pointer(&vectors[i+2][0])), // #nosec G103
+			uintptr(unsafe.Pointer(&vectors[i+3][0])), // #nosec G103
 			qLen,
-			uintptr(unsafe.Pointer(&results[i])),
+			uintptr(unsafe.Pointer(&results[i])), // #nosec G103
 		)
 	}
 
@@ -318,7 +318,7 @@ func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) er
 	if qLen == 0 {
 		return nil
 	}
-	qPtr := uintptr(unsafe.Pointer(&query[0]))
+	qPtr := uintptr(unsafe.Pointer(&query[0])) // #nosec G103
 	i := 0
 
 	for ; i <= n-4; i += 4 {
@@ -328,12 +328,12 @@ func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) er
 		}
 		cosineVertical4AVX2(
 			uintptr(qPtr),
-			uintptr(unsafe.Pointer(&vectors[i][0])),
-			uintptr(unsafe.Pointer(&vectors[i+1][0])),
-			uintptr(unsafe.Pointer(&vectors[i+2][0])),
-			uintptr(unsafe.Pointer(&vectors[i+3][0])),
+			uintptr(unsafe.Pointer(&vectors[i][0])), // #nosec G103
+			uintptr(unsafe.Pointer(&vectors[i+1][0])), // #nosec G103
+			uintptr(unsafe.Pointer(&vectors[i+2][0])), // #nosec G103
+			uintptr(unsafe.Pointer(&vectors[i+3][0])), // #nosec G103
 			qLen,
-			uintptr(unsafe.Pointer(&results[i])),
+			uintptr(unsafe.Pointer(&results[i])), // #nosec G103
 		)
 	}
 
@@ -359,35 +359,35 @@ func int8ToFloat32AVX2(src []int8, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	int8ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	int8ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func uint8ToFloat32AVX2(src []uint8, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	uint8ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	uint8ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func int16ToFloat32AVX2(src []int16, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	int16ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	int16ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func uint16ToFloat32AVX2(src []uint16, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	uint16ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	uint16ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func int32ToFloat32AVX2(src []int32, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	int32ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	int32ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func uint32ToFloat32AVX2(src []uint32, dst []float32) {
@@ -399,56 +399,56 @@ func float16ToFloat32AVX2(src []float16.Num, dst []float32) {
 		return
 	}
 	// We already have VCVTPH2PS in AVX2
-	float16ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	float16ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func int8ToFloat32AVX512(src []int8, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	int8ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	int8ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func uint8ToFloat32AVX512(src []uint8, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	uint8ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	uint8ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func int16ToFloat32AVX512(src []int16, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	int16ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	int16ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func uint16ToFloat32AVX512(src []uint16, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	uint16ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	uint16ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func int32ToFloat32AVX512(src []int32, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	int32ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	int32ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func uint32ToFloat32AVX512(src []uint32, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	uint32ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	uint32ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func float16ToFloat32AVX512(src []float16.Num, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	float16ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	float16ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func sigmoidAVX2(src, dst []float32) {
@@ -483,28 +483,28 @@ func sigmoidAVX512(src, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	sigmoidAVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	sigmoidAVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func softmaxAVX512(src, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	softmaxAVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	softmaxAVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func expAVX512(src, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	expAVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	expAVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func logAVX512(src, dst []float32) {
 	if len(src) == 0 {
 		return
 	}
-	logAVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	logAVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func matchInt64AVX2(src []int64, val int64, op CompareOp, dst []byte) error {
@@ -517,7 +517,7 @@ func matchInt64AVX2(src []int64, val int64, op CompareOp, dst []byte) error {
 	if len(src) == 0 {
 		return nil
 	}
-	matchInt64AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), val, int(op), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	matchInt64AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), val, int(op), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 	return nil
 }
 
@@ -531,7 +531,7 @@ func matchInt32AVX2(src []int32, val int32, op CompareOp, dst []byte) error {
 	if len(src) == 0 {
 		return nil
 	}
-	matchInt32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), int64(val), int(op), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	matchInt32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), int64(val), int(op), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 	return nil
 }
 
@@ -545,7 +545,7 @@ func matchFloat32AVX2(src []float32, val float32, op CompareOp, dst []byte) erro
 	if len(src) == 0 {
 		return nil
 	}
-	matchFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), int64(math.Float32bits(val)), int(op), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	matchFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), int64(math.Float32bits(val)), int(op), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 	return nil
 }
 
@@ -559,7 +559,7 @@ func matchFloat64AVX2(src []float64, val float64, op CompareOp, dst []byte) erro
 	if len(src) == 0 {
 		return nil
 	}
-	matchFloat64AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), int64(math.Float64bits(val)), int(op), uintptr(unsafe.Pointer(&dst[0])), len(src))
+	matchFloat64AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), int64(math.Float64bits(val)), int(op), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 	return nil
 }
 
@@ -572,8 +572,8 @@ func euclideanF16AVX2(a, b []float16.Num) (float32, error) {
 		return 0, nil
 	}
 	return euclideanF16AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -585,8 +585,8 @@ func dotF16AVX2(a, b []float16.Num) (float32, error) {
 		return 0, nil
 	}
 	return dotF16AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -623,8 +623,8 @@ func euclideanFloat64AVX2(a, b []float64) (float32, error) {
 		return 0, nil
 	}
 	return euclideanFloat64AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -636,8 +636,8 @@ func dotFloat64AVX2(a, b []float64) (float32, error) {
 		return 0, nil
 	}
 	return dotFloat64AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -652,8 +652,8 @@ func l2SquaredFloat64AVX2(a, b []float64) (float32, error) {
 		return l2SquaredFloat64Unrolled4x(a, b)
 	}
 	return l2SquaredFloat64AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -668,8 +668,8 @@ func cosineFloat64AVX2(a, b []float64) (float32, error) {
 		return cosineFloat64Unrolled4x(a, b)
 	}
 	dot, normA, normB := cosineFloat64AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a),
 	)
 	if normA <= 0 || normB <= 0 {
@@ -693,8 +693,8 @@ func euclideanInt8AVX2(a, b []int8) (float32, error) {
 		return 0, nil
 	}
 	return euclideanInt8AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -719,8 +719,8 @@ func euclideanInt16AVX2(a, b []int16) (float32, error) {
 		return 0, nil
 	}
 	return euclideanInt16AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -729,8 +729,8 @@ func euclideanUint16AVX2(a, b []uint16) (float32, error) {
 		return 0, nil
 	}
 	return euclideanUint16AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -739,8 +739,8 @@ func dotInt16AVX2(a, b []int16) (float32, error) {
 		return 0, nil
 	}
 	return dotInt16AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -749,8 +749,8 @@ func dotUint16AVX2(a, b []uint16) (float32, error) {
 		return 0, nil
 	}
 	return dotUint16AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -759,8 +759,8 @@ func dotInt8AVX2(a, b []int8) (float32, error) {
 		return 0, nil
 	}
 	return dotInt8AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -769,8 +769,8 @@ func euclideanUint8AVX2(a, b []uint8) (float32, error) {
 		return 0, nil
 	}
 	return euclideanUint8AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -779,8 +779,8 @@ func dotUint8AVX2(a, b []uint8) (float32, error) {
 		return 0, nil
 	}
 	return dotUint8AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
 		len(a)), nil
 }
 
@@ -792,7 +792,7 @@ func dotInt4AVX512(a, b []byte) (float32, error) {
 	var sum float32
 	if n >= 64 {
 		simdLen := (n / 64) * 64
-		sum = dotInt4AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), simdLen)
+		sum = dotInt4AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), simdLen) // #nosec G103
 		a = a[simdLen:]
 		b = b[simdLen:]
 	}
@@ -811,7 +811,7 @@ func dotInt4AVX2(a, b []byte) (float32, error) {
 	var sum float32
 	if n >= 32 {
 		simdLen := (n / 32) * 32
-		sum = dotInt4AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), simdLen)
+		sum = dotInt4AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), simdLen) // #nosec G103
 		a = a[simdLen:]
 		b = b[simdLen:]
 	}
@@ -846,7 +846,7 @@ func argMaxAVX2(src []float32) int {
 	if len(src) < 8 {
 		return argMaxGeneric(src)
 	}
-	_, idx := argMaxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), len(src))
+	_, idx := argMaxAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), len(src)) // #nosec G103
 	return idx
 }
 
@@ -854,7 +854,7 @@ func argMinAVX2(src []float32) int {
 	if len(src) < 8 {
 		return argMinGeneric(src)
 	}
-	_, idx := argMinAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), len(src))
+	_, idx := argMinAVX2Kernel(uintptr(unsafe.Pointer(&src[0])), len(src)) // #nosec G103
 	return idx
 }
 
@@ -870,9 +870,9 @@ func matMulAVX2(a, b []float32, m, n, k int, dst []float32) {
 	}
 
 	matMulAVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])),
-		uintptr(unsafe.Pointer(&b[0])),
-		uintptr(unsafe.Pointer(&dst[0])),
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&dst[0])), // #nosec G103
 		m, n, k,
 	)
 }

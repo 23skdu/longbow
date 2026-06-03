@@ -90,7 +90,7 @@ func MbindMemory(ptr unsafe.Pointer, size int, nodeID int) error {
 		uintptr(ptr),
 		uintptr(size),
 		uintptr(mpolBind),
-		uintptr(unsafe.Pointer(&mask)),
+		uintptr(unsafe.Pointer(&mask)), // #nosec G103
 		maxnode+1, // bits are 0-indexed, so we need at least nodeID+1 bits
 		0)
 	if errno != 0 && errno != unix.ENOSYS {

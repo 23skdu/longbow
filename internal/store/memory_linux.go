@@ -38,13 +38,13 @@ func movePages(pid int, pages []unsafe.Pointer, nodes []int, status []int, flags
 	var pPages, pNodes, pStatus uintptr
 
 	if len(pages) > 0 {
-		pPages = uintptr(unsafe.Pointer(&pages[0]))
+		pPages = uintptr(unsafe.Pointer(&pages[0])) // #nosec G103
 	}
 	if len(nodes) > 0 {
-		pNodes = uintptr(unsafe.Pointer(&nodes[0]))
+		pNodes = uintptr(unsafe.Pointer(&nodes[0])) // #nosec G103
 	}
 	if len(status) > 0 {
-		pStatus = uintptr(unsafe.Pointer(&status[0]))
+		pStatus = uintptr(unsafe.Pointer(&status[0])) // #nosec G103
 	}
 
 	_, _, e1 := unix.Syscall6(
@@ -69,7 +69,7 @@ func pinThreadToNodeLinux(node int) error {
 	// Ensure we lock the OS thread so this pinning sticks to the goroutine's thread
 	runtime.LockOSThread()
 
-	f, err := os.Open(cpulistPath)
+	f, err := os.Open(cpulistPath) // #nosec G304 - trusted sysfs path
 	if err != nil {
 		return fmt.Errorf("failed to open cpulist: %w", err)
 	}

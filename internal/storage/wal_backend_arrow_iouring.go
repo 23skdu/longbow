@@ -48,7 +48,7 @@ type completion struct {
 // newArrowIOUringBackend creates a new io_uring-based WAL backend
 func newArrowIOUringBackend(path string) (*ArrowIOUringBackend, error) {
 	// Create/Open file
-	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+	file, err := os.OpenFile(path, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0600) // #nosec G304 - path from direct caller
 	if err != nil {
 		return nil, fmt.Errorf("failed to open file: %w", err)
 	}
@@ -56,14 +56,14 @@ func newArrowIOUringBackend(path string) (*ArrowIOUringBackend, error) {
 	// Get current file size for offset tracking
 	stat, err := file.Stat()
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, fmt.Errorf("failed to stat file: %w", err)
 	}
 
 	// Create io_uring ring (256 entries)
 	ring, err := iouring.NewRing(256, 0)
 	if err != nil {
-		file.Close()
+		_ = file.Close()
 		return nil, fmt.Errorf("failed to create io_uring ring: %w", err)
 	}
 
@@ -395,7 +395,10 @@ func (b *ArrowIOUringBackend) Close() error {
 	// Flush any buffered data
 	b.bufMu.Lock()
 	if len(b.writeBuf[b.bufIndex]) > 0 {
-		b.flushBuffer()
+		if err := b.flushBuffer(); err != nil {
+			b.bufMu.Unlock()
+			return fmt.Errorf("flush on close: %w", err)
+		}
 	}
 	b.bufMu.Unlock()
 

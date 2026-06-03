@@ -26,16 +26,16 @@ func DotProductFMA_AVX512(a, b []float32) (float32, error) {
 	// Process 64-element blocks
 	for ; i+64 <= n; i += 64 {
 		sum += dot64FMA(
-			uintptr(unsafe.Pointer(&a[i])),
-			uintptr(unsafe.Pointer(&b[i])),
+			uintptr(unsafe.Pointer(&a[i])), // #nosec G103
+			uintptr(unsafe.Pointer(&b[i])), // #nosec G103
 		)
 	}
 
 	// Process 32-element blocks
 	for ; i+32 <= n; i += 32 {
 		sum += dot32FMA(
-			uintptr(unsafe.Pointer(&a[i])),
-			uintptr(unsafe.Pointer(&b[i])),
+			uintptr(unsafe.Pointer(&a[i])), // #nosec G103
+			uintptr(unsafe.Pointer(&b[i])), // #nosec G103
 		)
 	}
 
@@ -63,16 +63,16 @@ func EuclideanDistanceFMA_AVX512(a, b []float32) (float32, error) {
 	// Process 64-element blocks
 	for ; i+64 <= n; i += 64 {
 		sum += euclidean64FMA(
-			uintptr(unsafe.Pointer(&a[i])),
-			uintptr(unsafe.Pointer(&b[i])),
+			uintptr(unsafe.Pointer(&a[i])), // #nosec G103
+			uintptr(unsafe.Pointer(&b[i])), // #nosec G103
 		)
 	}
 
 	// Process 32-element blocks
 	for ; i+32 <= n; i += 32 {
 		sum += euclidean32FMA(
-			uintptr(unsafe.Pointer(&a[i])),
-			uintptr(unsafe.Pointer(&b[i])),
+			uintptr(unsafe.Pointer(&a[i])), // #nosec G103
+			uintptr(unsafe.Pointer(&b[i])), // #nosec G103
 		)
 	}
 
@@ -101,8 +101,8 @@ func CosineDistanceFMA_AVX512(a, b []float32) (float32, error) {
 	// Process 32-element blocks (cosine needs 3 accumulators)
 	for ; i+32 <= n; i += 32 {
 		dot, normA, normB := cosine32FMA(
-			uintptr(unsafe.Pointer(&a[i])),
-			uintptr(unsafe.Pointer(&b[i])),
+			uintptr(unsafe.Pointer(&a[i])), // #nosec G103
+			uintptr(unsafe.Pointer(&b[i])), // #nosec G103
 		)
 		dotSum += dot
 		normASum += normA

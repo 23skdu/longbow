@@ -28,7 +28,7 @@ func (r *Ring) Submit(sqe *SQE) error {
 
 	// Write barrier: ensure SQE is written before updating tail
 	// sqArray is the index array that points to SQE slots
-	sqArray := unsafe.Slice(r.sqArray, r.sqEntriesCached)
+	sqArray := unsafe.Slice(r.sqArray, r.sqEntriesCached) // #nosec G103
 	atomic.StoreUint32(&sqArray[index], index)
 
 	// Update tail (release barrier) - this makes the entry visible to kernel
@@ -55,7 +55,7 @@ func (r *Ring) SubmitVectored(fd int, iovs []IOVec, offset uint64, userData uint
 		Opcode:   IORING_OP_WRITEV,
 		Fd:       int32(fd), // #nosec G115
 		Off:      offset,
-		Addr:     uint64(uintptr(unsafe.Pointer(&iovs[0]))),
+		Addr:     uint64(uintptr(unsafe.Pointer(&iovs[0]))), // #nosec G103
 		Len:      uint32(len(iovs)), // #nosec G115
 		UserData: userData,
 	}
@@ -73,7 +73,7 @@ func (r *Ring) SubmitWrite(fd int, buf []byte, offset uint64, userData uint64) e
 		Opcode:   IORING_OP_WRITE,
 		Fd:       int32(fd), // #nosec G115
 		Off:      offset,
-		Addr:     uint64(uintptr(unsafe.Pointer(&buf[0]))),
+		Addr:     uint64(uintptr(unsafe.Pointer(&buf[0]))), // #nosec G103
 		Len:      uint32(len(buf)), // #nosec G115
 		UserData: userData,
 	}
@@ -91,7 +91,7 @@ func (r *Ring) SubmitRead(fd int, buf []byte, offset uint64, userData uint64) er
 		Opcode:   IORING_OP_READ,
 		Fd:       int32(fd), // #nosec G115
 		Off:      offset,
-		Addr:     uint64(uintptr(unsafe.Pointer(&buf[0]))),
+		Addr:     uint64(uintptr(unsafe.Pointer(&buf[0]))), // #nosec G103
 		Len:      uint32(len(buf)), // #nosec G115
 		UserData: userData,
 	}

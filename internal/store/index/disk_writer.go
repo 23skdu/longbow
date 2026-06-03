@@ -17,7 +17,7 @@ import (
 func WriteDiskGraph(gd *types.GraphData, path string, maxNodeID int, sqMin, sqMax float32, entryPoint uint32, maxLevel int) error {
 	path = filepath.Clean(path)
 	tmpPath := path + ".tmp"
-	f, err := os.Create(tmpPath)
+	f, err := os.Create(tmpPath) // #nosec G304 - path from direct caller
 	if err != nil {
 		return err
 	}

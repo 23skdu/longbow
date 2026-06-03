@@ -160,7 +160,7 @@ func (w *ArrowWriter) WriteV(records []arrow.RecordBatch, offset int64) (*WriteR
 		}
 		copy(buf[off:], w.writeBuf.Bytes())
 		iovs[i] = IOVec{
-			Base: unsafe.Pointer(&buf[off]),
+			Base: unsafe.Pointer(&buf[off]), // #nosec G103
 			Len:  uint64(sizes[i]), // #nosec G115
 		}
 		off += sizes[i]

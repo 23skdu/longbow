@@ -12,7 +12,7 @@ import (
 // This is Linux-specific using getcpu syscall.
 func GetCurrentCPU() int {
 	var cpu uint
-	_, _, errno := unix.Syscall(unix.SYS_GETCPU, uintptr(unsafe.Pointer(&cpu)), 0, 0)
+	_, _, errno := unix.Syscall(unix.SYS_GETCPU, uintptr(unsafe.Pointer(&cpu)), 0, 0) // #nosec G103
 	if errno != 0 {
 		return -1
 	}

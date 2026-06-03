@@ -13,7 +13,7 @@ func (c *Client) LoadKernel(filename string) (Executable, error) {
 		return nil, fmt.Errorf("kernel filename cannot be empty")
 	}
 
-	payload, err := os.ReadFile(filename)
+	payload, err := os.ReadFile(filename) // #nosec G304 - path from config
 	if err != nil {
 		return nil, fmt.Errorf("failed to read HLO kernel %s: %w", filename, err)
 	}

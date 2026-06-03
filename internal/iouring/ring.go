@@ -75,7 +75,7 @@ func NewRing(entries uint32, flags uint32) (*Ring, error) {
 	}
 
 	if err := ring.mmapRings(); err != nil {
-		unix.Close(fd)
+		_ = unix.Close(fd)
 		return nil, fmt.Errorf("mmap failed: %w", err)
 	}
 
@@ -110,7 +110,7 @@ func (r *Ring) mmapRings() error {
 	cqRing, err := unix.Mmap(r.fd, int64(IORING_OFF_CQ_RING), cqRingSize,
 		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_POPULATE)
 	if err != nil {
-		unix.Munmap(sqRing)
+		_ = unix.Munmap(sqRing)
 		return fmt.Errorf("mmap cq ring failed: %w", err)
 	}
 	r.cqRingArea = cqRing
@@ -122,8 +122,8 @@ func (r *Ring) mmapRings() error {
 	sqes, err := unix.Mmap(r.fd, int64(IORING_OFF_SQES), sqeSize,
 		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_POPULATE)
 	if err != nil {
-		unix.Munmap(cqRing)
-		unix.Munmap(sqRing)
+		_ = unix.Munmap(cqRing)
+		_ = unix.Munmap(sqRing)
 		return fmt.Errorf("mmap sqes failed: %w", err)
 	}
 	r.sqesArea = sqes
@@ -134,27 +134,27 @@ func (r *Ring) mmapRings() error {
 // setupPointers initializes ring structure pointers
 func (r *Ring) setupPointers() {
 	// SQ ring pointers
-	sqBase := (*[1 << 30]byte)(unsafe.Pointer(&r.sqRingArea[0]))
-	r.sqHead = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Head]))
-	r.sqTail = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Tail]))
-	r.sqRingMask = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.RingMask]))
-	r.sqRingEntries = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.RingEntries]))
-	r.sqFlags = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Flags]))
-	r.sqDropped = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Dropped]))
-	r.sqArray = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Array]))
+	sqBase := (*[1 << 30]byte)(unsafe.Pointer(&r.sqRingArea[0])) // #nosec G103
+	r.sqHead = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Head])) // #nosec G103
+	r.sqTail = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Tail])) // #nosec G103
+	r.sqRingMask = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.RingMask])) // #nosec G103
+	r.sqRingEntries = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.RingEntries])) // #nosec G103
+	r.sqFlags = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Flags])) // #nosec G103
+	r.sqDropped = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Dropped])) // #nosec G103
+	r.sqArray = (*uint32)(unsafe.Pointer(&sqBase[r.params.SqOffsets.Array])) // #nosec G103
 
 	// CQ ring pointers
-	cqBase := (*[1 << 30]byte)(unsafe.Pointer(&r.cqRingArea[0]))
-	r.cqHead = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Head]))
-	r.cqTail = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Tail]))
-	r.cqRingMask = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.RingMask]))
-	r.cqRingEntries = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.RingEntries]))
-	r.cqOverflow = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Overflow]))
-	r.cqFlags = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Flags]))
-	r.cqes = (*CQE)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Cqes]))
+	cqBase := (*[1 << 30]byte)(unsafe.Pointer(&r.cqRingArea[0])) // #nosec G103
+	r.cqHead = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Head])) // #nosec G103
+	r.cqTail = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Tail])) // #nosec G103
+	r.cqRingMask = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.RingMask])) // #nosec G103
+	r.cqRingEntries = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.RingEntries])) // #nosec G103
+	r.cqOverflow = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Overflow])) // #nosec G103
+	r.cqFlags = (*uint32)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Flags])) // #nosec G103
+	r.cqes = (*CQE)(unsafe.Pointer(&cqBase[r.params.CqOffsets.Cqes])) // #nosec G103
 
 	// SQEs array
-	r.sqes = unsafe.Slice((*SQE)(unsafe.Pointer(&r.sqesArea[0])), r.params.SqEntries)
+	r.sqes = unsafe.Slice((*SQE)(unsafe.Pointer(&r.sqesArea[0])), r.params.SqEntries) // #nosec G103
 
 	r.sqRingMaskCached = r.params.SqEntries - 1
 	r.cqRingMaskCached = r.params.CqEntries - 1

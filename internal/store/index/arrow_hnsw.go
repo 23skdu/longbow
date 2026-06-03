@@ -595,7 +595,7 @@ func (h *ArrowHNSW) FlushToDisk() error {
 	}
 
 	path := filepath.Join(h.config.DiskPath, h.name+"_graph.bin")
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(path), 0750); err != nil {
 		return fmt.Errorf("create disk graph directory: %w", err)
 	}
 

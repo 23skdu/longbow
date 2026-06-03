@@ -155,7 +155,7 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 		}
 		slice := vals[start:end]
 		if len(slice) > 0 {
-			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*4)
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*4) // #nosec G103
 		}
 	case *array.Float64:
 		elemSize = 8
@@ -167,7 +167,7 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 		}
 		slice := vals[start:end]
 		if len(slice) > 0 {
-			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*8)
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*8) // #nosec G103
 		}
 	default:
 		return 0, fmt.Errorf("unsupported list element type: %T", valuesArr)
@@ -196,7 +196,7 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 			start := i * width * 4
 			end := start + width*4
 			vecSlice := dataSlice[start:end]
-			vecFloat := unsafe.Slice((*float32)(unsafe.Pointer(&vecSlice[0])), width)
+			vecFloat := unsafe.Slice((*float32)(unsafe.Pointer(&vecSlice[0])), width) // #nosec G103
 			encoded, err := dvs.tqEnc.Encode(vecFloat)
 			if err != nil {
 				return 0, err

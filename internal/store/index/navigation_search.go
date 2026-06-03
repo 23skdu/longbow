@@ -694,7 +694,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				for _, val := range q {
 					searchCtx.queryInt8 = append(searchCtx.queryInt8, int8(val))
 				}
-				qUint8 := *(*[]uint8)(unsafe.Pointer(&searchCtx.queryInt8))
+				qUint8 := *(*[]uint8)(unsafe.Pointer(&searchCtx.queryInt8)) // #nosec G103
 				return &int8Computer{data: data, q: qUint8, qInt8: searchCtx.queryInt8, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 			}
 			if data.Type == types.VectorTypeInt16 {

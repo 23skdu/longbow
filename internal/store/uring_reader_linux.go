@@ -32,7 +32,7 @@ type UringReader struct {
 }
 
 func NewUringReader(path string) (*UringReader, error) {
-	f, err := os.Open(path)
+	f, err := os.Open(path) // #nosec G304 - path from direct caller
 	if err != nil {
 		return nil, err
 	}
@@ -40,7 +40,7 @@ func NewUringReader(path string) (*UringReader, error) {
 	// 1024 depth is reasonable for high-throughput ingestion
 	ring, err := iouring.NewRing(1024, 0)
 	if err != nil {
-		f.Close()
+		_ = f.Close()
 		return nil, fmt.Errorf("failed to init io_uring: %w", err)
 	}
 

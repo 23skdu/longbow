@@ -1,6 +1,9 @@
 package store
 
 import (
+	"fmt"
+	"math"
+
 	"github.com/23skdu/longbow/internal/autoscale"
 	"github.com/23skdu/longbow/internal/gc"
 	"github.com/23skdu/longbow/internal/gpu"
@@ -219,4 +222,44 @@ func (vs *VectorStore) SetTemporalIndex(cfg TemporalConfig) {
 // GetTemporalIndex is deprecated
 func (vs *VectorStore) GetTemporalIndex() *TemporalIndex {
 	return nil
+}
+
+// PublishIndexBoundaries publishes the geospatial and temporal boundaries of all datasets to Gossip tags.
+func (vs *VectorStore) PublishIndexBoundaries() {
+	if vs.Mesh == nil {
+		return
+	}
+
+	tags := make(map[string]string)
+
+	// Preserve other existing tags if any
+	self := vs.Mesh.GetIdentity()
+	for k, v := range self.Tags {
+		tags[k] = v
+	}
+
+	vs.IterateDatasets(func(name string, ds *Dataset) {
+		ds.dataMu.RLock()
+		defer ds.dataMu.RUnlock()
+
+		// 1. Geospatial boundaries
+		if ds.GeoIndex != nil {
+			centroid, radius := ds.GeoIndex.GetBounds()
+			if radius > 0 {
+				tags[fmt.Sprintf("geo:%s:centroid", name)] = fmt.Sprintf("%f,%f", centroid.Lat, centroid.Lon)
+				tags[fmt.Sprintf("geo:%s:radius", name)] = fmt.Sprintf("%f", radius)
+			}
+		}
+
+		// 2. Temporal boundaries
+		if ds.TemporalIndex != nil {
+			minTs, maxTs := ds.TemporalIndex.GetBounds()
+			if minTs <= maxTs && minTs != math.MaxInt64 && maxTs != math.MinInt64 {
+				tags[fmt.Sprintf("temporal:%s:min", name)] = fmt.Sprintf("%d", minTs)
+				tags[fmt.Sprintf("temporal:%s:max", name)] = fmt.Sprintf("%d", maxTs)
+			}
+		}
+	})
+
+	vs.Mesh.UpdateLocalTags(tags)
 }

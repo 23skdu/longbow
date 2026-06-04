@@ -772,6 +772,22 @@ func (tt *TemporalTree) Len() int {
 	return int(tt.nodeCount.Load())
 }
 
+// GetBounds returns the min and max timestamps in the tree.
+func (tt *TemporalTree) GetBounds() (int64, int64) {
+	tt.mu.RLock()
+	defer tt.mu.RUnlock()
+	return tt.minTs, tt.maxTs
+}
+
+// GetBounds returns the min and max timestamps in the index.
+func (ti *TemporalIndex) GetBounds() (int64, int64) {
+	tt := ti.temporalTree.Load()
+	if tt == nil {
+		return math.MaxInt64, math.MinInt64
+	}
+	return tt.GetBounds()
+}
+
 // NewTemporalIndex creates a new TemporalIndex instance.
 func NewTemporalIndex(dimension int) *TemporalIndex {
 	ti := &TemporalIndex{

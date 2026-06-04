@@ -141,7 +141,8 @@ func (c *MemoryBackpressureController) Acquire(ctx context.Context) error {
 	// Optimistic check without lock first
 	level := c.GetPressureLevel()
 
-	if level == PressureHard {
+	switch level {
+	case PressureHard:
 		c.mu.Lock()
 		for c.GetPressureLevel() == PressureHard {
 			signal := c.signal
@@ -159,7 +160,7 @@ func (c *MemoryBackpressureController) Acquire(ctx context.Context) error {
 			c.mu.Lock()
 		}
 		c.mu.Unlock()
-	} else if level == PressureSoft {
+	case PressureSoft:
 		if c.config.SoftPressureDelay > 0 {
 			timer := time.NewTimer(c.config.SoftPressureDelay)
 			defer timer.Stop()

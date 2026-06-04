@@ -91,6 +91,9 @@ func (s *VectorStore) runIngestionWorkerWithCtx(ctx context.Context) {
 		// Decrement PendingIngestion counter
 		job.DS.PendingIngestion.Add(-1)
 
+		// Publish updated boundaries to the mesh
+		s.PublishIndexBoundaries()
+
 		// Release the retained batch from DoPut
 		job.Batch.Release()
 	}

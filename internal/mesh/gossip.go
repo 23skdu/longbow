@@ -423,12 +423,8 @@ func (g *Gossip) handlePacket(p *Packet, addr *net.UDPAddr) {
 	// 2. Message specific logic
 	switch p.Type {
 	case PacketPing:
-		ack := &Packet{
-			Type: PacketAck,
-			Seq:  p.Seq,
-		}
-		// Send Ack
-		_ = g.sendPacketStruct(ack, addr)
+		// Send Ack with updates
+		_ = g.sendAck(addr.String(), "", p.Seq)
 
 	case PacketAck:
 		g.ackMu.Lock()
@@ -495,6 +491,28 @@ func (g *Gossip) sendPing(addr, targetID string, seq uint32) error {
 
 	metrics.GossipPingsTotal.WithLabelValues("sent").Inc()
 	return nil
+}
+
+func (g *Gossip) sendAck(addr, targetID string, seq uint32) error {
+	available := MaxPacketSize - HeaderSize
+
+	g.mu.Lock()
+	updates, numUpdates := g.getUpdatesForPacket(available, targetID)
+	g.mu.Unlock()
+
+	packet := &Packet{
+		Type:       PacketAck,
+		Seq:        seq,
+		NumUpdates: uint8(numUpdates), // #nosec G115
+		Payload:    updates,
+	}
+
+	udpAddr, err := net.ResolveUDPAddr("udp", addr)
+	if err != nil {
+		return err
+	}
+
+	return g.sendPacketStruct(packet, udpAddr)
 }
 
 func (g *Gossip) getUpdatesForPacket(limitBytes int, skipID string) (updates []byte, count int) {
@@ -666,6 +684,10 @@ func (g *Gossip) UpdateMember(m *Member) {
 		existing.Addr = m.Addr
 		existing.GRPCAddr = m.GRPCAddr
 		existing.MetaAddr = m.MetaAddr
+		existing.Tags = make(map[string]string)
+		for k, v := range m.Tags {
+			existing.Tags[k] = v
+		}
 		existing.LastSeen = time.Now()
 
 		switch m.Status {
@@ -679,14 +701,49 @@ func (g *Gossip) UpdateMember(m *Member) {
 
 		g.addUpdate(existing)
 
-		// Trigger notifications on transition
+		// Trigger notifications on transition or update
 		if g.Config.Delegate != nil {
 			if oldStatus != StatusAlive && existing.Status == StatusAlive {
 				go g.Config.Delegate.NotifyJoin(existing)
 			} else if oldStatus != StatusDead && existing.Status == StatusDead {
 				go g.Config.Delegate.NotifyLeave(existing)
+			} else {
+				go g.Config.Delegate.NotifyUpdate(existing)
 			}
 		}
+	}
+}
+
+// UpdateLocalTags updates the tags for the local node and triggers Gossip propagation.
+func (g *Gossip) UpdateLocalTags(tags map[string]string) {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	self, ok := g.members[g.Config.ID]
+	if !ok {
+		return
+	}
+
+	// Compare tags to see if changed
+	changed := false
+	if len(self.Tags) != len(tags) {
+		changed = true
+	} else {
+		for k, v := range tags {
+			if self.Tags[k] != v {
+				changed = true
+				break
+			}
+		}
+	}
+
+	if changed {
+		self.Tags = make(map[string]string)
+		for k, v := range tags {
+			self.Tags[k] = v
+		}
+		self.Incarnation++
+		g.addUpdate(self)
 	}
 }
 

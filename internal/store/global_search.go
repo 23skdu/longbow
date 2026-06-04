@@ -319,3 +319,341 @@ func (c *GlobalSearchCoordinator) Close() error {
 	// The pool is managed externally, so we don't need to close it here.
 	return nil
 }
+
+// GlobalGeoSearch performs scatter-gather geospatial search across the cluster
+func (c *GlobalSearchCoordinator) GlobalGeoSearch(ctx context.Context, localResults []SearchResult, req *core.GeoSearchRequest, peers []mesh.Member) ([]SearchResult, error) {
+	start := time.Now()
+
+	_, span := tracing.CreateSpan(ctx, "GlobalGeoSearch")
+	if span != nil {
+		span.SetAttributes(
+			"component", "distributed",
+			"level", "coordination",
+			"peers", fmt.Sprint(len(peers)),
+		)
+		defer span.End()
+	}
+
+	if len(peers) == 0 {
+		return localResults, nil
+	}
+
+	metrics.GlobalSearchFanoutSize.Observe(float64(len(peers)))
+
+	peerGroups := make(map[string][]mesh.Member)
+	for i := range peers {
+		p := peers[i]
+		groupID := p.ID
+		if shard, ok := p.Tags["shard"]; ok {
+			groupID = "shard:" + shard
+		}
+		peerGroups[groupID] = append(peerGroups[groupID], p)
+	}
+
+	numStreams := 1 + len(peerGroups)
+	channels := make([]<-chan []SearchResult, numStreams)
+
+	// 1. Local Stream
+	localCh := make(chan []SearchResult, 1)
+	localCh <- localResults
+	close(localCh)
+	channels[0] = localCh
+
+	// 2. Peer Streams (Hedged)
+	groupChs := make([]chan []SearchResult, len(peerGroups))
+	var wg sync.WaitGroup
+
+	groupIdx := 0
+	for _, members := range peerGroups {
+		ch := make(chan []SearchResult, 1)
+		groupChs[groupIdx] = ch
+		channels[groupIdx+1] = ch
+		groupIdx++
+
+		wg.Add(1)
+		go func(replicas []mesh.Member, outCh chan []SearchResult) {
+			defer wg.Done()
+			defer close(outCh)
+
+			ctxHedge, cancelHedge := context.WithCancel(ctx)
+			defer cancelHedge()
+
+			resultHedge := make(chan []SearchResult, 1)
+			failSignal := make(chan struct{}, len(replicas))
+			var wgReplicas sync.WaitGroup
+
+			for i := range replicas {
+				rp := replicas[i]
+				wgReplicas.Add(1)
+				go func(p mesh.Member) {
+					defer wgReplicas.Done()
+
+					err := retry.Do(ctxHedge, c.retryPolicy, func(subCtx context.Context) error {
+						conn, err := c.pool.Get(subCtx, p.MetaAddr)
+						if err != nil {
+							return err
+						}
+						defer c.pool.Put(conn)
+						client := conn.Client()
+
+						c.logger.Debug().Str("peer", p.ID).Str("addr", p.MetaAddr).Msg("Sending DoGet GeoSearch to peer")
+
+						ticketQuery := core.TicketQuery{
+							GeoSearch: req,
+						}
+						ticketBytes, err := json.Marshal(ticketQuery)
+						if err != nil {
+							return err
+						}
+
+						stream, err := client.DoGet(subCtx, &flight.Ticket{Ticket: ticketBytes})
+						if err != nil {
+							return err
+						}
+
+						reader, err := flight.NewRecordReader(stream)
+						if err != nil {
+							return err
+						}
+						defer reader.Release()
+
+						var results []SearchResult
+						for reader.Next() {
+							rec := reader.RecordBatch()
+							col0 := rec.Column(0)
+							col1 := rec.Column(1)
+
+							ids := col0.(*array.Uint64).Uint64Values()
+							scores := col1.(*array.Float32).Float32Values()
+
+							for k := 0; k < len(ids); k++ {
+								results = append(results, SearchResult{
+									ID:    lbtypes.VectorID(ids[k]), // #nosec G115
+									Score: scores[k],
+								})
+							}
+						}
+						if reader.Err() != nil {
+							return reader.Err()
+						}
+
+						select {
+						case resultHedge <- results:
+							cancelHedge()
+						case <-subCtx.Done():
+						}
+						return nil
+					})
+
+					if err != nil && ctxHedge.Err() == nil {
+						c.logger.Warn().Err(err).Str("peer", p.ID).Msg("DoGet GeoSearch failed after retries")
+						failSignal <- struct{}{}
+					}
+				}(rp)
+			}
+
+			finishedAll := make(chan struct{})
+			go func() {
+				wgReplicas.Wait()
+				close(finishedAll)
+			}()
+
+			failedCount := 0
+			for {
+				select {
+				case res := <-resultHedge:
+					outCh <- res
+					return
+				case <-failSignal:
+					failedCount++
+					if failedCount == len(replicas) {
+						metrics.GlobalSearchPartialFailures.Inc()
+						return
+					}
+				case <-finishedAll:
+					return
+				case <-ctxHedge.Done():
+					metrics.GlobalSearchPartialFailures.Inc()
+					return
+				}
+			}
+		}(members, ch)
+	}
+
+	go func() {
+		wg.Wait()
+	}()
+
+	finalResults := MergeSortedStreams(channels, req.K)
+	metrics.GlobalSearchDuration.Observe(time.Since(start).Seconds())
+	return finalResults, nil
+}
+
+// GlobalTemporalSearch performs scatter-gather temporal search across the cluster
+func (c *GlobalSearchCoordinator) GlobalTemporalSearch(ctx context.Context, localResults []SearchResult, req *core.TemporalSearchRequest, peers []mesh.Member) ([]SearchResult, error) {
+	start := time.Now()
+
+	_, span := tracing.CreateSpan(ctx, "GlobalTemporalSearch")
+	if span != nil {
+		span.SetAttributes(
+			"component", "distributed",
+			"level", "coordination",
+			"peers", fmt.Sprint(len(peers)),
+		)
+		defer span.End()
+	}
+
+	if len(peers) == 0 {
+		return localResults, nil
+	}
+
+	metrics.GlobalSearchFanoutSize.Observe(float64(len(peers)))
+
+	peerGroups := make(map[string][]mesh.Member)
+	for i := range peers {
+		p := peers[i]
+		groupID := p.ID
+		if shard, ok := p.Tags["shard"]; ok {
+			groupID = "shard:" + shard
+		}
+		peerGroups[groupID] = append(peerGroups[groupID], p)
+	}
+
+	numStreams := 1 + len(peerGroups)
+	channels := make([]<-chan []SearchResult, numStreams)
+
+	// 1. Local Stream
+	localCh := make(chan []SearchResult, 1)
+	localCh <- localResults
+	close(localCh)
+	channels[0] = localCh
+
+	// 2. Peer Streams (Hedged)
+	groupChs := make([]chan []SearchResult, len(peerGroups))
+	var wg sync.WaitGroup
+
+	groupIdx := 0
+	for _, members := range peerGroups {
+		ch := make(chan []SearchResult, 1)
+		groupChs[groupIdx] = ch
+		channels[groupIdx+1] = ch
+		groupIdx++
+
+		wg.Add(1)
+		go func(replicas []mesh.Member, outCh chan []SearchResult) {
+			defer wg.Done()
+			defer close(outCh)
+
+			ctxHedge, cancelHedge := context.WithCancel(ctx)
+			defer cancelHedge()
+
+			resultHedge := make(chan []SearchResult, 1)
+			failSignal := make(chan struct{}, len(replicas))
+			var wgReplicas sync.WaitGroup
+
+			for i := range replicas {
+				rp := replicas[i]
+				wgReplicas.Add(1)
+				go func(p mesh.Member) {
+					defer wgReplicas.Done()
+
+					err := retry.Do(ctxHedge, c.retryPolicy, func(subCtx context.Context) error {
+						conn, err := c.pool.Get(subCtx, p.MetaAddr)
+						if err != nil {
+							return err
+						}
+						defer c.pool.Put(conn)
+						client := conn.Client()
+
+						c.logger.Debug().Str("peer", p.ID).Str("addr", p.MetaAddr).Msg("Sending DoGet TemporalSearch to peer")
+
+						ticketQuery := core.TicketQuery{
+							TemporalSearch: req,
+						}
+						ticketBytes, err := json.Marshal(ticketQuery)
+						if err != nil {
+							return err
+						}
+
+						stream, err := client.DoGet(subCtx, &flight.Ticket{Ticket: ticketBytes})
+						if err != nil {
+							return err
+						}
+
+						reader, err := flight.NewRecordReader(stream)
+						if err != nil {
+							return err
+						}
+						defer reader.Release()
+
+						var results []SearchResult
+						for reader.Next() {
+							rec := reader.RecordBatch()
+							col0 := rec.Column(0)
+							col1 := rec.Column(1)
+
+							ids := col0.(*array.Uint64).Uint64Values()
+							scores := col1.(*array.Float32).Float32Values()
+
+							for k := 0; k < len(ids); k++ {
+								results = append(results, SearchResult{
+									ID:    lbtypes.VectorID(ids[k]), // #nosec G115
+									Score: scores[k],
+								})
+							}
+						}
+						if reader.Err() != nil {
+							return reader.Err()
+						}
+
+						select {
+						case resultHedge <- results:
+							cancelHedge()
+						case <-subCtx.Done():
+						}
+						return nil
+					})
+
+					if err != nil && ctxHedge.Err() == nil {
+						c.logger.Warn().Err(err).Str("peer", p.ID).Msg("DoGet TemporalSearch failed after retries")
+						failSignal <- struct{}{}
+					}
+				}(rp)
+			}
+
+			finishedAll := make(chan struct{})
+			go func() {
+				wgReplicas.Wait()
+				close(finishedAll)
+			}()
+
+			failedCount := 0
+			for {
+				select {
+				case res := <-resultHedge:
+					outCh <- res
+					return
+				case <-failSignal:
+					failedCount++
+					if failedCount == len(replicas) {
+						metrics.GlobalSearchPartialFailures.Inc()
+						return
+					}
+				case <-finishedAll:
+					return
+				case <-ctxHedge.Done():
+					metrics.GlobalSearchPartialFailures.Inc()
+					return
+				}
+			}
+		}(members, ch)
+	}
+
+	go func() {
+		wg.Wait()
+	}()
+
+	finalResults := MergeSortedStreams(channels, req.K)
+	metrics.GlobalSearchDuration.Observe(time.Since(start).Seconds())
+	return finalResults, nil
+}

@@ -1105,6 +1105,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	}
 
 	s.logger.Info().Str("name", name).Msg("DoPut completed (Batched)")
+	s.PublishIndexBoundaries()
 	return nil
 }
 

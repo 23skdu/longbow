@@ -52,6 +52,26 @@ func (r *Router) UpdateRegion(reg Region) {
 	r.dirty = true
 }
 
+// RemoveRegion removes all regions owned by a peer.
+func (r *Router) RemoveRegion(ownerID string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	var newRegions []Region
+	changed := false
+	for _, reg := range r.regions {
+		if reg.OwnerID == ownerID {
+			changed = true
+		} else {
+			newRegions = append(newRegions, reg)
+		}
+	}
+	if changed {
+		r.regions = newRegions
+		r.dirty = true
+	}
+}
+
 // Route returns the IDs of peers that might contain relevant vectors.
 // It checks if distance(query, centroid) <= radius + epsilon.
 func (r *Router) Route(query []float32, limit int) []string {

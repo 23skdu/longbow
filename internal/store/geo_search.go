@@ -349,6 +349,33 @@ func (q *Quadtree) queryBoxRecursive(box GeoBoundingBox, results *[]*GeoIndexedV
 	q.southeast.queryBoxRecursive(box, results)
 }
 
+// GetBounds computes and returns the centroid and max radius (in km) covering the index vectors.
+func (gi *GeoIndex) GetBounds() (GeoPoint, float64) {
+	var latSum, lonSum float64
+	var count int
+	gi.vectors.Range(func(key, value any) bool {
+		v := value.(*GeoIndexedVector)
+		latSum += v.GeoPoint.Lat
+		lonSum += v.GeoPoint.Lon
+		count++
+		return true
+	})
+	if count == 0 {
+		return GeoPoint{}, 0
+	}
+	centroid := GeoPoint{Lat: latSum / float64(count), Lon: lonSum / float64(count)}
+	var maxDist float64
+	gi.vectors.Range(func(key, value any) bool {
+		v := value.(*GeoIndexedVector)
+		dist := HaversineDistance(centroid, v.GeoPoint, 6371.0)
+		if dist > maxDist {
+			maxDist = dist
+		}
+		return true
+	})
+	return centroid, maxDist
+}
+
 // NewGeoIndex creates a new GeoIndex with the specified configuration.
 func NewGeoIndex(datasetName string, dimension int, config *GeoSearchConfig) *GeoIndex {
 	if config == nil {

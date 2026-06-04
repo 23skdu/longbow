@@ -38,7 +38,7 @@ type MemoryBackpressureController struct {
 	releaseCount  atomic.Uint64
 	rejectCount   atomic.Uint64
 	mu            sync.Mutex
-	cond          *sync.Cond
+	signal        chan struct{} // closed to broadcast pressure relief; recreated after close
 	stopChan      chan struct{}
 	stopOnce      sync.Once
 }
@@ -46,11 +46,18 @@ type MemoryBackpressureController struct {
 // NewMemoryBackpressureController creates a new backpressure controller.
 func NewMemoryBackpressureController(cfg BackpressureConfig) *MemoryBackpressureController {
 	ctrl := &MemoryBackpressureController{
-		config: cfg,
+		config:  cfg,
+		signal:  make(chan struct{}),
+		stopChan: make(chan struct{}),
 	}
-	ctrl.cond = sync.NewCond(&ctrl.mu)
-	ctrl.stopChan = make(chan struct{})
 	return ctrl
+}
+
+// broadcast wakes all goroutines blocked in Acquire and prepares
+// a fresh signal channel for the next round of waiting.
+func (c *MemoryBackpressureController) broadcast() {
+	close(c.signal)
+	c.signal = make(chan struct{})
 }
 
 // Start begins the background memory monitoring.
@@ -71,7 +78,9 @@ func (c *MemoryBackpressureController) Start(ctx context.Context) {
 
 				// If pressure relieved (Hard -> Soft/None), wake up waiters
 				if prevLevel == PressureHard && newLevel != PressureHard {
-					c.cond.Broadcast()
+					c.mu.Lock()
+					c.broadcast()
+					c.mu.Unlock()
 				}
 			}
 		}
@@ -121,7 +130,9 @@ func (c *MemoryBackpressureController) SetPressureLevel(level PressureLevel) {
 	prev := c.GetPressureLevel()
 	c.pressureLevel.Store(int32(level))
 	if prev == PressureHard && level != PressureHard {
-		c.cond.Broadcast()
+		c.mu.Lock()
+		c.broadcast()
+		c.mu.Unlock()
 	}
 }
 
@@ -133,60 +144,22 @@ func (c *MemoryBackpressureController) Acquire(ctx context.Context) error {
 	if level == PressureHard {
 		c.mu.Lock()
 		for c.GetPressureLevel() == PressureHard {
-			// Wait uses Cond.Wait, which releases lock and re-acquires
-			// We need to watch context cancellation too.
-			// Cond.Wait doesn't support context, so we use a wait with timeout/polling or
-			// separate channel. Since we have a Ticker in background, relying on Broadcast is fine.
-			// But for Context cancellation, we can't easily break Wait().
-			//
-			// Alternative: Use a loop with occasional polling or use a channel-based verify.
-			// Given this is Hard pressure (rare), a simple polling wait or broadcast is okay.
-			// But if we want to respect context immediately:
+			signal := c.signal
+			c.mu.Unlock()
 
-			// We can use a channel based approach or simply checking context before Wait.
-			// But Wait blocks indefinitely.
-			//
-			// Safe approach with Context:
-			// Use a select with signal channel.
-			// But current design uses Cond.
-
-			// Let's stick to Cond but we must ensure we don't hang if ctx is canceled.
-			// Actually Cond.Wait is not cancelable.
-			// We should probably convert this to channel-based notification or just poll.
-			//
-			// Let's modify to use a loop with short sleeps if we can't strictly use Cond with Context easily
-			// OR spawn a waiter.
-			//
-			// Actually, the background ticker broadcasts on relief.
-			// The issue is simply `c.cond.Wait()` ignores context.
-			// A common pattern:
-
-			c.mu.Unlock() // Release lock to check context
-
-			// Use timer to avoid memory leak from time.After() in loop
-			timer := time.NewTimer(100 * time.Millisecond)
 			select {
+			case <-signal:
+				// Pressure may have dropped; re-check
 			case <-ctx.Done():
-				timer.Stop()
 				c.rejectCount.Add(1)
 				metrics.MemoryBackpressureRejectsTotal.Inc()
 				return ctx.Err()
-			case <-timer.C:
-				// Poll / Wait
 			}
 
-			// Re-check
-			if c.GetPressureLevel() != PressureHard {
-				break
-			}
-			// Loop and check context again
-			// Note: We are not holding lock here, so we might miss a broadcast but we have polling.
-			// This is a hybrid approach. Effectively we poll every 100ms when under hard pressure.
-			continue
+			c.mu.Lock()
 		}
-		// If we broke out, pressure is relieved (or never was hard)
-	} else if level == PressureSoft { // Existing soft limit logic
-		// Add delay to slow down ingestion
+		c.mu.Unlock()
+	} else if level == PressureSoft {
 		if c.config.SoftPressureDelay > 0 {
 			timer := time.NewTimer(c.config.SoftPressureDelay)
 			defer timer.Stop()
@@ -207,6 +180,12 @@ func (c *MemoryBackpressureController) Acquire(ctx context.Context) error {
 func (c *MemoryBackpressureController) Release() {
 	c.releaseCount.Add(1)
 	metrics.MemoryBackpressureReleasesTotal.Inc()
+	// A release may have freed enough memory to relieve pressure.
+	// Broadcast so blocked acquirers re-check promptly instead of
+	// waiting for the next background tick.
+	c.mu.Lock()
+	c.broadcast()
+	c.mu.Unlock()
 }
 
 // GetAcquireCount returns the total number of successful acquires.

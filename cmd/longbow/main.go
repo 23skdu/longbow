@@ -33,6 +33,7 @@ import (
 	"github.com/23skdu/longbow/internal/sharding"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store"
+	"github.com/23skdu/longbow/internal/tensor"
 	"github.com/23skdu/longbow/pkg/version"
 
 	"github.com/apache/arrow-go/v18/arrow/flight"
@@ -360,6 +361,10 @@ func run() error {
 	} else {
 		logger.Info().Str("impl", simd.GetImplementation()).Msg("SIMD kernel self-test passed")
 	}
+
+	// Initialize tensor math dispatch: use hardware-accelerated math
+	// when a SIMD implementation was detected.
+	tensor.InitMathDispatch(simd.GetImplementation() != "generic")
 
 	// Configure GPU acceleration
 	if cfg.GPUEnabled {

@@ -648,7 +648,8 @@ func (g *Gossip) UpdateMember(m *Member) {
 		g.addUpdate(m)
 		// If new and alive, notify join
 		if m.Status == StatusAlive && g.Config.Delegate != nil {
-			go g.Config.Delegate.NotifyJoin(m)
+			memberCopy := copyMember(m)
+			go g.Config.Delegate.NotifyJoin(memberCopy)
 		}
 		metrics.GossipActiveMembers.Set(float64(g.countAlive()))
 		return
@@ -703,15 +704,41 @@ func (g *Gossip) UpdateMember(m *Member) {
 
 		// Trigger notifications on transition or update
 		if g.Config.Delegate != nil {
-			if oldStatus != StatusAlive && existing.Status == StatusAlive {
-				go g.Config.Delegate.NotifyJoin(existing)
-			} else if oldStatus != StatusDead && existing.Status == StatusDead {
-				go g.Config.Delegate.NotifyLeave(existing)
-			} else {
-				go g.Config.Delegate.NotifyUpdate(existing)
+			switch {
+			case oldStatus != StatusAlive && existing.Status == StatusAlive:
+				memberCopy := copyMember(existing)
+				go g.Config.Delegate.NotifyJoin(memberCopy)
+			case oldStatus != StatusDead && existing.Status == StatusDead:
+				memberCopy := copyMember(existing)
+				go g.Config.Delegate.NotifyLeave(memberCopy)
+			default:
+				memberCopy := copyMember(existing)
+				go g.Config.Delegate.NotifyUpdate(memberCopy)
 			}
 		}
 	}
+}
+
+// copyMember returns a deep copy of a Member for safe concurrent access.
+func copyMember(m *Member) *Member {
+	if m == nil {
+		return nil
+	}
+	c := &Member{
+		ID:          m.ID,
+		Addr:        m.Addr,
+		GRPCAddr:    m.GRPCAddr,
+		MetaAddr:    m.MetaAddr,
+		Status:      m.Status,
+		Incarnation: m.Incarnation,
+		LastSeen:    m.LastSeen,
+		SuspectAt:   m.SuspectAt,
+		Tags:        make(map[string]string, len(m.Tags)),
+	}
+	for k, v := range m.Tags {
+		c.Tags[k] = v
+	}
+	return c
 }
 
 // UpdateLocalTags updates the tags for the local node and triggers Gossip propagation.

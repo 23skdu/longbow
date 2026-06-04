@@ -16,7 +16,7 @@ func TestNewRing(t *testing.T) {
 	require.NoError(t, err)
 	defer ring.Close()
 
-	assert.Greater(t, ring.fd, 0)
+	assert.Greater(t, ring.fd.Load(), int64(0))
 	assert.NotNil(t, ring.sqRingArea)
 	assert.NotNil(t, ring.sqesArea)
 	assert.True(t, ring.sqEntriesCached > 0)
@@ -41,7 +41,7 @@ func TestRingClose(t *testing.T) {
 
 	err = ring.Close()
 	assert.NoError(t, err)
-	assert.Equal(t, -1, ring.fd)
+	assert.Equal(t, int64(-1), ring.fd.Load())
 }
 
 func TestRingCloseMultiple(t *testing.T) {

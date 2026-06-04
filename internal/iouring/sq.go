@@ -142,14 +142,14 @@ func (r *Ring) FlushAndWait(minComplete uint32, timeout time.Duration) (int, err
 			if minComplete == 0 {
 				break
 			}
-			n, err := ioUringEnter(r.fd, 0, minComplete, flags, nil)
+			n, err := ioUringEnter(int(r.fd.Load()), 0, minComplete, flags, nil)
 			if err != nil {
 				return int(submitted), err
 			}
 			return int(n), nil
 		}
 
-		n, err := ioUringEnter(r.fd, toSubmit, minComplete, flags, nil)
+		n, err := ioUringEnter(int(r.fd.Load()), toSubmit, minComplete, flags, nil)
 		if err != nil {
 			return int(submitted), err
 		}

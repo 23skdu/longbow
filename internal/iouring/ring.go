@@ -5,6 +5,7 @@ package iouring
 import (
 	"fmt"
 	"runtime"
+	"sync/atomic"
 	"unsafe"
 
 	"golang.org/x/sys/unix"
@@ -12,7 +13,7 @@ import (
 
 // Ring represents an io_uring instance
 type Ring struct {
-	fd     int
+	fd     atomic.Int64
 	params Params
 
 	// Memory-mapped regions
@@ -70,9 +71,9 @@ func NewRing(entries uint32, flags uint32) (*Ring, error) {
 	}
 
 	ring := &Ring{
-		fd:     fd,
 		params: params,
 	}
+	ring.fd.Store(int64(fd))
 
 	if err := ring.mmapRings(); err != nil {
 		_ = unix.Close(fd)
@@ -95,7 +96,7 @@ func (r *Ring) mmapRings() error {
 	sqRingSize = (sqRingSize + pageSize - 1) &^ (pageSize - 1)
 
 	// Map SQ ring
-	sqRing, err := unix.Mmap(r.fd, int64(IORING_OFF_SQ_RING), sqRingSize,
+	sqRing, err := unix.Mmap(int(r.fd.Load()), int64(IORING_OFF_SQ_RING), sqRingSize,
 		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_POPULATE)
 	if err != nil {
 		return fmt.Errorf("mmap sq ring failed: %w", err)
@@ -107,7 +108,7 @@ func (r *Ring) mmapRings() error {
 	cqRingSize = (cqRingSize + pageSize - 1) &^ (pageSize - 1)
 
 	// Map CQ ring separately
-	cqRing, err := unix.Mmap(r.fd, int64(IORING_OFF_CQ_RING), cqRingSize,
+	cqRing, err := unix.Mmap(int(r.fd.Load()), int64(IORING_OFF_CQ_RING), cqRingSize,
 		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_POPULATE)
 	if err != nil {
 		_ = unix.Munmap(sqRing)
@@ -119,7 +120,7 @@ func (r *Ring) mmapRings() error {
 	sqeSize := int(r.params.SqEntries) * int(unsafe.Sizeof(SQE{}))
 	sqeSize = (sqeSize + pageSize - 1) &^ (pageSize - 1)
 
-	sqes, err := unix.Mmap(r.fd, int64(IORING_OFF_SQES), sqeSize,
+	sqes, err := unix.Mmap(int(r.fd.Load()), int64(IORING_OFF_SQES), sqeSize,
 		unix.PROT_READ|unix.PROT_WRITE, unix.MAP_SHARED|unix.MAP_POPULATE)
 	if err != nil {
 		_ = unix.Munmap(cqRing)
@@ -164,7 +165,7 @@ func (r *Ring) setupPointers() {
 
 // Close releases resources
 func (r *Ring) Close() error {
-	if r == nil || r.fd < 0 {
+	if r == nil || int(r.fd.Load()) < 0 {
 		return nil
 	}
 
@@ -190,10 +191,10 @@ func (r *Ring) Close() error {
 		}
 	}
 
-	if err := unix.Close(r.fd); err != nil {
+	if err := unix.Close(int(r.fd.Load())); err != nil {
 		errs = append(errs, err)
 	}
-	r.fd = -1
+	r.fd.Store(-1)
 
 	if len(errs) > 0 {
 		return fmt.Errorf("cleanup errors: %v", errs)
@@ -204,7 +205,7 @@ func (r *Ring) Close() error {
 
 // Fd returns the ring file descriptor
 func (r *Ring) Fd() int {
-	return r.fd
+	return int(r.fd.Load())
 }
 
 // nextPowerOf2 rounds up to next power of 2

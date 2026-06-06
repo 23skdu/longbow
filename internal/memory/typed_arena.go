@@ -6,6 +6,8 @@ import (
 	"sync"
 	"sync/atomic"
 	"unsafe"
+
+	"github.com/23skdu/longbow/internal/metrics"
 )
 
 // TypedArena wraps a SlabArena to provide typed slice access.
@@ -143,6 +145,7 @@ func (ta *TypedArena[T]) AllocSlice(count int) (SliceRef, error) {
 
 	a := ta.arena.Load()
 	if a == nil {
+		metrics.ArenaNilErrorTotal.WithLabelValues("AllocSlice").Inc()
 		return SliceRef{}, errors.New("arena is nil")
 	}
 	offset, err := a.Alloc(totalBytes)
@@ -166,6 +169,7 @@ func (ta *TypedArena[T]) AllocSliceDirty(count int) (SliceRef, error) {
 
 	a := ta.arena.Load()
 	if a == nil {
+		metrics.ArenaNilErrorTotal.WithLabelValues("AllocSliceDirty").Inc()
 		return SliceRef{}, errors.New("arena is nil")
 	}
 	offset, err := a.AllocDirty(totalBytes)
@@ -188,6 +192,7 @@ func (ta *TypedArena[T]) AllocSliceAligned(count, align int) (SliceRef, error) {
 
 	a := ta.arena.Load()
 	if a == nil {
+		metrics.ArenaNilErrorTotal.WithLabelValues("AllocSliceAligned").Inc()
 		return SliceRef{}, errors.New("arena is nil")
 	}
 	offset, err := a.AllocAligned(totalBytes, align)

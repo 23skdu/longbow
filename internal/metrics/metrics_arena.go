@@ -54,4 +54,25 @@ var (
 			Help: "Total bytes allocated in off-heap SlabArenas (mmap/C.malloc)",
 		},
 	)
+
+	// ArenaNilErrorTotal counts occurrences of `"arena is nil"` errors
+	// returned by the TypedArena allocator family (AllocSlice, AllocSliceDirty,
+	// AllocSliceAligned). Should remain at 0 in healthy operation. Non-zero
+	// values indicate a regression of the reader-pin contract introduced in
+	// commit a2f535ef — a goroutine is calling a typed-arena allocator
+	// after the underlying Slab has been released, or the parent GraphData
+	// pointer was replaced by a concurrent compareAndSwapData before this
+	// goroutine acquired a reader pin.
+	//
+	// Implemented as a Counter (not a Gauge) because the value is
+	// monotonically increasing. The `method` label distinguishes the
+	// allocator that fired, which makes it possible to attribute the
+	// regression to the right call site from Grafana alone.
+	ArenaNilErrorTotal = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_arena_nil_error_total",
+			Help: "Total number of 'arena is nil' errors from TypedArena allocators",
+		},
+		[]string{"method"},
+	)
 )

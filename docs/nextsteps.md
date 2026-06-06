@@ -77,7 +77,7 @@ python3 scripts/unified_benchmark.py \
 
 2. **✅ DONE — Add a `TestArrowHNSW_ConcurrentAddBatch_50k_Int8` stress test** (`TestArrowHNSW_ConcurrentAddBatch_Int8_50k_Stress` in `concurrent_addbatch_50k_test.go`). It exercises 5 concurrent 10k-int8 AddBatch calls (50k total) and asserts `nodeCount >= 50000` and `data.Int8Arena != nil`. Without the fix, 3-5 of 5 batches fail; with the fix, all 5 succeed in ~76 s.
 
-3. **Wire a Prometheus gauge** `longbow_index_arena_nil_total` that increments on every `"arena is nil"` error from the async indexing path. Currently the only signal is the structured-log line, which is easy to miss in CI. The fix in `a2f535ef` should make this gauge stay at 0, but having the counter wired means future regressions are visible in Grafana.
+3. **✅ DONE — Wire a Prometheus counter** `longbow_arena_nil_error_total` (counter, not gauge — the value is monotonically increasing) that increments on every `"arena is nil"` error from the typed-arena allocator family. The counter is labelled by method (`AllocSlice` / `AllocSliceDirty` / `AllocSliceAligned`) so Grafana can attribute the regression to the right call site. The counter is wired at the three error sites in `internal/memory/typed_arena.go` (lines 146, 169, 191) and the metric is defined in `internal/metrics/metrics_arena.go`. Four regression tests in `internal/memory/typed_arena_metrics_test.go` cover each label and verify that the counter stays at 0 during healthy operation. Should stay at 0 in healthy operation; non-zero values indicate a regression of the reader-pin contract introduced in commit `a2f535ef`.
 
 4. **Re-run the full v2.2.0 matrix (13 search modes, 4 dtypes, 4 counts)** to get a complete picture post-fix. Use the unified_benchmark orchestrator with `--search-modes all` and `--dtypes float16,float32,int8,turboquant8`.
 
@@ -93,5 +93,6 @@ python3 scripts/unified_benchmark.py \
 - ✅ Automated continuous benchmarking (`.github/workflows/ci.yml`): shipped
 - ✅ **P0 `arena is nil` fix** (commit `a2f535ef`)
 - ✅ **50k int8 concurrent stress test** (commit `a2f535ef`)
+- ✅ **`longbow_arena_nil_error_total` Prometheus counter** (Rec #3)
 - ⏳ Disk-backed validation at 1M+ vectors: pending
 - ⏳ CUDA execution on RTX 4060: pending

@@ -85,7 +85,7 @@ python3 scripts/unified_benchmark.py \
 
 6. **Consider replacing the per-batch `Clone` in `insertInternal` with a structural-copy that retains shared typed-arena slabs.** The heap profile shows `GraphData.Clone` taking 26.5 MB at int8 50k dim=384 (12.2% of the 217 MB total). The shared-slab pattern is already in place (see `graph_data.go:2470-2472`); extending it to a "shallow structural clone" would reduce pressure on the GC and on the Slab allocator.
 
-7. **Add a `LongBow_BENCH_FAST=1` env var** to the unified_benchmark orchestrator that uses 100 queries and 1s duration for CI smoke runs. The current `--ci` flag exists but isn't documented in the unified_benchmark help text. Expose the existing reduced matrix in `docs/benchtool.md`.
+7. **✅ DONE — Add `LONGBOW_BENCH_FAST=1` env var** to the unified_benchmark orchestrator (`scripts/unified_benchmark.py:3258-3294`) as a synonym for the `--ci` CLI flag. The env var accepts `1` / `true` / `yes` / `on` (case-insensitive, whitespace-stripped) and is OR-merged with the CLI flag — either activates the same fast-mode defaults (`dims=128`, `counts=10000,50000`, `dtypes=float32,int8`, `search_modes=dense`). `docs/testplan.md` §4.3 documents both activation paths; the `--ci` help text was updated to mention the env var.
 
 ## Status of Implemented Recommendations (from previous `nextsteps.md`)
 
@@ -95,5 +95,6 @@ python3 scripts/unified_benchmark.py \
 - ✅ **50k int8 concurrent stress test** (commit `a2f535ef`)
 - ✅ **`longbow_arena_nil_error_total` Prometheus counter** (Rec #3)
 - ✅ **Document `inBulkInsert` + `readerCount` contract in `docs/hnsw.md`** (Rec #5)
+- ✅ **`LONGBOW_BENCH_FAST=1` env var as a synonym for `--ci`** (Rec #7)
 - ⏳ Disk-backed validation at 1M+ vectors: pending
 - ⏳ CUDA execution on RTX 4060: pending

@@ -3256,16 +3256,27 @@ if __name__ == "__main__":
         "--numa-compare", action="store_true", help="Run benchmarks with and without NUMA binding to compare"
     )
     parser.add_argument(
-        "--ci", action="store_true", help="Run a reduced 'fast' matrix for CI environments"
+        "--ci", action="store_true",
+        help="Run a reduced 'fast' matrix for CI environments. Equivalent to setting the LONGBOW_BENCH_FAST=1 env var; both activate the same fast-mode defaults (dims=128, counts=10000,50000, dtypes=float32,int8, search_modes=dense)."
     )
     args = parser.parse_args()
-    
+
+    # LONGBOW_BENCH_FAST=1 is a synonym for --ci, so CI configs can set the
+    # env var without editing the script invocation. Accepts 1/true/yes/on
+    # (case-insensitive); any other value (including unset) leaves --ci in
+    # whatever state argparse produced. The CLI flag and the env var are
+    # OR-merged: if either is set, fast mode is on, and fast mode overrides
+    # --dims/--counts/--dtypes/--search-modes (mirroring the --ci semantics
+    # above).
+    if os.environ.get("LONGBOW_BENCH_FAST", "").strip().lower() in ("1", "true", "yes", "on"):
+        args.ci = True
+
     if args.ci:
         args.dims = "128"
         args.counts = "10000,50000"
         args.dtypes = "float32,int8"
         if args.search_modes == "all":
             args.search_modes = "dense"
-            
+
     runner = BenchmarkRunner(args)
     runner.execute()

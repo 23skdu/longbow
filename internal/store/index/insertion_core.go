@@ -69,7 +69,12 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 	ensurePrivate := func() {
 		if !isPrivate {
 			data = h.data.Load()
-			data = data.Clone()
+			// ShallowStructuralClone shares the per-chunk vector slice
+			// headers with the original. This is safe because the
+			// modern write path goes through VectorsF32 (offset) +
+			// Float32Arena.Get(...), not Vectors[i] directly. Saves
+			// ~19 MB of heap at int8 50k dim=384 per Clone call.
+			data = data.ShallowStructuralClone()
 			isPrivate = true
 		}
 	}
@@ -167,9 +172,11 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			}
 			// Adopt the new global state
 			data = h.data.Load()
-			// If we were supposed to be private, clone it again
+			// If we were supposed to be private, clone it again.
+			// ShallowStructuralClone saves ~19 MB per call at int8 50k
+			// dim=384; see ensurePrivate above for the safety contract.
 			if !skipSet || existingData != nil {
-				data = data.Clone()
+				data = data.ShallowStructuralClone()
 			}
 		}
 		h.growMu.Unlock()
@@ -185,11 +192,14 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		if err != nil {
 			return nil, err
 		}
-		// If we were supposed to have a private copy, clone it
+		// If we were supposed to have a private copy, clone it.
+		// ShallowStructuralClone shares the per-chunk vector slice
+		// headers with the original; see ensurePrivate above for the
+		// safety contract. Saves ~19 MB per Clone at int8 50k dim=384.
 		if !skipSet || existingData != nil {
 			data.ReleaseReader()
 			data = h.data.Load()
-			data = data.Clone()
+			data = data.ShallowStructuralClone()
 		} else {
 			defer data.ReleaseReader()
 		}

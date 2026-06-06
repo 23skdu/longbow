@@ -146,8 +146,9 @@ type GraphData struct {
 
 	SharedVectorSpace bool // If true, skip primary vector storage allocation
 
-	cloneCount int32  // Atomic: incremented during Clone, checked by Release before freeing
-	released   uint32 // Atomic flag to prevent double-release/idempotency
+	cloneCount  int32  // Atomic: incremented during Clone, checked by Release before freeing
+	readerCount int32  // Atomic: incremented by AcquireReader on read paths; Release waits for 0 before freeing typed arenas
+	released    uint32 // Atomic flag to prevent double-release/idempotency
 
 	// OnNeighborsMiss is a callback hook triggered when neighbor data for a layer is accessed but evicted (offset == 0).
 	OnNeighborsMiss func(layer int) error
@@ -2412,6 +2413,22 @@ func (g *GraphData) GetLevelsChunk(chunkID int) []uint32 {
 	return nil
 }
 
+// AcquireReader pins the GraphData against premature typed-arena release.
+// Bracket any read path that accesses the typed-arena fields (Int8Arena,
+// Float32Arena, etc.) with AcquireReader/​ReleaseReader so a concurrent
+// compareAndSwapData-driven Release() waits until the read completes.
+// Cheap: a single atomic add. Hot-path readers (search, GetNeighbors) should
+// also use it; the contention window is short.
+func (g *GraphData) AcquireReader() {
+	atomic.AddInt32(&g.readerCount, 1)
+}
+
+// ReleaseReader decrements the reader count acquired by AcquireReader.
+// Pairs 1:1 with AcquireReader. Use defer to be panic-safe.
+func (g *GraphData) ReleaseReader() {
+	atomic.AddInt32(&g.readerCount, -1)
+}
+
 // Clone creates a shallow copy of the GraphData with deep copies of the structure slices.
 // This allows concurrent readers to safely access the old structure while a new one is being built (COW).
 func (g *GraphData) Clone() *GraphData {
@@ -3490,6 +3507,18 @@ func (g *GraphData) Release() {
 	// Clone() increments cloneCount while reading this GraphData's fields
 	// and takes a Retain() on shared arenas. We must not free until done.
 	for atomic.LoadInt32(&g.cloneCount) > 0 {
+		runtime.Gosched()
+	}
+
+	// Wait for all concurrent read paths to finish. AcquireReader/ReleaseReader
+	// bracket read access to the typed-arena fields (Int8Arena, Float32Arena,
+	// etc.). This guarantees that the Slabs pointed at by the typed-arenas
+	// are not released (SlabArena.refs reaches 0) while any reader is
+	// still calling AllocSlice / Get on them. The h.data CAS in
+	// compareAndSwapData synchronizes ordering, so a reader that did
+	// h.data.Load() before our CAS must call AcquireReader before
+	// reaching this point.
+	for atomic.LoadInt32(&g.readerCount) > 0 {
 		runtime.Gosched()
 	}
 

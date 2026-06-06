@@ -33,10 +33,17 @@ func (ta *TypedArena[T]) Retain() {
 }
 
 func (ta *TypedArena[T]) Release() {
+	// Do NOT nil out the arena pointer here. The Slab has its own
+	// ref-count (SlabArena.refs); it stays alive as long as any
+	// TypedArena holds a Retain() (e.g. a Clone of a GraphData that
+	// was made before this Release). Nilling the pointer would cause
+	// concurrent AllocSlice callers in other goroutines to fail
+	// with "arena is nil" even though the underlying Slab is still
+	// live and valid. The GraphData.AcquireReader/ReleaseReader pin
+	// guarantees the Slab is not freed while readers are in-flight.
 	a := ta.arena.Load()
 	if a != nil {
 		a.Release()
-		ta.arena.Store(nil)
 	}
 }
 

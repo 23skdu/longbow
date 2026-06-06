@@ -807,7 +807,15 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 						rec := recs[0]
 						values := valuesCache[rec]
 						if values != nil {
+							// Pin a reader so a concurrent compareAndSwapData
+							// (from addBatchBulkInternal) cannot Release() the
+							// published GraphData while we mutate its
+							// SetZeroCopyMapping fields. Without this, a Release()
+							// could race with the writes below and silently drop
+							// the zero-copy mapping.
 							data := h.data.Load()
+							data.AcquireReader()
+							defer data.ReleaseReader()
 							numFullChunks := n / types.ChunkSize
 							for c := 0; c < numFullChunks; c++ {
 								cID := int(startID)/types.ChunkSize + c

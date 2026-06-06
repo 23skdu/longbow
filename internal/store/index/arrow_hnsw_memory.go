@@ -20,6 +20,12 @@ func (h *ArrowHNSW) ensureChunk(cID, cOff, dims int) (*types.GraphData, error) {
 
 func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *types.GraphData, cloned bool, err error) {
 	data := h.data.Load()
+	// If we return a data (early or late), pin it so the caller can
+	// safely use it (typed-arena access, Clone, etc.) without racing
+	// against a concurrent compareAndSwapData-driven Release().
+	// Caller is responsible for releasing the pin after they're done
+	// with the returned data. To avoid leaking the pin on error paths,
+	// we always release before returning nil.
 	if data == nil {
 		// First chunk ever
 		capacity := h.config.InitialCapacity
@@ -30,10 +36,14 @@ func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *typ
 			return nil, false, err
 		}
 		data = h.data.Load()
+		if data != nil {
+			data.AcquireReader()
+		}
 		return data, true, nil
 	}
 
 	if !data.NeedsChunk(cID) {
+		data.AcquireReader()
 		return data, false, nil
 	}
 
@@ -46,14 +56,24 @@ func (h *ArrowHNSW) ensureChunkInternalLocked(cID, cOff, dims int) (newData *typ
 		if err := h.growInternal(newCap, dims); err != nil {
 			return nil, false, err
 		}
+		// Release the pin on the old data, pin the new one
+		data.ReleaseReader()
 		data = h.data.Load()
+		if data != nil {
+			data.AcquireReader()
+		}
 		return data, true, nil
 	}
 
-	// Just allocate the chunk within existing capacity IN-PLACE (Lock-Free atomic publishing)
+	// Just allocate the chunk within existing capacity IN-PLACE.
+	// Pin a reader so a concurrent compareAndSwapData-driven Release()
+	// cannot nil out the typed-arenas (e.g. Uint32Arena for Neighbors
+	// layer 0) while we call data.EnsureChunk.
 	if err := data.EnsureChunk(cID, cOff, dims); err != nil {
+		data.ReleaseReader()
 		return nil, false, err
 	}
+	// data is returned pinned; caller releases after use.
 	return data, false, nil
 }
 
@@ -165,6 +185,16 @@ func (h *ArrowHNSW) EnsureChunks(startCID, endCID int, dims int) (*types.GraphDa
 
 func (h *ArrowHNSW) ensureChunksLocked(startCID, endCID int, dims int) (*types.GraphData, error) {
 	data := h.data.Load()
+	// Pin a reader so a concurrent compareAndSwapData-driven Release()
+	// cannot nil out the typed-arenas while we call data.EnsureChunk
+	// (which invokes Int8Arena.AllocSlice and other typed-arena writes).
+	// Without this pin, a concurrent addBatchBulkInternal on the same
+	// ArrowHNSW could CAS-publish a newer snapshot, Release() this data,
+	// and cause "arena is nil" errors in our EnsureChunk loop.
+	if data != nil {
+		data.AcquireReader()
+		defer data.ReleaseReader()
+	}
 	needsGrow := false
 	if data == nil || (endCID+1)*types.ChunkSize > data.Capacity {
 		needsGrow = true

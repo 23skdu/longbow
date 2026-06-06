@@ -205,8 +205,17 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 	if err != nil {
 		return err
 	}
-	// Use a private clone for the entire batch operation
-	data = data.Clone()
+	// Pin the original data across the Clone() call so a concurrent
+	// compareAndSwapData-driven Release() cannot nil out the typed-
+	// arenas before we read them via g.Int8Arena.Slab(). The pin
+	// must be released BEFORE the first compareAndSwapData() further
+	// down in this function, because that call's Release() spins on
+	// the readerCount and would otherwise deadlock with ourselves.
+	original := data
+	original.AcquireReader()
+	clone := original.Clone()
+	original.ReleaseReader()
+	data = clone
 
 	growMuReleased := true // #nosec G101 - No longer needed with EnsureChunks
 	_ = growMuReleased
@@ -559,8 +568,21 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 	}
 	h.commitMu.Unlock()
 
-	// Refresh data snapshot after bootstrap loop as InsertWithVector updated the global state
-	data = h.data.Load()
+	// Refresh data snapshot after bootstrap loop as InsertWithVector updated the global state.
+	// Must Clone() the published data: another concurrent addBatchBulkInternal could
+	// CAS-publish a newer snapshot and Release() this one, nilling the typed-arenas.
+	// Clone() takes a fresh Retain on the Slab, so subsequent data.Clone() and
+	// data.SetVector calls have a valid live GraphData to work on.
+	// Pin the published snapshot across the Clone() call to prevent
+	// the typed-arena nil-out race during Slab() reads in Clone().
+	freshPublished := h.data.Load()
+	if freshPublished != nil {
+		freshPublished.AcquireReader()
+		data = freshPublished.Clone()
+		freshPublished.ReleaseReader()
+	} else {
+		data = nil
+	}
 
 	// Shift to remaining nodes for parallel linkage
 	remainingNodes := activeNodes[seedCount:]

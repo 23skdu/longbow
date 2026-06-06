@@ -177,7 +177,9 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 
 	cID := types.ChunkID(id)
 	if data.NeedsChunk(cID) {
-		// Use ensureChunk which handles the COW and publishing of the grown state
+		// Use ensureChunk which handles the COW and publishing of the grown state.
+		// ensureChunk returns the data with a reader pin held; we release
+		// the pin once we've cloned (or after we are done using the data).
 		var err error
 		data, err = h.ensureChunk(int(cID), int(types.ChunkOffset(id)), dims)
 		if err != nil {
@@ -185,8 +187,11 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		}
 		// If we were supposed to have a private copy, clone it
 		if !skipSet || existingData != nil {
+			data.ReleaseReader()
 			data = h.data.Load()
 			data = data.Clone()
+		} else {
+			defer data.ReleaseReader()
 		}
 	}
 

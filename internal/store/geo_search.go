@@ -17,6 +17,7 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 	internalcore "github.com/23skdu/longbow/internal/store/index"
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
+	"github.com/RoaringBitmap/roaring/v2"
 )
 
 // GeoPoint represents a geographic location with latitude and longitude.
@@ -113,13 +114,12 @@ type GeoPredicate struct {
 	center   GeoPoint
 	radiusKm float64
 	vectors  *sync.Map
-	allowed  map[uint64]bool
-	useAllowed bool
+	allowed  *roaring.Bitmap
 }
 
 func (gp *GeoPredicate) IsMatch(id uint32) bool {
-	if gp.useAllowed {
-		return gp.allowed[uint64(id)]
+	if gp.allowed != nil {
+		return gp.allowed.Contains(id)
 	}
 	val, ok := gp.vectors.Load(uint64(id))
 	if !ok {
@@ -274,22 +274,20 @@ func (q *Quadtree) subdivide() {
 
 // QueryRadius returns all vectors within a given radius from a point.
 func (q *Quadtree) QueryRadius(center GeoPoint, radiusKm float64) []*GeoIndexedVector {
-	// Pre-allocate with a reasonable estimate to avoid reallocations
 	results := make([]*GeoIndexedVector, 0, 128)
-	q.queryRadiusRecursive(center, radiusKm, &results)
+	cosLat := math.Cos(center.Lat * math.Pi / 180)
+	lonDelta := radiusKm / (111.0 * cosLat)
+	box := GeoBoundingBox{
+		MinLat: center.Lat - radiusKm/111.0,
+		MaxLat: center.Lat + radiusKm/111.0,
+		MinLon: center.Lon - lonDelta,
+		MaxLon: center.Lon + lonDelta,
+	}
+	q.queryRadiusRecursive(center, radiusKm, cosLat, lonDelta, box, &results)
 	return results
 }
 
-func (q *Quadtree) queryRadiusRecursive(center GeoPoint, radiusKm float64, results *[]*GeoIndexedVector) {
-	// Re-use BoundingBox logic but inline for performance in recursion
-	latDelta := radiusKm / 111.0
-	box := GeoBoundingBox{
-		MinLat: center.Lat - latDelta,
-		MaxLat: center.Lat + latDelta,
-		MinLon: center.Lon - radiusKm/(111.0*math.Cos(center.Lat*math.Pi/180)),
-		MaxLon: center.Lon + radiusKm/(111.0*math.Cos(center.Lat*math.Pi/180)),
-	}
-
+func (q *Quadtree) queryRadiusRecursive(center GeoPoint, radiusKm, cosLat, lonDelta float64, box GeoBoundingBox, results *[]*GeoIndexedVector) {
 	if !q.intersects(box) {
 		return
 	}
@@ -307,10 +305,10 @@ func (q *Quadtree) queryRadiusRecursive(center GeoPoint, radiusKm float64, resul
 	}
 	q.mu.RUnlock()
 
-	q.northwest.queryRadiusRecursive(center, radiusKm, results)
-	q.northeast.queryRadiusRecursive(center, radiusKm, results)
-	q.southwest.queryRadiusRecursive(center, radiusKm, results)
-	q.southeast.queryRadiusRecursive(center, radiusKm, results)
+	q.northwest.queryRadiusRecursive(center, radiusKm, cosLat, lonDelta, box, results)
+	q.northeast.queryRadiusRecursive(center, radiusKm, cosLat, lonDelta, box, results)
+	q.southwest.queryRadiusRecursive(center, radiusKm, cosLat, lonDelta, box, results)
+	q.southeast.queryRadiusRecursive(center, radiusKm, cosLat, lonDelta, box, results)
 }
 
 func (q *Quadtree) intersects(box GeoBoundingBox) bool {
@@ -638,29 +636,27 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 	vIdx := gi.GetVectorIndex()
 	if vIdx != nil {
 		index := gi.pointIndex.Load()
-		var allowed map[uint64]bool
-		var useAllowed bool
+		var allowed *roaring.Bitmap
 		if index != nil {
 			candidates := index.QueryRadius(center, radiusKm)
-			allowed = make(map[uint64]bool, len(candidates))
+			allowed = roaring.New()
 			for _, c := range candidates {
-				allowed[c.ID] = true
+				allowed.Add(uint32(c.ID)) // #nosec G115 — safe: VectorID is uint32
 			}
-			useAllowed = true
 		}
 
 		pred := &GeoPredicate{
-			center:     center,
-			radiusKm:   radiusKm,
-			vectors:    &gi.vectors,
-			allowed:    allowed,
-			useAllowed: useAllowed,
+			center:   center,
+			radiusKm: radiusKm,
+			vectors:  &gi.vectors,
+			allowed:  allowed,
 		}
-		// Query HNSW with predicate!
+		// Query HNSW with bitmap pre-filter (shortcut: avoids per-node
+		// HaversineDistance during HNSW traversal).
 		options := lbtypes.SearchOptions{
 			Predicate: pred,
 		}
-		results, err := vIdx.SearchVectors(ctx, queryVector, k, nil, options)
+		results, err := vIdx.SearchVectorsWithBitmap(ctx, queryVector, k, allowed, options)
 		if err == nil {
 			// Compute hybrid score: 0.5 * geoScore + 0.5 * vectorScore
 			for i, r := range results {

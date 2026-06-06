@@ -113,7 +113,8 @@ func (q *FlightDataQueue) TryEnqueue(chunk *FlightDataChunk) bool {
 }
 
 // Dequeue retrieves the next chunk, respecting context cancellation.
-// Returns (nil, false) if queue is closed and empty or context canceled.
+// Returns (nil, false) if queue is closed and empty, or if the context is cancelled/timed out.
+// Blocks until a chunk is available, the context expires, or the queue is closed.
 func (q *FlightDataQueue) Dequeue(ctx context.Context) (*FlightDataChunk, bool) {
 	select {
 	case chunk, ok := <-q.ch:
@@ -125,6 +126,7 @@ func (q *FlightDataQueue) Dequeue(ctx context.Context) (*FlightDataChunk, bool) 
 		return nil, false
 	}
 }
+
 
 // Len returns current queue length.
 func (q *FlightDataQueue) Len() int {

@@ -439,17 +439,31 @@ func main() {
 	log.Printf("[PUT] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(*scale)/duration, (float64(totalBytes)/(1024*1024))/duration)
 
 	log.Println("Waiting for background indexing to complete...")
-	waitCtx, waitCancel := context.WithTimeout(context.Background(), 660*time.Second)
+	indexingTimeout := 3600 * time.Second
+	if *scale >= 50000 && (*dtype == "complex128" || *dtype == "float64" || *dtype == "int64" || *dtype == "uint64") {
+		indexingTimeout = 14400 * time.Second
+	}
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), indexingTimeout)
 	indexingStart := time.Now()
-	readyStatus := waitForIndexingComplete(waitCtx, sc, *dataset, 600*time.Second)
+	readyStatus := waitForIndexingComplete(waitCtx, sc, *dataset, indexingTimeout)
 	waitCancel()
 	indexingSeconds := time.Since(indexingStart).Seconds()
+	results = append(results, BenchmarkResult{
+		Name:            "Indexing",
+		DurationSeconds: indexingSeconds,
+		Rows:            int64(*scale),
+		IndexingDuration: indexingSeconds,
+	})
 	log.Printf("Indexing complete in %.4fs (status: %s).", indexingSeconds, readyStatus)
 	logLoadHints(sc)
 
 	// 2. DoGet
 	log.Println("[GET] Downloading to verify scan...")
-	getCtx, getCancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	getTimeout := 5 * time.Minute
+	if *dtype == "complex128" || *dtype == "float64" {
+		getTimeout = 30 * time.Minute
+	}
+	getCtx, getCancel := context.WithTimeout(context.Background(), getTimeout)
 	start = time.Now()
 	rowsRead, err := downloadBatch(getCtx, sc, *dataset)
 	getCancel()

@@ -364,8 +364,14 @@ class BenchmarkRunner:
             print("  WARNING: No CUDA GPU detected")
         return True
 
-    def start_server(self, label, env_overrides=None):
-        """Start a fresh Longbow server for a specific configuration."""
+    def start_server(self, label, env_overrides=None, count=0):
+        """Start a fresh Longbow server for a specific configuration.
+        
+        Args:
+            label: Dataset label for directory naming.
+            env_overrides: Optional dict of env vars to override defaults.
+            count: Vector count for scale-adaptive HNSW parameters.
+        """
         self.stop_server()
         
         # Calculate dynamic port to avoid TIME_WAIT issues; never reuses a port
@@ -407,8 +413,6 @@ class BenchmarkRunner:
         os.makedirs(data_root, exist_ok=True)
 
         env = os.environ.copy()
-        if env_overrides:
-            env.update(env_overrides)
 
         # ── Core resource limits ──────────────────────────────────────────
         limit_gb = os.environ.get("LONGBOW_MAX_MEMORY", 18 * 1024 * 1024 * 1024)
@@ -420,8 +424,19 @@ class BenchmarkRunner:
         env["LONGBOW_SNAPSHOT_INTERVAL"] = "24h"
         env["LONGBOW_AUTOSCALE_ENABLED"] = "false"
         env["LONGBOW_ADAPTIVE_M_MAX_FACTOR"] = "1.5"
-        env["LONGBOW_MAX_M0"] = "32"
         env["LONGBOW_AUTO_SHARDING_ENABLED"] = "false"
+
+        # ── Scale-adaptive HNSW parameters (override defaults for large scales) ─
+        # These trade recall for practical build times on large datasets.
+        if count >= 500000:
+            env["LONGBOW_MAX_M0"] = "16"
+            env["LONGBOW_HNSW_EF_CONSTRUCTION"] = "100"
+        elif count >= 50000:
+            env["LONGBOW_MAX_M0"] = "16"
+            env["LONGBOW_HNSW_EF_CONSTRUCTION"] = "200"
+        else:
+            env["LONGBOW_MAX_M0"] = "32"
+            env["LONGBOW_HNSW_EF_CONSTRUCTION"] = "400"
 
         # ── Network addresses ─────────────────────────────────────────────
         env["LONGBOW_LISTEN_ADDR"] = f"0.0.0.0:{port}"
@@ -488,6 +503,10 @@ class BenchmarkRunner:
         # ── Autoshard and sharding (disabled for single-node benchmarks) ──
         env["LONGBOW_AUTO_SHARDING_ENABLED"] = "false"
         env["LONGBOW_RING_SHARDING_ENABLED"] = "true"
+
+        # ── Caller overrides (applied last so they win over computed defaults) ─
+        if env_overrides:
+            env.update(env_overrides)
 
         log_file = os.path.join(self.log_dir, f"longbow_{current_mode}_{label}.log")
         cmd = [server_bin]
@@ -804,6 +823,10 @@ class BenchmarkRunner:
             print(f"  Generating {dtype} dim={dim} count={batch_size} -> {output_path}")
 
         tq_arg = f" -tq-bits {tq_bits}" if is_turboquant else ""
+        # Remove stale result file so we don't silently reuse old data
+        if os.path.exists(json_file):
+            os.remove(json_file)
+
         cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype}{tq_arg} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
         print(f"DEBUG: cmd={cmd}", flush=True)
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
@@ -826,13 +849,19 @@ class BenchmarkRunner:
             else:
                 base_speed = 40.0
 
-        scaled_timeout = int((batch_size / base_speed) * dim_factor)
+        # HNSW build time dominates at large scales. Add a multiplier for
+        # slow data types where distance computations are bandwidth-bound.
+        hnsw_build_multiplier = 1.0
+        if batch_size >= 50000 and dtype in ("float64", "complex64", "complex128", "int64", "uint64"):
+            hnsw_build_multiplier = 4.0 if batch_size >= 500000 else 2.0
+
+        scaled_timeout = int((batch_size / base_speed) * dim_factor * hnsw_build_multiplier)
         search_overhead = int(self.args.queries / 100.0 * dim_factor)
         scaled_timeout += max(search_overhead, 60)
 
-        # Scaled timeout is primary; clamp between base_timeout and 4x base_timeout
+        # Scaled timeout is primary; clamp between base_timeout and 8x base_timeout
         timeout = max(base_timeout, scaled_timeout)
-        timeout = min(timeout, base_timeout * 4)
+        timeout = min(timeout, base_timeout * 8)
         
         bench_log = os.path.join(self.log_dir, f"bench_{label}.log")
         with open(bench_log, "w") as f:
@@ -2567,15 +2596,26 @@ class BenchmarkRunner:
                                     print(f"  Generation failed: {e}")
                                 continue
 
-                            # Start fresh server for this config
-                            if not self.start_server(label):
+                            # Start fresh server with scale-adaptive HNSW settings
+                            if not self.start_server(label, count=count):
                                 print("  Failed to start server!")
                                 continue
 
                             if self.args.cache:
                                 json_file = os.path.join(self.log_dir, f"result_{label}.json")
                                 if os.path.exists(json_file):
-                                    print(f"  [CACHE HIT] Skipping execution for {label}")
+                                    print(f"  [CACHE HIT] Loading cached result for {label}")
+                                    if hasattr(self, 'results'):
+                                        try:
+                                            with open(json_file) as _jf:
+                                                _jr = json.load(_jf)
+                                            if isinstance(_jr, dict):
+                                                self.results.append(_jr)
+                                            elif isinstance(_jr, list):
+                                                for _entry in _jr:
+                                                    self.results.append(_entry)
+                                        except Exception:
+                                            pass
                                     continue
 
                             pprof_thread = None

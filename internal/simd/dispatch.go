@@ -530,7 +530,7 @@ func initializeDispatch() {
 		dotProduct128Impl = dispatch.DotProduct128
 		euclideanDistanceBatchImpl = dispatch.EuclideanDistanceBatch
 
-		cosineDistanceBatchImpl = cosineBatchGeneric
+		cosineDistanceBatchImpl = cosineBatchAVX2
 		dotProductBatchImpl = dispatch.DotProductBatch
 		l2SquaredImpl = l2SquaredAVX2 // uses AVX2 kernel (no sqrt)
 		l2Squared128Impl = dispatch.L2SquaredDistance128
@@ -547,7 +547,7 @@ func initializeDispatch() {
 		adcDistanceBatchImpl = adcBatchGeneric
 		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric // AVX2 vertical batch kernel is a stub
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric
-		euclideanDistanceF16BatchImpl = euclideanF16BatchGeneric
+		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX2
 		andBytesImpl = andBytesAVX2
 		orBytesImpl = orBytesAVX2
 		notBytesImpl = notBytesGeneric
@@ -559,13 +559,13 @@ func initializeDispatch() {
 		dotProductFloat64Impl = dotFloat64AVX2
 		l2SquaredFloat64Impl = l2SquaredFloat64AVX2
 		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
-		euclideanDistanceInt8Impl = euclideanInt8Unrolled4x
-		dotProductInt8Impl = dotInt8Unrolled4x
+		euclideanDistanceInt8Impl = euclideanInt8AVX2
+		dotProductInt8Impl = dotInt8AVX2
 		dotProductUint8Impl = dotUint8Unrolled4x
-		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
-		euclideanDistanceInt16Impl = euclideanInt16Unrolled4x
-		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x
-		dotProductInt16Impl = dotInt16Unrolled4x
+		euclideanDistanceUint8Impl = euclideanUint8AVX2
+		euclideanDistanceInt16Impl = euclideanInt16AVX2
+		euclideanDistanceUint16Impl = euclideanUint16AVX2
+		dotProductInt16Impl = dotInt16AVX2
 		dotProductUint16Impl = dotUint16Unrolled4x
 		dotProductInt4Impl = dotInt4Generic
 		dotProductInt2Impl = dotInt2Generic

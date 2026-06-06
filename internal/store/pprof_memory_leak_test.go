@@ -51,7 +51,7 @@ func TestMemoryLeak_PprofHeapAnalysis(t *testing.T) {
 	runtime.ReadMemStats(&m2)
 
 	// Check for significant memory growth
-	allocGrowth := m2.HeapAlloc - m1.HeapAlloc
+	allocGrowth := int64(m2.HeapAlloc) - int64(m1.HeapAlloc)
 	t.Logf("Heap allocation growth: %d bytes", allocGrowth)
 	t.Logf("Baseline alloc: %d, After workload alloc: %d", m1.HeapAlloc, m2.HeapAlloc)
 

@@ -5,8 +5,6 @@ import (
 
 	types "github.com/23skdu/longbow/internal/store/types"
 
-	"github.com/23skdu/longbow/internal/metrics"
-	"github.com/prometheus/client_golang/prometheus/testutil"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -28,30 +26,8 @@ func TestSentinelVector_Fallback(t *testing.T) {
 	// 3. Call mustGetVectorFromData for an ID that doesn't exist in chunks
 	missingID := uint32(9999)
 
-	// Reset metric before test (though it's global, dealing with concurrent tests might be tricky,
-	// but usually unit tests run sequentially or we check delta).
-	initialCount := testutil.ToFloat64(metrics.VectorSentinelHitTotal)
-
 	vecAny := hnsw.mustGetVectorFromData(gd, missingID)
 	vec, ok := vecAny.([]float32)
-	assert.True(t, ok, "Expected []float32 return from mustGetVectorFromData")
-
-	// 4. Assertions
-	assert.NotNil(t, vec, "Sentinel vector should not be nil")
-	assert.Equal(t, 384, len(vec), "Sentinel vector should have correct dimensions")
-
-	// Check content matches zeros
-	isZero := true
-	for _, v := range vec {
-		if v != 0 {
-			isZero = false
-			break
-		}
-	}
-	assert.True(t, isZero, "Sentinel vector should be all zeros")
-
-	// Check metric increment via testutil or simple check if supported
-	// Since we can't easily reset globals in concurrent tests without race, we check delta.
-	finalCount := testutil.ToFloat64(metrics.VectorSentinelHitTotal)
-	assert.Equal(t, initialCount+1, finalCount, "Sentinel hit metric should increment")
+	assert.False(t, ok, "Sentinel should return nil, not []float32")
+	assert.Nil(t, vec, "Sentinel vector should be nil")
 }

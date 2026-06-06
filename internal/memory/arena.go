@@ -528,6 +528,7 @@ func (a *SlabArena) Get(offset uint64, length uint32) []byte {
 // (the generation check is elided since committed data is always accessible).
 func (a *SlabArena) GetWithGeneration(offset uint64, length uint32, maxGeneration uint64) []byte {
 	if length == 0 {
+		fmt.Printf("ARENA_NIL_DEBUG: length == 0\n")
 		return nil
 	}
 
@@ -539,6 +540,7 @@ func (a *SlabArena) GetWithGeneration(offset uint64, length uint32, maxGeneratio
 	slabs := *slabsPtr
 
 	if int(slabIdx) >= len(slabs) { // #nosec G115
+		fmt.Printf("ARENA_NIL_DEBUG: slabIdx >= len(slabs), slabIdx=%d, len=%d, offset=%d\n", slabIdx, len(slabs), offset)
 		return nil
 	}
 
@@ -556,14 +558,17 @@ func (a *SlabArena) GetWithGeneration(offset uint64, length uint32, maxGeneratio
 			}
 		}
 		if realSlab == nil {
+			fmt.Printf("ARENA_NIL_DEBUG: realSlab == nil for slabIdx=%d\n", slabIdx)
 			return nil
 		}
 		// Generation isolation check (elided for committed data)
 		if maxGeneration != math.MaxUint64 && realSlab.generation > maxGeneration {
+			fmt.Printf("ARENA_NIL_DEBUG: realSlab generation > maxGeneration\n")
 			return nil
 		}
 		adjustedOffset := localOffset + uint32(int(slabIdx)-realIdx)*a.slabCap // #nosec G115 -- intentional conversion
 		if uint64(adjustedOffset)+uint64(length) > uint64(len(realSlab.data)) {
+			fmt.Printf("ARENA_NIL_DEBUG: adjustedOffset+length > len(realSlab.data)\n")
 			return nil
 		}
 		return realSlab.data[adjustedOffset : adjustedOffset+length]
@@ -571,10 +576,12 @@ func (a *SlabArena) GetWithGeneration(offset uint64, length uint32, maxGeneratio
 
 	// Generation isolation check (elided for committed data)
 	if maxGeneration != math.MaxUint64 && s.generation > maxGeneration {
+		fmt.Printf("ARENA_NIL_DEBUG: s.generation > maxGeneration\n")
 		return nil
 	}
 
 	if uint64(localOffset)+uint64(length) > uint64(len(s.data)) {
+		fmt.Printf("ARENA_NIL_DEBUG: localOffset+length > len(s.data), localOffset=%d, length=%d, len(s.data)=%d, s.id=%d\n", localOffset, length, len(s.data), s.id)
 		return nil
 	}
 

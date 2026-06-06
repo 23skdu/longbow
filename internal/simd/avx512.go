@@ -152,43 +152,7 @@ func dotBatchAVX512(query []float32, vectors [][]float32, results []float32) err
 }
 
 func cosineBatchAVX512(query []float32, vectors [][]float32, results []float32) error {
-	if !features.HasAVX512 {
-		return cosineBatchAVX2(query, vectors, results)
-	}
-	if len(query) == 0 || len(vectors) == 0 {
-		return nil
-	}
-
-	n := len(vectors)
-	qLen := len(query)
-	qPtr := uintptr(unsafe.Pointer(&query[0]))
-	i := 0
-
-	for ; i <= n-4; i += 4 {
-		cosineVertical4AVX512(
-			qPtr,
-			uintptr(unsafe.Pointer(&vectors[i][0])),
-			uintptr(unsafe.Pointer(&vectors[i+1][0])),
-			uintptr(unsafe.Pointer(&vectors[i+2][0])),
-			uintptr(unsafe.Pointer(&vectors[i+3][0])),
-			qLen,
-			uintptr(unsafe.Pointer(&results[i])),
-		)
-	}
-
-	for ; i < n; i++ {
-		v := vectors[i]
-		if len(v) != qLen {
-			return errors.New("simd: batch dimension mismatch")
-		}
-		dot, normA, normB := cosineDotAVX512(qPtr, uintptr(unsafe.Pointer(&v[0])), qLen)
-		if normA == 0 || normB == 0 {
-			results[i] = 1.0
-		} else {
-			results[i] = 1.0 - (dot / float32(math.Sqrt(float64(normA)*float64(normB))))
-		}
-	}
-	return nil
+	return cosineBatchUnrolled4x(query, vectors, results)
 }
 
 func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results []float32) error {

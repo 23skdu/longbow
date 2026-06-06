@@ -113,6 +113,7 @@ type Dataset struct {
 	// In-flight Indexing Tracking (Compaction Safety)
 	PendingIndexJobs    atomic.Int64
 	PendingIngestion    atomic.Int64
+	LastIngestionCompletion atomic.Int64 // Unix timestamp of last successful ingestion job completion (for stale-PendingIngestion watchdog)
 	ActiveIngestStreams atomic.Int64 // Number of active DoPut streams for this dataset
 	IsReady             atomic.Bool  // Set to true after first successful ingestion (v0.2.0)
 	RegistryPublished   atomic.Bool  // Set to true when advertised to the cluster
@@ -387,7 +388,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		NumericPrimaryIndex: make(map[int64]RowLocation),
 		Uint64PrimaryIndex:  make(map[uint64]RowLocation),
 		LWW:                 NewTimestampMap(),
-		Merkle:              NewMerkleTree(),
+		Merkle: NewMerkleTree(),
 		queryStats: &QueryStats{
 			lastReset: time.Now(),
 		},
@@ -400,6 +401,7 @@ func NewDataset(name string, schema *arrow.Schema) *Dataset {
 		BM25Index:       NewBM25InvertedIndex(DefaultBM25Config()),
 		BM25ArenaIndex:  NewBM25ArenaIndex(memory.NewSlabArena(4*1024*1024), 10000),
 	}
+	ds.LastIngestionCompletion.Store(time.Now().Unix())
 	ds.TemporalIndex.ds = ds
 
 	// Initialize Schema Manager

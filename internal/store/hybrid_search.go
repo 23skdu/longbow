@@ -129,9 +129,12 @@ func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []
 		}
 	}
 
-	// 4. Graph Re-ranking (GraphRAG) - Re-acquire RLock for post-processing
+	// 4. Graph Re-ranking (GraphRAG) - Snapshot graph pointer under lock, then release before BFS
 	ds.dataMu.RLock()
-	if graphAlpha > 0 && ds.Graph != nil {
+	graph := ds.Graph
+	ds.dataMu.RUnlock()
+
+	if graphAlpha > 0 && graph != nil {
 		if graphDepth <= 0 {
 			graphDepth = 2 // Default hop depth
 		}
@@ -144,10 +147,9 @@ func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []
 			preRerankIds[r.ID] = true
 		}
 
-		// Rerank using graph topology (Distributed BFS expansion)
-		ds.dataMu.RUnlock()
-		ranked := ds.Graph.RankWithGraphDistributed(ctx, name, queryVec, finalResults, graphAlpha, graphDepth, s)
-		ds.dataMu.RLock()
+		// Rerank using graph topology (Distributed BFS expansion).
+		// GraphStore has its own adjMu lock — no need to hold dataMu for this.
+		ranked := graph.RankWithGraphDistributed(ctx, name, queryVec, finalResults, graphAlpha, graphDepth, s)
 		metrics.HybridGraphReRankLatencySeconds.WithLabelValues(name).Observe(time.Since(rerankStart).Seconds())
 
 		if len(ranked) > 0 {
@@ -164,6 +166,7 @@ func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []
 	}
 
 	// Map internal IDs to user IDs (Phase 14 integration)
+	ds.dataMu.RLock()
 	resolved := s.mapInternalToUserIDsLocked(ds, finalResults)
 	ds.dataMu.RUnlock()
 	if len(resolved) > k {

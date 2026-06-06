@@ -67,11 +67,26 @@ func (c *TurboQuantCompute) DistanceWithRotatedQueryAndDisk(id uint32, rotatedQu
 	return c.h.distFunc(vec1, rotatedQuery)
 }
 
+// DistanceDirect computes L2 distance directly from TQ codes using the rotated query.
+// Avoids the decode+distFunc path by using SIMD lookup-table reconstruction fused with L2.
+func (c *TurboQuantCompute) DistanceDirect(id uint32, rotatedQuery []float32, dg *DiskGraph, maxGen uint64) (float32, error) {
+	tqCode, err := c.getTQBytes(id, dg, maxGen)
+	if err != nil {
+		return 0, err
+	}
+	fn := simd.GetTurboQuantDistanceFunc()
+	if fn == nil {
+		return 0, fmt.Errorf("no TurboQuant distance function available")
+	}
+	return fn(rotatedQuery, tqCode, c.encoder.dims, c.encoder.pow2, c.encoder.params.BitsPerAngle)
+}
+
 // PrecomputeRotatedQuery applies the random rotation to a query vector for faster subsequent searches.
 func (c *TurboQuantCompute) PrecomputeRotatedQuery(vec []float32, output []float32) error {
 	if len(output) < c.encoder.pow2 {
 		output = make([]float32, c.encoder.pow2)
 	}
+	clear(output)
 	copy(output, vec)
 	return simd.RandomRotation(output, c.encoder.params.Seed)
 }
@@ -117,6 +132,38 @@ func (c *TurboQuantCompute) getVectorWithDisk(id uint32, dg *DiskGraph, maxGen u
 	}
 
 	return c.encoder.Decode(tqCode)
+}
+
+// getTQBytes returns the raw TurboQuant byte codes for a vector ID.
+func (c *TurboQuantCompute) getTQBytes(id uint32, dg *DiskGraph, maxGen uint64) ([]byte, error) {
+	cID := types.ChunkID(id)
+	cOff := types.ChunkOffset(id)
+	data := c.h.data.Load()
+	var chunk []byte
+	if maxGen == 18446744073709551615 {
+		chunk = data.GetVectorsTQChunkFast(int(cID))
+	} else {
+		chunk = data.GetVectorsTQChunkWithGen(int(cID), maxGen)
+	}
+
+	if chunk != nil {
+		stride := PackedSize(int(data.Dims), data.TurboQuantBits)
+		start := cOff * stride
+		if start+stride <= len(chunk) {
+			return chunk[start : start+stride], nil
+		}
+	}
+
+	if dg == nil {
+		dg = c.h.diskGraph.Load()
+	}
+	if dg != nil {
+		if tqCode := dg.GetVectorTQ(id); tqCode != nil {
+			return tqCode, nil
+		}
+	}
+
+	return nil, fmt.Errorf("tq vector %d not found", id)
 }
 
 // GetRadius extracts the radius information for a TurboQuant encoded vector.

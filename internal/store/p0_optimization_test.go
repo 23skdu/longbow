@@ -246,6 +246,41 @@ func TestP0_Eviction_And_FallbackSearch(t *testing.T) {
 	gd := hnsw.GetData()
 	require.NotNil(t, gd)
 
+	// Before clearing PackedNeighbors, copy upper layers to gd.Neighbors
+	// to simulate the state as if legacy neighbors storage was populated.
+	for l := 1; l < len(gd.Neighbors); l++ {
+		for cID := 0; cID < len(gd.Neighbors[l]); cID++ {
+			// Allocate chunk
+			ref, err := gd.Uint32Arena.AllocSlice(types.ChunkSize * types.MaxNeighbors)
+			require.NoError(t, err)
+			gd.Neighbors[l][cID] = ref.Offset
+
+			refCount, err := gd.Int32Arena.AllocSlice(types.ChunkSize)
+			require.NoError(t, err)
+			gd.Counts[l][cID] = refCount.Offset
+		}
+
+		// Copy neighbors from PackedNeighbors to gd.Neighbors
+		if l < len(gd.PackedNeighbors) && gd.PackedNeighbors[l] != nil {
+			pn := gd.PackedNeighbors[l]
+			for id := uint32(0); id < uint32(gd.Capacity); id++ {
+				if nbs, ok := pn.GetNeighbors(id); ok {
+					cID := id / types.ChunkSize
+					cOff := id % types.ChunkSize
+					baseIdx := int(cOff) * types.MaxNeighbors
+					neighborsChunk := gd.GetNeighborsChunk(l, int(cID))
+					countsChunk := gd.GetCountsChunk(l, int(cID))
+					if neighborsChunk != nil && countsChunk != nil {
+						for i, nb := range nbs {
+							neighborsChunk[baseIdx+i] = nb
+						}
+						countsChunk[cOff] = int32(len(nbs))
+					}
+				}
+			}
+		}
+	}
+
 	// Force HNSW search to fall back to standard gd.Neighbors by clearing PackedNeighbors
 	gd.PackedNeighbors = nil
 
@@ -270,8 +305,8 @@ func TestP0_Eviction_And_FallbackSearch(t *testing.T) {
 	// Verify layer 0 is marked as evicted (offset is 0)
 	assert.Equal(t, uint64(0), gd.Neighbors[0][0], "Layer 0 must be evicted to 0 offset")
 
-	// Verify layer 1 is NOT evicted (pinned in memory)
-	assert.NotEqual(t, uint64(0), gd.Neighbors[1][0], "Layer 1 must be pinned and not evicted")
+	// Verify layer 1 is also evicted (new disk-swap behavior)
+	assert.Equal(t, uint64(0), gd.Neighbors[1][0], "Layer 1 must be evicted to 0 offset")
 
 	// Query with Exact Float32 Option to verify fallback search and transparent restore
 	queryOptions := types.SearchOptions{
@@ -289,7 +324,9 @@ func TestP0_Eviction_And_FallbackSearch(t *testing.T) {
 	assert.NotEmpty(t, res)
 
 	t.Logf("DEBUG: After search, Layer 0 chunk 0 offset: %d", gd.Neighbors[0][0])
+	t.Logf("DEBUG: After search, Layer 1 chunk 0 offset: %d", gd.Neighbors[1][0])
 
-	// Verify transparent restore has successfully re-populated neighbors offset for layer 0
+	// Verify transparent restore has successfully re-populated neighbors offset for layer 0 and layer 1
 	assert.NotEqual(t, uint64(0), gd.Neighbors[0][0], "Evicted layer 0 must be transparently restored upon cache miss")
+	assert.NotEqual(t, uint64(0), gd.Neighbors[1][0], "Evicted layer 1 must be transparently restored upon cache miss")
 }

@@ -1866,6 +1866,15 @@ func (g *GraphData) GetVectorWithGen(id uint32, maxGen uint64) (any, error) {
 				return chunk[start : start+g.Dims], nil
 			}
 		}
+	case VectorTypeTQ:
+		chunk := g.GetVectorsTQChunkWithGen(cID, maxGen)
+		if chunk != nil {
+			stride := g.PackedSize()
+			start := cOff * stride
+			if start+stride <= len(chunk) {
+				return chunk[start : start+stride], nil
+			}
+		}
 	}
 
 	return nil, fmt.Errorf("vector type mismatch or uninitialized for ID %d (type %v)", id, g.Type)

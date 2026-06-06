@@ -181,9 +181,7 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 	if h.tqEncoder != nil {
 		chunk := data.GetVectorsTQChunkWithGen(int(types.ChunkID(id)), math.MaxUint64)
 		if chunk != nil {
-			// TQ stride calculation must match GraphData's layout
-			paddedDims := data.GetPaddedDimsForType(types.VectorTypeTQ)
-			stride := (paddedDims * data.TurboQuantBits) / 8
+			stride := PackedSize(int(data.Dims), data.TurboQuantBits)
 			start := int(types.ChunkOffset(id)) * stride // #nosec G115
 			return h.tqEncoder.Decode(chunk[start : start+stride])
 		}
@@ -255,10 +253,10 @@ func (h *ArrowHNSW) getVectorWithCachedDisk(data *types.GraphData, dg *DiskGraph
 	// This prevents panics in distance calculations during edge case lookups
 	metrics.VectorSentinelHitTotal.Inc()
 	if data != nil && data.Dims > 0 {
-		return make([]float32, data.Dims), nil
+		return nil, nil
 	}
 	if dims := h.GetDims(); dims > 0 {
-		return make([]float32, dims), nil
+		return nil, nil
 	}
 	return nil, fmt.Errorf("could not resolve dimensions for Sentinel vector")
 }

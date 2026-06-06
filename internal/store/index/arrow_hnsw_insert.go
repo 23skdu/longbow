@@ -842,7 +842,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]float16.Num); ok {
-						f16s[i] = slices.Clone(v)
+						f16s[i] = v
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false
@@ -855,7 +855,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 				for i := range rowIdxs {
 					rec := recs[batchIdxs[i]]
 					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int8); ok {
-						i8s[i] = slices.Clone(v)
+						i8s[i] = v
 						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
 					} else {
 						supported = false

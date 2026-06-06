@@ -578,9 +578,9 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 			}
 			if len(data.VectorsTQ) > cID {
-				if tqChunk := data.GetVectorsTQChunkWithGen(cID, maxGen); tqChunk != nil {
-					stride := 4 + (data.Dims-1)*data.TurboQuantBits/8 + (data.Dims+7)/8
-					start := cOff * stride
+		if tqChunk := data.GetVectorsTQChunkWithGen(cID, maxGen); tqChunk != nil {
+				stride := PackedSize(int(data.Dims), data.TurboQuantBits)
+				start := cOff * stride
 					if start+stride <= len(tqChunk) {
 						if int64(nID) < maxCommitted {
 							_ = tqChunk[start]

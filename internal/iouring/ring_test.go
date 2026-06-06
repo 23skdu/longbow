@@ -290,10 +290,11 @@ func TestCqReady(t *testing.T) {
 	defer os.Remove(tmpfile.Name())
 	defer tmpfile.Close()
 
-	// Submit a nop operation
+	// Submit a nop operation with non-zero UserData to avoid spurious completion filtering
 	sqe := &SQE{
-		Opcode: IORING_OP_NOP,
-		Fd:     -1,
+		Opcode:   IORING_OP_NOP,
+		Fd:       -1,
+		UserData: 999,
 	}
 	err = ring.Submit(sqe)
 	require.NoError(t, err)

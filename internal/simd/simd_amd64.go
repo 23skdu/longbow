@@ -242,7 +242,7 @@ func brayCurtisAVX2(a, b []float32) (float32, error) {
 
 // AVX2 optimized Batch Euclidean distance
 func euclideanBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
-	return euclideanBatchGeneric(query, vectors, results)
+	return euclideanVerticalBatchAVX2(query, vectors, results)
 }
 
 func euclideanSQ8BatchAVX2(query []byte, vectors [][]byte, results []float32) error {
@@ -250,7 +250,15 @@ func euclideanSQ8BatchAVX2(query []byte, vectors [][]byte, results []float32) er
 }
 
 func euclideanF16BatchAVX2(query []float16.Num, vectors [][]float16.Num, results []float32) error {
-	return euclideanF16BatchGeneric(query, vectors, results)
+	qLen := len(query)
+	qPtr := uintptr(unsafe.Pointer(&query[0]))
+	for i, v := range vectors {
+		if len(v) != qLen {
+			return errors.New("simd: batch dimension mismatch")
+		}
+		results[i] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v[0])), qLen)
+	}
+	return nil
 }
 
 // EuclideanDistanceVerticalBatch implementations
@@ -302,13 +310,8 @@ func adcBatchAVX2(table []float32, flatCodes []byte, m int, results []float32) e
 
 // AVX2 optimized Batch Dot Product
 func dotBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
-	return dotBatchGeneric(query, vectors, results)
-}
-
-// AVX2 optimized Batch Cosine distance
-func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
 	if !features.HasAVX2 {
-		return cosineBatchGeneric(query, vectors, results)
+		return dotBatchGeneric(query, vectors, results)
 	}
 	n := len(vectors)
 	if n == 0 {
@@ -318,37 +321,40 @@ func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) er
 	if qLen == 0 {
 		return nil
 	}
-	qPtr := uintptr(unsafe.Pointer(&query[0])) // #nosec G103
+	qPtr := uintptr(unsafe.Pointer(&query[0]))
 	i := 0
 
 	for ; i <= n-4; i += 4 {
 		if len(vectors[i]) == 0 || len(vectors[i+1]) == 0 || len(vectors[i+2]) == 0 || len(vectors[i+3]) == 0 {
-			// Fallback to individual calls with error handling for zero-length vectors
 			break
 		}
-		cosineVertical4AVX2(
+		dotVertical4AVX2(
 			uintptr(qPtr),
-			uintptr(unsafe.Pointer(&vectors[i][0])), // #nosec G103
-			uintptr(unsafe.Pointer(&vectors[i+1][0])), // #nosec G103
-			uintptr(unsafe.Pointer(&vectors[i+2][0])), // #nosec G103
-			uintptr(unsafe.Pointer(&vectors[i+3][0])), // #nosec G103
+			uintptr(unsafe.Pointer(&vectors[i][0])),
+			uintptr(unsafe.Pointer(&vectors[i+1][0])),
+			uintptr(unsafe.Pointer(&vectors[i+2][0])),
+			uintptr(unsafe.Pointer(&vectors[i+3][0])),
 			qLen,
-			uintptr(unsafe.Pointer(&results[i])), // #nosec G103
+			uintptr(unsafe.Pointer(&results[i])),
 		)
 	}
 
 	for ; i < n; i++ {
 		if len(vectors[i]) == 0 {
-			results[i] = 1.0
 			continue
 		}
-		d, err := cosineAVX2(query, vectors[i])
+		d, err := dotAVX2(query, vectors[i])
 		if err != nil {
 			return err
 		}
 		results[i] = d
 	}
 	return nil
+}
+
+// AVX2 optimized Batch Cosine distance
+func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
+	return cosineBatchUnrolled4x(query, vectors, results)
 }
 
 // Assembly function declarations
@@ -689,13 +695,7 @@ func cosineFloat64AVX2(a, b []float64) (float32, error) {
 // =============================================================================
 
 func euclideanInt8AVX2(a, b []int8) (float32, error) {
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanInt8AVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
-		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
-		len(a)), nil
+	return euclideanInt8Unrolled4x(a, b)
 }
 
 // =============================================================================

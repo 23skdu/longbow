@@ -17,6 +17,7 @@ import (
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/klauspost/compress/zstd"
 	"github.com/pierrec/lz4/v4"
 )
@@ -169,6 +170,30 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 		if len(slice) > 0 {
 			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*8) // #nosec G103
 		}
+	case *array.Int8:
+		elemSize = 1
+		vals := valuesArr.Int8Values()
+		start := offset * width
+		end := start + numRows*width
+		if start < 0 || end > len(vals) {
+			return 0, fmt.Errorf("index out of bounds")
+		}
+		slice := vals[start:end]
+		if len(slice) > 0 {
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*1) // #nosec G103
+		}
+	case *array.Float16:
+		elemSize = 2
+		vals := valuesArr.Values()
+		start := offset * width
+		end := start + numRows*width
+		if start < 0 || end > len(vals) {
+			return 0, fmt.Errorf("index out of bounds")
+		}
+		slice := vals[start:end]
+		if len(slice) > 0 {
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*2) // #nosec G103
+		}
 	default:
 		return 0, fmt.Errorf("unsupported list element type: %T", valuesArr)
 	}
@@ -178,9 +203,14 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 	dvs.mu.Lock()
 	defer dvs.mu.Unlock()
 
-	if elemSize == 8 {
+	switch elemSize {
+	case 1:
+		dvs.dataType = types.VectorTypeInt8
+	case 2:
+		dvs.dataType = types.VectorTypeFloat16
+	case 8:
 		dvs.dataType = types.VectorTypeFloat64
-	} else {
+	default:
 		dvs.dataType = types.VectorTypeFloat32
 	}
 
@@ -464,11 +494,17 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 	}
 
 	elemSize := 4
-	if dataType == types.VectorTypeFloat64 {
+	switch dataType {
+	case types.VectorTypeFloat64:
 		elemSize = 8
+	case types.VectorTypeInt8:
+		elemSize = 1
+	case types.VectorTypeFloat16:
+		elemSize = 2
 	}
 
-	if dataType == types.VectorTypeFloat64 {
+	switch dataType {
+	case types.VectorTypeFloat64:
 		results := make([][]float64, len(filtered))
 		for i, idx := range filtered {
 			bIdx := dvs.findBlock(idx)
@@ -485,7 +521,42 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 			results[i] = vec
 		}
 		return results, nil
-	} else {
+
+	case types.VectorTypeInt8:
+		results := make([][]int8, len(filtered))
+		for i, idx := range filtered {
+			bIdx := dvs.findBlock(idx)
+			raw := blockData[bIdx]
+			block := dvs.blocks[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]int8, dvs.dim)
+			offset := localIdx * dvs.dim * elemSize
+			for j := 0; j < dvs.dim; j++ {
+				vec[j] = int8(raw[offset+j])
+			}
+			results[i] = vec
+		}
+		return results, nil
+
+	case types.VectorTypeFloat16:
+		results := make([][]float16.Num, len(filtered))
+		for i, idx := range filtered {
+			bIdx := dvs.findBlock(idx)
+			raw := blockData[bIdx]
+			block := dvs.blocks[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]float16.Num, dvs.dim)
+			offset := localIdx * dvs.dim * elemSize
+			for j := 0; j < dvs.dim; j++ {
+				vec[j] = float16.FromLEBytes(raw[offset+j*2 : offset+(j+1)*2])
+			}
+			results[i] = vec
+		}
+		return results, nil
+
+	default:
 		results := make([][]float32, len(filtered))
 		for i, idx := range filtered {
 			bIdx := dvs.findBlock(idx)

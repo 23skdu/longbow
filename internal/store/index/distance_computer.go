@@ -103,7 +103,7 @@ type tqComputer struct {
 }
 
 func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
-	return c.h.tqCompute.DistanceWithRotatedQueryAndDisk(id, c.rotatedQuery, c.diskGraph, c.maxGen)
+	return c.h.tqCompute.DistanceDirect(id, c.rotatedQuery, c.diskGraph, c.maxGen)
 }
 
 func (c *tqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
@@ -465,7 +465,11 @@ func (c *float32ToFloat32Computer) ComputeBatch(ids []uint32, dst []float32) ([]
 				defer wg.Done()
 				vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, ids[idx], c.maxGen)
 				if err == nil {
-					c.batchVecs[idx] = vecAny.([]float32)
+					if v, ok := vecAny.([]float32); ok {
+						c.batchVecs[idx] = v
+					} else {
+						c.batchVecs[idx] = nil
+					}
 				} else {
 					c.batchVecs[idx] = nil
 				}

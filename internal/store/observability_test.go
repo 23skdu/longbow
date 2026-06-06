@@ -16,6 +16,9 @@ import (
 )
 
 func TestObservability_GranularMetrics(t *testing.T) {
+	metrics.GlobalHotpathSampler.AlwaysSample = true
+	defer func() { metrics.GlobalHotpathSampler.AlwaysSample = false }()
+
 	// Setup Float16 Index (Int8 support is partial, use Float16 to verify non-float32 metrics)
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema(
@@ -104,6 +107,9 @@ func TestObservability_GranularMetrics(t *testing.T) {
 }
 
 func TestHNSW_ObservabilityMetrics(t *testing.T) {
+	metrics.GlobalHotpathSampler.AlwaysSample = true
+	defer func() { metrics.GlobalHotpathSampler.AlwaysSample = false }()
+
 	mem := memory.NewGoAllocator()
 	vectors := [][]float32{{1.0, 0.0}, {0.0, 1.0}}
 	dims := 2

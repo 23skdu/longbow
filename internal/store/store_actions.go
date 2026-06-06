@@ -23,6 +23,7 @@ import (
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
+	"github.com/apache/arrow-go/v18/arrow/ipc"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 
 	lmem "github.com/23skdu/longbow/internal/memory"
@@ -173,6 +174,31 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 				pendingIngestion := ds.PendingIngestion.Load()
 				activeStreams := ds.ActiveIngestStreams.Load()
 				isMigrating := ds.Admission != nil && ds.Admission.migratingCount.Load() > 0
+
+				// Stuck PendingIngestion watchdog: if > 0 for > 60s with no completion or active streams,
+				// exclude it from the BUSY check (don't modify the counter so eventual worker completion
+				// still produces correct value).
+				if pendingIngestion > 0 && activeStreams == 0 && !isMigrating {
+					lastCompletion := ds.LastIngestionCompletion.Load()
+					elapsed := time.Now().Unix() - lastCompletion
+					if lastCompletion > 0 && elapsed > 60 {
+						s.logger.Warn().
+							Str("dataset", req.Dataset).
+							Int64("pending_ingestion", pendingIngestion).
+							Int64("pending_index_jobs", pending).
+							Int64("elapsed_sec", elapsed).
+							Msg("PendingIngestion stuck >60s - excluding from BUSY check")
+						pendingIngestion = 0
+					} else if lastCompletion == 0 && elapsed > 60 {
+						s.logger.Warn().
+							Str("dataset", req.Dataset).
+							Int64("pending_ingestion", pendingIngestion).
+							Int64("elapsed_sec", elapsed).
+							Msg("PendingIngestion stuck >60s with no completion time recorded")
+						pendingIngestion = 0
+					}
+				}
+
 				if pending > 0 || pendingIngestion > 0 || activeStreams > 0 || isMigrating {
 					resp["status"] = "BUSY"
 					resp["reason"] = fmt.Sprintf("dataset has %d pending index jobs, %d pending ingestion jobs, %d active streams, migrating=%t", pending, pendingIngestion, activeStreams, isMigrating)
@@ -831,8 +857,7 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		defer span.End()
 	}
 
-	// Fallback to standard reader for reliability during benchmarks
-	r, err := flight.NewRecordReader(stream)
+	r, err := flight.NewRecordReader(stream, ipc.WithAllocator(s.pooledMem))
 	if err != nil {
 		s.logger.Error().Err(err).Msg("DoPut failed to create reader")
 		return err
@@ -1290,6 +1315,16 @@ func (s *VectorStore) concatenateBatches(batches []arrow.RecordBatch) (arrow.Rec
 // applyBatchToMemory applies a batch to the in-memory dataset and dispatches indexing
 func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts int64) error {
 	name := ds.Name
+	traceStart := time.Now()
+	traceLog := func(step string) {
+		if elapsed := time.Since(traceStart); elapsed > 5*time.Second {
+			s.logger.Warn().
+				Str("dataset", name).
+				Str("step", step).
+				Int64("elapsed_ms", elapsed.Milliseconds()).
+				Msg("applyBatchToMemory trace: slow step")
+		}
+	}
 
 	// Memory tracking
 	batchSize := estimateBatchSize(rec)
@@ -1297,6 +1332,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	if err := s.checkMemoryBeforeWrite(batchSize, name); err != nil {
 		return err
 	}
+	traceLog("checkMemoryBeforeWrite")
 
 	// Auto-quantization under memory pressure (>60% capacity).
 	// Threshold intentionally lowered from 70% to 60% to give the compression path
@@ -1355,7 +1391,21 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	}
 
 	dsLockStart := time.Now()
+
+	// dataMu leak-guard: always unlock on panic so subsequent ingestion workers
+	// don't block forever at dataMu.Lock(). The explicit Unlock at the end of the
+	// critical section clears the flag so the defer is a no-op on the normal path.
+	var dataMuLocked bool
+	defer func() {
+		if dataMuLocked {
+			s.logger.Error().
+				Str("dataset", name).
+				Msg("dataMu was locked at panic time — recovering and unlocking to prevent worker deadlock")
+			ds.dataMu.Unlock()
+		}
+	}()
 	ds.dataMu.Lock()
+	dataMuLocked = true
 
 	// Lazy Index Initialization
 	// Also check if existing index has wrong DataType (e.g. Pre-warmed with Float32 but data is Float64)
@@ -1534,6 +1584,8 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	metrics.DatasetLockWaitDurationSeconds.WithLabelValues("put").Observe(time.Since(dsLockStart).Seconds())
 
 	ds.dataMu.Unlock()
+	dataMuLocked = false
+	traceLog("dataMu critical section")
 
 	// Update Primary Index and LWW/Merkle outside the main lock to prevent search-blocking
 	// contention while processing O(N) metadata updates.
@@ -1654,6 +1706,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			_ = ds.TemporalIndex.AddBatch(ids, vectors, timestamps, nil)
 		}
 	}
+	traceLog("temporal index")
 
 	// Geospatial Index Hook
 	geoPointIdx := -1
@@ -1666,6 +1719,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 	if geoPointIdx != -1 {
 		ds.dataMu.Lock()
+		dataMuLocked = true
 		if ds.GeoIndex == nil {
 			// Initialize with default config if missing
 			geoCfg := &GeoSearchConfig{
@@ -1684,6 +1738,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			s.logger.Info().Str("dataset", ds.Name).Int("dim", dim).Msg("Lazily initialized GeoIndex")
 		}
 		ds.dataMu.Unlock()
+		dataMuLocked = false
 
 		idColIdx := -1
 		vecColIdx := -1

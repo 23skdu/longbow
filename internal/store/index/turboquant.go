@@ -69,8 +69,8 @@ func (e *TurboQuantEncoder) Encode(vec []float32) ([]byte, error) {
 		}
 	}
 
-	// 2. Random Rotation (Hadamard Transform)
-	if err := e.had.Transform(work); err != nil {
+	// 2. Random Rotation (sign-flip + FWHT) — must match PrecomputeRotatedQuery
+	if err := simd.RandomRotation(work, e.params.Seed); err != nil {
 		return nil, err
 	}
 

@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	_ "expvar" // Register expvar handlers
 	"fmt"
 	"net"
@@ -34,8 +35,6 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/23skdu/longbow/internal/tensor"
-	"github.com/23skdu/longbow/pkg/version"
-
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
@@ -194,29 +193,28 @@ func main() {
 
 func run() error {
 	startTime := time.Now()
-	// Handle --version and -v flags early
-	if len(os.Args) > 1 {
-		for _, arg := range os.Args[1:] {
-			if arg == "--version" || arg == "-v" {
-				version.Print()
-				return nil
-			}
-		}
-	}
 
 	// Load .env file if it exists (do this before logger init to read LOG_* vars)
 	_ = godotenv.Load()
-
-	// Handle signals for graceful shutdown and hot reload
-	// Use NotifyContext to cancel context on SIGINT/SIGTERM
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
-	defer stop()
 
 	if err := envconfig.Process("LONGBOW", &globalCfg); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to process config: %v\n", err)
 		return err
 	}
 	cfg := globalCfg
+
+	// Parse CLI flags (override env vars). Must happen after envconfig for precedence.
+	if err := parseCLIFlags(&cfg, os.Args[1:], os.Stderr); err != nil {
+		if errors.Is(err, ErrVersionRequested) || errors.Is(err, ErrHelpRequested) {
+			os.Exit(0)
+		}
+		fmt.Fprintf(os.Stderr, "Failed to parse flags: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Handle signals for graceful shutdown and hot reload
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
 
 	// Initialize zerolog logger
 	logger, err := logging.NewLogger(logging.Config{

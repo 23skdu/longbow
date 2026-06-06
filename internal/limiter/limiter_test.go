@@ -105,3 +105,94 @@ func TestRateLimiter_Disabled(t *testing.T) {
 	_, err := interceptor(context.Background(), nil, &grpc.UnaryServerInfo{}, handler)
 	assert.NoError(t, err)
 }
+
+func TestRateLimiter_ZeroBurstDefaultsToRPS(t *testing.T) {
+	l := NewRateLimiter(Config{RPS: 5, Burst: 0})
+	assert.True(t, l.enabled)
+	assert.Equal(t, 5, l.limiter.Burst())
+}
+
+func TestRateLimiter_StreamInterceptor_Disabled(t *testing.T) {
+	l := NewRateLimiter(Config{RPS: 0})
+	interceptor := l.StreamInterceptor()
+
+	handler := func(srv any, ss grpc.ServerStream) error {
+		return nil
+	}
+
+	err := interceptor(nil, nil, &grpc.StreamServerInfo{}, handler)
+	assert.NoError(t, err)
+}
+
+func TestRateLimiter_StreamInterceptor_Allowed(t *testing.T) {
+	l := NewRateLimiter(Config{RPS: 100, Burst: 100})
+	interceptor := l.StreamInterceptor()
+
+	handler := func(srv any, ss grpc.ServerStream) error {
+		return nil
+	}
+
+	ctx := context.Background()
+	mockStream := &mockServerStream{ctx: ctx}
+	err := interceptor(nil, mockStream, &grpc.StreamServerInfo{}, handler)
+	assert.NoError(t, err)
+}
+
+func TestRateLimiter_StreamInterceptor_ContextCanceled(t *testing.T) {
+	l := NewRateLimiter(Config{RPS: 1, Burst: 1})
+	interceptor := l.StreamInterceptor()
+
+	handler := func(srv any, ss grpc.ServerStream) error {
+		return nil
+	}
+
+	ctx := context.Background()
+	mockStream := &mockServerStream{ctx: ctx}
+	// First call consumes the token
+	_ = interceptor(nil, mockStream, &grpc.StreamServerInfo{}, handler)
+
+	// Second with canceled context should error
+	ctx2, cancel := context.WithCancel(context.Background())
+	cancel()
+	mockStream2 := &mockServerStream{ctx: ctx2}
+
+	err := interceptor(nil, mockStream2, &grpc.StreamServerInfo{}, handler)
+	assert.Error(t, err)
+	st, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.Canceled, st.Code())
+}
+
+type mockServerStream struct {
+	ctx context.Context
+	grpc.ServerStream
+}
+
+func (m *mockServerStream) Context() context.Context {
+	return m.ctx
+}
+
+func TestRateLimiter_BurstExceededResourceExhausted(t *testing.T) {
+	l := NewRateLimiter(Config{RPS: 1, Burst: 1})
+	interceptor := l.UnaryInterceptor()
+
+	handler := func(ctx context.Context, req any) (any, error) {
+		return "ok", nil
+	}
+
+	// First call passes (consumes the token)
+	_, err := interceptor(context.Background(), nil, &grpc.UnaryServerInfo{}, handler)
+	assert.NoError(t, err)
+
+	// Second call immediately: rate.Wait would block longer than context with 0 timeout
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+
+	_, err = interceptor(ctx, nil, &grpc.UnaryServerInfo{}, handler)
+	assert.Error(t, err)
+	// Could be ResourceExhausted or DeadlineExceeded depending on timing
+	st, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.True(t, st.Code() == codes.ResourceExhausted || st.Code() == codes.DeadlineExceeded,
+		"expected ResourceExhausted or DeadlineExceeded, got %v", st.Code())
+}

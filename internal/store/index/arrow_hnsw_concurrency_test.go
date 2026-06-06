@@ -132,11 +132,9 @@ func TestArrowHNSW_Concurrency_AddBatch(t *testing.T) {
 }
 
 func TestArrowHNSW_Concurrency_MixedReadWrite(t *testing.T) {
-	// Pre-existing data race: search readers access GraphData fields while
-	// compareAndSwapData releases the same object from another goroutine.
-	if raceEnabled {
-		t.Skip("skipping: known pre-existing data race between search readers and graph release")
-	}
+	// Previously skipped: search readers raced with compareAndSwapData's
+	// synchronous Release. Fixed by removing the PackedNeighbors nil-out
+	// in GraphData.Release() and pinning FlatAdjacency via refs in reads.
 
 	mem := memory.NewGoAllocator()
 	numRows := 256

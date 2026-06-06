@@ -164,6 +164,12 @@ func (fa *FlatAdjacency) GetNeighbors(id uint32) ([]uint32, bool) {
 }
 
 func (fa *FlatAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint32, bool) {
+	// Pin the FlatAdjacency for the duration of the read so a concurrent
+	// Release() on the parent GraphData can't free the underlying arena
+	// out from under us. Decremented via defer.
+	fa.Retain()
+	defer fa.Release()
+
 	chunkIdx := int(id) / adjacencyChunkSize
 	cOff := int(id) % adjacencyChunkSize
 

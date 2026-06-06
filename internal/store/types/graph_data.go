@@ -3556,11 +3556,13 @@ func (g *GraphData) Release() {
 		g.Complex128Arena.Release()
 	}
 
-	// Release PackedNeighbors
+	// Release PackedNeighbors. Do NOT set slots to nil: concurrent search
+	// threads (held briefly by FlatAdjacency's refs counter) read this slice
+	// header and would race with a nil-out. The underlying FlatAdjacency
+	// becomes inert once refs hits zero; the header stays for safety.
 	for i := range g.PackedNeighbors {
 		if g.PackedNeighbors[i] != nil {
 			g.PackedNeighbors[i].Release()
-			g.PackedNeighbors[i] = nil
 		}
 	}
 

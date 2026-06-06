@@ -198,6 +198,8 @@ func (h *ArrowHNSW) compareAndSwapData(current, newData *types.GraphData) bool {
 		return true
 	}
 	if current != nil && newData != nil && newData.Capacity < current.Capacity {
+		// Reject install: caller transferred ownership; release to avoid leak.
+		newData.Release()
 		return false
 	}
 	if newData != nil {
@@ -229,6 +231,11 @@ func (h *ArrowHNSW) compareAndSwapData(current, newData *types.GraphData) bool {
 		if current != nil {
 			current.Release()
 		}
+	} else if newData != nil {
+		// CAS failed: caller transferred ownership of newData to us, but we
+		// couldn't install it. Release it to avoid leaking arenas. Callers
+		// that want to retry must re-Clone their working copy first.
+		newData.Release()
 	}
 	return swapped
 }

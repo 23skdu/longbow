@@ -251,12 +251,12 @@ func euclideanSQ8BatchAVX2(query []byte, vectors [][]byte, results []float32) er
 
 func euclideanF16BatchAVX2(query []float16.Num, vectors [][]float16.Num, results []float32) error {
 	qLen := len(query)
-	qPtr := uintptr(unsafe.Pointer(&query[0]))
+	qPtr := uintptr(unsafe.Pointer(&query[0])) // #nosec G103 -- SIMD kernel requires uintptr
 	for i, v := range vectors {
 		if len(v) != qLen {
 			return errors.New("simd: batch dimension mismatch")
 		}
-		results[i] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v[0])), qLen)
+		results[i] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v[0])), qLen) // #nosec G103 -- SIMD kernel requires uintptr
 	}
 	return nil
 }
@@ -321,7 +321,7 @@ func dotBatchAVX2(query []float32, vectors [][]float32, results []float32) error
 	if qLen == 0 {
 		return nil
 	}
-	qPtr := uintptr(unsafe.Pointer(&query[0]))
+	qPtr := uintptr(unsafe.Pointer(&query[0])) // #nosec G103 -- SIMD kernel requires uintptr
 	i := 0
 
 	for ; i <= n-4; i += 4 {
@@ -330,12 +330,12 @@ func dotBatchAVX2(query []float32, vectors [][]float32, results []float32) error
 		}
 		dotVertical4AVX2(
 			uintptr(qPtr),
-			uintptr(unsafe.Pointer(&vectors[i][0])),
-			uintptr(unsafe.Pointer(&vectors[i+1][0])),
-			uintptr(unsafe.Pointer(&vectors[i+2][0])),
-			uintptr(unsafe.Pointer(&vectors[i+3][0])),
+			uintptr(unsafe.Pointer(&vectors[i][0])),   // #nosec G103 -- SIMD kernel requires uintptr
+			uintptr(unsafe.Pointer(&vectors[i+1][0])), // #nosec G103 -- SIMD kernel requires uintptr
+			uintptr(unsafe.Pointer(&vectors[i+2][0])), // #nosec G103 -- SIMD kernel requires uintptr
+			uintptr(unsafe.Pointer(&vectors[i+3][0])), // #nosec G103 -- SIMD kernel requires uintptr
 			qLen,
-			uintptr(unsafe.Pointer(&results[i])),
+			uintptr(unsafe.Pointer(&results[i])), // #nosec G103 -- SIMD kernel requires uintptr
 		)
 	}
 

@@ -533,7 +533,7 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 			vec := make([]int8, dvs.dim)
 			offset := localIdx * dvs.dim * elemSize
 			for j := 0; j < dvs.dim; j++ {
-				vec[j] = int8(raw[offset+j])
+				vec[j] = int8(raw[offset+j]) // #nosec G115 -- bit reinterpretation of int8 stored as byte on disk
 			}
 			results[i] = vec
 		}

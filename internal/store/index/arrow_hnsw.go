@@ -149,7 +149,7 @@ type ArrowHNSW struct {
 	topo       *memory.NUMATopology
 	efTuner    *PIDTuner
 
-	inBulkInsert atomic.Bool
+	inBulkInsert atomic.Int64
 
 	// MetadataRegistry for pre-cached field lookups
 	metadata struct {

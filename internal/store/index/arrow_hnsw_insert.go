@@ -985,7 +985,9 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			}
 
 			if supported && vecs != nil {
+				h.inBulkInsert.Add(1)
 				err := h.addBatchBulkInternal(ctx, startID, n, vecs)
+				h.inBulkInsert.Add(-1)
 				if err == nil {
 					ids := make([]uint32, n)
 					for i := 0; i < n; i++ {

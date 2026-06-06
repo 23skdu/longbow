@@ -81,7 +81,7 @@ python3 scripts/unified_benchmark.py \
 
 4. **Re-run the full v2.2.0 matrix (13 search modes, 4 dtypes, 4 counts)** to get a complete picture post-fix. Use the unified_benchmark orchestrator with `--search-modes all` and `--dtypes float16,float32,int8,turboquant8`.
 
-5. **Document the `inBulkInsert` ref-counter AND the new `readerCount` pin** in `docs/hnsw.md`. The spin-wait in `insertion_core.go:331` and the new `AcquireReader/ReleaseReader` in `graph_data.go:2416-2430` are subtle and the previous behavior (silent "arena is nil" failures) was very hard to debug. A paragraph explaining the contract (any goroutine entering a read path that touches typed-arenas must `AcquireReader`; the parent `Release` waits for `readerCount == 0`) would save future contributors hours.
+5. **✅ DONE — Document the `inBulkInsert` ref-counter AND the new `readerCount` pin** in `docs/hnsw.md` §"Concurrency & Lifecycle Safety". The new section covers: the two ref-counter mechanisms (with rationale), the contract callers must follow, the contract violation debugging checklist, the P0 bug story (commit `a2f535ef`), the call-site table for `AcquireReader`/`ReleaseReader`, the rationale for why both counters (and not one), and a reference to the regression test.
 
 6. **Consider replacing the per-batch `Clone` in `insertInternal` with a structural-copy that retains shared typed-arena slabs.** The heap profile shows `GraphData.Clone` taking 26.5 MB at int8 50k dim=384 (12.2% of the 217 MB total). The shared-slab pattern is already in place (see `graph_data.go:2470-2472`); extending it to a "shallow structural clone" would reduce pressure on the GC and on the Slab allocator.
 
@@ -94,5 +94,6 @@ python3 scripts/unified_benchmark.py \
 - ✅ **P0 `arena is nil` fix** (commit `a2f535ef`)
 - ✅ **50k int8 concurrent stress test** (commit `a2f535ef`)
 - ✅ **`longbow_arena_nil_error_total` Prometheus counter** (Rec #3)
+- ✅ **Document `inBulkInsert` + `readerCount` contract in `docs/hnsw.md`** (Rec #5)
 - ⏳ Disk-backed validation at 1M+ vectors: pending
 - ⏳ CUDA execution on RTX 4060: pending

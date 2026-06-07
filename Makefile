@@ -1,4 +1,4 @@
-.PHONY: all build build-adbc test test-adbc clean
+.PHONY: all build build-adbc test test-adbc test-adbc-python test-adbc-so clean
 
 all: build build-adbc
 
@@ -13,10 +13,13 @@ test:
 	go test -v ./...
 
 test-adbc:
-	go test -v ./internal/adbc/...
+	go test -v -cover ./internal/adbc/...
 
 test-adbc-python: build-adbc
 	python3 scripts/verify_driver.py
+
+test-adbc-so: build-adbc
+	python3 tests/adbc/test_driver_so.py
 
 clean:
 	rm -f liblongbow_adbc.so liblongbow_adbc.h

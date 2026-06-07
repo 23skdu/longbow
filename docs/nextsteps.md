@@ -97,6 +97,16 @@ python3 scripts/unified_benchmark.py \
   --search-modes dense,sparse --queries 1000 --memory 16 --label float16-tq
 ```
 
+**Status (2026-06-06): partial — 10k rows added, 50k+ pending.**
+The 10k expansion was re-run for all 4 dtypes × 2 dims × 2 modes
+(8 configs, 8 minutes); the 50k expansion was started but aborted by
+the user. The 10k results are in `docs/performance.md` §"v2.2.0
+expansion matrix — 10k only". Float16 dense is ~55% of float32 dense
+(3,378–3,835 vs 6,132–6,556 QPS); turboquant8 dense is on par with
+float32 (6,225–6,233 vs 6,132–6,556 QPS); float16/turboquant8 sparse
+is on par with float32 sparse (7,000–7,400 QPS range). The 50k+ rows
+are still P3 and remain in the next matrix run.
+
 ## Recommendations (in order)
 
 1. **✅ DONE — Land the P0 `arena is nil` fix** (commit `a2f535ef`). The int8 path is now safe at 50k+ concurrent vectors; the 1M-vector benchmark can proceed.

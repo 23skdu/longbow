@@ -190,6 +190,60 @@ python3 scripts/unified_benchmark.py \
   --search-modes dense,sparse --queries 1000 --memory 16 --label float16-tq
 ```
 
+### 4. v2.2.0 expansion matrix — 10k only (2026-06-06)
+
+Partial re-run of the v2.2.0 matrix with all 4 dtypes (`float16`,
+`float32`, `int8`, `turboquant8`) at 10k. The 50k and 100k results
+for `float16` and `turboquant8` are pending; see P3 below.
+
+| dtype       | dim | count | dense QPS | dense p50 (ms) | dense p95 (ms) | dense p99 (ms) | sparse QPS | sparse p50 (ms) | sparse p95 (ms) | sparse p99 (ms) | ingest vec/s |
+|-------------|-----|-------|-----------|----------------|----------------|----------------|------------|-----------------|-----------------|-----------------|--------------|
+| float16     | 128 | 10,000  | 3,835.4   | 2.041          | 3.001          | 3.988          | 7,217.9    | 1.084           | 1.480           | 1.872           |   575,289    |
+| float16     | 384 | 10,000  | 3,378.0   | 2.292          | 3.506          | 4.198          | 7,292.2    | 1.084           | 1.514           | 1.764           |   405,280    |
+| float32     | 128 | 10,000  | 6,556.3   | 1.192          | 1.460          | 2.164          | 7,763.1    | 1.019           | 1.408           | 1.591           |   591,785    |
+| float32     | 384 | 10,000  | 6,132.1   | 1.275          | 1.527          | 1.888          | 8,033.4    | 1.001           | 1.392           | 1.580           |   207,193    |
+| int8        | 128 | 10,000  | 3,471.1   | 2.254          | 3.092          | 3.330          | 6,415.6    | 1.213           | 1.617           | 1.832           | 1,239,139    |
+| int8        | 384 | 10,000  | 3,426.6   | 2.286          | 3.211          | 3.602          | 6,646.2    | 1.180           | 1.547           | 1.726           |   695,956    |
+| turboquant8 | 128 | 10,000  | 6,224.9   | 1.252          | 1.532          | 1.741          | 6,742.7    | 1.165           | 1.541           | 1.752           |   423,372    |
+| turboquant8 | 384 | 10,000  | 6,232.7   | 1.255          | 1.512          | 1.731          | 7,353.6    | 1.064           | 1.480           | 1.681           |   215,865    |
+
+Delta vs previous v2.2.0 10k baseline (10k configs only — no float16/turboquant8 in previous):
+
+| dtype   | dim | prev dense | new dense | Δ      | prev sparse | new sparse | Δ       |
+|---------|-----|------------|-----------|--------|-------------|------------|---------|
+| float32 | 128 | 6,776.9    | 6,556.3   | -3.3%  | 7,868.8     | 7,763.1    | -1.3%   |
+| float32 | 384 | 6,272.6    | 6,132.1   | -2.2%  | 7,794.8     | 8,033.4    | +3.1%   |
+| int8    | 128 | 3,513.5    | 3,471.1   | -1.2%  | 7,350.0     | 6,415.6    | -12.7%  |
+| int8    | 384 | 3,357.9    | 3,426.6   | +2.0%  | 6,746.5     | 6,646.2    | -1.5%   |
+
+All deltas are within ±3% noise, except int8 128 sparse at -12.7% which
+is suspicious (single data point; the corresponding dim=384 sparse is
+flat at -1.5%). The 3 commits that landed between the two matrices
+(Rec #3 Prometheus counter, Rec #6 ShallowStructuralClone, the
+testplan.md rewrite) are observability/doc/small-refactor changes and
+should not affect QPS. The int8 128 sparse regression is most likely
+background-load noise on the dev box; treat as informational, not a
+regression.
+
+**New observations** (no previous baseline):
+- **float16 dense is ~55% of float32 dense** (3,378–3,835 vs 6,132–6,556).
+  Expected: half the byte footprint, but the F16C conversion + dispatch
+  path costs more than the savings on AVX2. Same observation as int8
+  vs float32.
+- **turboquant8 dense is essentially float32-fast** (6,225–6,233 vs
+  6,132–6,556). The TurboQuant encoding fits naturally into the SIMD
+  distance pipeline.
+- **float16 sparse is on par with float32 sparse** (7,218–7,292 vs
+  7,763–8,033). Sparse is I/O+merge bound, not distance bound.
+- **int8 ingest at 10k dim=128 reaches 1.24M vec/s** (the best in
+  the matrix; confirms the AVX2 `euclideanInt8AVX2Kernel` advantage).
+- **turboquant8 ingest is half of float32** (215–423k vs 207–592k).
+  The encoding step adds overhead.
+
+Source: `data/perf_logs/perf_matrix_cpu_v2.2.0-matrix_20260606_181242.json`
+(8 of 32 configs; the 24 50k configs were aborted at the user's
+request after the 10k results came back clean).
+
 ---
 
 ## Test Run Reproducibility

@@ -58,9 +58,35 @@ In all four cases the longbow server log contained `"Async batched index add fai
 
 The post-failure DoGet path emits a `WARN` for every `rows=0, cols=0` record, but in the failing int8 runs the same warning is logged 5× per DoGet even though the data is otherwise present. The downstream DoGet completes with the expected 10,000 rows. This is a benign stub-record path; demote to debug or remove the warning. (Will not recur post-P0-fix because the underlying "arena is nil" failure is gone, but the warning logic is still misleading on edge cases.)
 
-### P2 — `protoreflect` init costs 5.3 MB heap
+### P2 — `protoreflect` init costs 5.3 MB heap (INVESTIGATED, not actionable in longbow)
 
-From the heap profile of 100k float32 dim=128: `protobuf/internal/impl.consumeBytesNoZero` holds 5.3 MB and `bytes.growSlice` holds 6.5 MB. These are one-shot init costs. Not urgent; can be addressed by trimming the gRPC reflection service from the default-enabled services in `cmd/longbow/main.go` or by lazy-loading the descriptor set.
+From the heap profile of 100k float32 dim=128: `protobuf/internal/impl.consumeBytesNoZero` holds 5.3 MB and `bytes.growSlice` holds 6.5 MB. These are one-shot init costs.
+
+**Investigation (2026-06-06):** the 5.3 MB is the cost of the
+Apache Arrow Flight SQL protobuf message descriptors
+(`vendor/github.com/apache/arrow-go/v18/arrow/flight/gen/flight/FlightSql.pb.go`,
+33 message types) plus the Flight protobuf descriptors
+(`Flight.pb.go`, 34 message types) — 67 message types × ~80 KB each
+of generated `messageInfo` structs with marshal/unmarshal/size/equal
+function pointers. Each type is registered in protobuf's global
+registry via generated `init()` functions when the binary loads.
+
+**The original recommendation was based on a false premise:**
+longbow does NOT register the gRPC reflection service
+(`google.golang.org/grpc/reflection`). Verified by grep across
+`cmd/` and `internal/`: no `reflection.Register` or
+`grpcreflection.Register` call exists. The "trim the reflection
+service" suggestion is N/A. The "lazy-load the descriptor set"
+suggestion would require changes to Apache Arrow's generated
+`.pb.go` files (i.e., forking the library) or to the
+`google.golang.org/protobuf` runtime's eager-init contract — both
+are out of scope for longbow.
+
+**Conclusion:** P2 is recorded as INVESTIGATED, not actionable in
+longbow. The 5.3 MB is the unavoidable cost of integrating with
+Apache Arrow Flight SQL. Future contributors seeing this in a heap
+profile should not attempt to "fix" it without first confirming
+the Apache Arrow dependency has been removed or replaced.
 
 ### P3 — float16 and turboquant8 not in the matrix
 

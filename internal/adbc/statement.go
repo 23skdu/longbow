@@ -2,6 +2,7 @@ package adbc
 
 import (
 	"context"
+	"fmt"
 	"sync/atomic"
 
 	"github.com/apache/arrow-adbc/go/adbc"
@@ -38,8 +39,14 @@ func (s *Statement) ExecuteQuery(ctx context.Context) (array.RecordReader, int64
 		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
 	}, nil)
 
-	reader := &AdbcRecordReader{
-		schema: schema,
+	// ExecuteQuery is a stub for now: no real records are produced
+	// (the ADBC backend is not wired to a query engine). The reader
+	// is constructed via NewAdbcRecordReader to follow the
+	// arrow/array.simpleRecords ref-count convention; nil records
+	// means Next() always returns false.
+	reader, err := NewAdbcRecordReader(schema, nil)
+	if err != nil {
+		return nil, -1, err
 	}
 
 	return reader, -1, nil
@@ -81,6 +88,32 @@ type AdbcRecordReader struct {
 	records    []arrow.RecordBatch
 	currentIdx int
 	err        error
+}
+
+// NewAdbcRecordReader constructs an AdbcRecordReader that holds an
+// initial reference (refCount=1) and retains every record in
+// `records`. The schema of every record must match `schema`; if any
+// record's schema differs, the partially-constructed reader is
+// released and an error is returned (mirrors arrow/array.NewRecordReader).
+// The returned reader follows the arrow/array.simpleRecords contract:
+// the caller is responsible for calling Release exactly once to
+// balance the initial reference.
+func NewAdbcRecordReader(schema *arrow.Schema, records []arrow.RecordBatch) (*AdbcRecordReader, error) {
+	r := &AdbcRecordReader{
+		schema:   schema,
+		records:  records,
+		refCount: 1,
+	}
+	for _, rec := range records {
+		rec.Retain()
+	}
+	for _, rec := range records {
+		if !rec.Schema().Equal(schema) {
+			r.Release()
+			return nil, fmt.Errorf("adbc: record schema does not match AdbcRecordReader schema")
+		}
+	}
+	return r, nil
 }
 
 func (r *AdbcRecordReader) Retain() {

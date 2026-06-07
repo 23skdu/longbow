@@ -2,27 +2,44 @@
 """Smoke-test the c-shared ADBC driver build.
 
 This test verifies the ``liblongbow_adbc.so`` produced by
-``make build-adbc`` is loadable as a C shared library and that the
-``AdbcDriverInit`` entry point exported by ``cmd/adbc/main.go`` is
-present.  It does NOT exercise a full ADBC round-trip — the current
-``cmd/adbc/main.go`` is a stub that only exports ``AdbcDriverInit``
-(the c-shared binding is not yet wired up to the full C-API; see
-``cmd/adbc/main.go:73-87`` for the TODO).
+``make build-adbc`` exports the full ADBC 1.0.0 C-API surface
+(not just the ``AdbcDriverInit`` entry point). Each ADBC entry
+point must be exported with a valid function pointer so the
+driver manager can wire it into the AdbcDriver function pointer
+table.
 
 Run::
 
     make build-adbc
     /home/rsd/longbow-venv/bin/python3 tests/adbc/test_driver_so.py
 
-The test exits 0 if the library is loadable and contains the expected
-symbols; non-zero otherwise.  The test is intentionally independent
-of the Apache Arrow ADBC Python driver so it can run in CI without
-``adbc-driver-manager`` installed.
+The test exits 0 if all 1.0.0-required ADBC entry points are
+exported; non-zero otherwise. This test is intentionally
+independent of the Apache Arrow ADBC Python driver so it can run
+in CI without ``adbc-driver-manager`` installed.
 """
 
 import ctypes
 import os
 import sys
+
+
+# ADBC 1.0.0 entry points that the driver manager's CHECK_REQUIRED
+# macro refuses to omit. Each must be exported in the .so with a
+# non-NULL function pointer.
+ADBC_1_0_0_REQUIRED = (
+    "AdbcLongbowAdbcInit",  # Adbc<DriverName>Init
+    "AdbcDatabaseNew",
+    "AdbcDatabaseInit",
+    "AdbcDatabaseRelease",
+    "AdbcConnectionNew",
+    "AdbcConnectionInit",
+    "AdbcConnectionRelease",
+    "AdbcStatementNew",
+    "AdbcStatementRelease",
+    "AdbcStatementSetSqlQuery",
+    "AdbcStatementExecuteQuery",
+)
 
 
 def find_driver_so() -> str | None:
@@ -49,42 +66,26 @@ def main() -> int:
         print(f"FAIL: ctypes.CDLL({so_path}): {e}", file=sys.stderr)
         return 1
 
-    # The Go c-shared build exports a single Go-style symbol;
-    # cgo wraps it as `_cgoexp_<hash>_AdbcDriverInit`.  We check both.
-    init_sym = "AdbcDriverInit"
-    found = False
-    for name in (init_sym,):
+    failed = []
+    for name in ADBC_1_0_0_REQUIRED:
         try:
             sym = getattr(lib, name)
-            found = True
-            print(f"OK: {name} exported (address: 0x{ctypes.cast(sym, ctypes.c_void_p).value:x})")
-            break
         except AttributeError:
-            pass
+            print(f"FAIL: {name} not exported")
+            failed.append(name)
+            continue
+        addr = ctypes.cast(sym, ctypes.c_void_p).value
+        if addr == 0:
+            print(f"FAIL: {name} exported but address is NULL")
+            failed.append(name)
+        else:
+            print(f"OK:   {name} @ 0x{addr:x}")
 
-    if not found:
-        # cgo-renamed symbol format: _cgoexp_<hash>_<name>
-        try:
-            for attr in dir(lib):
-                if attr.endswith("_" + init_sym) or attr == init_sym:
-                    found = True
-                    print(f"OK: cgo-renamed symbol found: {attr}")
-                    break
-        except Exception:
-            pass
-
-    if not found:
-        print(f"FAIL: {init_sym} not found in {so_path}", file=sys.stderr)
+    if failed:
+        print(f"\n{len(failed)} symbol(s) missing or null: {failed}", file=sys.stderr)
         return 1
 
-    # Document the missing C-API entry point.  When the full ADBC
-    # C-API binding is wired up in cmd/adbc/main.go, this test should
-    # additionally assert that AdbcDatabaseNew is exported.
-    if not hasattr(lib, "AdbcDatabaseNew"):
-        print("INFO: AdbcDatabaseNew not exported (c-API is stub-only). "
-              "See cmd/adbc/main.go:73-87 for the wiring TODO.")
-
-    print("Smoke test passed.")
+    print(f"\nAll {len(ADBC_1_0_0_REQUIRED)} ADBC 1.0.0-required entry points exported.")
     return 0
 
 

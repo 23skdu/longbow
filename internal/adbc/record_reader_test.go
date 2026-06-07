@@ -163,15 +163,104 @@ func TestAdbcRecordReader_ConcurrentRetainRelease(t *testing.T) {
 	}
 }
 
-// TestAdbcRecordReader_ExecuteQueryRefCount documents the refcount
-// contract of the production ExecuteQuery path. As of 2026-06-06 the
-// returned reader has refCount=0 and r.records=nil (no public setter),
-// so a single Release from the consumer is a no-op. This is a latent
-// bug — when the ADBC backend eventually populates records from a real
-// query result, ExecuteQuery must do `reader.Retain()` (or the struct
-// literal must include `refCount: 1`) to follow the arrow/array
-// convention. This test will fail loudly when that fix lands, prompting
-// the contributor to verify the refCount path is correct.
+func TestNewAdbcRecordReader_Valid(t *testing.T) {
+	pool := memory.NewGoAllocator()
+	schema := arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Int32}}, nil)
+	rec1 := makeTestRecord(t, pool, schema, 3)
+	rec2 := makeTestRecord(t, pool, schema, 5)
+
+	r, err := NewAdbcRecordReader(schema, []arrow.RecordBatch{rec1, rec2})
+	if err != nil {
+		t.Fatalf("NewAdbcRecordReader: %v", err)
+	}
+	if r == nil {
+		t.Fatal("NewAdbcRecordReader: got nil reader")
+	}
+	// refCount=1 by convention; records slice is populated; schema matches.
+	if r.refCount != 1 {
+		t.Errorf("refCount = %d, want 1", r.refCount)
+	}
+	if len(r.records) != 2 {
+		t.Errorf("len(records) = %d, want 2", len(r.records))
+	}
+	if r.Schema() == nil || !r.Schema().Equal(schema) {
+		t.Errorf("Schema() mismatch")
+	}
+	// Iteration works as expected.
+	if !r.Next() || r.RecordBatch().NumRows() != 3 {
+		t.Errorf("first Next/RecordBatch failed: NumRows = %d", r.RecordBatch().NumRows())
+	}
+	if !r.Next() || r.RecordBatch().NumRows() != 5 {
+		t.Errorf("second Next/RecordBatch failed: NumRows = %d", r.RecordBatch().NumRows())
+	}
+	if r.Next() {
+		t.Error("third Next returned true")
+	}
+	// Single Release drops refCount to 0 and triggers cleanup.
+	r.Release()
+	if r.records != nil {
+		t.Errorf("after final release, records not nil: %v", r.records)
+	}
+}
+
+func TestNewAdbcRecordReader_SchemaMismatch(t *testing.T) {
+	pool := memory.NewGoAllocator()
+	wanted := arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Int32}}, nil)
+	other := arrow.NewSchema([]arrow.Field{{Name: "y", Type: arrow.PrimitiveTypes.Int64}}, nil)
+	// Build a record that uses `other`'s schema (Int64) but pass `wanted`
+	// (Int32) to NewAdbcRecordReader to trigger the mismatch path.
+	builder := array.NewRecordBuilder(pool, other)
+	t.Cleanup(builder.Release)
+	b, ok := builder.Field(0).(*array.Int64Builder)
+	if !ok {
+		t.Fatalf("expected *array.Int64Builder, got %T", builder.Field(0))
+	}
+	b.Append(int64(1))
+	rec := builder.NewRecordBatch()
+
+	r, err := NewAdbcRecordReader(wanted, []arrow.RecordBatch{rec})
+	if err == nil {
+		t.Fatal("NewAdbcRecordReader: expected schema-mismatch error, got nil")
+	}
+	if r != nil {
+		t.Errorf("NewAdbcRecordReader: expected nil reader on error, got %v", r)
+	}
+}
+
+func TestNewAdbcRecordReader_Empty(t *testing.T) {
+	// Constructor with no records: refCount=1, records=nil, Next() always false.
+	schema := arrow.NewSchema([]arrow.Field{{Name: "x", Type: arrow.PrimitiveTypes.Int32}}, nil)
+	r, err := NewAdbcRecordReader(schema, nil)
+	if err != nil {
+		t.Fatalf("NewAdbcRecordReader(nil records): %v", err)
+	}
+	if r == nil {
+		t.Fatal("NewAdbcRecordReader: got nil")
+	}
+	if r.refCount != 1 {
+		t.Errorf("refCount = %d, want 1", r.refCount)
+	}
+	if r.Next() {
+		t.Error("Next() returned true on empty reader")
+	}
+	r.Release() // drops refCount to 0; cleanup is a no-op
+}
+
+// TestAdbcRecordReader_ExecuteQueryRefCount locks in the refcount
+// contract of the production ExecuteQuery path. The returned reader
+// must have refCount=1 (the creator's initial ref, balanced by a
+// single consumer Release) — this matches the arrow/array
+// .simpleRecords convention. r.records is nil because the public
+// API has no way to populate it yet; see TestAdbcRecordReader_Iteration
+// for the in-package path that exercises a non-empty records slice.
+//
+// Note: ExecuteQuery's `if err != nil` defensive early-return branch
+// is intentionally not exercised by this test. NewAdbcRecordReader
+// only returns an error when records have a mismatched schema, and
+// ExecuteQuery always passes nil records with a hardcoded schema, so
+// the error path is unreachable from the public API. The 80% line
+// coverage on ExecuteQuery reflects this; the branch exists to make
+// ExecuteQuery robust against future changes to NewAdbcRecordReader.
 func TestAdbcRecordReader_ExecuteQueryRefCount(t *testing.T) {
 	stmt := &Statement{}
 	reader, _, err := stmt.ExecuteQuery(nil)
@@ -182,11 +271,14 @@ func TestAdbcRecordReader_ExecuteQueryRefCount(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected *AdbcRecordReader, got %T", reader)
 	}
-	// Document current state: refCount=0, records=nil.
-	if concrete.refCount != 0 {
-		t.Errorf("ExecuteQuery: refCount = %d, want 0 (latent bug, see comment)", concrete.refCount)
+	if concrete.refCount != 1 {
+		t.Errorf("ExecuteQuery: refCount = %d, want 1 (must match simpleRecords convention)", concrete.refCount)
 	}
 	if len(concrete.records) != 0 {
 		t.Errorf("ExecuteQuery: records len = %d, want 0", len(concrete.records))
 	}
+	// The single consumer Release must drop refCount to 0 and trigger
+	// the cleanup path (which is a no-op when records is nil, but the
+	// branch must be reachable).
+	reader.Release()
 }

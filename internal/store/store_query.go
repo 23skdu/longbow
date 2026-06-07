@@ -490,12 +490,25 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 		if !ok {
 			resultsChan = nil // Channel closed
 		} else {
-			// Guard against nil/empty records that can cause IPC writer panics
-			if rec == nil || rec.NumRows() == 0 || rec.NumCols() == 0 {
-				s.logger.Warn().Int64("rows", rec.NumRows()).Int64("cols", rec.NumCols()).Msg("Skipping invalid record in DoGet")
-				if rec != nil {
-					rec.Release()
-				}
+			// Guard against nil/empty records that can cause IPC writer panics.
+			//
+			// The empty-record case (rows=0, cols=0) is a benign stub-record
+			// path — the producer emits a zero-sized record to signal batch
+			// boundaries, and the DoGet path correctly skips it. The warning
+			// used to fire 5× per DoGet on int8 50k+ runs (see P1 in
+			// docs/nextsteps.md), which polluted the logs without indicating
+			// a real fault. Demoted to Debug.
+			//
+			// The nil case is a real producer bug (a nil record from the
+			// channel means the producer panicked or returned early). Kept
+			// at Warn so on-call sees it.
+			if rec == nil {
+				s.logger.Warn().Msg("Skipping nil record in DoGet (producer bug)")
+				continue
+			}
+			if rec.NumRows() == 0 || rec.NumCols() == 0 {
+				s.logger.Debug().Int64("rows", rec.NumRows()).Int64("cols", rec.NumCols()).Msg("Skipping empty stub record in DoGet")
+				rec.Release()
 				continue
 			}
 

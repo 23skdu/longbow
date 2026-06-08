@@ -637,8 +637,20 @@ func orBytesAVX512(dst, src []byte) {
 	orBytesAVX2(dst, src)
 }
 
+//go:noescape
+func euclideanInt8AVX512Kernel(a, b uintptr, n int) float32
+
 func euclideanInt8AVX512(a, b []int8) (float32, error) {
-	return euclideanInt8AVX2(a, b)
+	if !features.HasAVX512 {
+		return euclideanInt8AVX2(a, b)
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanInt8AVX512Kernel(
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
+		len(a)), nil
 }
 
 func euclideanInt16AVX512(a, b []int16) (float32, error) {

@@ -1462,7 +1462,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 
 		if ds.PreferredVectorType != types.VectorTypeUnknown {
 			dataType = ds.PreferredVectorType
-		} else if !hasMetadataType && dataType == types.VectorTypeFloat32 {
+		} else if !hasMetadataType && dataType == types.VectorTypeFloat32 && ds.TurboQuantBits() > 0 {
 			dataType = types.VectorTypeTQ
 			ds.PreferredVectorType = types.VectorTypeTQ
 		}

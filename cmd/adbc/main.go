@@ -454,7 +454,6 @@ func AdbcStatementExecuteQuery(stmt *C.struct_AdbcStatement, out *C.struct_Arrow
 	}
 	cdata.ExportRecordReader(reader, (*cdata.CArrowArrayStream)(unsafe.Pointer(out)))
 	return C.int(adbcStatusOK)
-	return C.int(adbcStatusOK)
 }
 
 // Additional 1.0.0 entry points wired up to keep the AdbcDriver

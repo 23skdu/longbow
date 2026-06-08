@@ -858,19 +858,77 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 					}
 				}
 				vecs = f16s
-			case types.VectorTypeInt8:
-				i8s := make([][]int8, n)
-				for i := range rowIdxs {
-					rec := recs[batchIdxs[i]]
-					if v, ok := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int8); ok {
-						i8s[i] = v
-						h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]})
-					} else {
-						supported = false
-						break
+		case types.VectorTypeInt8:
+			i8s := make([][]int8, n)
+			valuesCache := make(map[arrow.RecordBatch][]int8)
+			for i := range rowIdxs {
+				var rec arrow.RecordBatch
+				bIdx := batchIdxs[i]
+				if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+					rec = recs[bIdx]
+				} else if len(recs) == 1 {
+					rec = recs[0]
+				}
+				if rec != nil {
+					if _, ok := valuesCache[rec]; !ok {
+						col := rec.Column(vecColIdx)
+						if list, okList := col.(*arrowarray.FixedSizeList); okList {
+							if i8Arr, okArr := list.ListValues().(*arrowarray.Int8); okArr {
+								valuesCache[rec] = i8Arr.Int8Values()
+							}
+						} else if i8Arr, okArr := col.(*arrowarray.Int8); okArr {
+							valuesCache[rec] = i8Arr.Int8Values()
+						}
 					}
 				}
-				vecs = i8s
+			}
+			pool := GetSharedPool()
+			var supportedAtomic atomic.Bool
+			supportedAtomic.Store(true)
+			pool.ParallelFor(n, max(256, (n+runtime.NumCPU()-1)/runtime.NumCPU()), func(start, end int) {
+				if !supportedAtomic.Load() {
+					return
+				}
+				for i := start; i < end; i++ {
+					var rec arrow.RecordBatch
+					bIdx := batchIdxs[i]
+					if bIdx >= 0 && bIdx < len(recs) && recs[bIdx] != nil {
+						rec = recs[bIdx]
+					} else if len(recs) == 1 {
+						rec = recs[0]
+					}
+					if rec == nil {
+						supportedAtomic.Store(false)
+						return
+					}
+					values := valuesCache[rec]
+					physicalDims := int(h.dims.Load())
+					if values != nil {
+						sizePerRow := physicalDims
+						if list, okList := rec.Column(vecColIdx).(*arrowarray.FixedSizeList); okList {
+							sizePerRow = int(list.DataType().(*arrow.FixedSizeListType).Len())
+						}
+						off := rowIdxs[i] * sizePerRow
+						if off+physicalDims <= len(values) && physicalDims > 0 {
+							i8s[i] = values[off : off+physicalDims]
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]}) // #nosec G115
+						} else {
+							supportedAtomic.Store(false)
+							return
+						}
+					} else {
+						if v, okC := h.extractVector(rec, vecColIdx, rowIdxs[i]).([]int8); okC {
+							i8s[i] = v
+							h.SetLocation(types.VectorID(startID+uint32(i)), types.Location{BatchIdx: batchIdxs[i], RowIdx: rowIdxs[i]}) // #nosec G115
+						} else {
+							supportedAtomic.Store(false)
+							return
+						}
+					}
+				}
+			})
+			supported = supportedAtomic.Load()
+			vecs = i8s
 			case types.VectorTypeFloat64:
 				f64s := make([][]float64, n)
 				for i := range rowIdxs {

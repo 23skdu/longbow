@@ -137,10 +137,7 @@ func main() {
 	
 	// func(a, b uintptr, n int) float32
 	stubsDist := []string{
-		"dotInt4AVX512Kernel", "dotInt4AVX2Kernel",
-		"euclideanInt8AVX2Kernel", 
 		"euclideanInt8Unrolled4xAVX2Kernel",
-		"brayCurtisAVX2Kernel", "manhattanAVX2Kernel", "chebyshevAVX2Kernel",
 	}
 	for _, s := range stubsDist {
 		TEXT(s, NOSPLIT, "func(a, b uintptr, n int) float32")
@@ -149,27 +146,14 @@ func main() {
 	}
 
 	// func(src, dst uintptr, n int)
-	stubsUnary := []string{
-		"sigmoidAVX512Kernel",
-		"int8ToFloat32AVX2Kernel", "uint8ToFloat32AVX2Kernel", 
-		"int16ToFloat32AVX2Kernel", "uint16ToFloat32AVX2Kernel",
-		"int32ToFloat32AVX2Kernel", "uint32ToFloat32AVX2Kernel", 
-		"float16ToFloat32AVX2Kernel",
-		"int8ToFloat32AVX512Kernel", "uint8ToFloat32AVX512Kernel", 
-		"int16ToFloat32AVX512Kernel", "uint16ToFloat32AVX512Kernel",
-		"int32ToFloat32AVX512Kernel", "uint32ToFloat32AVX512Kernel", 
-		"float16ToFloat32AVX512Kernel",
-	}
+	stubsUnary := []string{}
 	for _, s := range stubsUnary {
 		TEXT(s, NOSPLIT, "func(src, dst uintptr, n int)")
 		RET()
 	}
 
 	// Match kernels: func(src uintptr, val T, op int, dst uintptr, n int)
-	stubsMatch := []string{
-		"matchInt64AVX2Kernel", "matchInt32AVX2Kernel", "matchFloat32AVX2Kernel", "matchFloat64AVX2Kernel",
-		"matchInt64AVX512Kernel", "matchInt32AVX512Kernel", "matchFloat32AVX512Kernel", "matchFloat64AVX512Kernel",
-	}
+	stubsMatch := []string{}
 	for _, s := range stubsMatch {
 		TEXT(s, NOSPLIT, "func(src uintptr, val int64, op int, dst uintptr, n int)")
 		RET()

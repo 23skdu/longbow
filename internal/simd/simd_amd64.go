@@ -221,23 +221,9 @@ func dotAVX2(a, b []float32) (float32, error) {
 	return sum, nil
 }
 
-// AVX2 optimized Bray-Curtis distance
+// Bray-Curtis uses the generic Go baseline; the avo stub kernel is not yet implemented.
 func brayCurtisAVX2(a, b []float32) (float32, error) {
-	if len(a) != len(b) {
-		return 0, errors.New("simd: length mismatch")
-	}
-	if len(a) == 0 {
-		return 0, nil
-	}
-	if !features.HasAVX2 {
-		return BrayCurtisDistanceFloat32(a, b)
-	}
-
-	return brayCurtisAVX2Kernel(
-		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
-		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
-		len(a),
-	), nil
+	return BrayCurtisDistanceFloat32(a, b)
 }
 
 // AVX2 optimized Batch Euclidean distance
@@ -361,100 +347,62 @@ func cosineBatchAVX2(query []float32, vectors [][]float32, results []float32) er
 
 // Assembly function declarations are now in all_kernels_stubs_amd64.go
 
+// All *ToFloat32* functions use generic fallbacks in this file.
+// The corresponding avo stub kernels are not yet implemented.
 func int8ToFloat32AVX2(src []int8, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	int8ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	int8ToFloat32Generic(src, dst)
 }
 
 func uint8ToFloat32AVX2(src []uint8, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	uint8ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	uint8ToFloat32Generic(src, dst)
 }
 
 func int16ToFloat32AVX2(src []int16, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	int16ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	int16ToFloat32Generic(src, dst)
 }
 
 func uint16ToFloat32AVX2(src []uint16, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	uint16ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	uint16ToFloat32Generic(src, dst)
 }
 
 func int32ToFloat32AVX2(src []int32, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	int32ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	int32ToFloat32Generic(src, dst)
 }
 
 func uint32ToFloat32AVX2(src []uint32, dst []float32) {
-	uint32ToFloat32Generic(src, dst) // uint32 -> f32 is tricky on AVX2, fallback to generic
+	uint32ToFloat32Generic(src, dst)
 }
 
 func float16ToFloat32AVX2(src []float16.Num, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	// We already have VCVTPH2PS in AVX2
-	float16ToFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	float16ToFloat32Generic(src, dst)
 }
 
 func int8ToFloat32AVX512(src []int8, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	int8ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	int8ToFloat32Generic(src, dst)
 }
 
 func uint8ToFloat32AVX512(src []uint8, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	uint8ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	uint8ToFloat32Generic(src, dst)
 }
 
 func int16ToFloat32AVX512(src []int16, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	int16ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	int16ToFloat32Generic(src, dst)
 }
 
 func uint16ToFloat32AVX512(src []uint16, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	uint16ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	uint16ToFloat32Generic(src, dst)
 }
 
 func int32ToFloat32AVX512(src []int32, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	int32ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	int32ToFloat32Generic(src, dst)
 }
 
 func uint32ToFloat32AVX512(src []uint32, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	uint32ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	uint32ToFloat32Generic(src, dst)
 }
 
 func float16ToFloat32AVX512(src []float16.Num, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	float16ToFloat32AVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	float16ToFloat32Generic(src, dst)
 }
 
 func sigmoidAVX2(src, dst []float32) {
@@ -514,59 +462,19 @@ func logAVX512(src, dst []float32) {
 }
 
 func matchInt64AVX2(src []int64, val int64, op CompareOp, dst []byte) error {
-	if len(src) != len(dst) {
-		return errors.New("simd: length mismatch")
-	}
-	if !features.HasAVX2 {
-		return matchInt64Generic(src, val, op, dst)
-	}
-	if len(src) == 0 {
-		return nil
-	}
-	matchInt64AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), val, int(op), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
-	return nil
+	return matchInt64Generic(src, val, op, dst)
 }
 
 func matchInt32AVX2(src []int32, val int32, op CompareOp, dst []byte) error {
-	if len(src) != len(dst) {
-		return errors.New("simd: length mismatch")
-	}
-	if !features.HasAVX2 {
-		return matchInt32Generic(src, val, op, dst)
-	}
-	if len(src) == 0 {
-		return nil
-	}
-	matchInt32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), int64(val), int(op), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
-	return nil
+	return matchInt32Generic(src, val, op, dst)
 }
 
 func matchFloat32AVX2(src []float32, val float32, op CompareOp, dst []byte) error {
-	if len(src) != len(dst) {
-		return errors.New("simd: length mismatch")
-	}
-	if !features.HasAVX2 {
-		return matchFloat32Generic(src, val, op, dst)
-	}
-	if len(src) == 0 {
-		return nil
-	}
-	matchFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), int64(math.Float32bits(val)), int(op), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
-	return nil
+	return matchFloat32Generic(src, val, op, dst)
 }
 
 func matchFloat64AVX2(src []float64, val float64, op CompareOp, dst []byte) error {
-	if len(src) != len(dst) {
-		return errors.New("simd: length mismatch")
-	}
-	if !features.HasAVX2 {
-		return matchFloat64Generic(src, val, op, dst)
-	}
-	if len(src) == 0 {
-		return nil
-	}
-	matchFloat64AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), int64(math.Float64bits(val)), int(op), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
-	return nil
+	return matchFloat64Generic(src, val, op, dst)
 }
 
 // FP16 AVX implementations
@@ -694,8 +602,16 @@ func cosineFloat64AVX2(a, b []float64) (float32, error) {
 // Int8 Implementations
 // =============================================================================
 
+func euclideanInt8AVX512Kernel(a, b uintptr, n int) float32
+
 func euclideanInt8AVX2(a, b []int8) (float32, error) {
-	return euclideanInt8Unrolled4x(a, b)
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanInt8AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
+		len(a)), nil
 }
 
 // =============================================================================
@@ -785,41 +701,11 @@ func dotUint8AVX2(a, b []uint8) (float32, error) {
 }
 
 func dotInt4AVX512(a, b []byte) (float32, error) {
-	n := len(a)
-	if n == 0 {
-		return 0, nil
-	}
-	var sum float32
-	if n >= 64 {
-		simdLen := (n / 64) * 64
-		sum = dotInt4AVX512Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), simdLen) // #nosec G103
-		a = a[simdLen:]
-		b = b[simdLen:]
-	}
-	if len(a) > 0 {
-		tailSum, _ := dotInt4Generic(a, b)
-		sum += tailSum
-	}
-	return sum, nil
+	return dotInt4Generic(a, b)
 }
 
 func dotInt4AVX2(a, b []byte) (float32, error) {
-	n := len(a)
-	if n == 0 {
-		return 0, nil
-	}
-	var sum float32
-	if n >= 32 {
-		simdLen := (n / 32) * 32
-		sum = dotInt4AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), simdLen) // #nosec G103
-		a = a[simdLen:]
-		b = b[simdLen:]
-	}
-	if len(a) > 0 {
-		tailSum, _ := dotInt4Generic(a, b)
-		sum += tailSum
-	}
-	return sum, nil
+	return dotInt4Generic(a, b)
 }
 
 func dotInt2AVX512(a, b []byte) (float32, error) {

@@ -2620,6 +2620,7 @@ class BenchmarkRunner:
 
                             pprof_thread = None
                             exhausted = False
+                            server_crashed = False
                             try:
                                 max_retries = getattr(self.args, "max_retries", 1)
                                 success = False
@@ -2632,6 +2633,15 @@ class BenchmarkRunner:
                                         if success:
                                             break
                                         print(f"  Benchmark run failed (attempt {attempt+1}/{max_retries})")
+                                        # Detect server crash: if server process is dead,
+                                        # skip retries and flag for cleanup.
+                                        if self.server_pid is not None:
+                                            try:
+                                                os.kill(self.server_pid, 0)
+                                            except (ProcessLookupError, ChildProcessError):
+                                                print(f"  [CRASH] Server for {label} died unexpectedly")
+                                                server_crashed = True
+                                                break
                                     except ResourceExhaustedException as re_err:
                                         print(f"  [EARLY ABORT] {re_err}")
                                         self.exhausted_configs.add(config_key)
@@ -2647,7 +2657,10 @@ class BenchmarkRunner:
                                 # hang or fail lose the benchmark results.
                                 self._save_checkpoint()
 
-                                if exhausted:
+                                if server_crashed:
+                                    print(f"  [CRASH] Server died — cleaning up without pprof snapshot")
+                                    self.stop_server(force=True)
+                                elif exhausted:
                                     # OOM'd server is unrecoverable, force-kill immediately.
                                     print("  [OOM] Force-killing server immediately...")
                                     self.stop_server(force=True)

@@ -626,13 +626,44 @@ func (c *int8Computer) ComputeSingle(id uint32) (float32, error) {
 }
 
 func (c *int8Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
-	dst = dst[:0]
-	for _, id := range ids {
+	if cap(dst) < len(ids) {
+		dst = make([]float32, len(ids))
+	} else {
+		dst = dst[:len(ids)]
+	}
+
+	pd := c.data.GetPaddedDimsForType(types.VectorTypeInt8)
+	var lastChunkID int32 = -1
+	var chunk []int8
+
+	for i, id := range ids {
+		cID := int32(types.ChunkID(id)) // #nosec G115
+		if cID != lastChunkID {
+			lastChunkID = cID
+			if c.maxGen == 18446744073709551615 {
+				chunk = c.data.GetVectorsInt8ChunkFast(int(cID))
+			} else {
+				chunk = c.data.GetVectorsInt8ChunkWithGen(int(cID), c.maxGen)
+			}
+		}
+		if chunk != nil {
+			cOff := int(id) % types.ChunkSize
+			start := cOff * pd
+			if start+c.dims <= len(chunk) {
+				v8 := chunk[start : start+c.dims]
+				if c.squared {
+					dst[i], _ = c.h.distFuncInt8Squared(c.qInt8, v8)
+				} else {
+					dst[i], _ = c.h.distFuncInt8(c.qInt8, v8)
+				}
+				continue
+			}
+		}
 		dist, err := c.ComputeSingle(id)
 		if err != nil {
 			return nil, err
 		}
-		dst = append(dst, dist)
+		dst[i] = dist
 	}
 	return dst, nil
 }

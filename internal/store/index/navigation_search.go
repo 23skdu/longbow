@@ -744,6 +744,30 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				}
 				return &uint64Computer{data: data, q: searchCtx.queryUint64, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 			}
+			if data.Type == types.VectorTypeComplex64 {
+				physDims := len(q)
+				logDims := physDims / 2
+				if cap(searchCtx.queryC64) < logDims {
+					searchCtx.queryC64 = make([]complex64, logDims)
+				}
+				searchCtx.queryC64 = searchCtx.queryC64[:logDims]
+				for i := 0; i < logDims; i++ {
+					searchCtx.queryC64[i] = complex(q[2*i], q[2*i+1])
+				}
+				return &complex64Computer{data: data, q: searchCtx.queryC64, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen}
+			}
+			if data.Type == types.VectorTypeComplex128 {
+				physDims := len(q)
+				logDims := physDims / 2
+				if cap(searchCtx.queryC128) < logDims {
+					searchCtx.queryC128 = make([]complex128, logDims)
+				}
+				searchCtx.queryC128 = searchCtx.queryC128[:logDims]
+				for i := 0; i < logDims; i++ {
+					searchCtx.queryC128[i] = complex(float64(q[2*i]), float64(q[2*i+1]))
+				}
+				return &complex128Computer{data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen}
+			}
 		}
 		comp := &float32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen}
 		if searchCtx != nil {

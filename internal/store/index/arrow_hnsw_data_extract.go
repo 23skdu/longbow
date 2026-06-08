@@ -69,6 +69,16 @@ func (h *ArrowHNSW) extractVector(rec arrow.RecordBatch, colIdx, rowIdx int) any
 			}
 			return complexes
 		}
+		if h.config.DataType == types.VectorTypeComplex128 {
+			if len(floats) < 2 {
+				return nil
+			}
+			complexes := make([]complex128, len(floats)/2)
+			for i := 0; i < len(complexes); i++ {
+				complexes[i] = complex(float64(floats[2*i]), float64(floats[2*i+1]))
+			}
+			return complexes
+		}
 		// Zero-copy: return the underlying slice directly
 		return floats
 

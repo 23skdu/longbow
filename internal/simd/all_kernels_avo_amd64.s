@@ -12589,12 +12589,6 @@ TEXT ·dotInt4AVX2Kernel(SB), NOSPLIT, $0-28
 	MOVSS X0, ret+24(FP)
 	RET
 
-// func euclideanInt8AVX2Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
-TEXT ·euclideanInt8AVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
-	RET
-
 // func euclideanInt8Unrolled4xAVX2Kernel(a uintptr, b uintptr, n int) float32
 // Requires: SSE
 TEXT ·euclideanInt8Unrolled4xAVX2Kernel(SB), NOSPLIT, $0-28

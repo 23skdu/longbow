@@ -534,3 +534,163 @@ scalar_loop_dot_u8:
 done_dot_uint8:
     MOVSS X0, ret+24(FP)
     RET
+
+// ============================================================================
+// euclideanInt8AVX2Kernel(a, b uintptr, n int) float32
+//
+// Computes sqrt(sum((a[i]-b[i])^2)) for n int8 elements.
+// Uses VPMOVSXBW (sign-extend) + VPSUBW + VPMADDWD (self-multiply for diff²).
+// ============================================================================
+TEXT ·euclideanInt8AVX2Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VXORPS Y0, Y0, Y0       // float32 accumulator x8
+
+loop16_eucl_i8:
+    CMPQ CX, $16
+    JL   tail8_eucl_i8
+
+    VPMOVSXBW 0(SI), Y1     // 16 int8 → 16 int16
+    VPMOVSXBW 0(DI), Y2
+    VPSUBW Y2, Y1, Y1       // diff (signed int16)
+    VPMADDWD Y1, Y1, Y1     // diff², adjacent pair sum → int32 x8
+    VCVTDQ2PS Y1, Y1
+    VADDPS Y1, Y0, Y0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $16, CX
+    JMP  loop16_eucl_i8
+
+tail8_eucl_i8:
+    CMPQ CX, $8
+    JL   tail_scalar_eucl_i8
+
+    VPMOVSXBW 0(SI), X1     // 8 int8 → 8 int16 (XMM: reads 8 bytes)
+    VPMOVSXBW 0(DI), X2
+    VPSUBW X2, X1, X1        // diff (signed int16 x8)
+    VPMADDWD X1, X1, X1      // diff², adjacent pair sum → int32 x4 (XMM)
+    VCVTDQ2PS X1, X1         // → 4 float32
+    VEXTRACTF128 $0, Y0, X2  // save current low accumulator
+    VADDPS X1, X2, X2        // add tail result to low accumulator
+    VINSERTF128 $0, X2, Y0, Y0 // merge updated low back
+
+    ADDQ $8, SI
+    ADDQ $8, DI
+    SUBQ $8, CX
+
+tail_scalar_eucl_i8:
+    REDUCE_YMM(Y0, X0, X1, X2)
+    VZEROUPPER
+
+    TESTQ CX, CX
+    JZ    done_eucl_int8
+
+scalar_loop_eucl_i8:
+    MOVBLSX 0(SI), AX        // sign-extend byte → int32
+    MOVBLSX 0(DI), BX
+    SUBL BX, AX              // diff
+    IMULL AX, AX             // diff²
+    CVTSL2SS AX, X1
+    VADDSS X1, X0, X0
+
+    INCQ SI
+    INCQ DI
+    DECQ CX
+    JNZ  scalar_loop_eucl_i8
+
+done_eucl_int8:
+    VSQRTSS X0, X0, X0
+    MOVSS X0, ret+24(FP)
+    RET
+
+// ============================================================================
+// euclideanInt8AVX512Kernel(a, b uintptr, n int) float32
+//
+// Computes sqrt(sum((a[i]-b[i])^2)) for n int8 elements.
+// AVX512: 32 elements per loop (512-bit ZMM), VPMOVSXBW + VPSUBW + VPMADDWD.
+// ============================================================================
+TEXT ·euclideanInt8AVX512Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VXORPS Y0, Y0, Y0       // float32 accumulator x8 (YMM — reuse AVX2 reduction)
+
+loop32_eucl_i8_avx512:
+    CMPQ CX, $32
+    JL   tail16_eucl_i8_avx512
+
+    VPMOVSXBW (SI), Z1      // 32 int8 → 32 int16 (512-bit)
+    VPMOVSXBW (DI), Z2
+    VPSUBW Z2, Z1, Z1       // diff (signed int16)
+    VPMADDWD Z1, Z1, Z1     // diff², adjacent pair sum → int32 x16
+    VCVTDQ2PS Z1, Z1        // → 16 float32
+    VEXTRACTF64X4 $0, Z1, Y2 // low 8 floats → Y2
+    VEXTRACTF64X4 $1, Z1, Y3 // high 8 floats → Y3
+    VADDPS Y2, Y0, Y0
+    VADDPS Y3, Y0, Y0
+
+    ADDQ $32, SI
+    ADDQ $32, DI
+    SUBQ $32, CX
+    JMP  loop32_eucl_i8_avx512
+
+tail16_eucl_i8_avx512:
+    CMPQ CX, $16
+    JL   tail8_eucl_i8_avx512
+
+    VPMOVSXBW (SI), Y1      // 16 int8 → 16 int16 (256-bit)
+    VPMOVSXBW (DI), Y2
+    VPSUBW Y2, Y1, Y1       // diff (signed int16)
+    VPMADDWD Y1, Y1, Y1     // diff² → int32 x8
+    VCVTDQ2PS Y1, Y1        // → 8 float32
+    VADDPS Y1, Y0, Y0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $16, CX
+
+tail8_eucl_i8_avx512:
+    CMPQ CX, $8
+    JL   tail_scalar_eucl_i8_avx512
+
+    VPMOVSXBW 0(SI), X1     // 8 int8 → 8 int16 (XMM)
+    VPMOVSXBW 0(DI), X2
+    VPSUBW X2, X1, X1        // diff
+    VPMADDWD X1, X1, X1      // diff² → int32 x4
+    VCVTDQ2PS X1, X1         // → 4 float32
+    VEXTRACTF128 $0, Y0, X2
+    VADDPS X1, X2, X2
+    VINSERTF128 $0, X2, Y0, Y0
+
+    ADDQ $8, SI
+    ADDQ $8, DI
+    SUBQ $8, CX
+
+tail_scalar_eucl_i8_avx512:
+    REDUCE_YMM(Y0, X0, X1, X2)
+    VZEROUPPER
+
+    TESTQ CX, CX
+    JZ    done_eucl_int8_avx512
+
+scalar_loop_eucl_i8_avx512:
+    MOVBLSX 0(SI), AX
+    MOVBLSX 0(DI), BX
+    SUBL BX, AX
+    IMULL AX, AX
+    CVTSL2SS AX, X1
+    VADDSS X1, X0, X0
+
+    INCQ SI
+    INCQ DI
+    DECQ CX
+    JNZ  scalar_loop_eucl_i8_avx512
+
+done_eucl_int8_avx512:
+    VSQRTSS X0, X0, X0
+    MOVSS X0, ret+24(FP)
+    RET

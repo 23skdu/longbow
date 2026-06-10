@@ -69,6 +69,7 @@ func (c *TurboQuantCompute) DistanceWithRotatedQueryAndDisk(id uint32, rotatedQu
 
 // DistanceDirect computes L2 distance directly from TQ codes using the rotated query.
 // Avoids the decode+distFunc path by using SIMD lookup-table reconstruction fused with L2.
+// Uses a sync.Pool for scratch buffers to eliminate per-call heap allocations.
 func (c *TurboQuantCompute) DistanceDirect(id uint32, rotatedQuery []float32, dg *DiskGraph, maxGen uint64) (float32, error) {
 	tqCode, err := c.getTQBytes(id, dg, maxGen)
 	if err != nil {

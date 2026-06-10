@@ -30,7 +30,7 @@ TurboQuant implements a two-stage compression pipeline:
 - **Configurable bit depth**: 2, 3, 4, or 8 bits per angle
 - **Automatic power-of-2 padding** for dimensions not a power of 2
 - **Lossy compression** with tunable accuracy vs. storage trade-off
-- **Dimensions supported**: 128 to 3072
+- **Dimensions supported**: 128 to 3072 (non-power-of-2 dims like 384, 768 work correctly; the SIMD kernel truncates query vectors to the original dimension length, not the padded power-of-2 length)
 
 ### Search Integration
 - **HNSW index support** for fast approximate k-NN search
@@ -111,7 +111,7 @@ longbow-cli create-namespace -name my_ns -dims 768 -data_type turboquant
 | Parameter | Type | Default | Description |
 |-----------|------|---------|-------------|
 | `vector_type` | string | - | Set to `"turboquant"` or `"tq"` |
-| `turboquant_bits` | int | 8 | Bits per angle (2, 4, or 8) |
+| `turboquant_bits` | int | 4 | Bits per angle (2, 4, or 8) |
 | `dimension` | int | - | Vector dimensions (128-3072) |
 | `metric` | string | `"cosine"` | Distance metric |
 

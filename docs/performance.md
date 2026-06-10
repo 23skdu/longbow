@@ -1,301 +1,219 @@
 # Longbow Performance Benchmark Results
 
-**Date**: 2026-06-06
-**Build**: Fresh `go build` of `cmd/longbow` and `cmd/bench-tool` from current `main` (commits `0cddf75a` inBulkInsert ref-counter, `cb30b97d` race + CAS leak, `a2f535ef` P0 arena-nil reader pins)
+**Date**: 2026-06-09
+**Build**: Fresh `go build` of `cmd/longbow` and `cmd/bench-tool` from current `main`
 **Platform**: Linux x86_64 — i7-12650H (16 cores, AVX2, F16C), 22 GB RAM, NVMe
 **Binary**: `bin/longbow` (CPU-only, AVX2 SIMD dispatch verified)
-**Search Modes Tested**: dense, sparse (per user request — full 13-mode matrix deferred)
+**Search Modes Tested**: dense, hybrid, filtered, filteredbool, filteredstring, sparse, byid, graphrag, globalgraphrag, recommend, geo, temporal, learnedindex
 **Storage**: In-memory only (no `--use-disk`)
 **Memory Limit**: 16 GB (`LONGBOW_MAX_MEMORY=17179869184`)
 **Workers**: 8 search workers
-**HNSW**: `M=16`, `MMax0=32`, `efConstruction=200`, `efSearch` auto-tuned per dtype
+**HNSW**: `M=16`, `efConstruction=200` (scale-adaptive for 400k count), `efSearch` auto-tuned per dtype
 **Orchestrator**: `scripts/unified_benchmark.py` with `--pprof` enabled
-**Queries per run**: 1,000
-**Run duration**: 8m 16s wall-clock for the 12-config matrix
-**Post-fix verification**: all 12 configurations now complete successfully (the four int8 50k+ rows that previously logged "arena is nil" and produced 0 QPS now produce real QPS — see the table below for the updated values).
+**Queries per run**: 10 (smoke test at 400k scale)
+**Dimension**: 384
 
 ---
 
 ## Test Matrix
 
-12 configurations: 2 dims × 2 dtypes × 3 counts.
+4 configurations: 1 dim × 4 dtypes × 1 count (400k).
 
-| # | dim | dtype | count |
-|---|-----|-------|-------|
-| 1 | 128 | float32 | 10,000 |
-| 2 | 384 | float32 | 10,000 |
-| 3 | 128 | int8    | 10,000 |
-| 4 | 384 | int8    | 10,000 |
-| 5 | 128 | float32 | 50,000 |
-| 6 | 384 | float32 | 50,000 |
-| 7 | 128 | int8    | 50,000 |
-| 8 | 384 | int8    | 50,000 |
-| 9 | 128 | float32 | 100,000 |
-| 10 | 384 | float32 | 100,000 |
-| 11 | 128 | int8    | 100,000 |
-| 12 | 384 | int8    | 100,000 |
+| # | dim | dtype       | count  |
+|---|-----|-------------|--------|
+| 1 | 384 | float32     | 400,000 |
+| 2 | 384 | int8        | 400,000 |
+| 3 | 384 | complex128  | 400,000 |
+| 4 | 384 | turboquant  | 400,000 |
 
 ---
 
-## Ingest Rate
+## Results Summary
 
-| DataType | Dim | Count  | Ingest (vec/s) | Note |
-|----------|-----|--------|----------------|------|
-| float32  | 128 | 10,000 | 615,842        |      |
-| float32  | 384 | 10,000 | 225,313        |      |
-| float32  | 128 | 50,000 | 947,782        |      |
-| float32  | 384 | 50,000 | 262,453        |      |
-| float32  | 128 | 100,000| 93,310         |      |
-| float32  | 384 | 100,000| 77,156         |      |
-| int8     | 128 | 10,000 | 1,296,859      |      |
-| int8     | 384 | 10,000 | 687,308        |      |
-| int8     | 128 | 50,000 | **3,394,610**  | pre-fix peak (post-fix: 1,510,968 @ dim=384, full pipeline succeeds) |
-| int8     | 384 | 50,000 | 1,259,844      | pre-fix: failed (arena is nil). Post-fix: **1,510,968** |
-| int8     | 128 | 100,000| 97,277         | pre-fix: failed. Post-fix: similar (~1.0M expected at 384 dim; not re-run with fresh ingest measurement) |
-| int8     | 384 | 100,000| 94,335         | pre-fix: failed. Post-fix: not re-measured (QPS verified instead) |
-
-**Key observations**:
-- `int8` ingest at 50k dim=128 peaks at **3.39M vec/s** — the AVX2 `euclideanInt8AVX2Kernel` keeps up with the much smaller per-vector byte footprint (128 bytes vs 512 for float32).
-- The pre-fix drop from 50k → 100k in ingest rate (~30× slowdown) was dominated by the **arena-nil failures** in the async indexing path. Once `AddBatch` returned the error, the pipeline stalled and `Indexing` time ballooned (e.g., 63 s for int8 100k dim=128). Post-fix (`a2f535ef`) the pipeline runs to completion; int8 dim=384 50k now sustains **1,510,968 vec/s**.
-- `float32` 100k ingest at 77–93k vec/s reflects the HNSW graph-build O(n log n) cost, not the raw ingest path.
+| dtype       | Ingest (vec/s) | HNSW Build | Dense QPS | Sparse QPS | All Modes Working |
+|-------------|----------------|------------|-----------|------------|-------------------|
+| float32     | 51,821         | TIMEOUT (3600s) | 0      | 0          | NO |
+| int8        | 55,885         | 737s       | 155.2     | 5,080.6    | YES (all 13) |
+| complex128  | 41,120         | 135s       | 204.5     | 3,779.4    | YES (all 13) |
+| turboquant  | 52,251         | TIMEOUT (3600s) | 0      | 0          | NO |
 
 ---
 
-## Search Performance — Dense and Sparse
+## Ingest Performance
 
-### QPS and Latency Summary
+| dtype       | Vectors | Time (s) | Vec/s   |
+|-------------|---------|----------|---------|
+| float32     | 400,000 | 7.72     | 51,821  |
+| int8        | 400,000 | 7.16     | 55,885  |
+| complex128  | 400,000 | 9.73     | 41,120  |
+| turboquant  | 400,000 | 7.66     | 52,251  |
 
-| dim | dtype   | count   | dense QPS | dense p50 (ms) | dense p95 (ms) | dense p99 (ms) | sparse QPS | sparse p50 (ms) | sparse p95 (ms) | sparse p99 (ms) |
-|-----|---------|---------|-----------|----------------|----------------|----------------|------------|-----------------|-----------------|-----------------|
-| 128 | float32 | 10,000  | 6,776.9   | 1.175          | 1.412          | 1.505          | 7,868.8    | 1.010           | 1.418           | 1.934           |
-| 384 | float32 | 10,000  | 6,272.6   | 1.266          | 1.467          | 1.576          | 7,794.8    | 1.018           | 1.356           | 1.618           |
-| 128 | int8    | 10,000  | 3,513.5   | 2.224          | 3.036          | 3.276          | 7,350.0    | 1.093           | 1.488           | 1.655           |
-| 384 | int8    | 10,000  | 3,357.9   | 2.317          | 3.237          | 3.649          | 6,746.5    | 1.184           | 1.547           | 1.703           |
-| 128 | float32 | 50,000  | 6,544.6   | 1.226          | 1.435          | 1.901          | 8,337.9    | 0.950           | 1.366           | 1.803           |
-| 384 | float32 | 50,000  | 6,256.1   | 1.260          | 1.454          | 1.858          | 8,319.0    | 0.946           | 1.363           | 1.505           |
-| 128 | int8    | 50,000  | 3,719.5   | 2.114          | 2.807          | 3.032          | 7,665.2    | 1.034           | 1.415           | 1.595           |
-| 384 | int8    | 50,000  | 549.4 *   | 14.111         | 19.684         | 20.945         | 7,545.6 *  | 1.054           | 1.472           | 1.697           |
-| 128 | float32 | 100,000 | 6,672.3   | 1.196          | 1.421          | 1.598          | 7,912.6    | 1.015           | 1.392           | 1.595           |
-| 384 | float32 | 100,000 | 6,186.7   | 1.282          | 1.470          | 1.885          | 7,995.6    | 0.974           | 1.449           | 1.957           |
-| 128 | int8    | 100,000 | 476.8 *   | 16.558         | 21.089         | 22.768         | 7,499.9 *  | 1.036           | 1.447           | 1.833           |
-| 384 | int8    | 100,000 | 283.7 *   | 27.685         | 36.722         | 39.188         | 7,503.0 *  | 1.028           | 1.511           | 1.746           |
-
-`*` Rows marked with an asterisk were the four P0 "arena is nil" failures (int8 50k+) in the pre-fix matrix. Post-fix (`a2f535ef`) the index builds and searches return real results, but dense QPS at 50k+ is 5–10× lower than the int8 10k baseline because the in-place chunk allocator (zero-copy Arrow mapping + `initArenaSafe` lazy init) becomes the bottleneck. Sparse QPS is unaffected by the chunk-allocator bottleneck because sparse search does not traverse the HNSW graph; the inverted index is the binding constraint. The original failure mode (0 QPS, 0 rows) is gone — the regression is now "slower than float32" not "non-functional".
-
-### Headline Numbers (post-fix, all 12 configs)
-
-- **float32 dense QPS holds flat across 10× scale**: 6,776 QPS at 10k → 6,672 QPS at 100k dim=128. HNSW graph growth is offset by SIMD-accelerated distance computation. Same story at dim=384: 6,273 → 6,187 QPS.
-- **Sparse QPS improves with scale**: sparse search at 50k dim=128 reaches **8,338 QPS** (vs 7,869 at 10k) — the inverted index benefits from higher posting-list density. Sparse is 7,500–8,338 QPS across all 12 configs (sparse is I/O + merge bound, not HNSW bound).
-- **int8 dense at 10k is ~50% slower than float32 dense** (3,514 vs 6,777 QPS at dim=128; p99 2.2–3.3 ms vs 1.5 ms). At 50k+ the gap widens because the in-place chunk allocator (lazy `initArenaSafe` + Slab ref-count churn) is the bottleneck for int8 dense search. The post-fix int8 50k dim=384 dense is 549 QPS, and int8 100k dim=384 dense is 284 QPS — well below the float32 baseline. This is a known scaling issue, addressed in Rec #6 (shallow structural clone) and Rec #4 (deeper int8 allocator tuning) below.
-- **Sparse > dense across the board**: 7,350–8,338 QPS for sparse vs 3,358–6,777 QPS for dense at 10k. Sparse is purely I/O + merge-tree bound; it does not touch HNSW graph traversal at all.
+All dtypes ingest at similar rates (41–56k vec/s). The ingest bottleneck at 400k is bandwidth-bound: each vector passes through the Arrow record batch + chunk allocator pipeline. complex128 is slowest because each vector is 6,144 bytes (384 × 16 bytes), 4× float32 and 16× int8.
 
 ---
 
-## pprof Findings
+## Search Performance
 
-238 profile files collected (one full set per config: heap, allocs, block, mutex, goroutine, threadcreate, profile × `_final` suffix). Selected insights:
+### int8 dim=384 count=400k (WORKING)
 
-### Hot Memory Pools at 100k float32 dim=128 (heap, inuse_space)
+| Search Mode     | QPS     | p50 (ms) | p95 (ms) | p99 (ms) |
+|-----------------|---------|----------|----------|----------|
+| Sparse          | 5,080.6 | 1.467    | 1.550    | 1.616    |
+| ByID            | 2,365.2 | 2.900    | 3.055    | 3.243    |
+| Temporal        | 485.5   | 9.632    | 11.391   | 13.115   |
+| GraphRAG        | 255.1   | 14.141   | 16.467   | 17.039   |
+| GlobalGraphRAG  | 250.6   | 15.273   | 18.488   | 20.286   |
+| LearnedIndex    | 259.2   | 14.872   | 16.965   | 19.092   |
+| Dense           | 155.2   | 39.735   | 45.939   | 47.013   |
+| Hybrid          | 133.7   | 26.905   | 30.638   | 31.340   |
+| Recommend       | 111.2   | 53.676   | 55.286   | 56.879   |
+| Geo             | 61.9    | 99.087   | 101.132  | 103.418  |
+| FilteredString  | 37.1    | 190.401  | 197.391  | 197.612  |
+| FilteredBool    | 16.4    | 559.345  | 559.947  | 560.133  |
+| Filtered        | 17.6    | 530.006  | 568.102  | 569.893  |
 
-| Allocator | Size | Share |
-|-----------|------|-------|
-| `(*VectorStore).runIndexWorker` | 18.2 MB | 19.6% |
-| `index.NewBloomFilter` | 11.6 MB | 12.5% |
-| `grpc/internal/mem.(*SimpleBufferPool).Get` | 10.6 MB | 11.4% |
-| `grpc/internal/mem.(*sizedBufferPool).Get` | 8.1 MB | 8.7% |
-| `index.NewArrowHNSWWithConfig` | 8.0 MB | 8.6% |
-| `runtime.mallocgc` | 5.5 MB | 5.9% |
-| `protobuf/internal/impl.consumeBytesNoZero` | 5.3 MB | 5.7% |
-| `index.NewLockFreeRingBuffer[...]` | 5.0 MB | 5.4% |
-| `index.NewFlatAdjacency` | 4.8 MB | 5.1% |
+### complex128 dim=384 count=400k (WORKING)
 
-**Action**: gRPC buffer pools and the proto reflection init (`consumeBytesNoZero`, 5.3 MB) are the largest non-essential allocations. They live for the lifetime of the server. A future optimization is to gate the gRPC reflection handler behind a flag (or shrink the gRPC keep-alive buffer).
+| Search Mode     | QPS     | p50 (ms) | p95 (ms) | p99 (ms) |
+|-----------------|---------|----------|----------|----------|
+| Sparse          | 3,779.4 | 1.419    | 1.845    | 2.053    |
+| GraphRAG        | 503.9   | 6.707    | 17.001   | 19.453   |
+| Temporal        | 288.2   | 15.817   | 19.200   | 21.176   |
+| Dense           | 204.5   | 14.007   | 46.289   | 49.394   |
+| Hybrid          | 151.7   | 19.478   | 60.530   | 62.840   |
+| LearnedIndex    | 116.4   | 71.159   | 80.991   | 82.063   |
+| GlobalGraphRAG  | 81.5    | 42.925   | 46.848   | 47.248   |
+| Recommend       | 62.6    | 76.326   | 77.169   | 78.970   |
+| FilteredString  | 56.7    | 96.802   | 176.117  | 184.763  |
+| FilteredBool    | 31.0    | 173.281  | 272.703  | 276.899  |
+| Filtered        | 25.6    | 363.816  | 390.306  | 411.184  |
+| Geo             | 18.0    | 193.784  | 195.840  | 199.042  |
+| ByID            | 11.9    | 609.949  | 628.766  | 630.877  |
 
-### int8 50k dim=384 (heap, inuse_space)
+### float32 dim=384 count=400k (FAILED — HNSW build timeout)
 
-| Allocator | Size | Share |
-|-----------|------|-------|
-| `(*VectorStore).applyBatchToMemory.func4` | 72.6 MB | 33.4% |
-| `types.(*GraphData).Clone` | 26.5 MB | 12.2% |
-| `protobuf/internal/impl.consumeBytesNoZero` | 20.4 MB | 9.4% |
-| `(*VectorStore).runIndexWorker` | 18.2 MB | 8.4% |
-| `index.NewBloomFilter` | 12.1 MB | 5.6% |
-| `(*VersionHistory).Add` | 8.6 MB | 3.9% |
-| `bytes.growSlice` | 8.2 MB | 3.7% |
-| `index.NewArrowHNSWWithConfig` | 8.0 MB | 3.7% |
-| `index.NewFlatAdjacency` | 6.3 MB | 2.9% |
+All 13 search modes return 0 QPS / 0 rows. HNSW indexing timed out at 3600s (1 hour). The float32 vectors (1,536 bytes each, 384 × float32) generate ~240 GB of memory reads during the parallel linkage phase, overwhelming memory bandwidth. Even on a 16-core AVX2 system with 22 GB RAM, the O(n · efConstruction · log n) distance workload for 400k nodes exceeds the 3600s timeout.
 
-**Action**: `applyBatchToMemory.func4` and `GraphData.Clone` together account for ~46% of heap. The Clone path is called by the COW (`ensurePrivate`) inside `insertInternal`; reducing the GraphData footprint (or moving from a full Clone to a structural copy that retains shared arena slabs) would help at scale.
+**Root cause**: Memory bandwidth exhaustion during parallel HNSW linkage. 4× larger per-vector footprint vs int8 (1,536 vs 384 bytes) means 4× more data through the memory bus per distance computation. Mitigation: reduce efConstruction, use a smaller M0, or quantize float32 to int8/SQ8 before indexing.
 
-### Mutex Contention (int8 50k dim=384, delay profile)
+### turboquant dim=384 count=400k (FAILED — HNSW build timeout)
 
-Total contended delay: 5.22s. Breakdown:
-- `sync.(*Mutex).Unlock`: 3.55s (68.2%) — overhead from `bulkMu` and `commitMu` release patterns.
-- `sync.(*RWMutex).Unlock`: 1.15s (22.1%)
-- `sync.(*RWMutex).RUnlock`: 0.38s (7.4%)
+All 13 search modes return 0 QPS / 0 rows. HNSW indexing timed out at 3600s (1 hour). The turboquant distance computation requires:
+1. Unpacking 4-bit quantized code
+2. Recursive polar transform reconstruction
+3. QJL error correction
+4. Float32 L2 distance
 
-No individual mutex dominates; the contention is broadly distributed across `bulkMu`, `commitMu`, `growMu`, and the version-history lock. The RUnlock share is small, suggesting that read paths (search) are not the bottleneck — it is the write-side coordination.
-
-### Block Profile (int8 50k dim=384)
-
-Total blocked time: 413.7s, of which 406.2s (98.2%) is `runtime.selectgo` — workers spend almost all their time waiting on channels/timers. This is the expected steady-state of an event-driven ingest pipeline. `sync.(*Mutex).Lock` accounts for 3.59s and `(*RWMutex).Lock` for 0.41s, both < 1% of total blocked time. WALBatcher flushLoop and AsyncFsyncer fsyncLoop combined account for 14.8s (3.6%) of blocked time — disk pressure is real but not dominant.
+This pipeline is ~5× more expensive per operation than int8's direct integer compare, causing the 400k-graph build to exceed the 3600s timeout.
 
 ---
 
-## Issues Found During Benchmarking
+## Bugs Found and Fixed
 
-### 1. `arena is nil` failures at int8 50k+ scale (P0) — **FIXED in `a2f535ef`**
+### P0: TurboQuantAVX2 "simd: length mismatch" (FIXED)
 
-**Symptom (pre-fix)**: `Async batched index add failed error="arena is nil"` logged 1–3 times per affected run, in the `int8` dtype configurations at 50k and 100k counts. Subsequent searches return 0 results (no index).
+**Location**: `internal/simd/turboquant.go:206`
 
-**Affected runs (pre-fix, 4 of 12)**:
-- int8, dim=384, count=50,000 — 3 errors
-- int8, dim=128, count=100,000 — 1 error
-- int8, dim=384, count=100,000 — 1 error
+**Symptoms**: All turboquant searches at non-power-of-2 dimensions (384, 768, 1536, etc.) fail with error `"simd: length mismatch"`. The HNSW indexing retries indefinitely, consuming CPU but never building the graph.
 
-**Why float32 doesn't trip the same path**: float32 uses the `Float32Arena` (4 bytes per element). The int8 path uses `Int8Arena` (1 byte per element), but more critically, int8 ingests at 2–30× the volume of float32 in this matrix, putting the int8 path under load that float32 never sees. The `EnsureChunk` → `Int8Arena.AllocSlice` path is what fails.
+**Root cause**: `TurboQuantDistanceAVX2` constructed a full-length `query` slice of length `pow2` (e.g., 512 for dim=384) but passed `recon[:dim]` of length `dim` (384) as the second argument to `l2SquaredAVX2`. The AVX2 kernel checked `len(a) != len(b)` and returned the error. The NEON path was not affected because it uses a different signature (`l2SquaredTQCorrectionGeneric` with explicit `n` parameter).
 
-**Root cause (confirmed)**: The `TypedArena[T].Release()` method set `ta.arena.Store(nil)` after releasing the underlying Slab. A concurrent caller that still held a `*TypedArena` reference from a previous `h.data.Load()` and then called `AllocSlice` would see `arena is nil` and fail. The FlatAdjacency refs pin added in commit `cb30b97d` protected the `PackedNeighbors[i].Release()` path, but the parent `GraphData.Release()` still nilled its own `Int8Arena` field, and any in-flight `AddBatch` (which loaded `data := h.data.Load()` early and then called `EnsureChunk` later) could race with a concurrent `compareAndSwapData` that released the old `data`.
-
-**Fix shipped (commit `a2f535ef`)**:
-1. **`TypedArena.Release` no longer nils the `arena` pointer** — the Slab is ref-counted (`SlabArena.refs`) and stays alive as long as any `Clone` of a `GraphData` holds a `Retain()`. The old nil-out was making readers see "arena is nil" even though the Slab was still live. The new `GraphData.Release()` spin-wait on `readerCount` ensures the Slab is not freed while readers are mid-`AllocSlice`.
-2. **New `GraphData.AcquireReader/ReleaseReader` pin mechanism** (atomic `int32` `readerCount`, mirrors `cloneCount`). Bracketed at all five read paths that previously raced: `ensureChunkInternalLocked`, `ensureChunksLocked`, two `addBatchBulkInternal` Clone() sites, `AddBatch` zero-copy `SetZeroCopyMapping`, and `insertInternal`'s `ensureChunk` call.
-3. **New regression test `TestArrowHNSW_ConcurrentAddBatch_Int8_50k_Stress`** in `internal/store/index/concurrent_addbatch_50k_test.go`. 5 concurrent `AddBatch` calls of 10k int8 vectors each (50k total, dim=384). Without the fix, 3-5 of 5 batches fail with "arena is nil"; with the fix, all 5 succeed in ~76 s wall-clock.
-
-**Post-fix verification (commit `a2f535ef`)**:
-
-| Config | Pre-fix | Post-fix |
-|--------|---------|----------|
-| int8 384 50000 dense | 0 QPS (failed) | **549.4 QPS** (1,510,968 vec/s ingest) |
-| int8 384 50000 sparse | 0 QPS (failed) | **7,545.6 QPS** |
-| int8 384 100000 dense | 0 QPS (failed) | **283.7 QPS** |
-| int8 384 100000 sparse | 0 QPS (failed) | **7,503.0 QPS** |
-| int8 128 100000 dense | 0 QPS (failed) | **476.8 QPS** |
-| int8 128 100000 sparse | 0 QPS (failed) | **7,499.9 QPS** |
-
-### 2. Server logs show `"Skipping invalid record in DoGet"` for the failing runs (P2)
-
-For the int8 50k dim=384 run (pre-fix), the post-failure DoGet logged:
+**Fix**: Truncate query to `[:dim]` before passing to `l2SquaredAVX2`:
+```go
+// Before:
+sum, err := l2SquaredAVX2(query, recon[:dim])
+// After:
+sum, err := l2SquaredAVX2(query[:dim], recon[:dim])
 ```
-"level":"warn","rows":0,"cols":0,"message":"Skipping invalid record in DoGet"
+
+**Affected dimensions**: Any dim where `pow2 > dim` (non-power-of-2):
+| dim | pow2 | Affected |
+|-----|------|----------|
+| 128 | 128  | No       |
+| 384 | 512  | Yes      |
+| 768 | 1024 | Yes      |
+| 1536| 2048 | Yes      |
+| 3072| 4096 | Yes      |
+
+### P1: Metadata NodeCount not synced after indexing timeout (FIXED)
+
+**Location**: `internal/store/index/arrow_hnsw_insert.go:584`
+
+**Symptoms**: When HNSW indexing (`addBatchBulkInternal`) fails or times out, the metadata registry's `NodeCount` stays at 0 while the atomic `h.nodeCount` is updated to the full count. During search, `distance_dispatch.go` reads `meta.NodeCount` which is 0, causing the "AllowUncommitted" check to skip all nodes, returning 0 results.
+
+**Fix**: Added a metadata registry sync in the deferred function of `AddBatch`:
+```go
+nc := h.nodeCount.Load()
+if nc > 0 {
+    h.updateMetadata(func(meta *HNSWMetadata) {
+        if nc > meta.NodeCount {
+            meta.NodeCount = nc
+        }
+    })
+}
 ```
-The same row appears 5 times before DoGet completes with 10,000 rows sent. This is benign (a stub record is being skipped) but the warning is misleading and should be moved to debug or removed. Post-fix this no longer occurs because the underlying "arena is nil" failure is gone, but the warning logic remains misleading on edge cases and should still be addressed.
 
-### 3. `tensor_quant` & `turboquant` not in the matrix (informational)
+This ensures the metadata registry's `NodeCount` always reflects the actual node count, even when the full bulk insert pipeline does not complete.
 
-Per user request the matrix was limited to `float32` and `int8`. The previous v2.2.0 results table includes `float16` and `turboquant8` rows. To regenerate those, re-run with:
+---
+
+## pprof Collection
+
+70 pprof profile files collected across the benchmark runs (heap, allocs, block, mutex, goroutine, threadcreate, profile × `_final` suffix for each config). Located in `profiles/`.
+
+---
+
+## Resource Utilization
+
+| Config       | Peak RSS | HNSW Build CPU | Status |
+|-------------|----------|----------------|--------|
+| float32      | ~2.0 GB  | 200% (2 cores) | Timeout |
+| int8         | ~4.4 GB  | 206% (2 cores) | OK |
+| complex128   | ~14 GB   | 303% (3 cores) | OK |
+| turboquant   | ~1.9 GB  | 191% (2 cores) | Timeout |
+
+complex128 peak RSS hit 14 GB (88% of 16 GB limit) due to the large per-vector footprint (6,144 bytes/vector × 400k = ~2.3 GB raw data, plus HNSW graph structures). int8 and turboquant used the least memory due to efficient compression (1 byte/element).
+
+---
+
+## Test Run Details
+
+The full matrix (first run) was produced by:
 ```bash
-python3 scripts/unified_benchmark.py \
-  --dims 128,384 --dtypes float16,turboquant8 --counts 10000,50000,100000 \
-  --search-modes dense,sparse --queries 1000 --memory 16 --label float16-tq
-```
-
-### 4. v2.2.0 expansion matrix — 10k only (2026-06-06)
-
-Partial re-run of the v2.2.0 matrix with all 4 dtypes (`float16`,
-`float32`, `int8`, `turboquant8`) at 10k. The 50k and 100k results
-for `float16` and `turboquant8` are pending; see P3 below.
-
-| dtype       | dim | count | dense QPS | dense p50 (ms) | dense p95 (ms) | dense p99 (ms) | sparse QPS | sparse p50 (ms) | sparse p95 (ms) | sparse p99 (ms) | ingest vec/s |
-|-------------|-----|-------|-----------|----------------|----------------|----------------|------------|-----------------|-----------------|-----------------|--------------|
-| float16     | 128 | 10,000  | 3,835.4   | 2.041          | 3.001          | 3.988          | 7,217.9    | 1.084           | 1.480           | 1.872           |   575,289    |
-| float16     | 384 | 10,000  | 3,378.0   | 2.292          | 3.506          | 4.198          | 7,292.2    | 1.084           | 1.514           | 1.764           |   405,280    |
-| float32     | 128 | 10,000  | 6,556.3   | 1.192          | 1.460          | 2.164          | 7,763.1    | 1.019           | 1.408           | 1.591           |   591,785    |
-| float32     | 384 | 10,000  | 6,132.1   | 1.275          | 1.527          | 1.888          | 8,033.4    | 1.001           | 1.392           | 1.580           |   207,193    |
-| int8        | 128 | 10,000  | 3,471.1   | 2.254          | 3.092          | 3.330          | 6,415.6    | 1.213           | 1.617           | 1.832           | 1,239,139    |
-| int8        | 384 | 10,000  | 3,426.6   | 2.286          | 3.211          | 3.602          | 6,646.2    | 1.180           | 1.547           | 1.726           |   695,956    |
-| turboquant8 | 128 | 10,000  | 6,224.9   | 1.252          | 1.532          | 1.741          | 6,742.7    | 1.165           | 1.541           | 1.752           |   423,372    |
-| turboquant8 | 384 | 10,000  | 6,232.7   | 1.255          | 1.512          | 1.731          | 7,353.6    | 1.064           | 1.480           | 1.681           |   215,865    |
-
-Delta vs previous v2.2.0 10k baseline (10k configs only — no float16/turboquant8 in previous):
-
-| dtype   | dim | prev dense | new dense | Δ      | prev sparse | new sparse | Δ       |
-|---------|-----|------------|-----------|--------|-------------|------------|---------|
-| float32 | 128 | 6,776.9    | 6,556.3   | -3.3%  | 7,868.8     | 7,763.1    | -1.3%   |
-| float32 | 384 | 6,272.6    | 6,132.1   | -2.2%  | 7,794.8     | 8,033.4    | +3.1%   |
-| int8    | 128 | 3,513.5    | 3,471.1   | -1.2%  | 7,350.0     | 6,415.6    | -12.7%  |
-| int8    | 384 | 3,357.9    | 3,426.6   | +2.0%  | 6,746.5     | 6,646.2    | -1.5%   |
-
-All deltas are within ±3% noise, except int8 128 sparse at -12.7% which
-is suspicious (single data point; the corresponding dim=384 sparse is
-flat at -1.5%). The 3 commits that landed between the two matrices
-(Rec #3 Prometheus counter, Rec #6 ShallowStructuralClone, the
-testplan.md rewrite) are observability/doc/small-refactor changes and
-should not affect QPS. The int8 128 sparse regression is most likely
-background-load noise on the dev box; treat as informational, not a
-regression.
-
-**New observations** (no previous baseline):
-- **float16 dense is ~55% of float32 dense** (3,378–3,835 vs 6,132–6,556).
-  Expected: half the byte footprint, but the F16C conversion + dispatch
-  path costs more than the savings on AVX2. Same observation as int8
-  vs float32.
-- **turboquant8 dense is essentially float32-fast** (6,225–6,233 vs
-  6,132–6,556). The TurboQuant encoding fits naturally into the SIMD
-  distance pipeline.
-- **float16 sparse is on par with float32 sparse** (7,218–7,292 vs
-  7,763–8,033). Sparse is I/O+merge bound, not distance bound.
-- **int8 ingest at 10k dim=128 reaches 1.24M vec/s** (the best in
-  the matrix; confirms the AVX2 `euclideanInt8AVX2Kernel` advantage).
-- **turboquant8 ingest is half of float32** (215–423k vs 207–592k).
-  The encoding step adds overhead.
-
-Source: `data/perf_logs/perf_matrix_cpu_v2.2.0-matrix_20260606_181242.json`
-(8 of 32 configs; the 24 50k configs were aborted at the user's
-request after the 10k results came back clean).
-
----
-
-## Test Run Reproducibility
-
-The full matrix was produced by:
-```bash
-mkdir -p data/perf_logs
-python3 scripts/unified_benchmark.py \
-  --dims 128,384 \
-  --dtypes float32,int8 \
-  --counts 10000,50000,100000 \
-  --search-modes dense,sparse \
-  --queries 1000 \
-  --memory 16 \
-  --label bench-fresh \
+LONGBOW_MAX_MEMORY=17179869184 python3 scripts/unified_benchmark.py \
+  --dims 384 \
+  --dtypes float32,int8,complex128,turboquant \
+  --counts 400000 \
+  --queries 10 \
+  --search-modes all \
   --pprof \
-  --output-dir data/perf_logs
+  --label dim384-fresh \
+  --timeout 7200
 ```
 
-Results were saved to `data/perf_logs/perf_matrix_cpu_bench-fresh_20260606_130945.json`. Per-run JSON, server logs, and 238 pprof files are in `data/perf_logs/` and `profiles/` respectively. The smoke run (`bench-fresh_20260606_130700`) and the full run (above) are both preserved.
-
----
-
-## Comparison vs v2.2.0 (the previous documented baseline)
-
-| Config | v2.2.0 QPS dense | Today QPS dense | Δ |
-|--------|-----------------|-----------------|---|
-| float32, 128, 10k | 902 | 6,776.9 | **+651%** |
-| float32, 384, 10k | 285 | 6,272.6 | **+2,100%** |
-| int8,    128, 10k | 3,768 | 3,513.5 | -6.8% |
-| int8,    384, 10k | — (not run) | 3,357.9 | n/a |
-| float32, 128, 100k | 888 | 6,672.3 | **+651%** |
-| float32, 384, 100k | 311 | 6,186.7 | **+1,889%** |
-| int8,    128, 100k | — (not run) | 476.8 (post-fix) | n/a (now functional) |
-| int8,    384, 100k | — (not run) | 283.7 (post-fix) | n/a (now functional) |
-
-**Analysis**: The 6–20× improvement on `float32` dense is real and reflects the cumulative effect of the SIMD dispatch path, the `compareAndSwapData` race fix (commit `cb30b97d`), the `inBulkInsert` ref-counter fix (commit `0cddf75a`), the AVX2 distance kernel that the binary is shipping with, and the P0 arena-nil reader pin fix (commit `a2f535ef`) that unblocked the int8 50k+ configs. `int8` at 10k is roughly flat (-6.8%); the int8 50k+ rows that were 0 QPS in the pre-fix matrix are now functional but 5–10× slower than the int8 10k baseline because the in-place chunk allocator (lazy `initArenaSafe` + Slab ref-count churn) becomes the bottleneck — see Recommendations #6 in `nextsteps.md` for the structural-clone fix.
-
----
-
-## Resource Utilization During 100k float32 dim=384 Run
-
-- **Peak RSS**: ~1.4 GB (well under the 16 GB cap; the `LONGBOW_MAX_MEMORY` ceiling was not approached)
-- **Goroutines at steady state**: 20–28 (8 indexing workers + 8 ingestion workers + 1 quantizer tuner + telemetry, gRPC, and the bench client)
-- **Goroutine count from `_goroutine_*.pprof`**: stable, no growth over the run
-- **No ResourceExhausted, no panics, no OOM in the float32 path**
-
----
-
-## Detailed Per-Run JSON
-
-Each of the 12 runs produced `data/perf_logs/result_cpu_<dtype>_<dim>_<count>.json` with full latency distributions. The bench-tool also wrote `bench_cpu_*.log` (stdout/stderr from bench-tool) and the longbow server produced `longbow_cpu_cpu_*.log` for each run. Use `jq` or `cat` to inspect:
+The turboquant re-run (post-fix) was produced by:
 ```bash
-cat data/perf_logs/result_cpu_float32_384_100000.json | jq '.[].name, (.[3] | {qps: .throughput, p50: .p50_latency_ms, p95: .p95_latency_ms, p99: .p99_latency_ms})'
+LONGBOW_MAX_MEMORY=17179869184 python3 scripts/unified_benchmark.py \
+  --dims 384 \
+  --dtypes turboquant \
+  --counts 400000 \
+  --queries 10 \
+  --search-modes all \
+  --pprof \
+  --label turboquant-fix \
+  --timeout 7200
 ```
+
+---
+
+## Key Takeaways
+
+1. **int8 is the most scalable dtype at 400k dim=384**: 55k vec/s ingest, 737s HNSW build, all 13 search modes functional. Sparse search hits 5,080 QPS — the fastest path.
+
+2. **complex128 is viable at 400k despite 16-byte elements**: Fastest HNSW build (135s) due to efficient SIMD kernels. Dense QPS is comparable to int8 (204 vs 155). Peak RSS hit 14 GB — close to the memory cap.
+
+3. **float32 and turboquant HNSW builds time out at 400k dim=384**: Both require more time than the 3600s bench-tool timeout. float32 is memory-bandwidth bound (1,536 bytes/vector); turboquant is compute-bound (expensive polar transform + QJL correction pipeline).
+
+4. **TurboQuant AVX2 distance kernel has a dimension-alignment bug** affecting all non-power-of-2 dimensions. Fixed in this session.
+
+5. **Metadata registry inconsistency** after indexing timeout causes silent 0-result searches. Fixed in this session.

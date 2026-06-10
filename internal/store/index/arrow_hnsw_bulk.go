@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"os"
 	"slices"
 	"strconv"
 
@@ -23,7 +24,14 @@ import (
 )
 
 // BulkInsertThreshold defines the minimum batch size to trigger parallel bulk insert
-const BulkInsertThreshold = 256
+var BulkInsertThreshold = func() int {
+	if v := os.Getenv("LONGBOW_HNSW_BULK_INSERT_THRESHOLD"); v != "" {
+		if t, err := strconv.Atoi(v); err == nil && t > 0 {
+			return t
+		}
+	}
+	return 256
+}()
 
 // ShardedLockCount is the number of shards for node locking.
 const ShardedLockCount = 131072
@@ -607,6 +615,24 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 		topL = batchMaxLevel
 	}
 
+	// Pre-decode TQ vectors to float32 for fast construction
+	if h.config.DataType == types.VectorTypeTQ && h.tqCompute != nil {
+		dim := int(h.dims.Load())
+		totalIDs := int(startID + uint32(n))
+		cache := make([]float32, totalIDs*dim)
+		for _, node := range activeNodes {
+			tqCode, err := h.tqCompute.getTQBytes(node.id, nil, math.MaxUint64)
+			if err == nil && len(tqCode) > 0 {
+				decoded, err := h.tqCompute.encoder.Decode(tqCode)
+				if err == nil && len(decoded) >= dim {
+					copy(cache[int(node.id)*dim:(int(node.id)+1)*dim], decoded[:dim])
+				}
+			}
+		}
+		h.tqDecodeCache.Store(&tqDecodeCache{data: cache})
+		defer func() { h.tqDecodeCache.Store(nil) }()
+	}
+
 	// Current entry points for remaining active nodes. Initially global EP.
 	currentEps := make([]uint32, numRemaining)
 	for i := range currentEps {
@@ -645,10 +671,11 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			subBatchSize = len(activeIndices) // Higher layers are small, process in one go
 		} else {
 			// Adaptive subBatchSize for layer 0 to prevent O(N^2) COW clones
-			existingNodes := int(h.nodeCount.Load())
-			if existingNodes < 10000 {
+			// Use existingNodes + n because nodeCount defer-update hasn't run yet
+			totalAfterBatch := int(h.nodeCount.Load()) + n
+			if totalAfterBatch < 10000 {
 				subBatchSize = 64
-			} else if existingNodes < 100000 {
+			} else if totalAfterBatch < 100000 {
 				subBatchSize = 1024
 			} else {
 				subBatchSize = 4096

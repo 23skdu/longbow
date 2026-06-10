@@ -11,6 +11,7 @@ import (
 	"math/rand"
 	"os"
 	"sort"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -440,7 +441,11 @@ func main() {
 
 	log.Println("Waiting for background indexing to complete...")
 	indexingTimeout := 3600 * time.Second
-	if *scale >= 50000 && (*dtype == "complex128" || *dtype == "float64" || *dtype == "int64" || *dtype == "uint64") {
+	if v := os.Getenv("LONGBOW_BENCH_HNSW_TIMEOUT"); v != "" {
+		if t, err := strconv.ParseInt(v, 10, 64); err == nil && t > 0 {
+			indexingTimeout = time.Duration(t) * time.Second
+		}
+	} else if *scale >= 50000 && (*dtype == "complex128" || *dtype == "float64" || *dtype == "int64" || *dtype == "uint64") {
 		indexingTimeout = 14400 * time.Second
 	}
 	waitCtx, waitCancel := context.WithTimeout(context.Background(), indexingTimeout)

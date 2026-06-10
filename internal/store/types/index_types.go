@@ -1,7 +1,9 @@
 package types
 
 import (
+	"math"
 	"os"
+	"strconv"
 	"time"
 
 	"context"
@@ -163,7 +165,7 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		PQTrainingThreshold:     5000,
 		SearchLayerSampleRate:   0.24,
 		TurboQuantEnabled:       false,
-		TurboQuantBits:          8,
+		TurboQuantBits:          4,
 		SelectionHeuristicLimit: 400,
 		Metric:                  core.MetricEuclidean,
 		ParallelSearch:          DefaultParallelSearchConfig(),
@@ -176,6 +178,30 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		config.M = 16
 		config.MMax = 32
 		config.MMax0 = 32
+	}
+
+	if v := os.Getenv("LONGBOW_HNSW_EF_CONSTRUCTION"); v != "" {
+		if ef, err := strconv.Atoi(v); err == nil && ef > 0 && ef <= math.MaxInt32 {
+			config.EfConstruction = int32(ef)
+		}
+	}
+
+	if v := os.Getenv("LONGBOW_HNSW_M"); v != "" {
+		if m, err := strconv.Atoi(v); err == nil && m > 0 {
+			config.M = m
+		}
+	}
+
+	if v := os.Getenv("LONGBOW_HNSW_MMAX"); v != "" {
+		if mm, err := strconv.Atoi(v); err == nil && mm > 0 {
+			config.MMax = mm
+		}
+	}
+
+	if v := os.Getenv("LONGBOW_HNSW_MMAX0"); v != "" {
+		if mm0, err := strconv.Atoi(v); err == nil && mm0 > 0 {
+			config.MMax0 = mm0
+		}
 	}
 
 	if os.Getenv("LONGBOW_USE_DISK") == "1" {

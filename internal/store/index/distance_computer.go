@@ -103,6 +103,17 @@ type tqComputer struct {
 }
 
 func (c *tqComputer) ComputeSingle(id uint32) (float32, error) {
+	if p := c.h.tqDecodeCache.Load(); p != nil {
+		dim := int(c.h.dims.Load())
+		if dim > 0 && len(c.rotatedQuery) >= dim {
+			offset := int(id) * dim
+			if offset+dim <= len(p.data) {
+				v := p.data[offset : offset+dim]
+				return c.h.distFunc(c.rotatedQuery[:dim], v)
+			}
+		}
+		return c.h.tqCompute.DistanceDirect(id, c.rotatedQuery, c.diskGraph, c.maxGen)
+	}
 	return c.h.tqCompute.DistanceDirect(id, c.rotatedQuery, c.diskGraph, c.maxGen)
 }
 

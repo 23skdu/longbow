@@ -193,7 +193,6 @@ func (h *ArrowHNSW) ensureChunksLocked(startCID, endCID int, dims int) (*types.G
 	// and cause "arena is nil" errors in our EnsureChunk loop.
 	if data != nil {
 		data.AcquireReader()
-		defer data.ReleaseReader()
 	}
 	needsGrow := false
 	if data == nil || (endCID+1)*types.ChunkSize > data.Capacity {
@@ -205,10 +204,18 @@ func (h *ArrowHNSW) ensureChunksLocked(startCID, endCID int, dims int) (*types.G
 		if data != nil && newCap < data.Capacity*2 {
 			newCap = data.Capacity * 2
 		}
+		// Release reader BEFORE growInternal to avoid self-deadlock:
+		// compareAndSwapData → oldData.Release() spins on readerCount > 0,
+		// but this goroutine is holding a reader on that same oldData.
+		if data != nil {
+			data.ReleaseReader()
+		}
 		if err := h.growInternal(newCap, dims); err != nil {
 			return nil, err
 		}
 		data = h.data.Load()
+	} else if data != nil {
+		defer data.ReleaseReader()
 	}
 
 	// Ensure all chunks are allocated IN-PLACE

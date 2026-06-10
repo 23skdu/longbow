@@ -597,6 +597,17 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			}
 			h.commitCond.Broadcast()
 			h.commitMu.Unlock()
+			// Ensure metadata registry stays in sync with nodeCount even if
+			// addBatchBulkInternal failed or timed out. Search reads NodeCount
+			// from the metadata registry, so an inconsistency produces 0 results.
+			nc := h.nodeCount.Load()
+			if nc > 0 {
+				h.updateMetadata(func(meta *HNSWMetadata) {
+					if nc > meta.NodeCount {
+						meta.NodeCount = nc
+					}
+				})
+			}
 		}
 	}()
 

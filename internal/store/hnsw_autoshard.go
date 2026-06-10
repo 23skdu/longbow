@@ -57,8 +57,10 @@ type AutoShardingIndex struct {
 	sharded      bool
 	interimIndex VectorIndex // NEW: Used during migration to handle new writes
 
-	migrating atomic.Bool    // Added migrating field
-	waitGroup sync.WaitGroup // Track active AddBatch ops on old index
+	migrating       atomic.Bool    // Added migrating field
+	waitGroup       sync.WaitGroup // Track active AddBatch ops on old index
+	migrationPause  chan struct{}  // Blocks ingestion AddBatch during migration
+	migrationPauseMu sync.Mutex    // Protects migrationPause
 }
 
 // NewAutoShardingIndex creates a new auto-sharding index.
@@ -168,6 +170,21 @@ func (idx *AutoShardingIndex) AddByRecord(ctx context.Context, rec arrow.RecordB
 	return id, err
 }
 
+// waitForMigrationPause blocks until the in-progress migration finishes,
+// or the context is cancelled. This prevents ingestion workers from contending
+// on shard locks with the migration loop.
+func (idx *AutoShardingIndex) waitForMigrationPause(ctx context.Context) {
+	idx.migrationPauseMu.Lock()
+	ch := idx.migrationPause
+	idx.migrationPauseMu.Unlock()
+	if ch != nil {
+		select {
+		case <-ch:
+		case <-ctx.Done():
+		}
+	}
+}
+
 // AddBatch adds multiple vectors from Arrow record batches efficiently.
 func (idx *AutoShardingIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	idx.mu.RLock()
@@ -184,7 +201,10 @@ func (idx *AutoShardingIndex) AddBatch(ctx context.Context, recs []arrow.RecordB
 	}
 
 	if interim != nil {
-		// During migration, add to the NEW index directly
+		// During migration, wait for it to finish before adding to the interim index.
+		// This prevents lock contention between the migration loop and ingestion workers
+		// on the new sharded index's per-shard locks.
+		idx.waitForMigrationPause(ctx)
 		return interim.AddBatch(ctx, recs, rowIdxs, batchIdxs)
 	}
 
@@ -257,8 +277,23 @@ func (idx *AutoShardingIndex) checkMigrationPressure() {
 func (idx *AutoShardingIndex) migrateToSharded() {
 	start := time.Now()
 
-	// Robust recovery to prevent background migration failures from crashing the server
+	// Use a context timeout to prevent the migration from leaving the dataset
+	// stuck in BUSY state forever. If the migration doesn't complete within
+	// this window, the deferred cleanup (migrating.Store(false), MigrationFinished)
+	// will still run via the function return.
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Minute)
+	defer cancel()
+
+	// Robust recovery + cleanup: ensure the pause channel is always closed so that
+	// waiting ingestion workers are not stuck forever, even on panic.
 	defer func() {
+		idx.migrationPauseMu.Lock()
+		if idx.migrationPause != nil {
+			close(idx.migrationPause)
+			idx.migrationPause = nil
+		}
+		idx.migrationPauseMu.Unlock()
+
 		if r := recover(); r != nil {
 			idx.dataset.Logger.Error().
 				Interface("panic", r).
@@ -342,6 +377,13 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	idx.interimIndex = newIndex
 	idx.mu.Unlock()
 
+	// Signal ingestion workers to pause: from here until migration completes, AddBatch
+	// calls from ingestion will block, avoiding lock contention with the migration loop
+	// on the new sharded index's per-shard locks.
+	idx.migrationPauseMu.Lock()
+	idx.migrationPause = make(chan struct{})
+	idx.migrationPauseMu.Unlock()
+
 	// Transition monolithic index to off-heap shadow mode to free up heap for the new index
 	idx.mu.Lock()
 	if err := oldIndex.RelocateToOffHeap(); err != nil {
@@ -357,6 +399,14 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	lastMigrated := 0
 
 	for {
+		if ctx.Err() != nil {
+			idx.dataset.Logger.Warn().
+				Err(ctx.Err()).
+				Int("migrated", lastMigrated).
+				Msg("Migration context cancelled, aborting")
+			break
+		}
+
 		// 1. Memory Check (Heap + Off-Heap)
 		var m runtime.MemStats
 		runtime.ReadMemStats(&m)
@@ -443,7 +493,7 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 
 		// 1b. Migration Lane Throttling
 		if idx.dataset.Admission != nil {
-			migrationDeadline := time.Now().Add(30 * time.Second)
+			migrationDeadline := time.Now().Add(3 * time.Second)
 			for {
 				if err := idx.dataset.Admission.AdmitMigration(context.Background()); err == nil {
 					break
@@ -586,8 +636,21 @@ func (idx *AutoShardingIndex) migrateToSharded() {
 	idx.dataset.dataMu.RUnlock()
 	idx.mu.Unlock()
 
-	// Wait for any remaining AddBatch operations on oldIndex to finish before closing
-	idx.waitGroup.Wait()
+	// Wait for any remaining AddBatch operations on oldIndex to finish before closing.
+	// Use a timeout so a hung AddBatch (e.g. blocked in ParallelFor) does not permanently
+	// block migration. If the wait times out we close the old index anyway — the deferred
+	// waitGroup.Done() will still run eventually and the old index's Close is safe to call
+	// concurrently with a running AddBatch because ArrowHNSW.Close acquires h.closeMu.
+	wgDone := make(chan struct{})
+	go func() {
+		idx.waitGroup.Wait()
+		close(wgDone)
+	}()
+	select {
+	case <-wgDone:
+	case <-time.After(30 * time.Second):
+		idx.dataset.Logger.Warn().Msg("Migration waitGroup.Wait timed out after 30s — closing old index without waiting")
+	}
 
 	// Close old index to release all remaining resources
 	_ = oldIndex.Close()

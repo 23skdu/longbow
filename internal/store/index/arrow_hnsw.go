@@ -34,6 +34,12 @@ type HNSWMetadata struct {
 	Generation uint64
 }
 
+// tqDecodeCache holds pre-decoded TQ vectors for fast construction during batch insert.
+// Stored via atomic.Pointer to allow race-free read from search goroutines.
+type tqDecodeCache struct {
+	data []float32
+}
+
 // ArrowHNSW implements a Hierarchical Navigable Small World (HNSW) index
 // optimized for Apache Arrow data structures with zero-copy operations.
 type ArrowHNSW struct {
@@ -144,8 +150,9 @@ type ArrowHNSW struct {
 
 	// Graph Navigation
 	navigator  *GraphNavigator
-	tqCompute  *TurboQuantCompute
-	gpuTrained atomic.Bool
+	tqCompute     *TurboQuantCompute
+	tqDecodeCache atomic.Pointer[tqDecodeCache] // pre-decoded TQ vectors (non-nil during batch insert for fast construction)
+	gpuTrained    atomic.Bool
 	topo       *memory.NUMATopology
 	efTuner    *PIDTuner
 

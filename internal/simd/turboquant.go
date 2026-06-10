@@ -2,7 +2,25 @@ package simd
 
 import (
 	"math"
+	"sync"
 )
+
+// tqScratchPool provides reusable buffers for TurboQuant distance computation.
+// Each goroutine gets its own buffer pair, eliminating per-call heap allocations.
+// Maximum pow2 = 4096 (next power of 2 for dim=3072), so buffer caps handle the max.
+var tqScratchPool = sync.Pool{
+	New: func() any {
+		return &tqScratchBuf{
+			recon:   make([]float32, 4096),
+			indices: make([]byte, 4096),
+		}
+	},
+}
+
+type tqScratchBuf struct {
+	recon   []float32
+	indices []byte
+}
 
 // TurboQuantDistanceFunc calculates the distance between a query and a TQ-encoded vector.
 type TurboQuantDistanceFunc func(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error)
@@ -45,6 +63,12 @@ func init() {
 
 // TurboQuantDistanceNEON is the NEON-optimized version of TQ distance.
 func TurboQuantDistanceNEON(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
+	buf := tqScratchPool.Get().(*tqScratchBuf)
+	defer tqScratchPool.Put(buf)
+	return turboQuantDistanceNEONScratch(query, tqData, dim, pow2, bitsPerAngle, buf.recon, buf.indices)
+}
+
+func turboQuantDistanceNEONScratch(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int, recon []float32, qIndices []byte) (float32, error) {
 	radius := math.Float32frombits(uint32(tqData[0]) | uint32(tqData[1])<<8 | uint32(tqData[2])<<16 | uint32(tqData[3])<<24)
 
 	angleCount := pow2 - 1
@@ -52,9 +76,11 @@ func TurboQuantDistanceNEON(query []float32, tqData []byte, dim int, pow2 int, b
 	packedAngles := tqData[4 : 4+angleBytes]
 	qjlBits := tqData[4+angleBytes:]
 
-	// 1. Unpack all angles into bytes first (specialized for bit depths)
-	// We'll use a temporary byte buffer to store raw quantized indices
-	qIndices := make([]byte, angleCount)
+	if cap(qIndices) < angleCount {
+		qIndices = make([]byte, angleCount)
+	}
+	qIndices = qIndices[:angleCount]
+
 	switch bitsPerAngle {
 	case 8:
 		copy(qIndices, packedAngles)
@@ -75,14 +101,14 @@ func TurboQuantDistanceNEON(query []float32, tqData []byte, dim int, pow2 int, b
 			qIndices[4*i+2] = (b >> 4) & 0x03
 			qIndices[4*i+3] = (b >> 6) & 0x03
 		}
-		// remainder omitted for brevity in this optimized path
 	default:
-		// Fallback for non-specialized bit depths
 		return TurboQuantDistanceGeneric(query, tqData, dim, pow2, bitsPerAngle)
 	}
 
-	// 2. Reconstruction (Recursive Polar) with Lookup Tables
-	recon := make([]float32, pow2)
+	if cap(recon) < pow2 {
+		recon = make([]float32, pow2)
+	}
+	recon = recon[:pow2]
 	recon[0] = radius
 
 	var lookup []float32
@@ -99,7 +125,6 @@ func TurboQuantDistanceNEON(query []float32, tqData []byte, dim int, pow2 int, b
 	angleOffset := angleCount
 	for currentLevelSize < pow2 {
 		angleOffset -= currentLevelSize
-		// Unrolled reconstruction loop using lookup table
 		for i := currentLevelSize - 1; i >= 0; i-- {
 			r := recon[i]
 			q := qIndices[angleOffset+i]
@@ -111,7 +136,6 @@ func TurboQuantDistanceNEON(query []float32, tqData []byte, dim int, pow2 int, b
 		currentLevelSize *= 2
 	}
 
-	// 3. Calculate L2 distance with QJL correction
 	correction := radius / float32(math.Sqrt(float64(pow2))) * 0.1
 	sum := l2SquaredTQCorrectionGeneric(query, recon, qjlBits, correction, dim)
 
@@ -130,6 +154,14 @@ func TurboQuantDistanceAVX512(query []float32, tqData []byte, dim int, pow2 int,
 }
 
 func TurboQuantDistanceAVX2(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
+	buf := tqScratchPool.Get().(*tqScratchBuf)
+	defer tqScratchPool.Put(buf)
+	return turboQuantDistanceAVX2Scratch(query, tqData, dim, pow2, bitsPerAngle, buf.recon, buf.indices)
+}
+
+// turboQuantDistanceAVX2Scratch is the allocation-free variant that uses caller-provided scratch buffers.
+// Pass nil for scratch buffers to allocate on first call (buffers are grown as needed).
+func turboQuantDistanceAVX2Scratch(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int, recon []float32, qIndices []byte) (float32, error) {
 	radius := math.Float32frombits(uint32(tqData[0]) | uint32(tqData[1])<<8 | uint32(tqData[2])<<16 | uint32(tqData[3])<<24)
 
 	angleCount := pow2 - 1
@@ -137,8 +169,13 @@ func TurboQuantDistanceAVX2(query []float32, tqData []byte, dim int, pow2 int, b
 	packedAngles := tqData[4 : 4+angleBytes]
 	qjlBits := tqData[4+angleBytes:]
 
+	// Reuse scratch buffers, grow if needed
+	if cap(qIndices) < angleCount {
+		qIndices = make([]byte, angleCount)
+	}
+	qIndices = qIndices[:angleCount]
+
 	// Unpack angles into byte indices
-	qIndices := make([]byte, angleCount)
 	switch bitsPerAngle {
 	case 8:
 		copy(qIndices, packedAngles)
@@ -174,7 +211,10 @@ func TurboQuantDistanceAVX2(query []float32, tqData []byte, dim int, pow2 int, b
 		lookup = tqLookup8
 	}
 
-	recon := make([]float32, pow2)
+	if cap(recon) < pow2 {
+		recon = make([]float32, pow2)
+	}
+	recon = recon[:pow2]
 	recon[0] = radius
 
 	currentLevelSize := 1
@@ -203,7 +243,7 @@ func TurboQuantDistanceAVX2(query []float32, tqData []byte, dim int, pow2 int, b
 	}
 
 	// Use AVX2 float32 L2 kernel on the corrected reconstruction
-	sum, err := l2SquaredAVX2(query, recon[:dim])
+	sum, err := l2SquaredAVX2(query[:dim], recon[:dim])
 	if err != nil {
 		return 0, err
 	}

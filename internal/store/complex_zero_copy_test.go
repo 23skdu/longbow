@@ -145,3 +145,31 @@ func TestArrowHNSW_Complex_FlattenedQuery(t *testing.T) {
 	require.Equal(t, uint32(0), uint32(results[0].ID))
 	require.InDelta(t, 0.0, results[0].Dist, 1e-5)
 }
+
+func TestArrowHNSW_Complex_Float64Query(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	dims := 4 // 4 complex numbers
+	config := DefaultArrowHNSWConfig()
+	config.Dims = dims
+	config.DataType = lbtypes.VectorTypeComplex128
+	config.Metric = "l2"
+
+	idx := NewArrowHNSW(nil, &config, nil)
+
+	// Create test vector
+	vec := []complex128{1 + 1i, 2 + 2i, 3 + 3i, 4 + 4i}
+	err := idx.AddBatchBulk(context.Background(), 0, 1, [][]complex128{vec})
+	require.NoError(t, err)
+
+	// Flattened float64 query: 1, 1, 2, 2, 3, 3, 4, 4
+	flatQuery := []float64{1, 1, 2, 2, 3, 3, 4, 4}
+
+	results, err := idx.Search(context.Background(), flatQuery, 1, nil)
+	require.NoError(t, err)
+	require.Len(t, results, 1)
+	require.Equal(t, uint32(0), uint32(results[0].ID))
+	require.InDelta(t, 0.0, results[0].Dist, 1e-5)
+}
+

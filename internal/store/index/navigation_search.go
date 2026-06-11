@@ -848,6 +848,25 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 		if searchCtx != nil {
 			maxGen = searchCtx.MaxGeneration
 		}
+		if data.Type == types.VectorTypeComplex128 {
+			physDims := len(q)
+			logDims := physDims / 2
+			if searchCtx != nil {
+				if cap(searchCtx.queryC128) < logDims {
+					searchCtx.queryC128 = make([]complex128, logDims)
+				}
+				searchCtx.queryC128 = searchCtx.queryC128[:logDims]
+				for i := 0; i < logDims; i++ {
+					searchCtx.queryC128[i] = complex(q[2*i], q[2*i+1])
+				}
+				return &complex128Computer{data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen}
+			}
+			qC128 := make([]complex128, logDims)
+			for i := 0; i < logDims; i++ {
+				qC128[i] = complex(q[2*i], q[2*i+1])
+			}
+			return &complex128Computer{data: data, q: qC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen}
+		}
 		return &float64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []float16.Num:
 		var dg *DiskGraph

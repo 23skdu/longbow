@@ -1,7 +1,6 @@
 package types
 
 import (
-	"math"
 	"os"
 	"strconv"
 	"time"
@@ -181,7 +180,7 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 	}
 
 	if v := os.Getenv("LONGBOW_HNSW_EF_CONSTRUCTION"); v != "" {
-		if ef, err := strconv.Atoi(v); err == nil && ef > 0 && ef <= math.MaxInt32 {
+		if ef, err := strconv.ParseInt(v, 10, 32); err == nil && ef > 0 {
 			config.EfConstruction = int32(ef)
 		}
 	}

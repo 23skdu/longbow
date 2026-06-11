@@ -7,22 +7,24 @@ Based on the 2026-06-10 400k-scale benchmark matrix (dim=384, 4 dtypes, 13 searc
 The self-deadlock fix in `ensureChunksLocked` was the enabler. Previously float32 and turboquant both hit the 3600s bench-tool timeout. Now:
 | dtype       | HNSW Build | Was       | Dense QPS | Sparse QPS |
 |-------------|-----------|-----------|-----------|------------|
-| float32     | **342s**  | >3600s    | 1,451.3   | 5,372.5    |
-| int8        | **331s**  | 737s      | 160.5     | 4,309.7    |
-| complex128  | **670s**  | 135s      | 87.5      | 4,226.7    |
-| turboquant  | **400.5s**| >3600s    | 498.2     | 4,194.3    |
+| float32     | **714s**† | >3600s    | 600.7†    | 4,410.4    |
+| int8        | **349s**  | 737s      | 162.0     | 5,177.2    |
+| complex128  | **709.5s**| 135s      | 56.6†     | 4,249.1    |
+| turboquant  | **571.5s**†| >3600s   | 475.2†    | 5,398.5    |
+
+† These results use default `MMax0=64`. The 2026-06-10 baseline used `MMax0=16`. See P6.
 
 ## Observations
 
-1. **float32 is now the fastest dense-search dtype at 400k**: 1,451 QPS at 4.40ms p50 — 9× faster than int8 dense (161 QPS). The 342s build time with MMax0=16 is acceptable. float32 benefits from direct SIMD L2 distance without conversion overhead.
+1. **float32 is the fastest dense-search dtype at 400k (with MMax0=16)**: With MMax0=16 the baseline achieved 1,451 QPS at 4.40ms. With default MMax0=64, dense QPS drops to 601 due to denser graph traversal. Build time is 714s (MMax0=64) vs 342s (MMax0=16). float32 benefits from direct SIMD L2 distance without conversion overhead.
 
-2. **turboquant is the most versatile dtype**: Second-fastest dense search (498 QPS), best hybrid/GraphRAG performance (>750 QPS), 4-bit compression (192 bytes/vector). The 400.5s build is a dramatic improvement from >3600s.
+2. **turboquant is the most versatile dtype**: Second-fastest dense search (475 QPS at MMax0=64), best hybrid/GraphRAG performance (>750 QPS), 4-bit compression (192 bytes/vector). The 571s build (MMax0=64) is a dramatic improvement from >3600s.
 
-3. **complex128 is viable but memory-bound**: 14 GB RSS at 400k (88% of 16 GB limit). The 670s build time (M=32) is slower than the previous 135s (M=16). ByID is anomalously slow at 3.8 QPS.
+3. **complex128 is viable but memory-bound**: 16 GB RSS at 400k (100% of 16 GB limit) with MMax0=64. The 709.5s build time is acceptable. **ByID is now fast at 1,680 QPS** (P3 fix resolved the 3.8 QPS anomaly).
 
-4. **Sparse search dominates across all dtypes**: 4,194–5,373 QPS — an order of magnitude faster than dense. Sparse uses the inverted index and does not traverse the HNSW graph.
+4. **Sparse search dominates across all dtypes**: 4,194–5,398 QPS — an order of magnitude faster than dense. Sparse uses the inverted index and does not traverse the HNSW graph.
 
-5. **Filtered search is the slowest path**: 15–115 QPS depending on filter type, across all dtypes. Filter evaluation overhead dominates.
+5. **Filtered search is the slowest path**: 4–123 QPS depending on filter type, across all dtypes. FilteredBool on float32 is the single worst mode at 3.9 QPS (1.6s P50).
 
 ## Issues Found
 
@@ -50,23 +52,38 @@ The self-deadlock fix in `ensureChunksLocked` was the enabler. Previously float3
 
 **Impact**: When HNSW indexing timed out, metadata registry's `NodeCount` stayed at 0 while `h.nodeCount` was updated, producing silent 0-result searches. Fixed with `updateMetadata` call in deferred function.
 
-### P3 — complex128 ByID anomalously slow at 400k
+### P3 — complex128 ByID anomalously slow at 400k (FIXED & CONFIRMED)
 
-**File**: N/A (needs investigation)
+**File**: `internal/store/index/navigation_search.go`
 
-**Impact**: `Search_ByID` on complex128 returns only 3.8 QPS at p50=2,141ms. For comparison, int8 ByID hits 2,100 QPS at 3.27ms. The 4× element size (128-bit complex vs 8-bit int8) combined with Arrow columnar scan overhead creates a bottleneck.
+**Impact**: `Search_ByID` on complex128 previously returned only 3.8 QPS at p50=2,141ms because `[]float64` query vectors (physically extracted by Arrow) on `complex128` datasets were not mapped to the optimized `complex128Computer`. This caused a fallback to slow, non-cached disk lookups for every visited node.
 
-**Mitigation**: Likely needs an index or bloom filter for 128-bit key lookups instead of full column scan.
+**Fix**: Modified `resolveHNSWComputer` to intercept `[]float64` query vectors for `types.VectorTypeComplex128` indexes, converting them to `[]complex128` and returning `complex128Computer`. This restores the high-performance SIMD search path.
+
+**Verification**: 2026-06-11 benchmark confirms ByID at 1,680 QPS (P50=3.12ms).
 
 ### P4 — complex128 memory pressure at 400k
 
-**Impact**: 14 GB RSS (88% of 16 GB limit) with M=32. Higher memory limit or M=8 may be needed for 1M+ scales.
+**Impact**: 14 GB RSS (88% of 16 GB limit) with M=32, MMax0=16. At MMax0=64, RSS hit 16 GB (100% of 16 GB limit), triggering GC tuning and ingestion throttling. Higher memory limit or M=8 may be needed for 1M+ scales.
+
+### P5 — Temporal index ingestion bottleneck at high scale
+
+**File**: `internal/store/temporal_search.go`
+
+**Impact**: Ingestion of large batches (e.g. 500k vectors) triggers a slow step warning for temporal indexing (`applyBatchToMemory trace: slow step`), taking ~5.2s.
+
+**Root cause**: `TemporalIndex.AddBatch` sequentially processes vectors and calls `Insert` one by one on `TemporalTree` and `SegmentTree`, resulting in 500k sequential lock acquisitions/releases and repeated slice growth/array copying.
+
+**Mitigation/Suggestions**:
+1. **Bulk Insertion API**: Implement `InsertBatch` in `TemporalTree` and `SegmentTree` that locks once, pre-sorts elements by timestamp, pre-sizes internal slices, and performs batch insertions to avoid lock overhead and repeated allocations.
+2. **Parallelized Norm/Metadata Processing**: Parallelize vector norm calculations inside `AddBatch` before acquiring any locks.
+3. **Asynchronous Temporal Ingestion**: Offload the temporal index updates to a background worker queue, similar to HNSW graph updates, so it does not block the primary ingestion worker thread.
 
 ## Recommendations (in order) — Updated 2026-06-10
 
 1. **✅ FIXED — Migration self-deadlock in ensureChunksLocked**. Root cause of all 400k build timeouts. All 4 dtypes now complete within 400–670s.
 
-2. **🟡 INVESTIGATE — complex128 ByID slowdown at 400k**. 3.8 QPS vs 2,100 QPS for int8. Likely Arrow column scan overhead with 128-bit wide elements. Consider indexing.
+2. **✅ RESOLVED — complex128 ByID slowdown at 400k**. Fixed routing of `[]float64` queries on `complex128` dataset to return optimized `complex128Computer` instead of falling back to slow disk/fallback path. Restores QPS from 3.8 to high-performance SIMD search.
 
 3. **✅ RESOLVED — float32 HNSW build at 400k dim=384**. 342s with MMax0=16, efConstruction=200. For even faster builds: `LONGBOW_HNSW_EF_CONSTRUCTION=100` + `LONGBOW_HNSW_M=16` yields 51.5s (at potential recall cost).
 
@@ -83,18 +100,116 @@ The self-deadlock fix in `ensureChunksLocked` was the enabler. Previously float3
 
 8. **⏳ UPDATE — complex128 memory analysis**. If targeting 1M+ scales with complex128, M=8 and/or 32 GB+ memory limit is needed.
 
-## Scale Sweep Results (all dtypes, dim=384, MMax0=16)
+9. **✅ RESOLVED — Temporal indexing bottlenecks (batch insertion APIs)**. Implemented `InsertBatch` on `TemporalTree` (sort + single lock + cursor-based) and `SegmentTree` (single lock). Also parallelized norm computation in `AddBatch` and added async ingestion worker (`SetAsyncIngestion`). Slow step warnings reduced from 500k individual lock operations to 1 batch per call.
 
-| Count | dtype | HNSW Build | Dense QPS | Notes |
-|-------|-------|-----------|-----------|-------|
-| 400k  | float32     | **342s** (ef=200, M=32) | 1,451 | ✅ ef=100/M=16 → 51.5s |
-| 400k  | int8        | **331s** (ef=200, M=32) | 161 | |
-| 400k  | complex128  | **670s** (ef=200, M=32) | 88 | ⚠️ 14GB RSS, ByID 3.8 QPS |
-| 400k  | turboquant  | **400.5s** (ef=200, M=32) | 498 | ✅ Best hybrid/GraphRAG |
-| 100k  | turboquant  | **43.5s** (ef=400) | 143 | ✅ All 13 modes |
-| 50k   | turboquant  | **27.5s** (ef=400) | 818 | All 13 modes |
+10. **🟡 BUG — Benchmark script MMax0 mismatch (`scripts/unified_benchmark.py`)**. Sets `LONGBOW_MAX_M0=16` but not `LONGBOW_HNSW_MMAX0=16`. This causes MMax0 to default to 64, producing 2× longer builds and lower QPS. Add `LONGBOW_HNSW_MMAX0=16` alongside `LONGBOW_MAX_M0=16`.
 
-**Key finding**: The self-deadlock in `ensureChunksLocked` was the root cause of ALL build timeouts at 400k. With MMax0=16 and efConstruction=200, all 4 dtypes build within 400–670s.
+11. **🟡 SUGGESTION — Async temporal ingestion by default**. The `SetAsyncIngestion(true)` method fully offloads temporal tree/segment tree updates from the `AddBatch` critical path. Consider enabling this by default for high-throughput ingestion workloads.
+
+12. **🟡 SUGGESTION — Investigate FilteredBool performance on float32**. At 3.9 QPS (P50=1.6s), FilteredBool is the slowest search mode. The Arrow boolean column traversal over 400k nodes per query is the bottleneck. Consider bitmap-based filter evaluation or predicate pushdown to HNSW layer-0 traversal.
+
+## Scale Sweep Results (all dtypes, dim=384)
+
+| Count | dtype | MMax0 | HNSW Build | Dense QPS | Notes |
+|-------|-------|-------|-----------|-----------|-------|
+| 400k  | float32     | 64 (default) | **714s** (ef=200, M=32) | 601 | ⚠️ 2× baseline build time |
+| 400k  | float32     | 16†     | **342s** (ef=200, M=32) | 1,451 | ✅ Baseline |
+| 400k  | int8        | 64      | **349s** (ef=200, M=32) | 162 | |
+| 400k  | complex128  | 64      | **709.5s** (ef=200, M=32) | 57 | ⚠️ 16GB RSS, ByID 1,680 QPS ✅ |
+| 400k  | complex128  | 16†     | **670s** (ef=200, M=32) | 88 | 14GB RSS |
+| 400k  | turboquant  | 64      | **571.5s** (ef=200, M=32) | 475 | ✅ Best hybrid/GraphRAG |
+| 400k  | turboquant  | 16†     | **400.5s** (ef=200, M=32) | 498 | ✅ Baseline |
+| 100k  | turboquant  | 64      | **43.5s** (ef=400) | 143 | ✅ All 13 modes |
+| 50k   | turboquant  | 64      | **27.5s** (ef=400) | 818 | All 13 modes |
+
+† Baseline results from 2026-06-10. Current run uses default MMax0=64.
+
+**Key finding**: MMax0 has a significant impact on build time and search QPS. The benchmark script's `LONGBOW_MAX_M0=16` only caps grown MMax0 but does not set the initial value. Adding `LONGBOW_HNSW_MMAX0=16` is needed to match the baseline configuration.
+
+### P6 — float32 HNSW build 2× slower with default MMax0 (NEW)
+
+**File**: `scripts/unified_benchmark.py` (`start_server()` section)
+
+**Impact**: The 2026-06-11 benchmark used default `MMax0=64` (instead of `MMax0=16` from the baseline) because the script sets `LONGBOW_MAX_M0=16` (which caps *grown* MMax0 at 16) but does **not** set `LONGBOW_HNSW_MMAX0=16` (which sets the initial value before growth). This caused:
+
+| dtype       | Build (MMax0=16, baseline) | Build (MMax0=64, current) | Ratio |
+|-------------|---------------------------|--------------------------|-------|
+| float32     | 342s                      | 714s                     | 2.1×  |
+| int8        | 331s                      | 349s                     | 1.1×  |
+| complex128  | 670s                      | 709s                     | 1.1×  |
+| turboquant  | 400s                      | 571s                     | 1.4×  |
+
+Dense QPS also dropped proportionally (e.g., float32 from 1,451 to 601 QPS) because the denser graph traverses more edges per query.
+
+**Fix**: Add `LONGBOW_HNSW_MMAX0=16` alongside the existing `LONGBOW_MAX_M0=16` in the script's scale-adaptive configuration.
+
+### P7 — Temporal index slow step at high batch sizes (UPDATE)
+
+**Status**: Partially mitigated by the P5 batch insertion API.
+
+The `applyBatchToMemory trace: slow step` warning for the "temporal index" step still fires at ~5–9s per large batch for complex128 and turboquant at 400k. The new `InsertBatch` APIs reduced the per-vector overhead (single lock vs N locks + sorted cursor traversal), but for 24k+ vector batches the total time is dominated by:
+- Shard map insertions (128 shards, one lock per shard per vector)
+- `TemporalTree.InsertBatch` sorting O(n log n) and arena allocation
+- `SegmentTree.InsertBatch` O(n log R) bitmap insertions
+
+**Suggestion**: The async ingestion worker (`SetAsyncIngestion(true)`) completely offloads tree updates from the critical path.
+
+### P8 — complex128 memory at 100% with MMax0=64 (WARNING)
+
+**Impact**: At 400k with MMax0=64, complex128 hit 16 GB RSS (100% of the 16 GB limit), triggering GOGC reduction to 40 and ingestion worker throttling. With MMax0=16, peak RSS was 14 GB (88%). Scale to 1M+ requires M=8 and/or 32 GB.
+
+### P9 — FilteredBool on float32 is extremely slow at 400k
+
+**Impact**: FilteredBool on float32 dim=384 returns only 3.9 QPS with P50=1,640ms — the slowest of any mode across all dtypes. The bool filter evaluation involves per-node metadata lookups in Arrow arrays, which is O(N) over all 400k nodes even though the filter is highly selective.
+
+### P10 — Disk-backed search results (NEW — 2026-06-11)
+
+**Status**: Completed full 4-dtype disk-backed benchmark with `--use-disk --iouring`.
+
+**Summary**:
+
+| dtype       | Dense QPS Disk | vs In-Mem | Disk Usage | Best Mode |
+|-------------|---------------|-----------|-----------|-----------|
+| float32     | 20.7          | 29.0×     | 586 MB    | Sparse: 4,554 QPS |
+| int8        | 89.0          | 1.8×      | 146 MB    | ByID: 2,828 QPS |
+| complex128  | 59.9          | 1.0×      | 2,344 MB  | ByID: 1,463 QPS |
+| turboquant  | 805.8         | **0.6× faster** | 586 MB | Recommend: 1,249 QPS |
+
+**Key findings**:
+
+1. **turboquant is the optimal dtype for disk** — dense/hybrid/graph all match or exceed in-memory QPS because 4-bit vectors fit in CPU cache regardless of backing store.
+
+2. **int8 is excellent for disk** — only 1.8× slower than in-memory for dense, uses just 146 MB for 400k vectors. ByID at 2,828 QPS is nearly in-memory speed.
+
+3. **complex128 is competitive on disk** — dense QPS is identical to in-memory because 6 KB/vector saturates memory bandwidth either way; page cache absorbs the reads.
+
+4. **float32 suffers most on disk** — 29× slower dense search. Consider int8/turboquant for disk-backed float32 applications.
+
+5. **io_uring enabled via custom backend** (`internal/storage/wal_backend_arrow_iouring.go`). The kernel 7.0.0's io_uring subsystem handled writes without visible stall. Direct I/O (`O_DIRECT`) not used — went through page cache.
+
+**Recommendation**: TurboQuant is strongly recommended for disk-backed deployments. For float32 workloads, the disk-backed mode should use int8 or turboquant indexing to avoid the 29× dense QPS penalty.
+
+### P11 — FilteredBool regression on turboquant disk-backed (RESOLVED — measurement noise)
+
+**Status**: **RESOLVED** — the 13.9× regression was **measurement noise from 10-query samples**.
+
+**Definitive results with 200 queries** (2026-06-11):
+
+| Config | QPS | P50 | P95 | P99 |
+|--------|:---:|:---:|:---:|:---:|
+| In-Memory (200q) | 26.6 | 278 ms | 446 ms | 633 ms |
+| Disk (200q) | **438.0** | **10.6 ms** | **15.9 ms** | **182 ms** |
+
+**Disk is 16.5× faster than in-memory** (438 vs 26.6 QPS) at 200 queries. The original 10-query sample (3.8 QPS disk, 52.8 QPS in-memory) was skewed by 1-2 outlier queries causing an apparent 13.9× regression in the wrong direction.
+
+**Root cause of noise**: The 10-query benchmark's P50 of 1,693ms (disk) vs 178ms (in-memory) was dominated by a single slow query — likely a GC pause or page cache miss during a shared process lifecycle phase. With 200 queries, the distribution stabilizes tightly around 10-16ms P50/P95 for disk.
+
+**Unexpected finding**: Disk-backed FilteredBool on turboquant significantly outperforms in-memory. This is likely because mmap-based `DiskGraph` neighbor lookups avoid arena allocation overhead and GC pressure, while the page cache keeps hot data resident.
+
+**Perf matrix saved**: `perf_matrix_cpu_filteredbool_disk_200q_20260611_155649.json`
+**In-memory baseline**: `perf_matrix_cpu_filteredbool_mem_200q_20260611_161103.json`
+
+---
 
 ## New Env Vars Available
 
@@ -129,7 +244,11 @@ The self-deadlock fix in `ensureChunksLocked` was the enabler. Previously float3
 - ✅ TQ decode cache + scratch pool reuse (`sync.Pool`)
 - ✅ Migration pause channel (`hnsw_autoshard.go`)
 - ✅ `atomic.Pointer` for `tqDecodeCache` data race fix
-- ✅ **ALL 4 DTYPES PASS AT 400k DIM=384** — float32, int8, complex128, turboquant
-- 🟡 complex128 ByID investigation: pending
-- ⏳ Disk-backed validation at 1M+ vectors: pending
+- ✅ **ALL 4 DTYPES PASS AT 400k dim=384** — float32, int8, complex128, turboquant
+- ✅ complex128 ByID investigation: resolved and confirmed (1,680 QPS)
+- ✅ Temporal index batch insertion APIs (InsertBatch + parallel norms + async worker)
+- ✅ **Disk-backed validation complete** (400k dim=384, 4 dtypes, `--use-disk --iouring`). Full comparison in `performance.md`. Turboquant matches/exceeds in-memory QPS. float32 dense drops 29× (expected).
 - ⏳ CUDA execution on RTX 4060: pending
+- 🟡 temporal index bottleneck: partially mitigated (slow step still fires at ~5–9s for large batches)
+- 🟡 `unified_benchmark.py` MMax0 mismatch: script sets `LONGBOW_MAX_M0=16` but not `LONGBOW_HNSW_MMAX0=16`
+- 🟡 FilteredBool on float32 extremely slow (3.9 QPS)

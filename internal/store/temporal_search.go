@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math"
+	"runtime"
 	"sort"
 	"sync"
 	"sync/atomic"
@@ -107,6 +108,16 @@ type TemporalIndex struct {
 	pointCount   atomic.Int64
 	gpuIndex     atomic.Value // holds gputypes.Index
 	ds           *Dataset     // parent dataset back-pointer
+
+	ingestCh     chan temporalIngestTask
+	ingestWg     sync.WaitGroup
+	asyncIngest atomic.Bool
+}
+
+type temporalIngestTask struct {
+	timestamps []int64
+	ids        []uint64
+	norms      []float32
 }
 
 // TemporalPredicate implements types.HNSWPredicate for temporal filtering.
@@ -312,10 +323,13 @@ func (tt *TemporalTree) Release() {
 func (tt *TemporalTree) Insert(timestamp int64, id uint64, norm float32) {
 	tt.mu.Lock()
 	defer tt.mu.Unlock()
+	tt.insertEntryNoLock(timestamp, TemporalEntry{ID: id, Norm: norm}, nil)
+}
 
-	entry := TemporalEntry{ID: id, Norm: norm}
-
-	// Update global min/max
+// insertEntryNoLock inserts a single entry assuming the write lock is already held.
+// cursor, if non-nil, provides a hint for the leaf index to start searching from
+// and is updated to the leaf where the entry was placed.
+func (tt *TemporalTree) insertEntryNoLock(timestamp int64, entry TemporalEntry, cursor *int) {
 	if timestamp < tt.minTs {
 		tt.minTs = timestamp
 	}
@@ -323,27 +337,33 @@ func (tt *TemporalTree) Insert(timestamp int64, id uint64, norm float32) {
 		tt.maxTs = timestamp
 	}
 
-	// Find the leaf chunk where this timestamp should reside
-	idx := sort.Search(len(tt.leafRefs), func(i int) bool {
-		return tt.leafRefs[i].MaxTs >= timestamp
-	})
+	// Start search from cursor hint when entries are processed in sorted order
+	lo := 0
+	if cursor != nil && *cursor >= 0 && *cursor < len(tt.leafRefs) && tt.leafRefs[*cursor].MinTs <= timestamp {
+		lo = *cursor
+	}
 
-	if idx == len(tt.leafRefs) {
-		// New chunk at the end or tree is empty
-		if idx > 0 && tt.leafRefs[idx-1].MaxTs < timestamp {
-			// Try to append to last chunk if not full
-			lastLeaf := &tt.leafRefs[idx-1]
+	idx := sort.Search(len(tt.leafRefs)-lo, func(i int) bool {
+		return tt.leafRefs[lo+i].MaxTs >= timestamp
+	})
+	idx += lo
+
+	if idx >= len(tt.leafRefs) {
+		if len(tt.leafRefs) > 0 && tt.leafRefs[len(tt.leafRefs)-1].MaxTs < timestamp {
+			lastLeaf := &tt.leafRefs[len(tt.leafRefs)-1]
 			leaf := &tt.leafArena.Get(lastLeaf.Ref)[0]
 			if leaf.Len < nodesPerChunk {
 				tt.insertInLeaf(leaf, timestamp, entry)
 				lastLeaf.MaxTs = leaf.Nodes[leaf.Len-1].Timestamp
 				tt.nodeCount.Add(1)
 				metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
+				if cursor != nil {
+					*cursor = len(tt.leafRefs) - 1
+				}
 				return
 			}
 		}
 
-		// Create new chunk
 		ref, _ := tt.leafArena.AllocSlice(1)
 		leaf := &tt.leafArena.Get(ref)[0]
 		tt.insertInLeaf(leaf, timestamp, entry)
@@ -354,41 +374,47 @@ func (tt *TemporalTree) Insert(timestamp int64, id uint64, norm float32) {
 		})
 		tt.nodeCount.Add(1)
 		metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
+		if cursor != nil {
+			*cursor = len(tt.leafRefs) - 1
+		}
 		return
 	}
 
-	// Insert into existing chunk
 	leafRef := &tt.leafRefs[idx]
 	leaf := &tt.leafArena.Get(leafRef.Ref)[0]
 
-	// Check if timestamp exists
 	nodeIdx := sort.Search(int(leaf.Len), func(i int) bool {
 		return leaf.Nodes[i].Timestamp >= timestamp
 	})
 
 	if nodeIdx < int(leaf.Len) && leaf.Nodes[nodeIdx].Timestamp == timestamp {
-		// Append to existing node
 		tt.appendEntryToNode(&leaf.Nodes[nodeIdx], entry)
+		if cursor != nil {
+			*cursor = idx
+		}
 		return
 	}
 
-	// New node in existing chunk
 	if leaf.Len < nodesPerChunk {
 		tt.insertInLeaf(leaf, timestamp, entry)
 		leafRef.MinTs = leaf.Nodes[0].Timestamp
 		leafRef.MaxTs = leaf.Nodes[leaf.Len-1].Timestamp
 		tt.nodeCount.Add(1)
 		metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
+		if cursor != nil {
+			*cursor = idx
+		}
 		return
 	}
 
-	// Chunk full - Split it
 	tt.splitAndInsert(idx, timestamp, entry)
 	tt.nodeCount.Add(1)
 	metrics.TemporalTreeNodesTotal.Set(float64(tt.nodeCount.Load()))
-
 	stats := tt.leafArena.Slab().Stats()
 	metrics.TemporalTreeAllocatedBytesTotal.Set(float64(stats.TotalCapacity))
+	if cursor != nil {
+		*cursor = 0
+	}
 }
 
 func (tt *TemporalTree) appendEntryToNode(node *TemporalNode, entry TemporalEntry) {
@@ -488,13 +514,33 @@ func (tt *TemporalTree) splitAndInsert(idx int, timestamp int64, entry TemporalE
 }
 
 // InsertBatch adds multiple vector IDs and their norms to the tree.
+// It sorts entries by timestamp, locks once, and uses a cursor-based search
+// to avoid repeated O(log n) binary searches and lock acquisitions.
 func (tt *TemporalTree) InsertBatch(timestamps []int64, ids []uint64, norms []float32) {
 	if len(timestamps) == 0 {
 		return
 	}
-	// For simplicity and correctness with splits, we call Insert for each
+
+	type timedEntry struct {
+		ts   int64
+		id   uint64
+		norm float32
+	}
+
+	entries := make([]timedEntry, len(timestamps))
 	for i := range timestamps {
-		tt.Insert(timestamps[i], ids[i], norms[i])
+		entries[i] = timedEntry{ts: timestamps[i], id: ids[i], norm: norms[i]}
+	}
+	sort.Slice(entries, func(i, j int) bool {
+		return entries[i].ts < entries[j].ts
+	})
+
+	tt.mu.Lock()
+	defer tt.mu.Unlock()
+
+	cursor := -1
+	for _, e := range entries {
+		tt.insertEntryNoLock(e.ts, TemporalEntry{ID: e.id, Norm: e.norm}, &cursor)
 	}
 }
 
@@ -810,6 +856,8 @@ func (ti *TemporalIndex) getShard(id uint64) *temporalShard {
 
 // Close releases resources associated with the temporal index.
 func (ti *TemporalIndex) Close() error {
+	ti.stopIngestWorker()
+
 	ti.mu.Lock()
 	defer ti.mu.Unlock()
 
@@ -829,6 +877,51 @@ func (ti *TemporalIndex) Close() error {
 
 	ti.pointCount.Store(0)
 	return nil
+}
+
+// SetAsyncIngestion enables or disables asynchronous temporal ingestion.
+// When enabled, AddBatch offloads TemporalTree and SegmentTree updates to
+// a background worker, returning immediately after storing vector data in shards.
+func (ti *TemporalIndex) SetAsyncIngestion(async bool) {
+	if async {
+		if !ti.asyncIngest.Swap(true) {
+			ti.startIngestWorker()
+		}
+	} else {
+		if ti.asyncIngest.Swap(false) {
+			ti.stopIngestWorker()
+		}
+	}
+}
+
+func (ti *TemporalIndex) startIngestWorker() {
+	ti.ingestCh = make(chan temporalIngestTask, 64)
+	ti.ingestWg.Add(1)
+	go func() {
+		defer ti.ingestWg.Done()
+		for task := range ti.ingestCh {
+			tree := ti.temporalTree.Load()
+			if tree != nil {
+				tree.InsertBatch(task.timestamps, task.ids, task.norms)
+			}
+			segmentTree := ti.segmentTree.Load()
+			if segmentTree != nil {
+				uids := make([]uint32, len(task.ids))
+				for i, id := range task.ids {
+					uids[i] = uint32(id) // #nosec G115
+				}
+				segmentTree.InsertBatch(task.timestamps, task.timestamps, uids)
+			}
+		}
+	}()
+}
+
+func (ti *TemporalIndex) stopIngestWorker() {
+	if ti.ingestCh != nil {
+		close(ti.ingestCh)
+		ti.ingestWg.Wait()
+		ti.ingestCh = nil
+	}
 }
 
 // Add inserts a new vector with a timestamp into the temporal index.
@@ -873,51 +966,102 @@ func (ti *TemporalIndex) Add(id uint64, vector []float32, timestamp int64, metad
 
 // AddBatch inserts multiple vectors into the TemporalIndex.
 func (ti *TemporalIndex) AddBatch(ids []uint64, vectors [][]float32, timestamps []int64, metadata [][]byte) error {
-	ti.mu.Lock()
-	defer ti.mu.Unlock()
+	n := len(ids)
+	if n == 0 {
+		return nil
+	}
 
-	tree := ti.temporalTree.Load()
-	norms := make([]float32, len(ids))
+	norms := make([]float32, n)
+	workers := runtime.GOMAXPROCS(0)
+	if workers > n {
+		workers = n
+	}
+	chunkSize := (n + workers - 1) / workers
+
+	var wg sync.WaitGroup
+	for w := 0; w < workers; w++ {
+		wg.Add(1)
+		start := w * chunkSize
+		end := start + chunkSize
+		if end > n {
+			end = n
+		}
+		go func(s, e int) {
+			defer wg.Done()
+			for i := s; i < e; i++ {
+				if len(vectors[i]) == ti.dimension {
+					norms[i] = ti.computeNorm(vectors[i])
+				}
+			}
+		}(start, end)
+	}
+	wg.Wait()
+
+	ti.mu.Lock()
 	for i := range ids {
 		if len(vectors[i]) != ti.dimension {
 			continue
 		}
-
 		var m []byte
 		if i < len(metadata) {
 			m = metadata[i]
 		}
-
-		norm := ti.computeNorm(vectors[i])
-		norms[i] = norm
 		vec := &TemporalVector{
 			ID:        ids[i],
 			Vector:    vectors[i],
-			Norm:      norm,
+			Norm:      norms[i],
 			Timestamp: timestamps[i],
 			Metadata:  m,
 			Tombstone: false,
 		}
-
 		shard := ti.getShard(ids[i])
 		shard.mu.Lock()
 		shard.data[ids[i]] = vec
 		shard.mu.Unlock()
 		if ti.history != nil {
-			ti.history.Add(ids[i], vectors[i], norm, timestamps[i], m)
+			ti.history.Add(ids[i], vectors[i], norms[i], timestamps[i], m)
 		}
 	}
 
-	if tree != nil {
-		tree.InsertBatch(timestamps, ids, norms)
-	}
-	segmentTree := ti.segmentTree.Load()
-	if segmentTree != nil {
-		for i, id := range ids {
-			segmentTree.Insert(timestamps[i], timestamps[i], uint32(id)) // #nosec G115
+	if ti.asyncIngest.Load() {
+		task := temporalIngestTask{
+			timestamps: timestamps,
+			ids:        ids,
+			norms:      norms,
+		}
+		select {
+		case ti.ingestCh <- task:
+		default:
+			// Channel full; fall back to synchronous insert
+			tree := ti.temporalTree.Load()
+			if tree != nil {
+				tree.InsertBatch(timestamps, ids, norms)
+			}
+			segmentTree := ti.segmentTree.Load()
+			if segmentTree != nil {
+				uids := make([]uint32, n)
+				for i, id := range ids {
+					uids[i] = uint32(id) // #nosec G115
+				}
+				segmentTree.InsertBatch(timestamps, timestamps, uids)
+			}
+		}
+	} else {
+		tree := ti.temporalTree.Load()
+		if tree != nil {
+			tree.InsertBatch(timestamps, ids, norms)
+		}
+		segmentTree := ti.segmentTree.Load()
+		if segmentTree != nil {
+			uids := make([]uint32, n)
+			for i, id := range ids {
+				uids[i] = uint32(id) // #nosec G115
+			}
+			segmentTree.InsertBatch(timestamps, timestamps, uids)
 		}
 	}
-	ti.pointCount.Add(int64(len(ids)))
+	ti.pointCount.Add(int64(n))
+	ti.mu.Unlock()
 
 	return nil
 }

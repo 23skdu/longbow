@@ -633,6 +633,9 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 					if cap(ctx.distsTemp) < len(validBatch) {
 						ctx.distsTemp = make([]float32, len(validBatch))
 					}
+					if cplx, ok := computer.(*complex128Computer); ok && len(ctx.resultSet) > 0 {
+						cplx.SetThreshold(ctx.resultSet[0].Dist)
+					}
 					dists, err := distBatchComputer(validBatch, ctx.distsTemp)
 					if err == nil {
 						for i, n := range validBatch {
@@ -680,6 +683,9 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				ctx.distComputeCount += len(batch)
 				if cap(ctx.distsTemp) < len(batch) {
 					ctx.distsTemp = make([]float32, len(batch))
+				}
+				if cplx, ok := computer.(*complex128Computer); ok && len(ctx.resultSet) > 0 {
+					cplx.SetThreshold(ctx.resultSet[0].Dist)
 				}
 				dists, err := distBatchComputer(batch, ctx.distsTemp)
 				if err == nil {

@@ -1,30 +1,35 @@
 # Observations & Next Steps
 
-Based on the 2026-06-10 400k-scale benchmark matrix (dim=384, 4 dtypes, 13 search modes, 10 queries per mode, `M=32`, `MMax0=16`, `efConstruction=200`). Full results in `performance.md`.
+Based on the 2026-06-11 400k-scale benchmark matrix (dim=384, 4 dtypes, 13 search modes, 500 queries per mode, `M=32`, `MMax0=16`, `efConstruction=200`). Full results in `performance.md`.
 
-## Key Milestone — All 4 dtypes pass at 400k
+## Key Milestone — All 4 dtypes pass at 400k (500 queries, MMax0=16)
 
-The self-deadlock fix in `ensureChunksLocked` was the enabler. Previously float32 and turboquant both hit the 3600s bench-tool timeout. Now:
+The self-deadlock fix in `ensureChunksLocked`, MMax0=16 correction, and async temporal ingestion combine for significantly improved build times and search QPS. All 13 search modes pass with 500 queries each, zero errors, zero OOMs.
+
 | dtype       | HNSW Build | Was       | Dense QPS | Sparse QPS |
 |-------------|-----------|-----------|-----------|------------|
-| float32     | **714s**† | >3600s    | 600.7†    | 4,410.4    |
-| int8        | **349s**  | 737s      | 162.0     | 5,177.2    |
-| complex128  | **709.5s**| 135s      | 56.6†     | 4,249.1    |
-| turboquant  | **571.5s**†| >3600s   | 475.2†    | 5,398.5    |
+| float32     | **~86s**  | >3600s    | **2,012.5** | **6,537.1** |
+| int8        | **~164s** | 737s      | **718.8**   | **6,910.9** |
+| complex128  | **~418s** | 135s      | **153.2**   | **6,396.9** |
+| turboquant  | **~115s** | >3600s    | **1,772.6** | **6,668.3** |
 
-† These results use default `MMax0=64`. The 2026-06-10 baseline used `MMax0=16`. See P6.
+**Key improvements since 2026-06-10 baseline**:
+- **MMax0=16 fix (P6)**: Benchmark script now sets `LONGBOW_HNSW_MMAX0=16`
+- **Async temporal ingestion (#11)**: Offloads tree updates from `AddBatch`
+- **FilteredBool optimization (P9)**: 5.8–20× improvement via raw Arrow buffer access
+- **500 queries per mode**: Eliminates outlier-dominated results from previous 10-query smoke test
 
 ## Observations
 
-1. **float32 is the fastest dense-search dtype at 400k (with MMax0=16)**: With MMax0=16 the baseline achieved 1,451 QPS at 4.40ms. With default MMax0=64, dense QPS drops to 601 due to denser graph traversal. Build time is 714s (MMax0=64) vs 342s (MMax0=16). float32 benefits from direct SIMD L2 distance without conversion overhead.
+1. **float32 is the fastest dense-search dtype at 400k**: At 2,012 QPS (3.78ms p50), float32 dense search leads all dtypes. It benefits from direct SIMD L2 distance computation without conversion overhead. Build time at ~86s (MMax0=16) is a dramatic improvement from the 714s MMax0=64 run.
 
-2. **turboquant is the most versatile dtype**: Second-fastest dense search (475 QPS at MMax0=64), best hybrid/GraphRAG performance (>750 QPS), 4-bit compression (192 bytes/vector). The 571s build (MMax0=64) is a dramatic improvement from >3600s.
+2. **turboquant is the most versatile dtype**: Second-fastest dense search (1,773 QPS), best FilteredBool (1,064 QPS), all vector modes exceed 1,500 QPS. 4-bit compression (192 bytes/vector). Build time at ~115s. The optimal choice for most workloads.
 
-3. **complex128 is viable but memory-bound**: 16 GB RSS at 400k (100% of 16 GB limit) with MMax0=64. The 709.5s build time is acceptable. **ByID is now fast at 1,680 QPS** (P3 fix resolved the 3.8 QPS anomaly).
+3. **complex128 is viable but memory-bound**: ~14 GB RSS at 400k (87% of 16 GB limit) with MMax0=16. Build at ~418s. **ByID remains fast at 3,536 QPS** (P3 fix). For 1M+ scales, M=8 is recommended.
 
-4. **Sparse search dominates across all dtypes**: 4,194–5,398 QPS — an order of magnitude faster than dense. Sparse uses the inverted index and does not traverse the HNSW graph.
+4. **Sparse search dominates across all dtypes**: 6,397–6,911 QPS — 3–9× faster than dense. Uses the inverted index and does not traverse the HNSW graph.
 
-5. **Filtered search is the slowest path**: 4–123 QPS depending on filter type, across all dtypes. FilteredBool on float32 is the single worst mode at 3.9 QPS (1.6s P50).
+5. **FilteredBool is no longer the slowest path**: The P9 fix (raw Arrow packed-bitset buffer) eliminated per-element `Value(i)` calls, delivering 5.8–20× improvements. turboquant FilteredBool now runs at 1,064 QPS (3.81ms p50). **FilteredString and Geo are now the slowest modes** across most dtypes.
 
 ## Issues Found
 
@@ -258,3 +263,46 @@ The `applyBatchToMemory trace: slow step` warning for the "temporal index" step 
 - ✅ temporal index bottleneck: mitigated — async ingestion enabled by default in `NewTemporalIndex`, slow step fully offloaded from `AddBatch` critical path
 - ✅ `unified_benchmark.py` MMax0 mismatch: fixed — now sets `LONGBOW_HNSW_MMAX0=16` alongside `LONGBOW_MAX_M0=16`
 - ✅ FilteredBool on float32 fixed: `boolFilterOp.MatchBitmap` uses raw Arrow packed-bitset buffer, eliminates per-element `Value(i)` calls
+
+---
+
+## New Recommendations (2026-06-11)
+
+### P13 — FilteredString optimization (NEW)
+
+**Impact**: FilteredString is now the slowest or second-slowest mode for all dtypes:
+- float32: 54.8 QPS (135.88ms)
+- int8: 130.9 QPS (54.37ms)
+- complex128: 34.3 QPS (158.73ms)
+- turboquant: 54.6 QPS (127.37ms)
+
+**Root cause**: Similar to the old FilteredBool bottleneck — string comparison iterates all rows calling `col.Value(i)` for each. There is no SIMD string match path.
+
+**Suggestion**: Apply the same raw-buffer approach used in P9. For string equality, access the Arrow string data buffer directly and use `bytes.Equal` or memcmp on raw offsets/lengths. Consider a prefix-filter or hash-based pre-filter for `eq`/`neq` operators on short strings.
+
+### P14 — Geo spatial search optimization (NEW)
+
+**Impact**: Geo is consistently one of the slowest modes (26–51 QPS) across all dtypes. The Haversine distance computation over 400k candidates dominates.
+
+**Suggestion**: Implement a spatial index (e.g., geohash or quadtree) to pre-filter candidates within a bounding box before running Haversine. This would reduce the O(N) scan to O(log N) lookup for typical geo queries with radius constraints.
+
+### P15 — int8 dense search SIMD gap (NEW)
+
+**Impact**: int8 dense at 719 QPS (10.42ms p50) is ~2.8× slower than float32 dense (2,012 QPS). The integer distance computation at 384-dim is bandwidth-bound, but lacks the SIMD-optimized L2 distance that float32 has.
+
+**Suggestion**: Implement an AVX2/AVX-512 int8 dot-product/L2 distance kernel. 384-dim int8 vectors (384 bytes) fit in two 256-bit AVX2 loads — a properly vectorized implementation should approach float32 throughput.
+
+### P16 — complex128 mode optimization (NEW)
+
+**Impact**: Several complex128 modes cluster at 100–315 QPS:
+- dense: 153 QPS, hybrid: 99 QPS, graphrag: 315 QPS, recommend: 201 QPS, learnedindex: 203 QPS
+
+These are memory-bandwidth-bound at 6,144 bytes/vector. The 16-byte complex type doubles the memory traffic vs float64 and quadruples it vs float32.
+
+**Suggestion**: Pre-compute complex magnitudes during ingestion and store them alongside the HNSW graph. Reference: `complex128Computer` in `navigation_search.go` already optimizes distance computation — but graph traversal still reads full vectors. Consider using the magnitude as a bound for pruning (similar to VP-tree).
+
+### P17 — 1M+ scale validation with disk-backed storage (ONGOING)
+
+**Impact**: Current in-memory benchmark validates up to 400k. Scaling to 1M+ exceeds the 16 GB memory limit for float32 (1,536 B × 1M = 1.5 GB vectors + 1.5× graph overhead ≈ 3.75 GB — fits, but HNSW temporarily doubles during migration). For complex128 (6,144 B × 1M = 6 GB vectors + graph), 16 GB is tight.
+
+**Suggestion**: Run disk-backed benchmarks at 1M+ with turboquant as the primary dtype (192 bytes/vector after quantization). Use `--use-disk --iouring` to keep peak RSS under 10 GB. Also validate int8 at 1M+ (384 MB vectors, fits comfortably).

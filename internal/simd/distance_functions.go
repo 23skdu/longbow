@@ -406,6 +406,21 @@ func DotProductInt8(a, b []int8) (float32, error) {
 	return dotInt8Unrolled4x(a, b)
 }
 
+// L2SquaredInt8 computes the squared L2 distance for Int8 vectors using
+// the SIMD-accelerated Euclidean kernel, squaring the result to avoid sqrt.
+func L2SquaredInt8(a, b []int8) (float32, error) {
+	if len(a) != len(b) {
+		return 0, fmt.Errorf("simd: vector length mismatch (len(a)=%d, len(b)=%d)", len(a), len(b))
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	if l2SquaredInt8Impl != nil {
+		return l2SquaredInt8Impl(a, b)
+	}
+	return l2SquaredInt8Unrolled4x(a, b)
+}
+
 // EuclideanDistanceInt16 calculates Euclidean distance for Int16 vectors.
 func EuclideanDistanceInt16(a, b []int16) (float32, error) {
 	if len(a) != len(b) {

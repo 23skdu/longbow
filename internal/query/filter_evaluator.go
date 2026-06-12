@@ -1,11 +1,13 @@
 package query
 
 import (
+	"bytes"
 	"fmt"
 	"log"
 	"strconv"
 	"strings"
 	"time"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
@@ -1093,23 +1095,37 @@ func (o *stringFilterOp) Reset(rec arrow.RecordBatch) error {
 }
 
 func (o *stringFilterOp) Match(rowIdx int) bool {
-	if o.col.IsNull(rowIdx) {
-		return false
+	data := o.col.Data()
+	off := data.Offset()
+	idx := rowIdx + off
+	offsets := arrow.Int32Traits.CastFromBytes(data.Buffers()[1].Bytes())
+	dataBuf := data.Buffers()[2].Bytes()
+
+	if o.col.NullN() > 0 {
+		validity := data.Buffers()[0].Bytes()
+		if len(validity) > 0 && (validity[idx/8]>>(idx%8))&1 == 0 {
+			return false
+		}
 	}
-	v := o.col.Value(rowIdx)
+
+	s := offsets[idx]
+	e := offsets[idx+1]
+	val := dataBuf[s:e]
+	valBytes := unsafe.Slice(unsafe.StringData(o.val), len(o.val)) // #nosec G103
+
 	switch o.operator {
 	case "=", "eq", "==":
-		return v == o.val
+		return bytes.Equal(val, valBytes)
 	case "!=", "neq":
-		return v != o.val
+		return !bytes.Equal(val, valBytes)
 	case ">", "gt":
-		return v > o.val
+		return bytes.Compare(val, valBytes) > 0
 	case "<", "lt":
-		return v < o.val
+		return bytes.Compare(val, valBytes) < 0
 	case ">=", "ge":
-		return v >= o.val
+		return bytes.Compare(val, valBytes) >= 0
 	case "<=", "le":
-		return v <= o.val
+		return bytes.Compare(val, valBytes) <= 0
 	}
 	return false
 }
@@ -1121,48 +1137,53 @@ func (o *stringFilterOp) MatchBitmap(dst []byte) {
 		metrics.StringFilterDurationSeconds.WithLabelValues(o.operator, "optimized").Observe(time.Since(start).Seconds())
 	}()
 
-	valLen := len(o.val)
+	data := o.col.Data()
+	off := data.Offset()
+	offsets := arrow.Int32Traits.CastFromBytes(data.Buffers()[1].Bytes())
+	dataBuf := data.Buffers()[2].Bytes()
+	n := len(dst)
+	valBytes := unsafe.Slice(unsafe.StringData(o.val), len(o.val)) // #nosec G103
+	valLen := len(valBytes)
+
+	hasNulls := o.col.NullN() > 0
+	var validity []byte
+	if hasNulls {
+		validity = data.Buffers()[0].Bytes()
+	}
 
 	switch o.operator {
 	case "=", "eq", "==":
 		metrics.StringFilterEqualLengthTotal.Inc()
 
 		if valLen == 0 {
-			for i := 0; i < len(dst); i++ {
-				switch {
-				case o.col.IsNull(i):
+			for i := 0; i < n; i++ {
+				idx := off + i
+				if hasNulls && (validity[idx/8]>>(idx%8))&1 == 0 {
 					dst[i] = 0
-				case o.col.ValueLen(i) == 0:
+				} else if offsets[idx+1]-offsets[idx] == 0 {
 					dst[i] = 1
-				default:
+				} else {
 					dst[i] = 0
 				}
 			}
 			return
 		}
 
-		for i := 0; i < len(dst); i++ {
-			if o.col.IsNull(i) {
+		for i := 0; i < n; i++ {
+			idx := off + i
+			if hasNulls && (validity[idx/8]>>(idx%8))&1 == 0 {
 				dst[i] = 0
 				continue
 			}
-			if o.col.ValueLen(i) != valLen {
+			s := offsets[idx]
+			e := offsets[idx+1]
+			if int(e-s) != valLen {
 				dst[i] = 0
 				continue
 			}
-
-			s := o.col.Value(i)
 			metrics.StringFilterComparisonsTotal.Inc()
 			metrics.StringFilterBytesComparedTotal.Add(float64(valLen))
-
-			match := true
-			for j := 0; j < valLen; j++ {
-				if s[j] != o.val[j] {
-					match = false
-					break
-				}
-			}
-			if match {
+			if bytes.Equal(dataBuf[s:e], valBytes) {
 				dst[i] = 1
 			} else {
 				dst[i] = 0
@@ -1170,28 +1191,21 @@ func (o *stringFilterOp) MatchBitmap(dst []byte) {
 		}
 
 	case "!=", "neq":
-		for i := 0; i < len(dst); i++ {
-			if o.col.IsNull(i) {
+		for i := 0; i < n; i++ {
+			idx := off + i
+			if hasNulls && (validity[idx/8]>>(idx%8))&1 == 0 {
 				dst[i] = 0
 				continue
 			}
-			if o.col.ValueLen(i) != valLen {
+			s := offsets[idx]
+			e := offsets[idx+1]
+			if int(e-s) != valLen {
 				dst[i] = 1
 				continue
 			}
-
-			s := o.col.Value(i)
 			metrics.StringFilterComparisonsTotal.Inc()
 			metrics.StringFilterBytesComparedTotal.Add(float64(valLen))
-
-			match := true
-			for j := 0; j < valLen; j++ {
-				if s[j] != o.val[j] {
-					match = false
-					break
-				}
-			}
-			if match {
+			if bytes.Equal(dataBuf[s:e], valBytes) {
 				dst[i] = 0
 			} else {
 				dst[i] = 1
@@ -1199,56 +1213,72 @@ func (o *stringFilterOp) MatchBitmap(dst []byte) {
 		}
 
 	case ">", "gt":
-		for i := 0; i < len(dst); i++ {
-			switch {
-			case o.col.IsNull(i):
+		for i := 0; i < n; i++ {
+			idx := off + i
+			if hasNulls && (validity[idx/8]>>(idx%8))&1 == 0 {
 				dst[i] = 0
-			case o.col.Value(i) > o.val:
+				continue
+			}
+			s := offsets[idx]
+			e := offsets[idx+1]
+			if bytes.Compare(dataBuf[s:e], valBytes) > 0 {
 				dst[i] = 1
-			default:
+			} else {
 				dst[i] = 0
 			}
 		}
 
 	case "<", "lt":
-		for i := 0; i < len(dst); i++ {
-			switch {
-			case o.col.IsNull(i):
+		for i := 0; i < n; i++ {
+			idx := off + i
+			if hasNulls && (validity[idx/8]>>(idx%8))&1 == 0 {
 				dst[i] = 0
-			case o.col.Value(i) < o.val:
+				continue
+			}
+			s := offsets[idx]
+			e := offsets[idx+1]
+			if bytes.Compare(dataBuf[s:e], valBytes) < 0 {
 				dst[i] = 1
-			default:
+			} else {
 				dst[i] = 0
 			}
 		}
 
 	case ">=", "ge":
-		for i := 0; i < len(dst); i++ {
-			switch {
-			case o.col.IsNull(i):
+		for i := 0; i < n; i++ {
+			idx := off + i
+			if hasNulls && (validity[idx/8]>>(idx%8))&1 == 0 {
 				dst[i] = 0
-			case o.col.Value(i) >= o.val:
+				continue
+			}
+			s := offsets[idx]
+			e := offsets[idx+1]
+			if bytes.Compare(dataBuf[s:e], valBytes) >= 0 {
 				dst[i] = 1
-			default:
+			} else {
 				dst[i] = 0
 			}
 		}
 
 	case "<=", "le":
-		for i := 0; i < len(dst); i++ {
-			switch {
-			case o.col.IsNull(i):
+		for i := 0; i < n; i++ {
+			idx := off + i
+			if hasNulls && (validity[idx/8]>>(idx%8))&1 == 0 {
 				dst[i] = 0
-			case o.col.Value(i) <= o.val:
+				continue
+			}
+			s := offsets[idx]
+			e := offsets[idx+1]
+			if bytes.Compare(dataBuf[s:e], valBytes) <= 0 {
 				dst[i] = 1
-			default:
+			} else {
 				dst[i] = 0
 			}
 		}
 
 	default:
 		metrics.StringFilterOpsTotal.WithLabelValues(o.operator, "slow").Inc()
-		for i := 0; i < len(dst); i++ {
+		for i := 0; i < n; i++ {
 			if o.Match(i) {
 				dst[i] = 1
 			} else {

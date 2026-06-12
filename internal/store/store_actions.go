@@ -831,7 +831,7 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 				}
 				return ds.GeoIndex.SearchBox(stream.Context(), *req.Box, req.K)
 			case "hybrid":
-				return ds.GeoIndex.HybridSearch(stream.Context(), nil, req.Center, req.RadiusKm, req.K)
+				return ds.GeoIndex.HybridSearch(stream.Context(), req.QueryVector, req.Center, req.RadiusKm, req.K)
 			default:
 				return nil, status.Error(codes.InvalidArgument, "invalid search type")
 			}

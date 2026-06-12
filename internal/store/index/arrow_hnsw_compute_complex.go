@@ -142,6 +142,8 @@ type complex128Computer struct {
 	diskGraph *DiskGraph
 	maxGen    uint64
 	batchVecs [][]complex128
+	queryMag  float64
+	threshold float32
 }
 
 func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
@@ -149,6 +151,14 @@ func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 	var lastChunk []complex128
 
 	for i, id := range ids {
+		// Triangle-inequality pruning: skip if |queryMag - storedMag| > threshold
+		if c.threshold > 0 {
+			if mag := c.data.GetComplex128Magnitude(id); float32(math.Abs(c.queryMag-mag)) > c.threshold {
+				dists[i] = c.threshold + 1
+				continue
+			}
+		}
+
 		cID := int(types.ChunkID(id))
 		if cID != lastCID {
 			if c.maxGen == 18446744073709551615 {
@@ -179,6 +189,13 @@ func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
 }
 
 func (c *complex128Computer) ComputeSingle(id uint32) (float32, error) {
+	// Triangle-inequality pruning: if |queryMag - storedMag| > threshold, skip
+	if c.threshold > 0 {
+		if mag := c.data.GetComplex128Magnitude(id); float32(math.Abs(c.queryMag-mag)) > c.threshold {
+			return c.threshold + 1, nil
+		}
+	}
+
 	vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
 	if err == nil {
 		if v, ok := vecAny.([]complex128); ok {
@@ -255,4 +272,8 @@ func (c *complex128Computer) Prefetch(id uint32) {
 			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
 		}
 	}
+}
+
+func (c *complex128Computer) SetThreshold(t float32) {
+	c.threshold = t
 }

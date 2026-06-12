@@ -83,6 +83,10 @@ type GraphData struct {
 	// VectorsComplex128
 	VectorsComplex128 [][]complex128
 
+	// Complex128Magnitudes holds pre-computed L2 magnitudes for complex128 vectors.
+	// Indexed by global id. Used during search for triangle-inequality pruning.
+	Complex128Magnitudes []float64
+
 	// VectorsInt64 stores arena offsets for Int64 vectors (off-heap, GC-free)
 	VectorsInt64 []uint64
 
@@ -1958,6 +1962,12 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 				copy(chunk[start:start+len(v)], v)
 			}
 		}
+		// Compute and store magnitude for triangle-inequality pruning
+		var sum float64
+		for _, val := range v {
+			sum += real(val)*real(val) + imag(val)*imag(val)
+		}
+		g.SetComplex128Magnitude(id, math.Sqrt(sum))
 	case []uint8:
 		chunk := g.GetVectorsInt8Chunk(cID)
 		if chunk != nil {
@@ -2034,6 +2044,21 @@ func (g *GraphData) SetVector(id uint32, vec any) error {
 		}
 	}
 	return nil
+}
+
+// GetComplex128Magnitude returns the pre-computed L2 magnitude for a complex128 vector.
+func (g *GraphData) GetComplex128Magnitude(id uint32) float64 {
+	if int(id) < len(g.Complex128Magnitudes) {
+		return g.Complex128Magnitudes[id]
+	}
+	return 0
+}
+
+// SetComplex128Magnitude stores the L2 magnitude for a complex128 vector.
+func (g *GraphData) SetComplex128Magnitude(id uint32, mag float64) {
+	if int(id) < len(g.Complex128Magnitudes) {
+		g.Complex128Magnitudes[id] = mag
+	}
 }
 
 // SetVectorsBatch sets multiple vectors in the same chunk efficiently.
@@ -2563,6 +2588,10 @@ func (g *GraphData) Clone() *GraphData {
 			}
 		}
 	}
+	if g.Complex128Magnitudes != nil {
+		newG.Complex128Magnitudes = make([]float64, len(g.Complex128Magnitudes))
+		copy(newG.Complex128Magnitudes, g.Complex128Magnitudes)
+	}
 
 	// Deep copy Neighbors (Layer -> Chunk -> Offset)
 	if g.Neighbors != nil {
@@ -2842,6 +2871,10 @@ func (g *GraphData) ShallowStructuralClone() *GraphData {
 				newG.VectorsComplex128[i] = g.VectorsComplex128[i]
 			}
 		}
+	}
+	if g.Complex128Magnitudes != nil {
+		newG.Complex128Magnitudes = make([]float64, len(g.Complex128Magnitudes))
+		copy(newG.Complex128Magnitudes, g.Complex128Magnitudes)
 	}
 
 	// Deep copy Levels (same as Clone) — elements are mutated via atomic CAS
@@ -3767,6 +3800,17 @@ func (g *GraphData) GrowMetadataSlices(numChunks int) {
 		}
 		if g.Type == VectorTypeComplex128 {
 			g.VectorsComplex128Offsets = growOffsetSlice(g.VectorsComplex128Offsets)
+		}
+	}
+
+	// Allocate Complex128Magnitudes flat array indexed by global id.
+	// Size: ChunkSize * numChunks float64 values.
+	if g.Type == VectorTypeComplex128 {
+		needed := numChunks * ChunkSize
+		if len(g.Complex128Magnitudes) < needed {
+			newM := make([]float64, needed)
+			copy(newM, g.Complex128Magnitudes)
+			g.Complex128Magnitudes = newM
 		}
 	}
 

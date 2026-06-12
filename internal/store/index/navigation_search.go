@@ -766,7 +766,11 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				for i := 0; i < logDims; i++ {
 					searchCtx.queryC128[i] = complex(float64(q[2*i]), float64(q[2*i+1]))
 				}
-				return &complex128Computer{data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen}
+				var sum float64
+				for _, v := range searchCtx.queryC128 {
+					sum += real(v)*real(v) + imag(v)*imag(v)
+				}
+				return &complex128Computer{data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen, queryMag: math.Sqrt(sum)}
 			}
 		}
 		comp := &float32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen}
@@ -859,13 +863,21 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				for i := 0; i < logDims; i++ {
 					searchCtx.queryC128[i] = complex(q[2*i], q[2*i+1])
 				}
-				return &complex128Computer{data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen}
+				var sum float64
+				for _, v := range searchCtx.queryC128 {
+					sum += real(v)*real(v) + imag(v)*imag(v)
+				}
+				return &complex128Computer{data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen, queryMag: math.Sqrt(sum)}
 			}
 			qC128 := make([]complex128, logDims)
 			for i := 0; i < logDims; i++ {
 				qC128[i] = complex(q[2*i], q[2*i+1])
 			}
-			return &complex128Computer{data: data, q: qC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen}
+			var sum float64
+			for _, v := range qC128 {
+				sum += real(v)*real(v) + imag(v)*imag(v)
+			}
+			return &complex128Computer{data: data, q: qC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen, queryMag: math.Sqrt(sum)}
 		}
 		return &float64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: maxGen}
 	case []float16.Num:
@@ -902,10 +914,18 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			}
 			searchCtx.queryC128 = searchCtx.queryC128[:len(q)]
 			copy(searchCtx.queryC128, q)
-			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: dg, maxGen: searchCtx.MaxGeneration}
+			var sum float64
+			for _, v := range searchCtx.queryC128 {
+				sum += real(v)*real(v) + imag(v)*imag(v)
+			}
+			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: dg, maxGen: searchCtx.MaxGeneration, queryMag: math.Sqrt(sum)}
 		}
 		dg = h.diskGraph.Load()
-		return &complex128Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: math.MaxUint64}
+		var sum float64
+		for _, v := range q {
+			sum += real(v)*real(v) + imag(v)*imag(v)
+		}
+		return &complex128Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: math.MaxUint64, queryMag: math.Sqrt(sum)}
 	case []int16:
 		var dg *DiskGraph
 		if searchCtx != nil {

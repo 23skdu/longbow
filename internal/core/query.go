@@ -84,13 +84,14 @@ type GeoBoundingBox struct {
 
 // GeoSearchRequest defines the request format for Geospatial search
 type GeoSearchRequest struct {
-	Dataset    string          `json:"dataset"`
-	Center     GeoPoint        `json:"center"`
-	RadiusKm   float64         `json:"radius_km"`
-	Box        *GeoBoundingBox `json:"box,omitempty"`
-	K          int             `json:"k"`
-	Filters    []Filter        `json:"filters,omitempty"`
-	SearchType string          `json:"search_type"` // "radius", "box", "hybrid"
+	Dataset     string          `json:"dataset"`
+	Center      GeoPoint        `json:"center"`
+	RadiusKm    float64         `json:"radius_km"`
+	Box         *GeoBoundingBox `json:"box,omitempty"`
+	K           int             `json:"k"`
+	Filters     []Filter        `json:"filters,omitempty"`
+	SearchType  string          `json:"search_type"` // "radius", "box", "hybrid"
+	QueryVector []float32       `json:"query_vector,omitempty"`
 }
 
 // VectorSearchRequest defines the request format for VectorSearch action

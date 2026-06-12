@@ -1594,7 +1594,7 @@ func (s *VectorStore) handleDoGetGeoSearch(req *types.GeoSearchRequest, wfs []qr
 		}
 		results, err = ds.GeoIndex.SearchBox(stream.Context(), *req.Box, req.K)
 	case "hybrid":
-		results, err = ds.GeoIndex.HybridSearch(stream.Context(), nil, req.Center, req.RadiusKm, req.K)
+		results, err = ds.GeoIndex.HybridSearch(stream.Context(), req.QueryVector, req.Center, req.RadiusKm, req.K)
 	default:
 		ds.dataMu.RUnlock()
 		return status.Errorf(codes.InvalidArgument, "invalid search_type: %s", req.SearchType)

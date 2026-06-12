@@ -575,12 +575,12 @@ func initializeDispatch() {
 			return d * d, nil
 		}
 		dotProductInt8Impl = dotInt8AVX2
-		dotProductUint8Impl = dotUint8Unrolled4x
+		dotProductUint8Impl = dotUint8AVX2
 		euclideanDistanceUint8Impl = euclideanUint8AVX2
 		euclideanDistanceInt16Impl = euclideanInt16AVX2
 		euclideanDistanceUint16Impl = euclideanUint16AVX2
 		dotProductInt16Impl = dotInt16AVX2
-		dotProductUint16Impl = dotUint16Unrolled4x
+		dotProductUint16Impl = dotUint16AVX2
 		dotProductInt4Impl = dotInt4Generic
 		dotProductInt2Impl = dotInt2Generic
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized

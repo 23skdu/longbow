@@ -40,6 +40,7 @@ type BenchmarkResult struct {
 	P95LatencyMs     float64   `json:"p95_latency_ms,omitempty"`
 	P99LatencyMs     float64   `json:"p99_latency_ms,omitempty"`
 	IndexingDuration float64   `json:"indexing_duration_seconds,omitempty"`
+	TqBits           int       `json:"tq_bits,omitempty"`
 }
 
 func main() {
@@ -436,6 +437,7 @@ func main() {
 		ThroughputMBs:   (float64(totalBytes) / (1024 * 1024)) / duration,
 		Rows:            int64(*scale),
 		BytesProcessed:  totalBytes,
+		TqBits:          *tqBits,
 	})
 	log.Printf("[PUT] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(*scale)/duration, (float64(totalBytes)/(1024*1024))/duration)
 
@@ -486,6 +488,7 @@ func main() {
 		ThroughputMBs:   (float64(totalBytesGet) / (1024 * 1024)) / duration,
 		Rows:            rowsRead,
 		BytesProcessed:  totalBytesGet,
+		TqBits:          *tqBits,
 	})
 	log.Printf("[GET] Completed in %.4fs (%.2f vec/s, %.2f MB/s)\n", duration, float64(rowsRead)/duration, (float64(totalBytesGet)/(1024*1024))/duration)
 
@@ -576,6 +579,7 @@ func main() {
 			P50LatencyMs:    p50,
 			P95LatencyMs:    p95,
 			P99LatencyMs:    p99,
+			TqBits:          *tqBits,
 		})
 		log.Printf("[SEARCH][%s] Completed %d queries in %.4fs (%.2f QPS, P50: %.2fms, P95: %.2fms, P99: %.2fms)\n", mode, len(latencies), duration, float64(len(latencies))/duration, p50, p95, p99)
 	}

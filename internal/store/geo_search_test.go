@@ -240,7 +240,8 @@ func TestQuadtree_QueryRadius(t *testing.T) {
 	q.Insert(&GeoIndexedVector{ID: 2, GeoPoint: GeoPoint{Lat: 34.0522, Lon: -118.2437}})
 
 	center := GeoPoint{Lat: 40.7128, Lon: -74.0060}
-	results := q.QueryRadius(center, 1000)
+	var results []*GeoIndexedVector
+	q.QueryRadius(center, 1000, &results)
 
 	assert.NotEmpty(t, results)
 }

@@ -273,8 +273,7 @@ func (q *Quadtree) subdivide() {
 }
 
 // QueryRadius returns all vectors within a given radius from a point.
-func (q *Quadtree) QueryRadius(center GeoPoint, radiusKm float64) []*GeoIndexedVector {
-	results := make([]*GeoIndexedVector, 0, 128)
+func (q *Quadtree) QueryRadius(center GeoPoint, radiusKm float64, results *[]*GeoIndexedVector) {
 	cosLat := math.Cos(center.Lat * math.Pi / 180)
 	lonDelta := radiusKm / (111.0 * cosLat)
 	box := GeoBoundingBox{
@@ -283,37 +282,26 @@ func (q *Quadtree) QueryRadius(center GeoPoint, radiusKm float64) []*GeoIndexedV
 		MinLon: center.Lon - lonDelta,
 		MaxLon: center.Lon + lonDelta,
 	}
-	q.queryRadiusRecursive(center, radiusKm, cosLat, lonDelta, box, &results)
-	return results
+	q.queryRadiusRecursive(box, results)
 }
 
-func (q *Quadtree) queryRadiusRecursive(center GeoPoint, radiusKm, cosLat, lonDelta float64, box GeoBoundingBox, results *[]*GeoIndexedVector) {
+func (q *Quadtree) queryRadiusRecursive(box GeoBoundingBox, results *[]*GeoIndexedVector) {
 	if !q.intersects(box) {
 		return
 	}
 
 	q.mu.RLock()
 	if !q.divided.Load() {
-		for _, v := range q.vectors {
-			dist := HaversineDistance(center, v.GeoPoint, 6371.0)
-			if dist <= radiusKm {
-				*results = append(*results, v)
-			}
-		}
+		*results = append(*results, q.vectors...)
 		q.mu.RUnlock()
 		return
 	}
 	q.mu.RUnlock()
 
-	q.northwest.queryRadiusRecursive(center, radiusKm, cosLat, lonDelta, box, results)
-	q.northeast.queryRadiusRecursive(center, radiusKm, cosLat, lonDelta, box, results)
-	q.southwest.queryRadiusRecursive(center, radiusKm, cosLat, lonDelta, box, results)
-	q.southeast.queryRadiusRecursive(center, radiusKm, cosLat, lonDelta, box, results)
-}
-
-func (q *Quadtree) intersects(box GeoBoundingBox) bool {
-	return !(box.MaxLat < q.bounds.MinLat || box.MinLat > q.bounds.MaxLat ||
-		box.MaxLon < q.bounds.MinLon || box.MinLon > q.bounds.MaxLon)
+	q.northwest.queryRadiusRecursive(box, results)
+	q.northeast.queryRadiusRecursive(box, results)
+	q.southwest.queryRadiusRecursive(box, results)
+	q.southeast.queryRadiusRecursive(box, results)
 }
 
 // QueryBox returns all vectors within a bounding box.
@@ -321,6 +309,11 @@ func (q *Quadtree) QueryBox(box GeoBoundingBox) []*GeoIndexedVector {
 	results := make([]*GeoIndexedVector, 0, 128)
 	q.queryBoxRecursive(box, &results)
 	return results
+}
+
+func (q *Quadtree) intersects(box GeoBoundingBox) bool {
+	return !(box.MaxLat < q.bounds.MinLat || box.MinLat > q.bounds.MaxLat ||
+		box.MaxLon < q.bounds.MinLon || box.MinLon > q.bounds.MaxLon)
 }
 
 func (q *Quadtree) queryBoxRecursive(box GeoBoundingBox, results *[]*GeoIndexedVector) {
@@ -633,17 +626,18 @@ func (gi *GeoIndex) HybridSearch(ctx context.Context, queryVector []float32, cen
 		metrics.GeoSearchDurationSeconds.WithLabelValues(gi.datasetName, "hybrid").Observe(time.Since(start).Seconds())
 	}()
 
-	vIdx := gi.GetVectorIndex()
-	if vIdx != nil {
-		index := gi.pointIndex.Load()
-		var allowed *roaring.Bitmap
-		if index != nil {
-			candidates := index.QueryRadius(center, radiusKm)
-			allowed = roaring.New()
-			for _, c := range candidates {
-				allowed.Add(uint32(c.ID)) // #nosec G115 — safe: VectorID is uint32
+		vIdx := gi.GetVectorIndex()
+		if vIdx != nil {
+			index := gi.pointIndex.Load()
+			var allowed *roaring.Bitmap
+			if index != nil {
+				candidates := make([]*GeoIndexedVector, 0, 128)
+				index.QueryRadius(center, radiusKm, &candidates)
+				allowed = roaring.New()
+				for _, c := range candidates {
+					allowed.Add(uint32(c.ID)) // #nosec G115 — safe: VectorID is uint32
+				}
 			}
-		}
 
 		pred := &GeoPredicate{
 			center:   center,

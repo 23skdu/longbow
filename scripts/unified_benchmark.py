@@ -790,7 +790,7 @@ class BenchmarkRunner:
 
         # Handle TurboQuant bit-packs
         is_turboquant = False
-        tq_bits = 4
+        tq_bits = 0
         if dtype == "turboquant2":
             dtype = "turboquant"
             tq_bits = 2
@@ -930,6 +930,7 @@ class BenchmarkRunner:
             },
             "search": search_metrics,
             "disk_usage_mb": disk_mb,
+            "tq_bits": tq_bits,
             "timestamp": datetime.now().isoformat(),
         }
         self.results.append(result_entry)
@@ -2961,67 +2962,84 @@ class BenchmarkRunner:
             return
 
         md_file = self.output_file.replace(".json", ".md")
-        mode_title = current_mode.upper()
         if current_mode == "metal":
+            device_name = "Apple M3 Pro"
             mode_title = "Metal GPU"
+        elif current_mode == "cuda":
+            device_name = "NVIDIA GPU"
+            mode_title = "CUDA GPU"
+        else:
+            device_name = platform.system()
+            mode_title = current_mode.upper() if current_mode != "cpu" else "CPU"
 
         with open(md_file, "w") as f:
-            f.write(f"# Performance Validation Matrix — Apple M3 Pro {mode_title}\n\n")
+            f.write(f"# Performance Validation Matrix — {device_name} {mode_title}\n\n")
             f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d')}\n")
             f.write(f"**Platform**: {platform.system()} ({platform.machine()})\n")
             f.write(f"**Memory**: {self.args.memory // (1024**3)}GB allocated\n")
             f.write(f"**Test Tool**: Longbow Unified Benchmark Script\n")
             f.write(f"**Queries**: {self.args.queries} per test\n\n")
 
+            # Collect all search modes present across results
+            all_search_modes = set()
+            for r in self.results:
+                if isinstance(r, dict) and "search" in r:
+                    all_search_modes.update(r["search"].keys())
+            all_search_modes = sorted(all_search_modes)
+
             f.write("## Results Table\n\n")
-            f.write(
-                "| DType | Dim | Count | Ingest (vec/s) | Dense QPS | Dense P50 | Hybrid QPS | Hybrid P50 | Filtered QPS | Filtered P50 | ByID QPS | ByID P50 |\n"
-            )
-            f.write(
-                "|-------|-----|-------|----------------|-----------|-----------|------------|------------|--------------|--------------|----------|----------|\n"
-            )
+            header_cols = ["DType", "Dim", "Count", "TqBits", "Ingest (vec/s)"]
+            for m in all_search_modes:
+                header_cols.append(f"{m.capitalize()} QPS")
+                header_cols.append(f"{m.capitalize()} P50")
+            f.write("| " + " | ".join(header_cols) + " |\n")
+            sep = ["-------"] * len(header_cols)
+            f.write("| " + " | ".join(sep) + " |\n")
 
             for r in self.results:
                 if not isinstance(r, dict) or "search" not in r:
                     continue
                 search = r["search"]
-                dense = search.get("dense", {"qps": 0, "p50": 0})
-                hybrid = search.get("hybrid", {"qps": 0, "p50": 0})
-                filtered = search.get("filtered", {"qps": 0, "p50": 0})
-                byid = search.get("byid", {"qps": 0, "p50": 0})
-
-                f.write(
-                    f"| {r['dtype']} | {r['dim']} | {r['count']:,} | {r['ingest']['vec_per_sec']:,.0f} | "
-                    f"{dense['qps']:,.0f} | {dense['p50']:.3f}ms | "
-                    f"{hybrid['qps']:,.0f} | {hybrid['p50']:.3f}ms | "
-                    f"{filtered['qps']:,.0f} | {filtered['p50']:.3f}ms | "
-                    f"{byid['qps']:,.0f} | {byid['p50']:.3f}ms |\n"
-                )
+                row = [
+                    r["dtype"],
+                    str(r["dim"]),
+                    f"{r['count']:,}",
+                    str(r.get("tq_bits", 0)),
+                    f"{r['ingest']['vec_per_sec']:,.0f}",
+                ]
+                for m in all_search_modes:
+                    s = search.get(m, {"qps": 0, "p50": 0})
+                    row.append(f"{s['qps']:,.0f}")
+                    row.append(f"{s['p50']:.3f}ms")
+                f.write("| " + " | ".join(row) + " |\n")
 
             f.write("\n---\n\n")
             f.write(
                 f"## {datetime.now().strftime('%Y-%m-%d')} Full Performance Benchmark Summary ({mode_title})\n\n"
             )
-            f.write(
-                "| Dim | Dtype | Vec/s Ingest | Search QPS | P50 ms | P90 ms | P95 ms | P99 ms |\n"
-            )
-            f.write(
-                "|-----|-------|--------------|------------|--------|--------|--------|--------|\n"
-            )
+            cols = ["Dim", "Dtype", "TqBits", "Vec/s Ingest"]
+            for m in all_search_modes:
+                cols.extend([f"{m.capitalize()} QPS", f"{m.capitalize()} P50", f"{m.capitalize()} P95"])
+            f.write("| " + " | ".join(cols) + " |\n")
+            f.write("|" + "|".join(["---"] * len(cols)) + "|\n")
 
             # Use largest count for the summary table
             valid_results = [r for r in self.results if isinstance(r, dict) and "count" in r and "search" in r]
             max_count = max(r["count"] for r in valid_results) if valid_results else 0
             for r in valid_results:
                 if r["count"] == max_count:
-                    dense = r["search"].get(
-                        "dense", {"qps": 0, "p50": 0, "p90": 0, "p95": 0, "p99": 0}
-                    )
-                    f.write(
-                        f"| {r['dim']} | {r['dtype']} | {r['ingest']['vec_per_sec']:,.0f} | "
-                        f"{dense['qps']:,.1f} | {dense['p50']:.3f} | {dense.get('p90', 0.0):.3f} | "
-                        f"{dense['p95']:.3f} | {dense['p99']:.3f} |\n"
-                    )
+                    row = [
+                        str(r["dim"]),
+                        r["dtype"],
+                        str(r.get("tq_bits", 0)),
+                        f"{r['ingest']['vec_per_sec']:,.0f}",
+                    ]
+                    for m in all_search_modes:
+                        s = r["search"].get(m, {"qps": 0, "p50": 0, "p95": 0})
+                        row.append(f"{s['qps']:,.1f}")
+                        row.append(f"{s['p50']:.3f}")
+                        row.append(f"{s['p95']:.3f}")
+                    f.write("| " + " | ".join(row) + " |\n")
 
             f.write("\n")
 

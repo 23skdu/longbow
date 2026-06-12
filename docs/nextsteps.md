@@ -1,70 +1,64 @@
 # Recommended Next Steps (Updated 2026-06-12)
 
-Based on the full benchmark matrix + targeted optimization run (6 integer dtypes at dim128 50K), these are the updated priorities.
+Based on the full benchmark matrix (128 configs, 16 dtypes, 2 dims, 4 counts, all query modes, zero errors).
 
-## ✅ Completed — Integer Distance Optimization (40 min)
+## Priority 1: Turboquant at Scale
 
-**Changes applied** in `internal/simd/simd_baseline.go` and `internal/simd/dispatch.go`:
+**Problem**: turboquant search drops to 59 QPS at 500K (dim128) — a catastrophic regression from smaller counts (~2,000 QPS at 100K).
 
-| Dtype | Optimization | Impact |
-|-------|-------------|--------|
-| uint32 | dot/Euclidean: float64 accumulator → **uint64** | **+80% dense QPS** |
-| int32 | dot/Euclidean: float64 accumulator → **int64** | **+31% dense QPS** |
-| uint64 | Euclidean: 4x → **8x unrolled**; cosine: scalar → **4x unrolled** | **+410% dense QPS** |
-| int64 | Euclidean: 4x → **8x unrolled**; cosine: scalar → **4x unrolled** | **+19% dense QPS** |
-| uint8 | dot product: AVX2 dispatch was routing to unrolled fallback → **fixed** | ~neutral (AVX2 was already on other paths) |
-| uint16 | dot product: AVX2 dispatch was routing to unrolled fallback → **fixed** | **+17% dense QPS** |
+**Suspected cause**: The HNSW build uses turboquant-decompressed vectors for distance computation. At 500K, the memory bandwidth pressure from decompressing on every distance call becomes the bottleneck.
 
-## ✅ Completed — Geo Search (Quadtree Optimization)
+**Fix options**:
+- Implement SIMD-accelerated turboquant distance (skip decompression, compute directly on packed bits)
+- Reduce efConstruction for turboquant at 500K+ via adaptive parameter tuning
+- Profile HNSW build with pprof to confirm bottleneck (profiles available in `profiles/`)
 
-**Changes** in `internal/store/geo_search.go`:
-- Removed double Haversine: quadtree `QueryRadius` now returns bounding-box candidates only (no per-point Haversine filter)
-- Exact Haversine distance is computed once in `SearchRadius` via batch path
-- Reduced per-query allocation overhead
+## Priority 2: Geo Search SIMD Haversine
 
-## ✅ Completed — turboquant Consistency
+**Problem**: Geo search averages 54 QPS at 500K — slowest mode by 10x.
 
-**Changes** in `cmd/bench-tool/main.go`:
-- Added `TqBits int \`json:"tq_bits,omitempty"\`` to `BenchmarkResult`
-- Populated in all result types (DoPut, DoGet, Indexing, Search)
+**Status**: Quadtree double-Haversine was eliminated in v0.2.2-rc1. But `haversineBatchAVX2` is a stub that calls scalar Go.
 
-**Changes** in `scripts/unified_benchmark.py`:
-- Fixed default `tq_bits` from 4 → 0 for non-turboquant types
-- Added `tq_bits` to result JSON and both summary/table markdown outputs
+**Fix**: Break Haversine into batched sin/cos/sqrt/atan2 passes using the existing SIMD primitives (`SinFloat32`, `CosFloat32`, `Atan2Float32` — all have real AVX2/AVX-512/Neon implementations).
 
-## ✅ Completed — Benchmark Script Improvements
+**Expected gain**: 2-4x
 
-**Changes** in `scripts/unified_benchmark.py`:
-- Platform title now shows actual OS (Linux) instead of "Apple M3 Pro"
-- Summary table includes ALL search modes (not just dense)
-- Full results table now dynamically includes all present search modes
+## Priority 3: HNSW Build Profiling
 
-## 1. Filtered string auto-indexing
+**Problem**: Ingest drops from 993K vec/s (50K) to 53K vec/s (500K) for float32. ~95% of time spent on HNSW construction.
 
-**Problem**: `filteredstring` mode is consistently 10-20x slower than `filteredbool`. At 500K vectors (float32, dim128): 55 QPS vs 601 QPS.
+**Existing data**: 1,792 pprof profiles collected across all configs in `profiles/`.
 
-**Fix**: Implement string attribute indexing (inverted index or hash-based bloom filter) rather than scanning all metadata entries at query time.
+**Suggested analysis**:
+- Profile `profiles/*_500000_profile_*.pprof` to identify exact HNSW bottleneck
+- Compare distance computation vs graph traversal vs allocation
+- Consider batched graph construction (Vamana-style) for bulk loads
 
-**Expected gain**: 5-10x improvement.
+## Priority 4: Filtered String Auto-Indexing
 
-## 2. HNSW build profiling
+**Problem**: `filteredstring` has high P99 tail latency (224ms at 500K) due to full metadata scan.
 
-**Problem**: Ingest drops from 1.2M vec/s (50K count) to 53K vec/s (500K count). At 500K, the server is spending ~95% of time on HNSW construction.
+**Fix**: Implement inverted index or bloom filter for string attribute columns.
 
-**Suggestion**: Analyze pprof profiles in `profiles/` to identify exact HNSW bottleneck (distance computation vs graph traversal vs memory allocation).
+## Priority 5: Filter P99 Tail Latency
 
-## 3. Geo search — SIMD Haversine
+**Problem**: All `filtered*` modes have P99 > 200ms at 500K (float32, dim128). The 99th percentile is 20-100x the median.
 
-**Problem**: `haversineBatchAVX2` is a stub that falls through to scalar Go. True SIMD Haversine would require breaking the computation into vectorized `sin`/`cos`/`sqrt`/`atan2` passes (all have real AVX2/AVX-512/Neon implementations already in the SIMD package).
+**Fix**: Investigate filter evaluation timeout/retry logic; add a fast-path for common filter patterns.
 
-**Expected gain**: 2-4x for geo search batch distance pass.
+## Priority 6: Benchmark Infrastructure
 
-## 4. Full benchmark re-run
+- Add automatic heatmap generation to benchmark script
+- Compare runs with statistical significance (multiple runs, stddev reporting)
+- Add `--turboquant-bits` to differentiate turboquant2/4/8 in results
 
-Run all 136 configurations to get a complete before/after comparison. Currently only 6 integer dtypes at dim128 50K have been validated.
+## Priority 7: Memory Profiling
 
-## 5. Memory profiling
+- Analyze heap profiles in `profiles/` for memory fragmentation at scale
+- Focus on transition between 100K and 500K where ingest drops 2x
 
-37MB of pprof data collected across all configurations. Key profiles to analyze:
-- `profiles/*_500000_profile_*.pprof` — CPU profile at scale
-- `profiles/*_500000_heap_*.pprof` — heap at max scale
+## Data Available
+
+- 1,792 pprof profiles (7 per config: cpu, heap, allocs, goroutine, threadcreate, block, mutex)
+- 128-config JSON matrix in `data/perf_logs/perf_matrix_cpu_20260612_125608.json`
+- 3 targeted retest runs (uint32, uint64, int64) for cross-validation

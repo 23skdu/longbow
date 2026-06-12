@@ -5,54 +5,54 @@
 **Memory**: 16 GB allocated
 **Test Tool**: `scripts/unified_benchmark.py` (CPU mode)
 **Queries**: 500 per test configuration
-**Range**: Dims 128,384 | 17 datatypes | Counts 10K, 50K, 100K, 500K | All search modes
+**Range**: Dims 128,384 | 16 datatypes | Counts 10K, 50K, 100K, 500K | All 13 search modes
 
 ## Summary
 
-All 136 configurations completed with **zero errors** across all search modes (dense, hybrid, filtered, filteredbool, filteredstring, sparse, byid, graphrag, globalgraphrag, recommend, geo, temporal, learnedindex).
+All 128 configurations completed with **zero errors** across all search modes.
 
 | Metric | Best | Worst |
 |--------|------|-------|
-| Ingest throughput | 3,346,718 vec/s (int8, dim128, 50K) | 39,328 vec/s (complex128, dim384, 500K) |
-| Dense search QPS | 5,793 QPS (uint8, dim128, 500K) | 221 QPS (float64, dim384, 500K) |
-| Dense P50 latency | 1.351ms (uint8, dim128, 500K) | 36.626ms (float64, dim384, 500K) |
+| Ingest throughput | 3,263,137 vec/s (uint8, dim128, 50K) | 38,440 vec/s (complex128, dim384, 500K) |
+| Dense search QPS | 4,678 QPS (uint8, dim384, 100K) | 59 QPS (turboquant, dim128, 500K) |
+| Dense P50 latency | 1.666ms (uint8, dim384, 10K) | 240.079ms (turboquant, dim128, 500K) |
 
 ## Dtype Performance Ranking (averaged across all dims/counts)
 
 | Rank | Dtype | Avg Ingest | Avg Dense QPS | Avg Dense P50 |
 |------|-------|-----------|--------------|--------------|
-| 1 | uint8 | 887,295 vec/s | 4,036 QPS | 2.33ms |
-| 2 | turboquant | 294,938 vec/s | 2,391 QPS | 7.34ms |
-| 3 | float32 | 310,343 vec/s | 2,864 QPS | 3.38ms |
-| 4 | int8 | 922,400 vec/s | 2,111 QPS | 4.94ms |
-| 5 | int32 | 330,775 vec/s | 1,873 QPS | 7.62ms |
-| 6 | float16 | 491,630 vec/s | 1,544 QPS | 8.73ms |
-| 7 | complex128 | 104,483 vec/s | 1,494 QPS | 11.38ms |
-| 8 | int16 | 574,973 vec/s | 1,435 QPS | 11.52ms |
-| 9 | complex64 | 184,162 vec/s | 1,268 QPS | 13.62ms |
-| 10 | float64 | 183,259 vec/s | 1,260 QPS | 14.35ms |
-| 11 | uint64 | 175,910 vec/s | 1,093 QPS | 14.39ms |
-| 12 | int64 | 187,249 vec/s | 734 QPS | 15.32ms |
-| 13 | uint16 | 520,145 vec/s | 617 QPS | 15.18ms |
-| 14 | uint32 | 330,900 vec/s | 585 QPS | 16.45ms |
+| 1 | uint8 | 877,513 vec/s | 3,692 QPS | 5.21ms |
+| 2 | float32 | 294,417 vec/s | 2,788 QPS | 5.94ms |
+| 3 | int8 | 762,194 vec/s | 2,320 QPS | 8.97ms |
+| 4 | int32 | 307,478 vec/s | 2,234 QPS | 11.34ms |
+| 5 | turboquant | 254,619 vec/s | 2,030 QPS | 28.31ms |
+| 6 | float16 | 453,834 vec/s | 1,887 QPS | 9.96ms |
+| 7 | complex128 | 93,476 vec/s | 1,720 QPS | 19.11ms |
+| 8 | complex64 | 159,542 vec/s | 1,192 QPS | 30.89ms |
+| 9 | float64 | 175,331 vec/s | 1,185 QPS | 35.48ms |
+| 10 | int16 | 544,350 vec/s | 1,015 QPS | 21.42ms |
+| 11 | uint64 | 160,754 vec/s | 756 QPS | 38.93ms |
+| 12 | int64 | 151,201 vec/s | 696 QPS | 28.78ms |
+| 13 | uint32 | 300,821 vec/s | 633 QPS | 29.05ms |
+| 14 | uint16 | 490,226 vec/s | 617 QPS | 29.38ms |
 
 ## Search Mode Comparison (float32, dim128, 500K vectors)
 
 | Mode | QPS | P50 | P95 | P99 |
 |------|-----|-----|-----|-----|
-| dense | 963 | 7.475ms | 10.251ms | 29.171ms |
-| hybrid | 956 | 8.072ms | 10.642ms | 13.774ms |
-| filtered | 561 | 7.526ms | 11.447ms | 47.530ms |
-| filteredbool | 601 | 7.701ms | 10.726ms | 118.610ms |
-| filteredstring | 55 | 137.959ms | 245.438ms | 458.009ms |
-| sparse | 7,047 | 1.103ms | 1.538ms | 1.739ms |
-| byid | 1,019 | 7.337ms | 10.342ms | 27.868ms |
-| graphrag | 950 | 8.043ms | 10.689ms | 17.571ms |
-| globalgraphrag | 862 | 8.831ms | 11.612ms | 13.000ms |
-| recommend | 953 | 8.058ms | 10.694ms | 28.967ms |
-| geo | 49 | 151.064ms | 304.392ms | 479.307ms |
-| temporal | 800 | 9.537ms | 13.313ms | 15.162ms |
-| learnedindex | 1,007 | 7.296ms | 10.098ms | 41.376ms |
+| sparse | 6,713 | 2.339ms | 2.997ms | 4.303ms |
+| learnedindex | 3,239 | 4.778ms | 5.872ms | 6.353ms |
+| recommend | 3,160 | 4.955ms | 5.975ms | 6.499ms |
+| byid | 3,061 | 5.096ms | 6.230ms | 6.792ms |
+| dense | 2,885 | 5.347ms | 7.171ms | 8.576ms |
+| hybrid | 2,876 | 5.548ms | 7.108ms | 8.640ms |
+| globalgraphrag | 2,383 | 6.461ms | 8.574ms | 9.936ms |
+| graphrag | 1,924 | 7.119ms | 13.789ms | 16.401ms |
+| filteredstring | 1,069 | 8.347ms | 13.296ms | 224.103ms |
+| filteredbool | 1,014 | 3.093ms | 7.545ms | 375.363ms |
+| temporal | 781 | 18.727ms | 27.988ms | 31.152ms |
+| filtered | 634 | 3.260ms | 5.427ms | 667.528ms |
+| geo | 54 | 273.455ms | 512.058ms | 599.595ms |
 
 ## Scale Behavior
 
@@ -60,40 +60,34 @@ Ingest throughput drops sharply at scale due to HNSW graph construction overhead
 
 | Count | Avg Ingest (float32, dim128) | Notes |
 |-------|-------------------------------|-------|
-| 10K | 469,962 vec/s | Warm cache, small graph |
-| 50K | 1,193,498 vec/s | Peak throughput (better batch utilization) |
-| 100K | 92,402 vec/s | HNSW edge construction dominates |
-| 500K | 53,443 vec/s | Fully constrained by HNSW build |
+| 10K | 604,263 vec/s | Warm cache, small graph |
+| 50K | 993,435 vec/s | Peak throughput (better batch utilization) |
+| 100K | 92,600 vec/s | HNSW edge construction dominates |
+| 500K | 53,606 vec/s | Fully constrained by HNSW build |
 
-## Memory Usage
+## Optimization Impact (v0.2.2-rc1)
 
-16GB was sufficient for all 136 configurations including 500K vectors at dim 384 with complex128 (the largest data type). No OOM or ResourceExhausted errors were encountered.
+Go baseline optimizations in `internal/simd/simd_baseline.go` and `internal/simd/dispatch.go`:
 
-## Optimization Impact (dim 128, 50K vectors)
+| Optimization | Files Changed | Notable Gains |
+|-------------|---------------|--------------|
+| uint64 4x→8x unrolled Euclidean + scalar→4x unrolled cosine | simd_baseline.go | +709% dense QPS at dim128 500K |
+| int32/uint32: float64→int64/uint64 accumulators | simd_baseline.go | +76% int32 dense QPS at dim128 50K |
+| int64 4x→8x unrolled Euclidean + scalar→4x unrolled cosine | simd_baseline.go | +51% dense QPS at dim128 50K |
+| uint8/uint16 AVX2 dispatch fix (dot product) | dispatch.go | Prevents fallback-to-unrolled on AVX2 systems |
+| Geo quadtree: bounding-box-only prefilter (remove double Haversine) | geo_search.go | Eliminates redundant per-point Haversine in quadtree |
 
-Baseline vs optimized Go baseline implementations. All changes in `internal/simd/simd_baseline.go` and `internal/simd/dispatch.go`.
+## Known Issues
 
-| Dtype | Mode | Before (QPS) | After (QPS) | Improvement | Change |
-|-------|------|-------------|-------------|-------------|--------|
-| int32 | dense | 2,060 | 2,688 | +30.5% | int64 accumulator for dot/Euclidean |
-| int32 | hybrid | 1,419 | 2,015 | +42.0% | (eliminates float64 conversions) |
-| uint32 | dense | 662 | 1,195 | **+80.4%** | uint64 accumulator for dot/Euclidean |
-| uint32 | hybrid | 488 | 754 | **+54.5%** | (eliminates float64 conversions) |
-| int64 | dense | 901 | 1,073 | +19.0% | 8x unrolled Euclidean + 4x unrolled cosine |
-| int64 | hybrid | 434 | 648 | **+49.2%** | (better instruction-level parallelism) |
-| uint64 | dense | 696 | 3,552 | **+410.3%** | 8x unrolled Euclidean + 4x unrolled cosine |
-| uint64 | hybrid | 458 | 3,781 | **+726.3%** | (was scalar loop, now 8x/4x unrolled) |
-| uint8 | dense | 4,612 | 4,553 | -1.3% | AVX2 dispatch fix (within margin) |
-| uint16 | dense | 753 | 879 | **+16.7%** | AVX2 dispatch fix |
-
-**Key Insight**: The uint64 integer types saw the largest gains because their distance computations were previously bottlenecked by scalar loops. The 8x unrolled Euclidean eliminates loop-carried dependencies for ~8x better instruction-level parallelism. The uint32 accumulator change (uint64 instead of float64) avoids 6 conversions per element.
+- **turboquant** at 500K count shows degraded search performance (59 QPS) — HNSW build with turboquant distance may need tuning at scale
+- **geo** search remains the slowest mode (54 QPS) — Haversine distance is not SIMD-accelerated
+- **filtered** search modes have high P99 tail latency (>200ms) due to occasional slow filter evaluations
+- **uint64** and **uint16** have the lowest avg dense QPS — memory bandwidth limited for 8-byte elements
 
 ## Notes
 
-- **sparse** search mode is consistently 5-8x faster than dense across all configurations
-- **filteredstring** is the slowest search mode (full text scan per query)
-- **geo** search is slow across all configurations (~50 QPS) — quadtree Haversine overhead was partially reduced (bounding-box-only prefilter, removing double Haversine computation)
-- **int16/uint16/int32/uint32/int64/uint64** no longer have disproportionately high search latency — the Go baseline implementations were optimized with integer accumulators and unrolled loops
-- **turboquant** variants all produce identical JSON dtype labels but perform differently in practice (2-bit, 4-bit, 8-bit packs)
-- Small counts (10K) show artificially high ingest rates due to minimal HNSW work
+- **sparse** search mode is 2-3x faster than dense across all configurations
+- **learnedindex** (learned IVF) closely matches dense QPS with competitive latency
+- **temporal** search has elevated latency due to SegmentTree construction overhead per query
+- **filteredstring** was optimized in a prior commit (raw Arrow buffer access) and shows competitive median latency
 - All results are from CPU mode on a single node

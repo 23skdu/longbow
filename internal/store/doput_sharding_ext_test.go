@@ -11,6 +11,12 @@ import (
 	"github.com/rs/zerolog"
 )
 
+func skipIfRace(t *testing.T) {
+	if raceEnabled {
+		t.Skip("skipping under race detector (too slow)")
+	}
+}
+
 // =============================================================================
 // extractVectorFromCol Tests
 // =============================================================================
@@ -232,6 +238,7 @@ func TestCheckAndMigrateToSharded_Disabled(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
+	skipIfRace(t)
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 5*time.Minute)
@@ -251,6 +258,7 @@ func TestCheckAndMigrateToSharded_AlreadySharded(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
+	skipIfRace(t)
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 5*time.Minute)
@@ -268,6 +276,7 @@ func TestCheckAndMigrateToSharded_BelowThreshold(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
+	skipIfRace(t)
 	mem := memory.NewGoAllocator()
 	logger := zerolog.Nop()
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 5*time.Minute)

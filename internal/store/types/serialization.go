@@ -8,6 +8,121 @@ import (
 	"unsafe"
 )
 
+func writeUint32(w io.Writer, v uint32) error {
+	var buf [4]byte
+	binary.LittleEndian.PutUint32(buf[:], v)
+	_, err := w.Write(buf[:])
+	return err
+}
+
+func writeInt32(w io.Writer, v int32) error {
+	return writeUint32(w, uint32(v))
+}
+
+func writeInt64(w io.Writer, v int64) error {
+	var buf [8]byte
+	binary.LittleEndian.PutUint64(buf[:], uint64(v))
+	_, err := w.Write(buf[:])
+	return err
+}
+
+func writeUint32Slice(w io.Writer, v []uint32) error {
+	if len(v) == 0 {
+		return nil
+	}
+	buf := make([]byte, len(v)*4)
+	for i, u := range v {
+		binary.LittleEndian.PutUint32(buf[i*4:], u)
+	}
+	_, err := w.Write(buf)
+	return err
+}
+
+func writeUint8(w io.Writer, v uint8) error {
+	_, err := w.Write([]byte{v})
+	return err
+}
+
+func writeFloat32Slice(w io.Writer, v []float32) error {
+	if len(v) == 0 {
+		return nil
+	}
+	data := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*4)
+	_, err := w.Write(data)
+	return err
+}
+
+func writeUint64Slice(w io.Writer, v []uint64) error {
+	if len(v) == 0 {
+		return nil
+	}
+	data := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*8)
+	_, err := w.Write(data)
+	return err
+}
+
+func writeUint16Slice(w io.Writer, v []uint16) error {
+	if len(v) == 0 {
+		return nil
+	}
+	data := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*2)
+	_, err := w.Write(data)
+	return err
+}
+
+func writeZeros(w io.Writer, n int) error {
+	const maxBlock = 64 * 1024
+	for n > 0 {
+		sz := n
+		if sz > maxBlock {
+			sz = maxBlock
+		}
+		if _, err := w.Write(make([]byte, sz)); err != nil {
+			return err
+		}
+		n -= sz
+	}
+	return nil
+}
+
+func writeInt16Slice(w io.Writer, v []int16) error {
+	if len(v) == 0 {
+		return nil
+	}
+	data := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*2)
+	_, err := w.Write(data)
+	return err
+}
+
+func readUint32(r io.Reader) (uint32, error) {
+	var buf [4]byte
+	if _, err := io.ReadFull(r, buf[:]); err != nil {
+		return 0, err
+	}
+	return binary.LittleEndian.Uint32(buf[:]), nil
+}
+
+func readInt32(r io.Reader) (int32, error) {
+	v, err := readUint32(r)
+	return int32(v), err
+}
+
+func readInt64(r io.Reader) (int64, error) {
+	var buf [8]byte
+	if _, err := io.ReadFull(r, buf[:]); err != nil {
+		return 0, err
+	}
+	return int64(binary.LittleEndian.Uint64(buf[:])), nil
+}
+
+func readUint8(r io.Reader) (uint8, error) {
+	var buf [1]byte
+	if _, err := io.ReadFull(r, buf[:]); err != nil {
+		return 0, err
+	}
+	return buf[0], nil
+}
+
 const (
 	GraphSnapshotVersion = 1
 	SerializationMagic   = 0x4C424752 // "LBGR" (LongBow GRaph)
@@ -16,19 +131,19 @@ const (
 // Serialize writes the GraphData to the writer in a portable binary format.
 func (g *GraphData) Serialize(w io.Writer) error {
 	// Header
-	if err := binary.Write(w, binary.LittleEndian, uint32(SerializationMagic)); err != nil {
+	if err := writeUint32(w, SerializationMagic); err != nil {
 		return err
 	}
-	if err := binary.Write(w, binary.LittleEndian, uint32(GraphSnapshotVersion)); err != nil {
+	if err := writeUint32(w, GraphSnapshotVersion); err != nil {
 		return err
 	}
-	if err := binary.Write(w, binary.LittleEndian, int64(g.Capacity)); err != nil {
+	if err := writeInt64(w, int64(g.Capacity)); err != nil {
 		return err
 	}
-	if err := binary.Write(w, binary.LittleEndian, int32(g.Dims)); err != nil { // #nosec G115
+	if err := writeInt32(w, int32(g.Dims)); err != nil {
 		return err
 	}
-	if err := binary.Write(w, binary.LittleEndian, uint8(g.Type)); err != nil { // #nosec G115
+	if err := writeUint8(w, uint8(g.Type)); err != nil {
 		return err
 	}
 
@@ -47,10 +162,10 @@ func (g *GraphData) Serialize(w io.Writer) error {
 	}
 	// Bits for TurboQuant: 4-7
 	flags |= uint32(g.TurboQuantBits&0xF) << 4
-	if err := binary.Write(w, binary.LittleEndian, flags); err != nil {
+	if err := writeUint32(w, flags); err != nil {
 		return err
 	}
-	if err := binary.Write(w, binary.LittleEndian, int32(g.PQM)); err != nil { // #nosec G115
+	if err := writeInt32(w, int32(g.PQM)); err != nil {
 		return err
 	}
 
@@ -110,7 +225,7 @@ func (g *GraphData) Serialize(w io.Writer) error {
 	// To match generic import/export efficiently, we'll serialize layer-wise.
 
 	// Write MaxLayers (although const, good for versioning)
-	if err := binary.Write(w, binary.LittleEndian, uint32(ArrowMaxLayers)); err != nil {
+	if err := writeUint32(w, uint32(ArrowMaxLayers)); err != nil {
 		return err
 	}
 
@@ -132,7 +247,7 @@ func (g *GraphData) Serialize(w io.Writer) error {
 				if l < len(g.PackedNeighbors) && g.PackedNeighbors[l] != nil {
 					if nbs, ok := g.PackedNeighbors[l].GetNeighbors(nodeID); ok {
 						neighborsList = nbs
-						encodedCount = uint32(len(nbs)) // #nosec G115
+						encodedCount = uint32(len(nbs))
 					}
 				}
 
@@ -140,7 +255,10 @@ func (g *GraphData) Serialize(w io.Writer) error {
 				if neighborsList == nil {
 					counts := g.GetCountsChunk(l, cID)
 					if counts != nil {
-						encodedCount = uint32(counts[i]) // #nosec G115
+						c := counts[i]
+						if c >= 0 && c <= MaxNeighbors {
+							encodedCount = uint32(c)
+						}
 					}
 					if encodedCount > 0 {
 						chunk := g.GetNeighborsChunk(l, cID)
@@ -153,19 +271,17 @@ func (g *GraphData) Serialize(w io.Writer) error {
 					}
 				}
 
-				if err := binary.Write(w, binary.LittleEndian, encodedCount); err != nil {
+				if err := writeUint32(w, encodedCount); err != nil {
 					return err
 				}
 
 				if encodedCount > 0 {
 					if neighborsList != nil {
-						if err := binary.Write(w, binary.LittleEndian, neighborsList); err != nil {
+						if err := writeUint32Slice(w, neighborsList); err != nil {
 							return err
 						}
 					} else {
-						// Data missing, write zeros to maintain alignment
-						dummy := make([]uint32, encodedCount)
-						if err := binary.Write(w, binary.LittleEndian, dummy); err != nil {
+						if err := writeZeros(w, int(encodedCount)*4); err != nil {
 							return err
 						}
 					}
@@ -257,12 +373,12 @@ func (g *GraphData) writeBQVectors(w io.Writer) error {
 		chunk := g.GetVectorsBQChunk(i)
 		if chunk == nil {
 			zeros := make([]uint64, toWriteNodes*numWords)
-			if err := binary.Write(w, binary.LittleEndian, zeros); err != nil {
+			if err := writeUint64Slice(w, zeros); err != nil {
 				return err
 			}
 		} else {
 			limit := toWriteNodes * numWords
-			if err := binary.Write(w, binary.LittleEndian, chunk[:limit]); err != nil {
+			if err := writeUint64Slice(w, chunk[:limit]); err != nil {
 				return err
 			}
 		}
@@ -317,7 +433,7 @@ func (g *GraphData) writeFloat32Vectors(w io.Writer) error {
 		chunk := g.GetVectorsChunk(chunkID)
 		if chunk == nil {
 			zeros := make([]float32, toWriteNodes*g.Dims)
-			if err := binary.Write(w, binary.LittleEndian, zeros); err != nil {
+			if err := writeFloat32Slice(w, zeros); err != nil {
 				return err
 			}
 		} else {
@@ -325,7 +441,7 @@ func (g *GraphData) writeFloat32Vectors(w io.Writer) error {
 			if len(chunk) < limit {
 				limit = len(chunk)
 			}
-			if err := binary.Write(w, binary.LittleEndian, chunk[:limit]); err != nil {
+			if err := writeFloat32Slice(w, chunk[:limit]); err != nil {
 				return err
 			}
 		}
@@ -346,7 +462,7 @@ func (g *GraphData) writeF16Vectors(w io.Writer) error {
 		chunk := g.GetVectorsF16Chunk(i)
 		if chunk == nil {
 			zeros := make([]uint16, toWriteNodes*g.Dims)
-			if err := binary.Write(w, binary.LittleEndian, zeros); err != nil {
+			if err := writeUint16Slice(w, zeros); err != nil {
 				return err
 			}
 		} else {
@@ -354,7 +470,7 @@ func (g *GraphData) writeF16Vectors(w io.Writer) error {
 			u16Chunk := unsafe.Slice((*uint16)(unsafe.Pointer(&chunk[0])), len(chunk)) // #nosec G103
 			for j := 0; j < toWriteNodes; j++ {
 				start := j * paddedDims
-				if err := binary.Write(w, binary.LittleEndian, u16Chunk[start:start+g.Dims]); err != nil {
+				if err := writeUint16Slice(w, u16Chunk[start:start+g.Dims]); err != nil {
 					return err
 				}
 			}
@@ -376,14 +492,14 @@ func (g *GraphData) writeInt16Vectors(w io.Writer) error {
 		chunk := g.GetVectorsInt16Chunk(i)
 		if chunk == nil {
 			zeros := make([]int16, toWriteNodes*g.Dims)
-			if err := binary.Write(w, binary.LittleEndian, zeros); err != nil {
+			if err := writeInt16Slice(w, zeros); err != nil {
 				return err
 			}
 		} else {
 			paddedDims := g.GetPaddedDimsForType(VectorTypeInt16)
 			for j := 0; j < toWriteNodes; j++ {
 				start := j * paddedDims
-				if err := binary.Write(w, binary.LittleEndian, chunk[start:start+g.Dims]); err != nil {
+				if err := writeInt16Slice(w, chunk[start:start+g.Dims]); err != nil {
 					return err
 				}
 			}
@@ -405,14 +521,14 @@ func (g *GraphData) writeUint16Vectors(w io.Writer) error {
 		chunk := g.GetVectorsUint16Chunk(i)
 		if chunk == nil {
 			zeros := make([]uint16, toWriteNodes*g.Dims)
-			if err := binary.Write(w, binary.LittleEndian, zeros); err != nil {
+			if err := writeUint16Slice(w, zeros); err != nil {
 				return err
 			}
 		} else {
 			paddedDims := g.GetPaddedDimsForType(VectorTypeUint16)
 			for j := 0; j < toWriteNodes; j++ {
 				start := j * paddedDims
-				if err := binary.Write(w, binary.LittleEndian, chunk[start:start+g.Dims]); err != nil {
+				if err := writeUint16Slice(w, chunk[start:start+g.Dims]); err != nil {
 					return err
 				}
 			}
@@ -424,39 +540,39 @@ func (g *GraphData) writeUint16Vectors(w io.Writer) error {
 
 // Deserialize reads GraphData from the reader.
 func DeserializeGraphData(r io.Reader) (*GraphData, error) {
-	var magic uint32
-	if err := binary.Read(r, binary.LittleEndian, &magic); err != nil {
+	magic, err := readUint32(r)
+	if err != nil {
 		return nil, err
 	}
 	if magic != SerializationMagic {
 		return nil, fmt.Errorf("invalid magic: 0x%x", magic)
 	}
 
-	var version uint32
-	if err := binary.Read(r, binary.LittleEndian, &version); err != nil {
+	version, err := readUint32(r)
+	if err != nil {
 		return nil, err
 	}
 	if version != GraphSnapshotVersion {
 		return nil, fmt.Errorf("unsupported version: %d", version)
 	}
 
-	var capacity int64
-	if err := binary.Read(r, binary.LittleEndian, &capacity); err != nil {
+	capacity, err := readInt64(r)
+	if err != nil {
 		return nil, err
 	}
 
-	var dims int32
-	if err := binary.Read(r, binary.LittleEndian, &dims); err != nil {
+	dims, err := readInt32(r)
+	if err != nil {
 		return nil, err
 	}
 
-	var typeCode uint8
-	if err := binary.Read(r, binary.LittleEndian, &typeCode); err != nil {
+	typeCode, err := readUint8(r)
+	if err != nil {
 		return nil, err
 	}
 
-	var flags uint32
-	if err := binary.Read(r, binary.LittleEndian, &flags); err != nil {
+	flags, err := readUint32(r)
+	if err != nil {
 		return nil, err
 	}
 
@@ -469,8 +585,8 @@ func DeserializeGraphData(r io.Reader) (*GraphData, error) {
 		tqBits = 8 // Default
 	}
 
-	var pqM int32
-	if err := binary.Read(r, binary.LittleEndian, &pqM); err != nil {
+	pqM, err := readInt32(r)
+	if err != nil {
 		return nil, err
 	}
 
@@ -511,8 +627,8 @@ func DeserializeGraphData(r io.Reader) (*GraphData, error) {
 	}
 
 	// 3. Adjacency
-	var numLayers uint32
-	if err := binary.Read(r, binary.LittleEndian, &numLayers); err != nil {
+	numLayers, err := readUint32(r)
+	if err != nil {
 		return nil, err
 	}
 	if numLayers > uint32(ArrowMaxLayers) {
@@ -528,10 +644,6 @@ func DeserializeGraphData(r io.Reader) (*GraphData, error) {
 				count = int(capacity) - nodesProcessed
 			}
 
-			// Ensure chunk exists
-			// Assuming EnsureChunk already called during Levels/Vectors or lazily here
-			// NOTE: EnsureChunk(cID) ensures neighbor/counts arrays too.
-
 			countsChunk := g.GetCountsChunk(l, cID)
 			neighborsChunk := g.GetNeighborsChunk(l, cID)
 
@@ -541,8 +653,8 @@ func DeserializeGraphData(r io.Reader) (*GraphData, error) {
 			neighborsFallback := neighborsChunk == nil
 
 			for i := 0; i < count; i++ {
-				var nCnt uint32
-				if err := binary.Read(r, binary.LittleEndian, &nCnt); err != nil {
+				nCnt, err := readUint32(r)
+				if err != nil {
 					return nil, err
 				}
 

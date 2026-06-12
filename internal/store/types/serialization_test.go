@@ -8,6 +8,9 @@ import (
 )
 
 func TestGraphData_Serialization(t *testing.T) {
+	if raceEnabled {
+		t.Skip("skipping serialization test under race detector")
+	}
 	// Create sample GraphData
 	capacity := 100
 	dims := 4

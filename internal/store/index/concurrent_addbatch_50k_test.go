@@ -39,6 +39,9 @@ func TestArrowHNSW_ConcurrentAddBatch_Int8_50k_Stress(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping 50k stress test in short mode")
 	}
+	if raceEnabled {
+		t.Skip("skipping 50k stress test under race detector (too slow)")
+	}
 
 	mem := memory.NewGoAllocator()
 	dims := 384

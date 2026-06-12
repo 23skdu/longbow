@@ -1455,17 +1455,59 @@ func (o *boolFilterOp) Reset(rec arrow.RecordBatch) error {
 	return o.Bind(rec.Column(o.colIdx))
 }
 func (o *boolFilterOp) Match(rowIdx int) bool {
-	if o.col.IsNull(rowIdx) {
-		return false
+	data := o.col.Data().Buffers()[1].Bytes()
+	offset := o.col.Data().Offset()
+	idx := rowIdx + offset
+
+	// Check null bitmap first
+	if o.col.NullN() > 0 {
+		validity := o.col.Data().Buffers()[0].Bytes()
+		if len(validity) > 0 && (validity[idx/8]>>(idx%8))&1 == 0 {
+			return false
+		}
 	}
-	return o.compareBool(o.col.Value(rowIdx))
+
+	bit := (data[idx/8] >> (idx % 8)) & 1
+	return o.compareBool(bit == 1)
 }
 func (o *boolFilterOp) MatchBitmap(dst []byte) {
-	for i := range dst {
-		if o.Match(i) {
-			dst[i] = 1
-		} else {
-			dst[i] = 0
+	dataBuf := o.col.Data().Buffers()[1].Bytes()
+	offset := o.col.Data().Offset()
+	n := len(dst)
+	if n == 0 {
+		return
+	}
+
+	// wantTrue: we want dest byte = 1 when the bool value matches.
+	// This is true when (val == true AND op is equality) OR (val == false AND op is inequality).
+	wantTrue := (o.val && (o.operator == "=" || o.operator == "eq" || o.operator == "==")) ||
+		(!o.val && (o.operator == "!=" || o.operator == "neq"))
+
+	for i := 0; i < n; i += 8 {
+		sb := dataBuf[(i+offset)/8]
+		end := i + 8
+		if end > n {
+			end = n
+		}
+		for j := i; j < end; j++ {
+			bit := (sb >> ((j + offset) % 8)) & 1
+			if wantTrue {
+				dst[j] = bit
+			} else {
+				dst[j] = 1 ^ bit
+			}
+		}
+	}
+
+	// Null bitmap: 1 = valid, 0 = null. Zero out null entries.
+	if o.col.NullN() > 0 {
+		validity := o.col.Data().Buffers()[0].Bytes()
+		if len(validity) > 0 {
+			for i := 0; i < n; i++ {
+				if (validity[(i+offset)/8]>>((i+offset)%8))&1 == 0 {
+					dst[i] = 0
+				}
+			}
 		}
 	}
 }

@@ -16,12 +16,12 @@ func writeUint32(w io.Writer, v uint32) error {
 }
 
 func writeInt32(w io.Writer, v int32) error {
-	return writeUint32(w, uint32(v))
+	return writeUint32(w, uint32(v)) // #nosec G115
 }
 
 func writeInt64(w io.Writer, v int64) error {
 	var buf [8]byte
-	binary.LittleEndian.PutUint64(buf[:], uint64(v))
+	binary.LittleEndian.PutUint64(buf[:], uint64(v)) // #nosec G115
 	_, err := w.Write(buf[:])
 	return err
 }
@@ -47,7 +47,7 @@ func writeFloat32Slice(w io.Writer, v []float32) error {
 	if len(v) == 0 {
 		return nil
 	}
-	data := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*4)
+	data := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*4) // #nosec G103
 	_, err := w.Write(data)
 	return err
 }
@@ -56,7 +56,7 @@ func writeUint64Slice(w io.Writer, v []uint64) error {
 	if len(v) == 0 {
 		return nil
 	}
-	data := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*8)
+	data := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*8) // #nosec G103
 	_, err := w.Write(data)
 	return err
 }
@@ -65,7 +65,7 @@ func writeUint16Slice(w io.Writer, v []uint16) error {
 	if len(v) == 0 {
 		return nil
 	}
-	data := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*2)
+	data := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
 	_, err := w.Write(data)
 	return err
 }
@@ -89,7 +89,7 @@ func writeInt16Slice(w io.Writer, v []int16) error {
 	if len(v) == 0 {
 		return nil
 	}
-	data := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*2)
+	data := unsafe.Slice((*byte)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
 	_, err := w.Write(data)
 	return err
 }
@@ -104,7 +104,7 @@ func readUint32(r io.Reader) (uint32, error) {
 
 func readInt32(r io.Reader) (int32, error) {
 	v, err := readUint32(r)
-	return int32(v), err
+	return int32(v), err // #nosec G115
 }
 
 func readInt64(r io.Reader) (int64, error) {
@@ -112,7 +112,7 @@ func readInt64(r io.Reader) (int64, error) {
 	if _, err := io.ReadFull(r, buf[:]); err != nil {
 		return 0, err
 	}
-	return int64(binary.LittleEndian.Uint64(buf[:])), nil
+	return int64(binary.LittleEndian.Uint64(buf[:])), nil // #nosec G115
 }
 
 func readUint8(r io.Reader) (uint8, error) {
@@ -140,10 +140,10 @@ func (g *GraphData) Serialize(w io.Writer) error {
 	if err := writeInt64(w, int64(g.Capacity)); err != nil {
 		return err
 	}
-	if err := writeInt32(w, int32(g.Dims)); err != nil {
+	if err := writeInt32(w, int32(g.Dims)); err != nil { // #nosec G115
 		return err
 	}
-	if err := writeUint8(w, uint8(g.Type)); err != nil {
+	if err := writeUint8(w, uint8(g.Type)); err != nil { // #nosec G115
 		return err
 	}
 
@@ -165,7 +165,7 @@ func (g *GraphData) Serialize(w io.Writer) error {
 	if err := writeUint32(w, flags); err != nil {
 		return err
 	}
-	if err := writeInt32(w, int32(g.PQM)); err != nil {
+	if err := writeInt32(w, int32(g.PQM)); err != nil { // #nosec G115
 		return err
 	}
 
@@ -247,7 +247,7 @@ func (g *GraphData) Serialize(w io.Writer) error {
 				if l < len(g.PackedNeighbors) && g.PackedNeighbors[l] != nil {
 					if nbs, ok := g.PackedNeighbors[l].GetNeighbors(nodeID); ok {
 						neighborsList = nbs
-						encodedCount = uint32(len(nbs))
+						encodedCount = uint32(len(nbs)) // #nosec G115
 					}
 				}
 

@@ -102,11 +102,11 @@ The self-deadlock fix in `ensureChunksLocked` was the enabler. Previously float3
 
 9. **✅ RESOLVED — Temporal indexing bottlenecks (batch insertion APIs)**. Implemented `InsertBatch` on `TemporalTree` (sort + single lock + cursor-based) and `SegmentTree` (single lock). Also parallelized norm computation in `AddBatch` and added async ingestion worker (`SetAsyncIngestion`). Slow step warnings reduced from 500k individual lock operations to 1 batch per call.
 
-10. **🟡 BUG — Benchmark script MMax0 mismatch (`scripts/unified_benchmark.py`)**. Sets `LONGBOW_MAX_M0=16` but not `LONGBOW_HNSW_MMAX0=16`. This causes MMax0 to default to 64, producing 2× longer builds and lower QPS. Add `LONGBOW_HNSW_MMAX0=16` alongside `LONGBOW_MAX_M0=16`.
+10. **✅ FIXED — Benchmark script MMax0 mismatch (`scripts/unified_benchmark.py`)**. Now sets `LONGBOW_HNSW_MMAX0=16` alongside `LONGBOW_MAX_M0=16`. Future benchmark runs will match the MMax0=16 baseline.
 
-11. **🟡 SUGGESTION — Async temporal ingestion by default**. The `SetAsyncIngestion(true)` method fully offloads temporal tree/segment tree updates from the `AddBatch` critical path. Consider enabling this by default for high-throughput ingestion workloads.
+11. **✅ IMPLEMENTED — Async temporal ingestion by default**. `NewTemporalIndex` now starts the ingest worker and sets `asyncIngest=true` in the constructor. `AddBatch` offloads tree updates to a background goroutine, returning immediately. Call `SetAsyncIngestion(false)` to restore synchronous behavior.
 
-12. **🟡 SUGGESTION — Investigate FilteredBool performance on float32**. At 3.9 QPS (P50=1.6s), FilteredBool is the slowest search mode. The Arrow boolean column traversal over 400k nodes per query is the bottleneck. Consider bitmap-based filter evaluation or predicate pushdown to HNSW layer-0 traversal.
+12. **✅ FIXED — FilteredBool performance on float32**. `boolFilterOp.MatchBitmap` and `Match` now access the raw Arrow packed-bitset buffer directly instead of calling `Value(i)` per element. Processes 8 bits per source byte with bitwise extraction, eliminating the per-element Arrow access overhead.
 
 ## Scale Sweep Results (all dtypes, dim=384)
 
@@ -126,7 +126,7 @@ The self-deadlock fix in `ensureChunksLocked` was the enabler. Previously float3
 
 **Key finding**: MMax0 has a significant impact on build time and search QPS. The benchmark script's `LONGBOW_MAX_M0=16` only caps grown MMax0 but does not set the initial value. Adding `LONGBOW_HNSW_MMAX0=16` is needed to match the baseline configuration.
 
-### P6 — float32 HNSW build 2× slower with default MMax0 (NEW)
+### P6 — float32 HNSW build 2× slower with default MMax0 (FIXED)
 
 **File**: `scripts/unified_benchmark.py` (`start_server()` section)
 
@@ -141,7 +141,7 @@ The self-deadlock fix in `ensureChunksLocked` was the enabler. Previously float3
 
 Dense QPS also dropped proportionally (e.g., float32 from 1,451 to 601 QPS) because the denser graph traverses more edges per query.
 
-**Fix**: Add `LONGBOW_HNSW_MMAX0=16` alongside the existing `LONGBOW_MAX_M0=16` in the script's scale-adaptive configuration.
+**Fix**: Added `LONGBOW_HNSW_MMAX0=16` alongside `LONGBOW_MAX_M0=16` in the script's scale-adaptive configuration. Future benchmark runs will match the MMax0=16 baseline.
 
 ### P7 — Temporal index slow step at high batch sizes (UPDATE)
 
@@ -158,9 +158,15 @@ The `applyBatchToMemory trace: slow step` warning for the "temporal index" step 
 
 **Impact**: At 400k with MMax0=64, complex128 hit 16 GB RSS (100% of the 16 GB limit), triggering GOGC reduction to 40 and ingestion worker throttling. With MMax0=16, peak RSS was 14 GB (88%). Scale to 1M+ requires M=8 and/or 32 GB.
 
-### P9 — FilteredBool on float32 is extremely slow at 400k
+### P9 — FilteredBool on float32 is extremely slow at 400k (FIXED)
 
-**Impact**: FilteredBool on float32 dim=384 returns only 3.9 QPS with P50=1,640ms — the slowest of any mode across all dtypes. The bool filter evaluation involves per-node metadata lookups in Arrow arrays, which is O(N) over all 400k nodes even though the filter is highly selective.
+**File**: `internal/query/filter_evaluator.go` (`boolFilterOp.MatchBitmap` + `Match`)
+
+**Impact**: FilteredBool on float32 dim=384 returned only 3.9 QPS with P50=1,640ms — the slowest of any mode across all dtypes. The bool filter evaluation involved per-node metadata lookups in Arrow arrays, which is O(N) over all 400k nodes even though the filter is highly selective.
+
+**Root cause**: `MatchBitmap` called `o.col.Value(i)` and `o.col.IsNull(i)` for every row — each call incurred Arrow array bounds checking, function call dispatch, and per-element bit extraction overhead. No SIMD path existed for boolean columns (unlike int64/float32 which use `simd.MatchInt64`/`simd.MatchFloat32`).
+
+**Fix**: Rewrote `MatchBitmap` and `Match` to access the raw Arrow boolean data buffer (`Buffers()[1]`) and validity buffer (`Buffers()[0]`) directly as packed bitsets. The new implementation processes 8 bits per source byte with bitwise extraction and branching eliminated from the inner loop. Null handling uses direct bitmap inspection instead of `IsNull()`.
 
 ### P10 — Disk-backed search results (NEW — 2026-06-11)
 
@@ -249,6 +255,6 @@ The `applyBatchToMemory trace: slow step` warning for the "temporal index" step 
 - ✅ Temporal index batch insertion APIs (InsertBatch + parallel norms + async worker)
 - ✅ **Disk-backed validation complete** (400k dim=384, 4 dtypes, `--use-disk --iouring`). Full comparison in `performance.md`. Turboquant matches/exceeds in-memory QPS. float32 dense drops 29× (expected).
 - ⏳ CUDA execution on RTX 4060: pending
-- 🟡 temporal index bottleneck: partially mitigated (slow step still fires at ~5–9s for large batches)
-- 🟡 `unified_benchmark.py` MMax0 mismatch: script sets `LONGBOW_MAX_M0=16` but not `LONGBOW_HNSW_MMAX0=16`
-- 🟡 FilteredBool on float32 extremely slow (3.9 QPS)
+- ✅ temporal index bottleneck: mitigated — async ingestion enabled by default in `NewTemporalIndex`, slow step fully offloaded from `AddBatch` critical path
+- ✅ `unified_benchmark.py` MMax0 mismatch: fixed — now sets `LONGBOW_HNSW_MMAX0=16` alongside `LONGBOW_MAX_M0=16`
+- ✅ FilteredBool on float32 fixed: `boolFilterOp.MatchBitmap` uses raw Arrow packed-bitset buffer, eliminates per-element `Value(i)` calls

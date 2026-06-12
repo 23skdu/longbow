@@ -430,12 +430,15 @@ class BenchmarkRunner:
         # These trade recall for practical build times on large datasets.
         if count >= 500000:
             env["LONGBOW_MAX_M0"] = "16"
+            env["LONGBOW_HNSW_MMAX0"] = "16"
             env["LONGBOW_HNSW_EF_CONSTRUCTION"] = "100"
         elif count >= 50000:
             env["LONGBOW_MAX_M0"] = "16"
+            env["LONGBOW_HNSW_MMAX0"] = "16"
             env["LONGBOW_HNSW_EF_CONSTRUCTION"] = "200"
         else:
             env["LONGBOW_MAX_M0"] = "32"
+            env["LONGBOW_HNSW_MMAX0"] = "32"
             env["LONGBOW_HNSW_EF_CONSTRUCTION"] = "400"
 
         # ── Network addresses ─────────────────────────────────────────────

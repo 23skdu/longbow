@@ -834,7 +834,10 @@ func (ti *TemporalIndex) GetBounds() (int64, int64) {
 	return tt.GetBounds()
 }
 
-// NewTemporalIndex creates a new TemporalIndex instance.
+// NewTemporalIndex creates a new TemporalIndex instance with async ingestion
+// enabled by default. AddBatch offloads TemporalTree and SegmentTree updates
+// to a background worker, returning immediately after storing vector data.
+// Call SetAsyncIngestion(false) to restore synchronous behavior.
 func NewTemporalIndex(dimension int) *TemporalIndex {
 	ti := &TemporalIndex{
 		dimension: dimension,
@@ -846,6 +849,8 @@ func NewTemporalIndex(dimension int) *TemporalIndex {
 	}
 	arena := memory.NewSlabArena(1024 * 1024)
 	ti.temporalTree.Store(NewTemporalTree(arena))
+	ti.startIngestWorker()
+	ti.asyncIngest.Store(true)
 	return ti
 }
 

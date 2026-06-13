@@ -51,20 +51,13 @@ exp_loop:
 	JMP  exp_loop
 
 exp_tail:
-	// Simple scalar fallback for tail
+	// Masked tail for remaining <16 elements
 	CMPQ DX, $0
 	JE   exp_done
 	
-	// For simplicity, we can use a small VMOVUPS with mask if we wanted, 
-	// but let's just do it until done.
-	// Actually, we can just process one by one with XMM.
-	MOVSS (AX), X0
-	// ... (scalar exp is complex in asm, we'll just return for now or use the loop with 1)
-	// Actually, we can use a mask for the last <16 elements.
-	
 	MOVQ $0xFFFF, R8
-	MOVQ DX, CX
-	SHLQ CX, R8
+	MOVQ DX, R9
+	SHLQ R9, R8
 	NOTQ R8
 	KMOVQ R8, K1
 	
@@ -146,8 +139,8 @@ log_tail:
 	JE   log_done
 	
 	MOVQ $0xFFFF, R8
-	MOVQ DX, CX
-	SHLQ CX, R8
+	MOVQ DX, R9
+	SHLQ R9, R8
 	NOTQ R8
 	KMOVQ R8, K1
 	

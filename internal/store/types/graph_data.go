@@ -140,6 +140,7 @@ type GraphData struct {
 
 	TurboQuantEnabled bool
 	TurboQuantBits    int
+	tqPackedSize      int // cached PackedSize() result; 0 = uninitialized
 
 	// ArrowRefs holds references to external Arrow arrays providing vector data.
 	// Used for zero-copy ingestion paths.
@@ -210,6 +211,9 @@ type PackedNeighbors interface {
 	EvictToDisk(gd *GraphData, layer int, chunkSizes []int, w interface{ Write([]byte) (int, error) }) (nChunks int, outChunkSizes []int, bytesWritten int64, err error)
 	// RestoreFromDisk reads neighbor chunks back from r, repopulating storage.
 	RestoreFromDisk(gd *GraphData, layer int, chunkSizes []int, r interface{ Read([]byte) (int, error) }) error
+	// GetNeighborsWithGenFast is like GetNeighborsWithGen but skips ref-counting.
+	// Caller must guarantee the PackedNeighbors remains alive during the call.
+	GetNeighborsWithGenFast(id uint32, maxGen uint64) ([]uint32, bool)
 }
 
 // GetNodeCount returns the current capacity of the graph (number of addressable nodes).
@@ -752,11 +756,16 @@ func (g *GraphData) PackedSize() int {
 	if g.Dims <= 0 {
 		return 0
 	}
+	if g.tqPackedSize > 0 {
+		return g.tqPackedSize
+	}
 	p2 := int(1 << uint(math.Ceil(math.Log2(float64(g.Dims)))))
 	angleBytes := ((p2-1)*g.TurboQuantBits + 7) / 8
 	bitBytes := (p2 + 7) / 8
 	size := 4 + angleBytes + bitBytes
-	return (size + 3) &^ 3 // Pad to 4 bytes for GPU alignment
+	size = (size + 3) &^ 3 // Pad to 4 bytes for GPU alignment
+	g.tqPackedSize = size
+	return size
 }
 
 // GetVectorsTQChunk returns a chunk of TurboQuant compressed vectors.

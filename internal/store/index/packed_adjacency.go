@@ -435,6 +435,10 @@ func (pa *PackedAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint
 	return res, true
 }
 
+func (pa *PackedAdjacency) GetNeighborsWithGenFast(id uint32, maxGen uint64) ([]uint32, bool) {
+	return pa.GetNeighborsWithGen(id, maxGen)
+}
+
 // GetNeighborsFromPacked retrieves the neighbor list from a packed reference.
 func (pa *PackedAdjacency) GetNeighborsFromPacked(packed uint64) []uint32 {
 	return pa.GetNeighborsFromPackedWithGen(packed, math.MaxUint64)

@@ -247,7 +247,6 @@ func (p *SharedWorkerPool) parallelForInternal(n int, chunkSize int, task func(s
 		return
 	}
 
-	var nextChunk atomic.Int32
 	var wg sync.WaitGroup
 
 	numHelpers := p.numWorkers - 1
@@ -258,23 +257,31 @@ func (p *SharedWorkerPool) parallelForInternal(n int, chunkSize int, task func(s
 		numHelpers = 0
 	}
 
+	// Pre-partition chunks among all workers (helpers + caller) to eliminate
+	// shared atomic counter contention. Each worker processes a contiguous
+	// range of chunks with zero atomic operations.
+	totalWorkers := numHelpers + 1
+	base := numChunks / totalWorkers
+	rem := numChunks % totalWorkers
+
+	// Worker i (0 = caller, 1+ = helpers) gets:
+	//   count = base+1 if i < rem else base
+	//   start = i*base + min(i, rem)
+	//   end   = start + count
+	workerRange := func(workerID int) (int, int) {
+		cnt := base
+		if workerID < rem {
+			cnt = base + 1
+		}
+		start := workerID*base + workerID
+		if workerID > rem {
+			start = rem*(base+1) + (workerID-rem)*base
+		}
+		return start, cnt
+	}
+
 	if numHelpers > 0 {
 		wg.Add(numHelpers)
-		helperFunc := func() {
-			defer wg.Done()
-			for {
-				chunkIdx := nextChunk.Add(1) - 1
-				start := int(chunkIdx) * chunkSize
-				if start >= n {
-					break
-				}
-				end := start + chunkSize
-				if end > n {
-					end = n
-				}
-				task(start, end)
-			}
-		}
 
 		submitFunc := p.Submit
 		if highPriority {
@@ -282,22 +289,32 @@ func (p *SharedWorkerPool) parallelForInternal(n int, chunkSize int, task func(s
 		}
 
 		for i := 0; i < numHelpers; i++ {
-			submitFunc(helperFunc)
+			startChunk, count := workerRange(i + 1)
+			submitFunc(func() {
+				defer wg.Done()
+				endChunk := startChunk + count
+				for chunkIdx := startChunk; chunkIdx < endChunk; chunkIdx++ {
+					s := chunkIdx * chunkSize
+					e := s + chunkSize
+					if e > n {
+						e = n
+					}
+					task(s, e)
+				}
+			})
 		}
 	}
 
-	// Caller thread also helps!
-	for {
-		chunkIdx := nextChunk.Add(1) - 1
-		start := int(chunkIdx) * chunkSize
-		if start >= n {
-			break
+	// Caller thread = worker 0
+	startChunk, count := workerRange(0)
+	endChunk := startChunk + count
+	for chunkIdx := startChunk; chunkIdx < endChunk; chunkIdx++ {
+		s := chunkIdx * chunkSize
+		e := s + chunkSize
+		if e > n {
+			e = n
 		}
-		end := start + chunkSize
-		if end > n {
-			end = n
-		}
-		task(start, end)
+		task(s, e)
 	}
 
 	wg.Wait()

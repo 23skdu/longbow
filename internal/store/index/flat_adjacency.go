@@ -164,12 +164,18 @@ func (fa *FlatAdjacency) GetNeighbors(id uint32) ([]uint32, bool) {
 }
 
 func (fa *FlatAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint32, bool) {
-	// Pin the FlatAdjacency for the duration of the read so a concurrent
-	// Release() on the parent GraphData can't free the underlying arena
-	// out from under us. Decremented via defer.
 	fa.Retain()
 	defer fa.Release()
+	return fa.getNeighborsWithGenInner(id, maxGen)
+}
 
+// GetNeighborsWithGenFast is like GetNeighborsWithGen but skips Retain/Release
+// ref-counting for callers that guarantee the FlatAdjacency remains alive.
+func (fa *FlatAdjacency) GetNeighborsWithGenFast(id uint32, maxGen uint64) ([]uint32, bool) {
+	return fa.getNeighborsWithGenInner(id, maxGen)
+}
+
+func (fa *FlatAdjacency) getNeighborsWithGenInner(id uint32, maxGen uint64) ([]uint32, bool) {
 	chunkIdx := int(id) / adjacencyChunkSize
 	cOff := int(id) % adjacencyChunkSize
 
@@ -181,7 +187,6 @@ func (fa *FlatAdjacency) GetNeighborsWithGen(id uint32, maxGen uint64) ([]uint32
 	if offset == math.MaxUint64 {
 		if fa.MissCallback != nil {
 			if err := fa.MissCallback(fa.missLayer); err == nil {
-				// Retry after restore
 				offset = atomic.LoadUint64(&(*chunksPtr)[chunkIdx])
 			}
 		}

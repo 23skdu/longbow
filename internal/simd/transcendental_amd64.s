@@ -27,13 +27,14 @@ exp_loop:
 	// f = z - n
 	VSUBPS Z2, Z1, Z1 // Z1 = f
 	
-	// Poly: 2^f approx c0 + f*(c1 + f*(c2 + f*(c3 + f*(c4 + f*c5))))
-	VMOVUPS     exp_c0_const_tr<>+0(SB), Z3
-	VFMADD213PS exp_c1_const_tr<>+0(SB), Z1, Z3
-	VFMADD213PS exp_c2_const_tr<>+0(SB), Z1, Z3
-	VFMADD213PS exp_c3_const_tr<>+0(SB), Z1, Z3
+	// Poly: 2^f approx c0 + c1*f + c2*f^2 + c3*f^3 + c4*f^4 + c5*f^5
+	// Horner from c5: ((((c5*f + c4)*f + c3)*f + c2)*f + c1)*f + c0
+	VMOVUPS     exp_c5_const_tr<>+0(SB), Z3
 	VFMADD213PS exp_c4_const_tr<>+0(SB), Z1, Z3
-	VFMADD213PS exp_c5_const_tr<>+0(SB), Z1, Z3
+	VFMADD213PS exp_c3_const_tr<>+0(SB), Z1, Z3
+	VFMADD213PS exp_c2_const_tr<>+0(SB), Z1, Z3
+	VFMADD213PS exp_c1_const_tr<>+0(SB), Z1, Z3
+	VFMADD213PS exp_c0_const_tr<>+0(SB), Z1, Z3
 	
 	// 2^n
 	VCVTPS2DQ Z2, Z1
@@ -71,12 +72,12 @@ exp_tail:
 	VADDPS  half_const_tr<>+0(SB), Z1, Z2
 	VRNDSCALEPS $0x01, Z2, Z2
 	VSUBPS Z2, Z1, Z1
-	VMOVUPS     exp_c0_const_tr<>+0(SB), Z3
-	VFMADD213PS exp_c1_const_tr<>+0(SB), Z1, Z3
-	VFMADD213PS exp_c2_const_tr<>+0(SB), Z1, Z3
-	VFMADD213PS exp_c3_const_tr<>+0(SB), Z1, Z3
+	VMOVUPS     exp_c5_const_tr<>+0(SB), Z3
 	VFMADD213PS exp_c4_const_tr<>+0(SB), Z1, Z3
-	VFMADD213PS exp_c5_const_tr<>+0(SB), Z1, Z3
+	VFMADD213PS exp_c3_const_tr<>+0(SB), Z1, Z3
+	VFMADD213PS exp_c2_const_tr<>+0(SB), Z1, Z3
+	VFMADD213PS exp_c1_const_tr<>+0(SB), Z1, Z3
+	VFMADD213PS exp_c0_const_tr<>+0(SB), Z1, Z3
 	VCVTPS2DQ Z2, Z1
 	VPADDD    exp_bias_const_tr<>+0(SB), Z1, Z1
 	VPSLLD    $23, Z1, Z1
@@ -324,16 +325,76 @@ log2_done:
 	RET
 
 DATA log2e_const_tr<>+0(SB)/4, $1.44269504
-GLOBL log2e_const_tr<>(SB), RODATA|NOPTR, $4
+DATA log2e_const_tr<>+4(SB)/4, $1.44269504
+DATA log2e_const_tr<>+8(SB)/4, $1.44269504
+DATA log2e_const_tr<>+12(SB)/4, $1.44269504
+DATA log2e_const_tr<>+16(SB)/4, $1.44269504
+DATA log2e_const_tr<>+20(SB)/4, $1.44269504
+DATA log2e_const_tr<>+24(SB)/4, $1.44269504
+DATA log2e_const_tr<>+28(SB)/4, $1.44269504
+DATA log2e_const_tr<>+32(SB)/4, $1.44269504
+DATA log2e_const_tr<>+36(SB)/4, $1.44269504
+DATA log2e_const_tr<>+40(SB)/4, $1.44269504
+DATA log2e_const_tr<>+44(SB)/4, $1.44269504
+DATA log2e_const_tr<>+48(SB)/4, $1.44269504
+DATA log2e_const_tr<>+52(SB)/4, $1.44269504
+DATA log2e_const_tr<>+56(SB)/4, $1.44269504
+DATA log2e_const_tr<>+60(SB)/4, $1.44269504
+GLOBL log2e_const_tr<>(SB), RODATA|NOPTR, $64
 
 DATA ln2_const_tr<>+0(SB)/4, $0.69314718
-GLOBL ln2_const_tr<>(SB), RODATA|NOPTR, $4
+DATA ln2_const_tr<>+4(SB)/4, $0.69314718
+DATA ln2_const_tr<>+8(SB)/4, $0.69314718
+DATA ln2_const_tr<>+12(SB)/4, $0.69314718
+DATA ln2_const_tr<>+16(SB)/4, $0.69314718
+DATA ln2_const_tr<>+20(SB)/4, $0.69314718
+DATA ln2_const_tr<>+24(SB)/4, $0.69314718
+DATA ln2_const_tr<>+28(SB)/4, $0.69314718
+DATA ln2_const_tr<>+32(SB)/4, $0.69314718
+DATA ln2_const_tr<>+36(SB)/4, $0.69314718
+DATA ln2_const_tr<>+40(SB)/4, $0.69314718
+DATA ln2_const_tr<>+44(SB)/4, $0.69314718
+DATA ln2_const_tr<>+48(SB)/4, $0.69314718
+DATA ln2_const_tr<>+52(SB)/4, $0.69314718
+DATA ln2_const_tr<>+56(SB)/4, $0.69314718
+DATA ln2_const_tr<>+60(SB)/4, $0.69314718
+GLOBL ln2_const_tr<>(SB), RODATA|NOPTR, $64
 
 DATA half_const_tr<>+0(SB)/4, $0.5
-GLOBL half_const_tr<>(SB), RODATA|NOPTR, $4
+DATA half_const_tr<>+4(SB)/4, $0.5
+DATA half_const_tr<>+8(SB)/4, $0.5
+DATA half_const_tr<>+12(SB)/4, $0.5
+DATA half_const_tr<>+16(SB)/4, $0.5
+DATA half_const_tr<>+20(SB)/4, $0.5
+DATA half_const_tr<>+24(SB)/4, $0.5
+DATA half_const_tr<>+28(SB)/4, $0.5
+DATA half_const_tr<>+32(SB)/4, $0.5
+DATA half_const_tr<>+36(SB)/4, $0.5
+DATA half_const_tr<>+40(SB)/4, $0.5
+DATA half_const_tr<>+44(SB)/4, $0.5
+DATA half_const_tr<>+48(SB)/4, $0.5
+DATA half_const_tr<>+52(SB)/4, $0.5
+DATA half_const_tr<>+56(SB)/4, $0.5
+DATA half_const_tr<>+60(SB)/4, $0.5
+GLOBL half_const_tr<>(SB), RODATA|NOPTR, $64
 
 DATA one_const_tr<>+0(SB)/4, $1.0
-GLOBL one_const_tr<>(SB), RODATA|NOPTR, $4
+DATA one_const_tr<>+4(SB)/4, $1.0
+DATA one_const_tr<>+8(SB)/4, $1.0
+DATA one_const_tr<>+12(SB)/4, $1.0
+DATA one_const_tr<>+16(SB)/4, $1.0
+DATA one_const_tr<>+20(SB)/4, $1.0
+DATA one_const_tr<>+24(SB)/4, $1.0
+DATA one_const_tr<>+28(SB)/4, $1.0
+DATA one_const_tr<>+32(SB)/4, $1.0
+DATA one_const_tr<>+36(SB)/4, $1.0
+DATA one_const_tr<>+40(SB)/4, $1.0
+DATA one_const_tr<>+44(SB)/4, $1.0
+DATA one_const_tr<>+48(SB)/4, $1.0
+DATA one_const_tr<>+52(SB)/4, $1.0
+DATA one_const_tr<>+56(SB)/4, $1.0
+DATA one_const_tr<>+60(SB)/4, $1.0
+GLOBL one_const_tr<>(SB), RODATA|NOPTR, $64
 
 DATA exp_bias_const_tr<>+0(SB)/4, $127
 DATA exp_bias_const_tr<>+4(SB)/4, $127
@@ -354,17 +415,107 @@ DATA exp_bias_const_tr<>+60(SB)/4, $127
 GLOBL exp_bias_const_tr<>(SB), RODATA|NOPTR, $64
 
 DATA exp_c0_const_tr<>+0(SB)/4, $1.0
-GLOBL exp_c0_const_tr<>(SB), RODATA|NOPTR, $4
+DATA exp_c0_const_tr<>+4(SB)/4, $1.0
+DATA exp_c0_const_tr<>+8(SB)/4, $1.0
+DATA exp_c0_const_tr<>+12(SB)/4, $1.0
+DATA exp_c0_const_tr<>+16(SB)/4, $1.0
+DATA exp_c0_const_tr<>+20(SB)/4, $1.0
+DATA exp_c0_const_tr<>+24(SB)/4, $1.0
+DATA exp_c0_const_tr<>+28(SB)/4, $1.0
+DATA exp_c0_const_tr<>+32(SB)/4, $1.0
+DATA exp_c0_const_tr<>+36(SB)/4, $1.0
+DATA exp_c0_const_tr<>+40(SB)/4, $1.0
+DATA exp_c0_const_tr<>+44(SB)/4, $1.0
+DATA exp_c0_const_tr<>+48(SB)/4, $1.0
+DATA exp_c0_const_tr<>+52(SB)/4, $1.0
+DATA exp_c0_const_tr<>+56(SB)/4, $1.0
+DATA exp_c0_const_tr<>+60(SB)/4, $1.0
+GLOBL exp_c0_const_tr<>(SB), RODATA|NOPTR, $64
 DATA exp_c1_const_tr<>+0(SB)/4, $0.69314718
-GLOBL exp_c1_const_tr<>(SB), RODATA|NOPTR, $4
+DATA exp_c1_const_tr<>+4(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+8(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+12(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+16(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+20(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+24(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+28(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+32(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+36(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+40(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+44(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+48(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+52(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+56(SB)/4, $0.69314718
+DATA exp_c1_const_tr<>+60(SB)/4, $0.69314718
+GLOBL exp_c1_const_tr<>(SB), RODATA|NOPTR, $64
 DATA exp_c2_const_tr<>+0(SB)/4, $0.240226507
-GLOBL exp_c2_const_tr<>(SB), RODATA|NOPTR, $4
+DATA exp_c2_const_tr<>+4(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+8(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+12(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+16(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+20(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+24(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+28(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+32(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+36(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+40(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+44(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+48(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+52(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+56(SB)/4, $0.240226507
+DATA exp_c2_const_tr<>+60(SB)/4, $0.240226507
+GLOBL exp_c2_const_tr<>(SB), RODATA|NOPTR, $64
 DATA exp_c3_const_tr<>+0(SB)/4, $0.0555041086
-GLOBL exp_c3_const_tr<>(SB), RODATA|NOPTR, $4
+DATA exp_c3_const_tr<>+4(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+8(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+12(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+16(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+20(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+24(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+28(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+32(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+36(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+40(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+44(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+48(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+52(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+56(SB)/4, $0.0555041086
+DATA exp_c3_const_tr<>+60(SB)/4, $0.0555041086
+GLOBL exp_c3_const_tr<>(SB), RODATA|NOPTR, $64
 DATA exp_c4_const_tr<>+0(SB)/4, $0.009618129
-GLOBL exp_c4_const_tr<>(SB), RODATA|NOPTR, $4
+DATA exp_c4_const_tr<>+4(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+8(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+12(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+16(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+20(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+24(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+28(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+32(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+36(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+40(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+44(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+48(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+52(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+56(SB)/4, $0.009618129
+DATA exp_c4_const_tr<>+60(SB)/4, $0.009618129
+GLOBL exp_c4_const_tr<>(SB), RODATA|NOPTR, $64
 DATA exp_c5_const_tr<>+0(SB)/4, $0.00134204
-GLOBL exp_c5_const_tr<>(SB), RODATA|NOPTR, $4
+DATA exp_c5_const_tr<>+4(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+8(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+12(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+16(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+20(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+24(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+28(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+32(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+36(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+40(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+44(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+48(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+52(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+56(SB)/4, $0.00134204
+DATA exp_c5_const_tr<>+60(SB)/4, $0.00134204
+GLOBL exp_c5_const_tr<>(SB), RODATA|NOPTR, $64
 
 DATA exp_mask_tr<>+0(SB)/4, $0x000000FF
 DATA exp_mask_tr<>+4(SB)/4, $0x000000FF
@@ -421,14 +572,104 @@ DATA one_float_bits_tr<>+60(SB)/4, $0x3F800000
 GLOBL one_float_bits_tr<>(SB), RODATA|NOPTR, $64
 
 DATA log_a1_const_tr<>+0(SB)/4, $0.99999642
-GLOBL log_a1_const_tr<>(SB), RODATA|NOPTR, $4
+DATA log_a1_const_tr<>+4(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+8(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+12(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+16(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+20(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+24(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+28(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+32(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+36(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+40(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+44(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+48(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+52(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+56(SB)/4, $0.99999642
+DATA log_a1_const_tr<>+60(SB)/4, $0.99999642
+GLOBL log_a1_const_tr<>(SB), RODATA|NOPTR, $64
 DATA log_a2_const_tr<>+0(SB)/4, $-0.49987412
-GLOBL log_a2_const_tr<>(SB), RODATA|NOPTR, $4
+DATA log_a2_const_tr<>+4(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+8(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+12(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+16(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+20(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+24(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+28(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+32(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+36(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+40(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+44(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+48(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+52(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+56(SB)/4, $-0.49987412
+DATA log_a2_const_tr<>+60(SB)/4, $-0.49987412
+GLOBL log_a2_const_tr<>(SB), RODATA|NOPTR, $64
 DATA log_a3_const_tr<>+0(SB)/4, $0.33179904
-GLOBL log_a3_const_tr<>(SB), RODATA|NOPTR, $4
+DATA log_a3_const_tr<>+4(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+8(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+12(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+16(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+20(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+24(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+28(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+32(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+36(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+40(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+44(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+48(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+52(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+56(SB)/4, $0.33179904
+DATA log_a3_const_tr<>+60(SB)/4, $0.33179904
+GLOBL log_a3_const_tr<>(SB), RODATA|NOPTR, $64
 DATA log_a4_const_tr<>+0(SB)/4, $-0.2407338
-GLOBL log_a4_const_tr<>(SB), RODATA|NOPTR, $4
+DATA log_a4_const_tr<>+4(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+8(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+12(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+16(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+20(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+24(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+28(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+32(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+36(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+40(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+44(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+48(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+52(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+56(SB)/4, $-0.2407338
+DATA log_a4_const_tr<>+60(SB)/4, $-0.2407338
+GLOBL log_a4_const_tr<>(SB), RODATA|NOPTR, $64
 DATA log_a5_const_tr<>+0(SB)/4, $0.16765407
-GLOBL log_a5_const_tr<>(SB), RODATA|NOPTR, $4
+DATA log_a5_const_tr<>+4(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+8(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+12(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+16(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+20(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+24(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+28(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+32(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+36(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+40(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+44(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+48(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+52(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+56(SB)/4, $0.16765407
+DATA log_a5_const_tr<>+60(SB)/4, $0.16765407
+GLOBL log_a5_const_tr<>(SB), RODATA|NOPTR, $64
 DATA log_a6_const_tr<>+0(SB)/4, $-0.09532939
-GLOBL log_a6_const_tr<>(SB), RODATA|NOPTR, $4
+DATA log_a6_const_tr<>+4(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+8(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+12(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+16(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+20(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+24(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+28(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+32(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+36(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+40(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+44(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+48(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+52(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+56(SB)/4, $-0.09532939
+DATA log_a6_const_tr<>+60(SB)/4, $-0.09532939
+GLOBL log_a6_const_tr<>(SB), RODATA|NOPTR, $64

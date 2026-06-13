@@ -142,7 +142,7 @@ func sqrt32(x float32) float32 {
 // DotProductFMA dispatches to AVX512 or fallback implementation
 func DotProductFMA(a, b []float32) (float32, error) {
 	if features.HasAVX512 {
-		return DotProductFMA_AVX512(a, b)
+		return dotAVX512(a, b)
 	}
 	return dotGeneric(a, b)
 }
@@ -150,7 +150,7 @@ func DotProductFMA(a, b []float32) (float32, error) {
 // EuclideanDistanceFMA dispatches to AVX512 or fallback implementation
 func EuclideanDistanceFMA(a, b []float32) (float32, error) {
 	if features.HasAVX512 {
-		return EuclideanDistanceFMA_AVX512(a, b)
+		return l2SquaredAVX512(a, b)
 	}
 	return euclideanGeneric(a, b)
 }
@@ -158,7 +158,7 @@ func EuclideanDistanceFMA(a, b []float32) (float32, error) {
 // CosineDistanceFMA dispatches to AVX512 or fallback implementation
 func CosineDistanceFMA(a, b []float32) (float32, error) {
 	if features.HasAVX512 {
-		return CosineDistanceFMA_AVX512(a, b)
+		return cosineAVX512(a, b)
 	}
 	return cosineGeneric(a, b)
 }

@@ -434,10 +434,7 @@ func minAVX2(src []float32) float32 {
 }
 
 func sigmoidAVX512(src, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	sigmoidAVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	sigmoidGeneric(src, dst)
 }
 
 func softmaxAVX512(src, dst []float32) {

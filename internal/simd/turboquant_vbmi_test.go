@@ -46,10 +46,9 @@ func TestPackTQ2AVX512VBMI(t *testing.T) {
 			// q = (v + PI) * INV2PI * 3.0 + 0.5
 			// Unpack: v = (q - 1.5) * (2*PI / 3.0)
 
-			scale := float32(2.0 * math.Pi / 3.0)
-			bias := float32(1.5)
+	scale := float32(2.0 * math.Pi / 3.0)
 
-			UnpackTQ2AVX512VBMI(dst, unpacked, scale, bias)
+	UnpackTQ2AVX512VBMI(dst, unpacked, scale, -float32(math.Pi))
 
 			for i := 0; i < dim; i++ {
 				// Each element in TQ2 is 2 bits, so it has 4 levels.

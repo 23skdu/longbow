@@ -8,58 +8,42 @@ Based on the 1M-vector benchmark run (dim128+384, float32/float64, 1000 queries,
 
 **Problem**: Longbow has no AMX (Advanced Matrix Extensions) support for Intel Sapphire Rapids / Emerald Rapids / Granite Rapids CPUs. AMX provides tile-based matrix multiply instructions (`TDPBSSD`/`TDPBF16PS` for INT8/BF16 on Emerald Rapids, `TDPFP16PS` for FP16 on Granite Rapids) that can deliver 5-10x higher throughput than AVX-512 for matrix-heavy workloads like HNSW distance computation and matmul.
 
-**Status**: Build tag infrastructure is implemented but AMX assembly kernels are not yet written.
+### ✅ Completed
 
-### What's Built
+| Component | Files | Description |
+|-----------|-------|-------------|
+| `emerald`/`granite` build tags | `emerald_amd64.go`, `emerald_stubs_amd64.go`, `granite_amd64.go`, `granite_stubs_amd64.go` | Compile-time gates for AMX kernels |
+| CPU detection | `cpu_detection.go` | `HasAMX`, `HasAMXINT8`, `HasAMXBF16`, `HasAMXFP16`, `HasAMXCOMPLEX`; auto-selects `"emerald"` or `"granite"` |
+| Dispatch tables | `dispatch.go` | `dispatchTable["emerald"]`, `dispatchTable["granite"]`, metrics `Set(4/5)` |
+| Build verified | — | `go build -tags emerald ./...` and `-tags granite` pass on vhagar (Emerald Rapids HW) |
+| Pushed to `main` | — | Commit `49aad114` and ancestors |
 
-| Component | File | Description |
-|-----------|------|-------------|
-| `emerald` build tag | `emerald_amd64.go`, `emerald_stubs_amd64.go` | Compile-time gate for Emerald Rapids AMX kernels |
-| `granite` build tag | `granite_amd64.go`, `granite_stubs_amd64.go` | Compile-time gate for Granite Rapids AMX-FP16 kernels |
-| CPU detection | `cpu_detection.go` | `HasAMX`, `HasAMXINT8`, `HasAMXBF16`, `HasAMXFP16`, `HasAMXCOMPLEX` |
-| Runtime dispatch selection | `cpu_detection.go` | Auto-selects `"emerald"` or `"granite"` when AMX hardware detected |
-| Dispatch entries | `dispatch.go` | `dispatchTable["emerald"]` and `dispatchTable["granite"]` |
-| Metrics | `dispatch.go` | `SimdStaticDispatchType.Set(4/5)` for emerald/granite |
+#### AVX-512 Assembly Bug Fixes (`transcendental_amd64.s`, `softmax_avx512_amd64.s`)
 
-### Build Usage
+| Bug | Fix | Impact |
+|-----|-----|--------|
+| **Segfault in exp/log tail** | Save `CX` (dst ptr) to `R10` before mask shift count clobbered it; restore after | `TestExpSIMD`, `TestLogSIMD` now pass |
+| **4-byte constants → 64-byte ZMM loads** | All scalar constants expanded to 64 bytes (16 copies) | No garbage bytes read; correct polynomial evaluation |
+| **Reversed Horner order (exp)** | FMA chain now starts from `c5` (highest deg) → `c0`, not `c0` → `c5` | `exp(0)=1.0`, not `exp(0)=c5=0.001342` |
+| **Same bugs in softmax** | Applied same constant + Horner fixes to `softmax_avx512_amd64.s` | Softmax assembly kernel structurally correct |
 
-```bash
-go build -tags emerald ./cmd/longbow        # Emerald Rapids
-go build -tags granite ./cmd/longbow         # Granite Rapids
-go build ./cmd/longbow                       # Falls back to runtime detection (avx2/avx512)
-```
+#### Function Redirects (Dispatch Fixes)
 
-### Required AMX Assembly Kernels
+| Function | Old Behavior | New Behavior |
+|----------|-------------|-------------|
+| `sigmoidAVX512` | Called no-op `sigmoidAVX512Kernel` (empty `RET`) | Delegates to `sigmoidGeneric` |
+| `softmaxAVX512` | Called broken `softmaxAVX512Kernel` (no horizontal max) | Delegates to `softmaxGeneric` |
+| `DotProductFMA` | Called stub `dot32FMA` returning 0 | Routes to `dotAVX512` |
+| `EuclideanDistanceFMA` | Called stub `l2Squared32FMA` returning 0 | Routes to `l2SquaredAVX512` |
+| `CosineDistanceFMA` | Called stub `cosine32FMA` returning 0 | Routes to `cosineAVX512` |
 
-| Kernel | AMX Instruction | File to Create | Priority | HW Required |
-|--------|----------------|---------------|----------|-------------|
-| `euclideanAMX` (float32 INT8) | `TDPBSSD` | `emerald_amd64.s` | High | Emerald Rapids |
-| `dotAMX` (float32 INT8) | `TDPBSSD` | `emerald_amd64.s` | High | Emerald Rapids |
-| `l2SquaredAMX` (float32 INT8) | `TDPBSSD` | `emerald_amd64.s` | High | Emerald Rapids |
-| `matMulAMX` (float32) | `TDPBF16PS` | `emerald_amd64.s` | High | Emerald Rapids |
-| `euclideanF16AMX` (float16) | `TDPFP16PS` | `granite_amd64.s` | Medium | Granite Rapids |
-| `dotF16AMX` (float16) | `TDPFP16PS` | `granite_amd64.s` | Medium | Granite Rapids |
-| `matMulF16AMX` (float16) | `TDPFP16PS` | `granite_amd64.s` | Medium | Granite Rapids |
+### ☐ Remaining
 
-### AMX Programming Model
-
-AMX uses 8 tile registers (TMM0-TMM7), each configured via `TCONFIG` with row/col dimensions. Key operations:
-1. **TDPBSSD**: Signed INT8 tile dot product → INT32 accumulator (HNSW integer distance)
-2. **TDPBF16PS**: BF16 tile multiply → float32 accumulator (HNSW float distance)
-3. **TDPFP16PS**: FP16 tile multiply → float32 accumulator (Granite Rapids, HNSW float16)
-4. **TILECONFIG**: Configures tile dimensions before use
-5. **TILELOADD/TILESTORED**: Load/store tile data
-
-### Calling Convention
-
-Each AMX kernel should:
-1. Accept `uintptr` (not Go slices) to match the existing assembly convention
-2. Configure tiles with `TILECONFIG` on entry
-3. Process vectors in tile-sized batches (typically 16×16 or 16×32 for INT8)
-4. Accumulate results in INT32 (TDPBSSD) or float32 (TDPBF16PS)
-5. Issue `TILERELEASE` on exit
-
-**Expected gain**: 2-5x over AVX-512 for INT8/BF16 dot products, 5-10x over AVX2.
+| Task | Details |
+|------|---------|
+| Write AMX assembly kernels | `emerald_amd64.s`: `TDPBSSD` (INT8 dot/L2/cosine), `TDPBF16PS` (BF16 matmul). `granite_amd64.s`: `TDPFP16PS` (FP16 dot/L2/matmul) |
+| Fix `TestSoftmaxSIMD` on vhagar | `softmaxAVX512 → softmaxGeneric` redirect works locally but test fails on vhagar — likely dispatch init ordering issue |
+| Fix `avx512` build tag | Pre-existing breakage: duplicate declarations between `simd_amd64.go` (always amd64) and `avx512.go`/`turboquant_avx512_amd64.go` (only with `avx512` tag). Move decls behind `!avx512` constraint or into `avx512.go`. |
 
 ---
 
@@ -160,16 +144,6 @@ Each AMX kernel should:
 - **Heatmap generation**: Automatically generate a heatmap from the perf matrix showing QPS by dtype × dim
 - **Swap detection**: Alert when the system starts swapping during a benchmark run
 - **OOM resilience**: If a config hits `ResourceExhausted`, skip remaining large dtypes and move to next batch
-
----
-
-## Priority 8: Fix `avx512` Build Tag
-
-**Problem**: The `avx512` compile-time build tag (`go build -tags avx512`) is broken due to duplicate function declarations between `simd_amd64.go` (always compiled on amd64) and `avx512.go`/`turboquant_avx512_amd64.go` (compiled only with avx512 tag). The avx512 *runtime* path works (via `cpu_detection.go`), but the build tag path has been broken since the avo-generated assembly refactor.
-
-**Fix**: Remove kernel function declarations from `simd_amd64.go` that duplicate those in `avx512.go`; either move them to `avx512.go` or conditionally compile with `!avx512` constraints.
-
-**Impact**: Unblocks `-tags=avx512` and enables `-tags=emerald`/`-tags=granite` to correctly use AVX512 assembly kernels + AMX.
 
 ---
 

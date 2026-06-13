@@ -138,9 +138,7 @@ var (
 	dotProductUint8Impl      func(a, b []uint8) (float32, error)
 	dotProductInt16Impl      func(a, b []int16) (float32, error)
 	dotProductUint16Impl     func(a, b []uint16) (float32, error)
-	cosineDistanceInt16Impl  func(a, b []int16) (float32, error)
-	cosineDistanceUint8Impl  func(a, b []uint8) (float32, error)
-	cosineDistanceUint16Impl func(a, b []uint16) (float32, error)
+
 	dotProductInt4Impl       func(a, b []byte) (float32, error)
 	dotProductInt2Impl       func(a, b []byte) (float32, error)
 
@@ -384,7 +382,7 @@ func euclideanSQ8BatchGeneric(query []byte, vectors [][]byte, results []float32)
 // euclideanBatchGeneric is the fallback implementation
 func euclideanBatchGeneric(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
-		if v == nil || len(v) == 0 {
+		if len(v) == 0 {
 			continue
 		}
 		d, err := euclideanGeneric(query, v)
@@ -440,7 +438,7 @@ func euclideanBatchFlatAVX512(query, flatVectors []float32, numVectors, dims int
 
 func dotBatchGeneric(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
-		if v == nil || len(v) == 0 {
+		if len(v) == 0 {
 			continue
 		}
 		d, err := DotProduct(query, v)

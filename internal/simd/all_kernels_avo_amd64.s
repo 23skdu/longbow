@@ -12705,14 +12705,6 @@ TEXT ·matchFloat32AVX512Kernel(SB), NOSPLIT, $0-40
 TEXT ·matchFloat64AVX512Kernel(SB), NOSPLIT, $0-40
 	RET
 
-// func cosineDotAVX512(a uintptr, b uintptr, n int) (dot float32, normA float32, normB float32)
-// Requires: SSE
-TEXT ·cosineDotAVX512(SB), NOSPLIT, $0-36
-	MOVSS X0, dot+24(FP)
-	MOVSS X0, normA+28(FP)
-	MOVSS X0, normB+32(FP)
-	RET
-
 // func cosineVertical4AVX512(q uintptr, v0 uintptr, v1 uintptr, v2 uintptr, v3 uintptr, n int, res uintptr)
 TEXT ·cosineVertical4AVX512(SB), NOSPLIT, $0-56
 	RET
@@ -12782,46 +12774,6 @@ TEXT ·cosine8AVX2(SB), NOSPLIT, $0-28
 	VADDSS       X0, X1, X1
 	MOVSS        X1, normB+24(FP)
 	VZEROUPPER
-	RET
-
-// func euclidean32FMA(a uintptr, b uintptr) float32
-// Requires: SSE
-TEXT ·euclidean32FMA(SB), NOSPLIT, $0-20
-	MOVSS X0, ret+16(FP)
-	RET
-
-// func dot32FMA(a uintptr, b uintptr) float32
-// Requires: SSE
-TEXT ·dot32FMA(SB), NOSPLIT, $0-20
-	MOVSS X0, ret+16(FP)
-	RET
-
-// func cosine32FMA(a uintptr, b uintptr) (dot float32, normA float32, normB float32)
-// Requires: SSE
-TEXT ·cosine32FMA(SB), NOSPLIT, $0-28
-	MOVSS X0, dot+16(FP)
-	MOVSS X0, normA+20(FP)
-	MOVSS X0, normB+24(FP)
-	RET
-
-// func euclidean64FMA(a uintptr, b uintptr) float32
-// Requires: SSE
-TEXT ·euclidean64FMA(SB), NOSPLIT, $0-20
-	MOVSS X0, ret+16(FP)
-	RET
-
-// func dot64FMA(a uintptr, b uintptr) float32
-// Requires: SSE
-TEXT ·dot64FMA(SB), NOSPLIT, $0-20
-	MOVSS X0, ret+16(FP)
-	RET
-
-// func cosine64FMA(a uintptr, b uintptr) (dot float32, normA float32, normB float32)
-// Requires: SSE
-TEXT ·cosine64FMA(SB), NOSPLIT, $0-28
-	MOVSS X0, dot+16(FP)
-	MOVSS X0, normA+20(FP)
-	MOVSS X0, normB+24(FP)
 	RET
 
 // func matMulAVX2Kernel(a uintptr, b uintptr, dst uintptr, m int, n int, k int)

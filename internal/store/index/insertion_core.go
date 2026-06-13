@@ -332,7 +332,11 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 
 	ctx := h.searchPool.Get()
 	ctx.MaxNodeCount = meta.NodeCount
-	ctx.MaxGeneration = meta.Generation
+	if isPrivate {
+		ctx.MaxGeneration = math.MaxUint64
+	} else {
+		ctx.MaxGeneration = meta.Generation
+	}
 	computer := h.resolveHNSWComputer(data, ctx, vec, true, nil)
 	defer h.searchPool.PutWithMetrics(ctx, h.config.DataType.String(), strconv.Itoa(dims))
 	ctx.Reset()

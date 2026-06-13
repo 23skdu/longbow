@@ -3,6 +3,7 @@ package simd
 import (
 	"fmt"
 	"math"
+	"os"
 	"runtime"
 
 	"github.com/klauspost/cpuid/v2"
@@ -46,11 +47,13 @@ func detectCPU() {
 	hasVBMI := cpuid.CPU.Supports(cpuid.AVX512VBMI)
 
 	// AMX detection (Sapphire Rapids+ / Emerald Rapids+)
-	hasAMX := cpuid.CPU.Supports(cpuid.AMXTILE)
-	hasAMXINT8 := cpuid.CPU.Supports(cpuid.AMXINT8)
-	hasAMXBF16 := cpuid.CPU.Supports(cpuid.AMXBF16)
-	hasAMXFP16 := cpuid.CPU.Supports(cpuid.AMXFP16)
-	hasAMXCOMPLEX := cpuid.CPU.Supports(cpuid.AMXCOMPLEX)
+	// CPUID may report AMX support even when the hypervisor hasn't enabled it.
+	// LONGBOW_DISABLE_AMX env var provides an escape hatch for such VMs.
+	hasAMX := cpuid.CPU.Supports(cpuid.AMXTILE) && os.Getenv("LONGBOW_DISABLE_AMX") == ""
+	hasAMXINT8 := cpuid.CPU.Supports(cpuid.AMXINT8) && hasAMX
+	hasAMXBF16 := cpuid.CPU.Supports(cpuid.AMXBF16) && hasAMX
+	hasAMXFP16 := cpuid.CPU.Supports(cpuid.AMXFP16) && hasAMX
+	hasAMXCOMPLEX := cpuid.CPU.Supports(cpuid.AMXCOMPLEX) && hasAMX
 
 	// Only detect NEON on ARM platforms
 	hasNEON := runtime.GOARCH == "arm64" && cpuid.CPU.Supports(cpuid.ASIMD)

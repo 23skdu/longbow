@@ -658,8 +658,6 @@ func orBytesAVX512(dst, src []byte) {
 	orBytesAVX2(dst, src)
 }
 
-//go:noescape
-func euclideanInt8AVX512Kernel(a, b uintptr, n int) float32
 
 func euclideanInt8AVX512(a, b []int8) (float32, error) {
 	if !features.HasAVX512 {

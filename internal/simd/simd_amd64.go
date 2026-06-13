@@ -438,10 +438,7 @@ func sigmoidAVX512(src, dst []float32) {
 }
 
 func softmaxAVX512(src, dst []float32) {
-	if len(src) == 0 {
-		return
-	}
-	softmaxAVX512Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
+	softmaxGeneric(src, dst)
 }
 
 func expAVX512(src, dst []float32) {
@@ -599,6 +596,7 @@ func cosineFloat64AVX2(a, b []float64) (float32, error) {
 // Int8 Implementations
 // =============================================================================
 
+//go:noescape
 func euclideanInt8AVX512Kernel(a, b uintptr, n int) float32
 
 func euclideanInt8AVX2(a, b []int8) (float32, error) {
@@ -819,7 +817,7 @@ var _ = func() {
 
 func l2SquaredBatchAVX2(query []float32, vectors [][]float32, results []float32) error {
 	for i, v := range vectors {
-		if v == nil || len(v) == 0 {
+		if len(v) == 0 {
 			continue
 		}
 		d, err := l2SquaredAVX2(query, v)

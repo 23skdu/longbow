@@ -115,9 +115,7 @@ var (
 	initTableOnce sync.Once
 )
 
-func init() {
-	initDispatchTable()
-}
+
 
 func initDispatchTable() {
 	initTableOnce.Do(func() {

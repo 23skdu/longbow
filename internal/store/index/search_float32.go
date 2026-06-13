@@ -89,7 +89,7 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 		}
 
 		if ctx.visitedNodesBudget > 0 && ctx.nodesVisitedCount >= ctx.visitedNodesBudget {
-			metrics.HNSWEarlyTerminationTotal.WithLabelValues(h.name, "budget_exceeded").Inc()
+			metrics.HNSWEarlyTerminationTotal.WithLabelValues("budget_exceeded").Inc()
 			break
 		}
 

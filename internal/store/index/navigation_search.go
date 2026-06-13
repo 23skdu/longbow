@@ -91,6 +91,18 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		searchOptions = opt
 	}
 
+	// Set visited nodes budget to prevent P99 tail latency.
+	ef := searchOptions.Ef
+	if ef <= 0 {
+		ef = 50
+	}
+	budget := ef * 40
+	if budget < 5000 {
+		budget = 5000
+	} else if budget > 100000 {
+		budget = 100000
+	}
+	searchCtx.visitedNodesBudget = budget
 	searchCtx.diskGraph = h.diskGraph.Load()
 	searchCtx.predicate = searchOptions.Predicate
 

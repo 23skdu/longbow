@@ -510,59 +510,88 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr Fi
 
 	bitset := types.NewBitset()
 
-	// Dataset records must have the same schema.
-	eval, err := qry.NewFilterEvaluator(records[0], filters)
-	if err != nil {
-		bitset.Release()
-		return nil, err
+	// Fast path: use ColumnInvertedIndex for simple equality filters on indexed columns.
+	// This avoids the full metadata scan (the primary bottleneck at 500K).
+	if d.ColumnIndex != nil && filterExpr == nil && len(filters) > 0 {
+		allIndexed := true
+		for _, f := range filters {
+			if f.Operator != "=" && f.Operator != "eq" && f.Operator != "==" {
+				allIndexed = false
+				break
+			}
+			if !d.ColumnIndex.HasIndex(f.Field) {
+				allIndexed = false
+				break
+			}
+		}
+		if allIndexed {
+			result := d.lookupIntersection(filters)
+			for _, pos := range result {
+				loc := types.Location{BatchIdx: pos.RecordIdx, RowIdx: pos.RowIdx}
+				if vid, ok := d.Index.GetVectorID(loc); ok {
+					bitset.Set(int(vid))
+				}
+			}
+			goto cacheResult
+		}
 	}
 
-	idx := d.Index
-	for batchIdx, rec := range records {
-		if err := eval.Reset(rec); err != nil {
-			continue // Should not happen with consistent schema
-		}
-
-		matches, err := eval.MatchesAll(int(rec.NumRows()))
+	{
+		eval, err := qry.NewFilterEvaluator(records[0], filters)
 		if err != nil {
+			bitset.Release()
 			return nil, err
 		}
 
-		if filterExpr != nil {
-			metaIdx := -1
-			for i, field := range d.Schema.Fields() {
-				if field.Name == "metadata" {
-					metaIdx = i
-					break
-				}
+		idx := d.Index
+		for batchIdx, rec := range records {
+			if err := eval.Reset(rec); err != nil {
+				continue
 			}
 
-			var validMatches []int
-			if metaIdx >= 0 {
-				metaCol := rec.Column(metaIdx)
-				binData := array.NewBinaryData(metaCol.Data())
+			matches, err := eval.MatchesAll(int(rec.NumRows()))
+			if err != nil {
+				return nil, err
+			}
 
-				for _, rowIdx := range matches {
-					if binData.IsValid(rowIdx) {
-						metaBytes := binData.Value(rowIdx)
-						lazyMeta := types.NewLazyMetadata(metaBytes)
-						if filterExpr.Evaluate(lazyMeta) {
-							validMatches = append(validMatches, rowIdx)
-						}
+			if filterExpr != nil {
+				metaIdx := -1
+				for i, field := range d.Schema.Fields() {
+					if field.Name == "metadata" {
+						metaIdx = i
+						break
 					}
 				}
-				binData.Release()
-				matches = validMatches
-			}
-		}
 
-		for _, rowIdx := range matches {
-			loc := types.Location{BatchIdx: batchIdx, RowIdx: int(rowIdx)}
-			if vid, ok := idx.GetVectorID(loc); ok {
-				bitset.Set(int(vid))
+				var validMatches []int
+				if metaIdx >= 0 {
+					metaCol := rec.Column(metaIdx)
+					binData := array.NewBinaryData(metaCol.Data())
+
+					for _, rowIdx := range matches {
+						if binData.IsValid(rowIdx) {
+							metaBytes := binData.Value(rowIdx)
+							lazyMeta := types.NewLazyMetadata(metaBytes)
+							if filterExpr.Evaluate(lazyMeta) {
+								validMatches = append(validMatches, rowIdx)
+							}
+						}
+					}
+					binData.Release()
+					matches = validMatches
+				}
+			}
+
+			for _, rowIdx := range matches {
+				loc := types.Location{BatchIdx: batchIdx, RowIdx: int(rowIdx)}
+				if vid, ok := idx.GetVectorID(loc); ok {
+					bitset.Set(int(vid))
+				}
 			}
 		}
 	}
+
+cacheResult:
 
 	// Cache a clone so the original can be released/modified if needed elsewhere
 	// and the cached one stays safe.
@@ -582,6 +611,37 @@ func (d *Dataset) GenerateFilterBitsetLocked(filters []qry.Filter, filterExpr Fi
 	d.filterMu.Unlock()
 
 	return bitset.Clone(), nil
+}
+
+// lookupIntersection returns RowPositions matching all filters by intersecting
+// ColumnInvertedIndex lookups. Caller must hold dataMu (at least RLock).
+func (d *Dataset) lookupIntersection(filters []qry.Filter) []index.RowPosition {
+	var result []index.RowPosition
+	for i, f := range filters {
+		positions := d.ColumnIndex.Lookup(f.Field, f.Value)
+		if len(positions) == 0 {
+			return nil
+		}
+		if i == 0 {
+			result = make([]index.RowPosition, len(positions))
+			copy(result, positions)
+		} else {
+			intersection := make([]index.RowPosition, 0, min(len(result), len(positions)))
+			for _, rp := range result {
+				for _, pp := range positions {
+					if rp == pp {
+						intersection = append(intersection, rp)
+						break
+					}
+				}
+			}
+			result = intersection
+			if len(result) == 0 {
+				return nil
+			}
+		}
+	}
+	return result
 }
 
 // MigrateToShardedIndex migrates the current index to a sharded index.

@@ -18,7 +18,12 @@ type CPUFeatures struct {
 	HasAVX512FP16 bool // AVX512-FP16 (Sapphire Rapids+)
 	HasVBMI       bool // AVX512-VBMI (Ice Lake+)
 	HasNEON       bool
-	HasDotProd    bool // ARM64 FEAT_DotProd (udot/sdot)
+	HasDotProd    bool  // ARM64 FEAT_DotProd (udot/sdot)
+	HasAMX        bool  // AMX-TILE (Sapphire Rapids+)
+	HasAMXINT8    bool  // AMX-INT8 tile dot product
+	HasAMXBF16    bool  // AMX-BF16 tile dot product
+	HasAMXFP16    bool  // AMX-FP16 tile dot product (Granite Rapids+)
+	HasAMXCOMPLEX bool  // AMX-COMPLEX (Granite Rapids+)
 }
 
 // Global CPU detection state
@@ -40,6 +45,13 @@ func detectCPU() {
 	hasAVX512FP16 := cpuid.CPU.Supports(cpuid.AVX512FP16)
 	hasVBMI := cpuid.CPU.Supports(cpuid.AVX512VBMI)
 
+	// AMX detection (Sapphire Rapids+ / Emerald Rapids+)
+	hasAMX := cpuid.CPU.Supports(cpuid.AMXTILE)
+	hasAMXINT8 := cpuid.CPU.Supports(cpuid.AMXINT8)
+	hasAMXBF16 := cpuid.CPU.Supports(cpuid.AMXBF16)
+	hasAMXFP16 := cpuid.CPU.Supports(cpuid.AMXFP16)
+	hasAMXCOMPLEX := cpuid.CPU.Supports(cpuid.AMXCOMPLEX)
+
 	// Only detect NEON on ARM platforms
 	hasNEON := runtime.GOARCH == "arm64" && cpuid.CPU.Supports(cpuid.ASIMD)
 	hasDotProd := runtime.GOARCH == "arm64" && cpuid.CPU.Supports(cpuid.ASIMDDP)
@@ -52,12 +64,23 @@ func detectCPU() {
 		HasAVXVNNI:    hasAVXVNNI,
 		HasAVX512FP16: hasAVX512FP16,
 		HasVBMI:       hasVBMI,
+		HasAMX:        hasAMX,
+		HasAMXINT8:    hasAMXINT8,
+		HasAMXBF16:    hasAMXBF16,
+		HasAMXFP16:    hasAMXFP16,
+		HasAMXCOMPLEX: hasAMXCOMPLEX,
 		HasNEON:       hasNEON,
 		HasDotProd:    hasDotProd,
 	}
 
 	// Select best implementation with fallback logic
 	switch {
+	case features.HasAMX:
+		if features.HasAMXFP16 || features.HasAMXCOMPLEX {
+			implementation = "granite"
+		} else {
+			implementation = "emerald"
+		}
 	case features.HasAVX512:
 		implementation = "avx512"
 	case features.HasAVX2:
@@ -98,6 +121,11 @@ func GetImplementationDetails() map[string]any {
 		"has_avx_vnni":    features.HasAVXVNNI,
 		"has_avx512_fp16": features.HasAVX512FP16,
 		"has_vbmi":        features.HasVBMI,
+		"has_amx":         features.HasAMX,
+		"has_amx_int8":    features.HasAMXINT8,
+		"has_amx_bf16":    features.HasAMXBF16,
+		"has_amx_fp16":    features.HasAMXFP16,
+		"has_amx_complex": features.HasAMXCOMPLEX,
 		"has_neon":        features.HasNEON,
 		"has_dotprod":     features.HasDotProd,
 	}

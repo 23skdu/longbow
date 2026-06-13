@@ -192,6 +192,148 @@ func initDispatchTable() {
 			HaversineBatch:            haversineBatchAVX2,
 		}
 
+		dispatchTable["emerald"] = &ImplementationDispatch{
+			EuclideanDistance:          euclideanAMX,
+			CosineDistance:             cosineAVX512,
+			DotProduct:                 dotAMX,
+			EuclideanDistanceBatch:     euclideanBatchAMX,
+			L2SquaredDistanceBatch:     l2SquaredBatchAVX512,
+			CosineDistanceBatch:        cosineBatchGeneric,
+			DotProductBatch:            dotBatchAMX,
+			EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
+			EuclideanDistanceF16:       euclideanF16AVX512,
+			CosineDistanceF16:          cosineF16AVX512,
+			DotProductF16:              dotF16AVX512,
+			L2SquaredDistance:          l2SquaredAMX,
+			L2SquaredDistance128:       l2Squared128AVX512,
+			L2SquaredDistance384:       l2Squared384AVX512,
+			L2SquaredDistance768:       l2Squared768AVX512,
+			L2SquaredDistance1024:      l2Squared1024AVX512,
+			L2SquaredDistance3072:      l2Squared3072AVX512,
+
+			EuclideanDistance128:  euclidean128AVX512,
+			EuclideanDistance384:  euclidean384AVX512,
+			EuclideanDistance768:  euclidean768AVX512,
+			EuclideanDistance1024: euclidean1024AVX512,
+			EuclideanDistance1536: euclidean1536AVX512,
+			EuclideanDistance3072: euclidean3072AVX512,
+
+			DotProduct128:  dot128AVX512,
+			DotProduct384:  dot384AVX512,
+			DotProduct768:  dot768AVX512,
+			DotProduct1024: dot1024AVX512,
+			DotProduct1536: dot1536AVX512,
+			DotProduct3072: dot3072AVX512,
+
+			Int8ToFloat32:    int8ToFloat32AVX512,
+			Uint8ToFloat32:   uint8ToFloat32AVX512,
+			Int16ToFloat32:   int16ToFloat32AVX512,
+			Uint16ToFloat32:  uint16ToFloat32AVX512,
+			Int32ToFloat32:   int32ToFloat32AVX512,
+			Uint32ToFloat32:  uint32ToFloat32AVX512,
+			Float16ToFloat32: float16ToFloat32AVX512,
+
+			Sigmoid:   sigmoidAVX512,
+			Softmax:   softmaxAVX512,
+			Exp:       expAVX512,
+			Log:       logAVX512,
+			UnpackTQ2: UnpackTQ2Generic,
+			UnpackTQ4: UnpackTQ4Generic,
+			UnpackTQ8: UnpackTQ8AVX512,
+			PackTQ2:   PackTQ2AVX512,
+			PackTQ4:   PackTQ4AVX512,
+			PackTQ8:   PackTQ8AVX512,
+
+			MatMul:                    matMulAMX,
+			Sin:                       sinFloat32Generic,
+			Cos:                       cosFloat32Generic,
+			Sincos:                    sincosFloat32Generic,
+			Sqrt:                      sqrtFloat32Generic,
+			Atan2:                     atan2Float32Generic,
+			ArgMax:                    argMaxGeneric,
+			ArgMin:                    argMinGeneric,
+			Sum:                       sumGeneric,
+			Max:                       maxGeneric,
+			Min:                       minGeneric,
+			ManhattanDistance:         ManhattanDistanceFloat32,
+			ChebyshevDistance:         ChebyshevDistanceFloat32,
+			BrayCurtisDistance:        BrayCurtisDistanceFloat32,
+			AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
+			BM25ScoreBatch:            bm25ScoreBatchGeneric,
+			HaversineBatch:            haversineBatchAVX2,
+		}
+
+		dispatchTable["granite"] = &ImplementationDispatch{
+			EuclideanDistance:          euclideanAMX,
+			CosineDistance:             cosineAVX512,
+			DotProduct:                 dotAMX,
+			EuclideanDistanceBatch:     euclideanBatchAMX,
+			L2SquaredDistanceBatch:     l2SquaredBatchAVX512,
+			CosineDistanceBatch:        cosineBatchGeneric,
+			DotProductBatch:            dotBatchAMX,
+			EuclideanDistanceBatchFlat: euclideanBatchFlatAVX512,
+			EuclideanDistanceF16:       euclideanF16AMX,
+			CosineDistanceF16:          cosineF16AVX512,
+			DotProductF16:              dotF16AMX,
+			L2SquaredDistance:          l2SquaredAMX,
+			L2SquaredDistance128:       l2Squared128AVX512,
+			L2SquaredDistance384:       l2Squared384AVX512,
+			L2SquaredDistance768:       l2Squared768AVX512,
+			L2SquaredDistance1024:      l2Squared1024AVX512,
+			L2SquaredDistance3072:      l2Squared3072AVX512,
+
+			EuclideanDistance128:  euclidean128AVX512,
+			EuclideanDistance384:  euclidean384AVX512,
+			EuclideanDistance768:  euclidean768AVX512,
+			EuclideanDistance1024: euclidean1024AVX512,
+			EuclideanDistance1536: euclidean1536AVX512,
+			EuclideanDistance3072: euclidean3072AVX512,
+
+			DotProduct128:  dot128AVX512,
+			DotProduct384:  dot384AVX512,
+			DotProduct768:  dot768AVX512,
+			DotProduct1024: dot1024AVX512,
+			DotProduct1536: dot1536AVX512,
+			DotProduct3072: dot3072AVX512,
+
+			Int8ToFloat32:    int8ToFloat32AVX512,
+			Uint8ToFloat32:   uint8ToFloat32AVX512,
+			Int16ToFloat32:   int16ToFloat32AVX512,
+			Uint16ToFloat32:  uint16ToFloat32AVX512,
+			Int32ToFloat32:   int32ToFloat32AVX512,
+			Uint32ToFloat32:  uint32ToFloat32AVX512,
+			Float16ToFloat32: float16ToFloat32AVX512,
+
+			Sigmoid:   sigmoidAVX512,
+			Softmax:   softmaxAVX512,
+			Exp:       expAVX512,
+			Log:       logAVX512,
+			UnpackTQ2: UnpackTQ2Generic,
+			UnpackTQ4: UnpackTQ4Generic,
+			UnpackTQ8: UnpackTQ8AVX512,
+			PackTQ2:   PackTQ2AVX512,
+			PackTQ4:   PackTQ4AVX512,
+			PackTQ8:   PackTQ8AVX512,
+
+			MatMul:                    matMulAMX,
+			Sin:                       sinFloat32Generic,
+			Cos:                       cosFloat32Generic,
+			Sincos:                    sincosFloat32Generic,
+			Sqrt:                      sqrtFloat32Generic,
+			Atan2:                     atan2Float32Generic,
+			ArgMax:                    argMaxGeneric,
+			ArgMin:                    argMinGeneric,
+			Sum:                       sumGeneric,
+			Max:                       maxGeneric,
+			Min:                       minGeneric,
+			ManhattanDistance:         ManhattanDistanceFloat32,
+			ChebyshevDistance:         ChebyshevDistanceFloat32,
+			BrayCurtisDistance:        BrayCurtisDistanceFloat32,
+			AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
+			BM25ScoreBatch:            bm25ScoreBatchGeneric,
+			HaversineBatch:            haversineBatchAVX2,
+		}
+
 		dispatchTable["avx2"] = &ImplementationDispatch{
 			EuclideanDistance:          euclideanAVX2,
 			CosineDistance:             cosineAVX2,
@@ -425,6 +567,212 @@ func initializeDispatch() {
 	}
 	currentDispatch = dispatch
 	switch implementation {
+	case "emerald":
+		euclideanDistanceImpl = dispatch.EuclideanDistance
+		euclideanDistance384Impl = dispatch.EuclideanDistance384
+		euclideanDistance768Impl = dispatch.EuclideanDistance768
+		euclideanDistance1024Impl = dispatch.EuclideanDistance1024
+		euclideanDistance1536Impl = dispatch.EuclideanDistance1536
+		euclideanDistance3072Impl = dispatch.EuclideanDistance3072
+		euclideanDistance128Impl = dispatch.EuclideanDistance128
+		metrics.SimdDispatchCount.WithLabelValues("emerald").Inc()
+		metrics.SimdStaticDispatchType.Set(4)
+		cosineDistanceImpl = dispatch.CosineDistance
+		dotProductImpl = dispatch.DotProduct
+		dotProduct384Impl = dispatch.DotProduct384
+		dotProduct768Impl = dispatch.DotProduct768
+		dotProduct1024Impl = dispatch.DotProduct1024
+		dotProduct1536Impl = dispatch.DotProduct1536
+		dotProduct3072Impl = dispatch.DotProduct3072
+		dotProduct128Impl = dispatch.DotProduct128
+		euclideanDistanceBatchImpl = dispatch.EuclideanDistanceBatch
+		cosineDistanceBatchImpl = dispatch.CosineDistanceBatch
+		dotProductBatchImpl = dispatch.DotProductBatch
+		l2SquaredImpl = dispatch.L2SquaredDistance
+		l2Squared128Impl = dispatch.L2SquaredDistance128
+		l2Squared384Impl = dispatch.L2SquaredDistance384
+		l2Squared768Impl = dispatch.L2SquaredDistance768
+		l2Squared1024Impl = dispatch.L2SquaredDistance1024
+		l2Squared3072Impl = dispatch.L2SquaredDistance3072
+		prefetchImpl = func(p unsafe.Pointer) { prefetchNTA(uintptr(p)) }
+		memcpyNTAImpl = memcpyGeneric
+		matchInt64Impl = matchInt64AVX512
+		matchInt32Impl = matchInt32AVX512
+		matchFloat32Impl = matchFloat32AVX512
+		matchFloat64Impl = matchFloat64AVX512
+		adcDistanceBatchImpl = adcBatchAVX512
+		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric
+		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX512
+		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX512
+		andBytesImpl = andBytesAVX512
+		orBytesImpl = orBytesAVX512
+		notBytesImpl = notBytesGeneric
+		isAllZerosImpl = isAllZerosAVX512
+		euclideanDistanceF16Impl = dispatch.EuclideanDistanceF16
+		cosineDistanceF16Impl = dispatch.CosineDistanceF16
+		dotProductF16Impl = dispatch.DotProductF16
+		euclideanDistanceFloat64Impl = euclideanFloat64AVX512
+		dotProductFloat64Impl = dotFloat64AVX512
+		l2SquaredFloat64Impl = l2SquaredFloat64AVX512
+		cosineDistanceFloat64Impl = cosineFloat64AVX512
+		euclideanDistanceInt8Impl = euclideanInt8AVX512
+		l2SquaredInt8Impl = func(a, b []int8) (float32, error) {
+			d, err := euclideanInt8AVX512(a, b)
+			if err != nil {
+				return 0, err
+			}
+			return d * d, nil
+		}
+		dotProductInt8Impl = dotInt8Unrolled4x
+		dotProductUint8Impl = dotUint8Unrolled4x
+		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
+		euclideanDistanceInt16Impl = euclideanInt16AVX512
+		euclideanDistanceUint16Impl = euclideanUint16AVX512
+		dotProductInt16Impl = dotInt16AVX512
+		dotProductUint16Impl = dotUint16AVX512
+		dotProductInt4Impl = dotInt4AVX512
+		dotProductInt2Impl = dotInt2AVX512
+		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
+		euclideanDistanceComplex128Impl = euclideanComplex128Optimized
+
+		int8ToFloat32Impl = dispatch.Int8ToFloat32
+		uint8ToFloat32Impl = dispatch.Uint8ToFloat32
+		int16ToFloat32Impl = dispatch.Int16ToFloat32
+		uint16ToFloat32Impl = dispatch.Uint16ToFloat32
+		int32ToFloat32Impl = dispatch.Int32ToFloat32
+		uint32ToFloat32Impl = dispatch.Uint32ToFloat32
+		float16ToFloat32Impl = dispatch.Float16ToFloat32
+
+		sigmoidFloat32Impl = dispatch.Sigmoid
+		softmaxFloat32Impl = dispatch.Softmax
+		expFloat32Impl = dispatch.Exp
+		logFloat32Impl = dispatch.Log
+
+		sumFloat32Impl = dispatch.Sum
+		maxFloat32Impl = dispatch.Max
+		minFloat32Impl = dispatch.Min
+		matMulFloat32Impl = dispatch.MatMul
+		sinFloat32Impl = dispatch.Sin
+		cosFloat32Impl = dispatch.Cos
+		sincosFloat32Impl = dispatch.Sincos
+		sqrtFloat32Impl = dispatch.Sqrt
+		atan2Float32Impl = dispatch.Atan2
+		argMaxFloat32Impl = dispatch.ArgMax
+		argMinFloat32Impl = dispatch.ArgMin
+		manhattanDistanceImpl = dispatch.ManhattanDistance
+		chebyshevDistanceImpl = dispatch.ChebyshevDistance
+		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
+		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
+		haversineBatchImpl = dispatch.HaversineBatch
+		unpackTQ2Impl = dispatch.UnpackTQ2
+		unpackTQ4Impl = dispatch.UnpackTQ4
+		unpackTQ8Impl = dispatch.UnpackTQ8
+		packTQ2Impl = dispatch.PackTQ2
+		packTQ4Impl = dispatch.PackTQ4
+		packTQ8Impl = dispatch.PackTQ8
+	case "granite":
+		euclideanDistanceImpl = dispatch.EuclideanDistance
+		euclideanDistance384Impl = dispatch.EuclideanDistance384
+		euclideanDistance768Impl = dispatch.EuclideanDistance768
+		euclideanDistance1024Impl = dispatch.EuclideanDistance1024
+		euclideanDistance1536Impl = dispatch.EuclideanDistance1536
+		euclideanDistance3072Impl = dispatch.EuclideanDistance3072
+		euclideanDistance128Impl = dispatch.EuclideanDistance128
+		metrics.SimdDispatchCount.WithLabelValues("granite").Inc()
+		metrics.SimdStaticDispatchType.Set(5)
+		cosineDistanceImpl = dispatch.CosineDistance
+		dotProductImpl = dispatch.DotProduct
+		dotProduct384Impl = dispatch.DotProduct384
+		dotProduct768Impl = dispatch.DotProduct768
+		dotProduct1024Impl = dispatch.DotProduct1024
+		dotProduct1536Impl = dispatch.DotProduct1536
+		dotProduct3072Impl = dispatch.DotProduct3072
+		dotProduct128Impl = dispatch.DotProduct128
+		euclideanDistanceBatchImpl = dispatch.EuclideanDistanceBatch
+		cosineDistanceBatchImpl = dispatch.CosineDistanceBatch
+		dotProductBatchImpl = dispatch.DotProductBatch
+		l2SquaredImpl = dispatch.L2SquaredDistance
+		l2Squared128Impl = dispatch.L2SquaredDistance128
+		l2Squared384Impl = dispatch.L2SquaredDistance384
+		l2Squared768Impl = dispatch.L2SquaredDistance768
+		l2Squared1024Impl = dispatch.L2SquaredDistance1024
+		l2Squared3072Impl = dispatch.L2SquaredDistance3072
+		prefetchImpl = func(p unsafe.Pointer) { prefetchNTA(uintptr(p)) }
+		memcpyNTAImpl = memcpyGeneric
+		matchInt64Impl = matchInt64AVX512
+		matchInt32Impl = matchInt32AVX512
+		matchFloat32Impl = matchFloat32AVX512
+		matchFloat64Impl = matchFloat64AVX512
+		adcDistanceBatchImpl = adcBatchAVX512
+		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric
+		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX512
+		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX512
+		andBytesImpl = andBytesAVX512
+		orBytesImpl = orBytesAVX512
+		notBytesImpl = notBytesGeneric
+		isAllZerosImpl = isAllZerosAVX512
+		euclideanDistanceF16Impl = dispatch.EuclideanDistanceF16
+		cosineDistanceF16Impl = dispatch.CosineDistanceF16
+		dotProductF16Impl = dispatch.DotProductF16
+		euclideanDistanceFloat64Impl = euclideanFloat64AVX512
+		dotProductFloat64Impl = dotFloat64AVX512
+		l2SquaredFloat64Impl = l2SquaredFloat64AVX512
+		cosineDistanceFloat64Impl = cosineFloat64AVX512
+		euclideanDistanceInt8Impl = euclideanInt8AVX512
+		l2SquaredInt8Impl = func(a, b []int8) (float32, error) {
+			d, err := euclideanInt8AVX512(a, b)
+			if err != nil {
+				return 0, err
+			}
+			return d * d, nil
+		}
+		dotProductInt8Impl = dotInt8Unrolled4x
+		dotProductUint8Impl = dotUint8Unrolled4x
+		euclideanDistanceUint8Impl = euclideanUint8Unrolled4x
+		euclideanDistanceInt16Impl = euclideanInt16AVX512
+		euclideanDistanceUint16Impl = euclideanUint16AVX512
+		dotProductInt16Impl = dotInt16AVX512
+		dotProductUint16Impl = dotUint16AVX512
+		dotProductInt4Impl = dotInt4AVX512
+		dotProductInt2Impl = dotInt2AVX512
+		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
+		euclideanDistanceComplex128Impl = euclideanComplex128Optimized
+
+		int8ToFloat32Impl = dispatch.Int8ToFloat32
+		uint8ToFloat32Impl = dispatch.Uint8ToFloat32
+		int16ToFloat32Impl = dispatch.Int16ToFloat32
+		uint16ToFloat32Impl = dispatch.Uint16ToFloat32
+		int32ToFloat32Impl = dispatch.Int32ToFloat32
+		uint32ToFloat32Impl = dispatch.Uint32ToFloat32
+		float16ToFloat32Impl = dispatch.Float16ToFloat32
+
+		sigmoidFloat32Impl = dispatch.Sigmoid
+		softmaxFloat32Impl = dispatch.Softmax
+		expFloat32Impl = dispatch.Exp
+		logFloat32Impl = dispatch.Log
+
+		sumFloat32Impl = dispatch.Sum
+		maxFloat32Impl = dispatch.Max
+		minFloat32Impl = dispatch.Min
+		matMulFloat32Impl = dispatch.MatMul
+		sinFloat32Impl = dispatch.Sin
+		cosFloat32Impl = dispatch.Cos
+		sincosFloat32Impl = dispatch.Sincos
+		sqrtFloat32Impl = dispatch.Sqrt
+		atan2Float32Impl = dispatch.Atan2
+		argMaxFloat32Impl = dispatch.ArgMax
+		argMinFloat32Impl = dispatch.ArgMin
+		manhattanDistanceImpl = dispatch.ManhattanDistance
+		chebyshevDistanceImpl = dispatch.ChebyshevDistance
+		brayCurtisDistanceImpl = dispatch.BrayCurtisDistance
+		accumulateWeightedScatterFloat32Impl = dispatch.AccumulateWeightedScatter
+		haversineBatchImpl = dispatch.HaversineBatch
+		unpackTQ2Impl = dispatch.UnpackTQ2
+		unpackTQ4Impl = dispatch.UnpackTQ4
+		unpackTQ8Impl = dispatch.UnpackTQ8
+		packTQ2Impl = dispatch.PackTQ2
+		packTQ4Impl = dispatch.PackTQ4
+		packTQ8Impl = dispatch.PackTQ8
 	case "avx512":
 		euclideanDistanceImpl = dispatch.EuclideanDistance
 		euclideanDistance384Impl = dispatch.EuclideanDistance384

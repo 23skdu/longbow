@@ -384,12 +384,17 @@ func main() {
 			totalUploaded += int(rec.NumRows())
 
 			if totalUploaded%50000 == 0 || totalUploaded == *scale {
+				// Exclude the breather sleep from measured upload time so throughput
+				// reflects actual wire speed, not idle pauses.
+				sleepStart := time.Now()
 				log.Printf("  Progress: %d/%d vectors uploaded\n", totalUploaded, *scale)
 
 				// Server has 18GB memory, safe to burst 400k vectors without deep backpressure polling
 				if totalUploaded < *scale {
 					time.Sleep(1 * time.Second) // Small breather for server
 				}
+				// Adjust start forward by the sleep duration to keep duration accurate.
+				start = start.Add(time.Since(sleepStart))
 			}
 		}
 		if uploader != nil {

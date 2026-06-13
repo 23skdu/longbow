@@ -191,22 +191,13 @@ func (c *LockFreeNeighborCache) GetNeighbors(nodeID uint32) ([]uint32, bool) {
 // SetNeighbors updates the neighbors for a given node ID.
 // This creates the list if it doesn't exist.
 func (c *LockFreeNeighborCache) SetNeighbors(nodeID uint32, neighbors []uint32) {
-	// Get or create the list
-	c.mu.RLock()
+	c.mu.Lock()
 	list, exists := c.lists[nodeID]
-	c.mu.RUnlock()
-
 	if !exists {
-		// Slow path: create new list
-		c.mu.Lock()
-		// Double-check after acquiring write lock
-		list, exists = c.lists[nodeID]
-		if !exists {
-			list = NewLockFreeNeighborList()
-			c.lists[nodeID] = list
-		}
-		c.mu.Unlock()
+		list = NewLockFreeNeighborList()
+		c.lists[nodeID] = list
 	}
+	c.mu.Unlock()
 
 	// Update the list (lock-free for readers)
 	list.Update(neighbors)

@@ -56,8 +56,10 @@ exp_tail:
 	JE   exp_done
 	
 	MOVQ $0xFFFF, R8
-	MOVQ DX, R9
-	SHLQ R9, R8
+	MOVQ CX, R10       // save dst pointer
+	MOVQ DX, CX        // shift count (must be in CX for SHLQ)
+	SHLQ CX, R8
+	MOVQ R10, CX       // restore dst pointer
 	NOTQ R8
 	KMOVQ R8, K1
 	
@@ -139,8 +141,10 @@ log_tail:
 	JE   log_done
 	
 	MOVQ $0xFFFF, R8
-	MOVQ DX, R9
-	SHLQ R9, R8
+	MOVQ CX, R10       // save dst pointer
+	MOVQ DX, CX        // shift count (must be in CX for SHLQ)
+	SHLQ CX, R8
+	MOVQ R10, CX       // restore dst pointer
 	NOTQ R8
 	KMOVQ R8, K1
 	

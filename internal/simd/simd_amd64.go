@@ -729,7 +729,16 @@ func sincosAVX2(src, sinDst, cosDst []float32) {
 }
 
 func sqrtAVX2(src, dst []float32) {
-	sqrtFloat32Generic(src, dst)
+	n := len(src)
+	if n != len(dst) || n == 0 {
+		sqrtFloat32Generic(src, dst)
+		return
+	}
+	sqrtFloat32AVX2Kernel(
+		unsafe.Pointer(&src[0]), // #nosec G103
+		unsafe.Pointer(&dst[0]), // #nosec G103
+		n,
+	)
 }
 
 func atan2AVX2(y, x, dst []float32) {

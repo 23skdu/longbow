@@ -305,6 +305,27 @@ func dotFloat64AVX512(a, b []float64) (float32, error) {
 		len(a)), nil
 }
 
+func cosineFloat64AVX512(a, b []float64) (float32, error) {
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if !features.HasAVX512 {
+		return cosineFloat64AVX2(a, b)
+	}
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	dot, normA, normB := cosineFloat64AVX512Kernel(
+		uintptr(unsafe.Pointer(&a[0])),
+		uintptr(unsafe.Pointer(&b[0])),
+		len(a),
+	)
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	return 1.0 - (dot / (float32(math.Sqrt(float64(normA))) * float32(math.Sqrt(float64(normB))))), nil
+}
+
 func l2SquaredFloat64AVX512(a, b []float64) (float32, error) {
 	val, err := euclideanFloat64AVX512(a, b)
 	if err != nil {

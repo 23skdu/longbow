@@ -189,7 +189,7 @@ func initDispatchTable() {
 			BrayCurtisDistance:        BrayCurtisDistanceFloat32,
 			AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
 			BM25ScoreBatch:            bm25ScoreBatchGeneric,
-			HaversineBatch:            haversineBatchGeneric,
+			HaversineBatch:            haversineBatchAVX2,
 		}
 
 		dispatchTable["avx2"] = &ImplementationDispatch{
@@ -260,7 +260,7 @@ func initDispatchTable() {
 			BrayCurtisDistance:        brayCurtisAVX2,
 			AccumulateWeightedScatter: accumulateWeightedScatterGeneric,
 			BM25ScoreBatch:            bm25ScoreBatchGeneric,
-			HaversineBatch:            haversineBatchGeneric,
+			HaversineBatch:            haversineBatchAVX2,
 		}
 
 		dispatchTable["neon"] = &ImplementationDispatch{
@@ -472,7 +472,7 @@ func initializeDispatch() {
 		euclideanDistanceFloat64Impl = euclideanFloat64AVX512
 		dotProductFloat64Impl = dotFloat64AVX512
 		l2SquaredFloat64Impl = l2SquaredFloat64AVX512
-		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
+		cosineDistanceFloat64Impl = cosineFloat64AVX512
 		euclideanDistanceInt8Impl = euclideanInt8AVX512
 		l2SquaredInt8Impl = func(a, b []int8) (float32, error) {
 			d, err := euclideanInt8AVX512(a, b)
@@ -577,7 +577,7 @@ func initializeDispatch() {
 		euclideanDistanceFloat64Impl = euclideanFloat64AVX2
 		dotProductFloat64Impl = dotFloat64AVX2
 		l2SquaredFloat64Impl = l2SquaredFloat64AVX2
-		cosineDistanceFloat64Impl = cosineFloat64Unrolled4x
+		cosineDistanceFloat64Impl = cosineFloat64AVX2
 		euclideanDistanceInt8Impl = euclideanInt8AVX2
 		l2SquaredInt8Impl = func(a, b []int8) (float32, error) {
 			d, err := euclideanInt8AVX2(a, b)

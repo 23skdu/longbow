@@ -175,6 +175,7 @@ func isAllZerosAVX512(src []byte) bool { return isAllZerosGeneric(src) }
 func euclideanFloat64AVX512(a, b []float64) (float32, error) { return euclideanFloat64Unrolled4x(a, b) }
 func dotFloat64AVX512(a, b []float64) (float32, error)       { return dotFloat64Unrolled4x(a, b) }
 func l2SquaredFloat64AVX512(a, b []float64) (float32, error) { return l2SquaredFloat64Unrolled4x(a, b) }
+func cosineFloat64AVX512(a, b []float64) (float32, error)    { return cosineFloat64Unrolled4x(a, b) }
 
 func euclideanInt8AVX512(a, b []int8) (float32, error)     { return euclideanInt8Unrolled4x(a, b) }
 func euclideanInt16AVX512(a, b []int16) (float32, error)   { return euclideanInt16Unrolled4x(a, b) }

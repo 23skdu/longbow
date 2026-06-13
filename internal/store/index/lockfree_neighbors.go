@@ -5,6 +5,48 @@ import (
 	"sync/atomic"
 )
 
+// syncMapShim wraps sync.Map to provide a typed interface for [uint32]*LockFreeNeighborList.
+// sync.Map is lock-free for reads (uses atomic operations internally) and serializes writes
+// via a compare-and-swap internal structure. This eliminates the RWMutex contention that
+// existed in the previous map[uint32]*LockFreeNeighborList + RWMutex design.
+type syncMapShim struct {
+	m sync.Map
+}
+
+func (s *syncMapShim) Load(key uint32) (*LockFreeNeighborList, bool) {
+	v, ok := s.m.Load(key)
+	if !ok {
+		return nil, false
+	}
+	return v.(*LockFreeNeighborList), true
+}
+
+func (s *syncMapShim) Store(key uint32, value *LockFreeNeighborList) {
+	s.m.Store(key, value)
+}
+
+func (s *syncMapShim) LoadOrStore(key uint32, value *LockFreeNeighborList) (actual *LockFreeNeighborList, loaded bool) {
+	v, loaded := s.m.LoadOrStore(key, value)
+	return v.(*LockFreeNeighborList), loaded
+}
+
+func (s *syncMapShim) Delete(key uint32) {
+	s.m.Delete(key)
+}
+
+func (s *syncMapShim) Len() int {
+	var n int
+	s.m.Range(func(_, _ any) bool {
+		n++
+		return true
+	})
+	return n
+}
+
+func (s *syncMapShim) Clear() {
+	s.m.Clear()
+}
+
 // LockFreeNeighborList provides lock-free reads with copy-on-write updates.
 // This eliminates lock contention in the read-heavy search hot path while
 // maintaining safety through epoch-based RCU (Read-Copy-Update).
@@ -147,14 +189,17 @@ func (l *LockFreeNeighborList) CurrentEpoch() uint64 {
 // LockFreeNeighborCache provides a cache of lock-free neighbor lists
 // indexed by node ID for a specific HNSW layer.
 //
-// This is designed to replace the current locked neighbor access pattern
-// in GraphData with a lock-free alternative.
+// Uses sync.Map for the outer map to provide lock-free reads for GetNeighbors
+// while still serializing structural mutations (SetNeighbors for new nodes,
+// Remove, Clear). Individual neighbor lists remain lock-free via atomic.Pointer.
+//
+// Design:
+// - GetNeighbors: sync.Map.Load (lock-free) + LockFreeNeighborList.Read (lock-free)
+// - SetNeighbors (existing node): sync.Map.Load (lock-free) + LockFreeNeighborList.Update (copy-on-write)
+// - SetNeighbors (new node): sync.Map.LoadOrStore (compare-and-swap) + LockFreeNeighborList.Update
+// - Remove: sync.Map.Delete (serialized by sync.Map's internal locking)
 type LockFreeNeighborCache struct {
-	// Map from node ID to lock-free neighbor list
-	// Protected by RWMutex for structural modifications (add/remove nodes)
-	// but individual lists are lock-free for reads
-	lists map[uint32]*LockFreeNeighborList
-	mu    sync.RWMutex
+	lists syncMapShim
 
 	// Statistics
 	hits   atomic.Int64
@@ -163,19 +208,13 @@ type LockFreeNeighborCache struct {
 
 // NewLockFreeNeighborCache creates a new neighbor cache.
 func NewLockFreeNeighborCache() *LockFreeNeighborCache {
-	return &LockFreeNeighborCache{
-		lists: make(map[uint32]*LockFreeNeighborList),
-	}
+	return &LockFreeNeighborCache{}
 }
 
 // GetNeighbors returns the neighbors for a given node ID.
-// This is lock-free for the common case (node exists).
+// Fully lock-free: uses sync.Map.Load + atomic.Pointer.Load.
 func (c *LockFreeNeighborCache) GetNeighbors(nodeID uint32) ([]uint32, bool) {
-	// Fast path: read lock to get the list
-	c.mu.RLock()
-	list, exists := c.lists[nodeID]
-	c.mu.RUnlock()
-
+	list, exists := c.lists.Load(nodeID)
 	if !exists {
 		c.misses.Add(1)
 		return nil, false
@@ -183,38 +222,27 @@ func (c *LockFreeNeighborCache) GetNeighbors(nodeID uint32) ([]uint32, bool) {
 
 	c.hits.Add(1)
 
-	// Lock-free read of the neighbor list
 	neighbors := list.Read()
 	return neighbors, true
 }
 
 // SetNeighbors updates the neighbors for a given node ID.
-// This creates the list if it doesn't exist.
+// For existing nodes: sync.Map.Load (lock-free) + LockFreeNeighborList.Update (copy-on-write).
+// For new nodes: sync.Map.LoadOrStore (internal CAS) to create the list.
 func (c *LockFreeNeighborCache) SetNeighbors(nodeID uint32, neighbors []uint32) {
-	c.mu.Lock()
-	list, exists := c.lists[nodeID]
-	if !exists {
-		list = NewLockFreeNeighborList()
-		c.lists[nodeID] = list
-	}
-	c.mu.Unlock()
-
-	// Update the list (lock-free for readers)
+	list, loaded := c.lists.LoadOrStore(nodeID, NewLockFreeNeighborList())
 	list.Update(neighbors)
+	_ = loaded
 }
 
 // Remove removes a node's neighbor list from the cache.
 func (c *LockFreeNeighborCache) Remove(nodeID uint32) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	delete(c.lists, nodeID)
+	c.lists.Delete(nodeID)
 }
 
 // Clear removes all neighbor lists from the cache.
 func (c *LockFreeNeighborCache) Clear() {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-	c.lists = make(map[uint32]*LockFreeNeighborList)
+	c.lists.Clear()
 }
 
 // Stats returns cache statistics.
@@ -224,7 +252,5 @@ func (c *LockFreeNeighborCache) Stats() (hits, misses int64) {
 
 // Len returns the number of nodes in the cache.
 func (c *LockFreeNeighborCache) Len() int {
-	c.mu.RLock()
-	defer c.mu.RUnlock()
-	return len(c.lists)
+	return c.lists.Len()
 }

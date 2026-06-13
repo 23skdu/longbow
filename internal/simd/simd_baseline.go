@@ -3,7 +3,6 @@ package simd
 import (
 	"errors"
 	"math"
-	"runtime"
 	"sync"
 
 	lbcore "github.com/23skdu/longbow/internal/core"
@@ -1187,53 +1186,118 @@ func atan2Float32Generic(y, x, dst []float32) {
 	}
 }
 
-func haversineBatchGeneric(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32) {
-	lat1 := centerLat * math.Pi / 180.0
-	lon1 := centerLon * math.Pi / 180.0
-	cosLat1 := math.Cos(lat1)
+func sincosFloat32Generic(src, sinDst, cosDst []float32) {
+	for i, v := range src {
+		s, c := math.Sincos(float64(v))
+		sinDst[i] = float32(s)
+		cosDst[i] = float32(c)
+	}
+}
 
-	// Parallelize for large batches
-	if len(points) < 1024 {
-		for i, p := range points {
-			lat2 := p.Lat * math.Pi / 180.0
-			lon2 := p.Lon * math.Pi / 180.0
-			dLat := lat2 - lat1
-			dLon := lon2 - lon1
-			a := math.Sin(dLat/2)*math.Sin(dLat/2) + cosLat1*math.Cos(lat2)*math.Sin(dLon/2)*math.Sin(dLon/2)
-			c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
-			results[i] = float32(earthRadius * c)
-		}
+func sqrtFloat32Generic(src, dst []float32) {
+	for i, v := range src {
+		dst[i] = float32(math.Sqrt(float64(v)))
+	}
+}
+
+func haversineBatchGeneric(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32) {
+	n := len(points)
+	if n == 0 {
 		return
 	}
 
-	numCPUs := runtime.NumCPU()
-	if numCPUs < 1 {
-		numCPUs = 1
-	}
-	chunkSize := (len(points) + numCPUs - 1) / numCPUs
+	rpd := float32(math.Pi / 180.0)
+	lat1 := float32(centerLat) * rpd
+	lon1 := float32(centerLon) * rpd
+	rad := float32(earthRadius)
 
-	var wg sync.WaitGroup
-	for i := 0; i < len(points); i += chunkSize {
-		start := i
-		end := i + chunkSize
-		if end > len(points) {
-			end = len(points)
-		}
+	scratch := getHaversineScratch(n)
+	defer putHaversineScratch(scratch)
 
-		wg.Add(1)
-		go func(s, e int) {
-			defer wg.Done()
-			for j := s; j < e; j++ {
-				p := points[j]
-				lat2 := p.Lat * math.Pi / 180.0
-				lon2 := p.Lon * math.Pi / 180.0
-				dLat := lat2 - lat1
-				dLon := lon2 - lon1
-				a := math.Sin(dLat/2)*math.Sin(dLat/2) + cosLat1*math.Cos(lat2)*math.Sin(dLon/2)*math.Sin(dLon/2)
-				c := 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
-				results[j] = float32(earthRadius * c)
-			}
-		}(start, end)
+	lat2Rad := scratch.lat2Rad[:n]
+	lon2Rad := scratch.lon2Rad[:n]
+
+	for i, p := range points {
+		lat2Rad[i] = float32(p.Lat)*rpd - lat1
+		lon2Rad[i] = float32(p.Lon)*rpd - lon1
 	}
-	wg.Wait()
+
+	// dLat/2, dLon/2 in place
+	for i := range lat2Rad {
+		lat2Rad[i] *= 0.5
+	}
+	for i := range lon2Rad {
+		lon2Rad[i] *= 0.5
+	}
+
+	// sin(dLat/2), sin(dLon/2)
+	sinDLat := scratch.sinDLat[:n]
+	sinDLon := scratch.sinDLon[:n]
+	SinFloat32(lat2Rad, sinDLat)
+	SinFloat32(lon2Rad, sinDLon)
+
+	// cos(lat2) — lat2Rad currently holds dLat/2, we need the original lat2
+	cosLat2 := scratch.cosLat2[:n]
+	for i, p := range points {
+		lat2Rad[i] = float32(p.Lat) * rpd
+	}
+	CosFloat32(lat2Rad, cosLat2)
+
+	cosLat1 := float32(math.Cos(float64(lat1)))
+
+	// a = sin²(dLat/2) + cosLat1 * cos(lat2) * sin²(dLon/2)
+	a := scratch.a[:n]
+	for i := 0; i < n; i++ {
+		a[i] = sinDLat[i]*sinDLat[i] + cosLat1*cosLat2[i]*sinDLon[i]*sinDLon[i]
+	}
+
+	// c = 2 * atan2(sqrt(a), sqrt(1-a))
+	sqrtA := scratch.sqrtA[:n]
+	sqrt1mA := scratch.sqrt1mA[:n]
+	SqrtFloat32(a, sqrtA)
+	for i := 0; i < n; i++ {
+		sqrt1mA[i] = 1 - a[i]
+	}
+	SqrtFloat32(sqrt1mA[:n], sqrt1mA)
+	Atan2Float32(sqrtA, sqrt1mA, results)
+
+	for i := 0; i < n; i++ {
+		results[i] *= 2 * rad
+	}
+}
+
+type haversineScratch struct {
+	lat2Rad []float32
+	lon2Rad []float32
+	sinDLat []float32
+	sinDLon []float32
+	cosLat2 []float32
+	a       []float32
+	sqrtA   []float32
+	sqrt1mA []float32
+}
+
+var haversineScratchPool = sync.Pool{
+	New: func() any {
+		return &haversineScratch{}
+	},
+}
+
+func getHaversineScratch(n int) *haversineScratch {
+	s := haversineScratchPool.Get().(*haversineScratch)
+	if cap(s.lat2Rad) < n {
+		s.lat2Rad = make([]float32, n)
+		s.lon2Rad = make([]float32, n)
+		s.sinDLat = make([]float32, n)
+		s.sinDLon = make([]float32, n)
+		s.cosLat2 = make([]float32, n)
+		s.a = make([]float32, n)
+		s.sqrtA = make([]float32, n)
+		s.sqrt1mA = make([]float32, n)
+	}
+	return s
+}
+
+func putHaversineScratch(s *haversineScratch) {
+	haversineScratchPool.Put(s)
 }

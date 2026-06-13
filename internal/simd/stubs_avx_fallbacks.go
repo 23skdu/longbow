@@ -141,9 +141,11 @@ func matMulAVX2(a, b []float32, m, n, k int, dst []float32) { matMulGeneric(a, b
 func argMaxAVX2(src []float32) int                          { return argMaxGeneric(src) }
 func argMinAVX2(src []float32) int                          { return argMinGeneric(src) }
 
-func sinAVX2(src, dst []float32)    { sinFloat32Generic(src, dst) }
-func cosAVX2(src, dst []float32)    { cosFloat32Generic(src, dst) }
-func atan2AVX2(y, x, dst []float32) { atan2Float32Generic(y, x, dst) }
+func sinAVX2(src, dst []float32)          { sinFloat32Generic(src, dst) }
+func cosAVX2(src, dst []float32)          { cosFloat32Generic(src, dst) }
+func sincosAVX2(src, sinDst, cosDst []float32) { sincosFloat32Generic(src, sinDst, cosDst) }
+func sqrtAVX2(src, dst []float32)         { sqrtFloat32Generic(src, dst) }
+func atan2AVX2(y, x, dst []float32)       { atan2Float32Generic(y, x, dst) }
 
 func haversineBatchAVX2(centerLat, centerLon float64, points []lbcore.GeoPoint, earthRadius float64, results []float32) {
 	haversineBatchGeneric(centerLat, centerLon, points, earthRadius, results)

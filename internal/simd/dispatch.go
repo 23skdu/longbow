@@ -76,9 +76,11 @@ type ImplementationDispatch struct {
 	MatMul func(a, b []float32, m, n, k int, dst []float32)
 
 	// Transcendental
-	Sin   func(src, dst []float32)
-	Cos   func(src, dst []float32)
-	Atan2 func(y, x, dst []float32)
+	Sin    func(src, dst []float32)
+	Cos    func(src, dst []float32)
+	Sincos func(src, sinDst, cosDst []float32)
+	Sqrt   func(src, dst []float32)
+	Atan2  func(y, x, dst []float32)
 
 	// More reductions
 	ArgMax func(src []float32) int
@@ -177,6 +179,8 @@ func initDispatchTable() {
 			MatMul:                    matMulGeneric,
 			Sin:                       sinFloat32Generic,
 			Cos:                       cosFloat32Generic,
+			Sincos:                    sincosFloat32Generic,
+			Sqrt:                      sqrtFloat32Generic,
 			Atan2:                     atan2Float32Generic,
 			ArgMax:                    argMaxGeneric,
 			ArgMin:                    argMinGeneric,
@@ -246,6 +250,8 @@ func initDispatchTable() {
 			MatMul:                    matMulAVX2,
 			Sin:                       sinAVX2,
 			Cos:                       cosAVX2,
+			Sincos:                    sincosAVX2,
+			Sqrt:                      sqrtAVX2,
 			Atan2:                     atan2AVX2,
 			ArgMax:                    argMaxAVX2,
 			ArgMin:                    argMinAVX2,
@@ -319,6 +325,8 @@ func initDispatchTable() {
 			MatMul:                    matMulNEON,
 			Sin:                       sinFloat32Generic,
 			Cos:                       cosFloat32Generic,
+			Sincos:                    sincosFloat32Generic,
+			Sqrt:                      sqrtFloat32Generic,
 			Atan2:                     atan2Float32Generic,
 			ArgMax:                    argMaxNEON,
 			ArgMin:                    argMinNEON,
@@ -382,6 +390,8 @@ func initDispatchTable() {
 			MatMul:                    matMulGeneric,
 			Sin:                       sinFloat32Generic,
 			Cos:                       cosFloat32Generic,
+			Sincos:                    sincosFloat32Generic,
+			Sqrt:                      sqrtFloat32Generic,
 			Atan2:                     atan2Float32Generic,
 			ArgMax:                    argMaxGeneric,
 			ArgMin:                    argMinGeneric,
@@ -503,6 +513,8 @@ func initializeDispatch() {
 		matMulFloat32Impl = dispatch.MatMul
 		sinFloat32Impl = dispatch.Sin
 		cosFloat32Impl = dispatch.Cos
+		sincosFloat32Impl = dispatch.Sincos
+		sqrtFloat32Impl = dispatch.Sqrt
 		atan2Float32Impl = dispatch.Atan2
 		argMaxFloat32Impl = dispatch.ArgMax
 		argMinFloat32Impl = dispatch.ArgMin
@@ -605,6 +617,8 @@ func initializeDispatch() {
 		matMulFloat32Impl = dispatch.MatMul
 		sinFloat32Impl = dispatch.Sin
 		cosFloat32Impl = dispatch.Cos
+		sincosFloat32Impl = dispatch.Sincos
+		sqrtFloat32Impl = dispatch.Sqrt
 		atan2Float32Impl = dispatch.Atan2
 		argMaxFloat32Impl = dispatch.ArgMax
 		argMinFloat32Impl = dispatch.ArgMin
@@ -709,6 +723,8 @@ func initializeDispatch() {
 		matMulFloat32Impl = dispatch.MatMul
 		sinFloat32Impl = dispatch.Sin
 		cosFloat32Impl = dispatch.Cos
+		sincosFloat32Impl = dispatch.Sincos
+		sqrtFloat32Impl = dispatch.Sqrt
 		atan2Float32Impl = dispatch.Atan2
 		argMaxFloat32Impl = dispatch.ArgMax
 		argMinFloat32Impl = dispatch.ArgMin
@@ -797,6 +813,8 @@ func initializeDispatch() {
 		matMulFloat32Impl = dispatch.MatMul
 		sinFloat32Impl = dispatch.Sin
 		cosFloat32Impl = dispatch.Cos
+		sincosFloat32Impl = dispatch.Sincos
+		sqrtFloat32Impl = dispatch.Sqrt
 		atan2Float32Impl = dispatch.Atan2
 		argMaxFloat32Impl = dispatch.ArgMax
 		argMinFloat32Impl = dispatch.ArgMin

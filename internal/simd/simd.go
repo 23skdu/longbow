@@ -171,9 +171,11 @@ var (
 	haversineBatchImpl                   haversineBatchFunc
 
 	// Transcendental kernels
-	sinFloat32Impl   func(src, dst []float32)
-	cosFloat32Impl   func(src, dst []float32)
-	atan2Float32Impl func(y, x, dst []float32)
+	sinFloat32Impl    func(src, dst []float32)
+	cosFloat32Impl    func(src, dst []float32)
+	sincosFloat32Impl func(src, sinDst, cosDst []float32)
+	sqrtFloat32Impl   func(src, dst []float32)
+	atan2Float32Impl  func(y, x, dst []float32)
 
 	pauseImpl func()
 
@@ -196,6 +198,16 @@ func SinFloat32(src, dst []float32) {
 // CosFloat32 calculates the cosine of each element in src.
 func CosFloat32(src, dst []float32) {
 	cosFloat32Impl(src, dst)
+}
+
+// SincosFloat32 calculates the sine and cosine of each element in src.
+func SincosFloat32(src, sinDst, cosDst []float32) {
+	sincosFloat32Impl(src, sinDst, cosDst)
+}
+
+// SqrtFloat32 calculates the square root of each element in src.
+func SqrtFloat32(src, dst []float32) {
+	sqrtFloat32Impl(src, dst)
 }
 
 // Atan2Float32 calculates the arc tangent of y/x for each pair of elements.

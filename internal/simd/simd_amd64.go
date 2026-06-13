@@ -724,6 +724,14 @@ func cosAVX2(src, dst []float32) {
 	cosFloat32Generic(src, dst)
 }
 
+func sincosAVX2(src, sinDst, cosDst []float32) {
+	sincosFloat32Generic(src, sinDst, cosDst)
+}
+
+func sqrtAVX2(src, dst []float32) {
+	sqrtFloat32Generic(src, dst)
+}
+
 func atan2AVX2(y, x, dst []float32) {
 	atan2Float32Generic(y, x, dst)
 }

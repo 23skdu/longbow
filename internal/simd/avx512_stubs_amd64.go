@@ -3,6 +3,8 @@
 package simd
 
 import (
+	"unsafe"
+
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -117,3 +119,23 @@ func cosine16AVX512Wrapper(a, b []float32) (float32, error)    { return cosineGe
 func l2SquaredBatchAVX512(query []float32, vectors [][]float32, results []float32) error {
 	return l2SquaredBatchAVX2(query, vectors, results)
 }
+
+// AVX512 kernel stubs for go vet (assembly is always compiled on amd64)
+
+//go:noescape
+func euclideanInt8AVX512Kernel(a, b uintptr, n int) float32
+
+//go:noescape
+func unpackTQ2AVX512VBMIKernel(src, dst unsafe.Pointer, n int, scale, bias float32)
+
+//go:noescape
+func packTQ2AVX512VBMIKernel(src, dst unsafe.Pointer, n int)
+
+//go:noescape
+func packTQ2AVX512Kernel(src, dst unsafe.Pointer, n int)
+
+//go:noescape
+func packTQ4AVX512Kernel(src, dst unsafe.Pointer, n int)
+
+//go:noescape
+func packTQ8AVX512Kernel(src, dst unsafe.Pointer, n int)

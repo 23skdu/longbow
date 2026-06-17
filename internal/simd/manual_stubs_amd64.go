@@ -39,6 +39,9 @@ func BrayCurtisDistanceFloat32AVX2(a, b []float32) (float32, error) {
 var _ = func() {
 	if false {
 		matMulAVX2Go(nil, nil, 0, 0, 0, nil)
+		softmaxAVX512Kernel(0, 0, 0)
+		expAVX2Kernel(0, 0, 0)
+		logAVX2Kernel(0, 0, 0)
 	}
 }
 

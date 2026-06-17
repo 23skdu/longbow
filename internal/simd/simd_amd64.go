@@ -596,8 +596,6 @@ func cosineFloat64AVX2(a, b []float64) (float32, error) {
 // Int8 Implementations
 // =============================================================================
 
-//go:noescape
-func euclideanInt8AVX512Kernel(a, b uintptr, n int) float32
 
 func euclideanInt8AVX2(a, b []int8) (float32, error) {
 	if len(a) == 0 {
@@ -712,15 +710,24 @@ func dotInt2AVX2(a, b []byte) (float32, error) {
 }
 
 func sinAVX2(src, dst []float32) {
-	sinFloat32Generic(src, dst)
+	if len(src) == 0 {
+		return
+	}
+	SinFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func cosAVX2(src, dst []float32) {
-	cosFloat32Generic(src, dst)
+	if len(src) == 0 {
+		return
+	}
+	CosFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&dst[0])), len(src)) // #nosec G103
 }
 
 func sincosAVX2(src, sinDst, cosDst []float32) {
-	sincosFloat32Generic(src, sinDst, cosDst)
+	if len(src) == 0 {
+		return
+	}
+	SincosFloat32AVX2Kernel(uintptr(unsafe.Pointer(&src[0])), uintptr(unsafe.Pointer(&sinDst[0])), uintptr(unsafe.Pointer(&cosDst[0])), len(src)) // #nosec G103
 }
 
 func sqrtAVX2(src, dst []float32) {
@@ -737,7 +744,10 @@ func sqrtAVX2(src, dst []float32) {
 }
 
 func atan2AVX2(y, x, dst []float32) {
-	atan2Float32Generic(y, x, dst)
+	if len(y) == 0 {
+		return
+	}
+	Atan2Float32AVX2Kernel(uintptr(unsafe.Pointer(&y[0])), uintptr(unsafe.Pointer(&x[0])), uintptr(unsafe.Pointer(&dst[0])), len(y)) // #nosec G103
 }
 
 func argMaxAVX2(src []float32) int {

@@ -2,7 +2,7 @@
 
 package simd
 
-import "unsafe"
+import "unsafe" // #nosec G103
 
 // AVX-512 specialized implementations
 
@@ -20,21 +20,21 @@ func PackTQ2AVX512(src []float32, dst []byte) {
 	if len(src) == 0 {
 		return
 	}
-	packTQ2AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+	packTQ2AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 }
 
 func PackTQ4AVX512(src []float32, dst []byte) {
 	if len(src) == 0 {
 		return
 	}
-	packTQ4AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+	packTQ4AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 }
 
 func PackTQ8AVX512(src []float32, dst []byte) {
 	if len(src) == 0 {
 		return
 	}
-	packTQ8AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+	packTQ8AVX512Kernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 }
 
 // AVX-512 VBMI specialized
@@ -42,13 +42,30 @@ func UnpackTQ2AVX512VBMI(src []byte, dst []float32, scale, bias float32) {
 	if len(dst) == 0 {
 		return
 	}
-	unpackTQ2AVX512VBMIKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(dst), scale, bias)
+	unpackTQ2AVX512VBMIKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(dst), scale, bias) // #nosec G103
 }
 
 func PackTQ2AVX512VBMI(src []float32, dst []byte) {
 	if len(src) == 0 {
 		return
 	}
-	packTQ2AVX512VBMIKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src))
+	packTQ2AVX512VBMIKernel(unsafe.Pointer(&src[0]), unsafe.Pointer(&dst[0]), len(src)) // #nosec G103
 }
+
+// Assembly kernel stubs
+
+//go:noescape
+func unpackTQ2AVX512VBMIKernel(src, dst unsafe.Pointer, n int, scale, bias float32) // #nosec G103
+
+//go:noescape
+func packTQ2AVX512VBMIKernel(src, dst unsafe.Pointer, n int) // #nosec G103
+
+//go:noescape
+func packTQ2AVX512Kernel(src, dst unsafe.Pointer, n int) // #nosec G103
+
+//go:noescape
+func packTQ4AVX512Kernel(src, dst unsafe.Pointer, n int) // #nosec G103
+
+//go:noescape
+func packTQ8AVX512Kernel(src, dst unsafe.Pointer, n int) // #nosec G103
 

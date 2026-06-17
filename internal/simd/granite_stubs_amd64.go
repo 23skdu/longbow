@@ -27,3 +27,9 @@ func matMulF16AMX(a, b []float16.Num, m, n, k int, dst []float16.Num) {
 		dst[i] = float16.New(fdst[i])
 	}
 }
+
+var _ = func() {
+	if false {
+		matMulF16AMX(nil, nil, 0, 0, 0, nil)
+	}
+}

@@ -1302,28 +1302,44 @@ func Float16ToFloat32(src []float16.Num, dst []float32) {
 // Sigmoid applies the sigmoid activation function element-wise.
 func Sigmoid(src, dst []float32) {
 	start := time.Now()
-	sigmoidFloat32Impl(src, dst)
+	if sigmoidFloat32Impl != nil {
+		sigmoidFloat32Impl(src, dst)
+	} else {
+		sigmoidGeneric(src, dst)
+	}
 	metrics.SIMDActivationDuration.WithLabelValues("sigmoid", implementation).Observe(time.Since(start).Seconds())
 }
 
 // Softmax applies the softmax activation function to the input slice.
 func Softmax(src, dst []float32) {
 	start := time.Now()
-	softmaxFloat32Impl(src, dst)
+	if softmaxFloat32Impl != nil {
+		softmaxFloat32Impl(src, dst)
+	} else {
+		softmaxGeneric(src, dst)
+	}
 	metrics.SIMDActivationDuration.WithLabelValues("softmax", implementation).Observe(time.Since(start).Seconds())
 }
 
 // Exp applies the exponential function element-wise.
 func Exp(src, dst []float32) {
 	start := time.Now()
-	expFloat32Impl(src, dst)
+	if expFloat32Impl != nil {
+		expFloat32Impl(src, dst)
+	} else {
+		expGeneric(src, dst)
+	}
 	metrics.SIMDActivationDuration.WithLabelValues("exp", implementation).Observe(time.Since(start).Seconds())
 }
 
 // Log applies the natural logarithm function element-wise.
 func Log(src, dst []float32) {
 	start := time.Now()
-	logFloat32Impl(src, dst)
+	if logFloat32Impl != nil {
+		logFloat32Impl(src, dst)
+	} else {
+		logGeneric(src, dst)
+	}
 	metrics.SIMDActivationDuration.WithLabelValues("log", implementation).Observe(time.Since(start).Seconds())
 }
 

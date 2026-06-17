@@ -104,6 +104,12 @@ func l2SquaredUint8Unrolled4x(a, b []uint8) (float32, error) {
 	return float32(sum0 + sum1 + sum2 + sum3), nil
 }
 
+var _ = func() {
+	if false {
+		_, _ = l2SquaredUint8Unrolled4x(nil, nil)
+	}
+}
+
 // ... Repeat for Int16, Int32, Int64 and Uint equivalents ...
 // Note: Int64 might need float64 for better precision if values are huge.
 

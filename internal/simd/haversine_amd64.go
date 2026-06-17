@@ -62,16 +62,7 @@ func atan2PolyF32(y, x float32) float32 {
 	return a
 }
 
-// batchSinCosF32 computes sin and cos for each element in src
-// using inline float32 polynomial approximations (no float64 conversion).
-func batchSinCosF32(src []float32, sinDst, cosDst []float32) {
-	pio2 := float32(math.Pi / 2)
-	for i, v := range src {
-		sinDst[i] = sinPolyF32(v)
-		cosDst[i] = cosPolyF32(v)
-	}
-	_ = pio2
-}
+
 
 // haversineBatchAVX2 computes Haversine distance with fused operations.
 // Uses float32 polynomial approximations for sin/cos/atan2 to avoid
@@ -91,52 +82,54 @@ func haversineBatchAVX2(centerLat, centerLon float64, points []lbcore.GeoPoint, 
 	scratch := getHaversineScratch(n)
 	defer putHaversineScratch(scratch)
 
-	lat2Buf := scratch.lat2Rad[:n]
-	sinDLat := scratch.sinDLat[:n]
-	sinDLon := scratch.sinDLon[:n]
-	cosLat2 := scratch.cosLat2[:n]
-	aBuf := scratch.a[:n]
+	dLatBuf := scratch.lat2Rad[:n] // reuse lat2Rad for dLat
+	dLonBuf := scratch.sinDLat[:n] // reuse sinDLat for dLon temporarily
+	lat2OffsetBuf := scratch.cosLat2[:n] // reuse cosLat2 for lat2Offset
 
-	// Phase 1: Compute dLat/2, dLon/2 and their sines, and cos(lat2) in one pass
-	// This fuses 4 loops that were previously separate.
+	// Phase 1: Compute inputs for transcendentals
 	for i, p := range points {
 		lat2 := float32(p.Lat)*rpd - lat1
 		lon2 := float32(p.Lon)*rpd - lon1
-		lat2Buf[i] = lat2 // store original lat2 for cos
 
-		// dLat/2, dLon/2
-		dLat := lat2 * 0.5
-		dLon := lon2 * 0.5
-
-		// sin(dLat/2), sin(dLon/2) via inline polynomial
-		sinDLat[i] = sinPolyF32(dLat)
-		sinDLon[i] = sinPolyF32(dLon)
-
-		// cos(lat2) via inline polynomial
-		// lat2 is already in radians and offset by lat1
-		cosLat2[i] = cosPolyF32(lat2 + lat1)
+		dLatBuf[i] = lat2 * 0.5
+		dLonBuf[i] = lon2 * 0.5
+		lat2OffsetBuf[i] = lat2 + lat1
 	}
 
-	cosLat1 := cosPolyF32(lat1)
+	sinDLat := scratch.sqrtA[:n] // reuse sqrtA for sinDLat
+	sinDLon := scratch.sqrt1mA[:n] // reuse sqrt1mA for sinDLon
+	cosLat2 := scratch.a[:n] // reuse a for cosLat2
+	
+	// Vectorized transcendentals
+	sinAVX2(dLatBuf, sinDLat)
+	sinAVX2(dLonBuf, sinDLon)
+	cosAVX2(lat2OffsetBuf, cosLat2)
 
-	// Phase 2: Compute a = sin²(dLat/2) + cosLat1 * cos(lat2) * sin²(dLon/2)
+	cosLat1 := cosPolyF32(lat1)
+	aBuf := dLatBuf // reuse dLatBuf for a
+	
+	// Phase 2: Compute a
 	for i := 0; i < n; i++ {
 		aBuf[i] = sinDLat[i]*sinDLat[i] + cosLat1*cosLat2[i]*sinDLon[i]*sinDLon[i]
 	}
 
-	// Phase 3: sqrt(a) and sqrt(1-a) — batch SIMD sqrt
-	sqrtA := scratch.sqrtA[:n]
-	sqrt1mA := scratch.sqrt1mA[:n]
-	SqrtFloat32(aBuf, sqrtA)
+	sqrtA := sinDLat // reuse sinDLat for sqrtA
+	sqrt1mA := sinDLon // reuse sinDLon for sqrt1mA
+	
+	// Phase 3: batch SIMD sqrt
+	sqrtAVX2(aBuf, sqrtA)
 	for i := 0; i < n; i++ {
 		sqrt1mA[i] = 1 - aBuf[i]
 	}
-	SqrtFloat32(sqrt1mA[:n], sqrt1mA)
+	sqrtAVX2(sqrt1mA, sqrt1mA)
 
-	// Phase 4: Compute c = 2 * atan2(sqrt(a), sqrt(1-a)) and scale by radius
+	cBuf := aBuf // reuse aBuf for c
+	
+	// Phase 4: Vectorized atan2
+	atan2AVX2(sqrtA, sqrt1mA, cBuf)
+	
 	twoRad := 2 * rad
 	for i := 0; i < n; i++ {
-		c := atan2PolyF32(sqrtA[i], sqrt1mA[i])
-		results[i] = c * twoRad
+		results[i] = cBuf[i] * twoRad
 	}
 }

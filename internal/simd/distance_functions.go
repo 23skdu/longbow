@@ -347,6 +347,9 @@ func CosineDistanceUint8(a, b []uint8) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
+	if cosineDistanceUint8Impl != nil {
+		return cosineDistanceUint8Impl(a, b)
+	}
 	return cosineDistanceUint8Unrolled4x(a, b)
 }
 
@@ -443,6 +446,9 @@ func CosineDistanceInt16(a, b []int16) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
+	if cosineDistanceInt16Impl != nil {
+		return cosineDistanceInt16Impl(a, b)
+	}
 	return cosineDistanceInt16Unrolled4x(a, b)
 }
 
@@ -468,6 +474,9 @@ func EuclideanDistanceInt32(a, b []int32) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	if euclideanDistanceInt32Impl != nil {
+		return euclideanDistanceInt32Impl(a, b)
+	}
 	// Use blocked SIMD for high dimensions (768+)
 	if len(a) >= 768 {
 		return EuclideanInt32Blocked(a, b)
@@ -483,6 +492,9 @@ func CosineDistanceInt32(a, b []int32) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
+	if cosineDistanceInt32Impl != nil {
+		return cosineDistanceInt32Impl(a, b)
+	}
 	return cosineDistanceInt32Unrolled4x(a, b)
 }
 
@@ -493,6 +505,9 @@ func DotProductInt32(a, b []int32) (float32, error) {
 	}
 	if len(a) == 0 {
 		return 0, nil
+	}
+	if dotProductInt32Impl != nil {
+		return dotProductInt32Impl(a, b)
 	}
 	// Use blocked SIMD for high dimensions (768+)
 	if len(a) >= 768 {
@@ -523,6 +538,9 @@ func CosineDistanceUint16(a, b []uint16) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
+	if cosineDistanceUint16Impl != nil {
+		return cosineDistanceUint16Impl(a, b)
+	}
 	return cosineDistanceUint16Unrolled4x(a, b)
 }
 
@@ -548,6 +566,9 @@ func EuclideanDistanceUint32(a, b []uint32) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	if euclideanDistanceUint32Impl != nil {
+		return euclideanDistanceUint32Impl(a, b)
+	}
 	if len(a) >= 768 {
 		return EuclideanUint32Blocked(a, b)
 	}
@@ -562,6 +583,9 @@ func CosineDistanceUint32(a, b []uint32) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
+	if cosineDistanceUint32Impl != nil {
+		return cosineDistanceUint32Impl(a, b)
+	}
 	return cosineDistanceUint32Unrolled4x(a, b)
 }
 
@@ -572,6 +596,9 @@ func DotProductUint32(a, b []uint32) (float32, error) {
 	}
 	if len(a) == 0 {
 		return 0, nil
+	}
+	if dotProductUint32Impl != nil {
+		return dotProductUint32Impl(a, b)
 	}
 	if len(a) >= 768 {
 		return DotProductUint32Blocked(a, b)
@@ -587,6 +614,9 @@ func EuclideanDistanceInt64(a, b []int64) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	if euclideanDistanceInt64Impl != nil {
+		return euclideanDistanceInt64Impl(a, b)
+	}
 	if len(a) >= 768 {
 		return EuclideanInt64Blocked(a, b)
 	}
@@ -601,6 +631,9 @@ func CosineDistanceInt64(a, b []int64) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
+	if cosineDistanceInt64Impl != nil {
+		return cosineDistanceInt64Impl(a, b)
+	}
 	return cosineDistanceInt64Unrolled4x(a, b)
 }
 
@@ -611,6 +644,9 @@ func DotProductInt64(a, b []int64) (float32, error) {
 	}
 	if len(a) == 0 {
 		return 0, nil
+	}
+	if dotProductInt64Impl != nil {
+		return dotProductInt64Impl(a, b)
 	}
 	if len(a) >= 768 {
 		return DotProductInt64Blocked(a, b)
@@ -626,6 +662,9 @@ func EuclideanDistanceUint64(a, b []uint64) (float32, error) {
 	if len(a) == 0 {
 		return 0, nil
 	}
+	if euclideanDistanceUint64Impl != nil {
+		return euclideanDistanceUint64Impl(a, b)
+	}
 	if len(a) >= 768 {
 		return EuclideanUint64Blocked(a, b)
 	}
@@ -640,6 +679,9 @@ func CosineDistanceUint64(a, b []uint64) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
+	if cosineDistanceUint64Impl != nil {
+		return cosineDistanceUint64Impl(a, b)
+	}
 	return cosineDistanceUint64Unrolled4x(a, b)
 }
 
@@ -650,6 +692,9 @@ func DotProductUint64(a, b []uint64) (float32, error) {
 	}
 	if len(a) == 0 {
 		return 0, nil
+	}
+	if dotProductUint64Impl != nil {
+		return dotProductUint64Impl(a, b)
 	}
 	if len(a) >= 768 {
 		return DotProductUint64Blocked(a, b)

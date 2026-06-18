@@ -276,15 +276,33 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 
 	// Autonomous efSearch Tuning based on DataType
 	baseEfSearch := int(config.EfSearch)
-	// Low-precision and quantized data types are heavily memory-bound optimized, so they
-	// can handle a massively expanded search buffer with very little latency penalty.
-	// Higher efSearch improves recall for these types without significant throughput loss.
+	maxEf := 2000 // default maximum efSearch
 	switch config.DataType {
 	case types.VectorTypeInt8, types.VectorTypeUint8,
 		types.VectorTypeInt16, types.VectorTypeUint16,
 		types.VectorTypeTQ:
 		if baseEfSearch < 600 {
 			baseEfSearch = 600
+		}
+		// TQ distance computation is 3-4x more expensive than float32 L2.
+		// Lower-bit quantization creates more noise which can cause the PID tuner
+		// to balloon efSearch to 2000, making search latency unacceptable.
+		// Cap efSearch lower for TQ types to prevent runaway search cost.
+		if config.TurboQuantEnabled {
+			tqBits := config.TurboQuantBits
+			if tqBits <= 0 {
+				tqBits = 8 // default fallback
+			}
+			switch {
+			case tqBits <= 2:
+				maxEf = 600 // 2-bit: very noisy, no benefit from high efSearch
+			case tqBits <= 4:
+				maxEf = 800 // 4-bit: moderate noise
+			default:
+				maxEf = 1200 // 8-bit: better quality, allow more exploration
+			}
+		} else {
+			maxEf = 1000 // int quantized types
 		}
 	case types.VectorTypeInt32, types.VectorTypeUint32,
 		types.VectorTypeFloat16:
@@ -295,7 +313,7 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	if config.TurboQuantEnabled && baseEfSearch < 600 {
 		baseEfSearch = 600
 	}
-	h.efTuner = NewPIDTuner(0.95, baseEfSearch) // Target 0.95 recall
+	h.efTuner = NewPIDTuner(0.95, baseEfSearch, maxEf) // Target 0.95 recall
 
 	// Ensure initial capacity
 	capacity := config.InitialCapacity

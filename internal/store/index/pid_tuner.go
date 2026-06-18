@@ -9,6 +9,7 @@ import (
 type PIDTuner struct {
 	targetRecall float64
 	kp, ki, kd   float64
+	maxEf        float64
 
 	mu         sync.Mutex
 	lastError  float64
@@ -19,12 +20,14 @@ type PIDTuner struct {
 }
 
 // NewPIDTuner initializes a new PID controller for dynamic parameter tuning.
-func NewPIDTuner(targetRecall float64, initialEf int) *PIDTuner {
+// maxEf caps the maximum efSearch value to prevent runaway search cost.
+func NewPIDTuner(targetRecall float64, initialEf int, maxEf int) *PIDTuner {
 	return &PIDTuner{
 		targetRecall: targetRecall,
 		kp:           0.5,
 		ki:           0.1,
 		kd:           0.05,
+		maxEf:        float64(maxEf),
 		currentEf:    float64(initialEf),
 		lastUpdate:   time.Now(),
 	}
@@ -55,8 +58,8 @@ func (t *PIDTuner) Update(observedRecall float64) int {
 	if t.currentEf < 10 {
 		t.currentEf = 10
 	}
-	if t.currentEf > 2000 {
-		t.currentEf = 2000
+	if t.maxEf > 0 && t.currentEf > t.maxEf {
+		t.currentEf = t.maxEf
 	}
 
 	t.lastError = error

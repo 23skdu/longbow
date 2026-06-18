@@ -640,8 +640,12 @@ func run() error {
 			}
 		})
 
+		metricsListener, err := listenWithReuseAddr("tcp", metricsAddr)
+		if err != nil {
+			logger.Error().Err(err).Str("addr", metricsAddr).Msg("Metrics server listen failed")
+			return
+		}
 		srv := &http.Server{
-			Addr:         metricsAddr,
 			Handler:      mux,
 			ReadTimeout:  10 * time.Second,
 			WriteTimeout: 10 * time.Second,
@@ -649,7 +653,7 @@ func run() error {
 		metricsSrvChan <- srv
 
 		logger.Info().Str("addr", metricsAddr).Msg("Metrics and pprof server starting")
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+		if err := srv.Serve(metricsListener); err != nil && err != http.ErrServerClosed {
 			logger.Error().Err(err).Msg("Metrics server failed")
 		}
 	}()
@@ -779,7 +783,7 @@ func run() error {
 	dataServer := grpc.NewServer(serverOpts...)
 	flight.RegisterFlightServiceServer(dataServer, dataService)
 
-	dataLisBase, err := net.Listen("tcp", cfg.ListenAddr)
+	dataLisBase, err := listenWithReuseAddr("tcp", cfg.ListenAddr)
 	if err != nil {
 		logger.Error().
 			Err(err).
@@ -794,7 +798,7 @@ func run() error {
 	metaService := store.NewMetaServer(vectorStore)
 	flight.RegisterFlightServiceServer(metaServer, metaService)
 
-	metaLisBase, err := net.Listen("tcp", cfg.MetaAddr)
+	metaLisBase, err := listenWithReuseAddr("tcp", cfg.MetaAddr)
 	if err != nil {
 		logger.Error().
 			Err(err).
@@ -944,4 +948,18 @@ func initTracer() *sdktrace.TracerProvider {
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}))
 
 	return tp
+}
+
+// listenWithReuseAddr creates a TCP listener with SO_REUSEADDR set,
+// allowing the server to bind to a port that may still be in TIME_WAIT
+// from a previous instance. This is critical for benchmark rapid restart.
+func listenWithReuseAddr(network, addr string) (net.Listener, error) {
+	lc := net.ListenConfig{
+		Control: func(network, address string, c syscall.RawConn) error {
+			return c.Control(func(fd uintptr) {
+				_ = syscall.SetsockoptInt(int(fd), syscall.SOL_SOCKET, syscall.SO_REUSEADDR, 1) // best-effort
+			})
+		},
+	}
+	return lc.Listen(context.Background(), network, addr)
 }

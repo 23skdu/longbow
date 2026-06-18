@@ -628,6 +628,26 @@ func initializeDispatch() {
 		euclideanDistanceUint16Impl = euclideanUint16AVX512
 		dotProductInt16Impl = dotInt16AVX512
 		dotProductUint16Impl = dotUint16AVX512
+		cosineDistanceInt8Impl = cosineInt8AVX2
+		cosineDistanceUint8Impl = cosineUint8AVX2
+		cosineDistanceInt16Impl = cosineInt16AVX2
+		cosineDistanceUint16Impl = cosineUint16AVX2
+
+		euclideanDistanceInt32Impl = euclideanInt32AVX2
+		dotProductInt32Impl = dotInt32AVX2
+		cosineDistanceInt32Impl = cosineInt32AVX2
+
+		euclideanDistanceUint32Impl = euclideanUint32AVX2
+		dotProductUint32Impl = dotUint32AVX2
+		cosineDistanceUint32Impl = cosineUint32AVX2
+
+		euclideanDistanceInt64Impl = euclideanInt64Unrolled4x
+		dotProductInt64Impl = dotInt64Unrolled4x
+		cosineDistanceInt64Impl = cosineInt64AVX2
+
+		euclideanDistanceUint64Impl = euclideanUint64Unrolled4x
+		dotProductUint64Impl = dotUint64Unrolled4x
+		cosineDistanceUint64Impl = cosineUint64AVX2
 		dotProductInt4Impl = dotInt4AVX512
 		dotProductInt2Impl = dotInt2AVX512
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
@@ -731,6 +751,26 @@ func initializeDispatch() {
 		euclideanDistanceUint16Impl = euclideanUint16AVX512
 		dotProductInt16Impl = dotInt16AVX512
 		dotProductUint16Impl = dotUint16AVX512
+		cosineDistanceInt8Impl = cosineInt8AVX2
+		cosineDistanceUint8Impl = cosineUint8AVX2
+		cosineDistanceInt16Impl = cosineInt16AVX2
+		cosineDistanceUint16Impl = cosineUint16AVX2
+
+		euclideanDistanceInt32Impl = euclideanInt32AVX2
+		dotProductInt32Impl = dotInt32AVX2
+		cosineDistanceInt32Impl = cosineInt32AVX2
+
+		euclideanDistanceUint32Impl = euclideanUint32AVX2
+		dotProductUint32Impl = dotUint32AVX2
+		cosineDistanceUint32Impl = cosineUint32AVX2
+
+		euclideanDistanceInt64Impl = euclideanInt64Unrolled4x
+		dotProductInt64Impl = dotInt64Unrolled4x
+		cosineDistanceInt64Impl = cosineInt64AVX2
+
+		euclideanDistanceUint64Impl = euclideanUint64Unrolled4x
+		dotProductUint64Impl = dotUint64Unrolled4x
+		cosineDistanceUint64Impl = cosineUint64AVX2
 		dotProductInt4Impl = dotInt4AVX512
 		dotProductInt2Impl = dotInt2AVX512
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
@@ -834,6 +874,26 @@ func initializeDispatch() {
 		euclideanDistanceUint16Impl = euclideanUint16AVX512
 		dotProductInt16Impl = dotInt16AVX512
 		dotProductUint16Impl = dotUint16AVX512
+		cosineDistanceInt8Impl = cosineInt8AVX2
+		cosineDistanceUint8Impl = cosineUint8AVX2
+		cosineDistanceInt16Impl = cosineInt16AVX2
+		cosineDistanceUint16Impl = cosineUint16AVX2
+
+		euclideanDistanceInt32Impl = euclideanInt32AVX2
+		dotProductInt32Impl = dotInt32AVX2
+		cosineDistanceInt32Impl = cosineInt32AVX2
+
+		euclideanDistanceUint32Impl = euclideanUint32AVX2
+		dotProductUint32Impl = dotUint32AVX2
+		cosineDistanceUint32Impl = cosineUint32AVX2
+
+		euclideanDistanceInt64Impl = euclideanInt64Unrolled4x
+		dotProductInt64Impl = dotInt64Unrolled4x
+		cosineDistanceInt64Impl = cosineInt64AVX2
+
+		euclideanDistanceUint64Impl = euclideanUint64Unrolled4x
+		dotProductUint64Impl = dotUint64Unrolled4x
+		cosineDistanceUint64Impl = cosineUint64AVX2
 		dotProductInt4Impl = dotInt4AVX512
 		dotProductInt2Impl = dotInt2AVX512
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
@@ -939,6 +999,26 @@ func initializeDispatch() {
 		euclideanDistanceUint16Impl = euclideanUint16AVX2
 		dotProductInt16Impl = dotInt16AVX2
 		dotProductUint16Impl = dotUint16AVX2
+		cosineDistanceInt8Impl = cosineInt8AVX2
+		cosineDistanceUint8Impl = cosineUint8AVX2
+		cosineDistanceInt16Impl = cosineInt16AVX2
+		cosineDistanceUint16Impl = cosineUint16AVX2
+
+		euclideanDistanceInt32Impl = euclideanInt32AVX2
+		dotProductInt32Impl = dotInt32AVX2
+		cosineDistanceInt32Impl = cosineInt32AVX2
+
+		euclideanDistanceUint32Impl = euclideanUint32AVX2
+		dotProductUint32Impl = dotUint32AVX2
+		cosineDistanceUint32Impl = cosineUint32AVX2
+
+		euclideanDistanceInt64Impl = euclideanInt64Unrolled4x
+		dotProductInt64Impl = dotInt64Unrolled4x
+		cosineDistanceInt64Impl = cosineInt64AVX2
+
+		euclideanDistanceUint64Impl = euclideanUint64Unrolled4x
+		dotProductUint64Impl = dotUint64Unrolled4x
+		cosineDistanceUint64Impl = cosineUint64AVX2
 		dotProductInt4Impl = dotInt4Generic
 		dotProductInt2Impl = dotInt2Generic
 		euclideanDistanceComplex64Impl = euclideanComplex64Optimized
@@ -1039,6 +1119,25 @@ func initializeDispatch() {
 			return d * d, nil
 		}
 		cosineDistanceInt8Impl = cosineInt8NEON
+		cosineDistanceUint8Impl = cosineDistanceUint8Unrolled4x
+		cosineDistanceInt16Impl = cosineDistanceInt16Unrolled4x
+		cosineDistanceUint16Impl = cosineDistanceUint16Unrolled4x
+
+		euclideanDistanceInt32Impl = euclideanInt32Unrolled4x
+		dotProductInt32Impl = dotInt32Unrolled4x
+		cosineDistanceInt32Impl = cosineDistanceInt32Unrolled4x
+
+		euclideanDistanceUint32Impl = euclideanUint32Unrolled4x
+		dotProductUint32Impl = dotUint32Unrolled4x
+		cosineDistanceUint32Impl = cosineDistanceUint32Unrolled4x
+
+		euclideanDistanceInt64Impl = euclideanInt64Unrolled4x
+		dotProductInt64Impl = dotInt64Unrolled4x
+		cosineDistanceInt64Impl = cosineDistanceInt64Unrolled4x
+
+		euclideanDistanceUint64Impl = euclideanUint64Unrolled4x
+		dotProductUint64Impl = dotUint64Unrolled4x
+		cosineDistanceUint64Impl = cosineDistanceUint64Unrolled4x
 		euclideanDistanceUint8Impl = euclideanUint8NEON
 		euclideanDistanceInt16Impl = euclideanInt16NEON
 		euclideanDistanceUint16Impl = euclideanUint16Unrolled4x
@@ -1136,6 +1235,26 @@ func initializeDispatch() {
 		dotProductUint8Impl = dotUint8Unrolled4x
 		dotProductInt16Impl = dotInt16Unrolled4x
 		dotProductUint16Impl = dotUint16Unrolled4x
+		cosineDistanceInt8Impl = cosineDistanceInt8Unrolled4x
+		cosineDistanceUint8Impl = cosineDistanceUint8Unrolled4x
+		cosineDistanceInt16Impl = cosineDistanceInt16Unrolled4x
+		cosineDistanceUint16Impl = cosineDistanceUint16Unrolled4x
+
+		euclideanDistanceInt32Impl = euclideanInt32Unrolled4x
+		dotProductInt32Impl = dotInt32Unrolled4x
+		cosineDistanceInt32Impl = cosineDistanceInt32Unrolled4x
+
+		euclideanDistanceUint32Impl = euclideanUint32Unrolled4x
+		dotProductUint32Impl = dotUint32Unrolled4x
+		cosineDistanceUint32Impl = cosineDistanceUint32Unrolled4x
+
+		euclideanDistanceInt64Impl = euclideanInt64Unrolled4x
+		dotProductInt64Impl = dotInt64Unrolled4x
+		cosineDistanceInt64Impl = cosineDistanceInt64Unrolled4x
+
+		euclideanDistanceUint64Impl = euclideanUint64Unrolled4x
+		dotProductUint64Impl = dotUint64Unrolled4x
+		cosineDistanceUint64Impl = cosineDistanceUint64Unrolled4x
 		dotProductInt4Impl = dotInt4Generic
 		dotProductInt2Impl = dotInt2Generic
 		memcpyNTAImpl = memcpyGeneric
@@ -1222,13 +1341,13 @@ func initializeDispatch() {
 	Registry.Register(MetricCosine, DataTypeInt16, 0, CosineDistanceInt16)
 	Registry.Register(MetricDotProduct, DataTypeInt16, 0, dotProductInt16Impl)
 
-	Registry.Register(MetricEuclidean, DataTypeInt32, 0, euclideanInt32Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeInt32, 0, EuclideanDistanceInt32)
 	Registry.Register(MetricCosine, DataTypeInt32, 0, CosineDistanceInt32)
-	Registry.Register(MetricDotProduct, DataTypeInt32, 0, dotInt32Unrolled4x)
+	Registry.Register(MetricDotProduct, DataTypeInt32, 0, DotProductInt32)
 
-	Registry.Register(MetricEuclidean, DataTypeInt64, 0, euclideanInt64Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeInt64, 0, EuclideanDistanceInt64)
 	Registry.Register(MetricCosine, DataTypeInt64, 0, CosineDistanceInt64)
-	Registry.Register(MetricDotProduct, DataTypeInt64, 0, dotInt64Unrolled4x)
+	Registry.Register(MetricDotProduct, DataTypeInt64, 0, DotProductInt64)
 
 	Registry.Register(MetricEuclidean, DataTypeUint8, 0, euclideanDistanceUint8Impl)
 	Registry.Register(MetricEuclidean, DataTypeUint8, 384, Euclidean384Uint8)
@@ -1250,22 +1369,22 @@ func initializeDispatch() {
 	Registry.Register(MetricDotProduct, DataTypeUint16, 768, Dot768Uint16)
 	Registry.Register(MetricDotProduct, DataTypeUint16, 1024, Dot1024Uint16)
 
-	Registry.Register(MetricEuclidean, DataTypeUint32, 0, euclideanUint32Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeUint32, 0, EuclideanDistanceUint32)
 	Registry.Register(MetricEuclidean, DataTypeUint32, 384, Euclidean384Uint32)
 	Registry.Register(MetricEuclidean, DataTypeUint32, 768, Euclidean768Uint32)
 	Registry.Register(MetricEuclidean, DataTypeUint32, 1024, Euclidean1024Uint32)
 	Registry.Register(MetricCosine, DataTypeUint32, 0, CosineDistanceUint32)
-	Registry.Register(MetricDotProduct, DataTypeUint32, 0, dotUint32Unrolled4x)
+	Registry.Register(MetricDotProduct, DataTypeUint32, 0, DotProductUint32)
 	Registry.Register(MetricDotProduct, DataTypeUint32, 384, Dot384Uint32)
 	Registry.Register(MetricDotProduct, DataTypeUint32, 768, Dot768Uint32)
 	Registry.Register(MetricDotProduct, DataTypeUint32, 1024, Dot1024Uint32)
 
-	Registry.Register(MetricEuclidean, DataTypeUint64, 0, euclideanUint64Unrolled4x)
+	Registry.Register(MetricEuclidean, DataTypeUint64, 0, EuclideanDistanceUint64)
 	Registry.Register(MetricEuclidean, DataTypeUint64, 384, Euclidean384Uint64)
 	Registry.Register(MetricEuclidean, DataTypeUint64, 768, Euclidean768Uint64)
 	Registry.Register(MetricEuclidean, DataTypeUint64, 1024, Euclidean1024Uint64)
 	Registry.Register(MetricCosine, DataTypeUint64, 0, CosineDistanceUint64)
-	Registry.Register(MetricDotProduct, DataTypeUint64, 0, dotUint64Unrolled4x)
+	Registry.Register(MetricDotProduct, DataTypeUint64, 0, DotProductUint64)
 	Registry.Register(MetricDotProduct, DataTypeUint64, 384, Dot384Uint64)
 	Registry.Register(MetricDotProduct, DataTypeUint64, 768, Dot768Uint64)
 	Registry.Register(MetricDotProduct, DataTypeUint64, 1024, Dot1024Uint64)

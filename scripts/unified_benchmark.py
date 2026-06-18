@@ -66,6 +66,10 @@ DTYPE_BYTES = {
 class ResourceExhaustedException(Exception):
     pass
 
+class MemoryExceededException(Exception):
+    """Raised when estimated memory exceeds the configured limit."""
+    pass
+
 
 
 def _kill_port(port):
@@ -190,6 +194,8 @@ class BenchmarkRunner:
         )
         self.results = []
         self.exhausted_configs = set()
+        self.completed_configs = set()
+        self.failed_configs = set()
         self.server_pid = None
         self.test_counter = 0
 
@@ -227,6 +233,39 @@ class BenchmarkRunner:
         print(f"  Disk usage: {mb:.1f} MB ({total_bytes} bytes)")
         return round(mb, 1)
 
+    def _estimate_memory_usage(self, dtype, dim, count):
+        """Estimate peak memory (MB) for a given config.
+
+        Uses a conservative formula based on raw data size plus HNSW overhead.
+        Skips configs where estimated memory exceeds the configured max.
+        """
+        bytes_per = DTYPE_BYTES.get(dtype, 4)
+        raw_mb = dim * count * bytes_per / (1024.0 * 1024.0)
+        hnsw_edges_mb = count * 2048 / (1024.0 * 1024.0)
+        arrow_overhead = raw_mb * 2
+        temp_scratch_mb = raw_mb * 4
+        headroom_mb = 512.0
+        total_mb = raw_mb + arrow_overhead + temp_scratch_mb + hnsw_edges_mb + headroom_mb
+        return round(total_mb, 1)
+
+    def _check_memory_limit(self, dtype, dim, count):
+        """Check if estimated memory exceeds the configured limit.
+
+        Returns True if the config fits within memory, False if it should be skipped.
+        Prints a warning when skipping.
+        """
+        if not getattr(self.args, 'estimate_memory', False):
+            return True
+        limit_gb = os.environ.get("LONGBOW_MAX_MEMORY", str(self.args.memory))
+        limit_gb = int(limit_gb) / (1024 ** 3)  # Convert from bytes to GB
+        estimated_mb = self._estimate_memory_usage(dtype, dim, count)
+        estimated_gb = estimated_mb / 1024.0
+        if estimated_gb > limit_gb:
+            print(f"  [MEMORY] Estimated memory {estimated_gb:.1f} GB exceeds limit {limit_gb:.1f} GB, skipping")
+            return False
+        print(f"  [MEMORY] Estimated {estimated_gb:.1f} GB / {limit_gb:.1f} GB limit — OK")
+        return True
+
     def _save_checkpoint(self):
         """Save partial results checkpoint to disk."""
         if hasattr(self, 'results') and self.results and hasattr(self, 'output_file'):
@@ -246,10 +285,43 @@ class BenchmarkRunner:
                             "duration": self.args.duration,
                         },
                         "results": self.results,
+                        "completed_configs": [list(c) for c in getattr(self, 'completed_configs', set())],
+                        "failed_configs": [list(c) for c in getattr(self, 'failed_configs', set())],
+                        "exhausted_configs": [list(c) for c in getattr(self, 'exhausted_configs', set())],
                     }, f, indent=2)
                 print(f"\n  [checkpoint] Partial results saved to {self.output_file}")
             except Exception as e:
                 print(f"\n  [checkpoint] Failed to save partial results: {e}")
+
+    def _load_checkpoint(self):
+        """Load checkpoint file and extract completed/failed configs for resume.
+
+        Returns list of previously collected results (empty if no checkpoint).
+        """
+        if not hasattr(self.args, 'resume') or not self.args.resume:
+            return []
+        if not hasattr(self, 'output_file') or not os.path.exists(self.output_file):
+            print("  [resume] No checkpoint file found, starting fresh")
+            return []
+        try:
+            with open(self.output_file) as f:
+                data = json.load(f)
+            completed = data.get("completed_configs", [])
+            if completed:
+                self.completed_configs = set(tuple(c) for c in completed)
+                print(f"  [resume] Loaded {len(completed)} completed configs from checkpoint, will skip them")
+            failed = data.get("failed_configs", [])
+            if failed:
+                self.failed_configs = set(tuple(c) for c in failed)
+                print(f"  [resume] Loaded {len(failed)} previously failed configs, will retry")
+            exhausted = data.get("exhausted_configs", [])
+            if exhausted:
+                self.exhausted_configs = set(tuple(c) for c in exhausted)
+                print(f"  [resume] Loaded {len(exhausted)} exhausted (OOM) configs, will skip")
+            return data.get("results", [])
+        except Exception as e:
+            print(f"  [resume] Failed to load checkpoint: {e}")
+            return []
 
     def _signal_handler(self, signum, frame):
         """Handle SIGINT/SIGTERM by saving partial results and cleaning up."""
@@ -384,10 +456,11 @@ class BenchmarkRunner:
         for p in [port, port + 1, port + 80, port + 6000]:
             _kill_port(p)
         
-        # Wait for ports to be actually free
+        # Wait for ports to be actually free with exponential backoff
         import socket
+        max_port_attempts = 30
         for p in [port, port + 1, port + 80, port + 6000]:
-            for _ in range(30):
+            for attempt in range(max_port_attempts):
                 with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
                     s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
                     try:
@@ -395,7 +468,22 @@ class BenchmarkRunner:
                         break # Success, we can bind!
                     except socket.error:
                         pass # Still in use
-                time.sleep(1.0)
+                # Exponential backoff: 0.05s, 0.1s, 0.2s, 0.4s, 0.8s, capped at 1.0s
+                sleep_time = min(0.05 * (2 ** attempt), 1.0)
+                time.sleep(sleep_time)
+            else:
+                # Port still stuck after all attempts — try random fallback if enabled
+                if getattr(self.args, 'random_port_fallback', False):
+                    import random
+                    fallback_offset = random.randint(1000, 9000)
+                    fallback_port = self.args.port + fallback_offset
+                    print(f"  Port {p} stuck after {max_port_attempts} attempts, "
+                          f"falling back to port offset {fallback_offset} (port {fallback_port})")
+                    # Recursively try with fallback port
+                    self.args.port = self.args.port + fallback_offset
+                    return self.start_server(label, env_overrides=env_overrides, count=count)
+                print(f"  Port {p} still in use after {max_port_attempts} attempts!")
+                return False
         
         # Also kill any lingering longbow processes by name to be sure
         for name in ["longbow", "longbow-metal", "longbow-cuda", "bench-tool", "benchmark-tool", "longbow-cli"]:
@@ -2550,7 +2638,10 @@ class BenchmarkRunner:
 
                 # Default logic for cpu/metal/cuda
 
-
+                # Load checkpoint for resume — skip previously completed configs
+                checkpoint_results = self._load_checkpoint()
+                if checkpoint_results:
+                    self.results = checkpoint_results
 
                 print("=" * 80)
                 print(f"UNIFIED BENCHMARK MATRIX ({mode.upper()})")
@@ -2587,9 +2678,15 @@ class BenchmarkRunner:
                                 f"\n[{current}/{total * len(counts)}] {dtype} dim={dim} count={count} port={current_port}"
                             )
 
-                            config_key = (mode, dtype, dim)
+                            config_key = (mode, dtype, dim, count)
                             if config_key in self.exhausted_configs:
                                 print(f"  [SKIPPED] skipping {label} due to prior ResourceExhausted error")
+                                continue
+                            if config_key in self.completed_configs:
+                                print(f"  [SKIPPED] skipping {label} — already completed (resume)")
+                                continue
+                            if not self._check_memory_limit(dtype, dim, count):
+                                self.exhausted_configs.add(config_key)
                                 continue
 
                             # Skip server startup if only generating data
@@ -2635,6 +2732,7 @@ class BenchmarkRunner:
 
                                         success = self.run_benchmark(dim, dtype, count, label)
                                         if success:
+                                            self.completed_configs.add(config_key)
                                             break
                                         print(f"  Benchmark run failed (attempt {attempt+1}/{max_retries})")
                                         # Detect server crash: if server process is dead,
@@ -2655,6 +2753,10 @@ class BenchmarkRunner:
                                         if pprof_thread:
                                             pprof_thread.join()
                                             pprof_thread = None
+
+                                # Track failed configs for retry-failed
+                                if not success and not exhausted and not server_crashed:
+                                    self.failed_configs.add(config_key)
 
                             finally:
                                 # Save results BEFORE pprof snapshot — don't let pprof
@@ -2695,6 +2797,9 @@ class BenchmarkRunner:
                         "duration": self.args.duration,
                     },
                     "results": self.results,
+                    "completed_configs": [list(c) for c in self.completed_configs],
+                    "failed_configs": [list(c) for c in self.failed_configs],
+                    "exhausted_configs": [list(c) for c in self.exhausted_configs],
                 },
                 f,
                 indent=2,
@@ -3265,6 +3370,18 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--cache", action="store_true", help="Skip unchanged code paths if result json already exists"
+    )
+    parser.add_argument(
+        "--resume", action="store_true",
+        help="Resume from checkpoint file, auto-skipping completed configs"
+    )
+    parser.add_argument(
+        "--estimate-memory", action="store_true",
+        help="Estimate peak memory per config and skip those exceeding the limit"
+    )
+    parser.add_argument(
+        "--random-port-fallback", action="store_true",
+        help="Fall back to a random port if the calculated port is stuck in TIME_WAIT"
     )
     numa_default = False
     try:

@@ -693,6 +693,202 @@ func dotUint8AVX2(a, b []uint8) (float32, error) {
 		len(a)), nil
 }
 
+func cosineInt8AVX2(a, b []int8) (float32, error) {
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	ptrA := uintptr(unsafe.Pointer(&a[0]))
+	ptrB := uintptr(unsafe.Pointer(&b[0]))
+	n := len(a)
+	dot := dotInt8AVX2Kernel(ptrA, ptrB, n)
+	normA := dotInt8AVX2Kernel(ptrA, ptrA, n)
+	normB := dotInt8AVX2Kernel(ptrB, ptrB, n)
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := float64(dot) / (math.Sqrt(float64(normA)) * math.Sqrt(float64(normB)))
+	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
+}
+
+func cosineUint8AVX2(a, b []uint8) (float32, error) {
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	ptrA := uintptr(unsafe.Pointer(&a[0]))
+	ptrB := uintptr(unsafe.Pointer(&b[0]))
+	n := len(a)
+	dot := dotUint8AVX2Kernel(ptrA, ptrB, n)
+	normA := dotUint8AVX2Kernel(ptrA, ptrA, n)
+	normB := dotUint8AVX2Kernel(ptrB, ptrB, n)
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := float64(dot) / (math.Sqrt(float64(normA)) * math.Sqrt(float64(normB)))
+	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
+}
+
+func cosineInt16AVX2(a, b []int16) (float32, error) {
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	ptrA := uintptr(unsafe.Pointer(&a[0]))
+	ptrB := uintptr(unsafe.Pointer(&b[0]))
+	n := len(a)
+	dot := dotInt16AVX2Kernel(ptrA, ptrB, n)
+	normA := dotInt16AVX2Kernel(ptrA, ptrA, n)
+	normB := dotInt16AVX2Kernel(ptrB, ptrB, n)
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := float64(dot) / (math.Sqrt(float64(normA)) * math.Sqrt(float64(normB)))
+	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
+}
+
+func cosineUint16AVX2(a, b []uint16) (float32, error) {
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	ptrA := uintptr(unsafe.Pointer(&a[0]))
+	ptrB := uintptr(unsafe.Pointer(&b[0]))
+	n := len(a)
+	dot := dotUint16AVX2Kernel(ptrA, ptrB, n)
+	normA := dotUint16AVX2Kernel(ptrA, ptrA, n)
+	normB := dotUint16AVX2Kernel(ptrB, ptrB, n)
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := float64(dot) / (math.Sqrt(float64(normA)) * math.Sqrt(float64(normB)))
+	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
+}
+
+// dotInt32AVX2 computes dot product using AVX2 int32 kernel.
+func dotInt32AVX2(a, b []int32) (float32, error) {
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotInt32AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
+		len(a)), nil
+}
+
+// euclideanInt32AVX2 computes Euclidean distance using AVX2 int32 kernel.
+func euclideanInt32AVX2(a, b []int32) (float32, error) {
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanInt32AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
+		len(a)), nil
+}
+
+// dotUint32AVX2 computes dot product using AVX2 uint32 kernel.
+func dotUint32AVX2(a, b []uint32) (float32, error) {
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return dotUint32AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
+		len(a)), nil
+}
+
+// euclideanUint32AVX2 computes Euclidean distance using AVX2 uint32 kernel.
+func euclideanUint32AVX2(a, b []uint32) (float32, error) {
+	if len(a) == 0 {
+		return 0, nil
+	}
+	return euclideanUint32AVX2Kernel(
+		uintptr(unsafe.Pointer(&a[0])), // #nosec G103
+		uintptr(unsafe.Pointer(&b[0])), // #nosec G103
+		len(a)), nil
+}
+
+// cosineInt32AVX2 computes cosine distance using the int32 dot product kernel.
+func cosineInt32AVX2(a, b []int32) (float32, error) {
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	ptrA := uintptr(unsafe.Pointer(&a[0]))
+	ptrB := uintptr(unsafe.Pointer(&b[0]))
+	n := len(a)
+	dot := dotInt32AVX2Kernel(ptrA, ptrB, n)
+	normA := dotInt32AVX2Kernel(ptrA, ptrA, n)
+	normB := dotInt32AVX2Kernel(ptrB, ptrB, n)
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := float64(dot) / (math.Sqrt(float64(normA)) * math.Sqrt(float64(normB)))
+	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
+}
+
+// cosineUint32AVX2 computes cosine distance using the uint32 dot product kernel.
+func cosineUint32AVX2(a, b []uint32) (float32, error) {
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	ptrA := uintptr(unsafe.Pointer(&a[0]))
+	ptrB := uintptr(unsafe.Pointer(&b[0]))
+	n := len(a)
+	dot := dotUint32AVX2Kernel(ptrA, ptrB, n)
+	normA := dotUint32AVX2Kernel(ptrA, ptrA, n)
+	normB := dotUint32AVX2Kernel(ptrB, ptrB, n)
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := float64(dot) / (math.Sqrt(float64(normA)) * math.Sqrt(float64(normB)))
+	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
+}
+
+// cosineInt64AVX2 computes cosine distance using the int64 dot product kernel.
+func cosineInt64AVX2(a, b []int64) (float32, error) {
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	dot, err := DotProductInt64Blocked(a, b)
+	if err != nil {
+		return 0, err
+	}
+	normA, err := DotProductInt64Blocked(a, a)
+	if err != nil {
+		return 0, err
+	}
+	normB, err := DotProductInt64Blocked(b, b)
+	if err != nil {
+		return 0, err
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := float64(dot) / (math.Sqrt(float64(normA)) * math.Sqrt(float64(normB)))
+	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
+}
+
+// cosineUint64AVX2 computes cosine distance using the uint64 dot product kernel.
+func cosineUint64AVX2(a, b []uint64) (float32, error) {
+	if len(a) == 0 {
+		return 1.0, nil
+	}
+	dot, err := DotProductUint64Blocked(a, b)
+	if err != nil {
+		return 0, err
+	}
+	normA, err := DotProductUint64Blocked(a, a)
+	if err != nil {
+		return 0, err
+	}
+	normB, err := DotProductUint64Blocked(b, b)
+	if err != nil {
+		return 0, err
+	}
+	if normA <= 0 || normB <= 0 {
+		return 1.0, nil
+	}
+	similarity := float64(dot) / (math.Sqrt(float64(normA)) * math.Sqrt(float64(normB)))
+	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
+}
+
 func dotInt4AVX512(a, b []byte) (float32, error) {
 	return dotInt4Generic(a, b)
 }

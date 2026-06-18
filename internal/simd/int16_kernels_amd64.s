@@ -694,3 +694,256 @@ done_eucl_int8_avx512:
     VSQRTSS X0, X0, X0
     MOVSS X0, ret+24(FP)
     RET
+
+// ============================================================================
+// dotInt32AVX2Kernel(a, b uintptr, n int) float32
+//
+// Computes sum(a[i]*b[i]) for n int32 elements.
+// Uses XMM (128-bit): 4 elements per iteration, VPMULDQ for int64 accumulation.
+// ============================================================================
+TEXT ·dotInt32AVX2Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VPXOR X0, X0, X0
+
+loop4_dot_i32:
+    CMPQ CX, $4
+    JL   reduce_dot_i32
+
+    VMOVDQU (SI), X1
+    VMOVDQU (DI), X2
+
+    VPMULDQ X2, X1, X3
+    VPADDQ  X3, X0, X0
+
+    VPALIGNR $4, X1, X1, X4
+    VPALIGNR $4, X2, X2, X5
+    VPMULDQ X5, X4, X6
+    VPADDQ  X6, X0, X0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $4, CX
+    JMP  loop4_dot_i32
+
+reduce_dot_i32:
+    VMOVQ  X0, R8
+    VPSHUFD $0xEE, X0, X1
+    VMOVQ  X1, AX
+    ADDQ   AX, R8
+    VZEROUPPER
+
+    TESTQ CX, CX
+    JZ    done_dot_i32
+
+scalar_dot_i32:
+    MOVL   (SI), AX
+    MOVL   (DI), BX
+    SHLQ   $32, AX
+    SARQ   $32, AX
+    SHLQ   $32, BX
+    SARQ   $32, BX
+    IMULQ  BX, AX
+    ADDQ   AX, R8
+
+    ADDQ $4, SI
+    ADDQ $4, DI
+    DECQ CX
+    JNZ  scalar_dot_i32
+
+done_dot_i32:
+    CVTSQ2SS R8, X0
+    MOVSS X0, ret+24(FP)
+    RET
+
+// ============================================================================
+// euclideanInt32AVX2Kernel(a, b uintptr, n int) float32
+//
+// Computes sqrt(sum((a[i]-b[i])^2)) for n int32 elements.
+// XMM approach: 4 elements per iteration.
+// ============================================================================
+TEXT ·euclideanInt32AVX2Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VPXOR X0, X0, X0
+
+loop4_eucl_i32:
+    CMPQ CX, $4
+    JL   reduce_eucl_i32
+
+    VMOVDQU (SI), X1
+    VMOVDQU (DI), X2
+    VPSUBD X2, X1, X1
+
+    VPMULDQ X1, X1, X3
+    VPADDQ  X3, X0, X0
+
+    VPALIGNR $4, X1, X1, X4
+    VPMULDQ X4, X4, X6
+    VPADDQ  X6, X0, X0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $4, CX
+    JMP  loop4_eucl_i32
+
+reduce_eucl_i32:
+    VMOVQ  X0, R8
+    VPSHUFD $0xEE, X0, X1
+    VMOVQ  X1, AX
+    ADDQ   AX, R8
+    VZEROUPPER
+
+    TESTQ CX, CX
+    JZ    done_eucl_i32
+
+scalar_eucl_i32:
+    MOVL   (SI), AX
+    MOVL   (DI), BX
+    SUBL   BX, AX
+    SHLQ   $32, AX
+    SARQ   $32, AX
+    IMULQ  AX, AX
+    ADDQ   AX, R8
+
+    ADDQ $4, SI
+    ADDQ $4, DI
+    DECQ CX
+    JNZ  scalar_eucl_i32
+
+done_eucl_i32:
+    CVTSQ2SS R8, X0
+    VSQRTSS X0, X0, X0
+    MOVSS X0, ret+24(FP)
+    RET
+
+// ============================================================================
+// dotUint32AVX2Kernel(a, b uintptr, n int) float32
+//
+// Computes sum(a[i]*b[i]) for n uint32 elements.
+// XMM: 4 elements per iteration, VPMULUDQ for unsigned int64 accumulation.
+// ============================================================================
+TEXT ·dotUint32AVX2Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VPXOR X0, X0, X0
+
+loop4_dot_u32:
+    CMPQ CX, $4
+    JL   reduce_dot_u32
+
+    VMOVDQU (SI), X1
+    VMOVDQU (DI), X2
+
+    VPMULUDQ X2, X1, X3
+    VPADDQ   X3, X0, X0
+
+    VPALIGNR $4, X1, X1, X4
+    VPALIGNR $4, X2, X2, X5
+    VPMULUDQ X5, X4, X6
+    VPADDQ   X6, X0, X0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $4, CX
+    JMP  loop4_dot_u32
+
+reduce_dot_u32:
+    VMOVQ  X0, R8
+    VPSHUFD $0xEE, X0, X1
+    VMOVQ  X1, AX
+    ADDQ   AX, R8
+    VZEROUPPER
+
+    TESTQ CX, CX
+    JZ    done_dot_u32
+
+scalar_dot_u32:
+    MOVL   (SI), AX
+    MOVL   (DI), BX
+    MULQ   BX
+    ADDQ   AX, R8
+
+    ADDQ $4, SI
+    ADDQ $4, DI
+    DECQ CX
+    JNZ  scalar_dot_u32
+
+done_dot_u32:
+    CVTSQ2SS R8, X0
+    MOVSS X0, ret+24(FP)
+    RET
+
+// ============================================================================
+// euclideanUint32AVX2Kernel(a, b uintptr, n int) float32
+//
+// Computes sqrt(sum((a[i]-b[i])^2)) for n uint32 elements.
+// XMM: 4 elements per iteration.
+// Uses VPMAXUD + VPMINUD for unsigned diff, then VPMULDQ for squaring.
+// ============================================================================
+TEXT ·euclideanUint32AVX2Kernel(SB),NOSPLIT,$0-28
+    MOVQ a+0(FP), SI
+    MOVQ b+8(FP), DI
+    MOVQ n+16(FP), CX
+
+    VPXOR X0, X0, X0
+
+loop4_eucl_u32:
+    CMPQ CX, $4
+    JL   reduce_eucl_u32
+
+    VMOVDQU (SI), X1
+    VMOVDQU (DI), X2
+
+    VPMAXUD X2, X1, X3
+    VPMINUD X2, X1, X1
+    VPSUBD  X1, X3, X1
+
+    VPMULDQ X1, X1, X3
+    VPADDQ  X3, X0, X0
+
+    VPALIGNR $4, X1, X1, X4
+    VPMULDQ X4, X4, X6
+    VPADDQ  X6, X0, X0
+
+    ADDQ $16, SI
+    ADDQ $16, DI
+    SUBQ $4, CX
+    JMP  loop4_eucl_u32
+
+reduce_eucl_u32:
+    VMOVQ  X0, R8
+    VPSHUFD $0xEE, X0, X1
+    VMOVQ  X1, AX
+    ADDQ   AX, R8
+    VZEROUPPER
+
+    TESTQ CX, CX
+    JZ    done_eucl_u32
+
+scalar_eucl_u32:
+    MOVL   (SI), AX
+    MOVL   (DI), BX
+    SUBL   BX, AX
+    JAE    abs_eucl_u32
+    NEGL   AX
+abs_eucl_u32:
+    MULQ   AX
+    ADDQ   AX, R8
+
+    ADDQ $4, SI
+    ADDQ $4, DI
+    DECQ CX
+    JNZ  scalar_eucl_u32
+
+done_eucl_u32:
+    CVTSQ2SS R8, X0
+    VSQRTSS X0, X0, X0
+    MOVSS X0, ret+24(FP)
+    RET

@@ -14,7 +14,7 @@ import (
 // TestPIDTuner_Isolation validates that the PID controller output moves in the correct direction
 // under different recall inputs and respects the min/max limits.
 func TestPIDTuner_Isolation(t *testing.T) {
-	tuner := NewPIDTuner(0.95, 100)
+	tuner := NewPIDTuner(0.95, 100, 2000)
 	assert.Equal(t, 100, tuner.GetCurrentEf())
 
 	// Simulated time step
@@ -84,7 +84,7 @@ func TestPIDTuner_RecallRetention(t *testing.T) {
 	}
 
 	// Target high-load validation by setting target ef search low initially
-	idx.efTuner = NewPIDTuner(0.95, 15) // Reset tuner with small initial efSearch
+	idx.efTuner = NewPIDTuner(0.95, 15, 2000) // Reset tuner with small initial efSearch
 
 	// Run search queries under simulated load
 	for i := 0; i < 5; i++ {

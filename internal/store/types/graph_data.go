@@ -140,7 +140,7 @@ type GraphData struct {
 
 	TurboQuantEnabled bool
 	TurboQuantBits    int
-	tqPackedSize      int // cached PackedSize() result; 0 = uninitialized
+	tqPackedSize      int64 // cached PackedSize() result; 0 = uninitialized (atomic access)
 
 	// ArrowRefs holds references to external Arrow arrays providing vector data.
 	// Used for zero-copy ingestion paths.
@@ -756,15 +756,15 @@ func (g *GraphData) PackedSize() int {
 	if g.Dims <= 0 {
 		return 0
 	}
-	if g.tqPackedSize > 0 {
-		return g.tqPackedSize
+	if ps := atomic.LoadInt64(&g.tqPackedSize); ps > 0 {
+		return int(ps)
 	}
 	p2 := int(1 << uint(math.Ceil(math.Log2(float64(g.Dims)))))
 	angleBytes := ((p2-1)*g.TurboQuantBits + 7) / 8
 	bitBytes := (p2 + 7) / 8
 	size := 4 + angleBytes + bitBytes
 	size = (size + 3) &^ 3 // Pad to 4 bytes for GPU alignment
-	g.tqPackedSize = size
+	atomic.StoreInt64(&g.tqPackedSize, int64(size))
 	return size
 }
 

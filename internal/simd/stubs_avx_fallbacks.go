@@ -199,6 +199,15 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 	return euclideanBatchGeneric(query, vectors, results)
 }
 
+func cosineInt8AVX2(a, b []int8) (float32, error)           { return cosineDistanceInt8Unrolled4x(a, b) }
+func cosineUint8AVX2(a, b []uint8) (float32, error)        { return cosineDistanceUint8Unrolled4x(a, b) }
+func cosineInt16AVX2(a, b []int16) (float32, error)        { return cosineDistanceInt16Unrolled4x(a, b) }
+func cosineUint16AVX2(a, b []uint16) (float32, error)      { return cosineDistanceUint16Unrolled4x(a, b) }
+func cosineInt32AVX2(a, b []int32) (float32, error)        { return cosineDistanceInt32Unrolled4x(a, b) }
+func cosineUint32AVX2(a, b []uint32) (float32, error)      { return cosineDistanceUint32Unrolled4x(a, b) }
+func cosineInt64AVX2(a, b []int64) (float32, error)        { return cosineDistanceInt64Unrolled4x(a, b) }
+func cosineUint64AVX2(a, b []uint64) (float32, error)      { return cosineDistanceUint64Unrolled4x(a, b) }
+
 func euclideanInt8AVX2(a, b []int8) (float32, error)     { return euclideanInt8Unrolled4x(a, b) }
 func dotInt8AVX2(a, b []int8) (float32, error)           { return dotInt8Unrolled4x(a, b) }
 func euclideanUint8AVX2(a, b []uint8) (float32, error)   { return euclideanUint8Unrolled4x(a, b) }
@@ -207,6 +216,10 @@ func euclideanInt16AVX2(a, b []int16) (float32, error)   { return euclideanInt16
 func euclideanUint16AVX2(a, b []uint16) (float32, error) { return euclideanUint16Unrolled4x(a, b) }
 func dotInt16AVX2(a, b []int16) (float32, error)         { return dotInt16Unrolled4x(a, b) }
 func dotUint16AVX2(a, b []uint16) (float32, error)       { return dotUint16Unrolled4x(a, b) }
+func dotInt32AVX2(a, b []int32) (float32, error)         { return dotInt32Unrolled4x(a, b) }
+func euclideanInt32AVX2(a, b []int32) (float32, error)   { return euclideanInt32Unrolled4x(a, b) }
+func dotUint32AVX2(a, b []uint32) (float32, error)       { return dotUint32Unrolled4x(a, b) }
+func euclideanUint32AVX2(a, b []uint32) (float32, error) { return euclideanUint32Unrolled4x(a, b) }
 
 func euclideanSQ8BatchAVX2(query []byte, vectors [][]byte, results []float32) error {
 	return euclideanSQ8BatchGeneric(query, vectors, results)

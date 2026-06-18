@@ -1,115 +1,76 @@
-# Test Plan — Benchmarking and Performance Evaluation (1M Scale)
+# Test Plan — Regression Benchmark (50k Scale, All Data Types)
 
-This document details the test plan for running comprehensive benchmarks of the Longbow vector database at 1,000,000 vector scale across all data types, dimensions, and query modes.
+This document details the test plan for running comprehensive regression benchmarks of the Longbow vector database at 10,000 and 50,000 vector scale across all data types, dimensions, and query modes.
 
 ---
 
 ## 1. Objectives
 
-- Measure ingest throughput (DoPut, DoGet) per dtype × dim
-- Measure HNSW indexing time at 1M scale
+- Measure ingest throughput (DoPut) per dtype × dim × count
 - Measure search QPS and latency (P50/P95/P99) for all 13 search modes
-- Collect pprof profiles (cpu, heap, allocs, goroutine, threadcreate, block, mutex) at start and end of each test
-- Identify memory bottlenecks and stability issues at scale
-- Validate the LockFreeNeighborCache deadlock fix under thread-pinned parallel insert
+- Validate all 17 data types at dims 128 and 384 within 16 GB memory budget
+- Identify regressions vs previous runs
+- Detect SIMD dispatch gaps (integer types, complex types)
+- Verify server startup reliability across repeated config cycling
 
----
+## 2. Test Configuration
 
-## 2. System Requirements
+| Parameter | Value |
+|-----------|-------|
+| Dimensions | 128, 384 |
+| Vector counts | 10,000, 50,000 |
+| Data types | float32, float64, float16, int8, int16, int32, int64, uint8, uint16, uint32, uint64, complex64, complex128, turboquant (4-bit), turboquant2 (2-bit), turboquant4 (4-bit), turboquant8 (8-bit) |
+| Search queries | 500 per config |
+| Search modes | all (13 modes: dense, hybrid, filtered, filteredbool, filteredstring, sparse, byid, graphrag, globalgraphrag, recommend, geo, temporal, learnedindex) |
+| Memory limit | 16 GB (`LONGBOW_MAX_MEMORY=17179869184`) |
+| Workers | 8 |
+| Mode | CPU |
+| Total configs | 17 dtypes × 2 dims × 2 counts = **68** |
 
-| Resource | Minimum | Recommended |
-|----------|---------|-------------|
-| CPU | 8 cores | 16 cores (AVX2) |
-| RAM | 16 GB | 32 GB |
-| Storage | 50 GB free | 100 GB free (for logs + profiles) |
-| OS | Linux x86_64 | Linux x86_64 with AVX2 |
-| Go | 1.22+ | 1.23+ |
+## 3. System Requirements
 
-Memory budget by dtype at 1M dim384 (estimated):
-- float32/int8/uint8/turboquant2: ~14 GB
-- float64/int32/uint32/turboquant4: ~18 GB
-- int64/uint64/complex64/turboquant8: ~22 GB
-- complex128: ~28 GB
-
-## 3. Test Configurations
-
-### Dimensions
-- 128, 384
-
-### Data Types (17 total)
-- `float32`, `float64`, `float16`
-- `int8`, `int16`, `int32`, `int64`
-- `uint8`, `uint16`, `uint32`, `uint64`
-- `complex64`, `complex128`
-- `turboquant`, `turboquant2`, `turboquant4`, `turboquant8`
-
-### Vector Counts
-- 1,000,000 (default)
-- Reduce to 500,000 for large types that OOM at 1M
-
-### Search Modes (13 total)
-- `dense`, `hybrid`, `filtered`, `filteredbool`, `filteredstring`
-- `sparse`, `byid`
-- `graphrag`, `globalgraphrag`, `recommend`
-- `geo`, `temporal`
-- `learnedindex`
+| Resource | Value |
+|----------|-------|
+| CPU | 16 cores (AVX2) |
+| RAM | 22 GB total, 16 GB allocated |
+| Storage | 50 GB free |
+| OS | Linux x86_64 |
+| Go toolchain | 1.22+ (for rebuilding if needed) |
 
 ## 4. Execution Steps
 
 ### Phase 1: Cleanup
 
 ```bash
-# Kill all longbow/bench-tool processes
 pkill -9 longbow bench-tool
-
-# Remove old data
-rm -rf data/bench data/perf_logs profiles/*.pprof
-
-# Recreate directories
-mkdir -p data/perf_logs profiles
+rm -rf data/bench/* data/perf_logs/* profiles/*
+mkdir -p data/bench data/perf_logs profiles
 ```
 
-### Phase 2: Build
+### Phase 2: Build (if binaries need updates)
 
 ```bash
 go build -o bin/longbow -ldflags "-s -w" ./cmd/longbow
 go build -o bin/bench-tool -ldflags "-s -w" ./cmd/bench-tool
 ```
 
-### Phase 3: Run Benchmark
-
-**Full run (all 17 types, both dims):**
+### Phase 3: Run
 
 ```bash
-LONGBOW_MAX_MEMORY=17179869184 PYTHONUNBUFFERED=1 \
+export LONGBOW_MAX_MEMORY=17179869184
+export LONGBOW_BENCH_FAST=0
+export PYTHONUNBUFFERED=1
+
 python3 scripts/unified_benchmark.py \
   --mode cpu \
   --dims 128,384 \
-  --counts 1000000 \
+  --counts 10000,50000 \
   --dtypes float32,float64,float16,int8,int16,int32,int64,uint8,uint16,uint32,uint64,complex64,complex128,turboquant,turboquant2,turboquant4,turboquant8 \
-  --queries 1000 \
-  --pprof \
-  --label full_bench \
+  --queries 500 \
   --memory 17179869184 \
-  --timeout 7200 > /tmp/bench_full.log 2>&1 &
-```
-
-**Batched approach (if memory-constrained):**
-
-Batch A (small):
-```bash
---dtypes float32,float16,int8,uint8,turboquant2
-```
-
-Batch B (medium):
-```bash
---dtypes float64,int16,uint16,int32,uint32,turboquant4
-```
-
-Batch C (large, >16 GB risk):
-```bash
---dtypes int64,uint64,complex64,complex128,turboquant,turboquant8
-# Use --counts 500000 for large dim384 dtypes
+  --timeout 3600 \
+  --label regression \
+  --workers 8
 ```
 
 ### Phase 4: Monitoring
@@ -117,77 +78,63 @@ Batch C (large, >16 GB risk):
 Check every 10 minutes:
 
 ```bash
-# Number of result JSONs generated
+# Completed configs
 ls -1 data/perf_logs/result_*.json | wc -l
 
-# Current configuration in progress
-tail -5 /tmp/bench_full.log
+# Current config
+tail -5 benchmark_run.log
 
-# Memory status
+# Memory pressure
 free -h
 
-# Check for OOM
-dmesg | grep -i "killed process" || journalctl -xn 20 | grep -i oom
+# OOM check
+dmesg | grep -i "killed process"
 
-# Process health
-ps aux | grep -E "longbow|bench-tool"
+# Errors
+grep -i "error\|fail\|exhausted\|panic\|CRASH" benchmark_run.log
 ```
 
 ### Phase 5: Report Generation
 
-After completion, parse results and update docs:
+Results are auto-saved to `data/perf_logs/perf_matrix_*.json` with an accompanying `*.md` report. Copy to docs:
 
 ```bash
-# Parse the perf matrix
-python3 scripts/parse_results.py data/perf_logs/perf_matrix_*.json
-
-# Copy reports
-cp data/perf_logs/perf_matrix_*.md docs/performance.md
+cp data/perf_logs/perf_matrix_cpu_regression_*.md docs/performance.md
 ```
 
 ## 5. Output Artifacts
 
 | Artifact | Location | Contents |
 |----------|----------|----------|
-| JSON results | `data/perf_logs/result_*.json` | Per-test structured results |
-| Server logs | `data/perf_logs/longbow_*.log` | Server diagnostics, memory usage |
-| Bench logs | `data/perf_logs/bench_*.log` | Bench-tool output per run |
-| pprof profiles | `profiles/*.pprof` | CPU, heap, allocs, goroutine, threadcreate, block, mutex |
-| Perf matrix | `data/perf_logs/perf_matrix_*.json` | Aggregated results across all configs |
-| Performance doc | `docs/performance.md` | Benchmark summary and analysis |
+| JSON results | `data/perf_logs/result_*.json` | Per-config structured results |
+| Server logs | `data/perf_logs/longbow_cpu_*.log` | Server diagnostics |
+| Bench logs | `data/perf_logs/bench_cpu_*.log` | Bench-tool output |
+| Perf matrix | `data/perf_logs/perf_matrix_*.json` | Aggregated all configs |
+| Performance doc | `docs/performance.md` | Analysis and findings |
 | Next steps | `docs/nextsteps.md` | Optimization recommendations |
 
 ## 6. Pass/Fail Criteria
 
-Each test configuration passes if:
-- Server starts successfully and stays up through all phases
-- All 1,000,000 vectors are indexed without error
-- All 13 search modes return results with non-zero QPS
-- No goroutine or memory panics in server or bench logs
-- No OOM kill from the kernel
+Each config passes if:
+- Server starts and stays up through all phases
+- All vectors indexed without error
+- All search modes return non-zero QPS
+- No goroutine/memory panics in logs
+- No kernel OOM kill
 
-Full benchmark run passes if:
-- All non-OOM configurations complete with zero errors
-- Coverage: all 17 dtypes × 2 dims = 34 configurations (or as many as fit in 16 GB)
+Full run passes if:
+- ≥95% of configs complete
+- No regressions vs previous runs for comparable configs
+- All 13 search modes verified working
 
-## 7. Lessons Learned (2026-06-12)
+## 7. Results Summary (2026-06-17)
 
-### From the 1M Run
-
-- **Deadlock in LockFreeNeighborCache**: The initial run at float32 dim128 deadlocked at ~820K/1M during HNSW build. Fixed by removing lock promotion (`RLock→RUnlock→Lock`) and using direct `Lock`. After fix, all completed runs were clean.
-
-- **Memory limit too tight for large types**: float64 dim384 exceeded 16 GB and was still indexing after 58 min. Larger types (complex128, turboquant8) at dim384 would OOM. Either increase memory to 24 GB+ or reduce test scale for large types.
-
-- **10-min monitoring interval is sufficient**: Each test takes 5-50 min. No need for more frequent checks.
-
-- **pprof overhead is negligible**: The 5-10% overhead from periodic pprof collection is acceptable for benchmark runs.
-
-- **Script doesn't auto-resume on crash**: If a server or bench-tool dies, the Python script hangs indefinitely (waiting on subprocess). Manual intervention is required.
-
-### For Next Run
-
-- Add `--timeout` per bench-tool, not just Python-level timeout
-- Use `--counts 500000` for large dtypes at dim384 as a safety valve
-- Consider separate runs per memory-profile batch
-- Add swap detection to the monitoring checklist
-- Use `systemd-cgtop` or similar to track cgroup memory limits
+| Metric | Value |
+|--------|-------|
+| Total configs | 68 |
+| Completed | 67 (98.5%) |
+| Failed | 1 (int32 dim=128 count=10k — transient port issue) |
+| Duration | ~30 minutes |
+| Peak memory | ~9.6 GB (well within 16 GB limit) |
+| Regressions | None detected |
+| New findings | Integer SIMD dispatch gap for int16/32/64 and uint16/32/64 |

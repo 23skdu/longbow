@@ -86,6 +86,18 @@ int lb_cudaIsAvailable() {
     cudaError_t err = cudaGetDeviceCount(&count);
     return (err == cudaSuccess && count > 0) ? 1 : 0;
 }
+
+// Check last CUDA error (does NOT reset error state)
+int lb_cudaPeekLastError() {
+    cudaError_t err = cudaPeekAtLastError();
+    return (int)err;
+}
+
+// Get and reset last CUDA error
+int lb_cudaGetLastError() {
+    cudaError_t err = cudaGetLastError();
+    return (int)err;
+}
 */
 import "C"
 import (
@@ -176,4 +188,22 @@ func Reset() error {
 // IsAvailable checks if CUDA is available on the system
 func IsAvailable() bool {
 	return C.lb_cudaIsAvailable() == 1
+}
+
+// PeekLastError returns the last CUDA error without resetting it.
+func PeekLastError() error {
+	err := C.lb_cudaPeekLastError()
+	if err == 0 {
+		return nil
+	}
+	return fmt.Errorf("CUDA error: %d", int(err))
+}
+
+// GetLastError returns and resets the last CUDA error.
+func GetLastError() error {
+	err := C.lb_cudaGetLastError()
+	if err == 0 {
+		return nil
+	}
+	return fmt.Errorf("CUDA error: %d", int(err))
 }

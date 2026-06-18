@@ -31,6 +31,7 @@ type PageInfo struct {
 	state      atomic.Int32 // PageState
 	size       int64
 	dirty      atomic.Bool
+	pinCount   atomic.Int32
 	lruElement *list.Element
 }
 
@@ -226,6 +227,18 @@ func (p *GPUPager) Demote(pi *PageInfo) error {
 	return nil
 }
 
+// Pin prevents a page from being evicted. Must be paired with Unpin.
+// While pinned, the page's GPU address is guaranteed to remain valid.
+func (p *GPUPager) Pin(pi *PageInfo) {
+	pi.pinCount.Add(1)
+}
+
+// Unpin releases a pin obtained from Pin. After the last Unpin the page
+// may be evicted on the next Promote of a different page.
+func (p *GPUPager) Unpin(pi *PageInfo) {
+	pi.pinCount.Add(-1)
+}
+
 // MarkDirty marks a page as modified on the GPU so it will be written back on eviction.
 func (p *GPUPager) MarkDirty(pi *PageInfo) {
 	pi.dirty.Store(true)
@@ -266,45 +279,48 @@ func (p *GPUPager) Free(id PageID) error {
 	return nil
 }
 
-// evictOne evicts the least-recently-used page. Caller must hold evictMu.
+// evictOne evicts the least-recently-used unpinned page. Caller must hold evictMu.
 func (p *GPUPager) evictOne() bool {
-	back := p.lruList.Back()
-	if back == nil {
-		return false
-	}
+	for e := p.lruList.Back(); e != nil; e = e.Prev() {
+		pi := e.Value.(*PageInfo)
 
-	pi := back.Value.(*PageInfo)
-	state := PageState(pi.state.Load())
+		if pi.pinCount.Load() > 0 {
+			continue
+		}
 
-	if state != PageResident && state != PageResidentDirty {
-		// Already evicted, remove from LRU list
-		p.lruList.Remove(back)
-		return false
-	}
+		state := PageState(pi.state.Load())
 
-	// Write back if dirty
-	if pi.dirty.Load() || state == PageResidentDirty {
-		if err := p.pool.MemcpyDeviceToHost(unsafe.Pointer(&pi.cpuBuf[0]), pi.gpuPtr, p.pageSize); err != nil {
+		if state != PageResident && state != PageResidentDirty {
+			// Already evicted, remove from LRU list
+			p.lruList.Remove(e)
 			return false
 		}
+
+		// Write back if dirty
+		if pi.dirty.Load() || state == PageResidentDirty {
+			if err := p.pool.MemcpyDeviceToHost(unsafe.Pointer(&pi.cpuBuf[0]), pi.gpuPtr, p.pageSize); err != nil {
+				return false
+			}
+		}
+
+		if err := p.pool.FreeGPU(pi.gpuPtr); err != nil {
+			return false
+		}
+
+		pi.gpuPtr = nil
+		p.usedVRAM -= p.pageSize
+		pi.state.Store(int32(PageEvicted))
+		pi.dirty.Store(false)
+
+		p.lruList.MoveToFront(pi.lruElement)
+
+		p.statsMu.Lock()
+		p.totalEvicts++
+		p.statsMu.Unlock()
+
+		return true
 	}
-
-	if err := p.pool.FreeGPU(pi.gpuPtr); err != nil {
-		return false
-	}
-
-	pi.gpuPtr = nil
-	p.usedVRAM -= p.pageSize
-	pi.state.Store(int32(PageEvicted))
-	pi.dirty.Store(false)
-
-	p.lruList.MoveToFront(pi.lruElement)
-
-	p.statsMu.Lock()
-	p.totalEvicts++
-	p.statsMu.Unlock()
-
-	return true
+	return false
 }
 
 // GetGPUAddr returns the GPU pointer for a resident page, or nil if evicted.

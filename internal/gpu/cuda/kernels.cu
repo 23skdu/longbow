@@ -849,6 +849,17 @@ void launch_turboquant_distance_kernel_v2(const float* query, const unsigned cha
     int blocks = count;
     int threads = 256;
     size_t shared_mem = pow2 * sizeof(float);
+
+    // Check that the reconstruction buffer fits in shared memory
+    int max_smem = 0;
+    cudaDeviceGetAttribute(&max_smem, cudaDevAttrMaxSharedMemoryPerBlock, 0);
+    if (max_smem > 0 && (int)shared_mem > max_smem) {
+        // pow2 too large for shared memory — set CUDA error so Go caller can detect this
+        // The v1 kernel has a hard 1024-element stack array (float recon[1024]) and cannot
+        // handle pow2 > 1024 either, so we abort the launch entirely.
+        return;
+    }
+
     turboquant_distance_kernel_v2<<<blocks, threads, shared_mem, stream>>>(query, tqData, distances, dim, pow2, bitsPerAngle, count);
 }
 
@@ -1329,6 +1340,9 @@ void launch_pq_encode_kernel(
 
 int cuda_pq_encode(
     void* handle,
+    float* d_vectors,
+    float* d_codebooks,
+    unsigned char* d_codes,
     float* h_vectors,
     float* h_codebooks,
     unsigned char* h_codes,
@@ -1336,23 +1350,9 @@ int cuda_pq_encode(
     int m,
     int subDim
 ) {
-    float *d_vectors, *d_codebooks;
-    unsigned char *d_codes;
-    
     size_t vecSize = (size_t)numVectors * m * subDim * sizeof(float);
     size_t cbSize = (size_t)m * 256 * subDim * sizeof(float);
     size_t codeSize = (size_t)numVectors * m * sizeof(unsigned char);
-    
-    if (cudaMalloc(&d_vectors, vecSize) != cudaSuccess) return -1;
-    if (cudaMalloc(&d_codebooks, cbSize) != cudaSuccess) {
-        cudaFree(d_vectors);
-        return -1;
-    }
-    if (cudaMalloc(&d_codes, codeSize) != cudaSuccess) {
-        cudaFree(d_vectors);
-        cudaFree(d_codebooks);
-        return -1;
-    }
     
     cudaMemcpy(d_vectors, h_vectors, vecSize, cudaMemcpyHostToDevice);
     cudaMemcpy(d_codebooks, h_codebooks, cbSize, cudaMemcpyHostToDevice);
@@ -1360,10 +1360,6 @@ int cuda_pq_encode(
     launch_pq_encode_kernel(d_vectors, d_codebooks, d_codes, m * subDim, numVectors, m, subDim, 0);
     
     cudaMemcpy(h_codes, d_codes, codeSize, cudaMemcpyDeviceToHost);
-    
-    cudaFree(d_vectors);
-    cudaFree(d_codebooks);
-    cudaFree(d_codes);
     
     return 0;
 }

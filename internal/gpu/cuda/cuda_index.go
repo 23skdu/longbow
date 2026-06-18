@@ -65,7 +65,7 @@ void launch_finalize_centroids(float* centroids, const uint32_t* counts, int dim
 void launch_hnsw_prune_neighbors_kernel(const uint32_t* candidateIds, const float* candidateDists, uint32_t* selectedIds, uint32_t* selectedCount, const float** page_ptrs, const int* page_starts, int maxNeighbors, int numCandidates, int dim, int total_count, int num_pages, bool extendedHeuristic, cudaStream_t stream);
 
 int cuda_train_kmeans(CUDAIndexHandle* handle, float* vectors, float* centroids, int numVectors, int dim, int k, int iterations);
-int cuda_pq_encode(CUDAIndexHandle* handle, float* h_vectors, float* h_codebooks, unsigned char* h_codes, int numVectors, int m, int subDim);
+int cuda_pq_encode(CUDAIndexHandle* handle, float* d_vectors, float* d_codebooks, unsigned char* d_codes, float* h_vectors, float* h_codebooks, unsigned char* h_codes, int numVectors, int m, int subDim);
 
 CUDAIndexHandle* cuda_init(int dimensions) {
     int device = 0;
@@ -110,17 +110,12 @@ void cuda_get_device_info(CUDAIndexHandle* handle, char* name, int maxLen, uint6
     }
 }
 
-int cuda_train_kmeans(CUDAIndexHandle* handle, float* h_vectors, float* h_centroids, int numVectors, int dim, int k, int iterations) {
+int cuda_train_kmeans(CUDAIndexHandle* handle, 
+    float* d_vectors, float* d_centroids, float* d_sumCentroids, 
+    uint32_t* d_assignments, uint32_t* d_counts,
+    float* h_vectors, float* h_centroids, 
+    int numVectors, int dim, int k, int iterations) {
     if (!handle) return -1;
-
-    float *d_vectors, *d_centroids, *d_sumCentroids;
-    uint32_t *d_assignments, *d_counts;
-
-    cudaMalloc((void**)&d_vectors, (size_t)numVectors * dim * sizeof(float));
-    cudaMalloc((void**)&d_centroids, (size_t)k * dim * sizeof(float));
-    cudaMalloc((void**)&d_sumCentroids, (size_t)k * dim * sizeof(float));
-    cudaMalloc((void**)&d_assignments, (size_t)numVectors * sizeof(uint32_t));
-    cudaMalloc((void**)&d_counts, (size_t)k * sizeof(uint32_t));
 
     cudaMemcpy(d_vectors, h_vectors, (size_t)numVectors * dim * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_centroids, h_centroids, (size_t)k * dim * sizeof(float), cudaMemcpyHostToDevice);
@@ -138,24 +133,12 @@ int cuda_train_kmeans(CUDAIndexHandle* handle, float* h_vectors, float* h_centro
     }
 
     cudaMemcpy(h_centroids, d_centroids, (size_t)k * dim * sizeof(float), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_vectors);
-    cudaFree(d_centroids);
-    cudaFree(d_sumCentroids);
-    cudaFree(d_assignments);
-    cudaFree(d_counts);
-
     return 0;
 }
 
 
 
-int cuda_haversine_batch(CUDAIndexHandle* handle, float* h_center, float* h_points, float* h_results, float earthRadius, int count) {
-    float *d_center, *d_points, *d_results;
-    cudaMalloc((void**)&d_center, 2 * sizeof(float));
-    cudaMalloc((void**)&d_points, count * 2 * sizeof(float));
-    cudaMalloc((void**)&d_results, count * sizeof(float));
-
+int cuda_haversine_batch(CUDAIndexHandle* handle, float* d_center, float* d_points, float* d_results, float* h_center, float* h_points, float* h_results, float earthRadius, int count) {
     cudaMemcpy(d_center, h_center, 2 * sizeof(float), cudaMemcpyHostToDevice);
     cudaMemcpy(d_points, h_points, count * 2 * sizeof(float), cudaMemcpyHostToDevice);
 
@@ -163,22 +146,16 @@ int cuda_haversine_batch(CUDAIndexHandle* handle, float* h_center, float* h_poin
 
     cudaMemcpy(h_results, d_results, count * sizeof(float), cudaMemcpyDeviceToHost);
 
-    cudaFree(d_center); cudaFree(d_points); cudaFree(d_results);
     return 0;
 }
 
-int cuda_norm_batch_f32(CUDAIndexHandle* handle, float* h_vectors, float* h_results, int dimensions, int count) {
-    float *d_vectors, *d_results;
-    cudaMalloc((void**)&d_vectors, (size_t)count * dimensions * sizeof(float));
-    cudaMalloc((void**)&d_results, count * sizeof(float));
-
+int cuda_norm_batch_f32(CUDAIndexHandle* handle, float* d_vectors, float* d_results, float* h_vectors, float* h_results, int dimensions, int count) {
     cudaMemcpy(d_vectors, h_vectors, (size_t)count * dimensions * sizeof(float), cudaMemcpyHostToDevice);
 
     launch_l2_squared_kernel(d_vectors, d_results, dimensions, count, 0);
 
     cudaMemcpy(h_results, d_results, count * sizeof(float), cudaMemcpyDeviceToHost);
 
-    cudaFree(d_vectors); cudaFree(d_results);
     return 0;
 }
 
@@ -204,42 +181,22 @@ int cuda_update_graph(CUDAIndexHandle* handle, uint32_t* h_offsets, uint32_t* h_
     return 0;
 }
 
-int cuda_prune_neighbors(CUDAIndexHandle* handle, uint32_t* candidateIds, float* candidateDists, uint32_t* selectedIds, uint32_t* selectedCount, const float** page_ptrs, const int* page_starts, int maxNeighbors, int numCandidates, int dim, int total_count, int num_pages, bool extended) {
+int cuda_prune_neighbors(CUDAIndexHandle* handle, 
+    uint32_t* d_candIds, float* d_candDists, uint32_t* d_selIds, uint32_t* d_selCount,
+    const float** d_pagePtrs, const int* d_pageStarts,
+    uint32_t* h_selectedIds, uint32_t* h_selectedCount,
+    int maxNeighbors, int numCandidates, int dim, 
+    int total_count, int num_pages, bool extended) {
     if (!handle) return -1;
 
-    uint32_t *d_candIds, *d_selIds, *d_selCount;
-    float *d_candDists;
-    const float **d_pagePtrs;
-    int *d_pageStarts;
-
-    cudaMalloc((void**)&d_candIds, (size_t)numCandidates * sizeof(uint32_t));
-    cudaMalloc((void**)&d_candDists, (size_t)numCandidates * sizeof(float));
-    cudaMalloc((void**)&d_selIds, (size_t)maxNeighbors * sizeof(uint32_t));
-    cudaMalloc((void**)&d_selCount, sizeof(uint32_t));
-
-    cudaMalloc((void**)&d_pagePtrs, (size_t)num_pages * sizeof(float*));
-    cudaMemcpy(d_pagePtrs, page_ptrs, (size_t)num_pages * sizeof(float*), cudaMemcpyHostToDevice);
-
-    cudaMalloc((void**)&d_pageStarts, (size_t)(num_pages+1) * sizeof(int));
-    cudaMemcpy(d_pageStarts, page_starts, (size_t)(num_pages+1) * sizeof(int), cudaMemcpyHostToDevice);
-
-    cudaMemcpy(d_candIds, candidateIds, (size_t)numCandidates * sizeof(uint32_t), cudaMemcpyHostToDevice);
-    cudaMemcpy(d_candDists, candidateDists, (size_t)numCandidates * sizeof(float), cudaMemcpyHostToDevice);
-    cudaMemset(d_selCount, 0, sizeof(uint32_t));
-
-    launch_hnsw_prune_neighbors_kernel(d_candIds, d_candDists, d_selIds, d_selCount, d_pagePtrs, d_pageStarts, maxNeighbors, numCandidates, dim, total_count, num_pages, extended, handle->streams[0]);
+    launch_hnsw_prune_neighbors_kernel(d_candIds, d_candDists, d_selIds, d_selCount, 
+        d_pagePtrs, d_pageStarts, maxNeighbors, numCandidates, dim, total_count, num_pages, 
+        extended, handle->streams[0]);
 
     uint32_t h_selCount;
     cudaMemcpy(&h_selCount, d_selCount, sizeof(uint32_t), cudaMemcpyDeviceToHost);
-    *selectedCount = h_selCount;
-    cudaMemcpy(selectedIds, d_selIds, (size_t)h_selCount * sizeof(uint32_t), cudaMemcpyDeviceToHost);
-
-    cudaFree(d_candIds);
-    cudaFree(d_candDists);
-    cudaFree(d_selIds);
-    cudaFree(d_selCount);
-    cudaFree(d_pagePtrs);
-    cudaFree(d_pageStarts);
+    *h_selectedCount = h_selCount;
+    cudaMemcpy(h_selectedIds, d_selIds, (size_t)h_selCount * sizeof(uint32_t), cudaMemcpyDeviceToHost);
 
     return 0;
 }
@@ -583,6 +540,28 @@ func (idx *CUDAIndex) AddPQ(ids []int64, codes []byte, m int) error {
 	return nil
 }
 
+// allocGPUMem allocates GPU memory through the pool so the pager's eviction
+// mechanism knows about it. Falls back to raw cudaMalloc if no pool is available.
+func (idx *CUDAIndex) allocGPUMem(size int64) (unsafe.Pointer, error) {
+	if idx.memPool != nil {
+		return idx.memPool.AllocateGPU(size)
+	}
+	var ptr unsafe.Pointer
+	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&ptr)), C.size_t(size)); ret != C.cudaSuccess {
+		return nil, fmt.Errorf("cudaMalloc failed")
+	}
+	return ptr, nil
+}
+
+// freeGPUMem frees GPU memory allocated by allocGPUMem.
+func (idx *CUDAIndex) freeGPUMem(ptr unsafe.Pointer) error {
+	if idx.memPool != nil {
+		return idx.memPool.FreeGPU(ptr)
+	}
+	C.cudaFree(ptr)
+	return nil
+}
+
 // acquireGPUOp blocks until a GPU operation slot is available or context is cancelled.
 // Callers MUST defer releaseGPUOp.
 func (idx *CUDAIndex) acquireGPUOp() error {
@@ -640,20 +619,22 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 	start := time.Now()
 
 	// Upload query to GPU
-	var dQuery unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dQuery)), C.size_t(idx.dim*4)); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("failed to allocate query GPU memory")
+	dQuery, err := idx.allocGPUMem(int64(idx.dim * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate query GPU memory: %w", err)
 	}
-	defer C.cudaFree(dQuery)
+	defer idx.freeGPUMem(dQuery)
 	C.cudaMemcpy(dQuery, unsafe.Pointer(&vector[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
 
 	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
 
 	type pageEntry struct {
-		ptr   unsafe.Pointer
-		nvecs int
+		ptr    unsafe.Pointer
+		nvecs  int
+		pinned bool
 	}
 	pages := make([]pageEntry, 0, numChunks)
+	var pinnedPages []*memory.PageInfo
 	for chunk := 0; chunk < numChunks; chunk++ {
 		pid := idx.pageIDFor(0, chunk)
 		pi := idx.pager.PageInfo(pid)
@@ -663,6 +644,8 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 		if err := idx.pager.Promote(pi); err != nil {
 			continue
 		}
+		idx.pager.Pin(pi)
+		pinnedPages = append(pinnedPages, pi)
 		gpuPtr := idx.pager.GetGPUAddr(pi)
 		if gpuPtr == nil {
 			continue
@@ -671,8 +654,14 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 		if vecsInChunk > vectorsPerPage {
 			vecsInChunk = vectorsPerPage
 		}
-		pages = append(pages, pageEntry{ptr: gpuPtr, nvecs: vecsInChunk})
+		pages = append(pages, pageEntry{ptr: gpuPtr, nvecs: vecsInChunk, pinned: true})
 	}
+
+	defer func() {
+		for _, pi := range pinnedPages {
+			idx.pager.Unpin(pi)
+		}
+	}()
 
 	if len(pages) == 0 {
 		return nil, nil, fmt.Errorf("no resident pages available for search")
@@ -688,25 +677,25 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 	totalVecs := int(hPageStarts[numPages])
 
 	// Allocate single output buffer for all vectors
-	var dAllDists unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dAllDists)), C.size_t(totalVecs*4)); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("failed to allocate distance buffer")
+	dAllDists, err := idx.allocGPUMem(int64(totalVecs * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate distance buffer: %w", err)
 	}
-	defer C.cudaFree(dAllDists)
+	defer idx.freeGPUMem(dAllDists)
 
 	// Allocate device-side arrays for batched launch
-	var dPagePtrs unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPagePtrs)), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0]))); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("failed to allocate page pointers buffer")
+	dPagePtrs, err := idx.allocGPUMem(int64(numPages) * int64(unsafe.Sizeof(hPagePtrs[0])))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate page pointers buffer: %w", err)
 	}
-	defer C.cudaFree(dPagePtrs)
+	defer idx.freeGPUMem(dPagePtrs)
 	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
 
-	var dPageStarts unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPageStarts)), C.size_t((numPages+1)*4)); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("failed to allocate page starts buffer")
+	dPageStarts, err := idx.allocGPUMem(int64((numPages + 1) * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate page starts buffer: %w", err)
 	}
-	defer C.cudaFree(dPageStarts)
+	defer idx.freeGPUMem(dPageStarts)
 	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
 
 	if idx.dim > 1024 {
@@ -803,20 +792,20 @@ func (idx *CUDAIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []
 	start := time.Now()
 
 	// Upload lookup table to GPU
-	tableSize := C.size_t(m * 256 * 4) // m * 256 floats
-	var dTable unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dTable)), tableSize); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("failed to allocate lookup table GPU memory")
+	tableSize := int64(m) * 256 * 4
+	dTable, err := idx.allocGPUMem(tableSize)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate lookup table GPU memory: %w", err)
 	}
-	defer C.cudaFree(dTable)
-	C.cudaMemcpy(dTable, unsafe.Pointer(&lookupTable[0]), tableSize, C.cudaMemcpyHostToDevice)
+	defer idx.freeGPUMem(dTable)
+	C.cudaMemcpy(dTable, unsafe.Pointer(&lookupTable[0]), C.size_t(tableSize), C.cudaMemcpyHostToDevice)
 
 	// Per-page distance buffer
-	var dPageDists unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPageDists)), C.size_t(vectorsPerPage*4)); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("failed to allocate per-page distance buffer")
+	dPageDists, err := idx.allocGPUMem(int64(vectorsPerPage * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate per-page distance buffer: %w", err)
 	}
-	defer C.cudaFree(dPageDists)
+	defer idx.freeGPUMem(dPageDists)
 
 	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
 	type scored struct {
@@ -825,6 +814,13 @@ func (idx *CUDAIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []
 	}
 	all := make([]scored, 0, n)
 	hPageDists := make([]float32, vectorsPerPage)
+
+	var pinnedPages []*memory.PageInfo
+	defer func() {
+		for _, pi := range pinnedPages {
+			idx.pager.Unpin(pi)
+		}
+	}()
 
 	for chunk := 0; chunk < numChunks; chunk++ {
 		pid := idx.pageIDFor(2, chunk)
@@ -835,6 +831,8 @@ func (idx *CUDAIndex) SearchPQ(lookupTable []float32, m int, k int) ([]int64, []
 		if err := idx.pager.Promote(pi); err != nil {
 			continue
 		}
+		idx.pager.Pin(pi)
+		pinnedPages = append(pinnedPages, pi)
 		gpuPtr := idx.pager.GetGPUAddr(pi)
 		if gpuPtr == nil {
 			continue
@@ -917,6 +915,42 @@ func (idx *CUDAIndex) TrainPQ(vectors []float32, m int, k int) error {
 		return fmt.Errorf("failed to create PQ encoder: %w", err)
 	}
 
+	// Pre-allocate GPU buffers for K-Means (reused across subspaces)
+	vecSize := int64(numVecs) * int64(subDim) * 4
+	centSize := int64(k) * int64(subDim) * 4
+	assignSize := int64(numVecs) * 4
+	countSize := int64(k) * 4
+
+	dVectors, err := idx.allocGPUMem(vecSize)
+	if err != nil {
+		return fmt.Errorf("failed to allocate K-Means vectors: %w", err)
+	}
+	defer idx.freeGPUMem(dVectors)
+
+	dCentroids, err := idx.allocGPUMem(centSize)
+	if err != nil {
+		return fmt.Errorf("failed to allocate K-Means centroids: %w", err)
+	}
+	defer idx.freeGPUMem(dCentroids)
+
+	dSumCentroids, err := idx.allocGPUMem(centSize)
+	if err != nil {
+		return fmt.Errorf("failed to allocate K-Means sum centroids: %w", err)
+	}
+	defer idx.freeGPUMem(dSumCentroids)
+
+	dAssignments, err := idx.allocGPUMem(assignSize)
+	if err != nil {
+		return fmt.Errorf("failed to allocate K-Means assignments: %w", err)
+	}
+	defer idx.freeGPUMem(dAssignments)
+
+	dCounts, err := idx.allocGPUMem(countSize)
+	if err != nil {
+		return fmt.Errorf("failed to allocate K-Means counts: %w", err)
+	}
+	defer idx.freeGPUMem(dCounts)
+
 	// Train each subspace
 	for i := 0; i < m; i++ {
 		subData := make([]float32, numVecs*subDim)
@@ -931,8 +965,15 @@ func (idx *CUDAIndex) TrainPQ(vectors []float32, m int, k int) error {
 			copy(centroids[j*subDim:(j+1)*subDim], subData[perm[j]*subDim:(perm[j]+1)*subDim])
 		}
 
-		// Run GPU K-Means
-		res := C.cuda_train_kmeans(idx.handle, (*C.float)(&subData[0]), (*C.float)(&centroids[0]), C.int(numVecs), C.int(subDim), C.int(k), 20)
+		// Run GPU K-Means with pre-allocated buffers
+		res := C.cuda_train_kmeans(
+			idx.handle,
+			(*C.float)(dVectors), (*C.float)(dCentroids), (*C.float)(dSumCentroids),
+			(*C.uint32_t)(dAssignments), (*C.uint32_t)(dCounts),
+			(*C.float)(unsafe.Pointer(&subData[0])),
+			(*C.float)(unsafe.Pointer(&centroids[0])),
+			C.int(numVecs), C.int(subDim), C.int(k), 20,
+		)
 		if res != 0 {
 			return fmt.Errorf("GPU K-Means failed for subspace %d", i)
 		}
@@ -1149,19 +1190,19 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 	start := time.Now()
 
 	// Upload query to GPU
-	var dQuery unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dQuery)), C.size_t(idx.dim*4)); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("failed to allocate query GPU memory")
+	dQuery, err := idx.allocGPUMem(int64(idx.dim * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate query GPU memory: %w", err)
 	}
-	defer C.cudaFree(dQuery)
+	defer idx.freeGPUMem(dQuery)
 	C.cudaMemcpy(dQuery, unsafe.Pointer(&vector[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
 
 	// Per-page distance buffer
-	var dPageDists unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPageDists)), C.size_t(vectorsPerPage*4)); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("failed to allocate per-page distance buffer")
+	dPageDists, err := idx.allocGPUMem(int64(vectorsPerPage * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate per-page distance buffer: %w", err)
 	}
-	defer C.cudaFree(dPageDists)
+	defer idx.freeGPUMem(dPageDists)
 
 	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
 	type scored struct {
@@ -1170,6 +1211,13 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 	}
 	all := make([]scored, 0, n)
 	hPageDists := make([]float32, vectorsPerPage)
+
+	var pinnedPages []*memory.PageInfo
+	defer func() {
+		for _, pi := range pinnedPages {
+			idx.pager.Unpin(pi)
+		}
+	}()
 
 	for chunk := 0; chunk < numChunks; chunk++ {
 		pid := idx.pageIDFor(3, chunk)
@@ -1180,6 +1228,8 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 		if err := idx.pager.Promote(pi); err != nil {
 			continue
 		}
+		idx.pager.Pin(pi)
+		pinnedPages = append(pinnedPages, pi)
 		gpuPtr := idx.pager.GetGPUAddr(pi)
 		if gpuPtr == nil {
 			continue
@@ -1200,6 +1250,10 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 			C.int(vecsInChunk),
 			nil,
 		)
+
+		if err := GetLastError(); err != nil {
+			return nil, nil, fmt.Errorf("TQ kernel launch failed (dim=%d pow2=%d): %w", idx.dim, pow2, err)
+		}
 
 		hPageDists = hPageDists[:vecsInChunk]
 		C.cudaMemcpy(
@@ -1409,11 +1463,11 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 	start := time.Now()
 
 	// Upload query to GPU
-	var dQuery unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dQuery)), C.size_t(idx.dim*4)); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("cudaMalloc query failed")
+	dQuery, err := idx.allocGPUMem(int64(idx.dim * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("cudaMalloc query failed: %w", err)
 	}
-	defer C.cudaFree(dQuery)
+	defer idx.freeGPUMem(dQuery)
 	C.cudaMemcpy(dQuery, unsafe.Pointer(&query[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
 
 	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
@@ -1423,6 +1477,7 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 		nvecs int
 	}
 	pages := make([]pageEntry, 0, numChunks)
+	var pinnedPages []*memory.PageInfo
 	for chunk := 0; chunk < numChunks; chunk++ {
 		pid := idx.pageIDFor(0, chunk)
 		pi := idx.pager.PageInfo(pid)
@@ -1432,6 +1487,8 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 		if err := idx.pager.Promote(pi); err != nil {
 			continue
 		}
+		idx.pager.Pin(pi)
+		pinnedPages = append(pinnedPages, pi)
 		gpuPtr := idx.pager.GetGPUAddr(pi)
 		if gpuPtr == nil {
 			continue
@@ -1442,6 +1499,12 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 		}
 		pages = append(pages, pageEntry{ptr: gpuPtr, nvecs: vecsInChunk})
 	}
+
+	defer func() {
+		for _, pi := range pinnedPages {
+			idx.pager.Unpin(pi)
+		}
+	}()
 
 	if len(pages) == 0 {
 		return nil, nil, nil
@@ -1456,24 +1519,24 @@ func (idx *CUDAIndex) SearchWithFilter(query []float32, k int, bitset []uint64) 
 	}
 	totalVecs := int(hPageStarts[numPages])
 
-	var dAllDists unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dAllDists)), C.size_t(totalVecs*4)); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("cudaMalloc distances failed")
+	dAllDists, err := idx.allocGPUMem(int64(totalVecs * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("cudaMalloc distances failed: %w", err)
 	}
-	defer C.cudaFree(dAllDists)
+	defer idx.freeGPUMem(dAllDists)
 
-	var dPagePtrs unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPagePtrs)), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0]))); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("cudaMalloc page ptrs failed")
+	dPagePtrs, err := idx.allocGPUMem(int64(numPages) * int64(unsafe.Sizeof(hPagePtrs[0])))
+	if err != nil {
+		return nil, nil, fmt.Errorf("cudaMalloc page ptrs failed: %w", err)
 	}
-	defer C.cudaFree(dPagePtrs)
+	defer idx.freeGPUMem(dPagePtrs)
 	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
 
-	var dPageStarts unsafe.Pointer
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&dPageStarts)), C.size_t((numPages+1)*4)); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("cudaMalloc page starts failed")
+	dPageStarts, err := idx.allocGPUMem(int64((numPages + 1) * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("cudaMalloc page starts failed: %w", err)
 	}
-	defer C.cudaFree(dPageStarts)
+	defer idx.freeGPUMem(dPageStarts)
 	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
 
 	if idx.dim > 1024 {
@@ -1597,53 +1660,54 @@ func (idx *CUDAIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]u
 
 	nodeCount := int(idx.handle.graphNodeCount)
 
-	// Allocate GPU buffers for BFS with error checking
-	var d_frontier, d_nextFrontier *C.uint32_t
-	var d_visited *C.ulonglong
-	var d_activations, d_newActivations *C.float
-	var d_nextSize *C.int
-
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_frontier)), C.size_t(nodeCount*4)); ret != C.cudaSuccess {
-		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc frontier failed: %v", ret)
+	// Allocate GPU buffers for BFS through the memory pool (visible to pager)
+	d_frontier, err := idx.allocGPUMem(int64(nodeCount * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc frontier failed: %w", err)
 	}
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_nextFrontier)), C.size_t(nodeCount*4)); ret != C.cudaSuccess {
-		C.cudaFree(unsafe.Pointer(d_frontier))
-		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc nextFrontier failed: %v", ret)
+	d_nextFrontier, err := idx.allocGPUMem(int64(nodeCount * 4))
+	if err != nil {
+		idx.freeGPUMem(d_frontier)
+		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc nextFrontier failed: %w", err)
 	}
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_visited)), C.size_t((nodeCount/64+1)*8)); ret != C.cudaSuccess {
-		C.cudaFree(unsafe.Pointer(d_frontier))
-		C.cudaFree(unsafe.Pointer(d_nextFrontier))
-		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc visited failed: %v", ret)
+	d_visited, err := idx.allocGPUMem(int64((nodeCount/64 + 1) * 8))
+	if err != nil {
+		idx.freeGPUMem(d_frontier)
+		idx.freeGPUMem(d_nextFrontier)
+		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc visited failed: %w", err)
 	}
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_activations)), C.size_t(nodeCount*4)); ret != C.cudaSuccess {
-		C.cudaFree(unsafe.Pointer(d_frontier))
-		C.cudaFree(unsafe.Pointer(d_nextFrontier))
-		C.cudaFree(unsafe.Pointer(d_visited))
-		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc activations failed: %v", ret)
+	d_activations, err := idx.allocGPUMem(int64(nodeCount * 4))
+	if err != nil {
+		idx.freeGPUMem(d_frontier)
+		idx.freeGPUMem(d_nextFrontier)
+		idx.freeGPUMem(d_visited)
+		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc activations failed: %w", err)
 	}
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_newActivations)), C.size_t(nodeCount*4)); ret != C.cudaSuccess {
-		C.cudaFree(unsafe.Pointer(d_frontier))
-		C.cudaFree(unsafe.Pointer(d_nextFrontier))
-		C.cudaFree(unsafe.Pointer(d_visited))
-		C.cudaFree(unsafe.Pointer(d_activations))
-		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc newActivations failed: %v", ret)
+	d_newActivations, err := idx.allocGPUMem(int64(nodeCount * 4))
+	if err != nil {
+		idx.freeGPUMem(d_frontier)
+		idx.freeGPUMem(d_nextFrontier)
+		idx.freeGPUMem(d_visited)
+		idx.freeGPUMem(d_activations)
+		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc newActivations failed: %w", err)
 	}
-	if ret := C.cudaMalloc((*unsafe.Pointer)(unsafe.Pointer(&d_nextSize)), 4); ret != C.cudaSuccess {
-		C.cudaFree(unsafe.Pointer(d_frontier))
-		C.cudaFree(unsafe.Pointer(d_nextFrontier))
-		C.cudaFree(unsafe.Pointer(d_visited))
-		C.cudaFree(unsafe.Pointer(d_activations))
-		C.cudaFree(unsafe.Pointer(d_newActivations))
-		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc nextSize failed: %v", ret)
+	d_nextSize, err := idx.allocGPUMem(4)
+	if err != nil {
+		idx.freeGPUMem(d_frontier)
+		idx.freeGPUMem(d_nextFrontier)
+		idx.freeGPUMem(d_visited)
+		idx.freeGPUMem(d_activations)
+		idx.freeGPUMem(d_newActivations)
+		return nil, nil, fmt.Errorf("GraphExpand: cudaMalloc nextSize failed: %w", err)
 	}
 
 	defer func() {
-		C.cudaFree(unsafe.Pointer(d_frontier))
-		C.cudaFree(unsafe.Pointer(d_nextFrontier))
-		C.cudaFree(unsafe.Pointer(d_visited))
-		C.cudaFree(unsafe.Pointer(d_activations))
-		C.cudaFree(unsafe.Pointer(d_newActivations))
-		C.cudaFree(unsafe.Pointer(d_nextSize))
+		idx.freeGPUMem(d_frontier)
+		idx.freeGPUMem(d_nextFrontier)
+		idx.freeGPUMem(d_visited)
+		idx.freeGPUMem(d_activations)
+		idx.freeGPUMem(d_newActivations)
+		idx.freeGPUMem(d_nextSize)
 	}()
 
 	C.cudaMemset(unsafe.Pointer(d_visited), 0, C.size_t((nodeCount/64+1)*8))
@@ -1670,15 +1734,15 @@ func (idx *CUDAIndex) GraphExpand(seeds []uint32, depth int, alpha float32) ([]u
 		C.cudaMemset(unsafe.Pointer(d_nextSize), 0, 4)
 
 		C.launch_graph_bfs_expand_kernel(
-			d_frontier, C.int(frontierSize),
+			(*C.uint32_t)(d_frontier), C.int(frontierSize),
 			(*C.uint32_t)(idx.handle.graphOffsets),
 			(*C.uint32_t)(idx.handle.graphNeighbors),
-			d_visited, d_nextFrontier, d_nextSize, nil,
+			(*C.ulonglong)(d_visited), (*C.uint32_t)(d_nextFrontier), (*C.int)(d_nextSize), nil,
 		)
 
 		C.launch_graph_activation_propagate_kernel(
-			d_activations, d_newActivations,
-			d_frontier, C.int(frontierSize),
+			(*C.float)(d_activations), (*C.float)(d_newActivations),
+			(*C.uint32_t)(d_frontier), C.int(frontierSize),
 			(*C.uint32_t)(idx.handle.graphOffsets),
 			(*C.uint32_t)(idx.handle.graphNeighbors),
 			(*C.float)(idx.handle.graphWeights),
@@ -1735,9 +1799,30 @@ func (idx *CUDAIndex) HaversineSearch(centerLat, centerLon float32, points []flo
 	results := make([]float32, count)
 	center := []float32{centerLat, centerLon}
 
+	dCenter, err := idx.allocGPUMem(2 * 4)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate center: %w", err)
+	}
+	defer idx.freeGPUMem(dCenter)
+
+	dPoints, err := idx.allocGPUMem(int64(count) * 2 * 4)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate points: %w", err)
+	}
+	defer idx.freeGPUMem(dPoints)
+
+	dResults, err := idx.allocGPUMem(int64(count) * 4)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate results: %w", err)
+	}
+	defer idx.freeGPUMem(dResults)
+
 	start := time.Now()
 	ret := C.cuda_haversine_batch(
 		idx.handle,
+		(*C.float)(dCenter),
+		(*C.float)(dPoints),
+		(*C.float)(dResults),
 		(*C.float)(unsafe.Pointer(&center[0])),
 		(*C.float)(unsafe.Pointer(&points[0])),
 		(*C.float)(unsafe.Pointer(&results[0])),
@@ -1769,9 +1854,23 @@ func (idx *CUDAIndex) NormBatch(vectors []float32, dims int) ([]float32, error) 
 
 	results := make([]float32, count)
 
+	dVectors, err := idx.allocGPUMem(int64(count) * int64(dims) * 4)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate vectors: %w", err)
+	}
+	defer idx.freeGPUMem(dVectors)
+
+	dResults, err := idx.allocGPUMem(int64(count) * 4)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate results: %w", err)
+	}
+	defer idx.freeGPUMem(dResults)
+
 	start := time.Now()
 	ret := C.cuda_norm_batch_f32(
 		idx.handle,
+		(*C.float)(dVectors),
+		(*C.float)(dResults),
 		(*C.float)(unsafe.Pointer(&vectors[0])),
 		(*C.float)(unsafe.Pointer(&results[0])),
 		C.int(dims),
@@ -1802,9 +1901,35 @@ func (idx *CUDAIndex) PQEncode(vectors []float32, codebooks []float32, m, subDim
 
 	codes := make([]byte, numVectors*m)
 
+	// Allocate GPU buffers through the pool
+	vecSize := int64(numVectors) * int64(m) * int64(subDim) * 4
+	cbSize := int64(m) * 256 * int64(subDim) * 4
+	codeSize := int64(numVectors) * int64(m)
+
+	dVectors, err := idx.allocGPUMem(vecSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate vectors: %w", err)
+	}
+	defer idx.freeGPUMem(dVectors)
+
+	dCodebooks, err := idx.allocGPUMem(cbSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate codebooks: %w", err)
+	}
+	defer idx.freeGPUMem(dCodebooks)
+
+	dCodes, err := idx.allocGPUMem(codeSize)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate codes: %w", err)
+	}
+	defer idx.freeGPUMem(dCodes)
+
 	start := time.Now()
 	ret := C.cuda_pq_encode(
 		idx.handle,
+		(*C.float)(dVectors),
+		(*C.float)(dCodebooks),
+		(*C.uchar)(dCodes),
 		(*C.float)(unsafe.Pointer(&vectors[0])),
 		(*C.float)(unsafe.Pointer(&codebooks[0])),
 		(*C.uchar)(unsafe.Pointer(&codes[0])),
@@ -1836,12 +1961,23 @@ func (idx *CUDAIndex) PruneNeighbors(candidateIds []uint32, candidateDists []flo
 	var totalVecs int
 	var numPages int
 
+	// For pager case, we hold pins until after kernel launch
+	var pinnedPages []*memory.PageInfo
+	var dAllVectors unsafe.Pointer
+
 	if len(allVectors) > 0 {
-		// Monolithic case (fallback)
-		numPages = 1
+		// Monolithic case (fallback) — upload vectors to GPU
 		totalVecs = len(allVectors) / idx.dim
+		var err error
+		dAllVectors, err = idx.allocGPUMem(int64(len(allVectors)) * 4)
+		if err != nil {
+			return nil, fmt.Errorf("failed to allocate GPU memory for vectors: %w", err)
+		}
+		C.cudaMemcpy(dAllVectors, unsafe.Pointer(&allVectors[0]), C.size_t(len(allVectors)*4), C.cudaMemcpyHostToDevice)
+
+		numPages = 1
 		hPageStarts = []C.int{0, C.int(totalVecs)}
-		hPagePtrs = []unsafe.Pointer{unsafe.Pointer(&allVectors[0])}
+		hPagePtrs = []unsafe.Pointer{dAllVectors}
 	} else {
 		// Pager case
 		n := idx.vectorCount
@@ -1859,6 +1995,8 @@ func (idx *CUDAIndex) PruneNeighbors(candidateIds []uint32, candidateDists []flo
 			if err := idx.pager.Promote(pi); err != nil {
 				continue
 			}
+			idx.pager.Pin(pi)
+			pinnedPages = append(pinnedPages, pi)
 			gpuPtr := idx.pager.GetGPUAddr(pi)
 			if gpuPtr == nil {
 				continue
@@ -1878,14 +2016,69 @@ func (idx *CUDAIndex) PruneNeighbors(candidateIds []uint32, candidateDists []flo
 		}
 	}
 
+	defer func() {
+		for _, pi := range pinnedPages {
+			idx.pager.Unpin(pi)
+		}
+		if dAllVectors != nil {
+			idx.freeGPUMem(dAllVectors)
+		}
+	}()
+
+	// Allocate temporary GPU buffers through the pool
+	dCandIds, err := idx.allocGPUMem(int64(numCandidates) * 4)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate candidate IDs: %w", err)
+	}
+	defer idx.freeGPUMem(dCandIds)
+
+	dCandDists, err := idx.allocGPUMem(int64(numCandidates) * 4)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate candidate dists: %w", err)
+	}
+	defer idx.freeGPUMem(dCandDists)
+
+	dSelIds, err := idx.allocGPUMem(int64(maxNeighbors) * 4)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate selected IDs: %w", err)
+	}
+	defer idx.freeGPUMem(dSelIds)
+
+	dSelCount, err := idx.allocGPUMem(4)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate selected count: %w", err)
+	}
+	defer idx.freeGPUMem(dSelCount)
+
+	dPagePtrs, err := idx.allocGPUMem(int64(numPages) * int64(unsafe.Sizeof(hPagePtrs[0])))
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate page ptrs: %w", err)
+	}
+	defer idx.freeGPUMem(dPagePtrs)
+
+	dPageStarts, err := idx.allocGPUMem(int64(numPages+1) * 4)
+	if err != nil {
+		return nil, fmt.Errorf("failed to allocate page starts: %w", err)
+	}
+	defer idx.freeGPUMem(dPageStarts)
+
+	// Copy data to GPU
+	C.cudaMemcpy(dCandIds, unsafe.Pointer(&candidateIds[0]), C.size_t(numCandidates)*4, C.cudaMemcpyHostToDevice)
+	C.cudaMemcpy(dCandDists, unsafe.Pointer(&candidateDists[0]), C.size_t(numCandidates)*4, C.cudaMemcpyHostToDevice)
+	C.cudaMemset(dSelCount, 0, 4)
+	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
+	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
+
 	ret := C.cuda_prune_neighbors(
 		idx.handle,
-		(*C.uint32_t)(unsafe.Pointer(&candidateIds[0])),
-		(*C.float)(unsafe.Pointer(&candidateDists[0])),
+		(*C.uint32_t)(dCandIds),
+		(*C.float)(dCandDists),
+		(*C.uint32_t)(dSelIds),
+		(*C.uint32_t)(dSelCount),
+		(**C.float)(dPagePtrs),
+		(*C.int)(dPageStarts),
 		(*C.uint32_t)(unsafe.Pointer(&selectedIds[0])),
 		(*C.uint32_t)(unsafe.Pointer(&selectedCount)),
-		(**C.float)(unsafe.Pointer(&hPagePtrs[0])),
-		(*C.int)(unsafe.Pointer(&hPageStarts[0])),
 		C.int(maxNeighbors),
 		C.int(numCandidates),
 		C.int(idx.dim),

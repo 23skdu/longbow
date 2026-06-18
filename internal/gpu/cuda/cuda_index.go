@@ -64,7 +64,7 @@ void launch_sum_centroids(const float* vectors, const uint32_t* assignments, flo
 void launch_finalize_centroids(float* centroids, const uint32_t* counts, int dim, int numCentroids, cudaStream_t stream);
 void launch_hnsw_prune_neighbors_kernel(const uint32_t* candidateIds, const float* candidateDists, uint32_t* selectedIds, uint32_t* selectedCount, const float** page_ptrs, const int* page_starts, int maxNeighbors, int numCandidates, int dim, int total_count, int num_pages, bool extendedHeuristic, cudaStream_t stream);
 
-int cuda_train_kmeans(CUDAIndexHandle* handle, float* vectors, float* centroids, int numVectors, int dim, int k, int iterations);
+int cuda_train_kmeans(CUDAIndexHandle* handle, float* d_vectors, float* d_centroids, float* d_sumCentroids, uint32_t* d_assignments, uint32_t* d_counts, float* h_vectors, float* h_centroids, int numVectors, int dim, int k, int iterations);
 int cuda_pq_encode(CUDAIndexHandle* handle, float* d_vectors, float* d_codebooks, unsigned char* d_codes, float* h_vectors, float* h_codebooks, unsigned char* h_codes, int numVectors, int m, int subDim);
 
 CUDAIndexHandle* cuda_init(int dimensions) {

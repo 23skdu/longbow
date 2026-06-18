@@ -2,6 +2,7 @@
 /longbow
 longbow-server
 longbow-gpu
+longbow-cuda
 longbow-metal
 longbow-darwin
 longbow-linux

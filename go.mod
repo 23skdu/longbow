@@ -33,7 +33,7 @@ require (
 	github.com/klauspost/compress v1.19.1
 	github.com/leanovate/gopter v0.2.11
 	github.com/mmcloughlin/avo v0.6.0
-	github.com/pierrec/lz4/v4 v4.1.27
+	github.com/pierrec/lz4/v4 v4.1.28
 	github.com/prometheus/client_model v0.6.2
 	github.com/rs/zerolog v1.35.1
 	github.com/sbinet/npyio v0.9.0

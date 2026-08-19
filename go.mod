@@ -18,7 +18,7 @@ require (
 	cloud.google.com/go/storage v1.62.2
 	github.com/IBM/sarama v1.60.1
 	github.com/RoaringBitmap/roaring/v2 v2.24.0
-	github.com/apache/arrow-adbc/go/adbc v1.11.0
+	github.com/apache/arrow-adbc/go/adbc v1.12.0
 	github.com/apache/pulsar-client-go v0.19.0
 	github.com/aws/aws-sdk-go-v2 v1.43.6
 	github.com/aws/aws-sdk-go-v2/config v1.32.35
@@ -162,10 +162,10 @@ require (
 	go.yaml.in/yaml/v2 v2.4.4 // indirect
 	golang.org/x/crypto v0.54.0 // indirect
 	golang.org/x/exp v0.0.0-20260410095643-746e56fc9e2f // indirect
-	golang.org/x/mod v0.37.0 // indirect
+	golang.org/x/mod v0.38.0 // indirect
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
-	golang.org/x/tools v0.47.0 // indirect
+	golang.org/x/tools v0.48.0 // indirect
 	google.golang.org/genproto v0.0.0-20260420184626-e10c466a9529 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260807164820-c8921c73eeea // indirect

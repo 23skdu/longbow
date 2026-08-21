@@ -15,7 +15,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/storage v1.62.2
+	cloud.google.com/go/storage v1.64.0
 	github.com/IBM/sarama v1.60.1
 	github.com/RoaringBitmap/roaring/v2 v2.25.0
 	github.com/apache/arrow-adbc/go/adbc v1.12.0
@@ -60,13 +60,13 @@ require (
 	cloud.google.com/go/auth v0.23.0 // indirect
 	cloud.google.com/go/auth/oauth2adapt v0.2.8 // indirect
 	cloud.google.com/go/compute/metadata v0.9.0 // indirect
-	cloud.google.com/go/iam v1.9.0 // indirect
-	cloud.google.com/go/monitoring v1.27.0 // indirect
+	cloud.google.com/go/iam v1.11.0 // indirect
+	cloud.google.com/go/monitoring v1.29.0 // indirect
 	github.com/AthenZ/athenz v1.12.39 // indirect
 	github.com/DataDog/zstd v1.5.7 // indirect
 	github.com/GoogleCloudPlatform/opentelemetry-operations-go/detectors/gcp v1.33.0 // indirect
-	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.56.0 // indirect
-	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.56.0 // indirect
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/exporter/metric v0.57.0 // indirect
+	github.com/GoogleCloudPlatform/opentelemetry-operations-go/internal/resourcemapping v0.57.0 // indirect
 	github.com/andybalholm/brotli v1.2.2 // indirect
 	github.com/apache/thrift v0.24.0 // indirect
 	github.com/ardielle/ardielle-go v1.5.2 // indirect
@@ -166,7 +166,7 @@ require (
 	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/text v0.40.0 // indirect
 	golang.org/x/tools v0.48.0 // indirect
-	google.golang.org/genproto v0.0.0-20260420184626-e10c466a9529 // indirect
+	google.golang.org/genproto v0.0.0-20260519071638-aa98bba5eb94 // indirect
 	google.golang.org/genproto/googleapis/api v0.0.0-20260803160001-6ac0973c030d // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20260807164820-c8921c73eeea // indirect
 	gopkg.in/inf.v0 v0.9.1 // indirect

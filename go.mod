@@ -15,7 +15,7 @@ require (
 )
 
 require (
-	cloud.google.com/go/storage v1.64.0
+	cloud.google.com/go/storage v1.65.0
 	github.com/IBM/sarama v1.60.1
 	github.com/RoaringBitmap/roaring/v2 v2.25.0
 	github.com/apache/arrow-adbc/go/adbc v1.12.0

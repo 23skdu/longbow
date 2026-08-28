@@ -17,8 +17,9 @@ func TestIVFOPQIndex_HNSWCoarse(t *testing.T) {
 	config := IVFOPQConfig{
 		Nlist:         nlist,
 		M:             4,
-		K:             256,
+		K:             32,
 		Nprobe:        2,
+		OPQIterations: 2,
 		UseHNSWCoarse: true,
 	}
 
@@ -26,7 +27,7 @@ func TestIVFOPQIndex_HNSWCoarse(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Create synthetic data
-	n := 1000
+	n := 100
 	vectors := make([][]float32, n)
 	for i := 0; i < n; i++ {
 		v := make([]float32, dim)

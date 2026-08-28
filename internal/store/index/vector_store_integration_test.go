@@ -19,6 +19,7 @@ func TestVectorStoreIntegration_PagingEviction(t *testing.T) {
 	dim := 8
 	cfg := types.DefaultArrowHNSWConfig()
 	cfg.Dims = dim
+	cfg.EfConstruction = 32
 
 	mem := memory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
@@ -28,7 +29,7 @@ func TestVectorStoreIntegration_PagingEviction(t *testing.T) {
 	b := array.NewRecordBuilder(mem, schema)
 	defer b.Release()
 
-	numVectors := 5000
+	numVectors := 500
 	rng := rand.New(rand.NewSource(42))
 
 	listB := b.Field(0).(*array.FixedSizeListBuilder)

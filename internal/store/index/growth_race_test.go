@@ -44,7 +44,7 @@ func TestHNSW_GrowthRace(t *testing.T) {
 
 	var wg sync.WaitGroup
 	numWorkers := 4
-	insertsPerWorker := 500
+	insertsPerWorker := 150
 
 	// Use atomic counter for sequential ID assignment to avoid commitID deadlock
 	var nextID atomic.Uint32

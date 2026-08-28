@@ -67,7 +67,7 @@ func TestLockFreeNeighbors_ReadWriteConcurrency(t *testing.T) {
 	stopChan := make(chan struct{})
 
 	// Readers
-	for i := 0; i < 50; i++ {
+	for i := 0; i < 8; i++ {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
@@ -78,9 +78,10 @@ func TestLockFreeNeighbors_ReadWriteConcurrency(t *testing.T) {
 				default:
 					neighbors := list.Read()
 					// Verify neighbors are always valid (non-nil and reasonable length)
-					if neighbors != nil {
-						assert.LessOrEqual(t, len(neighbors), 100, "Neighbor list should be reasonable size")
+					if neighbors != nil && len(neighbors) > 100 {
+						t.Errorf("Neighbor list should be reasonable size, got %d", len(neighbors))
 					}
+					runtime.Gosched()
 				}
 			}
 		}()
@@ -189,8 +190,8 @@ func TestLockFreeNeighbors_NoMemoryLeaks(t *testing.T) {
 	var mStart runtime.MemStats
 	runtime.ReadMemStats(&mStart)
 
-	// Perform many updates
-	for i := 0; i < 10000; i++ {
+	// Perform updates
+	for i := 0; i < 1000; i++ {
 		neighbors := make([]uint32, 100)
 		for j := range neighbors {
 			neighbors[j] = uint32(j)

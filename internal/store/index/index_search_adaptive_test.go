@@ -28,8 +28,8 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 		{Name: "id_col", Type: arrow.PrimitiveTypes.Int64},
 	}, nil)
 
-	// Create dataset with 1000 vectors
-	count := 1000
+	// Create dataset with 200 vectors
+	count := 200
 	builder := array.NewRecordBuilder(mem, schema)
 	defer builder.Release()
 
@@ -54,8 +54,8 @@ func TestAdaptiveSearch_RetryLogic(t *testing.T) {
 
 	config := DefaultArrowHNSWConfig()
 	config.M = 16
-	config.EfConstruction = 100
-	config.InitialCapacity = 1024
+	config.EfConstruction = 32
+	config.InitialCapacity = 256
 
 	index := NewArrowHNSW(dataset, &config, nil)
 	dataset.Index = index

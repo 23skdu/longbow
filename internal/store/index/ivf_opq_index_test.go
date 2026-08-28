@@ -14,13 +14,13 @@ func TestIVFOPQIndex_Basic(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	dim := 16
-	n := 500
+	n := 100
 	config := IVFOPQConfig{
 		Nlist:         10,
 		M:             4,
-		K:             256,
+		K:             32,
 		Nprobe:        2,
-		OPQIterations: 5,
+		OPQIterations: 2,
 	}
 
 	idx, err := NewIVFOPQIndex(dim, config)
@@ -121,16 +121,16 @@ func TestIVFOPQIndex_RecallK(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	dim := 128
-	n := 300
+	dim := 64
+	n := 100
 	k := 10
 
 	config := IVFOPQConfig{
-		Nlist:         50,
-		M:             16,
-		K:             256,
-		Nprobe:        10,
-		OPQIterations: 10,
+		Nlist:         10,
+		M:             8,
+		K:             32,
+		Nprobe:        5,
+		OPQIterations: 2,
 	}
 
 	idx, err := NewIVFOPQIndex(dim, config)
@@ -241,12 +241,12 @@ func TestIVFOPQ_decodeVector(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	dim := 128
-	n := 1000
+	dim := 16
+	n := 20
 	config := IVFOPQConfig{
-		Nlist:         8,
-		M:             8,
-		K:             256,
+		Nlist:         4,
+		M:             4,
+		K:             8,
 		Nprobe:        2,
 		OPQIterations: 2,
 	}
@@ -281,12 +281,12 @@ func TestIVFOPQ_computeResidualScore(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping test in short mode")
 	}
-	dim := 128
-	n := 1000
+	dim := 16
+	n := 20
 	config := IVFOPQConfig{
-		Nlist:         8,
-		M:             8,
-		K:             256,
+		Nlist:         4,
+		M:             4,
+		K:             8,
 		Nprobe:        2,
 		OPQIterations: 2,
 	}

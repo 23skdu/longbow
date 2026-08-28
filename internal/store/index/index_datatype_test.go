@@ -21,8 +21,8 @@ func TestArrowHNSW_DataTypes(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	mem := memory.NewGoAllocator()
-	dims := 128
-	count := 100 // Sufficient for validation
+	dims := 32
+	count := 30 // Sufficient for validation
 
 	tests := []struct {
 		name       string

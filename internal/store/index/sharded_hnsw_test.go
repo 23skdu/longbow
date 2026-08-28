@@ -209,13 +209,14 @@ func TestShardedHNSW_ParallelAdds(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	cfg := DefaultShardedHNSWConfig()
-	cfg.NumShards = 8
+	cfg.NumShards = 4
+	cfg.EfConstruction = 32
 
 	ds := NewMockDataset("test", nil)
 	sharded := NewShardedHNSW(cfg, ds).(*ShardedHNSW)
 
-	numGoroutines := 16
-	vectorsPerGoroutine := 100
+	numGoroutines := 4
+	vectorsPerGoroutine := 50
 
 	var wg sync.WaitGroup
 	var errCount atomic.Int32

@@ -362,6 +362,7 @@ func (g *Gossip) selectNeighbors(skipID string, k int) []*Member {
 	if len(others) <= k {
 		return others
 	}
+	// #nosec G404
 	rand.Shuffle(len(others), func(i, j int) {
 		others[i], others[j] = others[j], others[i]
 	})

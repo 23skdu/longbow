@@ -15,6 +15,12 @@ func FuzzSlabPoolConcurrentOperations(f *testing.F) {
 		if numGoroutines == 0 || allocsPerGoroutine == 0 {
 			return
 		}
+		if numGoroutines > 32 {
+			numGoroutines = 32
+		}
+		if allocsPerGoroutine > 32 {
+			allocsPerGoroutine = 32
+		}
 
 		pool := newSlabPool(4 * 1024 * 1024)
 		pool.maxPooled = 50

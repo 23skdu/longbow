@@ -57,6 +57,7 @@ func TestShardedHNSW_Routing(t *testing.T) {
 	}
 	mem := memory.NewGoAllocator()
 	cfg := DefaultShardedHNSWConfig()
+	cfg.EfConstruction = 32
 	cfg.ShardSplitThreshold = 25 // 4 shards for 100 vectors
 	cfg.NumShards = 1
 	cfg.UseRingSharding = false
@@ -92,6 +93,7 @@ func TestShardedHNSW_MergedSearch(t *testing.T) {
 	}
 	mem := memory.NewGoAllocator()
 	cfg := DefaultShardedHNSWConfig()
+	cfg.EfConstruction = 32
 	cfg.ShardSplitThreshold = 50 // 2 shards for 100 vectors
 	cfg.NumShards = 1
 	cfg.UseRingSharding = false
@@ -140,6 +142,7 @@ func TestShardedHNSW_Filtering(t *testing.T) {
 	}
 	mem := memory.NewGoAllocator()
 	cfg := DefaultShardedHNSWConfig()
+	cfg.EfConstruction = 32
 	cfg.ShardSplitThreshold = 50 // IDs 0-49 in Shard 0, 50-99 in Shard 1
 	cfg.NumShards = 1
 

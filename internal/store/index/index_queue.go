@@ -222,7 +222,7 @@ func (q *IndexJobQueue) drainBatch() {
 	// No dropping here.
 }
 
-// drainRemaining drains overflow jobs with timeout to prevent deadlock.
+// drainRemaining drains overflow jobs into mainChan if capacity allows, with a short timeout per job if consumer is draining.
 func (q *IndexJobQueue) drainRemaining() {
 	q.overflowMu.Lock()
 	batch := make([]IndexJob, len(q.overflow))
@@ -230,26 +230,14 @@ func (q *IndexJobQueue) drainRemaining() {
 	q.overflow = q.overflow[:0]
 	q.overflowMu.Unlock()
 
-	// Use timer to avoid memory leak from time.After() in loop
-	timer := time.NewTimer(5 * time.Millisecond)
-	defer timer.Stop()
-
 	for _, job := range batch {
-		// Reset timer for each iteration
-		if !timer.Stop() {
-			select {
-			case <-timer.C:
-			default:
-			}
-		}
-		timer.Reset(5 * time.Millisecond)
-
+		timer := time.NewTimer(50 * time.Millisecond)
 		select {
 		case q.mainChan <- job:
 			atomic.AddUint64(&q.drainedCount, 1)
+			timer.Stop()
 		case <-timer.C:
-			// Timed out, force drop
-			// This is acceptable for graceful shutdown to ensure we don't hang forever
+			// Main channel full and no consumer reading, drop to avoid blocking shutdown
 			atomic.AddUint64(&q.droppedCount, 1)
 		}
 	}

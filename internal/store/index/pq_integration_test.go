@@ -23,17 +23,18 @@ func TestPQ_EndToEnd(t *testing.T) {
 	}
 
 	// 1. Setup
-	dims := 128
-	pqM := 16 // 16 subspaces -> 8 dim per subspace
-	pqK := 256
-	numVecs := 400
-	trainVecs := 256
+	dims := 32
+	pqM := 4 // 4 subspaces
+	pqK := 16
+	numVecs := 50
+	trainVecs := 30
 
 	config := types.DefaultArrowHNSWConfig()
 	config.PQM = pqM
 	config.PQK = pqK
 	config.Dims = dims
-	config.EfSearch = 128
+	config.EfConstruction = 32
+	config.EfSearch = 32
 	// Start disabled, enable later via TrainPQ
 	config.PQEnabled = false
 

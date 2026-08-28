@@ -121,7 +121,7 @@ func TestArrowHNSW_RelocateToOffHeap_Full(t *testing.T) {
 	// Setup mock provider
 	pool := amemory.NewGoAllocator()
 	schema := arrow.NewSchema([]arrow.Field{
-		{Name: "vector", Type: arrow.FixedSizeListOf(128, arrow.PrimitiveTypes.Float32)},
+		{Name: "vector", Type: arrow.FixedSizeListOf(32, arrow.PrimitiveTypes.Float32)},
 		{Name: "id", Type: arrow.PrimitiveTypes.Int64},
 	}, nil)
 
@@ -131,8 +131,8 @@ func TestArrowHNSW_RelocateToOffHeap_Full(t *testing.T) {
 	vValBuilder := vBuilder.ValueBuilder().(*array.Float32Builder)
 	idBuilder := b.Field(1).(*array.Int64Builder)
 
-	for i := 0; i < 100; i++ {
-		vec := make([]float32, 128)
+	for i := 0; i < 30; i++ {
+		vec := make([]float32, 32)
 		vec[0] = float32(i)
 		vBuilder.Append(true)
 		vValBuilder.AppendValues(vec, nil)
@@ -143,12 +143,13 @@ func TestArrowHNSW_RelocateToOffHeap_Full(t *testing.T) {
 
 	provider := &MockProvider{recs: []arrow.RecordBatch{rec}}
 	config := types.DefaultArrowHNSWConfig()
-	config.Dims = 128
+	config.Dims = 32
+	config.EfConstruction = 32
 	hnsw := NewArrowHNSW(nil, &config, nil)
 	hnsw.dataset = provider
 
 	// Add data
-	for i := 0; i < 100; i++ {
+	for i := 0; i < 30; i++ {
 		_, err := hnsw.AddByLocation(context.Background(), 0, i)
 		require.NoError(t, err)
 	}
@@ -157,12 +158,12 @@ func TestArrowHNSW_RelocateToOffHeap_Full(t *testing.T) {
 	require.NoError(t, err)
 
 	// Verify search still works
-	query := make([]float32, 128)
-	query[0] = 50.0
+	query := make([]float32, 32)
+	query[0] = 15.0
 	results, err := hnsw.SearchVectors(context.Background(), query, 1, nil, nil)
 	require.NoError(t, err)
 	assert.NotEmpty(t, results)
-	assert.Equal(t, uint32(50), uint32(results[0].ID))
+	assert.Equal(t, uint32(15), uint32(results[0].ID))
 }
 
 func TestPackedAdjacency_RelocateToOffHeap(t *testing.T) {

@@ -697,8 +697,8 @@ func cosineInt8AVX2(a, b []int8) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	ptrA := uintptr(unsafe.Pointer(&a[0]))
-	ptrB := uintptr(unsafe.Pointer(&b[0]))
+	ptrA := uintptr(unsafe.Pointer(&a[0])) // #nosec G103
+	ptrB := uintptr(unsafe.Pointer(&b[0])) // #nosec G103
 	n := len(a)
 	dot := dotInt8AVX2Kernel(ptrA, ptrB, n)
 	normA := dotInt8AVX2Kernel(ptrA, ptrA, n)
@@ -714,8 +714,8 @@ func cosineUint8AVX2(a, b []uint8) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	ptrA := uintptr(unsafe.Pointer(&a[0]))
-	ptrB := uintptr(unsafe.Pointer(&b[0]))
+	ptrA := uintptr(unsafe.Pointer(&a[0])) // #nosec G103
+	ptrB := uintptr(unsafe.Pointer(&b[0])) // #nosec G103
 	n := len(a)
 	dot := dotUint8AVX2Kernel(ptrA, ptrB, n)
 	normA := dotUint8AVX2Kernel(ptrA, ptrA, n)
@@ -731,8 +731,8 @@ func cosineInt16AVX2(a, b []int16) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	ptrA := uintptr(unsafe.Pointer(&a[0]))
-	ptrB := uintptr(unsafe.Pointer(&b[0]))
+	ptrA := uintptr(unsafe.Pointer(&a[0])) // #nosec G103
+	ptrB := uintptr(unsafe.Pointer(&b[0])) // #nosec G103
 	n := len(a)
 	dot := dotInt16AVX2Kernel(ptrA, ptrB, n)
 	normA := dotInt16AVX2Kernel(ptrA, ptrA, n)
@@ -748,8 +748,8 @@ func cosineUint16AVX2(a, b []uint16) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	ptrA := uintptr(unsafe.Pointer(&a[0]))
-	ptrB := uintptr(unsafe.Pointer(&b[0]))
+	ptrA := uintptr(unsafe.Pointer(&a[0])) // #nosec G103
+	ptrB := uintptr(unsafe.Pointer(&b[0])) // #nosec G103
 	n := len(a)
 	dot := dotUint16AVX2Kernel(ptrA, ptrB, n)
 	normA := dotUint16AVX2Kernel(ptrA, ptrA, n)
@@ -810,8 +810,8 @@ func cosineInt32AVX2(a, b []int32) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	ptrA := uintptr(unsafe.Pointer(&a[0]))
-	ptrB := uintptr(unsafe.Pointer(&b[0]))
+	ptrA := uintptr(unsafe.Pointer(&a[0])) // #nosec G103
+	ptrB := uintptr(unsafe.Pointer(&b[0])) // #nosec G103
 	n := len(a)
 	dot := dotInt32AVX2Kernel(ptrA, ptrB, n)
 	normA := dotInt32AVX2Kernel(ptrA, ptrA, n)
@@ -828,8 +828,8 @@ func cosineUint32AVX2(a, b []uint32) (float32, error) {
 	if len(a) == 0 {
 		return 1.0, nil
 	}
-	ptrA := uintptr(unsafe.Pointer(&a[0]))
-	ptrB := uintptr(unsafe.Pointer(&b[0]))
+	ptrA := uintptr(unsafe.Pointer(&a[0])) // #nosec G103
+	ptrB := uintptr(unsafe.Pointer(&b[0])) // #nosec G103
 	n := len(a)
 	dot := dotUint32AVX2Kernel(ptrA, ptrB, n)
 	normA := dotUint32AVX2Kernel(ptrA, ptrA, n)

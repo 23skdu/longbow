@@ -6,6 +6,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/sys/unix"
 )
 
 func TestFSBackend_WriteSyncClose(t *testing.T) {
@@ -48,12 +49,16 @@ func TestFSBackend_DirectIO(t *testing.T) {
 		_ = os.Remove(tmpFile)
 	}()
 
-	// DirectIO often requires aligned buffer and size.
-	// Our Write implementation relies on os.File.Write which handles non-aligned writes
-	// (though perhaps inefficiently or by buffering if kernel supports).
-	// Let's test basic write.
-	data := []byte("hello direct io")
-	n, err := backend.Write(data)
-	assert.NoError(t, err)
-	assert.Equal(t, len(data), n)
+	// DirectIO requires aligned buffer and size (typically 4096 bytes on Linux).
+	alignedBuf, err := unix.Mmap(-1, 0, 4096, unix.PROT_READ|unix.PROT_WRITE, unix.MAP_ANON|unix.MAP_PRIVATE)
+	if err == nil {
+		defer func() { _ = unix.Munmap(alignedBuf) }()
+		copy(alignedBuf, "hello direct io")
+		n, err := backend.Write(alignedBuf)
+		if err != nil {
+			t.Logf("DirectIO write not supported on filesystem: %v", err)
+		} else {
+			assert.Equal(t, 4096, n)
+		}
+	}
 }

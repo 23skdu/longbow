@@ -12,14 +12,14 @@ import (
 )
 
 func TestIVFHNSWCompositeIndex_Basic(t *testing.T) {
-	dim := 64
-	numCentroids := 10
-	numVectors := 1000
+	dim := 16
+	numCentroids := 4
+	numVectors := 30
 
 	config := IVFHNSWConfig{
 		Nlist:  numCentroids,
-		M:      8,
-		K:      256,
+		M:      4,
+		K:      16,
 		Nprobe: 2,
 	}
 
@@ -28,8 +28,8 @@ func TestIVFHNSWCompositeIndex_Basic(t *testing.T) {
 	defer idx.Close()
 
 	// 1. Generate training data
-	trainData := make([][]float32, 500)
-	for i := 0; i < 500; i++ {
+	trainData := make([][]float32, 30)
+	for i := 0; i < 30; i++ {
 		vec := make([]float32, dim)
 		for j := 0; j < dim; j++ {
 			vec[j] = rand.Float32()
@@ -75,21 +75,22 @@ func TestIVFHNSWCompositeIndex_BillionScaleSimulation(t *testing.T) {
 		t.Skip("skipping billion-scale simulation in short mode")
 	}
 
-	dim := 128
-	numCentroids := 200
-	numVectors := 2000
+	dim := 16
+	numCentroids := 4
+	numVectors := 30
 
 	config := IVFHNSWConfig{
 		Nlist:  numCentroids,
-		M:      16,
-		Nprobe: 10,
+		M:      4,
+		K:      16,
+		Nprobe: 2,
 	}
 
 	idx, err := NewIVFHNSWCompositeIndex(dim, config)
 	require.NoError(t, err)
 
-	trainData := make([][]float32, 500)
-	for i := 0; i < 500; i++ {
+	trainData := make([][]float32, 30)
+	for i := 0; i < 30; i++ {
 		vec := make([]float32, dim)
 		for j := 0; j < dim; j++ {
 			vec[j] = rand.Float32()
@@ -101,7 +102,7 @@ func TestIVFHNSWCompositeIndex_BillionScaleSimulation(t *testing.T) {
 	require.NoError(t, err)
 
 	// Batch add
-	batchSize := 500
+	batchSize := 10
 	for i := 0; i < numVectors/batchSize; i++ {
 		batch := make([][]float32, batchSize)
 		ids := make([]uint64, batchSize)

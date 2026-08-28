@@ -80,7 +80,7 @@ func TrainKMeansWithOptions(data []float32, n, dim, k int, opts KMeansOptions) (
 	centroids := make([]float32, k*dim)
 
 	// 1. Initialization: Randomly select k centroids from data
-	perm := rand.Perm(n)
+	perm := rand.Perm(n) // #nosec G404
 	for i := 0; i < k; i++ {
 		idx := perm[i]
 		copy(centroids[i*dim:(i+1)*dim], data[idx*dim:(idx+1)*dim])

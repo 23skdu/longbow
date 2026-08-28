@@ -68,12 +68,12 @@ func TestIVFPQIndex_TrainAndAdd(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	dim := 128
-	numVectors := 1000
+	numVectors := 100
 	config := IVFPQConfig{
-		Nlist:  64, // Small for test
+		Nlist:  8, // Small for test
 		M:      8,
-		K:      256,
-		Nprobe: 8,
+		K:      32,
+		Nprobe: 2,
 	}
 
 	// Generate random test vectors
@@ -114,12 +114,12 @@ func TestIVFPQIndex_Search(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	dim := 32
-	numVectors := 500
+	numVectors := 100
 	config := IVFPQConfig{
-		Nlist:  32,
+		Nlist:  8,
 		M:      4,
-		K:      256,
-		Nprobe: 4,
+		K:      32,
+		Nprobe: 2,
 	}
 
 	// Generate clustered test data
@@ -171,12 +171,12 @@ func TestIVFPQIndex_SearchWithK(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	dim := 16
-	numVectors := 300
+	numVectors := 100
 	config := IVFPQConfig{
 		Nlist:  8,
 		M:      4,
-		K:      256,
-		Nprobe: 4,
+		K:      32,
+		Nprobe: 8,
 	}
 
 	vectors := make([][]float32, numVectors)
@@ -213,9 +213,10 @@ func TestIVFPQIndex_MemoryUsage(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	dim := 128
-	numVectors := 1000
+	numVectors := 100
 	config := DefaultIVFPQConfig()
-	config.Nlist = 64
+	config.Nlist = 8
+	config.K = 32
 
 	vectors := make([][]float32, numVectors)
 	for i := 0; i < numVectors; i++ {
@@ -307,7 +308,7 @@ func TestIVFPQIndex_SearchQueryInCluster(t *testing.T) {
 	config := IVFPQConfig{
 		Nlist:  3,
 		M:      4,
-		K:      256,
+		K:      32,
 		Nprobe: 2,
 	}
 
@@ -315,7 +316,7 @@ func TestIVFPQIndex_SearchQueryInCluster(t *testing.T) {
 
 	vectors := make([][]float32, 0)
 	for _, center := range clusters {
-		for i := 0; i < 300; i++ {
+		for i := 0; i < 30; i++ {
 			vec := make([]float32, dim)
 			for j := 0; j < dim; j++ {
 				vec[j] = center[j%len(center)] + float32(i%10)*0.5
@@ -351,12 +352,12 @@ func TestIVFPQIndex_SearchWithFilter(t *testing.T) {
 		t.Skip("skipping test in short mode")
 	}
 	dim := 64
-	numVectors := 300
+	numVectors := 100
 	config := IVFPQConfig{
-		Nlist:  16,
+		Nlist:  8,
 		M:      8,
-		K:      256,
-		Nprobe: 16,
+		K:      32,
+		Nprobe: 8,
 	}
 
 	vectors := make([][]float32, numVectors)

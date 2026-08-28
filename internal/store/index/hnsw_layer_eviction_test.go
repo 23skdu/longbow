@@ -100,7 +100,9 @@ func TestGraphLayerEvictionManager(t *testing.T) {
 			Cap:    sz,
 		})
 		for k := range chunk {
-			require.Equal(t, uint32(0*1000+j*100+k), chunk[k], "Restored data should match")
+			if chunk[k] != uint32(0*1000+j*100+k) {
+				t.Fatalf("Restored data mismatch at j=%d, k=%d: expected %d, got %d", j, k, uint32(0*1000+j*100+k), chunk[k])
+			}
 		}
 	}
 

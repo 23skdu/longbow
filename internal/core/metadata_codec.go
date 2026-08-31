@@ -146,11 +146,20 @@ func DecodeMetadata(data []byte) (map[string]interface{}, error) {
 		return nil, err
 	}
 
+	// Sanity check: each field needs at least 7 bytes (2 keyLen + 1 typeID + 4 valLen).
+	if numFields > 0 && uint64(numFields)*7 > uint64(len(data)) {
+		return nil, fmt.Errorf("metadata corrupted: numFields %d exceeds data length %d", numFields, len(data))
+	}
+
 	res := make(map[string]interface{}, numFields)
 	for i := uint32(0); i < numFields; i++ {
 		var keyLen uint16
 		if err := binary.Read(reader, binary.LittleEndian, &keyLen); err != nil {
 			return nil, err
+		}
+
+		if int(keyLen) > reader.Len() {
+			return nil, fmt.Errorf("metadata corrupted: keyLen %d exceeds remaining data %d", keyLen, reader.Len())
 		}
 
 		keyBuf := make([]byte, keyLen)
@@ -167,6 +176,12 @@ func DecodeMetadata(data []byte) (map[string]interface{}, error) {
 		var valLen uint32
 		if err := binary.Read(reader, binary.LittleEndian, &valLen); err != nil {
 			return nil, err
+		}
+
+		// Prevent oversized allocations from corrupted data
+		remaining := reader.Len()
+		if remaining >= 0 && int64(valLen) > int64(remaining) {
+			return nil, fmt.Errorf("metadata corrupted: valLen %d exceeds remaining data %d", valLen, remaining)
 		}
 
 		switch typeID {

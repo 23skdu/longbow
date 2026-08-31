@@ -1356,7 +1356,11 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 
 		if l == 0 {
 			if atomic.LoadUint64(&g.Neighbors[l][cID]) == 0 {
-				initArenaSafe(&g.Uint32Arena, 1024*1024*64, g.Allocator)
+				neighborSlabSize := ChunkSize*MaxNeighbors*4 + 64
+				if neighborSlabSize < 1024*1024 {
+					neighborSlabSize = 1024 * 1024
+				}
+				initArenaSafe(&g.Uint32Arena, neighborSlabSize, g.Allocator)
 				ref, err := g.Uint32Arena.AllocSlice(ChunkSize * MaxNeighbors)
 				if err != nil {
 					return err
@@ -1366,7 +1370,11 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 		}
 
 		if atomic.LoadUint64(&g.Counts[l][cID]) == 0 {
-			initArenaSafe(&g.Int32Arena, 4*1024*1024, g.Allocator)
+			countSlabSize := ChunkSize*4 + 64
+			if countSlabSize < 1024*1024 {
+				countSlabSize = 1024 * 1024
+			}
+			initArenaSafe(&g.Int32Arena, countSlabSize, g.Allocator)
 			ref, err := g.Int32Arena.AllocSlice(ChunkSize)
 			if err != nil {
 				return err
@@ -1375,7 +1383,11 @@ func (g *GraphData) EnsureChunk(cID, cOff, dims int) error {
 		}
 
 		if atomic.LoadUint64(&g.Versions[l][cID]) == 0 {
-			initArenaSafe(&g.Uint32Arena, 16*1024*1024, g.Allocator)
+			versionSlabSize := ChunkSize*4 + 64
+			if versionSlabSize < 1024*1024 {
+				versionSlabSize = 1024 * 1024
+			}
+			initArenaSafe(&g.Uint32Arena, versionSlabSize, g.Allocator)
 			ref, err := g.Uint32Arena.AllocSlice(ChunkSize)
 			if err != nil {
 				return err
@@ -3096,7 +3108,8 @@ func (g *GraphData) PreAllocate(capacity int) error {
 	// Pre-allocate Float32 arena chunks
 	if !g.SharedVectorSpace && (g.Type == VectorTypeFloat32 || g.Type == VectorTypeUnknown) {
 		paddedDims := g.GetPaddedDimsForType(VectorTypeFloat32)
-		slabSize := 64 * 1024 * 1024
+		requiredSize := numChunks * ChunkSize * paddedDims * 4
+		slabSize := getSafeSlabSize(requiredSize)
 
 		initArenaSafe(&g.Float32Arena, slabSize, g.Allocator)
 
@@ -3454,7 +3467,10 @@ func NewGraphData(capacity, dim int, mmap bool, useDisk bool, fd int,
 
 	var f32Arena, u8Arena, f64Arena, i8Arena, c64Arena, c128Arena, i64Arena, i16Arena, u16Arena, i32Arena, f16Arena, u64Arena, u32Arena *memory.SlabArena
 	if dim > 0 && !sharedVectorSpace {
-		minSlabSize := 4 * 1024 * 1024 // 4MB minimum for all arenas to reduce GC overhead
+		minSlabSize := ChunkSize*dim*4 + 64
+		if minSlabSize < 256*1024 {
+			minSlabSize = 256 * 1024
+		}
 
 		if dataType == VectorTypeFloat32 || dataType == VectorTypeUnknown {
 			f32SlabSize := ChunkSize*dim*4 + 64

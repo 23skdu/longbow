@@ -67,3 +67,40 @@ func TestStackTraceCapture(t *testing.T) {
 	// Should have captured some stack frames
 	assert.Greater(t, len(err.Stack), 0)
 }
+
+func TestWrapErrorConvenienceFunctions(t *testing.T) {
+	cause := errors.New("underlying error")
+
+	wrapped := WrapStorageError(cause, "save", "failed to save")
+	assert.Equal(t, ErrorTypeStorage, wrapped.Type)
+	assert.Equal(t, cause, wrapped.Unwrap())
+
+	wrapped = WrapNetworkError(cause, "fetch", "failed to fetch")
+	assert.Equal(t, ErrorTypeNetwork, wrapped.Type)
+	assert.Equal(t, cause, wrapped.Unwrap())
+
+	wrapped = WrapComputationError(cause, "compute", "failed to compute")
+	assert.Equal(t, ErrorTypeComputation, wrapped.Type)
+	assert.Equal(t, cause, wrapped.Unwrap())
+
+	wrapped = WrapConfigurationError(cause, "load", "failed to load config")
+	assert.Equal(t, ErrorTypeConfiguration, wrapped.Type)
+	assert.Equal(t, cause, wrapped.Unwrap())
+
+	wrapped = WrapTimeoutError(cause, "process", "timed out")
+	assert.Equal(t, ErrorTypeTimeout, wrapped.Type)
+	assert.Equal(t, cause, wrapped.Unwrap())
+}
+
+func TestWithContextNilContext(t *testing.T) {
+	err := &StructuredError{
+		Type:      ErrorTypeValidation,
+		Operation: "op",
+		Message:   "msg",
+		Context:   nil,
+	}
+
+	err.WithContext("key", "value")
+
+	assert.Equal(t, "value", err.Context["key"])
+}

@@ -196,3 +196,51 @@ func TestRateLimiter_BurstExceededResourceExhausted(t *testing.T) {
 	assert.True(t, st.Code() == codes.ResourceExhausted || st.Code() == codes.DeadlineExceeded,
 		"expected ResourceExhausted or DeadlineExceeded, got %v", st.Code())
 }
+
+func TestRateLimiter_UnaryInterceptor_ContextCanceled(t *testing.T) {
+	l := NewRateLimiter(Config{RPS: 1, Burst: 1})
+	interceptor := l.UnaryInterceptor()
+
+	handler := func(ctx context.Context, req any) (any, error) {
+		return "ok", nil
+	}
+
+	// First call consumes the token
+	_, err := interceptor(context.Background(), nil, &grpc.UnaryServerInfo{}, handler)
+	assert.NoError(t, err)
+
+	// Second call with pre-canceled context
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	_, err = interceptor(ctx, nil, &grpc.UnaryServerInfo{}, handler)
+	assert.Error(t, err)
+	st, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.Canceled, st.Code())
+}
+
+func TestRateLimiter_StreamInterceptor_Throttled(t *testing.T) {
+	l := NewRateLimiter(Config{RPS: 1, Burst: 1})
+	interceptor := l.StreamInterceptor()
+
+	handler := func(srv any, ss grpc.ServerStream) error {
+		return nil
+	}
+
+	// First call consumes the token
+	ctx := context.Background()
+	mockStream := &mockServerStream{ctx: ctx}
+	_ = interceptor(nil, mockStream, &grpc.StreamServerInfo{}, handler)
+
+	// Second call immediately with 1ms timeout should get throttled
+	ctx2, cancel := context.WithTimeout(context.Background(), 1*time.Millisecond)
+	defer cancel()
+	mockStream2 := &mockServerStream{ctx: ctx2}
+
+	err := interceptor(nil, mockStream2, &grpc.StreamServerInfo{}, handler)
+	assert.Error(t, err)
+	st, ok := status.FromError(err)
+	assert.True(t, ok)
+	assert.Equal(t, codes.ResourceExhausted, st.Code())
+}

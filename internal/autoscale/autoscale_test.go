@@ -1,6 +1,7 @@
 package autoscale
 
 import (
+	"context"
 	"testing"
 	"time"
 
@@ -79,4 +80,80 @@ func TestAutoScalerScaling(t *testing.T) {
 	as.sample()
 
 	assert.Equal(t, as.config.MinIndexingWorkers, mock.indexing, "Should scale down indexing when search load is high")
+}
+
+func TestClusterHealthString(t *testing.T) {
+	assert.Equal(t, "HEALTHY", HealthHealthy.String())
+	assert.Equal(t, "DEGRADED", HealthDegraded.String())
+	assert.Equal(t, "CRITICAL", HealthCritical.String())
+	assert.Equal(t, "UNKNOWN", ClusterHealth(99).String())
+}
+
+func TestRollingWindowAverage(t *testing.T) {
+	rw := NewRollingWindow(100*time.Millisecond, 10)
+	rw.Add(100)
+	assert.Equal(t, 10.0, rw.Average())
+}
+
+func TestRollingWindowAdvanceFullReset(t *testing.T) {
+	rw := NewRollingWindow(10*time.Millisecond, 5)
+	rw.Add(42)
+	time.Sleep(60 * time.Millisecond)
+	rw.Add(7)
+	assert.Equal(t, int64(7), rw.Sum())
+}
+
+func TestAutoScalerReconcileCooldown(t *testing.T) {
+	as := NewAutoScaler(zerolog.Nop())
+	as.monitorInterval = 50 * time.Millisecond
+	as.searchWindow = NewRollingWindow(10*time.Millisecond, 100)
+	as.cooldown = 1 * time.Hour
+
+	mock := &MockReconciler{}
+	as.SetReconciler(mock)
+
+	as.RecordSearch(10 * time.Millisecond)
+	as.sample()
+	firstCall := mock.indexing
+
+	as.RecordSearch(10 * time.Millisecond)
+	as.sample()
+	secondCall := mock.indexing
+
+	assert.Equal(t, firstCall, secondCall, "Reconcile should be skipped during cooldown")
+}
+
+func TestAutoScalerGetLoadSnapshotDegraded(t *testing.T) {
+	as := NewAutoScaler(zerolog.Nop())
+	as.monitorInterval = 50 * time.Millisecond
+	as.searchWindow = NewRollingWindow(10*time.Millisecond, 100)
+
+	for i := 0; i < 6000; i++ {
+		as.RecordSearch(1 * time.Millisecond)
+	}
+	as.sample()
+
+	snapshot := as.GetLoadSnapshot()
+	assert.Equal(t, HealthDegraded, snapshot.Health)
+}
+
+func TestAutoScalerStart(t *testing.T) {
+	as := NewAutoScaler(zerolog.Nop())
+	as.monitorInterval = 10 * time.Millisecond
+
+	ctx, cancel := context.WithCancel(context.Background())
+	done := make(chan struct{})
+	go func() {
+		as.Start(ctx)
+		close(done)
+	}()
+
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+
+	select {
+	case <-done:
+	case <-time.After(2 * time.Second):
+		t.Fatal("Start did not return after context cancellation")
+	}
 }

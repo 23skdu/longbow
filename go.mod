@@ -1,24 +1,13 @@
 module github.com/23skdu/longbow
 
-go 1.26.3
-
-require (
-	github.com/apache/arrow-go/v18 v18.7.0
-	github.com/joho/godotenv v1.5.1
-	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/klauspost/cpuid/v2 v2.4.0
-	github.com/parquet-go/parquet-go v0.32.0
-	github.com/prometheus/client_golang v1.24.1
-	github.com/stretchr/testify v1.12.1
-	golang.org/x/sys v0.47.0
-	google.golang.org/grpc v1.83.2
-)
+go 1.27.0
 
 require (
 	cloud.google.com/go/storage v1.66.0
 	github.com/IBM/sarama v1.60.2
 	github.com/RoaringBitmap/roaring/v2 v2.25.0
 	github.com/apache/arrow-adbc/go/adbc v1.12.0
+	github.com/apache/arrow-go/v18 v18.7.0
 	github.com/apache/pulsar-client-go v0.21.0
 	github.com/aws/aws-sdk-go-v2 v1.45.1
 	github.com/aws/aws-sdk-go-v2/config v1.32.38
@@ -30,14 +19,20 @@ require (
 	github.com/gorilla/websocket v1.5.4-0.20250319132907-e064f32e3674
 	github.com/grandcat/zeroconf v1.0.0
 	github.com/iceber/iouring-go v0.0.0-20230403020409-002cfd2e2a90
+	github.com/joho/godotenv v1.5.1
+	github.com/kelseyhightower/envconfig v1.4.0
 	github.com/klauspost/compress v1.19.2
+	github.com/klauspost/cpuid/v2 v2.4.0
 	github.com/leanovate/gopter v0.2.11
 	github.com/mmcloughlin/avo v0.6.0
+	github.com/parquet-go/parquet-go v0.32.0
 	github.com/pierrec/lz4/v4 v4.1.29
+	github.com/prometheus/client_golang v1.24.1
 	github.com/prometheus/client_model v0.6.2
 	github.com/rs/zerolog v1.35.1
 	github.com/sbinet/npyio v0.9.0
 	github.com/shirou/gopsutil/v3 v3.24.5
+	github.com/stretchr/testify v1.12.1
 	github.com/tetratelabs/wazero v1.12.0
 	github.com/yalue/onnxruntime_go v1.35.0
 	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.70.0
@@ -48,9 +43,11 @@ require (
 	go.opentelemetry.io/otel/trace v1.46.0
 	golang.org/x/oauth2 v0.36.0
 	golang.org/x/sync v0.22.0
+	golang.org/x/sys v0.47.0
 	golang.org/x/time v0.15.0
 	gonum.org/v1/gonum v0.17.0
 	google.golang.org/api v0.294.0
+	google.golang.org/grpc v1.83.2
 	google.golang.org/protobuf v1.36.12
 )
 

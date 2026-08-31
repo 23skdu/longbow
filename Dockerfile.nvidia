@@ -24,8 +24,8 @@ RUN apt-get update && apt-get install -y \
     libibverbs-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Go 1.26.2
-ENV GO_VERSION=1.26.3
+# Install Go 1.27.0
+ENV GO_VERSION=1.27.0
 ENV PATH=/usr/local/go/bin:$PATH
 RUN wget https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz && \
     tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz && \

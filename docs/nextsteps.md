@@ -2,16 +2,16 @@
 
 | Severity | Item | File:Line | Impact |
 |---|---|---|---|
-| CRITICAL | `TriggerBackup` sends placeholder data | `internal/store/backup.go:270` | Backup exists but stores no real data |
-| CRITICAL | `HybridSearchWithBitmap` returns nil | `internal/store/hybrid_search.go:306-309` | Hybrid search mode is a no-op |
-| CRITICAL | WAL replay skips corrupted entries silently | `internal/store/wal_replay.go:223,302` | Data loss without warning |
-| CRITICAL | Storage continues after snapshot corruption | `internal/store/engine.go:262,482` | Silent corruption propagation |
-| HIGH | `checkAndMigrateToSharded` is empty | `internal/store/store.go:688-694` | Sharded index migration never runs |
-| HIGH | DiskANN ExportState/ImportState/AddByLocation/GetVectorID all nil/false | `internal/store/diskann.go:586-608` | Cannot persist or retrieve DiskANN state |
-| HIGH | OpenTelemetry exporter commented out | `cmd/longbow/main.go:943` | No observability in production |
-| HIGH | Tensor ops panic on non-float32 | `internal/tensor/ops.go:84` | Runtime crash for int16/float64/complex types |
+| CRITICAL | ~~`TriggerBackup` sends placeholder data~~ | ~~`internal/store/backup.go:270`~~ | ~~Backup exists but stores no real data~~ **COMPLETE** |
+| CRITICAL | ~~`HybridSearchWithBitmap` returns nil~~ | ~~`internal/store/hybrid_search.go:306-309`~~ | ~~Hybrid search mode is a no-op~~ **COMPLETE** |
+| CRITICAL | ~~WAL replay skips corrupted entries silently~~ | ~~`internal/store/wal_replay.go:223,302`~~ | ~~Data loss without warning~~ **COMPLETE** |
+| CRITICAL | ~~Storage continues after snapshot corruption~~ | ~~`internal/storage/engine.go:262,482`~~ | ~~Silent corruption propagation~~ **COMPLETE** |
+| HIGH | ~~`checkAndMigrateToSharded` is empty~~ | ~~`internal/store/store.go:688-694`~~ | ~~Sharded index migration never runs~~ **COMPLETE** |
+| HIGH | ~~DiskANN ExportState/ImportState/AddByLocation/GetVectorID all nil/false~~ | ~~`internal/store/diskann.go:586-608`~~ | ~~Cannot persist or retrieve DiskANN state~~ **COMPLETE** |
+| HIGH | ~~OpenTelemetry exporter commented out~~ | ~~`cmd/longbow/main.go:943`~~ | ~~No observability in production~~ **COMPLETE** |
+| HIGH | ~~Tensor ops panic on non-float32~~ | ~~`internal/tensor/ops.go:84`~~ | ~~Runtime crash for int16/float64/complex types~~ **COMPLETE** |
 | MEDIUM | Learned Index + Temporal Index initialized then discarded | `cmd/longbow/main.go:493,525` | Wasted memory, features appear supported but are not |
-| MEDIUM | ADBC driver is skeleton | `internal/store/adbc/` — 21 methods return StatusNotImplemented | Partial Arrow flight interface |
+| MEDIUM | ~~ADBC driver is skeleton~~ | ~~`internal/store/adbc/` — 21 methods return StatusNotImplemented~~ | ~~Partial Arrow flight interface~~ **COMPLETE** |
 
 ### Critical (data loss / silent failures)
 
@@ -231,6 +231,17 @@ The server-side startup is fully implemented. The backoff/port-randomization exi
 | Combined matrix JSON | Generated at runtime, NOT committed to repo | INCOMPLETE |
 
 The matrix generation code exists and works, but the final `result_matrix.json` artifact is not tracked in git.
+
+## ADBC Driver Wiring — COMPLETE
+
+| Component | Implementation | Status |
+|---|---|---|
+| `database.go` | Holds `*store.VectorStore` reference, lazy init via `initStore()` | COMPLETE |
+| `connection.go` | `GetInfo` (driver metadata), `GetObjects` (lists datasets), `GetTableSchema` (Arrow schema), `GetTableTypes` | COMPLETE |
+| `statement.go` | SQL routing: SHOW TABLES, DESCRIBE, SELECT; vector search via `SearchHybrid`; scan fallback | COMPLETE |
+| `record_reader.go` | `AdbcRecordReader` with ref-counted record iteration | COMPLETE |
+| `cmd/adbc/main.go` | C bridge: `AdbcStatementNew` calls `Connection.NewStatement()` | COMPLETE |
+| Tests | All 4 test files updated for VectorStore-backed implementation | COMPLETE |
 
 ---
 

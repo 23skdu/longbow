@@ -45,6 +45,9 @@ ENV CGO_CFLAGS="-I/usr/local/cuda/include"
 ENV CGO_CXXFLAGS="-I/usr/local/cuda/include"
 ENV CGO_LDFLAGS="-L/usr/local/cuda/lib64 -lcudart -lcublas -lstdc++"
 
+# Compile CUDA kernels into object file
+RUN nvcc -c internal/gpu/cuda/kernels.cu -o internal/gpu/cuda/kernels.o -arch=sm_70 -O2
+
 # Build longbow, longbow-cli, and bench-tool with GPU support
 RUN if [ "$ENABLE_IOURING" = "true" ]; then \
     go build -tags "gpu,iouring" -ldflags="-s -w" -o longbow ./cmd/longbow; \

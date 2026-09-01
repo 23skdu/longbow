@@ -1349,7 +1349,7 @@ int cuda_pq_encode(
     int numVectors,
     int m,
     int subDim
-) // matched to cuda_index.go preamble {
+) {
     size_t vecSize = (size_t)numVectors * m * subDim * sizeof(float);
     size_t cbSize = (size_t)m * 256 * subDim * sizeof(float);
     size_t codeSize = (size_t)numVectors * m * sizeof(unsigned char);

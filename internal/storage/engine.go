@@ -446,6 +446,7 @@ func (e *StorageEngine) LoadSnapshots(loader func(*SnapshotItem) error) error {
 	}
 
 	partials := make(map[string]*SnapshotItem)
+	var loadErrors []error
 
 	for _, entry := range entries {
 		log.Trace().Str("entry", entry.Name()).Msg("LoadSnapshots: Processing entry")
@@ -468,6 +469,7 @@ func (e *StorageEngine) LoadSnapshots(loader func(*SnapshotItem) error) error {
 
 		f, err := os.Open(filepath.Clean(fullPath))
 		if err != nil {
+			loadErrors = append(loadErrors, fmt.Errorf("snapshot file %q: %w", entry.Name(), err))
 			continue
 		}
 		info, _ := f.Stat()
@@ -480,11 +482,14 @@ func (e *StorageEngine) LoadSnapshots(loader func(*SnapshotItem) error) error {
 				item.Records = append(item.Records, rec)
 			} else if err != nil {
 				log.Error().Err(err).Str("name", name).Msg("LoadSnapshots: Failed to read parquet")
+				loadErrors = append(loadErrors, fmt.Errorf("snapshot %q: %w", name, err))
 			}
 		case name + ".graph.parquet":
 			rec, err := readGraphParquet(f, info.Size(), e.mem)
 			if err == nil && rec != nil {
 				item.GraphRecords = append(item.GraphRecords, rec)
+			} else if err != nil {
+				loadErrors = append(loadErrors, fmt.Errorf("snapshot graph %q: %w", name, err))
 			}
 		case name + ".pq":
 			data, err := os.ReadFile(filepath.Clean(fullPath))
@@ -506,6 +511,10 @@ func (e *StorageEngine) LoadSnapshots(loader func(*SnapshotItem) error) error {
 		if err := loader(item); err != nil {
 			return err
 		}
+	}
+
+	if len(loadErrors) > 0 {
+		log.Warn().Int("errors", len(loadErrors)).Msg("LoadSnapshots: some snapshot files failed to load")
 	}
 
 	return nil

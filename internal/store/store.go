@@ -685,12 +685,28 @@ func (vs *VectorStore) CleanupGPUIndexPool() int {
 	return vs.gpuIndexPool.Cleanup()
 }
 
-func (vs *VectorStore) checkAndMigrateToSharded(_ *Dataset) {
-	// Placeholder logic: check if dataset size exceeds threshold and migrate index to sharded
+func (vs *VectorStore) checkAndMigrateToSharded(ds *Dataset) {
 	if !vs.autoShardingConfig.Enabled {
 		return
 	}
-	// Migration logic would go here
+	if ds == nil {
+		return
+	}
+
+	threshold := vs.autoShardingConfig.ShardThreshold
+	if threshold <= 0 {
+		threshold = 10000
+	}
+
+	size := ds.IndexLen()
+
+	if size >= threshold {
+		if err := ds.MigrateToShardedIndex(vs.autoShardingConfig); err != nil {
+			vs.logger.Warn().Err(err).Str("dataset", ds.Name).Msg("Auto-sharding migration failed")
+		} else {
+			vs.logger.Info().Str("dataset", ds.Name).Int("size", size).Int("threshold", threshold).Msg("Migrated dataset to sharded index")
+		}
+	}
 }
 
 // WarmupStats holds statistics about the warmup operation, including duration and node count.

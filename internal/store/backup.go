@@ -1,12 +1,15 @@
 package store
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"sync"
 	"time"
+
+	"github.com/apache/arrow-go/v18/arrow/ipc"
 )
 
 // BackupConfig defines the configuration for dataset backups.
@@ -256,22 +259,46 @@ func (vs *VectorStore) SetBackupSchedule(interval time.Duration) {
 	vs.backupScheduleInterval = interval
 }
 
-// TriggerBackup manually initiates a backup for a dataset.
+// TriggerBackup manually initiates a backup for a dataset by serializing
+// all current records via Arrow IPC.
 func (vs *VectorStore) TriggerBackup(datasetName string) error {
 	if vs.backupManager == nil {
 		return errors.New("backup manager not configured")
 	}
 
-	_, ok := vs.getDataset(datasetName)
+	ds, ok := vs.getDataset(datasetName)
 	if !ok {
 		return errors.New("dataset not found")
 	}
 
-	data := []byte("placeholder")
-	_, err := vs.backupManager.CreateBackup(datasetName, data, "")
+	ds.dataMu.RLock()
+	records := ds.Records.Read()
+	schema := ds.Schema
+	ds.dataMu.RUnlock()
+
+	if len(records) == 0 {
+		_, err := vs.backupManager.CreateBackup(datasetName, nil, "")
+		return err
+	}
+
+	var buf bytes.Buffer
+	writer := ipc.NewWriter(&buf, ipc.WithSchema(schema))
+	if writer == nil {
+		return errors.New("failed to create IPC writer for backup")
+	}
+	for _, rec := range records {
+		if err := writer.Write(rec); err != nil {
+			_ = writer.Close()
+			return fmt.Errorf("failed to write record for backup: %w", err)
+		}
+	}
+	if err := writer.Close(); err != nil {
+		return fmt.Errorf("failed to close IPC writer for backup: %w", err)
+	}
+
+	_, err := vs.backupManager.CreateBackup(datasetName, buf.Bytes(), "")
 	return err
 }
-
 // RestoreFromBackup restores a dataset from a specific backup ID.
 func (vs *VectorStore) RestoreFromBackup(backupID, datasetName string) error {
 	if vs.backupManager == nil {

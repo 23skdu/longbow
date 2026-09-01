@@ -221,7 +221,12 @@ func (e *StorageEngine) walReaderRoutine(f *os.File, out chan<- rawWALBlock, fir
 		// Logic check
 		if nameLen > 1024*1024 || recLen > 1024*1024*1024 {
 			log.Warn().Uint32("nameLen", nameLen).Uint64("recLen", recLen).Msg("ReplayWAL: skipping record with excessive length")
-			break
+			// Skip this record's body bytes and continue to next entry
+			skipName := make([]byte, nameLen)
+			_, _ = io.ReadFull(f, skipName)
+			skipRec := make([]byte, recLen)
+			_, _ = io.ReadFull(f, skipRec)
+			continue
 		}
 
 		// Read Name
@@ -299,8 +304,8 @@ func (e *StorageEngine) walDecoderRoutine(in <-chan rawWALBlock, out chan<- Deco
 			}
 
 			if err != nil {
-				log.Warn().Err(err).Uint32("type", uint32(compType)).Msg("ReplayWAL: failed to decompress block")
-				continue
+				out <- DecodedWALEntry{Err: fmt.Errorf("wal decompression failed at seq %d type %d: %w", block.seq, compType, err)}
+				return
 			}
 
 			// Reader for the decompressed blob

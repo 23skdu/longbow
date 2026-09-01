@@ -1,10 +1,12 @@
 package index
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"encoding/json"
 	"fmt"
+	"io"
 	"math"
 	"os"
 	"path/filepath"
@@ -587,24 +589,217 @@ func (idx *DiskANNIndex) Close() error {
 	return nil
 }
 
-// ExportState returns the serialized state of the index.
+// ExportState returns the serialized state of the index as a byte slice.
 func (idx *DiskANNIndex) ExportState() ([]byte, error) {
-	return nil, nil
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	var buf bytes.Buffer
+	w := &buf
+
+	// Write magic number and version
+	if err := binary.Write(w, binary.LittleEndian, uint32(diskannMagic)); err != nil {
+		return nil, fmt.Errorf("failed to write magic: %w", err)
+	}
+	if err := binary.Write(w, binary.LittleEndian, uint32(diskannVersion)); err != nil {
+		return nil, fmt.Errorf("failed to write version: %w", err)
+	}
+
+	// Write dimension
+	if err := binary.Write(w, binary.LittleEndian, uint32(idx.dimension)); err != nil { // #nosec G115
+		return nil, fmt.Errorf("failed to write dimension: %w", err)
+	}
+
+	// Write config as JSON
+	configData, err := json.Marshal(idx.config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal config: %w", err)
+	}
+	if err := binary.Write(w, binary.LittleEndian, uint32(len(configData))); err != nil { // #nosec G115
+		return nil, fmt.Errorf("failed to write config length: %w", err)
+	}
+	if _, err := w.Write(configData); err != nil {
+		return nil, fmt.Errorf("failed to write config: %w", err)
+	}
+
+	// Write vector count
+	vecCount := uint32(len(idx.vectors)) // #nosec G115
+	if err := binary.Write(w, binary.LittleEndian, vecCount); err != nil {
+		return nil, fmt.Errorf("failed to write vector count: %w", err)
+	}
+
+	// Sort IDs for deterministic ordering
+	ids := make([]uint64, 0, len(idx.vectors))
+	for id := range idx.vectors {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool { return ids[i] < ids[j] })
+
+	for _, id := range ids {
+		vector := idx.vectors[id]
+		if err := binary.Write(w, binary.LittleEndian, id); err != nil {
+			return nil, fmt.Errorf("failed to write vector id: %w", err)
+		}
+		vecBytes := make([]byte, len(vector)*4)
+		for i, v := range vector {
+			binary.LittleEndian.PutUint32(vecBytes[i*4:], math.Float32bits(v))
+		}
+		if _, err := w.Write(vecBytes); err != nil {
+			return nil, fmt.Errorf("failed to write vector: %w", err)
+		}
+	}
+
+	// Write graph count
+	graphCount := uint32(len(idx.graph)) // #nosec G115
+	if err := binary.Write(w, binary.LittleEndian, graphCount); err != nil {
+		return nil, fmt.Errorf("failed to write graph count: %w", err)
+	}
+
+	for _, id := range ids {
+		neighbors := idx.graph[id]
+		if err := binary.Write(w, binary.LittleEndian, id); err != nil {
+			return nil, fmt.Errorf("failed to write graph id: %w", err)
+		}
+		if err := binary.Write(w, binary.LittleEndian, uint32(len(neighbors))); err != nil { // #nosec G115
+			return nil, fmt.Errorf("failed to write neighbor count: %w", err)
+		}
+		if len(neighbors) > 0 {
+			neighborBytes := make([]byte, len(neighbors)*8)
+			for i, n := range neighbors {
+				binary.LittleEndian.PutUint64(neighborBytes[i*8:], n)
+			}
+			if _, err := w.Write(neighborBytes); err != nil {
+				return nil, fmt.Errorf("failed to write neighbors: %w", err)
+			}
+		}
+	}
+
+	// Write built flag
+	builtFlag := uint8(0)
+	if idx.built {
+		builtFlag = 1
+	}
+	if err := binary.Write(w, binary.LittleEndian, builtFlag); err != nil {
+		return nil, fmt.Errorf("failed to write built flag: %w", err)
+	}
+
+	return buf.Bytes(), nil
 }
 
 // ImportState restores the index state from a byte slice.
 func (idx *DiskANNIndex) ImportState(data []byte) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	if len(data) == 0 {
+		return fmt.Errorf("empty state data")
+	}
+
+	r := bytes.NewReader(data)
+
+	var magic uint32
+	if err := binary.Read(r, binary.LittleEndian, &magic); err != nil {
+		return fmt.Errorf("failed to read magic: %w", err)
+	}
+	if magic != diskannMagic {
+		return fmt.Errorf("invalid magic number: got %x, expected %x", magic, diskannMagic)
+	}
+
+	var version uint32
+	if err := binary.Read(r, binary.LittleEndian, &version); err != nil {
+		return fmt.Errorf("failed to read version: %w", err)
+	}
+	if version != diskannVersion {
+		return fmt.Errorf("unsupported version: %d", version)
+	}
+
+	var dim uint32
+	if err := binary.Read(r, binary.LittleEndian, &dim); err != nil {
+		return fmt.Errorf("failed to read dimension: %w", err)
+	}
+	idx.dimension = int(dim)
+
+	// Read config
+	var configLen uint32
+	if err := binary.Read(r, binary.LittleEndian, &configLen); err != nil {
+		return fmt.Errorf("failed to read config length: %w", err)
+	}
+	configBytes := make([]byte, configLen)
+	if _, err := io.ReadFull(r, configBytes); err != nil {
+		return fmt.Errorf("failed to read config: %w", err)
+	}
+	cfg := &DiskANNConfig{}
+	if err := json.Unmarshal(configBytes, cfg); err != nil {
+		return fmt.Errorf("failed to unmarshal config: %w", err)
+	}
+	idx.config = cfg
+
+	// Read vectors
+	var vecCount uint32
+	if err := binary.Read(r, binary.LittleEndian, &vecCount); err != nil {
+		return fmt.Errorf("failed to read vector count: %w", err)
+	}
+	idx.vectors = make(map[uint64][]float32, vecCount)
+	for i := uint32(0); i < vecCount; i++ {
+		var id uint64
+		if err := binary.Read(r, binary.LittleEndian, &id); err != nil {
+			return fmt.Errorf("failed to read vector id: %w", err)
+		}
+		vecBytes := make([]byte, idx.dimension*4)
+		if _, err := io.ReadFull(r, vecBytes); err != nil {
+			return fmt.Errorf("failed to read vector: %w", err)
+		}
+		vec := make([]float32, idx.dimension)
+		for j := range vec {
+			vec[j] = math.Float32frombits(binary.LittleEndian.Uint32(vecBytes[j*4:]))
+		}
+		idx.vectors[id] = vec
+	}
+
+	// Read graph
+	var graphCount uint32
+	if err := binary.Read(r, binary.LittleEndian, &graphCount); err != nil {
+		return fmt.Errorf("failed to read graph count: %w", err)
+	}
+	idx.graph = make(map[uint64][]uint64, graphCount)
+	for i := uint32(0); i < graphCount; i++ {
+		var id uint64
+		if err := binary.Read(r, binary.LittleEndian, &id); err != nil {
+			return fmt.Errorf("failed to read graph id: %w", err)
+		}
+		var neighborCount uint32
+		if err := binary.Read(r, binary.LittleEndian, &neighborCount); err != nil {
+			return fmt.Errorf("failed to read neighbor count: %w", err)
+		}
+		neighbors := make([]uint64, neighborCount)
+		for j := range neighbors {
+			if err := binary.Read(r, binary.LittleEndian, &neighbors[j]); err != nil {
+				return fmt.Errorf("failed to read neighbor: %w", err)
+			}
+		}
+		idx.graph[id] = neighbors
+	}
+
+	// Read built flag
+	var builtFlag uint8
+	if err := binary.Read(r, binary.LittleEndian, &builtFlag); err != nil {
+		return fmt.Errorf("failed to read built flag: %w", err)
+	}
+	idx.built = builtFlag == 1
+
 	return nil
 }
 
 // AddByLocation is a legacy adapter for location-based vector insertion.
+// DiskANN does not support location-based insertion; use Add instead.
 func (idx *DiskANNIndex) AddByLocation(batchIdx, rowIdx int) error {
-	return nil
+	return fmt.Errorf("DiskANN does not support location-based insertion: use Add instead")
 }
 
 // GetVectorID resolves a storage location to its internal vector ID.
+// DiskANN uses uint64 vector IDs directly and does not maintain a
+// location-to-ID mapping; this always returns false.
 func (idx *DiskANNIndex) GetVectorID(loc Location) (uint64, bool) {
-	// Not supported for DiskANN adapter
 	return 0, false
 }
 

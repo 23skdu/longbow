@@ -40,6 +40,7 @@ import (
 	"github.com/kelseyhightower/envconfig"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -490,7 +491,7 @@ func run() error {
 				Msg("Learned index predictor initialized")
 		}
 	}
-	_ = learnedWithOllama // Reserved for future API exposure
+	_ = learnedWithOllama
 
 	// Initialize Temporal Index (Part 22)
 	var temporalIndex *store.TemporalIndex
@@ -522,7 +523,7 @@ func run() error {
 			Bool("aggregation_enabled", cfg.TemporalAggregationEnabled).
 			Msg("Temporal index initialized")
 	}
-	_ = temporalIndex // Reserved for future API exposure
+	_ = temporalIndex // Wired via vectorStore.SetTemporalIndex above
 
 	// Start background indexing
 	indexingWorkers := runtime.NumCPU() / 2
@@ -937,11 +938,22 @@ func initTracer() *sdktrace.TracerProvider {
 		semconv.ServiceNameKey.String("longbow"),
 	)
 
-	// Create TracerProvider
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithResource(res),
-		// sdktrace.WithBatcher(exporter), // Add exporter here
+	// Create OTLP gRPC exporter
+	exporter, err := otlptracegrpc.New(context.Background(),
+		otlptracegrpc.WithInsecure(),
 	)
+	if err != nil {
+		fmt.Printf("WARN: Failed to create OTLP trace exporter, tracing disabled: %v\n", err)
+	}
+
+	// Create TracerProvider
+	opts := []sdktrace.TracerProviderOption{
+		sdktrace.WithResource(res),
+	}
+	if exporter != nil {
+		opts = append(opts, sdktrace.WithBatcher(exporter))
+	}
+	tp := sdktrace.NewTracerProvider(opts...)
 
 	// Register globals
 	otel.SetTracerProvider(tp)

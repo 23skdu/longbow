@@ -60,18 +60,20 @@ func TensorContract(a, b *Tensor, sumLabels, outLabels []string) (*Tensor, error
 	}
 
 	out := New(Promote(a.Dtype(), b.Dtype()), outShape)
-	contractGeneric(a, b, out, aAxes, bAxes, aFree, bFree)
+	if err := contractGeneric(a, b, out, aAxes, bAxes, aFree, bFree); err != nil {
+		return nil, err
+	}
 	return out, nil
 }
 
-func contractGeneric(a, b, out *Tensor, aAxes, bAxes, aFree, bFree []int) {
+func contractGeneric(a, b, out *Tensor, aAxes, bAxes, aFree, bFree []int) error {
 	// Try SIMD-accelerated path for 2D matrix multiply
 	if len(aFree) == 1 && len(bFree) == 1 && len(aAxes) == 1 {
 		m := a.Shape()[aFree[0]]
 		n := b.Shape()[bFree[0]]
 		k := a.Shape()[aAxes[0]]
 		if contractSIMDMatMul(a, b, out, m, n, k) {
-			return
+			return nil
 		}
 	}
 	switch {
@@ -81,8 +83,9 @@ func contractGeneric(a, b, out *Tensor, aAxes, bAxes, aFree, bFree []int) {
 		outdata := out.Float32s()
 		contractFloat32(adata, a.Shape(), aFree, aAxes, bdata, b.Shape(), bFree, bAxes, outdata)
 	default:
-		panic(fmt.Sprintf("tensor: contraction not implemented for %s", a.Dtype()))
+		return fmt.Errorf("tensor: contraction not implemented for %s", a.Dtype())
 	}
+	return nil
 }
 
 func contractFloat32(a []float32, aShape Shape, aFree, aAxes []int,

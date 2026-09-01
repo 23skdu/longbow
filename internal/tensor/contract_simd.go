@@ -10,7 +10,7 @@ func init() {
 
 // contractGenericGo is the default pure-Go contraction fallback.
 func contractGenericGo(a, b, out *Tensor, aAxes, bAxes, aFree, bFree []int) {
-	contractGeneric(a, b, out, aAxes, bAxes, aFree, bFree)
+	_ = contractGeneric(a, b, out, aAxes, bAxes, aFree, bFree)
 }
 
 // contractSIMDMatMul is an optimized 2D matrix multiply (the common contraction case).

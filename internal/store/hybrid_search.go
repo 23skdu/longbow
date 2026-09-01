@@ -303,9 +303,81 @@ func ReciprocalRankFusion(dataset string, list1, list2 []SearchResult, rrfK, k i
 }
 
 // HybridSearchWithBitmap performs hybrid search using a pre-computed bitmap for filtering.
+// It combines dense vector search (filtered by the bitmap) with optional sparse keyword
+// search (BM25) when a text query is provided, fusing results via Reciprocal Rank Fusion.
 func (s *VectorStore) HybridSearchWithBitmap(ctx context.Context, req *HybridSearchRequest) ([]SearchResult, error) {
-	// Placeholder
-	return nil, nil
+	if req.Alpha < 0 {
+		req.Alpha = EstimateAlpha(req.QueryText)
+	}
+
+	ds, ok := s.getDataset(req.Dataset)
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "dataset %s not found", req.Dataset)
+	}
+
+	ds.dataMu.RLock()
+	index := ds.Index
+	bm25Arena := ds.BM25ArenaIndex
+	ds.dataMu.RUnlock()
+
+	var denseResults []SearchResult
+	var sparseResults []SearchResult
+	var wg sync.WaitGroup
+	var denseErr error
+
+	// Dense vector search filtered by bitmap
+	if req.Alpha > 0 && len(req.QueryVector) > 0 && index != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			var filterBitmap *types.Bitset
+			if req.Bitset != nil {
+				filterBitmap = req.Bitset
+			}
+			var err error
+			if filterBitmap != nil && filterBitmap.Count() > 0 {
+				denseResults, err = index.SearchVectorsWithBitmap(ctx, req.QueryVector, req.K*2, filterBitmap.AsRoaring(), SearchOptions{})
+			} else {
+				denseResults, err = index.SearchVectors(ctx, req.QueryVector, req.K*2, nil, SearchOptions{})
+			}
+			if err != nil {
+				denseErr = err
+			}
+		}()
+	}
+
+	// Sparse keyword search (BM25)
+	if req.Alpha < 1.0 && req.QueryText != "" && bm25Arena != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			sparseResults = searchBM25Arena(bm25Arena, req.QueryText, req.K*2, nil)
+		}()
+	}
+
+	wg.Wait()
+
+	if denseErr != nil {
+		return nil, denseErr
+	}
+
+	// Fusion via RRF
+	var finalResults []SearchResult
+	switch req.Alpha {
+	case 1.0:
+		finalResults = denseResults
+	case 0.0:
+		finalResults = sparseResults
+	default:
+		rrfK := 60
+		finalResults = ReciprocalRankFusion(req.Dataset, denseResults, sparseResults, rrfK, req.K, s.resultPool)
+	}
+
+	if len(finalResults) > req.K {
+		finalResults = finalResults[:req.K]
+	}
+
+	return finalResults, nil
 }
 
 // EstimateAlpha calculates a heuristic alpha value based on query length.

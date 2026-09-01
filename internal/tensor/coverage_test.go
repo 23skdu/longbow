@@ -246,9 +246,10 @@ func TestContractGenericNonFloat32(t *testing.T) {
 	b := New(DtypeFloat64, Shape{2})
 	a.SetLabels([]string{"i"})
 	b.SetLabels([]string{"i"})
-	assertPanic(t, func() {
-		TensorContract(a, b, []string{"i"}, nil)
-	})
+	_, err := TensorContract(a, b, []string{"i"}, nil)
+	if err == nil {
+		t.Error("expected error for non-float32 contraction")
+	}
 }
 
 func TestOptimizeNilGraph(t *testing.T) {

@@ -334,15 +334,9 @@ go run ./cmd/bench-tool/main.go \
 ### Task 2.3: Evaluate efSearch impact
 Compare recall@10 across efSearch values: 100, 200, 400, 600, 800, 1200 for TQ2.
 
-## Phase 3: Commit Result Matrix (30 min)
+## Phase 3: ~~Commit Result Matrix~~ — CANCELLED
 
-### Task 3.1: Generate and commit result_matrix.json
-```bash
-cd tests/system
-python3 generate_result_matrix.py ../../result/
-git add ../../result/result_matrix.json
-git commit -m "benchmark: add 50k-scale result matrix for 13 search modes"
-```
+Result JSON files must **never** be committed to git. They are build artifacts generated at runtime.
 
 ---
 

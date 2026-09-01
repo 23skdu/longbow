@@ -31,12 +31,14 @@ func BenchmarkHNSW_InitializationOverhead(b *testing.B) {
 	_ = h.InsertWithVector(0, vec, 0)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		// Just insert same ID repeatedly to hit the "already initialized" path
 		// or distinct IDs. Distinct is better for realism.
 		// Wrapping to avoid massive growth (we care about check overhead, not growth overhead)
 		id := uint32(i % 10000)
 		_ = h.InsertWithVector(id, vec, 0)
+		i++
 	}
 }
 

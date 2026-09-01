@@ -318,7 +318,7 @@ func BenchmarkAddToIndexHNSW(b *testing.B) {
 	// Dataset already set by NewTestHNSWIndex
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = ds.AddToIndex(0, 0)
 	}
 }
@@ -333,7 +333,7 @@ func BenchmarkAddToIndexSharded(b *testing.B) {
 	ds.Index.(*index.ShardedHNSW).SetDataset(ds)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = ds.AddToIndex(0, 0)
 	}
 }

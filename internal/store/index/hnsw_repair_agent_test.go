@@ -216,7 +216,7 @@ func BenchmarkRepairAgent_DetectOrphans(b *testing.B) {
 	agent := NewRepairAgent(idx, config)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = agent.detectOrphans()
 	}
 }
@@ -245,7 +245,7 @@ func BenchmarkRepairAgent_RepairCycle(b *testing.B) {
 	agent := NewRepairAgent(idx, config)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = agent.runRepairCycle()
 	}
 }

@@ -271,7 +271,7 @@ func BenchmarkFuseRRF(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		FuseRRF("test_dataset", dense, sparse, 60, 10)
 	}
 }
@@ -285,7 +285,7 @@ func BenchmarkFuseLinear(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		FuseLinear(dense, sparse, 0.5, 10)
 	}
 }

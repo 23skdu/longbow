@@ -47,7 +47,7 @@ func BenchmarkBatchDistanceCompute(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		BatchDistanceCompute(queries, candidates, results)
 	}
 }
@@ -68,13 +68,13 @@ func BenchmarkBatchVsSequential(b *testing.B) {
 	}
 
 	b.Run("Batch", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			BatchDistanceCompute(queries, candidates, results)
 		}
 	})
 
 	b.Run("Sequential", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			for j := 0; j < numPairs; j++ {
 				results[j] = distanceSIMD(queries[j], candidates[j])
 			}

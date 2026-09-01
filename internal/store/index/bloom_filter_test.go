@@ -205,8 +205,10 @@ func BenchmarkBloomFilter_Contains(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		_ = bf.Contains(fmt.Sprintf("term_%d", i%20000))
+		i++
 	}
 }
 
@@ -218,9 +220,11 @@ func BenchmarkShardedIndex_NegativeLookupWithBloom(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		// Search for non-existent terms - bloom filter should make this fast
 		_ = idx.Search(fmt.Sprintf("nonexistent_%d", i), 10)
+		i++
 	}
 }
 
@@ -232,7 +236,7 @@ func BenchmarkShardedIndex_PositiveLookup(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Search for existing term
 		_ = idx.Search("document", 10)
 	}

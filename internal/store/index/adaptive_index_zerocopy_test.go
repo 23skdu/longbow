@@ -322,7 +322,7 @@ func BenchmarkBruteForceIndex_Search(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		results, _ := idx.SearchVectors(context.Background(), query, 10, nil, types.SearchOptions{})
 		_ = results
 	}

@@ -383,8 +383,10 @@ func BenchmarkExtractVectorFromCol(b *testing.B) {
 	defer rec.Release()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		_, _ = extractVectorFromCol(rec, i%100)
+		i++
 	}
 }
 
@@ -397,7 +399,7 @@ func BenchmarkDatasetSearchDataset(b *testing.B) {
 	query := make([]float32, 128)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = ds.SearchDataset(context.Background(), query, 10)
 	}
 }

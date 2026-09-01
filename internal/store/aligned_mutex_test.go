@@ -275,10 +275,12 @@ func BenchmarkAlignedShardedMutex_Lock(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
-		key := uint64(i)
+	i := uint64(0)
+	for b.Loop() {
+		key := i
 		sm.Lock(key)
 		sm.Unlock(key)
+		i++
 	}
 }
 
@@ -291,10 +293,12 @@ func BenchmarkAlignedShardedMutex_RLock(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
-		key := uint64(i)
+	i := uint64(0)
+	for b.Loop() {
+		key := i
 		sm.RLock(key)
 		sm.RUnlock(key)
+		i++
 	}
 }
 

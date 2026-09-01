@@ -151,8 +151,10 @@ func BenchmarkExtractVectorZeroCopy(b *testing.B) {
 	defer rec.Release()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		_, _ = ExtractVectorFromArrow(rec, i%1000, 0)
+		i++
 	}
 }
 
@@ -186,8 +188,10 @@ func BenchmarkExtractVectorCopy(b *testing.B) {
 	defer rec.Release()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		_, _ = ExtractVectorFromArrow(rec, i%1000, 0)
+		i++
 	}
 }
 

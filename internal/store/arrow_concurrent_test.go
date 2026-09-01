@@ -176,7 +176,7 @@ func BenchmarkSearchLatency(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = index.Search(context.Background(), query, 10, nil)
 	}
 }
@@ -191,8 +191,10 @@ func BenchmarkInsertThroughput(b *testing.B) {
 
 	query := make([]float32, 384)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := uint32(0)
+	for b.Loop() {
 		level := lg.Generate()
-		_ = index.InsertWithVector(uint32(i), query, level)
+		_ = index.InsertWithVector(i, query, level)
+		i++
 	}
 }

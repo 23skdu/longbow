@@ -221,7 +221,7 @@ func BenchmarkDoExchange_Ingest(b *testing.B) {
 	b.SetBytes(int64(rows * dim * 4))
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if err := wr.Write(rec); err != nil {
 			b.Fatalf("Write failed: %v", err)
 		}

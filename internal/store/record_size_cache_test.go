@@ -231,7 +231,7 @@ func BenchmarkCalculateRecordSize(b *testing.B) {
 	defer rec.Release()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = calculateRecordSize(rec)
 	}
 }
@@ -271,7 +271,7 @@ func BenchmarkCachedRecordSize(b *testing.B) {
 	_ = CachedRecordSize(rec)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = CachedRecordSize(rec)
 	}
 }
@@ -306,7 +306,7 @@ func BenchmarkEstimateRecordSize(b *testing.B) {
 	defer rec.Release()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = EstimateRecordSize(rec)
 	}
 }

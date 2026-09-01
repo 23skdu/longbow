@@ -65,9 +65,9 @@ func BenchmarkADCBatchSIMD(b *testing.B) {
 	results := make([]float32, n)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if err := simd.ADCDistanceBatch(table, flatCodes, m, results); err != nil {
-			b.Fatalf("ADC batch failed (iteration %d): %v", i, err)
+			b.Fatalf("ADC batch failed: %v", err)
 		}
 	}
 }

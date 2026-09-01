@@ -263,10 +263,12 @@ func BenchmarkArrowSearchContextPool(b *testing.B) {
 	pool := NewArrowSearchContextPool()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := uint32(0)
+	for b.Loop() {
 		ctx := pool.Get()
 		// Simulate some work
-		ctx.candidates.Push(types.Candidate{ID: uint32(i), Dist: float32(i)})
+		ctx.candidates.Push(types.Candidate{ID: i, Dist: float32(i)})
 		pool.Put(ctx)
+		i++
 	}
 }

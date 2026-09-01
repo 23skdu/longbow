@@ -148,7 +148,7 @@ func TestFixedHeap_RandomOrder(t *testing.T) {
 func BenchmarkFixedHeap_Push(b *testing.B) {
 	h := NewFixedHeap(1000)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		h.Clear()
 		for j := 0; j < 1000; j++ {
 			h.Push(Candidate{ID: uint32(j), Dist: float32(j)})
@@ -162,7 +162,7 @@ func BenchmarkFixedHeap_Pop(b *testing.B) {
 		h.Push(Candidate{ID: uint32(j), Dist: float32(j)})
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		h.Pop()
 		if h.Len() == 0 {
 			// Refill

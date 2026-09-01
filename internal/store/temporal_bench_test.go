@@ -17,7 +17,7 @@ func BenchmarkTemporalTree_GetRange(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = tt.GetRange(startTs+10000, startTs+20000)
 	}
 }
@@ -32,7 +32,7 @@ func BenchmarkTemporalTree_GetLatest(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = tt.GetLatest(10000)
 	}
 }

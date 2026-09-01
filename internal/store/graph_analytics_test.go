@@ -189,7 +189,7 @@ func BenchmarkGraphAnalytics_PageRank_Prefetch(b *testing.B) {
 	config.MaxIterations = 5 // Fast enough for bench
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := ga.CalculatePageRank(context.Background(), config)
 		if err != nil {
 			b.Fatal(err)

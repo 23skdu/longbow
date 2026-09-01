@@ -266,7 +266,7 @@ func TestGRPCConfigString(t *testing.T) {
 func BenchmarkBuildServerOptions(b *testing.B) {
 	cfg := DefaultGRPCConfig()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = cfg.BuildServerOptions()
 	}
 }
@@ -274,7 +274,7 @@ func BenchmarkBuildServerOptions(b *testing.B) {
 func BenchmarkBuildClientOptions(b *testing.B) {
 	cfg := DefaultGRPCConfig()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = cfg.BuildClientOptions()
 	}
 }

@@ -399,7 +399,7 @@ func BenchmarkFuseCascade(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		FuseCascade(exactIDs, keyword, vector, 10)
 	}
 }
@@ -411,7 +411,7 @@ func BenchmarkDedupeAndSort(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		dedupeAndSort(input, 10)
 	}
 }

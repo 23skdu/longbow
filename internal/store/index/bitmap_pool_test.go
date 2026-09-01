@@ -393,7 +393,7 @@ func BenchmarkBitmapPoolGetPut(b *testing.B) {
 	defer pool.Close()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := pool.Get(4096)
 		pool.Put(buf)
 	}
@@ -402,7 +402,7 @@ func BenchmarkBitmapPoolGetPut(b *testing.B) {
 func BenchmarkBitmapPoolNoPool(b *testing.B) {
 	// Compare against direct allocation
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := make([]byte, 4096/8)
 		_ = buf
 	}

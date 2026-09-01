@@ -357,8 +357,10 @@ func BenchmarkBM25InvertedIndexAdd(b *testing.B) {
 	idx := NewBM25InvertedIndex(DefaultBM25Config())
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		idx.Add(VectorID(i), "benchmark test document with several words")
+		i++
 	}
 }
 
@@ -371,7 +373,7 @@ func BenchmarkBM25InvertedIndexSearchBM25(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		idx.SearchBM25("various terms", 10, nil, nil)
 	}
 }

@@ -404,8 +404,10 @@ func BenchmarkInvertedIndex_Add(b *testing.B) {
 	text := "this is a sample document with several words for indexing"
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		addToIndex(idx, VectorID(i), text)
+		i++
 	}
 }
 
@@ -417,7 +419,7 @@ func BenchmarkInvertedIndex_Search(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		idx.Get("error")
 	}
 }
@@ -431,7 +433,7 @@ func BenchmarkRRF(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ReciprocalRankFusion("test_dataset", dense, sparse, 60, 10, nil)
 	}
 }

@@ -114,7 +114,7 @@ func BenchmarkSearch_SmallIndex(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := index.Search(context.Background(), query, 10, nil)
 		if err != nil {
 			b.Fatalf("search failed: %v", err)
@@ -182,7 +182,7 @@ func BenchmarkSearch_LargeIndex(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := index.Search(context.Background(), query, 10, nil)
 		if err != nil {
 			b.Fatalf("search failed: %v", err)

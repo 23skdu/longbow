@@ -276,7 +276,7 @@ func BenchmarkFilterRecordOptimized_WithIndex(b *testing.B) {
 	ctx := context.Background()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result, _ := store.filterRecordOptimized(ctx, "benchmark", rec, 0, filters)
 		result.Release()
 	}
@@ -315,7 +315,7 @@ func BenchmarkFilterRecord_WithoutIndex(b *testing.B) {
 	ctx := context.Background()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result, _ := filterRecord(ctx, store.mem, rec, filters)
 		result.Release()
 	}

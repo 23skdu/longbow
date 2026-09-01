@@ -327,7 +327,7 @@ func BenchmarkFilterRecords_Sequential(b *testing.B) {
 	ctx := context.Background()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, rec := range recs {
 			filtered, err := filterRecord(ctx, store.mem, rec, filters)
 			if err == nil && filtered.NumRows() > 0 {
@@ -356,7 +356,7 @@ func BenchmarkFilterRecords_Parallel(b *testing.B) {
 	ctx := context.Background()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		resultCh := store.filterRecordsParallel(ctx, recs, filters)
 		for rec := range resultCh {
 			rec.Release()
@@ -383,7 +383,7 @@ func BenchmarkFilterRecords_Parallel_LargeDataset(b *testing.B) {
 	ctx := context.Background()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		resultCh := store.filterRecordsParallel(ctx, recs, filters)
 		for rec := range resultCh {
 			rec.Release()

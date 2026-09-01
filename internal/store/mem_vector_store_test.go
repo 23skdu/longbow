@@ -135,7 +135,7 @@ func BenchmarkArena_VectorStorage(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, ref := range vecs {
 			slice := arena.Get(ref)
 			_ = slice[0]
@@ -159,7 +159,7 @@ func BenchmarkArena_VectorStorageVsMap(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			for _, ref := range vecs {
 				slice := arena.Get(ref)
 				_ = slice[0]
@@ -178,7 +178,7 @@ func BenchmarkArena_VectorStorageVsMap(b *testing.B) {
 		b.ResetTimer()
 		b.ReportAllocs()
 
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			for j := 0; j < vecCount; j++ {
 				vec := vecs[j]
 				_ = vec[0]

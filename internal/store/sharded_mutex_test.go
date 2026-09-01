@@ -301,8 +301,10 @@ var shardResult int
 func BenchmarkShardFor(b *testing.B) {
 	sm := NewShardedRWMutexDefault()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		shardResult = sm.ShardFor(uint64(i))
+	i := uint64(0)
+	for b.Loop() {
+		shardResult = sm.ShardFor(i)
+		i++
 	}
 }
 

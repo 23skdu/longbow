@@ -346,7 +346,7 @@ func BenchmarkGeoIndex_SearchRadius(b *testing.B) {
 
 	center := GeoPoint{Lat: 40.5, Lon: -73.5}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = gi.SearchRadius(context.Background(), center, 100, 10)
 	}
 }

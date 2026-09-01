@@ -107,7 +107,9 @@ func (s *VectorStore) ListFlights(c *flight.Criteria, stream flight.FlightServic
 				},
 				AppMetadata: metadata,
 			}
-			if err := stream.Send(info); err != nil {
+			err := stream.Send(info)
+			s.putPooledMetadataBuffer(metadata)
+			if err != nil {
 				return err
 			}
 		}

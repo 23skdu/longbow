@@ -414,7 +414,7 @@ func BenchmarkRequestSemaphore_Disabled(b *testing.B) {
 	ctx := context.Background()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = sem.Acquire(ctx)
 		sem.Release()
 	}

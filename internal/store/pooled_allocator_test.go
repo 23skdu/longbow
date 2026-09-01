@@ -151,7 +151,7 @@ func BenchmarkPooledAllocator_Allocate(b *testing.B) {
 	p := NewPooledAllocator()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := p.Allocate(4096)
 		p.Free(buf)
 	}
@@ -169,7 +169,7 @@ func BenchmarkPooledAllocator_Allocate_Parallel(b *testing.B) {
 }
 
 func BenchmarkGoAllocator_Allocate(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := make([]byte, 4096)
 		_ = buf
 	}
@@ -180,7 +180,7 @@ func BenchmarkPooledAllocator_VectorSize(b *testing.B) {
 	vectorSize := 1536 * 4 // 1536 float32s = 6144 bytes (typical embedding)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := p.Allocate(vectorSize)
 		p.Free(buf)
 	}

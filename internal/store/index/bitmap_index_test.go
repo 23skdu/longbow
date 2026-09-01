@@ -127,7 +127,7 @@ func BenchmarkBitmapIndex_Filter(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Filter cat=A AND tag=X (should be indices divisible by 2.. wait,
 		// i%2==0 -> cat=A, tag=X. So all evens match both.
 		// i%2!=0 -> cat=B, tag=Y.

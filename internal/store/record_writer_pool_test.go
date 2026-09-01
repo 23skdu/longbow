@@ -283,7 +283,7 @@ func BenchmarkIPCBufferPool_GetPut(b *testing.B) {
 	pool := NewIPCBufferPool(DefaultRecordWriterPoolConfig())
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := pool.Get()
 		buf.WriteString("benchmark data")
 		pool.Put(buf)
@@ -292,7 +292,7 @@ func BenchmarkIPCBufferPool_GetPut(b *testing.B) {
 
 func BenchmarkIPCBufferPool_NoPool(b *testing.B) {
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := bytes.NewBuffer(make([]byte, 0, 64*1024))
 		buf.WriteString("benchmark data")
 		// No reuse - GC will collect
@@ -317,7 +317,7 @@ func BenchmarkPooledRecordWriter(b *testing.B) {
 	defer bldr.Release()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := pool.Get()
 		w := ipc.NewWriter(buf, ipc.WithSchema(schema))
 		_ = w.Write(rec)
@@ -343,7 +343,7 @@ func BenchmarkUnpooledRecordWriter(b *testing.B) {
 	defer bldr.Release()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := bytes.NewBuffer(make([]byte, 0, 64*1024))
 		w := ipc.NewWriter(buf, ipc.WithSchema(schema))
 		_ = w.Write(rec)

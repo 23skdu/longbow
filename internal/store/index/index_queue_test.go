@@ -313,7 +313,7 @@ func BenchmarkIndexJobQueue_Send(b *testing.B) {
 	job := IndexJob{DatasetName: "benchmark", BatchIdx: 0}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q.Send(job)
 	}
 }
@@ -331,7 +331,7 @@ func BenchmarkIndexJobQueue_BlockingSend(b *testing.B) {
 	job := IndexJob{DatasetName: "benchmark", BatchIdx: 0}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ch <- job
 	}
 	close(ch)
@@ -360,7 +360,7 @@ func BenchmarkIndexJobQueue_BatchSend(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		q.SendBatch(batch)
 	}
 }

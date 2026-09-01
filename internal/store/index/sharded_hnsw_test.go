@@ -488,7 +488,7 @@ func BenchmarkHNSW_ShardedSearch(b *testing.B) {
 
 	query := make([]float32, 128)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = sharded.SearchVectors(context.Background(), query, 10, nil, types.SearchOptions{})
 	}
 }

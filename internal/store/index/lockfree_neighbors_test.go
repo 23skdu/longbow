@@ -77,8 +77,8 @@ func TestLockFreeNeighbors_ReadWriteConcurrency(t *testing.T) {
 					return
 				default:
 					neighbors := list.Read()
-					// Verify neighbors are always valid (non-nil and reasonable length)
-					if neighbors != nil && len(neighbors) > 100 {
+					// Verify neighbors are always valid (reasonable length)
+					if len(neighbors) > 100 {
 						t.Errorf("Neighbor list should be reasonable size, got %d", len(neighbors))
 					}
 					runtime.Gosched()
@@ -232,7 +232,7 @@ func BenchmarkNeighborAccess_LockFree(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		n := list.Read()
 		_ = n[0] // Use the result
 	}
@@ -249,7 +249,7 @@ func BenchmarkNeighborAccess_Locked(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		mu.RLock()
 		n := neighbors
 		_ = n[0]

@@ -88,7 +88,7 @@ func BenchmarkDistanceSIMD(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = distanceSIMD(a, vec)
 	}
 }
@@ -104,13 +104,13 @@ func BenchmarkDistanceSIMD_vs_L2(b *testing.B) {
 	}
 
 	b.Run("SIMD", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_ = distanceSIMD(a, vec)
 		}
 	})
 
 	b.Run("L2", func(b *testing.B) {
-		for i := 0; i < b.N; i++ {
+		for b.Loop() {
 			_, _ = simd.EuclideanDistance(a, vec)
 		}
 	})

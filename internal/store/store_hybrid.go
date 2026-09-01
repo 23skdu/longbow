@@ -108,15 +108,14 @@ func (s *VectorStore) indexTextColumnsForHybridSearch(ds *Dataset, batch arrow.R
 			// Use baseRowID + row as the VectorID
 			docID := uint32(baseRowID + uint32(row)) //nolint:gosec
 
+			if ds.BM25Index != nil {
+				ds.BM25Index.Add(VectorID(docID), text)
+			}
 			if ds.BM25ArenaIndex != nil {
-				// Arena path: tokenize and index via arena-based storage
 				tokens := index.Tokenize(text)
 				if err := ds.BM25ArenaIndex.IndexDocument(docID, tokens); err != nil {
 					s.logger.Error().Err(err).Uint32("doc_id", docID).Msg("hybrid search: arena index failed")
 				}
-			} else if ds.BM25Index != nil {
-				// Legacy path
-				ds.BM25Index.Add(VectorID(docID), text)
 			}
 			metrics.BM25DocumentsIndexedTotal.Inc()
 		}

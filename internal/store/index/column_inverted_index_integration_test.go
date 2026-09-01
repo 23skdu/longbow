@@ -162,7 +162,7 @@ func BenchmarkColumnInvertedIndex_FilterWithIndex(b *testing.B) {
 	filter := query.Filter{Field: "category", Operator: "=", Value: "cat5"}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		filtered, _ := idx.FilterRecordWithIndex(context.Background(), 0, rec, &filter, mem)
 		filtered.Release()
 	}

@@ -255,7 +255,7 @@ func BenchmarkBM25Score(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		scorer.Score(5, 120, 50)
 	}
 }
@@ -267,7 +267,7 @@ func BenchmarkBM25IDF(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		scorer.IDF(50)
 	}
 }

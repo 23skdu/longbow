@@ -379,7 +379,7 @@ func BenchmarkEnsureTimestamp_Old(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result, _ := ensureTimestampOld(mem, rec)
 		result.Release()
 	}
@@ -409,7 +409,7 @@ func BenchmarkEnsureTimestamp_ZeroCopy(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result, _ := EnsureTimestampZeroCopy(mem, rec)
 		result.Release()
 	}
@@ -439,7 +439,7 @@ func BenchmarkEnsureTimestamp_Old_10K(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result, _ := ensureTimestampOld(mem, rec)
 		result.Release()
 	}
@@ -468,7 +468,7 @@ func BenchmarkEnsureTimestamp_ZeroCopy_10K(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result, _ := EnsureTimestampZeroCopy(mem, rec)
 		result.Release()
 	}

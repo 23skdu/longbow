@@ -423,7 +423,7 @@ func BenchmarkSQ8Encode(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = enc.Encode(vec)
 	}
 }
@@ -447,7 +447,7 @@ func BenchmarkSQ8EncodeInto(b *testing.B) {
 	dst := make([]uint8, 128)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		enc.EncodeInto(vec, dst)
 	}
 }
@@ -460,7 +460,7 @@ func BenchmarkSQ8DistanceFast(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = SQ8DistanceFast(q1, q2)
 	}
 }
@@ -484,7 +484,7 @@ func BenchmarkSQ8EuclideanDistance(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = SQ8EuclideanDistance(q1, q2, enc)
 	}
 }

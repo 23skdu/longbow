@@ -460,7 +460,7 @@ func BenchmarkIVFPQIndex_Search(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = idx.SearchInternal(context.Background(), query, 10, nil, types.SearchOptions{})
 	}
 }

@@ -134,7 +134,7 @@ func BenchmarkBuildServerOptionsWithCompressionEnabled(b *testing.B) {
 	cfg := DefaultGRPCConfig()
 	cfg.CompressionEnabled = true
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = cfg.BuildServerOptions()
 	}
 }
@@ -144,7 +144,7 @@ func BenchmarkBuildClientOptionsWithCompressionEnabled(b *testing.B) {
 	cfg := DefaultGRPCConfig()
 	cfg.CompressionEnabled = true
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = cfg.BuildClientOptions()
 	}
 }

@@ -371,7 +371,7 @@ func BenchmarkBufferCopy(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		dst := make([]byte, len(src))
 		copy(dst, src)
 		_ = dst
@@ -387,7 +387,7 @@ func BenchmarkBufferZeroCopy(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// Zero-copy: just reference
 		dst := src
 		_ = dst
@@ -400,7 +400,7 @@ func BenchmarkPooledAllocator(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := pAlloc.Allocate(4096)
 		pAlloc.Free(buf)
 	}
@@ -412,7 +412,7 @@ func BenchmarkGoAllocator(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := alloc.Allocate(4096)
 		alloc.Free(buf)
 	}
@@ -426,7 +426,7 @@ func BenchmarkDirectBufferReader_CreateArray(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		arrData := reader.CreateArrayDataFromBuffer(arrow.PrimitiveTypes.Int32, 1024, rawData, nil)
 		arrData.Release()
 	}

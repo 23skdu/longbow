@@ -369,7 +369,7 @@ func BenchmarkColumnInvertedIndex_Lookup(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = idx.Lookup("category", "cat5")
 	}
 }
@@ -405,7 +405,7 @@ func BenchmarkColumnInvertedIndex_HighCardinality_Lookup(b *testing.B) {
 	searchKey := "uuid-50-500" // Corresponds to middle batch, middle row
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = idx.Lookup("uuid", searchKey)
 	}
 }

@@ -203,7 +203,7 @@ func BenchmarkBM25Arena_Score(b *testing.B) {
 	query := []string{"common", "rare", "optimization"}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = idx.Score(query, docIDs)
 	}
 }

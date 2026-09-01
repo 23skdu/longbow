@@ -167,7 +167,7 @@ func BenchmarkSearchArenaAlloc(b *testing.B) {
 	arena := NewSearchArena(64 * 1024) // 64KB arena
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		arena.Reset()
 		// Simulate typical search allocations
 		_ = arena.Alloc(1024) // distances
@@ -178,7 +178,7 @@ func BenchmarkSearchArenaAlloc(b *testing.B) {
 
 // BenchmarkStandardAlloc benchmarks standard Go allocation for comparison
 func BenchmarkStandardAlloc(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = make([]byte, 1024) // distances
 		_ = make([]byte, 1024) // indices
 		_ = make([]byte, 256)  // candidates
@@ -190,7 +190,7 @@ func BenchmarkSearchArenaAllocFloat32Slice(b *testing.B) {
 	arena := NewSearchArena(64 * 1024)
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		arena.Reset()
 		_ = arena.AllocFloat32Slice(256) // typical vector size
 	}
@@ -198,7 +198,7 @@ func BenchmarkSearchArenaAllocFloat32Slice(b *testing.B) {
 
 // BenchmarkStandardFloat32Alloc benchmarks standard float32 slice allocation
 func BenchmarkStandardFloat32Alloc(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = make([]float32, 256)
 	}
 }

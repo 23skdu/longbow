@@ -101,7 +101,7 @@ func BenchmarkNewArrowHNSW(b *testing.B) {
 	config := types.DefaultArrowHNSWConfig()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = NewArrowHNSW(dataset, &config, nil)
 	}
 }

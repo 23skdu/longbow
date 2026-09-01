@@ -27,7 +27,7 @@ func BenchmarkMetrics_WithLabelValues(b *testing.B) {
 	// Simulate the "Hot Path" behaviour: calling WithLabelValues every time
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		benchVec.WithLabelValues("val1", "val2").Inc()
 	}
 }
@@ -38,7 +38,7 @@ func BenchmarkMetrics_CachedHandle(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		handle.Inc()
 	}
 }
@@ -49,7 +49,7 @@ func BenchmarkMetrics_Curried(b *testing.B) {
 
 	b.ReportAllocs()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		curried.WithLabelValues("val2").Inc()
 	}
 }

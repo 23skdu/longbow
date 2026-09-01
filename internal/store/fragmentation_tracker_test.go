@@ -210,7 +210,7 @@ func BenchmarkFragmentationTracker_RecordDeletion(b *testing.B) {
 	tracker.SetBatchSize(0, 1000000)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		tracker.RecordDeletion(0)
 	}
 }
@@ -228,7 +228,7 @@ func BenchmarkFragmentationTracker_GetFragmentedBatches(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = tracker.GetFragmentedBatches(0.20)
 	}
 }

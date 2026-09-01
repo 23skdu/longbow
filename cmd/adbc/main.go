@@ -409,7 +409,11 @@ func AdbcStatementNew(conn *C.struct_AdbcConnection, stmt *C.struct_AdbcStatemen
 		return C.int(adbcStatusInvalidArgument)
 	}
 	goConnPtr := (*adbc.Connection)(unsafe.Pointer(conn.private_data))
-	goStmt := adbc.NewStatement(goConnPtr)
+	goStmt, goErr := goConnPtr.NewStatement()
+	if goErr != nil {
+		setCError(err, fmt.Sprintf("AdbcStatementNew: %v", goErr))
+		return C.int(adbcStatusUnknown)
+	}
 	stmt.private_data = unsafe.Pointer(&goStmt)
 	return C.int(adbcStatusOK)
 }

@@ -1,6 +1,7 @@
 package adbc
 
 import (
+	"context"
 	"sync"
 	"testing"
 
@@ -250,20 +251,17 @@ func TestNewAdbcRecordReader_Empty(t *testing.T) {
 // contract of the production ExecuteQuery path. The returned reader
 // must have refCount=1 (the creator's initial ref, balanced by a
 // single consumer Release) — this matches the arrow/array
-// .simpleRecords convention. r.records is nil because the public
-// API has no way to populate it yet; see TestAdbcRecordReader_Iteration
-// for the in-package path that exercises a non-empty records slice.
-//
-// Note: ExecuteQuery's `if err != nil` defensive early-return branch
-// is intentionally not exercised by this test. NewAdbcRecordReader
-// only returns an error when records have a mismatched schema, and
-// ExecuteQuery always passes nil records with a hardcoded schema, so
-// the error path is unreachable from the public API. The 80% line
-// coverage on ExecuteQuery reflects this; the branch exists to make
-// ExecuteQuery robust against future changes to NewAdbcRecordReader.
+// .simpleRecords convention.
 func TestAdbcRecordReader_ExecuteQueryRefCount(t *testing.T) {
-	stmt := &Statement{}
-	reader, _, err := stmt.ExecuteQuery(nil)
+	driver := NewDriver()
+	db, _ := driver.NewDatabase(nil)
+	conn, _ := db.Open(context.Background())
+	stmt, _ := conn.NewStatement()
+	defer stmt.Close()
+	defer conn.Close()
+	defer db.Close()
+
+	reader, _, err := stmt.ExecuteQuery(context.Background())
 	if err != nil {
 		t.Fatalf("ExecuteQuery: %v", err)
 	}

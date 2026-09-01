@@ -35,11 +35,6 @@ func newTestDatabase(t *testing.T, opts map[string]string) adbc.Database {
 	return db
 }
 
-// concrete returns the *longbowadbc.Database. Some methods (GetOption,
-// SetOption, GetOptionBytes, etc.) are defined on the concrete type but
-// are not part of the adbc.Database interface in Apache Arrow ADBC Go 18.
-// We use the concrete type to exercise those methods and lock in the
-// StatusNotImplemented / StatusNotFound contract.
 func concrete(t *testing.T, db adbc.Database) *longbowadbc.Database {
 	t.Helper()
 	c, ok := db.(*longbowadbc.Database)

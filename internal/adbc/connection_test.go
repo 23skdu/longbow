@@ -49,10 +49,6 @@ func TestConnection_Close(t *testing.T) {
 
 func TestConnection_SetOption_NotImplemented(t *testing.T) {
 	conn := newTestConnection(t)
-	// SetOption is defined on the concrete *Connection type but is not
-	// part of the adbc.Connection interface in Apache Arrow ADBC Go 18
-	// (the interface only has SetOptions(ctx, opts)). We still cover it
-	// to lock in the StatusNotImplemented contract.
 	concrete, ok := conn.(*longbowadbc.Connection)
 	if !ok {
 		t.Fatalf("expected *longbowadbc.Connection, got %T", conn)
@@ -74,55 +70,49 @@ func TestConnection_NewStatement(t *testing.T) {
 	}
 }
 
-func TestConnection_GetInfo_NotImplemented(t *testing.T) {
+func TestConnection_GetInfo(t *testing.T) {
 	conn := newTestConnection(t)
 	reader, err := conn.GetInfo(context.Background(), nil)
-	assertNotImplemented(t, err, "GetInfo(nil)")
-	if reader != nil {
-		t.Errorf("GetInfo: expected nil reader on error, got %T", reader)
+	if err != nil {
+		t.Fatalf("GetInfo(nil): %v", err)
 	}
-
-	codes := []adbc.InfoCode{adbc.InfoCode(0), adbc.InfoCode(42)}
-	reader, err = conn.GetInfo(context.Background(), codes)
-	assertNotImplemented(t, err, "GetInfo(codes)")
-	if reader != nil {
-		t.Errorf("GetInfo: expected nil reader on error, got %T", reader)
+	if reader == nil {
+		t.Fatal("GetInfo(nil): got nil reader")
 	}
+	reader.Release()
 }
 
-func TestConnection_GetObjects_NotImplemented(t *testing.T) {
+func TestConnection_GetObjects(t *testing.T) {
 	conn := newTestConnection(t)
-	catalog := "cat"
-	dbSchema := "schema"
-	tableName := "t"
-	columnName := "c"
-	tableType := []string{"table"}
 	reader, err := conn.GetObjects(context.Background(),
-		adbc.ObjectDepthAll, &catalog, &dbSchema, &tableName, &columnName, tableType)
-	assertNotImplemented(t, err, "GetObjects")
-	if reader != nil {
-		t.Errorf("GetObjects: expected nil reader on error, got %T", reader)
+		adbc.ObjectDepthAll, nil, nil, nil, nil, nil)
+	if err != nil {
+		t.Fatalf("GetObjects: %v", err)
 	}
+	if reader == nil {
+		t.Fatal("GetObjects: got nil reader")
+	}
+	reader.Release()
 }
 
-func TestConnection_GetTableSchema_NotImplemented(t *testing.T) {
+func TestConnection_GetTableSchema_NotFound(t *testing.T) {
 	conn := newTestConnection(t)
-	catalog := "cat"
-	dbSchema := "schema"
-	schema, err := conn.GetTableSchema(context.Background(), &catalog, &dbSchema, "t")
-	assertNotImplemented(t, err, "GetTableSchema")
-	if schema != nil {
-		t.Errorf("GetTableSchema: expected nil schema on error, got %v", schema)
+	_, err := conn.GetTableSchema(context.Background(), nil, nil, "nonexistent_dataset")
+	if err == nil {
+		t.Fatal("GetTableSchema: expected error for nonexistent dataset")
 	}
 }
 
-func TestConnection_GetTableTypes_NotImplemented(t *testing.T) {
+func TestConnection_GetTableTypes(t *testing.T) {
 	conn := newTestConnection(t)
 	reader, err := conn.GetTableTypes(context.Background())
-	assertNotImplemented(t, err, "GetTableTypes")
-	if reader != nil {
-		t.Errorf("GetTableTypes: expected nil reader on error, got %T", reader)
+	if err != nil {
+		t.Fatalf("GetTableTypes: %v", err)
 	}
+	if reader == nil {
+		t.Fatal("GetTableTypes: got nil reader")
+	}
+	reader.Release()
 }
 
 func TestConnection_ReadPartition_NotImplemented(t *testing.T) {

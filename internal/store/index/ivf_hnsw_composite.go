@@ -47,6 +47,7 @@ type IVFHNSWCompositeIndex struct {
 	coarseHNSW PluggableVectorIndex // Coarse quantizer
 	opqEncoder *pq.OPQEncoder
 	clusters   []IVFCluster
+	provider   types.IndexDataProvider
 
 	nextID uint32
 	mu     sync.RWMutex
@@ -551,10 +552,36 @@ func (idx *IVFHNSWCompositeIndex) ApplyDelta(d *types.DeltaSync) error {
 	return nil
 }
 
-func (idx *IVFHNSWCompositeIndex) fetchVector(_ core.Location) ([]float32, error) {
-	// This would interact with the underlying dataset to get the vector data
-	// For now, we'll assume we can resolve it.
-	return nil, fmt.Errorf("vector fetching from location not fully implemented in composite index")
+func (idx *IVFHNSWCompositeIndex) SetDataProvider(p types.IndexDataProvider) {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	idx.provider = p
+}
+
+func (idx *IVFHNSWCompositeIndex) fetchVector(loc core.Location) ([]float32, error) {
+	idx.mu.RLock()
+	provider := idx.provider
+	idx.mu.RUnlock()
+
+	if provider == nil {
+		return nil, fmt.Errorf("vector fetching requires IndexDataProvider")
+	}
+
+	records := provider.GetRecords()
+	if loc.BatchIdx < 0 || loc.BatchIdx >= len(records) {
+		return nil, fmt.Errorf("batch index %d out of bounds (len=%d)", loc.BatchIdx, len(records))
+	}
+
+	batch := records[loc.BatchIdx]
+	if batch == nil {
+		return nil, fmt.Errorf("nil record batch at index %d", loc.BatchIdx)
+	}
+
+	if loc.RowIdx < 0 || int64(loc.RowIdx) >= batch.NumRows() {
+		return nil, fmt.Errorf("row index %d out of bounds (numRows=%d)", loc.RowIdx, batch.NumRows())
+	}
+
+	return ExtractVectorFromArrow(batch, loc.RowIdx, -1)
 }
 
 // GetPQEncoder returns the underlying PQ encoder used by the index.

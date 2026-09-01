@@ -21,8 +21,9 @@ type WAL interface {
 
 // StdWAL is a standard file-based WAL implementation (fallback).
 type StdWAL struct {
-	dir string
-	mu  sync.Mutex
+	dir  string
+	file *os.File
+	mu   sync.Mutex
 }
 
 func NewWAL(dir string) WAL {
@@ -35,18 +36,27 @@ func NewStdWAL(dir string) *StdWAL {
 	}
 }
 
+func (w *StdWAL) getFileLocked() (*os.File, error) {
+	if w.file != nil {
+		return w.file, nil
+	}
+	path := filepath.Join(w.dir, walFileName)
+	f, err := os.OpenFile(filepath.Clean(path), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304
+	if err != nil {
+		return nil, err
+	}
+	w.file = f
+	return w.file, nil
+}
+
 func (w *StdWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBatch) error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
 
-	path := filepath.Join(w.dir, walFileName)
-	f, err := os.OpenFile(filepath.Clean(path), os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0o600) // #nosec G304
+	f, err := w.getFileLocked()
 	if err != nil {
 		return err
 	}
-	defer func() {
-		_ = f.Close()
-	}()
 
 	// Use binary format from persistence.go for compatibility
 	var buf bytes.Buffer
@@ -88,18 +98,24 @@ func (w *StdWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBat
 func (w *StdWAL) Close() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
-	path := filepath.Join(w.dir, walFileName)
-	f, err := os.OpenFile(filepath.Clean(path), os.O_RDWR, 0o600) // #nosec G304
-	if err != nil {
-		return nil // file may not exist yet
+	if w.file != nil {
+		syncErr := w.file.Sync()
+		closeErr := w.file.Close()
+		w.file = nil
+		if syncErr != nil {
+			return syncErr
+		}
+		return closeErr
 	}
-	defer f.Close()
-	return f.Sync()
+	return nil
 }
 
 func (w *StdWAL) Sync() error {
 	w.mu.Lock()
 	defer w.mu.Unlock()
+	if w.file != nil {
+		return w.file.Sync()
+	}
 	path := filepath.Join(w.dir, walFileName)
 	f, err := os.OpenFile(filepath.Clean(path), os.O_RDWR, 0o600) // #nosec G304
 	if err != nil {

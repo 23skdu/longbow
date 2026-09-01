@@ -191,12 +191,6 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	var wg sync.WaitGroup
 	errCh := make(chan error, 1024)
 
-	// Hold the write lock for the entire snapshot to prevent concurrent writes
-	// from creating inconsistency between the captured data and the WAL.
-	// ApplyDelta holds RLockSnapshot, so it will block until the snapshot
-	// completes, ensuring no writes arrive between data capture and WAL truncation.
-	e.mu.Lock()
-
 	err := source.Iterate(func(item SnapshotItem) error {
 		if e.snapshotBackend != nil && item.OnSnapshot != nil {
 			if err := item.OnSnapshot(e.snapshotBackend); err != nil {
@@ -221,17 +215,19 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 	close(errCh)
 
 	if err != nil {
-		e.mu.Unlock()
 		return err
 	}
 
 	// Check for errors from parallel workers
 	for e2 := range errCh {
 		if e2 != nil {
-			e.mu.Unlock()
 			return e2
 		}
 	}
+
+	// Hold the write lock during atomic swap and WAL reset to prevent writes
+	// while switching snapshot directories and resetting sequence numbers.
+	e.mu.Lock()
 
 	// Atomic snapshot swap: rename old -> backup, new -> target, then cleanup backup.
 	// This ensures a snapshot directory always exists even if the process crashes mid-swap.

@@ -337,6 +337,13 @@ func (vs *VectorStore) getPooledMetadataBuffer(size int) []byte {
 	return buf
 }
 
+func (vs *VectorStore) putPooledMetadataBuffer(buf []byte) {
+	if cap(buf) >= loadbalancing.LoadHintsSize {
+		b := buf[:loadbalancing.LoadHintsSize]
+		vs.metadataPool.Put(&b)
+	}
+}
+
 // initNUMA initializes NUMA topology detection and enables NUMA-aware allocations
 // when multiple NUMA nodes are detected on the system.
 func (vs *VectorStore) initNUMA(logger zerolog.Logger) {
@@ -984,11 +991,26 @@ func (s *VectorStore) GetMesh() *mesh.Gossip {
 
 // RegisterCDCSubscriber registers a subscriber for CDC events
 func (s *VectorStore) RegisterCDCSubscriber(dataset string, sub chan arrow.RecordBatch) {
-	// If store has CDC enabled/instantiated
-	// But to avoid cyclical dependencies, we just log unimplemented
-	s.logger.Warn().Msg("RegisterCDCSubscriber unimplemented directly on store due to package refactor")
+	s.cdcMu.Lock()
+	defer s.cdcMu.Unlock()
+	if s.cdcSubscribers == nil {
+		s.cdcSubscribers = make(map[string][]chan arrow.RecordBatch)
+	}
+	s.cdcSubscribers[dataset] = append(s.cdcSubscribers[dataset], sub)
 }
 
 // UnregisterCDCSubscriber unregisters a subscriber for CDC events
 func (s *VectorStore) UnregisterCDCSubscriber(dataset string, sub chan arrow.RecordBatch) {
+	s.cdcMu.Lock()
+	defer s.cdcMu.Unlock()
+	if s.cdcSubscribers == nil {
+		return
+	}
+	subs := s.cdcSubscribers[dataset]
+	for i, ch := range subs {
+		if ch == sub {
+			s.cdcSubscribers[dataset] = append(subs[:i], subs[i+1:]...)
+			break
+		}
+	}
 }

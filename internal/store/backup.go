@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/ipc"
 )
 
@@ -53,6 +54,7 @@ type BackupManager struct {
 	mu            sync.RWMutex
 	config        BackupConfig
 	backups       map[string]BackupMetadata
+	data          map[string][]byte
 	backupDir     string
 	retentionDays int
 }
@@ -68,6 +70,7 @@ func NewBackupManager(config BackupConfig) (*BackupManager, error) {
 		backupDir:     config.BackupDir,
 		retentionDays: config.RetentionDays,
 		backups:       make(map[string]BackupMetadata),
+		data:          make(map[string][]byte),
 	}, nil
 }
 
@@ -98,6 +101,11 @@ func (bm *BackupManager) CreateBackup(datasetName string, data []byte, parentBac
 	}
 
 	bm.backups[backupID] = metadata
+	if len(data) > 0 {
+		cp := make([]byte, len(data))
+		copy(cp, data)
+		bm.data[backupID] = cp
+	}
 
 	return metadata, nil
 }
@@ -167,6 +175,7 @@ func (bm *BackupManager) DeleteBackup(backupID string) error {
 	}
 
 	delete(bm.backups, backupID)
+	delete(bm.data, backupID)
 	return nil
 }
 
@@ -202,6 +211,7 @@ func (bm *BackupManager) ApplyRetentionPolicy() (int, error) {
 
 	for _, id := range toRemove {
 		delete(bm.backups, id)
+		delete(bm.data, id)
 		removed++
 	}
 
@@ -221,11 +231,12 @@ type RestoreConfig struct {
 }
 
 // Restore performs a restoration of a dataset from backup.
-// It verifies the backup exists, optionally validates the checksum against
-// provided data, and returns the backup data for re-insertion by the caller.
+// It verifies the backup exists, validates the checksum against data,
+// and returns the backup data for re-insertion by the caller.
 func (bm *BackupManager) Restore(config RestoreConfig) ([]byte, error) {
 	bm.mu.RLock()
 	m, ok := bm.backups[config.BackupID]
+	data, hasData := bm.data[config.BackupID]
 	bm.mu.RUnlock()
 
 	if !ok {
@@ -234,6 +245,17 @@ func (bm *BackupManager) Restore(config RestoreConfig) ([]byte, error) {
 
 	if config.Timestamp.IsZero() {
 		config.Timestamp = m.Timestamp
+	}
+
+	if hasData && len(data) > 0 {
+		hasher := sha256.Sum256(data)
+		checksum := hex.EncodeToString(hasher[:])
+		if checksum != m.Checksum {
+			return nil, fmt.Errorf("backup checksum mismatch: expected %s, got %s", m.Checksum, checksum)
+		}
+		res := make([]byte, len(data))
+		copy(res, data)
+		return res, nil
 	}
 
 	return nil, nil
@@ -303,6 +325,7 @@ func (vs *VectorStore) TriggerBackup(datasetName string) error {
 	_, err := vs.backupManager.CreateBackup(datasetName, buf.Bytes(), "")
 	return err
 }
+
 // RestoreFromBackup restores a dataset from a specific backup ID.
 func (vs *VectorStore) RestoreFromBackup(backupID, datasetName string) error {
 	if vs.backupManager == nil {
@@ -313,6 +336,36 @@ func (vs *VectorStore) RestoreFromBackup(backupID, datasetName string) error {
 		BackupID:    backupID,
 		DatasetName: datasetName,
 	}
-	_, err := vs.backupManager.Restore(config)
-	return err
+	data, err := vs.backupManager.Restore(config)
+	if err != nil {
+		return err
+	}
+	if len(data) == 0 {
+		return nil
+	}
+
+	r, err := ipc.NewReader(bytes.NewReader(data), ipc.WithAllocator(vs.mem))
+	if err != nil {
+		return fmt.Errorf("failed to create IPC reader for restoration: %w", err)
+	}
+	defer r.Release()
+
+	ds, _ := vs.getOrCreateDataset(datasetName, func() *Dataset {
+		return NewDataset(datasetName, r.Schema())
+	})
+
+	for r.Next() {
+		rec := r.RecordBatch()
+		rec.Retain()
+		ds.dataMu.Lock()
+		currentRecords := ds.Records.Read()
+		newRecords := make([]arrow.RecordBatch, len(currentRecords)+1)
+		copy(newRecords, currentRecords)
+		newRecords[len(currentRecords)] = rec
+		ds.Records.UpdateInPlace(newRecords)
+		ds.SizeBytes.Add(estimateBatchSize(rec))
+		ds.dataMu.Unlock()
+	}
+
+	return r.Err()
 }

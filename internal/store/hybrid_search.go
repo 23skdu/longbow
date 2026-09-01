@@ -318,6 +318,7 @@ func (s *VectorStore) HybridSearchWithBitmap(ctx context.Context, req *HybridSea
 	ds.dataMu.RLock()
 	index := ds.Index
 	bm25Arena := ds.BM25ArenaIndex
+	bm25Legacy := ds.BM25Index
 	ds.dataMu.RUnlock()
 
 	var denseResults []SearchResult
@@ -347,12 +348,20 @@ func (s *VectorStore) HybridSearchWithBitmap(ctx context.Context, req *HybridSea
 	}
 
 	// Sparse keyword search (BM25)
-	if req.Alpha < 1.0 && req.QueryText != "" && bm25Arena != nil {
-		wg.Add(1)
-		go func() {
-			defer wg.Done()
-			sparseResults = searchBM25Arena(bm25Arena, req.QueryText, req.K*2, nil)
-		}()
+	if req.Alpha < 1.0 && req.QueryText != "" {
+		if bm25Arena != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sparseResults = searchBM25Arena(bm25Arena, req.QueryText, req.K*2, nil)
+			}()
+		} else if bm25Legacy != nil {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				sparseResults = bm25Legacy.SearchBM25(req.QueryText, req.K*2, nil, s.resultPool)
+			}()
+		}
 	}
 
 	wg.Wait()

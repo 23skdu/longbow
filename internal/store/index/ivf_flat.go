@@ -37,6 +37,7 @@ const (
 type IVFFlatIndex struct {
 	mu             sync.RWMutex
 	dimension      int
+	nextID         uint64
 	vectors        map[uint64][]float32
 	centroids      [][]float32    // K cluster centroids
 	assignments    map[uint64]int // Vector ID -> Cluster ID
@@ -98,11 +99,7 @@ func (ivf *IVFFlatIndex) NeedsBuild() bool {
 	return true // IVF requires training/clustering
 }
 
-// Add inserts a single vector into the index.
-func (ivf *IVFFlatIndex) Add(id uint64, vector []float32) error {
-	ivf.mu.Lock()
-	defer ivf.mu.Unlock()
-
+func (ivf *IVFFlatIndex) addLocked(id uint64, vector []float32) error {
 	if len(vector) != ivf.dimension {
 		return fmt.Errorf("vector dimension mismatch: expected %d, got %d", ivf.dimension, len(vector))
 	}
@@ -119,7 +116,17 @@ func (ivf *IVFFlatIndex) Add(id uint64, vector []float32) error {
 		}
 	}
 
+	if id >= ivf.nextID {
+		ivf.nextID = id + 1
+	}
 	return nil
+}
+
+// Add inserts a single vector into the index.
+func (ivf *IVFFlatIndex) Add(id uint64, vector []float32) error {
+	ivf.mu.Lock()
+	defer ivf.mu.Unlock()
+	return ivf.addLocked(id, vector)
 }
 
 // AddByRecord extracts a vector from an Arrow record and adds it to the index.
@@ -129,24 +136,25 @@ func (ivf *IVFFlatIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch,
 		return 0, err
 	}
 
-	// Use sequential ID or something unique.
-	// For IVFFlatIndex, we'll use a simple counter if nextID is added,
-	// or just use the current size as ID.
 	ivf.mu.Lock()
-	n := len(ivf.vectors)
-	if n >= math.MaxUint32 {
-		ivf.mu.Unlock()
+	defer ivf.mu.Unlock()
+
+	id := ivf.nextID
+	if id >= math.MaxUint32 {
 		return 0, fmt.Errorf("index full (max 4B vectors)")
 	}
-	id := uint32(n) // #nosec G115 -- bounds checked above
-	ivf.mu.Unlock()
 
-	if err := ivf.Add(uint64(id), vec); err != nil {
+	if err := ivf.addLocked(id, vec); err != nil {
 		return 0, err
 	}
 
-	ivf.SetLocation(id, Location{BatchIdx: batchIdx, RowIdx: rowIdx})
-	return id, nil
+	u32ID := uint32(id)
+	loc := Location{BatchIdx: batchIdx, RowIdx: rowIdx}
+	packed := lbtypes.PackLocation(loc)
+	ivf.locationToID[packed] = id
+	ivf.idToLocation[id] = packed
+
+	return u32ID, nil
 }
 
 // AddBatchRaw inserts a batch of vectors with explicit IDs.

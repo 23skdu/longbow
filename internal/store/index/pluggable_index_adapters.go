@@ -78,6 +78,24 @@ func (h *HNSWPluggableAdapter) AddBatchRaw(ids []uint64, vectors [][]float32) er
 // Search performs a nearest neighbor search.
 func (h *HNSWPluggableAdapter) Search(query []float32, k int) ([]IndexSearchResult, error) {
 	h.mu.RLock()
+	hnsw := h.hnsw
+	h.mu.RUnlock()
+
+	if hnsw != nil {
+		res, err := hnsw.SearchVectors(context.Background(), query, k, nil, nil)
+		if err == nil && len(res) > 0 {
+			out := make([]IndexSearchResult, len(res))
+			for i, r := range res {
+				out[i] = IndexSearchResult{
+					ID:       uint64(r.ID),
+					Distance: r.Distance,
+				}
+			}
+			return out, nil
+		}
+	}
+
+	h.mu.RLock()
 	defer h.mu.RUnlock()
 
 	if len(h.vectors) == 0 {
@@ -526,7 +544,12 @@ func (a *PluggableInternalAdapter) IsSharded() bool { return false }
 func (a *PluggableInternalAdapter) GetEntryPoint() uint32 { return 0 }
 
 // GetLocation retrieves the location of a vector.
-func (a *PluggableInternalAdapter) GetLocation(id uint32) (any, bool) { return nil, false }
+func (a *PluggableInternalAdapter) GetLocation(id uint32) (any, bool) {
+	if lm, ok := a.inner.(interface{ GetLocation(uint32) (any, bool) }); ok {
+		return lm.GetLocation(id)
+	}
+	return nil, false
+}
 
 // GetVectorID retrieves the vector ID for a given location.
 func (a *PluggableInternalAdapter) GetVectorID(loc any) (uint32, bool) {
@@ -576,28 +599,59 @@ func (a *PluggableInternalAdapter) GetPQEncoder() *pq.PQEncoder { return nil }
 
 // DeleteBatch deletes multiple vectors from the index.
 func (a *PluggableInternalAdapter) DeleteBatch(ctx context.Context, ids []uint32) error {
+	if db, ok := a.inner.(interface{ DeleteBatch(context.Context, []uint32) error }); ok {
+		return db.DeleteBatch(ctx, ids)
+	}
 	return nil
 }
 
 // ExportState exports the internal state of the index.
-func (a *PluggableInternalAdapter) ExportState() ([]byte, error) { return nil, nil }
+func (a *PluggableInternalAdapter) ExportState() ([]byte, error) {
+	if es, ok := a.inner.(interface{ ExportState() ([]byte, error) }); ok {
+		return es.ExportState()
+	}
+	return nil, nil
+}
 
 // ImportState imports the internal state of the index.
-func (a *PluggableInternalAdapter) ImportState(data []byte) error { return nil }
+func (a *PluggableInternalAdapter) ImportState(data []byte) error {
+	if is, ok := a.inner.(interface{ ImportState([]byte) error }); ok {
+		return is.ImportState(data)
+	}
+	return nil
+}
 
 // ExportGraph exports the graph structure of the index.
-func (a *PluggableInternalAdapter) ExportGraph(w io.Writer) error { return nil }
+func (a *PluggableInternalAdapter) ExportGraph(w io.Writer) error {
+	if eg, ok := a.inner.(interface{ ExportGraph(io.Writer) error }); ok {
+		return eg.ExportGraph(w)
+	}
+	return nil
+}
 
 // ImportGraph imports the graph structure of the index.
-func (a *PluggableInternalAdapter) ImportGraph(r io.Reader) error { return nil }
+func (a *PluggableInternalAdapter) ImportGraph(r io.Reader) error {
+	if ig, ok := a.inner.(interface{ ImportGraph(io.Reader) error }); ok {
+		return ig.ImportGraph(r)
+	}
+	return nil
+}
 
 // ExportDelta exports the delta since the given version.
 func (a *PluggableInternalAdapter) ExportDelta(v uint64) (*lbtypes.DeltaSync, error) {
+	if ed, ok := a.inner.(interface{ ExportDelta(uint64) (*lbtypes.DeltaSync, error) }); ok {
+		return ed.ExportDelta(v)
+	}
 	return nil, nil
 }
 
 // ApplyDelta applies the given delta sync to the index.
-func (a *PluggableInternalAdapter) ApplyDelta(d *lbtypes.DeltaSync) error { return nil }
+func (a *PluggableInternalAdapter) ApplyDelta(d *lbtypes.DeltaSync) error {
+	if ad, ok := a.inner.(interface{ ApplyDelta(*lbtypes.DeltaSync) error }); ok {
+		return ad.ApplyDelta(d)
+	}
+	return nil
+}
 
 // SetParallelSearchConfig sets the configuration for parallel search.
 func (a *PluggableInternalAdapter) SetParallelSearchConfig(c lbtypes.ParallelSearchConfig) {}

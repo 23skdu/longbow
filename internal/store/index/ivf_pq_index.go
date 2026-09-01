@@ -11,10 +11,12 @@ import (
 	"encoding/gob"
 	"io"
 
+	"github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store/types"
+	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/RoaringBitmap/roaring/v2"
 	"github.com/apache/arrow-go/v18/arrow"
 )
@@ -671,11 +673,59 @@ func (idx *IVFPQIndex) ImportGraph(r io.Reader) error {
 	return nil
 }
 
-// ExportDelta is a no-op for this index type.
-func (idx *IVFPQIndex) ExportDelta(fromV uint64) (*types.DeltaSync, error) { return nil, nil }
+// ExportDelta exports incremental location changes since fromV.
+func (idx *IVFPQIndex) ExportDelta(fromV uint64) (*types.DeltaSync, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
 
-// ApplyDelta is a no-op for this index type.
-func (idx *IVFPQIndex) ApplyDelta(delta *types.DeltaSync) error { return nil }
+	total := uint64(idx.nextID)
+	if fromV >= total {
+		return &types.DeltaSync{
+			FromVersion: fromV,
+			ToVersion:   total,
+		}, nil
+	}
+
+	var newLocs []core.Location
+	for id := uint32(fromV); id < idx.nextID; id++ { // #nosec G115
+		if packed, ok := idx.idToLocation[id]; ok {
+			newLocs = append(newLocs, lbtypes.UnpackLocation(packed))
+		}
+	}
+
+	return &types.DeltaSync{
+		FromVersion:  fromV,
+		ToVersion:    total,
+		StartIndex:   int(fromV), // #nosec G115
+		NewLocations: newLocs,
+	}, nil
+}
+
+// ApplyDelta applies incremental location changes to the index.
+func (idx *IVFPQIndex) ApplyDelta(delta *types.DeltaSync) error {
+	if delta == nil || len(delta.NewLocations) == 0 {
+		return nil
+	}
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
+	for i, loc := range delta.NewLocations {
+		id := uint32(delta.StartIndex + i) // #nosec G115
+		packed := lbtypes.PackLocation(loc)
+		if idx.locationToID == nil {
+			idx.locationToID = make(map[uint64]uint32)
+		}
+		if idx.idToLocation == nil {
+			idx.idToLocation = make(map[uint32]uint64)
+		}
+		idx.locationToID[packed] = id
+		idx.idToLocation[id] = packed
+		if id >= idx.nextID {
+			idx.nextID = id + 1
+		}
+	}
+	return nil
+}
 
 // SetParallelSearchConfig is a no-op for this index type.
 func (idx *IVFPQIndex) SetParallelSearchConfig(cfg types.ParallelSearchConfig) {}

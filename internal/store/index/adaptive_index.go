@@ -1,8 +1,10 @@
 package index
 
 import (
+	"bytes"
 	"container/heap"
 	"context"
+	"encoding/gob"
 	"errors"
 	"io"
 	"math"
@@ -333,10 +335,40 @@ func (b *BruteForceIndex) DeleteBatch(ctx context.Context, ids []uint32) error {
 }
 
 // ExportState serializes the current index state.
-func (b *BruteForceIndex) ExportState() ([]byte, error) { return nil, nil }
+func (b *BruteForceIndex) ExportState() ([]byte, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	state := types.SyncState{
+		Version:   uint64(len(b.locations)),
+		Dims:      int(b.GetDimension()),
+		Locations: b.locations,
+	}
+	var buf bytes.Buffer
+	enc := gob.NewEncoder(&buf)
+	if err := enc.Encode(state); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
+}
 
 // ImportState restores the index state from a byte array.
-func (b *BruteForceIndex) ImportState(data []byte) error { return nil }
+func (b *BruteForceIndex) ImportState(data []byte) error {
+	if len(data) == 0 {
+		return nil
+	}
+	var state types.SyncState
+	dec := gob.NewDecoder(bytes.NewReader(data))
+	if err := dec.Decode(&state); err != nil {
+		return err
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.locations = make([]Location, len(state.Locations))
+	copy(b.locations, state.Locations)
+	return nil
+}
 
 // ExportGraph serializes the index graph structure. No-op for BruteForceIndex.
 func (b *BruteForceIndex) ExportGraph(w io.Writer) error { return nil }
@@ -345,10 +377,49 @@ func (b *BruteForceIndex) ExportGraph(w io.Writer) error { return nil }
 func (b *BruteForceIndex) ImportGraph(r io.Reader) error { return nil }
 
 // ExportDelta returns the changes since a given version.
-func (b *BruteForceIndex) ExportDelta(fromVersion uint64) (*DeltaSync, error) { return nil, nil }
+func (b *BruteForceIndex) ExportDelta(fromVersion uint64) (*DeltaSync, error) {
+	b.mu.RLock()
+	defer b.mu.RUnlock()
+
+	total := uint64(len(b.locations))
+	if fromVersion >= total {
+		return &DeltaSync{
+			FromVersion: fromVersion,
+			ToVersion:   total,
+		}, nil
+	}
+
+	delta := &DeltaSync{
+		FromVersion:  fromVersion,
+		ToVersion:    total,
+		StartIndex:   int(fromVersion), // #nosec G115
+		NewLocations: make([]Location, total-fromVersion),
+	}
+	copy(delta.NewLocations, b.locations[fromVersion:total])
+	return delta, nil
+}
 
 // ApplyDelta applies incremental changes to the index.
-func (b *BruteForceIndex) ApplyDelta(delta *DeltaSync) error { return nil }
+func (b *BruteForceIndex) ApplyDelta(delta *DeltaSync) error {
+	if delta == nil || len(delta.NewLocations) == 0 {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if delta.StartIndex == len(b.locations) {
+		b.locations = append(b.locations, delta.NewLocations...)
+	} else if delta.StartIndex < len(b.locations) {
+		newLocs := b.locations[:delta.StartIndex]
+		b.locations = append(newLocs, delta.NewLocations...)
+	} else {
+		expanded := make([]Location, delta.StartIndex+len(delta.NewLocations))
+		copy(expanded, b.locations)
+		copy(expanded[delta.StartIndex:], delta.NewLocations)
+		b.locations = expanded
+	}
+	return nil
+}
 
 // SetParallelSearchConfig updates the configuration for parallel searches.
 func (b *BruteForceIndex) SetParallelSearchConfig(cfg ParallelSearchConfig) {}

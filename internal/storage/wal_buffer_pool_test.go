@@ -111,7 +111,7 @@ func BenchmarkWALBufferPool_NoPool(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := new(bytes.Buffer)
 		buf.Write(data)
 		_ = buf.Bytes()
@@ -127,7 +127,7 @@ func BenchmarkWALBufferPool_WithPool(b *testing.B) {
 	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf := pool.Get()
 		buf.Write(data)
 		_ = buf.Bytes()

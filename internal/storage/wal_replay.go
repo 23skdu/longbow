@@ -149,11 +149,12 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 	var maxSeq uint64
 	count := 0
 
+DispatchLoop:
 	for entry := range reorderedChan {
 		if entry.Err != nil {
 			applierErr.Store(entry.Err)
 			cancel()
-			break
+			break DispatchLoop
 		}
 
 		if errAny := applierErr.Load(); errAny != nil {
@@ -161,7 +162,7 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 				entry.Record.Release()
 			}
 			cancel()
-			break
+			break DispatchLoop
 		}
 
 		// Update maxSeq
@@ -179,7 +180,7 @@ func (e *StorageEngine) ReplayWAL(applier ApplierFunc) (uint64, error) {
 			if entry.Record != nil {
 				entry.Record.Release()
 			}
-			break
+			break DispatchLoop
 		case applierChans[workerIdx] <- entry:
 			count++
 		}

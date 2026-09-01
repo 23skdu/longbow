@@ -318,7 +318,7 @@ func BenchmarkAsyncFsyncerRequest(b *testing.B) {
 	defer func() { _ = syncer.Stop() }()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		syncer.AddDirtyBytes(100)
 		syncer.RequestFsyncIfNeeded()
 	}

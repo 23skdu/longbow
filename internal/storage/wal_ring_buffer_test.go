@@ -153,7 +153,7 @@ func BenchmarkWALRingBuffer_Push(b *testing.B) {
 	entry := WALEntry{Name: "benchmark", Seq: 1}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if !rb.Push(entry) {
 			// Drain when full
 			drained := make([]WALEntry, 0, 1024)
@@ -169,12 +169,14 @@ func BenchmarkWALRingBuffer_PushDrain(b *testing.B) {
 	drained := make([]WALEntry, 0, 128)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		rb.Push(entry)
 		if i%100 == 0 {
 			drained = drained[:0]
 			rb.Drain(&drained)
 		}
+		i++
 	}
 }
 
@@ -185,7 +187,7 @@ func BenchmarkMutexSlice_Baseline(b *testing.B) {
 	entry := WALEntry{Name: "benchmark", Seq: 1}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		mu.Lock()
 		batch = append(batch, entry)
 		if len(batch) >= 100 {
@@ -207,7 +209,7 @@ func BenchmarkChannel_Baseline(b *testing.B) {
 	}()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ch <- entry
 	}
 	close(ch)

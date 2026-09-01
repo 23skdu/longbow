@@ -209,7 +209,7 @@ func BenchmarkArrowIOUringBackendWrite(b *testing.B) {
 	b.ResetTimer()
 	b.SetBytes(int64(len(data)))
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := backend.Write(data)
 		if err != nil {
 			b.Fatal(err)
@@ -267,7 +267,7 @@ func BenchmarkArrowIOUringBackendSync(b *testing.B) {
 
 	b.ResetTimer()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		err := backend.Sync()
 		if err != nil {
 			b.Fatal(err)
@@ -295,7 +295,7 @@ func BenchmarkFSBackendWrite(b *testing.B) {
 	b.ResetTimer()
 	b.SetBytes(int64(len(data)))
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := backend.Write(data)
 		if err != nil {
 			b.Fatal(err)

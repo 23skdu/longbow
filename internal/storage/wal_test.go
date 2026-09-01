@@ -27,13 +27,15 @@ func BenchmarkWAL_Write(b *testing.B) {
 	defer rec.Release()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		name := fmt.Sprintf("dataset_%d", i)
 		ts := time.Now().UnixNano()
 		err := wal.Write(name, uint64(i+1), ts, rec)
 		if err != nil {
 			b.Fatalf("Write failed: %v", err)
 		}
+		i++
 	}
 }
 
@@ -51,7 +53,8 @@ func BenchmarkWAL_Write_Sync(b *testing.B) {
 	defer rec.Release()
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	i := 0
+	for b.Loop() {
 		name := fmt.Sprintf("dataset_%d", i)
 		ts := time.Now().UnixNano()
 		err := wal.Write(name, uint64(i+1), ts, rec)
@@ -61,5 +64,6 @@ func BenchmarkWAL_Write_Sync(b *testing.B) {
 		if err := wal.Sync(); err != nil {
 			b.Fatalf("Sync failed: %v", err)
 		}
+		i++
 	}
 }

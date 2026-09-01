@@ -141,7 +141,7 @@ func BenchmarkEncodeUint32_Reflect(b *testing.B) {
 	val := uint32(12345)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf.Reset()
 		_ = binary.Write(buf, binary.LittleEndian, val)
 	}
@@ -153,7 +153,7 @@ func BenchmarkEncodeUint32_Manual(b *testing.B) {
 	val := uint32(12345)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		binary.LittleEndian.PutUint32(buf, val)
 	}
 }
@@ -164,7 +164,7 @@ func BenchmarkEncodeUint64_Reflect(b *testing.B) {
 	val := uint64(1234567890)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf.Reset()
 		_ = binary.Write(buf, binary.LittleEndian, val)
 	}
@@ -176,7 +176,7 @@ func BenchmarkEncodeUint64_Manual(b *testing.B) {
 	val := uint64(1234567890)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		binary.LittleEndian.PutUint64(buf, val)
 	}
 }
@@ -189,7 +189,7 @@ func BenchmarkEncodeWALHeader_Reflect(b *testing.B) {
 	recLen := uint64(1024)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		buf.Reset()
 		_ = binary.Write(buf, binary.LittleEndian, crc)
 		_ = binary.Write(buf, binary.LittleEndian, nameLen)
@@ -205,7 +205,7 @@ func BenchmarkEncodeWALHeader_Manual(b *testing.B) {
 	recLen := uint64(1024)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		binary.LittleEndian.PutUint32(headerBuf[0:4], crc)
 		binary.LittleEndian.PutUint32(headerBuf[4:8], nameLen)
 		binary.LittleEndian.PutUint64(headerBuf[8:16], recLen)
@@ -220,7 +220,7 @@ func BenchmarkEncodeWALEntryHeader(b *testing.B) {
 
 	var buf [32]byte
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		encodeWALEntryHeader(buf[:], crc, 0, 0, nameLen, recLen)
 	}
 }

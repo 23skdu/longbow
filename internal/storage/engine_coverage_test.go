@@ -218,9 +218,9 @@ func TestStorageEngine_NoBatcher(t *testing.T) {
 	engine, _ := NewStorageEngine(StorageConfig{DataPath: tempDir}, mem)
 	defer engine.Close()
 
-	// Write without InitWAL (wal and walBatcher are nil)
+	// Write without InitWAL (wal and walBatcher are nil) — should error
 	err = engine.WriteToWAL("test", nil, 1, 1)
-	assert.NoError(t, err) // Should be no-op or handled gracefully
+	assert.Error(t, err) // WAL not initialized is now an error (previously silent data loss)
 
 	err = engine.SyncWAL()
 	assert.NoError(t, err)

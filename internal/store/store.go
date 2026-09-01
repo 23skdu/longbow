@@ -329,9 +329,12 @@ func (vs *VectorStore) getPooledMetadataBuffer(size int) []byte {
 		return make([]byte, size)
 	}
 	bufPtr := vs.metadataPool.Get().(*[]byte)
-	// Note: In a production gRPC server, we would need a way to return this to the pool.
-	// For now, we provide the pooled buffer to reduce allocation pressure.
-	return *bufPtr
+	buf := *bufPtr
+	// Zero the buffer for clean reuse
+	for i := range buf {
+		buf[i] = 0
+	}
+	return buf
 }
 
 // initNUMA initializes NUMA topology detection and enables NUMA-aware allocations

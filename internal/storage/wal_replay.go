@@ -332,39 +332,43 @@ func (e *StorageEngine) walDecoderRoutine(in <-chan rawWALBlock, out chan<- Deco
 
 				// IPC Decode
 				r, err := ipc.NewReader(bytes.NewReader(inRecBytes), ipc.WithAllocator(e.mem))
-				if err == nil {
-					if r.Next() {
-						rec := r.RecordBatch()
-						rec.Retain()
-
-						out <- DecodedWALEntry{
-							Name:   string(inNameBytes),
-							Record: rec,
-							Seq:    inSeq,
-							Ts:     inTs,
-						}
-					}
-					r.Release()
+				if err != nil {
+					log.Warn().Err(err).Uint64("seq", inSeq).Msg("ReplayWAL: IPC decode failed for compressed inner record")
+					continue
 				}
-			}
-
-		} else {
-			// Handle Uncompressed Record
-			r, err := ipc.NewReader(bytes.NewReader(block.recBytes), ipc.WithAllocator(e.mem))
-			if err == nil {
 				if r.Next() {
 					rec := r.RecordBatch()
 					rec.Retain()
 
 					out <- DecodedWALEntry{
-						Name:   block.name,
+						Name:   string(inNameBytes),
 						Record: rec,
-						Seq:    block.seq,
-						Ts:     block.ts,
+						Seq:    inSeq,
+						Ts:     inTs,
 					}
 				}
 				r.Release()
 			}
+
+		} else {
+			// Handle Uncompressed Record
+			r, err := ipc.NewReader(bytes.NewReader(block.recBytes), ipc.WithAllocator(e.mem))
+			if err != nil {
+				log.Warn().Err(err).Uint64("seq", block.seq).Msg("ReplayWAL: IPC decode failed for uncompressed record")
+				continue
+			}
+			if r.Next() {
+				rec := r.RecordBatch()
+				rec.Retain()
+
+				out <- DecodedWALEntry{
+					Name:   block.name,
+					Record: rec,
+					Seq:    block.seq,
+					Ts:     block.ts,
+				}
+			}
+			r.Release()
 		}
 	}
 }
@@ -375,6 +379,7 @@ func (e *StorageEngine) reorderBufferRoutine(in chan DecodedWALEntry, out chan D
 
 	// Map to hold out-of-order entries
 	buffer := make(map[uint64]DecodedWALEntry)
+	const maxBufferSize = 10000
 
 	// Wait for the first sequence number
 	nextSeq, ok := <-firstSeqChan
@@ -398,6 +403,14 @@ func (e *StorageEngine) reorderBufferRoutine(in chan DecodedWALEntry, out chan D
 			return
 		}
 
+		// Drop entries with seq < nextSeq (duplicates from reordered stream)
+		if entry.Seq < nextSeq {
+			if entry.Record != nil {
+				entry.Record.Release()
+			}
+			continue
+		}
+
 		// If this is the expected next sequence, output it
 		if entry.Seq == nextSeq {
 			out <- entry
@@ -413,15 +426,34 @@ func (e *StorageEngine) reorderBufferRoutine(in chan DecodedWALEntry, out chan D
 					break
 				}
 			}
-		} else if entry.Seq > nextSeq {
-			// Store out-of-order entry in buffer
-			buffer[entry.Seq] = entry
 		} else {
-			// This shouldn't happen (seq < nextSeq), but handle it
-			log.Warn().
-				Uint64("seq", entry.Seq).
-				Uint64("nextSeq", nextSeq).
-				Msg("ReplayWAL: Received entry with seq < nextSeq, dropping")
+			// Store out-of-order entry in buffer
+			// Enforce bounds to prevent OOM on corrupted WAL
+			if len(buffer) >= maxBufferSize {
+				// Evict oldest entries up to the gap
+				for seq := nextSeq; seq < entry.Seq; seq++ {
+					if _, exists := buffer[seq]; exists {
+						delete(buffer, seq)
+						// Skip missing sequences
+						for nextSeq < seq {
+							nextSeq++
+						}
+						break
+					}
+				}
+				// If still full, drop the entry
+				if len(buffer) >= maxBufferSize {
+					if entry.Record != nil {
+						entry.Record.Release()
+					}
+					log.Warn().
+						Uint64("seq", entry.Seq).
+						Int("buffer_size", len(buffer)).
+						Msg("ReplayWAL: reorder buffer full, dropping entry")
+					continue
+				}
+			}
+			buffer[entry.Seq] = entry
 		}
 	}
 
@@ -432,8 +464,7 @@ func (e *StorageEngine) reorderBufferRoutine(in chan DecodedWALEntry, out chan D
 			out <- entry
 			nextSeq++
 		} else {
-			// We're missing entries, this shouldn't happen
-			// But we need to skip to next available
+			// We're missing entries — skip to next available
 			foundNext := false
 			for seq := range buffer {
 				if seq > nextSeq {

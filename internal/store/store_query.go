@@ -155,7 +155,21 @@ func (s *VectorStore) GetFlightInfo(ctx context.Context, desc *flight.FlightDesc
 
 // GetSchema returns the Arrow schema for a specific dataset.
 func (s *VectorStore) GetSchema(ctx context.Context, desc *flight.FlightDescriptor) (*flight.SchemaResult, error) {
-	return nil, nil
+	if len(desc.Path) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "empty path")
+	}
+	name := desc.Path[0]
+	ds, ok := s.getDataset(name)
+	if !ok {
+		return nil, status.Errorf(codes.NotFound, "dataset %s not found", name)
+	}
+	ds.dataMu.RLock()
+	defer ds.dataMu.RUnlock()
+	if ds.Schema == nil {
+		return nil, status.Errorf(codes.Internal, "dataset %s has no schema", name)
+	}
+	b := flight.SerializeSchema(ds.Schema, memory.DefaultAllocator)
+	return &flight.SchemaResult{Schema: b}, nil
 }
 
 // DoGet handles data retrieval and vector search queries via Arrow Tickets.

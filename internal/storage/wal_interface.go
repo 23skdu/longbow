@@ -86,12 +86,27 @@ func (w *StdWAL) Write(name string, seq uint64, ts int64, record arrow.RecordBat
 }
 
 func (w *StdWAL) Close() error {
-	return nil
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	path := filepath.Join(w.dir, walFileName)
+	f, err := os.OpenFile(filepath.Clean(path), os.O_RDWR, 0o600) // #nosec G304
+	if err != nil {
+		return nil // file may not exist yet
+	}
+	defer f.Close()
+	return f.Sync()
 }
 
 func (w *StdWAL) Sync() error {
-	// In StdWAL, we open/close/sync per write for safety (though inefficient)
-	return nil
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	path := filepath.Join(w.dir, walFileName)
+	f, err := os.OpenFile(filepath.Clean(path), os.O_RDWR, 0o600) // #nosec G304
+	if err != nil {
+		return nil // file may not exist yet
+	}
+	defer f.Close()
+	return f.Sync()
 }
 
 // WALWriter interface is used by the VectorStore to abstract WAL implementation.

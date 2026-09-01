@@ -138,7 +138,7 @@ func (ivf *IVFFlatIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch,
 		ivf.mu.Unlock()
 		return 0, fmt.Errorf("index full (max 4B vectors)")
 	}
-	id := uint32(n)
+	id := uint32(n) // #nosec G115 -- bounds checked above
 	ivf.mu.Unlock()
 
 	if err := ivf.Add(uint64(id), vec); err != nil {
@@ -505,6 +505,13 @@ func (ivf *IVFFlatIndex) Load(path string) error {
 
 // Close releases resources held by the index.
 func (ivf *IVFFlatIndex) Close() error {
+	ivf.mu.Lock()
+	defer ivf.mu.Unlock()
+	ivf.vectors = nil
+	ivf.centroids = nil
+	ivf.assignments = nil
+	ivf.clusterVectors = nil
+	ivf.clusterData = nil
 	return nil
 }
 

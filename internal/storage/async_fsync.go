@@ -266,9 +266,12 @@ func (a *AsyncFsyncer) doFsync() {
 		return
 	}
 
+	// Capture bytes before sync, then subtract after to avoid losing
+	// bytes written concurrently with the sync.
+	before := a.dirtyBytes.Load()
 	err := f.Sync()
 	if err == nil {
-		a.dirtyBytes.Store(0)
+		a.dirtyBytes.Add(-before)
 		a.completedFsyncs.Add(1)
 	} else {
 		a.failedFsyncs.Add(1)

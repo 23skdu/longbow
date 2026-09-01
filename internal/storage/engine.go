@@ -3,6 +3,7 @@ package storage
 import (
 	"bufio"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -110,7 +111,7 @@ func (e *StorageEngine) WriteToWAL(name string, rec arrow.RecordBatch, seq uint6
 		return e.walBatcher.Write(rec, name, seq, ts)
 	}
 	if e.wal == nil {
-		return nil
+		return fmt.Errorf("storage: WAL not initialized")
 	}
 	return e.wal.Write(name, seq, ts, rec)
 }
@@ -232,14 +233,28 @@ func (e *StorageEngine) Snapshot(source SnapshotSource) error {
 		}
 	}
 
-	if err := os.RemoveAll(snapshotDir); err != nil {
-		log.Warn().Err(err).Msg("Snapshot: failed to remove old snapshot dir")
+	// Atomic snapshot swap: rename old -> backup, new -> target, then cleanup backup.
+	// This ensures a snapshot directory always exists even if the process crashes mid-swap.
+	backupDir := snapshotDir + "_bak"
+	_ = os.RemoveAll(backupDir) // best-effort cleanup of stale backup
+
+	if _, err := os.Stat(snapshotDir); err == nil {
+		// Old snapshot exists — move it out of the way atomically
+		if err := os.Rename(snapshotDir, backupDir); err != nil {
+			e.mu.Unlock()
+			return fmt.Errorf("failed to rename old snapshot dir: %w", err)
+		}
 	}
 
 	if err := os.Rename(tempDir, snapshotDir); err != nil {
+		// Try to recover by renaming backup back
+		_ = os.Rename(backupDir, snapshotDir)
 		e.mu.Unlock()
-		return fmt.Errorf("failed to rename snapshot dir: %w", err)
+		return fmt.Errorf("failed to rename new snapshot dir: %w", err)
 	}
+
+	// Cleanup old snapshot after successful swap
+	_ = os.RemoveAll(backupDir)
 
 	// Truncate WAL and Restart Batcher
 	hadBatcher := e.walBatcher != nil
@@ -335,6 +350,10 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 				return fmt.Errorf("failed to flush record parquet buffer: %w", err)
 			}
 		}
+		if err := f.Sync(); err != nil {
+			_ = f.Close()
+			return fmt.Errorf("failed to fsync record parquet: %w", err)
+		}
 		if err := f.Close(); err != nil {
 			log.Error().Err(err).Msg("failed to close parquet file after write")
 			return fmt.Errorf("failed to close parquet file: %w", err)
@@ -374,6 +393,10 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 				_ = f.Close()
 				return fmt.Errorf("failed to flush graph parquet buffer: %w", err)
 			}
+		}
+		if err := f.Sync(); err != nil {
+			_ = f.Close()
+			return fmt.Errorf("failed to fsync graph parquet: %w", err)
 		}
 		if err := f.Close(); err != nil {
 			return fmt.Errorf("failed to close graph parquet file: %w", err)
@@ -421,6 +444,11 @@ func (e *StorageEngine) writeSnapshotItem(item *SnapshotItem, tempDir string) er
 				_ = f.Close()
 				return fmt.Errorf("failed to flush index config buffer: %w", err)
 			}
+		}
+
+		if err := f.Sync(); err != nil {
+			_ = f.Close()
+			return fmt.Errorf("failed to fsync index config: %w", err)
 		}
 
 		if err := f.Close(); err != nil {
@@ -493,12 +521,16 @@ func (e *StorageEngine) LoadSnapshots(loader func(*SnapshotItem) error) error {
 			}
 		case name + ".pq":
 			data, err := os.ReadFile(filepath.Clean(fullPath))
-			if err == nil {
+			if err != nil {
+				loadErrors = append(loadErrors, fmt.Errorf("snapshot pq codebook %q: %w", name, err))
+			} else {
 				item.PQCodebook = data
 			}
 		case name + ".config":
 			data, err := os.ReadFile(filepath.Clean(fullPath))
-			if err == nil {
+			if err != nil {
+				loadErrors = append(loadErrors, fmt.Errorf("snapshot index config %q: %w", name, err))
+			} else {
 				item.IndexConfig = data
 			}
 		}
@@ -509,12 +541,12 @@ func (e *StorageEngine) LoadSnapshots(loader func(*SnapshotItem) error) error {
 
 	for _, item := range partials {
 		if err := loader(item); err != nil {
-			return err
+			loadErrors = append(loadErrors, fmt.Errorf("loader failed for %q: %w", item.Name, err))
 		}
 	}
 
 	if len(loadErrors) > 0 {
-		log.Warn().Int("errors", len(loadErrors)).Msg("LoadSnapshots: some snapshot files failed to load")
+		return fmt.Errorf("snapshot load completed with %d error(s): %w", len(loadErrors), errors.Join(loadErrors...))
 	}
 
 	return nil

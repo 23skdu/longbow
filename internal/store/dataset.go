@@ -339,10 +339,15 @@ func (d *Dataset) GetSchema() *arrow.Schema {
 	return d.Schema
 }
 
-// GetTombstones returns the tombstones for the dataset
-// GetTombstones returns the tombstones for the dataset.
+// GetTombstones returns a copy of the tombstones for the dataset.
 func (d *Dataset) GetTombstones() map[int]*types.Bitset {
-	return d.Tombstones
+	d.dataMu.RLock()
+	defer d.dataMu.RUnlock()
+	cp := make(map[int]*types.Bitset, len(d.Tombstones))
+	for k, v := range d.Tombstones {
+		cp[k] = v
+	}
+	return cp
 }
 
 // GetPQEncoder returns the PQ encoder for the dataset

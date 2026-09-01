@@ -356,8 +356,18 @@ func (h *ArrowHNSW) Close() error {
 	if h == nil {
 		return nil
 	}
+	// Stop repair agent first to prevent goroutine accessing nil data
+	if h.repairAgent != nil {
+		h.repairAgent.Stop()
+	}
 	if h.navigator != nil {
 		if err := h.navigator.Close(); err != nil {
+			return err
+		}
+	}
+	// Close DiskGraph to release mmap'd file descriptors
+	if dg := h.diskGraph.Load(); dg != nil {
+		if err := dg.Close(); err != nil {
 			return err
 		}
 	}
@@ -369,10 +379,6 @@ func (h *ArrowHNSW) Close() error {
 		data.Release()
 	}
 	h.growMu.Unlock()
-	// We do NOT nil locationStore, searchPool, etc. here because concurrent
-	// background tasks (like indexing workers or migration) might still
-	// be accessing them. The memory will be reclaimed when the ArrowHNSW
-	// object itself is no longer referenced.
 	return nil
 }
 

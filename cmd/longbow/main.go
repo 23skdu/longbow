@@ -347,13 +347,18 @@ func run() error {
 	// If the KAT fails (e.g., AVX-512 trapping in a VM), logs a warning and continues
 	// on the generic path rather than crashing — the server is still functional.
 	simdDetails := simd.GetImplementationDetails()
+	arch, _ := simdDetails["arch"].(string)
+	vendor, _ := simdDetails["vendor"].(string)
+	hasAVX512, _ := simdDetails["has_avx512"].(bool)
+	hasAVX2, _ := simdDetails["has_avx2"].(bool)
+	hasNEON, _ := simdDetails["has_neon"].(bool)
 	logger.Info().
 		Str("simd_impl", simd.GetImplementation()).
-		Str("arch", simdDetails["arch"].(string)).
-		Str("vendor", simdDetails["vendor"].(string)).
-		Bool("has_avx512", simdDetails["has_avx512"].(bool)).
-		Bool("has_avx2", simdDetails["has_avx2"].(bool)).
-		Bool("has_neon", simdDetails["has_neon"].(bool)).
+		Str("arch", arch).
+		Str("vendor", vendor).
+		Bool("has_avx512", hasAVX512).
+		Bool("has_avx2", hasAVX2).
+		Bool("has_neon", hasNEON).
 		Msg("SIMD dispatch initialized")
 	if err := simd.ValidateSIMDKernels(); err != nil {
 		logger.Warn().Err(err).Msg("SIMD kernel self-test failed; distance computations may be incorrect")
@@ -458,6 +463,7 @@ func run() error {
 				Msg("MQ exporter started")
 		}
 	}
+	_ = mqExporter // Used in shutdown below
 
 	// Initialize Learned Index Predictor (Part 16)
 	var indexPredictor *store.IndexPerformancePredictor
@@ -792,7 +798,11 @@ func run() error {
 			Msg("Failed to listen for Data Server")
 		return err
 	}
-	dataLis := store.NewTCPNoDelayListener(dataLisBase.(*net.TCPListener))
+	tcpLis, ok := dataLisBase.(*net.TCPListener)
+	if !ok {
+		return fmt.Errorf("unexpected listener type: %T", dataLisBase)
+	}
+	dataLis := store.NewTCPNoDelayListener(tcpLis)
 
 	// --- Meta Server Setup ---
 	metaServer := grpc.NewServer(serverOpts...)
@@ -808,7 +818,11 @@ func run() error {
 		return err
 	}
 
-	metaLis := store.NewTCPNoDelayListener(metaLisBase.(*net.TCPListener))
+	metaTcpLis, ok := metaLisBase.(*net.TCPListener)
+	if !ok {
+		return fmt.Errorf("unexpected listener type: %T", metaLisBase)
+	}
+	metaLis := store.NewTCPNoDelayListener(metaTcpLis)
 	// Start Data Server
 	go func() {
 		logger.Info().Str("addr", cfg.ListenAddr).Msg("Listening for Data gRPC connections")
@@ -850,8 +864,9 @@ func run() error {
 	}()
 
 	// Start RDMA Server if enabled
+	var rdmaSrv *lbflight.RDMAServer
 	if cfg.RDMAEnabled {
-		rdmaSrv := lbflight.NewRDMAServer(true)
+		rdmaSrv = lbflight.NewRDMAServer(true)
 		go func() {
 			addr := fmt.Sprintf("0.0.0.0:%d", cfg.RDMAPort)
 			logger.Info().Str("addr", addr).Msg("Starting RDMA Zero-Copy Server")
@@ -867,6 +882,30 @@ func run() error {
 	// Step 8: Graceful Shutdown (Phase 6)
 	<-ctx.Done()
 	logger.Info().Msg("Shutdown signal received")
+
+	// Stop WebSocket server
+	if wsServer != nil {
+		if err := wsServer.Stop(); err != nil {
+			logger.Error().Err(err).Msg("WebSocket server stop failed")
+		} else {
+			logger.Info().Msg("WebSocket server stopped")
+		}
+	}
+
+	// Stop MQ Exporter
+	if mqExporter != nil {
+		if err := mqExporter.Stop(); err != nil {
+			logger.Error().Err(err).Msg("MQ exporter stop failed")
+		} else {
+			logger.Info().Msg("MQ exporter stopped")
+		}
+	}
+
+	// Stop RDMA server
+	if rdmaSrv != nil {
+		rdmaSrv.Stop()
+		logger.Info().Msg("RDMA server stopped")
+	}
 
 	// In benchmark mode (LONGBOW_SHUTDOWN_SKIP_FINAL_SNAPSHOT=true) the data
 	// directory is immediately deleted after shutdown, making persistence and

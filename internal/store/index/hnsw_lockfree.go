@@ -4,6 +4,7 @@ package index
 import (
 	"math"
 	"math/rand/v2"
+	"sort"
 	"sync"
 	"sync/atomic"
 
@@ -116,10 +117,78 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []types.VectorID {
 		}
 	}
 
-	// 2. Search Layer 0 (Standard BFS/PriorityQueue logic would go here)
-	// For this task skeleton, we stop here as specific search logic is complex to re-implement fully.
-	// We focus on the WRITER part (Add).
-	return []types.VectorID{currObj.ID}
+	// 2. Search Layer 0 using BFS with a candidate list
+	type candidate struct {
+		id    types.VectorID
+		dist  float32
+	}
+
+	startDist, _ := h.distFunc(query, currObj.Vec)
+	visited := make(map[types.VectorID]bool)
+	visited[currObj.ID] = true
+	candidates := []candidate{{id: currObj.ID, dist: startDist}}
+	results := []candidate{{id: currObj.ID, dist: startDist}}
+
+	efVal := k * 2
+	if efVal < 16 {
+		efVal = 16
+	}
+	if ef > efVal {
+		efVal = ef
+	}
+
+	for len(candidates) > 0 && len(results) < efVal {
+		// Pop best candidate
+		bestIdx := 0
+		for i := 1; i < len(candidates); i++ {
+			if candidates[i].dist < candidates[bestIdx].dist {
+				bestIdx = i
+			}
+		}
+		best := candidates[bestIdx]
+		candidates = append(candidates[:bestIdx], candidates[bestIdx+1:]...)
+
+		bestNode := h.getNode(best.id)
+		if bestNode == nil {
+			continue
+		}
+
+		bestNode.mu.RLock()
+		var friends []types.VectorID
+		if len(bestNode.Friends) > 0 {
+			friends = bestNode.Friends[0]
+		}
+		bestNode.mu.RUnlock()
+
+		for _, friendID := range friends {
+			if visited[friendID] {
+				continue
+			}
+			visited[friendID] = true
+			fNode := h.getNode(friendID)
+			if fNode == nil {
+				continue
+			}
+			d, _ := h.distFunc(query, fNode.Vec)
+			results = append(results, candidate{id: friendID, dist: d})
+			if len(results) < ef {
+				candidates = append(candidates, candidate{id: friendID, dist: d})
+			}
+		}
+	}
+
+	// Sort results by distance and return top k
+	sort.Slice(results, func(i, j int) bool {
+		return results[i].dist < results[j].dist
+	})
+	if k > len(results) {
+		k = len(results)
+	}
+	ids := make([]types.VectorID, k)
+	for i := 0; i < k; i++ {
+		ids[i] = results[i].id
+	}
+	return ids
 }
 
 // Add inserts a new vector into the lock-free HNSW index.

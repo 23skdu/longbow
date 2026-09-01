@@ -1,6 +1,7 @@
 package index
 
 import (
+	"log"
 	"runtime"
 	"sync"
 	"sync/atomic"
@@ -147,7 +148,10 @@ func (p *SharedWorkerPool) numaWorker(tasks chan func(), hpTasks chan func(), no
 func executeTask(task func()) {
 	defer func() {
 		if r := recover(); r != nil {
-			// Log and recover (metrics are handled elsewhere if needed)
+			// Log panic with stack trace for debugging
+			buf := make([]byte, 4096)
+			n := runtime.Stack(buf, false)
+			log.Printf("worker pool: task panicked: %v\n%s", r, buf[:n])
 		}
 	}()
 	task()

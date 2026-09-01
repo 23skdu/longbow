@@ -236,8 +236,7 @@ func (idx *DiskANNIndex) insertIntoGraph(newID uint64, vector []float32) {
 
 	idx.graph[newID] = newNeighbors
 
-	// Update neighbors of existing nodes (simplified: just add to top candidates)
-	// In a full implementation, this would use robust pruning
+	// Update neighbors of existing nodes and prune to MaxDegree
 	for i := 0; i < min(maxNeighbors, len(candidates)); i++ {
 		neighborID := candidates[i].id
 		// Add new node to neighbor's list if not already present
@@ -248,8 +247,27 @@ func (idx *DiskANNIndex) insertIntoGraph(newID uint64, vector []float32) {
 				break
 			}
 		}
-		if !found && len(idx.graph[neighborID]) < idx.config.MaxDegree {
+		if !found {
 			idx.graph[neighborID] = append(idx.graph[neighborID], newID)
+			// Prune: keep only the closest MaxDegree neighbors
+			if len(idx.graph[neighborID]) > idx.config.MaxDegree {
+				neighborVec := idx.vectors[neighborID]
+				type nb struct {
+					id   uint64
+					dist float32
+				}
+				nbs := make([]nb, 0, len(idx.graph[neighborID]))
+				for _, nid := range idx.graph[neighborID] {
+					d, _ := idx.getDistFunc()(neighborVec, idx.vectors[nid])
+					nbs = append(nbs, nb{id: nid, dist: d})
+				}
+				sort.Slice(nbs, func(i, j int) bool { return nbs[i].dist < nbs[j].dist })
+				pruned := make([]uint64, idx.config.MaxDegree)
+				for j := 0; j < idx.config.MaxDegree; j++ {
+					pruned[j] = nbs[j].id
+				}
+				idx.graph[neighborID] = pruned
+			}
 		}
 	}
 }
@@ -268,11 +286,14 @@ func (idx *DiskANNIndex) Search(query []float32, k int) ([]IndexSearchResult, er
 		return []IndexSearchResult{}, nil
 	}
 
-	// Start from a random node
+	// Start from a deterministic node (smallest ID for reproducibility)
 	var startNode uint64
+	first := true
 	for id := range idx.graph {
-		startNode = id
-		break
+		if first || id < startNode {
+			startNode = id
+			first = false
+		}
 	}
 
 	// Greedy graph search
@@ -516,7 +537,7 @@ func (idx *DiskANNIndex) Load(path string) error {
 		return fmt.Errorf("failed to read config length: %w", err)
 	}
 	configData := make([]byte, configLen)
-	if _, err := f.Read(configData); err != nil {
+	if _, err := io.ReadFull(f, configData); err != nil {
 		return fmt.Errorf("failed to read config: %w", err)
 	}
 	idx.config = &DiskANNConfig{}
@@ -537,7 +558,7 @@ func (idx *DiskANNIndex) Load(path string) error {
 		}
 		vec := make([]float32, idx.dimension)
 		vecBytes := make([]byte, idx.dimension*4)
-		if _, err := f.Read(vecBytes); err != nil {
+		if _, err := io.ReadFull(f, vecBytes); err != nil {
 			return fmt.Errorf("failed to read vector: %w", err)
 		}
 		for j := 0; j < idx.dimension; j++ {
@@ -564,7 +585,7 @@ func (idx *DiskANNIndex) Load(path string) error {
 		neighbors := make([]uint64, neighborCount)
 		if neighborCount > 0 {
 			neighborBytes := make([]byte, neighborCount*8)
-			if _, err := f.Read(neighborBytes); err != nil {
+			if _, err := io.ReadFull(f, neighborBytes); err != nil {
 				return fmt.Errorf("failed to read neighbors: %w", err)
 			}
 			for j := uint32(0); j < neighborCount; j++ {
@@ -586,6 +607,12 @@ func (idx *DiskANNIndex) Load(path string) error {
 
 // Close releases all resources associated with the DiskANN index.
 func (idx *DiskANNIndex) Close() error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	// Release graph and vector maps to allow GC
+	idx.graph = nil
+	idx.vectors = nil
+	idx.built = false
 	return nil
 }
 

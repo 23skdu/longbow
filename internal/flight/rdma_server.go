@@ -14,8 +14,10 @@ import (
 // RDMAServer handles zero-copy Arrow Flight transfers over RoCEv2.
 type RDMAServer struct {
 	flight.BaseFlightServer
-	ctx     *mesh.RDMAContext
-	tensors *TensorStreamHandler
+	ctx      *mesh.RDMAContext
+	tensors  *TensorStreamHandler
+	listener net.Listener
+	grpcSrv  *grpc.Server
 }
 
 func NewRDMAServer(enabled bool) *RDMAServer {
@@ -89,7 +91,16 @@ func (s *RDMAServer) StartRDMAListener(addr string) error {
 	if err != nil {
 		return err
 	}
+	s.listener = l
+	s.grpcSrv = grpc.NewServer()
+	flight.RegisterFlightServiceServer(s.grpcSrv, s)
 	fmt.Printf("RDMA Listener started on %s\n", addr)
-	_ = l
-	return nil
+	return s.grpcSrv.Serve(l)
+}
+
+// Stop gracefully stops the RDMA server.
+func (s *RDMAServer) Stop() {
+	if s.grpcSrv != nil {
+		s.grpcSrv.GracefulStop()
+	}
 }

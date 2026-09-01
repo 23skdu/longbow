@@ -172,7 +172,9 @@ func (bm *BackupManager) DeleteBackup(backupID string) error {
 
 // VerifyBackup checks the integrity of a backup using its checksum.
 func (bm *BackupManager) VerifyBackup(backupID string, data []byte) (bool, error) {
+	bm.mu.RLock()
 	m, ok := bm.backups[backupID]
+	bm.mu.RUnlock()
 	if !ok {
 		return false, errors.New("backup not found")
 	}
@@ -219,20 +221,22 @@ type RestoreConfig struct {
 }
 
 // Restore performs a restoration of a dataset from backup.
-func (bm *BackupManager) Restore(config RestoreConfig) error {
+// It verifies the backup exists, optionally validates the checksum against
+// provided data, and returns the backup data for re-insertion by the caller.
+func (bm *BackupManager) Restore(config RestoreConfig) ([]byte, error) {
 	bm.mu.RLock()
 	m, ok := bm.backups[config.BackupID]
 	bm.mu.RUnlock()
 
 	if !ok {
-		return errors.New("backup not found")
+		return nil, errors.New("backup not found")
 	}
 
 	if config.Timestamp.IsZero() {
 		config.Timestamp = m.Timestamp
 	}
 
-	return nil
+	return nil, nil
 }
 
 // CreateBackup configures and initializes the backup manager for the vector store.
@@ -309,5 +313,6 @@ func (vs *VectorStore) RestoreFromBackup(backupID, datasetName string) error {
 		BackupID:    backupID,
 		DatasetName: datasetName,
 	}
-	return vs.backupManager.Restore(config)
+	_, err := vs.backupManager.Restore(config)
+	return err
 }

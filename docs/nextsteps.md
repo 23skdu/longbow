@@ -1,43 +1,62 @@
 # P0 Blockers for 0.2.3 Release
 
-| Severity | Item | File:Line | Impact |
+## Critical (data loss / crash / silent corruption)
+
+| # | Item | File:Line | Impact |
 |---|---|---|---|
-| CRITICAL | ~~`TriggerBackup` sends placeholder data~~ | ~~`internal/store/backup.go:270`~~ | ~~Backup exists but stores no real data~~ **COMPLETE** |
-| CRITICAL | ~~`HybridSearchWithBitmap` returns nil~~ | ~~`internal/store/hybrid_search.go:306-309`~~ | ~~Hybrid search mode is a no-op~~ **COMPLETE** |
-| CRITICAL | ~~WAL replay skips corrupted entries silently~~ | ~~`internal/store/wal_replay.go:223,302`~~ | ~~Data loss without warning~~ **COMPLETE** |
-| CRITICAL | ~~Storage continues after snapshot corruption~~ | ~~`internal/storage/engine.go:262,482`~~ | ~~Silent corruption propagation~~ **COMPLETE** |
-| HIGH | ~~`checkAndMigrateToSharded` is empty~~ | ~~`internal/store/store.go:688-694`~~ | ~~Sharded index migration never runs~~ **COMPLETE** |
-| HIGH | ~~DiskANN ExportState/ImportState/AddByLocation/GetVectorID all nil/false~~ | ~~`internal/store/diskann.go:586-608`~~ | ~~Cannot persist or retrieve DiskANN state~~ **COMPLETE** |
-| HIGH | ~~OpenTelemetry exporter commented out~~ | ~~`cmd/longbow/main.go:943`~~ | ~~No observability in production~~ **COMPLETE** |
-| HIGH | ~~Tensor ops panic on non-float32~~ | ~~`internal/tensor/ops.go:84`~~ | ~~Runtime crash for int16/float64/complex types~~ **COMPLETE** |
-| MEDIUM | Learned Index + Temporal Index initialized then discarded | `cmd/longbow/main.go:493,525` | Wasted memory, features appear supported but are not |
-| MEDIUM | ~~ADBC driver is skeleton~~ | ~~`internal/store/adbc/` — 21 methods return StatusNotImplemented~~ | ~~Partial Arrow flight interface~~ **COMPLETE** |
+| 1 | `BackupManager.Restore` is a no-op | `internal/store/backup.go:222-236` | Backup restoration completely broken — validates then returns nil |
+| 2 | `GetSchema` returns `nil, nil` | `internal/store/store_query.go:157-159` | gRPC nil-pointer crash when any client calls GetSchema |
+| 3 | `WriteToWAL` silently returns nil when WAL uninitialized | `internal/storage/engine.go:112-114` | Data loss — caller believes data is persisted |
+| 4 | Snapshot file writes lack fsync | `internal/storage/engine.go:307-440` | Crash between f.Close() and Rename leaves corrupt snapshots |
+| 5 | Snapshot directory swap is non-atomic | `internal/storage/engine.go:239` | RemoveAll + Rename window leaves no snapshot on crash |
+| 6 | WAL replay reorder buffer unbounded | `internal/storage/wal_replay.go:377-449` | Corrupted WAL with gaps OOMs the process |
+| 7 | WAL IPC decode failures silently dropped | `internal/storage/wal_replay.go:334-367` | Corrupted entries vanish without any error/metric |
+| 8 | `StdWAL.Sync()` is a no-op | `internal/storage/wal_interface.go:92-95` | Callers believe data is synced — durability guarantee is false |
+| 9 | `StdWAL.Write()` no fsync before close | `internal/storage/wal_interface.go:38-86` | Data may not reach stable storage before file close |
+| 10 | LockFreeHNSW Search returns only 1 result | `internal/store/index/hnsw_lockfree.go:122` | Layer-0 BFS unimplemented — k>1 always returns 1 neighbor |
+| 11 | DiskANN non-deterministic start node | `internal/store/index/diskann.go:272-276` | Go map iteration is random — search results vary per call |
+| 12 | DiskANN `insertIntoGraph` never prunes neighbors | `internal/store/index/diskann.go:239-255` | Neighbor lists grow unbounded beyond MaxDegree |
+| 13 | WebSocket server never stopped on shutdown | `cmd/longbow/main.go:431` | Listener and connections leak on graceful shutdown |
+| 14 | MQ Exporter never stopped on shutdown | `cmd/longbow/main.go:454` | Buffered messages lost, goroutines leak |
+| 15 | RDMA listener discarded, never served | `cmd/longbow/main.go:853`, `rdma_server.go:93` | Dead code — feature advertised but non-functional |
 
-### Critical (data loss / silent failures)
+## High (broken features / race conditions)
 
-1. **`TriggerBackup` sends placeholder data** — `backup.go:270`: `Data: []byte("placeholder")`. Backup API exists and succeeds, but stores no actual data. Users believe backups are safe.
+| # | Item | File:Line | Impact |
+|---|---|---|---|
+| 16 | `HybridSearchWithBitmap` missing BM25Index fallback | `internal/store/hybrid_search.go:319-350` | Sparse search silently empty when BM25ArenaIndex is nil |
+| 17 | `LoadSnapshots` swallows `.pq`/`.config` read errors | `internal/storage/engine.go:494-503` | Dataset loads without PQ codebook or index config |
+| 18 | `LoadSnapshots` returns nil despite loadErrors | `internal/storage/engine.go:516-520` | Caller cannot detect partial snapshot load failure |
+| 19 | Snapshot holds write lock for entire duration | `internal/storage/engine.go:197-291` | All writes blocked for seconds/minutes during snapshot |
+| 20 | AsyncFsyncer `dirtyBytes` counter lost on multi-flush | `internal/storage/async_fsync.go:260-275` | Data durability window larger than configured |
+| 21 | Replay goroutines leak on error | `internal/storage/wal_replay.go:100-105` | Blocked decoders hang on channel send after main loop breaks |
+| 22 | Zstd decoder leak in replay | `internal/storage/wal_replay.go:296` | zstd.NewReader goroutines leak per compressed block |
+| 23 | `RegisterCDCSubscriber`/`UnregisterCDCSubscriber` stubs | `internal/store/store.go:983-991` | CDC event system non-functional |
+| 24 | `getPooledMetadataBuffer` never returns buffers | `internal/store/store.go:327-335` | Pool drains permanently — falls through to make() |
+| 25 | `VerifyBackup` reads map without lock | `internal/store/backup.go:174` | Concurrent map read/write race |
+| 26 | DiskANN `Load()` uses `f.Read()` not `io.ReadFull()` | `internal/store/index/diskann.go:519,540,567` | Silent data corruption on partial reads |
+| 27 | IVFFlat `AddByRecord` ID collision | `internal/store/index/ivf_flat.go:135-142` | Concurrent calls read same len(), overwrite vectors |
+| 28 | HNSWPluggableAdapter Search is brute-force O(n) | `internal/store/index/pluggable_index_adapters.go:79-115` | "HNSW" index does linear scan — no graph traversal |
+| 29 | IVF-HNSW `fetchVector` always returns error | `internal/store/index/ivf_hnsw_composite.go:554-558` | Delta sync completely broken |
+| 30 | SimdDetails unchecked type assertions | `cmd/longbow/main.go:353-356` | Panic if map key missing or wrong type |
+| 31 | Listener type assertions unchecked | `cmd/longbow/main.go:795,811` | Panic if listener type differs |
 
-2. **`HybridSearchWithBitmap` is a complete stub** — `hybrid_search.go:306-309`: Returns `nil, nil`. The hybrid search mode (graph + bitmap combined) is a no-op. No error, no log, just empty results.
+## Medium (reliability gaps)
 
-3. **WAL replay silently skips corrupted entries** — `wal_replay.go:223,302`: `log.Warn("WAL entry corrupted, skipping")` then `continue`. Corrupted entries are silently dropped. No counter, no metric, no alert.
-
-4. **Storage continues after snapshot corruption** — `engine.go:262,482`: `log.Warn("snapshot corrupted, rebuilding")` then continues. No shutdown, no error propagation. Corrupted data may be served.
-
-### High (incomplete features)
-
-5. **`checkAndMigrateToSharded` is empty** — `store.go:688-694`: Function body is `return nil`. Sharded index migration never runs. The sharded index feature appears supported but is non-functional.
-
-6. **DiskANN ExportState/ImportState/AddByLocation/GetVectorID all nil/false** — `diskann.go:586-608`: Cannot persist DiskANN state to disk, cannot import from external location, cannot get vector ID by offset. The disk-based index feature is non-functional.
-
-7. **OpenTelemetry exporter commented out** — `main.go:943`: `//otel.SetTracerProvider(...)` commented out. No distributed tracing, no metrics export. Production observability is absent.
-
-8. **Tensor ops panic on non-float32** — `tensor/ops.go:84`: `panic("only float32 supported")` in `Mul`. Any non-float32 vector type triggers runtime crash.
-
-### Medium (reliability gaps)
-
-9. **Learned Index + Temporal Index initialized then discarded** — `main.go:493,525`: `learnedIndex := learned.NewIndex(...)` then never used. `temporalIndex := temporal.NewIndex(...)` then never used. Wasted memory (~200 MB each). Features appear supported in help text but are not wired.
-
-10. **ADBC driver is skeleton** — 21 of 22 methods return `StatusNotImplemented`. Only `Open` and `Close` are implemented. Arrow Flight interface appears advertised but is non-functional.
+| # | Item | File:Line | Impact |
+|---|---|---|---|
+| 32 | Learned Index + Temporal Index discarded | `cmd/longbow/main.go:480,516` | Wasted ~400 MB, features appear supported but not wired |
+| 33 | `PluggableInternalAdapter` ~15 stub methods | `internal/store/index/pluggable_index_adapters.go:519-600` | ExportState/ImportState/ExportDelta silently no-op |
+| 34 | `BruteForceIndex` export/import no-ops | `internal/store/index/adaptive_index.go:330-358` | Backup/restore silently fails for BF-indexed datasets |
+| 35 | IVFFlat/IVFOPQ ExportDelta no-op | `internal/store/index/ivf_pq_index.go:675`, `ivf_opq_index.go:675` | Incremental replication misses all changes |
+| 36 | DiskANN `Close()` empty — memory leak | `internal/store/index/diskann.go:588-590` | GC cannot reclaim vectors/graph until reference dropped |
+| 37 | IVFFlat `Close()` empty — memory leak | `internal/store/index/ivf_flat.go:507-509` | Same issue |
+| 38 | `GetTombstones` returns mutable internal map | `internal/store/dataset.go:344-346` | Concurrent mutation without lock |
+| 39 | `indexTextColumns` double-indexes both BM25 stores | `internal/store/store_hybrid.go:111-121` | 2x memory and indexing time |
+| 40 | Emergency GC on ingestion throttle | `internal/store/store_actions.go:886-888` | Full stop-the-world pause under load |
+| 41 | `ArrowHNSW.Close()` doesn't close DiskGraph | `internal/store/index/arrow_hnsw_persistence.go:354-377` | mmap file descriptor leak |
+| 42 | `ArrowHNSW.Close()` doesn't stop RepairAgent | `internal/store/index/arrow_hnsw_persistence.go:354-377` | Goroutine accesses nil data pointer |
+| 43 | `worker_pool` panics silently swallowed | `internal/store/worker_pool.go:148-153` | Task panics disappear — debugging impossible |
 
 ---
 
@@ -60,15 +79,14 @@
 ## Known Issues
 
 1. **efSearch cap at 600 is counterproductive**: `turboquant.go:83` caps `Params.EfSearch` at `max(600, 40)` for TQ2, which may limit recall for fine-grained queries where the quantized range is only 256 levels.
-2. **No recall@10 validation for TQ2**: All 67 completed benchmark configs exclude turboquant2 (`"turboquant2": [1, 2, 4, 8, 16]` is excluded from the 50k run). Only the post-SIMD-fix run includes TQ2, but that only ran 100 vectors with `--query-mode random` and `--max-nprobe 32`.
-3. **No adaptive bit-depth**: There is no mechanism to dynamically select 8-bit vs 2-bit based on data distribution or query characteristics. The choice is purely at schema time via `VectorType`.
+2. **No recall@10 validation for TQ2**: All 67 completed benchmark configs exclude turboquant2. Only a 100-vector post-SIMD-fix run includes TQ2.
+3. **No adaptive bit-depth**: No mechanism to dynamically select 8-bit vs 2-bit based on data distribution.
 
 ## Recommendation
 
-- [ ] Run TQ2 at full 50k scale with recall@10 validation (use `--search-mode batch --query-mode random` for deterministic comparison)
-- [ ] Consider widening the efSearch cap or making it configurable per-vector-type
-- [ ] Add `--query-mode hyperplane` for TQ2 to stress the 4 bit-range-pair limitation
-- [ ] Add adaptive bit-depth: if avg cosine similarity > threshold, auto-select TQ2; else fall back to TQ1
+- [ ] Run TQ2 at full 50k scale with recall@10 validation
+- [ ] Widen efSearch cap or make configurable per-vector-type
+- [ ] Add `--query-mode hyperplane` for TQ2 to stress 4 bit-range-pair limitation
 
 ---
 
@@ -78,15 +96,6 @@
 |---|---|
 | Status | **INCOMPLETE — 11/17 types done** |
 | Location | `cmd/bench-tool/main.go:717`, `tests/system/test_unified_benchmark.py` |
-
-## What the Code Shows
-
-The benchmark infrastructure supports large-scale runs:
-- `--use-disk` flag routes all vector storage to OS-backed files (`DiskVectorStore`)
-- `--memory-budget-bytes` enables memory pressure monitoring
-- `--max-retries 5` with exponential backoff
-- Checkpoint persistence for resume after OOM
-- `--force-cleanup-stuck-processes` for zombie cleanup
 
 ## Remaining Types (6)
 
@@ -99,273 +108,11 @@ The benchmark infrastructure supports large-scale runs:
 | turboquant | 500k × 1B = 0.4 GB | ~16 GB | Not run |
 | turboquant8 | 500k × 1B = 0.4 GB | ~16 GB | Not run |
 
-System has 22 GB RAM. `int64`/`uint64`/`complex64` need ~19 GB. `complex128` needs ~23 GB — likely OOM on this system.
+System has 22 GB RAM. `complex128` needs ~23 GB — likely OOM without aggressive disk routing.
 
 ## Recommendation
 
-- [ ] Run `int64`, `uint64`, `complex64` with `--use-disk` on current system (16 GB RSS limit)
-- [ ] Run `complex128` with `--use-disk --memory-budget-bytes 8000000000` (aggressive disk routing)
+- [ ] Run `int64`, `uint64`, `complex64` with `--use-disk --memory-budget-bytes 8000000000`
+- [ ] Run `complex128` with `--use-disk --memory-budget-bytes 6000000000`
 - [ ] Run `turboquant`, `turboquant8` with `--use-disk` (low memory, should succeed)
-- [ ] Add the full result matrix JSON to the repo after completion
-
----
-
-# Completed
-
-## 50k-Scale Benchmark — COMPLETE
-
-All 13 search modes, all 12 vector types, 5 index types, all memory tiers — 67/68 configurations tested.
-
-| Field | Detail |
-|---|---|
-| Location | `tests/system/test_unified_benchmark.py`, `cmd/bench-tool/main.go` |
-| Configs | 67/68 (excluded: turboquant2 because it is not implemented yet) |
-| Max RSS | 13.95 GB (83% of 16 GB) |
-| Longest run | 8645 seconds (HNSW disk hybrid disk-16384 tier) |
-| Data integrity | No NaN, no negative precision, no zero recall — all 9 checks pass |
-
-**Evidence:**
-- `cmd/bench-tool/main.go:740-819`: Main loop iterates over indexNames × vectorTypes × searchModes, writes JSON result per config
-- `cmd/bench-tool/main.go:394-396`: Precision validation rejects NaN/negative precision/zero recall
-- `cmd/bench-tool/main.go:1239-1263`: HNSW fallback skips list mode with reason logged
-- `tests/system/test_unified_benchmark.py:53-55`: Retry logic with exponential backoff on OOM
-
-## All 13 Search Modes — COMPLETE
-
-| Mode | Vector | Status | QPS |
-|---|---|---|---|
-| single | `[100, 200, 300, 400, 500]` | implemented | 206 |
-| single | `[1000, 10000, 100000]` | implemented | 258 |
-| batch | `[100, 200, 300, 400, 500]` | implemented | 241 |
-| batch | `[1000, 10000, 100000]` | implemented | 208 |
-| list | `[1000, 10000, 100000]` | implemented | 59 |
-| batch | `[500, 1000, 2000, 5000]` | implemented | 158 |
-| single | `[100, 1000]` | implemented | 159 |
-| list | `[1000, 10000]` | implemented | 137 |
-| list | `[100000]` | implemented | 58 |
-| single | `[100000]` | implemented | 249 |
-| batch | `[100000]` | implemented | 256 |
-| batch | `[1000, 10000]` | implemented | 181 |
-| batch | `[500]` | implemented | 215 |
-
-**Evidence:** `cmd/bench-tool/main.go:740-794` — main loop iterates over `searchModes` from `common.BenchmarkSearchModes()`.
-
-## 16 GB Memory Limit — COMPLETE
-
-| Vector | Type | Memory Limit | Max RSS | Status |
-|---|---|---|---|---|
-| float32 | native | 16 GB | 13.95 GB | pass |
-| float64 | native | 16 GB | 13.48 GB | pass |
-| int8 | native | 16 GB | 10.99 GB | pass |
-| int16 | native | 16 GB | 11.11 GB | pass |
-| int32 | native | 16 GB | 12.19 GB | pass |
-| int64 | native | 16 GB | 13.49 GB | pass |
-| uint8 | native | 16 GB | 10.99 GB | pass |
-| uint16 | native | 16 GB | 11.11 GB | pass |
-| uint32 | native | 16 GB | 12.19 GB | pass |
-| uint64 | native | 16 GB | 13.49 GB | pass |
-| float32 | AVX2 quantized | 16 GB | 10.35 GB | pass |
-| float64 | AVX2 quantized | 16 GB | 10.35 GB | pass |
-| int16 | AVX2 quantized | 16 GB | 10.50 GB | pass |
-| uint16 | AVX2 quantized | 16 GB | 10.50 GB | pass |
-
-**Evidence:** `internal/store/types/util.go:175-189` — `estimateSliceMemory` returns `cap * elementSize`.
-
-## Integer SIMD Regression Fix — PARTIALLY VERIFIED
-
-| Metric | Detail |
-|---|---|
-| Status | VERIFIED with caveat |
-| Files | `internal/simd/*.s` |
-
-**What is actually implemented:**
-
-| Vector Type | Assembly | Go Fallback | Per-Loop Ops |
-|---|---|---|---|
-| int16, uint16 | Real AVX2 (`avx2_16bit.asm`) | `Fallback16Bit` | 16 |
-| int32, uint32 | Go unrolled 4× (`fallback_32bit.go`) | Same code | 4 |
-| int64, uint64 | Go unrolled 4× (`fallback_64bit.go`) | Same code | 4 |
-
-`internal/simd/dispatch.go:938-1061` — `Dot32Int`, `Dot32Uint`, `Dot64Int`, `Dot64Uint` all call Go fallback, not assembly. The `hasAVX2` check is present but the assembly implementation is absent for 32-bit and 64-bit types.
-
-**Conclusion:** The "regression fix" was actually implementing AVX2 for 16-bit types and Go unrolled fallbacks for 32/64-bit types. There was no previous regression — the 32/64-bit types never had AVX2 ASM in the first place.
-
-## Benchmark Auto-Resume and Retry Logic — COMPLETE
-
-| Feature | Implementation | Status |
-|---|---|---|
-| `--resume` | `cmd/bench-tool/main.go:567-582` | COMPLETE |
-| `--max-retries N` | `cmd/bench-tool/main.go:567-568` | COMPLETE |
-| Exponential backoff | `cmd/bench-tool/main.go:1306-1325` | COMPLETE |
-| OOM retry | `tests/system/test_unified_benchmark.py:104-111` | COMPLETE |
-| Port randomization | `tests/system/test_unified_benchmark.py:496` | COMPLETE |
-| Zombie cleanup | `tests/system/test_unified_benchmark.py:72-91` | COMPLETE |
-
-## Memory Estimation — COMPLETE
-
-| Component | Implementation | Status |
-|---|---|---|
-| `--estimate-memory` | `cmd/bench-tool/main.go:1191-1218` | COMPLETE |
-| `--benchmark-memory-bytes` | `cmd/bench-tool/main.go:1193-1210` | COMPLETE |
-| `--memory-budget-bytes` | `cmd/bench-tool/main.go:604-611` | COMPLETE |
-| `--rss-limit-bytes` | `cmd/bench-tool/main.go:629-651` | COMPLETE |
-| RSS estimation | `cmd/bench-tool/main.go:204-218` | COMPLETE |
-
-## Server Startup Reliability — PARTIALLY VERIFIED
-
-| Component | Implementation | Status |
-|---|---|---|
-| `SO_REUSEADDR` | `cmd/longbow-server/main.go:370-389` | COMPLETE |
-| Fast-exit | `cmd/longbow-server/main.go:407-415` | COMPLETE |
-| Graceful shutdown | `cmd/longbow-server/main.go:420-486` | COMPLETE |
-| Backoff + port randomization | `tests/system/test_unified_benchmark.py:478-505` | COMPLETE |
-
-The server-side startup is fully implemented. The backoff/port-randomization exists only in the Python test harness, not in the server itself.
-
-## Result Matrix Generation — PARTIALLY VERIFIED
-
-| Component | Implementation | Status |
-|---|---|---|
-| `generate_result_matrix.py` | Exists, 230 lines | COMPLETE |
-| Per-type JSON files | Written to `result/` directory | COMPLETE |
-| Combined matrix JSON | Generated at runtime, NOT committed to repo | INCOMPLETE |
-
-The matrix generation code exists and works, but the final `result_matrix.json` artifact is not tracked in git.
-
-## ADBC Driver Wiring — COMPLETE
-
-| Component | Implementation | Status |
-|---|---|---|
-| `database.go` | Holds `*store.VectorStore` reference, lazy init via `initStore()` | COMPLETE |
-| `connection.go` | `GetInfo` (driver metadata), `GetObjects` (lists datasets), `GetTableSchema` (Arrow schema), `GetTableTypes` | COMPLETE |
-| `statement.go` | SQL routing: SHOW TABLES, DESCRIBE, SELECT; vector search via `SearchHybrid`; scan fallback | COMPLETE |
-| `record_reader.go` | `AdbcRecordReader` with ref-counted record iteration | COMPLETE |
-| `cmd/adbc/main.go` | C bridge: `AdbcStatementNew` calls `Connection.NewStatement()` | COMPLETE |
-| Tests | All 4 test files updated for VectorStore-backed implementation | COMPLETE |
-
----
-
-# Implementation Plan
-
-## Phase 1: Complete 500k Benchmark (4-6 hours, low risk)
-
-### Task 1.1: Run int64, uint64, complex64 at 500k
-```bash
-go run ./cmd/bench-tool/main.go \
-  --vector-type int64 \
-  --num-vectors 500000 \
-  --dimensions 128 \
-  --index-type graph \
-  --search-mode batch \
-  --query-mode random \
-  --max-queries 10000 \
-  --use-disk \
-  --memory-budget-bytes 8000000000 \
-  --max-retries 5 \
-  --max-retries 5
-```
-
-Expected RSS: ~12 GB (disk-backed vectors, index in memory)
-
-### Task 1.2: Run complex128 at 500k
-```bash
-go run ./cmd/bench-tool/main.go \
-  --vector-type complex128 \
-  --num-vectors 500000 \
-  --dimensions 128 \
-  --index-type graph \
-  --search-mode batch \
-  --query-mode random \
-  --max-queries 10000 \
-  --use-disk \
-  --memory-budget-bytes 6000000000 \
-  --max-retries 5
-```
-
-Expected RSS: ~14 GB (disk-backed, large dimension)
-
-### Task 1.3: Run turboquant, turboquant8 at 500k
-```bash
-go run ./cmd/bench-tool/main.go \
-  --vector-type turboquant \
-  --num-vectors 500000 \
-  --dimensions 128 \
-  --index-type graph \
-  --search-mode batch \
-  --query-mode random \
-  --max-queries 10000 \
-  --use-disk \
-  --max-retries 5
-```
-
-Expected RSS: ~8 GB (1-byte compressed vectors)
-
-## Phase 2: Validate turboquant2 at Scale (2-4 hours, medium risk)
-
-### Task 2.1: Run TQ2 at 50k with recall@10
-```bash
-go run ./cmd/bench-tool/main.go \
-  --vector-type turboquant2 \
-  --num-vectors 50000 \
-  --dimensions 128 \
-  --index-type graph \
-  --search-mode batch \
-  --query-mode random \
-  --max-queries 10000 \
-  --recall-k 10 \
-  --ef-search 600 \
-  --max-retries 5
-```
-
-### Task 2.2: Run TQ2 at 50k with hyperplane mode
-```bash
-go run ./cmd/bench-tool/main.go \
-  --vector-type turboquant2 \
-  --num-vectors 50000 \
-  --dimensions 128 \
-  --index-type graph \
-  --search-mode batch \
-  --query-mode hyperplane \
-  --max-queries 10000 \
-  --recall-k 10 \
-  --max-retries 5
-```
-
-### Task 2.3: Evaluate efSearch impact
-Compare recall@10 across efSearch values: 100, 200, 400, 600, 800, 1200 for TQ2.
-
-## Phase 3: ~~Commit Result Matrix~~ — CANCELLED
-
-Result JSON files must **never** be committed to git. They are build artifacts generated at runtime.
-
----
-
-## Risk Assessment
-
-| Phase | Risk | Mitigation |
-|---|---|---|
-| Phase 1 | OOM on complex128 (23 GB needed, system has 22 GB) | Use `--use-disk --memory-budget-bytes 6000000000` |
-| Phase 2 | TQ2 recall@10 below threshold | Run with `--ef-search 1200` as fallback |
-| Phase 2 | TQ2 regression in efSearch capping | Widen cap from 600 to 1200 or make configurable |
-| Phase 3 | None | Just file generation and commit |
-
-## Estimated Total Time
-
-- Phase 1: 4-6 hours (can be parallelized across types)
-- Phase 2: 2-4 hours
-- Phase 3: 30 minutes
-- **Total: 6.5-10.5 hours**
-
-## Dependencies
-
-- Phase 1 depends on: Nothing (can start immediately)
-- Phase 2 depends on: Nothing (can run in parallel with Phase 1)
-- Phase 3 depends on: Phase 1 and Phase 2 complete
-
-## Success Criteria
-
-- [ ] All 17 vector types tested at 500k scale
-- [ ] TQ2 recall@10 > 0.85 at 50k scale
-- [ ] No OOM during any run
-- [ ] `result_matrix.json` committed to repo
-- [ ] All precision/recall values validated (no NaN, no negative, no zero recall)
+- [ ] Result JSON files must **never** be committed to git

@@ -193,22 +193,48 @@ The `GlobalSearchCoordinator` handles:
 | `longbow_global_search_partial_failures` | Failed peer queries |
 | `longbow_global_search_duration` | Total scatter-gather latency |
 
-### CLI Benchmark
+### GraphRAG vs GlobalGraphRAG (Local vs Distributed)
 
-```bash
-python3 scripts/unified_benchmark.py --mode graphrag --dims 768 --counts 10000
+Longbow differentiates between local node graph traversal (**GraphRAG**) and cluster-wide distributed graph search (**GlobalGraphRAG**):
+
+| Dimension | GraphRAG (Local) | GlobalGraphRAG (Distributed) |
+|---|---|---|
+| **Invocation** | Standard `search` ticket with `graph_alpha > 0` | Request includes gRPC metadata header `x-longbow-global: "true"` |
+| **Search Scope** | Local partition's HNSW Layer 0 & local `GraphStore` | Local partition + concurrent scatter-gather across all cluster peers |
+| **Routing Gate** | `req.LocalOnly = true` | `req.LocalOnly = false` (enabled via `x-longbow-global` header) |
+| **Prerequisites** | Single standalone node (`s.Mesh == nil` supported) | Requires active gossip cluster mesh (`s.Mesh != nil` with ≥2 nodes) |
+| **Result Merging** | In-place score sorting / spreading activation | Reciprocal Rank Fusion (RRF) & global ID deduplication across peer batches |
+| **Fault Tolerance** | Local circuit breaker (`s.Breakers`) | Circuit breaker + hedged peer queries, goroutine panic recovery, & partial failure tolerance |
+
+#### Single-Node vs Clustered Execution Semantics
+
+In [`internal/store/store_query.go`](../internal/store/store_query.go):
+```go
+// Header extraction enables distributed search
+if vals := md.Get("x-longbow-global"); len(vals) > 0 && vals[0] == "true" {
+    isGlobal = true
+}
+if isGlobal {
+    query.Search.LocalOnly = false
+}
+
+// Scatter-gather gate requires an initialized cluster mesh
+if !req.LocalOnly && s.Mesh != nil {
+    peers := s.Mesh.GetMembers()
+    ...
+    searchResults, globalErr = s.coordinator.GlobalSearch(stream.Context(), searchResults, req, remotePeers)
+}
 ```
 
-For large-scale graphs across multiple nodes:
-
-```python
-# Expand multiple seed nodes across cluster
-expansion = client.graph_rag_expand(
-    dataset="knowledge",
-    node_ids=[1, 2, 3, 4, 5]  # Multi-seed expansion
-)
-# Returns: {1: [neighbors...], 2: [neighbors...], ...}
-```
+> [!IMPORTANT]
+> **Single-Node Fallback**:
+> When Longbow runs as a standalone single-node instance (`s.Mesh == nil`), requests specifying `GlobalGraphRAG` execute the local GraphRAG path. While this verifies ticket deserialization, header parsing, circuit breaker handling, and local graph traversal, **it does not exercise cross-node network scatter-gather or distributed rank merging**.
+> 
+> To test true distributed `GlobalGraphRAG`:
+> ```bash
+> python3 scripts/unified_benchmark.py --mode cluster --cluster-nodes 3 --dims 128,384
+> ```
+> This spawns multiple Longbow daemons interconnected via the SWIM gossip protocol (`LONGBOW_GOSSIP_ENABLED=true`), exercising distributed peer fan-out, hedged queries, and multi-node Arrow streaming.
 
 ---
 

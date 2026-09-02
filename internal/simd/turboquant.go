@@ -143,9 +143,54 @@ func turboQuantDistanceNEONScratch(query []float32, tqData []byte, dim int, pow2
 }
 
 func TurboQuantDistanceGeneric(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {
-	// Fallback implementation for non-power-of-2 bit depths
-	// ... (old implementation here if needed)
-	return 0, nil
+	if len(tqData) < 4 || bitsPerAngle <= 0 || bitsPerAngle > 8 {
+		return 0, nil
+	}
+	radius := math.Float32frombits(uint32(tqData[0]) | uint32(tqData[1])<<8 | uint32(tqData[2])<<16 | uint32(tqData[3])<<24)
+
+	angleCount := pow2 - 1
+	angleBytes := (angleCount*bitsPerAngle + 7) / 8
+	if len(tqData) < 4+angleBytes {
+		return 0, nil
+	}
+	packedAngles := tqData[4 : 4+angleBytes]
+	qjlBits := tqData[4+angleBytes:]
+
+	maxVal := float32((uint32(1) << bitsPerAngle) - 1)
+	qIndices := make([]byte, angleCount)
+	var currentBit int
+	for i := range qIndices {
+		var q uint32
+		for k := 0; k < bitsPerAngle; k++ {
+			if (packedAngles[currentBit/8] & (byte(1) << (currentBit % 8))) != 0 {
+				q |= (uint32(1) << k)
+			}
+			currentBit++
+		}
+		qIndices[i] = byte(q)
+	}
+
+	recon := make([]float32, pow2)
+	recon[0] = radius
+
+	currentLevelSize := 1
+	angleOffset := angleCount
+	for currentLevelSize < pow2 {
+		angleOffset -= currentLevelSize
+		for i := currentLevelSize - 1; i >= 0; i-- {
+			r := recon[i]
+			q := qIndices[angleOffset+i]
+			theta := (float32(q)/maxVal)*2*math.Pi - math.Pi
+			s, c := math.Sincos(float64(theta))
+			recon[2*i] = r * float32(c)
+			recon[2*i+1] = r * float32(s)
+		}
+		currentLevelSize *= 2
+	}
+
+	correction := radius / float32(math.Sqrt(float64(pow2))) * 0.1
+	sum := l2SquaredTQCorrectionGeneric(query, recon, qjlBits, correction, dim)
+	return float32(math.Sqrt(float64(sum))), nil
 }
 
 func TurboQuantDistanceAVX512(query []float32, tqData []byte, dim int, pow2 int, bitsPerAngle int) (float32, error) {

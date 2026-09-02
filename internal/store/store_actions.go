@@ -951,6 +951,12 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		if len(batch) == 0 {
 			return nil
 		}
+		defer func() {
+			for _, b := range batch {
+				b.Release()
+			}
+			batch = batch[:0]
+		}()
 
 		// Namespace quota check on flush
 		if ns != nil {
@@ -992,7 +998,6 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 				if err := s.flushPutBatch(stream.Context(), ds, batch); err != nil {
 					return err
 				}
-				batch = batch[:0]
 				return nil
 			}
 		}
@@ -1013,12 +1018,6 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 		}
 
 		metrics.DoPutBatchLatencySeconds.Observe(time.Since(startFlush).Seconds())
-
-		// Clear batch slice
-		for _, b := range batch {
-			b.Release()
-		}
-		batch = batch[:0]
 		return nil
 	}
 
@@ -1038,17 +1037,15 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 				// Process sub-record
 				subRecSize := estimateBatchSize(subRec)
 				if len(batch) == 0 && subRecSize >= maxBatchBytes {
-					subRec.Retain()
 					metrics.DoPutBatchSizeBytes.Observe(float64(subRecSize))
-					if err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{subRec}); err != nil {
-						subRec.Release()
+					err := s.flushPutBatch(stream.Context(), ds, []arrow.RecordBatch{subRec})
+					subRec.Release()
+					if err != nil {
 						return err
 					}
-					subRec.Release()
 					continue
 				}
 
-				subRec.Retain()
 				batch = append(batch, subRec)
 
 				// Check accumulator size
@@ -1109,9 +1106,6 @@ func (s *VectorStore) DoPut(stream flight.FlightService_DoPutServer) error {
 	// Flush remaining
 	if len(batch) > 0 {
 		if err := flush(); err != nil {
-			for _, b := range batch {
-				b.Release()
-			}
 			return err
 		}
 	}

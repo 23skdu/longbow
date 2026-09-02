@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"math"
 	"sort"
 	"sync"
 	"time"
@@ -15,6 +16,7 @@ import (
 	lbtypes "github.com/23skdu/longbow/internal/store/types"
 	"github.com/23skdu/longbow/internal/tracing"
 	"github.com/23skdu/longbow/pkg/retry"
+	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/rs/zerolog"
@@ -134,6 +136,11 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 				wgReplicas.Add(1)
 				go func(p mesh.Member) {
 					defer wgReplicas.Done()
+					defer func() {
+						if r := recover(); r != nil {
+							c.logger.Error().Interface("panic", r).Str("peer", p.ID).Msg("Recovered from panic in peer query")
+						}
+					}()
 
 					err := retry.Do(ctxHedge, c.retryPolicy, func(subCtx context.Context) error {
 						conn, err := c.pool.Get(subCtx, p.MetaAddr)
@@ -177,28 +184,8 @@ func (c *GlobalSearchCoordinator) GlobalSearch(ctx context.Context, localResults
 						}
 
 						for reader.Next() {
-							rec := reader.RecordBatch()
-							col0 := rec.Column(0)
-							col1 := rec.Column(1)
-
-							ids := col0.(*array.Uint64).Uint64Values()
-							scores := col1.(*array.Float32).Float32Values()
-
-							var sourceValues []uint8
-							if sourceColIdx != -1 {
-								sourceValues = rec.Column(sourceColIdx).(*array.Uint8).Uint8Values()
-							}
-
-							for k := 0; k < len(ids); k++ {
-								res := SearchResult{
-									ID:    lbtypes.VectorID(ids[k]), // #nosec G115
-									Score: scores[k],
-								}
-								if sourceValues != nil {
-									res.Source = sourceValues[k]
-								}
-								results = append(results, res)
-							}
+							batchResults := extractSearchResultsFromRecord(reader.RecordBatch(), sourceColIdx)
+							results = append(results, batchResults...)
 						}
 						if reader.Err() != nil {
 							return reader.Err()
@@ -656,4 +643,64 @@ func (c *GlobalSearchCoordinator) GlobalTemporalSearch(ctx context.Context, loca
 	finalResults := MergeSortedStreams(channels, req.K)
 	metrics.GlobalSearchDuration.Observe(time.Since(start).Seconds())
 	return finalResults, nil
+}
+
+func extractSearchResultsFromRecord(rec arrow.RecordBatch, sourceColIdx int) []SearchResult {
+	if rec == nil || rec.NumRows() == 0 || rec.NumCols() < 2 {
+		return nil
+	}
+
+	col0 := rec.Column(0)
+	col1 := rec.Column(1)
+	n := int(rec.NumRows())
+	results := make([]SearchResult, 0, n)
+
+	extractID := func(i int) uint64 {
+		switch arr := col0.(type) {
+		case *array.Uint64:
+			return arr.Value(i)
+		case *array.Uint32:
+			return uint64(arr.Value(i))
+		case *array.Int64:
+			return uint64(arr.Value(i))
+		case *array.Int32:
+			return uint64(arr.Value(i))
+		default:
+			return 0
+		}
+	}
+
+	extractScore := func(i int) float32 {
+		switch arr := col1.(type) {
+		case *array.Float32:
+			return arr.Value(i)
+		case *array.Float64:
+			return float32(arr.Value(i))
+		default:
+			return 0
+		}
+	}
+
+	var sourceCol *array.Uint8
+	if sourceColIdx != -1 && sourceColIdx < int(rec.NumCols()) {
+		if arr, ok := rec.Column(sourceColIdx).(*array.Uint8); ok {
+			sourceCol = arr
+		}
+	}
+
+	for k := 0; k < n; k++ {
+		idVal := extractID(k)
+		if idVal > math.MaxUint32 {
+			idVal = math.MaxUint32
+		}
+		res := SearchResult{
+			ID:    lbtypes.VectorID(idVal), // #nosec G115
+			Score: extractScore(k),
+		}
+		if sourceCol != nil && k < sourceCol.Len() {
+			res.Source = sourceCol.Value(k)
+		}
+		results = append(results, res)
+	}
+	return results
 }

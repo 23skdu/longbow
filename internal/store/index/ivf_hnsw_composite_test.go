@@ -1,12 +1,15 @@
 package index
 
 import (
-	types "github.com/23skdu/longbow/internal/store/types"
-
+	"context"
 	"fmt"
 	"math/rand"
+	"sync"
 	"testing"
 
+	types "github.com/23skdu/longbow/internal/store/types"
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -126,3 +129,104 @@ func TestIVFHNSWCompositeIndex_BillionScaleSimulation(t *testing.T) {
 	assert.NotEmpty(t, results)
 	fmt.Printf("Billion-scale sim: Found %d results\n", len(results))
 }
+
+func TestIVFHNSWCompositeIndex_ApplyDelta(t *testing.T) {
+	dim := 16
+	config := IVFHNSWConfig{
+		Nlist:  4,
+		M:      4,
+		K:      16,
+		Nprobe: 2,
+	}
+
+	idx, err := NewIVFHNSWCompositeIndex(dim, config)
+	require.NoError(t, err)
+	defer idx.Close()
+
+	trainData := make([][]float32, 20)
+	for i := range trainData {
+		v := make([]float32, dim)
+		for j := range v {
+			v[j] = rand.Float32()
+		}
+		trainData[i] = v
+	}
+	require.NoError(t, idx.Train(trainData))
+
+	rec := MakeBatchTestRecord(memory.DefaultAllocator, dim, [][]float32{trainData[0], trainData[1]})
+	defer rec.Release()
+
+	mds := &MockDataset{
+		Records: []arrow.RecordBatch{rec},
+	}
+	idx.SetDataProvider(mds)
+
+	// ApplyDelta must not deadlock!
+	delta := &types.DeltaSync{
+		StartIndex: 0,
+		NewLocations: []types.Location{
+			{BatchIdx: 0, RowIdx: 0},
+			{BatchIdx: 0, RowIdx: 1},
+		},
+	}
+	err = idx.ApplyDelta(delta)
+	require.NoError(t, err)
+	assert.Equal(t, 2, idx.Size())
+}
+
+func TestIVFHNSWCompositeIndex_ConcurrentAddBatch(t *testing.T) {
+	dim := 16
+	config := IVFHNSWConfig{
+		Nlist:  4,
+		M:      4,
+		K:      16,
+		Nprobe: 2,
+	}
+
+	idx, err := NewIVFHNSWCompositeIndex(dim, config)
+	require.NoError(t, err)
+	defer idx.Close()
+
+	trainData := make([][]float32, 20)
+	for i := range trainData {
+		v := make([]float32, dim)
+		for j := range v {
+			v[j] = rand.Float32()
+		}
+		trainData[i] = v
+	}
+	require.NoError(t, idx.Train(trainData))
+
+	const numGoroutines = 4
+	const batchRows = 10
+	var wg sync.WaitGroup
+	idMap := &sync.Map{}
+
+	for g := 0; g < numGoroutines; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			vList := make([][]float32, batchRows)
+			for r := 0; r < batchRows; r++ {
+				v := make([]float32, dim)
+				for j := range v {
+					v[j] = rand.Float32()
+				}
+				vList[r] = v
+			}
+			rec := MakeBatchTestRecord(memory.DefaultAllocator, dim, vList)
+			defer rec.Release()
+
+			ids, err := idx.AddBatch(context.Background(), []arrow.RecordBatch{rec}, nil, nil)
+			assert.NoError(t, err)
+			for _, id := range ids {
+				_, loaded := idMap.LoadOrStore(id, true)
+				assert.False(t, loaded, "duplicate vector ID allocated: %d", id)
+			}
+		}()
+	}
+	wg.Wait()
+	assert.Equal(t, numGoroutines*batchRows, idx.Size())
+}
+
+

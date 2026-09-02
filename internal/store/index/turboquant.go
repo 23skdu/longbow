@@ -25,6 +25,9 @@ type TurboQuantEncoder struct {
 
 // NewTurboQuantEncoder creates a new encoder.
 func NewTurboQuantEncoder(dims int, bitsPerAngle int, seed int64) *TurboQuantEncoder {
+	if bitsPerAngle <= 0 || bitsPerAngle > 8 {
+		bitsPerAngle = 4
+	}
 	pow2 := 1
 	for pow2 < dims {
 		pow2 <<= 1
@@ -44,7 +47,11 @@ func NewTurboQuantEncoder(dims int, bitsPerAngle int, seed int64) *TurboQuantEnc
 func (e *TurboQuantEncoder) getWorkspace() *[]float32 {
 	wsPtr, ok := e.pool.Pop()
 	if !ok {
-		ws := make([]float32, e.pow2*2)
+		ws := make([]float32, e.pow2*3)
+		return &ws
+	}
+	if len(*wsPtr) < e.pow2*3 {
+		ws := make([]float32, e.pow2*3)
 		return &ws
 	}
 	return wsPtr
@@ -79,15 +86,16 @@ func (e *TurboQuantEncoder) Encode(vec []float32) ([]byte, error) {
 	// - 1 float32 (radius)
 	// - (pow2-1) angles (packed bits)
 	angles := make([]float32, e.pow2-1)
-	radius, err := e.polarTransformRecursive(work, angles, workspace)
+	stack := workspace[e.pow2*2 : e.pow2*3]
+	radius, err := e.polarTransformRecursive(work, angles, stack)
 	if err != nil {
 		return nil, err
 	}
 
 	// 4. Reconstruction (to calculate residuals)
-	// Use the second half of the workspace for recon
+	// Use the second section of the workspace for recon, isolated from work and stack
 	recon := workspace[e.pow2 : e.pow2*2]
-	e.polarReconstructRecursive(radius, angles, recon, workspace)
+	e.polarReconstructRecursive(radius, angles, recon, stack)
 
 	// 5. Stage 2: QJL (Sign bit of residual)
 	// residual = work - recon
@@ -115,43 +123,32 @@ func (e *TurboQuantEncoder) Encode(vec []float32) ([]byte, error) {
 	return result, nil
 }
 
-func (e *TurboQuantEncoder) polarTransformRecursive(vec []float32, angles []float32, workspace []float32) (float32, error) {
+func (e *TurboQuantEncoder) polarTransformRecursive(vec []float32, angles []float32, stack []float32) (float32, error) {
 	n := len(vec)
 	if n == 1 {
 		return vec[0], nil
 	}
 
-	// Use part of the workspace for nextRadii
-	// Workspace layout: [p2] nextRadii, [p2] ...
-	// We need n/2 for nextRadii
-	nextRadii := workspace[:n/2]
+	stackOffset := e.pow2 - n
+	nextRadii := stack[stackOffset : stackOffset+n/2]
 
 	simd.GetTurboQuantPolarTransformFunc()(vec, nextRadii, angles[:n/2])
 
 	// Recursive call on the radii
-	return e.polarTransformRecursive(nextRadii, angles[n/2:], workspace)
+	return e.polarTransformRecursive(nextRadii, angles[n/2:], stack)
 }
 
-func (e *TurboQuantEncoder) polarReconstructRecursive(radius float32, angles []float32, dst []float32, workspace []float32) {
+func (e *TurboQuantEncoder) polarReconstructRecursive(radius float32, angles []float32, dst []float32, stack []float32) {
 	n := len(dst)
 	if n == 1 {
 		dst[0] = radius
 		return
 	}
 
-	// Use part of the workspace for nextRadii
-	// Since we are reconstructing, we need to be careful with workspace reuse in recursion.
-	// We'll use an offset into the workspace based on depth.
-	depth := 0
-	tmpN := n
-	for tmpN < e.pow2 {
-		tmpN *= 2
-		depth++
-	}
-	// Simplified: use a separate workspace area or just the second half of the main workspace
-	nextRadii := workspace[e.pow2 : e.pow2+n/2]
+	stackOffset := e.pow2 - n
+	nextRadii := stack[stackOffset : stackOffset+n/2]
 
-	e.polarReconstructRecursive(radius, angles[n/2:], nextRadii, workspace)
+	e.polarReconstructRecursive(radius, angles[n/2:], nextRadii, stack)
 
 	// Now expand each radius to a pair (x, y) using the first n/2 angles
 	for i := 0; i < n/2; i++ {
@@ -218,7 +215,8 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 	workspace := *wsPtr
 	defer e.putWorkspace(wsPtr)
 	recon := make([]float32, e.pow2)
-	e.polarReconstructRecursive(radius, angles, recon, workspace)
+	stack := workspace[e.pow2*2 : e.pow2*3]
+	e.polarReconstructRecursive(radius, angles, recon, stack)
 
 	// Apply QJL Correction
 	qjlBits := data[qjlOffset:]

@@ -174,11 +174,8 @@ func (idx *IVFHNSWCompositeIndex) Build() error {
 	return nil
 }
 
-// Add adds a single vector to the index.
-func (idx *IVFHNSWCompositeIndex) Add(id uint64, vector []float32) error {
-	idx.mu.Lock()
-	defer idx.mu.Unlock()
-
+// addLocked adds a single vector into the index. The caller must hold idx.mu.Lock().
+func (idx *IVFHNSWCompositeIndex) addLocked(id uint64, vector []float32) error {
 	if idx.coarseHNSW == nil {
 		return errors.New("index not trained")
 	}
@@ -211,25 +208,42 @@ func (idx *IVFHNSWCompositeIndex) Add(id uint64, vector []float32) error {
 	return nil
 }
 
+// Add adds a single vector to the index.
+func (idx *IVFHNSWCompositeIndex) Add(id uint64, vector []float32) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	return idx.addLocked(id, vector)
+}
+
 // GetGPUIndex returns nil as this is a CPU-based implementation.
 func (idx *IVFHNSWCompositeIndex) GetGPUIndex() any { return nil }
 
 // AddBatchRaw adds a batch of vectors with explicit IDs to the index.
 func (idx *IVFHNSWCompositeIndex) AddBatchRaw(ids []uint64, vectors [][]float32) error {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
 	for i, id := range ids {
-		if err := idx.Add(id, vectors[i]); err != nil {
+		if err := idx.addLocked(id, vectors[i]); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-// AddBatch adds vectors from Arrow RecordBatches to the index.
+// AddBatch adds vectors from Arrow RecordBatches to the index with monotonic unique ID allocation.
 func (idx *IVFHNSWCompositeIndex) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowIdxs, batchIdxs []int) ([]uint32, error) {
 	if len(recs) == 0 {
 		return nil, nil
 	}
-	ids := make([]uint32, 0, len(recs))
+	totalRows := 0
+	for _, rec := range recs {
+		totalRows += int(rec.NumRows())
+	}
+	ids := make([]uint32, 0, totalRows)
+
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+
 	for _, rec := range recs {
 		n := int(rec.NumRows())
 		for row := 0; row < n; row++ {
@@ -238,7 +252,7 @@ func (idx *IVFHNSWCompositeIndex) AddBatch(ctx context.Context, recs []arrow.Rec
 				return nil, err
 			}
 			id := uint64(idx.nextID)
-			if err := idx.Add(id, vec); err != nil {
+			if err := idx.addLocked(id, vec); err != nil {
 				return nil, err
 			}
 			ids = append(ids, uint32(id)) // #nosec G115 -- id is within uint32 range
@@ -289,7 +303,12 @@ func (idx *IVFHNSWCompositeIndex) SearchVectorsWithBitmap(ctx context.Context, q
 		return nil, errors.New("unsupported query type")
 	}
 
-	if idx.coarseHNSW == nil || idx.nextID == 0 {
+	idx.mu.RLock()
+	coarseHNSW := idx.coarseHNSW
+	nextID := idx.nextID
+	idx.mu.RUnlock()
+
+	if coarseHNSW == nil || nextID == 0 {
 		return nil, nil
 	}
 
@@ -535,7 +554,7 @@ func (idx *IVFHNSWCompositeIndex) ApplyDelta(d *types.DeltaSync) error {
 		// If the delta doesn't provide vectors directly, we must fetch them.
 
 		// This is a simplified version assuming the dataset provides GetVectorByLocation
-		vec, err := idx.fetchVector(loc)
+		vec, err := idx.fetchVectorLocked(loc)
 		if err != nil {
 			continue // Skip or log
 		}
@@ -543,7 +562,7 @@ func (idx *IVFHNSWCompositeIndex) ApplyDelta(d *types.DeltaSync) error {
 		// Use the StartIndex or similar to assign IDs if needed,
 		// but typically IDs are derived from locations or provided in delta.
 		// For now, we'll use nextID and increment.
-		if err := idx.Add(uint64(idx.nextID), vec); err != nil {
+		if err := idx.addLocked(uint64(idx.nextID), vec); err != nil {
 			return err
 		}
 	}
@@ -558,16 +577,12 @@ func (idx *IVFHNSWCompositeIndex) SetDataProvider(p types.IndexDataProvider) {
 	idx.provider = p
 }
 
-func (idx *IVFHNSWCompositeIndex) fetchVector(loc core.Location) ([]float32, error) {
-	idx.mu.RLock()
-	provider := idx.provider
-	idx.mu.RUnlock()
-
-	if provider == nil {
+func (idx *IVFHNSWCompositeIndex) fetchVectorLocked(loc core.Location) ([]float32, error) {
+	if idx.provider == nil {
 		return nil, fmt.Errorf("vector fetching requires IndexDataProvider")
 	}
 
-	records := provider.GetRecords()
+	records := idx.provider.GetRecords()
 	if loc.BatchIdx < 0 || loc.BatchIdx >= len(records) {
 		return nil, fmt.Errorf("batch index %d out of bounds (len=%d)", loc.BatchIdx, len(records))
 	}
@@ -582,6 +597,12 @@ func (idx *IVFHNSWCompositeIndex) fetchVector(loc core.Location) ([]float32, err
 	}
 
 	return ExtractVectorFromArrow(batch, loc.RowIdx, -1)
+}
+
+func (idx *IVFHNSWCompositeIndex) fetchVector(loc core.Location) ([]float32, error) {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.fetchVectorLocked(loc)
 }
 
 // GetPQEncoder returns the underlying PQ encoder used by the index.

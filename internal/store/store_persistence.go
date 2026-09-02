@@ -40,22 +40,22 @@ func (s *VectorStore) InitPersistence(cfg StorageConfig) error {
 		engine.SetReplicator(replicator)
 	}
 
-	// 3. Replay WAL
+	// 3. Load Snapshots first (Establish baseline dataset state & records)
+	err = engine.LoadSnapshots(s.loadSnapshotItem)
+	if err != nil {
+		return fmt.Errorf("failed to load snapshots: %w", err)
+	}
+
+	// 4. Replay WAL on top of restored baseline
 	maxSeq, err := engine.ReplayWAL(s.applyReplayBatch)
 	if err != nil {
 		return fmt.Errorf("failed to replay WAL: %w", err)
 	}
 	s.sequence.Store(maxSeq)
 
-	// 4. Load Snapshots
-	err = engine.LoadSnapshots(s.loadSnapshotItem)
-	if err != nil {
-		return fmt.Errorf("failed to load snapshots: %w", err)
-	}
-
 	s.logger.Info().
 		Uint64("max_seq", maxSeq).
-		Msg("Persistence initialized (WAL replayed, Snapshots loaded)")
+		Msg("Persistence initialized (Snapshots loaded, WAL replayed)")
 
 	return nil
 }

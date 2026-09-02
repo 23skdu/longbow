@@ -97,6 +97,7 @@ func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) 
 				// 1. Capture lightweight clone immediately
 				snap, meta, err := hnsw.SnapshotGraph()
 				if err != nil {
+					item.Cleanup()
 					return fmt.Errorf("failed to snapshot index for %s: %w", name, err)
 				}
 
@@ -127,12 +128,14 @@ func (src *storeSnapshotSource) Iterate(yield func(storage.SnapshotItem) error) 
 				if err := ds.Index.ExportGraph(&graphBuf); err == nil {
 					item.IndexConfig = graphBuf.Bytes()
 				} else {
+					item.Cleanup()
 					return fmt.Errorf("failed to export index graph for %s: %w", name, err)
 				}
 			}
 		}
 
 		if err := yield(item); err != nil {
+			item.Cleanup()
 			return err
 		}
 	}

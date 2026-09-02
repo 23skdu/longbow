@@ -62,7 +62,11 @@ func atan2PolyF32(y, x float32) float32 {
 	return a
 }
 
-
+// Retain references to scalar polynomial functions for testing/diagnostics
+var (
+	_ = sinPolyF32
+	_ = atan2PolyF32
+)
 
 // haversineBatchAVX2 computes Haversine distance with fused operations.
 // Uses float32 polynomial approximations for sin/cos/atan2 to avoid

@@ -139,3 +139,13 @@ func packTQ4AVX512Kernel(src, dst unsafe.Pointer, n int)
 
 //go:noescape
 func packTQ8AVX512Kernel(src, dst unsafe.Pointer, n int)
+
+// Retain references to satisfy go vet without triggering unused warnings
+var (
+	_ = euclideanInt8AVX512Kernel
+	_ = unpackTQ2AVX512VBMIKernel
+	_ = packTQ2AVX512VBMIKernel
+	_ = packTQ2AVX512Kernel
+	_ = packTQ4AVX512Kernel
+	_ = packTQ8AVX512Kernel
+)

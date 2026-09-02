@@ -66,7 +66,7 @@ func BenchmarkEuclideanDistanceBatch(b *testing.B) {
 	results := make([]float32, numVectors)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = EuclideanDistanceBatch(query, vectors, results)
 	}
 }
@@ -128,7 +128,7 @@ func BenchmarkEuclideanDistanceSQ8Batch(b *testing.B) {
 	results := make([]float32, numVectors)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = EuclideanDistanceSQ8Batch(query, vectors, results)
 	}
 }
@@ -190,7 +190,7 @@ func BenchmarkEuclideanDistanceF16Batch(b *testing.B) {
 	results := make([]float32, numVectors)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = EuclideanDistanceF16Batch(query, vectors, results)
 	}
 }

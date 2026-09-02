@@ -75,7 +75,7 @@ func BenchmarkEuclidean128(b *testing.B) {
 	bb := make([]float32, dims)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistance(a, bb)
 	}
 }
@@ -86,7 +86,7 @@ func BenchmarkDot128(b *testing.B) {
 	bb := make([]float32, dims)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DotProduct(a, bb)
 	}
 }

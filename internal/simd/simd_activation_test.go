@@ -96,7 +96,7 @@ func BenchmarkExpSIMD(b *testing.B) {
 	}
 	dst := make([]float32, n)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		expSIMD(src, dst)
 	}
 	b.SetBytes(int64(n * 4))
@@ -110,7 +110,7 @@ func BenchmarkExpGeneric(b *testing.B) {
 	}
 	dst := make([]float32, n)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		expGeneric(src, dst)
 	}
 	b.SetBytes(int64(n * 4))
@@ -124,7 +124,7 @@ func BenchmarkSoftmaxSIMD(b *testing.B) {
 	}
 	dst := make([]float32, n)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		softmaxSIMD(src, dst)
 	}
 	b.SetBytes(int64(n * 4))
@@ -138,7 +138,7 @@ func BenchmarkSoftmaxGeneric(b *testing.B) {
 	}
 	dst := make([]float32, n)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		softmaxGeneric(src, dst)
 	}
 	b.SetBytes(int64(n * 4))

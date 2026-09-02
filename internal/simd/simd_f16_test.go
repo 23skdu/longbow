@@ -119,7 +119,7 @@ func BenchmarkEuclideanDistanceF16_384(b *testing.B) {
 	v1 := makeTestVectorF16(dim)
 	v2 := makeTestVectorF16(dim)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistanceF16(v1, v2)
 	}
 }
@@ -129,7 +129,7 @@ func BenchmarkDotProductF16_384(b *testing.B) {
 	v1 := makeTestVectorF16(dim)
 	v2 := makeTestVectorF16(dim)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DotProductF16(v1, v2)
 	}
 }

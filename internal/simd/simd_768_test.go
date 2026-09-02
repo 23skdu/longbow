@@ -94,7 +94,7 @@ func BenchmarkEuclidean768(b *testing.B) {
 	bb := make([]float32, dims)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = euclidean768Unrolled4x(a, bb)
 	}
 }
@@ -105,7 +105,7 @@ func BenchmarkEuclidean1536(b *testing.B) {
 	bb := make([]float32, dims)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = euclidean1536Unrolled4x(a, bb)
 	}
 }
@@ -116,7 +116,7 @@ func BenchmarkEuclidean768Dispatch(b *testing.B) {
 	bb := make([]float32, dims)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistance(a, bb)
 	}
 }
@@ -127,7 +127,7 @@ func BenchmarkEuclidean1536Dispatch(b *testing.B) {
 	bb := make([]float32, dims)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistance(a, bb)
 	}
 }

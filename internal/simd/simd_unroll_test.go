@@ -155,7 +155,7 @@ func BenchmarkEuclidean_Scalar_128dim(b *testing.B) {
 	a := make128()
 	vec := make128Offset()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = euclideanGeneric(a, vec)
 	}
 }
@@ -164,7 +164,7 @@ func BenchmarkEuclidean_Unrolled4x_128dim(b *testing.B) {
 	a := make128()
 	vec := make128Offset()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = euclideanUnrolled4x(a, vec)
 	}
 }
@@ -173,7 +173,7 @@ func BenchmarkCosine_Scalar_128dim(b *testing.B) {
 	a := make128()
 	vec := make128Offset()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = cosineGeneric(a, vec)
 	}
 }
@@ -182,7 +182,7 @@ func BenchmarkCosine_Unrolled4x_128dim(b *testing.B) {
 	a := make128()
 	vec := make128Offset()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = cosineUnrolled4x(a, vec)
 	}
 }
@@ -191,7 +191,7 @@ func BenchmarkDot_Scalar_128dim(b *testing.B) {
 	a := make128()
 	vec := make128Offset()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = dotGeneric(a, vec)
 	}
 }
@@ -200,7 +200,7 @@ func BenchmarkDot_Unrolled4x_128dim(b *testing.B) {
 	a := make128()
 	vec := make128Offset()
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = dotUnrolled4x(a, vec)
 	}
 }
@@ -213,7 +213,7 @@ func BenchmarkEuclideanBatch_Scalar_128dim_100vec(b *testing.B) {
 	}
 	results := make([]float32, 100)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		euclideanBatchGeneric(query, vectors, results)
 	}
 }
@@ -226,7 +226,7 @@ func BenchmarkEuclideanBatch_Unrolled4x_128dim_100vec(b *testing.B) {
 	}
 	results := make([]float32, 100)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = euclideanBatchUnrolled4x(query, vectors, results)
 	}
 }

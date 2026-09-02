@@ -75,7 +75,7 @@ func BenchmarkEuclidean384(b *testing.B) {
 	bb := make([]float32, dims)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistance(a, bb)
 	}
 }
@@ -92,7 +92,7 @@ func BenchmarkEuclidean385_Generic(b *testing.B) {
 	bb := make([]float32, dims)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		EuclideanDistance(a, bb)
 	}
 }
@@ -103,7 +103,7 @@ func BenchmarkDot384(b *testing.B) {
 	bb := make([]float32, dims)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DotProduct(a, bb)
 	}
 }
@@ -114,7 +114,7 @@ func BenchmarkDot385_Generic(b *testing.B) {
 	bb := make([]float32, dims)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DotProduct(a, bb)
 	}
 }

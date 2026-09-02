@@ -223,7 +223,7 @@ func BenchmarkAVX2_Euclidean_768(b *testing.B) {
 	defer restore()
 	v1, v2 := makeTestVector(768, 1.0), makeTestVector(768, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = euclideanAVX2(v1, v2)
 	}
 }
@@ -233,7 +233,7 @@ func BenchmarkAVX2_Cosine_768(b *testing.B) {
 	defer restore()
 	v1, v2 := makeTestVector(768, 1.0), makeTestVector(768, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = cosineAVX2(v1, v2)
 	}
 }
@@ -243,7 +243,7 @@ func BenchmarkAVX2_Dot_768(b *testing.B) {
 	defer restore()
 	v1, v2 := makeTestVector(768, 1.0), makeTestVector(768, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = dotAVX2(v1, v2)
 	}
 }
@@ -253,7 +253,7 @@ func BenchmarkAVX2_Euclidean_1536(b *testing.B) {
 	defer restore()
 	v1, v2 := makeTestVector(1536, 1.0), makeTestVector(1536, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = euclideanAVX2(v1, v2)
 	}
 }
@@ -263,7 +263,7 @@ func BenchmarkAVX2_Cosine_1536(b *testing.B) {
 	defer restore()
 	v1, v2 := makeTestVector(1536, 1.0), makeTestVector(1536, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = cosineAVX2(v1, v2)
 	}
 }

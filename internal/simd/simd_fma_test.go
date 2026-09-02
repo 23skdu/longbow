@@ -234,7 +234,7 @@ func BenchmarkDotProduct_FMA_768(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DotProductFMA(v1, v2)
 	}
 }
@@ -245,7 +245,7 @@ func BenchmarkDotProduct_Current_768(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DotProduct(v1, v2)
 	}
 }
@@ -260,7 +260,7 @@ func BenchmarkEuclidean_FMA_1536(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistanceFMA(v1, v2)
 	}
 }
@@ -271,7 +271,7 @@ func BenchmarkEuclidean_Current_1536(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistance(v1, v2)
 	}
 }
@@ -286,7 +286,7 @@ func BenchmarkCosine_FMA_768(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = CosineDistanceFMA(v1, v2)
 	}
 }
@@ -297,7 +297,7 @@ func BenchmarkCosine_Current_768(b *testing.B) {
 
 	b.ResetTimer()
 	b.ReportAllocs()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = CosineDistance(v1, v2)
 	}
 }

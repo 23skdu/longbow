@@ -81,7 +81,7 @@ func BenchmarkPackTQ2AVX512VBMI(b *testing.B) {
 	dst := make([]byte, dim/4)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		PackTQ2AVX512VBMI(src, dst)
 	}
 }
@@ -92,7 +92,7 @@ func BenchmarkPackTQ2AVX2(b *testing.B) {
 	dst := make([]byte, dim/4)
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		PackTQ2AVX2(src, dst)
 	}
 }

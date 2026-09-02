@@ -210,7 +210,7 @@ func BenchmarkCosineBatch_Unrolled4x_128dim_100vec(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if err := cosineBatchUnrolled4x(query, vectors, results); err != nil {
 			b.Fatalf("cosineBatchUnrolled4x failed: %v", err)
 		}
@@ -234,7 +234,7 @@ func BenchmarkDotBatch_Unrolled4x_128dim_100vec(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		if err := dotBatchUnrolled4x(query, vectors, results); err != nil {
 			b.Fatal(err)
 		}
@@ -258,7 +258,7 @@ func BenchmarkCosine_Sequential_128dim_100vec(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, v := range vectors {
 			_, _ = CosineDistance(query, v)
 		}
@@ -281,7 +281,7 @@ func BenchmarkDot_Sequential_128dim_100vec(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		for _, v := range vectors {
 			_, _ = DotProduct(query, v)
 		}

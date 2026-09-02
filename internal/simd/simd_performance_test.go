@@ -12,7 +12,7 @@ func BenchmarkSIMDDispatchOverhead(b *testing.B) {
 	vector := []float32{4.0, 3.0, 2.0, 1.0}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		// This measures dispatch overhead + actual computation
 		_, _ = EuclideanDistance(query, vector)
 	}
@@ -27,7 +27,7 @@ func BenchmarkDirectFunctionCall(b *testing.B) {
 	impl := euclideanDistanceImpl
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = impl(query, vector)
 	}
 }
@@ -167,7 +167,7 @@ func BenchmarkSIMDPrecisionValidation(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		result, _ := EuclideanDistance(query, vector)
 		// Validate result is reasonable (positive distance)
 		if result <= 0 {
@@ -215,7 +215,7 @@ func BenchmarkEuclideanInt16(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DispatchDistance(MetricEuclidean, a, vector)
 	}
 }
@@ -231,7 +231,7 @@ func BenchmarkEuclideanUint16(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DispatchDistance(MetricEuclidean, a, vector)
 	}
 }
@@ -247,7 +247,7 @@ func BenchmarkDotInt16(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DispatchDistance(MetricDotProduct, a, vector)
 	}
 }
@@ -263,7 +263,7 @@ func BenchmarkEuclideanInt64(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DispatchDistance(MetricEuclidean, a, vector)
 	}
 }

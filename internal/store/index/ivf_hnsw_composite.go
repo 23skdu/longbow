@@ -599,7 +599,8 @@ func (idx *IVFHNSWCompositeIndex) fetchVectorLocked(loc core.Location) ([]float3
 	return ExtractVectorFromArrow(batch, loc.RowIdx, -1)
 }
 
-func (idx *IVFHNSWCompositeIndex) fetchVector(loc core.Location) ([]float32, error) {
+// FetchVector retrieves a vector by storage location under read lock.
+func (idx *IVFHNSWCompositeIndex) FetchVector(loc core.Location) ([]float32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 	return idx.fetchVectorLocked(loc)

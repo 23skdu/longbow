@@ -265,7 +265,7 @@ func BenchmarkEuclideanDistance_128(b *testing.B) {
 	v1 := makeTestVector(128, 1.0)
 	v2 := makeTestVector(128, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistance(v1, v2)
 	}
 }
@@ -274,7 +274,7 @@ func BenchmarkEuclideanDistance_384(b *testing.B) {
 	v1 := makeTestVector(384, 1.0)
 	v2 := makeTestVector(384, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistance(v1, v2)
 	}
 }
@@ -283,7 +283,7 @@ func BenchmarkEuclideanDistance_768(b *testing.B) {
 	v1 := makeTestVector(768, 1.0)
 	v2 := makeTestVector(768, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistance(v1, v2)
 	}
 }
@@ -292,7 +292,7 @@ func BenchmarkEuclideanDistance_1536(b *testing.B) {
 	v1 := makeTestVector(1536, 1.0)
 	v2 := makeTestVector(1536, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistance(v1, v2)
 	}
 }
@@ -301,7 +301,7 @@ func BenchmarkCosineDistance_128(b *testing.B) {
 	v1 := makeTestVector(128, 1.0)
 	v2 := makeTestVector(128, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = CosineDistance(v1, v2)
 	}
 }
@@ -310,7 +310,7 @@ func BenchmarkCosineDistance_384(b *testing.B) {
 	v1 := makeTestVector(384, 1.0)
 	v2 := makeTestVector(384, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = CosineDistance(v1, v2)
 	}
 }
@@ -319,7 +319,7 @@ func BenchmarkCosineDistance_768(b *testing.B) {
 	v1 := makeTestVector(768, 1.0)
 	v2 := makeTestVector(768, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = CosineDistance(v1, v2)
 	}
 }
@@ -328,7 +328,7 @@ func BenchmarkCosineDistance_1536(b *testing.B) {
 	v1 := makeTestVector(1536, 1.0)
 	v2 := makeTestVector(1536, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = CosineDistance(v1, v2)
 	}
 }
@@ -337,7 +337,7 @@ func BenchmarkDotProduct_1536(b *testing.B) {
 	v1 := makeTestVector(1536, 1.0)
 	v2 := makeTestVector(1536, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DotProduct(v1, v2)
 	}
 }
@@ -347,7 +347,7 @@ func BenchmarkEuclidean_Generic_768(b *testing.B) {
 	v1 := makeTestVector(768, 1.0)
 	v2 := makeTestVector(768, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = euclideanGeneric(v1, v2)
 	}
 }
@@ -356,7 +356,7 @@ func BenchmarkCosine_Generic_768(b *testing.B) {
 	v1 := makeTestVector(768, 1.0)
 	v2 := makeTestVector(768, 2.0)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = cosineGeneric(v1, v2)
 	}
 }

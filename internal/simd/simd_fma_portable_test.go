@@ -296,7 +296,7 @@ func BenchmarkDotProductFMA_768(b *testing.B) {
 	a := generateTestVector(768, 1)
 	v := generateTestVector(768, 2)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DotProductFMA(a, v)
 	}
 }
@@ -305,7 +305,7 @@ func BenchmarkDotProductFMA_1536(b *testing.B) {
 	a := generateTestVector(1536, 1)
 	v := generateTestVector(1536, 2)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = DotProductFMA(a, v)
 	}
 }
@@ -314,7 +314,7 @@ func BenchmarkEuclideanDistanceFMA_768(b *testing.B) {
 	a := generateTestVector(768, 1)
 	v := generateTestVector(768, 2)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistanceFMA(a, v)
 	}
 }
@@ -323,7 +323,7 @@ func BenchmarkCosineDistanceFMA_768(b *testing.B) {
 	a := generateTestVector(768, 1)
 	v := generateTestVector(768, 2)
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = CosineDistanceFMA(a, v)
 	}
 }

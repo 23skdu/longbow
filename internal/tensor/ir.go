@@ -210,7 +210,7 @@ func collectInputs(n *IRNode, inputs *[]*IRNode) {
 	}
 }
 
-func inferContractShape(aShape, bShape Shape, aLabels, bLabels, sumLabels, outLabels []string) Shape {
+func inferContractShape(aShape, bShape Shape, aLabels, bLabels, _ []string, outLabels []string) Shape {
 	dimMap := map[string]int{}
 	for i, lbl := range aLabels {
 		dimMap[lbl] = aShape[i]

@@ -2,6 +2,6 @@
 
 package tensor
 
-func contractCUDA(a, b, out *Tensor, aAxes, bAxes, aFree, bFree []int) bool {
+func contractCUDA(_, _, _ *Tensor, _, _, _, _ []int) bool {
 	return false
 }

@@ -7,7 +7,7 @@ import (
 // TensorContract performs a tensor contraction (einsum-style) on two tensors.
 // sumLabels are the index names to contract over; outLabels are the output index order.
 func TensorContract(a, b *Tensor, sumLabels, outLabels []string) (*Tensor, error) {
-	aLabels, bLabels := deduceLabels(a, b, sumLabels, outLabels)
+	aLabels, bLabels := deduceLabels(a, b)
 
 	// Find contraction axes
 	aAxes := make([]int, 0, len(sumLabels))
@@ -104,6 +104,10 @@ func TensorContract(a, b *Tensor, sumLabels, outLabels []string) (*Tensor, error
 }
 
 func contractGeneric(a, b, out *Tensor, aAxes, bAxes, aFree, bFree []int) error {
+	// Try CUDA acceleration if available
+	if contractCUDA(a, b, out, aAxes, bAxes, aFree, bFree) {
+		return nil
+	}
 	// Try SIMD-accelerated path for 2D matrix multiply
 	if len(aFree) == 1 && len(bFree) == 1 && len(aAxes) == 1 {
 		m := a.Shape()[aFree[0]]
@@ -218,7 +222,7 @@ func contractNumeric[T float32 | float64 | complex64 | complex128 | int32 | int6
 	}
 }
 
-func offsetFromIndices(indices []int, strides Strides, elemSize int) int {
+func offsetFromIndices(indices []int, strides Strides, _ int) int {
 	off := 0
 	for i, idx := range indices {
 		off += idx * strides[i]
@@ -434,7 +438,7 @@ func contains(slice []string, s string) bool {
 	return false
 }
 
-func deduceLabels(a, b *Tensor, sumLabels, outLabels []string) ([]string, []string) {
+func deduceLabels(a, b *Tensor) ([]string, []string) {
 	aLabels := make([]string, a.Rank())
 	bLabels := make([]string, b.Rank())
 	for i := range aLabels {

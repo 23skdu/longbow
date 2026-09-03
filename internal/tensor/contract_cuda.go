@@ -1,5 +1,3 @@
-//go:build gpu && linux
-
 package tensor
 
 import (

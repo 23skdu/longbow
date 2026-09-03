@@ -28,17 +28,17 @@ Completed release tasks (including the 0.2.3-rc1 P0 blockers, comprehensive 500k
 - Integrated with `ArrowHNSWConfig`, CLI flags (`--auto-quantize`, `--auto-quantize-threshold`, `--auto-quantize-bits`), and runtime `QuantizationTuner`.
 - Prometheus counter `longbow_auto_quantize_engaged_total`.
 
+### C. Native Tensor Calculus Engine (see [docs/tensor_engine.md](tensor_engine.md))
+- **Phase 1: Tensor IR & Einstein Notation Parser**: Implemented high-level `Einsum` with diagonal extraction (`"ii->i"`), trace (`"ii->"`), contraction chains, and DAG IR (`Contract`, `Transpose`, `Reshape`, `Elementwise`, `Reduce`).
+- **Phase 2: Index Rewriting Optimizer**: Dynamic programming contraction order optimization (`OptimizePath`), Common Subexpression Elimination (CSE), constant folding, and algebraic simplification ($A \cdot 0 \to 0$, $A + 0 \to A$, $-(-A) \to A$, $T(T(A)) \to A$).
+- **Phase 3: Hardware Kernels & Tensor Calculus Intrinsics**: AVX2 FMA kernels (`gemm_amd64.s`), NVIDIA CUDA cuBLAS kernels (`cublasSgemm` & `cublasDgemm`), Levi-Civita permutation symbols ($\epsilon_{i_1 \dots i_n}$), metric inversion & index raising/lowering ($g^{\mu\nu}$), Christoffel connection symbols ($\Gamma^\sigma_{\mu\nu}$), Riemann curvature ($R^\rho_{\sigma\mu\nu}$), Ricci tensor ($R_{\sigma\nu}$), and exterior differential wedge product ($A \wedge B$).
+- **Phase 4: Multi-Dtype Execution & Telemetry**: Generic multi-dtype fallbacks (`Float32`, `Float64`, `Complex64`, `Complex128`, `Int32`, `Int64`), zero-copy tensor slicing, and Prometheus metrics (`longbow_tensor_operations_total`, `longbow_tensor_operation_duration_seconds`, `longbow_tensor_bytes_processed_total`, `longbow_tensor_optimizer_passes_total`, `longbow_tensor_optimizer_flops_saved_total`).
+
 ---
 
 ## 3. Extended Roadmap Initiatives (from `docs/roadmap.md`)
 
-### A. Native Tensor Calculus Engine
-- **Phase 1: Tensor IR & Einstein Notation Parser**: Implement parser for Einstein summation notation (e.g. `"ij,jk->ik"`) and construct a DAG IR (`Contract`, `Transpose`, `Reshape`, `Elementwise`, `Reduce`).
-- **Phase 2: Index Rewriting Optimizer**: Dynamic programming contraction order optimization, common sub-expression elimination, and algebraic simplification.
-- **Phase 3: JIT-Compiled Kernels**: AVX2 and CUDA tensor kernels (cuBLAS GEMM, elementwise intrinsics, trig/tensor calculus intrinsics).
-- **Phase 4: Hybrid Auto-Scheduling & Zero-Copy Views**: Cost-model scheduler between CPU/GPU and zero-copy tensor slicing over Arrow buffers.
-
-### B. Experimental Fast Math Integration (`feature/emlgo-math`)
+### Experimental Fast Math Integration (`feature/emlgo-math`)
 - **Objective**: Integrate the `emlgo` math library (https://github.com/23skdu/emlgo) to replace standard math library calls in distance calculation hotspots.
 - **Action Item**:
   - Set up feature branch and wrapper interface in `internal/store/index`.

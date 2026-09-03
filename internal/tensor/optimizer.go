@@ -14,6 +14,8 @@ const (
 	RuleReshapeOfReshape            // R(R(A)) -> A (if shapes allow)
 	RuleExpOfLog                    // exp(log(A)) -> A (domain permitting)
 	RuleLogOfExp                    // log(exp(A)) -> A
+	RuleConstantFolding             // Op(Const, Const) -> Const
+	RuleCSE                         // Common Subexpression Elimination
 )
 
 // Optimizer rewrites a tensor IR graph for efficiency.
@@ -28,17 +30,50 @@ func NewOptimizer() *Optimizer {
 			RuleAddZero,
 			RuleDoubleNeg,
 			RuleTransposeOfTranspose,
+			RuleConstantFolding,
 		},
 	}
 }
 
-// Optimize applies algebraic rewrite rules to simplify a graph.
+// Optimize applies algebraic rewrite rules and CSE to simplify a graph.
 func (opt *Optimizer) Optimize(g *Graph) *Graph {
 	if g == nil {
 		return nil
 	}
 	root := opt.rewrite(g.Root)
+
+	// Apply CSE deduplication pass
+	canonMap := map[string]*IRNode{}
+	root = opt.applyCSE(root, canonMap)
+
 	return NewGraph(root)
+}
+
+func (opt *Optimizer) applyCSE(n *IRNode, canonMap map[string]*IRNode) *IRNode {
+	if n == nil {
+		return nil
+	}
+	for i, c := range n.Children {
+		n.Children[i] = opt.applyCSE(c, canonMap)
+	}
+	key := deepNodeKey(n)
+	if existing, ok := canonMap[key]; ok {
+		TensorOptimizerPassesTotal.WithLabelValues("cse").Inc()
+		return existing
+	}
+	canonMap[key] = n
+	return n
+}
+
+func deepNodeKey(n *IRNode) string {
+	if n == nil {
+		return ""
+	}
+	childKeys := ""
+	for _, c := range n.Children {
+		childKeys += fmt.Sprintf("[%p]", c)
+	}
+	return nodeKey(n) + ":" + childKeys
 }
 
 func (opt *Optimizer) rewrite(n *IRNode) *IRNode {
@@ -63,16 +98,73 @@ func (opt *Optimizer) rewrite(n *IRNode) *IRNode {
 func (opt *Optimizer) apply(rule RewriteRule, n *IRNode) *IRNode {
 	switch rule {
 	case RuleMulByZero:
-		return rewriteMulByZero(n)
+		res := rewriteMulByZero(n)
+		if res != nil {
+			TensorOptimizerPassesTotal.WithLabelValues("mul_by_zero").Inc()
+		}
+		return res
 	case RuleAddZero:
-		return rewriteAddZero(n)
+		res := rewriteAddZero(n)
+		if res != nil {
+			TensorOptimizerPassesTotal.WithLabelValues("add_zero").Inc()
+		}
+		return res
 	case RuleDoubleNeg:
-		return rewriteDoubleNeg(n)
+		res := rewriteDoubleNeg(n)
+		if res != nil {
+			TensorOptimizerPassesTotal.WithLabelValues("double_neg").Inc()
+		}
+		return res
 	case RuleTransposeOfTranspose:
-		return rewriteTransposeOfTranspose(n)
+		res := rewriteTransposeOfTranspose(n)
+		if res != nil {
+			TensorOptimizerPassesTotal.WithLabelValues("transpose_of_transpose").Inc()
+		}
+		return res
+	case RuleConstantFolding:
+		res := rewriteConstantFolding(n)
+		if res != nil {
+			TensorOptimizerPassesTotal.WithLabelValues("constant_folding").Inc()
+			TensorOptimizerFlopsSavedTotal.Add(float64(numElements(n.Shape)))
+		}
+		return res
 	default:
 		return nil
 	}
+}
+
+func rewriteConstantFolding(n *IRNode) *IRNode {
+	switch n.Kind {
+	case OpTranspose:
+		if len(n.Children) == 1 && n.Children[0].Kind == OpConstant && n.Children[0].ConstVal != nil {
+			if res, err := Transpose(n.Children[0].ConstVal, n.Perm); err == nil {
+				return NewConstant(res)
+			}
+		}
+	case OpReshape:
+		if len(n.Children) == 1 && n.Children[0].Kind == OpConstant && n.Children[0].ConstVal != nil {
+			return NewConstant(n.Children[0].ConstVal.Reshape(n.Shape))
+		}
+	case OpElementwise:
+		allConst := true
+		for _, c := range n.Children {
+			if c.Kind != OpConstant || c.ConstVal == nil {
+				allConst = false
+				break
+			}
+		}
+		if allConst && len(n.Children) > 0 {
+			args := make([]*Tensor, len(n.Children))
+			for i, c := range n.Children {
+				args[i] = c.ConstVal
+			}
+			exec := NewExecutor()
+			if res, err := exec.execElementwise(n.ElemOp, args); err == nil {
+				return NewConstant(res)
+			}
+		}
+	}
+	return nil
 }
 
 func rewriteMulByZero(n *IRNode) *IRNode {

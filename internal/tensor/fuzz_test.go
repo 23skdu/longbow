@@ -66,3 +66,32 @@ func FuzzBroadcastShapes(f *testing.F) {
 		_, _ = broadcastShapes(a, b)
 	})
 }
+
+// FuzzEinsumExecution fuzzes end-to-end einsum execution with concrete tensors.
+func FuzzEinsumExecution(f *testing.F) {
+	seeds := []string{
+		"ij,jk->ik",
+		"ii->i",
+		"ii->",
+		"ij->ji",
+		"i,i->",
+		"ij,j->i",
+		"i,j->ij",
+		"invalid",
+		"a,b,c->",
+	}
+	for _, s := range seeds {
+		f.Add(s)
+	}
+	f.Fuzz(func(t *testing.T, expr string) {
+		t1 := New(DtypeFloat32, Shape{2, 2})
+		t2 := New(DtypeFloat32, Shape{2, 2})
+		for i := range t1.Float32s() {
+			t1.Float32s()[i] = 1.0
+			t2.Float32s()[i] = 2.0
+		}
+		// Must not panic on any expression
+		_, _ = Einsum(expr, t1, t2)
+		_, _ = Einsum(expr, t1)
+	})
+}

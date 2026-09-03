@@ -57,6 +57,15 @@ Advanced mutation management:
 - **Compaction**: Fragmentation-aware background hygiene and memory reclamation.
 - **Namespaces**: Recursive cleanup and isolation for multi-tenant workloads.
 
+### 8. [Native Tensor Calculus Engine](tensor_engine.md)
+
+General-purpose tensor calculus and scientific computing engine:
+
+- **Einstein Summation**: High-level `Einsum` with diagonal extraction, trace, and multi-tensor contraction chains.
+- **Tensor Calculus**: Levi-Civita permutation symbols, metric raising/lowering, Christoffel symbols, Riemann curvature, Ricci tensors, and exterior wedge products.
+- **Compiler & Optimizer**: Common subexpression elimination (CSE), constant folding, and algebraic DAG simplification.
+- **Hardware Acceleration**: Multi-threaded AVX2 SIMD and NVIDIA CUDA/cuBLAS kernels with real-time Prometheus telemetry.
+
 ---
 
 ## 🛠 System Reference

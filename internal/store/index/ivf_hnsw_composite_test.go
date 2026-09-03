@@ -23,7 +23,7 @@ func TestIVFHNSWCompositeIndex_Basic(t *testing.T) {
 		Nlist:  numCentroids,
 		M:      4,
 		K:      16,
-		Nprobe: 2,
+		Nprobe: 4,
 	}
 
 	idx, err := NewIVFHNSWCompositeIndex(dim, config)

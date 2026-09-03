@@ -266,6 +266,69 @@ func (t *Tensor) Float64s() []float64 {
 	return unsafe.Slice((*float64)(unsafe.Pointer(&t.data[0])), len(t.data)/8) // #nosec G103
 }
 
+// Complex64s returns the data as a complex64 slice. Panics if dtype is not Complex64.
+func (t *Tensor) Complex64s() []complex64 {
+	if t.dtype != DtypeComplex64 {
+		panic("tensor: Complex64s called on non-complex64 tensor")
+	}
+	if len(t.data) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*complex64)(unsafe.Pointer(&t.data[0])), len(t.data)/8) // #nosec G103
+}
+
+// Complex128s returns the data as a complex128 slice. Panics if dtype is not Complex128.
+func (t *Tensor) Complex128s() []complex128 {
+	if t.dtype != DtypeComplex128 {
+		panic("tensor: Complex128s called on non-complex128 tensor")
+	}
+	if len(t.data) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*complex128)(unsafe.Pointer(&t.data[0])), len(t.data)/16) // #nosec G103
+}
+
+// Int32s returns the data as an int32 slice. Panics if dtype is not Int32.
+func (t *Tensor) Int32s() []int32 {
+	if t.dtype != DtypeInt32 {
+		panic("tensor: Int32s called on non-int32 tensor")
+	}
+	if len(t.data) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*int32)(unsafe.Pointer(&t.data[0])), len(t.data)/4) // #nosec G103
+}
+
+// Int64s returns the data as an int64 slice. Panics if dtype is not Int64.
+func (t *Tensor) Int64s() []int64 {
+	if t.dtype != DtypeInt64 {
+		panic("tensor: Int64s called on non-int64 tensor")
+	}
+	if len(t.data) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*int64)(unsafe.Pointer(&t.data[0])), len(t.data)/8) // #nosec G103
+}
+
+// Int8s returns the data as an int8 slice. Panics if dtype is not Int8.
+func (t *Tensor) Int8s() []int8 {
+	if t.dtype != DtypeInt8 {
+		panic("tensor: Int8s called on non-int8 tensor")
+	}
+	if len(t.data) == 0 {
+		return nil
+	}
+	return unsafe.Slice((*int8)(unsafe.Pointer(&t.data[0])), len(t.data)) // #nosec G103
+}
+
+// Uint8s returns the data as a uint8 (byte) slice. Panics if dtype is not Uint8.
+func (t *Tensor) Uint8s() []uint8 {
+	if t.dtype != DtypeUint8 {
+		panic("tensor: Uint8s called on non-uint8 tensor")
+	}
+	return t.data
+}
+
 // Reshape returns a new view with the given shape if the total number of elements matches.
 func (t *Tensor) Reshape(shape Shape) *Tensor {
 	if numElements(shape) != t.NumElements() {
@@ -278,4 +341,77 @@ func (t *Tensor) Reshape(shape Shape) *Tensor {
 		labels: t.labels,
 	}
 	return out
+}
+
+// Diagonal extracts the diagonal along two axes where axis1 == axis2.
+// The two axes must have matching dimension sizes and are collapsed into a single axis at the end.
+func (t *Tensor) Diagonal(axis1, axis2 int) (*Tensor, error) {
+	rank := t.Rank()
+	if axis1 < 0 || axis1 >= rank || axis2 < 0 || axis2 >= rank {
+		return nil, fmt.Errorf("tensor: Diagonal axes (%d, %d) out of range [0, %d)", axis1, axis2, rank)
+	}
+	if axis1 == axis2 {
+		return nil, fmt.Errorf("tensor: Diagonal axes must be distinct (got %d and %d)", axis1, axis2)
+	}
+	if t.shape[axis1] != t.shape[axis2] {
+		return nil, fmt.Errorf("tensor: Diagonal axes have mismatched dimensions (%d != %d)", t.shape[axis1], t.shape[axis2])
+	}
+	diagLen := t.shape[axis1]
+
+	// Remaining axes shape
+	var outShape Shape
+	for i := 0; i < rank; i++ {
+		if i != axis1 && i != axis2 {
+			outShape = append(outShape, t.shape[i])
+		}
+	}
+	outShape = append(outShape, diagLen)
+
+	out := New(t.dtype, outShape)
+	elemSz := t.dtype.Size()
+
+	outStrides := computeStrides(outShape, elemSz)
+	srcStrides := computeStrides(t.shape, elemSz)
+
+	totalOut := numElements(outShape)
+	outIndices := make([]int, len(outShape))
+	srcIndices := make([]int, rank)
+
+	for outIdx := 0; outIdx < totalOut; outIdx++ {
+		// Unravel outIdx to outIndices
+		rem := outIdx
+		for d := len(outShape) - 1; d >= 0; d-- {
+			outIndices[d] = rem % outShape[d]
+			rem /= outShape[d]
+		}
+
+		diagVal := outIndices[len(outShape)-1]
+
+		// Map to srcIndices
+		remAxis := 0
+		for i := 0; i < rank; i++ {
+			if i == axis1 || i == axis2 {
+				srcIndices[i] = diagVal
+			} else {
+				srcIndices[i] = outIndices[remAxis]
+				remAxis++
+			}
+		}
+
+		srcOff := offsetFromIndices(srcIndices, srcStrides, elemSz)
+		dstOff := offsetFromIndices(outIndices, outStrides, elemSz)
+		copy(out.data[dstOff:dstOff+elemSz], t.data[srcOff:srcOff+elemSz])
+	}
+
+	return out, nil
+}
+
+// Trace computes the tensor trace by summing along the diagonal of axis1 and axis2.
+func (t *Tensor) Trace(axis1, axis2 int) (*Tensor, error) {
+	diag, err := t.Diagonal(axis1, axis2)
+	if err != nil {
+		return nil, err
+	}
+	// ReduceSum over the diagonal axis (the last axis in diag)
+	return ReduceSum(diag, diag.Rank()-1)
 }

@@ -242,13 +242,27 @@ func TestReshapeFunction(t *testing.T) {
 }
 
 func TestContractGenericNonFloat32(t *testing.T) {
-	a := New(DtypeFloat64, Shape{2})
-	b := New(DtypeFloat64, Shape{2})
+	// Float64 is supported
+	a64 := New(DtypeFloat64, Shape{2})
+	b64 := New(DtypeFloat64, Shape{2})
+	a64.SetLabels([]string{"i"})
+	b64.SetLabels([]string{"i"})
+	res64, err64 := TensorContract(a64, b64, []string{"i"}, nil)
+	if err64 != nil {
+		t.Fatalf("unexpected error for Float64 contraction: %v", err64)
+	}
+	if res64 == nil {
+		t.Fatal("expected non-nil result for Float64 contraction")
+	}
+
+	// Unsupported dtype like DtypeInt8 should return error
+	a := New(DtypeInt8, Shape{2})
+	b := New(DtypeInt8, Shape{2})
 	a.SetLabels([]string{"i"})
 	b.SetLabels([]string{"i"})
 	_, err := TensorContract(a, b, []string{"i"}, nil)
 	if err == nil {
-		t.Error("expected error for non-float32 contraction")
+		t.Error("expected error for unsupported dtype contraction")
 	}
 }
 
@@ -415,10 +429,21 @@ func TestTransposeNonFloat32(t *testing.T) {
 }
 
 func TestReduceSumNonFloat32(t *testing.T) {
-	a := New(DtypeFloat64, Shape{2})
+	// Float64 is supported
+	a64 := New(DtypeFloat64, Shape{2})
+	res64, err64 := ReduceSum(a64, 0)
+	if err64 != nil {
+		t.Fatalf("unexpected error for Float64 reduce: %v", err64)
+	}
+	if res64 == nil {
+		t.Fatal("expected non-nil result for Float64 reduce")
+	}
+
+	// Unsupported type like DtypeInt8 should error
+	a := New(DtypeInt8, Shape{2})
 	_, err := ReduceSum(a, 0)
 	if err == nil {
-		t.Error("expected error for float64 reduce")
+		t.Error("expected error for unsupported dtype reduce")
 	}
 }
 

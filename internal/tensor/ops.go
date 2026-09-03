@@ -63,6 +63,43 @@ func TensorContract(a, b *Tensor, sumLabels, outLabels []string) (*Tensor, error
 	if err := contractGeneric(a, b, out, aAxes, bAxes, aFree, bFree); err != nil {
 		return nil, err
 	}
+
+	outLabelsActual := make([]string, 0, len(aFree)+len(bFree))
+	for _, i := range aFree {
+		outLabelsActual = append(outLabelsActual, aLabels[i])
+	}
+	for _, i := range bFree {
+		outLabelsActual = append(outLabelsActual, bLabels[i])
+	}
+	out.SetLabels(outLabelsActual)
+
+	TensorOperationsTotal.WithLabelValues("contract", "cpu", out.Dtype().String()).Inc()
+	TensorBytesProcessedTotal.WithLabelValues("contract").Add(float64(a.NumElements()*a.Dtype().Size() + b.NumElements()*b.Dtype().Size()))
+
+	// If target outLabels is specified and permutes outLabelsActual, transpose
+	if len(outLabels) == len(outLabelsActual) && len(outLabels) > 1 {
+		perm := make([]int, len(outLabels))
+		needPerm := false
+		for j, targetLbl := range outLabels {
+			for i, actualLbl := range outLabelsActual {
+				if actualLbl == targetLbl {
+					perm[j] = i
+					if i != j {
+						needPerm = true
+					}
+					break
+				}
+			}
+		}
+		if needPerm {
+			t, err := Transpose(out, perm)
+			if err == nil {
+				t.SetLabels(outLabels)
+				return t, nil
+			}
+		}
+	}
+
 	return out, nil
 }
 
@@ -78,23 +115,31 @@ func contractGeneric(a, b, out *Tensor, aAxes, bAxes, aFree, bFree []int) error 
 	}
 	switch {
 	case a.Dtype() == DtypeFloat32 && b.Dtype() == DtypeFloat32:
-		adata := a.Float32s()
-		bdata := b.Float32s()
-		outdata := out.Float32s()
-		contractFloat32(adata, a.Shape(), aFree, aAxes, bdata, b.Shape(), bFree, bAxes, outdata)
+		contractNumeric(a.Float32s(), a.Shape(), aFree, aAxes, b.Float32s(), b.Shape(), bFree, bAxes, out.Float32s(), 4)
+	case a.Dtype() == DtypeFloat64 && b.Dtype() == DtypeFloat64:
+		contractNumeric(a.Float64s(), a.Shape(), aFree, aAxes, b.Float64s(), b.Shape(), bFree, bAxes, out.Float64s(), 8)
+	case a.Dtype() == DtypeComplex64 && b.Dtype() == DtypeComplex64:
+		contractNumeric(a.Complex64s(), a.Shape(), aFree, aAxes, b.Complex64s(), b.Shape(), bFree, bAxes, out.Complex64s(), 8)
+	case a.Dtype() == DtypeComplex128 && b.Dtype() == DtypeComplex128:
+		contractNumeric(a.Complex128s(), a.Shape(), aFree, aAxes, b.Complex128s(), b.Shape(), bFree, bAxes, out.Complex128s(), 16)
+	case a.Dtype() == DtypeInt64 && b.Dtype() == DtypeInt64:
+		contractNumeric(a.Int64s(), a.Shape(), aFree, aAxes, b.Int64s(), b.Shape(), bFree, bAxes, out.Int64s(), 8)
+	case a.Dtype() == DtypeInt32 && b.Dtype() == DtypeInt32:
+		contractNumeric(a.Int32s(), a.Shape(), aFree, aAxes, b.Int32s(), b.Shape(), bFree, bAxes, out.Int32s(), 4)
 	default:
-		return fmt.Errorf("tensor: contraction not implemented for %s", a.Dtype())
+		return fmt.Errorf("tensor: contraction not implemented for %s and %s", a.Dtype(), b.Dtype())
 	}
 	return nil
 }
 
-func contractFloat32(a []float32, aShape Shape, aFree, aAxes []int,
-	b []float32, bShape Shape, bFree, bAxes []int,
-	out []float32) {
-
+func contractNumeric[T float32 | float64 | complex64 | complex128 | int32 | int64](
+	a []T, aShape Shape, aFree, aAxes []int,
+	b []T, bShape Shape, bFree, bAxes []int,
+	out []T, elemSize int,
+) {
 	// Compute strides for each operand
-	aStrides := computeStrides(aShape, 4)
-	bStrides := computeStrides(bShape, 4)
+	aStrides := computeStrides(aShape, elemSize)
+	bStrides := computeStrides(bShape, elemSize)
 	outShape := make(Shape, 0, len(aFree)+len(bFree))
 	for _, i := range aFree {
 		outShape = append(outShape, aShape[i])
@@ -102,7 +147,7 @@ func contractFloat32(a []float32, aShape Shape, aFree, aAxes []int,
 	for _, i := range bFree {
 		outShape = append(outShape, bShape[i])
 	}
-	outStrides := computeStrides(outShape, 4)
+	outStrides := computeStrides(outShape, elemSize)
 
 	// Compute the contraction volume
 	contractSize := 1
@@ -116,13 +161,11 @@ func contractFloat32(a []float32, aShape Shape, aFree, aAxes []int,
 	totalFree := aFreeCount + bFreeCount
 
 	indices := make([]int, totalFree)
-
 	aIdx := make([]int, len(aShape))
 	bIdx := make([]int, len(bShape))
 	outIdx := make([]int, totalFree)
 
 	for {
-		// Map free indices to aFree position
 		for i := 0; i < aFreeCount; i++ {
 			aIdx[aFree[i]] = indices[i]
 		}
@@ -130,19 +173,15 @@ func contractFloat32(a []float32, aShape Shape, aFree, aAxes []int,
 			bIdx[bFree[i]] = indices[aFreeCount+i]
 		}
 
-		// Compute output offset
-		outOff := offsetFromIndices(outIdx, outStrides, 4)
+		outOff := offsetFromIndices(outIdx, outStrides, elemSize)
 
-		// Contract over summed axes
-		var sum float32
-		// iteration over contract axes
-		cIndices := make([]int, len(aAxes))
+		var sum T
 		totalIter := 1
 		for _, ax := range aAxes {
 			totalIter *= aShape[ax]
 		}
+		cIndices := make([]int, len(aAxes))
 		for ci := 0; ci < totalIter; ci++ {
-			// Map cIndices to positions
 			rem := ci
 			for k := len(aAxes) - 1; k >= 0; k-- {
 				dim := aShape[aAxes[k]]
@@ -154,21 +193,23 @@ func contractFloat32(a []float32, aShape Shape, aFree, aAxes []int,
 				bIdx[bAxes[k]] = cIndices[k]
 			}
 
-			aOff := offsetFromIndices(aIdx, aStrides, 4)
-			bOff := offsetFromIndices(bIdx, bStrides, 4)
-			sum += a[aOff/4] * b[bOff/4]
+			aOff := offsetFromIndices(aIdx, aStrides, elemSize)
+			bOff := offsetFromIndices(bIdx, bStrides, elemSize)
+			sum += a[aOff/elemSize] * b[bOff/elemSize]
 		}
 
-		out[outOff/4] = sum
+		out[outOff/elemSize] = sum
 
 		// Advance indices
 		i := totalFree - 1
 		for i >= 0 {
 			indices[i]++
+			outIdx[i] = indices[i]
 			if indices[i] < outShape[i] {
 				break
 			}
 			indices[i] = 0
+			outIdx[i] = 0
 			i--
 		}
 		if i < 0 {
@@ -326,25 +367,35 @@ func ReduceSum(a *Tensor, axis int) (*Tensor, error) {
 
 	switch a.Dtype() {
 	case DtypeFloat32:
-		adata := a.Float32s()
-		outdata := out.Float32s()
-		reduceSumFloat32(adata, a.Shape(), axis, outdata)
+		reduceSumNumeric(a.Float32s(), a.Shape(), axis, out.Float32s(), 4)
+	case DtypeFloat64:
+		reduceSumNumeric(a.Float64s(), a.Shape(), axis, out.Float64s(), 8)
+	case DtypeComplex64:
+		reduceSumNumeric(a.Complex64s(), a.Shape(), axis, out.Complex64s(), 8)
+	case DtypeComplex128:
+		reduceSumNumeric(a.Complex128s(), a.Shape(), axis, out.Complex128s(), 16)
+	case DtypeInt64:
+		reduceSumNumeric(a.Int64s(), a.Shape(), axis, out.Int64s(), 8)
+	case DtypeInt32:
+		reduceSumNumeric(a.Int32s(), a.Shape(), axis, out.Int32s(), 4)
 	default:
 		return nil, fmt.Errorf("tensor: ReduceSum not implemented for %s", a.Dtype())
 	}
 	return out, nil
 }
 
-func reduceSumFloat32(data []float32, shape Shape, axis int, out []float32) {
+func reduceSumNumeric[T float32 | float64 | complex64 | complex128 | int32 | int64](
+	data []T, shape Shape, axis int, out []T, elemSize int,
+) {
 	rank := len(shape)
-	strides := computeStrides(shape, 4)
+	strides := computeStrides(shape, elemSize)
 	outShape := make(Shape, 0, rank-1)
 	for i, d := range shape {
 		if i != axis {
 			outShape = append(outShape, d)
 		}
 	}
-	outStrides := computeStrides(outShape, 4)
+	outStrides := computeStrides(outShape, elemSize)
 
 	indices := make([]int, rank)
 	outIdx := make([]int, rank-1)
@@ -355,7 +406,6 @@ func reduceSumFloat32(data []float32, shape Shape, axis int, out []float32) {
 			indices[d] = rem % shape[d]
 			rem /= shape[d]
 		}
-		// Map to output index (skip axis)
 		oi := 0
 		for d := 0; d < rank; d++ {
 			if d != axis {
@@ -363,9 +413,9 @@ func reduceSumFloat32(data []float32, shape Shape, axis int, out []float32) {
 				oi++
 			}
 		}
-		off := offsetFromIndices(indices, strides, 4)
-		outOff := offsetFromIndices(outIdx, outStrides, 4)
-		out[outOff/4] += data[off/4]
+		off := offsetFromIndices(indices, strides, elemSize)
+		outOff := offsetFromIndices(outIdx, outStrides, elemSize)
+		out[outOff/elemSize] += data[off/elemSize]
 	}
 }
 

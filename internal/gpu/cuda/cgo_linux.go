@@ -98,10 +98,29 @@ int lb_cudaGetLastError() {
     cudaError_t err = cudaGetLastError();
     return (int)err;
 }
+
+// Pinned host memory allocation
+int lb_cudaHostAlloc(void** ptr, size_t size, unsigned int flags) {
+    return (int)cudaHostAlloc(ptr, size, flags);
+}
+
+int lb_cudaFreeHost(void* ptr) {
+    return (int)cudaFreeHost(ptr);
+}
+
+int lb_cudaMemcpyAsync(void* dst, const void* src, size_t count, int kind, cudaStream_t stream) {
+    return (int)cudaMemcpyAsync(dst, src, count, (enum cudaMemcpyKind)kind, stream);
+}
+
+int lb_cudaStreamSynchronize(cudaStream_t stream) {
+    return (int)cudaStreamSynchronize(stream);
+}
 */
 import "C"
 import (
 	"fmt"
+	"sync"
+	"unsafe"
 )
 
 // Init initializes the CUDA runtime
@@ -207,3 +226,128 @@ func GetLastError() error {
 	}
 	return fmt.Errorf("CUDA error: %d", int(err))
 }
+
+// MemcpyKind defines direction of CUDA memory copy
+type MemcpyKind int
+
+const (
+	MemcpyHostToHost     MemcpyKind = 0
+	MemcpyHostToDevice   MemcpyKind = 1
+	MemcpyDeviceToHost   MemcpyKind = 2
+	MemcpyDeviceToDevice MemcpyKind = 3
+)
+
+// HostAlloc allocates size bytes of page-locked (pinned) host memory.
+func HostAlloc(size int64) (unsafe.Pointer, error) {
+	if size <= 0 {
+		return nil, fmt.Errorf("invalid size: %d", size)
+	}
+	var ptr unsafe.Pointer
+	ret := C.lb_cudaHostAlloc((*unsafe.Pointer)(unsafe.Pointer(&ptr)), C.size_t(size), C.cudaHostAllocDefault)
+	if ret != 0 {
+		return nil, fmt.Errorf("cudaHostAlloc failed for size %d (error code %d)", size, int(ret))
+	}
+	return ptr, nil
+}
+
+// FreeHost frees page-locked host memory allocated by HostAlloc.
+func FreeHost(ptr unsafe.Pointer) error {
+	if ptr == nil {
+		return nil
+	}
+	ret := C.lb_cudaFreeHost(ptr)
+	if ret != 0 {
+		return fmt.Errorf("cudaFreeHost failed (error code %d)", int(ret))
+	}
+	return nil
+}
+
+// MemcpyAsync copies memory asynchronously between host and device on a stream.
+func MemcpyAsync(dst, src unsafe.Pointer, size int64, kind MemcpyKind, stream unsafe.Pointer) error {
+	if dst == nil || src == nil || size <= 0 {
+		return nil
+	}
+	ret := C.lb_cudaMemcpyAsync(dst, src, C.size_t(size), C.int(kind), (C.cudaStream_t)(stream))
+	if ret != 0 {
+		return fmt.Errorf("cudaMemcpyAsync failed (error code %d)", int(ret))
+	}
+	return nil
+}
+
+// StreamSynchronize waits for stream operations to complete.
+func StreamSynchronize(stream unsafe.Pointer) error {
+	ret := C.lb_cudaStreamSynchronize((C.cudaStream_t)(stream))
+	if ret != 0 {
+		return fmt.Errorf("cudaStreamSynchronize failed (error code %d)", int(ret))
+	}
+	return nil
+}
+
+// PinnedHostPool provides a reusable cache of pinned host memory buffers to avoid repeated cudaHostAlloc/cudaFreeHost calls.
+type PinnedHostPool struct {
+	mu      sync.Mutex
+	buffers map[int64][]unsafe.Pointer
+	closed  bool
+}
+
+// NewPinnedHostPool creates a new pool for pinned host buffers.
+func NewPinnedHostPool() *PinnedHostPool {
+	return &PinnedHostPool{
+		buffers: make(map[int64][]unsafe.Pointer),
+	}
+}
+
+// Get borrows a pinned host buffer of at least size bytes.
+func (p *PinnedHostPool) Get(size int64) (unsafe.Pointer, error) {
+	if size <= 0 {
+		return nil, fmt.Errorf("invalid size %d", size)
+	}
+	p.mu.Lock()
+	if p.closed {
+		p.mu.Unlock()
+		return nil, fmt.Errorf("pool is closed")
+	}
+	if bufs, ok := p.buffers[size]; ok && len(bufs) > 0 {
+		ptr := bufs[len(bufs)-1]
+		p.buffers[size] = bufs[:len(bufs)-1]
+		p.mu.Unlock()
+		return ptr, nil
+	}
+	p.mu.Unlock()
+
+	return HostAlloc(size)
+}
+
+// Put returns a pinned host buffer back to the pool.
+func (p *PinnedHostPool) Put(ptr unsafe.Pointer, size int64) {
+	if ptr == nil || size <= 0 {
+		return
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.closed {
+		_ = FreeHost(ptr)
+		return
+	}
+	// Cap pooled buffers per size to 32 to prevent unbounded growth
+	if len(p.buffers[size]) < 32 {
+		p.buffers[size] = append(p.buffers[size], ptr)
+	} else {
+		_ = FreeHost(ptr)
+	}
+}
+
+// Close frees all pooled buffers.
+func (p *PinnedHostPool) Close() error {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	p.closed = true
+	for size, bufs := range p.buffers {
+		for _, ptr := range bufs {
+			_ = FreeHost(ptr)
+		}
+		delete(p.buffers, size)
+	}
+	return nil
+}
+

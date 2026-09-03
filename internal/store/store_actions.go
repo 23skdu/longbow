@@ -217,7 +217,13 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 		// 3. Check admission controller (memory pressure, WAL replay, migration)
 		if resp["status"] == "READY" && s.admission != nil {
 			if err := s.admission.CanAdmitSearch(); err != nil {
-				resp["status"] = "BUSY"
+				st, ok := status.FromError(err)
+				if (ok && st.Code() == codes.ResourceExhausted) || strings.Contains(err.Error(), "ResourceExhausted") || strings.Contains(err.Error(), "exceeds limit") {
+					resp["status"] = "RESOURCE_EXHAUSTED"
+					resp["exhausted"] = true
+				} else {
+					resp["status"] = "BUSY"
+				}
 				resp["reason"] = fmt.Sprintf("admission blocked: %v", err)
 			}
 		}

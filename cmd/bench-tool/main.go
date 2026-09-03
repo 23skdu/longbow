@@ -459,6 +459,9 @@ func main() {
 	indexingStart := time.Now()
 	readyStatus := waitForIndexingComplete(waitCtx, sc, *dataset, indexingTimeout)
 	waitCancel()
+	if readyStatus == "ResourceExhausted" {
+		log.Fatalf("FATAL: Benchmark aborted for dataset %s: ResourceExhausted (admission blocked by memory limit)", *dataset)
+	}
 	indexingSeconds := time.Since(indexingStart).Seconds()
 	results = append(results, BenchmarkResult{
 		Name:            "Indexing",
@@ -849,6 +852,7 @@ func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, datase
 	defer ticker.Stop()
 
 	consecutiveErrors := 0
+	consecutiveExhausted := 0
 
 	for {
 		select {
@@ -886,7 +890,20 @@ func waitForIndexingComplete(ctx context.Context, sc *client.SmartClient, datase
 					if s == "READY" {
 						return s
 					}
+					if s == "RESOURCE_EXHAUSTED" || s == "EXHAUSTED" {
+						log.Printf("ERROR: Dataset %s readiness blocked: ResourceExhausted (%v)", dataset, status["reason"])
+						return "ResourceExhausted"
+					}
 					if reason, ok := status["reason"].(string); ok {
+						if strings.Contains(reason, "ResourceExhausted") || strings.Contains(reason, "exceeds limit") {
+							consecutiveExhausted++
+							if consecutiveExhausted >= 2 {
+								log.Printf("ERROR: Dataset %s admission blocked by memory limit: %s", dataset, reason)
+								return "ResourceExhausted"
+							}
+						} else {
+							consecutiveExhausted = 0
+						}
 						log.Printf("  Still indexing %s... (%s)", dataset, reason)
 					}
 				}

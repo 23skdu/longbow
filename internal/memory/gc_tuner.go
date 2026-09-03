@@ -54,6 +54,11 @@ type GCTuner struct {
 	isBursting     atomic.Bool   // True if currently in burst mode
 	cleanupFuncs   []func()      // Functions to call under extreme pressure
 
+	// Rate limiter for emergency GC and OS memory release to prevent STW livelock
+	lastEmergencyGC     time.Time
+	emergencyGCCooldown time.Duration
+	lastEmergencyDiag   time.Time
+
 	// GetPhysicalStats allows mocking the physical memory stats (off-heap)
 	GetPhysicalStats func() (int64, int64)
 }
@@ -78,16 +83,17 @@ func NewGCTuner(limitBytes int64, highGOGC, lowGOGC int, logger *zerolog.Logger)
 	}
 
 	tuner := &GCTuner{
-		limitBytes:         limitBytes,
-		highGOGC:           highGOGC,
-		lowGOGC:            lowGOGC,
-		reader:             &defaultMemStatsReader{},
-		logger:             logger,
-		currentGOGC:        debug.SetGCPercent(-1),
-		EnableGPUTuning:    types.GetDeviceCount() > 0,
-		GPUUtilizationHigh: 60.0,
-		GPUUtilizationLow:  20.0,
-		GetPhysicalStats:   defaultPhysicalStats,
+		limitBytes:          limitBytes,
+		highGOGC:            highGOGC,
+		lowGOGC:             lowGOGC,
+		reader:              &defaultMemStatsReader{},
+		logger:              logger,
+		currentGOGC:         debug.SetGCPercent(-1),
+		EnableGPUTuning:     types.GetDeviceCount() > 0,
+		GPUUtilizationHigh:  60.0,
+		GPUUtilizationLow:   20.0,
+		GetPhysicalStats:    defaultPhysicalStats,
+		emergencyGCCooldown: 10 * time.Second,
 	}
 
 	if tuner.logger != nil {
@@ -276,10 +282,13 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 				if targetGOGC < 10 {
 					targetGOGC = 10
 				}
-				// Force a manual GC if we are hitting the ceiling to avoid OOM/Livelock
-				runtime.GC()
-				if ratio > 0.97 {
-					debug.FreeOSMemory()
+				// Force a manual GC if hitting ceiling, subject to the emergency GC cooldown
+				now := time.Now()
+				if t.shouldRunEmergencyGC(now) {
+					runtime.GC()
+					if ratio > 0.97 {
+						debug.FreeOSMemory()
+					}
 				}
 			} else {
 				targetGOGC = t.lowGOGC
@@ -306,26 +315,32 @@ func (t *GCTuner) tune(m *runtime.MemStats, aggressive bool) {
 			}
 			runtime.GC()
 		} else if ratio > 0.88 {
-			if t.logger != nil {
-				t.logger.Warn().Float64("ratio", ratio).Int64("total_physical", totalPhysicalUsed).Int64("limit_bytes", t.limitBytes).Msg("CRITICAL total memory utilization - triggering emergency cleanup")
+			now := time.Now()
+			canDiag := t.shouldDumpEmergencyDiag(now)
+			if canDiag {
+				if t.logger != nil {
+					t.logger.Warn().Float64("ratio", ratio).Int64("total_physical", totalPhysicalUsed).Int64("limit_bytes", t.limitBytes).Msg("CRITICAL total memory utilization - triggering emergency cleanup")
+				}
+				// Dump SlabPool stats to stderr for diagnostic purposes
+				fmt.Fprintf(os.Stderr, "[DIAG] %s\n", DebugSlabPoolsSnapshot())
+				var ms runtime.MemStats
+				runtime.ReadMemStats(&ms)
+				fmt.Fprintf(os.Stderr, "[DIAG] Go heap: Alloc=%.1f MB Sys=%.1f MB Stack=%.1f MB\n",
+					float64(ms.Alloc)/1048576, float64(ms.Sys)/1048576, float64(ms.StackInuse)/1048576)
 			}
-			// Dump SlabPool stats to stderr for diagnostic purposes
-			fmt.Fprintf(os.Stderr, "[DIAG] %s\n", DebugSlabPoolsSnapshot())
-			var ms runtime.MemStats
-			runtime.ReadMemStats(&ms)
-			fmt.Fprintf(os.Stderr, "[DIAG] Go heap: Alloc=%.1f MB Sys=%.1f MB Stack=%.1f MB\n",
-				float64(ms.Alloc)/1048576, float64(ms.Sys)/1048576, float64(ms.StackInuse)/1048576)
 			t.mu.RLock()
 			for _, fn := range t.cleanupFuncs {
 				fn()
 			}
 			t.mu.RUnlock()
 
-			// Also force a GC if very high
+			// Also force a GC if very high, respecting the emergency GC cooldown to prevent STW livelock
 			if ratio > 0.92 {
-				runtime.GC()
-				if ratio > 0.97 {
-					debug.FreeOSMemory()
+				if t.shouldRunEmergencyGC(now) {
+					runtime.GC()
+					if ratio > 0.97 {
+						debug.FreeOSMemory()
+					}
 				}
 			}
 		}
@@ -378,4 +393,37 @@ func (t *GCTuner) IsBursting() bool {
 // IsHighPressure returns true if memory utilization is above 85% of limit.
 func (t *GCTuner) IsHighPressure() bool {
 	return t.GetUtilizationRatio() > 0.85
+}
+
+// SetEmergencyGCCooldown sets the minimum duration between emergency GC cycles.
+func (t *GCTuner) SetEmergencyGCCooldown(d time.Duration) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.emergencyGCCooldown = d
+}
+
+// shouldRunEmergencyGC checks if the emergency GC rate limiter allows a forced GC.
+func (t *GCTuner) shouldRunEmergencyGC(now time.Time) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	cooldown := t.emergencyGCCooldown
+	if cooldown <= 0 {
+		cooldown = 10 * time.Second
+	}
+	if t.lastEmergencyGC.IsZero() || now.Sub(t.lastEmergencyGC) >= cooldown {
+		t.lastEmergencyGC = now
+		return true
+	}
+	return false
+}
+
+// shouldDumpEmergencyDiag checks if diagnostic log dumping is allowed (5s cooldown).
+func (t *GCTuner) shouldDumpEmergencyDiag(now time.Time) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.lastEmergencyDiag.IsZero() || now.Sub(t.lastEmergencyDiag) >= 5*time.Second {
+		t.lastEmergencyDiag = now
+		return true
+	}
+	return false
 }

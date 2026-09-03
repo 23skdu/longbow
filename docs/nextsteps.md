@@ -36,22 +36,28 @@ All identified P0 blockers, architectural race conditions, memory leaks, and per
 The comprehensive 128-configuration benchmark across both CPU and CUDA hardware highlighted key architectural opportunities for the v0.3.0 pipeline:
 
 ### 1. `GCTuner` Emergency Rate Limiter & Cooldown
+- **Status**: **Implemented & Verified** (unit tests & `FuzzGCTuner_EmergencyRateLimiter` passed).
 - **Observation**: During high memory pressure (`ratio > 0.92`), `GCTuner.tune()` fired `runtime.GC()` and `debug.FreeOSMemory()` unconditionally on every 500ms tick. On large off-heap graphs (>18 GB), sweeping takes multiple seconds, inducing continuous Stop-The-World (STW) pauses and consuming ~300% CPU purely running GC scans.
-- **Action Item**: Introduce an adaptive emergency GC rate limiter (e.g. minimum 10s cooldown between forced `runtime.GC()` and `FreeOSMemory()` cycles) in [`internal/memory/gc_tuner.go`](../internal/memory/gc_tuner.go) to eliminate GC scanning livelock under high memory pressure.
+- **Resolution**: Introduced adaptive emergency GC rate limiter (minimum 10s cooldown between forced `runtime.GC()` and `FreeOSMemory()` cycles) and 5s diagnostic rate-limiting in [`internal/memory/gc_tuner.go`](../internal/memory/gc_tuner.go), eliminating GC scanning livelock under high memory pressure.
 
 ### 2. Fast-Fail Readiness Polling on Admission Block (`ResourceExhausted`)
+- **Status**: **Implemented & Verified** (unit tests & `FuzzCheckReadiness_StatusParsing` passed).
 - **Observation**: When vector and index allocations exceed `LONGBOW_MAX_MEMORY`, `CanAdmitSearch()` rejects incoming queries with `codes.ResourceExhausted`. In [`cmd/bench-tool/main.go`](../cmd/bench-tool/main.go), `waitForIndexingComplete` polled `check_readiness` for the full 4-hour timeout because the readiness status remained `BUSY`.
-- **Action Item**: Update `waitForIndexingComplete` to fast-fail and log `ResourceExhausted` when the admission controller blocks queries due to memory limits for consecutive checks, enabling immediate failover or graceful skipping.
+- **Resolution**: Updated [`internal/store/store_actions.go`](../internal/store/store_actions.go) to return `status: "RESOURCE_EXHAUSTED"` on admission memory blocks, and updated [`cmd/bench-tool/main.go`](../cmd/bench-tool/main.go) to immediately fast-fail when receiving `RESOURCE_EXHAUSTED` or consecutive memory limits.
 
 ### 3. Automatic Spill-to-Disk Paging for 500k+ Uncompressed High-Dimension Vectors
+- **Status**: In Pipeline (v0.3.0)
 - **Observation**: At 500,000 vectors with 384 dimensions, uncompressed 64-bit and 128-bit types (`float64`, `complex64`, `complex128`, `int64`) consume 1.54 GB – 3.07 GB raw vectors, expanding into ~20–24 GB during multi-layer HNSW graph construction. On hosts with ≤24 GB RAM, this triggers kernel swap paging.
 - **Action Item**: Automatically engage `LONGBOW_USE_DISK=1` or memory-mapped partition backing when estimated vector allocation exceeds 70% of available physical memory.
 
 ### 4. TurboQuant Default for High-Scale Memory Efficiency
+- **Status**: Documented & Recommended
 - **Observation**: Performance data from both CPU and CUDA runs demonstrated that TurboQuant (2-bit, 4-bit, 8-bit) provides 8x to 32x memory compression (only 16–64 MB raw buffer at 500k vectors) while matching or exceeding unquantized search performance (3,200–3,400 QPS on CPU, 3,200–3,660 QPS on GPU) with ~2.5ms median latency.
 - **Action Item**: Standardize on TurboQuant as the default recommended vector storage mode for 500k+ vector deployments on memory-constrained infrastructure.
 
 ### 5. Asynchronous Pinned-Host CUDA Memory Transfers
+- **Status**: **Implemented & Verified** (unit tests & `FuzzCUDA_PinnedBufferPool` passed).
 - **Observation**: In GPU benchmarks, synchronous host-to-device vector copies (`cudaMemcpy`) on unpinned Go heap buffers introduce latency overhead on high-dimension queries (e.g. `complex128` 384d).
-- **Action Item**: Utilize pinned host memory pools (`cudaHostAlloc`) and double-buffered asynchronous stream copies (`cudaMemcpyAsync`) in [`internal/gpu/cuda/cuda_index.go`](../internal/gpu/cuda/cuda_index.go) during high-concurrency batch query execution.
+- **Resolution**: Implemented `cudaHostAlloc`, `cudaFreeHost`, and `cudaMemcpyAsync` in [`internal/gpu/cuda/cuda_backend_linux.h`](../internal/gpu/cuda/cuda_backend_linux.h) and [`internal/gpu/cuda/cgo_linux.go`](../internal/gpu/cuda/cgo_linux.go). Added `PinnedHostPool` and integrated double-buffered asynchronous stream copies on `handle.streams[0]` in [`internal/gpu/cuda/cuda_index.go`](../internal/gpu/cuda/cuda_index.go).
+
 

@@ -22,6 +22,12 @@ int lb_cuda_get_device_properties(int device, char* name, size_t nameLen,
                                  int* major, int* minor, size_t* totalMem);
 int lb_cuda_get_mem_info(size_t* free, size_t* total);
 
+// Pinned Host Memory and Async Transfers
+int lb_cuda_host_alloc(void** ptr, size_t size, unsigned int flags);
+int lb_cuda_free_host(void* ptr);
+int lb_cuda_memcpy_async(void* dst, const void* src, size_t count, int kind, void* stream);
+int lb_cuda_stream_synchronize(void* stream);
+
 // Distance Kernels
 void launch_l2_distance_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, void* stream);
 void launch_l2_distance_large_kernel(const float* vectors, const float* query, float* distances, int dimensions, int count, void* stream);

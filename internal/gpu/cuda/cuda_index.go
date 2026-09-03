@@ -203,6 +203,7 @@ int cuda_prune_neighbors(CUDAIndexHandle* handle,
 */
 import "C"
 import (
+	"context"
 	"fmt"
 	"math"
 	"math/rand"
@@ -246,6 +247,7 @@ type CUDAIndex struct {
 
 	maxMemory  int64
 	usedMemory int64
+	pinnedPool *PinnedHostPool
 
 	// opSem limits concurrent GPU operations to prevent VRAM oversubscription.
 	opSem *semaphore.Weighted
@@ -334,6 +336,7 @@ func NewCUDAIndexImpl(cfg types.GPUConfig) (types.Index, error) {
 		stopSync:     make(chan struct{}),
 		maxMemory:    maxVRAM,
 		opSem:        semaphore.NewWeighted(int64(maxGPUOps)),
+		pinnedPool:   NewPinnedHostPool(),
 	}
 
 	pool, err := memory.NewGPUMemPool(types.BackendCUDA, cfg.DeviceID)
@@ -568,7 +571,7 @@ func (idx *CUDAIndex) acquireGPUOp() error {
 	if idx.opSem == nil {
 		return nil
 	}
-	return idx.opSem.Acquire(nil, 1)
+	return idx.opSem.Acquire(context.Background(), 1)
 }
 
 // releaseGPUOp releases a GPU operation slot.
@@ -618,13 +621,34 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 
 	start := time.Now()
 
-	// Upload query to GPU
-	dQuery, err := idx.allocGPUMem(int64(idx.dim * 4))
+	// Stream handle for asynchronous memory copies and kernel dispatch
+	var stream unsafe.Pointer
+	var cStream C.cudaStream_t
+	if idx.handle != nil {
+		stream = unsafe.Pointer(idx.handle.streams[0])
+		cStream = idx.handle.streams[0]
+	}
+
+	// Upload query to GPU asynchronously using pinned host memory when available
+	qBytes := int64(idx.dim * 4)
+	dQuery, err := idx.allocGPUMem(qBytes)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to allocate query GPU memory: %w", err)
 	}
 	defer idx.freeGPUMem(dQuery)
-	C.cudaMemcpy(dQuery, unsafe.Pointer(&vector[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
+
+	if idx.pinnedPool != nil {
+		hQueryBuf, err := idx.pinnedPool.Get(qBytes)
+		if err == nil {
+			C.memcpy(hQueryBuf, unsafe.Pointer(&vector[0]), C.size_t(qBytes))
+			_ = MemcpyAsync(dQuery, hQueryBuf, qBytes, MemcpyHostToDevice, stream)
+			defer idx.pinnedPool.Put(hQueryBuf, qBytes)
+		} else {
+			C.cudaMemcpy(dQuery, unsafe.Pointer(&vector[0]), C.size_t(qBytes), C.cudaMemcpyHostToDevice)
+		}
+	} else {
+		C.cudaMemcpy(dQuery, unsafe.Pointer(&vector[0]), C.size_t(qBytes), C.cudaMemcpyHostToDevice)
+	}
 
 	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
 
@@ -707,7 +731,7 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 			C.int(idx.dim),
 			C.int(totalVecs),
 			C.int(numPages),
-			nil,
+			cStream,
 		)
 	} else {
 		C.launch_l2_distance_kernel_v2_batched(
@@ -718,17 +742,37 @@ func (idx *CUDAIndex) Search(vector []float32, k int) ([]int64, []float32, error
 			C.int(idx.dim),
 			C.int(totalVecs),
 			C.int(numPages),
-			nil,
+			cStream,
 		)
 	}
 
 	hAllDists := make([]float32, totalVecs)
-	C.cudaMemcpy(
-		unsafe.Pointer(&hAllDists[0]),
-		dAllDists,
-		C.size_t(totalVecs*4),
-		C.cudaMemcpyDeviceToHost,
-	)
+	distBytes := int64(totalVecs * 4)
+
+	// Transfer distance results asynchronously using pinned host memory when available
+	if idx.pinnedPool != nil {
+		hDistBuf, err := idx.pinnedPool.Get(distBytes)
+		if err == nil {
+			_ = MemcpyAsync(hDistBuf, dAllDists, distBytes, MemcpyDeviceToHost, stream)
+			_ = StreamSynchronize(stream)
+			C.memcpy(unsafe.Pointer(&hAllDists[0]), hDistBuf, C.size_t(distBytes))
+			idx.pinnedPool.Put(hDistBuf, distBytes)
+		} else {
+			C.cudaMemcpy(
+				unsafe.Pointer(&hAllDists[0]),
+				dAllDists,
+				C.size_t(distBytes),
+				C.cudaMemcpyDeviceToHost,
+			)
+		}
+	} else {
+		C.cudaMemcpy(
+			unsafe.Pointer(&hAllDists[0]),
+			dAllDists,
+			C.size_t(distBytes),
+			C.cudaMemcpyDeviceToHost,
+		)
+	}
 
 	type scored struct {
 		dist float32
@@ -1049,6 +1093,11 @@ func (idx *CUDAIndex) Close() error {
 
 	if idx.pager != nil {
 		idx.pager.Close()
+	}
+
+	if idx.pinnedPool != nil {
+		idx.pinnedPool.Close()
+		idx.pinnedPool = nil
 	}
 
 	if idx.memPool != nil {

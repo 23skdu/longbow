@@ -662,9 +662,15 @@ func extractSearchResultsFromRecord(rec arrow.RecordBatch, sourceColIdx int) []S
 		case *array.Uint32:
 			return uint64(arr.Value(i))
 		case *array.Int64:
-			return uint64(arr.Value(i))
+			if val := arr.Value(i); val >= 0 {
+				return uint64(val)
+			}
+			return 0
 		case *array.Int32:
-			return uint64(arr.Value(i))
+			if val := arr.Value(i); val >= 0 {
+				return uint64(val)
+			}
+			return 0
 		default:
 			return 0
 		}

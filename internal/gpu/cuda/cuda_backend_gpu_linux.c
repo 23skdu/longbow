@@ -50,4 +50,24 @@ int lb_cuda_get_mem_info(size_t* free, size_t* total) {
     cudaError_t err = cudaMemGetInfo(free, total);
     return (int)err;
 }
+
+int lb_cuda_host_alloc(void** ptr, size_t size, unsigned int flags) {
+    cudaError_t err = cudaHostAlloc(ptr, size, flags);
+    return (int)err;
+}
+
+int lb_cuda_free_host(void* ptr) {
+    cudaError_t err = cudaFreeHost(ptr);
+    return (int)err;
+}
+
+int lb_cuda_memcpy_async(void* dst, const void* src, size_t count, int kind, void* stream) {
+    cudaError_t err = cudaMemcpyAsync(dst, src, count, (enum cudaMemcpyKind)kind, (cudaStream_t)stream);
+    return (int)err;
+}
+
+int lb_cuda_stream_synchronize(void* stream) {
+    cudaError_t err = cudaStreamSynchronize((cudaStream_t)stream);
+    return (int)err;
+}
 #endif

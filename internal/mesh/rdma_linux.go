@@ -139,7 +139,8 @@ func (c *RDMAContext) RegisterGPUMemory(ctx context.Context, ptr uintptr, size u
 	// This utilizes NVIDIA PeerDirect functionality implicitly if the memory ptr
 	// points to a GPU mapping and peer memory modules are active.
 	accessFlags := C.int(C.IBV_ACCESS_LOCAL_WRITE | C.IBV_ACCESS_REMOTE_WRITE | C.IBV_ACCESS_REMOTE_READ)
-	mr := C.ibv_reg_mr(c.pd, unsafe.Pointer(ptr), C.size_t(size), accessFlags)
+	uPtr := *(*unsafe.Pointer)(unsafe.Pointer(&ptr))
+	mr := C.ibv_reg_mr(c.pd, uPtr, C.size_t(size), accessFlags)
 	if mr == nil {
 		return nil, fmt.Errorf("libibverbs: failed to register GPU memory region")
 	}

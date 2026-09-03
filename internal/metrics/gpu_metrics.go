@@ -61,7 +61,7 @@ func (e *Exporter) healthHandler(w http.ResponseWriter, r *http.Request) {
 		status = "cpu_fallback"
 	}
 
-	if _, err := w.Write([]byte(fmt.Sprintf(`{"status": "%s", "backend": "%s"}`, status, backend))); err != nil {
+	if _, err := w.Write(fmt.Appendf(nil, `{"status": "%s", "backend": "%s"}`, status, backend)); err != nil {
 		http.Error(w, "Failed to write response", http.StatusInternalServerError)
 	}
 }

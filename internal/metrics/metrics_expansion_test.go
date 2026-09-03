@@ -239,19 +239,19 @@ func TestHistogramBuckets(t *testing.T) {
 
 // Benchmark metric operations
 func BenchmarkWalFsyncObserve(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		WalFsyncDurationSeconds.WithLabelValues("success").Observe(0.001)
 	}
 }
 
 func BenchmarkIndexJobLatencyObserve(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		IndexJobLatencySeconds.WithLabelValues("benchmark_dataset").Observe(0.05)
 	}
 }
 
 func BenchmarkSimdDispatchIncrement(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		SimdDispatchCount.WithLabelValues("avx2").Inc()
 	}
 }

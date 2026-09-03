@@ -77,6 +77,9 @@ func getProcMemInfo() int64 {
 			}
 		}
 	}
+	if err := scanner.Err(); err != nil {
+		return 0
+	}
 	return 0
 }
 

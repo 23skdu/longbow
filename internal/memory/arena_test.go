@@ -164,11 +164,9 @@ func TestSlabArena_FastPathFallback(t *testing.T) {
 
 func BenchmarkSlabArena_FastPath(b *testing.B) {
 	arena := NewSlabArena(4096)
-
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = arena.Alloc(32)
 	}
 }
@@ -188,11 +186,9 @@ func BenchmarkSlabArena_FastPathConcurrent(b *testing.B) {
 
 func BenchmarkSlabArena_SlowPath(b *testing.B) {
 	arena := NewSlabArena(4096)
-
-	b.ResetTimer()
 	b.ReportAllocs()
 
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = arena.Alloc(128) // > 64 bytes uses slow path
 	}
 }

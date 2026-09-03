@@ -155,8 +155,7 @@ func TestGetSlab_NonStandardSize(t *testing.T) {
 func BenchmarkSlabPool_GetPut(b *testing.B) {
 	pool := newSlabPool(4 * 1024 * 1024)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		slab := pool.Get()
 		pool.Put(slab)
 	}

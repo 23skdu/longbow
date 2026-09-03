@@ -411,25 +411,25 @@ func TestComprehensiveMetricsRegistered(t *testing.T) {
 // =============================================================================
 
 func BenchmarkArenaAllocBytesAdd(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ArenaAllocBytesTotal.Add(1024)
 	}
 }
 
 func BenchmarkResultPoolHitsInc(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		ResultPoolHitsTotal.WithLabelValues("100").Inc()
 	}
 }
 
 func BenchmarkHnswNodesVisitedObserve(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		HnswNodesVisited.WithLabelValues("dataset").Observe(150)
 	}
 }
 
 func BenchmarkS3RequestDurationObserve(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		S3RequestDuration.WithLabelValues("PutObject").Observe(0.5)
 	}
 }

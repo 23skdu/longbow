@@ -432,9 +432,10 @@ func BenchmarkSizeClassArena_Access(b *testing.B) {
 		refs[i] = ref
 	}
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		ref := refs[i%1000]
+	idx := 0
+	for b.Loop() {
+		ref := refs[idx%1000]
+		idx++
 		data := sca.Get(ref)
 		if len(data) != 100 {
 			b.Fatalf("Access failed")
@@ -445,8 +446,7 @@ func BenchmarkSizeClassArena_Access(b *testing.B) {
 func BenchmarkProfiler_RecordAllocation(b *testing.B) {
 	profiler := GetProfiler()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		profiler.RecordAllocation(100)
 	}
 }
@@ -454,8 +454,7 @@ func BenchmarkProfiler_RecordAllocation(b *testing.B) {
 func BenchmarkAnalyzer_Analysis(b *testing.B) {
 	analyzer := NewAnalyzer()
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = analyzer.AnalyzeUsage()
 	}
 }

@@ -168,8 +168,7 @@ func TestCompactableArena_ConcurrentReads(t *testing.T) {
 func BenchmarkCompactableArena_Alloc(b *testing.B) {
 	arena := NewCompactableArena[uint32](4 * 1024 * 1024)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = arena.AllocSlice(100)
 	}
 }
@@ -178,8 +177,7 @@ func BenchmarkCompactableArena_Get(b *testing.B) {
 	arena := NewCompactableArena[uint32](4 * 1024 * 1024)
 	ref, _ := arena.AllocSlice(1000)
 
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_ = arena.Get(ref)
 	}
 }

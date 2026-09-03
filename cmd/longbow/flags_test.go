@@ -183,6 +183,37 @@ func TestParseCLIFlags_GossipEnabled(t *testing.T) {
 	}
 }
 
+func TestParseCLIFlags_AutoSpillAndAutoQuantize(t *testing.T) {
+	var buf bytes.Buffer
+	cfg := Config{}
+	args := []string{
+		"--auto-spill-disk=true",
+		"--spill-threshold-ratio", "0.75",
+		"--auto-quantize=true",
+		"--auto-quantize-threshold", "250000",
+		"--auto-quantize-bits", "8",
+	}
+	err := parseCLIFlags(&cfg, args, &buf)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if !cfg.AutoSpillToDisk {
+		t.Error("expected AutoSpillToDisk=true")
+	}
+	if cfg.SpillThresholdRatio != 0.75 {
+		t.Errorf("expected SpillThresholdRatio=0.75, got %f", cfg.SpillThresholdRatio)
+	}
+	if !cfg.AutoQuantize {
+		t.Error("expected AutoQuantize=true")
+	}
+	if cfg.AutoQuantizeThreshold != 250000 {
+		t.Errorf("expected AutoQuantizeThreshold=250000, got %d", cfg.AutoQuantizeThreshold)
+	}
+	if cfg.AutoQuantizeBits != 8 {
+		t.Errorf("expected AutoQuantizeBits=8, got %d", cfg.AutoQuantizeBits)
+	}
+}
+
 func TestParseCLIFlags_MultipleFlags(t *testing.T) {
 	var buf bytes.Buffer
 	cfg := Config{}

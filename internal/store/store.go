@@ -979,6 +979,12 @@ func (d *Dataset) TurboQuantBits() int {
 	return d.turboQuantBits
 }
 
+func (d *Dataset) SetTurboQuantBits(bits int) {
+	d.dataMu.Lock()
+	defer d.dataMu.Unlock()
+	d.turboQuantBits = bits
+}
+
 // GetLogger returns the logger
 func (s *VectorStore) GetLogger() zerolog.Logger {
 	return s.logger

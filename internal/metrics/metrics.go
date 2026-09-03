@@ -436,6 +436,22 @@ var (
 		[]string{"dataset"},
 	)
 
+	AutoSpillToDiskEngaged = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_auto_spill_to_disk_engaged_total",
+			Help: "Total times automatic spill to disk was triggered for high-scale or memory-constrained datasets",
+		},
+		[]string{"dataset"},
+	)
+
+	AutoQuantizeEngaged = promauto.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "longbow_auto_quantize_engaged_total",
+			Help: "Total times automatic TurboQuant standardization was triggered for high-scale datasets",
+		},
+		[]string{"dataset"},
+	)
+
 	QueryCacheEvictionsTotal = promauto.NewCounterVec(
 		prometheus.CounterOpts{
 			Name: "longbow_query_cache_evictions_total",

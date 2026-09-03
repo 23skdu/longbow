@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"os"
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
@@ -1367,6 +1368,9 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	idMap := ds.ExtractIDs(rec)
 
 	// Determine vector column for DiskStore (Zero-Copy Persistence)
+	if ds.DiskStore == nil && s.ShouldSpillToDisk(ds, rec.Schema()) {
+		s.initDiskStore(ds, name, rec.Schema())
+	}
 	diskVecColIdx := -1
 	if ds.DiskStore != nil {
 		for i, f := range rec.Schema().Fields() {
@@ -1447,11 +1451,69 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			}
 		}
 
+		// Infer dimension
+		dim := 0
+		if vecCol := findVectorColumn(rec); vecCol != nil {
+			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
+				dim = int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+			}
+		}
+
+		// Automatic TurboQuant standardization for high-scale (500k+) or memory-constrained infrastructure
+		autoQuantizeEnabled := os.Getenv("LONGBOW_AUTO_QUANTIZE") == "1" || os.Getenv("LONGBOW_AUTO_QUANTIZE") == "true"
+		if config.IndexConfig != nil && config.IndexConfig.AutoQuantize {
+			autoQuantizeEnabled = true
+		}
+
+		if autoQuantizeEnabled && !hasMetadataType {
+			threshold := int64(500000)
+			if config.IndexConfig != nil && config.IndexConfig.AutoQuantizeThreshold > 0 {
+				threshold = config.IndexConfig.AutoQuantizeThreshold
+			}
+			maxRAM := s.maxMemory.Load()
+			if maxRAM <= 0 {
+				maxRAM = lmem.GetPhysicalMemory()
+			}
+			estimatedCount := ds.GetRowCount() + rec.NumRows()
+			if estimatedCount < threshold && maxRAM <= 24*1024*1024*1024 {
+				estimatedCount = threshold
+			}
+			if ShouldAutoQuantize(estimatedCount, dim, dataType, maxRAM, threshold) {
+				dataType = types.VectorTypeTQ
+				ds.PreferredVectorType = types.VectorTypeTQ
+				tqBits := 4
+				if config.IndexConfig != nil && config.IndexConfig.AutoQuantizeBits > 0 {
+					tqBits = config.IndexConfig.AutoQuantizeBits
+				}
+				if v := os.Getenv("LONGBOW_AUTO_QUANTIZE_BITS"); v != "" {
+					if b, err := strconv.Atoi(v); err == nil && (b == 2 || b == 4 || b == 8) {
+						tqBits = b
+					}
+				}
+				ds.SetTurboQuantBits(tqBits)
+				if ds.DiskStore != nil {
+					ds.DiskStore.SetTurboQuant(tqBits)
+				}
+				metrics.AutoQuantizeEngaged.WithLabelValues(name).Inc()
+				s.logger.Info().
+					Str("dataset", name).
+					Int64("estimatedVectors", estimatedCount).
+					Int("dim", dim).
+					Int("tqBits", tqBits).
+					Msg("Standardized on TurboQuant as default storage engine (LONGBOW_AUTO_QUANTIZE threshold crossed)")
+			}
+		}
+
 		if ds.PreferredVectorType != types.VectorTypeUnknown {
 			dataType = ds.PreferredVectorType
 		} else if !hasMetadataType && dataType == types.VectorTypeFloat32 {
 			dataType = types.VectorTypeTQ
 			ds.PreferredVectorType = types.VectorTypeTQ
+		}
+
+		// Ensure automatic spill to disk is engaged if memory projection exceeds threshold
+		if ds.DiskStore == nil && s.ShouldSpillToDisk(ds, rec.Schema()) {
+			s.initDiskStore(ds, name, rec.Schema())
 		}
 
 		s.logger.Info().Str("dataset", name).Str("dataType", dataType.String()).Str("column", vecColName).Msg("Inferred vector data type for new index")
@@ -1460,13 +1522,16 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			hnswCfg := DefaultArrowHNSWConfig()
 			hnswCfg.Metric = ds.Metric
 			hnswCfg.DataType = dataType
+			if ds.DiskStore != nil {
+				hnswCfg.UseDisk = true
+			}
 
 			if dataType == VectorTypeTQ {
 				hnswCfg.TurboQuantEnabled = true
 				if ds.TurboQuantBits() > 0 {
 					hnswCfg.TurboQuantBits = ds.TurboQuantBits()
 				} else if hnswCfg.TurboQuantBits == 0 {
-					hnswCfg.TurboQuantBits = 8
+					hnswCfg.TurboQuantBits = 4
 				}
 			}
 			config.IndexConfig = &hnswCfg
@@ -1479,13 +1544,16 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 				dataType = ds.PreferredVectorType
 			}
 			clonedCfg.DataType = dataType
+			if ds.DiskStore != nil {
+				clonedCfg.UseDisk = true
+			}
 
 			if dataType == VectorTypeTQ {
 				clonedCfg.TurboQuantEnabled = true
 				if ds.TurboQuantBits() > 0 {
 					clonedCfg.TurboQuantBits = ds.TurboQuantBits()
 				} else if clonedCfg.TurboQuantBits == 0 {
-					clonedCfg.TurboQuantBits = 8
+					clonedCfg.TurboQuantBits = 4
 				}
 			}
 			config.IndexConfig = &clonedCfg

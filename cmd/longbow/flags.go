@@ -53,6 +53,11 @@ func parseCLIFlags(cfg *Config, args []string, output io.Writer) error {
 	fs.BoolVar(&cfg.GPUEnabled, "gpu-enabled", cfg.GPUEnabled, "Enable GPU acceleration")
 	fs.IntVar(&cfg.GPUDeviceID, "gpu-device-id", cfg.GPUDeviceID, "GPU device ID")
 	fs.BoolVar(&cfg.GossipEnabled, "gossip-enabled", cfg.GossipEnabled, "Enable gossip protocol for clustering")
+	fs.BoolVar(&cfg.AutoSpillToDisk, "auto-spill-disk", cfg.AutoSpillToDisk, "Automatically fallback to disk backing when memory exceeds 70% of physical RAM")
+	fs.Float64Var(&cfg.SpillThresholdRatio, "spill-threshold-ratio", cfg.SpillThresholdRatio, "Physical memory ratio threshold to trigger automatic spill-to-disk")
+	fs.BoolVar(&cfg.AutoQuantize, "auto-quantize", cfg.AutoQuantize, "Standardize TurboQuant as default storage mode for high-scale configurations")
+	fs.Int64Var(&cfg.AutoQuantizeThreshold, "auto-quantize-threshold", cfg.AutoQuantizeThreshold, "Vector count threshold to trigger automatic TurboQuant standardization")
+	fs.IntVar(&cfg.AutoQuantizeBits, "auto-quantize-bits", cfg.AutoQuantizeBits, "Target bit depth for automatic TurboQuant standardization (2, 4, or 8)")
 
 	if err := fs.Parse(args); err != nil {
 		if err == flag.ErrHelp {

@@ -140,6 +140,13 @@ type ArrowHNSWConfig struct {
 	LockFreeThreshold int  // Layer threshold for CAS-based lock-free updates (e.g. 2)
 	NUMANode          int  // Target NUMA node for memory pinning (-1 for default)
 	SharedVectorSpace bool // If true, perform zero-copy lookups from primary Dataset records
+
+	// Automatic Spill-to-Disk Paging and Auto-Quantization (v0.3.0)
+	AutoSpillToDisk       bool
+	SpillThresholdRatio   float64 // Default 0.70 (70% of physical RAM)
+	AutoQuantize          bool
+	AutoQuantizeThreshold int64 // Default 500,000 vectors
+	AutoQuantizeBits      int   // Default 4 bits
 }
 
 // DefaultArrowHNSWConfig returns a configuration with sensible defaults
@@ -170,6 +177,11 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		ParallelSearch:          DefaultParallelSearchConfig(),
 		NUMANode:                -1,
 		SharedVectorSpace:       false,
+		AutoSpillToDisk:         true,
+		SpillThresholdRatio:     0.70,
+		AutoQuantize:            false,
+		AutoQuantizeThreshold:   500000,
+		AutoQuantizeBits:        4,
 	}
 
 	if os.Getenv("LONGBOW_LOW_MEM") == "1" || os.Getenv("LONGBOW_LOW_MEM") == "true" {
@@ -219,6 +231,28 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 	config.AdaptiveEf = true
 	if os.Getenv("LONGBOW_INDEXING_ADAPTIVE_ENABLED") == "0" || os.Getenv("LONGBOW_INDEXING_ADAPTIVE_ENABLED") == "false" {
 		config.AdaptiveEf = false
+	}
+
+	if os.Getenv("LONGBOW_AUTO_SPILL_DISK") == "0" || os.Getenv("LONGBOW_AUTO_SPILL_DISK") == "false" {
+		config.AutoSpillToDisk = false
+	}
+	if v := os.Getenv("LONGBOW_SPILL_THRESHOLD_RATIO"); v != "" {
+		if r, err := strconv.ParseFloat(v, 64); err == nil && r > 0 && r < 1 {
+			config.SpillThresholdRatio = r
+		}
+	}
+	if os.Getenv("LONGBOW_AUTO_QUANTIZE") == "1" || os.Getenv("LONGBOW_AUTO_QUANTIZE") == "true" {
+		config.AutoQuantize = true
+	}
+	if v := os.Getenv("LONGBOW_AUTO_QUANTIZE_THRESHOLD"); v != "" {
+		if t, err := strconv.ParseInt(v, 10, 64); err == nil && t > 0 {
+			config.AutoQuantizeThreshold = t
+		}
+	}
+	if v := os.Getenv("LONGBOW_AUTO_QUANTIZE_BITS"); v != "" {
+		if b, err := strconv.Atoi(v); err == nil && (b == 2 || b == 4 || b == 8) {
+			config.AutoQuantizeBits = b
+		}
 	}
 
 	return config

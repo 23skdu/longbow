@@ -449,6 +449,21 @@ func (d *Dataset) LastAccess() time.Time {
 	return time.Unix(0, atomic.LoadInt64(&d.lastAccess))
 }
 
+// GetRowCount returns the total number of rows across all record batches in the dataset.
+func (d *Dataset) GetRowCount() int64 {
+	if d == nil || d.Records == nil {
+		return 0
+	}
+	records := d.Records.Read()
+	var total int64
+	for _, rec := range records {
+		if rec != nil {
+			total += rec.NumRows()
+		}
+	}
+	return total
+}
+
 // SetLastAccess updates the time of the last access to the dataset.
 func (d *Dataset) SetLastAccess(t time.Time) {
 	atomic.StoreInt64(&d.lastAccess, t.UnixNano())

@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"runtime/debug"
+	"strconv"
 	"strings"
 	"time"
 
@@ -64,9 +65,84 @@ func (s *VectorStore) PrewarmDataset(name string, schema *arrow.Schema) {
 	}
 }
 
+// ShouldSpillToDisk evaluates whether dataset memory projection exceeds the configured physical RAM threshold (default 70%).
+func (s *VectorStore) ShouldSpillToDisk(ds *Dataset, schema *arrow.Schema) bool {
+	if os.Getenv("LONGBOW_AUTO_SPILL_DISK") == "0" || os.Getenv("LONGBOW_AUTO_SPILL_DISK") == "false" {
+		return false
+	}
+
+	dim := 0
+	vecColName := ""
+	if schema != nil {
+		for _, f := range schema.Fields() {
+			if f.Name == "vector" || f.Name == "embedding" {
+				if fst, ok := f.Type.(*arrow.FixedSizeListType); ok {
+					dim = int(fst.Len())
+					vecColName = f.Name
+					break
+				}
+			}
+		}
+	}
+	if dim == 0 {
+		return false
+	}
+
+	dt := types.VectorTypeFloat32
+	if schema != nil && vecColName != "" {
+		dt = index.InferVectorDataType(schema, vecColName)
+	}
+	if ds != nil && ds.PreferredVectorType != types.VectorTypeUnknown {
+		dt = ds.PreferredVectorType
+	}
+
+	rowCount := int64(0)
+	if ds != nil {
+		rowCount = ds.GetRowCount()
+	}
+
+	thresholdRatio := 0.70
+	if v := os.Getenv("LONGBOW_SPILL_THRESHOLD_RATIO"); v != "" {
+		if r, err := strconv.ParseFloat(v, 64); err == nil && r > 0 && r < 1 {
+			thresholdRatio = r
+		}
+	}
+
+	maxRAM := s.maxMemory.Load()
+	if maxRAM <= 0 {
+		maxRAM = lbmem.GetPhysicalMemory()
+	}
+
+	// If uncompressed 64/128-bit type (float64, complex64, complex128, int64),
+	// on memory-constrained infrastructure (<=24 GB RAM), project 500k scale if rowCount is high
+	evalCount := rowCount
+	if evalCount < 50000 && maxRAM <= 24*1024*1024*1024 {
+		if dt == types.VectorTypeFloat64 || dt == types.VectorTypeComplex64 ||
+			dt == types.VectorTypeComplex128 || dt == types.VectorTypeInt64 {
+			evalCount = 500000
+		}
+	}
+
+	return ShouldSpillToDisk(evalCount, dim, dt, maxRAM, thresholdRatio)
+}
+
 // initDiskStore initializes the DiskVectorStore for a dataset if conditions are met.
 func (s *VectorStore) initDiskStore(ds *Dataset, name string, schema *arrow.Schema) {
-	if !strings.HasPrefix(name, "test_disk") && os.Getenv("LONGBOW_USE_DISK") != "1" {
+	if ds == nil || schema == nil || ds.DiskStore != nil {
+		return
+	}
+
+	useDisk := os.Getenv("LONGBOW_USE_DISK") == "1" || strings.HasPrefix(name, "test_disk")
+	isAutoSpill := false
+
+	if !useDisk {
+		if s.ShouldSpillToDisk(ds, schema) {
+			useDisk = true
+			isAutoSpill = true
+		}
+	}
+
+	if !useDisk {
 		return
 	}
 
@@ -94,7 +170,17 @@ func (s *VectorStore) initDiskStore(ds *Dataset, name string, schema *arrow.Sche
 		dvs.SetTurboQuant(ds.TurboQuantBits())
 	}
 	ds.DiskStore = dvs
-	s.logger.Info().Str("path", path).Int("dim", dim).Msg("DiskVectorStore initialized")
+
+	if isAutoSpill {
+		metrics.AutoSpillToDiskEngaged.WithLabelValues(name).Inc()
+		s.logger.Info().
+			Str("dataset", name).
+			Str("path", path).
+			Int("dim", dim).
+			Msg("Automatic spill-to-disk paging engaged (exceeded 70% physical memory threshold)")
+	} else {
+		s.logger.Info().Str("path", path).Int("dim", dim).Msg("DiskVectorStore initialized")
+	}
 }
 
 var (

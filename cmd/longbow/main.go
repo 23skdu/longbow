@@ -94,6 +94,11 @@ type Config struct {
 	StorageDoPutBatchSize int  `envconfig:"STORAGE_DOPUT_BATCH_SIZE" default:"100"`
 	StorageUseIOUring     bool `envconfig:"STORAGE_USE_IOURING" default:"false"`
 	StorageUseDirectIO    bool `envconfig:"STORAGE_USE_DIRECT_IO" default:"false"`
+	AutoSpillToDisk       bool    `envconfig:"AUTO_SPILL_DISK" default:"true"`
+	SpillThresholdRatio   float64 `envconfig:"SPILL_THRESHOLD_RATIO" default:"0.70"`
+	AutoQuantize          bool    `envconfig:"AUTO_QUANTIZE" default:"false"`
+	AutoQuantizeThreshold int64   `envconfig:"AUTO_QUANTIZE_THRESHOLD" default:"500000"`
+	AutoQuantizeBits      int     `envconfig:"AUTO_QUANTIZE_BITS" default:"4"`
 
 	// Memory Management Configuration
 	MemoryEvictionHeadroom float64 `envconfig:"MEMORY_EVICTION_HEADROOM" default:"0.10"`
@@ -319,6 +324,28 @@ func run() error {
 		ShardSplitThreshold: cfg.AutoShardingSplitThreshold,
 		UseRingSharding:     cfg.RingShardingEnabled,
 	})
+
+	if cfg.AutoSpillToDisk {
+		_ = os.Setenv("LONGBOW_AUTO_SPILL_DISK", "1")
+	} else {
+		_ = os.Setenv("LONGBOW_AUTO_SPILL_DISK", "0")
+	}
+	if cfg.SpillThresholdRatio > 0 {
+		_ = os.Setenv("LONGBOW_SPILL_THRESHOLD_RATIO", fmt.Sprintf("%.2f", cfg.SpillThresholdRatio))
+	}
+	if cfg.AutoQuantize {
+		_ = os.Setenv("LONGBOW_AUTO_QUANTIZE", "1")
+		logger.Info().
+			Int64("threshold", cfg.AutoQuantizeThreshold).
+			Int("bits", cfg.AutoQuantizeBits).
+			Msg("Automatic TurboQuant standardization enabled")
+	}
+	if cfg.AutoQuantizeThreshold > 0 {
+		_ = os.Setenv("LONGBOW_AUTO_QUANTIZE_THRESHOLD", strconv.FormatInt(cfg.AutoQuantizeThreshold, 10))
+	}
+	if cfg.AutoQuantizeBits > 0 {
+		_ = os.Setenv("LONGBOW_AUTO_QUANTIZE_BITS", strconv.Itoa(cfg.AutoQuantizeBits))
+	}
 
 	// Configure hybrid search
 	if cfg.HybridSearchEnabled {

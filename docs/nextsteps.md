@@ -23,10 +23,35 @@ All identified P0 blockers, architectural race conditions, memory leaks, and per
 
 ## Roadmap Initiatives for v0.3.0
 
-The following long-term benchmarking and multi-node scaling items are scheduled for v0.3.0:
+| # | Initiative | Status | Description |
+|---|---|:---:|---|
+| 1 | **TurboQuant2 50k Recall@10 Validation** | Planned | Comprehensive 50k Recall@10 validation tests with adaptive bit-depth and widened search parameters. |
+| 2 | **500k Scale Benchmark Suite Execution** | **Completed** | Full matrix evaluation of 16 datatypes across 10k, 25k, 200k, and 500k scales on both CPU (AVX2) and GPU (NVIDIA RTX 4060 CUDA). Results published to [`docs/performance.md`](performance.md). |
+| 3 | **Multi-Node RDMA Integration Validation** | Planned | Live cluster verification of RoCE/InfiniBand Flight RDMA transport. |
 
-| # | Initiative | Description |
-|---|---|---|
-| 1 | **TurboQuant2 50k Recall@10 Validation** | Comprehensive 50k Recall@10 validation tests with adaptive bit-depth and widened search parameters. |
-| 2 | **500k Scale Benchmark Suite Execution** | Complete benchmark runs for remaining vector types (`int64`, `uint64`, `complex64`, `complex128`, `turboquant`) using `--use-disk` memory budgeting. |
-| 3 | **Multi-Node RDMA Integration Validation** | Live cluster verification of RoCE/InfiniBand Flight RDMA transport. |
+---
+
+## Architectural & Performance Optimizations Identified from Comprehensive Benchmark Runs
+
+The comprehensive 128-configuration benchmark across both CPU and CUDA hardware highlighted key architectural opportunities for the v0.3.0 pipeline:
+
+### 1. `GCTuner` Emergency Rate Limiter & Cooldown
+- **Observation**: During high memory pressure (`ratio > 0.92`), `GCTuner.tune()` fired `runtime.GC()` and `debug.FreeOSMemory()` unconditionally on every 500ms tick. On large off-heap graphs (>18 GB), sweeping takes multiple seconds, inducing continuous Stop-The-World (STW) pauses and consuming ~300% CPU purely running GC scans.
+- **Action Item**: Introduce an adaptive emergency GC rate limiter (e.g. minimum 10s cooldown between forced `runtime.GC()` and `FreeOSMemory()` cycles) in [`internal/memory/gc_tuner.go`](../internal/memory/gc_tuner.go) to eliminate GC scanning livelock under high memory pressure.
+
+### 2. Fast-Fail Readiness Polling on Admission Block (`ResourceExhausted`)
+- **Observation**: When vector and index allocations exceed `LONGBOW_MAX_MEMORY`, `CanAdmitSearch()` rejects incoming queries with `codes.ResourceExhausted`. In [`cmd/bench-tool/main.go`](../cmd/bench-tool/main.go), `waitForIndexingComplete` polled `check_readiness` for the full 4-hour timeout because the readiness status remained `BUSY`.
+- **Action Item**: Update `waitForIndexingComplete` to fast-fail and log `ResourceExhausted` when the admission controller blocks queries due to memory limits for consecutive checks, enabling immediate failover or graceful skipping.
+
+### 3. Automatic Spill-to-Disk Paging for 500k+ Uncompressed High-Dimension Vectors
+- **Observation**: At 500,000 vectors with 384 dimensions, uncompressed 64-bit and 128-bit types (`float64`, `complex64`, `complex128`, `int64`) consume 1.54 GB – 3.07 GB raw vectors, expanding into ~20–24 GB during multi-layer HNSW graph construction. On hosts with ≤24 GB RAM, this triggers kernel swap paging.
+- **Action Item**: Automatically engage `LONGBOW_USE_DISK=1` or memory-mapped partition backing when estimated vector allocation exceeds 70% of available physical memory.
+
+### 4. TurboQuant Default for High-Scale Memory Efficiency
+- **Observation**: Performance data from both CPU and CUDA runs demonstrated that TurboQuant (2-bit, 4-bit, 8-bit) provides 8x to 32x memory compression (only 16–64 MB raw buffer at 500k vectors) while matching or exceeding unquantized search performance (3,200–3,400 QPS on CPU, 3,200–3,660 QPS on GPU) with ~2.5ms median latency.
+- **Action Item**: Standardize on TurboQuant as the default recommended vector storage mode for 500k+ vector deployments on memory-constrained infrastructure.
+
+### 5. Asynchronous Pinned-Host CUDA Memory Transfers
+- **Observation**: In GPU benchmarks, synchronous host-to-device vector copies (`cudaMemcpy`) on unpinned Go heap buffers introduce latency overhead on high-dimension queries (e.g. `complex128` 384d).
+- **Action Item**: Utilize pinned host memory pools (`cudaHostAlloc`) and double-buffered asynchronous stream copies (`cudaMemcpyAsync`) in [`internal/gpu/cuda/cuda_index.go`](../internal/gpu/cuda/cuda_index.go) during high-concurrency batch query execution.
+

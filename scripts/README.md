@@ -24,6 +24,38 @@ The primary benchmark tool for Longbow correctness and performance testing. Runs
 python3 scripts/unified_benchmark.py --mode cpu,metal --dtypes float32,int8 --dims 128,384 --counts 1000,5000 --search-modes hybrid,dense
 ```
 
+### `test_tensor_engine.py` (and `test_tensor_engine.sh`)
+
+Comprehensive test suite and verification harness for the Longbow Tensor Engine (`internal/tensor`).
+Covers all features across 9 architectural domains:
+1. Core Tensors & Data Types (Float32, Float64, Complex64/128, Int64/32/8, Uint8, zero-copy slicing, strides, clone isolation)
+2. Elementwise & Transcendental Math (Arithmetic, broadcasting, trigonometric, hyperbolic, erf, exp, log, sqrt)
+3. Linear Algebra & Contractions (2D MatMul, Vector Dot & Outer Products, multi-axis TensorContract)
+4. Einstein Summation Engine (`Einsum`: matmul, dot, outer, transpose, diagonal `ii->i`, trace `ii->`, multi-tensor chains `ij,jk,kl->il`, `OptimizePath`)
+5. Computational DAG & Optimizer (IR Graph, CSE, Constant Subgraph Folding, Algebraic Rewrites: $A \cdot 0 \to 0$, $A + 0 \to A$, $-(-A) \to A$, $T(T(A)) \to A$)
+6. Relativistic & Differential Geometry Calculus (3D/4D Levi-Civita with parity, Metric Inversion, Index Raising/Lowering, Relativistic Invariant $p^\mu p_\mu = -m^2$, Christoffel symbols $\Gamma^\sigma_{\mu\nu}$, Riemann Curvature $R^\rho_{\sigma\mu\nu}$, Ricci Tensor $R_{\sigma\nu}$, Ricci Scalar $R$, Differential Forms Wedge Product $A \wedge B$)
+7. Multi-Dtype Execution (Float64, Complex128, Int64 contractions)
+8. Hardware Acceleration (AVX2 SIMD GEMM kernel vs generic baseline, fast math kernel dispatch)
+9. Fuzzing & Microbenchmarks (Einsum parser fuzzing, shape broadcasting fuzzing, execution fuzzing, GEMM microbenchmarks)
+
+**Usage**:
+
+```bash
+# Run all 140+ unit and deep verification tests
+python3 scripts/test_tensor_engine.py
+
+# Run with microbenchmarks and fuzz targets
+python3 scripts/test_tensor_engine.py --bench --fuzz
+
+# Filter by category
+python3 scripts/test_tensor_engine.py --category calculus
+python3 scripts/test_tensor_engine.py --category einsum
+python3 scripts/test_tensor_engine.py --category optimizer
+
+# Generate machine-readable JSON report
+python3 scripts/test_tensor_engine.py --json-report tensor_report.json
+```
+
 ### `cli_benchmark.py`
 
 Automated blackbox functional testing suite for the `longbow-cli` binary.

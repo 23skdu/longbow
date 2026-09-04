@@ -135,6 +135,7 @@ vendor/
 run_*.sh
 crash_repro.sh
 test_*.sh
+!scripts/test_tensor_engine.sh
 bench-tool
 
 # Root-level dev/scratch artifacts

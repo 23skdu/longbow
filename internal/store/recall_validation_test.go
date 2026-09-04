@@ -414,9 +414,13 @@ func TestRecallConsistency(t *testing.T) {
 		numVectors = 50
 		numQueries = 5
 		minRecall = 0.0
-		config = &store.ArrowHNSWConfig{
-			M: 8, MMax: 16, MMax0: 16, EfConstruction: 10, EfSearch: 5,
-		}
+		c := store.DefaultArrowHNSWConfig()
+		c.M = 8
+		c.MMax = 16
+		c.MMax0 = 16
+		c.EfConstruction = 10
+		c.EfSearch = 5
+		config = &c
 	}
 
 	const numRuns = 3

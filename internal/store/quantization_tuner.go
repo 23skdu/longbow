@@ -241,7 +241,7 @@ func (t *QuantizationTuner) applyTransition(name string, ds *Dataset, state *tun
 	case QuantizationTurboQuant:
 		dataType = types.VectorTypeTQ
 	}
-	ds.PreferredVectorType = dataType
+	ds.SetPreferredVectorType(dataType)
 	ds.dataMu.Unlock()
 
 	// Trigger active re-quantization

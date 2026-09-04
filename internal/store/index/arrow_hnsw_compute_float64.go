@@ -141,10 +141,10 @@ func (c *float64Computer) Prefetch(id uint32) {
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
 		start := cOff * pd
 		if start+c.dims <= len(chunk) {
-			ptr := uintptr(unsafe.Pointer(&chunk[start])) // #nosec G103
+			base := unsafe.Pointer(&chunk[start]) // #nosec G103
 			byteLen := uintptr(c.dims * 8)
 			for off := uintptr(0); off < byteLen; off += 64 {
-				simd.Prefetch(unsafe.Pointer(ptr + off)) // #nosec G103
+				simd.Prefetch(unsafe.Add(base, off)) // #nosec G103
 			}
 		}
 	}

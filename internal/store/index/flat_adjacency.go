@@ -1,11 +1,12 @@
 package index
 
 import (
-	"encoding/binary"
 	"errors"
+	"io"
 	"math"
 	"sync"
 	"sync/atomic"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/store/types"
@@ -315,8 +316,11 @@ func (fa *FlatAdjacency) EvictToDisk(gd *types.GraphData, layer int, chunkSizes 
 		})
 
 		chunkSizes[cID] = len(chunk)
-		if err := binary.Write(w, binary.LittleEndian, chunk); err != nil {
-			return nWritten, chunkSizes, totalBytes, err
+		if len(chunk) > 0 {
+			byteSlice := unsafe.Slice((*byte)(unsafe.Pointer(&chunk[0])), len(chunk)*4) // #nosec G103
+			if _, err := w.Write(byteSlice); err != nil {
+				return nWritten, chunkSizes, totalBytes, err
+			}
 		}
 		nWritten++
 		totalBytes += int64(len(chunk)) * 4
@@ -346,8 +350,11 @@ func (fa *FlatAdjacency) RestoreFromDisk(gd *types.GraphData, layer int, chunkSi
 			return err
 		}
 		chunk := fa.arena.Get(buf)
-		if err := binary.Read(r, binary.LittleEndian, chunk); err != nil {
-			return err
+		if len(chunk) > 0 {
+			byteBuf := unsafe.Slice((*byte)(unsafe.Pointer(&chunk[0])), len(chunk)*4) // #nosec G103
+			if _, err := io.ReadFull(r.(io.Reader), byteBuf); err != nil {
+				return err
+			}
 		}
 		atomic.StoreUint64(&chunks[cID], buf.Offset)
 	}

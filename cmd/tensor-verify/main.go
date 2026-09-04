@@ -7,6 +7,7 @@ import (
 	"math"
 	"math/cmplx"
 	"os"
+	"slices"
 	"time"
 
 	"github.com/23skdu/longbow/internal/tensor"
@@ -30,23 +31,15 @@ type SummaryReport struct {
 }
 
 func shapeEqual(a, b tensor.Shape) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	for i := range a {
-		if a[i] != b[i] {
-			return false
-		}
-	}
-	return true
+	return slices.Equal([]int(a), []int(b))
 }
 
 func atFloat64(t *tensor.Tensor, indices ...int) float64 {
 	switch t.Dtype() {
 	case tensor.DtypeFloat64:
-		return *(*float64)(t.At(indices...))
+		return *(*float64)(t.At(indices...)) // #nosec G103
 	case tensor.DtypeFloat32:
-		return float64(*(*float32)(t.At(indices...)))
+		return float64(*(*float32)(t.At(indices...))) // #nosec G103
 	default:
 		return 0
 	}

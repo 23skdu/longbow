@@ -25,11 +25,13 @@ func TestAdaptiveRequantization_Trigger(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 
 	// 4. Verify PreferredVectorType is updated
-	ds.dataMu.RLock()
-	assert.Equal(t, types.VectorTypePQ, ds.PreferredVectorType)
-	ds.dataMu.RUnlock()
+	assert.Eventually(t, func() bool {
+		return ds.GetPreferredVectorType() == types.VectorTypePQ
+	}, 2*time.Second, 10*time.Millisecond)
 
 	// Verify it's not requantizing anymore (or still in progress)
 	// For this small test it should be done
-	assert.False(t, ds.isRequantizing.Load())
+	assert.Eventually(t, func() bool {
+		return !ds.isRequantizing.Load()
+	}, 2*time.Second, 10*time.Millisecond)
 }

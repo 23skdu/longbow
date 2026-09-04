@@ -92,8 +92,8 @@ func (s *VectorStore) ShouldSpillToDisk(ds *Dataset, schema *arrow.Schema) bool 
 	if schema != nil && vecColName != "" {
 		dt = index.InferVectorDataType(schema, vecColName)
 	}
-	if ds != nil && ds.PreferredVectorType != types.VectorTypeUnknown {
-		dt = ds.PreferredVectorType
+	if ds != nil && ds.GetPreferredVectorType() != types.VectorTypeUnknown {
+		dt = ds.GetPreferredVectorType()
 	}
 
 	rowCount := int64(0)
@@ -129,6 +129,11 @@ func (s *VectorStore) ShouldSpillToDisk(ds *Dataset, schema *arrow.Schema) bool 
 // initDiskStore initializes the DiskVectorStore for a dataset if conditions are met.
 func (s *VectorStore) initDiskStore(ds *Dataset, name string, schema *arrow.Schema) {
 	if ds == nil || schema == nil || ds.DiskStore != nil {
+		return
+	}
+	ds.initMu.Lock()
+	defer ds.initMu.Unlock()
+	if ds.DiskStore != nil {
 		return
 	}
 

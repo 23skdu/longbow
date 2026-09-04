@@ -83,6 +83,8 @@ type Dataset struct {
 	Topo       *memory.NUMATopology
 
 	// Vector Configuration
+	pvtMu               sync.RWMutex
+	initMu              sync.Mutex
 	PreferredVectorType types.VectorDataType
 	turboQuantBits      int // Bits per dimension for TurboQuant encoding (4, 8)
 
@@ -1123,7 +1125,7 @@ func (d *Dataset) requantizeTask(targetType types.VectorDataType) {
 	// For now, we update the PreferredVectorType and signal the index.
 
 	d.dataMu.Lock()
-	d.PreferredVectorType = targetType
+	d.SetPreferredVectorType(targetType)
 	d.dataMu.Unlock()
 
 	// Record Metrics
@@ -1161,4 +1163,24 @@ func (d *Dataset) GetDiskStore() any {
 		return nil
 	}
 	return d.DiskStore
+}
+
+// GetPreferredVectorType returns the preferred vector data type in a thread-safe manner.
+func (d *Dataset) GetPreferredVectorType() types.VectorDataType {
+	if d == nil {
+		return types.VectorTypeUnknown
+	}
+	d.pvtMu.RLock()
+	defer d.pvtMu.RUnlock()
+	return d.PreferredVectorType
+}
+
+// SetPreferredVectorType updates the preferred vector data type in a thread-safe manner.
+func (d *Dataset) SetPreferredVectorType(t types.VectorDataType) {
+	if d == nil {
+		return
+	}
+	d.pvtMu.Lock()
+	defer d.pvtMu.Unlock()
+	d.PreferredVectorType = t
 }

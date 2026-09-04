@@ -1327,9 +1327,10 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 	// a wider window before the heap is exhausted — preventing ResourceExhausted at ~425K vectors.
 	maxMem := s.maxMemory.Load()
 	if maxMem > 0 && s.currentMemory.Load() > int64(float64(maxMem)*0.60) {
-		if ds.PreferredVectorType == types.VectorTypeFloat32 || ds.PreferredVectorType == types.VectorTypeUnknown {
+		pvt := ds.GetPreferredVectorType()
+		if pvt == types.VectorTypeFloat32 || pvt == types.VectorTypeUnknown {
 			s.logger.Warn().Str("dataset", ds.Name).Msg("Memory pressure >60%. Dynamically promoting dataset to TurboQuant8.")
-			ds.PreferredVectorType = types.VectorTypeTQ
+			ds.SetPreferredVectorType(types.VectorTypeTQ)
 
 			if h, ok := ds.Index.(*ArrowHNSW); ok {
 				h.EnableTurboQuant(8)
@@ -1416,191 +1417,204 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 		}
 	}
 	if ds.Index == nil || needsReindex {
-		s.logger.Info().Str("dataset", name).Msg("Attempting lazy index initialization")
-		config := s.autoShardingConfig
-		if config.ShardThreshold == 0 {
-			config.ShardThreshold = 10000
-			config.Enabled = true
-			config.ShardCount = runtime.NumCPU()
-		}
-
-		// Infer DataType from the FIRST record
-		vecColName := "vector"
-		for _, f := range rec.Schema().Fields() {
-			if f.Name == "vector" || f.Name == "embedding" {
-				vecColName = f.Name
-				break
-			}
-		}
-		dataType := InferVectorDataType(rec.Schema(), vecColName)
-
-		// Unspecified default logic: promote to turboquant8
-		hasMetadataType := false
-		if rec.Schema() != nil {
-			md := rec.Schema().Metadata()
-			if _, ok := md.GetValue("longbow.vector_type"); ok {
-				hasMetadataType = true
-			} else {
-				idx := rec.Schema().FieldIndices(vecColName)
-				if len(idx) > 0 {
-					f := rec.Schema().Field(idx[0])
-					if _, ok := f.Metadata.GetValue("longbow.vector_type"); ok {
-						hasMetadataType = true
-					}
+		ds.initMu.Lock()
+		needsReindex = false
+		if ds.Index != nil {
+			if hnsw, ok := ds.Index.(*ArrowHNSW); ok {
+				wantType := InferVectorDataType(ds.Schema, "vector")
+				if hnsw.GetConfig().DataType != wantType {
+					needsReindex = true
 				}
 			}
 		}
-
-		// Infer dimension
-		dim := 0
-		if vecCol := findVectorColumn(rec); vecCol != nil {
-			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
-				dim = int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-			}
-		}
-
-		// Automatic TurboQuant standardization for high-scale (500k+) or memory-constrained infrastructure
-		autoQuantizeEnabled := os.Getenv("LONGBOW_AUTO_QUANTIZE") == "1" || os.Getenv("LONGBOW_AUTO_QUANTIZE") == "true"
-		if config.IndexConfig != nil && config.IndexConfig.AutoQuantize {
-			autoQuantizeEnabled = true
-		}
-
-		if autoQuantizeEnabled && !hasMetadataType {
-			threshold := int64(500000)
-			if config.IndexConfig != nil && config.IndexConfig.AutoQuantizeThreshold > 0 {
-				threshold = config.IndexConfig.AutoQuantizeThreshold
-			}
-			maxRAM := s.maxMemory.Load()
-			if maxRAM <= 0 {
-				maxRAM = lmem.GetPhysicalMemory()
-			}
-			estimatedCount := ds.GetRowCount() + rec.NumRows()
-			if estimatedCount < threshold && maxRAM <= 24*1024*1024*1024 {
-				estimatedCount = threshold
-			}
-			if ShouldAutoQuantize(estimatedCount, dim, dataType, maxRAM, threshold) {
-				dataType = types.VectorTypeTQ
-				ds.PreferredVectorType = types.VectorTypeTQ
-				tqBits := 4
-				if config.IndexConfig != nil && config.IndexConfig.AutoQuantizeBits > 0 {
-					tqBits = config.IndexConfig.AutoQuantizeBits
-				}
-				if v := os.Getenv("LONGBOW_AUTO_QUANTIZE_BITS"); v != "" {
-					if b, err := strconv.Atoi(v); err == nil && (b == 2 || b == 4 || b == 8) {
-						tqBits = b
-					}
-				}
-				ds.SetTurboQuantBits(tqBits)
-				if ds.DiskStore != nil {
-					ds.DiskStore.SetTurboQuant(tqBits)
-				}
-				metrics.AutoQuantizeEngaged.WithLabelValues(name).Inc()
-				s.logger.Info().
-					Str("dataset", name).
-					Int64("estimatedVectors", estimatedCount).
-					Int("dim", dim).
-					Int("tqBits", tqBits).
-					Msg("Standardized on TurboQuant as default storage engine (LONGBOW_AUTO_QUANTIZE threshold crossed)")
-			}
-		}
-
-		if ds.PreferredVectorType != types.VectorTypeUnknown {
-			dataType = ds.PreferredVectorType
-		} else if !hasMetadataType && dataType == types.VectorTypeFloat32 {
-			dataType = types.VectorTypeTQ
-			ds.PreferredVectorType = types.VectorTypeTQ
-		}
-
-		// Ensure automatic spill to disk is engaged if memory projection exceeds threshold
-		if ds.DiskStore == nil && s.ShouldSpillToDisk(ds, rec.Schema()) {
-			s.initDiskStore(ds, name, rec.Schema())
-		}
-
-		s.logger.Info().Str("dataset", name).Str("dataType", dataType.String()).Str("column", vecColName).Msg("Inferred vector data type for new index")
-
-		if config.IndexConfig == nil {
-			hnswCfg := DefaultArrowHNSWConfig()
-			hnswCfg.Metric = ds.Metric
-			hnswCfg.DataType = dataType
-			if ds.DiskStore != nil {
-				hnswCfg.UseDisk = true
+		if ds.Index == nil || needsReindex {
+			s.logger.Info().Str("dataset", name).Msg("Attempting lazy index initialization")
+			config := s.autoShardingConfig
+			if config.ShardThreshold == 0 {
+				config.ShardThreshold = 10000
+				config.Enabled = true
+				config.ShardCount = runtime.NumCPU()
 			}
 
-			if dataType == VectorTypeTQ {
-				hnswCfg.TurboQuantEnabled = true
-				if ds.TurboQuantBits() > 0 {
-					hnswCfg.TurboQuantBits = ds.TurboQuantBits()
-				} else if hnswCfg.TurboQuantBits == 0 {
-					hnswCfg.TurboQuantBits = 4
+			// Infer DataType from the FIRST record
+			vecColName := "vector"
+			for _, f := range rec.Schema().Fields() {
+				if f.Name == "vector" || f.Name == "embedding" {
+					vecColName = f.Name
+					break
 				}
 			}
-			config.IndexConfig = &hnswCfg
-		} else {
-			// Clone the config to avoid polluting the shared autoShardingConfig
-			clonedCfg := *config.IndexConfig
+			dataType := InferVectorDataType(rec.Schema(), vecColName)
 
-			// Use preferred type if specified
-			if ds.PreferredVectorType != types.VectorTypeUnknown {
-				dataType = ds.PreferredVectorType
-			}
-			clonedCfg.DataType = dataType
-			if ds.DiskStore != nil {
-				clonedCfg.UseDisk = true
-			}
-
-			if dataType == VectorTypeTQ {
-				clonedCfg.TurboQuantEnabled = true
-				if ds.TurboQuantBits() > 0 {
-					clonedCfg.TurboQuantBits = ds.TurboQuantBits()
-				} else if clonedCfg.TurboQuantBits == 0 {
-					clonedCfg.TurboQuantBits = 4
-				}
-			}
-			config.IndexConfig = &clonedCfg
-		}
-
-		aIdx := NewAutoShardingIndex(ds, config)
-		if vecCol := findVectorColumn(rec); vecCol != nil {
-			if listArr, ok := vecCol.(*array.FixedSizeList); ok {
-				dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
-				s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("findVectorColumn result")
-				switch dataType {
-				case VectorTypeFloat32:
-					if listType, ok := listArr.DataType().(*arrow.FixedSizeListType); ok {
-						if listType.Elem().ID() == arrow.FLOAT32 && dim%2 == 0 {
-							// Only detect complex if field name suggests it
-							if strings.Contains(strings.ToLower(vecCol.Data().DataType().Name()), "complex") {
-								dataType = VectorTypeComplex64
-								dim /= 2
-								config.IndexConfig.DataType = dataType
-								aIdx = NewAutoShardingIndex(ds, config)
-								s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("Detected complex64 from physical dimension")
-							}
+			// Unspecified default logic: promote to turboquant8
+			hasMetadataType := false
+			if rec.Schema() != nil {
+				md := rec.Schema().Metadata()
+				if _, ok := md.GetValue("longbow.vector_type"); ok {
+					hasMetadataType = true
+				} else {
+					idx := rec.Schema().FieldIndices(vecColName)
+					if len(idx) > 0 {
+						f := rec.Schema().Field(idx[0])
+						if _, ok := f.Metadata.GetValue("longbow.vector_type"); ok {
+							hasMetadataType = true
 						}
 					}
-				case VectorTypeComplex64, VectorTypeComplex128:
-					dim /= 2
-				}
-				if setter, ok := aIdx.(interface{ SetInitialDimension(int) }); ok {
-					setter.SetInitialDimension(dim)
 				}
 			}
-		} else {
-			s.logger.Error().Str("dataset", name).Msg("findVectorColumn returned nil")
-		}
-		ds.Index = aIdx
 
-		// Pre-warm the index metadata cache with the current schema so the first
-		// AddBatch call doesn't pay lazy-cache population latency.
-		if hnsw, ok := aIdx.(*ArrowHNSW); ok {
-			hnsw.PreWarmMetadata(rec.Schema())
-		} else if asi, ok := aIdx.(*AutoShardingIndex); ok {
-			asi.mu.RLock()
-			if current, ok := asi.current.(*ArrowHNSW); ok {
-				current.PreWarmMetadata(rec.Schema())
+			// Infer dimension
+			dim := 0
+			if vecCol := findVectorColumn(rec); vecCol != nil {
+				if listArr, ok := vecCol.(*array.FixedSizeList); ok {
+					dim = int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+				}
 			}
-			asi.mu.RUnlock()
+
+			// Automatic TurboQuant standardization for high-scale (500k+) or memory-constrained infrastructure
+			autoQuantizeEnabled := os.Getenv("LONGBOW_AUTO_QUANTIZE") == "1" || os.Getenv("LONGBOW_AUTO_QUANTIZE") == "true"
+			if config.IndexConfig != nil && config.IndexConfig.AutoQuantize {
+				autoQuantizeEnabled = true
+			}
+
+			if autoQuantizeEnabled && !hasMetadataType {
+				threshold := int64(500000)
+				if config.IndexConfig != nil && config.IndexConfig.AutoQuantizeThreshold > 0 {
+					threshold = config.IndexConfig.AutoQuantizeThreshold
+				}
+				maxRAM := s.maxMemory.Load()
+				if maxRAM <= 0 {
+					maxRAM = lmem.GetPhysicalMemory()
+				}
+				estimatedCount := ds.GetRowCount() + rec.NumRows()
+				if estimatedCount < threshold && maxRAM <= 24*1024*1024*1024 {
+					estimatedCount = threshold
+				}
+				if ShouldAutoQuantize(estimatedCount, dim, dataType, maxRAM, threshold) {
+					dataType = types.VectorTypeTQ
+					ds.SetPreferredVectorType(types.VectorTypeTQ)
+					tqBits := 4
+					if config.IndexConfig != nil && config.IndexConfig.AutoQuantizeBits > 0 {
+						tqBits = config.IndexConfig.AutoQuantizeBits
+					}
+					if v := os.Getenv("LONGBOW_AUTO_QUANTIZE_BITS"); v != "" {
+						if b, err := strconv.Atoi(v); err == nil && (b == 2 || b == 4 || b == 8) {
+							tqBits = b
+						}
+					}
+					ds.SetTurboQuantBits(tqBits)
+					if ds.DiskStore != nil {
+						ds.DiskStore.SetTurboQuant(tqBits)
+					}
+					metrics.AutoQuantizeEngaged.WithLabelValues(name).Inc()
+					s.logger.Info().
+						Str("dataset", name).
+						Int64("estimatedVectors", estimatedCount).
+						Int("dim", dim).
+						Int("tqBits", tqBits).
+						Msg("Standardized on TurboQuant as default storage engine (LONGBOW_AUTO_QUANTIZE threshold crossed)")
+				}
+			}
+
+			if pvt := ds.GetPreferredVectorType(); pvt != types.VectorTypeUnknown {
+				dataType = pvt
+			} else if !hasMetadataType && dataType == types.VectorTypeFloat32 {
+				dataType = types.VectorTypeTQ
+				ds.SetPreferredVectorType(types.VectorTypeTQ)
+			}
+
+			// Ensure automatic spill to disk is engaged if memory projection exceeds threshold
+			if ds.DiskStore == nil && s.ShouldSpillToDisk(ds, rec.Schema()) {
+				s.initDiskStore(ds, name, rec.Schema())
+			}
+
+			s.logger.Info().Str("dataset", name).Str("dataType", dataType.String()).Str("column", vecColName).Msg("Inferred vector data type for new index")
+
+			if config.IndexConfig == nil {
+				hnswCfg := DefaultArrowHNSWConfig()
+				hnswCfg.Metric = ds.Metric
+				hnswCfg.DataType = dataType
+				if ds.DiskStore != nil {
+					hnswCfg.UseDisk = true
+				}
+
+				if dataType == VectorTypeTQ {
+					hnswCfg.TurboQuantEnabled = true
+					if ds.TurboQuantBits() > 0 {
+						hnswCfg.TurboQuantBits = ds.TurboQuantBits()
+					} else if hnswCfg.TurboQuantBits == 0 {
+						hnswCfg.TurboQuantBits = 4
+					}
+				}
+				config.IndexConfig = &hnswCfg
+			} else {
+				// Clone the config to avoid polluting the shared autoShardingConfig
+				clonedCfg := *config.IndexConfig
+
+				// Use preferred type if specified
+				if pvt := ds.GetPreferredVectorType(); pvt != types.VectorTypeUnknown {
+					dataType = pvt
+				}
+				clonedCfg.DataType = dataType
+				if ds.DiskStore != nil {
+					clonedCfg.UseDisk = true
+				}
+
+				if dataType == VectorTypeTQ {
+					clonedCfg.TurboQuantEnabled = true
+					if ds.TurboQuantBits() > 0 {
+						clonedCfg.TurboQuantBits = ds.TurboQuantBits()
+					} else if clonedCfg.TurboQuantBits == 0 {
+						clonedCfg.TurboQuantBits = 4
+					}
+				}
+				config.IndexConfig = &clonedCfg
+			}
+
+			aIdx := NewAutoShardingIndex(ds, config)
+			if vecCol := findVectorColumn(rec); vecCol != nil {
+				if listArr, ok := vecCol.(*array.FixedSizeList); ok {
+					dim := int(listArr.DataType().(*arrow.FixedSizeListType).Len())
+					s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("findVectorColumn result")
+					switch dataType {
+					case VectorTypeFloat32:
+						if listType, ok := listArr.DataType().(*arrow.FixedSizeListType); ok {
+							if listType.Elem().ID() == arrow.FLOAT32 && dim%2 == 0 {
+								// Only detect complex if field name suggests it
+								if strings.Contains(strings.ToLower(vecCol.Data().DataType().Name()), "complex") {
+									dataType = VectorTypeComplex64
+									dim /= 2
+									config.IndexConfig.DataType = dataType
+									aIdx = NewAutoShardingIndex(ds, config)
+									s.logger.Info().Str("dataset", name).Int("dim", dim).Str("dataType", dataType.String()).Msg("Detected complex64 from physical dimension")
+								}
+							}
+						}
+					case VectorTypeComplex64, VectorTypeComplex128:
+						dim /= 2
+					}
+					if setter, ok := aIdx.(interface{ SetInitialDimension(int) }); ok {
+						setter.SetInitialDimension(dim)
+					}
+				}
+			} else {
+				s.logger.Error().Str("dataset", name).Msg("findVectorColumn returned nil")
+			}
+			ds.Index = aIdx
+
+			// Pre-warm the index metadata cache with the current schema so the first
+			// AddBatch call doesn't pay lazy-cache population latency.
+			if hnsw, ok := aIdx.(*ArrowHNSW); ok {
+				hnsw.PreWarmMetadata(rec.Schema())
+			} else if asi, ok := aIdx.(*AutoShardingIndex); ok {
+				asi.mu.RLock()
+				if current, ok := asi.current.(*ArrowHNSW); ok {
+					current.PreWarmMetadata(rec.Schema())
+				}
+				asi.mu.RUnlock()
+			}
 		}
+		ds.initMu.Unlock()
 	}
 
 	currentRecords := ds.Records.Read()
@@ -1655,7 +1669,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			s.logger.Error().Err(err).Msg("Failed to batch append to DiskStore (Zero-Copy)")
 		} else {
 			elemSize := 4
-			if ds.PreferredVectorType == types.VectorTypeFloat64 {
+			if ds.GetPreferredVectorType() == types.VectorTypeFloat64 {
 				elemSize = 8
 			}
 			metrics.DiskStoreWriteBytesTotal.WithLabelValues(name).Add(float64(rec.NumRows() * int64(ds.DiskStore.dim) * int64(elemSize)))

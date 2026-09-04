@@ -230,15 +230,23 @@ func (q *IndexJobQueue) drainRemaining() {
 	q.overflow = q.overflow[:0]
 	q.overflowMu.Unlock()
 
-	for _, job := range batch {
-		timer := time.NewTimer(50 * time.Millisecond)
+	for i, job := range batch {
 		select {
 		case q.mainChan <- job:
 			atomic.AddUint64(&q.drainedCount, 1)
-			timer.Stop()
-		case <-timer.C:
-			// Main channel full and no consumer reading, drop to avoid blocking shutdown
-			atomic.AddUint64(&q.droppedCount, 1)
+		default:
+			// Main channel is full. Try with a short timeout once.
+			timer := time.NewTimer(5 * time.Millisecond)
+			select {
+			case q.mainChan <- job:
+				atomic.AddUint64(&q.drainedCount, 1)
+				timer.Stop()
+			case <-timer.C:
+				// Main channel full and no consumer reading, drop this and all remaining overflow jobs
+				remainingCount := uint64(len(batch) - i) // #nosec G115
+				atomic.AddUint64(&q.droppedCount, remainingCount)
+				return
+			}
 		}
 	}
 }

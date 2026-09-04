@@ -25,13 +25,14 @@ package index
 
 import (
 	"context"
-	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
+	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/store/types"
@@ -177,9 +178,47 @@ func (m *GraphLayerEvictionManager) Start(ctx context.Context) {
 	}()
 }
 
-// Stop halts the background goroutine.
+// Unregister removes a GraphData and cleans up any on-disk evicted files for it.
+func (m *GraphLayerEvictionManager) Unregister(gd *types.GraphData) {
+	if gd == nil {
+		return
+	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	for i, t := range m.targets {
+		if t.gd == gd {
+			t.mu.Lock()
+			for _, rec := range t.evictedLayers {
+				if rec != nil && rec.path != "" {
+					_ = os.Remove(rec.path)
+				}
+			}
+			t.evictedLayers = make(map[int]*layerDiskRecord)
+			t.mu.Unlock()
+			m.targets = append(m.targets[:i], m.targets[i+1:]...)
+			break
+		}
+	}
+}
+
+// Stop halts the background goroutine and cleans up any on-disk evicted files.
 func (m *GraphLayerEvictionManager) Stop() {
-	m.stopOnce.Do(func() { close(m.stopCh) })
+	m.stopOnce.Do(func() {
+		close(m.stopCh)
+		m.mu.Lock()
+		defer m.mu.Unlock()
+		for _, target := range m.targets {
+			target.mu.Lock()
+			for _, rec := range target.evictedLayers {
+				if rec != nil && rec.path != "" {
+					_ = os.Remove(rec.path)
+				}
+			}
+			target.evictedLayers = make(map[int]*layerDiskRecord)
+			target.mu.Unlock()
+		}
+		m.targets = nil
+	})
 }
 
 // utilization returns the current heap-in-use / GOGC soft target ratio (approximate).
@@ -336,9 +375,12 @@ func evictLayer(gd *types.GraphData, layer int) (rec *layerDiskRecord, freedByte
 		rec.chunkSizes[cID] = len(chunk)
 
 		// Write as raw little-endian uint32 array
-		if werr := binary.Write(f, binary.LittleEndian, chunk); werr != nil {
-			_ = os.Remove(f.Name())
-			return nil, 0, fmt.Errorf("write chunk layer=%d chunk=%d: %w", layer, cID, werr)
+		if len(chunk) > 0 {
+			byteSlice := unsafe.Slice((*byte)(unsafe.Pointer(&chunk[0])), len(chunk)*4) // #nosec G103
+			if _, werr := f.Write(byteSlice); werr != nil {
+				_ = os.Remove(f.Name())
+				return nil, 0, fmt.Errorf("write chunk layer=%d chunk=%d: %w", layer, cID, werr)
+			}
 		}
 		freedBytes += int64(len(chunk)) * 4 // 4 bytes per uint32
 
@@ -392,8 +434,11 @@ func (m *GraphLayerEvictionManager) RestoreLayer(t *evictionTarget, layer int) e
 			}
 
 			buf := make([]uint32, sz)
-			if err := binary.Read(f, binary.LittleEndian, buf); err != nil {
-				return fmt.Errorf("read chunk layer=%d chunk=%d: %w", layer, cID, err)
+			if len(buf) > 0 {
+				byteBuf := unsafe.Slice((*byte)(unsafe.Pointer(&buf[0])), len(buf)*4) // #nosec G103
+				if _, err := io.ReadFull(f, byteBuf); err != nil {
+					return fmt.Errorf("read chunk layer=%d chunk=%d: %w", layer, cID, err)
+				}
 			}
 
 			ref, allocErr := gd.Uint32Arena.AllocSlice(sz)

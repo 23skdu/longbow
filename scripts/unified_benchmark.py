@@ -1008,6 +1008,20 @@ class BenchmarkRunner:
         if getattr(self.args, "use_disk", False):
             disk_mb = self._measure_disk_usage(label)
 
+        # Measure peak memory from /proc/<pid>/status
+        peak_mb = 0.0
+        if getattr(self, "server_pid", None):
+            try:
+                with open(f"/proc/{self.server_pid}/status", "r") as f:
+                    for line in f:
+                        if line.startswith("VmHWM:"):
+                            peak_mb = float(line.split()[1]) / 1024.0
+                            break
+            except Exception:
+                pass
+        if peak_mb > 0:
+            print(f"  [MEMORY] Peak Server RSS: {peak_mb:.1f} MB")
+
         result_entry = {
             "dim": dim,
             "dtype": dtype,
@@ -1018,6 +1032,7 @@ class BenchmarkRunner:
             },
             "search": search_metrics,
             "disk_usage_mb": disk_mb,
+            "peak_memory_mb": round(peak_mb, 2),
             "tq_bits": tq_bits,
             "timestamp": datetime.now().isoformat(),
         }
@@ -2907,19 +2922,21 @@ class BenchmarkRunner:
         print("BENCHMARK SUMMARY")
         print("─" * 100)
         print(
-            f"{'Dim':<8} {'Dtype':<12} {'Count':<8} {'Search Type':<15} {'QPS':<10} {'P50 ms':<8} {'P95 ms':<8} {'P99 ms':<8}"
+            f"{'Dim':<6} {'Dtype':<12} {'Count':<8} {'Peak MB':<9} {'Search Type':<15} {'QPS':<9} {'P50 ms':<8} {'P95 ms':<8} {'P99 ms':<8}"
         )
         print("─" * 100)
 
         for r in self.results:
             search_results = r.get("search", {})
+            peak = r.get("peak_memory_mb", 0.0)
             for s_type, s_data in search_results.items():
                 print(
-                    f"{r.get('dim', 'N/A'):<8} "
+                    f"{r.get('dim', 'N/A'):<6} "
                     f"{r.get('dtype', 'N/A'):<12} "
                     f"{r.get('count', 'N/A'):<8} "
+                    f"{peak:<9.1f} "
                     f"{s_type:<15} "
-                    f"{s_data.get('qps', 0):<10.1f} "
+                    f"{s_data.get('qps', 0):<9.1f} "
                     f"{s_data.get('p50', 0):<8.3f} "
                     f"{s_data.get('p95', 0):<8.3f} "
                     f"{s_data.get('p99', 0):<8.3f}"

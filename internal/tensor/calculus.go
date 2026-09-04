@@ -3,6 +3,8 @@ package tensor
 import (
 	"fmt"
 	"math"
+
+	"github.com/23skdu/longbow/internal/mathutil"
 )
 
 // LeviCivita generates the totally antisymmetric Levi-Civita permutation tensor of rank `dim`.
@@ -235,7 +237,7 @@ func ChristoffelSymbols(metric, metricDeriv *Tensor) (*Tensor, error) {
 					term2 := getScalarFloat(metricDeriv, []int{nu, mu, rho})
 					term3 := getScalarFloat(metricDeriv, []int{rho, mu, nu})
 
-					sum += 0.5 * gInv * (term1 + term2 - term3)
+					sum = mathutil.FMA(0.5*gInv, term1+term2-term3, sum)
 				}
 				setScalarFloat(gamma, []int{sigma, mu, nu}, sum)
 			}
@@ -247,7 +249,8 @@ func ChristoffelSymbols(metric, metricDeriv *Tensor) (*Tensor, error) {
 
 // RiemannCurvature computes the Riemann curvature tensor:
 // R^rho_{sigma mu nu} = d_mu Gamma^rho_{nu sigma} - d_nu Gamma^rho_{mu sigma}
-//                     + Gamma^rho_{mu lambda} Gamma^lambda_{nu sigma} - Gamma^rho_{nu lambda} Gamma^lambda_{mu sigma}
+//   - Gamma^rho_{mu lambda} Gamma^lambda_{nu sigma} - Gamma^rho_{nu lambda} Gamma^lambda_{mu sigma}
+//
 // christoffel has shape [D, D, D] (indices: rho, mu, nu)
 // christoffelDeriv has shape [D, D, D, D] (axis 0: derivative coord lambda, axes 1..3: rho, mu, nu)
 func RiemannCurvature(christoffel, christoffelDeriv *Tensor) (*Tensor, error) {
@@ -288,7 +291,7 @@ func RiemannCurvature(christoffel, christoffelDeriv *Tensor) (*Tensor, error) {
 						g3 := getScalarFloat(christoffel, []int{rho, nu, lambda})
 						g4 := getScalarFloat(christoffel, []int{lambda, mu, sigma})
 
-						quadraticSum += (g1 * g2) - (g3 * g4)
+						quadraticSum = mathutil.FMA(g1, g2, quadraticSum) - g3*g4
 					}
 
 					val := (dMuGamma - dNuGamma) + quadraticSum
@@ -346,7 +349,7 @@ func RicciScalar(ricci, metricInv *Tensor) (*Tensor, error) {
 		for nu := 0; nu < d; nu++ {
 			gInv := getScalarFloat(metricInv, []int{sigma, nu})
 			rVal := getScalarFloat(ricci, []int{sigma, nu})
-			scalar += gInv * rVal
+			scalar = mathutil.FMA(gInv, rVal, scalar)
 		}
 	}
 
@@ -417,7 +420,7 @@ func WedgeProduct(formA, formB *Tensor) (*Tensor, error) {
 			bVal := getScalarFloat(formB, bIdx)
 
 			sign := float64(parities[pi])
-			sum += sign * (aVal * bVal)
+			sum = mathutil.FMA(sign*aVal, bVal, sum)
 		}
 
 		setScalarFloat(out, indices, sum*normFactor)

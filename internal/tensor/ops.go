@@ -2,6 +2,8 @@ package tensor
 
 import (
 	"fmt"
+
+	"github.com/23skdu/longbow/internal/mathutil"
 )
 
 // TensorContract performs a tensor contraction (einsum-style) on two tensors.
@@ -244,62 +246,62 @@ func MatMul(a, b *Tensor) (*Tensor, error) {
 
 // Add performs element-wise addition.
 func Add(a, b *Tensor) (*Tensor, error) {
-	return elementwiseBinary(a, b, func(x, y float32) float32 { return x + y })
+	return elementwiseBinary(a, b, "add", func(x, y float32) float32 { return x + y }, mathutil.AddBatch)
 }
 
 // Sub performs element-wise subtraction.
 func Sub(a, b *Tensor) (*Tensor, error) {
-	return elementwiseBinary(a, b, func(x, y float32) float32 { return x - y })
+	return elementwiseBinary(a, b, "sub", func(x, y float32) float32 { return x - y }, mathutil.SubBatch)
 }
 
 // Mul performs element-wise multiplication.
 func Mul(a, b *Tensor) (*Tensor, error) {
-	return elementwiseBinary(a, b, func(x, y float32) float32 { return x * y })
+	return elementwiseBinary(a, b, "mul", func(x, y float32) float32 { return x * y }, mathutil.MulBatch)
 }
 
 // Div performs element-wise division.
 func Div(a, b *Tensor) (*Tensor, error) {
-	return elementwiseBinary(a, b, func(x, y float32) float32 { return x / y })
+	return elementwiseBinary(a, b, "div", func(x, y float32) float32 { return x / y }, mathutil.DivBatch)
 }
 
 // Neg performs element-wise negation.
 func Neg(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 { return -x })
+	return elementwiseUnary(a, "neg", func(x float32) float32 { return -x }, mathutil.NegBatch)
 }
 
 // Sin computes element-wise sine.
 func Sin(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 { return float32(sin(float64(x))) })
+	return elementwiseUnary(a, "sin", func(x float32) float32 { return float32(sin(float64(x))) }, mathutil.SinBatch)
 }
 
 // Cos computes element-wise cosine.
 func Cos(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 { return float32(cos(float64(x))) })
+	return elementwiseUnary(a, "cos", func(x float32) float32 { return float32(cos(float64(x))) }, mathutil.CosBatch)
 }
 
 // Tan computes element-wise tangent.
 func Tan(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 { return float32(tan(float64(x))) })
+	return elementwiseUnary(a, "tan", func(x float32) float32 { return float32(tan(float64(x))) }, mathutil.TanBatch)
 }
 
 // Exp computes element-wise exponential.
 func Exp(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 { return float32(exp(float64(x))) })
+	return elementwiseUnary(a, "exp", func(x float32) float32 { return float32(exp(float64(x))) }, mathutil.ExpBatch)
 }
 
 // Log computes element-wise natural logarithm.
 func Log(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 { return float32(log(float64(x))) })
+	return elementwiseUnary(a, "log", func(x float32) float32 { return float32(log(float64(x))) }, mathutil.LogBatch)
 }
 
 // Sqrt computes element-wise square root.
 func Sqrt(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 { return float32(sqrt(float64(x))) })
+	return elementwiseUnary(a, "sqrt", func(x float32) float32 { return float32(sqrt(float64(x))) }, mathutil.SqrtBatch)
 }
 
 // Pow computes a raised to the power of b element-wise.
 func Pow(a, b *Tensor) (*Tensor, error) {
-	return elementwiseBinary(a, b, func(x, y float32) float32 { return float32(pow(float64(x), float64(y))) })
+	return elementwiseBinary(a, b, "pow", func(x, y float32) float32 { return float32(pow(float64(x), float64(y))) }, nil)
 }
 
 // Transpose permutes the axes of a tensor.
@@ -460,22 +462,74 @@ func deduceLabels(a, b *Tensor) ([]string, []string) {
 type unaryFn func(float32) float32
 type binaryFn func(float32, float32) float32
 
-func elementwiseUnary(a *Tensor, fn unaryFn) (*Tensor, error) {
+func elementwiseUnary(a *Tensor, opName string, fn32 unaryFn, batchF64 func([]float64) []float64) (*Tensor, error) {
 	out := New(a.Dtype(), a.Shape())
 	switch a.Dtype() {
 	case DtypeFloat32:
 		adata := a.Float32s()
 		outdata := out.Float32s()
-		for i, v := range adata {
-			outdata[i] = fn(v)
+		if mathImpl == MathEML && batchF64 != nil && len(adata) >= 128 {
+			f64s := make([]float64, len(adata))
+			for i, v := range adata {
+				f64s[i] = float64(v)
+			}
+			res64 := batchF64(f64s)
+			for i, v := range res64 {
+				outdata[i] = float32(v)
+			}
+			return out, nil
 		}
+		for i, v := range adata {
+			outdata[i] = fn32(v)
+		}
+		return out, nil
+	case DtypeFloat64:
+		adata := a.Float64s()
+		outdata := out.Float64s()
+		if mathImpl == MathEML && batchF64 != nil {
+			res64 := batchF64(adata)
+			copy(outdata, res64)
+			return out, nil
+		}
+		for i, v := range adata {
+			switch opName {
+			case "sin":
+				outdata[i] = sin(v)
+			case "cos":
+				outdata[i] = cos(v)
+			case "tan":
+				outdata[i] = tan(v)
+			case "exp":
+				outdata[i] = exp(v)
+			case "log":
+				outdata[i] = log(v)
+			case "sqrt":
+				outdata[i] = sqrt(v)
+			case "sinh":
+				outdata[i] = sinh(v)
+			case "cosh":
+				outdata[i] = cosh(v)
+			case "tanh":
+				outdata[i] = tanh(v)
+			case "asin":
+				outdata[i] = asin(v)
+			case "acos":
+				outdata[i] = acos(v)
+			case "atan":
+				outdata[i] = atan(v)
+			case "neg":
+				outdata[i] = -v
+			default:
+				outdata[i] = float64(fn32(float32(v)))
+			}
+		}
+		return out, nil
 	default:
 		return nil, fmt.Errorf("tensor: element-wise unary not implemented for %s", a.Dtype())
 	}
-	return out, nil
 }
 
-func elementwiseBinary(a, b *Tensor, fn binaryFn) (*Tensor, error) {
+func elementwiseBinary(a, b *Tensor, opName string, fn binaryFn, batchF64 func([]float64, []float64) []float64) (*Tensor, error) {
 	shape, err := broadcastShapes(a.Shape(), b.Shape())
 	if err != nil {
 		return nil, err
@@ -489,16 +543,100 @@ func elementwiseBinary(a, b *Tensor, fn binaryFn) (*Tensor, error) {
 		bdata := b.Float32s()
 		outdata := out.Float32s()
 		if len(adata) == len(outdata) && len(bdata) == len(outdata) {
+			if mathImpl == MathEML && batchF64 != nil && len(adata) >= 128 {
+				f64A := make([]float64, len(adata))
+				f64B := make([]float64, len(bdata))
+				for i := range adata {
+					f64A[i] = float64(adata[i])
+					f64B[i] = float64(bdata[i])
+				}
+				res64 := batchF64(f64A, f64B)
+				for i := range res64 {
+					outdata[i] = float32(res64[i])
+				}
+				return out, nil
+			}
 			for i := range outdata {
 				outdata[i] = fn(adata[i], bdata[i])
 			}
 		} else {
 			elementwiseBinaryBroadcast(adata, a.Shape(), bdata, b.Shape(), outdata, fn)
 		}
+	case a.Dtype() == DtypeFloat64 && b.Dtype() == DtypeFloat64:
+		adata := a.Float64s()
+		bdata := b.Float64s()
+		outdata := out.Float64s()
+		if len(adata) == len(outdata) && len(bdata) == len(outdata) {
+			if mathImpl == MathEML && batchF64 != nil {
+				res64 := batchF64(adata, bdata)
+				copy(outdata, res64)
+				return out, nil
+			}
+			for i := range outdata {
+				switch opName {
+				case "add":
+					outdata[i] = adata[i] + bdata[i]
+				case "sub":
+					outdata[i] = adata[i] - bdata[i]
+				case "mul":
+					outdata[i] = adata[i] * bdata[i]
+				case "div":
+					outdata[i] = adata[i] / bdata[i]
+				case "pow":
+					outdata[i] = pow(adata[i], bdata[i])
+				default:
+					outdata[i] = float64(fn(float32(adata[i]), float32(bdata[i])))
+				}
+			}
+		} else {
+			elementwiseBinaryBroadcastFloat64(adata, a.Shape(), bdata, b.Shape(), outdata, opName, fn)
+		}
 	default:
 		return nil, fmt.Errorf("tensor: element-wise binary not implemented for %s+%s", a.Dtype(), b.Dtype())
 	}
 	return out, nil
+}
+
+func elementwiseBinaryBroadcastFloat64(a []float64, aShape Shape, b []float64, bShape Shape, out []float64, opName string, fn binaryFn) {
+	aStrides := computeStrides(aShape, 8)
+	bStrides := computeStrides(bShape, 8)
+
+	rank := max(len(aShape), len(bShape))
+	indices := make([]int, rank)
+	aIdx := make([]int, len(aShape))
+	bIdx := make([]int, len(bShape))
+
+	total := numElements(outShapeForBroadcast(aShape, bShape))
+	for i := 0; i < total; i++ {
+		rem := i
+		for d := rank - 1; d >= 0; d-- {
+			indices[d] = rem % outShapeForBroadcast(aShape, bShape)[d]
+			rem /= outShapeForBroadcast(aShape, bShape)[d]
+		}
+		for d := 0; d < len(aShape); d++ {
+			aIdx[d] = indices[d+rank-len(aShape)] % aShape[d]
+		}
+		for d := 0; d < len(bShape); d++ {
+			bIdx[d] = indices[d+rank-len(bShape)] % bShape[d]
+		}
+		aOff := offsetFromIndices(aIdx, aStrides, 8) / 8
+		bOff := offsetFromIndices(bIdx, bStrides, 8) / 8
+		va, vb := a[aOff], b[bOff]
+		switch opName {
+		case "add":
+			out[i] = va + vb
+		case "sub":
+			out[i] = va - vb
+		case "mul":
+			out[i] = va * vb
+		case "div":
+			out[i] = va / vb
+		case "pow":
+			out[i] = pow(va, vb)
+		default:
+			out[i] = float64(fn(float32(va), float32(vb)))
+		}
+	}
 }
 
 func elementwiseBinaryBroadcast(a []float32, aShape Shape, b []float32, bShape Shape, out []float32, fn binaryFn) {
@@ -597,6 +735,24 @@ var pow = func(x, y float64) float64 {
 	v, _ := powGo(x, y)
 	return v
 }
+var sinh = func(x float64) float64 {
+	e, _ := expGo(x)
+	ne, _ := expGo(-x)
+	return (e - ne) / 2
+}
+var cosh = func(x float64) float64 {
+	e, _ := expGo(x)
+	ne, _ := expGo(-x)
+	return (e + ne) / 2
+}
+var tanh = func(x float64) float64 {
+	e, _ := expGo(x)
+	ne, _ := expGo(-x)
+	return (e - ne) / (e + ne)
+}
+var asin = asinGo
+var acos = acosGo
+var atan = atanGo
 
 // Pure Go fallbacks for math functions (will be replaced with SIMD/CUDA kernels)
 func sinGo(x float64) (float64, error) {
@@ -693,49 +849,37 @@ func powGo(x, y float64) (float64, error) {
 
 // Asin computes element-wise arcsine.
 func Asin(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 { return float32(asinGo(float64(x))) })
+	return elementwiseUnary(a, "asin", func(x float32) float32 { return float32(asin(float64(x))) }, nil)
 }
 
 // Acos computes element-wise arccosine.
 func Acos(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 { return float32(acosGo(float64(x))) })
+	return elementwiseUnary(a, "acos", func(x float32) float32 { return float32(acos(float64(x))) }, nil)
 }
 
 // Atan computes element-wise arctangent.
 func Atan(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 { return float32(atanGo(float64(x))) })
+	return elementwiseUnary(a, "atan", func(x float32) float32 { return float32(atan(float64(x))) }, nil)
 }
 
 // Sinh computes element-wise hyperbolic sine.
 func Sinh(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 {
-		e, _ := expGo(float64(x))
-		ne, _ := expGo(-float64(x))
-		return float32((e - ne) / 2)
-	})
+	return elementwiseUnary(a, "sinh", func(x float32) float32 { return float32(sinh(float64(x))) }, mathutil.SinhBatch)
 }
 
 // Cosh computes element-wise hyperbolic cosine.
 func Cosh(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 {
-		e, _ := expGo(float64(x))
-		ne, _ := expGo(-float64(x))
-		return float32((e + ne) / 2)
-	})
+	return elementwiseUnary(a, "cosh", func(x float32) float32 { return float32(cosh(float64(x))) }, mathutil.CoshBatch)
 }
 
 // Tanh computes element-wise hyperbolic tangent.
 func Tanh(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 {
-		e, _ := expGo(float64(x))
-		ne, _ := expGo(-float64(x))
-		return float32((e - ne) / (e + ne))
-	})
+	return elementwiseUnary(a, "tanh", func(x float32) float32 { return float32(tanh(float64(x))) }, mathutil.TanhBatch)
 }
 
 // Erf computes the error function element-wise.
 func Erf(a *Tensor) (*Tensor, error) {
-	return elementwiseUnary(a, func(x float32) float32 { return float32(erfGo(float64(x))) })
+	return elementwiseUnary(a, "erf", func(x float32) float32 { return float32(erfGo(float64(x))) }, nil)
 }
 
 func asinGo(x float64) float64 {
@@ -778,10 +922,10 @@ func erfGo(x float64) float64 {
 	}
 	t := 1.0 / (1.0 + 0.3275911*x)
 	poly := t * (0.254829592 +
-		t * (-0.284496736 +
-			t * (1.421413741 +
-				t * (-1.453152027 +
-					t * 1.061405429))))
+		t*(-0.284496736+
+			t*(1.421413741+
+				t*(-1.453152027+
+					t*1.061405429))))
 	expVal, _ := expGo(-x * x)
 	result := 1.0 - poly*expVal
 	return sign * result

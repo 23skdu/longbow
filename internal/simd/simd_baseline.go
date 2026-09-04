@@ -6,6 +6,7 @@ import (
 	"sync"
 
 	lbcore "github.com/23skdu/longbow/internal/core"
+	"github.com/23skdu/longbow/internal/mathutil"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
@@ -411,7 +412,7 @@ func euclideanFloat64Unrolled4x(a, b []float64) (float32, error) {
 		d := a[i] - b[i]
 		sum0 += d * d
 	}
-	return float32(math.Sqrt(sum0 + sum1 + sum2 + sum3)), nil
+	return float32(mathutil.Sqrt(sum0 + sum1 + sum2 + sum3)), nil
 }
 
 func l2SquaredFloat64Unrolled4x(a, b []float64) (float32, error) {
@@ -654,7 +655,7 @@ func cosineDistanceInt8Unrolled4x(a, b []int8) (float32, error) {
 	if normA <= 0 || normB <= 0 {
 		return 1.0, nil
 	}
-	similarity := dot / (math.Sqrt(normA) * math.Sqrt(normB))
+	similarity := dot / (mathutil.Sqrt(normA) * mathutil.Sqrt(normB))
 	return float32(math.Max(0, math.Min(2, 1.0-similarity))), nil
 }
 

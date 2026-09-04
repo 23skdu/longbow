@@ -404,19 +404,19 @@ func TestComposePermMismatched(t *testing.T) {
 }
 
 func TestElementwiseUnaryNonFloat32(t *testing.T) {
-	a := New(DtypeFloat64, Shape{2})
+	a := New(DtypeInt8, Shape{2})
 	_, err := Sin(a)
 	if err == nil {
-		t.Error("expected error for float64 unary")
+		t.Error("expected error for int8 unary")
 	}
 }
 
 func TestElementwiseBinaryNonFloat32(t *testing.T) {
-	a := New(DtypeFloat64, Shape{2})
-	b := New(DtypeFloat64, Shape{2})
+	a := New(DtypeInt8, Shape{2})
+	b := New(DtypeInt8, Shape{2})
 	_, err := Add(a, b)
 	if err == nil {
-		t.Error("expected error for float64 binary")
+		t.Error("expected error for int8 binary")
 	}
 }
 
@@ -493,8 +493,8 @@ func TestInitMathDispatch(t *testing.T) {
 		t.Error("expected Go math after InitMathDispatch(false)")
 	}
 	InitMathDispatch(true)
-	if mathImpl != MathSIMD {
-		t.Error("expected SIMD math after InitMathDispatch(true)")
+	if mathImpl != MathSIMD && mathImpl != MathEML {
+		t.Error("expected SIMD/EML math after InitMathDispatch(true)")
 	}
 	// Reset for later tests
 	InitMathDispatch(false)

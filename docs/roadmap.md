@@ -1,13 +1,16 @@
-# Longbow Roadmap: ADBC & Tensor Engine Support
+# Longbow Roadmap: ADBC, Native Tensor Engine & EMLGo Integration
 
-This roadmap details the architectural design, implementation subtasks, and testing strategies for two major upcoming features in Longbow: **ADBC Driver Support** and **Native Tensor Engine**.
+This roadmap details the architectural design, implementation subtasks, and testing strategies for three major pillars in Longbow:
+1. **ADBC (Arrow Database Connectivity) Driver Support**
+2. **Native Tensor Engine & Calculus Infrastructure**
+3. **EMLGo High-Performance Mathematical Engine & A/B Testing**
 
 ---
 
 ## 1. ADBC (Arrow Database Connectivity) Driver Support
 
 ### Objective
-Provide a highly performant, language-agnostic, and zero-copy interface for querying Longbow using the standard ADBC API. This will allow Python (Pandas/Polars), C++, and Rust applications to query Longbow directly with zero serialization overhead.
+Provide a highly performant, language-agnostic, and zero-copy interface for querying Longbow using the standard ADBC API. This allows Python (Pandas/Polars), C++, and Rust applications to query Longbow directly with zero serialization overhead.
 
 ### Architectural Design
 ```mermaid
@@ -20,148 +23,112 @@ graph TD
 ```
 
 ### Implementation Subtasks
-
-### Implementation Subtasks
-
 All ADBC implementation phases (Go ADBC Interface Implementation & C-API Export) have been successfully completed and verified.
-
-### Testing Strategy
-
-#### Unit Tests
-- **Statement Execution**: Validate that standard SQL SELECT, vector searches, and metadata queries return correct schemas and rows.
-- **Parametric Binding**: Test binding multiple float32/float64 vectors to statements and retrieving nearest neighbors.
-
-#### Fuzz & Integration Tests
-- **Dialect Fuzzing**: Send mutated/invalid SQL strings to the parser to ensure it gracefully returns `adbc.StatusInvalidArgument` instead of panicking.
-- **Cross-Language Verification**: Write a Python script using `adbc_driver_manager` to load `liblongbow_adbc.so`, ingest vectors, execute query statements, and verify correctness.
 
 ---
 
 ## 2. Native Tensor Engine
 
 ### Objective
-Extend Longbow from a vector engine into a general-purpose tensor calculus engine capable of performing operations used in theoretical physics and scientific computing. This includes Einstein-notation tensor contractions, matrix multiplication, index rewriting, and JIT-compiled kernels for CPU (AVX2) and GPU (CUDA).
+Extend Longbow from a vector index into a general-purpose tensor calculus engine capable of performing operations used in theoretical physics, machine learning, and scientific computing. This includes Einstein-notation tensor contractions, index rewriting, and JIT-compiled kernels for CPU (AVX2/AVX-512) and GPU (CUDA).
 
 ### Architectural Design
-
 ```mermaid
 graph TD
     UserAPI[User: Tensor Expressions] -->|Einstein Notation| Parser[Einstein Notation Parser]
     Parser -->|TensorIR| Optimizer[Index Rewriting Optimizer]
     Optimizer -->|Optimized IR| Scheduler[Contraction Scheduler]
     Scheduler -->|Scheduled Ops| JIT[JIT Compiler]
-    JIT -->|AVX2 Kernel| CPU[CPU Execution]
+    JIT -->|AVX2/AVX-512 Kernel| CPU[CPU Execution]
     JIT -->|CUDA Kernel| GPU[CUDA Execution]
-    JIT -->|Generic| Go[Go Fallback]
+    JIT -->|Generic / EMLGo| Go[Optimized Fallback]
     CPU --> Result[Result Tensors]
     GPU --> Result
     Go --> Result
 ```
 
 ### Implementation Subtasks
-
-#### Phase 1: Tensor IR & Einstein Notation
-
-- [x] **Task 1.1: Core Tensor Type**
-  - Define a `Tensor` type in Go with support for arbitrary ranks and strides, backing storage (contiguous Arrow buffers), and metadata (labels, dimension names).
-  - Support all numeric dtypes already in Longbow: float32, float64, int8–int64, uint8–uint64, float16, complex64, complex128.
-
-- [x] **Task 1.2: Einstein Notation Parser**
-  - Implement a parser for Einstein summation notation (e.g. `"ij,jk->ik"`, `"ab,cb->ac"`, `"ii->i"`, `"ii->"`) that maps index names to tensor dimensions.
-  - Support broadcasting rules, contraction, diagonal operations, and trace.
-
-- [x] **Task 1.3: Tensor IR**
-  - Build an IR that represents sequences of tensor operations as a DAG of nodes: `Contract`, `Transpose`, `Reshape`, `Elementwise`, `Reduce`.
-  - Each node carries its index mapping, dtype, and shape constraints for downstream optimization.
-
-#### Phase 2: Index Rewriting Optimizer
-
-- [x] **Task 2.1: Contraction Ordering**
-  - Implement an optimizer that finds optimal pairwise contraction order using dynamic programming or greedy heuristics (analogous to `opt_einsum` in Python).
-  - Model intermediate tensor sizes and choose the sequence minimizing FLOPs or peak memory.
-
-- [x] **Task 2.2: Shared-Subexpression Elimination**
-  - Walk the DAG and detect common sub-tensors (identical subgraphs), memoize their results, and reuse them across the expression.
-  - Handle cases where the same contraction appears with different index permutations.
-
-- [x] **Task 2.3: Algebraic Simplification**
-  - Rewrite rules: transpose-of-transpose elimination, identity contraction removal, zero-tensor propagation, and constant folding.
-  - Detect and lower diagonal operations (`ii->i`) and trace computations.
-
-#### Phase 3: JIT-Compiled Kernels
-
-- [x] **Task 3.1: Generic Go Fallback**
-  - Multi-dtype generic implementations for every IR node type to serve as correctness baseline and fallback across Float32, Float64, Complex64, Complex128, and Ints.
-
-- [x] **Task 3.2: AVX2 Tensor Kernels**
-  - Implement AVX2 kernels for:
-    - Matrix multiply (GEMM) via inline AVX2 FMA (`gemm_amd64.s`).
-    - Element-wise operations (add, mul, exp, sin, cos, tan, log, sqrt, pow) using math dispatch.
-    - Reduction operations (sum, max, min) along arbitrary axes.
-    - Transposition and permutation on small-to-medium tensors.
-
-- [x] **Task 3.3: CUDA Tensor Kernels**
-  - Implement CUDA kernels for matrix multiply using cuBLAS (`cublasSgemm` and `cublasDgemm`) and custom device routines.
-  - Integrate with Longbow's existing CUDA build tag path (`//go:build gpu || cuda`).
-
-- [x] **Task 3.4: Custom Math Intrinsics for Trig & Tensor Calculus**
-  - Implement intrinsics for:
-    - Trigonometric: sin, cos, tan, arcsin, arccos, arctan, sinh, cosh, tanh.
-    - Tensor calculus: contractions, covariant/contravariant index raising/lowering, Levi-Civita symbol applications, wedge products, and Christoffel & Riemann curvature computations.
-    - Exponential and logarithmic families: exp, log, sqrt, pow.
-
-#### Phase 4: Hybrid Execution & Memory Management
-
-- [x] **Task 4.1: Auto-Scheduling**
-  - Build a cost model that selects CPU or GPU execution per subgraph based on tensor size, available hardware, and transfer costs.
-  - Support split execution (e.g., large contraction on GPU, small element-wise on CPU).
-
-- [x] **Task 4.2: Zero-Copy Tensor Slices**
-  - Leverage Longbow's memory model for zero-copy tensor views: slicing, dicing, and broadcasting without data movement.
-  - Integrate with Longbow's existing memory arena infrastructure for allocation.
-
-### Testing Strategy
-
-#### Unit Tests
-- **Tensor Arithmetic**: Validate element-wise add, mul, sub, div against numpy reference across all supported dtypes.
-- **Contraction Correctness**: Compare `einsum("ij,jk->ik", A, B)` against numpy for random float32/float64 matrices up to 1024×1024.
-- **Optimizer Verification**: Verify that the contraction rewriter produces expressions numerically identical to the naive order.
-
-#### Fuzz & Performance Tests
-- **Index Fuzzing**: Randomly generate valid Einstein strings and verify that all execution paths (Go, AVX2, CUDA) produce bit-identical results.
-- **Microbenchmarks**: Benchmark GEMM, element-wise trig, and reduction throughput on AVX2 vs CUDA across a matrix of tensor sizes (16×16 to 4096×4096).
-- **Expression-Level Benchmarks**: Benchmark full physics-style expressions (e.g. Riemann curvature tensor from Christoffel symbols) against reference implementations.
+- **Core Tensor Type**: Arbitrary ranks, Arrow-backed contiguous memory, typed buffer views.
+- **Einstein Notation Parser**: Arbitrary tensor contractions, traces, and diagonal extractions.
+- **Tensor IR & Optimizer**: Contraction ordering, common subexpression elimination, and algebraic simplification.
+- **AVX2 / CUDA Kernels**: Matrix multiply (GEMM) via inline AVX2 FMA and CUDA device routines.
+- **Tensor Calculus Intrinsics**: Contractions, covariant/contravariant index raising/lowering, Levi-Civita permutation tensors, wedge products, Christoffel connection symbols, and Riemann/Ricci curvature tensors.
 
 ---
 
-## 3. Experimental Branch: `emlgo` Fast Math Integration
+## 3. EMLGo High-Performance Math Engine Integration
 
 ### Objective
-Create an experimental feature branch to integrate the `emlgo` math library (https://github.com/23skdu/emlgo) to replace standard math routines. The goal is to perform A/B testing against the `main` branch to evaluate potential performance gains and accuracy impacts during HNSW graph construction and query execution.
+Integrate the `emlgo` mathematical library ([https://github.com/23skdu/emlgo](https://github.com/23skdu/emlgo)) into Longbow on the `experimental/emlgo` branch. Replace standard Go `math` library routines and naive Taylor series loops with SIMD-accelerated batch operations and hardware-backed fast scalar kernels, achieving significant speedups in Tensor operations and Vector distance calculations while maintaining strict numerical precision.
 
-### Architectural Design
-- **Dependency Isolation**: Introduce `emlgo` selectively in distance computation hotspots (e.g., Euclidean distance, Cosine similarity, Inner Product).
-- **A/B Testing Framework**: Use build tags or feature flags to allow identical binaries to run with either standard `math` or `emlgo` routines for direct comparison.
+### Mathematical & Architectural Analysis
 
-### Implementation Subtasks
+#### 1. Hardware-Backed Fast Scalar Kernels (`pkg/fastmath`)
+- **`fastmath.Sqrt`**: Direct assembly dispatch (`SQRTSD` on amd64, `FSQRTD` on arm64). Bypasses runtime wrapper overhead.
+- **`fastmath.FMA`**: Direct assembly dispatch (`VFMADD231SD` on amd64, `FMADD` on arm64). Computes `(x * y) + z` in a single processor cycle with single rounding.
+- **`fastmath.Exp` & `fastmath.Log`**: 5th-degree minimax polynomials optimized with FMA and range reduction, providing 2x–3x throughput improvements with ~1e-7 relative error.
+- **`fastmath.Sin` & `fastmath.Cos`**: Branchless Cody-Waite range reduction with minimax polynomials, outperforming Go's standard library `math.Sin` and `math.Cos` by 10%–20%.
 
-#### Phase 1: Dependency & Stub Integration
-- [ ] **Task 1.1: Branch Creation & Dependency Addition**
-  - Create the experimental branch `feature/emlgo-math`.
-  - Add `github.com/23skdu/emlgo` to `go.mod`.
-- [ ] **Task 1.2: Math Wrapper Interface**
-  - Refactor direct `math.*` calls in `internal/store/index` (HNSW) and `internal/query` to use a new `mathutil` wrapper package.
-  - Implement two versions of the wrapper: one using standard `math` and one using `emlgo`.
+#### 2. Vectorized SIMD Batch Operations (`pkg/arithmetic`, `pkg/trig`, `pkg/logexp`, `pkg/hyper`)
+- **AVX-512 (8-wide) and AVX2 (4-wide)**: Vectorized batch kernels for `ExpBatch`, `LogBatch`, `SinBatch`, `CosBatch`, `TanBatch`, `AddBatch`, `SubBatch`, `MulBatch`, `DivBatch`, and `FmaBatch`.
+- **Parallel Chunking**: Automatic multi-worker thread pooling for large array slices exceeding cache thresholds.
+- **Hyperbolic Elimination**: Longbow's tensor element-wise `Sinh`, `Cosh`, and `Tanh` currently evaluate 12-term Taylor expansions in Go loops; replacing with `hyper.SinhBatch`, `hyper.CoshBatch`, and `hyper.TanhBatch` yields 100x+ throughput gains.
 
-#### Phase 2: HNSW Integration & Profiling
-- [ ] **Task 2.1: Distance Calculation Overrides**
-  - Replace float32/float64 exponentiation, logarithms, and square roots in `ArrowHNSW` distance calculators with `emlgo` equivalents.
-- [ ] **Task 2.2: Micro-Benchmarking**
-  - Write specific `BenchmarkHNSWConstructionEmlgo` vs `BenchmarkHNSWConstructionStandard` test functions to measure nano-second level function overhead.
+#### 3. Vector Distance & HNSW Indexing Hotspots
+- **Float64 Euclidean Distance**: Replace standard `math.Sqrt(sum)` with `fastmath.Sqrt`.
+- **Float64 Cosine Distance**: Compute norms and scalar clampings via `fastmath.Sqrt` and `fastmath.FMA`.
+- **Tensor Calculus Contractions**: Accelerate Christoffel, Riemann curvature, and Ricci contractions using `fastmath.FMA` to eliminate intermediate precision loss and reduce cycle counts.
 
-#### Phase 3: A/B Testing & Evaluation
-- [ ] **Task 3.1: Construct A/B Test Harness**
-  - Develop a script to ingest a standard dataset (e.g., SIFT1M) twice, once using `emlgo` and once using `math`.
-  - Record and export index construction time and peak memory metrics.
-- [ ] **Task 3.2: Recall & Accuracy Validation**
-  - Run standard recall test suite (e.g., `RecallValidationTest`) on the `emlgo` generated index to ensure fast-math approximations do not significantly degrade the top-K graph accuracy.
+### Integration Architecture
+```mermaid
+graph TD
+    TensorOps[Tensor Elementwise Ops] --> MathUtil[internal/mathutil Unified Facade]
+    DistanceOps[SIMD Distance Baselines] --> MathUtil
+    CalculusOps[Tensor Calculus Contractions] --> MathUtil
+
+    MathUtil -->|BackendEML| EMLGo[emlgo SIMD & FastMath]
+    MathUtil -->|BackendStandard| StdMath[Go math Library]
+
+    EMLGo --> FastMath[pkg/fastmath: Sqrt, FMA, Sin, Exp]
+    EMLGo --> BatchSIMD[pkg/arithmetic, logexp, trig, hyper Batch SIMD]
+    
+    TestHarness[A/B Benchmarking & Parity Suite] --> MathUtil
+```
+
+### Implementation Phases
+
+#### Phase 1: Module Setup & Math Abstraction Layer
+- [x] **Task 1.1: Experimental Branch Setup**
+  - Create and switch to `experimental/emlgo`.
+- [ ] **Task 1.2: Dependency Configuration**
+  - Add `github.com/emlgo/eml` dependency and local `replace` directive in `go.mod`.
+- [ ] **Task 1.3: Unified Math Utility (`internal/mathutil`)**
+  - Implement a dual-backend facade with dynamic runtime switching (`SetBackend(BackendStandard | BackendEML)`).
+  - Provide scalar fastmath primitives (`Sqrt`, `FMA`, `Exp`, `Log`, `Sin`, `Cos`, `Tan`, `Pow`, `Sinh`, `Cosh`, `Tanh`).
+  - Provide batch vector routines (`ExpBatch`, `LogBatch`, `SinBatch`, `CosBatch`, `TanBatch`, `SinhBatch`, `CoshBatch`, `TanhBatch`, `AddBatch`, `SubBatch`, `MulBatch`, `DivBatch`).
+
+#### Phase 2: Tensor Engine Acceleration
+- [ ] **Task 2.1: Math Dispatch Update**
+  - Add `MathEML` to `internal/tensor/math_dispatch.go`.
+  - Wire tensor scalar math functions directly to `emlgo` fastmath.
+- [ ] **Task 2.2: Vectorized Batch Element-Wise Kernels**
+  - Update `internal/tensor/ops.go` to use `emlgo` SIMD batch kernels for contiguous Float64 and Float32 buffers.
+  - Eliminate slow Taylor series loops in `Sinh`, `Cosh`, `Tanh`, replacing with `hyper` routines.
+- [ ] **Task 2.3: Tensor Calculus Contraction FMA**
+  - Update inner contraction loops in `internal/tensor/calculus.go` (Christoffel, Riemann, Ricci) to use `fastmath.FMA`.
+
+#### Phase 3: SIMD & Distance Metrics Optimization
+- [ ] **Task 3.1: Float64 Distance Functions**
+  - Upgrade `internal/simd/distance_functions.go` (`EuclideanDistanceFloat64`, `CosineDistanceFloat64`) to use `fastmath.Sqrt`.
+- [ ] **Task 3.2: Baseline Kernel Normalization**
+  - Update `internal/simd/simd_baseline.go` Float64 and integer Euclidean/Cosine distance baseline functions with `fastmath.Sqrt`.
+
+#### Phase 4: A/B Testing, Benchmarking & Regression Verification
+- [ ] **Task 4.1: Tensor Elementwise A/B Benchmarks**
+  - Benchmark scalar operations (Sin, Cos, Exp, Log, Sqrt, FMA) comparing Standard Go `math` vs `emlgo`.
+  - Benchmark batch tensor operations across various dataset scales (1K, 10K, 100K elements).
+- [ ] **Task 4.2: Distance Function A/B Benchmarks**
+  - Measure Euclidean and Cosine distance latency for Float64 vectors (128, 384, 768, 1536 dims).
+- [ ] **Task 4.3: Numerical Parity & Accuracy Testing**
+  - Validate that ULP differences and relative errors between `emlgo` and standard Go `math` remain within acceptable bounds (<1e-6 for float32, <1e-12 for float64).
+  - Ensure zero regressions across the entire Longbow test suite.

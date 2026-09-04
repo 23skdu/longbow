@@ -14,7 +14,7 @@ func contractCUDA(a, b, out *Tensor, aAxes, bAxes, aFree, bFree []int) bool {
 		return false
 	}
 	// Only handle 2D contraction (matrix multiply) via cuBLAS for now
-	if len(aFree) != 1 || len(bFree) != 1 || len(aAxes) != 1 {
+	if len(aFree) != 1 || len(bFree) != 1 || len(aAxes) != 1 || len(bAxes) != 1 {
 		return false
 	}
 	m := a.Shape()[aFree[0]]

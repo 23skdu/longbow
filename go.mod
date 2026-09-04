@@ -28,7 +28,7 @@ require (
 	github.com/parquet-go/parquet-go v0.32.0
 	github.com/pierrec/lz4/v4 v4.1.29
 	github.com/prometheus/client_golang v1.24.1
-	github.com/prometheus/client_model v0.6.2
+	github.com/prometheus/client_model v0.6.3
 	github.com/rs/zerolog v1.35.1
 	github.com/sbinet/npyio v0.9.0
 	github.com/shirou/gopsutil/v3 v3.24.5

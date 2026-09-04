@@ -527,6 +527,21 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		curr := minHeap.PopCandidate()
 		ctx.nodesVisitedCount++
 
+		maxCommitted := meta.NodeCount
+		if ctx != nil && ctx.MaxNodeCount > 0 {
+			maxCommitted = ctx.MaxNodeCount
+		}
+
+		// Active prefetch of the next best candidate on the heap to hide traversal latency
+		if minHeap.Len() > 0 {
+			nextBest := (*minHeap)[0]
+			if int64(nextBest.ID) < maxCommitted {
+				if comp, ok := computer.(DistanceComputer); ok {
+					comp.Prefetch(nextBest.ID)
+				}
+			}
+		}
+
 		if len(ctx.resultSet) > 0 {
 			furthest := ctx.resultSet[0]
 			threshold := furthest.Dist
@@ -549,10 +564,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		}
 		if prefetchLimit < 16 {
 			prefetchLimit = 16
-		}
-		maxCommitted := meta.NodeCount
-		if ctx != nil && ctx.MaxNodeCount > 0 {
-			maxCommitted = ctx.MaxNodeCount
 		}
 
 		for i := 0; i < len(neighbors) && i < int(prefetchLimit); i++ {
@@ -602,6 +613,8 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			}
 		}
 
+		const traversalBlockSize = 64
+
 		if ctx.predicate != nil {
 			// Vectorized Predicate Path
 			batch := ctx.neighborBatch[:0]
@@ -629,37 +642,57 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 				}
 
 				if len(validBatch) > 0 {
-					ctx.distComputeCount += len(validBatch)
-					if cap(ctx.distsTemp) < len(validBatch) {
-						ctx.distsTemp = make([]float32, len(validBatch))
-					}
-					if cplx, ok := computer.(*complex128Computer); ok && len(ctx.resultSet) > 0 {
-						cplx.SetThreshold(ctx.resultSet[0].Dist)
-					}
-					dists, err := distBatchComputer(validBatch, ctx.distsTemp)
-					if err == nil {
-						for i, n := range validBatch {
-							d := dists[i]
-							cand := types.Candidate{ID: n, Dist: d}
-							minHeap.PushCandidate(cand)
+					for chunkStart := 0; chunkStart < len(validBatch); chunkStart += traversalBlockSize {
+						chunkEnd := chunkStart + traversalBlockSize
+						if chunkEnd > len(validBatch) {
+							chunkEnd = len(validBatch)
+						}
+						block := validBatch[chunkStart:chunkEnd]
 
-							if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
-								continue
+						if comp, ok := computer.(DistanceComputer); ok && chunkEnd < len(validBatch) {
+							nextEnd := chunkEnd + traversalBlockSize
+							if nextEnd > len(validBatch) {
+								nextEnd = len(validBatch)
 							}
-							if h.IsDeleted(n) {
-								continue
-							}
-
-							if len(ctx.resultSet) > 0 {
-								furthest := ctx.resultSet[0]
-								if ctx.resultSet.Len() < ef || d < furthest.Dist {
-									resultSetAdapter.PushCandidate(cand)
-									if ctx.resultSet.Len() > ef {
-										resultSetAdapter.PopCandidate()
-									}
+							for _, nextN := range validBatch[chunkEnd:nextEnd] {
+								if int64(nextN) < maxCommitted {
+									comp.Prefetch(nextN)
 								}
-							} else {
-								resultSetAdapter.PushCandidate(cand)
+							}
+						}
+
+						ctx.distComputeCount += len(block)
+						if cap(ctx.distsTemp) < len(block) {
+							ctx.distsTemp = make([]float32, len(block))
+						}
+						if cplx, ok := computer.(*complex128Computer); ok && len(ctx.resultSet) > 0 {
+							cplx.SetThreshold(ctx.resultSet[0].Dist)
+						}
+						dists, err := distBatchComputer(block, ctx.distsTemp[:len(block)])
+						if err == nil {
+							for i, n := range block {
+								d := dists[i]
+								cand := types.Candidate{ID: n, Dist: d}
+								minHeap.PushCandidate(cand)
+
+								if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+									continue
+								}
+								if h.IsDeleted(n) {
+									continue
+								}
+
+								if len(ctx.resultSet) > 0 {
+									furthest := ctx.resultSet[0]
+									if ctx.resultSet.Len() < ef || d < furthest.Dist {
+										resultSetAdapter.PushCandidate(cand)
+										if ctx.resultSet.Len() > ef {
+											resultSetAdapter.PopCandidate()
+										}
+									}
+								} else {
+									resultSetAdapter.PushCandidate(cand)
+								}
 							}
 						}
 					}
@@ -680,42 +713,62 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			}
 
 			if len(batch) > 0 {
-				ctx.distComputeCount += len(batch)
-				if cap(ctx.distsTemp) < len(batch) {
-					ctx.distsTemp = make([]float32, len(batch))
-				}
-				if cplx, ok := computer.(*complex128Computer); ok && len(ctx.resultSet) > 0 {
-					cplx.SetThreshold(ctx.resultSet[0].Dist)
-				}
-				dists, err := distBatchComputer(batch, ctx.distsTemp)
-				if err == nil {
-					for i, n := range batch {
-						d := dists[i]
-						cand := types.Candidate{ID: n, Dist: d}
+				for chunkStart := 0; chunkStart < len(batch); chunkStart += traversalBlockSize {
+					chunkEnd := chunkStart + traversalBlockSize
+					if chunkEnd > len(batch) {
+						chunkEnd = len(batch)
+					}
+					block := batch[chunkStart:chunkEnd]
 
-						// Add to candidates for traversal regardless of filter
-						minHeap.PushCandidate(cand)
-
-						// Only add to resultSet if it passes filters
-						if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
-							continue
+					if comp, ok := computer.(DistanceComputer); ok && chunkEnd < len(batch) {
+						nextEnd := chunkEnd + traversalBlockSize
+						if nextEnd > len(batch) {
+							nextEnd = len(batch)
 						}
-						if h.deleted != nil && h.deleted.Contains(n) {
-							continue
-						}
-
-						if len(ctx.resultSet) > 0 {
-							furthest := ctx.resultSet[0]
-
-							if ctx.resultSet.Len() < ef || d < furthest.Dist {
-								resultSetAdapter.PushCandidate(cand)
-								if ctx.resultSet.Len() > ef {
-									resultSetAdapter.PopCandidate() // Remove furthest
-								}
+						for _, nextN := range batch[chunkEnd:nextEnd] {
+							if int64(nextN) < maxCommitted {
+								comp.Prefetch(nextN)
 							}
-						} else {
-							// Empty resultSet
-							resultSetAdapter.PushCandidate(cand)
+						}
+					}
+
+					ctx.distComputeCount += len(block)
+					if cap(ctx.distsTemp) < len(block) {
+						ctx.distsTemp = make([]float32, len(block))
+					}
+					if cplx, ok := computer.(*complex128Computer); ok && len(ctx.resultSet) > 0 {
+						cplx.SetThreshold(ctx.resultSet[0].Dist)
+					}
+					dists, err := distBatchComputer(block, ctx.distsTemp[:len(block)])
+					if err == nil {
+						for i, n := range block {
+							d := dists[i]
+							cand := types.Candidate{ID: n, Dist: d}
+
+							// Add to candidates for traversal regardless of filter
+							minHeap.PushCandidate(cand)
+
+							// Only add to resultSet if it passes filters
+							if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+								continue
+							}
+							if h.deleted != nil && h.deleted.Contains(n) {
+								continue
+							}
+
+							if len(ctx.resultSet) > 0 {
+								furthest := ctx.resultSet[0]
+
+								if ctx.resultSet.Len() < ef || d < furthest.Dist {
+									resultSetAdapter.PushCandidate(cand)
+									if ctx.resultSet.Len() > ef {
+										resultSetAdapter.PopCandidate() // Remove furthest
+									}
+								}
+							} else {
+								// Empty resultSet
+								resultSetAdapter.PushCandidate(cand)
+							}
 						}
 					}
 				}

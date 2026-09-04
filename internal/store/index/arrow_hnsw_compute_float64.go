@@ -20,37 +20,19 @@ type float64Computer struct {
 }
 
 func (c *float64Computer) Compute(ids []uint32, dists []float32) error {
-	for i, id := range ids {
-		cID := types.ChunkID(id)
-		var chunk []float64
-		if c.maxGen == 18446744073709551615 {
-			chunk = c.data.GetVectorsFloat64ChunkFast(int(cID))
-		} else {
-			chunk = c.data.GetVectorsFloat64ChunkWithGen(int(cID), c.maxGen)
-		}
-		if chunk != nil {
-			cOff := int(id) % types.ChunkSize
-			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
-			start := cOff * pd
-			if start+c.dims <= len(chunk) {
-				v := chunk[start : start+c.dims]
-				d, err := c.h.distFuncF64(c.q, v)
-				if err != nil {
-					return err
-				}
-				dists[i] = d
-				continue
-			}
-		}
-		dists[i] = math.MaxFloat32
-	}
-	return nil
+	_, err := c.ComputeBatch(ids, dists)
+	return err
 }
 
 func (c *float64Computer) ComputeSingle(id uint32) (float32, error) {
 	// Fast path: direct chunk access (same order as float32 computer)
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsFloat64ChunkWithGen(int(cID), c.maxGen)
+	var chunk []float64
+	if c.maxGen == math.MaxUint64 {
+		chunk = c.data.GetVectorsFloat64ChunkFast(int(cID))
+	} else {
+		chunk = c.data.GetVectorsFloat64ChunkWithGen(int(cID), c.maxGen)
+	}
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
@@ -72,50 +54,75 @@ func (c *float64Computer) ComputeSingle(id uint32) (float32, error) {
 }
 
 func (c *float64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
-	if cap(dst) < len(ids) {
-		dst = make([]float32, len(ids))
+	n := len(ids)
+	if cap(dst) < n {
+		dst = make([]float32, n)
 	} else {
-		dst = dst[:len(ids)]
+		dst = dst[:n]
+	}
+	if n == 0 {
+		return dst, nil
 	}
 
-	for i, id := range ids {
-		cID := types.ChunkID(id)
-		var chunk []float64
-		if c.maxGen == 18446744073709551615 {
-			chunk = c.data.GetVectorsFloat64ChunkFast(int(cID))
-		} else {
-			chunk = c.data.GetVectorsFloat64ChunkWithGen(int(cID), c.maxGen)
+	const blockSize = 64
+	for blockStart := 0; blockStart < n; blockStart += blockSize {
+		blockEnd := blockStart + blockSize
+		if blockEnd > n {
+			blockEnd = n
 		}
-		if chunk != nil {
-			cOff := int(id) % types.ChunkSize
-			pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
-			start := cOff * pd
-			if start+c.dims <= len(chunk) {
-				d, err := c.h.distFuncF64(c.q, chunk[start:start+c.dims])
-				if err != nil {
-					dst[i] = math.MaxFloat32
-					continue
-				}
-				dst[i] = d
-				continue
+
+		// Cache-blocking optimization: prefetch next 64-vector block while computing current block
+		if blockEnd < n {
+			nextEnd := blockEnd + blockSize
+			if nextEnd > n {
+				nextEnd = n
+			}
+			for _, nextID := range ids[blockEnd:nextEnd] {
+				c.Prefetch(nextID)
 			}
 		}
-		vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
-		if err != nil {
-			dst[i] = math.MaxFloat32
-			continue
+
+		// Process current 64-vector block
+		for i := blockStart; i < blockEnd; i++ {
+			id := ids[i]
+			cID := types.ChunkID(id)
+			var chunk []float64
+			if c.maxGen == math.MaxUint64 {
+				chunk = c.data.GetVectorsFloat64ChunkFast(int(cID))
+			} else {
+				chunk = c.data.GetVectorsFloat64ChunkWithGen(int(cID), c.maxGen)
+			}
+			if chunk != nil {
+				cOff := int(id) % types.ChunkSize
+				pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
+				start := cOff * pd
+				if start+c.dims <= len(chunk) {
+					d, err := c.h.distFuncF64(c.q, chunk[start:start+c.dims])
+					if err != nil {
+						dst[i] = math.MaxFloat32
+						continue
+					}
+					dst[i] = d
+					continue
+				}
+			}
+			vecAny, err := c.h.getVectorWithCachedDisk(c.data, c.diskGraph, id, c.maxGen)
+			if err != nil {
+				dst[i] = math.MaxFloat32
+				continue
+			}
+			v, ok := vecAny.([]float64)
+			if !ok {
+				dst[i] = math.MaxFloat32
+				continue
+			}
+			d, err := c.h.distFuncF64(c.q, v)
+			if err != nil {
+				dst[i] = math.MaxFloat32
+				continue
+			}
+			dst[i] = d
 		}
-		v, ok := vecAny.([]float64)
-		if !ok {
-			dst[i] = math.MaxFloat32
-			continue
-		}
-		d, err := c.h.distFuncF64(c.q, v)
-		if err != nil {
-			dst[i] = math.MaxFloat32
-			continue
-		}
-		dst[i] = d
 	}
 
 	return dst, nil
@@ -123,13 +130,22 @@ func (c *float64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32, 
 
 func (c *float64Computer) Prefetch(id uint32) {
 	cID := types.ChunkID(id)
-	chunk := c.data.GetVectorsFloat64ChunkWithGen(int(cID), c.maxGen)
+	var chunk []float64
+	if c.maxGen == math.MaxUint64 {
+		chunk = c.data.GetVectorsFloat64ChunkFast(int(cID))
+	} else {
+		chunk = c.data.GetVectorsFloat64ChunkWithGen(int(cID), c.maxGen)
+	}
 	if chunk != nil {
 		cOff := int(id) % types.ChunkSize
 		pd := c.data.GetPaddedDimsForType(types.VectorTypeFloat64)
 		start := cOff * pd
-		if start < len(chunk) {
-			simd.Prefetch(unsafe.Pointer(&chunk[start])) // #nosec G103
+		if start+c.dims <= len(chunk) {
+			ptr := uintptr(unsafe.Pointer(&chunk[start])) // #nosec G103
+			byteLen := uintptr(c.dims * 8)
+			for off := uintptr(0); off < byteLen; off += 64 {
+				simd.Prefetch(unsafe.Pointer(ptr + off)) // #nosec G103
+			}
 		}
 	}
 }

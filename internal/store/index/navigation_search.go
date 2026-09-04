@@ -309,6 +309,8 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		var err error
 		if compF32, ok := upperComputer.(*float32ToFloat32Computer); ok {
 			res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, 1, level, searchCtx, data)
+		} else if compF64, ok := upperComputer.(*float64Computer); ok {
+			res, err = h.searchLayerFloat64(ctx, compF64, currObj.ID, 1, level, searchCtx, data)
 		} else if compSQ8, ok := upperComputer.(*float32ToSQ8Computer); ok {
 			res, err = h.searchLayer(ctx, compSQ8, currObj.ID, 1, level, searchCtx, data, queryVec)
 		} else {
@@ -349,6 +351,8 @@ search_layer0:
 		var err error
 		if compF32, ok := computer.(*float32ToFloat32Computer); ok {
 			res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, efSearch, 0, searchCtx, data)
+		} else if compF64, ok := computer.(*float64Computer); ok {
+			res, err = h.searchLayerFloat64(ctx, compF64, currObj.ID, efSearch, 0, searchCtx, data)
 		} else {
 			res, err = h.searchLayer(ctx, computer, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
 		}
@@ -379,6 +383,8 @@ search_layer0:
 		var err error
 		if compF32, ok := computer.(*float32ToFloat32Computer); ok {
 			res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, efSearch, 0, searchCtx, data)
+		} else if compF64, ok := computer.(*float64Computer); ok {
+			res, err = h.searchLayerFloat64(ctx, compF64, currObj.ID, efSearch, 0, searchCtx, data)
 		} else {
 			res, err = h.searchLayer(ctx, computer, currObj.ID, efSearch, 0, searchCtx, data, queryVec)
 		}
@@ -534,6 +540,8 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 		var err error
 		if compF32, ok := upperComputer.(*float32ToFloat32Computer); ok {
 			res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, 1, level, searchCtx, data)
+		} else if compF64, ok := upperComputer.(*float64Computer); ok {
+			res, err = h.searchLayerFloat64(ctx, compF64, currObj.ID, 1, level, searchCtx, data)
 		} else if compSQ8, ok := upperComputer.(*float32ToSQ8Computer); ok {
 			res, err = h.searchLayer(ctx, compSQ8, currObj.ID, 1, level, searchCtx, data, queryVec)
 		} else {
@@ -551,6 +559,8 @@ func (h *ArrowHNSW) SearchVectorsInRange(ctx context.Context, queryVec any, thre
 	var err error
 	if compF32, ok := computer.(*float32ToFloat32Computer); ok {
 		res, err = h.searchLayerFloat32(ctx, compF32, currObj.ID, maxNodeCount, 0, searchCtx, data)
+	} else if compF64, ok := computer.(*float64Computer); ok {
+		res, err = h.searchLayerFloat64(ctx, compF64, currObj.ID, maxNodeCount, 0, searchCtx, data)
 	} else {
 		res, err = h.searchLayer(ctx, computer, currObj.ID, maxNodeCount, 0, searchCtx, data, queryVec)
 	}

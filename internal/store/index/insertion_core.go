@@ -373,6 +373,8 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			var err error
 			if compF32, ok := computer.(*float32ToFloat32Computer); ok {
 				neighbors, err = h.searchLayerFloat32(context.Background(), compF32, ep, 1, l, ctx, data)
+			} else if compF64, ok := computer.(*float64Computer); ok {
+				neighbors, err = h.searchLayerFloat64(context.Background(), compF64, ep, 1, l, ctx, data)
 			} else {
 				neighbors, err = h.searchLayer(context.Background(), computer, ep, 1, l, ctx, data, vec)
 			}
@@ -401,6 +403,8 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 			var err error
 			if compF32, ok := computer.(*float32ToFloat32Computer); ok {
 				neighbors, err = h.searchLayerFloat32(context.Background(), compF32, ep, 1, l, ctx, data)
+			} else if compF64, ok := computer.(*float64Computer); ok {
+				neighbors, err = h.searchLayerFloat64(context.Background(), compF64, ep, 1, l, ctx, data)
 			} else {
 				neighbors, err = h.searchLayer(context.Background(), computer, ep, 1, l, ctx, data, vec)
 			}

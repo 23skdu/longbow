@@ -23,6 +23,8 @@ func (h *ArrowHNSW) searchLayerForInsert(goCtx context.Context, ctx *ArrowSearch
 	var err error
 	if compF32, ok := computer.(*float32ToFloat32Computer); ok {
 		res, err = h.searchLayerFloat32(goCtx, compF32, entryPoint, ef, layer, ctx, data)
+	} else if compF64, ok := computer.(*float64Computer); ok {
+		res, err = h.searchLayerFloat64(goCtx, compF64, entryPoint, ef, layer, ctx, data)
 	} else {
 		res, err = h.searchLayer(goCtx, computer, entryPoint, ef, layer, ctx, data, query)
 	}

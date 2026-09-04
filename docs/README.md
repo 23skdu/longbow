@@ -66,6 +66,15 @@ General-purpose tensor calculus and scientific computing engine:
 - **Compiler & Optimizer**: Common subexpression elimination (CSE), constant folding, and algebraic DAG simplification.
 - **Hardware Acceleration**: Multi-threaded AVX2 SIMD and NVIDIA CUDA/cuBLAS kernels with real-time Prometheus telemetry.
 
+### 9. [EMLGo Mathematical Engine](emlgo.md)
+
+High-performance math backend and vector optimization:
+
+- **Unified Facade**: Thread-safe runtime switching between standard Go `math` and `emlgo`.
+- **Hardware Assembly**: AVX2, AVX-512, and ARM NEON fastmath primitives (`fastmath.Sqrt`, `fastmath.FMA`).
+- **Tensor Acceleration**: Vectorized Float64/Float32 element-wise operations and 1.66x faster hyperbolic functions (`Sinh`, `Cosh`, `Tanh`).
+- **A/B Testing & Parity**: Comprehensive benchmark suite and strict numerical verification.
+
 ---
 
 ## 🛠 System Reference

@@ -74,6 +74,7 @@ High-performance math backend and vector optimization:
 - **Hardware Assembly**: AVX2, AVX-512, and ARM NEON fastmath primitives (`fastmath.Sqrt`, `fastmath.FMA`).
 - **Tensor Acceleration**: Vectorized Float64/Float32 element-wise operations and 1.66x faster hyperbolic functions (`Sinh`, `Cosh`, `Tanh`).
 - **A/B Testing & Parity**: Comprehensive benchmark suite and strict numerical verification.
+- **[Performance & Pprof Profiling Report](emlgo_perf.md)**: Multi-scale 50k, 100k, and 250k benchmark evaluation across all 17 datatypes compared against baseline.
 
 ---
 

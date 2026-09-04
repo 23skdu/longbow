@@ -265,3 +265,7 @@ The integration adheres to Longbow's quality and security standards:
    go test -bench=BenchmarkAB_ ./internal/tensor
    go test -bench=BenchmarkAB_ ./internal/simd
    ```
+
+5. **Multi-Scale Vector Benchmark & Pprof Profiling**:
+   See [docs/emlgo_perf.md](emlgo_perf.md) for full benchmark results across all 17 datatypes at 50,000, 100,000, and 250,000 vector scale compared against baseline, along with detailed pprof CPU and memory allocation analyses.
+

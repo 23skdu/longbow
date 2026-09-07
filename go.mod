@@ -21,7 +21,7 @@ require (
 	github.com/iceber/iouring-go v0.0.0-20230403020409-002cfd2e2a90
 	github.com/joho/godotenv v1.5.1
 	github.com/kelseyhightower/envconfig v1.4.0
-	github.com/klauspost/compress v1.19.2
+	github.com/klauspost/compress v1.20.0
 	github.com/klauspost/cpuid/v2 v2.4.0
 	github.com/leanovate/gopter v0.2.11
 	github.com/mmcloughlin/avo v0.6.0

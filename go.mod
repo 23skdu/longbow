@@ -3,7 +3,7 @@ module github.com/23skdu/longbow
 go 1.27.0
 
 require (
-	cloud.google.com/go/storage v1.66.0
+	cloud.google.com/go/storage v1.67.0
 	github.com/IBM/sarama v1.60.2
 	github.com/RoaringBitmap/roaring/v2 v2.26.0
 	github.com/apache/arrow-adbc/go/adbc v1.12.0

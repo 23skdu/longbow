@@ -139,8 +139,110 @@
       "type": "stat"
     },
     {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line"},
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 21},
+      "id": 22,
+      "targets": [
+        {"expr": "sum(rate(longbow_eviction_layers_evicted_total[5m])) by (dataset)", "legendFormat": "Evicted {{dataset}}", "refId": "A"}
+      ],
+      "title": "Layer Evictions/s by Dataset",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line"},
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 21},
+      "id": 23,
+      "targets": [
+        {"expr": "sum(rate(longbow_eviction_layers_restored_total[5m])) by (dataset)", "legendFormat": "Restored {{dataset}}", "refId": "A"}
+      ],
+      "title": "Layer Restores/s by Dataset",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line"},
+          "unit": "bytes"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 21},
+      "id": 24,
+      "targets": [
+        {"expr": "sum(rate(longbow_eviction_bytes_freed_total[5m])) by (dataset)", "legendFormat": "Freed {{dataset}}", "refId": "A"}
+      ],
+      "title": "Eviction Bytes Freed/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line"},
+          "unit": "short"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 27},
+      "id": 25,
+      "targets": [
+        {"expr": "longbow_eviction_active_layers", "legendFormat": "{{dataset}}", "refId": "A"}
+      ],
+      "title": "Active Evicted Layers",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line"},
+          "unit": "percentunit"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 27},
+      "id": 26,
+      "targets": [
+        {"expr": "longbow_eviction_heap_utilization", "legendFormat": "Heap Util", "refId": "A"}
+      ],
+      "title": "Heap Utilization at Eviction",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "color": {"mode": "palette-classic"},
+          "custom": {"drawStyle": "line"},
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 27},
+      "id": 27,
+      "targets": [
+        {"expr": "sum(rate(longbow_eviction_errors_total[5m])) by (dataset, operation)", "legendFormat": "{{dataset}} {{operation}}", "refId": "A"}
+      ],
+      "title": "Eviction Errors/s",
+      "type": "timeseries"
+    },
+    {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 21},
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 33},
       "id": 13,
       "panels": [],
       "title": "SIMD Operations",

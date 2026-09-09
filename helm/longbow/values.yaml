@@ -102,6 +102,8 @@ storage:
 memory:
   evictionHeadroom: 0.10
   evictionPolicy: "lru"
+  layerEvictionEnabled: true
+  layerEvictionThreshold: 0.75
   rejectWrites: true
   gcBallastGB: 0
   gogc: 100

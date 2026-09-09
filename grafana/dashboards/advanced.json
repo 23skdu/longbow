@@ -246,7 +246,7 @@
       "datasource": "${datasource}",
       "gridPos": {"h": 6, "w": 8, "x": 8, "y": 25},
       "id": 20,
-      "targets": [{"expr": "longbow_hybrid_bm25_documents_indexed_total", "refId": "A"}],
+      "targets": [{"expr": "longbow_hybrid_bm25_tokens_total", "refId": "A"}],
       "title": "BM25 Documents Indexed",
       "type": "stat"
     },
@@ -273,7 +273,7 @@
       "datasource": "${datasource}",
       "gridPos": {"h": 6, "w": 8, "x": 0, "y": 32},
       "id": 23,
-      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(longbow_filter_execution_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "A"}],
+      "targets": [{"expr": "histogram_quantile(0.95, sum(rate(longbow_filter_evaluator_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "A"}],
       "title": "Filter Execution Duration P95",
       "type": "timeseries"
     },

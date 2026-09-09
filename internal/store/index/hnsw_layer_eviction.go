@@ -35,6 +35,7 @@ import (
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/rs/zerolog"
 )
@@ -299,6 +300,7 @@ func (m *GraphLayerEvictionManager) evictTarget(t *evictionTarget) error {
 			if evictErr != nil {
 				_ = f.Close()
 				_ = os.Remove(f.Name())
+				metrics.EvictionErrorsTotal.WithLabelValues(gd.Name, "evict").Inc()
 				m.logger.Warn().Err(evictErr).Int("layer", layer).Msg("Failed to evict packed layer")
 				continue
 			}
@@ -312,6 +314,7 @@ func (m *GraphLayerEvictionManager) evictTarget(t *evictionTarget) error {
 				}
 				t.evictedLayers[layer] = rec
 				totalFreedBytes += bytesWritten
+				metrics.EvictionLayersEvictedTotal.WithLabelValues(gd.Name).Inc()
 			} else {
 				_ = os.Remove(f.Name())
 			}
@@ -323,15 +326,20 @@ func (m *GraphLayerEvictionManager) evictTarget(t *evictionTarget) error {
 		if layer < len(gd.Neighbors) && len(gd.Neighbors[layer]) > 0 {
 			rec, freedBytes, err := evictLayer(gd, layer)
 			if err != nil {
+				metrics.EvictionErrorsTotal.WithLabelValues(gd.Name, "evict").Inc()
 				m.logger.Warn().Err(err).Int("layer", layer).Msg("Failed to evict HNSW layer")
 			} else if rec != nil {
 				t.evictedLayers[layer] = rec
 				totalFreedBytes += freedBytes
+				metrics.EvictionLayersEvictedTotal.WithLabelValues(gd.Name).Inc()
 			}
 		}
 	}
 
 	if totalFreedBytes > 0 {
+		metrics.EvictionBytesFreedTotal.WithLabelValues(gd.Name).Add(float64(totalFreedBytes))
+		metrics.EvictionActiveLayers.WithLabelValues(gd.Name).Add(float64(len(t.evictedLayers)))
+		metrics.EvictionHeapUtilization.Set(currentHeapUtilization())
 		m.logger.Info().
 			Int64("freed_bytes", totalFreedBytes).
 			Int64("freed_mb", totalFreedBytes/(1024*1024)).
@@ -422,6 +430,7 @@ func (m *GraphLayerEvictionManager) RestoreLayer(t *evictionTarget, layer int) e
 	if layer < len(gd.PackedNeighbors) && gd.PackedNeighbors[layer] != nil {
 		if fa, ok := gd.PackedNeighbors[layer].(*FlatAdjacency); ok {
 			if err := fa.RestoreFromDisk(gd, layer, rec.chunkSizes, f); err != nil {
+				metrics.EvictionErrorsTotal.WithLabelValues(gd.Name, "restore").Inc()
 				return fmt.Errorf("restore packed layer %d: %w", layer, err)
 			}
 		}
@@ -455,6 +464,8 @@ func (m *GraphLayerEvictionManager) RestoreLayer(t *evictionTarget, layer int) e
 	// Remove disk file and clear eviction record
 	_ = os.Remove(rec.path)
 	delete(t.evictedLayers, layer)
+	metrics.EvictionLayersRestoredTotal.WithLabelValues(gd.Name).Inc()
+	metrics.EvictionActiveLayers.WithLabelValues(gd.Name).Dec()
 
 	m.logger.Info().
 		Int("layer", layer).

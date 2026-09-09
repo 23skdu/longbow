@@ -142,6 +142,10 @@ spec:
               value: {{ .Values.memory.evictionHeadroom | quote }}
             - name: LONGBOW_MEMORY_EVICTION_POLICY
               value: {{ .Values.memory.evictionPolicy | quote }}
+            - name: LONGBOW_LAYER_EVICTION_ENABLED
+              value: {{ .Values.memory.layerEvictionEnabled | default true | quote }}
+            - name: LONGBOW_LAYER_EVICTION_THRESHOLD
+              value: {{ .Values.memory.layerEvictionThreshold | default 0.75 | quote }}
             - name: LONGBOW_MEMORY_REJECT_WRITES
               value: {{ .Values.memory.rejectWrites | quote }}
             - name: LONGBOW_GC_BALLAST_G

@@ -513,3 +513,41 @@ groups:
         annotations:
           summary: "Temporal indexing activity detected"
           description: "New temporal records or namespaces created."
+
+  - name: longbow_layer_eviction_alerts
+    rules:
+      - alert: LongbowLayerEvictionHighErrorRate
+        expr: rate(longbow_eviction_errors_total[5m]) > 0.1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High layer eviction error rate"
+          description: "Layer eviction/restore errors at {{ $value }}/sec on {{ $labels.dataset }}."
+
+      - alert: LongbowLayerEvictionActiveLayersHigh
+        expr: longbow_eviction_active_layers > 10
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Many HNSW layers evicted"
+          description: "{{ $value }} layers currently evicted on {{ $labels.dataset }}, may indicate memory pressure."
+
+      - alert: LongbowLayerEvictionHeapPressure
+        expr: longbow_eviction_heap_utilization > 0.9
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High heap utilization triggering evictions"
+          description: "Heap utilization at {{ $value | humanizePercentage }} when eviction triggered."
+
+      - alert: LongbowLayerEvictionRestoreStalled
+        expr: rate(longbow_eviction_layers_restored_total[10m]) == 0 AND longbow_eviction_active_layers > 0
+        for: 15m
+        labels:
+          severity: info
+        annotations:
+          summary: "Evicted layers not being restored"
+          description: "Layers are evicted but none have been restored for 15 minutes, check for stale data."

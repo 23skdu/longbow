@@ -218,7 +218,7 @@
       "datasource": "${datasource}",
       "gridPos": {"h": 6, "w": 12, "x": 12, "y": 42},
       "id": 24,
-      "targets": [{"expr": "longbow_iouring_buffer_pool_utilization", "refId": "A"}],
+      "targets": [{"expr": "longbow_ipc_buffer_pool_utilization", "refId": "A"}],
       "title": "io_uring Buffer Pool Utilization",
       "type": "gauge"
     },

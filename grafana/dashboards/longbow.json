@@ -585,7 +585,7 @@
       "id": 14,
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, sum(rate(longbow_filter_execution_duration_seconds_bucket[5m])) by (le, dataset))",
+          "expr": "histogram_quantile(0.95, sum(rate(longbow_filter_evaluator_duration_seconds_bucket[5m])) by (le, dataset))",
           "legendFormat": "{{dataset}} Filter P95",
           "refId": "A"
         }
@@ -881,18 +881,53 @@
       "datasource": "${datasource}",
       "fieldConfig": {
         "defaults": {
-          "custom": {
-            "drawStyle": "line"
-          },
+          "custom": {"drawStyle": "line"},
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 52},
+      "id": 200,
+      "targets": [
+        {"expr": "sum(rate(longbow_eviction_layers_evicted_total[5m])) by (dataset)", "legendFormat": "Evicted {{dataset}}", "refId": "A"}
+      ],
+      "title": "Layer Evictions/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"drawStyle": "line"},
+          "unit": "ops"
+        }
+      },
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 52},
+      "id": 201,
+      "targets": [
+        {"expr": "sum(rate(longbow_eviction_layers_restored_total[5m])) by (dataset)", "legendFormat": "Restored {{dataset}}", "refId": "A"}
+      ],
+      "title": "Layer Restores/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {"drawStyle": "line"},
           "unit": "bytes"
         }
       },
-      "gridPos": {
-        "h": 6,
-        "w": 8,
-        "x": 0,
-        "y": 53
-      },
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 53},
+      "id": 202,
+      "targets": [
+        {"expr": "sum(rate(longbow_eviction_bytes_freed_total[5m])) by (dataset)", "legendFormat": "Freed {{dataset}}", "refId": "A"}
+      ],
+      "title": "Eviction Bytes Freed/s",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 59},
       "id": 112,
       "targets": [
         {
@@ -1521,7 +1556,7 @@
       "id": 42,
       "targets": [
         {
-          "expr": "rate(longbow_global_search_requests_total[1m])",
+          "expr": "rate(longbow_global_search_duration_seconds_count[1m])",
           "legendFormat": "Requests/s",
           "refId": "A"
         }
@@ -1627,7 +1662,7 @@
       "id": 46,
       "targets": [
         {
-          "expr": "rate(longbow_shard_lock_wait_seconds_sum[1m])",
+          "expr": "histogram_quantile(0.95, sum(rate(longbow_hnsw_lock_wait_duration_seconds_bucket[5m])) by (le, dataset))",
           "legendFormat": "{{dataset}}",
           "refId": "A"
         }

@@ -343,6 +343,38 @@
       "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_turboquant_encoding_latency_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
       "title": "TurboQuant Encoding Latency P99",
       "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 73},
+      "id": 32,
+      "targets": [
+        {"expr": "rate(longbow_bitmap_cache_hits_total[5m])", "legendFormat": "Hits/s", "refId": "A"},
+        {"expr": "rate(longbow_bitmap_cache_misses_total[5m])", "legendFormat": "Misses/s", "refId": "B"}
+      ],
+      "title": "Bitmap Cache Hit/Miss Rate",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 73},
+      "id": 33,
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum(rate(longbow_global_rrf_latency_seconds_bucket[5m])) by (le))", "legendFormat": "Global RRF P99", "refId": "A"},
+        {"expr": "rate(longbow_global_rrf_payload_bytes[5m])", "legendFormat": "Payload bytes/s", "refId": "B"}
+      ],
+      "title": "Global RRF Latency & Payload",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 73},
+      "id": 34,
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum(rate(longbow_search_dequantize_latency_seconds_bucket[5m])) by (le))", "legendFormat": "Dequantize P99", "refId": "A"}
+      ],
+      "title": "Search Dequantize Latency P99",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

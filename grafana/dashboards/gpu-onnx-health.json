@@ -633,6 +633,26 @@
       ],
       "title": "Stub Embedding Model Usage (Fallbacks)",
       "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "id": 9001,
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum(rate(longbow_gpu_ingest_kernel_duration_seconds_bucket[5m])) by (le))", "legendFormat": "Ingest Kernel P99", "refId": "A"}
+      ],
+      "title": "GPU Ingest Kernel Latency P99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "id": 9002,
+      "targets": [
+        {"expr": "rate(longbow_gpu_neighbor_prune_ops_total[5m])", "legendFormat": "Prune Ops/s", "refId": "A"}
+      ],
+      "title": "GPU Neighbor Prune Ops",
+      "type": "timeseries"
     }
   ],
   "refresh": "5s",

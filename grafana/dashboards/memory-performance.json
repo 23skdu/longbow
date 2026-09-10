@@ -243,6 +243,110 @@
     {
       "collapsed": false,
       "gridPos": {"h": 1, "w": 24, "x": 0, "y": 33},
+      "id": 30,
+      "panels": [],
+      "title": "Slab Pool & Arena",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 34},
+      "id": 31,
+      "targets": [
+        {"expr": "longbow_slab_pool_buffer_hit_ratio", "legendFormat": "{{type}}", "refId": "A"}
+      ],
+      "title": "Slab Pool Buffer Hit Ratio",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 34},
+      "id": 32,
+      "targets": [
+        {"expr": "rate(longbow_slab_pool_growth_total[5m])", "legendFormat": "Growth/s", "refId": "A"},
+        {"expr": "rate(longbow_slab_pool_shrink_total[5m])", "legendFormat": "Shrink/s", "refId": "B"}
+      ],
+      "title": "Slab Pool Growth & Shrink",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 34},
+      "id": 33,
+      "targets": [
+        {"expr": "rate(longbow_slab_pool_resizes_total[5m])", "legendFormat": "Resizes/s", "refId": "A"},
+        {"expr": "longbow_slab_pool_max_pooled", "legendFormat": "Max Pooled", "refId": "B"}
+      ],
+      "title": "Slab Pool Resizes",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 40},
+      "id": 34,
+      "targets": [
+        {"expr": "longbow_arena_off_heap_bytes", "legendFormat": "Off-Heap", "refId": "A"}
+      ],
+      "title": "Arena Off-Heap Bytes",
+      "type": "timeseries",
+      "fieldConfig": {"defaults": {"unit": "bytes"}}
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 40},
+      "id": 35,
+      "targets": [
+        {"expr": "longbow_slab_active_arenas", "legendFormat": "Active Arenas", "refId": "A"},
+        {"expr": "longbow_slab_hugepage_count", "legendFormat": "Hugepages", "refId": "B"}
+      ],
+      "title": "Arena & Hugepage Count",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 40},
+      "id": 36,
+      "targets": [
+        {"expr": "longbow_slab_leak_probability", "legendFormat": "Leak Prob", "refId": "A"},
+        {"expr": "rate(longbow_slab_pool_boundary_violations_total[5m])", "legendFormat": "Boundary Violations/s", "refId": "B"},
+        {"expr": "longbow_slab_refcount_distribution", "legendFormat": "Refcount Dist", "refId": "C"}
+      ],
+      "title": "Slab Health Indicators",
+      "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 46},
+      "id": 37,
+      "panels": [],
+      "title": "Temporal Index Memory",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 47},
+      "id": 38,
+      "targets": [
+        {"expr": "longbow_temporal_tree_allocated_bytes_total", "legendFormat": "Allocated Bytes", "refId": "A"}
+      ],
+      "title": "Temporal Tree Allocated Bytes",
+      "type": "timeseries",
+      "fieldConfig": {"defaults": {"unit": "bytes"}}
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 47},
+      "id": 39,
+      "targets": [
+        {"expr": "longbow_temporal_tree_cache_hit_ratio", "legendFormat": "Cache Hit Ratio", "refId": "A"}
+      ],
+      "title": "Temporal Tree Cache Hit Ratio",
+      "type": "timeseries",
+      "fieldConfig": {"defaults": {"unit": "percentunit", "min": 0, "max": 1}}
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 53},
       "id": 13,
       "panels": [],
       "title": "SIMD Operations",

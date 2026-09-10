@@ -551,3 +551,92 @@ groups:
         annotations:
           summary: "Evicted layers not being restored"
           description: "Layers are evicted but none have been restored for 15 minutes, check for stale data."
+
+  - name: longbow_slab_alerts
+    rules:
+      - alert: LongbowSlabPoolBufferHitRatioLow
+        expr: longbow_slab_pool_buffer_hit_ratio < 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Low slab pool buffer hit ratio"
+          description: "Slab pool buffer hit ratio is {{ $value | humanizePercentage }}, pool may be undersized."
+
+      - alert: LongbowSlabPoolBoundaryViolations
+        expr: rate(longbow_slab_pool_boundary_violations_total[5m]) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slab pool boundary violations detected"
+          description: "Boundary violations at {{ $value }}/sec, may indicate memory corruption risk."
+
+      - alert: LongbowSlabLeakProbabilityHigh
+        expr: longbow_slab_leak_probability > 0.5
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High slab leak probability"
+          description: "Slab leak probability is {{ $value | humanizePercentage }}, investigate arena lifecycle."
+
+  - name: longbow_arena_alerts
+    rules:
+      - alert: LongbowArenaNilErrors
+        expr: rate(longbow_arena_nil_error_total[5m]) > 0.05
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Arena nil pointer errors"
+          description: "Arena nil errors at {{ $value }}/sec for {{ $labels.operation }}."
+
+      - alert: LongbowArenaOffHeapHigh
+        expr: longbow_arena_off_heap_bytes > 10737418240
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High off-heap arena usage"
+          description: "Off-heap arena usage is {{ $value | humanizeBytes }}."
+
+  - name: longbow_hnsw_contention_alerts
+    rules:
+      - alert: LongbowHNSWUpdateContentionHigh
+        expr: histogram_quantile(0.99, sum(rate(longbow_hnsw_update_contention_seconds_bucket[5m])) by (le)) > 0.1
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HNSW update contention"
+          description: "P99 update contention is {{ $value }}s, may impact write throughput."
+
+      - alert: LongbowHNSWCoWCopiesHigh
+        expr: rate(longbow_hnsw_cow_copy_count[5m]) > 100
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "High CoW copy rate"
+          description: "HNSW CoW copies at {{ $value }}/sec, index may be growing rapidly."
+
+  - name: longbow_gpu_ingest_alerts
+    rules:
+      - alert: LongbowGPUIngestKernelSlow
+        expr: histogram_quantile(0.99, sum(rate(longbow_gpu_ingest_kernel_duration_seconds_bucket[5m])) by (le)) > 1
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Slow GPU ingest kernel"
+          description: "P99 GPU ingest kernel latency is {{ $value }}s."
+
+      - alert: LongbowGPUNeighborPruneHigh
+        expr: rate(longbow_gpu_neighbor_prune_ops_total[5m]) > 1000
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: "High GPU neighbor prune rate"
+          description: "GPU neighbor prune ops at {{ $value }}/sec, may indicate HNSW index churn."

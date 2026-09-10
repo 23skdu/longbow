@@ -250,6 +250,46 @@
       ],
       "title": "Snapshot Size Distribution",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 57},
+      "id": 2000,
+      "panels": [],
+      "title": "Auto-Spill & Shard Health",
+      "type": "row"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 58},
+      "id": 2001,
+      "targets": [
+        {"expr": "rate(longbow_auto_spill_to_disk_engaged_total[5m])", "legendFormat": "Spill Events/s", "refId": "A"},
+        {"expr": "rate(longbow_auto_quantize_engaged_total[5m])", "legendFormat": "Auto-Quantize/s", "refId": "B"}
+      ],
+      "title": "Auto-Spill & Quantize Events",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 58},
+      "id": 2002,
+      "targets": [
+        {"expr": "rate(longbow_arena_nil_error_total[5m])", "legendFormat": "{{operation}}", "refId": "A"}
+      ],
+      "title": "Arena Nil Errors",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 58},
+      "id": 2003,
+      "targets": [
+        {"expr": "longbow_shard_balance_imbalance_ratio", "legendFormat": "Imbalance Ratio", "refId": "A"},
+        {"expr": "longbow_temporal_tree_nodes_total", "legendFormat": "Temporal Nodes", "refId": "B"}
+      ],
+      "title": "Shard Balance & Temporal Tree Size",
+      "type": "timeseries"
     }
   ],
   "refresh": "10s",

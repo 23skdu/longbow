@@ -3,6 +3,7 @@ package index
 import (
 	"context"
 	"os"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -267,4 +268,229 @@ func TestGraphLayerEvictionManager_SwapTargetUnregisteredOld(t *testing.T) {
 	// SwapTarget with an unregistered old should be a no-op
 	mgr.SwapTarget(gdOld, gdNew)
 	require.Empty(t, mgr.targets)
+}
+
+func newTestGraphDataWithPackedNeighbors(t *testing.T, name string, numLayers int) *types.GraphData {
+	t.Helper()
+	slab := memory.NewSlabArena(1024 * 1024)
+	gd := &types.GraphData{
+		Name:          name,
+		Uint32Arena:   memory.NewTypedArena[uint32](slab),
+		PackedNeighbors: make([]types.PackedNeighbors, numLayers),
+	}
+	t.Cleanup(func() { gd.Uint32Arena.Free() })
+
+	for l := 0; l < numLayers; l++ {
+		fa := NewFlatAdjacency(slab, types.MaxNeighbors, 64)
+		fa.missLayer = l
+		fa.Retain()
+		gd.PackedNeighbors[l] = fa
+
+		for id := uint32(0); id < 32; id++ {
+			neighbors := make([]uint32, types.MaxNeighbors)
+			for k := range neighbors {
+				neighbors[k] = uint32(l*10000 + int(id)*100 + k)
+			}
+			require.NoError(t, fa.SetNeighbors(id, neighbors))
+		}
+	}
+	return gd
+}
+
+func TestGraphLayerEvictionManager_PackedNeighborsEvictionAndRestore(t *testing.T) {
+	logger := zerolog.New(os.Stderr)
+	mgr := NewGraphLayerEvictionManager(0.1, logger)
+
+	gd := newTestGraphDataWithPackedNeighbors(t, "packed-test", 2)
+	mgr.Register(gd)
+
+	// Verify data exists before eviction
+	fa0 := gd.PackedNeighbors[0].(*FlatAdjacency)
+	nbs, ok := fa0.GetNeighbors(0)
+	require.True(t, ok)
+	require.Len(t, nbs, types.MaxNeighbors)
+	require.Equal(t, uint32(0), nbs[0], "layer 0, node 0, neighbor 0 = 0*10000+0*100+0")
+	require.Equal(t, uint32(5), nbs[5], "layer 0, node 0, neighbor 5 = 5")
+
+	// Also verify node 5 has correct data
+	nbs5, ok := fa0.GetNeighbors(5)
+	require.True(t, ok)
+	require.Equal(t, uint32(500), nbs5[0], "layer 0, node 5, neighbor 0 = 0*10000+5*100+0")
+
+	// Force evict all layers
+	mgr.ForceEvictAll()
+
+	// After eviction, the chunk offset should be MaxUint64
+	chunks0 := fa0.chunks.Load()
+	require.NotNil(t, chunks0)
+	require.Equal(t, ^uint64(0), (*chunks0)[0], "chunk should be marked as evicted")
+
+	// Restore layer 0 via the OnNeighborsMiss callback
+	err := gd.OnNeighborsMiss(0)
+	require.NoError(t, err)
+
+	// Verify data is restored correctly
+	nbs, ok = fa0.GetNeighbors(0)
+	require.True(t, ok)
+	require.Len(t, nbs, types.MaxNeighbors)
+	require.Equal(t, uint32(0), nbs[0], "restored neighbor[0] should match original")
+	require.Equal(t, uint32(5), nbs[5], "restored neighbor[5] should match original")
+
+	nbs5, ok = fa0.GetNeighbors(5)
+	require.True(t, ok)
+	require.Equal(t, uint32(500), nbs5[0], "restored node 5 neighbor 0 should match original")
+
+	mgr.Stop()
+}
+
+func TestGraphLayerEvictionManager_PackedNeighborsSwapTarget(t *testing.T) {
+	logger := zerolog.New(os.Stderr)
+	mgr := NewGraphLayerEvictionManager(0.1, logger)
+
+	gd1 := newTestGraphDataWithPackedNeighbors(t, "swap-packed-old", 2)
+	gd2 := newTestGraphDataWithPackedNeighbors(t, "swap-packed-new", 2)
+
+	mgr.Register(gd1)
+	mgr.SwapTarget(gd1, gd2)
+
+	mgr.ForceEvictAll()
+
+	// Restore through the new target
+	err := gd2.OnNeighborsMiss(1)
+	require.NoError(t, err)
+
+	fa1 := gd2.PackedNeighbors[1].(*FlatAdjacency)
+	nbs, ok := fa1.GetNeighbors(0)
+	require.True(t, ok)
+	require.Equal(t, uint32(10000), nbs[0], "restored via swapped target: layer 1, node 0, neighbor 0 = 1*10000+0*100+0")
+
+	mgr.Stop()
+}
+
+func TestGraphLayerEvictionManager_EvictTargetNilGD(t *testing.T) {
+	logger := zerolog.New(os.Stderr)
+	mgr := NewGraphLayerEvictionManager(0.1, logger)
+
+	gd := newTestGraphData(t, "nil-gd-target", 1, 5)
+	mgr.Register(gd)
+
+	// Set gd to nil
+	mgr.targets[0].gd = nil
+
+	// evictTarget should handle nil gd gracefully
+	err := mgr.evictTarget(mgr.targets[0])
+	require.NoError(t, err)
+}
+
+func TestGraphLayerEvictionManager_MaybeEvictAllWithTargets(t *testing.T) {
+	logger := zerolog.New(os.Stderr)
+	mgr := NewGraphLayerEvictionManager(0.1, logger)
+
+	gd := newTestGraphDataWithPackedNeighbors(t, "maybe-evict", 1)
+	mgr.Register(gd)
+
+	// Force maybeEvictAll to trigger by setting threshold very low
+	mgr.threshold = 0.0
+	mgr.maybeEvictAll()
+
+	// The eviction should have happened
+	chunks := gd.PackedNeighbors[0].(*FlatAdjacency).chunks.Load()
+	require.NotNil(t, chunks)
+	require.Equal(t, ^uint64(0), (*chunks)[0])
+}
+
+func TestGraphLayerEvictionManager_ConcurrentEvictAndRestore(t *testing.T) {
+	logger := zerolog.New(os.Stderr)
+	mgr := NewGraphLayerEvictionManager(0.1, logger)
+
+	gd := newTestGraphDataWithPackedNeighbors(t, "concurrent-test", 1)
+	mgr.Register(gd)
+
+	var wg sync.WaitGroup
+	errCh := make(chan error, 20)
+
+	// Start background monitor
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	mgr.Start(ctx)
+
+	// Concurrent evictions
+	for i := 0; i < 5; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			mgr.ForceEvictAll()
+		}()
+	}
+
+	// Concurrent restores
+	for i := 0; i < 15; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := gd.OnNeighborsMiss(0); err != nil {
+				errCh <- err
+			}
+		}()
+	}
+
+	wg.Wait()
+	close(errCh)
+
+	for err := range errCh {
+		t.Fatalf("concurrent restore error: %v", err)
+	}
+
+	mgr.Stop()
+}
+
+func TestGraphLayerEvictionManager_RestoreLayerRemovesDiskFile(t *testing.T) {
+	logger := zerolog.New(os.Stderr)
+	mgr := NewGraphLayerEvictionManager(0.1, logger)
+
+	gd := newTestGraphDataWithPackedNeighbors(t, "restore-cleanup", 1)
+	mgr.Register(gd)
+
+	mgr.ForceEvictAll()
+
+	// Get the disk record path before restore
+	target := mgr.targets[0]
+	target.mu.RLock()
+	rec := target.evictedLayers[0]
+	require.NotNil(t, rec)
+	diskPath := rec.path
+	target.mu.RUnlock()
+
+	// Restore should remove the disk file
+	err := gd.OnNeighborsMiss(0)
+	require.NoError(t, err)
+
+	_, err = os.Stat(diskPath)
+	require.True(t, os.IsNotExist(err), "disk file should be removed after restore")
+
+	mgr.Stop()
+}
+
+func TestGraphLayerEvictionManager_UnregisterCleansUpDiskFiles(t *testing.T) {
+	logger := zerolog.New(os.Stderr)
+	mgr := NewGraphLayerEvictionManager(0.1, logger)
+
+	gd := newTestGraphDataWithPackedNeighbors(t, "unreg-cleanup", 1)
+	mgr.Register(gd)
+
+	mgr.ForceEvictAll()
+
+	// Get the disk record path before unregister
+	target := mgr.targets[0]
+	target.mu.RLock()
+	rec := target.evictedLayers[0]
+	require.NotNil(t, rec)
+	diskPath := rec.path
+	target.mu.RUnlock()
+
+	// Unregister should remove disk files
+	mgr.Unregister(gd)
+
+	_, err := os.Stat(diskPath)
+	require.True(t, os.IsNotExist(err), "disk file should be removed after unregister")
 }

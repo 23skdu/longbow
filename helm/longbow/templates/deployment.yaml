@@ -113,6 +113,13 @@ spec:
               value: {{ .Values.hnsw.refinementFactor | quote }}
             - name: LONGBOW_USE_DISK
               value: {{ .Values.hnsw.useDisk | quote }}
+            # Auto-Quantization Configuration
+            - name: LONGBOW_AUTO_QUANTIZE
+              value: {{ .Values.autoQuantize.enabled | default false | quote }}
+            - name: LONGBOW_AUTO_QUANTIZE_BITS
+              value: {{ .Values.autoQuantize.bits | default 8 | quote }}
+            - name: LONGBOW_AUTO_QUANTIZE_THRESHOLD
+              value: {{ .Values.autoQuantize.threshold | default 10000 | quote }}
             # ML Inference & Reranking Configuration
             - name: LONGBOW_ML_MODEL_PATH
               value: {{ .Values.ml.modelPath | quote }}
@@ -148,6 +155,12 @@ spec:
               value: {{ .Values.memory.layerEvictionThreshold | default 0.75 | quote }}
             - name: LONGBOW_MEMORY_REJECT_WRITES
               value: {{ .Values.memory.rejectWrites | quote }}
+            - name: LONGBOW_MEMORY_MAX_HARD
+              value: {{ .Values.memory.maxMemoryHard | default "" | quote }}
+            - name: LONGBOW_AUTO_SPILL_DISK
+              value: {{ .Values.memory.autoSpillDisk | default false | quote }}
+            - name: LONGBOW_SPILL_THRESHOLD_RATIO
+              value: {{ .Values.memory.spillThresholdRatio | default "0.85" | quote }}
             - name: LONGBOW_GC_BALLAST_G
               value: {{ .Values.memory.gcBallastGB | quote }}
             - name: LONGBOW_GOGC
@@ -317,11 +330,11 @@ spec:
             # Learned Index Configuration
             - name: LONGBOW_LEARNED_INDEX_ENABLED
               value: {{ .Values.learnedIndex.enabled | quote }}
-            - name: LONGBOW_LEARNED_INDEX_MIN_SAMPLES
+            - name: LONGBOW_LEARNED_MIN_SAMPLES
               value: {{ .Values.learnedIndex.minSamples | quote }}
-            - name: LONGBOW_LEARNED_INDEX_CONFIDENCE_THRESH
+            - name: LONGBOW_LEARNED_CONFIDENCE_THRESHOLD
               value: {{ .Values.learnedIndex.confidenceThreshold | quote }}
-            - name: LONGBOW_LEARNED_INDEX_UPDATE_INTERVAL
+            - name: LONGBOW_LEARNED_UPDATE_INTERVAL
               value: {{ .Values.learnedIndex.updateInterval | quote }}
             # Ollama Configuration
             - name: LONGBOW_OLLAMA_ENABLED

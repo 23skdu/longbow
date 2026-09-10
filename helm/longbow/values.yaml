@@ -107,6 +107,15 @@ memory:
   rejectWrites: true
   gcBallastGB: 0
   gogc: 100
+  maxMemoryHard: "" # Hard memory limit (e.g., "18GB")
+  autoSpillDisk: false # Auto spill to disk when memory pressure is high
+  spillThresholdRatio: "0.85" # Ratio of max memory at which spill triggers
+
+# Auto-Quantization Configuration
+autoQuantize:
+  enabled: false
+  bits: 8
+  threshold: 10000
 
 # GPU Configuration
 gpu:

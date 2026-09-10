@@ -2196,6 +2196,36 @@
           "unit": "s"
         }
       }
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 0},
+      "id": 9001,
+      "targets": [
+        {"expr": "longbow_hnsw_cow_copy_count", "legendFormat": "CoW Copies", "refId": "A"}
+      ],
+      "title": "HNSW CoW Copy Count",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 0},
+      "id": 9002,
+      "targets": [
+        {"expr": "histogram_quantile(0.99, sum(rate(longbow_hnsw_update_contention_seconds_bucket[5m])) by (le))", "legendFormat": "P99 Contention", "refId": "A"}
+      ],
+      "title": "HNSW Update Contention P99",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "${datasource}",
+      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 0},
+      "id": 9003,
+      "targets": [
+        {"expr": "rate(longbow_packed_adjacency_cow_total[5m])", "legendFormat": "CoW Events/s", "refId": "A"}
+      ],
+      "title": "Packed Adjacency CoW Rate",
+      "type": "timeseries"
     }
   ],
   "refresh": "",

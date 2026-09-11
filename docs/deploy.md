@@ -47,7 +47,9 @@ Longbow follows the **Twelve-Factor App** methodology and is configured entirely
 | `LONGBOW_HNSW_EF_CONSTRUCTION` | `200` | Increase to `400-800` for 99.9% recall. |
 | `LONGBOW_HNSW_SQ8_ENABLED` | `false` | 4x memory reduction via 8-bit quantization. |
 | `LONGBOW_HNSW_TURBOQUANT_ENABLED`| `true` | **Default 0.1.9**: SIMD-accelerated bit-packing. |
-| `LONGBOW_USE_DISK` | `false` | Enable SSD offloading (Disk-ANN style). |
+| `LONGBOW_USE_DISK` | `false` | Force all vector reads through disk (including HNSW indexing). **Warning:** Makes HNSW graph construction 10-100x slower. Prefer `LONGBOW_AUTO_SPILL_DISK` for most use cases. |
+| `LONGBOW_AUTO_SPILL_DISK` | `true` | Auto-spill vectors to disk when memory exceeds threshold. HNSW indexing still runs in-memory; only spills after indexing completes. Recommended for large datasets. |
+| `LONGBOW_SPILL_THRESHOLD_RATIO` | `0.70` | Memory threshold (0.0-1.0) at which auto-spill triggers. Lower values spill earlier, using more disk but less RAM. |
 
 ### Storage & Persistence
  

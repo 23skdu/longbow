@@ -23,6 +23,7 @@ This document details the test plan for running comprehensive regression benchma
 | Search queries | 500 per config |
 | Search modes | all (13 modes: dense, hybrid, filtered, filteredbool, filteredstring, sparse, byid, graphrag, globalgraphrag, recommend, geo, temporal, learnedindex) |
 | Memory limit | 16 GB (`LONGBOW_MAX_MEMORY=17179869184`) |
+| Disk spillover | Auto-spill enabled at 60% threshold (`LONGBOW_AUTO_SPILL_DISK=true`, `LONGBOW_SPILL_THRESHOLD_RATIO=0.60`) for 500k runs |
 | Workers | 8 |
 | Mode | CPU |
 | Total configs | 17 dtypes × 2 dims × 2 counts = **68** |
@@ -37,7 +38,17 @@ This document details the test plan for running comprehensive regression benchma
 | OS | Linux x86_64 |
 | Go toolchain | 1.22+ (for rebuilding if needed) |
 
-## 4. Execution Steps
+## 4. Disk Spillover Modes
+
+| Mode | Env Var | Behavior | Use Case |
+|------|---------|----------|----------|
+| **Auto-spill** (recommended) | `LONGBOW_AUTO_SPILL_DISK=true` | Vectors stay in-memory during HNSW indexing. When memory exceeds the threshold ratio (default 70%, configurable via `LONGBOW_SPILL_THRESHOLD_RATIO`), vectors spill to disk. Graph construction always uses in-memory vectors. | All benchmarks. Fast indexing, prevents OOM at scale. |
+| **Forced disk** | `LONGBOW_USE_DISK=1` | Every vector read (including during HNSW graph construction) goes through disk. | **Do not use for benchmarks.** Makes HNSW indexing 10-100x slower because each distance computation requires a disk seek. Only useful for datasets that exceed total RAM + swap. |
+| **Disabled** | `LONGBOW_AUTO_SPILL_DISK=false` | All data stays in memory. OOM if insufficient RAM. | Small datasets (<50k vectors) that fit comfortably in RAM. |
+
+**Why forced disk mode breaks benchmarks:** HNSW graph construction at scale requires O(N * ef_construction) distance computations, each needing random access to vector data. With `LONGBOW_USE_DISK=1`, every one of these reads hits disk, turning a 5-minute build into a 60+ minute crawl. Auto-spill avoids this by building the graph in-memory first.
+
+## 5. Execution Steps
 
 ### Phase 1: Cleanup
 

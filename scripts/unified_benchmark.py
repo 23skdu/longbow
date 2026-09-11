@@ -11,6 +11,17 @@ Usage:
     python3 scripts/unified_benchmark.py --mode cuda
     python3 scripts/unified_benchmark.py --mode cpu --dtypes float32,int8,int16
     python3 scripts/unified_benchmark.py --dims 128,384,768,1536,3072
+
+Disk Spillover Modes:
+    --use-disk enables auto-spill (LONGBOW_AUTO_SPILL_DISK) which lets HNSW build
+    in-memory and spills vectors to disk only when memory exceeds 60% of the limit.
+
+    LONGBOW_USE_DISK=1 (forced disk mode) is intentionally NOT used because it makes
+    HNSW graph construction extremely slow — every distance computation during indexing
+    requires a disk read. Auto-spill is the correct mode for benchmarks.
+
+    For large vector counts (>=100k), auto-spill is enabled automatically regardless
+    of the --use-disk flag to prevent OOM at scale.
 """
 
 import argparse
@@ -208,8 +219,10 @@ class BenchmarkRunner:
     def _measure_disk_usage(self, label):
         """Measure disk usage (MB) of vector store files for a benchmark run.
 
-        When --use-disk is active, the server writes vectors to:
+        When auto-spill is active (LONGBOW_AUTO_SPILL_DISK=true), the server may
+        write spilled vectors and graph files to:
           <data_dir>/<label>/<dataset>_vectors.bin
+          <data_dir>/<label>/<dataset>_graph.bin
 
         Returns total MB used, or 0 if no disk files found.
         """
@@ -572,7 +585,18 @@ class BenchmarkRunner:
         if self.args.low_mem:
             env["LONGBOW_LOW_MEM"] = "1"
         if self.args.use_disk:
-            env["LONGBOW_USE_DISK"] = "1"
+            # Use auto-spill instead of forced disk mode. Forced LONGBOW_USE_DISK=1
+            # makes HNSW graph construction painfully slow because every distance
+            # computation during indexing requires a disk read. Auto-spill lets the
+            # HNSW build happen in-memory and only spills vectors to disk after
+            # indexing is complete (when memory pressure exceeds the threshold).
+            env["LONGBOW_AUTO_SPILL_DISK"] = "true"
+            env["LONGBOW_SPILL_THRESHOLD_RATIO"] = "0.60"
+        # Auto-enable disk spillover for large sets (500k+) to prevent OOM
+        max_count_env = max(int(c) for c in self.args.counts.split(","))
+        if max_count_env >= 100000:
+            env["LONGBOW_AUTO_SPILL_DISK"] = "true"
+            env["LONGBOW_SPILL_THRESHOLD_RATIO"] = "0.60"
         if self.args.pq_ingest:
             env["LONGBOW_PQ_INGEST"] = "1"
         if self.args.debug:
@@ -950,9 +974,17 @@ class BenchmarkRunner:
         search_overhead = int(self.args.queries / 100.0 * dim_factor)
         scaled_timeout += max(search_overhead, 60)
 
-        # Scaled timeout is primary; clamp between base_timeout and 8x base_timeout
+        # HNSW indexing at 500k+ scale dominates; ensure generous ceiling
+        if batch_size >= 500000:
+            scaled_timeout = max(scaled_timeout, 7200)
+
+        # Scaled timeout is primary; clamp between base_timeout and 12x base_timeout
         timeout = max(base_timeout, scaled_timeout)
-        timeout = min(timeout, base_timeout * 8)
+        timeout = min(timeout, base_timeout * 12)
+
+        # Override bench-tool's internal HNSW indexing timeout (default 3600s
+        # is too short for 500k+ vectors). Set to match the outer timeout.
+        os.environ["LONGBOW_BENCH_HNSW_TIMEOUT"] = str(timeout)
         
         bench_log = os.path.join(self.log_dir, f"bench_{label}.log")
         with open(bench_log, "w") as f:
@@ -3292,7 +3324,12 @@ if __name__ == "__main__":
     parser.add_argument(
         "--use-disk",
         action="store_true",
-        help="Enable LONGBOW_USE_DISK=1 for disk-based storage",
+        help="Enable auto-disk spillover (LONGBOW_AUTO_SPILL_DISK) with 60%% threshold. "
+             "Vectors spill to disk when memory pressure exceeds 60%% of LONGBOW_MAX_MEMORY. "
+             "IMPORTANT: This does NOT use LONGBOW_USE_DISK=1 (forced disk mode) because "
+             "forced disk mode makes HNSW graph construction extremely slow — every distance "
+             "computation during indexing requires a disk read. Auto-spill lets HNSW build "
+             "in-memory and only spills vectors to disk after indexing is complete.",
     )
     parser.add_argument(
         "--pq-ingest",

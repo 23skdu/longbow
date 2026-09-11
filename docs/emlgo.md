@@ -2,15 +2,34 @@
 
 ## Overview
 
-This document describes the architecture, implementation, and evaluation of integrating [EMLGo](https://github.com/23skdu/emlgo) into Longbow on the `experimental/emlgo` branch. 
+This document describes the architecture, implementation, and evaluation of integrating [EMLGo](https://github.com/23skdu/emlgo) into Longbow.
 
 Longbow utilizes high-performance mathematical operations across its tensor engine, tensor calculus routines (Christoffel symbols, Riemann/Ricci curvature, differential forms), and SIMD distance baselines. Previously, Longbow relied on standard Go `math` library functions and pure Go Taylor series expansions. By integrating `emlgo`, Longbow leverages hardware-backed fast assembly routines (AVX2/AVX-512 and ARM NEON) and vectorized batch pipelines, achieving up to a **1.66x throughput improvement (40% cycle reduction)** in tensor operations while guaranteeing strict numerical parity.
+
+### Build Tag
+
+EMLGo is gated behind the `emlgo` build tag. The default build uses standard Go `math` only:
+
+```bash
+# Standard build (no emlgo)
+go build -o longbow ./cmd/longbow
+
+# EMLGo-enabled build
+go build -tags emlgo -o longbow ./cmd/longbow
+```
+
+Without `-tags emlgo`, the `mathutil` and `tensor` packages use pure Go `math` standard library functions. With `-tags emlgo`, they dispatch to EMLGo's SIMD-optimized kernels (AVX2/AVX-512 on x86, NEON on ARM).
+
+Both builds compile and pass all tests. The build-tag approach ensures:
+- **No binary size bloat** when EMLGo is not needed (~34KB difference)
+- **Identical SIMD kernel performance** between builds (verified via pprof and perf stat)
+- **Clean separation** of EMLGo code from the standard math path
 
 ---
 
 ## Architectural Design
 
-The integration introduces a unified mathematical abstraction layer under [`internal/mathutil`](file:///home/rsd/REPOS/longbow/internal/mathutil/mathutil.go), decoupling core Longbow algorithms from specific mathematical backends.
+The integration introduces a unified mathematical abstraction layer under `internal/mathutil`, decoupling core Longbow algorithms from specific mathematical backends. EMLGo is gated behind the `emlgo` build tag — without it, the codebase uses standard Go `math` only.
 
 ```mermaid
 graph TD
@@ -21,8 +40,8 @@ graph TD
     end
 
     subgraph Abstraction Layer
-        MathUtil[internal/mathutil Facade<br/>Thread-safe Backend Switching]
-        TensorDispatch[internal/tensor Math Dispatch<br/>MathGo / MathSIMD / MathCUDA / MathEML]
+        MathUtil["internal/mathutil<br/><code>//go:build !emlgo</code> → stdlib<br/><code>//go:build emlgo</code> → EMLGo"]
+        TensorDispatch["internal/tensor math_dispatch<br/><code>//go:build !emlgo</code> → MathSIMD<br/><code>//go:build emlgo</code> → MathEML"]
     end
 
     subgraph Backends
@@ -43,8 +62,8 @@ graph TD
     TensorCalculus --> MathUtil
     SIMDBaseline --> MathUtil
 
-    MathUtil -->|BackendEML| EMLGoBackend
-    MathUtil -->|BackendStandard| StdLibBackend
+    MathUtil -->|emlgo tag| EMLGoBackend
+    MathUtil -->|no emlgo tag| StdLibBackend
 
     EMLGoBackend --> FastMath
     EMLGoBackend --> Arithmetic
@@ -59,7 +78,10 @@ graph TD
 
 ### 1. Unified Math Facade (`internal/mathutil`)
 
-[`internal/mathutil`](file:///home/rsd/REPOS/longbow/internal/mathutil/mathutil.go) provides thread-safe runtime switching between the standard library and `emlgo`:
+`internal/mathutil` provides the math abstraction, split across two files by build tag:
+
+- **`mathutil.go`** (`//go:build !emlgo`): Standard Go `math` library only. `IsEML()` always returns false. `SetBackend(BackendEML)` is a no-op.
+- **`mathutil_emlgo.go`** (`//go:build emlgo`): Full EMLGo backend with SIMD dispatch. `IsEML()` returns the active backend state.
 
 ```go
 type Backend int
@@ -93,10 +115,14 @@ func GetBackend() Backend
 ### 2. Tensor Engine Integration (`internal/tensor`)
 
 #### A. Dynamic Dispatch Extension
-[`internal/tensor/math_dispatch.go`](file:///home/rsd/REPOS/longbow/internal/tensor/math_dispatch.go) defines execution engines:
+`internal/tensor/math_dispatch.go` defines execution engines, split by build tag:
+
+- **`math_dispatch.go`** (`//go:build !emlgo`): Defaults to `MathSIMD`. `MathEML` case falls through to `MathSIMD`.
+- **`math_dispatch_emlgo.go`** (`//go:build emlgo`): Defaults to `MathEML`. Full EMLGo batch dispatch.
+
+Execution engines:
 - `MathGo`: Standard library fallbacks.
 - `MathSIMD`: Hand-rolled vector assembly.
-- `MathCUDA`: GPU acceleration kernels.
 - `MathEML`: High-performance `emlgo` hardware kernels and batch operations.
 
 Use `tensor.SetMathImplementation(tensor.MathEML)` to switch the active tensor execution engine.
@@ -257,13 +283,20 @@ The integration adheres to Longbow's quality and security standards:
 
 4. **A/B Parity & Benchmark Commands**:
    ```bash
-   # Run parity tests
+   # Run parity tests (both builds)
    go test -v ./internal/tensor -run TestEmlgoParity
    go test -v ./internal/simd -run TestEmlgoParity
+   go test -tags emlgo -v ./internal/tensor -run TestEmlgoParity
+   go test -tags emlgo -v ./internal/simd -run TestEmlgoParity
 
    # Run A/B performance benchmarks
    go test -bench=BenchmarkAB_ ./internal/tensor
    go test -bench=BenchmarkAB_ ./internal/simd
+
+   # Compare build sizes
+   go build -o longbow-standard ./cmd/longbow
+   go build -tags emlgo -o longbow-emlgo ./cmd/longbow
+   ls -la longbow-standard longbow-emlgo  # ~34KB difference
    ```
 
 5. **Multi-Scale Vector Benchmark & Pprof Profiling**:

@@ -34,7 +34,12 @@ See [Architecture Guide](docs/architecture.md) for a deep dive.
 ```bash
 git clone https://github.com/23skdu/longbow.git
 cd longbow
+
+# Standard build
 go build -o bin/longbow ./cmd/longbow
+
+# Build with EMLGo SIMD math backend (AVX2/AVX-512/NEON fastmath)
+go build -tags emlgo -o bin/longbow ./cmd/longbow
 ```
 
 ### Running a Local Cluster
@@ -62,6 +67,18 @@ Longbow is compiled natively for CPU architectures by default. To enable GPU acc
 - **Linux (CUDA)**: Build the CUDA-enabled binary via `make build-cuda` (requires NVIDIA toolkit).
 
 **Note:** If Longbow is launched on GPU-capable hardware without the GPU-enabled binary, it will silently fall back to CPU execution and print a 3-second startup warning.
+
+### Docker Images
+
+```bash
+# Standard builds
+docker build -f Dockerfile.cpu -t longbow:cpu .
+docker build -f Dockerfile.nvidia -t longbow:nvidia .
+
+# EMLGo builds (high-performance SIMD math backend)
+docker build -f Dockerfile.emlgo-cpu -t longbow:emlgo-cpu .
+docker build -f Dockerfile.emlgo-gpu -t longbow:emlgo-gpu .
+```
 
 ## Configuration
 

@@ -22,6 +22,28 @@ Official images are available on GitHub Container Registry (`ghcr.io/23skdu/long
 - **Apple Silicon (`arm64`)**: `latest-arm64-metal` - Optimized for Metal GPU and Mach CPU clusters.
 - **NVIDIA GPU (`amd64`)**: `latest-amd64-nvidia` - Includes custom CUDA 12.6 kernels and zero-copy tensor bridge.
 - **General CPU (`amd64`)**: `latest-amd64-cpu` - Broadwell-level AVX2 optimizations with `io_uring` support.
+- **EMLGo CPU (`amd64`)**: `latest-amd64-emlgo-cpu` - Standard build with EMLGo SIMD math backend (`-tags emlgo`).
+- **EMLGo GPU (`amd64`)**: `latest-amd64-emlgo-gpu` - CUDA + EMLGo SIMD math backend for maximum throughput.
+
+### Building Docker Images Locally
+
+```bash
+# Standard CPU build
+docker build -f Dockerfile.cpu -t longbow:cpu .
+
+# NVIDIA GPU build
+docker build -f Dockerfile.nvidia -t longbow:nvidia .
+
+# EMLGo CPU build (high-performance SIMD math)
+docker build -f Dockerfile.emlgo-cpu -t longbow:emlgo-cpu .
+
+# EMLGo GPU build (CUDA + SIMD math)
+docker build -f Dockerfile.emlgo-gpu -t longbow:emlgo-gpu .
+
+# With io_uring support
+docker build -f Dockerfile.cpu -t longbow:cpu-iouring . --build-arg ENABLE_IOURING=true
+docker build -f Dockerfile.emlgo-cpu -t longbow:emlgo-cpu-iouring . --build-arg ENABLE_IOURING=true
+```
 
 ---
 

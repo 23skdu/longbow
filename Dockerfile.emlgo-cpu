@@ -1,0 +1,58 @@
+# Dockerfile.emlgo-cpu
+# CPU-only build with EMLGo high-performance SIMD math backend
+#
+# Uses the "emlgo" build tag to compile in AVX2/AVX-512/NEON fastmath
+# kernels for tensor operations, hyperbolic functions, and batch math.
+#
+# Build:
+#   docker build -f Dockerfile.emlgo-cpu -t longbow:emlgo-cpu .
+#
+# Build with io_uring (Linux 5.1+):
+#   docker build -f Dockerfile.emlgo-cpu -t longbow:emlgo-cpu-iouring . --build-arg ENABLE_IOURING=true
+
+# -------------------------------------------------------------------
+# Stage 1: Build
+# -------------------------------------------------------------------
+FROM golang:1.27.0-bookworm AS builder
+
+WORKDIR /app
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG ENABLE_IOURING=false
+ARG BUILD_TAGS=linux
+ENV GOAMD64=v3
+
+# Build longbow, longbow-cli, and bench-tool with emlgo build tag
+RUN if [ "$ENABLE_IOURING" = "true" ]; then \
+    CGO_ENABLED=1 go build -tags="${BUILD_TAGS},emlgo,iouring" -ldflags="-s -w -checklinkname=0" -o longbow ./cmd/longbow; \
+    CGO_ENABLED=0 go build -tags="${BUILD_TAGS},emlgo" -ldflags="-s -w" -o longbow-cli ./cmd/cli; \
+    CGO_ENABLED=0 go build -tags="${BUILD_TAGS},emlgo" -ldflags="-s -w" -o bench-tool ./cmd/bench-tool; \
+else \
+    CGO_ENABLED=0 go build -tags="${BUILD_TAGS},emlgo" -ldflags="-s -w" -o longbow ./cmd/longbow; \
+    CGO_ENABLED=0 go build -tags="${BUILD_TAGS},emlgo" -ldflags="-s -w" -o longbow-cli ./cmd/cli; \
+    CGO_ENABLED=0 go build -tags="${BUILD_TAGS},emlgo" -ldflags="-s -w" -o bench-tool ./cmd/bench-tool; \
+fi
+
+# -------------------------------------------------------------------
+# Stage 2: Minimal runtime
+# -------------------------------------------------------------------
+FROM scratch
+
+COPY --from=builder /app/longbow /longbow
+COPY --from=builder /app/longbow-cli /longbow-cli
+COPY --from=builder /app/bench-tool /bench-tool
+
+VOLUME /data
+
+ENV LONGBOW_GPU_ENABLED=false
+ENV LONGBOW_STORAGE_USE_IOURING=false
+ENV LONGBOW_MATH_BACKEND=emlgo
+ENV GOGC=75
+
+EXPOSE 3000 3001 9090
+
+ENTRYPOINT ["/longbow"]

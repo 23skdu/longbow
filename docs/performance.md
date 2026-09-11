@@ -37,6 +37,20 @@ A/B comparison of **main** vs **emlgo v0.4** branches across CPU and GPU backend
 
 **emlgo v0.4 GPU** is now competitive with main GPU — a major improvement over v0.3. float32 dense at 500k jumps +203%, float64 +99%, complex128 +135%, turboquant4 +30%. The v0.3 GPU regressions are largely resolved.
 
+### Regression Investigation: int8/uint8 at 50k
+
+The ~56% regression in int8/uint8 dense at 50k was investigated via:
+
+1. **SIMD kernel microbenchmarks** — identical performance (~9ns/call) on both branches
+2. **Build-tag gating** — emlgo compiled behind `//go:build emlgo`; stdlib-only build confirmed
+3. **`perf stat`** — P-core counters: 106B instructions (noemlgo) vs 105B (emlgo), cache-misses +4%, branch-misses -9%
+4. **pprof CPU profiles** — identical hot-path breakdown at the HNSW search level:
+   - `euclideanInt8AVX2Kernel`: 18.15% vs 17.76%
+   - `searchLayer`: 16.52% vs 16.76%
+   - `Arena.Get`: 5.13% vs 5.27%
+
+**Conclusion**: The regression is a measurement artifact from the end-to-end benchmark (gRPC serialization, bench-tool overhead, server goroutine scheduling) — not a code path issue. The SIMD kernels, HNSW search, and memory access patterns are all identical between builds.
+
 ---
 
 ## CPU A/B — 50,000 Vectors

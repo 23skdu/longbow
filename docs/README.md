@@ -70,6 +70,7 @@ General-purpose tensor calculus and scientific computing engine:
 
 High-performance math backend and vector optimization:
 
+- **Build-Tag Gated**: Compiled only with `-tags emlgo`. Default build uses standard Go `math`.
 - **Unified Facade**: Thread-safe runtime switching between standard Go `math` and `emlgo`.
 - **Hardware Assembly**: AVX2, AVX-512, and ARM NEON fastmath primitives (`fastmath.Sqrt`, `fastmath.FMA`).
 - **Tensor Acceleration**: Vectorized Float64/Float32 element-wise operations and 1.66x faster hyperbolic functions (`Sinh`, `Cosh`, `Tanh`).

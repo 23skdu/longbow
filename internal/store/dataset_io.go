@@ -247,7 +247,8 @@ func (d *DatasetIO) writeRecordsToParquet(records []arrow.RecordBatch, buf *byte
 				col := rec.Column(vectorColIdx)
 				switch arr := col.(type) {
 				case *array.FixedSizeList:
-					dim := arr.Len()
+					start, end := arr.ValueOffsets(0)
+					dim := int(end - start)
 					child := arr.ListValues()
 					if floatArr, ok := child.(*array.Float32); ok {
 						vec := make([]byte, dim*4)

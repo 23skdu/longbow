@@ -1,4 +1,4 @@
-//go:build !emlgo
+//go:build emlgo
 
 package tensor
 
@@ -14,10 +14,10 @@ type MathImpl int
 const (
 	MathGo   MathImpl = iota // pure Go fallback (Taylor series, Newton)
 	MathSIMD                 // Standard SIMD-accelerated kernels wrapping math.*
-	MathEML                  // High-performance EMLGo SIMD & fastmath (no-op without emlgo tag)
+	MathEML                  // High-performance EMLGo SIMD & fastmath
 )
 
-var mathImpl MathImpl = MathSIMD
+var mathImpl MathImpl = MathEML
 
 // GetMathImpl returns the active math implementation.
 func GetMathImpl() MathImpl {
@@ -25,25 +25,24 @@ func GetMathImpl() MathImpl {
 }
 
 // SetMathImpl switches between MathGo, MathSIMD, and MathEML.
-// Without the "emlgo" build tag, MathEML falls through to MathSIMD.
 func SetMathImpl(impl MathImpl) {
 	mathImpl = impl
 	switch impl {
 	case MathEML:
-		mathutil.SetBackend(mathutil.BackendStandard)
-		sin = math.Sin
-		cos = math.Cos
-		tan = math.Tan
-		exp = math.Exp
-		log = math.Log
-		sqrt = math.Sqrt
-		pow = math.Pow
-		sinh = math.Sinh
-		cosh = math.Cosh
-		tanh = math.Tanh
-		asin = math.Asin
-		acos = math.Acos
-		atan = math.Atan
+		mathutil.SetBackend(mathutil.BackendEML)
+		sin = mathutil.Sin
+		cos = mathutil.Cos
+		tan = mathutil.Tan
+		exp = mathutil.Exp
+		log = mathutil.Log
+		sqrt = mathutil.Sqrt
+		pow = mathutil.Pow
+		sinh = mathutil.Sinh
+		cosh = mathutil.Cosh
+		tanh = mathutil.Tanh
+		asin = mathutil.Asin
+		acos = mathutil.Acos
+		atan = mathutil.Atan
 	case MathSIMD:
 		mathutil.SetBackend(mathutil.BackendStandard)
 		sin = math.Sin
@@ -79,15 +78,14 @@ func SetMathImpl(impl MathImpl) {
 
 // InitMathDispatch selects the best available math kernel implementation.
 // Call once at startup after CPU feature detection.
-// Without the "emlgo" build tag, SIMD mode defaults to standard math.
 func InitMathDispatch(useSIMD bool) {
 	if !useSIMD {
 		SetMathImpl(MathGo)
 		return
 	}
-	SetMathImpl(MathSIMD)
+	SetMathImpl(MathEML)
 }
 
 func init() {
-	SetMathImpl(MathSIMD)
+	SetMathImpl(MathEML)
 }

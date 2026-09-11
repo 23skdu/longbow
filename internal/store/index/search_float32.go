@@ -83,6 +83,8 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 	}
 	ctx.visited.Set(int(entryPoint))
 
+	const traversalBlockSize = 64
+
 	for minHeap.Len() > 0 {
 		if err := goCtx.Err(); err != nil {
 			return nil, err
@@ -185,34 +187,57 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 				}
 
 				if len(validBatch) > 0 {
-					ctx.distComputeCount += len(validBatch)
-					if cap(ctx.distsTemp) < len(validBatch) {
-						ctx.distsTemp = make([]float32, len(validBatch))
-					}
-					dists, err := computer.ComputeBatch(validBatch, ctx.distsTemp)
-					if err == nil {
-						for i, n := range validBatch {
-							d := dists[i]
-							cand := types.Candidate{ID: n, Dist: d}
-							minHeap.PushCandidate(cand)
+					// Cache-blocked candidate evaluation in 64-vector chunks
+					for chunkStart := 0; chunkStart < len(validBatch); chunkStart += traversalBlockSize {
+						chunkEnd := chunkStart + traversalBlockSize
+						if chunkEnd > len(validBatch) {
+							chunkEnd = len(validBatch)
+						}
+						block := validBatch[chunkStart:chunkEnd]
+						metrics.CacheBlockedTraversalChunksTotal.Inc()
 
-							if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
-								continue
+						// Prefetch candidate vectors in next tile
+						if chunkEnd < len(validBatch) {
+							nextEnd := chunkEnd + traversalBlockSize
+							if nextEnd > len(validBatch) {
+								nextEnd = len(validBatch)
 							}
-							if h.IsDeleted(n) {
-								continue
-							}
-
-							if len(ctx.resultSet) > 0 {
-								furthest := ctx.resultSet[0]
-								if ctx.resultSet.Len() < ef || d < furthest.Dist {
-									resultSetAdapter.PushCandidate(cand)
-									if ctx.resultSet.Len() > ef {
-										resultSetAdapter.PopCandidate()
-									}
+							for _, nextN := range validBatch[chunkEnd:nextEnd] {
+								if int64(nextN) < maxCommitted {
+									computer.Prefetch(nextN)
 								}
-							} else {
-								resultSetAdapter.PushCandidate(cand)
+							}
+						}
+
+						ctx.distComputeCount += len(block)
+						if cap(ctx.distsTemp) < len(block) {
+							ctx.distsTemp = make([]float32, len(block))
+						}
+						dists, err := computer.ComputeBatch(block, ctx.distsTemp[:len(block)])
+						if err == nil {
+							for i, n := range block {
+								d := dists[i]
+								cand := types.Candidate{ID: n, Dist: d}
+								minHeap.PushCandidate(cand)
+
+								if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+									continue
+								}
+								if h.IsDeleted(n) {
+									continue
+								}
+
+								if len(ctx.resultSet) > 0 {
+									furthest := ctx.resultSet[0]
+									if ctx.resultSet.Len() < ef || d < furthest.Dist {
+										resultSetAdapter.PushCandidate(cand)
+										if ctx.resultSet.Len() > ef {
+											resultSetAdapter.PopCandidate()
+										}
+									}
+								} else {
+									resultSetAdapter.PushCandidate(cand)
+								}
 							}
 						}
 					}
@@ -232,36 +257,59 @@ func (h *ArrowHNSW) searchLayerFloat32(goCtx context.Context, computer *float32T
 			}
 
 			if len(batch) > 0 {
-				ctx.distComputeCount += len(batch)
-				if cap(ctx.distsTemp) < len(batch) {
-					ctx.distsTemp = make([]float32, len(batch))
-				}
-				dists, err := computer.ComputeBatch(batch, ctx.distsTemp)
-				if err == nil {
-					for i, n := range batch {
-						d := dists[i]
-						cand := types.Candidate{ID: n, Dist: d}
+				// Cache-blocked candidate evaluation in 64-vector chunks
+				for chunkStart := 0; chunkStart < len(batch); chunkStart += traversalBlockSize {
+					chunkEnd := chunkStart + traversalBlockSize
+					if chunkEnd > len(batch) {
+						chunkEnd = len(batch)
+					}
+					block := batch[chunkStart:chunkEnd]
+					metrics.CacheBlockedTraversalChunksTotal.Inc()
 
-						minHeap.PushCandidate(cand)
-
-						if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
-							continue
+					// Prefetch candidate vectors in next tile
+					if chunkEnd < len(batch) {
+						nextEnd := chunkEnd + traversalBlockSize
+						if nextEnd > len(batch) {
+							nextEnd = len(batch)
 						}
-						if h.deleted != nil && h.deleted.Contains(n) {
-							continue
-						}
-
-						if len(ctx.resultSet) > 0 {
-							furthest := ctx.resultSet[0]
-
-							if ctx.resultSet.Len() < ef || d < furthest.Dist {
-								resultSetAdapter.PushCandidate(cand)
-								if ctx.resultSet.Len() > ef {
-									resultSetAdapter.PopCandidate()
-								}
+						for _, nextN := range batch[chunkEnd:nextEnd] {
+							if int64(nextN) < maxCommitted {
+								computer.Prefetch(nextN)
 							}
-						} else {
-							resultSetAdapter.PushCandidate(cand)
+						}
+					}
+
+					ctx.distComputeCount += len(block)
+					if cap(ctx.distsTemp) < len(block) {
+						ctx.distsTemp = make([]float32, len(block))
+					}
+					dists, err := computer.ComputeBatch(block, ctx.distsTemp[:len(block)])
+					if err == nil {
+						for i, n := range block {
+							d := dists[i]
+							cand := types.Candidate{ID: n, Dist: d}
+
+							minHeap.PushCandidate(cand)
+
+							if ctx.filterBitmap != nil && !ctx.filterBitmap.Contains(n) {
+								continue
+							}
+							if h.deleted != nil && h.deleted.Contains(n) {
+								continue
+							}
+
+							if len(ctx.resultSet) > 0 {
+								furthest := ctx.resultSet[0]
+
+								if ctx.resultSet.Len() < ef || d < furthest.Dist {
+									resultSetAdapter.PushCandidate(cand)
+									if ctx.resultSet.Len() > ef {
+										resultSetAdapter.PopCandidate()
+									}
+								}
+							} else {
+								resultSetAdapter.PushCandidate(cand)
+							}
 						}
 					}
 				}

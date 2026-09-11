@@ -386,3 +386,60 @@ func TestAdmissionController_Expanded(t *testing.T) {
 		ac.scaler = nil
 	})
 }
+
+// TestCanAdmitSearch_ResourceExhausted_Priority verifies that CanAdmitSearch
+// correctly returns ResourceExhausted when physical memory exceeds the hard limit.
+// This is the foundation of the deadlock prevention: check_readiness now calls
+// CanAdmitSearch FIRST, before checking queue depth, so that RESOURCE_EXHAUSTED
+// is returned even when pending > 0 (which would otherwise cause a BUSY response
+// and indefinite client blocking).
+func TestCanAdmitSearch_ResourceExhausted_Priority(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	basePhys := int64(m.HeapAlloc) + lbmem.GetGlobalOffHeapAllocated()
+	if basePhys < 10*1024*1024 {
+		basePhys = 10 * 1024 * 1024
+	}
+
+	maxMem := atomic.Int64{}
+	currMem := atomic.Int64{}
+
+	t.Run("Memory above limit returns ResourceExhausted", func(t *testing.T) {
+		maxMem.Store(basePhys)
+		currMem.Store(basePhys * 2) // 200% usage
+
+		ac := NewAdmissionController(&maxMem, &currMem, nil, zerolog.Nop())
+		ac.Bypass = false
+
+		err := ac.CanAdmitSearch()
+		assert.Error(t, err)
+		assert.Equal(t, codes.ResourceExhausted, status.Code(err))
+		assert.Contains(t, err.Error(), "exceeds limit")
+	})
+
+	t.Run("Memory below limit returns nil", func(t *testing.T) {
+		maxMem.Store(basePhys * 10)
+		currMem.Store(basePhys) // 10% usage
+
+		ac := NewAdmissionController(&maxMem, &currMem, nil, zerolog.Nop())
+		ac.Bypass = false
+
+		err := ac.CanAdmitSearch()
+		assert.NoError(t, err)
+	})
+
+	t.Run("Bypass mode always returns nil", func(t *testing.T) {
+		maxMem.Store(basePhys)
+		currMem.Store(basePhys * 10) // 1000% usage
+
+		ac := NewAdmissionController(&maxMem, &currMem, nil, zerolog.Nop())
+		ac.Bypass = true
+
+		err := ac.CanAdmitSearch()
+		assert.NoError(t, err)
+	})
+}

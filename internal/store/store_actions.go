@@ -159,13 +159,35 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 			"status": "READY",
 		}
 
-		// 1. Check Global Queue
+		// 1. Check Memory Pressure FIRST (prevents admission deadlock).
+		//    When physical memory exceeds the hard limit, ingestion is throttled to 0
+		//    which keeps pending > 0 forever — if we checked queue length first,
+		//    we'd report BUSY instead of RESOURCE_EXHAUSTED and clients would block
+		//    indefinitely up to the 4-hour timeout.
+		if s.admission != nil {
+			if err := s.admission.CanAdmitSearch(); err != nil {
+				st, ok := status.FromError(err)
+				if (ok && st.Code() == codes.ResourceExhausted) || strings.Contains(err.Error(), "ResourceExhausted") || strings.Contains(err.Error(), "exceeds limit") {
+					resp["status"] = "RESOURCE_EXHAUSTED"
+					resp["exhausted"] = true
+					resp["reason"] = fmt.Sprintf("memory pressure: %v", err)
+					metrics.ReadinessExhaustedTotal.Inc()
+					body, marshalErr := json.Marshal(resp)
+					if marshalErr != nil {
+						return status.Errorf(codes.Internal, "failed to serialize status: %v", marshalErr)
+					}
+					return stream.Send(&flight.Result{Body: body})
+				}
+			}
+		}
+
+		// 2. Check Global Queue
 		qLen := s.indexQueue.Len()
 		if qLen > 0 {
 			resp["status"] = "BUSY"
 			resp["reason"] = fmt.Sprintf("global index queue has %d jobs", qLen)
 		} else if req.Dataset != "" {
-			// 2. Check Specific Dataset
+			// 3. Check Specific Dataset
 			ds, ok := s.getDataset(req.Dataset)
 			if !ok {
 				resp["status"] = "NOT_FOUND"
@@ -212,20 +234,6 @@ func (s *VectorStore) DoAction(action *flight.Action, stream flight.FlightServic
 				}
 				resp["index_len"] = ds.IndexLen()
 				resp["index_ready"] = ds.Index != nil
-			}
-		}
-
-		// 3. Check admission controller (memory pressure, WAL replay, migration)
-		if resp["status"] == "READY" && s.admission != nil {
-			if err := s.admission.CanAdmitSearch(); err != nil {
-				st, ok := status.FromError(err)
-				if (ok && st.Code() == codes.ResourceExhausted) || strings.Contains(err.Error(), "ResourceExhausted") || strings.Contains(err.Error(), "exceeds limit") {
-					resp["status"] = "RESOURCE_EXHAUSTED"
-					resp["exhausted"] = true
-				} else {
-					resp["status"] = "BUSY"
-				}
-				resp["reason"] = fmt.Sprintf("admission blocked: %v", err)
 			}
 		}
 

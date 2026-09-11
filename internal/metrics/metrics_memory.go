@@ -87,6 +87,27 @@ var (
 		},
 	)
 
+	// ReadinessExhaustedTotal counts readiness checks returning RESOURCE_EXHAUSTED
+	// due to memory pressure. This prevents admission deadlock where clients block
+	// indefinitely because the readiness endpoint reports BUSY instead of
+	// RESOURCE_EXHAUSTED when physical memory exceeds the hard limit.
+	ReadinessExhaustedTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_readiness_exhausted_total",
+			Help: "Total number of readiness checks returning RESOURCE_EXHAUSTED due to memory pressure",
+		},
+	)
+
+	// CacheBlockedTraversalChunksTotal counts cache-blocked traversal chunks processed
+	// during HNSW graph search. Each chunk is a 64-vector block processed together
+	// to maximize L1/L2 cache locality and minimize L3 eviction stalls.
+	CacheBlockedTraversalChunksTotal = promauto.NewCounter(
+		prometheus.CounterOpts{
+			Name: "longbow_cache_blocked_traversal_chunks_total",
+			Help: "Total number of 64-vector cache-blocked traversal chunks processed",
+		},
+	)
+
 	// AdjacencyPaddingBytes tracks bytes used for alignment padding
 	AdjacencyPaddingBytes = promauto.NewCounter(
 		prometheus.CounterOpts{

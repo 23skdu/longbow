@@ -1,7 +1,7 @@
 # GraphRAG: Dual-Path Graph Architecture
 
 **Last Updated**: 2026-04-28
-**Related Docs**: [functions.md](functions.md) · [vectorsearch.md](vectorsearch.md) · [comparison.md](comparison.md)
+**Related Docs**: [api.md](api.md) · [vectorsearch.md](vectorsearch.md) · [features.md](features.md)
 
 ---
 

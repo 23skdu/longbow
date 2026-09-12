@@ -4,101 +4,102 @@ Longbow is a high-performance, distributed, and in-memory vector store implement
 
 ---
 
-## 📖 Core Guides
+## Core Guides
 
 ### 1. [Quick Start & Deployment](deploy.md)
 
-Get started with Longbow using Docker or Helm. Covers installation, environment configuration, distributed architecture, and basic operational management.
+Get started with Longbow using Docker or Helm. Covers installation, environment configuration, CLI reference, limits, security, and troubleshooting.
 
-### 2. [Command Line Interface (CLI)](cli.md)
+### 2. [Unified Search & Discovery](vectorsearch.md)
 
-Technical reference for the `longbow-cli` tool, including build instructions, import workflows, and search options.
+Comprehensive guide to all 10 search modes:
 
-### 3. [Unified Search & Discovery](vectorsearch.md)
+- **Dense**: HNSW vector search with SIMD acceleration.
+- **Hybrid**: Dense + Sparse fusion with Distributed Global RRF.
+- **Filtered**: SQL-like boolean logic and metadata predicates.
+- **GraphRAG**: Spreading Activation + Knowledge Graph traversal.
+- **Temporal**: Point-in-time and range-based versioned search.
+- **Geo-Spatial**: Haversine radius and bounding box queries.
+- **TurboQuant**: Compressed vector search (4x-64x reduction).
 
-Comprehensive guide to search:
-
-- **Metrics**: Euclidean, Cosine, Dot Product.
-- **SQL Filtering**: Compound boolean logic and nested fields.
-- **Hybrid**: Dense + Sparse fusion (RRF).
-- **Reranking**: ML-based Cross-Encoders.
-- **GraphRAG**: [Internal Spreading Activation](graphrag.md) and pathfinding.
-
-### 4. [High-Performance Indexing](indexing.md)
+### 3. [High-Performance Indexing](indexing.md)
 
 Tuning for scale and speed:
 
-- **Compression**: PQ, SQ8, BQ, and **TurboQuant**.
+- **Quantization**: PQ, SQ8, BQ, and **TurboQuant** (2/4/8-bit).
 - **Adaptive**: Automated Flat-to-HNSW migration for zero-config scaling.
-- **Hardware**: NUMA affinity and CPU pinning.
+- **Learned Index**: Runtime k-NN classifier for optimal index selection.
 - **Memory**: GOGC Auto-tuning and slab-arena management.
 
-### 5. [Hardware Acceleration & ML](wasm_onnx.md)
+### 4. [Hardware Acceleration & ML Inference](wasm_onnx.md)
 
 Unleash hardware performance:
 
-- **GPU/TPU**: CUDA (NVIDIA), Metal (Apple Silicon), and Google TPU (Ironwood) [Optimization Details](gpu.md).
-- **Inference**: High-performance execution via WASM (Wazero) and ONNX Runtimes.
+- **GPU/TPU**: CUDA (NVIDIA), Metal (Apple Silicon), and Google TPU (Ironwood).
+- **Inference**: ONNX Runtime (native acceleration) and WASM (Wazero sandboxed portability).
 - **Networking**: Zero-copy RDMA over RoCEv2.
 
-### 6. [Storage & Durability](persistence.md)
-
-Managing data lifecycle:
-
-- **Persistence**: WAL, Snapshots, and S3/GCS Offloading.
-- **Temporal**: Time-travel search and version history.
-- **Lifecycle**: TTL-based cleanup and LRU Eviction.
-
-### 7. [Data Lifecycle & Deletions](deletions.md)
-
-Advanced mutation management:
-
-- **Soft-Deletes**: Bitset-based tombstones for zero-overhead masking.
-- **Compaction**: Fragmentation-aware background hygiene and memory reclamation.
-- **Namespaces**: Recursive cleanup and isolation for multi-tenant workloads.
-
-### 8. [Native Tensor Calculus Engine](tensor_engine.md)
-
-General-purpose tensor calculus and scientific computing engine:
-
-- **Einstein Summation**: High-level `Einsum` with diagonal extraction, trace, and multi-tensor contraction chains.
-- **Tensor Calculus**: Levi-Civita permutation symbols, metric raising/lowering, Christoffel symbols, Riemann curvature, Ricci tensors, and exterior wedge products.
-- **Compiler & Optimizer**: Common subexpression elimination (CSE), constant folding, and algebraic DAG simplification.
-- **Hardware Acceleration**: Multi-threaded AVX2 SIMD and NVIDIA CUDA/cuBLAS kernels with real-time Prometheus telemetry.
-
-### 9. [EMLGo Mathematical Engine](emlgo.md)
-
-High-performance math backend and vector optimization:
-
-- **Build-Tag Gated**: Compiled only with `-tags emlgo`. Default build uses standard Go `math`.
-- **Unified Facade**: Thread-safe runtime switching between standard Go `math` and `emlgo`.
-- **Hardware Assembly**: AVX2, AVX-512, and ARM NEON fastmath primitives (`fastmath.Sqrt`, `fastmath.FMA`).
-- **Tensor Acceleration**: Vectorized Float64/Float32 element-wise operations and 1.66x faster hyperbolic functions (`Sinh`, `Cosh`, `Tanh`).
-- **A/B Testing & Parity**: Comprehensive benchmark suite and strict numerical verification.
-- **[Performance & Pprof Profiling Report](emlgo_perf.md)**: Multi-scale 50k, 100k, and 250k benchmark evaluation across all 17 datatypes compared against baseline.
-
----
-
-## 🛠 System Reference
-
-### 1. [Systems Architecture](architecture.md)
+### 5. [Systems Architecture](architecture.md)
 
 Deep dive into Longbow's design:
 
 - **Distributed Mesh**: Gossip-based membership and Consistent Hashing.
-- **Store Internals**: SlabArena, sharded indexing, and zero-copy data paths.
+- **Storage**: WAL, Snapshots, S3/GCS offloading, and tiered storage.
+- **Data Lifecycle**: Tombstones, compaction, TTL, LRU eviction.
+- **Hardware**: CUDA, Metal, TPU, SIMD acceleration matrix.
 
-### 2. [API Reference](api.md)
+### 6. [API Reference](api.md)
 
-Technical specification for the gRPC/Arrow Flight endpoints, including administrative actions and telemetry.
+Technical specification for the Arrow Flight endpoints:
 
-### 3. [Diagnostics & Metrics](metrics.md)
+- **Data Plane**: DoPut ingestion, DoGet search, DoExchange sync.
+- **Control Plane**: Global search, admin operations, GraphRAG actions.
+- **Python SDK**: Zero-copy client with native Pandas/NumPy integration.
 
-Complete Prometheus reference for monitoring system health, TurboQuant throughput, and SIMD dispatch rates.
+### 7. [Native Tensor Calculus Engine](tensor_engine.md)
 
-### 4. [Troubleshooting & Security](troubleshooting.md)
+General-purpose tensor calculus and scientific computing engine:
 
-Common pitfalls, security best practices, and performance tuning strategies.
+- **Einstein Summation**: Multi-tensor contraction chains.
+- **Tensor Calculus**: Christoffel symbols, Riemann curvature, Ricci tensors.
+- **Hardware**: AVX2 SIMD and NVIDIA CUDA/cuBLAS kernels.
+
+### 8. [EMLGo Mathematical Engine](emlgo.md)
+
+High-performance math backend:
+
+- **Build-Tag Gated**: Compiled only with `-tags emlgo`.
+- **Hardware Assembly**: AVX2, AVX-512, and ARM NEON fastmath primitives.
+- **Tensor Acceleration**: 1.66x faster hyperbolic functions.
+- **A/B Benchmarks**: Full performance evaluation across 17 datatypes.
+
+---
+
+## Reference
+
+### 9. [Agent Memory](agentmemory.md)
+
+AI agent memory patterns: hybrid search, temporal awareness, geo-spatial queries, and session management.
+
+### 10. [Features & Competitive Landscape](features.md)
+
+Feature checklist and competitive analysis vs FAISS, Milvus, Qdrant, and Pinecone.
+
+### 11. [GraphRAG](graphrag.md)
+
+Graph RAG dual-path architecture: Knowledge Graph edges and Spreading Activation.
+
+### 12. [HNSW Tuning](hnsw.md)
+
+HNSW parameter tradeoffs, memory breakdown, and concurrency safety.
+
+### 13. [Development Guide](development.md)
+
+Contributing, architecture overview, benchmarking, and test infrastructure.
+
+### 14. [Prometheus Metrics](metrics.md)
+
+Complete metrics reference for monitoring system health.
 
 ---
 

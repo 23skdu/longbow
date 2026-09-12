@@ -5,12 +5,13 @@ Longbow supports high-performance local ML inference for embedding generation, r
 ## Runtimes Overview
 
 ### 1. ONNX Runtime
-Provides high-performance execution using native libraries. It supports CPU, CUDA (NVIDIA), and a custom **Metal** backend for Apple Silicon.
+Provides high-performance execution using native libraries. Longbow's ONNX integration is designed for zero-copy data flow and hardware acceleration.
 
 - **Best for**: Maximum performance, GPU acceleration, and production workloads on supported hardware.
-- **Backends**: 
-  - **CPU/CUDA**: Via standard ONNX Runtime shared libraries.
-  - **Metal**: A custom-built, near-native performance backend for macOS (ARM64) optimized for transformer-based models.
+- **Backends**:
+  - **Metal (Darwin/ARM64)**: Custom Metal shader backend for ultra-low latency on macOS.
+  - **CUDA (Linux)**: NVIDIA GPUs via the CUDA Execution Provider.
+  - **CPU**: Fallback to highly optimized AVX-512/NEON SIMD kernels.
 
 ### 2. WebAssembly (WASM)
 Uses the [Wazero](https://wazero.io/) runtime for sandboxed, cross-platform inference.
@@ -29,6 +30,7 @@ Enable local inference by setting the following environment variables:
 |----------|---------|-------------|
 | `LONGBOW_ML_RUNNER` | `wazero` | Set to `onnx` or `wazero` to select the runtime. |
 | `ONNX_RUNTIME_LIB_PATH` | - | Path to `libonnxruntime.dylib` or `.so` (required for ONNX CPU/CUDA). |
+| `LONGBOW_ONNX_THREADS` | (logical cores) | Number of intra-op threads for ONNX execution. |
 
 ---
 
@@ -51,7 +53,50 @@ Longbow is optimized for transformer-based models:
 
 ### Requirements
 - **Format**: `.onnx` for ONNX runtime or `.wasm` for WASM runtime.
-- **Tokenizer**: Include a `vocab.txt` file in the model directory for native tokenization.
+- **Tokenizer**: Include a `vocab.txt` file in the model directory for native tokenization. Longbow includes a built-in WordPiece tokenizer for BERT/RoBERTa/MiniLM models, removing the need for external pre-processing.
+
+### Model Management
+
+Longbow can download models directly from Hugging Face using the CLI.
+
+**Downloading a Model:**
+
+```bash
+longbow-cli download-model -repo <huggingface_repo_id> -dest <local_directory>
+```
+
+The CLI will attempt to download:
+
+- `model.onnx`: The core model graph.
+- `config.json`: Model configuration.
+- `vocab.txt`: Tokenizer vocabulary.
+
+**Recommended Model for Testing:**
+
+For users looking for a balance of speed and accuracy, we recommend:
+
+- **Model**: `sentence-transformers/all-MiniLM-L6-v2`
+- **Why**:
+  - **Small Size**: ~80MB in ONNX format.
+  - **Fast**: Optimized for CPU and edge inference.
+  - **Accurate**: State-of-the-art performance for its parameter count.
+
+```bash
+longbow-cli download-model -repo sentence-transformers/all-MiniLM-L6-v2 -dest models/all-mini
+```
+
+### Cross-Encoding for Re-ranking
+
+Longbow uses ONNX cross-encoders to refine search results. By providing a query and a set of candidate documents, Longbow can compute precise similarity scores that account for complex semantic interactions between words.
+
+```python
+from longbow import LongbowClient
+
+client = LongbowClient("grpc://localhost:3000")
+client.load_model("models/cross-encoder", mode="cross-encoder")
+
+results = client.search("my-dataset", query="How does vector sharding work?", rerank=True)
+```
 
 ### Performance Tuning (ONNX/Metal)
 - **Batching**: Supported for both scoring and embeddings. Larger batches improve throughput but increase latency.

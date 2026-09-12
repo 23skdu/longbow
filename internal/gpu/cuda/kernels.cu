@@ -1580,7 +1580,169 @@ __global__ void hnsw_prune_neighbors_kernel(
     *selectedCount = (uint32_t)count;
 }
 
+// Part 3: TurboQuant HNSW Greedy Descent Kernel
+// Uses 32 threads (1 warp) per block. Each iteration: expand neighbors of current node,
+// compute TQ distances in parallel (lane-stride), reduce via warp shuffle, move if improved.
+// Matches Metal hnsw_greedy_search_tq semantics.
+// Uses paged TQ data layout (page_ptrs + page_starts) for compatibility with GPU pager.
+__global__ void turboquant_greedy_descent_kernel(
+    const float* query,
+    const float** page_ptrs,
+    const int* page_starts,
+    const uint32_t* graphOffsets,
+    const uint32_t* graphNeighbors,
+    uint32_t* entryPoint,
+    float* entryDist,
+    int dim,
+    int pow2,
+    int bitsPerAngle,
+    int totalVecs,
+    int numPages
+) {
+    // Only 1 thread block, 32 threads
+    int lane = threadIdx.x;
+
+    uint32_t currId = *entryPoint;
+    float currDist = *entryDist;
+
+    // TQ layout constants
+    int angleCount = pow2 - 1;
+    int angleBytes = (angleCount * bitsPerAngle + 7) / 8;
+    int rawStride = 4 + angleBytes + ((pow2 + 7) / 8);
+    int stride = (rawStride + 31) & ~31;
+
+    const float* lut = (bitsPerAngle <= 4) ? tq_lut_4 : tq_lut_8;
+
+    // Shared memory for per-lane results
+    __shared__ float s_bestDist[32];
+    __shared__ uint32_t s_bestId[32];
+
+    bool improved = true;
+    while (improved) {
+        uint32_t start = graphOffsets[currId];
+        uint32_t end = graphOffsets[currId + 1];
+        uint32_t numNeighbors = end - start;
+
+        uint32_t bestId = currId;
+        float bestDist = currDist;
+
+        // Each lane processes a strided subset of neighbors
+        for (uint32_t i = lane; i < numNeighbors; i += 32) {
+            uint32_t neighborId = graphNeighbors[start + i];
+            if (neighborId >= (uint32_t)totalVecs) continue;
+
+            // Find which page this neighbor belongs to via binary search
+            int lo = 0, hi = numPages;
+            while (lo < hi) {
+                int mid = (lo + hi) / 2;
+                if (page_starts[mid + 1] <= (int)neighborId) lo = mid + 1;
+                else hi = mid;
+            }
+            int page = lo;
+            int localId = (int)neighborId - page_starts[page];
+            const unsigned char* data = (const unsigned char*)page_ptrs[page] + (size_t)localId * stride;
+
+            // --- Fused TQ distance reconstruction ---
+            float radius = *(const float*)data;
+            const unsigned char* packedAngles = data + 4;
+            const unsigned char* qjlBits = data + 4 + angleBytes;
+
+            float correctionFactor = radius / sqrtf((float)pow2) * 0.1f;
+
+            float work[256];
+            if (pow2 > 256) return;
+
+            float normSq = 0.0f;
+            for (int k = 0; k < pow2; k++) {
+                float q_k = (k < dim) ? query[k] : 0.0f;
+                float c_k = ((qjlBits[k / 8] >> (k % 8)) & 1) ? correctionFactor : -correctionFactor;
+                work[k] = q_k - c_k;
+                normSq += (q_k - c_k) * (q_k - c_k);
+            }
+
+            // Butterfly reconstruction
+            uint32_t currentLevelSize = pow2;
+            uint32_t angleOffset = 0;
+            while (currentLevelSize > 1) {
+                uint32_t nextLevelSize = currentLevelSize / 2;
+                for (uint32_t k = 0; k < nextLevelSize; k++) {
+                    uint32_t bitStart = (angleOffset + k) * bitsPerAngle;
+                    uint32_t q = 0;
+                    for (int b = 0; b < bitsPerAngle; b++) {
+                        uint32_t bitIdx = bitStart + b;
+                        if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1)
+                            q |= (1 << b);
+                    }
+                    float c = lut[2 * q];
+                    float s = lut[2 * q + 1];
+                    work[k] = work[2*k] * c + work[2*k+1] * s;
+                }
+                angleOffset += nextLevelSize;
+                currentLevelSize = nextLevelSize;
+            }
+
+            float distSq = normSq + radius * radius - 2.0f * radius * work[0];
+            float dist = sqrtf(fmaxf(0.0f, distSq));
+
+            if (dist < bestDist) {
+                bestDist = dist;
+                bestId = neighborId;
+            }
+        }
+
+        // Warp reduction to find global best across all 32 lanes
+        s_bestDist[lane] = bestDist;
+        s_bestId[lane] = bestId;
+        __syncthreads();
+
+        if (lane == 0) {
+            for (int i = 1; i < 32; i++) {
+                if (s_bestDist[i] < bestDist) {
+                    bestDist = s_bestDist[i];
+                    bestId = s_bestId[i];
+                }
+            }
+            if (bestDist < currDist) {
+                currDist = bestDist;
+                currId = bestId;
+                improved = true;
+            } else {
+                improved = false;
+            }
+        }
+        __syncthreads();
+    }
+
+    if (lane == 0) {
+        *entryPoint = currId;
+        *entryDist = currDist;
+    }
+}
+
 extern "C" {
+
+void launch_turboquant_greedy_descent_kernel(
+    const float* query,
+    const float** page_ptrs,
+    const int* page_starts,
+    const uint32_t* graphOffsets,
+    const uint32_t* graphNeighbors,
+    uint32_t* entryPoint,
+    float* entryDist,
+    int dim,
+    int pow2,
+    int bitsPerAngle,
+    int totalVecs,
+    int numPages,
+    cudaStream_t stream
+) {
+    // 1 block, 32 threads (1 warp)
+    turboquant_greedy_descent_kernel<<<1, 32, 0, stream>>>(
+        query, page_ptrs, page_starts, graphOffsets, graphNeighbors,
+        entryPoint, entryDist, dim, pow2, bitsPerAngle, totalVecs, numPages
+    );
+}
+
 void launch_hnsw_prune_neighbors_kernel(
     const uint32_t* candidateIds,
     const float* candidateDists,

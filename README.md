@@ -202,10 +202,9 @@ docker run -p 3000:3000 -p 3001:3001 -p 9090:9090 longbow
 
 ## Documentation
 
-- [Distance Metrics & Functions](docs/functions.md)
+- [API Reference](docs/api.md)
 - [Deployment & Configuration](docs/deploy.md)
 - [Performance Benchmarks](docs/performance.md)
-- [Persistence & Snapshots](docs/persistence.md)
+- [Systems Architecture](docs/architecture.md)
 - [Vector Search Architecture](docs/vectorsearch.md)
-- [Troubleshooting Guide](docs/troubleshooting.md)
 - [Metrics Documentation](docs/metrics.md)

@@ -59,6 +59,7 @@ void launch_graph_bfs_expand_kernel(const uint32_t* frontier, int frontierSize, 
 void launch_graph_activation_propagate_kernel(const float* activations, float* newActivations, const uint32_t* frontier, int frontierSize, const uint32_t* offsets, const uint32_t* neighbors, const float* weights, float alpha, cudaStream_t stream);
 void launch_haversine_distance_kernel(const float* center, const float* points, float* distances, float earthRadius, int count, cudaStream_t stream);
 void launch_l2_squared_kernel(const float* vectors, float* results, int dimensions, int count, cudaStream_t stream);
+void launch_turboquant_greedy_descent_kernel(const float* query, const float** page_ptrs, const int* page_starts, const uint32_t* graphOffsets, const uint32_t* graphNeighbors, uint32_t* entryPoint, float* entryDist, int dim, int pow2, int bitsPerAngle, int totalVecs, int numPages, cudaStream_t stream);
 
 // K-Means Training Kernels
 void launch_assign_to_clusters(const float* vectors, const float* centroids, uint32_t* assignments, int dim, int numVectors, int numCentroids, cudaStream_t stream);
@@ -2220,7 +2221,152 @@ func (idx *CUDAIndex) SearchGreedy(query []float32, entryPoint uint32, entryDist
 		return 0, 0, fmt.Errorf("index is closed")
 	}
 
-	// For CUDA, we don't have a greedy search kernel yet, so we return the entry point.
-	// This is consistent with the CPU fallback behavior in other indices.
-	return entryPoint, entryDist, nil
+	if idx.handle == nil || idx.handle.graphOffsets == nil {
+		return entryPoint, entryDist, nil
+	}
+	if idx.pager == nil {
+		return entryPoint, entryDist, nil
+	}
+	if len(query) != idx.dim {
+		return 0, 0, fmt.Errorf("query dimension %d does not match index dimension %d", len(query), idx.dim)
+	}
+
+	pow2 := 1
+	for pow2 < idx.dim {
+		pow2 <<= 1
+	}
+
+	// Part 4: Use explicit CUDA stream
+	var cStream C.cudaStream_t
+	if idx.handle != nil {
+		cStream = idx.handle.streams[0]
+	}
+
+	// Upload query to GPU
+	dQuery, err := idx.allocGPUMem(int64(idx.dim * 4))
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to allocate query GPU memory: %w", err)
+	}
+	defer idx.freeGPUMem(dQuery)
+	C.cudaMemcpy(dQuery, unsafe.Pointer(&query[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
+
+	// Collect resident TQ pages
+	n := idx.vectorCount
+	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
+
+	type pageEntry struct {
+		ptr   unsafe.Pointer
+		nvecs int
+	}
+	pages := make([]pageEntry, 0, numChunks)
+	var pinnedPages []*memory.PageInfo
+	defer func() {
+		for _, pi := range pinnedPages {
+			idx.pager.Unpin(pi)
+		}
+	}()
+
+	for chunk := 0; chunk < numChunks; chunk++ {
+		pid := idx.pageIDFor(3, chunk)
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			continue
+		}
+		if err := idx.pager.Promote(pi); err != nil {
+			continue
+		}
+		idx.pager.Pin(pi)
+		pinnedPages = append(pinnedPages, pi)
+		gpuPtr := idx.pager.GetGPUAddr(pi)
+		if gpuPtr == nil {
+			continue
+		}
+		vecsInChunk := n - chunk*vectorsPerPage
+		if vecsInChunk > vectorsPerPage {
+			vecsInChunk = vectorsPerPage
+		}
+		pages = append(pages, pageEntry{ptr: gpuPtr, nvecs: vecsInChunk})
+	}
+
+	if len(pages) == 0 {
+		return entryPoint, entryDist, nil
+	}
+
+	numPages := len(pages)
+	hPageStarts := make([]C.int, numPages+1)
+	hPagePtrs := make([]unsafe.Pointer, numPages)
+	for i, p := range pages {
+		hPagePtrs[i] = p.ptr
+		hPageStarts[i+1] = hPageStarts[i] + C.int(p.nvecs)
+	}
+	totalVecs := int(hPageStarts[numPages])
+
+	// Upload page pointers and page starts to GPU
+	dPagePtrs, err := idx.allocGPUMem(int64(numPages) * int64(unsafe.Sizeof(hPagePtrs[0])))
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to allocate page pointers: %w", err)
+	}
+	defer idx.freeGPUMem(dPagePtrs)
+	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
+
+	dPageStarts, err := idx.allocGPUMem(int64((numPages + 1) * 4))
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to allocate page starts: %w", err)
+	}
+	defer idx.freeGPUMem(dPageStarts)
+	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
+
+	// Allocate device-side entry point and distance
+	dEntryPoint, err := idx.allocGPUMem(4)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to allocate entry point: %w", err)
+	}
+	defer idx.freeGPUMem(dEntryPoint)
+	ep := entryPoint
+	C.cudaMemcpy(dEntryPoint, unsafe.Pointer(&ep), 4, C.cudaMemcpyHostToDevice)
+
+	dEntryDist, err := idx.allocGPUMem(4)
+	if err != nil {
+		return 0, 0, fmt.Errorf("failed to allocate entry dist: %w", err)
+	}
+	defer idx.freeGPUMem(dEntryDist)
+	ed := entryDist
+	C.cudaMemcpy(dEntryDist, unsafe.Pointer(&ed), 4, C.cudaMemcpyHostToDevice)
+
+	// Launch greedy descent kernel
+	start := time.Now()
+	C.launch_turboquant_greedy_descent_kernel(
+		(*C.float)(dQuery),
+		(**C.float)(dPagePtrs),
+		(*C.int)(dPageStarts),
+		(*C.uint32_t)(idx.handle.graphOffsets),
+		(*C.uint32_t)(idx.handle.graphNeighbors),
+		(*C.uint32_t)(dEntryPoint),
+		(*C.float)(dEntryDist),
+		C.int(idx.dim),
+		C.int(pow2),
+		C.int(idx.tqBitsAngle),
+		C.int(totalVecs),
+		C.int(numPages),
+		cStream,
+	)
+
+	if err := GetLastError(); err != nil {
+		return 0, 0, fmt.Errorf("greedy descent kernel launch failed: %w", err)
+	}
+
+	// Read back results
+	var resultEP uint32
+	var resultDist float32
+	C.cudaMemcpy(unsafe.Pointer(&resultEP), dEntryPoint, 4, C.cudaMemcpyDeviceToHost)
+	C.cudaMemcpy(unsafe.Pointer(&resultDist), dEntryDist, 4, C.cudaMemcpyDeviceToHost)
+
+	metrics.RecordGPUSearch(time.Since(start), "cuda_tq_greedy", 1)
+
+	// Convert local vector index to global ID
+	if int(resultEP) < len(idx.idList) {
+		resultEP = uint32(idx.idList[resultEP])
+	}
+
+	return resultEP, resultDist, nil
 }

@@ -25,6 +25,26 @@ const (
 
 var currentBackend int32 = int32(BackendEML)
 
+// Part 7: float64 exclusion flag — when set, float64 batch operations use standard math.
+// This reduces memory pressure from emlgo's float64 SIMD kernels at large scale.
+var float64Excluded int32
+
+// SetFloat64Exclusion enables or disables emlgo for float64 batch operations.
+// When excluded, float64 batch ops fall back to standard math loops, reducing
+// binary memory footprint from emlgo assembly at large vector counts.
+func SetFloat64Excluded(excluded bool) {
+	if excluded {
+		atomic.StoreInt32(&float64Excluded, 1)
+	} else {
+		atomic.StoreInt32(&float64Excluded, 0)
+	}
+}
+
+// IsFloat64Excluded returns true if emlgo is excluded for float64 operations.
+func IsFloat64Excluded() bool {
+	return atomic.LoadInt32(&float64Excluded) != 0
+}
+
 // SetBackend changes the active math backend globally.
 func SetBackend(b Backend) {
 	atomic.StoreInt32(&currentBackend, int32(b))
@@ -162,7 +182,7 @@ func Atan(x float64) float64 {
 
 // ExpBatch computes element-wise exp for float64 slices.
 func ExpBatch(x []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return logexp.ExpBatch(x)
 	}
 	res := make([]float64, len(x))
@@ -174,7 +194,7 @@ func ExpBatch(x []float64) []float64 {
 
 // LogBatch computes element-wise natural log for float64 slices.
 func LogBatch(x []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return logexp.LogBatch(x)
 	}
 	res := make([]float64, len(x))
@@ -186,7 +206,7 @@ func LogBatch(x []float64) []float64 {
 
 // SinBatch computes element-wise sin for float64 slices.
 func SinBatch(x []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return trig.SinBatch(x)
 	}
 	res := make([]float64, len(x))
@@ -198,7 +218,7 @@ func SinBatch(x []float64) []float64 {
 
 // CosBatch computes element-wise cos for float64 slices.
 func CosBatch(x []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return trig.CosBatch(x)
 	}
 	res := make([]float64, len(x))
@@ -210,7 +230,7 @@ func CosBatch(x []float64) []float64 {
 
 // TanBatch computes element-wise tan for float64 slices.
 func TanBatch(x []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return trig.TanBatch(x)
 	}
 	res := make([]float64, len(x))
@@ -222,7 +242,7 @@ func TanBatch(x []float64) []float64 {
 
 // SinhBatch computes element-wise sinh for float64 slices.
 func SinhBatch(x []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return hyper.SinhBatch(x)
 	}
 	res := make([]float64, len(x))
@@ -234,7 +254,7 @@ func SinhBatch(x []float64) []float64 {
 
 // CoshBatch computes element-wise cosh for float64 slices.
 func CoshBatch(x []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return hyper.CoshBatch(x)
 	}
 	res := make([]float64, len(x))
@@ -246,7 +266,7 @@ func CoshBatch(x []float64) []float64 {
 
 // TanhBatch computes element-wise tanh for float64 slices.
 func TanhBatch(x []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return hyper.TanhBatch(x)
 	}
 	res := make([]float64, len(x))
@@ -259,7 +279,7 @@ func TanhBatch(x []float64) []float64 {
 // SqrtBatch computes element-wise sqrt for float64 slices.
 func SqrtBatch(x []float64) []float64 {
 	res := make([]float64, len(x))
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		for i, v := range x {
 			res[i] = fastmath.Sqrt(v)
 		}
@@ -273,7 +293,7 @@ func SqrtBatch(x []float64) []float64 {
 
 // AddBatch computes element-wise a + b for float64 slices.
 func AddBatch(a, b []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return arithmetic.AddBatch(a, b)
 	}
 	n := min(len(a), len(b))
@@ -286,7 +306,7 @@ func AddBatch(a, b []float64) []float64 {
 
 // SubBatch computes element-wise a - b for float64 slices.
 func SubBatch(a, b []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return arithmetic.SubBatch(a, b)
 	}
 	n := min(len(a), len(b))
@@ -299,7 +319,7 @@ func SubBatch(a, b []float64) []float64 {
 
 // MulBatch computes element-wise a * b for float64 slices.
 func MulBatch(a, b []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return arithmetic.MulBatch(a, b)
 	}
 	n := min(len(a), len(b))
@@ -312,7 +332,7 @@ func MulBatch(a, b []float64) []float64 {
 
 // DivBatch computes element-wise a / b for float64 slices.
 func DivBatch(a, b []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return arithmetic.DivBatch(a, b)
 	}
 	n := min(len(a), len(b))
@@ -325,7 +345,7 @@ func DivBatch(a, b []float64) []float64 {
 
 // NegBatch computes element-wise -x for float64 slices.
 func NegBatch(x []float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return arithmetic.NegBatch(x)
 	}
 	res := make([]float64, len(x))
@@ -337,7 +357,7 @@ func NegBatch(x []float64) []float64 {
 
 // PowBatch computes element-wise x^y for float64 slices.
 func PowBatch(x []float64, y float64) []float64 {
-	if IsEML() {
+	if IsEML() && !IsFloat64Excluded() {
 		return arithmetic.PowBatch(x, y)
 	}
 	res := make([]float64, len(x))

@@ -726,8 +726,70 @@ __global__ void turboquant_distance_kernel(const float* query, const unsigned ch
     distances[idx] = sqrtf(sum);
 }
 
+// Part 2: TurboQuant sin/cos lookup tables in __constant__ memory
+// Supports bitsPerAngle=4 (16 entries) and bitsPerAngle=8 (256 entries)
+// Each entry stores [cos, sin] pair
+__constant__ float tq_lut_4[32];   // 16 entries * 2
+__constant__ float tq_lut_8[512];  // 256 entries * 2
+
+// Initialize lookup tables (called once from host before first kernel launch)
+void init_tq_lookup_tables() {
+    float h_lut4[32];
+    for (int i = 0; i < 16; i++) {
+        float theta = (float(i) / 15.0f) * 2.0f * 3.14159265f - 3.14159265f;
+        h_lut4[2*i]   = cosf(theta);
+        h_lut4[2*i+1] = sinf(theta);
+    }
+    cudaMemcpyToSymbol(tq_lut_4, h_lut4, sizeof(h_lut4));
+
+    float h_lut8[512];
+    for (int i = 0; i < 256; i++) {
+        float theta = (float(i) / 255.0f) * 2.0f * 3.14159265f - 3.14159265f;
+        h_lut8[2*i]   = cosf(theta);
+        h_lut8[2*i+1] = sinf(theta);
+    }
+    cudaMemcpyToSymbol(tq_lut_8, h_lut8, sizeof(h_lut8));
+}
+
+// Part 2: Device helper — reconstruct TQ vector using lookup tables instead of sincosf
+// Each block calls this once from thread 0 to fill s_recon[].
+__device__ void tq_reconstruct_with_lut(
+    float* s_recon, const unsigned char* packedAngles,
+    int angleCount, int pow2, int bitsPerAngle
+) {
+    s_recon[0] = 1.0f; // radius multiplier (radius applied later in QJL correction)
+    int currentLevelSize = 1;
+    int angleOffset = angleCount;
+
+    // Select lookup table based on bitsPerAngle
+    const float* lut = (bitsPerAngle <= 4) ? tq_lut_4 : tq_lut_8;
+    int maxIdx = (1 << bitsPerAngle) - 1;
+
+    while (currentLevelSize < pow2) {
+        angleOffset -= currentLevelSize;
+        for (int i = currentLevelSize - 1; i >= 0; i--) {
+            float r = s_recon[i];
+            int bitStart = (angleOffset + i) * bitsPerAngle;
+            unsigned int q = 0;
+            for (int k = 0; k < bitsPerAngle; k++) {
+                int bitIdx = bitStart + k;
+                if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1) {
+                    q |= (1 << k);
+                }
+            }
+            // Table lookup instead of sincosf
+            float c = lut[2 * q];
+            float s = lut[2 * q + 1];
+            s_recon[2 * i]     = r * c;
+            s_recon[2 * i + 1] = r * s;
+        }
+        currentLevelSize *= 2;
+    }
+}
+
 // TurboQuant Distance Kernel v2 (per-block reconstruction with __shared__ buffer, no per-thread stack overflow)
 // Each block processes one vector; reconstruction buffer lives in shared memory.
+// Part 2: Uses pre-computed sin/cos lookup tables instead of sincosf.
 __global__ void turboquant_distance_kernel_v2(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count) {
     extern __shared__ float s_recon[];
 
@@ -736,40 +798,18 @@ __global__ void turboquant_distance_kernel_v2(const float* query, const unsigned
 
     int angleCount = pow2 - 1;
     int angleBytes = (angleCount * bitsPerAngle + 7) / 8;
+    // Part 5: 32-byte warp-aligned stride
     int rawStride = 4 + angleBytes + ((pow2 + 7) / 8);
-    int stride = (rawStride + 3) & ~3;
+    int stride = (rawStride + 31) & ~31;
 
     const unsigned char* data = tqData + (vec_idx * stride);
     float radius = *(const float*)data;
     const unsigned char* packedAngles = data + 4;
     const unsigned char* qjlBits = data + 4 + angleBytes;
 
-    // Single thread handles the hierarchical reconstruction (sequential dependency chain)
+    // Part 2: Use lookup tables for reconstruction
     if (threadIdx.x == 0) {
-        s_recon[0] = radius;
-        int currentLevelSize = 1;
-        int angleOffset = angleCount;
-
-        while (currentLevelSize < pow2) {
-            angleOffset -= currentLevelSize;
-            for (int i = currentLevelSize - 1; i >= 0; i--) {
-                float r = s_recon[i];
-                int bitStart = (angleOffset + i) * bitsPerAngle;
-                unsigned int q = 0;
-                for (int k = 0; k < bitsPerAngle; k++) {
-                    int bitIdx = bitStart + k;
-                    if ((packedAngles[bitIdx / 8] >> (bitIdx % 8)) & 1) {
-                        q |= (1 << k);
-                    }
-                }
-                float theta = (float(q) / ((1 << bitsPerAngle) - 1)) * 2.0f * 3.14159265f - 3.14159265f;
-                float s, c;
-                sincosf(theta, &s, &c);
-                s_recon[2 * i] = r * c;
-                s_recon[2 * i + 1] = r * s;
-            }
-            currentLevelSize *= 2;
-        }
+        tq_reconstruct_with_lut(s_recon, packedAngles, angleCount, pow2, bitsPerAngle);
     }
     __syncthreads();
 
@@ -782,7 +822,7 @@ __global__ void turboquant_distance_kernel_v2(const float* query, const unsigned
     float correctionFactor = radius / sqrtf((float)pow2) * 0.1f;
 
     for (int d = lane_id; d < dim; d += WARP_SZ) {
-        float val = s_recon[d];
+        float val = s_recon[d] * radius;
         if ((qjlBits[d / 8] >> (d % 8)) & 1) {
             val += correctionFactor;
         } else {
@@ -808,6 +848,84 @@ __global__ void turboquant_distance_kernel_v2(const float* query, const unsigned
             total += warp_sums[w];
         }
         distances[vec_idx] = sqrtf(total);
+    }
+}
+
+// Part 1: Batched TurboQuant Distance Kernel v2
+// Processes vectors from multiple pages in a single kernel launch.
+// Each block processes one vector. Uses binary search to find the page,
+// then reconstructs TQ vector using lookup tables (Part 2).
+__global__ void turboquant_distance_kernel_v2_batched(
+    const float** page_ptrs, const int* page_starts,
+    const float* query, float* distances,
+    int dim, int pow2, int bitsPerAngle, int num_pages
+) {
+    extern __shared__ float s_recon_tq[];
+
+    int warp_id = threadIdx.x / WARP_SZ;
+    int lane_id = threadIdx.x % WARP_SZ;
+    int warps_per_block = blockDim.x / WARP_SZ;
+    int global_vec = blockIdx.x * warps_per_block + warp_id;
+
+    int total_count = page_starts[num_pages];
+    if (global_vec >= total_count) return;
+
+    // Binary search to find which page this vector belongs to
+    int lo = 0, hi = num_pages;
+    while (lo < hi) {
+        int mid = (lo + hi) / 2;
+        if (global_vec < page_starts[mid]) hi = mid;
+        else lo = mid + 1;
+    }
+    int page = lo - 1;
+    int local_vec = global_vec - page_starts[page];
+
+    // Compute TQ stride (Part 5: 32-byte aligned)
+    int angleCount = pow2 - 1;
+    int angleBytes = (angleCount * bitsPerAngle + 7) / 8;
+    int rawStride = 4 + angleBytes + ((pow2 + 7) / 8);
+    int stride = (rawStride + 31) & ~31;
+
+    // Each block's thread 0 reconstructs the TQ vector into shared memory
+    if (threadIdx.x == 0) {
+        const unsigned char* data = (const unsigned char*)page_ptrs[page] + (int64_t)local_vec * stride;
+        float radius = *(const float*)data;
+        const unsigned char* packedAngles = data + 4;
+
+        tq_reconstruct_with_lut(s_recon_tq, packedAngles, angleCount, pow2, bitsPerAngle);
+
+        // Apply radius scaling to reconstructed values
+        for (int i = 0; i < dim; i++) {
+            s_recon_tq[i] *= radius;
+        }
+    }
+    __syncthreads();
+
+    // Read QJL bits and compute distance
+    const unsigned char* data = (const unsigned char*)page_ptrs[page] + (int64_t)local_vec * stride;
+    float radius = *(const float*)data;
+    const unsigned char* qjlBits = data + 4 + angleBytes;
+
+    float sum = 0.0f;
+    float correctionFactor = radius / sqrtf((float)pow2) * 0.1f;
+
+    for (int d = lane_id; d < dim; d += WARP_SZ) {
+        float val = s_recon_tq[d];
+        if ((qjlBits[d / 8] >> (d % 8)) & 1) {
+            val += correctionFactor;
+        } else {
+            val -= correctionFactor;
+        }
+        float diff = query[d] - val;
+        sum += diff * diff;
+    }
+
+    for (int offset = WARP_SZ / 2; offset > 0; offset >>= 1) {
+        sum += __shfl_xor_sync(0xffffffff, sum, offset);
+    }
+
+    if (lane_id == 0) {
+        distances[global_vec] = sqrtf(sum);
     }
 }
 
@@ -861,6 +979,31 @@ void launch_turboquant_distance_kernel_v2(const float* query, const unsigned cha
     }
 
     turboquant_distance_kernel_v2<<<blocks, threads, shared_mem, stream>>>(query, tqData, distances, dim, pow2, bitsPerAngle, count);
+}
+
+// Part 1: Batched launcher for turboquant_distance_kernel_v2_batched
+// Processes all pages in a single kernel launch, analogous to l2_distance_kernel_v2_batched.
+void launch_turboquant_distance_kernel_v2_batched(
+    const float** page_ptrs, const int* page_starts,
+    const float* query, float* distances,
+    int dim, int pow2, int bitsPerAngle, int total_count, int num_pages,
+    cudaStream_t stream
+) {
+    int warps_per_block = 8;
+    int vecs_per_block = warps_per_block;
+    int blocks = (total_count + vecs_per_block - 1) / vecs_per_block;
+    // Shared memory: reconstruction buffer (pow2 floats)
+    size_t shared_mem = pow2 * sizeof(float);
+
+    int max_smem = 0;
+    cudaDeviceGetAttribute(&max_smem, cudaDevAttrMaxSharedMemoryPerBlock, 0);
+    if (max_smem > 0 && (int)shared_mem > max_smem) {
+        return;
+    }
+
+    turboquant_distance_kernel_v2_batched<<<blocks, warps_per_block * WARP_SZ, shared_mem, stream>>>(
+        page_ptrs, page_starts, query, distances, dim, pow2, bitsPerAngle, num_pages
+    );
 }
 
 void launch_topk_kernel(const float* distances, const int64_t* ids, int n, int k, float* outDistances, int64_t* outIDs, cudaStream_t stream) {

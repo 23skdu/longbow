@@ -28,6 +28,7 @@ import (
 	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
 	lbmem "github.com/23skdu/longbow/internal/memory"
+	"github.com/23skdu/longbow/internal/mathutil"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/middleware"
@@ -396,6 +397,12 @@ func run() error {
 	// Initialize tensor math dispatch: use hardware-accelerated math
 	// when a SIMD implementation was detected.
 	tensor.InitMathDispatch(simd.GetImplementation() != "generic")
+
+	// Part 7: Support LONGBOW_FLOAT64_EXCLUDE_EMLGO env var to disable emlgo for float64 batch ops
+	if os.Getenv("LONGBOW_FLOAT64_EXCLUDE_EMLGO") == "true" {
+		mathutil.SetFloat64Excluded(true)
+		logger.Info().Msg("emlgo excluded for float64 batch operations (LONGBOW_FLOAT64_EXCLUDE_EMLGO=true)")
+	}
 
 	// Configure GPU acceleration
 	if cfg.GPUEnabled {

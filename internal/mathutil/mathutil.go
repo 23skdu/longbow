@@ -19,6 +19,10 @@ const (
 
 var currentBackend int32 = int32(BackendStandard)
 
+// Part 7: float64 exclusion stub — no-op without emlgo build tag
+func SetFloat64Excluded(excluded bool) {}
+func IsFloat64Excluded() bool          { return false }
+
 // SetBackend changes the active math backend globally.
 // Without the "emlgo" build tag, switching to BackendEML is a no-op.
 func SetBackend(b Backend) {

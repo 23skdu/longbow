@@ -283,6 +283,7 @@ func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 
 // PackedSize calculates the total byte size required to store a TurboQuant-encoded vector
 // for the given logical dimension, including power-of-2 padding and bit-packing overhead.
+// Part 5: Pads to 32-byte warp-aligned boundaries for coalesced GPU memory access.
 func PackedSize(dims int, bitsPerAngle int) int {
 	if dims <= 0 {
 		return 0
@@ -291,7 +292,7 @@ func PackedSize(dims int, bitsPerAngle int) int {
 	angleBytes := ((p2-1)*bitsPerAngle + 7) / 8
 	bitBytes := (p2 + 7) / 8
 	size := 4 + angleBytes + bitBytes
-	return (size + 3) &^ 3 // Pad to 4 bytes for GPU alignment
+	return (size + 31) &^ 31 // Part 5: Pad to 32 bytes for GPU warp alignment
 }
 
 // PackedSize returns the stride needed for this encoder's configuration.

@@ -7,7 +7,7 @@
 package cuda
 
 /*
-#cgo LDFLAGS: -lcudart -lcublas -lm ${SRCDIR}/kernels.o
+#cgo LDFLAGS: -lcudart -lcublas -Wl,--no-as-needed -lm -Wl,--as-needed ${SRCDIR}/kernels.o
 #include <cuda_runtime.h>
 #include <cublas_v2.h>
 #include <stdlib.h>
@@ -48,6 +48,8 @@ void launch_dot_distance_fp16_kernel(const uint16_t* vectors, const uint16_t* qu
 void launch_pq_distance_kernel(const float* lookupTable, const unsigned char* codes, float* distances, int m, int count, cudaStream_t stream);
 void launch_turboquant_distance_kernel(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count, cudaStream_t stream);
 void launch_turboquant_distance_kernel_v2(const float* query, const unsigned char* tqData, float* distances, int dim, int pow2, int bitsPerAngle, int count, cudaStream_t stream);
+void launch_turboquant_distance_kernel_v2_batched(const float** page_ptrs, const int* page_starts, const float* query, float* distances, int dim, int pow2, int bitsPerAngle, int total_count, int num_pages, cudaStream_t stream);
+void init_tq_lookup_tables();
 void launch_l2_distance_filtered_kernel(const float* vectors, const float* query, float* distances, const unsigned long long* bitset, int dimensions, int count, cudaStream_t stream);
 void launch_topk_kernel(const float* distances, const int64_t* ids, int n, int k, float* outDistances, int64_t* outIDs, cudaStream_t stream);
 int cuda_add_vectors_pq(CUDAIndexHandle* handle, unsigned char* h_codes, int64_t* h_ids, int count, int m);
@@ -83,6 +85,9 @@ CUDAIndexHandle* cuda_init(int dimensions) {
 
     cudaStreamCreate(&handle->streams[0]);
     cudaStreamCreate(&handle->streams[1]);
+
+    // Part 2: Initialize TQ sin/cos lookup tables
+    init_tq_lookup_tables();
 
     return handle;
 }
@@ -1238,6 +1243,12 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 
 	start := time.Now()
 
+	// Part 4: Use explicit CUDA stream instead of nil
+	var cStream C.cudaStream_t
+	if idx.handle != nil {
+		cStream = idx.handle.streams[0]
+	}
+
 	// Upload query to GPU
 	dQuery, err := idx.allocGPUMem(int64(idx.dim * 4))
 	if err != nil {
@@ -1246,21 +1257,14 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 	defer idx.freeGPUMem(dQuery)
 	C.cudaMemcpy(dQuery, unsafe.Pointer(&vector[0]), C.size_t(idx.dim*4), C.cudaMemcpyHostToDevice)
 
-	// Per-page distance buffer
-	dPageDists, err := idx.allocGPUMem(int64(vectorsPerPage * 4))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to allocate per-page distance buffer: %w", err)
-	}
-	defer idx.freeGPUMem(dPageDists)
-
 	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
-	type scored struct {
-		dist float32
-		pos  int
-	}
-	all := make([]scored, 0, n)
-	hPageDists := make([]float32, vectorsPerPage)
 
+	// Collect resident pages (same pattern as FP32 Search)
+	type pageEntry struct {
+		ptr    unsafe.Pointer
+		nvecs  int
+	}
+	pages := make([]pageEntry, 0, numChunks)
 	var pinnedPages []*memory.PageInfo
 	defer func() {
 		for _, pi := range pinnedPages {
@@ -1283,43 +1287,82 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 		if gpuPtr == nil {
 			continue
 		}
-
 		vecsInChunk := n - chunk*vectorsPerPage
 		if vecsInChunk > vectorsPerPage {
 			vecsInChunk = vectorsPerPage
 		}
-
-		C.launch_turboquant_distance_kernel_v2(
-			(*C.float)(dQuery),
-			(*C.uchar)(gpuPtr),
-			(*C.float)(dPageDists),
-			C.int(idx.dim),
-			C.int(pow2),
-			C.int(bitsPerAngle),
-			C.int(vecsInChunk),
-			nil,
-		)
-
-		if err := GetLastError(); err != nil {
-			return nil, nil, fmt.Errorf("TQ kernel launch failed (dim=%d pow2=%d): %w", idx.dim, pow2, err)
-		}
-
-		hPageDists = hPageDists[:vecsInChunk]
-		C.cudaMemcpy(
-			unsafe.Pointer(&hPageDists[0]),
-			dPageDists,
-			C.size_t(vecsInChunk*4),
-			C.cudaMemcpyDeviceToHost,
-		)
-
-		base := chunk * vectorsPerPage
-		for i, d := range hPageDists {
-			all = append(all, scored{dist: d, pos: base + i})
-		}
+		pages = append(pages, pageEntry{ptr: gpuPtr, nvecs: vecsInChunk})
 	}
 
-	if len(all) == 0 {
+	if len(pages) == 0 {
 		return nil, nil, fmt.Errorf("no resident TQ pages available")
+	}
+
+	numPages := len(pages)
+	hPageStarts := make([]C.int, numPages+1)
+	hPagePtrs := make([]unsafe.Pointer, numPages)
+	for i, p := range pages {
+		hPagePtrs[i] = p.ptr
+		hPageStarts[i+1] = hPageStarts[i] + C.int(p.nvecs)
+	}
+	totalVecs := int(hPageStarts[numPages])
+
+	// Allocate single output buffer for all vectors
+	dAllDists, err := idx.allocGPUMem(int64(totalVecs * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate distance buffer: %w", err)
+	}
+	defer idx.freeGPUMem(dAllDists)
+
+	// Allocate device-side arrays for batched launch
+	dPagePtrs, err := idx.allocGPUMem(int64(numPages) * int64(unsafe.Sizeof(hPagePtrs[0])))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate page pointers buffer: %w", err)
+	}
+	defer idx.freeGPUMem(dPagePtrs)
+	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
+
+	dPageStarts, err := idx.allocGPUMem(int64((numPages + 1) * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate page starts buffer: %w", err)
+	}
+	defer idx.freeGPUMem(dPageStarts)
+	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
+
+	// Part 1: Single batched kernel launch for all pages
+	C.launch_turboquant_distance_kernel_v2_batched(
+		(**C.float)(dPagePtrs),
+		(*C.int)(dPageStarts),
+		(*C.float)(dQuery),
+		(*C.float)(dAllDists),
+		C.int(idx.dim),
+		C.int(pow2),
+		C.int(bitsPerAngle),
+		C.int(totalVecs),
+		C.int(numPages),
+		cStream,
+	)
+
+	if err := GetLastError(); err != nil {
+		return nil, nil, fmt.Errorf("TQ batched kernel launch failed (dim=%d pow2=%d): %w", idx.dim, pow2, err)
+	}
+
+	// Transfer results
+	hAllDists := make([]float32, totalVecs)
+	C.cudaMemcpy(
+		unsafe.Pointer(&hAllDists[0]),
+		dAllDists,
+		C.size_t(totalVecs*4),
+		C.cudaMemcpyDeviceToHost,
+	)
+
+	type scored struct {
+		dist float32
+		pos  int
+	}
+	all := make([]scored, 0, totalVecs)
+	for i, d := range hAllDists {
+		all = append(all, scored{dist: d, pos: i})
 	}
 
 	sort.Slice(all, func(i, j int) bool {

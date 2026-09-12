@@ -25,12 +25,12 @@ ENV GOAMD64=v3
 
 # Build longbow, longbow-cli, and bench-tool
 RUN if [ "$ENABLE_IOURING" = "true" ]; then \
-    CGO_ENABLED=1 go build -mod=vendor -tags="${BUILD_TAGS},iouring" -ldflags="-s -w -checklinkname=0" -o longbow ./cmd/longbow; \
+    CGO_ENABLED=1 go build -mod=vendor -tags="${BUILD_TAGS},iouring" -ldflags="-s -w -checklinkname=0" -buildvcs=false -o longbow ./cmd/longbow; \
 else \
-    CGO_ENABLED=0 go build -mod=vendor -tags=${BUILD_TAGS} -ldflags="-s -w" -o longbow ./cmd/longbow; \
+    CGO_ENABLED=0 go build -mod=vendor -tags=${BUILD_TAGS} -ldflags="-s -w" -buildvcs=false -o longbow ./cmd/longbow; \
 fi
-RUN CGO_ENABLED=0 go build -mod=vendor -tags=${BUILD_TAGS} -ldflags="-s -w" -o longbow-cli ./cmd/cli
-RUN CGO_ENABLED=0 go build -mod=vendor -tags=${BUILD_TAGS} -ldflags="-s -w" -o bench-tool ./cmd/bench-tool
+RUN CGO_ENABLED=0 go build -mod=vendor -tags=${BUILD_TAGS} -ldflags="-s -w" -buildvcs=false -o longbow-cli ./cmd/cli
+RUN CGO_ENABLED=0 go build -mod=vendor -tags=${BUILD_TAGS} -ldflags="-s -w" -buildvcs=false -o bench-tool ./cmd/bench-tool
 
 # -------------------------------------------------------------------
 # Stage 2: Minimal runtime

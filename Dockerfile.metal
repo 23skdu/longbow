@@ -5,18 +5,14 @@
 # The resulting binary will NOT run on Linux
 #
 # Build on macOS:
-#   docker build -f Dockerfile.metal -t longbow:metal . 
-#
-# Or build directly with Go:
-#   CGO_ENABLED=1 go build -tags gpu -o longbow ./cmd/longbow
+#   CGO_ENABLED=1 go build -tags gpu -o longbow-metal ./cmd/longbow
+#   docker build -f Dockerfile.metal -t longbow:metal .
 
 FROM debian:bookworm-slim
 
 WORKDIR /app
 
-# Metal binary would be copied here if built on macOS
 COPY bin/longbow-metal /usr/local/bin/longbow
-COPY bin/longbow-cli /usr/local/bin/longbow-cli
 COPY bin/bench-tool /usr/local/bin/bench-tool
 
 ENV LONGBOW_GPU_ENABLED=true
@@ -25,19 +21,4 @@ ENV GOGC=75
 
 EXPOSE 3000 3001 9090
 
-# Build Instructions for Metal:
-# ============================
-# 
-# On macOS with Apple Silicon (M1, M2, M3, M4):
-#
-# 1. Ensure Xcode Command Line Tools:
-#    xcode-select --install
-#
-# 2. Build with Metal GPU support:
-#    CGO_ENABLED=1 go build -tags gpu -o longbow ./cmd/longbow
-#
-# 3. Run with GPU enabled:
-#    LONGBOW_GPU_ENABLED=true ./longbow
-#
-# Note: Metal framework is only available on macOS with Apple Silicon.
-# Intel Macs will fall back to CPU-only mode.
+ENTRYPOINT ["/usr/local/bin/longbow"]

@@ -1,5 +1,3 @@
-version: '3.8'
-
 x-common-env: &common-env
   # Core
   LONGBOW_NODE_ID: node1
@@ -41,7 +39,9 @@ x-common-env: &common-env
 services:
   # Single Instance / Primary Node
   longbow:
-    build: .
+    build:
+      context: .
+      dockerfile: Dockerfile.cpu
     # image: ghcr.io/23skdu/longbow:latest
     container_name: longbow
     environment:

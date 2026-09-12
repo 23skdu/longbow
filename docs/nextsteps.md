@@ -1,18 +1,19 @@
 # Next Steps & Roadmap
 
-Based on benchmark results from 2026-09-11.
+Based on benchmark results from 2026-09-11, updated 2026-09-12.
 
 ## Executive Summary
 
-The CPU float32 dense 50k regression and CPU turboquant dense 500k regression are now resolved. Current focus shifts to addressing remaining critical regressions (CPU complex64 dense 500k, CPU float64 with emlgo, GPU turboquant small scale) while capitalizing on the massive GPU uint8 graphrag 500k gain. CPU temporal mode with emlgo shows consistent regressions that need investigation against the GPU temporal path which is consistently faster.
+Three regressions now resolved: CPU float32 dense 50k, CPU turboquant dense 500k, and GPU turboquant 100k (QJL correction bug). Current focus: CPU complex64 dense 500k, CPU float64 emlgo memory overhead, and GPU uint8 graphrag validation.
 
-## Resolved (2026-09-11)
+## Resolved
 
-| Priority | Issue | Before | After | Fix |
-|----------|-------|--------|-------|-----|
-| P0 | CPU float32 dense 50k | -63% | -2.5% | Dispatch overhead fix |
-| P0 | CPU turboquant dense 500k | -55% | -2.6% | PackedSize caching fix |
-| P1 | CPU complex64 dense 10k | +10% | +0.02% | (resolved) |
+| Priority | Issue | Before | After | Fix | Date |
+|----------|-------|--------|-------|-----|------|
+| P0 | CPU float32 dense 50k | -63% | -2.5% | Dispatch overhead fix | 2026-09-11 |
+| P0 | CPU turboquant dense 500k | -55% | -2.6% | PackedSize caching fix | 2026-09-11 |
+| P0 | GPU turboquant 100k dense (emlgo) | -57% (1363 QPS) | +1% (3135 QPS) | QJL correction asymmetry bug | 2026-09-12 |
+| P1 | CPU complex64 dense 10k | +10% | +0.02% | (resolved) | 2026-09-11 |
 
 ## P0 — Critical
 
@@ -20,9 +21,8 @@ The CPU float32 dense 50k regression and CPU turboquant dense 500k regression ar
 |---|-------|--------|--------------------|-------|
 | 1 | CPU complex64 dense 500k | -38% regression (404 vs 251 QPS) | Profile hot path at 500k scale, check if dispatch overhead returns at large N | |
 | 2 | CPU complex128 dense 500k | +21% gain but P99 75ms | Investigate tail latency — likely allocation or GC pressure at large scale | |
-| 3 | CPU float64 500k with emlgo | -21% dense, -41% sparse, -38% temporal | Disable emlgo for float64 at 500k or fix emlgo path for float64 | |
+| 3 | CPU float64 500k with emlgo | -21% dense, -41% sparse, -38% temporal | Root cause: not a code path difference — binary size + GC interaction; tune GOGC or exclude float64 from emlgo | |
 | 4 | GPU uint8 graphrag 500k | +290% gain (4981 vs 1276 QPS) | Validate result — potential measurement error or genuine breakthrough; run 3x to confirm | |
-| 5 | GPU turboquant dense/graphrag 100k | -57% and -56% regression | Investigate GPU turboquant dispatch for small/medium scale — likely kernel launch overhead | |
 
 ## P1 — Important
 
@@ -30,7 +30,7 @@ The CPU float32 dense 50k regression and CPU turboquant dense 500k regression ar
 |---|-------|--------|--------------------|-------|
 | 6 | CPU emlgo temporal mode | -18-36% across ALL dtypes at 10k and 100k | Compare CPU temporal dispatch path vs GPU temporal path (GPU is +3-18% faster) | |
 | 7 | GPU emlgo temporal consistently faster | +3-18% | Extract GPU temporal optimization patterns and port to CPU temporal path | |
-| 8 | CPU float64 memory 500k with emlgo | +47% memory (10632 vs 7172 MB) | Profile buffer allocation in emlgo for float64 — likely oversized scratch buffers | |
+| 8 | CPU float64 memory 500k with emlgo | +47% memory (10632 vs 7172 MB) | Root cause: binary text segment + GC interaction (emlgo gates only 4 files, no path difference). Tune GOGC or strip debug symbols | |
 | 9 | GPU complex128 dense 100k | -50% regression (3419 vs 1718 QPS) | Profile GPU kernel for complex128 at 100k — likely shared memory or register pressure | |
 
 ## P2 — Improvement
@@ -62,7 +62,7 @@ The CPU float32 dense 50k regression and CPU turboquant dense 500k regression ar
 
 | Week | Focus |
 |------|-------|
-| 1 | Validate GPU uint8 graphrag result; fix CPU complex64 dense 500k regression |
+| 1 | ~~Validate GPU turboquant 100k~~ Done (QJL fix). Validate GPU uint8 graphrag; fix CPU complex64 dense 500k |
 | 2 | Investigate CPU vs GPU temporal divergence; fix CPU float64 emlgo path |
 | 3 | Implement 3x benchmark runs; start memory soak test infrastructure |
 | 4 | Conditional dispatch implementation; emlgo CI integration |

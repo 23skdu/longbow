@@ -111,7 +111,7 @@ func (c *TurboQuantCompute) getVectorWithDisk(id uint32, dg *DiskGraph, maxGen u
 	var stride int
 
 	if chunk != nil {
-		stride = PackedSize(int(data.Dims), data.TurboQuantBits)
+		stride = data.PackedSize()
 		start := cOff * stride
 		if start+stride <= len(chunk) {
 			tqCode = chunk[start : start+stride]
@@ -148,7 +148,7 @@ func (c *TurboQuantCompute) getTQBytes(id uint32, dg *DiskGraph, maxGen uint64) 
 	}
 
 	if chunk != nil {
-		stride := PackedSize(int(data.Dims), data.TurboQuantBits)
+		stride := data.PackedSize()
 		start := cOff * stride
 		if start+stride <= len(chunk) {
 			return chunk[start : start+stride], nil
@@ -183,7 +183,7 @@ func (c *TurboQuantCompute) GetRadius(id uint32, dg *DiskGraph, maxGen uint64) (
 	var stride int
 
 	if chunk != nil {
-		stride = PackedSize(int(data.Dims), data.TurboQuantBits)
+		stride = data.PackedSize()
 		start := cOff * stride
 		if start+stride <= len(chunk) {
 			tqCode = chunk[start : start+stride]

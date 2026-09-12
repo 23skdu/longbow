@@ -181,7 +181,7 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 	if h.tqEncoder != nil {
 		chunk := data.GetVectorsTQChunkWithGen(int(types.ChunkID(id)), math.MaxUint64)
 		if chunk != nil {
-			stride := PackedSize(int(data.Dims), data.TurboQuantBits)
+			stride := data.PackedSize()
 			start := int(types.ChunkOffset(id)) * stride // #nosec G115
 			return h.tqEncoder.Decode(chunk[start : start+stride])
 		}

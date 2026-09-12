@@ -320,13 +320,21 @@ func GetTurboQuantPolarTransformFunc() TurboQuantPolarTransformFunc {
 	return TurboQuantPolarTransformNEON
 }
 
-// GetTurboQuantDistanceFunc returns the optimal TQ distance function for the current CPU.
-func GetTurboQuantDistanceFunc() TurboQuantDistanceFunc {
+// cachedTQDistFunc is the cached TQ distance function, resolved once at init time.
+var cachedTQDistFunc TurboQuantDistanceFunc
+
+func init() {
 	if features.HasAVX2 {
-		return TurboQuantDistanceAVX2
+		cachedTQDistFunc = TurboQuantDistanceAVX2
+	} else if features.HasAVX512 {
+		cachedTQDistFunc = TurboQuantDistanceAVX512
+	} else {
+		cachedTQDistFunc = TurboQuantDistanceNEON
 	}
-	if features.HasAVX512 {
-		return TurboQuantDistanceAVX512
-	}
-	return TurboQuantDistanceNEON
+}
+
+// GetTurboQuantDistanceFunc returns the optimal TQ distance function for the current CPU.
+// The result is cached at init time to avoid repeated feature detection in the hot path.
+func GetTurboQuantDistanceFunc() TurboQuantDistanceFunc {
+	return cachedTQDistFunc
 }

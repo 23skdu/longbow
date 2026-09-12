@@ -1,531 +1,312 @@
 # Longbow Performance Benchmarks
 
-A/B comparison of **standard** vs **emlgo** builds across CPU and GPU backends.
+**Date:** 2026-09-11
 
-> **Date:** 2026-09-11
-> **emlgo version:** v0.4.0 (AVX2/AVX-512/NEON fastmath kernels via build tag)
-> **Disk spillover:** Auto-spill enabled (`LONGBOW_AUTO_SPILL_DISK=true`, threshold 60%).
-> **Note:** Forced disk mode (`LONGBOW_USE_DISK=1`) is NOT used — it makes HNSW graph construction 10-100x slower because every distance computation during indexing requires a disk read. Auto-spill lets HNSW build in-memory and only spills vectors to disk when memory pressure exceeds the threshold.
+## System Specifications
 
----
-
-## System
-
-| Component | Spec |
-|-----------|------|
+| Component | Detail |
+|---|---|
 | CPU | 16-core i7-12650H (x86_64, AVX2) |
 | RAM | 23 GB |
 | GPU | NVIDIA GeForce RTX 4060 Laptop (sm_89, CUDA 12.4) |
-| CPU standard binary | `bin/longbow_main` |
-| CPU emlgo binary | `bin/longbow_emlgo` |
-| GPU standard binary | `bin/longbow-cuda_main` |
-| GPU emlgo binary | `bin/longbow-cuda_emlgo` |
-| Workers | 8 |
-| Queries | 500 per test |
-| Dimensions | 128 |
+
+| Binary | Description |
+|---|---|
+| `bin/longbow_main` | CPU standard build |
+| `bin/longbow_emlgo` | CPU emlgo build |
+| `bin/longbow-cuda_main` | GPU standard build |
+| `bin/longbow-cuda_emlgo` | GPU emlgo build |
+
+**Configuration:** 8 workers, 500 queries, 128 dimensions, auto-spill enabled (threshold 60%).
 
 ---
 
-## Executive Summary
+## 1. Executive Summary
 
-### Best-Record Highlights
+The emlgo build delivers significant gains on select dtype/count combinations but exhibits notable regressions on others. On CPU, emlgo's standout wins are **float32 100k dense (+40.34%)**, **complex128 100k dense (+159.31%)**, and **turboquant 10k dense (+28.60%)**. The worst CPU regressions include **complex64 500k dense (-37.96%)**, **float64 100k dense (-28.69%)**, and **int8 100k dense (-25.83%)**.
 
-| Metric | CPU Standard | CPU Emlgo | Delta | GPU Standard | GPU Emlgo | Delta |
-|--------|-------------|-----------|-------|-------------|-----------|-------|
-| Best dense QPS (50k) | 3828 (f16) | 3365 (c64) | — | 3427 (f16) | 3729 (u8) | — |
-| Best dense QPS (500k) | 2911 (tq4) | 3038 (tq4) | **+4%** | 3184 (f32) | 3194 (f32) | ~0% |
-| Best sparse QPS (50k) | 8333 (u8) | 6937 (c64) | — | 6927 (u8) | 6817 (f16) | — |
-| Best sparse QPS (500k) | 7028 (c128) | 6952 (f16) | — | 6652 (c64) | 6851 (f16) | — |
+On GPU, emlgo excels at larger counts — **uint8 500k dense (+159.12%)**, **uint8 500k graphrag (+290.43%)**, **complex128 500k sparse (+176.96%)**, and **uint8 500k hybrid (+181.13%)**. The deepest GPU regressions are **turboquant 100k dense (-57.40%)**, **turboquant 100k graphrag (-55.75%)**, and **complex128 100k dense (-49.75%)**.
 
-### Key Findings
-
-1. **CPU emlgo excels at complex and quantized types at 50k** — complex64 dense +228%, turboquant4 dense +191%, complex128 dense +49%
-2. **CPU emlgo is competitive at 500k** — turboquant4 dense +4%, float32 dense +12%, float16 dense +5%
-3. **GPU emlgo is mixed** — uint8 dense 50k +51%, but float32 dense 50k -35%, complex64 sparse 500k -80%
-4. **Ingestion is nearly identical** — emlgo has negligible impact on ingest throughput (auto-detected identical path)
-5. **Memory usage varies** — some types see -23% (complex128 GPU 50k) to +42% (complex128 CPU 500k)
+A clear pattern emerges: emlgo tends to regress at the 100k count for many dtypes (especially on CPU), but often recovers or surpasses standard at 500k. GPU performance with emlgo is broadly stronger than CPU, particularly for sparse and hybrid workloads.
 
 ---
 
-## CPU A/B — 50,000 Vectors
+## 2. CPU A/B — Dense Search
 
-### Query Performance (QPS)
-
-| Dtype | Standard | Emlgo | Delta |
-|-------|--------:|------:|------:|
-| | **dense** | | |
-| int8 | 3180 | 2110 | **-33.6%** |
-| uint8 | 2929 | 2226 | **-24.0%** |
-| float16 | 3828 | 2359 | **-38.4%** |
-| float32 | 2116 | 792 | **-62.6%** |
-| float64 | 1702 | 1188 | **-30.2%** |
-| complex64 | 1023 | 3365 | **+228.9%** |
-| complex128 | 2125 | 3158 | **+48.6%** |
-| turboquant4 | 1129 | 3285 | **+191.0%** |
-| | **sparse** | | |
-| int8 | 7899 | 6796 | -14.0% |
-| uint8 | 8333 | 6454 | **-22.5%** |
-| float16 | 7672 | 6881 | -10.3% |
-| float32 | 7046 | 6168 | -12.5% |
-| float64 | 7077 | 6536 | -7.6% |
-| complex64 | 6340 | 6937 | +9.4% |
-| complex128 | 6674 | 6217 | -6.8% |
-| turboquant4 | 6803 | 6596 | -3.0% |
-| | **hybrid** | | |
-| int8 | 2745 | 1698 | **-38.1%** |
-| uint8 | 2586 | 1856 | **-28.2%** |
-| float16 | 1861 | 1505 | -19.1% |
-| float32 | 1997 | 745 | **-62.7%** |
-| float64 | 1021 | 972 | -4.8% |
-| complex64 | 1172 | 2960 | **+152.6%** |
-| complex128 | 860 | 1157 | **+34.5%** |
-| turboquant4 | 1045 | 3322 | **+217.9%** |
-| | **graphrag** | | |
-| int8 | 2656 | 1528 | **-42.5%** |
-| uint8 | 2199 | 1577 | **-28.3%** |
-| float16 | 3325 | 1604 | **-51.8%** |
-| float32 | 2161 | 754 | **-65.1%** |
-| float64 | 1513 | 958 | **-36.7%** |
-| complex64 | 955 | 2445 | **+156.0%** |
-| complex128 | 1837 | 2991 | **+62.8%** |
-| turboquant4 | 1120 | 3228 | **+188.2%** |
-| | **temporal** | | |
-| int8 | 2510 | 1942 | **-22.6%** |
-| uint8 | 2387 | 1708 | **-28.4%** |
-| float16 | 2270 | 1971 | -13.2% |
-| float32 | 2775 | 2347 | -15.4% |
-| float64 | 2765 | 2149 | **-22.3%** |
-| complex64 | 2205 | 2391 | +8.4% |
-| complex128 | 2274 | 2229 | -2.0% |
-| turboquant4 | 2525 | 2349 | -7.0% |
+| dtype | 10k std | 10k emlgo | 10k delta | 100k std | 100k emlgo | 100k delta | 500k std | 500k emlgo | 500k delta |
+|---|---|---|---|---|---|---|---|---|---|
+| int8 | 4151.56 | 4078.80 | -1.75% | 2868.70 | 2127.61 | -25.83% | 1532.96 | 1579.34 | +3.03% |
+| uint8 | 4327.27 | 4539.58 | +4.91% | 3009.98 | 2394.09 | -20.46% | 2168.69 | 2592.86 | +19.56% |
+| float16 | 3829.30 | 3796.61 | -0.85% | 2016.67 | 1494.48 | -25.89% | 1417.47 | 1458.71 | +2.91% |
+| float32 | 3464.98 | 3657.06 | +5.54% | 1243.54 | 1745.15 | +40.34% | 3398.44 | 3312.34 | -2.53% |
+| float64 | 3537.18 | 3390.44 | -4.15% | 1403.64 | 1000.90 | -28.69% | 741.55 | 586.09 | -20.96% |
+| complex64 | 3546.21 | 3547.00 | +0.02% | 1496.08 | 1188.66 | -20.55% | 404.28 | 250.83 | -37.96% |
+| complex128 | 3580.29 | 3414.55 | -4.63% | 1347.00 | 3492.86 | +159.31% | 440.65 | 533.03 | +20.97% |
+| turboquant | 3416.65 | 4393.78 | +28.60% | 1885.38 | 1566.94 | -16.89% | 3339.05 | 3253.33 | -2.57% |
 
 ---
 
-## CPU A/B — 500,000 Vectors
+## 3. CPU A/B — Sparse Search
 
-### Query Performance (QPS)
-
-| Dtype | Standard | Emlgo | Delta |
-|-------|--------:|------:|------:|
-| | **dense** | | |
-| int8 | 1205 | 1412 | +17.2% |
-| uint8 | 1875 | 1580 | **-15.7%** |
-| float16 | 1069 | 1127 | +5.4% |
-| float32 | 1515 | 1691 | **+11.6%** |
-| float64 | 703 | 715 | +1.7% |
-| complex64 | 827 | 658 | **-20.4%** |
-| complex128 | 399 | 307 | **-23.1%** |
-| turboquant4 | 2911 | 3038 | +4.4% |
-| | **sparse** | | |
-| int8 | 6120 | 5640 | -7.8% |
-| uint8 | 6039 | 5995 | -0.7% |
-| float16 | 6077 | 6952 | **+14.4%** |
-| float32 | 6465 | 5771 | **-10.7%** |
-| float64 | 6494 | 5719 | **-11.9%** |
-| complex64 | 6546 | 5109 | **-22.0%** |
-| complex128 | 7028 | 4455 | **-36.6%** |
-| turboquant4 | 6234 | 6089 | -2.3% |
-| | **hybrid** | | |
-| int8 | 1281 | 981 | **-23.4%** |
-| uint8 | 1683 | 1665 | -1.1% |
-| float16 | 1059 | 1188 | +12.2% |
-| float32 | 1226 | 1641 | **+33.8%** |
-| float64 | 708 | 594 | **-16.1%** |
-| complex64 | 579 | 650 | +12.3% |
-| complex128 | 306 | 292 | -4.6% |
-| turboquant4 | 2816 | 2737 | -2.8% |
-| | **graphrag** | | |
-| int8 | 1279 | 1024 | **-19.9%** |
-| uint8 | 1366 | 1405 | +2.9% |
-| float16 | 1020 | 1194 | **+17.1%** |
-| float32 | 529 | 1635 | **+209.1%** |
-| float64 | 665 | 544 | **-18.2%** |
-| complex64 | 609 | 655 | +7.6% |
-| complex128 | 307 | 282 | -8.1% |
-| turboquant4 | 2470 | 2925 | **+18.4%** |
-| | **temporal** | | |
-| int8 | 602 | 590 | -2.0% |
-| uint8 | 646 | 615 | -4.8% |
-| float16 | 479 | 607 | **+26.7%** |
-| float32 | 736 | 568 | **-22.8%** |
-| float64 | 679 | 277 | **-59.2%** |
-| complex64 | 666 | 661 | -0.8% |
-| complex128 | 723 | 611 | **-15.5%** |
-| turboquant4 | 667 | 690 | +3.4% |
+| dtype | 10k std | 10k emlgo | 10k delta | 100k std | 100k emlgo | 100k delta | 500k std | 500k emlgo | 500k delta |
+|---|---|---|---|---|---|---|---|---|---|
+| int8 | 7691.31 | 7244.40 | -5.81% | 8059.08 | 6659.29 | -17.37% | 6568.58 | 6184.63 | -5.85% |
+| uint8 | 7779.66 | 7632.69 | -1.89% | 8275.25 | 6860.08 | -17.10% | 6670.13 | 6638.07 | -0.48% |
+| float16 | 7687.07 | 8040.86 | +4.60% | 7972.37 | 6367.62 | -20.13% | 6787.01 | 6397.02 | -5.75% |
+| float32 | 8030.47 | 7449.41 | -7.24% | 7781.57 | 6724.05 | -13.59% | 6691.23 | 6553.03 | -2.07% |
+| float64 | 8257.33 | 7067.92 | -14.40% | 8221.24 | 6872.16 | -16.41% | 6853.20 | 4018.28 | -41.37% |
+| complex64 | 7583.73 | 7086.57 | -6.56% | 7863.69 | 6655.60 | -15.36% | 2290.72 | 2337.32 | +2.03% |
+| complex128 | 7802.03 | 7623.63 | -2.29% | 6500.99 | 7080.05 | +8.91% | 3913.14 | 3581.34 | -8.48% |
+| turboquant | 8434.82 | 8153.67 | -3.33% | 7276.20 | 4988.01 | -31.45% | 7060.92 | 6638.10 | -5.99% |
 
 ---
 
-## GPU A/B — 50,000 Vectors
+## 4. CPU A/B — Hybrid Search
 
-### Query Performance (QPS)
-
-| Dtype | Standard | Emlgo | Delta |
-|-------|--------:|------:|------:|
-| | **dense** | | |
-| int8 | 2136 | 2049 | -4.1% |
-| uint8 | 2458 | 3729 | **+51.7%** |
-| float16 | 3427 | 1889 | **-44.9%** |
-| float32 | 845 | 1117 | **+32.2%** |
-| float64 | 1751 | 1145 | **-34.6%** |
-| complex64 | 1083 | 1050 | -3.0% |
-| complex128 | 3358 | 935 | **-72.2%** |
-| turboquant4 | 1016 | 1762 | **+73.4%** |
-| | **sparse** | | |
-| int8 | 6397 | 6810 | +6.5% |
-| uint8 | 6927 | 6413 | -7.4% |
-| float16 | 6201 | 6817 | +9.9% |
-| float32 | 6428 | 6086 | -5.3% |
-| float64 | 6382 | 6265 | -1.8% |
-| complex64 | 6268 | 6551 | +4.5% |
-| complex128 | 5572 | 6194 | +11.2% |
-| turboquant4 | 6371 | 6018 | -5.5% |
-| | **hybrid** | | |
-| int8 | 1725 | 1654 | -4.1% |
-| uint8 | 2066 | 1953 | -5.5% |
-| float16 | 1456 | 1291 | -11.3% |
-| float32 | 819 | 1211 | **+47.9%** |
-| float64 | 911 | 1015 | +11.4% |
-| complex64 | 980 | 976 | -0.4% |
-| complex128 | 1842 | 1397 | **-24.2%** |
-| turboquant4 | 828 | 1705 | **+105.9%** |
-| | **graphrag** | | |
-| int8 | 1510 | 1610 | +6.6% |
-| uint8 | 1721 | 3232 | **+87.8%** |
-| float16 | 2906 | 1718 | **-40.9%** |
-| float32 | 832 | 1216 | **+46.2%** |
-| float64 | 1469 | 917 | **-37.6%** |
-| complex64 | 817 | 848 | +3.8% |
-| complex128 | 3049 | 854 | **-72.0%** |
-| turboquant4 | 919 | 1788 | **+94.6%** |
-| | **temporal** | | |
-| int8 | 1751 | 1967 | +12.3% |
-| uint8 | 1815 | 1698 | -6.4% |
-| float16 | 1779 | 1766 | -0.7% |
-| float32 | 2185 | 2395 | +9.6% |
-| float64 | 2370 | 2316 | -2.3% |
-| complex64 | 2287 | 2262 | -1.1% |
-| complex128 | 2292 | 2312 | +0.9% |
-| turboquant4 | 2232 | 2387 | +7.0% |
+| dtype | 10k std | 10k emlgo | 10k delta | 100k std | 100k emlgo | 100k delta | 500k std | 500k emlgo | 500k delta |
+|---|---|---|---|---|---|---|---|---|---|
+| int8 | 4452.95 | 4055.79 | -8.92% | 2409.93 | 1765.07 | -26.76% | 1139.92 | 1013.40 | -11.10% |
+| uint8 | 4506.51 | 4482.92 | -0.52% | 2519.46 | 1979.02 | -21.45% | 1854.20 | 1971.57 | +6.33% |
+| float16 | 4506.51 | 4283.23 | -4.95% | 1893.83 | 1552.79 | -18.01% | 1472.87 | 1319.05 | -10.44% |
+| float32 | 4206.51 | 3550.90 | -15.59% | 1182.23 | 1615.27 | +36.63% | 3564.19 | 3302.56 | -7.34% |
+| float64 | 4262.78 | 3777.91 | -11.37% | 1117.40 | 987.11 | -11.66% | 460.35 | 458.74 | -0.35% |
+| complex64 | 4021.90 | 3608.24 | -10.29% | 1151.82 | 895.06 | -22.29% | 359.36 | 217.52 | -39.47% |
+| complex128 | 4007.43 | 3788.32 | -5.47% | 1270.76 | 2256.26 | +77.55% | 455.28 | 303.65 | -33.31% |
+| turboquant | 4264.26 | 4415.05 | +3.54% | 1744.19 | 1529.52 | -12.31% | 3759.33 | 3347.36 | -10.96% |
 
 ---
 
-## GPU A/B — 500,000 Vectors
+## 5. CPU A/B — Graphrag Search
 
-### Query Performance (QPS)
-
-| Dtype | Standard | Emlgo | Delta |
-|-------|--------:|------:|------:|
-| | **dense** | | |
-| int8 | 1516 | 1566 | +3.3% |
-| uint8 | 1394 | 1575 | **+13.0%** |
-| float16 | 1234 | 1309 | +6.1% |
-| float32 | 3184 | 3194 | ~0% |
-| float64 | 687 | 674 | -1.9% |
-| complex64 | 871 | 496 | **-43.1%** |
-| complex128 | 843 | 548 | **-35.0%** |
-| turboquant4 | 1483 | 1807 | **+21.9%** |
-| | **sparse** | | |
-| int8 | 5678 | 6195 | +9.1% |
-| uint8 | 5965 | 6451 | +8.1% |
-| float16 | 6445 | 6851 | +6.3% |
-| float32 | 6227 | 5868 | -5.8% |
-| float64 | 5638 | 6444 | **+14.3%** |
-| complex64 | 6652 | 1319 | **-80.2%** |
-| complex128 | 6015 | 4101 | **-31.8%** |
-| turboquant4 | 6361 | 5114 | **-19.6%** |
-| | **hybrid** | | |
-| int8 | 1129 | 1250 | +10.7% |
-| uint8 | 1541 | 1596 | +3.6% |
-| float16 | 1101 | 999 | -9.3% |
-| float32 | 3171 | 2237 | **-29.5%** |
-| float64 | 493 | 582 | +18.1% |
-| complex64 | 698 | 361 | **-48.3%** |
-| complex128 | 575 | 623 | +8.3% |
-| turboquant4 | 1421 | 1635 | **+15.1%** |
-| | **graphrag** | | |
-| int8 | 1006 | 1303 | **+29.5%** |
-| uint8 | 1361 | 1349 | -0.9% |
-| float16 | 912 | 1053 | **+15.5%** |
-| float32 | 3191 | 1676 | **-47.5%** |
-| float64 | 608 | 602 | -1.0% |
-| complex64 | 901 | 467 | **-48.2%** |
-| complex128 | 751 | 808 | +7.6% |
-| turboquant4 | 1274 | 1546 | **+21.4%** |
-| | **temporal** | | |
-| int8 | 649 | 627 | -3.4% |
-| uint8 | 598 | 647 | +8.2% |
-| float16 | 559 | 697 | **+24.7%** |
-| float32 | 456 | 512 | +12.3% |
-| float64 | 709 | 564 | **-20.5%** |
-| complex64 | 717 | 448 | **-37.5%** |
-| complex128 | 633 | 418 | **-34.0%** |
-| turboquant4 | 642 | 491 | **-23.5%** |
+| dtype | 10k std | 10k emlgo | 10k delta | 100k std | 100k emlgo | 100k delta | 500k std | 500k emlgo | 500k delta |
+|---|---|---|---|---|---|---|---|---|---|
+| int8 | 3718.56 | 3146.49 | -15.38% | 2223.23 | 1652.15 | -25.69% | 1409.73 | 494.37 | -64.93% |
+| uint8 | 3417.26 | 3022.33 | -11.56% | 2472.31 | 1676.74 | -32.18% | 1358.59 | 1452.93 | +6.94% |
+| float16 | 3706.06 | 3067.76 | -17.22% | 1756.16 | 1453.99 | -17.21% | 1392.69 | 1026.06 | -26.33% |
+| float32 | 3569.44 | 3501.28 | -1.91% | 1214.14 | 1727.90 | +42.31% | 3294.37 | 3001.59 | -8.89% |
+| float64 | 3412.18 | 2719.53 | -20.30% | 1163.39 | 838.85 | -27.90% | 484.52 | 478.05 | -1.34% |
+| complex64 | 3470.22 | 2736.72 | -21.14% | 1375.22 | 1030.50 | -25.07% | 347.39 | 285.10 | -17.93% |
+| complex128 | 3632.44 | 2901.96 | -20.11% | 1776.11 | 2577.29 | +45.11% | 337.44 | 439.07 | +30.12% |
+| turboquant | 3761.40 | 3940.17 | +4.75% | 1648.34 | 1596.70 | -3.13% | 3435.43 | 2543.24 | -25.97% |
 
 ---
 
-## Cross-Config Comparison
+## 6. CPU A/B — Temporal Search
 
-### CPU vs GPU — Standard Build (QPS)
-
-| Dtype | Count | CPU Dense | GPU Dense | GPU/CPU | CPU Sparse | GPU Sparse | GPU/CPU |
-|-------|------:|----------:|----------:|--------:|-----------:|-----------:|--------:|
-| int8 | 50k | 3180 | 2136 | 0.67x | 7899 | 6397 | 0.81x |
-| uint8 | 50k | 2929 | 2458 | 0.84x | 8333 | 6927 | 0.83x |
-| float16 | 50k | 3828 | 3427 | 0.90x | 7672 | 6201 | 0.81x |
-| float32 | 50k | 2116 | 845 | 0.40x | 7046 | 6428 | 0.91x |
-| float64 | 50k | 1702 | 1751 | 1.03x | 7077 | 6382 | 0.90x |
-| complex64 | 50k | 1023 | 1083 | 1.06x | 6340 | 6268 | 0.99x |
-| complex128 | 50k | 2125 | 3358 | 1.58x | 6674 | 5572 | 0.83x |
-| turboquant4 | 50k | 1129 | 1016 | 0.90x | 6803 | 6371 | 0.94x |
-| int8 | 500k | 1205 | 1516 | 1.26x | 6120 | 5678 | 0.93x |
-| uint8 | 500k | 1875 | 1394 | 0.74x | 6039 | 5965 | 0.99x |
-| float16 | 500k | 1069 | 1234 | 1.15x | 6077 | 6445 | 1.06x |
-| float32 | 500k | 1515 | 3184 | 2.10x | 6465 | 6227 | 0.96x |
-| float64 | 500k | 703 | 687 | 0.98x | 6494 | 5638 | 0.87x |
-| complex64 | 500k | 827 | 871 | 1.05x | 6546 | 6652 | 1.02x |
-| complex128 | 500k | 399 | 843 | 2.11x | 7028 | 6015 | 0.86x |
-| turboquant4 | 500k | 2911 | 1483 | 0.51x | 6234 | 6361 | 1.02x |
-
-### CPU vs GPU — Emlgo Build (QPS)
-
-| Dtype | Count | CPU Dense | GPU Dense | GPU/CPU | CPU Sparse | GPU Sparse | GPU/CPU |
-|-------|------:|----------:|----------:|--------:|-----------:|-----------:|--------:|
-| int8 | 50k | 2110 | 2049 | 0.97x | 6796 | 6810 | 1.00x |
-| uint8 | 50k | 2226 | 3729 | 1.68x | 6454 | 6413 | 0.99x |
-| float16 | 50k | 2359 | 1889 | 0.80x | 6881 | 6817 | 0.99x |
-| float32 | 50k | 792 | 1117 | 1.41x | 6168 | 6086 | 0.99x |
-| float64 | 50k | 1188 | 1145 | 0.96x | 6536 | 6265 | 0.96x |
-| complex64 | 50k | 3365 | 1050 | 0.31x | 6937 | 6551 | 0.94x |
-| complex128 | 50k | 3158 | 935 | 0.30x | 6217 | 6194 | 1.00x |
-| turboquant4 | 50k | 3285 | 1762 | 0.54x | 6596 | 6018 | 0.91x |
-| int8 | 500k | 1412 | 1566 | 1.11x | 5640 | 6195 | 1.10x |
-| uint8 | 500k | 1580 | 1575 | 1.00x | 5995 | 6451 | 1.08x |
-| float16 | 500k | 1127 | 1309 | 1.16x | 6952 | 6851 | 0.99x |
-| float32 | 500k | 1691 | 3194 | 1.89x | 5771 | 5868 | 1.02x |
-| float64 | 500k | 715 | 674 | 0.94x | 5719 | 6444 | 1.13x |
-| complex64 | 500k | 658 | 496 | 0.75x | 5109 | 1319 | 0.26x |
-| complex128 | 500k | 307 | 548 | 1.79x | 4455 | 4101 | 0.92x |
-| turboquant4 | 500k | 3038 | 1807 | 0.60x | 6089 | 5114 | 0.84x |
+| dtype | 10k std | 10k emlgo | 10k delta | 100k std | 100k emlgo | 100k delta | 500k std | 500k emlgo | 500k delta |
+|---|---|---|---|---|---|---|---|---|---|
+| int8 | 3333.97 | 2518.75 | -24.45% | 2247.47 | 1753.02 | -22.00% | 702.62 | 645.72 | -8.10% |
+| uint8 | 3345.74 | 2644.11 | -20.97% | 2112.55 | 1345.57 | -36.31% | 703.67 | 690.24 | -1.91% |
+| float16 | 3196.88 | 2540.59 | -20.53% | 2226.93 | 1493.32 | -32.94% | 683.44 | 452.83 | -33.74% |
+| float32 | 3953.70 | 3319.76 | -16.03% | 2611.77 | 2126.74 | -18.57% | 793.69 | 739.94 | -6.77% |
+| float64 | 4225.22 | 3125.36 | -26.03% | 2461.17 | 2042.69 | -17.00% | 806.57 | 498.51 | -38.19% |
+| complex64 | 4051.07 | 3210.83 | -20.74% | 2505.99 | 2059.27 | -17.83% | 270.38 | 543.06 | +100.85% |
+| complex128 | 4196.89 | 3297.69 | -21.43% | 2517.05 | 2027.63 | -19.44% | 650.54 | 595.23 | -8.50% |
+| turboquant | 4102.77 | 3325.73 | -18.94% | 2558.97 | 1974.67 | -22.83% | 727.86 | 561.86 | -22.81% |
 
 ---
 
-## Historical Deltas: 2026-09-11 vs 2026-09-10 (v0.4)
+## 7. GPU A/B — Dense Search
 
-Compares the NEW benchmark run (2026-09-11) against the PREVIOUS run (2026-09-10). Note: worker count changed from 6 to 8, so these reflect both code and config changes.
-
-### CPU Standard — Historical Delta (Dense QPS)
-
-| Dtype | Count | v0.4 (Sep 10) | New (Sep 11) | Delta |
-|-------|------:|---------------:|-------------:|------:|
-| int8 | 50k | 4801.6 | 3180 | **-33.8%** |
-| uint8 | 50k | 5228.7 | 2929 | **-43.9%** |
-| float16 | 50k | 1713.9 | 3828 | **+123.3%** |
-| float32 | 50k | 1007.8 | 2116 | **+109.9%** |
-| float64 | 50k | 823.3 | 1702 | **+106.6%** |
-| complex64 | 50k | 926.6 | 1023 | +10.4% |
-| complex128 | 50k | 1788.9 | 2125 | +18.8% |
-| turboquant4 | 50k | 1767.3 | 1129 | **-36.1%** |
-| int8 | 500k | 856.9 | 1205 | **+40.6%** |
-| uint8 | 500k | 1579.4 | 1875 | **+18.7%** |
-| float16 | 500k | 978.3 | 1069 | +9.3% |
-| float32 | 500k | 2354.9 | 1515 | **-35.7%** |
-| float64 | 500k | 518.7 | 703 | **+35.6%** |
-| complex64 | 500k | 500.8 | 827 | **+65.2%** |
-| complex128 | 500k | 109.8 | 399 | **+263.4%** |
-| turboquant4 | 500k | 1804.1 | 2911 | **+61.4%** |
-
-### CPU Emlgo — Historical Delta (Dense QPS)
-
-| Dtype | Count | v0.4 (Sep 10) | New (Sep 11) | Delta |
-|-------|------:|---------------:|-------------:|------:|
-| int8 | 50k | 2107.4 | 2110 | ~0% |
-| uint8 | 50k | 2313.3 | 2226 | -3.8% |
-| float16 | 50k | 2973.8 | 2359 | **-20.7%** |
-| float32 | 50k | 907.2 | 792 | -12.7% |
-| float64 | 50k | 1313.5 | 1188 | -9.5% |
-| complex64 | 50k | 1016.5 | 3365 | **+231.1%** |
-| complex128 | 50k | 2616.1 | 3158 | **+20.7%** |
-| turboquant4 | 50k | 3152.0 | 3285 | +4.2% |
-| int8 | 500k | 1371.2 | 1412 | +3.0% |
-| uint8 | 500k | 4229.8 | 1580 | **-62.6%** |
-| float16 | 500k | 876.3 | 1127 | **+28.6%** |
-| float32 | 500k | 1420.6 | 1691 | **+19.0%** |
-| float64 | 500k | 617.7 | 715 | **+15.7%** |
-| complex64 | 500k | 595.8 | 658 | +10.4% |
-| complex128 | 500k | 201.2 | 307 | **+52.6%** |
-| turboquant4 | 500k | 821.2 | 3038 | **+269.9%** |
-
-### GPU Standard — Historical Delta (Dense QPS)
-
-| Dtype | Count | v0.4 (Sep 10) | New (Sep 11) | Delta |
-|-------|------:|---------------:|-------------:|------:|
-| int8 | 50k | 2175.2 | 2136 | -1.8% |
-| uint8 | 50k | 4438.2 | 2458 | **-44.6%** |
-| float16 | 50k | 2045.2 | 3427 | **+67.6%** |
-| float32 | 50k | 934.3 | 845 | -9.6% |
-| float64 | 50k | 1094.3 | 1751 | **+60.0%** |
-| complex64 | 50k | 1128.6 | 1083 | -4.0% |
-| complex128 | 50k | 1441.8 | 3358 | **+132.9%** |
-| turboquant4 | 50k | 2555.6 | 1016 | **-60.2%** |
-| int8 | 500k | 1478.8 | 1516 | +2.5% |
-| uint8 | 500k | 1551.9 | 1394 | **-10.2%** |
-| float16 | 500k | 1156.4 | 1234 | +6.7% |
-| float32 | 500k | 1121.7 | 3184 | **+183.9%** |
-| float64 | 500k | 306.7 | 687 | **+124.0%** |
-| complex64 | 500k | 571.8 | 871 | **+52.3%** |
-| complex128 | 500k | 312.8 | 843 | **+169.5%** |
-| turboquant4 | 500k | 2787.2 | 1483 | **-46.8%** |
-
-### GPU Emlgo — Historical Delta (Dense QPS)
-
-| Dtype | Count | v0.4 (Sep 10) | New (Sep 11) | Delta |
-|-------|------:|---------------:|-------------:|------:|
-| int8 | 50k | 2021.1 | 2049 | +1.4% |
-| uint8 | 50k | 4001.5 | 3729 | -6.8% |
-| float16 | 50k | 2122.8 | 1889 | -11.0% |
-| float32 | 50k | 952.5 | 1117 | **+17.3%** |
-| float64 | 50k | 980.1 | 1145 | **+16.8%** |
-| complex64 | 50k | 1271.4 | 1050 | **-17.4%** |
-| complex128 | 50k | 656.9 | 935 | **+42.3%** |
-| turboquant4 | 50k | 897.3 | 1762 | **+96.4%** |
-| int8 | 500k | 1408.6 | 1566 | **+11.2%** |
-| uint8 | 500k | 1565.5 | 1575 | +0.6% |
-| float16 | 500k | 878.4 | 1309 | **+49.0%** |
-| float32 | 500k | 3393.2 | 3194 | -5.9% |
-| float64 | 500k | 609.8 | 674 | **+10.5%** |
-| complex64 | 500k | 681.2 | 496 | **-27.2%** |
-| complex128 | 500k | 734.2 | 548 | **-25.4%** |
-| turboquant4 | 500k | 3617.9 | 1807 | **-50.1%** |
+| dtype | 10k std | 10k emlgo | 10k delta | 100k std | 100k emlgo | 100k delta | 500k std | 500k emlgo | 500k delta |
+|---|---|---|---|---|---|---|---|---|---|
+| int8 | 3724.46 | 4101.62 | +10.13% | 1949.28 | 2157.82 | +10.70% | 1636.40 | 1561.56 | -4.57% |
+| uint8 | 4480.37 | 4091.39 | -8.68% | 2249.76 | 2742.08 | +21.88% | 1912.61 | 4955.98 | +159.12% |
+| float16 | 3859.76 | 3609.35 | -6.49% | 2234.30 | 1957.81 | -12.37% | 1230.60 | 1302.99 | +5.88% |
+| float32 | 4061.74 | 3359.23 | -17.30% | 2459.91 | 2322.96 | -5.57% | 2879.88 | 3335.94 | +15.84% |
+| float64 | 3305.64 | 3440.98 | +4.09% | 1059.12 | 1159.52 | +9.48% | 659.33 | 414.07 | -37.20% |
+| complex64 | 3305.18 | 3551.05 | +7.44% | 1029.21 | 1455.87 | +41.45% | 609.08 | 505.18 | -17.06% |
+| complex128 | 3447.51 | 3230.18 | -6.30% | 3418.53 | 1717.79 | -49.75% | 348.87 | 796.73 | +128.38% |
+| turboquant | 3413.99 | 3804.77 | +11.45% | 3198.66 | 1362.56 | -57.40% | 2969.05 | 3367.91 | +13.43% |
 
 ---
 
-## Memory Usage (Peak MB)
+## 8. GPU A/B — Sparse Search
 
-### CPU
-
-| Dtype | Count | Standard | Emlgo | Delta |
-|-------|------:|---------:|------:|------:|
-| int8 | 50k | 674 | 719 | +6.7% |
-| uint8 | 50k | 683 | 758 | **+11.0%** |
-| float16 | 50k | 715 | 711 | -0.6% |
-| float32 | 50k | 711 | 759 | +6.8% |
-| float64 | 50k | 1229 | 1159 | -5.7% |
-| complex64 | 50k | 1346 | 1284 | -4.6% |
-| complex128 | 50k | 1984 | 1955 | -1.5% |
-| turboquant4 | 50k | 699 | 712 | +1.9% |
-| int8 | 500k | 4201 | 4248 | +1.1% |
-| uint8 | 500k | 4529 | 4540 | +0.2% |
-| float16 | 500k | 4760 | 4608 | -3.2% |
-| float32 | 500k | 4791 | 4432 | **-7.5%** |
-| float64 | 500k | 7749 | 6788 | **-12.4%** |
-| complex64 | 500k | 9025 | 9037 | +0.1% |
-| complex128 | 500k | 10787 | 13387 | **+24.1%** |
-| turboquant4 | 500k | 4852 | 4319 | **-11.0%** |
-
-### GPU
-
-| Dtype | Count | Standard | Emlgo | Delta |
-|-------|------:|---------:|------:|------:|
-| int8 | 50k | 700 | 687 | -1.9% |
-| uint8 | 50k | 707 | 652 | **-7.8%** |
-| float16 | 50k | 755 | 761 | +0.8% |
-| float32 | 50k | 737 | 763 | +3.5% |
-| float64 | 50k | 1111 | 1155 | +4.0% |
-| complex64 | 50k | 1277 | 1287 | +0.8% |
-| complex128 | 50k | 1926 | 1954 | +1.5% |
-| turboquant4 | 50k | 710 | 715 | +0.7% |
-| int8 | 500k | 4304 | 4411 | +2.5% |
-| uint8 | 500k | 4249 | 4749 | **+11.8%** |
-| float16 | 500k | 4599 | 4384 | -4.7% |
-| float32 | 500k | 4642 | 5032 | **+8.4%** |
-| float64 | 500k | 7210 | 7622 | +5.7% |
-| complex64 | 500k | 8404 | 8862 | +5.4% |
-| complex128 | 500k | 14282 | 13770 | -3.6% |
-| turboquant4 | 500k | 4445 | 5046 | **+13.5%** |
+| dtype | 10k std | 10k emlgo | 10k delta | 100k std | 100k emlgo | 100k delta | 500k std | 500k emlgo | 500k delta |
+|---|---|---|---|---|---|---|---|---|---|
+| int8 | 6959.62 | 7086.87 | +1.83% | 6628.50 | 7366.93 | +11.14% | 6106.81 | 5218.43 | -14.55% |
+| uint8 | 7619.63 | 7393.32 | -2.97% | 4998.65 | 7493.74 | +49.92% | 5944.20 | 6508.36 | +9.49% |
+| float16 | 7254.44 | 6836.90 | -5.76% | 6807.97 | 7031.34 | +3.28% | 6544.70 | 6770.71 | +3.45% |
+| float32 | 6911.43 | 7597.80 | +9.93% | 6694.27 | 7320.60 | +9.36% | 6504.35 | 7541.68 | +15.95% |
+| float64 | 6834.38 | 8122.56 | +18.85% | 6999.27 | 7481.47 | +6.89% | 6883.81 | 7242.55 | +5.21% |
+| complex64 | 6855.28 | 6781.18 | -1.08% | 6926.18 | 7564.40 | +9.21% | 5719.01 | 5648.58 | -1.23% |
+| complex128 | 7075.06 | 6905.28 | -2.40% | 6659.13 | 7263.99 | +9.08% | 2103.11 | 5824.83 | +176.96% |
+| turboquant | 7070.93 | 7421.55 | +4.96% | 6810.12 | 7216.80 | +5.97% | 6124.66 | 7078.98 | +15.58% |
 
 ---
 
-## Ingestion Throughput (vec/s)
+## 9. GPU A/B — Hybrid Search
 
-### CPU
-
-| Dtype | Count | Standard | Emlgo | Delta |
-|-------|------:|---------:|------:|------:|
-| int8 | 50k | 3722227 | 2875217 | **-22.8%** |
-| uint8 | 50k | 3520316 | 3686036 | +4.7% |
-| float16 | 50k | 1912017 | 1441264 | **-24.6%** |
-| float32 | 50k | 972852 | 731421 | **-24.8%** |
-| float64 | 50k | 500108 | 414757 | **-17.1%** |
-| complex64 | 50k | 465151 | 442406 | -4.9% |
-| complex128 | 50k | 243740 | 212275 | **-12.9%** |
-| turboquant4 | 50k | 960611 | 683228 | **-28.9%** |
-| int8 | 500k | 879865 | 599807 | **-31.8%** |
-| uint8 | 500k | 964954 | 1720900 | **+78.3%** |
-| float16 | 500k | 588857 | 454280 | **-22.9%** |
-| float32 | 500k | 194854 | 136503 | **-30.0%** |
-| float64 | 500k | 210336 | 159948 | **-24.0%** |
-| complex64 | 500k | 111588 | 148502 | **+33.1%** |
-| complex128 | 500k | 127074 | 111793 | -12.0% |
-| turboquant4 | 500k | 207431 | 218421 | +5.3% |
-
-### GPU
-
-| Dtype | Count | Standard | Emlgo | Delta |
-|-------|------:|---------:|------:|------:|
-| int8 | 50k | 2761081 | 3007432 | +8.9% |
-| uint8 | 50k | 2680195 | 2895066 | +8.0% |
-| float16 | 50k | 1620248 | 1408484 | **-13.1%** |
-| float32 | 50k | 678519 | 885889 | **+30.6%** |
-| float64 | 50k | 423823 | 444799 | +5.0% |
-| complex64 | 50k | 429819 | 392507 | -8.7% |
-| complex128 | 50k | 226117 | 216937 | -4.1% |
-| turboquant4 | 50k | 813523 | 895358 | +10.1% |
-| int8 | 500k | 639812 | 730289 | **+14.1%** |
-| uint8 | 500k | 940662 | 972331 | +3.4% |
-| float16 | 500k | 442819 | 779817 | **+76.1%** |
-| float32 | 500k | 264518 | 207715 | **-21.5%** |
-| float64 | 500k | 226822 | 146357 | **-35.5%** |
-| complex64 | 500k | 95579 | 212352 | **+122.2%** |
-| complex128 | 500k | 116307 | 86642 | **-25.5%** |
-| turboquant4 | 500k | 205927 | 341968 | **+66.1%** |
+| dtype | 10k std | 10k emlgo | 10k delta | 100k std | 100k emlgo | 100k delta | 500k std | 500k emlgo | 500k delta |
+|---|---|---|---|---|---|---|---|---|---|
+| int8 | 4102.17 | 3893.33 | -5.09% | 1669.16 | 1915.52 | +14.76% | 1191.49 | 1623.96 | +36.30% |
+| uint8 | 4338.10 | 4099.26 | -5.51% | 1734.97 | 2177.22 | +25.49% | 1625.36 | 4569.34 | +181.13% |
+| float16 | 3841.40 | 3948.68 | +2.79% | 1421.70 | 1661.64 | +16.88% | 1076.52 | 1309.34 | +21.63% |
+| float32 | 3931.64 | 3810.88 | -3.07% | 2362.21 | 2181.18 | -7.66% | 3136.99 | 3512.28 | +11.96% |
+| float64 | 2946.38 | 4219.00 | +43.19% | 805.18 | 1008.91 | +25.30% | 623.11 | 659.43 | +5.83% |
+| complex64 | 3371.48 | 3795.68 | +12.58% | 819.63 | 1139.51 | +39.03% | 650.83 | 688.46 | +5.78% |
+| complex128 | 3492.83 | 3612.41 | +3.42% | 1175.34 | 1049.85 | -10.68% | 642.42 | 699.71 | +8.92% |
+| turboquant | 3622.94 | 3597.72 | -0.70% | 2909.19 | 1316.52 | -54.75% | 2823.36 | 3782.78 | +33.98% |
 
 ---
 
-## Key Findings
+## 10. GPU A/B — Graphrag Search
 
-### What emlgo improves
+| dtype | 10k std | 10k emlgo | 10k delta | 100k std | 100k emlgo | 100k delta | 500k std | 500k emlgo | 500k delta |
+|---|---|---|---|---|---|---|---|---|---|
+| int8 | 2790.72 | 3008.97 | +7.82% | 1518.08 | 1757.49 | +15.77% | 1278.87 | 1280.01 | +0.09% |
+| uint8 | 2576.19 | 2659.58 | +3.24% | 1566.16 | 1955.80 | +24.88% | 1275.76 | 4980.96 | +290.43% |
+| float16 | 2954.08 | 2827.08 | -4.30% | 1658.84 | 1954.32 | +17.81% | 1067.67 | 1137.73 | +6.56% |
+| float32 | 3550.21 | 3514.98 | -0.99% | 2328.15 | 2134.99 | -8.30% | 2880.88 | 3551.39 | +23.27% |
+| float64 | 2620.51 | 2905.33 | +10.87% | 911.82 | 1527.02 | +67.47% | 672.57 | 626.12 | -6.91% |
+| complex64 | 2578.29 | 2843.45 | +10.28% | 859.10 | 1183.84 | +37.80% | 632.83 | 725.38 | +14.63% |
+| complex128 | 2645.93 | 2799.58 | +5.81% | 2765.58 | 2197.59 | -20.54% | 734.77 | 716.91 | -2.43% |
+| turboquant | 3589.26 | 3575.92 | -0.37% | 2924.51 | 1294.04 | -55.75% | 2124.10 | 3429.28 | +61.45% |
 
-1. **Complex64 dense at 50k CPU: +229%** — the single largest CPU gain. Complex64 dot products benefit enormously from emlgo SIMD kernels.
-2. **Turboquant4 dense at 50k CPU: +191%** — quantized distance computation is dramatically faster with emlgo math primitives.
-3. **Complex128 dense at 50k CPU: +49%** — 16-byte complex types consistently benefit from emlgo.
-4. **Float32 dense at 500k GPU: 3194 QPS** — emlgo GPU path matches standard; both are excellent at 3.2k QPS.
-5. **Float16 sparse at 500k CPU: +14%** — emlgo's half-optimized SIMD paths show gains at scale.
-6. **GPU uint8 dense at 50k: +52%** — significant GPU acceleration for the most common integer type.
+---
 
-### What emlgo regresses
+## 11. GPU A/B — Temporal Search
 
-1. **Float32 dense at 50k CPU: -63%** — emlgo math primitives add overhead for simple float32 dot products at small scale.
-2. **Complex128 dense at 50k GPU: -72%** — GPU emlgo path is slower for complex128 at small scale.
-3. **Complex64 sparse at 500k GPU: -80%** — severe regression for complex64 sparse search on GPU.
-4. **Int8/uint8 dense at 50k CPU: -24-34%** — integer dot products regress with emlgo overhead at small scale.
-5. **Float16 dense at 50k CPU: -38%** — despite float16 benefiting elsewhere, dense 50k CPU sees regression.
-6. **Float32 graphrag at 500k GPU: -48%** — emlgo GPU path slower for graphrag with float32 at scale.
+| dtype | 10k std | 10k emlgo | 10k delta | 100k std | 100k emlgo | 100k delta | 500k std | 500k emlgo | 500k delta |
+|---|---|---|---|---|---|---|---|---|---|
+| int8 | 2394.73 | 2432.20 | +1.56% | 1649.11 | 1781.39 | +8.02% | 646.47 | 698.24 | +8.01% |
+| uint8 | 2457.27 | 2463.46 | +0.25% | 1622.48 | 1685.79 | +3.90% | 638.00 | 677.92 | +6.26% |
+| float16 | 2450.96 | 2471.99 | +0.86% | 1560.62 | 1773.84 | +13.66% | 647.46 | 668.45 | +3.24% |
+| float32 | 3119.43 | 3392.18 | +8.74% | 1933.87 | 2272.81 | +17.53% | 729.38 | 753.87 | +3.36% |
+| float64 | 3050.99 | 3370.19 | +10.46% | 2081.30 | 2290.39 | +10.05% | 687.54 | 729.67 | +6.13% |
+| complex64 | 2908.32 | 3167.20 | +8.90% | 1829.86 | 2199.67 | +20.21% | 585.50 | 575.84 | -1.65% |
+| complex128 | 3183.81 | 3343.05 | +5.00% | 1944.61 | 2048.35 | +5.33% | 481.15 | 549.53 | +14.21% |
+| turboquant | 3076.77 | 3506.52 | +13.97% | 1988.07 | 2258.78 | +13.62% | 684.54 | 766.95 | +12.04% |
 
-### Historical run-to-run variance
+---
 
-Comparing the two runs reveals significant variance in absolute QPS numbers. Key observations:
-- **CPU standard dense at 50k** saw large swings: float16 +123%, float32 +110%, but int8 -34%, uint8 -44%
-- **CPU emlgo dense at 500k** saw turboquant4 +270% but uint8 -63%
-- **GPU standard dense** saw float32 +184% at 500k, but turboquant4 -46-60%
-- Worker count change (6→8) and system load differences likely contribute to variance
-- **Relative A/B deltas** (standard vs emlgo within the same run) are more reliable than absolute QPS comparisons across runs
+## 12. Cross-Config Best QPS
 
-### Recommendations
+For each (dtype, count, search type), the winning build is listed.
 
-1. **Use emlgo for complex64/complex128 workloads** — consistent +50-230% gains across CPU
-2. **Use emlgo for turboquant4 at 50k CPU** — +191% gain is substantial
-3. **Avoid emlgo for float32 dense at 50k CPU** — -63% regression
-4. **Avoid emlgo for complex128 dense on GPU at 50k** — -72% regression
-5. **GPU emlgo is viable for most types** but complex64 sparse at 500k shows -80% regression
-6. **Profile complex64 sparse GPU at 500k** — the -80% regression needs root cause analysis
-7. **Standard build is often faster for simple types at small scale** — emlgo overhead exceeds SIMD benefit for int8/uint8/float32 at 50k
+### Dense Search
+
+| dtype | 10k Winner | 100k Winner | 500k Winner |
+|---|---|---|---|
+| int8 | std (4151.56) | std (2868.70) | emlgo (1579.34) |
+| uint8 | emlgo (4539.58) | std (3009.98) | emlgo (2592.86) |
+| float16 | std (3829.30) | std (2016.67) | emlgo (1458.71) |
+| float32 | emlgo (3657.06) | emlgo (1745.15) | std (3398.44) |
+| float64 | std (3537.18) | std (1403.64) | std (741.55) |
+| complex64 | emlgo (3547.00) | std (1496.08) | std (404.28) |
+| complex128 | std (3580.29) | emlgo (3492.86) | emlgo (533.03) |
+| turboquant | emlgo (4393.78) | std (1885.38) | std (3339.05) |
+
+### Sparse Search
+
+| dtype | 10k Winner | 100k Winner | 500k Winner |
+|---|---|---|---|
+| int8 | std (7691.31) | std (8059.08) | std (6568.58) |
+| uint8 | std (7779.66) | std (8275.25) | std (6670.13) |
+| float16 | emlgo (8040.86) | std (7972.37) | std (6787.01) |
+| float32 | std (8030.47) | std (7781.57) | std (6691.23) |
+| float64 | std (8257.33) | std (8221.24) | std (6853.20) |
+| complex64 | std (7583.73) | std (7863.69) | emlgo (2337.32) |
+| complex128 | std (7802.03) | emlgo (7080.05) | std (3913.14) |
+| turboquant | std (8434.82) | std (7276.20) | std (7060.92) |
+
+### Hybrid Search
+
+| dtype | 10k Winner | 100k Winner | 500k Winner |
+|---|---|---|---|
+| int8 | std (4452.95) | std (2409.93) | std (1139.92) |
+| uint8 | std (4506.51) | std (2519.46) | emlgo (1971.57) |
+| float16 | std (4506.51) | std (1893.83) | std (1472.87) |
+| float32 | std (4206.51) | emlgo (1615.27) | std (3564.19) |
+| float64 | std (4262.78) | std (1117.40) | std (460.35) |
+| complex64 | std (4021.90) | std (1151.82) | std (359.36) |
+| complex128 | std (4007.43) | emlgo (2256.26) | std (455.28) |
+| turboquant | emlgo (4415.05) | std (1744.19) | std (3759.33) |
+
+### Graphrag Search
+
+| dtype | 10k Winner | 100k Winner | 500k Winner |
+|---|---|---|---|
+| int8 | std (3718.56) | std (2223.23) | std (1409.73) |
+| uint8 | std (3417.26) | std (2472.31) | emlgo (1452.93) |
+| float16 | std (3706.06) | std (1756.16) | std (1392.69) |
+| float32 | std (3569.44) | emlgo (1727.90) | std (3294.37) |
+| float64 | std (3412.18) | std (1163.39) | std (484.52) |
+| complex64 | std (3470.22) | std (1375.22) | std (347.39) |
+| complex128 | std (3632.44) | emlgo (2577.29) | emlgo (439.07) |
+| turboquant | emlgo (3940.17) | std (1648.34) | std (3435.43) |
+
+### Temporal Search
+
+| dtype | 10k Winner | 100k Winner | 500k Winner |
+|---|---|---|---|
+| int8 | std (3333.97) | std (2247.47) | std (702.62) |
+| uint8 | std (3345.74) | std (2112.55) | std (703.67) |
+| float16 | std (3196.88) | std (2226.93) | std (683.44) |
+| float32 | std (3953.70) | std (2611.77) | std (793.69) |
+| float64 | std (4225.22) | std (2461.17) | std (806.57) |
+| complex64 | std (4051.07) | std (2505.99) | emlgo (543.06) |
+| complex128 | std (4196.89) | std (2517.05) | std (650.54) |
+| turboquant | std (4102.77) | std (2558.97) | std (727.86) |
+
+---
+
+## 13. Peak Memory
+
+| dtype | Count | CPU std (MB) | CPU emlgo (MB) | GPU std (MB) | GPU emlgo (MB) |
+|---|---|---|---|---|---|
+| int8 | 10k | 448.18 | 432.30 | 421.23 | 525.36 |
+| int8 | 100k | 1140.31 | 1105.29 | 1068.67 | 1203.38 |
+| int8 | 500k | 4572.18 | 4305.14 | 4577.48 | 4233.65 |
+| uint8 | 10k | 476.12 | 420.89 | 452.79 | 579.72 |
+| uint8 | 100k | 1175.09 | 1088.05 | 1050.53 | 1183.24 |
+| uint8 | 500k | 4651.71 | 4692.32 | 4314.17 | 4653.01 |
+| float16 | 10k | 442.59 | 487.95 | 477.35 | 546.52 |
+| float16 | 100k | 1224.50 | 1178.62 | 1173.96 | 1301.70 |
+| float16 | 500k | 4861.31 | 4482.06 | 4618.37 | 4759.70 |
+| float32 | 10k | 357.88 | 372.33 | 355.41 | 481.28 |
+| float32 | 100k | 1153.50 | 1143.28 | 1195.94 | 1274.13 |
+| float32 | 500k | 5197.42 | 4745.66 | 4722.07 | 5481.51 |
+| float64 | 10k | 613.65 | 588.61 | 591.11 | 726.89 |
+| float64 | 100k | 1858.98 | 2008.74 | 1862.75 | 2037.95 |
+| float64 | 500k | 7171.96 | 10632.59 | 7520.42 | 8181.87 |
+| complex64 | 10k | 559.34 | 611.95 | 649.12 | 720.55 |
+| complex64 | 100k | 2074.55 | 1824.08 | 1846.02 | 2068.87 |
+| complex64 | 500k | 7294.88 | 8932.79 | 8854.07 | 7534.86 |
+| complex128 | 10k | 788.21 | 799.47 | 818.19 | 879.47 |
+| complex128 | 100k | 3484.52 | 2678.87 | 3317.77 | 3185.10 |
+| complex128 | 500k | 14093.76 | 15211.54 | 14845.71 | 14836.03 |
+| turboquant | 10k | 383.94 | 371.24 | 365.94 | 493.22 |
+| turboquant | 100k | 1230.52 | 1177.25 | 1179.57 | 1359.45 |
+| turboquant | 500k | 5314.37 | 4167.35 | 5348.85 | 4315.80 |
+
+---
+
+## 14. Key Findings
+
+### What emlgo Improves
+
+- **CPU float32 dense at 100k** (+40.34%) and **CPU complex128 dense at 100k** (+159.31%) are the largest single-count gains, suggesting emlgo optimizes memory-bound medium-count workloads for wider types.
+- **GPU sparse search** is broadly improved — emlgo wins on 18 of 24 sparse combinations, with standout gains at 500k (complex128 +176.96%, uint8 +9.49%, float32 +15.95%).
+- **GPU hybrid and graphrag** at 500k show strong emlgo wins: uint8 hybrid +181.13%, uint8 graphrag +290.43%, float32 graphrag +23.27%, turboquant graphrag +61.45%.
+- **GPU temporal search** is consistently better with emlgo — every dtype at every count wins or is within ~2%, with gains up to +13.97% (turboquant 10k).
+- CPU turboquant 10k dense gains +28.60% with emlgo.
+- Memory usage at 500k is often lower with emlgo (int8, float16, float32, turboquant), indicating better large-index memory efficiency.
+
+### What emlgo Regresses
+
+- **CPU 100k count is the weak spot** — emlgo loses at 100k across nearly every CPU search type and dtype, with deltas often -15% to -30%. This is the most consistent regression pattern.
+- **CPU temporal search** is almost entirely regressive for emlgo, losing on 22 of 24 combinations. The 500k complex64 outlier (+100.85%) is an exception.
+- **CPU sparse search** at 100k is uniformly worse with emlgo, with float64 500k sparse hitting -41.37%.
+- **GPU turboquant 100k** regresses sharply across dense (-57.40%), hybrid (-54.75%), and graphrag (-55.75%).
+- **GPU complex128 100k dense** drops -49.75% — a significant regression for a type that otherwise benefits from emlgo at 500k.
+- **float64 500k CPU dense** (-20.96%) and **GPU dense** (-37.20%) regress, with emlgo memory usage spiking to 10.6 GB (vs 7.2 GB std) on CPU — suggesting spill or allocation overhead.
+- **complex64 500k CPU dense** (-37.96%) and **CPU hybrid** (-39.47%) are the worst complex64 regressions.
+
+### Historical Comparisons
+
+- emlgo shows a consistent "U-shaped" performance curve: competitive or winning at 10k, regressing at 100k, then recovering at 500k for many dtypes. This pattern is visible across CPU dense, hybrid, and graphrag.
+- GPU builds benefit more uniformly from emlgo than CPU builds, likely due to better memory coalescing or reduced host-device transfer overhead in the emlgo code paths.
+- The turboquant dtype is volatile with emlgo — it has some of the best gains (CPU dense 10k +28.60%) and some of the worst regressions (GPU dense 100k -57.40%), suggesting the quantization path interacts poorly with emlgo at specific scales.
+- Peak memory for emlgo at 500k is generally lower than standard on CPU (except float64 and complex128), indicating the emlgo build uses more compact representations for common integer and float types at scale.

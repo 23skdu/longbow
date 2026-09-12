@@ -786,7 +786,7 @@ __global__ void turboquant_distance_kernel_v2(const float* query, const unsigned
         if ((qjlBits[d / 8] >> (d % 8)) & 1) {
             val += correctionFactor;
         } else {
-            val -= 0.1f;
+            val -= correctionFactor;
         }
         float diff = query[d] - val;
         sum += diff * diff;

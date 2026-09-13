@@ -2620,8 +2620,217 @@ class BenchmarkRunner:
                 indent=2,
             )
 
+    def _aggregate_runs(self, run_results, dim, dtype, count, label):
+        """Aggregate multiple benchmark runs into a single result with mean/stdev."""
+        import math
+
+        if not run_results:
+            return None
+
+        # Aggregate search metrics across runs
+        all_search_modes = set()
+        for r in run_results:
+            all_search_modes.update(r.get("search", {}).keys())
+
+        aggregated_search = {}
+        for mode in all_search_modes:
+            qps_values = [r["search"][mode]["qps"] for r in run_results if mode in r.get("search", {})]
+            p50_values = [r["search"][mode]["p50"] for r in run_results if mode in r.get("search", {})]
+            p95_values = [r["search"][mode]["p95"] for r in run_results if mode in r.get("search", {})]
+            p99_values = [r["search"][mode]["p99"] for r in run_results if mode in r.get("search", {})]
+
+            def mean_stdev(vals):
+                if len(vals) < 2:
+                    return vals[0] if vals else 0, 0
+                m = sum(vals) / len(vals)
+                var = sum((x - m) ** 2 for x in vals) / (len(vals) - 1)
+                return m, math.sqrt(var)
+
+            qps_mean, qps_stdev = mean_stdev(qps_values)
+            p50_mean, p50_stdev = mean_stdev(p50_values)
+            p95_mean, p95_stdev = mean_stdev(p95_values)
+            p99_mean, p99_stdev = mean_stdev(p99_values)
+
+            aggregated_search[mode] = {
+                "qps": round(qps_mean, 1),
+                "qps_stdev": round(qps_stdev, 1),
+                "p50": round(p50_mean, 3),
+                "p50_stdev": round(p50_stdev, 3),
+                "p95": round(p95_mean, 3),
+                "p95_stdev": round(p95_stdev, 3),
+                "p99": round(p99_mean, 3),
+                "p99_stdev": round(p99_stdev, 3),
+                "runs": len(qps_values),
+            }
+
+        # Aggregate ingest
+        ingest_values = [r.get("ingest", {}).get("vec_per_sec", 0) for r in run_results]
+        ingest_mean, ingest_stdev = 0, 0
+        if ingest_values:
+            ingest_mean = sum(ingest_values) / len(ingest_values)
+            if len(ingest_values) >= 2:
+                var = sum((x - ingest_mean) ** 2 for x in ingest_values) / (len(ingest_values) - 1)
+                ingest_stdev = math.sqrt(var)
+
+        # Peak memory
+        peak_mbs = [r.get("peak_memory_mb", 0) for r in run_results]
+        peak_mb = max(peak_mbs) if peak_mbs else 0
+
+        return {
+            "dim": dim,
+            "dtype": dtype,
+            "count": count,
+            "mode": run_results[0].get("mode", "cpu"),
+            "ingest": {
+                "vec_per_sec": round(ingest_mean, 1),
+                "vec_per_sec_stdev": round(ingest_stdev, 1),
+            },
+            "search": aggregated_search,
+            "peak_memory_mb": round(peak_mb, 2),
+            "tq_bits": run_results[0].get("tq_bits", 0),
+            "num_runs": len(run_results),
+            "timestamp": datetime.now().isoformat(),
+        }
+
+    def execute_memory_soak(self):
+        """Memory soak test: insert vectors and monitor RSS over time.
+        
+        Monitors memory usage for the specified duration, reporting RSS at
+        regular intervals to detect memory leaks or excessive growth.
+        """
+        if not HAS_LONGBOW_SDK:
+            print("ERROR: longbow SDK not installed. Install with: pip install longbow")
+            return
+
+        print("=" * 80)
+        print("MEMORY SOAK TEST")
+        print("Started:", datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        print("=" * 80)
+
+        dims = [int(d) for d in self.args.dims.split(",")]
+        dtypes = self.args.dtypes.split(",")
+        counts = [int(c) for c in self.args.counts.split(",")]
+        count = max(counts) if counts else 500000
+        duration = self.args.soak_duration
+        interval = max(30, duration // 120)  # Sample ~120 times
+
+        dtype_map = {
+            "float32": np.float32, "float64": np.float64, "float16": np.float16,
+            "int8": np.int8, "int16": np.int16, "int32": np.int32, "int64": np.int64,
+            "uint8": np.uint8, "uint16": np.uint16, "uint32": np.uint32, "uint64": np.uint64,
+            "complex64": np.complex64, "complex128": np.complex128, "turboquant": np.float32,
+        }
+
+        for dtype in dtypes:
+            for dim in dims:
+                print(f"\n{'=' * 80}")
+                print(f"Memory Soak: {dtype} dim={dim} count={count} duration={duration}s")
+                print("=" * 80)
+
+                label = f"soak_{dtype}_{dim}"
+                env_overrides = {"LONGBOW_MAX_MEMORY": str(self.args.memory)}
+                if not self.start_server(label, env_overrides=env_overrides):
+                    print(f"  Failed to start server for {dtype} dim={dim}")
+                    continue
+
+                np_dtype = dtype_map.get(dtype, np.float32)
+                vec_size = dim
+                if "complex" in dtype:
+                    vec_size = dim * 2
+
+                # Insert vectors in batches
+                batch_size = min(10000, count)
+                inserted = 0
+                try:
+                    while inserted < count:
+                        to_insert = min(batch_size, count - inserted)
+                        vectors = np.random.randn(to_insert, vec_size).astype(np_dtype)
+                        ids = list(range(inserted, inserted + to_insert))
+                        self.client.insert_vectors(ids, vectors.tolist())
+                        inserted += to_insert
+                        print(f"  Inserted {inserted}/{count} vectors", end="\r")
+
+                    print(f"\n  All {count} vectors inserted. Monitoring memory for {duration}s...")
+                except Exception as e:
+                    print(f"  Error during insertion: {e}")
+                    self.stop_server()
+                    continue
+
+                # Monitor memory over time
+                memory_samples = []
+                start_time = time.time()
+                peak_rss = 0.0
+
+                while time.time() - start_time < duration:
+                    elapsed = time.time() - start_time
+                    rss_mb = 0.0
+                    if self.server_pid:
+                        try:
+                            with open(f"/proc/{self.server_pid}/status", "r") as f:
+                                for line in f:
+                                    if line.startswith("VmRSS:"):
+                                        rss_mb = float(line.split()[1]) / 1024.0
+                                        break
+                        except Exception:
+                            pass
+
+                    if rss_mb > peak_rss:
+                        peak_rss = rss_mb
+
+                    memory_samples.append({
+                        "elapsed_s": round(elapsed, 1),
+                        "rss_mb": round(rss_mb, 2),
+                    })
+
+                    if int(elapsed) % 60 == 0 and elapsed > 0:
+                        print(f"  [{elapsed:.0f}s] RSS: {rss_mb:.1f} MB (peak: {peak_rss:.1f} MB)")
+
+                    time.sleep(interval)
+
+                self.stop_server()
+
+                # Calculate statistics
+                rss_values = [s["rss_mb"] for s in memory_samples]
+                if len(rss_values) >= 2:
+                    rss_mean = sum(rss_values) / len(rss_values)
+                    rss_min = min(rss_values)
+                    rss_max = max(rss_values)
+                    rss_growth = rss_values[-1] - rss_values[0]
+
+                    print(f"\n  Memory Soak Results ({dtype} dim={dim}):")
+                    print(f"    Samples:    {len(memory_samples)}")
+                    print(f"    RSS Mean:   {rss_mean:.1f} MB")
+                    print(f"    RSS Min:    {rss_min:.1f} MB")
+                    print(f"    RSS Max:    {rss_max:.1f} MB")
+                    print(f"    RSS Growth: {rss_growth:+.1f} MB ({rss_growth/rss_values[0]*100 if rss_values[0] > 0 else 0:+.1f}%)")
+                    print(f"    Peak RSS:   {peak_rss:.1f} MB")
+
+                    self.results.append({
+                        "dim": dim,
+                        "dtype": dtype,
+                        "count": count,
+                        "mode": "memory_soak",
+                        "duration_s": duration,
+                        "samples": len(memory_samples),
+                        "rss_mean_mb": round(rss_mean, 2),
+                        "rss_min_mb": round(rss_min, 2),
+                        "rss_max_mb": round(rss_max, 2),
+                        "rss_growth_mb": round(rss_growth, 2),
+                        "peak_rss_mb": round(peak_rss, 2),
+                        "samples_detail": memory_samples,
+                        "timestamp": datetime.now().isoformat(),
+                    })
+                else:
+                    print("  Insufficient memory samples collected")
+
     def execute(self):
         modes = self.args.mode.split(",")
+        
+        # Handle --memory-soak flag as a mode shortcut
+        if getattr(self.args, "memory_soak", False):
+            if "memory_soak" not in modes:
+                modes = ["memory_soak"]
+        
         print(f"Executing benchmarks for modes: {modes}")
         
         runs = [(False, "")]
@@ -2681,6 +2890,9 @@ class BenchmarkRunner:
                     continue
                 if mode == "temporal":
                     self.execute_temporal()
+                    continue
+                if mode == "memory_soak":
+                    self.execute_memory_soak()
                     continue
 
                 # Default logic for cpu/metal/cuda
@@ -2771,15 +2983,34 @@ class BenchmarkRunner:
                             server_crashed = False
                             try:
                                 max_retries = getattr(self.args, "max_retries", 1)
+                                num_runs = getattr(self.args, "runs", 1)
                                 success = False
                                 for attempt in range(max_retries):
                                     try:
                                         if self.args.pprof:
                                             pprof_thread = self.collect_pprof(label)
 
-                                        success = self.run_benchmark(dim, dtype, count, label)
+                                        # Multi-run support: run N times and aggregate
+                                        if num_runs > 1:
+                                            run_results = []
+                                            for run_idx in range(num_runs):
+                                                print(f"  --- Run {run_idx+1}/{num_runs} ---")
+                                                run_ok = self.run_benchmark(dim, dtype, count, f"{label}_run{run_idx}")
+                                                if run_ok:
+                                                    run_results.append(self.results[-1])
+                                            if run_results:
+                                                # Aggregate: compute mean/stdev across runs
+                                                aggregated = self._aggregate_runs(run_results, dim, dtype, count, label)
+                                                # Remove individual runs, add aggregated result
+                                                self.results = [r for r in self.results if r not in run_results]
+                                                self.results.append(aggregated)
+                                                success = True
+                                                self.completed_configs.add(config_key)
+                                        else:
+                                            success = self.run_benchmark(dim, dtype, count, label)
+                                            if success:
+                                                self.completed_configs.add(config_key)
                                         if success:
-                                            self.completed_configs.add(config_key)
                                             break
                                         print(f"  Benchmark run failed (attempt {attempt+1}/{max_retries})")
                                         # Detect server crash: if server process is dead,
@@ -2953,26 +3184,52 @@ class BenchmarkRunner:
         print("\n" + "─" * 100)
         print("BENCHMARK SUMMARY")
         print("─" * 100)
-        print(
-            f"{'Dim':<6} {'Dtype':<12} {'Count':<8} {'Peak MB':<9} {'Search Type':<15} {'QPS':<9} {'P50 ms':<8} {'P95 ms':<8} {'P99 ms':<8}"
-        )
+        has_stdev = any(r.get("num_runs", 1) > 1 for r in self.results)
+        if has_stdev:
+            print(
+                f"{'Dim':<6} {'Dtype':<12} {'Count':<8} {'Runs':<6} {'Search Type':<15} "
+                f"{'QPS':<12} {'P50 ms':<14} {'P95 ms':<14} {'P99 ms':<14}"
+            )
+        else:
+            print(
+                f"{'Dim':<6} {'Dtype':<12} {'Count':<8} {'Peak MB':<9} {'Search Type':<15} "
+                f"{'QPS':<9} {'P50 ms':<8} {'P95 ms':<8} {'P99 ms':<8}"
+            )
         print("─" * 100)
 
         for r in self.results:
             search_results = r.get("search", {})
             peak = r.get("peak_memory_mb", 0.0)
+            num_runs = r.get("num_runs", 1)
             for s_type, s_data in search_results.items():
-                print(
-                    f"{r.get('dim', 'N/A'):<6} "
-                    f"{r.get('dtype', 'N/A'):<12} "
-                    f"{r.get('count', 'N/A'):<8} "
-                    f"{peak:<9.1f} "
-                    f"{s_type:<15} "
-                    f"{s_data.get('qps', 0):<9.1f} "
-                    f"{s_data.get('p50', 0):<8.3f} "
-                    f"{s_data.get('p95', 0):<8.3f} "
-                    f"{s_data.get('p99', 0):<8.3f}"
-                )
+                if has_stdev and "qps_stdev" in s_data:
+                    print(
+                        f"{r.get('dim', 'N/A'):<6} "
+                        f"{r.get('dtype', 'N/A'):<12} "
+                        f"{r.get('count', 'N/A'):<8} "
+                        f"{num_runs:<6} "
+                        f"{s_type:<15} "
+                        f"{s_data.get('qps', 0):<8.1f} "
+                        f"±{s_data.get('qps_stdev', 0):<4.1f} "
+                        f"{s_data.get('p50', 0):<8.3f} "
+                        f"±{s_data.get('p50_stdev', 0):<5.3f} "
+                        f"{s_data.get('p95', 0):<8.3f} "
+                        f"±{s_data.get('p95_stdev', 0):<5.3f} "
+                        f"{s_data.get('p99', 0):<8.3f} "
+                        f"±{s_data.get('p99_stdev', 0):<5.3f}"
+                    )
+                else:
+                    print(
+                        f"{r.get('dim', 'N/A'):<6} "
+                        f"{r.get('dtype', 'N/A'):<12} "
+                        f"{r.get('count', 'N/A'):<8} "
+                        f"{peak:<9.1f} "
+                        f"{s_type:<15} "
+                        f"{s_data.get('qps', 0):<9.1f} "
+                        f"{s_data.get('p50', 0):<8.3f} "
+                        f"{s_data.get('p95', 0):<8.3f} "
+                        f"{s_data.get('p99', 0):<8.3f}"
+                    )
         print("─" * 100)
 
     def generate_markdown_report(self):
@@ -3459,6 +3716,18 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--numa-compare", action="store_true", help="Run benchmarks with and without NUMA binding to compare"
+    )
+    parser.add_argument(
+        "--runs", type=int, default=1,
+        help="Number of runs per configuration for mean/stdev reporting (default: 1)"
+    )
+    parser.add_argument(
+        "--memory-soak", action="store_true",
+        help="Run memory soak test: insert vectors and monitor RSS over time"
+    )
+    parser.add_argument(
+        "--soak-duration", type=int, default=3600,
+        help="Duration in seconds for memory soak test (default: 3600 = 1 hour)"
     )
     parser.add_argument(
         "--ci", action="store_true",

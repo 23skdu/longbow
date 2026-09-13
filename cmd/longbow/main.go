@@ -404,6 +404,20 @@ func run() error {
 		logger.Info().Msg("emlgo excluded for float64 batch operations (LONGBOW_FLOAT64_EXCLUDE_EMLGO=true)")
 	}
 
+	// Part 10: Support LONGBOW_MATH_DISPATCH env var for conditional dispatch routing
+	// Values: auto (default), emlgo, standard
+	if dispatchVal, ok := os.LookupEnv("LONGBOW_MATH_DISPATCH"); ok {
+		mode := tensor.ParseDispatchMode(dispatchVal)
+		switch mode {
+		case tensor.DispatchEML:
+			logger.Info().Str("mode", dispatchVal).Msg("math dispatch: forced emlgo for all operations")
+		case tensor.DispatchStandard:
+			logger.Info().Str("mode", dispatchVal).Msg("math dispatch: forced standard math for all operations")
+		case tensor.DispatchAuto:
+			logger.Info().Msg("math dispatch: auto routing (emlgo for complex/TQ>=50k, standard otherwise)")
+		}
+	}
+
 	// Configure GPU acceleration
 	if cfg.GPUEnabled {
 		detectedBackend := gpu.DetectGPUBackend()

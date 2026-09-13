@@ -32,7 +32,7 @@ jobs:
 
       - name: Run benchmarks on PR branch
         run: |
-          # Run specific benchmark packages only
+          # Run specific benchmark packages only with 3 runs for mean/stdev
           go test -bench=BenchmarkEuclidean -benchmem -count=5 ./internal/simd/... 2>/dev/null | tee pr-simd-bench.txt
           go test -bench=BenchmarkSearch -benchmem -count=5 ./internal/store/... 2>/dev/null | tee pr-search-bench.txt
           go test -bench=BenchmarkArrowHNSWInsert -benchmem -count=5 ./internal/store/... 2>/dev/null | tee pr-insert-bench.txt

@@ -65,5 +65,5 @@ jobs:
 
       - name: Run fast Unified Benchmark (CI mode)
         run: |
-          python3 scripts/unified_benchmark.py --ci
+          python3 scripts/unified_benchmark.py --ci --runs 3
 

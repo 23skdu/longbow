@@ -67,6 +67,14 @@ void launch_sum_centroids(const float* vectors, const uint32_t* assignments, flo
 void launch_finalize_centroids(float* centroids, const uint32_t* counts, int dim, int numCentroids, cudaStream_t stream);
 void launch_hnsw_prune_neighbors_kernel(const uint32_t* candidateIds, const float* candidateDists, uint32_t* selectedIds, uint32_t* selectedCount, const float** page_ptrs, const int* page_starts, int maxNeighbors, int numCandidates, int dim, int total_count, int num_pages, bool extendedHeuristic, cudaStream_t stream);
 
+// Part 8: Complex type kernels
+void launch_l2_distance_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
+void launch_dot_product_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
+void launch_cosine_similarity_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
+void launch_l2_distance_complex64_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
+void launch_dot_product_complex64_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
+void launch_cosine_similarity_complex64_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream);
+
 int cuda_train_kmeans(CUDAIndexHandle* handle, float* d_vectors, float* d_centroids, float* d_sumCentroids, uint32_t* d_assignments, uint32_t* d_counts, float* h_vectors, float* h_centroids, int numVectors, int dim, int k, int iterations);
 int cuda_pq_encode(CUDAIndexHandle* handle, float* d_vectors, float* d_codebooks, unsigned char* d_codes, float* h_vectors, float* h_codebooks, unsigned char* h_codes, int numVectors, int m, int subDim);
 
@@ -1480,19 +1488,311 @@ func (idx *CUDAIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float3
 		return nil, nil, fmt.Errorf("index is closed")
 	}
 
-	// Convert uint16 pairs to float32 pairs for search
-	f32Vec := make([]float32, len(vector)*2)
+	// complex64 is stored as interleaved uint16 (float16) pairs [re, im].
+	// Convert each uint16 to float32 for the GPU kernel.
+	f32Vec := make([]float32, len(vector))
 	for i, v := range vector {
 		f := float16.New(float32(math.Float32frombits(uint32(v)))).Float32()
-		f32Vec[i*2] = f
+		f32Vec[i] = f
 	}
 
-	return idx.Search(f32Vec, k)
+	if len(f32Vec) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(f32Vec), idx.dim)
+	}
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
+	if idx.pager == nil {
+		return nil, nil, fmt.Errorf("GPU pager not initialized")
+	}
+	n := idx.vectorCount
+	if n == 0 {
+		return nil, nil, nil
+	}
+	if k > n {
+		k = n
+	}
+
+	start := time.Now()
+
+	var cStream C.cudaStream_t
+	if idx.handle != nil {
+		cStream = idx.handle.streams[0]
+	}
+
+	qBytes := int64(idx.dim * 4)
+	dQuery, err := idx.allocGPUMem(qBytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate query GPU memory: %w", err)
+	}
+	defer idx.freeGPUMem(dQuery)
+	C.cudaMemcpy(dQuery, unsafe.Pointer(&f32Vec[0]), C.size_t(qBytes), C.cudaMemcpyHostToDevice)
+
+	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
+
+	type pageEntry struct {
+		ptr   unsafe.Pointer
+		nvecs int
+	}
+	pages := make([]pageEntry, 0, numChunks)
+	var pinnedPages []*memory.PageInfo
+	for chunk := 0; chunk < numChunks; chunk++ {
+		pid := idx.pageIDFor(0, chunk)
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			continue
+		}
+		if err := idx.pager.Promote(pi); err != nil {
+			continue
+		}
+		idx.pager.Pin(pi)
+		pinnedPages = append(pinnedPages, pi)
+		gpuPtr := idx.pager.GetGPUAddr(pi)
+		if gpuPtr == nil {
+			continue
+		}
+		vecsInChunk := n - chunk*vectorsPerPage
+		if vecsInChunk > vectorsPerPage {
+			vecsInChunk = vectorsPerPage
+		}
+		pages = append(pages, pageEntry{ptr: gpuPtr, nvecs: vecsInChunk})
+	}
+
+	defer func() {
+		for _, pi := range pinnedPages {
+			idx.pager.Unpin(pi)
+		}
+	}()
+
+	if len(pages) == 0 {
+		return nil, nil, fmt.Errorf("no resident pages available for search")
+	}
+
+	numPages := len(pages)
+	hPageStarts := make([]C.int, numPages+1)
+	hPagePtrs := make([]unsafe.Pointer, numPages)
+	for i, p := range pages {
+		hPagePtrs[i] = p.ptr
+		hPageStarts[i+1] = hPageStarts[i] + C.int(p.nvecs)
+	}
+	totalVecs := int(hPageStarts[numPages])
+
+	dAllDists, err := idx.allocGPUMem(int64(totalVecs * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate distance buffer: %w", err)
+	}
+	defer idx.freeGPUMem(dAllDists)
+
+	dPagePtrs, err := idx.allocGPUMem(int64(numPages) * int64(unsafe.Sizeof(hPagePtrs[0])))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate page pointers buffer: %w", err)
+	}
+	defer idx.freeGPUMem(dPagePtrs)
+	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
+
+	dPageStarts, err := idx.allocGPUMem(int64((numPages + 1) * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate page starts buffer: %w", err)
+	}
+	defer idx.freeGPUMem(dPageStarts)
+	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
+
+	// Use native complex64 CUDA kernels
+	C.launch_l2_distance_complex64_kernel(
+		(*C.float)(dPagePtrs),
+		(*C.float)(dQuery),
+		(*C.float)(dAllDists),
+		C.int(idx.dim),
+		C.int(totalVecs),
+		cStream,
+	)
+
+	hAllDists := make([]float32, totalVecs)
+	distBytes := int64(totalVecs * 4)
+	C.cudaMemcpy(unsafe.Pointer(&hAllDists[0]), dAllDists, C.size_t(distBytes), C.cudaMemcpyDeviceToHost)
+
+	type scored struct {
+		dist float32
+		pos  int
+	}
+	all := make([]scored, 0, totalVecs)
+	for i, d := range hAllDists {
+		all = append(all, scored{dist: d, pos: i})
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].dist < all[j].dist
+	})
+	if k > len(all) {
+		k = len(all)
+	}
+
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+	for i := 0; i < k; i++ {
+		resultDistances[i] = all[i].dist
+		if all[i].pos < len(idx.idList) {
+			resultIDs[i] = idx.idList[all[i].pos]
+		}
+	}
+
+	duration := time.Since(start)
+	metrics.RecordGPUSearch(duration, "cuda", k)
+
+	return resultIDs, resultDistances, nil
 }
 
 func (idx *CUDAIndex) SearchComplex128(vector []float32, k int) ([]int64, []float32, error) {
-	// complex128 is just float32 - use as-is
-	return idx.Search(vector, k)
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+
+	if idx.closed {
+		return nil, nil, fmt.Errorf("index is closed")
+	}
+	if len(vector) != idx.dim {
+		return nil, nil, fmt.Errorf("query vector dimension %d does not match index dimension %d", len(vector), idx.dim)
+	}
+	if err := idx.Flush(); err != nil {
+		return nil, nil, err
+	}
+	if idx.pager == nil {
+		return nil, nil, fmt.Errorf("GPU pager not initialized")
+	}
+	n := idx.vectorCount
+	if n == 0 {
+		return nil, nil, nil
+	}
+	if k > n {
+		k = n
+	}
+
+	start := time.Now()
+
+	var cStream C.cudaStream_t
+	if idx.handle != nil {
+		cStream = idx.handle.streams[0]
+	}
+
+	qBytes := int64(idx.dim * 4)
+	dQuery, err := idx.allocGPUMem(qBytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate query GPU memory: %w", err)
+	}
+	defer idx.freeGPUMem(dQuery)
+	C.cudaMemcpy(dQuery, unsafe.Pointer(&vector[0]), C.size_t(qBytes), C.cudaMemcpyHostToDevice)
+
+	numChunks := (n + vectorsPerPage - 1) / vectorsPerPage
+
+	type pageEntry struct {
+		ptr   unsafe.Pointer
+		nvecs int
+	}
+	pages := make([]pageEntry, 0, numChunks)
+	var pinnedPages []*memory.PageInfo
+	for chunk := 0; chunk < numChunks; chunk++ {
+		pid := idx.pageIDFor(0, chunk)
+		pi := idx.pager.PageInfo(pid)
+		if pi == nil {
+			continue
+		}
+		if err := idx.pager.Promote(pi); err != nil {
+			continue
+		}
+		idx.pager.Pin(pi)
+		pinnedPages = append(pinnedPages, pi)
+		gpuPtr := idx.pager.GetGPUAddr(pi)
+		if gpuPtr == nil {
+			continue
+		}
+		vecsInChunk := n - chunk*vectorsPerPage
+		if vecsInChunk > vectorsPerPage {
+			vecsInChunk = vectorsPerPage
+		}
+		pages = append(pages, pageEntry{ptr: gpuPtr, nvecs: vecsInChunk})
+	}
+
+	defer func() {
+		for _, pi := range pinnedPages {
+			idx.pager.Unpin(pi)
+		}
+	}()
+
+	if len(pages) == 0 {
+		return nil, nil, fmt.Errorf("no resident pages available for search")
+	}
+
+	numPages := len(pages)
+	hPageStarts := make([]C.int, numPages+1)
+	hPagePtrs := make([]unsafe.Pointer, numPages)
+	for i, p := range pages {
+		hPagePtrs[i] = p.ptr
+		hPageStarts[i+1] = hPageStarts[i] + C.int(p.nvecs)
+	}
+	totalVecs := int(hPageStarts[numPages])
+
+	dAllDists, err := idx.allocGPUMem(int64(totalVecs * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate distance buffer: %w", err)
+	}
+	defer idx.freeGPUMem(dAllDists)
+
+	dPagePtrs, err := idx.allocGPUMem(int64(numPages) * int64(unsafe.Sizeof(hPagePtrs[0])))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate page pointers buffer: %w", err)
+	}
+	defer idx.freeGPUMem(dPagePtrs)
+	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
+
+	dPageStarts, err := idx.allocGPUMem(int64((numPages + 1) * 4))
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to allocate page starts buffer: %w", err)
+	}
+	defer idx.freeGPUMem(dPageStarts)
+	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
+
+	// Use native complex128 CUDA kernels
+	C.launch_l2_distance_complex128_kernel(
+		(*C.float)(dPagePtrs),
+		(*C.float)(dQuery),
+		(*C.float)(dAllDists),
+		C.int(idx.dim),
+		C.int(totalVecs),
+		cStream,
+	)
+
+	hAllDists := make([]float32, totalVecs)
+	distBytes := int64(totalVecs * 4)
+	C.cudaMemcpy(unsafe.Pointer(&hAllDists[0]), dAllDists, C.size_t(distBytes), C.cudaMemcpyDeviceToHost)
+
+	type scored struct {
+		dist float32
+		pos  int
+	}
+	all := make([]scored, 0, totalVecs)
+	for i, d := range hAllDists {
+		all = append(all, scored{dist: d, pos: i})
+	}
+
+	sort.Slice(all, func(i, j int) bool {
+		return all[i].dist < all[j].dist
+	})
+	if k > len(all) {
+		k = len(all)
+	}
+
+	resultIDs := make([]int64, k)
+	resultDistances := make([]float32, k)
+	for i := 0; i < k; i++ {
+		resultDistances[i] = all[i].dist
+		if all[i].pos < len(idx.idList) {
+			resultIDs[i] = idx.idList[all[i].pos]
+		}
+	}
+
+	duration := time.Since(start)
+	metrics.RecordGPUSearch(duration, "cuda", k)
+
+	return resultIDs, resultDistances, nil
 }
 
 func (idx *CUDAIndex) AssignToClusters(vectors []float32, centroids []float32) ([]uint32, error) {

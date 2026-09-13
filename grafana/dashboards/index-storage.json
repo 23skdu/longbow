@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": {"type": "datasource", "uid": "grafana"},
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -21,7 +24,12 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
       "panels": [],
       "title": "Vector Index",
@@ -29,39 +37,88 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
       "id": 2,
-      "targets": [{"expr": "longbow_vector_index_size", "legendFormat": "{{dataset}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "longbow_vector_index_size",
+          "legendFormat": "{{dataset}}",
+          "refId": "A"
+        }
+      ],
       "title": "Vector Index Size",
       "type": "stat"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 1},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
       "id": 3,
-      "targets": [{"expr": "longbow_hnsw_node_count", "legendFormat": "{{dataset}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "longbow_hnsw_node_count",
+          "legendFormat": "{{dataset}}",
+          "refId": "A"
+        }
+      ],
       "title": "HNSW Node Count",
       "type": "stat"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 1},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
       "id": 4,
-      "targets": [{"expr": "longbow_hnsw_graph_height", "legendFormat": "Height", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "longbow_hnsw_graph_height",
+          "legendFormat": "Height",
+          "refId": "A"
+        }
+      ],
       "title": "Graph Height",
       "type": "stat"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 1},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
       "id": 5,
-      "targets": [{"expr": "longbow_hnsw_average_degree", "legendFormat": "Avg Degree", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "longbow_hnsw_average_degree",
+          "legendFormat": "Avg Degree",
+          "refId": "A"
+        }
+      ],
       "title": "Average Degree",
       "type": "stat"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 5},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
       "id": 6,
       "panels": [],
       "title": "Index Operations",
@@ -69,34 +126,73 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 6},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 6
+      },
       "id": 7,
       "targets": [
-        {"expr": "histogram_quantile(0.95, sum(rate(longbow_index_job_latency_seconds_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "A"},
-        {"expr": "histogram_quantile(0.99, sum(rate(longbow_index_job_latency_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "B"}
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(longbow_index_job_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P95",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_index_job_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P99",
+          "refId": "B"
+        }
       ],
       "title": "Index Job Latency",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 6},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 6
+      },
       "id": 8,
-      "targets": [{"expr": "longbow_index_queue_depth", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "longbow_index_queue_depth",
+          "refId": "A"
+        }
+      ],
       "title": "Index Queue Depth",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 6},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 6
+      },
       "id": 9,
-      "targets": [{"expr": "rate(longbow_hnsw_insert_ops_total[1m])", "legendFormat": "{{type}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "rate(longbow_hnsw_insert_ops_total[1m])",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ],
       "title": "HNSW Insert Rate",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 12},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 12
+      },
       "id": 10,
       "panels": [],
       "title": "Index Build",
@@ -104,23 +200,50 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 13},
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
       "id": 11,
-      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_index_build_latency_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_index_build_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P99",
+          "refId": "A"
+        }
+      ],
       "title": "Index Build Latency P99",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 13},
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
       "id": 12,
-      "targets": [{"expr": "rate(longbow_hnsw_bulk_vectors_processed_total[1m])", "legendFormat": "Vectors/s", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "rate(longbow_hnsw_bulk_vectors_processed_total[1m])",
+          "legendFormat": "Vectors/s",
+          "refId": "A"
+        }
+      ],
       "title": "Bulk Index Throughput",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 19},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 19
+      },
       "id": 13,
       "panels": [],
       "title": "WAL Persistence",
@@ -128,34 +251,74 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 20},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 20
+      },
       "id": 14,
-      "targets": [{"expr": "rate(longbow_wal_writes_total[1m])", "legendFormat": "Writes/s", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "rate(longbow_wal_writes_total[1m])",
+          "legendFormat": "Writes/s",
+          "refId": "A"
+        }
+      ],
       "title": "WAL Write Rate",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 20},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 20
+      },
       "id": 15,
-      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_wal_fsync_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_wal_fsync_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P99",
+          "refId": "A"
+        }
+      ],
       "title": "WAL Fsync Duration P99",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 20},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 20
+      },
       "id": 16,
       "targets": [
-        {"expr": "avg(longbow_wal_batch_size)", "legendFormat": "Avg Batch", "refId": "A"},
-        {"expr": "longbow_wal_pending_entries", "legendFormat": "Pending", "refId": "B"}
+        {
+          "expr": "avg(longbow_wal_batch_size)",
+          "legendFormat": "Avg Batch",
+          "refId": "A"
+        },
+        {
+          "expr": "longbow_wal_pending_entries",
+          "legendFormat": "Pending",
+          "refId": "B"
+        }
       ],
       "title": "WAL Batch & Pending",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 26
+      },
       "id": 17,
       "panels": [],
       "title": "Compaction",
@@ -163,23 +326,50 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 27},
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
       "id": 18,
-      "targets": [{"expr": "rate(longbow_compaction_operations_total[1m])", "legendFormat": "Ops/s", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "rate(longbow_compaction_operations_total[1m])",
+          "legendFormat": "Ops/s",
+          "refId": "A"
+        }
+      ],
       "title": "Compaction Rate",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 27},
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
       "id": 19,
-      "targets": [{"expr": "rate(longbow_compaction_auto_triggers_total[1m])", "legendFormat": "Auto Triggers/s", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "rate(longbow_compaction_auto_triggers_total[1m])",
+          "legendFormat": "Auto Triggers/s",
+          "refId": "A"
+        }
+      ],
       "title": "Auto Compaction Triggers",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 33},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 33
+      },
       "id": 20,
       "panels": [],
       "title": "io_uring Performance [Linux]",
@@ -187,44 +377,91 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 34},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 34
+      },
       "id": 21,
       "targets": [
-        {"expr": "rate(longbow_iouring_bytes_read_total[1m])", "legendFormat": "Read", "refId": "A"},
-        {"expr": "rate(longbow_iouring_bytes_written_total[1m])", "legendFormat": "Write", "refId": "B"}
+        {
+          "expr": "rate(longbow_iouring_bytes_read_total[1m])",
+          "legendFormat": "Read",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(longbow_iouring_bytes_written_total[1m])",
+          "legendFormat": "Write",
+          "refId": "B"
+        }
       ],
       "title": "io_uring Throughput (Bytes/s)",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 34},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 34
+      },
       "id": 22,
       "targets": [
-        {"expr": "histogram_quantile(0.99, sum(rate(longbow_iouring_complete_latency_seconds_bucket[5m])) by (le, operation))", "legendFormat": "P99 {{operation}}", "refId": "A"}
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_iouring_complete_latency_seconds_bucket[5m])) by (le, operation))",
+          "legendFormat": "P99 {{operation}}",
+          "refId": "A"
+        }
       ],
       "title": "io_uring Completion Latency (P99)",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 42},
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 42
+      },
       "id": 23,
-      "targets": [{"expr": "longbow_iouring_sq_depth", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "longbow_iouring_sq_depth",
+          "refId": "A"
+        }
+      ],
       "title": "io_uring Submission Queue Depth",
       "type": "gauge"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 42},
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 42
+      },
       "id": 24,
-      "targets": [{"expr": "longbow_ipc_buffer_pool_utilization", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "longbow_ipc_buffer_pool_utilization",
+          "refId": "A"
+        }
+      ],
       "title": "io_uring Buffer Pool Utilization",
       "type": "gauge"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 48},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 48
+      },
       "id": 1001,
       "panels": [],
       "title": "Snapshot & Archival (Parquet V2)",
@@ -232,28 +469,55 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 49},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 49
+      },
       "id": 1002,
       "targets": [
-        {"expr": "histogram_quantile(0.99, sum(rate(longbow_snapshot_write_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"},
-        {"expr": "histogram_quantile(0.95, sum(rate(longbow_snapshot_write_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P95", "refId": "B"}
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_snapshot_write_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P99",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(longbow_snapshot_write_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P95",
+          "refId": "B"
+        }
       ],
       "title": "Parquet Write Latency",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 49},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 49
+      },
       "id": 1003,
       "targets": [
-        {"expr": "histogram_quantile(0.5, sum(rate(longbow_snapshot_size_bytes_bucket[5m])) by (le))", "legendFormat": "Median Size", "refId": "A"}
+        {
+          "expr": "histogram_quantile(0.5, sum(rate(longbow_snapshot_size_bytes_bucket[5m])) by (le))",
+          "legendFormat": "Median Size",
+          "refId": "A"
+        }
       ],
       "title": "Snapshot Size Distribution",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 57},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 57
+      },
       "id": 2000,
       "panels": [],
       "title": "Auto-Spill & Shard Health",
@@ -261,44 +525,121 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 58},
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 58
+      },
       "id": 2001,
       "targets": [
-        {"expr": "rate(longbow_auto_spill_to_disk_engaged_total[5m])", "legendFormat": "Spill Events/s", "refId": "A"},
-        {"expr": "rate(longbow_auto_quantize_engaged_total[5m])", "legendFormat": "Auto-Quantize/s", "refId": "B"}
+        {
+          "expr": "rate(longbow_auto_spill_to_disk_engaged_total[5m])",
+          "legendFormat": "Spill Events/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(longbow_auto_quantize_engaged_total[5m])",
+          "legendFormat": "Auto-Quantize/s",
+          "refId": "B"
+        }
       ],
       "title": "Auto-Spill & Quantize Events",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 58},
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 58
+      },
       "id": 2002,
       "targets": [
-        {"expr": "rate(longbow_arena_nil_error_total[5m])", "legendFormat": "{{operation}}", "refId": "A"}
+        {
+          "expr": "rate(longbow_arena_nil_error_total[5m])",
+          "legendFormat": "{{operation}}",
+          "refId": "A"
+        }
       ],
       "title": "Arena Nil Errors",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 58},
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 58
+      },
       "id": 2003,
       "targets": [
-        {"expr": "longbow_shard_balance_imbalance_ratio", "legendFormat": "Imbalance Ratio", "refId": "A"},
-        {"expr": "longbow_temporal_tree_nodes_total", "legendFormat": "Temporal Nodes", "refId": "B"}
+        {
+          "expr": "longbow_shard_balance_imbalance_ratio",
+          "legendFormat": "Imbalance Ratio",
+          "refId": "A"
+        },
+        {
+          "expr": "longbow_temporal_tree_nodes_total",
+          "legendFormat": "Temporal Nodes",
+          "refId": "B"
+        }
       ],
       "title": "Shard Balance & Temporal Tree Size",
       "type": "timeseries"
+    },
+    {
+      "id": 2004,
+      "title": "Index Creation Failures",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "rate(longbow_index_creation_failures_total[1m])",
+          "legendFormat": "Index Failures/s"
+        }
+      ]
+    },
+    {
+      "id": 2005,
+      "title": "Tombstone Count",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "longbow_tombstones_total",
+          "legendFormat": "Tombstones"
+        }
+      ]
     }
   ],
   "refresh": "10s",
   "schemaVersion": 38,
-  "tags": ["longbow", "index", "storage"],
+  "tags": [
+    "longbow",
+    "index",
+    "storage"
+  ],
   "templating": {
     "list": [
       {
-        "current": {"selected": false, "text": "Prometheus", "value": "Prometheus"},
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "Prometheus"
+        },
         "hide": 0,
         "includeAll": false,
         "label": "Data Source",
@@ -313,7 +654,10 @@
       }
     ]
   },
-  "time": {"from": "now-1h", "to": "now"},
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "",
   "title": "Longbow Index & Storage",

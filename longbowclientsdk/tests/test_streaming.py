@@ -48,7 +48,7 @@ class TestArrowStreaming:
         # Cleanup
         try:
             client.delete(dataset_name)
-        except:
+        except Exception:
             pass
     
     def test_download_arrow_returns_table(self, client, sample_dataset):

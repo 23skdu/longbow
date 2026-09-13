@@ -134,6 +134,8 @@ env:
   LONGBOW_GRPC_MAX_SEND_MSG_SIZE: "21474836470" # 20GB gRPC max send message size
   LONGBOW_ADAPTIVE_M_MAX_FACTOR: "1.5" # Limit Adaptive-M growth to 1.5x
   LONGBOW_MAX_M0: "32"                 # Hard cap on max M for base layer
+  LONGBOW_FLOAT64_EXCLUDE_EMLGO: "0"  # Exclude float64 from emlgo backend (1=exclude)
+  LONGBOW_MATH_DISPATCH: ""            # Math dispatch: auto (default), eml, emlgo, standard
 
 # RDMA (RoCEv2) Configuration
 # Requires RDMA-capable NICs and libibverbs on the host.

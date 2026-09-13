@@ -50,7 +50,7 @@ except ImportError:
     _missing.append("numpy")
 
 try:
-    import pandas as np_pd
+    import pandas as pd
 except ImportError:
     _missing.append("pandas")
 
@@ -215,7 +215,7 @@ def verify_ingest_helpers():
     check("List[Dict] -> Arrow table", t1.num_rows == 2)
 
     # pd.DataFrame
-    df = np_pd.DataFrame(data_list)
+    df = pd.DataFrame(data_list)
     t2 = to_arrow_table(df)
     check("pd.DataFrame -> Arrow table", t2.num_rows == 2)
 
@@ -280,7 +280,7 @@ def verify_data_plane(client: LongbowClient, ds: str):
         return  # cannot proceed without data
 
     # --- insert pd.DataFrame ---
-    df = np_pd.DataFrame([
+    df = pd.DataFrame([
         {"id": 103, "vector": [0.2, 0.3, 0.4, 0.5], "tag": "delta"},
     ])
     try:
@@ -292,7 +292,7 @@ def verify_data_plane(client: LongbowClient, ds: str):
     # --- search ---
     try:
         res = client.search(ds, vector=[0.1, 0.2, 0.3, 0.4], k=5)
-        check("search() returns DataFrame", isinstance(res, np_pd.DataFrame))
+        check("search() returns DataFrame", isinstance(res, pd.DataFrame))
         check("search() returns results", len(res) > 0)
     except Exception as exc:
         check("search()", False, str(exc))
@@ -432,7 +432,7 @@ def verify_search_variants(client: LongbowClient, ds: str):
     # --- recommend ---
     try:
         rec = client.recommend(ds, seed_ids=["100", "101"], k=3, alpha=0.5, max_hops=1)
-        check("recommend() returns DataFrame", isinstance(rec, np_pd.DataFrame))
+        check("recommend() returns DataFrame", isinstance(rec, pd.DataFrame))
     except Exception as exc:
         detail = str(exc)
         if "unimplemented" in detail.lower() or "not supported" in detail.lower():

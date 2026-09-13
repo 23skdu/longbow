@@ -3,7 +3,10 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": {"type": "datasource", "uid": "grafana"},
+        "datasource": {
+          "type": "datasource",
+          "uid": "grafana"
+        },
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -21,7 +24,12 @@
   "panels": [
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 0},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "id": 1,
       "panels": [],
       "title": "Flight Operations",
@@ -31,24 +39,47 @@
       "datasource": "${datasource}",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{"color": "green", "value": null}]
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": []
       },
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 1},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
       "id": 2,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
-        "reduceOptions": {"calcs": ["mean"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "mean"
+          ],
+          "fields": "",
+          "values": false
+        },
         "textMode": "auto"
       },
-      "targets": [{"expr": "sum(longbow_flight_ops_total)", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "sum(longbow_flight_ops_total)",
+          "refId": "A"
+        }
+      ],
       "title": "Total Flight Ops",
       "type": "stat"
     },
@@ -56,14 +87,29 @@
       "datasource": "${datasource}",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
-          "custom": {"drawStyle": "line"},
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line"
+          },
           "unit": "ops"
         }
       },
-      "gridPos": {"h": 6, "w": 9, "x": 6, "y": 1},
+      "gridPos": {
+        "h": 6,
+        "w": 9,
+        "x": 6,
+        "y": 1
+      },
       "id": 3,
-      "targets": [{"expr": "rate(longbow_flight_ops_total[1m])", "legendFormat": "{{action}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "rate(longbow_flight_ops_total[1m])",
+          "legendFormat": "{{action}}",
+          "refId": "A"
+        }
+      ],
       "title": "Flight Operations Rate",
       "type": "timeseries"
     },
@@ -71,55 +117,169 @@
       "datasource": "${datasource}",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
-          "custom": {"drawStyle": "line"},
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line"
+          },
           "unit": "s"
         }
       },
-      "gridPos": {"h": 6, "w": 9, "x": 15, "y": 1},
+      "gridPos": {
+        "h": 6,
+        "w": 9,
+        "x": 15,
+        "y": 1
+      },
       "id": 4,
       "targets": [
-        {"expr": "histogram_quantile(0.99, sum(rate(longbow_flight_duration_seconds_bucket[5m])) by (le, action))", "legendFormat": "P99 {{action}}", "refId": "A"},
-        {"expr": "histogram_quantile(0.95, sum(rate(longbow_flight_duration_seconds_bucket[5m])) by (le, action))", "legendFormat": "P95 {{action}}", "refId": "B"}
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_flight_duration_seconds_bucket[5m])) by (le, action))",
+          "legendFormat": "P99 {{action}}",
+          "refId": "A"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(longbow_flight_duration_seconds_bucket[5m])) by (le, action))",
+          "legendFormat": "P95 {{action}}",
+          "refId": "B"
+        }
       ],
       "title": "Flight Latency P95/P99",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 7},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
       "id": 5,
       "panels": [],
       "title": "Search Performance",
       "type": "row"
     },
     {
+      "id": 35,
+      "title": "Vector Search Core Metrics",
+      "type": "row",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 2
+      }
+    },
+    {
+      "id": 36,
+      "title": "Vector Search Latency P95/P99",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 13
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_vector_search_latency_seconds_bucket[5m])) by (le, dataset))",
+          "legendFormat": "P99 {{dataset}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(longbow_vector_search_latency_seconds_bucket[5m])) by (le, dataset))",
+          "legendFormat": "P95 {{dataset}}"
+        },
+        {
+          "expr": "histogram_quantile(0.50, sum(rate(longbow_vector_search_latency_seconds_bucket[5m])) by (le, dataset))",
+          "legendFormat": "P50 {{dataset}}"
+        }
+      ]
+    },
+    {
+      "id": 37,
+      "title": "Vector Search QPS",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(longbow_vector_search_latency_seconds_count[1m])) by (dataset)",
+          "legendFormat": "{{dataset}}"
+        }
+      ]
+    },
+    {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 8},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 8
+      },
       "id": 6,
-      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_hnsw_search_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_hnsw_search_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P99",
+          "refId": "A"
+        }
+      ],
       "title": "HNSW Search Latency P99",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 8},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 8
+      },
       "id": 7,
-      "targets": [{"expr": "rate(longbow_hnsw_search_ops_total[1m])", "legendFormat": "{{type}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "rate(longbow_hnsw_search_ops_total[1m])",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ],
       "title": "HNSW Search Rate",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 8},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 8
+      },
       "id": 8,
-      "targets": [{"expr": "rate(longbow_hnsw_nodes_visited[1m])", "legendFormat": "Nodes/s", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "rate(longbow_hnsw_nodes_visited[1m])",
+          "legendFormat": "Nodes/s",
+          "refId": "A"
+        }
+      ],
       "title": "HNSW Nodes Visited/s",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 14},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 3
+      },
       "id": 9,
       "panels": [],
       "title": "gRPC Connection Pool",
@@ -129,49 +289,107 @@
       "datasource": "${datasource}",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "thresholds"},
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "steps": [
-              {"color": "green", "value": null},
-              {"color": "yellow", "value": 50},
-              {"color": "red", "value": 100}
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              },
+              {
+                "color": "red",
+                "value": 100
+              }
             ]
           }
         }
       },
-      "gridPos": {"h": 4, "w": 6, "x": 0, "y": 15},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 15
+      },
       "id": 10,
-      "targets": [{"expr": "longbow_flight_pool_connections_active", "legendFormat": "Active", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "longbow_flight_pool_connections_active",
+          "legendFormat": "Active",
+          "refId": "A"
+        }
+      ],
       "title": "Active Connections",
       "type": "stat"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 4, "w": 6, "x": 6, "y": 15},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 15
+      },
       "id": 11,
-      "targets": [{"expr": "longbow_flight_stream_pool_size", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "longbow_flight_stream_pool_size",
+          "refId": "A"
+        }
+      ],
       "title": "Stream Pool Size",
       "type": "stat"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 4, "w": 6, "x": 12, "y": 15},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 15
+      },
       "id": 12,
-      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_flight_pool_wait_duration_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_flight_pool_wait_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P99",
+          "refId": "A"
+        }
+      ],
       "title": "Pool Wait P99",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 4, "w": 6, "x": 18, "y": 15},
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 15
+      },
       "id": 13,
-      "targets": [{"expr": "longbow_flight_active_tickets", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "longbow_flight_active_tickets",
+          "refId": "A"
+        }
+      ],
       "title": "Active Tickets",
       "type": "stat"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 19},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 4
+      },
       "id": 14,
       "panels": [],
       "title": "Data Transfer",
@@ -181,39 +399,83 @@
       "datasource": "${datasource}",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
-          "custom": {"drawStyle": "line"},
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line"
+          },
           "unit": "Bps"
         }
       },
-      "gridPos": {"h": 6, "w": 8, "x": 0, "y": 20},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 0,
+        "y": 20
+      },
       "id": 15,
       "targets": [
-        {"expr": "rate(longbow_flight_bytes_read_total[1m])", "legendFormat": "Read", "refId": "A"},
-        {"expr": "rate(longbow_flight_bytes_written_total[1m])", "legendFormat": "Write", "refId": "B"}
+        {
+          "expr": "rate(longbow_flight_bytes_read_total[1m])",
+          "legendFormat": "Read",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(longbow_flight_bytes_written_total[1m])",
+          "legendFormat": "Write",
+          "refId": "B"
+        }
       ],
       "title": "Flight Bytes R/W",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 8, "x": 8, "y": 20},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 8,
+        "y": 20
+      },
       "id": 16,
-      "targets": [{"expr": "rate(longbow_vector_access_zerocopy_total{index_type=\"zero_copy_retain\"}[1m]) / (rate(longbow_vector_access_zerocopy_total[1m]) + 1)", "legendFormat": "Zero-Copy Ratio", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "rate(longbow_vector_access_zerocopy_total{index_type=\"zero_copy_retain\"}[1m]) / (rate(longbow_vector_access_zerocopy_total[1m]) + 1)",
+          "legendFormat": "Zero-Copy Ratio",
+          "refId": "A"
+        }
+      ],
       "title": "Zero-Copy Ratio",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 8, "x": 16, "y": 20},
+      "gridPos": {
+        "h": 6,
+        "w": 8,
+        "x": 16,
+        "y": 20
+      },
       "id": 17,
-      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_doput_batch_size_bytes_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_doput_batch_size_bytes_bucket[5m])) by (le))",
+          "legendFormat": "P99",
+          "refId": "A"
+        }
+      ],
       "title": "DoPut Payload Size P99",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 26},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
       "id": 18,
       "panels": [],
       "title": "Advanced Search Diagnostics",
@@ -221,39 +483,86 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 27},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 27
+      },
       "id": 19,
-      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_hnsw_simd_dispatch_latency_seconds_bucket[5m])) by (le, type))", "legendFormat": "P99 {{type}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_hnsw_simd_dispatch_latency_seconds_bucket[5m])) by (le, type))",
+          "legendFormat": "P99 {{type}}",
+          "refId": "A"
+        }
+      ],
       "title": "SIMD Dispatch Latency (P99)",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 27},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 27
+      },
       "id": 20,
-      "targets": [{"expr": "sum(rate(longbow_hnsw_polymorphic_throughput_bytes[1m])) by (type)", "legendFormat": "{{type}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "sum(rate(longbow_hnsw_polymorphic_throughput_bytes[1m])) by (type)",
+          "legendFormat": "{{type}}",
+          "refId": "A"
+        }
+      ],
       "title": "Polymorphic Search Throughput",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 35},
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 35
+      },
       "id": 21,
-      "targets": [{"expr": "sum(rate(graph_navigator_hops_per_query_sum[5m])) / sum(rate(graph_navigator_hops_per_query_count[5m]))", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "sum(rate(graph_navigator_hops_per_query_sum[5m])) / sum(rate(graph_navigator_hops_per_query_count[5m]))",
+          "refId": "A"
+        }
+      ],
       "title": "Avg Hops per Path",
       "type": "stat"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 35},
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 35
+      },
       "id": 22,
-      "targets": [{"expr": "sum(rate(graph_navigator_cache_hits_total[5m])) / (sum(rate(graph_navigator_cache_hits_total[5m])) + sum(rate(graph_navigator_cache_misses_total[5m])) + 1)", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "sum(rate(graph_navigator_cache_hits_total[5m])) / (sum(rate(graph_navigator_cache_hits_total[5m])) + sum(rate(graph_navigator_cache_misses_total[5m])) + 1)",
+          "refId": "A"
+        }
+      ],
       "title": "Graph Navigation Cache Hit Rate",
       "type": "gauge"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 41},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
       "id": 23,
       "panels": [],
       "title": "Geospatial Search",
@@ -261,23 +570,50 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 12, "x": 0, "y": 42},
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 0,
+        "y": 42
+      },
       "id": 24,
-      "targets": [{"expr": "rate(longbow_geo_search_ops_total[1m])", "legendFormat": "{{search_type}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "rate(longbow_geo_search_ops_total[1m])",
+          "legendFormat": "{{search_type}}",
+          "refId": "A"
+        }
+      ],
       "title": "Geo Search Rate",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 6, "w": 12, "x": 12, "y": 42},
+      "gridPos": {
+        "h": 6,
+        "w": 12,
+        "x": 12,
+        "y": 42
+      },
       "id": 25,
-      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_geo_search_duration_seconds_bucket[5m])) by (le, search_type))", "legendFormat": "P99 {{search_type}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_geo_search_duration_seconds_bucket[5m])) by (le, search_type))",
+          "legendFormat": "P99 {{search_type}}",
+          "refId": "A"
+        }
+      ],
       "title": "Geo Search Latency (P99)",
       "type": "timeseries"
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 48},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
       "id": 26,
       "panels": [],
       "title": "Quantization & Acceleration",
@@ -285,17 +621,39 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 49},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 49
+      },
       "id": 27,
-      "targets": [{"expr": "sum(rate(longbow_simd_dispatch_count[1m])) by (instruction)", "legendFormat": "{{instruction}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "sum(rate(longbow_simd_dispatch_count[1m])) by (instruction)",
+          "legendFormat": "{{instruction}}",
+          "refId": "A"
+        }
+      ],
       "title": "SIMD Dispatch Rate",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 49},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 49
+      },
       "id": 28,
-      "targets": [{"expr": "sum(rate(longbow_turboquant_search_total[1m])) by (bit_width)", "legendFormat": "Int{{bit_width}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "sum(rate(longbow_turboquant_search_total[1m])) by (bit_width)",
+          "legendFormat": "Int{{bit_width}}",
+          "refId": "A"
+        }
+      ],
       "title": "Turboquant Search Rate",
       "type": "timeseries"
     },
@@ -303,14 +661,37 @@
       "datasource": "${datasource}",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
-          "custom": {"lineWidth": 1},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
         }
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 57},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 57
+      },
       "id": 29,
-      "targets": [{"expr": "sum(rate(longbow_turboquant_encoding_total[1m])) by (direction)", "legendFormat": "{{direction}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "sum(rate(longbow_turboquant_encoding_total[1m])) by (direction)",
+          "legendFormat": "{{direction}}",
+          "refId": "A"
+        }
+      ],
       "title": "TurboQuant Encoding Rate",
       "type": "timeseries"
     },
@@ -318,14 +699,37 @@
       "datasource": "${datasource}",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
-          "custom": {"lineWidth": 1},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
         }
       },
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 57},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 57
+      },
       "id": 30,
-      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_turboquant_search_latency_seconds_bucket[5m])) by (le, bit_width))", "legendFormat": "P99 bit{{bit_width}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_turboquant_search_latency_seconds_bucket[5m])) by (le, bit_width))",
+          "legendFormat": "P99 bit{{bit_width}}",
+          "refId": "A"
+        }
+      ],
       "title": "TurboQuant Search Latency P99",
       "type": "timeseries"
     },
@@ -333,57 +737,157 @@
       "datasource": "${datasource}",
       "fieldConfig": {
         "defaults": {
-          "color": {"mode": "palette-classic"},
-          "custom": {"lineWidth": 1},
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
         }
       },
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 65},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 65
+      },
       "id": 31,
-      "targets": [{"expr": "histogram_quantile(0.99, sum(rate(longbow_turboquant_encoding_latency_seconds_bucket[5m])) by (le))", "legendFormat": "P99", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_turboquant_encoding_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P99",
+          "refId": "A"
+        }
+      ],
       "title": "TurboQuant Encoding Latency P99",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 8, "x": 0, "y": 73},
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 73
+      },
       "id": 32,
       "targets": [
-        {"expr": "rate(longbow_bitmap_cache_hits_total[5m])", "legendFormat": "Hits/s", "refId": "A"},
-        {"expr": "rate(longbow_bitmap_cache_misses_total[5m])", "legendFormat": "Misses/s", "refId": "B"}
+        {
+          "expr": "rate(longbow_bitmap_cache_hits_total[5m])",
+          "legendFormat": "Hits/s",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(longbow_bitmap_cache_misses_total[5m])",
+          "legendFormat": "Misses/s",
+          "refId": "B"
+        }
       ],
       "title": "Bitmap Cache Hit/Miss Rate",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 8, "x": 8, "y": 73},
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 73
+      },
       "id": 33,
       "targets": [
-        {"expr": "histogram_quantile(0.99, sum(rate(longbow_global_rrf_latency_seconds_bucket[5m])) by (le))", "legendFormat": "Global RRF P99", "refId": "A"},
-        {"expr": "rate(longbow_global_rrf_payload_bytes[5m])", "legendFormat": "Payload bytes/s", "refId": "B"}
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_global_rrf_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "Global RRF P99",
+          "refId": "A"
+        },
+        {
+          "expr": "rate(longbow_global_rrf_payload_bytes[5m])",
+          "legendFormat": "Payload bytes/s",
+          "refId": "B"
+        }
       ],
       "title": "Global RRF Latency & Payload",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 8, "x": 16, "y": 73},
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 73
+      },
       "id": 34,
       "targets": [
-        {"expr": "histogram_quantile(0.99, sum(rate(longbow_search_dequantize_latency_seconds_bucket[5m])) by (le))", "legendFormat": "Dequantize P99", "refId": "A"}
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_search_dequantize_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "Dequantize P99",
+          "refId": "A"
+        }
       ],
       "title": "Search Dequantize Latency P99",
       "type": "timeseries"
+    },
+    {
+      "id": 38,
+      "title": "Complex Vector Search Ops",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "sum(rate(longbow_hnsw_complex_ops_total[1m])) by (type)",
+          "legendFormat": "{{type}}"
+        }
+      ]
+    },
+    {
+      "id": 39,
+      "title": "SIMD Fallback Rate",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "rate(longbow_simd_fallback_total[1m])",
+          "legendFormat": "SIMD Fallback/s"
+        }
+      ]
     }
   ],
   "refresh": "10s",
   "schemaVersion": 38,
-  "tags": ["longbow", "search", "query"],
+  "tags": [
+    "longbow",
+    "search",
+    "query"
+  ],
   "templating": {
     "list": [
       {
-        "current": {"selected": false, "text": "Prometheus", "value": "Prometheus"},
+        "current": {
+          "selected": false,
+          "text": "Prometheus",
+          "value": "Prometheus"
+        },
         "hide": 0,
         "includeAll": false,
         "label": "Data Source",
@@ -398,7 +902,10 @@
       }
     ]
   },
-  "time": {"from": "now-1h", "to": "now"},
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "timepicker": {},
   "timezone": "",
   "title": "Longbow Search & Query",

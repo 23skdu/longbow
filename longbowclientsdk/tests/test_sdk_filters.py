@@ -17,7 +17,7 @@ class TestSDKFilters:
         
         try:
             client.delete_namespace(test_dataset_name)
-        except:
+        except Exception:
             pass  # Dataset might not exist
         
         client.insert(test_dataset_name, df)

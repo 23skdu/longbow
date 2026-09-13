@@ -21,7 +21,7 @@ class TestIndexingConsistency:
         try:
             client.delete_namespace(test_dataset_name)
             time.sleep(1) # Wait for deletion
-        except:
+        except Exception:
             pass
 
         print(f"Inserting into {test_dataset_name}...")

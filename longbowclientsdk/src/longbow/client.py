@@ -3,12 +3,14 @@ import pyarrow as pa
 import pandas as pd
 import json
 import logging
+import math
 import warnings
 from typing import Union, List, Dict, Any, Optional, Iterator
 
-# from .models import Vector, SearchResult, IndexStats # Unused internally for now
 from .exceptions import LongbowConnectionError, LongbowQueryError
 from .ingest import to_arrow_table
+
+__all__ = ["LongbowClient"]
 
 logger = logging.getLogger(__name__)
 
@@ -192,8 +194,6 @@ class LongbowClient:
             vector = flat_vector
 
         # Sanitize: Ensure no NaN/Inf which breaks server JSON parsing
-        import math
-
         for i, v in enumerate(vector):
             if isinstance(v, (int, float)) and not math.isfinite(v):
                 raise ValueError(
@@ -213,16 +213,16 @@ class LongbowClient:
             req["projection"] = projection
 
         # Merge extra args (e.g. alpha, text_query)
-        for k, v in kwargs.items():
-            if v is not None:
-                req[k] = v
-
-        ticket_bytes = json.dumps({"search": req}).encode("utf-8")
-        ticket = flight.Ticket(ticket_bytes)
+        for kw, val in kwargs.items():
+            if val is not None:
+                req[kw] = val
 
         # Handle efSearch PID tuning if requested
         if kwargs.get("ef_search_pid", False):
             req["ef_search_pid"] = True
+
+        ticket_bytes = json.dumps({"search": req}).encode("utf-8")
+        ticket = flight.Ticket(ticket_bytes)
 
         try:
             reader = self._data_client.do_get(ticket, options=self._get_call_options())

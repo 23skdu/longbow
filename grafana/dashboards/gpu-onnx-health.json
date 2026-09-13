@@ -52,22 +52,80 @@
             "mode": "thresholds"
           },
           "mappings": [
-            {"options": {"match": "null", "result": {"color": "gray", "text": "N/A"}}, "type": "special"},
-            {"options": {"at": 1, "color": "green", "op": "=", "text": "Healthy"}, "type": "value"},
-            {"options": {"at": 0.5, "color": "yellow", "op": "=", "text": "Degraded"}, "type": "value"},
-            {"options": {"at": 0, "color": "red", "op": "=", "text": "Unhealthy"}, "type": "value"}
+            {
+              "options": {
+                "match": "null",
+                "result": {
+                  "color": "gray",
+                  "text": "N/A"
+                }
+              },
+              "type": "special"
+            },
+            {
+              "options": {
+                "at": 1,
+                "color": "green",
+                "op": "=",
+                "text": "Healthy"
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "at": 0.5,
+                "color": "yellow",
+                "op": "=",
+                "text": "Degraded"
+              },
+              "type": "value"
+            },
+            {
+              "options": {
+                "at": 0,
+                "color": "red",
+                "op": "=",
+                "text": "Unhealthy"
+              },
+              "type": "value"
+            }
           ],
-          "thresholds": {"mode": "absolute", "steps": [{"color": "green", "value": null}]}
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
         }
       },
-      "gridPos": {"h": 4, "w": 24, "x": 0, "y": 1},
+      "gridPos": {
+        "h": 4,
+        "w": 24,
+        "x": 0,
+        "y": 1
+      },
       "id": 100,
       "options": {
         "displayMode": "basic",
-        "reduceOptions": {"calcs": ["lastNotNull"], "fields": "", "values": false},
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
         "showUnfilled": true
       },
-      "targets": [{"expr": "component_health_status{component=~\"gpu.*|onnx.*\"}", "legendFormat": "{{component}}", "refId": "A"}],
+      "targets": [
+        {
+          "expr": "component_health_status{component=~\"gpu.*|onnx.*\"}",
+          "legendFormat": "{{component}}",
+          "refId": "A"
+        }
+      ],
       "title": "GPU & ONNX Subsystem Health",
       "type": "status-history"
     },
@@ -598,7 +656,12 @@
     },
     {
       "collapsed": false,
-      "gridPos": {"h": 1, "w": 24, "x": 0, "y": 28},
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 28
+      },
       "id": 2001,
       "panels": [],
       "title": "Cross-Encoder Reranking",
@@ -606,53 +669,170 @@
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 29},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 29
+      },
       "id": 2002,
       "targets": [
-        {"expr": "rate(longbow_reranker_inference_duration_seconds_sum[5m]) / rate(longbow_reranker_inference_duration_seconds_count[5m])", "legendFormat": "Reranker Latency", "refId": "A"}
+        {
+          "expr": "rate(longbow_reranker_inference_duration_seconds_sum[5m]) / rate(longbow_reranker_inference_duration_seconds_count[5m])",
+          "legendFormat": "Reranker Latency",
+          "refId": "A"
+        }
       ],
       "title": "Reranker Latency",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 29},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 29
+      },
       "id": 2003,
       "targets": [
-        {"expr": "rate(longbow_reranker_scores_computed_total[1m])", "legendFormat": "Pair/s", "refId": "A"}
+        {
+          "expr": "rate(longbow_reranker_scores_computed_total[1m])",
+          "legendFormat": "Pair/s",
+          "refId": "A"
+        }
       ],
       "title": "Reranker Throughput (Scores/s)",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 24, "x": 0, "y": 37},
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 37
+      },
       "id": 2004,
       "targets": [
-        {"expr": "rate(longbow_stub_model_usage_total[5m])", "legendFormat": "Stub: {{model_path}}", "refId": "A"}
+        {
+          "expr": "rate(longbow_stub_model_usage_total[5m])",
+          "legendFormat": "Stub: {{model_path}}",
+          "refId": "A"
+        }
       ],
       "title": "Stub Embedding Model Usage (Fallbacks)",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 12, "x": 0, "y": 0},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
       "id": 9001,
       "targets": [
-        {"expr": "histogram_quantile(0.99, sum(rate(longbow_gpu_ingest_kernel_duration_seconds_bucket[5m])) by (le))", "legendFormat": "Ingest Kernel P99", "refId": "A"}
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_gpu_ingest_kernel_duration_seconds_bucket[5m])) by (le))",
+          "legendFormat": "Ingest Kernel P99",
+          "refId": "A"
+        }
       ],
       "title": "GPU Ingest Kernel Latency P99",
       "type": "timeseries"
     },
     {
       "datasource": "${datasource}",
-      "gridPos": {"h": 8, "w": 12, "x": 12, "y": 0},
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
       "id": 9002,
       "targets": [
-        {"expr": "rate(longbow_gpu_neighbor_prune_ops_total[5m])", "legendFormat": "Prune Ops/s", "refId": "A"}
+        {
+          "expr": "rate(longbow_gpu_neighbor_prune_ops_total[5m])",
+          "legendFormat": "Prune Ops/s",
+          "refId": "A"
+        }
       ],
       "title": "GPU Neighbor Prune Ops",
       "type": "timeseries"
+    },
+    {
+      "id": 9003,
+      "title": "GPU Index Size",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "longbow_gpu_index_size",
+          "legendFormat": "GPU Index Size"
+        }
+      ]
+    },
+    {
+      "id": 9004,
+      "title": "GPU Search Operations/s",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 40
+      },
+      "targets": [
+        {
+          "expr": "rate(longbow_vector_search_gpu_operations_total[1m])",
+          "legendFormat": "GPU Search Ops/s"
+        }
+      ]
+    },
+    {
+      "id": 9005,
+      "title": "GPU Search Latency P99",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 48
+      },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.99, sum(rate(longbow_vector_search_gpu_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P99"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(longbow_vector_search_gpu_latency_seconds_bucket[5m])) by (le))",
+          "legendFormat": "P95"
+        }
+      ]
+    },
+    {
+      "id": 9006,
+      "title": "GPU Fallback Rate",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 48
+      },
+      "targets": [
+        {
+          "expr": "rate(longbow_gpu_fallback_total[1m])",
+          "legendFormat": "GPU Fallback/s"
+        }
+      ]
     }
   ],
   "refresh": "5s",

@@ -2,7 +2,7 @@
 
 Longbow is designed to provide FAISS-level performance with Arrow-native ergonomics and GraphRAG integration.
 
-**Last Updated**: 2026-04-25
+**Last Updated**: 2026-09-12
 
 ---
 
@@ -16,6 +16,9 @@ Longbow is designed to provide FAISS-level performance with Arrow-native ergonom
 - **Lock-Free Ingestion Workers**: High-performance ingestion pipeline using `LockFreeRingBuffer` and adaptive batching to eliminate mutex contention.
 - **Runtime Learned Index**: `IndexPerformancePredictor` selects the optimal ANN index type per query using a k-NN classifier.
 - **Adaptive Flat to HNSW Migration**: Automated, zero-downtime promotion from flat scan to HNSW indexing.
+- **GPU Complex Type Kernels**: Native CUDA kernels for complex128/complex64 L2 distance, dot product, and cosine similarity, eliminating CPU fallback for complex vector search.
+- **Conditional Math Dispatch**: `LONGBOW_MATH_DISPATCH` env var for selective EMLGo routing by type and scale — emlgo for complex types + TQ above 50k, standard for int/float below 50k.
+- **Benchmark Multi-Run**: Statistical aggregation with mean/stdev reporting across multiple benchmark runs, plus memory soak testing for long-duration stability validation.
 
 ### Advanced Quantization Suite
 
@@ -128,14 +131,19 @@ Internal benchmarks on 1M vectors (1536D) show that Longbow is within 5% of FAIS
 - **SIMD**: Complete AVX2, AVX512, and NEON kernels
 - **Batching**: DoPut bulk path for >=100 vectors
 - **io_uring**: Linux async I/O for WAL operations
+- **GPU Complex Kernels**: Native CUDA L2/dot/cosine for complex128/complex64
+- **Conditional Dispatch**: EMLGo routing by type and scale via `LONGBOW_MATH_DISPATCH`
+- **Benchmark Multi-Run**: Statistical mean/stdev across runs + memory soak tests
 
 #### Search
 
 - **Temporal**: Native versioning (enabled by default)
 - **Hybrid**: Vector + BM25 + metadata filtering
 - **GraphRAG**: Dual-path (Spreading + Knowledge Graph) with PageRank & Community Detection
+- **Complex Vector Search**: First-class complex128/complex64 support across CPU and GPU
 
 #### Quality
 
 - **Fuzz Tests**: IVF index build, TurboQuant encode/decode
 - **Metrics**: Prometheus metrics for batching, quantization, SIMD
+- **Memory Soak**: Long-duration stability validation for production readiness

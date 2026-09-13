@@ -7,6 +7,7 @@ import (
 
 	"github.com/apache/arrow-go/v18/arrow"
 	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 	"github.com/apache/arrow-go/v18/arrow/memory"
 )
 
@@ -59,6 +60,12 @@ func FuzzArrowExtraction(f *testing.F) {
 				b.Append(0)
 			case *array.Int8Builder:
 				b.Append(0)
+			case *array.Int16Builder:
+				b.Append(0)
+			case *array.Uint8Builder:
+				b.Append(0)
+			case *array.Float16Builder:
+				b.Append(float16.New(0))
 			}
 		}
 		builder.Append(valid)

@@ -464,11 +464,12 @@ Longbow is optimized for heterogeneous hardware, providing native support for NV
 
 Optimized for data center workloads on Linux.
 
-- **Kernels**: Custom distance (L2, Cosine, IP) and HNSW traversal kernels written in CUDA C++.
+- **Kernels**: Custom distance (L2, Cosine, IP) and HNSW traversal kernels written in CUDA C++, including native complex128/complex64 variants for all distance metrics.
 - **Memory**: Leverages high-bandwidth VRAM with zero-copy tensor bridges for Arrow Flight integration.
 - **Tuning**:
   - `LONGBOW_GPU_ENABLED=true`
   - `LONGBOW_GPU_MEMORY_LIMIT`: Configurable VRAM pool size.
+  - `LONGBOW_MATH_DISPATCH`: Route EMLGo selectively by type and scale (auto/eml/standard).
 
 ### 7.3 Apple Metal Acceleration
 

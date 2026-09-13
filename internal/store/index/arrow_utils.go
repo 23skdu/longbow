@@ -194,11 +194,8 @@ func unsafeVectorSliceGeneric[T any](data arrow.ArrayData, offset, length int) [
 	var zero T
 	elementSize := int(unsafe.Sizeof(zero)) // #nosec G115
 	bytes := buf.Bytes()
-	if offset*elementSize >= len(bytes) {
-		if length == 0 {
-			return nil
-		}
-		// If length > 0 but offset is out of bounds, this is an error or corruption
+	needed := (offset + length) * elementSize
+	if needed > len(bytes) || offset < 0 || length < 0 {
 		return nil
 	}
 	ptr := unsafe.Pointer(&bytes[offset*elementSize]) // #nosec G103

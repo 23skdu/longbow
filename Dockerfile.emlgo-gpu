@@ -18,7 +18,7 @@ FROM nvidia/cuda:12.6.3-devel-ubuntu24.04 AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 
 # Install system dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     git \
     build-essential \
@@ -49,16 +49,22 @@ ENV CGO_CXXFLAGS="-I/usr/local/cuda/include"
 ENV CGO_LDFLAGS="-L/usr/local/cuda/lib64 -lcudart -lcublas -lstdc++"
 
 # Compile CUDA kernels into object file
-RUN nvcc -c internal/gpu/cuda/kernels.cu -o internal/gpu/cuda/kernels.o -arch=sm_70 -O2
+RUN nvcc -c internal/gpu/cuda/kernels.cu -o internal/gpu/cuda/kernels.o \
+    -gencode arch=compute_70,code=sm_70 \
+    -gencode arch=compute_80,code=sm_80 \
+    -gencode arch=compute_86,code=sm_86 \
+    -gencode arch=compute_89,code=sm_89 \
+    -gencode arch=compute_90,code=sm_90 \
+    -O2
 
 # Build longbow, longbow-cli, and bench-tool with GPU + emlgo support
 RUN if [ "$ENABLE_IOURING" = "true" ]; then \
-    go build -mod=vendor -tags "gpu,emlgo,iouring" -ldflags="-s -w" -buildvcs=false -o longbow ./cmd/longbow; \
+    go build -mod=vendor -tags "gpu,emlgo,iouring" -ldflags="-s -w" -buildvcs=false -trimpath -o longbow ./cmd/longbow; \
 else \
-    go build -mod=vendor -tags "gpu,emlgo" -ldflags="-s -w" -buildvcs=false -o longbow ./cmd/longbow; \
+    go build -mod=vendor -tags "gpu,emlgo" -ldflags="-s -w" -buildvcs=false -trimpath -o longbow ./cmd/longbow; \
 fi
-RUN go build -mod=vendor -tags "gpu,emlgo" -ldflags="-s -w" -buildvcs=false -o longbow-cli ./cmd/cli
-RUN go build -mod=vendor -tags "gpu,emlgo" -ldflags="-s -w" -buildvcs=false -o bench-tool ./cmd/bench-tool
+RUN go build -mod=vendor -tags "gpu,emlgo" -ldflags="-s -w" -buildvcs=false -trimpath -o longbow-cli ./cmd/cli
+RUN go build -mod=vendor -tags "gpu,emlgo" -ldflags="-s -w" -buildvcs=false -trimpath -o bench-tool ./cmd/bench-tool
 
 # -------------------------------------------------------------------
 # Stage 2: Runtime with CUDA
@@ -69,7 +75,7 @@ ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     libibverbs1 \
     ibverbs-providers \
@@ -83,6 +89,7 @@ COPY --from=builder /app/bench-tool .
 
 ENV LD_LIBRARY_PATH=/usr/local/cuda/lib64:$LD_LIBRARY_PATH
 ENV LONGBOW_GPU_ENABLED=true
+ENV LONGBOW_STORAGE_USE_IOURING=false
 ENV LONGBOW_MATH_BACKEND=emlgo
 ENV GOGC=75
 

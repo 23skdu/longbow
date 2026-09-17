@@ -18,6 +18,8 @@ Optimizing GPU TQ search from O(N) brute-force toward O(ef·logN) HNSW graph tra
 | 6 | CPU temporal emlgo investigation | Done | By design: emlgo adds 16-38% overhead for temporal search; use standard build |
 | 7 | CPU float64 emlgo exclusion | Done | `LONGBOW_FLOAT64_EXCLUDE_EMLGO` env var |
 | 8 | GPU complex128/complex64 CUDA kernels | Done | Native CUDA L2/dot/cosine kernels for complex types |
+| 9 | Benchmark infrastructure (3x runs, soak) | Done | Mean/stdev reporting, memory soak tests |
+| 10 | Conditional dispatch strategy | Done | Runtime emlgo routing by type/scale |
 
 ### Benchmark Results
 
@@ -51,19 +53,3 @@ Derived from 2026-09-11 A/B benchmark analysis. See [performance.md](performance
 |----------|-------|--------|
 | P0 | CPU complex64 dense 500k | -38% regression |
 | P0 | CPU complex128 dense 500k | P99 75ms tail latency |
-
----
-
-## 3. Future Work
-
-### Benchmark Infrastructure (Part 9)
-
-- 3x benchmark runs with mean/stdev reporting
-- Memory soak test (1+ hour at 500k)
-- CI integration with regression threshold alerts
-
-### Conditional Dispatch Strategy (Part 10)
-
-- Route emlgo selectively by type and scale
-- `LONGBOW_MATH_DISPATCH` env var for manual override
-- Empirical rules: emlgo for complex types + TQ above 50k; standard for int/float below 50k

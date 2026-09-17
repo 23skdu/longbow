@@ -1,0 +1,64 @@
+{
+  "_meta": {
+    "description": "CPU benchmark baseline for longbow",
+    "generated": "2026-09-17",
+    "tool": "unified_benchmark.py --runs 3",
+    "notes": "Values are mean QPS across 3 runs. Update after each full regression run."
+  },
+  "configs": [
+    {
+      "dim": 128,
+      "dtype": "float32",
+      "count": 10000,
+      "search": {
+        "dense": {"qps": 0, "qps_stdev": 0, "p50": 0, "p95": 0, "p99": 0}
+      },
+      "ingest": {"vec_per_sec": 0}
+    },
+    {
+      "dim": 128,
+      "dtype": "float32",
+      "count": 50000,
+      "search": {
+        "dense": {"qps": 0, "qps_stdev": 0, "p50": 0, "p95": 0, "p99": 0}
+      },
+      "ingest": {"vec_per_sec": 0}
+    },
+    {
+      "dim": 384,
+      "dtype": "float32",
+      "count": 10000,
+      "search": {
+        "dense": {"qps": 0, "qps_stdev": 0, "p50": 0, "p95": 0, "p99": 0}
+      },
+      "ingest": {"vec_per_sec": 0}
+    },
+    {
+      "dim": 384,
+      "dtype": "float32",
+      "count": 50000,
+      "search": {
+        "dense": {"qps": 0, "qps_stdev": 0, "p50": 0, "p95": 0, "p99": 0}
+      },
+      "ingest": {"vec_per_sec": 0}
+    },
+    {
+      "dim": 128,
+      "dtype": "int8",
+      "count": 10000,
+      "search": {
+        "dense": {"qps": 0, "qps_stdev": 0, "p50": 0, "p95": 0, "p99": 0}
+      },
+      "ingest": {"vec_per_sec": 0}
+    },
+    {
+      "dim": 128,
+      "dtype": "int8",
+      "count": 50000,
+      "search": {
+        "dense": {"qps": 0, "qps_stdev": 0, "p50": 0, "p95": 0, "p99": 0}
+      },
+      "ingest": {"vec_per_sec": 0}
+    }
+  ]
+}

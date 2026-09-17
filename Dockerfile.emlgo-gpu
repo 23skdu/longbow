@@ -34,6 +34,9 @@ RUN wget https://go.dev/dl/go${GO_VERSION}.linux-amd64.tar.gz && \
     tar -C /usr/local -xzf go${GO_VERSION}.linux-amd64.tar.gz && \
     rm go${GO_VERSION}.linux-amd64.tar.gz
 
+# Create non-root user for runtime
+RUN groupadd -r longbow && useradd -r -g longbow -d /app -s /sbin/nologin longbow
+
 WORKDIR /app
 
 COPY vendor/ vendor/
@@ -96,6 +99,7 @@ ENV GOGC=75
 EXPOSE 3000 3001 9090
 
 HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost:9090/metrics || exit 1
+    CMD curl -f http://localhost:9090/health || exit 1
 
+USER longbow:longbow
 ENTRYPOINT ["/app/longbow"]

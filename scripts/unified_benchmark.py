@@ -3733,6 +3733,22 @@ if __name__ == "__main__":
         "--ci", action="store_true",
         help="Run a reduced 'fast' matrix for CI environments. Equivalent to setting the LONGBOW_BENCH_FAST=1 env var; both activate the same fast-mode defaults (dims=128, counts=10000,50000, dtypes=float32,int8, search_modes=dense)."
     )
+    parser.add_argument(
+        "--save-baseline", type=str, default=None,
+        help="Save benchmark results as a baseline JSON file (e.g., benchmarks/baseline_cpu.json)"
+    )
+    parser.add_argument(
+        "--compare-baseline", type=str, default=None,
+        help="Compare results against a baseline JSON file; fail if regression exceeds --threshold"
+    )
+    parser.add_argument(
+        "--threshold", type=float, default=10.0,
+        help="Regression threshold percentage for --compare-baseline (default: 10)"
+    )
+    parser.add_argument(
+        "--report-md", type=str, default=None,
+        help="Generate a Markdown performance report at the given path (e.g., docs/performance.md)"
+    )
     args = parser.parse_args()
 
     # LONGBOW_BENCH_FAST=1 is a synonym for --ci, so CI configs can set the
@@ -3754,3 +3770,99 @@ if __name__ == "__main__":
 
     runner = BenchmarkRunner(args)
     runner.execute()
+
+    # --- Post-execution: save baseline, compare baseline, generate report ---
+
+    # Save results as a baseline file
+    if args.save_baseline:
+        import shutil
+        baseline_path = args.save_baseline
+        if hasattr(runner, 'output_file') and os.path.exists(runner.output_file):
+            os.makedirs(os.path.dirname(baseline_path) or ".", exist_ok=True)
+            shutil.copy2(runner.output_file, baseline_path)
+            print(f"\n  [baseline] Saved baseline to {baseline_path}")
+        else:
+            print(f"\n  [baseline] WARNING: no results file to save as baseline")
+
+    # Compare against a baseline
+    if args.compare_baseline:
+        baseline_path = args.compare_baseline
+        if not os.path.exists(baseline_path):
+            print(f"\n  [regression] ERROR: baseline file not found: {baseline_path}")
+            sys.exit(1)
+        if hasattr(runner, 'output_file') and os.path.exists(runner.output_file):
+            try:
+                with open(baseline_path) as f:
+                    baseline = json.load(f)
+                with open(runner.output_file) as f:
+                    results = json.load(f)
+                baseline_cfgs = baseline.get("configs", baseline.get("results", []))
+                result_cfgs = results.get("configs", results.get("results", []))
+                regressions = []
+                for b_cfg in baseline_cfgs:
+                    for r_cfg in result_cfgs:
+                        if (b_cfg.get("dim") != r_cfg.get("dim") or
+                            b_cfg.get("dtype") != r_cfg.get("dtype") or
+                            b_cfg.get("count") != r_cfg.get("count")):
+                            continue
+                        for mode, b_data in b_cfg.get("search", {}).items():
+                            r_data = r_cfg.get("search", {}).get(mode)
+                            if not r_data:
+                                continue
+                            b_qps = b_data.get("qps", 0)
+                            r_qps = r_data.get("qps", 0)
+                            if b_qps <= 0:
+                                continue
+                            change_pct = ((r_qps - b_qps) / b_qps) * 100
+                            if change_pct < -args.threshold:
+                                regressions.append(
+                                    f"  {b_cfg['dim']}d/{b_cfg['dtype']}/{b_cfg['count']}v "
+                                    f"{mode}: {b_qps:.1f} -> {r_qps:.1f} QPS ({change_pct:+.1f}%)"
+                                )
+                if regressions:
+                    print(f"\n  [regression] FAIL: {len(regressions)} regression(s) beyond {args.threshold}%:")
+                    for r in regressions:
+                        print(r)
+                    sys.exit(1)
+                else:
+                    print(f"\n  [regression] PASS: no regressions beyond {args.threshold}% threshold")
+            except Exception as e:
+                print(f"\n  [regression] ERROR: {e}")
+                sys.exit(1)
+
+    # Generate Markdown report
+    if args.report_md:
+        report_path = args.report_md
+        if hasattr(runner, 'output_file') and os.path.exists(runner.output_file):
+            try:
+                with open(runner.output_file) as f:
+                    data = json.load(f)
+                configs = data.get("configs", data.get("results", []))
+                os.makedirs(os.path.dirname(report_path) or ".", exist_ok=True)
+                with open(report_path, "w") as f:
+                    f.write("# Longbow Performance Report\n\n")
+                    f.write(f"**Generated**: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}  \n")
+                    f.write(f"**Mode**: {args.mode}  \n")
+                    f.write(f"**Configs**: {len(configs)}  \n\n")
+                    f.write("## Results\n\n")
+                    f.write("| Dim | Dtype | Count | Search Mode | QPS | P50 (ms) | P95 (ms) | P99 (ms) | Ingest (vec/s) |\n")
+                    f.write("|-----|-------|-------|-------------|-----|----------|----------|----------|----------------|\n")
+                    for cfg in configs:
+                        dim = cfg.get("dim", "?")
+                        dtype = cfg.get("dtype", "?")
+                        count = cfg.get("count", "?")
+                        ingest = cfg.get("ingest", {}).get("vec_per_sec", 0)
+                        for mode, s_data in cfg.get("search", {}).items():
+                            f.write(
+                                f"| {dim} | {dtype} | {count} | {mode} "
+                                f"| {s_data.get('qps', 0):.1f} "
+                                f"| {s_data.get('p50', 0):.3f} "
+                                f"| {s_data.get('p95', 0):.3f} "
+                                f"| {s_data.get('p99', 0):.3f} "
+                                f"| {ingest:.1f} |\n"
+                            )
+                    f.write("\n---\n\n")
+                    f.write(f"*Report generated by unified_benchmark.py*\n")
+                print(f"\n  [report] Generated Markdown report at {report_path}")
+            except Exception as e:
+                print(f"\n  [report] ERROR: {e}")

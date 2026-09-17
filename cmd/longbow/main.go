@@ -25,6 +25,7 @@ import (
 	lbflight "github.com/23skdu/longbow/internal/flight"
 	"github.com/23skdu/longbow/internal/gc"
 	"github.com/23skdu/longbow/internal/gpu"
+	"github.com/23skdu/longbow/internal/health"
 	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
 	lbmem "github.com/23skdu/longbow/internal/memory"
@@ -36,6 +37,7 @@ import (
 	"github.com/23skdu/longbow/internal/simd"
 	"github.com/23skdu/longbow/internal/store"
 	"github.com/23skdu/longbow/internal/tensor"
+	"github.com/23skdu/longbow/pkg/version"
 	"github.com/apache/arrow-go/v18/arrow/flight"
 	"github.com/joho/godotenv"
 	"github.com/kelseyhightower/envconfig"
@@ -605,6 +607,19 @@ func run() error {
 		}
 		mux := http.NewServeMux()
 		mux.Handle("/metrics", promhttp.Handler())
+
+		// Wire up health manager with component checkers
+		hm := health.NewHealthManager(
+			version.Version,
+			logger,
+			otel.Tracer("longbow.health"),
+		)
+		hm.RegisterChecker(health.NewStorageChecker(logger, otel.Tracer("longbow.health.storage")))
+		hm.RegisterChecker(health.NewMetricsChecker(logger, otel.Tracer("longbow.health.metrics")))
+		hm.RegisterChecker(health.NewLoggingChecker(logger, otel.Tracer("longbow.health.logging")))
+		hm.RegisterChecker(health.NewTracingChecker(logger, otel.Tracer("longbow.health.tracing")))
+		mux.Handle("/health", hm.HTTPHandler())
+
 		mux.HandleFunc("/ready", func(w http.ResponseWriter, r *http.Request) {
 			w.WriteHeader(http.StatusOK)
 			_, _ = w.Write([]byte("OK"))

@@ -36,34 +36,90 @@ x-common-env: &common-env
   LONGBOW_HYBRID_TEXT_COLUMNS: text
   LONGBOW_HYBRID_ALPHA: 0.5
 
+x-healthcheck: &healthcheck
+  test: ["CMD", "curl", "-f", "http://localhost:9090/health"]
+  interval: 30s
+  timeout: 10s
+  start_period: 5s
+  retries: 3
+
+x-common-service: &common-service
+  container_name: longbow
+  environment:
+    <<: *common-env
+    LONGBOW_GOSSIP_ENABLED: "false"
+  ports:
+    - "3000:3000"
+    - "3001:3001"
+    - "9090:9090"
+  volumes:
+    - ./data/longbow:/data
+  ulimits:
+    nofile:
+      soft: 65536
+      hard: 65536
+  healthcheck:
+    <<: *healthcheck
+  restart: unless-stopped
+
 services:
-  # Single Instance / Primary Node
+  # CPU-only (default profile)
   longbow:
+    <<: *common-service
+    profiles: ["cpu"]
     build:
       context: .
       dockerfile: Dockerfile.cpu
-    # image: ghcr.io/23skdu/longbow:latest
-    container_name: longbow
-    environment:
-      <<: *common-env
-      LONGBOW_GOSSIP_ENABLED: "false" # Disabled for one-instance mode
-    ports:
-      - "3000:3000" # Data Plane
-      - "3001:3001" # Control Plane
-      - "9090:9090" # Metrics
-    volumes:
-      - ./data/longbow:/data
-    ulimits:
-      nofile:
-        soft: 65536
-        hard: 65536
-    healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9090/metrics"]
-      interval: 30s
-      timeout: 10s
-      start_period: 5s
-      retries: 3
-    restart: unless-stopped
+
+  # NVIDIA CUDA GPU
+  longbow-nvidia:
+    <<: *common-service
+    profiles: ["nvidia"]
+    container_name: longbow-nvidia
+    build:
+      context: .
+      dockerfile: Dockerfile.nvidia
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+  # Apple Metal GPU
+  longbow-metal:
+    <<: *common-service
+    profiles: ["metal"]
+    container_name: longbow-metal
+    build:
+      context: .
+      dockerfile: Dockerfile.metal
+
+  # EMLGo CPU (SIMD math backend)
+  longbow-emlgo-cpu:
+    <<: *common-service
+    profiles: ["emlgo-cpu"]
+    container_name: longbow-emlgo-cpu
+    build:
+      context: .
+      dockerfile: Dockerfile.emlgo-cpu
+
+  # EMLGo GPU (SIMD math + CUDA)
+  longbow-emlgo-gpu:
+    <<: *common-service
+    profiles: ["emlgo-gpu"]
+    container_name: longbow-emlgo-gpu
+    build:
+      context: .
+      dockerfile: Dockerfile.emlgo-gpu
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
 
 networks:
   default:

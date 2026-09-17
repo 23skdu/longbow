@@ -37,6 +37,8 @@ RUN CGO_ENABLED=0 go build -mod=vendor -tags=${BUILD_TAGS} -ldflags="-s -w" -bui
 # -------------------------------------------------------------------
 FROM scratch
 
+COPY --from=builder /etc/passwd /etc/passwd
+COPY --from=builder /etc/group /etc/group
 COPY --from=builder /app/longbow /longbow
 COPY --from=builder /app/longbow-cli /longbow-cli
 COPY --from=builder /app/bench-tool /bench-tool
@@ -49,4 +51,5 @@ ENV GOGC=75
 
 EXPOSE 3000 3001 9090
 
+USER nobody:nobody
 ENTRYPOINT ["/longbow"]

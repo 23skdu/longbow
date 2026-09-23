@@ -1,0 +1,61 @@
+# Dockerfile.tpu
+# TPU-enabled build with PJRT/CGo support
+#
+# Build:
+#   docker build -f Dockerfile.tpu -t longbow:tpu .
+#
+# Requires libtpu.so on the target host for runtime linking.
+
+# -------------------------------------------------------------------
+# Stage 1: Build
+# -------------------------------------------------------------------
+FROM golang:1.27.0-bookworm AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+COPY vendor/ vendor/
+COPY go.mod go.sum ./
+
+COPY . .
+
+ARG BUILD_TAGS=linux
+ENV GOAMD64=v3
+
+# Build with tpu build tag and CGo enabled (pjrt.go uses dlopen via cgo)
+RUN CGO_ENABLED=1 go build -mod=vendor -tags="${BUILD_TAGS},tpu" \
+    -ldflags="-s -w -checklinkname=0" -buildvcs=false -trimpath \
+    -o longbow ./cmd/longbow
+RUN CGO_ENABLED=1 go build -mod=vendor -tags="${BUILD_TAGS},tpu" \
+    -ldflags="-s -w" -buildvcs=false -trimpath \
+    -o longbow-cli ./cmd/cli
+RUN CGO_ENABLED=1 go build -mod=vendor -tags="${BUILD_TAGS},tpu" \
+    -ldflags="-s -w" -buildvcs=false -trimpath \
+    -o bench-tool ./cmd/bench-tool
+
+# -------------------------------------------------------------------
+# Stage 2: Runtime with libc (needed for CGo + dlopen)
+# -------------------------------------------------------------------
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libc6 \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /app/longbow /longbow
+COPY --from=builder /app/longbow-cli /longbow-cli
+COPY --from=builder /app/bench-tool /bench-tool
+
+VOLUME /data
+
+ENV LONGBOW_TPU_ENABLED=true
+ENV LONGBOW_GPU_ENABLED=false
+ENV GOGC=75
+
+EXPOSE 3000 3001 9090
+
+USER nobody:nobody
+ENTRYPOINT ["/longbow"]

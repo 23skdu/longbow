@@ -1,3 +1,5 @@
+//go:build tpu
+
 package tpu
 
 /*

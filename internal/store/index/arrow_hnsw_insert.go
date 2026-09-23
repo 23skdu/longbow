@@ -533,6 +533,14 @@ func (h *ArrowHNSW) AddByLocation(ctx context.Context, batchIdx, rowIdx int) (ui
 			if vecColIdx != -1 {
 				vec = h.extractVector(record, vecColIdx, rowIdx)
 			}
+			// Index external ID from column 0 for O(1) reverse lookup.
+			if record.NumCols() > 0 {
+				if int64Col, ok := record.Column(0).(*arrowarray.Int64); ok && rowIdx < int64Col.Len() {
+					if extID := int64Col.Value(rowIdx); extID >= 0 {
+						h.IndexExternalID(uint64(extID), id)
+					}
+				}
+			}
 		}
 	}
 
@@ -558,6 +566,15 @@ func (h *ArrowHNSW) AddByRecord(ctx context.Context, rec arrow.RecordBatch, rowI
 	vecColIdx := h.getVectorColumnIndex(rec)
 	if vecColIdx != -1 {
 		vec = h.extractVector(rec, vecColIdx, rowIdx)
+	}
+
+	// Index external ID from column 0 for O(1) reverse lookup.
+	if rec.NumCols() > 0 {
+		if int64Col, ok := rec.Column(0).(*arrowarray.Int64); ok && rowIdx < int64Col.Len() {
+			if extID := int64Col.Value(rowIdx); extID >= 0 {
+				h.IndexExternalID(uint64(extID), id)
+			}
+		}
 	}
 
 	h.SetLocation(types.VectorID(id), types.Location{BatchIdx: batchIdx, RowIdx: rowIdx})

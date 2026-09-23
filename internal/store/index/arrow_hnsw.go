@@ -4,6 +4,7 @@ package index
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"math"
 	"os"
 	"path/filepath"
@@ -123,6 +124,11 @@ type ArrowHNSW struct {
 
 	repairAgent *RepairAgent
 
+	// externalIDIndex maps external (client-visible) IDs to internal uint32 node IDs.
+	// Used by resolveInternalID for O(1) lookup instead of O(n) scan.
+	externalIDIndex   map[uint64]uint32
+	externalIDIndexMu sync.RWMutex
+
 	// Parallel Search Config
 	parallelConfig types.ParallelSearchConfig
 
@@ -191,13 +197,14 @@ func NewArrowHNSW(dataset types.IndexDataProvider, config *types.ArrowHNSWConfig
 // NewArrowHNSWWithConfig creates a new ArrowHNSW index with the given configuration.
 func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowHNSWConfig, topo *memory.NUMATopology) *ArrowHNSW {
 	h := &ArrowHNSW{
-		config:     config,
-		dataset:    dataset,
-		m:          atomic.Int32{},
-		mMax:       atomic.Int32{},
-		mMax0:      atomic.Int32{},
-		searchPool: NewArrowSearchContextPool(),
-		insertPool: NewInsertContextPool(), // Issue 2: Pool metrics
+		config:           config,
+		dataset:          dataset,
+		m:                atomic.Int32{},
+		mMax:             atomic.Int32{},
+		mMax0:            atomic.Int32{},
+		searchPool:       NewArrowSearchContextPool(),
+		insertPool:       NewInsertContextPool(),
+		externalIDIndex:  make(map[uint64]uint32),
 		candidatePool: sync.Pool{
 			New: func() any {
 				s := make([]types.Candidate, 0, config.EfConstruction)
@@ -256,7 +263,8 @@ func NewArrowHNSWWithConfig(dataset types.IndexDataProvider, config types.ArrowH
 	h.maxLevel.Store(-1)
 	h.entryPoint.Store(math.MaxUint32)
 	if config.Dims > math.MaxInt32 {
-		fmt.Printf("Error: dimensions %d exceed MaxInt32, returning nil index\n", config.Dims)
+		slog.Error("ArrowHNSW: dimensions exceed MaxInt32, returning nil index",
+			"dims", config.Dims)
 		return nil
 	}
 	h.dims.Store(int32(config.Dims)) // #nosec G115
@@ -593,7 +601,7 @@ func (h *ArrowHNSW) maybeFlushToDisk() {
 	}
 	if doFlush {
 		if err := h.FlushToDisk(); err != nil {
-			fmt.Printf("FlushToDisk error for %s: %v\n", h.name, err)
+			slog.Error("FlushToDisk failed", "index", h.name, "error", err)
 		} else {
 			h.lastFlushNC.Store(nc)
 		}

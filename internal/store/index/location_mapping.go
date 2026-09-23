@@ -39,3 +39,27 @@ func (h *ArrowHNSW) SetLocation(id types.VectorID, loc types.Location) {
 	h.locationStore.Set(id, loc)
 	h.locationStore.UpdateSize(id)
 }
+
+// IndexExternalID records the mapping from an external (client-visible) ID
+// to an internal uint32 node ID. Called during insert to enable O(1) reverse lookups.
+func (h *ArrowHNSW) IndexExternalID(externalID uint64, internalID uint32) {
+	h.externalIDIndexMu.Lock()
+	h.externalIDIndex[externalID] = internalID
+	h.externalIDIndexMu.Unlock()
+}
+
+// LookupInternalID returns the internal node ID for a given external ID,
+// or (0, false) if not found.
+func (h *ArrowHNSW) LookupInternalID(externalID uint64) (uint32, bool) {
+	h.externalIDIndexMu.RLock()
+	id, ok := h.externalIDIndex[externalID]
+	h.externalIDIndexMu.RUnlock()
+	return id, ok
+}
+
+// RemoveExternalID removes the external ID mapping for a given internal ID.
+func (h *ArrowHNSW) RemoveExternalID(externalID uint64) {
+	h.externalIDIndexMu.Lock()
+	delete(h.externalIDIndex, externalID)
+	h.externalIDIndexMu.Unlock()
+}

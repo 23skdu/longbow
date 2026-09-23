@@ -116,14 +116,20 @@ func arrowHNSWLookupNeighbors(h *ArrowHNSW, externalID uint64, k int) ([]Neighbo
 }
 
 // resolveInternalID maps an external client ID to the ArrowHNSW internal
-// uint32 node ID by consulting the ChunkedLocationStore and the Arrow record.
+// uint32 node ID by consulting the externalIDIndex for O(1) lookup.
+// Falls back to O(n) scan if the index is not populated (e.g. legacy data).
 func resolveInternalID(h *ArrowHNSW, externalID uint64) (uint32, bool) {
+	// Fast path: O(1) lookup via the external ID index.
+	if id, ok := h.LookupInternalID(externalID); ok {
+		return id, true
+	}
+
+	// Slow path: O(n) scan for indexes built before the index was added,
+	// or when the index hasn't been populated yet.
 	nodeCount := h.nodeCount.Load()
 	if nodeCount < 0 {
 		return 0, false
 	}
-	// Cap count at MaxUint32 for safe iteration if needed, though uint32
-	// is the internal node ID limit.
 	var count uint32
 	if nodeCount > 0xFFFFFFFF {
 		count = 0xFFFFFFFF
@@ -142,8 +148,8 @@ func resolveInternalID(h *ArrowHNSW, externalID uint64) (uint32, bool) {
 		}
 
 		if h.dataset == nil {
-			// Fallback: treat internal ID as external ID.
 			if uint64(internalID) == externalID {
+				h.IndexExternalID(externalID, internalID)
 				return internalID, true
 			}
 			continue
@@ -158,11 +164,10 @@ func resolveInternalID(h *ArrowHNSW, externalID uint64) (uint32, bool) {
 		if rec.NumCols() == 0 || loc.RowIdx >= int(rec.NumRows()) {
 			continue
 		}
-		// id column is assumed to be column 0, type Int64.
 		if int64Col, ok := rec.Column(0).(*arrowarray.Int64); ok && loc.RowIdx < int64Col.Len() {
 			val := int64Col.Value(loc.RowIdx)
-			// Only compare if non-negative to avoid wrap-around issues with uint64 cast.
 			if val >= 0 && uint64(val) == externalID {
+				h.IndexExternalID(externalID, internalID)
 				return internalID, true
 			}
 		}

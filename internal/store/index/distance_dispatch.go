@@ -38,6 +38,7 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 	var distComputer func(uint32) (float32, error)
 	var distBatchComputer func([]uint32, []float32) ([]float32, error)
 	var epDist float32
+	var err error
 
 	var disk *DiskGraph
 	if ctx != nil {
@@ -48,7 +49,6 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 	if comp, ok := computer.(DistanceComputer); ok {
 		distComputer = comp.ComputeSingle
 		distBatchComputer = comp.ComputeBatch
-		var err error
 		if ctx != nil {
 			ctx.distComputeCount++
 		}
@@ -462,10 +462,13 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 			// Race Protection: If entry point is not yet committed, lock it to ensure SetVector is finished.
 			if int64(entryPoint) >= maxCommitted {
 				oldVer := data.LockNode(0, entryPoint)
-				epDist, _ = distComputer(entryPoint)
+				epDist, err = distComputer(entryPoint)
 				data.UnlockNode(0, entryPoint, oldVer)
 			} else {
-				epDist, _ = distComputer(entryPoint)
+				epDist, err = distComputer(entryPoint)
+			}
+			if err != nil {
+				return nil, err
 			}
 
 		default:
@@ -473,15 +476,14 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		}
 
 		distBatchComputer = func(ids []uint32, dst []float32) ([]float32, error) {
-			dists := make([]float32, len(ids))
 			for i, id := range ids {
 				d, err := distComputer(id)
 				if err != nil {
 					return nil, err
 				}
-				dists[i] = d
+				dst[i] = d
 			}
-			return dists, nil
+			return dst, nil
 		}
 	}
 

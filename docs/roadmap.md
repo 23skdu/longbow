@@ -6,9 +6,13 @@ This document tracks open work items derived from benchmark analysis. Completed 
 
 ## Open Issues
 
-Derived from 2026-09-11 A/B benchmark analysis. See [performance.md](performance.md) for raw data.
+None currently.
 
-| Priority | Issue | Impact |
-|----------|-------|--------|
-| P0 | CPU complex64 dense 500k | -38% regression |
-| P0 | CPU complex128 dense 500k | P99 75ms tail latency |
+---
+
+## Recently Resolved
+
+| Date | Issue | Fix |
+|------|-------|-----|
+| 2026-09-22 | CPU complex64 dense 500k (-38% regression) | Fixed ComputeBatch double-pass; added SIMD batch dispatch via float32 reinterpret-cast |
+| 2026-09-22 | CPU complex128 dense 500k (P99 75ms tail) | Fixed ComputeBatch double-pass; added per-vector SIMD dispatch via float64 reinterpret-cast |

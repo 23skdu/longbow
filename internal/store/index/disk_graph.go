@@ -132,12 +132,12 @@ func (dg *DiskGraph) parse() error {
 		PQOffset:  binary.LittleEndian.Uint64(dg.data[28:36]),
 		PQDims:    binary.LittleEndian.Uint32(dg.data[36:40]),
 	}
-	if len(dg.data) >= 64 {
-		dg.header.TQOffset = binary.LittleEndian.Uint64(dg.data[56:64])
-	}
 
 	metaStart := 40
 	if version >= 3 {
+		if len(dg.data) < 56 {
+			return fmt.Errorf("truncated version 3 header")
+		}
 		dg.header.SQ8Min = math.Float32frombits(binary.LittleEndian.Uint32(dg.data[40:44]))
 		dg.header.SQ8Max = math.Float32frombits(binary.LittleEndian.Uint32(dg.data[44:48]))
 		dg.header.EntryPoint = binary.LittleEndian.Uint32(dg.data[48:52])
@@ -146,13 +146,13 @@ func (dg *DiskGraph) parse() error {
 	}
 
 	if version >= 5 {
-		if len(dg.data) < 72 {
+		if len(dg.data) < 76 {
 			return fmt.Errorf("truncated version 5 header")
 		}
 		dg.header.TQOffset = binary.LittleEndian.Uint64(dg.data[56:64])
 		dg.header.TQBits = binary.LittleEndian.Uint32(dg.data[64:68])
 		dg.header.BQOffset = binary.LittleEndian.Uint64(dg.data[68:76])
-		metaStart = 76 // TQ(8) + bits(4) + BQ(8) = 20 -> 56+20 = 76
+		metaStart = 76
 	}
 
 	// Read Layer Meta offsets

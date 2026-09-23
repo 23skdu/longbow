@@ -19,21 +19,7 @@ type RankedResult struct {
 }
 
 // SearchWithBatchDistance performs k-NN search using batch distance calculations.
-// This is a two-stage retrieval:
-// 1. Coarse search using the HNSW graph to get initial candidates
-// 2. Batch distance calculation on all candidates for precise ranking
-//
-// Using batch SIMD operations provides significant speedup over per-vector
-// distance calculations by reducing function call overhead and maximizing
-// CPU pipeline utilization.
-// SearchWithBatchDistance performs k-NN search using batch distance calculations.
-// This is a two-stage retrieval:
-// 1. Coarse search using the HNSW graph to get initial candidates
-// 2. Batch distance calculation on all candidates for precise ranking
-//
-// Using batch SIMD operations provides significant speedup over per-vector
-// distance calculations by reducing function call overhead and maximizing
-// CPU pipeline utilization.
+// Two-stage retrieval: coarse HNSW search then batch SIMD reranking.
 func (h *ArrowHNSW) SearchWithBatchDistance(query []float32, k int) []RankedResult {
 	if len(query) == 0 || k <= 0 {
 		return nil

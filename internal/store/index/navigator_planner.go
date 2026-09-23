@@ -18,11 +18,6 @@ func NewQueryPlanner() *QueryPlanner {
 
 // Plan selects the appropriate strategy based on the query.
 func (p *QueryPlanner) Plan(query NavigatorQuery) NavigationStrategy {
-	// Heuristic:
-	// 1. Directed search -> A*
-	// 2. Large exploration (High hop count or no target) -> ParallelBFS
-	// 3. Small exploration -> BFS
-
 	if query.TargetID != query.StartID {
 		return p.astar
 	}

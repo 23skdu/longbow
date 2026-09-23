@@ -6,9 +6,6 @@ import (
 )
 
 // syncMapShim wraps sync.Map to provide a typed interface for [uint32]*LockFreeNeighborList.
-// sync.Map is lock-free for reads (uses atomic operations internally) and serializes writes
-// via a compare-and-swap internal structure. This eliminates the RWMutex contention that
-// existed in the previous map[uint32]*LockFreeNeighborList + RWMutex design.
 type syncMapShim struct {
 	m sync.Map
 }
@@ -47,19 +44,8 @@ func (s *syncMapShim) Clear() {
 	s.m.Clear()
 }
 
-// LockFreeNeighborList provides lock-free reads with copy-on-write updates.
-// This eliminates lock contention in the read-heavy search hot path while
-// maintaining safety through epoch-based RCU (Read-Copy-Update).
-//
-// Design:
-// - Readers: Lock-free, use atomic pointer load + epoch counter
-// - Writers: Acquire write lock, perform copy-on-write, atomic swap
-// - Safety: Epoch counter prevents premature reclamation of old slices
-//
-// Performance characteristics:
-// - Read: ~10ns (vs ~100ns with RWMutex)
-// - Write: ~1µs (copy + atomic swap)
-// - Memory: 2x during update (old + new slice), reclaimed after readers exit
+// LockFreeNeighborList provides lock-free reads with copy-on-write updates
+// using epoch-based RCU for safe memory reclamation.
 type LockFreeNeighborList struct {
 	// Atomic pointer to current neighbor slice
 	// Using atomic.Pointer for type-safe atomic operations

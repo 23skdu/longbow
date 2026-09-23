@@ -3,25 +3,6 @@ package index
 // GraphLayerEvictionManager evicts cold upper HNSW graph layers (layers ≥ 1) to disk
 // when memory pressure exceeds a configurable threshold, and transparently restores
 // them on the next access.
-//
-// # Background
-//
-// An HNSW graph has a layered structure:
-//   - Layer 0: O(N·M) neighbor entries. Usually too large for RAM at scale. Eligible for eviction.
-//   - Layers ≥ 1: O(N·log(N)) entries. Small footprint, critical for entry-point traversal. Pinned in memory.
-//
-// At 500K float32 dim=384 vectors, Layer 0 holds ~1GB of neighbor
-// data. Evicting it to a temp file frees this memory without
-// any correctness impact — they are transparently restored on cache miss.
-//
-// # Integration
-//
-// After autoshard migration completes, wire this into the ShardedHNSW:
-//
-//	evMgr := index.NewGraphLayerEvictionManager(0.75, logger)
-//	evMgr.Register(shardedHNSW)
-//
-// The manager runs a background goroutine checking memory pressure every 30 seconds.
 
 import (
 	"context"

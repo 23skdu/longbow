@@ -83,7 +83,15 @@ func NewAdaptiveIndex(ds types.IndexDataProvider, cfg AdaptiveIndexConfig) Vecto
 	return a
 }
 
-// IsSharded returns true if the adaptive index is currently using a sharded HNSW index.
+// activeIndex returns the currently active underlying index.
+// Callers must hold at least idx.mu.RLock.
+func (idx *AdaptiveIndex) activeIndex() VectorIndex {
+	if idx.usingHNSW.Load() {
+		return idx.hnsw
+	}
+	return idx.bruteForce
+}
+
 // IsSharded returns true if the adaptive index is currently using a sharded HNSW index.
 func (idx *AdaptiveIndex) IsSharded() bool {
 	idx.mu.RLock()
@@ -813,33 +821,21 @@ func (idx *AdaptiveIndex) SearchVectorsWithBitmap(ctx context.Context, q any, k 
 
 // GetLocation retrieves the storage location for a given vector ID.
 func (idx *AdaptiveIndex) GetLocation(id uint32) (any, bool) {
-	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.GetLocation(id)
-	}
-	return idx.bruteForce.GetLocation(id)
+	return idx.activeIndex().GetLocation(id)
 }
 
 // GetDimension returns the vector dimension of the index.
 func (idx *AdaptiveIndex) GetDimension() uint32 {
-	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.GetDimension()
-	}
-	return idx.bruteForce.GetDimension()
+	return idx.activeIndex().GetDimension()
 }
 
 // Warmup pre-loads index data into memory.
 func (idx *AdaptiveIndex) Warmup() int {
-	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.Warmup()
@@ -849,9 +845,7 @@ func (idx *AdaptiveIndex) Warmup() int {
 
 // SetIndexedColumns sets the columns to be indexed.
 func (idx *AdaptiveIndex) SetIndexedColumns(cols []string) {
-	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 	if idx.usingHNSW.Load() {
 		idx.hnsw.SetIndexedColumns(cols)
@@ -887,9 +881,7 @@ func (idx *AdaptiveIndex) TrainPQ(vectors [][]float32) error {
 
 // GetPQEncoder returns the Product Quantizer encoder for the index.
 func (idx *AdaptiveIndex) GetPQEncoder() *pq.PQEncoder {
-	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.GetPQEncoder()
@@ -899,17 +891,9 @@ func (idx *AdaptiveIndex) GetPQEncoder() *pq.PQEncoder {
 
 // EstimateMemory returns an estimate of the memory used by the index.
 func (idx *AdaptiveIndex) EstimateMemory() int64 {
-	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.EstimateMemory()
-	}
-	if idx.bruteForce != nil {
-		return idx.bruteForce.EstimateMemory()
-	}
-	return 0
+	return idx.activeIndex().EstimateMemory()
 }
 
 // GetRawNeighbors returns internal neighbor IDs, delegating to HNSW if active.
@@ -950,11 +934,9 @@ func (idx *AdaptiveIndex) Search(ctx context.Context, query any, k int, filter a
 }
 
 // Size returns the total number of vectors in the active index.
-func (idx *AdaptiveIndex) Size() int {
-	return idx.Len()
-}
+func (idx *AdaptiveIndex) Size() int { return idx.Len() }
 
-// GetEntryPoint returns the entry point of the index, delegating to HNSW if active.
+// GetEntryPoint returns the entry point of the index.
 func (idx *AdaptiveIndex) GetEntryPoint() uint32 {
 	if idx.usingHNSW.Load() {
 		return idx.hnsw.GetEntryPoint()
@@ -964,10 +946,7 @@ func (idx *AdaptiveIndex) GetEntryPoint() uint32 {
 
 // GetVectorID returns the ID of a vector given its location.
 func (idx *AdaptiveIndex) GetVectorID(loc any) (uint32, bool) {
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.GetVectorID(loc)
-	}
-	return idx.bruteForce.GetVectorID(loc)
+	return idx.activeIndex().GetVectorID(loc)
 }
 
 // DeleteBatch removes a batch of vectors from the active index.
@@ -987,10 +966,7 @@ func (idx *AdaptiveIndex) ExportState() ([]byte, error) {
 }
 
 // ImportState is not supported for AdaptiveIndex.
-func (idx *AdaptiveIndex) ImportState(data []byte) error {
-	// Not supported for adaptive bridge
-	return nil
-}
+func (idx *AdaptiveIndex) ImportState(data []byte) error { return nil }
 
 // ExportGraph serializes the active index graph.
 func (idx *AdaptiveIndex) ExportGraph(w io.Writer) error {
@@ -1001,10 +977,7 @@ func (idx *AdaptiveIndex) ExportGraph(w io.Writer) error {
 }
 
 // ImportGraph is not supported for AdaptiveIndex.
-func (idx *AdaptiveIndex) ImportGraph(r io.Reader) error {
-	// Not supported for adaptive bridge
-	return nil
-}
+func (idx *AdaptiveIndex) ImportGraph(r io.Reader) error { return nil }
 
 // ExportDelta returns changes since a given version from the active index.
 func (idx *AdaptiveIndex) ExportDelta(fromVersion uint64) (*DeltaSync, error) {

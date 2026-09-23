@@ -134,7 +134,6 @@ type ShardedHNSW struct {
 }
 
 // NewShardedHNSW creates a new sharded HNSW index.
-// NewShardedHNSW creates a new sharded HNSW index.
 func NewShardedHNSW(config ShardedHNSWConfig, dataset types.IndexDataProvider) VectorIndex {
 	if config.NumShards <= 0 {
 		config.NumShards = 1 // Start with at least 1 shard
@@ -554,12 +553,6 @@ func (idx *ShardedHNSW) SearchVectors(ctx context.Context, queryVec any, k int, 
 	if k <= 0 {
 		return nil, nil
 	}
-
-	searchOptions := types.SearchOptions{}
-	if opt, ok := options.(types.SearchOptions); ok {
-		searchOptions = opt
-	}
-	_ = searchOptions // Mark as used
 
 	// 1. Optimization: Try bitmap-based filtering
 	if len(filters) > 0 && idx.dataset != nil {

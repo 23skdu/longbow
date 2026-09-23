@@ -51,116 +51,12 @@ func (h *CandidateHeap) PopCandidate() (types.Candidate, bool) {
 }
 
 // PopAndReturn pops the top candidate and returns it (typed helper).
-// Returns (types.Candidate, ok) to match usage "c, _ := ctx.resultSet.Pop()"
-// Assuming standard heap interface Pop returns 'any', but if we execute heap.Pop(h), we don't call method directly.
-// The code calls ctx.resultSet.Pop(). This implies resultSet has a Pop method.
-// Standard heap.Interface Pop does NOT remove from heap logic, only slice.
-// BUT successful usage implies usage of heap.Pop(h).
-// Or maybe it's a custom PriorityQueue struct?
-// Given "ctx.resultSet.Pop()", it's a method on the type.
-// If I implement a custom Pop that does the heap logic?
-// OR just standard Pop from end?
-// The usage in insertion:
-// res := make...
-// for ... ctx.resultSet.Pop()
-// This implies extracting elements.
-// If it's a heap, we want to extract Max each time?
-// If so, we need heap.Pop(h) which re-heapifies.
-// BUT we can't call heap.Pop(&ctx.resultSet) if ctx.resultSet is just a field.
-// We must call method on it.
-// If `arrow_hnsw_insert.go` calls it directly, it expects the type to handle heap logic.
-// So I will implement Pop() to do heap pop. Note: standard heap package functions take interface.
-// If I implement Pop() on *CandidateHeap that calls heap.Pop(self)? No, cycle.
-// I will implement simple Pop from slice end?
-// Usage: "Returns candidates sorted by distance".
-// If resultSet is accumulated candidates, and we want them sorted...
-// If we just Pop from end, they are in stack order.
-// If it's a heap, popping from end is NOT sorted.
-// Unless we sort it first?
-// `insert` logic usually maintains a heap.
-// If `resultSet` is a heap, we can convert it to sorted slice by popping repeatedly.
-// So Pop() should be `heap.Pop()`.
-// Since I cannot import "container/heap" inside the method easily without using it, I'll rely on `heap` package being used if I pass it to `heap.Pop`.
-// But the call is `ctx.resultSet.Pop()`.
-// This means `Pop` IS defined on `CandidateHeap`.
-// Does it do heap pop?
-// Code: `c, _ := ctx.resultSet.Pop()`.
-// Return types: `(types.Candidate, bool/error)`.
-// My implementation:
+// Used in tests; production code uses PopCandidate.
 func (h *CandidateHeap) PopAndReturn() (types.Candidate, bool) {
 	if len(*h) == 0 {
 		return types.Candidate{}, false
 	}
-	// We want heap functionality. But we can't use container/heap easily if we are the interface.
-	// Actually we can: import "container/heap".
-	// func (h *CandidateHeap) Pop() (types.Candidate, bool) { val := heap.Pop(h).(types.Candidate); return val, true }
-	// Wait, naming conflict. heap.Pop calls h.Pop.
-	// If I name my method Pop(), heap.Pop calls it.
-	// But I want to CALL it.
-	// I can name the method `PopIter()` or similar?
-	// But the code `arrow_hnsw_insert.go` calls `Pop()`.
-	// So the code expects `Pop()` to function as an iterator/extractor.
-	// If I use `container/heap`, I must implement `Pop() any` for the interface.
-	// The code expects `Pop() (types.Candidate, bool)`.
-	// These signatures CONFLICT.
-	// `Pop() any` vs `Pop() (types.Candidate, bool)`.
-	// Go does not support overloading.
-	// So `resultSet` CANNOT be `heap.Interface`.
-	// It must be a custom struct that wraps a heap or implements its own logic.
-	// Or `Pop` in the code does NOT refer to heap pop, but just stack pop?
-	// In HNSW, `searchLayer` returns sorted results.
-	// If `resultSet` is just a list, and we Sort it?
-	// `arrow_hnsw_insert.go` logic:
-	// `h.searchLayer(...)` fills `ctx`. `resultSet` is part of `ctx`.
-	// Then it iterates and Pops.
-	// If `searchLayer` fills `resultSet` as a Heap?
-	// I should check `searchLayer` logic.
-	// But I don't have it (I'm implementing it as placeholder).
-	// I will define `resultSet` as `CandidateHeap` struct.
-	// I will implement `Pop` to return `(types.Candidate, bool)`.
-	// I won't use `container/heap` interface on it directly to avoid conflict.
-	// Or I assume `Pop` just pops from end (stack).
-	// If I want sorting, I should Sort `resultSet` before popping.
-	// But `searchLayer` usually returns heap.
-	// I'll implement `Pop()` as: swap 0 with last, reduce len, sift down 0. (Standard Heap Pop).
-
-	// Manual Heap Pop Implementation:
-	old := *h
-	n := len(old)
-	if n == 0 {
-		return types.Candidate{}, false
-	}
-
-	// Swap 0 and n-1
-	val := old[0] // Max element
-	old[0] = old[n-1]
-	*h = old[:n-1]
-
-	// Sift Down 0
-	// Simplified sift down
-	h.down(0, n-1)
-
-	return val, true
-}
-
-func (h *CandidateHeap) down(i0, n int) {
-	i := i0
-	for {
-		j1 := 2*i + 1
-		if j1 >= n || j1 < 0 { // j1 < 0 after int overflow
-			break
-		}
-		j := j1 // left child
-		j2 := j1 + 1
-		if j2 < n && (*h)[j2].Dist > (*h)[j1].Dist {
-			j = j2 // = 2*i + 2  // right child
-		}
-		if !((*h)[j].Dist > (*h)[i].Dist) {
-			break
-		}
-		(*h)[i], (*h)[j] = (*h)[j], (*h)[i]
-		i = j
-	}
+	return heap.Pop(h).(types.Candidate), true
 }
 
 // ArrowSearchContext holds pre-allocated buffers for Arrow-based HNSW search operations

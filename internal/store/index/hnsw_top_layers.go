@@ -145,7 +145,8 @@ func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGra
 		if res == nil {
 			// 3. Fallback to standard types.GraphData (lock-safe for reads)
 			if data != nil {
-				neighbors := data.GetNeighborsWithGen(layer, id, nil, maxGen)
+				scratch := make([]uint32, 0, types.MaxNeighbors)
+				neighbors := data.GetNeighborsWithGen(layer, id, scratch, maxGen)
 				if len(neighbors) > 0 {
 					res = neighbors
 				}
@@ -159,7 +160,8 @@ func (h *ArrowHNSW) GetNeighborsCombinedCached(layer int, id uint32, dg *DiskGra
 			dg = h.diskGraph.Load()
 		}
 		if dg != nil {
-			res = dg.GetNeighbors(layer, id, nil)
+			scratch := make([]uint32, 0, types.MaxNeighbors)
+			res = dg.GetNeighbors(layer, id, scratch)
 		}
 	}
 

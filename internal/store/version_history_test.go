@@ -6,6 +6,7 @@ import (
 	"time"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestVersionHistory_New(t *testing.T) {
@@ -101,4 +102,52 @@ func TestVersionHistory_MaxVersions(t *testing.T) {
 	history := vh.GetHistory(1)
 	assert.Len(t, history, 3)
 	assert.Equal(t, 5, history[2].Version)
+}
+
+func TestVersionHistory_GetVersionsAtBatch(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping test in short mode")
+	}
+	vh := NewVersionHistory(DefaultVersionHistoryConfig())
+
+	now := time.Now().UnixNano()
+	// id=1: two versions; id=2: one version; id=3: only future versions.
+	vh.Add(1, []float32{1.0}, 0.0, now-2000, nil)
+	vh.Add(1, []float32{2.0}, 0.0, now-1000, nil)
+	vh.Add(2, []float32{9.0}, 0.0, now-500, nil)
+	vh.Add(3, []float32{7.0}, 0.0, now+5000, nil)
+
+	ids := []uint64{1, 2, 3, 99}
+	out := make(map[uint64]VersionedVector, len(ids))
+	vh.GetVersionsAtBatch(ids, now, out)
+
+	require.Len(t, out, 2)
+	assert.Equal(t, []float32{2.0}, out[1].Vector)
+	assert.Equal(t, []float32{9.0}, out[2].Vector)
+	_, has3 := out[3]
+	assert.False(t, has3, "id 3 has no version at or before timestamp")
+	_, has99 := out[99]
+	assert.False(t, has99)
+}
+
+func BenchmarkVersionHistory_GetVersionsAtBatch(b *testing.B) {
+	vh := NewVersionHistory(DefaultVersionHistoryConfig())
+	now := time.Now().UnixNano()
+
+	const nIDs = 1000
+	ids := make([]uint64, nIDs)
+	for id := uint64(0); id < nIDs; id++ {
+		ids[id] = id
+		for v := 0; v < 5; v++ {
+			vh.Add(id, []float32{float32(v)}, 0.0, now+int64(v)*1000, nil)
+		}
+	}
+
+	out := make(map[uint64]VersionedVector, nIDs)
+	b.ReportAllocs()
+	b.ResetTimer()
+	for b.Loop() {
+		clear(out)
+		vh.GetVersionsAtBatch(ids, now, out)
+	}
 }

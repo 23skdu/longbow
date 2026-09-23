@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // NavigationStrategy defines the interface for different pathfinding algorithms.
@@ -33,6 +34,9 @@ func (s *BFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query Na
 	queue := []queueItem{{id: query.StartID, hops: 0, path: []uint32{query.StartID}}}
 	visited := make(map[uint32]bool)
 	maxFrontierSize := 0
+	// Reusable neighbor scratch buffer: avoids per-hop heap allocation when
+	// decoding adjacency lists from disk/in-memory backends.
+	neighborScratch := make([]uint32, 0, types.MaxNeighbors)
 
 	for len(queue) > 0 {
 		select {
@@ -77,10 +81,11 @@ func (s *BFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query Na
 		}
 		visited[current.id] = true
 
-		neighbors, ok := gn.getNeighbors(current.id)
+		neighbors, ok := gn.getNeighborsBuf(current.id, neighborScratch)
 		if !ok {
 			continue
 		}
+		neighborScratch = neighbors
 
 		for _, neighbor := range neighbors {
 			if !visited[neighbor] {

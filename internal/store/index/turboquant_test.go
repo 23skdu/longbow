@@ -108,6 +108,43 @@ func TestTurboQuant_VaryingBitDepths(t *testing.T) {
 	}
 }
 
+// TestTurboQuant_OddBitPackUnpack exercises the bit-accumulator fallback
+// (bits 1,3,5,6,7) with a pack→unpack round-trip that must stay within one
+// quantization step of the input.
+func TestTurboQuant_OddBitPackUnpack(t *testing.T) {
+	const dims = 64
+	for _, bits := range []int{1, 3, 5, 6, 7} {
+		t.Run(fmt.Sprintf("%d-bits", bits), func(t *testing.T) {
+			enc := NewTurboQuantEncoder(dims, bits, 42)
+			maxVal := float32((uint32(1) << bits) - 1)
+			step := (2 * math.Pi) / float64(maxVal)
+
+			// Deterministic angles across the representable range.
+			n := enc.pow2 - 1
+			angles := make([]float32, n)
+			for i := range angles {
+				angles[i] = float32(-math.Pi) + float32(2*math.Pi)*float32(i)/float32(n-1)
+			}
+
+			angleBytes := (n*bits + 7) / 8
+			packed := make([]byte, angleBytes)
+			enc.packAngles(angles, packed)
+
+			out := make([]float32, n)
+			enc.unpackAngles(packed, out)
+
+			// Within one quantization step (unpack quantizes to the same grid).
+			tolerance := float64(step) + 1e-6
+			for i := range angles {
+				diff := math.Abs(float64(angles[i]) - float64(out[i]))
+				assert.LessOrEqualf(t, diff, tolerance,
+					"idx %d: got %v want %v (diff %v > step %v)",
+					i, out[i], angles[i], diff, step)
+			}
+		})
+	}
+}
+
 func TestTurboQuant_LargeDimensions(t *testing.T) {
 	dims := 1536
 	encoder := NewTurboQuantEncoder(dims, 4, 42)
@@ -173,4 +210,48 @@ func FuzzTurboQuantCompression(f *testing.F) {
 			t.Fatalf("Compression ratio too low: %.2fx", ratio)
 		}
 	})
+}
+
+func BenchmarkTurboQuant_Encode(b *testing.B) {
+	dims := 128
+	for _, bits := range []int{4, 3} {
+		b.Run(fmt.Sprintf("bits%d", bits), func(b *testing.B) {
+			enc := NewTurboQuantEncoder(dims, bits, 42)
+			vec := make([]float32, dims)
+			for i := range vec {
+				vec[i] = float32(i) / float32(dims)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if _, err := enc.Encode(vec); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+func BenchmarkTurboQuant_Decode(b *testing.B) {
+	dims := 128
+	for _, bits := range []int{4, 3} {
+		b.Run(fmt.Sprintf("bits%d", bits), func(b *testing.B) {
+			enc := NewTurboQuantEncoder(dims, bits, 42)
+			vec := make([]float32, dims)
+			for i := range vec {
+				vec[i] = float32(i) / float32(dims)
+			}
+			encoded, err := enc.Encode(vec)
+			if err != nil {
+				b.Fatal(err)
+			}
+			b.ReportAllocs()
+			b.ResetTimer()
+			for b.Loop() {
+				if _, err := enc.Decode(encoded); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
 }

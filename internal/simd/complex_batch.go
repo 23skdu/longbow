@@ -109,7 +109,8 @@ func CosineDistanceComplex64Batch(query []complex64, vectors [][]complex64, resu
 }
 
 // EuclideanDistanceComplex128Batch computes Euclidean distances between one complex128 query and multiple complex128 vectors.
-func EuclideanDistanceComplex128Batch(query []complex128, vectors [][]complex128, results []float32) error {
+// f64Vecs is a pre-allocated scratch buffer of at least len(vectors) elements; it is reused to avoid allocation.
+func EuclideanDistanceComplex128Batch(query []complex128, vectors [][]complex128, results []float32, f64Vecs [][]float64) error {
 	if len(vectors) != len(results) {
 		return errors.New("simd: vectors and results length mismatch")
 	}
@@ -123,12 +124,23 @@ func EuclideanDistanceComplex128Batch(query []complex128, vectors [][]complex128
 
 	qF64 := unsafe.Slice((*float64)(unsafe.Pointer(&query[0])), dims*2) // #nosec G103
 
+	if cap(f64Vecs) < len(vectors) {
+		f64Vecs = make([][]float64, len(vectors))
+	}
+	f64Vecs = f64Vecs[:len(vectors)]
 	for i, v := range vectors {
 		if v == nil || len(v) != dims {
+			f64Vecs[i] = nil
 			results[i] = math.MaxFloat32
 			continue
 		}
-		vF64 := unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), dims*2) // #nosec G103
+		f64Vecs[i] = unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), dims*2) // #nosec G103
+	}
+
+	for i, vF64 := range f64Vecs {
+		if vF64 == nil {
+			continue
+		}
 		d, _ := EuclideanDistanceFloat64(qF64, vF64)
 		results[i] = d
 	}
@@ -136,7 +148,8 @@ func EuclideanDistanceComplex128Batch(query []complex128, vectors [][]complex128
 }
 
 // DotProductComplex128Batch computes dot products between one complex128 query and multiple complex128 vectors.
-func DotProductComplex128Batch(query []complex128, vectors [][]complex128, results []float32) error {
+// f64Vecs is a pre-allocated scratch buffer of at least len(vectors) elements; it is reused to avoid allocation.
+func DotProductComplex128Batch(query []complex128, vectors [][]complex128, results []float32, f64Vecs [][]float64) error {
 	if len(vectors) != len(results) {
 		return errors.New("simd: vectors and results length mismatch")
 	}
@@ -150,12 +163,23 @@ func DotProductComplex128Batch(query []complex128, vectors [][]complex128, resul
 
 	qF64 := unsafe.Slice((*float64)(unsafe.Pointer(&query[0])), dims*2) // #nosec G103
 
+	if cap(f64Vecs) < len(vectors) {
+		f64Vecs = make([][]float64, len(vectors))
+	}
+	f64Vecs = f64Vecs[:len(vectors)]
 	for i, v := range vectors {
 		if v == nil || len(v) != dims {
+			f64Vecs[i] = nil
 			results[i] = math.MaxFloat32
 			continue
 		}
-		vF64 := unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), dims*2) // #nosec G103
+		f64Vecs[i] = unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), dims*2) // #nosec G103
+	}
+
+	for i, vF64 := range f64Vecs {
+		if vF64 == nil {
+			continue
+		}
 		d, _ := DotProductF64(qF64, vF64)
 		results[i] = d
 	}
@@ -163,7 +187,8 @@ func DotProductComplex128Batch(query []complex128, vectors [][]complex128, resul
 }
 
 // CosineDistanceComplex128Batch computes cosine distances between one complex128 query and multiple complex128 vectors.
-func CosineDistanceComplex128Batch(query []complex128, vectors [][]complex128, results []float32) error {
+// f64Vecs is a pre-allocated scratch buffer of at least len(vectors) elements; it is reused to avoid allocation.
+func CosineDistanceComplex128Batch(query []complex128, vectors [][]complex128, results []float32, f64Vecs [][]float64) error {
 	if len(vectors) != len(results) {
 		return errors.New("simd: vectors and results length mismatch")
 	}
@@ -177,12 +202,23 @@ func CosineDistanceComplex128Batch(query []complex128, vectors [][]complex128, r
 
 	qF64 := unsafe.Slice((*float64)(unsafe.Pointer(&query[0])), dims*2) // #nosec G103
 
+	if cap(f64Vecs) < len(vectors) {
+		f64Vecs = make([][]float64, len(vectors))
+	}
+	f64Vecs = f64Vecs[:len(vectors)]
 	for i, v := range vectors {
 		if v == nil || len(v) != dims {
+			f64Vecs[i] = nil
 			results[i] = math.MaxFloat32
 			continue
 		}
-		vF64 := unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), dims*2) // #nosec G103
+		f64Vecs[i] = unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), dims*2) // #nosec G103
+	}
+
+	for i, vF64 := range f64Vecs {
+		if vF64 == nil {
+			continue
+		}
 		d, _ := CosineDistanceFloat64(qF64, vF64)
 		results[i] = d
 	}

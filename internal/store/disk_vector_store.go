@@ -8,6 +8,7 @@ import (
 	"io"
 	"math"
 	"sort"
+	"strconv"
 	"sync"
 	"time"
 	"unsafe"
@@ -81,12 +82,16 @@ func NewDiskVectorStoreWithConfig(path string, dim int, useUring, useDirect bool
 		zstdEnc:     z,
 		zstdDec:     zd,
 		deleted:     make(map[int]bool),
+		// Default hot-block cache for temporal lookups re-reading the same
+		// compressed blocks. SetTieredConfig replaces it with the tier cache.
+		blockCache: storage.NewLRUCache(16 * 1024 * 1024),
 	}
 
 	return dvs, nil
 }
 
 // SetTieredConfig configures the remote storage backend and cache size for tiered storage.
+// The same LRU also caches hot (local) blocks under synthetic "hot:" keys.
 func (dvs *DiskVectorStore) SetTieredConfig(remote storage.RemoteStorage, cacheMB int) {
 	dvs.mu.Lock()
 	defer dvs.mu.Unlock()
@@ -406,23 +411,27 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 	}
 
 	blockRequestMap := make(map[int][]int)
-	for _, idx := range filtered {
+	// Pre-compute block membership once; reused by the result assembly loop
+	// so findBlock is not re-run per element.
+	blockOf := make([]int, len(filtered))
+	for i, idx := range filtered {
 		bIdx := dvs.findBlock(idx)
 		if bIdx == -1 {
 			return nil, fmt.Errorf("vector index %d out of bounds", idx)
 		}
+		blockOf[i] = bIdx
 		blockRequestMap[bIdx] = append(blockRequestMap[bIdx], idx)
 	}
 
+	// Fetch blocks in ascending offset order for sequential I/O locality.
 	sortedBlockIdxs := make([]int, 0, len(blockRequestMap))
 	for bIdx := range blockRequestMap {
 		sortedBlockIdxs = append(sortedBlockIdxs, bIdx)
 	}
 	sort.Ints(sortedBlockIdxs)
 
-	blockData := make(map[int][]byte)
-
-	for bIdx := range blockRequestMap {
+	blockData := make(map[int][]byte, len(sortedBlockIdxs))
+	for _, bIdx := range sortedBlockIdxs {
 		raw, err := dvs.fetchBlockData(bIdx)
 		if err != nil {
 			return nil, err
@@ -432,7 +441,7 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 
 	results := make([][]float32, len(filtered))
 	for i, idx := range filtered {
-		bIdx := dvs.findBlock(idx)
+		bIdx := blockOf[i]
 		raw := blockData[bIdx]
 		block := dvs.blocks[bIdx]
 		localIdx := idx - block.StartIdx
@@ -465,13 +474,13 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 		return nil, nil
 	}
 
-	dvs.mu.RLock()
-	dataType := dvs.dataType
-	dvs.mu.RUnlock()
-
-	// Re-use standard GetBatch logic but specialize element sizes and conversion
+	// Single RLock covers dataType, block metadata and backend reads for the
+	// whole request — avoids the previous double-lock (read dataType, unlock,
+	// re-lock) window.
 	dvs.mu.RLock()
 	defer dvs.mu.RUnlock()
+
+	dataType := dvs.dataType
 
 	filtered := make([]int, 0, len(indices))
 	for _, idx := range indices {
@@ -484,17 +493,29 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 		return nil, nil
 	}
 
+	// Block request map: which global indices belong to which block.
+	// findBlock is computed once per index here, then reused by the result
+	// assembly loop (previously it was re-run per element — O(n log b) waste).
 	blockRequestMap := make(map[int][]int)
-	for _, idx := range filtered {
+	blockOf := make([]int, len(filtered))
+	for i, idx := range filtered {
 		bIdx := dvs.findBlock(idx)
 		if bIdx == -1 {
 			return nil, fmt.Errorf("vector index %d out of bounds", idx)
 		}
+		blockOf[i] = bIdx
 		blockRequestMap[bIdx] = append(blockRequestMap[bIdx], idx)
 	}
 
-	blockData := make(map[int][]byte)
+	// Fetch in ascending block order for sequential I/O locality.
+	sortedBlockIdxs := make([]int, 0, len(blockRequestMap))
 	for bIdx := range blockRequestMap {
+		sortedBlockIdxs = append(sortedBlockIdxs, bIdx)
+	}
+	sort.Ints(sortedBlockIdxs)
+
+	blockData := make(map[int][]byte, len(sortedBlockIdxs))
+	for _, bIdx := range sortedBlockIdxs {
 		raw, err := dvs.fetchBlockData(bIdx)
 		if err != nil {
 			return nil, err
@@ -516,7 +537,7 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 	case types.VectorTypeFloat64:
 		results := make([][]float64, len(filtered))
 		for i, idx := range filtered {
-			bIdx := dvs.findBlock(idx)
+			bIdx := blockOf[i]
 			raw := blockData[bIdx]
 			block := dvs.blocks[bIdx]
 			localIdx := idx - block.StartIdx
@@ -534,7 +555,7 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 	case types.VectorTypeInt8:
 		results := make([][]int8, len(filtered))
 		for i, idx := range filtered {
-			bIdx := dvs.findBlock(idx)
+			bIdx := blockOf[i]
 			raw := blockData[bIdx]
 			block := dvs.blocks[bIdx]
 			localIdx := idx - block.StartIdx
@@ -551,7 +572,7 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 	case types.VectorTypeUint8:
 		results := make([][]uint8, len(filtered))
 		for i, idx := range filtered {
-			bIdx := dvs.findBlock(idx)
+			bIdx := blockOf[i]
 			raw := blockData[bIdx]
 			block := dvs.blocks[bIdx]
 			localIdx := idx - block.StartIdx
@@ -566,7 +587,7 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 	case types.VectorTypeFloat16:
 		results := make([][]float16.Num, len(filtered))
 		for i, idx := range filtered {
-			bIdx := dvs.findBlock(idx)
+			bIdx := blockOf[i]
 			raw := blockData[bIdx]
 			block := dvs.blocks[bIdx]
 			localIdx := idx - block.StartIdx
@@ -583,7 +604,7 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 	default:
 		results := make([][]float32, len(filtered))
 		for i, idx := range filtered {
-			bIdx := dvs.findBlock(idx)
+			bIdx := blockOf[i]
 			raw := blockData[bIdx]
 			block := dvs.blocks[bIdx]
 			localIdx := idx - block.StartIdx
@@ -608,6 +629,23 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 		}
 		return results, nil
 	}
+}
+
+// readBufPool reuses the 13+CompSize header+payload buffer used for local
+// block reads. The buffer is only held for the duration of ReadAt +
+// decompressBlock; decompressBlock either returns a fresh slice (zstd/lz4)
+// or a subslice of buf (none/TQ) which is copied before the buffer is
+// returned to the pool.
+var readBufPool = sync.Pool{
+	New: func() any {
+		b := make([]byte, 0, 64*1024)
+		return &b
+	},
+}
+
+// hotCacheKey is the synthetic LRU key for a local (hot-tier) block.
+func hotCacheKey(bIdx int) string {
+	return "hot:" + strconv.Itoa(bIdx)
 }
 
 func (dvs *DiskVectorStore) fetchBlockData(bIdx int) ([]byte, error) {
@@ -640,20 +678,65 @@ func (dvs *DiskVectorStore) fetchBlockData(bIdx int) ([]byte, error) {
 			return nil, err
 		}
 
-		// Cache
+		// Cache decompressed payload under the remote key.
 		if dvs.blockCache != nil {
 			dvs.blockCache.Put(block.RemoteKey, raw)
 		}
 		return raw, nil
 	}
 
-	// Local Read
-	buf := make([]byte, 13+block.CompSize)
+	// Hot-tier LRU: temporal lookups re-read the same compressed blocks.
+	cacheKey := hotCacheKey(bIdx)
+	if dvs.blockCache != nil {
+		if data, ok := dvs.blockCache.Get(cacheKey); ok {
+			return data, nil
+		}
+	}
+
+	// Local Read via pooled buffer.
+	need := 13 + int(block.CompSize)
+	bp := readBufPool.Get().(*[]byte)
+	buf := *bp
+	if cap(buf) < need {
+		buf = make([]byte, need)
+	}
+	buf = buf[:need]
 	_, err := dvs.backend.ReadAt(buf, block.Offset)
 	if err != nil {
+		*bp = buf
+		readBufPool.Put(bp)
 		return nil, err
 	}
-	return dvs.decompressBlock(buf)
+	raw, derr := dvs.decompressBlock(buf)
+	if derr != nil {
+		*bp = buf
+		readBufPool.Put(bp)
+		return nil, derr
+	}
+	// zstd/lz4 already returned a fresh slice; none/TQ alias buf — copy so
+	// the pooled buffer can be reused. Detect alias by pointer range.
+	if isSubsliceOf(raw, buf) {
+		out := make([]byte, len(raw))
+		copy(out, raw)
+		raw = out
+	}
+	*bp = buf
+	readBufPool.Put(bp)
+	if dvs.blockCache != nil {
+		dvs.blockCache.Put(cacheKey, raw)
+	}
+	return raw, nil
+}
+
+// isSubsliceOf reports whether a shares backing storage with whole.
+func isSubsliceOf(a, whole []byte) bool {
+	if len(a) == 0 || cap(a) == 0 {
+		return false
+	}
+	a0 := uintptr(unsafe.Pointer(unsafe.SliceData(a)))
+	w0 := uintptr(unsafe.Pointer(unsafe.SliceData(whole)))
+	w1 := w0 + uintptr(cap(whole))
+	return a0 >= w0 && a0 < w1
 }
 
 // OffloadBlock moves a local block to remote storage.

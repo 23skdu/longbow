@@ -192,3 +192,70 @@ func BenchmarkDiskVectorStore_Read(b *testing.B) {
 		dvsDirect.Close()
 	})
 }
+
+// TestDiskVectorStore_HotBlockCache verifies the hot-tier LRU serves repeated
+// GetBatch reads of the same block without re-hitting the backend after the
+// first fetch, and that cached payloads stay correct across reads.
+func TestDiskVectorStore_HotBlockCache(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "hot_cache.bin")
+	dim := 8
+
+	dvs, err := NewDiskVectorStore(path, dim)
+	require.NoError(t, err)
+	defer dvs.Close()
+
+	// Append 3 blocks (BatchAppend flushes per call → one block each).
+	for b := 0; b < 3; b++ {
+		batch := make([][]float32, 4)
+		for i := range batch {
+			batch[i] = make([]float32, dim)
+			for j := range batch[i] {
+				batch[i][j] = float32(b*100 + i*10 + j)
+			}
+		}
+		n, err := dvs.BatchAppend(batch)
+		require.NoError(t, err)
+		require.Equal(t, 4, n)
+	}
+	require.Equal(t, 3, len(dvs.blocks))
+	require.NotNil(t, dvs.blockCache, "constructor must install a default hot cache")
+
+	// First read populates the cache for block 0 and block 1 (indices 4-7).
+	idx01 := []int{0, 1, 2, 3, 4, 5, 6, 7}
+	first, err := dvs.GetBatch(idx01)
+	require.NoError(t, err)
+	require.Len(t, first, 8)
+
+	key := hotCacheKey(0)
+	_, cached := dvs.blockCache.Get(key)
+	require.True(t, cached, "block 0 must be cached after first read")
+	_, cached1 := dvs.blockCache.Get(hotCacheKey(1))
+	require.True(t, cached1, "block 1 must be cached after first read")
+
+	// Second read: identical results from cache.
+	second, err := dvs.GetBatch(idx01)
+	require.NoError(t, err)
+	require.Equal(t, first, second)
+
+	// Hijack the cached payload; a subsequent read must reflect it (proving
+	// the cache path, not disk, was used).
+	src := mustGet(t, dvs, key)
+	alt := make([]byte, len(src))
+	copy(alt, src)
+	alt[0] ^= 0xFF
+	dvs.blockCache.Put(key, alt)
+
+	third, err := dvs.GetBatch(idx01)
+	require.NoError(t, err)
+	require.Len(t, third, 8)
+	require.NotEqual(t, first[0], third[0], "cache-hijacked read must differ → cache was used")
+	require.Equal(t, first[4], third[4], "block 1 payload unchanged")
+}
+
+func mustGet(t *testing.T, dvs *DiskVectorStore, key string) []byte {
+	t.Helper()
+	data, ok := dvs.blockCache.Get(key)
+	require.True(t, ok, "key %q", key)
+	return data
+}

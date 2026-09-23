@@ -151,15 +151,16 @@ func (c *complex64Computer) Prefetch(id uint32) {
 
 // complex128Computer handles Complex128 vectors
 type complex128Computer struct {
-	data      *types.GraphData
-	q         []complex128
-	dims      int
-	h         *ArrowHNSW
-	diskGraph *DiskGraph
-	maxGen    uint64
-	batchVecs [][]complex128
-	queryMag  float64
-	threshold float32
+	data        *types.GraphData
+	q           []complex128
+	dims        int
+	h           *ArrowHNSW
+	diskGraph   *DiskGraph
+	maxGen      uint64
+	batchVecs   [][]complex128
+	batchVecsF64 [][]float64
+	queryMag    float64
+	threshold   float32
 }
 
 func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
@@ -251,6 +252,11 @@ func (c *complex128Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 	}
 	c.batchVecs = c.batchVecs[:len(ids)]
 
+	if cap(c.batchVecsF64) < len(ids) {
+		c.batchVecsF64 = make([][]float64, len(ids))
+	}
+	c.batchVecsF64 = c.batchVecsF64[:len(ids)]
+
 	// Track which entries need distance computation vs pruning
 	pruned := 0
 
@@ -295,11 +301,11 @@ func (c *complex128Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 
 	switch c.h.config.Metric {
 	case basecore.MetricCosine:
-		return dst, simd.CosineDistanceComplex128Batch(c.q, c.batchVecs, dst)
+		return dst, simd.CosineDistanceComplex128Batch(c.q, c.batchVecs, dst, c.batchVecsF64)
 	case basecore.MetricDotProduct:
-		return dst, simd.DotProductComplex128Batch(c.q, c.batchVecs, dst)
+		return dst, simd.DotProductComplex128Batch(c.q, c.batchVecs, dst, c.batchVecsF64)
 	default:
-		return dst, simd.EuclideanDistanceComplex128Batch(c.q, c.batchVecs, dst)
+		return dst, simd.EuclideanDistanceComplex128Batch(c.q, c.batchVecs, dst, c.batchVecsF64)
 	}
 }
 

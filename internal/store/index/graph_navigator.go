@@ -314,6 +314,13 @@ func (gn *GraphNavigator) FindPath(ctx context.Context, query NavigatorQuery) (*
 }
 
 func (gn *GraphNavigator) getNeighbors(nodeID uint32) ([]uint32, bool) {
+	return gn.getNeighborsBuf(nodeID, nil)
+}
+
+// getNeighborsBuf retrieves neighbors for a node, using buf as a reusable
+// scratch buffer when the underlying graph supports it. Passing nil allocates
+// a fresh buffer on demand (safe for concurrent callers that do not share buf).
+func (gn *GraphNavigator) getNeighborsBuf(nodeID uint32, buf []uint32) ([]uint32, bool) {
 	gn.mu.RLock()
 	defer gn.mu.RUnlock()
 
@@ -322,8 +329,12 @@ func (gn *GraphNavigator) getNeighbors(nodeID uint32) ([]uint32, bool) {
 		return nil, false
 	}
 
+	if buf == nil {
+		buf = make([]uint32, 0, types.MaxNeighbors)
+	}
+
 	for layer := 0; layer < types.ArrowMaxLayers; layer++ {
-		neighbors := graph.GetNeighbors(layer, nodeID, []uint32{})
+		neighbors := graph.GetNeighbors(layer, nodeID, buf)
 		if len(neighbors) > 0 {
 			return neighbors, true
 		}

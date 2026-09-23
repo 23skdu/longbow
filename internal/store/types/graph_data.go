@@ -1675,6 +1675,33 @@ func (g *GraphData) SetNeighbors(id uint32, neighbors []uint32) error {
 	return g.SetNeighborsAtLayer(0, id, neighbors)
 }
 
+// ensureLayerNeighborsChunk allocates the neighbor arena slab for (layer, cID)
+// if missing. EnsureChunk only pre-allocates layer 0; upper layers normally use
+// PackedNeighbors, but SetNeighborsAtLayer must also be able to write the
+// legacy Neighbors slice for export / disk-graph serialization.
+func (g *GraphData) ensureLayerNeighborsChunk(layer, cID int) error {
+	if layer < 0 || layer >= len(g.Neighbors) {
+		return fmt.Errorf("layer %d out of range", layer)
+	}
+	if cID < 0 || cID >= len(g.Neighbors[layer]) {
+		return fmt.Errorf("chunk %d out of range for layer %d", cID, layer)
+	}
+	if atomic.LoadUint64(&g.Neighbors[layer][cID]) != 0 {
+		return nil
+	}
+	neighborSlabSize := ChunkSize*MaxNeighbors*4 + 64
+	if neighborSlabSize < 1024*1024 {
+		neighborSlabSize = 1024 * 1024
+	}
+	initArenaSafe(&g.Uint32Arena, neighborSlabSize, g.Allocator)
+	ref, err := g.Uint32Arena.AllocSlice(ChunkSize * MaxNeighbors)
+	if err != nil {
+		return err
+	}
+	atomic.StoreUint64(&g.Neighbors[layer][cID], ref.Offset)
+	return nil
+}
+
 func (g *GraphData) SetNeighborsAtLayer(layer int, id uint32, neighbors []uint32) error {
 	mu := &g.ShardedMus[id%1024]
 	mu.Lock()
@@ -1689,8 +1716,16 @@ func (g *GraphData) SetNeighborsAtLayer(layer int, id uint32, neighbors []uint32
 	versionsChunk := g.GetVersionsChunk(layer, cID)
 
 	if countsChunk == nil || neighborsChunk == nil {
-		if err := g.EnsureChunk(cID, layer, g.Dims); err != nil {
+		if err := g.EnsureChunk(cID, cOff, g.Dims); err != nil {
 			return err
+		}
+		// EnsureChunk only pre-allocates layer-0 neighbor slabs (upper layers
+		// normally live in PackedNeighbors). When writing the legacy slice for
+		// a specific upper layer (export / disk graph), allocate on demand.
+		if neighborsChunk == nil {
+			if err := g.ensureLayerNeighborsChunk(layer, cID); err != nil {
+				return err
+			}
 		}
 		countsChunk = g.GetCountsChunk(layer, cID)
 		neighborsChunk = g.GetNeighborsChunk(layer, cID)

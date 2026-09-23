@@ -19,8 +19,10 @@ type TurboQuantEncoder struct {
 	dims   int
 	pow2   int
 	had    *simd.HadamardTransformer
-	// Lock-free ring buffer for workspaces to avoid allocations while being thread-safe
+	// Lock-free ring buffer for float32 workspaces (work/recon/stack/angles)
 	pool *LockFreeRingBuffer[*[]float32]
+	// Lock-free ring buffer for QJL bit-scratch byte slices.
+	qjlPool *LockFreeRingBuffer[*[]byte]
 }
 
 // NewTurboQuantEncoder creates a new encoder.
@@ -32,26 +34,28 @@ func NewTurboQuantEncoder(dims int, bitsPerAngle int, seed int64) *TurboQuantEnc
 	for pow2 < dims {
 		pow2 <<= 1
 	}
-	// Create a ring buffer for workspaces. Size 1024 is plenty for concurrent bulk inserts.
+	// Create ring buffers for workspaces. Size 1024 is plenty for concurrent bulk inserts.
 	rb := NewLockFreeRingBuffer[*[]float32](1024)
+	qb := NewLockFreeRingBuffer[*[]byte](1024)
 
 	return &TurboQuantEncoder{
-		params: TurboQuantParams{BitsPerAngle: bitsPerAngle, Seed: seed},
-		dims:   dims,
-		pow2:   pow2,
-		had:    simd.NewHadamardTransformer(pow2),
-		pool:   rb,
+		params:  TurboQuantParams{BitsPerAngle: bitsPerAngle, Seed: seed},
+		dims:    dims,
+		pow2:    pow2,
+		had:     simd.NewHadamardTransformer(pow2),
+		pool:    rb,
+		qjlPool: qb,
 	}
 }
 
 func (e *TurboQuantEncoder) getWorkspace() *[]float32 {
 	wsPtr, ok := e.pool.Pop()
 	if !ok {
-		ws := make([]float32, e.pow2*3)
+		ws := make([]float32, e.pow2*4)
 		return &ws
 	}
-	if len(*wsPtr) < e.pow2*3 {
-		ws := make([]float32, e.pow2*3)
+	if len(*wsPtr) < e.pow2*4 {
+		ws := make([]float32, e.pow2*4)
 		return &ws
 	}
 	return wsPtr
@@ -59,6 +63,23 @@ func (e *TurboQuantEncoder) getWorkspace() *[]float32 {
 
 func (e *TurboQuantEncoder) putWorkspace(wsPtr *[]float32) {
 	e.pool.Push(wsPtr) // Ignore if full, let GC handle it
+}
+
+// getQJLScratch returns a byte slice of at least n bytes for QJL bit packing.
+func (e *TurboQuantEncoder) getQJLScratch(n int) *[]byte {
+	if ptr, ok := e.qjlPool.Pop(); ok {
+		if cap(*ptr) >= n {
+			s := (*ptr)[:n]
+			clear(s)
+			return &s
+		}
+	}
+	s := make([]byte, n)
+	return &s
+}
+
+func (e *TurboQuantEncoder) putQJLScratch(ptr *[]byte) {
+	e.qjlPool.Push(ptr)
 }
 
 // Encode compresses a float32 vector into a TurboQuant byte stream.
@@ -85,7 +106,8 @@ func (e *TurboQuantEncoder) Encode(vec []float32) ([]byte, error) {
 	// We'll store:
 	// - 1 float32 (radius)
 	// - (pow2-1) angles (packed bits)
-	angles := make([]float32, e.pow2-1)
+	// angles lives in the 4th workspace quadrant to avoid per-call allocation.
+	angles := workspace[e.pow2*3 : e.pow2*3+(e.pow2-1)]
 	stack := workspace[e.pow2*2 : e.pow2*3]
 	radius, err := e.polarTransformRecursive(work, angles, stack)
 	if err != nil {
@@ -99,7 +121,9 @@ func (e *TurboQuantEncoder) Encode(vec []float32) ([]byte, error) {
 
 	// 5. Stage 2: QJL (Sign bit of residual)
 	// residual = work - recon
-	qjlBits := make([]byte, (e.pow2+7)/8)
+	qjlPtr := e.getQJLScratch((e.pow2 + 7) / 8)
+	qjlBits := *qjlPtr
+	defer e.putQJLScratch(qjlPtr)
 	for i := 0; i < e.pow2; i++ {
 		if work[i] > recon[i] {
 			qjlBits[i/8] |= (byte(1) << (i % 8))
@@ -178,22 +202,31 @@ func (e *TurboQuantEncoder) packAngles(angles []float32, dst []byte) {
 		return
 	}
 
-	// Fallback for other bit depths
-	var currentBit int
+	// Bit-accumulator fallback for non-power-of-two depths (1,3,5,6,7).
+	// Packs whole values into a uint64 accumulator and flushes full bytes,
+	// avoiding per-bit division/modulo in the hot loop.
+	var acc uint64
+	var accBits uint
+	byteIdx := 0
 	for _, angle := range angles {
-		norm := (angle + math.Pi) / (2 * math.Pi)
+		norm := (angle + math.Pi) * (1.0 / (2 * math.Pi))
 		if norm < 0 {
 			norm = 0
 		} else if norm > 1 {
 			norm = 1
 		}
-		q := uint32(norm*maxVal + 0.5)
-		for k := 0; k < bits; k++ {
-			if (q & (uint32(1) << k)) != 0 {
-				dst[currentBit/8] |= (1 << (currentBit % 8))
-			}
-			currentBit++
+		q := uint64(norm*maxVal + 0.5) // #nosec G115
+		acc |= q << accBits
+		accBits += uint(bits)
+		for accBits >= 8 {
+			dst[byteIdx] = byte(acc)
+			acc >>= 8
+			accBits -= 8
+			byteIdx++
 		}
+	}
+	if accBits > 0 {
+		dst[byteIdx] = byte(acc)
 	}
 }
 
@@ -206,15 +239,16 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 	angleBytes := (angleCount*e.params.BitsPerAngle + 7) / 8
 	qjlOffset := 4 + angleBytes
 
-	// Unpack Angles
-	angles := make([]float32, angleCount)
-	e.unpackAngles(data[4:qjlOffset], angles)
-
-	// Reconstruct Cartesian
+	// Unpack Angles into workspace quadrant 4 (avoids per-call allocation).
 	wsPtr := e.getWorkspace()
 	workspace := *wsPtr
 	defer e.putWorkspace(wsPtr)
-	recon := make([]float32, e.pow2)
+
+	angles := workspace[e.pow2*3 : e.pow2*3+angleCount]
+	e.unpackAngles(data[4:qjlOffset], angles)
+
+	// Reconstruct Cartesian using workspace quadrant 2 for recon, quadrant 3 for stack.
+	recon := workspace[e.pow2 : e.pow2*2]
 	stack := workspace[e.pow2*2 : e.pow2*3]
 	e.polarReconstructRecursive(radius, angles, recon, stack)
 
@@ -224,8 +258,9 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 	// Here we'll treat it as a sign bit of the residual to improve accuracy.
 	// In the paper, QJL error correction allows the model to calculate
 	// attention scores more accurately by eliminating bias.
+	// Hoist the loop-invariant correction scale out of the hot loop.
+	correction := radius / float32(math.Sqrt(float64(e.pow2))) * 0.1 // Heuristic
 	for i := 0; i < e.pow2; i++ {
-		correction := radius / float32(math.Sqrt(float64(e.pow2))) * 0.1 // Heuristic
 		if (qjlBits[i/8] & (byte(1) << (i % 8))) != 0 {
 			// If bit is set, the residual was positive.
 			// Add a small correction factor based on the radius/dims.
@@ -235,7 +270,10 @@ func (e *TurboQuantEncoder) Decode(data []byte) ([]float32, error) {
 		}
 	}
 
-	return recon, nil
+	// Return a copy: callers own the result and the workspace is recycled.
+	out := make([]float32, e.pow2)
+	copy(out, recon)
+	return out, nil
 }
 
 // GetRadius extracts the radius (magnitude) from an encoded TurboQuant byte stream.
@@ -266,18 +304,24 @@ func (e *TurboQuantEncoder) unpackAngles(src []byte, dst []float32) {
 		return
 	}
 
-	// Fallback
-	var currentBit int
+	// Bit-accumulator fallback for non-power-of-two depths.
+	// Pulls whole bytes into a uint64 accumulator and extracts `bits` at a
+	// time, avoiding per-bit division/modulo.
+	scale := (2 * math.Pi) / maxVal
+	var acc uint64
+	var accBits uint
+	byteIdx := 0
+	mask := uint64(1)<<bits - 1
 	for i := range dst {
-		var q uint32
-		for k := 0; k < bits; k++ {
-			if (src[currentBit/8] & (byte(1) << (currentBit % 8))) != 0 {
-				q |= (uint32(1) << k)
-			}
-			currentBit++
+		for accBits < uint(bits) {
+			acc |= uint64(src[byteIdx]) << accBits // #nosec G115
+			byteIdx++
+			accBits += 8
 		}
-		norm := float32(q) / maxVal
-		dst[i] = norm*2*math.Pi - math.Pi
+		q := acc & mask
+		acc >>= bits
+		accBits -= uint(bits)
+		dst[i] = float32(q)*scale - math.Pi
 	}
 }
 

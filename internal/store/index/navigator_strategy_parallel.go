@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/store/types"
 	"golang.org/x/sync/errgroup"
 )
 
@@ -86,6 +87,9 @@ func (s *ParallelBFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, 
 					return nil
 				}
 
+				// Per-goroutine scratch: safe under concurrency, avoids allocs.
+				neighborScratch := make([]uint32, 0, types.MaxNeighbors)
+
 				// Check goal
 				if id == query.TargetID {
 					found.Store(true)
@@ -101,7 +105,7 @@ func (s *ParallelBFSStrategy) FindPath(ctx context.Context, gn *GraphNavigator, 
 				// Get Neighbors
 				// Note: getNeighbors does a read-lock on gn.mu but types.GraphData internal locks are fine.
 				// For truly lock-free, we rely on types.GraphData's seqlock.
-				neighbors, ok := gn.getNeighbors(id)
+				neighbors, ok := gn.getNeighborsBuf(id, neighborScratch)
 				if !ok {
 					return nil
 				}

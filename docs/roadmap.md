@@ -31,6 +31,8 @@ Derived from 2026-09-22 codebase audit and benchmark suite. See [performance.md]
 | 2026-09-23 | LockFreeHNSW randomLevel distribution, search & dynamic link pruning (recall > 95%) | Correctness & recall |
 | 2026-09-23 | SIMD unrolled batch bounds & vertical AVX-512 dimension validation | Stability & robustness |
 | 2026-09-23 | Empirical tensor math dispatch routing (float32/64 Standard, complex/TQ EML) | P2 perf tuning |
+| 2026-09-23 | Roadmap #3: disk-backed adjacency + complex128 batch scratch (GraphRAG inversion) | ~0-alloc GetNeighbors; FindPathCached 422 ns |
+| 2026-09-23 | Roadmap #4: TurboQuant bit-unpack + disk hot-block LRU (temporal regression) | Disk read 31 µs→3.1 µs, 68 KB→5.8 KB |
 
 ---
 
@@ -103,13 +105,24 @@ The following 10 improvement steps address remaining performance cliffs, stubbed
 
 #### 3. Resolve GPU Emlgo 100k Disk Complex128 GraphRAG Performance Inversion
 - **Area**: `internal/store/index/disk_graph.go`, `internal/store/index/graph_navigator.go`
-- **Status**: In Progress
-- **Details**: Profile and eliminate redundant intermediate heap allocations when deserializing disk-backed complex128 adjacency lists into tensor scratchpads.
+- **Status**: Completed
+- **Resolution (2026-09-23)**: Eliminated redundant heap allocations on disk-backed adjacency deserialization and complex128 batch distance paths.
+  - Added `getNeighborsBuf` scratch API on `GraphNavigator`; BFS/A*/parallel strategies now own reusable `[]uint32` scratch (per-goroutine in parallel path) instead of allocating on every hop.
+  - `complex128Computer` holds `batchVecsF64` scratch; `Euclidean/Dot/CosineDistanceComplex128Batch` take a pre-allocated `f64Vecs [][]float64` (mirrors complex64).
+  - `GetNeighborsCombinedCached` / `promoteNodeLocked` use local/reused disk scratch so cached results never alias GraphData buffers.
+  - Replaced `sort.Search` closures in `DiskGraph.GetNeighbors`/`GetLevel` with manual lower-bound (no per-call closure allocation).
+  - Fixed `SetNeighborsAtLayer(layer>0)` to allocate upper-layer neighbor chunks on demand (`ensureLayerNeighborsChunk`) — previously always failed after `EnsureChunk` only pre-allocated layer 0, silently dropping upper-layer export.
+  - **Metrics**: `BenchmarkDiskGraph_GetNeighborsReusedBuf` 8–10 ns/op, 0 B/op, 0 allocs; `NilBuf` 16–17 ns/op; `BenchmarkGraphNavigator_FindPathCached` 422 ns/op, 2 allocs.
+  - **Tests**: `TestDiskGraph_RoundTrip`, `TestDiskGraph_GetNeighborsBufReuse`, `TestDiskGraph_GetLevel`, `TestDiskGraph_GetNeighborsOutOfRange`, `TestGraphNavigator_GetNeighborsBufScratch`.
 
 #### 4. Resolve CPU Emlgo 100k Disk TurboQuant Temporal Indexing Regression
 - **Area**: `internal/store/index/turboquant.go`, `internal/store/disk_vector_store.go`
-- **Status**: In Progress
-- **Details**: Optimize bit-unpacking routines and memory-mapped block caching for historical temporal version lookups in compressed disk stores.
+- **Status**: Completed
+- **Resolution (2026-09-23)**: Optimized TurboQuant bit-unpacking, workspace reuse, and disk-store block caching for temporal lookups.
+  - **TurboQuant**: workspace grown to `pow2*4` (angles no longer per-call `make`); pooled QJL bit-scratch via `qjlPool`; bit-accumulator pack/unpack for odd depths (1/3/5/6/7) replaces per-bit div/mod; QJL correction scale hoisted out of Decode hot loop; Decode returns a copy (workspace is recycled).
+  - **DiskVectorStore**: `GetBatch` precomputes `blockOf[]` once per index (was re-running `findBlock` per element in every dtype branch) and fetches blocks in ascending order for sequential I/O; local reads use a pooled header/payload buffer (`readBufPool`) with alias-safe copy only when needed; default 16 MB hot-tier LRU (`hot:<bIdx>` keys) so repeated temporal re-reads of the same compressed block skip disk after first fetch; `GetBatchAny` collapsed double `RLock` into one.
+  - **Metrics**: `BenchmarkDiskVectorStore_Read/StandardIO` **31–33 µs → 3.1–3.4 µs/op (~9–10×), 68 KB → 5.8 KB/op (~12× less), 19 allocs/op** (baseline at `/tmp/opencode/baseline_bench.txt`). `BenchmarkTurboQuant_Encode/bits4` 9.3 µs, 2 allocs; `Decode/bits4` 3.0 µs, 1 alloc (return copy only). `BenchmarkVersionHistory_GetVersionsAtBatch` 41 µs, 0 B/op, 0 allocs/op (1000 IDs × 5 versions).
+  - **Tests**: `TestTurboQuant_OddBitPackUnpack` (1/3/5/6/7-bit round-trip within one quant step), `TestDiskVectorStore_HotBlockCache`, `TestVersionHistory_GetVersionsAtBatch`, `BenchmarkTurboQuant_Encode/Decode`, `BenchmarkVersionHistory_GetVersionsAtBatch`.
 
 #### 5. Replace ADBC Driver Query Stub with Robust SQL Execution Engine
 - **Area**: `internal/adbc/statement.go`

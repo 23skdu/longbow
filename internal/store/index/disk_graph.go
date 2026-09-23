@@ -6,7 +6,6 @@ import (
 	"math"
 	"os"
 	"path/filepath"
-	"sort"
 	"unsafe"
 
 	"github.com/23skdu/longbow/internal/memory"
@@ -241,19 +240,20 @@ func (dg *DiskGraph) GetNeighbors(layer int, nodeID uint32, buf []uint32) []uint
 		}
 		dataOffset = dg.l0Offsets[nodeID]
 	} else {
-		// Sparse check
+		// Sparse check via manual lower_bound (avoids sort.Search closure allocation)
 		idx := dg.upperLayers[layer]
-		// Binary search
-		// Since idx.NodeIDs is sorted
-		// sort.Search uses closures, might be slightly overhead?
-		// Implement manual lower_bound for speed if needed.
-		// For now standard sort.Search.
 		n := len(idx.NodeIDs)
-		i := sort.Search(n, func(j int) bool {
-			return idx.NodeIDs[j] >= nodeID
-		})
-		if i < n && idx.NodeIDs[i] == nodeID {
-			dataOffset = idx.Offsets[i]
+		lo, hi := 0, n
+		for lo < hi {
+			mid := int(uint(lo+hi) >> 1)
+			if idx.NodeIDs[mid] < nodeID {
+				lo = mid + 1
+			} else {
+				hi = mid
+			}
+		}
+		if lo < n && idx.NodeIDs[lo] == nodeID {
+			dataOffset = idx.Offsets[lo]
 		} else {
 			return nil
 		}
@@ -447,18 +447,21 @@ func (dg *DiskGraph) Capacity() int {
 
 // GetLevel returns the maximum level a node reaches in the graph.
 func (dg *DiskGraph) GetLevel(nodeID uint32) int {
-	// To find max level, we check from top down?
-	// Or we store levels explicitly?
-	// GraphBackend requires GetLevel.
-	// We didn't store a "Levels" array in our format above.
-	// We implicitly have it by presence in Sparse Layers.
+	// Levels are implicit via presence in sparse layers; scan top-down with
+	// a manual lower_bound to avoid sort.Search closure allocation.
 	for l := int(dg.header.MaxLayers) - 1; l > 0; l-- {
 		idx := dg.upperLayers[l]
 		n := len(idx.NodeIDs)
-		i := sort.Search(n, func(j int) bool {
-			return idx.NodeIDs[j] >= nodeID
-		})
-		if i < n && idx.NodeIDs[i] == nodeID {
+		lo, hi := 0, n
+		for lo < hi {
+			mid := int(uint(lo+hi) >> 1)
+			if idx.NodeIDs[mid] < nodeID {
+				lo = mid + 1
+			} else {
+				hi = mid
+			}
+		}
+		if lo < n && idx.NodeIDs[lo] == nodeID {
 			return l
 		}
 	}

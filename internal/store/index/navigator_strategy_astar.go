@@ -5,6 +5,7 @@ import (
 	"context"
 
 	"github.com/23skdu/longbow/internal/metrics"
+	"github.com/23skdu/longbow/internal/store/types"
 )
 
 // AStarStrategy implements A* search algorithm.
@@ -37,6 +38,8 @@ func (s *AStarStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query 
 	visited := make(map[uint32]float32) // id -> gScore (hops)
 	visited[query.StartID] = 0
 	maxFrontierSize := 0
+	// Reusable neighbor scratch: avoids per-expansion heap allocation.
+	neighborScratch := make([]uint32, 0, types.MaxNeighbors)
 
 	for pq.Len() > 0 {
 		select {
@@ -77,10 +80,11 @@ func (s *AStarStrategy) FindPath(ctx context.Context, gn *GraphNavigator, query 
 			continue
 		}
 
-		neighbors, ok := gn.getNeighbors(current.id)
+		neighbors, ok := gn.getNeighborsBuf(current.id, neighborScratch)
 		if !ok {
 			continue
 		}
+		neighborScratch = neighbors
 
 		for _, neighbor := range neighbors {
 			newHops := current.hops + 1

@@ -320,11 +320,13 @@ func (h *ArrowHNSW) promoteNodeLocked(data *types.GraphData, id uint32) *types.G
 	}
 
 	// Copy neighbors from disk for all layers
+	var diskScratch []uint32
 	for l := 0; l < types.ArrowMaxLayers; l++ {
-		diskNeighbors := dg.GetNeighbors(l, id, nil)
+		diskNeighbors := dg.GetNeighbors(l, id, diskScratch)
 		if len(diskNeighbors) == 0 {
 			continue
 		}
+		diskScratch = diskNeighbors
 		countsChunk := newData.GetCountsChunk(l, cID)
 		neighborsChunk := newData.GetNeighborsChunk(l, cID)
 		if countsChunk == nil || neighborsChunk == nil {

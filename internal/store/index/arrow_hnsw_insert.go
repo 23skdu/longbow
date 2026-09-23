@@ -681,35 +681,7 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			if recFirst != nil {
 				v := h.extractVector(recFirst, vecColIdx, rowIdxs[0])
 				if v != nil {
-					dims := 0
-					switch vt := v.(type) {
-					case []float32:
-						dims = len(vt)
-					case []float16.Num:
-						dims = len(vt)
-					case []float64:
-						dims = len(vt)
-					case []int32:
-						dims = len(vt)
-					case []uint32:
-						dims = len(vt)
-					case []int16:
-						dims = len(vt)
-					case []uint16:
-						dims = len(vt)
-					case []int8:
-						dims = len(vt)
-					case []uint8:
-						dims = len(vt)
-					case []int64:
-						dims = len(vt)
-					case []uint64:
-						dims = len(vt)
-					case []complex64:
-						dims = len(vt)
-					case []complex128:
-						dims = len(vt)
-					}
+					dims := VectorLength(v)
 
 					if dims > 0 {
 						h.dims.Store(int32(dims)) // #nosec G115

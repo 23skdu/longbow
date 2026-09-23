@@ -6,9 +6,6 @@ import (
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
-// Distance function resolvers for all supported vector types.
-// These resolve to the best available SIMD kernels from the internal/simd package.
-
 func getSimdMetric(m basecore.DistanceMetric) simd.MetricType {
 	switch m {
 	case basecore.MetricCosine:
@@ -22,435 +19,113 @@ func getSimdMetric(m basecore.DistanceMetric) simd.MetricType {
 	}
 }
 
-// resolveAllDistanceFuncs resolves and caches all typed distance functions.
-func (h *ArrowHNSW) resolveDistanceFuncSquared() func([]float32, []float32) (float32, error) {
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[float32](simd.MetricL2Squared, dims)
+type distanceFallbacks[T any] struct {
+	cosine    simd.DistanceKernel[T]
+	dot       simd.DistanceKernel[T]
+	l2Squared simd.DistanceKernel[T]
+	euclidean simd.DistanceKernel[T]
+}
+
+func resolveDistanceKernel[T any](sm simd.MetricType, dims int, fb distanceFallbacks[T]) simd.DistanceKernel[T] {
+	k := simd.GetKernel[T](sm, dims)
 	if k == nil {
-		return simd.L2SquaredFloat32
+		switch sm {
+		case simd.MetricCosine:
+			return fb.cosine
+		case simd.MetricDotProduct:
+			if fb.dot != nil {
+				return func(a, b []T) (float32, error) {
+					d, err := fb.dot(a, b)
+					return -d, err
+				}
+			}
+			return nil
+		case simd.MetricL2Squared:
+			if fb.l2Squared != nil {
+				return fb.l2Squared
+			}
+			return fb.euclidean
+		default:
+			return fb.euclidean
+		}
+	}
+	if sm == simd.MetricDotProduct {
+		return func(a, b []T) (float32, error) {
+			d, err := k(a, b)
+			return -d, err
+		}
 	}
 	return k
 }
 
-func (h *ArrowHNSW) resolveDistanceFuncInt8Squared() func([]int8, []int8) (float32, error) {
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[int8](simd.MetricL2Squared, dims)
-	if k == nil {
-		return nil
+func resolveL2SquaredKernel[T any](dims int, fallback simd.DistanceKernel[T]) simd.DistanceKernel[T] {
+	if k := simd.GetKernel[T](simd.MetricL2Squared, dims); k != nil {
+		return k
 	}
-	return k
-}
-
-func (h *ArrowHNSW) resolveDistanceFuncUint8Squared() func([]uint8, []uint8) (float32, error) {
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[uint8](simd.MetricL2Squared, dims)
-	if k == nil {
-		return nil
-	}
-	return k
+	return fallback
 }
 
 func (h *ArrowHNSW) resolveAllDistanceFuncs() {
-	h.distFunc = h.resolveDistanceFunc()
-	h.distFuncSquared = h.resolveDistanceFuncSquared()
-	h.distFuncF64 = h.resolveDistanceFuncF64()
-	h.distFuncF16 = h.resolveDistanceFuncF16()
-	h.distFuncC64 = h.resolveDistanceFuncC64()
-	h.distFuncC128 = h.resolveDistanceFuncC128()
-	h.distFuncInt8 = h.resolveDistanceFuncInt8()
-	h.distFuncInt8Squared = h.resolveDistanceFuncInt8Squared()
-	h.distFuncUint8 = h.resolveDistanceFuncUint8()
-	h.distFuncUint8Squared = h.resolveDistanceFuncUint8Squared()
-	h.distFuncInt16 = h.resolveDistanceFuncInt16()
-	h.distFuncUint16 = h.resolveDistanceFuncUint16()
-	h.distFuncInt32 = h.resolveDistanceFuncInt32()
-	h.distFuncUint32 = h.resolveDistanceFuncUint32()
-	h.distFuncInt64 = h.resolveDistanceFuncInt64()
-	h.distFuncUint64 = h.resolveDistanceFuncUint64()
+	sm := getSimdMetric(h.config.Metric)
+	dims := int(h.dims.Load())
 
-	// Sync with navigator
+	h.distFunc = resolveDistanceKernel[float32](sm, dims, distanceFallbacks[float32]{
+		cosine: simd.CosineDistance, dot: simd.DotProduct,
+		l2Squared: simd.L2SquaredFloat32, euclidean: simd.EuclideanDistance,
+	})
+	h.distFuncSquared = resolveL2SquaredKernel[float32](dims, simd.L2SquaredFloat32)
+	h.distFuncF16 = resolveDistanceKernel[float16.Num](sm, dims, distanceFallbacks[float16.Num]{
+		cosine: simd.CosineDistanceF16, dot: simd.DotProductF16,
+		euclidean: simd.EuclideanDistanceF16,
+	})
+	h.distFuncF64 = resolveDistanceKernel[float64](sm, dims, distanceFallbacks[float64]{
+		cosine: simd.CosineDistanceFloat64, dot: simd.DotProductF64,
+		l2Squared: simd.L2SquaredFloat64, euclidean: simd.EuclideanDistanceFloat64,
+	})
+	h.distFuncC64 = resolveDistanceKernel[complex64](sm, dims, distanceFallbacks[complex64]{
+		cosine: simd.CosineDistanceComplex64, dot: simd.DotProductComplex64,
+		euclidean: simd.EuclideanDistanceComplex64,
+	})
+	h.distFuncC128 = resolveDistanceKernel[complex128](sm, dims, distanceFallbacks[complex128]{
+		cosine: simd.CosineDistanceComplex128, dot: simd.DotProductComplex128,
+		euclidean: simd.EuclideanDistanceComplex128,
+	})
+	h.distFuncInt8 = resolveDistanceKernel[int8](sm, dims, distanceFallbacks[int8]{
+		cosine: simd.CosineDistanceInt8, dot: simd.DotProductInt8,
+		euclidean: simd.EuclideanDistanceInt8,
+	})
+	h.distFuncInt8Squared = resolveL2SquaredKernel[int8](dims, nil)
+	h.distFuncUint8 = resolveDistanceKernel[uint8](sm, dims, distanceFallbacks[uint8]{
+		cosine: simd.CosineDistanceUint8, dot: simd.DotProductUint8,
+		euclidean: simd.EuclideanDistanceUint8,
+	})
+	h.distFuncUint8Squared = resolveL2SquaredKernel[uint8](dims, nil)
+	h.distFuncInt16 = resolveDistanceKernel[int16](sm, dims, distanceFallbacks[int16]{
+		cosine: simd.CosineDistanceInt16, dot: simd.DotProductInt16,
+		euclidean: simd.EuclideanDistanceInt16,
+	})
+	h.distFuncUint16 = resolveDistanceKernel[uint16](sm, dims, distanceFallbacks[uint16]{
+		cosine: simd.CosineDistanceUint16, dot: simd.DotProductUint16,
+		euclidean: simd.EuclideanDistanceUint16,
+	})
+	h.distFuncInt32 = resolveDistanceKernel[int32](sm, dims, distanceFallbacks[int32]{
+		cosine: simd.CosineDistanceInt32, dot: simd.DotProductInt32,
+		euclidean: simd.EuclideanDistanceInt32,
+	})
+	h.distFuncUint32 = resolveDistanceKernel[uint32](sm, dims, distanceFallbacks[uint32]{
+		cosine: simd.CosineDistanceUint32, dot: simd.DotProductUint32,
+		euclidean: simd.EuclideanDistanceUint32,
+	})
+	h.distFuncInt64 = resolveDistanceKernel[int64](sm, dims, distanceFallbacks[int64]{
+		cosine: simd.CosineDistanceInt64, dot: simd.DotProductInt64,
+		euclidean: simd.EuclideanDistanceInt64,
+	})
+	h.distFuncUint64 = resolveDistanceKernel[uint64](sm, dims, distanceFallbacks[uint64]{
+		cosine: simd.CosineDistanceUint64, dot: simd.DotProductUint64,
+		euclidean: simd.EuclideanDistanceUint64,
+	})
+
 	if h.navigator != nil {
 		h.navigator.SetDistanceKernel(h.distFunc)
 	}
-}
-
-// resolveDistanceFunc returns the appropriate distance function for float32 vectors.
-func (h *ArrowHNSW) resolveDistanceFunc() func(a, b []float32) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[float32](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistance
-		case simd.MetricDotProduct:
-			return func(a, b []float32) (float32, error) {
-				d, err := simd.DotProduct(a, b)
-				return -d, err
-			}
-		case simd.MetricL2Squared:
-			return simd.L2SquaredFloat32
-		default:
-			return simd.EuclideanDistance
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []float32) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
-}
-
-// resolveDistanceFuncF16 returns the FP16 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncF16() func(a, b []float16.Num) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[float16.Num](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistanceF16
-		case simd.MetricDotProduct:
-			return func(a, b []float16.Num) (float32, error) {
-				d, err := simd.DotProductF16(a, b)
-				return -d, err
-			}
-		default:
-			return simd.EuclideanDistanceF16
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []float16.Num) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
-}
-
-// resolveDistanceFuncF64 returns the Float64 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncF64() func(a, b []float64) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[float64](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistanceFloat64
-		case simd.MetricDotProduct:
-			return func(a, b []float64) (float32, error) {
-				d, err := simd.DotProductF64(a, b)
-				return -d, err
-			}
-		case simd.MetricL2Squared:
-			return simd.L2SquaredFloat64
-		default:
-			return simd.EuclideanDistanceFloat64
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []float64) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
-}
-
-// resolveDistanceFuncC64 returns the Complex64 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncC64() func(a, b []complex64) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[complex64](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistanceComplex64
-		case simd.MetricDotProduct:
-			return func(a, b []complex64) (float32, error) {
-				d, err := simd.DotProductComplex64(a, b)
-				return -d, err
-			}
-		default:
-			return simd.EuclideanDistanceComplex64
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []complex64) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
-}
-
-// resolveDistanceFuncC128 returns the Complex128 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncC128() func(a, b []complex128) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[complex128](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistanceComplex128
-		case simd.MetricDotProduct:
-			return func(a, b []complex128) (float32, error) {
-				d, err := simd.DotProductComplex128(a, b)
-				return -d, err
-			}
-		default:
-			return simd.EuclideanDistanceComplex128
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []complex128) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
-}
-
-// resolveDistanceFuncInt8 returns the Int8 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncInt8() func(a, b []int8) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[int8](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistanceInt8
-		case simd.MetricDotProduct:
-			return func(a, b []int8) (float32, error) {
-				d, err := simd.DotProductInt8(a, b)
-				return -d, err
-			}
-		default:
-			return simd.EuclideanDistanceInt8
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []int8) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
-}
-
-// resolveDistanceFuncUint8 returns the Uint8 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncUint8() func(a, b []uint8) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[uint8](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistanceUint8
-		case simd.MetricDotProduct:
-			return func(a, b []uint8) (float32, error) {
-				d, err := simd.DotProductUint8(a, b)
-				return -d, err
-			}
-		default:
-			return simd.EuclideanDistanceUint8
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []uint8) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
-}
-
-// resolveDistanceFuncInt16 returns the Int16 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncInt16() func(a, b []int16) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[int16](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistanceInt16
-		case simd.MetricDotProduct:
-			return func(a, b []int16) (float32, error) {
-				d, err := simd.DotProductInt16(a, b)
-				return -d, err
-			}
-		default:
-			return simd.EuclideanDistanceInt16
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []int16) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
-}
-
-// resolveDistanceFuncUint16 returns the Uint16 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncUint16() func(a, b []uint16) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[uint16](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistanceUint16
-		case simd.MetricDotProduct:
-			return func(a, b []uint16) (float32, error) {
-				d, err := simd.DotProductUint16(a, b)
-				return -d, err
-			}
-		default:
-			return simd.EuclideanDistanceUint16
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []uint16) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
-}
-
-// resolveDistanceFuncInt32 returns the Int32 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncInt32() func(a, b []int32) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[int32](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistanceInt32
-		case simd.MetricDotProduct:
-			return func(a, b []int32) (float32, error) {
-				d, err := simd.DotProductInt32(a, b)
-				return -d, err
-			}
-		default:
-			return simd.EuclideanDistanceInt32
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []int32) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
-}
-
-// resolveDistanceFuncUint32 returns the Uint32 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncUint32() func(a, b []uint32) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[uint32](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistanceUint32
-		case simd.MetricDotProduct:
-			return func(a, b []uint32) (float32, error) {
-				d, err := simd.DotProductUint32(a, b)
-				return -d, err
-			}
-		default:
-			return simd.EuclideanDistanceUint32
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []uint32) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
-}
-
-// resolveDistanceFuncInt64 returns the Int64 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncInt64() func(a, b []int64) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[int64](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistanceInt64
-		case simd.MetricDotProduct:
-			return func(a, b []int64) (float32, error) {
-				d, err := simd.DotProductInt64(a, b)
-				return -d, err
-			}
-		default:
-			return simd.EuclideanDistanceInt64
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []int64) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
-}
-
-// resolveDistanceFuncUint64 returns the Uint64 distance function.
-func (h *ArrowHNSW) resolveDistanceFuncUint64() func(a, b []uint64) (float32, error) {
-	sm := getSimdMetric(h.config.Metric)
-	dims := int(h.dims.Load())
-	k := simd.GetKernel[uint64](sm, dims)
-
-	if k == nil {
-		switch sm {
-		case simd.MetricCosine:
-			return simd.CosineDistanceUint64
-		case simd.MetricDotProduct:
-			return func(a, b []uint64) (float32, error) {
-				d, err := simd.DotProductUint64(a, b)
-				return -d, err
-			}
-		default:
-			return simd.EuclideanDistanceUint64
-		}
-	}
-
-	if sm == simd.MetricDotProduct {
-		return func(a, b []uint64) (float32, error) {
-			d, err := k(a, b)
-			return -d, err
-		}
-	}
-	return k
 }

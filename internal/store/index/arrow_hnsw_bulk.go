@@ -170,19 +170,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			if h.dims.Load() == 0 {
 				h.dims.Store(int32(dims))
 				// Ensure distance functions are initialized with correct dims
-				h.distFunc = h.resolveDistanceFunc()
-				h.distFuncF64 = h.resolveDistanceFuncF64()
-				h.distFuncF16 = h.resolveDistanceFuncF16()
-				h.distFuncC64 = h.resolveDistanceFuncC64()
-				h.distFuncC128 = h.resolveDistanceFuncC128()
-				h.distFuncInt8 = h.resolveDistanceFuncInt8()
-				h.distFuncUint8 = h.resolveDistanceFuncUint8()
-				h.distFuncInt16 = h.resolveDistanceFuncInt16()
-				h.distFuncUint16 = h.resolveDistanceFuncUint16()
-				h.distFuncInt32 = h.resolveDistanceFuncInt32()
-				h.distFuncUint32 = h.resolveDistanceFuncUint32()
-				h.distFuncInt64 = h.resolveDistanceFuncInt64()
-				h.distFuncUint64 = h.resolveDistanceFuncUint64()
+				h.resolveAllDistanceFuncs()
 
 				// Allocate initial graph data if not already present with these dims
 				data := h.data.Load()
@@ -361,37 +349,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 			}
 
 			// Validate dimensions based on type
-			var vLen int
-			switch vec := v.(type) {
-			case []float32:
-				vLen = len(vec)
-			case []float16.Num:
-				vLen = len(vec)
-			case []int8:
-				vLen = len(vec)
-			case []uint8:
-				vLen = len(vec)
-			case []uint32:
-				vLen = len(vec)
-			case []int32:
-				vLen = len(vec)
-			case []uint16:
-				vLen = len(vec)
-			case []int16:
-				vLen = len(vec)
-			case []int64:
-				vLen = len(vec)
-			case []uint64:
-				vLen = len(vec)
-			case []float64:
-				vLen = len(vec)
-			case []complex64:
-				vLen = len(vec)
-			case []complex128:
-				vLen = len(vec)
-			default:
-				vLen = 0 // Trigger mismatch
-			}
+			vLen := VectorLength(v)
 
 			if vLen != dims {
 				metrics.BulkInsertDimensionErrorsTotal.Inc()

@@ -3,7 +3,6 @@ package index
 import (
 	"fmt"
 	"math"
-	"unsafe"
 
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
@@ -26,34 +25,7 @@ func (h *ArrowHNSW) ExtractVectorF64ToBufferForParallel(rec arrow.RecordBatch, r
 		return err
 	}
 
-	switch v := vec.(type) {
-	case []float64:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		copy(dst, v)
-		return nil
-	case []complex128:
-		if len(dst) != len(v)*2 {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
-		}
-		if len(v) == 0 {
-			return nil
-		}
-		raw := unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
-		copy(dst, raw)
-		return nil
-	case []float32:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float64(val)
-		}
-		return nil
-	default:
-		return fmt.Errorf("unsupported vector type for F64 extraction: %T", vec)
-	}
+	return CopyVectorToFloat64(vec, dst)
 }
 
 func (p parallelSearchHostF32) ExtractVectorByIDToBufferForParallel(id uint32, dst []float32) error {
@@ -66,34 +38,7 @@ func (h *ArrowHNSW) ExtractVectorF64ByIDToBufferForParallel(id uint32, dst []flo
 		return err
 	}
 
-	switch v := vecAny.(type) {
-	case []float64:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		copy(dst, v)
-		return nil
-	case []complex128:
-		if len(dst) != len(v)*2 {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v)*2)
-		}
-		if len(v) == 0 {
-			return nil
-		}
-		raw := unsafe.Slice((*float64)(unsafe.Pointer(&v[0])), len(v)*2) // #nosec G103
-		copy(dst, raw)
-		return nil
-	case []float32:
-		if len(dst) != len(v) {
-			return fmt.Errorf("dst length mismatch: got %d, expected %d", len(dst), len(v))
-		}
-		for i, val := range v {
-			dst[i] = float64(val)
-		}
-		return nil
-	}
-
-	return fmt.Errorf("unsupported vector type %T for F64 extraction", vecAny)
+	return CopyVectorToFloat64(vecAny, dst)
 }
 
 type diskVectorStoreIntf interface {

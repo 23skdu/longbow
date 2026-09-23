@@ -13,7 +13,6 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/store/types"
-	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 // Insert adds a new vector to the HNSW graph.
@@ -133,31 +132,7 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		}
 		dims = int(h.dims.Load())
 		if dims == 0 {
-			inputDims := 0
-			switch v := vec.(type) {
-			case []float16.Num:
-				inputDims = len(v)
-			case []float32:
-				inputDims = len(v)
-			case []float64:
-				inputDims = len(v)
-			case []int8:
-				inputDims = len(v)
-			case []uint8:
-				inputDims = len(v)
-			case []int16:
-				inputDims = len(v)
-			case []uint16:
-				inputDims = len(v)
-			case []int32:
-				inputDims = len(v)
-			case []uint32:
-				inputDims = len(v)
-			case []int64:
-				inputDims = len(v)
-			case []uint64:
-				inputDims = len(v)
-			}
+			inputDims := VectorLength(vec)
 			if inputDims > 0 {
 				h.dims.Store(int32(inputDims))
 				h.config.Dims = inputDims

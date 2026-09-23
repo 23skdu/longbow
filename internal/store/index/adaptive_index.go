@@ -837,56 +837,35 @@ func (idx *AdaptiveIndex) GetDimension() uint32 {
 func (idx *AdaptiveIndex) Warmup() int {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.Warmup()
-	}
-	return 0
+	return idx.activeIndex().Warmup()
 }
 
 // SetIndexedColumns sets the columns to be indexed.
 func (idx *AdaptiveIndex) SetIndexedColumns(cols []string) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	if idx.usingHNSW.Load() {
-		idx.hnsw.SetIndexedColumns(cols)
-	}
+	idx.activeIndex().SetIndexedColumns(cols)
 }
 
 // Close releases resources for both underlying indexes.
 func (idx *AdaptiveIndex) Close() error {
-	start := time.Now()
 	idx.mu.Lock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "write").Observe(time.Since(start).Seconds())
 	defer idx.mu.Unlock()
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.Close()
-	}
-	if idx.bruteForce != nil {
-		return idx.bruteForce.Close()
-	}
-	return nil
+	return idx.activeIndex().Close()
 }
 
 // TrainPQ trains a Product Quantizer for the index.
 func (idx *AdaptiveIndex) TrainPQ(vectors [][]float32) error {
-	start := time.Now()
 	idx.mu.Lock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "write").Observe(time.Since(start).Seconds())
 	defer idx.mu.Unlock()
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.TrainPQ(vectors)
-	}
-	return nil
+	return idx.activeIndex().TrainPQ(vectors)
 }
 
 // GetPQEncoder returns the Product Quantizer encoder for the index.
 func (idx *AdaptiveIndex) GetPQEncoder() *pq.PQEncoder {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.GetPQEncoder()
-	}
-	return nil
+	return idx.activeIndex().GetPQEncoder()
 }
 
 // EstimateMemory returns an estimate of the memory used by the index.
@@ -900,20 +879,14 @@ func (idx *AdaptiveIndex) EstimateMemory() int64 {
 func (idx *AdaptiveIndex) GetRawNeighbors(id uint32) ([]uint32, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.GetRawNeighbors(id)
-	}
-	return nil, errors.New("GetRawNeighbors not supported for BruteForceIndex")
+	return idx.activeIndex().GetRawNeighbors(id)
 }
 
 // GetNeighbors returns k-nearest neighbors, delegating to HNSW if active.
 func (idx *AdaptiveIndex) GetNeighbors(ctx context.Context, id uint32, k int) ([]SearchResult, error) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.GetNeighbors(ctx, id, k)
-	}
-	return nil, errors.New("GetNeighbors not supported for BruteForceIndex")
+	return idx.activeIndex().GetNeighbors(ctx, id, k)
 }
 
 // Search performs a vector search and returns a list of candidates, delegating to the active implementation.
@@ -938,10 +911,9 @@ func (idx *AdaptiveIndex) Size() int { return idx.Len() }
 
 // GetEntryPoint returns the entry point of the index.
 func (idx *AdaptiveIndex) GetEntryPoint() uint32 {
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.GetEntryPoint()
-	}
-	return 0
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.activeIndex().GetEntryPoint()
 }
 
 // GetVectorID returns the ID of a vector given its location.
@@ -951,18 +923,16 @@ func (idx *AdaptiveIndex) GetVectorID(loc any) (uint32, bool) {
 
 // DeleteBatch removes a batch of vectors from the active index.
 func (idx *AdaptiveIndex) DeleteBatch(ctx context.Context, ids []uint32) error {
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.DeleteBatch(ctx, ids)
-	}
-	return nil
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	return idx.activeIndex().DeleteBatch(ctx, ids)
 }
 
 // ExportState serializes the active index state.
 func (idx *AdaptiveIndex) ExportState() ([]byte, error) {
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.ExportState()
-	}
-	return nil, nil
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.activeIndex().ExportState()
 }
 
 // ImportState is not supported for AdaptiveIndex.
@@ -970,10 +940,9 @@ func (idx *AdaptiveIndex) ImportState(data []byte) error { return nil }
 
 // ExportGraph serializes the active index graph.
 func (idx *AdaptiveIndex) ExportGraph(w io.Writer) error {
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.ExportGraph(w)
-	}
-	return nil
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.activeIndex().ExportGraph(w)
 }
 
 // ImportGraph is not supported for AdaptiveIndex.
@@ -981,18 +950,16 @@ func (idx *AdaptiveIndex) ImportGraph(r io.Reader) error { return nil }
 
 // ExportDelta returns changes since a given version from the active index.
 func (idx *AdaptiveIndex) ExportDelta(fromVersion uint64) (*DeltaSync, error) {
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.ExportDelta(fromVersion)
-	}
-	return nil, nil
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.activeIndex().ExportDelta(fromVersion)
 }
 
 // ApplyDelta applies incremental changes to the active index.
 func (idx *AdaptiveIndex) ApplyDelta(delta *DeltaSync) error {
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.ApplyDelta(delta)
-	}
-	return nil
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	return idx.activeIndex().ApplyDelta(delta)
 }
 
 // SetParallelSearchConfig updates parallel search settings for HNSW if active.
@@ -1004,33 +971,30 @@ func (idx *AdaptiveIndex) SetParallelSearchConfig(cfg ParallelSearchConfig) {
 
 // GetParallelSearchConfig returns the active parallel search configuration.
 func (idx *AdaptiveIndex) GetParallelSearchConfig() ParallelSearchConfig {
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.GetParallelSearchConfig()
-	}
-	return ParallelSearchConfig{}
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.activeIndex().GetParallelSearchConfig()
 }
 
 // RemapLocations updates ID-to-location mappings in the active index.
 func (idx *AdaptiveIndex) RemapLocations(ctx context.Context, mapping map[uint32]any) error {
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.RemapLocations(ctx, mapping)
-	}
-	return nil
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	return idx.activeIndex().RemapLocations(ctx, mapping)
 }
 
 // GetGPUIndex returns the underlying GPU index if available.
 func (idx *AdaptiveIndex) GetGPUIndex() any {
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.GetGPUIndex()
-	}
-	return nil
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.activeIndex().GetGPUIndex()
 }
 
 // PreWarm pre-allocates resources for the active index.
 func (idx *AdaptiveIndex) PreWarm(targetSize int) {
-	if idx.usingHNSW.Load() {
-		idx.hnsw.PreWarm(targetSize)
-	}
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	idx.activeIndex().PreWarm(targetSize)
 }
 
 // migrateToHNSW performs the background migration from BruteForceIndex to HNSW.
@@ -1137,10 +1101,9 @@ func (idx *AdaptiveIndex) SearchVectorsInRange(ctx context.Context, q any, thres
 
 // GetIndexType returns the type of the active index ("hnsw" or "brute_force").
 func (idx *AdaptiveIndex) GetIndexType() string {
-	if idx.usingHNSW.Load() {
-		return "hnsw"
-	}
-	return "brute_force"
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.activeIndex().GetIndexType()
 }
 
 // GetMigrationCount returns the number of times the index has migrated.
@@ -1150,18 +1113,9 @@ func (idx *AdaptiveIndex) GetMigrationCount() int64 {
 
 // Len returns the total number of vectors across all underlying indexes.
 func (idx *AdaptiveIndex) Len() int {
-	start := time.Now()
 	idx.mu.RLock()
-	metrics.IndexLockWaitDuration.WithLabelValues(idx.dataset.GetName(), "read").Observe(time.Since(start).Seconds())
 	defer idx.mu.RUnlock()
-
-	if idx.usingHNSW.Load() {
-		return idx.hnsw.Len()
-	}
-	if idx.bruteForce != nil {
-		return idx.bruteForce.Len()
-	}
-	return 0
+	return idx.activeIndex().Len()
 }
 
 // GetData returns graph data if HNSW is active.
@@ -1198,13 +1152,7 @@ func (idx *AdaptiveIndex) GetShardedIndex() *ShardedHNSW {
 func (idx *AdaptiveIndex) RelocateToOffHeap() error {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
-	if idx.hnsw != nil {
-		return idx.hnsw.RelocateToOffHeap()
-	}
-	if idx.bruteForce != nil {
-		return idx.bruteForce.RelocateToOffHeap()
-	}
-	return nil
+	return idx.activeIndex().RelocateToOffHeap()
 }
 
 // RelocateToOffHeap relocates index structures to off-heap memory.

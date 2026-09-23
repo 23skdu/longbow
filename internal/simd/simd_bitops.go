@@ -1,5 +1,7 @@
 package simd
 
+import "errors"
+
 func andBytesGeneric(dst, src []byte) {
 	for i := range dst {
 		dst[i] &= src[i]
@@ -110,4 +112,50 @@ func CountBitVectorGeneric(src []uint64) int {
 		count += onesCount64(v)
 	}
 	return count
+}
+
+// AndBytes performs bitwise AND: dst[i] &= src[i].
+// Assumes len(dst) == len(src).
+func AndBytes(dst, src []byte) error {
+	if len(dst) != len(src) {
+		return errors.New("simd: length mismatch")
+	}
+	andBytesImpl(dst, src)
+	return nil
+}
+
+// OrBytes performs bitwise OR: dst[i] |= src[i].
+// Assumes len(dst) == len(src).
+func OrBytes(dst, src []byte) error {
+	if len(dst) != len(src) {
+		return errors.New("simd: length mismatch")
+	}
+	orBytesImpl(dst, src)
+	return nil
+}
+
+// NotBytes performs bitwise NOT: dst[i] = ^dst[i].
+func NotBytes(dst []byte) error {
+	notBytesImpl(dst)
+	return nil
+}
+
+// IsAllZeros returns true if all bytes in src are zero.
+func IsAllZeros(src []byte) bool {
+	return isAllZerosImpl(src)
+}
+
+// Pause yields the processor for a short time.
+// On x86 it uses the PAUSE instruction, on ARM64 it uses YIELD.
+func Pause() {
+	pauseImpl()
+}
+
+// pause is implemented in assembly.
+
+// PauseN calls Pause n times.
+func PauseN(n int) {
+	for i := 0; i < n; i++ {
+		pauseImpl()
+	}
 }

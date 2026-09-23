@@ -4,6 +4,7 @@ import (
 	"math"
 	"unsafe"
 
+	basecore "github.com/23skdu/longbow/internal/core"
 	"github.com/23skdu/longbow/internal/store/types"
 
 	"github.com/23skdu/longbow/internal/simd"
@@ -117,7 +118,15 @@ func (c *complex64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32
 		}
 		dst[i] = math.MaxFloat32
 	}
-	return dst, c.Compute(ids, dst)
+
+	switch c.h.config.Metric {
+	case basecore.MetricCosine:
+		return dst, simd.CosineDistanceComplex64Batch(c.q, c.batchVecs, dst)
+	case basecore.MetricDotProduct:
+		return dst, simd.DotProductComplex64Batch(c.q, c.batchVecs, dst)
+	default:
+		return dst, simd.EuclideanDistanceComplex64Batch(c.q, c.batchVecs, dst)
+	}
 }
 
 func (c *complex64Computer) Prefetch(id uint32) {
@@ -235,9 +244,22 @@ func (c *complex128Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 	}
 	c.batchVecs = c.batchVecs[:len(ids)]
 
+	// Track which entries need distance computation vs pruning
+	pruned := 0
+
 	var lastCID int = -1
 	var lastChunk []complex128
 	for i, id := range ids {
+		// Triangle-inequality pruning: skip if |queryMag - storedMag| > threshold
+		if c.threshold > 0 {
+			if mag := c.data.GetComplex128Magnitude(id); float32(math.Abs(c.queryMag-mag)) > c.threshold {
+				dst[i] = c.threshold + 1
+				c.batchVecs[i] = nil
+				pruned++
+				continue
+			}
+		}
+
 		cID := int(types.ChunkID(id))
 		if cID != lastCID {
 			if c.maxGen == 18446744073709551615 {
@@ -257,8 +279,21 @@ func (c *complex128Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 			}
 		}
 		dst[i] = math.MaxFloat32
+		c.batchVecs[i] = nil
 	}
-	return dst, c.Compute(ids, dst)
+
+	if pruned == len(ids) {
+		return dst, nil
+	}
+
+	switch c.h.config.Metric {
+	case basecore.MetricCosine:
+		return dst, simd.CosineDistanceComplex128Batch(c.q, c.batchVecs, dst)
+	case basecore.MetricDotProduct:
+		return dst, simd.DotProductComplex128Batch(c.q, c.batchVecs, dst)
+	default:
+		return dst, simd.EuclideanDistanceComplex128Batch(c.q, c.batchVecs, dst)
+	}
 }
 
 func (c *complex128Computer) Prefetch(id uint32) {

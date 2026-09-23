@@ -354,7 +354,7 @@ func dotProductBatch4Way(query []float32, vectors [][]float32, results []float32
 			for k := 0; k < dims; k++ {
 				d += query[k] * v[k]
 			}
-			results[idx] = d
-		}
+		results[idx] = d
 	}
+}
 }

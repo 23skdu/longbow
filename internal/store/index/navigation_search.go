@@ -379,6 +379,10 @@ search_layer0:
 			h.flushSearchMetrics(searchCtx)
 			return nil, err
 		}
+
+		// Reset node visit counter between retries so budget is fresh per attempt
+		searchCtx.nodesVisitedCount = 0
+
 		var res []types.Candidate
 		var err error
 		if compF32, ok := computer.(*float32ToFloat32Computer); ok {

@@ -12,10 +12,14 @@ import (
 // Complex64 is reinterpreted as float32 (2x length) for SIMD batch dispatch.
 // Complex128 is reinterpreted as float64 (2x length) and computed per-vector
 // using the SIMD float64 single-vector kernel.
+//
+// The batch functions below accept a pre-allocated f32Vecs buffer to avoid
+// per-call allocation. Callers should reuse the buffer across calls.
 // =============================================================================
 
 // EuclideanDistanceComplex64Batch computes Euclidean distances between one complex64 query and multiple complex64 vectors.
-func EuclideanDistanceComplex64Batch(query []complex64, vectors [][]complex64, results []float32) error {
+// f32Vecs is a pre-allocated scratch buffer of at least len(vectors) elements; it is reused to avoid allocation.
+func EuclideanDistanceComplex64Batch(query []complex64, vectors [][]complex64, results []float32, f32Vecs [][]float32) error {
 	if len(vectors) != len(results) {
 		return errors.New("simd: vectors and results length mismatch")
 	}
@@ -29,7 +33,10 @@ func EuclideanDistanceComplex64Batch(query []complex64, vectors [][]complex64, r
 
 	qF32 := unsafe.Slice((*float32)(unsafe.Pointer(&query[0])), dims*2) // #nosec G103
 
-	f32Vecs := make([][]float32, len(vectors))
+	if cap(f32Vecs) < len(vectors) {
+		f32Vecs = make([][]float32, len(vectors))
+	}
+	f32Vecs = f32Vecs[:len(vectors)]
 	for i, v := range vectors {
 		if v == nil || len(v) != dims {
 			f32Vecs[i] = nil
@@ -42,7 +49,7 @@ func EuclideanDistanceComplex64Batch(query []complex64, vectors [][]complex64, r
 }
 
 // DotProductComplex64Batch computes dot products between one complex64 query and multiple complex64 vectors.
-func DotProductComplex64Batch(query []complex64, vectors [][]complex64, results []float32) error {
+func DotProductComplex64Batch(query []complex64, vectors [][]complex64, results []float32, f32Vecs [][]float32) error {
 	if len(vectors) != len(results) {
 		return errors.New("simd: vectors and results length mismatch")
 	}
@@ -56,7 +63,10 @@ func DotProductComplex64Batch(query []complex64, vectors [][]complex64, results 
 
 	qF32 := unsafe.Slice((*float32)(unsafe.Pointer(&query[0])), dims*2) // #nosec G103
 
-	f32Vecs := make([][]float32, len(vectors))
+	if cap(f32Vecs) < len(vectors) {
+		f32Vecs = make([][]float32, len(vectors))
+	}
+	f32Vecs = f32Vecs[:len(vectors)]
 	for i, v := range vectors {
 		if v == nil || len(v) != dims {
 			f32Vecs[i] = nil
@@ -69,7 +79,7 @@ func DotProductComplex64Batch(query []complex64, vectors [][]complex64, results 
 }
 
 // CosineDistanceComplex64Batch computes cosine distances between one complex64 query and multiple complex64 vectors.
-func CosineDistanceComplex64Batch(query []complex64, vectors [][]complex64, results []float32) error {
+func CosineDistanceComplex64Batch(query []complex64, vectors [][]complex64, results []float32, f32Vecs [][]float32) error {
 	if len(vectors) != len(results) {
 		return errors.New("simd: vectors and results length mismatch")
 	}
@@ -83,7 +93,10 @@ func CosineDistanceComplex64Batch(query []complex64, vectors [][]complex64, resu
 
 	qF32 := unsafe.Slice((*float32)(unsafe.Pointer(&query[0])), dims*2) // #nosec G103
 
-	f32Vecs := make([][]float32, len(vectors))
+	if cap(f32Vecs) < len(vectors) {
+		f32Vecs = make([][]float32, len(vectors))
+	}
+	f32Vecs = f32Vecs[:len(vectors)]
 	for i, v := range vectors {
 		if v == nil || len(v) != dims {
 			f32Vecs[i] = nil

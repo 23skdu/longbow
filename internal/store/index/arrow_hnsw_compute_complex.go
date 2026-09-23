@@ -12,13 +12,14 @@ import (
 
 // complex64Computer handles Complex64 vectors
 type complex64Computer struct {
-	data      *types.GraphData
-	q         []complex64
-	dims      int
-	h         *ArrowHNSW
-	diskGraph *DiskGraph
-	maxGen    uint64
-	batchVecs [][]complex64
+	data       *types.GraphData
+	q          []complex64
+	dims       int
+	h          *ArrowHNSW
+	diskGraph  *DiskGraph
+	maxGen     uint64
+	batchVecs  [][]complex64
+	batchVecsF32 [][]float32
 }
 
 func (c *complex64Computer) Compute(ids []uint32, dists []float32) error {
@@ -117,15 +118,16 @@ func (c *complex64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32
 			}
 		}
 		dst[i] = math.MaxFloat32
+		c.batchVecs[i] = nil
 	}
 
 	switch c.h.config.Metric {
 	case basecore.MetricCosine:
-		return dst, simd.CosineDistanceComplex64Batch(c.q, c.batchVecs, dst)
+		return dst, simd.CosineDistanceComplex64Batch(c.q, c.batchVecs, dst, c.batchVecsF32)
 	case basecore.MetricDotProduct:
-		return dst, simd.DotProductComplex64Batch(c.q, c.batchVecs, dst)
+		return dst, simd.DotProductComplex64Batch(c.q, c.batchVecs, dst, c.batchVecsF32)
 	default:
-		return dst, simd.EuclideanDistanceComplex64Batch(c.q, c.batchVecs, dst)
+		return dst, simd.EuclideanDistanceComplex64Batch(c.q, c.batchVecs, dst, c.batchVecsF32)
 	}
 }
 

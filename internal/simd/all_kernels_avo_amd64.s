@@ -12596,9 +12596,83 @@ TEXT ·euclideanInt8Unrolled4xAVX2Kernel(SB), NOSPLIT, $0-28
 	RET
 
 // func brayCurtisAVX2Kernel(a uintptr, b uintptr, n int) float32
-// Requires: SSE
+// Requires: AVX2, FMA3
 TEXT ·brayCurtisAVX2Kernel(SB), NOSPLIT, $0-28
-	MOVSS X0, ret+24(FP)
+	MOVQ     a+0(FP), AX
+	MOVQ     b+8(FP), CX
+	MOVQ     n+16(FP), DX
+
+	VXORPS   Y0, Y0, Y0
+	VXORPS   Y1, Y1, Y1
+	VPCMPEQD Y2, Y2, Y2
+	VPSRLD   $1, Y2, Y2
+
+loop:
+	CMPQ    DX, $8
+	JL      tail
+	VMOVUPS (AX), Y3
+	VMOVUPS (CX), Y4
+
+	VSUBPS Y4, Y3, Y5
+	VANDPS Y2, Y5, Y5
+	VADDPS Y5, Y0, Y0
+
+	VADDPS Y4, Y3, Y6
+	VANDPS Y2, Y6, Y6
+	VADDPS Y6, Y1, Y1
+
+	ADDQ $32, AX
+	ADDQ $32, CX
+	SUBQ $8, DX
+	JMP  loop
+
+tail:
+	VEXTRACTF128 $1, Y0, X5
+	VADDPS       X5, X0, X0
+	VMOVSHDUP    X0, X5
+	VADDPS       X5, X0, X0
+	VMOVHLPS     X0, X0, X5
+	VADDSS       X5, X0, X0
+
+	VEXTRACTF128 $1, Y1, X5
+	VADDPS       X5, X1, X1
+	VMOVSHDUP    X1, X5
+	VADDPS       X5, X1, X1
+	VMOVHLPS     X1, X1, X5
+	VADDSS       X5, X1, X1
+
+scalar_loop:
+	CMPQ    DX, $0
+	JE      finish
+	VMOVSS  (AX), X3
+	VMOVSS  (CX), X4
+
+	VSUBSS  X4, X3, X5
+	VANDPS  X2, X5, X5
+	VADDSS  X5, X0, X0
+
+	VADDSS  X4, X3, X6
+	VANDPS  X2, X6, X6
+	VADDSS  X6, X1, X1
+
+	ADDQ    $4, AX
+	ADDQ    $4, CX
+	DECQ    DX
+	JMP     scalar_loop
+
+finish:
+	VXORPS   X5, X5, X5
+	VUCOMISS X5, X1
+	JP       do_div
+	JE       zero_ret
+do_div:
+	VDIVSS     X1, X0, X0
+	VMOVSS     X0, ret+24(FP)
+	VZEROUPPER
+	RET
+zero_ret:
+	VMOVSS     X5, ret+24(FP)
+	VZEROUPPER
 	RET
 
 // func manhattanAVX2Kernel(a uintptr, b uintptr, n int) float32

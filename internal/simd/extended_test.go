@@ -43,6 +43,33 @@ func TestExtendedDistances(t *testing.T) {
 			t.Errorf("got %f, want 0.5", got)
 		}
 	})
+
+	t.Run("BrayCurtis_Lengths", func(t *testing.T) {
+		lengths := []int{1, 4, 7, 8, 9, 15, 16, 17, 33, 128, 255}
+		for _, n := range lengths {
+			v1 := make([]float32, n)
+			v2 := make([]float32, n)
+			for i := 0; i < n; i++ {
+				v1[i] = float32(i+1) * 0.5
+				v2[i] = float32(n-i) * 0.25
+			}
+			expected, err := BrayCurtisDistanceFloat32(v1, v2)
+			if err != nil {
+				t.Fatalf("reference failed at n=%d: %v", n, err)
+			}
+			actual, err := BrayCurtisDistance(v1, v2)
+			if err != nil {
+				t.Fatalf("BrayCurtisDistance failed at n=%d: %v", n, err)
+			}
+			diff := expected - actual
+			if diff < 0 {
+				diff = -diff
+			}
+			if diff > 1e-5 {
+				t.Errorf("n=%d: got %f, want %f", n, actual, expected)
+			}
+		}
+	})
 }
 
 func TestArgMaxMin(t *testing.T) {

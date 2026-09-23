@@ -2,6 +2,7 @@ package memory
 
 import (
 	"testing"
+	"unsafe"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -89,4 +90,33 @@ func TestDoubleBufferZeroCapacity(t *testing.T) {
 	db := NewDoubleBuffer(0)
 	_, err := db.Write([]byte{1})
 	assert.Error(t, err)
+}
+
+func TestDoubleBufferWithHeadroom(t *testing.T) {
+	pool := &GPUMemPool{
+		totalBytes:  1000,
+		usedBytes:   200,
+		backend:     BackendCPU,
+		allocations: make(map[unsafe.Pointer]int64),
+	}
+
+	// 2 * 200 + 100 = 500 <= 800 available -> should succeed
+	db, err := NewDoubleBufferWithHeadroom(200, pool, 100)
+	assert.NoError(t, err)
+	assert.NotNil(t, db)
+	assert.Equal(t, 200, db.Capacity())
+
+	// Check headroom for operation needing 400 bytes (+ 100 headroom = 500 <= 800) -> success
+	err = db.CheckHeadroom(400)
+	assert.NoError(t, err)
+
+	// Check headroom for operation needing 750 bytes (+ 100 headroom = 850 > 800) -> error
+	err = db.CheckHeadroom(750)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "headroom check failed")
+
+	// Allocation exceeding available headroom (2 * 400 + 100 = 900 > 800) -> should fail
+	_, err = NewDoubleBufferWithHeadroom(400, pool, 100)
+	assert.Error(t, err)
+	assert.Contains(t, err.Error(), "insufficient GPU memory headroom")
 }

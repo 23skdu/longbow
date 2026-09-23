@@ -83,6 +83,7 @@ type IVFPQIndex struct {
 	mu     sync.RWMutex
 
 	distFunc simd.DistanceKernel[float32]
+	sharded  *ShardedHNSW
 }
 
 // NewIVFPQIndex creates a new IVF-PQ index with the specified dimensions and configuration.
@@ -371,6 +372,13 @@ func (idx *IVFPQIndex) AddByRecord(ctx context.Context, rec arrow.RecordBatch, r
 
 // Search executes a vector search query.
 func (idx *IVFPQIndex) Search(ctx context.Context, query any, k int, filter any) ([]types.Candidate, error) {
+	idx.mu.RLock()
+	sharded := idx.sharded
+	idx.mu.RUnlock()
+	if sharded != nil {
+		return sharded.Search(ctx, query, k, filter)
+	}
+
 	results, err := idx.SearchVectorsWithBitmap(ctx, query, k, nil, nil)
 	if err != nil {
 		return nil, err
@@ -386,11 +394,19 @@ func (idx *IVFPQIndex) Search(ctx context.Context, query any, k int, filter any)
 func (idx *IVFPQIndex) Size() int {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
+	if idx.sharded != nil {
+		return idx.sharded.Size()
+	}
 	return int(idx.nextID)
 }
 
 // Len returns the number of vectors in the index.
 func (idx *IVFPQIndex) Len() int {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	if idx.sharded != nil {
+		return idx.sharded.Len()
+	}
 	return idx.Size()
 }
 
@@ -411,12 +427,16 @@ func (idx *IVFPQIndex) GetLocation(id uint32) (any, bool) {
 }
 
 // GetVectorID returns the vector ID for a given physical location.
-func (idx *IVFPQIndex) GetVectorID(loc Location) (uint64, bool) {
+func (idx *IVFPQIndex) GetVectorID(loc any) (uint32, bool) {
 	idx.mu.RLock()
 	defer idx.mu.RUnlock()
 
-	id, ok := idx.locationToID[types.PackLocation(loc)]
-	return uint64(id), ok
+	l, ok := loc.(types.Location)
+	if !ok {
+		return 0, false
+	}
+	id, ok := idx.locationToID[types.PackLocation(l)]
+	return id, ok
 }
 
 // SetLocation registers a mapping between a vector ID and its physical location.
@@ -752,8 +772,52 @@ func (idx *IVFPQIndex) GetMemoryUsage() int64 {
 	return bytes
 }
 
-// IsSharded returns false for this index type.
-func (idx *IVFPQIndex) IsSharded() bool { return false }
+// RelocateToOffHeap is a no-op for IVFPQIndex.
+func (idx *IVFPQIndex) RelocateToOffHeap() error { return nil }
 
-// GetShardedIndex returns nil as it is not a sharded index.
-func (idx *IVFPQIndex) GetShardedIndex() *ShardedHNSW { return nil }
+// ReleaseMonolithicChunk is a no-op for IVFPQIndex.
+func (idx *IVFPQIndex) ReleaseMonolithicChunk(cID int) error { return nil }
+
+// GetGPUIndex returns nil as IVFPQIndex is CPU-based.
+func (idx *IVFPQIndex) GetGPUIndex() any { return nil }
+
+// IsSharded returns true if the index is configured in sharded mode.
+func (idx *IVFPQIndex) IsSharded() bool {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.sharded != nil
+}
+
+// GetShardedIndex returns the underlying ShardedHNSW instance if sharded.
+func (idx *IVFPQIndex) GetShardedIndex() *ShardedHNSW {
+	idx.mu.RLock()
+	defer idx.mu.RUnlock()
+	return idx.sharded
+}
+
+// SetShardedIndex configures the sharded index instance.
+func (idx *IVFPQIndex) SetShardedIndex(sharded *ShardedHNSW) {
+	idx.mu.Lock()
+	defer idx.mu.Unlock()
+	idx.sharded = sharded
+}
+
+// NewShardedIVFPQIndex creates a new sharded IVF-PQ index delegating to ShardedHNSW with IVFPQ shards.
+func NewShardedIVFPQIndex(dim int, config IVFPQConfig, numShards int) (*IVFPQIndex, error) {
+	root, err := NewIVFPQIndex(dim, config)
+	if err != nil {
+		return nil, err
+	}
+	shardedCfg := DefaultShardedHNSWConfig()
+	if numShards > 0 {
+		shardedCfg.NumShards = numShards
+	}
+	shardedCfg.Dimension = uint32(dim) // #nosec G115
+	shardedCfg.IndexFactory = func(shardIdx int) VectorIndex {
+		s, _ := NewIVFPQIndex(dim, config)
+		return s
+	}
+	sharded := NewShardedHNSW(shardedCfg, nil).(*ShardedHNSW)
+	root.sharded = sharded
+	return root, nil
+}

@@ -476,6 +476,11 @@ func (h *ArrowHNSW) searchLayer(goCtx context.Context, computer any, entryPoint 
 		}
 
 		distBatchComputer = func(ids []uint32, dst []float32) ([]float32, error) {
+			if cap(dst) < len(ids) {
+				dst = make([]float32, len(ids))
+			} else {
+				dst = dst[:len(ids)]
+			}
 			for i, id := range ids {
 				d, err := distComputer(id)
 				if err != nil {

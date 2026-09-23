@@ -96,6 +96,11 @@ func (c *complex64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32
 	}
 	c.batchVecs = c.batchVecs[:len(ids)]
 
+	if cap(c.batchVecsF32) < len(ids) {
+		c.batchVecsF32 = make([][]float32, len(ids))
+	}
+	c.batchVecsF32 = c.batchVecsF32[:len(ids)]
+
 	var lastCID int = -1
 	var lastChunk []complex64
 	for i, id := range ids {

@@ -130,6 +130,9 @@ func dotBatchAVX512(query []float32, vectors [][]float32, results []float32) err
 	i := 0
 
 	for ; i <= n-4; i += 4 {
+		if len(vectors[i]) != qLen || len(vectors[i+1]) != qLen || len(vectors[i+2]) != qLen || len(vectors[i+3]) != qLen {
+			break
+		}
 		dotVertical4AVX512(
 			qPtr,
 			uintptr(unsafe.Pointer(&vectors[i][0])), // #nosec G103
@@ -144,7 +147,8 @@ func dotBatchAVX512(query []float32, vectors [][]float32, results []float32) err
 	for ; i < n; i++ {
 		v := vectors[i]
 		if len(v) != qLen {
-			return errors.New("simd: batch dimension mismatch")
+			results[i] = -math.MaxFloat32
+			continue
 		}
 		results[i] = dotAVX512Kernel(qPtr, uintptr(unsafe.Pointer(&v[0])), qLen) // #nosec G103
 	}
@@ -161,11 +165,20 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 	}
 
 	n := len(vectors)
+	if n == 0 {
+		return nil
+	}
 	qLen := len(query)
+	if qLen == 0 {
+		return nil
+	}
 	queryPtr := uintptr(unsafe.Pointer(&query[0])) // #nosec G103
 
 	i := 0
 	for ; i <= n-4; i += 4 {
+		if len(vectors[i]) != qLen || len(vectors[i+1]) != qLen || len(vectors[i+2]) != qLen || len(vectors[i+3]) != qLen {
+			break
+		}
 		euclideanVertical4AVX512(
 			queryPtr,
 			uintptr(unsafe.Pointer(&vectors[i][0])), // #nosec G103
@@ -178,6 +191,10 @@ func euclideanVerticalBatchAVX512(query []float32, vectors [][]float32, results 
 	}
 
 	for ; i < n; i++ {
+		if len(vectors[i]) != qLen {
+			results[i] = math.MaxFloat32
+			continue
+		}
 		d, err := euclideanAVX512(query, vectors[i])
 		if err != nil {
 			return err

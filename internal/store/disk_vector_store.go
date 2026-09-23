@@ -145,8 +145,10 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 	var dataSlice []byte
 	var elemSize int
 
+	var inferredType types.VectorDataType
 	switch valuesArr := listArr.ListValues().(type) {
 	case *array.Float32:
+		inferredType = types.VectorTypeFloat32
 		elemSize = 4
 		vals := valuesArr.Float32Values()
 		start := offset * width
@@ -159,6 +161,7 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*4) // #nosec G103
 		}
 	case *array.Float64:
+		inferredType = types.VectorTypeFloat64
 		elemSize = 8
 		vals := valuesArr.Float64Values()
 		start := offset * width
@@ -171,6 +174,7 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*8) // #nosec G103
 		}
 	case *array.Int8:
+		inferredType = types.VectorTypeInt8
 		elemSize = 1
 		vals := valuesArr.Int8Values()
 		start := offset * width
@@ -182,7 +186,21 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 		if len(slice) > 0 {
 			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*1) // #nosec G103
 		}
+	case *array.Uint8:
+		inferredType = types.VectorTypeUint8
+		elemSize = 1
+		vals := valuesArr.Uint8Values()
+		start := offset * width
+		end := start + numRows*width
+		if start < 0 || end > len(vals) {
+			return 0, fmt.Errorf("index out of bounds")
+		}
+		slice := vals[start:end]
+		if len(slice) > 0 {
+			dataSlice = unsafe.Slice((*byte)(unsafe.Pointer(&slice[0])), len(slice)*1) // #nosec G103
+		}
 	case *array.Float16:
+		inferredType = types.VectorTypeFloat16
 		elemSize = 2
 		vals := valuesArr.Values()
 		start := offset * width
@@ -203,16 +221,7 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 	dvs.mu.Lock()
 	defer dvs.mu.Unlock()
 
-	switch elemSize {
-	case 1:
-		dvs.dataType = types.VectorTypeInt8
-	case 2:
-		dvs.dataType = types.VectorTypeFloat16
-	case 8:
-		dvs.dataType = types.VectorTypeFloat64
-	default:
-		dvs.dataType = types.VectorTypeFloat32
-	}
+	dvs.dataType = inferredType
 
 	var dataToWrite []byte
 	var compType byte // 0: none, 1: zstd, 2: lz4
@@ -497,7 +506,7 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 	switch dataType {
 	case types.VectorTypeFloat64:
 		elemSize = 8
-	case types.VectorTypeInt8:
+	case types.VectorTypeInt8, types.VectorTypeUint8:
 		elemSize = 1
 	case types.VectorTypeFloat16:
 		elemSize = 2
@@ -535,6 +544,21 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 			for j := 0; j < dvs.dim; j++ {
 				vec[j] = int8(raw[offset+j]) // #nosec G115 -- bit reinterpretation of int8 stored as byte on disk
 			}
+			results[i] = vec
+		}
+		return results, nil
+
+	case types.VectorTypeUint8:
+		results := make([][]uint8, len(filtered))
+		for i, idx := range filtered {
+			bIdx := dvs.findBlock(idx)
+			raw := blockData[bIdx]
+			block := dvs.blocks[bIdx]
+			localIdx := idx - block.StartIdx
+
+			vec := make([]uint8, dvs.dim)
+			offset := localIdx * dvs.dim * elemSize
+			copy(vec, raw[offset:offset+dvs.dim])
 			results[i] = vec
 		}
 		return results, nil

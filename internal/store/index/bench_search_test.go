@@ -46,7 +46,7 @@ func BenchmarkInt8Search_50k(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, err := idx.Search(ctx, query, 10, nil)
 		if err != nil {
 			b.Fatal(err)

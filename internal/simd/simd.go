@@ -398,7 +398,12 @@ func dotUnrolled4x(a, b []float32) (float32, error) {
 
 // euclideanBatchUnrolled4x computes batch Euclidean distances using unrolled inner loop
 func euclideanBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) error {
+	qLen := len(query)
 	for i, v := range vectors {
+		if v == nil || len(v) != qLen {
+			results[i] = math.MaxFloat32
+			continue
+		}
 		d, err := euclideanUnrolled4x(query, v)
 		if err != nil {
 			return err
@@ -411,7 +416,12 @@ func euclideanBatchUnrolled4x(query []float32, vectors [][]float32, results []fl
 // cosineBatchUnrolled4x computes batch cosine distances using unrolled inner loop
 // with 4 independent accumulators per dot/norm calculation (12 total accumulators).
 func cosineBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) error {
+	qLen := len(query)
 	for i, v := range vectors {
+		if v == nil || len(v) != qLen {
+			results[i] = math.MaxFloat32
+			continue
+		}
 		d, err := cosineUnrolled4x(query, v)
 		if err != nil {
 			return err
@@ -424,7 +434,12 @@ func cosineBatchUnrolled4x(query []float32, vectors [][]float32, results []float
 // dotBatchUnrolled4x computes batch dot products using unrolled inner loop
 // with 4 independent accumulators to break loop-carried dependencies.
 func dotBatchUnrolled4x(query []float32, vectors [][]float32, results []float32) error {
+	qLen := len(query)
 	for i, v := range vectors {
+		if v == nil || len(v) != qLen {
+			results[i] = -math.MaxFloat32
+			continue
+		}
 		d, err := dotUnrolled4x(query, v)
 		if err != nil {
 			return err

@@ -380,8 +380,8 @@ func initDispatchTable() {
 			UnpackTQ2: UnpackTQ2Generic,
 			UnpackTQ4: UnpackTQ4Generic,
 			UnpackTQ8: UnpackTQ8AVX2,
-			PackTQ2:   PackTQ2AVX2,
-			PackTQ4:   PackTQ4AVX2,
+			PackTQ2:   PackTQ2Generic,
+			PackTQ4:   PackTQ4Generic,
 			PackTQ8:   PackTQ8AVX2,
 
 			Sum:                       sumAVX2,
@@ -599,7 +599,7 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32AVX512
 		matchFloat64Impl = matchFloat64AVX512
 		adcDistanceBatchImpl = adcBatchAVX512
-		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric
+		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX512
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX512
 		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX512
 		andBytesImpl = andBytesAVX512
@@ -722,7 +722,7 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32AVX512
 		matchFloat64Impl = matchFloat64AVX512
 		adcDistanceBatchImpl = adcBatchAVX512
-		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric
+		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX512
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX512
 		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX512
 		andBytesImpl = andBytesAVX512
@@ -845,7 +845,7 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32AVX512
 		matchFloat64Impl = matchFloat64AVX512
 		adcDistanceBatchImpl = adcBatchAVX512
-		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric
+		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX512
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX512
 		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX512
 		andBytesImpl = andBytesAVX512
@@ -970,7 +970,7 @@ func initializeDispatch() {
 		matchFloat32Impl = matchFloat32Generic
 		matchFloat64Impl = matchFloat64Generic
 		adcDistanceBatchImpl = adcBatchGeneric
-		euclideanDistanceVerticalBatchImpl = euclideanBatchGeneric // AVX2 vertical batch kernel is a stub
+		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX2
 		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric
 		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX2
 		andBytesImpl = andBytesAVX2

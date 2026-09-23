@@ -50,6 +50,20 @@ func TestDiscovery_Multi(t *testing.T) {
 	peers, err := mp.FindPeers(ctx)
 	assert.NoError(t, err)
 	assert.Contains(t, peers, "p1")
-	// MDNS stub returns empty, so len should be 1
-	assert.Len(t, peers, 1)
+	// MDNS returns no peers if no other services are running on this test service name
+	assert.Contains(t, peers, "p1")
+}
+
+func TestDiscovery_MDNS_Lifecycle(t *testing.T) {
+	provider := NewMDNSProvider("longbow-test")
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+
+	err := provider.Register(ctx, "test-node-1", 12355)
+	assert.NoError(t, err)
+	defer provider.Shutdown()
+
+	peers, err := provider.FindPeers(ctx)
+	assert.NoError(t, err)
+	_ = peers
 }

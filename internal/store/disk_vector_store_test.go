@@ -5,6 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/array"
+	"github.com/apache/arrow-go/v18/arrow/memory"
 	"github.com/stretchr/testify/require"
 )
 
@@ -98,6 +101,50 @@ func TestDiskVectorStore_Read(t *testing.T) {
 	require.Equal(t, 2, len(results2))
 	require.Equal(t, float32(2), results2[0][0])
 	require.Equal(t, float32(4), results2[1][0])
+}
+
+func TestDiskVectorStore_Uint8(t *testing.T) {
+	tmpDir := t.TempDir()
+	path := filepath.Join(tmpDir, "uint8_vectors.bin")
+	dim := 4
+
+	dvs, err := NewDiskVectorStore(path, dim)
+	require.NoError(t, err)
+	defer dvs.Close()
+
+	mem := memory.NewGoAllocator()
+	builder := array.NewFixedSizeListBuilder(mem, int32(dim), arrow.PrimitiveTypes.Uint8)
+	defer builder.Release()
+
+	vb := builder.ValueBuilder().(*array.Uint8Builder)
+	vb.AppendValues([]uint8{10, 20, 30, 40}, nil)
+	builder.Append(true)
+	vb.AppendValues([]uint8{50, 60, 70, 80}, nil)
+	builder.Append(true)
+	vb.AppendValues([]uint8{90, 100, 110, 120}, nil)
+	builder.Append(true)
+
+	arr := builder.NewArray().(*array.FixedSizeList)
+	defer arr.Release()
+
+	schema := arrow.NewSchema([]arrow.Field{{Name: "vector", Type: arr.DataType()}}, nil)
+	rec := array.NewRecordBatch(schema, []arrow.Array{arr}, 3)
+	defer rec.Release()
+
+	n, err := dvs.BatchAppendArrow(rec, 0)
+	require.NoError(t, err)
+	require.Equal(t, 3, n)
+
+	// Read back using GetBatchAny
+	rawResults, err := dvs.GetBatchAny([]int{0, 1, 2})
+	require.NoError(t, err)
+
+	u8Results, ok := rawResults.([][]uint8)
+	require.True(t, ok, "Expected [][]uint8 from GetBatchAny")
+	require.Len(t, u8Results, 3)
+	require.Equal(t, []uint8{10, 20, 30, 40}, u8Results[0])
+	require.Equal(t, []uint8{50, 60, 70, 80}, u8Results[1])
+	require.Equal(t, []uint8{90, 100, 110, 120}, u8Results[2])
 }
 
 func BenchmarkDiskVectorStore_Read(b *testing.B) {

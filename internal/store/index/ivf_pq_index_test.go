@@ -508,3 +508,18 @@ func BenchmarkIVFPQIndex_MemoryReduction(b *testing.B) {
 	b.Logf("IVF-PQ with vectors: %d bytes", indexMemory)
 	b.Logf("Reduction (excluding full vectors): %.2fx", float64(originalMemory)/float64(pqCodeMemory))
 }
+
+func TestIVFPQIndex_Sharded(t *testing.T) {
+	dim := 128
+	cfg := DefaultIVFPQConfig()
+	idx, err := NewIVFPQIndex(dim, cfg)
+	require.NoError(t, err)
+	assert.False(t, idx.IsSharded())
+	assert.Nil(t, idx.GetShardedIndex())
+
+	shardedIdx, err := NewShardedIVFPQIndex(dim, cfg, 4)
+	require.NoError(t, err)
+	assert.True(t, shardedIdx.IsSharded())
+	assert.NotNil(t, shardedIdx.GetShardedIndex())
+	assert.Equal(t, 4, shardedIdx.GetShardedIndex().NumShards())
+}

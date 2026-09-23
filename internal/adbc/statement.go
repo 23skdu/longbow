@@ -93,6 +93,10 @@ func (s *Statement) executeSearch(ctx context.Context) (array.RecordReader, int6
 	query := strings.TrimSpace(s.query)
 	upper := strings.ToUpper(query)
 
+	if query == "" {
+		return s.stubExecuteQuery()
+	}
+
 	if upper == "SHOW TABLES" || upper == "SHOW DATASETS" {
 		return s.showTables(ctx)
 	}
@@ -110,9 +114,11 @@ func (s *Statement) executeSearch(ctx context.Context) (array.RecordReader, int6
 		return s.executeSelect(ctx, query, upper)
 	}
 
-	// Not a recognized SQL dialect — return stub results so callers
-	// like fuzz tests get a valid reader rather than an error.
-	return s.stubExecuteQuery()
+	// Not a recognized SQL dialect — return structured StatusNotImplemented error
+	return nil, -1, adbc.Error{
+		Code: adbc.StatusNotImplemented,
+		Msg:  fmt.Sprintf("unsupported SQL query: %q", query),
+	}
 }
 
 func (s *Statement) showTables(ctx context.Context) (array.RecordReader, int64, error) {

@@ -5,7 +5,6 @@ import (
 	"sync"
 )
 
-// DoubleBuffer holds two pre-allocated memory blocks to pipeline host-to-device transfers.
 type DoubleBuffer struct {
 	mu           sync.Mutex
 	bufA         []byte
@@ -13,15 +12,64 @@ type DoubleBuffer struct {
 	activeBuffer int // 0 for A, 1 for B
 	activeSize   int
 	capacity     int
+	memPool      *GPUMemPool
+	minHeadroom  int64
 }
 
-// NewDoubleBuffer allocates two slabs of the given capacity.
-func NewDoubleBuffer(capacity int) *DoubleBuffer {
-	return &DoubleBuffer{
+// DoubleBufferOption defines functional configuration for DoubleBuffer.
+type DoubleBufferOption func(*DoubleBuffer)
+
+// WithMemPool attaches a GPUMemPool to validate device memory headroom.
+func WithMemPool(pool *GPUMemPool, minHeadroomBytes int64) DoubleBufferOption {
+	return func(db *DoubleBuffer) {
+		db.memPool = pool
+		db.minHeadroom = minHeadroomBytes
+	}
+}
+
+// NewDoubleBuffer allocates two slabs of the given capacity with optional configuration.
+func NewDoubleBuffer(capacity int, opts ...DoubleBufferOption) *DoubleBuffer {
+	db := &DoubleBuffer{
 		bufA:     make([]byte, capacity),
 		bufB:     make([]byte, capacity),
 		capacity: capacity,
 	}
+	for _, opt := range opts {
+		opt(db)
+	}
+	return db
+}
+
+// NewDoubleBufferWithHeadroom allocates two slabs after validating that the GPU memory pool has sufficient headroom.
+func NewDoubleBufferWithHeadroom(capacity int, memPool *GPUMemPool, minHeadroomBytes int64) (*DoubleBuffer, error) {
+	if capacity <= 0 {
+		return nil, fmt.Errorf("capacity must be positive")
+	}
+	if memPool != nil && memPool.GetTotalMemory() > 0 {
+		avail := memPool.GetAvailableMemory()
+		needed := int64(capacity*2) + minHeadroomBytes
+		if needed > avail {
+			return nil, fmt.Errorf("insufficient GPU memory headroom: requested %d bytes (capacity 2x%d + headroom %d), available %d bytes",
+				needed, capacity, minHeadroomBytes, avail)
+		}
+	}
+	return NewDoubleBuffer(capacity, WithMemPool(memPool, minHeadroomBytes)), nil
+}
+
+// CheckHeadroom validates that the attached GPU memory pool has sufficient headroom for an upcoming operation.
+func (db *DoubleBuffer) CheckHeadroom(requiredBytes int64) error {
+	db.mu.Lock()
+	defer db.mu.Unlock()
+	if db.memPool == nil || db.memPool.GetTotalMemory() == 0 {
+		return nil
+	}
+	avail := db.memPool.GetAvailableMemory()
+	needed := requiredBytes + db.minHeadroom
+	if needed > avail {
+		return fmt.Errorf("GPU memory headroom check failed: required %d bytes (+ %d headroom), only %d bytes available",
+			requiredBytes, db.minHeadroom, avail)
+	}
+	return nil
 }
 
 // GetActive returns the current active buffer that can be written to by Go CPU code.

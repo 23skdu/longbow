@@ -3,13 +3,5 @@
 
 package simd
 
-import (
-	"unsafe"
-)
-
-func euclideanSQ8AVX2(a, b []byte) (int32, error) {
-	if len(a) == 0 {
-		return 0, nil
-	}
-	return euclideanSQ8AVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), len(a)), nil // #nosec G103
-}
+// Note: euclideanSQ8AVX2 is pending real AVX2 assembly kernel implementation in all_kernels_avo_amd64.s.
+// EuclideanSQ8Generic in sq8.go is used as the default implementation.

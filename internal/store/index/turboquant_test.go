@@ -35,8 +35,8 @@ func TestTurboQuant_EncoderDecoder(t *testing.T) {
 	// 3. Prepare original rotated vector for comparison
 	rotatedOrig := make([]float32, encoder.pow2)
 	copy(rotatedOrig, vec)
-	if err := encoder.had.Transform(rotatedOrig); err != nil {
-		t.Fatalf("Transform failed: %v", err)
+	if err := simd.RandomRotation(rotatedOrig, encoder.params.Seed); err != nil {
+		t.Fatalf("RandomRotation failed: %v", err)
 	}
 
 	// 4. Compare Dot Product or L2
@@ -51,10 +51,7 @@ func TestTurboQuant_EncoderDecoder(t *testing.T) {
 	norm2, _ := simd.DotProduct(rotatedRecon, rotatedRecon)
 	cosine := dot / (float32(math.Sqrt(float64(norm1))) * float32(math.Sqrt(float64(norm2))))
 
-	t.Logf("Cosine Similarity (Rotated Space): %f", cosine)
-	// TurboQuant is lossy compression - expect lower similarity at high dims
-	// Temporarily bypassing the strict threshold due to observed negative similarities in CI.
-	// TODO: Investigate quantization logic accuracy.
+	assert.Greater(t, cosine, float32(0.90), "Reconstructed vector must maintain high cosine similarity (>0.90)")
 }
 
 func TestTurboQuant_CompressionRatio(t *testing.T) {

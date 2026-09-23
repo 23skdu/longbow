@@ -43,9 +43,9 @@ func ParseDispatchMode(val string) DispatchMode {
 // ResolveBackend selects the math backend for a given data type and vector count.
 // Routing rules (empirical):
 //   - emlgo for complex types (complex64, complex128) at all scales
-//   - emlgo for float32/float64 with TQ above 50k vectors
+//   - emlgo for turboquant above 50k vectors
+//   - standard for float32/float64 (native AVX2/AVX-512 kernels outperform emlgo for dense traversal)
 //   - standard for int types at all scales
-//   - standard for float types below 50k vectors (dispatch overhead dominates)
 func ResolveBackend(typeName string, vectorCount int) mathutil.Backend {
 	switch dispatchMode {
 	case DispatchEML:
@@ -63,13 +63,8 @@ func ResolveBackend(typeName string, vectorCount int) mathutil.Backend {
 			return mathutil.BackendEML
 		}
 		return mathutil.BackendStandard
-	case "float32", "float64":
-		if vectorCount >= 50000 {
-			return mathutil.BackendEML
-		}
-		return mathutil.BackendStandard
 	default:
-		// int8, uint8, int16, uint16, int32, uint32, int64, uint64
+		// float32, float64, int8, uint8, int16, uint16, int32, uint32, int64, uint64
 		return mathutil.BackendStandard
 	}
 }

@@ -20,7 +20,7 @@ func BenchmarkInt8DenseLoop_50k(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		best := float32(1e30)
 		for j := 0; j < n; j++ {
 			d, _ := EuclideanDistanceInt8(query, dataset[j*dim:(j+1)*dim])
@@ -47,7 +47,7 @@ func BenchmarkInt8DotProductLoop_50k(b *testing.B) {
 	}
 
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		best := float32(-1e30)
 		for j := 0; j < n; j++ {
 			d, _ := DotProductInt8(query, dataset[j*dim:(j+1)*dim])
@@ -68,7 +68,7 @@ func BenchmarkFloat32Euclidean_128(b *testing.B) {
 		bVec[i] = rand.Float32()
 	}
 	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		_, _ = EuclideanDistance(a, bVec)
 	}
 }

@@ -85,7 +85,6 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []types.VectorID {
 	if err != nil {
 		dist = math.MaxFloat32
 	}
-	// Start from the entry point's level, not the potentially racing global maxLayer
 	startLevel := currObj.Level
 
 	for level := startLevel; level > 0; level-- {
@@ -95,7 +94,7 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []types.VectorID {
 			currObj.mu.RLock()
 			var friends []types.VectorID
 			if level < len(currObj.Friends) {
-				friends = currObj.Friends[level]
+				friends = append([]types.VectorID(nil), currObj.Friends[level]...)
 			}
 			currObj.mu.RUnlock()
 
@@ -106,7 +105,7 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []types.VectorID {
 				}
 				d, err := h.distFunc(query, fNode.Vec)
 				if err != nil {
-					d = math.MaxFloat32
+					continue
 				}
 				if d < dist {
 					dist = d
@@ -117,27 +116,23 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []types.VectorID {
 		}
 	}
 
-	// 2. Search Layer 0 using BFS with a candidate list
+	// 2. Search Layer 0 using candidate list
 	type candidate struct {
-		id    types.VectorID
-		dist  float32
+		id   types.VectorID
+		dist float32
 	}
 
-	startDist, _ := h.distFunc(query, currObj.Vec)
+	efVal := ef
+	if efVal < k {
+		efVal = k
+	}
+
 	visited := make(map[types.VectorID]bool)
 	visited[currObj.ID] = true
-	candidates := []candidate{{id: currObj.ID, dist: startDist}}
-	results := []candidate{{id: currObj.ID, dist: startDist}}
+	candidates := []candidate{{id: currObj.ID, dist: dist}}
+	results := []candidate{{id: currObj.ID, dist: dist}}
 
-	efVal := k * 2
-	if efVal < 16 {
-		efVal = 16
-	}
-	if ef > efVal {
-		efVal = ef
-	}
-
-	for len(candidates) > 0 && len(results) < efVal {
+	for len(candidates) > 0 {
 		// Pop best candidate
 		bestIdx := 0
 		for i := 1; i < len(candidates); i++ {
@@ -148,6 +143,10 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []types.VectorID {
 		best := candidates[bestIdx]
 		candidates = append(candidates[:bestIdx], candidates[bestIdx+1:]...)
 
+		if len(results) >= efVal && best.dist > results[len(results)-1].dist {
+			break
+		}
+
 		bestNode := h.getNode(best.id)
 		if bestNode == nil {
 			continue
@@ -156,7 +155,7 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []types.VectorID {
 		bestNode.mu.RLock()
 		var friends []types.VectorID
 		if len(bestNode.Friends) > 0 {
-			friends = bestNode.Friends[0]
+			friends = append([]types.VectorID(nil), bestNode.Friends[0]...)
 		}
 		bestNode.mu.RUnlock()
 
@@ -169,18 +168,33 @@ func (h *LockFreeHNSW) Search(query []float32, k, ef int) []types.VectorID {
 			if fNode == nil {
 				continue
 			}
-			d, _ := h.distFunc(query, fNode.Vec)
-			results = append(results, candidate{id: friendID, dist: d})
-			if len(results) < ef {
+			d, err := h.distFunc(query, fNode.Vec)
+			if err != nil {
+				continue
+			}
+
+			furthestDist := float32(math.MaxFloat32)
+			if len(results) >= efVal {
+				furthestDist = results[len(results)-1].dist
+			}
+
+			if d < furthestDist || len(results) < efVal {
 				candidates = append(candidates, candidate{id: friendID, dist: d})
+
+				idx := sort.Search(len(results), func(i int) bool {
+					return results[i].dist >= d
+				})
+				results = append(results, candidate{})
+				copy(results[idx+1:], results[idx:])
+				results[idx] = candidate{id: friendID, dist: d}
+				if len(results) > efVal {
+					results = results[:efVal]
+				}
 			}
 		}
 	}
 
-	// Sort results by distance and return top k
-	sort.Slice(results, func(i, j int) bool {
-		return results[i].dist < results[j].dist
-	})
+	// Return top k results
 	if k > len(results) {
 		k = len(results)
 	}
@@ -219,14 +233,11 @@ func (h *LockFreeHNSW) Add(id types.VectorID, vec []float32) {
 		currObj := ep
 		maxL := int(h.maxLayer.Load())
 
-		if level > maxL {
-			h.maxLayer.Store(int64(level))
-			h.entryPoint.Store(node)
-			h.link(node, ep, level)
-			maxL = level
+		// Greedy search down from maxL to level+1
+		currDist, err := h.distFunc(vec, currObj.Vec)
+		if err != nil {
+			currDist = math.MaxFloat32
 		}
-
-		// Greedy search down from maxL to level+1: find closest node at each layer
 		for l := maxL; l > level; l-- {
 			changed := true
 			for changed {
@@ -234,7 +245,7 @@ func (h *LockFreeHNSW) Add(id types.VectorID, vec []float32) {
 				currObj.mu.RLock()
 				var friends []types.VectorID
 				if l < len(currObj.Friends) {
-					friends = currObj.Friends[l]
+					friends = append([]types.VectorID(nil), currObj.Friends[l]...)
 				}
 				currObj.mu.RUnlock()
 
@@ -245,10 +256,10 @@ func (h *LockFreeHNSW) Add(id types.VectorID, vec []float32) {
 					}
 					d, err := h.distFunc(vec, fNode.Vec)
 					if err != nil {
-						d = math.MaxFloat32
+						continue
 					}
-					bestD, _ := h.distFunc(vec, currObj.Vec)
-					if d < bestD {
+					if d < currDist {
+						currDist = d
 						currObj = fNode
 						changed = true
 					}
@@ -257,34 +268,36 @@ func (h *LockFreeHNSW) Add(id types.VectorID, vec []float32) {
 		}
 
 		// Insert at each level from min(maxL, level) down to 0:
-		// Greedy search to find closest neighbors, then link.
 		for l := min(maxL, level); l >= 0; l-- {
 			type cand struct {
 				node *LockFreeNode
 				dist float32
 			}
-			candidates := []cand{{node: currObj, dist: 0}}
-			bestD, _ := h.distFunc(vec, currObj.Vec)
-			_ = bestD
 			visited := map[types.VectorID]bool{currObj.ID: true}
+			candidates := []cand{{node: currObj, dist: currDist}}
+			results := []cand{{node: currObj, dist: currDist}}
 
-			for len(candidates) < EfConstruction {
-				// Find unvisited closest neighbor of best candidate
-				best := candidates[0]
-				for _, c := range candidates {
-					if c.dist < best.dist {
-						best = c
+			for len(candidates) > 0 {
+				bestIdx := 0
+				for i := 1; i < len(candidates); i++ {
+					if candidates[i].dist < candidates[bestIdx].dist {
+						bestIdx = i
 					}
 				}
+				curr := candidates[bestIdx]
+				candidates = append(candidates[:bestIdx], candidates[bestIdx+1:]...)
 
-				best.node.mu.RLock()
-				var friends []types.VectorID
-				if l < len(best.node.Friends) {
-					friends = best.node.Friends[l]
+				if len(results) >= EfConstruction && curr.dist > results[len(results)-1].dist {
+					break
 				}
-				best.node.mu.RUnlock()
 
-				expanded := false
+				curr.node.mu.RLock()
+				var friends []types.VectorID
+				if l < len(curr.node.Friends) {
+					friends = append([]types.VectorID(nil), curr.node.Friends[l]...)
+				}
+				curr.node.mu.RUnlock()
+
 				for _, friendID := range friends {
 					if visited[friendID] {
 						continue
@@ -294,55 +307,120 @@ func (h *LockFreeHNSW) Add(id types.VectorID, vec []float32) {
 					if fNode == nil {
 						continue
 					}
-					d, _ := h.distFunc(vec, fNode.Vec)
-					candidates = append(candidates, cand{node: fNode, dist: d})
-					expanded = true
-				}
-				if !expanded {
-					break
+					d, err := h.distFunc(vec, fNode.Vec)
+					if err != nil {
+						continue
+					}
+
+					furthestDist := float32(math.MaxFloat32)
+					if len(results) >= EfConstruction {
+						furthestDist = results[len(results)-1].dist
+					}
+
+					if d < furthestDist || len(results) < EfConstruction {
+						candidates = append(candidates, cand{node: fNode, dist: d})
+
+						idx := sort.Search(len(results), func(i int) bool {
+							return results[i].dist >= d
+						})
+						results = append(results, cand{})
+						copy(results[idx+1:], results[idx:])
+						results[idx] = cand{node: fNode, dist: d}
+						if len(results) > EfConstruction {
+							results = results[:EfConstruction]
+						}
+					}
 				}
 			}
 
 			// Select top M closest and link bidirectionally
-			sort.Slice(candidates, func(i, j int) bool {
-				return candidates[i].dist < candidates[j].dist
-			})
 			mMax := MaxConnections
 			if l == 0 {
 				mMax = MaxConnections * 2
 			}
-			if len(candidates) > mMax {
-				candidates = candidates[:mMax]
+			numToLink := min(len(results), mMax)
+			for i := 0; i < numToLink; i++ {
+				c := results[i]
+				if c.node.ID != node.ID {
+					h.link(node, c.node, l)
+					h.link(c.node, node, l)
+				}
 			}
-			for _, c := range candidates {
-				h.link(node, c.node, l)
-				h.link(c.node, node, l)
+			if len(results) > 0 {
+				currObj = results[0].node
+				currDist = results[0].dist
 			}
-			if len(candidates) > 0 {
-				currObj = candidates[0].node
-			}
+		}
+
+		if level > maxL {
+			h.maxLayer.Store(int64(level))
+			h.entryPoint.Store(node)
 		}
 		return
 	}
 }
 
 func (h *LockFreeHNSW) randomLevel() int {
-	lvl := 0
-	for rand.Float64() < ML && lvl < MaxLayers-1 { // #nosec G404
-		lvl++
+	u := rand.Float64()
+	if u == 0 {
+		u = 1e-7
+	}
+	lvl := int(-math.Log(u) * ML)
+	if lvl >= MaxLayers {
+		lvl = MaxLayers - 1
 	}
 	return lvl
 }
 
 func (h *LockFreeHNSW) link(a, b *LockFreeNode, level int) {
-	if b == nil || level >= len(a.Friends) {
+	if b == nil || a.ID == b.ID || level >= len(a.Friends) {
 		return
 	}
 	// Fine-grained lock
 	a.mu.Lock()
 	defer a.mu.Unlock()
 
-	if len(a.Friends[level]) < MaxConnections {
+	maxConn := MaxConnections
+	if level == 0 {
+		maxConn = MaxConnections * 2
+	}
+
+	for _, id := range a.Friends[level] {
+		if id == b.ID {
+			return
+		}
+	}
+
+	if len(a.Friends[level]) < maxConn {
 		a.Friends[level] = append(a.Friends[level], b.ID)
+		return
+	}
+
+	// Prune furthest neighbor if b is closer
+	furthestIdx := -1
+	var maxDist float32 = -1
+	for idx, fID := range a.Friends[level] {
+		fNode := h.getNode(fID)
+		if fNode == nil {
+			furthestIdx = idx
+			maxDist = math.MaxFloat32
+			break
+		}
+		d, err := h.distFunc(a.Vec, fNode.Vec)
+		if err != nil {
+			d = math.MaxFloat32
+		}
+		if d > maxDist {
+			maxDist = d
+			furthestIdx = idx
+		}
+	}
+
+	newDist, err := h.distFunc(a.Vec, b.Vec)
+	if err != nil {
+		newDist = math.MaxFloat32
+	}
+	if furthestIdx != -1 && newDist < maxDist {
+		a.Friends[level][furthestIdx] = b.ID
 	}
 }

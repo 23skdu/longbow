@@ -40,8 +40,8 @@ The following table lists the configurable parameters of the Longbow chart and t
 | `service.data.type` | Service type for data | `ClusterIP` |
 | `service.meta.port` | gRPC Meta port | `3001` |
 | `service.meta.type` | Service type for meta | `ClusterIP` |
-| `grpc.maxRecvMsgSize` | Max gRPC receive message size (bytes) | `536870912` |
-| `grpc.maxSendMsgSize` | Max gRPC send message size (bytes) | `536870912` |
+| `grpc.maxRecvMsgSize` | Max gRPC receive message size (bytes) | `21474836470` (20GB) |
+| `grpc.maxSendMsgSize` | Max gRPC send message size (bytes) | `21474836470` (20GB) |
 | `grpc.initialWindowSize` | gRPC initial window size | `1048576` |
 | `grpc.maxConcurrentStreams` | Max concurrent gRPC streams | `250` |
 | `grpc.keepAliveTime` | gRPC keepalive time | `2h` |
@@ -76,14 +76,15 @@ The following table lists the configurable parameters of the Longbow chart and t
 |-----------|-------------|---------|
 | `hnsw.m` | Number of bi-directional links (M) | `32` |
 | `hnsw.efConstruction` | Size of dynamic candidate list | `400` |
-| `hnsw.sq8Enabled` | Enable SQ8 (Scalar Quantization) | `false` |
+| `hnsw.sq8Enabled` | Enable SQ8 (Scalar Quantization) | `true` |
+| `hnsw.sq4Enabled` | Enable SQ4 (Scalar Quantization) | `true` |
+| `hnsw.pqEnabled` | Enable PQ (Product Quantization) | `true` |
+| `hnsw.turboQuantEnabled` | Enable SIMD-accelerated TurboQuant | `true` |
 | `hnsw.bqEnabled` | Enable BQ (Binary Quantization) | `false` |
-| `hnsw.pqEnabled` | Enable PQ (Product Quantization) | `false` |
 | `pq.m` | Number of sub-spaces for PQ | `16` |
 | `pq.k` | Number of centroids per sub-space | `256` |
-| `hnsw.turboQuantEnabled` | Enable SIMD-accelerated TurboQuant | `false` |
-| `hnsw.geoSearchEnabled` | Enable geospatial search indexing | `false` |
-| `hnsw.float16Enabled` | Use Float16 precision for vectors | `false` |
+| `hnsw.geoSearchEnabled` | Enable geospatial search indexing | `true` |
+| `hnsw.float16Enabled` | Use Float16 precision for vectors | `true` |
 | `hnsw.useDisk` | Enable DiskANN-style disk offloading | `false` |
 | `indexing.adaptive.enabled` | Enable adaptive indexing | `true` |
 | `indexing.adaptive.threshold` | Threshold for adaptive migration | `1024` |

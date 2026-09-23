@@ -221,9 +221,16 @@ func dotAVX2(a, b []float32) (float32, error) {
 	return sum, nil
 }
 
-// Bray-Curtis uses the generic Go baseline; the avo stub kernel is not yet implemented.
+// brayCurtisAVX2 calculates Bray-Curtis distance using the AVX2 vectorized kernel.
 func brayCurtisAVX2(a, b []float32) (float32, error) {
-	return BrayCurtisDistanceFloat32(a, b)
+	if len(a) != len(b) {
+		return 0, errors.New("simd: length mismatch")
+	}
+	if len(a) == 0 {
+		return 0, nil
+	}
+	res := brayCurtisAVX2Kernel(uintptr(unsafe.Pointer(&a[0])), uintptr(unsafe.Pointer(&b[0])), len(a)) // #nosec G103
+	return res, nil
 }
 
 // AVX2 optimized Batch Euclidean distance

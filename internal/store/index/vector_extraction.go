@@ -7,6 +7,7 @@ import (
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
+	"github.com/apache/arrow-go/v18/arrow/float16"
 )
 
 func (p parallelSearchHostF32) ExtractVectorToBufferForParallel(rec arrow.RecordBatch, rowIdx int, dst []float32) error {
@@ -45,6 +46,38 @@ type diskVectorStoreIntf interface {
 	GetBatchAny(indices []int) (any, error)
 }
 
+func extractFirstVector(res any) any {
+	switch v := res.(type) {
+	case [][]float32:
+		if len(v) > 0 { return v[0] }
+	case [][]float64:
+		if len(v) > 0 { return v[0] }
+	case [][]uint8:
+		if len(v) > 0 { return v[0] }
+	case [][]int8:
+		if len(v) > 0 { return v[0] }
+	case [][]float16.Num:
+		if len(v) > 0 { return v[0] }
+	case [][]int16:
+		if len(v) > 0 { return v[0] }
+	case [][]uint16:
+		if len(v) > 0 { return v[0] }
+	case [][]int32:
+		if len(v) > 0 { return v[0] }
+	case [][]uint32:
+		if len(v) > 0 { return v[0] }
+	case [][]int64:
+		if len(v) > 0 { return v[0] }
+	case [][]uint64:
+		if len(v) > 0 { return v[0] }
+	case [][]complex64:
+		if len(v) > 0 { return v[0] }
+	case [][]complex128:
+		if len(v) > 0 { return v[0] }
+	}
+	return nil
+}
+
 func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 	data := h.data.Load()
 	if data == nil {
@@ -73,15 +106,8 @@ func (h *ArrowHNSW) GetVector(id uint32) (any, error) {
 			if dvs, ok := dsAny.(diskVectorStoreIntf); ok && dvs != nil {
 				res, err := dvs.GetBatchAny([]int{int(id)})
 				if err == nil && res != nil {
-					switch v := res.(type) {
-					case [][]float32:
-						if len(v) > 0 {
-							return v[0], nil
-						}
-					case [][]float64:
-						if len(v) > 0 {
-							return v[0], nil
-						}
+					if first := extractFirstVector(res); first != nil {
+						return first, nil
 					}
 				}
 			}
@@ -166,15 +192,8 @@ func (h *ArrowHNSW) getVectorWithCachedDisk(data *types.GraphData, dg *DiskGraph
 			if dvs, ok := dsAny.(diskVectorStoreIntf); ok && dvs != nil {
 				res, err := dvs.GetBatchAny([]int{int(id)})
 				if err == nil && res != nil {
-					switch v := res.(type) {
-					case [][]float32:
-						if len(v) > 0 {
-							return v[0], nil
-						}
-					case [][]float64:
-						if len(v) > 0 {
-							return v[0], nil
-						}
+					if first := extractFirstVector(res); first != nil {
+						return first, nil
 					}
 				}
 			}

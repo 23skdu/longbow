@@ -10,33 +10,33 @@ import (
 // VectorLength returns the number of elements in any supported vector type.
 // Returns 0 for unsupported types.
 func VectorLength(v any) int {
-	switch v.(type) {
+	switch v := v.(type) {
 	case []float32:
-		return len(v.([]float32))
+		return len(v)
 	case []float64:
-		return len(v.([]float64))
+		return len(v)
 	case []float16.Num:
-		return len(v.([]float16.Num))
+		return len(v)
 	case []int8:
-		return len(v.([]int8))
+		return len(v)
 	case []uint8:
-		return len(v.([]uint8))
+		return len(v)
 	case []int16:
-		return len(v.([]int16))
+		return len(v)
 	case []uint16:
-		return len(v.([]uint16))
+		return len(v)
 	case []int32:
-		return len(v.([]int32))
+		return len(v)
 	case []uint32:
-		return len(v.([]uint32))
+		return len(v)
 	case []int64:
-		return len(v.([]int64))
+		return len(v)
 	case []uint64:
-		return len(v.([]uint64))
+		return len(v)
 	case []complex64:
-		return len(v.([]complex64))
+		return len(v)
 	case []complex128:
-		return len(v.([]complex128))
+		return len(v)
 	default:
 		return 0
 	}

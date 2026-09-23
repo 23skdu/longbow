@@ -200,14 +200,12 @@ func (h *LockFreeHNSW) Add(id types.VectorID, vec []float32) {
 		Level:   level,
 		Friends: make([][]types.VectorID, level+1),
 	}
-	// Initializing Friends slices
 	for i := 0; i <= level; i++ {
 		node.Friends[i] = make([]types.VectorID, 0, MaxConnections)
 	}
 
 	h.nodes.Store(id, node)
 
-	// If first node
 	for {
 		ep := h.entryPoint.Load()
 		if ep == nil {
@@ -215,34 +213,114 @@ func (h *LockFreeHNSW) Add(id types.VectorID, vec []float32) {
 				h.maxLayer.Store(int64(level))
 				return
 			}
-			continue // Lost race, retry
+			continue
 		}
 
-		// Standard HNSW insertion
 		currObj := ep
 		maxL := int(h.maxLayer.Load())
 
-		// 1. Zoom down to node.Level
-
-		// Update global max layer and entry point if we are higher
 		if level > maxL {
-			// Naive update: just set new entry point and link to old one
-			// In production this needs careful handling of concurrent updates
 			h.maxLayer.Store(int64(level))
 			h.entryPoint.Store(node)
 			h.link(node, ep, level)
 			maxL = level
 		}
 
-		// Simplified traversal
-		// ...
+		// Greedy search down from maxL to level+1: find closest node at each layer
+		for l := maxL; l > level; l-- {
+			changed := true
+			for changed {
+				changed = false
+				currObj.mu.RLock()
+				var friends []types.VectorID
+				if l < len(currObj.Friends) {
+					friends = currObj.Friends[l]
+				}
+				currObj.mu.RUnlock()
 
-		// 2. Insert at each level from min(maxL, level) down to 0
+				for _, friendID := range friends {
+					fNode := h.getNode(friendID)
+					if fNode == nil {
+						continue
+					}
+					d, err := h.distFunc(vec, fNode.Vec)
+					if err != nil {
+						d = math.MaxFloat32
+					}
+					bestD, _ := h.distFunc(vec, currObj.Vec)
+					if d < bestD {
+						currObj = fNode
+						changed = true
+					}
+				}
+			}
+		}
+
+		// Insert at each level from min(maxL, level) down to 0:
+		// Greedy search to find closest neighbors, then link.
 		for l := min(maxL, level); l >= 0; l-- {
-			// Find closest neighbor at this level (approx)
-			// Link bidirectional
-			h.link(node, currObj, l)
-			h.link(currObj, node, l)
+			type cand struct {
+				node *LockFreeNode
+				dist float32
+			}
+			candidates := []cand{{node: currObj, dist: 0}}
+			bestD, _ := h.distFunc(vec, currObj.Vec)
+			_ = bestD
+			visited := map[types.VectorID]bool{currObj.ID: true}
+
+			for len(candidates) < EfConstruction {
+				// Find unvisited closest neighbor of best candidate
+				best := candidates[0]
+				for _, c := range candidates {
+					if c.dist < best.dist {
+						best = c
+					}
+				}
+
+				best.node.mu.RLock()
+				var friends []types.VectorID
+				if l < len(best.node.Friends) {
+					friends = best.node.Friends[l]
+				}
+				best.node.mu.RUnlock()
+
+				expanded := false
+				for _, friendID := range friends {
+					if visited[friendID] {
+						continue
+					}
+					visited[friendID] = true
+					fNode := h.getNode(friendID)
+					if fNode == nil {
+						continue
+					}
+					d, _ := h.distFunc(vec, fNode.Vec)
+					candidates = append(candidates, cand{node: fNode, dist: d})
+					expanded = true
+				}
+				if !expanded {
+					break
+				}
+			}
+
+			// Select top M closest and link bidirectionally
+			sort.Slice(candidates, func(i, j int) bool {
+				return candidates[i].dist < candidates[j].dist
+			})
+			mMax := MaxConnections
+			if l == 0 {
+				mMax = MaxConnections * 2
+			}
+			if len(candidates) > mMax {
+				candidates = candidates[:mMax]
+			}
+			for _, c := range candidates {
+				h.link(node, c.node, l)
+				h.link(c.node, node, l)
+			}
+			if len(candidates) > 0 {
+				currObj = candidates[0].node
+			}
 		}
 		return
 	}

@@ -136,7 +136,7 @@ run_*.sh
 crash_repro.sh
 test_*.sh
 !scripts/test_tensor_engine.sh
-bench-tool
+/bench-tool
 
 # Root-level dev/scratch artifacts
 /fix_*.py

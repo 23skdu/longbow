@@ -260,6 +260,10 @@ const (
 	adbcStatusIO              = 8
 )
 
+func isSupportedADBCVersion(version int) bool {
+	return version == 0 || (version >= 1000000 && version < 1002000)
+}
+
 //export AdbcLongbowAdbcInit
 func AdbcLongbowAdbcInit(version C.int, driver unsafe.Pointer, err *C.struct_AdbcError) C.int {
 	// ADBC API version negotiation.
@@ -267,7 +271,7 @@ func AdbcLongbowAdbcInit(version C.int, driver unsafe.Pointer, err *C.struct_Adb
 	// ADBC_VERSION_1_0_0 = 1000000
 	// ADBC_VERSION_1_1_0 = 1001000
 	// We support the 1.x family (1000000..1001999).
-	if version != 0 && (version < 1000000 || version >= 1002000) {
+	if !isSupportedADBCVersion(int(version)) {
 		setCError(err, fmt.Sprintf("AdbcLongbowAdbcInit: unsupported ADBC version %d (supported: 1.x)", version))
 		return C.int(adbcStatusInvalidArgument)
 	}

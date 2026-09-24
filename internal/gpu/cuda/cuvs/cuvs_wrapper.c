@@ -1,3 +1,5 @@
+//go:build gpu && linux && cuda
+
 #include "cuvs_wrapper.h"
 #include <stdio.h>
 #include <stdlib.h>

@@ -40,6 +40,16 @@ jobs:
       - name: Test
         run: go test -v -race -coverprofile=coverage.txt ./...
 
+      - name: Verify 100% Package Test Coverage Gate
+        run: |
+          UNTESTED=$(go test -list '.*' ./... 2>&1 | grep '\[no test files\]' || true)
+          if [ -n "$UNTESTED" ]; then
+            echo "::error::Found packages without tests:"
+            echo "$UNTESTED"
+            exit 1
+          fi
+          echo "All packages have active test coverage."
+
   benchmark-regression:
     name: Benchmark Regression (--ci)
     needs: validate

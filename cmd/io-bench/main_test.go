@@ -2,6 +2,7 @@ package main
 
 import (
 	"testing"
+	"time"
 )
 
 func TestBenchmarkModes(t *testing.T) {
@@ -50,3 +51,13 @@ func TestFileSizeValidation(t *testing.T) {
 		}
 	}
 }
+
+func TestIOBenchHelpers(t *testing.T) {
+	printStats("SmokeTest", time.Second, 100, 1024*1024)
+	tmpDir := t.TempDir()
+	size := prepFile(tmpDir, 1, 4096)
+	if size < 1024*1024 {
+		t.Errorf("prepFile size = %d; want at least 1MB", size)
+	}
+}
+

@@ -5,32 +5,26 @@ import (
 )
 
 func TestParseFloats(t *testing.T) {
-	validInputs := []string{"1.0,2.0,3.0", "0.1,0.2,0.3", "1"}
-	invalidInputs := []string{"invalid"}
-
-	for _, input := range validInputs {
-		if !isNumericList(input) {
-			t.Errorf("expected valid input: %s", input)
-		}
+	floats := parseFloats("1.0, 2.0, 3.5")
+	if len(floats) != 3 || floats[0] != 1.0 || floats[1] != 2.0 || floats[2] != 3.5 {
+		t.Fatalf("unexpected parseFloats result: %v", floats)
 	}
 
-	for _, input := range invalidInputs {
-		if isNumericList(input) {
-			t.Errorf("expected invalid input: %s", input)
-		}
+	filter, err := parseFilterExpression(`{"status": "active"}`)
+	if err != nil || filter == nil {
+		t.Fatalf("unexpected parseFilterExpression error: %v", err)
 	}
-}
 
-func isNumericList(s string) bool {
-	if s == "" {
-		return true
+	rec, sch := generateDemoData(4, 3)
+	if rec == nil || sch == nil {
+		t.Fatal("expected non-nil demo data")
 	}
-	for _, c := range s {
-		if c != '.' && c != ',' && (c < '0' || c > '9') && c != '-' && c != ' ' {
-			return false
-		}
+	defer rec.Release()
+	if rec.NumRows() != 3 {
+		t.Errorf("demo data rows = %d; want 3", rec.NumRows())
 	}
-	return true
+
+	printUsage()
 }
 
 func TestSearchModes(t *testing.T) {

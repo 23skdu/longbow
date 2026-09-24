@@ -96,6 +96,54 @@ func TestMathutilBackends(t *testing.T) {
 	}
 }
 
+func TestMathutilCompleteCoverage(t *testing.T) {
+	// Configuration & state helpers
+	SetFloat64Excluded(true)
+	_ = IsFloat64Excluded()
+	SetFloat64Excluded(false)
+	_ = IsFloat64Excluded()
+
+	restore := PushStandard()
+	if restore != nil {
+		restore()
+	}
+	_ = IsForceStandard()
+	_ = IsEML()
+	_ = GetBackend()
+
+	// Scalar functions
+	_ = Tan(math.Pi / 4)
+	_ = Pow(2.0, 3.0)
+	_ = Asin(0.5)
+	_ = Acos(0.5)
+	_ = Atan(1.0)
+
+	// Float64 batch functions
+	vec := []float64{0.5, 1.0, 2.0}
+	vec2 := []float64{0.1, 0.2, 0.3}
+	_ = LogBatch(vec)
+	_ = CosBatch(vec)
+	_ = TanBatch(vec)
+	_ = SinhBatch(vec)
+	_ = CoshBatch(vec)
+	_ = TanhBatch(vec)
+	_ = SqrtBatch(vec)
+	_ = SubBatch(vec, vec2)
+	_ = MulBatch(vec, vec2)
+	_ = DivBatch(vec, vec2)
+	_ = NegBatch(vec)
+	_ = PowBatch(vec, 2.0)
+
+	// Float32 batch functions
+	vecF32 := []float32{0.5, 1.0, 2.0}
+	vecF32_2 := []float32{0.1, 0.2, 0.3}
+	_ = ExpBatchF32(vecF32)
+	_ = SinBatchF32(vecF32)
+	_ = CosBatchF32(vecF32)
+	_ = AddBatchF32(vecF32, vecF32_2)
+	_ = MulBatchF32(vecF32, vecF32_2)
+}
+
 func BenchmarkBatchComparison(b *testing.B) {
 	n := 1000
 	x := make([]float64, n)

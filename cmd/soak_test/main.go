@@ -77,8 +77,8 @@ func main() {
 
 	fmt.Printf("🌊 Starting Longbow Soak Test\n")
 	fmt.Printf("Dataset: %s, Workers: %d, Duration: %s\n", *dataset, *concurrency, *duration)
-	fmt.Printf("Features: Index=%s, Cache=%v, Global=%v, Rerank=%v, BM25=%v\n",
-		*indexType, *enableCache, *enableGlobal, *enableRerank, *enableBM25)
+	fmt.Printf("Features: Index=%s, Cache=%v, Global=%v, Rerank=%v, BM25=%v, Chaos=%v, Telemetry=%v\n",
+		*indexType, *enableCache, *enableGlobal, *enableRerank, *enableBM25, *chaosEnabled, *enableTelemetry)
 	if *namespace != "" {
 		fmt.Printf("Namespace: %s (multi-tenancy enabled)\n", *namespace)
 	}
@@ -183,8 +183,10 @@ func runWorker(ctx context.Context, wg *sync.WaitGroup, peer, mode string, stats
 		}
 	}()
 
-	// Skip readiness check - searches will handle not-ready state
-	_ = c
+	// Probe readiness if client is initialized
+	if c != nil {
+		_, _ = checkReadiness(ctx, c)
+	}
 
 	for {
 		select {
@@ -230,10 +232,10 @@ func runWorker(ctx context.Context, wg *sync.WaitGroup, peer, mode string, stats
 	}
 }
 
-func performIngest(ctx context.Context, c *client.SmartClient) error {
-	schema := arrow.NewSchema([]arrow.Field{
+func buildSoakSchema(dimension int32) *arrow.Schema {
+	return arrow.NewSchema([]arrow.Field{
 		{Name: "id", Type: arrow.BinaryTypes.String},
-		{Name: "embedding", Type: arrow.FixedSizeListOf(int32(*dim), arrow.PrimitiveTypes.Float32)}, // #nosec G115
+		{Name: "embedding", Type: arrow.FixedSizeListOf(dimension, arrow.PrimitiveTypes.Float32)}, // #nosec G115
 		{Name: "category", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "score", Type: arrow.PrimitiveTypes.Float32},
 		{Name: "priority", Type: arrow.BinaryTypes.String},
@@ -243,6 +245,10 @@ func performIngest(ctx context.Context, c *client.SmartClient) error {
 		{Name: "created_at", Type: arrow.PrimitiveTypes.Int64},
 		{Name: "updated_at", Type: arrow.PrimitiveTypes.Int64},
 	}, nil)
+}
+
+func performIngest(ctx context.Context, c *client.SmartClient) error {
+	schema := buildSoakSchema(int32(*dim)) // #nosec G115
 
 	pool := memory.NewGoAllocator()
 	b := array.NewRecordBuilder(pool, schema)
@@ -458,9 +464,12 @@ func generateDateFilter() any {
 }
 
 func checkReadiness(ctx context.Context, c *client.SmartClient) (bool, error) {
+	if c == nil {
+		return false, fmt.Errorf("nil client")
+	}
 	action := &flight.Action{
 		Type: "check_readiness",
-		Body: []byte(fmt.Sprintf(`{"dataset": %q}`, *dataset)),
+		Body: fmt.Appendf(nil, `{"dataset": %q}`, *dataset),
 	}
 	stream, err := c.DoAction(ctx, action)
 	if err != nil {

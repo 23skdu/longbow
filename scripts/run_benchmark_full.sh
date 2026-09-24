@@ -6,7 +6,7 @@ set -e
 cd /home/rsd/REPOS/longbow
 DTYPES="int8,uint8,float16,float32,float64,complex64,complex128,turboquant4"
 DIMS="128"
-COUNTS="100000,250000"
+COUNTS="50000,100000,250000"
 SEARCH="dense,sparse,hybrid,graphrag,temporal"
 QUERIES=500
 WORKERS=8
@@ -69,6 +69,7 @@ run_config() {
         $disk_flag \
         --random-port-fallback \
         --label "$full_label" \
+        --report-md "data/perf_logs/perf_matrix_${mode}_${full_label}.md" \
         2>&1 | tee "data/perf_logs/run_${full_label}.log"
 
     echo ""

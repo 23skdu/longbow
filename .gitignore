@@ -59,10 +59,8 @@ race_report*.txt
 reports/
 test_results.txt
 gosec_report.json
-types.test
-store.test
-simd.out
-soak_test
+*.test
+/soak_test
 
 # Python and Environment
 __pycache__/

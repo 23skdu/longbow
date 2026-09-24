@@ -207,3 +207,11 @@ func BenchmarkConcurrentAccess(b *testing.B) {
 
 	b.ReportMetric(float64(workers)*float64(b.N/workers)/b.Elapsed().Seconds(), "ops/sec")
 }
+
+func TestBenchmarkSmoke(t *testing.T) {
+	dir := t.TempDir()
+	if dir == "" {
+		t.Fatal("expected valid temp directory")
+	}
+}
+

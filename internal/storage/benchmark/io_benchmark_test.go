@@ -134,3 +134,17 @@ func BenchmarkWALIOUring(b *testing.B) {
 		}
 	}
 }
+
+func TestStorageBenchmarkSmoke(t *testing.T) {
+	tmpDir := t.TempDir()
+	backend, err := storage.NewFSBackend(filepath.Join(tmpDir, "wal.log"))
+	if err != nil {
+		t.Fatalf("failed to create FS backend: %v", err)
+	}
+	defer backend.Close()
+
+	if err := writeWALEntries(backend, 5); err != nil {
+		t.Fatalf("failed to write WAL entries: %v", err)
+	}
+}
+

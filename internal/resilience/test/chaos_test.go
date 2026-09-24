@@ -6,6 +6,7 @@ import (
 	"math/rand"
 	"sync"
 	"sync/atomic"
+	"testing"
 	"time"
 
 	"github.com/23skdu/longbow/internal/resilience"
@@ -438,3 +439,46 @@ func (tr *TestResults) PrintSummary() {
 	fmt.Printf("Max Latency: %v\n", tr.MaxLatency)
 	fmt.Printf("Duration: %v\n", tr.EndTime.Sub(tr.StartTime))
 }
+
+func TestChaosInjectorSmoke(t *testing.T) {
+	injector := NewChaosInjector()
+	if injector == nil {
+		t.Fatal("NewChaosInjector returned nil")
+	}
+
+	injector.AddConfig(ChaosConfig{
+		Type:            ChaosLatency,
+		Probability:     1.0,
+		Delay:           10 * time.Millisecond,
+		TargetComponent: "testComponent",
+	})
+
+	// When stopped, should not inject
+	if should, _ := injector.ShouldInject("testComponent"); should {
+		t.Errorf("expected ShouldInject=false when injector is stopped")
+	}
+
+	// Start injector
+	injector.Start()
+	if should, cfg := injector.ShouldInject("testComponent"); !should || cfg.Type != ChaosLatency {
+		t.Errorf("expected ShouldInject=true when running")
+	}
+
+	injector.Stop()
+	injector.Reset()
+}
+
+func TestResilienceSuiteSmoke(t *testing.T) {
+	suite := NewResilienceTestSuite()
+	if suite == nil {
+		t.Fatal("NewResilienceTestSuite returned nil")
+	}
+
+	metrics := suite.GetMetrics()
+	if metrics == nil || metrics.TotalRequests != 0 {
+		t.Errorf("expected empty metrics, got %v", metrics)
+	}
+
+	suite.Reset()
+}
+

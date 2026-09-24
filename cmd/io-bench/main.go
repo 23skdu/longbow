@@ -533,7 +533,8 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 			var ticketBytes []byte
 			if strings.HasPrefix(mode, "temporal_") {
 				ts := time.Now().UnixNano()
-				if mode == "temporal_as_of" {
+				switch mode {
+				case "temporal_as_of":
 					req := map[string]interface{}{
 						"dataset":     dataset,
 						"search_type": "as_of",
@@ -541,7 +542,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 						"k":           10,
 					}
 					ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
-				} else if mode == "temporal_range" {
+				case "temporal_range":
 					req := map[string]interface{}{
 						"dataset":     dataset,
 						"search_type": "range",
@@ -550,7 +551,7 @@ func runVectorBenchmark(uri string, dim int, dtype string, _, scale, queries int
 						"k":           10,
 					}
 					ticketBytes, _ = json.Marshal(map[string]interface{}{"temporal_search": req})
-				} else if mode == "temporal_window" {
+				case "temporal_window":
 					req := map[string]interface{}{
 						"dataset":     dataset,
 						"search_type": "sliding_window",

@@ -133,8 +133,8 @@ func (h *ArrowHNSW) insertInternal(id uint32, vec any, level int, skipSet bool, 
 		dims = int(h.dims.Load())
 		if dims == 0 {
 			inputDims := VectorLength(vec)
-			if inputDims > 0 {
-				h.dims.Store(int32(inputDims))
+			if inputDims > 0 && inputDims <= math.MaxInt32 {
+				h.dims.Store(int32(inputDims)) // #nosec G115 -- bounded above
 				h.config.Dims = inputDims
 				dims = inputDims
 			}

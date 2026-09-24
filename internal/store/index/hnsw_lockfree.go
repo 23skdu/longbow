@@ -361,6 +361,7 @@ func (h *LockFreeHNSW) Add(id types.VectorID, vec []float32) {
 }
 
 func (h *LockFreeHNSW) randomLevel() int {
+	// #nosec G404 -- HNSW level selection does not require cryptographic randomness.
 	u := rand.Float64()
 	if u == 0 {
 		u = 1e-7

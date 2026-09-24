@@ -729,12 +729,14 @@ func (dvs *DiskVectorStore) fetchBlockData(bIdx int) ([]byte, error) {
 }
 
 // isSubsliceOf reports whether a shares backing storage with whole.
+//
+// #nosec G103 -- pointer arithmetic is confined to this range check; no dereference.
 func isSubsliceOf(a, whole []byte) bool {
 	if len(a) == 0 || cap(a) == 0 {
 		return false
 	}
-	a0 := uintptr(unsafe.Pointer(unsafe.SliceData(a)))
-	w0 := uintptr(unsafe.Pointer(unsafe.SliceData(whole)))
+	a0 := uintptr(unsafe.Pointer(unsafe.SliceData(a)))     // #nosec G103
+	w0 := uintptr(unsafe.Pointer(unsafe.SliceData(whole))) // #nosec G103
 	w1 := w0 + uintptr(cap(whole))
 	return a0 >= w0 && a0 < w1
 }

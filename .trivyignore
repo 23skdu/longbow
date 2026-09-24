@@ -1,0 +1,19 @@
+# Accepted risks — documented in docs/nextsteps.md Part 9 and docs/deploy.md.
+#
+# hamba/avro/v2 v2.31.0 (indirect via pulsar-client-go and temporal avro.Freeze):
+#   GO-2026-5046 / CVE-2026-46385  — CPU exhaustion in Avro decoder (Fixed in: N/A)
+#   GO-2026-5047 / CVE-2026-46384  — Integer overflow in Avro decoder (Fixed in: N/A)
+#   GO-2026-5048 / GHSA-mx64-mj3q-7prj — Unbounded map alloc DoS (Fixed in: N/A)
+#
+# golang.org/x/crypto openpgp (module required, not called by our code):
+#   GO-2026-5932 — openpgp unmaintained / unsafe by design (Fixed in: N/A)
+#
+# CVE / GHSA aliases for trivy:
+CVE-2026-46385
+CVE-2026-46384
+GHSA-mx64-mj3q-7prj
+# GO IDs (trivy also surfaces these from the Go vuln DB):
+GO-2026-5046
+GO-2026-5047
+GO-2026-5048
+GO-2026-5932

@@ -28,8 +28,8 @@ import (
 	"github.com/23skdu/longbow/internal/health"
 	"github.com/23skdu/longbow/internal/limiter"
 	"github.com/23skdu/longbow/internal/logging"
-	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mathutil"
+	lbmem "github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/mesh"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/middleware"
@@ -93,10 +93,10 @@ type Config struct {
 	GossipDNSRecord     string        `envconfig:"GOSSIP_DNS_RECORD" default:""`
 
 	// Storage Configuration
-	StorageAsyncFsync     bool `envconfig:"STORAGE_ASYNC_FSYNC" default:"true"`
-	StorageDoPutBatchSize int  `envconfig:"STORAGE_DOPUT_BATCH_SIZE" default:"100"`
-	StorageUseIOUring     bool `envconfig:"STORAGE_USE_IOURING" default:"false"`
-	StorageUseDirectIO    bool `envconfig:"STORAGE_USE_DIRECT_IO" default:"false"`
+	StorageAsyncFsync     bool    `envconfig:"STORAGE_ASYNC_FSYNC" default:"true"`
+	StorageDoPutBatchSize int     `envconfig:"STORAGE_DOPUT_BATCH_SIZE" default:"100"`
+	StorageUseIOUring     bool    `envconfig:"STORAGE_USE_IOURING" default:"false"`
+	StorageUseDirectIO    bool    `envconfig:"STORAGE_USE_DIRECT_IO" default:"false"`
 	AutoSpillToDisk       bool    `envconfig:"AUTO_SPILL_DISK" default:"true"`
 	SpillThresholdRatio   float64 `envconfig:"SPILL_THRESHOLD_RATIO" default:"0.70"`
 	AutoQuantize          bool    `envconfig:"AUTO_QUANTIZE" default:"false"`
@@ -400,24 +400,37 @@ func run() error {
 	// when a SIMD implementation was detected.
 	tensor.InitMathDispatch(simd.GetImplementation() != "generic")
 
-	// Part 7: Support LONGBOW_FLOAT64_EXCLUDE_EMLGO env var to disable emlgo for float64 batch ops
-	if os.Getenv("LONGBOW_FLOAT64_EXCLUDE_EMLGO") == "true" {
+	// Part 7: LONGBOW_FLOAT64_EXCLUDE_EMLGO disables emlgo for float64 batch ops.
+	// Default is excluded (true) when unset: emlgo float64 at 500k added +47%
+	// memory (10632 vs 7172 MB) with no dense-QPS win (nextsteps P1 #5).
+	// Accepts true/1/yes (exclude) and false/0/no (include).
+	f64ExcludeVal := strings.ToLower(strings.TrimSpace(os.Getenv("LONGBOW_FLOAT64_EXCLUDE_EMLGO")))
+	switch f64ExcludeVal {
+	case "false", "0", "no", "off":
+		mathutil.SetFloat64Excluded(false)
+		logger.Info().Msg("emlgo enabled for float64 batch operations (LONGBOW_FLOAT64_EXCLUDE_EMLGO=false)")
+	default:
+		// unset, true, 1, yes, or any other value → exclude (safe default)
 		mathutil.SetFloat64Excluded(true)
-		logger.Info().Msg("emlgo excluded for float64 batch operations (LONGBOW_FLOAT64_EXCLUDE_EMLGO=true)")
+		if f64ExcludeVal != "" {
+			logger.Info().Str("value", f64ExcludeVal).Msg("emlgo excluded for float64 batch operations")
+		}
 	}
 
-	// Part 10: Support LONGBOW_MATH_DISPATCH env var for conditional dispatch routing
-	// Values: auto (default), emlgo, standard
-	if dispatchVal, ok := os.LookupEnv("LONGBOW_MATH_DISPATCH"); ok {
-		mode := tensor.ParseDispatchMode(dispatchVal)
-		switch mode {
-		case tensor.DispatchEML:
-			logger.Info().Str("mode", dispatchVal).Msg("math dispatch: forced emlgo for all operations")
-		case tensor.DispatchStandard:
-			logger.Info().Str("mode", dispatchVal).Msg("math dispatch: forced standard math for all operations")
-		case tensor.DispatchAuto:
-			logger.Info().Msg("math dispatch: auto routing (emlgo for complex/TQ>=50k, standard otherwise)")
-		}
+	// Part 10: LONGBOW_MATH_DISPATCH conditional dispatch routing.
+	// Values: auto (default), emlgo, standard. ApplyDispatchConfig reads the
+	// env var and calls SetDispatchMode → SetMathImpl/SetBackend so the mode
+	// actually controls the math backend (previously it was log-only).
+	tensor.ApplyDispatchConfig()
+	switch tensor.GetDispatchMode() {
+	case tensor.DispatchEML:
+		logger.Info().Msg("math dispatch: forced emlgo for all operations")
+	case tensor.DispatchStandard:
+		logger.Info().Msg("math dispatch: forced standard math for all operations")
+	case tensor.DispatchAuto:
+		logger.Info().
+			Int("min_eml_vectors", tensor.MinEMLVectorCount).
+			Msg("math dispatch: auto routing (emlgo for complex/TQ>=50k, standard otherwise)")
 	}
 
 	// Configure GPU acceleration

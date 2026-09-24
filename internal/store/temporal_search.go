@@ -14,6 +14,7 @@ import (
 	"time"
 
 	gputypes "github.com/23skdu/longbow/internal/gpu/types"
+	"github.com/23skdu/longbow/internal/mathutil"
 	"github.com/23skdu/longbow/internal/memory"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/simd"
@@ -102,15 +103,15 @@ type TemporalIndex struct {
 	dimension    int
 	shards       [TemporalShards]temporalShard
 	temporalTree atomic.Pointer[TemporalTree]
-	segmentTree atomic.Pointer[SegmentTree]
+	segmentTree  atomic.Pointer[SegmentTree]
 	history      *VersionHistory
 	cache        *TemporalResultCache
 	pointCount   atomic.Int64
 	gpuIndex     atomic.Value // holds gputypes.Index
 	ds           *Dataset     // parent dataset back-pointer
 
-	ingestCh     chan temporalIngestTask
-	ingestWg     sync.WaitGroup
+	ingestCh    chan temporalIngestTask
+	ingestWg    sync.WaitGroup
 	asyncIngest atomic.Bool
 }
 
@@ -1144,6 +1145,10 @@ func (ti *TemporalIndex) Update(id uint64, vector []float32, timestamp int64, me
 
 // SearchAsOf performs a vector search considering only data available at a specific timestamp.
 func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int) ([]lbtypes.SearchResult, error) {
+	// Temporal path regresses -16-38% under emlgo (nextsteps P1 #3): pin standard math.
+	restoreStd := mathutil.PushStandard()
+	defer restoreStd()
+
 	cacheKey := fmt.Sprintf("asof:%d:%d", timestamp, k)
 	if results, ok := ti.cache.Get(cacheKey); ok {
 		return results, nil
@@ -1158,10 +1163,10 @@ func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int)
 		if dim > 0 {
 			queryVec := make([]float32, dim)
 			options := lbtypes.SearchOptions{}
-			
+
 			var results []lbtypes.SearchResult
 			var err error
-			
+
 			segmentTree := ti.segmentTree.Load()
 			if segmentTree != nil {
 				bm := segmentTree.QueryRange(0, timestamp)
@@ -1292,6 +1297,10 @@ func (ti *TemporalIndex) Prewarm(ctx context.Context) error {
 
 // SearchRange performs a vector search over data within a specific timestamp range.
 func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int64, k int) ([]lbtypes.SearchResult, error) {
+	// Temporal path regresses -16-38% under emlgo (nextsteps P1 #3): pin standard math.
+	restoreStd := mathutil.PushStandard()
+	defer restoreStd()
+
 	vIdx := ti.GetVectorIndex()
 	if vIdx != nil {
 		dim := ti.dimension
@@ -1301,10 +1310,10 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 		if dim > 0 {
 			queryVec := make([]float32, dim)
 			options := lbtypes.SearchOptions{}
-			
+
 			var results []lbtypes.SearchResult
 			var err error
-			
+
 			segmentTree := ti.segmentTree.Load()
 			if segmentTree != nil {
 				bm := segmentTree.QueryRange(startTime, endTime)
@@ -1399,6 +1408,10 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 
 // SearchSlidingWindow performs a search over the last n vector updates.
 func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int, k int) ([]lbtypes.SearchResult, error) {
+	// Temporal path regresses -16-38% under emlgo (nextsteps P1 #3): pin standard math.
+	restoreStd := mathutil.PushStandard()
+	defer restoreStd()
+
 	tree := ti.temporalTree.Load()
 	if tree == nil {
 		return []lbtypes.SearchResult{}, nil
@@ -1478,6 +1491,10 @@ func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int
 
 // SearchSlidingWindowByTime performs a search over vector updates from the last duration.
 func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration time.Duration, k int) ([]lbtypes.SearchResult, error) {
+	// Temporal path regresses -16-38% under emlgo (nextsteps P1 #3): pin standard math.
+	restoreStd := mathutil.PushStandard()
+	defer restoreStd()
+
 	vIdx := ti.GetVectorIndex()
 	now := time.Now().UnixNano()
 	start := now - duration.Nanoseconds()

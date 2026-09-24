@@ -95,3 +95,48 @@ func TestResolveBackend_AutoMode_RoutingRules(t *testing.T) {
 	assert.True(t, got == mathutil.BackendStandard || got == mathutil.BackendEML,
 		"eml mode returns standard (no emlgo tag) or emlgo (with tag)")
 }
+
+// TestResolveBackend_AutoMode_SizeThresholds verifies empirical size routing
+// (docs/emlgo.md, nextsteps P0 #1/#2, P2 #7).
+func TestResolveBackend_AutoMode_SizeThresholds(t *testing.T) {
+	origMode := dispatchMode
+	defer func() { dispatchMode = origMode }()
+
+	// Probe: forced DispatchEML returns EML only on emlgo builds (stub always standard).
+	dispatchMode = DispatchEML
+	emlgoTagged := ResolveBackend("float32", 1) == mathutil.BackendEML
+
+	dispatchMode = DispatchAuto
+	cases := []struct {
+		name     string
+		typeName string
+		count    int
+		wantEML  bool
+	}{
+		{"below_threshold_std", "complex128", MinEMLVectorCount - 1, false},
+		{"at_threshold_complex128", "complex128", MinEMLVectorCount, true},
+		{"complex64_mid_eml", "complex64", 100000, true},
+		{"complex64_250k_eml", "complex64", 250000, true},
+		{"complex64_500k_std", "complex64", 500001, false},
+		{"complex128_500k_std", "complex128", 500000, false},
+		{"float64_always_std", "float64", 500000, false},
+		{"float32_always_std", "float32", 500000, false},
+		{"turboquant_eml", "turboquant", 50000, true},
+		{"int8_always_std", "int8", 500000, false},
+	}
+
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			got := ResolveBackend(c.typeName, c.count)
+			if !emlgoTagged {
+				assert.Equal(t, mathutil.BackendStandard, got, "stub build always standard")
+				return
+			}
+			if c.wantEML {
+				assert.Equal(t, mathutil.BackendEML, got, "%s n=%d", c.typeName, c.count)
+			} else {
+				assert.Equal(t, mathutil.BackendStandard, got, "%s n=%d", c.typeName, c.count)
+			}
+		})
+	}
+}

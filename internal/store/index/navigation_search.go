@@ -9,14 +9,32 @@ import (
 	"time"
 	"unsafe"
 
+	"github.com/23skdu/longbow/internal/mathutil"
 	"github.com/23skdu/longbow/internal/metrics"
 	"github.com/23skdu/longbow/internal/pq"
 	"github.com/23skdu/longbow/internal/query"
 	"github.com/23skdu/longbow/internal/store/types"
+	"github.com/23skdu/longbow/internal/tensor"
 	"github.com/RoaringBitmap/roaring/v2"
 	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
+
+// applyIndexDispatch pins the math backend for one search using ResolveBackend
+// rules (dtype + node count). Returns a restore func. Skipped while a
+// PushStandard scope is active (temporal search, nextsteps P1 #3).
+func applyIndexDispatch(typeName string, nodeCount int) (restore func()) {
+	if mathutil.IsForceStandard() {
+		return func() {}
+	}
+	want := tensor.ResolveBackend(typeName, nodeCount)
+	prev := mathutil.GetBackend()
+	if want == prev {
+		return func() {}
+	}
+	mathutil.SetBackend(want)
+	return func() { mathutil.SetBackend(prev) }
+}
 
 func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k int, filter *roaring.Bitmap, options any) ([]types.SearchResult, error) {
 	if err := ctx.Err(); err != nil {
@@ -67,6 +85,11 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 	if meta.NodeCount == 0 {
 		return nil, nil
 	}
+
+	// Per-dtype auto routing (nextsteps P0 #1/#2, P1 #5, P2 #6/#7): pin backend
+	// for the duration of this search based on ResolveBackend rules.
+	restoreDispatch := applyIndexDispatch(h.config.DataType.String(), int(meta.NodeCount))
+	defer restoreDispatch()
 
 	// Automatic GPU dispatch for supported types
 	if h.gpuEnabled && h.gpuIndex != nil && meta.NodeCount >= 1024 {
@@ -780,7 +803,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				for i := 0; i < logDims; i++ {
 					searchCtx.queryC64[i] = complex(q[2*i], q[2*i+1])
 				}
-				return &complex64Computer{data: data, q: searchCtx.queryC64, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen}
+				return &complex64Computer{
+					data: data, q: searchCtx.queryC64, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen,
+					sctx: searchCtx,
+				}
 			}
 			if data.Type == types.VectorTypeComplex128 {
 				physDims := len(q)
@@ -796,7 +822,11 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				for _, v := range searchCtx.queryC128 {
 					sum += real(v)*real(v) + imag(v)*imag(v)
 				}
-				return &complex128Computer{data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen, queryMag: math.Sqrt(sum)}
+				// Reuse pooled searchCtx batch buffers (nextsteps P0 #2 P99/GC).
+				return &complex128Computer{
+					data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen, queryMag: math.Sqrt(sum),
+					sctx: searchCtx,
+				}
 			}
 		}
 		comp := &float32Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, squared: squared, maxGen: maxGen}
@@ -893,7 +923,10 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				for _, v := range searchCtx.queryC128 {
 					sum += real(v)*real(v) + imag(v)*imag(v)
 				}
-				return &complex128Computer{data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen, queryMag: math.Sqrt(sum)}
+				return &complex128Computer{
+					data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen, queryMag: math.Sqrt(sum),
+					sctx: searchCtx,
+				}
 			}
 			qC128 := make([]complex128, logDims)
 			for i := 0; i < logDims; i++ {
@@ -927,7 +960,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			}
 			searchCtx.queryC64 = searchCtx.queryC64[:len(q)]
 			copy(searchCtx.queryC64, q)
-			return &complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q), h: h, diskGraph: dg, maxGen: searchCtx.MaxGeneration}
+			return &complex64Computer{data: data, q: searchCtx.queryC64, dims: len(q), h: h, diskGraph: dg, maxGen: searchCtx.MaxGeneration, sctx: searchCtx}
 		}
 		dg = h.diskGraph.Load()
 		return &complex64Computer{data: data, q: q, dims: len(q), h: h, diskGraph: dg, maxGen: math.MaxUint64}
@@ -944,7 +977,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 			for _, v := range searchCtx.queryC128 {
 				sum += real(v)*real(v) + imag(v)*imag(v)
 			}
-			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: dg, maxGen: searchCtx.MaxGeneration, queryMag: math.Sqrt(sum)}
+			return &complex128Computer{data: data, q: searchCtx.queryC128, dims: len(q), h: h, diskGraph: dg, maxGen: searchCtx.MaxGeneration, queryMag: math.Sqrt(sum), sctx: searchCtx}
 		}
 		dg = h.diskGraph.Load()
 		var sum float64

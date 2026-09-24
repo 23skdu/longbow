@@ -12,13 +12,14 @@ import (
 
 // complex64Computer handles Complex64 vectors
 type complex64Computer struct {
-	data       *types.GraphData
-	q          []complex64
-	dims       int
-	h          *ArrowHNSW
-	diskGraph  *DiskGraph
-	maxGen     uint64
-	batchVecs  [][]complex64
+	data         *types.GraphData
+	q            []complex64
+	dims         int
+	h            *ArrowHNSW
+	diskGraph    *DiskGraph
+	maxGen       uint64
+	sctx         *ArrowSearchContext // pooled batch buffers when non-nil
+	batchVecs    [][]complex64
 	batchVecsF32 [][]float32
 }
 
@@ -91,15 +92,27 @@ func (c *complex64Computer) ComputeBatch(ids []uint32, dst []float32) ([]float32
 		dst = dst[:len(ids)]
 	}
 
-	if cap(c.batchVecs) < len(ids) {
-		c.batchVecs = make([][]complex64, len(ids))
-	}
-	c.batchVecs = c.batchVecs[:len(ids)]
+	// Prefer pooled searchCtx buffers (retain capacity across searches, P0 #1/#2).
+	if c.sctx != nil {
+		if cap(c.sctx.batchVecsComplex64) < len(ids) {
+			c.sctx.batchVecsComplex64 = make([][]complex64, len(ids))
+		}
+		c.batchVecs = c.sctx.batchVecsComplex64[:len(ids)]
+		if cap(c.sctx.batchVecsFloat32) < len(ids) {
+			c.sctx.batchVecsFloat32 = make([][]float32, len(ids))
+		}
+		c.batchVecsF32 = c.sctx.batchVecsFloat32[:len(ids)]
+	} else {
+		if cap(c.batchVecs) < len(ids) {
+			c.batchVecs = make([][]complex64, len(ids))
+		}
+		c.batchVecs = c.batchVecs[:len(ids)]
 
-	if cap(c.batchVecsF32) < len(ids) {
-		c.batchVecsF32 = make([][]float32, len(ids))
+		if cap(c.batchVecsF32) < len(ids) {
+			c.batchVecsF32 = make([][]float32, len(ids))
+		}
+		c.batchVecsF32 = c.batchVecsF32[:len(ids)]
 	}
-	c.batchVecsF32 = c.batchVecsF32[:len(ids)]
 
 	var lastCID int = -1
 	var lastChunk []complex64
@@ -151,16 +164,17 @@ func (c *complex64Computer) Prefetch(id uint32) {
 
 // complex128Computer handles Complex128 vectors
 type complex128Computer struct {
-	data        *types.GraphData
-	q           []complex128
-	dims        int
-	h           *ArrowHNSW
-	diskGraph   *DiskGraph
-	maxGen      uint64
-	batchVecs   [][]complex128
+	data         *types.GraphData
+	q            []complex128
+	dims         int
+	h            *ArrowHNSW
+	diskGraph    *DiskGraph
+	maxGen       uint64
+	sctx         *ArrowSearchContext // pooled batch buffers when non-nil
+	batchVecs    [][]complex128
 	batchVecsF64 [][]float64
-	queryMag    float64
-	threshold   float32
+	queryMag     float64
+	threshold    float32
 }
 
 func (c *complex128Computer) Compute(ids []uint32, dists []float32) error {
@@ -247,15 +261,27 @@ func (c *complex128Computer) ComputeBatch(ids []uint32, dst []float32) ([]float3
 		dst = dst[:len(ids)]
 	}
 
-	if cap(c.batchVecs) < len(ids) {
-		c.batchVecs = make([][]complex128, len(ids))
-	}
-	c.batchVecs = c.batchVecs[:len(ids)]
+	// Prefer pooled searchCtx buffers (retain capacity across searches, P0 #2 P99).
+	if c.sctx != nil {
+		if cap(c.sctx.batchVecsComplex128) < len(ids) {
+			c.sctx.batchVecsComplex128 = make([][]complex128, len(ids))
+		}
+		c.batchVecs = c.sctx.batchVecsComplex128[:len(ids)]
+		if cap(c.sctx.batchVecsFloat64) < len(ids) {
+			c.sctx.batchVecsFloat64 = make([][]float64, len(ids))
+		}
+		c.batchVecsF64 = c.sctx.batchVecsFloat64[:len(ids)]
+	} else {
+		if cap(c.batchVecs) < len(ids) {
+			c.batchVecs = make([][]complex128, len(ids))
+		}
+		c.batchVecs = c.batchVecs[:len(ids)]
 
-	if cap(c.batchVecsF64) < len(ids) {
-		c.batchVecsF64 = make([][]float64, len(ids))
+		if cap(c.batchVecsF64) < len(ids) {
+			c.batchVecsF64 = make([][]float64, len(ids))
+		}
+		c.batchVecsF64 = c.batchVecsF64[:len(ids)]
 	}
-	c.batchVecsF64 = c.batchVecsF64[:len(ids)]
 
 	// Track which entries need distance computation vs pruning
 	pruned := 0

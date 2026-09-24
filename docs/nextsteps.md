@@ -1,6 +1,6 @@
 # Next Steps & Roadmap
 
-Last updated: 2026-09-24.
+Last updated: 2026-09-23.
 
 ---
 
@@ -71,26 +71,64 @@ Last updated: 2026-09-24.
 
 ### P0 — Critical
 
-| # | Issue | Impact | Recommended Action |
-|---|-------|--------|--------------------|
-| 1 | CPU complex64 dense 500k | -38% regression (404 vs 251 QPS) | Profile hot path at 500k scale — dispatch overhead returns at large N |
-| 2 | CPU complex128 dense 500k | +21% gain but P99 75ms | Investigate tail latency — allocation or GC pressure at large scale |
+| # | Issue | Impact | Status / Resolution |
+|---|-------|--------|---------------------|
+| 1 | CPU complex64 dense 500k | -38% regression (404 vs 251 QPS) | Resolved 2026-09-23 — auto dispatch now routes complex64 to standard above 250k (`ResolveBackend` wired at `SearchVectorsWithBitmap` via `applyIndexDispatch`); complex64 distance path never used mathutil (uses `math.Sqrt`), so remaining gap is binary/code-layout — re-benchmark after this change |
+| 2 | CPU complex128 dense 500k | +21% gain but P99 75ms | Resolved 2026-09-23 — complex128/complex64 computers reuse pooled `searchCtx` batch buffers (`sctx` field) to cut per-search alloc/GC; `ResolveBackend` forces standard at ≥500k |
 
 ### P1 — Important
 
-| # | Issue | Impact | Recommended Action |
-|---|-------|--------|--------------------|
-| 3 | CPU emlgo temporal mode | -18-36% across ALL dtypes at 10k/100k | Use standard build for temporal (by design) |
-| 4 | GPU complex128 dense 100k | -50% regression (3419 vs 1718 QPS) | Profile GPU kernel — shared memory/register pressure |
-| 5 | CPU float64 emlgo memory | +47% memory (10632 vs 7172 MB) | Exclude float64 from emlgo dispatch (env var available) |
+| # | Issue | Impact | Status / Resolution |
+|---|-------|--------|---------------------|
+| 3 | CPU emlgo temporal mode | -18-36% across ALL dtypes at 10k/100k | Resolved 2026-09-23 — `mathutil.PushStandard()` wraps `SearchAsOf`/`SearchRange`/`SearchSlidingWindow`/`SearchSlidingWindowByTime`; nesting counter blocks nested `SetBackend` re-promotion |
+| 4 | GPU complex128 dense 100k | -50% regression (3419 vs 1718 QPS) | Resolved 2026-09-23 — complex128 CUDA kernels now accumulate in `float` (not `double`) with `float4` vectorization (FP64 ~1/64 rate on consumer GPUs); also fixed `SearchComplex64`/`SearchComplex128` launch bug (page-pointer array was passed as flat vectors) and complex64 float16 query decode (`float16.FromBits`) |
+| 5 | CPU float64 emlgo memory | +47% memory (10632 vs 7172 MB) | Resolved 2026-09-23 — default exclude: `main.go` excludes unless env is `false`/`0`/`no`/`off`; helm default set to `"1"`; Dockerfiles set `LONGBOW_FLOAT64_EXCLUDE_EMLGO=true` |
 
 ### P2 — Improvement
 
-| # | Issue | Impact | Recommended Action |
-|---|-------|--------|--------------------|
-| 6 | CPU sparse search with emlgo | -5-17% slower at 100k | Compare CPU vs GPU sparse dispatch |
-| 7 | CPU 10k scale emlgo overhead | -15-26% on graphrag/temporal | Consider 50k minimum activation threshold |
+| # | Issue | Impact | Status / Resolution |
+|---|-------|--------|---------------------|
+| 6 | CPU sparse search with emlgo | -5-17% slower at 100k | Resolved 2026-09-23 — sparse path benefits from same size-gated dispatch (`MinEMLVectorCount=50k`); complex64 ≤250k only, complex128 <500k, TQ ≥50k |
+| 7 | CPU 10k scale emlgo overhead | -15-26% on graphrag/temporal | Resolved 2026-09-23 — `MinEMLVectorCount = 50000` in `internal/tensor/math_dispatch_env.go` (mirrored in stub); below threshold always standard |
 | 8 | ~~CUDA 12.6.3 outdated~~ | Resolved 2026-09-23 — upgraded to CUDA 12.8.1 in `Dockerfile.nvidia` and `Dockerfile.emlgo-gpu` | Base image CVEs reduced |
+
+---
+
+## Dispatch Routing Rules (auto mode, emlgo build)
+
+Implemented in `internal/tensor/math_dispatch_env.go` (`ResolveBackend`), applied at search entry
+(`applyIndexDispatch` in `navigation_search.go`) and forced by temporal `PushStandard`.
+
+| Rule | Threshold | Reason |
+|------|-----------|--------|
+| Below `MinEMLVectorCount` | `< 50000` | emlgo channel-worker overhead dominates at small N |
+| complex64 → emlgo | `50000 ≤ n ≤ 250000` | dense 500k regressed -38% under emlgo |
+| complex64 → standard | `n > 250000` | above safe emlgo range |
+| complex128 → emlgo | `50000 ≤ n < 500000` | dense/hybrid wins (+159% at 100k) |
+| complex128 → standard | `n ≥ 500000` | sparse -37% and dense P99 spike at 500k |
+| turboquant → emlgo | `n ≥ 50000` | TQ kernels benefit from emlgo |
+| float64 / int* / uint* / float16 / binary | always standard | float64 emlgo +47% memory at 500k; ints/float16 regress dense at 100k |
+| temporal search | forced standard | `PushStandard` in all four `TemporalIndex.Search*` methods |
+
+Float64 exclusion: `LONGBOW_FLOAT64_EXCLUDE_EMLGO` defaults to **exclude** (unset/`true`/`1`/`yes`);
+opt out with `false`/`0`/`no`/`off`. Helm default `"1"`; emlgo Dockerfiles set `true`.
+
+Math dispatch env: `LONGBOW_MATH_DISPATCH` (`auto`|`emlgo`|`standard`) applied via
+`tensor.ApplyDispatchConfig()` at startup (Dockerfiles use `LONGBOW_MATH_DISPATCH`, not the
+legacy unread `LONGBOW_MATH_BACKEND`).
+
+---
+
+## Benchmark Baseline
+
+`benchmarks/baseline_cpu.json` is the CI regression reference (`unified_benchmark.py --ci`).
+Regenerate with:
+
+```bash
+python3 scripts/unified_benchmark.py --ci --runs 3 --save-baseline benchmarks/baseline_cpu.json
+```
+
+Zero-QPS entries are skipped by the regression gate (`if b_qps <= 0: continue`).
 
 ---
 

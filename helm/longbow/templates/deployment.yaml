@@ -176,7 +176,7 @@ spec:
               value: {{ .Values.env.LONGBOW_MAX_M0 | default "32" | quote }}
             # Conditional Math Dispatch (EMLGo routing)
             - name: LONGBOW_FLOAT64_EXCLUDE_EMLGO
-              value: {{ .Values.env.LONGBOW_FLOAT64_EXCLUDE_EMLGO | default "0" | quote }}
+              value: {{ .Values.env.LONGBOW_FLOAT64_EXCLUDE_EMLGO | default "1" | quote }}
             - name: LONGBOW_MATH_DISPATCH
               value: {{ .Values.env.LONGBOW_MATH_DISPATCH | default "" | quote }}
             # GPU Configuration

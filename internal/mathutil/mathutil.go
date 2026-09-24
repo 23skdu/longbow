@@ -23,6 +23,14 @@ var currentBackend int32 = int32(BackendStandard)
 func SetFloat64Excluded(excluded bool) {}
 func IsFloat64Excluded() bool          { return false }
 
+// PushStandard is a no-op without the emlgo build tag (backend is always standard).
+func PushStandard() (restore func()) {
+	return func() {}
+}
+
+// IsForceStandard is always false without the emlgo build tag.
+func IsForceStandard() bool { return false }
+
 // SetBackend changes the active math backend globally.
 // Without the "emlgo" build tag, switching to BackendEML is a no-op.
 func SetBackend(b Backend) {
@@ -46,20 +54,20 @@ func IsEML() bool {
 // Scalar Operations (standard math)
 // =============================================================================
 
-func Sqrt(x float64) float64             { return math.Sqrt(x) }
-func FMA(x, y, z float64) float64        { return math.FMA(x, y, z) }
-func Exp(x float64) float64              { return math.Exp(x) }
-func Log(x float64) float64              { return math.Log(x) }
-func Sin(x float64) float64              { return math.Sin(x) }
-func Cos(x float64) float64              { return math.Cos(x) }
-func Tan(x float64) float64              { return math.Tan(x) }
-func Pow(x, y float64) float64           { return math.Pow(x, y) }
-func Sinh(x float64) float64             { return math.Sinh(x) }
-func Cosh(x float64) float64             { return math.Cosh(x) }
-func Tanh(x float64) float64             { return math.Tanh(x) }
-func Asin(x float64) float64             { return math.Asin(x) }
-func Acos(x float64) float64             { return math.Acos(x) }
-func Atan(x float64) float64             { return math.Atan(x) }
+func Sqrt(x float64) float64      { return math.Sqrt(x) }
+func FMA(x, y, z float64) float64 { return math.FMA(x, y, z) }
+func Exp(x float64) float64       { return math.Exp(x) }
+func Log(x float64) float64       { return math.Log(x) }
+func Sin(x float64) float64       { return math.Sin(x) }
+func Cos(x float64) float64       { return math.Cos(x) }
+func Tan(x float64) float64       { return math.Tan(x) }
+func Pow(x, y float64) float64    { return math.Pow(x, y) }
+func Sinh(x float64) float64      { return math.Sinh(x) }
+func Cosh(x float64) float64      { return math.Cosh(x) }
+func Tanh(x float64) float64      { return math.Tanh(x) }
+func Asin(x float64) float64      { return math.Asin(x) }
+func Acos(x float64) float64      { return math.Acos(x) }
+func Atan(x float64) float64      { return math.Atan(x) }
 
 // =============================================================================
 // Vector / Batch Operations (Float64) — standard math loops

@@ -124,10 +124,10 @@ void cuda_get_device_info(CUDAIndexHandle* handle, char* name, int maxLen, uint6
     }
 }
 
-int cuda_train_kmeans(CUDAIndexHandle* handle, 
-    float* d_vectors, float* d_centroids, float* d_sumCentroids, 
+int cuda_train_kmeans(CUDAIndexHandle* handle,
+    float* d_vectors, float* d_centroids, float* d_sumCentroids,
     uint32_t* d_assignments, uint32_t* d_counts,
-    float* h_vectors, float* h_centroids, 
+    float* h_vectors, float* h_centroids,
     int numVectors, int dim, int k, int iterations) {
     if (!handle) return -1;
 
@@ -195,16 +195,16 @@ int cuda_update_graph(CUDAIndexHandle* handle, uint32_t* h_offsets, uint32_t* h_
     return 0;
 }
 
-int cuda_prune_neighbors(CUDAIndexHandle* handle, 
+int cuda_prune_neighbors(CUDAIndexHandle* handle,
     uint32_t* d_candIds, float* d_candDists, uint32_t* d_selIds, uint32_t* d_selCount,
     const float** d_pagePtrs, const int* d_pageStarts,
     uint32_t* h_selectedIds, uint32_t* h_selectedCount,
-    int maxNeighbors, int numCandidates, int dim, 
+    int maxNeighbors, int numCandidates, int dim,
     int total_count, int num_pages, bool extended) {
     if (!handle) return -1;
 
-    launch_hnsw_prune_neighbors_kernel(d_candIds, d_candDists, d_selIds, d_selCount, 
-        d_pagePtrs, d_pageStarts, maxNeighbors, numCandidates, dim, total_count, num_pages, 
+    launch_hnsw_prune_neighbors_kernel(d_candIds, d_candDists, d_selIds, d_selCount,
+        d_pagePtrs, d_pageStarts, maxNeighbors, numCandidates, dim, total_count, num_pages,
         extended, handle->streams[0]);
 
     uint32_t h_selCount;
@@ -1270,8 +1270,8 @@ func (idx *CUDAIndex) SearchTurboQuant(vector []float32, k int, bitsPerAngle int
 
 	// Collect resident pages (same pattern as FP32 Search)
 	type pageEntry struct {
-		ptr    unsafe.Pointer
-		nvecs  int
+		ptr   unsafe.Pointer
+		nvecs int
 	}
 	pages := make([]pageEntry, 0, numChunks)
 	var pinnedPages []*memory.PageInfo
@@ -1475,7 +1475,7 @@ func (idx *CUDAIndex) SearchFloat16(vector []uint16, k int) ([]int64, []float32,
 	// Convert float16 query to float32 and use pager-based search
 	f32Vec := make([]float32, len(vector))
 	for i, v := range vector {
-		f32Vec[i] = float16.New(float32(math.Float32frombits(uint32(v)))).Float32()
+		f32Vec[i] = float16.FromBits(v).Float32()
 	}
 	return idx.Search(f32Vec, k)
 }
@@ -1488,12 +1488,11 @@ func (idx *CUDAIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float3
 		return nil, nil, fmt.Errorf("index is closed")
 	}
 
-	// complex64 is stored as interleaved uint16 (float16) pairs [re, im].
-	// Convert each uint16 to float32 for the GPU kernel.
+	// complex64 queries arrive as interleaved float16 bit patterns [re, im].
+	// Stored vectors are float32 (Add); decode fp16 bits → float32 for the kernel.
 	f32Vec := make([]float32, len(vector))
 	for i, v := range vector {
-		f := float16.New(float32(math.Float32frombits(uint32(v)))).Float32()
-		f32Vec[i] = f
+		f32Vec[i] = float16.FromBits(v).Float32()
 	}
 
 	if len(f32Vec) != idx.dim {
@@ -1568,14 +1567,10 @@ func (idx *CUDAIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float3
 		return nil, nil, fmt.Errorf("no resident pages available for search")
 	}
 
-	numPages := len(pages)
-	hPageStarts := make([]C.int, numPages+1)
-	hPagePtrs := make([]unsafe.Pointer, numPages)
-	for i, p := range pages {
-		hPagePtrs[i] = p.ptr
-		hPageStarts[i+1] = hPageStarts[i] + C.int(p.nvecs)
+	totalVecs := 0
+	for _, p := range pages {
+		totalVecs += p.nvecs
 	}
-	totalVecs := int(hPageStarts[numPages])
 
 	dAllDists, err := idx.allocGPUMem(int64(totalVecs * 4))
 	if err != nil {
@@ -1583,29 +1578,20 @@ func (idx *CUDAIndex) SearchComplex64(vector []uint16, k int) ([]int64, []float3
 	}
 	defer idx.freeGPUMem(dAllDists)
 
-	dPagePtrs, err := idx.allocGPUMem(int64(numPages) * int64(unsafe.Sizeof(hPagePtrs[0])))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to allocate page pointers buffer: %w", err)
+	// Per-page launch: complex kernels expect a flat vectors base, not page-pointer arrays.
+	offset := 0
+	for _, p := range pages {
+		distPtr := unsafe.Pointer(uintptr(dAllDists) + uintptr(offset*4)) // #nosec G115
+		C.launch_l2_distance_complex64_kernel(
+			(*C.float)(p.ptr),
+			(*C.float)(dQuery),
+			(*C.float)(distPtr),
+			C.int(idx.dim),
+			C.int(p.nvecs),
+			cStream,
+		)
+		offset += p.nvecs
 	}
-	defer idx.freeGPUMem(dPagePtrs)
-	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
-
-	dPageStarts, err := idx.allocGPUMem(int64((numPages + 1) * 4))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to allocate page starts buffer: %w", err)
-	}
-	defer idx.freeGPUMem(dPageStarts)
-	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
-
-	// Use native complex64 CUDA kernels
-	C.launch_l2_distance_complex64_kernel(
-		(*C.float)(dPagePtrs),
-		(*C.float)(dQuery),
-		(*C.float)(dAllDists),
-		C.int(idx.dim),
-		C.int(totalVecs),
-		cStream,
-	)
 
 	hAllDists := make([]float32, totalVecs)
 	distBytes := int64(totalVecs * 4)
@@ -1721,14 +1707,10 @@ func (idx *CUDAIndex) SearchComplex128(vector []float32, k int) ([]int64, []floa
 		return nil, nil, fmt.Errorf("no resident pages available for search")
 	}
 
-	numPages := len(pages)
-	hPageStarts := make([]C.int, numPages+1)
-	hPagePtrs := make([]unsafe.Pointer, numPages)
-	for i, p := range pages {
-		hPagePtrs[i] = p.ptr
-		hPageStarts[i+1] = hPageStarts[i] + C.int(p.nvecs)
+	totalVecs := 0
+	for _, p := range pages {
+		totalVecs += p.nvecs
 	}
-	totalVecs := int(hPageStarts[numPages])
 
 	dAllDists, err := idx.allocGPUMem(int64(totalVecs * 4))
 	if err != nil {
@@ -1736,29 +1718,21 @@ func (idx *CUDAIndex) SearchComplex128(vector []float32, k int) ([]int64, []floa
 	}
 	defer idx.freeGPUMem(dAllDists)
 
-	dPagePtrs, err := idx.allocGPUMem(int64(numPages) * int64(unsafe.Sizeof(hPagePtrs[0])))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to allocate page pointers buffer: %w", err)
+	// Per-page launch: complex kernels expect a flat vectors base, not page-pointer arrays.
+	// (Previously dPagePtrs was passed as vectors — broken for multi-page and wrong for single-page.)
+	offset := 0
+	for _, p := range pages {
+		distPtr := unsafe.Pointer(uintptr(dAllDists) + uintptr(offset*4)) // #nosec G115
+		C.launch_l2_distance_complex128_kernel(
+			(*C.float)(p.ptr),
+			(*C.float)(dQuery),
+			(*C.float)(distPtr),
+			C.int(idx.dim),
+			C.int(p.nvecs),
+			cStream,
+		)
+		offset += p.nvecs
 	}
-	defer idx.freeGPUMem(dPagePtrs)
-	C.cudaMemcpy(dPagePtrs, unsafe.Pointer(&hPagePtrs[0]), C.size_t(numPages)*C.size_t(unsafe.Sizeof(hPagePtrs[0])), C.cudaMemcpyHostToDevice)
-
-	dPageStarts, err := idx.allocGPUMem(int64((numPages + 1) * 4))
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to allocate page starts buffer: %w", err)
-	}
-	defer idx.freeGPUMem(dPageStarts)
-	C.cudaMemcpy(dPageStarts, unsafe.Pointer(&hPageStarts[0]), C.size_t((numPages+1)*4), C.cudaMemcpyHostToDevice)
-
-	// Use native complex128 CUDA kernels
-	C.launch_l2_distance_complex128_kernel(
-		(*C.float)(dPagePtrs),
-		(*C.float)(dQuery),
-		(*C.float)(dAllDists),
-		C.int(idx.dim),
-		C.int(totalVecs),
-		cStream,
-	)
 
 	hAllDists := make([]float32, totalVecs)
 	distBytes := int64(totalVecs * 4)

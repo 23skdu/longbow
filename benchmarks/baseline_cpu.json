@@ -1,64 +1,157 @@
 {
-  "_meta": {
-    "description": "CPU benchmark baseline for longbow",
-    "generated": "2026-09-17",
-    "tool": "unified_benchmark.py --runs 3",
-    "notes": "Values are mean QPS across 3 runs. Update after each full regression run."
+  "mode": "cpu",
+  "timestamp": "20260923_185110",
+  "platform": "Linux x86_64",
+  "config": {
+    "dims": [
+      128
+    ],
+    "counts": [
+      10000,
+      50000
+    ],
+    "dtypes": [
+      "float32",
+      "int8"
+    ],
+    "duration": 15
   },
-  "configs": [
+  "results": [
     {
       "dim": 128,
       "dtype": "float32",
       "count": 10000,
-      "search": {
-        "dense": {"qps": 0, "qps_stdev": 0, "p50": 0, "p95": 0, "p99": 0}
+      "mode": "cpu",
+      "ingest": {
+        "vec_per_sec": 374638.6,
+        "vec_per_sec_stdev": 111444.8
       },
-      "ingest": {"vec_per_sec": 0}
-    },
-    {
-      "dim": 128,
-      "dtype": "float32",
-      "count": 50000,
       "search": {
-        "dense": {"qps": 0, "qps_stdev": 0, "p50": 0, "p95": 0, "p99": 0}
+        "dense": {
+          "qps": 2665.1,
+          "qps_stdev": 1100.6,
+          "p50": 2.522,
+          "p50_stdev": 0.226,
+          "p95": 9.01,
+          "p95_stdev": 10.361,
+          "p99": 11.936,
+          "p99_stdev": 14.783,
+          "runs": 3
+        }
       },
-      "ingest": {"vec_per_sec": 0}
-    },
-    {
-      "dim": 384,
-      "dtype": "float32",
-      "count": 10000,
-      "search": {
-        "dense": {"qps": 0, "qps_stdev": 0, "p50": 0, "p95": 0, "p99": 0}
-      },
-      "ingest": {"vec_per_sec": 0}
-    },
-    {
-      "dim": 384,
-      "dtype": "float32",
-      "count": 50000,
-      "search": {
-        "dense": {"qps": 0, "qps_stdev": 0, "p50": 0, "p95": 0, "p99": 0}
-      },
-      "ingest": {"vec_per_sec": 0}
+      "peak_memory_mb": 990.05,
+      "tq_bits": 0,
+      "num_runs": 3,
+      "timestamp": "2026-09-23T18:51:26.018615"
     },
     {
       "dim": 128,
       "dtype": "int8",
       "count": 10000,
-      "search": {
-        "dense": {"qps": 0, "qps_stdev": 0, "p50": 0, "p95": 0, "p99": 0}
+      "mode": "cpu",
+      "ingest": {
+        "vec_per_sec": 853251.1,
+        "vec_per_sec_stdev": 57137.2
       },
-      "ingest": {"vec_per_sec": 0}
+      "search": {
+        "dense": {
+          "qps": 2825.6,
+          "qps_stdev": 339.5,
+          "p50": 2.74,
+          "p50_stdev": 0.246,
+          "p95": 3.689,
+          "p95_stdev": 0.478,
+          "p99": 6.382,
+          "p99_stdev": 2.309,
+          "runs": 3
+        }
+      },
+      "peak_memory_mb": 758.67,
+      "tq_bits": 0,
+      "num_runs": 3,
+      "timestamp": "2026-09-23T18:52:02.804246"
+    },
+    {
+      "dim": 128,
+      "dtype": "float32",
+      "count": 50000,
+      "mode": "cpu",
+      "ingest": {
+        "vec_per_sec": 666245.3,
+        "vec_per_sec_stdev": 47242.3
+      },
+      "search": {
+        "dense": {
+          "qps": 2373.7,
+          "qps_stdev": 108.2,
+          "p50": 3.162,
+          "p50_stdev": 0.24,
+          "p95": 4.846,
+          "p95_stdev": 0.333,
+          "p99": 8.734,
+          "p99_stdev": 2.329,
+          "runs": 3
+        }
+      },
+      "peak_memory_mb": 1087.61,
+      "tq_bits": 0,
+      "num_runs": 3,
+      "timestamp": "2026-09-23T18:52:36.725260"
     },
     {
       "dim": 128,
       "dtype": "int8",
       "count": 50000,
-      "search": {
-        "dense": {"qps": 0, "qps_stdev": 0, "p50": 0, "p95": 0, "p99": 0}
+      "mode": "cpu",
+      "ingest": {
+        "vec_per_sec": 3284637.1,
+        "vec_per_sec_stdev": 541357.3
       },
-      "ingest": {"vec_per_sec": 0}
+      "search": {
+        "dense": {
+          "qps": 2121.7,
+          "qps_stdev": 353.2,
+          "p50": 3.641,
+          "p50_stdev": 0.474,
+          "p95": 5.428,
+          "p95_stdev": 1.195,
+          "p99": 7.755,
+          "p99_stdev": 2.063,
+          "runs": 3
+        }
+      },
+      "peak_memory_mb": 1684.98,
+      "tq_bits": 0,
+      "num_runs": 3,
+      "timestamp": "2026-09-23T18:53:18.457291"
     }
-  ]
+  ],
+  "completed_configs": [
+    [
+      "cpu",
+      "int8",
+      128,
+      50000
+    ],
+    [
+      "cpu",
+      "float32",
+      128,
+      50000
+    ],
+    [
+      "cpu",
+      "float32",
+      128,
+      10000
+    ],
+    [
+      "cpu",
+      "int8",
+      128,
+      10000
+    ]
+  ],
+  "failed_configs": [],
+  "exhausted_configs": []
 }

@@ -1515,22 +1515,37 @@ int cuda_pq_encode(
 // complex64: stored as interleaved float32 pairs [re, im].
 
 // Complex128 L2 Distance: |q - v|^2 = sum((q.re - v.re)^2 + (q.im - v.im)^2)
+// Inputs are float32 pairs; accumulate in float (not double) — FP64 math runs
+// ~1/64 rate on consumer GPUs (nextsteps P1 #4 GPU complex128 -50%).
 __global__ void l2_distance_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= count) return;
-    double sum = 0.0;
+    float sum = 0.0f;
     const float* vec = vectors + (int64_t)idx * dim;
-    // dim is 2 * numComplexElements; iterate over real/imag pairs
-    for (int i = 0; i < dim; i += 2) {
-        double qRe = (double)query[i];
-        double qIm = (double)query[i + 1];
-        double vRe = (double)vec[i];
-        double vIm = (double)vec[i + 1];
-        double dRe = qRe - vRe;
-        double dIm = qIm - vIm;
-        sum += dRe * dRe + dIm * dIm;
+    int i = 0;
+    // Vectorized path: dim is even (2*N); when dim%4==0 rows are float4-aligned.
+    if ((dim & 3) == 0) {
+        const float4* q4 = reinterpret_cast<const float4*>(query);
+        const float4* v4 = reinterpret_cast<const float4*>(vec);
+        const int n4 = dim / 4;
+        for (; i < n4; i++) {
+            const float4 q = q4[i];
+            const float4 v = v4[i];
+            const float d0 = q.x - v.x;
+            const float d1 = q.y - v.y;
+            const float d2 = q.z - v.z;
+            const float d3 = q.w - v.w;
+            sum += d0 * d0 + d1 * d1 + d2 * d2 + d3 * d3;
+        }
+        i = dim;
+    } else {
+        for (; i < dim; i += 2) {
+            const float dRe = query[i] - vec[i];
+            const float dIm = query[i + 1] - vec[i + 1];
+            sum += dRe * dRe + dIm * dIm;
+        }
     }
-    distances[idx] = sqrtf((float)sum);
+    distances[idx] = sqrtf(sum);
 }
 
 void launch_l2_distance_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream) {
@@ -1541,21 +1556,29 @@ void launch_l2_distance_complex128_kernel(const float* vectors, const float* que
 
 // Complex128 Dot Product: q . v* = sum(q.re*v.re + q.im*vIm, j*(q.im*v.re - q.re*v.im))
 // Returns only the real part (magnitude of the dot product) for distance ranking.
+// float accumulation on float32 inputs (nextsteps P1 #4).
 __global__ void dot_product_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= count) return;
-    double sum = 0.0;
+    float sum = 0.0f;
     const float* vec = vectors + (int64_t)idx * dim;
-    for (int i = 0; i < dim; i += 2) {
-        double qRe = (double)query[i];
-        double qIm = (double)query[i + 1];
-        double vRe = (double)vec[i];
-        double vIm = (double)vec[i + 1];
-        // Complex dot product: q . conj(v) = (qRe*vRe + qIm*vIm) + j*(qIm*vRe - qRe*vIm)
-        // We return the real part (inner product) for ranking
-        sum += qRe * vRe + qIm * vIm;
+    int i = 0;
+    if ((dim & 3) == 0) {
+        const float4* q4 = reinterpret_cast<const float4*>(query);
+        const float4* v4 = reinterpret_cast<const float4*>(vec);
+        const int n4 = dim / 4;
+        for (; i < n4; i++) {
+            const float4 q = q4[i];
+            const float4 v = v4[i];
+            sum += q.x * v.x + q.y * v.y + q.z * v.z + q.w * v.w;
+        }
+        i = dim;
+    } else {
+        for (; i < dim; i += 2) {
+            sum += query[i] * vec[i] + query[i + 1] * vec[i + 1];
+        }
     }
-    distances[idx] = (float)sum;
+    distances[idx] = sum;
 }
 
 void launch_dot_product_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream) {
@@ -1565,25 +1588,26 @@ void launch_dot_product_complex128_kernel(const float* vectors, const float* que
 }
 
 // Complex128 Cosine Similarity: cos(theta) = |q . v*| / (|q| * |v|)
+// float accumulation on float32 inputs (nextsteps P1 #4).
 __global__ void cosine_similarity_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= count) return;
-    double dotRe = 0.0, dotIm = 0.0;
-    double qMag = 0.0, vMag = 0.0;
+    float dotRe = 0.0f, dotIm = 0.0f;
+    float qMag = 0.0f, vMag = 0.0f;
     const float* vec = vectors + (int64_t)idx * dim;
     for (int i = 0; i < dim; i += 2) {
-        double qRe = (double)query[i];
-        double qIm = (double)query[i + 1];
-        double vRe = (double)vec[i];
-        double vIm = (double)vec[i + 1];
+        const float qRe = query[i];
+        const float qIm = query[i + 1];
+        const float vRe = vec[i];
+        const float vIm = vec[i + 1];
         dotRe += qRe * vRe + qIm * vIm;
         dotIm += qIm * vRe - qRe * vIm;
         qMag += qRe * qRe + qIm * qIm;
         vMag += vRe * vRe + vIm * vIm;
     }
-    double dotMod = sqrt(dotRe * dotRe + dotIm * dotIm);
-    double denom = sqrt(qMag) * sqrt(vMag);
-    distances[idx] = (denom > 1e-10) ? (float)(dotMod / denom) : 0.0f;
+    const float dotMod = sqrtf(dotRe * dotRe + dotIm * dotIm);
+    const float denom = sqrtf(qMag) * sqrtf(vMag);
+    distances[idx] = (denom > 1e-10f) ? (dotMod / denom) : 0.0f;
 }
 
 void launch_cosine_similarity_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count, cudaStream_t stream) {

@@ -45,8 +45,37 @@ func IsFloat64Excluded() bool {
 	return atomic.LoadInt32(&float64Excluded) != 0
 }
 
+// forceStandard is a nesting counter. When > 0, PushStandard callers have
+// pinned the standard backend (e.g. temporal search) and SetBackend is a no-op
+// so nested per-index dispatch cannot re-promote to emlgo mid-search.
+var forceStandard int32
+
+// PushStandard temporarily forces the standard math backend and returns a
+// restore function that reverts to the previous backend. Used by temporal
+// search, which regresses -16-38% under emlgo (docs/emlgo.md, nextsteps P1 #3).
+// Nested PushStandard calls are supported; SetBackend is ignored while held.
+func PushStandard() (restore func()) {
+	atomic.AddInt32(&forceStandard, 1)
+	prev := Backend(atomic.LoadInt32(&currentBackend))
+	atomic.StoreInt32(&currentBackend, int32(BackendStandard))
+	return func() {
+		if atomic.AddInt32(&forceStandard, -1) == 0 {
+			atomic.StoreInt32(&currentBackend, int32(prev))
+		}
+	}
+}
+
+// IsForceStandard reports whether a PushStandard scope is active.
+func IsForceStandard() bool {
+	return atomic.LoadInt32(&forceStandard) > 0
+}
+
 // SetBackend changes the active math backend globally.
+// No-op while a PushStandard scope is active (nextsteps P1 #3 temporal pin).
 func SetBackend(b Backend) {
+	if IsForceStandard() {
+		return
+	}
 	atomic.StoreInt32(&currentBackend, int32(b))
 }
 

@@ -21,11 +21,24 @@ const (
 	DispatchStandard
 )
 
+// MinEMLVectorCount mirrors the emlgo build threshold (kept in sync for tests).
+const MinEMLVectorCount = 50000
+
 var dispatchMode DispatchMode = DispatchAuto
 
 // GetDispatchMode returns the current dispatch mode.
 func GetDispatchMode() DispatchMode {
 	return dispatchMode
+}
+
+// SetDispatchMode sets the dispatch mode. Without the emlgo build tag this
+// only records the mode; the math backend is always standard.
+func SetDispatchMode(m DispatchMode) {
+	dispatchMode = m
+	if m == DispatchStandard || m == DispatchEML || m == DispatchAuto {
+		mathutil.SetBackend(mathutil.BackendStandard)
+		SetMathImpl(MathSIMD)
+	}
 }
 
 // ParseDispatchMode parses a LONGBOW_MATH_DISPATCH env var value.
@@ -50,7 +63,7 @@ func ResolveBackend(typeName string, vectorCount int) mathutil.Backend {
 // Without the emlgo build tag, this only sets the dispatch mode variable.
 func ApplyDispatchConfig() {
 	if val, ok := os.LookupEnv("LONGBOW_MATH_DISPATCH"); ok {
-		dispatchMode = ParseDispatchMode(val)
+		SetDispatchMode(ParseDispatchMode(val))
 	}
 }
 

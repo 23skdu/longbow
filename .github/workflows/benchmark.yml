@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout PR branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Setup Go
         uses: actions/setup-go@v5
@@ -38,7 +38,7 @@ jobs:
           go test -bench=BenchmarkArrowHNSWInsert -benchmem -count=5 ./internal/store/... 2>/dev/null | tee pr-insert-bench.txt
 
       - name: Checkout main branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           ref: main
           path: main-branch

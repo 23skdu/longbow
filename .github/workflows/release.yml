@@ -50,7 +50,7 @@ jobs:
             type=sha,prefix=sha-
 
       - name: Build and push Standard Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64,linux/arm64
@@ -73,7 +73,7 @@ jobs:
             type=sha,prefix=sha-
 
       - name: Build and push NVIDIA Docker image
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           file: Dockerfile.nvidia

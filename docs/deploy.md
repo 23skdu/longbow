@@ -63,7 +63,7 @@ helm install my-release ./helm/longbow
 Official images are available on GitHub Container Registry (`ghcr.io/23skdu/longbow`):
 
 - **Apple Silicon (`arm64`)**: `latest-arm64-metal` - Optimized for Metal GPU and Mach CPU clusters.
-- **NVIDIA GPU (`amd64`)**: `latest-amd64-nvidia` - Includes custom CUDA 12.6 kernels and zero-copy tensor bridge.
+- **NVIDIA GPU (`amd64`)**: `latest-amd64-nvidia` - Includes custom CUDA 12.8 kernels and zero-copy tensor bridge.
 - **General CPU (`amd64`)**: `latest-amd64-cpu` - Broadwell-level AVX2 optimizations with `io_uring` support.
 - **EMLGo CPU (`amd64`)**: `latest-amd64-emlgo-cpu` - Standard build with EMLGo SIMD math backend (`-tags emlgo`).
 - **EMLGo GPU (`amd64`)**: `latest-amd64-emlgo-gpu` - CUDA + EMLGo SIMD math backend for maximum throughput.
@@ -452,10 +452,15 @@ func ValidateInput(input string) error {
 
 #### CI/CD Integration
 
-- Dependency vulnerability scanning
-- Container image scanning
-- Static code analysis
-- Security testing in CI pipeline
+Automated by `.github/workflows/security.yml` (push/PR to main, weekly schedule, `workflow_dispatch`):
+
+- **govulncheck** via `scripts/check_govuln.sh` — Go module vulnerability scanning with an allowlist for unfixed accepted risks (see `.trivyignore`)
+- **Trivy filesystem scan** — dependency vulnerabilities, secrets, and misconfigurations (`HIGH`/`CRITICAL`, skips `vendor/`, `data/`, `bin/`)
+- **Trivy config scan** — Dockerfile and Helm chart IaC misconfigurations
+- **gosec** — run locally via `gosec ./...` (integrated into the development workflow)
+- **Dependabot** — daily `gomod` updates with auto-merge for minor/patch PRs
+
+Accepted risks (documented in `.trivyignore`): `hamba/avro` GO-2026-5046/5047/5048 and `x/crypto` openpgp GO-2026-5932 — all Fixed in: N/A upstream.
 
 #### Monitoring
 

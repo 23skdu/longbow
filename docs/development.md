@@ -13,7 +13,7 @@ This document provides guidance for contributing to and developing Longbow.
 - **Python 3.10+**: Required for running the unified benchmark suite and analysis tools.
 - **Hardware Backends (Optional)**:
   - **Metal**: Required for GPU acceleration on macOS (Apple Silicon).
-  - **CUDA 12.6+**: Required for NVIDIA GPU acceleration on Linux.
+  - **CUDA 12.8+**: Required for NVIDIA GPU acceleration on Linux.
 
 ### Setup Development Environment
 

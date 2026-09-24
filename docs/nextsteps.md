@@ -1,6 +1,6 @@
 # Next Steps & Roadmap
 
-Last updated: 2026-09-23.
+Last updated: 2026-09-24.
 
 ---
 
@@ -90,7 +90,7 @@ Last updated: 2026-09-23.
 |---|-------|--------|--------------------|
 | 6 | CPU sparse search with emlgo | -5-17% slower at 100k | Compare CPU vs GPU sparse dispatch |
 | 7 | CPU 10k scale emlgo overhead | -15-26% on graphrag/temporal | Consider 50k minimum activation threshold |
-| 8 | CUDA 12.6.3 outdated | Potential CVEs in base image | Upgrade to CUDA 12.8.x |
+| 8 | ~~CUDA 12.6.3 outdated~~ | Resolved 2026-09-23 — upgraded to CUDA 12.8.1 in `Dockerfile.nvidia` and `Dockerfile.emlgo-gpu` | Base image CVEs reduced |
 
 ---
 

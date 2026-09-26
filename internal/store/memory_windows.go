@@ -40,6 +40,11 @@ func PinThreadToCore(core int) error {
 	return nil
 }
 
+// SaveThreadAffinity is a no-op on Windows.
+func SaveThreadAffinity() func() {
+	return func() {}
+}
+
 // GetNumaNode is a no-op on Windows.
 func GetNumaNode(ptr unsafe.Pointer) (int, error) {
 	return -1, nil

@@ -1,5 +1,4 @@
-//go:build gpu && darwin
-// +build gpu,darwin
+//go:build gpu && darwin && arm64
 
 package index
 

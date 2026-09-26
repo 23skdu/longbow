@@ -32,6 +32,11 @@ func TestGetNumaNode(t *testing.T) {
 }
 
 func TestPinThreadToNode(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	restore := SaveThreadAffinity()
+	defer restore()
+
 	// This test is tricky because it requires existing nodes.
 	// We'll try node 0 which usually exists.
 	err := PinThreadToNode(0)
@@ -54,6 +59,11 @@ func TestPinThreadToNode(t *testing.T) {
 }
 
 func TestPinThreadToCore(t *testing.T) {
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+	restore := SaveThreadAffinity()
+	defer restore()
+
 	err := PinThreadToCore(0)
 	if runtime.GOOS != "linux" {
 		if err != nil {

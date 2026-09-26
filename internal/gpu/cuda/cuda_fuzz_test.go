@@ -1,4 +1,4 @@
-//go:build gpu && linux
+//go:build gpu && linux && cgo
 
 package cuda
 

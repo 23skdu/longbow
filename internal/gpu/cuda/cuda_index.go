@@ -1,4 +1,4 @@
-//go:build gpu && linux
+//go:build gpu && linux && cgo
 
 // NOTE: This file requires the "gpu" and "linux" build tags.
 // If your IDE reports "no packages found", ensure your gopls/build configuration

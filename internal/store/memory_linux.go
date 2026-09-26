@@ -20,6 +20,17 @@ func pinThreadToCoreLinux(core int) error {
 	return unix.SchedSetaffinity(0, &cpuSet)
 }
 
+// SaveThreadAffinity saves the current thread's CPU affinity and returns a restore function.
+func SaveThreadAffinity() func() {
+	var cpuSet unix.CPUSet
+	if err := unix.SchedGetaffinity(0, &cpuSet); err != nil {
+		return func() {}
+	}
+	return func() {
+		_ = unix.SchedSetaffinity(0, &cpuSet)
+	}
+}
+
 func getNumaNodeLinux(ptr unsafe.Pointer) (int, error) {
 	// Use MovePages with nil nodes to query status
 	pages := []unsafe.Pointer{ptr}

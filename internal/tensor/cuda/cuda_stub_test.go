@@ -1,3 +1,5 @@
+//go:build !gpu || !linux || !cgo
+
 package cuda
 
 import (

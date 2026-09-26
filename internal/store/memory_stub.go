@@ -15,3 +15,8 @@ func getNumaNodeLinux(_ unsafe.Pointer) (int, error) {
 func pinThreadToNodeLinux(_ int) error {
 	return nil
 }
+
+// SaveThreadAffinity is a no-op on non-Linux platforms.
+func SaveThreadAffinity() func() {
+	return func() {}
+}

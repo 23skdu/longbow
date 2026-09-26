@@ -5,19 +5,22 @@
 *.out
 *.log
 *.pprof
-# bin/
-# data/
-data1/
-data2/
-scripts/
-docs/
-helm/
-test/
-longbow
-longbow-gpu
-tmp/
-.venv/
-venv/
+bin
+data
+data*
+scratch
+data2
+scripts
+docs
+helm
+test
+longbow*
+tmp
+.venv
+**/.venv
+venv
+**/venv
+longbowclientsdk
 __pycache__/
 
 profiles_*/

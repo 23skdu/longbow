@@ -63,6 +63,24 @@ func TestBatchOperations_Extended(t *testing.T) {
 		require.NoError(t, err)
 		assert.InDelta(t, 1.0, res[0], 1e-6) // sqrt(0.5+0.5) = 1.0
 
+		// Multi-vector test covering unrolled loop and tail
+		for _, numVecs := range []int{1, 3, 4, 7, 16, 33, 64} {
+			testCodes := make([]byte, numVecs*m)
+			for i := range testCodes {
+				testCodes[i] = byte(i % 256)
+			}
+			resBatch := make([]float32, numVecs)
+			resGen := make([]float32, numVecs)
+
+			errBatch := ADCDistanceBatch(table, testCodes, m, resBatch)
+			errGen := adcBatchGeneric(table, testCodes, m, resGen)
+			require.NoError(t, errBatch)
+			require.NoError(t, errGen)
+			for i := 0; i < numVecs; i++ {
+				assert.InDelta(t, resGen[i], resBatch[i], 1e-6, "Mismatch at numVecs=%d i=%d", numVecs, i)
+			}
+		}
+
 		// Error cases
 		assert.Error(t, ADCDistanceBatch(nil, codes, m, res))
 		assert.Error(t, ADCDistanceBatch(table, codes, 0, res))

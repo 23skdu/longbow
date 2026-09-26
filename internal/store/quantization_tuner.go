@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -97,9 +98,15 @@ func (t *QuantizationTuner) TuneDataset(name string, ds *Dataset) {
 	t.mu.Unlock()
 
 	// High Scale Auto-Quantization Rule:
-	// If LONGBOW_AUTO_QUANTIZE is enabled and dataset has >= 500k rows, standardize on TurboQuant immediately.
+	// If LONGBOW_AUTO_QUANTIZE is enabled and dataset has >= 100k rows, standardize on TurboQuant immediately.
 	autoQuantize := os.Getenv("LONGBOW_AUTO_QUANTIZE") == "1" || os.Getenv("LONGBOW_AUTO_QUANTIZE") == "true"
-	if autoQuantize && ds != nil && ds.GetRowCount() >= 500000 && state.currentType != QuantizationTurboQuant {
+	threshold := int64(100000)
+	if v := os.Getenv("LONGBOW_AUTO_QUANTIZE_THRESHOLD"); v != "" {
+		if tVal, err := strconv.ParseInt(v, 10, 64); err == nil && tVal > 0 {
+			threshold = tVal
+		}
+	}
+	if autoQuantize && ds != nil && ds.GetRowCount() >= threshold && state.currentType != QuantizationTurboQuant {
 		t.applyTransition(name, ds, state, QuantizationTurboQuant, "auto_quantize_high_scale")
 		metrics.AutoQuantizeEngaged.WithLabelValues(name).Inc()
 		return

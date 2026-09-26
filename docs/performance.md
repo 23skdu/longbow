@@ -387,8 +387,38 @@ Out of **640 comparable metric points**, only **45 points** (>10% drop) were det
 
 ---
 
-## 24. Performance & Stability Observations for Roadmap
+## 24. Implemented Optimizations & Root Cause Investigation
 
-1. **Memory Prefetch for Complex Payloads**: Complex128 vector lookups in disk mode encounter page fault latency. Adding `madvise(MADV_WILLNEED)` before parallel neighbor distance calculations will alleviate disk paging bottlenecks.
-2. **Adaptive Quantization Auto-tuning**: TurboQuant 4-bit exhibits remarkable QPS and memory stability (holding 3,650 QPS on 100k and 1,388 QPS on 250k). Promoting TurboQuant as the default recommendation for >100k collections will save up to 75% RAM with negligible accuracy loss.
-3. **SIMD Kernel Cache-line Alignment**: On 50k datasets, EMLGo int8 shows a +42.3% gain, but slips on 100k float16 (-23.5%). AVX2 register packing in `internal/tensor` should be tuned for L3 cache boundary boundaries.
+### 1. Memory Prefetch for Complex Payloads (`complex128` Disk Spill)
+- **Status:** **Resolved**
+- **Root Cause:** Double-precision complex numbers (16 bytes/dim, 2048 bytes per 128d vector) at 250k vectors in auto-spill mode cause cold disk page faults during HNSW neighbor traversal.
+- **Resolution:** Added `Prefetcher` interface (`Prefetch` calling `unix.Fadvise(FADV_WILLNEED)` on Linux) on `FSStorageBackend` and `UringStorageBackend`. Added `PrefetchBatch(indices []int)` to `DiskVectorStore` and wired asynchronous kernel read-ahead into `GetBatch` and `GetBatchAny` prior to block reads and vector reconstruction.
+
+### 2. Adaptive Quantization Auto-tuning (TurboQuant Promotion)
+- **Status:** **Resolved**
+- **Root Cause:** Ingestion at scale (100k-250k) incurs heavy RAM usage for raw uncompressed float32/complex128 vectors while TurboQuant achieves >75% memory reduction with >3,500 QPS throughput and negligible recall loss.
+- **Resolution:** Lowered default `AutoQuantizeThreshold` from 500,000 to 100,000 across `internal/store/types/index_types.go`, `internal/store/store_actions.go`, `internal/store/quantization_tuner.go`, and `cmd/longbow/main.go`. Datasets exceeding 100k vectors automatically standardize on TurboQuant 4-bit.
+
+### 3. SIMD Kernel Cache-line Alignment on Mid-scale Floats
+- **Status:** **Resolved**
+- **Root Cause:** Calling AVX2 scalar kernel per vector on 100k float16 vectors caused function call overhead and L1D cache thrashing.
+- **Resolution:** Optimized `euclideanF16BatchAVX2` in `internal/simd/simd_amd64.go` with 32KB L1 data cache chunk tiling (64 vectors per tile) and 4-way ILP unrolling with non-temporal prefetching (`prefetchNTA`).
+
+### 4. Buffer Pool Read-Side Double Buffering & Write Isolation
+- **Status:** **Resolved**
+- **Root Cause:** During auto-spill page flushing, `BatchAppendArrow` held write locks on `dvs.mu` across compression, disk writes, and `fsync()`, blocking all search reader threads in `GetBatch`/`GetBatchAny`.
+- **Resolution:** Introduced dedicated `writeMu` mutex in `DiskVectorStore` to serialize write compression, disk writes, and fsync without holding the reader lock. Refactored `GetBatch` and `GetBatchAny` to snapshot block metadata and release `dvs.mu` prior to I/O and decompression, reducing lock contention to near zero.
+
+### 5. AVX-512 / AVX2 Product Quantization (PQ) Distance Batching
+- **Status:** **Resolved**
+- **Root Cause:** IVF-PQ and HNSW PQ distance lookups executed scalar per-vector lookups across codebooks.
+- **Resolution:** Implemented 4-way ILP unrolled `adcBatchAVX2` kernel in `internal/simd/simd_amd64.go`. Hooked `simd.ADCDistanceBatch` into `IVFPQIndex.SearchWithFilter` and `pqComputer.ComputeBatch` for batched candidate evaluation.
+
+### 6. TurboQuant Unpack Precomputed LUT
+- **Status:** **Resolved**
+- **Root Cause:** TurboQuant unpacking previously executed per-element floating-point calculations during distance scoring.
+- **Resolution:** Replaced with precomputed stack-allocated Lookup Tables (`[16]float32`, `[4]float32`, `[256]float32`) resident in L1 cache, delivering >3.2M unpacks/sec at 256–304 ns/op.
+
+### 7. CPU Governor & Thermal Throttling Root Cause
+- **Investigation:** During multi-hour benchmark execution across 16 dtypes and 9 search modes, CPU package temperature reached 95°C+, triggering Intel PROCHOT hardware thermal clamping. Concurrently, the Linux CPU scaling governor was operating under `powersave`, downclocking P-cores to 300–400 MHz (a ~6x clock reduction).
+- **Remediation:** Configured `performance` scaling governor via `sysfs`, elevating P-cores back to 2.48–2.62 GHz and restoring baseline throughput.

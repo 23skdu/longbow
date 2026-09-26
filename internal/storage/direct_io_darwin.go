@@ -36,3 +36,8 @@ func AdviseDontNeed(f *os.File) error {
 	// F_NOCACHE is the primary mechanism.
 	return nil
 }
+
+// AdviseWillNeed is a no-op on macOS as posix_fadvise is not supported.
+func AdviseWillNeed(f *os.File, off int64, length int64) error {
+	return nil
+}

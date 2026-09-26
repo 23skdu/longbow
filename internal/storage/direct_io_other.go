@@ -13,3 +13,8 @@ func OpenFileDirect(path string, flags int, perm os.FileMode) (*os.File, error) 
 func AdviseDontNeed(f *os.File) error {
 	return nil
 }
+
+// AdviseWillNeed is a no-op on unsupported platforms.
+func AdviseWillNeed(f *os.File, off int64, length int64) error {
+	return nil
+}

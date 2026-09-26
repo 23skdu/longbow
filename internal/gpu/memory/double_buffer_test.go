@@ -1,10 +1,12 @@
 package memory
 
 import (
+	"sync"
 	"testing"
 	"unsafe"
 
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
 )
 
 func TestNewDoubleBuffer(t *testing.T) {
@@ -119,4 +121,51 @@ func TestDoubleBufferWithHeadroom(t *testing.T) {
 	_, err = NewDoubleBufferWithHeadroom(400, pool, 100)
 	assert.Error(t, err)
 	assert.Contains(t, err.Error(), "insufficient GPU memory headroom")
+}
+
+func TestDoubleBuffer_HighVRAM_Stress(t *testing.T) {
+	// Simulate 16GB total VRAM pool with 1GB headroom and 1M vector operations (128 dims * 4 bytes = 512MB per batch)
+	const totalVRAM = 16 * 1024 * 1024 * 1024
+	const headroom = 1024 * 1024 * 1024
+	const batchSize = 100000 // 100k vectors per buffer = 51.2MB
+
+	pool := &GPUMemPool{
+		totalBytes:  totalVRAM,
+		usedBytes:   0,
+		backend:     BackendCPU,
+		allocations: make(map[unsafe.Pointer]int64),
+	}
+
+	db, err := NewDoubleBufferWithHeadroom(batchSize*128*4, pool, headroom)
+	require.NoError(t, err)
+	require.NotNil(t, db)
+
+	// Stress concurrent multi-stream access: 16 streams performing concurrent Writes, Swaps, and Headroom checks
+	const numGoroutines = 16
+	const iterations = 50
+	var wg sync.WaitGroup
+	wg.Add(numGoroutines)
+
+	for g := 0; g < numGoroutines; g++ {
+		go func() {
+			defer wg.Done()
+			scratch := make([]byte, 1024)
+			for i := 0; i < iterations; i++ {
+				// 1. Verify headroom for upcoming operation
+				err := db.CheckHeadroom(int64(len(scratch)))
+				assert.NoError(t, err)
+
+				// 2. Write data to active buffer
+				_, _ = db.Write(scratch)
+
+				// 3. Swap buffers simulating stream completion
+				db.Swap()
+
+				// 4. Retrieve active buffer
+				_ = db.GetActive()
+			}
+		}()
+	}
+
+	wg.Wait()
 }

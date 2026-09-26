@@ -25,3 +25,8 @@ func AdviseDontNeed(f *os.File) error {
 	// FADV_DONTNEED attempts to free cache pages associated with the file.
 	return unix.Fadvise(int(f.Fd()), 0, 0, unix.FADV_DONTNEED) // #nosec G115
 }
+
+// AdviseWillNeed advises the kernel to read ahead the specified range into page cache.
+func AdviseWillNeed(f *os.File, off int64, length int64) error {
+	return unix.Fadvise(int(f.Fd()), off, length, unix.FADV_WILLNEED) // #nosec G115
+}

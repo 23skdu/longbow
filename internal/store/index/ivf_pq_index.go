@@ -266,6 +266,42 @@ func (idx *IVFPQIndex) SearchInternal(ctx context.Context, queryVec []float32, k
 		entries := cluster.Entries
 		cluster.mu.RUnlock()
 
+		if len(entries) == 0 {
+			continue
+		}
+
+		if idx.config.K == 256 {
+			// Fast path: SIMD batch evaluation when codebook size K == 256
+			candidates := entries
+			if filter != nil {
+				candidates = make([]IVFIndexEntry, 0, len(entries))
+				for _, entry := range entries {
+					if filter.Contains(entry.VectorID) {
+						candidates = append(candidates, entry)
+					}
+				}
+			}
+			n := len(candidates)
+			if n > 0 {
+				flatCodes := make([]byte, n*idx.config.M)
+				for i, entry := range candidates {
+					copy(flatCodes[i*idx.config.M:], entry.PQCode)
+				}
+				dists := make([]float32, n)
+				if err := simd.ADCDistanceBatch(adt, flatCodes, idx.config.M, dists); err == nil {
+					for i, entry := range candidates {
+						results = append(results, IVFPQSearchResult{
+							ID:       entry.VectorID,
+							Distance: dists[i],
+						})
+					}
+					continue
+				}
+			} else {
+				continue
+			}
+		}
+
 		for _, entry := range entries {
 			// Apply filter pushdown
 			if filter != nil && !filter.Contains(entry.VectorID) {

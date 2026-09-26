@@ -969,9 +969,9 @@ func initializeDispatch() {
 		matchInt32Impl = matchInt32Generic
 		matchFloat32Impl = matchFloat32Generic
 		matchFloat64Impl = matchFloat64Generic
-		adcDistanceBatchImpl = adcBatchGeneric
+		adcDistanceBatchImpl = adcBatchAVX2
 		euclideanDistanceVerticalBatchImpl = euclideanVerticalBatchAVX2
-		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchGeneric
+		euclideanDistanceSQ8BatchImpl = euclideanSQ8BatchAVX2
 		euclideanDistanceF16BatchImpl = euclideanF16BatchAVX2
 		andBytesImpl = andBytesAVX2
 		orBytesImpl = orBytesAVX2

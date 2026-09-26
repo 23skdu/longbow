@@ -427,7 +427,7 @@ func (h *ArrowHNSW) addBatchBulkInternal(ctx context.Context, startID uint32, n 
 					if vf32, ok := v.([]float32); ok {
 						code, err := h.tqEncoder.Encode(vf32)
 						if err == nil {
-							stride := h.tqEncoder.PackedSize()
+							stride := data.PackedSize()
 							dest := tqChunk[int(cOff)*stride : (int(cOff)+1)*stride]
 							copy(dest, code)
 						}

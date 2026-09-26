@@ -100,7 +100,7 @@ type Config struct {
 	AutoSpillToDisk       bool    `envconfig:"AUTO_SPILL_DISK" default:"true"`
 	SpillThresholdRatio   float64 `envconfig:"SPILL_THRESHOLD_RATIO" default:"0.70"`
 	AutoQuantize          bool    `envconfig:"AUTO_QUANTIZE" default:"false"`
-	AutoQuantizeThreshold int64   `envconfig:"AUTO_QUANTIZE_THRESHOLD" default:"500000"`
+	AutoQuantizeThreshold int64   `envconfig:"AUTO_QUANTIZE_THRESHOLD" default:"100000"`
 	AutoQuantizeBits      int     `envconfig:"AUTO_QUANTIZE_BITS" default:"4"`
 
 	// Memory Management Configuration

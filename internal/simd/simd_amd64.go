@@ -243,13 +243,53 @@ func euclideanSQ8BatchAVX2(query []byte, vectors [][]byte, results []float32) er
 }
 
 func euclideanF16BatchAVX2(query []float16.Num, vectors [][]float16.Num, results []float32) error {
+	n := len(vectors)
+	if n == 0 {
+		return nil
+	}
 	qLen := len(query)
-	qPtr := uintptr(unsafe.Pointer(&query[0])) // #nosec G103 -- SIMD kernel requires uintptr
-	for i, v := range vectors {
-		if len(v) != qLen {
-			return errors.New("simd: batch dimension mismatch")
+	if qLen == 0 {
+		return nil
+	}
+	qPtr := uintptr(unsafe.Pointer(&query[0])) // #nosec G103
+
+	// L1D cache tiling: 32KB / (dim * 2) ≈ 64-128 vectors per tile.
+	// Processing in 64-vector tiles ensures query and working slice remain hot in L1D.
+	const tileSize = 64
+	for start := 0; start < n; start += tileSize {
+		end := start + tileSize
+		if end > n {
+			end = n
 		}
-		results[i] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v[0])), qLen) // #nosec G103 -- SIMD kernel requires uintptr
+
+		i := start
+		// 4-way unrolled loop across vectors within L1 cache tile
+		for ; i <= end-4; i += 4 {
+			v0 := vectors[i]
+			v1 := vectors[i+1]
+			v2 := vectors[i+2]
+			v3 := vectors[i+3]
+			if len(v0) != qLen || len(v1) != qLen || len(v2) != qLen || len(v3) != qLen {
+				return errors.New("simd: batch dimension mismatch")
+			}
+			// Prefetch next cache lines into L1 cache
+			if i+7 < n && len(vectors[i+4]) > 0 {
+				prefetchNTA(uintptr(unsafe.Pointer(&vectors[i+4][0]))) // #nosec G103
+			}
+
+			results[i] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v0[0])), qLen)     // #nosec G103
+			results[i+1] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v1[0])), qLen) // #nosec G103
+			results[i+2] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v2[0])), qLen) // #nosec G103
+			results[i+3] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v3[0])), qLen) // #nosec G103
+		}
+
+		for ; i < end; i++ {
+			v := vectors[i]
+			if len(v) != qLen {
+				return errors.New("simd: batch dimension mismatch")
+			}
+			results[i] = euclideanF16AVX2Kernel(qPtr, uintptr(unsafe.Pointer(&v[0])), qLen) // #nosec G103
+		}
 	}
 	return nil
 }
@@ -298,7 +338,52 @@ func euclideanVerticalBatchAVX2(query []float32, vectors [][]float32, results []
 }
 
 func adcBatchAVX2(table []float32, flatCodes []byte, m int, results []float32) error {
-	return adcBatchGeneric(table, flatCodes, m, results)
+	n := len(results)
+	if n == 0 {
+		return nil
+	}
+	if len(flatCodes) < n*m {
+		return errors.New("simd: flatCodes too short")
+	}
+
+	i := 0
+	// 4-way unrolled loop: processes 4 PQ codes concurrently to maximize L1D load-port utilization
+	for ; i <= n-4; i += 4 {
+		var s0, s1, s2, s3 float32
+		off0 := i * m
+		off1 := (i + 1) * m
+		off2 := (i + 2) * m
+		off3 := (i + 3) * m
+
+		for j := 0; j < m; j++ {
+			tblOffset := j * 256
+			c0 := int(flatCodes[off0+j])
+			c1 := int(flatCodes[off1+j])
+			c2 := int(flatCodes[off2+j])
+			c3 := int(flatCodes[off3+j])
+
+			s0 += table[tblOffset+c0]
+			s1 += table[tblOffset+c1]
+			s2 += table[tblOffset+c2]
+			s3 += table[tblOffset+c3]
+		}
+
+		results[i] = float32(math.Sqrt(float64(s0)))
+		results[i+1] = float32(math.Sqrt(float64(s1)))
+		results[i+2] = float32(math.Sqrt(float64(s2)))
+		results[i+3] = float32(math.Sqrt(float64(s3)))
+	}
+
+	for ; i < n; i++ {
+		var sum float32
+		off := i * m
+		for j := 0; j < m; j++ {
+			sum += table[j*256+int(flatCodes[off+j])]
+		}
+		results[i] = float32(math.Sqrt(float64(sum)))
+	}
+
+	return nil
 }
 
 // AVX2 optimized Batch Dot Product

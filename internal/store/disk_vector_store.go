@@ -42,6 +42,7 @@ type DiskVectorStore struct {
 	dim         int
 	backend     storage.StorageBackend
 	mu          sync.RWMutex
+	writeMu     sync.Mutex // isolates disk writes and flushes from read traversal (RCU/double-buffering)
 	compression string // "zstd", "lz4", "none"
 	zstdEnc     *zstd.Encoder
 	zstdDec     *zstd.Decoder
@@ -223,32 +224,36 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 
 	lenBytes := numRows * width * elemSize
 
-	dvs.mu.Lock()
-	defer dvs.mu.Unlock()
+	dvs.writeMu.Lock()
+	defer dvs.writeMu.Unlock()
 
-	dvs.dataType = inferredType
+	dvs.mu.RLock()
+	compAlg := dvs.compression
+	tqBits := dvs.tqBits
+	tqEnc := dvs.tqEnc
+	dvs.mu.RUnlock()
 
 	var dataToWrite []byte
 	var compType byte // 0: none, 1: zstd, 2: lz4
 
 	// 2. Compress
-	if dvs.tqBits > 0 && dvs.tqEnc != nil && elemSize == 4 {
+	if tqBits > 0 && tqEnc != nil && elemSize == 4 {
 		compType = 3 // TurboQuant
-		stride := dvs.tqEnc.PackedSize()
+		stride := tqEnc.PackedSize()
 		dataToWrite = make([]byte, 0, numRows*stride)
 		for i := 0; i < numRows; i++ {
 			start := i * width * 4
 			end := start + width*4
 			vecSlice := dataSlice[start:end]
 			vecFloat := unsafe.Slice((*float32)(unsafe.Pointer(&vecSlice[0])), width) // #nosec G103
-			encoded, err := dvs.tqEnc.Encode(vecFloat)
+			encoded, err := tqEnc.Encode(vecFloat)
 			if err != nil {
 				return 0, err
 			}
 			dataToWrite = append(dataToWrite, encoded...)
 		}
 	} else {
-		switch dvs.compression {
+		switch compAlg {
 		case "zstd":
 			dataToWrite = dvs.zstdEnc.EncodeAll(dataSlice, nil)
 			compType = 1
@@ -282,6 +287,13 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 		return 0, err
 	}
 
+	if err := dvs.backend.Sync(); err != nil {
+		return 0, err
+	}
+
+	// Update metadata under short in-memory mutex lock
+	dvs.mu.Lock()
+	dvs.dataType = inferredType
 	dvs.blocks = append(dvs.blocks, BlockEntry{
 		Offset:     writeOffset,
 		CompSize:   uint32(len(dataToWrite)), // #nosec G115
@@ -293,10 +305,7 @@ func (dvs *DiskVectorStore) BatchAppendArrow(rec arrow.RecordBatch, colIdx int) 
 		CreatedAt:  time.Now(),
 	})
 	dvs.totalCount += numRows
-
-	if err := dvs.backend.Sync(); err != nil {
-		return 0, err
-	}
+	dvs.mu.Unlock()
 
 	return numRows, nil
 }
@@ -307,14 +316,19 @@ func (dvs *DiskVectorStore) BatchAppend(vectors [][]float32) (int, error) {
 		return 0, nil
 	}
 
-	dvs.mu.Lock()
-	defer dvs.mu.Unlock()
+	dvs.writeMu.Lock()
+	defer dvs.writeMu.Unlock()
+
+	dvs.mu.RLock()
+	dim := dvs.dim
+	compAlg := dvs.compression
+	dvs.mu.RUnlock()
 
 	// 1. Serialize vectors to raw bytes (Little Endian Float32)
-	raw := make([]byte, len(vectors)*dvs.dim*4)
+	raw := make([]byte, len(vectors)*dim*4)
 	for i, v := range vectors {
 		for j, f := range v {
-			binary.LittleEndian.PutUint32(raw[(i*dvs.dim+j)*4:], math.Float32bits(f))
+			binary.LittleEndian.PutUint32(raw[(i*dim+j)*4:], math.Float32bits(f))
 		}
 	}
 
@@ -322,7 +336,7 @@ func (dvs *DiskVectorStore) BatchAppend(vectors [][]float32) (int, error) {
 	var compType byte // 0: none, 1: zstd, 2: lz4
 
 	// 2. Compress
-	switch dvs.compression {
+	switch compAlg {
 	case "zstd":
 		dataToWrite = dvs.zstdEnc.EncodeAll(raw, nil)
 		compType = 1
@@ -356,6 +370,12 @@ func (dvs *DiskVectorStore) BatchAppend(vectors [][]float32) (int, error) {
 		return 0, err
 	}
 
+	if err := dvs.backend.Sync(); err != nil {
+		return 0, err
+	}
+
+	// Update metadata under short in-memory mutex lock
+	dvs.mu.Lock()
 	dvs.blocks = append(dvs.blocks, BlockEntry{
 		Offset:     offset,
 		CompSize:   uint32(len(dataToWrite)), // #nosec G115
@@ -367,10 +387,7 @@ func (dvs *DiskVectorStore) BatchAppend(vectors [][]float32) (int, error) {
 		CreatedAt:  time.Now(),
 	})
 	dvs.totalCount += len(vectors)
-
-	if err := dvs.backend.Sync(); err != nil {
-		return 0, err
-	}
+	dvs.mu.Unlock()
 
 	return len(vectors), nil
 }
@@ -390,6 +407,40 @@ func (dvs *DiskVectorStore) findBlock(idx int) int {
 	return res
 }
 
+// PrefetchBatch advises the OS kernel to asynchronously read-ahead blocks for the specified vector indices.
+func (dvs *DiskVectorStore) PrefetchBatch(indices []int) error {
+	if len(indices) == 0 {
+		return nil
+	}
+	prefetcher, ok := dvs.backend.(storage.Prefetcher)
+	if !ok {
+		return nil
+	}
+
+	dvs.mu.RLock()
+	blockSeen := make(map[int]struct{}, len(indices))
+	for _, idx := range indices {
+		if !dvs.deleted[idx] {
+			bIdx := dvs.findBlock(idx)
+			if bIdx >= 0 && bIdx < len(dvs.blocks) {
+				blockSeen[bIdx] = struct{}{}
+			}
+		}
+	}
+	blocksToPrefetch := make([]BlockEntry, 0, len(blockSeen))
+	for bIdx := range blockSeen {
+		blocksToPrefetch = append(blocksToPrefetch, dvs.blocks[bIdx])
+	}
+	dvs.mu.RUnlock()
+
+	for _, b := range blocksToPrefetch {
+		if b.Tier != storage.TierWarm {
+			_ = prefetcher.Prefetch(b.Offset, int64(13+int(b.CompSize)))
+		}
+	}
+	return nil
+}
+
 // GetBatch retrieves multiple vectors by their absolute indices.
 func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 	if len(indices) == 0 {
@@ -397,8 +448,6 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 	}
 
 	dvs.mu.RLock()
-	defer dvs.mu.RUnlock()
-
 	filtered := make([]int, 0, len(indices))
 	for _, idx := range indices {
 		if !dvs.deleted[idx] {
@@ -407,6 +456,7 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 	}
 
 	if len(filtered) == 0 {
+		dvs.mu.RUnlock()
 		return [][]float32{}, nil
 	}
 
@@ -417,6 +467,7 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 	for i, idx := range filtered {
 		bIdx := dvs.findBlock(idx)
 		if bIdx == -1 {
+			dvs.mu.RUnlock()
 			return nil, fmt.Errorf("vector index %d out of bounds", idx)
 		}
 		blockOf[i] = bIdx
@@ -430,9 +481,29 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 	}
 	sort.Ints(sortedBlockIdxs)
 
+	// Snapshot block metadata and state under lock, then release before disk I/O
+	blockCopies := make(map[int]BlockEntry, len(sortedBlockIdxs))
+	for _, bIdx := range sortedBlockIdxs {
+		blockCopies[bIdx] = dvs.blocks[bIdx]
+	}
+	dim := dvs.dim
+	tqEnc := dvs.tqEnc
+	backend := dvs.backend
+	dvs.mu.RUnlock()
+
+	// Asynchronous kernel read-ahead for local blocks to eliminate page faults
+	if prefetcher, ok := backend.(storage.Prefetcher); ok {
+		for _, bIdx := range sortedBlockIdxs {
+			b := blockCopies[bIdx]
+			if b.Tier != storage.TierWarm {
+				_ = prefetcher.Prefetch(b.Offset, int64(13+int(b.CompSize)))
+			}
+		}
+	}
+
 	blockData := make(map[int][]byte, len(sortedBlockIdxs))
 	for _, bIdx := range sortedBlockIdxs {
-		raw, err := dvs.fetchBlockData(bIdx)
+		raw, err := dvs.fetchBlockDataWithEntry(bIdx, blockCopies[bIdx])
 		if err != nil {
 			return nil, err
 		}
@@ -443,21 +514,21 @@ func (dvs *DiskVectorStore) GetBatch(indices []int) ([][]float32, error) {
 	for i, idx := range filtered {
 		bIdx := blockOf[i]
 		raw := blockData[bIdx]
-		block := dvs.blocks[bIdx]
+		block := blockCopies[bIdx]
 		localIdx := idx - block.StartIdx
 
-		vec := make([]float32, dvs.dim)
-		if block.CompType == 3 && dvs.tqEnc != nil {
-			stride := dvs.tqEnc.PackedSize()
+		vec := make([]float32, dim)
+		if block.CompType == 3 && tqEnc != nil {
+			stride := tqEnc.PackedSize()
 			offset := localIdx * stride
 			encoded := raw[offset : offset+stride]
-			recon, err := dvs.tqEnc.Decode(encoded)
+			recon, err := tqEnc.Decode(encoded)
 			if err == nil {
 				copy(vec, recon)
 			}
 		} else {
-			offset := localIdx * dvs.dim * 4
-			for j := 0; j < dvs.dim; j++ {
+			offset := localIdx * dim * 4
+			for j := 0; j < dim; j++ {
 				bits := binary.LittleEndian.Uint32(raw[offset+j*4 : offset+(j+1)*4])
 				vec[j] = math.Float32frombits(bits)
 			}
@@ -474,12 +545,7 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 		return nil, nil
 	}
 
-	// Single RLock covers dataType, block metadata and backend reads for the
-	// whole request — avoids the previous double-lock (read dataType, unlock,
-	// re-lock) window.
 	dvs.mu.RLock()
-	defer dvs.mu.RUnlock()
-
 	dataType := dvs.dataType
 
 	filtered := make([]int, 0, len(indices))
@@ -490,6 +556,7 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 	}
 
 	if len(filtered) == 0 {
+		dvs.mu.RUnlock()
 		return nil, nil
 	}
 
@@ -501,6 +568,7 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 	for i, idx := range filtered {
 		bIdx := dvs.findBlock(idx)
 		if bIdx == -1 {
+			dvs.mu.RUnlock()
 			return nil, fmt.Errorf("vector index %d out of bounds", idx)
 		}
 		blockOf[i] = bIdx
@@ -514,9 +582,29 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 	}
 	sort.Ints(sortedBlockIdxs)
 
+	// Snapshot block metadata and state under lock, then release before disk I/O
+	blockCopies := make(map[int]BlockEntry, len(sortedBlockIdxs))
+	for _, bIdx := range sortedBlockIdxs {
+		blockCopies[bIdx] = dvs.blocks[bIdx]
+	}
+	dim := dvs.dim
+	tqEnc := dvs.tqEnc
+	backend := dvs.backend
+	dvs.mu.RUnlock()
+
+	// Asynchronous kernel read-ahead for local blocks to eliminate page faults
+	if prefetcher, ok := backend.(storage.Prefetcher); ok {
+		for _, bIdx := range sortedBlockIdxs {
+			b := blockCopies[bIdx]
+			if b.Tier != storage.TierWarm {
+				_ = prefetcher.Prefetch(b.Offset, int64(13+int(b.CompSize)))
+			}
+		}
+	}
+
 	blockData := make(map[int][]byte, len(sortedBlockIdxs))
 	for _, bIdx := range sortedBlockIdxs {
-		raw, err := dvs.fetchBlockData(bIdx)
+		raw, err := dvs.fetchBlockDataWithEntry(bIdx, blockCopies[bIdx])
 		if err != nil {
 			return nil, err
 		}
@@ -539,12 +627,12 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 		for i, idx := range filtered {
 			bIdx := blockOf[i]
 			raw := blockData[bIdx]
-			block := dvs.blocks[bIdx]
+			block := blockCopies[bIdx]
 			localIdx := idx - block.StartIdx
 
-			vec := make([]float64, dvs.dim)
-			offset := localIdx * dvs.dim * elemSize
-			for j := 0; j < dvs.dim; j++ {
+			vec := make([]float64, dim)
+			offset := localIdx * dim * elemSize
+			for j := 0; j < dim; j++ {
 				bits := binary.LittleEndian.Uint64(raw[offset+j*8 : offset+(j+1)*8])
 				vec[j] = math.Float64frombits(bits)
 			}
@@ -557,12 +645,12 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 		for i, idx := range filtered {
 			bIdx := blockOf[i]
 			raw := blockData[bIdx]
-			block := dvs.blocks[bIdx]
+			block := blockCopies[bIdx]
 			localIdx := idx - block.StartIdx
 
-			vec := make([]int8, dvs.dim)
-			offset := localIdx * dvs.dim * elemSize
-			for j := 0; j < dvs.dim; j++ {
+			vec := make([]int8, dim)
+			offset := localIdx * dim * elemSize
+			for j := 0; j < dim; j++ {
 				vec[j] = int8(raw[offset+j]) // #nosec G115 -- bit reinterpretation of int8 stored as byte on disk
 			}
 			results[i] = vec
@@ -574,12 +662,12 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 		for i, idx := range filtered {
 			bIdx := blockOf[i]
 			raw := blockData[bIdx]
-			block := dvs.blocks[bIdx]
+			block := blockCopies[bIdx]
 			localIdx := idx - block.StartIdx
 
-			vec := make([]uint8, dvs.dim)
-			offset := localIdx * dvs.dim * elemSize
-			copy(vec, raw[offset:offset+dvs.dim])
+			vec := make([]uint8, dim)
+			offset := localIdx * dim * elemSize
+			copy(vec, raw[offset:offset+dim])
 			results[i] = vec
 		}
 		return results, nil
@@ -589,12 +677,12 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 		for i, idx := range filtered {
 			bIdx := blockOf[i]
 			raw := blockData[bIdx]
-			block := dvs.blocks[bIdx]
+			block := blockCopies[bIdx]
 			localIdx := idx - block.StartIdx
 
-			vec := make([]float16.Num, dvs.dim)
-			offset := localIdx * dvs.dim * elemSize
-			for j := 0; j < dvs.dim; j++ {
+			vec := make([]float16.Num, dim)
+			offset := localIdx * dim * elemSize
+			for j := 0; j < dim; j++ {
 				vec[j] = float16.FromLEBytes(raw[offset+j*2 : offset+(j+1)*2])
 			}
 			results[i] = vec
@@ -606,21 +694,21 @@ func (dvs *DiskVectorStore) GetBatchAny(indices []int) (any, error) {
 		for i, idx := range filtered {
 			bIdx := blockOf[i]
 			raw := blockData[bIdx]
-			block := dvs.blocks[bIdx]
+			block := blockCopies[bIdx]
 			localIdx := idx - block.StartIdx
 
-			vec := make([]float32, dvs.dim)
-			if block.CompType == 3 && dvs.tqEnc != nil {
-				stride := dvs.tqEnc.PackedSize()
+			vec := make([]float32, dim)
+			if block.CompType == 3 && tqEnc != nil {
+				stride := tqEnc.PackedSize()
 				offset := localIdx * stride
 				encoded := raw[offset : offset+stride]
-				recon, err := dvs.tqEnc.Decode(encoded)
+				recon, err := tqEnc.Decode(encoded)
 				if err == nil {
 					copy(vec, recon)
 				}
 			} else {
-				offset := localIdx * dvs.dim * elemSize
-				for j := 0; j < dvs.dim; j++ {
+				offset := localIdx * dim * elemSize
+				for j := 0; j < dim; j++ {
 					bits := binary.LittleEndian.Uint32(raw[offset+j*4 : offset+(j+1)*4])
 					vec[j] = math.Float32frombits(bits)
 				}
@@ -649,8 +737,17 @@ func hotCacheKey(bIdx int) string {
 }
 
 func (dvs *DiskVectorStore) fetchBlockData(bIdx int) ([]byte, error) {
+	dvs.mu.RLock()
+	if bIdx < 0 || bIdx >= len(dvs.blocks) {
+		dvs.mu.RUnlock()
+		return nil, fmt.Errorf("invalid block index %d", bIdx)
+	}
 	block := dvs.blocks[bIdx]
+	dvs.mu.RUnlock()
+	return dvs.fetchBlockDataWithEntry(bIdx, block)
+}
 
+func (dvs *DiskVectorStore) fetchBlockDataWithEntry(bIdx int, block BlockEntry) ([]byte, error) {
 	if block.Tier == storage.TierWarm {
 		// Check Cache
 		if dvs.blockCache != nil {

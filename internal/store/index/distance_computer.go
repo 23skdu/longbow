@@ -70,6 +70,56 @@ func (c *pqComputer) ComputeSingle(id uint32) (float32, error) {
 }
 
 func (c *pqComputer) ComputeBatch(ids []uint32, dst []float32) ([]float32, error) {
+	n := len(ids)
+	if n == 0 {
+		return dst[:0], nil
+	}
+
+	t, isTableF32 := c.table.([]float32)
+	if isTableF32 && n >= 4 && c.h != nil && c.h.config.Metric == basecore.MetricEuclidean {
+		var m int
+		switch enc := c.h.oopqEncoder.(type) {
+		case *pq.PQEncoder:
+			m = enc.M
+		case *pq.OPQEncoder:
+			m = enc.M
+		}
+
+		if m > 0 && len(t) == m*256 {
+			flatCodes := make([]byte, n*m)
+			allValid := true
+			for i, id := range ids {
+				code := c.data.GetVectorPQWithGen(id, c.maxGen)
+				if code == nil {
+					if c.diskGraph != nil {
+						code = c.diskGraph.GetVectorPQ(id)
+					} else {
+						dg := c.h.diskGraph.Load()
+						if dg != nil {
+							code = dg.GetVectorPQ(id)
+						}
+					}
+				}
+				if code == nil || len(code) != m {
+					allValid = false
+					break
+				}
+				copy(flatCodes[i*m:(i+1)*m], code)
+			}
+
+			if allValid {
+				if cap(dst) < n {
+					dst = make([]float32, n)
+				} else {
+					dst = dst[:n]
+				}
+				if err := simd.ADCDistanceBatch(t, flatCodes, m, dst); err == nil {
+					return dst, nil
+				}
+			}
+		}
+	}
+
 	dst = dst[:0]
 	for _, id := range ids {
 		dist, err := c.ComputeSingle(id)

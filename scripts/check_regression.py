@@ -9,6 +9,14 @@ Usage:
         --results data/perf_logs/perf_matrix_latest.json \\
         --threshold 10
 
+Consolidated multi-variant baselines (benchmarks/baseline_matrix.json) can be
+compared per build variant:
+
+    python3 scripts/check_regression.py \\
+        --baseline benchmarks/baseline_matrix.json \\
+        --results data/perf_logs/perf_matrix_cpu_cpu_std_nodisk_*.json \\
+        --variant cpu_std_nodisk
+
 Exit codes:
     0 = no regressions beyond threshold
     1 = regressions detected
@@ -27,6 +35,12 @@ def load_json(path: str) -> dict:
 
 
 def match_config(baseline_cfg: dict, result_cfg: dict) -> bool:
+    # Consolidated baselines (benchmarks/baseline_matrix.json) tag every entry
+    # with the build/disk variant it came from; only compare like with like.
+    b_variant = baseline_cfg.get("variant")
+    r_variant = result_cfg.get("variant")
+    if b_variant is not None and r_variant is not None and b_variant != r_variant:
+        return False
     return (
         baseline_cfg.get("dim") == result_cfg.get("dim")
         and baseline_cfg.get("dtype") == result_cfg.get("dtype")
@@ -34,9 +48,13 @@ def match_config(baseline_cfg: dict, result_cfg: dict) -> bool:
     )
 
 
-def check_regressions(baseline: dict, results: dict, threshold: float) -> list:
+def check_regressions(baseline: dict, results: dict, threshold: float, variant: str | None = None) -> list:
     regressions = []
     baseline_configs = baseline.get("configs", baseline.get("results", []))
+    if variant:
+        baseline_configs = [
+            cfg for cfg in baseline_configs if cfg.get("variant", variant) == variant
+        ]
     result_configs = results.get("configs", results.get("results", []))
 
     for b_cfg in baseline_configs:
@@ -96,6 +114,9 @@ def main():
     parser.add_argument("--results", required=True, help="Path to results JSON")
     parser.add_argument("--threshold", type=float, default=10.0,
                         help="Regression threshold percentage (default: 10)")
+    parser.add_argument("--variant", default=None,
+                        help="Compare only this build variant of a consolidated baseline "
+                             "(e.g. cpu_std_nodisk, gpu_emlgo_disk)")
     args = parser.parse_args()
 
     if not Path(args.baseline).exists():
@@ -113,7 +134,7 @@ def main():
         print(f"ERROR: failed to parse JSON: {e}")
         sys.exit(2)
 
-    regressions = check_regressions(baseline, results, args.threshold)
+    regressions = check_regressions(baseline, results, args.threshold, args.variant)
 
     if regressions:
         print(f"FAIL: {len(regressions)} regression(s) detected (threshold: {args.threshold}%)\n")

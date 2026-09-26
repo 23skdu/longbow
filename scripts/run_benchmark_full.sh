@@ -1,13 +1,16 @@
 #!/bin/bash
-# Full benchmark: 4 configs × 2 disk modes
-# CPU std, CPU emlgo, GPU std, GPU emlgo × use_disk=yes, use_disk=no
-set -e
+# Full baseline matrix: 4 build variants × 2 disk modes
+# 100k / 250k vectors × 16 dtypes × all 13 search modes
+#
+# Resumable: a config whose perf_matrix_*_<label>_*.json already exists is skipped.
+set -uo pipefail
 
 cd /home/rsd/REPOS/longbow
-DTYPES="int8,uint8,float16,float32,float64,complex64,complex128,turboquant4"
+
+DTYPES="int8,uint8,int16,uint16,int32,uint32,int64,uint64,float16,float32,float64,complex64,complex128,turboquant2,turboquant4,turboquant8"
 DIMS="128"
-COUNTS="50000,100000,250000"
-SEARCH="dense,sparse,hybrid,graphrag,temporal"
+COUNTS="100000,250000"
+SEARCH="dense,hybrid,sparse,filtered,byid,graphrag,geo,temporal,learned_index"
 QUERIES=500
 WORKERS=8
 MEMORY=17179869184
@@ -32,6 +35,12 @@ run_config() {
         disk_suffix="disk"
     fi
     local full_label="${label}_${disk_suffix}"
+
+    # Resume: skip configs that already produced a result file
+    if ls data/perf_logs/perf_matrix_"${mode}"_"${full_label}"_*.json >/dev/null 2>&1; then
+        echo "  [SKIP] ${full_label} already has results — skipping (resume)"
+        return 0
+    fi
 
     echo ""
     echo "================================================================"
@@ -80,10 +89,9 @@ run_config() {
 }
 
 echo "================================================================"
-echo "  LONGBOW BENCHMARK SUITE (100k/250k, disk/nodisk)"
+echo "  LONGBOW BASELINE BENCHMARK SUITE (100k/250k, all dtypes, all modes)"
 echo "  Started: $(date)"
-echo "  Configs: CPU std/emlgo, GPU std/emlgo"
-echo "  Disk modes: yes, no"
+echo "  Configs: CPU std/emlgo, GPU std/emlgo × disk/nodisk"
 echo "================================================================"
 
 mkdir -p data/perf_logs data/bench

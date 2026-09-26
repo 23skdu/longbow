@@ -250,3 +250,11 @@ func (b *UringStorageBackend) Size() (int64, error) {
 func (b *UringStorageBackend) Name() string {
 	return b.path
 }
+
+// Prefetch advises the kernel to read ahead file data into page cache asynchronously.
+func (b *UringStorageBackend) Prefetch(off int64, length int64) error {
+	if b.f == nil {
+		return nil
+	}
+	return AdviseWillNeed(b.f, off, length)
+}

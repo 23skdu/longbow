@@ -8,12 +8,15 @@ import (
 	"runtime"
 	"slices"
 	"sync/atomic"
+	"time"
 
 	"github.com/23skdu/longbow/internal/store/types"
 	"github.com/apache/arrow-go/v18/arrow"
 	arrowarray "github.com/apache/arrow-go/v18/arrow/array"
 	"github.com/apache/arrow-go/v18/arrow/float16"
 )
+
+const commitWaitTimeout = 2 * time.Minute
 
 // searchLayerForInsert performs search during insertion.
 // Returns candidates sorted by distance.
@@ -608,9 +611,16 @@ func (h *ArrowHNSW) AddBatch(ctx context.Context, recs []arrow.RecordBatch, rowI
 			n := len(rowIdxs)
 			finalID := int64(startID + uint32(n)) // #nosec G115
 			h.commitMu.Lock()
-			for h.nodeCount.Load() < int64(startID) {
+			deadline := time.Now().Add(commitWaitTimeout)
+			wake := time.AfterFunc(commitWaitTimeout, func() {
+				h.commitMu.Lock()
+				h.commitCond.Broadcast()
+				h.commitMu.Unlock()
+			})
+			for h.nodeCount.Load() < int64(startID) && time.Now().Before(deadline) {
 				h.commitCond.Wait()
 			}
+			wake.Stop()
 			if h.nodeCount.Load() < finalID {
 				h.nodeCount.Store(finalID)
 			}

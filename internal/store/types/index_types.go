@@ -180,7 +180,7 @@ func DefaultArrowHNSWConfig() ArrowHNSWConfig {
 		AutoSpillToDisk:         true,
 		SpillThresholdRatio:     0.70,
 		AutoQuantize:            false,
-		AutoQuantizeThreshold:   500000,
+		AutoQuantizeThreshold:   100000,
 		AutoQuantizeBits:        4,
 	}
 

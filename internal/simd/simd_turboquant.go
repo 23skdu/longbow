@@ -31,41 +31,55 @@ func UnpackTQ8(src []byte, dst []float32, scale, bias float32) {
 
 func UnpackTQ2Generic(src []byte, dst []float32, scale, bias float32) {
 	n := len(dst)
+	if n == 0 {
+		return
+	}
+	var lut [4]float32
+	for j := 0; j < 4; j++ {
+		lut[j] = float32(j)*scale + bias
+	}
 	i := 0
 	for ; i <= n-8; i += 8 {
 		b0 := src[i/4]
 		b1 := src[i/4+1]
-		dst[i] = float32(b0&0x03)*scale + bias
-		dst[i+1] = float32((b0>>2)&0x03)*scale + bias
-		dst[i+2] = float32((b0>>4)&0x03)*scale + bias
-		dst[i+3] = float32((b0>>6)&0x03)*scale + bias
-		dst[i+4] = float32(b1&0x03)*scale + bias
-		dst[i+5] = float32((b1>>2)&0x03)*scale + bias
-		dst[i+6] = float32((b1>>4)&0x03)*scale + bias
-		dst[i+7] = float32((b1>>6)&0x03)*scale + bias
+		dst[i] = lut[b0&0x03]
+		dst[i+1] = lut[(b0>>2)&0x03]
+		dst[i+2] = lut[(b0>>4)&0x03]
+		dst[i+3] = lut[(b0>>6)&0x03]
+		dst[i+4] = lut[b1&0x03]
+		dst[i+5] = lut[(b1>>2)&0x03]
+		dst[i+6] = lut[(b1>>4)&0x03]
+		dst[i+7] = lut[(b1>>6)&0x03]
 	}
 	for ; i < n; i++ {
 		val := (src[i/4] >> (uint(i%4) * 2)) & 0x03
-		dst[i] = float32(val)*scale + bias
+		dst[i] = lut[val]
 	}
 }
 
 func UnpackTQ4Generic(src []byte, dst []float32, scale, bias float32) {
 	n := len(dst)
+	if n == 0 {
+		return
+	}
+	var lut [16]float32
+	for j := 0; j < 16; j++ {
+		lut[j] = float32(j)*scale + bias
+	}
 	i := 0
 	for ; i <= n-8; i += 8 {
 		b0 := src[i/2]
 		b1 := src[i/2+1]
 		b2 := src[i/2+2]
 		b3 := src[i/2+3]
-		dst[i] = float32(b0&0x0F)*scale + bias
-		dst[i+1] = float32(b0>>4)*scale + bias
-		dst[i+2] = float32(b1&0x0F)*scale + bias
-		dst[i+3] = float32(b1>>4)*scale + bias
-		dst[i+4] = float32(b2&0x0F)*scale + bias
-		dst[i+5] = float32(b2>>4)*scale + bias
-		dst[i+6] = float32(b3&0x0F)*scale + bias
-		dst[i+7] = float32(b3>>4)*scale + bias
+		dst[i] = lut[b0&0x0F]
+		dst[i+1] = lut[b0>>4]
+		dst[i+2] = lut[b1&0x0F]
+		dst[i+3] = lut[b1>>4]
+		dst[i+4] = lut[b2&0x0F]
+		dst[i+5] = lut[b2>>4]
+		dst[i+6] = lut[b3&0x0F]
+		dst[i+7] = lut[b3>>4]
 	}
 	for ; i < n; i++ {
 		var val byte
@@ -74,25 +88,32 @@ func UnpackTQ4Generic(src []byte, dst []float32, scale, bias float32) {
 		} else {
 			val = src[i/2] >> 4
 		}
-		dst[i] = float32(val)*scale + bias
+		dst[i] = lut[val]
 	}
 }
 
 func UnpackTQ8Generic(src []byte, dst []float32, scale, bias float32) {
 	n := len(dst)
+	if n == 0 {
+		return
+	}
+	var lut [256]float32
+	for j := 0; j < 256; j++ {
+		lut[j] = float32(j)*scale + bias
+	}
 	i := 0
 	for ; i <= n-8; i += 8 {
-		dst[i] = float32(src[i])*scale + bias
-		dst[i+1] = float32(src[i+1])*scale + bias
-		dst[i+2] = float32(src[i+2])*scale + bias
-		dst[i+3] = float32(src[i+3])*scale + bias
-		dst[i+4] = float32(src[i+4])*scale + bias
-		dst[i+5] = float32(src[i+5])*scale + bias
-		dst[i+6] = float32(src[i+6])*scale + bias
-		dst[i+7] = float32(src[i+7])*scale + bias
+		dst[i] = lut[src[i]]
+		dst[i+1] = lut[src[i+1]]
+		dst[i+2] = lut[src[i+2]]
+		dst[i+3] = lut[src[i+3]]
+		dst[i+4] = lut[src[i+4]]
+		dst[i+5] = lut[src[i+5]]
+		dst[i+6] = lut[src[i+6]]
+		dst[i+7] = lut[src[i+7]]
 	}
 	for ; i < n; i++ {
-		dst[i] = float32(src[i])*scale + bias
+		dst[i] = lut[src[i]]
 	}
 }
 

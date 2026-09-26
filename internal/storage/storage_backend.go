@@ -27,6 +27,11 @@ type StorageBackend interface {
 	Name() string
 }
 
+// Prefetcher defines optional asynchronous kernel read-ahead capabilities for storage backends.
+type Prefetcher interface {
+	Prefetch(off int64, length int64) error
+}
+
 // NewStorageBackend creates a StorageBackend based on the platform and configuration.
 func NewStorageBackend(path string, preferUring, directIO bool) (StorageBackend, error) {
 	if preferUring {
@@ -137,4 +142,12 @@ func (b *FSStorageBackend) Size() (int64, error) {
 
 func (b *FSStorageBackend) Name() string {
 	return b.path
+}
+
+// Prefetch advises the kernel to read ahead file data into page cache asynchronously.
+func (b *FSStorageBackend) Prefetch(off int64, length int64) error {
+	if b.f == nil {
+		return nil
+	}
+	return AdviseWillNeed(b.f, off, length)
 }

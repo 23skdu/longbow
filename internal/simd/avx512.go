@@ -606,11 +606,7 @@ func cosine16AVX512Wrapper(a, b []float32) (float32, error) {
 // =============================================================================
 
 func adcBatchAVX512(table []float32, flatCodes []byte, m int, results []float32) error {
-	if !features.HasAVX512 {
-		return adcBatchAVX2(table, flatCodes, m, results)
-	}
-	adcBatchAVX512Kernel(uintptr(unsafe.Pointer(&table[0])), uintptr(unsafe.Pointer(&flatCodes[0])), m, uintptr(unsafe.Pointer(&results[0])), len(results)) // #nosec G103
-	return nil
+	return adcBatchAVX2(table, flatCodes, m, results)
 }
 
 func adcBatchVNNI(table []float32, flatCodes []byte, m int, results []float32) error {

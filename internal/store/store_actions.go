@@ -1486,7 +1486,7 @@ func (s *VectorStore) applyBatchToMemory(ds *Dataset, rec arrow.RecordBatch, ts 
 			}
 
 			if autoQuantizeEnabled && !hasMetadataType {
-				threshold := int64(500000)
+				threshold := int64(100000)
 				if config.IndexConfig != nil && config.IndexConfig.AutoQuantizeThreshold > 0 {
 					threshold = config.IndexConfig.AutoQuantizeThreshold
 				}

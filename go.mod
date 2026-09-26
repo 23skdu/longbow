@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	cloud.google.com/go/storage v1.68.0
 	github.com/IBM/sarama v1.61.0
-	github.com/RoaringBitmap/roaring/v2 v2.28.0
+	github.com/RoaringBitmap/roaring/v2 v2.29.0
 	github.com/apache/arrow-adbc/go/adbc v1.12.0
 	github.com/apache/arrow-go/v18 v18.8.0
 	github.com/apache/pulsar-client-go v0.21.0

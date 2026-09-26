@@ -736,7 +736,8 @@ func hotCacheKey(bIdx int) string {
 	return "hot:" + strconv.Itoa(bIdx)
 }
 
-func (dvs *DiskVectorStore) fetchBlockData(bIdx int) ([]byte, error) {
+// FetchBlockData retrieves the decompressed data for the block at bIdx.
+func (dvs *DiskVectorStore) FetchBlockData(bIdx int) ([]byte, error) {
 	dvs.mu.RLock()
 	if bIdx < 0 || bIdx >= len(dvs.blocks) {
 		dvs.mu.RUnlock()

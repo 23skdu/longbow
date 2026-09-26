@@ -175,22 +175,35 @@ func (a *AsyncFsyncer) RequestFsyncIfNeeded() bool {
 	}
 }
 
-// WaitForPendingFsyncs waits for all pending fsyncs to complete
+// WaitForPendingFsyncs waits for all pending fsync requests to complete
 func (a *AsyncFsyncer) WaitForPendingFsyncs() {
-	// Drain the request channel and wait for completion
-	timer := time.NewTimer(100 * time.Millisecond)
+	if !a.IsRunning() {
+		return
+	}
+
+	isPending := func() bool {
+		pending := (a.totalRequests.Load() - a.queueFullDrops.Load()) - (a.completedFsyncs.Load() + a.failedFsyncs.Load())
+		return pending > 0 || len(a.requestCh) > 0
+	}
+
+	if !isPending() {
+		return
+	}
+
+	timer := time.NewTimer(50 * time.Millisecond)
 	defer timer.Stop()
 	for {
-		timer.Reset(100 * time.Millisecond)
+		if !a.IsRunning() || !isPending() {
+			return
+		}
+		timer.Reset(50 * time.Millisecond)
 		select {
 		case <-a.waitCh:
-			// Check if more pending
-			if len(a.requestCh) == 0 && a.dirtyBytes.Load() == 0 {
+			if !isPending() {
 				return
 			}
 		case <-timer.C:
-			// Timeout check
-			if len(a.requestCh) == 0 && a.dirtyBytes.Load() == 0 {
+			if !isPending() {
 				return
 			}
 		}

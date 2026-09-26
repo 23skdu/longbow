@@ -500,7 +500,7 @@ func TestBuildSearchTicketBufferReuse(t *testing.T) {
 }
 
 func BenchmarkGenerateRecord(b *testing.B) {
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		rec, _, err := generateRecord(1000, 128, "float32", 4)
 		if err != nil {
 			b.Fatal(err)
@@ -511,8 +511,7 @@ func BenchmarkGenerateRecord(b *testing.B) {
 
 func BenchmarkBuildSearchTicket(b *testing.B) {
 	s := NewReusableSearchState(128)
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
+	for b.Loop() {
 		s.BuildSearchTicket("bench", 128, "float32", "Dense", 10)
 	}
 }

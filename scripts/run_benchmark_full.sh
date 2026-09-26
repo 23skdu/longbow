@@ -15,6 +15,7 @@ QUERIES=50
 WORKERS=8
 MEMORY=17179869184
 TIMEOUT=3600
+export LONGBOW_CPU_AFFINITY="${LONGBOW_CPU_AFFINITY:-12-15}"
 
 cleanup() {
     pkill -9 -x longbow 2>/dev/null || true
@@ -76,6 +77,7 @@ run_config() {
         --memory "$MEMORY" \
         --timeout "$TIMEOUT" \
         $disk_flag \
+        --cpu-affinity "$LONGBOW_CPU_AFFINITY" \
         --random-port-fallback \
         --label "$full_label" \
         --report-md "data/perf_logs/perf_matrix_${mode}_${full_label}.md" \

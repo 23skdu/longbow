@@ -949,16 +949,14 @@ func generateRecord(count int, dim int, dtype string, tqBits int) (arrow.Record,
 	}
 
 	listLen := int32(dim) // #nosec G115
+	if dtype == "complex64" || dtype == "complex128" {
+		listLen = int32(2 * dim) // #nosec G115
+	}
 	var meta arrow.Metadata
-	if dtype == "complex64" || dtype == "complex128" || dtype == "turboquant" || dtype == "float16" {
-		if dtype == "complex64" || dtype == "complex128" {
-			listLen = int32(2 * dim) // #nosec G115
-		}
-		if dtype == "turboquant" {
-			meta = arrow.NewMetadata([]string{"longbow.vector_type", "longbow.turboquant_bits"}, []string{dtype, fmt.Sprintf("%d", tqBits)})
-		} else {
-			meta = arrow.NewMetadata([]string{"longbow.vector_type"}, []string{dtype})
-		}
+	if dtype == "turboquant" {
+		meta = arrow.NewMetadata([]string{"longbow.vector_type", "longbow.turboquant_bits"}, []string{dtype, fmt.Sprintf("%d", tqBits)})
+	} else {
+		meta = arrow.NewMetadata([]string{"longbow.vector_type"}, []string{dtype})
 	}
 
 	var vecField arrow.Field

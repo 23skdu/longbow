@@ -594,7 +594,7 @@ class BenchmarkRunner:
             env["LONGBOW_SPILL_THRESHOLD_RATIO"] = "0.60"
         # Auto-enable disk spillover for large sets (500k+) to prevent OOM
         max_count_env = max(int(c) for c in self.args.counts.split(","))
-        if max_count_env >= 100000:
+        if max_count_env >= 500000:
             env["LONGBOW_AUTO_SPILL_DISK"] = "true"
             env["LONGBOW_SPILL_THRESHOLD_RATIO"] = "0.60"
         if self.args.pq_ingest:
@@ -628,6 +628,9 @@ class BenchmarkRunner:
         if getattr(self.args, "numa_bind", False) and platform.system() == "Linux":
             cmd = ["numactl", "--cpunodebind=0", "--membind=0", server_bin]
             env["LONGBOW_NUMA_NODE"] = "0"
+        cpu_affinity = getattr(self.args, "cpu_affinity", None) or os.environ.get("LONGBOW_CPU_AFFINITY")
+        if cpu_affinity and platform.system() == "Linux":
+            cmd = ["taskset", "-c", str(cpu_affinity)] + cmd
 
         with open(log_file, "w") as f:
             process = subprocess.Popen(
@@ -943,6 +946,9 @@ class BenchmarkRunner:
             os.remove(json_file)
 
         cmd = f"{bench_tool} -mode vec -uri {uri} -dim {dim} -dtype {dtype}{tq_arg} -scale {batch_size} -queries {self.args.queries} -workers {self.args.workers} -dataset {label} -json {json_file} -search-modes {search_modes}{extra_args}"
+        cpu_affinity = getattr(self.args, "cpu_affinity", None) or os.environ.get("LONGBOW_CPU_AFFINITY")
+        if cpu_affinity and platform.system() == "Linux":
+            cmd = f"taskset -c {cpu_affinity} {cmd}"
         print(f"DEBUG: cmd={cmd}", flush=True)
         print(f"  Running {dtype} dim={dim}...", end="", flush=True)
         base_timeout = getattr(self.args, "timeout", 1800)
@@ -3716,6 +3722,12 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         "--numa-compare", action="store_true", help="Run benchmarks with and without NUMA binding to compare"
+    )
+    parser.add_argument(
+        "--cpu-affinity",
+        dest="cpu_affinity",
+        default=os.environ.get("LONGBOW_CPU_AFFINITY"),
+        help="Pin server and benchmark workers to specific CPU cores via taskset (e.g. '12-15')",
     )
     parser.add_argument(
         "--runs", type=int, default=1,

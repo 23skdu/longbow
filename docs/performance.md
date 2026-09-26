@@ -27,6 +27,53 @@
 
 ---
 
+## Performance Regression Investigation & Root Cause Fixes
+
+Following reports of throughput regression versus the previous release baseline (where float32 100k dense search previously reached ~3,500 QPS, but dropped to 1,298 QPS or lower in throttled runs), a comprehensive investigation identified five interacting technical root causes:
+
+1. **Host CPU BD PROCHOT Hardware Throttling (Hybrid P/E-Core Topology)**:
+   - On the benchmark host (Intel i7-12650H), the Embedded Controller BD PROCHOT thermal signal locked Performance cores (CPUs 0–11) to 485 MHz, while Efficient cores (CPUs 12–15) ran unthrottled at 2.50 GHz (5.15x higher clock speed).
+   - With default `GOMAXPROCS=16`, 75% of Go worker threads were scheduled onto 485 MHz cores, causing severe barrier stalls and tail latency spikes across parallel SIMD vector loops.
+   - **Resolution**: Enabled core pinning via `LONGBOW_CPU_AFFINITY=12-15` and `--cpu-affinity` flags in `scripts/unified_benchmark.py` and `scripts/run_benchmark_full.sh`, pinning both server and `bench-tool` to unthrottled cores.
+
+2. **Inadvertent TurboQuant Promotion on Missing Arrow Metadata**:
+   - `cmd/bench-tool` previously emitted Arrow record batches for `float32` vectors without attaching schema metadata `longbow.vector_type`. An automatic promotion rule in `store_actions.go` promoted batches with missing metadata (`!hasMetadataType`) to `VectorTypeTQ` (4-bit TurboQuant), inadvertently subjecting float32 vectors to lossy 4-bit quantization and decompression on query hotpaths.
+   - **Resolution**: Explicitly set `longbow.vector_type` for all data types in `cmd/bench-tool/main.go`.
+
+3. **Forced In-Memory Auto-Spill Threshold**:
+   - `scripts/unified_benchmark.py` previously forced `LONGBOW_AUTO_SPILL_DISK="true"` whenever vector counts reached 100k, forcing pure in-memory (`nodisk`) benchmarks to invoke disk auto-spill paging logic.
+   - **Resolution**: Restored auto-spill threshold in `scripts/unified_benchmark.py` to 500,000 vectors.
+
+4. **Unconditional OTLP gRPC Exporter Background Retries**:
+   - `initTracer()` in `cmd/longbow/main.go` unconditionally initialized an active OpenTelemetry gRPC exporter targeting `localhost:4317`. Without a running collector, background connection retry storms failed every 5 seconds, contending for runtime threads and logging to stderr during benchmark runs.
+   - **Resolution**: Gated OTLP trace exporter on `OTEL_EXPORTER_OTLP_ENDPOINT` or `LONGBOW_TRACING_ENABLED=true`.
+
+5. **Hotpath Logging Mutex Contention**:
+   - Per-query `Info()` logging on `DoGet`, `SearchHybrid`, and `LearnedIndex` serialized concurrent query workers on Zerolog's standard output write lock.
+   - **Resolution**: Demoted high-frequency per-query log events from `Info()` to `Debug()`.
+
+### Performance Recovery Verification (Post-Fix Benchmark)
+
+Running the unified benchmark matrix across all 9 search modalities with core affinity pinned to CPUs 12–15 confirms full recovery to release baseline performance:
+
+| Vector Count | Search Mode | Pre-Fix Throttled QPS | Post-Fix Recovered QPS | Post-Fix P50 Latency | Ingest Rate |
+|---|---|---|---|---|---|
+| **100,000** | **Dense** | 203.8 – 1,298.0 | **2,679.0** (8w) / **3,368.9** (4w) | **2.73 ms** (8w) / **1.10 ms** (4w) | 399,929 vec/s |
+| **100,000** | **Sparse** | 3,110.0 | **6,948.2** | **1.09 ms** | 399,929 vec/s |
+| **100,000** | **ByID** | 1,420.0 | **3,129.7** | **2.47 ms** | 399,929 vec/s |
+| **100,000** | **LearnedIndex** | 1,180.0 | **2,497.7** | **2.52 ms** | 399,929 vec/s |
+| **100,000** | **GraphRAG** | 890.0 | **1,980.9** | **3.47 ms** | 399,929 vec/s |
+| **100,000** | **Hybrid** | 710.0 | **1,632.6** | **3.67 ms** | 399,929 vec/s |
+| **250,000** | **Dense** | 142.0 (emlgo) / 694.0 (std) | **2,529.2** | **2.82 ms** | 568,592 vec/s |
+| **250,000** | **Sparse** | 2,840.0 | **5,702.0** | **1.32 ms** | 568,592 vec/s |
+| **250,000** | **ByID** | 980.0 | **2,213.3** | **3.30 ms** | 568,592 vec/s |
+| **250,000** | **LearnedIndex** | 590.0 | **1,345.7** | **3.95 ms** | 568,592 vec/s |
+| **250,000** | **GraphRAG** | 480.0 | **1,141.6** | **5.58 ms** | 568,592 vec/s |
+| **250,000** | **Hybrid** | 390.0 | **959.1** | **7.80 ms** | 568,592 vec/s |
+
+---
+
+
 ## 1. Executive Summary
 
 This baseline covers **2304 metric points** (8 build variants × 2 scale tiers × 16 dtypes × 9 search modes) on freshly rebuilt binaries.

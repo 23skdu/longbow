@@ -134,5 +134,20 @@ Following the benchmark matrix analysis and performance investigation across 50k
    - *Observation*: Auto-spill disk mode averaged +21.2% QPS improvement over in-memory mode in standard builds across 576 measurements, while bounding server RSS within the 60% memory threshold. The `writeMu` reader-writer separation and asynchronous flushing eliminate lock contention during background page writes.
 9. **[CONFIRMED] Integer EMLGo SIMD Acceleration**:
    - *Observation*: EMLGo SIMD builds demonstrated massive throughput gains on integer vectors: `uint8` 100k reached 1,577 QPS (+95.5%), `uint16` 100k disk reached 1,515 QPS (+209.1%), and `uint64` 100k disk reached 2,067 QPS (+352.8%).
+10. **[RESOLVED] Intel P-Core BD PROCHOT Hardware Throttling & Core Affinity**:
+   - *Observation*: On hybrid architectures (such as Intel i7-12650H), Embedded Controller BD PROCHOT clamped P-cores (CPUs 0–11) to 485 MHz while E-cores (CPUs 12–15) ran unthrottled at 2.50 GHz (5.15x higher frequency). Default `GOMAXPROCS=16` scheduled 75% of Go worker threads onto the throttled cores, introducing severe barrier stalls across parallel SIMD loops and causing an apparent ~3x–8x benchmark throughput drop.
+   - *Resolution*: Added CPU affinity management via `LONGBOW_CPU_AFFINITY` environment variable and `--cpu-affinity` CLI flags in `scripts/unified_benchmark.py` and `scripts/run_benchmark_full.sh`, pinning the Longbow server and `bench-tool` to unthrottled high-frequency cores (CPUs 12–15).
+11. **[RESOLVED] Arrow Vector Type Metadata Preservation & Inadvertent TurboQuant Demotion**:
+   - *Observation*: `cmd/bench-tool` previously created Arrow record batches for `float32` vectors without attaching schema metadata `longbow.vector_type`. An automatic promotion rule in `store_actions.go` promoted batches with missing metadata (`!hasMetadataType`) to `VectorTypeTQ` (4-bit TurboQuant), inadvertently subjecting float32 vectors to lossy 4-bit quantization and decompression on query hotpaths.
+   - *Resolution*: Updated `cmd/bench-tool/main.go` to explicitly populate `longbow.vector_type` across all 16 supported data types in `generateRecord`.
+12. **[RESOLVED] In-Memory Auto-Spill Threshold Boundary**:
+   - *Observation*: `scripts/unified_benchmark.py` previously forced `LONGBOW_AUTO_SPILL_DISK="true"` whenever the dataset vector count reached 100k, forcing pure in-memory (`nodisk`) benchmarks to invoke disk auto-spill paging logic.
+   - *Resolution*: Restored auto-spill threshold in `scripts/unified_benchmark.py` to 500,000 vectors, ensuring 100k and 250k pure memory benchmarks stay resident in RAM.
+13. **[RESOLVED] Unconditional OTLP gRPC Exporter Retry Storms**:
+   - *Observation*: `initTracer()` in `cmd/longbow/main.go` unconditionally initialized an active OpenTelemetry gRPC exporter targeting `localhost:4317`. When no OTLP collector was running, gRPC background connection retries failed every 5 seconds, contending for runtime threads and logging to stderr during benchmark runs.
+   - *Resolution*: Made OTLP trace exporter initialization conditional on `OTEL_EXPORTER_OTLP_ENDPOINT` or `LONGBOW_TRACING_ENABLED=true`.
+14. **[RESOLVED] Query Hotpath Logging Mutex Contention**:
+   - *Observation*: Per-query `Info()` logging on `DoGet`, `SearchHybrid`, and `LearnedIndex` serialized concurrent query workers on Zerolog's standard output write lock.
+   - *Resolution*: Demoted high-frequency per-query log events from `Info()` to `Debug()`, eliminating stdout mutex serialization across concurrent query workers.
 
 

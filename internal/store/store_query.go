@@ -255,7 +255,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 
 	// Existing Dataset Fetch Logic
 	name := query.Name
-	s.logger.Info().
+	s.logger.Debug().
 		Str("name", name).
 		Int("filters", len(query.Filters)).
 		Interface("parsed_filters", query.Filters).
@@ -318,7 +318,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	recordsToProcess, tombstonesToProcess := AdaptivelySliceBatches(ds.Records.Read(), ds.Tombstones, chunkStrategy)
 	ds.dataMu.RUnlock() // RELEASE LOCK IMMEDIATELY AFTER CLONING REFERENCES
 
-	s.logger.Info().Str("name", name).Int("batches", len(recordsToProcess)).Msg("DoGet streaming started")
+	s.logger.Debug().Str("name", name).Int("batches", len(recordsToProcess)).Msg("DoGet streaming started")
 
 	defer func() {
 		for _, r := range recordsToProcess {
@@ -584,7 +584,7 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 	}
 
 	// Normal exit
-	s.logger.Info().Int64("rows_sent", rowsSent).Msg("DoGet completed")
+	s.logger.Debug().Int64("rows_sent", rowsSent).Msg("DoGet completed")
 	metrics.FlightRowsProcessed.WithLabelValues("get", "ok").Add(float64(rowsSent))
 	return nil
 }
@@ -874,7 +874,7 @@ func (s *VectorStore) handleDoGetSearch(req *qry.VectorSearchRequest, windowFunc
 						IsHybrid:        isHybrid,
 					}
 					prediction := predictor.Predict(features)
-					s.logger.Info().
+					s.logger.Debug().
 						Str("dataset", req.Dataset).
 						Str("recommended", string(prediction.RecommendedIndex)).
 						Float64("confidence", prediction.Confidence).

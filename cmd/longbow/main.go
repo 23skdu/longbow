@@ -1053,21 +1053,26 @@ func initTracer() *sdktrace.TracerProvider {
 		semconv.ServiceNameKey.String("longbow"),
 	)
 
-	// Create OTLP gRPC exporter
-	exporter, err := otlptracegrpc.New(context.Background(),
-		otlptracegrpc.WithInsecure(),
-	)
-	if err != nil {
-		fmt.Printf("WARN: Failed to create OTLP trace exporter, tracing disabled: %v\n", err)
-	}
-
-	// Create TracerProvider
+	// Create TracerProvider options
 	opts := []sdktrace.TracerProviderOption{
 		sdktrace.WithResource(res),
 	}
-	if exporter != nil {
-		opts = append(opts, sdktrace.WithBatcher(exporter))
+
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	tracingEnabled := os.Getenv("LONGBOW_TRACING_ENABLED") == "true" || os.Getenv("LONGBOW_TRACING_ENABLED") == "1"
+
+	// Only connect to OTLP collector if an endpoint or explicit tracing flag is set
+	if endpoint != "" || tracingEnabled {
+		exporter, err := otlptracegrpc.New(context.Background(),
+			otlptracegrpc.WithInsecure(),
+		)
+		if err != nil {
+			fmt.Printf("WARN: Failed to create OTLP trace exporter, tracing disabled: %v\n", err)
+		} else if exporter != nil {
+			opts = append(opts, sdktrace.WithBatcher(exporter))
+		}
 	}
+
 	tp := sdktrace.NewTracerProvider(opts...)
 
 	// Register globals

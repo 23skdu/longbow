@@ -38,7 +38,7 @@ func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []
 	}(time.Now())
 
 	start := time.Now()
-	s.logger.Info().
+	s.logger.Debug().
 		Str("dataset", name).
 		Str("text_query", textQuery).
 		Float32("alpha", alpha).
@@ -173,7 +173,7 @@ func (s *VectorStore) SearchHybrid(ctx context.Context, name string, queryVec []
 		resolved = resolved[:k]
 	}
 
-	s.logger.Info().
+	s.logger.Debug().
 		Str("dataset", name).
 		Dur("duration", time.Since(start)).
 		Int("count", len(resolved)).

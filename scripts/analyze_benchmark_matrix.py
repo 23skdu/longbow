@@ -241,6 +241,7 @@ def main():
     ap.add_argument("--baseline-dir", default="data/perf_logs/archive_20260924")
     ap.add_argument("--out", default="docs/performance.md")
     ap.add_argument("--baseline-out", default="benchmarks/baseline_matrix.json")
+    ap.add_argument("--queries", type=int, default=50)
     ap.add_argument("--date", default=datetime.now().strftime("%Y-%m-%d"))
     args = ap.parse_args()
 
@@ -292,7 +293,7 @@ def main():
     w("| `bin/longbow-cuda_main` | GPU standard build (`-tags gpu`) |")
     w("| `bin/longbow-cuda_emlgo` | GPU emlgo build (`-tags \"gpu,emlgo\"`) |")
     w("")
-    w("**Configuration:** 8 concurrency workers, 500 queries, 128 dimensions, 16GB memory ceiling.")
+    w(f"**Configuration:** 8 concurrency workers, {args.queries} queries, 128 dimensions, 16GB memory ceiling.")
     w(f"**Scaling Tiers:** 100,000 (100k) and 250,000 (250k) vectors.")
     w(f"**Data Types:** all {n_dt} test-plan dtypes (`int8` → `turboquant8`).")
     w(f"**Search Modes:** all {n_modes} engine modalities (see `docs/testplan.md` §3.5).")

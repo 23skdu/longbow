@@ -127,4 +127,12 @@ Following the benchmark matrix analysis and performance investigation across 50k
 6. **[RESOLVED] TurboQuant Unpack Precomputed LUT**:
    - *Observation*: TurboQuant unpacking previously executed per-element floating-point calculations during distance scoring.
    - *Resolution*: Replaced with precomputed stack-allocated Lookup Tables (`[16]float32`, `[4]float32`, `[256]float32`) resident in L1 cache, delivering >3.2M unpacks/sec at 256–304 ns/op.
+7. **[VALIDATED] Full 8-Variant Baseline Matrix (2,304 Metric Points)**:
+   - *Observation*: Full 8-variant matrix executed across CPU and GPU builds (Standard & EMLGo), pure memory (`nodisk`) and auto-spill (`disk`) across all 16 data types, 100k & 250k vector counts, and all 9 search modalities (`dense`, `hybrid`, `sparse`, `filtered`, `byid`, `graphrag`, `geo`, `temporal`, `learned_index`). Peak throughput reached 3,644 QPS on GPU (`uint16` 100k sparse) and 3,611 QPS on CPU (`complex64` 250k sparse). Ingestion throughput achieved 385,000 to 603,742 vec/s.
+   - *Status*: Baseline recorded in `benchmarks/baseline_matrix.json` and documented in `docs/performance.md`.
+8. **[CONFIRMED] Auto-Spill Isolation & Throughput Gains**:
+   - *Observation*: Auto-spill disk mode averaged +21.2% QPS improvement over in-memory mode in standard builds across 576 measurements, while bounding server RSS within the 60% memory threshold. The `writeMu` reader-writer separation and asynchronous flushing eliminate lock contention during background page writes.
+9. **[CONFIRMED] Integer EMLGo SIMD Acceleration**:
+   - *Observation*: EMLGo SIMD builds demonstrated massive throughput gains on integer vectors: `uint8` 100k reached 1,577 QPS (+95.5%), `uint16` 100k disk reached 1,515 QPS (+209.1%), and `uint64` 100k disk reached 2,067 QPS (+352.8%).
+
 

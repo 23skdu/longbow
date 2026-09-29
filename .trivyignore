@@ -1,4 +1,4 @@
-# Accepted risks — documented in docs/nextsteps.md Part 9 and docs/deploy.md.
+# Accepted risks — documented in docs/roadmap.md section 6 and docs/deploy.md.
 #
 # hamba/avro/v2 v2.31.0 (indirect via pulsar-client-go and temporal avro.Freeze):
 #   GO-2026-5046 / CVE-2026-46385  — CPU exhaustion in Avro decoder (Fixed in: N/A)

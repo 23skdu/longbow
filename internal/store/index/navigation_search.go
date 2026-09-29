@@ -22,7 +22,7 @@ import (
 
 // applyIndexDispatch pins the math backend for one search using ResolveBackend
 // rules (dtype + node count). Returns a restore func. Skipped while a
-// PushStandard scope is active (temporal search, nextsteps P1 #3).
+// PushStandard scope is active (temporal search, roadmap.md §2).
 func applyIndexDispatch(typeName string, nodeCount int) (restore func()) {
 	if mathutil.IsForceStandard() {
 		return func() {}
@@ -86,7 +86,7 @@ func (h *ArrowHNSW) SearchVectorsWithBitmap(ctx context.Context, queryVec any, k
 		return nil, nil
 	}
 
-	// Per-dtype auto routing (nextsteps P0 #1/#2, P1 #5, P2 #6/#7): pin backend
+	// Per-dtype auto routing (roadmap.md §2): pin backend
 	// for the duration of this search based on ResolveBackend rules.
 	restoreDispatch := applyIndexDispatch(h.config.DataType.String(), int(meta.NodeCount))
 	defer restoreDispatch()
@@ -829,7 +829,7 @@ func (h *ArrowHNSW) resolveHNSWComputer(data *types.GraphData, searchCtx *ArrowS
 				for _, v := range searchCtx.queryC128 {
 					sum += real(v)*real(v) + imag(v)*imag(v)
 				}
-				// Reuse pooled searchCtx batch buffers (nextsteps P0 #2 P99/GC).
+				// Reuse pooled searchCtx batch buffers (roadmap.md §4).
 				return &complex128Computer{
 					data: data, q: searchCtx.queryC128, dims: logDims, h: h, diskGraph: dg, maxGen: maxGen, queryMag: math.Sqrt(sum),
 					sctx: searchCtx,

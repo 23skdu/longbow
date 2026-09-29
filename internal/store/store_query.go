@@ -510,9 +510,9 @@ func (s *VectorStore) DoGet(tkt *flight.Ticket, stream flight.FlightService_DoGe
 			// The empty-record case (rows=0, cols=0) is a benign stub-record
 			// path — the producer emits a zero-sized record to signal batch
 			// boundaries, and the DoGet path correctly skips it. The warning
-			// used to fire 5× per DoGet on int8 50k+ runs (see P1 in
-			// docs/nextsteps.md), which polluted the logs without indicating
-			// a real fault. Demoted to Debug.
+			// used to fire 5× per DoGet on int8 50k+ runs (roadmap.md §4,
+			// "Query Hotpath Logging Mutex Contention"), which polluted the
+			// logs without indicating a real fault. Demoted to Debug.
 			//
 			// The nil case is a real producer bug (a nil record from the
 			// channel means the producer panicked or returned early). Kept

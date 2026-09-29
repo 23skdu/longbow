@@ -97,7 +97,7 @@ func TestResolveBackend_AutoMode_RoutingRules(t *testing.T) {
 }
 
 // TestResolveBackend_AutoMode_SizeThresholds verifies empirical size routing
-// (docs/emlgo.md, nextsteps P0 #1/#2, P2 #7).
+// (docs/emlgo.md, roadmap.md §2).
 func TestResolveBackend_AutoMode_SizeThresholds(t *testing.T) {
 	origMode := dispatchMode
 	defer func() { dispatchMode = origMode }()

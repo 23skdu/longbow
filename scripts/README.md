@@ -184,7 +184,7 @@ python3 scripts/verify_driver.py
 
 Runs `govulncheck ./...` and fails only on vulnerabilities **outside** the
 allowlist (hamba/avro GO-2026-5046/5047/5048, x/crypto openpgp GO-2026-5932 —
-see `.trivyignore` and `docs/nextsteps.md`).
+see `.trivyignore` and docs/roadmap.md §6).
 
 **Exit codes**: `0` = clean/allowlisted, `1` = unexpected vuln, `2` = tool missing/scan failed.
 

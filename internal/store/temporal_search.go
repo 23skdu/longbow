@@ -1168,7 +1168,7 @@ func (ti *TemporalIndex) Update(id uint64, vector []float32, timestamp int64, me
 
 // SearchAsOf performs a vector search considering only data available at a specific timestamp.
 func (ti *TemporalIndex) SearchAsOf(ctx context.Context, timestamp int64, k int) ([]lbtypes.SearchResult, error) {
-	// Temporal path regresses -16-38% under emlgo (nextsteps P1 #3): pin standard math.
+	// Temporal path regresses -16-38% under emlgo (roadmap.md §2 temporal pin): pin standard math.
 	restoreStd := mathutil.PushStandard()
 	defer restoreStd()
 
@@ -1320,7 +1320,7 @@ func (ti *TemporalIndex) Prewarm(ctx context.Context) error {
 
 // SearchRange performs a vector search over data within a specific timestamp range.
 func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int64, k int) ([]lbtypes.SearchResult, error) {
-	// Temporal path regresses -16-38% under emlgo (nextsteps P1 #3): pin standard math.
+	// Temporal path regresses -16-38% under emlgo (roadmap.md §2 temporal pin): pin standard math.
 	restoreStd := mathutil.PushStandard()
 	defer restoreStd()
 
@@ -1431,7 +1431,7 @@ func (ti *TemporalIndex) SearchRange(ctx context.Context, startTime, endTime int
 
 // SearchSlidingWindow performs a search over the last n vector updates.
 func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int, k int) ([]lbtypes.SearchResult, error) {
-	// Temporal path regresses -16-38% under emlgo (nextsteps P1 #3): pin standard math.
+	// Temporal path regresses -16-38% under emlgo (roadmap.md §2 temporal pin): pin standard math.
 	restoreStd := mathutil.PushStandard()
 	defer restoreStd()
 
@@ -1514,7 +1514,7 @@ func (ti *TemporalIndex) SearchSlidingWindow(ctx context.Context, windowSize int
 
 // SearchSlidingWindowByTime performs a search over vector updates from the last duration.
 func (ti *TemporalIndex) SearchSlidingWindowByTime(ctx context.Context, duration time.Duration, k int) ([]lbtypes.SearchResult, error) {
-	// Temporal path regresses -16-38% under emlgo (nextsteps P1 #3): pin standard math.
+	// Temporal path regresses -16-38% under emlgo (roadmap.md §2 temporal pin): pin standard math.
 	restoreStd := mathutil.PushStandard()
 	defer restoreStd()
 

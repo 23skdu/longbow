@@ -65,7 +65,7 @@ func TestComplex128_TicketParsing(t *testing.T) {
 	_, isNested := list[0].([]any)
 
 	// If the parser (VerifyTicket?) expects float array, this structure is "valid json" but "invalid ticket".
-	// The failure mode described in nextsteps is "invalid ticket format".
+	// The failure mode is "invalid ticket format".
 	// We confirm that nested arrays (common mistake for complex types) are technically parsable
 	// but likely rejected by validation layer.
 	assert.True(t, isNested, "Nested array parsed as list-of-lists")

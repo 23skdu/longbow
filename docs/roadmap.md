@@ -1,7 +1,7 @@
 # Longbow Unified Roadmap & Optimization Plan
 
 Last updated: 2026-09-29.
-Consolidated canonical roadmap and optimization tracker for Longbow. Replaces and unifies `docs/roadmap.md` and `docs/nextsteps.md`.
+Consolidated canonical roadmap and optimization tracker for Longbow. This document absorbed `docs/nextsteps.md`, which was removed in its entirety.
 
 ---
 
@@ -16,6 +16,8 @@ This is the single canonical list of outstanding items and upcoming milestones a
 | **P2** | **AVX-512 / AVX2 Product Quantization (PQ) Kernels** | `internal/simd/`, `internal/store/index/` | **Done** | 4-way ILP unrolled `adcBatchAVX2` implemented and wired to `ADCDistanceBatch`. Hooked into `IVFPQIndex.SearchWithFilter` and `pqComputer.ComputeBatch` for high-throughput batch distance evaluation. | v0.2.5 |
 | **P2** | **Multi-GPU / High-VRAM Stress Profiling** | `internal/gpu/memory/` | **Done** | Validated `NewDoubleBufferWithHeadroom` and `CheckHeadroom` under heavy concurrent query load with `TestDoubleBuffer_HighVRAM_Stress` simulating multi-stream >1M vector footprint with zero allocation stalls. | v0.2.5 |
 | **P3** | **Continuous Package Coverage Enforcement** | `ci.yml`, test suite | **Done** | Enforced in `.github/workflows/ci.yml` via the `Verify 100% Package Test Coverage Gate` step. All 69 packages verified to contain active, passing unit tests with 0 untested packages. | Ongoing |
+
+Merged from `docs/nextsteps.md`: that file's status summary listed the AVX-512/AVX2 PQ kernels and the Multi-GPU/High-VRAM stress profiling as **[Open]**, which was stale. Both are recorded as **Done** above and their resolutions are detailed in §4; the roadmap is the canonical source and the two entries are reconciled here rather than tracked in two places.
 
 ---
 
@@ -226,6 +228,49 @@ Based on empirical CPU, Heap, and Mutex pprof profile data collected during mult
 ### Known Open Issues
 
 - `TestAddBatch_Bulk_Typed` (`internal/store/index/arrow_hnsw_bulk_typed_test.go:277`) is a **pre-existing** recall flake — reproduced on a pristine checkout of `cfa20cb9` with none of these changes, so it is not caused by this work.
-- Predicate-pruned HNSW traversal can return zero results with a moderately selective predicate: `search_float32.go` and `distance_dispatch.go` prune the frontier on the predicate, and if the (randomly chosen) entry point is rejected and no level-0 neighbour is admitted, the frontier closes. ~20% of builds returned <10 results at 2/3 rejection. Not addressed here.
-- An unverified arm64 twin of the TurboQuant 8-bit pack bug remains in `internal/simd/turboquant_arm64.s` (`packTQ8NEONKernel` narrowing). It was left unpatched deliberately: there is no ARM hardware or emulator on this host and `GOARCH=arm64` does not currently build, so the fix could not be validated. The same defect class is latent in the AVX2 2/4-bit pack kernels, which are not on the AVX2 dispatch path.
+- **Resolved 2026-09-29:** predicate-pruned HNSW traversal returning zero results. `search_float32.go`, `search_float64.go` and `distance_dispatch.go` applied the predicate to the traversal frontier as well as the result set, so the graph walk could not pass *through* non-matching nodes; a match reachable only via rejected nodes was unreachable, and a rejected entry point could return nothing. The fix gates only the result set. Measured filtered recall against an exact scan: **0.06 → 0.38**; the per-search short-result rate at 2/3 rejection went from 3/3 failing builds to 0/60. Regression tests in `internal/store/index/predicate_traversal_test.go` (deterministic connectivity, statistical result count, and brute-force recall).
+- **Resolved 2026-09-29:** the arm64 TurboQuant 8-bit pack bug. The reported NEON narrowing defect was re-derived and found to be **correct** (`XTN2` writes the upper half of the destination, not a second register), so that claim was withdrawn. A different, real bug was found instead: the `VFMIN_V` macro encoded to the same word as `VFMAX_V` for the operands actually used, so the `norm > 1` clamp never ran and out-of-range angles wrapped. Fixed to the true FMIN base, verified against `llvm-mc`. `GOARCH=arm64` now also builds, which it did not before (AMX entry points had no non-amd64 definitions).
+
+---
+
+## 6. Security Scanning & Accepted Risks (merged from `docs/nextsteps.md`)
+
+`.github/workflows/security.yml` runs `govulncheck` via `scripts/check_govuln.sh`, a Trivy filesystem scan, and a Trivy IaC scan. Both `check_govuln.sh` (exit 0 clean/allowlisted, 1 unexpected vuln, 2 tool missing) and `.trivyignore` fail on anything outside this allowlist.
+
+Accepted indirect dependencies with no available upstream patch, tracked as accepted risk:
+
+| Advisory | Package | Reason | Fixed in |
+|:---|:---|:---|:---|
+| `GO-2026-5046` / `CVE-2026-46385` | `hamba/avro` (via `pulsar-client-go`, temporal `avro.Freeze`) | CPU exhaustion in the Avro decoder | N/A |
+| `GO-2026-5047` / `CVE-2026-46384` | `hamba/avro` | Integer overflow in the Avro decoder | N/A |
+| `GO-2026-5048` / `GHSA-mx64-mj3q-7prj` | `hamba/avro` | Unbounded map allocation DoS | N/A |
+| `GO-2026-5932` | `golang.org/x/crypto/openpgp` | Unmaintained / unsafe by design; module is required but never called | N/A |
+
+These IDs are duplicated in `.trivyignore` and the `ALLOWLIST` array in `scripts/check_govuln.sh`; both now reference this section.
+
+---
+
+## 7. Next Ten Steps (Performance & Features)
+
+Derived from the measurements in §5 and the defects found while implementing it. Each states the evidence it rests on, so the ordering can be re-checked when the numbers change.
+
+1. **Index `VersionHistory` for batch temporal reads**: `GetVersionsAtBatch` costs ~96 ns/id at 100k and is now the dominant temporal-search cost (measured during item 10 — the columnar index itself improved 8.8-10.4x, yet `SearchAsOf` still spends most of its time here). Replace `map[uint64][]VersionedVector` plus the per-id linear reverse scan with a per-entity sorted timestamp array and a binary search per batch, reusing the item-10 columnar layout. Target: another 2-4x on `SearchAsOf` at 100k+.
+
+2. **Adaptive `ef` for filtered search**: a predicate admitting a small fraction of ids forces `ef` to grow to compensate for the pruned result set, which costs more than the filter saves. Measure `ef` versus admitted-fraction and select it adaptively at search entry. Target: recover the per-search cost the filter adds at high selectivity.
+
+3. **Fix the remaining TurboQuant pack kernels (AVX2 2/4-bit, AVX-512 2/4/8-bit)**: the item-9 work proved the 8-bit AVX2 kernel had three distinct assembly defects (`VEX.L=1` constant destruction, `VPERMPD` lane order, rounding mode). The same constant-destruction and missing-floor-before-convert patterns are reported present in `packTQ2/4AVX2Kernel` and the AVX-512 pack kernels. They are off the AVX2 dispatch path today, so this is latent, but it will bite anyone who routes to them. Fix and pin with bit-exactness tests against the generic reference, as `TestPackTQ8AVX2MatchesGeneric` now does.
+
+4. **Establish an ARM CI lane**: `GOARCH=arm64` now compiles, but the new arm64 tests are build-verified only — no arm64 code has been executed anywhere in this repo. Add a `qemu-user` (or native ARM runner) job to `ci.yml` so `turboquant_arm64.s` and the AMX non-amd64 fallbacks are actually run. Without this, assembly fixes on ARM remain unverified by construction.
+
+5. **Make the SIMD generation reproducible and reviewable**: `internal/simd/gen/all_kernels_gen.go` is a ~1600-line Avo program whose committed output must be regenerated by hand (`go generate ./internal/simd/`), and the current formatting makes a semantic change nearly impossible to review (a one-line kernel edit showed as 1641 changed lines). Normalise the generator's formatting, add a CI check that regeneration is a no-op on a clean tree, and document the workflow next to the `//go:generate` directives.
+
+6. **Bring the AVX-512 path under test**: the AVX-512 float64 kernels were dead code until this work and remain unmeasurable on the current host (no AVX-512). Gate them behind a cpuid-guarded dispatch that is exercised by an emulated or hardware-backed lane, so the kernels are not carried untested indefinitely.
+
+7. **Fix the `Bitset.Set` negative-index guard**: `internal/store/types/bitmap.go` `Set(i int)` does not reject negatives, so `Set(-1)` sets bit `4294967295` (`ArrowBitset.Set` already guards). Found while writing the bitmap-ownership stress tests. Low blast radius, silent wrong-answer class of bug.
+
+8. **Close the markdown-lint and docs-drift gap**: `docs/**` fails `markdownlint-cli2` repo-wide (778 errors across two files before this work, 192 in `roadmap.md` alone after it), so the `markdown-lint.yml` job has been red without blocking anyone. Add a `.markdownlint-cli2.jsonc` that encodes the style the docs actually use (or excludes generated benchmark tables), then fix the remainder, so the job becomes a real gate.
+
+9. **Track the Morton grid's measured result instead of the target**: the grid beats the quadtree on insert (2.3x, allocation-free) and loses on query (17-40%). Making it win needs per-cell adaptive subdivision in flat arrays. Either implement that and re-measure, or drop the `GeoIndexTypeMorton` option and record the write-path win only — an option that is slower on the read path is a maintenance cost unless someone has a write-heavy workload to use it.
+
+10. **Correct the §5 target column to reflect measurements**: several entries missed their projected QPS impact while others exceeded it (item 7 regressed, item 4's end-to-end effect is ~0.07%). Targets were pprof-derived estimates, and the section now records both. Have future planning steps lead with the measured effect size and a confidence statement, and re-derive targets from the §5 numbers rather than carrying the original projections forward.
 

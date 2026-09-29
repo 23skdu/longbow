@@ -52,7 +52,7 @@ var forceStandard int32
 
 // PushStandard temporarily forces the standard math backend and returns a
 // restore function that reverts to the previous backend. Used by temporal
-// search, which regresses -16-38% under emlgo (docs/emlgo.md, nextsteps P1 #3).
+// search, which regresses -16-38% under emlgo (docs/emlgo.md, roadmap.md §2).
 // Nested PushStandard calls are supported; SetBackend is ignored while held.
 func PushStandard() (restore func()) {
 	atomic.AddInt32(&forceStandard, 1)
@@ -71,7 +71,7 @@ func IsForceStandard() bool {
 }
 
 // SetBackend changes the active math backend globally.
-// No-op while a PushStandard scope is active (nextsteps P1 #3 temporal pin).
+// No-op while a PushStandard scope is active (roadmap.md §2 temporal pin).
 func SetBackend(b Backend) {
 	if IsForceStandard() {
 		return

@@ -1516,7 +1516,7 @@ int cuda_pq_encode(
 
 // Complex128 L2 Distance: |q - v|^2 = sum((q.re - v.re)^2 + (q.im - v.im)^2)
 // Inputs are float32 pairs; accumulate in float (not double) — FP64 math runs
-// ~1/64 rate on consumer GPUs (nextsteps P1 #4 GPU complex128 -50%).
+// ~1/64 rate on consumer GPUs (roadmap.md §4).
 __global__ void l2_distance_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= count) return;
@@ -1556,7 +1556,7 @@ void launch_l2_distance_complex128_kernel(const float* vectors, const float* que
 
 // Complex128 Dot Product: q . v* = sum(q.re*v.re + q.im*vIm, j*(q.im*v.re - q.re*v.im))
 // Returns only the real part (magnitude of the dot product) for distance ranking.
-// float accumulation on float32 inputs (nextsteps P1 #4).
+// float accumulation on float32 inputs (roadmap.md §4).
 __global__ void dot_product_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= count) return;
@@ -1588,7 +1588,7 @@ void launch_dot_product_complex128_kernel(const float* vectors, const float* que
 }
 
 // Complex128 Cosine Similarity: cos(theta) = |q . v*| / (|q| * |v|)
-// float accumulation on float32 inputs (nextsteps P1 #4).
+// float accumulation on float32 inputs (roadmap.md §4).
 __global__ void cosine_similarity_complex128_kernel(const float* vectors, const float* query, float* distances, int dim, int count) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     if (idx >= count) return;

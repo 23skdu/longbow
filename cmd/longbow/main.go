@@ -402,7 +402,7 @@ func run() error {
 
 	// Part 7: LONGBOW_FLOAT64_EXCLUDE_EMLGO disables emlgo for float64 batch ops.
 	// Default is excluded (true) when unset: emlgo float64 at 500k added +47%
-	// memory (10632 vs 7172 MB) with no dense-QPS win (nextsteps P1 #5).
+	// memory (10632 vs 7172 MB) with no dense-QPS win (roadmap.md §2).
 	// Accepts true/1/yes (exclude) and false/0/no (include).
 	f64ExcludeVal := strings.ToLower(strings.TrimSpace(os.Getenv("LONGBOW_FLOAT64_EXCLUDE_EMLGO")))
 	switch f64ExcludeVal {

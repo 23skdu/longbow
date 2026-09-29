@@ -9,7 +9,7 @@
 
 set -euo pipefail
 
-# Allowlisted GO IDs (see .trivyignore and docs/nextsteps.md Part 9).
+# Allowlisted GO IDs (see .trivyignore and docs/roadmap.md section 6).
 # These have Fixed in: N/A upstream; tracked as accepted risk.
 ALLOWLIST=(
   "GO-2026-5046"  # hamba/avro CPU exhaustion

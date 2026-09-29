@@ -30,7 +30,7 @@ const MinEMLVectorCount = 50000
 
 // complex64EMLMaxCount is the largest count where auto mode still routes
 // complex64 to emlgo. At 500k, emlgo complex64 dense regressed -38%
-// (docs/emlgo.md, nextsteps P0 #1); standard wins above this threshold.
+// (docs/emlgo.md, roadmap.md §2); standard wins above this threshold.
 const complex64EMLMaxCount = 250000
 
 // GetDispatchMode returns the current dispatch mode.
@@ -61,7 +61,7 @@ func ParseDispatchMode(val string) DispatchMode {
 //   - Below MinEMLVectorCount: always standard (emlgo dispatch overhead dominates)
 //   - complex64: emlgo only up to complex64EMLMaxCount (500k dense: -38%)
 //   - complex128: emlgo for dense/hybrid wins (+159% at 100k); standard at 500k+
-//     where sparse regresses -37% and dense P99 spikes (nextsteps P0 #2)
+//     where sparse regresses -37% and dense P99 spikes (roadmap.md §2)
 //   - turboquant: emlgo above MinEMLVectorCount (TQ kernels benefit)
 //   - float64/int*/uint*/float16/binary: always standard (float64 emlgo
 //     adds +47% memory at 500k; ints/float16 regress dense at 100k)

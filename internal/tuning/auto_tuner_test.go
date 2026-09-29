@@ -147,13 +147,13 @@ func TestAutoTuner_Start_Idempotent(t *testing.T) {
 		SampleInterval: 10 * time.Millisecond,
 	}, &logger)
 
-	at.Start(context.Background())
+	_ = at.Start(context.Background())
 	err := at.Start(context.Background())
 	if err != nil {
 		t.Error("expected idempotent start")
 	}
 
-	at.Stop()
+	_ = at.Stop()
 }
 
 func TestAutoTuner_Stop_Idempotent(t *testing.T) {
@@ -163,8 +163,8 @@ func TestAutoTuner_Stop_Idempotent(t *testing.T) {
 		SampleInterval: 10 * time.Millisecond,
 	}, &logger)
 
-	at.Start(context.Background())
-	at.Stop()
+	_ = at.Start(context.Background())
+	_ = at.Stop()
 	err := at.Stop()
 	if err != nil {
 		t.Error("expected idempotent stop")

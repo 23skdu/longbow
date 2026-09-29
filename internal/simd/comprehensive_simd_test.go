@@ -279,15 +279,15 @@ func TestSIMDBitops(t *testing.T) {
 	}
 
 	t.Run("And", func(t *testing.T) {
-		AndBytes(a, b) // Public API
+		_ = AndBytes(a, b) // Public API
 	})
 
 	t.Run("Or", func(t *testing.T) {
-		OrBytes(a, b)
+		_ = OrBytes(a, b)
 	})
 
 	t.Run("Not", func(t *testing.T) {
-		NotBytes(a)
+		_ = NotBytes(a)
 	})
 
 	t.Run("IsAllZeros", func(t *testing.T) {

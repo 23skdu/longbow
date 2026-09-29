@@ -214,7 +214,7 @@ func BenchmarkEuclideanBatch_Scalar_128dim_100vec(b *testing.B) {
 	results := make([]float32, 100)
 	b.ResetTimer()
 	for b.Loop() {
-		euclideanBatchGeneric(query, vectors, results)
+		_ = euclideanBatchGeneric(query, vectors, results)
 	}
 }
 

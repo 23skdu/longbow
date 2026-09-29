@@ -16,7 +16,7 @@ func BenchmarkEuclideanF16_Comparative(b *testing.B) {
 		b.Run("EuclideanF16_"+strconv.Itoa(dim), func(b *testing.B) {
 			b.SetBytes(int64(dim * 2)) // 2 bytes per float16
 			for i := 0; i < b.N; i++ {
-				EuclideanDistanceF16(v1, v2)
+				_, _ = EuclideanDistanceF16(v1, v2)
 			}
 		})
 	}
@@ -32,7 +32,7 @@ func BenchmarkCosineF16_Comparative(b *testing.B) {
 		b.Run("CosineF16_"+strconv.Itoa(dim), func(b *testing.B) {
 			b.SetBytes(int64(dim * 2))
 			for i := 0; i < b.N; i++ {
-				CosineDistanceF16(v1, v2)
+				_, _ = CosineDistanceF16(v1, v2)
 			}
 		})
 	}

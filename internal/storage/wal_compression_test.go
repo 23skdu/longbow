@@ -49,7 +49,7 @@ func TestWALBatcher_Compression_Direct(t *testing.T) {
 
 	// Verify file content has Sentinel
 	walPath := filepath.Join(tmpDir, "wal.log")
-	content, err := os.ReadFile(walPath)
+	content, err := os.ReadFile(walPath) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	require.NoError(t, err)
 
 	// Scan for 0xFFFFFFFF (Little Endian)

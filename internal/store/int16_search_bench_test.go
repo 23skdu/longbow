@@ -206,8 +206,8 @@ func BenchmarkSearch_Int16VsInt64(b *testing.B) {
 	idxI16 := store.NewArrowHNSW(nil, &configI16, nil)
 	idxI64 := store.NewArrowHNSW(nil, &configI64, nil)
 
-	idxI16.SetDimension(dim)
-	idxI64.SetDimension(dim)
+	_ = idxI16.SetDimension(dim)
+	_ = idxI64.SetDimension(dim)
 
 	for i := 0; i < numVectors; i++ {
 		_ = idxI16.InsertWithVector(uint32(i), vecsI16[i], -1)

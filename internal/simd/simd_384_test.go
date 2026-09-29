@@ -93,7 +93,7 @@ func BenchmarkEuclidean385_Generic(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		EuclideanDistance(a, bb)
+		_, _ = EuclideanDistance(a, bb)
 	}
 }
 

@@ -42,7 +42,7 @@ func TestFloat64_PrefetchMultiLine(t *testing.T) {
 		for d := 0; d < dims; d++ {
 			vec[d] = float64(i*dims + d)
 		}
-		data.SetVector(uint32(i), vec)
+		_ = data.SetVector(uint32(i), vec)
 	}
 
 	q := make([]float64, dims)
@@ -103,7 +103,7 @@ func TestInt64_Uint64_PrefetchMultiLine(t *testing.T) {
 		for d := 0; d < dims; d++ {
 			vec[d] = int64(i*dims + d)
 		}
-		dataI64.SetVector(uint32(i), vec)
+		_ = dataI64.SetVector(uint32(i), vec)
 	}
 
 	compI64 := &int64Computer{
@@ -126,7 +126,7 @@ func TestInt64_Uint64_PrefetchMultiLine(t *testing.T) {
 		for d := 0; d < dims; d++ {
 			vec[d] = uint64(i*dims + d)
 		}
-		dataU64.SetVector(uint32(i), vec)
+		_ = dataU64.SetVector(uint32(i), vec)
 	}
 
 	compU64 := &uint64Computer{
@@ -154,7 +154,7 @@ func TestFloat64_ComputeBatchCacheBlocked(t *testing.T) {
 		for d := 0; d < dims; d++ {
 			vec[d] = float64(i + d)
 		}
-		data.SetVector(uint32(i), vec)
+		_ = data.SetVector(uint32(i), vec)
 	}
 
 	q := make([]float64, dims)
@@ -304,7 +304,7 @@ func BenchmarkFloat64_ComputeBatch_CacheBlocked(b *testing.B) {
 				for d := 0; d < dims; d++ {
 					vec[d] = float64(i + d)
 				}
-				data.SetVector(uint32(i), vec)
+				_ = data.SetVector(uint32(i), vec)
 			}
 
 			q := make([]float64, dims)

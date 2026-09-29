@@ -55,7 +55,7 @@ func TestShouldSpillToDisk_EnvOverrides(t *testing.T) {
 	defer os.Unsetenv("LONGBOW_AUTO_SPILL_DISK")
 	defer os.Unsetenv("LONGBOW_SPILL_THRESHOLD_RATIO")
 
-	os.Setenv("LONGBOW_AUTO_SPILL_DISK", "0")
+	_ = os.Setenv("LONGBOW_AUTO_SPILL_DISK", "0")
 	// If auto-spill is explicitly disabled in env, it should not trigger in ShouldSpillToDisk
 	assert.False(t, (&VectorStore{}).ShouldSpillToDisk(nil, nil))
 }

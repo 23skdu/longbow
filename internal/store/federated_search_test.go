@@ -50,7 +50,7 @@ func TestCollectionRegistry_DeleteCollection(t *testing.T) {
 		Name:      "to-delete",
 		Dimension: 128,
 	}
-	registry.RegisterCollection(info)
+	_ = registry.RegisterCollection(info)
 
 	err := registry.DeleteCollection("to-delete")
 	assert.NoError(t, err)
@@ -62,9 +62,9 @@ func TestCollectionRegistry_DeleteCollection(t *testing.T) {
 func TestCollectionRegistry_ListCollections(t *testing.T) {
 	registry := NewCollectionRegistry()
 
-	registry.RegisterCollection(&CollectionInfo{Name: "col1", Dimension: 128})
-	registry.RegisterCollection(&CollectionInfo{Name: "col2", Dimension: 256})
-	registry.RegisterCollection(&CollectionInfo{Name: "col3", Dimension: 512})
+	_ = registry.RegisterCollection(&CollectionInfo{Name: "col1", Dimension: 128})
+	_ = registry.RegisterCollection(&CollectionInfo{Name: "col2", Dimension: 256})
+	_ = registry.RegisterCollection(&CollectionInfo{Name: "col3", Dimension: 512})
 
 	collections := registry.ListCollections()
 	assert.Len(t, collections, 3)
@@ -128,20 +128,20 @@ func TestFederatedQueryRouter_RegisterCollection(t *testing.T) {
 
 func TestCollectionRegistry_RouteQuery(t *testing.T) {
 	registry := NewCollectionRegistry()
-	registry.RegisterCollection(&CollectionInfo{
+	_ = registry.RegisterCollection(&CollectionInfo{
 		Name:        "prod-collection",
 		Description: "Production data",
 		Dimension:   128,
 		Tags:        []string{"prod"},
 	})
-	registry.RegisterCollection(&CollectionInfo{
+	_ = registry.RegisterCollection(&CollectionInfo{
 		Name:        "dev-collection",
 		Description: "Dev data",
 		Dimension:   128,
 		Tags:        []string{"dev"},
 	})
 
-	registry.RegisterRoutingRule(&RoutingRule{
+	_ = registry.RegisterRoutingRule(&RoutingRule{
 		Tag:        "prod",
 		Collection: "prod-collection",
 		Priority:   1,
@@ -154,11 +154,11 @@ func TestCollectionRegistry_RouteQuery(t *testing.T) {
 
 func TestCollectionRegistry_RouteByTag(t *testing.T) {
 	registry := NewCollectionRegistry()
-	registry.RegisterCollection(&CollectionInfo{
+	_ = registry.RegisterCollection(&CollectionInfo{
 		Name: "collection1",
 		Tags: []string{"tag1", "tag2"},
 	})
-	registry.RegisterCollection(&CollectionInfo{
+	_ = registry.RegisterCollection(&CollectionInfo{
 		Name: "collection2",
 		Tags: []string{"tag2", "tag3"},
 	})

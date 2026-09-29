@@ -70,7 +70,7 @@ func TestVectorStore_DoAction_Extended(t *testing.T) {
 		require.NoError(t, err)
 		require.NotEmpty(t, stream.results)
 		var resp map[string]any
-		json.Unmarshal(stream.results[0].Body, &resp)
+		_ = json.Unmarshal(stream.results[0].Body, &resp)
 		assert.Equal(t, "READY", resp["status"])
 	})
 

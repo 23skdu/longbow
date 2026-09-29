@@ -28,10 +28,10 @@ func TestFileSnapshotBackend(t *testing.T) {
 	// Test Read
 	r, err := backend.ReadSnapshot(ctx, name)
 	require.NoError(t, err)
-	readData, err := os.ReadFile(tmpDir + "/" + name + ".parquet")
+	readData, err := os.ReadFile(tmpDir + "/" + name + ".parquet") // #nosec G304 -- path is built from the test's own temp dir, never user input
 	require.NoError(t, err)
 	assert.Equal(t, data, readData)
-	r.Close()
+	_ = r.Close()
 
 	// Test List
 	names, err := backend.ListSnapshots(ctx)
@@ -50,18 +50,18 @@ func TestFileSnapshotBackend(t *testing.T) {
 
 	// Create another real file to copy from
 	tmpFile, _ := os.CreateTemp("", "source")
-	tmpFile.Write(importData)
-	tmpFile.Seek(0, 0)
+	_, _ = tmpFile.Write(importData)
+	_, _ = tmpFile.Seek(0, 0)
 
 	err = backend.WriteSnapshotFile(ctx, subName, ext, tmpFile)
 	assert.NoError(t, err)
-	tmpFile.Close()
-	os.Remove(tmpFile.Name())
+	_ = tmpFile.Close()
+	_ = os.Remove(tmpFile.Name())
 
 	// Test ReadSnapshotFile
 	r2, err := backend.ReadSnapshotFile(ctx, subName, ext)
 	require.NoError(t, err)
-	r2.Close()
+	_ = r2.Close()
 
 	// Test Delete
 	err = backend.DeleteSnapshot(ctx, name)

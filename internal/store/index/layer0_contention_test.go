@@ -62,7 +62,7 @@ func TestConcurrentLayer0Adds(t *testing.T) {
 				// Re-load data to handle potential growth/swaps
 				d := idx.data.Load()
 				src := uint32(100 + id*addsPerThread + j)
-				idx.data.Load().SetVector(src, []float32{float32(src)})
+				_ = idx.data.Load().SetVector(src, []float32{float32(src)})
 				dist := float32(0.1) + float32(j)*0.001
 				d = idx.AddConnection(ctxs[id], d, target, src, 0, config.MMax0, dist)
 			}

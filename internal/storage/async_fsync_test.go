@@ -115,7 +115,7 @@ func TestAsyncFsyncerStartStop(t *testing.T) {
 	syncer := NewAsyncFsyncer(cfg)
 
 	tmpDir := t.TempDir()
-	f, err := os.Create(filepath.Join(tmpDir, "test.wal"))
+	f, err := os.Create(filepath.Join(tmpDir, "test.wal")) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	if err != nil {
 		t.Fatalf("create file: %v", err)
 	}
@@ -148,7 +148,7 @@ func TestAsyncFsyncerRequestFsync(t *testing.T) {
 	syncer := NewAsyncFsyncer(cfg)
 
 	tmpDir := t.TempDir()
-	f, err := os.Create(filepath.Join(tmpDir, "test.wal"))
+	f, err := os.Create(filepath.Join(tmpDir, "test.wal")) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	if err != nil {
 		t.Fatalf("create file: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestAsyncFsyncerStats(t *testing.T) {
 	syncer := NewAsyncFsyncer(cfg)
 
 	tmpDir := t.TempDir()
-	f, err := os.Create(filepath.Join(tmpDir, "test.wal"))
+	f, err := os.Create(filepath.Join(tmpDir, "test.wal")) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	if err != nil {
 		t.Fatalf("create file: %v", err)
 	}
@@ -238,7 +238,7 @@ func TestAsyncFsyncerFallbackToSync(t *testing.T) {
 	syncer := NewAsyncFsyncer(cfg)
 
 	tmpDir := t.TempDir()
-	f, err := os.Create(filepath.Join(tmpDir, "test.wal"))
+	f, err := os.Create(filepath.Join(tmpDir, "test.wal")) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	if err != nil {
 		t.Fatalf("create file: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestAsyncFsyncerConcurrent(t *testing.T) {
 	syncer := NewAsyncFsyncer(cfg)
 
 	tmpDir := t.TempDir()
-	f, err := os.Create(filepath.Join(tmpDir, "test.wal"))
+	f, err := os.Create(filepath.Join(tmpDir, "test.wal")) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	if err != nil {
 		t.Fatalf("create file: %v", err)
 	}
@@ -311,7 +311,7 @@ func BenchmarkAsyncFsyncerRequest(b *testing.B) {
 	syncer := NewAsyncFsyncer(cfg)
 
 	tmpDir := b.TempDir()
-	f, _ := os.Create(filepath.Join(tmpDir, "test.wal"))
+	f, _ := os.Create(filepath.Join(tmpDir, "test.wal")) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	defer func() { _ = f.Close() }()
 
 	_ = syncer.Start(f)

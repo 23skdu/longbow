@@ -56,7 +56,7 @@ func TestWALRecovery_ChecksumMismatch(t *testing.T) {
 	walPath := filepath.Join(tmpDir, "wal.log")
 	mem := memory.NewGoAllocator()
 
-	f, err := os.Create(walPath)
+	f, err := os.Create(walPath) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	require.NoError(t, err)
 
 	// Header with BAD Checksum

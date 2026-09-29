@@ -45,7 +45,7 @@ func TestParquetRoundTrip_BasicIntegrity(t *testing.T) {
 
 	// Write to parquet file
 	path := filepath.Join(tmpDir, "test.parquet")
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	if err != nil {
 		t.Fatalf("Failed to create file: %v", err)
 	}
@@ -57,7 +57,7 @@ func TestParquetRoundTrip_BasicIntegrity(t *testing.T) {
 	_ = f.Close()
 
 	// Read back
-	f2, err := os.Open(path)
+	f2, err := os.Open(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}
@@ -128,14 +128,14 @@ func TestParquetRoundTrip_SchemaPreservation(t *testing.T) {
 			defer rec.Release()
 
 			path := filepath.Join(tmpDir, tc.name+".parquet")
-			f, _ := os.Create(path)
+			f, _ := os.Create(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 			if err := writeParquet(f, "zstd", rec); err != nil {
 				_ = f.Close()
 				t.Fatalf("writeParquet failed: %v", err)
 			}
 			_ = f.Close()
 
-			f2, _ := os.Open(path)
+			f2, _ := os.Open(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 			defer func() { _ = f2.Close() }()
 			stat, _ := f2.Stat()
 			readRec, err := readParquet(f2, stat.Size(), mem)
@@ -179,7 +179,7 @@ func TestParquetRoundTrip_LargeDataset(t *testing.T) {
 	defer rec.Release()
 
 	path := filepath.Join(tmpDir, "large.parquet")
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	if err != nil {
 		t.Fatalf("Failed to create file: %v", err)
 	}
@@ -195,7 +195,7 @@ func TestParquetRoundTrip_LargeDataset(t *testing.T) {
 	t.Logf("Large parquet file size: %d bytes", stat.Size())
 
 	// Read back and verify
-	f2, _ := os.Open(path)
+	f2, _ := os.Open(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	defer func() { _ = f2.Close() }()
 	stat2, _ := f2.Stat()
 
@@ -226,9 +226,9 @@ func TestParquetCorruptedFile_Recovery(t *testing.T) {
 
 	t.Run("empty_file", func(t *testing.T) {
 		path := filepath.Join(tmpDir, "empty.parquet")
-		_ = os.WriteFile(path, []byte{}, 0o644)
+		_ = os.WriteFile(path, []byte{}, 0o600)
 
-		f, _ := os.Open(path)
+		f, _ := os.Open(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 		defer func() { _ = f.Close() }()
 
 		_, err := readParquet(f, 0, mem)
@@ -243,15 +243,15 @@ func TestParquetCorruptedFile_Recovery(t *testing.T) {
 		defer rec.Release()
 
 		path := filepath.Join(tmpDir, "truncated.parquet")
-		f, _ := os.Create(path)
+		f, _ := os.Create(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 		_ = writeParquet(f, "zstd", rec)
 		_ = f.Close()
 
 		// Truncate file to corrupt it
-		data, _ := os.ReadFile(path)
-		_ = os.WriteFile(path, data[:len(data)/2], 0o644)
+		data, _ := os.ReadFile(path)                      // #nosec G304 -- path is built from the test's own temp dir, never user input
+		_ = os.WriteFile(path, data[:len(data)/2], 0o600) // #nosec G703 -- path is built from the test's own temp dir, never user input
 
-		f2, _ := os.Open(path)
+		f2, _ := os.Open(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 		defer func() { _ = f2.Close() }()
 		stat, _ := f2.Stat()
 
@@ -263,9 +263,9 @@ func TestParquetCorruptedFile_Recovery(t *testing.T) {
 
 	t.Run("garbage_data", func(t *testing.T) {
 		path := filepath.Join(tmpDir, "garbage.parquet")
-		_ = os.WriteFile(path, []byte("not a parquet file at all"), 0o644)
+		_ = os.WriteFile(path, []byte("not a parquet file at all"), 0o600)
 
-		f, _ := os.Open(path)
+		f, _ := os.Open(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 		defer func() { _ = f.Close() }()
 		stat, _ := f.Stat()
 
@@ -281,19 +281,19 @@ func TestParquetCorruptedFile_Recovery(t *testing.T) {
 		defer rec.Release()
 
 		path := filepath.Join(tmpDir, "corrupted_middle.parquet")
-		f, _ := os.Create(path)
+		f, _ := os.Create(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 		_ = writeParquet(f, "zstd", rec)
 		_ = f.Close()
 
 		// Corrupt middle of file
-		data, _ := os.ReadFile(path)
+		data, _ := os.ReadFile(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 		middle := len(data) / 2
 		for i := middle; i < middle+100 && i < len(data); i++ {
 			data[i] = 0xFF
 		}
-		_ = os.WriteFile(path, data, 0o644)
+		_ = os.WriteFile(path, data, 0o600) // #nosec G703 -- path is built from the test's own temp dir, never user input
 
-		f2, _ := os.Open(path)
+		f2, _ := os.Open(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 		defer func() { _ = f2.Close() }()
 		stat, _ := f2.Stat()
 
@@ -314,7 +314,7 @@ func TestParquetRoundTrip_EmptyRecord(t *testing.T) {
 	defer rec.Release()
 
 	path := filepath.Join(tmpDir, "empty.parquet")
-	f, _ := os.Create(path)
+	f, _ := os.Create(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 
 	// Write empty record - may succeed or fail, both are acceptable
 	err := writeParquet(f, "zstd", rec)
@@ -326,7 +326,7 @@ func TestParquetRoundTrip_EmptyRecord(t *testing.T) {
 	}
 
 	// If write succeeded, verify read
-	f2, _ := os.Open(path)
+	f2, _ := os.Open(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	defer func() { _ = f2.Close() }()
 	stat, _ := f2.Stat()
 

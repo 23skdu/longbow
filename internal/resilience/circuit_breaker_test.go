@@ -74,10 +74,10 @@ func TestCircuitBreakerOpenState(t *testing.T) {
 		},
 	})
 
-	cb.Execute(context.Background(), func() (any, error) {
+	_, _ = cb.Execute(context.Background(), func() (any, error) {
 		return nil, errors.New("fail")
 	})
-	cb.Execute(context.Background(), func() (any, error) {
+	_, _ = cb.Execute(context.Background(), func() (any, error) {
 		return nil, errors.New("fail")
 	})
 	assert.Equal(t, StateOpen, cb.State())
@@ -99,7 +99,7 @@ func TestCircuitBreakerHalfOpenToClosed(t *testing.T) {
 		},
 	})
 
-	cb.Execute(context.Background(), func() (any, error) {
+	_, _ = cb.Execute(context.Background(), func() (any, error) {
 		return nil, errors.New("fail")
 	})
 	assert.Equal(t, StateOpen, cb.State())
@@ -124,17 +124,17 @@ func TestCircuitBreakerHalfOpenToOpen(t *testing.T) {
 		},
 	})
 
-	cb.Execute(context.Background(), func() (any, error) {
+	_, _ = cb.Execute(context.Background(), func() (any, error) {
 		return nil, errors.New("fail")
 	})
-	cb.Execute(context.Background(), func() (any, error) {
+	_, _ = cb.Execute(context.Background(), func() (any, error) {
 		return nil, errors.New("fail")
 	})
 	assert.Equal(t, StateOpen, cb.State())
 
 	time.Sleep(60 * time.Millisecond)
 
-	cb.Execute(context.Background(), func() (any, error) {
+	_, _ = cb.Execute(context.Background(), func() (any, error) {
 		return nil, errors.New("still fail")
 	})
 	assert.Equal(t, StateOpen, cb.State())
@@ -149,7 +149,7 @@ func TestCircuitBreakerReset(t *testing.T) {
 		},
 	})
 
-	cb.Execute(context.Background(), func() (any, error) {
+	_, _ = cb.Execute(context.Background(), func() (any, error) {
 		return nil, errors.New("fail")
 	})
 	assert.Equal(t, StateOpen, cb.State())
@@ -162,10 +162,10 @@ func TestCircuitBreakerReset(t *testing.T) {
 func TestCircuitBreakerMetrics(t *testing.T) {
 	cb := NewCircuitBreaker(CircuitBreakerSettings{Name: "metrics-test"})
 
-	cb.Execute(context.Background(), func() (any, error) {
+	_, _ = cb.Execute(context.Background(), func() (any, error) {
 		return "ok", nil
 	})
-	cb.Execute(context.Background(), func() (any, error) {
+	_, _ = cb.Execute(context.Background(), func() (any, error) {
 		return nil, errors.New("fail")
 	})
 
@@ -194,7 +194,7 @@ func TestExecuteWithCircuitBreakerErrorPath(t *testing.T) {
 		},
 	})
 
-	ExecuteWithCircuitBreaker(cb, context.Background(), func() (string, error) {
+	_, _ = ExecuteWithCircuitBreaker(cb, context.Background(), func() (string, error) {
 		return "", errors.New("fail")
 	})
 
@@ -221,7 +221,7 @@ func TestCircuitBreakerOnStateChange(t *testing.T) {
 		},
 	})
 
-	cb.Execute(context.Background(), func() (any, error) {
+	_, _ = cb.Execute(context.Background(), func() (any, error) {
 		return nil, errors.New("fail")
 	})
 	mu.Lock()
@@ -276,7 +276,7 @@ func TestCircuitBreakerGroupResetAll(t *testing.T) {
 	cbg := NewCircuitBreakerGroup(CircuitBreakerSettings{Name: "group-reset"})
 	breaker := cbg.GetBreaker("x")
 
-	breaker.Execute(context.Background(), func() (any, error) {
+	_, _ = breaker.Execute(context.Background(), func() (any, error) {
 		return nil, errors.New("fail")
 	})
 

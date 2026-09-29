@@ -362,7 +362,7 @@ func BenchmarkSubmit(b *testing.B) {
 	for i := 0; i < b.N; i++ {
 		// Clear queue periodically to avoid overflow
 		if i%1024 == 0 {
-			ring.Flush()
+			_, _ = ring.Flush()
 		}
 
 		err := ring.Submit(sqe)
@@ -390,7 +390,7 @@ func BenchmarkSubmitAndFlush(b *testing.B) {
 		}
 
 		if i%128 == 0 {
-			ring.Flush()
+			_, _ = ring.Flush()
 		}
 	}
 }

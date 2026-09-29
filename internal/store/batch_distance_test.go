@@ -23,7 +23,7 @@ func TestBatchDistanceCompute_Basic(t *testing.T) {
 	}
 	results := make([]float32, len(queries))
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	// First pair: identical, distance = 0
 	assert.InDelta(t, 0.0, results[0], 0.001)
@@ -42,7 +42,7 @@ func TestBatchDistanceCompute_Empty(t *testing.T) {
 	results := []float32{}
 
 	// Should not panic
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 	assert.Empty(t, results)
 }
 
@@ -54,7 +54,7 @@ func TestBatchDistanceCompute_SinglePair(t *testing.T) {
 	candidates := [][]float32{{4.0, 5.0, 6.0}}
 	results := make([]float32, 1)
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	// Distance = sqrt((4-1)^2 + (5-2)^2 + (6-3)^2) = sqrt(9 + 9 + 9) = sqrt(27) ≈ 5.196
 	assert.InDelta(t, 5.196152, results[0], 0.001)
@@ -81,7 +81,7 @@ func TestBatchDistanceCompute_LargeBatch(t *testing.T) {
 	}
 
 	// Should not panic
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	// All results should be non-negative
 	for i := range results {
@@ -108,7 +108,7 @@ func TestBatchDistanceCompute_IdenticalVectors(t *testing.T) {
 	candidates := vectors
 	results := make([]float32, numPairs)
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	// All distances should be 0 (identical vectors)
 	for i := range results {
@@ -137,7 +137,7 @@ func TestBatchDistanceCompute_OrthogonalVectors(t *testing.T) {
 	}
 	results := make([]float32, numPairs)
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	// Each pair should have non-zero distance
 	for i := range results {
@@ -154,7 +154,7 @@ func TestBatchDistanceCompute_MismatchedDimensions(t *testing.T) {
 	results := make([]float32, 1)
 
 	// Should handle dimension mismatch gracefully (returns MaxFloat32 for mismatched pair)
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 	assert.Equal(t, float32(3.4028235e+38), results[0]) // math.MaxFloat32
 }
 
@@ -201,7 +201,7 @@ func FuzzBatchDistanceCompute(f *testing.F) {
 		}
 
 		// Should not panic
-		BatchDistanceCompute(queries, candidates, results)
+		_ = BatchDistanceCompute(queries, candidates, results)
 
 		// Verify all results are non-negative
 		for i := range results {

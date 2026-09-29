@@ -133,9 +133,9 @@ func TestGeoIndex_SearchBox(t *testing.T) {
 
 	idx := NewGeoIndex("test_dataset", 128, config)
 
-	idx.Add(1, []float32{1.0, 2.0}, GeoPoint{Lat: 40.7128, Lon: -74.0060}, nil)
-	idx.Add(2, []float32{1.1, 2.1}, GeoPoint{Lat: 34.0522, Lon: -118.2437}, nil)
-	idx.Add(3, []float32{1.2, 2.2}, GeoPoint{Lat: 51.5074, Lon: -0.1278}, nil)
+	_ = idx.Add(1, []float32{1.0, 2.0}, GeoPoint{Lat: 40.7128, Lon: -74.0060}, nil)
+	_ = idx.Add(2, []float32{1.1, 2.1}, GeoPoint{Lat: 34.0522, Lon: -118.2437}, nil)
+	_ = idx.Add(3, []float32{1.2, 2.2}, GeoPoint{Lat: 51.5074, Lon: -0.1278}, nil)
 
 	box := GeoBoundingBox{
 		MinLat: 30.0,

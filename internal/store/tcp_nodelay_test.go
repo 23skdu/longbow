@@ -81,7 +81,7 @@ func TestTCPNoDelayListenerMetrics(t *testing.T) {
 	go func() {
 		conn, _ := noDelayLis.Accept()
 		if conn != nil {
-			conn.Close() //nolint:errcheck
+			_ = conn.Close() //nolint:errcheck
 		}
 		close(done)
 	}()
@@ -90,7 +90,7 @@ func TestTCPNoDelayListenerMetrics(t *testing.T) {
 	if err != nil {
 		t.Fatalf("dial failed: %v", err)
 	}
-	clientConn.Close() //nolint:errcheck
+	_ = clientConn.Close() //nolint:errcheck
 
 	<-done
 

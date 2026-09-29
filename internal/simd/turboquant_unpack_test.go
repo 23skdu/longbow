@@ -12,7 +12,7 @@ func TestUnpackTQ4_MatchesGeneric(t *testing.T) {
 	for _, n := range []int{8, 16, 32, 64, 128, 256, 512, 1024} {
 		src := make([]byte, n/2)
 		rng := rand.New(rand.NewSource(int64(n)))
-		rng.Read(src)
+		_, _ = rng.Read(src)
 
 		dstGen := make([]float32, n)
 		dstAPI := make([]float32, n)
@@ -33,7 +33,7 @@ func TestUnpackTQ2_MatchesGeneric(t *testing.T) {
 	for _, n := range []int{8, 16, 32, 64, 128, 256, 512, 1024} {
 		src := make([]byte, n/4)
 		rng := rand.New(rand.NewSource(int64(n)))
-		rng.Read(src)
+		_, _ = rng.Read(src)
 
 		dstGen := make([]float32, n)
 		dstAPI := make([]float32, n)
@@ -54,7 +54,7 @@ func TestUnpackTQ8_MatchesGeneric(t *testing.T) {
 	for _, n := range []int{8, 16, 32, 64, 128, 256, 512, 1024} {
 		src := make([]byte, n)
 		rng := rand.New(rand.NewSource(int64(n)))
-		rng.Read(src)
+		_, _ = rng.Read(src)
 
 		dstGen := make([]float32, n)
 		dstAPI := make([]float32, n)

@@ -112,7 +112,7 @@ func TestVectorStore_Persistence_FullFlow(t *testing.T) {
 	// 3. Snapshot
 	err = vs.Snapshot(context.Background())
 	require.NoError(t, err)
-	vs.Close()
+	_ = vs.Close()
 
 	// 4. Re-initialize Store (Recovery)
 	vs2 := NewVectorStore(mem, logger, 1024*1024*100, 0, 0)

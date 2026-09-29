@@ -20,7 +20,7 @@ func TestBatchDistanceCompute(t *testing.T) {
 
 	results := make([]float32, 2)
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	// Identical vectors should have distance 0
 	if results[0] != 0.0 {
@@ -48,7 +48,7 @@ func BenchmarkBatchDistanceCompute(b *testing.B) {
 
 	b.ResetTimer()
 	for b.Loop() {
-		BatchDistanceCompute(queries, candidates, results)
+		_ = BatchDistanceCompute(queries, candidates, results)
 	}
 }
 
@@ -69,7 +69,7 @@ func BenchmarkBatchVsSequential(b *testing.B) {
 
 	b.Run("Batch", func(b *testing.B) {
 		for b.Loop() {
-			BatchDistanceCompute(queries, candidates, results)
+			_ = BatchDistanceCompute(queries, candidates, results)
 		}
 	})
 

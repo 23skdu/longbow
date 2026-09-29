@@ -28,7 +28,7 @@ func TestInitTracerInvalidSampleRate(t *testing.T) {
 }
 
 func TestCreateSpan(t *testing.T) {
-	InitTracer(SpanConfig{
+	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
 		ServiceVersion: "1.0",
 		SampleRate:     0.0,
@@ -49,7 +49,7 @@ func TestCreateSpanNoTracer(t *testing.T) {
 }
 
 func TestTraceSpanEnd(t *testing.T) {
-	InitTracer(SpanConfig{
+	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
 		ServiceVersion: "1.0",
 		SampleRate:     1.0,
@@ -69,7 +69,7 @@ func TestTraceSpanNilSafety(t *testing.T) {
 }
 
 func TestTraceSpanSetStatus(t *testing.T) {
-	InitTracer(SpanConfig{
+	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
 		ServiceVersion: "1.0",
 		SampleRate:     1.0,
@@ -79,7 +79,7 @@ func TestTraceSpanSetStatus(t *testing.T) {
 }
 
 func TestTraceSpanSetError(t *testing.T) {
-	InitTracer(SpanConfig{
+	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
 		ServiceVersion: "1.0",
 		SampleRate:     1.0,
@@ -89,7 +89,7 @@ func TestTraceSpanSetError(t *testing.T) {
 }
 
 func TestTraceSpanSetAttributes(t *testing.T) {
-	InitTracer(SpanConfig{
+	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
 		ServiceVersion: "1.0",
 		SampleRate:     1.0,
@@ -99,7 +99,7 @@ func TestTraceSpanSetAttributes(t *testing.T) {
 }
 
 func TestTraceSpanGetTraceID(t *testing.T) {
-	InitTracer(SpanConfig{
+	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
 		ServiceVersion: "1.0",
 		SampleRate:     1.0,
@@ -110,7 +110,7 @@ func TestTraceSpanGetTraceID(t *testing.T) {
 }
 
 func TestGetContextTraceID(t *testing.T) {
-	InitTracer(SpanConfig{
+	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
 		ServiceVersion: "1.0",
 		SampleRate:     1.0,
@@ -122,7 +122,7 @@ func TestGetContextTraceID(t *testing.T) {
 }
 
 func TestGetContextTraceIDWithSpan(t *testing.T) {
-	InitTracer(SpanConfig{
+	_ = InitTracer(SpanConfig{
 		ServiceName:    "test",
 		ServiceVersion: "1.0",
 		SampleRate:     1.0,

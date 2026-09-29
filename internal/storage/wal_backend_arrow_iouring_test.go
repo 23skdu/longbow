@@ -15,7 +15,7 @@ func TestArrowIOUringBackendCreation(t *testing.T) {
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
 	require.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Create backend
 	backend, err := NewIOUringBackend(tmpfile.Name())
@@ -32,7 +32,7 @@ func TestArrowIOUringBackendWrite(t *testing.T) {
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
 	require.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Create backend
 	backend, err := NewIOUringBackend(tmpfile.Name())
@@ -60,7 +60,7 @@ func TestArrowIOUringBackendMultipleWrites(t *testing.T) {
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
 	require.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Create backend
 	backend, err := NewIOUringBackend(tmpfile.Name())
@@ -97,7 +97,7 @@ func TestArrowIOUringBackendLargeWrite(t *testing.T) {
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
 	require.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Create backend
 	backend, err := NewIOUringBackend(tmpfile.Name())
@@ -129,7 +129,7 @@ func TestArrowIOUringBackendName(t *testing.T) {
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
 	require.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Create backend
 	backend, err := NewIOUringBackend(tmpfile.Name())
@@ -145,7 +145,7 @@ func TestArrowIOUringBackendFile(t *testing.T) {
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
 	require.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Create backend
 	backend, err := NewIOUringBackend(tmpfile.Name())
@@ -161,7 +161,7 @@ func TestArrowIOUringBackendConcurrency(t *testing.T) {
 	tmpfile, err := os.CreateTemp("", "iouring-wal-test-")
 	require.NoError(t, err)
 	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Create backend
 	backend, err := NewIOUringBackend(tmpfile.Name())
@@ -196,7 +196,7 @@ func BenchmarkArrowIOUringBackendWrite(b *testing.B) {
 	tmpfile, err := os.CreateTemp("", "iouring-bench-")
 	require.NoError(b, err)
 	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Create backend
 	backend, err := NewIOUringBackend(tmpfile.Name())
@@ -216,7 +216,7 @@ func BenchmarkArrowIOUringBackendWrite(b *testing.B) {
 		}
 	}
 
-	backend.Sync()
+	_ = backend.Sync()
 }
 
 func BenchmarkArrowIOUringBackendWriteParallel(b *testing.B) {
@@ -224,7 +224,7 @@ func BenchmarkArrowIOUringBackendWriteParallel(b *testing.B) {
 	tmpfile, err := os.CreateTemp("", "iouring-bench-")
 	require.NoError(b, err)
 	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Create backend
 	backend, err := NewIOUringBackend(tmpfile.Name())
@@ -246,7 +246,7 @@ func BenchmarkArrowIOUringBackendWriteParallel(b *testing.B) {
 		}
 	})
 
-	backend.Sync()
+	_ = backend.Sync()
 }
 
 func BenchmarkArrowIOUringBackendSync(b *testing.B) {
@@ -254,7 +254,7 @@ func BenchmarkArrowIOUringBackendSync(b *testing.B) {
 	tmpfile, err := os.CreateTemp("", "iouring-bench-")
 	require.NoError(b, err)
 	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Create backend
 	backend, err := NewIOUringBackend(tmpfile.Name())
@@ -263,7 +263,7 @@ func BenchmarkArrowIOUringBackendSync(b *testing.B) {
 
 	// Write initial data
 	data := make([]byte, 4096)
-	backend.Write(data)
+	_, _ = backend.Write(data)
 
 	b.ResetTimer()
 
@@ -282,7 +282,7 @@ func BenchmarkFSBackendWrite(b *testing.B) {
 	tmpfile, err := os.CreateTemp("", "fs-bench-")
 	require.NoError(b, err)
 	defer os.Remove(tmpfile.Name())
-	tmpfile.Close()
+	_ = tmpfile.Close()
 
 	// Create standard FS backend
 	backend, err := NewFSBackend(tmpfile.Name())
@@ -302,5 +302,5 @@ func BenchmarkFSBackendWrite(b *testing.B) {
 		}
 	}
 
-	backend.Sync()
+	_ = backend.Sync()
 }

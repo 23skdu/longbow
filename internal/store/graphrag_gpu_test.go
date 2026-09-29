@@ -19,8 +19,8 @@ func TestGraphRAG_GPUExpansion(t *testing.T) {
 
 	// 3. Populate Graph
 	// 0 -> 1 (w=0.8), 0 -> 2 (w=0.5)
-	gs.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 1, Weight: 0.8})
-	gs.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 2, Weight: 0.5})
+	_ = gs.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 1, Weight: 0.8})
+	_ = gs.AddEdge(Edge{Subject: 0, Predicate: "related", Object: 2, Weight: 0.5})
 
 	// 4. Mock search results (seeds)
 	seeds := []lbtypes.SearchResult{

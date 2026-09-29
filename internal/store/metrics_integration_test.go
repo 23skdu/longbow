@@ -115,7 +115,7 @@ func getMetricCount(t *testing.T, url, metricName, labelMatch string) float64 {
 				if len(parts) < 2 {
 					continue
 				}
-				fmt.Sscanf(parts[len(parts)-1], "%f", &val)
+				_, _ = fmt.Sscanf(parts[len(parts)-1], "%f", &val)
 				return val
 			}
 		}

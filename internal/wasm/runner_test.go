@@ -17,7 +17,7 @@ func TestRunnerCloseNil(t *testing.T) {
 	var r *Runner
 	assert.NotPanics(t, func() {
 		if r != nil {
-			r.Close(context.Background())
+			_ = r.Close(context.Background())
 		}
 	})
 }

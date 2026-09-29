@@ -262,7 +262,7 @@ func TestBulkheadFull(t *testing.T) {
 	blocked := make(chan struct{})
 	unblock := make(chan struct{})
 	go func() {
-		b.Execute(func() (interface{}, error) {
+		_, _ = b.Execute(func() (interface{}, error) {
 			close(blocked)
 			<-unblock
 			return nil, nil
@@ -283,7 +283,7 @@ func TestBulkheadExecuteWithContextCancelled(t *testing.T) {
 	blocked := make(chan struct{})
 	unblock := make(chan struct{})
 	go func() {
-		b.Execute(func() (interface{}, error) {
+		_, _ = b.Execute(func() (interface{}, error) {
 			close(blocked)
 			<-unblock
 			return nil, nil
@@ -372,7 +372,7 @@ func TestExecuteWithBulkheadFull(t *testing.T) {
 	blocked := make(chan struct{})
 	unblock := make(chan struct{})
 	go func() {
-		b.Execute(func() (interface{}, error) {
+		_, _ = b.Execute(func() (interface{}, error) {
 			close(blocked)
 			<-unblock
 			return nil, nil
@@ -392,7 +392,7 @@ func TestExecuteWithBulkheadAndContextFull(t *testing.T) {
 	blocked := make(chan struct{})
 	unblock := make(chan struct{})
 	go func() {
-		b.Execute(func() (interface{}, error) {
+		_, _ = b.Execute(func() (interface{}, error) {
 			close(blocked)
 			<-unblock
 			return nil, nil

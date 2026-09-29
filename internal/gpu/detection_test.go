@@ -18,23 +18,23 @@ func TestDetectTPUs_Mock(t *testing.T) {
 	// Mock sysfs
 	tmpDir := t.TempDir()
 	accelDir := filepath.Join(tmpDir, "sys/class/accel")
-	err := os.MkdirAll(accelDir, 0755)
+	err := os.MkdirAll(accelDir, 0o700)
 	require.NoError(t, err)
 
 	devDir := filepath.Join(accelDir, "accel0/device")
-	err = os.MkdirAll(devDir, 0755)
+	err = os.MkdirAll(devDir, 0o700)
 	require.NoError(t, err)
 
 	// Write mock vendor ID (Google)
-	err = os.WriteFile(filepath.Join(devDir, "vendor"), []byte("0x1ae0\n"), 0644)
+	err = os.WriteFile(filepath.Join(devDir, "vendor"), []byte("0x1ae0\n"), 0o600)
 	require.NoError(t, err)
 
 	// Write mock device ID (Ironwood)
-	err = os.WriteFile(filepath.Join(devDir, "device"), []byte("0x0063\n"), 0644)
+	err = os.WriteFile(filepath.Join(devDir, "device"), []byte("0x0063\n"), 0o600)
 	require.NoError(t, err)
 
 	// Write mock NUMA node
-	err = os.WriteFile(filepath.Join(devDir, "numa_node"), []byte("1\n"), 0644)
+	err = os.WriteFile(filepath.Join(devDir, "numa_node"), []byte("1\n"), 0o600)
 	require.NoError(t, err)
 
 	// Verify detection logic

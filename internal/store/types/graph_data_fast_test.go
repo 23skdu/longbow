@@ -51,13 +51,13 @@ func TestGenerationBypass(t *testing.T) {
 		Dims: 128,
 	}
 	g.GrowMetadataSlices(2)
-	g.EnsureChunk(0, 0, 128) // chunk 0 is generation 0
+	_ = g.EnsureChunk(0, 0, 128) // chunk 0 is generation 0
 
 	// Bump generation to 5
 	g.SetGeneration(5)
 
 	// Create chunk 1 at generation 5
-	g.EnsureChunk(1, 0, 128)
+	_ = g.EnsureChunk(1, 0, 128)
 
 	// Bypass generation with math.MaxUint64 for chunk 1
 	chunk1 := g.GetVectorsChunkFastWithGen(1, math.MaxUint64)
@@ -89,9 +89,9 @@ func FuzzConcurrentChunkIO(f *testing.F) {
 		}
 		g.GrowMetadataSlices(2)
 
-		g.EnsureChunk(0, 0, 8)
+		_ = g.EnsureChunk(0, 0, 8)
 		vec := []float32{1, 2, 3, 4, 5, 6, 7, 8}
-		g.SetVector(0, vec)
+		_ = g.SetVector(0, vec)
 
 		var wg sync.WaitGroup
 		wg.Add(2)
@@ -114,7 +114,7 @@ func FuzzConcurrentChunkIO(f *testing.F) {
 			defer wg.Done()
 			for i := 0; i < 100; i++ {
 				g.ReleaseChunk(0)
-				g.EnsureChunk(0, 0, 8)
+				_ = g.EnsureChunk(0, 0, 8)
 			}
 		}()
 

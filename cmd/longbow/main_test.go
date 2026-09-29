@@ -39,7 +39,7 @@ func testMain(m *testing.M) int {
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	binaryPath = filepath.Join(tmpDir, "longbow")
-	cmd := exec.Command("go", "build", "-o", binaryPath, ".")
+	cmd := exec.Command("go", "build", "-o", binaryPath, ".") // #nosec G204 -- invokes the local go toolchain to build the binary under test
 	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		fmt.Fprintf(os.Stderr, "Failed to build binary: %v\n", err)

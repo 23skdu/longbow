@@ -147,8 +147,8 @@ func TestStreamingAggregation_GetExponentialMovingAverage(t *testing.T) {
 	err := sa.CreateAggregate("vec1", 3, AggregationTypeExponential)
 	require.NoError(t, err)
 
-	sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
-	sa.AddVector("vec1", []float32{3.0, 4.0, 5.0}, time.Now())
+	_ = sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
+	_ = sa.AddVector("vec1", []float32{3.0, 4.0, 5.0}, time.Now())
 
 	result, err := sa.GetExponentialMovingAverage("vec1")
 	require.NoError(t, err)
@@ -165,8 +165,8 @@ func TestStreamingAggregation_GetCumulative(t *testing.T) {
 	err := sa.CreateAggregate("vec1", 3, AggregationTypeCumulative)
 	require.NoError(t, err)
 
-	sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
-	sa.AddVector("vec1", []float32{4.0, 5.0, 6.0}, time.Now())
+	_ = sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
+	_ = sa.AddVector("vec1", []float32{4.0, 5.0, 6.0}, time.Now())
 
 	result, err := sa.GetCumulative("vec1")
 	require.NoError(t, err)
@@ -180,7 +180,7 @@ func TestStreamingAggregation_GetAggregate(t *testing.T) {
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
 
-	sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
+	_ = sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
 
 	agg, exists := sa.GetAggregate("vec1")
 	require.True(t, exists)
@@ -195,7 +195,7 @@ func TestStreamingAggregation_RemoveAggregate(t *testing.T) {
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
 
-	sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
+	_ = sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
 	assert.Equal(t, 1, sa.GetAggregateCount())
 
 	sa.RemoveAggregate("vec1")
@@ -209,8 +209,8 @@ func TestStreamingAggregation_ListAggregates(t *testing.T) {
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
 
-	sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
-	sa.AddVector("vec2", []float32{4.0, 5.0, 6.0}, time.Now())
+	_ = sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
+	_ = sa.AddVector("vec2", []float32{4.0, 5.0, 6.0}, time.Now())
 
 	ids := sa.ListAggregates()
 	assert.Len(t, ids, 2)
@@ -225,8 +225,8 @@ func TestStreamingAggregation_Clear(t *testing.T) {
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
 
-	sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
-	sa.AddVector("vec2", []float32{4.0, 5.0, 6.0}, time.Now())
+	_ = sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
+	_ = sa.AddVector("vec2", []float32{4.0, 5.0, 6.0}, time.Now())
 
 	sa.Clear()
 
@@ -240,7 +240,7 @@ func TestStreamingAggregation_GetStats(t *testing.T) {
 	logger := zerolog.New(nil).With().Logger()
 	sa := NewStreamingAggregation(logger, StreamingAggregationConfig{})
 
-	sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
+	_ = sa.AddVector("vec1", []float32{1.0, 2.0, 3.0}, time.Now())
 
 	received, _, _, _ := sa.GetStats()
 	assert.Greater(t, received, int64(0))
@@ -292,12 +292,12 @@ func TestStreamingAggregation_MaxAggregates_AutoEvict(t *testing.T) {
 		AutoEvict:     true,
 	})
 
-	sa.AddVector("vec1", []float32{1.0}, time.Now())
-	sa.AddVector("vec2", []float32{2.0}, time.Now())
+	_ = sa.AddVector("vec1", []float32{1.0}, time.Now())
+	_ = sa.AddVector("vec2", []float32{2.0}, time.Now())
 
 	assert.Equal(t, 2, sa.GetAggregateCount())
 
-	sa.AddVector("vec3", []float32{3.0}, time.Now())
+	_ = sa.AddVector("vec3", []float32{3.0}, time.Now())
 
 	assert.Equal(t, 2, sa.GetAggregateCount())
 }
@@ -337,7 +337,7 @@ func TestStreamingAggregation_WindowSize_Limit(t *testing.T) {
 	})
 
 	for i := 0; i < 5; i++ {
-		sa.AddVector("vec1", []float32{float32(i)}, time.Now())
+		_ = sa.AddVector("vec1", []float32{float32(i)}, time.Now())
 	}
 
 	result, err := sa.GetMovingAverage("vec1")
@@ -360,9 +360,9 @@ func TestStreamingAggregation_DifferentAggregateTypes(t *testing.T) {
 	err = sa.CreateAggregate("cum", 2, AggregationTypeCumulative)
 	require.NoError(t, err)
 
-	sa.AddVector("ma", []float32{1.0, 2.0}, time.Now())
-	sa.AddVector("ewma", []float32{1.0, 2.0}, time.Now())
-	sa.AddVector("cum", []float32{1.0, 2.0}, time.Now())
+	_ = sa.AddVector("ma", []float32{1.0, 2.0}, time.Now())
+	_ = sa.AddVector("ewma", []float32{1.0, 2.0}, time.Now())
+	_ = sa.AddVector("cum", []float32{1.0, 2.0}, time.Now())
 
 	_, err = sa.GetMovingAverage("ma")
 	require.NoError(t, err)

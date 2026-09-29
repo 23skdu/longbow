@@ -51,7 +51,7 @@ func TestWorkQueue_SubmitAndProcess(t *testing.T) {
 	}
 
 	time.Sleep(100 * time.Millisecond)
-	wq.Close()
+	_ = wq.Close()
 
 	if processed.Load() != 10 {
 		t.Errorf("expected 10 processed items, got %d", processed.Load())
@@ -73,7 +73,7 @@ func TestWorkQueue_SubmitBlocking(t *testing.T) {
 	}
 
 	time.Sleep(100 * time.Millisecond)
-	wq.Close()
+	_ = wq.Close()
 
 	if processed.Load() != 5 {
 		t.Errorf("expected 5 processed items, got %d", processed.Load())
@@ -137,7 +137,7 @@ func TestWorkQueue_CloseCancelsContext(t *testing.T) {
 	wq.Start(handler)
 	wq.SubmitBlocking(1)
 	time.Sleep(50 * time.Millisecond)
-	wq.Close()
+	_ = wq.Close()
 
 	select {
 	case <-cancelled:
@@ -150,7 +150,7 @@ func TestWorkQueue_SubmitWhenFull(t *testing.T) {
 	wq := NewWorkQueue(1, 1)
 	wq.SubmitBlocking(1)
 	assert.False(t, wq.Submit(2), "Submit should return false when queue is full")
-	wq.Close()
+	_ = wq.Close()
 }
 
 func TestPriorityWorkQueue_Defaults(t *testing.T) {
@@ -161,7 +161,7 @@ func TestPriorityWorkQueue_Defaults(t *testing.T) {
 	if cap(pwq.queues[0]) == 0 {
 		t.Error("expected default buffer size to be set")
 	}
-	pwq.Close()
+	_ = pwq.Close()
 }
 
 func TestPriorityWorkQueue_SubmitAllPriorities(t *testing.T) {
@@ -179,7 +179,7 @@ func TestPriorityWorkQueue_SubmitAllPriorities(t *testing.T) {
 	assert.True(t, pwq.Submit("e", PriorityHigh))
 
 	time.Sleep(100 * time.Millisecond)
-	pwq.Close()
+	_ = pwq.Close()
 	assert.Equal(t, int32(5), processed.Load())
 }
 
@@ -204,7 +204,7 @@ func TestWorkQueue_ConcurrentSubmit(t *testing.T) {
 
 	wg.Wait()
 	time.Sleep(100 * time.Millisecond)
-	wq.Close()
+	_ = wq.Close()
 
 	if processed.Load() != 100 {
 		t.Errorf("expected 100 processed items, got %d", processed.Load())
@@ -238,7 +238,7 @@ func TestPriorityWorkQueue_SubmitAndProcess(t *testing.T) {
 	}
 
 	time.Sleep(100 * time.Millisecond)
-	pwq.Close()
+	_ = pwq.Close()
 
 	if processed.Load() != 10 {
 		t.Errorf("expected 10 processed items, got %d", processed.Load())
@@ -290,7 +290,7 @@ func TestPriorityWorkQueue_PriorityOrdering(t *testing.T) {
 	pwq.Submit(3, PriorityNormal)
 
 	time.Sleep(100 * time.Millisecond)
-	pwq.Close()
+	_ = pwq.Close()
 
 	if len(order) != 3 {
 		t.Skipf("order not deterministic in concurrent test, got %v", order)

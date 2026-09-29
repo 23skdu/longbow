@@ -49,7 +49,7 @@ func TestDiskVectorStore_Compression(t *testing.T) {
 	dvs2.SetCompression("lz4")
 	_, err = dvs2.BatchAppend(vectors)
 	require.NoError(t, err)
-	dvs2.Close()
+	_ = dvs2.Close()
 
 	fi2, _ := os.Stat(path2)
 	t.Logf("LZ4 compressed size for 10 vectors: %d bytes", fi2.Size())
@@ -189,7 +189,7 @@ func BenchmarkDiskVectorStore_Read(b *testing.B) {
 			}
 			_, _ = dvsDirect.GetBatch(indices)
 		}
-		dvsDirect.Close()
+		_ = dvsDirect.Close()
 	})
 }
 

@@ -75,7 +75,7 @@ func GenerateRandomRecordBatch(mem memory.Allocator, rng *rand.Rand, schema *arr
 				} else {
 					length := rng.Intn(20)
 					bytes := make([]byte, length)
-					rng.Read(bytes)
+					_, _ = rng.Read(bytes)
 					fb.Append(string(bytes))
 				}
 			}

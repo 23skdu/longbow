@@ -49,8 +49,8 @@ func TestWALBatcher_CompressionTypes(t *testing.T) {
 			require.NoError(t, err)
 
 			// Clean up for next run
-			os.RemoveAll(tmpDir)
-			os.MkdirAll(tmpDir, 0750)
+			_ = os.RemoveAll(tmpDir)
+			_ = os.MkdirAll(tmpDir, 0750)
 		})
 	}
 }

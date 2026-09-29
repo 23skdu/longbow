@@ -19,7 +19,7 @@ func TestParquetCompression_IsZSTD(t *testing.T) {
 	defer rec.Release()
 
 	path := filepath.Join(tmpDir, "compressed.parquet")
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	if err != nil {
 		t.Fatalf("Failed to create file: %v", err)
 	}
@@ -31,7 +31,7 @@ func TestParquetCompression_IsZSTD(t *testing.T) {
 	_ = f.Close()
 
 	// Open file to check metadata
-	f2, err := os.Open(path)
+	f2, err := os.Open(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	if err != nil {
 		t.Fatalf("Failed to open file: %v", err)
 	}

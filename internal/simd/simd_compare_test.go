@@ -28,7 +28,7 @@ func TestMatchInt64_Correctness(t *testing.T) {
 			for i := range dst {
 				dst[i] = 255
 			}
-			MatchInt64(src, tc.val, tc.op, dst)
+			_ = MatchInt64(src, tc.val, tc.op, dst)
 			for i, v := range dst {
 				if v != tc.expected[i] {
 					t.Errorf("Index %d: expected %d, got %d", i, tc.expected[i], v)
@@ -61,7 +61,7 @@ func TestMatchFloat32_Correctness(t *testing.T) {
 			for i := range dst {
 				dst[i] = 255
 			}
-			MatchFloat32(src, tc.val, tc.op, dst)
+			_ = MatchFloat32(src, tc.val, tc.op, dst)
 			for i, v := range dst {
 				if v != tc.expected[i] {
 					t.Errorf("Index %d: expected %d, got %d", i, tc.expected[i], v)
@@ -94,7 +94,7 @@ func TestMatchFloat32_AVX2_LargeArray(t *testing.T) {
 			for i := range dst8 {
 				dst8[i] = 255
 			}
-			MatchFloat32(src8, tc.val, tc.op, dst8)
+			_ = MatchFloat32(src8, tc.val, tc.op, dst8)
 			for i, v := range dst8 {
 				if v != tc.expected[i] {
 					t.Errorf("Index %d: expected %d, got %d", i, tc.expected[i], v)
@@ -110,7 +110,7 @@ func TestMatchFloat32_AVX2_LargeArray(t *testing.T) {
 	for i := range dst16 {
 		dst16[i] = 255
 	}
-	MatchFloat32(src16, 5.0, CompareEq, dst16)
+	_ = MatchFloat32(src16, 5.0, CompareEq, dst16)
 	for i, v := range dst16 {
 		if v != expected16[i] {
 			t.Errorf("Index %d: expected %d, got %d", i, expected16[i], v)
@@ -124,7 +124,7 @@ func TestMatchFloat32_AVX2_LargeArray(t *testing.T) {
 	for i := range dst9 {
 		dst9[i] = 255
 	}
-	MatchFloat32(src9, 5.0, CompareEq, dst9)
+	_ = MatchFloat32(src9, 5.0, CompareEq, dst9)
 	for i, v := range dst9 {
 		if v != expected9[i] {
 			t.Errorf("Index %d: expected %d, got %d", i, expected9[i], v)

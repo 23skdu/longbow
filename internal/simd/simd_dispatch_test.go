@@ -94,7 +94,7 @@ func TestDispatchCorrectness(t *testing.T) {
 		}
 		results := make([]float32, 2)
 
-		EuclideanDistanceBatch(query, vectors, results)
+		_ = EuclideanDistanceBatch(query, vectors, results)
 
 		if abs(results[0]-8.0) > 0.0001 {
 			t.Errorf("batch result[0] = %v, want 8.0", results[0])
@@ -224,7 +224,7 @@ func BenchmarkHotPath(b *testing.B) {
 	b.Run("Batch", func(b *testing.B) {
 		results := make([]float32, len(candidates))
 		for i := 0; i < b.N; i++ {
-			EuclideanDistanceBatch(query, candidates, results)
+			_ = EuclideanDistanceBatch(query, candidates, results)
 		}
 	})
 }

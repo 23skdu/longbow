@@ -14,7 +14,7 @@ func TestBatchDistanceCompute_EmptyInputs(t *testing.T) {
 	candidates := [][]float32{}
 	results := make([]float32, 0)
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 }
 
 func TestBatchDistanceCompute_ValidInputs(t *testing.T) {
@@ -31,7 +31,7 @@ func TestBatchDistanceCompute_ValidInputs(t *testing.T) {
 	}
 	results := make([]float32, 2)
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	assert.Equal(t, float32(0.0), results[0])
 	assert.Equal(t, float32(0.0), results[1])
@@ -85,7 +85,7 @@ func TestBatchDistanceCompute_SingleQuery(t *testing.T) {
 	}
 	results := make([]float32, 1)
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	assert.True(t, results[0] > 0, "distance should be positive")
 }
@@ -107,7 +107,7 @@ func TestBatchDistanceCompute_128Dimensions(t *testing.T) {
 		}
 	}
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	for i, d := range results {
 		assert.InDelta(t, 0.0, d, 0.001, "distance %d should be near zero for identical vectors", i)
@@ -131,7 +131,7 @@ func TestBatchDistanceCompute_384Dimensions(t *testing.T) {
 		}
 	}
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	for i, d := range results {
 		assert.InDelta(t, 0.0, d, 0.001, "distance %d should be near zero for identical vectors", i)
@@ -152,7 +152,7 @@ func TestBatchDistanceCompute_VariableDimensions(t *testing.T) {
 	}
 	results := make([]float32, 2)
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	assert.Equal(t, float32(0.0), results[0])
 	assert.Equal(t, float32(0.0), results[1])
@@ -170,7 +170,7 @@ func TestBatchDistanceCompute_ZeroVectors(t *testing.T) {
 	}
 	results := make([]float32, 1)
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	assert.True(t, results[0] >= 0, "distance should be non-negative")
 }
@@ -196,7 +196,7 @@ func TestBatchDistanceCompute_MixedDimensions(t *testing.T) {
 		candidates[2][j] = float32(j) * 0.01
 	}
 
-	BatchDistanceCompute(queries, candidates, results)
+	_ = BatchDistanceCompute(queries, candidates, results)
 
 	for i, d := range results {
 		assert.InDelta(t, 0.0, d, 0.001, "distance %d should be near zero for identical vectors", i)

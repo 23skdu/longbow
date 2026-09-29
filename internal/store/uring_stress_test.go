@@ -28,7 +28,7 @@ func TestUringReaderStress(t *testing.T) {
 		data[i] = byte(i % 256)
 	}
 
-	if err := os.WriteFile(testFile, data, 0644); err != nil {
+	if err := os.WriteFile(testFile, data, 0o600); err != nil {
 		t.Fatal(err)
 	}
 

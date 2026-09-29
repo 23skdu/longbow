@@ -35,9 +35,9 @@ func TestAutoQuantize_EnvFlags(t *testing.T) {
 	defer os.Unsetenv("LONGBOW_AUTO_QUANTIZE_THRESHOLD")
 	defer os.Unsetenv("LONGBOW_AUTO_QUANTIZE_BITS")
 
-	os.Setenv("LONGBOW_AUTO_QUANTIZE", "1")
-	os.Setenv("LONGBOW_AUTO_QUANTIZE_THRESHOLD", "250000")
-	os.Setenv("LONGBOW_AUTO_QUANTIZE_BITS", "8")
+	_ = os.Setenv("LONGBOW_AUTO_QUANTIZE", "1")
+	_ = os.Setenv("LONGBOW_AUTO_QUANTIZE_THRESHOLD", "250000")
+	_ = os.Setenv("LONGBOW_AUTO_QUANTIZE_BITS", "8")
 
 	cfg := types.DefaultArrowHNSWConfig()
 	assert.True(t, cfg.AutoQuantize)
@@ -47,7 +47,7 @@ func TestAutoQuantize_EnvFlags(t *testing.T) {
 
 func TestAutoQuantize_TuneDatasetIntegration(t *testing.T) {
 	defer os.Unsetenv("LONGBOW_AUTO_QUANTIZE")
-	os.Setenv("LONGBOW_AUTO_QUANTIZE", "1")
+	_ = os.Setenv("LONGBOW_AUTO_QUANTIZE", "1")
 
 	alloc := memory.NewGoAllocator()
 	logger := zerolog.Nop()

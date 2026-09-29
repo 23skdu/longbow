@@ -10,12 +10,12 @@ import (
 // TestGRPCServerConfigEnvVars verifies environment variable parsing for gRPC server options
 func TestGRPCServerConfigEnvVars(t *testing.T) {
 	// Set env vars
-	os.Setenv("LONGBOW_GRPC_MAX_RECV_MSG_SIZE", "33554432")       //nolint:errcheck // test helper  // 32MB
-	os.Setenv("LONGBOW_GRPC_MAX_SEND_MSG_SIZE", "16777216")       //nolint:errcheck // test helper  // 16MB
-	os.Setenv("LONGBOW_GRPC_INITIAL_WINDOW_SIZE", "2097152")      //nolint:errcheck // test helper // 2MB
-	os.Setenv("LONGBOW_GRPC_INITIAL_CONN_WINDOW_SIZE", "4194304") //nolint:errcheck // test helper // 4MB
-	os.Setenv("LONGBOW_GRPC_MAX_CONCURRENT_STREAMS", "500")       //nolint:errcheck // test helper
-	defer func() {                                                //nolint:errcheck // test cleanup
+	_ = os.Setenv("LONGBOW_GRPC_MAX_RECV_MSG_SIZE", "33554432")       //nolint:errcheck // test helper  // 32MB
+	_ = os.Setenv("LONGBOW_GRPC_MAX_SEND_MSG_SIZE", "16777216")       //nolint:errcheck // test helper  // 16MB
+	_ = os.Setenv("LONGBOW_GRPC_INITIAL_WINDOW_SIZE", "2097152")      //nolint:errcheck // test helper // 2MB
+	_ = os.Setenv("LONGBOW_GRPC_INITIAL_CONN_WINDOW_SIZE", "4194304") //nolint:errcheck // test helper // 4MB
+	_ = os.Setenv("LONGBOW_GRPC_MAX_CONCURRENT_STREAMS", "500")       //nolint:errcheck // test helper
+	defer func() {                                                    //nolint:errcheck // test cleanup
 		_ = os.Unsetenv("LONGBOW_GRPC_MAX_RECV_MSG_SIZE")
 		_ = os.Unsetenv("LONGBOW_GRPC_MAX_SEND_MSG_SIZE")
 		_ = os.Unsetenv("LONGBOW_GRPC_INITIAL_WINDOW_SIZE")

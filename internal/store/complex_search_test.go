@@ -39,7 +39,7 @@ func TestComplex128_DimensionCheck(t *testing.T) {
 	// GraphData interprets this as 4 elements of Complex128.
 	// Since Complex128 is 2 floats, this corresponds to 8 floats physically.
 
-	idx.SetDimension(logicalDim) // 4 (Complex Elements)
+	_ = idx.SetDimension(logicalDim) // 4 (Complex Elements)
 
 	require.Equal(t, uint32(logicalDim), idx.GetDimension(), "Index dimension should match logical dimension")
 
@@ -116,7 +116,7 @@ func TestComplex_SearchCorrectness(t *testing.T) {
 	defer rec.Release()
 
 	// Initialize HNSW sizing
-	idx.SetDimension(logicalDim)
+	_ = idx.SetDimension(logicalDim)
 
 	// Insert vectors individually using AddByRecord to handle location mapping automatically
 	for i := 0; i < len(vectors); i++ {

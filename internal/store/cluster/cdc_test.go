@@ -904,7 +904,7 @@ func TestChangeDataCapture_CloseSubscription_UpdatesMetrics(t *testing.T) {
 	_, _, _, _, initialSubs, _ := cdc.GetMetrics()
 	assert.Equal(t, int64(1), initialSubs)
 
-	cdc.Unsubscribe(sub.ID)
+	_ = cdc.Unsubscribe(sub.ID)
 
 	_, _, _, _, afterSubs, _ := cdc.GetMetrics()
 	assert.Equal(t, int64(0), afterSubs)

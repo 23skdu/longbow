@@ -249,6 +249,6 @@ func BenchmarkTrainKMeans_WarmPool(b *testing.B) {
 	b.ReportAllocs()
 
 	for i := 0; i < b.N; i++ {
-		TrainKMeans(data, n, dim, k, 10)
+		_, _ = TrainKMeans(data, n, dim, k, 10)
 	}
 }

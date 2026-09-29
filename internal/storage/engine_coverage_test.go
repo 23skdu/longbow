@@ -156,13 +156,13 @@ func TestStorageEngine_Snapshot_Error(t *testing.T) {
 
 	// Make snapshots_tmp a file so directory creation fails
 	tmpPath := filepath.Join(tempDir, "snapshots_tmp")
-	err = os.WriteFile(tmpPath, []byte("not-a-dir"), 0644)
+	err = os.WriteFile(tmpPath, []byte("not-a-dir"), 0o600)
 	require.NoError(t, err)
 
 	err = engine.CreateSnapshot(item)
 	assert.Error(t, err)
 
-	engine.Close()
+	_ = engine.Close()
 }
 
 func TestStorageEngine_LoadSnapshots(t *testing.T) {

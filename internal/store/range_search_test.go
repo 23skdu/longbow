@@ -58,7 +58,7 @@ func TestArrowHNSW_RangeSearch(t *testing.T) {
 
 	t.Logf("Range search found %d results within threshold 100.0", len(results))
 
-	idx.Close()
+	_ = idx.Close()
 }
 
 func TestArrowHNSW_RangeSearch_Empty(t *testing.T) {
@@ -88,5 +88,5 @@ func TestArrowHNSW_RangeSearch_Empty(t *testing.T) {
 		t.Errorf("expected no results for empty index, got %d", len(results))
 	}
 
-	idx.Close()
+	_ = idx.Close()
 }

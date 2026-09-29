@@ -19,7 +19,7 @@ func TestParquetCompression_LZ4(t *testing.T) {
 	defer rec.Release()
 
 	path := filepath.Join(tmpDir, "lz4_compressed.parquet")
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	require.NoError(t, err)
 
 	// Use LZ4
@@ -28,7 +28,7 @@ func TestParquetCompression_LZ4(t *testing.T) {
 	_ = f.Close()
 
 	// Verify
-	f2, err := os.Open(path)
+	f2, err := os.Open(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	require.NoError(t, err)
 	defer f2.Close()
 
@@ -54,7 +54,7 @@ func TestParquetCompression_Uncompressed(t *testing.T) {
 	defer rec.Release()
 
 	path := filepath.Join(tmpDir, "uncompressed.parquet")
-	f, err := os.Create(path)
+	f, err := os.Create(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	require.NoError(t, err)
 
 	// Use uncompressed
@@ -63,7 +63,7 @@ func TestParquetCompression_Uncompressed(t *testing.T) {
 	_ = f.Close()
 
 	// Verify
-	f2, err := os.Open(path)
+	f2, err := os.Open(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	require.NoError(t, err)
 	defer f2.Close()
 

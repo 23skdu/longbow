@@ -30,7 +30,7 @@ func TestEngineBehavior(t *testing.T) {
 	require.NoError(t, err)
 	defer os.Remove(tmpFile.Name())
 	tmpPath := tmpFile.Name()
-	tmpFile.Close()
+	_ = tmpFile.Close()
 
 	// In real Metal, LoadModel currently returns true if file exists
 	err = engine.LoadModel(tmpPath)

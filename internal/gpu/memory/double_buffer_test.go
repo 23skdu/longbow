@@ -53,7 +53,7 @@ func TestDoubleBufferWriteCapacityExceeded(t *testing.T) {
 
 func TestDoubleBufferWriteAcrossSwap(t *testing.T) {
 	db := NewDoubleBuffer(64)
-	db.Write([]byte("first"))
+	_, _ = db.Write([]byte("first"))
 	db.Swap()
 	n, err := db.Write([]byte("second"))
 	assert.NoError(t, err)
@@ -67,7 +67,7 @@ func TestDoubleBufferWriteAcrossSwap(t *testing.T) {
 
 func TestDoubleBufferReset(t *testing.T) {
 	db := NewDoubleBuffer(64)
-	db.Write([]byte("data"))
+	_, _ = db.Write([]byte("data"))
 	db.Reset()
 	assert.Equal(t, 0, db.ActiveSize())
 }

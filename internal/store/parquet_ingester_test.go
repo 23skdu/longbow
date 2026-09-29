@@ -29,7 +29,7 @@ func TestParquetIngester(t *testing.T) {
 	defer os.Remove(tmpPath)
 
 	// Use parquet-go directly to write a valid test file
-	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_RDWR, 0644)
+	f, err := os.OpenFile(tmpPath, os.O_CREATE|os.O_RDWR, 0o600) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	require.NoError(t, err)
 
 	pw := parquet.NewGenericWriter[DatasetParquetRecord](f)
@@ -45,7 +45,7 @@ func TestParquetIngester(t *testing.T) {
 	require.NoError(t, err)
 	err = pw.Close()
 	require.NoError(t, err)
-	f.Close()
+	_ = f.Close()
 
 	// 3. Ingest using ParquetIngester
 	ingester := NewParquetIngester(ds, 10)

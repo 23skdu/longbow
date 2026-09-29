@@ -64,7 +64,7 @@ func TestWAL_Lifecycle(t *testing.T) {
 	assert.Greater(t, info.Size(), int64(0))
 
 	// Verify Header structure (basic check)
-	data, err := os.ReadFile(walFile)
+	data, err := os.ReadFile(walFile) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	require.NoError(t, err)
 	// Header is 32 bytes
 	assert.GreaterOrEqual(t, len(data), 32)

@@ -15,11 +15,11 @@ func TestGetPhysicalMemory_Detection(t *testing.T) {
 func TestGetPhysicalMemory_Override(t *testing.T) {
 	defer os.Unsetenv("LONGBOW_PHYSICAL_RAM")
 
-	os.Setenv("LONGBOW_PHYSICAL_RAM", "24GiB")
+	_ = os.Setenv("LONGBOW_PHYSICAL_RAM", "24GiB")
 	mem := GetPhysicalMemory()
 	assert.Equal(t, int64(24)*1024*1024*1024, mem)
 
-	os.Setenv("LONGBOW_PHYSICAL_RAM", "500MB")
+	_ = os.Setenv("LONGBOW_PHYSICAL_RAM", "500MB")
 	mem = GetPhysicalMemory()
 	assert.Equal(t, int64(500)*1000*1000, mem)
 }

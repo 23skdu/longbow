@@ -17,7 +17,7 @@ func TestHNSWPQ_Integration(t *testing.T) {
 	ds := &index.MockDataset{Name: "test_pq"}
 	h := index.NewTestHNSWIndex(ds)
 	// Initialize dims
-	h.SetDimension(dim)
+	_ = h.SetDimension(dim)
 
 	// Generate random vectors
 	rng := rand.New(rand.NewSource(time.Now().UnixNano()))

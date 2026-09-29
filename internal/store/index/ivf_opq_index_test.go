@@ -195,9 +195,9 @@ func BenchmarkIVFOPQIndex_1M_3072dim(b *testing.B) {
 
 	for i := 0; i < b.N; i++ {
 		if i == 0 {
-			idx.Train(vectors)
+			_ = idx.Train(vectors)
 		}
-		idx.Add(context.Background(), vectors)
+		_ = idx.Add(context.Background(), vectors)
 	}
 
 	query := make([]float32, dim)
@@ -207,7 +207,7 @@ func BenchmarkIVFOPQIndex_1M_3072dim(b *testing.B) {
 
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
-		idx.SearchVectorsWithBitmap(context.Background(), query, 10, nil, nil)
+		_, _ = idx.SearchVectorsWithBitmap(context.Background(), query, 10, nil, nil)
 	}
 }
 

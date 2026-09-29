@@ -129,7 +129,7 @@ func TestPluggableVectorIndex_SaveLoad(t *testing.T) {
 		dimension: 4,
 		vectors:   make(map[uint64][]float32),
 	}
-	idx.Add(1, []float32{1.0, 0.0, 0.0, 0.0}) //nolint:errcheck
+	_ = idx.Add(1, []float32{1.0, 0.0, 0.0, 0.0}) //nolint:errcheck
 
 	// Save
 	err := idx.Save(path)
@@ -287,7 +287,7 @@ func TestPluggableIndex_ConcurrentAccess(t *testing.T) {
 		wg.Add(1)
 		go func(id uint64) {
 			defer wg.Done()
-			idx.Add(id, []float32{float32(id), 0, 0, 0}) //nolint:errcheck
+			_ = idx.Add(id, []float32{float32(id), 0, 0, 0}) //nolint:errcheck
 		}(uint64(i))
 	}
 	wg.Wait()
@@ -430,11 +430,11 @@ func (m *mockPluggableIndex) Build() error {
 }
 
 func (m *mockPluggableIndex) Save(path string) error {
-	return os.WriteFile(path, []byte("mock"), 0o644)
+	return os.WriteFile(path, []byte("mock"), 0o600)
 }
 
 func (m *mockPluggableIndex) Load(path string) error {
-	_, err := os.ReadFile(path)
+	_, err := os.ReadFile(path) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	return err
 }
 

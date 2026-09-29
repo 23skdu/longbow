@@ -64,7 +64,7 @@ func TestReproGraphRAGSearchRace(t *testing.T) {
 	for i := 0; i < 1000; i++ {
 		src := uint32(rand.Intn(numVectors))
 		dst := uint32(rand.Intn(numVectors))
-		ds.Graph.AddEdge(Edge{
+		_ = ds.Graph.AddEdge(Edge{
 			Subject: types.VectorID(src),
 			Object:  types.VectorID(dst),
 			Weight:  rand.Float32(),

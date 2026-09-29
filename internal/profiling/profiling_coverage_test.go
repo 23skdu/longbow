@@ -152,7 +152,7 @@ func TestLeakDetectorManager_CaptureProfiles(t *testing.T) {
 	logger := makeTestLogger()
 	mgr := NewLeakDetectorManager(logger, DefaultLeakDetectorConfig())
 	assert.NotPanics(t, func() {
-		mgr.CaptureProfiles()
+		_ = mgr.CaptureProfiles()
 	})
 }
 

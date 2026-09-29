@@ -59,8 +59,8 @@ func TestAdvancedSQL_E2E(t *testing.T) {
 	w.SetFlightDescriptor(&flight.FlightDescriptor{Path: []string{"users"}})
 	err = w.Write(usersRec)
 	require.NoError(t, err)
-	w.Close()
-	putStream.CloseSend()
+	_ = w.Close()
+	_ = putStream.CloseSend()
 	_, _ = putStream.Recv() // Wait
 
 	fmt.Println("Waiting for indexing...")

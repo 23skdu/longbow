@@ -166,7 +166,7 @@ func setupTestDataset(t *testing.T, s *VectorStore, name string) {
 	ds.SetLastAccess(time.Now())
 	// Init Index
 	idx := NewTestHNSWIndex(ds)
-	idx.SetDimension(2)
+	_ = idx.SetDimension(2)
 	ds.Index = idx
 
 	// Pre-populate hack

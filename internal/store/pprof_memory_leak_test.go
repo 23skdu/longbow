@@ -31,7 +31,7 @@ func TestMemoryLeak_PprofHeapAnalysis(t *testing.T) {
 	if err := pprof.WriteHeapProfile(baselineFile); err != nil {
 		t.Fatalf("failed to write baseline heap profile: %v", err)
 	}
-	baselineFile.Close()
+	_ = baselineFile.Close()
 
 	// Simulate workload that could leak memory
 	// Create and abandon slices in a loop (simulates the CPU recent feature)
@@ -64,7 +64,7 @@ func TestMemoryLeak_PprofHeapAnalysis(t *testing.T) {
 	if err := pprof.WriteHeapProfile(postFile); err != nil {
 		t.Fatalf("failed to write post-workload heap profile: %v", err)
 	}
-	postFile.Close()
+	_ = postFile.Close()
 
 	// Memory leak detection threshold: 10MB growth after GC
 	if allocGrowth > 10*1024*1024 {
@@ -90,7 +90,7 @@ func TestMemoryLeak_PprofGoroutineAnalysis(t *testing.T) {
 	if err := pprof.Lookup("goroutine").WriteTo(preFile, 1); err != nil {
 		t.Fatalf("failed to write goroutine profile: %v", err)
 	}
-	preFile.Close()
+	_ = preFile.Close()
 
 	// Simulate goroutine leak scenario
 	done := make(chan bool)
@@ -109,7 +109,7 @@ func TestMemoryLeak_PprofGoroutineAnalysis(t *testing.T) {
 	if err := pprof.Lookup("goroutine").WriteTo(preCleanupFile, 1); err != nil {
 		t.Fatalf("failed to write goroutine profile: %v", err)
 	}
-	preCleanupFile.Close()
+	_ = preCleanupFile.Close()
 
 	// Close the channel to let goroutines exit
 	close(done)
@@ -150,7 +150,7 @@ func TestMemoryLeak_CPURecentScenario(t *testing.T) {
 	if err := pprof.WriteHeapProfile(baselineHeapFile); err != nil {
 		t.Fatalf("failed to write baseline heap: %v", err)
 	}
-	baselineHeapFile.Close()
+	_ = baselineHeapFile.Close()
 
 	// Simulate CPU recent metric collection (creating temporary buffers)
 	for i := 0; i < 500; i++ {
@@ -181,7 +181,7 @@ func TestMemoryLeak_CPURecentScenario(t *testing.T) {
 	if err := pprof.WriteHeapProfile(finalHeapFile); err != nil {
 		t.Fatalf("failed to write final heap: %v", err)
 	}
-	finalHeapFile.Close()
+	_ = finalHeapFile.Close()
 
 	// Check for leaks
 	heapDelta := int64(final.HeapAlloc) - int64(baseline.HeapAlloc)

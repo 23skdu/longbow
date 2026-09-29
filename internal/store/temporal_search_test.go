@@ -131,7 +131,7 @@ func TestTemporalIndex_Delete(t *testing.T) {
 	ti := NewTemporalIndex(128)
 
 	now := time.Now().UnixNano()
-	ti.Add(1, make([]float32, 128), now, nil)
+	_ = ti.Add(1, make([]float32, 128), now, nil)
 
 	err := ti.Delete(1)
 	assert.NoError(t, err)
@@ -144,7 +144,7 @@ func TestTemporalIndex_Update(t *testing.T) {
 	ti := NewTemporalIndex(128)
 
 	now := time.Now().UnixNano()
-	ti.Add(1, make([]float32, 128), now, nil)
+	_ = ti.Add(1, make([]float32, 128), now, nil)
 
 	newVec := make([]float32, 128)
 	for i := range newVec {
@@ -161,8 +161,8 @@ func TestTemporalIndex_SearchAsOf(t *testing.T) {
 	ti := NewTemporalIndex(128)
 
 	now := time.Now().UnixNano()
-	ti.Add(1, make([]float32, 128), now-1000, nil)
-	ti.Add(2, make([]float32, 128), now, nil)
+	_ = ti.Add(1, make([]float32, 128), now-1000, nil)
+	_ = ti.Add(2, make([]float32, 128), now, nil)
 
 	results, err := ti.SearchAsOf(context.Background(), now, 10)
 	assert.NoError(t, err)
@@ -176,9 +176,9 @@ func TestTemporalIndex_SearchRange(t *testing.T) {
 	ti := NewTemporalIndex(128)
 
 	now := time.Now().UnixNano()
-	ti.Add(1, make([]float32, 128), now-1000, nil)
-	ti.Add(2, make([]float32, 128), now, nil)
-	ti.Add(3, make([]float32, 128), now+1000, nil)
+	_ = ti.Add(1, make([]float32, 128), now-1000, nil)
+	_ = ti.Add(2, make([]float32, 128), now, nil)
+	_ = ti.Add(3, make([]float32, 128), now+1000, nil)
 
 	results, err := ti.SearchRange(context.Background(), now-500, now+500, 10)
 	assert.NoError(t, err)
@@ -193,7 +193,7 @@ func TestTemporalIndex_SearchSlidingWindow(t *testing.T) {
 
 	now := time.Now().UnixNano()
 	for i := 0; i < 5; i++ {
-		ti.Add(uint64(i), make([]float32, 128), now+int64(i)*1000, nil)
+		_ = ti.Add(uint64(i), make([]float32, 128), now+int64(i)*1000, nil)
 	}
 
 	results, err := ti.SearchSlidingWindow(context.Background(), 3, 10)

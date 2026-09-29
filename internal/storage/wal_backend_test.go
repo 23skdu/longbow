@@ -27,7 +27,7 @@ func TestFSBackend_WriteSyncClose(t *testing.T) {
 	assert.NoError(t, err)
 
 	// Verify content
-	content, err := os.ReadFile(tmpFile)
+	content, err := os.ReadFile(tmpFile) // #nosec G304 -- path is built from the test's own temp dir, never user input
 	require.NoError(t, err)
 	assert.Equal(t, data, content)
 }

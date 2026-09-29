@@ -53,7 +53,7 @@ func TestNamespaceDelete(t *testing.T) {
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 0)
 	defer vs.Close() //nolint:errcheck
 
-	vs.CreateNamespace("tenant1") //nolint:errcheck
+	_ = vs.CreateNamespace("tenant1") //nolint:errcheck
 
 	// Delete
 	err := vs.DeleteNamespace("tenant1")
@@ -75,9 +75,9 @@ func TestNamespaceList(t *testing.T) {
 	defer vs.Close() //nolint:errcheck
 
 	// Create multiple
-	vs.CreateNamespace("tenant1") //nolint:errcheck
-	vs.CreateNamespace("tenant2") //nolint:errcheck
-	vs.CreateNamespace("tenant3") //nolint:errcheck
+	_ = vs.CreateNamespace("tenant1") //nolint:errcheck
+	_ = vs.CreateNamespace("tenant2") //nolint:errcheck
+	_ = vs.CreateNamespace("tenant3") //nolint:errcheck
 
 	list := vs.ListNamespaces()
 	// Should have 4: default + 3 created
@@ -119,8 +119,8 @@ func TestNamespaceDatasetIsolation(t *testing.T) {
 	vs := NewVectorStore(mem, logger, 1<<30, 1<<20, 0)
 	defer vs.Close() //nolint:errcheck
 
-	vs.CreateNamespace("tenant1") //nolint:errcheck
-	vs.CreateNamespace("tenant2") //nolint:errcheck
+	_ = vs.CreateNamespace("tenant1") //nolint:errcheck
+	_ = vs.CreateNamespace("tenant2") //nolint:errcheck
 
 	// Get dataset count per namespace
 	count1 := vs.GetNamespaceDatasetCount("tenant1")
@@ -169,7 +169,7 @@ func TestNamespaceMetrics(t *testing.T) {
 
 	initialCount := vs.GetTotalNamespaceCount()
 
-	vs.CreateNamespace("tenant1") //nolint:errcheck
+	_ = vs.CreateNamespace("tenant1") //nolint:errcheck
 
 	newCount := vs.GetTotalNamespaceCount()
 	if newCount != initialCount+1 {

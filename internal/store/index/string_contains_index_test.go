@@ -86,7 +86,7 @@ func TestStringContainsIndex_Integration(t *testing.T) {
 	}
 
 	// Close should not panic
-	idx.Close()
+	_ = idx.Close()
 
 	// After close, new index is clean
 	if idx.HasIndex("anything") {

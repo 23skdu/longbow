@@ -17,7 +17,7 @@ func TestTokenizer(t *testing.T) {
 
 	_, err = tmpVocab.WriteString(vocabContent)
 	require.NoError(t, err)
-	tmpVocab.Close()
+	_ = tmpVocab.Close()
 
 	// 2. Load tokenizer
 	tokenizer, err := NewTokenizer(tmpVocab.Name(), 512)

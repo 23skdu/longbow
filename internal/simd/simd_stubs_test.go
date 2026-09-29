@@ -123,7 +123,7 @@ func readBuildTags(t *testing.T) map[string][]string {
 		if entry.IsDir() || !strings.HasSuffix(fname, ".go") || strings.HasSuffix(fname, "_test.go") {
 			continue
 		}
-		f, err := os.Open(fname)
+		f, err := os.Open(fname) // #nosec G304 -- path is built from the test's own temp dir, never user input
 		if err != nil {
 			continue
 		}
@@ -148,7 +148,7 @@ func readBuildTags(t *testing.T) map[string][]string {
 		if err := scanner.Err(); err != nil {
 			t.Logf("error reading file %s: %v", fname, err)
 		}
-		f.Close()
+		_ = f.Close()
 	}
 	return result
 }

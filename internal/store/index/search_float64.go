@@ -161,69 +161,73 @@ func (h *ArrowHNSW) searchLayerFloat64(goCtx context.Context, computer *float64C
 			}
 
 			if len(batch) > 0 {
-				results := ctx.EvaluatePredicateBatch(batch)
-				skipped := h.hotpath.NodesSkippedCounter(h.name)
+				matches := ctx.EvaluatePredicateBatch(batch)
 
-				var validBatch []uint32
-				for i, n := range batch {
-					if results[i] == 1 {
-						validBatch = append(validBatch, n)
-					} else {
-						skipped.Inc()
+				rejected := 0
+				for _, m := range matches {
+					if m != 1 {
+						rejected++
 					}
 				}
+				h.hotpath.NodesSkippedCounter(h.name).AddInt(int64(rejected))
 
-				if len(validBatch) > 0 {
-					// Cache-blocked candidate evaluation in 64-vector chunks
-					for chunkStart := 0; chunkStart < len(validBatch); chunkStart += traversalBlockSize {
-						chunkEnd := chunkStart + traversalBlockSize
-						if chunkEnd > len(validBatch) {
-							chunkEnd = len(validBatch)
+				// Cache-blocked candidate evaluation in 64-vector chunks
+				for chunkStart := 0; chunkStart < len(batch); chunkStart += traversalBlockSize {
+					chunkEnd := chunkStart + traversalBlockSize
+					if chunkEnd > len(batch) {
+						chunkEnd = len(batch)
+					}
+					block := batch[chunkStart:chunkEnd]
+
+					// Prefetch candidate vectors in next tile
+					if chunkEnd < len(batch) {
+						nextEnd := chunkEnd + traversalBlockSize
+						if nextEnd > len(batch) {
+							nextEnd = len(batch)
 						}
-						block := validBatch[chunkStart:chunkEnd]
-
-						// Prefetch candidate vectors in next tile
-						if chunkEnd < len(validBatch) {
-							nextEnd := chunkEnd + traversalBlockSize
-							if nextEnd > len(validBatch) {
-								nextEnd = len(validBatch)
+						for _, nextN := range batch[chunkEnd:nextEnd] {
+							if int64(nextN) < maxCommitted {
+								computer.Prefetch(nextN)
 							}
-							for _, nextN := range validBatch[chunkEnd:nextEnd] {
-								if int64(nextN) < maxCommitted {
-									computer.Prefetch(nextN)
-								}
+						}
+					}
+
+					ctx.distComputeCount += len(block)
+					if cap(ctx.distsTemp) < len(block) {
+						ctx.distsTemp = make([]float32, len(block))
+					}
+					dists, err := computer.ComputeBatch(block, ctx.distsTemp[:len(block)])
+					if err == nil {
+						for i, n := range block {
+							d := dists[i]
+							cand := types.Candidate{ID: n, Dist: d}
+
+							// Add to candidates for traversal regardless of the
+							// predicate: a matching node is only reachable through
+							// the non-matching nodes that connect it to the entry
+							// point.
+							minHeap.PushCandidate(cand)
+
+							if matches[chunkStart+i] != 1 {
+								continue
 							}
-						}
+							if fm != nil && !fm.allows(n) {
+								continue
+							}
+							if h.IsDeleted(n) {
+								continue
+							}
 
-						ctx.distComputeCount += len(block)
-						if cap(ctx.distsTemp) < len(block) {
-							ctx.distsTemp = make([]float32, len(block))
-						}
-						dists, err := computer.ComputeBatch(block, ctx.distsTemp[:len(block)])
-						if err == nil {
-							for i, n := range block {
-								d := dists[i]
-								cand := types.Candidate{ID: n, Dist: d}
-								minHeap.PushCandidate(cand)
-
-								if fm != nil && !fm.allows(n) {
-									continue
-								}
-								if h.IsDeleted(n) {
-									continue
-								}
-
-								if len(ctx.resultSet) > 0 {
-									furthest := ctx.resultSet[0]
-									if ctx.resultSet.Len() < ef || d < furthest.Dist {
-										resultSetAdapter.PushCandidate(cand)
-										if ctx.resultSet.Len() > ef {
-											resultSetAdapter.PopCandidate()
-										}
-									}
-								} else {
+							if len(ctx.resultSet) > 0 {
+								furthest := ctx.resultSet[0]
+								if ctx.resultSet.Len() < ef || d < furthest.Dist {
 									resultSetAdapter.PushCandidate(cand)
+									if ctx.resultSet.Len() > ef {
+										resultSetAdapter.PopCandidate()
+									}
 								}
+							} else {
+								resultSetAdapter.PushCandidate(cand)
 							}
 						}
 					}

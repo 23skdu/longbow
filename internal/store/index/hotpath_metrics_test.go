@@ -19,24 +19,17 @@ import (
 )
 
 // rejectingPredicate admits every id but one in sixteen, so the traversal skips
-// the candidates it evaluates and the per candidate nodes-skipped counter fires,
-// and always admits the graph entry point.
+// the candidates it evaluates and the per candidate nodes-skipped counter fires.
 //
-// Both properties are load bearing, and neither is about the metrics. The
-// traversal prunes its frontier on the predicate: searchLayer* pushes only
-// predicate-passing neighbours onto the candidate heap, and the
-// traversal-chunk counter only fires once a batch contains one. The graph is
-// built in parallel, so both the entry point and its neighbourhood differ from
-// build to build; a rejection rate high enough for the frontier to close on the
-// entry point leaves the traversal with nothing to evaluate, the search returns
-// nothing and the chunk and nodes-skipped series never move — with a
-// two-in-three rate, roughly one build in twenty, even though nothing is
-// broken. Admitting the entry point keeps the search itself deterministic:
-// searchLayer* pushes the entry point into the result set whenever it passes the
-// filter and the predicate, so a search that admits it always returns a hit. The
-// remaining risk is that none of the entry point's level-0 neighbours is
-// admitted either; one rejected id in sixteen bounds that at well under one
-// search in a thousand on this dataset, over the four searches a test runs.
+// The predicate only gates the result set, not the traversal frontier, so the
+// graph is walkable regardless of which ids the predicate rejects. Admitting the
+// graph entry point is still load bearing for a different reason: searchLayer*
+// pushes the entry point into the result set only when it passes the filter and
+// the predicate, so a search whose entry point is rejected can legitimately
+// return no entry-point result, and this test asserts on returned results. The
+// graph is built in parallel, so the entry point differs from build to build;
+// admitting it keeps the search deterministic. A one-in-sixteen rejection rate
+// keeps the nodes-skipped series moving without discarding most candidates.
 type rejectingPredicate struct{ entryPoint uint32 }
 
 func (p rejectingPredicate) IsMatch(id uint32) bool { return id%16 != 0 || id == p.entryPoint }

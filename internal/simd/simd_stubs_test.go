@@ -14,7 +14,7 @@ import (
 // all_kernels_stubs_amd64.go do not duplicate declarations in simd_amd64.go
 // (or other hand-written assembly stub files). This prevents the compilation
 // error that occurred with euclideanInt16AVX2Kernel et al. being declared in
-// both files — see docs/nextsteps.md "Build System Fix Required".
+// both files — see docs/roadmap.md §4 (build system).
 //
 // Files with architecture-specific build constraints (arm64, avx512, etc.)
 // or platform fallback files (stubs_avx_fallbacks.go) are excluded since

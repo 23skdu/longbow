@@ -8,7 +8,7 @@
 #define VFCVTZS_V(n, d)  WORD $(0x4e21b800 | ((n) << 5) | (d))
 #define VSCVTF_V(n, d)   WORD $(0x4e21d800 | ((n) << 5) | (d))
 #define VFMAX_V(m, n, d) WORD $(0x4e20f400 | ((m) << 16) | ((n) << 5) | (d))
-#define VFMIN_V(m, n, d) WORD $(0x4e21f400 | ((m) << 16) | ((n) << 5) | (d))
+#define VFMIN_V(m, n, d) WORD $(0x4ea0f400 | ((m) << 16) | ((n) << 5) | (d))
 #define VXTN_S_H(n, d)   WORD $(0x0e612800 | ((n) << 5) | (d))
 #define VXTN2_S_H(n, d)  WORD $(0x4e612800 | ((n) << 5) | (d))
 #define VXTN_H_B(n, d)   WORD $(0x0e212800 | ((n) << 5) | (d))
@@ -73,13 +73,16 @@ loop_pack8:
     VFADD_V(0, 8, 8); VFMUL_V(1, 8, 8); VFMAX_V(5, 8, 8); VFMIN_V(4, 8, 8); VFMUL_V(2, 8, 8); VFADD_V(3, 8, 8); VFCVTZS_V(8, 8)
     VFADD_V(0, 9, 9); VFMUL_V(1, 9, 9); VFMAX_V(5, 9, 9); VFMIN_V(4, 9, 9); VFMUL_V(2, 9, 9); VFADD_V(3, 9, 9); VFCVTZS_V(9, 9)
 
-    // Narrow 32-bit to 16-bit
+    // Narrow 32-bit to 16-bit. XTN writes the low 64 bits of its destination
+    // and clears the upper half, and XTN2 writes the narrowed low half of its
+    // source into the upper half of its destination without touching the lower
+    // half, so this merges the V7 codes into the upper half of V6.
     VXTN_S_H(6, 6)
     VXTN2_S_H(7, 6)
     VXTN_S_H(8, 8)
     VXTN2_S_H(9, 8)
-    
-    // Narrow 16-bit to 8-bit
+
+    // Narrow 16-bit to 8-bit, same pattern.
     VXTN_H_B(6, 6)
     VXTN2_H_B(8, 6)
     

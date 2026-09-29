@@ -154,6 +154,7 @@ func haversineBatchAVX2(centerLat, centerLon float64, points []lbcore.GeoPoint, 
 func dotFloat64AVX2(a, b []float64) (float32, error)       { return dotFloat64Unrolled4x(a, b) }
 func euclideanFloat64AVX2(a, b []float64) (float32, error) { return euclideanFloat64Unrolled4x(a, b) }
 func l2SquaredFloat64AVX2(a, b []float64) (float32, error) { return l2SquaredFloat64Unrolled4x(a, b) }
+func cosineFloat64AVX2(a, b []float64) (float32, error)    { return cosineFloat64Unrolled4x(a, b) }
 
 func dotInt4AVX2(a, b []byte) (float32, error) { return dotInt4Generic(a, b) }
 func dotInt2AVX2(a, b []byte) (float32, error) { return dotInt2Generic(a, b) }
